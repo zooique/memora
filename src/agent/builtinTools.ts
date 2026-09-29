@@ -70,10 +70,11 @@ export interface ToolDefinition {
 //   - write_file（overwrite 模式）：全量覆盖，重复执行结果一致 ✅
 //   - write_file（append 模式）：追加写入，重复执行会追加多次 ❌
 //   - write_file（insert 模式）：行插入，重复执行会插入多次 ❌
+//   - write_file（replace 模式）：唯一匹配替换，重跑时 old_string 已不在原文 → 报错而非静默改写 ❌（失败向，安全）
 //
 // 注：write_file 的幂等性依赖于写入模式——overwrite 模式幂等，
-// append/insert 模式非幂等。当前统一标记为 'idempotent-key'，
-// 因 overwrite 是最常用模式，append/insert 的补偿应在调用方保证。
+// append/insert/replace 模式非幂等。当前统一标记为 'idempotent-key'，
+// 因 overwrite 是最常用模式，append/insert/replace 的补偿应在调用方保证。
 // task_table_write 幂等性随 mode 而异（勿一概称「追加语义」）：
 //   overwrite（默认）= 清空重建，同参重跑结果一致 → 幂等，但重发会重置已推进的 plan（覆盖进行中状态）；
 //   update = 全量替换 → 幂等；
@@ -458,6 +459,23 @@ export const RUN_TEAM_MEETING_TOOL: ToolDefinition = {
 };
 
 /**
+ * write_file 写入模式唯一定义（枚举 + 简介 · 单一真理源）
+ *
+ * mode 参数描述（下方 schema）与 handler 合法性校验（builtinToolHandlers.writeFile）都从此派生——
+ * 此前两处各自硬编码模式清单，新增模式漏改一处即出现「描述允许而校验拒绝」的静默漂移。
+ * 新增模式只改本表：描述文案与校验清单自动对齐，工具描述里的模式数量也由 length 派生。
+ */
+export const WRITE_FILE_MODES: readonly { name: string; summary: string }[] = [
+  { name: 'overwrite', summary: '默认，全量覆盖' },
+  { name: 'append', summary: '追加到末尾' },
+  { name: 'insert', summary: '在 insert_line 行号前插入' },
+  { name: 'replace', summary: '把文件中唯一出现的 old_string 替换为 content' },
+];
+
+/** write_file 模式清单文案（schema 描述统一由此拼接，勿手写模式清单） */
+const WRITE_FILE_MODES_BRIEF = WRITE_FILE_MODES.map((m) => `${m.name}（${m.summary}）`).join('、');
+
+/**
  * 始终可用的内置工具注册表（单一真理源 = 下方 `BUILTIN_TOOLS` 数组）。
  *
  * - 增删内置工具只改数组，勿在此复述清单：手工维护的工具列表会随数组演化而腐坏
@@ -497,21 +515,32 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'write_file',
     description:
-      '写入或创建文件。owner 模式默认自动批准；guest 模式会要求用户确认。受路径白名单保护。支持三种写入模式：overwrite（默认，全量覆盖）、append（追加到末尾）、insert（在指定行号前插入）。若改动只是「文末追加一段 / 单点插入新内容」，优先用 mode=append 或 mode=insert，不要 overwrite 全量重写整份文件（省 token）；只有结构性多处分改才用 overwrite。',
+      '写入或创建文件。owner 模式默认自动批准；guest 模式会要求用户确认。受路径白名单保护。' +
+      `支持 ${WRITE_FILE_MODES.length} 种写入模式：${WRITE_FILE_MODES_BRIEF}。` +
+      '改局部优先用 replace（只替换唯一匹配的 old_string，无需持有整份文件）；' +
+      '大文件手上没有完整内容，无法 overwrite 全量重写；文末追加用 append，单点插入用 insert。' +
+      '只有新建文件或结构性多处重写才用 overwrite。',
     diskWrite: 'path',
     parameters: {
       type: 'object',
       properties: {
         path: { type: 'string', description: '相对项目根目录的文件路径' },
-        content: { type: 'string', description: '要写入的内容' },
+        content: {
+          type: 'string',
+          description: '要写入的内容（replace 模式下为新文本；置空表示删除匹配到的片段）',
+        },
         mode: {
           type: 'string',
-          description:
-            '写入模式："overwrite"（默认，全量覆盖）、"append"（追加到末尾）、"insert"（在 insert_line 行号前插入）',
+          description: `写入模式：${WRITE_FILE_MODES_BRIEF}`,
         },
         insert_line: {
           type: 'string',
           description: 'insert 模式下插入位置的行号（从 1 开始），省略则插入到文件末尾',
+        },
+        old_string: {
+          type: 'string',
+          description:
+            'replace 模式下待替换的原文片段（须在文件中唯一出现，含缩进/换行须与原文完全一致）',
         },
       },
       required: ['path', 'content'],

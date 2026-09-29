@@ -195,6 +195,18 @@
 
 ## [3.0.0] - 待发布（发版日补日期）
 
+### Added（内核 · write_file 新增 `replace` 精确串替换 + mode 枚举双源收敛）
+
+**问题（两项）**：① `write_file` 只有 overwrite/append/insert——大文件改一处局部时，模型手上没有整份内容（读不全），只能 overwrite 全量重写硬凑、或退回大量 append/insert 拼接，token 与出错面双高；② `mode` 枚举**双源并列**：schema 描述（`builtinTools.ts`）与 handler 校验清单（`builtinToolHandlers.ts`）各写一份，漏改一处即「描述允许而校验拒绝」的静默漂移（与 TASKTABLE-NAME-1 同族）。
+
+- **收敛（SSOT）**：`builtinTools.WRITE_FILE_MODES` 作单一真理源（枚举 + 简介表）；schema 描述与 handler `validModes` 均从它派生，工具描述里的模式数量也由 `length` 派生（不写死「三种」）⇒ 新增模式只改一处
+- **原语**：新增 `mode=replace`，配 `old_string`（须在文件中**唯一**出现）——只替换命中片段、不动其余。**匹配不到 → 报错**（禁静默 no-op）；**多处匹配 → 报错**要求补足上下文，**不做 replace_all**（改错地方毁代码 > 让模型多试一次，与 `toolResultCache` 同哲学）；目标文件不存在 → `FILE_NOT_FOUND`（新文件走 overwrite）
+- **零额外接线的自动对齐（本方案最省事处）**：`diskWrite:'path'` 派生 ⇒ replace 自动进同 step 写串行闸（`WRITE_PATH_EXTRACTORS`）；`WriteExtensions.onBeforeWrite` 无条件调用 ⇒ 自动被已落地的 diff 可视化捕获；`invalidateFile` 按路径失效读缓存 ⇒ replace 自动作废旧读缓存
+- **描述引导**：`write_file` 描述改为「改局部优先 replace（无需持有整份文件）；大文件没有完整内容无法 overwrite；文末追加 append / 单点插入 insert；只有新建或结构性多处重写才 overwrite」
+- **SSOT 问诊 · 炼化归元（同族静默回落 2 处，顺手收口）**：① 结果标签 `modeLabel` 原以 `: '精确替换'` 作三元链**隐式兜底** ⇒ 未来新增模式会被静默标成「精确替换」，改为显式 `replace` 分支 + `default: mode` 如实回显；② `computeWriteContent` 原 `default: return content` 会在模式表与本 switch 脱节时**静默按 overwrite 落盘**（假阴性）⇒ 改抛 `ARGUMENT_ERROR` 响亮失败。两处均属「静默回落 = 缺陷行为」同族
+- **验证**：handler `replace` 6 例（唯一匹配成功 / 未匹配报错且文件不变 / 多处报错且文件不变 / 新文件 FILE_NOT_FOUND / 缺 old_string ARGUMENT_ERROR / `onBeforeWrite` 收到替换前后完整内容）+ `builtinTools` 补「mode 描述与 `WRITE_FILE_MODES` 同源」守卫（防描述退回手工硬编码）。门禁：`typecheck` 0 / `eslint` 0 / `format:check` 0 / `docs:links` 0 / `rules:refs` 0 / `terminology:check` 0 / 全量 **2820 passed | 4 skipped**
+- **顺带对齐**：宿主 `fileChangeTracker.ts` 注释模式清单与 `docs/memora-api-reference.md` 工具表补 `replace` / `old_string`（描述层跟随，无行为变更）
+
 ### Fixed（内核 · 读取防重回显文案诚实化：删「原文已在流程中被压缩」状态断言）
 
 **问题**：`formatLedgerStub`（台账替身文案）被两个语境共用——① 压缩链把 read_file 结果**原位替换**为台账摘要（loop 装配 `readFileReplacement`）；② LLM 变体/同参重读被分支②拦截时的**回显**。文案写死「原文已在流程中被压缩」：压缩语境为真，但回显语境原文可能仍在上下文（变体重读不经 L2 精确判重的「仍在上下文」前提）⇒ **文案撒谎**——guardRail 防死锁前提（「告知基于已有 = 指令撒谎」）的同型问题在台账分支复现。

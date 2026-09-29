@@ -904,6 +904,7 @@ export class ToolExecutor {
           extensions,
           strArg('mode', 'overwrite'),
           strArg('insert_line') || undefined,
+          strArg('old_string') || undefined,
         );
       case 'list_dir':
         return this.builtinHandlers.listDir(

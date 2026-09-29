@@ -19,6 +19,7 @@ import {
   WEB_FETCH_TOOL,
   RUN_CODE_TOOL,
   SEARCH_PROJECT_TOOL,
+  WRITE_FILE_MODES,
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
 import { WRITE_PATH_EXTRACTORS } from '@/agent/toolResultCache.js';
@@ -152,9 +153,21 @@ describe('builtinTools · BUILTIN_TOOLS', () => {
     expect(writeFile).toBeDefined();
     expect(writeFile!.parameters.required).toContain('path');
     expect(writeFile!.parameters.required).toContain('content');
-    // 可选参数：mode / insert_line
+    // 可选参数：mode / insert_line / old_string
     expect(writeFile!.parameters.properties.mode).toBeDefined();
     expect(writeFile!.parameters.properties.insert_line).toBeDefined();
+    expect(writeFile!.parameters.properties.old_string).toBeDefined();
+  });
+
+  it('write_file mode 描述与 WRITE_FILE_MODES 同源（防描述/校验双源漂移）', () => {
+    const writeFile = BUILTIN_TOOLS.find((t) => t.name === 'write_file')!;
+    const modeDesc = writeFile.parameters.properties.mode!.description;
+    // 描述须逐一列出单一真理源里的每个模式名（漏一处即说明又退回手工硬编码）
+    for (const m of WRITE_FILE_MODES) {
+      expect(modeDesc).toContain(m.name);
+    }
+    // 校验清单同样派生自该表：表里没有的 mode 必被拒
+    expect(WRITE_FILE_MODES.map((m) => m.name)).toContain('replace');
   });
 
   // ─── list_dir 具体契约 ────────────────────────────────────

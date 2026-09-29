@@ -30,6 +30,8 @@ import { getSessionDisplayName } from '@/memory/sessionStore.js';
 import { splitSessionId } from '@/utils/time.js';
 // read_file 分段脚注格式单一真理源（生成侧在此用作「截断诚实化」文案）
 import { formatSegmentationFooter } from '@/agent/toolLedger.js';
+// write_file 写入模式单一真理源（schema 描述与 handler 校验共用，避免双源漂移）
+import { WRITE_FILE_MODES } from '@/agent/builtinTools.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { sanitizeExternalText, stripControlChars } from '@/agent/toolExecutor.js';
@@ -593,7 +595,7 @@ export class BuiltinToolHandlers {
   }
 
   /**
-   * 写入文件（支持 overwrite / append / insert 三种模式）
+   * 写入文件（支持 overwrite / append / insert / replace 四种模式）
    *
    * 安全策略：
    *   - 路径必须在白名单内
@@ -603,8 +605,9 @@ export class BuiltinToolHandlers {
    * @param relativePath 相对项目根的文件路径
    * @param content 要写入的内容
    * @param extensions 写入扩展（可选，用于 diff 确认等）
-   * @param mode 写入模式："overwrite" | "append" | "insert"，默认 "overwrite"
+   * @param mode 写入模式："overwrite" | "append" | "insert" | "replace"，默认 "overwrite"
    * @param insertLine insert 模式下的目标行号（从 1 开始），省略则插入到末尾
+   * @param oldString replace 模式下的被替换文本（须在旧内容中唯一出现）
    */
   async writeFile(
     relativePath: string,
@@ -612,6 +615,7 @@ export class BuiltinToolHandlers {
     extensions?: WriteExtensions,
     mode: string = 'overwrite',
     insertLine?: string,
+    oldString?: string,
   ): Promise<string> {
     if (!relativePath) {
       throw toolError(
@@ -632,8 +636,8 @@ export class BuiltinToolHandlers {
       );
     }
 
-    // 校验 mode 参数合法性
-    const validModes = ['overwrite', 'append', 'insert'];
+    // 校验 mode 参数合法性（模式清单单一真理源：builtinTools.WRITE_FILE_MODES）
+    const validModes = WRITE_FILE_MODES.map((m) => m.name);
     if (!validModes.includes(mode)) {
       throw toolError(
         'write_file 参数错误',
@@ -650,6 +654,17 @@ export class BuiltinToolHandlers {
         'write_file 参数错误',
         'insert 模式必须提供 insert_line 参数',
         ['insert_line 指定插入位置的行号（从 1 开始）'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
+
+    // replace 模式必须提供非空 old_string（空串会被 indexOf 视为处处匹配，无意义）
+    if (mode === 'replace' && !oldString) {
+      throw toolError(
+        'write_file 参数错误',
+        'replace 模式必须提供非空 old_string 参数',
+        ['old_string 是待替换的原文片段（须唯一匹配）', '要写入的新内容放在 content'],
         undefined,
         ToolErrorCode.ARGUMENT_ERROR,
       );
@@ -683,7 +698,13 @@ export class BuiltinToolHandlers {
     }
 
     // 根据 mode 计算最终写入内容
-    const finalContent = this.computeWriteContent(mode, content, beforeContent, insertLine);
+    const finalContent = this.computeWriteContent(
+      mode,
+      content,
+      beforeContent,
+      insertLine,
+      oldString,
+    );
 
     // 写入确认：优先使用 WriteExtensions.onBeforeWrite（diff 确认），
     // 否则回退到 SecurityGuard.requestWriteConfirmation（安全确认）
@@ -764,7 +785,15 @@ export class BuiltinToolHandlers {
       const newLines = finalContent.split('\n').length;
       const oldLines = beforeContent !== null ? beforeContent.split('\n').length : 0;
       const modeLabel =
-        mode === 'overwrite' ? '覆盖' : mode === 'append' ? '追加' : `插入到第${insertLine}行`;
+        mode === 'overwrite'
+          ? '覆盖'
+          : mode === 'append'
+            ? '追加'
+            : mode === 'insert'
+              ? `插入到第${insertLine}行`
+              : mode === 'replace'
+                ? '精确替换'
+                : mode; // 未知模式（校验已挡）：如实回显原值，不伪装成某个已知模式
       return (
         `✅ 已写入（${modeLabel}）：${absolutePath}（${finalContent.length} 字符，${newLines} 行）` +
         (beforeContent !== null ? ` [旧文件: ${oldLines} 行]` : ' [新文件]')
@@ -788,6 +817,7 @@ export class BuiltinToolHandlers {
    * @param content LLM 提供的写入内容
    * @param beforeContent 文件旧内容（null 表示新文件）
    * @param insertLine insert 模式下的行号
+   * @param oldString replace 模式下的被替换文本（须唯一匹配）
    * @returns 最终要写入文件的完整内容
    */
   private computeWriteContent(
@@ -795,6 +825,7 @@ export class BuiltinToolHandlers {
     content: string,
     beforeContent: string | null,
     insertLine: string | undefined,
+    oldString: string | undefined,
   ): string {
     switch (mode) {
       case 'overwrite':
@@ -832,9 +863,59 @@ export class BuiltinToolHandlers {
         return lines.join('\n');
       }
 
+      case 'replace': {
+        // 精确串替换：old_string 须在旧内容中唯一出现，否则拒绝歧义改写
+        // （改错地方毁代码 > 让 LLM 多补一段上下文重试；不做 replace_all，与 toolResultCache 同哲学）
+        if (beforeContent === null) {
+          throw toolError(
+            '文件不存在，无法精确替换',
+            'replace 模式要求目标文件已存在',
+            ['新建文件请用 mode=overwrite'],
+            undefined,
+            ToolErrorCode.FILE_NOT_FOUND,
+          );
+        }
+        // oldString 非空由 writeFile 前置校验；此处 ?? '' 仅为类型收窄
+        const needle = oldString ?? '';
+        const firstIdx = beforeContent.indexOf(needle);
+        if (firstIdx === -1) {
+          throw toolError(
+            'replace 未匹配到 old_string',
+            'old_string 在目标文件中不存在，本次未做任何改动',
+            [
+              '先用 read_file 读取文件，确认 old_string 与原文完全一致（含缩进/换行）',
+              '若目标位置不存在，改用 overwrite / append / insert',
+            ],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        // 出现第二次即歧义 → 拒绝，要求扩大上下文
+        const secondIdx = beforeContent.indexOf(needle, firstIdx + needle.length);
+        if (secondIdx !== -1) {
+          throw toolError(
+            'replace 匹配到多处 old_string',
+            'old_string 在文件中出现多次，拒绝歧义替换',
+            ['扩大 old_string 上下文，使其在文件中唯一'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        return (
+          beforeContent.slice(0, firstIdx) + content + beforeContent.slice(firstIdx + needle.length)
+        );
+      }
+
       default:
-        // 理论上不会到达（writeFile 已校验 mode），防御性兜底
-        return content;
+        // 未知模式不该到达（writeFile 前置校验已挡）——万一到达，说明 WRITE_FILE_MODES 与
+        // 本 switch 脱节，此处响亮失败，不静默按 overwrite 落盘（静默回落 = 假阴性）
+        throw toolError(
+          'write_file 内部错误：未实现的写入模式',
+          `mode=${mode} 在 computeWriteContent 中无分支`,
+          ['检查 WRITE_FILE_MODES 与 computeWriteContent 是否同步'],
+          undefined,
+          ToolErrorCode.ARGUMENT_ERROR,
+        );
     }
   }
 

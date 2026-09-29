@@ -4,7 +4,7 @@
  * 覆盖范围：
  *   - 路径安全：resolveSafePath（绝对/相对路径解析）+ guardPathOrThrow（白名单校验 + 错误包装）
  *   - readFile：参数校验 + 路径校验 + 读取成功 + ENOENT + 其他错误（作品投影自动链已斩断，不再登记）
- *   - writeFile：参数校验（path/content/mode/insert_line）+ 3 模式（overwrite/append/insert）+ 确认流程（extensions.onBeforeWrite + security 回退）+ 父目录创建 + 返回格式
+ *   - writeFile：参数校验（path/content/mode/insert_line/old_string）+ 4 模式（overwrite/append/insert/replace）+ 确认流程（extensions.onBeforeWrite + security 回退）+ 父目录创建 + 返回格式
  *   - listDir：路径校验 + recursive + maxDepth + 忽略列表 + 空目录 + ENOENT + 非目录
  *   - searchMemories：参数校验 + limit + mode（match/near）+ 空结果 + 格式化
  *
@@ -268,6 +268,65 @@ describe('BuiltinToolHandlers.writeFile', () => {
       await expect(
         handlers.writeFile('exist.txt', '内容', undefined, 'insert', '0'),
       ).rejects.toMatchObject({ errorCode: ToolErrorCode.ARGUMENT_ERROR });
+    });
+  });
+
+  describe('replace 模式', () => {
+    it('唯一匹配处替换成功', async () => {
+      await createFileInProject('exist.txt', 'alpha\nbeta\ngamma');
+      const result = await handlers.writeFile(
+        'exist.txt',
+        'BETA',
+        undefined,
+        'replace',
+        undefined,
+        'beta',
+      );
+      expect(result).toContain('精确替换');
+      const { readFile } = await import('node:fs/promises');
+      expect(await readFile(join(projectPath, 'exist.txt'), 'utf-8')).toBe('alpha\nBETA\ngamma');
+    });
+
+    it('缺 old_string 抛 ARGUMENT_ERROR', async () => {
+      await createFileInProject('exist.txt', 'alpha');
+      await expect(
+        handlers.writeFile('exist.txt', 'x', undefined, 'replace'),
+      ).rejects.toMatchObject({ errorCode: ToolErrorCode.ARGUMENT_ERROR });
+    });
+
+    it('old_string 未匹配 → ARGUMENT_ERROR 且文件不变', async () => {
+      await createFileInProject('exist.txt', 'alpha');
+      await expect(
+        handlers.writeFile('exist.txt', 'x', undefined, 'replace', undefined, '不存在'),
+      ).rejects.toMatchObject({ errorCode: ToolErrorCode.ARGUMENT_ERROR });
+      const { readFile } = await import('node:fs/promises');
+      expect(await readFile(join(projectPath, 'exist.txt'), 'utf-8')).toBe('alpha');
+    });
+
+    it('old_string 多处匹配 → ARGUMENT_ERROR 且文件不变', async () => {
+      await createFileInProject('exist.txt', 'dup\ndup');
+      await expect(
+        handlers.writeFile('exist.txt', 'x', undefined, 'replace', undefined, 'dup'),
+      ).rejects.toMatchObject({ errorCode: ToolErrorCode.ARGUMENT_ERROR });
+      const { readFile } = await import('node:fs/promises');
+      expect(await readFile(join(projectPath, 'exist.txt'), 'utf-8')).toBe('dup\ndup');
+    });
+
+    it('目标文件不存在 → FILE_NOT_FOUND', async () => {
+      await expect(
+        handlers.writeFile('absent.txt', 'x', undefined, 'replace', undefined, 'y'),
+      ).rejects.toMatchObject({ errorCode: ToolErrorCode.FILE_NOT_FOUND });
+    });
+
+    it('onBeforeWrite 收到替换前后的完整内容（diff 钩子联动）', async () => {
+      await createFileInProject('exist.txt', 'alpha\nbeta');
+      const extensions = { onBeforeWrite: vi.fn().mockResolvedValue(true) };
+      await handlers.writeFile('exist.txt', 'BETA', extensions, 'replace', undefined, 'beta');
+      expect(extensions.onBeforeWrite).toHaveBeenCalledWith(
+        'exist.txt',
+        'alpha\nbeta',
+        'alpha\nBETA',
+      );
     });
   });
 

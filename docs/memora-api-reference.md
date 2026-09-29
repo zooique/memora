@@ -602,7 +602,7 @@ const lock = rp.getSwitchLockStatus(); // 切换防抖状态
 | 工具名 | 用途 | 参数 | 暴露条件 |
 |--------|------|------|------|
 | `read_file` | 读取项目内文件内容（**按行分段返回**：单次输出 token 数 ≤ `LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS`＝6000；未读到末尾时附「[read_file 分段]」脚注，给出已显示行号区间、总行数与续读 offset） | `path`, `offset?`, `limit?` | 默认常驻 |
-| `write_file` | 写入/创建文件（支持 overwrite/append/insert 三种模式） | `path`, `content`, `mode?`, `insert_line?` | 默认常驻 |
+| `write_file` | 写入/创建文件（支持 overwrite/append/insert/replace 四种模式） | `path`, `content`, `mode?`, `insert_line?`, `old_string?` | 默认常驻 |
 | `list_dir` | 列出目录内容（递归深度 ≤ 3） | `path?`, `recursive?`, `maxDepth?` | 默认常驻 |
 | `search_memories` | 在记忆索引中搜索（支持 match/near 两种模式） | `query`, `limit?`, `mode?` | 默认常驻 |
 | `run_project_script` | 运行**项目内既有**脚本（内核子进程，cwd=项目根；路径白名单越界拒绝；扩展名推断 node/python/shell；超时 30s 上限 120s） | `script_path`, `args?` | 默认常驻（零注入） |

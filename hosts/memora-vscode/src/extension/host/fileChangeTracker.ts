@@ -51,7 +51,7 @@ export interface FileChangeRecord {
   beforeContent: string | null;
   /** **最近一次**写入后的内容；已删除 = null */
   afterContent: string | null;
-  /** 最近一次 write_file 的写入模式（overwrite/append/insert） */
+  /** 最近一次 write_file 的写入模式（overwrite/append/insert/replace） */
   mode?: string;
   /** 累积写入次数（展示用） */
   writeCount: number;
@@ -283,7 +283,7 @@ export class FileChangeTracker {
    *
    * 合并语义与 `noteToolResult` **完全一致**（同走 `upsert`）：按文件路径合并、保留最早
    * `beforeContent`、writeCount+1——故脚本改的文件若之前已被 `write_file` 建过，两份记录自然合并，
-   * 不另造状态面。脚本类无 `mode`（非 write_file 三模式），故不写 `mode` 字段。
+   * 不另造状态面。脚本类无 `mode`（非 write_file 的写入模式），故不写 `mode` 字段。
    *
    * @returns 本次新增 / 更新的记录（调用方据此触发渲染）
    */
