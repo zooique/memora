@@ -69,10 +69,21 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
     /**
      * 按文件名 glob 搜索（workspace.findFiles，stable API）
      *
-     * 两轮语义（与 content 对齐）：先按 query 原样作 glob 精确匹配（保会写 glob 的用法）；
-     * 零命中**且** 内核下发了 `terms`、且 query 不含 glob 元字符时，才逐词按名称子串做一次
-     * OR 放宽，并以 `relaxed` + `termsUsed` 如实回报。放宽的**判定**留在这里（宿主是唯一知道
-     * findFiles 扫到几成的主体），`termsUsed` 唯一真值 = 本返回值。
+     * 三轮语义（精确优先，逐轮放宽）：
+     *   1. query 原样作 glob（保会写 glob 的用法，如以双星开头的扩展名模式）；
+     *   2. 零命中且 query 无 glob 元字符 → 末段文件名子串轮（宿主自治，不依赖 terms）：
+     *      findFiles 的 include 是「相对项目根精确匹配」，裸文件名/带路径猜名（如 "chatView.ts"）
+     *      对子目录文件必然不命中（台账 SEARCH-name-glob：14 查 12 空而文件实存）；
+     *      取 query 末段构造「双星、斜杠、单星、末段、单星」的文件名子串模式匹配，
+     *      命中以 relaxed + termsUsed=[末段] 如实回报（内核渲染只认宿主回报的 termsUsed，
+     *      与下发的词表无关）；
+     *   3. 仍零命中且内核下发了 terms → 逐词文件名子串 OR 放宽，relaxed + termsUsed 如实回报。
+     *      模式不得以斜杠结尾：曾误写为尾斜杠版（词后多一个斜杠），语义被错成
+     *      「名字含词的目录」，文件名含词的文件反而永不命中（SEARCH-name-glob 根因之二）。
+     *
+     * 放宽的**判定**留在这里（宿主是唯一知道 findFiles 扫到几成的主体），`termsUsed` 唯一真值 =
+     * 本返回值（可不同于内核下发的词表）。模式字面量以实现内行注释为准（块注释内书写含
+     * 注释终止符序列的 glob 字面量会提前闭合注释，故此处只做文字描述）。
      *
      * @param options query 为文件名 glob（省略时列出项目全部文件）；terms 为内核下发的放宽词表；
      *                exclude 排除 glob
@@ -108,20 +119,35 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
       const primaryMatches = primaryUris.map((u) => ({ path: toProjectRelative(root, u.fsPath) }));
       if (primaryMatches.length > 0) return toResult(primaryMatches, false);
 
-      // 第二轮：零命中且内核下发了放宽词表、且 query 无 glob 元字符才放宽（判定留宿主）
-      const terms = options?.terms ?? [];
+      // 含 glob 元字符的 query 保持 glob 语义（含元字符时不进任何放宽轮）
       const hasGlobMeta = /[*?{}[\]]/.test(include);
-      if (terms.length === 0 || hasGlobMeta) return toResult([], false);
+      if (hasGlobMeta) return toResult([], false);
+
+      // 第二轮（宿主自治）：query 末段作文件名子串。内核下发 terms 前会剔除「与整串等价的词」
+      // （防徒劳扫描），裸词恰恰整串等价 → terms 必空 → 放宽永不可达；末段子串轮正是解此死结
+      // 的根因修复（不预判路径深度，文件名对了就能命中）。
+      const basename = include.split('/').pop() ?? '';
+      if (basename) {
+        const uris = await vscode.workspace.findFiles(`**/*${basename}*`, exclude, maxResults);
+        if (uris.length > 0) {
+          const matches = uris.map((u) => ({ path: toProjectRelative(root, u.fsPath) }));
+          return toResult(matches, true, [basename]);
+        }
+      }
+
+      // 第三轮：零命中且内核下发了放宽词表才做分词 OR 放宽（无尾斜杠，见上方 jsdoc）
+      const terms = options?.terms ?? [];
+      if (terms.length === 0) return toResult([], false);
 
       const seen = new Set<string>();
       const relaxedMatches: ProjectFileMatch[] = [];
       for (const term of terms) {
         if (seen.size >= maxResults) break;
-        // 词含 glob 元字符会破坏 `**/*{term}*/` 的 glob 语义，跳过该词（可信：不强行放宽）
+        // 词含 glob 元字符会破坏 `**/*${term}*` 的 glob 语义，跳过该词（可信：不强行放宽）
         if (/[*?{}[\]]/.test(term)) continue;
-        // 名称子串 OR：任一词在路径中出现即命中（相对项目根、正斜杠）
+        // 文件名子串 OR：任一词出现在文件名中即命中（相对项目根、正斜杠）
         const uris = await vscode.workspace.findFiles(
-          `**/*${term}*/`,
+          `**/*${term}*`,
           exclude,
           maxResults - seen.size,
         );

@@ -121,31 +121,70 @@ describe('VscodeProjectSearchProvider', () => {
       );
     });
 
-    it('裸词零命中且下发 terms：按名称子串 OR 放宽并回报 relaxed/termsUsed', async () => {
+    it('裸词零命中：末段文件名子串放宽（宿主自治轮）命中并回报 relaxed/termsUsed', async () => {
       const provider = createVscodeProjectSearchProvider(root);
-      // 第一轮 query 原样 glob 零命中；第二轮才按词包 `**/*{term}*/` 子串命中
+      // 第一轮 query 原样 glob 零命中（裸名对 findFiles 是相对根精确匹配，子目录文件必不命中）；
+      // 第二轮取 query 末段构造 `**/*<末段>*` 按文件名子串命中
       vi.mocked(vscode.workspace.findFiles)
         .mockResolvedValueOnce([] as never)
         .mockResolvedValueOnce([{ fsPath: 'C:/proj/product.md' }] as never);
-      const result = await provider.searchFiles({ query: 'product', terms: ['product'] });
+      const result = await provider.searchFiles({ query: 'product' });
       expect(result.matches).toEqual([{ path: 'product.md' }]);
-      expect(result.relaxed).toBe(true); // 放宽只发生在第二轮
-      expect(result.termsUsed).toEqual(['product']); // 唯一真值 = 宿主回报
-      // 放宽轮用名称子串 glob（相对路径、正斜杠语义一致）
+      expect(result.relaxed).toBe(true); // 放宽只发生在第一轮零命中之后
+      expect(result.termsUsed).toEqual(['product']); // 唯一真值 = 宿主回报（与是否下发 terms 无关）
+      // 放宽轮用文件名子串 glob（无尾斜杠——尾斜杠会把语义错成"名字含词的目录"）
       expect(vscode.workspace.findFiles).toHaveBeenLastCalledWith(
-        '**/*product*/',
+        '**/*product*',
         '**/.git/**,**/node_modules/**,**/.memora/**,**/dist/**,**/coverage/**,**/.next/**',
         100,
       );
     });
 
-    it('裸词零命中但未下发 terms：不进入放宽（可信零）', async () => {
-      vi.mocked(vscode.workspace.findFiles).mockResolvedValueOnce([] as never);
+    it('带路径的猜名 query：取末段做文件名子串（路径猜错但文件名对可命中）', async () => {
+      const provider = createVscodeProjectSearchProvider(root);
+      vi.mocked(vscode.workspace.findFiles)
+        .mockResolvedValueOnce([] as never)
+        .mockResolvedValueOnce([{ fsPath: 'C:/proj/src/webview/chatView.ts' }] as never);
+      const result = await provider.searchFiles({ query: 'src/webview/chatView.ts' });
+      expect(result.matches).toEqual([{ path: 'src/webview/chatView.ts' }]);
+      expect(result.relaxed).toBe(true);
+      // 末段 = "chatView.ts"，而非整串带斜杠路径
+      expect(result.termsUsed).toEqual(['chatView.ts']);
+      expect(vscode.workspace.findFiles).toHaveBeenLastCalledWith(
+        '**/*chatView.ts*',
+        expect.any(String),
+        100,
+      );
+    });
+
+    it('末段子串轮零命中且下发 terms：逐词文件名子串 OR 放宽（模式无尾斜杠）', async () => {
+      const provider = createVscodeProjectSearchProvider(root);
+      // 前两轮零命中（原样 glob + 末段子串），第三轮 terms 分词命中
+      vi.mocked(vscode.workspace.findFiles)
+        .mockResolvedValueOnce([] as never)
+        .mockResolvedValueOnce([] as never)
+        .mockResolvedValueOnce([{ fsPath: 'C:/proj/src/panel/a.ts' }] as never);
+      const result = await provider.searchFiles({ query: 'panel', terms: ['panel'] });
+      expect(result.matches).toEqual([{ path: 'src/panel/a.ts' }]);
+      expect(result.relaxed).toBe(true);
+      expect(result.termsUsed).toEqual(['panel']);
+      // 回归守卫：曾误写 "**/*panel*/"（尾斜杠），文件名含词的文件永不命中
+      expect(vscode.workspace.findFiles).toHaveBeenLastCalledWith(
+        '**/*panel*',
+        '**/.git/**,**/node_modules/**,**/.memora/**,**/dist/**,**/coverage/**,**/.next/**',
+        100,
+      );
+    });
+
+    it('裸词零命中且末段子串轮也无命中、未下发 terms：可信零（不再放宽）', async () => {
+      vi.mocked(vscode.workspace.findFiles)
+        .mockResolvedValueOnce([] as never)
+        .mockResolvedValueOnce([] as never);
       const provider = createVscodeProjectSearchProvider(root);
       const result = await provider.searchFiles({ query: 'product' });
       expect(result.matches).toEqual([]);
       expect(result.relaxed).toBeUndefined();
-      expect(vscode.workspace.findFiles).toHaveBeenCalledTimes(1); // 仅精确一轮
+      expect(vscode.workspace.findFiles).toHaveBeenCalledTimes(2); // 原样 glob + 末段子串，无 terms 轮
     });
 
     it('query 含 glob 元字符零命中：不进入放宽（保 glob 语义）', async () => {

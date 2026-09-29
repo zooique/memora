@@ -31,7 +31,7 @@ import { splitSessionId } from '@/utils/time.js';
 // read_file 分段脚注格式单一真理源（生成侧在此用作「截断诚实化」文案）
 import { formatSegmentationFooter } from '@/agent/toolLedger.js';
 // write_file 写入模式单一真理源（schema 描述与 handler 校验共用，避免双源漂移）
-import { WRITE_FILE_MODES } from '@/agent/builtinTools.js';
+import { WRITE_FILE_MODES, isWriteFileMode, type WriteFileMode } from '@/agent/builtinTools.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { sanitizeExternalText, stripControlChars } from '@/agent/toolExecutor.js';
@@ -595,17 +595,22 @@ export class BuiltinToolHandlers {
   }
 
   /**
-   * 写入文件（支持 overwrite / append / insert / replace 四种模式）
+   * 写入文件（支持 overwrite / append / insert / replace，模式清单 SSOT = builtinTools.WRITE_FILE_MODES，
+   * 新增模式时本清单与 docs/memora-api-reference.md 的 write_file 行须同步复核）
    *
    * 安全策略：
    *   - 路径必须在白名单内
    *   - 写入前需用户确认（WriteExtensions.onBeforeWrite 或 SecurityGuard.requestWriteConfirmation）
    *   - 自动创建不存在的父目录
    *
+   * 参数形态前提（位置参数，当前 6 个）：再加 mode 专属参数时须一并评估改收 options 对象，
+   * 且四个内置文件工具（read_file / list_dir / search_memories）同批收，不单点特化本工具。
+   * 触发条件与成本核算见 `tasks/待完成任务.md` TOOLSIG-1。
+   *
    * @param relativePath 相对项目根的文件路径
    * @param content 要写入的内容
    * @param extensions 写入扩展（可选，用于 diff 确认等）
-   * @param mode 写入模式："overwrite" | "append" | "insert" | "replace"，默认 "overwrite"
+   * @param mode 写入模式（合法值集 = WriteFileMode 类型，派生自 WRITE_FILE_MODES），默认 "overwrite"
    * @param insertLine insert 模式下的目标行号（从 1 开始），省略则插入到末尾
    * @param oldString replace 模式下的被替换文本（须在旧内容中唯一出现）
    */
@@ -636,12 +641,12 @@ export class BuiltinToolHandlers {
       );
     }
 
-    // 校验 mode 参数合法性（模式清单单一真理源：builtinTools.WRITE_FILE_MODES）
-    const validModes = WRITE_FILE_MODES.map((m) => m.name);
-    if (!validModes.includes(mode)) {
+    // 校验 mode 参数合法性（模式清单单一真理源：builtinTools.WRITE_FILE_MODES，
+    // 经 isWriteFileMode 守卫窄化后，后续 mode 即 WriteFileMode 类型）
+    if (!isWriteFileMode(mode)) {
       throw toolError(
         'write_file 参数错误',
-        `mode 必须是 ${validModes.join('/')} 之一，收到：${mode}`,
+        `mode 必须是 ${WRITE_FILE_MODES.map((m) => m.name).join('/')} 之一，收到：${mode}`,
         ['检查 LLM 输出的 mode 参数'],
         undefined,
         ToolErrorCode.ARGUMENT_ERROR,
@@ -821,7 +826,7 @@ export class BuiltinToolHandlers {
    * @returns 最终要写入文件的完整内容
    */
   private computeWriteContent(
-    mode: string,
+    mode: WriteFileMode,
     content: string,
     beforeContent: string | null,
     insertLine: string | undefined,
@@ -906,9 +911,12 @@ export class BuiltinToolHandlers {
         );
       }
 
-      default:
-        // 未知模式不该到达（writeFile 前置校验已挡）——万一到达，说明 WRITE_FILE_MODES 与
-        // 本 switch 脱节，此处响亮失败，不静默按 overwrite 落盘（静默回落 = 假阴性）
+      default: {
+        // 编译期穷尽守卫：本 switch 覆盖 WRITE_FILE_MODES 全部成员时 mode 窄化为 never；
+        // 若新增模式漏加分支，下一行赋值即编译红——比运行时兜底更早暴露「表与 switch 脱节」
+        const exhaustiveNever: never = mode;
+        void exhaustiveNever;
+        // 运行时兜底（防绕过类型层的调用路径）：响亮失败，不静默按 overwrite 落盘（静默回落 = 假阴性）
         throw toolError(
           'write_file 内部错误：未实现的写入模式',
           `mode=${mode} 在 computeWriteContent 中无分支`,
@@ -916,6 +924,7 @@ export class BuiltinToolHandlers {
           undefined,
           ToolErrorCode.ARGUMENT_ERROR,
         );
+      }
     }
   }
 

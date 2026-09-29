@@ -465,12 +465,20 @@ export const RUN_TEAM_MEETING_TOOL: ToolDefinition = {
  * 此前两处各自硬编码模式清单，新增模式漏改一处即出现「描述允许而校验拒绝」的静默漂移。
  * 新增模式只改本表：描述文案与校验清单自动对齐，工具描述里的模式数量也由 length 派生。
  */
-export const WRITE_FILE_MODES: readonly { name: string; summary: string }[] = [
+export const WRITE_FILE_MODES = [
   { name: 'overwrite', summary: '默认，全量覆盖' },
   { name: 'append', summary: '追加到末尾' },
   { name: 'insert', summary: '在 insert_line 行号前插入' },
   { name: 'replace', summary: '把文件中唯一出现的 old_string 替换为 content' },
-];
+] as const;
+
+/** write_file 合法模式联合类型（从 WRITE_FILE_MODES 派生：新增模式只改上表，类型自动跟随） */
+export type WriteFileMode = (typeof WRITE_FILE_MODES)[number]['name'];
+
+/** mode 参数类型守卫（唯一判定点，判定与 WRITE_FILE_MODES 同源；窄化后可供 computeWriteContent 消费） */
+export function isWriteFileMode(mode: string): mode is WriteFileMode {
+  return WRITE_FILE_MODES.some((m) => m.name === mode);
+}
 
 /** write_file 模式清单文案（schema 描述统一由此拼接，勿手写模式清单） */
 const WRITE_FILE_MODES_BRIEF = WRITE_FILE_MODES.map((m) => `${m.name}（${m.summary}）`).join('、');
