@@ -154,6 +154,40 @@ interface FlowSeed {
 export const MAX_THOUGHT_PAYLOAD_LENGTH = 4000;
 
 /**
+ * thought 增量按 step 聚合（落盘前折叠）：同 stepIndex 的**相邻** thought 碎片合并为
+ * ≤MAX_THOUGHT_PAYLOAD_LENGTH 的批次事件。真机 1.37MB 级 round 文件的主因是 7000+
+ * 碎片信封开销（seq/ts/type/payload 键）而非思考正文——折叠后信封数 ≈ 正文字符/上限。
+ *
+ * 三条不变量：
+ * - **内容零损失**：批次满则开新批（单碎片超限已在 emit 侧截断，本函数不二次截断）；
+ * - **seq 幂等兼容**：批次 seq/ts 取首碎片，同输入恒同结果——step 边界检查点与流尾终局
+ *   两次折叠对 mergeProcessEvents 的 seq 去重天然幂等；
+ * - **UI 流式不变**：仅落盘侧折叠（emitEvent 即时投影仍逐碎片）；重放渲染无差
+ *   （webview 本就按 stepIndex 把连续碎片聚成一个折叠块，批次边界恰是其归桶边界）。
+ */
+export function foldThoughtEvents(events: ProcessEvent[]): ProcessEvent[] {
+  const out: ProcessEvent[] = [];
+  for (const ev of events) {
+    const prev = out[out.length - 1];
+    if (
+      ev.type === 'thought' &&
+      prev?.type === 'thought' &&
+      prev.payload.stepIndex === ev.payload.stepIndex &&
+      prev.payload.content.length + ev.payload.content.length <= MAX_THOUGHT_PAYLOAD_LENGTH
+    ) {
+      // 拷贝后替换，不原地改 prev（prev 与 eventsByRound 缓冲可能共享引用）
+      out[out.length - 1] = {
+        ...prev,
+        payload: { ...prev.payload, content: prev.payload.content + ev.payload.content },
+      };
+      continue;
+    }
+    out.push(ev);
+  }
+  return out;
+}
+
+/**
  * ask_user 提问等待超时（ms）：超时未答 → cancelAsk（[ASK_ABORTED] 占位）
  * + resumeExecution('timeout') 自动续跑（LLM 自决）。0/负值 = 禁用超时保底。
  * 语义 = 保底而非打扰：选项/自由输入仍是唯一主动通道，无「跳过」按钮。
@@ -2682,7 +2716,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     try {
       const round = store.getById(roundId);
       if (!round) return;
-      round.processEvents = this.mergeProcessEvents(round.processEvents ?? [], events);
+      // thought 碎片落盘前按 step 聚合（信封开销收敛；UI 流式不受影响，见 foldThoughtEvents）
+      round.processEvents = this.mergeProcessEvents(
+        round.processEvents ?? [],
+        foldThoughtEvents(events),
+      );
       store.save(round);
     } catch (err) {
       console.warn('Memora step 原子检查点落盘失败', err);

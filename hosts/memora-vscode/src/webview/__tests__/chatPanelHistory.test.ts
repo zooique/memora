@@ -21,7 +21,11 @@ import { todayDate, resolveContextWindow } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
-import { MemoraChatViewProvider, MAX_THOUGHT_PAYLOAD_LENGTH } from '../panels/chatPanel.js';
+import {
+  MemoraChatViewProvider,
+  MAX_THOUGHT_PAYLOAD_LENGTH,
+  foldThoughtEvents,
+} from '../panels/chatPanel.js';
 
 // mock vscode：仅提供 chatPanel / ProviderStore 用到的最小 API
 vi.mock('vscode', async () => {
@@ -342,6 +346,61 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(renameSession).toHaveBeenCalledWith('2026-08-14-other', '我的新标题');
     const title = ofType<{ type: string; title: string }>(posted, 'session_title');
     expect(title[0]?.title).toBe('我的新标题');
+  });
+
+  // ─── foldThoughtEvents（T4：thought 落盘前按 step 聚合，信封开销收敛）───
+  describe('foldThoughtEvents（thought 落盘前折叠）', () => {
+    /** 构造 thought 碎片事件 */
+    const thought = (seq: number, content: string, stepIndex?: number): ProcessEvent =>
+      ({
+        type: 'thought',
+        seq,
+        ts: `t${seq}`,
+        payload: { content, ...(stepIndex !== undefined ? { stepIndex } : {}) },
+      }) as ProcessEvent;
+
+    it('相邻同 step 碎片合并为单批：内容拼接，seq/ts 取首碎片', () => {
+      const out = foldThoughtEvents([
+        thought(1, 'abc', 5),
+        thought(2, 'def', 5),
+        thought(3, 'ghi', 5),
+      ]);
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({
+        seq: 1,
+        ts: 't1',
+        payload: { content: 'abcdefghi', stepIndex: 5 },
+      });
+    });
+
+    it('累计超上限分批：每批 ≤MAX 且内容零丢失（拼回 = 原文）', () => {
+      const frags = ['a'.repeat(1500), 'b'.repeat(1500), 'c'.repeat(1500)];
+      const out = foldThoughtEvents(frags.map((c, i) => thought(i + 1, c, 2)));
+      // 1500+1500=3000 ≤ 4000 合批；再 +1500 超限 → 开新批
+      expect(out).toHaveLength(2);
+      expect(
+        out.every(
+          (e) => e.type === 'thought' && e.payload.content.length <= MAX_THOUGHT_PAYLOAD_LENGTH,
+        ),
+      ).toBe(true);
+      const joined = out.map((e) => (e.type === 'thought' ? e.payload.content : '')).join('');
+      expect(joined).toBe(frags.join(''));
+    });
+
+    it('不同 step 不合并；被其它事件隔断不合并；非 thought 原样透传保序', () => {
+      const tool: ProcessEvent = {
+        type: 'tool_start',
+        seq: 2,
+        ts: 't2',
+        payload: { toolCallId: 'c1', name: 'read_file' },
+      };
+      // 隔断：t1 与 t3 同 step 但不相邻 → 不合并
+      const out = foldThoughtEvents([thought(1, 'a', 1), tool, thought(3, 'b', 1)]);
+      expect(out.map((e) => e.seq)).toEqual([1, 2, 3]);
+      // 相邻但 step 不同 → 不合并
+      const out2 = foldThoughtEvents([thought(1, 'a', 1), thought(2, 'b', 2)]);
+      expect(out2).toHaveLength(2);
+    });
   });
 
   // ─── meta 取证包（T5：关键调用参数快照，真机异常轮自带参数面） ───
@@ -1213,6 +1272,38 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     const types = r1.processEvents?.map((e) => e.type) ?? [];
     expect(types.indexOf('thought')).toBeLessThan(types.indexOf('tool_start'));
     expect(types.indexOf('tool_start')).toBeLessThan(types.lastIndexOf('thought'));
+  });
+
+  it('checkpointRound 落盘经折叠：同 step 多碎片持久化为单条（信封开销收敛，T4）', async () => {
+    const { store, roundStore, provider } = setup();
+    provider.setRoundStore(roundStore);
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '思考题', ts: 't0' },
+      { role: 'assistant', content: '答', ts: 't1' },
+    ]);
+    provider.setAgent(
+      chatAgentStub(() =>
+        (async function* () {
+          yield { type: 'thought', content: '一', stepIndex: 1, roundId: 'round-1' };
+          yield { type: 'thought', content: '二', stepIndex: 1, roundId: 'round-1' };
+          yield { type: 'thought', content: '三', stepIndex: 1, roundId: 'round-1' };
+          yield { type: 'text', content: '答', roundId: 'round-1' };
+          yield { type: 'done' };
+        })(),
+      ),
+    );
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('思考题');
+
+    const r1 = roundStore.getById('round-1')!;
+    const thoughts =
+      r1.processEvents?.filter(
+        (e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought',
+      ) ?? [];
+    // 3 碎片同 step → 落盘恰 1 条批次（内容拼接、seq/ts 取首碎片；UI 流式仍逐碎片不受影响）
+    expect(thoughts).toHaveLength(1);
+    expect(thoughts[0].payload.content).toBe('一二三');
+    expect(thoughts[0].payload.stepIndex).toBe(1);
   });
 
   it('连续两次 chat()（第二次问答）：第二次 processEvents 独立落盘到新 Round，不覆盖第一次', async () => {

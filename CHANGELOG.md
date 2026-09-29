@@ -204,6 +204,14 @@
 - **验证（变异双端）**：上限裁决加回 → 恰 1 红（70_000 被吞）；形态防御去掉 → 恰 1 红（-5 透传）；均还原复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2824 passed | 4 skipped**；宿主 `typecheck` / `eslint` 0 / 全量 **826 passed | 2 skipped**
 - **文档清算**：`tasks/审查-空响应根因排雷与优化方案-20260929.md` §五 T1 行与「依赖与边界」两处过时表述修订（原文「护栏对齐 normalizeMaxTokens / 越界→undefined」已不成立）
 
+### Changed（宿主 · thought 落盘按 step 聚合折叠：信封开销收敛）
+
+**背景（EMPTY-RESP-1 · T4 · 附带观察销项）**：真机单轮 round 文件 1.37MB（7461 事件中 thought 占 99%）——主因是碎片**信封开销**（每条 seq/ts/type/payload 键）而非思考正文（正文约 67KB）。本条落盘前按 step 把碎片折成批次（排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。
+
+- **foldThoughtEvents**（纯函数，chatPanel 导出）：同 stepIndex **相邻** thought 碎片合并为 ≤`MAX_THOUGHT_PAYLOAD_LENGTH` 批次事件——内容零损失（满批开新批，不二次截断）、seq/ts 取首碎片（同输入恒同结果，与 `mergeProcessEvents` 的 seq 去重幂等兼容）、**UI 流式不变**（emitEvent 逐碎片投影不动；重放渲染无差——webview 本就按 stepIndex 把连续碎片聚成折叠块，批次边界恰是其归桶边界）
+- **接线**：`checkpointRound` 单点折叠（step 边界检查点 + 流尾终局两条落盘路径全覆盖）。估算真机场景信封数 7461 → ~20，round 文件约 70KB（验收线 <200KB；最终以真机观察复核）
+- **测试**：foldThoughtEvents 3 例（同 step 合批 / 超限分批内容零丢失 / 异 step·隔断不合并）+ checkpointRound 调用点集成钉（3 碎片 → 落盘恰 1 条）；变异 3 方向（不折叠 / 无分批上限 / 跨 step 合并）各恰红 → 恢复复绿。门禁：宿主 `typecheck` / `eslint` 0 / 全量 **833 passed | 2 skipped**（内核零改动，沿用 **2827**）；`terminology:check` 零漂移
+
 ### Added（内核+宿主 · T5 取证与引导收尾：ALREADY_READ 条件引导句 + meta 关键调用参数包）
 
 **背景（EMPTY-RESP-1 · T5）**：真机异常破案靠截图/口问（调用参数不可见）；`ALREADY_READ` 替身回显不引导「引用已有原文」致 LLM 绕道写脚本（ALREADY-READ-1）。本条落地（排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。
