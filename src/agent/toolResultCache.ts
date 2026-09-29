@@ -220,8 +220,11 @@ export function formatDedupSubject(toolName: string, subject: DedupSubject): str
 }
 
 /**
- * 同主体失败硬闸的主体 key（工具名 + 规范化 path/query/item）：同一工具 + 同一请求主体的
- * 连续失败计数用，粒度=同参。
+ * 同主体聚合键（工具名 + 规范化 path/query/item），粒度 = 同参。
+ *
+ * **两个消费语境共用本函数**（SSOT）：① `read_failed` 的连续失败计数；
+ * ② `read_dedup` 的撞墙升级计数。二者要的都是「工具 + 请求主体」这一个标识，
+ * 故共用同一口径——各自另拼 key 会让两套计数对「同一主体」的理解悄悄分叉。
  *
  * 原子分隔符 `\u0002`：不可打印，避免与 path/query/item 的合法内容（文件路径、URL、会话 id）冲突。
  *

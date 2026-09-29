@@ -350,6 +350,12 @@ export type RoundEvidenceEvent =
          * 字段形状真源 = **生产侧** `DedupSubject`（agent 层 toolResultCache）——本层**不镜像其清单**：
          * `memory → agent` 类型禁向（见 `backend_layers_rules.md`）使本层无法 import 该类型，故以开放式
          * 索引签名承载，由 loop 侧整体 spread 透传。`DedupSubject` 增字段随透传自动落盘，本层零同步。
+         *
+         * 零同步的两条代价（本层边界，改动上述透传写法时须一并考虑）：
+         * - **键名拼写无编译保护**：索引签名接受任意 string 键，拼错（如 `toolname`）仍编译通过，
+         *   落盘静默少一个字段；故消费侧按键名取值时须以生产侧 `DedupSubject` 为准。
+         * - **透传 spread 顺序**：生产侧写法为 `{ toolName, ...subject }`，spread 在后——若 `DedupSubject`
+         *   将来新增 `toolName` 字段，会**静默覆盖**这里的 `toolName`；增该字段时须同步调整透传顺序。
          */
         [dedupField: string]: string | number | undefined;
       };
