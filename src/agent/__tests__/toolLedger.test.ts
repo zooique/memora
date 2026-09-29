@@ -138,7 +138,7 @@ describe('formatLedgerStub（分支②回显文案）', () => {
     expect(formatLedgerStub(cov)).toContain('覆盖 3 行');
   });
 
-  it('文案不含「被压缩」状态断言（两语境共用：压缩原位替换 / 重读回显——回显时原文可能仍在上下文，断言压缩即撒谎）', () => {
+  it('文案不含「被压缩」状态断言，引导语用条件语气（两语境共用：压缩原位替换 / 重读回显——断言单一语境状态即撒谎）', () => {
     const cov: FileCoverage = {
       totalLines: 100,
       coverStart: 1,
@@ -146,7 +146,11 @@ describe('formatLedgerStub（分支②回显文案）', () => {
       digest: 'd',
       cachedAtIteration: 1,
     };
-    expect(formatLedgerStub(cov)).not.toContain('被压缩');
+    const stub = formatLedgerStub(cov);
+    expect(stub).not.toContain('被压缩');
+    // 条件语气（两语境皆真）+ 真实性守卫：禁改回断言「原文已在上文」——回显语境原文也可能已被压缩
+    expect(stub).toContain('若原文仍在本次对话上文，可直接引用');
+    expect(stub).not.toContain('原文已在本次对话上文');
   });
 });
 

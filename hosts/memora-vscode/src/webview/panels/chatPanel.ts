@@ -39,6 +39,7 @@ import {
   type IRoundStore,
   type ISessionStore,
   type ProcessEvent,
+  type ProcessMetaPayload,
   type SessionMeta,
   type WriteConfirmationRequest,
   type SessionView,
@@ -91,6 +92,7 @@ import type {
   RoundView,
   TurnState,
   PendingQuestionDto,
+  LlmProviderConfig,
 } from '../../shared/protocol.js';
 // 错误文案映射单一真理源（与 webview 重放渲染共用，防文案双源漂移）
 import {
@@ -549,6 +551,32 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private roleDisplayName(rolePack: string): string {
     const meta = this._agent?.rolePackManager?.listMeta().find((m) => m.name === rolePack);
     return meta?.displayName ?? rolePack;
+  }
+
+  /**
+   * meta 取证包（关键调用参数快照）：role/llm 身份 + 本轮调用参数面（窗口 / 输出上限 /
+   * 推理深度 / 适配器形态）——真机异常轮自带取参数面，免截图、口问即可离线破案。
+   *
+   * @param providerConfig 流首取的激活 Provider 配置快照（本轮生效值；无激活配置时参数面缺省）
+   * @returns meta 事件载荷（身份 + 参数包）
+   */
+  private buildRoundMeta(providerConfig: LlmProviderConfig | undefined): ProcessMetaPayload {
+    const role = this._activeRolePack ? this.roleDisplayName(this._activeRolePack) : 'AI';
+    const llm = this._activeProviderDisplayName || this._providerStore.getActiveName() || '';
+    // reasoning_effort 转达口径（与内核 llmCaller 同源）：仅策略键 multiStepReasoning='manual' 发 'low'，
+    // 其余不发送（缺省不入包）。providerKind 当前唯一适配器形态（内核工厂只产 OpenAI 兼容）
+    const reasoningMode =
+      this._agent?.rolePackManager?.getActive()?.strategy.act?.multiStepReasoning;
+    return {
+      role,
+      llm,
+      contextWindow: providerConfig
+        ? resolveContextWindow(providerConfig.contextWindow)
+        : undefined,
+      maxTokens: providerConfig?.maxTokens,
+      reasoningEffort: reasoningMode === 'manual' ? 'low' : undefined,
+      providerKind: 'openai-compatible',
+    };
   }
 
   /**
@@ -2734,13 +2762,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 归属判据），供 live 轮投影把正文投为末段 assistantMessage。多 turn 编排各自独立成桶。
     const textByRound = new Map<string, string>();
     let currentRoundKey: string | undefined;
-    /** 当前 turn 是否已补 meta 首条（每 turn 段首条身份，角色/模型显示名） */
+    /** 当前 turn 是否已补 meta 首条（每 turn 段首条身份 + 关键调用参数包） */
     let metaEmittedForRound = false;
-    const roundMeta = () => {
-      const role = this._activeRolePack ? this.roleDisplayName(this._activeRolePack) : 'AI';
-      const llm = this._activeProviderDisplayName || this._providerStore.getActiveName() || '';
-      return { role, llm };
-    };
+    // meta 取证包：流首取一次激活 Provider 配置快照（本轮生效值），每 turn 首条 meta 携带
+    const providerConfig = await this._providerStore.getActive();
+    const roundMeta = () => this.buildRoundMeta(providerConfig);
     /** 构造过程事件：进缓冲（按 turn 分段，落盘真相源）+ 即时投影给 webview（渲染真相源），同一份数据 */
     const emitEvent = (typeKey: ProcessEvent['type'], payload: ProcessEvent['payload']): void => {
       // seq 实例级全局单调（_processSeq）：step 原子检查点按 seq 幂等合并，跨流/跨轮不冲突

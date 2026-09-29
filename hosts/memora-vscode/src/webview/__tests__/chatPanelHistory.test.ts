@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Agent, AgentChunk, ProcessEvent, Round } from '@zooique/memora';
 import type { RoundView, TurnState } from '../../shared/protocol.js';
-import { todayDate } from '@zooique/memora';
+import { todayDate, resolveContextWindow } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
@@ -85,10 +85,11 @@ function setup(): {
   const store = new WorkspaceSessionStore(dir, roundStore);
   store.load();
 
-  // providerStore 桩：仅需 listMasked / getActiveName（pushProviders 用）
+  // providerStore 桩：listMasked / getActiveName（pushProviders 用）+ getActive（meta 取证包流首快照用）
   const providerStore = {
     listMasked: async () => [],
     getActiveName: () => undefined,
+    getActive: async () => undefined,
   } as never;
 
   const provider = new MemoraChatViewProvider(
@@ -341,6 +342,62 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(renameSession).toHaveBeenCalledWith('2026-08-14-other', '我的新标题');
     const title = ofType<{ type: string; title: string }>(posted, 'session_title');
     expect(title[0]?.title).toBe('我的新标题');
+  });
+
+  // ─── meta 取证包（T5：关键调用参数快照，真机异常轮自带参数面） ───
+  it('buildRoundMeta 取证包：窗口生效值 / maxTokens / reasoningEffort 派生（manual→low）/ providerKind', () => {
+    const { provider } = setup();
+    const { agent } = agentStub();
+    // 策略键真源 = 内核 rolePackManager.getActive().strategy.act（与 postCapabilityBadge 同源）；
+    // listMeta 供 pushRolePacks（setAgent 装配链）消费
+    (agent as unknown as { rolePackManager: unknown }).rolePackManager = {
+      getActive: () => ({
+        strategy: { act: { multiStepReasoning: 'manual' } },
+        capabilities: [],
+      }),
+      listMeta: () => [],
+    };
+    provider.setAgent(agent);
+
+    const meta = (
+      provider as unknown as {
+        buildRoundMeta: (c: unknown) => {
+          contextWindow?: number;
+          maxTokens?: number;
+          reasoningEffort?: string;
+          providerKind?: string;
+        };
+      }
+    ).buildRoundMeta({ contextWindow: 600000, maxTokens: 64000 });
+
+    expect(meta.contextWindow).toBe(600000);
+    expect(meta.maxTokens).toBe(64000);
+    // 派生口径与内核 llmCaller 同源：仅 manual 发 'low'
+    expect(meta.reasoningEffort).toBe('low');
+    expect(meta.providerKind).toBe('openai-compatible');
+  });
+
+  it('buildRoundMeta 取证包缺省面：auto 不发 reasoningEffort；窗口未配置取 resolveContextWindow 生效值（非裸透传）', () => {
+    const { provider } = setup();
+    const { agent } = agentStub();
+    (agent as unknown as { rolePackManager: unknown }).rolePackManager = {
+      getActive: () => ({
+        strategy: { act: { multiStepReasoning: 'auto' } },
+        capabilities: [],
+      }),
+      listMeta: () => [],
+    };
+    provider.setAgent(agent);
+
+    const meta = (
+      provider as unknown as { buildRoundMeta: (c: unknown) => Record<string, unknown> }
+    ).buildRoundMeta({});
+
+    // 未发送 reasoning_effort → 缺省（与「已发送」可区分）
+    expect(meta.reasoningEffort).toBeUndefined();
+    // 窗口未配置 → 内核默认生效值（resolveContextWindow 单一真源）
+    expect(meta.contextWindow).toBe(resolveContextWindow(undefined));
+    expect(meta.maxTokens).toBeUndefined();
   });
 
   // ─── 重放转正（user/replay_events/assistant 消息风暴 → 单条 turn_update.rounds） ───

@@ -204,6 +204,14 @@
 - **验证（变异双端）**：上限裁决加回 → 恰 1 红（70_000 被吞）；形态防御去掉 → 恰 1 红（-5 透传）；均还原复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2824 passed | 4 skipped**；宿主 `typecheck` / `eslint` 0 / 全量 **826 passed | 2 skipped**
 - **文档清算**：`tasks/审查-空响应根因排雷与优化方案-20260929.md` §五 T1 行与「依赖与边界」两处过时表述修订（原文「护栏对齐 normalizeMaxTokens / 越界→undefined」已不成立）
 
+### Added（内核+宿主 · T5 取证与引导收尾：ALREADY_READ 条件引导句 + meta 关键调用参数包）
+
+**背景（EMPTY-RESP-1 · T5）**：真机异常破案靠截图/口问（调用参数不可见）；`ALREADY_READ` 替身回显不引导「引用已有原文」致 LLM 绕道写脚本（ALREADY-READ-1）。本条落地（排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。
+
+- **ALREADY_READ 引导句（对方案原句的规格订正）**：`formatLedgerStub` 补「**若原文仍在**本次对话上文，可直接引用」——方案原句「原文已在本次对话上文」是断言语气，与该函数 jsdoc 约束直接冲突（两语境共用：压缩链替换后原文已不在上文，断言即撒谎；既有真实性守卫 `not.toContain('被压缩')` 同族），故改**条件语气**（两语境皆真）+ 新增守卫断言禁改回断言
+- **meta 取证包**：`ProcessMetaPayload` 扩四选填字段 `{ contextWindow, maxTokens, reasoningEffort, providerKind }`（role/llm 既有）——每轮 meta 自带关键调用参数面。宿主 `buildRoundMeta`（流首取激活 Provider 配置快照）：contextWindow 取 `resolveContextWindow` 生效值（非裸透传）、maxTokens 取 per-LLM 配置（缺省=服务端默认不入包）、reasoningEffort 由策略键 `multiStepReasoning='manual'` 派生 'low'（与内核 llmCaller 转达口径同源，未发送即缺省）、providerKind 恒 'openai-compatible'（内核工厂唯一适配器形态，前向字段）
+- **测试**：toolLedger 真实性守卫增强 + chatPanelHistory `buildRoundMeta` 2 例；变异 4 方向（断言语气 / 派生恒 'low' / contextWindow 裸透传 / 摘 providerKind）各恰红 → 恢复复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2827 passed | 4 skipped**；宿主 `typecheck` / `eslint` 0 / 全量 **829 passed | 2 skipped**
+
 ### Added（内核 · 截断型空响应换策略重试：降思考 + 纠正提示双轨）
 
 **背景（EMPTY-RESP-1 · T2）**：同参重试对确定性截断无效（真机 3 连空、5 分钟白烧）——thinking 吃满输出预算后原参重发必然再炸。本条让截断型在**迭代内部**被救回（依赖 T3 的 finishReason 消费约定；排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。

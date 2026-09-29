@@ -171,6 +171,8 @@ export class FileExposureLedger {
  * ② LLM 变体/同参重读被分支②拦截时的回显。故文案**不得内嵌只对单一语境成立的状态断言**：
  * 「原文已在流程中被压缩」在压缩语境为真，回显语境原文却可能仍在上下文（变体重读不经 L2 精确
  * 判重）⇒ 即撒谎。文案只陈述两语境皆真的事实（读过 / 覆盖区间 / 要点 / 出路）。
+ * 「若原文仍在上文可直接引用」为**条件语气**（两语境皆真）——禁改回断言「原文已在上文」
+ * （回显语境原文也可能已被压缩，断言即撒谎；toolLedger.test.ts 有真实性守卫）。
  *
  * @param cov 台账覆盖度条目
  * @returns 面向 LLM 的提示串
@@ -183,6 +185,6 @@ export function formatLedgerStub(cov: FileCoverage): string {
   return (
     `[ALREADY_READ] 该文件已读过（第 ${cov.cachedAtIteration} 步，覆盖 ${range} / 共 ${cov.totalLines} 行）。` +
     `要点：${cov.digest}\n` +
-    `如需其它区间请用 read_file 的 offset/limit 指定（如 offset=${cov.coverEnd + 1}）；不要无区间重读已覆盖部分。`
+    `若原文仍在本次对话上文，可直接引用；如需其它区间请用 read_file 的 offset/limit 指定（如 offset=${cov.coverEnd + 1}）；不要无区间重读已覆盖部分。`
   );
 }

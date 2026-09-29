@@ -158,12 +158,21 @@ export function isRoundSettled(status: RoundStatus): boolean {
  */
 export type ProcessThinkingPhase = 'assembling' | 'processing' | 'archiving' | 'llm_calling';
 
-/** meta 事件载荷：该轮回答身份（角色/模型均为显示名，重放不依赖 ProviderStore/RolePackManager） */
+/** meta 事件载荷：该轮回答身份（角色/模型均为显示名，重放不依赖 ProviderStore/RolePackManager）
+ *  + 关键调用参数包（取证用：真机异常轮自带参数面，免截图/口问即可离线破案）。参数面四字段均选填（旧数据缺省）。 */
 export interface ProcessMetaPayload {
   /** 角色显示名（displayName ?? name） */
   role: string;
   /** 模型显示名（displayName ?? name） */
   llm: string;
+  /** 上下文窗口（token，`resolveContextWindow` 生效值）；旧数据缺省 */
+  contextWindow?: number;
+  /** 输出上限（token，per-LLM `maxTokens` 配置值）；未配置缺省 = 服务端默认 */
+  maxTokens?: number;
+  /** 随请求发送的 reasoning_effort（'low'）；未发送缺省——派生自策略键 `multiStepReasoning='manual'`（与内核转达口径同源） */
+  reasoningEffort?: string;
+  /** Provider 适配器形态（当前唯一形态 'openai-compatible'；前向字段——异构适配器落地时区分协议语义） */
+  providerKind?: string;
 }
 
 /** metrics 事件载荷：每轮执行汇总（流结束后写一条） */
