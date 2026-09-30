@@ -4181,9 +4181,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         appendInteractiveInput(item.content, item.ts, item.kind, r.id, item.question, item.options);
       }
     }
-    // 4) 最终回答（仅 complete 轮挂正文——中断轮正文与平铺 narrate 同源，避免双份）
-    if (r.status === 'complete' && r.assistantMessage?.content) {
+    // 4) 最终回答（complete 轮挂正文——中断轮正文与平铺 narrate 同源，避免双份；
+    //    live 轮 = 切界面重建重放时的本流进行中轮，正文为宿主 live buffer 的 streamingText 投影，
+    //    同挂才能恢复「切走前已生成的半截回答」）
+    if ((r.status === 'complete' || r.live) && r.assistantMessage?.content) {
       append('assistant', r.assistantMessage.content, r.assistantMessage.timestamp, r.id);
+      // live 轮流式状态接手：重放正文同步进 streamingRaw——finalize 终渲染以 streamingRaw
+      // 为全量真源（body.innerHTML = renderMarkdown(streamingRaw)），不同步则流尾 done
+      // 会用空 raw 覆盖掉重放正文；同步后后续 chunk 走增量续写分支（同环 roundId 相等），
+      // 重放文本 + 增量文本无缝拼接，与运行时单块续写同一管线。
+      if (r.live) {
+        streamingActive = true;
+        streamingRaw = r.assistantMessage.content;
+        activeAssistantEl
+          ?.querySelector(':scope .msg-body')
+          ?.classList.add('is-streaming');
+      }
       renderRoundBlock(currentEvents, true, runtimeInteractiveInputs);
       if (r.id && roundBlockEl?.isConnected) {
         messages

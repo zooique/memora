@@ -1863,3 +1863,154 @@ describe('turn_update 含运行时 live 轮（M3b-2a）', () => {
     expect(live.status).toBe('pending');
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// ready 握手重放并入本流 live 轮（「切界面不显示」修复 · 重建重放通道）
+//
+// 根因：webview 重建（折叠展开重建 HTML）→ ready 握手重放只读落盘历史——
+// 本流未落盘内容（流式正文不落盘、过程事件仅 step 边界增量 checkpoint）无重放通道，
+// 用户切回来只见运行中空转、内容全空白。修复：流缓冲提升实例级（_liveBuffer），
+// 重放时经 buildLiveTurnFromBuffer 并入投影（原位替换落盘半残快照）。
+//
+// **变异验证锚点**：
+//  - replayHistory 去掉 buildLiveTurnFromBuffer 并入 → 「重放含 live 轮」转红
+//  - buildLiveTurnFromBuffer 去掉 sessionId 护栏 → 「跨会话不投影」转红
+//  - 收场清除改回无条件 → 「软暂停保留缓冲」转红
+//  - buildLiveTurnFromBuffer 去掉落盘事件合并 → 「checkpoint 事件并入」转红
+describe('ready 握手重放并入本流 live 轮（切界面不显示修复）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const historyPair = [
+    { role: 'user', content: '历史问题', ts: 't0' },
+    { role: 'assistant', content: '历史回答', ts: 't1' },
+  ];
+
+  /** 造 provider + 落盘历史 + viewLoader + 当前会话，返回驱动句柄 */
+  function setupWithHistory(): {
+    provider: MemoraChatViewProvider;
+    posted: unknown[];
+    roundStore: WorkspaceRoundStore;
+  } {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setRoundStore(roundStore);
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    seedSession(store, roundStore, '2026-08-15-s1', historyPair);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    return { provider, posted, roundStore };
+  }
+
+  /** 直挂实例级流缓冲（模拟流中/暂停中的 live 现场） */
+  function attachBuffer(
+    provider: MemoraChatViewProvider,
+    sessionId: string,
+    roundId: string,
+    events: ProcessEvent[],
+    text: string,
+  ): void {
+    (provider as unknown as { _liveBuffer: unknown })._liveBuffer = {
+      sessionId,
+      eventsByRound: new Map([[roundId, events]]),
+      textByRound: new Map([[roundId, text]]),
+      currentRoundKey: roundId,
+      seedUserMessage: { id: `${roundId}-user`, role: 'user', content: '新问题', timestamp: 't2' },
+    };
+  }
+
+  /** 最小过程事件构造（seq 必填——mergeProcessEvents 幂等判据） */
+  function ev(seq: number, type: ProcessEvent['type']): ProcessEvent {
+    return { type, seq, ts: 't', payload: {} } as unknown as ProcessEvent;
+  }
+
+  it('流中重放：replay:true rounds 并入 live 轮（半截正文 + 缓冲事件原位替换）', () => {
+    const { provider, posted } = setupWithHistory();
+    attachBuffer(provider, '2026-08-15-s1', 'round-9', [ev(1, 'meta'), ev(2, 'thinking')], '半截正文');
+    (provider as unknown as { replayHistory(): void }).replayHistory();
+    const last = lastTurnUpdate(posted);
+    expect(last.replay).toBe(true);
+    const live = last.rounds.find((r) => r.id === 'round-9');
+    expect(live?.live).toBe(true);
+    expect(live?.assistantMessage?.content).toBe('半截正文');
+    expect(live?.processEvents?.map((e) => e.type)).toEqual(['meta', 'thinking']);
+    // 历史轮仍在列（原位替换非整表替换）
+    expect(last.rounds.map((r) => r.id)).toContain('round-1');
+  });
+
+  it('正常收场清缓冲：重放退化为纯历史（无 live 轮，回归保障）', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setRoundStore(roundStore);
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    seedSession(store, roundStore, '2026-08-15-s1', historyPair);
+    provider.setAgent(
+      chatAgentStub(() =>
+        (async function* () {
+          yield { type: 'text', content: '答完', roundId: 'round-9' } as AgentChunk;
+          yield { type: 'done' } as AgentChunk;
+        })(),
+      ),
+    );
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('新问题');
+    // 收场后缓冲退场（done 非暂停）
+    expect((provider as unknown as { _liveBuffer: unknown })._liveBuffer).toBeUndefined();
+    (provider as unknown as { replayHistory(): void }).replayHistory();
+    const last = lastTurnUpdate(posted);
+    expect(last.rounds.find((r) => r.id === 'round-9')?.live).toBeUndefined();
+  });
+
+  it('软暂停保留缓冲（收场不清）：重放含暂停半截正文', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setRoundStore(roundStore);
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    seedSession(store, roundStore, '2026-08-15-s1', historyPair);
+    provider.setAgent(
+      chatAgentStub(() =>
+        (async function* () {
+          yield { type: 'text', content: '半截', roundId: 'round-9' } as AgentChunk;
+          yield { type: 'paused' } as AgentChunk;
+        })(),
+      ),
+    );
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('新问题');
+    // 内核 paused 不 appendAssistant（保留现场待续跑）→ 半截正文只在缓冲 → 缓冲必须保留
+    expect((provider as unknown as { _liveBuffer: unknown })._liveBuffer).toBeDefined();
+    (provider as unknown as { replayHistory(): void }).replayHistory();
+    const last = lastTurnUpdate(posted);
+    const live = last.rounds.find((r) => r.id === 'round-9');
+    expect(live?.live).toBe(true);
+    expect(live?.assistantMessage?.content).toBe('半截');
+  });
+
+  it('会话护栏：缓冲归属 ≠ 当前会话 → 不投影（防切走切回跨会话污染）', () => {
+    const { provider, posted } = setupWithHistory();
+    attachBuffer(provider, '2026-08-14-s2', 'round-9', [ev(1, 'meta')], '别会话正文');
+    (provider as unknown as { replayHistory(): void }).replayHistory();
+    const last = lastTurnUpdate(posted);
+    expect(last.rounds.find((r) => r.id === 'round-9')).toBeUndefined();
+    // 历史重放链路本身走完（防「链路挂掉 → 断言空转」假绿）
+    expect(last.rounds.map((r) => r.id)).toContain('round-1');
+  });
+
+  it('落盘事件并入：checkpoint 历史 ∪ 缓冲增量（resume 续跑缓冲只含续跑段不丢暂停前事件）', () => {
+    const { provider, posted, roundStore } = setupWithHistory();
+    // 预置 round-9 落盘（step 边界 checkpoint 形态：暂停前已落部分事件）
+    roundStore.save({
+      id: 'round-9',
+      userMessage: { id: 'round-9-user', role: 'user', content: '新问题', timestamp: 't2' },
+      status: 'pending',
+      createdAt: 't2',
+      refCount: 0,
+      processEvents: [ev(1, 'meta'), ev(2, 'tool_start')],
+    } as never);
+    // 模拟 resume 续跑缓冲：只有续跑段事件（seq 更大），无暂停前事件
+    attachBuffer(provider, '2026-08-15-s1', 'round-9', [ev(3, 'tool_result')], '续跑正文');
+    (provider as unknown as { replayHistory(): void }).replayHistory();
+    const last = lastTurnUpdate(posted);
+    const live = last.rounds.find((r) => r.id === 'round-9');
+    // 暂停前 checkpoint 事件（seq1/2）与续跑段（seq3）全在，seq 幂等保序
+    expect(live?.processEvents?.map((e) => (e as { seq: number }).seq)).toEqual([1, 2, 3]);
+    expect(live?.assistantMessage?.content).toBe('续跑正文');
+  });
+});

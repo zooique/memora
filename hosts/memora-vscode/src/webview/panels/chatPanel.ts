@@ -147,6 +147,28 @@ interface FlowSeed {
 }
 
 /**
+ * 本流 live 缓冲：consumeFlow 运行期间的过程事件/流式正文/当前轮归属（实例级）。
+ *
+ * 为什么要实例级：webview 重建（折叠展开重建 HTML）后的 ready 握手重放需要读取
+ * 「本流尚未落盘的内容」（流式正文不落盘、过程事件仅 step 边界增量 checkpoint）——
+ * 局部缓冲流结束即焚，重放通道够不着，表现为「切界面回来本流内容全空白」。
+ * 生命周期 = consumeFlow 开始创建、收场末尾清除（身份比对防误清新流缓冲）；
+ * 会话归属随行（sessionId），重建重放时校验当前会话，防切走再切回旧会话时跨会话污染。
+ */
+interface LiveFlowBuffer {
+  /** 缓冲所属会话（创建时刻的 _currentSessionId）：重放投影前校验，防跨会话混入 */
+  sessionId: string;
+  /** 过程事件按 turn 分桶（与落盘真相源同一份 Map，emitEvent 同时写缓冲与投影） */
+  eventsByRound: Map<string, ProcessEvent[]>;
+  /** 流式正文按 turn 分桶（同构分桶，live 轮投影投为末段 assistantMessage） */
+  textByRound: Map<string, string>;
+  /** 当前 turn 归属（内核 chunk 携带 roundId，新 turn 起更新；无 chunk 前为 undefined） */
+  currentRoundKey?: string;
+  /** 开轮用户输入（仅 chat 开新轮路径有；resume 续跑轮由 mergeLiveRound 从落盘历史补） */
+  seedUserMessage?: RoundView['userMessage'];
+}
+
+/**
  * thought 落盘截断上限（字符；Turn 意图理解与模型思考展示设计）：
  * 模型思考内容可能很长（deepseek 深度思考数千 token），落盘前截断防 Round 文件膨胀
  * （SSOT 常量：仅宿主落盘侧消费；展示侧流式全量，不受影响）。命名与既有 thinking 相位事件无关。
@@ -296,6 +318,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 视图重建代数（每次 resolveWebviewView 自增）：供流尾检测「流期间 webview 被折叠/展开
    *  重建过」——重建后新 webview 没有本流的实时投影，落盘完成后须补一次 replaySession 刷全。 */
   private _viewEpoch = 0;
+  /** 本流 live 缓冲（consumeFlow 运行期间非空，收场清除）：ready 握手重放据此把
+   *  本流未落盘内容并入投影（shape 见 LiveFlowBuffer 注释）。 */
+  private _liveBuffer: LiveFlowBuffer | undefined;
   /**
    * 路径守卫安全审计累计（安全/装配透明）
    *
@@ -1766,7 +1791,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       if (this._viewLoader) {
         // round-based：单条 turn_update 承载全量 rounds。replay:true 标记「整批重放」——
         // webview 据此整批重建，与运行时每步投影（replay 缺省）区分，杜绝 settle 重绘重复。
-        this.postTurnUpdate(undefined, true);
+        // live 并入：本流仍在跑/暂停中时（缓冲未清），未落盘的流式正文 + 增量过程事件
+        // 经 buildLiveTurnFromBuffer 并入投影，原位替换落盘半残快照——单条消息即完整恢复，
+        // 不新增第二条重放通道（杜绝与流尾 _viewEpoch 比对重放的双通道漂移）。
+        this.postTurnUpdate(this.buildLiveTurnFromBuffer(), true);
         return;
       }
       // legacy 扁平回退（viewLoader 未注入时）：重放正文统一走 round-based rounds，
@@ -1880,16 +1908,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private replaySession(): void {
     if (!this._view) return;
-    // 恢复当前会话历史消息（只回放 _currentSessionId；round-based 按轮交织重放）
+    // 恢复当前会话历史消息（只回放 _currentSessionId；round-based 按轮交织重放）。
+    // 运行中/暂停中的本流轮由 replayHistory 内 buildLiveTurnFromBuffer 并入同一条
+    // turn_update（replay:true）——状态（running/waiting）随消息 state 字段同步投递，
+    // webview 收到即整批重建 + 骨架状态一步到位；后续 chunk/process_event 照常流式追加
+    //（ready 后监听器已就绪）。不再补推无 live 数据的骨架投影（旧实现 rounds 缺本流
+    // 内容，正是「切界面回来只见运行中空转、内容全空白」的根因）。
     this.replayHistory();
-    // 运行中兜底：折叠期间 agent 在扩展侧继续跑，重建时若仍有活动流，
-    // 补推运行中投影让 webview 显示运行中（输入禁用 + 停止/暂停按钮），后续 chunk
-    // 照常流式追加；本流落盘后的全量回放由 consumeFlow 流尾 _viewEpoch 比对触发。
-    // 不补推 status:'thinking'——postTurnUpdate 读 this._streaming=true
-    // → deriveTurnState 兜底 running（roundId 缺省），step 状态投影是唯一补推信号。
-    if (this._streaming) {
-      this.postTurnUpdate();
-    }
     // 推送历史加载完成信号 → webview 收到后强制滚到底部（不走吸底逻辑）
     // 解决多条历史消息 rAF 节流导致滚动位置不正确的问题
     this.post({ type: 'history_loaded' });
@@ -2292,6 +2317,37 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 仅当队列长度变化时由 syncPendingQueue 守卫触发本方法，避免无谓重投影。
       pendingQueue: this._agent?.getPendingInterjections?.() ?? [],
     });
+  }
+
+  /**
+   * 从本流 live 缓冲构造运行时当前轮快照（ready 握手重放专用）
+   *
+   * 重建重放通道把本流未落盘内容（流式正文 + 增量过程事件）并入 turn_update 投影：
+   * mergeLiveRound 按 roundId 原位替换落盘半残快照，单点消除「切界面回来本流内容全空白」。
+   * 过程事件与落盘历史 **seq 幂等合并**（mergeProcessEvents）——resume 续跑流的缓冲只含
+   * 续跑段，直接替换会丢暂停前 checkpoint 事件；合并后 live 版本恒 ≥ 历史版本，替换零丢失。
+   * 三重护栏：
+   *   ① 无缓冲（无流在跑/已收场清除）→ undefined，退化为纯历史重放（行为与旧版一致）；
+   *   ② 会话护栏：缓冲归属会话 ≠ 当前会话（切走再切回旧会话）→ 不投影，防跨会话污染；
+   *   ③ roundId 分界：当前 turn 尚无 chunk（roundId 未知）→ 无可投影轮。
+   * userMessage 取 seed（chat 开新轮）；resume 续跑轮缺省，由 mergeLiveRound 从落盘历史补，
+   * 两边都拿不到则整轮不并入（半残数据不投，与 postTurnUpdate 同一取舍）。
+   */
+  private buildLiveTurnFromBuffer(): PendingLiveRound | undefined {
+    const buf = this._liveBuffer;
+    if (!buf || buf.sessionId !== this._currentSessionId) return undefined;
+    const roundId = buf.currentRoundKey;
+    if (!roundId) return undefined;
+    // 落盘历史（step 边界 checkpoint 的部分事件）∪ 缓冲增量（seq 幂等去重保序）
+    const prior = this._eventLogRoundStore?.getById(roundId)?.processEvents ?? [];
+    const buffered = buf.eventsByRound.get(roundId) ?? [];
+    const merged = prior.length > 0 ? this.mergeProcessEvents(prior, buffered) : buffered;
+    return {
+      roundId,
+      userMessage: buf.seedUserMessage,
+      processEvents: merged.length > 0 ? merged : undefined,
+      streamingText: buf.textByRound.get(roundId),
+    };
   }
 
   /**
@@ -2811,11 +2867,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 分段归属 SSOT：roundId 由内核 chunk 携带（AgentChunk.roundId），
     // 不依赖「roundIds 末尾」推断当前轮——一次 chat()（多 turn 任务编排）多 turn 各自独立落盘。
     // step 检查点按 seq 幂等合并增量落盘（seq 实例级单调，见 _processSeq）。
-    const eventsByRound = new Map<string, ProcessEvent[]>();
+    // 缓冲同时挂实例字段（_liveBuffer）：webview 重建后的 ready 握手重放据此读
+    // 本流未落盘内容（流式正文不落盘、过程事件仅 step 边界增量 checkpoint）；
+    // 收场末尾清除（身份比对），防跨轮残留。
+    const liveBuffer: LiveFlowBuffer = {
+      sessionId: this._currentSessionId,
+      eventsByRound: new Map<string, ProcessEvent[]>(),
+      textByRound: new Map<string, string>(),
+      seedUserMessage: seed?.userMessage,
+    };
+    this._liveBuffer = liveBuffer;
+    // 局部别名保持闭包引用简洁（emitEvent / 正文分桶沿用原名）
+    const eventsByRound = liveBuffer.eventsByRound;
     // 流式正文按 turn 分段累积：与 eventsByRound **同构分桶**（同一 currentRoundKey
     // 归属判据），供 live 轮投影把正文投为末段 assistantMessage。多 turn 编排各自独立成桶。
-    const textByRound = new Map<string, string>();
-    let currentRoundKey: string | undefined;
+    const textByRound = liveBuffer.textByRound;
     /** 当前 turn 是否已补 meta 首条（每 turn 段首条身份 + 关键调用参数包） */
     let metaEmittedForRound = false;
     // meta 取证包：流首取一次激活 Provider 配置快照（本轮生效值），每 turn 首条 meta 携带
@@ -2827,10 +2893,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const seq = ++this._processSeq;
       const event = { type: typeKey, seq, ts: new Date().toISOString(), payload } as ProcessEvent;
       // 归属当前 turn 分段（无 roundId 的宿主自造事件归入最近 turn）
-      if (currentRoundKey) {
-        const list = eventsByRound.get(currentRoundKey) ?? [];
+      if (liveBuffer.currentRoundKey) {
+        const list = eventsByRound.get(liveBuffer.currentRoundKey) ?? [];
         list.push(event);
-        eventsByRound.set(currentRoundKey, list);
+        eventsByRound.set(liveBuffer.currentRoundKey, list);
       }
       this.post({ type: 'process_event', event });
     };
@@ -2853,12 +2919,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 普通插话（thinking 态 interject）不触发 sessionResumed，此处是它的唯一清空时机。
         this.syncPendingQueue();
         // turn 边界检测：roundId 变化 = 新 turn 开始（多 turn 任务编排多 turn 各自独立 roundId）
-        if (chunk.roundId && chunk.roundId !== currentRoundKey) {
-          currentRoundKey = chunk.roundId;
+        if (chunk.roundId && chunk.roundId !== liveBuffer.currentRoundKey) {
+          liveBuffer.currentRoundKey = chunk.roundId;
           metaEmittedForRound = false;
         }
         // 每 turn 段首条补 meta（身份，SSOT 与消息标签同源）；处理当前 chunk 前先补，保证 meta 为段内首条
-        if (currentRoundKey && !metaEmittedForRound) {
+        if (liveBuffer.currentRoundKey && !metaEmittedForRound) {
           metaEmittedForRound = true;
           emitEvent('meta', roundMeta());
         }
@@ -2906,10 +2972,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 与重放路径共用「roundId 相等」单一判定源（chunk.roundId 由内核 withRound 携带）
           // 同一份正文按 turn 分桶累积（live 轮投影用）。归属判据与 emitEvent 完全同源
           // （同一 currentRoundKey），不另立判据；自审查输出已在上方 continue 分流，不会误入正文。
-          if (currentRoundKey) {
+          if (liveBuffer.currentRoundKey) {
             textByRound.set(
-              currentRoundKey,
-              (textByRound.get(currentRoundKey) ?? '') + chunk.content,
+              liveBuffer.currentRoundKey,
+              (textByRound.get(liveBuffer.currentRoundKey) ?? '') + chunk.content,
             );
           }
           this.post({
@@ -3047,8 +3113,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 落盘时机 SSOT：全场景唯一时机（有/无任务表、有/无工具全覆盖），与流尾共用 mergeProcessEvents
           // 同一合并语义（seq 幂等）。顺序契约：内核保证 plan_item_boundary 先于本 chunk → 本轮落盘快照已含
           // 该任务项折叠边界，崩溃重放不错位。瞬态信号：不 emitEvent（不进 processEvents、不吃 seq）。
-          if (currentRoundKey) {
-            this.checkpointRound(currentRoundKey, eventsByRound.get(currentRoundKey) ?? []);
+          if (liveBuffer.currentRoundKey) {
+            this.checkpointRound(
+              liveBuffer.currentRoundKey,
+              eventsByRound.get(liveBuffer.currentRoundKey) ?? [],
+            );
           }
           // 瞬态透传：webview 据落盘点注销未升级的「（准备中）」预告行（本步工具宿命已定，
           // 截断批/重试孤儿的 tool_start 永不到达）——生命周期契约见 dropStalePendingToolRows
@@ -3090,6 +3159,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._agent.off('memoryAdded', onMemoryAdded);
       // 无论成败均清除生成态（恢复历史切换能力）
       this._streaming = false;
+      // live 缓冲退场（实例字段；流尾收场逻辑全用局部 liveBuffer，不受影响）。
+      // ⚠ 软暂停不清：内核 paused = 保留现场待续跑、**不 appendAssistant**——半截正文只在
+      // 缓冲（textByRound），清了则暂停中切界面重建 = 半截回答丢失；保留到 resume 新流覆盖
+      // （resume 必经 consumeFlow 重建 buffer）或最终收场。已知边界：resume 续跑流的缓冲只含
+      // 续跑段（暂停前正文随旧缓冲覆盖丢失，历史亦无——内核续跑收场 appendAssistant 落盘全量
+      // 自愈），渲染面由 buildLiveTurnFromBuffer 并入落盘事件兜底。
+      // 放 finally（非收场流水末）：收场任一步抛错不再跳过清除（异常路径泄漏防线）。
+      if (!pausedOnPurpose && this._liveBuffer === liveBuffer) this._liveBuffer = undefined;
       // 清理本轮 AbortController：仅当仍是本轮的 controller（防止下一轮已创建新 controller）
       if (this._abortController === controller) this._abortController = undefined;
     }
@@ -3098,7 +3175,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 正常结束 → done。三者均恢复/切换按钮态，仅提示语义不同。
     // 附带本轮回答归属的 roundId（SSOT：来自 chunk 携带的 turn roundId，非 roundIds 末尾推断）：
     // webview 据此回填消息分叉按钮（任意 LLM 回答可分叉）。
-    const latestRoundId = currentRoundKey;
+    const latestRoundId = liveBuffer.currentRoundKey;
     // 运行时当前轮快照：供 turn_update 投影 live 轮，三处收场共用同一份构造。
     // userMessage 取 seed（仅 chat 路径有）；resume 路径缺省，由 mergeLiveRound 从落盘历史补，
     // 两边都拿不到则整轮不并入。interactiveInputs 不含（补充/回答发生在别的 handler，
