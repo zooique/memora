@@ -302,7 +302,11 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   // 无全局封顶——用户对自己填写的参数负责（见架构决策）。resolveContextWindow 单参：传 per-LLM 值，undefined 即兜底。
   const activeProviderCfg = providerStore ? await providerStore.getActive() : undefined;
   const maxContextTokens = resolveContextWindow(activeProviderCfg?.contextWindow);
-  // per-LLM 输出预算（T1）：唯一真理源 = 用户 per-LLM 的 maxTokens（配置面板「输出上限 (K)」）；
+  // per-LLM 输出预算（T1）：底座值 = 用户 per-LLM 的 maxTokens（配置面板「输出上限 (K)」）；
+  // **非最终生效值**——与角色包策略 act.outputLimit **取更小值**（同为「上限」，须同时满足；
+  // 裁决只在内核 buildChatOptions 单点进行，宿主不重算）。生效值读取口 = Agent.getEffectiveMaxTokens()，
+  // 取证面取它而非本配置值。角色包未声明或声明 0 时不参与取小（0 = 不干预哨兵，
+  // 与 contextLimit/stepBudget 同构）。
   // 未配置 undefined → 内核不传 max_tokens（回服务端默认，盲区语义与 contextWindow 同构）。
   const maxTokens = activeProviderCfg?.maxTokens;
 

@@ -597,7 +597,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * meta 取证包（关键调用参数快照）：role/llm 身份 + 本轮调用参数面（窗口 / 输出上限 /
    * 推理深度 / 适配器形态）——真机异常轮自带取参数面，免截图、口问即可离线破案。
    *
-   * @param providerConfig 流首取的激活 Provider 配置快照（本轮生效值；无激活配置时参数面缺省）
+   * ⚠️ 参数面记的是**生效值**而非用户配置值：输出上限会被角色包策略 `act.outputLimit` 压过
+   * （优先级裁决在内核 `buildChatOptions`，宿主不重算），只记配置面会把「我配了 64K」当成
+   * 「真的发了 64K」——真机排雷已因此得出过错误结论（详见 tasks/审查-空响应根因排雷与优化方案-20260929.md）。
+   *
+   * @param providerConfig 流首取的激活 Provider 配置快照（仅作为 agent 未装配时的回落来源）
    * @returns meta 事件载荷（身份 + 参数包）
    */
   private buildRoundMeta(providerConfig: LlmProviderConfig | undefined): ProcessMetaPayload {
@@ -615,7 +619,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       contextWindow: providerConfig
         ? resolveContextWindow(providerConfig.contextWindow)
         : undefined,
-      maxTokens: providerConfig?.maxTokens,
+      // 输出上限记**生效值**（内核 buildChatOptions 裁决后的实际请求值）：角色包策略
+      // act.outputLimit 可压过 per-LLM 配置，故配置值不能代表已发出去的值；agent 未装配时回落配置面。
+      maxTokens: this._agent?.getEffectiveMaxTokens() ?? providerConfig?.maxTokens,
       reasoningEffort: reasoningMode === 'manual' ? 'low' : undefined,
       providerKind: 'openai-compatible',
     };

@@ -62,14 +62,18 @@ export interface LlmProviderConfig {
    */
   contextWindow?: number;
   /**
-   * 单次回复输出上限（token）—— 该 LLM 唯一真理源（T1 / EMPTY-RESP-1 根因修复）
+   * 单次回复输出上限（token）—— 该 LLM 的输出预算**底座**（T1 / EMPTY-RESP-1 根因修复）
    *
    * 背景：推理模型（mimo v2.6-pro 等）thinking 与正文共享输出预算；不传 max_tokens 时
    * 服务端默认上限不可见、不可控，thinking 吃满默认值 → 正文被挤空（空响应）。
    * 配置面板「输出上限 (K)」填写（K = ×1000 口径，如输入 64 = 64,000 tokens），随请求体透传 max_tokens。
    * 未填（undefined）→ 内核不传（回服务端默认，盲区语义与 contextWindow 同构）。
    * 护栏 = 宿主 save 校验 1–65536（独立 sanity，非与内核对齐——内核上限不裁决，超限透传由服务端可见报错）；
-   * 角色包策略 act.outputLimit 可压过本值（内核 buildChatOptions 优先级）。
+   * ⚠️ 非最终生效值：与角色包策略 act.outputLimit **取更小值**（两者都是「上限」性质，须同时满足；
+   * 对齐上下文窗口 min(provider 窗口, 角色包 contextLimit) 的语义）。裁决只在内核 buildChatOptions
+   * 单点进行，宿主不重算；实际请求值由 `Agent.getEffectiveMaxTokens()` 读取——面板显示与取证包均须
+   * 以生效值为准。角色包未声明或声明 `0` 时不参与取小（0 = 不干预哨兵，与 contextLimit/stepBudget
+   * 同构：不写 = 默认立场、写 0 = 让路、写正数 = 显式上限）。
    */
   maxTokens?: number;
 }

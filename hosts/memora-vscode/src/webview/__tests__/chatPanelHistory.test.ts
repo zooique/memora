@@ -71,6 +71,9 @@ function agentStub(): {
     on: vi.fn(),
     off: vi.fn(),
     isPausePending: () => false,
+    // 输出上限**生效值**读取口（取证面用）：缺省 undefined = 未传 max_tokens（回服务端默认）；
+    // 需非缺省的用例就地覆盖（替身约定：只补约定内的最小面）
+    getEffectiveMaxTokens: () => undefined,
   } as unknown as Agent;
   return { agent, switchToSession, renameSession, softDeleteRoundSummaries };
 }
@@ -213,6 +216,9 @@ function chatAgentStub(chatFn: () => AsyncGenerator<AgentChunk, void, unknown>):
     getCheckpoint: () => null,
     // 暂停在途判据（postTurnUpdate 折叠 TurnState 时读取，真实 handlePause 同 API）
     isPausePending: () => false,
+    // 输出上限**生效值**读取口（流首 meta 取证包消费）：缺省 undefined = 未传 max_tokens。
+    // 替身契约单点——consumeFlow 每轮都经 buildRoundMeta，缺此方法会让整条落盘链路空转
+    getEffectiveMaxTokens: () => undefined,
   } as unknown as Agent;
 }
 
@@ -417,6 +423,10 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       listMeta: () => [],
     };
     provider.setAgent(agent);
+    // 生效值 ≠ 配置值：内核 buildChatOptions 裁决后（角色包 act.outputLimit 可压过 per-LLM 配置）
+    // 的真值。取证面必须记这个——只记配置面会把「我配了 64K」误读成「真的发了 64K」
+    (agent as unknown as { getEffectiveMaxTokens: () => number }).getEffectiveMaxTokens = () =>
+      4096;
 
     const meta = (
       provider as unknown as {
@@ -430,7 +440,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     ).buildRoundMeta({ contextWindow: 600000, maxTokens: 64000 });
 
     expect(meta.contextWindow).toBe(600000);
-    expect(meta.maxTokens).toBe(64000);
+    // 输入配置面给的是 64K，但生效值是内核裁决后的 4096 → 取证面取后者
+    expect(meta.maxTokens).toBe(4096);
     // 派生口径与内核 llmCaller 同源：仅 manual 发 'low'
     expect(meta.reasoningEffort).toBe('low');
     expect(meta.providerKind).toBe('openai-compatible');
