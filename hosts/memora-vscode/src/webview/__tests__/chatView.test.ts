@@ -801,7 +801,8 @@ describe('chatView clear_ok 消息区清理', () => {
     });
     expect(metrics.hidden).toBe(false);
     expect(metrics.textContent).toContain('入 1000');
-    expect(metrics.textContent).toContain('出 500');
+    // 口径标注：输出只计正文、不含思考（旧断言「出 500」对应未标注的误导形态）
+    expect(metrics.textContent).toContain('正文 500（不含思考）');
   });
 
   it('metrics 渲染预算分配构成（④ 策略可视化，可选字段缺省不显示）', () => {
@@ -1601,8 +1602,49 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // round-block details 各小节（档案：已沉淀/执行指标）
     const details = rb.querySelector('.round-block__details') as HTMLElement;
     expect(details.textContent).toContain('设计约束');
-    expect(details.textContent).toContain('Tokens：入 100 / 出 200');
+    // 口径标注：入/出为估算、输出只计正文不含思考
+    expect(details.textContent).toContain(
+      'Tokens（估算）：入 100 / 正文 200（不含思考）',
+    );
+    // meta 未带 maxTokens（beginRound）→ 生效上限显示服务端默认
+    expect(details.textContent).toContain('输出上限（生效）：服务端默认');
     expect(details.textContent).toContain('完成：是');
+  });
+
+  it('执行指标 · meta.maxTokens 生效值亮明：被角色包收紧时看这行（非面板配置值）', () => {
+    mountChatView();
+    // 不用 beginRound：自行发带 maxTokens 的 meta（模拟面板 64K 被取小成 4096 的场景）
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'meta',
+        seq: 1,
+        ts: '',
+        payload: { role: '共鸣小说家', llm: 'mimo', maxTokens: 4096 },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'metrics',
+        seq: 2,
+        ts: '',
+        payload: {
+          durationMs: 1000,
+          tokenIn: 10,
+          // 正文估算很小：推理模型下思考吃大头，正文数不能代表输出预算消耗
+          tokenOut: 89,
+          toolFailureCount: 0,
+          success: true,
+        },
+      },
+    });
+    dispatch({ type: 'done' });
+
+    const details = document.querySelector('.round-block__details') as HTMLElement;
+    // 生效上限 = meta 里的裁决值（与面板配置无关，取证面不重算）
+    expect(details.textContent).toContain('输出上限（生效）：4096');
+    expect(details.textContent).toContain('正文 89（不含思考）');
   });
 
   it('执行指标 · 空响应兜底诚实信号：emptyResponseCount>0 → 显示计数且不算成功收尾（success 不动）', () => {

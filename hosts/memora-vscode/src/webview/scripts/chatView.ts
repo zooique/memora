@@ -1852,9 +1852,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 截断救回：>0 表示本轮曾截断但被换策略重试救回——观测信号（正文是真实产出，不参与否决）
       const truncRecover = metrics.payload.truncationRecoveryCount ?? 0;
       const finalSuccess = metrics.payload.success && unparsed === 0 && emptyResp === 0;
+      // meta 事件携带本轮**生效**输出上限（内核 buildChatOptions 裁决后的值；取证面不重算）
+      const roundMeta = events.find(
+        (e): e is Extract<ProcessEvent, { type: 'meta' }> => e.type === 'meta',
+      );
+      // undefined = 请求未传 max_tokens，回服务端默认（0-哨兵/未声明侧均落到此）
+      const effectiveLimit = roundMeta?.payload.maxTokens;
       const lines = [
         `耗时：${fmtDuration(metrics.payload.durationMs)}`,
-        `Tokens：入 ${metrics.payload.tokenIn} / 出 ${metrics.payload.tokenOut}`,
+        // 口径须显式：入/出均为估算值；「出」只计正文——不含思考与工具轮叙述，
+        // 推理模型下远小于真实输出预算消耗（判压力看下行「输出上限」+ 截断重试救回）
+        `Tokens（估算）：入 ${metrics.payload.tokenIn} / 正文 ${metrics.payload.tokenOut}（不含思考）`,
+        // 生效上限直接亮给用户：配了面板却被角色包收紧时，这里与面板值不一致即可见
+        `输出上限（生效）：${effectiveLimit ?? '服务端默认'}`,
         `工具失败：${metrics.payload.toolFailureCount} 次`,
         ...(unparsed > 0 ? [`未解析工具意图：${unparsed} 次`] : []),
         ...(emptyResp > 0 ? [`空响应兜底：${emptyResp} 次`] : []),
@@ -3862,11 +3872,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           : '') +
         ' · 截断 ' +
         msg.metrics.truncationCount,
-      // D（alignment-iteration.md）：token 用量（可选字段，缺省不显示）
-      'Tokens：' +
+      // token 用量（可选字段，缺省不显示）：估算口径，「出」只计正文、不含思考——
+      // 与轮详情执行指标同口径标注，防推理模型下把正文数误读成总输出
+      'Tokens（估算）：' +
         (typeof msg.metrics.llmTokenIn === 'number' ? '入 ' + msg.metrics.llmTokenIn : '入 -') +
-        ' / ' +
-        (typeof msg.metrics.llmTokenOut === 'number' ? '出 ' + msg.metrics.llmTokenOut : '出 -'),
+        ' / 正文 ' +
+        (typeof msg.metrics.llmTokenOut === 'number'
+          ? msg.metrics.llmTokenOut + '（不含思考）'
+          : '-'),
       // ④ 预算分配构成（可选字段，缺省不显示）——窗口内空间如何被 锚点/对话层 瓜分
       ...(msg.metrics.budget
         ? [
