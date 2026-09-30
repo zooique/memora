@@ -10,6 +10,16 @@
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不占内核版本号（理由见文首说明）。内核 3.0.0 的发版内容在其下方。
 
+### Fixed（宿主 · 挂起/插话补充输入渲染根治：骨架不删 + 正文单块续写统一）
+
+**问题（真机三轮复测暴露）**：暂停申请态/插话态发送补充输入时，运行过程 UI 异常三连——①当前轮过程蒸发（界面只剩补充内容）；②补充行散落在过程容器外；③吸收后重放出现内外双份。根因链三层语义错位：user 消息处理路径删除了骨架（flowShellEl），而 interject 契约「不 abort 旧流、runFlow 继续」意味着骨架非空壳、删除动作本身错误；打断分段形态（打断→新建正文块）与暂停锚续写（原位续写）两套形态并存，chunk 分支判定分裂。
+
+- **① user 消息一律不删骨架**：骨架是当前轮过程容器宿主，清理职责单一路径归 meta（prepareFlowShell 重建时清旧）/ 重放（resetChatView），user 消息处理不参与
+- **② 正文单块续写统一（打断分段形态退役）**：chunk 分支活动块复用判定统一为「活动块连接 + `isSameRoundContinue` roundId 护栏」——暂停锚块与插话前活动正文块两类来源共用同一判定，续写增量拼接（streamingRaw 不重置，打断前正文保留）；跨轮 chunk（roundId 不等/缺失）走新建，防跨轮挂载串位（历史事故护栏保留）
+- **③ 真新轮清理对称**：真新轮分支补 `resumePending = false`（残留 true 会被本分支误消费成续跑，与 done/interrupted 清理纪律对称）
+- **验证**：宿主全量 **840 passed | 2 skipped**；盲区补测（打断后无续写直接 done：streamingRaw 残留旧文正常进 finalize，正文完整、补充行折入折叠块）；真机复测通过
+- **残留**：切界面不显示（流中 webview 重建不补重放）为独立问题，已登记在案
+
 ### Changed（示例包 · 共鸣小说家行为参数对齐白话方案设计师）
 
 - `stepBudget` 40→100、`toolStepLimit` 20→100、`multiStepReasoning` manual→auto（`toolMode` 两包同 allow，未动；`temperature`/`outputLimit` 为创作特有设定保留）。**行为影响须知**：manual→auto 后请求不再强制 `reasoning_effort:'low'`——思考深度听服务端默认（变深、token 消耗上升），截断概率可能随之上升；截断救回（T2）不受影响，救回重试仍显式降 low（`llmCaller` 单点）。manual 原动机是 4096 紧预算下省思考防截断，outputLimit 放开（0-哨兵）后已弱化
@@ -228,7 +238,7 @@
 - **自纠（本轮差点造的假注释）**：初稿把上述风险写成「已明确告知」——**不实**：模态文案只在 dirty 分支出现。已改为如实描述并同步登记台账。
 - **验证（实测）**：宿主 `tsc --noEmit -p ./` = 0；`eslint --config eslint.config.mjs` = 0；fileChange 三套件 **88 passed**。
 
-## [3.0.0] - 待发布（发版日补日期）
+## [3.0.0] - 2026-09-30
 
 ### Added（内核+宿主 · 截断救回计数 truncationRecoveryCount：换策略重试效力的观测面 + 文案口径订正）
 
