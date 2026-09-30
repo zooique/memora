@@ -95,9 +95,9 @@
             },
             "outputLimit": {
               "type": "integer",
-              "minimum": 1,
+              "minimum": 0,
               "maximum": 65536,
-              "description": "单轮回答长度上限（token，默认 4096）"
+              "description": "单轮回答长度上限（token）。0 或不写 = 不干预（与 per-LLM 配置取更小值的语义下不设额外上限）；正数 = 显式上限"
             },
             "toolStepLimit": {
               "type": "integer",

@@ -137,7 +137,7 @@
 | -------------------- | ----------------------------- | ------------------ | ----------- | ------------- | ----------------- |
 | `toolMode`           | `allow` / `block`             | —                  | `allow`     | 是否允许工具调用      | `"block"`         |
 | `temperature`        | number                        | `0.0 ~ 2.0`        | `0.7`       | 生成随机性         | `0.3`             |
-| `outputLimit`        | 整数                            | `1 ~ 65536`（token） | `4096`      | 单轮回答长度上限      | `8192`            |
+| `outputLimit`        | 整数                            | `0 ~ 65536`（token） | `0`（不干预）    | 单轮回答长度上限（0=不干预，与 per-LLM 配置取更小值语义下不设额外上限）     | `8192`            |
 | `toolStepLimit`      | 整数                            | `0 ~ 100`（0=无限制）   | `20`        | 单轮工具调用步数上限    | `30`              |
 | `providerRouting`    | `auto` / `fixed`              | —                  | `auto`      | Provider 路由策略 | `"fixed"`         |
 | `multiStepReasoning` | `auto` / `manual`             | —                  | `auto`      | 多步推理模式        | `"manual"`        |
@@ -179,14 +179,14 @@
 | --------------------- | ---- | ------- | --------------- | ------------------ |
 | `summaryFocus`        | 1 字符 | 500 字符  | error           | 回退 undefined（通用浓缩） |
 | `temperature`         | 0    | 2       | error           | 忽略不注入              |
-| `outputLimit`         | 1    | 65536   | error           | 忽略不注入              |
+| `outputLimit`         | 0    | 65536   | error           | 忽略不注入              |
 | `toolStepLimit`       | 0    | 100     | error           | 回退默认 `0`（无限制）      |
 | `selfReview`          | 0    | 10      | error           | 回退 `0`（关闭）       |
 | `askLimit`            | 1    | 10      | error           | 回退默认 `10`          |
 | `contextLimit`         | 0    | 2000000 | error           | 回退 `0`（跟随 provider 窗口）  |
 | `stepBudget`          | 0    | 500     | error           | 回退默认 `50`          |
 
-> `contextLimit` / `stepBudget` 的 `0` 是**特殊合法值**（=不声明），正数声明须落在各自详表区间（§3.4：`contextLimit` 正数 ∈ [120000, 2000000]、`stepBudget` 正数 ∈ [10, 500]）——两端之间的中间数（如 50000）**非法**。
+> `contextLimit` / `stepBudget` / `outputLimit` 的 `0` 是**特殊合法值**（=不干预/不声明，与不写该键等价），正数声明须落在各自详表区间（§3.4：`contextLimit` 正数 ∈ [120000, 2000000]、`stepBudget` 正数 ∈ [10, 500]、`outputLimit` 正数 ∈ [1, 65536]）——两端之间的中间数（如 `contextLimit: 50000`）**非法**。三个上限键共用同一条心智规则：**不写 = 默认立场；写 0 = 让路（听下一层真相源）；写正数 = 显式上限**。
 
 ***
 

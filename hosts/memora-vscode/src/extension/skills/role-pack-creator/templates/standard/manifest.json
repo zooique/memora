@@ -16,7 +16,6 @@
     "act": {
       "toolMode": "allow",
       "temperature": 0.7,
-      "outputLimit": 4096,
       "toolStepLimit": 20,
       "providerRouting": "auto",
       "multiStepReasoning": "auto",

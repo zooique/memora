@@ -81,7 +81,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 #### strategy 键速查（16 键；未改动的键可删除 = 内核默认）
 
 `prepare`（1）默认值：`summaryFocus`(≤500字符，默认省略)。注：`understandingConfirm` 不作为开放键——confirm 并入 `askOn` 含 `'confirm'` 触发，echo 由内核 Turn 起始策略覆盖，勿再填写；`memoryRecall`/`memoryRecallPercent`/`minFallback`/`contextAssembly`/`recallConfidence`/`summaryRecall` 6 个召回键不存在——记忆检索改由 `memory_search` 工具触发，勿再填写。
-`act`（7）默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=4096(1~65536)｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`multiStepReasoning`=auto｜`toolReadonly`=full
+`act`（7）默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=0(0~65536，0=不干预、与 per-LLM 配置取更小值语义下不设额外上限)｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`multiStepReasoning`=auto｜`toolReadonly`=full
 `reflect`（3）默认值：`summary`=on｜`selfReview`=0(0~10，布尔数字：0=关闭，>0 一律收敛为 1=终审一次，写 2 与写 1 效果相同)｜`userFollowup`=silent
 `global`（5）默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=10(1~10)｜`errorHandling`=retry｜`contextLimit`=0(0~2000000，0=不设额外上限、跟随 provider 窗口)｜`stepBudget`=0(0~500，0=走内核兜底)
 
