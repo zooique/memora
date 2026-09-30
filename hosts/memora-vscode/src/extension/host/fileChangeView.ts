@@ -7,22 +7,22 @@
  *   ① 打开真实文件进工作区（改动已生效）；
  *   ② 改动行**块级高亮**（绿底 + 左侧竖条）；
  *   ③ hunk 首行**悬停看完整旧内容**（Markdown）——旧内容仅内存展示，文件中已不存在，
- *      全程不落盘。⚠️ 行尾**不挂**旧内容的常驻预览：2026-09-28 真机反馈它与 hover 信息重复
- *      且是视觉噪音，已删；「并排看新旧」的需求由「查看对比」的左右分栏 diff 承担。
+ *      全程不落盘。⚠️ 行尾**不挂**旧内容的常驻预览：它与 hover 信息重复
+ *      且是视觉噪音；「并排看新旧」的需求由「查看对比」的左右分栏 diff 承担。
  *   ④ **块级按钮**：每个改动块**末尾**一组「接受此处 / 拒绝此处」CodeLens，跟着改动走
- *      —— 改在哪一行，按钮就在哪一行旁边。⚠️ 旧稿写「每个 hunk 上方」：挂在 hunk **首行**
- *      时按钮会贴在**上一个 hunk 末尾**之下，被误读成「回退上一段」（2026-09-26 真机修正）。
- *      现挂在 `endLine + 1`：CodeLens 渲染在所在行**上方** ⇒ 视觉上紧跟该块**之后**，归属明确。
+ *      —— 改在哪一行，按钮就在哪一行旁边。⚠️ 不得挂在 hunk **首行**
+ *      ——按钮会贴在**上一个 hunk 末尾**之下，被误读成「回退上一段」。
+ *      挂在 `endLine + 1`：CodeLens 渲染在所在行**上方** ⇒ 视觉上紧跟该块**之后**，归属明确。
  *   ⑤ **文件级按钮**（确认本文件 / 回退本文件）放**编辑器标题栏**（`editor/title` 的
- *      `navigation` 组 = 标签栏右侧图标按钮），**不在文件正文里**——真机反馈「按钮嵌在文件里的
- *      感觉」。VS Code 扩展 API **没有**「编辑器内悬浮操作条」（Trae / Qoder 那条提示条是
+ *      `navigation` 组 = 标签栏右侧图标按钮），**不在文件正文里**——正文按钮给用户
+ *      「嵌在文件里的感觉」。VS Code 扩展 API **没有**「编辑器内悬浮操作条」（Trae / Qoder 那条提示条是
  *      fork 内核级 UI，扩展层拿不到），标题栏是扩展能拿到的最接近形态。
  *
  * 三层粒度（对位 Qoder / Trae）：跨文件（对话区常驻条 / 状态栏 / 命令面板）→ 单文件（标题栏）
  * → 单处（块级 CodeLens）。**不要在文件里摆跨文件按钮**：粒度混淆（§11.3 已判过一次真伤）。
  *
  * 「改动对照」= `vscode.diff`（左 = 旧内容虚拟文档，右 = 真实文件），即 git 同款的**左右分栏**。
- * 自渲染的「上下统一视图」已被真机否决（不如 git 同款直观）⇒ **勿改回**。
+ * 自渲染的「上下统一视图」已被否决（不如 git 同款直观）⇒ **勿改回**。
  * ⚠️ **布局由用户全局设置 `diffEditor.renderSideBySide` 决定**（默认左右），扩展**不去改它**——
  * 扩展 API 给不出「以 inline 布局打开 diff」的入口，改布局只能动用户设置或盲调切换型命令，
  * 两者都属侵入用户环境，不做。
@@ -34,7 +34,7 @@
  *     再走宿主原子写 `atomicWriteFileSync`；**不是**内核 `write_file` 处理器（该入口不存在）。
  *     因恢复是宿主直写、不产生 tool_start/tool_result → **无需 re-entrancy guard**（无自追踪回路）。
  *
- * ⚠️ 教训（2026-09-26 真机反馈）：装饰/动作**不得静默吞异常**——异常必须写日志，否则「文件打开了但
+ * ⚠️ 装饰/动作**不得静默吞异常**——异常必须写日志，否则「文件打开了但
  * 看不到高亮」会没有任何诊断线索。装饰色用**字面高对比色**（不依赖主题色，明暗主题都可见）；
  * 设完装饰还必须 `revealRange` 把视口移过去，否则改动行不在视野内＝用户「看不出改了哪里」。
  *
@@ -89,8 +89,8 @@ export const REVERT_ALL_FILE_CHANGES_COMMAND = 'memora.revertAllFileChanges';
 /**
  * 文件级命令 id（宿主入口 = **编辑器标题栏**，故**必须**进 package.json#contributes.commands）
  *
- * 2026-09-27 真机反馈：这两颗按钮原先是文件正文里的 CodeLens，用户反馈「嵌在文件里的感觉」，
- * 遂迁到标题栏（`editor/title`）。代价是必须贡献声明（菜单依赖声明才渲染），从而**必须能承受
+ * 这两颗按钮放**编辑器标题栏**（`editor/title`）而非文件正文 CodeLens：正文里的按钮给用户
+ * 「嵌在文件里的感觉」。代价是必须贡献声明（菜单依赖声明才渲染），从而**必须能承受
  * 无参调用**（命令面板 / 键绑定触发时没有 Uri）⇒ 无参时回落到**当前活动编辑器**的文件，
  * 取不到就留痕返回，不静默吞。
  */
@@ -127,7 +127,7 @@ export const REJECT_HUNK_COMMAND = 'memora.fileChange.rejectHunk';
  * 改动行高亮装饰（字面高对比色，不依赖主题色）
  *
  * 绿色系（与「新增/修改」直觉一致）+ 左侧竖条 border，明暗主题下都清晰可见；
- * `isWholeLine` 使整行铺满。此前用主题色 `diffEditor.insertedTextBackground` 在部分主题下几乎不可见。
+ * `isWholeLine` 使整行铺满。主题色 `diffEditor.insertedTextBackground` 在部分主题下几乎不可见，故用字面高对比色。
  *
  * ⚠️ **必须惰性构建，勿改回模块顶层常量**：`vscode.OverviewRulerLane` 是 VS Code 运行时枚举，
  * 放在模块顶层会在 **import 阶段**就求值。而本模块被「只想要命令 id 字符串」的导入方（对话面板
@@ -154,7 +154,7 @@ function highlightOptions(): vscode.DecorationRenderOptions {
  * 纯删除块在新文件中**不覆盖任何行**，装饰只能落在 `hunkAnchorLine` 给出的删除点锚行——
  * 那一行本身是**未变的其他内容**，铺明显红底会让用户误读成「该行被删」。因此：
  * 主信号 = 3px 红竖条 + 概览标尺红点；行底只给极淡一层（远淡于绿色 0.18）。
- * 此前纯删除块复用上面的绿色装饰 =「删除点被染成新增色」的语义错位，本装饰收口之。
+ * 纯删除块若复用上面的绿色装饰 =「删除点被染成新增色」的语义错位，本装饰收口之。
  * 颜色对位 GitHub diff 的删除红（248, 81, 73）。同样**必须惰性构建**（理由同上）。
  */
 let removedHighlightOptionsCache: vscode.DecorationRenderOptions | undefined;
@@ -253,7 +253,7 @@ interface HunkSnapshot {
 /**
  * CodeLens provider：**每个改动块末尾一组按钮**（块级粒度，跟着改动走）
  *
- * 形态依据（2026-09-27 真机反馈）：用户要的是「按块独立显示按钮」。文件级的两颗按钮
+ * 形态依据：用户要的是「按块独立显示按钮」。文件级的两颗按钮
  * 已迁到**编辑器标题栏**，故正文里只剩块级按钮——文件里摆文件级按钮会被读成「属于某一段」。
  *
  * 按钮带**块指纹**而非下标：渲染与点击之间内容可能已变（并行写同一文件、用户手改），
@@ -293,7 +293,7 @@ class FileChangeCodeLensProvider implements vscode.CodeLensProvider {
    * 挂在 hunk **首行**会被读成「属于上一段」（§11.8 已推翻的形态，勿回退）。
    * 纯删除块的 `endLine = startLine - 1` ⇒ 落点正好是删除位置，语义自洽，无需分支。
    *
-   * ⚠️ **序号不是装饰，是位置无解时的补偿**（2026-09-27 真机反馈，硬证据）：
+   * ⚠️ **序号不是装饰，是位置无解时的补偿**：
    * 文件**最后一行**没有「下一行」⇒ 末块的 `endLine + 1` 越界、只能 clamp 回块自己的末行，
    * 而 CodeLens 渲染在行的上方 ⇒ 末块按钮**必然落在该块上方**，这是 CodeLens 的固有约束
    * （VS Code 扩展 API 给不出「渲染在行下方」的 CodeLens）。用户原话「底部修改的按钮跑到上面
@@ -341,7 +341,7 @@ export class FileChangeView implements FileChangeSink {
    * 每条记录的逐行改动块缓存（渲染与 CodeLens **同源**消费，避免两处各算一遍）
    *
    * 值里带上「算这份 hunk 时用的写后内容」——并发写同一文件时缓存与 tracker 记录可能
-   * 不同代，只按 path 命中会拿旧 hunk 去渲染（真机「部分改动没高亮」的成因之一）。
+   * 不同代，只按 path 命中会拿旧 hunk 去渲染（「部分改动没高亮」的成因之一）。
    *
    * ⚠️ **改基线（`beforeContent`）也必须 `delete` 本缓存**：缓存的命中键是 `afterText`，
    * 只改基线不改正文 ⇒ 键不变、却拿到旧块（被接受的块仍高亮）。改正文则键自然失效，无需额外处理。
@@ -575,7 +575,7 @@ export class FileChangeView implements FileChangeSink {
   /**
    * 打开真实文件 + 内联呈现（**不自动弹 diff 窗口**；对比视图改为按需）
    *
-   * 并发安全（2026-09-26 真机修正）：一个 step 内模型可能**并行多次写同一文件**
+   * 并发安全：一个 step 内模型可能**并行多次写同一文件**
    * （实测：insert + append 在同一 step 发出，`noteToolResult` 连着触发两次本方法）。
    * `openTextDocument` 是异步的 ⇒ 若不加守卫，先发起的渲染可能**后完成**并覆盖最新装饰，
    * 用户看到的就是「只有部分改动有高亮」。两道守卫：
@@ -604,7 +604,7 @@ export class FileChangeView implements FileChangeSink {
       if (!this.isLatestRender(rec.path, seq)) return;
       this.renderInline(this.tracker.get(rec.path) ?? latest, doc, true);
     } catch (err) {
-      // 不再静默：打开/装饰失败必须留痕（真机「打开了但无高亮」曾因此无诊断线索）
+      // 不再静默：打开/装饰失败必须留痕（「打开了但无高亮」会因此无诊断线索）
       this.deps.log(
         `[fileChange] 打开/渲染失败 ${rec.relPath}：${err instanceof Error ? err.message : String(err)}`,
       );
@@ -708,7 +708,7 @@ export class FileChangeView implements FileChangeSink {
   /**
    * 编辑器可见集变化后补齐装饰（切文件 / 切回 / 分屏）
    *
-   * 起因（2026-09-26 真机）：切换查看其他文件再切回源文件，**高亮全部消失、只剩 CodeLens 按钮**。
+   * 触发场景：切换查看其他文件再切回源文件，**高亮全部消失、只剩 CodeLens 按钮**。
    * 根因 = 装饰项绑在编辑器实例上，VS Code 不会在编辑器重新可见时替你恢复；而 CodeLens 走
    * provider 模式（`provideCodeLenses` 由 VS Code 主动调用）不受影响 ⇒ 只有高亮丢了。
    * 同一个文件可能同时出现在多个编辑器里，故按路径去重后逐个补齐。
@@ -727,7 +727,7 @@ export class FileChangeView implements FileChangeSink {
   /**
    * 带悬停旧内容的单行装饰
    *
-   * **只有悬停、不挂行尾常驻预览**（2026-09-28 真机反馈）：行尾那行红色「⟵ 原: …」与 hover
+   * **只有悬停、不挂行尾常驻预览**：行尾那行红色「⟵ 原: …」与 hover
    * 说的是同一件事，却长期占着版面 = 视觉噪音；对照需求交给「查看对比」的左右分栏 diff。
    */
   private decorationFor(
@@ -826,7 +826,7 @@ export class FileChangeView implements FileChangeSink {
    *
    * 超限行为（与内核不同）：跳过对比、只提示可回退——阈值 = 内核 `MAX_DIFF_CONTENT_LENGTH`。
    * ⚠️ 两侧长度**都要判**：删除场景 `afterContent === null`，但旧内容本身可能是大文件，
-   * 同样要进虚拟文档渲染（旧版曾漏判此侧，删除大文件会绕过本闸）。
+   * 同样要进虚拟文档渲染（漏判此侧则删除大文件会绕过本闸）。
    *
    * **右栏为何是真实文件（可编辑）**：git 的 diff 右栏就是工作区文件、同样可编辑 ⇒ 与「git
    * 同款」的诉求一致，**不是疏漏，勿当缺陷重提**。已知残留（如实记，触发驱动，不预支复杂度）：
@@ -1202,7 +1202,7 @@ export class FileChangeView implements FileChangeSink {
    * ① 重算块；② 块已处理完 ⇒ 与文件级确认**同一收口**（注销记录）；
    * ③ 还剩块 ⇒ 重画——「拒绝」改了盘要重载文档再画，「接受」只改基线故只重画装饰。
    *
-   * ⚠️ **「拒绝」必须等文档重载落地后再刷按钮**（2026-09-27 真机纠因）：CodeLens 的落点要用
+   * ⚠️ **「拒绝」必须等文档重载落地后再刷按钮**：CodeLens 的落点要用
    * **文档行数**参与 clamp，而「拒绝」是宿主直写盘、文档缓存滞后 ⇒ 若立刻 `refresh()`，
    * VS Code 会拿着旧文档去问新块，按钮落到错的行上。故把刷新挂到 `revealChange` 之后。
    *
@@ -1301,7 +1301,7 @@ export class FileChangeView implements FileChangeSink {
     this.statusBar.text = `$(diff) Memora: ${count} 个未确认改动`;
     this.statusBar.tooltip = `点击处理：全部确认 / ${COMPARE_LABEL} / 回退本文件改动`;
     // 黄色警示底：把「有未确认改动」做成一眼可见的常驻入口。
-    // 真机反馈「没有确认/回退的按钮」的根因之一是入口不够显眼——通知会被用户划走，状态栏不会。
+    // 「没有确认/回退的按钮」的根因之一是入口不够显眼——通知会被用户划走，状态栏不会。
     this.statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
     this.statusBar.show();
   }

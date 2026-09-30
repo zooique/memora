@@ -707,7 +707,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 工具叙述句（**唯一形成点**）：「工具×N（读取文件 2 · 网络搜索 1）」
    *
    * **词表单一**：句内一律用工具显示名（`getToolDisplayName` = 中文名唯一真源），与工具行叙述
-   * （`toolActionLabel`）同词表。此前轮摘要另按类别粗分（「读取 2 · 搜索 1」）形成第二套词汇
+   * （`toolActionLabel`）同词表。轮摘要若另按类别粗分（「读取 2 · 搜索 1」）会形成第二套词汇
    * ——同一次调用在屏上被叫成两种名字，且两套映射表可按不同节奏更新。
    * **不参与成句的工具**：`toolActionType === 'other'`（未知 / 自定义 / 空间整理类）只计入 N、
    * 不占一段，避免用无法辨识的名撑长句子误导读者。

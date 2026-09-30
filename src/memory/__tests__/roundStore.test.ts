@@ -437,11 +437,11 @@ describe('问答闭环存储', () => {
 // 判据单源守卫：「轮是否已收场」只许走 isRoundSettled
 // ══════════════════════════════════════════════════════════════
 //
-// 背景：v3.0.0 把中断/失败轮从「伪 complete」改为 'interrupted' 后，各处**自写**的
+// 背景：中断/失败轮的状态是 'interrupted' 而非 complete，各处**自写**的
 // `status === 'complete'` 会静默改行为——中断轮的 assistantMessage 被排除出会话视图与
 // LLM 历史（`ISessionStore.loadMessages` 是 `restoreHistory` 的唯一上游），违背定案
 // `docs/architecture/step-atomic-persistence.md §一·五`「中断轮可作后续上下文」。
-// 修复方式不是逐处补 `|| 'interrupted'`（并列 = 腐化），而是收敛到单一判据；本守卫防其再散开。
+// 逐处补 `|| 'interrupted'`（并列 = 腐化）不可取，判据必须单源；本守卫防其再散开。
 
 /**
  * 剥离行尾注释，返回该行的**代码部分**（保守处理单/双/反引号字符串，识别引号外的首个 `//`）。

@@ -1135,7 +1135,7 @@ export class AgentLoop {
    *  无任务表（null）或 planItemId 未变则不产（lastBoundaryPlanItemId 去噪，避免每迭代发一条空边界）。
    *
    *  **检出时机 = 迭代开始、LLM 调用之前（硬，2026-09-26 定案）**：边界的语义是「**以下内容**
-   *  属于该任务项」，故必须产在它所罩住的思考与工具之前。曾放在本迭代工具落定之后，导致宿主
+   *  属于该任务项」，故必须产在它所罩住的思考与工具之前——放在工具落定之后，宿主
    *  「向前找最近边界」的判据对该迭代必然落空 → 每个任务项的首个迭代（思考 + 首批工具）恒掉出
    *  折叠块，且流式插入后不搬家（详见 docs/方案-任务项边界产出时机前移-20260926.md）。
    *
@@ -1947,7 +1947,7 @@ export class AgentLoop {
       // 覆盖面派生自 `diskWrite:'path'` 声明（与串行闸同一真源），目标提取复用同一提取器——
       // 必须用**归一后**路径才对得上缓存/台账的键（raw 写法如 './a.md' 会失效不中）。
       // opaque 写（脚本类）目标不可知、无法按 path 失效：但宿主已通过执行前后 workspace 目录快照 diff 收口
-      //（见 fileChangeTracker.noteExternalMutations），改动可视化盲区已闭环（台账 DIFF-4 可视化半已解除，2026-09-27）。
+      //（见 fileChangeTracker.noteExternalMutations），改动可视化盲区已闭环（台账 DIFF-4 可视化半已解除）。
       const invalidatedPath = WRITE_PATH_EXTRACTORS[tc.function.name]?.(tc.function.arguments);
       if (ok && invalidatedPath) {
         this.toolResultCache.invalidateFile(invalidatedPath);
@@ -2342,9 +2342,8 @@ export class AgentLoop {
 
     // 输出上限**取交集**（对齐上下文窗口 `min(provider 窗口, 角色包 contextLimit)` 的语义）：
     // per-LLM 配置与角色包策略都是「上限」性质，任何一侧声明「不能超过 X」都必须被满足 ⇒ 取更小值。
-    // 旧实现是角色包**直接覆盖**（Object.assign 压过），与「上限」语义相反——它会让角色包把用户
-    // 配的小值顶大（包 128K 顶掉面板 64K），且用户无从得知谁赢了（真机教训：面板配 64K、包 4096
-    // → 实际 4096，取证面一度记成 64000，见 tasks/审查-空响应根因排雷与优化方案-20260929.md §七）。
+    // 直接覆盖（Object.assign 压过）与「上限」语义相反——它会让角色包把用户配的小值顶大
+    //（包 128K 顶掉面板 64K），用户无从得知谁赢了（根因排雷见 tasks/审查-空响应根因排雷与优化方案-20260929.md §七）。
     const perLlmLimit = this.opts.defaultMaxTokens;
     const strategyLimit = baseOptions.maxTokens;
     if (perLlmLimit !== undefined && strategyLimit !== undefined) {

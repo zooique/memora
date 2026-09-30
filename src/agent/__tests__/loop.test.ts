@@ -116,8 +116,8 @@ describe('AgentLoop · per-LLM 输出预算（defaultMaxTokens，T1 / EMPTY-RESP
   });
 
   it('输出上限取交集（min）：per-LLM 与角色包策略谁小听谁的——两侧都能收紧', async () => {
-    // 为何不是单向覆盖：旧实现 `Object.assign` 压过 ⇒ 角色包 4096 会把用户配的 1024 **顶大**，
-    // 与「上限」语义相反（真机教训：面板 64K 被包 4096 顶小，且取证面一度记成 64000 看不出来）。
+    // 直接覆盖（Object.assign 压过）与「上限」语义相反 ⇒ 角色包 4096 会把用户配的 1024 **顶大**
+    //（面板 64K 被包 4096 顶小且看不出来）。
     // 变异方向：把 min 收敛退回 Object.assign 覆盖 → 本例第一段（1024 vs 4096）恰红。
     async function effective(perLlm: number, strategy: number): Promise<number | undefined> {
       const { provider, chats } = capturingProvider([{ content: '回复' }]);
@@ -135,7 +135,7 @@ describe('AgentLoop · per-LLM 输出预算（defaultMaxTokens，T1 / EMPTY-RESP
       return chats[0]?.maxTokens;
     }
 
-    // 用户配得更小 ⇒ 用户的收紧生效（旧实现在这里会给 4096，把小值顶大）
+    // 用户配得更小 ⇒ 用户的收紧生效
     expect(await effective(1024, 4096)).toBe(1024);
     // 角色包配得更小 ⇒ 角色包的收紧生效
     expect(await effective(4096, 1024)).toBe(1024);
@@ -161,7 +161,7 @@ describe('AgentLoop · per-LLM 输出预算（defaultMaxTokens，T1 / EMPTY-RESP
       return chats[0]?.maxTokens;
     }
 
-    // 角色包未声明 outputLimit（默认已改为 0 = 不干预哨兵）⇒ 用户面板说了算
+    // 角色包未声明 outputLimit（默认 0 = 不干预哨兵）⇒ 用户面板说了算
     expect(await effective(64000, undefined)).toBe(64000);
     // 用户未配 ⇒ 角色包说了算
     expect(await effective(undefined, 4096)).toBe(4096);

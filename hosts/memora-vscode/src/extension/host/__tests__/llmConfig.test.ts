@@ -1,7 +1,7 @@
 /**
  * llmConfig — Provider 构建的宿主契约
  *
- * 覆盖缺口：`createProvider` 的 **store 分支**（配置面板激活的 Provider）此前零覆盖——
+ * 覆盖缺口：`createProvider` 的 **store 分支**（配置面板激活的 Provider）零既有覆盖——
  * 既有 hostIntegration 只测环境变量回退分支（store 恒传 undefined）。
  * 该分支是能力位（supportsToolCalling / supportsStructuredOutput）进入内核的**唯一通路**，
  * 而能力位错一位的后果是工具调用整链失效（无原生 FC 的模型静默失败即此面），故以测试锁死

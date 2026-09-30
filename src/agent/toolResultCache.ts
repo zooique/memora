@@ -80,7 +80,7 @@ export interface CacheEntryMeta {
  * 路径去重规范化（纯字符串，不触磁盘）：统一分隔符 → 消除 `./`、`a//b`、`a/../b` → 去尾部 `/`。
  *
  * 只做「同一写法的等价归并」，**不解析绝对路径**（loop 不认文件系统，项目根属宿主）。
- * 因此 `a.md` 与 `/abs/a.md` 仍是不同主体 —— 这不是「残余漏洞」而是**保守语义**：
+ * 因此 `a.md` 与 `/abs/a.md` 仍是不同主体 —— 这是**保守语义**：
  * 无法确定二者是同一文件时就不该判为重复，判错方向的代价是死锁（见 loop 的拦截前提）。
  */
 export function normalizePathKey(raw: string): string {

@@ -462,7 +462,7 @@ export const RUN_TEAM_MEETING_TOOL: ToolDefinition = {
  * write_file 写入模式唯一定义（枚举 + 简介 · 单一真理源）
  *
  * mode 参数描述（下方 schema）与 handler 合法性校验（builtinToolHandlers.writeFile）都从此派生——
- * 此前两处各自硬编码模式清单，新增模式漏改一处即出现「描述允许而校验拒绝」的静默漂移。
+ * 模式清单若两处各自硬编码，新增模式漏改一处即出现「描述允许而校验拒绝」的静默漂移。
  * 新增模式只改本表：描述文案与校验清单自动对齐，工具描述里的模式数量也由 length 派生。
  */
 export const WRITE_FILE_MODES = [

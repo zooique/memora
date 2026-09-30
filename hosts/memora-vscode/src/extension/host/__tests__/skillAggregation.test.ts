@@ -178,7 +178,7 @@ describe('skillPromptFor · 两级回退（与内核 read_skill 同序：角色�
       global: [{ name: '同名', filePath: join(configDir, 'skills', 'dup.md') }],
       roleContent: { 同名: '角色包覆盖正文' },
     });
-    // 正本防回归：此前全局优先与内核相反，同名时 composer 注入全局版、read_skill 取角色包版 → 内容分叉
+    // 正本防回归：全局优先级须与内核一致，否则同名时 composer 注入全局版、read_skill 取角色包版 → 内容分叉
     expect(await skillPromptFor(agent, '同名')).toBe('【当前技能】同名\n角色包覆盖正文');
   });
 
@@ -248,7 +248,7 @@ describe('三面同源：列表保留 / 预览正文 / composer 注入 必须指
 // ═══════════════════════════════════════════════════════════
 // isSkillDisabled · 用户通道「响亮失败」的判据
 // ═══════════════════════════════════════════════════════════
-// 用途：composer 按名指定技能时，注入落空需给用户可见反馈（此前静默）。判据必须与
+// 用途：composer 按名指定技能时，注入落空需给用户可见反馈、不允许静默。判据必须与
 // `resolveSkill` **同序**，否则「角色包有同名技能」的场景会**假报错**（实际注入成功却报已禁用）。
 describe('isSkillDisabled · 与 resolveSkill 判据同源', () => {
   it('全局池命中禁用集 → true；未命中 → false', () => {

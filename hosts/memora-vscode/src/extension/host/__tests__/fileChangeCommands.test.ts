@@ -1,9 +1,9 @@
 /**
  * 文件改动命令 id 守卫（真源对拍：代码常量 ↔ `package.json#contributes.commands`）
  *
- * 起因（2026-09-26 实证）：`memora.revertAllFileChanges` 曾在代码里 `registerCommand`、
- * 却在 `contributes.commands` 漏声明——webview 与状态栏都能用，唯独命令面板看不到，
- * 而**当时没有任何测试报警**（该漂移靠真机复现才发现，修法是补一行 JSON）。
+ * 守卫对象：`registerCommand` 与 `contributes.commands` 的漂移——代码里 `registerCommand`、
+ * 却在 `contributes.commands` 漏声明时，webview 与状态栏都能用，唯独命令面板看不到，
+ * 且无任何报错（漂移静默发生）。
  *
  * 命令 id 物理上必然存在两处（TS 常量 + package.json 的 JSON，后者无法 import），
  * 所以无法靠「单一真源」消灭，只能靠**守卫**钉死二者一致。本用例即那道守卫。
@@ -13,8 +13,8 @@
  *   - 块级命令（需「路径 + 块指纹」两个参数）**必须不**贡献——暴露到命令面板会得到
  *     无参调用而静默失败（见 `fileChangeView` 中两个 HUNK 常量的注释）。
  *
- * ⚠️ 分类随形态走（2026-09-27）：文件级两颗按钮从「正文 CodeLens」迁到**标题栏**后，
- * 它们就从「内部命令」翻转为「对外命令」——菜单依赖声明才渲染。分类不是写死的标签，
+ * ⚠️ 分类随形态走：文件级按钮放**标题栏**即属「对外命令」——菜单依赖声明才渲染；
+ * 放正文 CodeLens 则属「内部命令」。分类不是写死的标签，
  * 是「有没有需要参数的外部入口」的推导结果。
  *
  * 无需模拟 VS Code 运行时：`fileChangeView` 模块顶层已无 `vscode.<成员>` 取值
