@@ -493,7 +493,7 @@ describe('isRoundSettled 判据单源守卫', () => {
       "r.status === 'complete' && r.assistantMessage?.content",
     ],
     'hosts/memora-vscode/src/webview/scripts/chatView.ts': [
-      "r.status === 'complete' && r.assistantMessage?.content",
+      "(r.status === 'complete' || r.live) && r.assistantMessage?.content",
     ],
   };
 

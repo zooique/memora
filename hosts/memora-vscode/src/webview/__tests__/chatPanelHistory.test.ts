@@ -1925,7 +1925,13 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
 
   it('流中重放：replay:true rounds 并入 live 轮（半截正文 + 缓冲事件原位替换）', () => {
     const { provider, posted } = setupWithHistory();
-    attachBuffer(provider, '2026-08-15-s1', 'round-9', [ev(1, 'meta'), ev(2, 'thinking')], '半截正文');
+    attachBuffer(
+      provider,
+      '2026-08-15-s1',
+      'round-9',
+      [ev(1, 'meta'), ev(2, 'thinking')],
+      '半截正文',
+    );
     (provider as unknown as { replayHistory(): void }).replayHistory();
     const last = lastTurnUpdate(posted);
     expect(last.replay).toBe(true);

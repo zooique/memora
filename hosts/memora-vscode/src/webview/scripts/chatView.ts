@@ -4193,9 +4193,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (r.live) {
         streamingActive = true;
         streamingRaw = r.assistantMessage.content;
-        activeAssistantEl
-          ?.querySelector(':scope .msg-body')
-          ?.classList.add('is-streaming');
+        activeAssistantEl?.querySelector(':scope .msg-body')?.classList.add('is-streaming');
       }
       renderRoundBlock(currentEvents, true, runtimeInteractiveInputs);
       if (r.id && roundBlockEl?.isConnected) {
