@@ -2426,8 +2426,8 @@ export class AgentLoop {
   /**
    * 读取本轮请求体**实际**携带的 max_tokens（生效值，供宿主取证 / 展示）。
    *
-   * 为何不交给宿主自行推算：生效值由「角色包策略 act.outputLimit > per-LLM 默认 > 服务端默认」
-   * 这条优先级决定，而该规则只在 `buildChatOptions()` 一处裁决——宿主侧重算等于复制规则、
+   * 为何不交给宿主自行推算：生效值由 `buildChatOptions()` 单点裁决——per-LLM 配置与角色包
+   * act.outputLimit 取更小值、单侧缺位取另一侧；宿主侧重算等于复制规则、
    * 制造第二真理源（真机教训：meta 记了用户配的 64000，实际发出的是角色包的 4096，
    * 取证包把「配置意图」当成了「已生效事实」，由此得出过错误结论）。
    *
@@ -2436,8 +2436,6 @@ export class AgentLoop {
   getEffectiveMaxTokens(): number | undefined {
     return this.buildChatOptions().maxTokens;
   }
-
-  /** 刷新 bootstrap 记忆段（设定面板对 rule/skill 增删改后用最新记忆重建 bootstrap 段）。
 
   /** 刷新 bootstrap 记忆段（设定面板对 rule/skill 增删改后用最新记忆重建 bootstrap 段）。
    *  与 refreshRolePackPrefix 区别：后者替换 prefix（角色包 prompt），本方法替换 bootstrapMemories */

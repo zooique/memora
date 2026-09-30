@@ -423,8 +423,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       listMeta: () => [],
     };
     provider.setAgent(agent);
-    // 生效值 ≠ 配置值：内核 buildChatOptions 裁决后（角色包 act.outputLimit 可压过 per-LLM 配置）
-    // 的真值。取证面必须记这个——只记配置面会把「我配了 64K」误读成「真的发了 64K」
+    // 生效值 ≠ 配置值：内核 buildChatOptions 在 per-LLM 配置与角色包 act.outputLimit 间
+    // 取更小值后的真值。取证面必须记这个——只记配置面会把「我配了 64K」误读成「真的发了 64K」
     (agent as unknown as { getEffectiveMaxTokens: () => number }).getEffectiveMaxTokens = () =>
       4096;
 

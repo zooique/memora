@@ -168,7 +168,7 @@ export interface ProcessMetaPayload {
   /** 上下文窗口（token，`resolveContextWindow` 生效值）；旧数据缺省 */
   contextWindow?: number;
   /** 输出上限（token，本轮**实际生效**的请求体 max_tokens）—— 由内核 buildChatOptions 裁决
-   *  （角色包 act.outputLimit > per-LLM 配置 > 服务端默认）；undefined = 未传，回服务端默认。
+   *  （per-LLM 配置与角色包 act.outputLimit 取更小值、单侧缺位取另一侧）；undefined = 未传，回服务端默认。
    *  ⚠️ 旧数据语义为用户配置值（配置面快照），与生效值可能不等——以本字段口径重读历史数据时注意 */
   maxTokens?: number;
   /** 随请求发送的 reasoning_effort（'low'）；未发送缺省——派生自策略键 `multiStepReasoning='manual'`

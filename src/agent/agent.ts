@@ -189,7 +189,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       registryDir: opts.registryDir,
       maxContextTokens: opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS,
       // per-LLM 输出预算默认值（token）：宿主 per-LLM 配置透传；undefined = 不传 max_tokens
-      //（回服务端默认）。角色包策略 act.outputLimit 经 setChatOptions 覆盖（优先级更高）。
+      //（回服务端默认）。与角色包策略 act.outputLimit 的最终关系由 buildChatOptions 取更小值。
       maxTokens: opts.maxTokens,
       permission: opts.permission ?? 'owner',
       allowedPaths: opts.allowedPaths ?? [],

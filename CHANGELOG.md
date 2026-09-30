@@ -25,7 +25,7 @@
 > **背景**：2026-09-29 的 T1/T2「真机验收」经 19 轮 round 数据复核后被推翻——详见 `tasks/审查-空响应根因排雷与优化方案-20260929.md` §七；新告警登记为观察项 `MAXTOKEN-SSOT-1`（待完成任务 .md）。**下方 2026-09-29 T1 / T2 条目的「真机取证」结论请以本条为准。**
 
 - **① 内核 · 截断救回计数假阳（`truncationRecoveryCount`）**：原判据 `truncatedRetry && !isEmptyResponse` 中，`isEmptyResponse` 内含 `!aborted` ⇒ 用户在流中途点停止、流提早退出时也判为「非空」，于是**「用户放弃」被记成「换策略救回成功」**（真机 round-1790686368607 全程零产出事件却 recov=1）。修复 = 计数判据补 `!aborted`（单点，兑现原注释已声明而未实现的纪律）。变异验证：去掉 `!aborted` → 新增用例恰红，其余不受影响
-- **② 内核 + 宿主 · 取证面改记「生效值」**：输出上限存在两个来源（per-LLM 面板 vs 角色包 `act.outputLimit`，优先级 **角色包 > per-LLM**，由 `loop.buildChatOptions` 单点裁决）⇒ meta 记用户配置值会把「配了 64K」误读成「发了 64K」。新增读取口 `AgentLoop.getEffectiveMaxTokens()` + `Agent` 薄委托，宿主 `buildRoundMeta` 以它为首选、配置面仅作回落——**宿主不再重算优先级**（宿主重算即第二真理源，正是本次误判根因）
+- **② 内核 + 宿主 · 取证面改记「生效值」**：输出上限存在两个来源（per-LLM 面板与角色包 `act.outputLimit`，由 `loop.buildChatOptions` 单点裁决——两者取更小值，见上方 Changed①）⇒ meta 记用户配置值会把「配了 64K」误读成「发了 64K」。新增读取口 `AgentLoop.getEffectiveMaxTokens()` + `Agent` 薄委托，宿主 `buildRoundMeta` 以它为首选、配置面仅作回落——**宿主不再重算裁决规则**（宿主重算即第二真理源，正是本次误判根因）
 - **③ 口径同步（去假 SSOT 声明）**：`protocol.ts` / `assemble.ts` 中的「唯一真理源 = per-LLM maxTokens」为假声明 → 改「底座值，非最终生效值」；`ProcessMetaPayload.maxTokens` 语义同步为生效值（旧数据语义差异已在注释标明）
 - **④ 宿主 min agent 替身补齐**：`consumeFlow` 每轮经 `buildRoundMeta`，替身缺新方法会让整条落盘链路**静默空转**（8 条连带失败，已用对照实验确认非环境噪音），已在替身工厂单点补齐；`buildRoundMeta` 用例同步升级为守卫「生效值 ≠ 配置值」
 - **验证**：内核 `tsc --noEmit`（含 scripts）0 错误 + 改动文件 `eslint --max-warnings 0` 干净；内核全量 **2820 passed / 12 failed（AssertionError = 0，全为 timeout ⇒ 环境性假红）**；宿主 `tsc -p ./` 干净 + 相关单测 **53/53**

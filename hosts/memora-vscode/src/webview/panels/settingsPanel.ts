@@ -1518,7 +1518,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           <div class="field">
             <label for="f-maxtokens">输出上限（K）</label>
             <input id="f-maxtokens" name="maxTokens" type="text" inputmode="decimal" placeholder="如 64（留空用服务端默认）" autocomplete="off" />
-            <div class="key-hint">模型单次回复的最大输出 token 数（含思考占用），如 64 = 64,000 tokens（K = ×1000，与上下文上限同口径）；留空 = 不传 max_tokens、由服务端默认——⚠️ 推理模型思考与正文共享输出预算，留空极易触发空响应，建议必填（mimo v2.6 建议 32–64K）；填后仍截断可再调大（超模型上限由服务端报错，不会静默生效）。</div>
+            <div class="key-hint">模型单次回复的最大输出 token 数（含思考占用），如 64 = 64,000 tokens（K = ×1000，与上下文上限同口径）；留空 = 不传 max_tokens、由服务端默认。<span class="hint-warn-icon" data-icon="warning" role="img" aria-label="注意"></span>推理模型思考与正文共享输出预算，留空极易触发空响应，建议必填（mimo v2.6 建议 32–64K）；填后仍截断可再调大（超模型上限由服务端报错，不会静默生效）。</div>
             <div id="f-maxtokens-feedback" class="key-hint" hidden></div>
           </div>
           <div id="testResult" class="test-result" hidden></div>

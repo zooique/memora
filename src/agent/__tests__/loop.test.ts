@@ -203,9 +203,9 @@ describe('AgentLoop · per-LLM 输出预算（defaultMaxTokens，T1 / EMPTY-RESP
     expect(chats[2]?.maxTokens).toBeUndefined();
   });
 
-  it('getEffectiveMaxTokens = 优先级裁决后的生效值（角色包 > per-LLM；宿主取证面据此读真值）', async () => {
+  it('getEffectiveMaxTokens = buildChatOptions 裁决后的生效值（取更小值；宿主取证面据此读真值）', async () => {
     // 为何需要这个出口：真实场景里用户配了 64K，角色包 outputLimit=4096 与之取小后生效的是 4096；
-    // 会压过它；宿主若只读配置面就得不到「实际发出去的值」，取证包会失真。
+    // 两侧反过来（用户配得更小）时生效值也随之取用户侧——宿主若只读配置面就得不到「实际发出去的值」，取证包会失真。
     // 变异方向：getter 改为直读 opts.defaultMaxTokens → 本例第一条断言恰红（规则被绕过）。
     const { provider } = capturingProvider([{ content: '回复' }]);
     const loop = new AgentLoop({

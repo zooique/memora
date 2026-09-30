@@ -43,7 +43,8 @@ export type IconName =
   | 'play' // 继续/播放（三角）
   | 'team' // 小组会议（双人轮廓，柔和线条）
   | 'ellipsis' // 更多操作（三点）
-  | 'target'; // 当前执行位置（同心圆靶心；plan-tag「正在执行任务项 N」锚点）
+  | 'target' // 当前执行位置（同心圆靶心；plan-tag「正在执行任务项 N」锚点）
+  | 'warning'; // 警告（三角感叹号；内联提示/校验警示）
 
 /** SVG 路径集合（viewBox 0 0 16 16）— Trae 柔和线条风格 */
 const ICON_PATHS: Record<IconName, string> = {
@@ -100,6 +101,10 @@ const ICON_PATHS: Record<IconName, string> = {
     '<circle cx="4" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="8" r="1.2" fill="currentColor" stroke="none"/>',
   // 当前执行位置：同心圆靶心（plan-tag 锚点）
   target: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.5"/>',
+  // 警告：三角轮廓 + 感叹号（竖线走描边、点用填充圆——与 ellipsis 同法，
+  // 16px 网格下描边小点会糊成环）
+  warning:
+    '<path d="M2.2 12.8L8 3.2l5.8 9.6z"/><path d="M8 6.8v2.6"/><circle cx="8" cy="11.4" r="0.9" fill="currentColor" stroke="none"/>',
 };
 
 /** SVG 通用属性（Trae 柔和风格） */
