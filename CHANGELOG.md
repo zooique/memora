@@ -10,6 +10,11 @@
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不占内核版本号（理由见文首说明）。内核 3.0.0 的发版内容在其下方。
 
+### Changed（示例包 · 共鸣小说家行为参数对齐白话方案设计师）
+
+- `stepBudget` 40→100、`toolStepLimit` 20→100、`multiStepReasoning` manual→auto（`toolMode` 两包同 allow，未动；`temperature`/`outputLimit` 为创作特有设定保留）。**行为影响须知**：manual→auto 后请求不再强制 `reasoning_effort:'low'`——思考深度听服务端默认（变深、token 消耗上升），截断概率可能随之上升；截断救回（T2）不受影响，救回重试仍显式降 low（`llmCaller` 单点）。manual 原动机是 4096 紧预算下省思考防截断，outputLimit 放开（0-哨兵）后已弱化
+- **验证**：内核 role-pack 域 244 passed + 内置包真实装载 8 passed（validator 域内）
+
 ### Changed（宿主 · chatView token 显示诚实口径：估算/正文标注 + 生效上限亮明 · `MAXTOKEN-SSOT-1` 销项）
 
 **问题**：chatView 两处 token 显示（轮详情执行指标 / 活动指标聚合面板）直接展示 roundStore 估算值——「Tokens：入 X / 出 Y」中的「出」只累计**正文**（不含 thinking、不含工具轮叙述），推理模型下「出 89」与十几条思考严重不符，必被误读为总输出；而真实生效的输出上限（面板配置与角色包取小后的裁决值）用户看不见，被角色包收紧时无任何提示。

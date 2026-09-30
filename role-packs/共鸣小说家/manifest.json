@@ -23,9 +23,9 @@
       "toolMode": "allow",
       "temperature": 0.9,
       "outputLimit": 0,
-      "toolStepLimit": 20,
+      "toolStepLimit": 100,
       "providerRouting": "auto",
-      "multiStepReasoning": "manual",
+      "multiStepReasoning": "auto",
       "toolReadonly": "full"
     },
     "reflect": {
@@ -38,7 +38,7 @@
       "askLimit": 10,
       "errorHandling": "degrade",
       "contextLimit": 0,
-      "stepBudget": 40
+      "stepBudget": 100
     }
   }
 }

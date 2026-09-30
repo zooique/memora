@@ -154,7 +154,11 @@ export function resolveSummary(strategy: BehaviorStrategy | undefined): Summary 
   return normalizeEnum(strategy?.reflect?.summary, SUMMARY_MODES, 'on');
 }
 
-/** 解析工具调用步数上限（内核已消费）：整数且 ∈ [0, MAX_TOOL_STEP_LIMIT] 才采用，非法/越界回退默认 0（不限制） */
+/**
+ * 解析工具调用步数上限（内核已消费）：整数且 ∈ [0, MAX_TOOL_STEP_LIMIT] 才采用，非法/越界回退 0（不限制）。
+ * 「未声明」不走本回退——mergeStrategy 已注入默认 act.toolStepLimit=20（DEFAULT_BEHAVIOR_STRATEGY），
+ * 激活包未声明时生效 20 而非 0；本回退仅承接显式非法值与 resolveL2Strategy(undefined) 构造期初值。
+ */
 export function resolveToolStepLimit(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.act?.toolStepLimit;
   // 合法值：0=无限制，1~MAX_TOOL_STEP_LIMIT=限制步数
