@@ -46,3 +46,7 @@ description: "内核（src/）改动后的 npm 发布就绪度验证流程：三
 ## 验收门槛
 
 全绿 + 契约同代 + 测试零失败 + 变异验证通过 + 包清单核对无误 = 就绪。剩「发布动作」本身（publish / package / tag）由用户确认后执行。
+
+## 发布动作链（publish 后必打 tag）
+
+`npm publish` 成功后：`git tag memora@<版本> && git push origin memora@<版本>`（如 `memora@3.0.0`）。tag 格式 = `<包名>@<semver>`，**禁裸 `v` 前缀**（与扩展 tag 撞车，存量裸 v tag 冻结不改）——定案见 [ADR-033](../../decisions/ADR-033-dual-version-line-and-tag-scheme.md)。
