@@ -383,7 +383,11 @@ export class LlmCaller {
         // = 双轨救回成功——救回轮正文是真实产出（不影响成功收尾），但「曾发生截断」只在此留痕
         // （empty_response 证据只在最终仍空时落）。每 call 恒 ≤1（粘性标记单调，成功即收场）。
         // 早退路径（degrade 降级文案 / 抛错 / aborted）不经此点，不计入——降级文本非模型产出。
-        if (truncatedRetry && !isEmptyResponse) {
+        // aborted 显式排除（真机修正）：`isEmptyResponse` 判据以 `!aborted` 为前提，用户中止时
+        // 它恒为 false ⇒ 「truncatedRetry && !isEmptyResponse」会把**用户放弃**误记为救回成功
+        //（真机 round-1790686368607：全程无正文/无工具产出却 recov=1）。救回 = 模型的真实产出，
+        // 中止 = 未有产出，两者分类互斥，故此处补 `!aborted` 兑现注释声明的纪律。
+        if (truncatedRetry && !aborted && !isEmptyResponse) {
           metrics.truncationRecoveryCount++;
         }
         break;

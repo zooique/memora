@@ -456,6 +456,46 @@ describe('LlmCaller.callWithRetry · 截断型换策略重试', () => {
     while (!cursorC.done) cursorC = await genC.next();
     expect(metricsC.truncationRecoveryCount).toBe(0);
   });
+
+  it('截断重试期间用户中止 → 不计救回（中止不是模型产出）', async () => {
+    // 背景（真机 round-1790686368607 排雷）：`isEmptyResponse` 判据内含 `!aborted`，中止时恒为
+    // false ⇒ 若不在计数判据显式排除 aborted，「用户放弃」会被记成「换策略救回成功」（计数假阳）。
+    // 变异方向：把 `truncatedRetry && !aborted && !isEmptyResponse` 退回缺 `!aborted` 的形态 → 本例恰红。
+    let chatCalls = 0;
+    const ac = new AbortController();
+    const abortProvider: LlmProvider = {
+      name: 'trunc-then-user-abort',
+      async *chat(messages: Message[], opts: ChatOptions) {
+        chatCalls++;
+        const hintCount = messages.filter((m) => String(m.content).includes(HINT_FRAGMENT)).length;
+        // 首试：截断空 → 触发换策略（粘性置位）
+        if (!(opts.reasoning_effort === 'low' && hintCount === 1)) {
+          yield { thought: 'x'.repeat(8), finishReason: 'length' };
+          return;
+        }
+        // 换策略尝试：吐一段思考后用户点停止 ⇒ 本次尝试未有产出
+        yield { thought: 'y'.repeat(8) };
+        ac.abort();
+        yield { thought: 'z'.repeat(8) };
+      },
+    } as unknown as LlmProvider;
+    const metricsD = new LoopMetrics();
+    const genD = new LlmCaller(makeDeps(abortProvider, metricsD)).callWithRetry(
+      [userMsg('hi')],
+      {} as ChatOptions,
+      ac.signal,
+      1,
+    );
+    let cursorD = await genD.next();
+    while (!cursorD.done) cursorD = await genD.next();
+    const result = cursorD.value as LlmCallResult;
+
+    expect(chatCalls).toBe(2);
+    expect(result.aborted).toBe(true);
+    expect(result.fullContent).toBe('');
+    // 核心：中止 ≠ 救回（真机此形态曾产出 recov=1 的假阳）
+    expect(metricsD.truncationRecoveryCount).toBe(0);
+  });
 });
 
 // ─── 发送边界守卫（TOOLPAIR-2 Step 2）───
