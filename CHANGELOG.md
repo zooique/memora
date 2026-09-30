@@ -238,7 +238,16 @@
 - **自纠（本轮差点造的假注释）**：初稿把上述风险写成「已明确告知」——**不实**：模态文案只在 dirty 分支出现。已改为如实描述并同步登记台账。
 - **验证（实测）**：宿主 `tsc --noEmit -p ./` = 0；`eslint --config eslint.config.mjs` = 0；fileChange 三套件 **88 passed**。
 
-## [3.0.0] - 2026-09-30
+## [3.0.1] · 2026-09-30
+
+### Changed（开源归口翻转：GitHub 升主仓库）
+
+- **README / README.en**：反馈、宿主项目链接、ADR 位置共 6 处归口从 Gitee 翻转为 GitHub 主仓库（Gitee 降为同步镜像，保留国内访问提及）
+- **package.json**：`repository` / `homepage` / `bugs` 指向 `github.com/zooique/memora`（npm 页面导流、dependents 与搜索入口随 GitHub 生态）
+
+> 纯元数据与文档归口变更，`dist` 产物与 3.0.0 无差异。
+
+## [3.0.0] · 2026-09-30
 
 ### Added（内核+宿主 · 截断救回计数 truncationRecoveryCount：换策略重试效力的观测面 + 文案口径订正）
 

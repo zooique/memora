@@ -1,4 +1,4 @@
-# Memora
+﻿# Memora
 
 > **Agent Memory Kernel with Governance** — Local-first, Private, Zero-dep. Not a framework, a kernel.
 
@@ -279,7 +279,7 @@ npm run build        # Compile to dist/
 
 ## Host Project
 
-[memora-vscode](https://gitee.com/zooique/memora/tree/main/hosts/memora-vscode) — The VS Code extension host (primary host), demonstrating a complete Memora integration: JSON file persistence (`.memora/memories.json`), keyword-only search, role pack management, and memory views.
+[memora-vscode](https://github.com/zooique/memora/tree/main/hosts/memora-vscode) — The VS Code extension host (primary host), demonstrating a complete Memora integration: JSON file persistence (`.memora/memories.json`), keyword-only search, role pack management, and memory views.
 
 ## Why Memora?
 
@@ -294,11 +294,11 @@ npm run build        # Compile to dist/
 
 ## Feedback
 
-Found a bug or have a suggestion? Please open an issue at [Gitee Issues](https://gitee.com/zooique/memora/issues) (primary repository) or [GitHub Issues](https://github.com/zooique/memora/issues) (mirror).
+Found a bug or have a suggestion? Please open an issue at [GitHub Issues](https://github.com/zooique/memora/issues) (primary repository); Gitee Issues (https://gitee.com/zooique/memora/issues) is a synced mirror for users in mainland China, checked less frequently.
 
 ## Contributing
 
-This project follows the "Big Tree Model" engineering philosophy. Architecture Decision Records (ADRs) are in the repository [.trae/decisions/](https://gitee.com/zooique/memora/tree/main/.trae/decisions).
+This project follows the "Big Tree Model" engineering philosophy. Architecture Decision Records (ADRs) are in the repository [.trae/decisions/](https://github.com/zooique/memora/tree/main/.trae/decisions).
 
 ## License
 
