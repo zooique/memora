@@ -4263,7 +4263,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         //     不重置 round-block 锚点），后续 text chunk 走 pausedAssistantEl 分支续写同一
         //     assistant 块。宿主每个 runFlow 都会重发 meta，若不处理，骨架 B 会劫持 chunk
         //     走 flowShellEl 分支，导致「暂停后继续 = 视觉两个独立 LLM 回答」。
-        //   resumePending：插话/提问续跑（无 paused 锚点）→ 保留锚点但建续接骨架（新段）。
+        //   resumePending：交互续跑 meta 兜底（无 paused 锚点）→ 建流式骨架（qa 第 2 段块
+        //     既定形态；supplement 主路径不过此——interject 无新 meta，chunk 层单块续写）。
         //   真新轮：清空当前轮缓冲与 round-block 引用，随即建流式骨架（TTFT 前即时反馈）。
         clearPendingWait(); // 骨架接管：移除等待指示器
         clearToolElapsed(); // 切轮清工具等待计时（瞬态，防跨轮残留）
@@ -4274,7 +4275,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 把同 turn 在 DOM 上分裂成 [块A][问/答][块B]，折叠块被夹在报告中间（污染两段式），故不设门控。
         const pausedResume = pausedAssistantEl !== null && pausedAssistantEl.isConnected;
         // 有暂停锚 → 原位续写同回合（不建新段，QA/补充行作为 turn 内过程，finalize 随折叠块折入）；
-        // 无锚但有续跑期待（生成中 interject 打断补充）→ 续接骨架（打断分段，非 turn 内补问）
+        // 无锚但有续跑期待 → 兜底建骨架（qa 第 2 段块形态）；supplement 正文由 chunk 层单块续写
         if (pausedResume) {
           // 暂停原位续写：锚点（pausedAssistantEl）与 currentEvents/round-block 全保留，
           // 不建骨架——由 chunk 分支的 pausedAssistantEl 原位续写路径消费。
@@ -4286,13 +4287,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           resumePending = false;
         } else if (resumePending) {
           resumePending = false;
-          // 交互续跑（提问/补充答后 resume）：建**续接骨架**（无任何续接视觉标识——
-          // 「↻ 续接」chip 已整体退役；补充/问答由独立交互条目行分隔，见 append 注释），挂载到交互链末位
-          // 之后——保持 [块A] → [问/你答行] → [块B] 的顺序（运行时同构；连环
+          // 交互续跑 meta 兜底路径：保持建续接骨架（qa 回答后第 2 段块为既定形态，D3 固化；
+          // qa 无锚窗口/异常窗口同样落此）。supplement 主路径不经此——interject 不产生新
+          // runFlow meta，chunk 直达 chunk 分支的活动块原位续写判定（方案 A 单块统一）。
+          // 挂载到交互链末位之后——保持 [问/你答行] → [骨架] 顺序；连环
           // ask：统一 resolveInteractionAnchor，取代全范围「最后 .msg-qa」扫描——
-          // 后者在 QA 已折入 rb / 前轮残留时会跨轮误取）
+          // 后者在 QA 已折入 rb / 前轮残留时会跨轮误取
           prepareFlowShell({ mountAfter: resolveInteractionAnchor() ?? undefined });
         } else {
+          resumePending = false; // 真新轮：清续跑期待——残留 true 会被本分支误消费成续跑（清理纪律与 done/interrupted 对称）
           currentEvents = [];
           runtimeInteractiveInputs = []; // 新轮：运行时输入累积重置（形态甲）
           skeletonPendingItems = []; // 新轮：骨架期暂存重置——残留条目已 DOM 落地，清引用即可
@@ -4347,25 +4350,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           streamRenderTimer = undefined;
         }
         streamingActive = false;
-        streamingRaw = '';
+        // 🔴 streamingRaw 保留（不随打断清空）：方案 A 单块续写依赖它拼接打断前正文
+        // （chunk 复用活动块时增量追加，renderStreamBody 全量重建）。新建块路径不受污染
+        // （beginStreaming 自行重置 streamingRaw）；done 时残留值 = 本轮正文，语义自洽。
         streamBodyRendered = false;
         // 注意：不置 activeAssistantEl = null —— 打断点引用保留给打断分条定位（见下）
       }
-      // 交互输入/问答：清残留骨架 + 等待指示器（后续段形态由 chunk/meta 决定）。
-      // 骨架期 ask 防回归护栏：ask 挂起（question-answer/timeout）时骨架是原位续写锚
-      // （flowShellEl + pausedAssistantEl 双引用）——删除会使 resume meta 的 pausedResume 判定失效
-      // （isConnected=false）→ 误走 resumePending → prepareFlowShell 挂 resolveInteractionAnchor 兜底位
-      // （消息流最后 assistant 块 = 上一轮）致回答错位，且 flowEl 随骨架消散使「你答」条目兜底挂
-      // 消息流尾（实证：ask 点选项后 LLM 回答接上一 turn、用户输入/补充孤零零在底部）。
-      // 保留骨架与引用：后续 chunk 走 flowShellEl 分支复用开启正文流（原位续写单块，与重放同构）。
-      // supplement（打断补充 interject）维持删除语义：打断后由 beginStreaming 新建块 + 容器化归位，
-      // 空壳骨架无保留价值。
-      if (msg.kind === 'supplement') {
-        flowShellEl?.remove();
-        flowShellEl = null;
-        // 防御：被删骨架若持 pausedAssistantEl 锚（罕见混合态），同步失效防悬空续写误判
-        if (pausedAssistantEl && !pausedAssistantEl.isConnected) pausedAssistantEl = null;
-      }
+      // 交互输入/问答：清等待指示器（后续段形态由 chunk/meta 决定）。
+      // 🔴 user 消息一律不删骨架（flowShellEl）：骨架是当前轮过程容器宿主（工具行/任务项
+      // 折叠块挂其内），删除 = 过程蒸发且运行中无全量重放补回（真机实证：暂停态/插话态补充
+      // 输入后运行记录消失、条目散落消息流尾、内核吸收后投影+本地兜底双份）。
+      // interject「不 abort 旧流、runFlow 继续」（宿主 sendInput 契约），骨架不是空壳；
+      // 骨架清理职责单一路径归 meta（prepareFlowShell 重建时清旧）/ 重放（resetChatView），
+      // user 消息处理不参与。补充行归位由 appendInteractiveInput 按 flowEl.isConnected
+      // 正常路径进过程容器，无兜底散落。
       clearPendingWait();
       // 在途批宿命已定（用户输入 = 插话打断/新轮起步，[TOOL_ABORTED] 同源）：
       // 未升级预告行注销（生命周期契约见 dropStalePendingToolRows）
@@ -4419,15 +4417,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           ensureRoundGroup(msg.roundId, flowShellEl, true);
           flowShellEl = null; // 已转化为正文块，后续插话/新轮不再特殊处理
         } else if (
-          pausedAssistantEl &&
-          pausedAssistantEl.isConnected &&
+          (pausedAssistantEl?.isConnected || activeAssistantEl?.isConnected) &&
           isSameRoundContinue(msg.roundId)
         ) {
-          // pause→resume 原位续写：无输入 continue 后首个 text chunk，
-          // 同闭环（roundId 相等）且存在暂停块 → 复用暂停块续写（还原该块流式状态），
-          // 而非 beginStreaming 新建第 2 个 assistant 块——修复「一次输入、视觉两个独立 LLM 回答」。
-          // 注意：streamingRaw 不重置——暂停前已累积文本保留，续写增量拼接（renderStreamBody 全量重建）。
-          activeAssistantEl = pausedAssistantEl;
+          // 同轮活动块原位续写（方案 A 统一单块）：两类来源共用同一判定——
+          // ① pause→resume 暂停锚块（无输入 continue）②插话前的活动正文块
+          // （interject 补充后 chunk 流回原块，打断分段退役：正文单块连续，
+          // 补充行在过程区不丢信息）。roundId 护栏保留：跨轮 chunk（roundId 不等
+          // 或缺失）→ 走 else 新建，防跨轮挂载串位（历史事故护栏，不得放宽）。
+          // streamingRaw 不重置——打断前已累积文本保留，续写增量拼接（renderStreamBody 全量重建）。
+          activeAssistantEl = (pausedAssistantEl?.isConnected ? pausedAssistantEl : activeAssistantEl)!;
           pausedAssistantEl = null;
           const body = activeAssistantEl.querySelector(':scope .msg-body');
           body?.classList.add('is-streaming');

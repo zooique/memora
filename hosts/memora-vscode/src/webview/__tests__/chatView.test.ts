@@ -4683,7 +4683,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(oldBody.classList.contains('is-streaming')).toBe(false);
   });
 
-  it('中断补充渲染为内联子行「你补充」，插在被打破块之后；后续 chunk 为「续接」块（2026-09-07 显示逻辑统一）', () => {
+  it('中断补充渲染为内联子行「你补充」进过程容器；后续 chunk 原位续写同一正文块（方案 A 单块统一，2026-09-30）', () => {
     mountChatView();
     dispatch({
       type: 'process_event',
@@ -4691,6 +4691,8 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     });
     // 单轨：运行时 chunk 携带 turn roundId（宿主透传），续接判定与重放共用「roundId 相等」
     dispatch({ type: 'chunk', content: '正在回答第一段', roundId: 'round-1' });
+    const blockBefore = document.querySelector('.msg.assistant') as HTMLElement;
+    expect(blockBefore).not.toBeNull();
     // 被打断补充（streaming 中 supplement）→ 过程条目「你补充」：与 question-answer 共用 round-block__input 形态
     dispatch({
       type: 'user',
@@ -4706,15 +4708,147 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     const flow = document.querySelector('.process-flow') as HTMLElement | null;
     expect(flow).not.toBeNull();
     expect(flow?.contains(supRow)).toBe(true);
-    // 后续 chunk（同 roundId）→ 第 2 段正文块（无 is-continued / 续接 chip，
-    // 补充内容已由独立条目行分隔）
+    // 后续 chunk（同 roundId）→ 原位续写同一正文块（方案 A：打断分段退役，
+    // 正文单块连续；补充行在过程区不丢信息）。roundId 护栏：不等则新建，防跨轮串位
     dispatch({ type: 'chunk', content: '好的，按你的要求继续', roundId: 'round-1' });
     const blocks = document.querySelectorAll('.msg.assistant');
-    expect(blocks).toHaveLength(2);
-    const continued = blocks[1] as HTMLElement;
-    expect(continued.classList.contains('is-continued')).toBe(false);
-    expect(continued.querySelector('.msg-ai-label__cont')).toBeNull();
-    expect(collectAllBodyText(continued)).toContain('按你的要求继续');
+    expect(blocks).toHaveLength(1); // 单块：不再拆续接块
+    expect(blocks[0]).toBe(blockBefore); // 同一 DOM 节点（原位续写，非重建）
+    expect(collectAllBodyText(document.body)).toContain('正在回答第一段');
+    expect(collectAllBodyText(document.body)).toContain('按你的要求继续');
+  });
+
+  it('跨轮 chunk 护栏：补充后新轮 chunk（roundId 不等）新建正文块，不误挂旧轮活动块', () => {
+    mountChatView();
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({ type: 'chunk', content: '第一轮回答', roundId: 'round-1' });
+    dispatch({
+      type: 'user',
+      text: '补充：换个话题',
+      ts: '2026-09-03T04:15:05Z',
+      kind: 'supplement',
+    });
+    // 新一轮（roundId 不同，正常经 resetForNewClosedLoop 清活动块后 beginStreaming；
+    // 此用例直接以异 roundId chunk 验证护栏本体：不得续写进 round-1 的块）
+    dispatch({ type: 'chunk', content: '新轮回答', roundId: 'round-2' });
+    const blocks = document.querySelectorAll('.msg.assistant');
+    expect(blocks).toHaveLength(2); // 护栏生效：新建而非误挂
+    expect(collectAllBodyText(blocks[0] as HTMLElement)).not.toContain('新轮回答');
+    expect(collectAllBodyText(blocks[1] as HTMLElement)).toContain('新轮回答');
+  });
+
+  it('打断后无续写直接 done：streamingRaw 残留旧文进 finalize，正文完整不丢（2026-09-30 盲区补测）', () => {
+    mountChatView();
+    // 场景：正文流入 → 补充打断（streamingRaw 保留、流式态结清）→ 内核吸收后直接收尾
+    // （补充即为最后输入，无续写 chunk）→ finalize 若清空 streamingRaw 则正文蒸发
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({ type: 'chunk', content: '正在回答第一段', roundId: 'round-1' });
+    dispatch({
+      type: 'user',
+      text: '补充：就此收尾',
+      ts: '2026-09-03T04:15:05Z',
+      kind: 'supplement',
+    });
+    // done 前（打断态）：补充行必须在过程容器（flowEl 转正后仍连接）
+    const flowBefore = document.querySelector('.process-flow') as HTMLElement | null;
+    expect(flowBefore?.textContent).toContain('就此收尾');
+    dispatch({ type: 'done', roundId: 'round-1' });
+    // 打断前正文必须存活（streamingRaw 保留语义的直接消费场景）
+    expect(collectAllBodyText(document.body)).toContain('正在回答第一段');
+    // finalize 完成：流式态结清、单块形态；补充行随过程折入折叠块（G31 收敛，rb 文本断言——
+    // collectAllBodyText 是正文收集器，折叠块内容不在其范围）
+    const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
+    expect(body.classList.contains('is-streaming')).toBe(false);
+    expect(document.querySelectorAll('.msg.assistant')).toHaveLength(1);
+    const rbText = document.querySelector('details.round-block')?.textContent ?? '';
+    expect(rbText).toContain('你补充');
+    expect(rbText).toContain('就此收尾');
+  });
+
+  it('骨架期补充输入（插话/挂起态补充统一）不删骨架：过程容器存活、补充行归位进过程容器（2026-09-30 真机修复）', () => {
+    mountChatView();
+    // 骨架期（meta 后无 chunk 转正）：过程容器挂在骨架壳内，这是删除/保留语义
+    // 真正作用于 DOM 的窗口——旧实现无条件删骨架（真机实证：过程蒸发 + 条目散落
+    // 消息流尾 + 内核吸收后投影与本地兜底双份），修复后 user 消息一律不删骨架
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    // 骨架内过程容器 + 已升级工具折叠行（挂起前已完成的工具步骤）
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: '读取成功' },
+      },
+    });
+    const flowBefore = document.querySelector('.process-flow') as HTMLElement;
+    expect(flowBefore).not.toBeNull();
+
+    // 补充输入到达（宿主 interject 入队 / resumeExecution 续跑，webview 渲染语义统一）
+    dispatch({
+      type: 'user',
+      text: '补充：先看配置再改',
+      ts: '2026-09-30T12:00:00.000Z',
+      kind: 'supplement',
+    });
+    // 过程容器同一节点（未拆除重建）= 修复断言；旧代码此处骨架被删必挂
+    expect(document.querySelector('.process-flow')).toBe(flowBefore);
+    // 补充行归位进过程容器（flowEl 保持连接 → 正常路径，无兜底散落到消息流）
+    expect(flowBefore.querySelector('.round-block__input')?.textContent).toContain('先看配置再改');
+    expect(
+      Array.from(document.querySelectorAll('.round-block__input')).filter(
+        (el) => !flowBefore.contains(el),
+      ),
+    ).toHaveLength(0); // 无散落在过程容器外的兜底条目（双份修复断言）
+  });
+
+  it('骨架期补充后首个 chunk 复用骨架块续写正文（不新建块、过程容器保持）', () => {
+    mountChatView();
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' },
+      },
+    });
+    const flowBefore = document.querySelector('.process-flow') as HTMLElement;
+    dispatch({
+      type: 'user',
+      text: '补充：换个方向',
+      ts: '2026-09-30T12:01:00.000Z',
+      kind: 'supplement',
+    });
+    // 骨架未删（引用保持）→ chunk 走复用分支：正文续进骨架块，过程容器不动
+    dispatch({ type: 'chunk', content: '好的，按新方向继续', roundId: 'round-1' });
+    expect(document.querySelector('.process-flow')).toBe(flowBefore);
+    expect(flowBefore.contains(flowBefore.querySelector('.round-block__input')!)).toBe(true);
+    // 单块续写：骨架块即正文块，无第二个 assistant 块
+    expect(document.querySelectorAll('.msg.assistant')).toHaveLength(1);
+    expect(collectAllBodyText(document.body)).toContain('按新方向继续');
   });
 
   it('连续补充各自独立成块：每颗钉子独立折叠块、无「补充 N 条」合并（2026-09-09 剪枝定案）', () => {
