@@ -1603,9 +1603,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const details = rb.querySelector('.round-block__details') as HTMLElement;
     expect(details.textContent).toContain('设计约束');
     // 口径标注：入/出为估算、输出只计正文不含思考
-    expect(details.textContent).toContain(
-      'Tokens（估算）：入 100 / 正文 200（不含思考）',
-    );
+    expect(details.textContent).toContain('Tokens（估算）：入 100 / 正文 200（不含思考）');
     // meta 未带 maxTokens（beginRound）→ 生效上限显示服务端默认
     expect(details.textContent).toContain('输出上限（生效）：服务端默认');
     expect(details.textContent).toContain('完成：是');

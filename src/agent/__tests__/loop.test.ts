@@ -119,10 +119,7 @@ describe('AgentLoop · per-LLM 输出预算（defaultMaxTokens，T1 / EMPTY-RESP
     // 为何不是单向覆盖：旧实现 `Object.assign` 压过 ⇒ 角色包 4096 会把用户配的 1024 **顶大**，
     // 与「上限」语义相反（真机教训：面板 64K 被包 4096 顶小，且取证面一度记成 64000 看不出来）。
     // 变异方向：把 min 收敛退回 Object.assign 覆盖 → 本例第一段（1024 vs 4096）恰红。
-    async function effective(
-      perLlm: number,
-      strategy: number,
-    ): Promise<number | undefined> {
+    async function effective(perLlm: number, strategy: number): Promise<number | undefined> {
       const { provider, chats } = capturingProvider([{ content: '回复' }]);
       const loop = new AgentLoop({
         provider,
