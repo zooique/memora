@@ -10,6 +10,26 @@
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不占内核版本号（理由见文首说明）。内核 3.0.0 的发版内容在其下方。
 
+### Changed（输出上限裁决改「取交集」语义 · 与上下文窗口对齐 + 默认不再设天花板）
+
+**问题**：输出上限有两个来源（per-LLM 面板「输出上限(K)」与角色包 `act.outputLimit`），旧实现是**角色包直接覆盖**（`Object.assign` 压过）——与「上限」的语义相反：上限应取交集（任何一侧说「不能超过 X」都必须满足），覆盖却允许角色包把用户配的小值顶大。同一件事在**输入侧**早已是正确写法：`min(provider 窗口, 角色包 contextLimit)`，两侧不对称。
+
+- **① 改取交集**：`buildChatOptions` 末对 `maxTokens` 做 `min(per-LLM, 角色包)` 收敛（仅此键取小；`temperature` 等是「设定值」不是「上限」，维持覆盖语义）。裁决仍在该方法**单点**，宿主仍只读 `Agent.getEffectiveMaxTokens()`，不重算
+- **② 默认不再设天花板**：`DEFAULT_BEHAVIOR_STRATEGY.act.outputLimit` 由 `4096` 改 `0`（= 不干预 → 回服务端默认 / 听面板）。**旧默认 4096 是隐形天花板**——未声明的包也被硬限到 4096，用户面板配 64K 无效且取证面看不出来
+- **③ 表示法统一（0-哨兵同构）**：`act.outputLimit` 校验域由 `[1, 65536]` 扩为 `0 ∪ [1, 65536]`——`0` = 不干预哨兵（≡ 不写该键），与 `contextLimit` / `stepBudget` 完全同构。三个「上限类」键统一一条心智规则：**不写 = 默认立场；写 0 = 让路（听下一层真相源）；写正数 = 显式上限（与 per-LLM 配置取小）**。schema.json `minimum` 同步 1→0；同构关系由守卫测试钉死（某键若漂回 intRange 即红灯）。消费点 `agent.buildChatOptionsFromStrategy` 既有 `> 0` 守卫零改动，`rolesView` chip 对 0 自动隐藏
+- **影响面（行为变更，须知）**：①角色包未声明 outputLimit → 请求不再带 4096 上限（回服务端默认或听面板配置）；②**显式声明** outputLimit 的包（如「共鸣小说家」4096）不受②影响，取小后仍是 4096 —— 想放大必须改该包的声明值或删掉该行
+- **验证**：新增/改写用例（两侧收紧都生效、单侧缺位取另一侧）；**变异**：min 退回 Object.assign → 恰红（`expected 4096 to be 1024`）；内核 `tsc --noEmit` 0 错误、eslint `--max-warnings 0` 干净、受影响套件 352 passed
+
+### Fixed（真机复核修正 · EMPTY-RESP-1：计数假阳 + 取证面改记生效值）
+
+> **背景**：2026-09-29 的 T1/T2「真机验收」经 19 轮 round 数据复核后被推翻——详见 `tasks/审查-空响应根因排雷与优化方案-20260929.md` §七；新告警登记为观察项 `MAXTOKEN-SSOT-1`（待完成任务 .md）。**下方 2026-09-29 T1 / T2 条目的「真机取证」结论请以本条为准。**
+
+- **① 内核 · 截断救回计数假阳（`truncationRecoveryCount`）**：原判据 `truncatedRetry && !isEmptyResponse` 中，`isEmptyResponse` 内含 `!aborted` ⇒ 用户在流中途点停止、流提早退出时也判为「非空」，于是**「用户放弃」被记成「换策略救回成功」**（真机 round-1790686368607 全程零产出事件却 recov=1）。修复 = 计数判据补 `!aborted`（单点，兑现原注释已声明而未实现的纪律）。变异验证：去掉 `!aborted` → 新增用例恰红，其余不受影响
+- **② 内核 + 宿主 · 取证面改记「生效值」**：输出上限存在两个来源（per-LLM 面板 vs 角色包 `act.outputLimit`，优先级 **角色包 > per-LLM**，由 `loop.buildChatOptions` 单点裁决）⇒ meta 记用户配置值会把「配了 64K」误读成「发了 64K」。新增读取口 `AgentLoop.getEffectiveMaxTokens()` + `Agent` 薄委托，宿主 `buildRoundMeta` 以它为首选、配置面仅作回落——**宿主不再重算优先级**（宿主重算即第二真理源，正是本次误判根因）
+- **③ 口径同步（去假 SSOT 声明）**：`protocol.ts` / `assemble.ts` 中的「唯一真理源 = per-LLM maxTokens」为假声明 → 改「底座值，非最终生效值」；`ProcessMetaPayload.maxTokens` 语义同步为生效值（旧数据语义差异已在注释标明）
+- **④ 宿主 min agent 替身补齐**：`consumeFlow` 每轮经 `buildRoundMeta`，替身缺新方法会让整条落盘链路**静默空转**（8 条连带失败，已用对照实验确认非环境噪音），已在替身工厂单点补齐；`buildRoundMeta` 用例同步升级为守卫「生效值 ≠ 配置值」
+- **验证**：内核 `tsc --noEmit`（含 scripts）0 错误 + 改动文件 `eslint --max-warnings 0` 干净；内核全量 **2820 passed / 12 failed（AssertionError = 0，全为 timeout ⇒ 环境性假红）**；宿主 `tsc -p ./` 干净 + 相关单测 **53/53**
+
 ### Fixed（宿主 · 纯删除块装饰改红：删除点被染成新增色的语义错位）
 
 **问题**：`buildDecorationItems` 把纯删除块的锚行走与新增/修改**同一个绿色装饰**——绿底直觉是「这行是新内容」，而删除锚行本身是**未变的其他内容**（删除点在新文件中不覆盖任何行，装饰只能落在锚行），颜色语义相反；且行尾红色预览删除后，删除点只剩 hover 一层信息。
