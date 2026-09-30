@@ -4426,7 +4426,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           // 补充行在过程区不丢信息）。roundId 护栏保留：跨轮 chunk（roundId 不等
           // 或缺失）→ 走 else 新建，防跨轮挂载串位（历史事故护栏，不得放宽）。
           // streamingRaw 不重置——打断前已累积文本保留，续写增量拼接（renderStreamBody 全量重建）。
-          activeAssistantEl = (pausedAssistantEl?.isConnected ? pausedAssistantEl : activeAssistantEl)!;
+          activeAssistantEl = (
+            pausedAssistantEl?.isConnected ? pausedAssistantEl : activeAssistantEl
+          )!;
           pausedAssistantEl = null;
           const body = activeAssistantEl.querySelector(':scope .msg-body');
           body?.classList.add('is-streaming');
