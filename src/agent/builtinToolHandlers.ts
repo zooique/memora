@@ -605,7 +605,6 @@ export class BuiltinToolHandlers {
    *
    * 参数形态前提（位置参数，当前 6 个）：再加 mode 专属参数时须一并评估改收 options 对象，
    * 且四个内置文件工具（read_file / list_dir / search_memories）同批收，不单点特化本工具。
-   * 触发条件与成本核算见 `tasks/待完成任务.md` TOOLSIG-1。
    *
    * @param relativePath 相对项目根的文件路径
    * @param content 要写入的内容

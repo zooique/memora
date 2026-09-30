@@ -123,8 +123,7 @@ export type RoundStatus = 'pending' | 'complete' | 'error' | 'interrupted';
  * 轮是否「已收场」（终态）——**判据单一收口点（SSOT）**。
  *
  * - `complete`：正常问答闭环完成（appendAssistant 收场）。
- * - `interrupted`：中断/失败收场（appendInterrupted 收场）。语义定案见
- *   `docs/architecture/step-atomic-persistence.md §一·五`——中断轮 = 等同用户点「停止」的
+ * - `interrupted`：中断/失败收场（appendInterrupted 收场）。语义定案——中断轮 = 等同用户点「停止」的
  *   正常 turn：**可删、入会话 roundIds、作后续上下文**，不是半成品草稿/孤儿。
  *
  * **为什么必须收口**：v3.0.0 把中断轮从「伪 complete」改为 `interrupted` 后，凡以
@@ -144,8 +143,7 @@ export function isRoundSettled(status: RoundStatus): boolean {
 }
 
 // ─── 过程事件（ProcessEvent）────────────────────────────
-// 每轮「过程事件」= UI 状态重建的最小信息（运行时与重放共用同一份数据，
-// 见 docs/architecture/process-event-log-replay-design.md §3.3）。
+// 每轮「过程事件」= UI 状态重建的最小信息（运行时与重放共用同一份数据）。
 // 落位决策：ProcessEvent 是 Round 的组成部分（存储面），故定义于 memory/；
 // thinking 阶段用本地字面量 ProcessThinkingPhase（与 agent/types.ts ThinkingPhase 同值），
 // 避免 memory → agent 反向依赖（对齐 protocol.ts「宿主侧本地字面量避免跨包类型耦合」先例）。

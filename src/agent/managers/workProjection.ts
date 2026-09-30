@@ -147,7 +147,7 @@ export class WorkProjectionManager {
     try {
       const content = await readFile(this.filePath, 'utf-8');
       const parsed = JSON.parse(content);
-      // 验证数据格式（必须是顶层数组，与设计文档 docs/architecture/work-projection.md 一致）
+      // 验证数据格式（必须是顶层数组，与作品投影设计约定一致）
       if (Array.isArray(parsed)) {
         this.fileWasMalformed = false;
         this.entries = parsed.filter((e) => e && e.source && e.name);
@@ -156,7 +156,7 @@ export class WorkProjectionManager {
         // 写路径由 registerWork 经 fileWasMalformed 标志 fail-safe 中止，不覆盖用户原索引
         logger.warn(
           { file: this.filePath },
-          '作品投影文件根节点非数组，已忽略（预期顶层 JSON 数组；若照旧文档手写请改为 [...]，详见 docs/architecture/work-projection.md）',
+          '作品投影文件根节点非数组，已忽略（预期顶层 JSON 数组；请改为 [...] 形态后重试）',
         );
         this.fileWasMalformed = true;
         this.entries = [];

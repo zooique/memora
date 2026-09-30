@@ -126,7 +126,7 @@ export type AgentChunk = (
   /**
    * 迭代边界（迭代原子落盘）：**一次 LLM 迭代结束**时无条件 emit。
    *
-   * 与 `plan_item_boundary` 的关系（术语撞车的解法，见 docs/architecture/step-atomic-persistence.md §九）：
+   * 与 `plan_item_boundary` 的关系（两个信号各归其阵营，术语不撞车）：
    * - `plan_item_boundary` = **任务项推进**（有任务表且 active 任务项变化才产，无任务表静默），职责是
    *   webview 任务项级折叠的**分组依据**；
    * - `step_boundary` = **迭代完成**（与有无任务表、有无工具无关），职责是宿主**增量落盘的时机信号**
@@ -134,8 +134,7 @@ export type AgentChunk = (
    *
    * 顺序契约（硬，2026-09-26 更新）：`plan_item_boundary` 产于**迭代开始**（它所罩住的思考与工具
    * 之前），本 chunk 产于**迭代尾** → 二者天然保持先后序，保证宿主本轮落盘快照已含该任务项
-   * 折叠边界，崩溃重放不错位。若二者同产在迭代尾，每个任务项的首个迭代会掉出折叠块
-   * （见 docs/方案-任务项边界产出时机前移-20260926.md）。
+   * 折叠边界，崩溃重放不错位。若二者同产在迭代尾，每个任务项的首个迭代会掉出折叠块。
    *
    * 瞬态信号：**不落 ProcessEvent**（不是历史内容，只是「此刻该落盘」的触发点），
    * `Round.processEvents` / schema 零改动。
@@ -223,7 +222,7 @@ export type ArchiveMode = 'full' | 'manual';
 // 核心思路：从「一问一答」升级为「开启后常驻、仅暂停不终止」，会话升级为状态机 + 检查点（SessionCheckpoint）
 // 检查点为纯内存态快照（不落盘、无序列化/恢复路径）。三态：RUNNING → PAUSED（双向）→ ERROR（独立可见）；
 // ERROR → RUNNING 前须 error.recovered===true 且 cause 已解除。
-// 输入统一走 chat（无增量事件驱动补全路径，见 docs/architecture/）。
+// 输入统一走 chat（无增量事件驱动补全路径）。
 // ────────────────────────────────────────────────────────
 
 /** 会话状态（三态状态机） */

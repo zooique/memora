@@ -6,7 +6,7 @@
  *   - loop = 对 step 的编排：turn 回答中阶段反复拉起 step 直到输出最终回答；
  *   - 本类承载 turn（问答闭环）的 Act 引擎（含 loop=step 编排），是 turn 的身体引擎；
  *   - 复杂任务（task_table_write + 动态规划）在一个 turn 的 step 循环里自然生长，
- *     不再强制拆成多 turn 编排（收敛依据见 docs/architecture/agent-design-philosophy.md 第一章 闭环）；
+ *     不再强制拆成多 turn 编排；
  *   - 上下文 = 用户输入 + Agent 记忆召回结果 + 运行帧追加。
  */
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
@@ -1137,7 +1137,7 @@ export class AgentLoop {
    *  **检出时机 = 迭代开始、LLM 调用之前（硬，2026-09-26 定案）**：边界的语义是「**以下内容**
    *  属于该任务项」，故必须产在它所罩住的思考与工具之前——放在工具落定之后，宿主
    *  「向前找最近边界」的判据对该迭代必然落空 → 每个任务项的首个迭代（思考 + 首批工具）恒掉出
-   *  折叠块，且流式插入后不搬家（详见 docs/方案-任务项边界产出时机前移-20260926.md）。
+   *  折叠块，且流式插入后不搬家（「任务项边界产出时机前移」定案）。
    *
    *  语义后果（可接受，非缺陷）：任务表若由本轮某迭代的工具**新建**，该迭代仍留在组外——
    *  那个时刻任务表还不存在。本产出点修的是「任务表在本轮开始前已存在」（续会/预置/上一 turn
@@ -2343,7 +2343,7 @@ export class AgentLoop {
     // 输出上限**取交集**（对齐上下文窗口 `min(provider 窗口, 角色包 contextLimit)` 的语义）：
     // per-LLM 配置与角色包策略都是「上限」性质，任何一侧声明「不能超过 X」都必须被满足 ⇒ 取更小值。
     // 直接覆盖（Object.assign 压过）与「上限」语义相反——它会让角色包把用户配的小值顶大
-    //（包 128K 顶掉面板 64K），用户无从得知谁赢了（根因排雷见 tasks/审查-空响应根因排雷与优化方案-20260929.md §七）。
+    //（包 128K 顶掉面板 64K），用户无从得知谁赢了。
     const perLlmLimit = this.opts.defaultMaxTokens;
     const strategyLimit = baseOptions.maxTokens;
     if (perLlmLimit !== undefined && strategyLimit !== undefined) {

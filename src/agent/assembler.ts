@@ -361,8 +361,8 @@ function wireRuntimeCallbacks(
 
   // active 任务项元信息回调（任务项级折叠）：loop 经 _maybeEmitPlanItemBoundary
   // 在**迭代开始**（LLM 调用前）取当前 active 任务项 { planItemId, title }，供 loop 对比推进产
-  // plan_item_boundary 事件——边界语义是「以下内容属于该任务项」，故须早于本迭代的思考与工具
-  // （见 docs/方案-任务项边界产出时机前移-20260926.md）。无任务表返回 null，宿主端据此不产边界（静默）。
+  // plan_item_boundary 事件——边界语义是「以下内容属于该任务项」，故须早于本迭代的思考与工具。
+  // 无任务表返回 null，宿主端据此不产边界（静默）。
   // 与 onPlanItemBoundary 读同一 checkpoint.plan 真源，但读取时刻不同：后者读 LLM 调用后、
   // 工具前的 active（本迭代 LLM 实际服务的任务项，只写 planItemLog 不推进），本回调读迭代开始
   // 时的 active（以下内容将归属的那个任务项）——时序分叉是设计语义。
