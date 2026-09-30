@@ -159,9 +159,20 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
   },
   act: {
     toolMode: { kind: 'enum', values: TOOL_MODES },
-    // 角色包可控温度（0.0~2.0）/输出长度（1~MAX_OUTPUT_LIMIT token）
+    // 角色包可控温度（0.0~2.0）/输出长度（0 或 1~MAX_OUTPUT_LIMIT token）
     temperature: { kind: 'check', check: isTemperature, range: { min: 0, max: 2 } },
-    outputLimit: intRange(1, MAX_OUTPUT_LIMIT),
+    // 输出上限：0 = 不干预（回服务端默认 / 听 per-LLM 配置）∪ [1, MAX_OUTPUT_LIMIT]。
+    // 与 contextLimit / stepBudget 同构（0 承载"未声明"语义、正数走声明区间），故不用 intRange
+    // 而自定义 check；range.min 是"正数声明下限"（schema 层 minimum=0 是 JSON-Schema 接受层）。
+    // 消费点（agent.buildChatOptionsFromStrategy）已有 `> 0` 守卫，0 自然落空 ⇒ 写 0 ≡ 不写。
+    outputLimit: {
+      kind: 'check',
+      check: (value) =>
+        typeof value === 'number' &&
+        Number.isInteger(value) &&
+        (value === 0 || (value >= 1 && value <= MAX_OUTPUT_LIMIT)),
+      range: { min: 1, max: MAX_OUTPUT_LIMIT },
+    },
     // 工具步数上限（0~MAX_TOOL_STEP_LIMIT，0=无限制）
     toolStepLimit: intRange(0, MAX_TOOL_STEP_LIMIT),
     providerRouting: { kind: 'enum', values: PROVIDER_ROUTINGS },

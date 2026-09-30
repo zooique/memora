@@ -86,7 +86,9 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     expect(a.toolReadonly).toBe('full');
     expect(a.toolStepLimit).toBe(20);
     expect(a.temperature).toBe(0.7);
-    expect(a.outputLimit).toBe(4096);
+    // 默认**不干预**输出（0 = 不干预哨兵，与 contextLimit: 0 / stepBudget: 0 同构）；
+    // 旧默认 4096 是隐形天花板，未声明角色包不该被内核替它设上限
+    expect(a.outputLimit).toBe(0);
     expect(a.providerRouting).toBe('auto');
     expect(a.multiStepReasoning).toBe('auto');
   });

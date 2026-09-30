@@ -115,21 +115,59 @@ describe('AgentLoop · per-LLM 输出预算（defaultMaxTokens，T1 / EMPTY-RESP
     expect(chats[0]?.maxTokens).toBe(4096);
   });
 
-  it('角色包策略覆盖项（chatOptions.maxTokens）压过 per-LLM 默认（优先级：角色包 > per-LLM）', async () => {
-    const { provider, chats } = capturingProvider([{ content: '回复' }]);
-    const loop = new AgentLoop({
-      provider,
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-      defaultMaxTokens: 4096,
-      chatOptions: { maxTokens: 1024 },
-    });
+  it('输出上限取交集（min）：per-LLM 与角色包策略谁小听谁的——两侧都能收紧', async () => {
+    // 为何不是单向覆盖：旧实现 `Object.assign` 压过 ⇒ 角色包 4096 会把用户配的 1024 **顶大**，
+    // 与「上限」语义相反（真机教训：面板 64K 被包 4096 顶小，且取证面一度记成 64000 看不出来）。
+    // 变异方向：把 min 收敛退回 Object.assign 覆盖 → 本例第一段（1024 vs 4096）恰红。
+    async function effective(
+      perLlm: number,
+      strategy: number,
+    ): Promise<number | undefined> {
+      const { provider, chats } = capturingProvider([{ content: '回复' }]);
+      const loop = new AgentLoop({
+        provider,
+        bootstrapMemories: [],
+        toolExecutor: vi.fn(),
+        defaultMaxTokens: perLlm,
+        chatOptions: { maxTokens: strategy },
+      });
 
-    for await (const {} of loop.processUserInput('你好')) {
-      // drain
+      for await (const {} of loop.processUserInput('你好')) {
+        // drain
+      }
+      return chats[0]?.maxTokens;
     }
 
-    expect(chats[0]?.maxTokens).toBe(1024);
+    // 用户配得更小 ⇒ 用户的收紧生效（旧实现在这里会给 4096，把小值顶大）
+    expect(await effective(1024, 4096)).toBe(1024);
+    // 角色包配得更小 ⇒ 角色包的收紧生效
+    expect(await effective(4096, 1024)).toBe(1024);
+  });
+
+  it('输出上限单侧缺位 → 取另一侧（未声明侧不参与取小）', async () => {
+    async function effective(
+      perLlm: number | undefined,
+      strategy: number | undefined,
+    ): Promise<number | undefined> {
+      const { provider, chats } = capturingProvider([{ content: '回复' }]);
+      const loop = new AgentLoop({
+        provider,
+        bootstrapMemories: [],
+        toolExecutor: vi.fn(),
+        defaultMaxTokens: perLlm,
+        chatOptions: strategy === undefined ? undefined : { maxTokens: strategy },
+      });
+
+      for await (const {} of loop.processUserInput('你好')) {
+        // drain
+      }
+      return chats[0]?.maxTokens;
+    }
+
+    // 角色包未声明 outputLimit（默认已改为 0 = 不干预哨兵）⇒ 用户面板说了算
+    expect(await effective(64000, undefined)).toBe(64000);
+    // 用户未配 ⇒ 角色包说了算
+    expect(await effective(undefined, 4096)).toBe(4096);
   });
 
   it('未配置 defaultMaxTokens → opts 无 maxTokens（不传，回服务端默认，盲区语义与 contextWindow 同构）', async () => {
@@ -163,6 +201,26 @@ describe('AgentLoop · per-LLM 输出预算（defaultMaxTokens，T1 / EMPTY-RESP
     expect(chats[0]?.maxTokens).toBeUndefined();
     expect(chats[1]?.maxTokens).toBe(2048);
     expect(chats[2]?.maxTokens).toBeUndefined();
+  });
+
+  it('getEffectiveMaxTokens = 优先级裁决后的生效值（角色包 > per-LLM；宿主取证面据此读真值）', async () => {
+    // 为何需要这个出口：真实场景里用户配了 64K，角色包 outputLimit=4096 与之取小后生效的是 4096；
+    // 会压过它；宿主若只读配置面就得不到「实际发出去的值」，取证包会失真。
+    // 变异方向：getter 改为直读 opts.defaultMaxTokens → 本例第一条断言恰红（规则被绕过）。
+    const { provider } = capturingProvider([{ content: '回复' }]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      defaultMaxTokens: 64000,
+      chatOptions: { maxTokens: 4096 },
+    });
+
+    // 角色包策略在位 → 生效值 = 策略值（per-LLM 的 64K 被压过）
+    expect(loop.getEffectiveMaxTokens()).toBe(4096);
+    // 策略注入撤销（如未激活角色包）→ 回落到 per-LLM 底座
+    loop.setChatOptions(undefined);
+    expect(loop.getEffectiveMaxTokens()).toBe(64000);
   });
 });
 

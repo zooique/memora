@@ -186,11 +186,19 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });
 
-  it('act.outputLimit 非正整数 → error', () => {
+  it('act.outputLimit 负数 → error', () => {
     const result = validate({
       strategy: { ...validStrategy, act: { ...validStrategy.act, outputLimit: -1 } },
     });
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+  });
+
+  it('act.outputLimit 为 0 → 通过（0 = 不干预哨兵，与 contextLimit/stepBudget 同构）', () => {
+    const result = validate({
+      strategy: { ...validStrategy, act: { ...validStrategy.act, outputLimit: 0 } },
+    });
+    expect(result.valid).toBe(true);
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
   });
 
   it('reflect.summary 越界枚举 → error', () => {

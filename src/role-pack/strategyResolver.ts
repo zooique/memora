@@ -63,7 +63,15 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     toolReadonly: 'full',
     toolStepLimit: 20,
     temperature: 0.7,
-    outputLimit: 4096,
+    /**
+     * 输出上限：0 = **不干预**（→ 回服务端默认 / 听 per-LLM 配置），正数 = 显式上限。
+     * 与 `global.contextLimit: 0` / `global.stepBudget: 0` **同构**：三个「上限类」键统一表示法
+     * ——0 承载"未声明"语义、正数走声明区间 [1, MAX_OUTPUT_LIMIT]、消费点以 `> 0` 判让位。
+     * 消费点（agent.buildChatOptionsFromStrategy）已有 `> 0` 守卫 ⇒ 写 0 ≡ 不写。
+     * 旧默认 4096 会把**未声明**的角色包也硬限到 4096——那是隐形天花板（用户面板配 64K 也无效，
+     * 且取证面看不出来）。未声明 = 作者无意限制，不该由内核替他限制。
+     */
+    outputLimit: 0,
     providerRouting: 'auto',
     multiStepReasoning: 'auto',
   },

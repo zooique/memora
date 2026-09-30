@@ -1365,6 +1365,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     logger.info({ maxTokens: tokens }, 'per-LLM 输出预算已更新');
   }
 
+  /**
+   * 读取本轮请求体**实际**携带的 max_tokens（生效值），供宿主取证面写 meta。
+   *
+   * 薄委托：优先级裁决收敛在 AgentLoop.buildChatOptions（见其注释），此处不复制规则——
+   * 否则「谁压过谁」会在宿主侧长出第二真理源。loop 未装配时返回 undefined。
+   */
+  getEffectiveMaxTokens(): number | undefined {
+    return this.loop?.getEffectiveMaxTokens();
+  }
+
   setBackgroundProvider(provider: LlmProvider | null): void {
     // 与 setProvider 一致，对话进行中禁止切换后台 Provider
     this.assertNotBusy('切换后台 Provider');
@@ -1479,7 +1489,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 从当前激活的角色包策略构建 ChatOptions 覆盖项
-   * 将 act.temperature / act.outputLimit 映射到 ChatOptions 字段，优先级高于全局默认值。
+   * 将 act.temperature / act.outputLimit 映射到 ChatOptions 字段；输出上限最终与 per-LLM 默认值
+   * 取**更小值**（两者皆为「上限」，须同时满足）——收敛在 `buildChatOptions`，此处不裁决大小。
    */
   private buildChatOptionsFromStrategy(): Partial<ChatOptions> | undefined {
     const strategy = this.getActiveStrategy();

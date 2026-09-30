@@ -411,6 +411,25 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       }
     });
 
+    it('三个 0-哨兵上限键同构：contextLimit / stepBudget / outputLimit 的 check(0) 均通过', () => {
+      // 表示法统一守卫：三个「上限类」键共用「0 = 不干预/走兜底、正数 = 显式声明区间」语义。
+      // 若某键未来改回 intRange(1, ...)（0 报错），此处红灯——表示法分裂不允许静默发生。
+      const ZERO_SENTINEL_KEYS = [
+        { phase: 'global', key: 'contextLimit' },
+        { phase: 'global', key: 'stepBudget' },
+        { phase: 'act', key: 'outputLimit' },
+      ] as const;
+      for (const { phase, key } of ZERO_SENTINEL_KEYS) {
+        const rule = STRATEGY_KEY_RULES[phase]![key] as {
+          kind: 'check';
+          check: (v: unknown) => boolean;
+        };
+        expect(rule.kind, `${phase}.${key} 应为 check`).toBe('check');
+        expect(rule.check(0), `${phase}.${key} 应接受 0（不干预哨兵）`).toBe(true);
+        expect(rule.check(-1), `${phase}.${key} 应拒绝负数`).toBe(false);
+      }
+    });
+
     // 浮点键：允许小数，仅约束区间；其余数值键为整数键
     const FLOAT_KEYS: ReadonlySet<string> = new Set(['act.temperature']);
 
@@ -545,11 +564,10 @@ describe('strategyKeys — schema.json 与常量一致性', () => {
       return rule!.range!.min;
     };
 
-    // 与 schema 比对的具体键（不含 stepBudget / contextLimit：二者的 schema 层 minimum=0 是
-    // JSON-Schema 的「接受 0」层，与代码 MIN_* 的"正数声明区间下限"语义不同，
+    // 与 schema 比对的具体键（不含 stepBudget / contextLimit / outputLimit：三者的 schema 层
+    // minimum=0 是 JSON-Schema 的「接受 0」层，与代码 range.min 的"正数声明区间下限"语义不同，
     // 已在文件头与常量注释说明，不在此强比对）
     const MIN_CASES = [
-      { phase: 'act', key: 'outputLimit' },
       { phase: 'act', key: 'toolStepLimit' },
       { phase: 'reflect', key: 'selfReview' },
       { phase: 'global', key: 'askLimit' },

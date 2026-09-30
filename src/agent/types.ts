@@ -525,8 +525,10 @@ export interface AgentOptions {
    * 请求体携带 max_tokens。背景（EMPTY-RESP-1 根因）：推理模型 thinking 与正文共享输出预算，
    * thinking 吃满服务端默认上限会把正文挤空（空响应）——显式配置消除盲区。
    * undefined = 不传（回服务端默认，盲区语义与 contextWindow 同构）。
-   * 优先级：角色包策略 act.outputLimit > 本值 > 服务端默认（buildChatOptions 先填本值、
-   * 策略覆盖项后 Object.assign 压过）。请求层只做形态归一（openaiCompatible.normalizeMaxTokens：
+   * 裁决：与角色包策略 act.outputLimit **取更小值**（两者都是「上限」性质，须同时满足；
+   * 对齐上下文窗口 min(provider 窗口, 角色包 contextLimit) 的语义）——buildChatOptions 单点裁决，
+   * 宿主只经 `Agent.getEffectiveMaxTokens()` 读取生效值，不得自行重算。未声明侧缺位时取另一侧。
+   * 请求层只做形态归一（openaiCompatible.normalizeMaxTokens：
    * 非正整数不传）；上限不裁决——超模型能力的值原样透传、由服务端可见报错，不被内核静默替换
    * （与 contextWindow 同哲学：集成方 UI 护栏是输入边界的唯一可见裁决点）。
    */

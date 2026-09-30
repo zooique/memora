@@ -131,11 +131,12 @@ export interface AgentLoopOptions {
   roundSummaryLoader?: () => string;
   /** 截断时最少保留的最近原始对话轮数（默认 0），宿主可据 provider prompt caching 能力放宽 */
   minRecentRounds?: number;
-  /** ChatOptions 覆盖项（角色包策略注入 temperature/outputLimit 等，优先于默认值） */
+  /** ChatOptions 覆盖项（角色包策略注入 temperature/outputLimit 等；与默认值的关系见 defaultMaxTokens） */
   chatOptions?: Partial<ChatOptions>;
   /**
    * per-LLM 输出预算默认值（token，宿主 per-LLM 配置透传）：buildChatOptions 填入底座，
-   * 策略覆盖项（chatOptions，act.outputLimit）后 Object.assign 压过。
+   * 与角色包策略覆盖项（chatOptions，act.outputLimit）**取更小值**（两者都是「上限」性质，
+   * 须同时满足——对齐上下文窗口 min(provider 窗口, 角色包 contextLimit) 的语义）。
    * undefined = 不传 max_tokens（回服务端默认）。请求层只做形态归一（非正整数不传），
    * 上限不裁决——本层与请求层均不设上限（真实上限由服务端裁决，见 normalizeMaxTokens）。
    */
@@ -2287,8 +2288,8 @@ export class AgentLoop {
     const baseOptions: ChatOptions = {};
 
     // per-LLM 输出预算默认值（T1 / EMPTY-RESP-1 根因修复）：推理模型 thinking 与正文共享
-    // 输出预算，无显式上限时 thinking 吃满服务端默认 → 正文被挤空。先填底座，策略覆盖项
-    // （chatOptions = act.outputLimit）随后 Object.assign 压过——优先级：角色包 > per-LLM 默认。
+    // 输出预算，无显式上限时 thinking 吃满服务端默认 → 正文被挤空。先填底座，随后与角色包
+    // 策略（act.outputLimit）**取交集**——见下方 min 收敛，非单向覆盖。
     if (this.opts.defaultMaxTokens !== undefined) {
       baseOptions.maxTokens = this.opts.defaultMaxTokens;
     }
@@ -2337,6 +2338,17 @@ export class AgentLoop {
     // 角色包策略覆盖项（temperature / outputLimit 等）
     if (this.opts.chatOptions) {
       Object.assign(baseOptions, this.opts.chatOptions);
+    }
+
+    // 输出上限**取交集**（对齐上下文窗口 `min(provider 窗口, 角色包 contextLimit)` 的语义）：
+    // per-LLM 配置与角色包策略都是「上限」性质，任何一侧声明「不能超过 X」都必须被满足 ⇒ 取更小值。
+    // 旧实现是角色包**直接覆盖**（Object.assign 压过），与「上限」语义相反——它会让角色包把用户
+    // 配的小值顶大（包 128K 顶掉面板 64K），且用户无从得知谁赢了（真机教训：面板配 64K、包 4096
+    // → 实际 4096，取证面一度记成 64000，见 tasks/审查-空响应根因排雷与优化方案-20260929.md §七）。
+    const perLlmLimit = this.opts.defaultMaxTokens;
+    const strategyLimit = baseOptions.maxTokens;
+    if (perLlmLimit !== undefined && strategyLimit !== undefined) {
+      baseOptions.maxTokens = Math.min(perLlmLimit, strategyLimit);
     }
 
     return baseOptions;
@@ -2410,6 +2422,22 @@ export class AgentLoop {
   setDefaultMaxTokens(tokens: number | undefined): void {
     this.opts.defaultMaxTokens = tokens;
   }
+
+  /**
+   * 读取本轮请求体**实际**携带的 max_tokens（生效值，供宿主取证 / 展示）。
+   *
+   * 为何不交给宿主自行推算：生效值由「角色包策略 act.outputLimit > per-LLM 默认 > 服务端默认」
+   * 这条优先级决定，而该规则只在 `buildChatOptions()` 一处裁决——宿主侧重算等于复制规则、
+   * 制造第二真理源（真机教训：meta 记了用户配的 64000，实际发出的是角色包的 4096，
+   * 取证包把「配置意图」当成了「已生效事实」，由此得出过错误结论）。
+   *
+   * @returns 生效的输出上限（token）；undefined = 不传 max_tokens（回服务端默认）
+   */
+  getEffectiveMaxTokens(): number | undefined {
+    return this.buildChatOptions().maxTokens;
+  }
+
+  /** 刷新 bootstrap 记忆段（设定面板对 rule/skill 增删改后用最新记忆重建 bootstrap 段）。
 
   /** 刷新 bootstrap 记忆段（设定面板对 rule/skill 增删改后用最新记忆重建 bootstrap 段）。
    *  与 refreshRolePackPrefix 区别：后者替换 prefix（角色包 prompt），本方法替换 bootstrapMemories */

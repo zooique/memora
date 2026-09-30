@@ -167,7 +167,9 @@ export interface ProcessMetaPayload {
   llm: string;
   /** 上下文窗口（token，`resolveContextWindow` 生效值）；旧数据缺省 */
   contextWindow?: number;
-  /** 输出上限（token，per-LLM `maxTokens` 配置值）；未配置缺省 = 服务端默认 */
+  /** 输出上限（token，本轮**实际生效**的请求体 max_tokens）—— 由内核 buildChatOptions 裁决
+   *  （角色包 act.outputLimit > per-LLM 配置 > 服务端默认）；undefined = 未传，回服务端默认。
+   *  ⚠️ 旧数据语义为用户配置值（配置面快照），与生效值可能不等——以本字段口径重读历史数据时注意 */
   maxTokens?: number;
   /** 随请求发送的 reasoning_effort（'low'）；未发送缺省——派生自策略键 `multiStepReasoning='manual'`
    *  （流首**配置面**快照：截断换策略的运行时置入不在本字段，以 `truncationRecoveryCount` 佐证） */
@@ -180,9 +182,9 @@ export interface ProcessMetaPayload {
 export interface ProcessMetricsPayload {
   /** 本轮耗时（毫秒） */
   durationMs: number;
-  /** 输入 token 用量 */
+  /** 输入 token 用量（估算口径：每次 LLM 调用请求消息 `estimateTokens` 的**全程累计**，非服务端 usage 实测值；实测值在 actualInputTokens，宿主取证面未消费） */
   tokenIn: number;
-  /** 输出 token 用量 */
+  /** 输出 token 用量（估算口径：各次 LLM 调用**正文**（fullContent）估算的全程累计——**不含 thinking、不含工具轮叙述**（二者不拼入 fullContent，见 llmCaller），推理模型下远小于真实输出预算消耗，勿据它判断「截断是否该发生」；判断输出压力用 maxTokens（生效值）+ truncationRecoveryCount + thinkingChars 佐证） */
   tokenOut: number;
   /** 工具调用失败次数 */
   toolFailureCount: number;
