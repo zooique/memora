@@ -1134,10 +1134,10 @@ export class AgentLoop {
    *  比较 active 任务项是否已推进，推进才产 plan_item_boundary（宿主按任务项分组后续事件）。
    *  无任务表（null）或 planItemId 未变则不产（lastBoundaryPlanItemId 去噪，避免每迭代发一条空边界）。
    *
-   *  **检出时机 = 迭代开始、LLM 调用之前（硬，2026-09-26 定案）**：边界的语义是「**以下内容**
+   *  **检出时机 = 迭代开始、LLM 调用之前（定案锚 ADR-034）**：边界的语义是「**以下内容**
    *  属于该任务项」，故必须产在它所罩住的思考与工具之前——放在工具落定之后，宿主
    *  「向前找最近边界」的判据对该迭代必然落空 → 每个任务项的首个迭代（思考 + 首批工具）恒掉出
-   *  折叠块，且流式插入后不搬家（「任务项边界产出时机前移」定案）。
+   *  折叠块，且流式插入后不搬家。
    *
    *  语义后果（可接受，非缺陷）：任务表若由本轮某迭代的工具**新建**，该迭代仍留在组外——
    *  那个时刻任务表还不存在。本产出点修的是「任务表在本轮开始前已存在」（续会/预置/上一 turn
@@ -2340,10 +2340,10 @@ export class AgentLoop {
       Object.assign(baseOptions, this.opts.chatOptions);
     }
 
-    // 输出上限**取交集**（对齐上下文窗口 `min(provider 窗口, 角色包 contextLimit)` 的语义）：
-    // per-LLM 配置与角色包策略都是「上限」性质，任何一侧声明「不能超过 X」都必须被满足 ⇒ 取更小值。
-    // 直接覆盖（Object.assign 压过）与「上限」语义相反——它会让角色包把用户配的小值顶大
-    //（包 128K 顶掉面板 64K），用户无从得知谁赢了。
+    // 输出上限**取交集**（定案锚 ADR-035）：per-LLM 配置与角色包策略都是「上限」性质，
+    // 任何一侧声明「不能超过 X」都必须被满足 ⇒ 取更小值（对齐上下文窗口
+    // `min(provider 窗口, 角色包 contextLimit)` 的同构语义）。直接覆盖（Object.assign 压过）
+    // 与「上限」语义相反——它会让角色包把用户配的小值顶大，用户无从得知谁赢了。
     const perLlmLimit = this.opts.defaultMaxTokens;
     const strategyLimit = baseOptions.maxTokens;
     if (perLlmLimit !== undefined && strategyLimit !== undefined) {
