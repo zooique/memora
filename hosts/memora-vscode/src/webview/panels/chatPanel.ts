@@ -3612,12 +3612,6 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <div id="emptyHint" class="empty-hint">在下方输入你的想法，或点击示例提问快速开始</div>
       <div id="emptySuggestions" class="empty-suggestions"></div>
     </div>
-    <!-- 一键到底（吸收养分：对齐 TRAE App / TraeWork「上滚后回到底部」）：
-         用户上滚阅读离开底部时浮现，点击回到最新消息位置；吸底时隐藏 -->
-    <button id="scrollToBottomBtn" class="scroll-to-bottom" hidden
-      title="回到底部" aria-label="回到底部">
-      <span class="btn-icon" data-icon="scroll-bottom"></span>
-    </button>
     <!-- 写入审批卡：confirmWrites=true 时写文件触发，
          host 推送 write_confirm_request，webview 渲染此卡；用户确认/拒绝回传
          write_confirm_answer。默认隐藏，由脚本按需显示（fail-closed：超时即拒） -->
@@ -3658,6 +3652,16 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     </div>
   </div>
   <div id="inputBar">
+    <!-- 一键到底（对齐 TRAE App / TraeWork「上滚后回到底部」）：真机反馈 2026-10-01——
+         原挂在 #messages 内：#messages 是 overflow-y:auto 滚动容器，absolute 子元素随内容
+         滚动（与 #planBar 注释警告过的同款错），表现为「和会话记录一起滚走」。挪到
+         #inputBar 内（已 position:relative）锚定其顶边（bottom: calc(100% + sp-4)）=
+         恒钉消息区可视框右下角，输入区多行增高时自动跟随，零补偿逻辑。守卫测试锁定：
+         按钮不得是 #messages 后代（scroll-to-bottom-anchored 用例）。 -->
+    <button id="scrollToBottomBtn" class="scroll-to-bottom" hidden
+      title="回到底部" aria-label="回到底部">
+      <span class="btn-icon" data-icon="scroll-bottom"></span>
+    </button>
     <!-- Grok 式：选中 Skill 后在输入框上方以「名称 + × 可移除」chip 展示（chatView renderSkillChip 动态构建）；
          entry 仍是 Row1 的 bolt 图标触发器，此处只呈现已挂载的技能状态，保证透明 + 可控 -->
     <div id="skillChips" class="skill-chip-row" hidden></div>

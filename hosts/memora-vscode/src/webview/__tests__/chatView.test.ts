@@ -3849,6 +3849,20 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     expect(btn.hidden).toBe(true);
   });
 
+  it('一键到底按钮锚点守卫：按钮必须锚 #inputBar（滚动容器内 absolute 必随内容滚走，真机反馈 2026-10-01）', () => {
+    mountChatView();
+    const btn = document.getElementById('scrollToBottomBtn') as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    const inputBar = document.getElementById('inputBar') as HTMLElement;
+    const messages = document.getElementById('messages') as HTMLElement;
+    // 必须挂在 #inputBar（position:relative，非滚动容器）内：bottom: calc(100% + sp-4)
+    // 锚其顶边 = 恒钉消息区可视框右下角，不随消息滚动
+    expect(inputBar.contains(btn)).toBe(true);
+    // 🔴 严禁挪回 #messages：#messages 是 overflow-y:auto 滚动容器，absolute 子元素
+    // 参与滚动（「和会话记录一起滚走」根因；同 #planBar 注释警告过的错）
+    expect(messages.contains(btn)).toBe(false);
+  });
+
   it('流式结束后复制按钮使用完整原始文本（dataset.rawText 修复复制只复制首 chunk）', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '第一段 ' });

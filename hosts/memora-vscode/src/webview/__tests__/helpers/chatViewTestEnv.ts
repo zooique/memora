@@ -54,7 +54,6 @@ const HTML = `
       <div id="emptyHint" class="empty-hint"></div>
       <div id="emptySuggestions" class="empty-suggestions"></div>
     </div>
-    <button id="scrollToBottomBtn" class="scroll-to-bottom" hidden><span class="btn-icon" data-icon="scroll-bottom"></span></button>
     <div id="writeConfirmCard" class="write-confirm-card" hidden>
       <div class="write-confirm-card__body">
         <div class="write-confirm-card__head">
@@ -82,6 +81,7 @@ const HTML = `
     </div>
   </div>
   <div id="inputBar">
+    <button id="scrollToBottomBtn" class="scroll-to-bottom" hidden><span class="btn-icon" data-icon="scroll-bottom"></span></button>
     <div id="skillChips" class="skill-chip-row" hidden></div>
     <div id="inputWrap">
       <textarea id="input"></textarea>

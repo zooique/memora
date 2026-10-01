@@ -41,9 +41,13 @@ export const chatStyles = `
   }
   /* 一键到底按钮（对齐 TRAE App「上滚后回到底部」）：
    * 用户上滚离开底部时浮现于消息区右下角，点击回到底部后隐藏。
-   * 圆形次级按钮：半透明表面 + 边框，不抢消息主体；z-index 高于消息、低于输入区。 */
+   * 圆形次级按钮：半透明表面 + 边框，不抢消息主体；z-index 高于消息、低于输入区。
+   * 定位锚 = #inputBar 顶边（真机反馈 2026-10-01：原挂 #messages 内 absolute 随内容
+   * 滚动、「和会话记录一起滚走」——滚动容器的 absolute 子元素必随内容滚，planBar
+   * 注释早有警告）。挪进 #inputBar（已 position:relative）后 bottom: calc(100% + sp-4)
+   * 恒钉消息区可视框右下角；输入区/活动条/技能 chips 增高时按钮自动跟随，零补偿逻辑。 */
   .scroll-to-bottom {
-    position: absolute; right: var(--sp-4, 10px); bottom: var(--sp-4, 10px);
+    position: absolute; right: var(--sp-4, 10px); bottom: calc(100% + var(--sp-4, 10px));
     z-index: 5;
     display: inline-flex; align-items: center; justify-content: center;
     width: 28px; height: 28px; padding: 0;
