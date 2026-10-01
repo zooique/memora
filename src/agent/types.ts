@@ -140,6 +140,12 @@ export type AgentChunk = (
    * `Round.processEvents` / schema 零改动。
    */
   | { type: 'step_boundary' }
+  /**
+   * 任务表收尾快照：turn 收尾清空运行时任务表（clearPlanOnTurnEnd）**之前**拍的全量终态。
+   * 宿主桥接为 ProcessEvent `plan_snapshot` 落盘（重放恢复任务项完成态的唯一真源）；
+   * 中断轮同样经过收尾兜底产出；暂停/ask 挂起轮 pauseMeta guard 保留 plan → 不拍。
+   */
+  | { type: 'plan_snapshot'; items: { planItemId: string; status: PlanItem['status'] }[] }
   | { type: 'done' }
 ) &
   RoundTagged;

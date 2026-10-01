@@ -1361,6 +1361,89 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   );
 
   /**
+   * turn 收尾产出 plan_snapshot 快照（任务项完成态落盘真源，方案-过程块视觉辨识-20261001.md §四）
+   *
+   * 契约：clearPlanOnTurnEnd 在清空任务表**之前**产出一条 plan_snapshot chunk（全量 items
+   * 含各任务项 status）——turn 结束后宿主落盘轨由此获得「历史回看任务项完成态」的唯一结构化
+   * 数据源；存量历史轮无此事件 = 重放不显示状态图标（诚实降级）。
+   *
+   * 突变验证：删除快照产出（clearPlanOnTurnEnd 去掉 yield）→ 本用例 MUST FAIL（快照缺失）。
+   */
+  it(
+    '场景 G3：turn 收尾产出 plan_snapshot 快照（全量 items 含 status），先拍后清',
+    { timeout: 30000 },
+    async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
+
+      agent.createCheckpoint('测试目标');
+      agent
+        .getCheckpoint()!
+        .plan.push(
+          { id: 'step-active-1', description: '当前执行步骤', status: 'active', order: 1 },
+          { id: 'step-pending-2', description: '后续步骤', status: 'pending', order: 2 },
+        );
+
+      // 消费完整流收集 chunks（chatSync 不暴露 chunk，须 for-await）
+      const chunks: Array<{ type: string; items?: { planItemId: string; status: string }[] }> = [];
+      for await (const chunk of agent.chat('推进任务')) {
+        chunks.push(chunk as (typeof chunks)[number]);
+      }
+
+      // 快照 chunk 存在且 items 全量透传（id + status 与清空前的任务表一致）
+      const snap = chunks.find((c) => c.type === 'plan_snapshot');
+      expect(snap).toBeDefined();
+      expect(snap!.items).toEqual([
+        { planItemId: 'step-active-1', status: 'active' },
+        { planItemId: 'step-pending-2', status: 'pending' },
+      ]);
+      // 先拍后清：快照产出后任务表已清空（与场景 G 同一收口点，不跨 turn 残留）
+      expect(agent.getCheckpoint()!.plan).toHaveLength(0);
+    },
+  );
+
+  /**
+   * 挂起收场轮不拍快照（pauseMeta guard）——与场景 G3 的对称面。
+   *
+   * 契约：turn 未真正结束（提问挂起/用户暂停）时 plan 保留供续跑推进，快照语义是
+   * 「收尾终态」——挂起轮不产 plan_snapshot（否则中途状态被误当终态，且续跑推进后
+   * 产生两条快照干扰「取最后一条」的重放语义）。
+   */
+  it(
+    '场景 G4：提问挂起收场（pauseMeta guard）不产 plan_snapshot，plan 保留',
+    { timeout: 30000 },
+    async () => {
+      agent = new Agent({
+        projectPath: tmpProject,
+        provider: new AskInPlanProvider(),
+        configDir: tmpConfig,
+        dataDir: tmpData,
+        permission: 'owner',
+        allowedPaths: [tmpData],
+      });
+      await agent.init();
+      agent.createCheckpoint('任务目标');
+      agent
+        .getCheckpoint()!
+        .plan.push(
+          { id: 'ask-plan-s1', description: '步骤一：读取', status: 'active', order: 1 },
+          { id: 'ask-plan-s2', description: '步骤二：汇报', status: 'pending', order: 2 },
+        );
+
+      const chunks: Array<{ type: string }> = [];
+      for await (const chunk of agent.chat('执行任务')) {
+        chunks.push(chunk as { type: string }); // 首轮 ask_user 提问挂起
+      }
+      // 守卫：确认确实挂在暂停态（pauseMeta 落检查点，clearPlanOnTurnEnd guard 生效前提）
+      expect(agent.sessionManager!.status).toBe('paused');
+      expect(agent.getCheckpoint()!.pauseMeta?.source).toBe('agent');
+      // 挂起收场：无快照 chunk + plan 原样保留（与缝隙 A 同一不变量）
+      expect(chunks.some((c) => c.type === 'plan_snapshot')).toBe(false);
+      expect(agent.getCheckpoint()!.plan).toHaveLength(2);
+    },
+  );
+
+  /**
    * 真实带伤回归锁：resume 收尾路径漏清 plan。
    *
    * 复现：chat() 第一半以 pause 收场（pauseMeta 挂起、plan 保留）→ 用户点「继续」续跑，

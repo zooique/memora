@@ -287,6 +287,23 @@ export type ProcessEvent =
       ts: string;
       payload: { planItemId?: string; title?: string };
     }
+  /**
+   * 任务表收尾快照：turn 收尾清空运行时任务表**之前**拍的全量终态（每条任务项的
+   * planItemId + status）。清空前拍 = 中断轮同样拍到；暂停/ask 挂起轮由 pauseMeta
+   * guard 保留 plan（不拍不清），最终收尾才拍。
+   *
+   * 为什么必须有它：任务表状态是 turn 内瞬态（收尾即清 + 宿主推空看板），历史回看时
+   * 任务项完成态没有任何结构化真源。本快照是重放恢复「任务项完成态」的唯一数据来源；
+   * 存量历史轮无此事件 = 任务项组不显示状态图标（诚实降级，不伪造）。
+   */
+  | {
+      type: 'plan_snapshot';
+      seq: number;
+      ts: string;
+      payload: {
+        items: { planItemId: string; status: 'pending' | 'active' | 'done' | 'blocked' }[];
+      };
+    }
   | {
       type: 'aborted';
       seq: number;

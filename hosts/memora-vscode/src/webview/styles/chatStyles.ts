@@ -1545,6 +1545,16 @@ export const chatStyles = `
   }
   .round-block__plan-item-summary::-webkit-details-marker { display: none; }
   .round-block__plan-item-summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  /* 任务项状态图标（applyPlanItemStates 单一写入点的视觉承载，summary 前置）：
+   * done = circle-check 完成绿 / active = target 进行中——颜色语义各一处，
+   * 复用既有令牌（--status-pass 写确认 ok 按钮在用、--accent 相位行在用），不造新色。 */
+  .round-block__plan-item-status {
+    display: inline-flex; align-items: center; vertical-align: -2px;
+    margin-right: var(--sp-2, 6px);
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .is-plan-done .round-block__plan-item-status { color: var(--status-pass, #4ec9b0); }
+  .is-plan-active .round-block__plan-item-status { color: var(--accent, #0e639c); }
   /* 过程叙述行：LLM 一段行动叙述 = 一个可折叠行（summary 摘要 + 全文展开），与工具行平级平铺 details 顶层 */
   .round-block__narrate { padding: var(--sp-1, 2px) 0; line-height: 1.6; }
   .round-block__narrate summary {

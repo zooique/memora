@@ -1132,6 +1132,52 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     grp.dataset.seq = String(boundSeq);
   }
 
+  /**
+   * 任务项状态单一写入点（SSOT，方案-过程块视觉辨识-20261001.md §四）：按组上已有的
+   * data-plan-item 匹配切换状态图标/类——done = circle-check（完成绿）、active = target
+   * （正在执行）、pending/blocked 无图标（收起态 summary 干净）。
+   *
+   * 消费点恰好两个：plan_update 分支（实时）+ renderRoundBlock（finalize/重放，从
+   * plan_snapshot 快照建 map）。禁第三处内联更新；🔴 禁从标题/时序/工具文本推断状态——
+   * 状态数据缺失（存量历史轮无快照）= 组不显示图标（诚实降级，不伪造绿勾）。
+   * 幂等：同图标已就位不重复注入（plan_update 高频重推零成本）。
+   */
+  function applyPlanItemStates(root: HTMLElement, states: Map<string, string>): void {
+    root.querySelectorAll<HTMLElement>('.round-block__plan-item[data-plan-item]').forEach((grp) => {
+      const status = states.get(grp.dataset.planItem ?? '');
+      const summary = grp.querySelector<HTMLElement>('.round-block__plan-item-summary');
+      if (!summary) return;
+      grp.classList.toggle('is-plan-done', status === 'done');
+      grp.classList.toggle('is-plan-active', status === 'active');
+      const existing = summary.querySelector<HTMLElement>('.round-block__plan-item-status');
+      // 图标由状态唯一决定；无状态/未知状态 = 不显示（数据缺失的自然投影）
+      const iconName = status === 'done' ? 'circle-check' : status === 'active' ? 'target' : null;
+      if (!iconName) {
+        existing?.remove();
+        return;
+      }
+      if (existing?.dataset.statusIcon === iconName) return;
+      const el = existing ?? document.createElement('span');
+      el.className = 'round-block__plan-item-status';
+      el.dataset.statusIcon = iconName;
+      el.setAttribute('aria-hidden', 'true');
+      el.innerHTML = getIconSvg(iconName, 12, 12); // 静态 SVG，无外部输入
+      if (!existing) summary.prepend(el);
+    });
+  }
+
+  /**
+   * 从 processEvents 提取任务项状态 map（取**最后一条** plan_snapshot——turn 内多次
+   * 挂起/恢复场景以收尾终态为准）。无快照返回空 map（存量轮诚实降级：组无图标）。
+   */
+  function planItemStatesFromEvents(events: ProcessEvent[]): Map<string, string> {
+    const snaps = events.filter(
+      (e): e is Extract<ProcessEvent, { type: 'plan_snapshot' }> => e.type === 'plan_snapshot',
+    );
+    const last = snaps[snaps.length - 1];
+    return new Map(last ? last.payload.items.map((i) => [i.planItemId, i.status]) : []);
+  }
+
   /** 思考折叠块标题：stepIndex 已知 = 标注第几步（一个 step 一个折叠块）；无归属 = 裸「思考」 */
   function thoughtLabel(stepIndex?: number): string {
     return stepIndex !== undefined ? `思考 · 第 ${stepIndex} 步` : '思考';
@@ -1920,6 +1966,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         }
       }
     }
+    // § 任务项状态（finalize/重放消费点）：从 plan_snapshot 快照建 map 应用状态图标。
+    // 存量历史轮无快照 → 空 map → 组不显示状态图标（诚实降级，不伪造绿勾）。
+    applyPlanItemStates(details, planItemStatesFromEvents(events));
   }
 
   /**
@@ -4577,6 +4626,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'plan_update') {
       // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（renderPlanBoard 自建/更新容器）
       renderPlanBoard(msg.items);
+      // 任务项组状态实时同步（单一写入点 applyPlanItemStates 的实时消费点）：
+      // 看板数据即状态真源投影，同步点亮过程区任务项组图标（done 绿勾 / active 靶心）。
+      // 根选择与 QA 归位同构：运行时 flow 优先，finalize 后 round-block 兜底。
+      const stateRoot = flowEl?.isConnected
+        ? flowEl
+        : roundBlockEl?.isConnected
+          ? roundBlockEl.querySelector<HTMLElement>('.round-block__details')
+          : null;
+      if (stateRoot) {
+        applyPlanItemStates(stateRoot, new Map(msg.items.map((s) => [s.id, s.status])));
+      }
     } else if (msg.type === 'polish_input_result') {
       // 输入框润色结果：ok=true 替换输入框内容；ok=false 提示失败
       if (msg.ok && msg.text) {

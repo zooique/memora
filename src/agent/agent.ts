@@ -481,8 +481,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 仅当本调用仍是当前锁持有者时才清理资源（token 校验）
       this.internals.chatLockManager?.release(myToken);
       cleanupExternalSignal();
-      // turn 结束自动收尾：非暂停态无条件清理任务表（turn 内能力，不跨 turn 残留）
-      this.clearPlanOnTurnEnd();
+      // turn 结束自动收尾：非暂停态无条件清理任务表（turn 内能力，不跨 turn 残留）；
+      // 清空前产出 plan_snapshot 快照 chunk（任务项完成态落盘真源）
+      yield* this.clearPlanOnTurnEnd();
       await this.flushPendingConfigReload();
     }
   }
@@ -646,8 +647,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 无条件清空任务表（除非再次暂停——pauseMeta 由 loop 在边界重新挂起，guard 保留）。
       // 必须无条件清：若仅全 done 才清，resume 以非 done 且未重暂停结束（如某任务项标 blocked
       // 后收尾）时 plan 残留 → 跨 turn 污染下一个 chat()。
-      // 两处 turn-end 清理统一为 clearPlanOnTurnEnd（单一收口点），plan 严格 turn 内、不跨 turn 残留。
-      this.clearPlanOnTurnEnd();
+      // 两处 turn-end 清理统一为 clearPlanOnTurnEnd（单一收口点），plan 严格 turn 内、不跨 turn 残留；
+      // 清空前产出 plan_snapshot 快照 chunk（任务项完成态落盘真源）
+      yield* this.clearPlanOnTurnEnd();
     }
   }
 
@@ -1009,15 +1011,28 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 故保留不清；恢复完成后该 turn 最终退出时仍会走本方法无条件清空。
    *
    * 运行时状态（plan/planItemLog）清空，但对话记录里的 round-block 折叠块已沉淀为历史（不落盘删除）。
-   * 挂点：chat() 与 resumeExecution 的 finally 块（generator close 时触发，确保所有 yield 已被宿主消费）
+   * 挂点：chat() 与 resumeExecution 的 finally 块（generator close 时触发，确保所有 yield 已被宿主消费）。
+   *
+   * 清空前产出一条 `plan_snapshot` chunk（任务表全量终态）：turn 结束后宿主落盘轨由此获得
+   * 任务项完成态的唯一结构化真源（重放恢复绿勾用）；中断轮同样经过本方法 → 中断轮也拍。
+   * 委托为同步 generator（`yield*` 消费），快照 chunk 尽力交付、清空动作经内部 try/finally
+   * 无条件执行——即使宿主提前终止流（快照未被消费），plan 也不跨 turn 残留（行为与改造前一致）。
    */
-  private clearPlanOnTurnEnd(): void {
+  private *clearPlanOnTurnEnd(): Generator<AgentChunk, void, unknown> {
     const sm = this._sessionManager;
     if (!sm) return;
     const cp = sm.getCheckpoint();
     if (!cp?.plan || cp.plan.length === 0) return;
     if (cp.pauseMeta) return; // 暂停态：turn 未真正结束，恢复时需继续用 plan，保留不清
-    sm.clearPlan();
+    try {
+      // 清空前拍快照：此刻 plan 仍完整（含各任务项最终 status）
+      yield {
+        type: 'plan_snapshot',
+        items: cp.plan.map((item) => ({ planItemId: item.id, status: item.status })),
+      };
+    } finally {
+      sm.clearPlan();
+    }
   }
 
   /**

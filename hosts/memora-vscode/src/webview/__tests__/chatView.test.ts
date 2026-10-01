@@ -7453,3 +7453,193 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     expect(rows.map((r) => r.dataset.toolBatch)).toEqual(['2', '5']);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// 任务项完成态（plan_snapshot 快照 → 状态图标，UI-BLOCK-ICON 批次一）
+// ═══════════════════════════════════════════════════════════
+// 数据真源 = 内核 plan_snapshot（turn 收尾清空 plan 前产出，方案-过程块视觉辨识-20261001.md §四）。
+// 写入点单一 = applyPlanItemStates；消费点恰两个（plan_update 实时 / renderRoundBlock 重放）。
+// 存量历史轮无快照 = 组无状态图标（诚实降级，不伪造绿勾）。变异锁：删 chatPanel
+// plan_snapshot 桥接 / 删 renderRoundBlock 快照消费 → 重放用例转红。
+describe('任务项完成态（plan_snapshot 快照 → 状态图标）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** 构造含任务项边界 + 叙述行 + 可选快照的过程事件序列（ts 递增保证归组判定成立） */
+  function planEvents(
+    withSnapshot: boolean,
+    finalStatus: 'pending' | 'active' | 'done' | 'blocked' = 'done',
+  ): ProcessEvent[] {
+    return [
+      { type: 'meta', seq: 0, ts: 'T0', payload: { role: 'AI', llm: 'm' } },
+      {
+        type: 'plan_item_boundary',
+        seq: 1,
+        ts: 'T1',
+        payload: { planItemId: 'p1', title: '第一步' },
+      },
+      { type: 'narrate', seq: 2, ts: 'T2', payload: { content: '干活中' } },
+      ...(withSnapshot
+        ? [
+            {
+              type: 'plan_snapshot' as const,
+              seq: 3,
+              ts: 'T3',
+              payload: { items: [{ planItemId: 'p1', status: finalStatus }] },
+            },
+          ]
+        : []),
+      {
+        type: 'metrics',
+        seq: 4,
+        ts: 'T4',
+        payload: { durationMs: 100, tokenIn: 1, tokenOut: 1, toolFailureCount: 0, success: true },
+      },
+    ];
+  }
+
+  it('重放：有 plan_snapshot 快照轮 → 任务项组点亮完成图标（is-plan-done + circle-check）', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'r-snap',
+        processEvents: planEvents(true, 'done'),
+        assistantMessage: { content: '完成回答' },
+        status: 'complete',
+      }),
+    );
+    const grp = document.querySelector(
+      '.round-block__plan-item[data-plan-item="p1"]',
+    ) as HTMLElement;
+    expect(grp).not.toBeNull();
+    expect(grp.classList.contains('is-plan-done')).toBe(true);
+    const icon = grp.querySelector('.round-block__plan-item-status') as HTMLElement;
+    expect(icon).not.toBeNull();
+    expect(icon.dataset.statusIcon).toBe('circle-check');
+  });
+
+  it('重放：active 状态 → 靶心图标（is-plan-active），与完成勾形态互斥', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'r-active',
+        processEvents: planEvents(true, 'active'),
+        assistantMessage: { content: '完成回答' },
+        status: 'complete',
+      }),
+    );
+    const grp = document.querySelector(
+      '.round-block__plan-item[data-plan-item="p1"]',
+    ) as HTMLElement;
+    expect(grp.classList.contains('is-plan-active')).toBe(true);
+    expect(grp.classList.contains('is-plan-done')).toBe(false);
+    const icon = grp.querySelector('.round-block__plan-item-status') as HTMLElement;
+    expect(icon.dataset.statusIcon).toBe('target');
+  });
+
+  it('重放：存量轮无快照 → 任务项组无状态图标（诚实降级，不伪造绿勾）', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'r-legacy',
+        processEvents: planEvents(false),
+        assistantMessage: { content: '完成回答' },
+        status: 'complete',
+      }),
+    );
+    const grp = document.querySelector(
+      '.round-block__plan-item[data-plan-item="p1"]',
+    ) as HTMLElement;
+    // 组照常渲染（分组结构不受影响），但无任何状态图标/状态类
+    expect(grp).not.toBeNull();
+    expect(grp.querySelector('.round-block__plan-item-status')).toBeNull();
+    expect(grp.classList.contains('is-plan-done')).toBe(false);
+    expect(grp.classList.contains('is-plan-active')).toBe(false);
+  });
+
+  it('重放：多条快照取最后一条（挂起→续跑推进后以收尾终态为准）', () => {
+    mountChatView();
+    const events = [
+      ...planEvents(false),
+      // 两条快照：挂起时中途态（active）+ 收尾终态（done）——重放必须以终态为准
+      {
+        type: 'plan_snapshot' as const,
+        seq: 3,
+        ts: 'T3',
+        payload: { items: [{ planItemId: 'p1', status: 'active' }] },
+      },
+      {
+        type: 'plan_snapshot' as const,
+        seq: 5,
+        ts: 'T5',
+        payload: { items: [{ planItemId: 'p1', status: 'done' }] },
+      },
+    ];
+    dispatchReplay(
+      makeRound({
+        id: 'r-multi',
+        processEvents: events,
+        assistantMessage: { content: '完成回答' },
+        status: 'complete',
+      }),
+    );
+    const grp = document.querySelector(
+      '.round-block__plan-item[data-plan-item="p1"]',
+    ) as HTMLElement;
+    expect(grp.classList.contains('is-plan-done')).toBe(true);
+    expect(
+      grp.querySelector('.round-block__plan-item-status')?.getAttribute('data-status-icon'),
+    ).toBe('circle-check');
+  });
+
+  it('实时：plan_update 到达 → 过程区任务项组同步状态图标（done/active 切换幂等）', () => {
+    mountChatView();
+    // 运行时链路：meta 建骨架 → boundary 声明分组 → narrate 触发懒建组 → plan_update 同步状态
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: 'T0', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'plan_item_boundary',
+        seq: 2,
+        ts: 'T1',
+        payload: { planItemId: 'p1', title: '第一步' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'narrate', seq: 3, ts: 'T2', payload: { content: '干活中' } },
+    });
+    const grpOf = () =>
+      document.querySelector('.round-block__plan-item[data-plan-item="p1"]') as HTMLElement;
+    expect(grpOf()).not.toBeNull();
+
+    // done → 绿勾
+    dispatch({
+      type: 'plan_update',
+      items: [{ id: 'p1', description: '第一步', status: 'done', order: 0, planItemLog: [] }],
+    });
+    expect(grpOf().classList.contains('is-plan-done')).toBe(true);
+    expect(
+      grpOf().querySelector('.round-block__plan-item-status')?.getAttribute('data-status-icon'),
+    ).toBe('circle-check');
+
+    // 状态回变 active（LLM 复改）→ 图标切换为靶心（不残留双图标，写入点幂等替换）
+    dispatch({
+      type: 'plan_update',
+      items: [{ id: 'p1', description: '第一步', status: 'active', order: 0, planItemLog: [] }],
+    });
+    expect(grpOf().classList.contains('is-plan-done')).toBe(false);
+    expect(grpOf().classList.contains('is-plan-active')).toBe(true);
+    expect(grpOf().querySelectorAll('.round-block__plan-item-status')).toHaveLength(1);
+    expect(
+      grpOf().querySelector('.round-block__plan-item-status')?.getAttribute('data-status-icon'),
+    ).toBe('target');
+  });
+});

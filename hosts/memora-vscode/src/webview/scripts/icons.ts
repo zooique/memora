@@ -44,6 +44,7 @@ export type IconName =
   | 'team' // 小组会议（双人轮廓，柔和线条）
   | 'ellipsis' // 更多操作（三点）
   | 'target' // 当前执行位置（同心圆靶心；plan-tag「正在执行任务项 N」锚点）
+  | 'circle-check' // 圈内对勾（完成态：任务项组 done 态 + 终态「已完成」淡勾）
   | 'warning' // 警告（三角感叹号；内联提示/校验警示）
   // 「移入留存区」（归档箱，盖 + 箱体 + 箱内横线）——会话列表的移出动作。
   // 语义提示：只改显示分组，不删数据，故不用任何「删除/叉号」类语言。
@@ -111,6 +112,9 @@ const ICON_PATHS: Record<IconName, string> = {
     '<circle cx="4" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="8" r="1.2" fill="currentColor" stroke="none"/>',
   // 当前执行位置：同心圆靶心（plan-tag 锚点）
   target: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.5"/>',
+  // 完成：圆圈内对勾（外圈与 target 同曲率成对——「正在执行 = 靶心 / 已完成 = 圈勾」；
+  // 勾整体置于圈内心区，端点不出圈）
+  'circle-check': '<circle cx="8" cy="8" r="5.5"/><path d="M5.6 8.3l1.7 1.7 3.3-3.5"/>',
   // 警告：三角轮廓 + 感叹号（竖线走描边、点用填充圆——与 ellipsis 同法，
   // 16px 网格下描边小点会糊成环）
   warning:
