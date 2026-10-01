@@ -2402,7 +2402,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     send.setAttribute('aria-label', spec.send.ariaLabel);
   }
 
-  // ─── 底部状态条收纳器（StatusDock，方案-底部状态条收纳-20261001.md）───
+  // ─── 底部状态条收纳器（StatusDock，方案-底部状态条收纳-20261001.md §二定案/§三契约）───
   // 底部三条（fileChanges / pendingQueue / activityBar 非错误态）同屏堆叠收紧：
   // 主位常显优先级最高一条，其余收进「+N」浮层（同 planBar head→panel 纵向展开形态）。
   // 🔴 SSOT：三条的 hidden 与 DOM 归位**只由 resolveDock 裁决**——各条更新函数只上报
@@ -4159,16 +4159,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else {
       activityBar.textContent = text;
     }
-    activityBar.hidden = false;
-    // StatusDock 接线：error 豁免恒主位（fail-visible），非错误态参与收纳（垫底优先级）
+    // StatusDock 接线：error 豁免恒主位（fail-visible），非错误态参与收纳（垫底优先级）。
+    // hidden 归 resolveDock 裁决（setDockActive 触发全量重排），此处不直写。
     setDockActive('activity', true);
     setDockFixed('activity', level === 'error');
     if (activityTimer) window.clearTimeout(activityTimer);
     activityTimer = window.setTimeout(
       () => {
-        activityBar.hidden = true;
         delete activityBar.dataset.level;
-        setDockActive('activity', false); // 自动消失 → 撤出收纳器（fixed 随之撤销）
+        // 自动消失 → 撤出收纳器（fixed 随之撤销；hidden 与归位由 resolveDock 统一裁决）
+        setDockActive('activity', false);
         setDockFixed('activity', false);
       },
       level === 'error' ? 8000 : 2500,

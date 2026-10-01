@@ -61,7 +61,7 @@ export const chatStyles = `
   .scroll-to-bottom:hover { color: var(--text-primary, #cccccc); }
   .scroll-to-bottom[hidden] { display: none; }
 
-  /* ============ StatusDock：底部状态条收纳器（方案-底部状态条收纳-20261001.md） ============ */
+  /* ============ StatusDock：底部状态条收纳器（方案-底部状态条收纳-20261001.md §三契约） ============ */
   /* 主位条尾部「+N」chip：被收纳条计数，点击开合浮层。独立 DOM（activityBar 渲染
    * textContent='' 整体重置，chip 塞条内会被抹掉）。全既有令牌，无新 token。 */
   .status-dock__chip {

@@ -3863,7 +3863,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     expect(messages.contains(btn)).toBe(false);
   });
 
-  // ─── StatusDock：底部状态条收纳器（方案-底部状态条收纳-20261001.md）───
+  // ─── StatusDock：底部状态条收纳器（方案-底部状态条收纳-20261001.md §五验证计划）───
   describe('StatusDock 底部状态条收纳（真机反馈 2026-10-01：形态太多）', () => {
     beforeEach(() => {
       document.body.innerHTML = '';
