@@ -2468,8 +2468,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     // 主位裁决：fixed（error 豁免）优先，否则 priority 最大（同分先注册者优先）
     const head =
-      actives.find((e) => e.fixed) ??
-      actives.reduce((a, b) => (b.priority > a.priority ? b : a));
+      actives.find((e) => e.fixed) ?? actives.reduce((a, b) => (b.priority > a.priority ? b : a));
     const rest = actives.filter((e) => e !== head);
     // 主位条归位
     head.el.hidden = false;
@@ -4687,9 +4686,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         } else if (ev.type === 'plan_snapshot') {
           // 收尾终态快照（内核 clearPlanOnTurnEnd yield，先拍后清）：全量重建——终态权威，
           // 覆盖此前累加的 active（运行期从未收 plan_update 时，绿勾在收尾即时点亮而非等 finalize）
-          livePlanStates = new Map(
-            ev.payload.items.map((i) => [i.planItemId, i.status]),
-          );
+          livePlanStates = new Map(ev.payload.items.map((i) => [i.planItemId, i.status]));
         }
         currentEvents.push(ev);
         // 运行时过程平铺容器随流同步刷新（增量：narrate 冒号行 + 工具折叠行 + 思考状态）

@@ -3485,7 +3485,12 @@ describe('任务项状态图标（真机反馈 2026-10-01：运行中无 active 
       type: 'meta',
       seq: 3,
       ts: T0,
-      payload: { role: '共鸣小说家', llm: 'mimo-v2.6-pro', contextWindow: 600000, maxTokens: 64000 },
+      payload: {
+        role: '共鸣小说家',
+        llm: 'mimo-v2.6-pro',
+        contextWindow: 600000,
+        maxTokens: 64000,
+      },
     },
     {
       type: 'plan_item_boundary',
@@ -3525,16 +3530,14 @@ describe('任务项状态图标（真机反馈 2026-10-01：运行中无 active 
         ],
       }),
     );
-    const grp = document.querySelector<HTMLElement>(
-      '.round-block__plan-item[data-plan-item="p1"]',
-    );
+    const grp = document.querySelector<HTMLElement>('.round-block__plan-item[data-plan-item="p1"]');
     expect(grp).toBeTruthy();
     expect(grp?.classList.contains('is-plan-done')).toBe(true);
     expect(grp?.querySelector('.round-block__plan-item-status')).toBeTruthy();
   });
 
   it('问题1复现：流式 plan_item_boundary 到达 → 该任务项组立即亮 active 靶心', () => {
-    const { } = mountChatView();
+    const {} = mountChatView();
     // 开轮（meta）→ 任务项边界（无任何 plan_snapshot / plan_update）
     dispatch({
       type: 'process_event',
@@ -3542,7 +3545,12 @@ describe('任务项状态图标（真机反馈 2026-10-01：运行中无 active 
         type: 'meta',
         seq: 3,
         ts: T0,
-        payload: { role: '共鸣小说家', llm: 'mimo-v2.6-pro', contextWindow: 600000, maxTokens: 64000 },
+        payload: {
+          role: '共鸣小说家',
+          llm: 'mimo-v2.6-pro',
+          contextWindow: 600000,
+          maxTokens: 64000,
+        },
       } as ProcessEvent,
     });
     dispatch({
@@ -3555,9 +3563,7 @@ describe('任务项状态图标（真机反馈 2026-10-01：运行中无 active 
       } as ProcessEvent,
     });
     // 任务项组已渲染（运行时平铺形态），状态图标应同步亮起（active 靶心）
-    const grp = document.querySelector<HTMLElement>(
-      '.round-block__plan-item[data-plan-item="p1"]',
-    );
+    const grp = document.querySelector<HTMLElement>('.round-block__plan-item[data-plan-item="p1"]');
     expect(grp).toBeTruthy();
     expect(grp?.classList.contains('is-plan-active')).toBe(true);
     expect(grp?.querySelector('.round-block__plan-item-status')).toBeTruthy();
@@ -3571,7 +3577,12 @@ describe('任务项状态图标（真机反馈 2026-10-01：运行中无 active 
         type: 'meta',
         seq: 3,
         ts: T0,
-        payload: { role: '共鸣小说家', llm: 'mimo-v2.6-pro', contextWindow: 600000, maxTokens: 64000 },
+        payload: {
+          role: '共鸣小说家',
+          llm: 'mimo-v2.6-pro',
+          contextWindow: 600000,
+          maxTokens: 64000,
+        },
       } as ProcessEvent,
     });
     dispatch({
@@ -3874,8 +3885,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     });
 
     const fcBar = (): HTMLElement => document.querySelector('.file-changes-bar') as HTMLElement;
-    const pqBar = (): HTMLElement =>
-      document.querySelector('.pending-queue-bar') as HTMLElement;
+    const pqBar = (): HTMLElement => document.querySelector('.pending-queue-bar') as HTMLElement;
     const actBar = (): HTMLElement => document.getElementById('activityBar') as HTMLElement;
     const chip = (): HTMLButtonElement =>
       document.querySelector('.status-dock__chip') as HTMLButtonElement;
