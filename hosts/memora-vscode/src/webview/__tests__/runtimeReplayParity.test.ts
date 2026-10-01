@@ -129,8 +129,8 @@ describe('运行时 × 重放对拍（round-1789565571934 同一 fixture 两路�
       const streamSemantics = extractRoundSemantics();
       const streamAssistant = document.querySelector('.msg.assistant');
       const streamBody = streamAssistant?.querySelector<HTMLElement>('.msg-body');
-      // 收口后光标消失（done 已收尾，非在途）
-      expect(streamBody?.classList.contains('is-streaming')).toBe(false);
+      // 收口后终态定格「已完成」（done 已收尾，非在途）
+      expect(streamBody?.dataset.status).toBe('已完成');
 
       // ── 路 B：重放（单条 turn_update.rounds 整批重建）──
       mountChatView();

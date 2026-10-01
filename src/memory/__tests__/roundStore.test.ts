@@ -494,6 +494,9 @@ describe('isRoundSettled 判据单源守卫', () => {
     ],
     'hosts/memora-vscode/src/webview/scripts/chatView.ts': [
       "(r.status === 'complete' || r.live) && r.assistantMessage?.content",
+      // 重放渲染的终态光标分流：complete 轮正文落「已完成」态（setCursorStatus），回答
+      // 「怎么画光标」而非「是否已收场」——变量化命名（settledReplay）使豁免片段自带辨识度
+      "const settledReplay = r.status === 'complete';",
     ],
   };
 

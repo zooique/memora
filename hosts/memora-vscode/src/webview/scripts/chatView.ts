@@ -2122,6 +2122,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         updateToolRowState(flow, e as Extract<ProcessEvent, { type: 'tool_result' }>);
       }
     }
+    // 4) 光标运行态同步：工具/思考 DOM 刚被本函数更新 → 推导一次（批次二单一合成点；
+    //    仅流式中生效——重放/骨架期调用无活动流式块，guard 内 no-op）
+    if (streamingActive) syncRunningCursor();
   }
 
   /**
@@ -3408,6 +3411,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       .closest<HTMLElement>('.round-group')
       ?.querySelector<HTMLElement>('.round-group__footer')
       ?.classList.add('is-pending');
+    // 光标挂起态「等待输入」：ask 预检停顿（无正文块时 no-op——纯问答轮由 ask-inline 承担可见性）
+    setActiveSheetStatus('等待输入');
     // 幂等：重复提问（如连续多问/多次 turn_update 推送）先移除旧内联块，再挂新
     document.querySelector('.ask-inline')?.remove();
     const box = document.createElement('div');
@@ -3615,11 +3620,86 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return { body, footer };
   }
 
+  // ─── 光标状态机（UI-BLOCK-ICON 批次二，方案-过程块视觉辨识-20261001.md §三定案 B）───
+  // 八态单属性驱动：JS 只写 .msg-body[data-status]（文案即状态值；异常中断附
+  // data-status-detail=原因摘要），文案与样式全由 CSS ::after + attr() 承载——
+  // 挂容器上不受增量 markdown 重渲染影响（🔴 禁真实 span，会被增量渲染吃掉）。
+
   /**
-   * 开始一轮流式：创建新的 assistant 消息（纯文本 body + 光标 ▋），并置流式状态
+   * 光标状态（八态，单一合成函数的输出域）：运行三态呼吸 / 挂起两态静态 / 终态三态分级。
+   * 「已停止」当前无写入点（中断轮正文块被移除，停止展示由 appendInterruptedRow 承担），
+   * 类型保留完备性。
+   */
+  type CursorStatus =
+    | '思考中' // 运行：思考相位（process-flow 相位行非工具形态在途）
+    | '运行工具中' // 运行：工具在途（is-tool-running 存在）
+    | '正在回答中' // 运行：正文流式生成（默认态）
+    | '等待输入' // 挂起：ask 预检停顿（提问框在途）
+    | '已暂停' // 挂起：软暂停/用户暂停（半截正文静态展示）
+    | '已完成' // 终态：静默 circle-check 淡勾
+    | '已停止' // 终态：用户停止（当前载体 = interrupted 行，无正文块写入点）
+    | '异常中断'; // 终态：异常（红色 + data-status-detail 原因摘要）
+
+  /**
+   * 对指定正文块写入光标状态（全部写入点的唯一实现；null = 清除，幂等）
+   *
+   * @param body    正文块（.msg-body）；null/未连接时 no-op（诚实投影：无载体不撒状态）
+   * @param status  八态文案之一；null 清除
+   * @param detail  异常中断的原因摘要（仅 error 态消费，JS 侧负责截断）
+   */
+  function setCursorStatus(
+    body: HTMLElement | null | undefined,
+    status: CursorStatus | null,
+    detail?: string,
+  ): void {
+    if (!body || !body.isConnected) return;
+    if (status) {
+      body.dataset.status = status;
+      if (detail) body.dataset.statusDetail = detail;
+      else delete body.dataset.statusDetail;
+    } else {
+      delete body.dataset.status;
+      delete body.dataset.statusDetail;
+    }
+  }
+
+  /** 活动正文块状态写入（实时流路径统一入口：activeAssistantEl 为正文块 SSOT） */
+  function setActiveSheetStatus(status: CursorStatus | null, detail?: string): void {
+    setCursorStatus(
+      activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
+      status,
+      detail,
+    );
+  }
+
+  /**
+   * 运行态推导（单一合成点）：优先级固定 = 工具在途 > 思考相位 > 默认回答。
+   * 判定源与过程渲染同源（DOM 单查询，无第二套状态轨道）：
+   * 工具在途 = 活动容器内 .is-tool-running 行 / 相位行 --tool 形态（正在执行：xxx）；
+   * 思考相位 = 相位行非工具形态（.process-flow__phase，renderProcessFlow 单条维护）。
+   * 挂起/终态不走此函数（paused/ask/done/error 事件分支直接设置）；
+   * 仅流式中调用（streamingActive guard 由调用方保证），重放路径显式落终态。
+   */
+  function syncRunningCursor(): void {
+    const body = activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body');
+    if (!body) return;
+    const scope = body.closest('.round-group') ?? messages;
+    if (scope.querySelector('.round-block__tool.is-tool-running, .process-flow__phase--tool')) {
+      setCursorStatus(body, '运行工具中');
+      return;
+    }
+    if (scope.querySelector('.process-flow__phase')) {
+      setCursorStatus(body, '思考中');
+      return;
+    }
+    setCursorStatus(body, '正在回答中');
+  }
+
+  /**
+   * 开始一轮流式：创建新的 assistant 消息（纯文本 body + 默认回答态光标），并置流式状态
    *
    * 首个 chunk 到达时调用（streamingActive 为 false 时）。流式期间按 markdown 增量
-   * 渲染（节流）+ 末尾闪烁光标；流结束后由 finalizeStreaming 收敛（去光标 + 代码块增强）。
+   * 渲染（节流）+ 八态光标；流结束后由 finalizeStreaming 收敛（清光标态 + 代码块增强）。
    *
    * @param ts 本轮流式第一条 chunk 的时间戳
    * @param roundId turn roundId（chunk 携带；供 D3 同环续接判定与骨架 roundId 回填）
@@ -3631,11 +3711,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 同轮续接视觉已整体退役（见 append 注释），此处不标记 is-continued
     if (roundId) lastAssistantRoundId = roundId;
     const { body } = buildAssistantShell(div, ts, roundId, { pending: true });
-    // 流式期间：is-streaming 类驱动 CSS ::after 闪烁光标（markdown 由增量渲染填充）
-    body.classList.add('is-streaming');
     activeAssistantEl = div;
     streamBodyRendered = false;
     messages.appendChild(div);
+    // 流式开启即默认回答态（后续工具/思考事件经 renderProcessFlow → syncRunningCursor 修正）；
+    // 须在 append 后写入（setCursorStatus 的 isConnected guard 要求载体已入树）
+    setCursorStatus(body, '正在回答中');
     // 容器化：运行时首块归位到所属 .round-group（chunk 携带 turn roundId）
     // 流式未定稿 → 容器 footer 初始隐藏（pending=true），done/interrupted 后 finalizeStreaming 展示
     ensureRoundGroup(roundId, div, true);
@@ -3717,11 +3798,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 流式结束：收敛渲染 Markdown + 移除光标 + 代码块增强 + 更新复制源
+   * 流式结束：收敛渲染 Markdown + 清光标态 + 代码块增强 + 更新复制源
    *
    * done / interrupted 消息统一调用（幂等：无流式时 no-op）。流式期间已按节流增量渲染，
-   * 此处做最终收敛：清定时器 + 终渲染 + 去光标（is-streaming）+ 代码块增强；复制按钮的
-   * 原始文本源同步更新为完整流式文本。
+   * 此处做最终收敛：清定时器 + 终渲染 + 清光标态（终态「已完成」由 done 分支随后设置，
+   * 中断轮正文块整块移除无需态）+ 代码块增强；复制按钮的原始文本源同步更新为完整流式文本。
    */
   function finalizeStreaming(): void {
     // ① UI 收尾（与流式状态无关，done/interrupted/打断均需执行）：
@@ -3740,10 +3821,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       clearTimeout(streamRenderTimer);
       streamRenderTimer = undefined;
     }
-    // 单容器结构：正文 = 该轮唯一 .msg-body（报告正文），收尾一次终渲染 + 去光标 + 代码块增强
+    // 单容器结构：正文 = 该轮唯一 .msg-body（报告正文），收尾一次终渲染 + 清光标态 + 代码块增强
     const body = el.querySelector(':scope .msg-body') as HTMLElement | null;
     if (body) {
-      body.classList.remove('is-streaming');
+      setCursorStatus(body, null);
       body.innerHTML = renderMarkdown(streamingRaw, sanitize);
       enhanceCodeBlocks(body);
     }
@@ -4241,6 +4322,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     //    同挂才能恢复「切走前已生成的半截回答」）
     if ((r.status === 'complete' || r.live) && r.assistantMessage?.content) {
       append('assistant', r.assistantMessage.content, r.assistantMessage.timestamp, r.id);
+      // 重放终态：complete 轮直接落「已完成」（与实时 done 收尾同一函数、同一形态）；
+      // live 轮在下方分支切运行态推导覆盖。变量化判据 = 渲染分流（怎么画光标，非收场判定），
+      // isRoundSettled 判据单源守卫按此片段登记豁免
+      const settledReplay = r.status === 'complete';
+      if (settledReplay) {
+        setCursorStatus(
+          activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
+          '已完成',
+        );
+      }
       // live 轮流式状态接手：重放正文同步进 streamingRaw——finalize 终渲染以 streamingRaw
       // 为全量真源（body.innerHTML = renderMarkdown(streamingRaw)），不同步则流尾 done
       // 会用空 raw 覆盖掉重放正文；同步后后续 chunk 走增量续写分支（同环 roundId 相等），
@@ -4248,7 +4339,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (r.live) {
         streamingActive = true;
         streamingRaw = r.assistantMessage.content;
-        activeAssistantEl?.querySelector(':scope .msg-body')?.classList.add('is-streaming');
+        // live 轮重放接手运行态：与实时流同一推导函数（工具在途/思考相位/默认回答）
+        syncRunningCursor();
       }
       renderRoundBlock(currentEvents, true, runtimeInteractiveInputs);
       if (r.id && roundBlockEl?.isConnected) {
@@ -4406,11 +4498,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 流式态（光标/定时器），但保留块引用 —— 打断分条将插在该块之后，后续 chunk 以「续接」
       // 段出现在分条之后（还原内核 interject() 的 abort→续跑语义）
       if (streamingActive) {
-        // 打断旧流必须同时移除旧块流式光标（is-streaming ▋）——否则旧块光标残留闪烁：
-        // 该块只是"被打断的半截回答"，不再有新 chunk，finalizeStreaming 也不会再被调用
-        activeAssistantEl
-          ?.querySelector<HTMLElement>(':scope .msg-body')
-          ?.classList.remove('is-streaming');
+        // 打断旧流必须同时清旧块光标态——旧块只是"被打断的半截回答"，此刻既非运行也非终态
+        //（后续 chunk 续写时重新推导运行态）；finalizeStreaming 也不会再被调用
+        setCursorStatus(activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'), null);
         if (streamRenderTimer) {
           clearTimeout(streamRenderTimer);
           streamRenderTimer = undefined;
@@ -4476,8 +4566,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           }
           streamingActive = true;
           streamingRaw = '';
-          const body = flowShellEl.querySelector(':scope .msg-body');
-          body?.classList.add('is-streaming');
+          const body = flowShellEl.querySelector<HTMLElement>(':scope .msg-body');
+          // 骨架转正文块：运行态推导（此时无工具/思考 → 默认回答态）
+          setCursorStatus(body, '正在回答中');
           // 容器化：骨架随 chunk 归位到所属容器（骨架建时无 roundId）
           // 流式未定稿 → 容器 footer 初始隐藏（pending=true），done/interrupted 后 finalizeStreaming 展示
           ensureRoundGroup(msg.roundId, flowShellEl, true);
@@ -4496,8 +4587,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
             pausedAssistantEl?.isConnected ? pausedAssistantEl : activeAssistantEl
           )!;
           pausedAssistantEl = null;
-          const body = activeAssistantEl.querySelector(':scope .msg-body');
-          body?.classList.add('is-streaming');
+          const body = activeAssistantEl.querySelector<HTMLElement>(':scope .msg-body');
+          // 暂停锚块原位续写：运行态重新推导（续写点无工具/思考 → 默认回答态）
+          setCursorStatus(body, '正在回答中');
           streamingActive = true;
         } else {
           beginStreaming(msg.ts, msg.roundId);
@@ -4511,6 +4603,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         : null;
       if (target) {
         streamingRaw += msg.content;
+        // 正文流式 = 最强「正在回答」信号：覆盖思考相位态（相位行随 thinking 事件常驻，
+        // 不覆盖会把流式正文误标「思考中」）；工具在途不受影响（chunk 与工具执行不同时发生）
+        setCursorStatus(target, '正在回答中');
         // 流式增量渲染：首个 chunk 立即渲染（TTFT 即时反馈），后续 150ms 节流重渲染。
         // 用户实时看到 markdown 成形（列表/代码块不显示 **、``` 原始记号），对齐 TraeWork 对话流。
         if (!streamBodyRendered) renderStreamBody();
@@ -4542,16 +4637,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (activeAssistantEl && activeAssistantEl.isConnected) {
         pausedAssistantEl = activeAssistantEl;
       }
-      // 暂停即流暂停：清流式光标 + 停节流定时器（保留半截正文静态展示，不 finalize 终态）。
+      // 暂停即流暂停：光标切挂起态「已暂停」（静态淡色，不撒运行态）+ 停节流定时器
+      //（保留半截正文静态展示，不 finalize 终态）。
       // 提问/补充后 resume 的新 runFlow 由 meta/chunk 建续接块，本暂停块不再闪烁「调用大模型」
       if (streamingActive) {
         if (streamRenderTimer) {
           clearTimeout(streamRenderTimer);
           streamRenderTimer = undefined;
         }
-        activeAssistantEl
-          ?.querySelector<HTMLElement>(':scope .msg-body')
-          ?.classList.remove('is-streaming');
+        setActiveSheetStatus('已暂停');
         streamingActive = false;
       }
     } else if (msg.type === 'capability_badge') {
@@ -4565,6 +4659,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       updateContextOccupancy(msg.occupancy);
     } else if (msg.type === 'error') {
       clearPendingWait(); // 失败即收尾，等待指示器退场
+      // 光标终态「异常中断」：红色 + 原因摘要（::after 的 data-status-detail 承载，JS 侧截断）。
+      // 若主路径随后发 done 收尾 → finalize 清态后落「已完成」（诚实：流确实收尾）；
+      // done 不来（宿主异常）→ error 态定格，不留呼吸运行态撒谎。
+      setActiveSheetStatus(
+        '异常中断',
+        msg.message.length > 80 ? `${msg.message.slice(0, 80)}…` : msg.message,
+      );
       // 错误收尾清理语义：
       // error 属「可恢复流中断」，不清交互行标志——与既有收窄语义一致：
       // 交互行（qa/supp）一旦上屏，后续正文恒分块续接（interactiveRowInserted 门控
@@ -4582,10 +4683,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       pausedAssistantEl = null; // 结束即收尾：暂停续接锚失效
       resumePending = false; // 同节奏清续跑期待（防中断/补充后残留污染下轮判定）
       // 顺序关键：先回填本轮 roundId（commitRoundId 同步给 QA 行补 roundId，fold 按归属过滤）→
-      // 收起任务过程折叠区（finalize 全量渲染）→ 收敛 QA 行进折叠块 → 关流式光标
+      // 收起任务过程折叠区（finalize 全量渲染）→ 收敛 QA 行进折叠块 → 关流式
       // （QA 不留在折叠块与报告之间）
       commitRoundId(msg.roundId);
       finalizeRound();
+      // 终态定格：静默「已完成」淡勾（finalize 清运行态后落终态，正常完成必须安静）
+      setActiveSheetStatus('已完成');
       // 回填删除按钮 ts 锚（运行时流式块 dataset.ts 恒空 → 删除按钮恒禁用修复）
       commitTurnTs();
     } else if (msg.type === 'interrupted') {

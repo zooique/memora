@@ -377,7 +377,6 @@ const BASELINE_CODE: readonly string[] = [
   'step-1',
   'step-active-1',
   'step-atomic-persistence',
-  'step-end',
   'step-pending-2',
   'step1',
   'step2',

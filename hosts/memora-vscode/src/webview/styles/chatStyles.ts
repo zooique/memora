@@ -491,21 +491,49 @@ export const chatStyles = `
 
   /* ============ Components：AI 回复 Markdown 渲染 ============
    * 大厂对话流（ChatGPT / Claude / Trae）均以 Markdown 渲染 AI 回复，代码块/列表/表格可读。
-   * 流式期间纯文本 + 光标 ▋（is-streaming：pre-wrap 保真换行 + 末尾闪烁光标），
-   * 流结束后渲染 markdown 用 normal（markdown 自身处理换行）。表格 display:block + 横向
-   * 滚动防撑爆气泡（pure CSS 降维，不写复杂正表格补全）。 */
+   * 流式期间按 markdown 增量渲染 + 末尾八态光标（data-status）；流结束后终渲染。
+   * 表格 display:block + 横向滚动防撑爆气泡（pure CSS 降维，不写复杂正表格补全）。 */
   .msg.assistant .msg-body { white-space: normal; }
-  /* 流式期间 body 已按 markdown 增量渲染（非纯文本），white-space 保持 normal 由
-   * markdown 自行控制换行；is-streaming 仅承载末尾闪烁光标。 */
-  .msg.assistant .msg-body.is-streaming { white-space: normal; }
-  /* 流式光标：只在 bubble 末尾显示闪烁块 ▋，指示内容正在生成（Claude 风格，最便宜的"活着"信号） */
-  .msg-body.is-streaming::after {
-    content: '▋';
-    display: inline-block; vertical-align: text-bottom;
-    margin-left: 2px; color: var(--accent, #0e639c);
-    animation: streamCaret 1s step-end infinite;
+  /* 八态光标（UI-BLOCK-ICON 批次二，方案-过程块视觉辨识-20261001.md §三定案 B）：
+   * JS 只写 .msg-body[data-status]（文案即状态值；异常中断附 data-status-detail=原因摘要），
+   * 文案与样式全部由本 ::after 承载——挂在容器上不受增量 markdown 重渲染影响（禁真实 span）。
+   * 档位：运行三态呼吸 / 挂起两态静态淡色（基础档即覆盖）/ 终态三态分级可见度。 */
+  .msg-body[data-status]::after {
+    content: attr(data-status);
+    display: inline-block; vertical-align: baseline;
+    margin-left: var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
   }
-  @keyframes streamCaret { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  /* 运行三态：呼吸动画（淡色「活着」信号；复用 selfReviewPulse，与相位行/圆点同源） */
+  .msg-body[data-status='思考中']::after,
+  .msg-body[data-status='运行工具中']::after,
+  .msg-body[data-status='正在回答中']::after {
+    animation: selfReviewPulse 1.2s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .msg-body[data-status='思考中']::after,
+    .msg-body[data-status='运行工具中']::after,
+    .msg-body[data-status='正在回答中']::after {
+      animation: none;
+    }
+  }
+  /* 终态「已完成」：静默 circle-check 淡勾（path 与 icons.ts circle-check 同形——::after 是
+   * 光标唯一安全位，无法走 getIconSvg 注入，以 mask 复刻同款轮廓；可见度分级：正常必须安静） */
+  .msg-body[data-status='已完成']::after {
+    content: '';
+    width: 12px; height: 12px; vertical-align: -1px;
+    background: var(--status-pass, #4ec9b0); opacity: 0.75;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='5.5'/%3E%3Cpath d='M5.6 8.3l1.7 1.7 3.3-3.5'/%3E%3C/svg%3E")
+      no-repeat center / contain;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='5.5'/%3E%3Cpath d='M5.6 8.3l1.7 1.7 3.3-3.5'/%3E%3C/svg%3E")
+      no-repeat center / contain;
+  }
+  /* 终态「异常中断」：红色 + 原因摘要（detail 由 JS 截断写入） */
+  .msg-body[data-status='异常中断']::after {
+    content: attr(data-status-detail);
+    color: var(--danger, #f14c4c);
+  }
   /* AI 正文段落间距（增加阅读舒适度） */
   .msg.assistant .msg-body p { margin: 0 0 var(--sp-4, 10px); line-height: 1.75; }
   .msg.assistant .msg-body > :last-child { margin-bottom: 0; }
@@ -1650,7 +1678,7 @@ export const chatStyles = `
   .round-block__tool-batch-warn { color: var(--danger, #f14c4c); font-weight: 600; }
   /* 进行中工具行——高亮左缘 + 主色名称 + summary 前置旋转圆环，让「正在执行的工具」一眼可见；
      result 到达即移除（updateToolRowState 切 class），收尾全量渲染天然不带该态。
-     环与正文 ▋ 光标互斥（同块在途工具时熄灭正文光标），见下方 :has 抑制规则 */
+     运行期间正文光标由八态状态机切「运行工具中」态（无 CSS 隐性联动） */
   .round-block__tool.is-tool-running {
     border-left-color: var(--accent, #0e639c);
     background: var(--surface-thought, rgba(128,128,128,.05));
@@ -1675,11 +1703,9 @@ export const chatStyles = `
     border: 1.5px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: 50%; box-sizing: border-box;
   }
-  /* 工具运行期间抑制正文流式光标：「工具在途」= 动态指示统一由工具旋转图标承担，
-     同 assistant 块正文的 ▋ 光标熄灭，只留"正在生成正文"时亮。单条 :has 规则、零 JS——class 切换
-     （updateToolRowState/renderProcessFlow）即驱动，无第二套状态轨道。仅作用于含在途工具行的块，
-     早前已定稿的块不受影响。 */
-  .msg.assistant:has(.round-block__tool.is-tool-running) .msg-body.is-streaming::after { content: none; animation: none; }
+  /* 工具运行期间的动态指示统一由工具旋转图标承担，正文光标由八态状态机切换为
+     「运行工具中」态（chatView syncRunningCursor 推导），无隐性 CSS 联动。
+     （批次二删除原 :has(.is-tool-running) 熄灭规则：双闪烁动画打架的前提已消失） */
   @media (prefers-reduced-motion: reduce) {
     .round-block__tool.is-tool-running > summary::before { animation: none; }
   }

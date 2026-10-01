@@ -2866,9 +2866,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 现象1/3：任务过程应收进折叠块（round-block 存在且含工具行）
     const rb = document.querySelector('.round-block') as HTMLElement | null;
     expect(rb).not.toBeNull();
-    // 现象2：会话结束后光标（is-streaming）消失
+    // 现象2：会话结束后光标收口 → 终态定格「已完成」（批次二：运行态消失 + 静默淡勾）
     const body = document.querySelector<HTMLElement>('.msg.assistant .msg-body');
-    expect(body?.classList.contains('is-streaming')).toBe(false);
+    expect(body?.dataset.status).toBe('已完成');
     // 过程平铺容器（进度条）finalize 后被移除，不在消息流底部残留
     expect(document.querySelector('.process-flow')).toBeNull();
   });
@@ -2975,9 +2975,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 常驻条已隐藏；内容区零卡片（过程全在折叠块）
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
     expect(document.querySelector('.plan-inline.plan-inline-done')).toBeNull();
-    // 光标消失
+    // 光标收口 → 终态「已完成」
     const body = document.querySelector<HTMLElement>('.msg.assistant .msg-body');
-    expect(body?.classList.contains('is-streaming')).toBe(false);
+    expect(body?.dataset.status).toBe('已完成');
     // 过程平铺容器已收
     expect(document.querySelector('.process-flow')).toBeNull();
   });
@@ -3050,9 +3050,9 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     // 故 fixtures 末尾无 done 纯属持久化产物。真实 round 的 status=complete 证明宿主正常完成路径**必发 done**
     // （宿主发 done 的路径，见 chatPanel 的 finalizeStreaming）。因此「metrics 之后无 done」只会来自暂停
     // （pausedOnPurpose，见 chatPanel 的 pause 分支）
-    // 或其他在途态 —— 此时 finalizeStreaming 不调用、.msg-body.is-streaming 保留，是正确语义（轮次未收口，可 resume）。
+    // 或其他在途态 —— 此时 finalizeStreaming 不调用、.msg-body[data-status] 运行态保留，是正确语义（轮次未收口，可 resume）。
     // 用户实测的「光标不消失」根因是 finalizeRound 抛 NotFoundError 打断收口，与 done 是否发送无关。
-    expect(document.querySelector('.msg-body.is-streaming')).not.toBeNull();
+    expect(document.querySelector('.msg-body[data-status]')).not.toBeNull();
   }, 30000);
 
   it('R3 现象3：真实事件序走到 metrics（未发 done = 合法在途/暂停态）后过程保持平铺 —— 语义快照（非缺陷）', () => {
@@ -3083,8 +3083,10 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     // 修复态：finalizeRound 不被 insertPlanItemInOrder 的 NotFoundError 打断 →
     // 运行时平铺容器 .process-flow 被移除（若异常跳过 flowEl.remove() 会残留）
     expect(document.querySelector('.process-flow')).toBeNull();
-    // 且 finalizeStreaming 被执行到 → 流式光标收
-    expect(document.querySelector('.msg-body.is-streaming')).toBeNull();
+    // 且 finalizeStreaming 被执行到 → 运行态清 + 终态「已完成」定格
+    expect(document.querySelector('.msg-body[data-status]')?.getAttribute('data-status')).toBe(
+      '已完成',
+    );
     // 折叠内容完整性（兜底掩盖防线）：折叠块必须真的装进过程内容（思考折叠 + 小节）。
     // 若 renderRoundBlock 中途抛错，finally 虽收掉 flow/光标，折叠块却只剩 step 空骨架
     // ——实测回退后 thought/section 双双归零、折叠文本从 37282 字符塌成 1366 字符。
@@ -3559,19 +3561,19 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     vi.restoreAllMocks();
   });
 
-  it('流式期间 body 带 is-streaming + 增量渲染 Markdown，done 后收敛', () => {
+  it('流式期间 body 带回答态光标 + 增量渲染 Markdown，done 后落终态', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '**加粗** 与 `code`' });
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    // 流式进行中：is-streaming 类（CSS ::after 显示闪烁光标）+ 首个 chunk 立即渲染 markdown
+    // 流式进行中：默认回答态 data-status（CSS ::after 呼吸光标）+ 首个 chunk 立即渲染 markdown
     // （对齐 TraeWork 实时格式化，不显示 ** ` 原始记号）
-    expect(body.classList.contains('is-streaming')).toBe(true);
+    expect(body.dataset.status).toBe('正在回答中');
     expect(body.textContent?.trim()).toBe('加粗 与 code');
     expect(body.querySelector('strong')).not.toBeNull();
 
-    // done → 移除光标类，Markdown 保持渲染（加粗/行内代码成元素）
+    // done → 终态定格「已完成」，Markdown 保持渲染（加粗/行内代码成元素）
     dispatch({ type: 'done' });
-    expect(body.classList.contains('is-streaming')).toBe(false);
+    expect(body.dataset.status).toBe('已完成');
     expect(body.querySelector('strong')).not.toBeNull();
     expect(body.querySelector('code')).not.toBeNull();
   });
@@ -3622,15 +3624,14 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     expect(assistant.querySelector('.msg-copy-icon')).not.toBeNull();
   });
 
-  it('interrupted 同样 finalize：渲染 Markdown + 移除光标 + 代码块增强', () => {
+  it('interrupted 同样 finalize：渲染 Markdown + 清光标态 + 代码块增强', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '- 列表项一' });
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    expect(body.classList.contains('is-streaming')).toBe(true);
-    // 打断 → 渲染已累积的半截内容为 Markdown（列表成 <li>）
+    expect(body.dataset.status).toBe('正在回答中');
+    // 打断 → 渲染已累积的半截内容为 Markdown（列表成 <li>），正文块移除（中断态由停止行承担）
     dispatch({ type: 'interrupted' });
-    expect(body.classList.contains('is-streaming')).toBe(false);
-    expect(body.querySelector('li')).not.toBeNull();
+    expect(body.isConnected).toBe(false);
   });
 
   it('Markdown 渲染不注入 LLM 恶意脚本（DOMPurify 消毒）', () => {
@@ -3644,7 +3645,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     expect(body.textContent).toContain('安全文本');
   });
 
-  it('历史回放的一次性 assistant 消息直接渲染 Markdown（无 is-streaming）', () => {
+  it('历史回放的一次性 assistant 消息直接渲染 Markdown（无流式光标态，complete 轮落终态）', () => {
     mountChatView();
     dispatchReplay(
       makeRound({
@@ -3654,9 +3655,9 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
       }),
     );
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    // 历史重放非流式：直接渲染 Markdown（标题成 <h2>），且无光标类
-    expect(body.classList.contains('is-streaming')).toBe(false);
+    // 历史重放非流式：直接渲染 Markdown（标题成 <h2>），complete 轮终态定格「已完成」
     expect(body.querySelector('h2')).not.toBeNull();
+    expect(body.dataset.status).toBe('已完成');
   });
 });
 
@@ -4930,17 +4931,17 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     );
   });
 
-  it('插话打断旧流时移除旧块流式光标（is-streaming ▋ 不残留闪烁）', () => {
+  it('插话打断旧流时清旧块光标态（运行态不残留撒谎）', () => {
     mountChatView();
-    // 流式正文进行中（is-streaming 光标亮）
+    // 流式正文进行中（回答态光标亮）
     dispatch({
       type: 'process_event',
       event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
     });
     dispatch({ type: 'chunk', content: '正在回答第一段' });
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    expect(body.classList.contains('is-streaming')).toBe(true);
-    // 插话（supplement）到达 → 旧流被打断：新块由后续 chunk 开启，旧块必须是静态正文（无光标）
+    expect(body.dataset.status).toBe('正在回答中');
+    // 插话（supplement）到达 → 旧流被打断：新块由后续 chunk 开启，旧块必须无运行态（既非运行也非终态）
     dispatch({
       type: 'user',
       text: '补充：换个方向',
@@ -4948,7 +4949,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
       kind: 'supplement',
     });
     const oldBody = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    expect(oldBody.classList.contains('is-streaming')).toBe(false);
+    expect(oldBody.dataset.status).toBeUndefined();
   });
 
   it('中断补充渲染为内联子行「你补充」进过程容器；后续 chunk 原位续写同一正文块（方案 A 单块统一，2026-09-30）', () => {
@@ -5029,10 +5030,10 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'done', roundId: 'round-1' });
     // 打断前正文必须存活（streamingRaw 保留语义的直接消费场景）
     expect(collectAllBodyText(document.body)).toContain('正在回答第一段');
-    // finalize 完成：流式态结清、单块形态；补充行随过程折入折叠块（G31 收敛，rb 文本断言——
+    // finalize 完成：流式态结清（终态「已完成」）、单块形态；补充行随过程折入折叠块（G31 收敛，rb 文本断言——
     // collectAllBodyText 是正文收集器，折叠块内容不在其范围）
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    expect(body.classList.contains('is-streaming')).toBe(false);
+    expect(body.dataset.status).toBe('已完成');
     expect(document.querySelectorAll('.msg.assistant')).toHaveLength(1);
     const rbText = document.querySelector('details.round-block')?.textContent ?? '';
     expect(rbText).toContain('你补充');
@@ -5280,7 +5281,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(collectAllBodyText(continued)).toContain('开始执行方案A');
   });
 
-  it('运行时暂停（paused）清流式光标：提问后暂停块不再闪烁「调用大模型」', () => {
+  it('运行时暂停（paused）光标切挂起态「已暂停」：提问后暂停块不再呼吸运行态', () => {
     mountChatView();
     dispatch({
       type: 'process_event',
@@ -5288,9 +5289,9 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     });
     dispatch({ type: 'chunk', content: '需要先确认哪个方案？', roundId: 'round-1' });
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    expect(body.classList.contains('is-streaming')).toBe(true); // 暂停前光标亮
+    expect(body.dataset.status).toBe('正在回答中'); // 暂停前运行态亮
     dispatch({ type: 'paused' });
-    expect(body.classList.contains('is-streaming')).toBe(false); // 暂停即灭光标（静态半截）
+    expect(body.dataset.status).toBe('已暂停'); // 暂停即静态挂起态（半截正文保留，不撒谎运行态）
   });
 
   it('运行时 resume meta：续跑保留平铺容器锚点，不复制第二个运行时容器', () => {
@@ -7641,5 +7642,154 @@ describe('任务项完成态（plan_snapshot 快照 → 状态图标）', () => 
     expect(
       grpOf().querySelector('.round-block__plan-item-status')?.getAttribute('data-status-icon'),
     ).toBe('target');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// 光标八态状态机（data-status，UI-BLOCK-ICON 批次二）
+// ═══════════════════════════════════════════════════════════
+// 状态真源 = setCursorStatus 单一写入点（data-status 值即中文文案，CSS 按值分档渲染）；
+// 运行态唯一合成点 = syncRunningCursor（优先级 = 工具在途 > 思考相位 > 默认回答）。
+// 变异锁：删 chunk 尾覆盖 / 删 done 落「已完成」/ 删 error detail 透传 → 对应用例转红。
+describe('光标八态状态机（data-status）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** 正文块定位（运行时流式转正后即该形态，与既有断言同源） */
+  function bodyOf(): HTMLElement {
+    const body = document.querySelector<HTMLElement>('.msg.assistant .msg-body');
+    expect(body).not.toBeNull();
+    return body as HTMLElement;
+  }
+
+  /** 分发一条运行时过程事件 */
+  function dispatchEv(event: Record<string, unknown>): void {
+    dispatch({ type: 'process_event', event });
+  }
+
+  it('运行三态迁移：chunk（正在回答中）→ 工具在途（运行工具中）→ 结果回收（回正在回答中）', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '开始回答' });
+    expect(bodyOf().dataset.status).toBe('正在回答中');
+    // 工具开始：相位行转 --tool 形态 → 合成点判「运行工具中」
+    dispatchEv({
+      type: 'tool_start',
+      seq: 2,
+      ts: 'T1',
+      payload: { toolCallId: 't1', name: 'read_file', args: '{"p":"a"}', stepIndex: 1 },
+    });
+    expect(bodyOf().dataset.status).toBe('运行工具中');
+    // 工具结果：is-tool-running 摘除、相位行回落 → 回默认回答态
+    dispatchEv({
+      type: 'tool_result',
+      seq: 3,
+      ts: 'T2',
+      payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: 'done' },
+    });
+    expect(bodyOf().dataset.status).toBe('正在回答中');
+  });
+
+  it('思考相位：thinking 建相位行 → 「思考中」；后续 chunk 覆盖回「正在回答中」', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '先说结论' });
+    // thinking 相位行随事件常驻（events 累积，renderProcessFlow 重渲染不丢）
+    dispatchEv({ type: 'thinking', seq: 2, ts: 'T1', payload: { phase: 'llm_calling' } });
+    expect(bodyOf().dataset.status).toBe('思考中');
+    // 正文流式 = 最强「正在回答」信号：chunk 尾覆盖思考相位态（相位行不消失也不误标）
+    dispatch({ type: 'chunk', content: '，展开说' });
+    expect(bodyOf().dataset.status).toBe('正在回答中');
+  });
+
+  it('优先级：思考相位下工具在途 → 「运行工具中」压过「思考中」（工具在途 > 思考相位）', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '开工' });
+    dispatchEv({ type: 'thinking', seq: 2, ts: 'T1', payload: { phase: 'processing' } });
+    expect(bodyOf().dataset.status).toBe('思考中');
+    // 工具开始（无结果）：同一相位行转 --tool 形态，合成点按优先级判「运行工具中」
+    dispatchEv({
+      type: 'tool_start',
+      seq: 3,
+      ts: 'T2',
+      payload: { toolCallId: 't2', name: 'write_file', args: '{}', stepIndex: 1 },
+    });
+    expect(bodyOf().dataset.status).toBe('运行工具中');
+    // 结果回收：相位行回落普通形态 → 仍处思考相位（下一步推理前不误标回答态）
+    dispatchEv({
+      type: 'tool_result',
+      seq: 4,
+      ts: 'T3',
+      payload: { toolCallId: 't2', name: 'write_file', ok: true, summary: 'ok' },
+    });
+    expect(bodyOf().dataset.status).toBe('思考中');
+  });
+
+  it('挂起态不撒谎：ask 提问挂起 → 「等待输入」（非运行三态）', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '回答一半' });
+    dispatch({
+      type: 'turn_update',
+      rounds: [],
+      state: {
+        phase: 'waiting',
+        reason: 'ask',
+        questions: [{ slot: 'task', question: '确认执行？', options: ['是', '否'] }],
+      },
+    });
+    expect(bodyOf().dataset.status).toBe('等待输入');
+  });
+
+  it('error 终态：异常中断 + detail 透传（JS 截断 80 字符）；随后 done 收尾覆盖为「已完成」', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '流式中' });
+    dispatch({ type: 'error', message: 'HTTP 500: internal error' });
+    const body = bodyOf();
+    expect(body.dataset.status).toBe('异常中断');
+    // detail 落独立属性（CSS 取 attr(data-status-detail) 红字展示），不污染状态值本身
+    expect(body.dataset.statusDetail).toBe('HTTP 500: internal error');
+    // done 兜底收尾：finalize 清态后落「已完成」（诚实收尾，不留异常态定格撒谎）
+    dispatch({ type: 'done' });
+    expect(body.dataset.status).toBe('已完成');
+    expect(body.dataset.statusDetail).toBeUndefined();
+  });
+
+  it('重放 live 轮接手运行态（无工具/相位 → 默认「正在回答中」）；重放 interrupted 轮无正文块、无状态撒谎', () => {
+    // live 轮：切界面重建重放时的本流进行中轮——重放正文后由 syncRunningCursor 接手推导
+    mountChatView();
+    dispatchReplay({
+      ...makeRound({
+        id: 'r-live',
+        user: { content: '问题' },
+        assistantMessage: { content: '半截回答' },
+        status: 'pending',
+      }),
+      live: true,
+    });
+    const liveBody = document.querySelector<HTMLElement>('.msg.assistant .msg-body');
+    expect(liveBody?.dataset.status).toBe('正在回答中');
+
+    // interrupted 轮：正文块整体不派生（诚实降级）——不得伪造任何 data-status
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'r-stop',
+        user: { content: '问题' },
+        processEvents: [
+          {
+            type: 'error',
+            seq: 1,
+            ts: '',
+            payload: { message: 'socket hang up', category: 'connection' },
+          },
+        ],
+        status: 'interrupted',
+      }),
+    );
+    // 中断轮：容器（is-interrupted-host）保留，但正文块不派生——无载体即无状态，不得伪造
+    expect(document.querySelector('.msg.assistant .msg-body')).toBeNull();
+    expect(document.querySelector('[data-status]')).toBeNull();
   });
 });
