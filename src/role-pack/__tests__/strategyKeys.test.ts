@@ -35,6 +35,7 @@ import {
   MAX_STEP_BUDGET,
   MIN_STEP_BUDGET,
   MAX_SUMMARY_FOCUS_LENGTH,
+  describeStrategyKeys,
   type KeyRule,
 } from '../strategyKeys.js';
 
@@ -589,5 +590,81 @@ describe('strategyKeys — schema.json 与常量一致性', () => {
     expect(isTemperature(0)).toBe(true);
     expect(isTemperature(2)).toBe(true);
     expect(isTemperature(2.1)).toBe(false);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// 6. describeStrategyKeys —— UI 键面唯一来源（RP-EDIT-1）
+// 宿主角色编辑 UI 的键面数据从这里派生（宿主零清单维护）：
+// 派生正确性在此锁定——枚举/区间/0 哨兵折算错任何一处，宿主表单跟着错。
+// ══════════════════════════════════════════════════════════════
+describe('strategyKeys — describeStrategyKeys 键面派生（RP-EDIT-1）', () => {
+  /** 阶段/键 → 键面 的查找表（用例内构造，避免重复线性查找） */
+  const faces = describeStrategyKeys();
+  const faceMap = new Map(faces.map((f) => [`${f.stage}.${f.key}`, f]));
+
+  it('键总数与 STRATEGY_KEY_RULES 一致，四阶段全覆盖', () => {
+    const expected: string[] = [];
+    for (const [stage, rules] of Object.entries(STRATEGY_KEY_RULES)) {
+      for (const key of Object.keys(rules)) expected.push(`${stage}.${key}`);
+    }
+    expect(faces.map((f) => `${f.stage}.${f.key}`).sort()).toEqual(expected.sort());
+  });
+
+  it('enum 键 → kind=enum 且 values 与各枚举常量同源（identity 派生）', () => {
+    expect(faceMap.get('act.toolMode')).toMatchObject({ kind: 'enum', values: [...TOOL_MODES] });
+    expect(faceMap.get('act.providerRouting')).toMatchObject({
+      kind: 'enum',
+      values: [...PROVIDER_ROUTINGS],
+    });
+    expect(
+      faceMap.get('reflect.errorHandling') ?? faceMap.get('global.errorHandling'),
+    ).toMatchObject({ kind: 'enum', values: [...ERROR_HANDLINGS] });
+    expect(faceMap.get('reflect.summary')).toMatchObject({
+      kind: 'enum',
+      values: [...SUMMARY_MODES],
+    });
+  });
+
+  it('askOn → kind=multi 且 options 携出 ASK_TRIGGERS（可选值藏在常量，派生时显式带出）', () => {
+    expect(faceMap.get('global.askOn')).toMatchObject({
+      kind: 'multi',
+      options: [...ASK_TRIGGERS],
+    });
+  });
+
+  it('summaryFocus → kind=text（字符串长度区间，非数值键）', () => {
+    expect(faceMap.get('prepare.summaryFocus')).toEqual({
+      stage: 'prepare',
+      key: 'summaryFocus',
+      kind: 'text',
+      range: { min: 1, max: MAX_SUMMARY_FOCUS_LENGTH },
+    });
+  });
+
+  it('数值键 0 哨兵折算：0 合法的键 UI 下限折算为 0；askLimit（1 起）保持声明下限', () => {
+    // outputLimit：validator range.min=1（正数声明下限），但 0=不干预合法 → UI 下限 0
+    expect(faceMap.get('act.outputLimit')).toMatchObject({
+      kind: 'number',
+      range: { min: 0, max: MAX_OUTPUT_LIMIT },
+    });
+    expect(faceMap.get('global.stepBudget')).toMatchObject({
+      kind: 'number',
+      range: { min: 0, max: MAX_STEP_BUDGET },
+    });
+    expect(faceMap.get('global.contextLimit')).toMatchObject({
+      kind: 'number',
+      range: { min: 0, max: MAX_CONTEXT_LIMIT },
+    });
+    // askLimit 区间 [1,10] 不含 0 → 保持 1
+    expect(faceMap.get('global.askLimit')).toMatchObject({
+      kind: 'number',
+      range: { min: 1, max: MAX_ASK_LIMIT },
+    });
+    // temperature 0.0 合法且声明下限本就是 0
+    expect(faceMap.get('act.temperature')).toMatchObject({
+      kind: 'number',
+      range: { min: 0, max: 2 },
+    });
   });
 });

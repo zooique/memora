@@ -4,6 +4,7 @@ import type {
   Round,
   RoundMessage,
   RoundStatus,
+  StrategyKeyFace,
 } from '@zooique/memora';
 
 /**
@@ -214,6 +215,23 @@ export type WebviewToExtensionMessage =
    * 管理器中显示用户角色包目录（globalStorageUri/role-packs/），便于用户放置自定义角色包。
    */
   | { type: 'roles_open_dir' }
+  /**
+   * 请求角色包键面配置详情（角色卡「查看配置」弹窗打开时触发）
+   *
+   * host 读 manifest 原文 strategy 段回发 roles_detail_data。初值真源 = **原文**：
+   * 禁读装配值 rpm.get().strategy（那是合并默认值后的完整策略，回填保存会把默认值固化成显式声明）。
+   */
+  | { type: 'roles_detail'; name: string }
+  /**
+   * 保存角色包策略键配置（详情弹窗编辑模式保存触发）
+   *
+   * host 侧按序执行：内置包真拒绝（直接发本消息也必须被拒，不依赖 webview 隐藏按钮）
+   * → 全量保真写回（读原文只换 strategy 段，skills/capabilities 等原样保留）
+   * → validateManifestText 校验（失败不写盘）→ 写盘 → rpm.reload()（装配缓存失效防线）
+   * → 回发 roles_detail_data + 刷新 roles_loaded。
+   * strategy 为表单收集结果：仅含填写的键（空格子 = 不写入该键，保持「未声明」语义）。
+   */
+  | { type: 'roles_save'; name: string; strategy: Record<string, Record<string, unknown>> }
   /**
    * 停止生成：用户主动中断当前流式输出（mvp-scope 打断能力）
    *
@@ -811,6 +829,25 @@ export type ExtensionToWebviewMessage =
        * 故经本字段下发，UI 侧禁止另写字面量。
        */
       maxTeamMembers: number;
+      /**
+       * 策略键面（纯数据，全局一份几百字节）：内核 describeStrategyKeys() 透传——
+       * 键名/控件形态/枚举值域/数值区间。SSOT：键面唯一来源在内核（strategyKeys.ts），
+       * 宿主零清单维护，内核加键自动跟随；缺省（旧载荷）= 编辑模式不可用。
+       */
+      keyface?: StrategyKeyFace[];
+    }
+  /**
+   * 角色包键面配置详情（对 roles_detail 的应答；roles_save 成功后复用回发新原文）
+   *
+   * strategy 为 manifest 原文该段（未装配合并、仅含显式声明的键）——
+   * 未声明的键不渲染 = 走默认值，不是「留空」。source 供弹窗区分只读（内置）/可编辑（用户）。
+   */
+  | {
+      type: 'roles_detail_data';
+      name: string;
+      source: 'builtin' | 'user';
+      /** manifest 原文 strategy 段（阶段 → 键 → 原始值）；未配置或缺省 = 全走默认 */
+      strategy?: Record<string, Record<string, unknown>>;
     }
   // ─── 大模型配置面板消息 ───
   /** Provider 列表加载完成（apiKey 为脱敏值，供展示） */

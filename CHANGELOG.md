@@ -10,6 +10,18 @@
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不占内核版本号（理由见文首说明）。内核 3.0.0 的发版内容在其下方。
 
+### Added（宿主 · 角色包编辑 UI `RP-EDIT-1`：键面查看与编辑——键面单源内核，保存全链路 extension 侧）
+
+**缺口**：角色页此前全只读（卡片/来源徽章/策略 chips/健康区俱全），真缺口只有「改的入口」（先例同型 = FD-2 技能）。键面清单若放宿主 = 第二真相源，且未知策略键在内核校验中只 warning + 忽略 ⇒ UI 写错键名时保存不报错、该键静默不生效（健康徽章兜不住）。
+
+- **内核键面单源**：`strategyKeys.ts` 新增 `describeStrategyKeys()` 导出（`StrategyKeyFace`：stage/key/kind/values?/options?/range?）——`check` 是闭包不可过协议、`askOn` 可选值藏于 `ASK_TRIGGERS`，键面派生收内核单点，宿主零清单维护；0 哨兵键按 `check(0)` 探测折算 UI 区间下限（0=不干预是合法填写，直接用 validator 区间会让用户填不了 0）
+- **协议 +3 通道（102→105）**：上行 `roles_detail` / `roles_save`、下行 `roles_detail_data`、`roles_loaded` 扩 `keyface`（键面为静态派生与装配时序无关，rpm 未就绪分支也下发）
+- **保存链路全在 extension 侧**：内置真拒绝（`rolePackSource` 单点判据，webview 隐藏编辑按钮只是呈现层，直接发消息也被拒）→ 读 manifest 原文**全量保真**只换 strategy 段（skills/displayName 等原样保留；空对象删键保持「未声明」语义）→ `validateManifestText` 首个 error 拦截不写盘 → 写盘必 `rpm.reload()` 失效装配缓存（下个 turn 立即用新配置）
+- **表单初值 = manifest 文件原文，禁用装配值**：`rpm.get().strategy` 是合并默认值后的完整策略，回填保存会把默认值固化成显式声明，破坏「未声明」语义
+- **webview 渲染层**：卡片点击开详情弹窗（复用 team-modal 令牌）+ 16 键中文表单（`STRATEGY_KEY_META` 标签/tooltip/选项文案，键集与内核双向一致守卫锁定）+ selfReview 做开关（默认 0=关，未勾=不写入不固化 0）+ askOn 多选 + **preserved 机制**（键面未覆盖的原文键保存时原样并入，防整段替换静默丢数据）+ enum 原文越界值回填「原文值」选项（防回填即改值）
+- **测试**：内核键面派生 5 用例（含 0 哨兵折算与 askLimit 例外）；宿主键面双向一致守卫（内核键集 ↔ META 键集，双向漂移都红 + 防假绿前置自证）+ 表单收集语义 5 用例；保存链路 6 用例——变异 M1 内置拒绝（不读不写不 reload）/ M2 全量保真（skills 不丢）/ M3 校验失败不写盘 / M4 reload 缺失全部锁定
+- **验证**：内核全量 2840 passed | 4 skipped；宿主全量 883 passed | 2 skipped；宿主 tsc 0 / eslint 0 / prettier 0
+
 ### Fixed（宿主 · 挂起/插话补充输入渲染根治：骨架不删 + 正文单块续写统一）
 
 **问题（真机三轮复测暴露）**：暂停申请态/插话态发送补充输入时，运行过程 UI 异常三连——①当前轮过程蒸发（界面只剩补充内容）；②补充行散落在过程容器外；③吸收后重放出现内外双份。根因链三层语义错位：user 消息处理路径删除了骨架（flowShellEl），而 interject 契约「不 abort 旧流、runFlow 继续」意味着骨架非空壳、删除动作本身错误；打断分段形态（打断→新建正文块）与暂停锚续写（原位续写）两套形态并存，chunk 分支判定分裂。

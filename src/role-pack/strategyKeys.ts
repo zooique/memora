@@ -144,6 +144,67 @@ export const USER_FOLLOWUPS = ['ask', 'silent'] as const;
 export const ERROR_HANDLINGS = ['retry', 'degrade', 'stop'] as const;
 
 /**
+ * 单键键面（纯数据，可过协议）：宿主 UI 渲染策略编辑控件所需的全部元数据。
+ * 无函数/闭包——KeyRule.check 是闭包不可序列化，键面对外只出结论不出函数（见 describeStrategyKeys）。
+ */
+export interface StrategyKeyFace {
+  /** 所属策略阶段（prepare / act / reflect / global） */
+  readonly stage: string;
+  /** 键名（camelCase，与 STRATEGY_KEY_RULES 同名） */
+  readonly key: string;
+  /** UI 控件形态：enum=下拉 / number=数字框 / text=文本框 / multi=多选 */
+  readonly kind: 'enum' | 'number' | 'text' | 'multi';
+  /** 枚举可选值（kind=enum 时存在，派生自各枚举常量） */
+  readonly values?: readonly string[];
+  /** 多选可选值（kind=multi 时存在） */
+  readonly options?: readonly string[];
+  /**
+   * 数值区间（kind=number 时存在；text 时为字符长度区间）。
+   * 0 哨兵键已折算：0 与「未声明」同义的键（outputLimit/contextLimit/stepBudget 等）UI 下限为 0，
+   * 非「正数声明下限」（后者是 validator 报错文案口径，不适合直接当输入框 min）。
+   */
+  readonly range?: { readonly min: number; readonly max: number };
+}
+
+/**
+ * UI 键面唯一来源：把 STRATEGY_KEY_RULES 派生为纯数据键面清单（宿主零清单维护，加键自动跟随）。
+ *
+ * 派生规则（全部在本文件内收口，宿主不逐键特判）：
+ *   - enum 规则 → kind='enum'，values 来自各枚举常量；
+ *   - askOn → kind='multi'，可选值带出 ASK_TRIGGERS（其可选值藏在常量而非 rule 内）；
+ *   - summaryFocus → kind='text'（字符串长度区间 1~MAX_SUMMARY_FOCUS_LENGTH，非数值键）；
+ *   - 其余 check+range → kind='number'，并用 check 闭包在内核内探测 0 是否合法
+ *     （闭包不出内核只出结论）：接受 0 的键（0 哨兵语义）UI 下限折算为 0。
+ */
+export function describeStrategyKeys(): StrategyKeyFace[] {
+  const faces: StrategyKeyFace[] = [];
+  for (const [stage, rules] of Object.entries(STRATEGY_KEY_RULES)) {
+    for (const [key, rule] of Object.entries(rules)) {
+      if (rule.kind === 'enum') {
+        faces.push({ stage, key, kind: 'enum', values: rule.values as readonly string[] });
+      } else if (key === 'askOn') {
+        faces.push({ stage, key, kind: 'multi', options: ASK_TRIGGERS });
+      } else if (key === 'summaryFocus') {
+        faces.push({ stage, key, kind: 'text', range: rule.range });
+      } else if (rule.range) {
+        // 0 哨兵折算：0 合法的键 UI 下限为 0（输入框可填 0 = 不干预），否则用正数声明下限
+        const zeroAllowed = rule.check(0) === true;
+        faces.push({
+          stage,
+          key,
+          kind: 'number',
+          range: { min: zeroAllowed ? 0 : rule.range.min, max: rule.range.max },
+        });
+      } else {
+        // 防御分支：check 无 range 的数值键（当前无此类键），UI 按无区间数字框呈现
+        faces.push({ stage, key, kind: 'number' });
+      }
+    }
+  }
+  return faces;
+}
+
+/**
  * L2 策略键集：camelCase 统一命名。无标注 = 冻结（memora 真实消费）；
  * [草案] = 尚无消费，保留征集验证。只有被消费的键保留在校验器；未知键 validator 报 warning。
  * 数值键全部带上下限（intRange）：下限防语义错误，上限防资源失控（SSOT 区间常量见文件头）。

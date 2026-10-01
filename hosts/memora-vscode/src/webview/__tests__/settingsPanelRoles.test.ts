@@ -1,18 +1,26 @@
 /**
- * settingsPanel 角色切换失败判定回归测试
+ * settingsPanel 角色包链路回归测试
  *
- * 被测不变量：`activateRole` 在 `agent.switchRolePack()` 返回 false 时，**必须**用内核公开判据
- * `agent.getRolePackSwitchLockStatus().locked` 区分失败成因，不得由「未收到 rolePackSwitchLocked
- * 事件」推断「角色包不存在」。
+ * 覆盖两组被测不变量：
  *
- * 判据依据：内核 `RolePackManager.activate()` 仅在**触发锁定**的那一次切换发射
- * onSwitchLocked（该次返回 **true**）；被锁期间的后续切换在 L879-882 直接 `return false` 且
- * **不发射任何事件**。故若以 `ok===false && !_lockedNoticeShown` 判定为"不存在"，
- * 会在锁定期内点击「设为当前」时弹出假错误「角色包不存在：X」（角色包其实存在）（坑）。
+ * 1. `activateRole` 切换失败两成因判定：`agent.switchRolePack()` 返回 false 时，**必须**用内核
+ *    公开判据 `agent.getRolePackSwitchLockStatus().locked` 区分失败成因，不得由「未收到
+ *    rolePackSwitchLocked 事件」推断「角色包不存在」。
+ *    判据依据：内核 `RolePackManager.activate()` 仅在**触发锁定**的那一次切换发射
+ *    onSwitchLocked（该次返回 **true**）；被锁期间的后续切换直接 `return false` 且不发射事件。
+ *
+ * 2. `roles_save` / `roles_detail` 保存链路（RP-EDIT-1，方案 §6-2/§6-3）：
+ *    - 内置包真拒绝在 extension 侧（webview 隐藏编辑按钮只是呈现，直接发消息也必须被拒）；
+ *    - 全量保真：只换 strategy 段，skills/displayName 等其余字段原样保留（禁整表重建）；
+ *    - 校验失败不写盘（validateManifestText 报 error 即短路）；
+ *    - 空 strategy = 删除该键（保持「未声明」语义，不固化空对象）；
+ *    - 写盘后必须 rpm.reload()（装配缓存失效防线）；
+ *    - 初值真源 = manifest 文件原文，roles_detail 读原文回发（非装配值）。
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as vscode from 'vscode';
+import { readFile, writeFile } from 'node:fs/promises';
 import type { Agent } from '@zooique/memora';
 import { MemoraSettingsViewProvider } from '../panels/settingsPanel.js';
 
@@ -40,6 +48,12 @@ vi.mock('vscode', () => ({
   },
   commands: { executeCommand: vi.fn() },
   ConfigurationTarget: { Global: 1 },
+}));
+
+// mock node:fs/promises：保存链路（roles_detail 读原文 / roles_save 读原文+写盘）不触真实文件系统
+vi.mock('node:fs/promises', () => ({
+  readFile: vi.fn(),
+  writeFile: vi.fn(),
 }));
 
 /** agent 桩：只暴露 activateRole 依赖的切换入口 + 锁定状态判据 + 事件订阅空实现 */
@@ -244,5 +258,201 @@ describe('settingsPanel.toggleSkillDisabled —— 技能启停开关', () => {
     expect(notices(posted)).toEqual([
       { type: 'notice', level: 'error', message: 'Agent 未就绪，无法切换技能禁用状态' },
     ]);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// roles_save / roles_detail —— 角色策略保存链路（RP-EDIT-1）
+// ══════════════════════════════════════════════════════════════
+
+describe('settingsPanel.roles_save / roles_detail —— 角色策略保存链路（RP-EDIT-1）', () => {
+  /** 用户角色包目录（来源判定锚：filePath 以此前缀开头 = user，否则 builtin） */
+  const USER_DIR = '/mock/user-packs';
+
+  /** 宽类型 posted：需读取 roles_detail_data / roles_loaded 的负载字段 */
+  type Posted = { type: string } & Record<string, unknown>;
+
+  /** readFile 读到的原文 fixture：skills + displayName 为「必须保真的其余字段」，strategy 为待替换段 */
+  const RAW_MANIFEST = JSON.stringify({
+    name: 'writer',
+    displayName: '白话方案设计师',
+    skills: [{ file: 'skills/write.md' }],
+    strategy: { act: { temperature: 0.5 } },
+  });
+
+  /**
+   * 构造带 rpm 桩的 provider。
+   * pack 桩需带 meta/validationIssues/capabilities：保存成功后的 loadRoles 会逐包读取
+   * meta.handoffPrompt / validationIssues 等字段（缺 meta 会 TypeError）。
+   */
+  function setupSave(filePath: string): {
+    provider: MemoraSettingsViewProvider;
+    posted: Posted[];
+    reload: ReturnType<typeof vi.fn>;
+  } {
+    const posted: Posted[] = [];
+    const reload = vi.fn(async () => {});
+    // rpm 桩：get 供寻址、listMeta/activeName 供保存成功后的 loadRoles 刷新下发
+    const rpm = {
+      get: vi.fn(() => ({
+        filePath,
+        meta: {},
+        validationIssues: [],
+        capabilities: [],
+      })),
+      reload,
+      listMeta: vi.fn(() => [{ name: 'writer' }]),
+      activeName: 'writer',
+    };
+    const agent = { rolePackManager: rpm, on: vi.fn(), off: vi.fn() } as unknown as Agent;
+    const provider = new MemoraSettingsViewProvider({} as never, {} as never);
+    provider.setAgentFactory(async () => agent);
+    provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
+    provider.setUserRolePacksDir(USER_DIR);
+    (provider as unknown as { _view: unknown })._view = {
+      webview: {
+        postMessage: (msg: never) => {
+          posted.push(msg);
+          return Promise.resolve(true);
+        },
+      },
+    };
+    return { provider, posted, reload };
+  }
+
+  /** 调私有 handleRolesSave */
+  function save(
+    provider: MemoraSettingsViewProvider,
+    name: string,
+    strategy: Record<string, Record<string, unknown>>,
+  ): Promise<void> {
+    return (
+      provider as unknown as {
+        handleRolesSave(n: string, s: Record<string, Record<string, unknown>>): Promise<void>;
+      }
+    ).handleRolesSave(name, strategy);
+  }
+
+  /** 调私有 handleRolesDetail */
+  function detail(provider: MemoraSettingsViewProvider, name: string): Promise<void> {
+    return (
+      provider as unknown as { handleRolesDetail(n: string): Promise<void> }
+    ).handleRolesDetail(name);
+  }
+
+  /** 取 notice 列表（宽类型收窄为消息断言面） */
+  function saveNotices(posted: Posted[]): { level?: string; message?: string }[] {
+    return posted.filter((m) => m.type === 'notice') as { level?: string; message?: string }[];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(writeFile).mockResolvedValue(undefined);
+  });
+
+  it('内置包保存 → extension 侧真拒绝：不读原文、不写盘、不 reload（变异 M1 锁）', async () => {
+    const { provider, posted, reload } = setupSave('/mock/builtin/pack-a/manifest.json');
+
+    await save(provider, 'pack-a', { act: { temperature: 0.8 } });
+
+    // 三重拒绝：读原文都不发生（拒绝在链路最前），写盘与 reload 更不可能
+    expect(vi.mocked(readFile)).not.toHaveBeenCalled();
+    expect(vi.mocked(writeFile)).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+    const msgs = saveNotices(posted);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]?.level).toBe('error');
+    expect(msgs[0]?.message).toContain('不可编辑');
+  });
+
+  it('用户包保存 → 全量保真：只换 strategy 段，其余字段保留 + 2 空格尾换行 + reload（变异 M2/M4 锁）', async () => {
+    vi.mocked(readFile).mockResolvedValue(RAW_MANIFEST);
+    const { provider, posted, reload } = setupSave(`${USER_DIR}/writer/manifest.json`);
+
+    await save(provider, 'writer', { act: { temperature: 0.8 } });
+
+    // 写盘内容：全量保真（skills/displayName 保留）+ strategy 替换 + 标准编排
+    expect(vi.mocked(writeFile)).toHaveBeenCalledTimes(1);
+    const [path, text] = vi.mocked(writeFile).mock.calls[0]!;
+    expect(path).toBe(`${USER_DIR}/writer/manifest.json`);
+    expect(text).toMatch(/\n$/);
+    expect(text).toContain('\n  "name"');
+    const written = JSON.parse(text as string) as Record<string, unknown>;
+    expect(written.displayName).toBe('白话方案设计师');
+    expect(written.skills).toEqual([{ file: 'skills/write.md' }]);
+    expect(written.strategy).toEqual({ act: { temperature: 0.8 } });
+
+    // 装配缓存失效防线：写盘后必须 reload，下个 turn 才能用新配置
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    // 回发链：roles_detail_data（弹窗回显新原文）+ roles_loaded（列表徽章刷新）+ notice info
+    const detailMsg = posted.find((m) => m.type === 'roles_detail_data');
+    expect(detailMsg).toMatchObject({
+      name: 'writer',
+      source: 'user',
+      strategy: { act: { temperature: 0.8 } },
+    });
+    expect(posted.some((m) => m.type === 'roles_loaded')).toBe(true);
+    expect(saveNotices(posted)).toEqual([
+      { type: 'notice', level: 'info', message: '「writer」的策略配置已保存' },
+    ]);
+  });
+
+  it('策略值越界 → validateManifestText 报 error：不写盘、不 reload（变异 M3 锁）', async () => {
+    vi.mocked(readFile).mockResolvedValue(RAW_MANIFEST);
+    const { provider, posted, reload } = setupSave(`${USER_DIR}/writer/manifest.json`);
+
+    await save(provider, 'writer', { act: { temperature: 99 } });
+
+    expect(vi.mocked(writeFile)).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+    const msgs = saveNotices(posted);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]?.level).toBe('error');
+    expect(msgs[0]?.message).toContain('保存失败');
+  });
+
+  it('空 strategy 保存 → 删除 strategy 键（保持「未声明」语义，不固化空对象），其余字段保留', async () => {
+    vi.mocked(readFile).mockResolvedValue(RAW_MANIFEST);
+    const { provider, posted } = setupSave(`${USER_DIR}/writer/manifest.json`);
+
+    await save(provider, 'writer', {});
+
+    const [, text] = vi.mocked(writeFile).mock.calls[0]!;
+    const written = JSON.parse(text as string) as Record<string, unknown>;
+    expect(written.strategy).toBeUndefined();
+    expect(written.skills).toEqual([{ file: 'skills/write.md' }]);
+    // 回发的 detail 数据 strategy 为 undefined（未声明语义透传给弹窗）
+    const detailMsg = posted.find((m) => m.type === 'roles_detail_data');
+    expect(detailMsg).toMatchObject({ name: 'writer', source: 'user', strategy: undefined });
+  });
+
+  it('roles_detail → 读 manifest 原文回发（初值真源 = 文件，非装配值）', async () => {
+    vi.mocked(readFile).mockResolvedValue(RAW_MANIFEST);
+    const { provider, posted } = setupSave(`${USER_DIR}/writer/manifest.json`);
+
+    await detail(provider, 'writer');
+
+    expect(vi.mocked(readFile)).toHaveBeenCalledWith(`${USER_DIR}/writer/manifest.json`, 'utf-8');
+    const detailMsg = posted.find((m) => m.type === 'roles_detail_data');
+    expect(detailMsg).toMatchObject({
+      name: 'writer',
+      source: 'user',
+      strategy: { act: { temperature: 0.5 } },
+    });
+  });
+
+  it('内置包 roles_detail → 查看放行（source: builtin）；受限的是编辑而非查看', async () => {
+    vi.mocked(readFile).mockResolvedValue(RAW_MANIFEST);
+    const { provider, posted } = setupSave('/mock/builtin/pack-a/manifest.json');
+
+    await detail(provider, 'pack-a');
+
+    const detailMsg = posted.find((m) => m.type === 'roles_detail_data');
+    expect(detailMsg).toMatchObject({
+      name: 'pack-a',
+      source: 'builtin',
+      strategy: { act: { temperature: 0.5 } },
+    });
   });
 });

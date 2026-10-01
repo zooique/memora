@@ -81,6 +81,9 @@ export {
 } from '@/role-pack/strategyResolver.js';
 export { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS } from '@/role-pack/constants.js';
 export { RolePackManager } from '@/role-pack/rolePackManager.js';
+// UI 键面唯一来源：宿主角色编辑 UI 从这里取键名/控件形态/值域，禁自维护键清单副本
+export { describeStrategyKeys } from '@/role-pack/strategyKeys.js';
+export type { StrategyKeyFace } from '@/role-pack/strategyKeys.js';
 // 角色包格式校验器：manifest.json 唯一核心控制文件 + companion 内容红线检测
 export {
   validateManifest,

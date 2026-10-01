@@ -291,6 +291,39 @@ export const rolesStyles = `
   }
   @keyframes roles-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
+  /* ============ Components：角色配置详情弹窗（RP-EDIT-1） ============ */
+  /* 复用 team-modal 遮罩/框架 token，仅扩内容形态：查看行 / 编辑表单行 / 键面宽度 */
+  #roles-root .team-modal.role-detail { width: min(480px, calc(100vw - 48px)); }
+  #roles-root .role-detail-body { overflow-y: auto; min-height: 60px; font-size: var(--font-sm, 11px); padding: var(--sp-1, 4px) 0; }
+  /* 阶段组头（回答前/回答中/回答后/全局） */
+  #roles-root .role-detail-stage { font-weight: 600; font-size: var(--font-xs, 10px); color: var(--text-tertiary, #666); margin: var(--sp-2, 6px) 0 var(--sp-1, 3px); }
+  /* 查看模式行：标签 + 值（title 悬停含义） */
+  #roles-root .role-detail-row { display: flex; gap: var(--sp-2, 6px); padding: var(--sp-1, 4px); border-radius: var(--radius, 6px); }
+  #roles-root .role-detail-row:hover { background: rgba(128,128,128,.08); }
+  #roles-root .role-detail-label { color: var(--text-tertiary, #666); flex-shrink: 0; min-width: 96px; }
+  #roles-root .role-detail-value { word-break: break-all; }
+  /* 编辑模式行：标签 + 控件 */
+  #roles-root .role-detail-form-row { display: flex; align-items: center; gap: var(--sp-2, 6px); padding: 2px var(--sp-1, 4px); }
+  #roles-root .role-detail-form-row > .role-detail-label { align-self: start; padding-top: 3px; }
+  #roles-root .role-detail-form-row input[type='number'],
+  #roles-root .role-detail-form-row input[type='text'],
+  #roles-root .role-detail-form-row select {
+    flex: 1; min-width: 0;
+    padding: 2px var(--sp-1, 4px);
+    font-size: var(--font-sm, 11px);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: var(--radius, 6px);
+    background: var(--surface-input, rgba(128,128,128,.1));
+    color: inherit;
+  }
+  /* 多选（askOn）：checkbox 组横排换行 */
+  #roles-root .role-detail-multi { display: flex; flex-wrap: wrap; gap: var(--sp-1, 3px) var(--sp-2, 6px); flex: 1; min-width: 0; }
+  #roles-root .role-detail-check { display: inline-flex; align-items: center; gap: var(--sp-1, 3px); cursor: pointer; }
+  /* 内置包只读提示：占位行左对齐（actions 行内 margin-right:auto 推按钮组靠右） */
+  #roles-root .role-detail-readonly-hint { margin-right: auto; margin: 0; }
+  /* 卡片可点击光标（点卡片空白区打开配置详情） */
+  #roles-root .roles-card-clickable { cursor: pointer; }
+
   /* ============ Components：版本号 ============ */
   #roles-root .card-version {
     font-size: var(--font-xs, 10px);

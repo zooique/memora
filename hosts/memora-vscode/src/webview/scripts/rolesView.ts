@@ -69,6 +69,205 @@ interface RolesPayload {
   activeName: string;
   /** 组员数量上限（内核常量 MAX_TEAM_MEMBERS，由宿主随 roles_loaded 下发；UI 侧禁止写死） */
   maxTeamMembers: number;
+  /** 策略键面（内核 describeStrategyKeys 透传；缺省 = 旧载荷，编辑模式不可用） */
+  keyface?: KeyFaceItem[];
+}
+
+/** 策略键面条目（内核 StrategyKeyFace 的结构镜像：webview 沙箱不直连内核，仅类型层对齐） */
+interface KeyFaceItem {
+  /** 所属策略阶段（prepare / act / reflect / global） */
+  stage: string;
+  /** 键名（camelCase） */
+  key: string;
+  /** UI 控件形态：enum=下拉 / number=数字框 / text=文本框 / multi=多选 */
+  kind: 'enum' | 'number' | 'text' | 'multi';
+  /** 枚举可选值（kind=enum 时存在） */
+  values?: readonly string[];
+  /** 多选可选值（kind=multi 时存在） */
+  options?: readonly string[];
+  /** 数值区间（kind=number；text 时为字符长度区间） */
+  range?: { min: number; max: number };
+}
+
+/** 单键中文元数据（STRATEGY_KEY_META 值类型）：标签 + 悬停含义 + 可选值中文映射 */
+export interface StrategyKeyMetaEntry {
+  /** 中文名（格子标签） */
+  label: string;
+  /** 悬停含义（一句话：这个键管什么 + 留空行为） */
+  tip: string;
+  /** 枚举值中文映射（enum 键用；缺省显示原文） */
+  valueLabels?: Record<string, string>;
+  /** 多选选项中文映射（multi 键用；缺省显示原文） */
+  optionLabels?: Record<string, string>;
+  /** 控件形态覆盖（缺省按键面 kind 渲染）：selfReview 是布尔数字语义（0=关/正整数归一 1），用开关而非数字框呈现 */
+  control?: 'switch';
+}
+
+/**
+ * 策略键中文标签映射（键名 → 中文标签 + 悬停含义）。
+ *
+ * 为什么在 webview 而非内核：内核领域无关，不背中文文案（四层分工，方案 §2）。
+ * 降级保护：内核新键宿主未配标签 → 格子照常出现（数据来自键面），标签/提示兜底显示键名原文。
+ * 守卫：键面一致性测试双向锁定本映射键集 ↔ 内核 describeStrategyKeys() 键集，
+ * 内核加键漏翻译 / 本表拼错键名都会红（防「键名拼错静默失败」，内核对未知键只 warning）。
+ */
+export const STRATEGY_KEY_META: Record<string, StrategyKeyMetaEntry> = {
+  summaryFocus: {
+    label: '提炼视角',
+    tip: '告诉记忆摘要往哪个方向提炼（如 code、creative），最长 500 字符；留空用通用摘要',
+  },
+  toolMode: {
+    label: '工具模式',
+    tip: 'allow = 允许使用工具；block = 纯对话不执行任何工具',
+    valueLabels: { allow: '允许工具', block: '禁止工具' },
+  },
+  temperature: {
+    label: '生成温度',
+    tip: '越高越有创意、越低越稳定（0.0~2.0）；留空用默认 0.7',
+  },
+  outputLimit: {
+    label: '输出上限',
+    tip: '单轮回答的最大 token 数；0 或留空 = 不干预（交给模型/服务商默认）',
+  },
+  toolStepLimit: {
+    label: '工具步数上限',
+    tip: '单轮最多执行多少步工具（0 = 不限制）；留空用默认',
+  },
+  providerRouting: {
+    label: '模型路由',
+    tip: 'auto = 按任务自动选模型；fixed = 固定当前模型',
+    valueLabels: { auto: '自动路由', fixed: '固定模型' },
+  },
+  multiStepReasoning: {
+    label: '多步推理',
+    tip: 'auto = 复杂任务自动深入思考；manual = 快速直接回答',
+    valueLabels: { auto: '自动推理', manual: '手动推理' },
+  },
+  toolReadonly: {
+    label: '工具权限',
+    tip: 'full = 完整读写；readonly = 仅只读操作（更安全）',
+    valueLabels: { full: '完整权限', readonly: '只读模式' },
+  },
+  summary: {
+    label: '记忆摘要',
+    tip: 'on = 每轮对话后生成记忆摘要；off = 不生成',
+    valueLabels: { on: '开启', off: '关闭' },
+  },
+  selfReview: {
+    label: '完成自审',
+    tip: '开启后回答完成前先自查一次再交付；关闭 = 不自查',
+    control: 'switch',
+  },
+  userFollowup: {
+    label: '追问策略',
+    tip: 'ask = 任务说不清时主动反问；silent = 只等用户输入',
+    valueLabels: { ask: '主动追问', silent: '静默等待' },
+  },
+  askOn: {
+    label: '主动提问时机',
+    tip: '允许角色向你提问的情形，可多选组合；全部不勾 = 不主动提问',
+    optionLabels: {
+      ambiguity: '任务有歧义时',
+      decision: '要做决定时',
+      missing_info: '信息不足时',
+      confirm: '执行前确认',
+    },
+  },
+  askLimit: {
+    label: '提问次数上限',
+    tip: '单轮回答最多主动提问几次（1~10）',
+  },
+  errorHandling: {
+    label: '出错处理',
+    tip: '工具/模型出错时怎么办：retry=重试，degrade=降级继续，stop=终止本轮',
+    valueLabels: { retry: '重试', degrade: '降级继续', stop: '终止' },
+  },
+  contextLimit: {
+    label: '上下文上限',
+    tip: '角色自设的上下文规模（token），与模型窗口取小值；0 或留空 = 跟随模型窗口',
+  },
+  stepBudget: {
+    label: '步数预算',
+    tip: '这轮对话最多跑多少次「思考+用工具」（10~500）；0 或留空 = 用默认 50',
+  },
+};
+
+/** 策略阶段中文标题（键面分组的组头；顺序 = 键面出现序） */
+const STAGE_LABELS: Record<string, string> = {
+  prepare: '回答前（Prepare）',
+  act: '回答中（Act）',
+  reflect: '回答后（Reflect）',
+  global: '全局',
+};
+
+/** 详情值渲染：数组（askOn 多选）走选项中文映射，枚举走值中文映射，其余原样字符串化（对象 JSON 兜底） */
+function formatDetailValue(meta: StrategyKeyMetaEntry | undefined, value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map((v) => meta?.optionLabels?.[String(v)] ?? String(v)).join(' / ');
+  }
+  const s = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+  return meta?.valueLabels?.[s] ?? s;
+}
+
+/** 表单快照单元（收集 strategy 前的中间形态）：DOM 读取薄封装后的纯数据 */
+export interface StrategyFormCell {
+  /** 所属策略阶段 */
+  stage: string;
+  /** 键名 */
+  key: string;
+  /** 控件形态（switch = 布尔数字键的开关覆盖形态） */
+  kind: 'enum' | 'number' | 'text' | 'multi' | 'switch';
+  /** 控件原始值：enum/number/text=字符串（''=空格子）/ multi=勾选值数组 / switch=布尔 */
+  raw: string | readonly string[] | boolean;
+}
+
+/**
+ * 从表单快照收集 strategy 段（纯函数，保存链路可测）。
+ *
+ * 语义纪律（方案 §3）：
+ *   - 空格子 = 不写入该键（保持「未声明」语义，不是写 0）；
+ *   - 多选全不勾 = 不写入（空数组会被内核 isAskOn 判错，等价「未声明」）；
+ *   - 开关未勾 = 不写入（selfReview 默认 0=关，未声明与 0 同语义，不固化 0）；
+ *   - preserved：原文中键面未覆盖的键（内核新增键宿主未升级 / 未知键）原样并入，
+ *     防止「整段替换 strategy」时静默丢数据（保真红线）。
+ */
+export function collectStrategyFromForm(
+  cells: readonly StrategyFormCell[],
+  preserved?: Record<string, Record<string, unknown>>,
+): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const c of cells) {
+    let value: unknown;
+    if (c.kind === 'multi') {
+      const arr = [...(c.raw as readonly string[])];
+      if (arr.length === 0) continue;
+      value = arr;
+    } else if (c.kind === 'switch') {
+      if (c.raw !== true) continue;
+      value = 1;
+    } else {
+      const s = (c.raw as string).trim();
+      if (s === '') continue;
+      if (c.kind === 'number') {
+        // 输入框原文转数值；type=number 输入框坏值表现为 ''（上方已挡），此处再防 NaN
+        const n = Number(s);
+        if (!Number.isFinite(n)) continue;
+        value = n;
+      } else {
+        value = s;
+      }
+    }
+    (out[c.stage] ??= {})[c.key] = value;
+  }
+  // 键面未覆盖的原文键原样保留（透明保真，不静默丢弃）
+  if (preserved) {
+    for (const [stage, kv] of Object.entries(preserved)) {
+      for (const [key, v] of Object.entries(kv)) {
+        (out[stage] ??= {})[key] = v;
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -94,6 +293,16 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   let activeName: string | undefined;
   /** 最近一次 roles_loaded 载荷（分页渲染需 teams 等上下文；每次 render 刷新） */
   let lastData: RolesPayload | null = null;
+  /** 策略键面（roles_loaded 下发；编辑表单的唯一数据源，缺省 = 编辑不可用） */
+  let keyface: KeyFaceItem[] = [];
+  /** 当前详情弹窗数据（roles_detail_data 写入；弹窗重渲染共用） */
+  let detail: {
+    name: string;
+    source: 'builtin' | 'user';
+    strategy?: Record<string, Record<string, unknown>>;
+  } | null = null;
+  /** 当前打开的详情弹窗 overlay（编辑/查看模式切换时整弹窗重建；null = 未打开） */
+  let detailOverlay: HTMLElement | null = null;
   /** 「其他角色」全量数组（分页组件前端切片数据源） */
   let othersAll: RolesPayload['packs'] = [];
   /** 「其他角色」整页容器（render 时创建，renderOthersPage 每次重建防翻页叠加） */
@@ -131,6 +340,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     statBar.textContent = `已加载 ${data.packs?.length ?? 0} 个角色`;
     list.textContent = '';
     lastData = data;
+    // 键面随载荷刷新（内核加键自动跟随；缺省保留旧值防瞬时载荷抖动清空）
+    if (data.keyface) keyface = data.keyface;
     if (!data.packs || data.packs.length === 0) {
       // 空态引导：无角色包时提示（SSOT：createEmptyState 纯函数，对齐 configView 列表级同构）
       list.appendChild(
@@ -308,6 +519,288 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     // 挂载到注入 root（id 空间隔离约定：不用 document.getElementById 全局查找，
     // 与 createRolesView 收受依赖的 root 一致——测试/多实例下 root 可能非 #roles-root）
     root.appendChild(overlay);
+  }
+
+  // ════════════════ 角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）════════════════
+  //
+  // 数据流（方案 §2）：点卡片 → roles_detail → 宿主读 manifest 原文回发 roles_detail_data
+  // → 查看模式（有啥渲染啥：声明键才出现 = 走默认，不是留空）→ 编辑模式（全键格子表单，
+  // 键面驱动）→ roles_save 交宿主校验写回。内置包弹只读提示（真拒绝在宿主 extension 侧）。
+
+  /**
+   * 详情弹窗骨架（复用 team-modal 弹窗 token）：head（标题+关闭）+ body + actions。
+   * 查看/编辑模式切换 = 整弹窗重建（detailOverlay 先摘后挂，防叠加）。
+   */
+  function mountDetailModal(body: HTMLElement, actions: HTMLElement[]): void {
+    if (!detail) return;
+    detailOverlay?.remove();
+    const overlay = document.createElement('div');
+    overlay.className = 'team-modal-overlay';
+    const modal = document.createElement('div');
+    modal.className = 'team-modal role-detail';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const pack = lastData?.packs.find((p) => p.name === detail!.name);
+    const title = document.createElement('span');
+    title.className = 'team-modal-title';
+    title.textContent = `角色配置 · ${pack?.displayName ?? detail.name}`;
+    const close = document.createElement('button');
+    close.className = 'btn team-modal-close';
+    close.innerHTML = getIconSvg('close', 12, 12);
+    close.title = '关闭';
+    close.addEventListener('click', () => {
+      detailOverlay = null;
+      overlay.remove();
+    });
+    const head = document.createElement('div');
+    head.className = 'team-modal-head';
+    head.appendChild(title);
+    head.appendChild(close);
+    modal.appendChild(head);
+    modal.appendChild(body);
+    const actionRow = document.createElement('div');
+    actionRow.className = 'team-modal-actions';
+    for (const b of actions) actionRow.appendChild(b);
+    modal.appendChild(actionRow);
+    // 点击遮罩空白处关闭
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) {
+        detailOverlay = null;
+        overlay.remove();
+      }
+    });
+    overlay.appendChild(modal);
+    root.appendChild(overlay);
+    detailOverlay = overlay;
+  }
+
+  /** 以当前 detail 重挂弹窗（查看态）：声明键渲染 + 内置只读提示 / 用户包编辑入口 */
+  function renderDetailView(): void {
+    if (!detail) return;
+    const body = document.createElement('div');
+    body.className = 'role-detail-body';
+    const declared = detail.strategy ?? {};
+    const stageNames = Object.keys(declared).filter(
+      (s) => Object.keys(declared[s] ?? {}).length > 0,
+    );
+    if (stageNames.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'team-modal-hint';
+      empty.textContent = '该角色未自定义任何策略键，全部走默认行为。';
+      body.appendChild(empty);
+    }
+    for (const stage of stageNames) {
+      const stageHead = document.createElement('div');
+      stageHead.className = 'role-detail-stage';
+      stageHead.textContent = STAGE_LABELS[stage] ?? stage;
+      body.appendChild(stageHead);
+      for (const [key, value] of Object.entries(declared[stage] ?? {})) {
+        const meta = STRATEGY_KEY_META[key];
+        const row = document.createElement('div');
+        row.className = 'role-detail-row';
+        // 悬停含义：meta.tip 优先；未知键兜底显示键名原文（降级安全，方案 §2）
+        row.title = meta?.tip ?? `未识别的策略键：${key}`;
+        const label = document.createElement('span');
+        label.className = 'role-detail-label';
+        label.textContent = meta?.label ?? key;
+        const val = document.createElement('span');
+        val.className = 'role-detail-value';
+        val.textContent = formatDetailValue(meta, value);
+        row.appendChild(label);
+        row.appendChild(val);
+        body.appendChild(row);
+      }
+    }
+    const actions: HTMLElement[] = [];
+    if (detail.source === 'user') {
+      const edit = document.createElement('button');
+      edit.className = 'btn btn-primary';
+      edit.textContent = '编辑配置';
+      edit.title = '打开全键表单（留空 = 走默认值；悬停键名查看含义）';
+      edit.addEventListener('click', () => openDetailEditor());
+      actions.push(edit);
+    } else {
+      // 内置包：只读呈现 + 指路（真拒绝在宿主 extension 侧，直接发 roles_save 也被拒）
+      const hint = document.createElement('span');
+      hint.className = 'team-modal-hint role-detail-readonly-hint';
+      hint.textContent = '内置角色包为只读展示；复制到用户角色包目录后可编辑';
+      actions.push(hint);
+    }
+    mountDetailModal(body, actions);
+  }
+
+  /**
+   * 单键表单行：按键面 kind 构建控件（meta.control='switch' 覆盖为开关）+ 登记读取器。
+   * 初值只读 manifest 原文（调用方传入），禁读装配值（防默认值固化，红线 1）。
+   */
+  function buildFormRow(
+    face: KeyFaceItem,
+    meta: StrategyKeyMetaEntry | undefined,
+    initial: unknown,
+    refs: { cell: StrategyFormCell; read: () => string | readonly string[] | boolean }[],
+  ): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'role-detail-form-row';
+    const kind = meta?.control === 'switch' ? 'switch' : face.kind;
+    const label = document.createElement('label');
+    label.className = 'role-detail-label';
+    label.textContent = meta?.label ?? face.key;
+    // 悬停含义：中文 tip；数值键追加合法范围（来自键面 range，与内核同源）
+    const rangeSuffix =
+      face.range && kind === 'number' ? `（合法范围 ${face.range.min}–${face.range.max}）` : '';
+    label.title = (meta?.tip ?? `未识别的策略键：${face.key}`) + rangeSuffix;
+    row.appendChild(label);
+
+    if (kind === 'enum') {
+      const sel = document.createElement('select');
+      const emptyOpt = document.createElement('option');
+      emptyOpt.value = '';
+      emptyOpt.textContent = '留空（用默认）';
+      sel.appendChild(emptyOpt);
+      for (const v of face.values ?? []) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = meta?.valueLabels?.[v] ?? v;
+        sel.appendChild(opt);
+      }
+      sel.value = initial === undefined || initial === null ? '' : String(initial);
+      // 原文越界值不在枚举内 → 追加展示原文选项，防「回填即改值」（保真）
+      if (sel.value === '' && initial !== undefined && initial !== null) {
+        const rawOpt = document.createElement('option');
+        rawOpt.value = String(initial);
+        rawOpt.textContent = `${String(initial)}（原文值）`;
+        sel.appendChild(rawOpt);
+        sel.value = String(initial);
+      }
+      refs.push({
+        cell: { stage: face.stage, key: face.key, kind: 'enum', raw: '' },
+        read: () => sel.value,
+      });
+      row.appendChild(sel);
+      return row;
+    }
+    if (kind === 'number') {
+      const input = document.createElement('input');
+      input.type = 'number';
+      // 区间属性来自键面（内核 describeStrategyKeys 折算过 0 哨兵），UI 不另写死
+      if (face.range) {
+        input.min = String(face.range.min);
+        input.max = String(face.range.max);
+        input.step = face.key === 'temperature' ? '0.1' : '1';
+      }
+      input.placeholder = '留空 = 用默认值';
+      input.title = (meta?.tip ?? '') + rangeSuffix;
+      if (typeof initial === 'number') input.value = String(initial);
+      refs.push({
+        cell: { stage: face.stage, key: face.key, kind: 'number', raw: '' },
+        read: () => input.value,
+      });
+      row.appendChild(input);
+      return row;
+    }
+    if (kind === 'multi') {
+      const wrap = document.createElement('div');
+      wrap.className = 'role-detail-multi';
+      // askOn 初值兼容两种形态：单枚举字符串或组合数组（isAskOn 双形态）
+      const selected = new Set(
+        Array.isArray(initial)
+          ? initial.map(String)
+          : typeof initial === 'string' && initial !== ''
+            ? [initial]
+            : [],
+      );
+      for (const opt of face.options ?? []) {
+        const item = document.createElement('label');
+        item.className = 'role-detail-check';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = opt;
+        cb.checked = selected.has(opt);
+        const txt = document.createElement('span');
+        txt.textContent = meta?.optionLabels?.[opt] ?? opt;
+        item.appendChild(cb);
+        item.appendChild(txt);
+        wrap.appendChild(item);
+      }
+      refs.push({
+        cell: { stage: face.stage, key: face.key, kind: 'multi', raw: [] },
+        read: () =>
+          Array.from(wrap.querySelectorAll('input:checked')).map(
+            (el) => (el as HTMLInputElement).value,
+          ),
+      });
+      row.appendChild(wrap);
+      return row;
+    }
+    // switch（selfReview 布尔数字语义）：勾选 = 写 1；未勾 = 不写入（默认 0=关，同语义不固化 0）。
+    // 原文正整数（3、5…）内核归一为 1，回显按开处理，保存后归一落盘。
+    const toggle = document.createElement('label');
+    toggle.className = 'role-detail-check';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = typeof initial === 'number' && initial > 0;
+    const txt = document.createElement('span');
+    txt.textContent = '开启';
+    toggle.appendChild(cb);
+    toggle.appendChild(txt);
+    refs.push({
+      cell: { stage: face.stage, key: face.key, kind: 'switch', raw: false },
+      read: () => cb.checked,
+    });
+    row.appendChild(toggle);
+    return row;
+  }
+
+  /** 编辑模式：全键格子表单（键面驱动，宿主零清单）；键面未覆盖的原文键保存时原样并入 */
+  function openDetailEditor(): void {
+    if (!detail) return;
+    // 键面未下发（旧载荷/时序未到）→ 编辑不可用，不给假表单（静默失败防线）
+    if (keyface.length === 0) return;
+    const refs: { cell: StrategyFormCell; read: () => string | readonly string[] | boolean }[] = [];
+    const body = document.createElement('div');
+    body.className = 'role-detail-body';
+    // 键面未覆盖的原文键（内核新键宿主未升级 / 未知键）→ preserved，保存时原样并入（透明保真）
+    const preserved: Record<string, Record<string, unknown>> = {};
+    for (const [stage, kv] of Object.entries(detail.strategy ?? {})) {
+      for (const [key, v] of Object.entries(kv)) {
+        if (!keyface.some((f) => f.stage === stage && f.key === key)) {
+          (preserved[stage] ??= {})[key] = v;
+        }
+      }
+    }
+    // 按键面阶段顺序分组渲染（阶段序 = 内核 STRATEGY_KEY_RULES 序）
+    const stages = [...new Set(keyface.map((f) => f.stage))];
+    for (const stage of stages) {
+      const stageHead = document.createElement('div');
+      stageHead.className = 'role-detail-stage';
+      stageHead.textContent = STAGE_LABELS[stage] ?? stage;
+      body.appendChild(stageHead);
+      for (const face of keyface.filter((f) => f.stage === stage)) {
+        const initial = detail.strategy?.[stage]?.[face.key];
+        body.appendChild(buildFormRow(face, STRATEGY_KEY_META[face.key], initial, refs));
+      }
+    }
+    const hint = document.createElement('div');
+    hint.className = 'team-modal-hint';
+    hint.textContent = '留空的键不写入（= 走默认值）；悬停键名查看含义。';
+    body.appendChild(hint);
+    const save = document.createElement('button');
+    save.className = 'btn btn-primary';
+    save.textContent = '保存';
+    save.title = '校验通过后写回 manifest 原文（仅替换 strategy 段，其余字段原样保留）';
+    save.addEventListener('click', () => {
+      // 收集：DOM 读取薄封装 → 纯函数收集（空格子不写入）；弹窗保持打开——
+      // 成功 → 宿主回发 roles_detail_data 切回查看态；失败 → notice 留在编辑态
+      const cells = refs.map(({ cell, read }) => ({ ...cell, raw: read() }));
+      const strategy = collectStrategyFromForm(cells, preserved);
+      vscode.postMessage({ type: 'roles_save', name: detail!.name, strategy });
+    });
+    const cancel = document.createElement('button');
+    cancel.className = 'btn btn-secondary';
+    cancel.textContent = '取消';
+    cancel.title = '放弃修改，回到查看模式（不写盘）';
+    cancel.addEventListener('click', () => renderDetailView());
+    mountDetailModal(body, [save, cancel]);
   }
 
   /**
@@ -561,12 +1054,26 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       card.appendChild(details);
     }
 
+    // 点击卡片空白区打开配置详情（RP-EDIT-1）：按钮/输入/折叠区等交互元素除外（交给各自行为）
+    card.classList.add('roles-card-clickable');
+    card.addEventListener('click', (ev) => {
+      const t = ev.target as HTMLElement;
+      if (t.closest('button, input, select, textarea, label, a, summary')) return;
+      vscode.postMessage({ type: 'roles_detail', name: p.name });
+    });
+
     return card;
   }
 
-  // 消息接收：roles_loaded 渲染列表
+  // 消息接收：roles_loaded 渲染列表 + roles_detail_data 驱动详情弹窗
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
     if (msg.type === 'roles_loaded') render(msg);
+    // 详情数据：更新 detail；弹窗已开 = 查看态回显/保存成功回显（重挂切查看态）；
+    // 未开 = 只更新数据不自动弹（roles_loaded 刷新列表即可，避免列表刷新连带弹窗）
+    if (msg.type === 'roles_detail_data') {
+      detail = { name: msg.name, source: msg.source, strategy: msg.strategy };
+      if (detailOverlay) renderDetailView();
+    }
   });
 }

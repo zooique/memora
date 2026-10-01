@@ -38,10 +38,19 @@ import {
   ROLE_PACK_TEAMS_KEY,
   MEMORY_RECYCLE_RETENTION_DAYS,
 } from '../../shared/constants.js';
-// 内核常量（宿主不复制字面量，SSOT 单一来源）：
+// 内核常量与键面/校验入口（宿主不复制字面量，SSOT 单一来源）：
 //   BUILTIN_FALLBACK_PACK — 兜底契约包名，随内核包分发，宿主 UI 禁删标记；
-//   MAX_TEAM_MEMBERS      — 小组会议组员上限，本处用于保存校验，并随 roles_loaded 下发给 webview。
-import { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS } from '@zooique/memora';
+//   MAX_TEAM_MEMBERS      — 小组会议组员上限，本处用于保存校验，并随 roles_loaded 下发给 webview；
+//   describeStrategyKeys  — UI 键面唯一来源（strategyKeys.ts），随 roles_loaded 下发，宿主零清单维护；
+//   validateManifestText  — 角色包保存前校验入口（宿主不重写判据，校验失败不写盘）。
+import {
+  BUILTIN_FALLBACK_PACK,
+  MAX_TEAM_MEMBERS,
+  describeStrategyKeys,
+  validateManifestText,
+} from '@zooique/memora';
+// 角色包 manifest 原文读写（详情弹窗初值 + 全量保真写回的真源是文件原文，不是装配值）
+import { readFile, writeFile } from 'node:fs/promises';
 
 /** 列表加载条数（MVP：只读浏览，先展示最常用的前 20 条） */
 const MEMORY_LIST_LIMIT = 20;
@@ -210,6 +219,16 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     // 打开用户角色包目录（与技能系统入口一致）
     if (msg.type === 'roles_open_dir') {
       this.openUserRolePacksDir();
+      return;
+    }
+    // 角色配置详情：读 manifest 原文 strategy 段回发（初值真源 = 原文，禁读装配值）
+    if (msg.type === 'roles_detail') {
+      await this.handleRolesDetail(msg.name);
+      return;
+    }
+    // 保存角色策略键：内置真拒绝 → 全量保真写回 → 校验 → reload → 刷新下发
+    if (msg.type === 'roles_save') {
+      await this.handleRolesSave(msg.name, msg.strategy);
       return;
     }
 
@@ -515,6 +534,130 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     agent?.rolePackManager?.setRolePackTeams(next);
   }
 
+  /**
+   * 角色包来源层判定（单点收口）：用户目录命中 → user，否则内置。
+   * 与 loadRoles 的列表来源判定同源（filePath 前缀，configDir 与用户目录天然不重叠），
+   * 保存链路的内置包拒绝判据也复用本方法——禁第二份前缀判定副本。
+   */
+  private rolePackSource(filePath: string | undefined): 'builtin' | 'user' {
+    return this._userRolePacksDir && filePath?.startsWith(this._userRolePacksDir)
+      ? 'user'
+      : 'builtin';
+  }
+
+  /**
+   * 角色配置详情（roles_detail）：读 manifest 原文 strategy 段回发 roles_detail_data。
+   *
+   * 初值真源 = 文件原文：装配值（rpm.get().strategy）是合并默认值后的完整策略，
+   * 回填保存会把默认值固化成显式声明（红线 1），故必须读文件。
+   */
+  private async handleRolesDetail(name: string): Promise<void> {
+    const agent = await this.ensureAgent();
+    const rpm = agent?.rolePackManager;
+    if (!rpm) {
+      this.post({ type: 'notice', level: 'error', message: 'Agent 未就绪，无法读取角色配置' });
+      return;
+    }
+    const pack = rpm.get(name);
+    if (!pack?.filePath) {
+      this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
+      return;
+    }
+    const source = this.rolePackSource(pack.filePath);
+    try {
+      const raw = JSON.parse(await readFile(pack.filePath, 'utf-8')) as {
+        strategy?: Record<string, Record<string, unknown>>;
+      };
+      this.post({ type: 'roles_detail_data', name, source, strategy: raw.strategy });
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: `读取角色包配置失败：${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  /**
+   * 保存角色策略键（roles_save）：内置真拒绝 → 全量保真写回 → 校验 → 写盘 → reload → 刷新下发。
+   *
+   * 执行序（每步失败即短路，不写盘不留半态）：
+   *   1. 内置包真拒绝在本层（红线 3：webview 隐藏编辑按钮只是呈现，直接发消息也必须被拒）；
+   *   2. 全量保真：读原文全量对象只替换 strategy 段（skills/capabilities/name 等原样保留，
+   *      禁止从表单数据重建整个 manifest）；空 strategy 段 = 删除该键（保持「未声明」语义）；
+   *   3. validateManifestText 校验失败不写盘；
+   *   4. 写盘后必须 rpm.reload()（_cachedAssembly 缓存装配结果，不 reload 下个 turn 仍用旧配置）；
+   *   5. 回发 roles_detail_data（弹窗回显新原文）+ loadRoles（列表策略徽章刷新）。
+   */
+  private async handleRolesSave(
+    name: string,
+    strategy: Record<string, Record<string, unknown>>,
+  ): Promise<void> {
+    const agent = await this.ensureAgent();
+    const rpm = agent?.rolePackManager;
+    if (!rpm) {
+      this.post({ type: 'notice', level: 'error', message: 'Agent 未就绪，无法保存角色配置' });
+      return;
+    }
+    const pack = rpm.get(name);
+    if (!pack?.filePath) {
+      this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
+      return;
+    }
+    const source = this.rolePackSource(pack.filePath);
+    // 内置包真拒绝（判据与列表来源判定同源：rolePackSource 单点）
+    if (source !== 'user') {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: `「${name}」是内置角色包，不可编辑；可将其复制到用户角色包目录后修改`,
+      });
+      return;
+    }
+    try {
+      // 全量保真写回：只换 strategy 段，其余字段原样保留
+      const manifest = JSON.parse(await readFile(pack.filePath, 'utf-8')) as Record<
+        string,
+        unknown
+      >;
+      if (strategy && Object.keys(strategy).length > 0) {
+        manifest.strategy = strategy;
+      } else {
+        delete manifest.strategy;
+      }
+      // 2 空格缩进 + 尾换行：手编排版会被归一（可接受边界，文件本为机器读）
+      const text = `${JSON.stringify(manifest, null, 2)}\n`;
+      // 校验失败不写盘（复用内核 validateManifestText，宿主不重写判据）
+      const result = validateManifestText(text);
+      const firstError = result.issues.find((i) => i.severity === 'error');
+      if (firstError) {
+        this.post({
+          type: 'notice',
+          level: 'error',
+          message: `保存失败：${firstError.message}`,
+        });
+        return;
+      }
+      await writeFile(pack.filePath, text, 'utf-8');
+      // 装配缓存失效防线：写盘后重扫（保留运行时注入项），下个 turn 立即用新配置
+      await rpm.reload();
+      this.post({
+        type: 'roles_detail_data',
+        name,
+        source,
+        strategy: manifest.strategy as Record<string, Record<string, unknown>> | undefined,
+      });
+      await this.loadRoles();
+      this.post({ type: 'notice', level: 'info', message: `「${name}」的策略配置已保存` });
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: `保存失败：${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
   private async loadRoles(): Promise<void> {
     const agent = await this.ensureAgent();
     const rpm = agent?.rolePackManager;
@@ -525,6 +668,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         teams: [],
         activeName: '',
         maxTeamMembers: MAX_TEAM_MEMBERS,
+        // 键面与 rpm 无关（静态派生），未就绪时也下发，编辑模式不因装配时序缺席
+        keyface: describeStrategyKeys(),
       });
       return;
     }
@@ -545,12 +690,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       .filter((m) => m.name)
       .map((m) => {
         const pack = rpm.get(m.name);
-        // 来源层判定：用户目录命中 → user，否则内置（内置优先语义；
-        // 与技能 sourceOf 同思路，用 filePath 前缀，configDir 与用户目录天然不重叠）
-        const source: 'builtin' | 'user' =
-          this._userRolePacksDir && pack?.filePath?.startsWith(this._userRolePacksDir)
-            ? 'user'
-            : 'builtin';
+        // 来源层判定：rolePackSource 单点（与保存链路内置拒绝判据同源，禁第二份前缀副本）
+        const source = this.rolePackSource(pack?.filePath);
         // 提取策略指示器：从内核完整策略中提炼 UI 友好的摘要
         const strategy = pack?.strategy;
         // 温度分组：基于 temperature 值动态计算
@@ -596,7 +737,15 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       });
     const activeName = rpm.activeName ?? (packs.length > 0 ? packs[0]!.name : '');
     // maxTeamMembers：内核常量透传给 webview（浏览器沙箱不可直连内核，UI 侧禁止另写字面量）
-    this.post({ type: 'roles_loaded', packs, teams, activeName, maxTeamMembers: MAX_TEAM_MEMBERS });
+    // keyface：内核键面透传（UI 键面唯一来源 = describeStrategyKeys，宿主零清单维护）
+    this.post({
+      type: 'roles_loaded',
+      packs,
+      teams,
+      activeName,
+      maxTeamMembers: MAX_TEAM_MEMBERS,
+      keyface: describeStrategyKeys(),
+    });
   }
 
   // ─── 大模型配置子视图数据加载 ───
