@@ -466,6 +466,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /** 本轮过程事件缓冲（渲染唯一真相源，运行时与重放同源） */
   let currentEvents: ProcessEvent[] = [];
+  /**
+   * 实时任务项状态累加（webview 侧运行态真源）：plan_item_boundary 置 active /
+   * plan_update 与 plan_snapshot 全量重建。renderProcessFlow 增量刷新尾部统一投影——
+   * 调和两个时序问题：① 组由内容事件（narrate/tool）触发创建，boundary 先到时组尚未建，
+   * 「到达瞬间置图标」会丢；② plan_update 宣告 done 后，后续内容事件若「从事件序推导」
+   * 会把绿勾抹回 active。finalize 后由 renderRoundBlock 的 planItemStatesFromEvents
+   * 接管（事件序推导，语义与实时累加同源）。新轮 meta 重建时清空（与 currentEvents 同点）。
+   */
+  let livePlanStates = new Map<string, string>();
   /** 本轮身份（meta 事件写入）：该轮 AI 消息挂的角色/模型标签（与会话级 chat_role_pack 分离） */
   let currentRoundMeta: { role: string; llm: string } | undefined;
   /** 当前轮 round-block 容器（挂在本轮首个 assistant 块；null = 正文块尚未创建） */
@@ -1149,9 +1158,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * data-plan-item 匹配切换状态图标/类——done = circle-check（完成绿）、active = target
    * （正在执行）、pending/blocked 无图标（收起态 summary 干净）。
    *
-   * 消费点恰好两个：plan_update 分支（实时）+ renderRoundBlock（finalize/重放，从
-   * plan_snapshot 快照建 map）。禁第三处内联更新；🔴 禁从标题/时序/工具文本推断状态——
-   * 状态数据缺失（存量历史轮无快照）= 组不显示图标（诚实降级，不伪造绿勾）。
+   * 消费点恰好三个（全部经本函数喂数据，禁第四处内联 DOM 更新）：plan_update 分支
+   * （实时显式重建 livePlanStates）、renderProcessFlow 尾部（实时投影 livePlanStates，
+   * 兜住组延迟创建）、renderRoundBlock 尾部（finalize/重放，planItemStatesFromEvents
+   * 事件序推导）。🔴 禁从标题/时序/工具文本推断状态——只消费内核结构化信号
+   * （plan_item_boundary / plan_snapshot / task_table_update）。
    * 幂等：同图标已就位不重复注入（plan_update 高频重推零成本）。
    */
   function applyPlanItemStates(root: HTMLElement, states: Map<string, string>): void {
@@ -1180,14 +1191,33 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /**
    * 从 processEvents 提取任务项状态 map（取**最后一条** plan_snapshot——turn 内多次
-   * 挂起/恢复场景以收尾终态为准）。无快照返回空 map（存量轮诚实降级：组无图标）。
+   * 挂起/恢复场景以收尾终态为准）。双保险（真机反馈 2026-10-01）：
+   * ① 最后快照**之后**发生的 boundary（数组序 = 事件发生序）覆盖为 active——覆盖
+   *    「快照缺项/快照滞后于边界」的窗口（结构化信号，非文本推断）；
+   * ② 无任何快照：最后一条 boundary 对应项置 active，其余项无图标——boundary 语义 =
+   *    内核宣告「任务项开始执行」，最后宣告开始且未见完成宣告的项亮「进行中」是数据
+   *    支持的诚实表达（中断轮保留现场；存量轮不再全程裸奔），其余项完成与否未知，
+   *    维持无图标（不伪造 done）。
    */
   function planItemStatesFromEvents(events: ProcessEvent[]): Map<string, string> {
     const snaps = events.filter(
       (e): e is Extract<ProcessEvent, { type: 'plan_snapshot' }> => e.type === 'plan_snapshot',
     );
     const last = snaps[snaps.length - 1];
-    return new Map(last ? last.payload.items.map((i) => [i.planItemId, i.status]) : []);
+    const states = new Map(last ? last.payload.items.map((i) => [i.planItemId, i.status]) : []);
+    const bounds = events.filter(isPlanItemBoundaryEvent);
+    if (last) {
+      const lastIdx = events.lastIndexOf(last);
+      for (const b of bounds) {
+        if (events.indexOf(b) > lastIdx && b.payload.planItemId) {
+          states.set(b.payload.planItemId, 'active');
+        }
+      }
+    } else {
+      const lastBound = bounds[bounds.length - 1];
+      if (lastBound?.payload.planItemId) states.set(lastBound.payload.planItemId, 'active');
+    }
+    return states;
   }
 
   /** 思考折叠块标题：stepIndex 已知 = 标注第几步（一个 step 一个折叠块）；无归属 = 裸「思考」 */
@@ -1993,7 +2023,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
     }
     // § 任务项状态（finalize/重放消费点）：从 plan_snapshot 快照建 map 应用状态图标。
-    // 存量历史轮无快照 → 空 map → 组不显示状态图标（诚实降级，不伪造绿勾）。
+    // 先补建组：组由 narrate/tool 消费 planItemContainerFor 时触发创建——boundary 之后
+    // 无内容事件跟随的尾部任务项（真机实证：中断轮最后 boundary / 快照后新 boundary）
+    // 组不存在，状态图标无处安放。与 renderProcessFlow 尾部建组循环同构（幂等，复用既有组）。
+    const planBounds = events.filter(isPlanItemBoundaryEvent);
+    for (const b of planBounds) getOrCreatePlanItemGroup(details, b, planBounds);
+    // 存量历史轮无快照 → planItemStatesFromEvents 无快照分支（最后 boundary 项 active，
+    // 其余无图标——诚实降级，不伪造绿勾）。
     applyPlanItemStates(details, planItemStatesFromEvents(events));
   }
 
@@ -2155,6 +2191,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         updateToolRowState(flow, e as Extract<ProcessEvent, { type: 'tool_result' }>);
       }
     }
+    // 3.5) 任务项组建组 + 状态投影（真机反馈 2026-10-01：运行中无 active 靶心）：
+    //   boundary 事件本身不建组（组由 narrate/tool/thought/batch 消费 planItemContainerFor
+    //   时创建）——boundary 先于一切内容事件到达时（真机实证：LLM 建表后立刻宣告任务项，
+    //   下一事件可能长时间未到），组必须由 boundary 自行创建，否则靶心无处安放。
+    //   幂等：getOrCreatePlanItemGroup 复用既有组，重复调用零成本。
+    //   状态投影走 livePlanStates（实时累加真源，含 plan_update 的 done——防被事件序推导
+    //   抹掉）；空 map = 无状态信号，不投影（诚实降级，不伪造图标）。
+    const planBounds = events.filter(isPlanItemBoundaryEvent);
+    for (const b of planBounds) getOrCreatePlanItemGroup(flow, b, planBounds);
+    if (livePlanStates.size > 0) applyPlanItemStates(flow, livePlanStates);
     // 4) 光标运行态同步：工具/思考 DOM 刚被本函数更新 → 推导一次（批次二单一合成点；
     //    仅流式中生效——重放/骨架期调用无活动流式块，guard 内 no-op）
     if (streamingActive) syncRunningCursor();
@@ -4488,6 +4534,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         } else {
           resumePending = false; // 真新轮：清续跑期待——残留 true 会被本分支误消费成续跑（清理纪律与 done/interrupted 对称）
           currentEvents = [];
+          livePlanStates = new Map(); // 新轮：实时任务项状态重置（残留会把上轮图标投影进新轮组）
           runtimeInteractiveInputs = []; // 新轮：运行时输入累积重置（形态甲）
           skeletonPendingItems = []; // 新轮：骨架期暂存重置——残留条目已 DOM 落地，清引用即可
           roundBlockEl = null;
@@ -4521,6 +4568,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         } else if (ev.type === 'tool_result') {
           // TS-11c：工具结束 → 移除计时点（行内 elapsed 由 result 后的重渲/清理移除）
           toolElapsedStart.delete(ev.payload.toolCallId);
+        } else if (ev.type === 'plan_item_boundary') {
+          // 任务项状态实时累加（真机反馈 2026-10-01）：boundary = 内核结构化宣告
+          // 「任务项开始执行」（payload.planItemId），置 active。只改本项、不动其他项
+          // （未被宣告完成的项不伪造终态）；投影统一归 renderProcessFlow 尾部（单点）。
+          if (ev.payload.planItemId) livePlanStates.set(ev.payload.planItemId, 'active');
+        } else if (ev.type === 'plan_snapshot') {
+          // 收尾终态快照（内核 clearPlanOnTurnEnd yield，先拍后清）：全量重建——终态权威，
+          // 覆盖此前累加的 active（运行期从未收 plan_update 时，绿勾在收尾即时点亮而非等 finalize）
+          livePlanStates = new Map(
+            ev.payload.items.map((i) => [i.planItemId, i.status]),
+          );
         }
         currentEvents.push(ev);
         // 运行时过程平铺容器随流同步刷新（增量：narrate 冒号行 + 工具折叠行 + 思考状态）
@@ -4764,6 +4822,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       renderPlanBoard(msg.items);
       // 任务项组状态实时同步（单一写入点 applyPlanItemStates 的实时消费点）：
       // 看板数据即状态真源投影，同步点亮过程区任务项组图标（done 绿勾 / active 靶心）。
+      // 全量重建 livePlanStates（LLM 显式表态 = 权威，覆盖 boundary 累加的 active）——
+      // 后续内容事件到达时 renderProcessFlow 尾部投影同一 map，绿勾不被事件序推导抹掉。
+      livePlanStates = new Map(msg.items.map((s) => [s.id, s.status]));
       // 根选择与 QA 归位同构：运行时 flow 优先，finalize 后 round-block 兜底。
       const stateRoot = flowEl?.isConnected
         ? flowEl
@@ -4771,7 +4832,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           ? roundBlockEl.querySelector<HTMLElement>('.round-block__details')
           : null;
       if (stateRoot) {
-        applyPlanItemStates(stateRoot, new Map(msg.items.map((s) => [s.id, s.status])));
+        applyPlanItemStates(stateRoot, livePlanStates);
       }
     } else if (msg.type === 'polish_input_result') {
       // 输入框润色结果：ok=true 替换输入框内容；ok=false 提示失败

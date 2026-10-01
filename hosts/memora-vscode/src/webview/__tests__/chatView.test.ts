@@ -3474,6 +3474,243 @@ describe('会话元数据搜索（FD-3-A）', () => {
   });
 });
 
+describe('任务项状态图标（真机反馈 2026-10-01：运行中无 active 图标 / 重放丢完成图标）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const T0 = '2026-10-01T08:00:00.000Z';
+  const planEvents = (): ProcessEvent[] => [
+    {
+      type: 'meta',
+      seq: 3,
+      ts: T0,
+      payload: { role: '共鸣小说家', llm: 'mimo-v2.6-pro', contextWindow: 600000, maxTokens: 64000 },
+    },
+    {
+      type: 'plan_item_boundary',
+      seq: 55,
+      ts: '2026-10-01T08:00:09.206Z',
+      payload: { planItemId: 'p1', title: '任务一：读取素材' },
+    },
+    { type: 'narrate', seq: 60, ts: '2026-10-01T08:00:10.000Z', payload: { content: '开工' } },
+    {
+      type: 'plan_item_boundary',
+      seq: 70,
+      ts: '2026-10-01T08:01:00.000Z',
+      payload: { planItemId: 'p2', title: '任务二：成文' },
+    },
+  ];
+
+  it('问题2复现：重放含 plan_snapshot（全 done）的轮 → 任务项组显示完成绿勾', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'r-plan',
+        user: { content: '建任务表干活', ts: T0 },
+        assistantMessage: { content: '第 1 章正文成稿。', ts: '2026-10-01T08:09:00.500Z' },
+        processEvents: [
+          ...planEvents(),
+          {
+            type: 'plan_snapshot',
+            seq: 90,
+            ts: '2026-10-01T08:09:00.000Z',
+            payload: {
+              items: [
+                { planItemId: 'p1', status: 'done' },
+                { planItemId: 'p2', status: 'done' },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+    const grp = document.querySelector<HTMLElement>(
+      '.round-block__plan-item[data-plan-item="p1"]',
+    );
+    expect(grp).toBeTruthy();
+    expect(grp?.classList.contains('is-plan-done')).toBe(true);
+    expect(grp?.querySelector('.round-block__plan-item-status')).toBeTruthy();
+  });
+
+  it('问题1复现：流式 plan_item_boundary 到达 → 该任务项组立即亮 active 靶心', () => {
+    const { } = mountChatView();
+    // 开轮（meta）→ 任务项边界（无任何 plan_snapshot / plan_update）
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'meta',
+        seq: 3,
+        ts: T0,
+        payload: { role: '共鸣小说家', llm: 'mimo-v2.6-pro', contextWindow: 600000, maxTokens: 64000 },
+      } as ProcessEvent,
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'plan_item_boundary',
+        seq: 55,
+        ts: '2026-10-01T08:00:09.206Z',
+        payload: { planItemId: 'p1', title: '任务一：读取素材' },
+      } as ProcessEvent,
+    });
+    // 任务项组已渲染（运行时平铺形态），状态图标应同步亮起（active 靶心）
+    const grp = document.querySelector<HTMLElement>(
+      '.round-block__plan-item[data-plan-item="p1"]',
+    );
+    expect(grp).toBeTruthy();
+    expect(grp?.classList.contains('is-plan-active')).toBe(true);
+    expect(grp?.querySelector('.round-block__plan-item-status')).toBeTruthy();
+  });
+
+  it('调和回归：plan_update 宣告 done 后，后续内容事件到达不把绿勾抹回 active', () => {
+    mountChatView();
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'meta',
+        seq: 3,
+        ts: T0,
+        payload: { role: '共鸣小说家', llm: 'mimo-v2.6-pro', contextWindow: 600000, maxTokens: 64000 },
+      } as ProcessEvent,
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'plan_item_boundary',
+        seq: 55,
+        ts: '2026-10-01T08:00:09.206Z',
+        payload: { planItemId: 'p1', title: '任务一：读取素材' },
+      } as ProcessEvent,
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'plan_item_boundary',
+        seq: 70,
+        ts: '2026-10-01T08:01:00.000Z',
+        payload: { planItemId: 'p2', title: '任务二：成文' },
+      } as ProcessEvent,
+    });
+    // LLM 显式更新任务表：p1 done（权威表态，全量重建 livePlanStates）
+    dispatch({
+      type: 'plan_update',
+      items: [
+        { order: 0, id: 'p1', description: '任务一：读取素材', status: 'done', planItemLog: [] },
+        { order: 1, id: 'p2', description: '任务二：成文', status: 'active', planItemLog: [] },
+      ],
+    });
+    // 后续内容事件（narrate）到达 → renderProcessFlow 增量刷新：
+    // 若尾部投影「从事件序推导 active」而非读 livePlanStates，p1 的绿勾会被抹掉
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'narrate',
+        seq: 80,
+        ts: '2026-10-01T08:02:00.000Z',
+        payload: { content: '继续' },
+      } as ProcessEvent,
+    });
+    const p1 = document.querySelector<HTMLElement>('.round-block__plan-item[data-plan-item="p1"]');
+    const p2 = document.querySelector<HTMLElement>('.round-block__plan-item[data-plan-item="p2"]');
+    expect(p1?.classList.contains('is-plan-done')).toBe(true);
+    expect(p2?.classList.contains('is-plan-active')).toBe(true);
+  });
+
+  it('中断轮（无 plan_snapshot）finalize → 最后 boundary 项保留 active 靶心，其余项诚实无图标', () => {
+    mountChatView();
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'meta',
+        seq: 3,
+        ts: T0,
+        payload: { role: 'AI', llm: 'm' },
+      } as ProcessEvent,
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'plan_item_boundary',
+        seq: 55,
+        ts: '2026-10-01T08:00:09.206Z',
+        payload: { planItemId: 'p1', title: '任务一' },
+      } as ProcessEvent,
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'narrate',
+        seq: 60,
+        ts: '2026-10-01T08:00:10.000Z',
+        payload: { content: '开工' },
+      } as ProcessEvent,
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'plan_item_boundary',
+        seq: 70,
+        ts: '2026-10-01T08:01:00.000Z',
+        payload: { planItemId: 'p2', title: '任务二' },
+      } as ProcessEvent,
+    });
+    dispatch({ type: 'chunk', content: '半截正文' });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'aborted',
+        seq: 80,
+        ts: '',
+        payload: { reason: '用户停止', stopReason: 'user' },
+      } as ProcessEvent,
+    });
+    dispatch({ type: 'interrupted', roundId: 'r-int' });
+    // finalize 全量重渲（planItemStatesFromEvents 无快照分支）：最后 boundary = p2 active
+    const p1 = document.querySelector<HTMLElement>('.round-block__plan-item[data-plan-item="p1"]');
+    const p2 = document.querySelector<HTMLElement>('.round-block__plan-item[data-plan-item="p2"]');
+    expect(p2?.classList.contains('is-plan-active')).toBe(true);
+    // p1 未见完成宣告：无图标（不伪造 done、不误亮 active）
+    expect(p1?.classList.contains('is-plan-done')).toBe(false);
+    expect(p1?.classList.contains('is-plan-active')).toBe(false);
+  });
+
+  it('重放双保险：最后快照之后发生的 boundary → 该项覆盖为 active（快照终态不覆盖新开始项）', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'r-plan-late',
+        user: { content: '建任务表干活', ts: T0 },
+        assistantMessage: { content: '正文成稿。', ts: '2026-10-01T08:10:00.500Z' },
+        processEvents: [
+          ...planEvents(),
+          {
+            type: 'plan_snapshot',
+            seq: 90,
+            ts: '2026-10-01T08:09:00.000Z',
+            payload: {
+              items: [
+                { planItemId: 'p1', status: 'done' },
+                { planItemId: 'p2', status: 'done' },
+              ],
+            },
+          },
+          {
+            type: 'plan_item_boundary',
+            seq: 95,
+            ts: '2026-10-01T08:09:30.000Z',
+            payload: { planItemId: 'p3', title: '任务三：收尾' },
+          },
+        ],
+      }),
+    );
+    const p1 = document.querySelector<HTMLElement>('.round-block__plan-item[data-plan-item="p1"]');
+    const p3 = document.querySelector<HTMLElement>('.round-block__plan-item[data-plan-item="p3"]');
+    expect(p1?.classList.contains('is-plan-done')).toBe(true);
+    expect(p3?.classList.contains('is-plan-active')).toBe(true);
+  });
+});
+
 describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -7542,7 +7779,7 @@ describe('任务项完成态（plan_snapshot 快照 → 状态图标）', () => 
     expect(icon.dataset.statusIcon).toBe('target');
   });
 
-  it('重放：存量轮无快照 → 任务项组无状态图标（诚实降级，不伪造绿勾）', () => {
+  it('重放：存量轮无快照 → 最后 boundary 项亮 active 靶心（不再全程裸奔；中断轮定格现场）', () => {
     mountChatView();
     dispatchReplay(
       makeRound({
@@ -7555,11 +7792,14 @@ describe('任务项完成态（plan_snapshot 快照 → 状态图标）', () => 
     const grp = document.querySelector(
       '.round-block__plan-item[data-plan-item="p1"]',
     ) as HTMLElement;
-    // 组照常渲染（分组结构不受影响），但无任何状态图标/状态类
+    // 组照常渲染（分组结构不受影响）。口径升级（真机反馈 2026-10-01）：
+    // boundary = 内核结构化「开始执行」宣告，最后宣告且未见完成宣告的项亮「进行中」
+    // 是数据支持的诚实表达（中断轮定格现场），非伪造状态；不伪造的是 done 绿勾。
     expect(grp).not.toBeNull();
-    expect(grp.querySelector('.round-block__plan-item-status')).toBeNull();
     expect(grp.classList.contains('is-plan-done')).toBe(false);
-    expect(grp.classList.contains('is-plan-active')).toBe(false);
+    expect(grp.classList.contains('is-plan-active')).toBe(true);
+    const icon = grp.querySelector('.round-block__plan-item-status') as HTMLElement;
+    expect(icon.dataset.statusIcon).toBe('target');
   });
 
   it('重放：多条快照取最后一条（挂起→续跑推进后以收尾终态为准）', () => {
