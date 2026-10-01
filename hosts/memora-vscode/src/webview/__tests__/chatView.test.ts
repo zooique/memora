@@ -3863,6 +3863,90 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     expect(messages.contains(btn)).toBe(false);
   });
 
+  // ─── StatusDock：底部状态条收纳器（方案-底部状态条收纳-20261001.md）───
+  describe('StatusDock 底部状态条收纳（真机反馈 2026-10-01：形态太多）', () => {
+    beforeEach(() => {
+      document.body.innerHTML = '';
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    });
+
+    const fcBar = (): HTMLElement => document.querySelector('.file-changes-bar') as HTMLElement;
+    const pqBar = (): HTMLElement =>
+      document.querySelector('.pending-queue-bar') as HTMLElement;
+    const actBar = (): HTMLElement => document.getElementById('activityBar') as HTMLElement;
+    const chip = (): HTMLButtonElement =>
+      document.querySelector('.status-dock__chip') as HTMLButtonElement;
+    const panel = (): HTMLElement => document.querySelector('.status-dock__panel') as HTMLElement;
+
+    it('优先级裁决：文件改动 + 待发送同活 → 文件改动主位，待发送收进浮层（变异：去掉 priority 排序必红）', () => {
+      mountChatView();
+      dispatch({ type: 'file_changes', files: ['a.md'] });
+      dispatch({ type: 'turn_update', state: { phase: 'running' }, pendingQueue: ['补充一'] });
+      // 主位 = fileChanges（priority 3 > 2）：可见、在浮层外
+      expect(fcBar().hidden).toBe(false);
+      expect(panel()?.contains(fcBar())).toBe(false);
+      // 次位 = pendingQueue：已移入浮层 panel
+      expect(panel()?.contains(pqBar())).toBe(true);
+      expect(pqBar().hidden).toBe(true); // 浮层收起态内容隐藏
+      // chip = +1
+      expect(chip()?.textContent).toBe('+1');
+      expect(chip().getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('error 豁免：错误 + 文件改动同活 → activityBar 恒主位（浮层外），文件改动降入浮层（变异：去掉 fixed 豁免必红）', () => {
+      mountChatView();
+      dispatch({ type: 'file_changes', files: ['a.md'] });
+      dispatch({ type: 'notice', level: 'error', message: '出错了' });
+      // error 恒主位：不在浮层内、可见
+      expect(panel()?.contains(actBar())).toBe(false);
+      expect(actBar().hidden).toBe(false);
+      expect(actBar().textContent).toContain('出错了');
+      // fileChanges 降为被收纳
+      expect(panel()?.contains(fcBar())).toBe(true);
+      expect(chip()?.textContent).toBe('+1');
+    });
+
+    it('浮层交互：点击 +N 展开（被收纳条可见、动作按钮可达），再点收起', () => {
+      mountChatView();
+      dispatch({ type: 'file_changes', files: ['a.md'] });
+      dispatch({ type: 'turn_update', state: { phase: 'running' }, pendingQueue: ['补充一'] });
+      chip().click();
+      expect(chip().getAttribute('aria-expanded')).toBe('true');
+      expect(panel().hidden).toBe(false);
+      expect(pqBar().hidden).toBe(false);
+      // 浮层内动作按钮直达：待发送清空按钮存在且可点击
+      const clearBtn = pqBar().querySelector('.pending-queue-bar__clear') as HTMLButtonElement;
+      expect(clearBtn).toBeTruthy();
+      expect(clearBtn.disabled).toBe(false);
+      // 再点收起
+      chip().click();
+      expect(panel().hidden).toBe(true);
+      expect(chip().getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('单条空态：单条活跃无 chip；条撤销后主位顺延、全部清空时 chip/浮层消失', () => {
+      mountChatView();
+      // 单条：无 chip（N=0 不显示）
+      dispatch({ type: 'file_changes', files: ['a.md'] });
+      expect(chip()).toBeNull();
+      expect(panel()).toBeNull();
+      // fileChanges 撤销 → pendingQueue 顺延为主位
+      dispatch({ type: 'turn_update', state: { phase: 'running' }, pendingQueue: ['补充一'] });
+      dispatch({ type: 'file_changes', files: [] });
+      expect(fcBar().hidden).toBe(true);
+      expect(pqBar().hidden).toBe(false);
+      expect(chip()).toBeNull(); // 只剩一条 → 无 chip
+      // 全部清空 → chip/浮层消失
+      dispatch({ type: 'turn_update', state: { phase: 'running' }, pendingQueue: [] });
+      expect(chip()).toBeNull();
+      expect(panel()).toBeNull();
+      expect(pqBar().hidden).toBe(true);
+    });
+  });
+
   it('流式结束后复制按钮使用完整原始文本（dataset.rawText 修复复制只复制首 chunk）', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '第一段 ' });

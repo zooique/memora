@@ -2402,6 +2402,110 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     send.setAttribute('aria-label', spec.send.ariaLabel);
   }
 
+  // ─── 底部状态条收纳器（StatusDock，方案-底部状态条收纳-20261001.md）───
+  // 底部三条（fileChanges / pendingQueue / activityBar 非错误态）同屏堆叠收紧：
+  // 主位常显优先级最高一条，其余收进「+N」浮层（同 planBar head→panel 纵向展开形态）。
+  // 🔴 SSOT：三条的 hidden 与 DOM 归位**只由 resolveDock 裁决**——各条更新函数只上报
+  // setDockActive / setDockFixed，禁直写 hidden / insertBefore（散写即回到堆叠现状）。
+  // error 豁免（fail-visible）：fixed 恒主位，裁决优先于 priority 排序。
+  const DOCK_PRIORITY = { fileChanges: 3, pendingQueue: 2, activity: 1 } as const;
+  type DockId = keyof typeof DOCK_PRIORITY;
+  type DockEntry = {
+    el: HTMLElement;
+    priority: number;
+    /** error 豁免：恒主位（裁决优先于 priority）；error 消失时撤销 */
+    fixed: boolean;
+    active: boolean;
+  };
+  const dockEntries = new Map<DockId, DockEntry>();
+  let _dockPanel: HTMLElement | null = null;
+  let _dockChip: HTMLButtonElement | null = null;
+  let _dockExpanded = false;
+
+  function registerDockEntry(id: DockId, el: HTMLElement): void {
+    dockEntries.set(id, { el, priority: DOCK_PRIORITY[id], fixed: false, active: false });
+  }
+
+  function setDockActive(id: DockId, active: boolean): void {
+    const entry = dockEntries.get(id);
+    if (!entry || entry.active === active) return;
+    entry.active = active;
+    resolveDock();
+  }
+
+  function setDockFixed(id: DockId, fixed: boolean): void {
+    const entry = dockEntries.get(id);
+    if (!entry || entry.fixed === fixed) return;
+    entry.fixed = fixed;
+    resolveDock();
+  }
+
+  // activityBar 接入收纳器（静态 HTML 节点，此处注册；fileChanges/pendingQueue 懒创建时注册）
+  // ——注册必须在 dockEntries（const Map）初始化之后，放声明区会踩 TDZ
+  registerDockEntry('activity', activityBar);
+
+  /** 显隐与归位裁决（SSOT 单点）：主位条在浮层 panel 之前、inputBar 之前；被收纳条单实例
+   *  移入 panel（节点移动保留事件监听）；非活跃条 hidden 归位 anchor 前。每次全量重排。 */
+  function resolveDock(): void {
+    const anchor = inputBar;
+    const parent = anchor.parentNode;
+    if (!parent) return;
+    // 旧 chip/panel 摘除（panel 内嵌的条随节点一起摘下，下方统一归位）
+    if (_dockPanel?.parentNode) _dockPanel.remove();
+    if (_dockChip?.parentNode) _dockChip.remove();
+    const actives = [...dockEntries.values()].filter((e) => e.active);
+    // 非活跃条：hidden 归位 anchor 前（不可见，位置无语义；恢复活跃时由本函数重新归位）——
+    // 必须在空态提前返回**之前**执行，否则「最后一条撤销」时残留可见
+    for (const e of dockEntries.values()) {
+      if (!e.active) {
+        e.el.hidden = true;
+        parent.insertBefore(e.el, anchor);
+      }
+    }
+    if (actives.length === 0) {
+      _dockExpanded = false;
+      return;
+    }
+    // 主位裁决：fixed（error 豁免）优先，否则 priority 最大（同分先注册者优先）
+    const head =
+      actives.find((e) => e.fixed) ??
+      actives.reduce((a, b) => (b.priority > a.priority ? b : a));
+    const rest = actives.filter((e) => e !== head);
+    // 主位条归位
+    head.el.hidden = false;
+    parent.insertBefore(head.el, anchor);
+    if (rest.length === 0) {
+      _dockExpanded = false;
+      return;
+    }
+    // chip：+N 独立 DOM（activityBar 渲染 textContent='' 整体重置，chip 塞条内会被抹掉）
+    if (!_dockChip) {
+      _dockChip = document.createElement('button');
+      _dockChip.className = 'status-dock__chip';
+      _dockChip.type = 'button';
+      _dockChip.title = '更多状态';
+      _dockChip.setAttribute('aria-expanded', 'false');
+      _dockChip.addEventListener('click', () => {
+        _dockExpanded = !_dockExpanded;
+        resolveDock();
+      });
+    }
+    _dockChip.textContent = `+${rest.length}`;
+    _dockChip.setAttribute('aria-expanded', String(_dockExpanded));
+    parent.insertBefore(_dockChip, anchor);
+    // panel：被收纳条单实例移入（展开显示 / 收纳隐藏但位置已进浮层）
+    if (!_dockPanel) {
+      _dockPanel = document.createElement('div');
+      _dockPanel.className = 'status-dock__panel';
+    }
+    for (const e of rest) {
+      e.el.hidden = !_dockExpanded;
+      _dockPanel.appendChild(e.el);
+    }
+    _dockPanel.hidden = !_dockExpanded;
+    parent.insertBefore(_dockPanel, anchor);
+  }
+
   /**
    * 待发送区（interject 队列可视化）：由 turn_update.pendingQueue 更新。
    * 懒创建 DOM 元素（挂在 inputBar 前面）——列出全部待发补充，每条带序号 + 文本 + 独立 × 按钮。
@@ -2429,6 +2533,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       inputBar.parentNode?.insertBefore(_pendingQueueBar, inputBar);
       // 本节点运行期创建 → 初始化时的 populateIcons（document.body）未覆盖 → 此处补填充 data-icon
       populateIcons(_pendingQueueBar);
+      registerDockEntry('pendingQueue', _pendingQueueBar);
       const clearBtn = _pendingQueueBar.querySelector('.pending-queue-bar__clear');
       clearBtn?.addEventListener('click', () => {
         // 清空全部 interject（宿主层 chatPanel 清 _pendingQueue 并 post 空队列通知）
@@ -2436,7 +2541,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       });
     }
     if (items.length === 0) {
-      _pendingQueueBar.hidden = true;
+      setDockActive('pendingQueue', false); // 显隐裁决归 StatusDock（SSOT）
       return;
     }
     // 顶部：计数徽章（圆形，数字）+ 标题
@@ -2471,7 +2576,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       row.append(num, preview, delBtn);
       listEl.appendChild(row);
     });
-    _pendingQueueBar.hidden = false;
+    setDockActive('pendingQueue', true); // 显隐裁决归 StatusDock（SSOT）
   }
 
   // ─── 文件改动常驻条（DIFF-1）───
@@ -2486,7 +2591,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   function updateFileChangesBar(files: readonly string[]): void {
     if (files.length === 0) {
-      if (_fileChangesBar) _fileChangesBar.hidden = true;
+      if (_fileChangesBar) setDockActive('fileChanges', false); // 显隐裁决归 StatusDock（SSOT）
       return;
     }
     if (!_fileChangesBar) {
@@ -2500,6 +2605,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         <button class="file-changes-bar__revert" type="button" title="回退全部改动到 agent 之前（不可撤销，需二次确认）">全部回退</button>
       `;
       inputBar.parentNode?.insertBefore(_fileChangesBar, inputBar);
+      registerDockEntry('fileChanges', _fileChangesBar);
       _fileChangesBar.querySelector('.file-changes-bar__confirm')?.addEventListener('click', () => {
         vscode.postMessage({ type: 'confirm_all_file_changes' });
       });
@@ -2511,7 +2617,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (badge) badge.textContent = String(files.length);
     // 悬停看完整文件清单（相对路径由宿主下发，webview 只展示不解析）
     _fileChangesBar.title = files.join('\n');
-    _fileChangesBar.hidden = false;
+    setDockActive('fileChanges', true); // 显隐裁决归 StatusDock（SSOT）
   }
 
   /**
@@ -4054,11 +4160,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       activityBar.textContent = text;
     }
     activityBar.hidden = false;
+    // StatusDock 接线：error 豁免恒主位（fail-visible），非错误态参与收纳（垫底优先级）
+    setDockActive('activity', true);
+    setDockFixed('activity', level === 'error');
     if (activityTimer) window.clearTimeout(activityTimer);
     activityTimer = window.setTimeout(
       () => {
         activityBar.hidden = true;
         delete activityBar.dataset.level;
+        setDockActive('activity', false); // 自动消失 → 撤出收纳器（fixed 随之撤销）
+        setDockFixed('activity', false);
       },
       level === 'error' ? 8000 : 2500,
     );

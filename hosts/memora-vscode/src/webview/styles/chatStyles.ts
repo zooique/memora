@@ -61,6 +61,38 @@ export const chatStyles = `
   .scroll-to-bottom:hover { color: var(--text-primary, #cccccc); }
   .scroll-to-bottom[hidden] { display: none; }
 
+  /* ============ StatusDock：底部状态条收纳器（方案-底部状态条收纳-20261001.md） ============ */
+  /* 主位条尾部「+N」chip：被收纳条计数，点击开合浮层。独立 DOM（activityBar 渲染
+   * textContent='' 整体重置，chip 塞条内会被抹掉）。全既有令牌，无新 token。 */
+  .status-dock__chip {
+    display: inline-flex; align-items: center; justify-content: center;
+    align-self: center;
+    margin: 0 var(--sp-4, 8px) var(--sp-2, 4px);
+    padding: 0 var(--sp-3, 8px);
+    height: 18px;
+    border: 1px solid var(--border-subtle, rgba(128,128,128,.35));
+    border-radius: 999px;
+    background: var(--surface-inset, rgba(128,128,128,.12));
+    color: var(--text-secondary, #9aa0a6);
+    font-size: var(--font-xs, 11px);
+    cursor: pointer;
+  }
+  .status-dock__chip:hover { color: var(--text-primary, #cccccc); background: var(--surface-active, rgba(128,128,128,.24)); }
+  .status-dock__chip[hidden] { display: none; }
+  /* 浮层面板：被收纳条的单实例容器（纵向展开，planBar head→panel 同构形态）。
+   * 条原样式自带外边距，浮层内统一收紧为条间距。 */
+  .status-dock__panel {
+    display: flex; flex-direction: column; gap: var(--sp-2, 4px);
+    margin: var(--sp-2, 4px) var(--sp-4, 8px);
+    padding: var(--sp-2, 4px);
+    border: 1px solid var(--border-subtle, rgba(128,128,128,.35));
+    border-radius: var(--radius-sm, 2px);
+    background: var(--surface-inset, rgba(128,128,128,.12));
+  }
+  .status-dock__panel[hidden] { display: none; }
+  .status-dock__panel .file-changes-bar,
+  .status-dock__panel .pending-queue-bar { margin: 0; }
+
   /* ============ Components：会话标题条（ADR-024 会话标题层） ============ */
   /* 顶部一条：主动可见展示当前会话标题，让用户始终识别「我在哪个会话」；
    * 灰字小字号 + 左侧细竖线（会话语义），不挤占消息区；
