@@ -944,12 +944,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (ts) row.dataset.ts = ts;
     if (seq !== undefined) row.dataset.seq = String(seq);
     const summary = document.createElement('summary');
-    summary.textContent =
+    // 思考类型标（独立稳定节点）：thought icon 前置——后续 preview 拼接只写文本 span，icon 不丢
+    const icon = document.createElement('span');
+    icon.className = 'round-block__type-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = getIconSvg('thought', 12, 12); // 静态 SVG，无外部输入
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent =
       cnt > 1
         ? `${label} · ${preview}${text.length > preview.length ? '…' : ''}`
         : preview
           ? `${label} · ${preview}`
           : label;
+    summary.append(icon, labelSpan);
     const body = document.createElement('div');
     body.className = 'round-block__thought-body';
     body.textContent = text;
@@ -983,6 +990,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     row.open = true; // 准备中默认展开——让「正在准备工具」直接可见
     const summary = document.createElement('summary');
     summary.className = 'round-block__tool-name';
+    // 工具类型标：与 renderToolRow 同构（升级转执行态不重建 DOM，icon 随行保留）
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'round-block__type-icon';
+    iconSpan.setAttribute('aria-hidden', 'true');
+    iconSpan.innerHTML = getIconSvg('tool', 12, 12); // 静态 SVG，无外部输入
     const labelSpan = document.createElement('span');
     labelSpan.className = 'round-block__tool-label';
     // 参数未成形，无法生成行动叙述 → 直显中文显示名（与 toolActionLabel 兜底同源：toolNameMap）
@@ -990,7 +1002,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const statusSpan = document.createElement('span');
     statusSpan.className = 'round-block__tool-status';
     statusSpan.textContent = ' (准备中)';
-    summary.append(labelSpan, statusSpan);
+    summary.append(iconSpan, labelSpan, statusSpan);
     row.appendChild(summary);
     flow.appendChild(row);
   }
@@ -1384,6 +1396,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (!summary) return;
     // 标题 span 为稳定节点（get-or-create）+ 变化才写文本：summary 子节点重建会销毁点击目标，
     // 事件密集期点击被吞
+    let icon = summary.querySelector<HTMLElement>(':scope > .round-block__type-icon');
+    if (!icon) {
+      // 工具类型标：tool icon 前置（行批共用；稳定节点模式与 title 同构，重刷不重建）
+      icon = document.createElement('span');
+      icon.className = 'round-block__type-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.innerHTML = getIconSvg('tool', 12, 12); // 静态 SVG，无外部输入
+      summary.prepend(icon);
+    }
     let title = summary.querySelector<HTMLElement>(':scope > .round-block__tool-batch-title');
     if (!title) {
       title = document.createElement('span');
@@ -1568,6 +1589,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     row.classList.toggle('is-tool-running', running);
     const summary = document.createElement('summary');
     summary.className = 'round-block__tool-name';
+    // 工具类型标（独立稳定节点）：tool icon 前置（行批共用；运行/待命态由 CSS 切环、隐藏 icon）
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'round-block__type-icon';
+    iconSpan.setAttribute('aria-hidden', 'true');
+    iconSpan.innerHTML = getIconSvg('tool', 12, 12); // 静态 SVG，无外部输入
     // TS-11 结构化管理：叙述与状态标签分孤儿 span——状态标签独占定位供 updateToolRowState 精确更新，
     // 与 TS-11c elapsed 等待标签（append 到 summary 尾部）共存不冲突（若仍用整体 textContent 替换，
     // 尾部 Ns 会使状态正则 `\)$` 失配，状态标签停更）
@@ -1577,7 +1603,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const statusSpan = document.createElement('span');
     statusSpan.className = 'round-block__tool-status';
     statusSpan.textContent = ` (${status})`; // 前导空格：span 间空白不折叠，显式补「叙述 (状态)」间距
-    summary.append(labelSpan, statusSpan);
+    summary.append(iconSpan, labelSpan, statusSpan);
     row.appendChild(summary);
     if (start.payload.args) {
       const pre = document.createElement('pre');
@@ -2045,7 +2071,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         row.dataset.ts = b.anchorTs; // 时间键（统一排序）
         row.dataset.seq = String(b.anchorSeq); // seq 兜底比较（同 ts/空串回落）
         const summaryEl = document.createElement('summary');
-        summaryEl.textContent = thoughtLabel(b.stepIndex);
+        // 思考类型标：thought icon 前置（与 createAggregatedThought 同构，增量/重建不偏移）
+        const thoughtIcon = document.createElement('span');
+        thoughtIcon.className = 'round-block__type-icon';
+        thoughtIcon.setAttribute('aria-hidden', 'true');
+        thoughtIcon.innerHTML = getIconSvg('thought', 12, 12); // 静态 SVG，无外部输入
+        const thoughtLabelSpan = document.createElement('span');
+        thoughtLabelSpan.textContent = thoughtLabel(b.stepIndex);
+        summaryEl.append(thoughtIcon, thoughtLabelSpan);
         row.appendChild(summaryEl);
         const bodyEl = document.createElement('div');
         bodyEl.className = 'process-flow__thought-body';

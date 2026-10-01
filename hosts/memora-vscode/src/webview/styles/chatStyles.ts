@@ -1590,7 +1590,6 @@ export const chatStyles = `
     color: var(--text-primary, #e0e0e0);
     word-break: break-all; white-space: pre-wrap;
   }
-  .round-block__narrate summary::marker { color: var(--text-secondary, #9aa0a6); }
   .round-block__narrate-body {
     margin-top: var(--sp-1, 2px); padding: var(--sp-2, 6px);
     border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
@@ -1600,15 +1599,14 @@ export const chatStyles = `
   }
   /* 思考折叠行/块：模型 thought 流，
    * <details> 折叠；process-flow 运行时与 round-block finalize/重放共用同构形态（按 seq 平铺）。
-   * summary = 「思考」标签 + 首行预览，展开看全文；颜色沿用 narrate token，无新色。 */
+   * summary = 思考类型标 + 「思考」标签 + 首行预览，展开看全文；
+   * 字形双层（批次三）：斜体 + 降饱和（非正文信号——icon 解决认出类型，字形解决「别当正文读」） */
   .process-flow__thought, .round-block__thought { padding: var(--sp-1, 2px) 0; line-height: 1.6; }
   .process-flow__thought summary, .round-block__thought summary {
     cursor: pointer; font-size: var(--font-xs, 11px);
-    color: var(--text-primary, #e0e0e0);
-    word-break: break-all; white-space: pre-wrap;
-  }
-  .process-flow__thought summary::marker, .round-block__thought summary::marker {
+    font-style: italic;
     color: var(--text-secondary, #9aa0a6);
+    word-break: break-all; white-space: pre-wrap;
   }
   .process-flow__thought-body, .round-block__thought-body {
     margin-top: var(--sp-1, 2px); padding: var(--sp-2, 6px);
@@ -1616,6 +1614,59 @@ export const chatStyles = `
     font-size: var(--font-xs, 11px); line-height: 1.7;
     color: var(--text-secondary, #9aa0a6);
     white-space: pre-wrap; word-break: break-all;
+  }
+  /* ─── 折叠箭头统一（批次三定案）───
+   * 过程块体系全部折叠 summary 隐藏原生 marker（::marker + ::-webkit-details-marker 双写），
+   * CSS 自绘 chevron（L 形 border）随 details[open] 旋转——纯 CSS 零 JS。
+   * 前置区形态全局一致：chevron + 类型标（或无）+ 文本；叙述块明确不加类型标（裸文本即类别信号）。
+   * .round-block summary 后代选择器覆盖外层折叠区与全部嵌套块（narrate/thought/tool/tool-batch/
+   * plan-item）；.process-flow__thought 运行时在 round-block 外，单独列出。
+   * 工具行运行/待命环以下方更高特异性规则（.is-tool-running/.is-tool-pending + transform:none）
+   * 覆盖 chevron 形态——运行中行恒展开，环即状态即类型，无源顺序依赖。 */
+  .round-block summary,
+  .process-flow__thought summary {
+    list-style: none;
+  }
+  .round-block summary::marker,
+  .process-flow__thought summary::marker {
+    content: none;
+  }
+  .round-block summary::-webkit-details-marker,
+  .process-flow__thought summary::-webkit-details-marker {
+    display: none;
+  }
+  .round-block summary::before,
+  .process-flow__thought summary::before {
+    content: '';
+    display: inline-block;
+    width: 5px; height: 5px;
+    margin-right: var(--sp-2, 6px);
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg); /* 收起态：右向 chevron */
+    transition: transform 0.15s ease;
+    vertical-align: 1px;
+  }
+  /* 展开态：下向（弱选择器 [0,1,1]，低于工具行环规则 [0,2,1]，环不受旋转污染） */
+  details[open] > summary::before {
+    transform: rotate(45deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .round-block summary::before,
+    .process-flow__thought summary::before {
+      transition: none;
+    }
+  }
+  /* 块类型标（批次三）：thought/tool icon 注入容器（getIconSvg 静态 SVG），
+   * 基线对齐微调；运行/待命态隐藏（环已承担状态+类型双标识，防「环+icon」双标） */
+  .round-block__type-icon {
+    display: inline-block;
+    vertical-align: -2px;
+    margin-right: var(--sp-1, 2px);
+  }
+  .round-block__tool.is-tool-running .round-block__type-icon,
+  .round-block__tool.is-tool-pending .round-block__type-icon {
+    display: none;
   }
   .round-block__pre {
     margin: var(--sp-1, 2px) 0; padding: var(--sp-2, 6px);
@@ -1689,6 +1740,7 @@ export const chatStyles = `
     margin-right: var(--sp-2, 6px); vertical-align: -1px;
     border: 1.5px solid transparent; border-top-color: var(--accent, #0e639c);
     border-radius: 50%; box-sizing: border-box;
+    transform: none; /* 覆盖 chevron 基形/展开旋转（旋转交由 toolSpinner 动画） */
     animation: toolSpinner .7s linear infinite;
   }
   @keyframes toolSpinner { to { transform: rotate(360deg); } }
@@ -1702,6 +1754,7 @@ export const chatStyles = `
     margin-right: var(--sp-2, 6px); vertical-align: -1px;
     border: 1.5px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: 50%; box-sizing: border-box;
+    transform: none; /* 无动画兜底：显式压掉 chevron 基形旋转（transform 不随源顺序漂移） */
   }
   /* 工具运行期间的动态指示统一由工具旋转图标承担，正文光标由八态状态机切换为
      「运行工具中」态（chatView syncRunningCursor 推导），无隐性 CSS 联动。

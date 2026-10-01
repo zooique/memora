@@ -7793,3 +7793,152 @@ describe('光标八态状态机（data-status）', () => {
     expect(document.querySelector('[data-status]')).toBeNull();
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// 块类型标与折叠箭头（UI-BLOCK-ICON 批次三）
+// ═══════════════════════════════════════════════════════════
+// 类型标收敛 2 个：thought（思考块 summary 前置）/ tool（工具行 + 工具批共用）；
+// 叙述块明确不加（防泛滥定案：裸文本即类别信号）。icon = 独立稳定 span（getIconSvg 注入），
+// 文本节点刷新不触碰——变异锁：改 icon 随文本重写 / 漏注入某构建点 → 对应用例转红。
+// 折叠箭头统一为 CSS 层（chevron ::before），DOM 断言不覆盖，真机对照验收。
+describe('块类型标与折叠箭头（批次三）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** 分发一条运行时过程事件 */
+  function dispatchEv(event: Record<string, unknown>): void {
+    dispatch({ type: 'process_event', event });
+  }
+
+  it('思考块 summary 前置 thought 类型标（finalize 重建与运行时增量两路同构）', () => {
+    // 路一：finalize/重放重建（createAggregatedThought）
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'r-thought',
+        user: { content: '问题' },
+        processEvents: [
+          { type: 'meta', seq: 0, ts: 'T0', payload: { role: 'AI', llm: 'm' } },
+          { type: 'thought', seq: 1, ts: 'T1', payload: { content: '先分析结构', stepIndex: 1 } },
+          { type: 'thought', seq: 2, ts: 'T2', payload: { content: '再定方案', stepIndex: 1 } },
+        ],
+        assistantMessage: { content: '完成回答' },
+        status: 'complete',
+      }),
+    );
+    const iconOf = (root: Element) => root.querySelector('.round-block__type-icon svg');
+    const thought = document.querySelector('.round-block__thought');
+    expect(thought).not.toBeNull();
+    expect(iconOf(thought!)).not.toBeNull();
+    // 文本走独立 span：icon 存在且 summary 文本完整（拼接逻辑迁移不丢内容）
+    expect(thought!.querySelector('summary')?.textContent).toContain('思考 · 第 1 步');
+
+    // 路二：运行时增量（renderProcessFlow 懒建折叠块）
+    mountChatView();
+    dispatch({ type: 'chunk', content: '正文' });
+    dispatchEv({
+      type: 'thought',
+      seq: 2,
+      ts: 'T1',
+      payload: { content: '增量思考', stepIndex: 1 },
+    });
+    const flowThought = document.querySelector('.process-flow__thought');
+    expect(flowThought).not.toBeNull();
+    expect(iconOf(flowThought!)).not.toBeNull();
+    expect(flowThought!.querySelector('summary')?.textContent).toContain('思考 · 第 1 步');
+  });
+
+  it('工具行 summary 前置 tool 类型标；tool_result 状态重写后 icon 不丢', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '开工' });
+    dispatchEv({
+      type: 'tool_start',
+      seq: 2,
+      ts: 'T1',
+      payload: { toolCallId: 't1', name: 'read_file', args: '{"p":"a"}', stepIndex: 1 },
+    });
+    const row = () => document.querySelector('.round-block__tool[data-tool-call-id="t1"]')!;
+    expect(row().querySelector('.round-block__type-icon svg')).not.toBeNull();
+    // 结果回收：updateToolRowState 重写状态 span 文本——icon（独立节点）必须仍在
+    dispatchEv({
+      type: 'tool_result',
+      seq: 3,
+      ts: 'T2',
+      payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: 'done' },
+    });
+    expect(row().querySelector('.round-block__type-icon svg')).not.toBeNull();
+    expect(row().querySelector('.round-block__tool-status')?.textContent).toBe(' (成功)');
+  });
+
+  it('工具批 summary 前置 tool 类型标（行批共用）；finalize 重刷后 icon 不丢', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '连做两件事' });
+    dispatchEv({
+      type: 'tool_start',
+      seq: 2,
+      ts: 'T1',
+      payload: { toolCallId: 't1', name: 'read_file', args: '{}', stepIndex: 1 },
+    });
+    dispatchEv({
+      type: 'tool_start',
+      seq: 3,
+      ts: 'T2',
+      payload: { toolCallId: 't2', name: 'write_file', args: '{}', stepIndex: 1 },
+    });
+    dispatchEv({
+      type: 'tool_result',
+      seq: 4,
+      ts: 'T3',
+      payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: 'a' },
+    });
+    dispatchEv({
+      type: 'tool_result',
+      seq: 5,
+      ts: 'T4',
+      payload: { toolCallId: 't2', name: 'write_file', ok: false, summary: 'b' },
+    });
+    // 运行时批块（多工具 = 批容器）已带类型标
+    const batch = () => document.querySelector('.round-block__tool-batch')!;
+    expect(batch()).not.toBeNull();
+    expect(
+      batch().querySelector('.round-block__tool-batch-summary .round-block__type-icon svg'),
+    ).not.toBeNull();
+    // done 收尾全量重建（refreshToolBatchSummary 重刷路径）→ icon 仍在
+    dispatch({ type: 'done' });
+    expect(
+      batch().querySelector('.round-block__tool-batch-summary .round-block__type-icon svg'),
+    ).not.toBeNull();
+  });
+
+  it('叙述块不加类型标（防泛滥定案：裸文本即类别信号；运行时与重建两路同锁）', () => {
+    // 路一：运行时增量（process-flow__narrate 平铺行）
+    mountChatView();
+    dispatch({ type: 'chunk', content: '正文' });
+    dispatchEv({ type: 'narrate', seq: 2, ts: 'T1', payload: { content: '开始读取文件' } });
+    const flowNarrate = document.querySelector('.process-flow__narrate');
+    expect(flowNarrate).not.toBeNull();
+    expect(flowNarrate!.querySelector('.round-block__type-icon')).toBeNull();
+
+    // 路二：finalize/重放重建（round-block__narrate 折叠行）
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'r-narrate',
+        user: { content: '问题' },
+        processEvents: [
+          { type: 'meta', seq: 0, ts: 'T0', payload: { role: 'AI', llm: 'm' } },
+          { type: 'narrate', seq: 1, ts: 'T1', payload: { content: '开始读取文件' } },
+        ],
+        assistantMessage: { content: '完成回答' },
+        status: 'complete',
+      }),
+    );
+    const narrate = document.querySelector('.round-block__narrate');
+    expect(narrate).not.toBeNull();
+    expect(narrate!.querySelector('.round-block__type-icon')).toBeNull();
+  });
+});

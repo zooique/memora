@@ -45,6 +45,8 @@ export type IconName =
   | 'ellipsis' // 更多操作（三点）
   | 'target' // 当前执行位置（同心圆靶心；plan-tag「正在执行任务项 N」锚点）
   | 'circle-check' // 圈内对勾（完成态：任务项组 done 态 + 终态「已完成」淡勾）
+  | 'thought' // 思考类型标（气泡 + 省略号两点；思考块 summary 前置）
+  | 'tool' // 工具类型标（终端框 + 提示符；工具行/工具批 summary 前置，行批共用）
   | 'warning' // 警告（三角感叹号；内联提示/校验警示）
   // 「移入留存区」（归档箱，盖 + 箱体 + 箱内横线）——会话列表的移出动作。
   // 语义提示：只改显示分组，不删数据，故不用任何「删除/叉号」类语言。
@@ -115,6 +117,12 @@ const ICON_PATHS: Record<IconName, string> = {
   // 完成：圆圈内对勾（外圈与 target 同曲率成对——「正在执行 = 靶心 / 已完成 = 圈勾」；
   // 勾整体置于圈内心区，端点不出圈）
   'circle-check': '<circle cx="8" cy="8" r="5.5"/><path d="M5.6 8.3l1.7 1.7 3.3-3.5"/>',
+  // 思考：气泡 + 省略号两点（点用填充圆——与 ellipsis 同法，16px 网格下描边小点会糊成环；
+  // 尾巴为贴底边的折线，不与矩形描边相交成结）
+  thought:
+    '<rect x="3" y="3" width="10" height="7.5" rx="2"/><path d="M6 10.5v2.5l3-2.5"/><circle cx="6" cy="6.75" r="0.9" fill="currentColor" stroke="none"/><circle cx="10" cy="6.75" r="0.9" fill="currentColor" stroke="none"/>',
+  // 工具：终端框 + > 提示符 + 命令光标线（IDE 语境的工具执行符号）
+  tool: '<rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/><path d="M5.2 6.5l2 2-2 2"/><path d="M9 10.5h2.3"/>',
   // 警告：三角轮廓 + 感叹号（竖线走描边、点用填充圆——与 ellipsis 同法，
   // 16px 网格下描边小点会糊成环）
   warning:
