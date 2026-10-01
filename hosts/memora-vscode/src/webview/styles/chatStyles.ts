@@ -287,6 +287,32 @@ export const chatStyles = `
     opacity: 1; transform: translateY(0);
   }
   .msg-user-actions .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
+  /* 长输入截断：超出阈值折叠（阈值取既有 160px 档，与活动详情面板同值，不新增 token）。
+   * 底部渐隐暗示「还有内容」；「展开全文」按钮由 chatView 仅在**真溢出**时插入——
+   * 未溢出的短消息既不加 is-clamped 也不留按钮（判定在 JS，此处只负责折叠态外观）。 */
+  .msg.user .msg-body.is-clamped {
+    max-height: 160px;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+  }
+  /* 展开/收起按钮：气泡内底部居中常显（不放 .msg-user-actions——那区 hover 才可见） */
+  .msg-user-more {
+    align-self: center;
+    margin-top: var(--sp-2, 6px);
+    padding: var(--sp-1, 4px) var(--sp-4, 10px);
+    font-size: var(--font-xs, 11px);
+    font-family: inherit;
+    color: var(--text-secondary, #9aa0a6);
+    background: transparent;
+    border: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .msg-user-more:hover {
+    color: var(--text-primary, #cccccc);
+    border-color: var(--border-input, rgba(128, 128, 128, 0.5));
+  }
   /* 提问内联选择题：
    * 提问块下方直接出「选项按钮 + 补充输入」，对齐 Claude/TraeWork 消息流内联交互。
    * 浅底容器 + 品牌色选项按钮，不抢正文；补充输入与主输入区同语言（输入框 + 发送按钮）。 */

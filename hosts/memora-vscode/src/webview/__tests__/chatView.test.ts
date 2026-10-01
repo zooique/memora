@@ -3946,6 +3946,53 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     expect(messages.scrollTop).toBe(900);
   });
 
+  // ─── 长输入气泡折叠（USER-CLAMP-1）───
+  it('短输入气泡不动：未溢出时不截断也不留按钮', () => {
+    mountChatView();
+    dispatch({ type: 'user', text: '短问题', ts: '2026-10-02T10:00:00.000Z' });
+    const body = document.querySelector('.msg.user .msg-body') as HTMLElement;
+    expect(body).toBeTruthy();
+    expect(body.classList.contains('is-clamped')).toBe(false);
+    expect(document.querySelector('.msg-user-more')).toBeNull();
+  });
+
+  it('长输入气泡折叠：溢出才截断并插「展开全文」，点击可展开与收起', () => {
+    mountChatView();
+    // jsdom 无布局：给 .msg-body 打桩几何值（内容 400 > 可视 160 = 溢出），用完立即还原
+    const proto = HTMLElement.prototype;
+    const geo = (v: number): PropertyDescriptor => ({
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains('msg-body') ? v : 0;
+      },
+    });
+    const origSH = Object.getOwnPropertyDescriptor(proto, 'scrollHeight');
+    const origCH = Object.getOwnPropertyDescriptor(proto, 'clientHeight');
+    Object.defineProperty(proto, 'scrollHeight', geo(400));
+    Object.defineProperty(proto, 'clientHeight', geo(160));
+    try {
+      dispatch({ type: 'user', text: 'x'.repeat(2000), ts: '2026-10-02T10:00:00.000Z' });
+    } finally {
+      if (origSH) Object.defineProperty(proto, 'scrollHeight', origSH);
+      else Reflect.deleteProperty(proto, 'scrollHeight');
+      if (origCH) Object.defineProperty(proto, 'clientHeight', origCH);
+      else Reflect.deleteProperty(proto, 'clientHeight');
+    }
+    const body = document.querySelector('.msg.user .msg-body') as HTMLElement;
+    expect(body.classList.contains('is-clamped')).toBe(true);
+    const more = document.querySelector('.msg-user-more') as HTMLButtonElement;
+    expect(more).toBeTruthy();
+    expect(more.textContent).toBe('展开全文');
+    // 点击 → 展开（撤掉截断），文案切「收起」
+    more.click();
+    expect(body.classList.contains('is-clamped')).toBe(false);
+    expect(more.textContent).toBe('收起');
+    // 再点 → 收回折叠态
+    more.click();
+    expect(body.classList.contains('is-clamped')).toBe(true);
+    expect(more.textContent).toBe('展开全文');
+  });
+
   // ─── StatusDock：底部状态条收纳器（方案-底部状态条收纳-20261001.md §五验证计划）───
   describe('StatusDock 底部状态条收纳（真机反馈 2026-10-01：形态太多）', () => {
     beforeEach(() => {
