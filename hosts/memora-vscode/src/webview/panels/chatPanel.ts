@@ -263,6 +263,11 @@ type HostSessionStore = Omit<ISessionStore, 'deleteSession'> & {
   truncateFrom: (date: string, session: string, fromTs: string) => RoundTruncateResult;
   listSessionMetas: () => SessionMeta[];
   getSessionMeta: (sessionId: string) => SessionMeta | undefined;
+  /** 留存区分组标签（宿主扩展，非 ISessionStore 契约）：纯展示态，不参与任何数据判据 */
+  archiveSession: (sessionId: string) => boolean;
+  unarchiveSession: (sessionId: string) => boolean;
+  isArchived: (sessionId: string) => boolean;
+  listArchivedIds: () => string[];
 };
 
 /** 侧边栏视图提供者 */
@@ -834,6 +839,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'delete_session') {
         // 历史浮层垃圾桶删除 → host 确认不可恢复后删除会话记录
         void this.handleDeleteSession(msg.sessionId);
+      } else if (msg.type === 'archive_session') {
+        // 历史浮层「移入留存」→ 仅改显示分组，不动数据（与删除是两种不同强度的动作）
+        this.handleArchiveSession(msg.sessionId);
+      } else if (msg.type === 'restore_session') {
+        // 留存区条目「移回」→ 同上的逆操作
+        this.handleRestoreSession(msg.sessionId);
       } else if (msg.type === 'rename_request') {
         // 标题条改名笔 → 弹 InputBox 输入新标题写入元数据
         void this.renameCurrentSession();
@@ -1468,7 +1479,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         sessionId: m.sessionId,
         title: getSessionDisplayName(m),
         updatedAt: m.updatedAt,
+        // FD-3-A 元数据搜索匹配域：随条目下发（metas 已全量在内存，零新 IO）；
+        // undefined 值经 postMessage JSON 序列化自然剔除，协议侧标注可选
+        keyTopics: m.keyTopics,
+        summary: m.summary,
       })),
+      // 留存区标记随全量列表一同下发（**单一数据源 + 前端过滤**）：
+      // 不拆「近期 / 留存」两份数组——拆了就是两份真相源，标记与归属不同步时会出现
+      // 「两边都有 / 两边都没有」。会话本身与近期条目无任何数据差别，标记只在显示层生效。
+      archivedIds: this.sessionStore.listArchivedIds(),
     });
   }
 
@@ -1513,6 +1532,57 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       console.warn('Memora 删除会话记录失败', err);
       this.post({ type: 'notice', level: 'error', message: '删除会话失败，请稍后重试' });
     }
+    this.pushSessionList();
+  }
+
+  /**
+   * 把会话移入留存区（历史浮层「移入留存」触发）——**只改显示分组，数据一字不动**
+   *
+   * 与 `handleDeleteSession` 的三点刻意差异（勿互相靠拢，靠拢即造伤）：
+   *   ① **无 modal 确认**：移入留存完全可逆（Round 文件、引用计数、内容全部不变），
+   *      对它弹「此操作不可恢复」是撒谎——删除才配这个确认强度；
+   *   ② **不减引用、不删任何文件**：引用归零会让启动清扫（`sweepOrphans`）把 Round 当孤儿
+   *      物理删除，与「留存 = 保住记忆溯源的原文」的立项目的正好相反；
+   *   ③ **给可见反馈**：改位是不可见的动作，没有反馈用户不知道发生了什么（静默改位 =
+   *      「点了没反应」的观感）。
+   *
+   * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
+   */
+  private handleArchiveSession(sessionId: string): void {
+    // 运行时守卫（与 newSession/switchToSession/handleDeleteSession 同源 _streaming）
+    if (this._streaming) {
+      this.post({ type: 'notice', level: 'info', message: '生成中，请稍后再整理会话' });
+      return;
+    }
+    if (!this.sessionStore.archiveSession(sessionId)) {
+      // 归档返回 false 的两种情形：会话不存在 / 已在留存区——都无需打扰，仅低强度提示
+      this.post({ type: 'notice', level: 'info', message: '该会话已在留存区' });
+      return;
+    }
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: '已移入留存区（会话内容保留，可随时移回）',
+    });
+    this.pushSessionList();
+  }
+
+  /**
+   * 把会话移回归属列表（留存区条目「移回」触发）——`handleArchiveSession` 的逆操作
+   *
+   * 同样只改显示分组：不存在「数据恢复」这一说（数据从头到尾没动过）。
+   *
+   * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
+   */
+  private handleRestoreSession(sessionId: string): void {
+    if (this._streaming) {
+      this.post({ type: 'notice', level: 'info', message: '生成中，请稍后再整理会话' });
+      return;
+    }
+    if (!this.sessionStore.unarchiveSession(sessionId)) {
+      return; // 本就不在留存区：无变化即无反馈（避免为幂等动作刷提示）
+    }
+    this.post({ type: 'notice', level: 'info', message: '已移回会话记录' });
     this.pushSessionList();
   }
 
@@ -3492,7 +3562,27 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <button id="historyBtn" class="treedd__trigger" title="历史记录" aria-label="历史记录" aria-haspopup="menu">
         <span class="btn-icon" data-icon="history"></span>
       </button>
-      <div id="historyMenu" class="treedd__menu" role="menu"></div>
+      <!-- 下拉面板 = 分组切换器 + 条目容器（**两者不可合并**，勿合并这两个 div）：
+           ① tab 必须在 .treedd__menu 内——菜单是绝对定位面板，其之外的内容不随菜单显隐；
+           ② 条目容器 #historyMenu 必须独立于 tab——renderHistoryMenu 每次整块重建条目
+              （textContent=''），tab 若在其内会被一并清掉。
+           注意：tab 按钮**绝不可带 .treedd__item 类**：dropdown 的点击委托命中该类后立即
+              收起菜单，带了会导致「点 tab 即关浮层」。
+           role 取舍（如实登记，不伪装合规）：面板保留 role="menu"（下拉组件与条目
+           role="menuitem" 依赖它），其内嵌 role="tablist" 在严格 ARIA 下非标准组合；
+           为不破坏既有下拉语义与键盘模型，此处保留该组合并登记为已知取舍。 -->
+      <div class="treedd__menu" role="menu">
+        <div id="historyTabs" class="session-tabs" role="tablist" aria-label="会话列表分组">
+          <button id="historyTabRecent" class="session-tab is-active" type="button" role="tab" aria-selected="true" data-view="recent">会话记录</button>
+          <button id="historyTabArchived" class="session-tab" type="button" role="tab" aria-selected="false" data-view="archived">留存区<span id="historyArchivedCount" class="session-tab__count"></span></button>
+        </div>
+        <!-- FD-3-A 元数据搜索框（匹配域：标题 / 主题 / 摘要）：
+             ① 必须独立于 #historyMenu——renderHistoryView 每次清空重建条目，放里面会被一并清掉；
+             ② 与 tab 同样禁带 .treedd__item 类（点击委托命中即收起浮层）；
+             ③ 键盘行为随 dropdown 既有模型：字符输入不受拦截，方向键跳条目，Escape 收起浮层。 -->
+        <input id="historySearch" class="session-search" type="text" placeholder="搜索会话（标题 / 主题 / 摘要）" aria-label="搜索会话" autocomplete="off" />
+        <div id="historyMenu"></div>
+      </div>
     </div>
   </div>
   <!-- 任务进度常驻条（单轨）：与 #messages **同级**的固定插槽——

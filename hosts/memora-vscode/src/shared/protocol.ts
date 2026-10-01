@@ -149,8 +149,25 @@ export type WebviewToExtensionMessage =
    *
    * 当前会话不进历史记录，故正常不会删除到当前会话；
    * host 侧对目标是当前会话做保护（拒绝 + 提示）。
+   *
+   * 留存区条目走**同一条**删除链路（留存只是显示分组，不是数据状态），
+   * 故不另设「彻底删除」消息——删掉谁都是删掉它，标记随会话一并清理。
    */
   | { type: 'delete_session'; sessionId: string }
+  /**
+   * 把会话移入留存区（历史浮层「移入留存」按钮触发）
+   *
+   * **只改显示分组，不动任何数据**：Round 文件原地不动、引用计数不减、会话内容一字不变，
+   * 与「删除」是两种完全不同强度的动作（删除 = 物理删 Round + 摘要软删进回收站；
+   * 移入留存 = 什么都没删）。立项目的：会话原文是摘要记忆的溯源原文，值得保留但不该污染近期列表。
+   */
+  | { type: 'archive_session'; sessionId: string }
+  /**
+   * 把会话移回会话记录列表（留存区条目「移回」按钮触发）
+   *
+   * `archive_session` 的逆操作，同样只改显示分组。不涉及数据恢复——数据从头到尾没动过。
+   */
+  | { type: 'restore_session'; sessionId: string }
   /**
    * 重命名当前会话（标题条改名笔触发）：host 弹 InputBox 输入新标题写入元数据
    */
@@ -662,10 +679,25 @@ export type ExtensionToWebviewMessage =
    *
    * host 返回非当前会话的历史列表（按 updatedAt 降序），webview 据此渲染历史模态浮层。
    * 当前会话不进历史记录，故 sessions 不含当前会话——天然规避「删除当前会话」边界。
+   *
+   * **留存区（archivedIds）**：会话列表分两组显示（会话记录 / 留存区），但数据只有一份——
+   * `sessions` 是**全量**，`archivedIds` 标出其中哪些属于留存区，**webview 侧据此前端过滤**。
+   * 刻意不出两个数组：两份列表 = 两份真相源，标记与归属一旦不同步就会出现
+   * 「两边都有 / 两边都没有」；单数据源 + 过滤是唯一无同步成本形态。
    */
   | {
       type: 'session_list_data';
-      sessions: { sessionId: string; title: string; updatedAt: string }[];
+      sessions: {
+        sessionId: string;
+        title: string;
+        updatedAt: string;
+        /** 会话关键主题（内核写入；缺省 = 尚未生成）。FD-3-A 元数据搜索匹配域之一 */
+        keyTopics?: string[];
+        /** 会话级摘要（内核写入；缺省 = 尚未生成）。FD-3-A 元数据搜索匹配域之一 */
+        summary?: string;
+      }[];
+      /** 属于留存区（视图分组标签）的会话 id；**不是**状态字段，会话本身与近期条目无任何差别 */
+      archivedIds: string[];
     }
   /**
    * Chat Panel Provider 列表同步（底部模型下拉框的数据）

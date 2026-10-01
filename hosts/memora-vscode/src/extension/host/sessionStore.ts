@@ -5,10 +5,12 @@
  *   - 会话仅持有 Round ID 列表（roundIdsStore）；消息内容只存在于 RoundStore（物理真相源）
  *   - 消息读写经 roundIds → RoundStore 展开 / 成 Round 写入，绝无 legacy 扁平消息列表
  *   - 与设计文档 §3.2 对齐：SessionMeta 不含 storageMode 之类的模式标识字段
+ *   - `archivedIds`（宿主扩展字段）：会话列表的**分组标签**，见 `archivedIdsSet` 声明处语义边界
  *
  * 职责：
  *   - 将 memora 对话 Round ID 列表持久化到工作区 `.memora/sessions.json`
  *   - 实现 ISessionStore 接口，注入 Agent，让跨会话对话记录可回溯（traceSummary 依赖）
+ *   - 承载「留存区」分组标签（`archivedIdsSet`）——纯展示态，会话记录可分两组显示
  *   - 原子写入：save() 使用 atomicWriteFileSync 防崩溃损坏
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -49,6 +51,26 @@ export class WorkspaceSessionStore implements ISessionStore {
   private readonly filePath: string;
 
   /**
+   * 「留存区」会话标记（**视图层分组标签，不是数据状态**）
+   *
+   * 语义边界（易与第一直觉相反，务必先读）：
+   *   - 打标的会话**什么都没变**：Round 文件原地不动、**引用计数不减**（保持 refCount > 0，
+   *     `WorkspaceRoundStore.sweepOrphans` 天然不碰 ⇒ 24h 保洁不会吃掉留存数据），
+   *     会话仍出现在 `listSessions()` 结果里；变的只有「显示在哪个分组」。
+   *   - 因此本集合**只能供给 UI 分屏显示**，**不得**被任何数据层判据消费
+   *     （不得作为「能否删除 / 能否写入 / 是否参与 GC」的条件）。若将来有人想拿它做判据，
+   *     那是新需求，须单独拍板——因为那会把「视图标签」升格为「数据状态」，本文件的
+   *     所有不变式随之改变。
+   *
+   * 为什么存在：会话原文（Round）是摘要记忆的**溯源原文**——删了等于只留结论、烧掉证据。
+   * 留存区解决「要保留，但不该污染近期列表」。
+   *
+   * 可退出路径：本字段是可丢弃的纯数据（删掉整个字段 + 三个读写点即回到无留存区形态），
+   * 且不影响既有会话的任何现有语义（此处未改任何既有判据，只新增能力面）。
+   */
+  private archivedIdsSet = new Set<string>();
+
+  /**
    * @param workspacePath 工作区路径（落盘目录 `.memora`）
    * @param roundStore 问答闭环存储；缺省时在同工作区新建文件级 WorkspaceRoundStore 并 load()
    */
@@ -76,15 +98,19 @@ export class WorkspaceSessionStore implements ISessionStore {
       const data = JSON.parse(raw) as {
         metas: Record<string, SessionMeta>;
         roundIdsStore: Record<string, string[]>;
+        archivedIds?: string[];
       };
       for (const [k, v] of Object.entries(data.metas ?? {})) this.metas.set(k, v);
       // 加载 round-based 模式的 Round ID 列表（唯一内容来源）
       for (const [k, v] of Object.entries(data.roundIdsStore ?? {})) this.roundIdsStore.set(k, v);
+      // 留存区标记：旧档无该字段 → 缺省空集（向后兼容，不做迁移分发）
+      this.archivedIdsSet = new Set(data.archivedIds ?? []);
     } catch (err) {
       // 会话文件损坏时降级为空（不阻塞插件启动）
       console.warn('Memora 会话文件读取失败，降级为空', err);
       this.metas.clear();
       this.roundIdsStore.clear();
+      this.archivedIdsSet.clear();
     }
   }
 
@@ -93,6 +119,7 @@ export class WorkspaceSessionStore implements ISessionStore {
     const data = {
       metas: Object.fromEntries(this.metas),
       roundIdsStore: Object.fromEntries(this.roundIdsStore),
+      archivedIds: [...this.archivedIdsSet],
     };
     atomicWriteFileSync(this.filePath, JSON.stringify(data, null, 2));
   }
@@ -147,8 +174,65 @@ export class WorkspaceSessionStore implements ISessionStore {
     // 清理：移除 Round ID 指针 + 元数据（物理 Round 由 RoundStore 引用计数 + GC 管理）
     this.roundIdsStore.delete(sessionId);
     this.metas.delete(sessionId);
+    // 留存区标记同步摘除（**唯一清理点**）：会话已不存在，若留着标记会让留存区分组出现
+    // 无标题的幽灵条目（标记是挂载在 sessionId 上的视图标签，随会话删除一并失效）。
+    // 由此本方法对「近期列表条目」与「留存区条目」是同一条删除链路，不需要第二个删除 API。
+    this.archivedIdsSet.delete(sessionId);
     this.save();
     return removedIds;
+  }
+
+  // ─── 留存区分组标签（宿主扩展能力，非 ISessionStore 契约） ───
+
+  /**
+   * 把会话移入留存区（纯视图改位，**不动任何数据**）
+   *
+   * 刻意不改的东西（这是本方法的核心不变式，改动前必读）：
+   *   - **不调 `roundStore.decrementRef`**：引用一旦归零，`WorkspaceRoundStore.sweepOrphans`
+   *     （宿主启动清理，默认 24h 存活保护）就会把该会话的 Round 当孤儿物理删除 ——
+   *     留存区若这么做，等于「存了但 24 小时后被自家保洁清空」，与立项目的（保住记忆溯源的原文）
+   *     完全相反。
+   *   - **不移 files、不改 Round 内容**：Round 原地留在 `.memora/rounds/`，记忆里的 roundId
+   *     依旧可指到原文。
+   *
+   * 幂等：重复打标无副作用（Set 语义）。
+   *
+   * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
+   * @returns 是否为本次新增标记（false = 已在留存区，或会话不存在）
+   */
+  archiveSession(sessionId: string): boolean {
+    if (!this.roundIdsStore.has(sessionId) && !this.metas.has(sessionId)) return false;
+    if (this.archivedIdsSet.has(sessionId)) return false;
+    this.archivedIdsSet.add(sessionId);
+    this.save();
+    return true;
+  }
+
+  /**
+   * 把会话移回归属列表（留存区标记的逆操作，同样只动视图层）
+   *
+   * @returns 是否移回成功（false = 本就不在留存区）
+   */
+  unarchiveSession(sessionId: string): boolean {
+    if (!this.archivedIdsSet.delete(sessionId)) return false;
+    this.save();
+    return true;
+  }
+
+  /** 该会话是否在留存区（供 host 侧渲染分组，纯查询） */
+  isArchived(sessionId: string): boolean {
+    return this.archivedIdsSet.has(sessionId);
+  }
+
+  /**
+   * 留存区标记全集（**单一真源**，webview 侧据此给列表分组）
+   *
+   * 为何只下发 id 集合、不下发「近期 / 留存」两份列表：同一份会话数据切成两个数组 = 两份真相源，
+   * 一旦某会话的标记与数组归属不同步就会出现「两边都有 / 两边都没有」。故保持单数据源 +
+   * 前端按本集合过滤，任何时刻的出入口都是本方法。
+   */
+  listArchivedIds(): string[] {
+    return [...this.archivedIdsSet];
   }
 
   /**

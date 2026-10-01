@@ -23,7 +23,15 @@ const HTML = `
   </div>
   <div id="historyDd" class="treedd session-history" data-treedd data-on-select="__historyOnSelect">
     <button id="historyBtn" class="treedd__trigger"><span class="btn-icon" data-icon="history"></span></button>
-    <div id="historyMenu" class="treedd__menu"></div>
+    <!-- 镜像生产 DOM 结构（分组切换器 + 搜索框 + 条目容器同级；tab/搜索框不带 .treedd__item） -->
+    <div class="treedd__menu">
+      <div id="historyTabs" class="session-tabs" role="tablist">
+        <button id="historyTabRecent" class="session-tab is-active" type="button" role="tab" aria-selected="true" data-view="recent">会话记录</button>
+        <button id="historyTabArchived" class="session-tab" type="button" role="tab" aria-selected="false" data-view="archived">留存区<span id="historyArchivedCount" class="session-tab__count"></span></button>
+      </div>
+      <input id="historySearch" class="session-search" type="text" placeholder="搜索会话（标题 / 主题 / 摘要）" autocomplete="off" />
+      <div id="historyMenu"></div>
+    </div>
   </div>
   <div id="planBar" class="plan-bar" hidden>
     <button id="planBarHead" class="plan-bar__head" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="planBarPanel">

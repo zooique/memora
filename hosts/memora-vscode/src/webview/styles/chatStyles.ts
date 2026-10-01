@@ -139,6 +139,48 @@ export const chatStyles = `
     padding: var(--sp-4, 10px); text-align: center;
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
+  /* 分组切换器（会话记录 / 留存区）：贴在下拉面板顶部，不随条目重建被清空。
+     注意：用普通按钮样式，**不可**长成 .treedd__item（那会让点击委托收起整个菜单）。 */
+  .session-tabs {
+    display: flex; gap: var(--sp-1, 4px);
+    padding: var(--sp-2, 6px) var(--sp-2, 6px) var(--sp-1, 4px);
+    border-bottom: 1px solid var(--border-subtle, rgba(128,128,128,.22));
+  }
+  .session-tab {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: var(--sp-1, 4px) var(--sp-3, 8px);
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+    background: transparent; border: none; border-radius: var(--radius-sm, 2px);
+    cursor: pointer;
+  }
+  .session-tab:hover { color: var(--text-primary, #cccccc); }
+  .session-tab.is-active {
+    color: var(--text-primary, #cccccc); font-weight: 600;
+    background: var(--surface-active, rgba(128,128,128,.24));
+  }
+  .session-tab__count { font-weight: 400; color: var(--text-secondary, #9aa0a6); }
+  /* FD-3-A 元数据搜索框：贴在分组 tab 下、条目容器上；独立元素不随条目重建清空 */
+  .session-search {
+    display: block; box-sizing: border-box;
+    width: calc(100% - var(--sp-3, 8px) * 2);
+    margin: var(--sp-2, 6px) var(--sp-3, 8px) 0;
+    padding: var(--sp-1, 4px) var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px); color: var(--text-primary, #cccccc);
+    background: var(--surface-inset, rgba(128,128,128,.12));
+    border: 1px solid var(--border-subtle, rgba(128,128,128,.22));
+    border-radius: var(--radius-sm, 2px); outline: none;
+  }
+  .session-search::placeholder { color: var(--text-secondary, #9aa0a6); }
+  .session-search:focus { border-color: var(--accent-hover, #1177bb); }
+  /* 分组动作（移入留存 / 移回）：与删除同尺寸同位置，视觉弱于删除（非破坏性动作） */
+  .session-history__item-keep {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; padding: 0; border: none; border-radius: var(--radius-sm, 2px);
+    background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
+    opacity: 0; transition: opacity .15s ease;
+  }
+  .session-history .treedd__item:hover .session-history__item-keep { opacity: 1; }
+  .session-history__item-keep:hover { color: var(--accent, #4c8dff); }
 
   /* ============ Components：消息 ============ */
   /* 空状态：克制的中性提示，垂直居中 */

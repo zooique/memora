@@ -44,7 +44,12 @@ export type IconName =
   | 'team' // 小组会议（双人轮廓，柔和线条）
   | 'ellipsis' // 更多操作（三点）
   | 'target' // 当前执行位置（同心圆靶心；plan-tag「正在执行任务项 N」锚点）
-  | 'warning'; // 警告（三角感叹号；内联提示/校验警示）
+  | 'warning' // 警告（三角感叹号；内联提示/校验警示）
+  // 「移入留存区」（归档箱，盖 + 箱体 + 箱内横线）——会话列表的移出动作。
+  // 语义提示：只改显示分组，不删数据，故不用任何「删除/叉号」类语言。
+  | 'archive'
+  // 「移回会话记录」（逆时针回退箭头）——archive 的逆动作，同样不含删除语义。
+  | 'restore';
 
 /** SVG 路径集合（viewBox 0 0 16 16）— Trae 柔和线条风格 */
 const ICON_PATHS: Record<IconName, string> = {
@@ -91,6 +96,11 @@ const ICON_PATHS: Record<IconName, string> = {
   plus: '<path d="M8 3v10"/><path d="M3 8h10"/>',
   // 历史记录：时钟
   history: '<circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5"/>',
+  // 移入留存区：归档箱（盖 + 箱体 + 箱内横线）
+  archive:
+    '<rect x="2.5" y="2.5" width="11" height="3" rx="1"/><path d="M4 5.5v7a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-7"/><path d="M6.5 9h3"/>',
+  // 移回会话记录：逆时针回退箭头（与 archive 同粗细，成对出现）
+  restore: '<path d="M3 8a5 5 0 1 0 5-5H5.2"/><path d="M3.2 4.2V8h3.6"/>',
   // 回到底部：向下箭头到横线
   'scroll-bottom': '<path d="M8 3v7"/><path d="M5 7l3 3 3-3"/><path d="M3 12h10"/>',
   // 小组会议：双人轮廓（小在前大在后，柔和线条）

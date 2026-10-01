@@ -3152,6 +3152,7 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
       sessions: [
         { sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() },
       ],
+      archivedIds: [],
     });
     const items = document.querySelectorAll('#historyMenu .treedd__item');
     expect(items.length).toBe(1);
@@ -3171,6 +3172,7 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
       sessions: [
         { sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() },
       ],
+      archivedIds: [],
     });
     const delBtn = document.querySelector('.session-history__item-del') as HTMLElement;
     delBtn.click();
@@ -3186,7 +3188,7 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
 
   it('session_list_data 空数组 → 显示空态（非 item 文本）', () => {
     mountChatView();
-    dispatch({ type: 'session_list_data', sessions: [] });
+    dispatch({ type: 'session_list_data', sessions: [], archivedIds: [] });
     expect(document.querySelector('.session-history__empty')?.textContent).toContain(
       '暂无历史会话',
     );
@@ -3201,6 +3203,265 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     // 点击外部（非下拉区域）→ treedd root 委托关闭
     document.body.click();
     expect(dd.classList.contains('is-open')).toBe(false);
+  });
+});
+
+describe('留存区分组标签（SESS-KEEP-1）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const mkSession = (id: string, title: string) => ({
+    sessionId: id,
+    title,
+    updatedAt: new Date().toISOString(),
+  });
+
+  it('分组过滤：会话记录只显示未归档条目，切留存区只显示已归档条目', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '会话A'), mkSession('s2', '会话B')],
+      archivedIds: ['s2'],
+    });
+    let titles = [...document.querySelectorAll('#historyMenu .session-history__item-title')];
+    expect(titles.map((el) => el.textContent)).toEqual(['会话A']);
+    (document.getElementById('historyTabArchived') as HTMLElement).click();
+    titles = [...document.querySelectorAll('#historyMenu .session-history__item-title')];
+    expect(titles.map((el) => el.textContent)).toEqual(['会话B']);
+    expect(
+      (document.getElementById('historyTabArchived') as HTMLElement).classList.contains('is-active'),
+    ).toBe(true);
+  });
+
+  it('留存区计数徽标：有归档显示数量，切视图后计数由同一数据源驱动不变', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '会话A')],
+      archivedIds: ['s1'],
+    });
+    const count = document.getElementById('historyArchivedCount') as HTMLElement;
+    expect(count.textContent).toContain('1');
+    (document.getElementById('historyTabRecent') as HTMLElement).click();
+    expect(count.textContent).toContain('1');
+  });
+
+  it('留存区空态显示专属文案（与「暂无历史会话」区分）', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '会话A')],
+      archivedIds: [],
+    });
+    (document.getElementById('historyTabArchived') as HTMLElement).click();
+    expect(document.querySelector('#historyMenu .session-history__empty')?.textContent).toContain(
+      '留存区',
+    );
+  });
+
+  it('会话记录视图 keepBtn：发送 archive_session，不触发条目加载、不触发删除', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '会话A')],
+      archivedIds: [],
+    });
+    (document.querySelector('.session-history__item-keep') as HTMLElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'archive_session', sessionId: 's1' });
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'switch_session' }),
+    );
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'delete_session' }),
+    );
+  });
+
+  it('留存区视图 keepBtn：发送 restore_session（同一按钮按视图分型）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '会话A')],
+      archivedIds: ['s1'],
+    });
+    (document.getElementById('historyTabArchived') as HTMLElement).click();
+    (document.querySelector('.session-history__item-keep') as HTMLElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'restore_session', sessionId: 's1' });
+  });
+
+  it('数据下发不重置视图：留存区操作后的列表刷新仍停在留存区', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '会话A'), mkSession('s2', '会话B')],
+      archivedIds: ['s2'],
+    });
+    (document.getElementById('historyTabArchived') as HTMLElement).click();
+    // 模拟「移回一条」后宿主刷新下发（archivedIds 已空）
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '会话A'), mkSession('s2', '会话B')],
+      archivedIds: [],
+    });
+    expect(
+      (document.getElementById('historyTabArchived') as HTMLElement).classList.contains('is-active'),
+    ).toBe(true);
+    expect(document.querySelector('#historyMenu .session-history__empty')?.textContent).toContain(
+      '留存区',
+    );
+  });
+
+  it('点历史按钮重置视图：新一轮浏览回到会话记录默认分组', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '会话A')],
+      archivedIds: [],
+    });
+    (document.getElementById('historyTabArchived') as HTMLElement).click();
+    (document.getElementById('historyBtn') as HTMLElement).click();
+    expect(
+      (document.getElementById('historyTabRecent') as HTMLElement).classList.contains('is-active'),
+    ).toBe(true);
+  });
+
+  it('硬约束：tab 按钮不得携带 .treedd__item（点击委托命中即收起浮层）', () => {
+    mountChatView();
+    const tabs = [...document.querySelectorAll('#historyTabs button')] as HTMLElement[];
+    expect(tabs.length).toBe(2);
+    for (const tab of tabs) {
+      expect(tab.classList.contains('treedd__item')).toBe(false);
+    }
+  });
+});
+
+describe('会话元数据搜索（FD-3-A）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const mkSession = (
+    id: string,
+    title: string,
+    extra?: { keyTopics?: string[]; summary?: string },
+  ) => ({
+    sessionId: id,
+    title,
+    updatedAt: new Date().toISOString(),
+    ...extra,
+  });
+
+  /** 模拟输入搜索词（input 事件驱动过滤） */
+  const type = (q: string): void => {
+    const box = document.getElementById('historySearch') as HTMLInputElement;
+    box.value = q;
+    box.dispatchEvent(new Event('input'));
+  };
+
+  const visibleTitles = (): (string | null)[] =>
+    [...document.querySelectorAll('#historyMenu .session-history__item-title')].map(
+      (el) => el.textContent,
+    );
+
+  it('按标题过滤：命中者可见，未命中者隐藏', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '排序算法实现'), mkSession('s2', '翻译助手调试')],
+      archivedIds: [],
+    });
+    type('排序');
+    expect(visibleTitles()).toEqual(['排序算法实现']);
+  });
+
+  it('按摘要过滤：summary 命中即可见（标题不含该词）', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [
+        mkSession('s1', '随便聊聊', { summary: '讨论了动态规划的边界条件' }),
+        mkSession('s2', '翻译助手调试'),
+      ],
+      archivedIds: [],
+    });
+    type('动态规划');
+    expect(visibleTitles()).toEqual(['随便聊聊']);
+  });
+
+  it('按主题过滤：keyTopics 任一命中即可见', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [
+        mkSession('s1', '随便聊聊', { keyTopics: ['算法', '记忆子系统'] }),
+        mkSession('s2', '翻译助手调试', { keyTopics: ['i18n'] }),
+      ],
+      archivedIds: [],
+    });
+    type('记忆');
+    expect(visibleTitles()).toEqual(['随便聊聊']);
+  });
+
+  it('无匹配空态：区分「没有匹配」与「暂无历史会话」，且回显搜索词', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '排序算法实现')],
+      archivedIds: [],
+    });
+    type('不存在的词');
+    const empty = document.querySelector('#historyMenu .session-history__empty');
+    expect(empty?.textContent).toContain('没有匹配');
+    expect(empty?.textContent).toContain('不存在的词');
+  });
+
+  it('搜索作用于当前分组：留存区视图下搜索不显示会话记录侧的匹配项', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '排序算法实现'), mkSession('s2', '留存的历史', { summary: '排序话题' })],
+      archivedIds: ['s2'],
+    });
+    (document.getElementById('historyTabArchived') as HTMLElement).click();
+    type('排序');
+    expect(visibleTitles()).toEqual(['留存的历史']);
+    (document.getElementById('historyTabRecent') as HTMLElement).click();
+    expect(visibleTitles()).toEqual(['排序算法实现']);
+  });
+
+  it('硬约束：搜索框不得携带 .treedd__item（点击委托命中即收起浮层）', () => {
+    mountChatView();
+    const box = document.getElementById('historySearch') as HTMLElement;
+    expect(box.classList.contains('treedd__item')).toBe(false);
+  });
+
+  it('打开浮层清空搜索词（新一轮浏览语义，与视图重置同批）', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '排序算法实现')],
+      archivedIds: [],
+    });
+    type('排序');
+    (document.getElementById('historyBtn') as HTMLElement).click();
+    expect((document.getElementById('historySearch') as HTMLInputElement).value).toBe('');
+  });
+
+  it('数据下发不清搜索词：归档/移回后的刷新仍保持过滤（连续操作场景）', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '排序算法实现'), mkSession('s2', '翻译助手调试')],
+      archivedIds: [],
+    });
+    type('排序');
+    dispatch({
+      type: 'session_list_data',
+      sessions: [mkSession('s1', '排序算法实现'), mkSession('s2', '翻译助手调试')],
+      archivedIds: [],
+    });
+    expect((document.getElementById('historySearch') as HTMLInputElement).value).toBe('排序');
+    expect(visibleTitles()).toEqual(['排序算法实现']);
   });
 });
 

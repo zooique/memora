@@ -176,5 +176,5 @@ src/
 | 类型 | 规则 |
 | ---- | ---- |
 | DO | 新增 IPC 通道前确认能否由现有通道组合达成，避免重复注册 |
-| DO | IPC 通道总数接近 130 条时启动治理评估（当前 **101** 条，2026-09-20 实测；阈值单一真源见 `hosts/memora-vscode/src/shared/__tests__/protocolGuard.test.ts`；⚠️ **该计数每次增删通道即过期，引用前须按守卫同源判据重算**——此前 2026-09-19 记「103」已实测漂为 101） |
+| DO | IPC 通道总数接近 130 条时启动治理评估（当前 **102** 条，2026-10-01 实测——SESS-KEEP-1 新增 `archive_session`/`restore_session` 两条后按守卫同源判据重算；阈值单一真源见 `hosts/memora-vscode/src/shared/__tests__/protocolGuard.test.ts`；⚠️ **该计数每次增删通道即过期，引用前须按守卫同源判据重算**——此前 2026-09-20 记「101」、2026-09-19 记「103」均已实测漂移） |
 | DO | 新增模块前先走 [new-module-guide.md](./generic/new-module-guide.md) 评估流程 |

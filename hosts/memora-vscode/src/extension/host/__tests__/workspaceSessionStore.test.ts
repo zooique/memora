@@ -11,7 +11,7 @@
  *     - 空会话 / 全 tool 消息容错
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Round } from '@zooique/memora';
@@ -664,5 +664,142 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
     seedRawRound('round-inflight', 0, new Date().toISOString(), 'pending');
     expect(roundStore.sweepOrphans()).toEqual([]);
     expect(roundStore.getById('round-inflight')).not.toBeNull();
+  });
+});
+
+/**
+ * 留存区分组标签（宿主扩展能力，非 ISessionStore 契约）
+ *
+ * 守的是四条**立身不变式**（实现改动前必读，任何一条破了本机制就名存实亡）：
+ *   ① 移入留存 = **纯视图改位**：Round 文件、引用计数、会话内容一律不变；会话仍在
+ *      `listSessions()` 结果里（它没被移出存储，只是换了显示分组）。
+ *   ② **留存数据不能被启动清扫吃掉**——不清引用是保住它的唯一机制：引用一旦归零，
+ *      `WorkspaceRoundStore.sweepOrphans`（宿主启动清理）就会把 Round 当孤儿物理删除，
+ *      表现为「存进留存区了，24 小时后被自家保洁清空」。
+ *   ③ 标记与会话**同生共死**：删除会话必须同步摘标记，否则留存区分组出现无标题幽灵条目。
+ *   ④ 旧档无 `archivedIds` 字段 → 空集（向后兼容，不做迁移分发）。
+ */
+describe('WorkspaceSessionStore · 留存区分组标签', () => {
+  /** 临时工作区路径（每用例独立） */
+  let dir: string;
+  let store: WorkspaceSessionStore;
+  let roundStore: WorkspaceRoundStore;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'memora-archive-test-'));
+    roundStore = new WorkspaceRoundStore(dir);
+    roundStore.load();
+    store = new WorkspaceSessionStore(dir, roundStore);
+    store.load();
+  });
+
+  /** Round 物理文件路径（断言「文件还在」用，是留存价值的最小证据） */
+  const roundFileOf = (roundId: string): string =>
+    join(dir, '.memora', 'rounds', `${roundId}.json`);
+
+  it('① 移入留存是纯改位：会话内容 / Round 文件 / 引用计数一律不变', () => {
+    seedThreeTurns(store, roundStore);
+    const sessionId = '2026-08-16-main';
+    const roundIds = store.getRoundIds(sessionId);
+
+    expect(store.archiveSession(sessionId)).toBe(true);
+    expect(store.isArchived(sessionId)).toBe(true);
+    // 仍是会话（没被移出存储，只是换了显示分组）
+    expect(store.listSessions()).toContain(sessionId);
+    // 内容一字不变
+    expect(store.loadMessages('2026-08-16', 'main').map((m) => m.content)).toEqual([
+      '问题一',
+      '回答一',
+      '问题二',
+      '回答二',
+      '问题三',
+      '回答三',
+    ]);
+    // 物理文件与引用计数均在
+    for (const id of roundIds) {
+      expect(existsSync(roundFileOf(id))).toBe(true);
+      expect(roundStore.getById(id)?.refCount).toBe(1);
+    }
+  });
+
+  it('② 留存数据不被启动清扫吃掉：归档后强制清扫（minAgeMs=0）仍完好', () => {
+    // 本用例是留存机制的**存在证明**：若归档实现改成「清引用 + 搬文件」的直觉写法，
+    // 引用归零 → sweepOrphans 把 Round 当孤儿物理删 → 留存区里只剩一个空壳会话。
+    seedThreeTurns(store, roundStore);
+    const sessionId = '2026-08-16-main';
+    const roundIds = store.getRoundIds(sessionId);
+    store.archiveSession(sessionId);
+
+    // 关闭存活保护强制清扫：留存区会话的 Round 必须一个都不被回收
+    expect(roundStore.sweepOrphans(0)).toEqual([]);
+    for (const id of roundIds) {
+      expect(roundStore.getById(id)).not.toBeNull();
+      expect(existsSync(roundFileOf(id))).toBe(true);
+    }
+    expect(store.loadMessages('2026-08-16', 'main').map((m) => m.content)).toEqual([
+      '问题一',
+      '回答一',
+      '问题二',
+      '回答二',
+      '问题三',
+      '回答三',
+    ]);
+  });
+
+  it('③ 标记持久化往返：重载后仍在留存区', () => {
+    seedThreeTurns(store, roundStore);
+    store.archiveSession('2026-08-16-main');
+
+    const reloaded = new WorkspaceSessionStore(dir, roundStore);
+    reloaded.load();
+    expect(reloaded.listArchivedIds()).toEqual(['2026-08-16-main']);
+    expect(reloaded.isArchived('2026-08-16-main')).toBe(true);
+  });
+
+  it('④ 旧档兼容：无 archivedIds 字段的会话文件 → 空集，其余数据照常读取', () => {
+    const sessionsPath = join(dir, '.memora', 'sessions.json');
+    mkdirSync(join(dir, '.memora'), { recursive: true });
+    writeFileSync(
+      sessionsPath,
+      JSON.stringify({
+        metas: {},
+        roundIdsStore: { '2026-08-16-main': ['round-1'] },
+      }),
+    );
+    const legacy = new WorkspaceSessionStore(dir, roundStore);
+    legacy.load();
+    expect(legacy.listArchivedIds()).toEqual([]);
+    expect(legacy.getRoundIds('2026-08-16-main')).toEqual(['round-1']);
+  });
+
+  it('幂等：重复移入返回 false；移回非留存项返回 false', () => {
+    seedThreeTurns(store, roundStore);
+    expect(store.archiveSession('2026-08-16-main')).toBe(true);
+    expect(store.archiveSession('2026-08-16-main')).toBe(false); // 已在留存区
+    expect(store.archiveSession('不存在-的会话')).toBe(false); // 会话不存在
+
+    expect(store.unarchiveSession('2026-08-16-main')).toBe(true);
+    expect(store.unarchiveSession('2026-08-16-main')).toBe(false); // 已移回
+  });
+
+  it('⑤ 删除留存会话：标记同步摘除（防留存区出现幽灵条目）', () => {
+    seedThreeTurns(store, roundStore);
+    store.archiveSession('2026-08-16-main');
+    expect(store.listArchivedIds()).toEqual(['2026-08-16-main']);
+
+    store.deleteSession('2026-08-16-main');
+    expect(store.listSessions()).not.toContain('2026-08-16-main');
+    expect(store.listArchivedIds()).toEqual([]);
+  });
+
+  it('回归护栏：删除语义未变（物理回收 Round + 返回联动产物）', () => {
+    // 本用例锁的是「既有删除行为一字未动」——留存能力是新增面，不得改变删除的既有语义。
+    seedThreeTurns(store, roundStore);
+    const removed = store.deleteSession('2026-08-16-main');
+    expect(removed).toEqual(['round-1', 'round-2', 'round-3']);
+    for (const id of removed) {
+      expect(roundStore.getById(id)).toBeNull();
+      expect(existsSync(roundFileOf(id))).toBe(false);
+    }
   });
 });

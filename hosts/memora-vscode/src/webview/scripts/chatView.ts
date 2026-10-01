@@ -117,6 +117,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 菜单容器为渲染目标，开合/外部关闭/Escape 由 initDropdowns 管理（无遮罩、轻量）
   const historyBtn = document.getElementById('historyBtn') as HTMLButtonElement;
   const historyMenu = document.getElementById('historyMenu') as HTMLElement;
+  // 历史浮层分组切换器（会话记录 / 留存区）：与条目容器同级，不受条目重建影响
+  const historyTabRecent = document.getElementById('historyTabRecent') as HTMLButtonElement;
+  const historyTabArchived = document.getElementById('historyTabArchived') as HTMLButtonElement;
+  const historyArchivedCount = document.getElementById('historyArchivedCount') as HTMLElement;
+  // FD-3-A 元数据搜索框（标题 / 主题 / 摘要）：独立于 #historyMenu，重建条目不影响本框
+  const historySearch = document.getElementById('historySearch') as HTMLInputElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
   const send = document.getElementById('send') as HTMLButtonElement;
   // 暂停按钮（Gap A：用户主动暂停入口，仅生成中可见，与「停止」并列的软暂停控制）
@@ -4600,8 +4606,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 切换/改名/清空后由 chatPanel 推送最新标题，标题条始终指向当前会话。
       sessionTitleText.textContent = msg.title;
     } else if (msg.type === 'session_list_data') {
-      // 历史会话列表：渲染到 treedd 历史下拉菜单
-      renderHistoryMenu(msg.sessions);
+      // 历史会话列表：渲染到 treedd 历史下拉菜单（全量 + 留存区标记，前端过滤分两组）
+      renderHistoryMenu(msg.sessions, msg.archivedIds ?? []);
     } else if (msg.type === 'chat_providers') {
       currentProviders = msg.providers || [];
       currentActive = msg.activeName;
@@ -4872,22 +4878,91 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (day < 30) return `${day} 天前`;
     return iso.slice(0, 10);
   }
-  // 渲染历史菜单（对 session_list_data 的应答）：复用 treedd 组件——
-  // 条目为 .treedd__item（id=sessionId，点击走 initDropdowns 选择委托加载会话并收起）；
-  // 内嵌垃圾桶（span，点击 stopPropagation 阻断选择委托，仅发 delete_session，菜单保持展开）；
-  // 空态为非 item 文本（委托不命中，纯展示）。
+  /** 当前分组视图：recent=会话记录 / archived=留存区 */
+  let sessionListView: 'recent' | 'archived' = 'recent';
+  /** 当前搜索词（FD-3-A 元数据搜索）：空串 = 不过滤；只作用于当前分组的渲染 */
+  let sessionSearchQuery = '';
+  /** 最近一次下发的全量会话列表（切 tab 的前端过滤数据源；keyTopics/summary 为搜索匹配域） */
+  let lastSessionList: {
+    sessionId: string;
+    title: string;
+    updatedAt: string;
+    keyTopics?: string[];
+    summary?: string;
+  }[] = [];
+  /** 最近一次下发的留存区标记（**单一真源**：分组归属只认它） */
+  let lastArchivedIds: string[] = [];
+
+  /**
+   * 渲染历史菜单（对 session_list_data 的应答）：复用 treedd 组件——
+   * 条目为 .treedd__item（id=sessionId，点击走 initDropdowns 选择委托加载会话并收起）；
+   * 内嵌动作（span，点击 stopPropagation 阻断选择委托，菜单保持展开）；
+   * 空态为非 item 文本（委托不命中，纯展示）。
+   *
+   * **分组形态（留存区）**：列表只有一份数据，分组切换是**前端过滤**——
+   * `sessions` 全量 + `archivedIds` 标记，切 tab 只重渲染当前容器，不回 host 请求。
+   * 这样两个分组不可能出现「同一会话两边都有 / 两边都没有」的归属漂移，
+   * 也避免把菜单项集合变成两份（dropdown 的键盘导航取全部 `.treedd__item`，
+   * 多容器显隐会让方向键跳到不可见条目）。
+   *
+   * 分组视图的改变时机**只有两处**：① tab 点击（用户主动）；② 点历史按钮
+   * 重新打开浮层（新一轮浏览回到默认分组）。数据下发（含归档/移回后的
+   * 列表刷新）只按**当前视图**渲染——若在下发时机强制重置，留存区里点
+   * 「移回」会把用户踢回会话记录，连续管理被打断。
+   */
   function renderHistoryMenu(
     sessions: { sessionId: string; title: string; updatedAt: string }[],
+    archivedIds: string[],
   ): void {
+    lastSessionList = sessions;
+    lastArchivedIds = archivedIds;
+    renderHistoryView(); // 按当前视图渲染新数据（视图重置不挂下发时机，见上）
+  }
+
+  /** 切换分组并同步 tab 高亮（含 aria-selected），随后重渲染条目 */
+  function setSessionListView(view: 'recent' | 'archived'): void {
+    sessionListView = view;
+    historyTabRecent.classList.toggle('is-active', view === 'recent');
+    historyTabArchived.classList.toggle('is-active', view === 'archived');
+    historyTabRecent.setAttribute('aria-selected', String(view === 'recent'));
+    historyTabArchived.setAttribute('aria-selected', String(view === 'archived'));
+    renderHistoryView();
+  }
+
+  /** FD-3-A 元数据匹配：标题 / 主题 / 摘要任一命中即匹配（大小写不敏感，空词恒真） */
+  function matchesSessionSearch(s: (typeof lastSessionList)[number], q: string): boolean {
+    if (!q) return true;
+    const haystack = [s.title, s.summary ?? '', (s.keyTopics ?? []).join(' ')].join(' ');
+    return haystack.toLowerCase().includes(q);
+  }
+
+  /** 渲染当前分组的条目（单容器，一次只渲染一组；搜索词在组内二次过滤） */
+  function renderHistoryView(): void {
+    const archived = new Set(lastArchivedIds);
+    const q = sessionSearchQuery.trim().toLowerCase();
+    const visible = lastSessionList.filter((s) => {
+      const inGroup =
+        sessionListView === 'archived' ? archived.has(s.sessionId) : !archived.has(s.sessionId);
+      return inGroup && matchesSessionSearch(s, q);
+    });
+    // 留存区计数（0 条时不显数字，避免「留存区 0」的噪音）
+    historyArchivedCount.textContent = lastArchivedIds.length > 0 ? ` ${lastArchivedIds.length}` : '';
     historyMenu.textContent = '';
-    if (sessions.length === 0) {
+    if (visible.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'session-history__empty';
-      empty.textContent = '暂无历史会话，新建会话后自动归档到此';
+      // 搜索无匹配 ≠ 分组为空：两种空态语义不同，文案必须区分（否则搜不到会被误读成「分组是空的」）
+      empty.textContent = q
+        ? sessionListView === 'archived'
+          ? `留存区中没有匹配「${sessionSearchQuery.trim()}」的会话`
+          : `没有匹配「${sessionSearchQuery.trim()}」的会话`
+        : sessionListView === 'archived'
+          ? '留存区还是空的——把不想看的会话移进来，内容不会丢'
+          : '暂无历史会话，新建会话后自动归档到此';
       historyMenu.appendChild(empty);
       return;
     }
-    for (const s of sessions) {
+    for (const s of visible) {
       const item = document.createElement('button');
       item.className = 'treedd__item';
       item.dataset.treeddId = s.sessionId; // treedd 选择委托据此回调 __historyOnSelect
@@ -4898,7 +4973,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const timeEl = document.createElement('span');
       timeEl.className = 'session-history__item-time';
       timeEl.textContent = fmtRelativeTime(s.updatedAt);
-      // 删除用 span 而非 button：treedd__item 本身是 button，HTML 规范 button 内不可嵌套 button
+      // 分组动作：会话记录 → 移入留存区；留存区 → 移回会话记录。
+      // 两者都**不是删除**（数据一字不动），故图标与文案都不用删除类语言。
+      // 用 span 而非 button：treedd__item 本身是 button，HTML 规范 button 内不可嵌套 button
+      const keepBtn = document.createElement('span');
+      keepBtn.className = 'session-history__item-keep';
+      keepBtn.title =
+        sessionListView === 'archived' ? '移回会话记录' : '移入留存区（内容不丢，只是换个位置）';
+      keepBtn.setAttribute('role', 'button');
+      keepBtn.setAttribute('aria-label', keepBtn.title);
+      keepBtn.innerHTML = getIconSvg(sessionListView === 'archived' ? 'restore' : 'archive', 14, 14);
+      keepBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        vscode.postMessage({
+          type: sessionListView === 'archived' ? 'restore_session' : 'archive_session',
+          sessionId: s.sessionId,
+        });
+      });
+      // 删除用 span 而非 button：同上（button 内不可嵌套 button）
       const delBtn = document.createElement('span');
       delBtn.className = 'session-history__item-del';
       delBtn.title = '删除会话';
@@ -4909,16 +5001,36 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         e.stopPropagation(); // 阻断冒泡到 menu 的选择委托，仅触发删除（菜单保持展开可连续删）
         vscode.postMessage({ type: 'delete_session', sessionId: s.sessionId });
       });
-      item.append(titleEl, timeEl, delBtn);
+      item.append(titleEl, timeEl, keepBtn, delBtn);
       historyMenu.appendChild(item);
     }
   }
+
+  // 分组 tab 切换：**只用点击 + 原生 Enter/Space 激活**——
+  // ⚠️ 不得依赖 Tab 键移动焦点：dropdown 把菜单内 Tab 处理为「收起菜单」，
+  // 依赖它会导致切 tab 时浮层关闭。
+  historyTabRecent.addEventListener('click', () => setSessionListView('recent'));
+  historyTabArchived.addEventListener('click', () => setSessionListView('archived'));
+  // FD-3-A 搜索：输入即过滤（纯前端，数据已在内存），作用于当前分组视图；
+  // 数据下发（归档/移回后的刷新）不清词——用户常在搜索结果上连续操作
+  historySearch.addEventListener('input', () => {
+    sessionSearchQuery = historySearch.value;
+    renderHistoryView();
+  });
   // 标题条按钮：改名笔 / 新建「＋」（分叉统一收敛到消息底部——任意 LLM 回答处可分叉，标题条不再冗余入口）
   renameSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'rename_request' }));
   newSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'new_session' }));
   // 历史按钮：开合由 treedd 管理（initDropdowns），本层只负责「打开时请求最新列表」——
   // 二者协作不耦合（SSOT 单一职责：treedd 管交互状态、本层管数据）
-  historyBtn.addEventListener('click', () => vscode.postMessage({ type: 'session_list' }));
+  historyBtn.addEventListener('click', () => {
+    // 视图重置挂「打开浮层」时机（新一轮浏览回默认分组），不挂数据下发——
+    // 否则归档/移回后的列表刷新会把用户踢出当前分组（见 renderHistoryMenu 注释）
+    setSessionListView('recent');
+    // 新一轮浏览同样清搜索词（与视图重置同批：都是「重新开始浏览」语义）
+    sessionSearchQuery = '';
+    historySearch.value = '';
+    vscode.postMessage({ type: 'session_list' });
+  });
 
   // 任务常驻条（合并单轨）：点击头部展开/收起锚定浮层；浮层轻交互——
   // 点击浮层外区域收起（非 modal：看进度时需同时看正文，故不遮罩全屏）
