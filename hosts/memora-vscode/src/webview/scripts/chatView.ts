@@ -4946,7 +4946,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       return inGroup && matchesSessionSearch(s, q);
     });
     // 留存区计数（0 条时不显数字，避免「留存区 0」的噪音）
-    historyArchivedCount.textContent = lastArchivedIds.length > 0 ? ` ${lastArchivedIds.length}` : '';
+    historyArchivedCount.textContent =
+      lastArchivedIds.length > 0 ? ` ${lastArchivedIds.length}` : '';
     historyMenu.textContent = '';
     if (visible.length === 0) {
       const empty = document.createElement('div');
@@ -4982,7 +4983,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         sessionListView === 'archived' ? '移回会话记录' : '移入留存区（内容不丢，只是换个位置）';
       keepBtn.setAttribute('role', 'button');
       keepBtn.setAttribute('aria-label', keepBtn.title);
-      keepBtn.innerHTML = getIconSvg(sessionListView === 'archived' ? 'restore' : 'archive', 14, 14);
+      keepBtn.innerHTML = getIconSvg(
+        sessionListView === 'archived' ? 'restore' : 'archive',
+        14,
+        14,
+      );
       keepBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         vscode.postMessage({

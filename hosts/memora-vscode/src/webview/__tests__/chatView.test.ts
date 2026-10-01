@@ -3230,7 +3230,9 @@ describe('留存区分组标签（SESS-KEEP-1）', () => {
     titles = [...document.querySelectorAll('#historyMenu .session-history__item-title')];
     expect(titles.map((el) => el.textContent)).toEqual(['会话B']);
     expect(
-      (document.getElementById('historyTabArchived') as HTMLElement).classList.contains('is-active'),
+      (document.getElementById('historyTabArchived') as HTMLElement).classList.contains(
+        'is-active',
+      ),
     ).toBe(true);
   });
 
@@ -3304,7 +3306,9 @@ describe('留存区分组标签（SESS-KEEP-1）', () => {
       archivedIds: [],
     });
     expect(
-      (document.getElementById('historyTabArchived') as HTMLElement).classList.contains('is-active'),
+      (document.getElementById('historyTabArchived') as HTMLElement).classList.contains(
+        'is-active',
+      ),
     ).toBe(true);
     expect(document.querySelector('#historyMenu .session-history__empty')?.textContent).toContain(
       '留存区',
@@ -3419,7 +3423,10 @@ describe('会话元数据搜索（FD-3-A）', () => {
     mountChatView();
     dispatch({
       type: 'session_list_data',
-      sessions: [mkSession('s1', '排序算法实现'), mkSession('s2', '留存的历史', { summary: '排序话题' })],
+      sessions: [
+        mkSession('s1', '排序算法实现'),
+        mkSession('s2', '留存的历史', { summary: '排序话题' }),
+      ],
       archivedIds: ['s2'],
     });
     (document.getElementById('historyTabArchived') as HTMLElement).click();
