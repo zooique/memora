@@ -19,6 +19,12 @@ import type {
 import type { ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
 // 错误文案映射单一真理源（与 Node 侧 chatPanel 实时提示条共用，防文案双源漂移）
 import { friendlyErrorMessage } from '../../shared/errorText.js';
+// 输入长度上限（INPUT-LIMIT-1）：值真源 = shared/constants.ts，两侧输入口同源消费
+import {
+  MAX_ASK_ANSWER_CHARS,
+  MAX_INPUT_CHARS,
+  MAX_PENDING_INTERJECTIONS,
+} from '../../shared/constants.js';
 import { fmtTime } from '../helpers/fmtTime.js';
 import { fmtTokens, fmtCompactTokens } from '../helpers/fmtTokens.js';
 import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
@@ -150,6 +156,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const clarifyText = document.getElementById('clarifyText') as HTMLElement;
   const clarifyOptions = document.getElementById('clarifyOptions') as HTMLElement;
   const clarifyInput = document.getElementById('clarifyInput') as HTMLInputElement;
+  // INPUT-LIMIT-1：输入长度上限在**输入框阶段**生效（原生 maxLength，超出部分进不了
+  // 输入框，所见即所发）；分档 = 主输入长档 / clarify 回答短档（ask-inline 每题输入框
+  // 在 renderAskInline 创建处同源设限）。程序化赋值（润色回填等）不受 maxLength 约束，
+  // 属可接受残留（输入源本身已截，输出同量级）。
+  input.maxLength = MAX_INPUT_CHARS;
+  clarifyInput.maxLength = MAX_ASK_ANSWER_CHARS;
   // 写入审批卡：confirmWrites=true 时写文件触发，渲染审批卡
   // 供用户确认/拒绝；回传 write_confirm_answer（fail-closed：host 30s 超时即自动拒绝）
   const writeConfirmCard = document.getElementById('writeConfirmCard') as HTMLElement | null;
@@ -2517,7 +2529,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * step 边界时内核一次性注入全部 → UI 渲染层 appendInterruptDivider 合并成一个气泡展示。
    */
   let _pendingQueueBar: HTMLElement | null = null;
+  /** 待发送队列投影缓存（内核 interruptQueue 的视觉镜像，随 turn_update.pendingQueue 同步）：
+   *  仅供 sendMessage 插话满员预检用（真源在内核，宿主闸门仍裁决竞态漏网）。 */
+  let _pendingQueueItems: readonly string[] = [];
   function updatePendingQueueBar(items: readonly string[]): void {
+    // 投影先于空态提前返回更新：空队列也要落缓存，否则预检读到上一次的残留长度
+    _pendingQueueItems = [...items];
     if (!_pendingQueueBar) {
       // 懒创建：顶行（徽章 + 标题 + 清空按钮）+ 列表（每条可独立删除）
       // 计数为圆形徽章（视觉聚焦），结构保持轻量无重造
@@ -3677,6 +3694,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 每题输入框（forceChoose 时隐藏——仅点选，见下）
       const input = document.createElement('input');
       input.className = 'ask-inline__input';
+      // INPUT-LIMIT-1：ask 回答 = 短档（值真源 shared/constants.ts，与 clarifyBar 兜底输入同档）
+      input.maxLength = MAX_ASK_ANSWER_CHARS;
       input.placeholder = '输入你的回答…';
       input.addEventListener('input', () => {
         answers[i] = input.value;
@@ -4454,6 +4473,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 续接状态复位：清空/切换会话后上一轮的 roundId/续跑期待/容器不再生效（防跨会话误判）
     lastAssistantRoundId = undefined;
     resumePending = false;
+    // 视图复位 = 队列投影清空（新会话无插话排队，防残留长度误拦 sendMessage 预检）
+    _pendingQueueItems = [];
     roundGroupEl = null;
     lastShownDate = undefined;
     // 视图复位 = 吸底标记复位：新会话默认从底部看起。容器清空时高度塌缩未必派发
@@ -5209,6 +5230,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function sendMessage(): void {
     const text = input.value.trim();
     if (!text) return;
+    // 插话满员预检（INPUT-LIMIT-1 审查补漏）：运行中（thinking，含 pausePending 窗口）
+    // send 会被宿主路由为插话——队列满员时宿主整条拒收，若此刻已先清框，用户文本随
+    // 警告一同消失（丢内容=背刺）。故在清框**之前**用队列投影预检：满员即拒发，文本
+    // 原地保留在输入框。paused 带补充走 resumeExecution、done 走 chat，均不入插话
+    // 队列，不预检。宿主闸门保留：投影经 turn_update 送达有延迟窗口，竞态漏网由宿主裁决兜底。
+    const isInterjectRoute = deriveSessionUiState(skeletonState) === 'thinking';
+    if (isInterjectRoute && _pendingQueueItems.length >= MAX_PENDING_INTERJECTIONS) {
+      showActivity(
+        'info',
+        `待发送已满 ${MAX_PENDING_INTERJECTIONS} 条——先在待发送区删减，本条仍保留在输入框`,
+      );
+      return;
+    }
     input.value = '';
     input.style.height = 'auto';
     input.style.overflowY = 'hidden';

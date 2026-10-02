@@ -19,6 +19,12 @@ import {
   dispatchTurn,
   mountChatView,
 } from './helpers/chatViewTestEnv.js';
+// 断言与真源同源：上限值消费 shared/constants.ts（非字面量复制）
+import {
+  MAX_ASK_ANSWER_CHARS,
+  MAX_INPUT_CHARS,
+  MAX_PENDING_INTERJECTIONS,
+} from '../../shared/constants.js';
 import type { RoundView } from '../../shared/protocol.js';
 import type { InteractiveInputKind } from '@zooique/memora';
 import type { ProcessEvent } from '@zooique/memora';
@@ -8407,5 +8413,77 @@ describe('块类型标与折叠箭头（批次三）', () => {
     const narrate = document.querySelector('.round-block__narrate');
     expect(narrate).not.toBeNull();
     expect(narrate!.querySelector('.round-block__type-icon')).toBeNull();
+  });
+});
+
+describe('INPUT-LIMIT-1 输入长度上限（输入框阶段原生截断，2026-10-02）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('主输入框与 clarify 兜底输入框挂上限（长档 / 短档，值真源 shared/constants）', () => {
+    mountChatView();
+    expect((document.getElementById('input') as HTMLTextAreaElement).maxLength).toBe(
+      MAX_INPUT_CHARS,
+    );
+    expect((document.getElementById('clarifyInput') as HTMLInputElement).maxLength).toBe(
+      MAX_ASK_ANSWER_CHARS,
+    );
+  });
+
+  it('ask-inline 每题输入框挂短档上限（创建时设 maxLength）', () => {
+    mountChatView();
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
+      questions: [{ slot: 'task', question: '请描述当前任务目标' }],
+    });
+    const askInput = document.querySelector<HTMLInputElement>('.ask-inline__input');
+    expect(askInput).not.toBeNull();
+    expect(askInput!.maxLength).toBe(MAX_ASK_ANSWER_CHARS);
+  });
+
+  it('运行中插话满员：Enter 拒发——不 post、文本保留在输入框（审查补漏：宿主拒收不丢用户内容）', () => {
+    const { postMessage } = mountChatView();
+    // 队列投影满员（宿主即将拒收第 6 条的镜像场景）
+    dispatch({
+      type: 'turn_update',
+      rounds: [],
+      state: { phase: 'running' },
+      pendingQueue: Array.from({ length: MAX_PENDING_INTERJECTIONS }, (_, i) => `插话${i}`),
+    });
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '第 6 条插话';
+    // 运行中插话走 Enter（发送按钮 loading 态 click = 停止，不经 sendMessage）
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    // 不发送 + 不清框：拒收发生在文本离开输入框之前，警告不再伴随内容丢失
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'input', kind: 'send' }),
+    );
+    expect(input.value).toBe('第 6 条插话');
+  });
+
+  it('运行中插话未满员：Enter 正常发送并清框（防误伤边界）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'turn_update',
+      rounds: [],
+      state: { phase: 'running' },
+      pendingQueue: Array.from({ length: MAX_PENDING_INTERJECTIONS - 1 }, (_, i) => `插话${i}`),
+    });
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '第 5 条插话';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'input', kind: 'send', text: '第 5 条插话' }),
+    );
+    expect(input.value).toBe('');
   });
 });

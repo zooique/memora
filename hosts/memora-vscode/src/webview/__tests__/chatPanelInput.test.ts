@@ -13,6 +13,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
 import type { Agent } from '@zooique/memora';
+import { MAX_PENDING_INTERJECTIONS } from '../../shared/constants.js';
 import type { PendingQuestionDto, TurnState } from '../../shared/protocol.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
@@ -41,6 +42,7 @@ vi.mock('vscode', async () => ({
 function inputAgentStub() {
   const interject = vi.fn();
   const answerQuestion = vi.fn();
+  const getPendingInterjections = vi.fn((): string[] => []);
   // 显式参数类型：mock.calls 元组元素可索引（TS2493：无参推导为空 tuple）
   const resumeExecution = vi.fn(async function* (
     _text?: string,
@@ -71,10 +73,11 @@ function inputAgentStub() {
     cancelPauseRequest: vi.fn(),
     interject,
     answerQuestion,
+    getPendingInterjections,
     resumeExecution,
     chat,
   } as unknown as Agent;
-  return { agent, interject, answerQuestion, resumeExecution, chat };
+  return { agent, interject, answerQuestion, getPendingInterjections, resumeExecution, chat };
 }
 
 /** 构造 provider + agent 桩，cast 注入私有状态，返回可驱动句柄 */
@@ -296,5 +299,42 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     expect(answerQuestion).not.toHaveBeenCalled();
     expect(resumeExecution).not.toHaveBeenCalled();
     expect(chat).not.toHaveBeenCalled();
+  });
+
+  it('INPUT-LIMIT-1：插话队列达上限 → 整条拒收，不排队不上屏，警告提示', async () => {
+    const h = setupInput();
+    const { interject, chat, getPendingInterjections } = mount(h);
+    // 队列真源在内核：桩模拟 getPendingInterjections 快照满员
+    getPendingInterjections.mockReturnValue(
+      Array.from({ length: MAX_PENDING_INTERJECTIONS }, (_, i) => `插话${i}`),
+    );
+    h.cast._streaming = true;
+    h.cast._abortController = new AbortController();
+    h.cast._turnState = { phase: 'running' };
+
+    await h.cast.handleInput({ kind: 'send', text: '第 6 条' });
+
+    // 整条拒收：不排队（interject）、不上屏（user 气泡 = 已入队的视觉镜像）、不续跑
+    expect(interject).not.toHaveBeenCalled();
+    expect(h.posted.filter((m) => (m as { type?: string }).type === 'user')).toHaveLength(0);
+    expect(chat).not.toHaveBeenCalled();
+    // 拒收必须提示（走既有 showWarningMessage 通道，零新增协议）
+    const { window } = await import('vscode');
+    expect(window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('上限'));
+  });
+
+  it('INPUT-LIMIT-1：插话未达上限 → 正常入队（防误伤边界）', async () => {
+    const h = setupInput();
+    const { interject, getPendingInterjections } = mount(h);
+    getPendingInterjections.mockReturnValue(
+      Array.from({ length: MAX_PENDING_INTERJECTIONS - 1 }, (_, i) => `插话${i}`),
+    );
+    h.cast._streaming = true;
+    h.cast._abortController = new AbortController();
+    h.cast._turnState = { phase: 'running' };
+
+    await h.cast.handleInput({ kind: 'send', text: '第 5 条' });
+
+    expect(interject).toHaveBeenCalledTimes(1);
   });
 });

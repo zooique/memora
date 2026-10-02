@@ -34,3 +34,21 @@ export const CONFIRM_SCRIPTS_KEY = 'memora.confirmScripts';
  *  改保留期只改此处。内核不持定时器，保留期策略归宿主，
  *  且只在用户显式触发清理时生效（无自动清理）。 */
 export const MEMORY_RECYCLE_RETENTION_DAYS = 30;
+
+/** 用户主输入长度上限（INPUT-LIMIT-1）：在**输入框阶段**以原生 maxLength 截断——
+ *  超出部分进不了输入框，用户所见即所发；发送链路不做二次截断（发送时静默砍内容
+ *  = 背刺，禁）。主输入框（#input textarea）= 任务指令语义，长档。 */
+export const MAX_INPUT_CHARS = 20000;
+
+/** ask/clarify 回答长度上限（INPUT-LIMIT-1）：回答「一个问题」的短语义。
+ *  消费点：ask-inline 每题输入框（renderAskInline 创建处）+ clarifyBar 兜底输入框。
+ *  取 4000 的依据：ask 回答的常见超档场景是粘贴报错/日志，而栈回溯的关键信息
+ *  （异常行 / Caused by）在尾部，maxLength 保留头部砍尾部 ⇒ 档位必须容得下单段
+ *  日志（4000 字符 ≈ 1000+ token，10 问最坏 ≈ 1 万 token，120K 窗口仍安全）；
+ *  更长的内容语义上属「材料」，应走主输入框或存文件（agent 有读文件工具）。 */
+export const MAX_ASK_ANSWER_CHARS = 4000;
+
+/** 运行期待并入插话条数上限（INPUT-LIMIT-1）：插话队列真源在内核 loop.interruptQueue
+ *  （内核无上限），宿主发送前读 agent.getPendingInterjections() 快照裁决（不自持计数）。
+ *  达上限整条拒收——插话是原子思路，截半条 = 语义破坏。内核侧上限登记 3.1.0 候选。 */
+export const MAX_PENDING_INTERJECTIONS = 5;

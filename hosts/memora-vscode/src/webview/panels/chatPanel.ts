@@ -26,6 +26,8 @@ import {
   CONFIRM_ALL_FILE_CHANGES_COMMAND,
   REVERT_ALL_FILE_CHANGES_COMMAND,
 } from '../../extension/host/fileChangeView.js';
+// 输入限额（INPUT-LIMIT-1）：值真源 = shared/constants.ts
+import { MAX_PENDING_INTERJECTIONS } from '../../shared/constants.js';
 import {
   defaultSessionTitle,
   formatDateKey,
@@ -2505,6 +2507,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     //  正在进行的 runFlow 继续；UI 即时上屏，排序由 webview 在收到下一条 chunk 时开新助手块。
     //  pausePending 窗口（flag=true 但 step 还没跑完）发补充 → interject + 自动 cancelPauseRequest（一行覆盖暂停操作）。
     if (this._streaming && this._abortController) {
+      // INPUT-LIMIT-1 插话条数上限（值真源 = shared/constants.ts）：队列真源在内核，
+      // 读 getPendingInterjections() 快照裁决（宿主不自持计数；optional 调用兼容测试桩，
+      // 同 syncPendingQueue 先例）。达上限**整条拒收**——插话是原子思路，截半条 = 语义
+      // 破坏；拒收必须提示（静默丢整条 = 背刺），走既有 showWarningMessage 通道
+      // （handleInput 未就绪提示同款），零新增协议通道。守卫在 post 之前——待发送
+      // 气泡 = 已入队的视觉镜像，拒收即不投影。
+      const pendingCount = agent.getPendingInterjections?.().length ?? 0;
+      if (pendingCount >= MAX_PENDING_INTERJECTIONS) {
+        void vscode.window.showWarningMessage(
+          `Memora：待并入的插话已达 ${MAX_PENDING_INTERJECTIONS} 条上限，本条未送出——可在待发送区删减后再试`,
+        );
+        return;
+      }
       this.post({ type: 'user', text: input, ts: new Date().toISOString(), kind: 'supplement' });
       agent.interject(input);
       // pausePending 期间发补充 → 自动取消暂停（覆盖暂停操作）：
