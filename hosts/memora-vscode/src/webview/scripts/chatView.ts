@@ -503,7 +503,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 一键到底点击：滚动到底部并隐藏按钮
   scrollToBottomBtn.addEventListener('click', () => {
     messages.scrollTop = messages.scrollHeight;
-    scrollToBottomBtn.hidden = true;
+    // 点击到底即显式重算吸底标记（返回值同时裁决按钮显隐，没真到底就继续显示）：
+    // 不依赖「滚动位置变化会派发 scroll 事件」这一隐式行为——该事件在异步 / 平滑
+    // 滚动形态下时机不确定，标记更新必须有显式调用点。
+    scrollToBottomBtn.hidden = trackScroll(messages);
   });
   // 日期分隔线：跨天合并视图在日期交界插入分组
   let lastShownDate: string | undefined;
@@ -4017,6 +4020,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     streamingActive = false;
     streamingRaw = '';
     streamBodyRendered = false;
+    // 定稿终渲染会增高（代码块增强给每个 <pre> 补一行 header）⇒ 收尾补一次吸底，
+    // 把视野对齐到定稿后的底部。是否真滚由 helpers/scrollToBottom 的吸底标记裁决——
+    // 用户上滚阅读历史时静默，不被拽走。
+    scrollToBottom(messages);
   }
 
   /**
@@ -4419,6 +4426,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     resumePending = false;
     roundGroupEl = null;
     lastShownDate = undefined;
+    // 视图复位 = 吸底标记复位：新会话默认从底部看起。容器清空时高度塌缩未必派发
+    // scroll 事件（用户已停在顶部时 scrollTop 无变化），吸底标记只由滚动事件更新，
+    // 故此处显式复位，避免上轮的上滚状态残留到新会话首条长回答。
+    forceScrollToBottom(messages);
   }
 
   /**

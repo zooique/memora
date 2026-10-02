@@ -3874,6 +3874,78 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     expect(messages.contains(btn)).toBe(false);
   });
 
+  // ─── 运行时吸底（RAF-1：定稿收尾补吸底 + 视图复位即吸底复位）───
+  /** 放行一帧 rAF：scrollToBottom / forceScrollToBottom 均经 requestAnimationFrame 落地 */
+  function flushRaf(): Promise<void> {
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }
+
+  /** 把消息区撑成可滚动且已吸底的形态（jsdom 无布局，三项几何值须显式喂入） */
+  function makeScrollableAtBottom(scrollHeight: number, clientHeight = 200): HTMLElement {
+    const messages = document.getElementById('messages') as HTMLElement;
+    Object.defineProperty(messages, 'scrollHeight', { value: scrollHeight, configurable: true });
+    Object.defineProperty(messages, 'clientHeight', { value: clientHeight, configurable: true });
+    return messages;
+  }
+
+  it('定稿收尾补吸底：代码块增强增高后视野对齐最新内容', async () => {
+    mountChatView();
+    const messages = makeScrollableAtBottom(800);
+    messages.scrollTop = 600; // 800 - 200 = 600 ⇒ 吸底
+    dispatch({ type: 'chunk', content: '```ts\nconst x = 1;\n```' });
+    await flushRaf(); // 先让 chunk 自身那次吸底落地（否则它会掩盖定稿收尾的补滚动）
+    expect(messages.scrollTop).toBe(800);
+    // 终渲染 + 代码块增强（每个 <pre> 补一行 header）使内容增高——增高只发生在定稿时
+    Object.defineProperty(messages, 'scrollHeight', { value: 900, configurable: true });
+    dispatch({ type: 'done' });
+    await flushRaf();
+    expect(messages.scrollTop).toBe(900);
+  });
+
+  it('定稿收尾不拽走：用户上滚阅读历史时不强制吸底', async () => {
+    mountChatView();
+    const messages = makeScrollableAtBottom(1000);
+    messages.scrollTop = 100; // 距底 700 > 阈值 ⇒ 非吸底
+    messages.dispatchEvent(new Event('scroll'));
+    dispatch({ type: 'chunk', content: '```ts\nconst x = 1;\n```' });
+    Object.defineProperty(messages, 'scrollHeight', { value: 1100, configurable: true });
+    dispatch({ type: 'done' });
+    await flushRaf();
+    expect(messages.scrollTop).toBe(100);
+  });
+
+  it('一键到底即恢复吸底：点击后新内容继续自动跟随', async () => {
+    mountChatView();
+    const messages = makeScrollableAtBottom(1000);
+    messages.scrollTop = 100;
+    messages.dispatchEvent(new Event('scroll')); // 上滚阅读 → 标记非吸底
+    const btn = document.getElementById('scrollToBottomBtn') as HTMLButtonElement;
+    expect(btn.hidden).toBe(false);
+    btn.click();
+    expect(messages.scrollTop).toBe(1000);
+    expect(btn.hidden).toBe(true);
+    // 恢复吸底：此后新内容继续自动跟随。标记由点击处理器显式重算，不依赖浏览器
+    // 因 scrollTop 变化而派发 scroll 事件（jsdom 不派发，守卫须锁住显式调用点）
+    Object.defineProperty(messages, 'scrollHeight', { value: 1100, configurable: true });
+    dispatch({ type: 'chunk', content: 'hello' });
+    await flushRaf();
+    expect(messages.scrollTop).toBe(1100);
+  });
+
+  it('视图复位即吸底复位：上滚后清空，新会话首条消息仍自动吸底', async () => {
+    mountChatView();
+    const messages = makeScrollableAtBottom(1000);
+    messages.scrollTop = 0; // 停在顶部：清空时高度塌缩不改变 scrollTop ⇒ 无 scroll 事件纠正
+    messages.dispatchEvent(new Event('scroll'));
+    dispatch({ type: 'clear_ok' });
+    await flushRaf();
+    // 复位后新会话重新开始：内容增高即跟随到底部
+    Object.defineProperty(messages, 'scrollHeight', { value: 900, configurable: true });
+    dispatch({ type: 'chunk', content: 'hello' });
+    await flushRaf();
+    expect(messages.scrollTop).toBe(900);
+  });
+
   // ─── StatusDock：底部状态条收纳器（方案-底部状态条收纳-20261001.md §五验证计划）───
   describe('StatusDock 底部状态条收纳（真机反馈 2026-10-01：形态太多）', () => {
     beforeEach(() => {
