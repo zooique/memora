@@ -138,6 +138,8 @@
 
 ## 九、落点清单（改动面）
 
+> 🔴 **本节已被 §13.1 替代（2026-10-02）**：下表为嫁接修正（§11.4）前的旧方案遗留，所列新建文件（`commandExecutor.ts` 等）**不落地**；真实落点以 §13.1 为准，本节仅留档证明决策演变。
+
 | 层 | 文件 |
 | --- | --- |
 | 内核 | `src/agent/builtinTools.ts`、`src/agent/toolExecutor.ts`、`src/security/pathGuard.ts`、`src/code-exec/types.ts`（或新 `src/command-exec/`）、`src/index.ts` |
@@ -347,3 +349,82 @@ deny 黑名单命中（内核 SSOT，优先级最高，任何档位/guest/owner 
 4. **fail-closed 保底**：`confirmationHandler` 未注入 → ask 层拒绝（既有语义，run_command 同样遵守）。
 5. **审计闭环**：自动批准必留审计记录；ask 批准/拒绝结果亦入审计。
 6. **分阶段护栏**：阶段 1 无 allow 白名单（逃逸阀只有 denyOnly 档）→ 阶段 2 开放绿区时白名单配置须**默认空**且设置面板明示风险（对齐 Trae「Add to allowlist 前验证安全」话术）。
+
+## 十三、实施规格收口（2026-10-02 · 落地就绪度审查补口）
+
+> 落地就绪度审查结论：架构决策层（§6 / §11.4-11.6 / §12）已闭合；本节收口实施规格层五处缺口，补齐后方案达到可落地形态。
+
+### 13.1 落点清单重写（替代 §9——原清单为嫁接修正前的旧方案遗留）
+
+**嫁接修正（§11.4）后，不新建 provider、不新建宿主 commandExecutor**。真实落点：
+
+| 层 | 文件 | 改动 |
+| --- | --- | --- |
+| 内核 | `src/code-exec/skillScriptRunner.ts` | 新增 `runShellCommand(command, cwd, timeoutMs)`——复用 `runOnce` 进程治理，仅新增「裸命令 → `{command: shell, args: ['/c'\|'-c', command]}`」解析分支 |
+| 内核 | `src/agent/builtinTools.ts` | 注册 `run_command` 常驻工具（schema 见 §13.3） |
+| 内核 | `src/agent/toolExecutor.ts` | 新增 handler：黑名单校验（§13.2）→ `confirmCommandRun` 确认 → 调 `runShellCommand` |
+| 内核 | `src/security/pathGuard.ts` | 黑名单 SSOT 清单扩展（含 alwaysAsk 分区，§13.2）+ `confirmCommandRun`（接 `confirmScriptRun` 同款 handler 链路） |
+| 内核 | `src/index.ts` | 类型导出（若有新面） |
+| 宿主 | `src/extension/extension.ts` | 确认 handler 注入处扩展命令确认分支（复用脚本确认同一条注入链） |
+| 宿主 | `src/shared/constants.ts` | 开关键沿用 `CONFIRM_SCRIPTS_KEY`（**不新增键**）；若有独立描述开关才补 |
+| 测试 | 内核 `toolExecutor.test.ts` / `pathGuard.test.ts` + `skillScriptRunner` 单测 | 清单见 §13.5 |
+
+**明确不落点**：`protocol.ts`（审批走既有确认链路，零新协议通道）、`chatPanel.ts`、`settingsPanel.ts`（除非 §13.3 描述开关独立）、无 `commandExecutor.ts`。
+
+### 13.2 git 写操作分级定案（消解 §11.5 的「deny 或恒 ask」悬置）
+
+**拍板：恒 ask（alwaysAsk 分区），不进 deny 黑名单。**
+
+- 理由：deny = 永久拒绝，agent 从此无法 `git commit` / `git add`（高频正当操作）；本仓血训（Windows git 写操作污染索引前科）的正确对策是**每次都问 + 不可豁免**，不是**永远禁跑**。
+- 落地形态：内核黑名单 SSOT 处新增 `ALWAYS_ASK_PREFIXES` 分区（与 deny 同文件同源同测，**同一真源两个分区**）；裁决链在 §12.3 基础上细化：
+
+```
+deny 黑名单（恒拦）
+  → ALWAYS_ASK 前缀命中（即使 denyOnly 档也弹确认；allow 白名单对它无效——不可被绿区豁免）
+    → guest 恒确认（fail-closed）
+      → confirmScripts 档位（true = ask；false = 自动批准走审计）
+        → allow 前缀白名单（阶段 2）
+```
+
+- 清单初始内容：`git commit`、`git push`、`git reset`、`git rebase`、`git merge`、`git checkout`（`--` 文件形态）——前缀匹配，实施时按本仓实测补全；**清单只增不减须过测试**（清单回归 = 内容真源变更，走台账）。
+- 同理适用的高危写操作：`rm -rf`/`Remove-Item -Recurse -Force` 类**留 deny**（无正当 agent 场景）；`npm publish` 类发布操作**进 ALWAYS_ASK**。
+
+### 13.3 工具 schema 定案（LLM 契约面）
+
+```jsonc
+// run_command 参数面（name: run_command；常驻 BUILTIN_TOOLS）
+{
+  "command":  "string — 要执行的 shell 命令（Windows 经 cmd /c，类 Unix 经 sh -c）",
+  "cwd":      "string? — 工作目录（绝对路径；缺省 = 宿主注入的工作区根）",
+  "timeoutMs":"number? — 超时毫秒（缺省 60_000，上限 600_000，越界取边界）"
+}
+```
+
+**描述措辞红线**（止血④同款纪律）：
+
+1. **禁写安全承诺**——不出现「已校验/安全/已过滤」类字样（LLM 会据此跳过谨慎）；只写能力边界：「在工作区执行 shell 命令，受黑名单与用户审批约束」。
+2. **禁写 bypass 提示**——不写「可通过关闭确认开关自动执行」（引诱 LLM 建议用户关护栏 = 诱导性越权）。
+3. 超时语义写明：超时即强杀并返回已捕获输出（复用 `runOnce` 语义）。
+
+### 13.4 审计与确认呈现接线（自检第 5 条的落地形态）
+
+- **审计**：实施第一步先核实 `SecurityGuard` 既有审计通道的落点形态（脚本工具自动批准的审计现状），`run_command` 接**同一通道**——禁止新建第二审计流。若现状脚本工具无审计落盘（仅有内存痕迹），则 run_command 阶段 1 至少保证「确认请求与裁决结果（ask 批准/拒绝/自动）进既有 trace/审计面」，并如实登记边界，不虚写。
+- **确认呈现**：复用脚本确认 handler 的**现有宿主呈现**（extension 注入 confirmationHandler → 既有 UI 通道），**零新协议通道**。实施首日核对该链路的呈现形态（模态/内联），若发现脚本确认本身无 UI 呈现（静默 fail-closed），属独立缺口，单独立项不动 run_command 结构。
+- **fail-closed 保底**：handler 未注入 → 拒绝执行（既有测试语义，run_command 用例同锁）。
+
+### 13.5 阶段 1 验收锚点（完成判据）
+
+**测试清单**（全绿 = 代码层完成）：
+
+1. 黑名单命中不执行（deny 分区，任何档位 × guest/owner 组合恒拒）。
+2. ALWAYS_ASK 命中：denyOnly 档仍弹确认；allow 白名单（阶段 2 到来后）对它无效。
+3. guest + 未注入 handler → 拒绝（fail-closed）。
+4. owner + confirmScripts=false → 自动批准 + 审计记录存在。
+5. owner + confirmScripts=true → 弹确认；拒绝后不执行、LLM 收到拒绝语义（非静默空跑，止血③教训）。
+6. 超时强杀 + 输出截断（复用 runOnce 语义的边界用例）。
+7. 描述文案守卫：不含「安全/已校验」承诺词、不含 bypass 提示（文案快照测试）。
+8. `scripts/test-temp-script-loop.ts` 同批修改核验（§11.6.4）。
+
+**真机点验项**：恒确认档弹窗 → 批准执行成功 / 拒绝后 LLM 行为合理；denyOnly 档普通命令直跑 + git commit 弹窗；黑名单命令直接拒绝的对话呈现。
+
+**阶段 1 完成定义 = 测试全绿 + 真机点验通过 + §12.5 六条自检逐条对照通过**；阶段 2（allow 白名单）另行排期，不随阶段 1 顺车。
