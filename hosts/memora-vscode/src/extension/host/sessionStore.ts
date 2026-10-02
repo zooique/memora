@@ -332,7 +332,11 @@ export class WorkspaceSessionStore implements ISessionStore {
   getSessionMeta(sessionId: string): SessionMeta | undefined {
     // SSOT：SessionMeta 为纯展示 DTO（无 roundIds），Round ID 需经 getRoundIds() 真源读取
     const meta = this.metas.get(sessionId);
-    if (meta) return meta;
+    if (meta) {
+      // 计数读值一律现场派生（O(1)）：与下方占位兜底路径同口径，读值不信任缓存副本——
+      // 派生真源 = deriveMessageCount（单一真源，见其注释），副本仅服务持久化形态
+      return { ...meta, messageCount: this.deriveMessageCount(sessionId) };
+    }
     // round-based 会话兜底：如果有 Round ID 列表，创建占位元数据
     const roundIds = this.roundIdsStore.get(sessionId);
     if (roundIds && roundIds.length > 0) {

@@ -3173,6 +3173,54 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     });
   });
 
+  it('历史条目渲染 messageCount 并槽「N 条」；缺省时只显示时间不显示 0', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [
+        {
+          sessionId: '2026-08-15-s1',
+          title: '会话A',
+          updatedAt: new Date().toISOString(),
+          messageCount: 12,
+        },
+        { sessionId: '2026-08-15-s2', title: '会话B', updatedAt: new Date().toISOString() },
+      ],
+      archivedIds: [],
+    });
+    const items = document.querySelectorAll('#historyMenu .treedd__item');
+    // 带计数：时间并槽追加「 · 12 条」
+    expect(items[0]?.querySelector('.session-history__item-time')?.textContent).toContain('12 条');
+    // 缺省（旧会话未生成）：只显示时间，不出现「0 条」
+    expect(items[1]?.querySelector('.session-history__item-time')?.textContent).not.toContain('条');
+    void postMessage;
+  });
+
+  it('历史条目悬停 title 载摘要：keyTopics + summary（超 100 字截断以…收尾）', () => {
+    mountChatView();
+    const longSummary = '长'.repeat(120);
+    dispatch({
+      type: 'session_list_data',
+      sessions: [
+        {
+          sessionId: '2026-08-15-s1',
+          title: '会话A',
+          updatedAt: new Date().toISOString(),
+          keyTopics: ['术语锚点', 'SSOT'],
+          summary: longSummary,
+        },
+        { sessionId: '2026-08-15-s2', title: '会话B', updatedAt: new Date().toISOString() },
+      ],
+      archivedIds: [],
+    });
+    const items = document.querySelectorAll('#historyMenu .treedd__item');
+    const tip = (items[0] as HTMLElement).title;
+    expect(tip).toContain('术语锚点 · SSOT');
+    expect(tip).toContain('长'.repeat(100) + '…');
+    // 无摘要条目不挂空 title
+    expect((items[1] as HTMLElement).hasAttribute('title')).toBe(false);
+  });
+
   it('历史条目垃圾桶：点击发送 delete_session 且不触发条目加载', () => {
     const { postMessage } = mountChatView();
     dispatch({
@@ -4435,6 +4483,30 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     expect(planItems[2].querySelector('.plan-item-title')?.textContent).toBe('3. 编写文档');
     expect(planItems[2].classList.contains('plan-item-pending')).toBe(true);
     expect(planItems[2].querySelector('.plan-item-badge')?.textContent).toBe('待执行');
+  });
+
+  it('任务看板浮层展开态按 Esc 收起（对齐 dropdown 族键盘契约）；收起态 Esc 无副作用', () => {
+    mountChatView();
+    // 条数 ≥3 常驻条才显示（setPlanBarVisible 门槛）；planItemLog 为协议必填字段
+    dispatch({
+      type: 'plan_update',
+      items: [
+        { id: 's1', description: '收集需求', status: 'done', order: 0, planItemLog: [] },
+        { id: 's2', description: '设计方案', status: 'active', order: 1, planItemLog: [] },
+        { id: 's3', description: '编写文档', status: 'pending', order: 2, planItemLog: [] },
+      ],
+    });
+    const head = document.querySelector('#planBarHead') as HTMLElement;
+    const panel = document.querySelector('#planBarPanel') as HTMLElement;
+    head.click();
+    expect(panel.hidden).toBe(false);
+    // 展开态 Esc → 收起（aria 复位 + 面板清空，与点击外部收起同路径）
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(head.getAttribute('aria-expanded')).toBe('false');
+    expect(panel.childElementCount).toBe(0);
+    // 收起态再按 Esc：幂等无副作用（aria 保持 false）
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(head.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('plan_update 携带 planItemLog → 浮层任务项节点展开显示该任务项的推进记录', () => {

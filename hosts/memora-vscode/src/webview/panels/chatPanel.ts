@@ -1481,6 +1481,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         sessionId: m.sessionId,
         title: getSessionDisplayName(m),
         updatedAt: m.updatedAt,
+        // 计数已在 getSessionMeta 读路径现场派生（Round 真源），此处直取即新鲜值
+        messageCount: m.messageCount,
         // FD-3-A 元数据搜索匹配域：随条目下发（metas 已全量在内存，零新 IO）；
         // undefined 值经 postMessage JSON 序列化自然剔除，协议侧标注可选
         keyTopics: m.keyTopics,

@@ -709,6 +709,8 @@ export type ExtensionToWebviewMessage =
         sessionId: string;
         title: string;
         updatedAt: string;
+        /** 会话消息数（User+AI 各计一条；宿主读时从 Round 真源现场派生）。历史菜单条目展示「N 条」 */
+        messageCount?: number;
         /** 会话关键主题（内核写入；缺省 = 尚未生成）。FD-3-A 元数据搜索匹配域之一 */
         keyTopics?: string[];
         /** 会话级摘要（内核写入；缺省 = 尚未生成）。FD-3-A 元数据搜索匹配域之一 */

@@ -5329,6 +5329,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     updatedAt: string;
     keyTopics?: string[];
     summary?: string;
+    messageCount?: number;
   }[] = [];
   /** 最近一次下发的留存区标记（**单一真源**：分组归属只认它） */
   let lastArchivedIds: string[] = [];
@@ -5351,7 +5352,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 「移回」会把用户踢回会话记录，连续管理被打断。
    */
   function renderHistoryMenu(
-    sessions: { sessionId: string; title: string; updatedAt: string }[],
+    sessions: {
+      sessionId: string;
+      title: string;
+      updatedAt: string;
+      keyTopics?: string[];
+      summary?: string;
+      messageCount?: number;
+    }[],
     archivedIds: string[],
   ): void {
     lastSessionList = sessions;
@@ -5408,12 +5416,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       item.className = 'treedd__item';
       item.dataset.treeddId = s.sessionId; // treedd 选择委托据此回调 __historyOnSelect
       item.setAttribute('role', 'menuitem');
+      // 悬停摘要（原生 title，与 keepBtn 同款惯例）：summary/keyTopics 已随列表下发
+      // （FD-3-A 搜索域复用，零新协议），浏览态也可感知；截断防长摘要炸 tooltip
+      const topics = (s.keyTopics ?? []).slice(0, 5).join(' · ');
+      const brief = (s.summary ?? '').slice(0, 100) + ((s.summary ?? '').length > 100 ? '…' : '');
+      const tip = [topics, brief].filter(Boolean).join('\n');
+      if (tip) item.title = tip;
       const titleEl = document.createElement('span');
       titleEl.className = 'session-history__item-title';
       titleEl.textContent = s.title; // textContent 防注入
       const timeEl = document.createElement('span');
       timeEl.className = 'session-history__item-time';
-      timeEl.textContent = fmtRelativeTime(s.updatedAt);
+      // 计数并槽（messageCount 缺省 = 旧会话未生成，只显示时间不显示 0）
+      timeEl.textContent =
+        typeof s.messageCount === 'number' && s.messageCount > 0
+          ? `${fmtRelativeTime(s.updatedAt)} · ${s.messageCount} 条`
+          : fmtRelativeTime(s.updatedAt);
       // 分组动作：会话记录 → 移入留存区；留存区 → 移回会话记录。
       // 两者都**不是删除**（数据一字不动），故图标与文案都不用删除类语言。
       // 用 span 而非 button：treedd__item 本身是 button，HTML 规范 button 内不可嵌套 button
@@ -5486,6 +5504,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   document.addEventListener('click', (e) => {
     const bar = getPlanBarEl();
     if (planBarExpanded && bar && !bar.contains(e.target as Node)) {
+      setPlanBarExpanded(false);
+    }
+  });
+  // Esc 收起对齐 dropdown 族键盘契约（dropdown.ts 同款）：展开态任意焦点位置均可关，
+  // 仅展开态生效，不干扰输入框（输入框 Esc 无既有语义）
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && planBarExpanded) {
       setPlanBarExpanded(false);
     }
   });

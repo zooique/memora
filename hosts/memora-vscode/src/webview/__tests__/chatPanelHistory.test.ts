@@ -245,6 +245,21 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(data[0]?.sessions[0]?.title).toBe('昨天会话');
   });
 
+  it('pushSessionList：随条目下发 messageCount（读路径现场派生自 Round 真源，1 轮 = 2 条）', () => {
+    const { store, roundStore, provider, posted } = setup();
+    seedSession(store, roundStore, '2026-08-14-s2', [
+      { role: 'user', content: '问', ts: 't1' },
+      { role: 'assistant', content: '答', ts: 't2' },
+    ]);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    (provider as unknown as { pushSessionList(): void }).pushSessionList();
+    const data = ofType<{
+      type: string;
+      sessions: { sessionId: string; messageCount?: number }[];
+    }>(posted, 'session_list_data');
+    expect(data[0]?.sessions[0]?.messageCount).toBe(2);
+  });
+
   it('pushSessionList：无历史时返回空数组（webview 显示空态）', () => {
     const { provider, posted } = setup();
     (provider as unknown as { pushSessionList(): void }).pushSessionList();
