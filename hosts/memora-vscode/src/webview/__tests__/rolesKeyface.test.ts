@@ -64,6 +64,20 @@ describe('键面一致性守卫（RP-EDIT-1 核心护栏）', () => {
       expect(labels[opt], `askOn 选项 ${opt} 缺少中文映射`).toBeTruthy();
     }
   });
+
+  it('每个 number 键必须带 range（NUM-HINT-1 实时检测的前提）', () => {
+    // 编辑表单的输入超限红框（rolesStyles :out-of-range）依赖 buildFormRow 写入的
+    // input[min]/max——键面 range 缺失 = 红框对该键静默失效（只剩保存时内核拦截）。
+    // 内核 describeStrategyKeys 防御分支（无 range 数值键，当前无实例）若被触发，
+    // 本守卫即红：逼新增数值键在 STRATEGY_KEY_RULES 声明区间，而非放开 UI 降级。
+    const missing = kernelFaces
+      .filter((f) => f.kind === 'number' && !f.range)
+      .map((f) => `${f.stage}.${f.key}`);
+    expect(
+      missing,
+      `number 键缺少 range（输入超限红框将静默失效）：[${missing.join(', ')}]。请在内核 STRATEGY_KEY_RULES 为该键补 intRange 区间。`,
+    ).toEqual([]);
+  });
 });
 
 describe('collectStrategyFromForm —— 表单收集语义（方案 §3）', () => {

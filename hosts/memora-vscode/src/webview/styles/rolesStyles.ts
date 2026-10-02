@@ -316,6 +316,12 @@ export const rolesStyles = `
     background: var(--surface-input, rgba(128,128,128,.1));
     color: inherit;
   }
+  /* 数值键实时检测：超出键面 range（input[min]/max，与内核同源）即红框即时反馈。
+     纯 CSS 消费既有属性零 JS；留空 = 用默认值（合法语义，:out-of-range 不命中空值）。
+     失效前提是键面 range 缺失——由 rolesKeyface 守卫锁死（number 键必须带 range）。 */
+  #roles-root .role-detail-form-row input[type='number']:out-of-range {
+    border-color: var(--status-fail, #b3261e);
+  }
   /* 多选（askOn）：checkbox 组横排换行 */
   #roles-root .role-detail-multi { display: flex; flex-wrap: wrap; gap: var(--sp-1, 3px) var(--sp-2, 6px); flex: 1; min-width: 0; }
   #roles-root .role-detail-check { display: inline-flex; align-items: center; gap: var(--sp-1, 3px); cursor: pointer; }
