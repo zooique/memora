@@ -362,7 +362,7 @@ deny 黑名单命中（内核 SSOT，优先级最高，任何档位/guest/owner 
 
 | 层 | 文件 | 改动 |
 | --- | --- | --- |
-| 内核 | `src/code-exec/skillScriptRunner.ts` | 新增 `runShellCommand(command, cwd, timeoutMs)`——复用 `runOnce` 进程治理，仅新增「裸命令 → `{command: shell, args: ['/c'\|'-c', command]}`」解析分支 |
+| 内核 | `src/skill/skillScriptRunner.ts`（⚠️ 2026-10-02 排雷订正：本文档其余 6 处锚点均写对，本行系重写笔误） | 新增 `runShellCommand(command, cwd, timeoutMs)`——复用 `runOnce` 进程治理，仅新增「裸命令 → `{command: shell, args: ['/c'\|'-c', command]}`」解析分支；**嫁接时一并清偿 §13.6 三缺口（杀树原语 / 输出上限 / timeoutMs 语义）** |
 | 内核 | `src/agent/builtinTools.ts` | 注册 `run_command` 常驻工具（schema 见 §13.3） |
 | 内核 | `src/agent/toolExecutor.ts` | 新增 handler：黑名单校验（§13.2）→ `confirmCommandRun` 确认 → 调 `runShellCommand` |
 | 内核 | `src/security/pathGuard.ts` | 黑名单 SSOT 清单扩展（含 alwaysAsk 分区，§13.2）+ `confirmCommandRun`（接 `confirmScriptRun` 同款 handler 链路） |
@@ -398,7 +398,7 @@ deny 黑名单（恒拦）
 {
   "command":    "string — 要执行的 shell 命令（Windows 经 cmd /c，类 Unix 经 sh -c）",
   "cwd":        "string? — 工作目录（绝对路径；缺省 = 宿主注入的工作区根）",
-  "timeoutMs":  "number? — 超时毫秒（缺省 60_000，上限 600_000，越界取边界）",
+  "timeoutMs":  "number? — 最长执行时长毫秒（单语义，含后台；§13.6-C）：同步缺省 60_000、上限 600_000 越界取边界；background=true 缺省不限时（长构建核心场景），传值则到点强杀并以 timedOut 回流",
   "background": "boolean? — true = 后台执行：立即返回 taskId，完成后经气口回流（定案见 §14）；缺省同步等待"
 }
 ```
@@ -424,16 +424,48 @@ deny 黑名单（恒拦）
 3. guest + 未注入 handler → 拒绝（fail-closed）。
 4. owner + confirmScripts=false → 自动批准 + 审计记录存在。
 5. owner + confirmScripts=true → 弹确认；拒绝后不执行、LLM 收到拒绝语义（非静默空跑，止血③教训）。
-6. 超时强杀 + 输出截断（复用 runOnce 语义的边界用例）。
+6. 超时强杀**杀树验证**（收割后孙进程已死）+ 输出截断（`MAX_OUTPUT_CHARS` 头尾保留 + `truncated` 标记）——§13.6-A/B 锚点（原锚点「复用 runOnce 截断语义」失实：runOnce 既有实现无截断，2026-10-02 排雷订正）。
 7. 描述文案守卫：不含「安全/已校验」承诺词、不含 bypass 提示（文案快照测试）。
 8. `scripts/test-temp-script-loop.ts` 同批修改核验（§11.6.4）。
 9. `background: true` 立即返回 `taskId`（不等待进程结束）；同步路径行为不受参数缺省影响（§14）。
 10. 后台完成 → 回流事件在下个 iteration 检查点注入且带来源标记；回流不占插话满员计数（role 语义隔离，§12.5 第 8 条）。
 11. turn 终态收割：done / interrupted / error 后存活后台进程被强杀且收尾报告；回流不跨 turn（§14.5）。
+12. `background=true` + `timeoutMs` 组合：到点强杀（杀树）并以 `timedOut` 回流；缺省不限时（§13.6-C）。
 
 **真机点验项**：恒确认档弹窗 → 批准执行成功 / 拒绝后 LLM 行为合理；denyOnly 档普通命令直跑 + git commit 弹窗；黑名单命令直接拒绝的对话呈现。
 
 **阶段 1 完成定义 = 测试全绿 + 真机点验通过 + §12.5 八条自检逐条对照通过**；阶段 2（allow 白名单）另行排期，不随阶段 1 顺车。
+
+### 13.6 runOnce 既有缺口一并清偿（2026-10-02 排雷发现，嫁接前必修）
+
+> 三个缺口均为 runOnce **既有伤**（非后台新增）——同步路径同样中招，存量 `run_skill_script` 一并受益；后台执行把「收割」「输出量」放大为显式承诺，不在嫁接时清偿，§14 的承诺就落在假地基上。
+
+**缺口 A：进程树强杀缺失**
+
+- 现状实锤：runOnce 用 Node spawn 原生 `timeout` 选项，到期 kill 仅及**直接子进程**——Windows `cmd /c npm test` 场景下孙进程（npm/node/vitest）变孤儿继续跑（端口占用/文件锁）。全库无 tree-kill 依赖、无 taskkill 调用（2026-10-02 grep 实锤；lockManager 的 `process.kill(pid,0)` 仅探活，无关）。
+- 定案（零新依赖，复用 OS 原语）：
+  - Windows：`taskkill /pid <pid> /T /F`（进程树强杀）
+  - POSIX：spawn 加 `detached: true`（子进程自成进程组长）+ 收割时 `process.kill(-pid, 'SIGKILL')` 杀全组
+- 落点：skillScriptRunner 内新增**单一强杀原语**（私有函数，不新增模块——新模块指南红线）；spawn `timeout` 选项替换为手动计时 + 强杀原语，**同步超时路径一并升级**（既有伤不留给存量）。
+- 测试锚点：§13.5 第 6 条（spawn 父→子→孙三层脚本，收割后探孙进程已死）。
+
+**缺口 B：输出收集无上限**
+
+- 现状实锤：`stdout += data` 无限拼接；runOnce → formatExecutionResult → toolExecutor **全链路无大小防线**（format 层注释自证「stdout/stderr 须由调用方先行净化」且只管净化不管截断；全库 `outputLimit` 均为 LLM 生成 token 上限，非工具结果回流防线）。
+- 定案（**单点截断 = 收集侧**）：runOnce 增加输出上限常量 `MAX_OUTPUT_CHARS = 50_000`（同文件导出，脚本执行域真源）；超限保留**头 40_000 + 尾 10_000**（尾部含最终错误堆栈，头尾保留对排障最友好），中间标注省略字符数并置 `truncated: true`。format 层不重复截断（防双层截断双语义）。
+- 测试锚点：§13.5 第 6 条。
+
+**缺口 C：timeoutMs 双语义澄清（后台修订引入）**
+
+- 统一定案：`timeoutMs` = **「最长执行时长」单语义**，同步后台共用一参不新增组合校验：
+  - 同步：缺省 60_000、上限 600_000 越界取边界（等待贴脸兜底，现状语义不变）；
+  - `background=true`：缺省**不限时**（长构建/冷缓存安装是后台核心场景，600s 不够）；传值则到点强杀（走缺口 A 原语）并以 `timedOut` 回流。
+- 拒绝的备选：组合禁令（background 时传 timeoutMs 报错）——新增校验分支且 agent 需多记一条禁忌；静默忽略——吞参违「语义显式性」（agent 以为 300s 会收割实际没有）。单语义无静默、无新分支。
+- schema 措辞已同步修订（§13.3）。
+
+**边界登记（如实）**：宿主进程退出（VS Code 关窗）时存活后台进程属 OS 层孤儿，阶段 1 **不承诺**收割；turn 终态收割为阶段 1 显式承诺（§14.5）。登记不为免责而为了解真实边界后再立项。
+
+**锚点纪律**：本节三定案写入前均经 grep 实锤（与网络养分标搜证日期同待遇）——代码锚点失实（§13.1 路径笔误、tree-kill 不存在、§13.5 截断锚点空转）皆因未先跑 grep，此后代码锚点入档前必须实锤。
 
 ## 十四、后台执行定案（2026-10-02 · 长命令消费者实锤后的阶段 1 范围修订）
 
@@ -444,17 +476,17 @@ deny 黑名单（恒拦）
 | 组件 | 定案 | 边界 |
 | --- | --- | --- |
 | `run_command` 同步 | runOnce 嫁接，等**进程退出码**（非输出流静默判定），600s 上限 | §13 已定案不变 |
-| `background: true` 参数 | **发起时显式声明后台**：立即返回 `taskId`，agent 心理模型全程一致 | **不做超时自动转后台**（拒绝理由见 §14.3 末行） |
+| `background: true` 参数 | **发起时显式声明后台**：立即返回 `taskId`，agent 心理模型全程一致 | **不做超时自动转后台**（拒绝理由见 §14.3 末行）；`timeoutMs` 缺省不限时、传值到点强杀回流（§13.6-C） |
 | 完成回流 | 后台命令结束 → **气口排队回流**（形态见 §14.2），agent 下个 step 消费结果继续原任务链 | **不跨 turn**：turn 终态收割存活进程并收尾报告（§14.5） |
-| `kill_command` 工具 | 显式终止，返回截至终止时的已捕获输出（兼任「放弃并看输出」） | watch/server 类**中途增量查询**（command_output）不做——触发 = 长驻进程真实需求，阶段 2 |
+| `kill_command` 工具 | 显式终止，返回截至终止时的已捕获输出（兼任「放弃并看输出」） | **免裁决链**：仅可杀本 turn 本 agent 起的后台任务（`taskId` 寻址，非任意 pid），属自产资源回收，deny/ask/allow 均不涉（裁决链语义 = 执行新命令前审批，不含回收自家进程）；watch/server 类**中途增量查询**（command_output）不做——触发 = 长驻进程真实需求，阶段 2 |
 
 ### 14.2 回流通道形态（对齐 TOOL-ASYNC-1 沉淀设计，零新基建）
 
-- 回流走**独立队列**：与 pendingInterjections 同机制（iteration 间检查点消费、挂起/恢复全链路复用），但**独立事件类型**——插话通道留给用户意图，系统事件不借道、不占插话满员计数。
+- 回流走**独立队列**：与 pendingInterjections 同机制（iteration 间检查点消费、挂起/恢复全链路复用），但**独立事件类型**——插话通道留给用户意图，系统事件不借道、不占插话满员计数。零新基建实锤：`interruptQueue` 已是 kind 判别联合队列（loop.ts 按类型筛选消费），回流新增一个 kind 即得，不改队列结构。
 - 回流进 LLM 历史时标记来源为「后台命令完成」（非用户发言），role 语义隔离。
 - ask 挂起 / 打断续跑期间后台进程继续跑：回流在恢复后的下个气口注入（不丢、不打断当前推理）。
 - 多命令并发完成：按完成顺序逐个回流。
-- 进程治理复用 `runOnce` 强杀语义（tree-kill），收割锚在 turn 终态既有集合。
+- 进程治理：收割/超时强杀走 §13.6-A 杀树原语（Windows `taskkill /T /F` + POSIX 进程组，零新依赖）——原稿「tree-kill」失实（全库无此依赖，2026-10-02 排雷订正）；收割锚在 turn 终态既有集合。
 
 ### 14.3 养分吸收矩阵（土壤 → 种子过滤）
 
@@ -476,8 +508,9 @@ deny 黑名单（恒拦）
 
 ### 14.5 竞态边界（阶段 1 拍板）
 
-- turn 终态（`done` / `interrupted` / `error`）统一收割存活后台进程，收尾报告未收割任务；回流不跨 turn（跨 turn 回流属新语义面，待真实需求另立项）。
+- turn 终态（`done` / `interrupted` / `error`）统一收割存活后台进程（§13.6-A 杀树原语），收尾报告未收割任务；回流不跨 turn（跨 turn 回流属新语义面，待真实需求另立项）。
 - 打断续跑不算终态：后台进程继续跑，续跑后回流照常注入。
+- 宿主进程退出（VS Code 关窗）时存活后台进程不承诺收割（OS 层孤儿，如实登记）——§13.6 边界登记。
 
 ### 14.6 不带伤自检（新增两条，清单单点在 §12.5 第 7/8 条）
 
