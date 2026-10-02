@@ -16,7 +16,7 @@
 
 - **上限裁决单点收口内核**：`LOOP_CONSTANTS` 新增 `MAX_PENDING_INTERJECTIONS = 5`（值真源）；`loop.interject` 返回 `boolean`——达上限**整条拒收**返回 false 不入队（插话是原子思路不截半条）；`agent.interject` 改**先入队后持久化**（顺序即语义：拒收时零入队、零落盘，防「队列没进、落盘却写」数据不一致）
 - **宿主消费真源**：extension 闸门改消费 `interject()` 返回值（快照预检自写判据退役，宿主零裁决逻辑）；webview 预检仍用 `shared/constants.ts` 镜像常量（webview 无法 import 内核包），同值关系由宿主守卫测试锁定（漂移即红）；pause 条目不受上限管辖（内部控制语义非用户输入洪流）
-- **测试**：内核 loop 上限用例（满员拒收不入队 / 删一条可再入 / pause 不受限）+ 变异闭环（判据 off-by-one 精准红）；`constants.test` 键数守卫 24→25 同步；宿主 chatPanelInput 11 用例（桩默认受理态 / 满员拒收不上屏 / 防误伤上屏 / 跨包同值守卫）
+- **测试**：内核 loop 上限用例（满员拒收不入队 / 删一条可再入 / pause 不受限）+ 变异闭环（判据 off-by-one 精准红）；`constants.test` 键数守卫 24→25 同步；agent 层 +4 用例（未初始化断言 / 受理入队返回 true / 满员拒收返回 false 队列不增 / 删一腾位再入——返回值透传与队列状态链路贯通；落盘内容无公开读口，闭环节点持久化由 messageHistory.test 既有覆盖）；宿主 chatPanelInput 11 用例（桩默认受理态 / 满员拒收不上屏 / 防误伤上屏 / 跨包同值守卫）
 - **版本**：内核语义变更（接口返回值 void→boolean + 新增常量），随已定档的 3.1.0 一并发布，不单独发版
 
 ### Added（宿主 · 角色包编辑 UI `RP-EDIT-1`：键面查看与编辑——键面单源内核，保存全链路 extension 侧）

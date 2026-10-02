@@ -17,6 +17,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Agent } from '@/agent/agent.js';
+import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import type { AgentChunk } from '@/agent/types.js';
 import { LlmProvider } from '@/llm/provider.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
@@ -295,6 +296,79 @@ describe('Agent · agentLoop.getMessages()', () => {
   it('未初始化时 agentLoop 应为 null', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     expect(agent.agentLoop).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：Agent · interject 插话上限（KERNEL-QUEUE-LIMIT-1）
+// 裁决本体在 loop 层（loop.test.ts 已锁满员拒收/腾位/pause 不受限）；
+// 本组锁 agent 层新增接口行为：返回值透传 + 队列状态 + 未初始化断言。
+// 落盘内容无公开读口（interactiveInputs 不在 loadRoundBasedMessages 展开面），
+// 闭环节点持久化行为由 messageHistory.test 覆盖（appendUser 不分裂轮等）；
+// 「先入队后持久化」顺序由代码结构单点保证（appendUser 物理位于受理分支内）。
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · interject 插话上限（KERNEL-QUEUE-LIMIT-1）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-agent-ij-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-agent-ij-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-agent-ij-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('未初始化时 interject 抛明确错误（assertInitialized 统一拦截形态）', () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    expect(() => agent!.interject('提前插话')).toThrow(/Agent 未初始化/);
+  });
+
+  it('受理：未满员返回 true 且入队（getPendingInterjections 可见）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    expect(agent.interject('补充甲')).toBe(true);
+    expect(agent.interject('补充乙')).toBe(true);
+    expect(agent.getPendingInterjections()).toEqual(['补充甲', '补充乙']);
+  });
+
+  it('满员：第 6 条返回 false 且队列不增（整条拒收，透传 loop 裁决）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    for (let i = 0; i < LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS; i++) {
+      expect(agent.interject(`插话${i}`)).toBe(true);
+    }
+    expect(agent.getPendingInterjections()).toHaveLength(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);
+    // 上限裁决单一真源在内核：agent 层只透传 boolean，不重复裁决
+    expect(agent.interject('超出上限的一条')).toBe(false);
+    expect(agent.getPendingInterjections()).toHaveLength(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);
+  });
+
+  it('腾位：removePendingInterject 删一条后 interject 可再入（agent 层删除/受理链路贯通）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    for (let i = 0; i < LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS; i++) {
+      agent.interject(`插话${i}`);
+    }
+    expect(agent.interject('第 6 条先拒')).toBe(false);
+    expect(agent.removePendingInterject(0)).toBe(true);
+    expect(agent.interject('腾位后新插话')).toBe(true);
+    expect(agent.getPendingInterjections()).toHaveLength(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);
   });
 });
 
