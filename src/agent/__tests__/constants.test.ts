@@ -151,8 +151,9 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
     // SUMMARY_MSG_COUNT / SUMMARY_CONTENT_SLICE / SUMMARY_MAX_TOKENS /
     // REASONING_INPUT_CHARS / TASK_TYPE_WINDOW /
     // MAX_INTEL_PREFIX_LEN（情报区数据上限——LLM 私有笔记长度栓）/
-    // MEMORY_SEARCH_TIMEOUT_MS（search_memories 响应性护栏——embed 挂起降级）
-    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(24);
+    // MEMORY_SEARCH_TIMEOUT_MS（search_memories 响应性护栏——embed 挂起降级）/
+    // MAX_PENDING_INTERJECTIONS（待注入插话条数上限——loop.interject 满员拒收裁决）
+    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(25);
   });
 
   it('TOOL_NARRATION_DISCIPLINE 为工具导语纪律（抑制工具步前长文规划，与 narrate 分区配套）', () => {

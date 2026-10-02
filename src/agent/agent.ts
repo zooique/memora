@@ -910,9 +910,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 归属：插话同时以「补充」交互输入持久化到当前闭环节点（interactiveInputs），
    * 保证跨重启重放时插话内容不丢失、不分裂新轮。持久化 fire-and-forget（appendUser 内部
    * 已 catch 写入失败，仅记日志），不阻塞插话本身。
+   *
+   * 上限裁决：loop 待注入插话达 LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS 时**整条拒收**——
+   * 先入队后持久化（顺序即语义）：拒收时零入队、零落盘、零上屏（调用方据返回值提示用户）。
+   *
+   * @returns true=已入队并持久化；false=已达上限被拒收（未入队未落盘）
    */
-  interject(content: string): void {
+  interject(content: string): boolean {
     this.assertInitialized('interject');
+    // 先入队（上限裁决在此）：满员拒收时不可写盘——队列没进、落盘却写 = 数据不一致
+    const accepted = this.requireLoop.interject(content);
+    if (!accepted) return false;
     // 持久化插话为闭环节点交互补充输入（roundId 非空时才写；空=无在途闭环，跳过）
     const closureRoundId = this.loop?.getCurrentRoundId();
     if (closureRoundId) {
@@ -921,7 +929,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         kind: 'supplement',
       });
     }
-    this.requireLoop.interject(content);
+    return true;
   }
 
   /**

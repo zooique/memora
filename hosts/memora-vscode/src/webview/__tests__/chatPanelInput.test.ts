@@ -40,7 +40,8 @@ vi.mock('vscode', async () => ({
 
 /** agent 桩：覆盖输入路由 + consumeFlow 尾部依赖的最小面 */
 function inputAgentStub() {
-  const interject = vi.fn();
+  // 默认受理（内核未满员常态）：宿主上屏以返回值为判，undefined 会被当拒收
+  const interject = vi.fn((): boolean => true);
   const answerQuestion = vi.fn();
   const getPendingInterjections = vi.fn((): string[] => []);
   // 显式参数类型：mock.calls 元组元素可索引（TS2493：无参推导为空 tuple）
@@ -303,19 +304,17 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
 
   it('INPUT-LIMIT-1：插话队列达上限 → 整条拒收，不排队不上屏，警告提示', async () => {
     const h = setupInput();
-    const { interject, chat, getPendingInterjections } = mount(h);
-    // 队列真源在内核：桩模拟 getPendingInterjections 快照满员
-    getPendingInterjections.mockReturnValue(
-      Array.from({ length: MAX_PENDING_INTERJECTIONS }, (_, i) => `插话${i}`),
-    );
+    const { interject, chat } = mount(h);
+    // 上限裁决单一真源在内核：agent.interject() 达上限返回 false（零入队零落盘），
+    // 宿主只消费返回值——桩模拟内核满员拒收
+    interject.mockReturnValue(false);
     h.cast._streaming = true;
     h.cast._abortController = new AbortController();
     h.cast._turnState = { phase: 'running' };
 
     await h.cast.handleInput({ kind: 'send', text: '第 6 条' });
 
-    // 整条拒收：不排队（interject）、不上屏（user 气泡 = 已入队的视觉镜像）、不续跑
-    expect(interject).not.toHaveBeenCalled();
+    // 整条拒收：不上屏（user 气泡 = 已入队的视觉镜像，判定后置）、不续跑
     expect(h.posted.filter((m) => (m as { type?: string }).type === 'user')).toHaveLength(0);
     expect(chat).not.toHaveBeenCalled();
     // 拒收必须提示（走既有 showWarningMessage 通道，零新增协议）
@@ -323,12 +322,11 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     expect(window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('上限'));
   });
 
-  it('INPUT-LIMIT-1：插话未达上限 → 正常入队（防误伤边界）', async () => {
+  it('INPUT-LIMIT-1：插话未达上限 → 正常入队并上屏（防误伤边界）', async () => {
     const h = setupInput();
-    const { interject, getPendingInterjections } = mount(h);
-    getPendingInterjections.mockReturnValue(
-      Array.from({ length: MAX_PENDING_INTERJECTIONS - 1 }, (_, i) => `插话${i}`),
-    );
+    const { interject } = mount(h);
+    // 内核受理（未满员）→ 宿主上屏 user 气泡
+    interject.mockReturnValue(true);
     h.cast._streaming = true;
     h.cast._abortController = new AbortController();
     h.cast._turnState = { phase: 'running' };
@@ -336,5 +334,13 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     await h.cast.handleInput({ kind: 'send', text: '第 5 条' });
 
     expect(interject).toHaveBeenCalledTimes(1);
+    expect(h.posted.filter((m) => (m as { type?: string }).type === 'user')).toHaveLength(1);
+  });
+
+  it('INPUT-LIMIT-1：webview 镜像常量与内核真源同值（跨包数值漂移守卫）', async () => {
+    // shared/constants.ts 的 MAX_PENDING_INTERJECTIONS 是内核真源的 webview 镜像
+    // （webview 无法 import 内核包）——两处声明靠本守卫锁同值，任一侧改值漂移即红
+    const { LOOP_CONSTANTS } = await import('@zooique/memora');
+    expect(MAX_PENDING_INTERJECTIONS).toBe(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);
   });
 });

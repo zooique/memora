@@ -10,6 +10,15 @@
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不占内核版本号（理由见文首说明）。内核 3.0.0 的发版内容在其下方。
 
+### Changed（内核 · 待注入插话上限裁决收口内核 · `KERNEL-QUEUE-LIMIT-1`，已定档 3.1.0）
+
+**债务清偿**：INPUT-LIMIT-1 落地时插话条数上限只做在宿主两层（webview 预检 + extension 闸门），内核 `loop.interruptQueue` 本体 push 前无上限——第三方集成方绕过宿主直调 `agent.interject()` 仍可塞爆队列（队列是内核资源不变量，该内核自己堵，不能指望每个集成方自带限额）。
+
+- **上限裁决单点收口内核**：`LOOP_CONSTANTS` 新增 `MAX_PENDING_INTERJECTIONS = 5`（值真源）；`loop.interject` 返回 `boolean`——达上限**整条拒收**返回 false 不入队（插话是原子思路不截半条）；`agent.interject` 改**先入队后持久化**（顺序即语义：拒收时零入队、零落盘，防「队列没进、落盘却写」数据不一致）
+- **宿主消费真源**：extension 闸门改消费 `interject()` 返回值（快照预检自写判据退役，宿主零裁决逻辑）；webview 预检仍用 `shared/constants.ts` 镜像常量（webview 无法 import 内核包），同值关系由宿主守卫测试锁定（漂移即红）；pause 条目不受上限管辖（内部控制语义非用户输入洪流）
+- **测试**：内核 loop 上限用例（满员拒收不入队 / 删一条可再入 / pause 不受限）+ 变异闭环（判据 off-by-one 精准红）；`constants.test` 键数守卫 24→25 同步；宿主 chatPanelInput 11 用例（桩默认受理态 / 满员拒收不上屏 / 防误伤上屏 / 跨包同值守卫）
+- **版本**：内核语义变更（接口返回值 void→boolean + 新增常量），随已定档的 3.1.0 一并发布，不单独发版
+
 ### Added（宿主 · 角色包编辑 UI `RP-EDIT-1`：键面查看与编辑——键面单源内核，保存全链路 extension 侧）
 
 **缺口**：角色页此前全只读（卡片/来源徽章/策略 chips/健康区俱全），真缺口只有「改的入口」（先例同型 = FD-2 技能）。键面清单若放宿主 = 第二真相源，且未知策略键在内核校验中只 warning + 忽略 ⇒ UI 写错键名时保存不报错、该键静默不生效（健康徽章兜不住）。

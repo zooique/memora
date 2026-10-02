@@ -26,8 +26,6 @@ import {
   CONFIRM_ALL_FILE_CHANGES_COMMAND,
   REVERT_ALL_FILE_CHANGES_COMMAND,
 } from '../../extension/host/fileChangeView.js';
-// 输入限额（INPUT-LIMIT-1）：值真源 = shared/constants.ts
-import { MAX_PENDING_INTERJECTIONS } from '../../shared/constants.js';
 import {
   defaultSessionTitle,
   formatDateKey,
@@ -36,6 +34,7 @@ import {
   estimateOccupancy,
   estimateTokensMessages,
   splitSessionId,
+  LOOP_CONSTANTS,
   type Agent,
   type AgentChunk,
   type IRoundStore,
@@ -48,6 +47,10 @@ import {
   OPAQUE_WRITE_TOOL_NAMES,
   IGNORED_DIR_NAMES,
 } from '@zooique/memora';
+
+/** 插话条数上限提示文案用值：直接消费内核真源（webview 侧无法 import 内核包，
+ *  其 shared/constants.ts 同名常量是本值的镜像，由 chatPanelInput 守卫测试锁同值） */
+const INTERJECT_LIMIT = LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS;
 
 /** 脚本类写工具（opaque 写，目标运行时才可知）——真源 = 内核 `OPAQUE_WRITE_TOOL_NAMES`（diskWrite:'opaque' 派生）。
  * 宿主据此在工具执行前后各扫一次 workspace 快照、diff 收口，让脚本类文件改动可见（见 tracker.noteExternalMutations）。 */
@@ -2509,21 +2512,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     //  正在进行的 runFlow 继续；UI 即时上屏，排序由 webview 在收到下一条 chunk 时开新助手块。
     //  pausePending 窗口（flag=true 但 step 还没跑完）发补充 → interject + 自动 cancelPauseRequest（一行覆盖暂停操作）。
     if (this._streaming && this._abortController) {
-      // INPUT-LIMIT-1 插话条数上限（值真源 = shared/constants.ts）：队列真源在内核，
-      // 读 getPendingInterjections() 快照裁决（宿主不自持计数；optional 调用兼容测试桩，
-      // 同 syncPendingQueue 先例）。达上限**整条拒收**——插话是原子思路，截半条 = 语义
-      // 破坏；拒收必须提示（静默丢整条 = 背刺），走既有 showWarningMessage 通道
-      // （handleInput 未就绪提示同款），零新增协议通道。守卫在 post 之前——待发送
-      // 气泡 = 已入队的视觉镜像，拒收即不投影。
-      const pendingCount = agent.getPendingInterjections?.().length ?? 0;
-      if (pendingCount >= MAX_PENDING_INTERJECTIONS) {
+      // INPUT-LIMIT-1 插话条数上限：裁决单一真源在内核（LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS）——
+      // agent.interject() 达上限返回 false（整条拒收：零入队、零落盘），宿主只消费返回值做提示
+      // 与上屏裁决，不自持计数不自写判据。拒收必须提示（静默丢整条 = 背刺），走既有
+      // showWarningMessage 通道（handleInput 未就绪提示同款），零新增协议通道。
+      // 上屏在判定之后——待发送气泡 = 已入队的视觉镜像，拒收即不投影。
+      const accepted = agent.interject(input);
+      if (!accepted) {
         void vscode.window.showWarningMessage(
-          `Memora：待并入的插话已达 ${MAX_PENDING_INTERJECTIONS} 条上限，本条未送出——可在待发送区删减后再试`,
+          `Memora：待并入的插话已达 ${INTERJECT_LIMIT} 条上限，本条未送出——可在待发送区删减后再试`,
         );
         return;
       }
       this.post({ type: 'user', text: input, ts: new Date().toISOString(), kind: 'supplement' });
-      agent.interject(input);
       // pausePending 期间发补充 → 自动取消暂停（覆盖暂停操作）：
       // UI 按钮态本地 toggle，cancelPauseRequest 即可；
       // UI 状态会在下一次 status 切换（如后续新 runFlow thinking）时自动重置

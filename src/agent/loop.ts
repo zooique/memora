@@ -739,11 +739,24 @@ export class AgentLoop {
     this.cancelPauseEntry();
   }
 
-  /** 插话（申请入队）：把用户补充输入作为 InterruptRequest{kind:'interject'} 入 interruptQueue。
-   *  与 requestPause（queueInterrupt pause）同为「申请 → 气口生效」——不中断当前 LLM/工具执行，
-   *  只在 step 边界统一消费（先注入型 → appendUser，后挂起型 → yield paused）。 */
-  interject(content: string): void {
+  /**
+   * 插话（申请入队）：把用户补充输入作为 InterruptRequest{kind:'interject'} 入 interruptQueue。
+   * 与 requestPause（queueInterrupt pause）同为「申请 → 气口生效」——不中断当前 LLM/工具执行，
+   * 只在 step 边界统一消费（先注入型 → appendUser，后挂起型 → yield paused）。
+   *
+   * 上限裁决（内核资源不变量，值真源 = LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS）：待注入插话达上限时
+   * **整条拒收**返回 false（插话是原子思路，截半条 = 语义破坏）；宿主以此返回值做 UI
+   * 提示（webview 预检与其 shared 镜像常量由守卫测试与本常量锁同值）。pause 条目不受
+   * 本上限管辖（软暂停申请是内部控制语义，非用户输入洪流）。
+   *
+   * @returns true=已入队；false=待注入插话已满，本条未入队（调用方不应持久化/上屏）
+   */
+  interject(content: string): boolean {
+    if (this.getPendingInterjections().length >= LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS) {
+      return false;
+    }
     this.interruptQueue.push({ kind: 'interject', content });
+    return true;
   }
 
   /** 删除待注入的插话（宿主 UI 层用户后悔）。与 interject 对称，在 step 边界消费前可安全删除。

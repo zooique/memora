@@ -258,4 +258,12 @@ export const LOOP_CONSTANTS = {
    * 长文本（reasoning）判定仍以最近一条 user 消息为准（反映当前轮意图）。
    */
   TASK_TYPE_WINDOW: 3,
+
+  /**
+   * 待注入插话（interruptQueue 中 interject 条目）上限。5 条 ≈ step 边界一次注入的极限：
+   * 超量注入会让上下文爆炸 + LLM 被碎片指令搞懵。达上限**整条拒收**（loop.interject
+   * 返回 false，插话是原子思路不截半条）。值真源在本文件；宿主 webview 预检镜像
+   * （hosts 的 shared/constants.ts 同名常量）由宿主守卫测试与本值锁同值防漂移。
+   */
+  MAX_PENDING_INTERJECTIONS: 5,
 } as const;

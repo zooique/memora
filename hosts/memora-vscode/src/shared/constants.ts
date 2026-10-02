@@ -48,7 +48,8 @@ export const MAX_INPUT_CHARS = 20000;
  *  更长的内容语义上属「材料」，应走主输入框或存文件（agent 有读文件工具）。 */
 export const MAX_ASK_ANSWER_CHARS = 4000;
 
-/** 运行期待并入插话条数上限（INPUT-LIMIT-1）：插话队列真源在内核 loop.interruptQueue
- *  （内核无上限），宿主发送前读 agent.getPendingInterjections() 快照裁决（不自持计数）。
- *  达上限整条拒收——插话是原子思路，截半条 = 语义破坏。内核侧上限登记 3.1.0 候选。 */
+/** 运行期待并入插话条数上限（INPUT-LIMIT-1）：**镜像常量**——值真源 = 内核
+ *  `LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS`（loop.interject 达上限整条拒收并返回 false，
+ *  extension 侧直接消费内核常量与返回值）。本常量仅供 webview 预检消费（webview 无法
+ *  import 内核包），与内核真源的同值关系由 chatPanelInput 守卫测试锁定，改值须两处同步。 */
 export const MAX_PENDING_INTERJECTIONS = 5;

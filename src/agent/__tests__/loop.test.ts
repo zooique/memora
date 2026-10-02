@@ -7,6 +7,7 @@ import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AgentLoop } from '@/agent/loop.js';
+import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { ResultReplacementStrategy } from '@/agent/compaction.js';
 import type { AgentChunk } from '@/agent/types.js';
 import type { ChatOptions, LlmProvider, Message } from '@/llm/provider.js';
@@ -3087,6 +3088,29 @@ describe('AgentLoop · 执行中插话', () => {
     // 宿主运行时若误 push 该数组，不得回写内核队列
     (loop.getPendingInterjections() as string[]).push('越权写入');
     expect(loop.getPendingInterjections()).toEqual(['唯一插话']);
+  });
+
+  it('interject 达上限整条拒收：返回 false 不入队，删一条后可再入（内核资源上限）', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    const limit = LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS;
+    // 逐条入队至满员，每条受理返回 true
+    for (let i = 0; i < limit; i++) {
+      expect(loop.interject(`插话${i}`)).toBe(true);
+    }
+    expect(loop.getPendingInterjections()).toHaveLength(limit);
+    // 满员后第 limit+1 条：整条拒收（返回 false），队列不增——插话是原子思路不截半条
+    expect(loop.interject('超出上限的一条')).toBe(false);
+    expect(loop.getPendingInterjections()).toHaveLength(limit);
+    // pause 条目不受上限管辖：满员态仍可申请挂起（内部控制语义非用户输入洪流）
+    expect(() => loop.requestPause()).not.toThrow();
+    // 删一条腾位后可再入：上限管存量不管历史
+    loop.removePendingInterject(0);
+    expect(loop.interject('腾位后新插话')).toBe(true);
+    expect(loop.getPendingInterjections()).toHaveLength(limit);
   });
 
   it('removePendingInterject 按插话序号删除，混排 pause 条目时索引映射正确', () => {
