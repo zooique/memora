@@ -287,3 +287,63 @@
 2. 宿主**未声明** → 描述退化为现行去承诺文案（「具体支持哪些语言由宿主执行器决定，内核不预设」），**不报错、不拒服务、不列举**——对任意现有宿主零感知。
 3. **测试锁死**：未声明 → 生成的描述不含任何语言名（防回归「悄悄开始列举」）。
 4. `scripts/test-temp-script-loop.ts` 在 3.1.0 改接口时**同批修改**（已登记——该文件脱离 tsc 守卫，防 searchHybrid 式漏改）。
+
+## 十二、审批档位定案（2026-10-02 · 主流养分吸收 + confirmScripts 单一真源打磨）
+
+> 本节为 §11.5 三层护栏的**审批档位**维度的落地定案。养分来源：Trae 官方文档与博客（2026-01 沙箱公告、更新日志）、Claude Code 权限模式文档与 auto mode 工程博客（2026-03）——搜证日期 2026-10-02。
+
+### 12.1 主流实锤（2026-10-02 搜证）
+
+| 来源 | 档位模型 | 关键不变式 |
+| --- | --- | --- |
+| **Trae**（IDE） | 命令执行三档：**Sandbox + Allowlist**（默认）/ **Manual Run**（全部手动）/ **Auto Run**（自动）；更早版本四档（手动 / 黑名单 / 白名单 / 全自动）+ 高风险命令自动检测 | **Auto Run 下黑名单命令仍需手动**（自动档不吞掉红名单）；Shell 拦截层（`rm`/`rmdir` 类）独立于档位恒生效 |
+| **TRAE CLI** | `permission_mode`：`default`（非只读全询问）/ `plan` / `bypass_permissions`（狂飙） | 会话级档位与工具级规则**双轴并存** |
+| **Claude Code** | 会话档位：`default` / `acceptEdits` / `plan` / `auto`（分类器代审）/ `dontAsk` / `bypassPermissions`；工具级 `allow/ask/deny` 三区前缀匹配，deny > ask > allow | **「任何模式都不自动批准」清单** + 关键路径（Protected/Critical paths）删除连 bypass 也拦；auto mode 进入时**主动丢弃**已授予的任意代码执行规则 |
+| **Claude Code auto mode**（93% 实证） | 用户批准 93% 的权限弹窗 → **审批疲劳**是恒问模式的实证代价；auto mode = 输入层注入探针 + 输出层分类器代审 | 恒问 ≠ 安全（无脑批准）；全自动 ≠ 无护栏（分类器/关键路径兜底） |
+
+**共同点收敛**：主流全部收敛为**双轴模型**——轴 1 会话级审批档位（控制「问不问」基调），轴 2 工具级三区规则（deny 红名单 / ask 黄区 / allow 绿前缀）；且**红名单在任何档位下优先级最高**（Trae Auto Run 黑名单仍手动 = Claude no mode auto-approves 同一不变式）。
+
+### 12.2 memora 种子对照（现有机制即档位雏形，不新增开关）
+
+| memora 现有机制 | 主流同位 | 定位 |
+| --- | --- | --- |
+| `confirmScripts: boolean`（`memora.confirmScripts`，宿主 globalState，默认 `false`，经 extension 注入内核） | Trae 的 Manual Run ↔ Auto Run 档位切换 | **轴 1 会话档位已存在**——布尔两态恰好承载主流两档 |
+| `confirmScripts = true` | Trae Manual Run / Claude `default` | 恒确认档 |
+| `confirmScripts = false` | Trae **Auto Run**（黑名单仍手动）/ Claude `bypassPermissions` 但保留关键路径拦截 | 自动档（deny 红名单仍恒拦） |
+| deny 高危黑名单（内核单点 SSOT，不可关） | Trae 黑名单 / Claude Critical paths | **轴 2 红名单已存在**且比主流更严（内核 SSOT，宿主无法绕过） |
+| 权限模式 `guest`（恒确认 fail-closed）/ `owner`（默认自动批准走审计） | Claude「任何模式都不自动批准」+ 角色权限 | **叠加约束**：guest 压倒审批档位 |
+| `SecurityGuard.confirmScriptRun`（统一确认入口，fail-closed） | 各家 Approve/Reject 弹窗 | 审批执行链路单一真源 |
+
+**SSOT 结论**：**布尔开关不升级为枚举档位**。`confirmScripts` 两态与主流两档语义一一对应，红名单、guest 叠加、allow 白名单全部是**正交维度**（列表/模式叠加），不塞进档位枚举——新增枚举 = breaking 且制造第二套开关面，违背单一真源。Trae 的四档中「白名单」在 memora 是独立的 allow 前缀列表配置（§11.5 阶段 2），与档位正交——Trae 自身也是同样结构（模式 × 白名单列表）。
+
+### 12.3 裁决链定案（优先级单源，run_command 与脚本工具共用）
+
+```
+deny 黑名单命中（内核 SSOT，优先级最高，任何档位/guest/owner 之下恒拦）
+  → guest 权限模式（恒确认，fail-closed；未注入 confirmationHandler 即拒绝）
+    → confirmScripts 档位（true = ask 弹宿主审批；false = 自动批准走审计）
+      → allow 前缀白名单（阶段 2；仅对走到此层的命令生效，命中即免 ask）
+```
+
+- **run_command 与 run_project_script / run_skill_script 共用同一条裁决链**（`SecurityGuard.confirmCommandRun` 接入 `confirmScriptRun` 同款 handler 链路）——不出现第二套确认机制。
+- 审计：`confirmScripts = false` 档的自动批准**必走审计**（沿用 owner 模式既有语义），出事可溯。
+- 审批疲劳对策：恒 ask 是默认安全档（阶段 1），逃逸阀 = ①关开关进 denyOnly 自动档（deny 仍拦）②阶段 2 的 allow 前缀白名单。**不引入「按命令智能预判是否询问」**（无分类器条件下是伪安全）。
+
+### 12.4 刻意不做（复杂度守恒，带伤预防）
+
+| 不做 | 理由 |
+| --- | --- |
+| 沙箱（Trae Sandbox with Allowlist） | Windows 无系统级沙箱条件（Trae 自家 Windows 也未支持，官方建议 allowlist 替代）；memora 已有路径白名单 + 超时强杀兜底 |
+| 分类器代审（Claude auto mode） | 需服务端第二模型（Sonnet 分类器），memora 本地单机 + 用户自持 API key，无条件；且「93% 批准率」问题的本仓解法是 denyOnly 档 + allow 白名单，不是再造分类器 |
+| plan 模式联动（TRAE CLI / Claude `plan` 档） | memora 无 plan 权限模式；「先计划后执行」职责已由预检停顿承载，重复建设 |
+| 「任何模式都不自动批准」泛化清单 | memora 的 deny 内核 SSOT 已承载该不变式；额外维护一份跨工具清单 = 第二真理源，等真实场景再收敛 |
+| 会话中动态切档（Claude Shift+Tab） | 档位属宿主设置面（globalState），对话中改配置破坏「重配置对象只被显式调用」；先不做，等真实需求 |
+
+### 12.5 不带伤自检（落地前逐条对照）
+
+1. **零 breaking**：内核选项面无新必填成员（`confirmScripts` 布尔原样复用；run_command 新工具属新增 minor）。
+2. **零第二开关**：审批面唯一入口 `confirmScriptRun`/`confirmCommandRun` 同链路；设置面唯一开关 `memora.confirmScripts`。
+3. **红名单不可逃逸**：deny 在任何档位 × 任何权限模式下恒拦（内核 SSOT 判据，测试锁定：guest + denyOnly 组合、owner + deny 命中 → 拒绝）。
+4. **fail-closed 保底**：`confirmationHandler` 未注入 → ask 层拒绝（既有语义，run_command 同样遵守）。
+5. **审计闭环**：自动批准必留审计记录；ask 批准/拒绝结果亦入审计。
+6. **分阶段护栏**：阶段 1 无 allow 白名单（逃逸阀只有 denyOnly 档）→ 阶段 2 开放绿区时白名单配置须**默认空**且设置面板明示风险（对齐 Trae「Add to allowlist 前验证安全」话术）。
