@@ -700,7 +700,15 @@ export class AgentLoop {
       // 判据 = pauseBoundaryReached：挂起是同 turn 续跑（后台继续跑、其回流照常注入），
       // 不算终态、不收割。error 路径也收割——异常收场同样不能留孤儿进程。
       if (!this.pauseBoundaryReached) {
-        this.finalizeBackgroundTasksOnTurnEnd();
+        const bgReport = this.finalizeBackgroundTasksOnTurnEnd();
+        if (bgReport) {
+          // 收尾报告双通道：chunk 上屏（finally 中 yield 合法——推迟 generator 完成，
+          // 宿主照常 for-await 消费）+ system 消息进 LLM 历史（真源不因上屏形态漂移）。
+          // generator.return() 硬关闭路径下 yield 被丢弃不上屏（用户已主动停止），
+          // system 消息仍写入——报告不因上屏通道状态丢失。
+          yield { type: 'background_report', content: bgReport };
+          this.appendSystemMessage(bgReport, { executionTemp: true });
+        }
       }
       const durationMs = Date.now() - taskStartAt;
       this.metrics.taskTotalDurationMs += durationMs;
@@ -843,20 +851,16 @@ export class AgentLoop {
    *      插话条目**不动**（它们由 processUserInput 入口的 clearPendingInterjections 负责，
    *      且暂停续跑链上的插话有独立语义）。
    *
-   * @returns 被收割的任务数（0 = 无后台任务，纯问答 turn 的常态）
+   * @returns 收尾报告文本（null = 无后台任务，纯问答 turn 的常态——不产 chunk 不写 system 消息）
    */
-  private finalizeBackgroundTasksOnTurnEnd(): number {
+  private finalizeBackgroundTasksOnTurnEnd(): string | null {
     this.interruptQueue = this.interruptQueue.filter((r) => r.kind !== 'command-result');
     const reaped = this.backgroundTasks?.reapAll() ?? [];
-    if (reaped.length === 0) return 0;
+    if (reaped.length === 0) return null;
     const detail = reaped
       .map((t) => `- ${t.taskId}（status=${t.status}）：${t.command}`)
       .join('\n');
-    this.appendSystemMessage(
-      `[本轮结束 · 后台任务收割] 本轮仍有 ${reaped.length} 个后台命令在运行，已全部终止（其输出不再回流）：\n${detail}`,
-      { executionTemp: true },
-    );
-    return reaped.length;
+    return `[本轮结束 · 后台任务收割] 本轮仍有 ${reaped.length} 个后台命令在运行，已全部终止（其输出不再回流）：\n${detail}`;
   }
 
   /** 删除待注入的插话（宿主 UI 层用户后悔）。与 interject 对称，在 step 边界消费前可安全删除。

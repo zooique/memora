@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 对话面板 — 侧边栏 Webview 视图提供者（u1 UX 改进）
  *
  * 职责：
@@ -1429,6 +1429,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           permission: info.permission,
           beforeContent: info.beforeContent ?? null,
           afterContent: info.afterContent,
+          // diff 域判据透传内核单点判定结果（hasDiff），webview 据此决定是否渲染对比区
+          hasDiff: info.hasDiff,
         });
       });
     };
@@ -3206,6 +3208,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 重放恢复「任务项完成态」的唯一结构化真源（历史回看绿勾）；实时态由 plan_update
           // 承载（本 chunk 无需 post webview——收到即流尾，finalize 重建自落盘事件消费）。
           emitEvent('plan_snapshot', { items: chunk.items });
+        } else if (chunk.type === 'background_report') {
+          // 后台任务收尾报告（内核 turn 终态收割存活后台进程后产出，§14.5；无收割不产）
+          // → 落盘 + 投影。与 plan_snapshot 同型：收到即流尾，webview 实时仅入缓冲，
+          // finalize/重放经 renderRoundBlock「后台任务收割」小节单点消费渲染。
+          emitEvent('background_report', { content: chunk.content });
         } else if (chunk.type === 'step_boundary') {
           // 迭代边界：一次 LLM 迭代（含其工具执行）结束 → 增量落盘当前 pending Round。
           // 落盘时机 SSOT：全场景唯一时机（有/无任务表、有/无工具全覆盖），与流尾共用 mergeProcessEvents

@@ -534,6 +534,36 @@ describe('SecurityGuard · 写入二次确认', () => {
     expect(received[0]!.beforeContent).toBeUndefined();
     expect(received[0]!.afterContent).toBeUndefined();
   });
+
+  // ─── hasDiff 判据归内核单点（2026-10-03 实锤：宿主 truthy 自猜属措辞折叠型带伤）───
+
+  it('hasDiff 四场景守卫：写入恒 true / 脚本·命令·代码执行恒 false', async () => {
+    // 场景① 写入且带 diff options → hasDiff=true（宿主渲染写入前后对比域）
+    const guard = new SecurityGuard(projectPath, dataDir, [], true, 'owner');
+    const received: WriteConfirmationInfo[] = [];
+    guard.onWriteConfirmation(async (info) => {
+      received.push(info);
+      return true;
+    });
+    await guard.requestWriteConfirmation(join(projectPath, 'a.txt'), 'write_file', '描述', {
+      beforeContent: '旧',
+      afterContent: '新',
+    });
+    // 场景② 写入但未传 options（无内容预览）→ 仍 hasDiff=true：hasDiff 语义 =「写入卡」
+    // （宿主据此渲染 diff 域，域内内容缺省由宿主兜底）；命令/代码/脚本三类恒 false
+    await guard.requestWriteConfirmation(join(projectPath, 'b.txt'), 'write_file', '描述');
+    // 场景③ 脚本执行确认（confirmGate 不传 diff）→ hasDiff=false
+    guard.confirmScripts = true; // owner 需开档才会进确认分支
+    await guard.confirmScriptRun(join(projectPath, 'c.sh'), 'run_project_script', '描述');
+    // 场景④ 命令执行确认（confirmGate 不传 diff；用普通命令避开 deny/always-ask 恒拦面）
+    await guard.confirmCommandRun('echo hi', 'run_command', '描述');
+
+    expect(received).toHaveLength(4);
+    expect(received[0]!.hasDiff).toBe(true);
+    expect(received[1]!.hasDiff).toBe(true);
+    expect(received[2]!.hasDiff).toBe(false);
+    expect(received[3]!.hasDiff).toBe(false);
+  });
 });
 
 describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁）', () => {

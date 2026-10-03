@@ -1615,6 +1615,33 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(details.textContent).toContain('完成：是');
   });
 
+  it('后台任务收割小节：background_report 事件 → finalize 渲染多行报告（§14.5）', () => {
+    // 渲染单点 = renderRoundBlock（finalize 与重放共用）——单点有测试即双路有保障。
+    // 无收割的轮无此事件 → 小节不出现（由上方用例的「无收割内容」断言天然覆盖）。
+    mountChatView();
+    beginRound();
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'background_report',
+        seq: 2,
+        ts: '',
+        payload: {
+          content:
+            '[本轮结束 · 后台任务收割] 本轮仍有 1 个后台命令在运行，已全部终止（其输出不再回流）：\n- bg_1（status=killed）：node server.js',
+        },
+      },
+    });
+    dispatch({ type: 'done' });
+
+    const details = document.querySelector('.round-block__details') as HTMLElement;
+    expect(details).not.toBeNull();
+    // 小节标题 + 多行报告逐行渲染（\n 拆行，textContent 防注入）
+    expect(details.textContent).toContain('后台任务收割');
+    expect(details.textContent).toContain('[本轮结束 · 后台任务收割]');
+    expect(details.textContent).toContain('- bg_1（status=killed）：node server.js');
+  });
+
   it('执行指标 · meta.maxTokens 生效值亮明：被角色包收紧时看这行（非面板配置值）', () => {
     mountChatView();
     // 不用 beginRound：自行发带 maxTokens 的 meta（模拟面板 64K 被取小成 4096 的场景）
@@ -7488,6 +7515,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       permission: '',
       beforeContent: 'old',
       afterContent: 'new',
+      hasDiff: true, // 写入场景：判据归内核单点，宿主按此渲染 diff 域
     });
     expect(card.hasAttribute('hidden')).toBe(false);
     expect(document.getElementById('writeConfirmTool')!.textContent).toBe('写入文件');
@@ -7500,10 +7528,10 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(document.getElementById('writeConfirmDiff')!.textContent).toContain('new');
   });
 
-  it('非写入场景（命令确认，宿主协议层给 beforeContent=null）不得渲染假 diff 表', () => {
-    // 回归锁：2026-10-03 自审实锤——判据曾用 `!== undefined`，而协议层把「无 diff 域」归一为
-    // `beforeContent: null`（delete_file 与命令/脚本确认都不传 diff），于是 null 被判成「有 diff」，
-    // 命令场景继续显示假的「--- 写入前 --- / +++ 写入后 +++」。此处用**真实链路形态**（null）锁死。
+  it('非写入场景（命令确认，内核下发 hasDiff=false）不得渲染假 diff 表', () => {
+    // 回归锁：diff 域判据已归内核单点（`WriteConfirmationInfo.hasDiff`，2026-10-03 实锤
+    // 宿主 truthy 自猜属措辞折叠型带伤）。命令/代码/脚本/删除确认内核恒下发 hasDiff=false，
+    // 宿主无论载荷带不带内容字段都不渲染「--- 写入前 --- / +++ 写入后 +++」假对比。
     mountChatView();
     dispatch({
       type: 'write_confirm_request',
@@ -7513,6 +7541,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       description: '在工作区执行命令：git push origin main',
       permission: 'owner',
       beforeContent: null,
+      hasDiff: false, // 命令场景：内核恒 false
     });
     const diff = document.getElementById('writeConfirmDiff')!.textContent ?? '';
     expect(diff).toContain('--- 目标 ---');
@@ -7534,6 +7563,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       description: '删除文件：gone.ts',
       permission: 'owner',
       beforeContent: null,
+      hasDiff: false, // 删除场景：内核恒 false（同命令确认）
     });
     const diff = document.getElementById('writeConfirmDiff')!.textContent ?? '';
     expect(diff).toContain('--- 目标 ---');

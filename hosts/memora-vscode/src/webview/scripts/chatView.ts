@@ -1941,6 +1941,25 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         listEl.appendChild(row);
       });
     }
+    // § 后台任务收割（§14.5）：内核 turn 终态收割存活后台进程后产（无收割则无此事件、
+    // 小节不出现——纯问答常态零块）。与 plan_snapshot 同型：实时仅入缓冲，finalize/重放
+    // 在此单点消费（实时/重放同源，规避「实时建行 → finalize 重建删行」的双形态维护）。
+    const bgReports = events.filter(
+      (e): e is Extract<ProcessEvent, { type: 'background_report' }> =>
+        e.type === 'background_report',
+    );
+    if (bgReports.length > 0) {
+      const { listEl } = sectionOf(details, '后台任务收割');
+      for (const rep of bgReports) {
+        // 多行报告按 \n 拆行渲染（textContent 防注入；格式化单点在内核，宿主零猜测）
+        for (const line of rep.payload.content.split('\n')) {
+          const row = document.createElement('div');
+          row.className = 'round-block__row';
+          row.textContent = line;
+          listEl.appendChild(row);
+        }
+      }
+    }
     // § 自审查输出
     const reviews = events.filter(
       (e): e is Extract<ProcessEvent, { type: 'self_review' }> => e.type === 'self_review',
@@ -5178,20 +5197,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     writeConfirmTool.textContent = getToolDisplayName(msg.tool);
     writeConfirmPath.textContent = msg.targetPath;
     writeConfirmDesc.textContent = msg.description ?? '';
-    // diff 预览：afterContent 为写入后的完整内容（beforeContent 为 null 时即新建文件）。
-    // ⚠️ 非写入场景（命令 / 代码 / 脚本执行确认，以及**删除文件**）内核不下发任何 diff 域，
-    // 宿主协议层把它归一为 `beforeContent: null`（protocol: `beforeContent?: string | null`），
-    // 故判据必须用 **truthy** 而非 `!== undefined` —— 后者会把 null 判成「有 diff」，
-    // 于是命令/删除场景继续渲染假的「--- 写入前 --- / +++ 写入后 +++」（2026-10-03 自审实锤）。
-    const hasDiff = Boolean(msg.beforeContent) || Boolean(msg.afterContent);
-    if (!hasDiff) {
-      writeConfirmDiff.textContent = `--- 目标 ---\n${msg.targetPath}\n\n${msg.description ?? ''}`;
-    } else {
+    // diff 域判据归内核单点（`WriteConfirmationInfo.hasDiff` 经协议载荷透传）：
+    // 仅写入场景 true；命令 / 代码 / 脚本执行（含删除文件）恒 false——宿主不再用
+    // beforeContent/afterContent truthy 自猜（2026-10-03 实锤：truthy 判据属措辞折叠型带伤，
+    // 判据归位内核后，即使载荷意外带内容字段也不会渲染假的写入前后对比）。
+    if (msg.hasDiff) {
+      // 有 diff 对比域（仅写入场景）：before 为 null 即新建文件
       const before = msg.beforeContent ?? '(新建文件)';
       writeConfirmDiff.textContent =
         before === msg.afterContent
           ? before
           : `--- 写入前 ---\n${before}\n\n+++ 写入后 +++\n${msg.afterContent ?? ''}`;
+    } else {
+      // 无 diff 域（命令 / 代码 / 脚本执行确认）：渲染目标摘要，绝不伪造写入前后对比
+      writeConfirmDiff.textContent = `--- 目标 ---\n${msg.targetPath}\n\n${msg.description ?? ''}`;
     }
     pendingWriteConfirmRequestId = msg.requestId;
     writeConfirmCard.hidden = false;

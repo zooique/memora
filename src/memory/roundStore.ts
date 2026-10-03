@@ -304,6 +304,18 @@ export type ProcessEvent =
         items: { planItemId: string; status: 'pending' | 'active' | 'done' | 'blocked' }[];
       };
     }
+  /**
+   * 后台任务收尾报告：turn 终态收割存活后台进程后由内核产出（§14.5；无收割则不产，
+   * 纯问答常态零块）。与 plan_snapshot 同型（turn 收尾瞬态信号）：中断硬关闭
+   * （generator.return()）路径下上屏 chunk 被丢弃，但 LLM 历史的 system 消息已由内核
+   * 写入（收割报告双通道）；本事件承载「上屏通道」的重放真相源——历史回看收尾条由此重建。
+   */
+  | {
+      type: 'background_report';
+      seq: number;
+      ts: string;
+      payload: { content: string };
+    }
   | {
       type: 'aborted';
       seq: number;

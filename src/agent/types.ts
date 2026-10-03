@@ -146,6 +146,13 @@ export type AgentChunk = (
    * 中断轮同样经过收尾兜底产出；暂停/ask 挂起轮 pauseMeta guard 保留 plan → 不拍。
    */
   | { type: 'plan_snapshot'; items: { planItemId: string; status: PlanItem['status'] }[] }
+  /**
+   * 后台任务收尾报告：turn 终态收割存活后台进程后 emit（§14.5；无收割则不产，纯问答常态零块）。
+   * 与 `plan_snapshot` 同型（turn 收尾瞬态信号）：宿主上屏收尾条并桥接为 ProcessEvent 落盘
+   * （重放可见）；中断硬关闭（generator.return()）路径下 yield 被丢弃不上屏，但 LLM 历史
+   * 的 system 消息已由内核写入（收割报告双通道：chunk 上屏 + system 消息进史，不双写渲染）。
+   */
+  | { type: 'background_report'; content: string }
   | { type: 'done' }
 ) &
   RoundTagged;

@@ -114,6 +114,7 @@ function createMockProvider(guard: SecurityGuardStub): {
             permission: info.permission,
             beforeContent: info.beforeContent ?? null,
             afterContent: info.afterContent,
+            hasDiff: info.hasDiff, // 与 chatPanel.ts 真实现同步：diff 域判据透传内核单点
           });
         });
       };
@@ -173,6 +174,7 @@ describe('H0 写入审批流程', () => {
       needsConfirm: true,
       beforeContent: '旧内容',
       afterContent: '新内容',
+      hasDiff: true, // 写入场景：有 diff 对比域
     };
 
     // 触发写入请求（不 await：本用例只验证请求已发送，应答由后续用例覆盖）
@@ -188,6 +190,8 @@ describe('H0 写入审批流程', () => {
       expect(requestMsg!.permission).toBe('owner');
       expect(requestMsg!.beforeContent).toBe('旧内容');
       expect(requestMsg!.afterContent).toBe('新内容');
+      // hasDiff 判据归内核单点，经载荷透传（写入场景 true）
+      expect(requestMsg!.hasDiff).toBe(true);
       expect(requestMsg!.requestId).toBeDefined();
     });
   });
@@ -203,6 +207,7 @@ describe('H0 写入审批流程', () => {
       description: '测试写入',
       permission: 'owner' as const,
       needsConfirm: true,
+      hasDiff: false, // 简化载荷无内容字段：无 diff 域（真实写入场景内核恒下发内容）
     };
 
     // 触发写入请求
@@ -235,6 +240,7 @@ describe('H0 写入审批流程', () => {
       description: '测试写入',
       permission: 'owner' as const,
       needsConfirm: true,
+      hasDiff: false, // 简化载荷无内容字段：无 diff 域（真实写入场景内核恒下发内容）
     };
 
     const resultPromise = handler(info);
@@ -266,6 +272,7 @@ describe('H0 写入审批流程', () => {
       description: '测试写入',
       permission: 'owner' as const,
       needsConfirm: true,
+      hasDiff: false, // 简化载荷无内容字段：无 diff 域（真实写入场景内核恒下发内容）
     };
 
     const resultPromise = handler(info);
@@ -297,6 +304,7 @@ describe('H0 写入审批流程', () => {
       needsConfirm: true,
       beforeContent: 'const btn = <button>Click</button>;',
       afterContent: 'const btn = <button onClick={handler}>Click</button>;',
+      hasDiff: true, // 写入场景：有 diff 对比域
     };
 
     handler(info);
@@ -311,6 +319,8 @@ describe('H0 写入审批流程', () => {
       expect(requestMsg!.afterContent).toBe(
         'const btn = <button onClick={handler}>Click</button>;',
       );
+      // hasDiff 判据归内核单点，经载荷透传（写入场景 true）
+      expect(requestMsg!.hasDiff).toBe(true);
     });
   });
 
@@ -325,6 +335,7 @@ describe('H0 写入审批流程', () => {
       description: 'A',
       permission: 'owner' as const,
       needsConfirm: true,
+      hasDiff: false, // 简化载荷无内容字段：无 diff 域（真实写入场景内核恒下发内容）
     };
     const info2 = {
       targetPath: '/project/b.ts',
@@ -332,6 +343,7 @@ describe('H0 写入审批流程', () => {
       description: 'B',
       permission: 'owner' as const,
       needsConfirm: true,
+      hasDiff: false, // 简化载荷无内容字段：无 diff 域（真实写入场景内核恒下发内容）
     };
 
     const result1Promise = handler(info1);

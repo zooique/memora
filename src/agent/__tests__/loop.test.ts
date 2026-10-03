@@ -6570,13 +6570,35 @@ describe('AgentLoop · 后台命令回流与 turn 终态收割（§14）', () =>
     const taskId = registry.start(SLEEP_CMD);
     expect(registry.get(taskId)?.status).toBe('running');
 
-    await drain(loop.processUserInput('读取文件'));
+    const chunks = await drain(loop.processUserInput('读取文件'));
 
     // 终态收割：进程被杀 + 报告进上下文
     expect(registry.get(taskId)?.status).toBe('killed');
     const report = loop.getMessages().find((m) => m.content.includes('后台任务收割'));
     expect(report).toBeDefined();
     expect(report!.content).toContain(taskId);
+    // 双通道上屏轨：turn 收尾 yield background_report chunk（宿主上屏 + 桥接落盘，
+    // 与 plan_snapshot 同型瞬态信号；system 消息轨已由上方断言覆盖）。
+    // ⚠️ 时序契约在**宿主消费层**而非 chunk 层：done chunk 由迭代循环产出（在本 chunk 之前），
+    // 但宿主 chatPanel 的 done 消息在流耗尽后才 post（webview finalizeRound 触发点），
+    // 故 background_report 的 process_event 投影必然先于 finalize 到达——chunk 层顺序不断言
+    // （与 plan_snapshot 既有测试同口径，不过度指定内核内部结构）。
+    const bgChunk = chunks.find(
+      (c): c is Extract<AgentChunk, { type: 'background_report' }> =>
+        c.type === 'background_report',
+    );
+    expect(bgChunk).toBeDefined();
+    expect(bgChunk!.content).toContain(taskId);
+  });
+
+  it('纯问答无存活后台任务 → 不产 background_report（常态零块）', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([[{ content: '你好' }]]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    const chunks = await drain(loop.processUserInput('打招呼'));
+    expect(chunks.some((c) => c.type === 'background_report')).toBe(false);
   });
 
   it('mid-turn 回流在本 turn 内送达，且下一轮 LLM 请求里不再出现', async () => {

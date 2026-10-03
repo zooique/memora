@@ -238,6 +238,12 @@ export interface WriteConfirmationInfo {
   beforeContent?: string | null;
   /** 写入后内容预览（截断到 10KB）——供宿主 UI 展示 diff */
   afterContent?: string;
+  /**
+   * 本确认卡是否有 diff 对比域（判据归内核，宿主不猜——2026-10-03 实锤：宿主用
+   * truthy 判据猜「diff 域空不空」属措辞折叠型带伤，判据归位内核单点）。
+   * true 仅写入场景（confirmGate 的 diff 参数唯一传入点）；命令/代码/脚本执行三类恒 false。
+   */
+  hasDiff: boolean;
 }
 
 /** diff 内容最大长度（10KB），防大文件撑爆 IPC 传输和 UI 渲染。宿主 UI 展示上限从本常量 import 对齐（唯一真源） */
@@ -540,6 +546,8 @@ export class SecurityGuard {
       needsConfirm: needConfirm,
       beforeContent: diff?.beforeContent,
       afterContent: diff?.afterContent,
+      // diff 域语义判定单点：写入场景传了 diff 参数 → 有域；命令/代码/脚本三类不传 → 无域
+      hasDiff: diff !== undefined,
     };
 
     // 未注入 confirmationHandler 时 fail-closed 拒绝

@@ -1005,6 +1005,12 @@ export type ExtensionToWebviewMessage =
       permission: string;
       beforeContent?: string | null;
       afterContent?: string;
+      /**
+       * 本审批卡是否有 diff 对比域（判据归内核 `WriteConfirmationInfo.hasDiff` 单点，
+       * 宿主不再用 beforeContent/afterContent truthy 自猜——命令/代码/脚本执行三类恒 false，
+       * 即使载荷意外带了内容字段也不渲染 diff 域）。
+       */
+      hasDiff: boolean;
     }
   /**
    * 安全设置状态推送（设置面板加载时推送当前开关状态）
