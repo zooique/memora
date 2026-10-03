@@ -46,6 +46,8 @@ import {
   type SessionView,
   OPAQUE_WRITE_TOOL_NAMES,
   IGNORED_DIR_NAMES,
+  COMPRESS_TARGET_LABELS,
+  type CompressTarget,
 } from '@zooique/memora';
 
 /** 插话条数上限提示文案用值：直接消费内核真源（webview 侧无法 import 内核包，
@@ -999,11 +1001,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /** contextCompressed：LLM 主动压缩上下文（第二级压缩，与内核自动截断区分） */
   private readonly onContextCompressed = (info: {
-    target: string;
+    target: CompressTarget;
     replacedCount: number;
     summaryLength: number;
   }): void => {
-    const targetText = info.target === 'earliest_round' ? '最早轮次摘要' : '最大工具结果摘要';
+    // target→中文标签引内核 COMPRESS_TARGET_LABELS（穷尽 Record），
+    // 禁在本处写三元/else——枚举增补时三元会把新值落到旧标签上，对用户说谎
+    // （2026-10-03 CTX-WIN-2 落地时实证：earliest_steps 曾被三元显示成「最大工具结果摘要」）。
+    const targetText = COMPRESS_TARGET_LABELS[info.target];
     this.post({
       type: 'notice',
       level: 'info',

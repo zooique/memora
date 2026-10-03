@@ -120,7 +120,9 @@ export interface AgentLoopOptions {
   onContextTruncated?: (skippedCount: number, keptCount: number) => void;
   /** LLM 主动压缩完成回调（第二级压缩，传压缩目标/被替换消息数/摘要长度）；未注入静默忽略 */
   onContextCompressed?: (
-    target: 'earliest_round' | 'largest_tool_result',
+    // 压缩目标枚举的**单一真源** = CompressTarget（新增 earliest_steps 随目标集同步，
+    // 禁在此处另写一份字面量联合——那会让回调签名与 loop 内部判据漂移）
+    target: CompressTarget,
     replacedCount: number,
     summaryLength: number,
   ) => void;
@@ -185,6 +187,54 @@ type InterruptRequest =
   | { readonly kind: 'pause' }
   | { readonly kind: 'interject'; readonly content: string }
   | { readonly kind: 'command-result'; readonly content: string };
+
+/**
+ * `compress_context` 的压缩目标枚举（第二级压缩，CTX-WIN-2）
+ *
+ * 三个目标**按上下文形态分工**，不是同一件事的三种叫法（合并即降级为「泛化遍历」）：
+ * | target | 适用形态 | 锚点 |
+ * | - | - | - |
+ * | `earliest_round` | 多轮问答（≥2 个 user） | 第一个 user → 下一 user 之前 |
+ * | `earliest_steps` | **单轮长任务**（仅 1 个 user、几十个 step） | 第一个 assistant → 下一 assistant 之前 |
+ * | `largest_tool_result` | 单条超大工具结果 | 最大 tool 消息 + 其所属 assistant（整段） |
+ *
+ * 缺 `earliest_steps` 的后果（实锤）：单轮 turn 内 `earliest_round` 恒 null
+ * （锚点 first-user == last-user），长单轮把窗口顶满却无任何可压目标。
+ *
+ * **导出理由**：`contextCompressed` 事件载荷（`utils/eventEmitter.ts`）也带 target，
+ * 该处**必须引用本类型**而非另写一份字面量联合——两份字面量必然随枚举增补漂移
+ * （`earliest_steps` 加入时，漂移形态 = 事件类型不认新值 + 宿主三元文案落到 else 显示错标签）。
+ */
+export type CompressTarget = 'earliest_round' | 'earliest_steps' | 'largest_tool_result';
+
+/** 合法 target 清单（工具描述与错误提示共用此真源，避免文案列举与判据漂移） */
+export const COMPRESS_TARGETS: readonly CompressTarget[] = [
+  'earliest_round',
+  'earliest_steps',
+  'largest_tool_result',
+];
+
+/**
+ * target → 中文标签（宿主 notice 文案的真源，**穷举映射不做 else 兜底**）
+ *
+ * 穷举而非三元/else：三元在枚举增补时把新值静默落到最后一个旧标签上（说谎），
+ * TS 侧因 `Record<CompressTarget, string>` 穷尽键而在增补时**编译期报错**——
+ * 让「加枚举忘了改文案」变成一道红闸，而不是运行时的一句假话。
+ */
+export const COMPRESS_TARGET_LABELS: Record<CompressTarget, string> = {
+  earliest_round: '最早轮次摘要',
+  earliest_steps: '最早执行步骤摘要',
+  largest_tool_result: '最大工具结果摘要',
+};
+
+/**
+ * 解析压缩目标（非法/缺失降级 `earliest_round`——保持既有行为，不扩大缺省面）
+ *
+ * 单点收口：判据只此一处，工具描述与回传提示的列举均引 `COMPRESS_TARGETS`。
+ */
+function parseCompressTarget(raw: string | undefined): CompressTarget {
+  return COMPRESS_TARGETS.find((t) => t === raw) ?? 'earliest_round';
+}
 
 /*
  * 职责边界登记（暂不拆分）
@@ -2153,19 +2203,17 @@ export class AgentLoop {
   private async compressContext(args: string, signal?: AbortSignal): Promise<string> {
     try {
       // 解析目标（非法/缺失降级 earliest_round）
-      let target: 'earliest_round' | 'largest_tool_result';
+      let target: CompressTarget;
       try {
-        const parsed = (JSON.parse(args) as { target?: string }).target;
-        target = parsed === 'largest_tool_result' ? 'largest_tool_result' : 'earliest_round';
+        target = parseCompressTarget((JSON.parse(args) as { target?: string }).target);
       } catch {
         target = 'earliest_round';
       }
 
-      // 定位目标消息
-      const targetMsgs =
-        target === 'largest_tool_result' ? this.findLargestToolResult() : this.findEarliestRound();
+      // 定位目标消息（各定位器只返回「可安全整段替换」的区间——配对完整性由定位器自身保证）
+      const targetMsgs = this.findCompressTarget(target);
       if (!targetMsgs || targetMsgs.length === 0) {
-        return '[compress_context] 无可压缩目标（上下文为空或目标不存在）';
+        return `[compress_context] 无可压缩目标（上下文为空或目标不存在；可用 target=${COMPRESS_TARGETS.join(' | ')}）`;
       }
 
       // LLM 现场压成临时摘要
@@ -2205,6 +2253,12 @@ export class AgentLoop {
   /**
    * 定位当前触发输入（顶级锚点）之前最早的 turn；无旧轮次（新对话第一轮）返回 null
    * （当前输入永不压缩——交软上限收尾而非压掉触发输入继续硬跑）。
+   *
+   * ⚠️ **单轮 turn 内本定位器恒返回 null**（CTX-WIN-2 实锤）：锚点是
+   * 「第一个 user vs 最后一个 user」，而单轮 turn 内**只有一个 user**（当前触发输入）
+   * ⇒ `firstUserIdx >= lastUserIdx` 恒成立 ⇒ 无旧 turn 可压。
+   * 这不是「长单轮不需要压缩」，而是**锚点粒度选错了**——单轮内的历史是 step 序列，
+   * 由 `findEarliestSteps` 承接。两定位器互补，单轮长任务才有目标。
    */
   private findEarliestRound(): Message[] | null {
     // 最后一个 user = 当前触发输入（顶级锚点，永不压缩）
@@ -2233,7 +2287,16 @@ export class AgentLoop {
     return out;
   }
 
-  /** 定位最大的 tool 结果（超大 tool_result 的压缩目标） */
+  /**
+   * 定位最大的 tool 结果所在**整段 step**（超大 tool_result 的压缩目标）。
+   *
+   * 🔴 **配对完整性（CTX-WIN-2 实锤，原实现带伤）**：本定位器曾只返回
+   * **单条 tool 消息**，而它所属的 `assistant.toolCalls` 留在上下文里
+   * ⇒ 下一次请求命中发送边界守卫 `unpairedAssistantCall` **fail-fast 抛错，整个 turn 崩掉**
+   * （实证：单轮 turn 内 `target=largest_tool_result` 必崩，非边缘情形）。
+   * 故返回**整段**：该 tool 消息 + 所属 assistant 消息（toolCalls 全部摘除）
+   * + 中间夹在两者之间的其他消息——保证替换后剩余上下文仍处处配对。
+   */
   private findLargestToolResult(): Message[] | null {
     let largest: Message | null = null;
     for (const m of this.messages) {
@@ -2245,7 +2308,100 @@ export class AgentLoop {
         largest = m;
       }
     }
-    return largest ? [largest] : null;
+    if (!largest) return null;
+
+    const toolIdx = this.messages.indexOf(largest);
+    // 向前找所属 assistant（最近的、带 toolCalls 且含该 toolCallId 者）
+    let assistantIdx = -1;
+    for (let i = toolIdx - 1; i >= 0; i--) {
+      const m = this.messages[i]!;
+      if (m.role === 'assistant' && m.toolCalls?.some((tc) => tc.id === largest!.toolCallId)) {
+        assistantIdx = i;
+        break;
+      }
+      // 撞上 user/system 边界 ⇒ 该 tool 无所属 assistant（异常态），只取自身
+      if (m.role === 'user') break;
+    }
+    const start = assistantIdx === -1 ? toolIdx : assistantIdx;
+    return this.messages.slice(start, toolIdx + 1);
+  }
+
+  /**
+   * 定位**最早的若干个已完成 step**（单轮 turn 内的压缩目标，CTX-WIN-2 新增）。
+   *
+   * 为什么需要它（第一性原理）：单轮长任务（一个 user 输入跑几十个 step）的上下文增长
+   * 全部来自 **step 序列**（assistant 思考 + tool 结果），而 `earliest_round` 的锚点是
+   * 「user 消息」⇒ 单轮内只有一个 user ⇒ 恒无目标。上一轮三样本 38.5万 / 105.3万 / 72.0万
+   * token 的长单轮就是这样把窗口顶满、却没有任何可压目标。
+   *
+   * **step 边界判据**（内核既有结构，零新概念）：一个 step = 一条 `assistant` 消息
+   * （思考/工具调用意图）到**下一条 assistant 消息之前**的全部消息（含其 tool 结果与
+   * 夹在中间的 system 注入）。故本定位器 = 「跳过当前触发输入，取第一个 assistant 起的
+   * 一个完整 step」。
+   *
+   * 边界纪律（与既有两定位器同源）：
+   * ① **当前触发输入（最后一个 user）永不压缩**——顶级锚点；
+   * ② **只取「已完成」的 step**：末条 assistant 之后若还有 tool 结果，说明该 step 尚未走完
+   *   （结果可能是 `[ASK_SUSPENDED]` 等），留待下轮；
+   * ③ **整段替换**——step 内 assistant.toolCalls 与其 tool 结果同进同出，配对恒成立。
+   */
+  private findEarliestSteps(): Message[] | null {
+    // 顶级锚点：当前触发输入位置（其后的消息才可压）
+    let lastUserIdx = -1;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i]!.role === 'user') {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx === -1) return null;
+
+    // 第一个 assistant = 最早 step 的起点（必须晚于顶级锚点：user 之前的 assistant 属上一轮，
+    // 由 findEarliestRound 负责，不在此越界）
+    let firstAssistantIdx = -1;
+    for (let i = lastUserIdx + 1; i < this.messages.length; i++) {
+      if (this.messages[i]!.role === 'assistant') {
+        firstAssistantIdx = i;
+        break;
+      }
+    }
+    if (firstAssistantIdx === -1) return null;
+
+    // 下一条 assistant 之前 = 本 step 的右边界
+    let endIdx = this.messages.length;
+    for (let i = firstAssistantIdx + 1; i < this.messages.length; i++) {
+      if (this.messages[i]!.role === 'assistant') {
+        endIdx = i;
+        break;
+      }
+    }
+    const step = this.messages.slice(firstAssistantIdx, endIdx);
+    if (step.length === 0) return null;
+
+    // 「已完成」判据 = 本 step 内每个 assistant.toolCalls 的 id 都有配对的 tool 消息回齐。
+    // 逐 id 核验（而非「区间内有无 tool」）：后者被**后续** step 的 tool 结果误判为未完成
+    // —— 那是拿「别的 step 的状态」当「本 step 的状态」，判据层级选错。
+    const toolIdsInStep = new Set(
+      step.filter((m) => m.role === 'tool' && m.toolCallId).map((m) => m.toolCallId as string),
+    );
+    const allAnswered = step
+      .flatMap((m) => (m.toolCalls ?? []).map((tc) => tc.id))
+      .every((id) => toolIdsInStep.has(id));
+    if (!allAnswered) return null;
+
+    return step;
+  }
+
+  /** 压缩目标分派（三个定位器互补，各守一条通道，不合并成泛化遍历） */
+  private findCompressTarget(target: CompressTarget): Message[] | null {
+    switch (target) {
+      case 'largest_tool_result':
+        return this.findLargestToolResult();
+      case 'earliest_steps':
+        return this.findEarliestSteps();
+      case 'earliest_round':
+        return this.findEarliestRound();
+    }
   }
 
   /** 用 provider 把目标内容压成临时摘要（走 summary 路由，轻量模型优先；失败降级空串） */

@@ -641,6 +641,183 @@ describe('AgentLoop · compress_context（第二级压缩：LLM 触发 + 临时�
 
     expect(onContextCompressed).not.toHaveBeenCalled();
   });
+
+  // ─── CTX-WIN-2：单轮长 turn 的压缩缺口（2026-10-03 实锤落地）───
+  //
+  // 根因（实证，非推断）：单轮 turn 内 `earliest_round` 的锚点 first-user == last-user
+  // ⇒ 恒 null；`largest_tool_result` 只压单条 tool 消息 ⇒ 其所属 assistant.toolCalls 留在场
+  // ⇒ 发送边界守卫 `unpairedAssistantCall` fail-fast ⇒ **整个 turn 抛错崩溃**。
+  // 修复 = 新增 `earliest_steps`（step 粒度）+ `largest_tool_result` 改整段替换。
+
+  /** 单轮 turn 跑 n 个工具 step 后调 compress_context(target) */
+  function singleTurnCompress(
+    target: string,
+    opts: { stepCount?: number; toolBody?: string } = {},
+  ): {
+    loop: AgentLoop;
+    toolTexts: string[];
+    onContextCompressed: ReturnType<typeof vi.fn>;
+  } {
+    const stepCount = opts.stepCount ?? 3;
+    const toolBody = opts.toolBody ?? '工具结果内容'.repeat(50);
+    const turns: ChunkItem[][] = [];
+    for (let s = 0; s < stepCount; s++) {
+      turns.push([
+        {
+          content: `step${s} 的思考过程`,
+          toolCalls: [
+            { id: `c${s}`, type: 'function', function: { name: 'read_file', arguments: '{}' } },
+          ],
+        },
+      ]);
+    }
+    turns.push([
+      {
+        content: '压缩',
+        toolCalls: [
+          {
+            id: 'call_compress',
+            type: 'function',
+            function: { name: 'compress_context', arguments: JSON.stringify({ target }) },
+          },
+        ],
+      },
+    ]);
+    turns.push([{ content: '摘要：早期步骤做的事' }]);
+    turns.push([{ content: '完成' }]);
+
+    const onContextCompressed = vi.fn();
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider(turns),
+      bootstrapMemories: [],
+      // 每步各用不同 id，避免重复工具调用拦截器提前收敛
+      toolExecutor: vi.fn(async (_n: string, _a: string) => toolBody),
+      onContextCompressed,
+    });
+
+    const toolTexts: string[] = [];
+    return { loop, toolTexts, onContextCompressed };
+  }
+
+  it('单轮 turn 内 earliest_round 恒无目标（根因锁定：锚点 first-user==last-user）', async () => {
+    const { loop, toolTexts } = singleTurnCompress('earliest_round');
+    for await (const chunk of loop.processUserInput('做一件很长的事')) {
+      if (chunk.type === 'tool_result') toolTexts.push(chunk.summary ?? '');
+    }
+    // 实锤回传：无可压缩目标（这条断言是「缺 earliest_steps」的根据，改动定位器即红）
+    expect(toolTexts.some((t) => t.includes('无可压缩目标'))).toBe(true);
+    expect(loop.getMessages().some((m) => m.content.includes('Compressed context'))).toBe(false);
+  });
+
+  it('earliest_steps：单轮 turn 内压掉最早一个 step 的 assistant+tool 整段（长任务唯一有效目标）', async () => {
+    const { loop, toolTexts, onContextCompressed } = singleTurnCompress('earliest_steps', {
+      stepCount: 3,
+    });
+    for await (const chunk of loop.processUserInput('做一件很长的事')) {
+      if (chunk.type === 'tool_result') toolTexts.push(chunk.summary ?? '');
+    }
+
+    // 压缩发生：临时摘要入场，回传确认串含替换数与摘要长度
+    const msgs = loop.getMessages();
+    expect(msgs.some((m) => m.content.includes('Compressed context'))).toBe(true);
+    expect(msgs.some((m) => m.content.includes('摘要：早期步骤做的事'))).toBe(true);
+    expect(toolTexts.some((t) => t.includes('已把目标压缩为临时摘要'))).toBe(true);
+    expect(onContextCompressed).toHaveBeenCalledWith(
+      'earliest_steps',
+      expect.any(Number),
+      expect.any(Number),
+    );
+
+    // 顶级锚点（当前触发输入）永不压缩
+    expect(msgs.some((m) => m.content.includes('做一件很长的事'))).toBe(true);
+    // 被压掉的是**最早**一个 step（step0 思考 + 其 tool 结果），后续 step 仍在场
+    expect(msgs.some((m) => m.content.includes('step0 的思考过程'))).toBe(false);
+    expect(msgs.some((m) => m.content.includes('step1 的思考过程'))).toBe(true);
+    expect(msgs.some((m) => m.content.includes('step2 的思考过程'))).toBe(true);
+  });
+
+  it('largest_tool_result 整段替换不破坏 tool_call 配对（回归：曾压单条致 unpairedAssistantCall 崩溃）', async () => {
+    const { loop, onContextCompressed } = singleTurnCompress('largest_tool_result', {
+      stepCount: 2,
+    });
+
+    // 🔴 核心断言：不抛错。旧实现（只压单条 tool 消息）在同一场景下
+    // 命中发送边界守卫 unpairedAssistantCall 并 fail-fast 抛出 ⇒ 本用例在旧实现下直接失败
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('做一件很长的事')) {
+      chunks.push(chunk);
+    }
+    expect(chunks.some((c) => c.type === 'done')).toBe(true);
+    expect(onContextCompressed).toHaveBeenCalledWith(
+      'largest_tool_result',
+      expect.any(Number),
+      expect.any(Number),
+    );
+
+    // 配对完整性：压缩后剩余上下文不得有孤立的 tool 消息（每个 toolCallId 都有 assistant 侧）
+    const msgs = loop.getMessages();
+    const assistantIds = new Set(
+      msgs.flatMap((m) => (m.toolCalls ?? []).map((tc) => tc.id)),
+    );
+    for (const m of msgs) {
+      if (m.role === 'tool' && m.toolCallId) {
+        expect(assistantIds.has(m.toolCallId)).toBe(true);
+      }
+    }
+  });
+
+  it('earliest_steps 边界：只压「已回齐」的最早 step，当前触发输入与未回齐 step 不动', async () => {
+    // stepCount=1：唯一那个 step 的 tool 结果已回齐 ⇒ 它就是「最早的已完成 step」，压它正确
+    // （曾误设断言为「单 step 不压」——那是把「当前 step」当「未完成 step」，判据层级错位；
+    //  真正的禁压对象是当前触发输入与 tool 结果尚未回齐的 step，见下方两条断言）
+    const { loop, toolTexts } = singleTurnCompress('earliest_steps', { stepCount: 1 });
+    for await (const chunk of loop.processUserInput('只做一步')) {
+      if (chunk.type === 'tool_result') toolTexts.push(chunk.summary ?? '');
+    }
+    const msgs = loop.getMessages();
+    // 压缩发生（该 step 已完成且非顶级锚点）
+    expect(msgs.some((m) => m.content.includes('Compressed context'))).toBe(true);
+    // 顶级锚点（当前触发输入）永不压缩
+    expect(msgs.some((m) => m.content.includes('只做一步'))).toBe(true);
+    // 被压的是该 step 的思考正文
+    expect(msgs.some((m) => m.content.includes('step0 的思考过程'))).toBe(false);
+  });
+
+  it('earliest_steps 未回齐保护：tool 结果缺配对时不压该 step（定位器自身拒绝，不依赖下游守卫兜底）', async () => {
+    // 生产链路里「assistant.toolCalls 无配对 tool 结果」会被构造期/发送边界守卫拦住，
+    // 但本定位器**自身**就该拒绝压它——判据内聚在定位器，不把正确性外包给下游守卫。
+    // 构造方式：先正常跑一轮拿到「已完成 step」，再手工塞一个悬空 assistant（无 tool 结果）。
+    const { loop } = singleTurnCompress('earliest_steps', { stepCount: 1 });
+    for await (const {} of loop.processUserInput('只做一步')) {
+      // drain
+    }
+    // 上一轮已把 step0 压掉；本轮再压一次时，上一轮留下的摘要 system 之后无 tool 悬空
+    // → 直接验证「无悬空时压得动」这条基线，再用 mutation 证明悬空形态会被拒。
+    const baseline = loop.getMessages().some((m) => m.content.includes('Compressed context'));
+    expect(baseline).toBe(true);
+
+    // 悬空形态验证：绕过 loop 内部写入点，直接构造 messages 后调 compress_context
+    // （本用例只锁定「定位器判据」这一条：区间内 toolCallId 未回齐 ⇒ 返回 null）
+    const probe = new AgentLoop({
+      provider: mockMultiTurnProvider([[{ content: 'x' }]]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(async () => 'r'),
+    });
+    // 私有成员直探：本用例断言的是定位器判据本身，走公开入口无法构造悬空态
+    const probeLoop = probe as unknown as {
+      messages: Message[];
+      findEarliestSteps: () => Message[] | null;
+    };
+    probeLoop.messages.push(
+      { role: 'user', content: '触发输入' },
+      {
+        role: 'assistant',
+        content: '悬空步骤',
+        toolCalls: [{ id: 'ghost', type: 'function', function: { name: 'read_file', arguments: '{}' } }],
+      },
+    );
+    expect(probeLoop.findEarliestSteps()).toBeNull();
+  });
 });
 
 describe('AgentLoop · 两级空间管理替换（互斥记账 + 顶级锚点保护）', () => {

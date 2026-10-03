@@ -234,14 +234,19 @@ export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
   description:
     '当上下文接近容量上限或空间紧张时主动压缩空间（第二级压缩，LLM 触发兜底）：把最早的 turn' +
     '或超大工具结果现场压成临时摘要替换，loop 收尾即弃。当替换无法释放空间（无已存摘要）时、或存在' +
-    '超大工具结果 / 较多旧 turn 时使用；压缩内容仍可经 trace_summary 回溯。',
+    '超大工具结果 / 较多旧 turn 时使用；压缩内容仍可经 trace_summary 回溯。' +
+    '⚠️ target 选型：一次长任务（你已连续调用多个工具、同一问题下的多步执行）内，' +
+    '用 earliest_steps 压缩最早的那个执行步骤——这是长任务里唯一有效的目标；' +
+    'earliest_round 只在「用户已问过多个问题」（上下文里有多个用户提问）时才有目标。',
   parameters: {
     type: 'object',
     properties: {
       target: {
         type: 'string',
         description:
-          '压缩目标："earliest_round"（最早的 turn，默认）或 "largest_tool_result"（最大的工具结果）',
+          '压缩目标（缺省 earliest_round）："earliest_steps"（当前任务内最早的一个执行步骤，' +
+          '**长任务首选**）| "earliest_round"（最早的对话轮次，仅在上下文含多个用户提问时有效）| ' +
+          '"largest_tool_result"（最大的单条工具结果，连同其所属步骤一并压缩）',
       },
     },
     required: [],

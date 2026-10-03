@@ -38,6 +38,14 @@ export {
   type EstimableMessage,
 } from '@/agent/contextManager.js';
 export { type AgentForkResult } from '@/agent/managers/sessionManager.js';
+// 第二级压缩的 target 枚举 + 中文标签（宿主 notice 文案真源）：
+// 宿主**不得**自己写 target→文案映射——三元/else 在枚举增补时会把新值静默落到旧标签上
+// （对用户说谎），而 `Record<CompressTarget, string>` 穷尽键在增补时编译期报错。
+export {
+  COMPRESS_TARGETS,
+  COMPRESS_TARGET_LABELS,
+  type CompressTarget,
+} from '@/agent/loop.js';
 export type { SessionManager } from '@/agent/managers/sessionManager.js';
 export type {
   ToolDefinition,

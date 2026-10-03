@@ -5,6 +5,7 @@
 import { getLogger } from '@/utils/loggerHolder.js';
 import { toError } from '@/utils/toError.js';
 import type { AskQuestion } from '@/agent/types.js';
+import type { CompressTarget } from '@/agent/loop.js';
 
 /** Agent 事件名常量（运行时真理源，与 AgentEventMap 键集一致） */
 export const AGENT_EVENTS = {
@@ -61,9 +62,11 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   projectSwitched: { from: string | null; to: string; projectName: string };
   archiveFailed: { stage: 'session'; message: string };
   contextTruncated: { skippedCount: number; keptCount: number };
-  /** LLM 主动压缩完成载荷：压缩目标 + 被替换消息数 + 摘要长度 */
+  /** LLM 主动压缩完成载荷：压缩目标 + 被替换消息数 + 摘要长度
+   * ⚠️ target 类型**引用 loop 的 CompressTarget**（不另写字面量联合）——枚举增补时
+   * 本处自动跟随，禁在此复制一份（两份字面量 = 必然漂移）。 */
   contextCompressed: {
-    target: 'earliest_round' | 'largest_tool_result';
+    target: CompressTarget;
     replacedCount: number;
     summaryLength: number;
   };

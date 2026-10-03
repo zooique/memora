@@ -39,6 +39,22 @@
 - ⚠️ **`shell` 字段语义 = 本会话执行器实际派发的 shell**（不是集成终端/登录 shell）：内核 `resolveShellCommand` 恒定映射 win32 → `cmd /c`、其余 → `sh -c`，不读环境变量。两侧互为镜像，改一侧必须同批改另一侧（宿主测试从内核源码文本提取真源比对，防单边漂移）
 - **刻意不做**：内核内置探测（派生判定律：环境事实不得升级为内核判据）、执行期自动语言切换（抢模型决策权）、cwd/git 分支注入（阶段 2 观察）
 
+### Fixed（内核+宿主 · `compress_context` 单轮长 turn 压缩缺口 + 崩溃修复 · `CTX-WIN-2`，已定档 3.1.0）
+
+**问题（诊断实锤，非推断）**：长单轮任务（一个提问跑几十个 step）把上下文顶满时，`compress_context` 结构性无可压目标——台账原描述「只能靠换区间重读硬扛」，实测**比这更严重**：
+
+- `target=earliest_round` 在单轮 turn 内**恒返回 null**：锚点是「第一个 user vs 最后一个 user」，而单轮内只有一个 user（当前触发输入）⇒ 必然重合
+- `target=largest_tool_result` **用了就崩**：原实现只压单条 tool 消息，其所属 `assistant.toolCalls` 留在上下文 ⇒ 发送边界守卫 `unpairedAssistantCall` fail-fast 抛错，**整个 turn 中断**
+
+**根因**：不是「压缩能力不足」，而是**锚点粒度选错**——单轮内的历史是 **step 序列**，而既有定位器的锚点是 **user 消息**。
+
+- **新增 `target=earliest_steps`**（step 粒度，长任务首选）：step 边界 = 一条 `assistant` 消息 → 下一条 `assistant` 之前；「已回齐」判据 = 区间内每个 `assistant.toolCalls.id` 都有配对 tool 消息（未回齐不压，避免丢未完成语义）
+- **`largest_tool_result` 改整段替换**：该 tool 消息 + 所属 assistant 消息同进同出 ⇒ 配对恒成立，修掉崩溃
+- **target 枚举单点化并公开导出**：`CompressTarget` / `COMPRESS_TARGETS` / `COMPRESS_TARGET_LABELS`。标签表用 `Record<CompressTarget, string>` **穷尽键** ⇒ 日后加 target 忘改宿主文案 = **编译期红闸**（原宿主三元 `target === 'earliest_round' ? A : B` 会把新值静默显示成「最大工具结果摘要」= 对用户说谎）
+- 工具描述补 target 选型指引；「无可压目标」的回传串列出合法 target 值（此前只说「目标不存在」，模型无法自纠）
+
+**兼容性**：`target` 仍为可选参数，缺省/非法值仍降级 `earliest_round`——既有集成方零改动。新增导出为纯增量。
+
 ### Changed（内核 · 待注入插话上限裁决收口内核 · `KERNEL-QUEUE-LIMIT-1`，已定档 3.1.0）
 
 **债务清偿**：INPUT-LIMIT-1 落地时插话条数上限只做在宿主两层（webview 预检 + extension 闸门），内核 `loop.interruptQueue` 本体 push 前无上限——第三方集成方绕过宿主直调 `agent.interject()` 仍可塞爆队列（队列是内核资源不变量，该内核自己堵，不能指望每个集成方自带限额）。

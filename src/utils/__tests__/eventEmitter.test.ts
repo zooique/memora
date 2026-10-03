@@ -202,3 +202,30 @@ describe('utils/eventEmitter · TypedEventEmitter', () => {
     });
   });
 });
+
+/**
+ * contextCompressed 载荷的 target 枚举守卫（CTX-WIN-2 落地连带）
+ *
+ * 守卫的是**类型层漂移**这一类伤：`AgentEventMap.contextCompressed.target` 曾另写一份
+ * 字面量联合（与 loop 的 CompressTarget 平行），枚举增补 `earliest_steps` 时不跟随 ⇒
+ * 事件类型不认新值 + 宿主文案落到旧标签。类型层已改为引用 CompressTarget，
+ * 本用例锁住运行期一致性（键集与 COMPRESS_TARGETS 双向相等 + 标签非空）。
+ */
+describe('contextCompressed 载荷 · target 枚举一致性', () => {
+  it('COMPRESS_TARGET_LABELS 键集与 COMPRESS_TARGETS 双向相等（穷尽 Record 已保证编译期，此处锁运行期）', async () => {
+    const { COMPRESS_TARGETS, COMPRESS_TARGET_LABELS } = await import('@/agent/loop.js');
+    expect(Object.keys(COMPRESS_TARGET_LABELS).sort()).toEqual([...COMPRESS_TARGETS].sort());
+    // 每个 target 都有非空中文标签（空标签 = notice 渲染出「上下文已压缩：，替换…」）
+    for (const t of COMPRESS_TARGETS) {
+      expect(COMPRESS_TARGET_LABELS[t].length).toBeGreaterThan(0);
+    }
+  });
+
+  it('新增 target 时标签表必须同步（点名的具体伤：earliest_steps 曾被宿主三元显示成「最大工具结果摘要」）', async () => {
+    const { COMPRESS_TARGET_LABELS } = await import('@/agent/loop.js');
+    expect(COMPRESS_TARGET_LABELS.earliest_steps).toBe('最早执行步骤摘要');
+    // 三者互不相同——若两个 target 共用同一标签，notice 就无法区分实际压了什么
+    const labels = Object.values(COMPRESS_TARGET_LABELS);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+});
