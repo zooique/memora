@@ -1,14 +1,14 @@
 # Changelog
 
-本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号——其变更与本轮**已定档 3.1.0** 的项一并归入 `[Unreleased]` 区。
+本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号。`[Unreleased]` 按 ADR-033 双版本线拆为**两个同构子区**：`[Unreleased] · 内核`（随 3.1.0 发版，不提前 bump）与 `[Unreleased] · 宿主`（随做随用，攒批随 `vsce package` 定版）。
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
 > **版本定位（v3.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。早期版本（2.1.0 及以下）为探索性迭代；**3.0.0 是架构收敛后的第一个稳定基线**，API 与结构以 3.0.0 为准。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与单测（2700+ 用例）负责，不对"agent 整体行为稳定"作承诺。
 
-## [Unreleased]（宿主变更 · 不占内核版本号）
+## [Unreleased] · 内核（已定档 3.1.0 · 未发版）
 
-> **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不占内核版本号（理由见文首说明）。内核 3.0.0 的发版内容在其下方。
+> **本区归属**：仅**内核**（`@zooique/memora`）变更，随 3.1.0 发版。**不提前 bump**——`package.json` 版本号仍为 3.0.1，bump 属发版动作而非落地动作（ADR-033）。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
 
 ### ⚠️ Breaking（内核 · 确认载荷与 chunk/事件变体 · 已定档 3.1.0）
 
@@ -63,6 +63,32 @@
 - **宿主消费真源**：extension 闸门改消费 `interject()` 返回值（快照预检自写判据退役，宿主零裁决逻辑）；webview 预检仍用 `shared/constants.ts` 镜像常量（webview 无法 import 内核包），同值关系由宿主守卫测试锁定（漂移即红）；pause 条目不受上限管辖（内部控制语义非用户输入洪流）
 - **测试**：内核 loop 上限用例（满员拒收不入队 / 删一条可再入 / pause 不受限）+ 变异闭环（判据 off-by-one 精准红）；`constants.test` 键数守卫 24→25 同步；agent 层 +4 用例（未初始化断言 / 受理入队返回 true / 满员拒收返回 false 队列不增 / 删一腾位再入——返回值透传与队列状态链路贯通；落盘内容无公开读口，闭环节点持久化由 messageHistory.test 既有覆盖）；宿主 chatPanelInput 11 用例（桩默认受理态 / 满员拒收不上屏 / 防误伤上屏 / 跨包同值守卫）
 - **版本**：内核语义变更（接口返回值 void→boolean + 新增常量），随已定档的 3.1.0 一并发布，不单独发版
+
+## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
+
+> **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
+
+### Fixed（宿主 · 任务项组层级与折叠箭头右置 · `TOP-UI-2` / `TOP-UI-3`）
+
+**缺口（用户真机反馈）**：对话流任务表四级内容左对齐糊成一片；折叠箭头左置压迫行首，标题无法顶格。
+
+- **定案形态**：组标题（`summary`）**顶格最外侧**、与叙述/工具行同列（组本身零 padding、无边线——边线恒在最左，与「标题最外侧」结构性冲突，分组语义由下方组内缩进独立表达）；**组内过程行缩进一档**（`--sp-6` = 16px，与正文 markdown 列表缩进同档）
+- **折叠箭头分槽**：chevron 移 `::after` 绝对定位右缘（收起「＞」/ 展开「⌄」），状态环保留 `::before` 紧跟工具名——原「高特异性覆盖」方案的两条 `transform: none` 防漂移 hack 随分槽退役；summary 加 `position: relative` + `padding-right: 14px`；运行中工具行右缘 chevron 压掉（环即状态即类型，防双标识）
+- **落地过程**：`bf2b8f0d` → `6b86973b`（推翻首刀「组整体右移」方案）→ `b82d7a21`（chevron 右置）三刀；运行时与重放共用 `getOrCreatePlanItemGroup` 唯一构造点，改样式即两路径同逻辑生效
+- ⚠️ **零自动化测试覆盖**：纯 CSS 单文件改动（`chatStyles.ts`），DOM 断言不覆盖 ⇒ 验收口径为「点验前 `npm run compile` 重建 dist + 真机对照」（宿主 dist 已随本批过期）
+
+### Fixed（宿主 · 角色页详情/编辑弹窗永不出现 · `RP-EDIT-1` 功能不可达回归）
+
+**根因**：`roles_detail_data` 的重挂判据写成「弹窗已开才重挂」（`if (detailOverlay) renderDetailView()`）。该消息只有两个发送点——① `roles_detail` 应答（用户点卡片，**此时弹窗未开** → 首挂查看态）、② `roles_save` 成功回发（弹窗必然开着 → 先摘后挂回显）。判据把场景①整体挡死 ⇒ **详情/编辑功能从未弹出过**。
+
+- **修法**：`roles_detail_data` 到达即无条件 `renderDetailView()`（`mountDetailModal` 幂等，`detailOverlay?.remove()` 先摘后挂，两场景同函数通吃）
+- **纪律**：RP-EDIT-1 销项时判定为「✅ 已落地 · ⏳ 待真机点验」，真机一验即现**功能整体不可达**。同型于 `CMD-1-BYPASS-FIX` 已立纪律——新增判定分支必须同时补「该分支被走到」的用例，fixture 取生产真实形态；「单侧单测全绿」只证明没跑到
+- **测试**：`rolesView.test.ts` +93 行 / 18 passed（2026-10-04 实测）
+
+### Fixed（宿主 · 待发送区空条常驻 + 队伍幽灵引用清理 · `STATUS-DOCK-FIX` / `TEAM-GHOST-1`）
+
+- **待发送区空条常驻**（`5aaff721`）：空态判断**提前至懒创建前**（与文件改动条范式同构）——先判空再建 DOM，杜绝「有容器无内容」的空条常驻；新增 2 条测试锁定
+- **组员侧标注退役 + 启动/面板读期队伍对账**（`b9c93eba`）：`reconcileTeams` 纯函数 + 双接线点写回 `globalState`，清幽灵引用（队伍已删但标注仍在）
 
 ### Added（宿主 · 角色包编辑 UI `RP-EDIT-1`：键面查看与编辑——键面单源内核，保存全链路 extension 侧）
 
