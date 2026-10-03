@@ -1624,18 +1624,18 @@ export const chatStyles = `
    * 归入对应任务项折叠块（summary 显示「任务项 N · 标题」），实现「边界切组、任务项内平铺」。
    * 无 plan_item_boundary 时不出现（退回整轮扁平）。默认收起——任务项过程属过程明细，报告保持简洁。 */
   .round-block__plan-item {
-    /* 缩进两档拉层级（2026-10-04 用户真机反馈「任务表内记录无缩进、视觉一片」）：
-     * 第一档 = 组本身相对外层叙述/工具行凸出（padding-left 8→16px，与正文 markdown 列表缩进同档）；
-     * 第二档见下方 :not(summary) 规则 = 组内过程行相对组标题再缩进。
+    /* 层级形态（2026-10-04 用户复测指认，推翻首刀「组整体右移」方案）：
+     * 组标题（summary）顶格显示在最外侧、与叙述/工具行同列——组本身零 padding、无边线
+     * （边线与「标题最外侧」结构性冲突：线恒在最左，标题永远差线宽无法顶格；
+     *   分组语义由下方组内缩进独立表达，线成冗余，伴生 border-radius 一并清理）。
      * 运行时与重放共用本类（getOrCreatePlanItemGroup 唯一构造点），改样式即两路径同逻辑生效。 */
-    margin: var(--sp-2, 6px) 0; padding-left: var(--sp-6, 16px);
-    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
-    border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
+    margin: var(--sp-2, 6px) 0;
   }
-  /* 组内二级缩进：summary 之外的过程行（narrate/tool/thought/输入条目）相对组标题右移一档。
+  /* 组内二级缩进：summary 之外的过程行（narrate/tool/thought/输入条目）相对组标题右移一档
+   * （--sp-6 = 16px，与正文 markdown 列表缩进同档）。首刀 6px 过浅不可感知 = 「视觉一片」根因。
    * 用 :not(summary) 而非包 wrapper——组内行平铺 details 顶层（无共同容器），包容器会破坏
    * insertPlanItemGroupInOrder 的「root 直接子节点」排序前提，属带伤改法。 */
-  .round-block__plan-item > :not(summary) { margin-left: var(--sp-2, 6px); }
+  .round-block__plan-item > :not(summary) { margin-left: var(--sp-6, 16px); }
   .round-block__plan-item-summary {
     cursor: pointer; user-select: none; outline: none; list-style: none;
     font-size: var(--font-xs, 11px); color: var(--text-secondary, #9aa0a6);
