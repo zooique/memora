@@ -10,6 +10,17 @@
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更，随 3.1.0 发版。**不提前 bump**——`package.json` 版本号仍为 3.0.1，bump 属发版动作而非落地动作（ADR-033）。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
 
+### Added（内核 · 后台任务宿主出口 `listBackgroundTasks` / `killBackgroundTask` · CMD-1 阶段 2 缺口）
+
+**缺口**：后台任务运行态对用户零可见、无 kill 入口——`BackgroundTaskRegistry` 的 `list()` / `kill()` 能力早已齐备，但 `src/index.ts` **零导出**，宿主拿不到数据通道（不是「没画 UI」，是「取不到数」）。
+
+- **新增门面方法**（纯委托，零新逻辑）：`agent.listBackgroundTasks(): readonly BackgroundTask[]`、`agent.killBackgroundTask(taskId): BackgroundTask | null`；委托链 = agent → loop → 注册表，**不复制任何判据**（复制即第二真理源）
+- **只出方法不出类**：注册表是 **Agent 实例级**（单例会让 `kill_command` 杀掉别的会话起的进程），导出类 = 把实例化权交给宿主 = 破坏隔离不变量
+- **投影不泄漏句柄**：返回对象的键只有 `taskId / command / startedAt / status / result?`，`killNow` / `peek` 已由 `projection()` 剥离（有守卫测试钉死）
+- **新增类型导出**：`BackgroundTask` / `BackgroundTaskStatus`（只读投影类型）
+- **测试**：loop 层 5 条（未装配不抛 / 运行态可见 / kill 返回终态 / 未知 id 返回 null / 不泄漏句柄）+ 变异验证 2 组有效。**变异副产品**：原 `kill` 后的二次判空是**冗余分支**（`get()` 对未知 id 同为 null，删早退行为完全等价）→ 按无僵尸分支纪律删除，不留不可测代码
+- **方案文档**：`docs/方案-后台任务可见性与kill入口-20261004.md`（实施规格真源；宿主侧协议 + UI 为后续刀次，本文只落内核出口）
+
 ### ⚠️ Breaking（内核 · 确认载荷与 chunk/事件变体 · 已定档 3.1.0）
 
 **升级即需改代码**（TS 集成方必读）：

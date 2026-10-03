@@ -19,6 +19,7 @@ import type {
   SessionCheckpoint,
 } from '@/agent/types.js';
 import type { InteractiveInputKind } from '@/memory/roundStore.js';
+import type { BackgroundTask } from '@/agent/backgroundTasks.js';
 import type { ToolExecutor } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
@@ -1122,6 +1123,34 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (!calls || calls.length === 0) return [];
     // 取最近 limit 条并浅拷贝，避免宿主引用改动污染检查点（FIFO 封顶后 slice 安全）
     return calls.slice(-limit).map((r) => ({ ...r }));
+  }
+
+  /**
+   * 后台任务只读快照（宿主 UI 出口 · 见 `docs/方案-后台任务可见性与kill入口-20261004.md` §2.1）
+   *
+   * 委托 loop → `BackgroundTaskRegistry.list()`。返回**只读投影**
+   * （taskId / command / startedAt / status / result?），不含进程句柄——
+   * 宿主拿它渲染列表，但**无从操纵进程**（注册表按 Agent 实例隔离，
+   * 导出注册表类会让宿主跨会话 kill，故只出方法不出类）。
+   *
+   * 未初始化返回空数组，与既有门面同构（不抛）。
+   */
+  listBackgroundTasks(): readonly BackgroundTask[] {
+    this.assertInitialized('listBackgroundTasks');
+    return this.requireLoop.getBackgroundTasks();
+  }
+
+  /**
+   * 终止后台任务（宿主 UI 出口 · 同上 §2.1）
+   *
+   * 委托 loop → `BackgroundTaskRegistry.kill()`：先取已捕获输出快照再杀树，
+   * 返回终态投影（用户点「终止」即等价于模型调 `kill_command`）。
+   *
+   * @returns 终态投影；`taskId` 不存在 → `null`
+   */
+  killBackgroundTask(taskId: string): BackgroundTask | null {
+    this.assertInitialized('killBackgroundTask');
+    return this.requireLoop.killBackgroundTask(taskId);
   }
 
   /**

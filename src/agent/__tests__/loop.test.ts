@@ -6936,3 +6936,79 @@ describe('AgentLoop · 后台命令回流与 turn 终态收割（§14）', () =>
     expect(injectedCount).toBe(LOOP_CONSTANTS.MAX_PENDING_COMMAND_RESULTS * 2);
   });
 });
+
+describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
+  // 长驻命令：20s 后自退，测试内显式收割避免残留
+  const BG_SLEEP_CMD = 'node -e setTimeout(function(){},20000)';
+
+  function makeBgLoop(): AgentLoop {
+    return new AgentLoop({
+      provider: mockMultiTurnProvider([[{ content: '好' }]]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+  }
+
+  it('未装配注册表 → 列表空、kill 返回 null（不抛）', () => {
+    const loop = makeBgLoop();
+    expect(loop.getBackgroundTasks()).toEqual([]);
+    expect(loop.killBackgroundTask('bg-1')).toBeNull();
+  });
+
+  it('装配后列表反映注册表运行态', () => {
+    const loop = makeBgLoop();
+    const registry = new BackgroundTaskRegistry();
+    loop.setBackgroundTasks(registry);
+    const taskId = registry.start(BG_SLEEP_CMD);
+    try {
+      const tasks = loop.getBackgroundTasks();
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]?.taskId).toBe(taskId);
+      expect(tasks[0]?.status).toBe('running');
+    } finally {
+      registry.reapAll();
+    }
+  });
+
+  it('kill 真实任务 → 返回终态投影（status=killed）', () => {
+    const loop = makeBgLoop();
+    const registry = new BackgroundTaskRegistry();
+    loop.setBackgroundTasks(registry);
+    const taskId = registry.start(BG_SLEEP_CMD);
+    const killed = loop.killBackgroundTask(taskId);
+    try {
+      expect(killed?.taskId).toBe(taskId);
+      expect(killed?.status).toBe('killed');
+    } finally {
+      registry.reapAll();
+    }
+  });
+
+  it('kill 不存在的 taskId → null（不误伤、不凭空建条目）', () => {
+    const loop = makeBgLoop();
+    const registry = new BackgroundTaskRegistry();
+    loop.setBackgroundTasks(registry);
+    try {
+      expect(loop.killBackgroundTask('bg-999')).toBeNull();
+      expect(loop.getBackgroundTasks()).toEqual([]);
+    } finally {
+      registry.reapAll();
+    }
+  });
+
+  it('投影不泄漏进程句柄（killNow / peek 不在返回键上）', () => {
+    const loop = makeBgLoop();
+    const registry = new BackgroundTaskRegistry();
+    loop.setBackgroundTasks(registry);
+    registry.start(BG_SLEEP_CMD);
+    try {
+      const task = loop.getBackgroundTasks()[0];
+      expect(task).toBeDefined();
+      const keys = Object.keys(task as object);
+      expect(keys).not.toContain('killNow');
+      expect(keys).not.toContain('peek');
+    } finally {
+      registry.reapAll();
+    }
+  });
+});

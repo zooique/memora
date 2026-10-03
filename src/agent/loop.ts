@@ -78,6 +78,7 @@ import { ToolRunner } from '@/agent/toolRunner.js';
 import { detectNeedsPlanning, PLAN_NUDGE_PROMPT } from '@/agent/needsPlanning.js';
 import {
   formatBackgroundTaskNotice,
+  type BackgroundTask,
   type BackgroundTaskRegistry,
 } from '@/agent/backgroundTasks.js';
 
@@ -884,6 +885,32 @@ export class AgentLoop {
     registry.setCompletionListener((task) => {
       this.enqueueCommandResult(formatBackgroundTaskNotice(task));
     });
+  }
+
+  /**
+   * 后台任务只读快照（宿主 UI 出口 · 见 `docs/方案-后台任务可见性与kill入口-20261004.md` §2.1）
+   *
+   * 纯透传注册表 `list()`——投影已剥离 `killNow` / `peek` 进程句柄，宿主无从触碰进程。
+   * 注册表未装配（后台能力未启用 / 装配期之前）返回空数组，不抛。
+   */
+  getBackgroundTasks(): readonly BackgroundTask[] {
+    return this.backgroundTasks?.list() ?? [];
+  }
+
+  /**
+   * 终止后台任务（宿主 UI 出口 · 同上 §2.1）
+   *
+   * 纯透传注册表 `kill()`：先取已捕获输出快照再走杀树原语，随后回读终态投影。
+   * 任务不存在 → `null`（`kill` 与 `get` 对未知 taskId 同为 null，无需二次判空）。
+   *
+   * ⚠️ 主动 kill 不触发回流——输出已直接返回调用方，再回流一次会让 LLM
+   * 收到同一份结果的第二份副本（重复消费）。
+   */
+  killBackgroundTask(taskId: string): BackgroundTask | null {
+    if (!this.backgroundTasks) return null;
+    // kill 对未知 taskId 返回 null 时 get 同样为 null，无需二次判空（防冗余分支）
+    this.backgroundTasks.kill(taskId);
+    return this.backgroundTasks.get(taskId);
   }
 
   /**
