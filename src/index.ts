@@ -274,6 +274,8 @@ export type { SessionCheckpoint, PauseMeta, PlanItemOutcome, PlanItem } from '@/
 // 后台任务只读投影（宿主 UI 列表出口：`agent.listBackgroundTasks()` / `killBackgroundTask()`
 // 的载荷类型）。只出类型不出注册表类——注册表是 Agent 实例级，出类会让宿主跨会话 kill。
 export type { BackgroundTask, BackgroundTaskStatus } from '@/agent/backgroundTasks.js';
+// 后台任务状态中文词表（宿主 UI 直接消费，禁自建第二套；Record 穷尽键 = 加状态忘补文案编译期红）
+export { BACKGROUND_TASK_STATUS_LABELS } from '@/agent/backgroundTasks.js';
 // MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）
 export type { ForkResult } from '@/agent/messageHistory.js';
 // 注：extractKeywords 为 keywordsTouch 导出的内核分词 SSOT（project-search/terms.ts 同源消费，不另造分词器），

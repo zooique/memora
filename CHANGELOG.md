@@ -18,6 +18,7 @@
 - **只出方法不出类**：注册表是 **Agent 实例级**（单例会让 `kill_command` 杀掉别的会话起的进程），导出类 = 把实例化权交给宿主 = 破坏隔离不变量
 - **投影不泄漏句柄**：返回对象的键只有 `taskId / command / startedAt / status / result?`，`killNow` / `peek` 已由 `projection()` 剥离（有守卫测试钉死）
 - **新增类型导出**：`BackgroundTask` / `BackgroundTaskStatus`（只读投影类型）
+- **状态词表单点**：`BACKGROUND_TASK_STATUS_LABELS`（`Record` 穷尽键 = 新增状态忘补文案即**编译期红**，同 `COMPRESS_TARGET_LABELS` 定案）。**2026-10-04 自审补**：方案文档 §2.3 曾写「复用内核 `STATUS_LABELS`」——该标识符当时是模块私有、内核零导出，属**引用不存在导出的文档失真**（与旧台账 `inlinePlanBoard` 同型）⇒ 改为公开导出，宿主 UI 直接消费、**禁自建第二套**
 - **测试**：loop 层 5 条（未装配不抛 / 运行态可见 / kill 返回终态 / 未知 id 返回 null / 不泄漏句柄）+ 变异验证 2 组有效。**变异副产品**：原 `kill` 后的二次判空是**冗余分支**（`get()` 对未知 id 同为 null，删早退行为完全等价）→ 按无僵尸分支纪律删除，不留不可测代码
 - **方案文档**：`docs/方案-后台任务可见性与kill入口-20261004.md`（实施规格真源；宿主侧协议 + UI 为后续刀次，本文只落内核出口）
 

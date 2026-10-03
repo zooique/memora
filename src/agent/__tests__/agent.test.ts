@@ -3364,3 +3364,34 @@ describe('A1 回抽 · 首轮工具轮叙述不进持久化正文', () => {
     expect(content).toContain('这是最终结论。');
   });
 });
+
+describe('Agent · 后台任务出口（CMD-1 阶段 2）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-agent-bg-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-agent-bg-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-agent-bg-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('未初始化时两个出口都抛明确错误（不静默降级）', () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    // 静默返回空数组会把「未初始化」伪装成「没有后台任务」——必须抛，不降级
+    expect(() => agent!.listBackgroundTasks()).toThrow(/Agent 未初始化/);
+    expect(() => agent!.killBackgroundTask('bg-1')).toThrow(/Agent 未初始化/);
+  });
+});

@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   BackgroundTaskRegistry,
+  BACKGROUND_TASK_STATUS_LABELS,
   formatBackgroundTaskNotice,
   type BackgroundTask,
 } from '../backgroundTasks.js';
@@ -159,5 +160,24 @@ describe('formatBackgroundTaskNotice（回流文案 · 2026-10-03 对抗式回�
     const notice = formatBackgroundTaskNotice(task);
     expect(notice).not.toContain('[COMMAND_ERROR]');
     expect(notice).not.toContain('退出码');
+  });
+
+  // 词表是宿主 UI 的唯一来源（宿主禁自建第二套）——键集与文案都必须钉死，
+  // 否则 UI 出现「状态无对应文案」的空标签（Record 穷尽只保证编译期，这里锁运行期）。
+  it('BACKGROUND_TASK_STATUS_LABELS 覆盖全部四态且文案非空', () => {
+    expect(Object.keys(BACKGROUND_TASK_STATUS_LABELS).sort()).toEqual([
+      'completed',
+      'killed',
+      'running',
+      'timedOut',
+    ]);
+    for (const label of Object.values(BACKGROUND_TASK_STATUS_LABELS)) {
+      expect(label.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('回流通知用同一词表（改词表即改通知，无第二套文案）', () => {
+    const notice = formatBackgroundTaskNotice(makeTask('ok', 'timedOut'));
+    expect(notice).toContain(BACKGROUND_TASK_STATUS_LABELS.timedOut);
   });
 });
