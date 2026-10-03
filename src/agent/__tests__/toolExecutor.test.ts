@@ -72,8 +72,27 @@ describe('工具执行器（6 个工具）', () => {
 
   afterAll(async () => {
     await index.close?.();
-    rmSync(tmpProject, { recursive: true, force: true });
-    rmSync(tmpData, { recursive: true, force: true });
+    // Windows 下 Temp 目录常被系统服务（搜索索引/Defender 扫描）持续握持，
+    // rmSync 会 EPERM——清理属 best-effort：EPERM/EBUSY 记警告留路径供追查，
+    // 不让环境噪音把 171 个通过用例整个标红；其他错误照抛不吞
+    const rmBestEffort = async (p: string): Promise<void> => {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          rmSync(p, { recursive: true, force: true });
+          return;
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException)?.code;
+          if (code !== 'EPERM' && code !== 'EBUSY') throw err;
+          if (attempt === 3) {
+            console.warn(`[test] 临时目录清理失败（系统占用，可忽略）：${p}`);
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, attempt * 200));
+        }
+      }
+    };
+    await rmBestEffort(tmpProject);
+    await rmBestEffort(tmpData);
   });
 
   describe('BUILTIN_TOOLS 注册表', () => {

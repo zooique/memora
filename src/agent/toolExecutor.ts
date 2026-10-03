@@ -8,10 +8,7 @@
  * ToolExecutor 聚焦工具注册 / 分发 / 参数校验。
  */
 import type { SecurityGuard } from '@/security/pathGuard.js';
-import {
-  requireConfirmingEntry,
-  type ConfirmingEntry,
-} from '@/security/confirmEntries.js';
+import { requireConfirmingEntry, type ConfirmingEntry } from '@/security/confirmEntries.js';
 import { toolError, configError, MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';

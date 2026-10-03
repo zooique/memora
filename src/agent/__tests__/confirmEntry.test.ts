@@ -15,7 +15,11 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ToolExecutor } from '@/agent/toolExecutor.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
-import { CONFIRM_ENTRY_BY_TOOL, requireConfirmEntry, requireConfirmingEntry } from '@/security/confirmEntries.js';
+import {
+  CONFIRM_ENTRY_BY_TOOL,
+  requireConfirmEntry,
+  requireConfirmingEntry,
+} from '@/security/confirmEntries.js';
 import { OPAQUE_WRITE_TOOL_NAMES } from '@/agent/builtinTools.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 
@@ -71,7 +75,11 @@ describe('执行面确认入口登记表（CMD-1-BYPASS · 守卫）', () => {
     { tool: 'run_command', args: { command: 'echo probe' }, entry: 'command' },
     { tool: 'run_code', args: { language: 'js', code: 'console.log(1)' }, entry: 'script' },
     { tool: 'run_project_script', args: { script_path: 'scripts/probe.js' }, entry: 'script' },
-    { tool: 'run_skill_script', args: { skill_name: 'demo', script_path: 'x.js' }, entry: 'script' },
+    {
+      tool: 'run_skill_script',
+      args: { skill_name: 'demo', script_path: 'x.js' },
+      entry: 'script',
+    },
   ];
 
   for (const surface of surfaces) {
@@ -79,10 +87,7 @@ describe('执行面确认入口登记表（CMD-1-BYPASS · 守卫）', () => {
       const commandSpy = vi.spyOn(security, 'confirmCommandRun').mockResolvedValue(false);
       const scriptSpy = vi.spyOn(security, 'confirmScriptRun').mockResolvedValue(false);
 
-      const result = await executor.execute(
-        surface.tool,
-        JSON.stringify(surface.args),
-      );
+      const result = await executor.execute(surface.tool, JSON.stringify(surface.args));
 
       // 确认被拒 ⇒ handler 不执行，返回拒收串
       expect(result).toContain('DECLINE');

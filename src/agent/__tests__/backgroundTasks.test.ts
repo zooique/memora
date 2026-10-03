@@ -18,12 +18,30 @@ import {
   type BackgroundTask,
 } from '../backgroundTasks.js';
 
-/** 跨平台长驻命令（经注册表内的 shell 派发：Windows cmd /c，POSIX sh -c） */
-const SLEEP_CMD = 'node -e "setTimeout(()=>{},20000)"';
+/**
+ * 跨平台长驻命令（经注册表内的 shell 派发：Windows cmd /c，POSIX sh -c）
+ * 生命周期 120s：收割靠 kill/reapAll 主动结束而非自然退出——给 gate-full
+ * 全量并发下的调度抖动留余量（20000 在饱和负载下会被测试窗口追上）
+ */
+const SLEEP_CMD = 'node -e "setTimeout(()=>{},120000)"';
 /** 跨平台快速命令（完成态用例用） */
 const ECHO_CMD = 'echo memora-bg-ok';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** 轮询等待任务进入 running 态（裸 sleep 在全量并发下不可靠：调度延迟会跨过断言窗口） */
+async function waitForRunning(registry: BackgroundTaskRegistry, taskIds: string[]): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    const statuses = taskIds.map((id) => registry.get(id)?.status);
+    if (statuses.every((s) => s === 'running')) return;
+    await sleep(200);
+  }
+  const snapshot = registry
+    .list()
+    .map((t) => `${t.taskId}:${t.status}`)
+    .join(', ');
+  throw new Error(`任务未按预期存活（${snapshot}）`);
+}
 
 describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
   it('start 立即返回 taskId（不等进程结束）', () => {
@@ -31,7 +49,8 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
     const t0 = Date.now();
     const taskId = registry.start(SLEEP_CMD);
 
-    expect(Date.now() - t0).toBeLessThan(1_000); // 未等待 20s 进程
+    // 意图 = 没等 120s 进程结束；上界给足调度余量（饱和负载下同步 spawn 实测可达 1.7s）
+    expect(Date.now() - t0).toBeLessThan(5_000);
     expect(taskId).toBe('bg-1');
     expect(registry.get(taskId)?.status).toBe('running');
 
@@ -56,7 +75,7 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
     registry.setCompletionListener((t) => calls.push(t));
 
     const taskId = registry.start(SLEEP_CMD);
-    await sleep(300);
+    await waitForRunning(registry, [taskId]);
 
     const killed = registry.kill(taskId);
     expect(killed?.status).toBe('killed');
@@ -72,7 +91,8 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
     const registry = new BackgroundTaskRegistry();
     const a = registry.start(SLEEP_CMD);
     const b = registry.start(SLEEP_CMD);
-    await sleep(300);
+
+    await waitForRunning(registry, [a, b]);
 
     const reaped = registry.reapAll();
     expect(reaped.map((t) => t.taskId).sort()).toEqual([a, b].sort());
