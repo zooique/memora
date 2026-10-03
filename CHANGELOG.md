@@ -10,6 +10,35 @@
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不占内核版本号（理由见文首说明）。内核 3.0.0 的发版内容在其下方。
 
+### ⚠️ Breaking（内核 · 确认载荷与 chunk/事件变体 · 已定档 3.1.0）
+
+**升级即需改代码**（TS 集成方必读）：
+
+- `WriteConfirmationInfo`（`onWriteConfirmation` 载荷）新增**必填**字段 `hasDiff: boolean`——**编译期破坏**（自建该对象的集成方需补字段；只消费不构造的集成方不受影响）。语义 = 「本次确认卡是否有 diff 对比域」：写入场景恒 `true`，命令 / 代码 / 脚本执行三类恒 `false`。**判据归内核单点**（`confirmGate` 的 `diff !== undefined`），宿主不再用 `beforeContent`/`afterContent` 的 truthy 自猜——那属「措辞折叠型带伤」（非写入场景被归一为 `beforeContent: null`，truthy 与 `!== undefined` 判据都会把命令确认渲染成假的「写入前/写入后」对比）
+- `AgentChunk` 新增变体 `{ type: 'background_report'; content: string }`（turn 终态收割存活后台进程后 emit；无收割则不产）。消费方 `for await` 的 switch/exhaustive 检查需处理新变体
+- `ProcessEvent` 新增同名变体 `{ type: 'background_report'; seq; ts; payload: { content: string } }`（落盘重放可见，与 `plan_snapshot` 同型）
+
+### Added（内核+宿主 · 命令行执行能力 `run_command` / `kill_command` · `CMD-1`，已定档 3.1.0）
+
+**能力缺口**：此前执行 shell 命令须「`write_file` 写脚本 → `run_project_script` 执行 → `delete_file` 清理」三步，且 `.sh` 在 Windows 上静默空跑（退出码 0 但输出全空）。
+
+- **工具层**：`run_command`（任意 shell 命令字符串 + `cwd` + `timeoutMs` + `background`；`diskWrite:'opaque'` 与一切写互斥）+ `kill_command`（按 `taskId` 终止并取回截至当时的输出；只能杀本会话自起任务，非任意 pid）。两者入 `DEFAULT_EXPOSED_TOOLS` 常驻开放
+- **安全边界**：`SecurityGuard.classifyCommand` 三档裁决（deny 黑名单恒拦 / always-ask 恒确认 / normal）+ `confirmCommandRun`（**复用既有 `confirmGate`**，零新确认通道）。⚠️ **已知边界（如实登记）**：deny 是**命令字面量护栏**，凡执行内容由间接载体承载处（脚本文件 / `run_code` 内联代码）结构性失效——裁决面登记见 `src/security/confirmEntries.ts`，绕过成本 = 一次工具调用
+- **后台执行**：`background: true` 显式发起（**不做超时自动转后台**，拒绝隐式状态切换）→ 立即返回 `taskId`，完成后经 step 边界气口以 system 消息回流（role 语义隔离，不占插话满员）；`LOOP_CONSTANTS.MAX_PENDING_COMMAND_RESULTS` 限量注入（超量留队续投，不截半丢弃）；turn 终态（done/interrupted/error）收割存活进程并出收尾报告，回流不跨 turn
+- **进程治理**：`skillScriptRunner.buildSpawnOptions` + `attachGovernance` 收为单点（同步/后台共用），Windows 走 `taskkill /T /F` 杀树、POSIX 走 `kill(-pgid)`；`SYNC_MAX_TIMEOUT_MS`(600s) / `BACKGROUND_MAX_TIMEOUT_MS`(1800s=30min) 双常量分治，`normalizeTimeoutMs(timeoutMs, maxMs)` 参数化取上限（不给 SSOT 函数开 mode 分支）
+- **诚实口径**：「被主动终止」不是「执行失败」——强杀态独立 `formatKilledCommandOutput`，不声称任何退出状态（防 `[COMMAND_ERROR] 退出码 -1` 谎报）；命令结果定长真源上移到格式化层（脚本/命令/后台回流三面共用，杜绝第二消费面看不到上限）
+- **宿主**：工具中文名两键 + 行动叙述（叙述命令原文 + 后台标记）+ 设置面板「执行二次确认」补 `run_command` 并显式声明 git 写操作/发布不受开关影响（ALWAYS_ASK 恒询问）；后台收尾报告上屏（「后台任务收割」小节，实时/重放同源）
+- **未做（如实登记）**：后台任务**运行态列表**（UI 零可见 + 无用户侧 kill 入口）、命令前缀 allow 白名单（阶段 2）、`.ps1` 运行时档
+
+### Added（内核+宿主 · 环境能力宣告 · `CMD-2`，已定档 3.1.0）
+
+**缺口**：`run_code` 描述曾写「如 python、node、shell」而宿主执行器只支持 JS（对模型说了假话）；且模型对运行环境一无所知。
+
+- **消灭谎言（声明列举）**：`ICodeExecutionProvider` 增**可选** `supportedLanguages?: readonly string[]`；`RUN_CODE_TOOL` 改工厂 `buildRunCodeTool(supportedLanguages?)`——声明时按实际生成语言清单，未声明退化为去承诺文案（零感知向后兼容）。工具描述与「暂不支持语言」回知文案**同源自宿主声明**，杜绝双写漂移
+- **环境事实注入**：新增 `IEnvironmentProvider`（**同步** `getEnvironment(): HostEnvironmentInfo | null`）+ `HostEnvironmentInfo`（`os`/`shell`/`runtimes` 全可选），公开导出；`buildEnvironmentContextBlock` 纯函数格式化为 system prompt「## 运行环境」段（插作品投影后、时间戳前；全空字段不产生空壳标题段）。**零解释转发**——只做字段→文本机械映射，不加行为引导语
+- ⚠️ **`shell` 字段语义 = 本会话执行器实际派发的 shell**（不是集成终端/登录 shell）：内核 `resolveShellCommand` 恒定映射 win32 → `cmd /c`、其余 → `sh -c`，不读环境变量。两侧互为镜像，改一侧必须同批改另一侧（宿主测试从内核源码文本提取真源比对，防单边漂移）
+- **刻意不做**：内核内置探测（派生判定律：环境事实不得升级为内核判据）、执行期自动语言切换（抢模型决策权）、cwd/git 分支注入（阶段 2 观察）
+
 ### Changed（内核 · 待注入插话上限裁决收口内核 · `KERNEL-QUEUE-LIMIT-1`，已定档 3.1.0）
 
 **债务清偿**：INPUT-LIMIT-1 落地时插话条数上限只做在宿主两层（webview 预检 + extension 闸门），内核 `loop.interruptQueue` 本体 push 前无上限——第三方集成方绕过宿主直调 `agent.interject()` 仍可塞爆队列（队列是内核资源不变量，该内核自己堵，不能指望每个集成方自带限额）。

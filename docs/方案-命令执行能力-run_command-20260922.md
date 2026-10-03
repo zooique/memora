@@ -566,8 +566,9 @@ deny 黑名单（`run_command` 命令字面量，恒拦）
 | 宿主工具行动叙述 | ✅ 已落地 | `chatView.TOOL_ACTION_LABELS` 收录 `run_command`（叙述命令原文 + 后台标记）；`toolActionType` 两工具归 `run` 档（原 `other` 档不参与成句 ⇒ 收尾叙述句会漏计命令执行） |
 | 宿主安全开关文案 | ✅ 已落地 | 设置面板「执行二次确认」补 `run_command` + **显式声明 git 写操作/发布不受开关影响**（ALWAYS_ASK 恒询问）。原文案说「关 = 脚本自动运行」对命令场景是**安全承诺失实** |
 | 公出面导出 | ⬜ 不落点 | 宿主零消费（工具常驻、确认闸走既有 `onWriteConfirmation`）⇒ `src/index.ts` **不新增导出** |
-| 宿主审批卡的命令形态 | ⏳ 登记未做 | 审批卡复用既有 `write_confirm_request`（`confirmCommandRun` 走同一 `confirmGate`，**零新协议**），但卡片对命令场景说谎：diff 区显示 `--- 写入前 --- (新建文件) / +++ 写入后 +++`（**命令执行无 diff 概念**）、按钮写死「确认写入」、超时提示写死「写入确认超时」。正解 = 内核 `WriteConfirmationInfo` 上报「本次有无 diff 域」的语义字段（**判据归内核**，宿主不猜）⇒ 动公共类型，独立一刀 |
-| 宿主 UI 呈现（后台任务列表 / 收尾报告上屏） | ⏳ 登记未做 | 阶段 1 收尾报告**仅内核 system 消息 + 日志**；上屏需扩 `AgentChunk` 协议面（宿主渲染层），独立立项 |
+| 宿主审批卡的命令形态 | ✅ 已落地（2026-10-03 · CMD-1 宿主收尾） | 内核 `WriteConfirmationInfo` 增**必填** `hasDiff`（唯一构造点 `confirmGate` 的 `diff !== undefined` 判定：写入卡恒 true / 命令·代码·脚本恒 false），宿主 protocol 载荷透传 + `chatView` 判据由 truthy 自猜换 `msg.hasDiff`；按钮「确认写入」→「确认」、`<summary>`「查看写入内容」→「查看内容」、超时「写入确认超时」→「确认超时」全链改齐（产品模板 + 测试夹具 + 两侧代码注释 + 协议注释）。⚠️ `hasDiff` 为必填字段 ⇒ 对 TS 集成方是**编译期破坏性变更**，`[Unreleased]` 已显式标注 |
+| 宿主 UI 呈现 · 后台任务**收尾报告上屏** | ✅ 已落地（2026-10-03 · CMD-1 宿主收尾） | 内核 `AgentChunk` 增 `background_report` 瞬态 chunk（`_runWithSlo` finally 双通道：chunk 上屏 + system 消息进史，中断硬关闭下 yield 被丢弃但 LLM 历史已写入）+ `ProcessEvent` 同名变体落盘（重放可见）；宿主 chatPanel 桥接投影 + webview「后台任务收割」小节（渲染单点 = `renderRoundBlock`，finalize/重放同源）。时序契约在宿主消费层：done 消息流耗尽后 post，事件投影必然先于 finalize 到达 |
+| 宿主 UI 呈现 · 后台任务**列表**（运行态可见 + 用户侧 kill 入口） | ⏳ 登记未做 | **运行中的后台任务在 UI 上零可见**：宿主对 `BackgroundTaskRegistry` 零消费面（`src/index.ts` 未导出该注册表），用户看不到「现在有 N 个后台任务在跑」，也无法自行 `kill_command`（只能由 LLM 调）；收尾报告里的 `taskId` 是对用户无意义的内部串。**列表 + 用户侧 kill 入口是否进阶段 2 范围待定**（2026-10-03 审查提出，原登记只写「列表」未拆「用户侧 kill」） |
 | 宿主 `codeExecutor` 同伤 | ⏳ 登记未做 | 见未决三第 1 项（杀树原语为 skillScriptRunner 私有，禁宿主复制一份） |
 | 阶段 2（allow 白名单） | ⏳ 另行排期 | 不随阶段 1 顺车（§12.4） |
 
