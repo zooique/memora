@@ -1624,10 +1624,18 @@ export const chatStyles = `
    * 归入对应任务项折叠块（summary 显示「任务项 N · 标题」），实现「边界切组、任务项内平铺」。
    * 无 plan_item_boundary 时不出现（退回整轮扁平）。默认收起——任务项过程属过程明细，报告保持简洁。 */
   .round-block__plan-item {
-    margin: var(--sp-1, 4px) 0; padding-left: var(--sp-3, 8px);
+    /* 缩进两档拉层级（2026-10-04 用户真机反馈「任务表内记录无缩进、视觉一片」）：
+     * 第一档 = 组本身相对外层叙述/工具行凸出（padding-left 8→16px，与正文 markdown 列表缩进同档）；
+     * 第二档见下方 :not(summary) 规则 = 组内过程行相对组标题再缩进。
+     * 运行时与重放共用本类（getOrCreatePlanItemGroup 唯一构造点），改样式即两路径同逻辑生效。 */
+    margin: var(--sp-2, 6px) 0; padding-left: var(--sp-6, 16px);
     border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
   }
+  /* 组内二级缩进：summary 之外的过程行（narrate/tool/thought/输入条目）相对组标题右移一档。
+   * 用 :not(summary) 而非包 wrapper——组内行平铺 details 顶层（无共同容器），包容器会破坏
+   * insertPlanItemGroupInOrder 的「root 直接子节点」排序前提，属带伤改法。 */
+  .round-block__plan-item > :not(summary) { margin-left: var(--sp-2, 6px); }
   .round-block__plan-item-summary {
     cursor: pointer; user-select: none; outline: none; list-style: none;
     font-size: var(--font-xs, 11px); color: var(--text-secondary, #9aa0a6);
