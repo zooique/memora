@@ -163,6 +163,18 @@ export const LOOP_CONSTANTS = {
   TOOL_RESULT_WRAP_OVERHEAD_TOKENS: 100,
 
   /**
+   * 入口关落盘后，替换文本里**尾部预览**的字符数（默认预览总预算 1,000 中的一份）。
+   *
+   * 与 `SCRIPT_RESULT_TAIL_CHARS` 同因：长输出的关键信息常在尾部（构建失败原因 /
+   * 堆栈末尾 / FAIL 汇总行），只留头会让 LLM 系统性看不到失败原因（缺口 D）。
+   *
+   * ⚠️ 尾部份额从**总预览预算内**划出（头 = 1,000 − 本键），**不扩大预算**——
+   * 预算扩大会让替换文本逼近 `SINGLE_TOOL_RESULT_MAX_TOKENS`，
+   * 破坏「替换后不二次落盘」的结构性保证。
+   */
+  TOOL_RESULT_OFFLOAD_TAIL_PREVIEW_CHARS: 300,
+
+  /**
    * `search_memories` 工具响应性护栏：整次关键词搜索的上限。
    *
    * 背景：搜索服务为网络调用（web/project search）时以 30s 超时为先例（webSearchProvider.ts），

@@ -2856,7 +2856,11 @@ export class AgentLoop {
    */
   private appendToolMessage(content: string, toolCallId: string): void {
     const finalContent = this.offloadDir
-      ? offloadLargeToolResult(content, { offloadDir: this.offloadDir }).content
+      ? offloadLargeToolResult(content, {
+          offloadDir: this.offloadDir,
+          // 尾部预览：长输出的关键信息常在尾部（缺口 D）；份额在既有预览预算内划分
+          tailPreviewChars: LOOP_CONSTANTS.TOOL_RESULT_OFFLOAD_TAIL_PREVIEW_CHARS,
+        }).content
       : content;
     this.messages.push({
       role: 'tool',

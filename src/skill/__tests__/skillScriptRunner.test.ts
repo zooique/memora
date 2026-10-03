@@ -5,6 +5,8 @@
  *   1. formatScriptResult — 结果格式化（超时/错误/成功分支）+ 超时文案按实际超时（钳制后）生成
  *   2. runSkillScript — 子进程执行（成功/超时/失败/边界场景）
  *   3. resolveCommand 行为 — runtime→command 映射（间接测试）
+ *   4. 进程治理缺口清偿（§13.6-A/B）— 超时强杀**进程树**（孙进程不再变孤儿）
+ *      + 收集侧**内存护栏**（字节量纲，truncated/discardedBytes 诚实化上报）
  *
  * 注：runSkillScript 测试使用真实子进程，脚本内容尽量简单。
  *     完整沙箱测试由宿主集成测试覆盖。
@@ -13,6 +15,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
   runSkillScript,
+  runShellCommand,
+  resolveShellCommand,
   formatScriptResult,
   formatExecutionResult,
   guardWindowsShellScript,
@@ -306,14 +310,83 @@ describe('skillScriptRunner — runSkillScript', () => {
       const slowScript = join(TMP_DIR, 'slow.js');
       writeFileSync(slowScript, 'setTimeout(() => console.log("done"), 3000);');
       const result = await runSkillScript(slowScript, 'node', [], 1000);
-      // 被 timeout 选项 kill → close(null, 'SIGTERM') → 无退出码，实现以 `code ?? 0` 兜底为 0；
-      // 故 timedOut 才是超时的唯一可靠判据，不能断言 exitCode 非 0（该断言在本机恒红，已用独立探针实证）。
-      // 此处锁真契约：将来若有人把 `code ?? 0` 改成 `code ?? -1` 或去掉兜底，本行会红。
-      expect(result.exitCode).toBe(0);
+      // 2026-10-03 语义变更（§13.6-A）：超时不再经 spawn `timeout` 选项 kill，故**不再有
+      // close(null,'SIGTERM') 那条路径**——由手动计时器直接收场，退出码取 -1（对齐宿主
+      // codeExecutor killer 的 `exitCode: -1 + timedOut: true` 同构形态）。旧断言 `toBe(0)`
+      // 锁的是「`code ?? 0` 兜底」，该兜底仍存在于**正常 close 路径**（未被超时截断时），
+      // 不适用于超时路径。
+      // 语义上也只有 -1 是诚实的：0 = 成功，把「被强杀」报成 0 是对判据的污染。
+      expect(result.exitCode).toBe(-1);
       expect(result.timedOut).toBe(true);
       // 脚本未正常完成：3s 后才打印的 "done" 不应出现在收集到的 stdout 里
       expect(result.stdout).not.toContain('done');
     });
+  });
+
+  // ── 裸命令执行（后台能力的同步侧地基，§13.1）──
+  describe('裸命令执行（runShellCommand / resolveShellCommand）', () => {
+    it('resolveShellCommand：Windows → cmd /c，其余 → sh -c（纯函数，平台参数化）', () => {
+      expect(resolveShellCommand('npm test', 'win32')).toEqual({
+        command: 'cmd',
+        args: ['/c', 'npm test'],
+      });
+      expect(resolveShellCommand('npm test', 'linux')).toEqual({
+        command: 'sh',
+        args: ['-c', 'npm test'],
+      });
+    });
+
+    it('runShellCommand：同步执行并返回 stdout / 退出码', async () => {
+      const result = await runShellCommand('echo memora-shell-ok');
+      expect(result.exitCode).toBe(0);
+      expect(result.timedOut).toBe(false);
+      expect(result.stdout).toContain('memora-shell-ok');
+    });
+
+    // 命令构造纪律（跨平台）：避开 shell 元字符——`>` 会被 cmd 当重定向、
+    // 嵌套引号会被 cmd 吞掉。故用无空格、无元字符的 `node -e <code>` 形态。
+    it('runShellCommand：非零退出码如实回传（不把失败粉饰为成功）', async () => {
+      const result = await runShellCommand('node -e process.exit(3)');
+      expect(result.exitCode).toBe(3);
+    });
+
+    it('runShellCommand：超时走杀树原语并置 timedOut（与脚本路径同一治理）', async () => {
+      const result = await runShellCommand(
+        'node -e setTimeout(function(){},30000)',
+        undefined,
+        1_000,
+      );
+      expect(result.timedOut).toBe(true);
+      expect(result.exitCode).toBe(-1);
+    }, 20_000);
+  });
+
+  // ── §13.6-A 进程树强杀 + §13.6-B 收集侧内存护栏（2026-10-03 清偿）──
+  describe('进程治理缺口清偿（§13.6-A/B）', () => {
+    // ⚠️ 「孙进程是否真被收割」的**结果级**断言不放在本文件：本机（Windows）实测
+    // `child.kill()` 单杀时孙进程**同样停止心跳**（共享控制台被销毁连带终止），
+    // 故结果级探活在本环境无法区分「杀树」与「单杀」——断言会**因错误的原因通过**。
+    // 该行为改由 skillScriptRunner-exec.test.ts 的**机制级**分平台断言锁定
+    // （Windows `taskkill /T /F` 调用 / POSIX `process.kill(-pgid)`），
+    // 真机层面的「孙进程确实不再存活」列为阶段 1 手工验证项（方案文档 §13.6 未决三）。
+
+    it('收集侧内存护栏：超量输出停止拼接并置 truncated + 丢弃字节数', async () => {
+      // 48 × 64KB = 3MB > MAX_COLLECTED_OUTPUT_BYTES(2MB) → 护栏生效
+      const floodScript = join(TMP_DIR, 'flood.js');
+      writeFileSync(
+        floodScript,
+        "const chunk = 'x'.repeat(64 * 1024); for (let i = 0; i < 48; i++) process.stdout.write(chunk);",
+      );
+
+      const result = await runSkillScript(floodScript, 'node', [], 30_000);
+      expect(result.timedOut).toBe(false);
+      expect(result.truncated).toBe(true);
+      expect(result.discardedBytes ?? 0).toBeGreaterThan(0);
+      // 收集量被护栏约束（≤ 2MB）——内存防线，与下游 20_000 字符的上下文防线不同层
+      expect(Buffer.byteLength(result.stdout, 'utf-8')).toBeLessThanOrEqual(2 * 1024 * 1024);
+      // 截断诚实化：格式化文案须显式告知（静默截断 = 假阴性，与 read_file 分段脚注同纪律）
+      expect(formatScriptResult(result)).toContain('[OUTPUT_TRUNCATED]');
+    }, 60_000);
   });
 
   // ── 环境继承（不走 PATH/HOME 最小白名单）──

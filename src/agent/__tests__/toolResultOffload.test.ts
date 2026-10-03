@@ -113,6 +113,26 @@ describe('offloadLargeToolResult（入口关原语）', () => {
     expect(out.content).toContain(`省略 ${50_000 - 200} 字符`);
   });
 
+  it('tailPreviewChars>0 → 预览含头 + 尾，且**总预览预算不扩大**（缺口 D）', async () => {
+    // 尾部标记 TAIL：只留头的预览会让 LLM 系统性看不到长输出的失败原因
+    const large = `${'y'.repeat(40_000)}TAIL`;
+    const out = offloadLargeToolResult(large, {
+      offloadDir,
+      previewChars: 200,
+      tailPreviewChars: 50,
+    });
+
+    expect(out.content).toContain('TAIL'); // 尾部可见
+    expect(out.content).toContain('头 150 + 尾 50'); // 份额从预算内划出，非追加
+    expect(out.content).toContain('y'.repeat(150)); // 头部份额 = 200 − 50
+    expect(out.content).toContain(`省略 ${40_004 - 200} 字符`);
+
+    // 未传 tailPreviewChars → 旧形态不变（纯头预览）
+    const legacy = offloadLargeToolResult(large, { offloadDir, previewChars: 200 });
+    expect(legacy.content).toContain('[预览（前 200 字符）]');
+    expect(legacy.content).not.toContain('TAIL');
+  });
+
   it('thresholdTokens 可覆盖：显式传阈值时按该值判定', async () => {
     const text = 'a'.repeat(3_000); // ≈1,000 tokens
     expect(offloadLargeToolResult(text, { offloadDir, thresholdTokens: 999 }).offloaded).toBe(true);

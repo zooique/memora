@@ -89,8 +89,25 @@ function normalizeScriptRuntime(language: string): ScriptRuntime {
 }
 
 // ─── run_skill_script 注入防御常量 ─────────────────
-/** run_skill_script 单次结果最大长度（防脚本刷屏撑爆上下文；对齐 run_code 的 RUN_CODE_RESULT_MAX_LEN） */
+/**
+ * run_skill_script 单次结果最大长度（防脚本刷屏撑爆上下文；对齐 run_code 的 RUN_CODE_RESULT_MAX_LEN）
+ *
+ * ⚠️ 这是**上下文层**的字符上限，与收集侧的**内存护栏**不是一回事：
+ * `skillScriptRunner.MAX_COLLECTED_OUTPUT_BYTES`（字节量纲，防 Node 进程内存膨胀）。
+ * 两者量纲不同（字符 / 字节 / token 三层各司其职），**禁止互相对齐或合并**——
+ * 合并会让「内存护栏」退化成「上下文截断」，或让后者在 CJK 下实际越界。
+ */
 const RUN_SCRIPT_RESULT_MAX_LEN = 20_000;
+
+/**
+ * 脚本 / 代码长输出的**尾部保留**字符数（缺口 D）
+ *
+ * 只服务「关键信息常在尾部」的长输出（构建失败原因、堆栈末尾、FAIL 汇总行）。
+ * 网页正文 / 技能文档 / 资源文件等**头部即要点**的内容**不传**此参数（默认 0，
+ * 保持纯头截断——尾部对它们是页脚噪声）。
+ * 是否保留尾部由**调用点显式声明**，不在函数内按内容猜测（猜测 = 隐式分支 + 不可预测）。
+ */
+const SCRIPT_RESULT_TAIL_CHARS = 4_000;
 
 // ─── search_project 注入防御常量 ─────────────────
 /** search_project 的 query 最大长度（防超长 glob/关键词滥用） */
@@ -285,12 +302,23 @@ export function stripControlChars(text: string): string {
  * 但仍须剥掉 ANSI/控制字符。否则它只能传一个假的上限（如 MAX_SAFE_INTEGER）来迁就本函数签名。
  *
  * @param text 外部原始文本
- * @param maxLen 最大长度
+ * @param maxLen 最大长度（**内容预算**，不含省略标记本身）
+ * @param tailChars 尾部保留字符数（默认 0 = 仅留头部；>0 时头尾各留一份，预算内部分配）
  * @returns 净化后的文本
  */
-export function sanitizeExternalText(text: string, maxLen: number): string {
+export function sanitizeExternalText(text: string, maxLen: number, tailChars = 0): string {
   const cleaned = stripControlChars(text);
-  return cleaned.length > maxLen ? `${cleaned.slice(0, maxLen)}…` : cleaned;
+  if (cleaned.length <= maxLen) return cleaned;
+  if (tailChars <= 0) return `${cleaned.slice(0, maxLen)}…`;
+  // 头 + 尾：不扩大总预算（头尾合计仍 = maxLen），中间如实标注省略量。
+  // 尾部保留解决的是「长输出的关键信息常在尾部」——构建/测试的失败原因、
+  // 堆栈末尾、FAIL 汇总行都在尾；只留头会让 LLM 系统性看不到失败原因（缺口 D）。
+  const tail = Math.min(tailChars, maxLen - 1);
+  const headLen = maxLen - tail;
+  const omitted = cleaned.length - headLen - tail;
+  return (
+    `${cleaned.slice(0, headLen)}…[省略 ${omitted} 字符]…` + cleaned.slice(cleaned.length - tail)
+  );
 }
 
 /**
@@ -1123,8 +1151,16 @@ export class ToolExecutor {
           execOptions,
         );
         // 结果净化：stdout/stderr 当外部内容去控制字符 + 长度上限，防长上下文注入
-        const stdout = sanitizeExternalText(result.stdout, RUN_CODE_RESULT_MAX_LEN);
-        const stderr = sanitizeExternalText(result.stderr, RUN_CODE_RESULT_MAX_LEN);
+        const stdout = sanitizeExternalText(
+          result.stdout,
+          RUN_CODE_RESULT_MAX_LEN,
+          SCRIPT_RESULT_TAIL_CHARS,
+        );
+        const stderr = sanitizeExternalText(
+          result.stderr,
+          RUN_CODE_RESULT_MAX_LEN,
+          SCRIPT_RESULT_TAIL_CHARS,
+        );
         // 格式化：与 run_skill_script 共用 formatExecutionResult（同一真理源，改格式契约须两链路同步）
         return formatExecutionResult(
           { stdout, stderr, exitCode: result.exitCode, timedOut: result.timedOut },
@@ -1304,7 +1340,7 @@ export class ToolExecutor {
           return `[ERR:SCRIPT_NOT_FOUND] 未找到脚本 "${scriptPath}"（技能 "${skillName}" 无此脚本，或执行失败）`;
         }
         // 返回净化：脚本输出当外部内容去控制字符 + 长度上限（8-1 对齐 run_code 的防护），防刷屏撑爆上下文
-        return sanitizeExternalText(result, RUN_SCRIPT_RESULT_MAX_LEN);
+        return sanitizeExternalText(result, RUN_SCRIPT_RESULT_MAX_LEN, SCRIPT_RESULT_TAIL_CHARS);
       }
       case 'run_project_script': {
         // 项目内已有脚本执行（默认开放，判据 A+B）：内核子进程执行，脚本源码不进上下文
@@ -1357,6 +1393,7 @@ export class ToolExecutor {
         return sanitizeExternalText(
           formatScriptResult(result, timeoutMs),
           RUN_SCRIPT_RESULT_MAX_LEN,
+          SCRIPT_RESULT_TAIL_CHARS,
         );
       }
       case 'list_resources': {

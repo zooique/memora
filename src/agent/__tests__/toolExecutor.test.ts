@@ -300,14 +300,18 @@ describe('工具执行器（6 个工具）', () => {
     });
 
     it('超长输出被截断到上限（8-1 对齐 run_code 防护，防刷屏撑爆上下文）', async () => {
-      executor.runSkillScript = async () => 'x'.repeat(50_000);
+      // 尾部打标记 TAIL：长输出的失败原因常在尾部（缺口 D），截断必须留住它
+      executor.runSkillScript = async () => `${'x'.repeat(50_000)}TAIL`;
       const result = await executor.execute(
         'run_skill_script',
         JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
       );
-      // 20KB 上限 + 截断省略号：返回不被超长输出撑爆
-      expect(result.length).toBeLessThanOrEqual(20_001);
-      expect(result.endsWith('…')).toBe(true);
+      // 20KB 内容预算（+ 省略标记本身）：返回不被超长输出撑爆
+      expect(result.length).toBeLessThanOrEqual(20_000 + 40);
+      // 尾部可见（旧契约是纯头截断 + '…' 结尾，已按缺口 D 定案变更）
+      expect(result.endsWith('TAIL')).toBe(true);
+      // 中间省略量如实标注（静默截断 = 假阴性）
+      expect(result).toContain('[省略 ');
     });
 
     it('正常输出原样返回（不截断）', async () => {
@@ -1233,6 +1237,28 @@ describe('工具执行器（6 个工具）', () => {
     it('普通文本不受 ANSI 剥除影响（回归）', () => {
       const cleaned = sanitizeExternalText('plain [bracket] text', 100);
       expect(cleaned).toBe('plain [bracket] text');
+    });
+
+    it('未超限 → 原样返回（含尾部保留参数也不得改动内容）', () => {
+      const cleaned = sanitizeExternalText('short', 100, 40);
+      expect(cleaned).toBe('short');
+    });
+
+    it('tailChars=0（默认）→ 纯头截断 + 省略号（既有语义不变）', () => {
+      const cleaned = sanitizeExternalText('abcdefghij', 4);
+      expect(cleaned).toBe('abcd…');
+    });
+
+    it('tailChars>0 → 头尾各留且**不扩大总预算**，中间如实标注省略量（缺口 D）', () => {
+      // 头部标记 HEAD，尾部标记 TAIL：只留头会系统性丢掉 TAIL（构建失败原因常在此）
+      const text = `${'H'.repeat(60)}MIDDLE${'T'.repeat(60)}`;
+      const cleaned = sanitizeExternalText(text, 40, 10);
+      // 总预算严格不超：头 30 + 尾 10（省略标记不计入内容预算）
+      expect(cleaned.startsWith('H'.repeat(30))).toBe(true);
+      expect(cleaned.endsWith('T'.repeat(10))).toBe(true);
+      // 中间省略量如实标注（静默截断 = 假阴性）
+      expect(cleaned).toContain('[省略 ');
+      expect(cleaned).not.toContain('MIDDLE');
     });
   });
 

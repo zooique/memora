@@ -367,6 +367,10 @@ deny 黑名单命中（内核 SSOT，优先级最高，任何档位/guest/owner 
 | 内核 | `src/agent/toolExecutor.ts` | 新增 handler：黑名单校验（§13.2）→ `confirmCommandRun` 确认 → 调 `runShellCommand` |
 | 内核 | `src/security/pathGuard.ts` | 黑名单 SSOT 清单扩展（含 alwaysAsk 分区，§13.2）+ `confirmCommandRun`（接 `confirmScriptRun` 同款 handler 链路） |
 | 内核 | `src/index.ts` | 类型导出（若有新面） |
+| 内核 | `src/agent/loop.ts` | 回流 kind 入队（`InterruptRequest` 新增变体 + **生产者入口**）、插话满员判据**排除**回流 kind、turn 终态收割调用点（§14.2 / §14.5）——2026-10-03 补：原清单漏此行 |
+| 内核 | `src/agent/backgroundTasks.ts`（**内部模块，不进 `index.ts` 公出面**） | 后台任务注册表 SSOT：`taskId` 生成、进程句柄与输出持有、`kill_command` 寻址、终态收割遍历（toolExecutor 写 / loop 读 —— 跨模块共享故必须单点，不可散落两处） |
+| 内核 | `src/agent/builtinTools.ts` + `toolExecutor.ts` | `kill_command` 注册 + handler（§14.1 已定案能力，落点不可缺；schema 见 §13.3） |
+| 内核 | `src/agent/constants.ts` | 仅当「回流条数上限」需新建常量时落此（与既有插话上限 `MAX_PENDING_INTERJECTS` 同文件同真源）；不新建则不动 |
 | 宿主 | `src/extension/extension.ts` | 确认 handler 注入处扩展命令确认分支（复用脚本确认同一条注入链） |
 | 宿主 | `src/shared/constants.ts` | 开关键沿用 `CONFIRM_SCRIPTS_KEY`（**不新增键**）；若有独立描述开关才补 |
 | 测试 | 内核 `toolExecutor.test.ts` / `pathGuard.test.ts` + `skillScriptRunner` 单测 | 清单见 §13.5 |
@@ -398,10 +402,18 @@ deny 黑名单（恒拦）
 {
   "command":    "string — 要执行的 shell 命令（Windows 经 cmd /c，类 Unix 经 sh -c）",
   "cwd":        "string? — 工作目录（绝对路径；缺省 = 宿主注入的工作区根）",
-  "timeoutMs":  "number? — 最长执行时长毫秒（单语义，含后台；§13.6-C）：同步缺省 60_000、上限 600_000 越界取边界；background=true 缺省不限时（长构建核心场景），传值则到点强杀并以 timedOut 回流",
+  "timeoutMs":  "number? — 最长执行时长毫秒（单语义，含后台；§13.6-C）：同步缺省 60_000、上限 SYNC_MAX_TIMEOUT_MS=600_000 越界取边界；background=true 缺省不限时（不设定时器），传值 clamp 至 BACKGROUND_MAX_TIMEOUT_MS=1_800_000 后到点强杀并以 timedOut 回流",
   "background": "boolean? — true = 后台执行：立即返回 taskId，完成后经气口回流（定案见 §14）；缺省同步等待"
 }
 ```
+
+```jsonc
+// kill_command 参数面（name: kill_command；常驻 BUILTIN_TOOLS；免裁决链见 §14.1）
+{
+  "taskId": "string — run_command 后台返回的 taskId（仅本 turn 本 agent 起的后台任务；非任意 pid）"
+}
+```
+⚠️ 未决：`taskId` 不存在 / 任务已完成时的返回语义未定（§13.6 未决二），实施前须拍板，不得静默成功。
 
 **描述措辞红线**（止血④同款纪律）：
 
@@ -424,7 +436,7 @@ deny 黑名单（恒拦）
 3. guest + 未注入 handler → 拒绝（fail-closed）。
 4. owner + confirmScripts=false → 自动批准 + 审计记录存在。
 5. owner + confirmScripts=true → 弹确认；拒绝后不执行、LLM 收到拒绝语义（非静默空跑，止血③教训）。
-6. 超时强杀**杀树验证**（收割后孙进程已死）+ 输出截断（`MAX_OUTPUT_CHARS` 头尾保留 + `truncated` 标记）——§13.6-A/B 锚点（原锚点「复用 runOnce 截断语义」失实：runOnce 既有实现无截断，2026-10-02 排雷订正）。
+6. 超时强杀**机制级验证**（Windows 断言 `taskkill /pid X /T /F` 调用 / POSIX 断言 `process.kill(-pgid)`；⚠️ 结果级「孙进程已死」探活实测不可用，见 §13.6 未决三）+ **收集侧内存护栏**（超 `MAX_COLLECTED_OUTPUT_BYTES` 停止拼接 + 累计丢弃字节 + `truncated`）——§13.6-A/B 锚点（锚点两度订正：①原写「复用 runOnce 截断语义」失实；②2026-10-03 二次排雷再订正：B 的真缺口是**收集侧内存**，上下文侧 L1/L2 两层既有防线存在且不并列改写）。**✅ 两项均已于 2026-10-03 实施 + 变异验证通过。**
 7. 描述文案守卫：不含「安全/已校验」承诺词、不含 bypass 提示（文案快照测试）。
 8. `scripts/test-temp-script-loop.ts` 同批修改核验（§11.6.4）。
 9. `background: true` 立即返回 `taskId`（不等待进程结束）；同步路径行为不受参数缺省影响（§14）。
@@ -449,23 +461,68 @@ deny 黑名单（恒拦）
 - 落点：skillScriptRunner 内新增**单一强杀原语**（私有函数，不新增模块——新模块指南红线）；spawn `timeout` 选项替换为手动计时 + 强杀原语，**同步超时路径一并升级**（既有伤不留给存量）。
 - 测试锚点：§13.5 第 6 条（spawn 父→子→孙三层脚本，收割后探孙进程已死）。
 
-**缺口 B：输出收集无上限**
+**缺口 B：输出收集无内存上限（原判「全链路无大小防线」已订正 —— 2026-10-03 二次排雷）**
 
-- 现状实锤：`stdout += data` 无限拼接；runOnce → formatExecutionResult → toolExecutor **全链路无大小防线**（format 层注释自证「stdout/stderr 须由调用方先行净化」且只管净化不管截断；全库 `outputLimit` 均为 LLM 生成 token 上限，非工具结果回流防线）。
-- 定案（**单点截断 = 收集侧**）：runOnce 增加输出上限常量 `MAX_OUTPUT_CHARS = 50_000`（同文件导出，脚本执行域真源）；超限保留**头 40_000 + 尾 10_000**（尾部含最终错误堆栈，头尾保留对排障最友好），中间标注省略字符数并置 `truncated: true`。format 层不重复截断（防双层截断双语义）。
-- 测试锚点：§13.5 第 6 条。
+- ⚠️ **订正：上轮「runOnce → format → toolExecutor 全链路无大小防线」结论失实。** 上下文侧**已有两层防线**（grep 实锤）：
+  - L1 **字符层（工具级）**：`toolExecutor` 的 `sanitizeExternalText(x, 20_000)` —— `run_skill_script`（toolExecutor.ts:1307）、`run_project_script`（:1357）走 `RUN_SCRIPT_RESULT_MAX_LEN`（:93），`run_code`（:1126-1127）走 `RUN_CODE_RESULT_MAX_LEN`（:71）；语义 = 「留头 20_000 + `…`」。
+  - L2 **token 层（入口关）**：`loop.appendToolMessage` → `offloadLargeToolResult`（阈值 `SINGLE_TOOL_RESULT_MAX_TOKENS = 6_000`），超阈原文落盘、上下文留「路径 + 预览前 1_000 字符」。
+  - 漏检归因：上轮以 `outputLimit / maxOutput` 为关键词排雷，漏检 `*RESULT_MAX_LEN` 与 `sanitizeExternalText` 这条真防线——**关键词排雷的漏检样本**，记入本节锚点纪律。
+- 真缺口（收窄后）：`stdout += data` 无限拼接，**收集侧无内存上限**。量纲是**内存**（Node 进程膨胀），不是上下文；同步 60s 场景尚可，后台不限时把它放大为真实 OOM 面。
+- 定案（**内存护栏，单点在收集侧**）：
+  - 常量按**字节**量纲命名与计量（如 `MAX_COLLECTED_OUTPUT_BYTES = 2MB`，`Buffer.byteLength` 累计），与 L1 的**字符**上限、L2 的 **token** 阈值三者量纲各异、各司其职。**禁止再按字符数拍一个「结果上限」与 `RUN_SCRIPT_RESULT_MAX_LEN` 并列**（constants.ts:147-149 明令：同一字符数在 CJK/非 CJK 下 token 差近 2 倍，字符不可作量纲）。
+  - 超阈行为：**停止拼接** + 累计丢弃字节数 + 置 `truncated`。**不做头尾保留**——尾部保留在收集侧是无效复杂度：L1 的头截断会把尾部抹掉（见缺口 D）。
+  - 明确不动：L1 / L2 既有上下文防线**不并列、不改写**；本层只防进程内存膨胀。
+- 测试锚点：§13.5 第 6 条（断言改为「收集侧内存护栏」）。
 
-**缺口 C：timeoutMs 双语义澄清（后台修订引入）**
+**缺口 C：timeoutMs 语义澄清（后台修订引入）——原定案与既有 SSOT 冲突，改走常量语义重裁定**
 
-- 统一定案：`timeoutMs` = **「最长执行时长」单语义**，同步后台共用一参不新增组合校验：
-  - 同步：缺省 60_000、上限 600_000 越界取边界（等待贴脸兜底，现状语义不变）；
-  - `background=true`：缺省**不限时**（长构建/冷缓存安装是后台核心场景，600s 不够）；传值则到点强杀（走缺口 A 原语）并以 `timedOut` 回流。
-- 拒绝的备选：组合禁令（background 时传 timeoutMs 报错）——新增校验分支且 agent 需多记一条禁忌；静默忽略——吞参违「语义显式性」（agent 以为 300s 会收割实际没有）。单语义无静默、无新分支。
+- ⚠️ **订正：上轮定案「background 缺省不限时 + 600s 上限不钳」与既有 SSOT 直接冲突。** `skillScriptRunner.ts:24 MAX_TIMEOUT_MS = 600_000` 与 `:26-37 normalizeTimeoutMs` 注释明写「超时钳制**真理源（SSOT）**」，且要求「执行侧（spawn timeout）与文案侧（formatScriptResult『超过 Ns』）**必须同源**」。后台绕过钳制 = 给 SSOT 函数开 mode 分支，恰是原定案宣称要避免的「新增分支」；且不限时后「超过 Ns」文案失去同源对象（toolExecutor.ts:1356 注释已在防这类谎报）。
+- 改定案（**调整 SSOT 常量语义，不在调用点分叉**）：
+  - 单一 `MAX_TIMEOUT_MS` 按风险性质**拆为两个命名常量**：
+    - `SYNC_MAX_TIMEOUT_MS = 600_000` —— 同步等待上限（阻塞 LLM，防挂死；语义与现状一致，不变）；
+    - `BACKGROUND_MAX_TIMEOUT_MS = 1_800_000`（30 分钟）—— 后台收割时限上限；`background=true` **缺省不设定时器**（表达「不限时」，**不是**拿 `Infinity` 去 clamp），传值则 clamp 到本上限，到点走缺口 A 杀树原语并以 `timedOut` 回流。
+  - 两常量**异义勿合并**（对齐 `builtinToolHandlers.ts:98` 既有「异义同值勿误合并」纪律）；`normalizeTimeoutMs` 保持单参纯函数，调用方按模式选常量 —— 判定逻辑零分支新增。
+  - 同源不变量延伸：不限时后台的**超时文案必须由「本次是否设定了时限」驱动**——未设定时不得出现「超过 Ns」，否则重现「实际不限时却报超过 600s」的谎报。
+- `timeoutMs` 本身仍是**「最长执行时长」单语义**（同步后台共用一参），拒绝组合禁令（多一条禁忌分支）与静默忽略（吞参违语义显式性）。
 - schema 措辞已同步修订（§13.3）。
 
 **边界登记（如实）**：宿主进程退出（VS Code 关窗）时存活后台进程属 OS 层孤儿，阶段 1 **不承诺**收割；turn 终态收割为阶段 1 显式承诺（§14.5）。登记不为免责而为了解真实边界后再立项。
 
-**锚点纪律**：本节三定案写入前均经 grep 实锤（与网络养分标搜证日期同待遇）——代码锚点失实（§13.1 路径笔误、tree-kill 不存在、§13.5 截断锚点空转）皆因未先跑 grep，此后代码锚点入档前必须实锤。
+**锚点纪律（含 2026-10-03 漏检教训）**：本节定案写入前均经 grep 实锤（与网络养分标搜证日期同待遇）——代码锚点失实（§13.1 路径笔误、tree-kill 不存在、§13.5 截断锚点空转）皆因未先跑 grep，此后代码锚点入档前必须实锤。**补一条**：grep 只跑**单个关键词**同样会失实——上轮以 `outputLimit/maxOutput` 论证「全链路无防线」，漏检了 `*RESULT_MAX_LEN` 与 `sanitizeExternalText`。**「某能力不存在」的结论，必须穷举同义面（命名族 / 调用族 / 量纲族）后再下，否则是「搜索不足」冒充「事实不存在」。**
+
+**缺口 D：长输出尾部系统性不可见 —— ✅ 2026-10-03 已落地**
+
+- 实锤（缺陷）：L1 语义 = 「留头 20_000 + `…`」（`sanitizeExternalText` 实现即 `slice(0, maxLen)`）；L2 落盘后预览 = 「前 1_000 字符」（`toolResultOffload`）——**两层都只留头**。
+- 影响：构建 / 测试长输出的**失败原因常在尾部**（堆栈末尾、FAIL 汇总行）；后台不限时长命令把它放大为常态。
+- 定案（**单点升级既有真源，不新建第二套截断**）：
+  - `sanitizeExternalText(text, maxLen, tailChars = 0)`：新增**可选**尾部保留参数，默认 0 ⇒ 既有 14 个调用点**语义零变化**（短字段场景无噪声）。
+  - 头尾份额**在既有 `maxLen` 预算内划分**（头 = maxLen − 尾），**不扩大预算**——扩大会破坏「替换后不二次落盘」的结构性保证。
+  - 是否保留尾部由**调用点显式声明**：脚本 / 代码链路（`run_code` / `run_skill_script` / `run_project_script`）传 `SCRIPT_RESULT_TAIL_CHARS = 4_000`；网页正文 / 技能文档 / 资源文件等**头部即要点**的内容**不传**（尾部对它们是页脚噪声）。**不在函数内按内容猜测**——猜测 = 隐式分支 + 行为不可预测。
+  - 落盘预览同步：可选 `tailPreviewChars`，份额从既有 1_000 预算内划出（`LOOP_CONSTANTS.TOOL_RESULT_OFFLOAD_TAIL_PREVIEW_CHARS = 300`）。
+- 为何未选「生产者回流前单独精简」：那会在既有两层之外新增第三个截断点（三层截断 = 双语义腐化）；升级既有真源则**一处生效、全链路一致**。
+- 验证：头尾保留 + 预算不扩大 + 中间省略量如实标注三组断言；变异验证（忽略尾部 → 3 处测试红）。
+
+**阶段 1 边界登记（未决三问 · 实施前逐条拍板）**
+
+| # | 未决项 | 现状实锤 | 建议（待拍板） |
+| --- | --- | --- | --- |
+| 1 | **宿主 `codeExecutor` 同伤** | 宿主侧同样是 `child.kill()` 单杀（codeExecutor.ts:126），全库零杀树能力——**两侧同伤，无现成机制可复用**（2026-10-03 排雷结论） | 阶段 1 **只修内核侧**；宿主同伤**独立登记立项**。原语做成 skillScriptRunner 私有函数 ⇒ 宿主够不着，**禁止宿主侧复制一份实现**（双轨各造 = 并列腐化）；要么阶段 2 一起提成内核内部共享原语，要么维持宿主缺口登记 |
+| 2 | `kill_command` 的 taskId 失效语义 | ~~未定~~ ✅ 已定案（2026-10-03） | 注册表层：不存在 → `kill()` 返回 `null`；已完成 → 返回其终态 + 结果（**不报错**，因「放弃并看输出」是正当用法）。工具层据此生成文案：不存在 → `[ERR:TASK_NOT_FOUND]`；已终态 → 直接回传结果。**绝不静默成功**——静默成功会让 LLM 以为自己杀掉了一个正在跑的进程 |
+| 3 | Windows `taskkill` 失败兜底 + 杀树测试守卫 | 已落地（2026-10-03 实施实证） | 兜底已实现（taskkill 失败/非 0 退出 → 降级 `child.kill()`）。**测试形态已实证改判**：原设想「杀树后孙进程已死」的**结果级**断言**不可用**——本机 Windows 探针实测（`probe_killtree`）：`child.kill()` **单杀**时孙进程心跳**同样停止**（共享控制台被销毁连带终止），故结果级探活无法区分两种实现 ⇒ 断言会**因错误的原因通过**。改为**机制级**分平台断言（Windows 断言 `taskkill /pid X /T /F` 调用、POSIX 断言 `process.kill(-pgid)`），并已做变异验证（退回单杀 → 测试红）；「真机层面孙进程确实不再存活」降为**手工验证项** |
+
+**实施进度（2026-10-03 更新）**：
+
+| 项 | 状态 | 落点 |
+| --- | --- | --- |
+| 缺口 A 杀树原语 | ✅ 已落地 | `skillScriptRunner.buildSpawnOptions` / `attachGovernance`（同步路径一并升级） |
+| 缺口 B 收集侧内存护栏 | ✅ 已落地 | 同上；`ScriptExecutionResult` 增 `OutputTruncationInfo`（**不进宿主公共接口面**） |
+| 缺口 C 超时双常量 | ✅ 已落地 | `SYNC_MAX_TIMEOUT_MS` / `BACKGROUND_MAX_TIMEOUT_MS`；`normalizeTimeoutMs(timeoutMs, maxMs)` 参数化取上限 |
+| 进程治理单点 | ✅ 已落地 | `buildSpawnOptions` + `attachGovernance`：同步与后台**共用同一实现** |
+| 后台任务注册表 | ✅ 已落地 | `src/agent/backgroundTasks.ts`（**实例非单例**，内部模块不进公出面）：start / get / list / kill / reapAll + 完成监听 |
+| 裸命令同步执行 | ✅ 已落地 | `resolveShellCommand` + `runShellCommand`（含单测） |
+| **工具层接线** | ⏳ 下一刀 | builtinTools 注册 / toolExecutor handler / pathGuard 黑名单 + 确认 / loop 回流 kind + 终态收割 |
+
+**⚠️ 命令构造纪律（实测教训）**：跨平台命令测试要避开 shell 元字符——`=>` 里的 `>` 会被 `cmd` 当**重定向符**、嵌套引号会被 `cmd` 吞掉（实测 `node -e "setTimeout(()=>{},30000)"` 在 Windows 下瞬间返回退出码 0）。统一用无空格、无元字符的 `node -e <code>` 形态。
 
 ## 十四、后台执行定案（2026-10-02 · 长命令消费者实锤后的阶段 1 范围修订）
 

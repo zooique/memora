@@ -8,8 +8,12 @@
  *      对齐宿主 codeExecutor；回流净化由 toolExecutor sanitize 兜底剥残留）
  *   2. L2 python 9009 兜底 —— ENOENT 时自动 `py -3` 重试一次
  *   3. 参数映射 —— resolveCommand 的 node 命令映射、cwd 条件展开、timeoutMs 钳制
- *      （与超时文案同源的 normalizeTimeoutMs）、spawn 同步抛错的启动失败态
- * 真实执行路径（退出码/超时/env 实际可读性）仍在 skillScriptRunner.test.ts 覆盖。
+ *      （与超时文案同源的 normalizeTimeoutMs；2026-10-03 起钳制值落到**手动计时器**，
+ *      不再下发 spawn `timeout` 选项）、spawn 同步抛错的启动失败态
+ *   4. 进程树强杀（§13.6-A）—— 分平台机制断言（Windows `taskkill /T /F`
+ *      / POSIX `process.kill(-pgid)`）
+ * 真实执行路径（退出码/超时/env 实际可读性、收集侧内存护栏）仍在
+ * skillScriptRunner.test.ts 覆盖。
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type * as ChildProcessModule from 'node:child_process';
@@ -34,6 +38,17 @@ function fakeChild(emit: (e: EventEmitter) => void) {
   (fake as unknown as Record<string, unknown>).stderr = null;
   emit(fake);
   return fake;
+}
+
+/** 杀树原语测试用的固定 pid（负号 = POSIX 进程组） */
+const FAKE_PID = 4321;
+
+/** 带 pid 的假子进程：使 killProcessTree 走真实分支（kill 为空实现，防降级路径崩溃） */
+function fakeChildWithPid(emit: (e: EventEmitter) => void) {
+  const fake = fakeChild(emit) as unknown as Record<string, unknown>;
+  fake.pid = FAKE_PID;
+  fake.kill = () => true;
+  return fake as unknown as childProcess.ChildProcess;
 }
 
 describe('skillScriptRunner — L1/L2 执行修复 spawn 行为', () => {
@@ -62,8 +77,12 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为', () => {
       expect(env.NO_COLOR).toBe('1');
       expect(env.PATH).toBe(process.env.PATH);
       expect(env.MEMORA_TEST_VAR).toBe('test-var-456');
-      // 超时默认 60s（上限 600s 见 MAX_TIMEOUT_MS）
-      expect(calls[0]!.opts.timeout).toBe(60_000);
+      // 超时**不再**经 spawn `timeout` 选项下发：该选项到期只 kill 直接子进程，
+      // 经 shell 派发时孙进程变孤儿 → 改为手动计时器 + killProcessTree 杀整棵树
+      // （方案文档 §13.6-A）。钳制后的值落到计时器，见下方 timeoutMs 用例。
+      expect(calls[0]!.opts).not.toHaveProperty('timeout');
+      // POSIX：子进程自成进程组（收割按 -pid 杀组）；Windows 走 taskkill /T，无需 detached
+      expect(calls[0]!.opts.detached).toBe(IS_WINDOWS ? undefined : true);
     } finally {
       delete process.env.MEMORA_TEST_VAR;
     }
@@ -158,18 +177,76 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为', () => {
   });
 
   // ── L1 补充：timeoutMs 钳制（执行侧与超时文案同源的 normalizeTimeoutMs）──
-  it('timeoutMs 钳制到 [1s, 600s] 后下发给 spawn（执行侧与超时文案同源）', async () => {
-    const timeouts: number[] = [];
-    mockedSpawn.mockImplementation(((_cmd: string, _args: string[], opts: object) => {
-      timeouts.push((opts as { timeout: number }).timeout);
-      return fakeChild((e) => queueMicrotask(() => e.emit('close', 0, null)));
-    }) as never);
+  it('timeoutMs 钳制到 [1s, 600s] 后作为手动计时器时长（不再下发 spawn timeout）', async () => {
+    vi.useFakeTimers();
+    try {
+      const optsList: Record<string, unknown>[] = [];
+      // 假子进程不 close：收场只能由超时计时器触发（验证钳制值确实落到了计时器）
+      mockedSpawn.mockImplementation(((_cmd: string, _args: string[], opts: object) => {
+        optsList.push(opts as Record<string, unknown>);
+        return fakeChild(() => undefined);
+      }) as never);
 
-    await runSkillScript('x.js', 'node', [], 120_000);
-    await runSkillScript('x.js', 'node', [], 999);
-    await runSkillScript('x.js', 'node', [], 10_000_000);
+      const cases = [
+        { timeoutMs: 120_000, expected: 120_000 }, // 区间内 → 原值
+        { timeoutMs: 999, expected: 1_000 }, // 下限
+        { timeoutMs: 10_000_000, expected: 600_000 }, // 上限
+      ];
+      for (const c of cases) {
+        let settled = false;
+        const pending = runSkillScript('x.js', 'node', [], c.timeoutMs).then((r) => {
+          settled = true;
+          return r;
+        });
+        await vi.advanceTimersByTimeAsync(c.expected - 1);
+        expect(settled).toBe(false); // 未到点不得收场
+        await vi.advanceTimersByTimeAsync(1);
+        const result = await pending;
+        expect(result.timedOut).toBe(true);
+        expect(result.exitCode).toBe(-1);
+      }
+      // 计时器承载超时 ⇒ spawn 侧不再有 timeout 选项（杀树原语替代）
+      optsList.forEach((o) => expect(o).not.toHaveProperty('timeout'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
-    expect(timeouts).toEqual([120_000, 1_000, 600_000]);
+  // ── §13.6-A 进程树强杀：机制级分平台断言 ──
+  // 为何锁机制而非结果：本机（Windows）实测 `child.kill()` 单杀时孙进程同样停止心跳
+  // （共享控制台被销毁连带终止）⇒ 「孙进程是否已死」的结果级断言无法区分两种实现，
+  // 会**因错误的原因通过**。故在此锁定机制（与方案文档 §13.6-A 定案逐字对应），
+  // 真机级验证列为阶段 1 手工项。
+  it('超时收割走进程树强杀原语（Windows taskkill /T /F；POSIX kill(-pgid)）', async () => {
+    vi.useFakeTimers();
+    try {
+      const spawnCalls: { cmd: string; args: string[] }[] = [];
+      mockedSpawn.mockImplementation(((cmd: string, args: string[]) => {
+        spawnCalls.push({ cmd, args });
+        return fakeChildWithPid(() => undefined);
+      }) as never);
+      // POSIX 分支会真调 process.kill(-pid)：spy 掉，避免向真实进程组发信号
+      const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+
+      const pending = runSkillScript('x.js', 'node', [], 1_000);
+      await vi.advanceTimersByTimeAsync(1_000);
+      const result = await pending;
+      expect(result.timedOut).toBe(true);
+
+      if (IS_WINDOWS) {
+        expect(
+          spawnCalls.some(
+            (c) => c.cmd === 'taskkill' && c.args.join(' ') === `/pid ${FAKE_PID} /T /F`,
+          ),
+        ).toBe(true);
+      } else {
+        // 负 pid = 杀整个进程组（依赖 spawn 的 detached:true 使子进程自成组长）
+        expect(killSpy).toHaveBeenCalledWith(-FAKE_PID, 'SIGKILL');
+      }
+      killSpy.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // ── L1 补充：spawn 同步抛错（区别于下方异步 error 事件分支）──

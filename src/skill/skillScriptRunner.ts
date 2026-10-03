@@ -15,25 +15,87 @@ import type { CodeExecutionResult } from '@/code-exec/types.js';
 import { logger } from '@/logging/logger.js';
 import type { ScriptRuntime } from '@/utils/scanner.js';
 
-/** 脚本执行结果（= CodeExecutionResult，复用代码执行结果形态，SSOT 不重复定义） */
-export type ScriptExecutionResult = CodeExecutionResult;
+/**
+ * 收集侧**内存护栏**产物（可选）。
+ *
+ * 语义边界：这是**内存防线**产物（防 Node 进程被超长输出撑爆），与上下文侧防线
+ * （调用方 `sanitizeExternalText` 的字符上限、`appendToolMessage` 入口关的 token 落盘）
+ * **量纲与目的均不同，不是同一件事的两处实现**。
+ *
+ * ⚠️ 只挂在 `ScriptExecutionResult`（内核子进程收集侧），**不进 `CodeExecutionResult`**——
+ * 后者是宿主 `ICodeExecutionProvider` 的公共返回类型，宿主执行器不产生这两个字段，
+ * 挂上去只会给集成方制造「我该不该填」的噪声。
+ */
+export interface OutputTruncationInfo {
+  /** 输出是否在收集侧被内存护栏截断 */
+  truncated?: boolean;
+  /** 被内存护栏丢弃的字节数（仅 `truncated` 为真时有意义） */
+  discardedBytes?: number;
+}
+
+/**
+ * 脚本执行结果 = 代码执行结果形态 + 收集侧护栏信息
+ *
+ * 复用 `CodeExecutionResult`（SSOT 不重复定义四个基础字段），仅在脚本侧**扩展**——
+ * 宿主 `run_code` 链路不受影响（字段可选，传纯 `CodeExecutionResult` 即合规）。
+ */
+export type ScriptExecutionResult = CodeExecutionResult & OutputTruncationInfo;
 
 /** 默认执行超时（毫秒）：脚本常用交互/构建任务在 1 分钟内完成；超长任务由 LLM 传 timeoutMs */
 const DEFAULT_TIMEOUT_MS = 60_000;
-/** 最大执行超时（毫秒）：适配脚本内 API 调用/批处理等长耗时任务 */
-const MAX_TIMEOUT_MS = 600_000;
+/**
+ * **同步**执行等待上限（毫秒）：适配脚本内 API 调用/批处理等长耗时任务。
+ * 上限只保护「阻塞 LLM」的同步路径——防 LLM 传天文数字把会话挂死。
+ */
+const SYNC_MAX_TIMEOUT_MS = 600_000;
+/**
+ * **后台**收割时限上限（毫秒）：长构建 / 冷缓存依赖安装是后台核心场景，600s 明显不够。
+ *
+ * 与 `SYNC_MAX_TIMEOUT_MS` **异义勿合并**（对齐 builtinToolHandlers「异义同值勿误合并」纪律）：
+ * 两者风险性质不同（同步阻塞 LLM vs 后台不阻塞），各自独立演进，合并会让任一侧的
+ * 调整误伤另一侧。
+ */
+const BACKGROUND_MAX_TIMEOUT_MS = 1_800_000;
 
 /**
- * 超时钳制真理源（SSOT）：实际超时 = clamp(timeoutMs, 1s, MAX_TIMEOUT_MS)
+ * 收集侧**内存护栏**上限（字节）：stdout + stderr 共享该预算，超限停止拼接并累计丢弃量。
  *
- * 执行侧（spawn 的 timeout 选项）与文案侧（formatScriptResult 的「超过 Ns」）必须同源，
+ * 量纲纪律（勿改写成字符数）：本常量防的是 **Node 进程内存膨胀**，量纲必须是字节；
+ * 上下文侧另有两层防线——调用方的 `sanitizeExternalText(x, 20_000)`（字符）与
+ * `appendToolMessage` 入口关的 `SINGLE_TOOL_RESULT_MAX_TOKENS`（token，含落盘）。
+ * 三者量纲各异、各司其职：**禁止**把本常量并入或对齐那两层（并列 = 双真源腐化）。
+ *
+ * 取值理由：2MB 对「脚本/命令刷屏」已是数量级冗余（下游上下文层只留 20_000 字符），
+ * 同时远低于 Node 默认堆上限，不会成为新的 OOM 面。
+ */
+const MAX_COLLECTED_OUTPUT_BYTES = 2 * 1024 * 1024;
+
+/**
+ * 超时钳制真理源（SSOT）：实际超时 = clamp(timeoutMs, 1s, maxMs)
+ *
+ * 执行侧（计时器时长）与文案侧（formatScriptResult 的「超过 Ns」）必须同源，
  * 否则两处漂移会重现「实际 60s 超时却告知超过 600s」的谎报。
  *
+ * **上限由调用方按模式选常量**（同步 `SYNC_MAX_TIMEOUT_MS` / 后台
+ * `BACKGROUND_MAX_TIMEOUT_MS`），函数本身仍是单参纯函数——不按模式内部分支
+ * （分支 = 同一语义两套判定，属并列腐化）。
+ *
  * @param timeoutMs 调用方传入的超时（毫秒；toolExecutor 由 LLM 的 timeout_ms 秒值 ×1000 得到）
- * @returns 钳制后的实际超时（毫秒，落在 [1_000, MAX_TIMEOUT_MS] 区间内）
+ * @param maxMs 上限（默认同步上限）
+ * @returns 钳制后的实际超时（毫秒，落在 [1_000, maxMs] 区间内）
  */
-function normalizeTimeoutMs(timeoutMs: number): number {
-  return Math.min(Math.max(timeoutMs, 1_000), MAX_TIMEOUT_MS);
+function normalizeTimeoutMs(timeoutMs: number, maxMs: number = SYNC_MAX_TIMEOUT_MS): number {
+  return Math.min(Math.max(timeoutMs, 1_000), maxMs);
+}
+
+/**
+ * 后台收割时限钳制：与同步共用 `normalizeTimeoutMs` 同一实现，只换上限常量。
+ *
+ * 单点是刻意的：后台若另写一个 clamp，就会与同步侧的「1s 下限 / 上限语义」分叉，
+ * 两处漂移后难以判断哪边是真理源。
+ */
+export function normalizeBackgroundTimeoutMs(timeoutMs: number): number {
+  return normalizeTimeoutMs(timeoutMs, BACKGROUND_MAX_TIMEOUT_MS);
 }
 
 /**
@@ -75,12 +137,306 @@ export function guardWindowsShellScript(
 }
 
 /**
+ * 进程树强杀原语（跨平台，零新依赖）
+ *
+ * 缺口事实：Node spawn 的 `timeout` 选项到期只 kill **直接子进程**——`cmd /c npm test`
+ * 这类经 shell 派发的场景，孙进程（npm/node/vitest）变孤儿继续跑（占端口 / 锁文件）。
+ * 故不再依赖 spawn timeout，改为手动计时 + 本原语（同步与后台路径统一）。
+ *
+ * - Windows：`taskkill /pid <pid> /T /F`（/T = 进程树）；taskkill 自身失败（权限不足 /
+ *   进程已退出）降级为 `child.kill()`——只及直接子进程，属**降级**而非等价，如实记录。
+ * - POSIX：spawn 时 `detached: true` 使子进程自成进程组（pgid == pid），
+ *   故 `process.kill(-pid, 'SIGKILL')` 杀整组；失败降级同上。
+ *
+ * ⚠️ 本原语是**私有**实现：宿主 codeExecutor 属另一进程上下文，够不着本函数；其同款缺口
+ * （`child.kill()` 单杀）已独立登记立项（方案文档 §13.6 未决一）——**禁止**在宿主侧复制
+ * 一份实现（双轨各造 = 并列腐化），要么阶段 2 一起提成内核内部共享原语，要么维持登记。
+ */
+function killProcessTree(child: childProcess.ChildProcess): void {
+  const pid = child.pid;
+  if (pid === undefined) return;
+  if (process.platform === 'win32') {
+    const killer = childProcess.spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    });
+    killer.on('error', (err) => {
+      logger.warn({ pid, err }, 'taskkill 启动失败，降级为 kill 直接子进程');
+      child.kill();
+    });
+    killer.on('close', (code) => {
+      if (code !== 0) {
+        logger.warn({ pid, code }, 'taskkill 未成功结束进程树，降级为 kill 直接子进程');
+        child.kill();
+      }
+    });
+    return;
+  }
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch (err) {
+    logger.warn({ pid, err }, '进程组强杀失败，降级为 kill 直接子进程');
+    child.kill('SIGKILL');
+  }
+}
+
+/**
+ * 输出收集器（内存护栏）：stdout/stderr **共享**一个字节预算，超限即停止拼接并累计丢弃量。
+ *
+ * 只在收集侧生效。**不做「头尾保留」**：尾部保留在此处是无效复杂度——下游
+ * `sanitizeExternalText` 的头截断会把尾部抹掉（方案文档 §13.6-B / 缺口 D）。
+ */
+function createOutputCollector(limitBytes: number) {
+  let collected = 0;
+  let discarded = 0;
+  return {
+    /** 追加一个 chunk，返回**应当拼入**的部分（已超限返回空串） */
+    push(chunk: string): string {
+      const size = Buffer.byteLength(chunk, 'utf-8');
+      const remaining = limitBytes - collected;
+      if (remaining <= 0) {
+        discarded += size;
+        return '';
+      }
+      if (size <= remaining) {
+        collected += size;
+        return chunk;
+      }
+      // 部分容纳：按字节精确切分后回退到 UTF-8 字符边界（续字节形如 0b10xxxxxx），
+      // 避免切出半个多字节字符产生 U+FFFD 污染脚本输出
+      const buf = Buffer.from(chunk, 'utf-8');
+      let end = remaining;
+      while (end > 0 && ((buf[end] ?? 0) & 0xc0) === 0x80) end--;
+      const kept = buf.subarray(0, end).toString('utf-8');
+      const keptBytes = Buffer.byteLength(kept, 'utf-8');
+      collected += keptBytes;
+      discarded += size - keptBytes;
+      return kept;
+    },
+    get discardedBytes(): number {
+      return discarded;
+    },
+    get truncated(): boolean {
+      return discarded > 0;
+    },
+  };
+}
+
+/**
+ * 统一的 spawn 选项（进程治理同源）
+ *
+ * 同步与后台共用一份：防止「同步一套选项 / 后台另一套」的漂移——一旦漂移，
+ * 杀树 / detached / 禁色 / windowsHide 会各自演化出不同行为。
+ */
+function buildSpawnOptions(cwd?: string): childProcess.SpawnOptions {
+  return {
+    // ⚠️ 不用 spawn 原生 `timeout` 选项：它到期只 kill **直接子进程**，
+    // 经 shell 派发（`cmd /c npm test`）时孙进程会变孤儿继续跑。改为手动计时
+    // + `killProcessTree` 强杀整棵树（方案文档 §13.6-A）。
+    // POSIX `detached`：子进程自成进程组（pgid == pid），收割按 -pid 杀组；
+    // Windows 不需要 detached（走 taskkill /T /F）。
+    ...(process.platform === 'win32' ? {} : { detached: true }),
+    // 继承宿主用户环境变量（不走 PATH/HOME 最小白名单——
+    // 项目脚本读用户环境（API KEY/PATH/工作区变量）是合理需求；密钥默认经
+    // SecretStorage→config 不经 env，env 回退模式下 key 在 env 属 owner 信任
+    // 语义（见文件头安全模型）。对齐宿主 codeExecutor 持久会话环境语义）
+    // 禁子进程彩色输出：FORCE_COLOR:0/NO_COLOR:1 源头禁色（对齐宿主 codeExecutor
+    // 同构）；回流净化由 toolExecutor sanitizeExternalText 兜底剥残留 ANSI——
+    // 源头禁根因 + 通用防御两层不冲突
+    env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    // 隐藏子进程窗口（Windows）：不传则每次执行弹 conhost 黑框（对齐宿主
+    // codeExecutor 既有 windowsHide 语义 + 大厂仅隐藏子进程回流输出共识）
+    windowsHide: true,
+    // cwd 缺省时由 node 决定（当前进程目录）；仅显式传入时指定
+    ...(cwd ? { cwd } : {}),
+  };
+}
+
+/** 进程治理挂载参数 */
+interface GovernanceOptions {
+  /** 超时收割毫秒；**null = 不限时**（后台缺省语义） */
+  timeoutMs: number | null;
+  /** 日志标签（脚本路径或命令） */
+  logLabel: string;
+  /** 终局回调（**只调用一次**） */
+  resolve: (result: ScriptExecutionResult & { enoent: boolean }) => void;
+}
+
+/**
+ * 给已 spawn 的子进程挂上**统一治理**：输出收集（内存护栏）+ 超时杀树 + 终局回调。
+ *
+ * 同步（await 终局）与后台（不 await，监听终局）两条路径共用同一实现——
+ * 「同步一套 / 后台另一套」是并列腐化，进程治理必须只有一处。
+ */
+function attachGovernance(
+  child: childProcess.ChildProcess,
+  opts: GovernanceOptions,
+): { peek: () => ScriptExecutionResult & { enoent: boolean } } {
+  let stdout = '';
+  let stderr = '';
+  let timedOut = false;
+  let enoent = false;
+  /** 是否已结算（超时强杀与 close/error 竞争时的单点守卫） */
+  let settled = false;
+  /** 收集侧内存护栏：stdout/stderr 共享字节预算（方案文档 §13.6-B） */
+  const collector = createOutputCollector(MAX_COLLECTED_OUTPUT_BYTES);
+
+  child.stdout?.on('data', (data: Buffer) => {
+    stdout += collector.push(data.toString('utf-8'));
+  });
+  child.stderr?.on('data', (data: Buffer) => {
+    stderr += collector.push(data.toString('utf-8'));
+  });
+
+  const snapshot = (exitCode: number): ScriptExecutionResult & { enoent: boolean } => ({
+    stdout,
+    stderr,
+    exitCode,
+    timedOut,
+    enoent,
+    truncated: collector.truncated,
+    discardedBytes: collector.discardedBytes,
+  });
+
+  // 硬超时：到点强杀**进程树**并立即结算——对齐宿主 codeExecutor 的 killer 形态
+  // （不等 close，避免 taskkill 异步失败 / 子进程僵死时终局永不发生）
+  let killer: NodeJS.Timeout | undefined;
+  if (opts.timeoutMs !== null) {
+    killer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      timedOut = true;
+      logger.warn(
+        { logLabel: opts.logLabel, timeoutMs: opts.timeoutMs },
+        '子进程执行超时，已强杀进程树',
+      );
+      killProcessTree(child);
+      opts.resolve(snapshot(-1));
+    }, opts.timeoutMs);
+    // 定时器不阻塞宿主进程退出（对齐宿主 codeExecutor 的 killer.unref 语义）
+    if (typeof killer.unref === 'function') killer.unref();
+  }
+
+  child.on('error', (err) => {
+    // ENOENT = 命令不存在（Windows python 9009 场景：现代 Python 只装 py 启动器）
+    // 记标记供 L2 fallback，其余错误原样返回
+    enoent = (err as NodeJS.ErrnoException).code === 'ENOENT';
+    logger.error({ logLabel: opts.logLabel, err }, '子进程执行错误');
+    if (settled) return;
+    settled = true;
+    if (killer) clearTimeout(killer);
+    opts.resolve({ ...snapshot(-1), stderr: stderr || String(err) });
+  });
+
+  child.on('close', (code) => {
+    if (settled) return;
+    settled = true;
+    if (killer) clearTimeout(killer);
+    opts.resolve(snapshot(code ?? 0));
+  });
+
+  // 中途快照（后台 kill_command 需要「截至终止时的已捕获输出」）：
+  // 退出码在进程未退出时取 -1，timedOut / 护栏标记随当时状态
+  return { peek: () => snapshot(child.exitCode ?? -1) };
+}
+
+/**
+ * 裸命令 → shell 派发形态（纯函数，平台参数化可测）
+ *
+ * Windows 经 `cmd /c`，类 Unix 经 `sh -c`。**不在此引入 powershell/bash 第二档**——
+ * 那是宿主 shell 选型的议题，内核只做「命令 → 平台默认 shell」的单点映射。
+ */
+export function resolveShellCommand(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } {
+  return platform === 'win32'
+    ? { command: 'cmd', args: ['/c', command] }
+    : { command: 'sh', args: ['-c', command] };
+}
+
+/**
+ * 执行裸 shell 命令（**同步**）：与脚本执行共用同一套进程治理（§13.6-A/B），
+ * 只多一层「命令 → shell 派发」解析。后台形态见 `backgroundTasks` 注册表——
+ * 同一治理实现的另一条消费路径，不是另一套实现。
+ */
+export async function runShellCommand(
+  command: string,
+  cwd?: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<ScriptExecutionResult> {
+  const { command: shell, args } = resolveShellCommand(command);
+  return new Promise((resolve) => {
+    let child: childProcess.ChildProcess;
+    try {
+      child = childProcess.spawn(shell, args, buildSpawnOptions(cwd));
+    } catch (err) {
+      logger.error({ command, err }, '启动命令进程失败');
+      resolve({
+        stdout: '',
+        stderr: `启动失败: ${(err as Error).message}`,
+        exitCode: -1,
+        timedOut: false,
+      });
+      return;
+    }
+    attachGovernance(child, {
+      timeoutMs: normalizeTimeoutMs(timeoutMs),
+      logLabel: command,
+      resolve,
+    });
+  });
+}
+
+/**
+ * 启动**后台**裸命令（立即返回，不等待进程结束）
+ *
+ * @param command 裸命令
+ * @param cwd 工作目录
+ * @param timeoutMs 收割时限（**null = 不限时**，随 turn 生命周期）；由调用方按
+ *        `BACKGROUND_MAX_TIMEOUT_MS` 钳制后传入（钳制真源不在本函数内分支）
+ * @param onSettled 终局回调（完成 / 超时 / 出错均经此，**只调用一次**）
+ * @returns 句柄：killNow = 中途终止（走杀树原语）
+ */
+export function startBackgroundCommand(
+  command: string,
+  cwd: string | undefined,
+  timeoutMs: number | null,
+  onSettled: (result: ScriptExecutionResult) => void,
+): { killNow: () => void; peek: () => ScriptExecutionResult } {
+  const { command: shell, args } = resolveShellCommand(command);
+  let child: childProcess.ChildProcess;
+  try {
+    child = childProcess.spawn(shell, args, buildSpawnOptions(cwd));
+  } catch (err) {
+    logger.error({ command, err }, '启动后台命令进程失败');
+    onSettled({
+      stdout: '',
+      stderr: `启动失败: ${(err as Error).message}`,
+      exitCode: -1,
+      timedOut: false,
+    });
+    return {
+      killNow: () => undefined,
+      peek: () => ({ stdout: '', stderr: '', exitCode: -1, timedOut: false }),
+    };
+  }
+  const governance = attachGovernance(child, {
+    timeoutMs,
+    logLabel: command,
+    resolve: onSettled,
+  });
+  return { killNow: () => killProcessTree(child), peek: governance.peek };
+}
+
+/**
  * 执行技能脚本：在隔离子进程中运行，收集 stdout/stderr/exitCode/timedOut
  *
  * @param scriptPath 脚本绝对路径
  * @param runtime 运行时（node/python/shell 白名单三档）
  * @param args 传给脚本的参数数组
- * @param timeoutMs 超时（毫秒，限制在 [1s, MAX_TIMEOUT_MS] 内）
+ * @param timeoutMs 超时（毫秒，限制在 [1s, SYNC_MAX_TIMEOUT_MS] 内）
  * @param cwd 子进程工作目录（可选；run_project_script 以项目根为 cwd，
  *        使项目脚本可加载项目本地依赖/相对数据文件）
  * @param nodePath node 可执行文件路径（可选，缺省 'node' 走 PATH）——供宿主注入真实
@@ -107,7 +463,8 @@ export async function runSkillScript(
     return { stdout: '', stderr: guardError, exitCode: -1, timedOut: false };
   }
 
-  // 超时限制在 [1s, MAX_TIMEOUT_MS] 内（与超时文案同源，见 normalizeTimeoutMs）
+  // 超时限制在 [1s, SYNC_MAX_TIMEOUT_MS] 内（与超时文案同源，见 normalizeTimeoutMs；
+  // 后台走 BACKGROUND_MAX_TIMEOUT_MS，见 normalizeBackgroundTimeoutMs）
   const effectiveTimeout = normalizeTimeoutMs(timeoutMs);
 
   const { command, args: cmdArgs } = resolveCommand(runtime, scriptPath, args, nodePath);
@@ -122,27 +479,9 @@ export async function runSkillScript(
     runArgs: string[],
   ): Promise<ScriptExecutionResult & { enoent: boolean }> =>
     new Promise((resolve) => {
-      /** ENOENT 标记：spawn 命令不存在（如 Windows 缺 python 命令，仅 python runtime 场景用） */
-      let enoent = false;
       let child: childProcess.ChildProcess;
       try {
-        child = childProcess.spawn(cmd, runArgs, {
-          timeout: effectiveTimeout,
-          // 继承宿主用户环境变量（不走 PATH/HOME 最小白名单——
-          // 项目脚本读用户环境（API KEY/PATH/工作区变量）是合理需求；密钥默认经
-          // SecretStorage→config 不经 env，env 回退模式下 key 在 env 属 owner 信任
-          // 语义（见文件头安全模型）。对齐宿主 codeExecutor 持久会话环境语义）
-          // 禁子进程彩色输出：FORCE_COLOR:0/NO_COLOR:1 源头禁色（对齐宿主 codeExecutor
-          // 同构）；回流净化由 toolExecutor sanitizeExternalText 兜底剥残留 ANSI——
-          // 源头禁根因 + 通用防御两层不冲突
-          env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
-          stdio: ['ignore', 'pipe', 'pipe'],
-          // 隐藏子进程窗口（Windows）：不传则每次执行弹 conhost 黑框（对齐宿主
-          // codeExecutor 既有 windowsHide 语义 + 大厂仅隐藏子进程回流输出共识）
-          windowsHide: true,
-          // cwd 缺省时由 node 决定（当前进程目录）；仅显式传入时指定
-          ...(cwd ? { cwd } : {}),
-        });
+        child = childProcess.spawn(cmd, runArgs, buildSpawnOptions(cwd));
       } catch (err) {
         logger.error({ scriptPath, runtime, err }, '启动脚本进程失败');
         resolve({
@@ -155,38 +494,11 @@ export async function runSkillScript(
         return;
       }
 
-      let stdout = '';
-      let stderr = '';
-      let timedOut = false;
-
-      child.stdout?.on('data', (data: Buffer) => {
-        stdout += data.toString('utf-8');
-      });
-
-      child.stderr?.on('data', (data: Buffer) => {
-        stderr += data.toString('utf-8');
-      });
-
-      child.on('error', (err) => {
-        // ENOENT = 命令不存在（Windows python 9009 场景：现代 Python 只装 py 启动器）
-        // 记标记供 L2 fallback，其余错误原样返回
-        enoent = (err as NodeJS.ErrnoException).code === 'ENOENT';
-        logger.error({ scriptPath, err }, '脚本进程执行错误');
-        resolve({ stdout, stderr: stderr || String(err), exitCode: -1, timedOut: false, enoent });
-      });
-
-      child.on('close', (code, signal) => {
-        if (signal === 'SIGTERM' || signal === 'SIGKILL') {
-          timedOut = true;
-          logger.warn({ scriptPath, effectiveTimeout }, '脚本执行超时，已被终止');
-        }
-        resolve({
-          stdout,
-          stderr,
-          exitCode: code ?? 0,
-          timedOut,
-          enoent,
-        });
+      // 治理挂载（单点）：输出收集 + 超时杀树 + 终局回调，与后台命令同一实现
+      attachGovernance(child, {
+        timeoutMs: effectiveTimeout,
+        logLabel: scriptPath,
+        resolve,
       });
     });
 
@@ -298,21 +610,26 @@ export interface ExecutionResultFormatLabels {
  * @returns 格式化后的可读字符串（供工具返回值注入 LLM 上下文）
  */
 export function formatExecutionResult(
-  result: CodeExecutionResult,
+  result: CodeExecutionResult & OutputTruncationInfo,
   labels: ExecutionResultFormatLabels,
 ): string {
+  // 截断诚实化：收集侧内存护栏生效时必须显式告知丢弃量——静默截断会让 LLM 以为
+  // 所见即完整输出（假阴性；与 read_file 分段脚注「已显示第 X–Y 行」同一纪律）
+  const truncatedNote = result.truncated
+    ? `\n[OUTPUT_TRUNCATED] 输出超过收集侧内存上限，已停止收集（丢弃 ${result.discardedBytes ?? 0} 字节，所见非完整输出）`
+    : '';
   if (result.timedOut) {
-    return `[${labels.kind}_TIMEOUT] ${labels.timeoutDetail}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`;
+    return `[${labels.kind}_TIMEOUT] ${labels.timeoutDetail}\nstdout: ${result.stdout}\nstderr: ${result.stderr}${truncatedNote}`;
   }
   if (result.exitCode !== 0) {
-    return `[${labels.kind}_ERROR] ${labels.errorDetail}（退出码: ${result.exitCode}）\nstdout: ${result.stdout}\nstderr: ${result.stderr}`;
+    return `[${labels.kind}_ERROR] ${labels.errorDetail}（退出码: ${result.exitCode}）\nstdout: ${result.stdout}\nstderr: ${result.stderr}${truncatedNote}`;
   }
   // 成功：优先 stdout，stderr 附加
   const output = result.stdout || '(无输出)';
   if (result.stderr) {
-    return `${output}\n[stderr] ${result.stderr}`;
+    return `${output}\n[stderr] ${result.stderr}${truncatedNote}`;
   }
-  return output;
+  return `${output}${truncatedNote}`;
 }
 
 /**

@@ -56,6 +56,14 @@ export interface ToolResultOffloadOptions {
   thresholdTokens?: number;
   /** 预览字符数（默认 1,000） */
   previewChars?: number;
+  /**
+   * 尾部预览字符数（默认 0 = 只留头部）。
+   *
+   * >0 时从**总预览预算内**划出尾部份额（头 = previewChars − 尾），**不扩大预算**——
+   * 预算扩大会让替换文本逼近单条上限，破坏「替换后不二次落盘」的结构性保证。
+   * 用途同 `SCRIPT_RESULT_TAIL_CHARS`：长输出的关键信息常在尾部（见缺口 D）。
+   */
+  tailPreviewChars?: number;
 }
 
 /**
@@ -91,13 +99,24 @@ export function offloadLargeToolResult(
     return { content, offloaded: false };
   }
 
-  const preview = content.slice(0, previewChars);
-  const omitted = Math.max(0, content.length - previewChars);
+  // 头（+可选尾）份额均在 previewChars 预算内划分，不扩大总预览量
+  const tailChars = Math.min(
+    Math.max(opts.tailPreviewChars ?? 0, 0),
+    Math.max(previewChars - 1, 0),
+  );
+  const headChars = previewChars - tailChars;
+  const head = content.slice(0, headChars);
+  const tail = tailChars > 0 ? content.slice(content.length - tailChars) : '';
+  const omitted = Math.max(0, content.length - headChars - tailChars);
+  const previewBlock =
+    tailChars > 0
+      ? `[预览（头 ${headChars} + 尾 ${tailChars} 字符）]\n${head}\n…[省略 ${omitted} 字符]…\n${tail}`
+      : `[预览（前 ${previewChars} 字符）]\n${head}…`;
 
   return {
     content:
       `[工具结果已卸载至磁盘] 原文 ${content.length} 字符（≈${tokens} tokens）写入：${filePath}\n` +
-      `[预览（前 ${previewChars} 字符）]\n${preview}…\n` +
+      `${previewBlock}\n` +
       `[省略 ${omitted} 字符。需要完整内容请用 read_file 读取上述路径，大文件可配合 offset/limit 分段读取]`,
     offloaded: true,
     filePath,
