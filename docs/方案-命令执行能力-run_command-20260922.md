@@ -327,7 +327,15 @@ deny 黑名单命中（内核 SSOT，优先级最高，任何档位/guest/owner 
       → allow 前缀白名单（阶段 2；仅对走到此层的命令生效，命中即免 ask）
 ```
 
-- **run_command 与 run_project_script / run_skill_script 共用同一条裁决链**（`SecurityGuard.confirmCommandRun` 接入 `confirmScriptRun` 同款 handler 链路）——不出现第二套确认机制。
+- **「共用」的确切语义（2026-10-03 对抗式审查订正）——两个层面必须分开说**：
+  | 层面 | 是否共用 | 落点 |
+  | --- | --- | --- |
+  | **确认通道**（谁来弹窗、fail-closed、审计） | ✅ 共用 | 两者都经 `confirmGate` → 宿主**同一张**审批卡（`onWriteConfirmation`） |
+  | **命令内容裁决**（deny / always-ask 判据） | ❌ **不共用** | `classifyCommand` 的唯一调用点是 `confirmCommandRun`；`confirmScriptRun(targetPath, …)` **只判权限档位，不看执行内容** |
+- ⚠️ **由此产生的已知边界（不是漏洞登记，是能力边界的如实声明）**：`run_project_script` / `run_skill_script` 执行**脚本文件内容**，其命令内容**不经 deny/always-ask 裁决**。故「黑名单恒拦」这一不变式在**命令字面量**上成立，在**脚本文件内容**上不成立——脚本里写 `rm -rf /` 不会被 deny 拦（只受路径白名单 + 运行时白名单三档 + 确认档位约束）。
+  - 阶段 1 **不修**，理由：修它需读文件内容做命令扫描（`.bat`/`.sh`/`.py`/`.js` 形态各异 + 引号/变量/转义解析）= 半个 shell 解释器，误判率与维护成本都不可控，且会把「命令裁决」从纯函数变成 IO 函数（判据不再可单测）。
+  - 该边界的**实际风险等级**：走脚本面绕 deny 需要「写脚本 → 执行 → 删脚本」三步，`write_file` 本身受路径白名单 + 确认档位约束，且执行对象是**仓库内已沉淀的文件**（可被用户审阅），与 `run_command` 的「任意字符串」不同质。
+  - **诚实化要求**：设置面板与工具描述**不得**声称「所有命令执行都受黑名单保护」——当前 `run_command` 描述写的是「命令执行受黑名单与用户审批约束」，作用域限该工具，措辞正确 ✅。
 - 审计：`confirmScripts = false` 档的自动批准**必走审计**（沿用 owner 模式既有语义），出事可溯。
 - 审批疲劳对策：恒 ask 是默认安全档（阶段 1），逃逸阀 = ①关开关进 denyOnly 自动档（deny 仍拦）②阶段 2 的 allow 前缀白名单。**不引入「按命令智能预判是否询问」**（无分类器条件下是伪安全）。
 
@@ -344,8 +352,8 @@ deny 黑名单命中（内核 SSOT，优先级最高，任何档位/guest/owner 
 ### 12.5 不带伤自检（落地前逐条对照）
 
 1. **零 breaking**：内核选项面无新必填成员（`confirmScripts` 布尔原样复用；run_command 新工具属新增 minor）。
-2. **零第二开关**：审批面唯一入口 `confirmScriptRun`/`confirmCommandRun` 同链路；设置面唯一开关 `memora.confirmScripts`。
-3. **红名单不可逃逸**：deny 在任何档位 × 任何权限模式下恒拦（内核 SSOT 判据，测试锁定：guest + denyOnly 组合、owner + deny 命中 → 拒绝）。
+2. **零第二开关**：审批面唯一入口 `confirmScriptRun`/`confirmCommandRun` 同链路（`confirmGate`）；设置面唯一开关 `memora.confirmScripts`。
+3. **红名单不可逃逸**：deny 在任何档位 × 任何权限模式下恒拦（内核 SSOT 判据，测试锁定：guest + denyOnly 组合、owner + deny 命中 → 拒绝）。**⚠️ 作用域：仅 `run_command` 的命令字面量**——脚本工具执行文件内容、不经此判据（见 §12.3 订正与边界登记）。
 4. **fail-closed 保底**：`confirmationHandler` 未注入 → ask 层拒绝（既有语义，run_command 同样遵守）。
 5. **审计闭环**：自动批准必留审计记录；ask 批准/拒绝结果亦入审计。
 6. **分阶段护栏**：阶段 1 无 allow 白名单（逃逸阀只有 denyOnly 档）→ 阶段 2 开放绿区时白名单配置须**默认空**且设置面板明示风险（对齐 Trae「Add to allowlist 前验证安全」话术）。
