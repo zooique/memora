@@ -249,8 +249,6 @@ export const rolesStyles = `
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
   }
   #roles-root .team-ribbon-btn { padding: 1px var(--sp-2, 6px); font-size: var(--font-xs, 10px); flex-shrink: 0; }
-  /* 组员标注（卡片信息区） */
-  #roles-root .team-member-role { font-size: var(--font-xs, 10px); color: var(--text-tertiary, #666); }
   /* 组队弹窗：遮罩 + 电话本式多选 + 反馈区 */
   #roles-root .team-modal-overlay {
     position: fixed; inset: 0; z-index: 1000;

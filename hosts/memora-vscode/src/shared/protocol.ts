@@ -819,8 +819,6 @@ export type ExtensionToWebviewMessage =
         interactionType?: 'tool_assistant' | 'companion';
         /** 版本号 */
         version?: string;
-        /** 该角色包作为组员被哪些组引用（仅小组会议用，标注展示） */
-        teamMembers?: readonly string[];
         /** 兜底契约包标记（BUILTIN_FALLBACK_PACK，宿主 UI 禁删） */
         isFallback?: boolean;
         /** manifest 校验问题（健康徽章数据源，镜像 skills_loaded 的 SkillIssueDto 结构） */

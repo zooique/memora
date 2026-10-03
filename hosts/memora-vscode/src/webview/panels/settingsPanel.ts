@@ -14,6 +14,7 @@ import * as vscode from 'vscode';
 import type { Agent, MemoryInspector } from '@zooique/memora';
 import type { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createBackgroundProvider } from '../../extension/host/llmConfig.js';
+import { reconcileRolePackTeams } from '../../extension/host/rolePackTeams.js';
 import { MemoraChatViewProvider } from './chatPanel.js';
 import type {
   ExtensionToWebviewMessage,
@@ -673,18 +674,12 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       });
       return;
     }
+    // 读期对账兜底（与启动对账共用单实现，幂等）：覆盖「面板打开早于启动对账写回」的竞态窗口，
+    // 清理幽灵队伍后再读存储，确保下发的 teams 是干净数据
+    await reconcileRolePackTeams(rpm, this._globalState);
     // 组（会议名单）用户级数据：组员仅作小组会议参与者
     const teams =
       this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
-    // 组员名单索引：角色包 → 引用它的组长集合（供「小组会议用」标注）
-    const memberOf = new Map<string, string[]>();
-    for (const team of teams) {
-      for (const member of team.members) {
-        const list = memberOf.get(member) ?? [];
-        if (!list.includes(team.leader)) list.push(team.leader);
-        memberOf.set(member, list);
-      }
-    }
     const packs = rpm
       .listMeta()
       .filter((m) => m.name)
@@ -725,8 +720,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
           strategyHint,
           interactionType: pack?.meta.interactionType,
           version: pack?.meta.version,
-          // 该包作为组员被哪些组引用（仅小组会议用）+ 兜底契约包禁删标记
-          teamMembers: memberOf.get(m.name),
+          // 兜底契约包禁删标记（组员反向索引已退役：组员不感知被引用，见 ADR-028 收敛补记）
           isFallback: m.name === BUILTIN_FALLBACK_PACK,
           // 健康徽章：内核 validateManifest 全量 issues 透传给 webview（error/warning 均渲染）
           issues: (pack?.validationIssues ?? []).map((i) => ({

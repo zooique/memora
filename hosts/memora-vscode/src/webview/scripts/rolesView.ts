@@ -57,8 +57,6 @@ interface RolesPayload {
     };
     interactionType?: 'tool_assistant' | 'companion';
     version?: string;
-    /** 该角色包作为组员被哪些组引用（仅小组会议用，标注展示） */
-    teamMembers?: readonly string[];
     /** 兜底契约包标记（BUILTIN_FALLBACK_PACK，宿主 UI 禁删） */
     isFallback?: boolean;
     /** manifest 校验问题（健康徽章，level+message 结构对齐 skills_loaded） */
@@ -959,18 +957,9 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       }
     }
 
-    // 组员标注（v0.13 S7）：该角色包被哪些组引用为组员——仅小组会议参与者，不用于日常切换
-    if (p.teamMembers && p.teamMembers.length > 0) {
-      const memberTag = document.createElement('div');
-      memberTag.className = 'team-member-role';
-      memberTag.textContent = `小组会议用（组员：${p.teamMembers.join(' / ')}）`;
-      memberTag.title = '作为组员参与小组会议（会议内表层装配发言），不参与日常切换';
-      info.appendChild(memberTag);
-    }
-
     card.appendChild(info);
 
-    // ② 卡片级小组条（队伍状态 + 组队入口；复用小组成员标注的信息层级）
+    // ② 卡片级小组条（队伍状态 + 组队入口；组长侧队伍展示，组员侧不感知被引用）
     card.appendChild(buildTeamRibbon(p, data));
 
     // ===== 健康区（manifest 校验问题，镜像技能徽章模式）=====

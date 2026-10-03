@@ -23,6 +23,7 @@ import * as vscode from 'vscode';
 import { readFile, writeFile } from 'node:fs/promises';
 import type { Agent } from '@zooique/memora';
 import { MemoraSettingsViewProvider } from '../panels/settingsPanel.js';
+import { ROLE_PACK_TEAMS_KEY } from '../../shared/constants.js';
 
 // 可观测的 workspace 配置 mock（vi.hoisted：vi.mock 工厂被提升到文件顶部，闭包外变量
 // 必须先提升声明，否则工厂内引用报错）。get/update 供 toggleSkillDisabled 用例断言。
@@ -454,5 +455,52 @@ describe('settingsPanel.roles_save / roles_detail —— 角色策略保存链�
       source: 'builtin',
       strategy: { act: { temperature: 0.5 } },
     });
+  });
+});
+
+describe('settingsPanel.loadRoles —— 读期队伍对账兜底（幽灵引用清理）', () => {
+  /**
+   * 场景：存储残留「组长已卸载」的幽灵队伍（如内置包收紧删掉「方案设计师」），
+   * 且启动对账尚未写回（面板打开早于装配完成的竞态窗口）。
+   * 不变量：loadRoles 读存储前先对账——写回清理结果 + 热更新内核，
+   * roles_loaded 下发的 teams 是干净数据（不得把幽灵队伍推给 webview）。
+   */
+  it('存储含幽灵队伍 → 读期对账写回 + 内核热更新 + roles_loaded 下发干净 teams', async () => {
+    const setRolePackTeams = vi.fn();
+    // agent 桩：只含 loadRoles / 对账消费面（ensureAgent 的事件绑定 + listMeta/get/activeName/setRolePackTeams）
+    const agent = {
+      on: vi.fn(),
+      off: vi.fn(),
+      rolePackManager: {
+        listMeta: () => [{ name: 'memora助手' }],
+        get: () => undefined,
+        activeName: 'memora助手',
+        setRolePackTeams,
+      },
+    } as unknown as Agent;
+    // globalState 桩：get 读当前值、update 可变存储（loadRoles 在对账写回后重读存储）
+    let store: unknown = [{ leader: '方案设计师', members: ['memora助手'] }];
+    const globalUpdate = vi.fn(async (_key: string, value: unknown) => {
+      store = value;
+    });
+    const posted: { type: string; teams?: unknown }[] = [];
+    const provider = new MemoraSettingsViewProvider({} as never, {} as never);
+    provider.setAgentFactory(async () => agent);
+    provider.setGlobalState({ get: () => store, update: globalUpdate } as never);
+    (provider as unknown as { _view: unknown })._view = {
+      webview: {
+        postMessage: (msg: never) => {
+          posted.push(msg);
+          return Promise.resolve(true);
+        },
+      },
+    };
+
+    await (provider as unknown as { loadRoles(): Promise<void> }).loadRoles();
+
+    expect(globalUpdate).toHaveBeenCalledWith(ROLE_PACK_TEAMS_KEY, []);
+    expect(setRolePackTeams).toHaveBeenCalledWith([]);
+    const rolesLoaded = posted.find((m) => m.type === 'roles_loaded');
+    expect(rolesLoaded?.teams).toEqual([]);
   });
 });
