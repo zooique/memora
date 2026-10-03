@@ -41,17 +41,19 @@ function mountRolesView(): { postMessage: ReturnType<typeof vi.fn> } {
 
 /**
  * 向 webview 分发一条 roles_loaded 消息，驱动 render。
- * maxTeamMembers 模拟宿主下发的内核常量（MAX_TEAM_MEMBERS）。
+ * maxTeamMembers 模拟宿主下发的内核常量（MAX_TEAM_MEMBERS）；
+ * keyface 模拟宿主透传的内核 describeStrategyKeys() 键面（RP-EDIT-1 编辑表单依赖）。
  */
 function dispatchLoaded(
   packs: unknown[],
   activeName: string,
   teams: unknown[] = [],
   maxTeamMembers = 4,
+  keyface?: unknown[],
 ): void {
   window.dispatchEvent(
     new MessageEvent('message', {
-      data: { type: 'roles_loaded', packs, activeName, teams, maxTeamMembers },
+      data: { type: 'roles_loaded', packs, activeName, teams, maxTeamMembers, keyface },
     }),
   );
 }
@@ -417,5 +419,92 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       );
       expect((document.querySelector('.pager-bar') as HTMLElement).hidden).toBe(true);
     });
+  });
+});
+
+describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () => {
+  /** 键面最小样本（number 键带 range）：编辑表单控件与 NUM-HINT-1 红框依赖它 */
+  const KEYFACE = [
+    { stage: 'global', key: 'stepBudget', kind: 'number', range: { min: 0, max: 500 } },
+  ];
+
+  /** 向 webview 分发一条 roles_detail_data（宿主 handleRolesDetail 的应答形态） */
+  function dispatchDetail(
+    name: string,
+    source: 'builtin' | 'user',
+    strategy: Record<string, Record<string, unknown>>,
+  ): void {
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'roles_detail_data', name, source, strategy } }),
+    );
+  }
+
+  it('内置包：点卡片发 roles_detail → 收到应答弹出只读查看弹窗（弹窗未开也必须首挂）', () => {
+    const { postMessage } = mountRolesView();
+    dispatchLoaded([{ name: 'builtin-a', displayName: '内置甲', capabilities: [] }], 'builtin-a');
+    // 点卡片空白区：交互元素被 closest 过滤，卡片本体点击 → 上行 roles_detail
+    const card = Array.from(document.querySelectorAll('.card')).find(
+      (c) => c.querySelector('.card-name')?.textContent === '内置甲',
+    ) as HTMLElement;
+    card.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'roles_detail', name: 'builtin-a' });
+
+    // 行为契约：弹窗未开时收到应答必须首挂查看态——这是详情/编辑功能的入口，
+    // 缺失即整体不可达（点卡片 → roles_detail → roles_detail_data 是唯一挂载触发链）
+    dispatchDetail('builtin-a', 'builtin', { global: { stepBudget: 100 } });
+    const modal = document.querySelector('.team-modal.role-detail');
+    expect(modal).not.toBeNull();
+    expect(modal?.querySelector('.team-modal-title')?.textContent).toContain('内置甲');
+    // 查看态：声明键中文渲染（有啥渲染啥：manifest 声明了才出现）
+    expect(modal?.querySelector('.role-detail-label')?.textContent).toBe('步数预算');
+    expect(modal?.querySelector('.role-detail-value')?.textContent).toBe('100');
+    // 内置包：只读提示在、编辑按钮不在（真拒绝在宿主 extension 侧，这里只是呈现）
+    expect(modal?.querySelector('.role-detail-readonly-hint')?.textContent).toContain('只读展示');
+    const primaries = Array.from(modal?.querySelectorAll('.btn-primary') ?? []).map(
+      (b) => b.textContent,
+    );
+    expect(primaries).not.toContain('编辑配置');
+  });
+
+  it('用户包：查看弹窗有「编辑配置」→ 键面驱动编辑表单 → 保存上行 roles_save', () => {
+    const { postMessage } = mountRolesView();
+    dispatchLoaded(
+      [{ name: 'user-a', displayName: '用户甲', capabilities: [] }],
+      'user-a',
+      [],
+      4,
+      KEYFACE,
+    );
+    dispatchDetail('user-a', 'user', {});
+    const viewModal = document.querySelector('.team-modal.role-detail');
+    const edit = Array.from(viewModal?.querySelectorAll('.btn-primary') ?? []).find(
+      (b) => b.textContent === '编辑配置',
+    ) as HTMLButtonElement;
+    expect(edit).toBeTruthy();
+    edit.click();
+
+    // 编辑表单：数字框区间来自键面 range（UI 不写死；留空 = 走默认值语义）
+    const formModal = document.querySelector('.team-modal.role-detail');
+    const num = formModal?.querySelector('input[type="number"]') as HTMLInputElement;
+    expect(num.min).toBe('0');
+    expect(num.max).toBe('500');
+    num.value = '200';
+    // actions 首个 btn-primary = 保存（collectStrategyFromForm：数值转 number 后上行）
+    (formModal?.querySelector('.btn-primary') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'roles_save',
+      name: 'user-a',
+      strategy: { global: { stepBudget: 200 } },
+    });
+  });
+
+  it('重挂幂等：连续两次 roles_detail_data → 弹窗不叠加（先摘后挂，保存成功回显场景）', () => {
+    mountRolesView();
+    dispatchLoaded([{ name: 'user-a', displayName: '用户甲', capabilities: [] }], 'user-a');
+    dispatchDetail('user-a', 'user', {});
+    dispatchDetail('user-a', 'user', { global: { stepBudget: 300 } });
+    expect(document.querySelectorAll('.team-modal.role-detail')).toHaveLength(1);
+    // 第二次应答的原文已回显（保存成功 → 弹窗切回查看态显示新配置）
+    expect(document.querySelector('.role-detail-value')?.textContent).toBe('300');
   });
 });

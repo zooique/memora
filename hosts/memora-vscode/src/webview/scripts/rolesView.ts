@@ -1058,11 +1058,14 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
     if (msg.type === 'roles_loaded') render(msg);
-    // 详情数据：更新 detail；弹窗已开 = 查看态回显/保存成功回显（重挂切查看态）；
-    // 未开 = 只更新数据不自动弹（roles_loaded 刷新列表即可，避免列表刷新连带弹窗）
+    // 详情数据：更新 detail 后无条件重挂弹窗——roles_detail_data 只有两个发送点：
+    // ① roles_detail 应答（用户点卡片，此时弹窗未开 → 首挂查看态）；
+    // ② roles_save 成功回发（弹窗必然开着 → 先摘后挂回显新原文）。
+    // mountDetailModal 幂等（detailOverlay?.remove()），两场景同函数通吃；
+    // 若判「弹窗已开才重挂」，场景①永远不弹（详情/编辑功能整体不可达）。
     if (msg.type === 'roles_detail_data') {
       detail = { name: msg.name, source: msg.source, strategy: msg.strategy };
-      if (detailOverlay) renderDetailView();
+      renderDetailView();
     }
   });
 }
