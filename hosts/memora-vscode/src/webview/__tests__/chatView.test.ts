@@ -8507,7 +8507,7 @@ describe('光标八态状态机（data-status）', () => {
 // 类型标收敛 2 个：thought（思考块 summary 前置）/ tool（工具行 + 工具批共用）；
 // 叙述块明确不加（防泛滥定案：裸文本即类别信号）。icon = 独立稳定 span（getIconSvg 注入），
 // 文本节点刷新不触碰——变异锁：改 icon 随文本重写 / 漏注入某构建点 → 对应用例转红。
-// 折叠箭头统一为 CSS 层（chevron ::before），DOM 断言不覆盖，真机对照验收。
+// 折叠箭头统一为 CSS 层（chevron ::after 右置），DOM 断言不覆盖，真机对照验收。
 describe('块类型标与折叠箭头（批次三）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
