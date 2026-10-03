@@ -213,8 +213,12 @@ export interface AuditEvent {
 export type AuditListener = (event: AuditEvent) => void;
 
 /**
- * 写入确认请求：宿主在非交互式环境（WebUI/桌宠/无终端）注入自定义确认 UI，
+ * 确认请求：宿主在非交互式环境（WebUI/桌宠/无终端）注入自定义确认 UI，
  * 走此回调而非直接读 stdin。返回 true 确认 / false 拒绝；抛错视为拒绝（fail-closed）。
+ *
+ * ⚠️ 类型名 `WriteConfirmation*` 是**历史命名**：该回调承载全部四类确认
+ * （写入 / 命令 / 代码 / 脚本执行），非写入类请求同样走它（见 `confirmGate`）。
+ * 改名 = 破坏性公共面变更，收益仅为命名纯度 ⇒ 保留旧名 + 此注释说明。
  */
 export type WriteConfirmationRequest = (info: WriteConfirmationInfo) => Promise<boolean>;
 
@@ -501,11 +505,12 @@ export class SecurityGuard {
   }
 
   /**
-   * 确认闸公共核心（SSOT：写入确认与脚本执行确认的唯一执行路径）
+   * 确认闸公共核心（SSOT：**全部四类**确认——写入 / 命令 / 代码 / 脚本执行——的唯一执行路径）
    *
    * needConfirm=false → 自动批准（审计 write-auto）；为 true 且未注入 confirmationHandler
    * → fail-closed 拒绝（审计 write-decline）；否则经 confirmViaHandler 走宿主确认 UI。
-   * diff 仅写入场景有，脚本执行不传（域留空）。
+   * diff 仅写入场景有（`requestWriteConfirmation` 唯一传 diff），其余三类不传（域留空），
+   * 宿主据此判「本卡无 diff 域」并跳过写入前后对比渲染。
    */
   private async confirmGate(
     targetPath: string,
@@ -559,8 +564,8 @@ export class SecurityGuard {
   }
 
   /**
-   * 通过宿主注入的 confirmationHandler 执行写入确认（唯一确认执行路径）。
-   * 抛错视为拒绝（fail-closed 安全优先）。
+   * 通过宿主注入的 confirmationHandler 执行确认（**全部四类**确认的唯一执行路径：
+   * 写入 / 命令 / 代码 / 脚本执行）。抛错视为拒绝（fail-closed 安全优先）。
    */
   private async confirmViaHandler(
     info: WriteConfirmationInfo,

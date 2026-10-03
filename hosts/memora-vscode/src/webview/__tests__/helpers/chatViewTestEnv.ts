@@ -62,12 +62,12 @@ const HTML = `
         </div>
         <div class="write-confirm-card__desc" id="writeConfirmDesc"></div>
         <details class="write-confirm-card__diff">
-          <summary>查看写入内容</summary>
+          <summary>查看内容</summary>
           <pre id="writeConfirmDiff"></pre>
         </details>
         <div class="write-confirm-card__actions">
           <button id="writeConfirmReject" class="write-confirm-card__btn--reject">拒绝</button>
-          <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认写入</button>
+          <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认</button>
         </div>
       </div>
     </div>

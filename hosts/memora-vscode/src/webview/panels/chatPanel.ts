@@ -383,12 +383,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private _askTimeout: ReturnType<typeof setTimeout> | undefined;
   /**
-   * 待处理写入确认请求
+   * 待处理确认请求（写入 / 命令 / 代码 / 脚本执行共用同一张审批卡）
    *
-   * 内核触发写入确认时，host 创建 requestId + pending Promise，向 webview 推送
+   * 内核触发任一确认时，host 创建 requestId + pending Promise，向 webview 推送
    * write_confirm_request 审批卡；用户确认/拒绝后 webview 回传 write_confirm_answer，
    * host resolve 对应 pending Promise，回调内核 confirmationHandler。
    * 超时或 webview 不可达时自动拒绝（fail-closed）。
+   * 协议名沿用 write_* 历史命名（改协议面 = breaking，不值）。
    */
   private _pendingWriteConfirmations = new Map<
     string,
@@ -574,7 +575,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.bindAgentNoticeEvents();
     // 绑定路径守卫安全审计订阅（幂等，先取消旧订阅再绑新）
     this.bindSecurityAudit();
-    // 绑定写入确认回调（confirmWrites=true 时触发，默认 fail-closed）
+    // 绑定确认回调（写入 confirmWrites / 脚本与命令 confirmScripts / guest 恒确认，默认 fail-closed）
     this.bindWriteConfirmation();
     // 装配注入后统一补推（时序竞态）：
     // webview ready 时 agent 可能尚未装配，replaySession 的 chat_role_pack / pushRolePacks
@@ -938,7 +939,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.bindAgentNoticeEvents();
       // 绑定路径守卫安全审计订阅（幂等）
       this.bindSecurityAudit();
-      // 绑定写入确认回调（confirmWrites=true 时触发）
+      // 绑定确认回调（写入 confirmWrites / 脚本与命令 confirmScripts / guest 恒确认）
       this.bindWriteConfirmation();
       // 装配完成后统一补推（与 setAgent 路径共用同一收口点）：
       // ready 时 agent 可能尚未装配 / _activeRolePack 未设置，
@@ -1377,11 +1378,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 绑定写入确认回调（安全增强可选项，confirmWrites=true 时触发）
+   * 绑定确认回调（`SecurityGuard.onWriteConfirmation` 唯一注入口）
    *
-   * 默认 fail-closed：未启用 confirmWrites 时，内核直接 auto-approve 不触发回调；
-   * 启用后通过 webview 审批卡（write_confirm_request/write_confirm_answer）交互，
-   * 用户确认放行、拒绝则阻断写入。webview 不可达或超时自动拒绝（fail-closed）。
+   * 承载**全部四类**确认请求（写入 / 命令 / 代码 / 脚本执行）——它们在内核共用 `confirmGate`，
+   * 宿主只认这一个注入点，故本方法名中的 `Write` 是历史命名，不代表「只管写入」。
+   * 触发条件随内核判据：写入 = `guest || confirmWrites`；命令 = `classifyCommand` 三档；
+   * 代码与脚本 = `guest || confirmScripts`。
+   * 默认 fail-closed：内核未走到确认分支时直接 auto-approve，不会调用本回调。
+   * 交互走 webview 审批卡（write_confirm_request / write_confirm_answer）；
+   * webview 不可达或超时自动拒绝（fail-closed）。
    */
   private bindWriteConfirmation(): void {
     const agent = this._agent;
@@ -1391,7 +1396,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const handler: WriteConfirmationRequest = async (info) => {
       // 生成唯一请求 ID，用于匹配 write_confirm_answer
       const requestId = `wc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const fileName = info.targetPath.split(/[\\/]/).pop() ?? info.targetPath;
       // 工具中文名走 toolNameMap 单一真源（复用公开入口 getToolDisplayName）：
       // 本地另建映射易产生幽灵键（edit_file / create_file / append_file 内核并不存在——
       // 唯一写入工具是 write_file），还可能同工具异名双写（「写文件」vs「写入文件」）；
@@ -1407,7 +1411,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           this.post({
             type: 'notice',
             level: 'error',
-            message: `写入确认超时（${toolLabel} ${fileName}），已自动拒绝`,
+            // 动作词中性化：同一张卡也承载命令/代码/脚本执行确认，写「写入」即失实
+            message: `确认超时（${toolLabel}），已自动拒绝`,
           });
         }, timeoutMs);
 
@@ -1420,7 +1425,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           requestId,
           targetPath: info.targetPath,
           tool: info.tool,
-          description: info.description || `${toolLabel}：${fileName}`,
+          description: info.description || `${toolLabel}：${info.targetPath}`,
           permission: info.permission,
           beforeContent: info.beforeContent ?? null,
           afterContent: info.afterContent,
@@ -3641,12 +3646,12 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
         </div>
         <div class="write-confirm-card__desc" id="writeConfirmDesc"></div>
         <details class="write-confirm-card__diff">
-          <summary>查看写入内容</summary>
+          <summary>查看内容</summary>
           <pre id="writeConfirmDiff"></pre>
         </details>
         <div class="write-confirm-card__actions">
           <button id="writeConfirmReject" class="write-confirm-card__btn--reject">拒绝</button>
-          <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认写入</button>
+          <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认</button>
         </div>
       </div>
     </div>

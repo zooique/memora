@@ -415,7 +415,8 @@ export type WebviewToExtensionMessage =
   /**
    * 写入审批应答（对 write_confirm_request 的应答）
    *
-   * 用户在审批卡点击「确认写入」或「拒绝」后，webview 发送此消息。
+   * 用户在审批卡点击「确认」或「拒绝」后，webview 发送此消息。
+   * ⚠️ 动作词中性：本卡同样承载命令 / 代码 / 脚本执行确认，写「写入」即对命令场景失实。
    * host 根据 approved 结果回调内核 confirmationHandler。
    */
   | { type: 'write_confirm_answer'; approved: boolean; requestId: string }
@@ -761,7 +762,7 @@ export type ExtensionToWebviewMessage =
    *
    * 由 extension host 转发的非消息区通知，webview 用同一提示条分级呈现：
    *   - info：记忆召回/沉淀、上下文截断、记忆冲突等低扰信息（短暂显示）
-   *   - error：会话异常/恢复失败/写入确认超时等错误级反馈（醒目、停留更久）
+   *   - error：会话异常/恢复失败/确认超时等错误级反馈（醒目、停留更久）
    * 统一走提示条而不插入消息区，避免污染对话历史。
    * 注：运行时的「已召回 N 条 / 已沉淀：xx」提示由 webview 解析 process_event 本地派生，
    * 不经本消息通道（记忆活动走 ProcessEvent 单源）。

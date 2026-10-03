@@ -311,7 +311,7 @@
 | --- | --- | --- |
 | `confirmScripts: boolean`（`memora.confirmScripts`，宿主 globalState，默认 `false`，经 extension 注入内核） | Trae 的 Manual Run ↔ Auto Run 档位切换 | **轴 1 会话档位已存在**——布尔两态恰好承载主流两档 |
 | `confirmScripts = true` | Trae Manual Run / Claude `default` | 恒确认档 |
-| `confirmScripts = false` | Trae **Auto Run**（黑名单仍手动）/ Claude `bypassPermissions` 但保留关键路径拦截 | 自动档（deny 红名单仍恒拦） |
+| `confirmScripts = false` | Trae **Auto Run**（黑名单仍手动）/ Claude `bypassPermissions` 但保留关键路径拦截 | 自动档（deny 红名单对 `run_command` 命令字面量仍恒拦，见 §12.3 作用域） |
 | deny 高危黑名单（内核单点 SSOT，不可关） | Trae 黑名单 / Claude Critical paths | **轴 2 红名单已存在**且比主流更严（内核 SSOT，宿主无法绕过） |
 | 权限模式 `guest`（恒确认 fail-closed）/ `owner`（默认自动批准走审计） | Claude「任何模式都不自动批准」+ 角色权限 | **叠加约束**：guest 压倒审批档位 |
 | `SecurityGuard.confirmScriptRun`（统一确认入口，fail-closed） | 各家 Approve/Reject 弹窗 | 审批执行链路单一真源 |
@@ -321,7 +321,7 @@
 ### 12.3 裁决链定案（优先级单源，run_command 与脚本工具共用）
 
 ```
-deny 黑名单命中（内核 SSOT，优先级最高，任何档位/guest/owner 之下恒拦）
+deny 黑名单命中（`run_command` 命令字面量，内核 SSOT，优先级最高，任何档位/guest/owner 之下恒拦）
   → guest 权限模式（恒确认，fail-closed；未注入 confirmationHandler 即拒绝）
     → confirmScripts 档位（true = ask 弹宿主审批；false = 自动批准走审计）
       → allow 前缀白名单（阶段 2；仅对走到此层的命令生效，命中即免 ask）
@@ -332,7 +332,11 @@ deny 黑名单命中（内核 SSOT，优先级最高，任何档位/guest/owner 
   | --- | --- | --- |
   | **确认通道**（谁来弹窗、fail-closed、审计） | ✅ 共用 | 两者都经 `confirmGate` → 宿主**同一张**审批卡（`onWriteConfirmation`） |
   | **命令内容裁决**（deny / always-ask 判据） | ❌ **不共用** | `classifyCommand` 的唯一调用点是 `confirmCommandRun`；`confirmScriptRun(targetPath, …)` **只判权限档位，不看执行内容** |
-- ⚠️ **由此产生的已知边界（不是漏洞登记，是能力边界的如实声明）**：`run_project_script` / `run_skill_script` 执行**脚本文件内容**，其命令内容**不经 deny/always-ask 裁决**。故「黑名单恒拦」这一不变式在**命令字面量**上成立，在**脚本文件内容**上不成立——脚本里写 `rm -rf /` 不会被 deny 拦（只受路径白名单 + 运行时白名单三档 + 确认档位约束）。
+- ⚠️ **由此产生的已知边界（能力边界的如实声明，不是漏洞）**：`run_code` / `run_project_script` / `run_skill_script` 三个执行面**都不走 `classifyCommand`**——`run_code` 执行 LLM 现写的内联代码（无文件载体），另两者执行脚本文件内容 ⇒ 它们的**执行内容不经 deny/always-ask 裁决**。故「deny 恒拦」这一不变式只在 **`run_command` 的命令字面量**上成立，在**脚本文件内容 / 内联代码**上不成立。
+  - **实际可利用性（2026-10-03 复核，按成本排序，均为一次工具调用）**：① `run_code` 内联——`spawn(process.execPath,['-e',code])`，cwd=项目根、环境变量全继承，默认 `owner + confirmScripts=false` 自动批准（仅审计）；② `run_project_script` 执行**项目根内已有**文件（路径闸只判「是否在根内」，`node_modules/**/*.js`、`.git/hooks/*.sh`、任意 `.py`/`.bat` 皆可执行）——**零写文件**；③ `run_skill_script` 走宿主注入回调。⇒ **「绕 deny 需写脚本→执行→删脚本三步」的旧风险等级论证不实**，真实成本是一位数的**一次工具调用**。
+  - **deny 的真实定位（降级为「命令字面量护栏」，不是「危险执行总闸」）**：它是**字符串形态判据**，只能拦「LLM 直写的危险命令字符串」——拦得住模型手滑 / 幻觉 / 被提示注入直接写出 `rm -rf /`；拦不住经间接载体（文件内容、内联代码、变量展开、编码混淆）表达的同一意图。语义防护由**用户审批卡 + 审计溯源**承担，不由 denylist 承担。
+  - 三面实际受哪些约束：确认档位（`guest` 恒确认 fail-closed / `confirmScripts`）+ 路径白名单（仅 `run_project_script`）+ 运行时白名单三档（node/python/shell）。
+  - **机器守卫（2026-10-03 落地）**：`src/security/confirmEntries.ts` 的执行面登记表（`CONFIRM_ENTRY_BY_TOOL`）把「哪个执行面走哪个确认入口」变成显式单一真源，`toolExecutor` 四个执行面统一经 `confirmByEntry` 路由；守卫测试 `src/agent/__tests__/confirmEntry.test.ts` 钉死两条不变量——① 登记项与 `diskWrite==='opaque'` 派生集**双向相等**（新增执行面漏登记即红）② 每个执行面**真走登记入口且不经另一入口**。⇒ 上述边界从此不是口头承诺，改错会红。
   - 阶段 1 **不修**，理由：修它需读文件内容做命令扫描（`.bat`/`.sh`/`.py`/`.js` 形态各异 + 引号/变量/转义解析）= 半个 shell 解释器，误判率与维护成本都不可控，且会把「命令裁决」从纯函数变成 IO 函数（判据不再可单测）。
   - 该边界的**实际风险等级**：走脚本面绕 deny 需要「写脚本 → 执行 → 删脚本」三步，`write_file` 本身受路径白名单 + 确认档位约束，且执行对象是**仓库内已沉淀的文件**（可被用户审阅），与 `run_command` 的「任意字符串」不同质。
   - **诚实化要求**：设置面板与工具描述**不得**声称「所有命令执行都受黑名单保护」——当前 `run_command` 描述写的是「命令执行受黑名单与用户审批约束」，作用域限该工具，措辞正确 ✅。
@@ -353,7 +357,7 @@ deny 黑名单命中（内核 SSOT，优先级最高，任何档位/guest/owner 
 
 1. **零 breaking**：内核选项面无新必填成员（`confirmScripts` 布尔原样复用；run_command 新工具属新增 minor）。
 2. **零第二开关**：审批面唯一入口 `confirmScriptRun`/`confirmCommandRun` 同链路（`confirmGate`）；设置面唯一开关 `memora.confirmScripts`。
-3. **红名单不可逃逸**：deny 在任何档位 × 任何权限模式下恒拦（内核 SSOT 判据，测试锁定：guest + denyOnly 组合、owner + deny 命中 → 拒绝）。**⚠️ 作用域：仅 `run_command` 的命令字面量**——脚本工具执行文件内容、不经此判据（见 §12.3 订正与边界登记）。
+3. **红名单不可逃逸（作用域＝`run_command` 命令字面量）**：deny 对 `run_command` 传来的命令字符串在任何档位 × 任何权限模式下恒拦（内核 SSOT 判据，测试锁定：guest + denyOnly 组合、owner + deny 命中 → 拒绝）；**不覆盖** `run_code`／`run_project_script`／`run_skill_script`（三者执行内容不经此判据，见 §12.3 边界登记）。
 4. **fail-closed 保底**：`confirmationHandler` 未注入 → ask 层拒绝（既有语义，run_command 同样遵守）。
 5. **审计闭环**：自动批准必留审计记录；ask 批准/拒绝结果亦入审计。
 6. **分阶段护栏**：阶段 1 无 allow 白名单（逃逸阀只有 denyOnly 档）→ 阶段 2 开放绿区时白名单配置须**默认空**且设置面板明示风险（对齐 Trae「Add to allowlist 前验证安全」话术）。
@@ -393,7 +397,7 @@ deny 黑名单命中（内核 SSOT，优先级最高，任何档位/guest/owner 
 - 落地形态：内核黑名单 SSOT 处新增 `ALWAYS_ASK_PREFIXES` 分区（与 deny 同文件同源同测，**同一真源两个分区**）；裁决链在 §12.3 基础上细化：
 
 ```
-deny 黑名单（恒拦）
+deny 黑名单（`run_command` 命令字面量，恒拦）
   → ALWAYS_ASK 前缀命中（即使 denyOnly 档也弹确认；allow 白名单对它无效——不可被绿区豁免）
     → guest 恒确认（fail-closed）
       → confirmScripts 档位（true = ask；false = 自动批准走审计）
@@ -593,7 +597,7 @@ deny 黑名单（恒拦）
 | Trae 同步默认 | runOnce 同步嫁接 | 等待中人工降级转后台 | 状态中途转换是带伤高发区（Trae 官方社区「命令已结束 agent 傻等」「工作流全停」bug 帖实锤，2026-10-02 搜证） |
 | Trae 集成终端读流 | 进程退出码判定 | 输出流静默判定 | 结束信号确定性——Trae 流静默误判痛点天然免疫 |
 | Claude 权限三模式 | `confirmScripts` 档位语义（§12.2） | 枚举化模式切换 | 布尔即两档同位；红名单/guest/allow 全是正交维度（§12.2 SSOT 结论） |
-| Trae/Claude 黑名单 | 内核 SSOT deny 恒拦 | 宿主侧黑名单 | 集成方不可绕过，内核是不可逆约束层 |
+| Trae/Claude 黑名单 | 内核 SSOT deny 恒拦（`run_command` 命令字面量） | 宿主侧黑名单 | 集成方不可绕过，内核是不可逆约束层 |
 | Anthropic 93% 批准率实证 | 逃逸阀前置：关开关进 denyOnly 自动档（deny 仍拦） | 恒问不设逃逸 | 恒问必然被无脑批准（审批疲劳），安全 theater |
 | 用户「等待 60s 超时自动转后台」提案 | **回流走气口排队——完整保留** | 隐式超时切换 + 魔法数阈值 | 语义中途切换 → agent 在不确定态幻觉推进；违背「禁止隐式自动挂起」定案；同一工具行为不可预测 |
 

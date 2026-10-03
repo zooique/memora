@@ -7500,6 +7500,46 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(document.getElementById('writeConfirmDiff')!.textContent).toContain('new');
   });
 
+  it('非写入场景（命令确认，宿主协议层给 beforeContent=null）不得渲染假 diff 表', () => {
+    // 回归锁：2026-10-03 自审实锤——判据曾用 `!== undefined`，而协议层把「无 diff 域」归一为
+    // `beforeContent: null`（delete_file 与命令/脚本确认都不传 diff），于是 null 被判成「有 diff」，
+    // 命令场景继续显示假的「--- 写入前 --- / +++ 写入后 +++」。此处用**真实链路形态**（null）锁死。
+    mountChatView();
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_cmd',
+      targetPath: '在工作区执行命令：git push origin main',
+      tool: 'run_command',
+      description: '在工作区执行命令：git push origin main',
+      permission: 'owner',
+      beforeContent: null,
+    });
+    const diff = document.getElementById('writeConfirmDiff')!.textContent ?? '';
+    expect(diff).toContain('--- 目标 ---');
+    expect(diff).toContain('git push origin main');
+    expect(diff).not.toContain('--- 写入前 ---');
+    expect(diff).not.toContain('+++ 写入后 +++');
+    // 按钮动词中性（不写死「确认写入」）
+    expect(document.getElementById('writeConfirmOk')!.textContent).toBe('确认');
+  });
+
+  it('删除文件场景（同样无 diff 域）也不得渲染假 diff 表', () => {
+    // delete_file 走 requestWriteConfirmation 时不传 diff（builtinToolHandlers 只给 3 个参数）
+    mountChatView();
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_del',
+      targetPath: '/workspace/src/gone.ts',
+      tool: 'delete_file',
+      description: '删除文件：gone.ts',
+      permission: 'owner',
+      beforeContent: null,
+    });
+    const diff = document.getElementById('writeConfirmDiff')!.textContent ?? '';
+    expect(diff).toContain('--- 目标 ---');
+    expect(diff).not.toContain('--- 写入前 ---');
+  });
+
   it('confirmWrites 审批卡：确认按钮回传 write_confirm_answer(approved=true) 并隐藏', () => {
     const { postMessage } = mountChatView();
     dispatch({

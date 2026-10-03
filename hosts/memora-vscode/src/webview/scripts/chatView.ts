@@ -5152,10 +5152,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 写入审批卡渲染（webview 侧唯一实现点）
+   * 确认审批卡渲染（webview 侧唯一实现点）
    *
-   * 填充卡片字段（工具名 / 目标文件 / 描述 / 写入内容 diff 预览）并显示；
+   * 填充卡片字段（工具名 / 目标 / 描述 / 内容预览）并显示；
    * 记录当前 requestId，供确认/拒绝按钮回传 write_confirm_answer。
+   *
+   * ⚠️ 本卡承载**全部四类**确认（写入 / 命令 / 代码 / 脚本执行）——文案一律用中性动词
+   * （「确认」而非「确认写入」），diff 域缺省时不得渲染假的写入前后对比（见下方 hasDiff 注释）。
    *
    * @param msg write_confirm_request 载荷（host 推送）
    */
@@ -5175,12 +5178,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     writeConfirmTool.textContent = getToolDisplayName(msg.tool);
     writeConfirmPath.textContent = msg.targetPath;
     writeConfirmDesc.textContent = msg.description ?? '';
-    // diff 预览：afterContent 为写入后的完整内容（beforeContent 为 null 时即新建文件）
-    const before = msg.beforeContent ?? '(新建文件)';
-    writeConfirmDiff.textContent =
-      before === msg.afterContent
-        ? before
-        : `--- 写入前 ---\n${before}\n\n+++ 写入后 +++\n${msg.afterContent ?? ''}`;
+    // diff 预览：afterContent 为写入后的完整内容（beforeContent 为 null 时即新建文件）。
+    // ⚠️ 非写入场景（命令 / 代码 / 脚本执行确认，以及**删除文件**）内核不下发任何 diff 域，
+    // 宿主协议层把它归一为 `beforeContent: null`（protocol: `beforeContent?: string | null`），
+    // 故判据必须用 **truthy** 而非 `!== undefined` —— 后者会把 null 判成「有 diff」，
+    // 于是命令/删除场景继续渲染假的「--- 写入前 --- / +++ 写入后 +++」（2026-10-03 自审实锤）。
+    const hasDiff = Boolean(msg.beforeContent) || Boolean(msg.afterContent);
+    if (!hasDiff) {
+      writeConfirmDiff.textContent = `--- 目标 ---\n${msg.targetPath}\n\n${msg.description ?? ''}`;
+    } else {
+      const before = msg.beforeContent ?? '(新建文件)';
+      writeConfirmDiff.textContent =
+        before === msg.afterContent
+          ? before
+          : `--- 写入前 ---\n${before}\n\n+++ 写入后 +++\n${msg.afterContent ?? ''}`;
+    }
     pendingWriteConfirmRequestId = msg.requestId;
     writeConfirmCard.hidden = false;
   }

@@ -97,7 +97,12 @@ function createMockProvider(guard: SecurityGuardStub): {
           const timer = setTimeout(() => {
             pendingConfirmations.delete(requestId);
             resolve(false);
-            provider.post({ type: 'notice', level: 'error', message: '写入确认超时，已自动拒绝' });
+            // 文案与产品 chatPanel.bindWriteConfirmation 同源（动词中性：同一张卡也承载命令/脚本确认）
+            provider.post({
+              type: 'notice',
+              level: 'error',
+              message: '确认超时（写入文件），已自动拒绝',
+            });
           }, timeoutMs);
           pendingConfirmations.set(requestId, { resolve, timer });
           provider.post({

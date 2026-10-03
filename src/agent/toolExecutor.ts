@@ -8,6 +8,10 @@
  * ToolExecutor 聚焦工具注册 / 分发 / 参数校验。
  */
 import type { SecurityGuard } from '@/security/pathGuard.js';
+import {
+  requireConfirmingEntry,
+  type ConfirmingEntry,
+} from '@/security/confirmEntries.js';
 import { toolError, configError, MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
@@ -876,6 +880,30 @@ export class ToolExecutor {
   }
 
   /**
+   * 按登记表把执行面路由到对应确认入口（CMD-1-BYPASS 2026-10-03）
+   *
+   * 入口由 `security/confirmEntries.ts` 的 `CONFIRM_ENTRY_BY_TOOL` 唯一指定，
+   * 不在各 case 分支里隐式选方法 ⇒ 新增执行面漏登记会在守卫测试处即红。
+   *
+   * @param entry 确认入口（来自登记表，类型已排除 `none`——非确认面不可能被路由进来）
+   * @param target 确认对象（命令原文 / 脚本路径 / 内联代码标识）
+   * @param tool 工具名
+   * @param description 面向用户的描述
+   * @returns 是否获确认放行
+   */
+  private async confirmByEntry(
+    entry: ConfirmingEntry,
+    target: string,
+    tool: string,
+    description?: string,
+  ): Promise<boolean> {
+    if (entry === 'command') {
+      return this.security.confirmCommandRun(target, tool, description);
+    }
+    return this.security.confirmScriptRun(target, tool, description);
+  }
+
+  /**
    * 执行工具调用
    *
    * 新增参数类型校验。
@@ -1141,7 +1169,8 @@ export class ToolExecutor {
         }
         // 执行确认：guest 模式或 confirmScripts 时询问（run_code 由宿主沙箱执行，此处为权限层确认；
         // owner+confirmScripts=false 自动批准，走审计。code 无落盘路径，target 用描述型标识）
-        const execConfirmed = await this.security.confirmScriptRun(
+        const execConfirmed = await this.confirmByEntry(
+          requireConfirmingEntry('run_code'),
           scriptPath ? `run_code:script:${scriptPath}` : 'run_code:inline',
           'run_code',
           scriptPath
@@ -1334,7 +1363,8 @@ export class ToolExecutor {
         // confirmScripts=true 时 owner 亦确认（开关语义 = "脚本执行二次确认"，对全部脚本生效）。
         // 无 OS 级沙箱（子进程直跑 + env 继承用户环境），故不能以 Codex workspace-write 的
         // "边界内自动"前提豁免 guest。target 用技能名:脚本路径标识（无落盘绝对路径）。
-        const execConfirmed = await this.security.confirmScriptRun(
+        const execConfirmed = await this.confirmByEntry(
+          requireConfirmingEntry('run_skill_script'),
           `skill:${skillName}:${scriptPath ?? ''}`,
           'run_skill_script',
           `执行技能 ${skillName} 的脚本 ${scriptPath ?? ''}`,
@@ -1369,7 +1399,8 @@ export class ToolExecutor {
           return `[ERR:PATH_DENIED] 脚本路径越界（超出项目根）："${scriptPath}"`;
         }
         // ② 执行确认：guest 模式或 confirmScripts 时询问（owner 默认自动批准，走审计）
-        const confirmed = await this.security.confirmScriptRun(
+        const confirmed = await this.confirmByEntry(
+          requireConfirmingEntry('run_project_script'),
           fullPath,
           'run_project_script',
           `运行项目脚本 ${scriptPath}`,
@@ -1439,7 +1470,8 @@ export class ToolExecutor {
           cwd = resolved;
         }
         // ② 命令裁决：deny 恒拦（不入确认流程）/ alwaysAsk 恒确认 / 其余同脚本判据
-        const confirmed = await this.security.confirmCommandRun(
+        const confirmed = await this.confirmByEntry(
+          requireConfirmingEntry('run_command'),
           command,
           'run_command',
           `在工作区执行命令：${command}`,
