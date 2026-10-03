@@ -899,6 +899,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'revert_all_file_changes') {
         // 对话区常驻条「全部回退」：命令内部含模态二次确认（破坏性操作，勿绕过）
         void vscode.commands.executeCommand(REVERT_ALL_FILE_CHANGES_COMMAND);
+      } else if (msg.type === 'background_kill') {
+        // 后台任务浮层「终止」：杀树 + 取回已捕获输出（用户侧等价于模型调 kill_command）。
+        // 内核按 Agent 实例隔离，只能杀本会话自起的任务；taskId 已不在时返回 null（不报错）。
+        // 执行后强制回推一次快照，让浮层立刻刷新为终态（不等下一次推送时机）。
+        this.killBackgroundTask(msg.taskId);
       }
     });
   }
@@ -3218,6 +3223,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // → 落盘 + 投影。与 plan_snapshot 同型：收到即流尾，webview 实时仅入缓冲，
           // finalize/重放经 renderRoundBlock「后台任务收割」小节单点消费渲染。
           emitEvent('background_report', { content: chunk.content });
+          // 收割是后台任务状态的批量变化点 → 同步推一次快照（浮层据此转为全终态）
+          this.postBackgroundTasks();
         } else if (chunk.type === 'step_boundary') {
           // 迭代边界：一次 LLM 迭代（含其工具执行）结束 → 增量落盘当前 pending Round。
           // 落盘时机 SSOT：全场景唯一时机（有/无任务表、有/无工具全覆盖），与流尾共用 mergeProcessEvents
@@ -3438,6 +3445,42 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         planItemLog: planItemLogById.get(s.id) ?? [],
       }));
     this.post({ type: 'plan_update', items });
+  }
+
+  /**
+   * 推送后台任务快照（CMD-1 阶段 2 · 见 `docs/方案-后台任务可见性与kill入口-20261004.md`）
+   *
+   * 真源 = 内核 `agent.listBackgroundTasks()`（只读投影，含进程句柄的字段已被内核剥离）。
+   * 宿主零副本、零裁决，只按快照转发。
+   *
+   * 刻意**不下发 `result`**（命令输出）：体量可达 KB~MB 级，UI 不呈现输出——
+   * 输出归模型消费（经 `kill_command` / 回流通道给 LLM），随包搬运纯属浪费。
+   *
+   * agent 未就绪时不推（`_agent` 为空 = 未装配，与 `postPlanUpdate` 同守卫形态）——
+   * 不静默推空快照，否则「未就绪」会被 UI 读成「没有后台任务」。
+   */
+  private postBackgroundTasks(): void {
+    if (!this._agent) return;
+    const items = this._agent.listBackgroundTasks().map((t) => ({
+      taskId: t.taskId,
+      command: t.command,
+      startedAt: t.startedAt,
+      status: t.status,
+    }));
+    this.post({ type: 'background_tasks', items });
+  }
+
+  /**
+   * 终止后台任务（webview 浮层「终止」按钮 → `background_kill` 消息）
+   *
+   * 内核按 Agent 实例隔离 ⇒ 只能杀本会话自起的任务（与 `kill_command` 同一不变量）。
+   * 任务已不在返回 `null`，此处按「已终结」处理并照常回推快照（浮层据此刷新为终态），
+   * 不弹错误提示——用户视角「点了终止、它没了」就是正确结果。
+   */
+  private killBackgroundTask(taskId: string): void {
+    if (!this._agent) return;
+    this._agent.killBackgroundTask(taskId);
+    this.postBackgroundTasks();
   }
 
   /** 待发送区同步守卫：

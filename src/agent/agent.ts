@@ -1133,7 +1133,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 宿主拿它渲染列表，但**无从操纵进程**（注册表按 Agent 实例隔离，
    * 导出注册表类会让宿主跨会话 kill，故只出方法不出类）。
    *
-   * 未初始化返回空数组，与既有门面同构（不抛）。
+   * ⚠️ 未初始化**抛 `configError`**（与既有门面同构，`assertInitialized` 是门面统一契约）——
+   * 调用方须自行保证 init 完成，本方法不做静默降级（静默返回空会把「未初始化」
+   * 伪装成「没有后台任务」）。
    */
   listBackgroundTasks(): readonly BackgroundTask[] {
     this.assertInitialized('listBackgroundTasks');
@@ -1147,6 +1149,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 返回终态投影（用户点「终止」即等价于模型调 `kill_command`）。
    *
    * @returns 终态投影；`taskId` 不存在 → `null`
+   * @throws 未初始化时抛 `configError`（同 `listBackgroundTasks`）
    */
   killBackgroundTask(taskId: string): BackgroundTask | null {
     this.assertInitialized('killBackgroundTask');

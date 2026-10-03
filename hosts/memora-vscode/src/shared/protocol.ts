@@ -1,4 +1,5 @@
 import type {
+  BackgroundTask,
   InteractiveInputKind,
   ProcessEvent,
   Round,
@@ -457,7 +458,16 @@ export type WebviewToExtensionMessage =
    * 用户确认后才逐个执行，并逐个统计成败（单个失败不中断整批）。
    * host 侧复用已注册命令 `memora.revertAllFileChanges`。
    */
-  | { type: 'revert_all_file_changes' };
+  | { type: 'revert_all_file_changes' }
+  /**
+   * 终止后台命令（后台任务浮层「终止」按钮触发 · 见 `docs/方案-后台任务可见性与kill入口-20261004.md`）
+   *
+   * 语义 = 用户侧等价于模型调 `kill_command`：杀树 + 取回截至当时的已捕获输出。
+   * host 侧调 `agent.killBackgroundTask(taskId)`（内核门面，Agent 实例级隔离——
+   * 只能杀本会话自起的任务），执行后**回推一次 `background_tasks` 快照**让浮层刷新。
+   * taskId 不存在时内核返回 null，host 侧按「任务已不在」处理（不报错 toast）。
+   */
+  | { type: 'background_kill'; taskId: string };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -1061,7 +1071,26 @@ export type ExtensionToWebviewMessage =
    * `files` 为**相对项目根**的路径清单（供 title 悬停展示；不下发绝对路径，避免在 UI 暴露无关信息）。
    * 真源 = 宿主 `FileChangeTracker`（webview **不自维护计数副本**，只按收到的快照渲染）。
    */
-  | { type: 'file_changes'; count: number; files: string[] };
+  | { type: 'file_changes'; count: number; files: string[] }
+  /**
+   * 后台任务快照（后台任务浮层数据源 · CMD-1 阶段 2）
+   *
+   * 真源 = 内核 `agent.listBackgroundTasks()` 的只读投影；**webview 不自维护副本**。
+   * `items` 为空 → webview 隐藏「后台 N」入口（无任务时零占用）。
+   * 推送时机：宿主侧条件轮询（仅当存在 running 任务时拉取）+ kill 后强制回推一次。
+   */
+  | { type: 'background_tasks'; items: BackgroundTaskView[] };
+
+/**
+ * 后台任务 UI 投影（**Pick 约束**——改内核字段名即编译报错，禁另立第二套字段）
+ *
+ * 刻意**不含 `result`**：命令输出体量可至 KB~MB 级，UI 不呈现输出
+ * （输出归模型消费，经 `kill_command` / 回流通道给 LLM），避免无谓搬运。
+ */
+export type BackgroundTaskView = Pick<
+  BackgroundTask,
+  'taskId' | 'command' | 'startedAt' | 'status'
+>;
 
 // ─── turn 投影层类型（SSOT）────────────────────────
 // 设计源：docs/architecture/turn-runtime-render-ssot.md

@@ -79,6 +79,18 @@
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Added（宿主 · 后台任务可见性与 kill 入口 · CMD-1 阶段 2 · 协议 + 接线）
+
+**缺口**：后台任务运行态对用户零可见、无 kill 入口（内核能力齐备但零导出，宿主取不到数——详见内核区同批条目）。
+
+- **协议 +2 通道**（105 → 107，远低于 130 治理阈值）：下行 `background_tasks`（快照）、上行 `background_kill`（taskId）
+- **投影约束**：`BackgroundTaskView = Pick<BackgroundTask, 'taskId'|'command'|'startedAt'|'status'>`——改内核字段名即编译报错，禁另立第二套字段；**刻意不含 `result`**（命令输出归模型消费，不搬进 UI 通道）
+- **接线**：`chatPanel` 增 `postBackgroundTasks()` / `killBackgroundTask()`；推送时机 = `background_report` 到达时 + kill 后强制回推（浮层立刻转终态）
+- **实施修订（相对方案文档 §2.4 原定案）**：刷新原定「条件轮询」，实施改**宿主侧事件点推送**（零定时器 ⇒ 零泄漏面，why not simpler）；方案文档已同步订正
+- **测试**：新增 `chatPanelBackground.test.ts` 3 条（快照只下发 4 键不含 result / agent 未装配不推 / kill 后回推终态）+ 变异验证（去掉回推 → 精准红）
+- ⚠️ **未覆盖面（如实登记）**：`onDidReceiveMessage` 里 `msg.type === 'background_kill'` 的**路由一跳**未驱动（在 `resolveWebviewView` 回调内，需 provider 级 harness）；与同函数内既有数十个路由分支同构，随刀 3（webview UI）补 harness 时一并钉死
+- ⚠️ **已知缺口（刀 3 处理）**：任务**刚启动**时无推送点，浮层要等首个 `background_report` 才出现
+
 ### Fixed（宿主 · 任务项组层级与折叠箭头右置 · `TOP-UI-2` / `TOP-UI-3`）
 
 **缺口（用户真机反馈）**：对话流任务表四级内容左对齐糊成一片；折叠箭头左置压迫行首，标题无法顶格。
