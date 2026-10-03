@@ -1330,7 +1330,12 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: [] });
     expect(document.querySelector('.pending-queue-bar')).toBeNull();
     // 空 → 非空：懒创建 + StatusDock 裁决显示
-    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: ['插话'] });
+    dispatch({
+      type: 'turn_update',
+      rounds: [],
+      state: { phase: 'running' },
+      pendingQueue: ['插话'],
+    });
     const bar = document.querySelector('.pending-queue-bar') as HTMLElement;
     expect(bar).not.toBeNull();
     expect(bar.hidden).toBe(false);

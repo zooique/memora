@@ -756,9 +756,7 @@ describe('AgentLoop · compress_context（第二级压缩：LLM 触发 + 临时�
 
     // 配对完整性：压缩后剩余上下文不得有孤立的 tool 消息（每个 toolCallId 都有 assistant 侧）
     const msgs = loop.getMessages();
-    const assistantIds = new Set(
-      msgs.flatMap((m) => (m.toolCalls ?? []).map((tc) => tc.id)),
-    );
+    const assistantIds = new Set(msgs.flatMap((m) => (m.toolCalls ?? []).map((tc) => tc.id)));
     for (const m of msgs) {
       if (m.role === 'tool' && m.toolCallId) {
         expect(assistantIds.has(m.toolCallId)).toBe(true);
@@ -813,7 +811,9 @@ describe('AgentLoop · compress_context（第二级压缩：LLM 触发 + 临时�
       {
         role: 'assistant',
         content: '悬空步骤',
-        toolCalls: [{ id: 'ghost', type: 'function', function: { name: 'read_file', arguments: '{}' } }],
+        toolCalls: [
+          { id: 'ghost', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+        ],
       },
     );
     expect(probeLoop.findEarliestSteps()).toBeNull();

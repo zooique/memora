@@ -23,7 +23,10 @@ import { reconcileTeams, reconcileRolePackTeams } from '../rolePackTeams.js';
 import { ROLE_PACK_TEAMS_KEY } from '../../../shared/constants.js';
 
 /** 内核角色包管理器桩：listMeta 返回给定包名集合（真源面），setRolePackTeams 记录调用 */
-function rpmStub(names: string[]): { rpm: RolePackManager; setRolePackTeams: ReturnType<typeof vi.fn> } {
+function rpmStub(names: string[]): {
+  rpm: RolePackManager;
+  setRolePackTeams: ReturnType<typeof vi.fn>;
+} {
   const setRolePackTeams = vi.fn();
   const rpm = {
     listMeta: () => names.map((name) => ({ name })),
@@ -76,10 +79,7 @@ describe('reconcileTeams —— 对账纯函数语义', () => {
   });
 
   it('存量空名单组 → 删组（不动组长的组员名单也为空的组不成立）', () => {
-    const { teams, changed } = reconcileTeams(
-      [{ leader: 'A', members: [] }],
-      new Set(['A', 'B']),
-    );
+    const { teams, changed } = reconcileTeams([{ leader: 'A', members: [] }], new Set(['A', 'B']));
     expect(teams).toEqual([]);
     expect(changed).toBe(true);
   });
@@ -135,7 +135,10 @@ describe('reconcileRolePackTeams —— 对账编排语义', () => {
       const update = vi.fn(async () => {
         throw new Error('storage write failed');
       });
-      const memento = { get: () => [{ leader: '幽灵组长', members: [] }], update } as unknown as Memento;
+      const memento = {
+        get: () => [{ leader: '幽灵组长', members: [] }],
+        update,
+      } as unknown as Memento;
 
       await expect(reconcileRolePackTeams(rpm, memento)).resolves.toBeUndefined();
 
