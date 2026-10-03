@@ -166,6 +166,14 @@ function killProcessTree(child: childProcess.ChildProcess): void {
       child.kill();
     });
     killer.on('close', (code) => {
+      if (code === 128) {
+        // 128 = ERROR_PROC_NOT_FOUND（Windows taskkill 语义）：目标进程已退出——
+        // 强杀目标已达成（正常竞态：探活与 taskkill 之间进程自然结束），
+        // 静默结束，不当降级也不打 WARN（2026-10-03 实锤：门禁日志噪音源）。
+        // 主 pid 已死时孙进程成孤儿无人收割——child.kill 够不着，属残余边界
+        // （Windows pid 复用窗口下的 taskkill 误杀风险同样在此，见 §13.6-A 登记）。
+        return;
+      }
       if (code !== 0) {
         logger.warn({ pid, code }, 'taskkill 未成功结束进程树，降级为 kill 直接子进程');
         child.kill();
