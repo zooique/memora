@@ -78,8 +78,15 @@ export function createVscodeEnvironmentProvider(): IEnvironmentProvider {
   const partial: HostEnvironmentInfo = {
     // 形如 "win32 10.0.22631"（平台 + 内核版本号，宿主进程内零成本事实）
     os: `${process.platform} ${os.release()}`,
-    // 默认 shell：Windows 侧 VS Code 集成终端默认 PowerShell；POSIX 读 $SHELL 环境变量
-    shell: process.platform === 'win32' ? 'PowerShell' : (process.env.SHELL ?? 'sh'),
+    // shell = **本会话命令执行器实际派发的那个 shell**（不是集成终端 / 登录 shell）。
+    // ⚠️ 语义收窄实锤（2026-10-03 审查 P0）：本字段唯一用途是「供模型避免跨平台命令误用」，
+    //   报「用户登录/集成终端用的那个 shell」是**假事实**——内核 `runShellCommand` /
+    //   `startBackgroundCommand` 均走 `skillScriptRunner.ts` 的 `resolveShellCommand`：
+    //   win32 → `cmd /c`，其余平台 → `sh -c`，**恒定映射、不读任何环境变量**。
+    //   模型按 PowerShell 语法写命令却在 cmd 下执行（win32）、
+    //   按 zsh/bash 语法写命令却在 dash 下执行（POSIX）= 每次都失败。
+    //   两侧映射必须同源：改内核 resolveShellCommand 时必须同批改此处（互为镜像，勿单边改）。
+    shell: process.platform === 'win32' ? 'cmd' : 'sh',
   };
   snapshot = partial;
 

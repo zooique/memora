@@ -355,6 +355,13 @@ function attachGovernance(
  *
  * Windows 经 `cmd /c`，类 Unix 经 `sh -c`。**不在此引入 powershell/bash 第二档**——
  * 那是宿主 shell 选型的议题，内核只做「命令 → 平台默认 shell」的单点映射。
+ *
+ * ⚠️ **本函数是「命令实际派发到哪个 shell」的唯一真源**（2026-10-03 审查 P0 锚点）：
+ * 宿主把该事实注入 system prompt「## 运行环境 · 默认 Shell」段供模型避坑，
+ * 两侧若不一致 = 对模型说假话（曾发生：宿主报 `PowerShell` 而此处是 `cmd`，
+ * 模型写 PowerShell 语法却由 cmd 执行，每次必败）。
+ * **改本映射必须同批核对宿主镜像**：`hosts/memora-vscode/src/extension/host/environmentProvider.ts`
+ * 的 `shell` 字段（与 `run_command` / `run_project_script` 的 shell 档共用此派发形态）。
  */
 export function resolveShellCommand(
   command: string,
