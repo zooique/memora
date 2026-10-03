@@ -45,7 +45,7 @@
  * 发布前清单一行比对即可发现（自觉不可观测，缺口可观测）。
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -53,6 +53,62 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const HOST = join(ROOT, 'hosts', 'memora-vscode');
 const LOG_DIR = join(ROOT, '.workbuddy', 'tmp');
+// 门禁互斥锁：两份全量门禁并发 = spawn 资源对撞（2026-10-03 实锤：两个 push
+// 任务并发各触发一份 gate-full，spawn 类测试成片假失败 + 步骤耗时暴涨 5-7 倍）。
+// 锁文件只写 pid；启动时校验持有者存活——活着即拒绝（exit 2），死锁（崩溃残留）
+// 自动接管；正常路径经 process exit 钩子释放。探活用 process.kill(pid,0)（lockManager 同款）。
+const LOCK_FILE = join(LOG_DIR, 'local-ci.lock');
+
+/**
+ * 门禁互斥锁获取：并发即拒绝，崩溃残留锁自动接管。
+ * 返回 true = 成功持有；进程退出时经 exit 钩子释放。
+ */
+function acquireLock() {
+  mkdirSync(LOG_DIR, { recursive: true });
+  try {
+    // 'wx' 独占创建：已存在即抛——并发第一道闸（不依赖读后判的竞态窗口）
+    writeFileSync(LOCK_FILE, String(process.pid), { flag: 'wx' });
+  } catch (err) {
+    if (err?.code !== 'EEXIST') throw err;
+    let holderPid = 0;
+    try {
+      holderPid = Number(readFileSync(LOCK_FILE, 'utf8'));
+    } catch {
+      /* 锁文件读到空/坏 = 异常残留，按死锁处理（下方覆盖接管） */
+    }
+    const holderAlive =
+      holderPid > 0 &&
+      (() => {
+        try {
+          process.kill(holderPid, 0);
+          return true;
+        } catch (e) {
+          return e?.code === 'EPERM'; // EPERM = 进程存在但无权探活，视为活着
+        }
+      })();
+    if (holderAlive) {
+      console.error(
+        `\n[local-ci] ❌ 另一份门禁正在运行（pid=${holderPid}），已拒绝并发执行——` +
+          `两份全量门禁并发会对撞 spawn 资源，测试成片假失败（2026-10-03 实锤）。` +
+          `\n[local-ci] 等待其结束或手动杀进程后重试。`,
+      );
+      process.exit(2);
+    }
+    // 死锁自动接管：持有者进程已不存在（上次运行崩溃残留）
+    console.warn(`[local-ci] 检测到崩溃残留锁（pid=${holderPid || '未知'}），已自动接管`);
+    writeFileSync(LOCK_FILE, String(process.pid));
+  }
+  // 正常路径：进程退出（含门禁失败 exit(1)/并发拒绝 exit(2) 前的持有期）释放
+  process.on('exit', () => {
+    try {
+      // 只释放自己持有的锁（防误删接管场景下新持有者的锁）
+      if (readFileSync(LOCK_FILE, 'utf8') === String(process.pid)) rmSync(LOCK_FILE);
+    } catch {
+      /* 锁文件已消失/不可读 = 无需释放 */
+    }
+  });
+  return true;
+}
 
 const argv = process.argv.slice(2);
 const has = (flag) => argv.includes(flag);
@@ -293,6 +349,7 @@ function formatReceipt(receipt) {
 }
 
 async function main() {
+  acquireLock(); // 门禁互斥：并发 gate-full 对撞防线（见 LOCK_FILE 注释）
   const preset = argOf('preset') ?? 'full';
   const steps = selectSteps();
   const receipt = buildReceipt(preset, steps.length);
