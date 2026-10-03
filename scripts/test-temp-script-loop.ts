@@ -49,6 +49,9 @@ const SUPPORTED_LANGS = new Set(['node', 'js', 'javascript', 'nodejs']);
  */
 function createLocalNodeExecutor(): ICodeExecutionProvider {
   return {
+    // 支持语言声明（§10.4-①(b) 同批补齐）：内核 run_code 工具描述按本声明生成列举；
+    // 与下方 execute 的支持判定同源 SUPPORTED_LANGS，不双写
+    supportedLanguages: [...SUPPORTED_LANGS],
     /**
      * 在独立 Node 子进程内执行代码
      *

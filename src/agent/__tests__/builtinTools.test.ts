@@ -18,6 +18,7 @@ import {
   WEB_SEARCH_TOOL,
   WEB_FETCH_TOOL,
   RUN_CODE_TOOL,
+  buildRunCodeTool,
   SEARCH_PROJECT_TOOL,
   WRITE_FILE_MODES,
   type ToolDefinition,
@@ -357,6 +358,31 @@ describe('builtinTools · RUN_CODE_TOOL（通用计算/验证底座）', () => {
       },
     };
     expect(isValid.name).toBe(RUN_CODE_TOOL.name);
+  });
+
+  it('buildRunCodeTool 未声明语言 → 描述不列举任何语言名（§11.6 防回归锁）', () => {
+    // 未声明（undefined）与空数组两种形态都必须退化为去承诺文案：
+    // 防「悄悄开始列举」回归——对未声明支持的宿主列举语言 = 对模型说谎（§10.3 同型伤）
+    for (const def of [buildRunCodeTool(), buildRunCodeTool([])]) {
+      const langDesc = def.parameters.properties.language!.description;
+      expect(langDesc).not.toContain('支持：');
+      expect(langDesc).not.toContain('python');
+      expect(langDesc).not.toContain('javascript');
+      // 去承诺文案保留（由宿主决定的如实声明）
+      expect(langDesc).toContain('由宿主执行器决定');
+    }
+  });
+
+  it('buildRunCodeTool 声明语言 → 描述按实际生成「支持：a、b、c」', () => {
+    const def = buildRunCodeTool(['javascript', 'js', 'nodejs', 'node']);
+    const langDesc = def.parameters.properties.language!.description;
+    // 列举与声明逐一对应（描述从声明派生，非独立字面量）
+    expect(langDesc).toContain('当前执行器支持：javascript、js、nodejs、node');
+    // 未声明语言不得出现（描述宽度 = 声明宽度，不外溢）
+    expect(langDesc).not.toContain('python');
+    // 其他字段与缺省形态一致（name/diskWrite 不随声明变化——写盘索引依赖稳定）
+    expect(def.name).toBe('run_code');
+    expect(def.diskWrite).toBe('opaque');
   });
 });
 

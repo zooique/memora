@@ -21,7 +21,11 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assembleComponents, buildSystemPromptPrefix } from '@/agent/assembler.js';
+import {
+  assembleComponents,
+  buildSystemPromptPrefix,
+  buildEnvironmentContextBlock,
+} from '@/agent/assembler.js';
 import type { AssembleInput, AgentHooks } from '@/agent/assembler.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
@@ -726,5 +730,52 @@ describe('buildSystemPromptPrefix · Turn 起始策略', () => {
     expect(tsIdx).toBeGreaterThan(-1);
     expect(strategyIdx).toBeGreaterThan(tsIdx);
     expect(sepIdx).toBeGreaterThan(strategyIdx);
+  });
+});
+
+// ─── buildEnvironmentContextBlock · 宿主环境事实段（方案 §10.4-②）──
+
+describe('buildEnvironmentContextBlock · 运行环境注入', () => {
+  it('null → 空串（未注入 provider 时不产生环境段）', () => {
+    expect(buildEnvironmentContextBlock(null)).toBe('');
+  });
+
+  it('全字段缺省 → 空串（不产生空壳标题谎言段）', () => {
+    expect(buildEnvironmentContextBlock({})).toBe('');
+    expect(buildEnvironmentContextBlock({ runtimes: [] })).toBe('');
+  });
+
+  it('字段 → 「## 运行环境」段逐行映射（零解释转发，无行为引导语）', () => {
+    const block = buildEnvironmentContextBlock({
+      os: 'win32 10.0.22631',
+      shell: 'PowerShell',
+      runtimes: ['node v22.10.0', 'python 3.12.1'],
+    });
+    expect(block).toContain('## 运行环境');
+    expect(block).toContain('- 操作系统：win32 10.0.22631');
+    expect(block).toContain('- 默认 Shell：PowerShell');
+    expect(block).toContain('- 可用运行时：node v22.10.0、python 3.12.1');
+    // 零解释：不添加「你应该…」类行为引导（环境事实自己会说话，方案 §10.2）
+    expect(block).not.toContain('应该');
+  });
+
+  it('environmentContext 作为第 5 参注入 prefix：位于作品投影后、时间戳前', () => {
+    const prefix = buildSystemPromptPrefix(
+      'persona',
+      'skills',
+      'zh-CN',
+      '## 作品投影',
+      buildEnvironmentContextBlock({ os: 'win32 10.0.22631' }),
+    );
+    const envIdx = prefix.indexOf('## 运行环境');
+    const projIdx = prefix.indexOf('## 作品投影');
+    const tsIdx = prefix.indexOf('当前时间：');
+    expect(envIdx).toBeGreaterThan(projIdx);
+    expect(tsIdx).toBeGreaterThan(envIdx);
+  });
+
+  it('environmentContext 缺省 → prefix 不含环境段（向后兼容）', () => {
+    const prefix = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
+    expect(prefix).not.toContain('## 运行环境');
   });
 });

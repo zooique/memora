@@ -62,11 +62,23 @@ describe('键集合与内核内置工具清单对齐', () => {
   function kernelToolNames(): Set<string> {
     const src = readFileSync(KERNEL_TOOLS_PATH, 'utf8');
     const names = new Set<string>();
-    // ① 独立的工具常量定义（export const XXX_TOOL: ToolDefinition = { name: '...' }）
+    // ①-a 独立的工具常量定义·字面量形态（export const XXX_TOOL: ToolDefinition = { name: '...' }）
     for (const m of src.matchAll(
       /export const [A-Z][A-Z0-9_]*_TOOL: ToolDefinition = \{[\s\S]*?\bname: '([a-z_]+)'/g,
     )) {
       names.add(m[1]!);
+    }
+    // ①-b 独立的工具常量定义·工厂形态（2026-10-03 buildRunCodeTool 引入，§10.4-①(b)）：
+    // export const XXX_TOOL: ToolDefinition = buildYYY(...) —— name 在工厂函数体内的
+    // return { name: '...' }，从对应函数体提取（提取失效立即红，不静默通过）
+    for (const m of src.matchAll(
+      /export const [A-Z][A-Z0-9_]*_TOOL: ToolDefinition = (build[A-Za-z0-9_]*)\(/g,
+    )) {
+      const fnStart = src.indexOf(`function ${m[1]}(`);
+      expect(fnStart, `未找到工厂函数 ${m[1]}——内核结构已变更，守卫需同步`).toBeGreaterThan(-1);
+      const nameMatch = src.slice(fnStart).match(/\bname: '([a-z_]+)'/);
+      expect(nameMatch, `工厂函数 ${m[1]} 内未提取到 name——守卫正则需同步`).toBeTruthy();
+      names.add(nameMatch![1]!);
     }
     // ② BUILTIN_TOOLS 数组内联定义（未抽为常量的那批）
     const start = src.indexOf('export const BUILTIN_TOOLS');

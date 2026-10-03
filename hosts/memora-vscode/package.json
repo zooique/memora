@@ -130,6 +130,12 @@
           "default": "auto",
           "description": "内部网页搜索引擎（web_search 工具使用的后端）。auto 为内置降级链（Bing→DuckDuckGo）；选 baidu/sogou 时用户首选引擎在前、Bing 兜底。用户级偏好，随用户而非随项目。修改后重建会话（或重载窗口）生效。"
         },
+        "memora.scriptNodePath": {
+          "type": "string",
+          "scope": "application",
+          "default": "",
+          "description": "脚本执行的 node 可执行文件绝对路径（可选）。供 run_skill_script / run_project_script 的 node 脚本使用；留空时走系统 PATH 查找 node。宿主机无独立 node（技能脚本报 ENOENT）时配置此项，如内置运行时的 node 路径。修改后需重载窗口生效。"
+        },
         "memora.disabledSkills": {
           "type": "array",
           "items": {

@@ -34,6 +34,15 @@ export interface CodeExecutionOptions {
  * 未注入时 Agent 不会暴露 run_code 工具给 LLM。
  */
 export interface ICodeExecutionProvider {
+  /**
+   * 执行器支持的语言清单（可选声明，方案 §10.4-①(b)）：小写语言别名
+   * （如 ["javascript", "js", "nodejs", "node"]）。
+   * 声明后内核 run_code 工具描述按实际生成「支持：a、b、c」——消灭「描述承诺 python、
+   * 宿主只支持 JS」的描述与现实不符（§10.3 实锤）；未声明（undefined / 空数组）→
+   * 描述退化为现行去承诺文案，对模型不列举（零感知，向后兼容，§11.6 拍板）。
+   * 支持列表真源在本字段（宿主执行器自知），内核与工具描述均从它派生，不双写。
+   */
+  readonly supportedLanguages?: readonly string[];
   /** 执行代码字符串，返回 stdout/stderr/exitCode/timedOut */
   execute(
     code: string,

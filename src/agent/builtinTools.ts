@@ -343,7 +343,52 @@ export const WEB_FETCH_TOOL: ToolDefinition = {
 };
 
 /**
- * run_code 工具定义（独立导出，条件性包含）
+ * run_code 工具定义工厂（方案 §10.4-①(b)）
+ *
+ * @param supportedLanguages 宿主执行器声明支持的语言清单（可选）：声明时 language 描述
+ *        追加「支持：a、b、c」按实际生成；未声明（undefined / 空数组）→ 退化为现行
+ *        去承诺文案，对模型不列举任何语言名（§11.6 拍板：声明列举 / 未声明不列举）。
+ * @returns run_code 工具定义
+ */
+export function buildRunCodeTool(supportedLanguages?: readonly string[]): ToolDefinition {
+  // 声明段：仅当清单非空时生成，追加到 language 描述尾部（模型据此直接选对语言，
+  // 免「写 python → 被回知 → 改用 JS」的一轮浪费）
+  const languageSupportedNote =
+    supportedLanguages && supportedLanguages.length > 0
+      ? `当前执行器支持：${supportedLanguages.join('、')}。`
+      : '';
+  return {
+    name: 'run_code',
+    description:
+      '执行代码并返回运行结果（通用计算/数据处理/验证能力）。源码不进入上下文，仅执行结果返回。执行能力与隔离等级由宿主注入的执行器决定。' +
+      '两种模式（二选一）：① 传 code 直接执行代码字符串；② 传 script_path 执行项目根下的脚本文件（相对项目根路径，cwd=项目根，脚本可 require 项目本地依赖、读取项目数据）。' +
+      '一次性数据处理推荐「临时脚本」闭环：先 write_file 写入脚本 → run_code(script_path) 执行拿数据 → delete_file 清理脚本，不留痕。',
+    diskWrite: 'opaque',
+    parameters: {
+      type: 'object',
+      properties: {
+        language: {
+          type: 'string',
+          description:
+            '代码语言（可选；script_path 模式省略时按文件扩展名推断）。**具体支持哪些语言由宿主执行器决定，内核不预设**——' +
+            '不确定时优先用 script_path 模式（先 write_file 写文件再执行，按扩展名推断运行时），或先观察项目里已有脚本的扩展名；' +
+            '若直接传 code 而语言不被支持，执行器会明确回知可用语言，据此改用即可。' +
+            languageSupportedNote,
+        },
+        code: { type: 'string', description: '要执行的代码内容（与 script_path 二选一）' },
+        script_path: {
+          type: 'string',
+          description:
+            '要执行的项目脚本文件路径（相对项目根，如 "tmp_analyze.mjs"；与 code 二选一，cwd=项目根，脚本可用项目依赖）',
+        },
+      },
+      required: [],
+    },
+  };
+}
+
+/**
+ * run_code 工具缺省形态（独立导出，条件性包含）
  *
  * 通用代码执行（计算/数据处理/验证底座）。源码不进入 LLM 上下文，仅执行结果返回。
  * 仅在宿主注入了 ICodeExecutionProvider 时才暴露给 LLM。
@@ -354,34 +399,13 @@ export const WEB_FETCH_TOOL: ToolDefinition = {
  *
  * 「临时脚本」闭环（对齐主流 AI IDE 行为约定）：write_file 写脚本 → run_code(script_path)
  * 执行拿数据 → delete_file 清理脚本——一次性数据处理不留痕。
+ *
+ * 注意：实际暴露给 LLM 的定义由 toolExecutor 按注入的 codeExecutionProvider 声明
+ * （buildRunCodeTool(provider.supportedLanguages)）生成；本缺省形态仅用于
+ * ALL_BUILTIN_TOOL_DEFS 写盘派生索引（name/diskWrite 与语言描述无关）与名称比较，
+ * 其描述不含语言列举——勿直接把它当 LLM 可见定义。
  */
-export const RUN_CODE_TOOL: ToolDefinition = {
-  name: 'run_code',
-  description:
-    '执行代码并返回运行结果（通用计算/数据处理/验证能力）。源码不进入上下文，仅执行结果返回。执行能力与隔离等级由宿主注入的执行器决定。' +
-    '两种模式（二选一）：① 传 code 直接执行代码字符串；② 传 script_path 执行项目根下的脚本文件（相对项目根路径，cwd=项目根，脚本可 require 项目本地依赖、读取项目数据）。' +
-    '一次性数据处理推荐「临时脚本」闭环：先 write_file 写入脚本 → run_code(script_path) 执行拿数据 → delete_file 清理脚本，不留痕。',
-  diskWrite: 'opaque',
-  parameters: {
-    type: 'object',
-    properties: {
-      language: {
-        type: 'string',
-        description:
-          '代码语言（可选；script_path 模式省略时按文件扩展名推断）。**具体支持哪些语言由宿主执行器决定，内核不预设**——' +
-          '不确定时优先用 script_path 模式（先 write_file 写文件再执行，按扩展名推断运行时），或先观察项目里已有脚本的扩展名；' +
-          '若直接传 code 而语言不被支持，执行器会明确回知可用语言，据此改用即可。',
-      },
-      code: { type: 'string', description: '要执行的代码内容（与 script_path 二选一）' },
-      script_path: {
-        type: 'string',
-        description:
-          '要执行的项目脚本文件路径（相对项目根，如 "tmp_analyze.mjs"；与 code 二选一，cwd=项目根，脚本可用项目依赖）',
-      },
-    },
-    required: [],
-  },
-};
+export const RUN_CODE_TOOL: ToolDefinition = buildRunCodeTool();
 
 /**
  * search_project 工具定义（独立导出，条件性包含）

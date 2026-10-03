@@ -23,6 +23,7 @@ import {
   WEB_FETCH_CONTENT_MAX_LEN,
   WEB_FETCH_CONTENT_DEFAULT_LEN,
   RUN_CODE_TOOL,
+  buildRunCodeTool,
   SEARCH_PROJECT_TOOL,
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
@@ -841,7 +842,10 @@ export class ToolExecutor {
     let baseTools = BUILTIN_TOOLS;
     if (this.webSearchProvider) baseTools = [...baseTools, WEB_SEARCH_TOOL];
     if (this.fetchProvider) baseTools = [...baseTools, WEB_FETCH_TOOL];
-    if (this.codeExecutionProvider) baseTools = [...baseTools, RUN_CODE_TOOL];
+    // run_code 定义按宿主执行器声明生成（§10.4-①(b)）：声明 supportedLanguages →
+    // 描述列举「支持：a、b、c」；未声明 → buildRunCodeTool 缺省形态（去承诺文案，不列举）
+    if (this.codeExecutionProvider)
+      baseTools = [...baseTools, buildRunCodeTool(this.codeExecutionProvider.supportedLanguages)];
 
     // 常驻豁免集无条件暴露（LLM 工具面不因角色包能力声明收窄本地能力）
     const exposed = baseTools.filter((t) => DEFAULT_EXPOSED_TOOLS.has(t.name));

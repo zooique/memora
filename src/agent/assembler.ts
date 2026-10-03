@@ -46,6 +46,7 @@ import type {
   PreExecutionResult,
   ToolExecutionRecord,
   IdempotencyLevel,
+  HostEnvironmentInfo,
 } from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
@@ -73,14 +74,38 @@ const TURN_START_STRATEGY_PROMPT = `## Turn 起始策略
 简单问题直接回答。`;
 
 /**
+ * 将宿主环境快照格式化为 system prompt 注入段（纯函数，方案 §10.4-②）
+ *
+ * 零解释转发：只做字段 → 文本的机械映射，不添加行为引导（环境事实自己会说话，
+ * 「由模型自己决定」——Cline/Claude Code 共同点，见方案 §10.1）。
+ * 全字段缺省/空 → 返回空串（调用方 filter(Boolean) 自动跳过，prompt 无空段）。
+ *
+ * @param env 宿主环境快照（IEnvironmentProvider.getEnvironment() 产出）
+ * @returns 「## 运行环境」段落（可能为空串）
+ */
+export function buildEnvironmentContextBlock(env: HostEnvironmentInfo | null): string {
+  if (!env) return '';
+  const lines: string[] = [];
+  if (env.os) lines.push(`- 操作系统：${env.os}`);
+  if (env.shell) lines.push(`- 默认 Shell：${env.shell}`);
+  if (env.runtimes && env.runtimes.length > 0) {
+    lines.push(`- 可用运行时：${env.runtimes.join('、')}`);
+  }
+  // 无任何有效字段 → 不产生空壳标题（防 prompt 出现「## 运行环境」下无内容的谎言段）
+  if (lines.length === 0) return '';
+  return `## 运行环境\n\n${lines.join('\n')}`;
+}
+
+/**
  * 构建 systemPromptPrefix 的共享函数（SSOT）
  *
  * 初始化时和刷新时都必须使用此函数，确保前缀包含：
  *   1. 角色包 L1 persona + 技能清单（rolePackPrompt）
  *   2. 全局技能 L1 清单（globalSkillList）
  *   3. 作品投影装配注入块（workProjectionContext，可选：极简元数据清单，AI 按需 read_file）
- *   4. 当前时间戳
- *   5. 分隔线
+ *   4. 运行环境事实段（environmentContext，可选：宿主上报的 OS/shell/运行时）
+ *   5. 当前时间戳
+ *   6. 分隔线
  *
  * 必须包含全局技能清单和时间戳——若只拼接 rolePackPrompt，
  * 首次角色切换后全局技能永久不可见。
@@ -90,6 +115,7 @@ const TURN_START_STRATEGY_PROMPT = `## Turn 起始策略
  * @param globalSkillList 全局技能清单（SkillManager.buildSkillList()）
  * @param locale 时间格式化 locale
  * @param workProjectionContext 作品投影装配注入块（可选；由 WorkProjectionManager.loadAndGetContextBlock() 产出）
+ * @param environmentContext 运行环境事实段（可选；由 buildEnvironmentContextBlock 格式化宿主快照产出）
  * @returns 完整的 systemPromptPrefix
  */
 export function buildSystemPromptPrefix(
@@ -97,10 +123,14 @@ export function buildSystemPromptPrefix(
   globalSkillList: string,
   locale?: string,
   workProjectionContext?: string,
+  environmentContext?: string,
 ): string {
-  const systemPrefixParts = [rolePackPrompt, globalSkillList, workProjectionContext].filter(
-    Boolean,
-  );
+  const systemPrefixParts = [
+    rolePackPrompt,
+    globalSkillList,
+    workProjectionContext,
+    environmentContext,
+  ].filter(Boolean);
   const now = new Date();
   const timeStr = now.toLocaleString(locale ?? AGENT_CONSTANTS.DEFAULT_LOCALE, {
     year: 'numeric',
@@ -197,6 +227,7 @@ type AssembleRuntimeParams = Pick<
   | 'fetchProvider'
   | 'codeExecutionProvider'
   | 'projectSearchProvider'
+  | 'environmentProvider'
   | 'scriptNodePath'
   | 'disabledSkills'
 >;
@@ -250,6 +281,8 @@ type LoopAndDepsParams = Pick<
   sessionManager: SessionManager;
   /** 作品投影装配注入块（L1 name+description 清单 + L2 always 正文，两级渐进披露） */
   workProjectionContext: string;
+  /** 运行环境事实段（可选；assembleComponents 从 environmentProvider 快照格式化产出，空串/undefined 不注入） */
+  environmentContext?: string;
 };
 
 /**
@@ -480,16 +513,18 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     sessionManager,
     hooks,
     workProjectionContext,
+    environmentContext,
   } = params;
 
   // 系统前缀：使用共享函数构建（SSOT：buildSystemPromptPrefix）
-  // 包含角色包 L1 persona + 全局技能清单 + 作品投影装配块（L1 清单 + L2 always 正文）+ 当前时间戳
+  // 包含角色包 L1 persona + 全局技能清单 + 作品投影装配块（L1 清单 + L2 always 正文）+ 运行环境事实段 + 当前时间戳
   const globalSkillList = skillManager.buildSkillList();
   const systemPromptPrefix = buildSystemPromptPrefix(
     rolePackPrompt,
     globalSkillList,
     locale,
     workProjectionContext,
+    environmentContext,
   );
   // 角色包底盘占用（system prompt 总体 token）= 装配此刻即确定的真值，早于 prepare；
   // 冷启动 / 重启首屏即可显示真实占比。与运行时 prepare 用同一 estimateTokensMessages 估算器（口径一致）。
@@ -895,6 +930,13 @@ export async function assembleComponents(
   // 刷新失败不阻断装配——loadAndGetContextBlock 内部已容错，返回空串即不注入（投影是可选项，非装配硬依赖）
   const workProjectionContext = await workProjection.loadAndGetContextBlock();
 
+  // 运行环境事实段（方案 §10.4-②）：从宿主环境提供者同步取快照并格式化。
+  // getEnvironment 同步返回（探测节奏宿主自理，内核零等待）；未注入/返回 null → 空串不注入。
+  // 环境事实只进 prompt（给模型看），不进任何内核判据（§10.5 刻意不做）。
+  const environmentContext = buildEnvironmentContextBlock(
+    input.environmentProvider?.getEnvironment() ?? null,
+  );
+
   const { loop, sessionArchiver, textPolisher, roundSummaryGenerator } =
     await createAgentLoopAndDeps({
       provider,
@@ -913,6 +955,7 @@ export async function assembleComponents(
       sessionManager,
       hooks,
       workProjectionContext,
+      environmentContext,
     });
   loopRef = loop;
 

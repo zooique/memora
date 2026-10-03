@@ -157,6 +157,11 @@ function getOrCreateAgent(
     // （L1 清单 / list_skills / read_skill / L3 全不可达）。此处只是**装配期快照**；
     // 用户改设置由 activate 内的配置监听实时重设，无需重新装配。
     const disabledSkills = readDisabledSkills();
+    // 脚本执行 node 路径（S3-接续）：用户显式配置的 node 可执行文件绝对路径；
+    // 空/未配置 = 不注入（内核走 'node' PATH 查找）。修改需重建会话（装配期一次性注入）。
+    const scriptNodePath = vscode.workspace
+      .getConfiguration('memora')
+      .get<string>('scriptNodePath', '');
     agentPromise = assembleAgent({
       projectPath,
       // 项目搜索根 = 真实工作区文件夹（无 folder 时 undefined → 不注入 search_project）
@@ -174,6 +179,7 @@ function getOrCreateAgent(
       confirmScripts,
       allowedPaths,
       disabledSkills,
+      scriptNodePath: scriptNodePath || undefined,
       outputChannel,
     }).catch((err) => {
       // 装配失败则重置，下次命令重试

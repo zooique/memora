@@ -487,6 +487,37 @@ export interface DuplicateCheckContext {
   readonly threshold: number;
 }
 
+/**
+ * 宿主环境事实快照（方案 §10.4-②，IEnvironmentProvider 的上报载荷）
+ *
+ * 全字段可选：宿主只上报它知道的事实，未探测/未知的字段省略，内核不补猜。
+ * 内核对快照**零解释转发**（仅格式化为 system prompt 段落）——环境事实不得
+ * 升级为内核判据（§10.5 刻意不做：内核内置探测 = 派生判定律违规）。
+ */
+export interface HostEnvironmentInfo {
+  /** 操作系统描述（如 "win32 10.0.22631"；宿主自行决定详细程度） */
+  os?: string;
+  /** 默认 shell（如 "PowerShell"、"/bin/zsh"；供模型避免跨平台命令误用） */
+  shell?: string;
+  /**
+   * 可用运行时清单（每项一行，如 "node v22.10.0"、"python 3.12.1"）：
+   * 宿主探测结果（探测失败/不存在的运行时不上报），模型据此决定用什么语言写脚本。
+   */
+  runtimes?: string[];
+}
+
+/**
+ * 宿主环境提供者接口：宿主实现并注入 AgentOptions.environmentProvider。
+ *
+ * getEnvironment 为**同步**返回快照——探测节奏（异步 spawn / 启动期缓存）由宿主自理，
+ * 内核装配与前缀刷新路径同步读取，零等待、零解释。
+ * 返回 null / undefined = 本轮无环境信息（system prompt 不注入该段，非错误）。
+ */
+export interface IEnvironmentProvider {
+  /** 返回环境事实快照；null = 无环境信息（不注入 prompt 段） */
+  getEnvironment(): HostEnvironmentInfo | null;
+}
+
 /** Agent 构造选项 */
 export interface AgentOptions {
   /** 项目路径（必须） */
@@ -575,6 +606,14 @@ export interface AgentOptions {
   codeExecutionProvider?: ICodeExecutionProvider;
   /** 项目搜索提供者（可选，不配则不启用 search_project；等价 IDE 全局搜索，由宿主实现） */
   projectSearchProvider?: IProjectSearchProvider;
+  /**
+   * 宿主环境提供者（可选，不配则 system prompt 不注入环境段）：宿主上报运行环境事实
+   * （OS / shell / 可用运行时），内核经 buildEnvironmentContextBlock 注入 system prompt。
+   * 方案 §10.4-②：探测环境 → 把事实告诉模型 → 由模型自己决定（对齐 Cline System
+   * Information 支柱与 Claude Code 每轮环境注入）。内核不裁决平台差异——环境事实
+   * 只有宿主知道，内核零解释转发（宿主内部事实不得提升为内核判据，§10.5）。
+   */
+  environmentProvider?: IEnvironmentProvider;
   /**
    * node 可执行文件路径（可选）：宿主注入真实 node 路径
    * （如 IDE 内置 node / 用户配置的 node）给 L3 脚本执行器（run_skill_script /

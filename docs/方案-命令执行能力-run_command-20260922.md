@@ -210,6 +210,31 @@
 
 **⚠️ 已知残留**：`scripts/test-temp-script-loop.ts` 经 3.1.0 接口改动时须同批修改（该文件在 `tsconfig.json` include 之外，脱离 tsc 守卫——与 `searchHybrid` 漏改同型教训）。
 
+### 10.7 落地记录（2026-10-03 · ①(b) + ② 已落地，③ 定档不动）
+
+**①(b) supportedLanguages**（§11.6 拍板形态）：
+
+- `src/code-exec/types.ts`：`ICodeExecutionProvider` 增可选 `readonly supportedLanguages?: readonly string[]`（可选 = minor 兼容；支持列表真源在宿主执行器，内核与工具描述均从它派生，不双写）。
+- `src/agent/builtinTools.ts`：`RUN_CODE_TOOL` 常量 → `buildRunCodeTool(supportedLanguages?)` 工厂——声明时 language 描述追加「当前执行器支持：a、b、c」；未声明（undefined/空数组）退化为现行去承诺文案。`export const RUN_CODE_TOOL = buildRunCodeTool()` 保留缺省形态，供 `ALL_BUILTIN_TOOL_DEFS` 写盘派生索引（name/diskWrite 与语言描述无关）与名称比较。
+- `src/agent/toolExecutor.ts`：暴露点改 `buildRunCodeTool(this.codeExecutionProvider.supportedLanguages)`——LLM 可见定义按宿主实际声明生成。
+- 测试锁死（§11.6 第 3 条）：未声明 → 描述不含任何语言名（防「悄悄开始列举」回归）；声明 → 列举与声明逐一对应、不外溢。
+- 宿主 `codeExecutor.ts`：补 `supportedLanguages: [...SUPPORTED_LANGUAGES]`；「暂不支持语言」回知文案同步改为从 `SUPPORTED_LANGUAGES` 派生（声明与回知同源，杜绝双写漂移）。
+- `scripts/test-temp-script-loop.ts` 同批补声明（清偿 §10.6 残留登记）。
+- 连带守卫同步：宿主 `toolNameMap.test.ts` 的内核工具名文本级提取正则补「工厂形态」分支（`RUN_CODE_TOOL` 从字面量改工厂返回后 `= {` 形态消失，提取漏掉 run_code → 幽灵键误报；正则加 `= buildYYY(` 分支从函数体提取 name，提取失效仍立即红）。
+
+**② IEnvironmentProvider**：
+
+- `src/agent/types.ts`：新增 `HostEnvironmentInfo`（os/shell/runtimes 三字段全可选）+ `IEnvironmentProvider`（**同步** `getEnvironment(): HostEnvironmentInfo | null`——探测节奏宿主自理，内核装配/刷新路径零等待；null = 无环境信息不注入）+ `AgentOptions.environmentProvider?` 注入位。
+- `src/agent/assembler.ts`：新增 `buildEnvironmentContextBlock` 纯函数（零解释格式化，全空字段不产生空壳标题段）；`buildSystemPromptPrefix` 增第 5 参 `environmentContext`（插在作品投影后、时间戳前）；装配主链从 provider 同步取快照格式化。
+- `src/agent/agent.ts`：`refreshRolePackPrefixForRound`（同步刷新路径）同样读快照——每次重建前缀拉最新，宿主可自行缓存。
+- `src/index.ts`：公开导出 `IEnvironmentProvider` / `HostEnvironmentInfo`。
+- 宿主 `environmentProvider.ts`：启动期异步探测一次（node / python `--version`，5s 超时兜底），**退出码非 0 不上报**（宁缺勿假——Windows Store python stub 假阳性被滤）；OS/shell 同步可得字段先落快照（探测未完成时内核也能拿到基础事实）。
+- 刻意不做（§10.5 维持）：内核不内置探测；prompt 不加「你应该…」类行为引导语（环境事实自己会说话）。
+
+**③ 执行期兜底**：按 §10.4 定档不动（python 兜底链保持现状，不替模型切换语言）。
+
+**验证**：内核 tsc EXIT=0 + dist 重建；builtinTools/assembler 112 passed（含「未声明不列举」防回归锁）；宿主 tsc EXIT=0 + 全量复跑通过（toolNameMap 守卫同步后 934+ passed）；宿主 codeExecutor 声明一致性断言（`supportedLanguages` 与 execute 实际支持集合同源）+ environmentProvider 快照语义 9 passed。
+
 ## 十一、能力归属追问（2026-09-22 二次澄清）
 
 ### 11.1 内核天然会什么（实锤）

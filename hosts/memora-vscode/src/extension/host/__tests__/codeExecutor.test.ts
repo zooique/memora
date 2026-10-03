@@ -19,6 +19,11 @@ describe('codeExecutor（G2 本地子进程执行器）', () => {
 
   it('支持 javascript/js/nodejs/node，不支持其他语言返回明确提示', async () => {
     const exe = createLocalCodeExecutor();
+    // 声明一致性（§10.4-①(b)）：supportedLanguages 上报内核生成工具描述，
+    // 必须与 execute 实际支持集合同源一致——声明了却不支持 = 对模型说谎
+    expect([...exe.supportedLanguages!].sort()).toEqual(
+      ['javascript', 'js', 'node', 'nodejs'].sort(),
+    );
     // node 别名：对齐内核 run_code script_path 模式按扩展名推断出的规范语言名
     for (const lang of ['javascript', 'js', 'nodejs', 'node']) {
       const r = await exe.execute('console.log(1 + 1)', lang);
@@ -28,6 +33,8 @@ describe('codeExecutor（G2 本地子进程执行器）', () => {
     const py = await exe.execute('print(1)', 'python');
     expect(py.exitCode).toBe(-1);
     expect(py.stderr).toContain('暂不支持语言「python」');
+    // 回知清单从 SUPPORTED_LANGUAGES 派生（与声明同源，模型可据此直接改用）
+    expect(py.stderr).toContain('javascript');
   });
 
   it('console.log 捕获进 stdout，console.error 进 stderr', async () => {

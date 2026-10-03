@@ -19,9 +19,10 @@
  * （防死循环/防卡死），而非文件系统/网络沙箱。如要运行不可信代码，需升级为
  * OS 级容器/沙箱（如专用受限用户 + rlimit + 网络隔离），不在本执行器范围。
  *
- * 语言支持：仅 JavaScript（javascript / js / nodejs / node）。其他语言由 LLM 提示词约束避开。
- * 内核 run_code 工具描述已如实声明「具体支持哪些语言由宿主执行器决定，内核不预设」——
- * 本执行器实际支持如上四别名；「node」对齐 script_path 模式按扩展名推断（.js/.mjs/.cjs/.ts → node）。
+ * 语言支持：仅 JavaScript（javascript / js / nodejs / node）。经 supportedLanguages
+ * 声明上报内核（§10.4-①(b)），run_code 工具描述按声明生成「支持：…」，描述与现实一致；
+ * 不支持的语言由执行器回知清单（同源自 SUPPORTED_LANGUAGES 派生）。
+ * 「node」对齐 script_path 模式按扩展名推断（.js/.mjs/.cjs/.ts → node）。
  */
 import { spawn } from 'node:child_process';
 import type {
@@ -44,6 +45,9 @@ const SUPPORTED_LANGUAGES = new Set(['javascript', 'js', 'nodejs', 'node']);
  */
 export function createLocalCodeExecutor(): ICodeExecutionProvider {
   return {
+    // 支持语言声明（方案 §10.4-①(b)）：内核 run_code 工具描述按本声明生成「支持：a、b、c」，
+    // 消灭「描述与现实不符」（描述真源 = 本字段，回知文案亦从 SUPPORTED_LANGUAGES 派生，不双写）
+    supportedLanguages: [...SUPPORTED_LANGUAGES],
     /**
      * 在独立 Node 子进程内执行 JavaScript 代码
      *
@@ -58,11 +62,12 @@ export function createLocalCodeExecutor(): ICodeExecutionProvider {
       options?: CodeExecutionOptions,
     ): Promise<CodeExecutionResult> {
       const lang = (language ?? '').toLowerCase();
-      // 暂不支持的语言：返回明确提示（引导 LLM 用 JavaScript）
+      // 暂不支持的语言：返回明确提示（支持清单从 SUPPORTED_LANGUAGES 派生——
+      // 与 supportedLanguages 声明同源，杜绝声明与回知双写漂移）
       if (!SUPPORTED_LANGUAGES.has(lang)) {
         return {
           stdout: '',
-          stderr: `暂不支持语言「${language || '(空)'}」；当前执行器仅支持 JavaScript（javascript / js / nodejs / node）`,
+          stderr: `暂不支持语言「${language || '(空)'}」；当前执行器支持：${[...SUPPORTED_LANGUAGES].join('、')}`,
           exitCode: -1,
           timedOut: false,
         };

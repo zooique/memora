@@ -35,6 +35,7 @@ import type { OutputChannel } from 'vscode';
 import { join } from 'node:path';
 import { createProvider, createBackgroundProvider } from './llmConfig.js';
 import { createLocalCodeExecutor } from './codeExecutor.js';
+import { createVscodeEnvironmentProvider } from './environmentProvider.js';
 import { createVscodeProjectSearchProvider } from './projectSearchProvider.js';
 import { WorkspaceStorage } from './workspaceStorage.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
@@ -218,6 +219,16 @@ export interface AssembleOptions {
    */
   disabledSkills?: string[];
   /**
+   * 脚本执行 node 路径（可选，S3-接续）
+   *
+   * 由 extension 从 workspace 设置 memora.scriptNodePath 读取注入（用户显式配置），
+   * 透传 AgentOptions.scriptNodePath → 内核 run_skill_script / run_project_script 的
+   * node runtime 分支（内核零解释转发）。缺省不注入 → 内核走 'node'（PATH 查找）；
+   * 宿主机无独立 node 时由用户配置可避免 .js/.mjs 技能脚本 ENOENT。
+   * 刻意不做自动探测（where node 有 WindowsApps stub 假阳性风险）——执行配置由用户显式决定。
+   */
+  scriptNodePath?: string;
+  /**
    * VSCode 输出通道（日志对接）
    *
    * 宿主创建 vscode.OutputChannel 注入，内核通过 setLogger() 将日志导向该通道。
@@ -267,6 +278,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     allowedPaths,
     outputChannel,
     disabledSkills,
+    scriptNodePath,
   } = options;
 
   // 日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核
@@ -347,6 +359,12 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     fetchProvider: new FetchWebFetchProvider(),
     // 代码执行（local vm 沙箱，受限计算能力）——注入后内核暴露 run_code 工具给 LLM
     codeExecutionProvider: createLocalCodeExecutor(),
+    // 宿主环境提供者（方案 §10.4-②）：上报 OS/shell/可用运行时 → 内核注入 system prompt
+    // 「## 运行环境」段；环境事实只给模型看，内核零解释（不进判据）
+    environmentProvider: createVscodeEnvironmentProvider(),
+    // 脚本执行 node 路径（S3-接续）：用户经 memora.scriptNodePath 显式配置，
+    // 内核 run_skill_script / run_project_script 的 node runtime 分支零解释转发
+    scriptNodePath: scriptNodePath || undefined,
     // 项目搜索（等价 IDE 全局搜索）——注入后内核暴露 search_project 工具给 LLM；
     // 仅真实工作区注入（无 folder 时 projectSearchRoot 为 undefined → 不注入、工具隐藏，
     // 避免搜索落到 projectPath 兜底根 ~/.memora 答非所问）

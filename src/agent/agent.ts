@@ -38,7 +38,11 @@ import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { DedupManager } from '@/agent/managers/dedupManager.js';
 import type { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { createDefaultGCService, type GCService, type GCResult } from '@/memory/gcService.js';
-import { assembleComponents, buildSystemPromptPrefix } from '@/agent/assembler.js';
+import {
+  assembleComponents,
+  buildSystemPromptPrefix,
+  buildEnvironmentContextBlock,
+} from '@/agent/assembler.js';
 import { estimateTokensMessages } from '@/agent/contextManager.js';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
 // 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点）
@@ -214,6 +218,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       fetchProvider: opts.fetchProvider,
       codeExecutionProvider: opts.codeExecutionProvider,
       projectSearchProvider: opts.projectSearchProvider,
+      // 宿主环境提供者（可选）：system prompt 注入运行环境事实段（方案 §10.4-②）
+      environmentProvider: opts.environmentProvider,
       // 脚本执行 node 路径（可选）：宿主注入真实 node 路径，避免无独立 node 时 ENOENT
       scriptNodePath: opts.scriptNodePath,
       // 禁用技能清单（配置形态启停）：透传装配 → SkillManager 过滤 L1/L2/L3
@@ -1496,11 +1502,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const globalSkillList = this.skillManager?.buildSkillList() ?? '';
     // 作品投影装配块：缓存于 manager（装配时刷新 + register_work 更新），同步读取即可
     const workProjectionContext = this.workProjection?.contextBlock() ?? '';
+    // 运行环境事实段（方案 §10.4-②）：同步取宿主快照并格式化（未注入 → 空串不注入）。
+    // getEnvironment 为同步接口，刷新路径（本函数为同步 void）可无等待拉取最新快照；
+    // 环境事实是低频变化数据，宿主可自行缓存，内核每次重建前缀即拉最新。
+    const environmentContext = buildEnvironmentContextBlock(
+      this.#config.environmentProvider?.getEnvironment() ?? null,
+    );
     const newPrefix = buildSystemPromptPrefix(
       rolePackPrompt,
       globalSkillList,
       undefined,
       workProjectionContext,
+      environmentContext,
     );
     this.loop.refreshRolePackPrefix(newPrefix);
     // 角色包底盘占用随切换实时更新（不依赖跑 prepare）：装配此刻即确定的真值
