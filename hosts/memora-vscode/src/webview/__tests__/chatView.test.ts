@@ -1315,6 +1315,31 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(bar.hidden).toBe(true);
   });
 
+  it('首帧 pendingQueue 为空数组 → 不创建待发送区（面板打开零队列零残留）', () => {
+    mountChatView();
+    // 宿主 postTurnUpdate 恒带 pendingQueue 快照，面板 ready 首帧即空数组（真机回归路径）
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'settled' }, pendingQueue: [] });
+    expect(document.querySelector('.pending-queue-bar')).toBeNull();
+    // 连续空帧同样不得懒创建（空投影不得留下任何可残留节点）
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: [] });
+    expect(document.querySelector('.pending-queue-bar')).toBeNull();
+  });
+
+  it('空态首帧后入队正常创建显示，再清空隐藏（空态提前返回不得阻断后续懒创建）', () => {
+    mountChatView();
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: [] });
+    expect(document.querySelector('.pending-queue-bar')).toBeNull();
+    // 空 → 非空：懒创建 + StatusDock 裁决显示
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: ['插话'] });
+    const bar = document.querySelector('.pending-queue-bar') as HTMLElement;
+    expect(bar).not.toBeNull();
+    expect(bar.hidden).toBe(false);
+    expect(bar.querySelectorAll('.pending-queue-bar__item').length).toBe(1);
+    // 非空 → 空：撤出裁决（true→false 触发 resolveDock）
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: [] });
+    expect(bar.hidden).toBe(true);
+  });
+
   it('pending-queue-bar 清空按钮 → post clear_pending_queue', () => {
     const { postMessage } = mountChatView();
     dispatch({

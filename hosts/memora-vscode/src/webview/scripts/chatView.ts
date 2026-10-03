@@ -2557,7 +2557,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /**
    * 待发送区（interject 队列可视化）：由 turn_update.pendingQueue 更新。
-   * 懒创建 DOM 元素（挂在 inputBar 前面）——列出全部待发补充，每条带序号 + 文本 + 独立 × 按钮。
+   * 非空时懒创建 DOM 元素（归位/显隐由 StatusDock 单点裁决）——列出全部待发补充，每条带序号 + 文本 + 独立 × 按钮；空队列不创建。
    * 仅 thinking 态有排队时显示；paused 宿主已清队列；done 不可能有队列。
    *
    * 连续补充的用户心智：用户在 LLM 思考期间连发多条 → 每条独立显示 + 可删除，
@@ -2568,8 +2568,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *  仅供 sendMessage 插话满员预检用（真源在内核，宿主闸门仍裁决竞态漏网）。 */
   let _pendingQueueItems: readonly string[] = [];
   function updatePendingQueueBar(items: readonly string[]): void {
-    // 投影先于空态提前返回更新：空队列也要落缓存，否则预检读到上一次的残留长度
+    // 投影缓存先于一切：空队列也要落缓存，否则满员预检读到上一次的残留长度
     _pendingQueueItems = [...items];
+    // 空态在懒创建之前返回（与 updateFileChangesBar 同范式）：dock 注册初值 active=false，
+    // 若先创建再以空数组 setDockActive(false) 属状态未变 no-op，resolveDock 永不裁决该节点，
+    // 裸插入的空条会永久可见且任何后续空投影都关不掉。未创建 = DOM 中无此条，无需撤出。
+    if (items.length === 0) {
+      if (_pendingQueueBar) setDockActive('pendingQueue', false); // 显隐裁决归 StatusDock（SSOT）
+      return;
+    }
     if (!_pendingQueueBar) {
       // 懒创建：顶行（徽章 + 标题 + 清空按钮）+ 列表（每条可独立删除）
       // 计数为圆形徽章（视觉聚焦），结构保持轻量无重造
@@ -2593,10 +2600,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 清空全部 interject（宿主层 chatPanel 清 _pendingQueue 并 post 空队列通知）
         vscode.postMessage({ type: 'clear_pending_queue' });
       });
-    }
-    if (items.length === 0) {
-      setDockActive('pendingQueue', false); // 显隐裁决归 StatusDock（SSOT）
-      return;
     }
     // 顶部：计数徽章（圆形，数字）+ 标题
     const badgeEl = _pendingQueueBar.querySelector('.pending-queue-bar__badge')!;
