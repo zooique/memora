@@ -7,7 +7,7 @@
  *   · chatPanel（extension）—— 写入确认描述 bindWriteConfirmation。
  *
  * **键集合对齐约束**：本映射的键须与内核内置工具清单（完整面 = ToolExecutor.builtinDefinitions：
- * 20 常驻 + 4 能力门控 web_search/web_fetch/run_code/search_project）保持一致——webview 沙箱
+ * 22 常驻 + 4 能力门控 web_search/web_fetch/run_code/search_project）保持一致——webview 沙箱
  * 不可 import 内核，故由本文件显式对齐维护；新增内置工具时须同步补键（否则工具卡片回退英文名），
  * 删除工具时须删幽灵键。守卫：helpers/__tests__/toolNameMap.test.ts 双向闭合断言（读内核源码）。
  *
@@ -26,6 +26,7 @@ const TOOL_LABELS: Record<string, string> = {
   ask_user: '询问用户',
   compress_context: '压缩上下文',
   delete_file: '删除文件',
+  kill_command: '终止后台命令',
   list_dir: '列出目录',
   list_resources: '列出资源',
   list_sessions: '列出会话',
@@ -36,6 +37,7 @@ const TOOL_LABELS: Record<string, string> = {
   register_work: '登记作品',
   remember_intel: '记住情报',
   run_code: '运行代码',
+  run_command: '执行命令',
   run_project_script: '运行项目脚本',
   run_skill_script: '运行技能脚本',
   run_team_meeting: '团队会议',

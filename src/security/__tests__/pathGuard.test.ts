@@ -6,6 +6,8 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   SecurityGuard,
+  classifyCommand,
+  type CommandVerdict,
   type WriteConfirmationInfo,
   type AuditEvent,
 } from '@/security/pathGuard.js';
@@ -619,5 +621,188 @@ describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁�
       'write_file',
     );
     expect(writeOk).toBe(true); // 写入判据独立：confirmWrites=false → 仍自动批准
+  });
+});
+
+describe('命令裁决（classifyCommand，run_command 安全边界 §13.2）', () => {
+  /** 断言一批命令的裁决档位（表格驱动，避免逐条重复样板） */
+  function expectVerdicts(list: Array<[string, CommandVerdict]>): void {
+    for (const [command, verdict] of list) {
+      expect(classifyCommand(command), command).toBe(verdict);
+    }
+  }
+
+  it('deny 档：无正当 agent 场景的破坏性命令', () => {
+    expectVerdicts([
+      ['rm -rf /', 'deny'],
+      ['rm -rf ~', 'deny'],
+      ['rm -fr /', 'deny'], // 短选项连写
+      ['Remove-Item -Path C:\\x -Recurse -Force', 'deny'],
+      ['format C:', 'deny'],
+      ['mkfs.ext4 /dev/sda1', 'deny'],
+      ['dd if=/dev/zero of=/dev/sda', 'deny'],
+      [':(){ :|:& };:', 'deny'], // fork bomb
+    ]);
+  });
+
+  it('always-ask 档：正当但不可逆（git 写操作 / 发布类）', () => {
+    expectVerdicts([
+      ['git commit -m "fix"', 'always-ask'],
+      ['git push origin main', 'always-ask'],
+      ['git reset --hard HEAD~1', 'always-ask'],
+      ['git rebase -i HEAD~3', 'always-ask'],
+      ['git merge feature/x', 'always-ask'],
+      ['git checkout -- src/a.ts', 'always-ask'],
+      ['npm publish', 'always-ask'],
+      ['GIT COMMIT -M "X"', 'always-ask'], // 大小写不敏感
+    ]);
+  });
+
+  it('normal 档：只读 / 本地构建类命令不打扰用户', () => {
+    expectVerdicts([
+      ['npm test', 'normal'],
+      ['npm run build', 'normal'],
+      ['git status', 'normal'],
+      ['git diff', 'normal'],
+      ['git log --oneline', 'normal'],
+      ['node -e console.log(1)', 'normal'],
+    ]);
+  });
+
+  it('deny 优先于 always-ask（同条命令以最严为准）', () => {
+    // 构造同时命中两档的命令：deny 正则命中，且以 ALWAYS_ASK 前缀开头
+    expect(classifyCommand('git commit; rm -rf /')).toBe('deny');
+    expect(classifyCommand('npm publish && mkfs.ext4 /dev/sda')).toBe('deny');
+  });
+
+  it('全角字符绕过防护：NFKC 规范化后再匹配', () => {
+    // 全角斜杠／冒号（．／：）经 NFKC 归一为 ASCII 后仍命中 deny
+    expect(classifyCommand('rm -rf ／')).toBe('deny');
+    expect(classifyCommand('ｆｏｒｍａｔ　C：')).toBe('deny');
+  });
+
+  it('ALWAYS_ASK 清单只增不减（回归锁定）', () => {
+    // 清单是安全边界的一部分：删条目必须显式改这条测试，防静默降档
+    const locked = [
+      'git commit',
+      'git push',
+      'git reset',
+      'git rebase',
+      'git merge',
+      'git checkout --',
+      'npm publish',
+    ];
+    for (const prefix of locked) {
+      expect(classifyCommand(prefix), prefix).toBe('always-ask');
+    }
+  });
+
+  // ─── 2026-10-03 对抗式回顾补锁：前缀锚定在 shell 复合命令下形同虚设 ───
+
+  it('复合命令中的 git 写操作仍恒确认（前缀锚定曾让整条落到 normal 直接放行）', () => {
+    // 缺陷链：`startsWith('git push')` 对 `echo hi && git push` 为 false ⇒ 整条判 normal
+    // ⇒ owner+confirmScripts=false 档静默放行 ⇒ 恒确认承诺形同虚设
+    expect(classifyCommand('echo hi && git push origin main')).toBe('always-ask');
+    expect(classifyCommand('cd /tmp && git reset --hard')).toBe('always-ask');
+    expect(classifyCommand('npm test && npm publish')).toBe('always-ask');
+    expect(classifyCommand('a | git commit -m x')).toBe('always-ask');
+    // 管道形态同理
+    expect(classifyCommand('cat log | grep x || git merge feature')).toBe('always-ask');
+  });
+
+  it('复合命令中的黑名单命令仍恒拦（deny 早已是全文匹配，此例锁死不退化）', () => {
+    expect(classifyCommand('echo hi && rm -rf /')).toBe('deny');
+  });
+
+  it('git 全局选项插在子命令前仍恒确认（-C <path> 是常规用法，不留绕过口）', () => {
+    expect(classifyCommand('git -C /other/repo push')).toBe('always-ask');
+    expect(classifyCommand('git -c user.email=a@b.com commit -m x')).toBe('always-ask');
+    expect(classifyCommand('git --git-dir=/other/.git push')).toBe('always-ask');
+    // 只读子命令带全局选项不得误报
+    expect(classifyCommand('git -C /x status')).toBe('normal');
+  });
+
+  it('更长单词不误命中（git pushx / git committed 不该被判 always-ask）', () => {
+    expect(classifyCommand('git pushx')).toBe('normal');
+    expect(classifyCommand('git committed')).toBe('normal');
+  });
+
+  it('Remove-Item 选项顺序无关（-Force -Recurse 曾漏检）', () => {
+    expect(classifyCommand('Remove-Item -Recurse -Force C:\\temp')).toBe('deny');
+    expect(classifyCommand('Remove-Item -Force -Recurse C:\\temp')).toBe('deny');
+    // 缺 -Force 的单文件删除不是本黑名单的目标（正当操作）
+    expect(classifyCommand('Remove-Item C:\\temp\\a.txt')).toBe('normal');
+  });
+});
+
+describe('SecurityGuard · 命令执行确认（confirmCommandRun，§13.2）', () => {
+  let projectPath: string;
+  let dataDir: string;
+
+  beforeEach(() => {
+    projectPath = mkdtempSync(join(tmpdir(), 'memora-cmd-confirm-'));
+    dataDir = mkdtempSync(join(tmpdir(), 'memora-cmd-data-'));
+  });
+
+  it('deny 命中：owner + confirmScripts=false + handler 恒同意 也拦（恒拒）', async () => {
+    // 关键不变量：deny 不入确认流程——即使宿主 handler 一律同意也无法放行
+    const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner', false);
+    let handlerCalled = false;
+    guard.onWriteConfirmation(async () => {
+      handlerCalled = true;
+      return true;
+    });
+    const audits = collectAudits(guard);
+    const ok = await guard.confirmCommandRun('rm -rf /', 'run_command');
+    expect(ok).toBe(false);
+    expect(handlerCalled).toBe(false); // 未走确认 UI
+
+    const last = audits[audits.length - 1]!;
+    expect(last.type).toBe('write-decline');
+    expect(last.decision).toBe('auto-denied');
+  });
+
+  it('always-ask 命中：owner + confirmScripts=false 也弹确认（不可豁免）', async () => {
+    // 与 confirmScriptRun 的分水岭：脚本同档位自动批准，命令同档位恒弹
+    const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner', false);
+    const audits = collectAudits(guard);
+    const ok = await guard.confirmCommandRun('git commit -m "x"', 'run_command');
+    // 未注入 handler → fail-closed 拒绝（已证明确实进了确认流程，而非自动批准）
+    expect(ok).toBe(false);
+    expect(audits[audits.length - 1]!.type).toBe('write-decline');
+  });
+
+  it('always-ask 命中 + handler 同意 → 放行', async () => {
+    const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner', false);
+    const audits = collectAudits(guard);
+    guard.onWriteConfirmation(async (info) => {
+      expect(info.tool).toBe('run_command');
+      expect(info.targetPath).toBe('git push origin main');
+      return true;
+    });
+    const ok = await guard.confirmCommandRun('git push origin main', 'run_command');
+    expect(ok).toBe(true);
+    expect(audits[audits.length - 1]!.decision).toBe('confirmed');
+  });
+
+  it('normal 命令：owner + confirmScripts=false 自动批准（与脚本同判据）', async () => {
+    const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner', false);
+    const audits = collectAudits(guard);
+    const ok = await guard.confirmCommandRun('npm test', 'run_command');
+    expect(ok).toBe(true);
+    expect(audits[audits.length - 1]!.decision).toBe('auto-approved');
+  });
+
+  it('normal 命令：confirmScripts=true 走同一开关（不另造判据）', async () => {
+    // 自然生长验证：命令确认复用脚本开关，不为 run_command 新增配置项
+    const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner', true);
+    const ok = await guard.confirmCommandRun('npm test', 'run_command');
+    expect(ok).toBe(false); // 需确认但无 handler → fail-closed
+  });
+
+  it('guest 模式：normal 命令亦强制确认', async () => {
+    const guard = new SecurityGuard(projectPath, dataDir, [], false, 'guest', false);
+    const ok = await guard.confirmCommandRun('npm test', 'run_command');
+    expect(ok).toBe(false);
   });
 });

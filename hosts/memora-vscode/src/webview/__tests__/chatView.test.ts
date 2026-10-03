@@ -6597,6 +6597,68 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     expect(row.textContent).toContain('(成功)');
   });
 
+  it('run_command 工具行叙述命令原文（2026-10-03 宿主侧自然生长）', () => {
+    // 背景：run_command 的命令原文是唯一可叙述面。不收录 → 只显「执行命令」，
+    // 用户完全看不到 AI 到底跑了什么命令（命令执行是最高风险的可观测面）。
+    mountChatView();
+    beginRound();
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: {
+          toolCallId: 'call_cmd',
+          name: 'run_command',
+          args: JSON.stringify({ command: 'npm test' }),
+        },
+      },
+    });
+    const row = document.querySelector('.round-block__tool') as HTMLElement;
+    expect(row.textContent).toContain('执行命令：npm test');
+  });
+
+  it('run_command 后台模式在叙述里标出（否则用户以为界面卡住）', () => {
+    mountChatView();
+    beginRound();
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: {
+          toolCallId: 'call_bg',
+          name: 'run_command',
+          args: JSON.stringify({ command: 'npm run build', background: true }),
+        },
+      },
+    });
+    const row = document.querySelector('.round-block__tool') as HTMLElement;
+    expect(row.textContent).toContain('执行命令（后台）：npm run build');
+  });
+
+  it('kill_command 叙述任务 id（否则只见「终止后台命令」，不知停的是哪个）', () => {
+    mountChatView();
+    beginRound();
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: {
+          toolCallId: 'call_kill',
+          name: 'kill_command',
+          args: JSON.stringify({ taskId: 'bg-1' }),
+        },
+      },
+    });
+    const row = document.querySelector('.round-block__tool') as HTMLElement;
+    expect(row.textContent).toContain('终止后台命令');
+  });
+
   it('工具中文名接入（2026-09-19）：无参数可叙述的未收录工具与参数缺失场景均显中文名，不裸露英文名', () => {
     // 背景：toolActionLabel 兜底若为 `?? name`（英文原名）——两类场景在 UI 裸露英文工具名：
     // ①未收录工具（ask_user / remember_intel / run_project_script / run_team_meeting，均无可叙述

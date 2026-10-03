@@ -543,7 +543,7 @@ function createSecurityView({
       if (statusEl) {
         const parts: string[] = [];
         parts.push(msg.confirmWrites ? '写文件前审批' : '写文件自动批准');
-        parts.push(msg.confirmScripts ? '脚本执行前审批' : '脚本自动运行');
+        parts.push(msg.confirmScripts ? '脚本/命令执行前审批' : '脚本/命令自动放行');
         statusEl.textContent = `已开启：${parts.join(' · ')}`;
         statusEl.hidden = false;
       }

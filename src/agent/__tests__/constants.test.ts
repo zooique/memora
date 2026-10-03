@@ -155,7 +155,7 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
     // MAX_PENDING_INTERJECTIONS（待注入插话条数上限——loop.interject 满员拒收裁决）/
     // TOOL_RESULT_OFFLOAD_TAIL_PREVIEW_CHARS（落盘替换文本的尾部预览份额——
     // 长输出关键信息常在尾部，份额在既有预览预算内划分，不扩大预算）
-    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(26);
+    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(27);
   });
 
   it('TOOL_NARRATION_DISCIPLINE 为工具导语纪律（抑制工具步前长文规划，与 narrate 分区配套）', () => {

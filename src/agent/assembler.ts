@@ -57,6 +57,7 @@ import { RolePackManager } from '@/role-pack/rolePackManager.js';
 import { runTeamMeetingAssessment } from '@/agent/builtinToolHandlers.js';
 // L3 脚本执行器（静态导入，避免每次调用动态加载）
 import { runSkillScript, formatScriptResult } from '@/skill/skillScriptRunner.js';
+import { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 
 /**
  * Turn 起始策略固定段（内核行为约束）。
@@ -627,6 +628,13 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   // 预算联动：search_project 执行期读取 loop 最近一轮 prepare 的剩余预算，
   // 预算紧张时自动下探结果条数上限（loop 创建后注入，与 read_skill 同款时序解耦）
   toolExec.setBudgetProvider(() => loop.getLastBudget()?.remainingTokens);
+
+  // 后台任务注册表（run_command background / kill_command 与后台回流的共享单点）：
+  // 一个实例同时接两端——toolExec 写（start / kill）、loop 读（完成回流 + turn 终态收割）。
+  // **实例非单例**：每次装配新建一张任务表，多会话各自隔离（否则 kill_command 能杀别的会话的进程）。
+  const backgroundTasks = new BackgroundTaskRegistry();
+  toolExec.setBackgroundTasks(backgroundTasks);
+  loop.setBackgroundTasks(backgroundTasks);
 
   return { loop, sessionArchiver, textPolisher, roundSummaryGenerator };
 }

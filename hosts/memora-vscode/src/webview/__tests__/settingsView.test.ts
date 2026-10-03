@@ -240,7 +240,9 @@ describe('脚本执行二次确认开关（security_scripts_toggle，2026-09-08�
     );
     const statusEl = document.getElementById('securityStatus') as HTMLElement;
     expect(statusEl.textContent).toContain('写文件前审批');
-    expect(statusEl.textContent).toContain('脚本执行前审批');
+    // 2026-10-03：开关语义已含 run_command（普通命令），文案随之改判——
+    // 原「脚本执行前审批」漏了命令执行这一档，对用户是安全承诺失实
+    expect(statusEl.textContent).toContain('脚本/命令执行前审批');
   });
 
   it('切换脚本确认开关 → 发送 security_scripts_toggle + 更新状态文案', () => {

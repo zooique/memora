@@ -366,7 +366,7 @@ deny 黑名单命中（内核 SSOT，优先级最高，任何档位/guest/owner 
 | 内核 | `src/agent/builtinTools.ts` | 注册 `run_command` 常驻工具（schema 见 §13.3） |
 | 内核 | `src/agent/toolExecutor.ts` | 新增 handler：黑名单校验（§13.2）→ `confirmCommandRun` 确认 → 调 `runShellCommand` |
 | 内核 | `src/security/pathGuard.ts` | 黑名单 SSOT 清单扩展（含 alwaysAsk 分区，§13.2）+ `confirmCommandRun`（接 `confirmScriptRun` 同款 handler 链路） |
-| 内核 | `src/index.ts` | 类型导出（若有新面） |
+| 内核 | `src/index.ts` | 类型导出（若有新面）—— ✅ **实施结论：不落点**。宿主零消费（工具常驻、确认闸走既有 `onWriteConfirmation` 注入链），新增导出即制造无消费的契约面 |
 | 内核 | `src/agent/loop.ts` | 回流 kind 入队（`InterruptRequest` 新增变体 + **生产者入口**）、插话满员判据**排除**回流 kind、turn 终态收割调用点（§14.2 / §14.5）——2026-10-03 补：原清单漏此行 |
 | 内核 | `src/agent/backgroundTasks.ts`（**内部模块，不进 `index.ts` 公出面**） | 后台任务注册表 SSOT：`taskId` 生成、进程句柄与输出持有、`kill_command` 寻址、终态收割遍历（toolExecutor 写 / loop 读 —— 跨模块共享故必须单点，不可散落两处） |
 | 内核 | `src/agent/builtinTools.ts` + `toolExecutor.ts` | `kill_command` 注册 + handler（§14.1 已定案能力，落点不可缺；schema 见 §13.3） |
@@ -413,7 +413,7 @@ deny 黑名单（恒拦）
   "taskId": "string — run_command 后台返回的 taskId（仅本 turn 本 agent 起的后台任务；非任意 pid）"
 }
 ```
-⚠️ 未决：`taskId` 不存在 / 任务已完成时的返回语义未定（§13.6 未决二），实施前须拍板，不得静默成功。
+✅ 未决已消解：`taskId` 不存在 / 任务已完成时的返回语义见未决三第 2 项（`[ERR:TASK_NOT_FOUND]` / `[TASK_ALREADY_SETTLED]` + 回传结果，均不静默成功）。
 
 **描述措辞红线**（止血④同款纪律）：
 
@@ -520,9 +520,41 @@ deny 黑名单（恒拦）
 | 进程治理单点 | ✅ 已落地 | `buildSpawnOptions` + `attachGovernance`：同步与后台**共用同一实现** |
 | 后台任务注册表 | ✅ 已落地 | `src/agent/backgroundTasks.ts`（**实例非单例**，内部模块不进公出面）：start / get / list / kill / reapAll + 完成监听 |
 | 裸命令同步执行 | ✅ 已落地 | `resolveShellCommand` + `runShellCommand`（含单测） |
-| **工具层接线** | ⏳ 下一刀 | builtinTools 注册 / toolExecutor handler / pathGuard 黑名单 + 确认 / loop 回流 kind + 终态收割 |
+| 命令裁决链 | ✅ 已落地 | `pathGuard`：`classifyCommand`（deny / always-ask / normal 三档纯函数）+ `confirmCommandRun`（**复用 `confirmGate`**，不新造第二套确认路径） |
+| 工具注册 | ✅ 已落地 | `builtinTools`：`run_command`（`diskWrite:'opaque'`）/ `kill_command`；两者入 `DEFAULT_EXPOSED_TOOLS`（§11.5 常驻开放）+ 幂等映射 |
+| 工具层 handler | ✅ 已落地 | `toolExecutor`：`run_command`（参数校验 → 裁决 → 同步/后台分流）/ `kill_command`（§13.6 未决二语义）；`setBackgroundTasks` 注入注册表 |
+| 回流 + 终态收割 | ✅ 已落地 | `loop`：`InterruptRequest` 增 `command-result` 变体（system 通道注入、不占插话满员）+ `finalizeBackgroundTasksOnTurnEnd`（收割调用点唯一 = `_runWithSlo` finally，判据 `pauseBoundaryReached`） |
+| 装配接线 | ✅ 已落地 | `assembler`：每次装配 `new BackgroundTaskRegistry()` 一实例同时接 toolExec（写）与 loop（读） |
+| 宿主工具中文名 | ✅ 已落地 | `webview/helpers/toolNameMap.ts` 补两键（双向闭合守卫连带：内核新增内置工具必同步） |
+| 宿主工具行动叙述 | ✅ 已落地 | `chatView.TOOL_ACTION_LABELS` 收录 `run_command`（叙述命令原文 + 后台标记）；`toolActionType` 两工具归 `run` 档（原 `other` 档不参与成句 ⇒ 收尾叙述句会漏计命令执行） |
+| 宿主安全开关文案 | ✅ 已落地 | 设置面板「执行二次确认」补 `run_command` + **显式声明 git 写操作/发布不受开关影响**（ALWAYS_ASK 恒询问）。原文案说「关 = 脚本自动运行」对命令场景是**安全承诺失实** |
+| 公出面导出 | ⬜ 不落点 | 宿主零消费（工具常驻、确认闸走既有 `onWriteConfirmation`）⇒ `src/index.ts` **不新增导出** |
+| 宿主审批卡的命令形态 | ⏳ 登记未做 | 审批卡复用既有 `write_confirm_request`（`confirmCommandRun` 走同一 `confirmGate`，**零新协议**），但卡片对命令场景说谎：diff 区显示 `--- 写入前 --- (新建文件) / +++ 写入后 +++`（**命令执行无 diff 概念**）、按钮写死「确认写入」、超时提示写死「写入确认超时」。正解 = 内核 `WriteConfirmationInfo` 上报「本次有无 diff 域」的语义字段（**判据归内核**，宿主不猜）⇒ 动公共类型，独立一刀 |
+| 宿主 UI 呈现（后台任务列表 / 收尾报告上屏） | ⏳ 登记未做 | 阶段 1 收尾报告**仅内核 system 消息 + 日志**；上屏需扩 `AgentChunk` 协议面（宿主渲染层），独立立项 |
+| 宿主 `codeExecutor` 同伤 | ⏳ 登记未做 | 见未决三第 1 项（杀树原语为 skillScriptRunner 私有，禁宿主复制一份） |
+| 阶段 2（allow 白名单） | ⏳ 另行排期 | 不随阶段 1 顺车（§12.4） |
 
 **⚠️ 命令构造纪律（实测教训）**：跨平台命令测试要避开 shell 元字符——`=>` 里的 `>` 会被 `cmd` 当**重定向符**、嵌套引号会被 `cmd` 吞掉（实测 `node -e "setTimeout(()=>{},30000)"` 在 Windows 下瞬间返回退出码 0）。统一用无空格、无元字符的 `node -e <code>` 形态。
+
+**⚠️ 后台命令的目录句柄纪律（2026-10-03 实测新增）**：后台子进程的 `cwd` 是项目根，进程存活期间 **Windows 持有该目录句柄** ⇒ 测试 `afterEach` 里 `rmSync(项目临时目录)` 会 `EBUSY`。处置顺序固定为「先 `registry.reapAll()` 收割 → 再删目录」，且删目录对 `EBUSY/EPERM` 做有限次重试（`taskkill` 返回后 cmd wrapper 仍有一段句柄释放窗口期）。**这是测试夹具问题，不是产品缺陷**——勿改 vitest 配置迁就。
+
+**⚠️ 「被主动终止」不是「执行失败」（2026-10-03 实施纠偏）**：`kill_command` 拿到的是 `peek()` 快照，`exitCode = -1` 的含义是**尚未退出**而非「退出码 -1」。丢给 `formatCommandResult` 的三态会被判成 `[COMMAND_ERROR] 命令执行失败（退出码: -1）`，与头部「已终止」自相矛盾（对 LLM 是谎报，会让它以为命令自己挂了）。故强杀态走独立格式化 `formatKilledCommandOutput`：**只列已捕获输出，不声称任何退出状态**。这是「量纲/状态分治」在文案层的同款纪律——没有退出码就不报退出码。
+
+**🔴 对抗式回顾补录（2026-10-03 · 工具层接线落地后的自我审查）**：接线首版通过全部门禁后重审，**查出 5 处带伤并已全部修复**（3 处为首版自伤，2 处为清单漏检）。逐条登记如下，作为「落地 ≠ 无伤」的样本：
+
+| # | 带伤 | 缺陷链 | 修法（不新增判据） |
+| --- | --- | --- | --- |
+| 1 | `ALWAYS_ASK` 前缀锚定形同虚设 | `startsWith('git push')` 对 `echo hi && git push` 为 false ⇒ 整条落 `normal` ⇒ owner+confirmScripts=false **静默放行**。与 deny 的**全文 test 语义不对称** | 判据不变（「这条命令会不会做 git 写操作」），改**匹配形态**：清单经 `COMMAND_SEGMENT_BOUNDARY` 派生为全文正则（`&&` / `;` / `\|` / 换行 / 括号边界） |
+| 2 | git 全局选项绕过 | `git -C /other/repo push` 不含连续短语 `git push` ⇒ 漏 | 派生时允许 `program` 与子命令间插入 `-\S+(=\S+\|\s+\S+)?` 形式的全局选项（**两段式**条目才插，三段式 `git checkout --` 的尾部 token 是语义标记，插 gap 会失真） |
+| 3 | `Remove-Item` 选项顺序敏感 | 正则写成 `-Recurse.*-Force` ⇒ `Remove-Item -Force -Recurse`（选项顺序由用户决定）漏检 | 改两个**前瞻断言**（`(?=[^;&\|]*-Recurse)(?=[^;&\|]*-Force)`），顺序无关 |
+| 4 | **回流无字符上限** | 命令结果的定长上限曾是 `toolExecutor` 的**模块私有常量**，第二个消费面（后台回流 `formatBackgroundTaskNotice`）根本看不到它 ⇒ 2MB 内存护栏放行的输出可直灌上下文 | 定长真源**上移到格式化层**（`skillScriptRunner.COMMAND_RESULT_MAX_CHARS`），两个消费面自动一致、无法漏配；顺带把 `sanitizeExternalText` 抽到 `textSanitize.ts`（解掉 `toolExecutor ↔ builtinToolHandlers` 的模块循环） |
+| 5 | 两条无界输入 | ① `command` 无长度上限，而命令原文会扩散到裁决链 / 确认卡 UI / 审计 / turn 终态收割报告**四处**；② 回流**条数**无上限，N 个后台任务同时完成 = N × 20k 一次性进上下文 | ① `RUN_COMMAND_MAX_LEN = 50_000`（对齐 `RUN_CODE_CODE_MAX_LEN`），**整条拒收**（截半条命令 = 执行的不是模型写的那条）；② `LOOP_CONSTANTS.MAX_PENDING_COMMAND_RESULTS = 3` **限量注入**（超量留队下个 step 续投——**不是拒收**，回流是已发生的事实） |
+
+**⚠️ 衍生纪律（由带伤 4/5 派生）**：
+- **共享真源的判据要放在「所有消费面的下游」**，不是「任一消费方的私有常量」——否则第二个消费面天然漏配，且**没有任何测试会红**（它压根不知道有上限这回事）。
+- **限量 ≠ 截断**：可拒收的（用户插话）超量要拒收并告知；不可拒收的（系统回流）只能限量并**留队**，且消费侧**不得**在同一处把留队项一并清掉（我在本次实现里就先写错了一处，由自审捕获）。
+- **复合命令形态必须进判据测试**：`&&` / `;` / `\|` 串接是 shell 的常态，只测单条命令的护栏等于没测。
+
 
 ## 十四、后台执行定案（2026-10-02 · 长命令消费者实锤后的阶段 1 范围修订）
 

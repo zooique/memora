@@ -50,8 +50,8 @@ describe('builtinToolHandlers · isReservedTaskTableFile（任务表保留名，
 describe('builtinTools · BUILTIN_TOOLS', () => {
   // ─── 数量与名称 ────────────────────────────────────────────
 
-  it('应包含 20 个内置工具', () => {
-    expect(BUILTIN_TOOLS).toHaveLength(20);
+  it('应包含 22 个内置工具', () => {
+    expect(BUILTIN_TOOLS).toHaveLength(22);
   });
 
   it('应包含 read_file / write_file / delete_file / list_dir / search_memories / trace_summary / list_sessions', () => {
@@ -594,7 +594,8 @@ describe('builtinTools · 写盘声明位（diskWrite）与派生索引', () => 
     // 序无关比较（派生序 = 定义排布序，不承载语义）
     expect([...PATH_WRITE_TOOL_NAMES].sort()).toEqual(['delete_file', 'write_file']);
     expect([...OPAQUE_WRITE_TOOL_NAMES].sort()).toEqual(
-      ['register_work', 'run_code', 'run_project_script', 'run_skill_script'].sort(),
+      // run_command 在列：任意 shell 命令可改盘任意路径，目标不可静态定位 ⇒ opaque 屏障
+      ['register_work', 'run_code', 'run_command', 'run_project_script', 'run_skill_script'].sort(),
     );
   });
 

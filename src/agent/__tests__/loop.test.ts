@@ -16,6 +16,7 @@ import { TRACE_SPANS, type ISpan, type ITracer } from '@/agent/tracer.js';
 import * as hashModule from '@/utils/hash.js';
 import { WEB_SEARCH_TOOL } from '@/agent/builtinTools.js';
 import type { ToolDefinition } from '@/agent/builtinTools.js';
+import { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 import { logger } from '@/logging/logger.js';
 
 import type { DuplicateCallInterceptor } from '@/agent/types.js';
@@ -6481,5 +6482,258 @@ describe('AgentLoop · 工具的 step 归属（tool_start.stepIndex）', () => {
       }
     }
     expect(results).toBeGreaterThan(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：后台命令回流与 turn 终态收割（§14）
+// 覆盖：回流注入 system 消息 / 不占插话满员 / 终态收割 / 挂起不收割
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · 后台命令回流与 turn 终态收割（§14）', () => {
+  /** 跨平台长驻命令（经注册表内的 shell 派发：Windows cmd /c，POSIX sh -c） */
+  const SLEEP_CMD = 'node -e setTimeout(function(){},20000)';
+
+  /** 驱动一次 turn 到终态（跑完即 return，模拟宿主 for-await 消费到底） */
+  async function drain(gen: AsyncGenerator<AgentChunk, void, unknown>): Promise<AgentChunk[]> {
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of gen) chunks.push(chunk);
+    return chunks;
+  }
+
+  it('后台完成 → 回流以 system 消息进上下文（role 隔离，非用户发言）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('工具结果');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    const registry = new BackgroundTaskRegistry();
+    loop.setBackgroundTasks(registry);
+
+    await drain(loop.processUserInput('读取文件'));
+    // 工具步跑完后模拟后台命令完成（生产入口 = 注册表完成监听）
+    loop.enqueueCommandResult('[后台命令完成] taskId=bg-1 · 已完成');
+
+    // 再起一轮 turn：回流应在**首个 step 边界**注入
+    await drain(loop.processUserInput('继续'));
+    const injected = loop.getMessages().filter((m) => m.content.includes('后台命令完成'));
+    expect(injected).toHaveLength(1);
+    expect(injected[0]!.role).toBe('system');
+    // 不占插话满员：回流条目不进入插话快照
+    expect(loop.getPendingInterjections()).toEqual([]);
+  });
+
+  it('回流不占插话满员计数（插话满员时回流仍可入队）', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([[{ content: '回复' }]]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    // 塞满插话
+    for (let i = 0; i < LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS; i++) {
+      expect(loop.interject(`插话${i}`)).toBe(true);
+    }
+    expect(loop.interject('多出来的一条')).toBe(false); // 已满
+    // 回流走独立通道，不受插话满员影响
+    loop.enqueueCommandResult('[后台命令完成] taskId=bg-9');
+    expect(loop.getPendingInterjections()).toHaveLength(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);
+  });
+
+  it('turn 终态 → 收割存活后台进程 + 追加如实报告（不静默丢弃）', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('工具结果'),
+    });
+    const registry = new BackgroundTaskRegistry();
+    loop.setBackgroundTasks(registry);
+
+    const taskId = registry.start(SLEEP_CMD);
+    expect(registry.get(taskId)?.status).toBe('running');
+
+    await drain(loop.processUserInput('读取文件'));
+
+    // 终态收割：进程被杀 + 报告进上下文
+    expect(registry.get(taskId)?.status).toBe('killed');
+    const report = loop.getMessages().find((m) => m.content.includes('后台任务收割'));
+    expect(report).toBeDefined();
+    expect(report!.content).toContain(taskId);
+  });
+
+  it('mid-turn 回流在本 turn 内送达，且下一轮 LLM 请求里不再出现', async () => {
+    // 记录每次 chat() 收到的消息：断言「LLM 实际看到什么」，而不是看 loop 内部 messages
+    // （回流是 executionTemp 消息，下一轮入口会被 cleanExecutionTemporary 清掉，看内部数组测不出注入与否）
+    const seen: string[][] = [];
+    let turnIndex = 0;
+    const turns: ChunkItem[][] = [
+      [
+        {
+          toolCalls: [
+            { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+          ],
+        },
+      ],
+      [{ content: '完成' }],
+      [{ content: '下一个问题的回复' }],
+    ];
+    const provider = {
+      name: 'mock',
+      async *chat(messages: Message[]) {
+        seen.push(messages.map((m) => m.content));
+        for (const chunk of turns[turnIndex] ?? []) yield chunk;
+        turnIndex++;
+      },
+    } as unknown as LlmProvider;
+
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('工具结果'),
+    });
+
+    // turn 进行中（工具步之后）入队回流
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      if (chunk.type === 'tool_result') {
+        loop.enqueueCommandResult('[后台命令完成] taskId=bg-x · 本轮结果');
+      }
+    }
+    // 第 2 次 LLM 调用（本 turn 的收尾轮）必须看到回流
+    const sawInTurn = seen[1]?.some((c) => c.includes('bg-x')) ?? false;
+    expect(sawInTurn).toBe(true);
+
+    // 下一轮 turn：LLM 请求里不得再出现（回流不跨 turn）
+    for await (const _chunk of loop.processUserInput('下一个问题')) {
+      void _chunk;
+    }
+    const sawNextTurn = seen[2]?.some((c) => c.includes('bg-x')) ?? false;
+    expect(sawNextTurn).toBe(false);
+  });
+
+  it('aborted 收场（无 done 分支消费机会）→ 队列里的回流被丢弃，不跨 turn', async () => {
+    // 为什么单独走 aborted：done 分支会把队列里的回流消费掉并再跑一轮，
+    // 于是「终态丢弃」永远走不到。aborted 是**没有 done 消费点**的终态路径——
+    // 在 aborted chunk 处入队的回流，只可能被终态收尾丢弃。
+    const seen: string[][] = [];
+    let turnIndex = 0;
+    const turns: ChunkItem[][] = [[{ content: '回答' }], [{ content: '下一轮回答' }]];
+    const provider = {
+      name: 'mock',
+      async *chat(messages: Message[]) {
+        seen.push(messages.map((m) => m.content));
+        for (const chunk of turns[turnIndex] ?? []) yield chunk;
+        turnIndex++;
+      },
+    } as unknown as LlmProvider;
+
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor: vi.fn() });
+    const ac = new AbortController();
+    ac.abort();
+
+    for await (const chunk of loop.processUserInput('提问', ac.signal)) {
+      // 收场窗口：LLM 已收尾、终态收尾尚未执行
+      if (chunk.type === 'aborted') {
+        loop.enqueueCommandResult('[后台命令完成] taskId=bg-stale · 陈旧结果');
+      }
+    }
+
+    // 下一轮 LLM 请求里不得出现它
+    for await (const _chunk of loop.processUserInput('下一个问题')) {
+      void _chunk;
+    }
+    const leaked = seen.at(-1)?.some((c) => c.includes('bg-stale')) ?? false;
+    expect(leaked).toBe(false);
+  });
+
+  it('挂起不是终态 → 不收割（续跑期间后台进程继续跑）', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '续跑完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('工具结果'),
+    });
+    const registry = new BackgroundTaskRegistry();
+    loop.setBackgroundTasks(registry);
+    const taskId = registry.start(SLEEP_CMD);
+
+    // 工具步后申请暂停 → 宿主在 paused chunk 处 break（真实消费形态）
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      chunks.push(chunk);
+      if (chunk.type === 'tool_result') loop.requestPause();
+      if (chunk.type === 'paused') break;
+    }
+    expect(chunks.some((c) => c.type === 'paused')).toBe(true);
+    // 挂起 ≠ 终态：进程仍在跑（若被误收割，这条会红）
+    expect(registry.get(taskId)?.status).toBe('running');
+
+    // 续跑到终态 → 此时才收割
+    for await (const _chunk of loop.continueAfterPause()) {
+      void _chunk;
+    }
+    expect(registry.get(taskId)?.status).toBe('killed');
+  });
+
+  it('回流限量注入：超过上限的留队等下个 step 边界（不截半丢弃）', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '收尾' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('工具结果'),
+    });
+    const total = LOOP_CONSTANTS.MAX_PENDING_COMMAND_RESULTS + 2;
+    for (let i = 1; i <= total; i++) {
+      loop.enqueueCommandResult(`[后台命令完成] taskId=bg-${i} · 结果`);
+    }
+
+    // 第二个 step 边界（首个已消费完）只注入到上限
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      if (chunk.type === 'tool_result') {
+        // 工具步结束 → 下一 step 边界注入
+        for (let i = total + 1; i <= total + LOOP_CONSTANTS.MAX_PENDING_COMMAND_RESULTS; i++) {
+          loop.enqueueCommandResult(`[后台命令完成] taskId=bg-${i} · 结果`);
+        }
+      }
+    }
+
+    // 首轮注入上限条；剩余的仍在队列（未进上下文 ⇒ 不会被截半丢弃）
+    const injectedCount = loop
+      .getMessages()
+      .filter((m) => m.content.includes('后台命令完成')).length;
+    expect(injectedCount).toBe(LOOP_CONSTANTS.MAX_PENDING_COMMAND_RESULTS * 2);
   });
 });

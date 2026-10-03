@@ -78,6 +78,117 @@ const BLOCKED_PATTERNS = [
 /** 运行时动态白名单（setAllowedPaths）最大条数，与 config/loader.ts 同值，防白名单膨胀 */
 const MAX_EXTRA_ALLOWED_PATHS = 50;
 
+// ─── 命令裁决（run_command 安全边界，§13.2）───
+
+/** 命令裁决三档 */
+export type CommandVerdict =
+  /** 恒拦：无正当 agent 场景的破坏性命令 */
+  | 'deny'
+  /** 恒弹确认：正当但不可逆（git 写操作、发布类），不可被豁免 */
+  | 'always-ask'
+  /** 普通：走常规确认判据（guest / confirmScripts） */
+  | 'normal';
+
+/**
+ * 命令黑名单（**恒拦**，不进确认流程）
+ *
+ * 收录标准：不存在「agent 正当使用」场景的破坏性命令——拦掉不影响任何合理任务，
+ * 漏掉则不可逆（数据/系统级）。可逆或有正当场景的写操作走 ALWAYS_ASK，不在此列。
+ *
+ * 匹配形态：**全文 test**（不锚定开头）——shell 复合命令（`echo hi && rm -rf /`）
+ * 里真正执行的是后半段，锚定开头等于给绕过送路。
+ */
+const BLOCKED_COMMAND_PATTERNS: RegExp[] = [
+  // 递归强删根目录 / 家目录 / 通配符（项目内受限删除由用户自行确认，不在此列）
+  /rm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)\s+(\/|\*|~|~\/)/i,
+  /rm\s+-rf\s+(\/|\*|~)/i,
+  // PowerShell 递归强删。两个前瞻断言**顺序无关**——写成
+  // `-Recurse.*-Force` 会漏掉 `-Force -Recurse`（选项顺序由用户决定，不由我们决定）
+  /Remove-Item(?=[^;&|]*-Recurse)(?=[^;&|]*-Force)/i,
+  // 磁盘格式化 / 覆写
+  /format\s+[a-z]:/i,
+  /mkfs(\.[a-z0-9]+)?\b/i,
+  /dd\s+if=/i,
+  // fork bomb（:(){ :|:& };:）
+  /:\(\)\s*\{\s*:\|:&\s*\}\s*;:/,
+];
+
+/**
+ * 恒询问前缀（ALWAYS_ASK）：正当但不可逆
+ *
+ * 定案理由（§13.2）：deny 会让 agent 从此无法 `git commit`（高频正当操作）；
+ * 本仓血训（Windows git 写操作污染索引）的正确对策是**每次都问且不可豁免**，
+ * 不是永远禁跑。故这类进 ALWAYS_ASK 而非 deny。
+ *
+ * ⚠️ 清单**只增不减**（回归测试锁定内容）。
+ */
+const ALWAYS_ASK_COMMAND_PREFIXES: string[] = [
+  'git commit',
+  'git push',
+  'git reset',
+  'git rebase',
+  'git merge',
+  'git checkout --',
+  'npm publish',
+];
+
+/**
+ * 命令分隔符边界（shell 复合命令的切分点）
+ *
+ * 用途：把「命令是否**以** X 开头」升级为「命令**是否包含** X」——判据本身没变
+ * （这条命令会不会做 git 写操作），变的是**匹配形态**。前缀锚定在复合命令下形同虚设：
+ * `echo hi && git push` / `cd /tmp && git reset --hard` 会整条落到 normal 档直接放行。
+ *
+ * ⚠️ 不做完整 shell 词法解析（引号 / 转义 / 变量展开）：那会把裁决链变成半个 shell 解释器，
+ * 复杂度和出错面都不可控。此处只做**保守匹配**——宁可多弹一次确认（偏保守方向），
+ * 也不可漏判。已知代价：`echo "git push"` 会被多问一次（误报方向安全）。
+ */
+const COMMAND_SEGMENT_BOUNDARY = String.raw`(?:^|[\n;&|]|\(|\)|\{|\})`;
+
+/**
+ * 恒询问清单 → 判据用模式（**构造级派生**，唯一匹配点）
+ *
+ * 由 `ALWAYS_ASK_COMMAND_PREFIXES` 派生而非另写一张正则表：两份清单必然漂移
+ * （改一处忘另一处 = 安全边界出现静默缺口，且没有任何测试会红）。
+ * 构造期一次性生成，运行时零成本。清单**只增不减**由回归测试锁定。
+ *
+ * **两段式条目允许插入全局选项**（`git -C /other/repo push`）：git 的 `-C <path>` /
+ * `-c k=v` / `--git-dir=<p>` 插在子命令前是常规用法，不留这个口子等于本仓血训
+ * （Windows git 写操作）照旧可绕。三段式及以上（`git checkout --`）原样匹配——
+ * 其尾部 token（`--`）本身是语义标记，插 gap 会让模式失真。
+ */
+const ALWAYS_ASK_COMMAND_PATTERNS: RegExp[] = ALWAYS_ASK_COMMAND_PREFIXES.map((prefix) => {
+  const escape = (token: string): string => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const [program, ...rest] = prefix.split(' ');
+  const allowGlobalOptions = rest.length === 1;
+  // 全局选项段：`-{1,2}<flag>` 后可跟一个独立参数（`-C <path>`）或 `=` 值（`--git-dir=<p>`）
+  const gap = allowGlobalOptions ? String.raw`(?:\s+-{1,2}\S+(?:=\S+|\s+\S+)?)*` : '';
+  const body = allowGlobalOptions
+    ? String.raw`\s+${escape(rest[0]!)}`
+    : String.raw`\s+${rest.map(escape).join(String.raw`\s+`)}`;
+  return new RegExp(
+    String.raw`${COMMAND_SEGMENT_BOUNDARY}\s*${escape(program!)}${gap}${body}(?![A-Za-z0-9_-])`,
+    'i',
+  );
+});
+
+/**
+ * 命令裁决（纯函数，命令安全边界的**唯一判据**；§13.2）
+ *
+ * 顺序不可颠倒：deny 优先于 always-ask（一条命令同时命中时以最严为准）。
+ * NFKC 规范化与路径黑名单同款，防全角字符绕过正则。
+ */
+export function classifyCommand(command: string): CommandVerdict {
+  const normalized = command.normalize('NFKC').trim();
+  for (const pattern of BLOCKED_COMMAND_PATTERNS) {
+    if (pattern.test(normalized)) return 'deny';
+  }
+  for (const pattern of ALWAYS_ASK_COMMAND_PATTERNS) {
+    if (pattern.test(normalized)) return 'always-ask';
+  }
+  return 'normal';
+}
+
 export type Permission = 'owner' | 'guest';
 export type WriteDecision = 'confirmed' | 'declined' | 'auto-approved' | 'auto-denied';
 
@@ -356,6 +467,36 @@ export class SecurityGuard {
       description,
       // 脚本执行确认判据：guest 或 confirmScripts（独立于写入确认）
       this.permission === 'guest' || this.confirmScripts,
+    );
+  }
+
+  /**
+   * 命令执行确认（run_command 的执行闸，§13.2）
+   *
+   * 三档判据，与 `confirmScriptRun` **共用同一个 `confirmGate`**（不新造第二套确认路径）：
+   *   1. deny 命中 → **恒拒**（不入确认流程，任何档位/权限都拦）；
+   *   2. ALWAYS_ASK 命中 → **恒弹确认**（即使 owner + confirmScripts=false 也弹；
+   *      将来的 allow 白名单对它无效——不可豁免，§13.2 定案）；
+   *   3. 其余 → 与脚本执行同判据（guest 或 confirmScripts），未注入 handler 时 fail-closed。
+   */
+  async confirmCommandRun(command: string, tool: string, description?: string): Promise<boolean> {
+    const verdict = classifyCommand(command);
+    if (verdict === 'deny') {
+      this.emitAudit({
+        type: 'write-decline',
+        path: command,
+        tool,
+        decision: 'auto-denied',
+        reason: '命令命中黑名单（恒拦，不进确认流程）',
+        timestamp: nowIso(),
+      });
+      return false;
+    }
+    return this.confirmGate(
+      command,
+      tool,
+      description,
+      verdict === 'always-ask' || this.permission === 'guest' || this.confirmScripts,
     );
   }
 

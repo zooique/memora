@@ -12,7 +12,11 @@
  * 进程治理本身（杀树 / 内存护栏）的断言在 skillScriptRunner 侧，本文件不重复。
  */
 import { describe, it, expect } from 'vitest';
-import { BackgroundTaskRegistry, type BackgroundTask } from '../backgroundTasks.js';
+import {
+  BackgroundTaskRegistry,
+  formatBackgroundTaskNotice,
+  type BackgroundTask,
+} from '../backgroundTasks.js';
 
 /** 跨平台长驻命令（经注册表内的 shell 派发：Windows cmd /c，POSIX sh -c） */
 const SLEEP_CMD = 'node -e "setTimeout(()=>{},20000)"';
@@ -93,5 +97,47 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
     expect(sessionB.kill(taskId)).toBeNull();
 
     sessionA.reapAll();
+  });
+});
+
+describe('formatBackgroundTaskNotice（回流文案 · 2026-10-03 对抗式回顾补锁）', () => {
+  /** 构造一个已完成的超长输出任务投影（不经真实进程，纯格式化层） */
+  function makeTask(stdout: string, status: BackgroundTask['status'] = 'completed') {
+    return {
+      taskId: 'bg-1',
+      command: 'npm run build',
+      startedAt: Date.now(),
+      status,
+      result: { stdout, stderr: '', exitCode: 0, timedOut: false },
+    } satisfies BackgroundTask;
+  }
+
+  it('超长输出被定长截断（真伤：定长真源曾住在 toolExecutor 私有常量，回流面看不到它）', () => {
+    // 2MB 内存护栏放行的输出若无字符上限，回流会把它整块灌进上下文
+    const notice = formatBackgroundTaskNotice(makeTask('x'.repeat(2 * 1024 * 1024)));
+    expect(notice.length).toBeLessThan(30_000);
+    // 截断必须如实标注（不得静默丢尾巴）
+    expect(notice).toContain('省略');
+  });
+
+  it('头部与尾部都保留（构建失败原因常在尾部）', () => {
+    const notice = formatBackgroundTaskNotice(
+      makeTask('HEAD_MARKER' + 'y'.repeat(60_000) + 'TAIL_MARKER'),
+    );
+    expect(notice).toContain('HEAD_MARKER');
+    expect(notice).toContain('TAIL_MARKER');
+  });
+
+  it('来源标记显式（系统事件，不能让 LLM 误认成用户发言）', () => {
+    expect(formatBackgroundTaskNotice(makeTask('ok'))).toContain('[后台命令完成]');
+    expect(formatBackgroundTaskNotice(makeTask('ok', 'killed'))).toContain('[后台命令已终止]');
+  });
+
+  it('被终止态不谎报执行失败 / 不声称退出码', () => {
+    const task = makeTask('partial', 'killed');
+    task.result!.exitCode = -1; // peek 快照：-1 意为「尚未退出」
+    const notice = formatBackgroundTaskNotice(task);
+    expect(notice).not.toContain('[COMMAND_ERROR]');
+    expect(notice).not.toContain('退出码');
   });
 });

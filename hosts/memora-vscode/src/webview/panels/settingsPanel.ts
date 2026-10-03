@@ -1309,10 +1309,13 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 切换脚本/代码执行确认开关（security_scripts_toggle 消息处理）
+   * 切换脚本/代码/命令执行确认开关（security_scripts_toggle 消息处理）
    *
    * 持久化到 globalState + 热更新 agent.security.setConfirmScripts()。
-   * 无需重启 Agent——SecurityGuard 支持运行时切换。语义：开 = run_code/run_project_script 执行前询问。
+   * 无需重启 Agent——SecurityGuard 支持运行时切换。语义：开 = run_code / run_project_script /
+   * run_command（普通命令）执行前询问。⚠️ git 写操作与 npm publish 属 ALWAYS_ASK 档，
+   * **不受本开关影响**（恒询问且不可豁免，见内核 `pathGuard.classifyCommand`）——
+   * 故下方关闭态文案必须带上这句，否则用户会误以为关掉开关就能跳过 git 提交审批。
    */
   private async toggleConfirmScripts(enabled: boolean): Promise<void> {
     try {
@@ -1330,8 +1333,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         type: 'notice',
         level: 'info',
         message: enabled
-          ? '已开启脚本执行二次确认（运行脚本/代码前将弹出审批卡）'
-          : '已关闭脚本执行二次确认（脚本自动运行）',
+          ? '已开启执行二次确认（运行脚本/代码或执行普通命令前将弹出审批卡）'
+          : '已关闭执行二次确认（脚本与普通命令自动放行；git 写操作与发布仍每次询问）',
       });
     } catch (err) {
       this.post({
@@ -1721,13 +1724,13 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       </div>
       <div class="security-item">
         <div class="security-item-header">
-          <label for="confirmScriptsToggle" class="security-label">脚本执行二次确认</label>
+          <label for="confirmScriptsToggle" class="security-label">执行二次确认</label>
           <label class="toggle-switch">
-            <input id="confirmScriptsToggle" type="checkbox" role="switch" aria-label="脚本执行二次确认开关" />
+            <input id="confirmScriptsToggle" type="checkbox" role="switch" aria-label="脚本与命令执行二次确认开关" />
             <span class="toggle-slider"></span>
           </label>
         </div>
-        <p class="security-desc">开启后，AI 运行脚本/代码（run_project_script / run_code）前会弹出审批卡，需确认放行。默认关闭（脚本自动运行）。仅控制「是否询问」，不影响脚本能力本身（run_project_script 始终默认开放）。</p>
+        <p class="security-desc">开启后，AI 运行脚本/代码（run_project_script / run_code）或执行普通 shell 命令（run_command）前会弹出审批卡，需确认放行。默认关闭（自动放行）。仅控制「是否询问」，不影响能力本身（这些能力始终开放）。<strong>注意：git 写操作（commit / push / reset / rebase / merge）与 npm publish 不受本开关影响，每次都会询问、且无法豁免</strong>——它们属于不可逆操作。</p>
       </div>
       <div id="securityStatus" class="security-status" hidden></div>
       <div class="security-item">

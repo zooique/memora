@@ -25,7 +25,9 @@ import {
   SEARCH_PROJECT_TOOL,
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
+import { sanitizeExternalText } from '@/agent/textSanitize.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
+import type { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { IWebSearchProvider } from '@/web-search/types.js';
 import { safeSearch } from '@/web-search/webSearchProvider.js';
@@ -36,6 +38,10 @@ import { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
 import {
   formatExecutionResult,
   formatScriptResult,
+  formatCommandResult,
+  formatKilledCommandOutput,
+  resolveCommandTimeoutMs,
+  runShellCommand,
   runSkillScript,
 } from '@/skill/skillScriptRunner.js';
 import { resolveSafePath, inferRuntimeFromExt, type ScriptRuntime } from '@/utils/scanner.js';
@@ -88,9 +94,9 @@ function normalizeScriptRuntime(language: string): ScriptRuntime {
   return 'node';
 }
 
-// ─── run_skill_script 注入防御常量 ─────────────────
+// ─── run_skill_script / run_command 注入防御常量 ─────────────────
 /**
- * run_skill_script 单次结果最大长度（防脚本刷屏撑爆上下文；对齐 run_code 的 RUN_CODE_RESULT_MAX_LEN）
+ * 脚本 / 命令单次结果最大长度（防刷屏撑爆上下文；对齐 run_code 的 RUN_CODE_RESULT_MAX_LEN）
  *
  * ⚠️ 这是**上下文层**的字符上限，与收集侧的**内存护栏**不是一回事：
  * `skillScriptRunner.MAX_COLLECTED_OUTPUT_BYTES`（字节量纲，防 Node 进程内存膨胀）。
@@ -98,6 +104,15 @@ function normalizeScriptRuntime(language: string): ScriptRuntime {
  * 合并会让「内存护栏」退化成「上下文截断」，或让后者在 CJK 下实际越界。
  */
 const RUN_SCRIPT_RESULT_MAX_LEN = 20_000;
+
+/**
+ * run_command 单条命令最大长度（防超长命令滥用）
+ *
+ * 对齐 `RUN_CODE_CODE_MAX_LEN`（50_000）的注入防御口径：LLM 可能吐出整份文件内容当命令传，
+ * 而命令原文会**四处扩散**——裁决链正则、确认卡 UI 展示、审计事件、turn 终态收割报告
+ * （收割报告把每条命令原文写进 system 消息）。不限长 = 一个超长命令污染整条链路。
+ */
+const RUN_COMMAND_MAX_LEN = 50_000;
 
 /**
  * 脚本 / 代码长输出的**尾部保留**字符数（缺口 D）
@@ -278,48 +293,15 @@ const SKILL_CONTENT_MAX_LEN = 50_000;
 const RESOURCE_CONTENT_MAX_LEN = 50_000;
 
 /**
- * 去 ANSI 转义序列与不可打印控制字符（**不限长**）
+ * 外部文本净化（转发 re-export，保持既有 import 面不破）
  *
- * 净化规则的单一真理源。外部不可信内容（web_search / 子进程输出 / 文件正文）注入 LLM 上下文前
- * 须剥掉控制字符，防转义/终端注入。
- *
- * @param text 原始文本
- * @returns 净化后的文本
+ * 实现真源已迁至 `textSanitize.ts`：净化是**跨模块**的最后一道闸（工具返回 / 脚本与资源正文 /
+ * 命令结果三处消费），住在本文件有两个后果——① `builtinToolHandlers` 反向 import 本模块
+ * 形成循环依赖；② 命令结果的定长上限成了本模块的**私有常量**，第二个消费面
+ * （后台完成回流）看不到它 ⇒ 回流路径无长度上限。
+ * 本处只做转发，既有调用点无需改动；新代码直接 import `textSanitize.js`。
  */
-export function stripControlChars(text: string): string {
-  // 去 ANSI 转义序列（CSI：ESC [ 参数 + 终结符；子进程经 env 继承可能拿到
-  // FORCE_COLOR 输出色码，单剥 ESC 会留 `[33m` 残渣——整个序列须剥净）
-  const withoutAnsi = text.replace(/\u001B\[[0-9;?]*[a-zA-Z]/g, '');
-  // 去控制字符：保留可打印字符（含 \t 制表符），其余控制字符移除
-  return withoutAnsi.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
-}
-
-/**
- * 外部工具返回净化：去控制字符 + 长度上限
- *
- * 净化规则本身抽为 `stripControlChars`（**单一真理源**），供需要「净化但不限长」的调用方复用——
- * 例如 `read_file`：它的长度由 **token 预算分段**（`sliceFileByLineBudget`）收口，不走字符上限，
- * 但仍须剥掉 ANSI/控制字符。否则它只能传一个假的上限（如 MAX_SAFE_INTEGER）来迁就本函数签名。
- *
- * @param text 外部原始文本
- * @param maxLen 最大长度（**内容预算**，不含省略标记本身）
- * @param tailChars 尾部保留字符数（默认 0 = 仅留头部；>0 时头尾各留一份，预算内部分配）
- * @returns 净化后的文本
- */
-export function sanitizeExternalText(text: string, maxLen: number, tailChars = 0): string {
-  const cleaned = stripControlChars(text);
-  if (cleaned.length <= maxLen) return cleaned;
-  if (tailChars <= 0) return `${cleaned.slice(0, maxLen)}…`;
-  // 头 + 尾：不扩大总预算（头尾合计仍 = maxLen），中间如实标注省略量。
-  // 尾部保留解决的是「长输出的关键信息常在尾部」——构建/测试的失败原因、
-  // 堆栈末尾、FAIL 汇总行都在尾；只留头会让 LLM 系统性看不到失败原因（缺口 D）。
-  const tail = Math.min(tailChars, maxLen - 1);
-  const headLen = maxLen - tail;
-  const omitted = cleaned.length - headLen - tail;
-  return (
-    `${cleaned.slice(0, headLen)}…[省略 ${omitted} 字符]…` + cleaned.slice(cleaned.length - tail)
-  );
-}
+export { stripControlChars, sanitizeExternalText } from '@/agent/textSanitize.js';
 
 /**
  * 写入扩展接口
@@ -486,6 +468,12 @@ export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
   'list_skills',
   // 项目内既有脚本执行（判据 A+B：仓库已沉淀）；search_project 走宿主注入例外，不在此集
   'run_project_script',
+  // 命令执行（§11.5 拍板：常驻开放 + deny/ask/allow 三层护栏）——
+  // 不做角色包能力门：命令执行是通用脚手架（构建/测试/git 查询），按需声明会让
+  // 「宿主已注入确认闸、内核已恒拦黑名单」的双层防护退化为「角色包没声明就不能用」。
+  // 危险度由裁决链（deny 黑名单恒拦 / alwaysAsk 恒确认 / guest 恒确认）承担，不由暴露面承担。
+  'run_command',
+  'kill_command',
 ]);
 
 /**
@@ -543,6 +531,15 @@ export class ToolExecutor {
   private readonly scriptNodePath?: string;
 
   /**
+   * 后台任务注册表（可选，run_command background=true / kill_command 的唯一数据源）
+   *
+   * 由 agent 装配时注入（实例非单例，多会话互不可见——见 backgroundTasks 模块头注释）。
+   * 未注入时两个工具返回 NOT_AVAILABLE：工具面仍暴露（能力缺失要如实说，不静默假装能跑），
+   * 而非把工具从暴露面摘掉（那会让 LLM 以为自己看错了工具清单）。
+   */
+  private backgroundTasks?: BackgroundTaskRegistry;
+
+  /**
    * 剩余对话预算提供者（可选，预算联动）
    *
    * 由 agent 装配时注入（读取 loop 最近一轮 prepare 的剩余预算），
@@ -555,6 +552,16 @@ export class ToolExecutor {
   /** 注入剩余对话预算提供者（装配时由 loop 创建后注入，见 assembler） */
   setBudgetProvider(provider: () => number | undefined): void {
     this.budgetProvider = provider;
+  }
+
+  /**
+   * 注入后台任务注册表（装配层接线，run_command background / kill_command 数据源）
+   *
+   * 与 toolExec 构造解耦（注册表在 toolExec 之后创建，见 assembler），故用 setter。
+   * 注入的是**实例**——多会话各自一张任务表，kill_command 够不着别的会话的进程。
+   */
+  setBackgroundTasks(registry: BackgroundTaskRegistry): void {
+    this.backgroundTasks = registry;
   }
 
   /** 任务表管理回调（由 agent 装配时注入，处理 task_table_write/update） */
@@ -1395,6 +1402,116 @@ export class ToolExecutor {
           RUN_SCRIPT_RESULT_MAX_LEN,
           SCRIPT_RESULT_TAIL_CHARS,
         );
+      }
+      case 'run_command': {
+        // 裸命令执行（§13.2 裁决链 → 执行）：三道闸顺序不可颠倒——
+        //   ① 参数校验（空命令 / 越界 cwd）② 命令裁决（deny 恒拦 / alwaysAsk 恒确认）
+        //   ③ 执行（同步等退出码 / 后台注册表立即返回 taskId）
+        // 裁决链判据在 SecurityGuard.confirmCommandRun（与 confirmScriptRun 共用 confirmGate 单点）。
+        const command = strArg('command');
+        if (!command.trim()) {
+          throw toolError(
+            'run_command 缺少 command 参数',
+            '命令为空',
+            ['传要执行的 shell 命令，如 "npm test"'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        if (command.length > RUN_COMMAND_MAX_LEN) {
+          // 截半条命令 = 语义破坏（执行的不是用户/模型写的那条），故整条拒收
+          throw toolError(
+            'run_command 命令过长',
+            `命令长度 ${command.length} 字符，超过上限 ${RUN_COMMAND_MAX_LEN}`,
+            ['把命令拆成多条执行，或改用脚本文件 + run_project_script'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        // cwd 缺省 = 项目根；显式传入时按项目根解析，越界拒绝（与 run_project_script 同判据）
+        let cwd = this.builtinHandlers.projectPath;
+        const rawCwd = strArg('cwd');
+        if (rawCwd) {
+          const resolved = resolveSafePath(this.builtinHandlers.projectPath, rawCwd);
+          if (!resolved) {
+            return `[ERR:PATH_DENIED] 工作目录越界（超出项目根）："${rawCwd}"`;
+          }
+          cwd = resolved;
+        }
+        // ② 命令裁决：deny 恒拦（不入确认流程）/ alwaysAsk 恒确认 / 其余同脚本判据
+        const confirmed = await this.security.confirmCommandRun(
+          command,
+          'run_command',
+          `在工作区执行命令：${command}`,
+        );
+        if (!confirmed) {
+          return (
+            '[ERR:COMMAND_DECLINE] 命令未获执行许可（命中恒拦黑名单 / 用户拒绝 / 未注入确认回调 fail-closed）。' +
+            '未执行任何命令；如确需执行，请改用等效手段或请用户调整审批设置。'
+          );
+        }
+        // ③ 执行：background=true 立即返回 taskId（不等进程结束）
+        // `=== 1` 兜底：validateAndCoerceArgs 已把字符串 'true'/'1' 归一为布尔，
+        // 裸数字 1 仍会漏过——若不认，模型要的后台会退化成同步阻塞（正是本能力要消除的形态）
+        if (args['background'] === true || args['background'] === 1) {
+          if (!this.backgroundTasks) {
+            return '[ERR:TOOL:NOT_AVAILABLE] run_command 后台模式不可用：未装配后台任务注册表';
+          }
+          const rawTimeout = args['timeoutMs'];
+          const taskId = this.backgroundTasks.start(
+            command,
+            cwd,
+            typeof rawTimeout === 'number' && Number.isFinite(rawTimeout) ? rawTimeout : undefined,
+          );
+          return (
+            `[BACKGROUND_STARTED] taskId=${taskId}（命令已在后台运行，完成后结果会自动进入你的上下文）。` +
+            '期间可继续其它工作；不再需要时用 kill_command 传入该 taskId 终止并取回截至当时的输出。' +
+            '命令：' +
+            command
+          );
+        }
+        // 同步路径：超时钳制与文案同源（resolveCommandTimeoutMs 单一真源，见 §13.6-C）
+        const effectiveTimeoutMs = resolveCommandTimeoutMs(
+          typeof args['timeoutMs'] === 'number' ? args['timeoutMs'] : undefined,
+        );
+        const result = await runShellCommand(command, cwd, effectiveTimeoutMs);
+        // 定长与净化由 formatCommandResult 自带（真源在格式化层，回流面共用同一上限）
+        return formatCommandResult(result, effectiveTimeoutMs);
+      }
+      case 'kill_command': {
+        // 后台任务终止（§14.1 免裁决链：只可杀本 agent 起的自家任务，taskId 寻址非任意 pid）
+        if (!this.backgroundTasks) {
+          return '[ERR:TOOL:NOT_AVAILABLE] kill_command 不可用：未装配后台任务注册表';
+        }
+        const taskId = strArg('taskId');
+        if (!taskId) {
+          throw toolError(
+            'kill_command 缺少 taskId 参数',
+            '未传 taskId',
+            ['传 run_command 后台执行返回的 taskId（如 "bg-1"）'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        const outcome = this.backgroundTasks.kill(taskId);
+        // 不静默成功：不存在与已终态是两种语义，必须让 LLM 知道（§13.6 未决二定案）
+        if (!outcome) {
+          return (
+            `[ERR:TASK_NOT_FOUND] 未找到后台任务 "${taskId}"。` +
+            '它可能来自上一次提问（已收割）或从未存在——本轮不会终止任何进程。'
+          );
+        }
+        const task = this.backgroundTasks.get(taskId);
+        if (!outcome.result) {
+          return `[TASK_ALREADY_SETTLED] taskId=${taskId} 已是终态（status=${outcome.status}，无需终止；该任务无已捕获输出）`;
+        }
+        // 结果体的净化与定长由 formatCommandResult / formatKilledCommandOutput 自带
+        // （定长真源在格式化层，两条消费面共用）——此处不再套一层，避免两个 policy。
+        if (outcome.status === 'killed') {
+          // 被主动终止 ≠ 执行失败：走专用格式化，不谎报退出码（见 formatKilledCommandOutput）
+          return `[KILLED] taskId=${taskId}（已终止；以下为截至终止时的输出）\n命令：${task?.command ?? '(未知)'}\n${formatKilledCommandOutput(outcome.result)}`;
+        }
+        return `[TASK_ALREADY_SETTLED] taskId=${taskId} 已是终态（status=${outcome.status}，无需终止；以下为其结果）\n命令：${task?.command ?? '(未知)'}\n${formatCommandResult(outcome.result)}`;
       }
       case 'list_resources': {
         // 渐进披露 L3：列出技能的资源清单

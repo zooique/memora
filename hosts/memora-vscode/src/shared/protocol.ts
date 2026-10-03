@@ -402,11 +402,14 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'security_toggle'; enabled: boolean }
   /**
-   * 切换脚本/代码执行确认开关（设置面板「安全」选项卡的 toggle 开关）
+   * 切换脚本/代码/命令执行确认开关（设置面板「安全」选项卡的 toggle 开关）
    *
-   * 由设置面板「脚本执行二次确认」开关触发：host 持久化到 globalState + 热更新
+   * 由设置面板「执行二次确认」开关触发：host 持久化到 globalState + 热更新
    * agent.security.setConfirmScripts()。无需重启 Agent。
-   * 语义：开 = run_code/run_project_script 执行前弹窗询问；关（默认）= 自动批准。
+   * 语义：开 = run_code / run_project_script / run_command（普通命令）执行前弹窗询问；
+   * 关（默认）= 自动批准。
+   * ⚠️ git 写操作与 npm publish 属 ALWAYS_ASK 档，**不受本开关影响**（恒询问不可豁免，
+   * 内核 `pathGuard.classifyCommand` 裁决），故开关关闭时它们仍会弹窗。
    */
   | { type: 'security_scripts_toggle'; enabled: boolean }
   /**

@@ -76,6 +76,10 @@ import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
 import { DEFAULT_MAX_ITERATIONS } from '@/role-pack/strategyKeys.js';
 import { ToolRunner } from '@/agent/toolRunner.js';
 import { detectNeedsPlanning, PLAN_NUDGE_PROMPT } from '@/agent/needsPlanning.js';
+import {
+  formatBackgroundTaskNotice,
+  type BackgroundTaskRegistry,
+} from '@/agent/backgroundTasks.js';
 
 export interface AgentLoopOptions {
   provider: LlmProvider;
@@ -164,12 +168,23 @@ export interface AgentLoopOptions {
  *    - pause：宿主 requestPause → queueInterrupt({kind:'pause'})
  *    - interject：宿主 interject → queueInterrupt({kind:'interject', content})
  *    - ask_user 不走此队列（它是 LLM 工具触发的气口，在工具分支直接 yield paused，与用户申请气口不同源）
+ *    - command-result：后台命令完成回流（**系统事件**，非用户申请）——同队列复用、异质处理，
+ *      见下方「回流 kind 的隔离纪律」
  *
  * 消费方 = _handleInterrupt：step 边界统一 queue.splice(0) 取出全部申请，
- * 先注入型（interject → appendUser）后挂起型（pause → yield paused）。
+ * 先注入型（interject → appendUser / command-result → appendSystem）后挂起型（pause → yield paused）。
+ *
+ * **回流 kind 的隔离纪律**（§12.5 第 8 条 / §14.2）：
+ *   - 注入通道不同：interject → `appendUserMessage`（用户意图）；command-result → `appendSystemMessage`
+ *     （系统事件，role 语义隔离，不伪装成用户发言）；
+ *   - 满员判据不同：`interject()` 的容量裁决只看 kind==='interject'（`getPendingInterjections` 过滤），
+ *     故回流条目天然不占插话满员计数，也永不因满员被拒；
+ *   - 生命周期不同：插话随 turn 入口清理，回流随 turn 终态丢弃（不跨 turn，§14.5）。
  */
 type InterruptRequest =
-  { readonly kind: 'pause' } | { readonly kind: 'interject'; readonly content: string };
+  | { readonly kind: 'pause' }
+  | { readonly kind: 'interject'; readonly content: string }
+  | { readonly kind: 'command-result'; readonly content: string };
 
 /*
  * 职责边界登记（暂不拆分）
@@ -294,10 +309,19 @@ export class AgentLoop {
       this.interruptQueue.splice(idx, 1);
     }
   }
-  /** step 边界气口申请统一队列（pause/interject 统一入队，无独立 pauseRequested flag）。
-   *  用户申请的气口（pause/interject）统一入队，_handleInterrupt 在 step 边界消费：
-   *  先注入型（interject → appendUser），后挂起型（pause → yield paused）。 */
+  /** step 边界气口申请统一队列（pause/interject/command-result 统一入队，无独立 pauseRequested flag）。
+   *  消费在 _handleInterrupt：先注入型（interject → appendUser，command-result → appendSystem），
+   *  后挂起型（pause → yield paused）。 */
   private interruptQueue: InterruptRequest[] = [];
+  /**
+   * 后台任务注册表（可选，装配层注入）
+   *
+   * loop 侧只做两件事，**不碰进程治理**（spawn / 杀树 / 内存护栏全在 skillScriptRunner）：
+   *   ① 注册完成监听 → 终局时把结果入队（`kind:'command-result'`），下个 step 边界注入 system 消息；
+   *   ② turn 终态收割存活进程（§14.5，回流不跨 turn）。
+   * 未注入时两个动作都是 no-op（无后台任务可管），不报错——纯 ToolExecutor 单测场景无注册表。
+   */
+  private backgroundTasks?: BackgroundTaskRegistry;
   /** 主动提问回调（LLM 调 ask_user 工具时调用，Agent 注入，loop 只回调不处理 UI） */
   onPendingQuestion?: (questions: AskQuestion[]) => void;
   /** 有效窗口变更回调（Agent 注入）：把 loop 算出的**有效窗口**分发给 loop 之外仍持有窗口拷贝的
@@ -309,6 +333,15 @@ export class AgentLoop {
   private strategy: L2RuntimeStrategy = { ...DEFAULT_L2_STRATEGY };
   /** 本 turn 是否已执行过自审查（单次终审：布尔状态，不再需要轮次计数） */
   private selfReviewDone = false;
+  /**
+   * 本 turn 是否已在 step 边界挂起（paused）——**turn 终态收割的判据**（§14.5）。
+   *
+   * 置位点在 `_handleInterrupt` 的 pause 分支、**yield 之前**（宿主 break 会触发
+   * generator finally，时序敏感）；复位点在 `resetTurnState`（两个 turn 入口都调）。
+   * 语义：挂起 = 同 turn 续跑，后台进程继续跑；不挂起的收场（done / interrupted /
+   * error）才是终态，收割存活后台进程。
+   */
+  private pauseBoundaryReached = false;
   /** 本 turn（processUserInput）内是否实际执行过工具步。
    *  自审查的唯一触发门槛：只有多轮 turn（发生过工具调用）才审查，
    *  一遍过的纯文本问答不触发。由 processUserInput 入口重置（续跑 continueAfterPause 保留）。
@@ -662,6 +695,13 @@ export class AgentLoop {
       taskSucceeded = false;
       throw err;
     } finally {
+      // turn 终态后台任务收尾（§14.5）：done / interrupted / error / 达到最大迭代
+      // 四条收场路径都经过本 finally ⇒ 收割调用点唯一。
+      // 判据 = pauseBoundaryReached：挂起是同 turn 续跑（后台继续跑、其回流照常注入），
+      // 不算终态、不收割。error 路径也收割——异常收场同样不能留孤儿进程。
+      if (!this.pauseBoundaryReached) {
+        this.finalizeBackgroundTasksOnTurnEnd();
+      }
       const durationMs = Date.now() - taskStartAt;
       this.metrics.taskTotalDurationMs += durationMs;
       if (taskSucceeded) {
@@ -759,6 +799,66 @@ export class AgentLoop {
     return true;
   }
 
+  /**
+   * 后台命令完成回流入队（**生产者入口**，由装配层从注册表完成监听器调用）
+   *
+   * 走既有 `interruptQueue`（判别联合队列）新增一个 kind，零新基建：
+   * 与插话同机制（iteration 间检查点消费、挂起/恢复全链路复用），但**异质**——
+   *   - 消费时进 `appendSystemMessage`（系统事件），不进 `appendUserMessage`（不伪装用户发言）；
+   *   - 不占插话满员计数（`interject()` 的容量裁决只数 kind==='interject'）；
+   *   - 不跨 turn（turn 终态随收割一并丢弃，§14.5）。
+   *
+   * @param content 已格式化的完成通知（含来源标记「后台命令完成」+ 命令 + 输出）
+   */
+  enqueueCommandResult(content: string): void {
+    this.interruptQueue.push({ kind: 'command-result', content });
+  }
+
+  /**
+   * 装配后台任务注册表（assembler 调用，loop 创建之后）
+   *
+   * 两件职责一次接线，避免装配层散写两处：
+   *   ① 完成监听 → `enqueueCommandResult`（回流通道生产者）；
+   *   ② 持有引用供 turn 终态收割。
+   */
+  setBackgroundTasks(registry: BackgroundTaskRegistry): void {
+    this.backgroundTasks = registry;
+    registry.setCompletionListener((task) => {
+      this.enqueueCommandResult(formatBackgroundTaskNotice(task));
+    });
+  }
+
+  /**
+   * turn 终态后台任务收尾（§14.5）：收割存活进程 + 丢弃本 turn 未消费的回流条目
+   *
+   * 判据 = 调用方传入的「本 turn 已收场」（挂起不算终态，见 `pauseBoundaryReached`）：
+   * done / interrupted / error / 达到最大迭代 四条收场路径统一经此，调用点唯一
+   * （`_runWithSlo` 的 finally）。
+   *
+   * 两件事，缺一不可：
+   *   ① 收割存活进程（走注册表 → skillScriptRunner 杀树原语），并以 system 消息**如实报告**
+   *      ——不静默丢弃被杀的进程，否则 LLM 会以为自己的后台命令还活着；
+   *   ② 丢弃队列里未消费的 command-result 条目（回流不跨 turn，§14.5）——否则下一次
+   *      提问的 step 边界会把上一个 turn 的陈旧结果注入新问题上下文。
+   *      插话条目**不动**（它们由 processUserInput 入口的 clearPendingInterjections 负责，
+   *      且暂停续跑链上的插话有独立语义）。
+   *
+   * @returns 被收割的任务数（0 = 无后台任务，纯问答 turn 的常态）
+   */
+  private finalizeBackgroundTasksOnTurnEnd(): number {
+    this.interruptQueue = this.interruptQueue.filter((r) => r.kind !== 'command-result');
+    const reaped = this.backgroundTasks?.reapAll() ?? [];
+    if (reaped.length === 0) return 0;
+    const detail = reaped
+      .map((t) => `- ${t.taskId}（status=${t.status}）：${t.command}`)
+      .join('\n');
+    this.appendSystemMessage(
+      `[本轮结束 · 后台任务收割] 本轮仍有 ${reaped.length} 个后台命令在运行，已全部终止（其输出不再回流）：\n${detail}`,
+      { executionTemp: true },
+    );
+    return reaped.length;
+  }
+
   /** 删除待注入的插话（宿主 UI 层用户后悔）。与 interject 对称，在 step 边界消费前可安全删除。
    *  委托 interruptQueue 中 interject 条目的索引。
    *  index 越界时静默 no-op（宿主镜像数组和内核队列始终同序同长度，理论上不会越界）。
@@ -844,6 +944,8 @@ export class AgentLoop {
     // 但 processUserInput 在 resetTurnState 之后会重判设值（续跑入口不复用因此不重判）
     this.planNeedsNudge = false;
     this.planNudgeInjected = false;
+    // 挂起标记复位：续跑入口（continueAfterPause）也走本方法，复位后本段跑到底即终态
+    this.pauseBoundaryReached = false;
   }
 
   /** 重置 askLimit 计数（turn 入口）：仅 processUserInput 调用，continueAfterPause 不动，
@@ -915,9 +1017,18 @@ export class AgentLoop {
     // LLM 返回 done（纯文本完成）期间用户 interject() 入队的补充输入，若直接 return false 会被静默丢弃；
     // 消费并继续迭代，下一轮 LLM 必看到插话内容。委托 _consumeInterjects（SSOT）。
     // 主要消费发生在 _handleInterrupt（迭代开始前），此处覆盖「LLM 在收尾轮执行期间插话」的窗口。
+    //
+    // ⚠️ 后台回流（command-result）**同样**在此消费，理由与插话同源但多一层：
+    // 收尾轮期间完成的后台命令若随 turn 结束被丢弃，agent 就永远拿不到自己起的任务的输出
+    // （进程已被 reapAll 杀掉、结果被 finalize 丢弃）——LLM 会带着「任务大概在跑」的
+    // 错误信念交付答案。故有后台结果就再跑一轮，让它看到。
     const consumedCount = this._consumeInterjects(this.interruptQueue);
+    const consumedResults = this._consumeCommandResults(this.interruptQueue);
+    // ⚠️ 只清 interject：**不清 command-result** —— 限量注入（MAX_PENDING_COMMAND_RESULTS）
+    // 意味着本轮可能只投了前 N 条，剩下的必须**留队**等下个 step 边界续投；这里一并清掉
+    // 就等于「限量」退化成「截半丢弃」。真正该丢的是 turn 终态（finalize 负责）。
     this.interruptQueue = this.interruptQueue.filter((r) => r.kind !== 'interject');
-    return consumedCount > 0;
+    return consumedCount > 0 || consumedResults > 0;
   }
 
   /**
@@ -986,11 +1097,43 @@ export class AgentLoop {
     return count;
   }
 
-  /** 中断检查：step 边界统一消费 interruptQueue（pause + interject）+ 硬中止检查。
+  /**
+   * 消费注入型**系统事件**条目（command-result → appendSystemMessage）
+   *
+   * 与 `_consumeInterjects` 严格分开而非合并成「消费所有注入型」：
+   * 两者的注入通道（user / system）、role 语义、生命周期（跨 turn / 不跨 turn）都不同，
+   * 合并成一个泛化遍历等于把这些判据摊平到 if 分支里——将来任一判据变化都要在同
+   * 一段代码里翻找，正是「同一语义两套判定」的开始。故：两个方法，各守一条通道。
+   *
+   * **限量注入**（`MAX_PENDING_COMMAND_RESULTS`）：回流是已发生的事实、不可拒收，
+   * 只能限量。每步只注入 N 条，其余留队列等下个 step 边界——避免 N 个后台任务同时完成时
+   * 一次性灌爆上下文。
+   *
+   * `executionTemp: true` —— 回流是**本轮执行期事件**（进程已结束、结果已交付），
+   * 下一轮闭环入口由 `cleanExecutionTemporary` 清掉，不进历史上下文。
+   *
+   * @param reqs 待消费的申请列表（只读遍历，不修改）
+   * @returns 消费的条目数
+   */
+  private _consumeCommandResults(reqs: readonly InterruptRequest[]): number {
+    const cap = LOOP_CONSTANTS.MAX_PENDING_COMMAND_RESULTS;
+    let count = 0;
+    for (const req of reqs) {
+      if (req.kind !== 'command-result') continue;
+      if (count >= cap) break; // 超量留队，下个 step 边界续投
+      this.appendSystemMessage(req.content, { executionTemp: true });
+      count++;
+    }
+    return count;
+  }
+
+  /** 中断检查：step 边界统一消费 interruptQueue（pause + interject + command-result）+ 硬中止检查。
    *
    *  单一气口出口——气口申请统一收在 interruptQueue（无独立 pause flag / 插话数组写位），
-   *  此处统一 queue.splice(0) 取出全部申请，按 kind 分两类处理：
-   *    - 注入型（interject）：先 appendUserMessage，不暂停 loop，让补充输入立刻进入下一轮 step
+   *  此处统一 queue.splice(0) 取出全部申请，按 kind 分三类处理：
+   *    - 注入型·用户意图（interject）：appendUserMessage，不暂停 loop，让补充输入立刻进入下一轮 step
+   *    - 注入型·系统事件（command-result）：appendSystemMessage（executionTemp），
+   *      不暂停 loop；与 interject 的差别只在注入通道与 role 语义（系统事件 ≠ 用户发言）
    *    - 挂起型（pause）：yield {type:'paused'} + return 'paused'，generator 在 step 边界挂起
    *
    *  顺序：先消费注入型 → 再检查挂起型 → 最后硬中止。注入型优先是为了让补充输入在 pause 生效前
@@ -1003,8 +1146,10 @@ export class AgentLoop {
     // 统一取出全部气口申请（queue.splice(0) 原子消费，消费后队列为空）
     const reqs = this.interruptQueue.splice(0);
 
-    // ① 先处理注入型气口（interject → appendUserMessage）——不暂停 loop，让补充输入立刻生效
+    // ① 先处理注入型气口（interject → appendUserMessage；command-result → appendSystemMessage）
+    //    ——不暂停 loop，让补充输入 / 后台结果立刻进入下一轮 step
     this._consumeInterjects(reqs);
+    this._consumeCommandResults(reqs);
 
     // ② 后处理挂起型气口（pause → yield paused）——如果队列里有 pause 申请，在 step 边界挂起
     // ⛔ 生命周期契约：yield paused 后本 generator 立即 return 结束，
@@ -1014,6 +1159,11 @@ export class AgentLoop {
     // 导致"暂停态输入补充"被误路由进 interject 排队而无人消费（卡死坑）。
     if (reqs.some((r) => r.kind === 'pause')) {
       // pause 消费后 clearPauseRequest 已由 splice(0) 自动完成——无需额外清 flag
+      // 挂起**不是** turn 终态（§14.5）：同 turn 续跑，后台进程应继续跑、其回流照常注入。
+      // 标记必须在 yield 之前置位——宿主在 paused chunk 处 break 会让 generator 停在
+      // 这个 yield 上并触发 finally（runIterationLoop 的收割判据），置位晚了就会
+      // 把「续跑」误判成「终态」而错杀后台进程。
+      this.pauseBoundaryReached = true;
       yield { type: 'paused' };
       return 'paused';
     }

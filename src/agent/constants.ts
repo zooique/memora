@@ -278,4 +278,18 @@ export const LOOP_CONSTANTS = {
    * （hosts 的 shared/constants.ts 同名常量）由宿主守卫测试与本值锁同值防漂移。
    */
   MAX_PENDING_INTERJECTIONS: 5,
+
+  /**
+   * 待消费的后台命令完成回流（interruptQueue 中 command-result 条目）上限。
+   *
+   * 与 `MAX_PENDING_INTERJECTIONS` **异义勿合并**（对齐 builtinToolHandlers「异义同值勿误合并」
+   * 纪律）：插话是「用户意图洪流」，超量要拒收（拒收有代价：用户的补充输入被丢）；
+   * 回流是「已发生的系统事件」，**不可拒收**（命令已经跑完、输出已经存在，丢掉就是静默
+   * 丢弃真相），只能限量**每步注入量**——超出的留队列，下个 step 边界继续注入。
+   *
+   * 为何需要上限：单条回流已由 COMMAND_RESULT_MAX_CHARS 定长（20k 字符），
+   * 但条数无上限时 N 个后台任务同时完成 = N × 20k 一次性进上下文 ⇒ 上下文爆炸。
+   * 值取 3：约 60k 字符，已接近但未触 120K 窗口；且后台任务本身是低频能力。
+   */
+  MAX_PENDING_COMMAND_RESULTS: 3,
 } as const;

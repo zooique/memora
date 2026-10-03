@@ -7,19 +7,20 @@
  *   - list_dir：默认项目根 / 递归 / 深度限制 / 忽略 node_modules / 黑名单
  *   - search_memories：match 模式 / near 模式 / 空查询 / 注入限制
  */
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ToolExecutor, sanitizeExternalText, BUILTIN_TOOLS } from '@/agent/toolExecutor.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { estimateTokensText } from '@/agent/contextManager.js';
-import { SecurityGuard } from '@/security/pathGuard.js';
+import { SecurityGuard, type WriteConfirmationInfo } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+import { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import type { IProjectSearchProvider, ProjectTextSearchResult } from '@/project-search/types.js';
-import { MemoraError, toolError } from '@/utils/errors.js';
+import { MemoraError, toolError, ToolErrorCode } from '@/utils/errors.js';
 
 describe('工具执行器（6 个工具）', () => {
   let tmpProject: string;
@@ -76,9 +77,9 @@ describe('工具执行器（6 个工具）', () => {
   });
 
   describe('BUILTIN_TOOLS 注册表', () => {
-    it('应注册 20 个内置工具', () => {
+    it('应注册 22 个内置工具', () => {
       const names = BUILTIN_TOOLS.map((t) => t.name);
-      expect(names.length).toBe(20);
+      expect(names.length).toBe(22);
       expect(names).toContain('delete_file');
       expect(names).toContain('run_team_meeting');
     });
@@ -86,8 +87,8 @@ describe('工具执行器（6 个工具）', () => {
     it('builtinDefinitions 应含全部内置 + 条件工具（只读闸查询源，不受白名单影响）', () => {
       const defs = executor.builtinDefinitions;
       const names = defs.map((t) => t.name);
-      // 始终内置 20 + 条件 4（web_search / web_fetch / run_code / search_project）
-      expect(names.length).toBe(24);
+      // 始终内置 22 + 条件 4（web_search / web_fetch / run_code / search_project）
+      expect(names.length).toBe(26);
       expect(names).toContain('write_file');
       expect(names).toContain('web_search');
       expect(names).toContain('web_fetch');
@@ -1939,6 +1940,289 @@ describe('工具执行器（6 个工具）', () => {
       expect(() => executorWithCode.registerTool(codeDef, async () => '')).toThrow(
         /不能覆盖内置工具/,
       );
+    });
+  });
+});
+
+/**
+ * run_command / kill_command 工具层（方案文档 §13.2 裁决链 + §14 后台能力）
+ *
+ * 命令构造纪律（实测教训）：跨平台命令避开 shell 元字符——`=>` 里的 `>` 会被 cmd 当重定向符、
+ * 嵌套引号被 cmd 吞掉。统一用无空格无元字符的 `node -e <code>` / `node -v` 形态。
+ */
+describe('run_command / kill_command（命令执行工具层）', () => {
+  let tmpProject: string;
+  let tmpData: string;
+  let index: IMemoryStorage;
+  /** 本轮建过的注册表（afterEach 统一收割，否则后台子进程占着 cwd 目录导致删不掉） */
+  let registries: BackgroundTaskRegistry[];
+  /** 最近一次注入的注册表（供需要直接观察任务态的用例用） */
+  let lastRegistry: BackgroundTaskRegistry | null;
+  /** 跨平台成功命令（打印 node 版本，无元字符） */
+  const OK_CMD = 'node -v';
+  /** 工具层命令长度上限（对齐 run_code 的 RUN_CODE_CODE_MAX_LEN；测试按此构造超长命令） */
+  const RUN_COMMAND_MAX_LEN_FOR_TEST = 50_000;
+  /** 跨平台非零退出命令 */
+  const FAIL_CMD = 'node -e process.exit(3)';
+  /** 跨平台长驻命令（供 kill_command 终止） */
+  const SLEEP_CMD = 'node -e setTimeout(function(){},20000)';
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  beforeEach(() => {
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-cmd-proj-'));
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-cmd-data-'));
+    index = new InMemoryStorage();
+    registries = [];
+    lastRegistry = null;
+  });
+
+  afterEach(async () => {
+    // 先收割残留后台进程：它们的 cwd 是 tmpProject，不收完就删目录会 EBUSY（本机实测）
+    for (const registry of registries) registry.reapAll();
+    registries = [];
+    await index.close?.();
+    // Windows：taskkill 返回后 cmd wrapper 仍可能短暂持有 cwd 句柄 → 删目录重试
+    await removeDirWithRetry(tmpProject);
+    await removeDirWithRetry(tmpData);
+  });
+
+  /** 递归删目录并对 EBUSY/EPERM 重试（Windows 句柄释放有窗口期，全量并行负载下更宽） */
+  async function removeDirWithRetry(dir: string, attempts = 12): Promise<void> {
+    let lastErr: unknown;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+        return;
+      } catch (err) {
+        lastErr = err;
+        await sleep(300);
+      }
+    }
+    throw lastErr;
+  }
+
+  /** 构造执行器：permission / confirmScripts 可变，background 可选注入 */
+  function makeExecutor(opts?: {
+    permission?: 'owner' | 'guest';
+    confirmScripts?: boolean;
+    withBackground?: boolean;
+    onConfirm?: (info: WriteConfirmationInfo) => Promise<boolean>;
+  }): ToolExecutor {
+    const guard = new SecurityGuard(
+      tmpProject,
+      tmpData,
+      [],
+      false,
+      opts?.permission ?? 'owner',
+      opts?.confirmScripts ?? false,
+    );
+    if (opts?.onConfirm) guard.onWriteConfirmation(opts.onConfirm);
+    const exec = new ToolExecutor(tmpProject, guard, index);
+    if (opts?.withBackground) {
+      const registry = new BackgroundTaskRegistry();
+      registries.push(registry);
+      lastRegistry = registry;
+      exec.setBackgroundTasks(registry);
+    }
+    return exec;
+  }
+
+  describe('裁决链（§13.2）', () => {
+    it('deny 黑名单：恒拒且不执行（owner + 自动批准档亦拦）', async () => {
+      const exec = makeExecutor();
+      const out = await exec.execute('run_command', JSON.stringify({ command: 'rm -rf /' }));
+      expect(out).toContain('[ERR:COMMAND_DECLINE]');
+      // 拒绝语义必须写明「未执行」——否则 LLM 会以为命令跑过了
+      expect(out).toContain('未执行任何命令');
+    });
+
+    it('ALWAYS_ASK（git commit）：owner + confirmScripts=false 仍进确认流程（无 handler → fail-closed）', async () => {
+      const exec = makeExecutor();
+      const out = await exec.execute('run_command', JSON.stringify({ command: 'git commit -m x' }));
+      expect(out).toContain('[ERR:COMMAND_DECLINE]');
+    });
+
+    it('ALWAYS_ASK + handler 同意 → 真执行（确认 UI 收到命令原文）', async () => {
+      const seen: WriteConfirmationInfo[] = [];
+      const exec = makeExecutor({
+        onConfirm: async (info) => {
+          seen.push(info);
+          return true;
+        },
+      });
+      // 必须命中 ALWAYS_ASK 前缀（`git commit`）才会进确认流程；`git --version` 是 normal 档
+      const out = await exec.execute(
+        'run_command',
+        JSON.stringify({ command: 'git commit -m probe' }),
+      );
+      expect(seen[0]?.targetPath).toBe('git commit -m probe');
+      expect(seen[0]?.needsConfirm).toBe(true);
+      expect(out).not.toContain('[ERR:COMMAND_DECLINE]');
+    });
+
+    it('handler 拒绝 → 不执行并回传拒绝语义', async () => {
+      const exec = makeExecutor({ onConfirm: async () => false });
+      const out = await exec.execute('run_command', JSON.stringify({ command: 'git commit -m x' }));
+      expect(out).toContain('[ERR:COMMAND_DECLINE]');
+    });
+
+    it('guest 模式：普通命令亦强制确认（无 handler → fail-closed）', async () => {
+      const exec = makeExecutor({ permission: 'guest' });
+      const out = await exec.execute('run_command', JSON.stringify({ command: OK_CMD }));
+      expect(out).toContain('[ERR:COMMAND_DECLINE]');
+    });
+  });
+
+  describe('参数校验', () => {
+    it('空命令 → ARGUMENT_ERROR（不是静默通过）', async () => {
+      const exec = makeExecutor();
+      await expect(exec.execute('run_command', JSON.stringify({ command: '   ' }))).rejects.toThrow(
+        /缺少 command 参数/,
+      );
+    });
+
+    it('cwd 越界 → PATH_DENIED 且不执行', async () => {
+      const exec = makeExecutor();
+      const out = await exec.execute(
+        'run_command',
+        JSON.stringify({ command: OK_CMD, cwd: '../..' }),
+      );
+      expect(out).toContain('[ERR:PATH_DENIED]');
+    });
+
+    it('命令超长 → ARGUMENT_ERROR（整条拒收，禁截半条执行）', async () => {
+      const exec = makeExecutor();
+      // 命令原文会扩散到裁决链 / 确认卡 / 审计 / turn 终态收割报告四处，不限长会污染整条链路
+      const err = await exec
+        .execute(
+          'run_command',
+          JSON.stringify({ command: 'echo ' + 'a'.repeat(RUN_COMMAND_MAX_LEN_FOR_TEST) }),
+        )
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(MemoraError);
+      const e = err as MemoraError;
+      expect(e.errorCode).toBe(ToolErrorCode.ARGUMENT_ERROR);
+      // 标题判「是长度问题」，细节给出实际/上限数字（模型据此自己改小）
+      expect(e.title).toContain('命令过长');
+      expect(e.detail).toContain(String(RUN_COMMAND_MAX_LEN_FOR_TEST));
+    });
+  });
+
+  describe('同步执行', () => {
+    it('成功命令 → 返回输出（无 COMMAND_ERROR 标签）', async () => {
+      const exec = makeExecutor();
+      const out = await exec.execute('run_command', JSON.stringify({ command: OK_CMD }));
+      expect(out).not.toContain('[COMMAND_ERROR]');
+      expect(out).not.toContain('[COMMAND_TIMEOUT]');
+      expect(out.trim().length).toBeGreaterThan(0);
+    });
+
+    it('非零退出码 → [COMMAND_ERROR] + 退出码（诚实化，不谎报成功）', async () => {
+      const exec = makeExecutor();
+      const out = await exec.execute('run_command', JSON.stringify({ command: FAIL_CMD }));
+      expect(out).toContain('[COMMAND_ERROR]');
+      expect(out).toContain('退出码: 3');
+    });
+  });
+
+  describe('后台执行（§14）', () => {
+    it('background=true → 立即返回 taskId（不等进程结束）', async () => {
+      const exec = makeExecutor({ withBackground: true });
+      const t0 = Date.now();
+      const out = await exec.execute(
+        'run_command',
+        JSON.stringify({ command: SLEEP_CMD, background: true }),
+      );
+      expect(Date.now() - t0).toBeLessThan(5_000); // 未等 20s
+      expect(out).toContain('[BACKGROUND_STARTED]');
+      expect(out).toContain('bg-1');
+    });
+
+    it('未注入注册表 → 如实报 NOT_AVAILABLE（不假装能跑）', async () => {
+      const exec = makeExecutor();
+      const out = await exec.execute(
+        'run_command',
+        JSON.stringify({ command: OK_CMD, background: true }),
+      );
+      expect(out).toContain('[ERR:TOOL:NOT_AVAILABLE]');
+    });
+  });
+
+  describe('kill_command（§14.1 免裁决链）', () => {
+    it('不存在的 taskId → [ERR:TASK_NOT_FOUND]（绝不静默成功）', async () => {
+      const exec = makeExecutor({ withBackground: true });
+      const out = await exec.execute('kill_command', JSON.stringify({ taskId: 'bg-999' }));
+      expect(out).toContain('[ERR:TASK_NOT_FOUND]');
+    });
+
+    it('终止运行中的任务 → [KILLED]，且**不谎报**执行失败/退出码', async () => {
+      const exec = makeExecutor({ withBackground: true });
+      await exec.execute('run_command', JSON.stringify({ command: SLEEP_CMD, background: true }));
+      await sleep(500);
+      const out = await exec.execute('kill_command', JSON.stringify({ taskId: 'bg-1' }));
+      expect(out).toContain('[KILLED]');
+      // 强杀没有退出码：贴 [COMMAND_ERROR]/退出码 -1 会让 LLM 以为命令自己挂了
+      expect(out).not.toContain('[COMMAND_ERROR]');
+      expect(out).not.toContain('退出码');
+    });
+
+    it('缺 taskId → ARGUMENT_ERROR（required 校验在参数层拦，措辞不与实现耦合）', async () => {
+      const exec = makeExecutor({ withBackground: true });
+      const err = await exec.execute('kill_command', JSON.stringify({})).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(MemoraError);
+      const e = err as MemoraError;
+      expect(e.errorCode).toBe(ToolErrorCode.ARGUMENT_ERROR);
+      // 细节里点名缺失参数，LLM 才知道该补什么
+      expect(e.detail).toContain('taskId');
+    });
+
+    it('已终态任务 → [TASK_ALREADY_SETTLED] + 回传其结果（不报错，正当用法）', async () => {
+      const exec = makeExecutor({ withBackground: true });
+      const registry = lastRegistry!;
+      // 事件驱动等待完成（固定 sleep 在全量并行负载下会 flaky——本机已踩）
+      const settled = new Promise<void>((resolve) =>
+        registry.setCompletionListener(() => resolve()),
+      );
+      await exec.execute('run_command', JSON.stringify({ command: OK_CMD, background: true }));
+      await settled;
+      const out = await exec.execute('kill_command', JSON.stringify({ taskId: 'bg-1' }));
+      expect(out).toContain('[TASK_ALREADY_SETTLED]');
+      expect(out).toContain('status=completed');
+    });
+
+    it('免裁决链：终止不经过命令确认闸（无需注入 handler 即成功）', async () => {
+      const exec = makeExecutor({ withBackground: true });
+      await exec.execute('run_command', JSON.stringify({ command: SLEEP_CMD, background: true }));
+      await sleep(300);
+      // SecurityGuard 未注入 confirmationHandler：若 kill 走裁决链必 fail-closed
+      const out = await exec.execute('kill_command', JSON.stringify({ taskId: 'bg-1' }));
+      expect(out).toContain('[KILLED]');
+    });
+  });
+
+  describe('描述文案红线（§13.3）', () => {
+    const defs = BUILTIN_TOOLS.filter((t) => t.name === 'run_command' || t.name === 'kill_command');
+
+    it('两工具均已注册', () => {
+      expect(defs).toHaveLength(2);
+    });
+
+    it('禁安全承诺词（已校验 / 已过滤 / 安全执行）', () => {
+      for (const def of defs) {
+        expect(def.description, def.name).not.toMatch(/已校验|已过滤|安全执行|保证安全/);
+      }
+    });
+
+    it('禁 bypass 提示（不得诱导 LLM 建议用户关闭审批）', () => {
+      for (const def of defs) {
+        expect(def.description, def.name).not.toMatch(/关闭确认|可绕过|无需确认|跳过审批/);
+      }
+    });
+
+    it('写明超时语义（超时即强杀并返回已捕获输出）', () => {
+      const runDef = defs.find((d) => d.name === 'run_command')!;
+      expect(runDef.description).toContain('强杀');
     });
   });
 });

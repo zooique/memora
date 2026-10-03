@@ -13,6 +13,7 @@
 import * as childProcess from 'node:child_process';
 import type { CodeExecutionResult } from '@/code-exec/types.js';
 import { logger } from '@/logging/logger.js';
+import { sanitizeExternalText } from '@/agent/textSanitize.js';
 import type { ScriptRuntime } from '@/utils/scanner.js';
 
 /**
@@ -589,10 +590,10 @@ function resolveCommand(
   }
 }
 
-/** formatExecutionResult 的三态标签配置：前缀与详情文案（run_skill_script / run_code 各自定制） */
+/** formatExecutionResult 的三态标签配置：前缀与详情文案（run_skill_script / run_code / run_command 各自定制） */
 export interface ExecutionResultFormatLabels {
-  /** 三态前缀标签（'SCRIPT' → [SCRIPT_TIMEOUT]/[SCRIPT_ERROR]；'CODE' → [CODE_TIMEOUT]/[CODE_ERROR]） */
-  kind: 'SCRIPT' | 'CODE';
+  /** 三态前缀标签（'SCRIPT' → [SCRIPT_TIMEOUT]/[SCRIPT_ERROR]；'CODE' → [CODE_TIMEOUT]/[CODE_ERROR]；'COMMAND' → [COMMAND_TIMEOUT]/[COMMAND_ERROR]） */
+  kind: 'SCRIPT' | 'CODE' | 'COMMAND';
   /** 超时详情文案（如「脚本执行超时（超过 120s）」） */
   timeoutDetail: string;
   /** 失败详情文案（如「代码执行失败」） */
@@ -650,4 +651,92 @@ export function formatScriptResult(
     timeoutDetail: `脚本执行超时（超过 ${Math.round(normalizeTimeoutMs(timeoutMs) / 1000)}s）`,
     errorDetail: '脚本执行失败',
   });
+}
+
+/**
+ * 同步命令的**实际生效超时**（毫秒）：run_command 同步路径的钳制真源入口。
+ *
+ * 存在的理由是「执行侧与文案侧同源」这条硬约束：`runShellCommand` 内部钳制，
+ * 若文案侧自行 clamp 就会重演「实际 60s 超时却告知超过 600s」的谎报。
+ * 调用方拿本值同时喂给执行与格式化，两侧恒等。
+ *
+ * @param timeoutMs LLM 传入值（undefined/非法 → 取默认 60s）
+ */
+export function resolveCommandTimeoutMs(timeoutMs: number | undefined): number {
+  return normalizeTimeoutMs(
+    typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS,
+  );
+}
+
+/**
+ * 命令结果进入上下文的**定长真源**（字符层）+ 格式化收口
+ *
+ * **定长为何住在格式化层而非调用方**：命令结果有**两个消费面**——① `run_command` 的工具
+ * 返回值 ② 后台命令完成的回流通知（`formatBackgroundTaskNotice`）。上限若住在
+ * toolExecutor 的模块私有常量里，第二个消费面就看不到它 ⇒ 回流路径无上限
+ * （2MB 内存护栏放行的输出可直灌上下文）。定义在两者的**共同下游**，两个消费面
+ * 自动一致、无法漏配。
+ *
+ * 量纲纪律：与 `MAX_COLLECTED_OUTPUT_BYTES`（**字节**，防 Node 进程内存膨胀）、
+ * `SINGLE_TOOL_RESULT_MAX_TOKENS`（**token**，入口关落盘）三者各异，**禁止互相对齐或合并**。
+ *
+ * 超时文案用**调用方传入的本次实际生效超时**（`resolveCommandTimeoutMs` 的产物）；
+ * 传 undefined 表示本次未设收割时限（后台缺省），此时只说「超时」不编造秒数——
+ * 报一个不存在的秒数比不报更坏（LLM 会据此误判该等多久）。
+ */
+const COMMAND_RESULT_MAX_CHARS = 20_000;
+/** 命令结果尾部保留（缺口 D 同款：构建/测试失败原因常在尾部） */
+const COMMAND_RESULT_TAIL_CHARS = 4_000;
+
+/**
+ * 格式化命令执行结果为可读字符串（run_command 同步 / kill_command 回传 / 后台回流共用）
+ *
+ * **定长真源在此**（见 `COMMAND_RESULT_MAX_CHARS`）：本函数是命令结果进上下文的唯一收口，
+ * 调用方**不要**再各自套一层上限——那会让「限了多少」在两处漂移。
+ *
+ * 超时文案用**调用方传入的本次实际生效超时**（`resolveCommandTimeoutMs` 的产物）；
+ * 传 undefined 表示本次未设收割时限（后台缺省），此时只说「超时」不编造秒数——
+ * 报一个不存在的秒数比不报更坏（LLM 会据此误判该等多久）。
+ */
+export function formatCommandResult(
+  result: ScriptExecutionResult,
+  effectiveTimeoutMs?: number,
+): string {
+  return sanitizeExternalText(
+    formatExecutionResult(result, {
+      kind: 'COMMAND',
+      timeoutDetail:
+        effectiveTimeoutMs === undefined
+          ? '命令执行超时'
+          : `命令执行超时（超过 ${Math.round(effectiveTimeoutMs / 1000)}s）`,
+      errorDetail: '命令执行失败',
+    }),
+    COMMAND_RESULT_MAX_CHARS,
+    COMMAND_RESULT_TAIL_CHARS,
+  );
+}
+
+/**
+ * 格式化「被主动终止」的命令输出（kill_command 专用）
+ *
+ * ⚠️ 刻意**不走** `formatCommandResult`：进程被强杀时**没有退出码**——
+ * `peek()` 取的 -1 意思是「尚未退出」，不是「退出码 -1」。丢给三态格式化会被判成
+ * `[COMMAND_ERROR] 命令执行失败（退出码: -1）`，与 kill_command 头部的「已终止」
+ * 自相矛盾（对 LLM 是谎报：它会以为命令自己挂了，而不是被我们停掉）。
+ *
+ * 因此这里只如实列出截至终止时已捕获的输出，不声称任何退出状态。定长口径与
+ * `formatCommandResult` **同源**（同一对常量）——两个函数对「多少字进上下文」的
+ * 判断若有差异，LLM 就会在同一会话里看到两种长度 policy。
+ */
+export function formatKilledCommandOutput(result: ScriptExecutionResult): string {
+  const stdout = result.stdout || '(无输出)';
+  const stderr = result.stderr ? `\n[stderr] ${result.stderr}` : '';
+  const truncatedNote = result.truncated
+    ? `\n[OUTPUT_TRUNCATED] 输出超过收集侧内存上限，已停止收集（丢弃 ${result.discardedBytes ?? 0} 字节，所见非完整输出）`
+    : '';
+  return sanitizeExternalText(
+    `stdout: ${stdout}${stderr}${truncatedNote}`,
+    COMMAND_RESULT_MAX_CHARS,
+    COMMAND_RESULT_TAIL_CHARS,
+  );
 }

@@ -54,9 +54,9 @@ describe('键集合与内核内置工具清单对齐', () => {
    *
    * 判据同源：内核 SSOT = `ToolExecutor.builtinDefinitions`（toolExecutor.ts）=
    * `[...BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL, SEARCH_PROJECT_TOOL]`。
-   * ⚠️ 注意 `BUILTIN_TOOLS`（builtinTools.ts 数组）只是**常驻**那批（20），另有 4 个能力门控
+   * ⚠️ 注意 `BUILTIN_TOOLS`（builtinTools.ts 数组）只是**常驻**那批（22），另有 4 个能力门控
    * 工具（web_search/web_fetch/run_code/search_project）定义在数组外、按宿主注入的 provider
-   * 条件暴露——两者合计 24 才是完整面。因此本函数取「全部 `XXX_TOOL` 常量定义 + 数组内联定义」，
+   * 条件暴露——两者合计 26 才是完整面。因此本函数取「全部 `XXX_TOOL` 常量定义 + 数组内联定义」，
    * 而非仅数组段。
    */
   function kernelToolNames(): Set<string> {

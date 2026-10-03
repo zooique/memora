@@ -14,6 +14,8 @@
 
 import { logger } from '@/logging/logger.js';
 import {
+  formatCommandResult,
+  formatKilledCommandOutput,
   startBackgroundCommand,
   normalizeBackgroundTimeoutMs,
   type ScriptExecutionResult,
@@ -170,4 +172,30 @@ export class BackgroundTaskRegistry {
       ...(entry.result ? { result: entry.result } : {}),
     };
   }
+}
+
+/** 终局状态 → 中文标签（回流通知与收尾报告共用一个词表） */
+const STATUS_LABELS: Record<BackgroundTaskStatus, string> = {
+  running: '运行中',
+  completed: '已完成',
+  timedOut: '超时被终止',
+  killed: '已终止',
+};
+
+/**
+ * 后台任务终局 → 回流通知文案（**格式化单点**：loop 回流与收尾报告共用）
+ *
+ * 来源标记前置且显式（`[后台命令完成]`）——消费方是 LLM，必须能让它分清
+ * 「这是系统事件」而非「用户刚说了什么」（role 语义隔离，§14.2）。
+ * 超时文案不编造秒数：注册表不存时限，缺省即不限时（§13.6-C）。
+ */
+export function formatBackgroundTaskNotice(task: BackgroundTask): string {
+  const header = `[后台命令${task.status === 'killed' ? '已终止' : '完成'}] taskId=${task.taskId} · ${STATUS_LABELS[task.status]}`;
+  if (!task.result) return `${header}\n命令：${task.command}\n（无已捕获输出）`;
+  // killed 态走专用格式化：被主动终止没有退出码，套三态会谎报成「命令执行失败」
+  const body =
+    task.status === 'killed'
+      ? formatKilledCommandOutput(task.result)
+      : formatCommandResult(task.result);
+  return `${header}\n命令：${task.command}\n${body}`;
 }

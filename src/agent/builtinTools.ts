@@ -116,6 +116,11 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   run_skill_script: 'non-idempotent',
   // run_project_script：运行项目内已有脚本，结果不可预期，禁止跳过（同 run_skill_script）
   run_project_script: 'non-idempotent',
+  // run_command：任意 shell 命令，副作用不可预期，禁止跳过（同 run_project_script）
+  run_command: 'non-idempotent',
+  // kill_command：终止后台任务。重复调用返回同一终态投影（注册表按 taskId 寻址、不二次发信号），
+  // 但「禁止跳过」语义更贴切——LLM 重发时它需要重新拿到截至终止时的输出快照
+  kill_command: 'non-idempotent',
   // register_work：写 JSON 索引（同 path+description → 同记录），以 source 为业务键实现幂等
   register_work: 'idempotent-key',
   // ask_user：read-only 语义——提问的目标态（用户答案）天然可变，永不跳过（跳过=丢问题）
@@ -772,6 +777,53 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         },
       },
       required: ['script_path'],
+    },
+  },
+  {
+    name: 'run_command',
+    description:
+      '在工作区执行一条 shell 命令（Windows 经 cmd /c，类 Unix 经 sh -c），返回退出码与输出。' +
+      '适用于构建、测试、git 查询等命令行走场景：命令本身不落盘成脚本文件，执行完即走。' +
+      '默认同步等待：超时默认 60s（上限 600s），到点强杀进程树并返回截至当时已捕获的输出。' +
+      '命令执行受黑名单与用户审批约束（部分破坏性命令恒被拒绝，git 写操作类每次都会请求确认）；' +
+      '被拒绝时你会收到明确说明，不会静默跳过。' +
+      '⚠️ 长耗时命令（全量测试、依赖安装、冷缓存构建）传 background=true 放到后台：' +
+      '立即返回 taskId，命令结束后结果会自动回到你的上下文；用 kill_command 按 taskId 终止并取回截至当时的输出。',
+    // 目标不可静态定位（任意 shell 命令可改盘任意路径）→ opaque 屏障，与一切写互斥
+    diskWrite: 'opaque',
+    parameters: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: '要执行的 shell 命令字符串' },
+        cwd: {
+          type: 'string',
+          description: '工作目录（相对项目根或项目内绝对路径；缺省 = 项目根；越界拒绝执行）',
+        },
+        timeoutMs: {
+          type: 'number',
+          description:
+            '最长执行时长毫秒（可选，同步缺省 60000、上限 600000；background=true 时缺省不限时，传值上限 1800000，到点强杀）',
+        },
+        background: {
+          type: 'boolean',
+          description: 'true = 后台执行：立即返回 taskId，结果完成后自动回到上下文（缺省同步等待）',
+        },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'kill_command',
+    description:
+      '终止由 run_command（background=true）启动的后台命令，返回截至终止时已捕获的输出。' +
+      '只能按 taskId 终止本会话起的后台任务（不是任意系统进程）。' +
+      '常用于「长任务已经不需要了，但想先看看它跑到哪儿了」——终止与查看输出一次完成。',
+    parameters: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'run_command 后台执行返回的 taskId（如 "bg-1"）' },
+      },
+      required: ['taskId'],
     },
   },
   {
