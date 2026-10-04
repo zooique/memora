@@ -427,7 +427,6 @@ const BASELINE_TEXT: readonly string[] = [
   'data-step-bucket',
   'earliest_steps',
   'ensureActiveStep',
-  'findEarliestSteps',
   'getActiveStepMeta',
   'handleIteration',
   'handleIterationResult',
