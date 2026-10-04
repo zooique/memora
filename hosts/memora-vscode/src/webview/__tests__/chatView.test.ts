@@ -4239,7 +4239,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
       expect(rows()[0]?.querySelector('.background-tasks-bar__kill')).toBeTruthy();
     });
 
-    it('终态行无「终止」按钮（已结束再点即无反应 —— 僵尸交互不留）', () => {
+    it('终态行无「终止」按钮（已结束再点即无反应 —— 僵尸交互不留），改为 `×` 收起', () => {
       mountChatView();
       dispatch({
         type: 'background_tasks',
@@ -4247,6 +4247,42 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
       });
       expect(rows()).toHaveLength(1);
       expect(rows()[0]?.querySelector('.background-tasks-bar__kill')).toBeNull();
+      // 终态行给 `×`：关掉的是「眼睛」不是「东西」（reason:'dismiss'，宿主只收起视图）
+      expect(rows()[0]?.querySelector('.background-tasks-bar__dismiss')).toBeTruthy();
+    });
+
+    it('`×` 只收视图不终止进程（载荷带 reason=dismiss，与「终止」区分）', () => {
+      const { postMessage } = mountChatView();
+      dispatch({
+        type: 'background_tasks',
+        items: [bgTask({ taskId: 'bg-3', status: 'completed', statusLabel: '已完成' })],
+      });
+      const dismiss = rows()[0]?.querySelector(
+        '.background-tasks-bar__dismiss',
+      ) as HTMLButtonElement;
+      postMessage.mockClear();
+      dismiss.click();
+      expect(postMessage).toHaveBeenCalledWith({
+        type: 'background_kill',
+        taskId: 'bg-3',
+        reason: 'dismiss',
+      });
+      // 反向守卫：running 行的「终止」**不带** reason（缺省即 terminate，兼容旧 webview）
+      dispatch({
+        type: 'background_tasks',
+        items: [bgTask({ taskId: 'bg-4', status: 'running', statusLabel: '运行中' })],
+      });
+      const kill = document.querySelector('.background-tasks-bar__kill') as HTMLButtonElement;
+      postMessage.mockClear();
+      kill.click();
+      expect(postMessage).toHaveBeenCalledWith({ type: 'background_kill', taskId: 'bg-4' });
+    });
+
+    it('running 行刻意不给 `×`（进程在跑必须始终可见 —— 本缺口最初的样子）', () => {
+      mountChatView();
+      dispatch({ type: 'background_tasks', items: [bgTask()] });
+      expect(rows()[0]?.querySelector('.background-tasks-bar__dismiss')).toBeNull();
+      expect(rows()[0]?.querySelector('.background-tasks-bar__kill')).toBeTruthy();
     });
 
     it('点「终止」只回宿主（执行只能落 host），载荷带 taskId', () => {

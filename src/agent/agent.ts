@@ -1354,6 +1354,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.loop.onContextWindowChanged = (effectiveTokens: number) => {
       this.internals.contextPreparer?.setMaxContextTokens(effectiveTokens);
     };
+    // 后台任务转入终态 → Agent 事件面（脱管后 turn 已结束，宿主三个既有推送时机覆盖不到
+    // 「任务自然跑完」，缺此事件 UI 会一直显示假活跃的「运行中」。见方案文档 §5.2.2）。
+    // 走既有 TypedEventEmitter：宿主 bindAgentNoticeEvents 的「先 off 再 on」幂等模式适用。
+    this.loop.setBackgroundTaskSettledEmitter((task) => {
+      this.emit('backgroundTaskSettled', {
+        taskId: task.taskId,
+        command: task.command,
+        status: task.status,
+      });
+    });
     this.toolExec = result.toolExec;
     this.skillManager = result.skillManager;
     this._rolePackManager = result.rolePackManager;

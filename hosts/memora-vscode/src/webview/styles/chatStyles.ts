@@ -1001,6 +1001,29 @@ export const chatStyles = `
     background: var(--feedback-error-bg, rgba(180, 40, 30, .14));
     color: var(--status-fail, #b3261e);
   }
+  /* 终态行的「收起」：中性灰、不带危险色——它不杀进程（与「终止」视觉上必须可区分，
+     否则用户会以为点了会杀东西）。hover 用普通高亮而非危险色。 */
+  .background-tasks-bar__dismiss {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted, #888);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+  }
+  .background-tasks-bar__dismiss:hover {
+    background: var(--surface-hover, rgba(128,128,128,.18));
+    color: var(--text-secondary, #9aa0a6);
+  }
   .background-tasks-bar[hidden] { display: none; }
 
   /* 预算可视化：发送按钮旁的上下文占用圆环充能图标（常驻不占行；hover/聚焦**向上**弹窗出分层明细文字，

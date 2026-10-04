@@ -373,6 +373,20 @@ export class AgentLoop {
    * 未注入时两个动作都是 no-op（无后台任务可管），不报错——纯 ToolExecutor 单测场景无注册表。
    */
   private backgroundTasks?: BackgroundTaskRegistry;
+  /** 后台任务转入终态时通知装配层（由 Agent 在装配期接到事件面上，loop 只发不处理 UI）。
+   *  脱管后 turn 已结束，宿主三个既有推送时机覆盖不到「任务自然跑完」⇒ 缺此出口 UI 会显示
+   *  假活跃。挂在注册表 `notify` 单点链上（settle 与主动 kill 均经此），不新增 listener。 */
+  private emitBackgroundTaskSettled?: (task: BackgroundTask) => void;
+  /**
+   * 装配层在装配期注入「后台任务终态」发射回调（**仅装配期一次**，非公开 API）。
+   *
+   * 走 Agent 事件面（`backgroundTaskSettled`）而非独立回调字段：与既有宿主事件
+   * （sessionError / contextTruncated / …）同型，宿主 `bindAgentNoticeEvents` 的
+   * 「先 off 再 on」幂等模式天然适用。
+   */
+  setBackgroundTaskSettledEmitter(fn: ((task: BackgroundTask) => void) | undefined): void {
+    this.emitBackgroundTaskSettled = fn;
+  }
   /** 主动提问回调（LLM 调 ask_user 工具时调用，Agent 注入，loop 只回调不处理 UI） */
   onPendingQuestion?: (questions: AskQuestion[]) => void;
   /** 有效窗口变更回调（Agent 注入）：把 loop 算出的**有效窗口**分发给 loop 之外仍持有窗口拷贝的
@@ -884,6 +898,11 @@ export class AgentLoop {
     this.backgroundTasks = registry;
     registry.setCompletionListener((task) => {
       this.enqueueCommandResult(formatBackgroundTaskNotice(task));
+      // 终态同时出宿主面（阶段二补漏 · 见方案文档 §5.2）：脱管后 turn 已结束，
+      // 宿主靠 step_boundary / background_report 三个推送时机全都覆盖不到「任务自然跑完」
+      // ⇒ UI 会一直显示「运行中」。经 Agent 事件面转发（走既有 TypedEventEmitter，
+      // 与 bindAgentNoticeEvents 的 off/on 幂等模式对齐），**不新增注册表 listener**。
+      this.emitBackgroundTaskSettled?.(task);
     });
   }
 

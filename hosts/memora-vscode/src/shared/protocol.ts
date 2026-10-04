@@ -460,14 +460,18 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'revert_all_file_changes' }
   /**
-   * 终止后台命令（后台任务浮层「终止」按钮触发 · 见 `docs/方案-后台任务可见性与kill入口-20261004.md`）
+   * 后台任务条的动作（见 `docs/方案-后台任务跨轮存活-20261004.md` §5.2.4）
    *
-   * 语义 = 用户侧等价于模型调 `kill_command`：杀树 + 取回截至当时的已捕获输出。
-   * host 侧调 `agent.killBackgroundTask(taskId)`（内核门面，Agent 实例级隔离——
-   * 只能杀本会话自起的任务），执行后**回推一次 `background_tasks` 快照**让浮层刷新。
-   * taskId 不存在时内核返回 null，host 侧按「任务已不在」处理（不报错 toast）。
+   * `reason` 决定**两件完全不同**的事，靠单通道区分而非开第二条：
+   *   - `terminate`（**缺省**，兼容旧 webview）：用户点「终止」⇒ 调
+   *     `agent.killBackgroundTask(taskId)`，**进程真被杀**（杀树 + 取回截至当时输出）。
+   *   - `dismiss`：用户点终态行的 `×` ⇒ **仅从视图收起**，**进程留着、输出留着**，
+   *     `kill_command` 随时可取回。**可逆 > 不可逆**（反悔还能捞回来）。
+   *
+   * ⚠️ running 行**只有 `terminate`**：进程在跑必须可见（不变量），
+   * 绝不能让它能被藏起来——那正是本缺口最初的样子（「派了人出去办事却不知道他还在不在」）。
    */
-  | { type: 'background_kill'; taskId: string };
+  | { type: 'background_kill'; taskId: string; reason?: 'terminate' | 'dismiss' };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =

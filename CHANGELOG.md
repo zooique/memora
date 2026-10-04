@@ -46,6 +46,42 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
   恢复 `command-result` 丢弃行 → `aborted` 留存守卫红
 - **方案文档**：`docs/方案-后台任务跨轮存活-20261004.md`（含主流对标实锤、SSOT 论证、刻意不做清单）
 
+### Fixed（内核+宿主 · 后台任务终态 UI 不准 + 终态行可手动收起 · CMD-1 阶段 3 补漏）
+
+**缺口（阶段一自查漏判）**：脱管落地后，任务自然跑完时**宿主完全收不到通知**——
+`setCompletionListener` 的回调只做 `enqueueCommandResult`（入队给模型），无任何出宿主的面。
+而宿主推 UI 只有三个时机（`step_boundary` / `background_report` / kill 后回推），脱管后 turn 已结束，
+三个全不覆盖 ⇒ **条上一律写「运行中」，实际早已跑完**。
+
+> 比原缺陷更坏：原缺陷是「进程死了却显示已终止」（假终态），本漏是「进程活着却显示运行中」
+> （**假活跃**）——让用户以为还有事在跑，而真相是结果早已躺在队列里。
+
+- **新增内核事件 `backgroundTaskSettled`**（入 `AgentEventMap` + `AGENT_EVENTS`）：挂在注册表
+  `notify` 单点链上（`settle` 与主动 kill 均经此）⇒ `loop.setBackgroundTaskSettledEmitter` →
+  `agent.emit` → 宿主 `bindAgentNoticeEvents` 订阅。**不新增注册表 listener**
+  （`setCompletionListener` 是单点 setter 且已被回流占用，加第二个即第二真理源）；
+  **走既有 `TypedEventEmitter`** 而非独立回调字段（与宿主 `off`/`on` 幂等模式对齐）。
+  载荷只带 `taskId` / `command` / `status`——**刻意不含输出**（同 `BackgroundTaskView`
+  不含 `result` 的口径）
+- **终态行可手动收起**：webview 终态行给 `×` → `background_kill` + `reason:'dismiss'`；宿主记入
+  `Set` 并在投影出口过滤 ⇒ **只关掉「眼睛」**，内核条目与输出都留着（`kill_command` 随时取回）。
+  **可逆 > 不可逆**。**「记住了」放宿主不放 webview**（放 webview 则面板一折叠即忘，刚收起又冒出来）
+- ⚠️ **running 行刻意不给 `×`**：只有「终止」（真杀）。进程在跑必须始终可见——不能让它能被藏起来，
+  那正是本缺口最初的样子（「派了人出去办事却不知道他还在不在」）
+- **单通道复用**：`background_kill` 加 `reason?: 'terminate' | 'dismiss'`（缺省 `terminate`
+  兼容旧 webview）⇒ **协议通道 107 → 107 不变**（治理阈值 130）。一个通道两个明确动作优于开第二条
+- **踩坑并已修（真缺陷，非测试问题）**：dismiss 后把签名哨兵置 `''` ⇒ **最后一条被收起时过滤后
+  `items` 为空、签名也是空串** ⇒ 去重判成 no-op ⇒ **条根本收不起来**。改用 `null` 哨兵
+  （`_backgroundSignature: string | null`）。这是「去重守卫 + 空集合」交互的典型陷阱
+- **踩坑并已修**：回滚变异时误插成两行 `a.on(...)` ⇒ 一次终态推两遍相同快照（签名去重在处理器
+  内部拦不住，那是两条独立调用）。已加**订阅幂等守卫**（同一事件只 `on` 一次）并用变异验证其有效
+- **测试**：内核 +2（终态触发发射回调 / 未注入回调时不抛）；宿主 +5（dismiss 只收视图不碰内核 /
+  记在宿主侧面板重建不复活 / 终态事件推快照且桩 `on` 真转发 / 订阅幂等 / `×` 载荷带 `dismiss`
+  且 running 行无 `×`）。测试**桩的 `on` 必须是真转发**（`vi.fn()` 空实现会让「事件名错配」测不出来）；
+  **不暴露 `emit`**（真实 Agent 上是 `protected`，测试直调会绕过事件名检查 ⇒ 改用捕获的订阅处理器）
+- **变异验证 4 组**：拆终态发射 → 出口用例红 / 拆宿主订阅 → 事件用例红 / 拆 dismiss 过滤 → 2 条红 /
+  注入重复订阅 → 幂等守卫红
+
 ### Added（内核 · 后台任务宿主出口 `listBackgroundTasks` / `killBackgroundTask` · CMD-1 阶段 2 缺口）
 
 **缺口**：后台任务运行态对用户零可见、无 kill 入口——`BackgroundTaskRegistry` 的 `list()` / `kill()` 能力早已齐备，但 `src/index.ts` **零导出**，宿主拿不到数据通道（不是「没画 UI」，是「取不到数」）。

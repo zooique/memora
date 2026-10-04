@@ -45,6 +45,12 @@ export const AGENT_EVENTS = {
    * 一次 chat() 只触发一次，载荷带 roundId 溯源。
    */
   roundSummaryGenerated: 'roundSummaryGenerated',
+  /**
+   * 后台任务转入终态（`run_command` background 跑完 / 被 kill / 超时清理）。
+   * 宿主据此推 UI 快照——脱管后 turn 已结束，靠 step_boundary / background_report 三个
+   * 推送时机覆盖不到「任务自然跑完」，缺此事件 UI 会一直显示假活跃的「运行中」。
+   */
+  backgroundTaskSettled: 'backgroundTaskSettled',
 } as const;
 
 /** 事件名联合类型（由 AGENT_EVENTS 推导，新增事件只需在此加一项） */
@@ -108,6 +114,16 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   sessionTitleUpdated: { sessionId: string; title: string };
   /** 轮次摘要生成完成载荷：本轮 roundId（溯源）+ 成功/失败（失败时宿主仍需兜底解锁） */
   roundSummaryGenerated: { roundId: string; success: boolean };
+  /**
+   * 后台任务终态载荷：只读投影（与 `agent.listBackgroundTasks()` 的元素同形状）。
+   * 宿主只需 taskId 即可推全量快照，**刻意不携带输出**（命令输出体量可达 KB~MB，
+   * UI 不呈现——同 `BackgroundTaskView` 刻意不含 `result` 的口径）。
+   */
+  backgroundTaskSettled: {
+    taskId: string;
+    command: string;
+    status: 'running' | 'completed' | 'timedOut' | 'killed';
+  };
 }
 
 /** 事件处理器类型 */

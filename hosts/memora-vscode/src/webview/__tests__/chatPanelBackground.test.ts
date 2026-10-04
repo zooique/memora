@@ -60,11 +60,28 @@ function backgroundAgentStub(initial: BackgroundTask[] = [taskWithResult()]) {
     tasks[idx] = { ...tasks[idx]!, status: 'killed' };
     return { ...tasks[idx]! };
   });
+  /** 自然完成（非 kill）：与内核 settle 同语义——改状态、**不发** kernel kill 回调 */
+  const settle = (taskId: string): void => {
+    const idx = tasks.findIndex((t) => t.taskId === taskId);
+    if (idx < 0) return;
+    tasks[idx] = { ...tasks[idx]!, status: 'completed' };
+  };
+  // 真实 Agent 是 TypedEventEmitter（宿主靠 a.on/off 订阅）。桩必须**真的转发**：
+  // 用 vi.fn() 空实现会让「事件名错配 / 处理器没绑上」这类缺陷测不出来（测试全绿但零覆盖）。
+  const handlers = new Map<string, ((payload: unknown) => void)[]>();
+  const onCalls: string[] = [];
   const agent = {
     listBackgroundTasks,
     killBackgroundTask,
+    on: (event: string, cb: (payload: unknown) => void) => {
+      onCalls.push(event);
+      const list = handlers.get(event) ?? [];
+      list.push(cb);
+      handlers.set(event, list);
+    },
+    off: vi.fn((event: string) => handlers.set(event, [])),
   } as unknown as Agent;
-  return { agent, listBackgroundTasks, killBackgroundTask };
+  return { agent, listBackgroundTasks, killBackgroundTask, settle, onCalls, handlers };
 }
 
 interface BackgroundCast {
@@ -72,6 +89,8 @@ interface BackgroundCast {
   _view: unknown;
   postBackgroundTasks(mode?: 'dedup' | 'force'): void;
   killBackgroundTask(taskId: string): void;
+  dismissBackgroundTask(taskId: string): void;
+  bindAgentNoticeEvents(): void;
 }
 
 function setupBackground() {
@@ -202,6 +221,72 @@ describe('后台任务宿主出口（chatPanel · 方案 §2.1/§2.2）', () => 
       .slice(before)
       .filter((m) => (m as { type: string }).type === 'background_tasks');
     expect(bgMsgs).toHaveLength(1);
+  });
+
+  it('dismiss 只收起视图：内核条目与输出留着，且过滤后不再下发', () => {
+    const h = setupBackground();
+    const stub = backgroundAgentStub();
+    h.cast._agent = stub.agent;
+
+    h.cast.dismissBackgroundTask('bg-1');
+
+    // ① 不碰内核：既不 kill 也不改任何内核状态
+    expect(stub.killBackgroundTask).not.toHaveBeenCalled();
+    expect(stub.agent.listBackgroundTasks()).toHaveLength(1);
+    // ② 快照里这条被过滤掉（视图收起）
+    const last = h.posted[h.posted.length - 1] as { type: string; items: unknown[] };
+    expect(last.type).toBe('background_tasks');
+    expect(last.items).toHaveLength(0);
+  });
+
+  it('dismiss 记在宿主侧：面板重建（webview ready 全量对齐）后该条不会复活', () => {
+    const h = setupBackground();
+    h.cast._agent = backgroundAgentStub().agent;
+    h.cast.dismissBackgroundTask('bg-1');
+
+    // 模拟 webview 重建：ready 时走 force 全量对齐（签名去重会拦掉重复推送，此处验内容）
+    h.cast.postBackgroundTasks('force');
+
+    const last = h.posted[h.posted.length - 1] as { type: string; items: unknown[] };
+    expect(last.type).toBe('background_tasks');
+    // force 也过滤 dismissed —— 「记住了」在宿主，不在 webview
+    expect(last.items).toHaveLength(0);
+  });
+
+  it('终态事件 → 推一次快照（订阅面必须真收到：桩的 on/off 是真转发）', () => {
+    // 桩先转 running → completed，让「事件驱动状态变化」这件事是**真的**发生的，
+    // 而不是「事件说 completed、注册表还报 running」的自相矛盾假数据。
+    const h = setupBackground();
+    const stub = backgroundAgentStub();
+    h.cast._agent = stub.agent;
+    h.cast.bindAgentNoticeEvents();
+    stub.settle('bg-1');
+
+    // 走真实投递面：桩捕获的订阅处理器（`emit` 在真实 Agent 上是 protected，
+    // 测试里直接调会绕过「事件名对不对得上」这道真检查）
+    const handler = stub.handlers.get('backgroundTaskSettled')?.[0];
+    expect(handler).toBeTruthy();
+    handler?.({
+      taskId: 'bg-1',
+      command: 'npm run build',
+      status: 'completed',
+    });
+
+    const last = h.posted[h.posted.length - 1] as { type: string; items: { status: string }[] };
+    expect(last.type).toBe('background_tasks');
+    expect(last.items[0]?.status).toBe('completed');
+  });
+
+  it('订阅幂等：同一事件只 on 一次（重复订阅 ⇒ 一次终态推两遍快照）', () => {
+    const h = setupBackground();
+    const stub = backgroundAgentStub();
+    h.cast._agent = stub.agent;
+    h.cast.bindAgentNoticeEvents();
+
+    // 守卫「off/on 成对且各一次」——本轮踩过：回滚变异时误插成两行 on，
+    // 一次终态会推两遍完全相同的快照（签名去重在事件处理器内部拦不住，那是两条独立调用）。
+    const ons = stub.onCalls.filter((e) => e === 'backgroundTaskSettled');
+    expect(ons).toHaveLength(1);
   });
 
   it('路由跳：webview 的 background_kill 消息真能走到 killBackgroundTask（经 resolveWebviewView 注册的回调）', () => {

@@ -2745,6 +2745,25 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           vscode.postMessage({ type: 'background_kill', taskId: task.taskId });
         });
         row.appendChild(killBtn);
+      } else {
+        // 终态行给 `×` 收起。⚠️ running 行**刻意不给收起**：进程在跑必须始终可见
+        //（这正是本缺口最初的样子：「派了人出去办事，却不知道他还在不在」）。
+        // 收起只对已结束的行开放，且**只关掉「眼睛」**——任务与输出仍在宿主侧，
+        // `kill_command` 随时可取回（可逆 > 不可逆）。
+        const dismissBtn = document.createElement('button');
+        dismissBtn.className = 'background-tasks-bar__dismiss';
+        dismissBtn.type = 'button';
+        dismissBtn.textContent = '×';
+        dismissBtn.title = '从列表收起这条（不终止进程，输出仍可取回）';
+        dismissBtn.setAttribute('aria-label', '收起这条后台任务');
+        dismissBtn.addEventListener('click', () => {
+          vscode.postMessage({
+            type: 'background_kill',
+            taskId: task.taskId,
+            reason: 'dismiss',
+          });
+        });
+        row.appendChild(dismissBtn);
       }
       listEl.appendChild(row);
     }

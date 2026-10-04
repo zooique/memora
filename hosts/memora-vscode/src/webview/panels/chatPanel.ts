@@ -369,7 +369,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 与 `_lastPendingQueueLen` 同族但判据更强：签名能捕获「条数不变而状态变」（kill 后
    * `running → killed`），长度判据会漏。详见 `postBackgroundTasks` 注释。
    */
-  private _backgroundSignature = '';
+  private _backgroundSignature: string | null = null;
+  /**
+   * 用户已手动收起的后台任务（webview 终态行 `×`）
+   *
+   * **只存用户偏好，不存任务数据**——任务与输出恒在内核注册表，本集合只影响「这条别显示」。
+   * 放宿主而非 webview：webview 折叠重建后记忆会丢，刚收起的行又冒出来。
+   * 生命周期 = 宿主实例（切会话 / 重开窗口即重置，与「换场景重新看待」一致）。
+   */
+  private readonly _dismissedBackgroundTaskIds = new Set<string>();
   /**
    * 当前 turn 状态（单一路由判据的 SSOT）
    *
@@ -909,10 +917,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 对话区常驻条「全部回退」：命令内部含模态二次确认（破坏性操作，勿绕过）
         void vscode.commands.executeCommand(REVERT_ALL_FILE_CHANGES_COMMAND);
       } else if (msg.type === 'background_kill') {
-        // 后台任务浮层「终止」：杀树 + 取回已捕获输出（用户侧等价于模型调 kill_command）。
-        // 内核按 Agent 实例隔离，只能杀本会话自起的任务；taskId 已不在时返回 null（不报错）。
-        // 执行后强制回推一次快照，让浮层立刻刷新为终态（不等下一次推送时机）。
-        this.killBackgroundTask(msg.taskId);
+        // 两种语义共用一个通道（方案 §5.2.4）：`terminate` 真终止进程 / `dismiss` 仅收起这一行。
+        // 缺省按 terminate（兼容旧 webview 发出的无 reason 消息）。
+        if (msg.reason === 'dismiss') {
+          this.dismissBackgroundTask(msg.taskId);
+        } else {
+          this.killBackgroundTask(msg.taskId);
+        }
       }
     });
   }
@@ -1324,6 +1335,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 角色包切换 → UI 角色选择器实时对齐（内核粘性切换/显式激活）
     a.off('rolePackSwitched', this.onRolePackSwitched);
     a.on('rolePackSwitched', this.onRolePackSwitched);
+    // 后台任务转入终态 → 推 UI 快照（脱管后 turn 已结束，其余三个推送时机覆盖不到
+    // 「任务自然跑完」⇒ 条会一直显示假活跃的「运行中」。见方案文档 §5.2.2）
+    a.off('backgroundTaskSettled', this.onBackgroundTaskSettled);
+    a.on('backgroundTaskSettled', this.onBackgroundTaskSettled);
+
     // 项目切换 + 工作投影生成事件 → info 级提示条
     a.off('projectSwitched', this.onProjectSwitched);
     a.on('projectSwitched', this.onProjectSwitched);
@@ -3489,19 +3505,55 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private postBackgroundTasks(mode: 'dedup' | 'force' = 'dedup'): void {
     if (!this._agent) return;
-    const items = this._agent.listBackgroundTasks().map((t) => ({
-      taskId: t.taskId,
-      command: t.command,
-      status: t.status,
-      // 状态文案真源 = 内核词表（宿主零自建），在此转成字面量下发——
-      // webview 只做 type import，值导入内核会把整包打进 bundle
-      statusLabel: BACKGROUND_TASK_STATUS_LABELS[t.status],
-    }));
+    // 用户已收起的条目不再下发（**只是视图过滤，内核条目与输出都留着**，`kill_command`
+    // 随时可取回）。过滤放在**投影出口**而非内核：宿主只存「哪条别显示」这个用户偏好，
+    // 真相源恒为内核注册表，零第二份数据。
+    const items = this._agent
+      .listBackgroundTasks()
+
+      .filter((t) => !this._dismissedBackgroundTaskIds.has(t.taskId))
+      .map((t) => ({
+        taskId: t.taskId,
+        command: t.command,
+        status: t.status,
+        // 状态文案真源 = 内核词表（宿主零自建），在此转成字面量下发——
+        // webview 只做 type import，值导入内核会把整包打进 bundle
+        statusLabel: BACKGROUND_TASK_STATUS_LABELS[t.status],
+      }));
     const signature = items.map((t) => `${t.taskId}:${t.status}`).join('|');
     if (mode === 'dedup' && signature === this._backgroundSignature) return;
     this._backgroundSignature = signature;
     this.post({ type: 'background_tasks', items });
   }
+
+  /**
+   * 收起一条终态任务（webview 终态行的 `×` → `background_kill` + `reason:'dismiss'`）
+   *
+   * **不碰内核**（不 kill、不清条目）：关掉的是「眼睛」不是「东西」——任务与输出留在
+   * 注册表里，`kill_command` 随时能取回。**可逆 > 不可逆**：用户反悔了还能把这条捞回来显示。
+   *
+   * 「记住了」放宿主而非 webview：放 webview 则面板一折叠即忘，刚收起的行又冒出来
+   * （与 ready 全量对齐同源的问题）。进程存活期不设上限，与注册表实例同生命周期。
+   */
+  private dismissBackgroundTask(taskId: string): void {
+    this._dismissedBackgroundTaskIds.add(taskId);
+    // ⚠️ 必须把签名置为**永不可能与真实签名相等的哨兵**再推，不能置空串：
+    // 最后一条被收起时过滤后 `items` 为空 ⇒ 签名也是空串，置空串等于「没变」⇒
+    // 去重判成 no-op ⇒ UI 根本不更新（实测踩中：条收不起来）。
+    this._backgroundSignature = null;
+    this.postBackgroundTasks();
+  }
+
+  /**
+   * 后台任务转入终态 → 推一次 UI 快照（事件订阅 · 见方案文档 §5.2.2）
+   *
+   * 用默认 `dedup` 即可：签名含 `status`，`running → completed` 必判为变化并推送；
+   * 重复终态（同 status）判为 no-op，正是去重要的行为。**不需 force**——force 只为
+   * 「webview 重建后重新对齐」而存在（签名跨重建残留会误吞），与本路径无关。
+   */
+  private readonly onBackgroundTaskSettled = (): void => {
+    this.postBackgroundTasks();
+  };
 
   /**
    * 终止后台任务（webview 浮层「终止」按钮 → `background_kill` 消息）

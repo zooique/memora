@@ -6971,6 +6971,38 @@ describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
     expect(loop.killBackgroundTask('bg-1')).toBeNull();
   });
 
+  it('任务转入终态 → 触发 setBackgroundTaskSettledEmitter 出口（阶段二补漏 · 宿主 UI 靠它更新）', async () => {
+    // 回归守卫：脱管后 turn 已结束，宿主三个既有推送时机覆盖不到「任务自然跑完」。
+    // 本用例锁住「注册表 notify 单点链 → loop 发射回调」这段，缺它 UI 会一直显示假活跃。
+    const loop = makeBgLoop();
+    const registry = new BackgroundTaskRegistry();
+    const settled: string[] = [];
+    loop.setBackgroundTaskSettledEmitter((t) => settled.push(t.taskId));
+    loop.setBackgroundTasks(registry);
+
+    const taskId = registry.start('node -e "console.log(1)"');
+    await vi.waitFor(() => {
+      expect(registry.get(taskId)?.status).not.toBe('running');
+    });
+    expect(settled).toEqual([taskId]);
+    // 终态出口只带只读投影（taskId/command/status），**不携带 result**——命令输出体量大，
+    // UI 不呈现（同 BackgroundTaskView 刻意不含 result 的口径）
+    const entry = registry.get(taskId);
+    expect(entry?.status).toBe('completed');
+  });
+
+  it('未注入发射回调时任务跑完不抛（门用语义，纯内核单测场景零影响）', async () => {
+    const loop = makeBgLoop();
+    const registry = new BackgroundTaskRegistry();
+    loop.setBackgroundTasks(registry); // 故意不 setBackgroundTaskSettledEmitter
+    const taskId = registry.start('node -e "console.log(1)"');
+    await expect(
+      vi.waitFor(() => {
+        expect(registry.get(taskId)?.status).not.toBe('running');
+      }),
+    ).resolves.not.toThrow();
+  });
+
   it('装配后列表反映注册表运行态', () => {
     const loop = makeBgLoop();
     const registry = new BackgroundTaskRegistry();
