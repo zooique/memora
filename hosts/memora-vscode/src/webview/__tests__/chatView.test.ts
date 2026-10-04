@@ -6419,7 +6419,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(rows[1].textContent).toContain('现在逐一读取它们的内容');
   });
 
-  it('扁平化：narrate 与 tool 按 seq 平铺 details 顶层，各自独立折叠（2026-09-04）', () => {
+  it('扁平化：narrate 纯文本行与 tool 折叠行按 seq 平铺 details 顶层（2026-09-04；narrate 直显形态 2026-10-05）', () => {
     mountChatView();
     beginRound();
     // 第一段叙述 → 一个搜索工具
@@ -6470,7 +6470,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     });
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
-    const narrates = rb.querySelectorAll('.round-block__narrate') as NodeListOf<HTMLDetailsElement>;
+    const narrates = rb.querySelectorAll('.round-block__narrate') as NodeListOf<HTMLElement>;
     const tools = rb.querySelectorAll('.round-block__tool') as NodeListOf<HTMLDetailsElement>;
     expect(narrates).toHaveLength(2);
     expect(tools).toHaveLength(2);
@@ -6495,7 +6495,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(tools[1].textContent).toContain('读取文件：x.md (成功)');
   });
 
-  it('运行中 narrate 平铺冒号行、done 收尾重建后进折叠块收起（v1.8 剪枝拍板）', () => {
+  it('运行中与收尾 narrate 同构纯文本冒号行（2026-10-05 形态统一：details+双份消费已废）', () => {
     mountChatView();
     beginRound();
     dispatch({
@@ -6533,13 +6533,15 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
       payload: { toolCallId: 't1', name: 'web_search', ok: true, summary: '结果A' },
     });
     dispatch({ type: 'done' });
-    // 收尾（finalize 全量重建 + flow 移除）：narrate 进 round-block 折叠块（收起态）
+    // 收尾（finalize 全量重建 + flow 移除）：narrate 保持纯文本直显（流式/收尾同构，
+    // 不再折叠收起——轮结束瞬间形态突变 + summary/body 双份消费已废）
     const rb = document.querySelector('.round-block') as HTMLDetailsElement;
     expect(rb).not.toBeNull();
     expect(document.querySelector('.process-flow')).toBeNull(); // 平铺容器已移除
-    const narrateFolded = rb.querySelector('.round-block__narrate') as HTMLDetailsElement;
-    expect(narrateFolded).not.toBeNull();
-    expect(narrateFolded.open).toBe(false);
+    const narrateRow = rb.querySelector('.round-block__narrate') as HTMLElement;
+    expect(narrateRow).not.toBeNull();
+    expect(narrateRow.tagName).toBe('DIV'); // 非折叠 details
+    expect(narrateRow.textContent).toBe('我先搜索相关资料：'); // 冒号形态与运行时一致
   });
 
   it('策略拦截（blocked）工具行显示「已拦截」并默认展开，不冒充成功/失败（2026-09-02 第三态）', () => {

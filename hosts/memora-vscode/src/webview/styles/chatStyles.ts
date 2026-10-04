@@ -1763,19 +1763,13 @@ export const chatStyles = `
   }
   .is-plan-done .round-block__plan-item-status { color: var(--status-pass, #4ec9b0); }
   .is-plan-active .round-block__plan-item-status { color: var(--accent, #0e639c); }
-  /* 过程叙述行：LLM 一段行动叙述 = 一个可折叠行（summary 摘要 + 全文展开），与工具行平级平铺 details 顶层 */
-  .round-block__narrate { padding: var(--sp-1, 2px) 0; line-height: 1.6; }
-  .round-block__narrate summary {
-    cursor: pointer; font-size: var(--font-xs, 11px);
+  /* 过程叙述行：LLM 一段行动叙述 = 一行纯文本直显（流式 process-flow__narrate 同构形态），
+   * 与工具行平级平铺 details 顶层——无折叠（叙述语义即短句，details+双份消费已废） */
+  .round-block__narrate {
+    padding: var(--sp-1, 2px) 0; line-height: 1.6;
+    font-size: var(--font-xs, 11px);
     color: var(--text-primary, #e0e0e0);
     word-break: break-all; white-space: pre-wrap;
-  }
-  .round-block__narrate-body {
-    margin-top: var(--sp-1, 2px); padding: var(--sp-2, 6px);
-    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
-    font-size: var(--font-xs, 11px); line-height: 1.7;
-    color: var(--text-secondary, #9aa0a6);
-    white-space: pre-wrap; word-break: break-all;
   }
   /* 思考折叠行/块：模型 thought 流，
    * <details> 折叠；process-flow 运行时与 round-block finalize/重放共用同构形态（按 seq 平铺）。

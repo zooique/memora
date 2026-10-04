@@ -933,29 +933,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 过程叙述父块（扁平化）：LLM 一段行动叙述 = 一个可折叠父块——
-   * summary 显示首行摘要（截断），展开看全文。工具调用不再嵌套进叙述块——narrate 与 tool
-   * 平级、各自独立折叠，按 seq 顺序平铺在 details 顶层（Trae Work 式扁平 step 流）。返回父块 el。
+   * 过程叙述行（扁平化）：LLM 一段行动叙述 = 一行纯文本直显（对流式 process-flow__narrate 同构）。
+   * 工具调用不嵌套进叙述行——narrate 与 tool 平级、按 seq 顺序平铺在 details 顶层
+   * （Trae Work 式扁平 step 流）。返回行 el。
    */
-  function createNarrateGroup(
-    ev: Extract<ProcessEvent, { type: 'narrate' }>,
-    openByDefault = false,
-  ): HTMLDetailsElement {
-    const row = document.createElement('details');
+  function createNarrateRow(ev: Extract<ProcessEvent, { type: 'narrate' }>): HTMLElement {
+    const row = document.createElement('div');
     row.className = 'round-block__narrate';
-    // 展开态：运行中（增量投影）默认展开——过程叙述直显，
-    // 保持「任务过程可见」体验；收尾/回放（finalize 重建）默认收起，与 round-block 一致
-    row.open = openByDefault;
     // seq 锚点：进行中增量追加去重 + 顶层按序插入（insertPlanItemInOrder）；ts 时间键：统一排序
     row.dataset.seq = String(ev.seq);
     row.dataset.ts = ev.ts;
-    const summary = document.createElement('summary');
+    // 纯文本直显（对齐流式 process-flow__narrate 同构）：narrate 语义 = 一句话行动叙述，
+    // 无折叠价值——旧 details 形态（summary 全文 + body 全文）对 ≤80 字叙述双份消费同一内容，
+    // 且与流式纯文本形态分裂（轮结束瞬间直显突变折叠+双份，2026-10-05 真机实锤）。
+    // 叙述冒号：结尾无标点时补「：」（流式同款定案「AI 说什么：」后接工具块）——文本防注入
     const text = ev.payload.content.trim();
-    summary.textContent = text.length > 80 ? `${text.slice(0, 80)}…` : text;
-    const body = document.createElement('div');
-    body.className = 'round-block__narrate-body';
-    body.textContent = text;
-    row.append(summary, body);
+    row.textContent = /[:：。!！?？；;]$/.test(text) ? text : `${text}：`;
     return row;
   }
 
@@ -1838,7 +1831,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       .sort((a, b) => a.seq - b.seq);
     for (const n of narrates) {
       const { host } = planItemContainerFor(details, events, n.ts, n.seq);
-      insertPlanItemInOrder(host, createNarrateGroup(n), n.ts);
+      insertPlanItemInOrder(host, createNarrateRow(n), n.ts);
     }
     // § 工具批（toolBatch）：相邻连续工具合并为批块——分组判据单一真源 groupToolBatches
     // （三渲染上下文共用：此处 finalize 重建 / renderProcessFlow 流式 / pending 行升级，禁内联三份）。
