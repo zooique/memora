@@ -454,7 +454,6 @@ const BASELINE_TEXT: readonly string[] = [
   'step-end',
   'step1',
   'step2',
-  'step4',
   'step5',
   'stepBoundary',
   'stepBucket',
