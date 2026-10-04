@@ -18,7 +18,7 @@
 # `role-packs/` 37 · `hosts/` 16 · `deliverables/` 7 · `prompts/` 6 · `tasks/` 3 · 根目录 3，共 208 个），
 # 黑名单永远补不全；且损害挂在**内容**（中文表格 / frontmatter）上，不挂在**路径**上。
 # 本条只**缩小 prettier 的作用范围、不改任何文件内容**，是存量清零前的即时止损
-# （存量 341 文件不合格式，见 `tasks/待完成任务.md` 的 FMT-PRETTIER-1）。
+# （存量 341 文件不合格式，FMT-PRETTIER-1 已结项，见 `tasks/已完成任务.md` 2026-09-27 节）。
 #
 # ✅ ts/json 侧已于 2026-09-27 清零（FMT-PRETTIER-1 第②步，提交 61bfd1fd）：245 文件格式化 +
 #    .gitattributes 固定 LF（19 个纯 EOL 红同轮消解），format:check 已绿。
