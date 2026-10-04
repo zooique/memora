@@ -8,6 +8,8 @@
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   REAL_ROUND,
   PLAN_SNAPSHOTS,
@@ -7688,6 +7690,13 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(document.getElementById('writeConfirmDiff')!.textContent).toContain('old');
     expect(document.getElementById('writeConfirmDiff')!.textContent).toContain('+++ 写入后 +++');
     expect(document.getElementById('writeConfirmDiff')!.textContent).toContain('new');
+    // S3 断言升级：原只断言 hidden（真机 hidden=false 却不可见 ⇒ 假绿）。此处补结构断言——
+    // 卡片必须不在滚动容器 #messages 内，否则「渲染成功」与「用户看得见」不等价。
+    expect(
+      (document.getElementById('messages') as HTMLElement).contains(
+        document.getElementById('writeConfirmCard') as HTMLElement,
+      ),
+    ).toBe(false);
   });
 
   it('非写入场景（命令确认，内核下发 hasDiff=false）不得渲染假 diff 表', () => {
@@ -7811,6 +7820,39 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       requestId: 'wc_second',
       approved: true,
     });
+  });
+
+  it('审批卡锚点守卫：卡须与 #messages 同级并位其之后，严禁挪回滚动容器内', () => {
+    // 真机背景（2026-10-05 实锤）：卡原是 #messages 的**第 2 个子节点**（紧跟 #emptyState），
+    // 而 chatView 全部 12 处消息追加都是 messages.appendChild() ⇒ 卡恒停在消息流最顶端；
+    // #messages 是 overflow-y:auto 滚动容器（chatStyles.ts:34），流式全程吸底
+    // （helpers/scrollToBottom.ts）把视口钉在底部 ⇒ 卡恒在视口之上不可见 ⇒ 表现为
+    // 「确认 UI 根本没弹」，30s 后 fail-closed 自动拒绝（命令确认首跑即翻车）。
+    mountChatView();
+    const card = document.getElementById('writeConfirmCard') as HTMLElement;
+    const messages = document.getElementById('messages') as HTMLElement;
+    const inputBar = document.getElementById('inputBar') as HTMLElement;
+    // 🔴 严禁挪回 #messages 内部
+    expect(messages.contains(card)).toBe(false);
+    // 必须与 #messages 同级（同父）且排在其后 —— 不参与消息流滚动，恒定可见
+    expect(card.parentElement).toBe(messages.parentElement);
+    expect(messages.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 位于输入区紧上方（对齐 Cline / Roo「输入区上方动作区」形态）
+    expect(card.compareDocumentPosition(inputBar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('审批卡位置源码守卫：生产 buildHtml 模板中卡为骨架层（缩进 2 空格，非 #messages 内 4 空格）', () => {
+    // S9 防线：测试夹具 chatViewTestEnv.ts 的 HTML 是生产 buildHtml 的**手工镜像**，
+    // 仅靠 DOM 层守卫会在夹具漂移时失效。此处直接锁生产模板（沿用 iconLanguage /
+    // tokensClosure 的 readFileSync 范式），夹具漂了生产也跑不掉。
+    const src = readFileSync(join(__dirname, '..', 'panels', 'chatPanel.ts'), 'utf8');
+    // 缩进 2 空格 = 面板骨架层（与 #messages / #inputBar 同级）；4 空格 = 嵌在 #messages 内
+    expect(/^ {2}<div id="writeConfirmCard"/m.test(src)).toBe(true);
+    expect(/^ {4,}<div id="writeConfirmCard"/m.test(src)).toBe(false);
+    // 且必须排在 #inputBar 之前（输入区紧上方）
+    expect(src.indexOf('<div id="writeConfirmCard"')).toBeLessThan(
+      src.indexOf('<div id="inputBar">'),
+    );
   });
 });
 

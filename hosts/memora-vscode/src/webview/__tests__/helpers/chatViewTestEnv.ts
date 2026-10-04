@@ -54,23 +54,6 @@ const HTML = `
       <div id="emptyHint" class="empty-hint"></div>
       <div id="emptySuggestions" class="empty-suggestions"></div>
     </div>
-    <div id="writeConfirmCard" class="write-confirm-card" hidden>
-      <div class="write-confirm-card__body">
-        <div class="write-confirm-card__head">
-          <span class="write-confirm-card__tool" id="writeConfirmTool"></span>
-          <span class="write-confirm-card__path" id="writeConfirmPath"></span>
-        </div>
-        <div class="write-confirm-card__desc" id="writeConfirmDesc"></div>
-        <details class="write-confirm-card__diff">
-          <summary>查看内容</summary>
-          <pre id="writeConfirmDiff"></pre>
-        </details>
-        <div class="write-confirm-card__actions">
-          <button id="writeConfirmReject" class="write-confirm-card__btn--reject">拒绝</button>
-          <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认</button>
-        </div>
-      </div>
-    </div>
   </div>
   <div id="clarifyBar">
     <div id="clarifyText"></div>
@@ -78,6 +61,25 @@ const HTML = `
     <div id="clarifyRow">
       <input id="clarifyInput" />
       <button id="clarifySend">提交</button>
+    </div>
+  </div>
+  <!-- 镜像生产 DOM：审批卡归位在输入区紧上方、与 #messages 同级（2026-10-05 修复「卡挂
+       滚动容器内不可见」）。本夹具是生产 buildHtml 的手工镜像，结构守卫另由源码级用例锁定。 -->
+  <div id="writeConfirmCard" class="write-confirm-card" hidden>
+    <div class="write-confirm-card__body">
+      <div class="write-confirm-card__head">
+        <span class="write-confirm-card__tool" id="writeConfirmTool"></span>
+        <span class="write-confirm-card__path" id="writeConfirmPath"></span>
+      </div>
+      <div class="write-confirm-card__desc" id="writeConfirmDesc"></div>
+      <details class="write-confirm-card__diff">
+        <summary>查看内容</summary>
+        <pre id="writeConfirmDiff"></pre>
+      </details>
+      <div class="write-confirm-card__actions">
+        <button id="writeConfirmReject" class="write-confirm-card__btn--reject">拒绝</button>
+        <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认</button>
+      </div>
     </div>
   </div>
   <div id="inputBar">

@@ -3778,26 +3778,10 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <div id="emptyHint" class="empty-hint">在下方输入你的想法，或点击示例提问快速开始</div>
       <div id="emptySuggestions" class="empty-suggestions"></div>
     </div>
-    <!-- 写入审批卡：confirmWrites=true 时写文件触发，
-         host 推送 write_confirm_request，webview 渲染此卡；用户确认/拒绝回传
-         write_confirm_answer。默认隐藏，由脚本按需显示（fail-closed：超时即拒） -->
-    <div id="writeConfirmCard" class="write-confirm-card" hidden>
-      <div class="write-confirm-card__body">
-        <div class="write-confirm-card__head">
-          <span class="write-confirm-card__tool" id="writeConfirmTool"></span>
-          <span class="write-confirm-card__path" id="writeConfirmPath"></span>
-        </div>
-        <div class="write-confirm-card__desc" id="writeConfirmDesc"></div>
-        <details class="write-confirm-card__diff">
-          <summary>查看内容</summary>
-          <pre id="writeConfirmDiff"></pre>
-        </details>
-        <div class="write-confirm-card__actions">
-          <button id="writeConfirmReject" class="write-confirm-card__btn--reject">拒绝</button>
-          <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认</button>
-        </div>
-      </div>
-    </div>
+    <!-- 写入审批卡已于 2026-10-05 移出本容器（见下方 #writeConfirmCard 处说明）。
+         ⚠️ 红线：#messages 是 overflow-y:auto 滚动容器（chatStyles.ts:34），任何「需要用户
+         即时看见/操作」的交互 UI 都**不得**挂在其内部——插进去会被 12 处 appendChild 顶到
+         消息流最顶端，一滚即不可见（chatView.test.ts 审批卡锚点守卫用例锁定本约束）。 -->
   </div>
 
   <!-- 活动状态区（错误/低扰通知单条主状态 + 指标折叠详情）：
@@ -3815,6 +3799,32 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <div id="clarifyRow">
       <input id="clarifyInput" type="text" placeholder="回答 Agent 的问题，回车提交……" aria-label="回答 Agent 的问题" />
       <button id="clarifySend">提交回答</button>
+    </div>
+  </div>
+  <!-- 审批卡（A 类决策面板）：confirmWrites=true / classifyCommand 裁决需确认 / 脚本确认时触发，
+       host 推送 write_confirm_request，webview 渲染此卡；用户确认/拒绝回传 write_confirm_answer。
+       默认隐藏，由脚本按需显示（fail-closed：超时即拒）。
+       ⚠️ 位置红线（2026-10-05 实锤修复）：本卡原挂 #messages **内部**，是 #messages 的第 2 个
+       子节点（紧跟 #emptyState）；#messages 是 overflow-y:auto 滚动容器且流式全程吸底
+       （helpers/scrollToBottom.ts），视口钉在底部 ⇒ 卡永远停在消息流最顶端、视口之上，
+       表现为「确认 UI 根本没弹」，30s 后 fail-closed 自动拒绝（命令确认首跑即翻车）。
+       现归位到输入区紧上方（对齐 Cline / Roo 的「输入区上方动作区」形态）——与 #messages
+       同级、不在其内，恒定可见。守卫：chatView.test.ts「审批卡锚点守卫」。 -->
+  <div id="writeConfirmCard" class="write-confirm-card" hidden>
+    <div class="write-confirm-card__body">
+      <div class="write-confirm-card__head">
+        <span class="write-confirm-card__tool" id="writeConfirmTool"></span>
+        <span class="write-confirm-card__path" id="writeConfirmPath"></span>
+      </div>
+      <div class="write-confirm-card__desc" id="writeConfirmDesc"></div>
+      <details class="write-confirm-card__diff">
+        <summary>查看内容</summary>
+        <pre id="writeConfirmDiff"></pre>
+      </details>
+      <div class="write-confirm-card__actions">
+        <button id="writeConfirmReject" class="write-confirm-card__btn--reject">拒绝</button>
+        <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认</button>
+      </div>
     </div>
   </div>
   <div id="inputBar">
