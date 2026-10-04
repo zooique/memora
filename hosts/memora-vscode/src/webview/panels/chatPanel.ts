@@ -231,9 +231,25 @@ export function foldThoughtEvents(events: ProcessEvent[]): ProcessEvent[] {
 const ASK_TIMEOUT_MS = 120_000;
 
 /**
- * ask 超时交互记录正文（镜像内核 orchestrator.ts ASK_TIMEOUT_NOTICE，防运行时/重放
- * 文案分叉——post 给 webview 即时渲染与内核落盘 content 必须同值；改此须同步内核。
+ * confirm 确认等待超时（ms）：无响应 → **自动拒绝**（fail-closed）。0/负值 = 禁用超时。
+ *
+ * ⚠️ 与 ASK_TIMEOUT_MS 的语义**刻意不同，勿统一**（2026-10-05 定案，登记为有意的风险分级）：
+ *   - ask 超时（120s）→ 自动**继续**：不回答 = 什么都不执行，agent 空转往前走，无副作用；
+ *   - confirm 超时 → 自动**拒绝**：不批准 = 不执行。执行有副作用（命令/脚本/写入），
+ *     默认必须是「不做」。改成自动确认 = fail-open 安全模型反转，已驳回（见方案文档 §二）。
+ *
+ * 时长取值依据：fail-closed 下超时长度不带来安全风险（风险来自「超时后做什么」而非
+ * 「等多久」），30 分钟覆盖「用户离开一会儿」的场景；代价仅是 loop 挂起更久（不烧 token）。
  */
+const CONFIRM_TIMEOUT_MS = 30 * 60 * 1000;
+
+/**
+ * confirm 超时交互记录正文（镜像语义：与 timeout 分支的 resolve(false) 同因，供用户可知）
+ */
+const CONFIRM_TIMEOUT_NOTICE = '用户未在时限内确认，已自动拒绝';
+
+/** ask 超时交互记录正文（镜像内核 orchestrator.ts ASK_TIMEOUT_NOTICE，防运行时/重放
+ * 文案分叉——post 给 webview 即时渲染与内核落盘 content 必须同值；改此须同步内核。 */
 const ASK_TIMEOUT_NOTICE = '用户未在时限内回答，已自动继续';
 
 /** 文档上下文注入上限（字符，约 3~4k token，防大文档爆上下文） */
@@ -909,6 +925,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           clearTimeout(pending.timer);
           this._pendingWriteConfirmations.delete(msg.requestId);
           pending.resolve(msg.approved);
+          // 回执终结通知：与超时分支同源（卡片关闭的唯一真源在宿主「请求已终结」这一事实，
+          // webview 侧不再自行假设「点了就算关」）
+          this.post({ type: 'write_confirm_closed', requestId: msg.requestId });
         }
       } else if (msg.type === 'confirm_all_file_changes') {
         // 对话区常驻条「全部确认」：复用已注册命令（纯内存清理，零风险，无需二次确认）
@@ -1421,8 +1440,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 触发条件随内核判据：写入 = `guest || confirmWrites`；命令 = `classifyCommand` 三档；
    * 代码与脚本 = `guest || confirmScripts`。
    * 默认 fail-closed：内核未走到确认分支时直接 auto-approve，不会调用本回调。
-   * 交互走 webview 审批卡（write_confirm_request / write_confirm_answer）；
-   * webview 不可达或超时自动拒绝（fail-closed）。
+   * 交互走 webview 审批卡（write_confirm_request / write_confirm_answer）。
+   *
+   * ⚠️ 超时语义（2026-10-05 对齐实现，勿再信旧措辞）：**只有超时兜底，没有「不可达即拒」**。
+   * 原注释写过「webview 不可达或超时自动拒绝」——「不可达」分支从未实现，且**刻意不补**：
+   * VS Code 切走/隐藏面板也会触发 onDidDispose，若在 dispose 时逐个 resolve(false)，
+   * 用户切走看个东西回来就被拒（误伤）。正确兜底链 = ①超时（CONFIRM_TIMEOUT_MS，fail-closed）
+   * ②webview ready 时补推 pending 队列快照（P2，保证切回来卡还在）。本方法**不在** dispose 清理。
    */
   private bindWriteConfirmation(): void {
     const agent = this._agent;
@@ -1437,20 +1461,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 唯一写入工具是 write_file），还可能同工具异名双写（「写文件」vs「写入文件」）；
       // 复用入口后内核工具更名/新增无需第二处同步。
       const toolLabel = getToolDisplayName(info.tool);
-      // 超时保护：30 秒无响应自动拒绝（fail-closed）
-      const timeoutMs = 30000;
       return new Promise<boolean>((resolve) => {
-        // 设置超时 timer
+        // 设置超时 timer（CONFIRM_TIMEOUT_MS，fail-closed：超时 = 拒绝）
         const timer = setTimeout(() => {
           this._pendingWriteConfirmations.delete(requestId);
           resolve(false); // 超时视为拒绝
+          // 关闭卡片：不推这条 webview 不知道请求已终结，卡会残留成「点了也没反应」的僵尸交互
+          this.post({ type: 'write_confirm_closed', requestId });
           this.post({
             type: 'notice',
             level: 'error',
             // 动作词中性化：同一张卡也承载命令/代码/脚本执行确认，写「写入」即失实
-            message: `确认超时（${toolLabel}），已自动拒绝`,
+            message: `${CONFIRM_TIMEOUT_NOTICE}（${toolLabel}）`,
           });
-        }, timeoutMs);
+        }, CONFIRM_TIMEOUT_MS);
 
         // 存储 pending 回调
         this._pendingWriteConfirmations.set(requestId, { resolve, timer });
@@ -1467,6 +1491,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           afterContent: info.afterContent,
           // diff 域判据透传内核单点判定结果（hasDiff），webview 据此决定是否渲染对比区
           hasDiff: info.hasDiff,
+          // 超时时长透传（A5 SSOT）：真源是本文件的 CONFIRM_TIMEOUT_MS，webview 只投影、
+          // 不自算，末段倒计时因此不可能与宿主计时漂移。
+          timeoutMs: CONFIRM_TIMEOUT_MS,
         });
       });
     };

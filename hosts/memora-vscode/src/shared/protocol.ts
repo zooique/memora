@@ -1023,7 +1023,20 @@ export type ExtensionToWebviewMessage =
        * 即使载荷意外带了内容字段也不渲染 diff 域）。
        */
       hasDiff: boolean;
+      /**
+       * 本请求的超时时长（ms）——真源在宿主 `CONFIRM_TIMEOUT_MS`，**透传供 webview 投影倒计时**。
+       * webview 侧不得自算超时（自算即真源双写，末段倒计时会与宿主计时漂移）。
+       */
+      timeoutMs: number;
     }
+  /**
+   * 写入审批终结通知（E→W：请求已终结，webview 必须收起卡片）
+   *
+   * 终结两种来源：①用户点了确认/拒绝（宿主收到 answer）②超时自动拒绝。
+   * 不推这条的话，超时场景 webview 不知道请求已死：卡片残留、按钮点了无反应
+   * —— 属「终态仍可交互」的僵尸交互，项目纪律不留（对照后台任务行终态去掉「终止」按钮）。
+   */
+  | { type: 'write_confirm_closed'; requestId: string }
   /**
    * 安全设置状态推送（设置面板加载时推送当前开关状态）
    *

@@ -2458,7 +2458,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // background 取最低（0）：activity 承载「正在思考/执行」主状态，不可被后台条顶掉；
   // 而轮次收尾后 activity 归位、后台任务仍在跑 ⇒ 它自动成为唯一活跃条升主位，
   // 「终止」按钮恰在最需要它的时刻直接可见（方案 §2.3）。
-  const DOCK_PRIORITY = { fileChanges: 3, pendingQueue: 2, activity: 1, background: 0 } as const;
+  // ─── 提示 UI 两分收敛（A 类阻断 / B 类信息，方案-提示UI两分收敛-20261005.md §四/§五）───
+  // 🔴 SSOT：A、B 两类**共用一个裁决器** resolveDock()——不另造 promptSlot 裁决器
+  // （两个裁决器会争同一个插入锚点、顺序不定，即双源）。A 类作为最高优先级 entry 注册进来，
+  // 复用既有 fixed/主位/收纳机制。
+  // 数值含义：confirm(10) 恒主位，优先于 error 豁免——确认卡被收纳 = 不可见 = 超时自动拒绝，
+  // 而 error 被收纳仍可从图标条点开，代价不对称（方案 §九 A2）。
+  const DOCK_PRIORITY = {
+    confirm: 10,
+    fileChanges: 3,
+    pendingQueue: 2,
+    activity: 1,
+    background: 0,
+  } as const;
+  /** A 类阻断面板的优先级（恒主位判据；勿与 B 类数值混用） */
+  const CONFIRM_PRIORITY = DOCK_PRIORITY.confirm;
   type DockId = keyof typeof DOCK_PRIORITY;
   type DockEntry = {
     el: HTMLElement;
@@ -2493,6 +2507,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // activityBar 接入收纳器（静态 HTML 节点，此处注册；fileChanges/pendingQueue 懒创建时注册）
   // ——注册必须在 dockEntries（const Map）初始化之后，放声明区会踩 TDZ
   registerDockEntry('activity', activityBar);
+  // A 类阻断面板（审批卡）接入同一收纳器：显隐与归位自此**只由 resolveDock 裁决**，
+  // renderWriteConfirmCard / 按钮回调一律改走 setDockActive，禁直写 hidden（散写即回到堆叠）。
+  if (writeConfirmCard) registerDockEntry('confirm', writeConfirmCard);
 
   /** 显隐与归位裁决（SSOT 单点）：主位条在浮层 panel 之前、inputBar 之前；被收纳条单实例
    *  移入 panel（节点移动保留事件监听）；非活跃条 hidden 归位 anchor 前。每次全量重排。 */
@@ -2516,9 +2533,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       _dockExpanded = false;
       return;
     }
-    // 主位裁决：fixed（error 豁免）优先，否则 priority 最大（同分先注册者优先）
+    // 主位裁决：A 类阻断面板（confirm）恒主位，优先于 error 豁免——确认卡一旦被收纳就不可见，
+    // 30 分钟超时后 fail-closed 自动拒绝（命令确认首跑即翻车的同款病灶）；而 error 被收纳
+    // 仍可从图标条点开，两者代价不对称。其次 fixed（error 豁免），再次 priority 最大。
     const head =
-      actives.find((e) => e.fixed) ?? actives.reduce((a, b) => (b.priority > a.priority ? b : a));
+      actives.find((e) => e.priority === CONFIRM_PRIORITY) ??
+      actives.find((e) => e.fixed) ??
+      actives.reduce((a, b) => (b.priority > a.priority ? b : a));
     const rest = actives.filter((e) => e !== head);
     // 主位条归位
     head.el.hidden = false;
@@ -5260,6 +5281,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 用户点击后回传 write_confirm_answer。多请求同一时刻只展示最新（前一张被新请求覆盖，
       // 与 host 侧「每个 requestId 独立超时 fail-closed」语义兼容——旧请求由超时自动拒绝）。
       renderWriteConfirmCard(msg);
+    } else if (msg.type === 'write_confirm_closed') {
+      // 请求已终结（用户裁决 / 超时自动拒绝）→ 收卡。requestId 不匹配即丢弃：
+      // 当前卡可能已切到更新的请求（多请求场景），旧终结通知不得关掉新卡。
+      if (pendingWriteConfirmRequestId === msg.requestId) closeWriteConfirmCard();
     }
   }
 
@@ -5306,7 +5331,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       writeConfirmDiff.textContent = `--- 目标 ---\n${msg.targetPath}\n\n${msg.description ?? ''}`;
     }
     pendingWriteConfirmRequestId = msg.requestId;
-    writeConfirmCard.hidden = false;
+    // 显隐交裁决器（SSOT）：不再直写 hidden——直写会绕过 resolveDock 的主位/收纳裁决，
+    // 与 B 类条同屏时顺序不定（方案 §九 A1）。
+    setDockActive('confirm', true);
+  }
+
+  /**
+   * 关闭审批卡（唯一收口点）
+   *
+   * 三种终结来源共用：用户点确认 / 点拒绝 / 宿主推 write_confirm_closed（请求已终结，
+   * 含超时自动拒绝）。不收口会出现「请求已死、卡片还挂着、按钮点了没反应」的僵尸交互。
+   */
+  function closeWriteConfirmCard(): void {
+    pendingWriteConfirmRequestId = null;
+    setDockActive('confirm', false);
   }
 
   /** H0 审批卡按钮事件（确认/拒绝 → 回传 write_confirm_answer + 隐藏卡片） */
@@ -5319,8 +5357,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           approved: true,
         });
       }
-      writeConfirmCard.hidden = true;
-      pendingWriteConfirmRequestId = null;
+      closeWriteConfirmCard();
     });
     writeConfirmReject.addEventListener('click', () => {
       if (pendingWriteConfirmRequestId !== null) {
@@ -5330,8 +5367,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           approved: false,
         });
       }
-      writeConfirmCard.hidden = true;
-      pendingWriteConfirmRequestId = null;
+      closeWriteConfirmCard();
     });
   }
 

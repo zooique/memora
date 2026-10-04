@@ -7841,6 +7841,80 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(card.compareDocumentPosition(inputBar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('审批卡终结通知：write_confirm_closed 收卡，收卡后按钮不再回传（僵尸交互不留）', () => {
+    // 缺口背景：宿主超时自动拒绝时，webview 不知道请求已死 ⇒ 卡残留、按钮点了没反应
+    // （对照后台任务行「终态无终止按钮」的既有纪律）。终结通知补上这一唯一真源。
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_close',
+      targetPath: '/workspace/a.ts',
+      tool: 'write_file',
+      description: '',
+      permission: '',
+      beforeContent: null,
+      afterContent: 'a',
+      hasDiff: true,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    const card = document.getElementById('writeConfirmCard') as HTMLElement;
+    expect(card.hasAttribute('hidden')).toBe(false);
+    // 宿主侧终结（用户裁决 / 超时自动拒绝同源）
+    dispatch({ type: 'write_confirm_closed', requestId: 'wc_close' });
+    expect(card.hasAttribute('hidden')).toBe(true);
+    // 收卡后点确认不得再回传（requestId 已清空）
+    (document.getElementById('writeConfirmOk') as HTMLButtonElement).click();
+    const answers = postMessage.mock.calls.filter(
+      (args) => (args[0] as { type?: string }).type === 'write_confirm_answer',
+    );
+    expect(answers.length).toBe(0);
+  });
+
+  it('审批卡终结通知：requestId 不匹配不关当前卡（旧终结通知不得关掉新卡）', () => {
+    mountChatView();
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_new',
+      targetPath: '/workspace/b.ts',
+      tool: 'run_command',
+      description: 'ls',
+      permission: 'owner',
+      beforeContent: null,
+      hasDiff: false,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    dispatch({ type: 'write_confirm_closed', requestId: 'wc_stale' });
+    const card = document.getElementById('writeConfirmCard') as HTMLElement;
+    expect(card.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('A 类恒主位：确认卡与 error 通知同活时确认卡仍占主位（被收纳 = 不可见 = 超时拒绝）', () => {
+    // 方案 §九 A2：确认卡一旦被 StatusDock 收进浮层就不可见，30 分钟后 fail-closed 自动拒绝
+    // —— 正是「命令确认不弹 UI」的同款病灶。error 被收纳仍可从图标条点开，代价不对称。
+    mountChatView();
+    // error 走 fixed 豁免（activity 恒主位的既有语义）
+    dispatch({ type: 'notice', level: 'error', message: '出错了' });
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_head',
+      targetPath: '/workspace/c.ts',
+      tool: 'write_file',
+      description: '',
+      permission: '',
+      beforeContent: null,
+      afterContent: 'c',
+      hasDiff: true,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    const card = document.getElementById('writeConfirmCard') as HTMLElement;
+    const activity = document.getElementById('activityBar') as HTMLElement;
+    // 确认卡在主位（可见、不在收纳浮层内）
+    expect(card.hasAttribute('hidden')).toBe(false);
+    expect(card.closest('.status-dock__panel')).toBeNull();
+    // error 条让位被收纳（A 类恒主位优先于 error 豁免）
+    expect(activity.closest('.status-dock__panel')).not.toBeNull();
+  });
+
   it('审批卡位置源码守卫：生产 buildHtml 模板中卡为骨架层（缩进 2 空格，非 #messages 内 4 空格）', () => {
     // S9 防线：测试夹具 chatViewTestEnv.ts 的 HTML 是生产 buildHtml 的**手工镜像**，
     // 仅靠 DOM 层守卫会在夹具漂移时失效。此处直接锁生产模板（沿用 iconLanguage /
