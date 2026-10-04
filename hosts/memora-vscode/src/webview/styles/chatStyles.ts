@@ -91,7 +91,8 @@ export const chatStyles = `
   }
   .status-dock__panel[hidden] { display: none; }
   .status-dock__panel .file-changes-bar,
-  .status-dock__panel .pending-queue-bar { margin: 0; }
+  .status-dock__panel .pending-queue-bar,
+  .status-dock__panel .background-tasks-bar { margin: 0; }
 
   /* ============ Components：会话标题条（ADR-024 会话标题层） ============ */
   /* 顶部一条：主动可见展示当前会话标题，让用户始终识别「我在哪个会话」；
@@ -920,6 +921,88 @@ export const chatStyles = `
     color: var(--status-fail, #b3261e);
   }
   .pending-queue-bar[hidden] { display: none; }
+
+  /* ============ 后台任务条（CMD-1 阶段 2）：与 pending-queue-bar 同构（左侧色条 + 透明底）；
+   * 列表每行 = 命令原文 + 状态标签 + 终止按钮（终态行无按钮）。 ============ */
+  .background-tasks-bar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1, 2px);
+    margin: 0 var(--sp-4, 8px) var(--sp-2, 4px);
+    padding: var(--sp-2, 4px) var(--sp-3, 8px) var(--sp-2, 4px);
+    /* 色条复用 --accent（与 pending-queue-bar 同族）：不新造 token ——
+       status-running 在 tokens.ts 无定义，写了就恒走 fallback、不跟随主题。
+       两条的区分靠标题文案（「后台任务」/「待发送」）与行内容，不靠颜色编码。 */
+    border-left: 3px solid var(--accent, #0e639c);
+    background: transparent;
+    border-radius: var(--radius-sm, 3px);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text-muted, #9a9a9a);
+  }
+  .background-tasks-bar__head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 4px);
+  }
+  .background-tasks-bar__badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--surface-active, rgba(128,128,128,.24));
+    color: var(--text-secondary, #9aa0a6);
+    font-size: var(--font-xs, 11px);
+  }
+  .background-tasks-bar__label { color: var(--text-secondary, #cccccc); }
+  .background-tasks-bar__item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 4px);
+    padding: 2px;
+    border-radius: var(--radius-sm, 3px);
+    transition: background 0.12s;
+  }
+  .background-tasks-bar__item:hover { background: var(--surface-hover, rgba(128,128,128,.10)); }
+  /* 命令原文占满剩余宽度（过长由 JS 截断 + title 悬停看全文，此处只防溢出撑破布局） */
+  .background-tasks-bar__text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    /* 等宽字体：随既有 code 块写法用字面量——tokens.ts 无字体令牌，
+       包一层 var() 会被 tokensClosure 守卫判为幽灵令牌（注释里连令牌名都不能写） */
+    font-family: ui-monospace, Consolas, monospace;
+    color: var(--text-secondary, #cccccc);
+  }
+  .background-tasks-bar__status {
+    flex-shrink: 0;
+    color: var(--text-muted, #888);
+    font-size: var(--font-xs, 11px);
+  }
+  .background-tasks-bar__kill {
+    flex-shrink: 0;
+    padding: 0 var(--sp-2, 6px);
+    height: 18px;
+    border: 1px solid var(--border-subtle, rgba(128,128,128,.35));
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-secondary, #9aa0a6);
+    font-size: var(--font-xs, 11px);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+  }
+  .background-tasks-bar__kill:hover {
+    background: var(--feedback-error-bg, rgba(180, 40, 30, .14));
+    color: var(--status-fail, #b3261e);
+  }
+  .background-tasks-bar[hidden] { display: none; }
+
   /* 预算可视化：发送按钮旁的上下文占用圆环充能图标（常驻不占行；hover/聚焦**向上**弹窗出分层明细文字，
    * 避免向下展开挤压面板底部出现外部滚动条） */
   .context-ring {

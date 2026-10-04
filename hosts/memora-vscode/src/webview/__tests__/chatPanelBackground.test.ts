@@ -2,16 +2,16 @@
  * 后台任务宿主出口验收测试（CMD-1 阶段 2 · 内核侧刀 1 的宿主消费面）
  *
  * 覆盖 `chatPanel.postBackgroundTasks` / `killBackgroundTask` 两个新增私有方法的行为：
- *   ① 快照只下发 4 个投影键（**不含 `result`**——命令输出体量大，UI 不呈现）；
+ *   ① 快照只下发 3 个投影键 + statusLabel（**不含 `result`**——命令输出体量大，UI 不呈现）；
  *   ② agent 未装配时**不推**（不静默推空：否则 UI 会把「未就绪」读成「没有后台任务」）；
- *   ③ kill 后**强制回推一次**快照（浮层立刻转终态，不等下一个推送时机）。
+ *   ③ kill 后**回推一次**快照（浮层立刻转终态，不等下一个推送时机）；
+ *   ④ 签名去重：快照未变不推，kill 导致的「条数不变而状态变」必须推得出去。
  *
  * 替身策略：agent 桩 + cast 注入私有状态，与 chatPanelInput.test 既有模式一致。
  *
  * ⚠️ 未覆盖面（如实登记）：`onDidReceiveMessage` 里 `msg.type === 'background_kill'`
- * → `killBackgroundTask()` 这一跳**未驱动**（它在 `resolveWebviewView` 注册回调内，
- * 需 provider 级 harness）。该分支与同函数内既有数十个 `else if` 路由同构，
- * 风险由「路由无裁决、只转发」保证；随刀 3（UI 接线）补 harness 时一并钉死。
+ * → `killBackgroundTask()` 这一跳由下方「路由跳」用例驱动（走 `resolveWebviewView`
+ * 真实注册回调，非直接调私有方法）。
  */
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
@@ -100,7 +100,7 @@ function setupBackground() {
 }
 
 describe('后台任务宿主出口（chatPanel · 方案 §2.1/§2.2）', () => {
-  it('快照只下发 4 个投影键（不含 result——输出归模型消费，UI 不呈现）', () => {
+  it('快照只下发 3 个投影键 + statusLabel（不含 result——输出归模型消费，UI 不呈现）', () => {
     const h = setupBackground();
     h.cast._agent = backgroundAgentStub().agent;
 
@@ -113,8 +113,8 @@ describe('后台任务宿主出口（chatPanel · 方案 §2.1/§2.2）', () => 
     // 多一个 result 字段 = 把 KB~MB 级命令输出搬进 UI 通道
     expect(Object.keys(msg.items[0] as object).sort()).toEqual([
       'command',
-      'startedAt',
       'status',
+      'statusLabel',
       'taskId',
     ]);
   });
@@ -142,5 +142,67 @@ describe('后台任务宿主出口（chatPanel · 方案 §2.1/§2.2）', () => 
     const last = h.posted[h.posted.length - 1] as { type: string; items: { status: string }[] };
     expect(last.type).toBe('background_tasks');
     expect(last.items[0]?.status).toBe('killed');
+  });
+
+  it('签名去重：快照未变不重复推（step_boundary 是周期到达点，无任务时零噪音）', () => {
+    const h = setupBackground();
+    h.cast._agent = backgroundAgentStub().agent;
+
+    h.cast.postBackgroundTasks();
+    h.cast.postBackgroundTasks(); // 同一快照：不推
+    expect(h.posted).toHaveLength(1);
+  });
+
+  it('签名去重不得吞掉 kill：条数不变而状态变，仍须推出去', () => {
+    const h = setupBackground();
+    h.cast._agent = backgroundAgentStub().agent;
+
+    h.cast.postBackgroundTasks(); // running（第 1 推）
+    h.cast.killBackgroundTask('bg-1'); // running → killed，条数恒为 1
+
+    const bgMsgs = h.posted.filter((m) => (m as { type: string }).type === 'background_tasks');
+    // 长度守卫会把这次判成 no-op（1→1）⇒ 用签名而非长度，本用例即该判据的变异守卫
+    expect(bgMsgs).toHaveLength(2);
+    const last = bgMsgs[1] as { items: { status: string }[] };
+    expect(last.items[0]?.status).toBe('killed');
+  });
+
+  it('路由跳：webview 的 background_kill 消息真能走到 killBackgroundTask（经 resolveWebviewView 注册的回调）', () => {
+    // 走**真实注册路径**：resolveWebviewView 内 onDidReceiveMessage 捕获回调后驱动，
+    // 避免「直接调私有方法」把中间那一跳（消息类型判据）测没了。
+    const h = setupBackground();
+    const stub = backgroundAgentStub();
+    h.cast._agent = stub.agent;
+    // 与本用例无关的三件事桩掉：HTML 渲染 / 编辑器追踪 / Agent 装配（后者是 async 且要真配置）
+    const p = h.provider as unknown as {
+      render(): void;
+      ensureEditorTracking(): void;
+      ensureAgent(): Promise<void>;
+    };
+    p.render = () => {};
+    p.ensureEditorTracking = () => {};
+    p.ensureAgent = async () => {};
+
+    let handler: ((msg: unknown) => void) | undefined;
+    const view = {
+      webview: {
+        asWebviewUri: () => ({ toString: () => 'mock://script' }),
+        options: {},
+        html: '',
+        postMessage: () => Promise.resolve(true),
+        // 真实 API 形状：onDidReceiveMessage 挂在 webview 上（不是 view 上）
+        onDidReceiveMessage: (cb: (msg: unknown) => void) => {
+          handler = cb;
+          return { dispose: () => {} };
+        },
+      },
+      onDidDispose: () => ({ dispose: () => {} }),
+    } as never;
+    h.provider.resolveWebviewView(view, {} as never, {} as never);
+    expect(handler).toBeTruthy();
+
+    handler!({ type: 'background_kill', taskId: 'bg-1' });
+
+    expect(stub.killBackgroundTask).toHaveBeenCalledWith('bg-1');
   });
 });

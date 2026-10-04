@@ -48,6 +48,7 @@ import {
   IGNORED_DIR_NAMES,
   COMPRESS_TARGET_LABELS,
   type CompressTarget,
+  BACKGROUND_TASK_STATUS_LABELS,
 } from '@zooique/memora';
 
 /** 插话条数上限提示文案用值：直接消费内核真源（webview 侧无法 import 内核包，
@@ -361,6 +362,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *  队列消费后无「空通知」→ 待发送区弹窗残留。统一经 syncPendingQueue 长度变化检测，
    *  让「队列变空」这个真理源变化总能被推送到 webview（消费后必有后续 chunk 触发同步）。 */
   private _lastPendingQueueLen = 0;
+  /**
+   * 上次推送给 webview 的后台任务快照**内容签名**（`taskId:status` 拼接串）
+   *
+   * 纯推送去重守卫，**不是后台任务的真相源**（真相源恒为内核注册表，宿主零副本）。
+   * 与 `_lastPendingQueueLen` 同族但判据更强：签名能捕获「条数不变而状态变」（kill 后
+   * `running → killed`），长度判据会漏。详见 `postBackgroundTasks` 注释。
+   */
+  private _backgroundSignature = '';
   /**
    * 当前 turn 状态（单一路由判据的 SSOT）
    *
@@ -3239,6 +3248,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 瞬态透传：webview 据落盘点注销未升级的「（准备中）」预告行（本步工具宿命已定，
           // 截断批/重试孤儿的 tool_start 永不到达）——生命周期契约见 dropStalePendingToolRows
           this.post({ type: 'step_boundary' });
+          // 后台任务「刚启动」的唯一推送点（方案 §2.4）：step 含一次 LLM 迭代 + 其工具执行，
+          // 后台命令必在某 step 内启动 ⇒ 边界到达时快照已含它（内建签名去重，无任务时零推送）
+          this.postBackgroundTasks();
         } else if (chunk.type === 'error') {
           // 流内错误 → 复用现有 error 协议消息（webview 已有分支）。
           // 按内核产出的 category 映射友好文案（connection/timeout/unknown），
@@ -3458,15 +3470,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * agent 未就绪时不推（`_agent` 为空 = 未装配，与 `postPlanUpdate` 同守卫形态）——
    * 不静默推空快照，否则「未就绪」会被 UI 读成「没有后台任务」。
+   *
+   * **内容签名去重**（见方案 §2.4）：`taskId:status` 拼接串未变则不推。
+   * 推送点有两个（`step_boundary` / `background_report`）+ kill 后回推，其中 step 边界
+   * 是周期性到达的 ⇒ 无任务时逐 step 推空快照纯属 IPC 噪音。
+   * 用**签名**而非「条数」判变化：`kill` 后 `running → killed` 条数恒为 1 而内容已变，
+   * 长度守卫会把这次关键刷新判成 no-op（同 `syncPendingQueue` 长度守卫的反向教训）。
    */
   private postBackgroundTasks(): void {
     if (!this._agent) return;
     const items = this._agent.listBackgroundTasks().map((t) => ({
       taskId: t.taskId,
       command: t.command,
-      startedAt: t.startedAt,
       status: t.status,
+      // 状态文案真源 = 内核词表（宿主零自建），在此转成字面量下发——
+      // webview 只做 type import，值导入内核会把整包打进 bundle
+      statusLabel: BACKGROUND_TASK_STATUS_LABELS[t.status],
     }));
+    const signature = items.map((t) => `${t.taskId}:${t.status}`).join('|');
+    if (signature === this._backgroundSignature) return;
+    this._backgroundSignature = signature;
     this.post({ type: 'background_tasks', items });
   }
 

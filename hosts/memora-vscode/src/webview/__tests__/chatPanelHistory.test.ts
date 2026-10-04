@@ -219,6 +219,11 @@ function chatAgentStub(chatFn: () => AsyncGenerator<AgentChunk, void, unknown>):
     // 输出上限**生效值**读取口（流首 meta 取证包消费）：缺省 undefined = 未传 max_tokens。
     // 替身契约单点——consumeFlow 每轮都经 buildRoundMeta，缺此方法会让整条落盘链路空转
     getEffectiveMaxTokens: () => undefined,
+    // 后台任务快照（step_boundary 推送点消费）：空 = 无后台任务。
+    // 同型第三次：替身缺方法 → postBackgroundTasks 抛错中断 consumeFlow，
+    // 表现为「两次迭代只落一次盘」。**宿主侧不得用 `?.()` 兜此类缺口**——
+    // 那是在给「替身违约」打掩护，把真实契约缺口藏进 optional 链。
+    listBackgroundTasks: () => [],
   } as unknown as Agent;
 }
 

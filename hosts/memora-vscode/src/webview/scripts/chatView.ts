@@ -14,6 +14,7 @@ import type {
   PlanItemDto,
   RoundView,
   WebviewToExtensionMessage,
+  BackgroundTaskView,
 } from '../../shared/protocol.js';
 // ProcessThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
 import type { ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
@@ -2458,7 +2459,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 🔴 SSOT：三条的 hidden 与 DOM 归位**只由 resolveDock 裁决**——各条更新函数只上报
   // setDockActive / setDockFixed，禁直写 hidden / insertBefore（散写即回到堆叠现状）。
   // error 豁免（fail-visible）：fixed 恒主位，裁决优先于 priority 排序。
-  const DOCK_PRIORITY = { fileChanges: 3, pendingQueue: 2, activity: 1 } as const;
+  // background 取最低（0）：activity 承载「正在思考/执行」主状态，不可被后台条顶掉；
+  // 而轮次收尾后 activity 归位、后台任务仍在跑 ⇒ 它自动成为唯一活跃条升主位，
+  // 「终止」按钮恰在最需要它的时刻直接可见（方案 §2.3）。
+  const DOCK_PRIORITY = { fileChanges: 3, pendingQueue: 2, activity: 1, background: 0 } as const;
   type DockId = keyof typeof DOCK_PRIORITY;
   type DockEntry = {
     el: HTMLElement;
@@ -2675,6 +2679,74 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 悬停看完整文件清单（相对路径由宿主下发，webview 只展示不解析）
     _fileChangesBar.title = files.join('\n');
     setDockActive('fileChanges', true); // 显隐裁决归 StatusDock（SSOT）
+  }
+
+  // ─── 后台任务条（CMD-1 阶段 2 · 方案-后台任务可见性与kill入口-20261004.md）───
+  let _backgroundBar: HTMLElement | null = null;
+  /**
+   * 后台命令任务条（懒创建，与 pending-queue-bar 同范式）
+   *
+   * **webview 零自维护副本**：任务列表与状态标签（`statusLabel`，extension 侧读内核
+   * `BACKGROUND_TASK_STATUS_LABELS` 填充后下发）全部来自快照，webview 只做「取数 → 渲染」。
+   * 状态文案不下发枚举再自转（那要建第二套词表 = 双源漂移）。
+   *
+   * 「终止」按钮**不自己实现终止**：只 `postMessage` 回宿主（杀进程是宿主侧能力，
+   * 且内核按 Agent 实例隔离——同 `confirm_all_file_changes` 的「拦截/执行只能落 host」定案）。
+   *
+   * 刻意不做：批量「全部终止」——破坏性批量操作，且内核只提供单任务 `kill`，超出本缺口。
+   */
+  function updateBackgroundTasksBar(items: readonly BackgroundTaskView[]): void {
+    if (items.length === 0) {
+      if (_backgroundBar) setDockActive('background', false); // 显隐裁决归 StatusDock（SSOT）
+      return;
+    }
+    if (!_backgroundBar) {
+      _backgroundBar = document.createElement('div');
+      _backgroundBar.className = 'background-tasks-bar';
+      _backgroundBar.innerHTML = `
+        <div class="background-tasks-bar__head">
+          <span class="background-tasks-bar__badge"></span>
+          <span class="background-tasks-bar__label">后台任务</span>
+        </div>
+        <div class="background-tasks-bar__list"></div>
+      `;
+      inputBar.parentNode?.insertBefore(_backgroundBar, inputBar);
+      registerDockEntry('background', _backgroundBar);
+    }
+    const badge = _backgroundBar.querySelector('.background-tasks-bar__badge');
+    if (badge) badge.textContent = String(items.length);
+    // 列表容器全量重建（条数是个位数，成本可忽略）
+    const listEl = _backgroundBar.querySelector('.background-tasks-bar__list')!;
+    listEl.innerHTML = '';
+    for (const task of items) {
+      const row = document.createElement('div');
+      row.className = 'background-tasks-bar__item';
+      // 命令原文（过长截断，title 悬停看全文）——不解析、不改写
+      const text = document.createElement('span');
+      text.className = 'background-tasks-bar__text';
+      text.textContent =
+        task.command.length > 100 ? `${task.command.slice(0, 100)}…` : task.command;
+      text.title = task.command;
+      const status = document.createElement('span');
+      status.className = 'background-tasks-bar__status';
+      status.textContent = task.statusLabel;
+      row.append(text, status);
+      // 终态行不给「终止」按钮：已结束的任务点终止 → 宿主 kill 返回 null（按「已终结」处理），
+      // 按钮留着即「点了没反应」的僵尸交互
+      if (task.status === 'running') {
+        const killBtn = document.createElement('button');
+        killBtn.className = 'background-tasks-bar__kill';
+        killBtn.type = 'button';
+        killBtn.textContent = '终止';
+        killBtn.title = '终止这条后台命令';
+        killBtn.addEventListener('click', () => {
+          vscode.postMessage({ type: 'background_kill', taskId: task.taskId });
+        });
+        row.appendChild(killBtn);
+      }
+      listEl.appendChild(row);
+    }
+    setDockActive('background', true); // 显隐裁决归 StatusDock（SSOT）
   }
 
   /**
@@ -5158,6 +5230,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 未确认文件改动快照：宿主在**改动集变化**时推 + **webview ready 时补推一次**
       // （两个时机缺一即漏面——只推变化的话，面板重开后常驻条会消失）
       updateFileChangesBar(msg.files);
+    } else if (msg.type === 'background_tasks') {
+      // 后台任务快照（宿主按事件点推、已内建内容签名去重）→ 空列表即隐藏（无任务零占用）
+      updateBackgroundTasksBar(msg.items);
     } else if (msg.type === 'notice') {
       showActivity(msg.level, msg.message);
     } else if (msg.type === 'goal_drift_detected') {

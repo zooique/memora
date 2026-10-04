@@ -20,7 +20,7 @@
 - **新增类型导出**：`BackgroundTask` / `BackgroundTaskStatus`（只读投影类型）
 - **状态词表单点**：`BACKGROUND_TASK_STATUS_LABELS`（`Record` 穷尽键 = 新增状态忘补文案即**编译期红**，同 `COMPRESS_TARGET_LABELS` 定案）。**2026-10-04 自审补**：方案文档 §2.3 曾写「复用内核 `STATUS_LABELS`」——该标识符当时是模块私有、内核零导出，属**引用不存在导出的文档失真**（与旧台账 `inlinePlanBoard` 同型）⇒ 改为公开导出，宿主 UI 直接消费、**禁自建第二套**
 - **测试**：loop 层 5 条（未装配不抛 / 运行态可见 / kill 返回终态 / 未知 id 返回 null / 不泄漏句柄）+ 变异验证 2 组有效。**变异副产品**：原 `kill` 后的二次判空是**冗余分支**（`get()` 对未知 id 同为 null，删早退行为完全等价）→ 按无僵尸分支纪律删除，不留不可测代码
-- **方案文档**：`docs/方案-后台任务可见性与kill入口-20261004.md`（实施规格真源；宿主侧协议 + UI 为后续刀次，本文只落内核出口）
+- **方案文档**：`docs/方案-后台任务可见性与kill入口-20261004.md`（实施规格真源；宿主侧协议 + UI 见下方宿主区同批条目）
 
 ### ⚠️ Breaking（内核 · 确认载荷与 chunk/事件变体 · 已定档 3.1.0）
 
@@ -85,12 +85,14 @@
 **缺口**：后台任务运行态对用户零可见、无 kill 入口（内核能力齐备但零导出，宿主取不到数——详见内核区同批条目）。
 
 - **协议 +2 通道**（105 → 107，远低于 130 治理阈值）：下行 `background_tasks`（快照）、上行 `background_kill`（taskId）
-- **投影约束**：`BackgroundTaskView = Pick<BackgroundTask, 'taskId'|'command'|'startedAt'|'status'>`——改内核字段名即编译报错，禁另立第二套字段；**刻意不含 `result`**（命令输出归模型消费，不搬进 UI 通道）
-- **接线**：`chatPanel` 增 `postBackgroundTasks()` / `killBackgroundTask()`；推送时机 = `background_report` 到达时 + kill 后强制回推（浮层立刻转终态）
-- **实施修订（相对方案文档 §2.4 原定案）**：刷新原定「条件轮询」，实施改**宿主侧事件点推送**（零定时器 ⇒ 零泄漏面，why not simpler）；方案文档已同步订正
-- **测试**：新增 `chatPanelBackground.test.ts` 3 条（快照只下发 4 键不含 result / agent 未装配不推 / kill 后回推终态）+ 变异验证（去掉回推 → 精准红）
-- ⚠️ **未覆盖面（如实登记）**：`onDidReceiveMessage` 里 `msg.type === 'background_kill'` 的**路由一跳**未驱动（在 `resolveWebviewView` 回调内，需 provider 级 harness）；与同函数内既有数十个路由分支同构，随刀 3（webview UI）补 harness 时一并钉死
-- ⚠️ **已知缺口（刀 3 处理）**：任务**刚启动**时无推送点，浮层要等首个 `background_report` 才出现
+- **投影约束**：`BackgroundTaskView = Pick<BackgroundTask, 'taskId'|'command'|'status'> & { statusLabel }`——改内核字段名即编译报错，禁另立第二套字段；**刻意不含 `result`**（命令输出归模型消费，不搬进 UI 通道）。`statusLabel` 由 extension 侧读内核 `BACKGROUND_TASK_STATUS_LABELS` 填充后下发（webview 只做 type import，值导入内核会把整包打进 bundle）
+- **刀 3 · webview UI**：StatusDock **第四条**（`DOCK_PRIORITY` += `background: 0`，优先级垫底 ⇒ 不顶掉 activity 主状态条；轮次收尾后 activity 归位、后台任务成为唯一活跃条时自动升主位，「终止」按钮恰在最需要它的时刻直接可见）。行 = 命令原文（过长截断 + `title` 全文）+ 状态标签 + 「终止」按钮（**仅 `running` 行有**，终态行无按钮——已结束再点即无反应 = 僵尸交互）。终止按钮**只 postMessage 回宿主**，杀进程不自实现（执行只能落 host）
+- **UI 形态实施修订（相对方案文档 §2.3 原定案）**：初稿定「新增『后台 N』chip」，实施读穿 `resolveDock()` 后否决——既有 `+N` chip / `status-dock__panel` 已完备，再造第二个 chip = 两套 chip、两套展开态、两套显隐裁决，纯负收益。代价如实登记：收纳时先看到无语义的 `+1`，需点开才知是后台任务（与 fileChanges / pendingQueue 同一取舍，不为其破例）
+- **推送点三个（零定时器、零轮询）**：`step_boundary`（任务刚启动的唯一气口——step 含一次 LLM 迭代 + 其工具执行，边界到达时快照已含它）/ `background_report`（终态批量变化）/ `background_kill` 处理后回推。三点共用**内容签名去重**（`taskId:status` 拼接串，变化才推）——用签名而非条数，因 kill 后 `running → killed` **条数恒为 1 而内容已变**，长度守卫会把这次关键刷新判成 no-op
+- **接线**：`chatPanel` 增 `postBackgroundTasks()` / `killBackgroundTask()`；agent 未就绪时不推（否则「未就绪」被 UI 读成「没有后台任务」）
+- **测试**：`chatPanelBackground.test.ts` 6 条（快照只下发 4 键不含 result / agent 未装配不推 / kill 后回推终态 / 签名未变不重推 / **签名降级为长度则吞掉 kill** / **经 `resolveWebviewView` 真实注册回调驱动的 `background_kill` 路由跳**）+ `chatView.test.ts` 新增 6 条（空快照零占用 / running 行三要素 / 终态行无按钮 / 终止只回宿主载荷带 taskId / 长命令截断 + title 全文 / 优先级垫底不顶 activity）
+- **变异验证 5 组**（逐组确认对应用例转红）：终态行按钮判据去掉 / 后台条优先级改 9 / 签名降级为长度 / 去掉签名去重守卫 / 路由跳改传常量 taskId
+- ⚠️ **已知取舍**：状态文案走协议下发而非 webview 自建词表（真源仍是内核那张表，宿主零自建）；面板内色条复用 `--accent`（`--status-running` 在 `tokens.ts` 无定义，写了就恒走 fallback、不跟随主题）
 
 ### Fixed（宿主 · 任务项组层级与折叠箭头右置 · `TOP-UI-2` / `TOP-UI-3`）
 

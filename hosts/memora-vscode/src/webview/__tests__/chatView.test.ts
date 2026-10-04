@@ -25,7 +25,7 @@ import {
   MAX_INPUT_CHARS,
   MAX_PENDING_INTERJECTIONS,
 } from '../../shared/constants.js';
-import type { RoundView } from '../../shared/protocol.js';
+import type { RoundView, BackgroundTaskView } from '../../shared/protocol.js';
 import type { InteractiveInputKind } from '@zooique/memora';
 import type { ProcessEvent } from '@zooique/memora';
 
@@ -4184,6 +4184,95 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
       expect(chip()).toBeNull();
       expect(panel()).toBeNull();
       expect(pqBar().hidden).toBe(true);
+    });
+  });
+
+  // ─── 后台任务条（CMD-1 阶段 2 · 方案-后台任务可见性与kill入口-20261004.md §2.3/§4）───
+  // 缺口原状：后台命令「运行态零可见 + 用户无 kill 入口」（只有模型能砍）。
+  // 本组钉死三件事：① 无任务零占用；② 运行态可见且带终止按钮；③ 终止只回宿主、webview 不自杀进程。
+  describe('后台任务条（运行态可见 + 用户侧 kill 入口）', () => {
+    beforeEach(() => {
+      document.body.innerHTML = '';
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    });
+
+    const bgBar = (): HTMLElement => document.querySelector('.background-tasks-bar') as HTMLElement;
+    const rows = (): HTMLElement[] =>
+      [...document.querySelectorAll('.background-tasks-bar__item')] as HTMLElement[];
+
+    /** statusLabel 由宿主下发（真源 = 内核 BACKGROUND_TASK_STATUS_LABELS），webview 不自建词表 */
+    function bgTask(over: Partial<BackgroundTaskView> = {}): BackgroundTaskView {
+      return {
+        taskId: 'bg-1',
+        command: 'npm run build',
+        status: 'running',
+        statusLabel: '运行中',
+        ...over,
+      };
+    }
+
+    it('无任务时零占用（空快照 → 条不创建，不制造常驻噪音）', () => {
+      mountChatView();
+      dispatch({ type: 'background_tasks', items: [] });
+      expect(bgBar()).toBeNull();
+    });
+
+    it('running 任务 → 条可见，行 = 命令原文 + 状态标签 + 终止按钮', () => {
+      mountChatView();
+      dispatch({ type: 'background_tasks', items: [bgTask()] });
+      expect(bgBar()).toBeTruthy();
+      expect(bgBar().hidden).toBe(false);
+      expect(rows()).toHaveLength(1);
+      expect(rows()[0]?.querySelector('.background-tasks-bar__text')?.textContent).toBe(
+        'npm run build',
+      );
+      // 状态文案直接消费下发的 statusLabel（改内核词表即改 UI，无第二套）
+      expect(rows()[0]?.querySelector('.background-tasks-bar__status')?.textContent).toBe('运行中');
+      expect(rows()[0]?.querySelector('.background-tasks-bar__kill')).toBeTruthy();
+    });
+
+    it('终态行无「终止」按钮（已结束再点即无反应 —— 僵尸交互不留）', () => {
+      mountChatView();
+      dispatch({
+        type: 'background_tasks',
+        items: [bgTask({ status: 'completed', statusLabel: '已完成' })],
+      });
+      expect(rows()).toHaveLength(1);
+      expect(rows()[0]?.querySelector('.background-tasks-bar__kill')).toBeNull();
+    });
+
+    it('点「终止」只回宿主（执行只能落 host），载荷带 taskId', () => {
+      const { postMessage } = mountChatView();
+      dispatch({ type: 'background_tasks', items: [bgTask({ taskId: 'bg-9' })] });
+      const killBtn = rows()[0]?.querySelector('.background-tasks-bar__kill') as HTMLButtonElement;
+      postMessage.mockClear();
+      killBtn.click();
+      expect(postMessage).toHaveBeenCalledWith({ type: 'background_kill', taskId: 'bg-9' });
+    });
+
+    it('命令原文过长截断，title 保留全文（不解析、不改写命令）', () => {
+      mountChatView();
+      const long = 'x'.repeat(200);
+      dispatch({ type: 'background_tasks', items: [bgTask({ command: long })] });
+      const text = rows()[0]?.querySelector('.background-tasks-bar__text') as HTMLElement;
+      expect(text.textContent).toBe(`${'x'.repeat(100)}…`);
+      expect(text.title).toBe(long);
+    });
+
+    it('优先级垫底：不顶掉 activity 主状态条，后台条收进 +N 浮层', () => {
+      mountChatView();
+      dispatch({ type: 'notice', level: 'info', message: '正在思考' });
+      dispatch({ type: 'background_tasks', items: [bgTask()] });
+      const actBar = document.getElementById('activityBar') as HTMLElement;
+      const chip = document.querySelector('.status-dock__chip') as HTMLButtonElement;
+      const panel = document.querySelector('.status-dock__panel') as HTMLElement;
+      expect(actBar.hidden).toBe(false);
+      expect(panel.contains(actBar)).toBe(false); // activity 恒主位
+      expect(panel.contains(bgBar())).toBe(true); // 后台条被收纳
+      expect(chip.textContent).toBe('+1');
     });
   });
 

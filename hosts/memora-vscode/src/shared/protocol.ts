@@ -1076,8 +1076,9 @@ export type ExtensionToWebviewMessage =
    * 后台任务快照（后台任务浮层数据源 · CMD-1 阶段 2）
    *
    * 真源 = 内核 `agent.listBackgroundTasks()` 的只读投影；**webview 不自维护副本**。
-   * `items` 为空 → webview 隐藏「后台 N」入口（无任务时零占用）。
-   * 推送时机：宿主侧条件轮询（仅当存在 running 任务时拉取）+ kill 后强制回推一次。
+   * `items` 为空 → webview 隐藏后台任务条（无任务时零占用）。
+   * 推送时机 = 宿主侧三个事件点（无定时器、无轮询）：`step_boundary`（任务刚启动）/ `background_report`（终态批量变化）/ `background_kill` 处理后回推。
+   * 三个点共用 `postBackgroundTasks()` 的**内容签名去重**——快照未变不推，kill 导致的「条数不变而状态变」也能被捕获。
    */
   | { type: 'background_tasks'; items: BackgroundTaskView[] };
 
@@ -1086,11 +1087,18 @@ export type ExtensionToWebviewMessage =
  *
  * 刻意**不含 `result`**：命令输出体量可至 KB~MB 级，UI 不呈现输出
  * （输出归模型消费，经 `kill_command` / 回流通道给 LLM），避免无谓搬运。
+ *
+ * `statusLabel` 由 **extension 侧**读内核 `BACKGROUND_TASK_STATUS_LABELS` 填充后下发——
+ * 真源仍是内核那张表（宿主零自建词表），走协议只为**避免 webview 值导入内核包**
+ * （webview 侧只做 type import，值导入会把内核打进 bundle）。
+ *
+ * ⚠️ **2026-10-04 自审订正（刀 3）**：初版 Pick 了 `startedAt`，但 UI 三个消费点
+ * （命令原文 / 状态标签 / 终止按钮）**零消费它** ⇒ 属于「预支复杂度」的僵尸载荷字段。
+ * 已删；真需要「启动时间」来识别卡死任务时按触发驱动再加，不预留。
  */
-export type BackgroundTaskView = Pick<
-  BackgroundTask,
-  'taskId' | 'command' | 'startedAt' | 'status'
->;
+export type BackgroundTaskView = Pick<BackgroundTask, 'taskId' | 'command' | 'status'> & {
+  statusLabel: string;
+};
 
 // ─── turn 投影层类型（SSOT）────────────────────────
 // 设计源：docs/architecture/turn-runtime-render-ssot.md
