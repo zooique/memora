@@ -1790,20 +1790,18 @@ export const chatStyles = `
     color: var(--text-secondary, #9aa0a6);
     white-space: pre-wrap; word-break: break-all;
   }
-  /* ─── 折叠箭头右置（批次三定案的现行形态）───
+  /* ─── 折叠箭头行内随文（2026-10-05 定案，替代批次三的右缘钉死形态）───
    * 过程块体系全部折叠 summary 隐藏原生 marker（::marker + ::-webkit-details-marker 双写），
    * CSS 自绘 chevron（L 形 border）随 details[open] 旋转——纯 CSS 零 JS。
-   * chevron 挂 ::after 绝对定位到 summary 右缘（收起态即「＞」，展开旋转向下）；
-   * 行首留给文本顶格，层级由缩进引导，与叙述行左对齐基线一致。
+   * chevron 挂 ::after 行内流式（inline-block），自然衔接标题文字末尾：旧形态绝对定位
+   * 钉死容器右缘，短标题与箭头间留大片空白，视觉断裂；折行时箭头随文本流落在末段行尾。
    * ::before 槽位留给工具行运行/待命状态环——环须紧跟工具名让「正在执行」一眼可见，
-   * 与右置 chevron 分槽互不干扰（分槽替代原「高特异性覆盖」方案）。
+   * 与行内 chevron 分槽互不干扰（分槽替代原「高特异性覆盖」方案）。
    * .round-block summary 后代选择器覆盖外层折叠区与全部嵌套块（narrate/thought/tool/tool-batch/
    * plan-item）；.process-flow__thought 运行时在 round-block 外，单独列出。 */
   .round-block summary,
   .process-flow__thought summary {
-    list-style: none;
-    position: relative; /* chevron ::after 的绝对定位基准 */
-    padding-right: 14px; /* 行尾给 chevron 留位，文本不撞箭头 */
+    list-style: none; /* chevron 行内随文，无需定位基准与右缘留位 */
   }
   .round-block summary::marker,
   .process-flow__thought summary::marker {
@@ -1816,18 +1814,24 @@ export const chatStyles = `
   .round-block summary::after,
   .process-flow__thought summary::after {
     content: '';
-    display: block;
-    position: absolute;
-    right: 4px; top: 50%;
+    display: inline-block;
+    margin-left: var(--sp-2, 6px); /* 与标题文字的衔接间距 */
+    vertical-align: middle; /* 箭头居文字行中线 */
     width: 5px; height: 5px;
     border-right: 1.5px solid currentColor;
     border-bottom: 1.5px solid currentColor;
-    transform: translateY(-50%) rotate(-45deg); /* 收起态：右向「＞」 */
+    transform: rotate(-45deg); /* 收起态：右向「＞」 */
     transition: transform 0.15s ease;
+  }
+  /* tool-batch summary 是 flex 布局（gap 已提供衔接间距）：margin 归零防双倍间距；
+     align-self 替代 vertical-align（flex item 上后者无效，baseline 会按空盒底缘对齐致偏上） */
+  .round-block .round-block__tool-batch-summary::after {
+    margin-left: 0;
+    align-self: center;
   }
   /* 展开态：下向「⌄」；状态环在 ::before 槽，不受此规则污染 */
   details[open] > summary::after {
-    transform: translateY(-50%) rotate(45deg);
+    transform: rotate(45deg);
   }
   @media (prefers-reduced-motion: reduce) {
     .round-block summary::after,
@@ -1920,7 +1924,7 @@ export const chatStyles = `
     border-radius: 50%; box-sizing: border-box;
     animation: toolSpinner .7s linear infinite;
   }
-  /* 运行中行恒展开，环即状态即类型——右缘 chevron 无交互意义，压掉（防双状态标识） */
+  /* 运行中行恒展开，环即状态即类型——chevron 无交互意义，压掉（防双状态标识） */
   .round-block__tool.is-tool-running > summary::after {
     display: none;
   }
