@@ -1632,12 +1632,17 @@ export const chatStyles = `
     border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
     padding: var(--sp-1, 4px) var(--sp-3, 8px);
   }
-  .round-block summary {
+  /* 仅外层折叠区标题 flex（dot + 统计 span 的横排布局）——不得用后代选择器：
+   * 嵌套块 summary（tool/thought/narrate/任务项）被后代命中会集体 flex 化，
+   * 其 ::after 箭头的 margin 与 flex gap 叠加双倍间距、vertical-align 失效（2026-10-05 实锤）。
+   * 嵌套块回归 inline 流，箭头统一走 .round-block summary::after 一套逻辑。 */
+  .round-block > summary {
     display: flex; align-items: center; gap: var(--sp-2, 6px);
     cursor: pointer; user-select: none; outline: none;
     font-size: var(--font-xs, 10px);
   }
-  .round-block summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .round-block summary:focus-visible,
+  .process-flow summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
   /* round-block 任务项标签：active 任务项提示。prepend 到 details 最前（summary 上方） */
   .round-block__plan-tag {
     display: flex; align-items: center; gap: var(--sp-1, 4px);
@@ -1797,22 +1802,24 @@ export const chatStyles = `
    * 钉死容器右缘，短标题与箭头间留大片空白，视觉断裂；折行时箭头随文本流落在末段行尾。
    * ::before 槽位留给工具行运行/待命状态环——环须紧跟工具名让「正在执行」一眼可见，
    * 与行内 chevron 分槽互不干扰（分槽替代原「高特异性覆盖」方案）。
-   * .round-block summary 后代选择器覆盖外层折叠区与全部嵌套块（narrate/thought/tool/tool-batch/
-   * plan-item）；.process-flow__thought 运行时在 round-block 外，单独列出。 */
+   * 覆盖面 = 两个容器的 summary 后代：.round-block（收尾/重放全量树）+ .process-flow（流式
+   * 实时容器）——工具行/工具批/叙述/任务项组的类名不带容器前缀，流式期间挂在 process-flow
+   * 下，只按 round-block 选会漏掉它们（原生 marker 裸奔 + 无箭头，与思考行形态分裂，
+   * 2026-10-05 真机实锤）。 */
   .round-block summary,
-  .process-flow__thought summary {
+  .process-flow summary {
     list-style: none; /* chevron 行内随文，无需定位基准与右缘留位 */
   }
   .round-block summary::marker,
-  .process-flow__thought summary::marker {
+  .process-flow summary::marker {
     content: none;
   }
   .round-block summary::-webkit-details-marker,
-  .process-flow__thought summary::-webkit-details-marker {
+  .process-flow summary::-webkit-details-marker {
     display: none;
   }
   .round-block summary::after,
-  .process-flow__thought summary::after {
+  .process-flow summary::after {
     content: '';
     display: inline-block;
     margin-left: var(--sp-2, 6px); /* 与标题文字的衔接间距 */
@@ -1823,9 +1830,11 @@ export const chatStyles = `
     transform: rotate(-45deg); /* 收起态：右向「＞」 */
     transition: transform 0.15s ease;
   }
-  /* tool-batch summary 是 flex 布局（gap 已提供衔接间距）：margin 归零防双倍间距；
-     align-self 替代 vertical-align（flex item 上后者无效，baseline 会按空盒底缘对齐致偏上） */
-  .round-block .round-block__tool-batch-summary::after {
+  /* flex summary（外层折叠区标题 / 工具批标题）：gap 已提供衔接间距，margin 归零防双倍；
+     align-self/align-items 替代 vertical-align（flex item 上后者无效） */
+  .round-block > summary::after,
+  .round-block .round-block__tool-batch-summary::after,
+  .process-flow .round-block__tool-batch-summary::after {
     margin-left: 0;
     align-self: center;
   }
@@ -1835,7 +1844,7 @@ export const chatStyles = `
   }
   @media (prefers-reduced-motion: reduce) {
     .round-block summary::after,
-    .process-flow__thought summary::after {
+    .process-flow summary::after {
       transition: none;
     }
   }

@@ -394,7 +394,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     panel.appendChild(buildPlanItemList(items));
   }
 
-  /** 构建全量任务项列表（ul.plan-board-list；浮层与 round-block 任务项标签共用——任务项结构单一实现） */
+  /** 构建全量任务项列表（ul.plan-board-list；任务浮层专用——round-block 内任务项组标题走
+   *  round-block__plan-item-summary 独立实现，两处不同构） */
   function buildPlanItemList(items: PlanItemDto[]): HTMLUListElement {
     const ul = document.createElement('ul');
     ul.className = 'plan-board-list';
