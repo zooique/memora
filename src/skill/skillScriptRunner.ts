@@ -410,7 +410,8 @@ export async function runShellCommand(
  *
  * @param command 裸命令
  * @param cwd 工作目录
- * @param timeoutMs 收割时限（**null = 不限时**，随 turn 生命周期）；由调用方按
+ * @param timeoutMs 收割时限（**null = 不限时**；后台任务可活过 turn，见
+ *        `BackgroundTaskRegistry.detachAll`）；由调用方按
  *        `BACKGROUND_MAX_TIMEOUT_MS` 钳制后传入（钳制真源不在本函数内分支）
  * @param onSettled 终局回调（完成 / 超时 / 出错均经此，**只调用一次**）
  * @returns 句柄：killNow = 中途终止（走杀树原语）

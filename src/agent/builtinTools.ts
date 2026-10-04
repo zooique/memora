@@ -838,8 +838,9 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         background: {
           type: 'boolean',
           description:
-            'true = 后台执行：立即返回 taskId，命令继续跑（活过本轮对话，活不过宿主进程）。' +
-            '结果不会自动进入上下文，需要时用 kill_command 取回（缺省同步等待）',
+            'true = 后台执行：立即返回 taskId，命令继续跑、活过本轮对话。' +
+            '结果不会自动进入上下文，需要时用 kill_command 取回（缺省同步等待）；' +
+            '正常退出 VS Code（扩展停用）时会被一并终止，扩展崩溃或被强制结束时不保证清理——别起永不结束的命令后遗弃。',
         },
       },
       required: ['command'],

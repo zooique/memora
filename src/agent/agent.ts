@@ -1354,9 +1354,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.loop.onContextWindowChanged = (effectiveTokens: number) => {
       this.internals.contextPreparer?.setMaxContextTokens(effectiveTokens);
     };
-    // 后台任务转入终态 → Agent 事件面（脱管后 turn 已结束，宿主三个既有推送时机覆盖不到
-    // 「任务自然跑完」，缺此事件 UI 会一直显示假活跃的「运行中」。见方案文档 §5.2.2）。
+    // 后台任务自然终态 → Agent 事件面（脱管后 turn 已结束，宿主挂在 turn 生命周期上的
+    // 推送时机覆盖不到「任务自然跑完」，缺此事件 UI 会一直显示假活跃的「运行中」。见方案文档 §5.2.2）。
     // 走既有 TypedEventEmitter：宿主 bindAgentNoticeEvents 的「先 off 再 on」幂等模式适用。
+    // 主动 kill 不发此事件（注册表刻意不回调），kill 后的 UI 刷新由宿主 kill 路径自行回推。
     this.loop.setBackgroundTaskSettledEmitter((task) => {
       this.emit('backgroundTaskSettled', {
         taskId: task.taskId,
@@ -1854,6 +1855,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     } catch (err) {
       logger.warn({ err: toError(err) }, 'close: awaitBackgroundTasks 失败');
+    }
+    // 后台「命令」任务实例终态收割——与上方 awaitBackgroundTasks 是同名异物：
+    // 上方等的是归档/打分类内存任务，此处杀的是注册表持有的 shell 子进程。
+    // turn 终态刻意脱管不杀（跨轮存活），但注册表按 Agent 实例隔离，实例销毁后任务
+    // 不可寻址，不杀就是 OS 层孤儿（观察点 ⑧ 真机实锤：父进程退出后 ping.exe 仍在）。
+    // 须在 nullifyAllComponents（loop 置 null）之前。
+    const killedBackgroundCommands = this.loop?.shutdownBackgroundTasks() ?? 0;
+    if (killedBackgroundCommands > 0) {
+      logger.info({ count: killedBackgroundCommands }, 'close: 收割存活后台命令任务');
     }
     // 处理 pending 暂停残留：关闭前确保状态机与检查点一致
     const sm = this._sessionManager;

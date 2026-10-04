@@ -42,6 +42,7 @@ description: Memora 关键决策年轮
 | [ADR-033](./ADR-033-dual-version-line-and-tag-scheme.md) | 双包双版本线与发布 tag 规范（内核 npm / 扩展 marketplace 各自独立 semver；tag 带包名前缀 `memora@3.0.0` 防撞车，存量裸 v tag 冻结；宿主定位第一方参考宿主；不引发布管理工具） | ✅ 已接受 | 工程 |
 | [ADR-034](./ADR-034-plan-item-boundary-emit-timing.md) | 任务项边界产出时机前移（plan_item_boundary 产于迭代开始、LLM 调用之前——边界语义「以下内容属于该任务项」决定先于所罩内容；顺序契约与装配时序分叉一并定案） | ✅ 已接受 | 架构 |
 | [ADR-035](./ADR-035-max-tokens-intersection-adjudication.md) | 输出上限裁决收口（maxTokens 生效值 = min(per-LLM, 角色包 outputLimit) 单点裁决；0-哨兵装配层过滤；取证面记生效值不记配置快照；内核不设上限校验） | ✅ 已接受 | 架构 |
+| [ADR-036](./ADR-036-background-task-lifecycle-boundary.md) | 后台命令任务双生命周期边界（turn 终态脱管不杀 + 回流跨 turn 留存；Agent 实例终态 killAllRunning 真杀；主动终止单点不回调 listener；诚实边界仅覆盖正常退出） | ✅ 已接受 | 架构 |
 
 ### 插件宿主（VC 系列）
 
@@ -66,7 +67,7 @@ description: Memora 关键决策年轮
 | 运行时 | 1    | ADR-001 |
 | 数据层 | 2    | ADR-002, ADR-016 |
 | 集成层 | 2    | ADR-003, ADR-017-web-search |
-| 架构   | 16   | ADR-004, ADR-010~011, ADR-015, ADR-021~025, ADR-027~031, ADR-034~035 |
+| 架构   | 17   | ADR-004, ADR-010~011, ADR-015, ADR-021~025, ADR-027~031, ADR-034~036 |
 | 安全   | 1    | ADR-006 |
 | 质量   | 1    | ADR-007 |
 | 工程   | 4    | ADR-008, ADR-017, ADR-032, ADR-033 |

@@ -1,7 +1,7 @@
 /**
  * 后台命令任务注册表（方案文档 §14 · 阶段 1）
  *
- * 职责单点：后台进程的**身份与生命周期**——`taskId` 寻址、完成回调、中途终止、终态收割。
+ * 职责单点：后台进程的**身份与生命周期**——`taskId` 寻址、完成回调、中途终止、终态结算。
  * 进程治理本身（spawn 选项 / 输出内存护栏 / 杀树）在 `skillScriptRunner`，
  * 本模块只持有句柄与状态，**不重复实现任何进程逻辑**。
  *
@@ -33,8 +33,14 @@ export interface BackgroundTask {
   result?: ScriptExecutionResult;
 }
 
-/** 完成监听器：任务到达终局时回调**一次**（loop 借此入回流队列） */
-export type BackgroundTaskListener = (task: BackgroundTask) => void;
+/** 自然终态：进程自行跑完或超时；主动 kill 写入的 `killed` 不属此列（不走 listener） */
+export type BackgroundTaskNaturalStatus = Extract<BackgroundTaskStatus, 'completed' | 'timedOut'>;
+
+/** 自然终态投影（listener 收到的形态：状态必为 completed/timedOut，不可能是 running/killed） */
+export type SettledBackgroundTask = BackgroundTask & { status: BackgroundTaskNaturalStatus };
+
+/** 完成监听器：任务**自然终态**时回调**一次**（loop 借此入回流队列；主动 kill 不回调，见 kill） */
+export type BackgroundTaskListener = (task: SettledBackgroundTask) => void;
 
 /** 任务表内部条目（= 投影 + 进程句柄） */
 interface TaskEntry extends BackgroundTask {
@@ -54,7 +60,7 @@ export class BackgroundTaskRegistry {
    * 注入完成监听器（单点 setter）
    *
    * 监听器抛错**吞掉并记日志**：它是回流通道的入口，一抛就污染进程治理路径，
-   * 而任务表状态与进程收割不应受消费方失败影响。
+   * 而任务表状态结算不应受消费方失败影响。
    */
   setCompletionListener(listener: BackgroundTaskListener | null): void {
     this.listener = listener;
@@ -65,8 +71,8 @@ export class BackgroundTaskRegistry {
    *
    * @param command 裸命令
    * @param cwd 工作目录
-   * @param timeoutMs 收割时限（毫秒）；**省略 = 不限时**，生命周期随 turn
-   *        （长构建/冷缓存安装是后台核心场景，不给它套同步上限）
+   * @param timeoutMs 收割时限（毫秒）；**省略 = 不限时**（长构建 / 冷缓存安装 /
+   *        长驻服务是后台核心场景，不给它套同步上限；活过 turn 见 detachAll）
    */
   start(command: string, cwd?: string, timeoutMs?: number): string {
     this.seq += 1;
@@ -113,32 +119,59 @@ export class BackgroundTaskRegistry {
     const entry = this.tasks.get(taskId);
     if (!entry) return null;
     if (entry.status === 'running') {
-      // 先取快照再杀：杀完 stdio 关闭，此后拿不到已捕获内容
-      entry.result = entry.peek();
-      entry.killNow();
-      entry.status = 'killed';
-      // ⚠️ 主动 kill **不回调** listener：输出已由 kill_command 直接返回，
-      // 再回流一次会让 LLM 收到同一份结果的第二份副本（重复消费）。
+      this.terminate(entry);
     }
     return { status: entry.status, result: entry.result };
   }
 
   /**
-   * turn 终态**脱管**：把存活任务移出「本轮跟踪」，但**进程继续跑**（定案修订，见
-   * `docs/方案-后台任务跨轮存活-20261004.md`）
+   * Agent 实例终态收割：**真杀全部仍在运行的任务**（仅 `Agent.close` 调用）
    *
-   * 与修订前的 `reapAll`（强杀全部存活任务）**行为完全相反**，此处不做任何兼容：
-   * 旧行为已在真机被证伪（用户起 `ping -n 90`，turn 6.3 秒结束就把进程杀了，
-   * UI 底部条从「运行中」变「已终止」而用户从未点过）。
+   * 与 `detachAll` 的边界（两者各管一个生命周期终点，勿混用）：
+   *   - `detachAll` = **turn 终态**：不杀，进程跨轮存活（问答闭环不是进程容器）；
+   *   - `killAllRunning` = **Agent 实例终态**：杀。注册表按实例隔离是硬不变量，
+   *     实例销毁后任务不可寻址（`kill_command` 找不到、UI 快照变空表），不杀只会
+   *     制造无人可收的 OS 层孤儿。
+   *
+   * 真机依据（验收教程观察点 ⑧，2026-10-04）：完全退出 VS Code 后 `ping.exe`
+   * 仍在运行而父进程（扩展宿主）已死——Windows 不回收脱离控制台的子进程，
+   * Job Object 兜底在此环境不成立。
+   *
+   * 同 `kill` 单点约定：**不回调 listener**（实例正在关闭，回流队列已无消费方）；
+   * 终态条目保留在表内（关闭流程不读它，无谓清理）。
+   *
+   * @returns 实际收割的 running 任务数（已终态的不计）
+   */
+  killAllRunning(): number {
+    let count = 0;
+    for (const entry of this.tasks.values()) {
+      if (entry.status !== 'running') continue;
+      this.terminate(entry);
+      count += 1;
+    }
+    return count;
+  }
+
+  /**
+   * turn 终态**脱管**：把存活任务移出「本轮跟踪」，但**进程继续跑**
+   * （定案锚：ADR-036；论证见 `docs/方案-后台任务跨轮存活-20261004.md` §三）
+   *
+   * 为什么不杀（勿改回强杀）：后台命令常需跨多轮存活（长构建 / 常驻服务）；turn 是问答的
+   * 归档单元、不是进程容器，turn 结束就杀 = 用户没点终止的任务凭空死亡（真机实测：90 秒的
+   * ping 在 turn 6.3 秒结束时被杀，UI 显示「已终止」而用户从未操作）。
    *
    * 「脱管」的实际含义 = **什么都不做**：
    *   - 不杀进程（`killNow` 不调用）⇒ 进程继续跑，输出继续被捕获
    *   - 不改 status（仍是 `running`）⇒ `list()` / UI 条照常显示「运行中」
    *   - 不清注册表条目 ⇒ 用户随时可 `kill(taskId)` 取回截至当时的输出
    *
-   * 进程生命周期交给**宿主进程**兜底（Agent 关闭 / 窗口关闭时随 spawn 树一起走），
-   * 与 Claude Code「tasks are auto-cleaned up when Claude Code exits」同源。
-   * 后台任务自身仍受 `BACKGROUND_MAX_TIMEOUT_MS`（30min）封顶 ⇒ 脱管窗口天然有界。
+   * 脱管窗口的边界（如实写）：
+   *   - **无内核侧时限**：timeoutMs 省略时 startBackgroundCommand 收 null = 永不超时；
+   *     `BACKGROUND_MAX_TIMEOUT_MS`（30min）只是「显式传值时的钳制上限」，缺省路径碰不到它。
+   *   - 跨的是 turn，不是宿主寿命：**Agent 实例终态（`close`）经 `killAllRunning` 真杀**
+   *     （注册表实例隔离，实例销毁后任务不可寻址，不杀即孤儿——观察点 ⑧ 真机实锤：
+   *     退出 VS Code 后父进程已死而 `ping.exe` 仍在）。唯一残留缺口：扩展崩溃 / 被 OS
+   *     强杀时 `close` 来不及执行，该场景不承诺清理。
    *
    * @returns 本轮结束时仍在运行的任务清单（供脱管报告）；已终态的不计入
    */
@@ -153,6 +186,21 @@ export class BackgroundTaskRegistry {
 
   // ── 内部 ──
 
+  /**
+   * 主动终止单点（`kill` 单个 / `killAllRunning` 实例终态收割共用）：
+   * 先取输出快照再杀树，随后置 `killed`。
+   *
+   * ⚠️ 刻意**不回调** listener：主动终止的输出已由调用方直接取得（`kill_command`
+   * 返回值 / 关闭流程不需要），再回流一次会让消费方收到同一份结果的第二份副本
+   * （重复消费）。自然终态的回调唯一入口是 `settle → notify`。
+   */
+  private terminate(entry: TaskEntry): void {
+    // 先取快照再杀：杀完 stdio 关闭，此后拿不到已捕获内容
+    entry.result = entry.peek();
+    entry.killNow();
+    entry.status = 'killed';
+  }
+
   /** 终局结算（由 startBackgroundCommand 的 onSettled 调用；只处理 running 态） */
   private settle(taskId: string, result: ScriptExecutionResult): void {
     const entry = this.tasks.get(taskId);
@@ -160,14 +208,17 @@ export class BackgroundTaskRegistry {
     // 已终态（多为 kill 先行标记）不覆盖：主动终止的语义优先于进程退出
     if (entry.status !== 'running') return;
     entry.result = result;
-    entry.status = result.timedOut ? 'timedOut' : 'completed';
-    this.notify(entry);
+    // 自然终态只有 completed/timedOut（killed 只由主动 kill 写入，永不走本路径）
+    const status: BackgroundTaskNaturalStatus = result.timedOut ? 'timedOut' : 'completed';
+    entry.status = status;
+    this.notify(entry, status);
   }
 
-  private notify(entry: TaskEntry): void {
+  private notify(entry: TaskEntry, status: BackgroundTaskNaturalStatus): void {
     if (!this.listener) return;
     try {
-      this.listener(this.projection(entry));
+      // 显式带上窄状态：listener 契约只传自然终态，killed 永不经此通道
+      this.listener({ ...this.projection(entry), status });
     } catch (err) {
       logger.error({ taskId: entry.taskId, err }, '后台任务完成回调抛错（已吞，不影响任务表）');
     }

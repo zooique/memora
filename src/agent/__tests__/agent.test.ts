@@ -3394,4 +3394,26 @@ describe('Agent · 后台任务出口（CMD-1 阶段 2）', () => {
     expect(() => agent!.listBackgroundTasks()).toThrow(/Agent 未初始化/);
     expect(() => agent!.killBackgroundTask('bg-1')).toThrow(/Agent 未初始化/);
   });
+
+  it('close() 必经 shutdownBackgroundTasks（实例终态收割调用点守卫 · 观察点 ⑧）', async () => {
+    // 本用例只锁「close 接线」这一层（删掉 close 里的调用即红）；
+    // 注册表真杀行为在 backgroundTasks.test、loop 透传在 loop.test，不重复。
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    // loop 为私有字段：白盒取实例挂 spy（as unknown 结构化断言，零 any，同 internals 先例）
+    const loop = (
+      agent as unknown as {
+        loop: { shutdownBackgroundTasks: () => number } | null;
+      }
+    ).loop;
+    expect(loop).not.toBeNull();
+    const shutdownSpy = vi.spyOn(loop!, 'shutdownBackgroundTasks');
+
+    await agent.close();
+    expect(shutdownSpy).toHaveBeenCalledTimes(1);
+
+    // 已手动 close：afterEach 不得再走一遍关闭流程
+    shutdownSpy.mockRestore();
+    agent = null;
+  });
 });

@@ -1335,8 +1335,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 角色包切换 → UI 角色选择器实时对齐（内核粘性切换/显式激活）
     a.off('rolePackSwitched', this.onRolePackSwitched);
     a.on('rolePackSwitched', this.onRolePackSwitched);
-    // 后台任务转入终态 → 推 UI 快照（脱管后 turn 已结束，其余三个推送时机覆盖不到
-    // 「任务自然跑完」⇒ 条会一直显示假活跃的「运行中」。见方案文档 §5.2.2）
+    // 后台任务自然终态 → 推 UI 快照（脱管后 turn 已结束：周期性推送点（step_boundary /
+    // background_report）都已过、也没有 kill 动作，覆盖不到「任务自然跑完」⇒ 条会一直
+    // 显示假活跃的「运行中」。主动 kill 不发本事件。见方案文档 §5.2.2）
     a.off('backgroundTaskSettled', this.onBackgroundTaskSettled);
     a.on('backgroundTaskSettled', this.onBackgroundTaskSettled);
 
@@ -1968,9 +1969,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // ④ 文件改动常驻条补推：该条只在「改动集变化」时推送，面板重开/回放时必须补一次——
     //    否则关掉面板再打开，常驻条凭空消失（项目里踩过四次的「时间面」漏面）。
     this.pushFileChanges();
-    // ⑤ 后台任务条补推：与 ④ 同型的时间面漏面——本条只在三个事件点推（step_boundary /
-    //    background_report / kill 后），面板重开时新 webview 从未收到过该消息 ⇒ 条凭空消失，
-    //    而进程还在跑、用户看不到也砍不掉。**必须走 'force' 绕签名去重**（签名跨重建残留）。
+    // ⑤ 后台任务条补推：与 ④ 同型的时间面漏面——本条平时只由推送事件点驱动（五个点的
+    //    枚举见 postBackgroundTasks 注释，唯一真源不在此复制），面板重开时新 webview 从未
+    //    收到过该消息 ⇒ 条凭空消失，而进程还在跑、用户看不到也砍不掉。
+    //    **必须走 'force' 绕签名去重**（签名跨重建残留）。
     this.postBackgroundTasks('force');
     // 角色 handoff 预填补发：视图解析后 webview 监听器已就绪，安全投递
     if (this._pendingPrefill !== undefined) {
@@ -3492,8 +3494,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 不静默推空快照，否则「未就绪」会被 UI 读成「没有后台任务」。
    *
    * **内容签名去重**（见方案 §2.4）：`taskId:status` 拼接串未变则不推。
-   * 推送点有两个（`step_boundary` / `background_report`）+ kill 后回推，其中 step 边界
-   * 是周期性到达的 ⇒ 无任务时逐 step 推空快照纯属 IPC 噪音。
+   * 推送点共五个：`step_boundary` / `background_report` / `background_kill` 后回推 /
+   * 内核 `backgroundTaskSettled` 事件 / webview ready（force）。其中 step 边界周期性
+   * 到达 ⇒ 无任务时逐 step 推空快照纯属 IPC 噪音，由签名去重拦掉。
    * 用**签名**而非「条数」判变化：`kill` 后 `running → killed` 条数恒为 1 而内容已变，
    * 长度守卫会把这次关键刷新判成 no-op（同 `syncPendingQueue` 长度守卫的反向教训）。
    *

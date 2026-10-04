@@ -1998,7 +1998,7 @@ describe('run_command / kill_command（命令执行工具层）', () => {
 
   afterEach(async () => {
     // 先终止残留后台进程：它们的 cwd 是 tmpProject，不收完就删目录会 EBUSY（本机实测）。
-    // ⚠️ 必须用 kill 而非 detachAll——脱管定案下 detachAll 故意不杀进程（正是本轮的行为反转）。
+    // ⚠️ 必须用 kill 而非 detachAll：detachAll 语义是脱管，故意不杀进程，收不掉残留句柄。
     for (const registry of registries) {
       for (const t of registry.list()) registry.kill(t.taskId);
     }
@@ -2115,7 +2115,7 @@ describe('run_command / kill_command（命令执行工具层）', () => {
 
     it('命令超长 → ARGUMENT_ERROR（整条拒收，禁截半条执行）', async () => {
       const exec = makeExecutor();
-      // 命令原文会扩散到裁决链 / 确认卡 / 审计 / turn 终态收割报告四处，不限长会污染整条链路
+      // 命令原文会扩散到裁决链 / 确认卡 / 审计 / turn 终态后台任务报告四处，不限长会污染整条链路
       const err = await exec
         .execute(
           'run_command',

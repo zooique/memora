@@ -6667,7 +6667,7 @@ describe('AgentLoop · 工具的 step 归属（tool_start.stepIndex）', () => {
 // 覆盖：回流注入 system 消息 / 不占插话满员 / 终态脱管 / 跨 turn 留存 / 挂起不脱管
 // ═══════════════════════════════════════════════════════════════
 
-describe('AgentLoop · 后台命令回流与 turn 终态脱管（§14 · 脱管定案修订）', () => {
+describe('AgentLoop · 后台命令回流与 turn 终态脱管（§14 · 脱管定案）', () => {
   /** 跨平台长驻命令（经注册表内的 shell 派发：Windows cmd /c，POSIX sh -c） */
   const SLEEP_CMD = 'node -e setTimeout(function(){},20000)';
 
@@ -6826,7 +6826,7 @@ describe('AgentLoop · 后台命令回流与 turn 终态脱管（§14 · 脱管�
     const sawInTurn = seen[1]?.some((c) => c.includes('bg-x')) ?? false;
     expect(sawInTurn).toBe(true);
 
-    // 下一轮 turn：LLM 请求里不得再出现（回流不跨 turn）
+    // 下一轮 turn：该回流已在本 turn 被消费出队（splice），不得重复注入下一轮
     for await (const _chunk of loop.processUserInput('下一个问题')) {
       void _chunk;
     }
@@ -6840,11 +6840,10 @@ describe('AgentLoop · 后台命令回流与 turn 终态脱管（§14 · 脱管�
     // 在 aborted chunk 处入队的回流会**径直撞上**终态收尾，是本条判据
     // （`finalizeBackgroundTasksOnTurnEnd` 不清 command-result）唯一能稳定驱到的路径。
     //
-    // ⚠️ 2026-10-04 定案修订：本用例原断言「被丢弃，不跨 turn」，与脱管定案直接冲突。
-    // 该守卫的原始意图（陈旧结果不该凭空注入新问题）**仍成立**，但它的实现手段
-    // （turn 边界一刀切丢弃）过宽——把「用户插话跨 turn 放行 / 后台结果跨 turn 封杀」
-    // 这对同性质数据的双标准固化了下来。改为「留存 + 下一轮被吸收」后，
-    // 模型仍是**显式看到**这条 system 消息（不吞声、不偷注），原意图等价达成。
+    // ⚠️ 留存而非丢弃的理由：回流与插话同为外部产生的显式消息，turn 边界丢弃
+    // command-result 而放行 interject = 同性质数据两套标准（脱管定案，见 loop.finalize
+    // 注释）。「陈旧结果不该凭空注入新问题」的顾虑由模型**显式看到**这条 system 消息
+    // 等价达成（不吞声、不偷注），无需在边界偷删。
     const seen: string[][] = [];
     let turnIndex = 0;
     const turns: ChunkItem[][] = [[{ content: '回答' }], [{ content: '下一轮回答' }]];
@@ -6954,8 +6953,13 @@ describe('AgentLoop · 后台命令回流与 turn 终态脱管（§14 · 脱管�
 });
 
 describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
-  // 长驻命令：20s 后自退，测试内显式终止避免残留
-  const BG_SLEEP_CMD = 'node -e setTimeout(function(){},20000)';
+  // 长驻命令：20s 后自退，测试内显式终止避免残留。
+  // 平台分叉原因同 backgroundTasks.test 的 SLEEP_CMD：cmd /c 下双引号会让 node
+  // eval 成字符串字面量秒退（假活）；sh -c 下无引号 () 是语法错误。
+  const BG_SLEEP_CMD =
+    process.platform === 'win32'
+      ? 'node -e setTimeout(function(){},20000)'
+      : 'node -e "setTimeout(()=>{},20000)"';
 
   function makeBgLoop(): AgentLoop {
     return new AgentLoop({
@@ -7070,6 +7074,31 @@ describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
       expect(keys).not.toContain('peek');
     } finally {
       registry.kill(taskId);
+    }
+  });
+
+  it('未装配注册表 → shutdownBackgroundTasks 返回 0（不抛）', () => {
+    const loop = makeBgLoop();
+    expect(loop.shutdownBackgroundTasks()).toBe(0);
+  });
+
+  it('shutdownBackgroundTasks → 真杀全部 running（Agent.close 实例终态收割的 loop 侧透传）', () => {
+    // 调用点锁在 agent.test（close 必调本方法）；此处锁透传语义与「真杀而非脱管」。
+    const loop = makeBgLoop();
+    const registry = new BackgroundTaskRegistry();
+    loop.setBackgroundTasks(registry);
+    const a = registry.start(BG_SLEEP_CMD);
+    const b = registry.start(BG_SLEEP_CMD);
+    try {
+      // 变异验证：若误接成 detachAll（纯读），返回值是投影数组（此处直接编译不过/数值不符），
+      // 且 a/b 状态仍 running → 下面断言红
+      expect(loop.shutdownBackgroundTasks()).toBe(2);
+      expect(registry.get(a)?.status).toBe('killed');
+      expect(registry.get(b)?.status).toBe('killed');
+    } finally {
+      // 幂等兜底：收割已置 killed，kill 对终态不再动杀树
+      registry.kill(a);
+      registry.kill(b);
     }
   });
 });

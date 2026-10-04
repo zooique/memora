@@ -1081,8 +1081,11 @@ export type ExtensionToWebviewMessage =
    *
    * 真源 = 内核 `agent.listBackgroundTasks()` 的只读投影；**webview 不自维护副本**。
    * `items` 为空 → webview 隐藏后台任务条（无任务时零占用）。
-   * 推送时机 = 宿主侧三个事件点（无定时器、无轮询）：`step_boundary`（任务刚启动）/ `background_report`（终态批量变化）/ `background_kill` 处理后回推。
-   * 三个点共用 `postBackgroundTasks()` 的**内容签名去重**——快照未变不推，kill 导致的「条数不变而状态变」也能被捕获。
+   * 推送时机 = 宿主侧五个事件点（无定时器、无轮询）：`step_boundary`（任务刚启动）/
+   * `background_report`（turn 终态批量变化）/ `background_kill` 处理后回推 /
+   * 内核 `backgroundTaskSettled` 事件（turn 结束后自然终态）/ webview ready（force，
+   * 重建对齐）。五个点共用 `postBackgroundTasks()` 的**内容签名去重**——快照未变不推，
+   * kill 导致的「条数不变而状态变」也能被捕获。
    */
   | { type: 'background_tasks'; items: BackgroundTaskView[] };
 

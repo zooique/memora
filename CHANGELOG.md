@@ -33,10 +33,12 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
   `command-result` ⇒ 两个清理点本就分流、无冲突。**零新工具 / 零新队列 / 零新状态机**
 - **诚实口径修订**（文案层是真机问题的源头①）：`[BACKGROUND_STARTED]` 回执与工具描述删去
   「结果会自动回到你的上下文」承诺，改为显式告知「不会自动进上下文，需要时用 `kill_command` 取回」+
-  「本轮结束不会终止它」+「活不过宿主进程」
-- **诚实边界**：进程活过 turn，**活不过 extension 进程**（窗口关闭即随 spawn 树终止）——与
-  Claude Code 同源（官方：tasks are auto-cleaned up when Claude Code exits），**不是缺陷但必须写明**。
-  脱管窗口天然有界：后台任务自身受 `BACKGROUND_MAX_TIMEOUT_MS`（30min）封顶
+  「本轮结束不会终止它」
+- **诚实边界**（2026-10-04 审查订正；⑧ 已闭环见下方 Fixed「退出杀树」条）：进程活过 turn；
+  宿主寿命边界经观察点 ⑧ 真机定类（OS 层孤儿实锤）后已补退出杀树——正常退出 VS Code 终止，
+  崩溃/被强杀不保证。
+  超时同理：`BACKGROUND_MAX_TIMEOUT_MS`（30min）只是**显式传 timeoutMs 时的钳制上限**，
+  缺省不传 = 永不超时，脱管窗口**无内核侧时限**
 - **回归守卫翻转 1 条**：`aborted 收场 → 回流被丢弃，不跨 turn` 与新定案直接冲突，改为
   「跨 turn 留存 + 下一轮被吸收」。该守卫原始意图（陈旧结果不该凭空注入）**仍成立**，但旧实现手段
   （turn 边界一刀切丢弃）过宽；改后模型仍是**显式看到**该 system 消息，不吞声、不偷注
@@ -45,6 +47,35 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 - **变异验证 2 组**（逐组精确转红）：`detachAll` 改回 `killNow`+置 `killed` → 3 红；
   恢复 `command-result` 丢弃行 → `aborted` 留存守卫红
 - **方案文档**：`docs/方案-后台任务跨轮存活-20261004.md`（含主流对标实锤、SSOT 论证、刻意不做清单）
+
+### Fixed（内核 · 宿主退出孤儿进程：补实例终态杀树 · 观察点 ⑧ 真机定类闭环）
+
+**真机实锤**：完全退出 VS Code 约 10 秒后，后台 `ping -n 300`（PID 15456）仍在运行，
+其父进程（扩展宿主）已不存在——Windows 不回收脱离控制台的子进程，Job Object 兜底在此
+环境不成立。旧代码 `Agent.close` 不处置后台注册表，每次退出留一批 OS 孤儿（dev server
+类更会永久占端口）。
+
+- **两个生命周期终点分开**（勿折叠）：turn 终态 `detachAll` **不杀**（跨轮存活）；
+  Agent 实例终态新增 `BackgroundTaskRegistry.killAllRunning()` **真杀**——注册表按
+  实例隔离是硬不变量，实例销毁后任务不可寻址，不杀即孤儿
+- **接线**：`AgentLoop.shutdownBackgroundTasks()` 纯透传（未装配返 0）；`Agent.close()`
+  在 loop null 化前调用；宿主 `deactivate` 本就 await close，**宿主侧零行为改动**。
+  主动终止逻辑抽单点 `terminate`（`kill` / `killAllRunning` 共用），不回调 listener
+  （退出时回流队列已无消费方），不推 UI 快照
+- **诚实边界**：只覆盖扩展正常停用；扩展崩溃 / 被 OS 强杀时 `close` 来不及执行，该场景
+  依旧不承诺清理。文案三处（工具描述 / `[BACKGROUND_STARTED]` 回执 / turn 收尾报告）
+  统一为「正常退出 VS Code 时终止；崩溃 / 被强杀不保证」
+- **测试**：注册表混合态收割（running 真杀 / completed、killed 不碰 / 不回调 listener）+
+  loop 透传（含未装配返 0）+ `Agent.close` 调用点 spy 守卫；**变异验证 2 组**（断 close
+  接线 → spy 红；收割改纯读 → 状态断言红）
+- **定案沉淀**：ADR-036（后台命令任务双生命周期边界 + 回流留存；S2 固化触发 1 = src 引用
+  ≥1），src 定案注释锚改指 ADR
+- **顺带修测试夹具假活（同批实锤的既有缺陷）**：`backgroundTasks.test.ts` 的
+  `SLEEP_CMD` 原写法 `node -e "setTimeout(()=>{},120000)"` 在 Windows `cmd /c` 下
+  **引号被原样传给 node，eval 的是字符串字面量（空语句）→ 秒退 exit 0**，而既有用例
+  只在 start 占位 `running` 的窗口内断言，从未真验进程存活。改为平台分叉
+  （win32 无引号 function 版 / POSIX 双引号版，引号在两个 shell 命运相反），
+  `loop.test.ts` 同型夹具一并修；新用例以「起后 300ms 复查仍 running」挡占位假活
 
 ### Fixed（内核+宿主 · 后台任务终态 UI 不准 + 终态行可手动收起 · CMD-1 阶段 3 补漏）
 
@@ -57,7 +88,8 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 > （**假活跃**）——让用户以为还有事在跑，而真相是结果早已躺在队列里。
 
 - **新增内核事件 `backgroundTaskSettled`**（入 `AgentEventMap` + `AGENT_EVENTS`）：挂在注册表
-  `notify` 单点链上（`settle` 与主动 kill 均经此）⇒ `loop.setBackgroundTaskSettledEmitter` →
+  `notify` 单点链上（**仅自然终态 settle 经此；主动 kill 刻意不回调**——输出已直接返回，回调会
+  造成双份消费；UI 终止路径由宿主 kill 后自行回拉快照）⇒ `loop.setBackgroundTaskSettledEmitter` →
   `agent.emit` → 宿主 `bindAgentNoticeEvents` 订阅。**不新增注册表 listener**
   （`setCompletionListener` 是单点 setter 且已被回流占用，加第二个即第二真理源）；
   **走既有 `TypedEventEmitter`** 而非独立回调字段（与宿主 `off`/`on` 幂等模式对齐）。
@@ -99,7 +131,7 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 **升级即需改代码**（TS 集成方必读）：
 
 - `WriteConfirmationInfo`（`onWriteConfirmation` 载荷）新增**必填**字段 `hasDiff: boolean`——**编译期破坏**（自建该对象的集成方需补字段；只消费不构造的集成方不受影响）。语义 = 「本次确认卡是否有 diff 对比域」：写入场景恒 `true`，命令 / 代码 / 脚本执行三类恒 `false`。**判据归内核单点**（`confirmGate` 的 `diff !== undefined`），宿主不再用 `beforeContent`/`afterContent` 的 truthy 自猜——那属「措辞折叠型带伤」（非写入场景被归一为 `beforeContent: null`，truthy 与 `!== undefined` 判据都会把命令确认渲染成假的「写入前/写入后」对比）
-- `AgentChunk` 新增变体 `{ type: 'background_report'; content: string }`（turn 终态收割存活后台进程后 emit；无收割则不产）。消费方 `for await` 的 switch/exhaustive 检查需处理新变体
+- `AgentChunk` 新增变体 `{ type: 'background_report'; content: string }`（turn 终态对存活后台进程**脱管**后 emit，报告「已转后台常驻（未被终止）」；无存活进程则不产。语义随阶段 3 脱管定案修订，见上方 Breaking）。消费方 `for await` 的 switch/exhaustive 检查需处理新变体
 - `ProcessEvent` 新增同名变体 `{ type: 'background_report'; seq; ts; payload: { content: string } }`（落盘重放可见，与 `plan_snapshot` 同型）
 
 ### Added（内核+宿主 · 命令行执行能力 `run_command` / `kill_command` · `CMD-1`，已定档 3.1.0）
@@ -108,11 +140,11 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 
 - **工具层**：`run_command`（任意 shell 命令字符串 + `cwd` + `timeoutMs` + `background`；`diskWrite:'opaque'` 与一切写互斥）+ `kill_command`（按 `taskId` 终止并取回截至当时的输出；只能杀本会话自起任务，非任意 pid）。两者入 `DEFAULT_EXPOSED_TOOLS` 常驻开放
 - **安全边界**：`SecurityGuard.classifyCommand` 三档裁决（deny 黑名单恒拦 / always-ask 恒确认 / normal）+ `confirmCommandRun`（**复用既有 `confirmGate`**，零新确认通道）。⚠️ **已知边界（如实登记）**：deny 是**命令字面量护栏**，凡执行内容由间接载体承载处（脚本文件 / `run_code` 内联代码）结构性失效——裁决面登记见 `src/security/confirmEntries.ts`，绕过成本 = 一次工具调用
-- **后台执行**：`background: true` 显式发起（**不做超时自动转后台**，拒绝隐式状态切换）→ 立即返回 `taskId`，完成后经 step 边界气口以 system 消息回流（role 语义隔离，不占插话满员）；`LOOP_CONSTANTS.MAX_PENDING_COMMAND_RESULTS` 限量注入（超量留队续投，不截半丢弃）；turn 终态（done/interrupted/error）收割存活进程并出收尾报告，回流不跨 turn
-- **进程治理**：`skillScriptRunner.buildSpawnOptions` + `attachGovernance` 收为单点（同步/后台共用），Windows 走 `taskkill /T /F` 杀树、POSIX 走 `kill(-pgid)`；`SYNC_MAX_TIMEOUT_MS`(600s) / `BACKGROUND_MAX_TIMEOUT_MS`(1800s=30min) 双常量分治，`normalizeTimeoutMs(timeoutMs, maxMs)` 参数化取上限（不给 SSOT 函数开 mode 分支）
+- **后台执行**：`background: true` 显式发起（**不做超时自动转后台**，拒绝隐式状态切换）→ 立即返回 `taskId`，完成后经 step 边界气口以 system 消息回流（role 语义隔离，不占插话满员）；`LOOP_CONSTANTS.MAX_PENDING_COMMAND_RESULTS` 限量注入（超量留队续投，不截半丢弃）；turn 终态（done/interrupted/error）对存活进程**脱管**（不杀）并出常驻报告，完成回流**跨 turn 留存**（阶段 3 修订见上方 Breaking 区）
+- **进程治理**：`skillScriptRunner.buildSpawnOptions` + `attachGovernance` 收为单点（同步/后台共用），Windows 走 `taskkill /T /F` 杀树、POSIX 走 `kill(-pgid)`；`SYNC_MAX_TIMEOUT_MS`(600s) / `BACKGROUND_MAX_TIMEOUT_MS`(1800s=30min) 双常量分治（30min 只钳制**显式传入**的 timeoutMs，缺省不传 = 不限时，见上方诚实边界），`normalizeTimeoutMs(timeoutMs, maxMs)` 参数化取上限（不给 SSOT 函数开 mode 分支）
 - **诚实口径**：「被主动终止」不是「执行失败」——强杀态独立 `formatKilledCommandOutput`，不声称任何退出状态（防 `[COMMAND_ERROR] 退出码 -1` 谎报）；命令结果定长真源上移到格式化层（脚本/命令/后台回流三面共用，杜绝第二消费面看不到上限）
 - **宿主**：工具中文名两键 + 行动叙述（叙述命令原文 + 后台标记）+ 设置面板「执行二次确认」补 `run_command` 并显式声明 git 写操作/发布不受开关影响（ALWAYS_ASK 恒询问）；后台收尾报告上屏（「后台任务收尾」小节，实时/重放同源）
-- **未做（如实登记）**：后台任务**运行态列表**（UI 零可见 + 无用户侧 kill 入口）、命令前缀 allow 白名单（阶段 2）、`.ps1` 运行时档
+- **未做（如实登记）**：命令前缀 allow 白名单（阶段 2）、`.ps1` 运行时档（后台任务运行态列表与用户侧 kill 入口阶段 1 未做，已由同日阶段 2/3 补齐，见下方宿主区 Added 与阶段 3 Fixed 条目）
 
 ### Added（内核+宿主 · 环境能力宣告 · `CMD-2`，已定档 3.1.0）
 
@@ -160,7 +192,7 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 - **投影约束**：`BackgroundTaskView = Pick<BackgroundTask, 'taskId'|'command'|'status'> & { statusLabel }`——改内核字段名即编译报错，禁另立第二套字段；**刻意不含 `result`**（命令输出归模型消费，不搬进 UI 通道）。`statusLabel` 由 extension 侧读内核 `BACKGROUND_TASK_STATUS_LABELS` 填充后下发（webview 只做 type import，值导入内核会把整包打进 bundle）
 - **刀 3 · webview UI**：StatusDock **第四条**（`DOCK_PRIORITY` += `background: 0`，优先级垫底 ⇒ 不顶掉 activity 主状态条；轮次收尾后 activity 归位、后台任务成为唯一活跃条时自动升主位，「终止」按钮恰在最需要它的时刻直接可见）。行 = 命令原文（过长截断 + `title` 全文）+ 状态标签 + 「终止」按钮（**仅 `running` 行有**，终态行无按钮——已结束再点即无反应 = 僵尸交互）。终止按钮**只 postMessage 回宿主**，杀进程不自实现（执行只能落 host）
 - **UI 形态实施修订（相对方案文档 §2.3 原定案）**：初稿定「新增『后台 N』chip」，实施读穿 `resolveDock()` 后否决——既有 `+N` chip / `status-dock__panel` 已完备，再造第二个 chip = 两套 chip、两套展开态、两套显隐裁决，纯负收益。代价如实登记：收纳时先看到无语义的 `+1`，需点开才知是后台任务（与 fileChanges / pendingQueue 同一取舍，不为其破例）
-- **推送点四个（零定时器、零轮询）**：`step_boundary`（任务刚启动的唯一气口——step 含一次 LLM 迭代 + 其工具执行，边界到达时快照已含它）/ `background_report`（终态批量变化）/ `background_kill` 处理后回推 / **`webview ready` 全量对齐**。三点共用**内容签名去重**（`taskId:status` 拼接串，变化才推）——用签名而非条数，因 kill 后 `running → killed` **条数恒为 1 而内容已变**，长度守卫会把这次关键刷新判成 no-op
+- **推送点四个（零定时器、零轮询）**：`step_boundary`（任务刚启动的唯一气口——step 含一次 LLM 迭代 + 其工具执行，边界到达时快照已含它）/ `background_report`（终态批量变化）/ `background_kill` 处理后回推 / **`webview ready` 全量对齐**。三点共用**内容签名去重**（`taskId:status` 拼接串，变化才推）——用签名而非条数，因 kill 后 `running → killed` **条数恒为 1 而内容已变**，长度守卫会把这次关键刷新判成 no-op。⚠️ **阶段 3 补漏增补第五点**：内核 `backgroundTaskSettled` 事件（turn 结束后自然终态通知），现行推送点以代码 `postBackgroundTasks` 注释 / `protocol.ts` 五枚举为准，见上方阶段 3 Fixed 条目
 - **⓿ ready 对齐必须走 `force` 绕去重（自审带伤第 4 条）**：三个周期性推送点漏了**时间面**（本项目已踩四次）——面板折叠/关闭再打开时新 webview 从未收到 `background_tasks` ⇒ **条凭空消失而进程还在跑、用户也砍不掉**。而签名存于 extension 实例、**跨重建残留** ⇒ 光加补推会被自己的守卫吞掉。故拆 `dedup`（周期降噪）/ `force`（视图重建后对齐）两语义，不合并成一条判据
 - **接线**：`chatPanel` 增 `postBackgroundTasks()` / `killBackgroundTask()`；agent 未就绪时不推（否则「未就绪」被 UI 读成「没有后台任务」）
 - **测试**：`chatPanelBackground.test.ts` 8 条（快照只下发 4 键不含 result / agent 未装配不推 / kill 后回推终态 / 签名未变不重推 / **签名降级为长度则吞掉 kill** / **force 绕过去重** / **ready 补推接线** / 经 `resolveWebviewView` 真实注册回调驱动的 `background_kill` 路由跳）+ `chatView.test.ts` 6 条（空快照零占用 / running 行三要素 / 终态行无按钮 / 终止只回宿主载荷带 taskId / 长命令截断 + title 全文 / 优先级垫底不顶 activity）

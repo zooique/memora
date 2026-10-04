@@ -1499,7 +1499,8 @@ export class ToolExecutor {
           return (
             `[BACKGROUND_STARTED] taskId=${taskId}（命令已在本轮之外继续运行，本轮对话结束不会终止它）。` +
             '**结果不会自动进入上下文**：它不会自己跳进来，你需要时用 kill_command 传入该 taskId，' +
-            '取回截至当时的输出并终止它；若不取，它会一直跑到自己结束或超时。' +
+            '取回截至当时的输出并终止它；若不取，它会一直跑到自己结束（未传 timeoutMs 时没有超时上限）。' +
+            '寿命边界：正常退出 VS Code 时随扩展一并终止（扩展崩溃或被强制结束时不保证清理）。' +
             '命令：' +
             command
           );
@@ -1532,7 +1533,8 @@ export class ToolExecutor {
         if (!outcome) {
           return (
             `[ERR:TASK_NOT_FOUND] 未找到后台任务 "${taskId}"。` +
-            '它可能来自上一次提问（已收割）或从未存在——本轮不会终止任何进程。'
+            '任务跨轮保留、可在后续轮次 kill；该 id 可能本就有误，或来自扩展重启前的会话' +
+            '（注册表不跨重启保留）——本轮不会终止任何进程。'
           );
         }
         const task = this.backgroundTasks.get(taskId);

@@ -6,8 +6,9 @@
  *   2. 完成 → 回调一次 + completed 态 + 结果可读
  *   3. kill → 返回已捕获输出 + killed 态，且**不再回调**（防同一结果被消费两次）
  *   4. detachAll → 脱管全部存活任务（**进程继续跑**、状态仍 running），已终态不计入
- *   5. 不存在的 taskId → get/kill 返回 null（非抛错）
- *   6. **实例隔离**：两个注册表互不可见（非单例——多会话不得互杀，§14.1 定案守卫）
+ *   5. killAllRunning → 实例终态真杀全部 running（已终态不动、不回调 listener）
+ *   6. 不存在的 taskId → get/kill 返回 null（非抛错）
+ *   7. **实例隔离**：两个注册表互不可见（非单例——多会话不得互杀，§14.1 定案守卫）
  *
  * 进程治理本身（杀树 / 内存护栏）的断言在 skillScriptRunner 侧，本文件不重复。
  */
@@ -20,11 +21,19 @@ import {
 } from '../backgroundTasks.js';
 
 /**
- * 跨平台长驻命令（经注册表内的 shell 派发：Windows cmd /c，POSIX sh -c）
+ * 跨平台长驻命令（经注册表内的 shell 派发：Windows `cmd /c`、POSIX `sh -c`）
  * 生命周期 120s：脱管/收尾靠 kill/detachAll 主动处理而非自然退出——给 gate-full
- * 全量并发下的调度抖动留余量（20000 在饱和负载下会被测试窗口追上）
+ * 全量并发下的调度抖动留余量。
+ *
+ * ⚠️ 引号在两个 shell 里命运相反（2026-10-04 实锤）：双引号版在 `sh -c` 下保护
+ * `()` 合法；在 `cmd /c` 下引号被原样传给 node，eval 的是「字符串字面量」
+ * （空表达式语句，**秒退且 exit 0 = 假活**）。无引号 function 版反之：cmd 下是
+ * 单个合法 token，sh 下 `()` 属语法错误。故按平台分叉，同 resolveShellCommand。
  */
-const SLEEP_CMD = 'node -e "setTimeout(()=>{},120000)"';
+const SLEEP_CMD =
+  process.platform === 'win32'
+    ? 'node -e setTimeout(function(){},120000)'
+    : 'node -e "setTimeout(()=>{},120000)"';
 /** 跨平台快速命令（完成态用例用） */
 const ECHO_CMD = 'echo memora-bg-ok';
 
@@ -42,6 +51,15 @@ async function waitForRunning(registry: BackgroundTaskRegistry, taskIds: string[
     .map((t) => `${t.taskId}:${t.status}`)
     .join(', ');
   throw new Error(`任务未按预期存活（${snapshot}）`);
+}
+
+/** 轮询等待任务离开 running（自然终态用；裸 sleep 在全量并发下不可靠） */
+async function waitForTerminal(registry: BackgroundTaskRegistry, taskId: string): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    if (registry.get(taskId)?.status !== 'running') return;
+    await sleep(200);
+  }
+  throw new Error(`任务未按预期结束（${registry.get(taskId)?.status}）`);
 }
 
 describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
@@ -97,8 +115,8 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
 
     const detached = registry.detachAll();
     expect(detached.map((t) => t.taskId).sort()).toEqual([a, b].sort());
-    // ⚠️ 脱管 ≠ 终止：状态必须仍是 running（这是与旧 reapAll 的**行为反转**，
-    // 变异验证：把 detachAll 改回调 killNow 即红）
+    // ⚠️ 脱管 ≠ 终止：状态必须仍是 running
+    // （变异验证：把 detachAll 改回调 killNow 即红）
     detached.forEach((t) => expect(t.status).toBe('running'));
     // 进程真的还活着：注册表仍查得到、仍可 kill 取回输出
     expect(registry.get(a)?.status).toBe('running');
@@ -108,6 +126,50 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
 
     // 收尾清理（避免 120s 进程泄漏到后续用例）
     registry.kill(b);
+  });
+
+  it('killAllRunning → 实例终态真杀全部 running；已终态不动、不回调 listener', async () => {
+    const registry = new BackgroundTaskRegistry();
+
+    // ① 先起一条长驻并确认真活：waitForRunning 首检可能命中 start 的占位 running，
+    //    故再留 300ms 窗口复查——饱和并发下 spawn 异步失败会在此窗口暴露为非 running
+    const a = registry.start(SLEEP_CMD);
+    await waitForRunning(registry, [a]);
+    await sleep(300);
+    if (registry.get(a)?.status !== 'running') {
+      throw new Error(`前置任务未真存活（${registry.get(a)?.status}），本用例无有效断言对象`);
+    }
+
+    // ② 再造一条 killed：主动终止（错开 spawn，避免多条长驻同时起的瞬时负载）
+    const d = registry.start(SLEEP_CMD);
+    await waitForRunning(registry, [d]);
+    registry.kill(d);
+    expect(registry.get(d)?.status).toBe('killed');
+
+    // ③ 再造一条 completed（自然终态）
+    const settleCalls: BackgroundTask[] = [];
+    registry.setCompletionListener((t) => settleCalls.push(t));
+    const c = registry.start(ECHO_CMD);
+    await waitForTerminal(registry, c);
+    expect(registry.get(c)?.status).toBe('completed');
+
+    // ④ 换装干净探针：此后只允许出现收割「不应触发」的回调（自然终态已全部发生完）
+    const listenerCallsAfterSetup: BackgroundTask[] = [];
+    registry.setCompletionListener((t) => listenerCallsAfterSetup.push(t));
+
+    // ⑤ 收割：表里 running 仅 a 一条（c=completed、d=killed 都不得被碰）
+    const count = registry.killAllRunning();
+    expect(count).toBe(1);
+    expect(registry.get(a)?.status).toBe('killed');
+    // 变异验证：若收割漏 status 判据扫全表，下面两条会被覆盖成 killed
+    expect(registry.get(c)?.status).toBe('completed');
+    expect(registry.get(d)?.status).toBe('killed');
+    // 自然完成的 c 恰好转过一次回调（前置监听期），换装后无新增
+    expect(settleCalls.map((t) => t.taskId)).toEqual([c]);
+
+    // 给 a 的进程退出事件留落定窗口：收割不得触发任何 listener 回调（主动终止不回流）
+    await sleep(800);
+    expect(listenerCallsAfterSetup).toHaveLength(0);
   });
 
   it('不存在的 taskId → get/kill 返回 null（不抛错）', () => {

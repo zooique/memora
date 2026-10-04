@@ -6,6 +6,7 @@ import { getLogger } from '@/utils/loggerHolder.js';
 import { toError } from '@/utils/toError.js';
 import type { AskQuestion } from '@/agent/types.js';
 import type { CompressTarget } from '@/agent/loop.js';
+import type { BackgroundTaskNaturalStatus } from '@/agent/backgroundTasks.js';
 
 /** Agent 事件名常量（运行时真理源，与 AgentEventMap 键集一致） */
 export const AGENT_EVENTS = {
@@ -46,9 +47,13 @@ export const AGENT_EVENTS = {
    */
   roundSummaryGenerated: 'roundSummaryGenerated',
   /**
-   * 后台任务转入终态（`run_command` background 跑完 / 被 kill / 超时清理）。
-   * 宿主据此推 UI 快照——脱管后 turn 已结束，靠 step_boundary / background_report 三个
-   * 推送时机覆盖不到「任务自然跑完」，缺此事件 UI 会一直显示假活跃的「运行中」。
+   * 后台任务**自然终态**（`run_command` background 进程自己跑完 / 到点超时强杀）。
+   * 宿主据此推 UI 快照——脱管后 turn 已结束，宿主周期性推送（step_boundary /
+   * background_report）覆盖不到「turn 结束后任务自然跑完」，缺此事件 UI 会一直显示
+   * 假活跃的「运行中」。
+   * ⚠️ **主动 kill 不发本事件**：注册表 kill 刻意不回调（防结果双份消费）——
+   * UI 终止按钮路径由宿主 kill 后自行回拉快照；LLM 调 kill_command 后靠下一个
+   * step_boundary（若 turn 当场结束则无推送点，已登记边界，见后台任务跨轮存活方案）。
    */
   backgroundTaskSettled: 'backgroundTaskSettled',
 } as const;
@@ -115,14 +120,20 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   /** 轮次摘要生成完成载荷：本轮 roundId（溯源）+ 成功/失败（失败时宿主仍需兜底解锁） */
   roundSummaryGenerated: { roundId: string; success: boolean };
   /**
-   * 后台任务终态载荷：只读投影（与 `agent.listBackgroundTasks()` 的元素同形状）。
+   * 后台任务**自然终态**载荷：只读投影（与 `agent.listBackgroundTasks()` 的元素同形状）。
+   *
+   * ⚠️ **仅进程自行完成 / 超时发射**（status 类型即契约，running/killed 不可能出现）：
+   * 主动 kill 不发此事件——注册表 `kill()` 刻意不回调 completion listener，防同一份输出
+   * 被 `kill_command` 返回值与完成回流双份消费；kill 后的 UI 刷新走宿主 kill 处理路径
+   * 自行回推快照。
+   *
    * 宿主只需 taskId 即可推全量快照，**刻意不携带输出**（命令输出体量可达 KB~MB，
    * UI 不呈现——同 `BackgroundTaskView` 刻意不含 `result` 的口径）。
    */
   backgroundTaskSettled: {
     taskId: string;
     command: string;
-    status: 'running' | 'completed' | 'timedOut' | 'killed';
+    status: BackgroundTaskNaturalStatus;
   };
 }
 

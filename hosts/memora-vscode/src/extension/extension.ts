@@ -699,8 +699,12 @@ export function activate(context: vscode.ExtensionContext): void {
 /**
  * 插件停用入口
  *
- * 内核 Agent.close() 内部调用 sessionManager.flushOnShutdown()（纯内存清脏 no-op——
- * 检查点不落盘，进行中工具结果与幂等标记仅内存态，正常关闭即整体丢弃，无持久化保障）。
+ * 内核 Agent.close() 内部：
+ * - 调用 sessionManager.flushOnShutdown()（纯内存清脏 no-op——
+ *   检查点不落盘，进行中工具结果与幂等标记仅内存态，正常关闭即整体丢弃，无持久化保障）；
+ * - 收割全部存活的后台**命令**进程（loop.shutdownBackgroundTasks → 注册表 taskkill 杀树）：
+ *   turn 终态刻意不杀（跨轮存活），但扩展停用时注册表随实例销毁，不杀即 OS 层孤儿
+ *   （真机观察点 ⑧ 实锤）。扩展崩溃 / 被强杀时本函数来不及执行，该场景不承诺清理。
  * 失败不阻塞插件退出。
  */
 export async function deactivate(): Promise<void> {

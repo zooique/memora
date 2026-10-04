@@ -80,6 +80,7 @@ import {
   formatBackgroundTaskNotice,
   type BackgroundTask,
   type BackgroundTaskRegistry,
+  type SettledBackgroundTask,
 } from '@/agent/backgroundTasks.js';
 
 export interface AgentLoopOptions {
@@ -182,7 +183,8 @@ export interface AgentLoopOptions {
  *     （系统事件，role 语义隔离，不伪装成用户发言）；
  *   - 满员判据不同：`interject()` 的容量裁决只看 kind==='interject'（`getPendingInterjections` 过滤），
  *     故回流条目天然不占插话满员计数，也永不因满员被拒；
- *   - 生命周期不同：插话随 turn 入口清理，回流随 turn 终态丢弃（不跨 turn，§14.5）。
+ *   - 生命周期不同：插话在新 turn 入口被 clearPendingInterjections 清掉；command-result
+ *     不经该清理、跨 turn 留存（脱管定案，见 finalizeBackgroundTasksOnTurnEnd 注释）。
  */
 type InterruptRequest =
   | { readonly kind: 'pause' }
@@ -367,24 +369,27 @@ export class AgentLoop {
   /**
    * 后台任务注册表（可选，装配层注入）
    *
-   * loop 侧只做两件事，**不碰进程治理**（spawn / 杀树 / 内存护栏全在 skillScriptRunner）：
-   *   ① 注册完成监听 → 终局时把结果入队（`kind:'command-result'`），下个 step 边界注入 system 消息；
-   *   ② turn 终态收割存活进程（§14.5，回流不跨 turn）。
-   * 未注入时两个动作都是 no-op（无后台任务可管），不报错——纯 ToolExecutor 单测场景无注册表。
+   * loop 侧只做三件事，**不碰进程治理**（spawn / 杀树 / 内存护栏全在 skillScriptRunner）：
+   *   ① 注册完成监听 → 自然终态时把结果入队（`kind:'command-result'`），下个 step 边界注入 system 消息；
+   *   ② turn 终态脱管存活进程（不杀，见 detachAll 注释），回流跨 turn 留存；
+   *   ③ Agent 实例终态（close）真杀全部存活任务（见 shutdownBackgroundTasks）——
+   *      跨 turn 但不跨宿主寿命，边界与 ② 不同。
+   * 未注入时这些动作都是 no-op（无后台任务可管），不报错——纯 ToolExecutor 单测场景无注册表。
    */
   private backgroundTasks?: BackgroundTaskRegistry;
-  /** 后台任务转入终态时通知装配层（由 Agent 在装配期接到事件面上，loop 只发不处理 UI）。
-   *  脱管后 turn 已结束，宿主三个既有推送时机覆盖不到「任务自然跑完」⇒ 缺此出口 UI 会显示
-   *  假活跃。挂在注册表 `notify` 单点链上（settle 与主动 kill 均经此），不新增 listener。 */
-  private emitBackgroundTaskSettled?: (task: BackgroundTask) => void;
+  /** 后台任务**自然终态**时通知装配层（由 Agent 在装配期接到事件面上，loop 只发不处理 UI）。
+   *  脱管后 turn 已结束，宿主挂在 turn 生命周期上的推送时机覆盖不到「任务自然跑完」⇒ 缺此
+   *  出口 UI 会显示假活跃。挂注册表 completion listener（notify）单点链，仅 settle 自然终态
+   *  到达；主动 kill 刻意不回调 listener（防同份结果双份消费），不经此事件。 */
+  private emitBackgroundTaskSettled?: (task: SettledBackgroundTask) => void;
   /**
-   * 装配层在装配期注入「后台任务终态」发射回调（**仅装配期一次**，非公开 API）。
+   * 装配层在装配期注入「后台任务自然终态」发射回调（**仅装配期一次**，非公开 API）。
    *
    * 走 Agent 事件面（`backgroundTaskSettled`）而非独立回调字段：与既有宿主事件
    * （sessionError / contextTruncated / …）同型，宿主 `bindAgentNoticeEvents` 的
    * 「先 off 再 on」幂等模式天然适用。
    */
-  setBackgroundTaskSettledEmitter(fn: ((task: BackgroundTask) => void) | undefined): void {
+  setBackgroundTaskSettledEmitter(fn: ((task: SettledBackgroundTask) => void) | undefined): void {
     this.emitBackgroundTaskSettled = fn;
   }
   /** 主动提问回调（LLM 调 ask_user 工具时调用，Agent 注入，loop 只回调不处理 UI） */
@@ -760,10 +765,11 @@ export class AgentLoop {
       taskSucceeded = false;
       throw err;
     } finally {
-      // turn 终态后台任务收尾（§14.5）：done / interrupted / error / 达到最大迭代
-      // 四条收场路径都经过本 finally ⇒ 收割调用点唯一。
+      // turn 终态后台任务脱管（§14.5 脱管定案）：done / interrupted / error / 达到最大迭代
+      // 四条收场路径都经过本 finally ⇒ 调用点唯一。
       // 判据 = pauseBoundaryReached：挂起是同 turn 续跑（后台继续跑、其回流照常注入），
-      // 不算终态、不收割。error 路径也收割——异常收场同样不能留孤儿进程。
+      // 不算终态、不脱管。脱管 = 不杀进程（error 路径也不杀）；进程寿命的终点在另一处：
+      // Agent 实例终态 close → shutdownBackgroundTasks 真杀（观察点 ⑧ 真机定类后补）。
       if (!this.pauseBoundaryReached) {
         const bgReport = this.finalizeBackgroundTasksOnTurnEnd();
         if (bgReport) {
@@ -879,7 +885,8 @@ export class AgentLoop {
    * 与插话同机制（iteration 间检查点消费、挂起/恢复全链路复用），但**异质**——
    *   - 消费时进 `appendSystemMessage`（系统事件），不进 `appendUserMessage`（不伪装用户发言）；
    *   - 不占插话满员计数（`interject()` 的容量裁决只数 kind==='interject'）；
-   *   - 不跨 turn（turn 终态随收割一并丢弃，§14.5）。
+   *   - **跨 turn 留存**（脱管定案，§14.5）：turn 终态不丢弃，下个 turn 的 step 边界照常吸收——
+   *     与插话跨 turn 同标准，同性质数据不搞两套生命周期。
    *
    * @param content 已格式化的完成通知（含来源标记「后台命令完成」+ 命令 + 输出）
    */
@@ -892,16 +899,17 @@ export class AgentLoop {
    *
    * 两件职责一次接线，避免装配层散写两处：
    *   ① 完成监听 → `enqueueCommandResult`（回流通道生产者）；
-   *   ② 持有引用供 turn 终态收割。
+   *   ② 持有引用供 turn 终态脱管报告。
    */
   setBackgroundTasks(registry: BackgroundTaskRegistry): void {
     this.backgroundTasks = registry;
     registry.setCompletionListener((task) => {
       this.enqueueCommandResult(formatBackgroundTaskNotice(task));
       // 终态同时出宿主面（阶段二补漏 · 见方案文档 §5.2）：脱管后 turn 已结束，
-      // 宿主靠 step_boundary / background_report 三个推送时机全都覆盖不到「任务自然跑完」
-      // ⇒ UI 会一直显示「运行中」。经 Agent 事件面转发（走既有 TypedEventEmitter，
-      // 与 bindAgentNoticeEvents 的 off/on 幂等模式对齐），**不新增注册表 listener**。
+      // 宿主周期性推送（step_boundary / background_report / kill 后回推）覆盖不到
+      // 「turn 结束后任务自然跑完」⇒ UI 会一直显示「运行中」。经 Agent 事件面转发
+      // （走既有 TypedEventEmitter，与 bindAgentNoticeEvents 的 off/on 幂等模式对齐），
+      // **不新增注册表 listener**。主动 kill 不经此回调（注册表刻意不回调，防双份消费）。
       this.emitBackgroundTaskSettled?.(task);
     });
   }
@@ -933,27 +941,44 @@ export class AgentLoop {
   }
 
   /**
-   * turn 终态后台任务脱管（§14.5 定案修订 · 见 `docs/方案-后台任务跨轮存活-20261004.md`）
+   * Agent 实例终态收割（**唯一调用点 = `Agent.close`**）：真杀全部存活后台命令任务。
+   *
+   * 纯透传注册表 `killAllRunning()`，判据不复制。与 turn 终态 `finalizeBackgroundTasksOnTurnEnd`
+   * 的边界见注册表 `detachAll / killAllRunning` 注释：跨 turn 存活是刻意语义，实例销毁后
+   * 任务不可寻址，留着只能是 OS 层孤儿（观察点 ⑧ 真机实锤）。
+   *
+   * 不产 `background_report`、不推 UI 快照——宿主正在退出，界面与回流都已无消费方。
+   * 注册表未装配返回 0，不抛。
+   *
+   * @returns 实际收割的 running 任务数
+   */
+  shutdownBackgroundTasks(): number {
+    return this.backgroundTasks?.killAllRunning() ?? 0;
+  }
+
+  /**
+   * turn 终态后台任务脱管（定案锚：ADR-036；论证见 `docs/方案-后台任务跨轮存活-20261004.md` §三）
    *
    * 判据 = 调用方传入的「本 turn 已收场」（挂起不算终态，见 `pauseBoundaryReached`）：
    * done / interrupted / error / 达到最大迭代 四条收场路径统一经此，调用点唯一
    * （`_runWithSlo` 的 finally）。
    *
-   * **修订前**此处两件事都带破坏性：杀光存活进程 + 丢弃未消费的 command-result 条目。
-   * **修订后只剩一件事：脱管（detach）——把存活任务移出跟踪，但进程继续跑。**
+   * 此处只做脱管（detach）——把存活任务移出跟踪，**不杀进程、不丢未消费的 command-result**。
    *
-   * 为什么不再杀：turn 是「一问一答」的**归档单元**，不是进程的容器。进程属于**会话**，
+   * 为什么不杀：turn 是「一问一答」的**归档单元**，不是进程的容器。进程属于**会话**，
    * 活过 turn 是应有语义（Claude Code 的后台任务同样活到进程退出）。真机实锤过一个反例：
    * 用户起 `ping -n 90`，turn 仅 6.3 秒结束就把进程杀了，UI 底部条从「运行中」变「已终止」
    * 而用户从未点过——「后台」名不副实，用户视角完全不可理解。
    *
-   * 为什么不再丢 command-result：旧定案只封杀 `command-result` 却放行 `interject`，而两者
-   * 性质完全相同（外部产生的事实、显式一条消息、分别经 appendSystem / appendUser）⇒ 同一现象
+   * 为什么不丢 command-result：回流与插话性质相同（外部产生的事实、显式一条消息、分别经
+   * appendSystem / appendUser），只封杀 `command-result` 而放行 `interject` ⇒ 同一现象
    * 两套标准 = 违反 SSOT；且 turn 内跑的 command-result 走的就是同一条通路（`_handleInterrupt`
    * → `appendSystem`），**机制在 turn 边界突然失效是一致性缺口，不是保护**。
    *
-   * 跨 turn 留存的两个天然边界（无需额外机制）：`interruptQueue` 挂在 Agent 级单例 `loop` 上
-   * （Agent 关闭即销毁）；注入量受 `MAX_PENDING_COMMAND_RESULTS` 限量。保质期类问题按触发驱动再定。
+   * 跨 turn 留存的边界（如实写）：`interruptQueue` 挂在 Agent 级单例 `loop` 上
+   * （Agent 关闭即销毁）；`MAX_PENDING_COMMAND_RESULTS=3` 只限**每步注入条数**（防一次性
+   * 灌爆上下文），**不限队列总量**——队列条数与注册表终态条目目前都无 GC，是已登记的
+   * 设计缺口（真机出现症状再立项，不在本次提前加机制）。
    *
    * @returns 脱管报告文本（null = 无后台任务，纯问答 turn 的常态——不产 chunk 不写 system 消息）
    */
@@ -961,7 +986,7 @@ export class AgentLoop {
     const detached = this.backgroundTasks?.detachAll() ?? [];
     if (detached.length === 0) return null;
     const detail = detached.map((t) => `- ${t.taskId}（仍在运行）：${t.command}`).join('\n');
-    return `[本轮结束 · 后台任务继续运行] 本轮结束时有 ${detached.length} 个后台命令在运行，已转为后台常驻（未被终止）。结果不会自动进入上下文：你可以在后续任意一轮用 kill_command 传入该 taskId 取回截至当时的输出。\n${detail}`;
+    return `[本轮结束 · 后台任务继续运行] 本轮结束时有 ${detached.length} 个后台命令在运行，已转为后台常驻（本轮不终止；正常退出 VS Code 时随扩展终止，崩溃/被强杀除外）。结果不会自动进入上下文：你可以在后续任意一轮用 kill_command 传入该 taskId 取回截至当时的输出。\n${detail}`;
   }
 
   /** 删除待注入的插话（宿主 UI 层用户后悔）。与 interject 对称，在 step 边界消费前可安全删除。
@@ -1207,9 +1232,11 @@ export class AgentLoop {
    * 消费注入型**系统事件**条目（command-result → appendSystemMessage）
    *
    * 与 `_consumeInterjects` 严格分开而非合并成「消费所有注入型」：
-   * 两者的注入通道（user / system）、role 语义、生命周期（跨 turn / 不跨 turn）都不同，
-   * 合并成一个泛化遍历等于把这些判据摊平到 if 分支里——将来任一判据变化都要在同
-   * 一段代码里翻找，正是「同一语义两套判定」的开始。故：两个方法，各守一条通道。
+   * 两者的注入通道（user / system）、role 语义、容量裁决（插话占满员名额 / 回流不占）不同；
+   * **生命周期 = 跨 turn 留存**（turn 终态不丢弃，下个 turn 的 step 边界照常吸收，见 finalize 注释）。
+   * 即便如此仍须分开：通道与容量判据各异，合并成一个泛化遍历等于把判据摊平到 if 分支里
+   * ——将来任一判据变化都要在同一段代码里翻找，正是「同一语义两套判定」的开始。
+   * 故：两个方法，各守一条通道。
    *
    * **限量注入**（`MAX_PENDING_COMMAND_RESULTS`）：回流是已发生的事实、不可拒收，
    * 只能限量。每步只注入 N 条，其余留队列等下个 step 边界——避免 N 个后台任务同时完成时

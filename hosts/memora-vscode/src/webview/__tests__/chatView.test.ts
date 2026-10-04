@@ -1660,7 +1660,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         ts: '',
         payload: {
           content:
-            '[本轮结束 · 后台任务继续运行] 本轮结束时有 1 个后台命令在运行，已转为后台常驻（未被终止）。结果不会自动进入上下文：你可以在后续任意一轮用 kill_command 传入该 taskId 取回截至当时的输出。\n- bg_1（仍在运行）：node server.js',
+            '[本轮结束 · 后台任务继续运行] 本轮结束时有 1 个后台命令在运行，已转为后台常驻（本轮不终止；正常退出 VS Code 时随扩展终止，崩溃/被强杀除外）。结果不会自动进入上下文：你可以在后续任意一轮用 kill_command 传入该 taskId 取回截至当时的输出。\n- bg_1（仍在运行）：node server.js',
         },
       },
     });
