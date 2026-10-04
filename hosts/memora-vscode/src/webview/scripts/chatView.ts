@@ -153,6 +153,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const activityList = document.getElementById('activityList') as HTMLElement;
   const activityMetrics = document.getElementById('activityMetrics') as HTMLElement;
   const inputBar = document.getElementById('inputBar') as HTMLElement;
+  const inputWrap = document.getElementById('inputWrap') as HTMLElement | null;
   const clarifyBar = document.getElementById('clarifyBar') as HTMLElement;
   const clarifyText = document.getElementById('clarifyText') as HTMLElement;
   const clarifyOptions = document.getElementById('clarifyOptions') as HTMLElement;
@@ -2490,6 +2491,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     dockEntries.set(id, { el, priority: DOCK_PRIORITY[id], fixed: false, active: false });
   }
 
+  /**
+   * composer 替换（A 类阻断面板激活 ⇒ 输入框整体让位）
+   *
+   * 采用**替换**而非**遮罩**：composer 直接 hidden，面板占据输入框的位置。差别不是审美——
+   * ①遮罩要新开 z-index 层（消息区 1 / 输入区 20），会与 treedd 下拉菜单抢层级、还要手写
+   * 焦点陷阱；②替换是流布局，零新层级零陷阱；③体验等价：用户此刻只能做「确认/拒绝」这一个决定。
+   * 🔴 SSOT：只由 resolveDock 调用，禁散写（散写会出现「面板关了 composer 没回来」的卡死）。
+   */
+  function setComposerReplaced(replaced: boolean): void {
+    if (inputWrap) inputWrap.hidden = replaced;
+  }
+
   function setDockActive(id: DockId, active: boolean): void {
     const entry = dockEntries.get(id);
     if (!entry || entry.active === active) return;
@@ -2521,6 +2534,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (_dockPanel?.parentNode) _dockPanel.remove();
     if (_dockChip?.parentNode) _dockChip.remove();
     const actives = [...dockEntries.values()].filter((e) => e.active);
+    // composer 让位裁决（唯一写入点）：A 类阻断面板激活即替换掉输入框——用户此刻只能做
+    // 「确认/拒绝」这一个决定。B 类信息条再多条也不抢输入框（它们不阻断）。
+    setComposerReplaced(actives.some((e) => e.priority === CONFIRM_PRIORITY));
     // 非活跃条：hidden 归位 anchor 前（不可见，位置无语义；恢复活跃时由本函数重新归位）——
     // 必须在空态提前返回**之前**执行，否则「最后一条撤销」时残留可见
     for (const e of dockEntries.values()) {
@@ -5334,6 +5350,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 显隐交裁决器（SSOT）：不再直写 hidden——直写会绕过 resolveDock 的主位/收纳裁决，
     // 与 B 类条同屏时顺序不定（方案 §九 A1）。
     setDockActive('confirm', true);
+    // 焦点落「拒绝」：composer 已被替换，焦点不能丢到 body（键盘用户会失去落点）。
+    // 选拒绝而非确认是与 fail-closed 同向的安全默认（超时亦为拒绝），误触不会造成副作用。
+    writeConfirmReject?.focus();
   }
 
   /**

@@ -7841,6 +7841,41 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(card.compareDocumentPosition(inputBar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('A 类阻断即替换 composer：审批卡挂起时输入框让位，终结后恢复', () => {
+    // 方案 P1b：输入框在阻断期间整体让位（**替换**而非遮罩 —— 零新 z-index 层、零焦点陷阱），
+    // 用户此刻只能做「确认/拒绝」这一个决定。🔴 恢复路径必须覆盖：漏了就永久卡死输入。
+    mountChatView();
+    const inputWrap = document.getElementById('inputWrap') as HTMLElement;
+    expect(inputWrap.hidden).toBe(false);
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_lock',
+      targetPath: '/workspace/d.ts',
+      tool: 'run_command',
+      description: 'echo test',
+      permission: 'owner',
+      beforeContent: null,
+      hasDiff: false,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    // 挂起中：输入框让位
+    expect(inputWrap.hidden).toBe(true);
+    // 焦点落到「拒绝」（安全默认，与 fail-closed 同向；composer 已隐藏，焦点不能丢到 body）
+    expect(document.activeElement).toBe(document.getElementById('writeConfirmReject'));
+    // 终结（用户拒绝）：输入框恢复
+    (document.getElementById('writeConfirmReject') as HTMLButtonElement).click();
+    expect(inputWrap.hidden).toBe(false);
+  });
+
+  it('B 类信息条不抢输入框：多条状态条同活也不替换 composer', () => {
+    // 反向守卫：只有 A 类（阻断）才让位。若 B 类也让位，用户发消息会被无故剥夺入口。
+    mountChatView();
+    const inputWrap = document.getElementById('inputWrap') as HTMLElement;
+    dispatch({ type: 'notice', level: 'error', message: '出错了' });
+    dispatch({ type: 'file_changes', files: ['/workspace/a.ts', '/workspace/b.ts'] });
+    expect(inputWrap.hidden).toBe(false);
+  });
+
   it('审批卡终结通知：write_confirm_closed 收卡，收卡后按钮不再回传（僵尸交互不留）', () => {
     // 缺口背景：宿主超时自动拒绝时，webview 不知道请求已死 ⇒ 卡残留、按钮点了没反应
     // （对照后台任务行「终态无终止按钮」的既有纪律）。终结通知补上这一唯一真源。
