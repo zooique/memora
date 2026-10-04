@@ -70,7 +70,7 @@ function backgroundAgentStub(initial: BackgroundTask[] = [taskWithResult()]) {
 interface BackgroundCast {
   _agent: Agent;
   _view: unknown;
-  postBackgroundTasks(): void;
+  postBackgroundTasks(mode?: 'dedup' | 'force'): void;
   killBackgroundTask(taskId: string): void;
 }
 
@@ -165,6 +165,43 @@ describe('后台任务宿主出口（chatPanel · 方案 §2.1/§2.2）', () => 
     expect(bgMsgs).toHaveLength(2);
     const last = bgMsgs[1] as { items: { status: string }[] };
     expect(last.items[0]?.status).toBe('killed');
+  });
+
+  it('force 绕过去重：紧邻的同签名快照也再推一次（webview 重建后必须重新对齐）', () => {
+    const h = setupBackground();
+    h.cast._agent = backgroundAgentStub().agent;
+
+    h.cast.postBackgroundTasks(); // dedup 首次：推
+    const afterFirst = h.posted.length;
+    h.cast.postBackgroundTasks('force');
+
+    // 断言「增量恰为 1」而非「总共 N 条」——后者会被两种不同错误实现同时满足
+    // （dedup 退化成不设限、force 也被去重）⇒ 变异时仍绿 = 因错误的原因通过
+    expect(h.posted.length).toBe(afterFirst + 1);
+  });
+
+  it('ready 补推接线：handleWebviewReady 必走 force（否则面板重开后台条凭空消失）', async () => {
+    // 回归守卫：只推事件点、不在 ready 补推 ⇒ 折叠/关闭再打开面板时新 webview 从未收到
+    // background_tasks，而后台进程还在跑、用户看不到也砍不掉（同 pushFileChanges 的时间面漏面）。
+    const h = setupBackground();
+    h.cast._agent = backgroundAgentStub().agent;
+    h.cast.postBackgroundTasks(); // 先推一次，把签名写满（模拟事件点已推过）
+    const before = h.posted.length;
+    const p = h.provider as unknown as {
+      ensureAgent(): Promise<void>;
+      replaySession(): void;
+      handleWebviewReady(): Promise<void>;
+    };
+    p.ensureAgent = async () => {};
+    p.replaySession = () => {}; // 与本断言无关的回放（避免掺入历史轮噪声）
+    (h.provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+
+    await p.handleWebviewReady();
+
+    const bgMsgs = h.posted
+      .slice(before)
+      .filter((m) => (m as { type: string }).type === 'background_tasks');
+    expect(bgMsgs).toHaveLength(1);
   });
 
   it('路由跳：webview 的 background_kill 消息真能走到 killBackgroundTask（经 resolveWebviewView 注册的回调）', () => {

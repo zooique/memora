@@ -1952,6 +1952,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // ④ 文件改动常驻条补推：该条只在「改动集变化」时推送，面板重开/回放时必须补一次——
     //    否则关掉面板再打开，常驻条凭空消失（项目里踩过四次的「时间面」漏面）。
     this.pushFileChanges();
+    // ⑤ 后台任务条补推：与 ④ 同型的时间面漏面——本条只在三个事件点推（step_boundary /
+    //    background_report / kill 后），面板重开时新 webview 从未收到过该消息 ⇒ 条凭空消失，
+    //    而进程还在跑、用户看不到也砍不掉。**必须走 'force' 绕签名去重**（签名跨重建残留）。
+    this.postBackgroundTasks('force');
     // 角色 handoff 预填补发：视图解析后 webview 监听器已就绪，安全投递
     if (this._pendingPrefill !== undefined) {
       this.post({ type: 'prefill_input', text: this._pendingPrefill });
@@ -3476,8 +3480,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 是周期性到达的 ⇒ 无任务时逐 step 推空快照纯属 IPC 噪音。
    * 用**签名**而非「条数」判变化：`kill` 后 `running → killed` 条数恒为 1 而内容已变，
    * 长度守卫会把这次关键刷新判成 no-op（同 `syncPendingQueue` 长度守卫的反向教训）。
+   *
+   * @param mode `dedup`（默认）= 周期推送点，走签名去重降噪；
+   *   `force` = **webview ready 全量对齐**，绕过去重——签名存于 extension 实例、
+   *   跨 webview 重建（折叠/关闭再打开）残留，不绕则这次补推被自己的守卫吞掉，
+   *   表现为「面板重开后后台任务条凭空消失，而进程还在跑、用户也砍不掉」。
+   *   两者语义不同（降噪 vs 对齐），故不合并成一条判据。
    */
-  private postBackgroundTasks(): void {
+  private postBackgroundTasks(mode: 'dedup' | 'force' = 'dedup'): void {
     if (!this._agent) return;
     const items = this._agent.listBackgroundTasks().map((t) => ({
       taskId: t.taskId,
@@ -3488,7 +3498,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       statusLabel: BACKGROUND_TASK_STATUS_LABELS[t.status],
     }));
     const signature = items.map((t) => `${t.taskId}:${t.status}`).join('|');
-    if (signature === this._backgroundSignature) return;
+    if (mode === 'dedup' && signature === this._backgroundSignature) return;
     this._backgroundSignature = signature;
     this.post({ type: 'background_tasks', items });
   }
