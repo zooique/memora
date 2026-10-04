@@ -124,20 +124,31 @@ export class BackgroundTaskRegistry {
   }
 
   /**
-   * turn 终态收割：强杀**所有存活**任务（走杀树原语）
+   * turn 终态**脱管**：把存活任务移出「本轮跟踪」，但**进程继续跑**（定案修订，见
+   * `docs/方案-后台任务跨轮存活-20261004.md`）
    *
-   * @returns 被收割的任务清单（供收尾报告）；已终态的不重复收割
+   * 与修订前的 `reapAll`（强杀全部存活任务）**行为完全相反**，此处不做任何兼容：
+   * 旧行为已在真机被证伪（用户起 `ping -n 90`，turn 6.3 秒结束就把进程杀了，
+   * UI 底部条从「运行中」变「已终止」而用户从未点过）。
+   *
+   * 「脱管」的实际含义 = **什么都不做**：
+   *   - 不杀进程（`killNow` 不调用）⇒ 进程继续跑，输出继续被捕获
+   *   - 不改 status（仍是 `running`）⇒ `list()` / UI 条照常显示「运行中」
+   *   - 不清注册表条目 ⇒ 用户随时可 `kill(taskId)` 取回截至当时的输出
+   *
+   * 进程生命周期交给**宿主进程**兜底（Agent 关闭 / 窗口关闭时随 spawn 树一起走），
+   * 与 Claude Code「tasks are auto-cleaned up when Claude Code exits」同源。
+   * 后台任务自身仍受 `BACKGROUND_MAX_TIMEOUT_MS`（30min）封顶 ⇒ 脱管窗口天然有界。
+   *
+   * @returns 本轮结束时仍在运行的任务清单（供脱管报告）；已终态的不计入
    */
-  reapAll(): BackgroundTask[] {
-    const reaped: BackgroundTask[] = [];
+  detachAll(): BackgroundTask[] {
+    const detached: BackgroundTask[] = [];
     for (const entry of this.tasks.values()) {
       if (entry.status !== 'running') continue;
-      entry.result = entry.peek();
-      entry.killNow();
-      entry.status = 'killed';
-      reaped.push(this.projection(entry));
+      detached.push(this.projection(entry));
     }
-    return reaped;
+    return detached;
   }
 
   // ── 内部 ──

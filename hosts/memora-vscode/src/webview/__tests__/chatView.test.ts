@@ -1645,9 +1645,11 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(details.textContent).toContain('完成：是');
   });
 
-  it('后台任务收割小节：background_report 事件 → finalize 渲染多行报告（§14.5）', () => {
+  it('后台任务收尾小节：background_report 事件 → finalize 渲染多行报告（§14.5 脱管定案）', () => {
     // 渲染单点 = renderRoundBlock（finalize 与重放共用）——单点有测试即双路有保障。
-    // 无收割的轮无此事件 → 小节不出现（由上方用例的「无收割内容」断言天然覆盖）。
+    // 无存活后台任务的轮无此事件 → 小节不出现（由上方用例的「无收尾内容」断言天然覆盖）。
+    // ⚠️ 假数据必须是**脱管后的新文案**：沿用旧的「已全部终止」= 测试在固化一句对用户
+    // 不再成立的假话（真机 2026-10-04 用户截图即此症状）。小节标题同理不得写「收割」。
     mountChatView();
     beginRound();
     dispatch({
@@ -1658,7 +1660,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         ts: '',
         payload: {
           content:
-            '[本轮结束 · 后台任务收割] 本轮仍有 1 个后台命令在运行，已全部终止（其输出不再回流）：\n- bg_1（status=killed）：node server.js',
+            '[本轮结束 · 后台任务继续运行] 本轮结束时有 1 个后台命令在运行，已转为后台常驻（未被终止）。结果不会自动进入上下文：你可以在后续任意一轮用 kill_command 传入该 taskId 取回截至当时的输出。\n- bg_1（仍在运行）：node server.js',
         },
       },
     });
@@ -1667,9 +1669,12 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const details = document.querySelector('.round-block__details') as HTMLElement;
     expect(details).not.toBeNull();
     // 小节标题 + 多行报告逐行渲染（\n 拆行，textContent 防注入）
-    expect(details.textContent).toContain('后台任务收割');
-    expect(details.textContent).toContain('[本轮结束 · 后台任务收割]');
-    expect(details.textContent).toContain('- bg_1（status=killed）：node server.js');
+    expect(details.textContent).toContain('后台任务收尾');
+    expect(details.textContent).toContain('[本轮结束 · 后台任务继续运行]');
+    expect(details.textContent).toContain('- bg_1（仍在运行）：node server.js');
+    // 反向守卫：旧「收割/已全部终止」措辞不得复活（脱管后进程并未被杀）
+    expect(details.textContent).not.toContain('已全部终止');
+    expect(details.textContent).not.toContain('后台任务收割');
   });
 
   it('执行指标 · meta.maxTokens 生效值亮明：被角色包收紧时看这行（非面板配置值）', () => {

@@ -1997,8 +1997,11 @@ describe('run_command / kill_command（命令执行工具层）', () => {
   });
 
   afterEach(async () => {
-    // 先收割残留后台进程：它们的 cwd 是 tmpProject，不收完就删目录会 EBUSY（本机实测）
-    for (const registry of registries) registry.reapAll();
+    // 先终止残留后台进程：它们的 cwd 是 tmpProject，不收完就删目录会 EBUSY（本机实测）。
+    // ⚠️ 必须用 kill 而非 detachAll——脱管定案下 detachAll 故意不杀进程（正是本轮的行为反转）。
+    for (const registry of registries) {
+      for (const t of registry.list()) registry.kill(t.taskId);
+    }
     registries = [];
     await index.close?.();
     // Windows：taskkill 返回后 cmd wrapper 仍可能短暂持有 cwd 句柄 → 删目录重试

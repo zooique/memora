@@ -1497,8 +1497,9 @@ export class ToolExecutor {
             typeof rawTimeout === 'number' && Number.isFinite(rawTimeout) ? rawTimeout : undefined,
           );
           return (
-            `[BACKGROUND_STARTED] taskId=${taskId}（命令已在后台运行，完成后结果会自动进入你的上下文）。` +
-            '期间可继续其它工作；不再需要时用 kill_command 传入该 taskId 终止并取回截至当时的输出。' +
+            `[BACKGROUND_STARTED] taskId=${taskId}（命令已在本轮之外继续运行，本轮对话结束不会终止它）。` +
+            '**结果不会自动进入上下文**：它不会自己跳进来，你需要时用 kill_command 传入该 taskId，' +
+            '取回截至当时的输出并终止它；若不取，它会一直跑到自己结束或超时。' +
             '命令：' +
             command
           );

@@ -6663,11 +6663,11 @@ describe('AgentLoop · 工具的 step 归属（tool_start.stepIndex）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：后台命令回流与 turn 终态收割（§14）
-// 覆盖：回流注入 system 消息 / 不占插话满员 / 终态收割 / 挂起不收割
+// 测试：后台命令回流与 turn 终态脱管（§14）
+// 覆盖：回流注入 system 消息 / 不占插话满员 / 终态脱管 / 跨 turn 留存 / 挂起不脱管
 // ═══════════════════════════════════════════════════════════════
 
-describe('AgentLoop · 后台命令回流与 turn 终态收割（§14）', () => {
+describe('AgentLoop · 后台命令回流与 turn 终态脱管（§14 · 脱管定案修订）', () => {
   /** 跨平台长驻命令（经注册表内的 shell 派发：Windows cmd /c，POSIX sh -c） */
   const SLEEP_CMD = 'node -e setTimeout(function(){},20000)';
 
@@ -6726,7 +6726,7 @@ describe('AgentLoop · 后台命令回流与 turn 终态收割（§14）', () =>
     expect(loop.getPendingInterjections()).toHaveLength(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);
   });
 
-  it('turn 终态 → 收割存活后台进程 + 追加如实报告（不静默丢弃）', async () => {
+  it('turn 终态 → 后台进程脱管继续跑 + 追加如实报告（不再杀、不静默丢弃）', async () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [
@@ -6749,11 +6749,15 @@ describe('AgentLoop · 后台命令回流与 turn 终态收割（§14）', () =>
 
     const chunks = await drain(loop.processUserInput('读取文件'));
 
-    // 终态收割：进程被杀 + 报告进上下文
-    expect(registry.get(taskId)?.status).toBe('killed');
-    const report = loop.getMessages().find((m) => m.content.includes('后台任务收割'));
+    // ⚠️ 脱管 ≠ 终止（定案反转 · 见 docs/方案-后台任务跨轮存活-20261004.md）：
+    // turn 终态**不杀**进程，状态必须仍是 running。
+    // 变异验证：把 detachAll 改回 killNow+置 killed 即红。
+    expect(registry.get(taskId)?.status).toBe('running');
+    // 报告文案不得再宣称「已终止」——那正是真机被诟病的说谎点
+    const report = loop.getMessages().find((m) => m.content.includes('后台任务继续运行'));
     expect(report).toBeDefined();
     expect(report!.content).toContain(taskId);
+    expect(report!.content).not.toContain('已全部终止');
     // 双通道上屏轨：turn 收尾 yield background_report chunk（宿主上屏 + 桥接落盘，
     // 与 plan_snapshot 同型瞬态信号；system 消息轨已由上方断言覆盖）。
     // ⚠️ 时序契约在**宿主消费层**而非 chunk 层：done chunk 由迭代循环产出（在本 chunk 之前），
@@ -6766,9 +6770,12 @@ describe('AgentLoop · 后台命令回流与 turn 终态收割（§14）', () =>
     );
     expect(bgChunk).toBeDefined();
     expect(bgChunk!.content).toContain(taskId);
+
+    // 收尾清理（脱管后进程仍在跑，显式终止避免泄漏到后续用例）
+    registry.kill(taskId);
   });
 
-  it('纯问答无存活后台任务 → 不产 background_report（常态零块）', async () => {
+  it('纯问答无存活后台任务 → 不产 background_report（常态零块 · 反向守卫）', async () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([[{ content: '你好' }]]),
       bootstrapMemories: [],
@@ -6827,10 +6834,17 @@ describe('AgentLoop · 后台命令回流与 turn 终态收割（§14）', () =>
     expect(sawNextTurn).toBe(false);
   });
 
-  it('aborted 收场（无 done 分支消费机会）→ 队列里的回流被丢弃，不跨 turn', async () => {
+  it('aborted 收场（无 done 分支消费机会）→ 队列里的回流跨 turn 留存，下一轮被吸收', async () => {
     // 为什么单独走 aborted：done 分支会把队列里的回流消费掉并再跑一轮，
-    // 于是「终态丢弃」永远走不到。aborted 是**没有 done 消费点**的终态路径——
-    // 在 aborted chunk 处入队的回流，只可能被终态收尾丢弃。
+    // 于是「终态后的队列」永远为空。aborted 是**没有 done 消费点**的终态路径——
+    // 在 aborted chunk 处入队的回流会**径直撞上**终态收尾，是本条判据
+    // （`finalizeBackgroundTasksOnTurnEnd` 不清 command-result）唯一能稳定驱到的路径。
+    //
+    // ⚠️ 2026-10-04 定案修订：本用例原断言「被丢弃，不跨 turn」，与脱管定案直接冲突。
+    // 该守卫的原始意图（陈旧结果不该凭空注入新问题）**仍成立**，但它的实现手段
+    // （turn 边界一刀切丢弃）过宽——把「用户插话跨 turn 放行 / 后台结果跨 turn 封杀」
+    // 这对同性质数据的双标准固化了下来。改为「留存 + 下一轮被吸收」后，
+    // 模型仍是**显式看到**这条 system 消息（不吞声、不偷注），原意图等价达成。
     const seen: string[][] = [];
     let turnIndex = 0;
     const turns: ChunkItem[][] = [[{ content: '回答' }], [{ content: '下一轮回答' }]];
@@ -6854,15 +6868,15 @@ describe('AgentLoop · 后台命令回流与 turn 终态收割（§14）', () =>
       }
     }
 
-    // 下一轮 LLM 请求里不得出现它
+    // 下一轮 LLM 请求里**必须**出现它（显式 system 消息，模型看得见，不吞声）
     for await (const _chunk of loop.processUserInput('下一个问题')) {
       void _chunk;
     }
-    const leaked = seen.at(-1)?.some((c) => c.includes('bg-stale')) ?? false;
-    expect(leaked).toBe(false);
+    const delivered = seen.at(-1)?.some((c) => c.includes('bg-stale')) ?? false;
+    expect(delivered).toBe(true);
   });
 
-  it('挂起不是终态 → 不收割（续跑期间后台进程继续跑）', async () => {
+  it('挂起不是终态 → 不脱管（续跑期间后台进程继续跑）', async () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [
@@ -6889,14 +6903,16 @@ describe('AgentLoop · 后台命令回流与 turn 终态收割（§14）', () =>
       if (chunk.type === 'paused') break;
     }
     expect(chunks.some((c) => c.type === 'paused')).toBe(true);
-    // 挂起 ≠ 终态：进程仍在跑（若被误收割，这条会红）
+    // 挂起 ≠ 终态：进程仍在跑（若被误脱管收尾，这条会红）
     expect(registry.get(taskId)?.status).toBe('running');
 
-    // 续跑到终态 → 此时才收割
+    // 续跑到终态 → 此时才走终态脱管收尾（**进程仍不杀**，见下方断言）
     for await (const _chunk of loop.continueAfterPause()) {
       void _chunk;
     }
-    expect(registry.get(taskId)?.status).toBe('killed');
+    expect(registry.get(taskId)?.status).toBe('running');
+    // 收尾清理（脱管不杀 ⇒ 显式终止，避免 20s 进程泄漏到后续用例）
+    registry.kill(taskId);
   });
 
   it('回流限量注入：超过上限的留队等下个 step 边界（不截半丢弃）', async () => {
@@ -6938,7 +6954,7 @@ describe('AgentLoop · 后台命令回流与 turn 终态收割（§14）', () =>
 });
 
 describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
-  // 长驻命令：20s 后自退，测试内显式收割避免残留
+  // 长驻命令：20s 后自退，测试内显式终止避免残留
   const BG_SLEEP_CMD = 'node -e setTimeout(function(){},20000)';
 
   function makeBgLoop(): AgentLoop {
@@ -6966,7 +6982,7 @@ describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
       expect(tasks[0]?.taskId).toBe(taskId);
       expect(tasks[0]?.status).toBe('running');
     } finally {
-      registry.reapAll();
+      registry.kill(taskId);
     }
   });
 
@@ -6980,7 +6996,7 @@ describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
       expect(killed?.taskId).toBe(taskId);
       expect(killed?.status).toBe('killed');
     } finally {
-      registry.reapAll();
+      registry.kill(taskId);
     }
   });
 
@@ -6992,7 +7008,7 @@ describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
       expect(loop.killBackgroundTask('bg-999')).toBeNull();
       expect(loop.getBackgroundTasks()).toEqual([]);
     } finally {
-      registry.reapAll();
+      registry.detachAll();
     }
   });
 
@@ -7000,7 +7016,7 @@ describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
     const loop = makeBgLoop();
     const registry = new BackgroundTaskRegistry();
     loop.setBackgroundTasks(registry);
-    registry.start(BG_SLEEP_CMD);
+    const taskId = registry.start(BG_SLEEP_CMD);
     try {
       const task = loop.getBackgroundTasks()[0];
       expect(task).toBeDefined();
@@ -7008,7 +7024,7 @@ describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
       expect(keys).not.toContain('killNow');
       expect(keys).not.toContain('peek');
     } finally {
-      registry.reapAll();
+      registry.kill(taskId);
     }
   });
 });

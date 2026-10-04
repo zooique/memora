@@ -10,6 +10,42 @@
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更，随 3.1.0 发版。**不提前 bump**——`package.json` 版本号仍为 3.0.1，bump 属发版动作而非落地动作（ADR-033）。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
 
+### ⚠️ Breaking（内核 · `background` 语义修订：turn 终态不再杀后台进程 · CMD-1 阶段 3）
+
+**真机实锤的缺陷**（`round-1791074929352.json`）：用户起 `ping -n 90`（`background=true`），
+turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI 底部条从「运行中」变「已终止」
+而**用户从未点过终止**；助手正文还说「后台运行中，完成后结果会自动回到上下文」。
+⇒ **内核文案在骗模型，模型在骗用户。**
+
+**行为反转（两句话）**：**一、别杀它。二、别扔它的结果。**
+
+- `BackgroundTaskRegistry.reapAll()` → **`detachAll()`**（脱管不杀）。旧方法**直接删除、不留兼容**——
+  旧行为已被真机证伪，留着等于留一个陷阱。脱管实际是**纯读**：不杀进程、不改 status、不清注册表
+- `loop.finalizeBackgroundTasksOnTurnEnd()` **删除** `command-result` 丢弃行；`background_report`
+  报告文案改「已转为后台常驻（未被终止）」，**不再宣称「已全部终止」**
+- ⚠️ **撤销「回流不跨 turn」定案**：该定案只封杀 `command-result` 却放行 `interject`，而两者性质完全
+  相同（外部产生的事实、显式一条消息、分别经 `appendSystem` / `appendUser`）⇒ **同一现象两套标准 =
+  违反 SSOT**；且 turn 内跑的 `command-result` 走的就是同一通路（`_handleInterrupt` →
+  `appendSystem`），**机制在 turn 边界突然失效是一致性缺口，不是保护**。本条**不是推翻定案，
+  是补齐一条没贯彻到底的判据**
+- **零新机制**：`loop` 是 Agent 级单例（`agent.ts:1350` 装配时创建一次，`:1907` close 才置 null）
+  ⇒ `interruptQueue` 天然跨 turn 存活；`clearPendingInterjections()` 只清 `interject` 不动
+  `command-result` ⇒ 两个清理点本就分流、无冲突。**零新工具 / 零新队列 / 零新状态机**
+- **诚实口径修订**（文案层是真机问题的源头①）：`[BACKGROUND_STARTED]` 回执与工具描述删去
+  「结果会自动回到你的上下文」承诺，改为显式告知「不会自动进上下文，需要时用 `kill_command` 取回」+
+  「本轮结束不会终止它」+「活不过宿主进程」
+- **诚实边界**：进程活过 turn，**活不过 extension 进程**（窗口关闭即随 spawn 树终止）——与
+  Claude Code 同源（官方：tasks are auto-cleaned up when Claude Code exits），**不是缺陷但必须写明**。
+  脱管窗口天然有界：后台任务自身受 `BACKGROUND_MAX_TIMEOUT_MS`（30min）封顶
+- **回归守卫翻转 1 条**：`aborted 收场 → 回流被丢弃，不跨 turn` 与新定案直接冲突，改为
+  「跨 turn 留存 + 下一轮被吸收」。该守卫原始意图（陈旧结果不该凭空注入）**仍成立**，但旧实现手段
+  （turn 边界一刀切丢弃）过宽；改后模型仍是**显式看到**该 system 消息，不吞声、不偷注
+- **测试**：`detachAll` 脱管不杀（3 处断言：status 仍 `running` / 仍可 `kill` 取回 / 再脱管仍能列出）
+  + turn 终态脱管 + 报告文案不得含「已全部终止」+ 纯问答不产 `background_report`（反向守卫）
+- **变异验证 2 组**（逐组精确转红）：`detachAll` 改回 `killNow`+置 `killed` → 3 红；
+  恢复 `command-result` 丢弃行 → `aborted` 留存守卫红
+- **方案文档**：`docs/方案-后台任务跨轮存活-20261004.md`（含主流对标实锤、SSOT 论证、刻意不做清单）
+
 ### Added（内核 · 后台任务宿主出口 `listBackgroundTasks` / `killBackgroundTask` · CMD-1 阶段 2 缺口）
 
 **缺口**：后台任务运行态对用户零可见、无 kill 入口——`BackgroundTaskRegistry` 的 `list()` / `kill()` 能力早已齐备，但 `src/index.ts` **零导出**，宿主拿不到数据通道（不是「没画 UI」，是「取不到数」）。
@@ -39,7 +75,7 @@
 - **后台执行**：`background: true` 显式发起（**不做超时自动转后台**，拒绝隐式状态切换）→ 立即返回 `taskId`，完成后经 step 边界气口以 system 消息回流（role 语义隔离，不占插话满员）；`LOOP_CONSTANTS.MAX_PENDING_COMMAND_RESULTS` 限量注入（超量留队续投，不截半丢弃）；turn 终态（done/interrupted/error）收割存活进程并出收尾报告，回流不跨 turn
 - **进程治理**：`skillScriptRunner.buildSpawnOptions` + `attachGovernance` 收为单点（同步/后台共用），Windows 走 `taskkill /T /F` 杀树、POSIX 走 `kill(-pgid)`；`SYNC_MAX_TIMEOUT_MS`(600s) / `BACKGROUND_MAX_TIMEOUT_MS`(1800s=30min) 双常量分治，`normalizeTimeoutMs(timeoutMs, maxMs)` 参数化取上限（不给 SSOT 函数开 mode 分支）
 - **诚实口径**：「被主动终止」不是「执行失败」——强杀态独立 `formatKilledCommandOutput`，不声称任何退出状态（防 `[COMMAND_ERROR] 退出码 -1` 谎报）；命令结果定长真源上移到格式化层（脚本/命令/后台回流三面共用，杜绝第二消费面看不到上限）
-- **宿主**：工具中文名两键 + 行动叙述（叙述命令原文 + 后台标记）+ 设置面板「执行二次确认」补 `run_command` 并显式声明 git 写操作/发布不受开关影响（ALWAYS_ASK 恒询问）；后台收尾报告上屏（「后台任务收割」小节，实时/重放同源）
+- **宿主**：工具中文名两键 + 行动叙述（叙述命令原文 + 后台标记）+ 设置面板「执行二次确认」补 `run_command` 并显式声明 git 写操作/发布不受开关影响（ALWAYS_ASK 恒询问）；后台收尾报告上屏（「后台任务收尾」小节，实时/重放同源）
 - **未做（如实登记）**：后台任务**运行态列表**（UI 零可见 + 无用户侧 kill 入口）、命令前缀 allow 白名单（阶段 2）、`.ps1` 运行时档
 
 ### Added（内核+宿主 · 环境能力宣告 · `CMD-2`，已定档 3.1.0）

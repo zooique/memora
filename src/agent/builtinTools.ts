@@ -817,7 +817,9 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       '命令执行受黑名单与用户审批约束（部分破坏性命令恒被拒绝，git 写操作类每次都会请求确认）；' +
       '被拒绝时你会收到明确说明，不会静默跳过。' +
       '⚠️ 长耗时命令（全量测试、依赖安装、冷缓存构建）传 background=true 放到后台：' +
-      '立即返回 taskId，命令结束后结果会自动回到你的上下文；用 kill_command 按 taskId 终止并取回截至当时的输出。',
+      '立即返回 taskId，命令继续运行，**本轮对话结束不会终止它**。' +
+      '但结果**不会自动回到你的上下文**——需要时用 kill_command 按 taskId 取回截至当时的输出并终止它。' +
+      '若你本轮就想要它的结果，请改用同步执行（给足 timeoutMs，上限 600s）。',
     // 目标不可静态定位（任意 shell 命令可改盘任意路径）→ opaque 屏障，与一切写互斥
     diskWrite: 'opaque',
     parameters: {
@@ -835,7 +837,9 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         },
         background: {
           type: 'boolean',
-          description: 'true = 后台执行：立即返回 taskId，结果完成后自动回到上下文（缺省同步等待）',
+          description:
+            'true = 后台执行：立即返回 taskId，命令继续跑（活过本轮对话，活不过宿主进程）。' +
+            '结果不会自动进入上下文，需要时用 kill_command 取回（缺省同步等待）',
         },
       },
       required: ['command'],

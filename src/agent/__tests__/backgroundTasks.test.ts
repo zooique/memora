@@ -5,7 +5,7 @@
  *   1. start 立即返回 taskId（不阻塞）+ running 态可查
  *   2. 完成 → 回调一次 + completed 态 + 结果可读
  *   3. kill → 返回已捕获输出 + killed 态，且**不再回调**（防同一结果被消费两次）
- *   4. reapAll → 收割全部存活任务，已终态不重复收割
+ *   4. detachAll → 脱管全部存活任务（**进程继续跑**、状态仍 running），已终态不计入
  *   5. 不存在的 taskId → get/kill 返回 null（非抛错）
  *   6. **实例隔离**：两个注册表互不可见（非单例——多会话不得互杀，§14.1 定案守卫）
  *
@@ -21,7 +21,7 @@ import {
 
 /**
  * 跨平台长驻命令（经注册表内的 shell 派发：Windows cmd /c，POSIX sh -c）
- * 生命周期 120s：收割靠 kill/reapAll 主动结束而非自然退出——给 gate-full
+ * 生命周期 120s：脱管/收尾靠 kill/detachAll 主动处理而非自然退出——给 gate-full
  * 全量并发下的调度抖动留余量（20000 在饱和负载下会被测试窗口追上）
  */
 const SLEEP_CMD = 'node -e "setTimeout(()=>{},120000)"';
@@ -55,7 +55,7 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
     expect(taskId).toBe('bg-1');
     expect(registry.get(taskId)?.status).toBe('running');
 
-    registry.reapAll();
+    registry.kill(taskId);
   });
 
   it('完成 → 回调一次 + completed 态 + 结果可读', async () => {
@@ -88,18 +88,26 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
     expect(registry.get(taskId)?.status).toBe('killed');
   });
 
-  it('reapAll → 收割全部存活任务；已终态不重复收割', async () => {
+  it('detachAll → 脱管全部存活任务（进程继续跑，状态仍是 running）；已终态不计入', async () => {
     const registry = new BackgroundTaskRegistry();
     const a = registry.start(SLEEP_CMD);
     const b = registry.start(SLEEP_CMD);
 
     await waitForRunning(registry, [a, b]);
 
-    const reaped = registry.reapAll();
-    expect(reaped.map((t) => t.taskId).sort()).toEqual([a, b].sort());
-    reaped.forEach((t) => expect(t.status).toBe('killed'));
-    // 第二次收割为空（不重复计数）
-    expect(registry.reapAll()).toHaveLength(0);
+    const detached = registry.detachAll();
+    expect(detached.map((t) => t.taskId).sort()).toEqual([a, b].sort());
+    // ⚠️ 脱管 ≠ 终止：状态必须仍是 running（这是与旧 reapAll 的**行为反转**，
+    // 变异验证：把 detachAll 改回调 killNow 即红）
+    detached.forEach((t) => expect(t.status).toBe('running'));
+    // 进程真的还活着：注册表仍查得到、仍可 kill 取回输出
+    expect(registry.get(a)?.status).toBe('running');
+    expect(registry.kill(a)?.status).toBe('killed');
+    // 脱管是纯读，不改任何状态 ⇒ 再脱管仍能列出未终结的那条（b）
+    expect(registry.detachAll().map((t) => t.taskId)).toEqual([b]);
+
+    // 收尾清理（避免 120s 进程泄漏到后续用例）
+    registry.kill(b);
   });
 
   it('不存在的 taskId → get/kill 返回 null（不抛错）', () => {
@@ -117,7 +125,7 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
     expect(sessionB.get(taskId)).toBeNull();
     expect(sessionB.kill(taskId)).toBeNull();
 
-    sessionA.reapAll();
+    sessionA.kill(taskId);
   });
 });
 

@@ -1942,15 +1942,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         listEl.appendChild(row);
       });
     }
-    // § 后台任务收割（§14.5）：内核 turn 终态收割存活后台进程后产（无收割则无此事件、
-    // 小节不出现——纯问答常态零块）。与 plan_snapshot 同型：实时仅入缓冲，finalize/重放
-    // 在此单点消费（实时/重放同源，规避「实时建行 → finalize 重建删行」的双形态维护）。
+    // § 后台任务收尾（§14.5 定案修订）：内核 turn 终态**脱管**（存活任务转后台常驻、进程不被杀）
+    // 后产（无存活后台任务则无此事件、小节不出现——纯问答常态零块）。与 plan_snapshot 同型：
+    // 实时仅入缓冲，finalize/重放在此单点消费（实时/重放同源，规避「实时建行 → finalize 重建删行」
+    // 的双形态维护）。⚠️ 小节标题**不得**写「收割」——脱管定案下进程并未被杀，
+    // 沿用旧标题会当着用户的面说反话（真机 2026-10-04 用户截图即此症状）。
     const bgReports = events.filter(
       (e): e is Extract<ProcessEvent, { type: 'background_report' }> =>
         e.type === 'background_report',
     );
     if (bgReports.length > 0) {
-      const { listEl } = sectionOf(details, '后台任务收割');
+      const { listEl } = sectionOf(details, '后台任务收尾');
       for (const rep of bgReports) {
         // 多行报告按 \n 拆行渲染（textContent 防注入；格式化单点在内核，宿主零猜测）
         for (const line of rep.payload.content.split('\n')) {

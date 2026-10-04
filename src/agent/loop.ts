@@ -914,30 +914,35 @@ export class AgentLoop {
   }
 
   /**
-   * turn 终态后台任务收尾（§14.5）：收割存活进程 + 丢弃本 turn 未消费的回流条目
+   * turn 终态后台任务脱管（§14.5 定案修订 · 见 `docs/方案-后台任务跨轮存活-20261004.md`）
    *
    * 判据 = 调用方传入的「本 turn 已收场」（挂起不算终态，见 `pauseBoundaryReached`）：
    * done / interrupted / error / 达到最大迭代 四条收场路径统一经此，调用点唯一
    * （`_runWithSlo` 的 finally）。
    *
-   * 两件事，缺一不可：
-   *   ① 收割存活进程（走注册表 → skillScriptRunner 杀树原语），并以 system 消息**如实报告**
-   *      ——不静默丢弃被杀的进程，否则 LLM 会以为自己的后台命令还活着；
-   *   ② 丢弃队列里未消费的 command-result 条目（回流不跨 turn，§14.5）——否则下一次
-   *      提问的 step 边界会把上一个 turn 的陈旧结果注入新问题上下文。
-   *      插话条目**不动**（它们由 processUserInput 入口的 clearPendingInterjections 负责，
-   *      且暂停续跑链上的插话有独立语义）。
+   * **修订前**此处两件事都带破坏性：杀光存活进程 + 丢弃未消费的 command-result 条目。
+   * **修订后只剩一件事：脱管（detach）——把存活任务移出跟踪，但进程继续跑。**
    *
-   * @returns 收尾报告文本（null = 无后台任务，纯问答 turn 的常态——不产 chunk 不写 system 消息）
+   * 为什么不再杀：turn 是「一问一答」的**归档单元**，不是进程的容器。进程属于**会话**，
+   * 活过 turn 是应有语义（Claude Code 的后台任务同样活到进程退出）。真机实锤过一个反例：
+   * 用户起 `ping -n 90`，turn 仅 6.3 秒结束就把进程杀了，UI 底部条从「运行中」变「已终止」
+   * 而用户从未点过——「后台」名不副实，用户视角完全不可理解。
+   *
+   * 为什么不再丢 command-result：旧定案只封杀 `command-result` 却放行 `interject`，而两者
+   * 性质完全相同（外部产生的事实、显式一条消息、分别经 appendSystem / appendUser）⇒ 同一现象
+   * 两套标准 = 违反 SSOT；且 turn 内跑的 command-result 走的就是同一条通路（`_handleInterrupt`
+   * → `appendSystem`），**机制在 turn 边界突然失效是一致性缺口，不是保护**。
+   *
+   * 跨 turn 留存的两个天然边界（无需额外机制）：`interruptQueue` 挂在 Agent 级单例 `loop` 上
+   * （Agent 关闭即销毁）；注入量受 `MAX_PENDING_COMMAND_RESULTS` 限量。保质期类问题按触发驱动再定。
+   *
+   * @returns 脱管报告文本（null = 无后台任务，纯问答 turn 的常态——不产 chunk 不写 system 消息）
    */
   private finalizeBackgroundTasksOnTurnEnd(): string | null {
-    this.interruptQueue = this.interruptQueue.filter((r) => r.kind !== 'command-result');
-    const reaped = this.backgroundTasks?.reapAll() ?? [];
-    if (reaped.length === 0) return null;
-    const detail = reaped
-      .map((t) => `- ${t.taskId}（status=${t.status}）：${t.command}`)
-      .join('\n');
-    return `[本轮结束 · 后台任务收割] 本轮仍有 ${reaped.length} 个后台命令在运行，已全部终止（其输出不再回流）：\n${detail}`;
+    const detached = this.backgroundTasks?.detachAll() ?? [];
+    if (detached.length === 0) return null;
+    const detail = detached.map((t) => `- ${t.taskId}（仍在运行）：${t.command}`).join('\n');
+    return `[本轮结束 · 后台任务继续运行] 本轮结束时有 ${detached.length} 个后台命令在运行，已转为后台常驻（未被终止）。结果不会自动进入上下文：你可以在后续任意一轮用 kill_command 传入该 taskId 取回截至当时的输出。\n${detail}`;
   }
 
   /** 删除待注入的插话（宿主 UI 层用户后悔）。与 interject 对称，在 step 边界消费前可安全删除。
@@ -1101,13 +1106,14 @@ export class AgentLoop {
     //
     // ⚠️ 后台回流（command-result）**同样**在此消费，理由与插话同源但多一层：
     // 收尾轮期间完成的后台命令若随 turn 结束被丢弃，agent 就永远拿不到自己起的任务的输出
-    // （进程已被 reapAll 杀掉、结果被 finalize 丢弃）——LLM 会带着「任务大概在跑」的
-    // 错误信念交付答案。故有后台结果就再跑一轮，让它看到。
+    // ——LLM 会带着「任务大概在跑」的**错误信念交付答案**（进程虽已脱管继续跑，但结果永远不回流）。
+    // 故有后台结果就再跑一轮，让它看到。
     const consumedCount = this._consumeInterjects(this.interruptQueue);
     const consumedResults = this._consumeCommandResults(this.interruptQueue);
     // ⚠️ 只清 interject：**不清 command-result** —— 限量注入（MAX_PENDING_COMMAND_RESULTS）
     // 意味着本轮可能只投了前 N 条，剩下的必须**留队**等下个 step 边界续投；这里一并清掉
-    // 就等于「限量」退化成「截半丢弃」。真正该丢的是 turn 终态（finalize 负责）。
+    // 就等于「限量」退化成「截半丢弃」。turn 终态**也不再清**（脱管定案，见
+    // `finalizeBackgroundTasksOnTurnEnd`）——跨 turn 留存是刻意语义，不是遗漏。
     this.interruptQueue = this.interruptQueue.filter((r) => r.kind !== 'interject');
     return consumedCount > 0 || consumedResults > 0;
   }
