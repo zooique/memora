@@ -3250,11 +3250,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 承载（本 chunk 无需 post webview——收到即流尾，finalize 重建自落盘事件消费）。
           emitEvent('plan_snapshot', { items: chunk.items });
         } else if (chunk.type === 'background_report') {
-          // 后台任务收尾报告（内核 turn 终态收割存活后台进程后产出，§14.5；无收割不产）
+          // 后台任务收尾报告（内核 turn 终态对存活后台进程脱管后产出，ADR-036；无存活进程不产）
           // → 落盘 + 投影。与 plan_snapshot 同型：收到即流尾，webview 实时仅入缓冲，
           // finalize/重放经 renderRoundBlock「后台任务收尾」小节单点消费渲染。
           emitEvent('background_report', { content: chunk.content });
-          // 收割是后台任务状态的批量变化点 → 同步推一次快照（浮层据此转为全终态）
+          // 收尾报告是后台任务状态的批量变化点 → 同步推一次快照（浮层据此转为全终态）
           this.postBackgroundTasks();
         } else if (chunk.type === 'step_boundary') {
           // 迭代边界：一次 LLM 迭代（含其工具执行）结束 → 增量落盘当前 pending Round。

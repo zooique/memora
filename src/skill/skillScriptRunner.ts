@@ -138,6 +138,16 @@ export function guardWindowsShellScript(
 }
 
 /**
+ * taskkill 参数构造（同步 / 异步两形态**同源**单一处）
+ *
+ * 为什么抽出来：异步原语（运行时收割）与同步原语（进程退出钩子兜底）都要打同一组参数，
+ * 各写一份 = 第二真理源（改一处漏一处，无测试报警）。
+ */
+function buildTaskkillArgs(pid: number): string[] {
+  return ['/pid', String(pid), '/T', '/F'];
+}
+
+/**
  * 进程树强杀原语（跨平台，零新依赖）
  *
  * 缺口事实：Node spawn 的 `timeout` 选项到期只 kill **直接子进程**——`cmd /c npm test`
@@ -157,7 +167,7 @@ function killProcessTree(child: childProcess.ChildProcess): void {
   const pid = child.pid;
   if (pid === undefined) return;
   if (process.platform === 'win32') {
-    const killer = childProcess.spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+    const killer = childProcess.spawn('taskkill', buildTaskkillArgs(pid), {
       windowsHide: true,
       stdio: 'ignore',
     });
@@ -185,6 +195,46 @@ function killProcessTree(child: childProcess.ChildProcess): void {
     process.kill(-pid, 'SIGKILL');
   } catch (err) {
     logger.warn({ pid, err }, '进程组强杀失败，降级为 kill 直接子进程');
+    child.kill('SIGKILL');
+  }
+}
+
+/**
+ * 同步杀树原语——**专供** `process.on('exit')` 钩子（`BackgroundTaskRegistry` 兜底收割）
+ *
+ * 为什么必须同步（与 `killProcessTree` 并存的原因，不是冗余双轨）：
+ *   exit 钩子返回后 Node 立即退出，异步 `spawn` 的 fork 由 libuv 线程池派发，
+ *   可能**来不及完成** taskkill 就随宿主进程消失——杀树静默失败（假阴性）。
+ *   `execFileSync` 在当前进程内同步等 taskkill 执行完，钩子返回前杀树已落地。
+ *
+ * - Windows：`execFileSync('taskkill', …)`；退出码 128（目标已退出）= 强杀已达成，静默；
+ *   其他失败（权限不足等）降级 `child.kill()` 并记 WARN。
+ * - POSIX：`process.kill(-pid, 'SIGKILL')` 本就是同步系统调用，语义与异步版一致。
+ *
+ * 调用纪律：只在 exit 钩子（或等价的「进程即将终止、无后续异步机会」语境）使用；
+ * 常规运行时收割仍走 `killProcessTree`（异步版有完整 error/close 事件处理）。
+ */
+export function killProcessTreeSync(child: childProcess.ChildProcess): void {
+  const pid = child.pid;
+  if (pid === undefined) return;
+  if (process.platform === 'win32') {
+    try {
+      childProcess.execFileSync('taskkill', buildTaskkillArgs(pid), {
+        windowsHide: true,
+        stdio: 'ignore',
+      });
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException & { status?: number }).status;
+      if (code === 128) return; // 目标已退出 = 强杀已达成（与异步版 128 语义同源）
+      logger.warn({ pid, code }, 'exit 兜底 taskkill 未成功，降级为 kill 直接子进程');
+      child.kill();
+    }
+    return;
+  }
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch (err) {
+    logger.warn({ pid, err }, 'exit 兜底进程组强杀失败，降级为 kill 直接子进程');
     child.kill('SIGKILL');
   }
 }
@@ -414,14 +464,15 @@ export async function runShellCommand(
  *        `BackgroundTaskRegistry.detachAll`）；由调用方按
  *        `BACKGROUND_MAX_TIMEOUT_MS` 钳制后传入（钳制真源不在本函数内分支）
  * @param onSettled 终局回调（完成 / 超时 / 出错均经此，**只调用一次**）
- * @returns 句柄：killNow = 中途终止（走杀树原语）
+ * @returns 句柄：killNow = 中途终止（异步杀树原语，运行时收割用）；
+ *          killNowSync = 同步杀树原语（**仅** exit 钩子兜底用，见 `killProcessTreeSync`）
  */
 export function startBackgroundCommand(
   command: string,
   cwd: string | undefined,
   timeoutMs: number | null,
   onSettled: (result: ScriptExecutionResult) => void,
-): { killNow: () => void; peek: () => ScriptExecutionResult } {
+): { killNow: () => void; killNowSync: () => void; peek: () => ScriptExecutionResult } {
   const { command: shell, args } = resolveShellCommand(command);
   let child: childProcess.ChildProcess;
   try {
@@ -436,6 +487,7 @@ export function startBackgroundCommand(
     });
     return {
       killNow: () => undefined,
+      killNowSync: () => undefined,
       peek: () => ({ stdout: '', stderr: '', exitCode: -1, timedOut: false }),
     };
   }
@@ -444,7 +496,11 @@ export function startBackgroundCommand(
     logLabel: command,
     resolve: onSettled,
   });
-  return { killNow: () => killProcessTree(child), peek: governance.peek };
+  return {
+    killNow: () => killProcessTree(child),
+    killNowSync: () => killProcessTreeSync(child),
+    peek: governance.peek,
+  };
 }
 
 /**

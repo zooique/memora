@@ -372,8 +372,8 @@ export class AgentLoop {
    * loop 侧只做三件事，**不碰进程治理**（spawn / 杀树 / 内存护栏全在 skillScriptRunner）：
    *   ① 注册完成监听 → 自然终态时把结果入队（`kind:'command-result'`），下个 step 边界注入 system 消息；
    *   ② turn 终态脱管存活进程（不杀，见 detachAll 注释），回流跨 turn 留存；
-   *   ③ Agent 实例终态（close）真杀全部存活任务（见 shutdownBackgroundTasks）——
-   *      跨 turn 但不跨宿主寿命，边界与 ② 不同。
+   *   ③ Agent 实例终态（close）真杀全部存活任务并注销 exit 兜底钩子（见 shutdownBackgroundTasks）——
+   *      跨 turn 但不跨宿主寿命，边界与 ② 不同；close 窗口赶不上时 exit 钩子同步兜底。
    * 未注入时这些动作都是 no-op（无后台任务可管），不报错——纯 ToolExecutor 单测场景无注册表。
    */
   private backgroundTasks?: BackgroundTaskRegistry;
@@ -404,12 +404,12 @@ export class AgentLoop {
   /** 本 turn 是否已执行过自审查（单次终审：布尔状态，不再需要轮次计数） */
   private selfReviewDone = false;
   /**
-   * 本 turn 是否已在 step 边界挂起（paused）——**turn 终态收割的判据**（§14.5）。
+   * 本 turn 是否已在 step 边界挂起（paused）——**turn 终态脱管的判据**（定案锚：ADR-036）。
    *
    * 置位点在 `_handleInterrupt` 的 pause 分支、**yield 之前**（宿主 break 会触发
    * generator finally，时序敏感）；复位点在 `resetTurnState`（两个 turn 入口都调）。
    * 语义：挂起 = 同 turn 续跑，后台进程继续跑；不挂起的收场（done / interrupted /
-   * error）才是终态，收割存活后台进程。
+   * error）才是终态，对存活后台进程脱管（不杀，跨轮存活）。
    */
   private pauseBoundaryReached = false;
   /** 本 turn（processUserInput）内是否实际执行过工具步。
@@ -769,7 +769,8 @@ export class AgentLoop {
       // 四条收场路径都经过本 finally ⇒ 调用点唯一。
       // 判据 = pauseBoundaryReached：挂起是同 turn 续跑（后台继续跑、其回流照常注入），
       // 不算终态、不脱管。脱管 = 不杀进程（error 路径也不杀）；进程寿命的终点在另一处：
-      // Agent 实例终态 close → shutdownBackgroundTasks 真杀（观察点 ⑧ 真机定类后补）。
+      // Agent 实例终态 close → shutdownBackgroundTasks 真杀 + exit 钩子同步兜底
+      // （观察点 ⑧ 真机定类后补，方案 §4.2）。
       if (!this.pauseBoundaryReached) {
         const bgReport = this.finalizeBackgroundTasksOnTurnEnd();
         if (bgReport) {
@@ -941,10 +942,11 @@ export class AgentLoop {
   }
 
   /**
-   * Agent 实例终态收割（**唯一调用点 = `Agent.close`**）：真杀全部存活后台命令任务。
+   * Agent 实例终态收割（**唯一调用点 = `Agent.close`**）：真杀全部存活后台命令任务
+   * 并注销其 exit 兜底钩子。
    *
-   * 纯透传注册表 `killAllRunning()`，判据不复制。与 turn 终态 `finalizeBackgroundTasksOnTurnEnd`
-   * 的边界见注册表 `detachAll / killAllRunning` 注释：跨 turn 存活是刻意语义，实例销毁后
+   * 纯透传注册表 `shutdown()`，判据不复制。与 turn 终态 `finalizeBackgroundTasksOnTurnEnd`
+   * 的边界见注册表 `detachAll / shutdown` 注释：跨 turn 存活是刻意语义，实例销毁后
    * 任务不可寻址，留着只能是 OS 层孤儿（观察点 ⑧ 真机实锤）。
    *
    * 不产 `background_report`、不推 UI 快照——宿主正在退出，界面与回流都已无消费方。
@@ -953,7 +955,7 @@ export class AgentLoop {
    * @returns 实际收割的 running 任务数
    */
   shutdownBackgroundTasks(): number {
-    return this.backgroundTasks?.killAllRunning() ?? 0;
+    return this.backgroundTasks?.shutdown() ?? 0;
   }
 
   /**

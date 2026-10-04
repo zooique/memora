@@ -9,8 +9,13 @@
  *   5. killAllRunning → 实例终态真杀全部 running（已终态不动、不回调 listener）
  *   6. 不存在的 taskId → get/kill 返回 null（非抛错）
  *   7. **实例隔离**：两个注册表互不可见（非单例——多会话不得互杀，§14.1 定案守卫）
+ *   8. exit 钩子兜底（方案-后台任务跨轮存活 §4.2）——构造注册恰一个 / shutdown 注销配对、
+ *      兜底同步收割行为（不回调 listener、幂等）、注销后钩子空转
  *
  * 进程治理本身（杀树 / 内存护栏）的断言在 skillScriptRunner 侧，本文件不重复。
+ * ⚠️ 收尾纪律：每个用例结束时经 `shutdown()` 清理（而非裸 kill）——exit 钩子是进程级
+ * 监听，注册/注销必须配对；测试不得复制「注册后不注销」的堆积模式（每文件 11+ 个
+ * 同事件监听器还会触发 Node MaxListeners 告警，污染门禁输出）。
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -73,7 +78,7 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
     expect(taskId).toBe('bg-1');
     expect(registry.get(taskId)?.status).toBe('running');
 
-    registry.kill(taskId);
+    registry.shutdown();
   });
 
   it('完成 → 回调一次 + completed 态 + 结果可读', async () => {
@@ -86,6 +91,8 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
     expect(task.status).toBe('completed');
     expect(task.result?.stdout).toContain('memora-bg-ok');
     expect(registry.get(taskId)?.status).toBe('completed');
+
+    registry.shutdown();
   });
 
   it('kill → 返回已捕获输出 + killed 态，且**不再回调**（防重复消费）', async () => {
@@ -104,6 +111,8 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
     await sleep(800);
     expect(calls).toHaveLength(0);
     expect(registry.get(taskId)?.status).toBe('killed');
+
+    registry.shutdown();
   });
 
   it('detachAll → 脱管全部存活任务（进程继续跑，状态仍是 running）；已终态不计入', async () => {
@@ -125,7 +134,7 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
     expect(registry.detachAll().map((t) => t.taskId)).toEqual([b]);
 
     // 收尾清理（避免 120s 进程泄漏到后续用例）
-    registry.kill(b);
+    registry.shutdown();
   });
 
   it('killAllRunning → 实例终态真杀全部 running；已终态不动、不回调 listener', async () => {
@@ -170,12 +179,15 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
     // 给 a 的进程退出事件留落定窗口：收割不得触发任何 listener 回调（主动终止不回流）
     await sleep(800);
     expect(listenerCallsAfterSetup).toHaveLength(0);
+
+    registry.shutdown(); // 全部已终态：返回 0，仅注销 exit 钩子
   });
 
   it('不存在的 taskId → get/kill 返回 null（不抛错）', () => {
     const registry = new BackgroundTaskRegistry();
     expect(registry.get('bg-999')).toBeNull();
     expect(registry.kill('bg-999')).toBeNull();
+    registry.shutdown();
   });
 
   it('两个注册表实例互不可见（非单例——多会话不得互杀，§14.1 定案守卫）', async () => {
@@ -187,7 +199,69 @@ describe('BackgroundTaskRegistry（后台命令任务注册表）', () => {
     expect(sessionB.get(taskId)).toBeNull();
     expect(sessionB.kill(taskId)).toBeNull();
 
-    sessionA.kill(taskId);
+    sessionA.shutdown();
+    sessionB.shutdown();
+  });
+
+  // ── exit 钩子兜底（Agent 实例终态第二触发通路 · 方案-后台任务跨轮存活 §4.2）──
+  // 真机实锤：Windows 正常关窗给扩展宿主的清理窗口仅 31ms，async close() 深处的
+  // killAllRunning 跑不到 ⇒ 需要 exit 钩子同步兜底。钩子引用经 listeners 快照 diff 捕获、
+  // 直接调用——不经 process.emit('exit')（会误触发同进程其他清理监听器，副作用不可控）。
+
+  /** 构造注册表并捕获它注册的 exit 钩子引用（快照 diff，恰一个为配对正确的前提） */
+  function newRegistryWithHook(): { registry: BackgroundTaskRegistry; hook: () => void } {
+    const before = process.listeners('exit');
+    const registry = new BackgroundTaskRegistry();
+    const added = process.listeners('exit').filter((l) => !before.includes(l));
+    expect(added).toHaveLength(1); // 恰注册一个：多注册 = 钩子堆积（重复收割回归）
+    return { registry, hook: added[0] as () => void };
+  }
+
+  it('构造注册恰一个 exit 钩子，shutdown 注销回原数（注册/注销配对守卫）', () => {
+    const countBefore = process.listenerCount('exit');
+    const registry = new BackgroundTaskRegistry();
+    expect(process.listenerCount('exit')).toBe(countBefore + 1);
+    registry.shutdown();
+    expect(process.listenerCount('exit')).toBe(countBefore);
+  });
+
+  it('进程退出钩子兜底：running 被同步收割置 killed、不回调 listener、重复触发幂等', async () => {
+    const { registry, hook } = newRegistryWithHook();
+    const calls: BackgroundTask[] = [];
+    registry.setCompletionListener((t) => calls.push(t));
+
+    const taskId = registry.start(SLEEP_CMD);
+    await waitForRunning(registry, [taskId]);
+
+    hook(); // 模拟进程退出兜底（真实路径：Node 退出前最后同步窗口）
+    const task = registry.get(taskId);
+    expect(task?.status).toBe('killed');
+    expect(task?.result).toBeDefined(); // 先快照再杀（与 terminate 单点同约定）
+
+    // 给被杀进程的退出事件留窗口：兜底收割不得触发回流回调
+    await sleep(800);
+    expect(calls).toHaveLength(0);
+
+    hook(); // 幂等：表内已全终态，重复触发零副作用
+    expect(registry.get(taskId)?.status).toBe('killed');
+    expect(calls).toHaveLength(0);
+
+    registry.shutdown();
+  });
+
+  it('shutdown 收割 running 并注销钩子：注销后钩子即使被残留调用也必须空转', async () => {
+    const { registry, hook } = newRegistryWithHook();
+
+    const taskId = registry.start(SLEEP_CMD);
+    await waitForRunning(registry, [taskId]);
+
+    const count = registry.shutdown();
+    expect(count).toBe(1);
+    expect(registry.get(taskId)?.status).toBe('killed');
+
+    // 钩子已注销（disposed）：被残留调用（如监听器引用泄漏场景）也不得改状态、不得抛
+    expect(() => hook()).not.toThrow();
+    expect(registry.get(taskId)?.status).toBe('killed');
   });
 });
 

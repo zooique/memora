@@ -665,7 +665,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   toolExec.setBudgetProvider(() => loop.getLastBudget()?.remainingTokens);
 
   // 后台任务注册表（run_command background / kill_command 与后台回流的共享单点）：
-  // 一个实例同时接两端——toolExec 写（start / kill）、loop 读（完成回流 + turn 终态收割）。
+  // 一个实例同时接两端——toolExec 写（start / kill）、loop 读（完成回流 + turn 终态脱管）。
   // **实例非单例**：每次装配新建一张任务表，多会话各自隔离（否则 kill_command 能杀别的会话的进程）。
   const backgroundTasks = new BackgroundTaskRegistry();
   toolExec.setBackgroundTasks(backgroundTasks);

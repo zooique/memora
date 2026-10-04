@@ -1860,6 +1860,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 上方等的是归档/打分类内存任务，此处杀的是注册表持有的 shell 子进程。
     // turn 终态刻意脱管不杀（跨轮存活），但注册表按 Agent 实例隔离，实例销毁后任务
     // 不可寻址，不杀就是 OS 层孤儿（观察点 ⑧ 真机实锤：父进程退出后 ping.exe 仍在）。
+    // 本调用同时注销注册表的 exit 兜底钩子（close 内同步杀树若因关窗窗口赶不上，
+    // exit 钩子是第二触发通路——两通路共用 terminate 单点，非两套机制）。
     // 须在 nullifyAllComponents（loop 置 null）之前。
     const killedBackgroundCommands = this.loop?.shutdownBackgroundTasks() ?? 0;
     if (killedBackgroundCommands > 0) {

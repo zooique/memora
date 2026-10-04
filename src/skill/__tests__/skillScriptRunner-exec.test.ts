@@ -12,21 +12,23 @@
  *      不再下发 spawn `timeout` 选项）、spawn 同步抛错的启动失败态
  *   4. 进程树强杀（§13.6-A）—— 分平台机制断言（Windows `taskkill /T /F`
  *      / POSIX `process.kill(-pgid)`）
+ *   5. 同步杀树原语（exit 钩子兜底专用，方案-后台任务跨轮存活 §4.2）——
+ *      Windows `execFileSync('taskkill', …)` 参数/128 静默/非 128 降级；POSIX 同步 kill(-pgid)
  * 真实执行路径（退出码/超时/env 实际可读性、收集侧内存护栏）仍在
  * skillScriptRunner.test.ts 覆盖。
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type * as ChildProcessModule from 'node:child_process';
 
-// 文件级 mock：仅替换 spawn 为 vi.fn，其余 child_process 导出原样保留
+// 文件级 mock：仅替换 spawn / execFileSync 为 vi.fn，其余 child_process 导出原样保留
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof ChildProcessModule>();
-  return { ...actual, spawn: vi.fn() };
+  return { ...actual, spawn: vi.fn(), execFileSync: vi.fn() };
 });
 
 import { EventEmitter } from 'node:events';
 import * as childProcess from 'node:child_process';
-import { runSkillScript } from '../skillScriptRunner.js';
+import { runSkillScript, startBackgroundCommand } from '../skillScriptRunner.js';
 
 /** 平台标识符（与真实执行测试同口径） */
 const IS_WINDOWS = process.platform === 'win32';
@@ -369,4 +371,75 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为', () => {
       expect(result.stderr).toContain('cmd');
     },
   );
+});
+
+// ── 同步杀树原语（exit 钩子兜底专用 · 方案-后台任务跨轮存活 §4.2）──
+// 为何锁机制：exit 钩子返回后 Node 即退出，「taskkill 是否真把进程杀了」的结果级断言
+// 无法在单测内构造（不能真退宿主进程）——故锁「同步原语被正确调用」这一机制层，
+// 真机级验证 = 观察点 ⑧ 第三轮（退出 VS Code 后查 ping 残留）。
+describe('killProcessTreeSync（exit 兜底同步杀树，经 startBackgroundCommand.killNowSync）', () => {
+  const mockedSpawn = vi.mocked(childProcess.spawn);
+  const mockedExecFileSync = vi.mocked(childProcess.execFileSync);
+  afterEach(() => {
+    mockedSpawn.mockReset();
+    mockedExecFileSync.mockReset();
+  });
+
+  /** 起一条后台命令（spawn 已 mock 为带 pid 的假子进程），返回其句柄与 kill 调用记录 */
+  function startWithFakeChild() {
+    const killCalls: (string | number | undefined)[] = [];
+    mockedSpawn.mockImplementation(((_cmd: string, _args: string[]) => {
+      const fake = fakeChild(() => undefined) as unknown as Record<string, unknown>;
+      fake.pid = FAKE_PID;
+      fake.kill = (signal?: string | number) => {
+        killCalls.push(signal);
+        return true;
+      };
+      return fake as unknown as childProcess.ChildProcess;
+    }) as never);
+    const handle = startBackgroundCommand('node -e 1', undefined, null, () => undefined);
+    return { handle, killCalls };
+  }
+
+  it('Windows：走 execFileSync taskkill /T /F（与异步原语同源参数）；POSIX：同步 kill(-pgid)', () => {
+    const { handle, killCalls } = startWithFakeChild();
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    try {
+      handle.killNowSync();
+      if (IS_WINDOWS) {
+        // 同源参数：/pid <pid> /T /F（改参数构造须同步异步一起改，本断言拦异步版漏改）
+        expect(mockedExecFileSync).toHaveBeenCalledWith(
+          'taskkill',
+          ['/pid', String(FAKE_PID), '/T', '/F'],
+          expect.objectContaining({ windowsHide: true, stdio: 'ignore' }),
+        );
+        expect(killCalls).toHaveLength(0); // 成功路径不降级
+      } else {
+        expect(killSpy).toHaveBeenCalledWith(-FAKE_PID, 'SIGKILL');
+        expect(mockedExecFileSync).not.toHaveBeenCalled();
+      }
+    } finally {
+      killSpy.mockRestore();
+    }
+  });
+
+  it.runIf(IS_WINDOWS)('execFileSync 退出码 128（目标已退出）→ 静默达成，不降级 kill', () => {
+    const { handle, killCalls } = startWithFakeChild();
+    mockedExecFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('command failed'), { status: 128 });
+    });
+
+    expect(() => handle.killNowSync()).not.toThrow();
+    expect(killCalls).toHaveLength(0);
+  });
+
+  it.runIf(IS_WINDOWS)('execFileSync 非零非 128（权限不足等）→ 降级 child.kill 单杀', () => {
+    const { handle, killCalls } = startWithFakeChild();
+    mockedExecFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('Access is denied.'), { status: 1 });
+    });
+
+    expect(() => handle.killNowSync()).not.toThrow();
+    expect(killCalls).toHaveLength(1); // 降级路径（只及直接子进程，属降级非等价）
+  });
 });

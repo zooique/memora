@@ -44,7 +44,10 @@ export type BackgroundTaskListener = (task: SettledBackgroundTask) => void;
 
 /** 任务表内部条目（= 投影 + 进程句柄） */
 interface TaskEntry extends BackgroundTask {
+  /** 异步杀树（运行时收割用：kill_command / killAllRunning，有完整事件处理） */
   killNow: () => void;
+  /** 同步杀树（**仅**进程退出钩子兜底用：钩子返回后 Node 即退出，异步 spawn 来不及） */
+  killNowSync: () => void;
   peek: () => ScriptExecutionResult;
 }
 
@@ -55,6 +58,24 @@ export class BackgroundTaskRegistry {
   private seq = 0;
   /** 完成监听（未注入 → 完成仅入表，不回流；不因缺监听而报错） */
   private listener: BackgroundTaskListener | null = null;
+  /** exit 钩子是否已注销（Agent 实例终态 shutdown 后置真，钩子空转防重复收割） */
+  private disposed = false;
+
+  /** 进程退出兜底钩子（构造注册 / shutdown 注销，**配对**——防多实例钩子堆积） */
+  private readonly exitHook = (): void => {
+    if (this.disposed) return; // Agent.close 已收割并注销，幂等空转
+    const killed = this.flushRunningSync();
+    if (killed > 0) {
+      logger.info({ count: killed }, '进程退出兜底：同步收割存活后台命令任务');
+    }
+  };
+
+  constructor() {
+    // 实例终态第二触发通路：Windows 正常关窗给扩展宿主的清理窗口实测仅 31ms，
+    // async close() 深处的 killAllRunning 跑不到——exit 钩子用同步杀树在进程消失前落地
+    // （定案锚：ADR-036；论证见 docs/方案-后台任务跨轮存活-20261004.md §4.2）。
+    process.on('exit', this.exitHook);
+  }
 
   /**
    * 注入完成监听器（单点 setter）
@@ -84,6 +105,7 @@ export class BackgroundTaskRegistry {
       status: 'running',
       // 占位：startBackgroundCommand 启动即失败时回调会同步触发，句柄随后覆盖
       killNow: () => undefined,
+      killNowSync: () => undefined,
       peek: () => ({ stdout: '', stderr: '', exitCode: -1, timedOut: false }),
     };
     this.tasks.set(taskId, entry);
@@ -95,6 +117,7 @@ export class BackgroundTaskRegistry {
       (result) => this.settle(taskId, result),
     );
     entry.killNow = handle.killNow;
+    entry.killNowSync = handle.killNowSync;
     entry.peek = handle.peek;
     return taskId;
   }
@@ -119,7 +142,7 @@ export class BackgroundTaskRegistry {
     const entry = this.tasks.get(taskId);
     if (!entry) return null;
     if (entry.status === 'running') {
-      this.terminate(entry);
+      this.terminate(entry, 'async');
     }
     return { status: entry.status, result: entry.result };
   }
@@ -146,10 +169,26 @@ export class BackgroundTaskRegistry {
     let count = 0;
     for (const entry of this.tasks.values()) {
       if (entry.status !== 'running') continue;
-      this.terminate(entry);
+      this.terminate(entry, 'async');
       count += 1;
     }
     return count;
+  }
+
+  /**
+   * Agent 实例终态**总出口**：收割全部 running + 注销 exit 兜底钩子（仅 `Agent.close` 链路调用）
+   *
+   * 为什么收割之外还要注销：exit 钩子是**进程级**事件监听，注册表是**实例级**对象——
+   * Agent 关闭后不注销 = 旧实例钩子残留（多实例场景堆积 + 闭包泄漏）。注销后若进程
+   * 随即退出，`exitHook` 经 `disposed` 判空转——close 已杀光，钩子无事可做（幂等）。
+   *
+   * @returns 实际收割的 running 任务数（与 `killAllRunning` 同口径）
+   */
+  shutdown(): number {
+    const killed = this.killAllRunning();
+    this.disposed = true;
+    process.removeListener('exit', this.exitHook);
+    return killed;
   }
 
   /**
@@ -168,10 +207,11 @@ export class BackgroundTaskRegistry {
    * 脱管窗口的边界（如实写）：
    *   - **无内核侧时限**：timeoutMs 省略时 startBackgroundCommand 收 null = 永不超时；
    *     `BACKGROUND_MAX_TIMEOUT_MS`（30min）只是「显式传值时的钳制上限」，缺省路径碰不到它。
-   *   - 跨的是 turn，不是宿主寿命：**Agent 实例终态（`close`）经 `killAllRunning` 真杀**
-   *     （注册表实例隔离，实例销毁后任务不可寻址，不杀即孤儿——观察点 ⑧ 真机实锤：
-   *     退出 VS Code 后父进程已死而 `ping.exe` 仍在）。唯一残留缺口：扩展崩溃 / 被 OS
-   *     强杀时 `close` 来不及执行，该场景不承诺清理。
+   *   - 跨的是 turn，不是宿主寿命：**Agent 实例终态（`close` → `shutdown`）经
+   *     `killAllRunning` 真杀**（注册表实例隔离，实例销毁后任务不可寻址，不杀即孤儿——
+   *     观察点 ⑧ 真机实锤：父进程退出后 `ping.exe` 仍在）；close 清理窗口赶不上时由
+   *     **exit 钩子同步兜底**（见构造函数）。唯一残留缺口：扩展崩溃 / 被 OS
+   *     强杀时两者都来不及执行，该场景不承诺清理。
    *
    * @returns 本轮结束时仍在运行的任务清单（供脱管报告）；已终态的不计入
    */
@@ -187,18 +227,44 @@ export class BackgroundTaskRegistry {
   // ── 内部 ──
 
   /**
-   * 主动终止单点（`kill` 单个 / `killAllRunning` 实例终态收割共用）：
+   * 主动终止单点（`kill` 单个 / `killAllRunning` 实例终态收割 / exit 钩子兜底共用）：
    * 先取输出快照再杀树，随后置 `killed`。
    *
    * ⚠️ 刻意**不回调** listener：主动终止的输出已由调用方直接取得（`kill_command`
    * 返回值 / 关闭流程不需要），再回流一次会让消费方收到同一份结果的第二份副本
    * （重复消费）。自然终态的回调唯一入口是 `settle → notify`。
+   *
+   * @param mode 杀树原语档位，**必传**（缺省值语义 = 调用方对执行语境含糊，静默回落缺陷）：
+   *   `'async'` = 异步杀树（运行时收割，有完整事件处理）；
+   *   `'sync'`  = 同步杀树（**仅** exit 钩子——钩子返回后 Node 即退出，异步 spawn 来不及落地）
    */
-  private terminate(entry: TaskEntry): void {
+  private terminate(entry: TaskEntry, mode: 'async' | 'sync'): void {
     // 先取快照再杀：杀完 stdio 关闭，此后拿不到已捕获内容
     entry.result = entry.peek();
-    entry.killNow();
+    if (mode === 'sync') {
+      entry.killNowSync();
+    } else {
+      entry.killNow();
+    }
     entry.status = 'killed';
+  }
+
+  /**
+   * exit 钩子的同步收割体：真杀全部 running（同步原语），逐条独立执行
+   *
+   * 单条杀树失败（taskkill 权限不足等）由原语内部降级 `child.kill()`，**不抛出**——
+   * exit 钩子内抛错会中断监听器链，殃及后续清理；逐条循环本身就是故障隔离边界。
+   *
+   * @returns 实际收割的 running 任务数
+   */
+  private flushRunningSync(): number {
+    let count = 0;
+    for (const entry of this.tasks.values()) {
+      if (entry.status !== 'running') continue;
+      this.terminate(entry, 'sync');
+      count += 1;
+    }
+    return count;
   }
 
   /** 终局结算（由 startBackgroundCommand 的 onSettled 调用；只处理 running 态） */
