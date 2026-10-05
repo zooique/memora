@@ -3894,6 +3894,12 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
         <summary>查看内容</summary>
         <pre id="writeConfirmDiff"></pre>
       </details>
+      <!-- 等待态提示（2026-10-05 P5 落地 A）：点击裁决后**不收卡**，等宿主推下一条
+           （write_confirm_request 覆盖渲染）或 write_confirm_closed 收卡。
+           原实现点击即同步 closeWriteConfirmCard、下一条由宿主异步推 ⇒ 中间空档 = 闪烁；
+           且队列无下一条时卡片会带旧内容滞留，形成重复提交窗口（宿主 pending 已delete，
+           第二个 answer 静默丢弃 ⇒ 用户视角「点了没反应」）。本提示 + 按钮 disabled 消解之。 -->
+      <div class="write-confirm-card__hint" id="writeConfirmHint" hidden></div>
       <div class="write-confirm-card__actions">
         <button id="writeConfirmReject" class="write-confirm-card__btn--reject">拒绝</button>
         <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认</button>

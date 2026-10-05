@@ -27,7 +27,11 @@ import {
   MAX_INPUT_CHARS,
   MAX_PENDING_INTERJECTIONS,
 } from '../../shared/constants.js';
-import type { RoundView, BackgroundTaskView } from '../../shared/protocol.js';
+import type {
+  RoundView,
+  BackgroundTaskView,
+  ExtensionToWebviewMessage,
+} from '../../shared/protocol.js';
 import type { InteractiveInputKind } from '@zooique/memora';
 import type { ProcessEvent } from '@zooique/memora';
 
@@ -7745,7 +7749,10 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(diff).not.toContain('--- 写入前 ---');
   });
 
-  it('confirmWrites 审批卡：确认按钮回传 write_confirm_answer(approved=true) 并隐藏', () => {
+  it('confirmWrites 审批卡：确认按钮回传 answer(approved=true) 并进入等待态（**不收卡**）', () => {
+    // 2026-10-05 P5 落地 A 语义变更：点击**不再**收卡。显隐真源在宿主（_settleConfirm 推下一条
+    // 覆盖渲染 / 队列空时推 closed 收卡）；webview 同步关卡会造成「同步关 / 异步开」两帧空档
+    // = 用户真机实测的闪烁，且队列无下一条时卡片滞留 → 重复提交窗口。
     const { postMessage } = mountChatView();
     dispatch({
       type: 'write_confirm_request',
@@ -7763,12 +7770,21 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       requestId: 'wc_ok',
       approved: true,
     });
-    expect(
-      (document.getElementById('writeConfirmCard') as HTMLElement).hasAttribute('hidden'),
-    ).toBe(true);
+    const card = document.getElementById('writeConfirmCard') as HTMLElement;
+    // 🔴 卡**不得**收：等宿主推下一条
+    expect(card.hasAttribute('hidden')).toBe(false);
+    // 等待态三件套：按钮 disabled（防重复提交）+ 卡片降透明度 + 明示文案
+    expect((document.getElementById('writeConfirmOk') as HTMLButtonElement).disabled).toBe(true);
+    expect((document.getElementById('writeConfirmReject') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(card.getAttribute('data-pending')).toBe('true');
+    expect(document.getElementById('writeConfirmHint')!.textContent).toContain('已确认');
+    // 倒计时停表（F3）：已裁决的卡不再倒数
+    expect((document.getElementById('writeConfirmCountdown') as HTMLElement).hidden).toBe(true);
   });
 
-  it('confirmWrites 审批卡：拒绝按钮回传 write_confirm_answer(approved=false) 并隐藏', () => {
+  it('confirmWrites 审批卡：拒绝按钮回传 answer(approved=false) 并进入等待态', () => {
     const { postMessage } = mountChatView();
     dispatch({
       type: 'write_confirm_request',
@@ -7786,9 +7802,135 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       requestId: 'wc_no',
       approved: false,
     });
-    expect(
-      (document.getElementById('writeConfirmCard') as HTMLElement).hasAttribute('hidden'),
-    ).toBe(true);
+    const card = document.getElementById('writeConfirmCard') as HTMLElement;
+    expect(card.hasAttribute('hidden')).toBe(false);
+    expect((document.getElementById('writeConfirmReject') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(card.getAttribute('data-pending')).toBe('true');
+    expect(document.getElementById('writeConfirmHint')!.textContent).toContain('已拒绝');
+  });
+
+  it('等待态期间重复点击不再回传 answer（消解 F1：宿主 pending 已 delete，重复提交会被静默丢弃）', () => {
+    // 无disabled 时：点第2 下 ⇒ postMessage 再发一条同 requestId 的 answer ⇒ 宿主 pending
+    // 已 delete ⇒ 静默丢弃 ⇒ 用户视角「点了没反应」。disabled 是第一道防线，
+    // writeConfirmAwaitingNext 的显式 early-return 是第二道（双保险）。
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_dup',
+      targetPath: '/workspace/c.ts',
+      tool: 'write_file',
+      description: '',
+      permission: '',
+      beforeContent: null,
+      hasDiff: true,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    const ok = document.getElementById('writeConfirmOk') as HTMLButtonElement;
+    ok.click();
+    ok.click();
+    ok.click();
+    const answers = postMessage.mock.calls.filter(
+      (args) => (args[0] as { type?: string }).type === 'write_confirm_answer',
+    );
+    expect(answers.length).toBe(1);
+  });
+
+  it('宿主推下一条 request ⇒ 等待态复位、按钮恢复可用（串行送审接力）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_r1',
+      targetPath: '/workspace/1.ts',
+      tool: 'run_command',
+      description: 'git push',
+      permission: 'owner',
+      beforeContent: null,
+      hasDiff: false,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    (document.getElementById('writeConfirmOk') as HTMLButtonElement).click();
+    const card = document.getElementById('writeConfirmCard') as HTMLElement;
+    expect(card.getAttribute('data-pending')).toBe('true');
+    // 宿主推下一条（队列还有）⇒ 覆盖渲染 + 等待态复位
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_r2',
+      targetPath: '/workspace/2.ts',
+      tool: 'run_command',
+      description: 'git reset --hard',
+      permission: 'owner',
+      beforeContent: null,
+      hasDiff: false,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    expect(card.getAttribute('data-pending')).toBe(null);
+    expect((document.getElementById('writeConfirmOk') as HTMLButtonElement).disabled).toBe(false);
+    expect((document.getElementById('writeConfirmReject') as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    expect(document.getElementById('writeConfirmHint')!.hidden).toBe(true);
+    // 内容已切到第 2 条，且卡**始终可见**（同DOM 覆盖 ⇒ 天然无闪烁）
+    expect(card.hasAttribute('hidden')).toBe(false);
+    expect(document.getElementById('writeConfirmPath')!.textContent).toBe('/workspace/2.ts');
+    // 第二条可独立裁决
+    (document.getElementById('writeConfirmReject') as HTMLButtonElement).click();
+    const answers = postMessage.mock.calls.filter(
+      (args) => (args[0] as { type?: string }).type === 'write_confirm_answer',
+    );
+    expect(answers.length).toBe(2);
+    expect(answers[1]![0]).toEqual({
+      type: 'write_confirm_answer',
+      requestId: 'wc_r2',
+      approved: false,
+    });
+  });
+
+  it('队列已空：宿主推 write_confirm_closed ⇒ 收卡且等待态一并清干净（无残留）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_last',
+      targetPath: '/workspace/z.ts',
+      tool: 'write_file',
+      description: '',
+      permission: '',
+      beforeContent: null,
+      hasDiff: true,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    (document.getElementById('writeConfirmOk') as HTMLButtonElement).click();
+    // 宿主推 closed（队列空）⇒ 收卡
+    dispatch({ type: 'write_confirm_closed', requestId: 'wc_last' });
+    const card = document.getElementById('writeConfirmCard') as HTMLElement;
+    expect(card.hasAttribute('hidden')).toBe(true);
+    // 等待态痕迹必须全清（否则下次请求进来按钮是灰的 = 僵尸交互）
+    expect(card.getAttribute('data-pending')).toBe(null);
+    expect((document.getElementById('writeConfirmOk') as HTMLButtonElement).disabled).toBe(false);
+    expect(document.getElementById('writeConfirmHint')!.hidden).toBe(true);
+    // composer 已回归（A 类不再阻断）
+    expect((document.getElementById('inputWrap') as HTMLElement).hidden).toBe(false);
+    // 收卡后重新来一条必须完全可用（回归锁：等待态跨请求泄漏）
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_fresh',
+      targetPath: '/workspace/fresh.ts',
+      tool: 'write_file',
+      description: '',
+      permission: '',
+      beforeContent: null,
+      hasDiff: true,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    const ok = document.getElementById('writeConfirmOk') as HTMLButtonElement;
+    expect(ok.disabled).toBe(false);
+    ok.click();
+    const answers = postMessage.mock.calls.filter(
+      (args) => (args[0] as { type?: string }).type === 'write_confirm_answer',
+    );
+    expect(answers.length).toBe(2);
+    expect(answers[1]![0]).toMatchObject({ requestId: 'wc_fresh', approved: true });
   });
 
   it('审批卡覆盖渲染：收到新 request 即替换为最新（旧 requestId 清空，卡片无状态泄漏）', () => {
@@ -7927,9 +8069,12 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(countdown.textContent).toBe('');
   });
 
-  it('A 类阻断即替换 composer：审批卡挂起时输入框让位，终结后恢复', () => {
+  it('A 类阻断即替换 composer：审批卡挂起时输入框让位，宿主终结后才恢复', () => {
     // 方案 P1b：输入框在阻断期间整体让位（**替换**而非遮罩 —— 零新 z-index 层、零焦点陷阱），
     // 用户此刻只能做「确认/拒绝」这一个决定。🔴 恢复路径必须覆盖：漏了就永久卡死输入。
+    // ⚠️ 2026-10-05 P5 落地 A 后恢复判据变了：点击**不再**立即恢复，须待宿主推
+    // write_confirm_closed（=宿主已确认「请求终结且队列已空」）。这正是把 composer 让位的
+    // 生命周期锚定在宿主事实上的意义——用户拒绝的那一刻起，输入框仍被占用（阻断未结束）。
     mountChatView();
     const inputWrap = document.getElementById('inputWrap') as HTMLElement;
     expect(inputWrap.hidden).toBe(false);
@@ -7948,8 +8093,42 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(inputWrap.hidden).toBe(true);
     // 焦点落到「拒绝」（安全默认，与 fail-closed 同向；composer 已隐藏，焦点不能丢到 body）
     expect(document.activeElement).toBe(document.getElementById('writeConfirmReject'));
-    // 终结（用户拒绝）：输入框恢复
+    // 用户拒绝 ⇒ 进入等待态，**输入框仍让位**（阻断未结束，卡还要接下一条）
     (document.getElementById('writeConfirmReject') as HTMLButtonElement).click();
+    expect(inputWrap.hidden).toBe(true);
+    // 宿主推 closed（队列已空，请求真终结）⇒ composer 恢复
+    dispatch({ type: 'write_confirm_closed', requestId: 'wc_lock' });
+    expect(inputWrap.hidden).toBe(false);
+  });
+
+  it('A 类串行送审：连续两条确认期间 composer 全程让位（中途不闪回）', () => {
+    // 回归锁：若某条路径在「点确认 → 宿主推下一条」之间让 composer 提前恢复，用户会在
+    // 阻断未结束时拿到输入入口（A4 定的阻断语义被破坏），且视觉上表现为输入框一闪。
+    mountChatView();
+    const inputWrap = document.getElementById('inputWrap') as HTMLElement;
+    const first: ExtensionToWebviewMessage = {
+      type: 'write_confirm_request',
+      requestId: 'wc_s1',
+      targetPath: '/workspace/s1.ts',
+      tool: 'run_command',
+      description: 'git push',
+      permission: 'owner',
+      beforeContent: null,
+      hasDiff: false,
+      timeoutMs: 30 * 60 * 1000,
+    };
+    dispatch(first);
+    expect(inputWrap.hidden).toBe(true);
+    (document.getElementById('writeConfirmOk') as HTMLButtonElement).click();
+    // 关键断言：点完确认，composer 依然隐藏
+    expect(inputWrap.hidden).toBe(true);
+    // 宿主推下一条（队列还有）⇒ 覆盖渲染，composer 继续让位
+    dispatch({ ...first, requestId: 'wc_s2', targetPath: '/workspace/s2.ts' });
+    expect(inputWrap.hidden).toBe(true);
+    (document.getElementById('writeConfirmReject') as HTMLButtonElement).click();
+    expect(inputWrap.hidden).toBe(true);
+    // 最后一条终结 ⇒ 恢复
+    dispatch({ type: 'write_confirm_closed', requestId: 'wc_s2' });
     expect(inputWrap.hidden).toBe(false);
   });
 

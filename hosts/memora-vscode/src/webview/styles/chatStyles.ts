@@ -461,6 +461,19 @@ export const chatStyles = `
   .write-confirm-card__btn--reject:focus-visible {
     outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px;
   }
+  /* 🔴 等待态（2026-10-05 P5 落地A 时新增，消解 F1）
+   * 病根：webview 点击后**同步**关卡、宿主**异步**推下一条 ⇒ 中间空档 = 闪烁，
+   * 且用户点完若队列无下一条，卡片会带着「已裁决」的旧内容滞留 ⇒ 重复提交窗口。
+   * 修法：点击后不关卡，改为等待态——按钮 disabled（防重复提交）+ 卡片整体降透明度
+   * （明示「这张已处理完，等下一张」）。透明度用既有 token 拼，不新增色板。
+   * [hidden] 兜底：.write-confirm-card 本体无 display 声明（默认 block），
+   * 但本状态类会设 display:flex，故必须配 [hidden] 兜底（规则 10 血训）。 */
+  .write-confirm-card[data-pending='true'] { opacity: 0.55; }
+  .write-confirm-card[data-pending='true'][hidden] { display: none; }
+  .write-confirm-card__btn[disabled] { cursor: default; opacity: 0.6; }
+  .write-confirm-card__hint {
+    font-size: var(--font-xs, 10px); color: var(--text-muted, #888);
+  }
   /* 运行时输入条目行：question-answer / supplement / timeout 统一形态，
    * 对齐 thought/tool 过程行视觉（左缘 + 圆角 + 弱化字色）；非折叠块——内容恒可见，来源以 tag
    * 区分（「你答 / 你补充 / 未回答」）。 */

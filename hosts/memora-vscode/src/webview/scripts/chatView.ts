@@ -179,7 +179,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const writeConfirmCountdown = document.getElementById(
     'writeConfirmCountdown',
   ) as HTMLElement | null;
+  const writeConfirmHint = document.getElementById('writeConfirmHint') as HTMLElement | null;
   let pendingWriteConfirmRequestId: string | null = null;
+  /**
+   * 等待态标记（2026-10-05 P5 落地 A）：用户已裁决、卡等宿主推下一条的过渡态。
+   *
+   * 🔴 为何需要它（消解 F1 重复提交 + 闪烁）：
+   * 原实现点击后**同步** closeWriteConfirmCard()，而下一条 write_confirm_request 由宿主
+   * **异步**推 ⇒ ①两帧空档 = 用户实测的闪烁；②队列无下一条时，卡片会带着已裁决的旧内容
+   * 滞留，用户再点一次 → 宿主 pending 已 delete ⇒ 第二个 answer 静默丢弃（点了没反应）。
+   * 等待态把「点了 → 下一张」显式化：按钮 disabled（防重复）+ 卡片降透明度（明示过渡）。
+   *
+   * 🔴 显隐真源仍在宿主（chatPanel._settleConfirm）：本状态只改**按钮可用性与提示**，
+   * 绝不开关卡片——否则又回到「两个显隐写入点」（双源）。
+   */
+  let writeConfirmAwaitingNext = false;
   const clarifySend = document.getElementById('clarifySend') as HTMLButtonElement;
   // 当前角色显示名（AI 消息头部标签 + 空状态标题共用；由 chat_role_pack 填充）
   let currentRoleName = '';
@@ -5352,6 +5366,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       writeConfirmDiff.textContent = `--- 目标 ---\n${msg.targetPath}\n\n${msg.description ?? ''}`;
     }
     pendingWriteConfirmRequestId = msg.requestId;
+    // 退出等待态（2026-10-05 P5 落地 A）：宿主推来新 request = 上一张已终结、队列还有下一条。
+    // 此处复位按钮可用性与提示——卡片**保持可见**（同DOM 覆盖内容，天然无闪烁）。
+    // ⚠️ 显隐不归本函数：只 setDockActive('confirm', true)（幂等，SSOT 仍是 resolveDock）。
+    exitConfirmAwaitingNext();
     // 显隐交裁决器（SSOT）：不再直写 hidden——直写会绕过 resolveDock 的主位/收纳裁决，
     // 与 B 类条同屏时顺序不定（方案 §九 A1）。
     setDockActive('confirm', true);
@@ -5423,36 +5441,91 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 关闭审批卡（唯一收口点）
    *
-   * 三种终结来源共用：用户点确认 / 点拒绝 / 宿主推 write_confirm_closed（请求已终结，
-   * 含超时自动拒绝）。不收口会出现「请求已死、卡片还挂着、按钮点了没反应」的僵尸交互。
+   * 🔴 真源已迁至宿主（2026-10-05 P5 落地 A）：卡片显隐只由本函数与 renderWriteConfirmCard
+   * 两处**互斥**触发，且两处的内容源都是宿主消息——
+   * ① `write_confirm_request` ⇒ 覆盖渲染（队列还有下一条，宿主 _settleConfirm 不推 closed）
+   * ② `write_confirm_closed` ⇒ 收卡（队列已空）
+   * 用户点击**不再**调本函数（改调 enterConfirmAwaitingNext），否则会造出第三处显隐写入点
+   * 并造成「同步关卡 / 异步开卡」两帧空档（用户实测的闪烁，F1 重复提交窗口）。
+   * 另两种调用来源：宿主推 closed（含超时兜底）、write_confirm_closed 终结。
+   *
+   * 注：等待态（writeConfirmAwaitingNext）**刻意不进dispose 清理**——它只改DOM 属性
+   * 与 button.disabled，无定时器 ⇒ 无跨用例泄漏；dispose 时页面已销毁、清它反而多余。
    */
   function closeWriteConfirmCard(): void {
     stopConfirmCountdown();
+    exitConfirmAwaitingNext();
     pendingWriteConfirmRequestId = null;
     setDockActive('confirm', false);
   }
 
-  /** H0 审批卡按钮事件（确认/拒绝 → 回传 write_confirm_answer + 隐藏卡片） */
+  /**
+   * 进入等待态（点击裁决后、宿主推下一条前）
+   *
+   * 只改**按钮可用性 + 提示 + 卡片透明度**，**不开关卡片**（显隐真源在宿主）。
+   * 同时停掉倒计时（F3）：这张已裁决，倒数对它已无意义。
+   */
+  function enterConfirmAwaitingNext(approved: boolean): void {
+    writeConfirmAwaitingNext = true;
+    stopConfirmCountdown();
+    if (writeConfirmOk) {
+      writeConfirmOk.disabled = true;
+      writeConfirmOk.classList.add('write-confirm-card__btn');
+    }
+    if (writeConfirmReject) writeConfirmReject.disabled = true;
+    if (writeConfirmHint) {
+      writeConfirmHint.hidden = false;
+      writeConfirmHint.textContent = approved ? '已确认，等待下一条…' : '已拒绝，等待下一条…';
+    }
+    writeConfirmCard?.setAttribute('data-pending', 'true');
+  }
+
+  /** 退出等待态（宿主推来新的 request 覆盖渲染时，由 renderWriteConfirmCard 调） */
+  function exitConfirmAwaitingNext(): void {
+    if (!writeConfirmAwaitingNext) return;
+    writeConfirmAwaitingNext = false;
+    if (writeConfirmOk) {
+      writeConfirmOk.disabled = false;
+      writeConfirmOk.classList.remove('write-confirm-card__btn');
+    }
+    if (writeConfirmReject) writeConfirmReject.disabled = false;
+    if (writeConfirmHint) {
+      writeConfirmHint.hidden = true;
+      writeConfirmHint.textContent = '';
+    }
+    writeConfirmCard?.removeAttribute('data-pending');
+  }
+
+  /**
+   * H0 审批卡按钮事件（确认/拒绝 → 回传 write_confirm_answer + 进入等待态）
+   *
+   * ⚠️ 等待态期间**不再收卡**（显隐真源在宿主，见 closeWriteConfirmCard 注释）。
+   * 双击由 disabled 天然挡住（F4）；pendingWriteConfirmRequestId 在等待态期间保持非空，
+   * 故重复 click 事件若漏网仍会回传同一 requestId —— 宿主 pending 已 delete 会静默丢弃，
+   * 但那不该发生，disabled 是第一道防线，requestId 相同只是兜底。
+   */
   if (writeConfirmOk && writeConfirmReject && writeConfirmCard) {
     writeConfirmOk.addEventListener('click', () => {
+      if (writeConfirmAwaitingNext) return;
       if (pendingWriteConfirmRequestId !== null) {
         vscode.postMessage({
           type: 'write_confirm_answer',
           requestId: pendingWriteConfirmRequestId,
           approved: true,
         });
+        enterConfirmAwaitingNext(true);
       }
-      closeWriteConfirmCard();
     });
     writeConfirmReject.addEventListener('click', () => {
+      if (writeConfirmAwaitingNext) return;
       if (pendingWriteConfirmRequestId !== null) {
         vscode.postMessage({
           type: 'write_confirm_answer',
           requestId: pendingWriteConfirmRequestId,
           approved: false,
         });
+        enterConfirmAwaitingNext(false);
       }
-      closeWriteConfirmCard();
     });
   }
 
