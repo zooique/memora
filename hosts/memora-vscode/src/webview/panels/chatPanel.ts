@@ -433,7 +433,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private _pendingWriteConfirmations = new Map<
     string,
-    { resolve: (v: boolean) => void; timer: ReturnType<typeof setTimeout> }
+    {
+      resolve: (v: boolean) => void;
+      timer: ReturnType<typeof setTimeout>;
+      /** 决策记录工具面（预计算 `${toolLabel}：${basename}`；裁决/超时同源消费，不记载荷全文） */
+      logLabel: string;
+    }
   >();
   /** 待推送的确认请求队列（FIFO；内核并发确认在此排队，逐个送审）
    *  载荷类型从 `WriteConfirmationRequest` 形参推导——不自抄一份接口，也无需多引一个类型。 */
@@ -936,6 +941,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         const pending = this._pendingWriteConfirmations.get(msg.requestId);
         if (pending) {
           pending.resolve(msg.approved);
+          // 决议留痕（唯一发点 _logDecision）：批准/拒绝与超时拒同构入时间线（C2）
+          this._logDecision(msg.requestId, msg.approved ? 'approved' : 'declined');
           // 终结 + 泵下一条（卡片关闭/覆盖的唯一真源在宿主「请求已终结」这一事实，
           // webview 侧不再自行假设「点了就算关」）
           this._settleConfirm(msg.requestId);
@@ -1493,18 +1500,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 复用入口后内核工具更名/新增无需第二处同步。
     const toolLabel = getToolDisplayName(info.tool);
     this._confirmCurrentId = requestId;
+    // 决策记录工具面（预计算）：basename 与安全审计同款取法，防折叠区冗长且不泄露完整目录结构
+    const logLabel = `${toolLabel}：${info.targetPath.split(/[\\/]/).pop() ?? info.targetPath}`;
     // 超时 timer（fail-closed：超时 = 拒绝）
     const timer = setTimeout(() => {
       resolve(false);
-      this.post({
-        type: 'notice',
-        level: 'error',
-        // 动作词中性化：同一张卡也承载命令/代码/脚本执行确认，写「写入」即失实
-        message: `${CONFIRM_TIMEOUT_NOTICE}（${toolLabel}）`,
-      });
+      // 超时拒同样走决策记录（唯一发点 _logDecision）：红条警示 + 时间线留痕，单条双职不双写
+      this._logDecision(requestId, 'timeout');
       this._settleConfirm(requestId);
     }, CONFIRM_TIMEOUT_MS);
-    this._pendingWriteConfirmations.set(requestId, { resolve, timer });
+    this._pendingWriteConfirmations.set(requestId, { resolve, timer, logLabel });
     this.post({
       type: 'write_confirm_request',
       requestId,
@@ -1519,6 +1524,33 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 超时时长透传（A5 SSOT）：真源是本文件的 CONFIRM_TIMEOUT_MS，webview 只投影、
       // 不自算，末段倒计时因此不可能与宿主计时漂移。
       timeoutMs: CONFIRM_TIMEOUT_MS,
+    });
+  }
+
+  /**
+   * 决策记录唯一发点（C2）：批准 / 拒绝 / 超时自动拒三路径同构入时间线
+   *
+   * 载荷纪律：**只记工具面（`logLabel`）+ 裁决结果，不记载荷全文**——`info.description`
+   * 是 diff 全文级内容，入线即撑爆时间线窗口（20 条淘汰下挤掉的全是别人的记录）。
+   * 超时拒 level 保留 error（红条警示职责不变，单条双职：瞬态条 + 时间线决策行，不双写）。
+   * 必须在 `_settleConfirm` **之前**调用（settle 会 delete pending 表项）。
+   */
+  private _logDecision(requestId: string, verdict: 'approved' | 'declined' | 'timeout'): void {
+    const pending = this._pendingWriteConfirmations.get(requestId);
+    if (!pending) return;
+    const word =
+      verdict === 'approved'
+        ? '已批准'
+        : verdict === 'declined'
+          ? '已拒绝'
+          : CONFIRM_TIMEOUT_NOTICE;
+    this.post({
+      type: 'notice',
+      level: verdict === 'timeout' ? 'error' : 'info',
+      // 动作词中性化：同一张卡也承载命令/代码/脚本执行确认，写「写入」即失实
+      message:
+        verdict === 'timeout' ? `${word}（${pending.logLabel}）` : `${word} ${pending.logLabel}`,
+      kind: 'decision',
     });
   }
 

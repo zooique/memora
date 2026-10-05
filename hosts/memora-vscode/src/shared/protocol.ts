@@ -781,7 +781,13 @@ export type ExtensionToWebviewMessage =
    * 注：运行时的「已召回 N 条 / 已沉淀：xx」提示由 webview 解析 process_event 本地派生，
    * 不经本消息通道（记忆活动走 ProcessEvent 单源）。
    */
-  | { type: 'notice'; level: 'info' | 'error'; message: string }
+  | {
+      type: 'notice';
+      level: 'info' | 'error';
+      message: string;
+      /** 时间线第三类事件「决策记录」标记（C2）：批准/拒绝/超时自动拒，只记工具面+裁决结果，不记载荷 */
+      kind?: 'decision';
+    }
   /**
    * Chat Panel 当前激活角色包（消息区顶部角色徽章数据）
    *

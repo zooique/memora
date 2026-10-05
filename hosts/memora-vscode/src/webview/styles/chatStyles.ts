@@ -2059,6 +2059,11 @@ export const chatStyles = `
     padding: var(--sp-1, 4px) 0; line-height: 1.6;
   }
   .activity-list__row.error { color: var(--feedback-error-fg); }
+  /* 决策记录行（C2 第三类事件）：左侧竖线与普通活动行区分，复用中性色不引入新 token */
+  .activity-list__row.decision {
+    border-left: 2px solid var(--text-secondary, #9aa0a6);
+    padding-left: var(--sp-2, 6px);
+  }
   .activity-list__time {
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
     flex-shrink: 0;

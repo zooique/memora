@@ -4380,6 +4380,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     level: 'error' | 'info';
     text: string;
     ts: string;
+    /** 时间线第三类事件「决策记录」（C2）：批准/拒绝/超时自动拒，只记工具面+裁决结果 */
+    kind?: 'decision';
   }
   const activityHistory: ActivityRecord[] = [];
 
@@ -4430,7 +4432,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     activityList.textContent = '';
     for (const r of activityHistory) {
       const row = document.createElement('div');
-      row.className = 'activity-list__row ' + r.level;
+      row.className = 'activity-list__row ' + r.level + (r.kind === 'decision' ? ' decision' : '');
       const text = document.createElement('span');
       text.className = 'activity-list__text';
       text.textContent = r.text;
@@ -4456,12 +4458,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     level: 'error' | 'info',
     text: string,
     action?: { label: string; onClick: () => void },
+    kind?: 'decision',
   ): void {
     // 全部活动先入历史（被覆盖的提示不丢失，详情可回溯）
     const record: ActivityRecord = {
       level,
       text,
       ts: fmtTime(new Date().toISOString()),
+      ...(kind ? { kind } : {}),
     };
     activityHistory.push(record);
     if (activityHistory.length > MAX_ACTIVITY_HISTORY) activityHistory.shift();
@@ -5449,7 +5453,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 后台任务快照（宿主按事件点推、已内建内容签名去重）→ 空列表即隐藏（无任务零占用）
       updateBackgroundTasksBar(msg.items);
     } else if (msg.type === 'notice') {
-      showActivity(msg.level, msg.message);
+      showActivity(msg.level, msg.message, undefined, msg.kind);
     } else if (msg.type === 'goal_drift_detected') {
       // 目标漂移检测：展示原目标 vs 新目标 + 相似度，供用户确认或忽略
       const pct = Math.round(msg.similarity * 100);
