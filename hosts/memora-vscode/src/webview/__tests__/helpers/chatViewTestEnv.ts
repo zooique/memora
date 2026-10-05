@@ -43,11 +43,6 @@ const HTML = `
     <div id="planBarPanel" class="plan-bar__panel" hidden></div>
   </div>
   <div id="activityBar" class="activity-bar" hidden></div>
-  <details id="activityDetail" class="activity-detail" hidden>
-    <summary>活动详情</summary>
-    <div id="activityList" class="activity-list"></div>
-    <div id="activityMetrics" class="activity-metrics" hidden></div>
-  </details>
   <div id="messages">
     <div id="emptyState" class="empty-state" hidden>
       <div id="emptyTitle" class="empty-title"></div>
@@ -83,6 +78,17 @@ const HTML = `
         <button id="writeConfirmReject" class="write-confirm-card__btn--reject">拒绝</button>
         <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认</button>
       </div>
+    </div>
+  </div>
+  <!-- 镜像生产 DOM：状态抽屉静态骨架（C1）——chip 入口 + panel 两段（控件/时间），
+       时间线 #activityDetail 静态固定在 panel 内、不再随瞬态条搬运。 -->
+  <button id="dockChip" class="status-dock__chip" type="button" title="状态与活动" aria-expanded="false" hidden></button>
+  <div id="dockPanel" class="status-dock__panel" hidden>
+    <div id="dockControls" class="status-dock__controls" hidden></div>
+    <div id="activityDetail" class="status-dock__timeline">
+      <div class="status-dock__timeline-head">活动</div>
+      <div id="activityList" class="activity-list"></div>
+      <div id="activityMetrics" class="activity-metrics" hidden></div>
     </div>
   </div>
   <div id="inputBar">

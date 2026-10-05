@@ -101,7 +101,7 @@
         "memora.showMetrics": {
           "type": "boolean",
           "default": false,
-          "description": "显示活动指标（LLM 调用次数 / 召回命中率 / 指纹 hash 等调试信息）。默认隐藏，对普通用户是噪音；需要调试可观测性时开启"
+          "description": "显示活动指标（LLM 调用次数 / 工具失败与截断 / token / 安全审计 / 指纹 hash 等调试信息）。默认隐藏，对普通用户是噪音；需要调试可观测性时开启"
         },
         "memora.allowedPaths": {
           "type": "array",

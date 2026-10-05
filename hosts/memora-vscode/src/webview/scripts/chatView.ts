@@ -147,11 +147,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // Grok 式技能 chip 行：输入框上方展示当前已选 Skill（名称 + × 可移除）
   const skillChipRow = document.getElementById('skillChips') as HTMLElement | null;
   let currentSkill: { name: string; disabled?: boolean } | null = null;
-  // 活动状态区（三合一：错误 / 低扰通知单条主状态 + 指标折叠详情）
+  // 活动状态条（瞬态单条：error/info 通知，info 2500ms / error 8000ms 自动撤）
   const activityBar = document.getElementById('activityBar') as HTMLElement;
-  // 🔴 P4：HTMLDetailsElement 而非 HTMLElement —— .open（展开态）只有 details 才有，
-  // 未读判据读它。as 断言不会校验运行时类型，写错就是读到 undefined（静默失效）。
-  const activityDetail = document.getElementById('activityDetail') as HTMLDetailsElement | null;
+  // 状态抽屉（C1，2026-10-05）：静态骨架，入口 chip + 下拉体 panel（内含控件段 controls
+  // 与时间段 #activityDetail）。#activityDetail 是纯静态容器（列表/指标各有元素引用），
+  // 脚本无需持有它——不参与任何搬运与显隐，可见性纯粹随 #dockPanel.hidden。
+  const dockChip = document.getElementById('dockChip') as HTMLButtonElement | null;
+  const dockPanel = document.getElementById('dockPanel') as HTMLElement | null;
+  const dockControls = document.getElementById('dockControls') as HTMLElement | null;
   const activityList = document.getElementById('activityList') as HTMLElement;
   const activityMetrics = document.getElementById('activityMetrics') as HTMLElement;
   const inputBar = document.getElementById('inputBar') as HTMLElement;
@@ -2470,7 +2473,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     send.setAttribute('aria-label', spec.send.ariaLabel);
   }
 
-  // ─── 底部状态条收纳器（StatusDock，方案-底部状态条收纳-20261001.md §二定案/§三契约）───
+  // ─── 底部状态条收纳器（StatusDock，ADR-037 形态宪法；实现契约详见
+  // docs/方案-底部状态条收纳-20261001.md §三）───
   // 底部三条（fileChanges / pendingQueue / activityBar 非错误态）同屏堆叠收紧：
   // 主位常显优先级最高一条，其余收进「+N」浮层（同 planBar head→panel 纵向展开形态）。
   // 🔴 SSOT：三条的 hidden 与 DOM 归位**只由 resolveDock 裁决**——各条更新函数只上报
@@ -2501,26 +2505,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     /** error 豁免：恒主位（裁决优先于 priority）；error 消失时撤销 */
     fixed: boolean;
     active: boolean;
-    /**
-     * 随从节点：随本条**同处一个位置**（同进主位或同进浮层），自身不参与主位竞争。
-     *
-     * 🔴 P4 收口（2026-10-05）：#activityDetail 是「活动详情」折叠区，此前是与 activityBar
-     * **平级的游离节点**——不在 dockEntries 里、不受 resolveDock 裁决，故形态不受管且
-     * 「历史非空即常驻」（UI-CONFIRM-P10）。此处给它挂随从位，随 activity 条一起被裁决。
-     *
-     * 为何不用 DOM 父子（试过，会炸）：showActivity 每次渲染都 `activityBar.textContent=''`
-     * 整体重置（:4407 无 action 分支 / :4418 有 action 分支），嵌套即被销毁 ⇒ 只能靠
-     * 裁决器显式搬运，不能靠结构。
-     */
-    follower?: HTMLElement;
   };
   const dockEntries = new Map<DockId, DockEntry>();
-  let _dockPanel: HTMLElement | null = null;
-  let _dockChip: HTMLButtonElement | null = null;
+  /**
+   * 抽屉展开态（唯一折叠轴，C1）。
+   *
+   * 2026-10-05 C1 之前还有第二根轴——#activityDetail 自己的 `<details>.open`，
+   * 两轴并存期靠 follower 显隐回调（reconcileActivityDetailVisibility）缝合，
+   * 止血契约 P10C 即此物。C1 把时间线静态固定进 #dockPanel 后，details 退化为
+   * 普通容器，随从机制整组拆除：开/合只剩这一个变量，只由用户点 #dockChip 翻转。
+   */
   let _dockExpanded = false;
 
-  function registerDockEntry(id: DockId, el: HTMLElement, follower?: HTMLElement): void {
-    dockEntries.set(id, { el, priority: DOCK_PRIORITY[id], fixed: false, active: false, follower });
+  function registerDockEntry(id: DockId, el: HTMLElement): void {
+    dockEntries.set(id, { el, priority: DOCK_PRIORITY[id], fixed: false, active: false });
   }
 
   /**
@@ -2549,9 +2547,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     resolveDock();
   }
 
-  // activityBar 接入收纳器（静态 HTML 节点，此处注册；fileChanges/pendingQueue 懒创建时注册）
+  // activityBar 接入收纳器（静态 HTML 节点，此处注册；fileChanges/pendingQueue 懒创建时注册）。
+  // C1：时间线 #activityDetail 不再是本条随从（静态固定在抽屉时间段），注册只传单条本身。
   // ——注册必须在 dockEntries（const Map）初始化之后，放声明区会踩 TDZ
-  registerDockEntry('activity', activityBar, activityDetail ?? undefined);
+  registerDockEntry('activity', activityBar);
   // A 类阻断面板（审批卡）接入同一收纳器：显隐与归位自此**只由 resolveDock 裁决**，
   // renderWriteConfirmCard / 按钮回调一律改走 setDockActive，禁直写 hidden（散写即回到堆叠）。
   if (writeConfirmCard) registerDockEntry('confirm', writeConfirmCard);
@@ -2561,6 +2560,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * 数值含义：confirm(10) 恒主位，优先于 error 豁免——确认卡被收纳 = 不可见 = 超时自动拒绝，
    * 而 error 被收纳仍可从图标条点开，代价不对称（方案§九 A2）。
+   *
+   * 🔴 勿把 error 豁免读成「不管优先级多低都硬占明面」：confirm 在场时 error 一样被收进
+   * 浮层——豁免只相对 B 类 priority 排序成立，不越过 confirm。
    *
    * 🔴 单一真源：非活跃条归位（要退到主位之上）与主位条归位（要贴anchor）**共用此裁决**。
    * 早先两处各判一次，改一处忘另一处即出现「主位与 anchor 之间夹着隐藏节点」。
@@ -2573,152 +2575,96 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     );
   }
 
-  /** 主位条节点（非活跃条退位时的目标位；空态返回 null）——与主位归位同源，禁止各判一次 */
-  function restAnchor(actives: DockEntry[]): HTMLElement | null {
-    return actives.length > 0 ? (pickDockHead(actives)?.el ?? null) : null;
-  }
-
-  /** 显隐与归位裁决（SSOT 单点）：主位条在浮层 panel 之前、inputBar 之前；被收纳条单实例
-   *  移入 panel（节点移动保留事件监听）；非活跃条 hidden 退到主位之上。每次全量重排。 */
+  /**
+   * 显隐与归位裁决（SSOT 单点，C1 重写）。
+   *
+   * 静态链（骨架写死，不再动态插拔）：非活跃条们(hidden) → #dockChip → #dockPanel → inputBar。
+   * 每次全量重排三件事：①主位条（pickDockHead）插 inputBar 前，恒紧邻输入框；
+   * ②其余活跃条单实例搬入 #dockControls（节点移动保留事件监听）；③非活跃条 hidden 退到
+   * #dockChip 之上。时间线 #activityDetail 是 #dockPanel 的静态子节点，**永不参与搬运**。
+   *
+   * 抽屉入口状态同在此单点裁决：rest>0 显「+N」，否则时间段有内容时显「活动」；
+   * 未读只挂 chip 徽章，抽屉从不自动弹（宪法④，ADR-037）。
+   */
   function resolveDock(): void {
     const anchor = inputBar;
     const parent = anchor.parentNode;
-    if (!parent) return;
-    // 🔴 全量归位（**必须先于摘 panel**，探针实锤 2026-10-05）：
-    // 旧 panel.remove() 会把**嵌在 panel 里的条一并从 DOM 摘掉**，而那些条既不在 parent
-    // 下、也不在 panel 下（panel 已走）⇒ 节点凭空消失。真机表现：error 提示那条 activityBar
-    // 整个不见了（探针：after err 链里 activityBar/ activityDetail 双双消失、panel 不存在）。
-    // 该隐患 P4 之前就存在（条消失一轮、下一轮再被搬回），只是没被观测到。
-    //
-    // 修法：摘 panel 之前先把**全部 dock 节点（含随从节点）**搬回 parent。appendChild 是
-    // 移动（幂等），已在 parent 下的节点搬回原位不改变结构。
+    if (!parent || !dockChip || !dockPanel || !dockControls) return;
+    // 全量归位（必须先于重新收纳）：把上一轮搬进 #dockControls 的条先搬回 parent。
+    // appendChild 是移动（幂等），随后的归位循环立刻给它们正确位置，中间态无渲染帧。
+    // （2026-10-05 探针实锤教训：旧动态 panel 摘除时不先搬空，条会随 panel 一起消失一轮。）
     for (const e of dockEntries.values()) {
       if (e.el.parentNode !== parent) parent.appendChild(e.el);
-      if (e.follower && e.follower.parentNode !== parent) parent.appendChild(e.follower);
     }
-    // 旧 chip/panel 摘除（此时内部已空，摘除不影响任何条）
-    if (_dockPanel?.parentNode) _dockPanel.remove();
-    if (_dockChip?.parentNode) _dockChip.remove();
     const actives = [...dockEntries.values()].filter((e) => e.active);
     // composer 让位裁决（唯一写入点）：A 类阻断面板激活即替换掉输入框——用户此刻只能做
     // 「确认/拒绝」这一个决定。B 类信息条再多条也不抢输入框（它们不阻断）。
     setComposerReplaced(actives.some((e) => e.priority === CONFIRM_PRIORITY));
-    // 非活跃条：hidden 退到**主位之上**（退到 anchor 前是错的，见下方「结构纪律」）。
-    // 必须在空态提前返回**之前**执行，否则「最后一条撤销」时残留可见。
-    //
-    // 🔴 结构纪律（探针实锤，2026-10-05）：**主位条与 anchor 之间必须恒定干净**。
-    // 早先非活跃条退到 anchor 前 ⇒ 它们天然夹在「主位条 ↔ inputBar」中间
-    // ⇒ 主位免重排判据（无论看物理相邻还是跳过隐藏节点）都无法既「免重排」又「位置正确」
-    // ⇒ 既有契约「常驻条 nextElementSibling === inputBar」当场变红。
-    // 改为退到主位之上后：主位条恒紧贴 anchor，中间无任何节点，判据与契约同时成立。
-    //
-    // 空态（无主位）时无处可退，退回 anchor 前——此时链上无主位条，不违反纪律。
+    // 🔴 结构纪律（探针实锤，2026-10-05）：**主位条与 anchor 之间必须恒定干净**——
+    // 物理相邻，不允许隐藏节点夹在中间（点击穿透/点击区错位）。故非活跃条统一退到
+    // #dockChip 之上（静态抽屉比任何条都更靠近 anchor），不退 anchor 前。
+    // 必须在空态分支之前执行，否则「最后一条撤销」时残留可见。
     for (const e of dockEntries.values()) {
       if (!e.active) {
         e.el.hidden = true;
-        parent.insertBefore(e.el, restAnchor(actives) ?? anchor);
-        // 🔴 随从节点**同退位且贴着自己那条**（排在 e.el 之后）。
-        // 漏这一步 ⇒ 详情留在原地（探针实锤：activity 撤出后详情还悬在输入框上方）。
-        if (e.follower) {
-          e.follower.hidden = true;
-          parent.insertBefore(e.follower, e.el.nextSibling);
-        }
+        parent.insertBefore(e.el, dockChip);
       }
     }
-    if (actives.length === 0) {
-      _dockExpanded = false;
-      return;
-    }
-    // 主位裁决：A 类阻断面板（confirm）恒主位，优先于 error 豁免——确认卡一旦被收纳就不可见，
-    // 30 分钟超时后 fail-closed 自动拒绝（命令确认首跑即翻车的同款病灶）；而 error 被收纳
-    // 仍可从图标条点开，两者代价不对称。其次 fixed（error 豁免），再次 priority 最大。
-    // 🔴 与非活跃条退位共用 pickDockHead（SSOT）：两处各判一次 = 改一处忘另一处 ⇒
-    // 主位与 anchor 之间夹进隐藏节点（探针实锤，见上方结构纪律）。
-    const head = pickDockHead(actives) as DockEntry;
-    const rest = actives.filter((e) => e !== head);
-    // 🔴 主位免重排判据（2026-10-05 真机实锤「P7 落地后还是先消失再出现」的第二轮修复）：
-    // insertBefore 是 **DOM 移动**——节点已在位时再搬一次，浏览器仍走一遍
-    // 「摘出→ 插入」的重排，视觉上卡片**瞬移闪一下**。
-    //
-    // 触发链（P7 只解决了「点击后同步关卡」，没解决这条）：任一 B 类条进出都会触发
-    // resolveDock 全量重排，而重排无条件对主位条 insertBefore。高频触发点 = activity 条的
-    // 2500ms 自动消失（showActivity 定时器 → setDockActive('activity', false)）
-    // —— 恰好落在用户审下一条的等待窗口内 ⇒ 每切一张卡必闪一次。
-    //
-    // 🔴 判据方向：是问「**anchor 前面那个是不是主位条**」，不是「主位条前面是不是 anchor」
-    // ——后者恒为假（非活跃条曾夹在中间，该写法让判据形同虚设）。
-    //
-    // 🔴 主位链 = follower → head → anchor（详情排本条之上，见下方二次校位）⇒
-    // anchor 的前一位恒是主位条本身，判据**只需认一种形态**。早先误以为链是
-    // head → follower → anchor 而加的 atFollowerSlot 分支恒为假，是死代码（探针实锤）。
-    {
-      parent.insertBefore(head.el, anchor);
-    }
-    // 主位条归位
-    head.el.hidden = false;
-    const headFollower = head.follower;
-    // 🔴 随从节点**二次校位（排在主位条之上）**：主位链恒为 `follower → head → anchor`。
-    //
-    // 为何详情排上面而不是下面：既有位置范式是「主位条插到 inputBar 的前一个兄弟」
-    // （chatView.test.ts「常驻条插在输入栏之前」）。详情排本条之下会插进主位条与 inputBar
-    // 之间 ⇒ 破该范式。排本条之上则主位条恒紧贴输入框，详情作为附属信息叠在其上方。
-    //
-    // 🔴 判据写`previousElementSibling`（follower 在 head 之上）：早先写成
-    // `head.el.nextElementSibling !== headFollower` 且把follower 插 anchor 前
-    // ⇒ 链成head → follower → anchor，主位条被 follower 顶离输入框（探针实测
-    // act.prev=clarifyBar、act.next=activityDetail）。探针与判据必须同向。
-    if (headFollower) {
-      headFollower.hidden = false;
-      if (headFollower.nextElementSibling !== head.el) {
-        parent.insertBefore(headFollower, head.el);
+    const head = actives.length > 0 ? pickDockHead(actives) : undefined;
+    const rest = head ? actives.filter((e) => e !== head) : [];
+    // 主位归位：插 anchor 前 = 静态 #dockPanel 之后、inputBar 之前，恒紧贴输入框。
+    // 抽屉开合只切 #dockPanel.hidden，chip/panel 从骨架起就不插拔 ⇒ P7/P8 时代
+    // 「chip/panel 反复插拔把确认卡挤开、主位条瞬移闪烁」的结构根在此不复存在。
+    if (head) {
+      // 免重排守卫（P8 主位条瞬移闪烁血训）：head 已物理紧邻 anchor 就不搬。
+      // 本函数会被重复触发（重复通知时 active/fixed 未变，见 showActivity 尾部说明），
+      // 其余节点同位置重放是同步无帧操作，唯 head 可见、重复 insertBefore 真机上=整条瞬移。
+      if (head.el.nextElementSibling !== anchor) {
+        parent.insertBefore(head.el, anchor);
       }
+      head.el.hidden = false;
     }
-    if (rest.length === 0) {
-      _dockExpanded = false;
-      return;
-    }
-    // chip：+N 独立 DOM（activityBar 渲染 textContent='' 整体重置，chip 塞条内会被抹掉）
-    if (!_dockChip) {
-      _dockChip = document.createElement('button');
-      _dockChip.className = 'status-dock__chip';
-      _dockChip.type = 'button';
-      _dockChip.title = '更多状态';
-      _dockChip.setAttribute('aria-expanded', 'false');
-      _dockChip.addEventListener('click', () => {
-        _dockExpanded = !_dockExpanded;
-        resolveDock();
-      });
-    }
-    _dockChip.textContent = `+${rest.length}`;
-    _dockChip.setAttribute('aria-expanded', String(_dockExpanded));
-    // 🔴 chip/panel 锚点必须在主位条**之上**（真机实锤「P7 落地后仍先消失再出现」的真凶）：
-    // 插到 anchor 前会把它们塞进「confirm 卡 ↔ inputBar」之间，把 A 类卡挤开。
-    // 而 rest 是否非空随 B 类条进出而变（activity 条 2500ms 自动消失是高频触发点）
-    // ⇒ chip/panel 反复插拔 ⇒ 卡在「紧邻 inputBar」与「被挤开」之间来回跳 = 视觉上的
-    // 「消失再出现」。探针实证：notice 触发后 adjacentToAnchor 由 true 变 false。
-    //
-    // 锚点取 head.el（主位条）而非 anchor：chip 在 head 之上、panel 在 chip 之上，
-    // 主位条始终紧贴 inputBar —— A 类卡的视觉位置恒定，B 类的收纳浮层不挤占它。
-    parent.insertBefore(_dockChip, head.el);
-    // panel：被收纳条单实例移入（展开显示 / 收纳隐藏但位置已进浮层）
-    if (!_dockPanel) {
-      _dockPanel = document.createElement('div');
-      _dockPanel.className = 'status-dock__panel';
-    }
+    // 被收纳条：单实例移入控件段；收起态隐藏条本身（panel 也 hidden，双保险）
     for (const e of rest) {
       e.el.hidden = !_dockExpanded;
-      _dockPanel.appendChild(e.el);
-      // 🔴 P4：随从节点同进浮层，且紧随本条（appendChild 保持 rest 的 priority 序）。
-      // 不这么做的话详情会留在原地——它在生产骨架里是 #activityBar 的**下一个兄弟**，
-      // 条被搬进浮层后它仍留在 anchor 前 ⇒ 「活动条被收纳、详情却还显在输入框上方」。
-      if (e.follower) {
-        e.follower.hidden = !_dockExpanded;
-        _dockPanel.appendChild(e.follower);
-      }
+      dockControls.appendChild(e.el);
     }
-    _dockPanel.hidden = !_dockExpanded;
-    parent.insertBefore(_dockPanel, _dockChip.nextSibling);
+    dockControls.hidden = rest.length === 0;
+    // 抽屉入口：有被收纳的活跃条（+N）**或**时间段有内容（历史/指标）才可达。
+    // 时间线一旦有内容不清空（历史有界保留、metrics 渲染后常驻）⇒ 入口首次出现后常驻，
+    // 单条 error 8s 撤后历史仍可从这里拉开——C1 闭合的最后残余缺口（台账 P15 病③）。
+    const timelineReady = activityHistory.length > 0 || !activityMetrics.hidden;
+    const chipVisible = rest.length > 0 || timelineReady;
+    const hasUnread = activityUnread || metricsUnread;
+    // 空态（入口不可达）时展开态无意义，强制收起；其余时刻**不替用户合抽屉**
+    // （正在看历史时条全撤 = P10C open 轴血训的同一条纪律，折叠轴只剩这一个）。
+    if (!chipVisible) _dockExpanded = false;
+    dockChip.hidden = !chipVisible;
+    dockChip.textContent = rest.length > 0 ? `+${rest.length}` : '活动';
+    // 可见文案极简（+N/活动），可读名在此补全：收纳数 + 未读后缀。未读圆点是 ::before
+    // 装饰（读屏拿不到），有未读必须靠 aria-label 让读屏器报出。
+    dockChip.setAttribute(
+      'aria-label',
+      (rest.length > 0 ? `${rest.length} 个收纳状态` : '活动历史') + (hasUnread ? '，有未读' : ''),
+    );
+    dockChip.setAttribute('aria-expanded', String(_dockExpanded));
+    dockChip.classList.toggle('is-unread', hasUnread);
+    dockPanel.hidden = !_dockExpanded;
   }
+
+  /**
+   * 抽屉入口点击：唯一折叠轴。拉开＝已读（清两个未读位 + 现场消费指标信号），
+   * 开合都只切 _dockExpanded 后交 resolveDock 单点重排，不直写任何 hidden。
+   */
+  dockChip?.addEventListener('click', () => {
+    _dockExpanded = !_dockExpanded;
+    if (_dockExpanded) {
+      activityUnread = false;
+      metricsUnread = false;
+      metricsSignalSeen = metricsSignalLatest;
+    }
+    resolveDock();
+  });
 
   /**
    * 待发送区（interject 队列可视化）：由 turn_update.pendingQueue 更新。
@@ -4424,8 +4370,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   // ─── 活动状态区（三合一：P0 错误 / P1 低扰 / P2 指标） ───
   // 单一主状态条（#activityBar）同时只显示一条；被覆盖的提示不丢失，
-  // 全部进「▾ 活动详情」历史（最近 MAX_ACTIVITY_HISTORY 条，带时间戳）。
-  // 优先级策略：P0 错误显示期间，P1/P2 不打断它（错误优先保护）；P2 指标常驻详情。
+  // 全部进抽屉「活动」时间段的历史列表（最近 MAX_ACTIVITY_HISTORY 条，带时间戳）。
+  // 优先级策略：P0 错误显示期间，P1/P2 不打断它（错误优先保护）；P2 指标常驻时间段。
 
   /** 详情历史最大条数（有界，防长期使用累积） */
   const MAX_ACTIVITY_HISTORY = 20;
@@ -4441,27 +4387,44 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 详情「有未读」标记（P4 / UI-CONFIRM-P10 治本）
    *
    * 🔴 旧判据是「历史非空即显示」而历史**从不清空**（只 shift 截断到MAX 条）⇒ 出现过
-   * 任意一条活动后折叠区永久可见，即用户反馈的「基本常驻」。新判据 = 有未读才提示，
-   * 用户展开看过即消未读（details 的 toggle 事件是浏览器的、不自算）。
+   * 任意一条活动后折叠区永久可见，即用户反馈的「基本常驻」。C1 起事实与呈现分离：
+   * 历史非空只决定**入口可达**（chip 显「活动」），是否提示由未读位决定——
+   * 用户点开抽屉看过即消（唯一折叠轴 #dockChip 点击回调，拉开＝已读）。
    *
    * 为何不用「历史空才隐藏」：那只是把常驻改成「最后一次活动后才消」，用户读过之后
    * 仍常驻 ⇒ 换壳不换病。
    */
   let activityUnread = false;
 
+  /**
+   * 指标未读位（与 activityUnread 同构，判据的第二个事实源）
+   *
+   * 🔴 病根（2026-10-05 审查实锤）：旧判据把 `activityMetrics.hidden`（**渲染结果**，
+   * 且只置 false 从不复位）当「有没有指标要看」的事实喂给显隐判据 ⇒ 首次 metrics
+   * 之后详情区恒显形。第二版改喂「渲染全文快照对比」仍错——宿主每轮都推 metrics，
+   * 而 llmCallCount / token 是**累计计数**、每轮必涨 ⇒ 全文每轮都不同 ⇒ 退化成
+   * 「每轮弹一次」，换壳不换病。
+   *
+   * 定案修法：未读只由**诊断信号**驱动（失败数 / 截断数 / 未解析意图数 / 安全审计数 /
+   * 指纹变化，见 `metricsSignalOf`）——累计计数是仪表盘读数，不是「新闻」。
+   * 指标块本身的显隐仍归 `activityMetrics.hidden`（渲染职责，两件事互不侵占）。
+   */
+  let metricsUnread = false;
+  /** 最近一次 metrics 的诊断信号（每次推送都更新；展开中现场消费的依据） */
+  let metricsSignalLatest = '';
+  /** 用户已读的诊断信号快照（空串 = 从未读过；与 latest 不同 ⇒ 有未读信号） */
+  let metricsSignalSeen = '';
+
   let activityTimer: number | null = null;
 
-  /** 折叠区展开态变化时消费未读（展开＝已读） */
-  activityDetail?.addEventListener('toggle', () => {
-    if (activityDetail.open) {
-      activityUnread = false;
-      activityDetail.classList.remove('is-unread');
-      // 🔴 必须重跑判据：只清标记不动 hidden ⇒ 「读过一次后收起」不成立（变异实测红）。
-      // 收起方向的显隐由 resolveDock 裁，但「该不该显形」这一层归本函数，故须重渲。
-      renderActivityDetail();
-    }
-  });
-  /** 渲染「活动详情」列表（历史 + 指标），并按未读标记决定是否显形 */
+  // C1：#activityDetail 的 <details>.open 折叠轴与 toggle 监听已整组拆除——时间线静态
+  // 固定在 #dockPanel 内，其可见性纯粹随抽屉（#dockPanel.hidden），未读消费统一在
+  // #dockChip 点击回调（拉开＝已读），展开中现场消费见 showActivity/renderMetrics。
+
+  /**
+   * 渲染时间段的活动历史列表（内容职责；C1 起不再裁决任何显隐——
+   * 时间线可见性是 #dockPanel.hidden 的纯函数，徽章/入口显隐归 resolveDock）。
+   */
   function renderActivityDetail(): void {
     // 历史列表：textContent 构建防注入（全部来自内核/宿主文案或用户输入）
     activityList.textContent = '';
@@ -4478,10 +4441,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       row.appendChild(time);
       activityList.appendChild(row);
     }
-    // 详情折叠区显隐判据（2026-10-05 P4 治本）：有未读 **或** 指标在展示时才显形。
-    // 🔴 resolveDock 会在本函数之后裁决 hidden（随 activity 条进出浮层），故这里只管
-    // 「该不该有内容」，位置与最终显隐归裁决器——两个单点各管一件事，不互相覆盖。
-    if (activityDetail) activityDetail.hidden = !activityUnread && activityMetrics.hidden;
   }
 
   /**
@@ -4506,12 +4465,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     };
     activityHistory.push(record);
     if (activityHistory.length > MAX_ACTIVITY_HISTORY) activityHistory.shift();
-    // 新活动 ⇒ 标未读（收起态才标，展开中说明用户正在看，不标）
-    if (activityDetail && !activityDetail.open) {
+    // 新活动 ⇒ 标未读（抽屉收起态才标；拉开着说明用户正在看，不标）。
+    // 未读只亮 #dockChip 徽章、不弹时间线（宪法④）；事实位在此，呈现在 resolveDock。
+    if (!_dockExpanded) {
       activityUnread = true;
-      activityDetail.classList.add('is-unread');
     }
     renderActivityDetail();
+    // 入口显式刷新（必须在 P0 早退判据**之前**）：history 与未读位是 resolveDock 的输入，
+    // 但重复通知时 active/fixed 往往没变——setDockActive/setDockFixed 判重 no-op 不触发裁决，
+    // 不补这一下则「收抽屉后第二条通知到达，徽章不亮」（与 renderMetrics 尾部同款刷新）。
+    // 紧接着的 setter 若状态真变化会再裁决一次：两次同帧、幂等，head 有免重排守卫不搬。
+    resolveDock();
 
     // P0 保护：当前显示 error 时，后续 info 不打断（仅进历史，主条保持错误可见）
     if (level === 'info' && activityBar.dataset.level === 'error') return;
@@ -4547,6 +4511,32 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       },
       level === 'error' ? 8000 : 2500,
     );
+  }
+
+  /**
+   * 从 metrics 载荷提取**诊断信号**（未读判据唯一事实源）。
+   *
+   * 口径：只收「出了事 / 配置变了」的量——工具失败、上下文截断、未解析工具意图、
+   * 路径守卫**拒绝数**、系统提示指纹。判据不是「累计 vs 瞬时」，而是
+   * **「正常轮次这个值会不会变」**：fail/trunc/unparsed/denied 只在异常时增长，
+   * 正常轮次恒定；llmCallCount / token / budget 每轮必涨。
+   *
+   * 🔴 血训（2026-10-05 真机触发链复核实锤）：audit 字段**只准用 denied，不准用 total**。
+   * 内核 SecurityGuard 对**白名单正常放行也发 path-allow 审计**，宿主 total 无条件累加
+   * （含 allow）⇒ AI 真实编码每轮都读文件 ⇒ total 每轮必涨，与 llmCallCount 同病。
+   * v3 曾误收 total，变异测试因构造数据没让审计数逐轮涨而漏网；守卫用例见
+   * `chatView.test.ts`「P4 补审 A」审计守卫条。total 仍在指标块正常展示（仪表盘读数），
+   * 只是不入信号。trace 是操作流镜像，同样不是新闻。
+   */
+  function metricsSignalOf(msg: Extract<ExtensionToWebviewMessage, { type: 'metrics' }>): string {
+    return JSON.stringify({
+      fp: msg.fingerprints.systemPromptHash ?? '',
+      fail: msg.metrics.toolFailureCount ?? 0,
+      trunc: msg.metrics.truncationCount ?? 0,
+      unparsed: msg.metrics.unparsedToolIntentCount ?? 0,
+      // 只认拒绝数：total 含每轮必发生的 path-allow，入信号 = 每轮弹一次（见函数头血训）
+      audit: msg.securityAudit?.denied ?? 0,
+    });
   }
 
   /**
@@ -4613,9 +4603,25 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           ]
         : []),
     ];
-    activityMetrics.textContent = lines.join('\n');
+    const next = lines.join('\n');
+    activityMetrics.textContent = next;
     activityMetrics.hidden = false;
+    // 未读由**诊断信号变化**驱动（不是「推过」、不是渲染全文 diff——见 metricsSignalOf）。
+    // 抽屉拉开中到达的新信号当场消费（更新已读快照），避免用户现场看过、收起后反被标未读。
+    const signal = metricsSignalOf(msg);
+    metricsSignalLatest = signal;
+    if (signal !== metricsSignalSeen) {
+      if (_dockExpanded) {
+        metricsSignalSeen = signal;
+      } else {
+        metricsUnread = true;
+      }
+    }
     renderActivityDetail();
+    // metrics 路径不经过 setDockActive（活动瞬态条可能根本没激活），徽章/入口状态
+    // 必须在此显式刷新：首推 metrics 即让入口可达（内容已渲染、信号未读 ⇒ 亮「活动」徽章，
+    // 但抽屉仍不自动弹——可见性只由用户点击翻转）。
+    resolveDock();
   }
 
   // 当前占用条已展示的容量上限（token）——Provider 列表推送（含上限）时据此判断

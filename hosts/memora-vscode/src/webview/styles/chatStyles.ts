@@ -91,17 +91,18 @@ export const chatStyles = `
   .scroll-to-bottom:hover { color: var(--text-primary, #cccccc); }
   .scroll-to-bottom[hidden] { display: none; }
 
-  /* ============ StatusDock：底部状态条收纳器（方案-底部状态条收纳-20261001.md §三契约） ============ */
-  /* 主位条尾部「+N」chip：被收纳条计数，点击开合浮层。独立 DOM（activityBar 渲染
-   * textContent='' 整体重置，chip 塞条内会被抹掉）。全既有令牌，无新 token。 */
+  /* ============ StatusDock：底部状态抽屉（ADR-037 形态宪法） ============ */
+  /* 抽屉入口（C1 常驻化）：静态骨架节点，body flex 列中独立成行（stretch 整条可点）。
+   * 可达 = 有被收纳条（文案「+N」）或时间段有内容（文案「活动」）；未读只亮 .is-unread
+   * 徽章，抽屉从不自动弹（宪法④）。全既有令牌，无新 token。 */
   .status-dock__chip {
-    display: inline-flex; align-items: center; justify-content: center;
-    align-self: center;
-    margin: 0 var(--sp-4, 8px) var(--sp-2, 4px);
-    padding: 0 var(--sp-3, 8px);
-    height: 18px;
+    align-self: stretch;
+    display: flex; align-items: center; justify-content: center; gap: var(--sp-2, 6px);
+    margin: var(--sp-2, 4px) var(--sp-4, 8px) 0;
+    padding: var(--sp-1, 3px) var(--sp-3, 8px);
+    min-height: 20px;
     border: 1px solid var(--border-subtle, rgba(128,128,128,.35));
-    border-radius: 999px;
+    border-radius: var(--radius-sm, 2px);
     background: var(--surface-inset, rgba(128,128,128,.12));
     color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-xs, 11px);
@@ -109,8 +110,20 @@ export const chatStyles = `
   }
   .status-dock__chip:hover { color: var(--text-primary, #cccccc); background: var(--surface-active, rgba(128,128,128,.24)); }
   .status-dock__chip[hidden] { display: none; }
-  /* 浮层面板：被收纳条的单实例容器（纵向展开，planBar head→panel 同构形态）。
-   * 条原样式自带外边距，浮层内统一收紧为条间距。 */
+  /* 未读徽章：警示色文字/描边 + 前导圆点（::before 纯装饰；读屏语义由 JS 的 aria-label 承担，
+   * 伪元素内容测试与读屏都拿不到，不承载语义——同旧活动详情折叠 marker 血训）。 */
+  .status-dock__chip.is-unread {
+    color: var(--feedback-warn-accent, #d7ba7d);
+    border-color: var(--feedback-warn-accent, #d7ba7d);
+    font-weight: 600;
+  }
+  .status-dock__chip.is-unread::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--feedback-warn-accent, #d7ba7d);
+  }
+  .status-dock__chip:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  /* 抽屉体：纵向两段——#dockControls 控件段（被收纳活跃条）+ #activityDetail 时间段。
+   * flex gap 只落在两个非 hidden 段之间（display:none 不生成盒、不占 gap）。 */
   .status-dock__panel {
     display: flex; flex-direction: column; gap: var(--sp-2, 4px);
     margin: var(--sp-2, 4px) var(--sp-4, 8px);
@@ -120,12 +133,11 @@ export const chatStyles = `
     background: var(--surface-inset, rgba(128,128,128,.12));
   }
   .status-dock__panel[hidden] { display: none; }
-  .status-dock__panel .file-changes-bar,
-  .status-dock__panel .pending-queue-bar,
-  .status-dock__panel .background-tasks-bar { margin: 0; }
-  /* P4：活动详情折进浮层后（随 #activityBar 一起被 resolveDock 收容），条与详情在浮层内
-   * 上下相邻，须收掉详情自身外边距（.activity-detail 的 margin 是为独立骨架位设的）。 */
-  .status-dock__panel .activity-detail { margin: 0; }
+  /* 控件段：被收纳活跃条的单实例容器（节点由 resolveDock 搬运，事件监听随节点保留）。
+   * 条原样式自带外边距，段内统一收紧——子选择器兜底所有未来入段条，免枚举漂移。 */
+  .status-dock__controls { display: flex; flex-direction: column; gap: var(--sp-2, 4px); }
+  .status-dock__controls[hidden] { display: none; }
+  .status-dock__controls > * { margin: 0; }
 
   /* ============ Components：会话标题条（ADR-024 会话标题层） ============ */
   /* 顶部一条：主动可见展示当前会话标题，让用户始终识别「我在哪个会话」；
@@ -1532,7 +1544,7 @@ export const chatStyles = `
   /* ============ Components：活动状态区 · 主状态条 ============ */
   /* 会话异常等错误级反馈 + 低扰 info 统一走单一主状态条（#activityBar），不插入消息区，
    * 不污染对话历史。错误显示期间低扰不打断（优先级保护）；被覆盖的
-   * 提示进「活动详情」历史回溯（见下方 .activity-detail）。
+   * 提示进抽屉「活动」时间段历史回溯（见下方 .status-dock__timeline）。
    * 分级：error 醒目（inputValidation error 色）、info 低扰（同记忆语义）。
    * [hidden] 覆盖：display:flex 会覆盖 HTML hidden 属性，需显式恢复。 */
   .activity-bar {
@@ -2021,27 +2033,27 @@ export const chatStyles = `
     50% { opacity: 0.35; }
   }
 
-  /* ============ Components：活动状态区 · 详情折叠（历史 + 指标） ============ */
-  /* 活动详情折叠区：历史记录（error 标红 / info 灰显，带时间戳）+ 指标块。
-   * 被主状态条覆盖的提示不丢失，全部在此回溯（有界 MAX_ACTIVITY_HISTORY 条）。 */
-  .activity-detail {
-    margin: var(--sp-3, 8px) var(--sp-5, 12px) 0; font-size: var(--font-sm, 11px);
+  /* ============ Components：活动状态区 · 抽屉时间段（历史 + 指标） ============ */
+  /* 时间段（C1）：#dockPanel 的静态第二段，不再是随瞬态条进出的 <details>。
+   * 外边框/外边距由抽屉体承担，本段只留排版；与控件段并存时顶部分隔线（gap 已给间距）。
+   * 被主状态条覆盖的提示不丢失，全部在历史列表回溯（有界 MAX_ACTIVITY_HISTORY 条）。 */
+  .status-dock__timeline {
+    margin: 0; font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
-    border-radius: var(--radius, 6px);
-    flex-shrink: 0;
+    flex-shrink: 0; min-width: 0;
   }
-  .activity-detail summary {
-    cursor: pointer; padding: var(--sp-2, 6px) var(--sp-3, 8px); user-select: none;
-    outline: none; border-radius: inherit;
+  .status-dock__controls:not([hidden]) + .status-dock__timeline {
+    padding-top: var(--sp-2, 4px);
+    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }
-  /* P4 未读标记：收起态且有未读时 summary 前缀一个状态点（判据 = .is-unread，
-   * 由 chatView 在「新活动且详情收起」时加、消未读时移除；不引入新状态机）。
-   * 用 border 而非 ::before 伪元素内容 —— 伪元素内容是渲染文本，测试与读屏都拿不到。 */
-  .activity-detail.is-unread > summary { color: var(--text-primary, #cccccc); font-weight: 600; }
-  .activity-detail.is-unread > summary::marker { color: var(--feedback-warn-accent, #d7ba7d); }
-  .activity-detail summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
-  .activity-list { padding: 0 var(--sp-3, 8px) var(--sp-2, 6px); }
+  /* 段头「活动」：静态骨架文本，纯标签不可点（折叠职责已上移到抽屉入口）。 */
+  .status-dock__timeline-head {
+    padding: 0 0 var(--sp-1, 4px);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    user-select: none;
+  }
+  .activity-list { padding: 0; }
   .activity-list__row {
     display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3, 8px);
     padding: var(--sp-1, 4px) 0; line-height: 1.6;
@@ -2052,7 +2064,8 @@ export const chatStyles = `
     flex-shrink: 0;
   }
   .activity-metrics {
-    padding: 0 var(--sp-3, 8px) var(--sp-2, 6px); line-height: 1.7;
+    /* 与历史列表的分隔线；横向/底部留白由抽屉体 padding 承担，不双倍 */
+    padding: var(--sp-2, 4px) 0 0; line-height: 1.7;
     white-space: pre-wrap; word-break: break-all;
     border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }

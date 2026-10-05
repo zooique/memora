@@ -1493,12 +1493,14 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     expect(body?.textContent?.trim()).toBe('被阻断的回复');
   });
 
-  it('metrics 渲染活动详情折叠区（指纹只显示 hash，不显示内容）', () => {
+  it('metrics 首推渲染进抽屉时间段：入口亮未读徽章，但抽屉不自动弹（C1 宪法④）', () => {
     mountChatView();
-    const detail = document.getElementById('activityDetail') as HTMLElement;
+    const chip = document.querySelector('.status-dock__chip') as HTMLButtonElement;
+    const panel = document.querySelector('.status-dock__panel') as HTMLElement;
     const metrics = document.getElementById('activityMetrics') as HTMLElement;
-    // 未推送前默认隐藏
-    expect(detail.hidden).toBe(true);
+    // 未推送前：入口/抽屉体皆隐藏（时间线节点静态在骨架中，随 panel 一起不可见）
+    expect(chip.hidden).toBe(true);
+    expect(panel.hidden).toBe(true);
 
     dispatch({
       type: 'metrics',
@@ -1506,11 +1508,18 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
       metrics: { llmCallCount: 5, toolFailureCount: 1, truncationCount: 0 },
     });
 
-    // metrics 只进详情折叠区，不占用主状态条（P2 不占主条）
+    // metrics 只进抽屉时间段，不占用主状态条（P2 不占主条）
     const activityBar = document.getElementById('activityBar') as HTMLElement;
     expect(activityBar.hidden).toBe(true);
-    expect(detail.hidden).toBe(false);
     expect(metrics.hidden).toBe(false);
+    // C1：首推只让入口可达 + 亮未读徽章，抽屉体仍隐藏（宪法④ 不自动弹）
+    expect(chip.hidden).toBe(false);
+    expect(chip.textContent).toBe('活动');
+    expect(chip.classList.contains('is-unread')).toBe(true);
+    expect(panel.hidden).toBe(true);
+    // 用户主动拉开后才看到内容
+    chip.click();
+    expect(panel.hidden).toBe(false);
     expect(metrics.textContent).toContain('系统提示 a1b2c3d4e5f6');
     expect(metrics.textContent).toContain('LLM 5 次');
   });
@@ -1566,123 +1575,150 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════
-// P4 · 活动详情折进「活动」浮层 + 治常驻（UI-CONFIRM-P10）
+// P4 · 状态抽屉 C1：时间线静态固定 + 未读只亮入口徽章（UI-CONFIRM-P10 收口）
 // ═══════════════════════════════════════════════════════════
-// 缺陷两处，同源：①#activityDetail 是与 #activityBar **平级的游离节点**——不在
-// dockEntries 里、不受 resolveDock 裁决 ⇒ activity 条被收纳进浮层时，详情仍留在
-// 输入框上方独自显形（形态不受管）。②显隐判据是「历史非空即显示」而历史**从不清空**
-// （只shift 截断到 MAX_ACTIVITY_HISTORY）⇒ 出现过任意一条活动后永久可见（用户反馈
-// 的「基本常驻」）。
-// 修法：DockEntry 增follower 位（随从节点随本条同处一位，不参与主位竞争），
-// 判据改「有未读或指标在展示」，展开看过即消未读。
-describe('P4 活动详情：折进浮层 + 未读判据治常驻（UI-CONFIRM-P10）', () => {
-  const detail = (): HTMLDetailsElement =>
-    document.getElementById('activityDetail') as HTMLDetailsElement;
+// 止血版（follower）两处旧伤：①#activityDetail 是随 #activityBar 进出的随从节点——
+// 条 2500ms 自动撤，详情被一起陪葬（条撤后历史不可达）；②「详情有自己的 <details>.open
+// 折叠轴 + 抽屉展开轴」两套折叠语义并存，靠 reconcileActivityDetailVisibility 缝合。
+// C1 终态（ADR-037 四宪法）：时间线**静态固定**在 #dockPanel 第二段，永不参与搬运；
+// details 退化为普通 div，折叠轴只剩 #dockChip 点击翻转的 _dockExpanded 一个；
+// 未读只亮入口徽章，抽屉从不自动弹；入口在「rest>0 ‖ 历史非空 ‖ metrics 已渲染」时常驻。
+describe('P4 状态抽屉：时间线静态固定 + 未读只亮入口徽章（C1 · UI-CONFIRM-P10）', () => {
+  const detail = (): HTMLElement => document.getElementById('activityDetail') as HTMLElement;
   const actBar = (): HTMLElement => document.getElementById('activityBar') as HTMLElement;
   const panel = (): HTMLElement => document.querySelector('.status-dock__panel') as HTMLElement;
+  const chip = (): HTMLButtonElement =>
+    document.querySelector('.status-dock__chip') as HTMLButtonElement;
+  const controls = (): HTMLElement => document.getElementById('dockControls') as HTMLElement;
 
-  /** 触发一条info 活动（进历史 + 标未读），不与其他 B 类条争主位 */
+  /** 触发一条info 活动（进历史 + 收起态标未读），不与其他 B 类条争主位 */
   function pushActivity(text: string): void {
     dispatch({ type: 'notice', level: 'info', message: text });
   }
 
-  /** 模拟用户展开 details：jsdom 不派发原生 toggle，故手动派发（生产监听的是 toggle） */
-  function expandDetail(): void {
-    detail().open = true;
-    detail().dispatchEvent(new Event('toggle'));
+  /**
+   * 模拟用户点抽屉入口（C1 唯一折叠轴；旧 details 的 open/toggle 已整组拆除，
+   * jsdom 不再需要手动派发 toggle——chip 点击监听就是生产真实链路）。
+   * 每调一次翻转一次：展开＝已读，再调＝收起。
+   */
+  function toggleDrawer(): void {
+    chip().click();
   }
 
-  /** 模拟用户收起 details（真实场景：读过 → 折叠区隐去 → 后续新活动重新提示） */
-  function collapseDetail(): void {
-    detail().open = false;
-    detail().dispatchEvent(new Event('toggle'));
-  }
-
-  it('常驻治本：读过一次后收起，不再永久显形（旧判据「历史非空即显示」必红）', () => {
+  it('🔴 未读治本：新活动只亮入口徽章、抽屉不自动弹；拉开已读，收起后入口常驻但不提示', () => {
     mountChatView();
+    // 初始：入口/抽屉体皆不可达
+    expect(chip().hidden).toBe(true);
+    expect(panel().hidden).toBe(true);
     pushActivity('正在思考');
-    // 未读 ⇒ 显形 + 挂未读标记
-    expect(detail().hidden).toBe(false);
-    expect(detail().classList.contains('is-unread')).toBe(true);
-    // 用户展开看过 ⇒ 消未读
-    expandDetail();
-    expect(detail().classList.contains('is-unread')).toBe(false);
-    // 🔴 关键：内容没丢（历史仍在），但**不再显形** —— 这条就是治「基本常驻」
+    // 未读 ⇒ 入口可达 + 亮徽章 + 文案「活动」（单条活跃无收纳，rest=0）；抽屉体仍隐藏
+    expect(chip().hidden).toBe(false);
+    expect(chip().textContent).toBe('活动');
+    expect(chip().classList.contains('is-unread')).toBe(true);
+    expect(chip().getAttribute('aria-expanded')).toBe('false');
+    expect(panel().hidden).toBe(true); // 宪法④：不自动弹
+    // 用户拉开 ⇒ 抽屉体显形、徽章消（拉开＝已读）；内容没丢（历史在时间段里）
+    toggleDrawer();
+    expect(panel().hidden).toBe(false);
+    expect(chip().getAttribute('aria-expanded')).toBe('true');
+    expect(chip().classList.contains('is-unread')).toBe(false);
     expect(detail().querySelector('#activityList')?.textContent).toContain('正在思考');
-    expect(detail().hidden).toBe(true);
+    // 🔴 治「基本常驻」的关键：收起后抽屉体隐藏；但与旧 details 时代不同——
+    // 历史非空 ⇒ 入口**常驻可达**（只是不亮徽章），随时能再拉开
+    toggleDrawer();
+    expect(panel().hidden).toBe(true);
+    expect(chip().hidden).toBe(false);
+    expect(chip().classList.contains('is-unread')).toBe(false);
+    expect(chip().textContent).toBe('活动');
   });
 
-  it('新活动重新标未读并再次显形（未读不是一次性开关）', () => {
+  it('新活动重新标未读（未读不是一次性开关），但始终不自动弹', () => {
     mountChatView();
     pushActivity('第一条');
-    expandDetail();
-    expect(detail().hidden).toBe(true);
-    // 真实交互链：读过 → 收起 → 新活动到达 ⇒ 重新提示
-    collapseDetail();
+    toggleDrawer(); // 拉开（已读）
+    expect(panel().hidden).toBe(false);
+    toggleDrawer(); // 收起
+    expect(panel().hidden).toBe(true);
+    // 真实交互链：读过 → 收起 → 新活动到达 ⇒ 徽章重新亮，抽屉体仍隐藏
     pushActivity('第二条');
-    expect(detail().hidden).toBe(false);
-    expect(detail().classList.contains('is-unread')).toBe(true);
+    expect(chip().classList.contains('is-unread')).toBe(true);
+    expect(panel().hidden).toBe(true);
   });
 
-  it('展开态收到新活动不重复标未读（用户正在看，别在他眼皮底下跳）', () => {
+  it('展开态收到新活动不重复标未读（用户正在看，别在他眼皮底下亮徽章）', () => {
     mountChatView();
     pushActivity('第一条');
-    expandDetail();
-    detail().classList.remove('is-unread');
-    // 仍展开 ⇒ 新活动不再标未读
+    toggleDrawer(); // 拉开＝已读
+    // 仍展开 ⇒ 新活动不再标未读，抽屉体保持展开
     pushActivity('第二条');
-    expect(detail().classList.contains('is-unread')).toBe(false);
+    expect(chip().classList.contains('is-unread')).toBe(false);
+    expect(panel().hidden).toBe(false);
   });
 
-  it('浮层收容：activity 条被收纳时详情随之进浮层，不独自留在输入框上方', () => {
+  it('🔴 控件段收容：activity 被收纳时条进 #dockControls；时间线始终静态固定在抽屉体（变异：条搬进 panel 根或时间线随搬必红）', () => {
     mountChatView();
     // fileChanges(priority 3) 压过 activity(priority 1) ⇒ activity 降为被收纳
     pushActivity('正在思考');
     dispatch({ type: 'file_changes', files: ['a.md'] });
     const fcBar = document.querySelector('.file-changes-bar') as HTMLElement;
-    // 主位是 fileChanges
+    // 主位是 fileChanges：可见、在抽屉体外
     expect(fcBar.hidden).toBe(false);
     expect(panel().contains(fcBar)).toBe(false);
-    // 🔴 关键：详情与 activity 条同在浮层内，且紧随本条
-    expect(panel().contains(actBar())).toBe(true);
-    expect(panel().contains(detail())).toBe(true);
-    // 浮层内顺序 = 条 → 详情（appendChild 保序，见 resolveDock 收容段）
-    expect(actBar().nextElementSibling).toBe(detail());
+    // 🔴 被收纳的是**条**：进控件段（直接父 = #dockControls）
+    expect(controls().contains(actBar())).toBe(true);
+    expect(actBar().parentElement).toBe(controls());
+    // 🔴 时间线不参与任何搬运：直接父恒为抽屉体，且不在控件段内（两段分离）
+    expect(detail().parentElement).toBe(panel());
+    expect(controls().contains(detail())).toBe(false);
+    // chip = +1（rest=1：被收纳的 activity 条）
+    expect(chip().textContent).toBe('+1');
   });
 
-  it('浮层收起态：activity 条与详情同步隐藏（不出现「条没了详情还在」）', () => {
+  it('抽屉收起态：被收纳条随抽屉隐藏；时间线可见性也只随抽屉体（不出现「条没了详情还在」）', () => {
     mountChatView();
     pushActivity('正在思考');
     dispatch({ type: 'file_changes', files: ['a.md'] });
-    //浮层默认收起
+    // 抽屉默认收起：体隐藏、被收纳条隐藏（时间线节点本身不挂 hidden，它随 panel 不可见）
     expect(panel().hidden).toBe(true);
     expect(actBar().hidden).toBe(true);
-    expect(detail().hidden).toBe(true);
+    // 拉开：条与时间线同时可见
+    toggleDrawer();
+    expect(panel().hidden).toBe(false);
+    expect(actBar().hidden).toBe(false);
+    // 收起：一起藏回
+    toggleDrawer();
+    expect(panel().hidden).toBe(true);
+    expect(actBar().hidden).toBe(true);
   });
 
-  it('activity 条升主位时详情随条回到主位区（不留在浮层里）', () => {
+  it('activity 条升主位时只条移出控件段；时间线静态不动（C1 与 follower 时代的根本差异）', () => {
     mountChatView();
     pushActivity('正在思考');
     dispatch({ type: 'file_changes', files: ['a.md'] });
-    expect(panel().contains(detail())).toBe(true);
-    // fileChanges撤出⇒ activity 升主位
+    expect(controls().contains(actBar())).toBe(true);
+    expect(detail().parentElement).toBe(panel());
+    // fileChanges 撤出 ⇒ activity 升主位
     dispatch({ type: 'file_changes', files: [] });
     expect(actBar().hidden).toBe(false);
-    expect(detail().hidden).toBe(false);
-    // 主位链（DOM 上 actBar 在 detail 之上，详情排本条之后）
-    expect(actBar().previousElementSibling).toBe(detail());
-    expect(panel()?.contains(detail()) ?? false).toBe(false);
+    expect(controls().contains(actBar())).toBe(false);
+    // 🔴 时间线仍在抽屉体——它不再有「随条回主位区」这回事
+    expect(detail().parentElement).toBe(panel());
+    expect(panel().hidden).toBe(true); // 不自动弹
+    // 历史入口仍可达
+    expect(chip().hidden).toBe(false);
+    expect(chip().textContent).toBe('活动');
   });
 
-  it('主位免重排判据含随从位：详情紧贴 inputBar 时不触发主位条 DOM 移动', () => {
-    // 🔴 回归锁：follower 参与主位链后，若免重排判据只认「head 紧邻 anchor」，
-    // 则每轮都误判需重排 ⇒ 主位条瞬移 = P8 修掉的闪烁复发。
+  it('静态链：主位条紧邻 inputBar，其上恒为静态抽屉体/入口（C1 链 = 非活跃条 → chip → panel → head → inputBar）', () => {
     mountChatView();
     pushActivity('正在思考');
     const inputBar = document.getElementById('inputBar') as HTMLElement;
-    // 主位链（探针从 inputBar 往回打印：detail ← actBar ← inputBar，即 DOM 上 actBar 在detail 之上）
+    // head 插 anchor 前 = 落在静态 #dockPanel 之后，恒紧贴输入框
     expect(inputBar.previousElementSibling).toBe(actBar());
-    expect(actBar().previousElementSibling).toBe(detail());
+    expect(actBar().previousElementSibling).toBe(panel());
+    expect(panel().previousElementSibling).toBe(chip());
+    // 时间线是抽屉体的静态子节点，永不跑到主位链上
+    expect(detail().parentElement).toBe(panel());
   });
 
   it('🔴 免重排真行为锁：主位构成不变时主位条不被搬动（判据退化必红）', () => {
@@ -1690,8 +1726,8 @@ describe('P4 活动详情：折进浮层 + 未读判据治常驻（UI-CONFIRM-P1
     // 终态断言天生抓不到（探针实测：把判据退回错误写法时静态断言仍全绿，而真机上主位条
     // 每轮瞬移= P8 修掉的闪烁复发）。本条改为**行为观测**：拦截父节点 insertBefore。
     //
-    // 🔴 场景选「主位**独占**」而非「加一条低优先级 B 类条」：后者会让 chip/panel 插到
-    // head 之上，属**必要**重排（主位要让出收纳浮层的空间），不是免重排判据要管的事。
+    // 🔴 场景选「主位**独占**」而非「加一条低优先级 B 类条」：后者会让 head 移入
+    // #dockControls（主位换成另一条），属**必要**重排，不是免重排判据要管的事。
     // 只让主位独占时，任何 insertBefore(head) 都是纯浪费 = 闪烁。
     mountChatView();
     pushActivity('正在思考');
@@ -1715,28 +1751,245 @@ describe('P4 活动详情：折进浮层 + 未读判据治常驻（UI-CONFIRM-P1
     expect(inputBar.previousElementSibling).toBe(act);
   });
 
-  it('🔴 结构纪律：主位条必须物理紧邻 inputBar（变异 3 必红）', () => {
-    // 非活跃条若退到 anchor前（而非主位之上），它们天然夹在「主位条 ↔ inputBar」中间：
-    // 免重排判据恒假（退化成每轮重排 = P8 修掉的闪烁复发），且破坏「主位条紧贴输入区」的
-    // 位置范式。探针实测该场景 act.prev=clarifyBar / act.next=activityDetail。
-    //
-    // 判据用**物理相邻**（不用「跳过隐藏节点」）：隐藏节点夹在中间一样破坏位置范式
-    // （点击穿透、点击区错位），故必须在物理上紧邻。
+  it('🔴 结构纪律：主位条必须物理紧邻 inputBar（非活跃条退到 chip 之上，变异必红）', () => {
+    // 非活跃条统一 insertBefore(#dockChip)——若错误地退到 anchor 前，隐藏节点会夹在
+    // 「主位条 ↔ inputBar」中间：免重排判据恒假（退化成每轮重排 = P8 修掉的闪烁复发），
+    // 且破坏「主位条紧贴输入区」的位置范式（点击穿透、点击区错位）。
+    // 判据用**物理相邻**（不「跳过隐藏节点」）：隐藏节点夹在中间一样破坏位置范式。
     mountChatView();
     pushActivity('正在思考');
     const inputBar = document.getElementById('inputBar') as HTMLElement;
     expect(inputBar.previousElementSibling).toBe(actBar());
   });
 
-  it('🔴 结构纪律：有第二个 dock 条同活时主位条仍物理紧邻 inputBar（变异 3 必红）', () => {
-    // 上一条只覆盖「主位独占」，而变异 3 的实际破坏发生在**有其他 dock 条**时：
-    // 隐藏条被塞进主位与 inputBar 之间，把主位条顶离。这一条才是变异 3 的真守卫。
+  it('🔴 结构纪律：有第二个 dock 条同活时主位条仍物理紧邻 inputBar（收纳走控件段，不顶主位）', () => {
+    // 上一条只覆盖「主位独占」；本条覆盖有被收纳条时：rest 进 #dockControls（静态节点），
+    // 主位与输入框之间的物理相邻不受任何影响。
     mountChatView();
     pushActivity('正在思考');
-    // 加一条更低的 B 类条（background 垫底）⇒ 出现 chip/panel，但主位仍activity
-    dispatch({ type: 'background_tasks', items: [{ id: 'bg1', command: 'ls', status: 'running' }] });
+    // 加一条更低的 B 类条（background 垫底）⇒ chip 显 +1，但主位仍是 activity
+    dispatch({
+      type: 'background_tasks',
+      items: [{ id: 'bg1', command: 'ls', status: 'running' }],
+    });
     const inputBar = document.getElementById('inputBar') as HTMLElement;
     expect(inputBar.previousElementSibling).toBe(actBar());
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // P4 补审 · 止血期三处残余缺陷在 C1 的落点（信号口径原样保留）
+  // ═══════════════════════════════════════════════════════════
+  // ① 未读判据曾把 activityMetrics.hidden（**渲染结果**，只置 false 从不复位）当事实，
+  //    第二版改「渲染全文快照 diff」仍错：宿主每轮推 metrics，llmCallCount/token 是累计
+  //    计数、每轮必涨 ⇒ 每轮弹一次 = 换壳常驻。定案：未读只由**诊断信号**驱动
+  //    （metricsSignalOf：失败/截断/未解析意图/安全审计 denied/指纹）。C1 只换呈现面——
+  //    从「详情区显形」改为「入口徽章亮」，信号口径一个字段没动。
+  // ② ③的止血机制（details.open 第二轴 / follower 随从显隐）已在 C1 整组拆除，
+  //    对应守卫改写成「不自动弹 + 时间线静态存活 + 不替用户合抽屉」，见补审 B。
+  describe('P4 补审 A：metrics 诊断信号量驱动入口徽章（累计计数不是新闻）', () => {
+    const metrics = (): HTMLElement => document.getElementById('activityMetrics') as HTMLElement;
+
+    /**
+     * 推一条 metrics（默认指纹与诊断量固定，llmCallCount 单独可控）。
+     * 便于构造「只有累计计数变」与「诊断信号真变」两种场景。
+     */
+    function pushMetrics(llmCallCount: number, extra?: Record<string, unknown>): void {
+      dispatch({
+        type: 'metrics',
+        fingerprints: { systemPromptHash: 'a1b2c3d4e5f6' },
+        metrics: { llmCallCount, toolFailureCount: 1, truncationCount: 0, ...extra },
+      });
+    }
+
+    /** 模拟用户拉开抽屉读过、再收起（真实「读过」动作链；C1 唯一折叠轴 = chip 点击） */
+    function readAndCollapse(): void {
+      chip().click();
+      chip().click();
+    }
+
+    it('🔴 核心守卫：读过后仅累计计数增长不重新亮徽章（变异：llmCallCount 纳入信号必红）', () => {
+      mountChatView();
+      pushMetrics(5);
+      // 首推信号出现 ⇒ 入口亮未读徽章，但抽屉体不自动弹
+      expect(chip().classList.contains('is-unread')).toBe(true);
+      expect(panel().hidden).toBe(true);
+      readAndCollapse();
+      // 🔴 llmCallCount 5→9 只是仪表盘读数滚动，信号未变 ⇒ **不得**重新亮徽章，
+      // 否则「每轮都推 + 每轮必涨」把 metricsUnread 喂成常驻（换壳不换病）
+      pushMetrics(9);
+      expect(chip().classList.contains('is-unread')).toBe(false);
+      expect(panel().hidden).toBe(true);
+    });
+
+    it('同信号重复推送不标未读（新闻按信号判，不按「推过」判）', () => {
+      mountChatView();
+      pushMetrics(5);
+      readAndCollapse();
+      // 完全相同的信号再推一次 ⇒ 无新东西 ⇒ 不提示
+      pushMetrics(5);
+      expect(chip().classList.contains('is-unread')).toBe(false);
+    });
+
+    it('🔴 诊断信号变化（失败数 / 指纹）收起态重新亮徽章（变异：信号漏收 fail 或 fp 必红）', () => {
+      mountChatView();
+      pushMetrics(5);
+      readAndCollapse();
+      // 失败数 1→2 = 真出了事 ⇒ 重新唤起（徽章亮，仍不自动弹）
+      pushMetrics(9, { toolFailureCount: 2 });
+      expect(chip().classList.contains('is-unread')).toBe(true);
+      expect(panel().hidden).toBe(true);
+      // 指纹变化（系统提示换了）同属诊断信号 ⇒ 读过后仍应再次唤起
+      readAndCollapse();
+      dispatch({
+        type: 'metrics',
+        fingerprints: { systemPromptHash: 'f0e1d2c3b4a5' },
+        metrics: { llmCallCount: 10, toolFailureCount: 2, truncationCount: 0 },
+      });
+      expect(chip().classList.contains('is-unread')).toBe(true);
+    });
+
+    it('拉开中到达的新信号当场消费：看着它发生，收起后不反标未读', () => {
+      mountChatView();
+      pushMetrics(5);
+      chip().click(); // 拉开
+      // 展开态下诊断信号变化（失败数 1→2）⇒ 当场记为已读，不亮徽章
+      pushMetrics(42, { toolFailureCount: 2 });
+      expect(chip().classList.contains('is-unread')).toBe(false);
+      expect(metrics().textContent).toContain('工具失败 2'); // 内容照常刷新
+      // 收起后不反标；同信号继续推也安静
+      chip().click();
+      pushMetrics(43, { toolFailureCount: 2 });
+      expect(chip().classList.contains('is-unread')).toBe(false);
+    });
+
+    it('新活动仍能重新亮徽章（metrics 修好不牵连活动路径）', () => {
+      mountChatView();
+      pushMetrics(5);
+      readAndCollapse();
+      // 收起态来一条活动 ⇒ 活动未读位标未读（徽章统一在入口）
+      dispatch({ type: 'notice', level: 'info', message: '正在思考' });
+      expect(chip().classList.contains('is-unread')).toBe(true);
+      expect(panel().hidden).toBe(true);
+    });
+
+    it('指标块渲染与抽屉显隐解耦（渲染职责不被未读判据劫持）', () => {
+      // 回归锁：判据一度拿 activityMetrics.hidden 当事实源 ⇒ 渲染结果反向污染显隐决策。
+      // 本条锁住「指标块画出来了（hidden=false）但读过收起后抽屉体可独立隐藏」这个组合。
+      mountChatView();
+      pushMetrics(5);
+      expect(metrics().hidden).toBe(false); // 指标块已渲染
+      readAndCollapse();
+      expect(metrics().hidden).toBe(false); // 指标块仍在（内容不丢）
+      expect(panel().hidden).toBe(true); // 但抽屉体收起
+      expect(chip().hidden).toBe(false); // 入口仍在（metrics 常驻时间段）
+    });
+
+    it('🔴 审计守卫：path-allow 正常累计（total 涨/denied 不涨）不重亮；新增拒绝才唤起（变异：信号用 total 必红）', () => {
+      mountChatView();
+      // 局部 helper：模拟内核真实行为——AI 每轮读文件，白名单放行也发 path-allow 审计，
+      // 宿主 total 无条件累加；只有 path-deny/write-decline 才让 denied 涨。
+      const pushAudit = (llmCalls: number, total: number, denied: number): void => {
+        dispatch({
+          type: 'metrics',
+          fingerprints: { systemPromptHash: 'a1b2c3d4e5f6' },
+          metrics: { llmCallCount: llmCalls, toolFailureCount: 1, truncationCount: 0 },
+          securityAudit: {
+            total,
+            denied,
+            recent:
+              denied > 0
+                ? [{ type: 'path-deny', path: 'out.js', reason: '路径越界，不在白名单内' }]
+                : [{ type: 'path-allow', path: 'foo.ts' }],
+          },
+        });
+      };
+      // 首轮 3 次审计全放行（denied=0）：首推因信号首次出现亮徽章，读过后收起
+      pushAudit(3, 3, 0);
+      readAndCollapse();
+      // 下一轮 AI 又读 4 个文件：llmCallCount 3→7、total 3→7，但 denied 恒 0
+      // ⇒ 全是正常操作，**不得**重新亮徽章（total 入信号则此处必红 = 每轮弹一次）
+      pushAudit(7, 7, 0);
+      expect(chip().classList.contains('is-unread')).toBe(false);
+      // 真被拒一次：denied 0→1 = 出了安全事件 ⇒ 重新唤起
+      pushAudit(8, 8, 1);
+      expect(chip().classList.contains('is-unread')).toBe(true);
+    });
+  });
+
+  describe('P4 补审 B：条自动撤时时间线存活 + 唯一折叠轴不被裁决翻转（C1 终态）', () => {
+    // info 条 2500ms 自动撤是本组的触发源，统一切假钟，afterEach 还原防污染他组
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('🔴 拉开态：未读消费后抽屉保持展开（变异：resolveDock 按未读位强制合抽屉必红）', () => {
+      mountChatView();
+      pushActivity('正在思考');
+      toggleDrawer(); // 拉开即消费未读
+      expect(chip().classList.contains('is-unread')).toBe(false);
+      // 未读位已空，抽屉仍必须保持展开——折叠轴只由用户点击翻转，裁决不替用户合
+      expect(panel().hidden).toBe(false);
+      expect(chip().getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('🔴 条 2500ms 自动撤：入口与时间线不陪葬，未读徽章仍在；拉开可见历史、收起后入口常驻（变异：入口判据退回 rest>0 必红）', () => {
+      mountChatView();
+      pushActivity('正在思考');
+      expect(actBar().hidden).toBe(false);
+      // info 条 2500ms 到期撤出收纳器
+      vi.advanceTimersByTime(2500);
+      expect(actBar().hidden).toBe(true);
+      // 🔴 C1 闭合的核心缺口：条没了，入口仍可达（历史非空）、文案退为「活动」、未读仍亮
+      expect(chip().hidden).toBe(false);
+      expect(chip().textContent).toBe('活动');
+      expect(chip().classList.contains('is-unread')).toBe(true);
+      expect(panel().hidden).toBe(true); // 不自动弹
+      // 用户拉开 ⇒ 历史内容在（条死了历史不死）
+      toggleDrawer();
+      expect(panel().hidden).toBe(false);
+      expect(detail().querySelector('#activityList')?.textContent).toContain('正在思考');
+      // 收起 ⇒ 徽章已消、入口常驻
+      toggleDrawer();
+      expect(panel().hidden).toBe(true);
+      expect(chip().hidden).toBe(false);
+      expect(chip().classList.contains('is-unread')).toBe(false);
+    });
+
+    it('🔴 抽屉拉开时条自动撤：抽屉不被强制合上（变异：空 rest 时无条件收抽屉必红）', () => {
+      mountChatView();
+      pushActivity('正在思考');
+      toggleDrawer(); // 用户正在看
+      vi.advanceTimersByTime(2500); // 条撤
+      expect(actBar().hidden).toBe(true);
+      // 正在看的东西不许消失：唯一折叠轴不被 resolveDock 替用户翻回
+      expect(panel().hidden).toBe(false);
+      expect(chip().getAttribute('aria-expanded')).toBe('true');
+      // 入口从「+N」语义退为「活动」（rest 清空，时间段仍在）
+      expect(chip().textContent).toBe('活动');
+    });
+
+    it('控件段随抽屉开合：被收纳条在 #dockControls 内显隐随抽屉，时间线同在抽屉体内', () => {
+      mountChatView();
+      pushActivity('正在思考');
+      // fileChanges(priority 3) 压过 activity(priority 1) ⇒ activity 被收进控件段
+      dispatch({ type: 'file_changes', files: ['a.md'] });
+      expect(controls().contains(actBar())).toBe(true);
+      expect(detail().parentElement).toBe(panel()); // 时间线静态固定
+      expect(panel().hidden).toBe(true); // 抽屉收起
+      expect(actBar().hidden).toBe(true);
+      // 拉开抽屉 ⇒ 被收纳条与时间线同时可见
+      chip().click();
+      expect(panel().hidden).toBe(false);
+      expect(controls().hidden).toBe(false);
+      expect(actBar().hidden).toBe(false);
+      // 收起抽屉 ⇒ 一起隐藏
+      chip().click();
+      expect(panel().hidden).toBe(true);
+      expect(actBar().hidden).toBe(true);
+    });
   });
 });
 
@@ -4290,7 +4543,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     expect(more.textContent).toBe('展开全文');
   });
 
-  // ─── StatusDock：底部状态条收纳器（方案-底部状态条收纳-20261001.md §五验证计划）───
+  // ─── StatusDock：底部状态条收纳器（优先级裁决 / error 豁免 / 收纳形态行为锁）───
   describe('StatusDock 底部状态条收纳（真机反馈 2026-10-01：形态太多）', () => {
     beforeEach(() => {
       document.body.innerHTML = '';
@@ -4306,36 +4559,38 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     const chip = (): HTMLButtonElement =>
       document.querySelector('.status-dock__chip') as HTMLButtonElement;
     const panel = (): HTMLElement => document.querySelector('.status-dock__panel') as HTMLElement;
+    const controls = (): HTMLElement => document.getElementById('dockControls') as HTMLElement;
 
-    it('优先级裁决：文件改动 + 待发送同活 → 文件改动主位，待发送收进浮层（变异：去掉 priority 排序必红）', () => {
+    it('优先级裁决：文件改动 + 待发送同活 → 文件改动主位，待发送收进控件段（变异：去掉 priority 排序必红）', () => {
       mountChatView();
       dispatch({ type: 'file_changes', files: ['a.md'] });
       dispatch({ type: 'turn_update', state: { phase: 'running' }, pendingQueue: ['补充一'] });
-      // 主位 = fileChanges（priority 3 > 2）：可见、在浮层外
+      // 主位 = fileChanges（priority 3 > 2）：可见、在抽屉体外
       expect(fcBar().hidden).toBe(false);
       expect(panel()?.contains(fcBar())).toBe(false);
-      // 次位 = pendingQueue：已移入浮层 panel
-      expect(panel()?.contains(pqBar())).toBe(true);
-      expect(pqBar().hidden).toBe(true); // 浮层收起态内容隐藏
+      // 次位 = pendingQueue：单实例移入抽屉体控件段（直接父 = #dockControls）
+      expect(controls().contains(pqBar())).toBe(true);
+      expect(pqBar().parentElement).toBe(controls());
+      expect(pqBar().hidden).toBe(true); // 抽屉收起态内容隐藏
       // chip = +1
       expect(chip()?.textContent).toBe('+1');
       expect(chip().getAttribute('aria-expanded')).toBe('false');
     });
 
-    it('error 豁免：错误 + 文件改动同活 → activityBar 恒主位（浮层外），文件改动降入浮层（变异：去掉 fixed 豁免必红）', () => {
+    it('error 豁免：错误 + 文件改动同活 → activityBar 恒主位（抽屉体外），文件改动降入控件段（变异：去掉 fixed 豁免必红）', () => {
       mountChatView();
       dispatch({ type: 'file_changes', files: ['a.md'] });
       dispatch({ type: 'notice', level: 'error', message: '出错了' });
-      // error 恒主位：不在浮层内、可见
+      // error 恒主位：不在抽屉体内、可见
       expect(panel()?.contains(actBar())).toBe(false);
       expect(actBar().hidden).toBe(false);
       expect(actBar().textContent).toContain('出错了');
-      // fileChanges 降为被收纳
-      expect(panel()?.contains(fcBar())).toBe(true);
+      // fileChanges 降为被收纳（进控件段；panel.contains 经 #dockControls 成立）
+      expect(controls().contains(fcBar())).toBe(true);
       expect(chip()?.textContent).toBe('+1');
     });
 
-    it('浮层交互：点击 +N 展开（被收纳条可见、动作按钮可达），再点收起', () => {
+    it('抽屉交互：点击 +N 展开（被收纳条可见、动作按钮可达），再点收起', () => {
       mountChatView();
       dispatch({ type: 'file_changes', files: ['a.md'] });
       dispatch({ type: 'turn_update', state: { phase: 'running' }, pendingQueue: ['补充一'] });
@@ -4343,7 +4598,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
       expect(chip().getAttribute('aria-expanded')).toBe('true');
       expect(panel().hidden).toBe(false);
       expect(pqBar().hidden).toBe(false);
-      // 浮层内动作按钮直达：待发送清空按钮存在且可点击
+      // 控件段内动作按钮直达：待发送清空按钮存在且可点击
       const clearBtn = pqBar().querySelector('.pending-queue-bar__clear') as HTMLButtonElement;
       expect(clearBtn).toBeTruthy();
       expect(clearBtn.disabled).toBe(false);
@@ -4353,22 +4608,22 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
       expect(chip().getAttribute('aria-expanded')).toBe('false');
     });
 
-    it('单条空态：单条活跃无 chip；条撤销后主位顺延、全部清空时 chip/浮层消失', () => {
+    it('单条空态：单条活跃入口隐藏；条撤销后主位顺延、全部清空时入口/抽屉体隐藏（C1：节点静态常驻，只切 hidden）', () => {
       mountChatView();
-      // 单条：无 chip（N=0 不显示）
+      // 单条：无收纳、无历史 ⇒ 入口不可达（节点仍在骨架中，仅 hidden）
       dispatch({ type: 'file_changes', files: ['a.md'] });
-      expect(chip()).toBeNull();
-      expect(panel()).toBeNull();
+      expect(chip().hidden).toBe(true);
+      expect(panel().hidden).toBe(true);
       // fileChanges 撤销 → pendingQueue 顺延为主位
       dispatch({ type: 'turn_update', state: { phase: 'running' }, pendingQueue: ['补充一'] });
       dispatch({ type: 'file_changes', files: [] });
       expect(fcBar().hidden).toBe(true);
       expect(pqBar().hidden).toBe(false);
-      expect(chip()).toBeNull(); // 只剩一条 → 无 chip
-      // 全部清空 → chip/浮层消失
+      expect(chip().hidden).toBe(true); // 只剩一条 → 入口不可达
+      // 全部清空 → 入口/抽屉体隐藏（无活动历史，本用例不触发 notice）
       dispatch({ type: 'turn_update', state: { phase: 'running' }, pendingQueue: [] });
-      expect(chip()).toBeNull();
-      expect(panel()).toBeNull();
+      expect(chip().hidden).toBe(true);
+      expect(panel().hidden).toBe(true);
       expect(pqBar().hidden).toBe(true);
     });
   });
@@ -4484,16 +4739,18 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
       expect(text.title).toBe(long);
     });
 
-    it('优先级垫底：不顶掉 activity 主状态条，后台条收进 +N 浮层', () => {
+    it('优先级垫底：不顶掉 activity 主状态条，后台条收进抽屉控件段（chip = +1）', () => {
       mountChatView();
       dispatch({ type: 'notice', level: 'info', message: '正在思考' });
       dispatch({ type: 'background_tasks', items: [bgTask()] });
       const actBar = document.getElementById('activityBar') as HTMLElement;
       const chip = document.querySelector('.status-dock__chip') as HTMLButtonElement;
       const panel = document.querySelector('.status-dock__panel') as HTMLElement;
+      const controls = document.getElementById('dockControls') as HTMLElement;
       expect(actBar.hidden).toBe(false);
       expect(panel.contains(actBar)).toBe(false); // activity 恒主位
-      expect(panel.contains(bgBar())).toBe(true); // 后台条被收纳
+      expect(controls.contains(bgBar())).toBe(true); // 后台条被收进控件段
+      expect(bgBar().parentElement).toBe(controls);
       expect(chip.textContent).toBe('+1');
     });
   });
@@ -9532,19 +9789,26 @@ describe('INPUT-LIMIT-1 输入长度上限（输入框阶段原生截断，2026-
 describe('骨架 id 三方一致性（UI-CONFIRM-P6 轻量版）', () => {
   /** 抽出一份源码里全部 `id="xxx"` 字面量（仅字母数字，与 getElementById 的 id 风格一致） */
   function idsOf(src: string): Set<string> {
-    return new Set(Array.from(src.matchAll(/\bid="([A-Za-z][A-Za-z0-9]*)"/g), (m) => m[1] as string));
+    return new Set(
+      Array.from(src.matchAll(/\bid="([A-Za-z][A-Za-z0-9]*)"/g), (m) => m[1] as string),
+    );
   }
 
   /** 抽出 chatView.ts 全部 `getElementById('xxx')` 字面量 —— 消费面的唯一可静态判据 */
   function consumedIds(src: string): Set<string> {
     return new Set(
-      Array.from(src.matchAll(/getElementById\('([A-Za-z][A-Za-z0-9]*)'\)/g), (m) => m[1] as string),
+      Array.from(
+        src.matchAll(/getElementById\('([A-Za-z][A-Za-z0-9]*)'\)/g),
+        (m) => m[1] as string,
+      ),
     );
   }
 
   /** 集合差：a 中有而 b 中无的项（排序后便于断言失败时直读） */
   function diff(a: Set<string>, b: Set<string>): string[] {
-    return Array.from(a).filter((x) => !b.has(x)).sort();
+    return Array.from(a)
+      .filter((x) => !b.has(x))
+      .sort();
   }
 
   const consumed = consumedIds(
@@ -9569,4 +9833,3 @@ describe('骨架 id 三方一致性（UI-CONFIRM-P6 轻量版）', () => {
     expect(diff(fixture, prod)).toEqual([]);
   });
 });
-

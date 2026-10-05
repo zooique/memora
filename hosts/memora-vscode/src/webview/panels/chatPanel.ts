@@ -3856,19 +3856,12 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
          锁定本约束）。 -->
   </div>
 
-  <!-- 活动状态区（错误/低扰通知单条主状态 + 指标折叠详情）：
-       位于消息流下方、composer 上方 —— 不顶置挤占消息区。
-       单一通道承载错误/通知/指标三类状态（memoryBar + noticeBar + metricsBox 合一），SSOT 不互相覆盖。
-       P4 收口（2026-10-05）：详情**不改为 #activityBar 的子节点**（试过，会炸）：
-       showActivity 每次渲染都整体重置 activityBar 的 textContent（chatView.ts 两处分支），
-       嵌套即被销毁。改走「resolveDock 收容时把详情一并移入 status-dock__panel」——
-       同一裁决器、同一浮层，不靠 DOM 父子关系。 -->
+  <!-- 活动状态条（错误/低扰通知的**瞬态单条**：info 2500ms / error 8000ms 自动撤）。
+       归位/显隐由 resolveDock 单点裁决。历史与指标**不在本条**——固定归下方
+       #dockPanel 的时间段（C1，2026-10-05）：本条再怎么生灭，时间线都不陪葬。
+       不把时间段做成本条子节点的原因不变：showActivity 每次整体重置
+       activityBar.textContent，嵌套即被销毁。 -->
   <div id="activityBar" class="activity-bar" hidden></div>
-  <details id="activityDetail" class="activity-detail" hidden>
-    <summary>活动详情</summary>
-    <div id="activityList" class="activity-list"></div>
-    <div id="activityMetrics" class="activity-metrics" hidden></div>
-  </details>
   <div id="clarifyBar">
     <div id="clarifyText"></div>
     <div id="clarifyOptions"></div>
@@ -3909,6 +3902,23 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
         <button id="writeConfirmReject" class="write-confirm-card__btn--reject">拒绝</button>
         <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认</button>
       </div>
+    </div>
+  </div>
+  <!-- 状态抽屉（C1 · ADR-037 形态宪法的结构落点）：
+       唯一常驻状态面 = 入口 #dockChip——被收纳的活跃条 >0 时显「+N」，
+       仅有时间段内容时显「活动」；未读挂 is-unread 徽章。从不自动弹（宪法④）。
+       下拉体 #dockPanel 分两段：#dockControls 控件段（被收纳的活跃条由
+       resolveDock 单实例搬运）+ #activityDetail 时间段（活动历史/诊断指标，
+       静态固定，不再随瞬态条进出——P4 follower 机制在 C1 整组拆除）。
+       静态序 chip → panel → inputBar：主位条归位插 inputBar 前，恒紧贴输入框，
+       抽屉开合不挤占 A 类确认卡位置。 -->
+  <button id="dockChip" class="status-dock__chip" type="button" title="状态与活动" aria-expanded="false" hidden></button>
+  <div id="dockPanel" class="status-dock__panel" hidden>
+    <div id="dockControls" class="status-dock__controls" hidden></div>
+    <div id="activityDetail" class="status-dock__timeline">
+      <div class="status-dock__timeline-head">活动</div>
+      <div id="activityList" class="activity-list"></div>
+      <div id="activityMetrics" class="activity-metrics" hidden></div>
     </div>
   </div>
   <div id="inputBar">
