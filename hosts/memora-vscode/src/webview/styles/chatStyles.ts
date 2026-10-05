@@ -123,6 +123,9 @@ export const chatStyles = `
   .status-dock__panel .file-changes-bar,
   .status-dock__panel .pending-queue-bar,
   .status-dock__panel .background-tasks-bar { margin: 0; }
+  /* P4：活动详情折进浮层后（随 #activityBar 一起被 resolveDock 收容），条与详情在浮层内
+   * 上下相邻，须收掉详情自身外边距（.activity-detail 的 margin 是为独立骨架位设的）。 */
+  .status-dock__panel .activity-detail { margin: 0; }
 
   /* ============ Components：会话标题条（ADR-024 会话标题层） ============ */
   /* 顶部一条：主动可见展示当前会话标题，让用户始终识别「我在哪个会话」；
@@ -2032,6 +2035,11 @@ export const chatStyles = `
     cursor: pointer; padding: var(--sp-2, 6px) var(--sp-3, 8px); user-select: none;
     outline: none; border-radius: inherit;
   }
+  /* P4 未读标记：收起态且有未读时 summary 前缀一个状态点（判据 = .is-unread，
+   * 由 chatView 在「新活动且详情收起」时加、消未读时移除；不引入新状态机）。
+   * 用 border 而非 ::before 伪元素内容 —— 伪元素内容是渲染文本，测试与读屏都拿不到。 */
+  .activity-detail.is-unread > summary { color: var(--text-primary, #cccccc); font-weight: 600; }
+  .activity-detail.is-unread > summary::marker { color: var(--feedback-warn-accent, #d7ba7d); }
   .activity-detail summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
   .activity-list { padding: 0 var(--sp-3, 8px) var(--sp-2, 6px); }
   .activity-list__row {

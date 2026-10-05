@@ -1565,6 +1565,181 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
   });
 });
 
+// ═══════════════════════════════════════════════════════════
+// P4 · 活动详情折进「活动」浮层 + 治常驻（UI-CONFIRM-P10）
+// ═══════════════════════════════════════════════════════════
+// 缺陷两处，同源：①#activityDetail 是与 #activityBar **平级的游离节点**——不在
+// dockEntries 里、不受 resolveDock 裁决 ⇒ activity 条被收纳进浮层时，详情仍留在
+// 输入框上方独自显形（形态不受管）。②显隐判据是「历史非空即显示」而历史**从不清空**
+// （只shift 截断到 MAX_ACTIVITY_HISTORY）⇒ 出现过任意一条活动后永久可见（用户反馈
+// 的「基本常驻」）。
+// 修法：DockEntry 增follower 位（随从节点随本条同处一位，不参与主位竞争），
+// 判据改「有未读或指标在展示」，展开看过即消未读。
+describe('P4 活动详情：折进浮层 + 未读判据治常驻（UI-CONFIRM-P10）', () => {
+  const detail = (): HTMLDetailsElement =>
+    document.getElementById('activityDetail') as HTMLDetailsElement;
+  const actBar = (): HTMLElement => document.getElementById('activityBar') as HTMLElement;
+  const panel = (): HTMLElement => document.querySelector('.status-dock__panel') as HTMLElement;
+
+  /** 触发一条info 活动（进历史 + 标未读），不与其他 B 类条争主位 */
+  function pushActivity(text: string): void {
+    dispatch({ type: 'notice', level: 'info', message: text });
+  }
+
+  /** 模拟用户展开 details：jsdom 不派发原生 toggle，故手动派发（生产监听的是 toggle） */
+  function expandDetail(): void {
+    detail().open = true;
+    detail().dispatchEvent(new Event('toggle'));
+  }
+
+  /** 模拟用户收起 details（真实场景：读过 → 折叠区隐去 → 后续新活动重新提示） */
+  function collapseDetail(): void {
+    detail().open = false;
+    detail().dispatchEvent(new Event('toggle'));
+  }
+
+  it('常驻治本：读过一次后收起，不再永久显形（旧判据「历史非空即显示」必红）', () => {
+    mountChatView();
+    pushActivity('正在思考');
+    // 未读 ⇒ 显形 + 挂未读标记
+    expect(detail().hidden).toBe(false);
+    expect(detail().classList.contains('is-unread')).toBe(true);
+    // 用户展开看过 ⇒ 消未读
+    expandDetail();
+    expect(detail().classList.contains('is-unread')).toBe(false);
+    // 🔴 关键：内容没丢（历史仍在），但**不再显形** —— 这条就是治「基本常驻」
+    expect(detail().querySelector('#activityList')?.textContent).toContain('正在思考');
+    expect(detail().hidden).toBe(true);
+  });
+
+  it('新活动重新标未读并再次显形（未读不是一次性开关）', () => {
+    mountChatView();
+    pushActivity('第一条');
+    expandDetail();
+    expect(detail().hidden).toBe(true);
+    // 真实交互链：读过 → 收起 → 新活动到达 ⇒ 重新提示
+    collapseDetail();
+    pushActivity('第二条');
+    expect(detail().hidden).toBe(false);
+    expect(detail().classList.contains('is-unread')).toBe(true);
+  });
+
+  it('展开态收到新活动不重复标未读（用户正在看，别在他眼皮底下跳）', () => {
+    mountChatView();
+    pushActivity('第一条');
+    expandDetail();
+    detail().classList.remove('is-unread');
+    // 仍展开 ⇒ 新活动不再标未读
+    pushActivity('第二条');
+    expect(detail().classList.contains('is-unread')).toBe(false);
+  });
+
+  it('浮层收容：activity 条被收纳时详情随之进浮层，不独自留在输入框上方', () => {
+    mountChatView();
+    // fileChanges(priority 3) 压过 activity(priority 1) ⇒ activity 降为被收纳
+    pushActivity('正在思考');
+    dispatch({ type: 'file_changes', files: ['a.md'] });
+    const fcBar = document.querySelector('.file-changes-bar') as HTMLElement;
+    // 主位是 fileChanges
+    expect(fcBar.hidden).toBe(false);
+    expect(panel().contains(fcBar)).toBe(false);
+    // 🔴 关键：详情与 activity 条同在浮层内，且紧随本条
+    expect(panel().contains(actBar())).toBe(true);
+    expect(panel().contains(detail())).toBe(true);
+    // 浮层内顺序 = 条 → 详情（appendChild 保序，见 resolveDock 收容段）
+    expect(actBar().nextElementSibling).toBe(detail());
+  });
+
+  it('浮层收起态：activity 条与详情同步隐藏（不出现「条没了详情还在」）', () => {
+    mountChatView();
+    pushActivity('正在思考');
+    dispatch({ type: 'file_changes', files: ['a.md'] });
+    //浮层默认收起
+    expect(panel().hidden).toBe(true);
+    expect(actBar().hidden).toBe(true);
+    expect(detail().hidden).toBe(true);
+  });
+
+  it('activity 条升主位时详情随条回到主位区（不留在浮层里）', () => {
+    mountChatView();
+    pushActivity('正在思考');
+    dispatch({ type: 'file_changes', files: ['a.md'] });
+    expect(panel().contains(detail())).toBe(true);
+    // fileChanges撤出⇒ activity 升主位
+    dispatch({ type: 'file_changes', files: [] });
+    expect(actBar().hidden).toBe(false);
+    expect(detail().hidden).toBe(false);
+    // 主位链（DOM 上 actBar 在 detail 之上，详情排本条之后）
+    expect(actBar().previousElementSibling).toBe(detail());
+    expect(panel()?.contains(detail()) ?? false).toBe(false);
+  });
+
+  it('主位免重排判据含随从位：详情紧贴 inputBar 时不触发主位条 DOM 移动', () => {
+    // 🔴 回归锁：follower 参与主位链后，若免重排判据只认「head 紧邻 anchor」，
+    // 则每轮都误判需重排 ⇒ 主位条瞬移 = P8 修掉的闪烁复发。
+    mountChatView();
+    pushActivity('正在思考');
+    const inputBar = document.getElementById('inputBar') as HTMLElement;
+    // 主位链（探针从 inputBar 往回打印：detail ← actBar ← inputBar，即 DOM 上 actBar 在detail 之上）
+    expect(inputBar.previousElementSibling).toBe(actBar());
+    expect(actBar().previousElementSibling).toBe(detail());
+  });
+
+  it('🔴 免重排真行为锁：主位构成不变时主位条不被搬动（判据退化必红）', () => {
+    // 静态断言锁不住「有没有搬」：insertBefore 搬一个已在位的节点，终态 DOM 完全相同 ⇒
+    // 终态断言天生抓不到（探针实测：把判据退回错误写法时静态断言仍全绿，而真机上主位条
+    // 每轮瞬移= P8 修掉的闪烁复发）。本条改为**行为观测**：拦截父节点 insertBefore。
+    //
+    // 🔴 场景选「主位**独占**」而非「加一条低优先级 B 类条」：后者会让 chip/panel 插到
+    // head 之上，属**必要**重排（主位要让出收纳浮层的空间），不是免重排判据要管的事。
+    // 只让主位独占时，任何 insertBefore(head) 都是纯浪费 = 闪烁。
+    mountChatView();
+    pushActivity('正在思考');
+    const inputBar = document.getElementById('inputBar') as HTMLElement;
+    const act = actBar();
+    const parent = inputBar.parentNode as HTMLElement;
+    const orig = parent.insertBefore.bind(parent);
+    const moved: Node[] = [];
+    parent.insertBefore = function patched<T extends Node>(n: T, ref: Node | null): T {
+      moved.push(n);
+      return orig(n, ref);
+    } as typeof parent.insertBefore;
+    try {
+      // 再来一条同类活动：activity 仍active、仍独占主位、fixed 仍 false ⇒ 链不变
+      pushActivity('仍在思考');
+    } finally {
+      parent.insertBefore = orig;
+    }
+    // 主位条一次都不该被搬
+    expect(moved).not.toContain(act);
+    expect(inputBar.previousElementSibling).toBe(act);
+  });
+
+  it('🔴 结构纪律：主位条必须物理紧邻 inputBar（变异 3 必红）', () => {
+    // 非活跃条若退到 anchor前（而非主位之上），它们天然夹在「主位条 ↔ inputBar」中间：
+    // 免重排判据恒假（退化成每轮重排 = P8 修掉的闪烁复发），且破坏「主位条紧贴输入区」的
+    // 位置范式。探针实测该场景 act.prev=clarifyBar / act.next=activityDetail。
+    //
+    // 判据用**物理相邻**（不用「跳过隐藏节点」）：隐藏节点夹在中间一样破坏位置范式
+    // （点击穿透、点击区错位），故必须在物理上紧邻。
+    mountChatView();
+    pushActivity('正在思考');
+    const inputBar = document.getElementById('inputBar') as HTMLElement;
+    expect(inputBar.previousElementSibling).toBe(actBar());
+  });
+
+  it('🔴 结构纪律：有第二个 dock 条同活时主位条仍物理紧邻 inputBar（变异 3 必红）', () => {
+    // 上一条只覆盖「主位独占」，而变异 3 的实际破坏发生在**有其他 dock 条**时：
+    // 隐藏条被塞进主位与 inputBar 之间，把主位条顶离。这一条才是变异 3 的真守卫。
+    mountChatView();
+    pushActivity('正在思考');
+    // 加一条更低的 B 类条（background 垫底）⇒ 出现 chip/panel，但主位仍activity
+    dispatch({ type: 'background_tasks', items: [{ id: 'bg1', command: 'ls', status: 'running' }] });
+    const inputBar = document.getElementById('inputBar') as HTMLElement;
+    expect(inputBar.previousElementSibling).toBe(actBar());
+  });
+});
+
 describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛）', () => {
   /** 构造一个 meta（开新轮，随后 round-block 挂载） */
   function beginRound(): void {
@@ -8028,7 +8203,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
   it('审批卡锚点守卫：卡须与 #messages 同级并位其之后，严禁挪回滚动容器内', () => {
     // 真机背景（2026-10-05 实锤）：卡原是 #messages 的**第 2 个子节点**（紧跟 #emptyState），
     // 而 chatView 全部 12 处消息追加都是 messages.appendChild() ⇒ 卡恒停在消息流最顶端；
-    // #messages 是 overflow-y:auto 滚动容器（chatStyles.ts:34），流式全程吸底
+    // #messages 是 overflow-y:auto 滚动容器（chatStyles.ts 内 #messages 规则），流式全程吸底
     // （helpers/scrollToBottom.ts）把视口钉在底部 ⇒ 卡恒在视口之上不可见 ⇒ 表现为
     // 「确认 UI 根本没弹」，超时后 fail-closed 自动拒绝（命令确认首跑即翻车）。
     mountChatView();

@@ -3850,14 +3850,19 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <div id="emptySuggestions" class="empty-suggestions"></div>
     </div>
     <!-- 写入审批卡已于 2026-10-05 移出本容器（见下方 #writeConfirmCard 处说明）。
-         ⚠️ 红线：#messages 是 overflow-y:auto 滚动容器（chatStyles.ts:34），任何「需要用户
-         即时看见/操作」的交互 UI 都**不得**挂在其内部——插进去会被 12 处 appendChild 顶到
-         消息流最顶端，一滚即不可见（chatView.test.ts 审批卡锚点守卫用例锁定本约束）。 -->
+         红线：#messages 是 overflow-y:auto 滚动容器（chatStyles.ts 内 #messages 规则），
+         任何「需要用户即时看见/操作」的交互 UI 都**不得**挂在其内部——插进去会被 12 处
+         appendChild 顶到消息流最顶端，一滚即不可见（chatView.test.ts 审批卡锚点守卫用例
+         锁定本约束）。 -->
   </div>
 
   <!-- 活动状态区（错误/低扰通知单条主状态 + 指标折叠详情）：
        位于消息流下方、composer 上方 —— 不顶置挤占消息区。
-       单一通道承载错误/通知/指标三类状态（memoryBar + noticeBar + metricsBox 合一），SSOT 不互相覆盖 -->
+       单一通道承载错误/通知/指标三类状态（memoryBar + noticeBar + metricsBox 合一），SSOT 不互相覆盖。
+       P4 收口（2026-10-05）：详情**不改为 #activityBar 的子节点**（试过，会炸）：
+       showActivity 每次渲染都整体重置 activityBar 的 textContent（chatView.ts 两处分支），
+       嵌套即被销毁。改走「resolveDock 收容时把详情一并移入 status-dock__panel」——
+       同一裁决器、同一浮层，不靠 DOM 父子关系。 -->
   <div id="activityBar" class="activity-bar" hidden></div>
   <details id="activityDetail" class="activity-detail" hidden>
     <summary>活动详情</summary>
@@ -3875,7 +3880,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
   <!-- 审批卡（A 类决策面板）：confirmWrites=true / classifyCommand 裁决需确认 / 脚本确认时触发，
        host 推送 write_confirm_request，webview 渲染此卡；用户确认/拒绝回传 write_confirm_answer。
        默认隐藏，由脚本按需显示（fail-closed：超时即拒）。
-       ⚠️ 位置红线（2026-10-05 实锤修复）：本卡原挂 #messages **内部**，是 #messages 的第 2 个
+       位置红线（2026-10-05 实锤修复）：本卡原挂 #messages **内部**，是 #messages 的第 2 个
        子节点（紧跟 #emptyState）；#messages 是 overflow-y:auto 滚动容器且流式全程吸底
        （helpers/scrollToBottom.ts），视口钉在底部 ⇒ 卡永远停在消息流最顶端、视口之上，
        表现为「确认 UI 根本没弹」，超时后 fail-closed 自动拒绝（命令确认首跑即翻车；
