@@ -95,6 +95,9 @@ const HTML = `
           <div class="composer-actions">
             <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
             <div class="treedd skill-picker treedd--capsule" data-treedd data-on-select="__skillPickerOnSelect"><button class="treedd__trigger" title="选择 Skill" aria-label="选择 Skill" aria-haspopup="menu"></button><div class="treedd__menu" role="menu"></div></div>
+            <!-- 润色按钮：消费侧 getElementById('polishBtn') 带 null 守卫，缺它不会崩但整条
+                 润色链路（点击→loading 态→回填）在夹具里恒不执行＝静默失测（P6 守卫锁此id）。 -->
+            <button id="polishBtn" class="polish-btn-icon" title="润色输入内容" aria-label="润色"><span class="btn-icon" data-icon="edit"></span></button>
             <button id="pauseBtn" hidden title="暂停生成" aria-label="暂停生成"><span class="btn-icon" data-icon="pause"></span></button>
             <button id="send"></button>
           </div>
@@ -102,6 +105,8 @@ const HTML = `
         <div class="composer-row composer-row--status">
           <div class="composer-status">
             <span id="currentRoleBadge" class="role-badge"></span>
+            <!-- 能力徽章：同polishBtn，消费侧 null 守卫 ⇒ 缺它不崩但恒不渲染＝静默失测。 -->
+            <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
           </div>
           <!-- ④ 预算可视化：状态行右端上下文占用圆环（容量上限由 chat_providers 实时渲染，真实占用由 context_occupancy 覆盖） -->
           <div id="contextOccupancy" class="context-ring" hidden>

@@ -9343,3 +9343,55 @@ describe('INPUT-LIMIT-1 输入长度上限（输入框阶段原生截断，2026-
     expect(input.value).toBe('');
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+//骨架 id 三方一致性（UI-CONFIRM-P6 轻量版）
+// ═══════════════════════════════════════════════════════════
+// 缺陷：测试夹具 chatViewTestEnv.ts 的 HTML 是生产 buildHtml 的**手工镜像**（双源）。
+// 夹具漏一个 id 时，若消费侧写的是 `getElementById(x) as T | null` + `if (x)` 守卫
+// （polishBtn / currentCapabilityBadge 即此形态），则**测试全绿而该链路恒不执行** ——
+// 与E4 同构的静默失测：断言没红，行为根本没被测。
+// 本守卫以「消费面 = chatView.ts 全部字面量 getElementById」为轴，一次锁三方：
+//①消费 ⊆ 生产骨架 ②消费 ⊆ 夹具骨架 ③夹具 ⊆ 生产（夹具不得凭空多出 id）。
+// 代价O(1)、零新模块；不足是纯静态（不校验嵌套结构），嵌套/类名另由各用例守。
+describe('骨架 id 三方一致性（UI-CONFIRM-P6 轻量版）', () => {
+  /** 抽出一份源码里全部 `id="xxx"` 字面量（仅字母数字，与 getElementById 的 id 风格一致） */
+  function idsOf(src: string): Set<string> {
+    return new Set(Array.from(src.matchAll(/\bid="([A-Za-z][A-Za-z0-9]*)"/g), (m) => m[1] as string));
+  }
+
+  /** 抽出 chatView.ts 全部 `getElementById('xxx')` 字面量 —— 消费面的唯一可静态判据 */
+  function consumedIds(src: string): Set<string> {
+    return new Set(
+      Array.from(src.matchAll(/getElementById\('([A-Za-z][A-Za-z0-9]*)'\)/g), (m) => m[1] as string),
+    );
+  }
+
+  /** 集合差：a 中有而 b 中无的项（排序后便于断言失败时直读） */
+  function diff(a: Set<string>, b: Set<string>): string[] {
+    return Array.from(a).filter((x) => !b.has(x)).sort();
+  }
+
+  const consumed = consumedIds(
+    readFileSync(join(__dirname, '..', 'scripts', 'chatView.ts'), 'utf8'),
+  );
+  const prod = idsOf(readFileSync(join(__dirname, '..', 'panels', 'chatPanel.ts'), 'utf8'));
+  const fixture = idsOf(
+    readFileSync(join(__dirname, '..', '__tests__', 'helpers', 'chatViewTestEnv.ts'), 'utf8'),
+  );
+
+  it('消费面（chatView getElementById）非空，且逐项落在生产骨架上', () => {
+    // 前置：轴心本身不能为空，否则守卫空跑＝假绿
+    expect(consumed.size).toBeGreaterThan(20);
+    expect(diff(consumed, prod)).toEqual([]);
+  });
+
+  it('消费面逐项落在测试夹具骨架上（夹具漏 id ⇒ 该链路静默失测）', () => {
+    expect(diff(consumed, fixture)).toEqual([]);
+  });
+
+  it('夹具不得凭空多出生产没有的 id（防止两处各写各的、互不校准）', () => {
+    expect(diff(fixture, prod)).toEqual([]);
+  });
+});
+
