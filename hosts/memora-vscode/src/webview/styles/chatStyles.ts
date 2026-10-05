@@ -16,6 +16,36 @@ export const chatStyles = `
   ${tokens}
 
   /* ============ Base：元素级基础 ============ */
+  /* 🔴 全局 [hidden] 兜底（2026-10-05 真机实锤后新增，治本而非打补丁）
+   *
+   * 病灶：HTML hidden 属性的 display:none 来自 **UA 样式表**，author 层任何
+   * display 声明都赢它。本文件声明 display 的元素（flex/block/grid）遍布全表，
+   * 每处都曾或正会踩「JS 写了 el.hidden = true，视觉却纹丝不动」——而脚本报错
+   * 查不到（属性确实为 true）⇒ 结构性假绿。#inputWrap 是最新一例：
+   * A 类阻断面板激活时 composer 应被替换，真机却显示在面板「上方」。
+   *
+   * 为何此前逐个补 .xxx[hidden]{display:none} 仍漏：新增样式时没人会想起
+   * 要补这条，而漏了只在真机视觉暴露（jsdom 不加载样式表，测试恒绿）。
+   *
+   * 【实测盘点 2026-10-05】正则粗扫本文件 74 处 display 声明，约 60+ 处自身无
+   * [hidden] 兜底（该数字是**上界**：正则会误抓嵌套子选择器，如 .pending-queue-bar
+   * 本体有兜底而 __clear 子元素被计入）。即便打八折也是数十处 ⇒ 此前 18 处逐个
+   * 补丁是打补丁非治本，本条才是唯一有效防线。盘点方法（jsdom 不加载样式表 ⇒
+   * hidden 属性断言恒真，必须读 CSS 文本）：
+   *   [...css.matchAll(/(^|\})([^{}@]+)\{([^{}]*)\}/g)].filter(m => /display\s*:/.test(m[3]))
+   * 已知同列真实元素（自身确无兜底、且会被 JS 切 hidden）：
+   * .background-tasks-bar__head、.ask-inline__item、.round-block 等子组件。
+   * 其中 dock 条（.pending-queue-bar 本体 949 行、.background-tasks-bar 1033 行
+   * 已有兜底）侥幸无恙，但这是运气，不是设计。
+   *
+   * 为何用 !important：同 specificity 下后声明者胜，而本条在文件靠前位置，
+   * 无 !important 时会输给下方各条显式 .xxx[hidden]（那些恰好也要 display:none，
+   * 故本可接受）；但对「未来新增、忘了补兜底」的样式，只有 !important 才能
+   * 确保兜住。已核验全库零处依赖 hidden 属性做非显隐语义
+   * （交互一律经 el.hidden 属性赋值，无 removeAttribute/setAttribute 旁路），
+   * 故 !important 无误伤面。 */
+  [hidden] { display: none !important; }
+
   body {
     font-family: system-ui, -apple-system, sans-serif;
     margin: 0;
@@ -1098,6 +1128,14 @@ export const chatStyles = `
     .context-ring__fill { transition: none; }
   }
   /* 唯一视觉卡片：边框 + 圆角 + 阴影 + 背景（全部集中在此） */
+  /* 🔴 [hidden] 覆盖（2026-10-05 真机实锤）：display:flex 会覆盖 HTML hidden 属性
+   * （hidden 的 display:none 来自 UA 样式表，author 层任何 display 声明都赢它）——
+   * 漏这条导致 A 类阻断面板激活时 setComposerReplaced(true) 写了hidden=true，
+   * 但 composer 视觉仍在（真机表现：确认卡显示在输入框「上方」而非替换之）。
+   * 脚本报错也查不到（hidden 属性确实为 true）⇒ 假绿。
+   * 【根因防线】此前列此坑已18 处（.activity-bar / .plan-bar / 各 dock 条…），
+   * 逐个补[hidden] 是打补丁不是治本。根治 = 下方全局兜底规则：
+   * 凡声明 display 的元素一律带 [hidden]{display:none}，新样式自动被覆盖。 */
   #inputWrap {
     display: flex;
     flex-direction: column;
@@ -1110,6 +1148,7 @@ export const chatStyles = `
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
     overflow: visible; /* 禁止裁剪向上弹出的菜单 */
   }
+  #inputWrap[hidden] { display: none; }
   /* 聚焦态：边框色变品牌色 + 阴影加深 */
   #inputWrap:focus-within {
     border-color: var(--border-focus, #0e639c);

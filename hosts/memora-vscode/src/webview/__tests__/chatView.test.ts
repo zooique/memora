@@ -7962,6 +7962,23 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(inputWrap.hidden).toBe(false);
   });
 
+  it('🔴 源码级守卫：凡声明 display 的可见元素，一律须有[hidden] 兜底或被全局规则覆盖', () => {
+    // 真机实锤（2026-10-05）：A 类阻断面板激活时确认卡显示在 composer「上方」而非替换之。
+    // 根因＝ #inputWrap { display: flex } 覆盖了 HTML hidden 属性的 UA display:none，
+    // 而 setComposerReplaced 写的inputWrap.hidden=true **确实为 true** ⇒ 上方那两条
+    // 「hidden === true/false」断言全绿，而真机视觉纹丝不动 = 结构性假绿。
+    // 为什么测试抓不到：①jsdom 不加载 <style> ②夹具HTML 不含样式表 ③hidden 是属性非计算样式。
+    //
+    // 本守卫读**生产样式表源码**（chatStyles.ts），对每个声明 display 且
+    //「初始 hidden / 会被 JS 切 hidden」的容器类名，要求存在 [hidden] 兜底。
+    // 新增此类元素若忘补兜底 ⇒ 此用例变红。
+    const src = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf-8') as string;
+    // 治本防线：全局兜底规则必须在（它覆盖全部，逐条补 [hidden] 是打补丁不是治本）
+    expect(src).toMatch(/\[hidden\]\s*\{\s*display:\s*none\s*!important/);
+    // 本次真机翻车的那一条：显式兜底 + 注释登记（注释是给未来人的，不参与断言）
+    expect(src).toMatch(/#inputWrap\[hidden\]\s*\{\s*display:\s*none/);
+  });
+
   it('审批卡终结通知：write_confirm_closed 收卡，收卡后按钮不再回传（僵尸交互不留）', () => {
     // 缺口背景：宿主超时自动拒绝时，webview 不知道请求已死 ⇒ 卡残留、按钮点了没反应
     // （对照后台任务行「终态无终止按钮」的既有纪律）。终结通知补上这一唯一真源。
