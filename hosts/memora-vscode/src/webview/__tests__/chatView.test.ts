@@ -7933,6 +7933,63 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(answers[1]![0]).toMatchObject({ requestId: 'wc_fresh', approved: true });
   });
 
+  it('🔴 主位条位置恒定：B 类条进出不得挤开审批卡（真机「先消失再出现」守卫）', () => {
+    // 真机实锤（2026-10-05 第二轮，P7 落地后仍闪）：审批卡每切一张必闪一次。
+    // 探针实测根因：resolveDock 把 +N chip /浮层 panel 插到 **anchor(inputBar) 前**，
+    // 即插进「confirm 卡 ↔ inputBar」之间；而 rest 是否非空随 B 类条进出而变
+    // （activity 条 2500ms 自动消失 = 高频触发点，恰好落在用户审下一条的等待窗口内）
+    // ⇒ chip/panel 反复插拔 ⇒ 卡在「紧邻 inputBar」与「被挤开」之间来回跳。
+    //
+    // 🔴 判据用anchor.previousElementSibling（**不是** head.previousElementSibling：
+    // 后者恒为假—— 非活跃条循环会把隐藏条夹在 head 与 anchor 之间，两者可同时成立）。
+    const isAdjacent = (): boolean => {
+      const card = document.getElementById('writeConfirmCard') as HTMLElement;
+      const bar = document.getElementById('inputBar') as HTMLElement;
+      return bar.previousElementSibling === card;
+    };
+    mountChatView();
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_pos1',
+      targetPath: '/workspace/p1.ts',
+      tool: 'run_command',
+      description: 'git push',
+      permission: 'owner',
+      beforeContent: null,
+      hasDiff: false,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    expect(isAdjacent()).toBe(true);
+    // B 类条进入 ⇒ rest 非空 ⇒ 生成 chip + panel（这是「挤开」的发生条件）
+    dispatch({ type: 'notice', level: 'info', message: '正在执行' });
+    expect(isAdjacent()).toBe(true);
+    // B 类条退出 ⇒ rest 变空 ⇒ chip/panel 撤除
+    dispatch({ type: 'file_changes', files: [] });
+    expect(isAdjacent()).toBe(true);
+    // 多条 B 类同活（rest 更多）仍不得挤开
+    dispatch({ type: 'file_changes', files: ['/workspace/a.ts'] });
+    dispatch({ type: 'notice', level: 'info', message: '正在执行' });
+    expect(isAdjacent()).toBe(true);
+    // 裁决 → 下一条覆盖渲染，全程位置恒定
+    (document.getElementById('writeConfirmOk') as HTMLButtonElement).click();
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_pos2',
+      targetPath: '/workspace/p2.ts',
+      tool: 'run_command',
+      description: 'git reset --hard',
+      permission: 'owner',
+      beforeContent: null,
+      hasDiff: false,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    expect(isAdjacent()).toBe(true);
+    // 收卡后 A 类退位，inputBar 前一位交还给常规条
+    dispatch({ type: 'write_confirm_closed', requestId: 'wc_pos2' });
+    const card = document.getElementById('writeConfirmCard') as HTMLElement;
+    expect(card.hasAttribute('hidden')).toBe(true);
+  });
+
   it('审批卡覆盖渲染：收到新 request 即替换为最新（旧 requestId 清空，卡片无状态泄漏）', () => {
     const { postMessage } = mountChatView();
     dispatch({

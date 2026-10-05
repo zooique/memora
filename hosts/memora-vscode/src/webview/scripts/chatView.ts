@@ -2577,7 +2577,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const rest = actives.filter((e) => e !== head);
     // 主位条归位
     head.el.hidden = false;
-    parent.insertBefore(head.el, anchor);
+    // 🔴 位置免重排（2026-10-05 真机实锤「P7 落地后还是先消失再出现」的第二轮修复）：
+    // insertBefore 是 **DOM 移动**——节点已在 anchor 紧前方时再搬一次，浏览器仍走一遍
+    // 「摘出→ 插入」的重排，视觉上卡片**瞬移闪一下**。
+    //
+    // 触发链（P7 只解决了「点击后同步关卡」，没解决这条）：任一 B 类条进出都会触发
+    // resolveDock 全量重排，而重排无条件对主位条 insertBefore。高频触发点 = activity 条的
+    // 2500ms 自动消失（showActivity 定时器 → setDockActive('activity', false)）
+    // —— 恰好落在用户审下一条的等待窗口内 ⇒ 每切一张卡必闪一次。
+    //
+    // 🔴 判据方向：head 紧邻 anchor 的判据是 **`anchor.previousElementSibling === head.el`**
+    //（不是 head.previousElementSibling === anchor —— 那永远为假：非活跃条循环
+    // 2560 会把隐藏条搬到 anchor 前，夹在 head 与 anchor 之间）。实测两者可同时成立。
+    // 探针实证（tmpProbe，已删）：card.prev=#activityBar 且 inputBar.prev=#writeConfirmCard。
+    if (anchor.previousElementSibling !== head.el) {
+      parent.insertBefore(head.el, anchor);
+    }
     if (rest.length === 0) {
       _dockExpanded = false;
       return;
@@ -2596,7 +2611,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     _dockChip.textContent = `+${rest.length}`;
     _dockChip.setAttribute('aria-expanded', String(_dockExpanded));
-    parent.insertBefore(_dockChip, anchor);
+    // 🔴 chip/panel 锚点必须在主位条**之上**（真机实锤「P7 落地后仍先消失再出现」的真凶）：
+    // 插到 anchor 前会把它们塞进「confirm 卡 ↔ inputBar」之间，把 A 类卡挤开。
+    // 而 rest 是否非空随 B 类条进出而变（activity 条 2500ms 自动消失是高频触发点）
+    // ⇒ chip/panel 反复插拔 ⇒ 卡在「紧邻 inputBar」与「被挤开」之间来回跳 = 视觉上的
+    // 「消失再出现」。探针实证：notice 触发后 adjacentToAnchor 由 true 变 false。
+    //
+    // 锚点取 head.el（主位条）而非 anchor：chip 在 head 之上、panel 在 chip 之上，
+    // 主位条始终紧贴 inputBar —— A 类卡的视觉位置恒定，B 类的收纳浮层不挤占它。
+    parent.insertBefore(_dockChip, head.el);
     // panel：被收纳条单实例移入（展开显示 / 收纳隐藏但位置已进浮层）
     if (!_dockPanel) {
       _dockPanel = document.createElement('div');
@@ -2607,7 +2630,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       _dockPanel.appendChild(e.el);
     }
     _dockPanel.hidden = !_dockExpanded;
-    parent.insertBefore(_dockPanel, anchor);
+    parent.insertBefore(_dockPanel, _dockChip.nextSibling);
   }
 
   /**
