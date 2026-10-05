@@ -175,6 +175,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const writeConfirmReject = document.getElementById(
     'writeConfirmReject',
   ) as HTMLButtonElement | null;
+  const writeConfirmCountdown = document.getElementById(
+    'writeConfirmCountdown',
+  ) as HTMLElement | null;
   let pendingWriteConfirmRequestId: string | null = null;
   const clarifySend = document.getElementById('clarifySend') as HTMLButtonElement;
   // 当前角色显示名（AI 消息头部标签 + 空状态标题共用；由 chat_role_pack 填充）
@@ -5294,8 +5297,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       showActivity('info', `目标漂移（${levelLabel}，相似度 ${pct}%）：${msg.newGoal}`);
     } else if (msg.type === 'write_confirm_request') {
       // H0 写入审批卡：confirmWrites=true 时写文件触发 → 渲染审批卡等待用户确认/拒绝；
-      // 用户点击后回传 write_confirm_answer。多请求同一时刻只展示最新（前一张被新请求覆盖，
-      // 与 host 侧「每个 requestId 独立超时 fail-closed」语义兼容——旧请求由超时自动拒绝）。
+      // 用户点击后回传 write_confirm_answer。多请求**不再同时并存**：宿主侧已改为 FIFO
+      // 串行送审（一次只推一条，裁决/超时后再推下一条）⇒ 旧请求不会「用户看不到就超时
+      // 静默拒绝」（修 S2）。此处收到新 request 时的覆盖渲染仅用于串行切换（卡保持可见）。
       renderWriteConfirmCard(msg);
     } else if (msg.type === 'write_confirm_closed') {
       // 请求已终结（用户裁决 / 超时自动拒绝）→ 收卡。requestId 不匹配即丢弃：
@@ -5350,9 +5354,59 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 显隐交裁决器（SSOT）：不再直写 hidden——直写会绕过 resolveDock 的主位/收纳裁决，
     // 与 B 类条同屏时顺序不定（方案 §九 A1）。
     setDockActive('confirm', true);
+    // 末段倒计时（时长真源 = 宿主 timeoutMs）
+    startConfirmCountdown(msg.timeoutMs);
     // 焦点落「拒绝」：composer 已被替换，焦点不能丢到 body（键盘用户会失去落点）。
     // 选拒绝而非确认是与 fail-closed 同向的安全默认（超时亦为拒绝），误触不会造成副作用。
     writeConfirmReject?.focus();
+  }
+
+  /** 末段倒计时窗口（ms）：剩余不足该值才显示倒计时，之前保持静默不打扰 */
+  const CONFIRM_COUNTDOWN_WINDOW_MS = 60_000;
+  /** 当前审批截止时刻（epoch ms）——由宿主透传的 timeoutMs 换算，webview 不自算时长 */
+  let confirmDeadlineAt = 0;
+  /** 倒计时定时器（唯一实例；关卡与 dispose 都必须清，否则跨测试污染 DOM） */
+  let confirmCountdownTimer: ReturnType<typeof setInterval> | undefined;
+
+  /** 停表 + 清空倒计时（关卡 / 新请求覆盖 / dispose 共用唯一收口） */
+  function stopConfirmCountdown(): void {
+    if (confirmCountdownTimer !== undefined) {
+      clearInterval(confirmCountdownTimer);
+      confirmCountdownTimer = undefined;
+    }
+    confirmDeadlineAt = 0;
+    if (writeConfirmCountdown) {
+      writeConfirmCountdown.hidden = true;
+      writeConfirmCountdown.textContent = '';
+    }
+  }
+
+  /**
+   * 启动末段倒计时
+   *
+   * 时长**只**来自宿主载荷（timeoutMs）——真源是宿主 CONFIRM_TIMEOUT_MS；webview 自算即
+   * 真源双写，末段提示会与宿主实际拒绝时刻漂移。
+   */
+  function startConfirmCountdown(timeoutMs: number): void {
+    stopConfirmCountdown();
+    const el = writeConfirmCountdown;
+    if (!el || !timeoutMs || timeoutMs <= 0) return;
+    confirmDeadlineAt = Date.now() + timeoutMs;
+    const tick = (): void => {
+      const left = confirmDeadlineAt - Date.now();
+      if (left <= 0) {
+        stopConfirmCountdown();
+        return;
+      }
+      if (left > CONFIRM_COUNTDOWN_WINDOW_MS) {
+        el.hidden = true;
+        return;
+      }
+      el.hidden = false;
+      el.textContent = `还有 ${Math.ceil(left / 1000)} 秒将自动拒绝`;
+    };
+    tick();
+    confirmCountdownTimer = setInterval(tick, 1000);
   }
 
   /**
@@ -5362,6 +5416,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 含超时自动拒绝）。不收口会出现「请求已死、卡片还挂着、按钮点了没反应」的僵尸交互。
    */
   function closeWriteConfirmCard(): void {
+    stopConfirmCountdown();
     pendingWriteConfirmRequestId = null;
     setDockActive('confirm', false);
   }
@@ -5956,6 +6011,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (pendingWaitTimer !== undefined) clearInterval(pendingWaitTimer);
     if (toolElapsedTimer !== undefined) clearInterval(toolElapsedTimer);
     if (activityTimer !== null) window.clearTimeout(activityTimer);
+    stopConfirmCountdown();
   }
 
   return { dispose };

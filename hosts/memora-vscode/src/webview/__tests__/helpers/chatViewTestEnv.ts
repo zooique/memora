@@ -72,6 +72,7 @@ const HTML = `
         <span class="write-confirm-card__path" id="writeConfirmPath"></span>
       </div>
       <div class="write-confirm-card__desc" id="writeConfirmDesc"></div>
+      <div class="write-confirm-card__countdown" id="writeConfirmCountdown" hidden></div>
       <details class="write-confirm-card__diff">
         <summary>查看内容</summary>
         <pre id="writeConfirmDiff"></pre>

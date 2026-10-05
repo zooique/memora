@@ -7841,6 +7841,63 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(card.compareDocumentPosition(inputBar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('末段倒计时：剩余不足 60 秒才显示，文本由宿主透传的 timeoutMs 投影', () => {
+    // 时长真源在宿主（CONFIRM_TIMEOUT_MS → 协议 timeoutMs），webview 只投影不自算——
+    // 自算即真源双写，末段提示会与宿主实际拒绝时刻漂移。
+    mountChatView();
+    const countdown = document.getElementById('writeConfirmCountdown') as HTMLElement;
+    // 远超末段窗口 ⇒ 静默（不打扰）
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_cd_far',
+      targetPath: '/workspace/x.ts',
+      tool: 'write_file',
+      description: '',
+      permission: '',
+      beforeContent: null,
+      afterContent: 'x',
+      hasDiff: true,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    expect(countdown.hidden).toBe(true);
+    // 落在末段窗口内 ⇒ 显示倒计时
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_cd_near',
+      targetPath: '/workspace/y.ts',
+      tool: 'run_command',
+      description: 'rm -rf /tmp/x',
+      permission: 'owner',
+      beforeContent: null,
+      hasDiff: false,
+      timeoutMs: 30_000,
+    });
+    expect(countdown.hidden).toBe(false);
+    expect(countdown.textContent).toContain('还有');
+    expect(countdown.textContent).toContain('秒将自动拒绝');
+  });
+
+  it('末段倒计时：收卡即停表（不在关闭后残留倒计时）', () => {
+    mountChatView();
+    const countdown = document.getElementById('writeConfirmCountdown') as HTMLElement;
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_cd_stop',
+      targetPath: '/workspace/z.ts',
+      tool: 'write_file',
+      description: '',
+      permission: '',
+      beforeContent: null,
+      afterContent: 'z',
+      hasDiff: true,
+      timeoutMs: 30_000,
+    });
+    expect(countdown.hidden).toBe(false);
+    dispatch({ type: 'write_confirm_closed', requestId: 'wc_cd_stop' });
+    expect(countdown.hidden).toBe(true);
+    expect(countdown.textContent).toBe('');
+  });
+
   it('A 类阻断即替换 composer：审批卡挂起时输入框让位，终结后恢复', () => {
     // 方案 P1b：输入框在阻断期间整体让位（**替换**而非遮罩 —— 零新 z-index 层、零焦点陷阱），
     // 用户此刻只能做「确认/拒绝」这一个决定。🔴 恢复路径必须覆盖：漏了就永久卡死输入。

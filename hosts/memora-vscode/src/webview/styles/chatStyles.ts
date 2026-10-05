@@ -402,6 +402,12 @@ export const chatStyles = `
     unicode-bidi: plaintext;
   }
   .write-confirm-card__desc { font-size: var(--font-md, 12px); color: var(--text-secondary, #9aa0a6); }
+  /* 末段倒计时（fail-closed 提示）：仅剩最后一分钟时出现，用失败语义色，不造新色。
+     时长真源在宿主（CONFIRM_TIMEOUT_MS 经协议 timeoutMs 透传），此处只管呈现。 */
+  .write-confirm-card__countdown {
+    font-size: var(--font-sm, 11px);
+    color: var(--status-fail, #f14c4c);
+  }
   .write-confirm-card__diff { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
   .write-confirm-card__diff summary { cursor: pointer; font-size: var(--font-xs, 10px); }
   .write-confirm-card__diff pre {

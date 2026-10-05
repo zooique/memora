@@ -325,7 +325,9 @@ describe('H0 写入审批流程', () => {
   });
 
   // ─── 多请求隔离性 ───────────────────────────────
-  it('多个并发请求的审批互不影响', async () => {
+  it('并发确认串行送审：一次只推一条，裁决后立即推下一条（旧请求不再静默超时）', async () => {
+    // 旧行为（S2，已修）：两条同时推给 webview，webview 只留最后一张 ⇒ 第一条用户根本
+    // 看不到，只能等超时被动拒绝（**静默拒绝**）。新行为：FIFO 串行，逐个真正送审。
     provider.provider.bindWriteConfirmation();
     const handler = guard.registeredHandler!;
 
@@ -349,31 +351,40 @@ describe('H0 写入审批流程', () => {
     const result1Promise = handler(info1);
     const result2Promise = handler(info2);
 
-    // 等待两个请求发送
+    // 只有**第一条**被推送；第二条在队列里等（同时推 = 用户看不到第一条 = 静默拒绝）
     await vi.waitFor(() => {
-      const requests = provider.postedMessages.filter((m) => m.type === 'write_confirm_request');
-      return requests.length === 2;
+      const r = provider.postedMessages.filter((m) => m.type === 'write_confirm_request');
+      return r.length === 1;
     });
+    const req1 = provider.postedMessages.find((m) => m.type === 'write_confirm_request')!;
 
-    const requests = provider.postedMessages.filter((m) => m.type === 'write_confirm_request');
-    const [req1, req2] = requests;
-
-    // 确认第一个，拒绝第二个
+    // 裁决第一条 → 立即推第二条（不推 closed，卡片被覆盖渲染，省一次「关了又开」）
     provider.handleMessage({
       type: 'write_confirm_answer',
       requestId: req1.requestId as string,
       approved: true,
     });
+    await vi.waitFor(() => {
+      const r = provider.postedMessages.filter((m) => m.type === 'write_confirm_request');
+      return r.length === 2;
+    });
+    const req2 = provider.postedMessages.filter((m) => m.type === 'write_confirm_request')[1]!;
+    expect(req2.requestId).not.toBe(req1.requestId);
+    // 切换过程中没有收卡通知（否则卡片会闪一下）
+    expect(provider.postedMessages.filter((m) => m.type === 'write_confirm_closed').length).toBe(0);
+
     provider.handleMessage({
       type: 'write_confirm_answer',
       requestId: req2.requestId as string,
       approved: false,
     });
 
-    const result1 = await result1Promise;
-    const result2 = await result2Promise;
-
-    expect(result1).toBe(true);
-    expect(result2).toBe(false);
+    expect(await result1Promise).toBe(true);
+    expect(await result2Promise).toBe(false);
+    // 队列排空 ⇒ 推一次收卡（否则卡片残留成僵尸交互）
+    await vi.waitFor(() => {
+      const c = provider.postedMessages.filter((m) => m.type === 'write_confirm_closed');
+      return c.length === 1;
+    });
   });
 });
