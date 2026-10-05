@@ -373,11 +373,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 当前进行中流的 promise：生成中插话需 await 旧流彻底结束再发新流，
    *  避免 chatLock 未释放导致「发起新对话」busy 冲突 */
   private _currentFlow: Promise<void> | undefined;
-  /** 上次推送给 webview 的待发送区长度（长度变化才 post）
+  /** 上次推送给 webview 的待发送区长度（长度变化才 post）；`undefined` = 从未投影过
+   *  （agent 刚装配 / webview 重建）。与「已投影为空」是两种状态——折叠成 0 会让
+   *  「从未投影过 + 清空到空」（如 resume 恢复队列后直接清）被长度守卫误拦，
+   *  丢弃信号失去成对快照帧（契约见 postPendingDiscarded）。
    *  背景：普通插话（thinking 态 interject）不触发 sessionResumed（那是 resume 专有事件），
    *  队列消费后无「空通知」→ 待发送区弹窗残留。统一经 syncPendingQueue 长度变化检测，
    *  让「队列变空」这个真理源变化总能被推送到 webview（消费后必有后续 chunk 触发同步）。 */
-  private _lastPendingQueueLen = 0;
+  private _lastPendingQueueLen: number | undefined = undefined;
   /**
    * 上次推送给 webview 的后台任务快照**内容签名**（`taskId:status` 拼接串）
    *
@@ -620,9 +623,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 由 extension 在装配 Agent 后注入（open 命令路径），同时绑定会话级可观测事件 */
   public setAgent(agent: Agent): void {
     this._agent = agent;
-    // 换 agent = 投影源切换（SSOT）：清空待发送区长度投影缓存，防旧 agent 队列长度残留
-    // 导致 syncPendingQueue 长度未变误判不推送（新 agent 首 chunk 同步必触发一次推送）
-    this._lastPendingQueueLen = 0;
+    // 换 agent = 投影源切换（SSOT）：重置待发送区长度投影缓存为「从未投影过」，
+    // 防旧 agent 队列长度残留导致 syncPendingQueue 长度未变误判不推送
+    // （新 agent 首次 sync 必推送一次，无论队列空满）
+    this._lastPendingQueueLen = undefined;
     // 与 ensureAgent 懒装配路径保持一致：注入即绑定，确保事件通知两条路径都生效
     // （bindAgentNoticeEvents 内部先 off 再 on，幂等，折叠展开重复注入不重复注册）
     this.bindAgentNoticeEvents();
@@ -2684,10 +2688,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         );
         return;
       }
-      // MUTATION-2 临时变异：删除路径不发丢弃信号
-      // this.post({ type: 'user', text: input, ts: new Date().toISOString(), kind: 'supplement' });
       // 上屏时机 = 消费时刻（吸收时上屏）：入队成功**不再**即时 post type:'user'——
       // 排队中 ≠ 已说出，呈现超前于事实（旧即时上屏设计）会让「取消排队」留下孤儿行。
+      // 退役设计（变异加回本行即 chatPanelInterject 用例「入队不 post」红）：
+      // this.post({ type: 'user', text: input, ts: new Date().toISOString(), kind: 'supplement' });
       // 排队期间唯一呈现 = 待发送区（syncPendingQueue 投影）；内核 _consumeInterjects
       // → appendUserMessage 落盘后，队列快照减少 → webview diff 上屏「你补充」行。
       // pausePending 期间发补充 → 自动取消暂停（覆盖暂停操作）：
@@ -2931,6 +2935,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         if (before.length > 0) {
           this.postPendingDiscarded([...before]);
         }
+        // 信号后必跟快照帧（契约见 postPendingDiscarded）：队列已清空、长度必变 →
+        // 长度守卫必放行，推空快照让 webview 丢弃缓冲在本帧内消耗干净，不留跨轮残留
+        this.syncPendingQueue();
       }
     }
   }
@@ -3719,7 +3726,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // optional 调用：consumeFlow 主循环每 chunk 同步，测试桩可能缺该方法
     // （chatPanelHistory 的 mock agent 不实现 getPendingInterjections）——缺则跳过不阻断流
     const items = this._agent.getPendingInterjections?.() ?? [];
-    // 长度未变不重复投影（同一队列状态不刷屏）；入队/消费/清空/删除均改变长度 → 必触发一次
+    // 长度未变不重复投影（同一队列状态不刷屏）；入队/消费/清空/删除均改变长度 → 必触发一次。
+    // `undefined`（从未投影过）恒不等于任何长度 → 首次 sync 恒推，覆盖「resume 恢复队列后
+    // 直接清空」等从未投影场景——丢弃信号的成对快照帧不因长度恰好归零而丢失
     if (items.length === this._lastPendingQueueLen) return;
     this._lastPendingQueueLen = items.length;
     // 不单发 pending_queue_update，由 turn_update.pendingQueue 统一承载

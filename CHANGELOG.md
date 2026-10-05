@@ -216,6 +216,44 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Fixed（宿主 · 异常终态轮缺「复制/分叉/删除 + 时间戳」底部栏 · settleRoundFooter 收口）
+
+**真机实锤**：生成中点停止（尤其首 chunk 前的思考/工具相位），中断轮只剩停止行——无复制整链/分叉/删除/时间戳底部栏；重启渲染（重放）则正常显示。
+
+- **根因**：容器 footer 显形由 `finalizeStreaming` 顺带移除 is-pending，前提 = 正文块已入容器——早相位中断时骨架未归位，`closest('.round-group')` 命中 null，显形信号静默丢失；done 恒在正文定稿后，故正常轮不受影响。附带伤：运行时建 footer 时首段 `dataset.ts` 恒空 → 时间戳元素从未创建
+- **修法 = 显形真源回归终态事实**：新增 `settleRoundFooter(roundId, hostEl)` 单点收口（锚 = done/interrupted 终态消息携带的 roundId，不依赖 DOM 连通性）：容器已建 → 移 is-pending + 时间戳补建；未建（早相位中断）→ hostEl 作首段建容器（与重放 `renderInterruptedRound` 同构）；roundId 缺失诚实降级不建栏。`finalizeStreaming` 只保留段级 footer 职责，容器显形不再双写
+- **复制源同源化**：中断 = 半截正文作废，rawText 覆盖为过程叙述（narrate）拼接——抽 `narrateChainText` 单点与重放共用（旧注释「运行时同源同形」只对「不显示正文」成立、rawText 拼接运行时缺失，属措辞折叠订正）
+- error 不接入：error→done 两连发是既定架构（error 为末条属登记过的可接受残留），不扩面
+- **测试**：`chatViewInterruptedFooter` 三相位用例（正文流中断/早相位中断/done 回归）+ 变异 2 组逐组精确转红（删 settle 调用 → 两中断用例红；删 narrate rawText → 复制源断言红）
+
+### Fixed（宿主 · 插话丢弃信号「信号帧 → 快照帧」成对契约三路径补齐）
+
+**变异验证暴露**：修复停止路径补 `syncPendingQueue` 时，「全部清空」存量用例红——`clear_pending_queue` 路径在「宿主从未投影过队列」场景（如 resume 恢复检查点带队列后 webview 重建）发信号但无成对快照帧。
+
+- `handleStop` paused 分支补 `syncPendingQueue()`（三条丢弃路径中唯一漏跟契约的一条）
+- **根因**：`_lastPendingQueueLen` 初始值 `0` 把「从未投影过」与「已投影为空」折叠成同一值——清空后长度未变被守卫误拦。改 `undefined`（从未投影 → 首次 sync 恒推），单点修正三条路径同时受益
+- **测试**：停止/清空两用例补「信号先于新快照 turn_update」FIFO 时序断言（与删除单条路径同款）；变异 2 组逐组转红（删停止路径 sync → 停止用例红；恢复折叠 0 → 清空用例红）
+
+### Fixed（宿主 · 消息区自动吸底脆弱——MutationObserver 收口「高度变更不派发 scroll 事件」整类缺口）
+
+**真机实锤（用户反馈）**：点开思考折叠块后拉到底部不吸底；部分工具运行期也不吸底——且「可能还有其他情况」。
+
+- **根因**：吸底标记 `stickyMap` 仅由 `scroll` 事件经 `trackScroll` 刷新；展开/收起 `<details>`（思考块、工具行）、工具流式增删、长气泡展开、中断轮重建等**高度变更不派发 scroll 事件**却改写「是否真在底部」真值 → 标记与实际位置脱节（可双向错）。原注释「吸底判定在 DOM 变更前记录避开 tall-message 陷阱」只覆盖「新增内容前先记录状态」一侧，漏了「高度变更不刷新状态」一侧
+- **修法（SSOT 收口）**：`helpers/scrollToBottom.ts` 新增 `followIfPinned(container)`——只读**既有**吸底意图（由 trackScroll 在用户滚动时记录、默认吸底），吸底则 rAF 滚到底、返回意图供「一键到底」按钮显隐；webview 在消息区挂 rAF 去抖 `MutationObserver`（`childList + characterData + attributes:['open'|'class'|'style'|'hidden']` subtree）delegate 到 `followIfPinned`。逻辑全收口于 helper，webview 只接线（不复制吸底逻辑、不碰 DOM 模板、不新增长度常量）。闭合整类而非两个症状
+- **测试**：`scrollToBottom.test.ts` 2 条（jsdom 无布局，Object.defineProperty 注入几何）；变异 2 组转红（删 `if (sticky)` 分支 → 吸底用例 scrollTop 断言红；删 `return sticky` → 非吸底用例返回值断言红）
+
+### Fixed（宿主 · 渲染异常用户侧静默——onMessage 兜底补非阻断红条 · 观察点③）
+
+**缺口（上一轮审计坐实）**：`onMessage` catch 仅 `console.error`，用户侧零呈现 → 渲染抛异常时看到「冻住/半成品 UI + 无报错」的可见性黑洞。
+
+- **修法**：catch 内补 `showActivity('error', '界面渲染异常，详情见开发者控制台')` 非阻断红条，与 `console.error` 互补（根因定位不掩盖）；`showActivity` 为既有活动条通道（P0 错误优先）
+- **测试**：`chatViewRenderErrorBanner.test.ts` 1 条（dispatch 一条缺 `event` 字段的 `process_event` → `ev.type` 抛真实 TypeError 被兜 → 活动条 `data-level==='error'`）；变异 1 组转红（删 showActivity 调用 → 断言红）
+
+### Changed（宿主 · 终态 footer 显形与 commitTurnTs 前置防御性收口为单操作）
+
+- **复核订正（2026-10-05）**：上一轮将「settleRoundFooter 顺序契约」诊断成「时间戳补建依赖 commitTurnTs 前置」——**实测不成立**：footer 时间戳元素由流式期 `ensureRoundGroupFooter` 按首段 `dataset.ts` 直接生成，`commitTurnTs` 缺位时三相位用例时间戳仍齐全。故该组合**不修复已复现的 bug**
+- **保留价值（防御性）**：`settleRoundWithFooter(roundId, hostEl)` 把 `commitTurnTs`（删除按钮 ts 锚，`ensureRoundGroupFooter` 内 `deleteBtn.disabled = !firstSeg?.dataset.ts`）与 footer 显形收口为单操作，对任意「终态」路径保证 commitTurnTs 随 footer 显形恒执行，消除调用方需记的隐式顺序，防未来某终态路径未在建栏前回填 ds 致删除按钮恒禁用。属防御性收口，注释已对齐真源
+
 ### Added（宿主 · 后台任务可见性与 kill 入口 · CMD-1 阶段 2 · 协议 + 接线）
 
 **缺口**：后台任务运行态对用户零可见、无 kill 入口（内核能力齐备但零导出，宿主取不到数——详见内核区同批条目）。

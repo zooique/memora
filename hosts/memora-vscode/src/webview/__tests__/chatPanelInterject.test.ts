@@ -142,16 +142,23 @@ describe('插话吸收时上屏 · 宿主出口（chatPanel）', () => {
     expect(snapshotIdx).toBeGreaterThan(signalIdx);
   });
 
-  it('全部清空 → pending_discarded 携带全部被丢文本', async () => {
+  it('全部清空 → pending_discarded 携带全部被丢文本，且先于新快照 turn_update（FIFO 时序契约）', async () => {
     const items = ['甲补充', '乙补充', '丙补充'];
     const h = setup(items);
     h.receive({ type: 'clear_pending_queue' });
     const d = takeDiscarded(h.posted);
     expect(d).not.toBeNull();
     expect(d!.items).toEqual(['甲补充', '乙补充', '丙补充']);
+    // 时序契约：信号帧必须先于携带新快照的 turn_update 帧（与删除单条路径同款断言）
+    const signalIdx = h.posted.findIndex((m) => m.type === 'pending_discarded');
+    const snapshotIdx = h.posted.findIndex(
+      (m) => m.type === 'turn_update' && m.pendingQueue !== undefined,
+    );
+    expect(signalIdx).toBeGreaterThanOrEqual(0);
+    expect(snapshotIdx).toBeGreaterThan(signalIdx);
   });
 
-  it('停止（paused 态放弃检查点）→ 协同清理的排队插话同样发丢弃信号', () => {
+  it('停止（paused 态放弃检查点）→ 协同清理的排队插话同样发丢弃信号，且先于新快照 turn_update（FIFO 时序契约）', () => {
     const items = ['暂停前的补充'];
     const h = setup(items);
     // 造 paused 相位：sessionManager.status = 'paused'（handleStop 走 discard 分支的判据）
@@ -162,6 +169,14 @@ describe('插话吸收时上屏 · 宿主出口（chatPanel）', () => {
     const d = takeDiscarded(h.posted);
     expect(d).not.toBeNull();
     expect(d!.items).toEqual(['暂停前的补充']);
+    // 时序契约（三条丢弃路径同款断言）：信号后必跟快照帧——变异：删掉 handleStop 的
+    // syncPendingQueue() 调用 ⇒ 快照缺失，本断言红（缓冲残留契约被锁定）
+    const signalIdx = h.posted.findIndex((m) => m.type === 'pending_discarded');
+    const snapshotIdx = h.posted.findIndex(
+      (m) => m.type === 'turn_update' && m.pendingQueue !== undefined,
+    );
+    expect(signalIdx).toBeGreaterThanOrEqual(0);
+    expect(snapshotIdx).toBeGreaterThan(signalIdx);
   });
 
   it('删除越界（队列未变）→ 零信号零误报', () => {

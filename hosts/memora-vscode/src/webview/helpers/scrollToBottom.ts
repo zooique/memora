@@ -7,6 +7,11 @@
  *   - 用户滚回底部后吸底状态恢复，新内容继续自动吸底；
  *   - 吸底判定在 DOM 变更「之前」的滚动事件里记录，天然解决「新增超高消息后 scrollHeight
  *     已增长导致判不到底部」的时序陷阱（记录的是变更前的状态）。
+ *   - ⚠ 局限：吸底标记**仅由滚动事件**刷新；内容高度变更（展开/收起折叠块、工具流式增删、
+ *     长气泡展开、中断轮重建）不派发 scroll 事件却改变「是否真在底部」的真值 → 标记与实际
+ *     位置脱节（用户可双向错：展开思考后不吸底 / 收起后位置漂移）。followIfPinned 供
+ *     MutationObserver 订阅方在「任意高度变更」后调用，只读既有吸底意图、不重算变更后几何，
+ *     闭合该整类缺口（逻辑仍收口于此文件，SSOT）。
  *
  * rAF 节流：流式渲染时每 chunk/卡片插入都可能触发滚动，用 requestAnimationFrame 合并为
  * 每帧一次，避免读写交错强制 reflow。rAF 回调幂等（scrollTop 赋值相同值），同帧多次
@@ -56,6 +61,33 @@ export function scrollToBottom(container: HTMLElement): void {
     if (!isSticky(container)) return; // 用户已上滚 → 不自动吸底，避免被拽走
     container.scrollTop = container.scrollHeight;
   });
+}
+
+/**
+ * 内容高度变更后保持吸底（由 MutationObserver 等订阅方在 DOM 变更后调用）
+ *
+ * 读取**既有**吸底意图（trackScroll 在用户滚动时记录、默认吸底），吸底则 rAF 滚到底、
+ * 返回该意图供调用方显隐「一键到底」按钮。读取的是变更**前**记录的意图、不依据变更**后**
+ * 的几何重算——既避开「新增超高消息后 scrollHeight 已增长导致判不到底部」的时序陷阱，
+ * 又闭合「展开/收起折叠块、工具流式、长气泡展开、中断重建等高度变化不派发 scroll 事件、
+ * 吸底标记与实际位置脱节」这一整类缺口（单点收口，不复制吸底逻辑）。
+ *
+ * 与 scrollToBottom 的分工：scrollToBottom 由各个内容写入路径在「自己刚改完高度」后显式
+ * 调用；本函数由订阅方在「任意高度变更（含自己不知道的变更）」后统一调用，二者都只读
+ * 既有吸底标记、都不重算几何，互不冲突、合并于 rAF。订阅方负责 rAF 去抖（避免流式期
+ * 每字符变更都派发一帧）。
+ *
+ * @param container 滚动容器（如消息区）
+ * @returns 是否吸底（true=已在底部附近，调用方据此隐藏「一键到底」按钮）
+ */
+export function followIfPinned(container: HTMLElement): boolean {
+  const sticky = isSticky(container);
+  if (sticky) {
+    container.ownerDocument.defaultView?.requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+    });
+  }
+  return sticky;
 }
 
 /**

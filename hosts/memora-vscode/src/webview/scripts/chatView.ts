@@ -28,7 +28,7 @@ import {
 } from '../../shared/constants.js';
 import { fmtTime } from '../helpers/fmtTime.js';
 import { fmtTokens, fmtCompactTokens } from '../helpers/fmtTokens.js';
-import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
+import { forceScrollToBottom, followIfPinned, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
 // 骨架（会话控件）语义派生纯函数层：矩阵与状态容器在 turnUiState.ts，
@@ -537,6 +537,28 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   messages.addEventListener('scroll', () => {
     const atBottom = trackScroll(messages);
     scrollToBottomBtn.hidden = atBottom;
+  });
+  // 内容高度变更自动吸底：MutationObserver 统一订阅消息区任意高度变更（展开/收起折叠块、
+  // 工具流式增删、长气泡展开、中断轮重建……），rAF 去抖后 delegate 到 followIfPinned——
+  // 闭合「高度变化不派发 scroll 事件 → 吸底标记与实际位置脱节」整类缺口，逻辑仍收口于
+  // helpers/scrollToBottom.ts（SSOT），此处只做接线（不复制吸底逻辑、不碰 DOM 模板）。
+  let followRaf = 0;
+  function scheduleFollow(): void {
+    if (followRaf) return;
+    const win = messages.ownerDocument.defaultView;
+    if (!win) return;
+    followRaf = win.requestAnimationFrame(() => {
+      followRaf = 0;
+      scrollToBottomBtn.hidden = followIfPinned(messages);
+    });
+  }
+  const followObserver = new MutationObserver(scheduleFollow);
+  followObserver.observe(messages, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['open', 'class', 'style', 'hidden'],
   });
   // 一键到底点击：滚动到底部并隐藏按钮
   scrollToBottomBtn.addEventListener('click', () => {
@@ -2311,6 +2333,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
+   * 中断轮整链复制源：过程叙述（narrate）事件文本按序拼接（单点实现，重放/运行时共用）
+   *
+   * 中断 = 半截正文作废（运行时删 body / 重放不渲染 body），复制语义与「定稿正文」轮不同：
+   * 能拿到的实质内容只剩过程叙述。返回空串（无 narrate 事件）时调用方不设 rawText
+   * （复制按钮复制空串无害，但 dataset 缺失让「源为空」事实保持可见）。
+   */
+  function narrateChainText(events: ProcessEvent[]): string {
+    return events
+      .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
+      .map((e) => e.payload.content)
+      .join('\n');
+  }
+
+  /**
    * 重放中断轮孤儿宿主渲染（形态定案：与 done 轮同构——过程折叠 + 停止行平铺）
    *
    * 中断轮无 assistant 正文块（host 只对 complete 轮挂正文，避免半截文本与过程事件同源双份），
@@ -2323,7 +2359,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * .round-group 容器建 footer（复制整链/分叉/删除 + 时间戳），支持用户手动删除。ts 用本轮首个
    * 过程事件时间（meta 恒为首条，真实闭环起点，对齐运行时中断块首 chunk ts），替代 new Date()
    * 伪值——伪值会使容器 footer 的 delete_turn 锚点错位。复制整链的原始文本 = 过程叙述
-   * （narrate）拼接（半截正文已随中断丢弃，运行时同源同形）。
+   * （narrate）拼接（半截正文已随中断丢弃；拼接逻辑在 narrateChainText 单点，重放与运行时共用）。
    *
    * @param roundId 本轮 ID（孤儿宿主归属标记）
    */
@@ -2335,14 +2371,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     buildAssistantShell(host, startTs, roundId, { pending: false });
     host.querySelector('.msg-body')?.remove();
     if (roundId) host.dataset.roundId = roundId;
-    // 复制整链语义与运行时中断轮对齐：正文已丢弃，原始文本由过程叙述（narrate）拼接供复制
-    const narrateText = (
-      currentEvents.filter(
-        (e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate',
-      ) as Extract<ProcessEvent, { type: 'narrate' }>[]
-    )
-      .map((e) => e.payload.content)
-      .join('\n');
+    // 复制源（与运行时中断轮共用 narrateChainText 同源）：正文已随中断丢弃，整链复制 = 过程叙述拼接
+    const narrateText = narrateChainText(currentEvents);
     if (narrateText) host.dataset.rawText = narrateText;
     messages.appendChild(host);
     const prevAssistant = activeAssistantEl;
@@ -4307,14 +4337,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   function finalizeStreaming(): void {
     // ① UI 收尾（与流式状态无关，done/interrupted/打断均需执行）：
-    // 段级/容器级 footer 的 is-pending 移除 = 内容已定稿的信号，打断也是定稿（半截内容到此为止）。
+    // 段级 footer 的 is-pending 移除 = 内容已定稿的信号，打断也是定稿（半截内容到此为止）。
     // 放在 guard 之外——打断路径已把 streamingActive 清为 false，guard 会挡住旧逻辑。
+    // 容器 footer 显形归 settleRoundFooter 单点（终态消息真源 + roundId 锚），不在此处
+    // 经 activeAssistantEl.closest 间接命中——早相位中断时骨架未入容器，closest 命中
+    // null，显形信号静默丢失（中断轮无底部栏的根因）。
     const el = activeAssistantEl;
     if (el?.isConnected) {
       el.querySelector<HTMLElement>('.msg-footer')?.classList.remove('is-pending');
-      el.closest<HTMLElement>('.round-group')
-        ?.querySelector<HTMLElement>('.round-group__footer')
-        ?.classList.remove('is-pending');
     }
     // ② 流式专属清理（guard 保护：非流式状态下这些动作不该执行）
     if (!streamingActive || !el || !el.isConnected) return;
@@ -4395,6 +4425,67 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       activeAssistantEl;
     if (firstSeg && !firstSeg.dataset.ts) firstSeg.dataset.ts = lastUserTs;
     updateSessionControlsLock(sessionControlsLocked);
+  }
+
+  /**
+   * 终态容器 footer 显形（done/interrupted 的唯一收口点）
+   *
+   * 显形真源 = 终态消息到达，锚 = 终态消息携带的 roundId——不依赖 activeAssistantEl
+   * 连通性。旧路径由 finalizeStreaming 顺带移除容器 footer 的 is-pending，前提是正文块
+   * 已入容器：中断发生在首 chunk 前（骨架未归位）时 closest('.round-group') 命中 null，
+   * 显形信号丢失 → 中断轮只剩停止行、无「复制整链/分叉/删除 + 时间戳」底部栏。
+   *
+   * - 容器已建（正文流中的 done/中断）：移除 footer is-pending；时间戳元素缺失时按首段
+   *   ts 补建（运行时建 footer 时首段 dataset.ts 恒空 → 时间戳从未创建，重放路径无此问题）。
+   * - 容器未建（早相位中断）：hostEl 作首段建容器（pending=false 直接显形，与重放
+   *   renderInterruptedRound 同构）；hostEl 回填 roundId（骨架期无 roundId，由终态消息补）。
+   * - roundId 缺失 / 无载体可挂：诚实降级不建栏——无身份锚的删除/分叉按钮是死的，
+   *   不猜不伪造。
+   *
+   * 调用顺序契约：须在 commitTurnTs 之后（时间戳补建读首段 dataset.ts，先回填再建栏）。
+   */
+  function settleRoundFooter(roundId: string | undefined, hostEl: HTMLElement | null): void {
+    if (!roundId) return;
+    // 属性比对而非选择器直拼（roundId 进 CSS 选择器需转义；循环量级 = 可视轮数，可接受）
+    const existing = Array.from(messages.querySelectorAll<HTMLElement>('.round-group')).find(
+      (g) => g.dataset.roundId === roundId,
+    );
+    if (existing) {
+      const footer = existing.querySelector<HTMLElement>('.round-group__footer');
+      footer?.classList.remove('is-pending');
+      const firstSeg = existing.querySelector<HTMLElement>('.msg.assistant');
+      const t = firstSeg ? fmtTime(firstSeg.dataset.ts) : '';
+      if (footer && t && !footer.querySelector('.msg-time')) {
+        const timeEl = document.createElement('span');
+        timeEl.className = 'msg-time';
+        timeEl.textContent = t;
+        footer.appendChild(timeEl);
+      }
+      return;
+    }
+    if (hostEl?.isConnected) {
+      hostEl.dataset.roundId = roundId;
+      ensureRoundGroup(roundId, hostEl, false);
+    }
+  }
+
+  /**
+   * 终态 footer 显形 + 其前置 commitTurnTs 收口为单操作
+   *
+   * 防御性收口：commitTurnTs 回填首段 dataset.ts（删除按钮 ts 锚，决定 footer 删除按钮
+   * 可用性——`ensureRoundGroupFooter` 内 `deleteBtn.disabled = !firstSeg?.dataset.ts`）。
+   * 主流水路径已在渲染期写入首段 dataset.ts（footer 时间戳同期由 `ensureRoundGroupFooter`
+   * 按首段 ds 直接生成），故当前「顺序契约」对时间戳并不构成已复现的阻断；本组合的价值在
+   * 于：对任意「终态」路径保证 commitTurnTs 随 footer 显形恒执行，消除调用方需记的隐式顺序，
+   * 防未来某路径（如早相位中断/暂停续跑）未在建栏前回填 ds 导致删除按钮恒禁用或时间戳缺失。
+   * 属防御性收口，非修复当前已复现 bug（与「单一操作自持其前置不变量」同源）。
+   *
+   * @see settleRoundFooter 具体显形逻辑
+   * @see ensureRoundGroupFooter 删除按钮可用性与时间戳均依赖首段 dataset.ts
+   */
+  function settleRoundWithFooter(roundId: string | undefined, hostEl: HTMLElement | null): void {
+    commitTurnTs();
+    settleRoundFooter(roundId, hostEl);
   }
 
   // ─── 活动状态区（三合一：P0 错误 / P1 低扰 / P2 指标） ───
@@ -5314,8 +5405,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       finalizeRound();
       // 终态定格：静默「已完成」淡勾（finalize 清运行态后落终态，正常完成必须安静）
       setActiveSheetStatus('已完成');
-      // 回填删除按钮 ts 锚（运行时流式块 dataset.ts 恒空 → 删除按钮恒禁用修复）
-      commitTurnTs();
+      // 回填删除按钮 ts 锚 + 容器 footer 显形收口（commitTurnTs 前置契约已内嵌于
+      // settleRoundWithFooter，无需调用方记顺序——时间戳补建读首段 ts）
+      settleRoundWithFooter(msg.roundId, activeAssistantEl);
     } else if (msg.type === 'interrupted') {
       // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 等待指示器同步收尾
       // ③：done/error 均清，唯独中断漏清——残留的 pending-wait 会悬挂
@@ -5335,10 +5427,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (interruptedHost?.isConnected) {
         // 丢弃半截正文（运行中 step 的内容因中断作废，与重放中断轮不显示正文同源同形）
         interruptedHost.querySelector<HTMLElement>(':scope > .msg-body')?.remove();
+        // 复制源同源化（narrateChainText 单点，与重放 renderInterruptedRound 共用）：
+        // 半截正文已删，整链复制 = 过程叙述拼接（覆盖 finalizeStreaming 刚写的半截正文 rawText）
+        const narrateText = narrateChainText(currentEvents);
+        if (narrateText) interruptedHost.dataset.rawText = narrateText;
         appendInterruptedRow(interruptedHost, currentEvents);
       }
       // 打断也可能产生部分回答：同样回填 roundId，允许从该轮分叉
-      commitTurnTs();
+      // 容器 footer 显形收口（commitTurnTs 前置契约已内嵌）：正文流中断走「容器已建」分支，
+      // 早相位中断（骨架未归位）走「建容器」分支——两相位都保证中断轮有底部栏
+      settleRoundWithFooter(msg.roundId, interruptedHost);
       showActivity('info', '已停止生成');
     } else if (msg.type === 'suggestions') {
       // Follow-up 建议：回复结束后「下一步可探索」chips（点击填入输入框并聚焦）
@@ -5727,7 +5825,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     try {
       handleMessage(event);
     } catch (err) {
+      // 既有观测兜底保留（根因定位靠 Extension Host Console，不掩盖）——补用户侧非阻断红条，
+      // 避免「渲染抛异常 → 冻住/半成品 UI + 零报错」的可见性黑洞（观察点③）。
       console.error('[chatView] 消息处理异常（已兜底，UI 可能不完整）：', err);
+      showActivity('error', '界面渲染异常，详情见开发者控制台');
     }
   }
 
