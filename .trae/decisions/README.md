@@ -43,6 +43,7 @@ description: Memora 关键决策年轮
 | [ADR-034](./ADR-034-plan-item-boundary-emit-timing.md) | 任务项边界产出时机前移（plan_item_boundary 产于迭代开始、LLM 调用之前——边界语义「以下内容属于该任务项」决定先于所罩内容；顺序契约与装配时序分叉一并定案） | ✅ 已接受 | 架构 |
 | [ADR-035](./ADR-035-max-tokens-intersection-adjudication.md) | 输出上限裁决收口（maxTokens 生效值 = min(per-LLM, 角色包 outputLimit) 单点裁决；0-哨兵装配层过滤；取证面记生效值不记配置快照；内核不设上限校验） | ✅ 已接受 | 架构 |
 | [ADR-036](./ADR-036-background-task-lifecycle-boundary.md) | 后台命令任务双生命周期边界（turn 终态脱管不杀 + 回流跨 turn 留存；Agent 实例终态 killAllRunning 真杀；主动终止单点不回调 listener；诚实边界仅覆盖正常退出） | ✅ 已接受 | 架构 |
+| [ADR-037](./ADR-037-dock-morphology-constitution.md) | 底部状态形态宪法：动/静分离抽屉化四条（决策贴输入区+留痕 / 状态不自己消失 / 常驻的是入口 / 抽屉不自动弹）+ 唯一折叠轴 + 入口常驻判据 | ✅ 已接受 | 前端 |
 
 ### 插件宿主（VC 系列）
 
@@ -71,7 +72,7 @@ description: Memora 关键决策年轮
 | 安全   | 1    | ADR-006 |
 | 质量   | 1    | ADR-007 |
 | 工程   | 4    | ADR-008, ADR-017, ADR-032, ADR-033 |
-| 前端   | 1    | ADR-018 |
+| 前端   | 2    | ADR-018, ADR-037 |
 | 形态   | 1    | ADR-VC-001 |
 
 ---
