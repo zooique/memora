@@ -3878,7 +3878,8 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
        ⚠️ 位置红线（2026-10-05 实锤修复）：本卡原挂 #messages **内部**，是 #messages 的第 2 个
        子节点（紧跟 #emptyState）；#messages 是 overflow-y:auto 滚动容器且流式全程吸底
        （helpers/scrollToBottom.ts），视口钉在底部 ⇒ 卡永远停在消息流最顶端、视口之上，
-       表现为「确认 UI 根本没弹」，30s 后 fail-closed 自动拒绝（命令确认首跑即翻车）。
+       表现为「确认 UI 根本没弹」，超时后 fail-closed 自动拒绝（命令确认首跑即翻车；
+       当时超时为 30s，2026-10-05 已放宽至 CONFIRM_TIMEOUT_MS = 30 分钟）。
        现归位到输入区紧上方（对齐 Cline / Roo 的「输入区上方动作区」形态）——与 #messages
        同级、不在其内，恒定可见。守卫：chatView.test.ts「审批卡锚点守卫」。 -->
   <div id="writeConfirmCard" class="write-confirm-card" hidden>

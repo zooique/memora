@@ -7659,11 +7659,15 @@ describe('chatView narrate_withdraw 回抽', () => {
 
 // ─── 写入审批卡（webview 侧）────────────────────
 // 背景：write_confirm_request 若仅 host 发送、webview 无消费 → 开启「写入二次确认」后
-// 审批卡永不弹出、30s 超时自动拒绝（fail-closed）导致写入功能不可用。本组护栏验证：
-// 1) 收到 request 渲染审批卡（工具/路径/描述/diff 全部字段 textContent 填充，防注入）；
+// 审批卡永不弹出、超时 fail-closed 自动拒绝导致写入功能不可用。本组护栏验证：
+// 1) 收到 request渲染审批卡（工具/路径/描述/diff 全部字段 textContent 填充，防注入）；
 // 2) 确认按钮回传 write_confirm_answer(approved=true) 并隐藏卡片；
 // 3) 拒绝按钮回传 write_confirm_answer(approved=false) 并隐藏卡片；
-// 4) 覆盖渲染：新请求覆盖旧请求（旧 requestId 由 host 30s 超时独立兜底，无泄漏）。
+// 4) 覆盖渲染：webview 收到新 request 时替换当前卡（旧 requestId 清空，不泄漏陈旧按钮态）。
+// ⚠️ 语义变更（2026-10-05 串行化，修 S2）：真实链路已由宿主 FIFO 串行送审，**同一时刻
+// 只有一条在途**，故「旧 requestId 由 host 超时独立兜底」不再成立——旧请求根本没被推出去，
+// 是宿主队列在等，不是 webview 覆盖后被 host 兜底。保留本用例是因webview 仍须对
+// 「同时收到两条」保持健壮（协议层不假设host 行为，是webview 的自保义务）。
 describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
   it('write_confirm_request 渲染审批卡：工具/路径/描述/diff 填充且卡片可见', () => {
     mountChatView();
@@ -7787,7 +7791,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     ).toBe(true);
   });
 
-  it('审批卡覆盖渲染：新请求只展示最新（旧 requestId 由 host 超时独立兜底，卡片无状态泄漏）', () => {
+  it('审批卡覆盖渲染：收到新 request 即替换为最新（旧 requestId 清空，卡片无状态泄漏）', () => {
     const { postMessage } = mountChatView();
     dispatch({
       type: 'write_confirm_request',
@@ -7827,7 +7831,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     // 而 chatView 全部 12 处消息追加都是 messages.appendChild() ⇒ 卡恒停在消息流最顶端；
     // #messages 是 overflow-y:auto 滚动容器（chatStyles.ts:34），流式全程吸底
     // （helpers/scrollToBottom.ts）把视口钉在底部 ⇒ 卡恒在视口之上不可见 ⇒ 表现为
-    // 「确认 UI 根本没弹」，30s 后 fail-closed 自动拒绝（命令确认首跑即翻车）。
+    // 「确认 UI 根本没弹」，超时后 fail-closed 自动拒绝（命令确认首跑即翻车）。
     mountChatView();
     const card = document.getElementById('writeConfirmCard') as HTMLElement;
     const messages = document.getElementById('messages') as HTMLElement;
@@ -7839,6 +7843,31 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(messages.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // 位于输入区紧上方（对齐 Cline / Roo「输入区上方动作区」形态）
     expect(card.compareDocumentPosition(inputBar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('载荷缺 timeoutMs 必显式报错（禁静默失效：倒计时无声消失且无痕可查）', () => {
+    // 反向守卫：startConfirmCountdown 曾对非法 timeoutMs 静默 return——宿主一旦漏填
+    // （真源漂移），倒计时无声消失，用户只见一张永不提示的卡，直到 30 分钟后突然被拒，
+    // 现场无任何痕迹（与E2 同款病）。此处锁死「必须抛」，不锁抛的文案。
+    mountChatView();
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // 走 onMessage：异常由其兜底 catch 转 console.error，不炸测试。
+    // 载荷用as never 绕过 TS——本用例正是要模拟「宿主违约、字段根本不存在」。
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_no_timeout',
+      targetPath: '/workspace/z.ts',
+      tool: 'write_file',
+      description: '',
+      permission: '',
+      beforeContent: null,
+      hasDiff: true,
+    } as never);
+    // onMessage 的 catch 必须被触发（＝确实抛了，不是静默 return）
+    expect(spy).toHaveBeenCalled();
+    const logged = spy.mock.calls.map((c) => String(c[0]) + ' ' + String(c[1] ?? '')).join('\n');
+    expect(logged).toContain('timeoutMs');
+    spy.mockRestore();
   });
 
   it('末段倒计时：剩余不足 60 秒才显示，文本由宿主透传的 timeoutMs 投影', () => {

@@ -165,7 +165,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   input.maxLength = MAX_INPUT_CHARS;
   clarifyInput.maxLength = MAX_ASK_ANSWER_CHARS;
   // 写入审批卡：confirmWrites=true 时写文件触发，渲染审批卡
-  // 供用户确认/拒绝；回传 write_confirm_answer（fail-closed：host 30s 超时即自动拒绝）
+  // 供用户确认/拒绝；回传 write_confirm_answer（fail-closed：host CONFIRM_TIMEOUT_MS
+  // = 30 分钟超时即自动拒绝，末 60 秒面板显倒计时）
   const writeConfirmCard = document.getElementById('writeConfirmCard') as HTMLElement | null;
   const writeConfirmTool = document.getElementById('writeConfirmTool') as HTMLElement | null;
   const writeConfirmPath = document.getElementById('writeConfirmPath') as HTMLElement | null;
@@ -5390,7 +5391,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function startConfirmCountdown(timeoutMs: number): void {
     stopConfirmCountdown();
     const el = writeConfirmCountdown;
-    if (!el || !timeoutMs || timeoutMs <= 0) return;
+    if (!el) return;
+    // 载荷缺 timeoutMs / 非正数 = 协议违约（真源必须由宿主透传，见 protocol.ts 该字段注释）。
+    // 🔴 不得静默 return：真源一旦漂移（如宿主漏填），倒计时会无声消失——用户只见一张
+    // 永不提示的卡，直到 30 分钟后突然被拒，且**无任何痕迹可查**（E2 同款病：
+    // 字段进了协议零消费）。显式抛错让违约在开发期第一眼暴露，而非潜伏到真机。
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new Error(
+        `write_confirm_request 载荷缺少合法 timeoutMs（收到 ${String(timeoutMs)}）——` +
+          `超时真源在宿主 CONFIRM_TIMEOUT_MS，必须经协议透传`,
+      );
+    }
     confirmDeadlineAt = Date.now() + timeoutMs;
     const tick = (): void => {
       const left = confirmDeadlineAt - Date.now();
