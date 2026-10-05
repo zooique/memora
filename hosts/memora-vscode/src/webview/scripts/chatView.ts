@@ -28,7 +28,13 @@ import {
 } from '../../shared/constants.js';
 import { fmtTime } from '../helpers/fmtTime.js';
 import { fmtTokens, fmtCompactTokens } from '../helpers/fmtTokens.js';
-import { forceScrollToBottom, followIfPinned, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
+import {
+  forceScrollToBottom,
+  followIfPinned,
+  jumpToBottom,
+  scrollToBottom,
+  trackScroll,
+} from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
 // 骨架（会话控件）语义派生纯函数层：矩阵与状态容器在 turnUiState.ts，
@@ -560,13 +566,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     attributes: true,
     attributeFilter: ['open', 'class', 'style', 'hidden'],
   });
-  // 一键到底点击：滚动到底部并隐藏按钮
+  // 一键到底点击：滚到底 + 按实际结果重算吸底标记并据此显隐按钮。
+  // 滚动实现收口于 helpers/scrollToBottom.ts 的 jumpToBottom（SSOT）——此处不裸写
+  // scrollTop、不复制吸底逻辑。语义要点（勿改回裸写）：不预设 sticky，按滚动后的实际
+  // 几何重算；显式调用点保证不依赖「scrollTop 变化会派发 scroll 事件」这一不确定行为。
   scrollToBottomBtn.addEventListener('click', () => {
-    messages.scrollTop = messages.scrollHeight;
-    // 点击到底即显式重算吸底标记（返回值同时裁决按钮显隐，没真到底就继续显示）：
-    // 不依赖「滚动位置变化会派发 scroll 事件」这一隐式行为——该事件在异步 / 平滑
-    // 滚动形态下时机不确定，标记更新必须有显式调用点。
-    scrollToBottomBtn.hidden = trackScroll(messages);
+    scrollToBottomBtn.hidden = jumpToBottom(messages);
   });
   // 日期分隔线：跨天合并视图在日期交界插入分组
   let lastShownDate: string | undefined;

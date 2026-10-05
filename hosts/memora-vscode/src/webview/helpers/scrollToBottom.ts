@@ -17,6 +17,10 @@
  * 每帧一次，避免读写交错强制 reflow。rAF 回调幂等（scrollTop 赋值相同值），同帧多次
  * 调用天然合并，无需额外节流标志。
  *
+ * ⚠ **唯一的同步例外** = `jumpToBottom`（一键到底按钮）：不包 rAF。用户点击是低频单次动作，
+ * 无节流必要；且它需要**同步返回**重算后的吸底标记供调用方立即显隐按钮（既有测试在 click 后
+ * 同步断言 scrollTop 与 hidden ⇒ 包 rAF 会破坏该契约）。四个导出语义互不取代，见各自 jsdoc。
+ *
  * 从容器 ownerDocument 派生 window，不引入全局 document/window 引用（与依赖注入的
  * 环境隔离策略统一，可 jsdom 测试）。
  */
@@ -111,4 +115,27 @@ export function forceScrollToBottom(container: HTMLElement): void {
     stickyMap.set(container, true);
     container.scrollTop = container.scrollHeight;
   });
+}
+
+/**
+ * 一键到底：无条件滚到底部，并按滚动后的**实际几何**重算吸底标记返回（同步，不经 rAF）
+ *
+ * 与另三个导出的分工（**四者互不取代，勿合并**）：
+ *   - `scrollToBottom`：受**既有**吸底标记裁决 —— 用户上滚阅读时静默，不打断阅读；
+ *   - `followIfPinned`：读取既有意图、不重算几何，供 MutationObserver 在任意高度变更后调用；
+ *   - `forceScrollToBottom`：**预设** sticky=true 再滚 —— 用于容器内容被整体换掉
+ *     （旧阅读位置对新内容无意义）；
+ *   - **本函数**：**不预设** —— 先滚，再按实际结果重算并返回。预设会掩盖「没真滚到底」
+ *     的情形（容器不可滚动 / 高度塌缩 / 布局尚未生效），本函数如实返回 ⇒ 没到底就继续显示按钮。
+ *
+ * **为何必须显式重算而非等 scroll 事件**：程序化赋值 `scrollTop` 是否派发 scroll 事件、
+ * 何时派发，在异步 / 平滑滚动形态下不确定 ⇒ 标记更新必须有显式调用点（jsdom 完全不派发，
+ * 故既有测试在 click 后同步断言，本函数保持同步即为守住该契约）。
+ *
+ * @param container 滚动容器（如消息区）
+ * @returns 重算后是否吸底（false = 没真到底，调用方应继续显示「一键到底」按钮）
+ */
+export function jumpToBottom(container: HTMLElement): boolean {
+  container.scrollTop = container.scrollHeight;
+  return trackScroll(container);
 }
