@@ -259,7 +259,7 @@ src/
 | Function Coverage | 92.41% |
 | Line Coverage | 91.79% |
 | Runtime Dependencies | **0** |
-| Architecture Decision Records | 26 ADRs |
+| Architecture Decision Records | In-repo `.trae/decisions/` directory (see its `README.md` for the index; no count listed here — any count is a point-in-time snapshot) |
 
 ## Development
 

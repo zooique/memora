@@ -114,7 +114,7 @@ src/
 | 渐进式重构 | [progressive-refactor-rules.md](./generic/progressive-refactor-rules.md) |
 | 安全 / 测试 | [security_rules.md](./generic/security_rules.md) / [testing_rules.md](./generic/testing_rules.md) |
 | 跨文档引用 / 新增模块 | [cross-document-reference.md](./generic/cross-document-reference.md) / [new-module-guide.md](./generic/new-module-guide.md) |
-| 决策记录（26 ADR） | `decisions/`（[README](../decisions/README.md)；技术栈变更先更新 ADR，§1①） |
+| 决策记录 | `decisions/`（[README](../decisions/README.md) = **索引唯一真源**；技术栈变更先更新 ADR，§1①）。⚠️ **不在此处登记 ADR 条数**——计数是时点快照、每次新增即过期（历史已漂移三次：37 → 25 → 26 → 30）⇒ 需要引用时**现读 README 索引** |
 
 > 任务追踪统一在根 `tasks/`（唯一真理源）。
 > **架构说明书**：[docs/architecture/agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md)（设计哲学 + 闭环设计 + 数据模型 + 角色包体系 + 思维模式速查）。
@@ -167,6 +167,8 @@ src/
 | 类型 | 规则 |
 | ---- | ---- |
 | DO | 底层问题优先修复（架构 / 基础设施层面，避免积重难返） |
+| DO | **落地批次同批入台账**：凡写进 `CHANGELOG.md` 的落地批次，**同一批**必须在 `tasks/` 落账（已完入 `已完成任务.md`，未完入 `待完成任务.md`）——CHANGELOG 记**发布变更**、台账记**待办与销项**，**职责不同、两边都进**；只进一处 = SSOT 断裂（发版前核对会漏项） |
+| DON'T | 只更新 CHANGELOG、不进台账（2026-10-06 实证：`eed62d49` 批次遗漏，同周另两笔均同步 ⇒ 纪律执行不一致本身即缺口） |
 | DO | 代码修复独立可回滚（每次修复独立提交） |
 | DO | 自动归档根据 `archiveMode` 执行（full / manual 二态） |
 | DO | LLM 工具调用传递 `tools` 参数，SSE 流正确解析 `tool_calls` delta |
