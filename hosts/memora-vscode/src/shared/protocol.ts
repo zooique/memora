@@ -1106,7 +1106,19 @@ export type ExtensionToWebviewMessage =
    * 重建对齐）。五个点共用 `postBackgroundTasks()` 的**内容签名去重**——快照未变不推，
    * kill 导致的「条数不变而状态变」也能被捕获。
    */
-  | { type: 'background_tasks'; items: BackgroundTaskView[] };
+  | { type: 'background_tasks'; items: BackgroundTaskView[] }
+  /**
+   * 插话丢弃信号（边沿事件 · 吸收时上屏机制的另一半）
+   *
+   * 语义二分：队列条目消失只有两种原因——**消费**（内核 step 边界吸收 → appendUserMessage
+   * 落盘入史）与**丢弃**（删除/清空/停止放弃 → 蒸发，不落盘）。快照 diff 只能看出「消失」，
+   * 区分不出原因；本事件由宿主在**全部丢弃路径**（remove_pending_item / clear_pending_queue /
+   * handleStop 放弃暂停检查点）显式发出，载荷 = 被丢条目文本。
+   * webview 以此把「消失条目」分流：命中本事件载荷 = 丢弃不上屏；未命中 = 消费 → 上屏「你补充」行。
+   * **时序契约**：宿主必须先 post 本事件、后 post 携带新队列快照的 turn_update（同一 handler
+   * 内顺序调用，postMessage FIFO 保证到达序）——webview 的丢弃缓冲按帧消耗，乱序 = 误上屏。
+   */
+  | { type: 'pending_discarded'; items: string[] };
 
 /**
  * 后台任务 UI 投影（**Pick 约束**——改内核字段名即编译报错，禁另立第二套字段）

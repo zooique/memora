@@ -921,16 +921,25 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'clear_pending_queue') {
         // 清理由内核 clearPendingInterjections 原子操作 + getter 读，宿主不维护镜像副本
         //  （坑：手动镜像双写易出错）
+        // 先读后清：丢弃信号需要被丢条目文本（webview diff 据此分流「消失 = 丢弃不上屏」）
+        const before = this._agent?.getPendingInterjections?.() ?? [];
         const cleared = this._agent?.clearPendingInterjections() ?? 0;
         if (cleared > 0) {
           this.post({ type: 'notice', level: 'info', message: `已清空 ${cleared} 条待发送内容` });
+          this.postPendingDiscarded(before);
         }
         this.syncPendingQueue();
       } else if (msg.type === 'remove_pending_item') {
         // 删除单条 interject（待发送区某条的独立 × 按钮）：
         // 内核 removePendingInterject 内部已做越界检查，宿主直接调内核 +
         // 从内核读当前值渲染（SSOT 源头 = loop.pendingInterjections）
-        this._agent?.removePendingInterject(msg.index);
+        // 先读后删：按 index 取被删文本，删除成功才发丢弃信号（失败 = 队列未变，零信号）
+        const before = this._agent?.getPendingInterjections?.() ?? [];
+        const removed = before[msg.index];
+        const ok = this._agent?.removePendingInterject(msg.index) ?? false;
+        if (ok && removed !== undefined) {
+          this.postPendingDiscarded([removed]);
+        }
         this.syncPendingQueue();
       } else if (msg.type === 'polish_input') {
         // 文本润色（输入框入口）：调 agent.polish(text) 润色输入框内容，
@@ -2675,7 +2684,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         );
         return;
       }
-      this.post({ type: 'user', text: input, ts: new Date().toISOString(), kind: 'supplement' });
+      // MUTATION-2 临时变异：删除路径不发丢弃信号
+      // this.post({ type: 'user', text: input, ts: new Date().toISOString(), kind: 'supplement' });
+      // 上屏时机 = 消费时刻（吸收时上屏）：入队成功**不再**即时 post type:'user'——
+      // 排队中 ≠ 已说出，呈现超前于事实（旧即时上屏设计）会让「取消排队」留下孤儿行。
+      // 排队期间唯一呈现 = 待发送区（syncPendingQueue 投影）；内核 _consumeInterjects
+      // → appendUserMessage 落盘后，队列快照减少 → webview diff 上屏「你补充」行。
       // pausePending 期间发补充 → 自动取消暂停（覆盖暂停操作）：
       // UI 按钮态本地 toggle，cancelPauseRequest 即可；
       // UI 状态会在下一次 status 切换（如后续新 runFlow thinking）时自动重置
@@ -2906,13 +2920,32 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     // paused 态：彻底放弃暂停检查点（对称 pause 语义）
     if (this._agent?.sessionManager?.status === 'paused') {
+      // 先读后弃：discardCurrentCheckpoint 协同清理排队插话（内核 agent.ts 单点），
+      // 被弃条目 = 丢弃（蒸发不落盘）→ 必须发丢弃信号，否则 webview diff 误判「消费」误上屏
+      const before = this._agent.getPendingInterjections?.() ?? [];
       // 内核显式暴露 discardCurrentCheckpoint，不靠"下一次 chat() 会重建"隐式清理
       const cleaned = this._agent.discardCurrentCheckpoint();
       this.post({ type: 'status', state: 'done' });
       if (cleaned) {
         this.post({ type: 'notice', level: 'info', message: '已停止，暂停检查点已清理' });
+        if (before.length > 0) {
+          this.postPendingDiscarded([...before]);
+        }
       }
     }
+  }
+
+  /**
+   * 插话丢弃信号唯一发点（吸收时上屏机制的宿主侧一半）
+   *
+   * 载荷 = 被丢条目文本（**先读后丢**模式取得，发点不自己再查队列——丢弃与读值必须
+   * 原子相邻，否则竞态窗口内队列变化会发错内容）。
+   * 调用契约：发本信号后**必须**紧跟 syncPendingQueue（推新快照）——webview 丢弃缓冲
+   * 按「信号帧 → 快照帧」成对消耗，只发信号不推快照会让缓冲残留、误吞后续消费条目。
+   */
+  private postPendingDiscarded(items: readonly string[]): void {
+    if (items.length === 0) return;
+    this.post({ type: 'pending_discarded', items: [...items] });
   }
 
   /**

@@ -2676,9 +2676,38 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   let _pendingQueueBar: HTMLElement | null = null;
   /** 待发送队列投影缓存（内核 interruptQueue 的视觉镜像，随 turn_update.pendingQueue 同步）：
-   *  仅供 sendMessage 插话满员预检用（真源在内核，宿主闸门仍裁决竞态漏网）。 */
+   *  仅供 sendMessage 插话满员预检用（真源在内核，宿主闸门仍裁决竞态漏网）；
+   *  同时是「吸收时上屏」diff 的上一帧（消费检测 = 本帧与上帧的内容差）。 */
   let _pendingQueueItems: readonly string[] = [];
+  /** 丢弃信号缓冲（pending_discarded 事件载荷暂存）：diff 分流的依据——
+   *  消失条目命中缓冲 = 丢弃（不上屏）；未命中 = 消费（内核已落盘 → 上屏「你补充」行）。
+   *  生命周期 = 一帧（宿主契约：信号后必跟新快照，随下帧 diff 消耗）；视图复位时清空。 */
+  let _pendingDiscardedBuffer: string[] = [];
   function updatePendingQueueBar(items: readonly string[]): void {
+    // —— 吸收时上屏：队列快照 diff（必须在缓存覆盖前取上一帧）——
+    // 消失条目 = 上帧有、本帧无（内容可能重复，按出现次数消耗）；再扣除丢弃缓冲，
+    // 剩余 = 被内核消费（appendUserMessage 已落盘）→ 按 prev 顺序逐条上屏「你补充」行。
+    // ts 用检测时刻 ≈ 内核落盘时刻（与重放排序同相）；行形态复用 appendInteractiveInput
+    // 过程条目行（与 thought/tool 同源同序），不进消息流、不打断正文单块续写。
+    const prevItems = _pendingQueueItems;
+    if (prevItems.length > 0) {
+      const remain = new Map<string, number>();
+      for (const t of items) remain.set(t, (remain.get(t) ?? 0) + 1);
+      const gone: string[] = [];
+      for (const t of prevItems) {
+        const c = remain.get(t) ?? 0;
+        if (c > 0) remain.set(t, c - 1);
+        else gone.push(t);
+      }
+      for (const t of gone) {
+        const bi = _pendingDiscardedBuffer.indexOf(t);
+        if (bi >= 0) {
+          _pendingDiscardedBuffer.splice(bi, 1); // 丢弃：缓冲消耗，不上屏
+        } else {
+          appendInteractiveInput(t, new Date().toISOString(), 'supplement');
+        }
+      }
+    }
     // 投影缓存先于一切：空队列也要落缓存，否则满员预检读到上一次的残留长度
     _pendingQueueItems = [...items];
     // 空态在懒创建之前返回（与 updateFileChangesBar 同范式）：dock 注册初值 active=false，
@@ -4804,6 +4833,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     resumePending = false;
     // 视图复位 = 队列投影清空（新会话无插话排队，防残留长度误拦 sendMessage 预检）
     _pendingQueueItems = [];
+    // 丢弃缓冲同步清空：跨会话残留会让新会话首帧消费条目被误吞（不上屏 = 内容蒸发）
+    _pendingDiscardedBuffer = [];
     roundGroupEl = null;
     lastShownDate = undefined;
     // 视图复位 = 吸底标记复位：新会话默认从底部看起。容器清空时高度塌缩未必派发
@@ -4981,6 +5012,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       ) {
         renderAskPhase(msg.state.questions!);
       }
+    } else if (msg.type === 'pending_discarded') {
+      // 插话丢弃信号：压入缓冲，随下一帧队列快照 diff 消耗（消失条目命中缓冲 = 丢弃不上屏）。
+      // 时序契约：宿主保证本事件先于携带新快照的 turn_update 到达（postMessage FIFO）。
+      _pendingDiscardedBuffer.push(...msg.items);
     } else if (msg.type === 'tool_pending') {
       // 工具意图预告：LLM 流式生成 tool_call 参数期间（name 成形即上报），
       // 工具尚未执行——提前渲染「准备中」工具行。瞬态展示轨：不落 events[]、不参与

@@ -141,12 +141,11 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
 
     await h.cast.handleInput({ kind: 'send', text: '补充要求' });
 
-    // interject 入队 + 即时上屏（supplement 交互行）
+    // interject 入队成功；**不再即时上屏**（吸收时上屏：排队中 ≠ 已说出，
+    // 上屏改由 webview 在队列快照减少（消费）时 diff 触发——见 chatViewInterject.test.ts）
     expect(interject).toHaveBeenCalledTimes(1);
     expect(interject).toHaveBeenCalledWith('补充要求');
-    expect(h.posted).toContainEqual(
-      expect.objectContaining({ type: 'user', kind: 'supplement', text: '补充要求' }),
-    );
+    expect(h.posted.some((m) => (m as { type?: string }).type === 'user')).toBe(false);
     // 不中断旧流、不发起新 chat
     expect(chat).not.toHaveBeenCalled();
     expect(h.posted.filter((m) => (m as { type?: string }).type === 'status')).toHaveLength(0);
@@ -322,10 +321,10 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     expect(window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('上限'));
   });
 
-  it('INPUT-LIMIT-1：插话未达上限 → 正常入队并上屏（防误伤边界）', async () => {
+  it('INPUT-LIMIT-1：插话未达上限 → 正常入队、不即时上屏（吸收时上屏）', async () => {
     const h = setupInput();
     const { interject } = mount(h);
-    // 内核受理（未满员）→ 宿主上屏 user 气泡
+    // 内核受理（未满员）→ 宿主不 post user 气泡（呈现时机 = 消费时刻）
     interject.mockReturnValue(true);
     h.cast._streaming = true;
     h.cast._abortController = new AbortController();
@@ -334,7 +333,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     await h.cast.handleInput({ kind: 'send', text: '第 5 条' });
 
     expect(interject).toHaveBeenCalledTimes(1);
-    expect(h.posted.filter((m) => (m as { type?: string }).type === 'user')).toHaveLength(1);
+    expect(h.posted.filter((m) => (m as { type?: string }).type === 'user')).toHaveLength(0);
   });
 
   it('INPUT-LIMIT-1：webview 镜像常量与内核真源同值（跨包数值漂移守卫）', async () => {
