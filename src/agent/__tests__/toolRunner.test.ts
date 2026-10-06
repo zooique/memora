@@ -216,9 +216,7 @@ describe('SCRIPT-2 B4：runOne 返回 ToolOutcome（结构化事实，文本降�
     expect((await okRunner.runOne(tc())).status).toBe('ok');
 
     // 即使文本长得像失败前缀，只要执行器没 emit 就不判失败——判据唯一来源 = emit
-    const errishRunner = new ToolRunner(
-      makeDeps({ execute: vi.fn(async () => '[ERR:X] 坏了') }),
-    );
+    const errishRunner = new ToolRunner(makeDeps({ execute: vi.fn(async () => '[ERR:X] 坏了') }));
     expect((await errishRunner.runOne(tc())).status).toBe('ok');
   });
 
