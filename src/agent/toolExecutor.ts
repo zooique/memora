@@ -1650,7 +1650,11 @@ export class ToolExecutor {
       case 'kill_command': {
         // 后台任务终止（§14.1 免裁决链：只可杀本 agent 起的自家任务，taskId 寻址非任意 pid）
         if (!this.backgroundTasks) {
-          return '[ERR:TOOL:NOT_AVAILABLE] kill_command 不可用：未装配后台任务注册表';
+          // 能力缺失 = 执行失败事实（非主动拦截）→ 显式 emit failed
+          const notAvailableText =
+            '[ERR:TOOL:NOT_AVAILABLE] kill_command 不可用：未装配后台任务注册表';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         const taskId = strArg('taskId');
         if (!taskId) {
@@ -1665,21 +1669,28 @@ export class ToolExecutor {
         const outcome = this.backgroundTasks.kill(taskId);
         // 不静默成功：不存在与已终态是两种语义，必须让 LLM 知道（§13.6 未决二定案）
         if (!outcome) {
-          return (
+          const notFoundText =
             `[ERR:TASK_NOT_FOUND] 未找到后台任务 "${taskId}"。` +
             '任务跨轮保留、可在后续轮次 kill；该 id 可能本就有误，或来自扩展重启前的会话' +
-            '（注册表不跨重启保留）——本轮不会终止任何进程。'
-          );
+            '（注册表不跨重启保留）——本轮不会终止任何进程。';
+          emitOutcome?.(failedOutcome(notFoundText));
+          return notFoundText;
         }
         const task = this.backgroundTasks.get(taskId);
         if (!outcome.result) {
-          return `[TASK_ALREADY_SETTLED] taskId=${taskId} 已是终态（status=${outcome.status}，无需终止；该任务无已捕获输出）`;
+          const settledBareText = `[TASK_ALREADY_SETTLED] taskId=${taskId} 已是终态（status=${outcome.status}，无需终止；该任务无已捕获输出）`;
+          // 终止动作本身完成（无事可终止）→ ok；底层任务若有失败已由完成点单点结算（B3）
+          emitOutcome?.(okOutcome(settledBareText));
+          return settledBareText;
         }
         // 结果体的净化与定长由 formatCommandResult / formatKilledCommandOutput 自带
         // （定长真源在格式化层，两条消费面共用）——此处不再套一层，避免两个 policy。
         if (outcome.status === 'killed') {
           // 被主动终止 ≠ 执行失败：走专用格式化，不谎报退出码（见 formatKilledCommandOutput）
-          return `[KILLED] taskId=${taskId}（已终止；以下为截至终止时的输出）\n命令：${task?.command ?? '(未知)'}\n${formatKilledCommandOutput(outcome.result)}`;
+          const killedText = `[KILLED] taskId=${taskId}（已终止；以下为截至终止时的输出）\n命令：${task?.command ?? '(未知)'}\n${formatKilledCommandOutput(outcome.result)}`;
+          // 终止动作成功 → ok（强杀无退出码，文本不谎报失败，status 同样不谎）
+          emitOutcome?.(okOutcome(killedText));
+          return killedText;
         }
         const settledNote = `[TASK_ALREADY_SETTLED] taskId=${taskId} 已是终态（status=${outcome.status}，无需终止）`;
         // 行首归属判据改读**结构化执行事实**（B4 判据切换，不再扫文本前缀）：
@@ -1692,14 +1703,22 @@ export class ToolExecutor {
         // 指向上方 —— 对 LLM 是指代错乱的谎。两条路径各自带对位置的引导语。
         const commandLine = `命令：${task?.command ?? '(未知)'}`;
         const body = formatCommandResult(outcome.result);
-        // 事实真源 = 注册表记录的进程终态（timedOut / exitCode），与同步路径判据同源
+        // 失败终态判定（timedOut / exitCode 非零）仍写入文本（诚实呈现），
+        // 但 **status 恒 ok**：底层任务的失败已在完成点单点结算（B3 setBackgroundTasks 回调），
+        // kill 回传只是「取回输出快照」这一动作的成功 —— 若此处再判 failed，同一失败计 2 次
+        // （双计伤：B3 完成点 × B4-c 行首 [COMMAND_ERROR] 桥判，2026-10-06 实测）。
+        // 文本层的 [COMMAND_ERROR] 保留给 LLM 看结局，计数层只认 status（单点结算）。
         const settledWithFailure = outcome.result.timedOut || outcome.result.exitCode !== 0;
         if (settledWithFailure) {
           // 附注在结果**之后** ⇒ 用回指语（「其结果为」），不用「以下」。
-          return `${body}\n${commandLine}\n${settledNote}；其结果为上述内容`;
+          const settledFailedText = `${body}\n${commandLine}\n${settledNote}；其结果为上述内容`;
+          emitOutcome?.(okOutcome(settledFailedText));
+          return settledFailedText;
         }
         // 成功路径：附注在前、结果在后 ⇒ 沿用原文案的前置引导语，逐字不变。
-        return `${settledNote}；以下为其结果\n${commandLine}\n${body}`;
+        const settledOkText = `${settledNote}；以下为其结果\n${commandLine}\n${body}`;
+        emitOutcome?.(okOutcome(settledOkText));
+        return settledOkText;
       }
       case 'list_resources': {
         // 渐进披露 L3：列出技能的资源清单
