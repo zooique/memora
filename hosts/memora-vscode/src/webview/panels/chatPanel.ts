@@ -3563,8 +3563,23 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         agent?.off('roundSummaryGenerated', onSummary);
         unlockDone();
       }, SUMMARY_WAIT_TIMEOUT_MS);
-      const onSummary = (_info: { roundId: string; success: boolean }) => {
+      const onSummary = (info: { roundId: string; success: boolean }): void => {
         clearTimeout(timeoutHandle);
+        // 与 setTimeout 分支对称解绑：本回调经 agent.on 注册（非 .once），只在
+        // 事件触发路径上解绑是不够的——每轮正常收到事件都会遗留一个 handler 累积。
+        agent?.off('roundSummaryGenerated', onSummary);
+        // 摘要失败可观测出口：内核 runSummary 的三条失败路径（异步 reject / 同步 catch）
+        // 都发 success:false，此处此前只拿它解锁 UI 定时器、直接丢弃该字段 ⇒
+        // 摘要失败在 metrics/事件/记忆库四面皆不可见（「静默失败 = 假阴性」）。
+        // 走本文件既有的错误级 notice 单通道（见「会话异常可观测出口」节），
+        // 不新增日志路径、不新增协议字段、不改内核。
+        if (!info.success) {
+          this.post({
+            type: 'notice',
+            level: 'error',
+            message: '本轮记忆摘要生成失败，本轮内容不会被自动沉淀（对话本身不受影响）',
+          });
+        }
         unlockDone();
       };
       agent?.on('roundSummaryGenerated', onSummary);

@@ -10,6 +10,36 @@
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更，随 3.1.0 发版。**不提前 bump**——`package.json` 版本号仍为 3.0.1，bump 属发版动作而非落地动作（ADR-033）。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
 
+### ⚠️ Breaking（内核 · 工具失败判据收敛单点：脚本/代码/命令三态族不再漏计 · `SCRIPT-1` + `METRICS-PREFIX-1`①②，已定档 3.1.0）
+
+**口径缺陷（静默失败 = 假阴性）**：失败判据此前散落三处、各自手写 `result.startsWith('[ERR')`
+（`toolRunner` 执行层 / `loop` 编排层 / `loop` `toolFailureCount` 计数）。而脚本族失败产出的是
+`formatExecutionResult` 的**三态前缀** —— `[SCRIPT_ERROR]` / `[CODE_ERROR]` / `[COMMAND_ERROR]` /
+`[SCRIPT_TIMEOUT]` / `[CODE_TIMEOUT]` / `[COMMAND_TIMEOUT]`（`kind: 'SCRIPT' | 'CODE' | 'COMMAND'`），
+**一个都不以 `[ERR` 开头** ⇒ `run_skill_script` / `run_code` / `run_command`（及后台任务回流）
+的**全部失败与超时恒判为成功**，`toolFailureCount` / `AgentMetrics.tools.failureCount` **恒少计**。
+
+**变更**：新增 `toolCallHelpers.isToolFailure()` 为失败判据**唯一真源**（两族正则），三处散点全部改调它；
+生产代码 `startsWith('[ERR')` 零残留。`_processToolResults` 签名新增 `blockedFlags?`（调用点传
+`toolExecs.map(e => e.blocked)`），使「策略拦截不算失败」由**隐性约定**（靠护栏文案刻意避开 `[ERR`）
+转为**显式排除** —— 原为脆弱不变量：新护栏文案一旦用 `[ERR` 前缀即静默误计拦截为失败。
+`tracer.ts` 的 `failureCount` JSDoc 原以「结果以 `[ERR` 开头」定义字段，已改指判据函数（防文档层留失效定义）。
+
+**⚠️ 对下游的口径影响（诚实登记）**：`toolFailureCount` / `failureCount` 的**历史数字与修复后不可比**
+——修复后**上升**。已落盘 round 的 metrics 属旧口径，跨版本比较该字段须先对齐此边界。
+**宿主落盘侧同受影响**：宿主收场的 `toolFailureCount` 自行从 processEvents 数（`!ok && !blocked`），
+`ok` 来源统一后**两侧口径首次自动一致**（此前内核漏三态族、宿主跟着一起漏，两侧同错故看似一致），
+故**宿主已落盘 round 的该字段数字同样上升**。
+实测影响面（12 案例）：**精确翻转 5 条**（三族的非零退出码 + 超时），**零误伤**
+（策略拦截族 `[SEARCH_LIMIT_REACHED]` / `[ALREADY_READ]` / `[ASK_LIMIT]`、`[KILLED]` 主动终止、
+正常输出、旧 `[ERR` 族共 7 条判定均不变）。
+
+**前缀约定已由测试锁定**：`toolCallHelpers.test.ts` 的「isToolFailure · 前缀约定契约」段逐条断言
+失败族 10 条 + **豁免族 9 条**（策略拦截 3 / 未执行·幂等 4 / 护栏提示 2）—— 新增护栏文案未登记归属即转红，
+「记得避开」的隐性约定转为可执行纪律。豁免清单由**全量 grep 生产代码 `[XXX]` 标签逐个过判据**得出
+（共 31 个标签，判失败 6 个全为执行三态族、无一误判），非仅照抄既有台账。
+**未闭合**：`METRICS-XFLOW-1`（跨流 metrics 低估）独立待排 —— 判据收敛只修「单流内漏计」，跨流漏计照旧。
+
 ### ⚠️ Breaking（内核 · `background` 语义修订：turn 终态不再杀后台进程 · CMD-1 阶段 3）
 
 **真机实锤的缺陷**（`round-1791074929352.json`）：用户起 `ping -n 90`（`background=true`），
@@ -211,6 +241,27 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 - **宿主消费真源**：extension 闸门改消费 `interject()` 返回值（快照预检自写判据退役，宿主零裁决逻辑）；webview 预检仍用 `shared/constants.ts` 镜像常量（webview 无法 import 内核包），同值关系由宿主守卫测试锁定（漂移即红）；pause 条目不受上限管辖（内部控制语义非用户输入洪流）
 - **测试**：内核 loop 上限用例（满员拒收不入队 / 删一条可再入 / pause 不受限）+ 变异闭环（判据 off-by-one 精准红）；`constants.test` 键数守卫 24→25 同步；agent 层 +4 用例（未初始化断言 / 受理入队返回 true / 满员拒收返回 false 队列不增 / 删一腾位再入——返回值透传与队列状态链路贯通；落盘内容无公开读口，闭环节点持久化由 messageHistory.test 既有覆盖）；宿主 chatPanelInput 11 用例（桩默认受理态 / 满员拒收不上屏 / 防误伤上屏 / 跨包同值守卫）
 - **版本**：内核语义变更（接口返回值 void→boolean + 新增常量），随已定档的 3.1.0 一并发布，不单独发版
+
+### Fixed（宿主 · 轮次摘要失败可见化 + 摘要事件 handler 泄漏 · `MEM-1`）
+
+**现象**：complete 轮缺少 round-summary 摘要记忆（记忆库无条目），而**用户与排查者都无从得知原因**。
+
+**前提订正（原文「无任何可观测信号」只对一半）**：内核 `orchestrator.runSummary` **早已**在三条路径上
+`emit('roundSummaryGenerated', { roundId, success })` —— 异步 reject / 同步 catch 均发 `success: false`，
+「摘要关闭」发 `success: true`。**信号在事件层一直存在**；断点在**宿主消费点** ——
+`chatPanel` 的 `onSummary` 只拿 `roundId` 解锁 UI 定时器，把 `success` **整个丢弃**。
+
+- **观测出口接线**：`onSummary` 增 `if (!info.success)` → `post({ type:'notice', level:'error' })`，
+  走本文件既有的**错误级 `notice` 单通道**（`protocol.ts` 的 `level:'info'|'error'` 已有承载）——
+  **零协议变更、零内核改动、零判据改动**
+- **⚠️ 对抗式审查推翻「记日志、不弹 UI」的原建议**：静默失败正是本缺陷的成因；低频（仅真失败时出现）
+  的错误提示条才真正闭合可观测链（用户可自证「这轮没沉淀」），仅日志留痕等于把问题继续藏着
+- **顺带修同处第二个独立缺陷**：`agent.on('roundSummaryGenerated', …)` **非 `.once`**，此前仅
+  `setTimeout` 分支 `off`、**事件触发分支不解绑** ⇒ 每轮正常收场遗留一个 handler 累积；已补**对称解绑**
+- **测试**：新增 `chatPanelSummaryFailure.test.ts` 4 用例（失败 → 错误 notice / 成功 → 不误报 /
+  notice 不阻断 UI 解锁 / 连跑三轮 handler 零残留）+ **变异双闸门已实证红→绿**（删 `if` → ①红；
+  删 `off` → ④红且报「3 handler 累积」）
+- **⏳ 真机复验**：构造摘要失败（如摘要 LLM 返无效 JSON）时错误提示条应可见，且连跑多轮无 handler 累积
 
 ## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
 
