@@ -2009,6 +2009,148 @@ describe('工具执行器（6 个工具）', () => {
     });
   });
 
+  describe('★ 原生 outcome（SCRIPT-2 B5-c · 渐进披露/回调族 status 断言）', () => {
+    /**
+     * 构造原生 outcome 捕获器（B5 语义裁决：失败点 emit failed、成功点不 emit）。
+     * 共享 fixture（beforeAll）＋回调可注入 ⇒ 每条用例显式设/清所需回调，双向防泄漏。
+     */
+    function makeSink(): { readonly list: ToolOutcome[]; sink: (o: ToolOutcome) => void } {
+      const list: ToolOutcome[] = [];
+      return { list, sink: (o) => list.push(o) };
+    }
+
+    it('read_skill 未装配回调 → emit failed', async () => {
+      executor.readSkill = undefined;
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'read_skill',
+        JSON.stringify({ name: 'write' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('read_skill 技能未找到（回调返 null）→ emit failed', async () => {
+      executor.readSkill = async () => null;
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'read_skill',
+        JSON.stringify({ name: 'nope' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('read_skill 命中技能 → 零 emit（裸文本走 ok 兜底）', async () => {
+      executor.readSkill = async () => '# 技能正文';
+      const { list, sink } = makeSink();
+      await executor.execute('read_skill', JSON.stringify({ name: 'write' }), undefined, sink);
+      expect(list).toHaveLength(0);
+      executor.readSkill = undefined;
+    });
+
+    it('read_resource 未装配回调 → emit failed', async () => {
+      executor.readResource = undefined;
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'read_resource',
+        JSON.stringify({ skill_name: 'write', resource_path: 'a.md' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('read_resource 资源未找到（回调返 null）→ emit failed', async () => {
+      executor.readResource = async () => null;
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'read_resource',
+        JSON.stringify({ skill_name: 'write', resource_path: 'nope.md' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+      executor.readResource = undefined;
+    });
+
+    it('list_resources 未装配回调 → emit failed', async () => {
+      executor.listResources = undefined;
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'list_resources',
+        JSON.stringify({ skill_name: 'write' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('list_skills 未装配回调 → emit failed', async () => {
+      executor.listSkills = undefined;
+      const { list, sink } = makeSink();
+      const out = await executor.execute('list_skills', JSON.stringify({}), undefined, sink);
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('register_work 未装配回调 → emit failed', async () => {
+      executor.registerWork = undefined;
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'register_work',
+        JSON.stringify({ path: 'a.md', description: '说明' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('register_work path 空串 → emit failed（required 只挡 undefined，空串穿到分支体）', async () => {
+      executor.registerWork = async () => 'ok';
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'register_work',
+        JSON.stringify({ path: '', description: '说明' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+      executor.registerWork = undefined;
+    });
+
+    it('run_team_meeting 未装配回调 → emit failed', async () => {
+      executor.runTeamMeeting = undefined;
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'run_team_meeting',
+        JSON.stringify({ group: 'g', topic: 't' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+  });
+
   describe('task_table_update（寻址契约：renderer 行首序号 ↔ task_table_write 短 id ↔ 完整 uuid 三源归一）', () => {
     /** 默认三任务项桩（id 前缀各异，8 位短 id 可唯一命中） */
     const DEFAULT_PLAN: Array<{ id: string; description: string; status: string; order: number }> =

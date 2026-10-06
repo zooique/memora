@@ -1398,11 +1398,18 @@ export class ToolExecutor {
         // 渐进披露 L2：读取激活角色包内嵌技能正文（readSkill 回调由 agent 装配注入）
         // name 为必填参数，已由 validateAndCoerceArgs 校验，此处直接用
         if (!this.readSkill) {
-          return '[ERR:TOOL:NOT_AVAILABLE] read_skill 不可用：未装配角色包技能读取回调';
+          // 能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
+          const notAvailableText =
+            '[ERR:TOOL:NOT_AVAILABLE] read_skill 不可用：未装配角色包技能读取回调';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         const content = await this.readSkill(strArg('name'));
         if (content === null) {
-          return `[ERR:SKILL_NOT_FOUND] 未找到技能 "${strArg('name')}"（角色包 skills/ 与全局技能池均无此名，或技能正文读取失败）`;
+          // 技能未找到 = 执行失败事实 → 显式 emit failed
+          const notFoundText = `[ERR:SKILL_NOT_FOUND] 未找到技能 "${strArg('name')}"（角色包 skills/ 与全局技能池均无此名，或技能正文读取失败）`;
+          emitOutcome?.(failedOutcome(notFoundText));
+          return notFoundText;
         }
         // 返回净化：技能正文当外部内容去控制字符 + 长度上限（防超长技能正文撑爆上下文）
         return sanitizeExternalText(content, SKILL_CONTENT_MAX_LEN);
@@ -1410,13 +1417,20 @@ export class ToolExecutor {
       case 'read_resource': {
         // 渐进披露 L3：读取技能的参考资源文件
         if (!this.readResource) {
-          return '[ERR:TOOL:NOT_AVAILABLE] read_resource 不可用：未装配 L3 资源读取回调';
+          // 能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
+          const notAvailableText =
+            '[ERR:TOOL:NOT_AVAILABLE] read_resource 不可用：未装配 L3 资源读取回调';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         const skillName = strArg('skill_name');
         const resourcePath = strArg('resource_path');
         const resourceContent = await this.readResource(skillName, resourcePath);
         if (resourceContent === null) {
-          return `[ERR:RESOURCE_NOT_FOUND] 未找到资源 "${resourcePath}"（技能 "${skillName}" 无此资源，或资源读取失败）`;
+          // 资源未找到 = 执行失败事实 → 显式 emit failed
+          const notFoundText = `[ERR:RESOURCE_NOT_FOUND] 未找到资源 "${resourcePath}"（技能 "${skillName}" 无此资源，或资源读取失败）`;
+          emitOutcome?.(failedOutcome(notFoundText));
+          return notFoundText;
         }
         // 返回净化：资源正文当外部内容去控制字符 + 长度上限（防超长资源撑爆上下文）
         return sanitizeExternalText(resourceContent, RESOURCE_CONTENT_MAX_LEN);
@@ -1690,7 +1704,10 @@ export class ToolExecutor {
       case 'list_resources': {
         // 渐进披露 L3：列出技能的资源清单
         if (!this.listResources) {
-          return '[ERR:TOOL:NOT_AVAILABLE] list_resources 不可用';
+          // 能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
+          const notAvailableText = '[ERR:TOOL:NOT_AVAILABLE] list_resources 不可用';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         const skillName = strArg('skill_name');
         return await this.listResources(skillName);
@@ -1698,26 +1715,41 @@ export class ToolExecutor {
       case 'list_skills': {
         // 渐进披露 L1 补充：列出所有技能清单（>50 技能时使用）
         if (!this.listSkills) {
-          return '[ERR:TOOL:NOT_AVAILABLE] list_skills 不可用';
+          // 能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
+          const notAvailableText = '[ERR:TOOL:NOT_AVAILABLE] list_skills 不可用';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         return await this.listSkills();
       }
       case 'register_work': {
         // 作品投影登记（registerWork 回调由 agent 装配注入；用户主动触发写索引卡片）
         if (!this.registerWork) {
-          return '[ERR:TOOL:NOT_AVAILABLE] register_work 不可用：未装配作品投影登记回调';
+          // 能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
+          const notAvailableText =
+            '[ERR:TOOL:NOT_AVAILABLE] register_work 不可用：未装配作品投影登记回调';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         const path = strArg('path');
         const description = strArg('description');
         if (!path || !description) {
-          return '[ERR:INVALID_ARG] register_work 需要 path（相对项目根）与 description（一句话说明）参数';
+          // 非法参数 = 执行失败事实（方案明文 INVALID_ARG=failed）→ 显式 emit failed
+          const invalidArgText =
+            '[ERR:INVALID_ARG] register_work 需要 path（相对项目根）与 description（一句话说明）参数';
+          emitOutcome?.(failedOutcome(invalidArgText));
+          return invalidArgText;
         }
         return await this.registerWork(path, description);
       }
       case 'run_team_meeting': {
         // 评估/评审型小组会议（runTeamMeeting 回调由 agent 装配注入；工具内嵌一次 LLM 调用）
         if (!this.runTeamMeeting) {
-          return '[ERR:TOOL:NOT_AVAILABLE] run_team_meeting 不可用：未装配小组会议回调';
+          // 能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
+          const notAvailableText =
+            '[ERR:TOOL:NOT_AVAILABLE] run_team_meeting 不可用：未装配小组会议回调';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         const group = strArg('group');
         const topic = strArg('topic');
