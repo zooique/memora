@@ -18,6 +18,7 @@ import {
   filterCallableToolCalls,
   isRetryableToolError,
   auditToolCallPairing,
+  isToolFailure,
 } from '@/agent/managers/toolCallHelpers.js';
 
 // ─── parseAskCalls ────────────────────────────────────
@@ -359,5 +360,103 @@ describe('auditToolCallPairing（批次成形发送边界守卫纯谓词）', ()
       { kind: 'nameTooLong', toolCallId: 'c1', length: 65 },
       { kind: 'unpairedAssistantCall', toolCallId: 'c1' },
     ]);
+  });
+});
+
+// ─── isToolFailure（失败判据单点 · SCRIPT-1 / METRICS-PREFIX-1）────────────
+
+/**
+ * 失败判据的**前缀约定契约**。
+ *
+ * 存在的理由：失败判据此前散落三处手写 `[ERR`，靠「护栏文案刻意避开 `[ERR` 前缀」
+ * 这条**隐性约定**维持「拦截不算失败」——无声明、无测试锁定。新护栏一旦用了失败前缀，
+ * 拦截即被静默误计为失败。本清单把该约定**显式化**：每个前缀要么判失败、要么明写豁免。
+ */
+describe('isToolFailure · 前缀约定契约', () => {
+  /** 判为失败的族：结构化错误 + 执行三态（`formatExecutionResult` 的 kind 三值） */
+  it.each([
+    ['[ERR:TOOL:FILE_NOT_FOUND] 文件不存在', '[ERR 族 · 内核结构化错误'],
+    ['[ERR:INVALID_ARG] 参数错误', '[ERR 族 · 参数非法'],
+    ['[ERR:PATH_DENIED] 路径越界', '[ERR 族 · 路径拒绝'],
+    ['[ERR:COMMAND_DECLINE] 命令未获许可', '[ERR 族 · 确认拒绝（fail-closed）'],
+    ['[SCRIPT_ERROR] 脚本执行失败（退出码: 9009）', '执行三态 · SCRIPT 非零退出'],
+    ['[SCRIPT_TIMEOUT] 脚本执行超时（超过 60s）', '执行三态 · SCRIPT 超时'],
+    ['[CODE_ERROR] 代码执行失败（退出码: 1）', '执行三态 · CODE 非零退出'],
+    ['[CODE_TIMEOUT] 代码执行超时（超过 30s）', '执行三态 · CODE 超时'],
+    ['[COMMAND_ERROR] 命令执行失败（退出码: -1）', '执行三态 · COMMAND 非零退出'],
+    ['[COMMAND_TIMEOUT] 命令执行超时（超过 60s）', '执行三态 · COMMAND 超时'],
+  ])('%s → 失败（%s）', (result) => {
+    expect(isToolFailure(result)).toBe(true);
+  });
+
+  /**
+   * 豁免清单 = **非失败语义**的前缀（主动挡下 / 未执行 / 幂等跳过），逐条断言非失败。
+   *
+   * 这三条是「拦截不算失败」纪律的全部实现细节——新增护栏文案时**必须**在此登记，
+   * 否则该前缀的归属无人守护（要么误计、要么靠"记得避开"维持 = 回到隐性约定）。
+   */
+  it.each([
+    ['[SEARCH_LIMIT_REACHED] 搜索收敛护栏已达阈值', '搜索收敛护栏'],
+    ['[ALREADY_READ] 该内容已在上下文中', '读取防重拦截'],
+    ['[ASK_LIMIT] 主动提问次数已达上限', '提问次数护栏'],
+  ])('%s → 非失败（%s：拦截非失败，纪律显式锁定）', (result) => {
+    expect(isToolFailure(result)).toBe(false);
+  });
+
+  /**
+   * 未执行 / 幂等跳过族（2026-10-06 全量 grep 生产代码方括号前缀后补登记）。
+   *
+   * 前三条原**未登记**于豁免清单 —— 豁免行为正确（判据本就返回 false），但「正确」若
+   * 无断言锁定就等于隐性约定：将来有人把 `*_ABORTED` 误加进 `TOOL_FAILURE_PATTERNS`
+   * （看着像"错误"），或新增同族前缀时无从查证归属。
+   * 语义依据 = loop 的「不执行 ≠ 不回答」纪律：未执行不是工具跑失败了。
+   */
+  it.each([
+    ['[TOOL_ABORTED] 该调用因本轮被中止而未执行。', '本轮中止 · 未执行'],
+    ['[ASK_ABORTED] 用户未回答该提问', '提问中止 · 未执行'],
+    ['[ASK_SUSPENDED] 因等待回答本轮未执行', '提问挂起 · 未执行'],
+    ['[SKIP:TOOL:IDEMPOTENT] 幂等跳过，未执行', '幂等跳过 · 主动挡下'],
+  ])('%s → 非失败（%s）', (result) => {
+    expect(isToolFailure(result)).toBe(false);
+  });
+
+  /**
+   * 护栏提示族（2026-10-06 全量 grep 生产代码 `[XXX]` 标签后补登记，共 25 个非失败标签）。
+   *
+   * ⚠️ **层级说明（勿误读为「也要经判据」）**：以下几条是**注入 system prompt 的护栏提示**
+   * （`GUARD_RAIL_PROMPTS`），不作为 tool 结果返回，**结构上就不经 `isToolFailure`**。
+   * 登记它们是为了让「将来有人把护栏文案改成 tool 结果、或误加进 `TOOL_FAILURE_PATTERNS`」
+   * 这两种改动被断言挡住 —— 护栏提示一旦被当成失败计，前缀会静默误伤 UI 与 metrics。
+   */
+  it.each([
+    ['[READ_FAILED_LIMIT] 该目标已连续失败 3 次（阈值 3），可能不存在。', '读取失败上限护栏 · system prompt'],
+    ['[WRITE_LOOP_STOP] 你已连续 3 次重写同一文件 a.ts，疑似自环。', '写循环护栏 · system prompt'],
+  ])('%s → 非失败（%s）', (result) => {
+    expect(isToolFailure(result)).toBe(false);
+  });
+
+  it('正常成功输出 → 非失败（含疑似前缀的普通文本不误判）', () => {
+    expect(isToolFailure('文件内容如下')).toBe(false);
+    expect(isToolFailure('(无输出)')).toBe(false);
+    // 前缀出现在正文中（非行首）不误判——判据锚定行首，判的是「这个结果本身是不是错误」
+    expect(isToolFailure('日志片段：昨天遇到 [ERR:TOOL:X] 一次')).toBe(false);
+  });
+
+  /**
+   * 变异靶标：把执行三态族从判据里删掉 → 上方 5 条 `*_ERROR` / `*_TIMEOUT` 用例转红
+   * （即台账 SCRIPT-1 的原始现象：脚本族失败恒判成功）。已实证。
+   */
+  it('执行三态族是判据内成员（删掉即红 · SCRIPT-1 回归锁）', () => {
+    const threeState = [
+      '[SCRIPT_ERROR]',
+      '[SCRIPT_TIMEOUT]',
+      '[CODE_ERROR]',
+      '[CODE_TIMEOUT]',
+      '[COMMAND_ERROR]',
+      '[COMMAND_TIMEOUT]',
+    ];
+    for (const p of threeState) {
+      expect(isToolFailure(`${p} 文案`)).toBe(true);
+    }
   });
 });

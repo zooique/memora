@@ -133,7 +133,12 @@ export interface AgentMetrics {
   tools: {
     /** 工具调用总次数 */
     callCount: number;
-    /** 失败次数（结果以 [ERR 开头） */
+    /**
+     * 失败次数（判据 = `isToolFailure`：覆盖 `[ERR…` 结构化错误族与执行三态族
+     * `[SCRIPT_ERROR]` / `[CODE_TIMEOUT]` / `[COMMAND_ERROR]` …）。
+     * 判据真源 = `toolCallHelpers.isToolFailure`，**勿在本文件复述前缀**——
+     * 口径变更时只改那一个函数即可，否则文档层会留下一个已失效的定义。
+     */
     failureCount: number;
     /**
      * 未解析工具意图数（文本骨架 <tool_call>/<function=> 但无常原生 toolCalls）。

@@ -48,6 +48,7 @@ import {
   parseAskCalls,
   wrapToolResult,
   isRetryableToolError,
+  isToolFailure,
 } from '@/agent/managers/toolCallHelpers.js';
 import { LlmCaller } from '@/agent/managers/llmCaller.js';
 import type { LlmCallResult } from '@/agent/managers/llmCaller.js';
@@ -2165,16 +2166,23 @@ export class AgentLoop {
 
     const results = await Promise.all(toolExecs.map((e) => e.promise));
 
-    this._processToolResults(toolCalls, results);
+    // 拦截标记随结果一并下传：失败计数据此排除「主动挡下」的那部分
+    // （与下方编排层 ok 判据同源——同一份 blocked 事实喂两处，禁各读一份）
+    this._processToolResults(
+      toolCalls,
+      results,
+      toolExecs.map((e) => e.blocked),
+    );
 
     // 按原始顺序 yield tool_result
     for (let i = 0; i < toolCalls.length; i++) {
       const tc = toolCalls[i]!;
       const result = results[i]!;
       // 第三态：策略拦截 blocked=true 非成功亦非失败——ok=false 且不计成功搜索数；
-      // 失败（[ERR 前缀）与拦截区分开，UI 显示「已拦截」，metrics 失败数不把拦截算作失败
+      // 失败（isToolFailure 判据，见 toolCallHelpers）与拦截区分开，UI 显示「已拦截」，
+      // metrics 失败数不把拦截算作失败
       const blocked = toolExecs[i]!.blocked;
-      const ok = !blocked && !result.startsWith('[ERR');
+      const ok = !blocked && !isToolFailure(result);
       // 搜索收敛护栏：累计本闭环成功 web_search 次数（LLM 反复搜索不收敛时据此注入收敛提示）
       if (tc.function.name === 'web_search' && ok) {
         this.successfulWebSearchCount++;
@@ -3346,10 +3354,18 @@ export class AgentLoop {
 
   // ─── Reflection 辅助方法 ────────────────────────────────
 
-  /** 处理工具执行结果：push tool 消息 + 统计失败数 */
+  /**
+   * 处理工具执行结果：push tool 消息 + 统计失败数
+   *
+   * @param blockedFlags 每条工具调用的策略拦截标记（与 toolCalls 同序）。**显式传入**
+   *   而非靠「护栏文案刻意避开失败前缀」维持——那是隐性约定、无声明、无测试锁定，
+   *   新护栏一旦用失败前缀即静默误计拦截为失败（台账 METRICS-PREFIX-1 结构缺口）。
+   *   缺省 undefined = 无拦截（调用方未提供时的兼容路径，等价于全 false）。
+   */
   private _processToolResults(
     toolCalls: NonNullable<Message['toolCalls']>,
     results: string[],
+    blockedFlags?: readonly boolean[],
   ): void {
     for (let i = 0; i < toolCalls.length; i++) {
       const tc = toolCalls[i]!;
@@ -3358,7 +3374,9 @@ export class AgentLoop {
       // ERR 前缀保留在包裹内，供 isRetryableToolError 识别（该正则不锚定行首）
       const wrapped = wrapToolResult(tc.function.name, result);
       this.appendToolMessage(wrapped, tc.id);
-      if (result.startsWith('[ERR')) {
+      // 拦截（blocked）非失败——「我们主动挡的」与「工具真的失败了」必须分开计数。
+      // 判据单点 = isToolFailure（覆盖 [ERR 族 + 执行三态族，见 toolCallHelpers）。
+      if (!blockedFlags?.[i] && isToolFailure(result)) {
         this.metrics.toolFailureCount++;
       }
     }

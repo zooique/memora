@@ -116,6 +116,43 @@ export function isRetryableToolError(result: string): boolean {
   return isRetryableErrorCode(code);
 }
 
+/**
+ * 工具失败前缀（判据 SSOT，`isToolFailure` 唯一真源）。
+ *
+ * 两族，缺一不可：
+ *  ① `[ERR…`    —— 内核结构化错误族（`[ERR:TOOL:X]` / `[ERR:INVALID_ARG]` / `[ERR:PATH_DENIED]` …）
+ *  ② `*_ERROR` / `*_TIMEOUT` —— **执行三态族**（`formatExecutionResult` 的 kind 三值
+ *     SCRIPT / CODE / COMMAND 各自产出 `[SCRIPT_ERROR]` / `[CODE_TIMEOUT]` /
+ *     `[COMMAND_ERROR]` …）。**这一族历史上不在 `[ERR` 判据内** ⇒ 脚本/代码/命令
+ *     工具的全部失败与超时恒被判为成功（台账 SCRIPT-1）。
+ *
+ * ⚠️ 改这里等于改失败判据（口径变更）：新增前缀会让 `toolFailureCount` 历史数字上升，
+ * 前缀约定必须由 `managers/__tests__/toolCallHelpers.test.ts` 的「isToolFailure · 前缀约定契约」
+ * 段锁定（失败族 + 豁免族逐条断言），不得靠"记得避开"维持。
+ */
+const TOOL_FAILURE_PATTERNS: readonly RegExp[] = [
+  /^\[ERR/,
+  /^\[(?:SCRIPT|CODE|COMMAND)_(?:ERROR|TIMEOUT)\]/,
+];
+
+/**
+ * 判断工具结果是否为失败（判据单点）。
+ *
+ * 消费方**全部**经此函数，禁止再手写前缀判断：
+ *   - `toolRunner` 执行层 `ok`（喂 outbox 幂等）
+ *   - `loop` 编排层 `ok`（含 blocked 第三态排除）
+ *   - `loop` `toolFailureCount` 计数
+ *
+ * **不锚定行首的例外说明**：`isRetryableToolError` 刻意不锚定（结果被 `<tool_result>`
+ * 包裹后前缀不在行首）；本函数**锚定行首**——它判的是「这个工具结果本身是不是错误」，
+ * 包裹发生在计数之后（`_processToolResults` 先判后包），故行首即真源。
+ * 若将来调用顺序变化，必须同步去掉锚定并重跑契约测试。
+ */
+export function isToolFailure(result: string): boolean {
+  return TOOL_FAILURE_PATTERNS.some((re) => re.test(result));
+}
+
+
 /** 供调用方复用的类型（避免深导入 agent/types） */
 export type { AskQuestion };
 

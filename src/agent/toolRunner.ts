@@ -17,6 +17,7 @@ import { TRACE_SPANS } from '@/agent/tracer.js';
 import { MemoraError } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
+import { isToolFailure } from '@/agent/managers/toolCallHelpers.js';
 
 /** 工具调用元素契约（OpenAI 协议结构）——单一真源 llm/types.ToolCall（Message.toolCalls 同源） */
 import type { ToolCall } from '@/llm/types.js';
@@ -56,7 +57,8 @@ export class ToolRunner {
    * 执行单个工具（并行独立执行单元，无共享状态，可安全并发）。
    * @param tc 工具调用元素
    * @param signal 中止信号（与工具执行 race，signal 先 abort 返回 ABORTED 错误串）
-   * @returns 执行结果串（成功文本或 [ERR:TOOL:code] 错误串）
+   * @returns 执行结果串（成功文本或失败串——`[ERR…` 族 / 执行三态族 `*_ERROR`·`*_TIMEOUT`；
+   *   是否为失败一律经 `isToolFailure` 判定，勿在前缀上另立判据）
    */
   async runOne(tc: ToolCall, signal?: AbortSignal): Promise<string> {
     // 工具执行 Span（并发时多个 span 时间重叠，tracer 可观测并发度）
@@ -82,7 +84,8 @@ export class ToolRunner {
       // raceToolWithSignal 兼容 signal 中断（每个调用独立 race，监听器无并发副作用）
       const result = await this.raceToolWithSignal(tc.function.name, decision.args, signal);
       // 通知上层工具执行完成（供 outbox 幂等模式记录是否已执行）
-      const ok = !result.startsWith('[ERR');
+      // 判据单点 = isToolFailure（覆盖 [ERR 族 + 执行三态族，见 toolCallHelpers）
+      const ok = !isToolFailure(result);
       this.deps.onToolExecuted?.(tc.function.name, decision.args, result, ok);
 
       // 记录工具执行结果摘要到 Span（可观测性增强：宿主可追踪每次工具调用的结果）
