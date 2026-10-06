@@ -1014,7 +1014,11 @@ export class ToolExecutor {
         // web_search 由 ToolExecutor 直接处理，不经过 BuiltinToolHandlers（文件系统导向）
         // 使用注入的 webSearchProvider 执行网络搜索，带超时保护
         if (!this.webSearchProvider) {
-          return '[ERR:TOOL:NOT_AVAILABLE] 错误：网络搜索功能未配置，请先注入 IWebSearchProvider';
+          // 未注入提供方 = 工具能力缺失（执行失败事实，非主动拦截）→ 显式 emit failed
+          const notAvailableText =
+            '[ERR:TOOL:NOT_AVAILABLE] 错误：网络搜索功能未配置，请先注入 IWebSearchProvider';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         const query = strArg('query');
         if (!query) {
@@ -1063,7 +1067,11 @@ export class ToolExecutor {
         // web_fetch 由 ToolExecutor 直接处理（与 web_search 同侧，均为外部信息获取）
         // 使用注入的 fetchProvider 抓取网页正文，带超时保护；失败由 safeFetch 降级
         if (!this.fetchProvider) {
-          return '[ERR:TOOL:NOT_AVAILABLE] 错误：网页抓取功能未配置，请先注入 IFetchProvider';
+          // 未注入提供方 = 工具能力缺失（执行失败事实，非主动拦截）→ 显式 emit failed
+          const notAvailableText =
+            '[ERR:TOOL:NOT_AVAILABLE] 错误：网页抓取功能未配置，请先注入 IFetchProvider';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         const url = strArg('url');
         if (!url) {
@@ -1240,7 +1248,11 @@ export class ToolExecutor {
         // search_project 由 ToolExecutor 直接处理（与 web_search/run_code 同侧，均为宿主注入能力）
         // 使用注入的 projectSearchProvider 执行项目内搜索，带超时保护；失败由 safe* 降级
         if (!this.projectSearchProvider) {
-          return '[ERR:TOOL:NOT_AVAILABLE] 错误：项目搜索功能未配置，请先注入 IProjectSearchProvider';
+          // 未注入提供方 = 工具能力缺失（执行失败事实，非主动拦截）→ 显式 emit failed
+          const notAvailableText =
+            '[ERR:TOOL:NOT_AVAILABLE] 错误：项目搜索功能未配置，请先注入 IProjectSearchProvider';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         const query = strArg('query');
         const mode = strArg('mode', 'name');
@@ -1271,11 +1283,17 @@ export class ToolExecutor {
           );
         }
         if (mode !== 'name' && mode !== 'content') {
-          return `[ERR:INVALID_ARG] 不支持的搜索模式 "${mode}"，仅支持 name/content`;
+          // 非法参数 = 执行失败事实（方案明文 INVALID_ARG=failed）→ 显式 emit failed
+          const invalidModeText = `[ERR:INVALID_ARG] 不支持的搜索模式 "${mode}"，仅支持 name/content`;
+          emitOutcome?.(failedOutcome(invalidModeText));
+          return invalidModeText;
         }
         if (mode === 'content') {
           if (!query) {
-            return '[ERR:INVALID_ARG] content 模式需要 query 内容关键词';
+            // 非法参数 = 执行失败事实（方案明文 INVALID_ARG=failed）→ 显式 emit failed
+            const missingQueryText = '[ERR:INVALID_ARG] content 模式需要 query 内容关键词';
+            emitOutcome?.(failedOutcome(missingQueryText));
+            return missingQueryText;
           }
           // 放宽词表（精确优先 + 零命中回退）：剔除与整串等价的词——否则宿主会做一轮与
           // 精确轮逐字相同的徒劳扫描，并回报一个名不副实的 relaxed

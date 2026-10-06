@@ -653,6 +653,112 @@ describe('工具执行器（6 个工具）', () => {
     });
   });
 
+  describe('★ 原生 outcome（SCRIPT-2 B5-a · 信息获取族 status 断言）', () => {
+    /**
+     * 构造原生 outcome 捕获器：execute 第 4 参传入，按调用次序收集结构化结果。
+     * （B5 语义裁决：失败点 emit failed；成功点**不 emit**——各族成败不经执行事实
+     * 计算，失败即独立事实点，成功 = 裸文本走 runOne 的 ok 兜底。）
+     */
+    function makeSink(): { readonly list: ToolOutcome[]; sink: (o: ToolOutcome) => void } {
+      // 收集数组：断言 status 与 text 同源关系的唯一事实面
+      const list: ToolOutcome[] = [];
+      return { list, sink: (o) => list.push(o) };
+    }
+
+    /** 最小 projectSearchProvider 桩：仅为通过注入闸（mode 校验在其后，桩不会被真正调用） */
+    const stubProjectProvider = {
+      searchFiles: async () => ({ matches: [] }),
+      searchText: async () => ({ matches: [], truncated: false, scannedFiles: 0 }),
+    };
+    // 注入桩提供者的执行器（第 8 参 = projectSearchProvider）
+    let execWithStub: ToolExecutor;
+    beforeAll(() => {
+      execWithStub = new ToolExecutor(
+        tmpProject,
+        security,
+        index,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        stubProjectProvider,
+      );
+    });
+
+    it('web_search 未注入提供者 → emit failed（能力缺失属执行失败，非拦截）', async () => {
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'web_search',
+        JSON.stringify({ query: 'test' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.blockedReason).toBeUndefined();
+      // 结构化面与渲染面同源：text 就是返回值本身，不存在两份文本
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('web_fetch 未注入提供者 → emit failed', async () => {
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'web_fetch',
+        JSON.stringify({ url: 'https://example.com' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('search_project 未注入提供者 → emit failed', async () => {
+      const { list, sink } = makeSink();
+      const out = await executor.execute('search_project', JSON.stringify({}), undefined, sink);
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('search_project mode 非法 → emit failed（INVALID_ARG=failed，方案明文裁决）', async () => {
+      const { list, sink } = makeSink();
+      const out = await execWithStub.execute(
+        'search_project',
+        JSON.stringify({ query: 'x', mode: 'bogus' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('search_project content 模式缺 query → emit failed', async () => {
+      const { list, sink } = makeSink();
+      const out = await execWithStub.execute(
+        'search_project',
+        JSON.stringify({ mode: 'content' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('成功路径不 emit（零 emit = 裸文本走 ok 兜底；B5 契约：失败即事实点）', async () => {
+      const { list, sink } = makeSink();
+      await execWithStub.execute(
+        'search_project',
+        JSON.stringify({ query: '**/*.ts', mode: 'name' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(0);
+    });
+  });
+
   describe('web_fetch / run_code（未注入提供者）', () => {
     it('list 不应包含 web_fetch 与 run_code 工具', () => {
       const names = executor.list.map((t) => t.name);
