@@ -725,10 +725,9 @@ describe('AgentLoop · 后台命令自然终局失败计数（METRICS-BGTASK-1�
     const taskId = registry.start(FAIL_CMD, process.cwd());
     // settle 先写 status 再同步 notify ⇒ 轮询到终态时 completion 回调必已结算完毕
     // （listener 已被 loop 占用，不能再 setCompletionListener 事件驱动，只能轮询状态）
-    await vi.waitFor(
-      () => expect(registry.get(taskId)?.status).toBe('completed'),
-      { timeout: 10_000 },
-    );
+    await vi.waitFor(() => expect(registry.get(taskId)?.status).toBe('completed'), {
+      timeout: 10_000,
+    });
     expect(loop.getMetrics().tools.failureCount).toBe(before + 1);
   });
 
@@ -736,10 +735,9 @@ describe('AgentLoop · 后台命令自然终局失败计数（METRICS-BGTASK-1�
     const { loop, registry } = makeLoopWithRegistry();
     const before = loop.getMetrics().tools.failureCount;
     const taskId = registry.start(OK_CMD, process.cwd());
-    await vi.waitFor(
-      () => expect(registry.get(taskId)?.status).toBe('completed'),
-      { timeout: 10_000 },
-    );
+    await vi.waitFor(() => expect(registry.get(taskId)?.status).toBe('completed'), {
+      timeout: 10_000,
+    });
     expect(loop.getMetrics().tools.failureCount).toBe(before);
   });
 
@@ -749,10 +747,9 @@ describe('AgentLoop · 后台命令自然终局失败计数（METRICS-BGTASK-1�
     // timeoutMs 1000 = 钳制下限（normalizeBackgroundTimeoutMs 收敛于 [1000, 30min]），
     // 20s 长驻命令必超时；waitFor 轮询到 timedOut 即结算完成
     const taskId = registry.start(SLEEP_CMD, process.cwd(), 1000);
-    await vi.waitFor(
-      () => expect(registry.get(taskId)?.status).toBe('timedOut'),
-      { timeout: 10_000 },
-    );
+    await vi.waitFor(() => expect(registry.get(taskId)?.status).toBe('timedOut'), {
+      timeout: 10_000,
+    });
     expect(loop.getMetrics().tools.failureCount).toBe(before + 1);
   });
 });
