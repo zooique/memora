@@ -18,10 +18,11 @@
  * | 正常成功 | 执行层（ToolRunner） | `ok=true` |
  * | 执行失败 | 执行层 | `ok=false, blocked=false` |
  * | 执行层闸门拒绝 / 幂等跳过 | 执行层报 blocked | `ok=false`（已知口径分歧） |
- * | **loop 护栏拦截** | **无 outcome（unregistered 观测）** | `ok=false, blocked=true` |
+ * | loop 护栏拦截 | loop 拦截点补写（B2-b，blocked 同向一致） | `ok=false, blocked=true` |
+ * | loop 内自执行旁路（compress / remember） | `_bypassOutcomeOf` 派生（B2-b） | 拒绝形 `ok=true`（已知口径分歧） |
  *
- * ⚠️ 护栏命中时工具**根本没进 ToolRunner**（loop 直接回拒绝文案 + `blocked:true`），
- * 执行层无从上报 ⇒ 该路径当前无 outcome，护栏点的 outcome 写入在后续批次补齐。
+ * B2-b 起全部路径都有 outcome 上报 ⇒ `toolOutcomeUnreportedCount` 归零
+ * （该观测集保留作「未来新增路径漏报」的哨兵，非僵尸容器）。
  *
  * ## 变异靶标（已实证红→绿，勿改坏）
  *
@@ -114,9 +115,9 @@ describe('SCRIPT-2 · status 与既有 ok 判据的一致性（P1 期双轨守�
     }
   });
 
-  it('★ blocked 路径：loop 护栏拦截 → 无 outcome（unregistered），ok=false + blocked', async () => {
+  it('★ blocked 路径：loop 护栏拦截 → B2-b 拦截点补写 outcome，unreported 归零', async () => {
     // 两次同 path 读取 → 第二次命中 read_dedup 护栏，**工具根本没进 ToolRunner**。
-    // 护栏拦截不经 ToolRunner：执行层压根没被调用 ⇒ 无 outcome，落 unregistered 观测。
+    // B2-b 在编排层结果循环补写 blockedOutcome（read_dedup），与编排层 blocked 同向一致。
     const toolExecutor = vi.fn().mockResolvedValue('文件正文');
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -136,8 +137,8 @@ describe('SCRIPT-2 · status 与既有 ok 判据的一致性（P1 期双轨守�
     const blockedOne = reads[1]!;
     expect(blockedOne.blocked).toBe(true);
     expect(blockedOne.ok).toBe(false);
-    // 护栏拦截无上报、走 unreported 分支 ⇒ 本例钉住「护栏拦截不经过双轨核对」，
-    // 该点补 outcome 写入是后续批次的施工项（由 unreported 计数读出）。
+    // B2-b：护栏点已补报 outcome ⇒ unreported 归零（非 0 即拦截点补报断线，哨兵立即报警）
+    expect(loop.getMetrics().tools.toolOutcomeUnreportedCount).toBe(0);
     expect(toolExecutor).toHaveBeenCalledTimes(1); // 第二次压根没进执行层
   });
 
@@ -199,9 +200,10 @@ describe('SCRIPT-2 · status 与既有 ok 判据的一致性（P1 期双轨守�
     expect(m.tools.toolBlockedDisagreementCount).toBeGreaterThan(0);
   });
 
-  it('★ 观测集有真实读取口：未经 ToolRunner 的旁路路径计入 metrics（P2 施工清单）', async () => {
-    // `compress_context` 由 loop 内自执行、**不经 ToolRunner** ⇒ 落 unreported 集。
-    // 若该集无结算出口（P1 自审曾查出的僵尸容器缺陷），本例即转红。
+  it('★ B2-b 旁路补报：compress_context 无目标 → unreported 归零，拒绝形落已知分歧族', async () => {
+    // `compress_context` 由 loop 内自执行、**不经 ToolRunner** ⇒ B2-b 前每次落 unreported
+    // （该计数曾是 P2 施工清单的读出口）。B2-b 起编排层按分支形态补报：
+    // 无目标 = 主动拒绝 → blocked(no_compress_target)；旧口径判 ok ⇒ 落已知分歧族（B4 裁决）。
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [{ toolCalls: [call('c1', 'compress_context', '{"target":"old"}')] }],
@@ -213,7 +215,55 @@ describe('SCRIPT-2 · status 与既有 ok 判据的一致性（P1 期双轨守�
     const chunks = await runOnce(loop, '压缩上下文');
     // 走完了流程（不抛错）
     expect(chunks.length).toBeGreaterThan(0);
-    // 观测可读：非 0 即证明「未经 ToolRunner 的路径」被成功捕获并结算进 metrics
-    expect(loop.getMetrics().tools.toolOutcomeUnreportedCount).toBeGreaterThan(0);
+    // 旁路已补报 ⇒ unreported 归零（哨兵：非 0 即旁路补报断线）
+    expect(loop.getMetrics().tools.toolOutcomeUnreportedCount).toBe(0);
+    // 拒绝形（编排算 ok / 上报 blocked）如实登记为已知分歧，不静默
+    expect(loop.getMetrics().tools.toolBlockedDisagreementCount).toBeGreaterThan(0);
+  });
+
+  it('★ B2-b 旁路补报：remember_intel 非法 note → unreported 归零，拒绝形落已知分歧族', async () => {
+    // note 缺失 → handleRememberIntel 返回「未写入」文案 = 主动拒绝写入
+    // → blocked(invalid_intel_note)；旧口径判 ok ⇒ 落已知分歧族（B4 裁决）。
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('x', 'remember_intel', '{}')] }],
+        [{ content: '整合完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('不应被调用'),
+    });
+    const chunks = await runOnce(loop, '收集情报');
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(loop.getMetrics().tools.toolOutcomeUnreportedCount).toBe(0);
+    expect(loop.getMetrics().tools.toolBlockedDisagreementCount).toBeGreaterThan(0);
+  });
+
+  it('★ B2-b 旁路补报：compress_context 成功形 → ok 镜像一致，零分歧', async () => {
+    // 成功生成临时摘要 → _bypassOutcomeOf 报 ok；旧口径也判 ok ⇒ 同向一致，不落分歧。
+    // 锁「拒绝形落分歧、成功形零分歧」的分野，防分歧计数虚高。
+    const provider = mockMultiTurnProvider([
+      [{ content: '第一轮回答' }], // turn0：首轮纯文本（建立可压缩历史）
+      [
+        {
+          toolCalls: [call('c1', 'compress_context', '{"target":"earliest_round"}')],
+        },
+      ], // turn1：触发压缩
+      [{ content: '临时摘要：首轮干的事' }], // turn2：压缩摘要
+      [{ content: '第二轮回答' }], // turn3：续答
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    for await (const {} of loop.processUserInput('第一个任务')) {
+      // drain：建立历史
+    }
+    for await (const {} of loop.processUserInput('当前任务')) {
+      // drain：触发压缩
+    }
+    const m = loop.getMetrics();
+    expect(m.tools.toolOutcomeUnreportedCount).toBe(0);
+    expect(m.tools.toolBlockedDisagreementCount).toBe(0);
   });
 });

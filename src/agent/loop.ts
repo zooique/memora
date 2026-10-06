@@ -49,6 +49,9 @@ import {
   wrapToolResult,
   isRetryableToolError,
   isToolFailure,
+  // B2-b：旁路工具 outcome 补报用（loop 自执行工具不经 ToolRunner，须在 loop 内补写）
+  blockedOutcome,
+  okOutcome,
 } from '@/agent/managers/toolCallHelpers.js';
 import type { ToolOutcome, BlockedReason } from '@/agent/managers/toolCallHelpers.js';
 import { LlmCaller } from '@/agent/managers/llmCaller.js';
@@ -493,6 +496,37 @@ export class AgentLoop {
         `但既有判定推出 ${expected}（text 前缀判据 ok=${ok} blocked=${blocked}）。` +
         `text 开头：${text.slice(0, 80)}`,
     );
+  }
+
+  /**
+   * SCRIPT-2 B2-b：loop 内自执行旁路工具（compress_context / remember_intel）的 outcome 派生。
+   *
+   * 这两类工具由 loop 现场执行、不经 ToolRunner ⇒ 此前无 outcome 上报，每次落 unreported
+   * 观测（P1 期已知缺口，B2-b 归零）。归类判据 = **loop 自产文案的分支形态**（前缀匹配范围
+   * 仅限 loop 自己写的文案，非外部内容，单点维护）：
+   * - 拒绝形（无可压缩目标 / 目标已不在当前上下文 / note 未写入）→ blocked 带旁路原因——
+   *   工具主动拒绝执行所请求的动作，与台账替身同族；编排层旧口径仍算 ok ⇒ 落已知分歧族
+   *   （stepBlockedDisagreements，B4 裁决），不抛错不中断。
+   * - 其余（含摘要生成失败 / 压缩失败）→ ok **镜像旧口径**：旧判据本就不把它们当失败
+   *   （非 [ERR 前缀），双轨期镜像保留零行为变更；B4 切换时随内部工具返回结构化一并重归类。
+   */
+  private _bypassOutcomeOf(toolName: string, text: string): ToolOutcome {
+    // compress_context：无目标/目标消失 = 主动拒绝压缩 → no_compress_target
+    if (toolName === COMPRESS_CONTEXT_TOOL.name) {
+      if (
+        text.startsWith('[compress_context] 无可压缩目标') ||
+        text.startsWith('[compress_context] 目标已不在当前上下文')
+      ) {
+        return blockedOutcome('no_compress_target', text);
+      }
+      return okOutcome(text);
+    }
+    // remember_intel：note 缺失/非法未写入 = 主动拒绝写入 → invalid_intel_note；已记录 → ok
+    if (toolName === REMEMBER_INTEL_TOOL.name) {
+      return text.includes('未写入') ? blockedOutcome('invalid_intel_note', text) : okOutcome(text);
+    }
+    // 其余工具不经此入口（护栏/替身在调用点带 blocked=true，compress/remember 之外无旁路）
+    return okOutcome(text);
   }
 
   /**
@@ -2331,6 +2365,26 @@ export class AgentLoop {
       // metrics 失败数不把拦截算作失败
       const blocked = toolExecs[i]!.blocked;
       const ok = !blocked && !isToolFailure(result);
+      // SCRIPT-2 B2-b：旁路工具 outcome 补报（unreported 归零）——
+      // ① blocked=true（护栏/台账替身）：不经 ToolRunner 无上报，此处补写；原因 B1 起要求齐备，
+      //    缺即抛错点名工具（禁静默兜底——无原因的 blocked 是契约破洞）。
+      // ② compress/remember（loop 内自执行）：按分支形态派生（见 _bypassOutcomeOf）。
+      // 写入后 _crossCheckOutcome 才有核对对象：护栏/替身侧 expected=blocked 同向一致；
+      // 旁路拒绝形属「编排算 ok / 执行面 blocked」已知分歧族（B4 裁决，登记不抛错）。
+      if (blocked) {
+        const reason = toolExecs[i]!.blockedReason;
+        if (!reason) {
+          throw new Error(
+            `SCRIPT-2：blocked 工具 ${tc.function.name} 缺 blockedReason（B1 起要求齐备，禁静默兜底）`,
+          );
+        }
+        this.stepOutcomes.set(tc.id, blockedOutcome(reason, result));
+      } else if (
+        tc.function.name === COMPRESS_CONTEXT_TOOL.name ||
+        tc.function.name === REMEMBER_INTEL_TOOL.name
+      ) {
+        this.stepOutcomes.set(tc.id, this._bypassOutcomeOf(tc.function.name, result));
+      }
       this._crossCheckOutcome(tc, result, ok, blocked);
       // 搜索收敛护栏：累计本闭环成功 web_search 次数（LLM 反复搜索不收敛时据此注入收敛提示）
       if (tc.function.name === 'web_search' && ok) {
