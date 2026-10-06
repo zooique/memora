@@ -196,5 +196,27 @@ describe('SCRIPT-2 · status 与既有 ok 判据的一致性（P1 期双轨守�
     expect(results[0]!.ok).toBe(false);
     // 工具确实没执行
     expect(toolExecutor).not.toHaveBeenCalled();
+    // ⭐ 观测必须**可读出口**（否则两个 Set 是僵尸容器、注释里的「施工清单由此读出」是撒谎）：
+    // 口径分歧计数必须落到 metrics 上（字段在 `tools` 子对象下 —— tsc 抓过这个错）。
+    const m = loop.getMetrics();
+    expect(m.tools.toolBlockedDisagreementCount).toBeGreaterThan(0);
+  });
+
+  it('★ 观测集有真实读取口：未经 ToolRunner 的旁路路径计入 metrics（P2 施工清单）', async () => {
+    // `compress_context` 由 loop 内自执行、**不经 ToolRunner** ⇒ 落 unreported 集。
+    // 若该集无结算出口（P1 自审曾查出的僵尸容器缺陷），本例即转红。
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'compress_context', '{"target":"old"}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('不应被调用'),
+    });
+    const chunks = await runOnce(loop, '压缩上下文');
+    // 走完了流程（不抛错）
+    expect(chunks.length).toBeGreaterThan(0);
+    // 观测可读：非 0 即证明「未经 ToolRunner 的路径」被成功捕获并结算进 metrics
+    expect(loop.getMetrics().tools.toolOutcomeUnreportedCount).toBeGreaterThan(0);
   });
 });

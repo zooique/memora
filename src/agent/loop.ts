@@ -2086,11 +2086,11 @@ export class AgentLoop {
     stepIndex: number,
   ): AsyncGenerator<AgentChunk, { aborted: boolean }, unknown> {
     this.appendAssistantToolCall(fullContent, toolCalls);
-    // SCRIPT-2 双轨暂存生命周期 = **一个 step**（step 内累积、step 边界清空）。
+    // SCRIPT-2 双轨暂存生命周期 = **一个 step**。
     // 跨 step 累积 = 引入第二个状态源，与「每个概念一个真源」冲突。
+    // ⚠️ 观测集（stepUnreportedOutcomes / stepBlockedDisagreements）的**清空在结算方法内**
+    // （`_settleStepOutcomeObservations`）——单点清空。此处只清 stepOutcomes（纯暂存，无结算概念）。
     this.stepOutcomes.clear();
-    this.stepUnreportedOutcomes.clear();
-    this.stepBlockedDisagreements.clear();
 
     // 工具并行执行（保持顺序的并发）：Promise.all 并发所有工具（总耗时≈最慢工具），
     // 但 tool_start/tool_result 与 messages 均按原始顺序 yield/push，保证 Reflection slice 正确
@@ -2401,10 +2401,43 @@ export class AgentLoop {
     // 循环结束后再查 abort：最后一个工具执行期间被 abort 时返回 aborted:true，
     // 否则 processUserInput 会进入下一轮 LLM 调用（浪费资源）
     if (signal?.aborted) {
+      // 观测结算：此处工具**已执行完毕**（循环已跑完），观测集里可能有本 step 的真实记录
+      // ⇒ 必须结算，否则 abort 收场会静默丢掉它们（结算方法幂等，重复调用安全）。
+      this._settleStepOutcomeObservations();
       return { aborted: true };
     }
     this.inAutonomousStep = false;
+    this._settleStepOutcomeObservations();
     return { aborted: false };
+  }
+
+  /**
+   * SCRIPT-2 本 step 观测结算（P1 期）：把两个 step 内观测集**累加进 `LoopMetrics`** 后清空。
+   *
+   * ## 为什么必须有这个方法（否则两个 Set 是僵尸容器）
+   *
+   * `stepUnreportedOutcomes` / `stepBlockedDisagreements` 若只写不读、每 step 清空即丢，
+   * 就是**无消费者的容器**（项目铁律：无消费方容器拒绝入库）—— 且注释里
+   * 「让 P2 施工清单由此直接读出」就成了**撒谎的注释**。
+   * ⇒ 结算进 `LoopMetrics`（既有 metrics 单一真源，与 `readDedupBlockCount` 同族做法），
+   * 经 `getMetrics()` 对外可见，注释才成立。
+   *
+   * ## 累加而非直接赋值
+   *
+   * 两个集合是 **step 内瞬态**（每 step 清空），而 `LoopMetrics` 字段是**本 turn 累计**
+   * ⇒ 须累加。`Set` 的 `add` 幂等 ⇒ 同一 toolCallId 在同 step 内重复触发也只计一次
+   * （如 `_processToolResults` 与 abort 早退路径都经过核对）。
+   *
+   * ## 幂等保证
+   *
+   * 方法本身可重复调用（异常路径 + 正常路径都调）—— 但**结算后立即清空**，
+   * 故第二次调用累加 0，天然幂等（与「清空放在读取方」互为对照，见调用点）。
+   */
+  private _settleStepOutcomeObservations(): void {
+    this.metrics.toolOutcomeUnreportedCount += this.stepUnreportedOutcomes.size;
+    this.metrics.toolBlockedDisagreementCount += this.stepBlockedDisagreements.size;
+    this.stepUnreportedOutcomes.clear();
+    this.stepBlockedDisagreements.clear();
   }
 
   /**
@@ -3088,6 +3121,8 @@ export class AgentLoop {
         unparsedToolIntentCount: this.metrics.unparsedToolIntentCount,
         ledgerStubEchoCount: this.metrics.ledgerStubEchoCount,
         readDedupBlockCount: this.metrics.readDedupBlockCount,
+        toolOutcomeUnreportedCount: this.metrics.toolOutcomeUnreportedCount,
+        toolBlockedDisagreementCount: this.metrics.toolBlockedDisagreementCount,
       },
       context: {
         truncationCount: this.contextManager.truncationCount,

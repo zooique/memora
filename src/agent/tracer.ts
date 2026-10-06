@@ -155,6 +155,24 @@ export interface AgentMetrics {
     /** read_dedup 护栏硬拦命中（同主体重复获取且结果仍在上下文）次数。
      *  与 ledgerStubEchoCount 互补：本计数 = L2 精确判重（模型乒乓信号，撞墙升级文案的量化基线）。 */
     readDedupBlockCount: number;
+    /**
+     * 未经 `ToolRunner` 的工具执行路径次数（SCRIPT-2 · `compress_context` /
+     * `remember_intel` / 台账替身等 loop 内自执行分支）。
+     *
+     * **用途** = SCRIPT-2 P2 三族推广的施工清单由此读出，不重新考古。
+     * P1 期这些路径不参与 status 双轨核对（行为不变），但它们是「失败语义仍寄生在文本」
+     * 的最后一批据点。健康态：P2 完成后应趋 0（全部接入或显式豁免）。
+     */
+    toolOutcomeUnreportedCount: number;
+    /**
+     * 「执行层报 `blocked`、编排层算 `failed`」的口径分歧次数（**待 P2/P3 裁决**）。
+     *
+     * 执行层闸门（宿主 denied / 只读拒绝 / 幂等跳过）语义是「主动挡下的」⇒ 报 blocked；
+     * 既有编排层把这些一律算 `ok=false` ⇒ 计入 `toolFailureCount`。两条判据历史口径不同，
+     * P1 期如实计数而不改判据（改则 Breaking，抛错则掐断工具流）。
+     * **健康态**：非 0 即「该口径分歧仍未裁决」的信号；裁决后应停增。
+     */
+    toolBlockedDisagreementCount: number;
   };
   /** 上下文管理指标 */
   context: {
