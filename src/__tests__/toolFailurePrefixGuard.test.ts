@@ -157,9 +157,10 @@ describe('工具失败前缀 · 双向对账守卫', () => {
     const wrong = Object.keys(NON_FAILURE_PREFIXES)
       .filter((tag) => isToolFailure(tag))
       .sort();
-    expect(wrong, `以下前缀已登记为非失败，但 isToolFailure 判为失败：\n  ${wrong.join('\n  ')}`).toEqual(
-      [],
-    );
+    expect(
+      wrong,
+      `以下前缀已登记为非失败，但 isToolFailure 判为失败：\n  ${wrong.join('\n  ')}`,
+    ).toEqual([]);
   });
 
   it('★ 拼接盲区规模登记（把「已知边界」钉成数字，防边界声明被当 boilerplate 忽略）', () => {

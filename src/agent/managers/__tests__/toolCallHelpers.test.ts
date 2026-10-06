@@ -442,7 +442,10 @@ describe('isToolFailure · 前缀约定契约（正向 · 配 toolFailurePrefixG
    */
   it.each([
     ['[KILLED] taskId=bg-1（已终止；以下为截至终止时的输出）', '主动终止 · 无退出码不算失败'],
-    ['[TASK_ALREADY_SETTLED] taskId=bg-1 已是终态（status=completed，无需终止）', '已终态回传 · 控制流事实'],
+    [
+      '[TASK_ALREADY_SETTLED] taskId=bg-1 已是终态（status=completed，无需终止）',
+      '已终态回传 · 控制流事实',
+    ],
     ['[BACKGROUND_STARTED] taskId=bg-2（命令已在本轮之外继续运行）', '后台启动成功 · 本轮不判成败'],
   ])('%s → 非失败（%s）', (result) => {
     expect(isToolFailure(result)).toBe(false);
@@ -457,7 +460,10 @@ describe('isToolFailure · 前缀约定契约（正向 · 配 toolFailurePrefixG
    * 这两种改动被断言挡住 —— 护栏提示一旦被当成失败计，前缀会静默误伤 UI 与 metrics。
    */
   it.each([
-    ['[READ_FAILED_LIMIT] 该目标已连续失败 3 次（阈值 3），可能不存在。', '读取失败上限护栏 · system prompt'],
+    [
+      '[READ_FAILED_LIMIT] 该目标已连续失败 3 次（阈值 3），可能不存在。',
+      '读取失败上限护栏 · system prompt',
+    ],
     ['[WRITE_LOOP_STOP] 你已连续 3 次重写同一文件 a.ts，疑似自环。', '写循环护栏 · system prompt'],
   ])('%s → 非失败（%s）', (result) => {
     expect(isToolFailure(result)).toBe(false);

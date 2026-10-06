@@ -274,7 +274,6 @@ export function isToolFailure(result: string): boolean {
   return TOOL_FAILURE_PATTERNS.some((re) => re.test(result));
 }
 
-
 /** 供调用方复用的类型（避免深导入 agent/types） */
 export type { AskQuestion };
 

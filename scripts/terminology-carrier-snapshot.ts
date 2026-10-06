@@ -341,6 +341,7 @@ const BASELINE_CODE: readonly string[] = [
   'STEP_TIMEOUT_MS',
   'Step',
   '_emitStepBoundary',
+  '_settleStepOutcomeObservations',
   'a1b2c3d4-step-1',
   'alignment-iteration',
   'animation-iteration-count',
@@ -384,13 +385,19 @@ const BASELINE_CODE: readonly string[] = [
   'step0',
   'step1',
   'step2',
+  // P1 双轨设施：step 阵营合法词（按 loop 迭代归属，非任务表语义），2026-10-06 补基线
+  'stepBlockedDisagreements',
   'stepBoundary',
   'stepBucket',
   'stepBudget',
   'stepCount',
   'stepIndex',
+  // P1 双轨设施：step 阵营合法词（按 loop 迭代归属，非任务表语义），2026-10-06 补基线
+  'stepOutcomes',
   'step_boundary',
   'steps',
+  // P1 双轨设施：step 阵营合法词（按 loop 迭代归属，非任务表语义），2026-10-06 补基线
+  'stepUnreportedOutcomes',
   'toolIdsInStep',
   'toolStepLimit',
   'withStepIndex',
@@ -415,6 +422,8 @@ const BASELINE_TEXT: readonly string[] = [
   '_emitIterationBoundary',
   '_emitStepBoundary',
   '_maybeEmitStepBoundary',
+  // P1 双轨设施：step 阵营合法词（按 loop 迭代归属，非任务表语义），2026-10-06 补基线
+  '_settleStepOutcomeObservations',
   'a1b2c3d4-step-1',
   'animation-iteration-count',
   'appendPlanStep',
@@ -462,6 +471,8 @@ const BASELINE_TEXT: readonly string[] = [
   'stepGroup',
   'stepIndex',
   'stepLogLenBefore',
+  // P1 双轨设施：step 阵营合法词（按 loop 迭代归属，非任务表语义），2026-10-06 补基线
+  'stepOutcomes',
   'step_boundary',
   'step_id',
   'steps',

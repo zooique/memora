@@ -187,12 +187,10 @@ describe('SCRIPT-2 原生 outcome 通道（B1）', () => {
   it('执行器 emit 原生 outcome → onToolSettled 原样上报（status 权威，不被文本判据覆盖）', async () => {
     const onToolSettled = vi.fn();
     // 执行器在返回字符串的同点 emit：文本是成功形、status 是 blocked —— 原生为唯一权威
-    const execute = vi.fn(
-      async (_n: string, _a: string, emit?: (o: ToolOutcome) => void) => {
-        emit?.({ status: 'blocked', text: 'OK', blockedReason: 'permission_denied' });
-        return 'OK';
-      },
-    );
+    const execute = vi.fn(async (_n: string, _a: string, emit?: (o: ToolOutcome) => void) => {
+      emit?.({ status: 'blocked', text: 'OK', blockedReason: 'permission_denied' });
+      return 'OK';
+    });
     const deps = makeDeps({ execute, onToolSettled });
     const runner = new ToolRunner(deps);
 
