@@ -341,7 +341,6 @@ const BASELINE_CODE: readonly string[] = [
   'STEP_TIMEOUT_MS',
   'Step',
   '_emitStepBoundary',
-  '_settleStepOutcomeObservations',
   'a1b2c3d4-step-1',
   'alignment-iteration',
   'animation-iteration-count',
@@ -385,19 +384,13 @@ const BASELINE_CODE: readonly string[] = [
   'step0',
   'step1',
   'step2',
-  // P1 双轨设施：step 阵营合法词（按 loop 迭代归属，非任务表语义），2026-10-06 补基线
-  'stepBlockedDisagreements',
   'stepBoundary',
   'stepBucket',
   'stepBudget',
   'stepCount',
   'stepIndex',
-  // P1 双轨设施：step 阵营合法词（按 loop 迭代归属，非任务表语义），2026-10-06 补基线
-  'stepOutcomes',
   'step_boundary',
   'steps',
-  // P1 双轨设施：step 阵营合法词（按 loop 迭代归属，非任务表语义），2026-10-06 补基线
-  'stepUnreportedOutcomes',
   'toolIdsInStep',
   'toolStepLimit',
   'withStepIndex',
@@ -473,6 +466,9 @@ const BASELINE_TEXT: readonly string[] = [
   'stepLogLenBefore',
   // P1 双轨设施：step 阵营合法词（按 loop 迭代归属，非任务表语义），2026-10-06 补基线
   'stepOutcomes',
+  // B4 退役设施：code 层已物理删除，text 层为退役清单历史档引用（方案/台账/CHANGELOG），2026-10-06 补基线
+  'stepBlockedDisagreements',
+  'stepUnreportedOutcomes',
   'step_boundary',
   'step_id',
   'steps',
