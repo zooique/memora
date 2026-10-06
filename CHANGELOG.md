@@ -39,6 +39,37 @@ B4 判据切换后编排层 / 计数层一律读 `ToolOutcome.status` 三值契�
 failedOutcome emit；kill_command 已终态分支的行首归属判据改读结构化进程终态（`timedOut` / `exitCode`），
 不再扫文本前缀。
 
+### ⚠️ Breaking（内核 · 判据桥消亡：失败语义全面结构化，文本前缀判据退役 · `SCRIPT-2` B5，已定档 3.1.0）
+
+**B5（最终消亡批次）收口**：未切族全部 outcome 化，文本前缀判据（`isToolFailure` +
+`TOOL_FAILURE_PATTERNS`）及其守卫（`toolFailurePrefixGuard.test.ts` / 前缀契约测试段）**物理删除**。
+`SCRIPT-2` 全案闭合：失败语义唯一承载 = `ToolOutcome.status`，文本只喂 LLM / 渲染。
+
+**落地内容（B5-a～e 五子批）**：
+
+- **全族 outcome 化**：信息获取族（web_search / web_fetch / search_project）、任务表族
+  （task_table_write / update）、渐进披露/回调族（read_skill / read_resource / list_resources /
+  list_skills / register_work / run_team_meeting）共 **21 个失败点**显式 emit failedOutcome；
+  kill_command 六出口全 emit（NOT_AVAILABLE / TASK_NOT_FOUND = failed，KILLED / SETTLED = ok）；
+  `assembler.planManager.updatePlanItem` 任务项寻址失败改抛结构化 `toolError`
+  （经 runOne catch → failedOutcome，不再裸文本 return）。
+- **runOne 兜底改写**：`nativeOutcome ?? okOutcome(result)`——执行器未 emit = 工具正常完成
+  （裸文本含软降级说明），不再扫文本前缀派生 status；abort 两出口（已 abort 提前返回 / abort 胜出）
+  显式 emit failedOutcome（中断 = 失败事实，防兜底误判 ok）。
+- **残留守卫固化**：新增「生产代码零裸失败前缀 return」守卫测试（扫 toolExecutor / toolRunner /
+  assembler 三文件，失败必须显式 emit），把方案的 grep 证明固化为永久测试。
+- **list_sessions 裁决登记**：两处软降级（未配置存储 / 读取失败返回说明文本）是文档化的
+  「降级优先」刻意设计（JSDoc 明示不抛错、不阻塞对话），非伪装失败，不改 throw。
+
+**数字变化（历史不可比）**：kill_command 终止「已终态的失败任务」时，失败已在后台完成点
+（B3 `setBackgroundTasks` 回调）单点结算；B5 前该场景被 B4-c 行首 `[COMMAND_ERROR]` 桥判**重复
+计 1 次 failed（双计伤，2026-10-06 实测）**——B5-d 起 kill 回传 status 恒 ok（文本层
+`[COMMAND_ERROR]` 保留给 LLM 看结局），`toolFailureCount` 对该场景**下降**（去重）。
+
+**测试口径（B5-e 契约同构）**：loop 层 mock toolExecutor 返回失败文本时必须伴随显式 emit
+（新增 `mockExecutorReturning` 辅助函数统一 7 处 mock 形态）；「执行器未 emit → 兜底 ok（即使
+文本长得像失败前缀）」由测试锁定——失败判据唯一来源 = emit，无第二判据。
+
 ### ⚠️ Breaking（内核 · 工具失败判据收敛单点：脚本/代码/命令三态族不再漏计 · `SCRIPT-1` + `METRICS-PREFIX-1`①②，已定档 3.1.0）
 
 **口径缺陷（静默失败 = 假阴性）**：失败判据此前散落三处、各自手写 `result.startsWith('[ERR')`

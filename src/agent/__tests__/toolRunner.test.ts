@@ -6,6 +6,8 @@
  * B4 起 runOne 返回 ToolOutcome（结构化事实）；denied/skip 直接构造 blocked outcome。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { ToolRunner, type ToolCall, type ToolRunnerDeps } from '@/agent/toolRunner.js';
 import {
   BUILTIN_TOOLS,
@@ -207,14 +209,17 @@ describe('SCRIPT-2 B4：runOne 返回 ToolOutcome（结构化事实，文本降�
     expect(result.text).toBe('OK');
   });
 
-  it('执行器未 emit → 判据桥按前缀回落（未切 19 族的唯一派生点，B5 后退役）', async () => {
-    // 失败串 + 无 emit：isToolFailure 桥回落 failed（同一次判定，不引入第二判据）
-    const failedRunner = new ToolRunner(makeDeps({ execute: vi.fn(async () => '[ERR:X] 坏了') }));
-    expect((await failedRunner.runOne(tc())).status).toBe('failed');
-
-    // 成功串回落 ok（默认路径，无前缀即成功）
+  it('执行器未 emit → 兜底 ok（B5 后无文本判据：失败必须显式 emit，裸文本=正常完成）', async () => {
+    // 未 emit + 裸文本：兜底 okOutcome（原 isToolFailure 判据桥已物理删除，
+    // 失败事实若不 emit 会被吞 ⇒ 由残留守卫测试锁「生产代码零裸失败前缀 return」）
     const okRunner = new ToolRunner(makeDeps({ execute: vi.fn(async () => 'OK') }));
     expect((await okRunner.runOne(tc())).status).toBe('ok');
+
+    // 即使文本长得像失败前缀，只要执行器没 emit 就不判失败——判据唯一来源 = emit
+    const errishRunner = new ToolRunner(
+      makeDeps({ execute: vi.fn(async () => '[ERR:X] 坏了') }),
+    );
+    expect((await errishRunner.runOne(tc())).status).toBe('ok');
   });
 
   it('denied/skip 出口直接构造 blocked：readonly_denied / permission_denied / idempotent_skip', async () => {
@@ -240,5 +245,39 @@ describe('SCRIPT-2 B4：runOne 返回 ToolOutcome（结构化事实，文本降�
       makeDeps({ preExecutionCheck: vi.fn(() => ({ skip: true })) as never }),
     ).runOne(tc());
     expect(r3.blockedReason).toBe('idempotent_skip');
+  });
+});
+
+describe('SCRIPT-2 B5-e：裸失败前缀 return 残留守卫（判据桥消亡后的永久锁）', () => {
+  // 判据桥（isToolFailure）已物理删除：runOne 兜底 = ok，失败事实的唯一出口 = 执行器显式 emit。
+  // 若有人新增「裸 return 失败前缀文本」，失败会被兜底吞成成功（静默假阴性，无测试会红）——
+  // 本守卫把方案收尾时的手工 grep 证明固化为永久测试：生产代码零裸失败前缀 return。
+  // 覆盖面 = 三个工具执行/装配文件；软降级前缀（[KILLED] / [TASK_ALREADY_SETTLED] /
+  // [BACKGROUND_STARTED] / [SEARCH_LIMIT_REACHED] 等）语义非失败，不在守卫范围。
+  const PROD_FILES = [
+    'src/agent/toolExecutor.ts',
+    'src/agent/toolRunner.ts',
+    'src/agent/assembler.ts',
+  ];
+
+  // 失败前缀两族（与已删除的 TOOL_FAILURE_PATTERNS 同源）：
+  // ① `[ERR…` 结构化错误族 ② 执行三态族（SCRIPT/CODE/COMMAND × ERROR/TIMEOUT）
+  const BARE_FAIL_RETURN =
+    /return\s*(?:\(\s*)?['"`]\[(?:ERR|(?:SCRIPT|CODE|COMMAND)_(?:ERROR|TIMEOUT))]/;
+
+  it.each(PROD_FILES)('%s 零裸失败前缀 return（失败必须显式 emit）', (rel) => {
+    const src = readFileSync(resolve(process.cwd(), rel), 'utf8');
+    const hits = src
+      .split('\n')
+      .map((line, i) => ({ line, n: i + 1 }))
+      .filter((l) => BARE_FAIL_RETURN.test(l.line));
+    expect(hits).toEqual([]);
+  });
+
+  it('abort 出口已结构化（toolRunner 内 ABORTED 文本经 emitOutcome 产出，非裸 return）', () => {
+    const src = readFileSync(resolve(process.cwd(), 'src/agent/toolRunner.ts'), 'utf8');
+    // abort 两点都必须 emit failedOutcome（中断 = 失败事实，防兜底误判 ok）
+    const emitCount = (src.match(/emitOutcome\(failedOutcome\(abortedText\)\)/g) ?? []).length;
+    expect(emitCount).toBe(2);
   });
 });

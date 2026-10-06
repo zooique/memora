@@ -219,54 +219,6 @@ export function blockedOutcome(
   return { status: 'blocked', text, blockedReason: reason, hasRealFailure };
 }
 
-/**
- * 工具失败前缀（**判据桥真源**——B4 后唯一残余的文本判据，语义见 `isToolFailure`）。
- *
- * ## ⚠️ 定位：**未切族的过渡派生器**，B5 物理删除
- *
- * B4 判据切换后编排层/计数层一律读 `ToolOutcome.status`；本常量只服务
- * `toolRunner.runOne` 的回落路径——未切 19 族的执行器只返回文本，按前缀派生 status。
- * 已切族不再经过它（判定 = 结构化 status，文本降为渲染面）。
- *
- * 两族，缺一不可：
- *  ① `[ERR…`    —— 内核结构化错误族（`[ERR:TOOL:X]` / `[ERR:INVALID_ARG]` / `[ERR:PATH_DENIED]` …）
- *  ② `*_ERROR` / `*_TIMEOUT` —— **执行三态族**（`formatExecutionResult` 的 kind 三值
- *     SCRIPT / CODE / COMMAND 各自产出 `[SCRIPT_ERROR]` / `[CODE_TIMEOUT]` /
- *     `[COMMAND_ERROR]` …）。**这一族历史上不在 `[ERR` 判据内** ⇒ 脚本/代码/命令
- *     工具的全部失败与超时恒被判为成功（台账 SCRIPT-1）。
- *
- * ⚠️ 改这里 = 改未切族的失败派生口径（历史可比性中断）：前缀约定由
- * `managers/__tests__/toolCallHelpers.test.ts` 的「isToolFailure · 前缀约定契约」段锁定
- * （失败族 + 豁免族逐条断言），并由 `toolFailurePrefixGuard` 反向对账，不得靠"记得避开"维持。
- * B5（最终消亡批次）19 族 outcome 化后，本常量与 `isToolFailure` 一并物理删除。
- */
-const TOOL_FAILURE_PATTERNS: readonly RegExp[] = [
-  /^\[ERR/,
-  /^\[(?:SCRIPT|CODE|COMMAND)_(?:ERROR|TIMEOUT)\]/,
-];
-
-/**
- * 判断工具结果是否为失败（**判据桥**：未切族文本 → 结构化 status 的边界转换器）。
- *
- * ## B4 后的定位（已收窄，勿再当编排判据用）
- *
- * SCRIPT-2 B4 判据切换后，编排层 / 计数层 / ToolRunner 出口**一律读
- * `ToolOutcome.status`**。本函数**唯一**生产消费点 = `toolRunner.runOne` 的回落路径：
- * 未切 19 族（read_file / write_file / task_table_* / kill_command …）的执行器只返回
- * 文本，runOne 据此派生 `failed` / `ok`。它是「文本工具 → 结构化事实」的边界转换器，
- * **不再是判据 SSOT**——已切族若绕过 outcome 靠它判定，等于在结构化通道旁重开
- * 文本判据（措辞折叠同族伤，禁）。
- *
- * **守卫**：`toolFailurePrefixGuard`（防新增文本失败前缀绕过本函数）+
- * `toolCallHelpers.test.ts`「前缀约定契约」段。B5 后随 19 族 outcome 化一并物理删除。
- *
- * **锚定行首**：它判的是「这个工具结果本身是不是错误」。未切族结果在包裹
- * （`wrapToolResult`）之前由 runOne 判定，失败前缀位于整串行首。
- */
-export function isToolFailure(result: string): boolean {
-  return TOOL_FAILURE_PATTERNS.some((re) => re.test(result));
-}
-
 /** 供调用方复用的类型（避免深导入 agent/types） */
 export type { AskQuestion };
 

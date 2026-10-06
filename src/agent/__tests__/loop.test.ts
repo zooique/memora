@@ -18,6 +18,8 @@ import { WEB_SEARCH_TOOL } from '@/agent/builtinTools.js';
 import type { ToolDefinition } from '@/agent/builtinTools.js';
 import { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 import { logger } from '@/logging/logger.js';
+// B5-e 契约同构 mock 用：失败文本必须伴随显式 emit failedOutcome（runOne 兜底=ok，不 emit 即被吞）
+import { failedOutcome, type ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
 
 import type { DuplicateCallInterceptor } from '@/agent/types.js';
 import { expectWellFormedToolPairing } from './toolCallPairing.js';
@@ -35,6 +37,28 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
     accessedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
   };
+}
+
+/** 失败文本两族判据（与 toolCallHelpers 原 TOOL_FAILURE_PATTERNS 同源）：[ERR… 族 + 执行三态族 */
+const FAIL_TEXT_RE = /^\[(?:ERR\b|(?:SCRIPT|CODE|COMMAND)_(?:ERROR|TIMEOUT)\])/;
+
+/**
+ * 构造按次序返回文本的 mock toolExecutor（B5 契约同构 mock）
+ *
+ * 依次消费 texts，末位文本恒定复用。文本命中失败前缀时**先显式 emit failedOutcome 再返回**——
+ * 与真实执行器「同点同源产出 status 与 text」同构；B5 后 runOne 兜底=ok，
+ * mock 若只返回失败文本不 emit，会与真实行为不同构（失败语义被吞，测试假绿/假红）。
+ */
+function mockExecutorReturning(...texts: string[]) {
+  let call = 0;
+  return vi.fn(async (_name: string, _args: string, emit?: (o: ToolOutcome) => void) => {
+    const text = texts[Math.min(call, texts.length - 1)]!;
+    call += 1;
+    if (FAIL_TEXT_RE.test(text)) {
+      emit?.(failedOutcome(text));
+    }
+    return text;
+  });
 }
 
 type ChunkItem = {
@@ -2150,7 +2174,7 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
 
   it('工具返回可重试错误码时应推送 REFLECTION_HINT', async () => {
     // FILE_NOT_FOUND 是可重试错误码
-    const toolExecutor = vi.fn().mockResolvedValue('[ERR:TOOL:FILE_NOT_FOUND] 文件不存在');
+    const toolExecutor = mockExecutorReturning('[ERR:TOOL:FILE_NOT_FOUND] 文件不存在');
 
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -2180,7 +2204,7 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
 
   it('工具返回不可重试错误码时不应推送 REFLECTION_HINT', async () => {
     // PERMISSION_DENIED 是不可重试错误码
-    const toolExecutor = vi.fn().mockResolvedValue('[ERR:TOOL:PERMISSION_DENIED] 权限不足');
+    const toolExecutor = mockExecutorReturning('[ERR:TOOL:PERMISSION_DENIED] 权限不足');
 
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -2208,7 +2232,7 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
 
   it('达到 maxReflectionRetries 后不应再推送 REFLECTION_HINT', async () => {
     // 始终返回可重试错误，迫使 Reflection 达到上限
-    const toolExecutor = vi.fn().mockResolvedValue('[ERR:TOOL:ARGUMENT_ERROR] 参数错误');
+    const toolExecutor = mockExecutorReturning('[ERR:TOOL:ARGUMENT_ERROR] 参数错误');
 
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -2257,10 +2281,10 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
     // 若按 llmResult.toolCalls.length=5 做 slice(-5) → 会把迭代1 的错误 tool 结果吸进
     // 本轮判定窗口 → 误判 hasRetryableError → 误注入第 2 条 REFLECTION_HINT。
     // 按实际执行的 effectiveToolCalls.length=1 做 slice(-1)，只看本轮 1 条成功结果 → 仅 1 条 hint。
-    const toolExecutor = vi
-      .fn()
-      .mockResolvedValueOnce('[ERR:TOOL:FILE_NOT_FOUND] 文件不存在') // 迭代1：retryable 错误
-      .mockResolvedValue('ok'); // 迭代2及以后：成功
+    const toolExecutor = mockExecutorReturning(
+      '[ERR:TOOL:FILE_NOT_FOUND] 文件不存在', // 迭代1：retryable 错误
+      'ok', // 迭代2及以后：成功
+    );
 
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -4235,7 +4259,7 @@ describe('AgentLoop · blockedFlags 平行数组错位回归（护栏命中工�
   });
 
   it('read_failed：同一目标第 4 次连续失败被拦且上报 blocked=true && ok=false', async () => {
-    const toolExecutor = vi.fn().mockResolvedValue('[ERR:TOOL:FILE] 不存在');
+    const toolExecutor = mockExecutorReturning('[ERR:TOOL:FILE] 不存在');
     const turns: ChunkItem[][] = [];
     for (let i = 0; i < 4; i++) {
       turns.push([{ toolCalls: [call(`r${i}`, 'read_file', '{"path":"ghost.md"}')] }]);
@@ -4341,10 +4365,7 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
 
   it('搜索失败不累计、未达阈值不注入收敛提示', async () => {
     // 首次搜索失败（[ERR 前缀），后续仅一次成功 → 未达阈值（2），不注入
-    const toolExecutor = vi
-      .fn()
-      .mockResolvedValueOnce('[ERR:TOOL:NETWORK] 搜索失败')
-      .mockResolvedValue('1. 结果A');
+    const toolExecutor = mockExecutorReturning('[ERR:TOOL:NETWORK] 搜索失败', '1. 结果A');
     const provider = mockMultiTurnProvider([
       [
         {
@@ -6150,7 +6171,7 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
 
   it('F · 同主体连续失败达阈值 → 执行前硬拦（N2 同主体粒度，治幻觉文件风暴）', async () => {
     // 读一个始终失败（不存在）的文件：返回 [ERR → 触发失败硬闸
-    const toolExecutor = vi.fn().mockResolvedValue('[ERR 文件不存在：幻想文档.md]');
+    const toolExecutor = mockExecutorReturning('[ERR 文件不存在：幻想文档.md]');
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/幻想.md"}')] }],

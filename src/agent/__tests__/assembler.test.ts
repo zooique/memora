@@ -681,12 +681,12 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
     expect(rendered).toContain('任务表已更新');
   });
 
-  it('planManager.updatePlanItem：不存在的任务项返回 PLAN_ITEM_NOT_FOUND', async () => {
+  it('planManager.updatePlanItem：不存在的任务项 → 结构化抛错（B5-e 消亡口径，不再裸文本）', async () => {
     const out = await assembleWithHooks();
     out.sessionManager.createCheckpoint('测试计划');
-    expect(out.toolExec.planManager!.updatePlanItem('nope', 'done')).toContain(
-      '[ERR:PLAN_ITEM_NOT_FOUND]',
-    );
+    await expect(
+      Promise.resolve().then(() => out.toolExec.planManager!.updatePlanItem('nope', 'done')),
+    ).rejects.toThrow('未找到任务项 nope');
   });
 
   it('planManager.getPlan：无 checkpoint 时返回空计划', async () => {

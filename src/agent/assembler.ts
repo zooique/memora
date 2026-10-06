@@ -51,7 +51,7 @@ import type {
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { AGENT_EVENTS, type AgentEventName } from '@/utils/eventEmitter.js';
-import { configError } from '@/utils/errors.js';
+import { configError, toolError, ToolErrorCode } from '@/utils/errors.js';
 // 角色包管理器（唯一角色真理源）
 import { RolePackManager } from '@/role-pack/rolePackManager.js';
 // run_team_meeting 会议实现（工具内嵌 LLM 调用；装配层持 provider + rolePackManager 闭包注入）
@@ -463,7 +463,18 @@ function wireRuntimeCallbacks(
       // 状态变更收口 SessionManager.updatePlanItemStatus（内部标脏 + 心跳，唯一写点）。
       // 必须经此写点置 checkpointDirty，否则计划变更可能丢失标脏（纯内存态）
       if (!sessionManager.updatePlanItemStatus(planItemId, status)) {
-        return `[ERR:PLAN_ITEM_NOT_FOUND] 未找到任务项 ${planItemId}`;
+        // 任务项寻址失败 = 执行失败事实 → 结构化抛错（经 runOne catch → failedOutcome）。
+        // 不裸文本 return：B5 后 runOne 兜底=ok，裸失败前缀会被吞成成功（B5-e 消亡口径）。
+        throw toolError(
+          `未找到任务项 ${planItemId}`,
+          'task_table_update 的 plan_item_id 在当前任务表中不存在',
+          [
+            '用 task_table_write 返回的 8 位短 id 或任务表行首序号定位',
+            '先核对任务表注入内容中的现有任务项',
+          ],
+          undefined,
+          ToolErrorCode.ARGUMENT_ERROR,
+        );
       }
       // updatePlanItemStatus 返回 true ⇒ checkpoint/plan 必存在（SessionManager.updatePlanItemStatus 早退契约），用非空断言保证
       const plan = sessionManager.getCheckpoint()!.plan;

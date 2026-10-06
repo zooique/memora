@@ -2,8 +2,9 @@
  * 工具执行器（ToolRunner）— 从 AgentLoop 抽出的「单工具执行」独立单元
  *
  * 承载一个工具的完整生命周期：执行前检查（三重闸门）→ 并发/中断竞争执行 → 异常转结构化错误串。
- * 状态独立（不触碰 loop 工作记忆 / 指标 / 自主步标志），输入工具调用元素、输出结果串并触发
- * onToolExecuted，故可独立单测。loop 的 executeToolCalls 只做批量编排，逐工具委托本执行器。
+ * 状态独立（不触碰 loop 工作记忆 / 指标 / 自主步标志），输入工具调用元素、输出结构化
+ * ToolOutcome（status 为判据面真源）并触发 onToolExecuted，故可独立单测。
+ * loop 的 executeToolCalls 只做批量编排，逐工具委托本执行器。
  *
  * 依赖经 deps 注入（execute / preExecutionCheck / onToolExecuted / getStrategy / tracer），
  * 其中 getStrategy 每次执行读最新策略——setStrategy 的动态更新在此依然生效。
@@ -18,7 +19,6 @@ import { MemoraError } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
 import {
-  isToolFailure,
   failedOutcome,
   okOutcome,
   blockedOutcome,
@@ -96,8 +96,7 @@ export class ToolRunner {
         return blockedOutcome(decision.reason, decision.result);
       }
 
-      // 每调用独立的原生 outcome 捕获器：已切族执行器在返回字符串的同点按事实产出；
-      // 未切族不产出 ⇒ 走下方文本派生桥。
+      // 每调用独立的原生 outcome 捕获器：执行器在返回字符串的同点按事实产出。
       let nativeOutcome: ToolOutcome | undefined;
       // raceToolWithSignal 兼容 signal 中断（每个调用独立 race，监听器无并发副作用）
       const result = await this.raceToolWithSignal(
@@ -108,12 +107,10 @@ export class ToolRunner {
           nativeOutcome = native;
         },
       );
-      // 判据桥（SCRIPT-2 B4 后**唯一**残余文本判据）：未切族（outcome 化批次见方案 B5）
-      // 的执行器只返回文本，此处按前缀约定派生 status——它不再是编排层的判据
-      // （编排层只读本返回值的 status），而是「文本工具 → 结构化事实」的边界转换器，
-      // 正确性由前缀契约测试 + toolFailurePrefixGuard 守卫锁定。
-      const outcome =
-        nativeOutcome ?? (isToolFailure(result) ? failedOutcome(result) : okOutcome(result));
+      // SCRIPT-2 B5 后无文本判据：失败事实一律由执行器在同点显式 emit（结构化产出，
+      // status 与 text 同源）；未 emit = 工具正常完成（裸文本含软降级说明与成功输出），
+      // runOne 统一兜底 ok——兜底不再扫文本前缀（原 isToolFailure 判据桥已物理删除）。
+      const outcome = nativeOutcome ?? okOutcome(result);
       // 通知上层工具执行完成（供 outbox 幂等模式记录是否已执行）；
       // ok 判据单点 = outcome.status（与文本派生/native 产出同源，无第二次独立判断）
       this.deps.onToolExecuted?.(
@@ -217,7 +214,8 @@ export class ToolRunner {
    * 用 Promise.race 竞争，signal 先 abort 则返回 [ERR:TOOL:ABORTED]（而非抛 AbortError，
    * 避免破坏"工具失败回传 LLM"契约；ABORTED 不入错误码体系，不触发 Reflection）
    *
-   * @param emitOutcome 原生 outcome 回调（透传给 execute；未切族忽略此参）
+   * @param emitOutcome 原生 outcome 回调（透传给 execute；abort 出口也经它显式 emit failed，
+   *   保证 runOne 兜底（nativeOutcome ?? ok）读到中断事实而非误判 ok）
    */
   private async raceToolWithSignal(
     name: string,
@@ -233,13 +231,21 @@ export class ToolRunner {
 
     // signal 已 abort：直接返回中断错误，不发起工具调用
     if (signal.aborted) {
-      return '[ERR:TOOL:ABORTED] 错误：工具执行被中断';
+      const abortedText = '[ERR:TOOL:ABORTED] 错误：工具执行被中断';
+      // 中断 = 失败事实（执行被夺走），显式 emit 防兜底误判 ok
+      emitOutcome(failedOutcome(abortedText));
+      return abortedText;
     }
 
     // abort 监听 Promise（signal abort 时 resolve 错误串）；onAbort 提外层便于 race 后清理
     let onAbort: (() => void) | null = null;
     const abortPromise = new Promise<string>((resolve) => {
-      onAbort = () => resolve('[ERR:TOOL:ABORTED] 错误：工具执行被中断');
+      onAbort = () => {
+        const abortedText = '[ERR:TOOL:ABORTED] 错误：工具执行被中断';
+        // 中断胜出 = 失败事实（execute 仍在后台跑但结果丢弃），显式 emit 防兜底误判 ok
+        emitOutcome(failedOutcome(abortedText));
+        resolve(abortedText);
+      };
       signal.addEventListener('abort', onAbort, { once: true });
     });
 
