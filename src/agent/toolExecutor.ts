@@ -52,6 +52,8 @@ import {
   resolveCommandTimeoutMs,
   runShellCommand,
   runSkillScript,
+  // 脚本执行的结构化事实（exitCode/timedOut），run_skill_script 回调契约加宽后消费
+  type ScriptExecutionResult,
 } from '@/skill/skillScriptRunner.js';
 import { resolveSafePath, inferRuntimeFromExt, type ScriptRuntime } from '@/utils/scanner.js';
 import type {
@@ -613,12 +615,16 @@ export class ToolExecutor {
    *
    * 渐进披露 L3：执行技能的 scripts/ 目录下的可执行脚本。
    * 脚本源码不进入 LLM 上下文，仅执行结果返回。
+   *
+   * B2-a 契约加宽：返回**结构化执行事实**而非已格式化字符串——格式化与 outcome
+   * 派生都在 ToolExecutor 单点完成（与 run_project_script 同源），
+   * 消除「exitCode/timedOut 在装配边界被压成文本」的事实丢失。
    */
   runSkillScript?: (
     skillName: string,
     scriptPath: string,
     args: string[],
-  ) => Promise<string | null>;
+  ) => Promise<ScriptExecutionResult | null>;
 
   /**
    * list_resources 资源清单回调（由 agent 装配时注入）
@@ -1112,7 +1118,11 @@ export class ToolExecutor {
         // run_code 由 ToolExecutor 直接处理（通用计算/数据处理/验证底座）
         // 使用注入的 codeExecutionProvider 执行代码，带超时保护；失败由 safeExecuteCode 降级
         if (!this.codeExecutionProvider) {
-          return '[ERR:TOOL:NOT_AVAILABLE] 错误：代码执行功能未配置，请先注入 ICodeExecutionProvider';
+          // 未注入执行器 = 工具能力缺失（旧口径 [ERR 开头亦判失败），显式 emit failed
+          const notAvailableText =
+            '[ERR:TOOL:NOT_AVAILABLE] 错误：代码执行功能未配置，请先注入 ICodeExecutionProvider';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         const language = strArg('language');
         const code = strArg('code');
@@ -1194,7 +1204,11 @@ export class ToolExecutor {
             : `执行内联代码（${execLanguage}，${execCode.length} 字符，宿主沙箱）`,
         );
         if (!execConfirmed) {
-          return '[ERR:SCRIPT_DECLINE] 代码执行未获确认（用户拒绝或未注入确认回调，fail-closed）';
+          // 用户/系统拒绝执行 = 主动挡下（permission_denied），非执行失败
+          const declineText =
+            '[ERR:SCRIPT_DECLINE] 代码执行未获确认（用户拒绝或未注入确认回调，fail-closed）';
+          emitOutcome?.(blockedOutcome('permission_denied', declineText));
+          return declineText;
         }
         const result = await safeExecuteCode(
           this.codeExecutionProvider,
@@ -1214,10 +1228,14 @@ export class ToolExecutor {
           SCRIPT_RESULT_TAIL_CHARS,
         );
         // 格式化：与 run_skill_script 共用 formatExecutionResult（同一真理源，改格式契约须两链路同步）
-        return formatExecutionResult(
+        const codeText = formatExecutionResult(
           { stdout, stderr, exitCode: result.exitCode, timedOut: result.timedOut },
           { kind: 'CODE', timeoutDetail: '代码执行超时', errorDetail: '代码执行失败' },
         );
+        // status 直接读执行事实（B2-a：不扫文本前缀）：超时或退出码非 0 = failed，其余 = ok
+        const codeFailed = result.timedOut || result.exitCode !== 0;
+        emitOutcome?.(codeFailed ? failedOutcome(codeText) : okOutcome(codeText));
+        return codeText;
       }
       case 'search_project': {
         // search_project 由 ToolExecutor 直接处理（与 web_search/run_code 同侧，均为宿主注入能力）
@@ -1368,7 +1386,11 @@ export class ToolExecutor {
       case 'run_skill_script': {
         // 渐进披露 L3：执行技能的可执行脚本（脚本源码不进上下文，仅结果返回）
         if (!this.runSkillScript) {
-          return '[ERR:TOOL:NOT_AVAILABLE] run_skill_script 不可用：未装配 L3 脚本执行回调';
+          // 未装配回调 = 工具能力缺失（旧口径 [ERR 开头亦判失败），显式 emit failed
+          const notAvailableText =
+            '[ERR:TOOL:NOT_AVAILABLE] run_skill_script 不可用：未装配 L3 脚本执行回调';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         const skillName = strArg('skill_name');
         const scriptPath = strArg('script_path');
@@ -1386,14 +1408,29 @@ export class ToolExecutor {
           `执行技能 ${skillName} 的脚本 ${scriptPath ?? ''}`,
         );
         if (!execConfirmed) {
-          return '[ERR:SCRIPT_DECLINE] 技能脚本执行未获确认（用户拒绝或未注入确认回调，fail-closed）';
+          // 用户/系统拒绝执行 = 主动挡下（permission_denied），非执行失败
+          const declineText =
+            '[ERR:SCRIPT_DECLINE] 技能脚本执行未获确认（用户拒绝或未注入确认回调，fail-closed）';
+          emitOutcome?.(blockedOutcome('permission_denied', declineText));
+          return declineText;
         }
         const result = await this.runSkillScript(skillName, scriptPath, scriptArgs);
         if (result === null) {
-          return `[ERR:SCRIPT_NOT_FOUND] 未找到脚本 "${scriptPath}"（技能 "${skillName}" 无此脚本，或执行失败）`;
+          // 脚本不存在/无法执行 = 执行事实失败（区别于权限拒绝）
+          const notFoundText = `[ERR:SCRIPT_NOT_FOUND] 未找到脚本 "${scriptPath}"（技能 "${skillName}" 无此脚本，或执行失败）`;
+          emitOutcome?.(failedOutcome(notFoundText));
+          return notFoundText;
         }
-        // 返回净化：脚本输出当外部内容去控制字符 + 长度上限（8-1 对齐 run_code 的防护），防刷屏撑爆上下文
-        return sanitizeExternalText(result, RUN_SCRIPT_RESULT_MAX_LEN, SCRIPT_RESULT_TAIL_CHARS);
+        // 格式化在本点单点收口（B2-a：回调只返结构化事实）；再经净化防刷屏撑爆上下文
+        const formattedText = sanitizeExternalText(
+          formatScriptResult(result),
+          RUN_SCRIPT_RESULT_MAX_LEN,
+          SCRIPT_RESULT_TAIL_CHARS,
+        );
+        // status 直接读执行事实：超时或退出码非 0 = failed，其余 = ok（不扫文本前缀）
+        const scriptFailed = result.timedOut || result.exitCode !== 0;
+        emitOutcome?.(scriptFailed ? failedOutcome(formattedText) : okOutcome(formattedText));
+        return formattedText;
       }
       case 'run_project_script': {
         // 项目内已有脚本执行（默认开放，判据 A+B）：内核子进程执行，脚本源码不进上下文
@@ -1412,7 +1449,10 @@ export class ToolExecutor {
         // ① 路径白名单：相对项目根解析，防穿越返回 null → 拒绝（越界不协商）
         const fullPath = resolveSafePath(this.builtinHandlers.projectPath, scriptPath);
         if (!fullPath) {
-          return `[ERR:PATH_DENIED] 脚本路径越界（超出项目根）："${scriptPath}"`;
+          // 安全白名单拦截 = 主动挡下（B2-a 拍板：归 permission_denied，不新增枚举值）
+          const pathDeniedText = `[ERR:PATH_DENIED] 脚本路径越界（超出项目根）："${scriptPath}"`;
+          emitOutcome?.(blockedOutcome('permission_denied', pathDeniedText));
+          return pathDeniedText;
         }
         // ② 执行确认：guest 模式或 confirmScripts 时询问（owner 默认自动批准，走审计）
         const confirmed = await this.confirmByEntry(
@@ -1422,7 +1462,11 @@ export class ToolExecutor {
           `运行项目脚本 ${scriptPath}`,
         );
         if (!confirmed) {
-          return '[ERR:SCRIPT_DECLINE] 脚本运行未获确认（用户拒绝或未注入确认回调，fail-closed）';
+          // 用户/系统拒绝执行 = 主动挡下（permission_denied），非执行失败
+          const declineText =
+            '[ERR:SCRIPT_DECLINE] 脚本运行未获确认（用户拒绝或未注入确认回调，fail-closed）';
+          emitOutcome?.(blockedOutcome('permission_denied', declineText));
+          return declineText;
         }
         // ③ 运行时白名单：扩展名推断并收敛到 node/python/shell 三档（推断即可信，不规则兜底 node）
         const ext = scriptPath.slice(scriptPath.lastIndexOf('.')).toLowerCase();
@@ -1444,11 +1488,17 @@ export class ToolExecutor {
         );
         // 返回净化：脚本输出当外部内容去控制字符 + 长度上限（防刷屏撑爆上下文，对齐 run_skill_script）
         // 超时文案按本次实际超时生成（未传 timeout_ms → 内核默认 60s，见上），不恒报上限 600s
-        return sanitizeExternalText(
+        const projectScriptText = sanitizeExternalText(
           formatScriptResult(result, timeoutMs),
           RUN_SCRIPT_RESULT_MAX_LEN,
           SCRIPT_RESULT_TAIL_CHARS,
         );
+        // status 直接读执行事实（B2-a：不扫文本前缀）：超时或退出码非 0 = failed，其余 = ok
+        const projectScriptFailed = result.timedOut || result.exitCode !== 0;
+        emitOutcome?.(
+          projectScriptFailed ? failedOutcome(projectScriptText) : okOutcome(projectScriptText),
+        );
+        return projectScriptText;
       }
       case 'run_command': {
         // 裸命令执行（§13.2 裁决链 → 执行）：三道闸顺序不可颠倒——

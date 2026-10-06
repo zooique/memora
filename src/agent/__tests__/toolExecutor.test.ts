@@ -322,7 +322,13 @@ describe('工具执行器（6 个工具）', () => {
 
     it('超长输出被截断到上限（8-1 对齐 run_code 防护，防刷屏撑爆上下文）', async () => {
       // 尾部打标记 TAIL：长输出的失败原因常在尾部（缺口 D），截断必须留住它
-      executor.runSkillScript = async () => `${'x'.repeat(50_000)}TAIL`;
+      // （B2-a 契约：回调返结构化事实，stdout 载体）
+      executor.runSkillScript = async () => ({
+        stdout: `${'x'.repeat(50_000)}TAIL`,
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+      });
       const result = await executor.execute(
         'run_skill_script',
         JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
@@ -336,7 +342,13 @@ describe('工具执行器（6 个工具）', () => {
     });
 
     it('正常输出原样返回（不截断）', async () => {
-      executor.runSkillScript = async () => 'lint 通过，0 errors';
+      // 成功脚本（exitCode 0）经 formatScriptResult 后 stdout 原样呈现
+      executor.runSkillScript = async () => ({
+        stdout: 'lint 通过，0 errors',
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+      });
       const result = await executor.execute(
         'run_skill_script',
         JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
@@ -345,7 +357,12 @@ describe('工具执行器（6 个工具）', () => {
     });
 
     it('owner + confirmScripts=false 默认放行（来源可信，无人值守可跑）', async () => {
-      executor.runSkillScript = async () => 'ok';
+      executor.runSkillScript = async () => ({
+        stdout: 'ok',
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+      });
       const result = await executor.execute(
         'run_skill_script',
         JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
@@ -357,7 +374,12 @@ describe('工具执行器（6 个工具）', () => {
       // guest 恒确认；未注入 confirmationHandler → confirmScriptRun fail-closed → 拒绝
       const guestSecurity = new SecurityGuard(tmpProject, tmpData, [], false, 'guest');
       const guestExecutor = new ToolExecutor(tmpProject, guestSecurity, index);
-      guestExecutor.runSkillScript = async () => '不应执行';
+      guestExecutor.runSkillScript = async () => ({
+        stdout: '不应执行',
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+      });
       const result = await guestExecutor.execute(
         'run_skill_script',
         JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
@@ -368,7 +390,12 @@ describe('工具执行器（6 个工具）', () => {
     it('owner + confirmScripts=true（无确认回调）时 fail-closed 拒绝（开关对技能脚本生效）', async () => {
       const strictSecurity = new SecurityGuard(tmpProject, tmpData, [], false, 'owner', true);
       const strictExecutor = new ToolExecutor(tmpProject, strictSecurity, index);
-      strictExecutor.runSkillScript = async () => '不应执行';
+      strictExecutor.runSkillScript = async () => ({
+        stdout: '不应执行',
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+      });
       const result = await strictExecutor.execute(
         'run_skill_script',
         JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
@@ -380,9 +407,14 @@ describe('工具执行器（6 个工具）', () => {
       const strictSecurity = new SecurityGuard(tmpProject, tmpData, [], false, 'owner', true);
       const strictExecutor = new ToolExecutor(tmpProject, strictSecurity, index);
 
-      // 回调同意 → 放行执行
+      // 回调同意 → 放行执行（成功 stdout 经 formatScriptResult 原样呈现）
       strictSecurity.onWriteConfirmation(async () => true);
-      strictExecutor.runSkillScript = async () => 'lint 通过，0 errors';
+      strictExecutor.runSkillScript = async () => ({
+        stdout: 'lint 通过，0 errors',
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+      });
       const ok = await strictExecutor.execute(
         'run_skill_script',
         JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
@@ -391,12 +423,203 @@ describe('工具执行器（6 个工具）', () => {
 
       // 回调拒绝 → SCRIPT_DECLINE，脚本不执行
       strictSecurity.onWriteConfirmation(async () => false);
-      strictExecutor.runSkillScript = async () => '不应执行';
+      strictExecutor.runSkillScript = async () => ({
+        stdout: '不应执行',
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+      });
       const declined = await strictExecutor.execute(
         'run_skill_script',
         JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
       );
       expect(declined).toContain('SCRIPT_DECLINE');
+    });
+  });
+
+  describe('★ 原生 outcome（SCRIPT-2 B2-a · 三脚本族 status 断言）', () => {
+    /** 构造原生 outcome 捕获器：execute 第 4 参传入，按调用次序收集结构化结果 */
+    function makeSink(): { readonly list: readonly ToolOutcome[]; sink: (o: ToolOutcome) => void } {
+      // 收集数组：断言 status 与 text 同源关系的唯一事实面
+      const list: ToolOutcome[] = [];
+      return { list, sink: (o) => list.push(o) };
+    }
+
+    /** run_code 用本地执行器（mock provider：boom 脚本退出码 1，其余成功） */
+    const codeProvider: ICodeExecutionProvider = {
+      async execute(code) {
+        if (code.includes('boom')) {
+          return { stdout: '', stderr: 'reference error', exitCode: 1, timedOut: false };
+        }
+        return { stdout: 'code-ok', stderr: '', exitCode: 0, timedOut: false };
+      },
+    };
+    let codeExec: ToolExecutor;
+
+    beforeAll(() => {
+      codeExec = new ToolExecutor(
+        tmpProject,
+        security,
+        index,
+        undefined,
+        undefined,
+        undefined,
+        codeProvider,
+      );
+    });
+
+    it('① run_code 成功 → ok；失败（boom 退出码 1）→ failed；decline → blocked+permission_denied', async () => {
+      // 成功事实（exitCode 0）→ ok
+      const sinkOk = makeSink();
+      await codeExec.execute(
+        'run_code',
+        JSON.stringify({ language: 'node', code: 'console.log(1)' }),
+        undefined,
+        sinkOk.sink,
+      );
+      expect(sinkOk.list[0]!.status).toBe('ok');
+      expect(sinkOk.list[0]!.text).toContain('code-ok');
+
+      // 失败事实（exitCode 1）→ failed
+      const sinkFail = makeSink();
+      await codeExec.execute(
+        'run_code',
+        JSON.stringify({ language: 'node', code: 'boom()' }),
+        undefined,
+        sinkFail.sink,
+      );
+      expect(sinkFail.list[0]!.status).toBe('failed');
+      expect(sinkFail.list[0]!.text).toContain('CODE_ERROR');
+
+      // 拒绝执行 → blocked（permission_denied），非失败
+      const guestSecurity = new SecurityGuard(tmpProject, tmpData, [], false, 'guest');
+      const guestExec = new ToolExecutor(
+        tmpProject,
+        guestSecurity,
+        index,
+        undefined,
+        undefined,
+        undefined,
+        codeProvider,
+      );
+      const sinkDecline = makeSink();
+      const declineOut = await guestExec.execute(
+        'run_code',
+        JSON.stringify({ language: 'node', code: 'console.log(1)' }),
+        undefined,
+        sinkDecline.sink,
+      );
+      expect(sinkDecline.list[0]!.status).toBe('blocked');
+      expect(sinkDecline.list[0]!.blockedReason).toBe('permission_denied');
+      expect(declineOut).toContain('SCRIPT_DECLINE');
+    });
+
+    it('② run_skill_script 成功 → ok；退出码 3 → failed；未找到脚本 → failed；decline → blocked', async () => {
+      // 成功（exitCode 0）→ ok，text 与返回值同源
+      executor.runSkillScript = async () => ({
+        stdout: 'skill-ok',
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+      });
+      const sinkOk = makeSink();
+      const okOut = await executor.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
+        undefined,
+        sinkOk.sink,
+      );
+      expect(sinkOk.list[0]!.status).toBe('ok');
+      expect(sinkOk.list[0]!.text).toBe(okOut);
+      expect(okOut).toContain('skill-ok');
+
+      // 失败（exitCode 3）→ failed
+      executor.runSkillScript = async () => ({
+        stdout: 'partial',
+        stderr: 'boom',
+        exitCode: 3,
+        timedOut: false,
+      });
+      const sinkFail = makeSink();
+      await executor.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
+        undefined,
+        sinkFail.sink,
+      );
+      expect(sinkFail.list[0]!.status).toBe('failed');
+      expect(sinkFail.list[0]!.text).toContain('SCRIPT_ERROR');
+
+      // 脚本不存在（回调返 null）→ failed（执行事实失败，非权限拒绝）
+      executor.runSkillScript = async () => null;
+      const sinkMissing = makeSink();
+      const missOut = await executor.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'nope.ts' }),
+        undefined,
+        sinkMissing.sink,
+      );
+      expect(sinkMissing.list[0]!.status).toBe('failed');
+      expect(missOut).toContain('SCRIPT_NOT_FOUND');
+
+      // 拒绝执行 → blocked（permission_denied）
+      const guestSecurity = new SecurityGuard(tmpProject, tmpData, [], false, 'guest');
+      const guestExec = new ToolExecutor(tmpProject, guestSecurity, index);
+      guestExec.runSkillScript = async () => ({
+        stdout: '不应执行',
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+      });
+      const sinkDecline = makeSink();
+      await guestExec.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
+        undefined,
+        sinkDecline.sink,
+      );
+      expect(sinkDecline.list[0]!.status).toBe('blocked');
+      expect(sinkDecline.list[0]!.blockedReason).toBe('permission_denied');
+    });
+
+    it('③ run_project_script 成功 → ok；退出码 3 → failed；越界 → blocked+permission_denied', async () => {
+      // 成功脚本（exitCode 0）→ ok
+      mkdirSync(join(tmpProject, 'scripts'), { recursive: true });
+      writeFileSync(join(tmpProject, 'scripts/ok-b2a.js'), 'console.log("b2a-ok");', 'utf-8');
+      const sinkOk = makeSink();
+      const okOut = await executor.execute(
+        'run_project_script',
+        JSON.stringify({ script_path: 'scripts/ok-b2a.js' }),
+        undefined,
+        sinkOk.sink,
+      );
+      expect(sinkOk.list[0]!.status).toBe('ok');
+      expect(sinkOk.list[0]!.text).toBe(okOut);
+      expect(okOut).toContain('b2a-ok');
+
+      // 失败脚本（process.exit(3)）→ failed
+      writeFileSync(join(tmpProject, 'scripts/fail-b2a.js'), 'process.exit(3);', 'utf-8');
+      const sinkFail = makeSink();
+      await executor.execute(
+        'run_project_script',
+        JSON.stringify({ script_path: 'scripts/fail-b2a.js' }),
+        undefined,
+        sinkFail.sink,
+      );
+      expect(sinkFail.list[0]!.status).toBe('failed');
+      expect(sinkFail.list[0]!.text).toContain('SCRIPT_ERROR');
+
+      // 路径越界（安全白名单拦截）→ blocked（permission_denied，B2-a 拍板）
+      const sinkDenied = makeSink();
+      const deniedOut = await executor.execute(
+        'run_project_script',
+        JSON.stringify({ script_path: '../escape.sh' }),
+        undefined,
+        sinkDenied.sink,
+      );
+      expect(sinkDenied.list[0]!.status).toBe('blocked');
+      expect(sinkDenied.list[0]!.blockedReason).toBe('permission_denied');
+      expect(deniedOut).toContain('PATH_DENIED');
     });
   });
 

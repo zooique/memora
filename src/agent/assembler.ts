@@ -57,7 +57,7 @@ import { RolePackManager } from '@/role-pack/rolePackManager.js';
 // run_team_meeting 会议实现（工具内嵌 LLM 调用；装配层持 provider + rolePackManager 闭包注入）
 import { runTeamMeetingAssessment } from '@/agent/builtinToolHandlers.js';
 // L3 脚本执行器（静态导入，避免每次调用动态加载）
-import { runSkillScript, formatScriptResult } from '@/skill/skillScriptRunner.js';
+import { runSkillScript } from '@/skill/skillScriptRunner.js';
 import { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 
 /**
@@ -842,7 +842,8 @@ export async function assembleComponents(
           undefined,
           input.scriptNodePath,
         );
-        return formatScriptResult(result);
+        // B2-a：返回结构化事实，formatScriptResult 由 ToolExecutor 单点收口
+        return result;
       }
     }
     // 再查全局通用技能
@@ -860,7 +861,8 @@ export async function assembleComponents(
           undefined,
           input.scriptNodePath,
         );
-        return formatScriptResult(result);
+        // B2-a：返回结构化事实，formatScriptResult 由 ToolExecutor 单点收口
+        return result;
       }
     }
     return null;
