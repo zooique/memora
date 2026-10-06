@@ -10,6 +10,41 @@
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更，随 3.1.0 发版。**不提前 bump**——`package.json` 版本号仍为 3.0.1，bump 属发版动作而非落地动作（ADR-033）。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
 
+### ⚠️ Breaking（内核 · 导出面收敛：53 个无消费、无文档承诺的公共导出降级为内部实现 · `REL-3.1`，已定档 3.1.0）
+
+**收敛判据（2026-10-06 定案）**：公共导出只保留 ① 宿主（`hosts/memora-vscode`）经 `@zooique/memora`
+实际 import 的符号；② README / API 手册 §十六 明文承诺的公共 API。两条都不占的符号从 `src/index.ts`
+公共面移除。**收编 ≠ 删除**：类型定义仍在原模块、随函数签名/结构推断可用，只是不再可显式 import；
+判定前全量重盘（历史快照「约 70 个」实测为 53 个）。
+
+**移除清单（53 个，按域分组）**：
+
+- agent 内部类型/值（16）：`AbortStopReason` / `IdempotencyLevel` / `ToolExecutionRecord` /
+  `PauseMeta` / `PlanItemOutcome` / `PlanItem` / `BackgroundTaskStatus` /
+  `DefaultDuplicateCallInterceptor` / `DuplicateCallInterceptor` / `DuplicateCheckVerdict` /
+  `DuplicateCheckContext` / `RoundSummaryGenerator` / `EstimateOccupancyInput` /
+  `estimateTokensText` / `EstimableMessage` / `COMPRESS_TARGETS`
+- LLM / 事件 / 记忆（3）：`TaskType` / `AGENT_EVENTS` / `SummaryType`
+- Round 存储内部件（6）：`RoundEvidenceEvent` / `generateRoundId` / `generateMessageId` /
+  `createPendingRound` / `completeRound` / `InMemoryRoundStore`
+- 工具定义常量（2）：`SEARCH_PROJECT_TOOL` / `TRACE_SUMMARY_TOOL`
+- 角色包子类型与装配内部件（22）：`RolePack` / `RolePackTeam` / `RolePackCapability` /
+  `RolePackManifestSkill` / `BehaviorStrategy` / `PrepareStrategy` / `ActStrategy` /
+  `ReflectStrategy` / `GlobalStrategy` / `ToolReadonly` / `ProviderRouting` /
+  `MultiStepReasoning` / `SelfReviewRounds` / `UserFollowup` / `ErrorHandling` /
+  `DEFAULT_BEHAVIOR_STRATEGY` / `mergeStrategy` / `assembleRolePack` /
+  `checkCompanionContentRedline` / `RolePackValidationIssue` / `RolePackValidationResult` /
+  `RolePackIssueSeverity`
+- 杂项工具（4）：`safeSearch` / `isValidConfigName` / `parseConfigId` / `MAX_CONFIG_NAME_LENGTH`
+
+**文档面同步修正（API 手册 §十六 5 处失真）**：删 4 个**幻影承诺**（`AgentProjectEntry` /
+`BOOST_INCREMENT` / `SCORE_CEILING` / `SCORE_FLOOR` / `SkillMatch`——src 无对应导出，属文档单方面
+承诺了不存在的 API）+ 1 处**滞后承诺**（`extractKeywords`——代码已定案收回，文档未跟）；
+`SummaryType` 字段描述改行内联合类型写法。手册 §十六 收敛口径改写为与 `src/index.ts` 同判据。
+
+**影响**：宿主零改动（tsc 双绿实证，收编清单与宿主消费面零交集）；外部消费者若显式 import 被收
+符号，改用类型推断或自有定义。
+
 ### ⚠️ Breaking（内核 · 工具结果三值契约判据切换：执行层闸门 blocked 不再计入 toolFailureCount · `SCRIPT-2` B4，已定档 3.1.0）
 
 **口径变更（Breaking）**：执行层闸门（宿主审批拒绝 `permission_denied` / 只读拒绝 `readonly_denied` /

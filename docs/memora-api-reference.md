@@ -426,7 +426,7 @@ interface Memory {
   accessedAt: string; // 最后访问时间（每次召回时刷新）
   deletedAt?: string; // 软删除时间（ISO 8601，可选；非 undefined 表示已软删除。回收站**无自动清理**：保留期清理由宿主入口显式触发，见 writePurgeExpired）
   metadata?: Record<string, string>; // 配置文件 frontmatter 额外元数据（仅配置文件写入路径使用，不进记忆库）
-  summaryType?: SummaryType; // round-summary 摘要类型（preference/fact/decision/intent/general；顶层持久化字段）
+  summaryType?: 'preference' | 'fact' | 'decision' | 'intent' | 'general'; // round-summary 摘要类型（顶层持久化字段；类型随 Memory 签名推断，不单独导出）
   sessionName?: string;  // round-summary 归属会话标识（顶层持久化字段，仅 round-summary 有意义）
   roundId?: string;      // round-summary 归属轮次标识（顶层持久化字段，仅 round-summary 有意义）
   isModified?: boolean;  // 摘要是否已被人工修改（仅 round-summary 有意义）
@@ -1026,7 +1026,7 @@ isRetryableErrorCode(ToolErrorCode.PATH_NOT_ALLOWED);  // false
 
 ## 十六、类型导出
 
-> 以下**精选子集**为宿主最常用的公开导出，全部经 `@zooique/memora` 再导出（无幻影）；未在清单中的其他导出（如 `DuplicateCallInterceptor` / `SessionManager` / `ProviderRouter` / `SummaryType` 等）以 `src/index.ts` 为准。治理报告类型（`DedupReport` / `SourceHealthReport` 等）经方法返回推断，不列为显式导出。
+> 以下**精选子集**为宿主最常用的公开导出，全部经 `@zooique/memora` 再导出（无幻影）；未在清单中的其他导出（如 `SessionManager` / `ProviderRouter` 等）以 `src/index.ts` 为准。导出面已于 2026-10-06 收敛：只保留「宿主消费」或「本手册 / README 明文承诺」的符号，内部实现不再挂公共面。治理报告类型（`DedupReport` / `SourceHealthReport` 等）经方法返回推断，不列为显式导出。
 
 ```typescript
 // Agent 与流式事件
@@ -1040,7 +1040,6 @@ export type {
 export type {
   AgentOptions,
   AgentContext,
-  AgentProjectEntry,
 } from '@zooique/memora';
 export { type AgentForkResult } from '@zooique/memora';
 export type { SessionCheckpoint } from '@zooique/memora';
@@ -1079,8 +1078,6 @@ export { escapeLike, escapeLikeSnippet, validateSource } from '@zooique/memora';
 export type { SourceValidationSeverity } from '@zooique/memora';
 export type { IMemoryStorage } from '@zooique/memora';
 export { InMemoryStorage } from '@zooique/memora';
-// 治理共享常量（提升/上限/下限）
-export { BOOST_INCREMENT, SCORE_CEILING, SCORE_FLOOR } from '@zooique/memora';
 export type { ISessionStore, SessionMessage } from '@zooique/memora';
 export type { ForkResult } from '@zooique/memora';
 
@@ -1106,10 +1103,6 @@ export type { ToolErrorCodeValue } from '@zooique/memora';
 export type { ILogger } from '@zooique/memora';
 export { setLogger, logger } from '@zooique/memora';
 
-// 召回（2026-09-10 减法：`recall()` 召回编排 + `RecallOptions` 已退役——
-// 唯一消费者是跨重启恢复链的 warmRecall，随之整体下线；记忆检索走 `search_memories` 工具 → `searchByKeyword`）
-export { extractKeywords } from '@zooique/memora';
-
 // 网络搜索
 export type { IWebSearchProvider, SearchResult, WebSearchOptions, SearchEndpoint } from '@zooique/memora';
 export { FetchWebSearchProvider } from '@zooique/memora';
@@ -1118,7 +1111,7 @@ export { FetchWebSearchProvider } from '@zooique/memora';
 export type { RolePackMeta } from '@zooique/memora';
 
 // 技能
-export type { SkillEntry, SkillMatch } from '@zooique/memora';
+export type { SkillEntry } from '@zooique/memora';
 
 // LLM
 export { createLlmProvider, createProviderFromConfig } from '@zooique/memora';
