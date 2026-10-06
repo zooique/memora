@@ -2049,10 +2049,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           unparsedToolIntentCount: 0,
           ledgerStubEchoCount: 0,
           readDedupBlockCount: 0,
-          // SCRIPT-2 P1 期双轨核对观测（零初始值 = 健康起点；非 0 见字段 JSDoc）
-          toolOutcomeUnreportedCount: 0,
-          toolBlockedDisagreementCount: 0,
-          // B1 主动挡下计数（零起点；B4 前执行层闸门与 failureCount 双计）
+          // B4 口径：执行层闸门归 blocked（不再与 failureCount 双计），见字段 JSDoc
           toolBlockedCount: 0,
           toolBlockedWithFailureCount: 0,
         },

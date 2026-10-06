@@ -363,7 +363,7 @@ describe('auditToolCallPairing（批次成形发送边界守卫纯谓词）', ()
   });
 });
 
-// ─── isToolFailure（失败判据单点 · SCRIPT-1 / METRICS-PREFIX-1）────────────
+// ─── isToolFailure（判据桥 · 未切族文本→status 派生 · SCRIPT-1 / METRICS-PREFIX-1）────────────
 
 /**
  * 失败判据的**前缀约定契约**（正向：已登记前缀 → 判定真值）。

@@ -133,10 +133,10 @@ export function isRetryableToolError(result: string): boolean {
  * · `blocked` —— **我们主动挡下的**（护栏拦截 / 只读拒绝 / 幂等跳过 / fail-closed 拒绝）。
  *   语义依据 = 纪律「主动挡下的 ≠ 工具跑失败的」：它既非成功也非失败。
  *
- * **`blocked` 的产出点按执行路径分两类**：
+ * **`blocked` 的产出点（B4 后全路径覆盖）**：
  *   · 执行层闸门（宿主审批拒绝 / 只读拒绝 / 幂等跳过）⇒ `ToolRunner` 直接报 `blocked`；
- *   · loop 护栏拦截的工具不进 `ToolRunner`，当前无 outcome（落 unreported 观测），
- *     护栏点的 outcome 写入在后续批次补齐。
+ *   · loop 护栏 / 台账替身 ⇒ loop 分发段推送点就地构造 `blockedOutcome`；
+ *   · loop 内旁路（compress_context / remember_intel）⇒ 各自实现内构造。
  */
 export type ToolStatus = 'ok' | 'failed' | 'blocked';
 
@@ -220,13 +220,13 @@ export function blockedOutcome(
 }
 
 /**
- * 工具失败前缀（判据 SSOT，`isToolFailure` 唯一真源）。
+ * 工具失败前缀（**判据桥真源**——B4 后唯一残余的文本判据，语义见 `isToolFailure`）。
  *
- * ## ⚠️ 定位：这是**过渡期**判据，SCRIPT-2 完成后退役
+ * ## ⚠️ 定位：**未切族的过渡派生器**，B5 物理删除
  *
- * 当前阶段（双轨并行）：`status` 与本函数**并存**，且必须满足
- * `outcome.status === 'failed'` ⟺ `isToolFailure(outcome.text)`（一致性断言锁死）。
- * **判据的唯一权威是 `status`**；本函数在双轨期只做**交叉验证**，不做决策。
+ * B4 判据切换后编排层/计数层一律读 `ToolOutcome.status`；本常量只服务
+ * `toolRunner.runOne` 的回落路径——未切 19 族的执行器只返回文本，按前缀派生 status。
+ * 已切族不再经过它（判定 = 结构化 status，文本降为渲染面）。
  *
  * 两族，缺一不可：
  *  ① `[ERR…`    —— 内核结构化错误族（`[ERR:TOOL:X]` / `[ERR:INVALID_ARG]` / `[ERR:PATH_DENIED]` …）
@@ -235,9 +235,10 @@ export function blockedOutcome(
  *     `[COMMAND_ERROR]` …）。**这一族历史上不在 `[ERR` 判据内** ⇒ 脚本/代码/命令
  *     工具的全部失败与超时恒被判为成功（台账 SCRIPT-1）。
  *
- * ⚠️ 改这里等于改失败判据（口径变更）：新增前缀会让 `toolFailureCount` 历史数字上升，
- * 前缀约定必须由 `managers/__tests__/toolCallHelpers.test.ts` 的「isToolFailure · 前缀约定契约」
- * 段锁定（失败族 + 豁免族逐条断言），不得靠"记得避开"维持。
+ * ⚠️ 改这里 = 改未切族的失败派生口径（历史可比性中断）：前缀约定由
+ * `managers/__tests__/toolCallHelpers.test.ts` 的「isToolFailure · 前缀约定契约」段锁定
+ * （失败族 + 豁免族逐条断言），并由 `toolFailurePrefixGuard` 反向对账，不得靠"记得避开"维持。
+ * B5（最终消亡批次）19 族 outcome 化后，本常量与 `isToolFailure` 一并物理删除。
  */
 const TOOL_FAILURE_PATTERNS: readonly RegExp[] = [
   /^\[ERR/,
@@ -245,30 +246,22 @@ const TOOL_FAILURE_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
- * 判断工具结果是否为失败（判据单点）。
+ * 判断工具结果是否为失败（**判据桥**：未切族文本 → 结构化 status 的边界转换器）。
  *
- * 消费方**全部**经此函数，禁止再手写前缀判断：
- *   - `toolRunner` 执行层 `ok`（喂 outbox 幂等）
- *   - `loop` 编排层 `ok`（含 blocked 第三态排除）
- *   - `loop` `toolFailureCount` 计数
- *   - `toolExecutor` `kill_command` 已终态分支（**片段级**，见下方「两类消费点」）
+ * ## B4 后的定位（已收窄，勿再当编排判据用）
  *
- * ## 两类消费点（性质不同，勿混为同一种用法）
+ * SCRIPT-2 B4 判据切换后，编排层 / 计数层 / ToolRunner 出口**一律读
+ * `ToolOutcome.status`**。本函数**唯一**生产消费点 = `toolRunner.runOne` 的回落路径：
+ * 未切 19 族（read_file / write_file / task_table_* / kill_command …）的执行器只返回
+ * 文本，runOne 据此派生 `failed` / `ok`。它是「文本工具 → 结构化事实」的边界转换器，
+ * **不再是判据 SSOT**——已切族若绕过 outcome 靠它判定，等于在结构化通道旁重开
+ * 文本判据（措辞折叠同族伤，禁）。
  *
- * **① 整串级**（前三个）：传入的是**最终工具结果全文**，判据答「这个工具调用是不是失败了」。
- * 位置正确（失败前缀在行首）由产出方保证。
+ * **守卫**：`toolFailurePrefixGuard`（防新增文本失败前缀绕过本函数）+
+ * `toolCallHelpers.test.ts`「前缀约定契约」段。B5 后随 19 族 outcome 化一并物理删除。
  *
- * **② 片段级**（`toolExecutor` 的 `kill_command` 已终态分支）：传入的是**结果体片段**
- * （`formatCommandResult` 的产物），用于决定「结局事实与控制流事实谁占行首」——
- * 这是**产出侧**的自检：只有结局在前缀位时，最终整串才判得出失败。
- * 它的存在不是第二处判据，而是让「行首归属」这个隐性要求**在产出侧显式化**；
- * 最终判定仍由整串级消费点（`loop` / `toolRunner`）做。
- * ⚠️ 若将来 `kill_command` 改走别的格式化路径，此片段级消费点须同步核对其输出是否仍以失败前缀开头。
- *
- * **不锚定行首的例外说明**：`isRetryableToolError` 刻意不锚定（结果被 `<tool_result>`
- * 包裹后前缀不在行首）；本函数**锚定行首**——它判的是「这个工具结果本身是不是错误」，
- * 包裹发生在计数之后（`_processToolResults` 先判后包），故行首即真源。
- * 若将来调用顺序变化，必须同步去掉锚定并重跑契约测试。
+ * **锚定行首**：它判的是「这个工具结果本身是不是错误」。未切族结果在包裹
+ * （`wrapToolResult`）之前由 runOne 判定，失败前缀位于整串行首。
  */
 export function isToolFailure(result: string): boolean {
   return TOOL_FAILURE_PATTERNS.some((re) => re.test(result));

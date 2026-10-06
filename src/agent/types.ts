@@ -42,9 +42,10 @@ export type AgentChunk = (
       ok: boolean;
       summary?: string;
       /**
-       * 策略拦截标记：工具被内核确定性拒绝（如 web_search 达硬上限），
-       * 未实际执行。ok=false + blocked=true：区别于「执行失败」，UI 显示「已拦截」，
-       * 不计成功数亦不计失败数；LLM 收到的是拒绝文案而非真实结果。
+       * 主动挡下标记（B4 口径）：工具被**我们**拦下未实际执行——loop 护栏（搜索上限等）、
+       * 执行层闸门（宿主审批拒绝 / 只读拒绝 / 幂等跳过）、旁路拒绝均归此。
+       * ok=false + blocked=true：区别于「执行失败」，UI 显示「已拦截」，不计成功数亦不计失败数；
+       * LLM 收到的是拒绝文案而非真实结果。
        */
       blocked?: boolean;
     }

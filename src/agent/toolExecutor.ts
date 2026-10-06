@@ -29,7 +29,6 @@ import {
 } from '@/agent/builtinTools.js';
 import { sanitizeExternalText } from '@/agent/textSanitize.js';
 import {
-  isToolFailure,
   okOutcome,
   failedOutcome,
   blockedOutcome,
@@ -1531,7 +1530,11 @@ export class ToolExecutor {
         if (rawCwd) {
           const resolved = resolveSafePath(this.builtinHandlers.projectPath, rawCwd);
           if (!resolved) {
-            return `[ERR:PATH_DENIED] 工作目录越界（超出项目根）："${rawCwd}"`;
+            const pathDeniedText = `[ERR:PATH_DENIED] 工作目录越界（超出项目根）："${rawCwd}"`;
+            // 原生 outcome：越界拒绝 = 主动挡下 ⇒ blocked（对齐 run_project_script 同判据先例；
+            // B4 口径：blocked 不再计入 toolFailureCount，见方案 §六决策二）
+            emitOutcome?.(blockedOutcome('permission_denied', pathDeniedText));
+            return pathDeniedText;
           }
           cwd = resolved;
         }
@@ -1557,7 +1560,11 @@ export class ToolExecutor {
         // 裸数字 1 仍会漏过——若不认，模型要的后台会退化成同步阻塞（正是本能力要消除的形态）
         if (args['background'] === true || args['background'] === 1) {
           if (!this.backgroundTasks) {
-            return '[ERR:TOOL:NOT_AVAILABLE] run_command 后台模式不可用：未装配后台任务注册表';
+            // 能力缺失如实说（B1 缺口补齐：补 emit，对齐 run_code/run_skill_script NOT_AVAILABLE 先例）
+            const notAvailableText =
+              '[ERR:TOOL:NOT_AVAILABLE] run_command 后台模式不可用：未装配后台任务注册表';
+            emitOutcome?.(failedOutcome(notAvailableText));
+            return notAvailableText;
           }
           const rawTimeout = args['timeoutMs'];
           const taskId = this.backgroundTasks.start(
@@ -1582,8 +1589,7 @@ export class ToolExecutor {
         // 定长与净化由 formatCommandResult 自带（真源在格式化层，回流面共用同一上限）
         const text = formatCommandResult(result, effectiveTimeoutMs);
         // 原生 status 直接读**执行事实**（不扫文本前缀）：超时或退出码非 0 = failed，其余 = ok。
-        // loop 的 _crossCheckOutcome 会把它与 [COMMAND_ERROR]/[COMMAND_TIMEOUT] 前缀逐字交叉核对
-        // （双轨不变量①），分歧即红——此处改事实、核对设施守口径。
+        // status 与 text 同源产出，编排层/计数层只读 status（B4 判据切换，无文本交叉核对）。
         const commandFailed = result.timedOut || result.exitCode !== 0;
         emitOutcome?.(commandFailed ? failedOutcome(text) : okOutcome(text));
         return text;
@@ -1623,18 +1629,19 @@ export class ToolExecutor {
           return `[KILLED] taskId=${taskId}（已终止；以下为截至终止时的输出）\n命令：${task?.command ?? '(未知)'}\n${formatKilledCommandOutput(outcome.result)}`;
         }
         const settledNote = `[TASK_ALREADY_SETTLED] taskId=${taskId} 已是终态（status=${outcome.status}，无需终止）`;
-        // 已终态 ≠ 失败；但「已是终态」是**控制流事实**、「退出码非零/超时」是**执行结局事实**，
-        // 两者抢同一个行首 ⇒ 判据（isToolFailure 锚定行首）只看得见先到的那一个。
-        // 原写法把 [TASK_ALREADY_SETTLED] 放行首、[COMMAND_ERROR] 放第二行 ⇒ 已终态的
-        // 失败任务被判成功（SCRIPT-1 同形状漏计，2026-10-06 实测）。
-        // 修法 = 改**喂给判据的事实**，不改判据：失败/超时终态把结果体提到行首（结局可判），
-        // 「已终态」说明降为末尾附注（信息不丢，仍在上下文里）。
+        // 行首归属判据改读**结构化执行事实**（B4 判据切换，不再扫文本前缀）：
+        // 「已是终态」是控制流事实、「退出码非零/超时」是执行结局事实，两者抢同一行首。
+        // 原写法把 [TASK_ALREADY_SETTLED] 放行首 ⇒ 已终态的失败任务被判成功
+        // （SCRIPT-1 同形状漏计，2026-10-06 实测）。
+        // 修法：失败/超时终态把结果体提到行首（结局可判），「已终态」说明降为末尾附注。
         // ⚠️ 引导语必须**随结果体一起走**（不能钉在 settledNote 上）：它在原文案里是
         // **前置引导**（结果在下方）。若失败路径把同一句放在结果体**之后**，「以下」就变成
         // 指向上方 —— 对 LLM 是指代错乱的谎。两条路径各自带对位置的引导语。
         const commandLine = `命令：${task?.command ?? '(未知)'}`;
         const body = formatCommandResult(outcome.result);
-        if (isToolFailure(body)) {
+        // 事实真源 = 注册表记录的进程终态（timedOut / exitCode），与同步路径判据同源
+        const settledWithFailure = outcome.result.timedOut || outcome.result.exitCode !== 0;
+        if (settledWithFailure) {
           // 附注在结果**之后** ⇒ 用回指语（「其结果为」），不用「以下」。
           return `${body}\n${commandLine}\n${settledNote}；其结果为上述内容`;
         }

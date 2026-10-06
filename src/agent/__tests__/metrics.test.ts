@@ -12,6 +12,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { AgentLoop } from '@/agent/loop.js';
 import { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
+import { blockedOutcome, type ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
 import type { AgentChunk } from '@/agent/types.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { AgentMetrics } from '@/agent/tracer.js';
@@ -261,6 +262,69 @@ describe('AgentLoop · 工具调用指标', () => {
     const metrics = loop.getMetrics();
     expect(metrics.tools.callCount).toBe(3);
     expect(metrics.tools.failureCount).toBe(0);
+  });
+
+  it('B4 口径：执行层闸门 emit blocked → toolBlockedCount 累加且不计 failureCount', async () => {
+    // 执行器同点 emit 结构化 blocked + 返回成功形文本：status 权威，文本只是渲染面。
+    // 口径变更（Breaking）：拦截从「文本算失败」改归 blocked ⇒ failureCount 下降历史不可比。
+    const toolExecutor = vi.fn(async (_n: string, _a: string, emit?: (o: ToolOutcome) => void) => {
+      emit?.(blockedOutcome('permission_denied', '[ERR:TOOL:PERMISSION_DENIED] 宿主拒绝'));
+      return '[ERR:TOOL:PERMISSION_DENIED] 宿主拒绝';
+    });
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'tc1', type: 'function', function: { name: 'test_tool', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '收到拦截' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: toolExecutor as never,
+    });
+
+    const chunks = await consumeGenerator(loop.processUserInput('调用工具'));
+
+    const metrics = loop.getMetrics();
+    expect(metrics.tools.toolBlockedCount).toBe(1);
+    expect(metrics.tools.failureCount).toBe(0); // 拦截 ≠ 失败（口径变更锁定）
+    // chunk 侧同步呈现「已拦截」语义（UI 据此区别于失败）
+    const toolResult = chunks.find((c) => c.type === 'tool_result') as
+      { blocked?: boolean; ok: boolean } | undefined;
+    expect(toolResult?.blocked).toBe(true);
+    expect(toolResult?.ok).toBe(false);
+  });
+
+  it('B4 口径：remember_intel 缺 note = 旁路主动挡下 → toolBlockedCount 累加且不计 failureCount', async () => {
+    // remember_intel 由 loop 拦截自执行（不经 ToolExecutor）：缺 note → blocked(invalid_intel_note)。
+    // 重归类前它是「无失败前缀 = 成功」，B4 起如实归 blocked（方案 §六决策四补完）。
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              {
+                id: 'tc1',
+                type: 'function',
+                function: { name: 'remember_intel', arguments: '{"note":"  "}' },
+              },
+            ],
+          },
+        ],
+        [{ content: '好的' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    await consumeGenerator(loop.processUserInput('记个笔记'));
+
+    const metrics = loop.getMetrics();
+    expect(metrics.tools.toolBlockedCount).toBe(1);
+    expect(metrics.tools.failureCount).toBe(0); // 旁路拒绝不计失败（口径变更锁定）
   });
 });
 

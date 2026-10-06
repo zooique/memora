@@ -75,42 +75,13 @@ export class LoopMetrics {
    *  后者 = L3 变体顶替；健康态应接近 0，持续增长 = 模型在同主体上反复重读。 */
   readDedupBlockCount = 0;
 
-  // ─── SCRIPT-2 status 字段化的双轨核对观测（P1 期 · 行为零变更）──
+  // ─── SCRIPT-2 主动挡下计数（B4 口径收口）──
   /**
-   * 未经 `ToolRunner` 的工具执行路径累计次数（`compress_context` / `remember_intel` /
-   * 台账替身等 loop 内自执行分支）。
+   * 主动挡下总数（loop 护栏 + 旁路拒绝 + 台账替身 + 执行层闸门）。
    *
-   * **用途** = SCRIPT-2 P2 三族推广的施工清单由此直接读出，**不重新考古**。
-   * 这些路径当前不参与 status 双轨核对（`ok` 判定仍走既有文本判据 ⇒ 行为不变），
-   * 但它们是「失败语义仍寄生在文本」的最后一批据点 —— P2 须逐个决定
-   * 「接入 status」或「明确豁免并登记」，**不得默认跳过**（默认跳过 = 又一处隐性约定）。
-   *
-   * **健康态**：P1 期非 0 属预期（旁路路径本就存在）。P2 完成后应趋于 0
-   * （全部接入或显式豁免），**持续非 0 = 有人加了新旁路却没处理 status 归属**。
-   */
-  toolOutcomeUnreportedCount = 0;
-
-  /**
-   * 「执行层报 `blocked`、编排层算 `failed`」的口径分歧累计次数（SCRIPT-2 · **待 P2/P3 裁决**）。
-   *
-   * **来源**：执行层闸门（宿主 `denied` / 只读拒绝 / outbox 幂等跳过）语义是
-   * 「我们主动挡下的」⇒ 报 `blocked`；而既有编排层把这些一律算 `ok=false`
-   * ⇒ **计入 `toolFailureCount` 失败计数**。两条判据对「主动挡下」的历史口径本就不同。
-   *
-   * **P1 期不动它**：改判据属口径变更（Breaking，须拍板 + 历史不可比登记），
-   * 抛错则直接掐断工具流（实测 5 条用例 `results` 变空）。故如实计数暴露分歧。
-   *
-   * **健康态**：非 0 即「这个口径分歧仍未裁决」的信号。裁决后本计数应停增。
-   */
-  toolBlockedDisagreementCount = 0;
-
-  // ─── SCRIPT-2 主动挡下计数（B1 起 · 纯新增，不改旧口径）──
-  /**
-   * 主动挡下总数（loop 护栏 + 台账替身 + 执行层闸门）。
-   *
-   * **双轨口径**：其中执行层闸门（`permission_denied` / `readonly_denied` /
-   * `idempotent_skip`）在 B4 前**仍计入** `toolFailureCount`（已知口径分歧）；
-   * B4 起从失败计数剔除 ⇒ `toolFailureCount` 下降且历史不可比（CHANGELOG 登记）。
+   * **B4 口径（Breaking，CHANGELOG 已登记）**：执行层闸门（`permission_denied` /
+   * `readonly_denied` / `idempotent_skip`）从 `toolFailureCount` 剔除、归入本计数
+   * ⇒ 失败数下降、挡下数上升，历史不可比。
    */
   toolBlockedCount = 0;
 

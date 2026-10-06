@@ -134,10 +134,9 @@ export interface AgentMetrics {
     /** 工具调用总次数 */
     callCount: number;
     /**
-     * 失败次数（判据 = `isToolFailure`：覆盖 `[ERR…` 结构化错误族与执行三态族
-     * `[SCRIPT_ERROR]` / `[CODE_TIMEOUT]` / `[COMMAND_ERROR]` …）。
-     * 判据真源 = `toolCallHelpers.isToolFailure`，**勿在本文件复述前缀**——
-     * 口径变更时只改那一个函数即可，否则文档层会留下一个已失效的定义。
+     * 失败次数（判据 = `ToolOutcome.status === 'failed'`，SCRIPT-2 B4 判据切换）。
+     * **口径变更（Breaking）**：执行层闸门（宿主审批拒绝 / 只读拒绝 / 幂等跳过）归
+     * `blocked`、不再计入本值 ⇒ 数字较双轨期下降且历史不可比；主动挡下看 `toolBlockedCount`。
      */
     failureCount: number;
     /**
@@ -156,27 +155,9 @@ export interface AgentMetrics {
      *  与 ledgerStubEchoCount 互补：本计数 = L2 精确判重（模型乒乓信号，撞墙升级文案的量化基线）。 */
     readDedupBlockCount: number;
     /**
-     * 未经 `ToolRunner` 的工具执行路径次数（SCRIPT-2 · `compress_context` /
-     * `remember_intel` / 台账替身等 loop 内自执行分支）。
-     *
-     * **用途** = SCRIPT-2 P2 三族推广的施工清单由此读出，不重新考古。
-     * P1 期这些路径不参与 status 双轨核对（行为不变），但它们是「失败语义仍寄生在文本」
-     * 的最后一批据点。健康态：P2 完成后应趋 0（全部接入或显式豁免）。
-     */
-    toolOutcomeUnreportedCount: number;
-    /**
-     * 「执行层报 `blocked`、编排层算 `failed`」的口径分歧次数（**待 P2/P3 裁决**）。
-     *
-     * 执行层闸门（宿主 denied / 只读拒绝 / 幂等跳过）语义是「主动挡下的」⇒ 报 blocked；
-     * 既有编排层把这些一律算 `ok=false` ⇒ 计入 `toolFailureCount`。两条判据历史口径不同，
-     * P1 期如实计数而不改判据（改则 Breaking，抛错则掐断工具流）。
-     * **健康态**：非 0 即「该口径分歧仍未裁决」的信号；裁决后应停增。
-     */
-    toolBlockedDisagreementCount: number;
-    /**
-     * 主动挡下总数（SCRIPT-2 B1 起）：loop 护栏 + 台账替身 + 执行层闸门。
-     * 双轨期执行层闸门仍计入 `failureCount`（见 toolBlockedDisagreementCount）；
-     * B4 起剔除 ⇒ `failureCount` 下降且历史不可比。
+     * 主动挡下总数（SCRIPT-2）：loop 护栏 + 旁路拒绝 + 台账替身 + 执行层闸门
+     * （宿主审批拒绝 / 只读拒绝 / 幂等跳过）。B4 起本计数从 `failureCount` 剥离
+     * 独立承载「主动挡下」语义 ⇒ `failureCount` 下降且历史不可比（CHANGELOG 登记）。
      */
     toolBlockedCount: number;
     /** 挡下中藏真失败的次数（`read_failed` 子集；独立于 failureCount） */

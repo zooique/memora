@@ -48,12 +48,12 @@ import {
   parseAskCalls,
   wrapToolResult,
   isRetryableToolError,
-  isToolFailure,
-  // B2-b：旁路工具 outcome 补报用（loop 自执行工具不经 ToolRunner，须在 loop 内补写）
+  // B4 判据切换：护栏/替身/compress/remember 的 outcome 就地构造用
   blockedOutcome,
   okOutcome,
+  failedOutcome,
 } from '@/agent/managers/toolCallHelpers.js';
-import type { ToolOutcome, BlockedReason } from '@/agent/managers/toolCallHelpers.js';
+import type { ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
 import { LlmCaller } from '@/agent/managers/llmCaller.js';
 import type { LlmCallResult } from '@/agent/managers/llmCaller.js';
 import { LoopMetrics } from '@/agent/managers/loopMetrics.js';
@@ -412,139 +412,7 @@ export class AgentLoop {
   onContextWindowChanged?: (effectiveTokens: number) => void;
   /** 单工具执行器（独立可测单元；strategy/回调经闭包读最新） */
   private readonly toolRunner: ToolRunner;
-  /**
-   * 本 step 的工具结果结构化 outcome 暂存（SCRIPT-2 · P1' 旁路，**step 内累积、step 边界清空**）。
-   *
-   * ## 用途：双轨期的一致性自检，不是第二套判据
-   *
-   * `ToolRunner` 旁路上报 `ToolOutcome`（`status` + `text`），此处按 `toolCallId` 暂存，
-   * 在既有 `ok` 判定旁**读一次做交叉核对**：上报 status 与编排层判定须一致，
-   * 未知分歧（除已登记的口径分歧外）即抛 —— 缺它整个方案等于制造口径分裂。
-   *
-   * ## 为什么暂存而非直接比较
-   *
-   * `onToolSettled` 在**执行层**触发（早于 loop 的 `yield tool_result`），
-   * 且并发工具的完成顺序 ≠ `toolCalls` 数组序 ⇒ 必须按 `toolCallId` 对齐后才能比。
-   * 生命周期 = 一个 step（`executeToolCalls` 开头清、末尾比），不跨 step —— 跨 step
-   * 暂存等于引入第二个状态源，与「每个概念一个真源」冲突。
-   */
-  private stepOutcomes = new Map<string, ToolOutcome>();
 
-  /**
-   * SCRIPT-2 双轨一致性自检（P1' 核心守卫）。
-   *
-   * ## 为什么必须有这个（缺它 = 整个方案在制造口径分裂）
-   *
-   * 双轨期并存两条成文判定：既有 `ok = !blocked && !isToolFailure(result)`（文本判据）
-   * 与新增 `outcome.status`（结构化判据）。二者若在某条路径上分叉，
-   * `toolFailureCount` 就会**同时混用两套口径**且无人知晓 —— 这比不做 status 化更糟。
-   * 本方法在**每条工具结果产出后立即比对**，不等落盘、不等 UI。
-   *
-   * ## 期望的映射（核对基准 = 既有编排层判定）
-   *
-   * | 情形 | 上报 status | 既有 `ok` / `blocked` |
-   * |:--|:--|:--|
-   * | 正常成功 | `ok` | `ok=true` |
-   * | 执行失败（非零退出 / 超时 / 异常 / 参数非法） | `failed` | `ok=false, blocked=false` |
-   * | loop 护栏拦截（`toolExecs[i].blocked`） | 无上报（unregistered） | `ok=false, blocked=true` |
-   * | 执行层闸门拒绝 / 幂等跳过 | `blocked`（执行层直接报） | `ok=false, blocked=false` |
-   *
-   * loop 护栏命中的工具不进 `ToolRunner` ⇒ 无 outcome 可核对，落 unregistered 观测；
-   * 执行层闸门报 `blocked` 而编排层推出 `failed` ⇒ 属已知口径分歧（见方法内登记）。
-   *
-   * ## 为什么分歧只登记不抛错
-   *
-   * 静默不一致 = 静默口径分裂，正是本项目「静默失败 = 假阴性」纪律针对的形态，
-   * 但对该分歧抛错会中断工具流；改判据则属口径变更（Breaking，须 CHANGELOG +
-   * 历史不可比登记）。故如实登记为观测，保持既有行为不变，由判据切换批次裁决。
-   * 判据切换后本方法退化为「status 是唯一权威」的幂等检查，可降为 debug 日志。
-   *
-   * @param toolCallId 协议唯一标识（并发同参工具的区分依据）
-   * @param text       既有文本判据的输入（渲染面）
-   * @param ok         既有编排层判定的结果
-   * @param blocked    loop 护栏事实
-   */
-  private _crossCheckOutcome(
-    toolCallId: { id: string },
-    text: string,
-    ok: boolean,
-    blocked: boolean,
-  ): void {
-    const reported = this.stepOutcomes.get(toolCallId.id);
-    if (!reported) {
-      // 无上报 = 走了不经 ToolRunner 的旁路（compress_context / remember_intel /
-      // 台账替身等 loop 内自执行分支）⇒ 不参与核对，但必须显式登记而非静默跳过。
-      this.stepUnreportedOutcomes.add(toolCallId.id);
-      return;
-    }
-    // 期望 status 由既有编排层判定推出
-    const expected = blocked ? 'blocked' : ok ? 'ok' : 'failed';
-    if (reported.status === expected) return;
-
-    // 已知口径分歧：执行层闸门（denied/skip）报 `blocked`，编排层按 ok=false 推出 `failed`。
-    // 判据切换批次裁决前保持既有行为，登记观测而非抛错（抛错会中断工具流）。
-    if (reported.status === 'blocked' && !blocked) {
-      this.stepBlockedDisagreements.add(toolCallId.id);
-      logger.debug(
-        { toolCallId: toolCallId.id, text: text.slice(0, 80) },
-        'SCRIPT-2 口径分歧：执行层报 blocked（主动挡下）但编排层算 failed（判据切换批次裁决）',
-      );
-      return;
-    }
-    throw new Error(
-      `[SCRIPT-2 双轨不一致] toolCallId=${toolCallId.id}：status=${reported.status} ` +
-        `但既有判定推出 ${expected}（text 前缀判据 ok=${ok} blocked=${blocked}）。` +
-        `text 开头：${text.slice(0, 80)}`,
-    );
-  }
-
-  /**
-   * SCRIPT-2 B2-b：loop 内自执行旁路工具（compress_context / remember_intel）的 outcome 派生。
-   *
-   * 这两类工具由 loop 现场执行、不经 ToolRunner ⇒ 此前无 outcome 上报，每次落 unreported
-   * 观测（P1 期已知缺口，B2-b 归零）。归类判据 = **loop 自产文案的分支形态**（前缀匹配范围
-   * 仅限 loop 自己写的文案，非外部内容，单点维护）：
-   * - 拒绝形（无可压缩目标 / 目标已不在当前上下文 / note 未写入）→ blocked 带旁路原因——
-   *   工具主动拒绝执行所请求的动作，与台账替身同族；编排层旧口径仍算 ok ⇒ 落已知分歧族
-   *   （stepBlockedDisagreements，B4 裁决），不抛错不中断。
-   * - 其余（含摘要生成失败 / 压缩失败）→ ok **镜像旧口径**：旧判据本就不把它们当失败
-   *   （非 [ERR 前缀），双轨期镜像保留零行为变更；B4 切换时随内部工具返回结构化一并重归类。
-   */
-  private _bypassOutcomeOf(toolName: string, text: string): ToolOutcome {
-    // compress_context：无目标/目标消失 = 主动拒绝压缩 → no_compress_target
-    if (toolName === COMPRESS_CONTEXT_TOOL.name) {
-      if (
-        text.startsWith('[compress_context] 无可压缩目标') ||
-        text.startsWith('[compress_context] 目标已不在当前上下文')
-      ) {
-        return blockedOutcome('no_compress_target', text);
-      }
-      return okOutcome(text);
-    }
-    // remember_intel：note 缺失/非法未写入 = 主动拒绝写入 → invalid_intel_note；已记录 → ok
-    if (toolName === REMEMBER_INTEL_TOOL.name) {
-      return text.includes('未写入') ? blockedOutcome('invalid_intel_note', text) : okOutcome(text);
-    }
-    // 其余工具不经此入口（护栏/替身在调用点带 blocked=true，compress/remember 之外无旁路）
-    return okOutcome(text);
-  }
-
-  /**
-   * 本 step「执行层报 blocked、编排层算 failed」的分歧集合（观测用，不参与判定）。
-   *
-   * 集合非空即证明「执行层闸门拒绝/幂等跳过」这条路径在两套口径下归属不同 ——
-   * 现有 `toolFailureCount` 把它们计入失败，执行层语义认为它们是「主动挡下」。
-   * 剔除属口径变更（Breaking，须 CHANGELOG + 历史不可比登记），由判据切换批次裁决。
-   */
-  private readonly stepBlockedDisagreements = new Set<string>();
-
-  /**
-   * 本 step 未上报 outcome 的 toolCallId（观测用，不参与判定）。
-   *
-   * 用途：让「哪些执行路径还没接入 status 化」可观测而非靠翻代码 ——
-   * 后续批次的施工清单由此直接读出，不重新考古。
-   */
-  private readonly stepUnreportedOutcomes = new Set<string>();
   /** L2 运行时策略（单一策略对象）。Agent 每轮经 setStrategy 注入，构造期默认 DEFAULT_L2_STRATEGY */
   private strategy: L2RuntimeStrategy = { ...DEFAULT_L2_STRATEGY };
   /** 本 turn 是否已执行过自审查（单次终审：布尔状态，不再需要轮次计数） */
@@ -793,15 +661,6 @@ export class AgentLoop {
       builtinTools: opts.builtinTools,
       preExecutionCheck: opts.preExecutionCheck,
       onToolExecuted: opts.onToolExecuted,
-      // SCRIPT-2 旁路：按 toolCallId 暂存 outcome（四条出口：denied/skip=blocked，
-      // execute=ok/failed，catch=failed），供 _crossCheckOutcome 双轨核对。
-      onToolSettled: (toolCallId, name, outcome) => {
-        this.stepOutcomes.set(toolCallId, outcome);
-        logger.debug(
-          { tool: name, toolCallId, status: outcome.status },
-          '工具结果结构化上报（SCRIPT-2 旁路）',
-        );
-      },
       getStrategy: () => this.strategy,
       tracer: this.tracer,
     });
@@ -1070,8 +929,8 @@ export class AgentLoop {
       // timedOut 或退出码非 0 = 执行事实失败，判定式与 run_command 同步路径同源
       // （toolExecutor 的 commandFailed 同式，改一处必查另一处）。
       // 即时结算、无 step 归属：metrics 是 loop 实例级累计（无 per-turn 重置），
-      // 脱管后终局照常落账；不写 stepOutcomes 双轨核对——无 toolCallId 可挂，
-      // 无消费者的容器拒绝入库。
+      // 脱管后终局照常落账；不产 ToolOutcome——无 toolCallId 可挂（工具结果通道
+      // 只覆盖经 runOne 的同步执行），后台失败经本点直接结算进 metrics。
       // ⚠️ 口径变更：后台失败由不可见→计入 toolFailureCount，数字上升且历史不可比
       // （论证：docs/方案-工具结果status字段化-20261006.md §三批次表 B3、§七）。
       // task.result 类型可选，但自然终态必有（注册表 settle 先赋值后同步 notify），
@@ -2136,11 +1995,6 @@ export class AgentLoop {
     stepIndex: number,
   ): AsyncGenerator<AgentChunk, { aborted: boolean }, unknown> {
     this.appendAssistantToolCall(fullContent, toolCalls);
-    // SCRIPT-2 双轨暂存生命周期 = **一个 step**。
-    // 跨 step 累积 = 引入第二个状态源，与「每个概念一个真源」冲突。
-    // ⚠️ 观测集（stepUnreportedOutcomes / stepBlockedDisagreements）的**清空在结算方法内**
-    // （`_settleStepOutcomeObservations`）——单点清空。此处只清 stepOutcomes（纯暂存，无结算概念）。
-    this.stepOutcomes.clear();
 
     // 工具并行执行（保持顺序的并发）：Promise.all 并发所有工具（总耗时≈最慢工具），
     // 但 tool_start/tool_result 与 messages 均按原始顺序 yield/push，保证 Reflection slice 正确
@@ -2171,25 +2025,20 @@ export class AgentLoop {
     this.inAutonomousStep = true;
 
     // yield tool_start 并并发发起所有工具执行（不 await，由 Promise.all 统一等待）
-    // blocked 与执行 promise 耦合为同一结构体，每个工具恰好一条。
-    // 每个工具一次 push 一个 { blocked, promise }，结果按工具顺序对齐取出，
-    // 保证护栏拦截标记永不与执行结果错位（避免平行数组各自 push 导致索引漂移）。
-    const toolExecs: Array<{
-      /** loop 护栏/替身拦截事实（false = 经 ToolRunner 执行） */
-      blocked: boolean;
-      promise: Promise<string>;
-      /** 拦截原因（仅 blocked=true 出现；护栏取 GuardHit.reason，替身固定 ledger_stub） */
-      blockedReason?: BlockedReason;
-    }> = [];
+    // 每个工具一次 push 一个 { promise }，结果按工具顺序对齐取出，
+    // 保证拦截事实与执行结果永不错位（避免平行数组各自 push 导致索引漂移）。
+    // B4 判据切换：promise 直接产出 ToolOutcome——护栏/替身在推送点构造 blockedOutcome，
+    // 经 ToolRunner 的由 runOne 返回，loop 内自执行（compress/remember）返回结构化结果。
+    const toolExecs: Array<{ promise: Promise<ToolOutcome> }> = [];
     // 同路径写串行闸：键 = 写工具的规范化目标路径（`WRITE_PATH_EXTRACTORS`），值 = 该路径的写链尾。
     // 为何需要——`write_file` 是「读盘 → 改 → 写盘」，同 step 内并行发起时两次都基于同一份旧快照，
     // 后落地者覆盖先落地者 ⇒ **静默丢内容**（真机实证：insert + append 同 step 并行，插入行被覆盖）。
     // 只对**同路径**串行：不同文件之间维持完全并发（总耗时仍≈最慢的那条路径）。
-    const writeChains = new Map<string, Promise<string>>();
+    const writeChains = new Map<string, Promise<ToolOutcome>>();
     // 不透明写链尾（目标不可静态定位：脚本执行类 / 内部索引落盘类 / 'path' 提取失败降级）——
     // 屏障语义：与**一切**写互斥（它可能写任何文件），后续任何写也须排在它之后。
     // 批内共享即完备（step 串行推进，无跨批并发）。判据真源 = 工具定义行 `diskWrite` 声明。
-    let opaqueWriteTail: Promise<string> | undefined;
+    let opaqueWriteTail: Promise<ToolOutcome> | undefined;
     // 运行时护栏阈值组装（真源分配见 guardRail.GuardThresholds）：
     //  写环=GUARD_THRESHOLDS.writeLoop，读闸=GUARD_THRESHOLDS.readFailed（独立静态真源，
     //  不再与 duplicateCallInterceptor 阈值复用——语义同宽，解开隐藏耦合）；
@@ -2250,10 +2099,8 @@ export class AgentLoop {
           );
         }
         toolExecs.push({
-          blocked: true,
-          promise: Promise.resolve(guardHit.message),
-          // search_limit 护栏原因（GuardHit 已带，透传供 blocked 结算）
-          blockedReason: guardHit.reason,
+          // search_limit 护栏拦截 = 主动挡下 ⇒ blockedOutcome（原因 GuardHit 已带）
+          promise: Promise.resolve(blockedOutcome(guardHit.reason, guardHit.message)),
         });
         continue;
       }
@@ -2275,10 +2122,11 @@ export class AgentLoop {
         // 拦截归属回喂：read_dedup 的撞墙升级计数只认自己拦的（onExec 分不清拦截归属）
         this.guardier.notifyBlocked(guardHit.guardId, tc.function.name, tc.function.arguments);
         toolExecs.push({
-          blocked: true,
-          promise: Promise.resolve(guardHit.message),
-          // 其余护栏（ask_limit/write_loop/read_failed/read_dedup）原因透传
-          blockedReason: guardHit.reason,
+          // 其余护栏（ask_limit/write_loop/read_failed/read_dedup）= 主动挡下 ⇒ blockedOutcome；
+          // read_failed 是唯一「挡下背后藏真失败」的护栏（hasRealFailure 事实随 outcome 带出）
+          promise: Promise.resolve(
+            blockedOutcome(guardHit.reason, guardHit.message, guardHit.reason === 'read_failed'),
+          ),
         });
         continue;
       }
@@ -2315,10 +2163,8 @@ export class AgentLoop {
             'read_file 台账替身回显：已用摘要顶替整读',
           );
           toolExecs.push({
-            blocked: true,
-            promise: Promise.resolve(formatLedgerStub(cov)),
-            // 台账替身非护栏、不经 GuardHit：原因固定 ledger_stub（B1 起 blocked 结算要求原因齐备）
-            blockedReason: 'ledger_stub',
+            // 台账替身 = 主动挡下 ⇒ blockedOutcome（替身非护栏、不经 GuardHit：原因固定 ledger_stub）
+            promise: Promise.resolve(blockedOutcome('ledger_stub', formatLedgerStub(cov))),
           });
           continue;
         }
@@ -2331,8 +2177,8 @@ export class AgentLoop {
       const useWriteBarrier =
         OPAQUE_WRITE_TOOL_NAMES.includes(tc.function.name) ||
         (pathExtractor !== undefined && writeKey === undefined);
-      // 第二级压缩工具由 loop 拦截执行（现场压临时摘要替换，loop 收尾即弃），不落 ToolExecutor
-      let promise: Promise<string>;
+      // 第二级压缩/情报区工具由 loop 拦截执行（决策四：直接返回 ToolOutcome，不经 ToolExecutor）
+      let promise: Promise<ToolOutcome>;
       if (tc.function.name === COMPRESS_CONTEXT_TOOL.name) {
         promise = this.compressContext(tc.function.arguments, signal);
       } else if (tc.function.name === REMEMBER_INTEL_TOOL.name) {
@@ -2341,68 +2187,45 @@ export class AgentLoop {
         // 屏障：排在全部在途写链尾之后（同/异路径写与既有屏障都要等），执行后成为新屏障尾
         const prior = [...writeChains.values(), ...(opaqueWriteTail ? [opaqueWriteTail] : [])];
         promise = Promise.all(prior).then(() => this.toolRunner.runOne(tc, signal));
-        // 链尾吞掉失败：一次写失败不得毒化后续写（本次真实结果仍由 promise 原样上抛）
-        opaqueWriteTail = promise.catch(() => '');
+        // 链尾吞掉失败：一次写失败不得毒化后续写（本次真实结果仍由 promise 原样上抛；
+        // 链尾值从不被消费，仅作串行占位 ⇒ okOutcome('') 即可）
+        opaqueWriteTail = promise.catch(() => okOutcome(''));
       } else if (writeKey) {
         // 等同路径上一次写落地后再执行——这样本次「读盘」拿到的是上一次写后的最新内容，
         // 不再基于旧快照、也就不会把上一次的改动覆盖掉；屏障在途时同样等它（目标可能就是本文件）。
         const prior = [
-          writeChains.get(writeKey) ?? Promise.resolve(''),
+          writeChains.get(writeKey) ?? Promise.resolve(okOutcome('')),
           ...(opaqueWriteTail ? [opaqueWriteTail] : []),
         ];
         promise = Promise.all(prior).then(() => this.toolRunner.runOne(tc, signal));
         // 链尾吞掉失败：一次写失败不得毒化同路径的后续写（本次真实结果仍由 promise 原样上抛）
         writeChains.set(
           writeKey,
-          promise.catch(() => ''),
+          promise.catch(() => okOutcome('')),
         );
       } else {
         promise = this.toolRunner.runOne(tc, signal);
       }
-      toolExecs.push({ blocked: false, promise });
+      toolExecs.push({ promise });
     }
 
     const results = await Promise.all(toolExecs.map((e) => e.promise));
 
-    // 拦截标记 + 原因随结果一并下传：失败计数据此排除「主动挡下」、blocked 结算据此归因
-    // （与下方编排层 ok 判据同源——同一份 blocked 事实喂两处，禁各读一份）
-    this._processToolResults(
-      toolCalls,
-      results,
-      toolExecs.map((e) => e.blocked),
-      toolExecs.map((e) => e.blockedReason),
-    );
+    // 结果随 outcome 一并下传：status 是成败/拦截判据的唯一真源
+    //（B4 判据切换：编排层与计数层读同一份 status，禁另立文本判据）
+    this._processToolResults(toolCalls, results);
 
     // 按原始顺序 yield tool_result
     for (let i = 0; i < toolCalls.length; i++) {
       const tc = toolCalls[i]!;
-      const result = results[i]!;
-      // 第三态：策略拦截 blocked=true 非成功亦非失败——ok=false 且不计成功搜索数；
-      // 失败（isToolFailure 判据，见 toolCallHelpers）与拦截区分开，UI 显示「已拦截」，
-      // metrics 失败数不把拦截算作失败
-      const blocked = toolExecs[i]!.blocked;
-      const ok = !blocked && !isToolFailure(result);
-      // SCRIPT-2 B2-b：旁路工具 outcome 补报（unreported 归零）——
-      // ① blocked=true（护栏/台账替身）：不经 ToolRunner 无上报，此处补写；原因 B1 起要求齐备，
-      //    缺即抛错点名工具（禁静默兜底——无原因的 blocked 是契约破洞）。
-      // ② compress/remember（loop 内自执行）：按分支形态派生（见 _bypassOutcomeOf）。
-      // 写入后 _crossCheckOutcome 才有核对对象：护栏/替身侧 expected=blocked 同向一致；
-      // 旁路拒绝形属「编排算 ok / 执行面 blocked」已知分歧族（B4 裁决，登记不抛错）。
-      if (blocked) {
-        const reason = toolExecs[i]!.blockedReason;
-        if (!reason) {
-          throw new Error(
-            `SCRIPT-2：blocked 工具 ${tc.function.name} 缺 blockedReason（B1 起要求齐备，禁静默兜底）`,
-          );
-        }
-        this.stepOutcomes.set(tc.id, blockedOutcome(reason, result));
-      } else if (
-        tc.function.name === COMPRESS_CONTEXT_TOOL.name ||
-        tc.function.name === REMEMBER_INTEL_TOOL.name
-      ) {
-        this.stepOutcomes.set(tc.id, this._bypassOutcomeOf(tc.function.name, result));
-      }
-      this._crossCheckOutcome(tc, result, ok, blocked);
+      const outcome = results[i]!;
+      // 渲染面文本（给 LLM / 防重指纹 / 台账用）；成败与拦截一律读 outcome.status，不再扫文本
+      const result = outcome.text;
+      // 第三态：主动挡下（loop 护栏 / 执行层闸门 / 旁路拒绝 / 台账替身）非成功亦非失败——
+      // ok=false 且不计成功搜索数；失败与拦截区分开，UI 显示「已拦截」，
+      // metrics 失败数不把拦截算作失败（B4 口径：执行层闸门也归 blocked，见方案 §六决策二）
+      const blocked = outcome.status === 'blocked';
+      const ok = outcome.status === 'ok';
       // 搜索收敛护栏：累计本闭环成功 web_search 次数（LLM 反复搜索不收敛时据此注入收敛提示）
       if (tc.function.name === 'web_search' && ok) {
         this.successfulWebSearchCount++;
@@ -2467,7 +2290,9 @@ export class AgentLoop {
         toolName: tc.function.name,
         argsJson: tc.function.arguments,
         toolCallId: tc.id,
-        outcome: blocked ? 'blocked' : ok ? 'ok' : 'failed',
+        // B4 判据切换：执行层拒绝（宿主审批）从 'failed' 变 'blocked'——write_loop
+        // 自持状态因此不再把「用户拒绝」当失败升级文案，语义对齐「主动挡下」
+        outcome: outcome.status,
       });
       // 副作用型工具成功 → 主动失效关联的 read_file 缓存（放行后续合法重读）
       // 覆盖面派生自 `diskWrite:'path'` 声明（与串行闸同一真源），目标提取复用同一提取器——
@@ -2493,43 +2318,10 @@ export class AgentLoop {
     // 循环结束后再查 abort：最后一个工具执行期间被 abort 时返回 aborted:true，
     // 否则 processUserInput 会进入下一轮 LLM 调用（浪费资源）
     if (signal?.aborted) {
-      // 观测结算：此处工具**已执行完毕**（循环已跑完），观测集里可能有本 step 的真实记录
-      // ⇒ 必须结算，否则 abort 收场会静默丢掉它们（结算方法幂等，重复调用安全）。
-      this._settleStepOutcomeObservations();
       return { aborted: true };
     }
     this.inAutonomousStep = false;
-    this._settleStepOutcomeObservations();
     return { aborted: false };
-  }
-
-  /**
-   * SCRIPT-2 本 step 观测结算（P1 期）：把两个 step 内观测集**累加进 `LoopMetrics`** 后清空。
-   *
-   * ## 为什么必须有这个方法（否则两个 Set 是僵尸容器）
-   *
-   * `stepUnreportedOutcomes` / `stepBlockedDisagreements` 若只写不读、每 step 清空即丢，
-   * 就是**无消费者的容器**（项目铁律：无消费方容器拒绝入库）—— 且注释里
-   * 「让 P2 施工清单由此直接读出」就成了**撒谎的注释**。
-   * ⇒ 结算进 `LoopMetrics`（既有 metrics 单一真源，与 `readDedupBlockCount` 同族做法），
-   * 经 `getMetrics()` 对外可见，注释才成立。
-   *
-   * ## 累加而非直接赋值
-   *
-   * 两个集合是 **step 内瞬态**（每 step 清空），而 `LoopMetrics` 字段是**本 turn 累计**
-   * ⇒ 须累加。`Set` 的 `add` 幂等 ⇒ 同一 toolCallId 在同 step 内重复触发也只计一次
-   * （如 `_processToolResults` 与 abort 早退路径都经过核对）。
-   *
-   * ## 幂等保证
-   *
-   * 方法本身可重复调用（异常路径 + 正常路径都调）—— 但**结算后立即清空**，
-   * 故第二次调用累加 0，天然幂等（与「清空放在读取方」互为对照，见调用点）。
-   */
-  private _settleStepOutcomeObservations(): void {
-    this.metrics.toolOutcomeUnreportedCount += this.stepUnreportedOutcomes.size;
-    this.metrics.toolBlockedDisagreementCount += this.stepBlockedDisagreements.size;
-    this.stepUnreportedOutcomes.clear();
-    this.stepBlockedDisagreements.clear();
   }
 
   /**
@@ -2540,9 +2332,12 @@ export class AgentLoop {
    *
    * @param args 工具参数 JSON（{ target: 'earliest_round' | 'largest_tool_result' }）
    * @param signal 中止信号
-   * @returns 回传给 LLM 的确认串（失败/无目标时返回提示，不抛错阻断工具链）
+   * @returns 结构化 outcome（B4 判据切换）：无目标 → blocked(no_compress_target)；
+   *   真跑了但失败（摘要生成失败 / 压缩异常）→ **failed**（重归类：文本判据期这两串
+   *   无失败前缀、曾被静默算成功，口径变更见方案 §七）；成功 → ok。
+   *   text 仍是回传给 LLM 的提示串（失败/无目标不抛错阻断工具链）。
    */
-  private async compressContext(args: string, signal?: AbortSignal): Promise<string> {
+  private async compressContext(args: string, signal?: AbortSignal): Promise<ToolOutcome> {
     try {
       // 解析目标（非法/缺失降级 earliest_round）
       let target: CompressTarget;
@@ -2555,13 +2350,17 @@ export class AgentLoop {
       // 定位目标消息（各定位器只返回「可安全整段替换」的区间——配对完整性由定位器自身保证）
       const targetMsgs = this.findCompressTarget(target);
       if (!targetMsgs || targetMsgs.length === 0) {
-        return `[compress_context] 无可压缩目标（上下文为空或目标不存在；可用 target=${COMPRESS_TARGETS.join(' | ')}）`;
+        return blockedOutcome(
+          'no_compress_target',
+          `[compress_context] 无可压缩目标（上下文为空或目标不存在；可用 target=${COMPRESS_TARGETS.join(' | ')}）`,
+        );
       }
 
       // LLM 现场压成临时摘要
       const summary = await this.summarizeForCompression(targetMsgs, signal);
       if (!summary) {
-        return '[compress_context] 摘要生成失败，已跳过（不破坏上下文）';
+        // B4 重归类：真跑了压缩但摘要生成为空 ⇒ failed（原无失败前缀，曾被算成功）
+        return failedOutcome('[compress_context] 摘要生成失败，已跳过（不破坏上下文）');
       }
 
       // 替换为目标内容为临时摘要 system 消息（executionTemp：loop 收尾即弃）
@@ -2574,7 +2373,10 @@ export class AgentLoop {
       const startIdx = this.messages.indexOf(first);
       const endIdx = last === first ? startIdx : this.messages.indexOf(last);
       if (startIdx === -1 || endIdx === -1) {
-        return '[compress_context] 目标已不在当前上下文，已跳过';
+        return blockedOutcome(
+          'no_compress_target',
+          '[compress_context] 目标已不在当前上下文，已跳过',
+        );
       }
       this.messages.splice(startIdx, endIdx - startIdx + 1, tempSummaryMsg);
       this.executionTempSystem.add(tempSummaryMsg);
@@ -2585,10 +2387,13 @@ export class AgentLoop {
       );
       // 回调宿主：LLM 主动压缩完成（第二级压缩，与 contextTruncated 的内核自动截断区分）
       this.onContextCompressed?.(target, targetMsgs.length, summary.length);
-      return `[compress_context] 已把目标压缩为临时摘要（${summary.length} 字，loop 收尾即弃）：${summary.slice(0, 80)}`;
+      return okOutcome(
+        `[compress_context] 已把目标压缩为临时摘要（${summary.length} 字，loop 收尾即弃）：${summary.slice(0, 80)}`,
+      );
     } catch (err) {
       logger.warn({ err: toError(err).message }, 'compress_context 压缩失败，已跳过');
-      return '[compress_context] 压缩失败，已跳过（不阻断工具链）';
+      // B4 重归类：压缩异常 = 真跑了但失败 ⇒ failed（原无失败前缀，曾被算成功）
+      return failedOutcome('[compress_context] 压缩失败，已跳过（不阻断工具链）');
     }
   }
 
@@ -3213,9 +3018,7 @@ export class AgentLoop {
         unparsedToolIntentCount: this.metrics.unparsedToolIntentCount,
         ledgerStubEchoCount: this.metrics.ledgerStubEchoCount,
         readDedupBlockCount: this.metrics.readDedupBlockCount,
-        toolOutcomeUnreportedCount: this.metrics.toolOutcomeUnreportedCount,
-        toolBlockedDisagreementCount: this.metrics.toolBlockedDisagreementCount,
-        // SCRIPT-2 B1 主动挡下计数（执行层闸门 B4 前双计，见字段 JSDoc）
+        // SCRIPT-2 B4 口径：执行层闸门归 blocked（不再计入 failureCount），见字段 JSDoc
         toolBlockedCount: this.metrics.toolBlockedCount,
         toolBlockedWithFailureCount: this.metrics.toolBlockedWithFailureCount,
       },
@@ -3534,9 +3337,10 @@ export class AgentLoop {
    * ack **不回填 note 原文**（工具结果只回「已记录」），note 原文只进情报区 system 消息 → 不在用户流。
    *
    * @param args remember_intel 的 JSON arguments
-   * @returns 简短 ack（作为该工具调用的 tool 结果）
+   * @returns 结构化 outcome（B4 判据切换）：note 为空 → blocked(invalid_intel_note)
+   *   （主动挡下：没写就谈不上失败）；已记录 → ok。text 仍为简短 ack（工具结果不回填 note 原文）。
    */
-  private handleRememberIntel(args: string): string {
+  private handleRememberIntel(args: string): ToolOutcome {
     let note: string | undefined;
     try {
       const parsed = JSON.parse(args) as { note?: unknown };
@@ -3546,7 +3350,7 @@ export class AgentLoop {
       note = undefined;
     }
     if (!note) {
-      return '[情报区] 未写入：note 为空或缺少该参数。';
+      return blockedOutcome('invalid_intel_note', '[情报区] 未写入：note 为空或缺少该参数。');
     }
     const prev = this.intelNote;
     this.intelNote = prev ? `${prev}\n${note}` : note;
@@ -3554,7 +3358,7 @@ export class AgentLoop {
     if (this.intelNote.length > LOOP_CONSTANTS.MAX_INTEL_PREFIX_LEN) {
       this.intelNote = this.intelNote.slice(-LOOP_CONSTANTS.MAX_INTEL_PREFIX_LEN);
     }
-    return '[情报区] 已记录（对你私有，不会展示给用户）。';
+    return okOutcome('[情报区] 已记录（对你私有，不会展示给用户）。');
   }
 
   /**
@@ -3613,47 +3417,35 @@ export class AgentLoop {
   // ─── Reflection 辅助方法 ────────────────────────────────
 
   /**
-   * 处理工具执行结果：push tool 消息 + 结算主动挡下与失败计数
+   * 处理工具执行结果：push tool 消息 + 按结构化 `status` 结算计数。
    *
-   * @param blockedFlags 每条工具调用的 loop 护栏/替身拦截标记（与 toolCalls 同序）。**显式传入**
-   *   而非靠「护栏文案刻意避开失败前缀」维持——那是隐性约定、无声明、无测试锁定，
-   *   新护栏一旦用失败前缀即静默误计拦截为失败（台账 METRICS-PREFIX-1 结构缺口）。
-   *   缺省 undefined = 无拦截（调用方未提供时的兼容路径，等价于全 false）。
-   * @param blockedReasons 拦截原因（与 blockedFlags 同序，仅拦截位非空；护栏取 GuardHit.reason）。
-   *   经 ToolRunner 上报的 blocked（执行层闸门）原因在 `stepOutcomes` 的 outcome 上，不在此数组。
+   * B4 判据切换：成败/拦截判据唯一真源 = `ToolOutcome.status`（三值契约），不再解析文本前缀。
+   * 三路互斥穷尽：
+   *   · `blocked` → `toolBlockedCount`（主动挡下总数：loop 护栏 + 旁路拒绝 + 台账替身 + 执行层闸门）
+   *     其中 `hasRealFailure=true`（当前唯一 = read_failed 护栏）→ 另计 `toolBlockedWithFailureCount`
+   *   · `failed` → `toolFailureCount`；`ok` → 无计数
+   * **口径变更（Breaking，CHANGELOG 已登记）**：执行层闸门（宿主审批拒绝 / 只读拒绝 /
+   * 幂等跳过）从 `toolFailureCount` 剔除、归入 `toolBlockedCount` ⇒ 失败数下降、挡下数上升，
+   * 历史不可比（方案 §六决策二）。
    */
   private _processToolResults(
     toolCalls: NonNullable<Message['toolCalls']>,
-    results: string[],
-    blockedFlags?: readonly boolean[],
-    blockedReasons?: readonly (BlockedReason | undefined)[],
+    results: readonly ToolOutcome[],
   ): void {
     for (let i = 0; i < toolCalls.length; i++) {
       const tc = toolCalls[i]!;
-      const result = results[i]!;
+      const outcome = results[i]!;
       // 工具结果隔离：用 <tool_result> 包裹 + 指令前缀，防外部工具返回承载间接注入；
       // ERR 前缀保留在包裹内，供 isRetryableToolError 识别（该正则不锚定行首）
-      const wrapped = wrapToolResult(tc.function.name, result);
+      const wrapped = wrapToolResult(tc.function.name, outcome.text);
       this.appendToolMessage(wrapped, tc.id);
 
-      // ── 主动挡下统一结算（B1 起）：两个来源合为一个计数面，互不重叠 ──
-      // ① loop 护栏/替身（blockedFlags，原因同序带出）；
-      // ② ToolRunner 上报的 blocked outcome（执行层闸门/命令拒绝，原因在 outcome 上）。
-      const guardBlocked = blockedFlags?.[i] === true;
-      const reportedOutcome = this.stepOutcomes.get(tc.id);
-      const runnerBlocked = reportedOutcome?.status === 'blocked';
-      if (guardBlocked || runnerBlocked) {
+      // 计数读 status（禁另立文本判据——判据面与渲染面分离是 SCRIPT-2 的核心契约）
+      if (outcome.status === 'blocked') {
         this.metrics.toolBlockedCount++;
-        // 真失败判据：护栏侧 read_failed（hasRealFailure 唯一为 true 的护栏）；
-        // runner 侧以 outcome.hasRealFailure 字段为准（当前无 true 来源）
-        const hasRealFailure = guardBlocked
-          ? blockedReasons?.[i] === 'read_failed'
-          : reportedOutcome?.hasRealFailure === true;
-        if (hasRealFailure) this.metrics.toolBlockedWithFailureCount++;
-      }
-      // 失败计数（旧口径逐字保留）：仅 loop 护栏/替身排除；
-      // 执行层闸门的 blocked 在 B4 前仍按文本算失败（已知口径分歧，B4 剔除，见方案决策二）。
-      if (!guardBlocked && isToolFailure(result)) {
+        // blocked 背后藏真失败的子集计数（独立于失败总数，防「主动停手」与「真失败」混数）
+        if (outcome.hasRealFailure === true) this.metrics.toolBlockedWithFailureCount++;
+      } else if (outcome.status === 'failed') {
         this.metrics.toolFailureCount++;
       }
     }

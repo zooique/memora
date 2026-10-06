@@ -10,6 +10,35 @@
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更，随 3.1.0 发版。**不提前 bump**——`package.json` 版本号仍为 3.0.1，bump 属发版动作而非落地动作（ADR-033）。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
 
+### ⚠️ Breaking（内核 · 工具结果三值契约判据切换：执行层闸门 blocked 不再计入 toolFailureCount · `SCRIPT-2` B4，已定档 3.1.0）
+
+**口径变更（Breaking）**：执行层闸门（宿主审批拒绝 `permission_denied` / 只读拒绝 `readonly_denied` /
+幂等跳过 `idempotent_skip`）此前被文本判据算作**失败**（`[ERR:TOOL:PERMISSION_DENIED]` 等前缀命中
+`isToolFailure`）计入 `toolFailureCount`——「我们主动挡下的」与「工具真的跑失败了」混在一个数字里。
+B4 判据切换后编排层 / 计数层一律读 `ToolOutcome.status` 三值契约：**blocked 归入
+`toolBlockedCount`（主动挡下），不再计入 `toolFailureCount`**（方案 §六决策二）。
+
+**数字变化（历史不可比，跨版本比较该字段须先对齐此边界）**：
+
+- `toolFailureCount` / `AgentMetrics.tools.failureCount` **下降**（执行层闸门剔除 + run_command
+  cwd 越界 `[ERR:PATH_DENIED]` 转 blocked）；
+- `toolBlockedCount` **上升**（执行层闸门 + 旁路拒绝 `no_compress_target` / `invalid_intel_note` 计入）；
+- `compress_context` 摘要生成失败 / 压缩异常**重归类为 failed**（原无失败前缀、被静默算成功）⇒ 计入 failureCount；
+- chunk 呈现：执行层拒绝 / 幂等跳过从「失败」变「已拦截」（`tool_result` chunk `blocked: true`）；
+- `guardier.notifyExec` 收到执行层拒绝从 `'failed'` 变 `'blocked'`（write_loop 自持不再把用户拒绝当失败升级文案）。
+
+**双轨设施同批整体退役**：`ToolRunner.runOne` 返回值 `string` → `Promise<ToolOutcome>`（结构化事实
+直通编排层）；`onToolSettled` 旁路通道、`stepOutcomes` 注册表、`_crossCheckOutcome` 双轨核对、
+`stepBlockedDisagreements` / `stepUnreportedOutcomes` 观测集及其 metrics 出闸字段
+（`toolBlockedDisagreementCount` / `toolOutcomeUnreportedCount`）、`toolOutcomeConsistency.test.ts`
+一致性测试**全部删除**——status 是唯一判据，不再有第二轨道。
+
+**判据桥收窄（非退役）**：`isToolFailure` 降格为**未切 19 族文本 → status 的边界转换器**（唯一生产
+消费点 = `toolRunner.runOne` 回落），由前缀契约测试 + `toolFailurePrefixGuard` 守卫锁定；其物理删除
+随 B5（最终消亡批次：19 族 outcome 化）执行。B1 缺口补齐：run_command 后台模式未装配注册表出口补
+failedOutcome emit；kill_command 已终态分支的行首归属判据改读结构化进程终态（`timedOut` / `exitCode`），
+不再扫文本前缀。
+
 ### ⚠️ Breaking（内核 · 工具失败判据收敛单点：脚本/代码/命令三态族不再漏计 · `SCRIPT-1` + `METRICS-PREFIX-1`①②，已定档 3.1.0）
 
 **口径缺陷（静默失败 = 假阴性）**：失败判据此前散落三处、各自手写 `result.startsWith('[ERR')`

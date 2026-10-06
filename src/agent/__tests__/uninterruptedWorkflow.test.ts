@@ -2323,7 +2323,7 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
     opts: { preExecutionCheck?: (name: string, args: string) => PreExecutionResult },
     toolName = 'read_file',
     toolArgs = '{"path":"probe.txt"}',
-  ): Promise<Array<{ name: string; ok: boolean; summary?: string }>> {
+  ): Promise<Array<{ name: string; ok: boolean; blocked?: boolean; summary?: string }>> {
     agent = new Agent({
       projectPath: tmpProject,
       provider: new SingleToolThenTextProvider(toolName, toolArgs),
@@ -2336,10 +2336,15 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
       preExecutionCheck: opts.preExecutionCheck,
     });
     await agent.init();
-    const results: Array<{ name: string; ok: boolean; summary?: string }> = [];
+    const results: Array<{ name: string; ok: boolean; blocked?: boolean; summary?: string }> = [];
     for await (const chunk of agent.chat('读取探针文件')) {
       if (chunk.type === 'tool_result') {
-        results.push({ name: chunk.name, ok: chunk.ok, summary: chunk.summary });
+        results.push({
+          name: chunk.name,
+          ok: chunk.ok,
+          blocked: chunk.blocked,
+          summary: chunk.summary,
+        });
       }
     }
     return results;
@@ -2366,9 +2371,11 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
       preExecutionCheck: () => ({ skip: true, previousResult: '宿主缓存的已有结果' }),
     });
 
-    // skip 返回的 previousResult 原样透传（ok=true，非错误）
+    // skip 返回的 previousResult 原样透传；B4 口径：幂等跳过 = 主动挡下（blocked=true）
+    // 非成功——文本仍原样给 LLM，成败语义从「成功」改归「已拦截」（口径变更，CHANGELOG 已登记）
     expect(results).toHaveLength(1);
-    expect(results[0]!.ok).toBe(true);
+    expect(results[0]!.ok).toBe(false);
+    expect(results[0]!.blocked).toBe(true);
     expect(results[0]!.summary).toContain('宿主缓存的已有结果');
   });
 
@@ -2460,16 +2467,18 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
         idempotent: BUILTIN_TOOL_IDEMPOTENCY.write_file,
       });
 
-      const results: Array<{ ok: boolean; summary?: string }> = [];
+      const results: Array<{ ok: boolean; blocked?: boolean; summary?: string }> = [];
       for await (const chunk of agent.chat('写入探针文件')) {
         if (chunk.type === 'tool_result') {
-          results.push({ ok: chunk.ok, summary: chunk.summary });
+          results.push({ ok: chunk.ok, blocked: chunk.blocked, summary: chunk.summary });
         }
       }
 
-      // 宿主放行 → 内部幂等键跳过：outbox 标记 + 上次结果
+      // 宿主放行 → 内部幂等键跳过：outbox 标记 + 上次结果；
+      // B4 口径：幂等跳过 = 主动挡下（blocked=true），不再是成功
       expect(results).toHaveLength(1);
-      expect(results[0]!.ok).toBe(true);
+      expect(results[0]!.ok).toBe(false);
+      expect(results[0]!.blocked).toBe(true);
       expect(results[0]!.summary).toContain('[SKIP:TOOL:IDEMPOTENT]');
       expect(results[0]!.summary).toContain('幂等上次结果');
     },
@@ -2498,16 +2507,18 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
       idempotent: BUILTIN_TOOL_IDEMPOTENCY.write_file,
     });
 
-    const results: Array<{ ok: boolean; summary?: string }> = [];
+    const results: Array<{ ok: boolean; blocked?: boolean; summary?: string }> = [];
     for await (const chunk of agent.chat('写入探针文件')) {
       if (chunk.type === 'tool_result') {
-        results.push({ ok: chunk.ok, summary: chunk.summary });
+        results.push({ ok: chunk.ok, blocked: chunk.blocked, summary: chunk.summary });
       }
     }
 
-    // 无宿主回调 → 幂等键照常：outbox 标记 + 上次结果
+    // 无宿主回调 → 幂等键照常：outbox 标记 + 上次结果；
+    // B4 口径：幂等跳过 = 主动挡下（blocked=true），不再是成功
     expect(results).toHaveLength(1);
-    expect(results[0]!.ok).toBe(true);
+    expect(results[0]!.ok).toBe(false);
+    expect(results[0]!.blocked).toBe(true);
     expect(results[0]!.summary).toContain('[SKIP:TOOL:IDEMPOTENT]');
     expect(results[0]!.summary).toContain('现状幂等结果');
   });

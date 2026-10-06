@@ -254,7 +254,7 @@ export type ProcessEvent =
         name: string;
         ok: boolean;
         summary?: string;
-        /** 策略拦截：ok=false + blocked=true = 被确定性拒绝未执行（如搜索达硬上限） */
+        /** 主动挡下（B4 口径）：ok=false + blocked=true = 被我们拦下未执行（护栏/执行层闸门/旁路拒绝） */
         blocked?: boolean;
       };
     }

@@ -3,6 +3,7 @@
  *
  * 覆盖单工具执行的生命周期：三重闸门（只读/审批/宿主 preCheck）的 denied/skip/execute、
  * 成功回传 onToolExecuted、异常转结构化错误串、signal 中断竞争（ABORTED）。
+ * B4 起 runOne 返回 ToolOutcome（结构化事实）；denied/skip 直接构造 blocked outcome。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ToolRunner, type ToolCall, type ToolRunnerDeps } from '@/agent/toolRunner.js';
@@ -50,7 +51,8 @@ describe('ToolRunner 单工具执行', () => {
 
     const result = await runner.runOne(tc());
 
-    expect(result).toBe('OK');
+    expect(result.status).toBe('ok');
+    expect(result.text).toBe('OK');
     // raceToolWithSignal 始终把原生 outcome 回调作为第 3 参传入（未切族忽略即可）
     expect(deps.execute).toHaveBeenCalledWith('echo', '{}', expect.any(Function));
     expect(onToolExecuted).toHaveBeenCalledWith('echo', '{}', 'OK', true);
@@ -69,7 +71,8 @@ describe('ToolRunner 单工具执行', () => {
 
     const result = await runner.runOne(tc('write_file', '{payload}'));
 
-    expect(result.startsWith('[ERR:TOOL:READONLY_DENIED]')).toBe(true);
+    expect(result.status).toBe('blocked');
+    expect(result.blockedReason).toBe('readonly_denied');
     expect(deps.execute).not.toHaveBeenCalled();
   });
 
@@ -92,9 +95,9 @@ describe('ToolRunner 单工具执行', () => {
 
     // 写/执行工具（write_file / run_code）被只读闸拒绝
     const deniedWrite = await runner.runOne(tc('write_file', '{"path":"a","content":"x"}'));
-    expect(deniedWrite.startsWith('[ERR:TOOL:READONLY_DENIED]')).toBe(true);
+    expect(deniedWrite.blockedReason).toBe('readonly_denied');
     const deniedCode = await runner.runOne(tc('run_code', '{"language":"python","code":"x"}'));
-    expect(deniedCode.startsWith('[ERR:TOOL:READONLY_DENIED]')).toBe(true);
+    expect(deniedCode.blockedReason).toBe('readonly_denied');
     // 拒绝路径不入 execute（execute 仅被上 3 个只读工具调用）
     expect(execute).toHaveBeenCalledTimes(3);
   });
@@ -106,7 +109,7 @@ describe('ToolRunner 单工具执行', () => {
 
     const result = await runner.runOne(tc());
 
-    expect(result.startsWith('[ERR:TOOL:PERMISSION_DENIED]')).toBe(true);
+    expect(result.blockedReason).toBe('permission_denied');
     expect(deps.execute).not.toHaveBeenCalled();
   });
 
@@ -117,7 +120,9 @@ describe('ToolRunner 单工具执行', () => {
 
     const result = await runner.runOne(tc());
 
-    expect(result).toBe('已执行过');
+    expect(result.status).toBe('blocked');
+    expect(result.blockedReason).toBe('idempotent_skip');
+    expect(result.text).toBe('已执行过');
     expect(deps.execute).not.toHaveBeenCalled();
   });
 
@@ -139,11 +144,12 @@ describe('ToolRunner 单工具执行', () => {
 
     const result = await runner.runOne(tc());
 
-    expect(result.startsWith('[ERR:TOOL:')).toBe(true);
+    expect(result.status).toBe('failed');
+    expect(result.text.startsWith('[ERR:TOOL:')).toBe(true);
     // 建议送达：suggestions 从「人读」下沉进「LLM 上下文」，可执行确切的下一步指令
-    expect(result).toContain('建议：检查权限');
-    expect(result).toContain('磁盘只读'); // detail 仍保留
-    expect(onToolExecuted).toHaveBeenCalledWith('echo', expect.any(String), result, false);
+    expect(result.text).toContain('建议：检查权限');
+    expect(result.text).toContain('磁盘只读'); // detail 仍保留
+    expect(onToolExecuted).toHaveBeenCalledWith('echo', expect.any(String), result.text, false);
   });
 
   it('工具抛 MemoraError 且无 suggestions → 失败串不加「建议：」后缀（零噪音）', async () => {
@@ -162,8 +168,9 @@ describe('ToolRunner 单工具执行', () => {
 
     const result = await runner.runOne(tc());
 
-    expect(result).toBe('[ERR:TOOL:UNKNOWN] 错误：未知工具');
-    expect(result).not.toContain('建议：');
+    expect(result.status).toBe('failed');
+    expect(result.text).toBe('[ERR:TOOL:UNKNOWN] 错误：未知工具');
+    expect(result.text).not.toContain('建议：');
   });
 
   it('signal 提前 abort → 返回 ABORTED，不触发 execute', async () => {
@@ -174,92 +181,64 @@ describe('ToolRunner 单工具执行', () => {
 
     const result = await runner.runOne(tc(), ac.signal);
 
-    expect(result).toContain('[ERR:TOOL:ABORTED]');
+    expect(result.status).toBe('failed');
+    expect(result.text).toContain('[ERR:TOOL:ABORTED]');
     expect(execute).not.toHaveBeenCalled();
   });
 });
 
-describe('SCRIPT-2 原生 outcome 通道（B1）', () => {
+describe('SCRIPT-2 B4：runOne 返回 ToolOutcome（结构化事实，文本降为渲染面）', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('执行器 emit 原生 outcome → onToolSettled 原样上报（status 权威，不被文本判据覆盖）', async () => {
-    const onToolSettled = vi.fn();
+  it('执行器 emit 原生 outcome → 原样返回（status 权威，不被文本判据覆盖）', async () => {
     // 执行器在返回字符串的同点 emit：文本是成功形、status 是 blocked —— 原生为唯一权威
     const execute = vi.fn(async (_n: string, _a: string, emit?: (o: ToolOutcome) => void) => {
       emit?.({ status: 'blocked', text: 'OK', blockedReason: 'permission_denied' });
       return 'OK';
     });
-    const deps = makeDeps({ execute, onToolSettled });
-    const runner = new ToolRunner(deps);
+    const runner = new ToolRunner(makeDeps({ execute }));
 
     const result = await runner.runOne(tc());
 
-    expect(result).toBe('OK');
-    expect(onToolSettled).toHaveBeenCalledTimes(1);
-    expect(onToolSettled).toHaveBeenCalledWith(
-      't1',
-      'echo',
-      expect.objectContaining({ status: 'blocked', blockedReason: 'permission_denied' }),
-    );
+    expect(result.status).toBe('blocked');
+    expect(result.blockedReason).toBe('permission_denied');
+    expect(result.text).toBe('OK');
   });
 
-  it('执行器未 emit → 文本判据同源回落（未切族零变更）', async () => {
-    const onToolSettled = vi.fn();
-    // 失败串 + 无 emit：isToolFailure 回落 failed（同一次判定，不引入第二判据）
-    const deps = makeDeps({
-      execute: vi.fn(async () => '[ERR:X] 坏了'),
-      onToolSettled,
-    });
-    const runner = new ToolRunner(deps);
+  it('执行器未 emit → 判据桥按前缀回落（未切 19 族的唯一派生点，B5 后退役）', async () => {
+    // 失败串 + 无 emit：isToolFailure 桥回落 failed（同一次判定，不引入第二判据）
+    const failedRunner = new ToolRunner(makeDeps({ execute: vi.fn(async () => '[ERR:X] 坏了') }));
+    expect((await failedRunner.runOne(tc())).status).toBe('failed');
 
-    await runner.runOne(tc());
-
-    expect(onToolSettled).toHaveBeenCalledWith(
-      't1',
-      'echo',
-      expect.objectContaining({ status: 'failed' }),
-    );
+    // 成功串回落 ok（默认路径，无前缀即成功）
+    const okRunner = new ToolRunner(makeDeps({ execute: vi.fn(async () => 'OK') }));
+    expect((await okRunner.runOne(tc())).status).toBe('ok');
   });
 
-  it('denied/skip 出口带原因：readonly_denied / permission_denied / idempotent_skip', async () => {
+  it('denied/skip 出口直接构造 blocked：readonly_denied / permission_denied / idempotent_skip', async () => {
     // ① 只读闸拒绝 → readonly_denied
     const readonlyTools = [{ name: 'write_file', readonly: false }] as never;
-    let deps = makeDeps({
-      builtinTools: readonlyTools,
-      getStrategy: () => strategy({ toolReadonly: 'readonly' }),
-      onToolSettled: vi.fn(),
-    });
-    await new ToolRunner(deps).runOne(tc('write_file'));
-    expect(deps.onToolSettled).toHaveBeenCalledWith(
-      't1',
-      'write_file',
-      expect.objectContaining({ status: 'blocked', blockedReason: 'readonly_denied' }),
-    );
+    const r1 = await new ToolRunner(
+      makeDeps({
+        builtinTools: readonlyTools,
+        getStrategy: () => strategy({ toolReadonly: 'readonly' }),
+      }),
+    ).runOne(tc('write_file'));
+    expect(r1.status).toBe('blocked');
+    expect(r1.blockedReason).toBe('readonly_denied');
 
     // ② 宿主 preCheck 拒绝 → permission_denied
-    deps = makeDeps({
-      preExecutionCheck: vi.fn(() => ({ denied: true })) as never,
-      onToolSettled: vi.fn(),
-    });
-    await new ToolRunner(deps).runOne(tc());
-    expect(deps.onToolSettled).toHaveBeenCalledWith(
-      't1',
-      'echo',
-      expect.objectContaining({ blockedReason: 'permission_denied' }),
-    );
+    const r2 = await new ToolRunner(
+      makeDeps({ preExecutionCheck: vi.fn(() => ({ denied: true })) as never }),
+    ).runOne(tc());
+    expect(r2.blockedReason).toBe('permission_denied');
 
     // ③ outbox 幂等跳过 → idempotent_skip
-    deps = makeDeps({
-      preExecutionCheck: vi.fn(() => ({ skip: true })) as never,
-      onToolSettled: vi.fn(),
-    });
-    await new ToolRunner(deps).runOne(tc());
-    expect(deps.onToolSettled).toHaveBeenCalledWith(
-      't1',
-      'echo',
-      expect.objectContaining({ blockedReason: 'idempotent_skip' }),
-    );
+    const r3 = await new ToolRunner(
+      makeDeps({ preExecutionCheck: vi.fn(() => ({ skip: true })) as never }),
+    ).runOne(tc());
+    expect(r3.blockedReason).toBe('idempotent_skip');
   });
 });
