@@ -50,7 +50,7 @@ import {
   isRetryableToolError,
   isToolFailure,
 } from '@/agent/managers/toolCallHelpers.js';
-import type { ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
+import type { ToolOutcome, BlockedReason } from '@/agent/managers/toolCallHelpers.js';
 import { LlmCaller } from '@/agent/managers/llmCaller.js';
 import type { LlmCallResult } from '@/agent/managers/llmCaller.js';
 import { LoopMetrics } from '@/agent/managers/loopMetrics.js';
@@ -90,7 +90,15 @@ export interface AgentLoopOptions {
   /** Provider 路由选择器（多模型路由基础，可选） */
   providerRouter?: ProviderRouter;
   bootstrapMemories: Memory[]; // 永驻 + 领域记忆
-  toolExecutor: (name: string, args: string) => Promise<string>;
+  /**
+   * 工具执行入口（装配层注入）。
+   * 第 3 参 emitOutcome：已切族工具产出原生结构化 outcome 的通道（透传至 toolExecutor.execute）。
+   */
+  toolExecutor: (
+    name: string,
+    args: string,
+    emitOutcome?: (outcome: ToolOutcome) => void,
+  ) => Promise<string>;
   maxIterations?: number;
   /** 系统 prompt 前缀（角色包 prompt），注入到 bootstrap 记忆之前 */
   systemPromptPrefix?: string;
@@ -746,7 +754,8 @@ export class AgentLoop {
 
     // 单工具执行器：注入 loop 稳定能力窄面，strategy 经闭包读最新（setStrategy 动态生效）
     this.toolRunner = new ToolRunner({
-      execute: (name, args) => this.opts.toolExecutor(name, args),
+      // 原生 outcome 回调逐跳透传：ToolRunner → opts.toolExecutor → toolExecutor.execute
+      execute: (name, args, emitOutcome) => this.opts.toolExecutor(name, args, emitOutcome),
       builtinTools: opts.builtinTools,
       preExecutionCheck: opts.preExecutionCheck,
       onToolExecuted: opts.onToolExecuted,
@@ -2114,7 +2123,13 @@ export class AgentLoop {
     // blocked 与执行 promise 耦合为同一结构体，每个工具恰好一条。
     // 每个工具一次 push 一个 { blocked, promise }，结果按工具顺序对齐取出，
     // 保证护栏拦截标记永不与执行结果错位（避免平行数组各自 push 导致索引漂移）。
-    const toolExecs: Array<{ blocked: boolean; promise: Promise<string> }> = [];
+    const toolExecs: Array<{
+      /** loop 护栏/替身拦截事实（false = 经 ToolRunner 执行） */
+      blocked: boolean;
+      promise: Promise<string>;
+      /** 拦截原因（仅 blocked=true 出现；护栏取 GuardHit.reason，替身固定 ledger_stub） */
+      blockedReason?: BlockedReason;
+    }> = [];
     // 同路径写串行闸：键 = 写工具的规范化目标路径（`WRITE_PATH_EXTRACTORS`），值 = 该路径的写链尾。
     // 为何需要——`write_file` 是「读盘 → 改 → 写盘」，同 step 内并行发起时两次都基于同一份旧快照，
     // 后落地者覆盖先落地者 ⇒ **静默丢内容**（真机实证：insert + append 同 step 并行，插入行被覆盖）。
@@ -2183,7 +2198,12 @@ export class AgentLoop {
             { executionTemp: true },
           );
         }
-        toolExecs.push({ blocked: true, promise: Promise.resolve(guardHit.message) });
+        toolExecs.push({
+          blocked: true,
+          promise: Promise.resolve(guardHit.message),
+          // search_limit 护栏原因（GuardHit 已带，透传供 blocked 结算）
+          blockedReason: guardHit.reason,
+        });
         continue;
       }
       // 其余护栏命中 → 硬拦回填拒绝文案（blocked 与拒绝 promise 一体推出）；未命中 → 下方正常执行。
@@ -2203,7 +2223,12 @@ export class AgentLoop {
         }
         // 拦截归属回喂：read_dedup 的撞墙升级计数只认自己拦的（onExec 分不清拦截归属）
         this.guardier.notifyBlocked(guardHit.guardId, tc.function.name, tc.function.arguments);
-        toolExecs.push({ blocked: true, promise: Promise.resolve(guardHit.message) });
+        toolExecs.push({
+          blocked: true,
+          promise: Promise.resolve(guardHit.message),
+          // 其余护栏（ask_limit/write_loop/read_failed/read_dedup）原因透传
+          blockedReason: guardHit.reason,
+        });
         continue;
       }
       // 台账替身回显分支（摘要顶替，不收口进 guardRail）：原文已压缩/分段脚注时用摘要或引导 offset 续读替代重读。
@@ -2238,7 +2263,12 @@ export class AgentLoop {
             },
             'read_file 台账替身回显：已用摘要顶替整读',
           );
-          toolExecs.push({ blocked: true, promise: Promise.resolve(formatLedgerStub(cov)) });
+          toolExecs.push({
+            blocked: true,
+            promise: Promise.resolve(formatLedgerStub(cov)),
+            // 台账替身非护栏、不经 GuardHit：原因固定 ledger_stub（B1 起 blocked 结算要求原因齐备）
+            blockedReason: 'ledger_stub',
+          });
           continue;
         }
       }
@@ -2283,12 +2313,13 @@ export class AgentLoop {
 
     const results = await Promise.all(toolExecs.map((e) => e.promise));
 
-    // 拦截标记随结果一并下传：失败计数据此排除「主动挡下」的那部分
+    // 拦截标记 + 原因随结果一并下传：失败计数据此排除「主动挡下」、blocked 结算据此归因
     // （与下方编排层 ok 判据同源——同一份 blocked 事实喂两处，禁各读一份）
     this._processToolResults(
       toolCalls,
       results,
       toolExecs.map((e) => e.blocked),
+      toolExecs.map((e) => e.blockedReason),
     );
 
     // 按原始顺序 yield tool_result
@@ -3113,6 +3144,9 @@ export class AgentLoop {
         readDedupBlockCount: this.metrics.readDedupBlockCount,
         toolOutcomeUnreportedCount: this.metrics.toolOutcomeUnreportedCount,
         toolBlockedDisagreementCount: this.metrics.toolBlockedDisagreementCount,
+        // SCRIPT-2 B1 主动挡下计数（执行层闸门 B4 前双计，见字段 JSDoc）
+        toolBlockedCount: this.metrics.toolBlockedCount,
+        toolBlockedWithFailureCount: this.metrics.toolBlockedWithFailureCount,
       },
       context: {
         truncationCount: this.contextManager.truncationCount,
@@ -3508,17 +3542,20 @@ export class AgentLoop {
   // ─── Reflection 辅助方法 ────────────────────────────────
 
   /**
-   * 处理工具执行结果：push tool 消息 + 统计失败数
+   * 处理工具执行结果：push tool 消息 + 结算主动挡下与失败计数
    *
-   * @param blockedFlags 每条工具调用的策略拦截标记（与 toolCalls 同序）。**显式传入**
+   * @param blockedFlags 每条工具调用的 loop 护栏/替身拦截标记（与 toolCalls 同序）。**显式传入**
    *   而非靠「护栏文案刻意避开失败前缀」维持——那是隐性约定、无声明、无测试锁定，
    *   新护栏一旦用失败前缀即静默误计拦截为失败（台账 METRICS-PREFIX-1 结构缺口）。
    *   缺省 undefined = 无拦截（调用方未提供时的兼容路径，等价于全 false）。
+   * @param blockedReasons 拦截原因（与 blockedFlags 同序，仅拦截位非空；护栏取 GuardHit.reason）。
+   *   经 ToolRunner 上报的 blocked（执行层闸门）原因在 `stepOutcomes` 的 outcome 上，不在此数组。
    */
   private _processToolResults(
     toolCalls: NonNullable<Message['toolCalls']>,
     results: string[],
     blockedFlags?: readonly boolean[],
+    blockedReasons?: readonly (BlockedReason | undefined)[],
   ): void {
     for (let i = 0; i < toolCalls.length; i++) {
       const tc = toolCalls[i]!;
@@ -3527,9 +3564,25 @@ export class AgentLoop {
       // ERR 前缀保留在包裹内，供 isRetryableToolError 识别（该正则不锚定行首）
       const wrapped = wrapToolResult(tc.function.name, result);
       this.appendToolMessage(wrapped, tc.id);
-      // 拦截（blocked）非失败——「我们主动挡的」与「工具真的失败了」必须分开计数。
-      // 判据单点 = isToolFailure（覆盖 [ERR 族 + 执行三态族，见 toolCallHelpers）。
-      if (!blockedFlags?.[i] && isToolFailure(result)) {
+
+      // ── 主动挡下统一结算（B1 起）：两个来源合为一个计数面，互不重叠 ──
+      // ① loop 护栏/替身（blockedFlags，原因同序带出）；
+      // ② ToolRunner 上报的 blocked outcome（执行层闸门/命令拒绝，原因在 outcome 上）。
+      const guardBlocked = blockedFlags?.[i] === true;
+      const reportedOutcome = this.stepOutcomes.get(tc.id);
+      const runnerBlocked = reportedOutcome?.status === 'blocked';
+      if (guardBlocked || runnerBlocked) {
+        this.metrics.toolBlockedCount++;
+        // 真失败判据：护栏侧 read_failed（hasRealFailure 唯一为 true 的护栏）；
+        // runner 侧以 outcome.hasRealFailure 字段为准（当前无 true 来源）
+        const hasRealFailure = guardBlocked
+          ? blockedReasons?.[i] === 'read_failed'
+          : reportedOutcome?.hasRealFailure === true;
+        if (hasRealFailure) this.metrics.toolBlockedWithFailureCount++;
+      }
+      // 失败计数（旧口径逐字保留）：仅 loop 护栏/替身排除；
+      // 执行层闸门的 blocked 在 B4 前仍按文本算失败（已知口径分歧，B4 剔除，见方案决策二）。
+      if (!guardBlocked && isToolFailure(result)) {
         this.metrics.toolFailureCount++;
       }
     }

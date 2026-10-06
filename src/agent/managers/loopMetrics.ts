@@ -103,4 +103,21 @@ export class LoopMetrics {
    * **健康态**：非 0 即「这个口径分歧仍未裁决」的信号。裁决后本计数应停增。
    */
   toolBlockedDisagreementCount = 0;
+
+  // ─── SCRIPT-2 主动挡下计数（B1 起 · 纯新增，不改旧口径）──
+  /**
+   * 主动挡下总数（loop 护栏 + 台账替身 + 执行层闸门）。
+   *
+   * **双轨口径**：其中执行层闸门（`permission_denied` / `readonly_denied` /
+   * `idempotent_skip`）在 B4 前**仍计入** `toolFailureCount`（已知口径分歧）；
+   * B4 起从失败计数剔除 ⇒ `toolFailureCount` 下降且历史不可比（CHANGELOG 登记）。
+   */
+  toolBlockedCount = 0;
+
+  /**
+   * 主动挡下中「背后藏真失败」的次数（当前唯一子集 = `read_failed` 护栏）。
+   * 独立于 `toolFailureCount`：它是 blocked 的子集，混入失败总数会让
+   * 「主动停手」与「真失败」共用一个数字（见方案 §六决策一）。
+   */
+  toolBlockedWithFailureCount = 0;
 }

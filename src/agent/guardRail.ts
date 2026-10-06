@@ -34,6 +34,8 @@ import {
   type CacheEntry,
   type DedupSubject,
 } from '@/agent/toolResultCache.js';
+// blocked 原因契约（与 GuardRailId 经下方 GUARD_BLOCKED_REASONS 穷尽映射；只引类型，无运行时环）
+import type { BlockedReason } from '@/agent/managers/toolCallHelpers.js';
 
 /** 护栏类型 id（收敛集合，新增护栏在此扩联合） */
 export type GuardRailId =
@@ -151,6 +153,42 @@ export interface GuardRailDef {
 export interface GuardHit {
   guardId: GuardRailId;
   message: string;
+  /** blocked 原因：护栏命中同期经穷尽映射产出（消费方无需自己再映射，见 blockedReasonOfGuard） */
+  reason: BlockedReason;
+}
+
+/**
+ * GuardRailId → BlockedReason **穷尽映射**（SSOT）。
+ *
+ * 两个枚举独立演进：`as const satisfies Record<…>` 让「新增护栏漏登记」
+ * 在**编译期**转红。运行期取值在 `noUncheckedIndexedAccess` 下仍带 undefined，
+ * 故 `blockedReasonOfGuard` 显式处理未登记分支 —— 禁 `as`/`??` 兜底
+ * （兜底 = 新护栏静默落进假原因，正是 blockedReason 要消灭的病症）。
+ */
+const GUARD_BLOCKED_REASONS = {
+  search_limit: 'search_limit',
+  ask_limit: 'ask_limit',
+  write_loop: 'write_loop',
+  // read_failed 是唯一 hasRealFailure=true 的护栏（消费方见 loop 结算），但原因值同名
+  read_failed: 'read_failed',
+  read_dedup: 'read_dedup',
+} as const satisfies Record<GuardRailId, BlockedReason>;
+
+/**
+ * 取护栏 id 对应的 blocked 原因。
+ *
+ * @param id 护栏 id
+ * @returns 穷尽映射登记的原因
+ * @throws 映射表漏登记该 id（编译期 satisfies 已封全键；运行期再点名暴露，不静默兜底）
+ */
+export function blockedReasonOfGuard(id: GuardRailId): BlockedReason {
+  const reason = GUARD_BLOCKED_REASONS[id];
+  if (!reason) {
+    throw new Error(
+      `GuardRailId '${id}' 未登记 BlockedReason 映射：新增护栏须同步补 GUARD_BLOCKED_REASONS（禁兜底）`,
+    );
+  }
+  return reason;
 }
 
 /** 提取给定工具的请求主体（无该工具的 subject 提取器 → undefined，即非 info 型工具） */
@@ -263,7 +301,12 @@ export class GuardRail {
       // promptId 函数形态：按运行态选择文案；裁决结果传给 promptArgs 按其分支（选择与参数构造性一致）
       const promptId = typeof g.promptId === 'function' ? g.promptId(c) : g.promptId;
       const args = g.promptArgs?.(c, promptId) ?? {};
-      return { guardId: g.id, message: renderPrompt(promptId, args) };
+      return {
+        guardId: g.id,
+        message: renderPrompt(promptId, args),
+        // 原因随命中同期产出（经穷尽映射；漏登记在此抛错点名，不产出原因不明的命中）
+        reason: blockedReasonOfGuard(g.id),
+      };
     }
     return undefined;
   }

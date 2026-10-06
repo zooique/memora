@@ -28,7 +28,13 @@ import {
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
 import { sanitizeExternalText } from '@/agent/textSanitize.js';
-import { isToolFailure } from '@/agent/managers/toolCallHelpers.js';
+import {
+  isToolFailure,
+  okOutcome,
+  failedOutcome,
+  blockedOutcome,
+  type ToolOutcome,
+} from '@/agent/managers/toolCallHelpers.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
 import type { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
@@ -916,9 +922,17 @@ export class ToolExecutor {
    * @param name 工具名称
    * @param argsJson 参数 JSON 字符串
    * @param extensions 写入扩展（可选，用于 diff 确认等）
-   * @returns 工具结果的字符串描述
+   * @param emitOutcome 原生结构化结果回调（可选 · SCRIPT-2 outcome 通道）：
+   *   已切族工具在**返回字符串的同点**按执行事实产出 `ToolOutcome`（status 不读文本前缀）；
+   *   未切族不调用 ⇒ ToolRunner 回落文本判据。每调用独立回调，无并发相关性问题。
+   * @returns 工具结果的字符串描述（渲染面，逐字保持）
    */
-  async execute(name: string, argsJson: string, extensions?: WriteExtensions): Promise<string> {
+  async execute(
+    name: string,
+    argsJson: string,
+    extensions?: WriteExtensions,
+    emitOutcome?: (outcome: ToolOutcome) => void,
+  ): Promise<string> {
     let args: Record<string, unknown>;
     try {
       args = JSON.parse(argsJson) as Record<string, unknown>;
@@ -1479,10 +1493,14 @@ export class ToolExecutor {
           `在工作区执行命令：${command}`,
         );
         if (!confirmed) {
-          return (
+          const declineText =
             '[ERR:COMMAND_DECLINE] 命令未获执行许可（命中恒拦黑名单 / 用户拒绝 / 未注入确认回调 fail-closed）。' +
-            '未执行任何命令；如确需执行，请改用等效手段或请用户调整审批设置。'
-          );
+            '未执行任何命令；如确需执行，请改用等效手段或请用户调整审批设置。';
+          // 原生 outcome：语义是「主动挡下」⇒ blocked（permission_denied）。
+          // 双轨期编排层仍按 [ERR:COMMAND_DECLINE] 文本算 failed（已知口径分歧，
+          // B4 裁决，见方案 §六决策二）⇒ 文本逐字不变，仅新增结构化面。
+          emitOutcome?.(blockedOutcome('permission_denied', declineText));
+          return declineText;
         }
         // ③ 执行：background=true 立即返回 taskId（不等进程结束）
         // `=== 1` 兜底：validateAndCoerceArgs 已把字符串 'true'/'1' 归一为布尔，
@@ -1512,7 +1530,13 @@ export class ToolExecutor {
         );
         const result = await runShellCommand(command, cwd, effectiveTimeoutMs);
         // 定长与净化由 formatCommandResult 自带（真源在格式化层，回流面共用同一上限）
-        return formatCommandResult(result, effectiveTimeoutMs);
+        const text = formatCommandResult(result, effectiveTimeoutMs);
+        // 原生 status 直接读**执行事实**（不扫文本前缀）：超时或退出码非 0 = failed，其余 = ok。
+        // loop 的 _crossCheckOutcome 会把它与 [COMMAND_ERROR]/[COMMAND_TIMEOUT] 前缀逐字交叉核对
+        // （双轨不变量①），分歧即红——此处改事实、核对设施守口径。
+        const commandFailed = result.timedOut || result.exitCode !== 0;
+        emitOutcome?.(commandFailed ? failedOutcome(text) : okOutcome(text));
+        return text;
       }
       case 'kill_command': {
         // 后台任务终止（§14.1 免裁决链：只可杀本 agent 起的自家任务，taskId 寻址非任意 pid）

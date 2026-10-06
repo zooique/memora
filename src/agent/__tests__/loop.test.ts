@@ -1115,7 +1115,7 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
     const toolResults = chunks.filter((c) => c.type === 'tool_result');
     expect(toolResults).toHaveLength(1);
     expect(toolResults[0]!.ok).toBe(true);
-    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}');
+    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}', expect.any(Function));
 
     const messages = loop.getMessages();
     // system + user + assistant(toolCalls) + tool + assistant = 5
@@ -1172,7 +1172,7 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
 
     // 幻影未被下发执行（否则本地只报 args 解析错，掩盖真因）
     expect(toolExecutor).toHaveBeenCalledTimes(1);
-    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.md"}');
+    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.md"}', expect.any(Function));
     expect(chunks.filter((c) => c.type === 'tool_start')).toHaveLength(1);
   });
 
@@ -1234,8 +1234,8 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
 
     // 并发执行下，两个工具都应被调用，参数正确
     expect(toolExecutor).toHaveBeenCalledTimes(2);
-    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}');
-    expect(toolExecutor).toHaveBeenCalledWith('list_dir', '{}');
+    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}', expect.any(Function));
+    expect(toolExecutor).toHaveBeenCalledWith('list_dir', '{}', expect.any(Function));
   });
 
   it('独立工具调用应该并发执行而非串行', async () => {
@@ -3658,7 +3658,7 @@ describe('AgentLoop · L2 策略 setToolCallsBlocked', () => {
     }
 
     // 工具应正常执行
-    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}');
+    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}', expect.any(Function));
     const toolResults = chunks.filter((c) => c.type === 'tool_result');
     expect(toolResults).toHaveLength(1);
     // 最后一个是 done 事件
@@ -3833,7 +3833,7 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
 
     expect(onPendingQuestion).not.toHaveBeenCalled();
     expect(chunks.some((c) => c.type === 'question_pending')).toBe(false);
-    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}');
+    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}', expect.any(Function));
   });
 
   // 回归测试：工具轮提问不「撕工具」
@@ -4117,7 +4117,7 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     const q2Tool = messages.find((m) => m.role === 'tool' && m.toolCallId === 'q2');
     expect(q2Tool?.content).toContain('[ASK_LIMIT]');
     // read_file 正常执行，整个过程无第二次 paused
-    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}');
+    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}', expect.any(Function));
     expect(chunks2.some((c) => c.type === 'paused')).toBe(false);
     expect(chunks2[chunks2.length - 1]!.type).toBe('done');
   });

@@ -2052,6 +2052,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           // SCRIPT-2 P1 期双轨核对观测（零初始值 = 健康起点；非 0 见字段 JSDoc）
           toolOutcomeUnreportedCount: 0,
           toolBlockedDisagreementCount: 0,
+          // B1 主动挡下计数（零起点；B4 前执行层闸门与 failureCount 双计）
+          toolBlockedCount: 0,
+          toolBlockedWithFailureCount: 0,
         },
         context: { truncationCount: 0, messageCount: 0, estimatedTokens: 0 },
         plan: { taskTableWriteCount: 0, planItemBoundaryCount: 0 },

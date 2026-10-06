@@ -21,7 +21,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import type { IProjectSearchProvider, ProjectTextSearchResult } from '@/project-search/types.js';
 import { MemoraError, toolError, ToolErrorCode } from '@/utils/errors.js';
-import { isToolFailure } from '@/agent/managers/toolCallHelpers.js';
+import { isToolFailure, type ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
 
 describe('工具执行器（6 个工具）', () => {
   let tmpProject: string;
@@ -2146,6 +2146,79 @@ describe('run_command / kill_command（命令执行工具层）', () => {
       const out = await exec.execute('run_command', JSON.stringify({ command: FAIL_CMD }));
       expect(out).toContain('[COMMAND_ERROR]');
       expect(out).toContain('退出码: 3');
+    });
+  });
+
+  describe('★ 原生 outcome（SCRIPT-2 B1 · 四态 status 断言）', () => {
+    /**
+     * 构造原生 outcome 捕获器：execute 第 4 参传入，按调用次序收集结构化结果。
+     * （第 3 参 extensions 非 run_command 语义，传 undefined 占位。）
+     */
+    function makeSink(): { readonly list: readonly ToolOutcome[]; sink: (o: ToolOutcome) => void } {
+      // 收集数组：断言 status 与 text 同源关系的唯一事实面
+      const list: ToolOutcome[] = [];
+      return { list, sink: (o) => list.push(o) };
+    }
+
+    it('① 成功 → status=ok，无原因；outcome.text 与返回值逐字同源', async () => {
+      const exec = makeExecutor();
+      const { list, sink } = makeSink();
+      const out = await exec.execute(
+        'run_command',
+        JSON.stringify({ command: OK_CMD }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      // 成功事实（exitCode 0）直接产 ok，不扫文本
+      expect(list[0]!.status).toBe('ok');
+      expect(list[0]!.blockedReason).toBeUndefined();
+      expect(list[0]!.hasRealFailure).toBeUndefined();
+      // 双轨同源：结构化面的 text 就是返回值本身，不存在两份文本
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('② 非零退出 → status=failed（读退出码事实，不靠前缀）', async () => {
+      const exec = makeExecutor();
+      const { list, sink } = makeSink();
+      const out = await exec.execute(
+        'run_command',
+        JSON.stringify({ command: FAIL_CMD }),
+        undefined,
+        sink,
+      );
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('③ 超时 → status=failed（timedOut 事实；文本含 COMMAND_TIMEOUT 由双轨核对兜底）', async () => {
+      const exec = makeExecutor();
+      const { list, sink } = makeSink();
+      // timeoutMs 800 经 resolveCommandTimeoutMs 钳到 1s 下限 ⇒ 约 1s 后超时
+      const out = await exec.execute(
+        'run_command',
+        JSON.stringify({ command: SLEEP_CMD, timeoutMs: 800 }),
+        undefined,
+        sink,
+      );
+      expect(list[0]!.status).toBe('failed');
+      expect(out).toContain('[COMMAND_TIMEOUT]');
+    });
+
+    it('④ 拒绝许可 → status=blocked + reason=permission_denied（双轨期仍被失败计数，已知分歧）', async () => {
+      const exec = makeExecutor();
+      const { list, sink } = makeSink();
+      const out = await exec.execute(
+        'run_command',
+        JSON.stringify({ command: 'rm -rf /' }),
+        undefined,
+        sink,
+      );
+      expect(list[0]!.status).toBe('blocked');
+      // blocked 不允许原因不明：构造器强制、断言锁死
+      expect(list[0]!.blockedReason).toBe('permission_denied');
+      expect(list[0]!.hasRealFailure).toBe(false);
+      expect(list[0]!.text).toBe(out);
     });
   });
 

@@ -141,18 +141,56 @@ export function isRetryableToolError(result: string): boolean {
 export type ToolStatus = 'ok' | 'failed' | 'blocked';
 
 /**
- * 工具结果契约（P1' 结构化出口，与 `text` 配对）。
+ * blocked 的原因（**11 值穷尽 · 与 status 正交**——只回答「为什么没成功」）。
+ *
+ * ## 为什么是独立维度而非第 4 个 status 值
+ *
+ * 11 种主动挡下**全部是「没成功」**，没有一种例外；它们之间的差别回答的是
+ * 「为什么没成功」——两个正交问题硬塞进一个字段，字段会随护栏增加持续膨胀且语义退化。
+ * 新增原因值须对应真实新语义，**禁止硬塞进既有值**（硬塞 = 原因字段退化成第二个 status）。
+ *
+ * 按来源分三组：
+ * · loop 护栏（5）：`search_limit` / `ask_limit` / `write_loop` / `read_failed` / `read_dedup`
+ * · loop 内自执行旁路（3）：`ledger_stub` / `no_compress_target` / `invalid_intel_note`
+ * · 执行层闸门（3）：`permission_denied` / `readonly_denied` / `idempotent_skip`
+ */
+export type BlockedReason =
+  // ── loop 护栏族（与 GuardRailId 经穷尽映射对应，见 guardRail.blockedReasonOfGuard）──
+  | 'search_limit' //       联网搜索次数用完，没必要再搜（hasRealFailure=false）
+  | 'ask_limit' //          提问次数用完（hasRealFailure=false）
+  | 'write_loop' //         检测到同文件写作死循环，主动停手（hasRealFailure=false）
+  | 'read_failed' //        同一读取主体连续失败达上限，判定再试无用 ⚠️ hasRealFailure=**true**
+  | 'read_dedup' //         同内容已在上下文，重复读无意义（hasRealFailure=false）
+  // ── loop 内自执行旁路族（不经 ToolRunner）──
+  | 'ledger_stub' //        台账替身：用摘要顶替整读
+  | 'no_compress_target' // compress_context 目标不存在
+  | 'invalid_intel_note' // remember_intel 参数为空
+  // ── 执行层闸门族（ToolRunner denied/skip）──
+  | 'permission_denied' //  宿主审批拒绝 / fail-closed
+  | 'readonly_denied' //    只读模式禁写工具
+  | 'idempotent_skip'; //   outbox 幂等：已执行过
+
+/**
+ * 工具结果契约（结构化出口，`text` 与判据面配对）。
  *
  * `text` 是**给 LLM 看的渲染面**（保留失败前缀与退出码等证据，LLM 靠它自愈）；
  * `status` 是**给机器看的判据面**。两者同源产出、不得各自演化 ——
  * 消费者判成败**一律读 `status`**，不再解析 `text`。
  *
- * @param status 三值状态（判据面）
- * @param text   结果文本（渲染面，原工具返回值逐字不变）
+ * @param status        三值状态（判据面）
+ * @param text          结果文本（渲染面，原工具返回值逐字不变）
+ * @param blockedReason blocked 原因（仅 `status='blocked'` 出现；拦截不许原因不明）
+ * @param hasRealFailure blocked 背后是否藏真失败（仅 blocked；唯 `read_failed` 为 true）
  */
 export interface ToolOutcome {
+  /** 三值状态（判据面唯一真源） */
   readonly status: ToolStatus;
+  /** 结果文本（渲染面） */
   readonly text: string;
+  /** blocked 原因：仅 blocked 时出现。blocked outcome 缺此字段 = 原因不明的拦截 */
+  readonly blockedReason?: BlockedReason;
+  /** blocked 背后是否藏真失败：仅 blocked 时出现；缺省 = false（主动挡下不藏失败） */
+  readonly hasRealFailure?: boolean;
 }
 
 /** 构造失败 outcome（成功不配此函数——成功是默认，直接构造对象更直白） */
@@ -163,6 +201,22 @@ export function failedOutcome(text: string): ToolOutcome {
 /** 构造 ok outcome */
 export function okOutcome(text: string): ToolOutcome {
   return { status: 'ok', text };
+}
+
+/**
+ * 构造 blocked outcome（主动挡下的唯一构造出口）。
+ *
+ * @param reason         挡下原因（**必给**：原因不明的拦截不允许入库）
+ * @param text           结果文本（渲染面）
+ * @param hasRealFailure 背后是否藏真失败（仅 `read_failed` 传 true；缺省 false）
+ * @returns 带原因维度的 blocked outcome
+ */
+export function blockedOutcome(
+  reason: BlockedReason,
+  text: string,
+  hasRealFailure = false,
+): ToolOutcome {
+  return { status: 'blocked', text, blockedReason: reason, hasRealFailure };
 }
 
 /**

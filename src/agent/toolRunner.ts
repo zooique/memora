@@ -17,7 +17,14 @@ import { TRACE_SPANS } from '@/agent/tracer.js';
 import { MemoraError } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
-import { isToolFailure, failedOutcome, okOutcome, type ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
+import {
+  isToolFailure,
+  failedOutcome,
+  okOutcome,
+  blockedOutcome,
+  type ToolOutcome,
+  type BlockedReason,
+} from '@/agent/managers/toolCallHelpers.js';
 
 /** 工具调用元素契约（OpenAI 协议结构）——单一真源 llm/types.ToolCall（Message.toolCalls 同源） */
 import type { ToolCall } from '@/llm/types.js';
@@ -25,16 +32,22 @@ import type { ToolCall } from '@/llm/types.js';
 /** 一次工具调用（LLM 输出的工具调用元素）——SSOT：形状真源在 llm/types.ToolCall（协议契约单一实现；re-export 保留本文件测试判据点） */
 export type { ToolCall };
 
-/** 执行前检查决策：单点聚合的多重顺序检查结果（denied 拒绝 / skip 幂等跳过 / execute 放行） */
+/** 执行前检查决策：单点聚合的多重顺序检查结果（denied 拒绝 / skip 幂等跳过 / execute 放行）。
+ *  denied/skip 必带 blocked 原因（执行层闸门的「为什么挡下」，经 outcome 一并上报）。 */
 type PreCheckDecision =
-  | { kind: 'denied'; result: string }
-  | { kind: 'skip'; result: string }
+  | { kind: 'denied'; result: string; reason: BlockedReason }
+  | { kind: 'skip'; result: string; reason: BlockedReason }
   | { kind: 'execute'; args: string };
 
 /** 工具执行器依赖注入（loop 稳定的窄面；策略动态经 getStrategy 读取） */
 export interface ToolRunnerDeps {
-  /** 执行单个工具（loop 的 opts.toolExecutor） */
-  execute: (name: string, args: string) => Promise<string>;
+  /** 执行单个工具（loop 的 opts.toolExecutor）。
+   *  第 3 参 emitOutcome：执行器按调用独立产出原生 outcome 的通道（见 toolExecutor.execute） */
+  execute: (
+    name: string,
+    args: string,
+    emitOutcome?: (outcome: ToolOutcome) => void,
+  ) => Promise<string>;
   /** 内置工具定义（只读闸查 readonly 标记） */
   builtinTools?: ToolDefinition[];
   /** 宿主执行前检查（拒绝 / 跳过 / 改写参数） */
@@ -90,32 +103,45 @@ export class ToolRunner {
       const decision = this.applyPrechecks(tc);
       if (decision.kind === 'denied') {
         span.setAttribute('denied', true);
-        // denied = 主动挡下（只读拒绝 / fail-closed 拒绝）⇒ status = blocked（非 failed）
-        this.deps.onToolSettled?.(tc.id, tc.function.name, {
-          status: 'blocked',
-          text: decision.result,
-        });
+        // denied = 主动挡下（只读拒绝 / 宿主审批拒绝）⇒ blocked，原因随该闸门事实带出
+        this.deps.onToolSettled?.(
+          tc.id,
+          tc.function.name,
+          blockedOutcome(decision.reason, decision.result),
+        );
         return decision.result;
       }
       if (decision.kind === 'skip') {
         span.setAttribute('skipped', true);
-        // skip = 幂等跳过（主动挡下）⇒ status = blocked（非 failed）
-        this.deps.onToolSettled?.(tc.id, tc.function.name, {
-          status: 'blocked',
-          text: decision.result,
-        });
+        // skip = outbox 幂等跳过（主动挡下）⇒ blocked（idempotent_skip）
+        this.deps.onToolSettled?.(
+          tc.id,
+          tc.function.name,
+          blockedOutcome(decision.reason, decision.result),
+        );
         return decision.result;
       }
 
+      // 每调用独立的原生 outcome 捕获器：已切族执行器在返回字符串的同点按事实产出；
+      // 未切族不产出 ⇒ nativeOutcome 保持 undefined，回落文本判据。
+      let nativeOutcome: ToolOutcome | undefined;
       // raceToolWithSignal 兼容 signal 中断（每个调用独立 race，监听器无并发副作用）
-      const result = await this.raceToolWithSignal(tc.function.name, decision.args, signal);
+      const result = await this.raceToolWithSignal(
+        tc.function.name,
+        decision.args,
+        signal,
+        (native) => {
+          nativeOutcome = native;
+        },
+      );
       // 通知上层工具执行完成（供 outbox 幂等模式记录是否已执行）
       // 判据单点 = isToolFailure（覆盖 [ERR 族 + 执行三态族，见 toolCallHelpers）
       const ok = !isToolFailure(result);
       this.deps.onToolExecuted?.(tc.function.name, decision.args, result, ok);
-      // SCRIPT-2 旁路上报：status 由判据**同源**产出（同一 isToolFailure 调用），
-      // 不是第二次独立判断 ⇒ 双轨期不存在两条判据漂移的可能。
-      this.deps.onToolSettled?.(tc.id, tc.function.name, ok ? okOutcome(result) : failedOutcome(result));
+      // SCRIPT-2 上报：优先执行器原生 outcome（事实派生，status 唯一权威）；
+      // 未切族则由同一次 isToolFailure 同源回落 —— 两种形态都没有第二次独立判断，不会漂移。
+      const settledOutcome = nativeOutcome ?? (ok ? okOutcome(result) : failedOutcome(result));
+      this.deps.onToolSettled?.(tc.id, tc.function.name, settledOutcome);
 
       // 记录工具执行结果摘要到 Span（可观测性增强：宿主可追踪每次工具调用的结果）
       span.setAttribute('result', result.slice(0, 200));
@@ -170,6 +196,8 @@ export class ToolRunner {
         return {
           kind: 'denied',
           result: `[ERR:TOOL:READONLY_DENIED] 工具 "${name}" 是写入操作，在只读模式下不可用`,
+          // 只读模式拦截：原因独立于宿主审批（readonly_denied）
+          reason: 'readonly_denied',
         };
       }
     }
@@ -180,7 +208,12 @@ export class ToolRunner {
       const reason = preCheck.reason ?? '工具调用被拒绝';
       logger.warn({ tool: name, reason }, '工具调用被拒绝（执行前检查）');
       // PERMISSION_DENIED 不可重试，LLM 见后会调整策略而非重试
-      return { kind: 'denied', result: `[ERR:TOOL:PERMISSION_DENIED] ${reason}` };
+      return {
+        kind: 'denied',
+        result: `[ERR:TOOL:PERMISSION_DENIED] ${reason}`,
+        // 宿主审批拒绝 / fail-closed：permission_denied
+        reason: 'permission_denied',
+      };
     }
     if (preCheck?.skip) {
       const result =
@@ -189,7 +222,12 @@ export class ToolRunner {
         { tool: name, argsSignature: args.slice(0, 80) },
         '工具已执行，跳过（仅一次语义）',
       );
-      return { kind: 'skip', result };
+      return {
+        kind: 'skip',
+        result,
+        // outbox 幂等跳过：idempotent_skip
+        reason: 'idempotent_skip',
+      };
     }
 
     // 放行：有改写参数则用改写后的执行（审计/参数改写）
@@ -200,16 +238,19 @@ export class ToolRunner {
    * 工具执行与 signal abort 竞争包裹。toolExecutor 签名不接受 signal，无法真正中断；
    * 用 Promise.race 竞争，signal 先 abort 则返回 [ERR:TOOL:ABORTED]（而非抛 AbortError，
    * 避免破坏"工具失败回传 LLM"契约；ABORTED 不入错误码体系，不触发 Reflection）
+   *
+   * @param emitOutcome 原生 outcome 回调（透传给 execute；未切族忽略此参）
    */
   private async raceToolWithSignal(
     name: string,
     args: string,
     signal: AbortSignal | undefined,
+    emitOutcome: (outcome: ToolOutcome) => void,
   ): Promise<string> {
     const { execute } = this.deps;
     // 无 signal 时直接执行工具（保持原行为，测试场景常用）
     if (!signal) {
-      return execute(name, args);
+      return execute(name, args, emitOutcome);
     }
 
     // signal 已 abort：直接返回中断错误，不发起工具调用
@@ -224,8 +265,9 @@ export class ToolRunner {
       signal.addEventListener('abort', onAbort, { once: true });
     });
 
-    // race 结束清理监听器，避免并发工具调用累积残留监听器（{ once: true } 不保证未触发时被移除）
-    return Promise.race([execute(name, args), abortPromise]).finally(() => {
+    // race 结束清理监听器，避免并发工具调用累积残留监听器（{ once: true } 不保证未触发时被移除）。
+    // ⚠️ 注意：execute 胜出时已完成（含可能的 emitOutcome）；abort 胜出时执行仍在后台跑但结果丢弃。
+    return Promise.race([execute(name, args, emitOutcome), abortPromise]).finally(() => {
       if (onAbort) signal.removeEventListener('abort', onAbort);
     });
   }

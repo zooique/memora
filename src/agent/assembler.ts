@@ -571,7 +571,9 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     provider,
     providerRouter: providerRouter ?? undefined,
     bootstrapMemories: pctx.bootstrapMemories,
-    toolExecutor: (name: string, args: string) => toolExec.execute(name, args),
+    // 第 3 参透传：ToolRunner 的原生 outcome 回调必须直达 ToolExecutor（不透传 = 已切族静默回落文本判据）
+    toolExecutor: (name: string, args: string, emitOutcome) =>
+      toolExec.execute(name, args, undefined, emitOutcome),
     systemPromptPrefix,
     rolePackBaseTokens,
     toolDefinitions: toolExec.list,

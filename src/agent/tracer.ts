@@ -173,6 +173,14 @@ export interface AgentMetrics {
      * **健康态**：非 0 即「该口径分歧仍未裁决」的信号；裁决后应停增。
      */
     toolBlockedDisagreementCount: number;
+    /**
+     * 主动挡下总数（SCRIPT-2 B1 起）：loop 护栏 + 台账替身 + 执行层闸门。
+     * 双轨期执行层闸门仍计入 `failureCount`（见 toolBlockedDisagreementCount）；
+     * B4 起剔除 ⇒ `failureCount` 下降且历史不可比。
+     */
+    toolBlockedCount: number;
+    /** 挡下中藏真失败的次数（`read_failed` 子集；独立于 failureCount） */
+    toolBlockedWithFailureCount: number;
   };
   /** 上下文管理指标 */
   context: {
