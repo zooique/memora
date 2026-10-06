@@ -1780,6 +1780,12 @@ export class AgentLoop {
     // slice 按实际执行的 effectiveToolCalls.length 取窗口——若按 LLM 原始请求条数
     // llmResult.toolCalls.length 切，toolStepLimit 截断时 slice 多看会把上一轮残留的
     // tool 错误吸进判定窗口，误注入反思提示（坑）
+    // 重试轴 vs 计数轴分离（不动带伤）：
+    // 下方 isRetryableToolError 读文本前缀 [ERR:TOOL:…] 仅做「重试分类」——判定「哪个错误码可重试」，
+    // 需要错误类别信息，而 _processToolResults 的失败计数只读 outcome.status 三值（不编码类别）。
+    // 这是两条正交轴：计数承载「成/败/拦」，重试分类承载「败因是否可重试」；文本前缀在此只作
+    // 「错误类别渲染面」，不参与失败计数。非 SCRIPT-2 双轨残留（B5 后 isToolFailure 已物理删除，
+    // 计数轴零文本判据；此文本读取属独立的重试决策轴，须保留）。
     const hasRetryableError = this.messages
       .slice(-effectiveToolCalls.length) // 只看本轮工具结果
       .some((m) => m.role === 'tool' && isRetryableToolError(m.content));

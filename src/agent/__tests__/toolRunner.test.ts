@@ -258,10 +258,12 @@ describe('SCRIPT-2 B5-e：裸失败前缀 return 残留守卫（判据桥消亡�
     'src/agent/assembler.ts',
   ];
 
-  // 失败前缀两族（与已删除的 TOOL_FAILURE_PATTERNS 同源）：
-  // ① `[ERR…` 结构化错误族 ② 执行三态族（SCRIPT/CODE/COMMAND × ERROR/TIMEOUT）
+  // 失败前缀两族（与已删除的 TOOL_FAILURE_PATTERNS 同源，须覆盖真实生产前缀形式）：
+  // ① `[ERR:TOOL:XXX]` 结构化错误族（含冒号错误码，如 [ERR:TOOL:FILE_NOT_FOUND]）—— ERR 后允许任意非空白非 ] 字符
+  // ② 执行三态族（SCRIPT/CODE/COMMAND × ERROR/TIMEOUT，如 [COMMAND_ERROR]/[SCRIPT_TIMEOUT]）
+  // 软降级前缀（[KILLED]/[TASK_ALREADY_SETTLED]/[BACKGROUND_STARTED]/[SEARCH_LIMIT_REACHED] 等）语义非失败，不在范围。
   const BARE_FAIL_RETURN =
-    /return\s*(?:\(\s*)?['"`]\[(?:ERR|(?:SCRIPT|CODE|COMMAND)_(?:ERROR|TIMEOUT))]/;
+    /return\s*(?:\(\s*)?['"`]\[(?:ERR[^\s\]]*|(?:SCRIPT|CODE|COMMAND)_(?:ERROR|TIMEOUT))]/;
 
   it.each(PROD_FILES)('%s 零裸失败前缀 return（失败必须显式 emit）', (rel) => {
     const src = readFileSync(resolve(process.cwd(), rel), 'utf8');
@@ -277,5 +279,20 @@ describe('SCRIPT-2 B5-e：裸失败前缀 return 残留守卫（判据桥消亡�
     // abort 两点都必须 emit failedOutcome（中断 = 失败事实，防兜底误判 ok）
     const emitCount = (src.match(/emitOutcome\(failedOutcome\(abortedText\)\)/g) ?? []).length;
     expect(emitCount).toBe(2);
+  });
+
+  // 变异验证（testing_rules §5.5 真闸门自证）：证明 BARE_FAIL_RETURN 不是装饰——
+  // 既能命中与生产同形的裸失败前缀 return，又不误伤语义非失败的软降级前缀。
+  it('变异验证-命中：正则能抓裸失败前缀 return（与生产同形样本）', () => {
+    expect(BARE_FAIL_RETURN.test("    return '[ERR:TOOL:FILE_NOT_FOUND] 文件不存在';")).toBe(true);
+    expect(BARE_FAIL_RETURN.test("  return (`[COMMAND_ERROR] 命令失败（退出码: 1）`);")).toBe(true);
+    expect(BARE_FAIL_RETURN.test("return '[SCRIPT_TIMEOUT] 超时';")).toBe(true);
+  });
+
+  it('变异验证-精度：正则不误伤软降级前缀（放行正常降级路径）', () => {
+    expect(BARE_FAIL_RETURN.test("    return '[KILLED] 已终止';")).toBe(false);
+    expect(BARE_FAIL_RETURN.test("  return '[TASK_ALREADY_SETTLED] 已结算';")).toBe(false);
+    expect(BARE_FAIL_RETURN.test("return '[BACKGROUND_STARTED] 后台已启动';")).toBe(false);
+    expect(BARE_FAIL_RETURN.test("return '普通结果文本';")).toBe(false);
   });
 });
