@@ -17,7 +17,7 @@ import { TRACE_SPANS } from '@/agent/tracer.js';
 import { MemoraError } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
-import { isToolFailure } from '@/agent/managers/toolCallHelpers.js';
+import { isToolFailure, failedOutcome, okOutcome, type ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
 
 /** 工具调用元素契约（OpenAI 协议结构）——单一真源 llm/types.ToolCall（Message.toolCalls 同源） */
 import type { ToolCall } from '@/llm/types.js';
@@ -31,7 +31,7 @@ type PreCheckDecision =
   | { kind: 'skip'; result: string }
   | { kind: 'execute'; args: string };
 
-/** ToolRunner 依赖注入（loop 稳定的窄面；策略动态经 getStrategy 读取） */
+/** 工具执行器依赖注入（loop 稳定的窄面；策略动态经 getStrategy 读取） */
 export interface ToolRunnerDeps {
   /** 执行单个工具（loop 的 opts.toolExecutor） */
   execute: (name: string, args: string) => Promise<string>;
@@ -41,6 +41,22 @@ export interface ToolRunnerDeps {
   preExecutionCheck?: (name: string, args: string) => PreExecutionResult;
   /** 工具执行完成回调（outbox 幂等记录是否已执行） */
   onToolExecuted?: (name: string, args: string, result: string, ok: boolean) => void;
+  /**
+   * 工具结果结构化上报（**SCRIPT-2 旁路出口 · P1'**）。
+   *
+   * 形参带 `toolCallId`（非 name+args 拼键）：并发批量执行时**同名同参的工具可有多条**
+   * （LLM 重复调用），按 name+args 建键会互相覆盖 ⇒ 消费方拿到错误的 outcome。
+   * `tc.id` 是协议自带唯一标识，直接透传最省事也最可靠。
+   *
+   * 为什么不改 `runOne` 的返回类型：`runOne` 虽未过公共面，但它的返回值经
+   * `Promise.all` 链直通 `loop.executeToolCalls` 的 `results: string[]`，
+   * 改签名会波及编排层全部下游（`_processToolResults` / 防重缓存 / `yield tool_result`
+   * / 三处 `ok` 判定）—— 那是 P2/P3 的工作量，**P1' 不做**（分期边界按「能否独立验证」切）。
+   *
+   * 旁路的意义：让 `status` 有了**首个真实消费者**（而非无消费方的僵尸类型），
+   * 且 `loop` 侧可**先只观测不决策**（`status` 暂不喂判据，双轨并存期）。
+   */
+  onToolSettled?: (toolCallId: string, name: string, outcome: ToolOutcome) => void;
   /** 读最新 L2 策略（toolReadonly 随 setStrategy 动态生效） */
   getStrategy: () => L2RuntimeStrategy;
   /** 可观测性 Tracer */
@@ -74,10 +90,20 @@ export class ToolRunner {
       const decision = this.applyPrechecks(tc);
       if (decision.kind === 'denied') {
         span.setAttribute('denied', true);
+        // denied = 主动挡下（只读拒绝 / fail-closed 拒绝）⇒ status = blocked（非 failed）
+        this.deps.onToolSettled?.(tc.id, tc.function.name, {
+          status: 'blocked',
+          text: decision.result,
+        });
         return decision.result;
       }
       if (decision.kind === 'skip') {
         span.setAttribute('skipped', true);
+        // skip = 幂等跳过（主动挡下）⇒ status = blocked（非 failed）
+        this.deps.onToolSettled?.(tc.id, tc.function.name, {
+          status: 'blocked',
+          text: decision.result,
+        });
         return decision.result;
       }
 
@@ -87,6 +113,9 @@ export class ToolRunner {
       // 判据单点 = isToolFailure（覆盖 [ERR 族 + 执行三态族，见 toolCallHelpers）
       const ok = !isToolFailure(result);
       this.deps.onToolExecuted?.(tc.function.name, decision.args, result, ok);
+      // SCRIPT-2 旁路上报：status 由判据**同源**产出（同一 isToolFailure 调用），
+      // 不是第二次独立判断 ⇒ 双轨期不存在两条判据漂移的可能。
+      this.deps.onToolSettled?.(tc.id, tc.function.name, ok ? okOutcome(result) : failedOutcome(result));
 
       // 记录工具执行结果摘要到 Span（可观测性增强：宿主可追踪每次工具调用的结果）
       span.setAttribute('result', result.slice(0, 200));
@@ -110,11 +139,13 @@ export class ToolRunner {
           '工具执行失败，错误已回传给 LLM',
         );
         this.deps.onToolExecuted?.(tc.function.name, tc.function.arguments, result, false);
+        this.deps.onToolSettled?.(tc.id, tc.function.name, failedOutcome(result));
         return result;
       } else {
         const result = `[ERR:TOOL:UNKNOWN] 错误：工具执行异常 — ${e.message}`;
         logger.error({ tool: tc.function.name, err }, '工具执行异常');
         this.deps.onToolExecuted?.(tc.function.name, tc.function.arguments, result, false);
+        this.deps.onToolSettled?.(tc.id, tc.function.name, failedOutcome(result));
         return result;
       }
     } finally {

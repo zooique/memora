@@ -117,7 +117,62 @@ export function isRetryableToolError(result: string): boolean {
 }
 
 /**
+ * 工具结果状态（三值，**SCRIPT-2 契约层**）。
+ *
+ * ## 为什么要有这个类型（不是"再加个枚举"）
+ *
+ * 此前失败语义**寄生在文本里**（前缀约定），导致三个已实测的结构性代价：
+ * 判据与渲染耦合（改文案即失效）、行首归属是隐性契约（前缀被别的标签抢首行即漏判）、
+ * 前缀守卫对拼接型产出**完全失明**（实测 98 行含插值模板串扫不到）。
+ * 本类型让失败成为**结构化事实** —— 判据读字段，文本降为纯渲染面。
+ *
+ * ## 三值语义（穷尽，勿增第四值）
+ *
+ * · `ok`      —— 工具正常执行完成（**含"成功但无输出"**：`exitCode 0` + 空输出仍是成功）
+ * · `failed`  —— 工具真的跑了但失败（非零退出 / 超时 / 抛异常 / 参数非法 / 资源不存在）
+ * · `blocked` —— **我们主动挡下的**（护栏拦截 / 只读拒绝 / 幂等跳过 / fail-closed 拒绝）。
+ *   语义依据 = 纪律「主动挡下的 ≠ 工具跑失败的」：它既非成功也非失败。
+ *
+ * ⚠️ **`blocked` 由 loop 层补写，执行层产不出**：执行器跑在护栏判定**之前**，
+ *   对「该不该执行」无发言权。故 `ToolRunner` 只报 `ok` / `failed`，
+ *   `loop` 在已持有 `blockedFlags` 的同一处把它补成 `blocked`（唯一写点，
+ *   与既有 `blockedFlags` 机制同构，不新增概念）。
+ */
+export type ToolStatus = 'ok' | 'failed' | 'blocked';
+
+/**
+ * 工具结果契约（P1' 结构化出口，与 `text` 配对）。
+ *
+ * `text` 是**给 LLM 看的渲染面**（保留失败前缀与退出码等证据，LLM 靠它自愈）；
+ * `status` 是**给机器看的判据面**。两者同源产出、不得各自演化 ——
+ * 消费者判成败**一律读 `status`**，不再解析 `text`。
+ *
+ * @param status 三值状态（判据面）
+ * @param text   结果文本（渲染面，原工具返回值逐字不变）
+ */
+export interface ToolOutcome {
+  readonly status: ToolStatus;
+  readonly text: string;
+}
+
+/** 构造失败 outcome（成功不配此函数——成功是默认，直接构造对象更直白） */
+export function failedOutcome(text: string): ToolOutcome {
+  return { status: 'failed', text };
+}
+
+/** 构造 ok outcome */
+export function okOutcome(text: string): ToolOutcome {
+  return { status: 'ok', text };
+}
+
+/**
  * 工具失败前缀（判据 SSOT，`isToolFailure` 唯一真源）。
+ *
+ * ## ⚠️ 定位：这是**过渡期**判据，SCRIPT-2 完成后退役
+ *
+ * 当前阶段（双轨并行）：`status` 与本函数**并存**，且必须满足
+ * `outcome.status === 'failed'` ⟺ `isToolFailure(outcome.text)`（一致性断言锁死）。
+ * **判据的唯一权威是 `status`**；本函数在双轨期只做**交叉验证**，不做决策。
  *
  * 两族，缺一不可：
  *  ① `[ERR…`    —— 内核结构化错误族（`[ERR:TOOL:X]` / `[ERR:INVALID_ARG]` / `[ERR:PATH_DENIED]` …）

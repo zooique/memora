@@ -50,6 +50,7 @@ import {
   isRetryableToolError,
   isToolFailure,
 } from '@/agent/managers/toolCallHelpers.js';
+import type { ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
 import { LlmCaller } from '@/agent/managers/llmCaller.js';
 import type { LlmCallResult } from '@/agent/managers/llmCaller.js';
 import { LoopMetrics } from '@/agent/managers/loopMetrics.js';
@@ -400,6 +401,118 @@ export class AgentLoop {
   onContextWindowChanged?: (effectiveTokens: number) => void;
   /** 单工具执行器（独立可测单元；strategy/回调经闭包读最新） */
   private readonly toolRunner: ToolRunner;
+  /**
+   * 本 step 的工具结果结构化 outcome 暂存（SCRIPT-2 · P1' 旁路，**step 内累积、step 边界清空**）。
+   *
+   * ## 用途：双轨期的一致性自检，不是第二套判据
+   *
+   * `ToolRunner` 旁路上报 `ToolOutcome`（`status` + `text`），此处按 `toolCallId` 暂存，
+   * 在既有 `ok` 判定旁**读一次做交叉核对**：`status === 'failed'` ⟺ `!ok && !blocked`。
+   * 不等即抛 —— 这是 P1' 的核心守卫，缺它整个方案等于制造口径分裂。
+   *
+   * ## 为什么暂存而非直接比较
+   *
+   * `onToolSettled` 在**执行层**触发（早于 loop 的 `yield tool_result`），
+   * 且并发工具的完成顺序 ≠ `toolCalls` 数组序 ⇒ 必须按 `toolCallId` 对齐后才能比。
+   * 生命周期 = 一个 step（`executeToolCalls` 开头清、末尾比），不跨 step —— 跨 step
+   * 暂存等于引入第二个状态源，与「每个概念一个真源」冲突。
+   */
+  private stepOutcomes = new Map<string, ToolOutcome>();
+
+  /**
+   * SCRIPT-2 双轨一致性自检（P1' 核心守卫）。
+   *
+   * ## 为什么必须有这个（缺它 = 整个方案在制造口径分裂）
+   *
+   * 双轨期并存两条成文判定：既有 `ok = !blocked && !isToolFailure(result)`（文本判据）
+   * 与新增 `outcome.status`（结构化判据）。二者若在某条路径上分叉，
+   * `toolFailureCount` 就会**同时混用两套口径**且无人知晓 —— 这比不做 status 化更糟。
+   * 本方法在**每条工具结果产出后立即比对**，不等落盘、不等 UI。
+   *
+   * ## 期望的映射（`blocked` 在此补写，唯一写点）
+   *
+   * | 情形 | `status` | 既有 `ok` / `blocked` |
+   * |:--|:--|:--|
+   * | 正常成功 | `ok` | `ok=true` |
+   * | 执行失败（非零退出 / 超时 / 异常 / 参数非法） | `failed` | `ok=false, blocked=false` |
+   * | loop 护栏拦截（`toolExecs[i].blocked`） | `blocked`（**此处补写**） | `ok=false, blocked=true` |
+   * | 执行层闸门拒绝 / 幂等跳过 | `blocked`（执行层直接报） | 同上二者 |
+   *
+   * 执行层产不出 `blocked`（它跑在护栏判定之前，对「该不该执行」无发言权），
+   * 故 loop 护栏命中的那批在**此处**由 `blocked` 事实补写 —— 与既有
+   * `blockedFlags` 同一份事实、同一写点，不新增状态源。
+   *
+   * ## 为什么抛错而不只记日志
+   *
+   * 静默不一致 = 静默口径分裂，正是本项目「静默失败 = 假阴性」纪律针对的形态。
+   * P1' 阶段抛错是**故意为之**：它是「接线写错了」的早期信号，越响越好。
+   * P3 判据切换后本方法退化为「status 是唯一权威」的幂等检查，可降为 debug 日志。
+   *
+   * @param toolCallId 协议唯一标识（并发同参工具的区分依据）
+   * @param text       既有文本判据的输入（渲染面）
+   * @param ok         既有编排层判定的结果
+   * @param blocked    loop 护栏事实（唯一补写源）
+   */
+  private _crossCheckOutcome(
+    toolCallId: { id: string },
+    text: string,
+    ok: boolean,
+    blocked: boolean,
+  ): void {
+    const reported = this.stepOutcomes.get(toolCallId.id);
+    if (!reported) {
+      // 无上报 = 走了不经 ToolRunner 的旁路（compress_context / remember_intel /
+      // 台账替身等 loop 内自执行分支）⇒ 不参与核对，但必须显式登记而非静默跳过。
+      this.stepUnreportedOutcomes.add(toolCallId.id);
+      return;
+    }
+    // blocked 补写：loop 护栏事实优先（它才是「主动挡下」的权威）
+    const expected = blocked ? 'blocked' : ok ? 'ok' : 'failed';
+    if (reported.status === expected) return;
+
+    // ⚠️ **已知且刻意容忍的不一致：执行层闸门拒绝/幂等跳过**（2026-10-06 实测 5 条真回归后修）。
+    // 执行层在这两种情形下报 `status='blocked'`（语义：主动挡下的），而既有编排层判定把它们
+    // 算 `ok=false`（⇒ expected='failed'）——**两条判据对「主动挡下」的历史口径本就不同**：
+    //   · 执行层视角：只读拒绝 / 宿主 denied / outbox 幂等跳过 = 我们主动挡下，非工具失败
+    //   · 既有编排层视角：只有 loop 护栏（`toolExecs[i].blocked`）才叫 blocked，
+    //     执行层闸门一律进 `ok=false` 分支（= metrics 计入失败）
+    // **本处不抛错、不改判据**：抛错会中断工具流（实测 5 条用例 results 为空）；
+    // 改判据则是「为让核对通过而造伤」——两条都拒绝。
+    // ⇒ 如实登记为**待裁决的口径分歧**（P2/P3 拍板：执行层闸门是否从失败计数中剔除），
+    //   在此之前**保持既有行为不变**（`ok=false` 照旧进 metrics），本方法退化为
+    //   「记录分歧」而非「强制一致」。
+    if (reported.status === 'blocked' && !blocked) {
+      this.stepBlockedDisagreements.add(toolCallId.id);
+      logger.debug(
+        { toolCallId: toolCallId.id, text: text.slice(0, 80) },
+        'SCRIPT-2 口径分歧：执行层报 blocked（主动挡下）但编排层算 failed（待 P2/P3 裁决）',
+      );
+      return;
+    }
+    throw new Error(
+      `[SCRIPT-2 双轨不一致] toolCallId=${toolCallId.id}：status=${reported.status} ` +
+        `但既有判定推出 ${expected}（text 前缀判据 ok=${ok} blocked=${blocked}）。` +
+        `text 开头：${text.slice(0, 80)}`,
+    );
+  }
+
+  /**
+   * 本 step「执行层报 blocked、编排层算 failed」的分歧集合（P1 期观测，不参与判定）。
+   *
+   * **这是 P2/P3 的裁决输入**：集合非空即证明「执行层闸门拒绝/幂等跳过」这条路径
+   * 在两套口径下归属不同 —— 现有 `toolFailureCount` 把它们**计入失败**，
+   * 而执行层语义认为它们是「主动挡下」。是否剔除属**口径变更（Breaking）**，
+   * 须拍板 + CHANGELOG + 历史不可比登记，**P1 期一律不动**。
+   */
+  private readonly stepBlockedDisagreements = new Set<string>();
+
+  /**
+   * 本 step 未上报 outcome 的 toolCallId（P1' 观测用，不参与判定）。
+   *
+   * 用途：让「哪些执行路径还没接入 status 化」**可观测**而非靠翻代码 ——
+   * 下一期（P2 三族推广）的施工清单由此直接读出，不重新考古。
+   */
+  private readonly stepUnreportedOutcomes = new Set<string>();
   /** L2 运行时策略（单一策略对象）。Agent 每轮经 setStrategy 注入，构造期默认 DEFAULT_L2_STRATEGY */
   private strategy: L2RuntimeStrategy = { ...DEFAULT_L2_STRATEGY };
   /** 本 turn 是否已执行过自审查（单次终审：布尔状态，不再需要轮次计数） */
@@ -647,6 +760,15 @@ export class AgentLoop {
       builtinTools: opts.builtinTools,
       preExecutionCheck: opts.preExecutionCheck,
       onToolExecuted: opts.onToolExecuted,
+      // SCRIPT-2 旁路：执行层只报 ok/failed（它跑在护栏判定之前，产不出 blocked），
+      // blocked 由 loop 在 executeToolCalls 内按既有 blockedFlags 补写后统一核对。
+      onToolSettled: (toolCallId, name, outcome) => {
+        this.stepOutcomes.set(toolCallId, outcome);
+        logger.debug(
+          { tool: name, toolCallId, status: outcome.status },
+          '工具结果结构化上报（SCRIPT-2 旁路）',
+        );
+      },
       getStrategy: () => this.strategy,
       tracer: this.tracer,
     });
@@ -1964,6 +2086,11 @@ export class AgentLoop {
     stepIndex: number,
   ): AsyncGenerator<AgentChunk, { aborted: boolean }, unknown> {
     this.appendAssistantToolCall(fullContent, toolCalls);
+    // SCRIPT-2 双轨暂存生命周期 = **一个 step**（step 内累积、step 边界清空）。
+    // 跨 step 累积 = 引入第二个状态源，与「每个概念一个真源」冲突。
+    this.stepOutcomes.clear();
+    this.stepUnreportedOutcomes.clear();
+    this.stepBlockedDisagreements.clear();
 
     // 工具并行执行（保持顺序的并发）：Promise.all 并发所有工具（总耗时≈最慢工具），
     // 但 tool_start/tool_result 与 messages 均按原始顺序 yield/push，保证 Reflection slice 正确
@@ -2183,6 +2310,7 @@ export class AgentLoop {
       // metrics 失败数不把拦截算作失败
       const blocked = toolExecs[i]!.blocked;
       const ok = !blocked && !isToolFailure(result);
+      this._crossCheckOutcome(tc, result, ok, blocked);
       // 搜索收敛护栏：累计本闭环成功 web_search 次数（LLM 反复搜索不收敛时据此注入收敛提示）
       if (tc.function.name === 'web_search' && ok) {
         this.successfulWebSearchCount++;
