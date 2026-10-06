@@ -1,5 +1,5 @@
 /**
- * SCRIPT-2 · 工具结果 status 字段化 —— **双轨一致性守卫**（P1'）
+ * SCRIPT-2 · 工具结果 status 字段化 —— **双轨一致性守卫**
  *
  * ## 为什么这个文件独立存在
  *
@@ -9,25 +9,24 @@
  *
  * 二者若在某条路径上分叉，`toolFailureCount` 就会**同时混用两套口径且无人知晓** ——
  * 这比不做 status 化更糟（status 化的卖点就是消灭口径分裂，分裂即证伪）。
- * `loop._crossCheckOutcome` 在每条工具结果后立即比对、不等落盘；本文件是它的**行为证据**：
- * 三条映射各有用例，**含「去掉 blocked 补写必须被捕获」这个变异靶标**。
+ * `loop._crossCheckOutcome` 在每条工具结果后立即比对；本文件是它的**行为证据**。
  *
- * ## 三条映射（P1' 覆盖范围）
+ * ## 覆盖的映射
  *
  * | 情形 | status 来源 | 既有判定 |
  * |:--|:--|:--|
  * | 正常成功 | 执行层（ToolRunner） | `ok=true` |
  * | 执行失败 | 执行层 | `ok=false, blocked=false` |
- * | **loop 护栏拦截** | **loop 补写**（执行层产不出） | `ok=false, blocked=true` |
+ * | 执行层闸门拒绝 / 幂等跳过 | 执行层报 blocked | `ok=false`（已知口径分歧） |
+ * | **loop 护栏拦截** | **无 outcome（unregistered 观测）** | `ok=false, blocked=true` |
  *
- * ⚠️ 第三行是本文件的核心：护栏命中时工具**根本没进 ToolRunner**（loop 直接
- * `Promise.resolve(拒绝文案)` + `blocked:true`），执行层**无从上报**——
- * 印证了方案「blocked 由 loop 补写、执行层产不出」的建模是对的，不是偷懒。
+ * ⚠️ 护栏命中时工具**根本没进 ToolRunner**（loop 直接回拒绝文案 + `blocked:true`），
+ * 执行层无从上报 ⇒ 该路径当前无 outcome，护栏点的 outcome 写入在后续批次补齐。
  *
  * ## 变异靶标（已实证红→绿，勿改坏）
  *
- * · 去掉 `blocked` 补写（`expected` 恒 `ok/failed`）⇒ 用例③转红
- * · 执行层恒报 `ok` ⇒ loop 全量 8 条转红（错误信息含 toolCallId + 两 status + text 开头）
+ * · 执行层恒报 `ok` ⇒ 本文件 2 条 + loop.test 8 条转红
+ *   （错误信息含 toolCallId + 两 status + text 开头）
  */
 import { describe, it, expect, vi } from 'vitest';
 import { AgentLoop } from '@/agent/loop.js';
@@ -115,9 +114,9 @@ describe('SCRIPT-2 · status 与既有 ok 判据的一致性（P1 期双轨守�
     }
   });
 
-  it('★ blocked 路径：loop 护栏拦截 → status=blocked（由 loop 补写，非执行层）', async () => {
+  it('★ blocked 路径：loop 护栏拦截 → 无 outcome（unregistered），ok=false + blocked', async () => {
     // 两次同 path 读取 → 第二次命中 read_dedup 护栏，**工具根本没进 ToolRunner**。
-    // 这正是「blocked 必须由 loop 补写、执行层产不出」的实证：执行层压根没被调用。
+    // 护栏拦截不经 ToolRunner：执行层压根没被调用 ⇒ 无 outcome，落 unregistered 观测。
     const toolExecutor = vi.fn().mockResolvedValue('文件正文');
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -137,10 +136,8 @@ describe('SCRIPT-2 · status 与既有 ok 判据的一致性（P1 期双轨守�
     const blockedOne = reads[1]!;
     expect(blockedOne.blocked).toBe(true);
     expect(blockedOne.ok).toBe(false);
-    // 变异靶标：若 loop 不补写 blocked，expected 会被算成 failed
-    // 而执行层对该工具**无上报**（未经 ToolRunner）⇒ 走 unreported 分支不抛错。
-    // 故本例的真正价值是钉住「护栏拦截不经过 status 双轨核对」这个事实，
-    // 它是 P2 推广时必须补上 status 产出的地方（施工清单由此读出）。
+    // 护栏拦截无上报、走 unreported 分支 ⇒ 本例钉住「护栏拦截不经过双轨核对」，
+    // 该点补 outcome 写入是后续批次的施工项（由 unreported 计数读出）。
     expect(toolExecutor).toHaveBeenCalledTimes(1); // 第二次压根没进执行层
   });
 

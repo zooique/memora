@@ -407,8 +407,8 @@ export class AgentLoop {
    * ## 用途：双轨期的一致性自检，不是第二套判据
    *
    * `ToolRunner` 旁路上报 `ToolOutcome`（`status` + `text`），此处按 `toolCallId` 暂存，
-   * 在既有 `ok` 判定旁**读一次做交叉核对**：`status === 'failed'` ⟺ `!ok && !blocked`。
-   * 不等即抛 —— 这是 P1' 的核心守卫，缺它整个方案等于制造口径分裂。
+   * 在既有 `ok` 判定旁**读一次做交叉核对**：上报 status 与编排层判定须一致，
+   * 未知分歧（除已登记的口径分歧外）即抛 —— 缺它整个方案等于制造口径分裂。
    *
    * ## 为什么暂存而非直接比较
    *
@@ -429,29 +429,29 @@ export class AgentLoop {
    * `toolFailureCount` 就会**同时混用两套口径**且无人知晓 —— 这比不做 status 化更糟。
    * 本方法在**每条工具结果产出后立即比对**，不等落盘、不等 UI。
    *
-   * ## 期望的映射（`blocked` 在此补写，唯一写点）
+   * ## 期望的映射（核对基准 = 既有编排层判定）
    *
-   * | 情形 | `status` | 既有 `ok` / `blocked` |
+   * | 情形 | 上报 status | 既有 `ok` / `blocked` |
    * |:--|:--|:--|
    * | 正常成功 | `ok` | `ok=true` |
    * | 执行失败（非零退出 / 超时 / 异常 / 参数非法） | `failed` | `ok=false, blocked=false` |
-   * | loop 护栏拦截（`toolExecs[i].blocked`） | `blocked`（**此处补写**） | `ok=false, blocked=true` |
-   * | 执行层闸门拒绝 / 幂等跳过 | `blocked`（执行层直接报） | 同上二者 |
+   * | loop 护栏拦截（`toolExecs[i].blocked`） | 无上报（unregistered） | `ok=false, blocked=true` |
+   * | 执行层闸门拒绝 / 幂等跳过 | `blocked`（执行层直接报） | `ok=false, blocked=false` |
    *
-   * 执行层产不出 `blocked`（它跑在护栏判定之前，对「该不该执行」无发言权），
-   * 故 loop 护栏命中的那批在**此处**由 `blocked` 事实补写 —— 与既有
-   * `blockedFlags` 同一份事实、同一写点，不新增状态源。
+   * loop 护栏命中的工具不进 `ToolRunner` ⇒ 无 outcome 可核对，落 unregistered 观测；
+   * 执行层闸门报 `blocked` 而编排层推出 `failed` ⇒ 属已知口径分歧（见方法内登记）。
    *
-   * ## 为什么抛错而不只记日志
+   * ## 为什么分歧只登记不抛错
    *
-   * 静默不一致 = 静默口径分裂，正是本项目「静默失败 = 假阴性」纪律针对的形态。
-   * P1' 阶段抛错是**故意为之**：它是「接线写错了」的早期信号，越响越好。
-   * P3 判据切换后本方法退化为「status 是唯一权威」的幂等检查，可降为 debug 日志。
+   * 静默不一致 = 静默口径分裂，正是本项目「静默失败 = 假阴性」纪律针对的形态，
+   * 但对该分歧抛错会中断工具流；改判据则属口径变更（Breaking，须 CHANGELOG +
+   * 历史不可比登记）。故如实登记为观测，保持既有行为不变，由判据切换批次裁决。
+   * 判据切换后本方法退化为「status 是唯一权威」的幂等检查，可降为 debug 日志。
    *
    * @param toolCallId 协议唯一标识（并发同参工具的区分依据）
    * @param text       既有文本判据的输入（渲染面）
    * @param ok         既有编排层判定的结果
-   * @param blocked    loop 护栏事实（唯一补写源）
+   * @param blocked    loop 护栏事实
    */
   private _crossCheckOutcome(
     toolCallId: { id: string },
@@ -466,26 +466,17 @@ export class AgentLoop {
       this.stepUnreportedOutcomes.add(toolCallId.id);
       return;
     }
-    // blocked 补写：loop 护栏事实优先（它才是「主动挡下」的权威）
+    // 期望 status 由既有编排层判定推出
     const expected = blocked ? 'blocked' : ok ? 'ok' : 'failed';
     if (reported.status === expected) return;
 
-    // ⚠️ **已知且刻意容忍的不一致：执行层闸门拒绝/幂等跳过**（2026-10-06 实测 5 条真回归后修）。
-    // 执行层在这两种情形下报 `status='blocked'`（语义：主动挡下的），而既有编排层判定把它们
-    // 算 `ok=false`（⇒ expected='failed'）——**两条判据对「主动挡下」的历史口径本就不同**：
-    //   · 执行层视角：只读拒绝 / 宿主 denied / outbox 幂等跳过 = 我们主动挡下，非工具失败
-    //   · 既有编排层视角：只有 loop 护栏（`toolExecs[i].blocked`）才叫 blocked，
-    //     执行层闸门一律进 `ok=false` 分支（= metrics 计入失败）
-    // **本处不抛错、不改判据**：抛错会中断工具流（实测 5 条用例 results 为空）；
-    // 改判据则是「为让核对通过而造伤」——两条都拒绝。
-    // ⇒ 如实登记为**待裁决的口径分歧**（P2/P3 拍板：执行层闸门是否从失败计数中剔除），
-    //   在此之前**保持既有行为不变**（`ok=false` 照旧进 metrics），本方法退化为
-    //   「记录分歧」而非「强制一致」。
+    // 已知口径分歧：执行层闸门（denied/skip）报 `blocked`，编排层按 ok=false 推出 `failed`。
+    // 判据切换批次裁决前保持既有行为，登记观测而非抛错（抛错会中断工具流）。
     if (reported.status === 'blocked' && !blocked) {
       this.stepBlockedDisagreements.add(toolCallId.id);
       logger.debug(
         { toolCallId: toolCallId.id, text: text.slice(0, 80) },
-        'SCRIPT-2 口径分歧：执行层报 blocked（主动挡下）但编排层算 failed（待 P2/P3 裁决）',
+        'SCRIPT-2 口径分歧：执行层报 blocked（主动挡下）但编排层算 failed（判据切换批次裁决）',
       );
       return;
     }
@@ -497,20 +488,19 @@ export class AgentLoop {
   }
 
   /**
-   * 本 step「执行层报 blocked、编排层算 failed」的分歧集合（P1 期观测，不参与判定）。
+   * 本 step「执行层报 blocked、编排层算 failed」的分歧集合（观测用，不参与判定）。
    *
-   * **这是 P2/P3 的裁决输入**：集合非空即证明「执行层闸门拒绝/幂等跳过」这条路径
-   * 在两套口径下归属不同 —— 现有 `toolFailureCount` 把它们**计入失败**，
-   * 而执行层语义认为它们是「主动挡下」。是否剔除属**口径变更（Breaking）**，
-   * 须拍板 + CHANGELOG + 历史不可比登记，**P1 期一律不动**。
+   * 集合非空即证明「执行层闸门拒绝/幂等跳过」这条路径在两套口径下归属不同 ——
+   * 现有 `toolFailureCount` 把它们计入失败，执行层语义认为它们是「主动挡下」。
+   * 剔除属口径变更（Breaking，须 CHANGELOG + 历史不可比登记），由判据切换批次裁决。
    */
   private readonly stepBlockedDisagreements = new Set<string>();
 
   /**
-   * 本 step 未上报 outcome 的 toolCallId（P1' 观测用，不参与判定）。
+   * 本 step 未上报 outcome 的 toolCallId（观测用，不参与判定）。
    *
-   * 用途：让「哪些执行路径还没接入 status 化」**可观测**而非靠翻代码 ——
-   * 下一期（P2 三族推广）的施工清单由此直接读出，不重新考古。
+   * 用途：让「哪些执行路径还没接入 status 化」可观测而非靠翻代码 ——
+   * 后续批次的施工清单由此直接读出，不重新考古。
    */
   private readonly stepUnreportedOutcomes = new Set<string>();
   /** L2 运行时策略（单一策略对象）。Agent 每轮经 setStrategy 注入，构造期默认 DEFAULT_L2_STRATEGY */
@@ -760,8 +750,8 @@ export class AgentLoop {
       builtinTools: opts.builtinTools,
       preExecutionCheck: opts.preExecutionCheck,
       onToolExecuted: opts.onToolExecuted,
-      // SCRIPT-2 旁路：执行层只报 ok/failed（它跑在护栏判定之前，产不出 blocked），
-      // blocked 由 loop 在 executeToolCalls 内按既有 blockedFlags 补写后统一核对。
+      // SCRIPT-2 旁路：按 toolCallId 暂存 outcome（四条出口：denied/skip=blocked，
+      // execute=ok/failed，catch=failed），供 _crossCheckOutcome 双轨核对。
       onToolSettled: (toolCallId, name, outcome) => {
         this.stepOutcomes.set(toolCallId, outcome);
         logger.debug(

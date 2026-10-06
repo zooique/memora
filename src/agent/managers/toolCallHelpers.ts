@@ -133,10 +133,10 @@ export function isRetryableToolError(result: string): boolean {
  * · `blocked` —— **我们主动挡下的**（护栏拦截 / 只读拒绝 / 幂等跳过 / fail-closed 拒绝）。
  *   语义依据 = 纪律「主动挡下的 ≠ 工具跑失败的」：它既非成功也非失败。
  *
- * ⚠️ **`blocked` 由 loop 层补写，执行层产不出**：执行器跑在护栏判定**之前**，
- *   对「该不该执行」无发言权。故 `ToolRunner` 只报 `ok` / `failed`，
- *   `loop` 在已持有 `blockedFlags` 的同一处把它补成 `blocked`（唯一写点，
- *   与既有 `blockedFlags` 机制同构，不新增概念）。
+ * **`blocked` 的产出点按执行路径分两类**：
+ *   · 执行层闸门（宿主审批拒绝 / 只读拒绝 / 幂等跳过）⇒ `ToolRunner` 直接报 `blocked`；
+ *   · loop 护栏拦截的工具不进 `ToolRunner`，当前无 outcome（落 unreported 观测），
+ *     护栏点的 outcome 写入在后续批次补齐。
  */
 export type ToolStatus = 'ok' | 'failed' | 'blocked';
 
