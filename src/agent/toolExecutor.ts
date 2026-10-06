@@ -1329,12 +1329,18 @@ export class ToolExecutor {
       case 'task_table_write': {
         // 写入任务表（overwrite / append / replace）；items 每项可选 rolePack（会议表层装配角色）
         if (!this.planManager) {
-          return '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
+          // 任务表能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
+          const notAvailableText = '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         // mode 为 required（validateAndCoerceArgs 强制校验），不设缺省——设缺省即与 required 契约矛盾
         const writeMode = strArg('mode');
         if (writeMode !== 'overwrite' && writeMode !== 'append' && writeMode !== 'replace') {
-          return `[ERR:INVALID_ARG] 不支持的写入模式 "${writeMode}"，仅支持 overwrite/append/replace`;
+          // 非法参数 = 执行失败事实（方案明文 INVALID_ARG=failed）→ 显式 emit failed
+          const invalidModeText = `[ERR:INVALID_ARG] 不支持的写入模式 "${writeMode}"，仅支持 overwrite/append/replace`;
+          emitOutcome?.(failedOutcome(invalidModeText));
+          return invalidModeText;
         }
         const itemsRaw = args.items;
         const items = Array.isArray(itemsRaw)
@@ -1345,18 +1351,28 @@ export class ToolExecutor {
             }))
           : [];
         if (items.length === 0 || items.some((s) => s.description.trim() === '')) {
-          return '[ERR:INVALID_ARG] items 参数不能为空，且每项须含非空 description';
+          // 非法参数 = 执行失败事实（方案明文 INVALID_ARG=failed）→ 显式 emit failed
+          const invalidItemsText =
+            '[ERR:INVALID_ARG] items 参数不能为空，且每项须含非空 description';
+          emitOutcome?.(failedOutcome(invalidItemsText));
+          return invalidItemsText;
         }
         return this.planManager.writePlan(writeMode, items);
       }
       case 'task_table_update': {
         // 更新任务状态
         if (!this.planManager) {
-          return '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
+          // 任务表能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
+          const notAvailableText = '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
+          emitOutcome?.(failedOutcome(notAvailableText));
+          return notAvailableText;
         }
         const planItemId = strArg('plan_item_id');
         if (!planItemId) {
-          return '[ERR:INVALID_ARG] plan_item_id 不能为空';
+          // 非法参数 = 执行失败事实（方案明文 INVALID_ARG=failed）→ 显式 emit failed
+          const missingIdText = '[ERR:INVALID_ARG] plan_item_id 不能为空';
+          emitOutcome?.(failedOutcome(missingIdText));
+          return missingIdText;
         }
         // 寻址统一解析（见 resolvePlanItemId）：renderer 只向 LLM 展示行首序号（1-based），
         // task_table_write 返回 uuid 前 8 位短 id，planItemLog 展示完整 uuid——三种来源全部归一为真实 uuid 后
@@ -1364,12 +1380,17 @@ export class ToolExecutor {
         const plan = this.planManager.getPlan?.() ?? [];
         const resolved = resolvePlanItemId(planItemId, plan);
         if (!resolved.ok) {
+          // 寻址失败（PLAN_ITEM_NOT_FOUND）= 执行失败事实 → 显式 emit failed
+          emitOutcome?.(failedOutcome(resolved.error));
           return resolved.error;
         }
         // status 为 required（validateAndCoerceArgs 强制校验），不设缺省
         const planItemStatus = strArg('status');
         if (planItemStatus !== 'done' && planItemStatus !== 'blocked') {
-          return `[ERR:INVALID_ARG] 不支持的状态 "${planItemStatus}"，仅支持 done/blocked`;
+          // 非法参数 = 执行失败事实（方案明文 INVALID_ARG=failed）→ 显式 emit failed
+          const invalidStatusText = `[ERR:INVALID_ARG] 不支持的状态 "${planItemStatus}"，仅支持 done/blocked`;
+          emitOutcome?.(failedOutcome(invalidStatusText));
+          return invalidStatusText;
         }
         return this.planManager.updatePlanItem(resolved.id, planItemStatus);
       }

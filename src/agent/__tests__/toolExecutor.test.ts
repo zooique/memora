@@ -1893,6 +1893,122 @@ describe('工具执行器（6 个工具）', () => {
     });
   });
 
+  describe('★ 原生 outcome（SCRIPT-2 B5-b · 任务表族 status 断言）', () => {
+    /**
+     * 构造原生 outcome 捕获器（B5 语义裁决：失败点 emit failed、成功点不 emit）。
+     */
+    function makeSink(): { readonly list: ToolOutcome[]; sink: (o: ToolOutcome) => void } {
+      const list: ToolOutcome[] = [];
+      return { list, sink: (o) => list.push(o) };
+    }
+
+    /** 注入最小 planManager 桩（getPlan 供寻址解析；写入/更新收 no-op） */
+    function injectPlanStub(): void {
+      executor.planManager = {
+        writePlan: () => 'ok',
+        updatePlanItem: () => 'ok',
+        getPlan: () => [{ id: 'a1b2c3d4-step-1', description: 'A', status: 'pending', order: 0 }],
+      };
+    }
+
+    it('task_table_write 未装配 planManager → emit failed（能力缺失属执行失败）', async () => {
+      // fixture 是 beforeAll 共享实例：前置区块可能注入过 planManager，显式清空还原「未装配」态
+      executor.planManager = undefined;
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'task_table_write',
+        JSON.stringify({ mode: 'append', items: [{ description: 'A' }] }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('task_table_write mode 非法 → emit failed（INVALID_ARG=failed）', async () => {
+      injectPlanStub();
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'task_table_write',
+        JSON.stringify({ mode: 'bogus', items: [{ description: 'A' }] }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('task_table_write items 空 → emit failed', async () => {
+      injectPlanStub();
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'task_table_write',
+        JSON.stringify({ mode: 'append', items: [] }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('task_table_update plan_item_id 空串 → emit failed（required 校验只挡 undefined/null，空串穿到分支体）', async () => {
+      injectPlanStub();
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: '', status: 'done' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('task_table_update 寻址失败（PLAN_ITEM_NOT_FOUND）→ emit failed', async () => {
+      injectPlanStub();
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: 'zzzzzzzz', status: 'done' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('task_table_update status 非法 → emit failed', async () => {
+      injectPlanStub();
+      const { list, sink } = makeSink();
+      const out = await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: '1', status: 'bogus' }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(1);
+      expect(list[0]!.status).toBe('failed');
+      expect(list[0]!.text).toBe(out);
+    });
+
+    it('task_table_write 成功路径不 emit（零 emit = 裸文本走 ok 兜底）', async () => {
+      injectPlanStub();
+      const { list, sink } = makeSink();
+      await executor.execute(
+        'task_table_write',
+        JSON.stringify({ mode: 'append', items: [{ description: 'A' }] }),
+        undefined,
+        sink,
+      );
+      expect(list).toHaveLength(0);
+    });
+  });
+
   describe('task_table_update（寻址契约：renderer 行首序号 ↔ task_table_write 短 id ↔ 完整 uuid 三源归一）', () => {
     /** 默认三任务项桩（id 前缀各异，8 位短 id 可唯一命中） */
     const DEFAULT_PLAN: Array<{ id: string; description: string; status: string; order: number }> =
