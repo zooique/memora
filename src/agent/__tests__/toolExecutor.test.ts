@@ -21,6 +21,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import type { IProjectSearchProvider, ProjectTextSearchResult } from '@/project-search/types.js';
 import { MemoraError, toolError, ToolErrorCode } from '@/utils/errors.js';
+import { isToolFailure } from '@/agent/managers/toolCallHelpers.js';
 
 describe('工具执行器（6 个工具）', () => {
   let tmpProject: string;
@@ -2211,6 +2212,31 @@ describe('run_command / kill_command（命令执行工具层）', () => {
       const out = await exec.execute('kill_command', JSON.stringify({ taskId: 'bg-1' }));
       expect(out).toContain('[TASK_ALREADY_SETTLED]');
       expect(out).toContain('status=completed');
+      // 成功终态：非失败（与下方失败终态用例成对，锁「已终态」本身不等于失败）
+      expect(isToolFailure(out)).toBe(false);
+    });
+
+    it('★ 已终态的**失败**任务 → 判据必须判失败（行首归属回归锁 · 2026-10-06）', async () => {
+      const exec = makeExecutor({ withBackground: true });
+      const registry = lastRegistry!;
+      const settled = new Promise<void>((resolve) =>
+        registry.setCompletionListener(() => resolve()),
+      );
+      await exec.execute('run_command', JSON.stringify({ command: FAIL_CMD, background: true }));
+      await settled;
+      const out = await exec.execute('kill_command', JSON.stringify({ taskId: 'bg-1' }));
+      // 「已是终态」是控制流事实、「退出码非零」是执行结局事实，两者抢行首会让判据只看见前者
+      // ⇒ 原写法（[TASK_ALREADY_SETTLED] 在行首、[COMMAND_ERROR] 在第二行）把失败判成成功。
+      // 修法 = 改喂给判据的事实（结果体提到行首），不是改判据。
+      expect(isToolFailure(out)).toBe(true);
+      // 结局信息不因换序而丢失：两个事实都必须还在上下文里
+      expect(out).toContain('[TASK_ALREADY_SETTLED]');
+      expect(out).toContain('[COMMAND_ERROR]');
+      // ⚠️ 引导语方向守卫：附注在结果**之后** ⇒ 必须用回指语（「其结果为」）。
+      // 若有人图省事把「以下为其结果」也钉在附注上，它会指向上方 —— 对 LLM 是指代错乱的谎。
+      // （成功路径的同一句话是**前置引导**，位置相反、语义也相反，故此处只断言失败路径。）
+      expect(out).toContain('其结果为上述内容');
+      expect(out).not.toContain('以下为其结果');
     });
 
     it('免裁决链：终止不经过命令确认闸（无需注入 handler 即成功）', async () => {

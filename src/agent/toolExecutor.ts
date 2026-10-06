@@ -28,6 +28,7 @@ import {
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
 import { sanitizeExternalText } from '@/agent/textSanitize.js';
+import { isToolFailure } from '@/agent/managers/toolCallHelpers.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
 import type { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
@@ -1547,7 +1548,24 @@ export class ToolExecutor {
           // 被主动终止 ≠ 执行失败：走专用格式化，不谎报退出码（见 formatKilledCommandOutput）
           return `[KILLED] taskId=${taskId}（已终止；以下为截至终止时的输出）\n命令：${task?.command ?? '(未知)'}\n${formatKilledCommandOutput(outcome.result)}`;
         }
-        return `[TASK_ALREADY_SETTLED] taskId=${taskId} 已是终态（status=${outcome.status}，无需终止；以下为其结果）\n命令：${task?.command ?? '(未知)'}\n${formatCommandResult(outcome.result)}`;
+        const settledNote = `[TASK_ALREADY_SETTLED] taskId=${taskId} 已是终态（status=${outcome.status}，无需终止）`;
+        // 已终态 ≠ 失败；但「已是终态」是**控制流事实**、「退出码非零/超时」是**执行结局事实**，
+        // 两者抢同一个行首 ⇒ 判据（isToolFailure 锚定行首）只看得见先到的那一个。
+        // 原写法把 [TASK_ALREADY_SETTLED] 放行首、[COMMAND_ERROR] 放第二行 ⇒ 已终态的
+        // 失败任务被判成功（SCRIPT-1 同形状漏计，2026-10-06 实测）。
+        // 修法 = 改**喂给判据的事实**，不改判据：失败/超时终态把结果体提到行首（结局可判），
+        // 「已终态」说明降为末尾附注（信息不丢，仍在上下文里）。
+        // ⚠️ 引导语必须**随结果体一起走**（不能钉在 settledNote 上）：它在原文案里是
+        // **前置引导**（结果在下方）。若失败路径把同一句放在结果体**之后**，「以下」就变成
+        // 指向上方 —— 对 LLM 是指代错乱的谎。两条路径各自带对位置的引导语。
+        const commandLine = `命令：${task?.command ?? '(未知)'}`;
+        const body = formatCommandResult(outcome.result);
+        if (isToolFailure(body)) {
+          // 附注在结果**之后** ⇒ 用回指语（「其结果为」），不用「以下」。
+          return `${body}\n${commandLine}\n${settledNote}；其结果为上述内容`;
+        }
+        // 成功路径：附注在前、结果在后 ⇒ 沿用原文案的前置引导语，逐字不变。
+        return `${settledNote}；以下为其结果\n${commandLine}\n${body}`;
       }
       case 'list_resources': {
         // 渐进披露 L3：列出技能的资源清单

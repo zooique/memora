@@ -16,8 +16,15 @@
 （`toolRunner` 执行层 / `loop` 编排层 / `loop` `toolFailureCount` 计数）。而脚本族失败产出的是
 `formatExecutionResult` 的**三态前缀** —— `[SCRIPT_ERROR]` / `[CODE_ERROR]` / `[COMMAND_ERROR]` /
 `[SCRIPT_TIMEOUT]` / `[CODE_TIMEOUT]` / `[COMMAND_TIMEOUT]`（`kind: 'SCRIPT' | 'CODE' | 'COMMAND'`），
-**一个都不以 `[ERR` 开头** ⇒ `run_skill_script` / `run_code` / `run_command`（及后台任务回流）
+**一个都不以 `[ERR` 开头** ⇒ `run_skill_script` / `run_code` / `run_command`
 的**全部失败与超时恒判为成功**，`toolFailureCount` / `AgentMetrics.tools.failureCount` **恒少计**。
+
+**⚠️ 口径边界（2026-10-06 二次审查订正，勿夸大）**：后台命令**自然终局**（`backgroundTasks` 的
+`formatBackgroundTaskNotice` → `enqueueCommandResult` → `appendSystemMessage`）**结构上不产生
+`tool_result` chunk**，因此其失败**不经过本判据、也不计入 `toolFailureCount`** —— 这不是判据漏计，
+而是该路径**没有工具结果承载点**。台账已拆独立条目 `METRICS-BGTASK-1` 待排（修法与判据字段化强耦合）。
+本条闭合范围 = **三个工具族的同步执行面**（`run_skill_script` / `run_code` / `run_command` 同步路径
++ `kill_command` 回传），**不含后台自然终局**。
 
 **变更**：新增 `toolCallHelpers.isToolFailure()` 为失败判据**唯一真源**（两族正则），三处散点全部改调它；
 生产代码 `startsWith('[ERR')` 零残留。`_processToolResults` 签名新增 `blockedFlags?`（调用点传

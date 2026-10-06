@@ -366,13 +366,20 @@ describe('auditToolCallPairing（批次成形发送边界守卫纯谓词）', ()
 // ─── isToolFailure（失败判据单点 · SCRIPT-1 / METRICS-PREFIX-1）────────────
 
 /**
- * 失败判据的**前缀约定契约**。
+ * 失败判据的**前缀约定契约**（正向：已登记前缀 → 判定真值）。
  *
  * 存在的理由：失败判据此前散落三处手写 `[ERR`，靠「护栏文案刻意避开 `[ERR` 前缀」
- * 这条**隐性约定**维持「拦截不算失败」——无声明、无测试锁定。新护栏一旦用了失败前缀，
+ * 这条**隐性约定**维持「拦截不算失败」——无声明、无测试锁定，新护栏一旦用了失败前缀，
  * 拦截即被静默误计为失败。本清单把该约定**显式化**：每个前缀要么判失败、要么明写豁免。
+ *
+ * ⚠️ **本段只管正向，不管「新增」（2026-10-06 订正，勿再宣称反了）**：
+ * 逐条列出的断言只能钉死「**已登记**的前缀判定不变」，**测不出新增未登记前缀**
+ * ——实测：把 `toolExecutor` 两处返回改写成全新 `[NETWORK_ERROR]`，本段仍全绿。
+ * 「新增前缀漏登记」的反向对账由**另一个文件**负责：
+ * `src/__tests__/toolFailurePrefixGuard.test.ts`（扫生产代码真实产出的前缀 ∖ 登记 = ∅）。
+ * 二者分工：本格 = 判据真值；彼格 = 登记完整性。**缺任一都留复发口。**
  */
-describe('isToolFailure · 前缀约定契约', () => {
+describe('isToolFailure · 前缀约定契约（正向 · 配 toolFailurePrefixGuard 反向对账）', () => {
   /** 判为失败的族：结构化错误 + 执行三态（`formatExecutionResult` 的 kind 三值） */
   it.each([
     ['[ERR:TOOL:FILE_NOT_FOUND] 文件不存在', '[ERR 族 · 内核结构化错误'],
@@ -416,6 +423,27 @@ describe('isToolFailure · 前缀约定契约', () => {
     ['[ASK_ABORTED] 用户未回答该提问', '提问中止 · 未执行'],
     ['[ASK_SUSPENDED] 因等待回答本轮未执行', '提问挂起 · 未执行'],
     ['[SKIP:TOOL:IDEMPOTENT] 幂等跳过，未执行', '幂等跳过 · 主动挡下'],
+  ])('%s → 非失败（%s）', (result) => {
+    expect(isToolFailure(result)).toBe(false);
+  });
+
+  /**
+   * 后台任务面三前缀（2026-10-06 补 · kill_command / run_command 后台分支）。
+   *
+   * 这三条是**语义最微妙**的一组，逐一写明「为什么不是失败」——
+   * 正因微妙，才需要断言钉住，而不是留给"记得避开"：
+   *   · `[KILLED]` 主动终止：强杀无退出码，判失败即谎报命令自己挂了（CMI 内存笔记「被终止 ≠ 失败」）
+   *   · `[TASK_ALREADY_SETTLED]` 已终态回传：**控制流事实**（无需终止），非执行结局
+   *   · `[BACKGROUND_STARTED]` 启动成功：命令转后台，不在本轮判成败
+   *
+   * ⚠️ 三条与 `src/__tests__/toolFailurePrefixGuard.test.ts` 的 `NON_FAILURE_PREFIXES`
+   * 登记表**同源同集**：那处是「语义归属」SSOT，此处是「判据真值」断言。
+   * 两处必须同步改（守卫的「登记条目腐化成僵尸契约」用例会抓住单边改动）。
+   */
+  it.each([
+    ['[KILLED] taskId=bg-1（已终止；以下为截至终止时的输出）', '主动终止 · 无退出码不算失败'],
+    ['[TASK_ALREADY_SETTLED] taskId=bg-1 已是终态（status=completed，无需终止）', '已终态回传 · 控制流事实'],
+    ['[BACKGROUND_STARTED] taskId=bg-2（命令已在本轮之外继续运行）', '后台启动成功 · 本轮不判成败'],
   ])('%s → 非失败（%s）', (result) => {
     expect(isToolFailure(result)).toBe(false);
   });
