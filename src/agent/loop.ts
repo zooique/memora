@@ -1061,7 +1061,24 @@ export class AgentLoop {
   setBackgroundTasks(registry: BackgroundTaskRegistry): void {
     this.backgroundTasks = registry;
     registry.setCompletionListener((task) => {
-      this.enqueueCommandResult(formatBackgroundTaskNotice(task));
+      const notice = formatBackgroundTaskNotice(task);
+      this.enqueueCommandResult(notice);
+      // 后台自然终局失败结算（METRICS-BGTASK-1 显式闭合 · SCRIPT-2 批次 B3）：
+      // 本路径结构上不经工具结果通道——无 toolCallId、不产 tool_result，B4 判据切换
+      // 碰不到它，不在此显式施工则后台失败对 toolFailureCount 永久不可见。
+      // killed 不经本回调（注册表刻意不回调，防双份消费），只余 completed / timedOut：
+      // timedOut 或退出码非 0 = 执行事实失败，判定式与 run_command 同步路径同源
+      // （toolExecutor 的 commandFailed 同式，改一处必查另一处）。
+      // 即时结算、无 step 归属：metrics 是 loop 实例级累计（无 per-turn 重置），
+      // 脱管后终局照常落账；不写 stepOutcomes 双轨核对——无 toolCallId 可挂，
+      // 无消费者的容器拒绝入库。
+      // ⚠️ 口径变更：后台失败由不可见→计入 toolFailureCount，数字上升且历史不可比
+      // （论证：docs/方案-工具结果status字段化-20261006.md §三批次表 B3、§七）。
+      // task.result 类型可选，但自然终态必有（注册表 settle 先赋值后同步 notify），
+      // 判空即跳过、不计失败。
+      if (task.result && (task.result.timedOut || task.result.exitCode !== 0)) {
+        this.metrics.toolFailureCount++;
+      }
       // 终态同时出宿主面（阶段二补漏 · 见方案文档 §5.2）：脱管后 turn 已结束，
       // 宿主周期性推送（step_boundary / background_report / kill 后回推）覆盖不到
       // 「turn 结束后任务自然跑完」⇒ UI 会一直显示「运行中」。经 Agent 事件面转发

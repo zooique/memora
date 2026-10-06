@@ -7,9 +7,11 @@
  *   （记忆召回命中率指标已随自动注入退役删除，见下）
  *   - 上下文管理指标（truncationCount、messageCount、estimatedTokens）
  *   - Agent.getMetrics() 聚合行为
+ *   - 后台命令自然终局失败计数（METRICS-BGTASK-1 · B3：注册表 completion 点结算）
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { AgentLoop } from '@/agent/loop.js';
+import { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 import type { AgentChunk } from '@/agent/types.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { AgentMetrics } from '@/agent/tracer.js';
@@ -673,5 +675,84 @@ describe('AgentLoop · 配对守卫计数出闸（僵尸声明消缺）', () => 
     // 职责分工同上：递增行为由 llmCaller.test.ts「截断救回计数」用例守住，此处只守出闸。
     // 变异验证：删掉出闸行 → tsc(TS2741) 与本用例双重变红。
     expect(loop.getMetrics().llm.truncationRecoveryCount).toBe(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 后台命令自然终局失败计数（METRICS-BGTASK-1 · SCRIPT-2 批次 B3）
+//
+// 后台任务自然终态不经工具结果通道（无 toolCallId / 不产 tool_result），
+// B4 判据切换碰不到它——失败可见性只能由注册表 completion 点显式结算：
+// timedOut 或退出码非 0 → tools.failureCount +1（与 run_command 同步路径同式）。
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · 后台命令自然终局失败计数（METRICS-BGTASK-1）', () => {
+  // 跨平台命令均用无空格 node -e 表达式（避开 Windows 引号拆参，同 toolExecutor.test.ts 先例）
+  /** 零退出命令（打印 node 版本，无元字符） */
+  const OK_CMD = 'node -v';
+  /** 非零退出命令 */
+  const FAIL_CMD = 'node -e process.exit(3)';
+  /** 长驻命令（配合 1s 超时限触发 timedOut） */
+  const SLEEP_CMD = 'node -e setTimeout(function(){},20000)';
+
+  /** 本 describe 建过的注册表（afterEach 统一收割，防孤儿进程 + exit 钩子堆积） */
+  const registries: BackgroundTaskRegistry[] = [];
+
+  afterEach(() => {
+    // shutdown = 收割 running 任务 + 注销 exit 钩子（注册表终态总出口）
+    for (const r of registries) r.shutdown();
+    registries.length = 0;
+  });
+
+  /**
+   * 构造带真实后台注册表的 loop（completion 监听由 setBackgroundTasks 一次性接线）
+   */
+  function makeLoopWithRegistry(): { loop: AgentLoop; registry: BackgroundTaskRegistry } {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    const registry = new BackgroundTaskRegistry();
+    loop.setBackgroundTasks(registry);
+    registries.push(registry);
+    return { loop, registry };
+  }
+
+  it('非零退出 → tools.failureCount +1', async () => {
+    const { loop, registry } = makeLoopWithRegistry();
+    const before = loop.getMetrics().tools.failureCount;
+    const taskId = registry.start(FAIL_CMD, process.cwd());
+    // settle 先写 status 再同步 notify ⇒ 轮询到终态时 completion 回调必已结算完毕
+    // （listener 已被 loop 占用，不能再 setCompletionListener 事件驱动，只能轮询状态）
+    await vi.waitFor(
+      () => expect(registry.get(taskId)?.status).toBe('completed'),
+      { timeout: 10_000 },
+    );
+    expect(loop.getMetrics().tools.failureCount).toBe(before + 1);
+  });
+
+  it('零退出 → tools.failureCount 不变', async () => {
+    const { loop, registry } = makeLoopWithRegistry();
+    const before = loop.getMetrics().tools.failureCount;
+    const taskId = registry.start(OK_CMD, process.cwd());
+    await vi.waitFor(
+      () => expect(registry.get(taskId)?.status).toBe('completed'),
+      { timeout: 10_000 },
+    );
+    expect(loop.getMetrics().tools.failureCount).toBe(before);
+  });
+
+  it('超时 → tools.failureCount +1', async () => {
+    const { loop, registry } = makeLoopWithRegistry();
+    const before = loop.getMetrics().tools.failureCount;
+    // timeoutMs 1000 = 钳制下限（normalizeBackgroundTimeoutMs 收敛于 [1000, 30min]），
+    // 20s 长驻命令必超时；waitFor 轮询到 timedOut 即结算完成
+    const taskId = registry.start(SLEEP_CMD, process.cwd(), 1000);
+    await vi.waitFor(
+      () => expect(registry.get(taskId)?.status).toBe('timedOut'),
+      { timeout: 10_000 },
+    );
+    expect(loop.getMetrics().tools.failureCount).toBe(before + 1);
   });
 });
