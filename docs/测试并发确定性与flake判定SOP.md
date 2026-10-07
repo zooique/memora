@@ -44,6 +44,23 @@
 > 既非回归也非跨文件竞争。实测佐证：同一份代码在默认 10s 下 2 红，放宽后 101/101 全绿。
 > ⚠️ 这两个参数**仅作一次性诊断**，不得写进 `vitest.config.ts` / `package.json`——那是改判据，不是修问题。
 >
+> **⚠️ 本诊断的适用边界（2026-10-07 补 · 两个参数分管两类超时）**：
+> `--hookTimeout` 管 `Hook timed out`、`--testTimeout` 管 `Test timed out`，**两者各自有效**。
+> ⚠️ **唯一的失效场景**：`Test timed out` 且该用例**自带内联 timeout**
+> （`it('…', fn, 30_000)` 第三参 / `describe` 第四参）—— 此时**内联值优先级高于 CLI**，
+> `--testTimeout` **静默无效**：不报错、不提示，只是没生效。执行者会以为诊断做了，实际没做。
+> ⚠️ 反之**「用例带内联 timeout」本身不等于失效**：`Hook timed out` 归 `--hookTimeout` 管，
+> 与内联 test timeout 无关（实测 `hostIntegration.test.ts` 带内联仍因放宽而转绿）。
+> **实测佐证**：同批 3 条红，`hostIntegration` / `allowedPaths` 放宽后**转绿**（确诊环境慢），
+> 而 `projectSearchProvider.test.ts:549`（无 Hook 超时、只有内联 test timeout）**仍红**
+> ⇒ 未确诊、亦未排除，结论开放。
+> **动手前先识别**：`grep -rE '\}, [0-9_]{4,}\);' src hosts/memora-vscode/src --include='*.test.ts'`
+> ——有命中**且**该用例报 `Test timed out` 时，本诊断不适用。实测规模约 **50 处**
+> （内核 40 / 宿主 10；2026-10-07 实测，重算用上面那条 grep）。确需确诊该形态者，
+> 走「改判据」流程（带观测 + 退出条件），**不得**为跑绿而随手放宽内联值。
+> **机制归属（为何不能就地放宽）**：内联 timeout 同时承载两种目的 ——「被测代码自身的超时契约」
+> 与「诊断旋钮」。二者共用同一个参数 ⇒ 为诊断临时放宽会**同时削弱被测约束**。
+>
 > **首选判据（2026-09-26 补，成本最低、无需改任何参数）**：**先数 `AssertionError` 的条数。**
 > 在失败日志里 grep `AssertionError` ——**条数为 0 且失败信息全是 `timed out`** 即环境假红，
 > **可以直接结案，不必进隔离复跑**；条数 > 0 才可能是真回归，转 §3 步骤 2。

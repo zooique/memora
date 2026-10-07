@@ -403,6 +403,9 @@ const BASELINE_TEXT: readonly string[] = [
   'DEFAULT_MAX_ITERATIONS',
   'MAX_STEP_BUDGET',
   'MIN_STEP_BUDGET',
+  // 现行 TS 类型名（src/role-pack/strategyResolver.ts）：text 层命中的是文档对现行类型的合法引用，非退役旧词；
+  // 门禁词边界改造（待拍板）落地后应迁出本基线，2026-10-07 补基线
+  'MultiStepReasoning',
   'PlanStep',
   'PlanStepDto',
   'STEP',
