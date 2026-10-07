@@ -582,45 +582,49 @@ describe('工具执行器（6 个工具）', () => {
       expect(sinkDecline.list[0]!.blockedReason).toBe('permission_denied');
     });
 
-    it('③ run_project_script 成功 → ok；退出码 3 → failed；越界 → blocked+permission_denied', async () => {
-      // 成功脚本（exitCode 0）→ ok
-      mkdirSync(join(tmpProject, 'scripts'), { recursive: true });
-      writeFileSync(join(tmpProject, 'scripts/ok-b2a.js'), 'console.log("b2a-ok");', 'utf-8');
-      const sinkOk = makeSink();
-      const okOut = await executor.execute(
-        'run_project_script',
-        JSON.stringify({ script_path: 'scripts/ok-b2a.js' }),
-        undefined,
-        sinkOk.sink,
-      );
-      expect(sinkOk.list[0]!.status).toBe('ok');
-      expect(sinkOk.list[0]!.text).toBe(okOut);
-      expect(okOut).toContain('b2a-ok');
+    it(
+      '③ run_project_script 成功 → ok；退出码 3 → failed；越界 → blocked+permission_denied',
+      { timeout: 20_000 }, // 三段真进程连续 spawn（脚本 ×3），5s 缺省在门禁负载下假超时（2026-10-07 实锤）
+      async () => {
+        // 成功脚本（exitCode 0）→ ok
+        mkdirSync(join(tmpProject, 'scripts'), { recursive: true });
+        writeFileSync(join(tmpProject, 'scripts/ok-b2a.js'), 'console.log("b2a-ok");', 'utf-8');
+        const sinkOk = makeSink();
+        const okOut = await executor.execute(
+          'run_project_script',
+          JSON.stringify({ script_path: 'scripts/ok-b2a.js' }),
+          undefined,
+          sinkOk.sink,
+        );
+        expect(sinkOk.list[0]!.status).toBe('ok');
+        expect(sinkOk.list[0]!.text).toBe(okOut);
+        expect(okOut).toContain('b2a-ok');
 
-      // 失败脚本（process.exit(3)）→ failed
-      writeFileSync(join(tmpProject, 'scripts/fail-b2a.js'), 'process.exit(3);', 'utf-8');
-      const sinkFail = makeSink();
-      await executor.execute(
-        'run_project_script',
-        JSON.stringify({ script_path: 'scripts/fail-b2a.js' }),
-        undefined,
-        sinkFail.sink,
-      );
-      expect(sinkFail.list[0]!.status).toBe('failed');
-      expect(sinkFail.list[0]!.text).toContain('SCRIPT_ERROR');
+        // 失败脚本（process.exit(3)）→ failed
+        writeFileSync(join(tmpProject, 'scripts/fail-b2a.js'), 'process.exit(3);', 'utf-8');
+        const sinkFail = makeSink();
+        await executor.execute(
+          'run_project_script',
+          JSON.stringify({ script_path: 'scripts/fail-b2a.js' }),
+          undefined,
+          sinkFail.sink,
+        );
+        expect(sinkFail.list[0]!.status).toBe('failed');
+        expect(sinkFail.list[0]!.text).toContain('SCRIPT_ERROR');
 
-      // 路径越界（安全白名单拦截）→ blocked（permission_denied，B2-a 拍板）
-      const sinkDenied = makeSink();
-      const deniedOut = await executor.execute(
-        'run_project_script',
-        JSON.stringify({ script_path: '../escape.sh' }),
-        undefined,
-        sinkDenied.sink,
-      );
-      expect(sinkDenied.list[0]!.status).toBe('blocked');
-      expect(sinkDenied.list[0]!.blockedReason).toBe('permission_denied');
-      expect(deniedOut).toContain('PATH_DENIED');
-    });
+        // 路径越界（安全白名单拦截）→ blocked（permission_denied，B2-a 拍板）
+        const sinkDenied = makeSink();
+        const deniedOut = await executor.execute(
+          'run_project_script',
+          JSON.stringify({ script_path: '../escape.sh' }),
+          undefined,
+          sinkDenied.sink,
+        );
+        expect(sinkDenied.list[0]!.status).toBe('blocked');
+        expect(sinkDenied.list[0]!.blockedReason).toBe('permission_denied');
+        expect(deniedOut).toContain('PATH_DENIED');
+      },
+    );
   });
 
   describe('web_search（未注入提供者）', () => {
@@ -2720,7 +2724,9 @@ describe('run_command / kill_command（命令执行工具层）', () => {
   });
 
   describe('同步执行', () => {
-    it('成功命令 → 返回输出（无 COMMAND_ERROR 标签）', async () => {
+    // 真进程 spawn 类用例：耗时（OS 调度 + coverage 插桩开销）不是被测行为，
+    // 全局 5s 缺省在门禁负载下偶发假超时（2026-10-07 实锤），显式放宽到 20s
+    it('成功命令 → 返回输出（无 COMMAND_ERROR 标签）', { timeout: 20_000 }, async () => {
       const exec = makeExecutor();
       const out = await exec.execute('run_command', JSON.stringify({ command: OK_CMD }));
       expect(out).not.toContain('[COMMAND_ERROR]');
@@ -2765,7 +2771,7 @@ describe('run_command / kill_command（命令执行工具层）', () => {
       expect(list[0]!.text).toBe(out);
     });
 
-    it('② 非零退出 → status=failed（读退出码事实，不靠前缀）', async () => {
+    it('② 非零退出 → status=failed（读退出码事实，不靠前缀）', { timeout: 20_000 }, async () => {
       const exec = makeExecutor();
       const { list, sink } = makeSink();
       const out = await exec.execute(
