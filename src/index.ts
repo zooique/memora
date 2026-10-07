@@ -3,6 +3,7 @@
  * 公共导出面：宿主项目通过本入口 import 接入；持久化/搜索/会话等宿主能力均经接口注入。
  * 导出面口径（2026-10-06 收敛定案）：只收「宿主生产/测试消费」或「README / docs/memora-api-reference.md §十六
  * 明文承诺」的符号；其余一律为内部实现，不挂公共面（新增导出前先过这两条判据）。
+ * 机器对账：publicApiSurfaceGuard.test.ts 双向断言（未登记公开 / 手册幻觉符号均红），挂面动作先过守卫。
  * 类型依赖方向单向（agent → memory → utils；agent → llm；agent → security），详见 module-inventory.md。
  */
 
@@ -47,16 +48,18 @@ export { WRITE_PATH_EXTRACTORS } from '@/agent/toolResultCache.js';
 // 禁并列维护第二份清单（两份必漂移 = 脚本类改动静默不追踪）。
 export { OPAQUE_WRITE_TOOL_NAMES } from '@/agent/builtinTools.js';
 // 角色包（Role Pack）：文件夹形态（manifest.json 核心控制 + 独立内容文件）。
-// 只挂宿主/文档消费的两个装配结果类型；策略/团队/能力等子类型随签名推断可用，为内部实现
-export type { RolePackMeta, RolePackAssembly } from '@/role-pack/types.js';
+// 只挂宿主/文档消费的装配元类型；装配结果/策略/团队/能力等子类型随签名推断可用，为内部实现
+export type { RolePackMeta } from '@/role-pack/types.js';
 export { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS } from '@/role-pack/constants.js';
 export { RolePackManager } from '@/role-pack/rolePackManager.js';
 // UI 键面唯一来源：宿主角色编辑 UI 从这里取键名/控件形态/值域，禁自维护键清单副本
 export { describeStrategyKeys } from '@/role-pack/strategyKeys.js';
 export type { StrategyKeyFace } from '@/role-pack/strategyKeys.js';
-// 角色包格式校验器：manifest.json 唯一核心控制文件 + companion 内容红线检测
-// （宿主保存前校验入口，宿主不重写判据——方案-角色包编辑UI / role-pack-validation-flow 承诺面）
-export { validateManifest, validateManifestText } from '@/role-pack/validator.js';
+// 角色包格式校验器（文本形态入口）：manifest.json 唯一核心控制文件 + companion 内容红线检测
+// （宿主持有文件文本，经 validateManifestText 保存前校验，宿主不重写判据——
+//   方案-角色包编辑UI / role-pack-validation-flow 承诺面；内存对象形态 validateManifest
+//   为内核内部实现，随签名推导可用）
+export { validateManifestText } from '@/role-pack/validator.js';
 export type {
   MemoryInspector,
   MemorySnapshot,
@@ -67,7 +70,8 @@ export type {
   AgentStats,
 } from '@/agent/managers/memoryInspector.js';
 export { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
-export { WorkProjectionManager } from '@/agent/managers/workProjection.js';
+// 作品投影只出类型不出类：Manager 为 Agent 实例级组件（宿主经 agent.workProjection 访问器消费），
+// 出类会引导宿主绕过 Agent 生命周期自建实例
 export type { WorkProjectionEntry } from '@/agent/managers/workProjection.js';
 // accumulateStream: 宿主可复用的 LLM 流式响应累积工具（用于生成标题、描述等短文本）
 export { accumulateStream } from '@/agent/managers/streamAccumulator.js';

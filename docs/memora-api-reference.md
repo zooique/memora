@@ -1107,6 +1107,9 @@ export { setLogger, logger } from '@zooique/memora';
 export type { IWebSearchProvider, SearchResult, WebSearchOptions, SearchEndpoint } from '@zooique/memora';
 export { FetchWebSearchProvider } from '@zooique/memora';
 
+// 项目搜索（等价 IDE 全局搜索；IProjectSearchProvider 注入接口见 §8.6）
+export { safeSearchProjectFiles, safeSearchProjectText } from '@zooique/memora';
+
 // 角色包
 export type { RolePackMeta } from '@zooique/memora';
 
