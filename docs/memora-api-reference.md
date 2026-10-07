@@ -231,7 +231,7 @@ Agent 通过一组 getter 暴露专职 Manager 与组件。详见后续章节。
 | `agent.works` | `WorkProjectionManager \| null` | 作品投影（工作内容摘要） |
 | `agent.polish` | `TextPolishManager \| null` | 文本润色（LLM 语法修正 + 表达优化） |
 
-> **读写统一入口**：`agent.memory`（MemoryInspector）同时负责记忆的查询与写入——只读方法（snapshot/search/searchByKeyword/stats/list/getById/getBySource/listDeleted 等）与写方法（`writeXxx` 前缀：writeUpsert/writeDelete/writeRestore/writePurge/writePurgeExpired。`writeBoost` 已随 score 字段退役删除，2026-09-09）。旧的 `memoryMutator`/`MemoryMutator` 拆分已在后续迭代中合并回 `MemoryInspector`，二者均不再存在。
+> **读写统一入口**：`agent.memory`（MemoryInspector）同时负责记忆的查询与写入——只读方法（snapshot/searchByKeyword/stats/list/getById/getBySource/listDeleted 等；**`search()` 已于 4.0.0 移除**，见 §4.2）与写方法（`writeXxx` 前缀：writeUpsert/writeDelete/writeRestore/writePurge/writePurgeExpired。`writeBoost` 已随 score 字段退役删除，2026-09-09）。旧的 `memoryMutator`/`MemoryMutator` 拆分已在后续迭代中合并回 `MemoryInspector`，二者均不再存在。
 
 ### 2.5 内部组件访问器（高级）
 
@@ -353,12 +353,27 @@ interface MemorySnapshot {
 }
 ```
 
-### 4.2 `search(query, limit?)` — 记忆搜索
+### 4.2 `searchByKeyword(query, limit?, excludeRoundIds?)` — 记忆搜索（唯一入口）
 
 ```typescript
-// ⚠️ @deprecated 同步通道已退役（2026-09-20），改用 searchByKeyword()。实证无生产/宿主消费方。
-agent.memory.search(query: string, limit?: number): AgentSearchHit[]
+agent.memory.searchByKeyword(
+  query: string,
+  limit?: number,                        // 默认 10
+  excludeRoundIds?: ReadonlySet<string>,  // 可选：这些轮次的 round-summary 已在正文，不重复返回
+): Promise<AgentSearchHit[]>
 ```
+
+纯关键词单通道（FTS5 索引；**无向量通道、无融合排序**）。返回前做两级过滤：
+`superseded` 过滤（被 `supersededBy` 取代的摘要不作为当前事实返回，仍可经 `trace_summary`
+回溯原文）与 `excludeRoundIds` 互斥（工具召回与装配期正文不重复）。
+
+> ⚠️ **4.0.0 已移除 `search()`**：原同步方法 `search(query, limit?)` **已删除**——
+> 此前它只标了 `@deprecated`，却仍作为正常方法列在随包文档里（退役不彻底的僵尸出口）。
+> 其能力由 `searchByKeyword()` 完全覆盖（后者还多出 superseded 过滤 / `excludeRoundIds`
+> 互斥 / accessedAt 刷新 + 溯源揭示），且移除前已实测**零生产消费、零宿主消费**。
+> **一律改用 `searchByKeyword()`。**
+
+返回值 `AgentSearchHit`：
 
 ```typescript
 interface AgentSearchHit {
@@ -819,6 +834,41 @@ interface IProjectSearchProvider {
 
 > 参考实现：VS Code 宿主 `hosts/memora-vscode/src/extension/host/projectSearchProvider.ts`（`mode=name` 走 `workspace.findFiles`；`mode=content` 走受限 fs 递归扫描，忽略 `IGNORED_DIR_NAMES`）。
 
+### 8.7 后台命令任务（`run_command` background 模式）
+
+`run_command` 以 `background: true` 启动时**不阻塞本轮**：立即返回 `taskId`，进程在本轮对话之外继续跑。宿主经 Agent 门面查看 / 终止这些任务（注册表按 **Agent 实例隔离**，不跨会话互杀）。
+
+```typescript
+// 只读快照：供宿主 UI 渲染任务列表（只读投影，不含进程句柄）
+agent.listBackgroundTasks(): readonly BackgroundTask[]
+
+// 终止：先取已捕获输出快照再杀树，返回终态投影；taskId 不存在 → null
+agent.killBackgroundTask(taskId: string): BackgroundTask | null
+```
+
+> ⚠️ 两者**未 `init()` 时抛 `configError`**（`assertInitialized` 门面统一契约），
+> **不静默降级**——静默返回空会把「未初始化」伪装成「没有后台任务」。
+
+```typescript
+interface BackgroundTask {
+  taskId: string;                                   // 寻址用（kill_command 传入它取回输出）
+  command: string;
+  startedAt: number;                                // 启动时间戳（ms）
+  status: 'running' | 'completed' | 'timedOut' | 'killed';
+  result?: ScriptExecutionResult;                   // 进入终态后才有
+}
+```
+
+**寿命与可见性边界（务必转达用户）**：
+
+* 结果**不会自动进入上下文**——需模型调 `kill_command` 传入该 `taskId`，取回截至当时的输出并终止；
+* 不取则一直跑到自己结束（未传 `timeoutMs` 时**没有超时上限**）；
+* 正常退出 VS Code 时随扩展一并终止（扩展崩溃或被强制结束时不保证清理）。
+
+> 注册表类 `BackgroundTaskRegistry` **不进公共导出面**（内核内部模块）：导出它会让宿主
+> 跨会话 kill，与「仅可杀本 agent 起的后台任务」定案冲突——故**只出方法、不出类**；
+> 类型 `BackgroundTask` 经 `@zooique/memora` 导出。
+
 ---
 
 ## 九、作品投影（`agent.works` · WorkProjectionManager）
@@ -910,6 +960,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 角色 | `switchRolePack(name)` / `getRolePackSwitchLockStatus()` / `getActiveTraits()` / `injectAffect(affectString)` |
 | 手动归档 | `archiveSession(...)` |
 | 配置热更新 | `reloadConfig(source?)` |
+| 后台任务 | `listBackgroundTasks()` / `killBackgroundTask(taskId)`（见 §8.7；未 `init()` 抛 `configError`，不静默降级） |
 | 记忆治理 | 经 `agent.governance` 暴露（`.deduplicate()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()`，见下方 Manager 成员） |
 | 指标 | `getMetrics()` |
 
@@ -925,7 +976,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.tools` | `ToolExecutor` | `.list` / `.registerTool()` / `.execute()` |
 | `agent.skills` | `SkillManager` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
 | `agent.governance` | `MemoryGovernance` | `.deduplicate()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()` |
-| `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.search()` / `.searchByKeyword()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()`；写：`.writeUpsert()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` |
+| `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.searchByKeyword()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()`（**`.search()` 已于 4.0.0 移除**）；写：`.writeUpsert()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` |
 | `agent.works` | `WorkProjectionManager` | `.ensureProjection(filePath, content, fileName?)` / `.getProjection(filePath)` / `.loadAll()` |
 | `agent.polish` | `TextPolishManager` | `.polish(...)`（文本润色：LLM 语法修正 + 表达优化） |
 
@@ -988,7 +1039,13 @@ TRACE_SPANS.REPORT           // 'round.report'       — 汇报闭环（预留�
 
 ## 十四、工具错误码（ToolErrorCode）
 
-工具执行失败时，错误结果包含 `[ERR:TOOL:code]` 前缀，供 Reflection 逻辑和宿主项目解析。
+工具执行失败时，内核产出**结构化** `ToolOutcome`（完整契约见 §14.3）。与本表直接相关的两个字段：
+
+* `errorCode` —— 失败原因分类，**Reflection 重试判定的判据面**；
+* `text` —— 渲染面，形如 `` `[ERR:TOOL:${code}] …` `` 给 LLM 自愈看。
+
+**`text` 前缀由 `errorCode` 派生**（唯一构造出口 `failedOutcomeWithCode` 一次产出二者），
+故解析文案取码与读 `errorCode` 字段**恒等价**，不存在漂移。
 
 ### 14.1 错误码枚举
 
@@ -998,12 +1055,17 @@ TRACE_SPANS.REPORT           // 'round.report'       — 汇报闭环（预留�
 | `FILE_NOT_FOUND` | ✅ | 文件不存在（LLM 可能用错路径） |
 | `PERMISSION_DENIED` | ❌ | 权限不足 |
 | `ARGUMENT_ERROR` | ✅ | 工具参数错误（LLM 可修正参数格式） |
-| `TOOL_TIMEOUT` | ✅ | 工具执行超时 |
 | `WRITE_REJECTED` | ❌ | 用户拒绝写入 |
 | `DIR_NOT_FOUND` | ✅ | 目录不存在 |
 | `UNKNOWN_TOOL` | ❌ | 未知工具 |
 | `CUSTOM_TOOL_FAILED` | ✅ | 自定义工具执行失败 |
+| `NOT_AVAILABLE` | ❌ | 能力未装配 / 未注入回调（provider 或技能回调缺失）——重试无意义 |
 | `UNKNOWN` | ❌ | 通用错误 |
+
+> ⚠️ **订正（对齐 `src/utils/errors.ts` 实际枚举）**：旧版此表列有 `TOOL_TIMEOUT`（★可重试），
+> 该值**已从枚举删除**（删除后 retryable 由 5 → 4），属文档死条目，已移除。
+> 另：结果文本里会出现 `[ERR:TOOL:ABORTED]`，但 `ABORTED` **故意不入本枚举**
+> （中断不触发 Reflection，见 `toolRunner`），勿按本表去找它。
 
 ### 14.2 isRetryableErrorCode()
 
@@ -1013,6 +1075,40 @@ import { ToolErrorCode, isRetryableErrorCode } from '@zooique/memora';
 isRetryableErrorCode(ToolErrorCode.FILE_NOT_FOUND);   // true
 isRetryableErrorCode(ToolErrorCode.PATH_NOT_ALLOWED);  // false
 ```
+
+### 14.3 `ToolOutcome` — 工具结果契约（status 三值 + errorCode）
+
+工具结果在内核内部与可观测面共用同一形状（`agent/managers/toolCallHelpers`）：
+
+> **可观测性说明（勿踩空）**：`ToolOutcome` 是**内核内部**形状，
+> **未从 `@zooique/memora` 导出**（`src/index.ts` 无此导出），**不要尝试 import 它**。
+> 宿主是**间接**观察它的：`tool_result` chunk 的 `ok` / `blocked` 字段即由 `status` 派生
+> （`ok` ⇔ `status==='ok'`，`blocked` ⇔ `status==='blocked'`），计数经 `getMetrics()` 暴露。
+> 本节列出它是为了说清三值语义与计数口径，不是新增可导入类型。
+
+```typescript
+interface ToolOutcome {
+  readonly status: ToolStatus;              // 'ok' | 'failed' | 'blocked' —— 判据面唯一真源
+  readonly text: string;                    // 渲染面（原样回给 LLM 自愈）
+  readonly blockedReason?: BlockedReason;   // 仅 blocked：为什么没成功（与 status 正交）
+  readonly hasRealFailure?: boolean;        // 仅 blocked：背后是否藏真失败
+  readonly errorCode?: ToolErrorCodeValue;  // 仅 failed：失败原因分类（见 §14.1）
+}
+```
+
+| `status` | 语义 | 计入 `toolFailureCount`？ |
+|-----------|------|---------------------------|
+| `ok` | 工具正常执行完成（**含"成功但无输出"**：`exitCode 0` + 空输出仍是成功） | ❌ |
+| `failed` | 工具真的跑了但失败（非零退出 / 超时 / 抛异常 / 参数非法 / 资源不存在） | ✅ |
+| `blocked` | **我们主动挡下的**（护栏拦截 / 只读拒绝 / 幂等跳过 / fail-closed 拒绝） | ❌（改计 `toolBlockedCount`） |
+
+**纪律（勿回改）**：
+
+1. `blocked` 既非成功也非失败——「主动挡下的 ≠ 工具跑失败的」，三值穷尽，不加第四值；
+2. 消费者判成败**一律读 `status` 字段**，不得解析 `text`（B4/B5 后内核零文本判据，
+   `isToolFailure` 文本判据桥已物理删除）；
+3. `blockedReason` 与 `status` 正交——前者只回答「为什么没成功」，不新增 status 值；
+4. `errorCode` 与 `text` 前缀在 `failedOutcomeWithCode` **同源产出一次**，改一处即两处同步。
 
 ---
 
