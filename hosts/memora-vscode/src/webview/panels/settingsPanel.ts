@@ -222,6 +222,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.openUserRolePacksDir();
       return;
     }
+    // 重扫用户角色包目录（刷新按钮）：内核对账后 notice 结果 + 刷新下发
+    if (msg.type === 'roles_refresh') {
+      await this.refreshRolePacks();
+      return;
+    }
     // 角色配置详情：读 manifest 原文 strategy 段回发（初值真源 = 原文，禁读装配值）
     if (msg.type === 'roles_detail') {
       await this.handleRolesDetail(msg.name);
@@ -1262,6 +1267,36 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     this.openDirInOs(this._userRolePacksDir, '用户角色包');
   }
 
+  /**
+   * roles_refresh：重扫用户角色包目录，对账内核内存池（刷新按钮）。
+   *
+   * 背景：loadExtraDir 仅在 Agent 启动时执行一次，面板折叠展开读内存快照——
+   * 用户在目录里新增/改名/删除角色包后，不重启宿主不会生效。本方法调用内核
+   * resyncUserPacks 完成对账（摘除旧注入项 → 重扫 → 激活悬空走兜底单链），
+   * 结果以 notice 反馈并经 loadRoles 下发最新列表。
+   */
+  private async refreshRolePacks(): Promise<void> {
+    const agent = await this.ensureAgent();
+    const rpm = agent?.rolePackManager;
+    if (!rpm || !this._userRolePacksDir) {
+      this.post({ type: 'notice', level: 'error', message: '角色包系统未就绪，无法刷新' });
+      return;
+    }
+    const r = await rpm.resyncUserPacks(this._userRolePacksDir);
+    // 净差对账文案（对用户诚实）：同名重注入 = 更新生效，不与新增/移除混报
+    const parts: string[] = [];
+    if (r.added > 0) parts.push(`新增 ${r.added} 个`);
+    if (r.updated.length > 0) parts.push(`更新 ${r.updated.length} 个（${r.updated.join('、')}）`);
+    if (r.removed.length > 0) parts.push(`移除 ${r.removed.length} 个（${r.removed.join('、')}）`);
+    if (r.activeFallback) parts.push('原激活包已不在，已回退兜底角色包');
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: parts.length > 0 ? `角色包已刷新：${parts.join('；')}` : '角色包已刷新：无变化',
+    });
+    await this.loadRoles();
+  }
+
   // ─── 安全子视图方法（写入审批） ───
 
   /**
@@ -1585,6 +1620,9 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <div class="header-actions">
         <button id="btnOpenRolePacksDir" class="btn btn-secondary btn-icon-solo" title="打开用户角色包目录">
           <span class="btn-icon" data-icon="folder"></span>
+        </button>
+        <button id="btnRefreshRolePacks" class="btn btn-secondary btn-icon-solo" title="刷新角色包列表（重扫用户角色包目录）">
+          <span class="btn-icon" data-icon="refresh"></span>
         </button>
       </div>
     </div>

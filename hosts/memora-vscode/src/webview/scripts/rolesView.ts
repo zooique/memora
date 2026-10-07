@@ -288,6 +288,15 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     });
   }
 
+  // 「刷新角色包列表」入口（对齐技能刷新按钮）：请求 host 重扫用户角色包目录对账内存池，
+  // host 完成后回发 notice（对账结果）+ roles_loaded（最新列表）
+  const refreshBtn = root.querySelector<HTMLButtonElement>('#btnRefreshRolePacks');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'roles_refresh' });
+    });
+  }
+
   let activeName: string | undefined;
   /** 最近一次 roles_loaded 载荷（分页渲染需 teams 等上下文；每次 render 刷新） */
   let lastData: RolesPayload | null = null;

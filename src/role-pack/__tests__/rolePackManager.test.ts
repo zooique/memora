@@ -551,6 +551,155 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(active!.personaPrompt).toContain('内置翻译');
   });
 
+  describe('resyncUserPacks —— 用户角色包目录重扫对账（角色视图「刷新」按钮内核落点）', () => {
+    /** 公共夹具：内置目录放翻译助手，用户目录独立（与 loadExtraDir 测试同构） */
+    async function setupDirs(): Promise<{ packsDir: string; userPacksDir: string }> {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '你是翻译。' });
+      return { packsDir, userPacksDir: join(dir, 'user-role-packs') };
+    }
+
+    it('新增包 → 注入池中（added 计数 + listMeta 可见），removed 为空', async () => {
+      const { userPacksDir } = await setupDirs();
+      await writePack(
+        userPacksDir,
+        '用户打磨',
+        { name: '用户打磨', formatVersion: '1.0.0' },
+        { persona: '你是用户自建角色。' },
+      );
+
+      const manager = new RolePackManager(dir);
+      await manager.load('翻译助手');
+
+      const r = await manager.resyncUserPacks(userPacksDir);
+
+      expect(r.added).toBe(1);
+      expect(r.removed).toEqual([]);
+      expect(r.activeFallback).toBe(false);
+      expect(
+        manager
+          .listMeta()
+          .map((m) => m.name)
+          .sort(),
+      ).toEqual(['用户打磨', '翻译助手']);
+    });
+
+    it('已删包 → 摘除出池（removed 含包名），存活包保留且 reload 后仍在（记账连续）', async () => {
+      const { userPacksDir } = await setupDirs();
+      await writePack(userPacksDir, '用户打磨', { name: '用户打磨', formatVersion: '1.0.0' });
+      await writePack(userPacksDir, '临时包', { name: '临时包', formatVersion: '1.0.0' });
+
+      const manager = new RolePackManager(dir);
+      await manager.load('翻译助手');
+      await manager.loadExtraDir(userPacksDir);
+
+      // 模拟用户手动删除「临时包」目录后点刷新
+      await rm(join(userPacksDir, '临时包'), { recursive: true, force: true });
+      const r = await manager.resyncUserPacks(userPacksDir);
+
+      expect(r.removed).toEqual(['临时包']);
+      expect(
+        manager
+          .listMeta()
+          .map((m) => m.name)
+          .sort(),
+      ).toEqual(['用户打磨', '翻译助手']);
+      // 存活用户包记账连续：后续 reload 不得把无磁盘真理源误判为已删而抹除
+      await manager.reload();
+      expect(
+        manager
+          .listMeta()
+          .map((m) => m.name)
+          .sort(),
+      ).toEqual(['用户打磨', '翻译助手']);
+    });
+
+    it('改名包 → removed 含旧名 + 新名注入（旧名出池、新名入池）', async () => {
+      const { userPacksDir } = await setupDirs();
+      await writePack(userPacksDir, '旧名包', { name: '旧名包', formatVersion: '1.0.0' });
+
+      const manager = new RolePackManager(dir);
+      await manager.load('翻译助手');
+      await manager.loadExtraDir(userPacksDir);
+
+      // 模拟用户改名：删旧目录 + 写新名 manifest（manifest.name 变更即改名，非文件夹名）
+      await rm(join(userPacksDir, '旧名包'), { recursive: true, force: true });
+      await writePack(userPacksDir, '新名包', { name: '新名包', formatVersion: '1.0.0' });
+
+      const r = await manager.resyncUserPacks(userPacksDir);
+
+      expect(r.removed).toEqual(['旧名包']);
+      expect(r.added).toBe(1);
+      const names = manager
+        .listMeta()
+        .map((m) => m.name)
+        .sort();
+      expect(names).toContain('新名包');
+      expect(names).not.toContain('旧名包');
+    });
+
+    it('激活的用户包被删 → 悬空走 §4.1 兜底单链（与 reload 激活包被删同源）', async () => {
+      const { userPacksDir } = await setupDirs();
+      // 内置目录补兜底契约包（§4.1 单链落点，构建期内核分发形态）
+      await writePack(
+        join(dir, 'role-packs'),
+        'memora助手',
+        { name: 'memora助手', formatVersion: '1.0.0' },
+        { persona: '你是通用助手。' },
+      );
+      await writePack(userPacksDir, '用户打磨', { name: '用户打磨', formatVersion: '1.0.0' });
+
+      const manager = new RolePackManager(dir);
+      await manager.load();
+      await manager.loadExtraDir(userPacksDir);
+      // 激活用户包（真实切换，非兜底默认态）
+      expect(manager.activate('用户打磨')).toBe(true);
+      expect(manager.activeName).toBe('用户打磨');
+
+      // 用户删除激活中的包后点刷新 → 回退兜底包（memora助手），不悬空、不指向池外
+      await rm(join(userPacksDir, '用户打磨'), { recursive: true, force: true });
+      const r = await manager.resyncUserPacks(userPacksDir);
+
+      expect(r.activeFallback).toBe(true);
+      expect(r.removed).toEqual(['用户打磨']);
+      expect(manager.activeName).toBe('memora助手');
+    });
+
+    it('激活的用户包仍存活 + 磁盘内容已改 → 净差记 updated（不算新增/移除）、激活保持、新内容生效', async () => {
+      const { userPacksDir } = await setupDirs();
+      await writePack(
+        userPacksDir,
+        '用户打磨',
+        { name: '用户打磨', formatVersion: '1.0.0' },
+        {
+          persona: '你是用户自建角色（v1）。',
+        },
+      );
+
+      const manager = new RolePackManager(dir);
+      await manager.load('翻译助手');
+      await manager.loadExtraDir(userPacksDir);
+      expect(manager.activate('用户打磨')).toBe(true);
+
+      // 模拟用户编辑 persona 后点刷新：同名重注入以磁盘版替换，激活名保持
+      await writeFile(
+        join(userPacksDir, '用户打磨', 'persona.md'),
+        '你是用户自建角色（v2）。',
+        'utf-8',
+      );
+      const r = await manager.resyncUserPacks(userPacksDir);
+
+      // 净差对账：同名重注入 = 更新生效，不得谎报为「新增 1 / 移除 1」
+      expect(r.updated).toEqual(['用户打磨']);
+      expect(r.added).toBe(0);
+      expect(r.removed).toEqual([]);
+      expect(r.activeFallback).toBe(false);
+      expect(manager.activeName).toBe('用户打磨');
+      expect(manager.getActive()!.personaPrompt).toContain('v2');
+    });
+  });
+
   it('companion 角色包触发内容红线 → 拒绝装载', async () => {
     const packsDir = join(dir, 'role-packs');
     await mkdir(packsDir, { recursive: true });

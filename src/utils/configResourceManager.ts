@@ -136,14 +136,21 @@ export abstract class ConfigResourceManager<T extends ConfigResource, TOptions =
     return true;
   }
 
-  /**
-   * 登记运行时注入的资源（子类 register() 唯一落点）——必须记账，
+  /** 登记运行时注入的资源（子类 register() 唯一落点）——必须记账，
    * 否则 reload() 会把无磁盘真理源的注入项当成"磁盘上已删除"而抹掉。
    * 重名校验由子类调用前完成（各自语义不同）。
    */
   protected registerRuntimeItem(item: T): void {
     this.items.push(item);
     this.runtimeNames.add(item.name);
+  }
+
+  /**
+   * 运行时注入名单的只读快照（子类对账用，如角色包「重扫用户目录」）。
+   * 名单本体保持基类私有单点记账——子类只读快照，禁止外部改写。
+   */
+  protected get runtimeItemNames(): string[] {
+    return [...this.runtimeNames];
   }
 
   // ── 抽象方法（子类差异化） ──────────────────────────────

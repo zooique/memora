@@ -1228,6 +1228,52 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     logger.info({ count, dir }, '用户角色包加载完成');
     return count;
   }
+
+  /**
+   * 重扫用户角色包目录并与内存池对账（角色视图「刷新」按钮的唯一内核落点）。
+   *
+   * 语义 = 摘除全部运行时注入项 → 重新 loadExtraDir → 净差对账 + 激活态悬空兜底：
+   * - runtimeNames 记账即用户注入名单（本类 registerRuntimeItem 唯一调用点在 loadExtraDir）；
+   * - 对账结果取**净差**（对用户诚实）：同名重注入 = 磁盘版替换（updated），不算新增/移除；
+   *   只有真消失（目录已删 / 改名旧名）才进 removed，全新名字才计入 added；
+   * - 内置包不参与对账（磁盘真理源 = dist，构建期同步，运行中恒定）；
+   * - 原激活包被摘除（目录删除 / 改名）时走 §4.1 单链兜底（activateFallback，与 reload
+   *   激活包被删同源同判据，不自造第二套回退规则），经 setActivePackName 触发
+   *   onActiveChanged（宿主同步 UI，属真实激活变更）。
+   *
+   * @returns added 净新增数；removed 真消失的包名；updated 同名重注入（内容生效）的包名；
+   *          activeFallback 激活是否发生悬空兜底
+   */
+  async resyncUserPacks(dir: string): Promise<{
+    added: number;
+    removed: string[];
+    updated: string[];
+    activeFallback: boolean;
+  }> {
+    // 快照摘除名单后逐个摘除（deleteItem 注销记账；loadExtraDir 重名跳过判据因此不会误拦重扫注入）
+    const beforeNames = this.runtimeItemNames;
+    for (const name of beforeNames) {
+      this.deleteItem(name);
+    }
+    // 摘除后的池 = 净差基线（重扫不触碰内置包）
+    const baseline = new Set(this.items.map((p) => p.meta.name));
+    await this.loadExtraDir(dir);
+    const finalNames = new Set(this.items.map((p) => p.meta.name));
+    // 净差：摘除名单中未随重扫回来的 = 真消失；重扫回来的同名项 = 内容更新生效；
+    // added = 全新名字（既不在摘除名单也不在基线，改名新名 / 全新包）
+    const removed = beforeNames.filter((name) => !finalNames.has(name));
+    const updated = beforeNames.filter((name) => finalNames.has(name));
+    const added = [...finalNames].filter(
+      (name) => !baseline.has(name) && !beforeNames.includes(name),
+    ).length;
+    let activeFallback = false;
+    if (this.activePackName && !finalNames.has(this.activePackName)) {
+      this.activateFallback();
+      activeFallback = true;
+    }
+    logger.info({ dir, added, removed, updated, activeFallback }, '用户角色包目录已重扫对账');
+    return { added, removed, updated, activeFallback };
+  }
 }
 
 // statSyncSafe / existsSyncSafe 已收口到 utils/fileSafe（SSOT，与全局技能共用同一实现）

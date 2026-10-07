@@ -20,6 +20,7 @@ const HTML = `
     <div class="header">
       <h2>角色</h2>
       <span id="statBar" class="stat-bar" hidden></span>
+      <div class="header-actions"><button id="btnOpenRolePacksDir" class="btn btn-secondary btn-icon-solo" title="打开用户角色包目录"><span class="btn-icon" data-icon="folder"></span></button><button id="btnRefreshRolePacks" class="btn btn-secondary btn-icon-solo" title="刷新角色包列表（重扫用户角色包目录）"><span class="btn-icon" data-icon="refresh"></span></button></div>
     </div>
     <div id="list"><p class="hint">加载中…</p></div>
     <p class="footer-hint">「设为当前」仅切换默认角色；「带入对话」还会跳到对话并预填一句过渡语（不自动发送，可编辑后再发）。</p>
@@ -190,6 +191,13 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     const btn = document.querySelector('.card:not(.active) .btn-secondary') as HTMLButtonElement;
     btn.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'roles_set_active', name: 'translator' });
+  });
+
+  it('刷新按钮 → postMessage roles_refresh（host 重扫用户角色包目录对账内存池）', () => {
+    const { postMessage } = mountRolesView();
+    const btn = document.getElementById('btnRefreshRolePacks') as HTMLButtonElement;
+    btn.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'roles_refresh' });
   });
 
   it('「带入对话」→ postMessage roles_handoff（host 切换激活角色 + 聚焦对话视图）', () => {

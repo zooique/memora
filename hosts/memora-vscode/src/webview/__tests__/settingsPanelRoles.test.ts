@@ -263,6 +263,148 @@ describe('settingsPanel.toggleSkillDisabled —— 技能启停开关', () => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// roles_refresh —— 角色包刷新按钮（重扫用户角色包目录对账内核内存池）
+// ══════════════════════════════════════════════════════════════
+
+describe('settingsPanel.refreshRolePacks —— 角色包刷新链路', () => {
+  const USER_DIR = '/mock/user-packs';
+
+  /** 调私有 refreshRolePacks */
+  function refresh(provider: MemoraSettingsViewProvider): Promise<void> {
+    return (provider as unknown as { refreshRolePacks(): Promise<void> }).refreshRolePacks();
+  }
+
+  /** 取 notice 列表 */
+  function notices(posted: { type: string; level?: string; message?: string }[]) {
+    return posted.filter((m) => m.type === 'notice');
+  }
+
+  /** 构造带 rpm 桩的 provider（resyncUserPacks 返回值可注入；loadRoles 依赖面与幽灵对账测试同构） */
+  function setup(resyncResult: {
+    added: number;
+    removed: string[];
+    updated: string[];
+    activeFallback: boolean;
+  }): {
+    provider: MemoraSettingsViewProvider;
+    posted: { type: string; level?: string; message?: string }[];
+    resync: ReturnType<typeof vi.fn>;
+  } {
+    const posted: { type: string; level?: string; message?: string }[] = [];
+    const resync = vi.fn(async () => resyncResult);
+    const agent = {
+      on: vi.fn(),
+      off: vi.fn(),
+      rolePackManager: {
+        resyncUserPacks: resync,
+        listMeta: () => [{ name: 'memora助手' }],
+        get: () => undefined,
+        activeName: 'memora助手',
+      },
+    } as unknown as Agent;
+    const provider = new MemoraSettingsViewProvider({} as never, {} as never);
+    provider.setAgentFactory(async () => agent);
+    provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
+    provider.setUserRolePacksDir(USER_DIR);
+    (provider as unknown as { _view: unknown })._view = {
+      webview: {
+        postMessage: (msg: never) => {
+          posted.push(msg);
+          return Promise.resolve(true);
+        },
+      },
+    };
+    return { provider, posted, resync };
+  }
+
+  it('刷新成功 → resync 以用户目录调用 + notice 净差对账结果 + roles_loaded 下发最新列表', async () => {
+    const { provider, posted, resync } = setup({
+      added: 1,
+      removed: ['旧名包'],
+      updated: [],
+      activeFallback: false,
+    });
+
+    await refresh(provider);
+
+    expect(resync).toHaveBeenCalledWith(USER_DIR);
+    expect(notices(posted)).toEqual([
+      { type: 'notice', level: 'info', message: '角色包已刷新：新增 1 个；移除 1 个（旧名包）' },
+    ]);
+    expect(posted.some((m) => m.type === 'roles_loaded')).toBe(true);
+  });
+
+  it('同名重注入 → notice 报「更新」不报新增/移除（净差语义，不谎报）', async () => {
+    const { provider, posted } = setup({
+      added: 0,
+      removed: [],
+      updated: ['用户打磨'],
+      activeFallback: false,
+    });
+
+    await refresh(provider);
+
+    expect(notices(posted)).toEqual([
+      { type: 'notice', level: 'info', message: '角色包已刷新：更新 1 个（用户打磨）' },
+    ]);
+  });
+
+  it('零变化 → notice 明示「无变化」（不输出空对账句）', async () => {
+    const { provider, posted } = setup({
+      added: 0,
+      removed: [],
+      updated: [],
+      activeFallback: false,
+    });
+
+    await refresh(provider);
+
+    expect(notices(posted)).toEqual([
+      { type: 'notice', level: 'info', message: '角色包已刷新：无变化' },
+    ]);
+  });
+
+  it('激活悬空 → notice 含兜底回退提示（文案与内核 §4.1 单链行为一致）', async () => {
+    const { provider, posted } = setup({
+      added: 0,
+      removed: ['用户打磨'],
+      updated: [],
+      activeFallback: true,
+    });
+
+    await refresh(provider);
+
+    const msgs = notices(posted);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]?.message).toContain('回退兜底角色包');
+  });
+
+  it('Agent 未装配（无 rolePackManager）→ 错误提示，不调 resync、不下发列表', async () => {
+    const posted: { type: string; level?: string; message?: string }[] = [];
+    const agent = { on: vi.fn(), off: vi.fn() } as unknown as Agent;
+    const provider = new MemoraSettingsViewProvider({} as never, {} as never);
+    provider.setAgentFactory(async () => agent);
+    provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
+    provider.setUserRolePacksDir(USER_DIR);
+    (provider as unknown as { _view: unknown })._view = {
+      webview: {
+        postMessage: (msg: never) => {
+          posted.push(msg);
+          return Promise.resolve(true);
+        },
+      },
+    };
+
+    await refresh(provider);
+
+    expect(notices(posted)).toEqual([
+      { type: 'notice', level: 'error', message: '角色包系统未就绪，无法刷新' },
+    ]);
+    expect(posted.some((m) => m.type === 'roles_loaded')).toBe(false);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
 // roles_save / roles_detail —— 角色策略保存链路（RP-EDIT-1）
 // ══════════════════════════════════════════════════════════════
 

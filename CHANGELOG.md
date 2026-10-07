@@ -180,6 +180,19 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
   恢复 `command-result` 丢弃行 → `aborted` 留存守卫红
 - **方案文档**：`docs/方案-后台任务跨轮存活-20261004.md`（含主流对标实锤、SSOT 论证、刻意不做清单）
 
+### Added（内核 · 用户角色包目录重扫对账 `resyncUserPacks` · 角色包「刷新」按钮内核落点）
+
+- **背景**：`loadExtraDir` 仅在 Agent 装配时执行一次，面板折叠展开读内存快照——用户在用户
+  角色包目录新增/改名/删除/修改角色包后，不重启宿主不生效（真机 RP-EDIT-1 冒烟实证）。
+- **语义（净差对账，对用户诚实）**：摘除全部运行时注入项（`runtimeNames` 记账名单）→ 重新
+  `loadExtraDir` → 同名重注入 = 内容更新生效（`updated`），不算新增/移除；真消失（目录已删 /
+  改名旧名）才进 `removed`，全新名字才计 `added`。
+- **激活悬空走 §4.1 单链兜底**：原激活包被摘除时复用 `activateFallback()`（与 reload 激活包被删
+  同源同判据），经 `onActiveChanged` 同步宿主 UI；不自造第二套回退规则。
+- **边界**：内置包不参与对账（磁盘真理源 = dist，构建期同步，运行中恒定）；manifest.name 撞内置
+  的用户包继承重名跳过判据。
+- **测试**：5 用例锁行为（新增注入 / 删除摘除 + 记账连续 / 改名 / 悬空兜底 / 内容更新净差）。
+
 ### Fixed（内核 · 宿主退出孤儿进程：补实例终态杀树 · 观察点 ⑧ 真机定类闭环）
 
 **真机实锤**：完全退出 VS Code 约 10 秒后，后台 `ping -n 300`（PID 15456）仍在运行，
@@ -391,6 +404,14 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 ## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
+
+### Added（宿主 · 角色包「刷新」按钮：用户角色包目录改动免重启生效）
+
+- 角色页头部新增刷新按钮（对齐技能列表刷新形态）：webview 发 `roles_refresh` → extension 调内核
+  `resyncUserPacks(userRolePacksDir)` 对账内存池 → notice 反馈净差结果（新增/更新/移除/兜底回退，
+  零变化明示「无变化」）+ `roles_loaded` 下发最新列表。
+- **测试**：webview 按钮绑定（postMessage 契约）+ extension handler（净差文案 / 同名重注入报
+  「更新」不谎报 / 零变化明示 / 悬空回退提示 / 未就绪拒绝）共 6 用例锁定。
 
 ### Fixed（宿主 · 历史条目悬停假显「当前会话」+ 归档后条目不刷新 · `HIST-INFO-1`）
 

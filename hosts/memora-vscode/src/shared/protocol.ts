@@ -217,6 +217,14 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'roles_open_dir' }
   /**
+   * 重扫用户角色包目录（角色视图「刷新」按钮触发）
+   *
+   * host 调 rolePackManager.resyncUserPacks(userRolePacksDir)：摘除旧运行时注入项 →
+   * 重新扫描注入（新增 / 改名 / 内容修改生效，已删包摘除，激活悬空走兜底单链）。
+   * 完成后回发 notice（净差对账结果：新增/更新/移除）+ 刷新 roles_loaded。
+   */
+  | { type: 'roles_refresh' }
+  /**
    * 请求角色包键面配置详情（角色卡「查看配置」弹窗打开时触发）
    *
    * host 读 manifest 原文 strategy 段回发 roles_detail_data。初值真源 = **原文**：
