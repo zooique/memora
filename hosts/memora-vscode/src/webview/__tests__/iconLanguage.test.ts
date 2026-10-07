@@ -8,7 +8,8 @@
  * 本守卫防其回潮：**代码**中出现字符图标即红。
  *
  * **判据边界（有意为之，勿随意扩大）**：
- *   · 注释里的符号不管——不渲染进 DOM，且项目文风以 ⚠️ 作警示标记（如「⚠️ 勿回退」）；
+ *   · 注释里的符号不管——JS 注释与 HTML 注释（模板串内 `<!-- -->`）均剥离：前者不进 DOM，
+ *     后者被浏览器解析为不可见的注释节点；且项目文风以 ⚠️ 作警示标记（如「⚠️ 勿回退」）；
  *   · 语义箭头 `→ ← ↔ ⇒` 不管——表意（「A → B」）而非图标；故 U+2190–21FF 整体放行，
  *     仅把循环箭头 `↺ ↻`（U+21BA/21BB，属图标性质）拦下；
  *   · CSS `content` 的几何字符——**两类语义不同，勿混为一谈**：
@@ -118,6 +119,34 @@ function stripTrailingComment(line: string): string {
   return line;
 }
 
+/**
+ * 单行 HTML 注释剥离（跨行状态机）：剔除 `<!-- ... -->` 区间内容。
+ * 模板串内的 HTML 注释被浏览器解析为注释节点，永不显示——与 JS 注释同属「不可见面」，
+ * 其中的字符图标不可能成为真 offender，剥离不会隐藏任何真实违规。
+ * @param line 该行的 JS 注释剥离结果（先 JS 后 HTML：`// <!--` 不应误开 HTML 注释态）
+ * @param state 跨行注释态（调用方按文件维护，文件开始时重置；未闭合 = 模板串语法错，tsc 拦截）
+ */
+function stripHtmlComments(line: string, state: { open: boolean }): string {
+  let out = '';
+  let i = 0;
+  while (i < line.length) {
+    if (!state.open && line.startsWith('<!--', i)) {
+      state.open = true;
+      i += 4;
+      continue;
+    }
+    if (state.open && line.startsWith('-->', i)) {
+      state.open = false;
+      i += 3;
+      continue;
+    }
+    // 仅注释态外的字符保留——open 态字符全部剔除
+    if (!state.open) out += line[i];
+    i++;
+  }
+  return out;
+}
+
 /** 扫描 UI 层源码，返回所有「代码中出现字符图标」的违规点 */
 function findCharIcons(): { file: string; line: number; char: string }[] {
   const offenders: { file: string; line: number; char: string }[] = [];
@@ -128,11 +157,14 @@ function findCharIcons(): { file: string; line: number; char: string }[] {
     // 若全局豁免，那种行里的字符图标会被静默放过
     const styleLayer = rel.startsWith(STYLE_LAYER);
     const lines = readFileSync(file, 'utf8').split('\n');
+    // HTML 注释态按文件重置（跨行 `<!-- -->` 在文件内自闭合）
+    const htmlState = { open: false };
     lines.forEach((raw, idx) => {
       const trimmed = raw.trim();
       // 整行注释跳过（含 JSDoc / 块注释续行）
       if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return;
-      const code = stripTrailingComment(raw);
+      // 先剥 JS 行尾注释，再剥 HTML 注释（跨行状态机）
+      const code = stripHtmlComments(stripTrailingComment(raw), htmlState);
       scannedLines++;
       // CSS content 值豁免——伪元素无法持有 DOM 节点（详见 CSS_CONTENT_ROW 注释）
       if (styleLayer && CSS_CONTENT_ROW.test(code)) return;

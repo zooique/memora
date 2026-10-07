@@ -265,6 +265,21 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(data[0]?.sessions[0]?.messageCount).toBe(2);
   });
 
+  it('onSessionArchived：归档写入成功信号 → 触发会话列表重拉（否则条目快照摘要恒空）', () => {
+    const { store, roundStore, provider, posted } = setup();
+    seedSession(store, roundStore, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+
+    // 模拟内核异步归档完成 → 宿主 handler 被事件触发
+    (provider as unknown as { onSessionArchived(): void }).onSessionArchived();
+
+    const data = ofType<{ type: string; sessions: unknown[] }>(posted, 'session_list_data');
+    expect(data).toHaveLength(1);
+    expect(data[0]?.sessions.map((s) => (s as { sessionId: string }).sessionId)).toEqual([
+      '2026-08-14-s2',
+    ]);
+  });
+
   it('pushSessionList：无历史时返回空数组（webview 显示空态）', () => {
     const { provider, posted } = setup();
     (provider as unknown as { pushSessionList(): void }).pushSessionList();

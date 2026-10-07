@@ -14,8 +14,21 @@ export const AGENT_EVENTS = {
   rolePackSwitched: 'rolePackSwitched',
   memoryRecalled: 'memoryRecalled',
   sessionForked: 'sessionForked',
+  /**
+   * 会话身份切换完成（switchToSession 换会话成功后触发，载荷指向**被切走的旧会话**）。
+   * 内核自消费事件：agent 归档监听器据此对旧会话做会话级归档（summary/keyTopics 进
+   * SessionMeta 搜索索引）。宿主零消费 = 刻意设计（宿主是切换发起方，无增量信息），
+   * protocolGuard V-2 已登记 KERNEL_SELF_CONSUMED_EVENTS 豁免。
+   */
+  sessionSwitched: 'sessionSwitched',
   projectSwitched: 'projectSwitched',
   archiveFailed: 'archiveFailed',
+  /**
+   * 会话归档写入成功（updatedFields 非空才发，与 archiveFailed 对称）。
+   * 宿主据此重拉会话列表：切走时归档异步完成，列表快照若无此信号则条目摘要永不更新
+   * （悬停 tooltip 一直为空）。手动触发同样经 ArchiveCoordinator 发射。
+   */
+  sessionArchived: 'sessionArchived',
   contextTruncated: 'contextTruncated',
   /** LLM 主动压缩完成（第二级压缩，与 contextTruncated 的内核自动截断区分） */
   contextCompressed: 'contextCompressed',
@@ -70,8 +83,17 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   rolePackSwitched: { from: string | null; to: string };
   memoryRecalled: { count: number; query: string };
   sessionForked: { from: string; to: string; roundCount: number };
+  /** date/session = 被切走的旧会话（归档对象）；fromSessionId/toSessionId = 旧/新完整会话标识 */
+  sessionSwitched: {
+    date: string;
+    session: string;
+    fromSessionId: string;
+    toSessionId: string;
+  };
   projectSwitched: { from: string | null; to: string; projectName: string };
   archiveFailed: { stage: 'session'; message: string };
+  /** 会话归档写入成功载荷：sessionId = `${date}-${session}`；updatedFields = 实际落库字段（summary/keyTopics/autoName） */
+  sessionArchived: { sessionId: string; updatedFields: string[] };
   contextTruncated: { skippedCount: number; keptCount: number };
   /** LLM 主动压缩完成载荷：压缩目标 + 被替换消息数 + 摘要长度
    * ⚠️ target 类型**引用 loop 的 CompressTarget**（不另写字面量联合）——枚举增补时

@@ -196,6 +196,53 @@ describe('ArchiveCoordinator', () => {
     });
   });
 
+  // ─── sessionArchived 事件发射（归档写入成功信号，宿主重拉会话列表的依据） ───
+  describe('sessionArchived 事件发射', () => {
+    it('归档成功且 updatedFields 非空 → 发射 sessionArchived（sessionId = sessionLabel）', async () => {
+      const sessionArchiver = createMockSessionArchiver({
+        updatedFields: ['summary', 'keyTopics'],
+        sessionLabel: '2026-07-04-s-1',
+        messageCount: 5,
+      });
+      const coordinator = createCoordinator(emitSpy, sessionArchiver, 'full');
+
+      await coordinator.archiveSession('2026-07-04', 's-1', { autoTriggered: true });
+
+      const events = emitSpy.events.filter((e) => e.event === 'sessionArchived');
+      expect(events).toHaveLength(1);
+      expect(events[0]!.payload).toEqual({
+        sessionId: '2026-07-04-s-1',
+        updatedFields: ['summary', 'keyTopics'],
+      });
+    });
+
+    it('updatedFields 为空（LLM 判无价值/防重跳过）→ 不发射（避免宿主无意义重拉）', async () => {
+      const sessionArchiver = createMockSessionArchiver({
+        updatedFields: [],
+        sessionLabel: '2026-07-04-s-1',
+        messageCount: 5,
+      });
+      const coordinator = createCoordinator(emitSpy, sessionArchiver, 'full');
+
+      await coordinator.archiveSession('2026-07-04', 's-1', { autoTriggered: true });
+
+      expect(emitSpy.events.filter((e) => e.event === 'sessionArchived')).toHaveLength(0);
+    });
+
+    it('手动触发归档成功同样发射（信号与触发源无关）', async () => {
+      const sessionArchiver = createMockSessionArchiver({
+        updatedFields: ['autoName'],
+        sessionLabel: '2026-07-04-s-1',
+        messageCount: 3,
+      });
+      const coordinator = createCoordinator(emitSpy, sessionArchiver, 'manual');
+
+      await coordinator.archiveSession('2026-07-04', 's-1');
+
+      expect(emitSpy.events.filter((e) => e.event === 'sessionArchived')).toHaveLength(1);
+    });
+  });
+
   // ─── archiveMode 二态控制集中到 ArchiveCoordinator ───
   describe('archiveMode 控制（session）', () => {
     it('autoTriggered + full 模式 → 执行（调用 SessionArchiver）', async () => {
@@ -209,7 +256,10 @@ describe('ArchiveCoordinator', () => {
       const result = await coordinator.archiveSession('2026-07-04', 's-1', { autoTriggered: true });
 
       expect(result.updatedFields).toHaveLength(1);
-      expect(sessionArchiver.archiveSession).toHaveBeenCalledWith('2026-07-04', 's-1');
+      // 自动触发透传防重选项（内容未变时 SessionArchiver 跳过 LLM 调用）
+      expect(sessionArchiver.archiveSession).toHaveBeenCalledWith('2026-07-04', 's-1', {
+        skipIfUnchanged: true,
+      });
     });
 
     it('autoTriggered + manual 模式 → 跳过', async () => {

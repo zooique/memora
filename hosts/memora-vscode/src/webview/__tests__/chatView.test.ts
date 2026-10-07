@@ -3717,6 +3717,14 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     expect((items[1] as HTMLElement).hasAttribute('title')).toBe(false);
   });
 
+  it('骨架 title 防泄漏：标题条容器无 title（容器级 title 会被无 title 后代继承，历史条目悬停误显示「当前会话」）', () => {
+    mountChatView();
+    // 容器不得携带 title：历史下拉挂在它内部，无摘要条目会回退显示祖先 title
+    expect(document.getElementById('sessionTitleBar')?.hasAttribute('title')).toBe(false);
+    // 提示语义保留在内层标题文本上
+    expect(document.getElementById('sessionTitleText')?.getAttribute('title')).toBe('当前会话');
+  });
+
   it('历史条目垃圾桶：点击发送 delete_session 且不触发条目加载', () => {
     const { postMessage } = mountChatView();
     dispatch({

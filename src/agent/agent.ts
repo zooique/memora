@@ -73,6 +73,7 @@ import {
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter } from '@/llm/types.js';
 import { logger } from '@/logging/logger.js';
+import { isValidSessionId, splitSessionId } from '@/utils/time.js';
 import type { AgentMetrics } from '@/agent/tracer.js';
 import {
   getBackgroundTaskStats as readBackgroundTaskStats,
@@ -261,6 +262,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 注册暂停超时归档（同进程暂停超时：30min 无心跳则归档清理）
     this.registerPauseTimeoutArchiver();
+    // 注册会话离场归档（切换/分叉使会话脱离当前态时归档其摘要元数据）
+    this.registerSessionArchiveOnLeave();
     this.registerWorkProjectionRefresh();
 
     // 注：不加载持久化检查点——中止/断电一律走
@@ -298,6 +301,36 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         ?.archiveSession(date, session, { autoTriggered: true })
         .catch((err) => {
           logger.warn({ err, sessionId }, '暂停超时会话自动归档失败');
+        });
+    });
+  }
+
+  /**
+   * 注册「会话离场归档」处理器：会话因切换/分叉不再是当前会话时，对其做会话级归档
+   * （summary/keyTopics 写入 SessionMeta，供 list_sessions 路标与宿主历史菜单悬停摘要）。
+   * 两条触发源：
+   *   - sessionSwitched（switchToSession 切走旧会话）：载荷已含旧会话 date/session；
+   *   - sessionForked（forkSession 从源会话分出新支）：载荷 from 为完整会话标识，此处拆解。
+   * 注册在 init() 内（与 registerPauseTimeoutArchiver 同生命周期，close 的 removeAllListeners 兜底）。
+   * fire-and-forget：归档失败不阻塞切换/分叉主流程，仅记录。
+   */
+  private registerSessionArchiveOnLeave(): void {
+    this.on(AGENT_EVENTS.sessionSwitched, (payload) => {
+      const { date, session, fromSessionId } = payload;
+      this.internals.archiveCoordinator
+        ?.archiveSession(date, session, { autoTriggered: true })
+        .catch((err) => {
+          logger.warn({ err, sessionId: fromSessionId }, '会话切走后自动归档失败');
+        });
+    });
+    this.on(AGENT_EVENTS.sessionForked, (payload) => {
+      // from 为完整会话标识（YYYY-MM-DD-会话名）；非法格式无归档对象，静默跳过
+      if (!isValidSessionId(payload.from)) return;
+      const { date, session } = splitSessionId(payload.from);
+      this.internals.archiveCoordinator
+        ?.archiveSession(date, session, { autoTriggered: true })
+        .catch((err) => {
+          logger.warn({ err, sessionId: payload.from }, '分叉源会话自动归档失败');
         });
     });
   }
@@ -1622,8 +1655,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 手动归档会话（更新 SessionMeta，委托 ArchiveCoordinator）
    *
-   * 适用于 manual 模式（用户手动触发；full 模式由宿主切换前自动调用）。
-   * options 透传给 ArchiveCoordinator：宿主自动触发传 { autoTriggered: true }（按其模式判断），
+   * 适用于 manual 模式（用户手动触发；自动归档由内核监听器在会话切走/分叉离场/暂停超时时触发）。
+   * options 透传给 ArchiveCoordinator：内核自动触发传 { autoTriggered: true }（按其模式判断），
    * 用户手动触发省略 options（默认 autoTriggered=false，无条件执行）。
    *
    * @returns 归档结果（updatedFields 可能为空，表示无归档价值或 LLM 失败）

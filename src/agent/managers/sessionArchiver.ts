@@ -1,6 +1,10 @@
 /**
  * 会话归档器（SessionMeta 归档）：将原始对话归纳为元数据，LLM 生成 summary/keyTopics/autoName 供搜索索引。
- * 触发时机：full 模式在会话切换前自动归档；manual 模式用户手动触发（Agent.archiveSession）。
+ * 触发时机（三类自动 + 手动）：
+ *   - 会话切走（sessionSwitched，switchToSession 后旧会话离场）；
+ *   - 分叉离场（sessionForked，源会话脱离当前态）；
+ *   - 暂停超时（sessionPauseTimedOut，30min watchdog）；
+ *   三类自动触发经 ArchiveCoordinator 统一入口（archiveMode=manual 时跳过），手动调用无条件执行。
  * 降级：LLM 不可用/消息为空/sessionStore 未注入时静默跳过或返回空结果，不阻塞会话切换（best-effort）。
  */
 
@@ -18,6 +22,16 @@ export interface SessionArchiveResult {
   sessionLabel: string;
   /** 归档的消息数量 */
   messageCount: number;
+}
+
+/** 归档触发选项 */
+export interface SessionArchiveOptions {
+  /**
+   * 内容未变则跳过（仅自动触发传 true）：对比上次实际归档时的消息数，相同即跳过 LLM 调用。
+   * 对话记录 append-only（单条消息不删），消息数相同 = 内容未变，判据可靠。
+   * 手动触发不跳过（用户意图优先，无条件重新归档）。
+   */
+  skipIfUnchanged?: boolean;
 }
 
 /** LLM 摘要提示词中的最大消息数（防超长会话撑爆 LLM 上下文） */
@@ -43,6 +57,11 @@ export class SessionArchiver {
   private readonly defaultProvider: LlmProvider;
   /** 会话存储（加载原始对话消息 + 写入 SessionMeta） */
   private sessionStore: ISessionStore | undefined;
+  /**
+   * 已归档会话的消息数快照（防重判据，进程内内存态）：sessionLabel → 上次**实际完成归档**时的消息数。
+   * 仅自动触发的 skipIfUnchanged 消费；重启后清零（首次自动触发多归档一次，可接受）。
+   */
+  private lastArchivedMessageCount = new Map<string, number>();
 
   constructor(provider: LlmProvider, sessionStore: ISessionStore | undefined) {
     this.provider = provider;
@@ -56,10 +75,14 @@ export class SessionArchiver {
   }
 
   /**
-   * 归档指定会话：加载消息 → 消息过少（<2）跳过 → LLM 生成摘要/主题 → 写入 SessionMeta。
+   * 归档指定会话：加载消息 → 消息过少（<2）跳过 → [防重] → LLM 生成摘要/主题 → 写入 SessionMeta。
    * 错误传播：sessionStore 未注入/消息过少/LLM 判无价值返回空结果（非错误）；LLM 异常/写入失败向上抛给 ArchiveCoordinator 统一 catch。
    */
-  async archiveSession(date: string, session: string): Promise<SessionArchiveResult> {
+  async archiveSession(
+    date: string,
+    session: string,
+    options?: SessionArchiveOptions,
+  ): Promise<SessionArchiveResult> {
     const sessionLabel = `${date}-${session}`;
     const emptyResult: SessionArchiveResult = {
       updatedFields: [],
@@ -78,6 +101,16 @@ export class SessionArchiver {
       logger.debug(
         { sessionLabel, messageCount: messages.length },
         'SessionArchiver: 消息过少，跳过',
+      );
+      return { ...emptyResult, messageCount: messages.length };
+    }
+
+    // 自动触发防重：消息数与上次实际归档时相同 → 内容未变，跳过 LLM 调用
+    const lastCount = this.lastArchivedMessageCount.get(sessionLabel);
+    if (options?.skipIfUnchanged && lastCount !== undefined && lastCount === messages.length) {
+      logger.debug(
+        { sessionLabel, messageCount: messages.length },
+        'SessionArchiver: 内容未变（消息数同上次归档），跳过自动归档',
       );
       return { ...emptyResult, messageCount: messages.length };
     }
@@ -109,6 +142,8 @@ export class SessionArchiver {
 
     if (updatedFields.length > 0) {
       this.sessionStore.updateSessionMeta?.(sessionLabel, partialMeta);
+      // 写入成功才记防重快照：LLM 判无价值/写入失败不记，下次自动触发仍会重试
+      this.lastArchivedMessageCount.set(sessionLabel, messages.length);
     }
 
     logger.info(

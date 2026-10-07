@@ -1,6 +1,9 @@
 /**
- * 归档协调器：归档会话元数据（SessionMeta）+ 二态归档模式统一判断 + 失败事件发射。
+ * 归档协调器：归档会话元数据（SessionMeta）+ 二态归档模式统一判断 + 结果事件发射
+ * （成功且 updatedFields 非空 → sessionArchived；异常 → archiveFailed）。
  * 归档=更新 SessionMeta（summary/keyTopics/autoName），仅用于搜索索引，不进记忆召回。
+ * 自动触发源（均经本类 archiveSession，autoTriggered: true）：会话切走 / 分叉离场 / 暂停超时；
+ * 手动触发（Agent.archiveSession）不受 archiveMode 门控。
  */
 
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
@@ -22,7 +25,7 @@ export interface ArchiveCoordinatorOptions {
 }
 
 /**
- * 归档触发选项：区分自动触发（postProcess/会话切换）与手动触发（用户点击）。
+ * 归档触发选项：区分自动触发（会话切走/分叉离场/暂停超时）与手动触发（用户点击）。
  * 自动触发由 archiveMode 判断是否跳过；手动触发无条件执行（用户意图优先）。
  */
 export interface ArchiveTriggerOptions {
@@ -72,7 +75,19 @@ export class ArchiveCoordinator {
       return { updatedFields: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
     try {
-      const result = await sessionArchiver.archiveSession(date, session);
+      // 调用形态即语义：自动触发带防重（内容未变不重复调 LLM）；手动触发零选项（无条件重新归档）
+      const result = options?.autoTriggered
+        ? await sessionArchiver.archiveSession(date, session, { skipIfUnchanged: true })
+        : await sessionArchiver.archiveSession(date, session);
+      // 归档写入成功（有字段落库）→ 发射 sessionArchived：宿主据此重拉会话列表。
+      // 缺此信号则切走时的列表快照永远拿不到异步完成的 summary/keyTopics（tooltip 恒空）；
+      // 防重跳过 / LLM 判无价值（updatedFields 空）不发，避免宿主做无意义的全量重拉。
+      if (result.updatedFields.length > 0) {
+        this.emit('sessionArchived', {
+          sessionId: result.sessionLabel,
+          updatedFields: result.updatedFields,
+        });
+      }
       return result;
     } catch (err) {
       this.handleArchiveError('session', err);

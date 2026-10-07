@@ -121,6 +121,16 @@ function extractHostConsumedEvents(filePaths: string[]): Set<string> {
   return consumed;
 }
 
+/**
+ * 内核自消费事件豁免（宿主零消费 = 刻意设计，非遗漏）：
+ *   - sessionSwitched：内核内部事件——sessionManager 发（旧会话切走时广播）、agent 归档
+ *     监听器收（触发旧会话离场归档）。宿主是切换发起方，命令响应即知结果，无增量信息。
+ *
+ * ⚠ 分表触发器：内核自消费事件继续增多时，应拆独立内部事件通道（AGENT_EVENTS 语义 =
+ * 「内核→宿主广播」），而非继续扩本豁免清单。
+ */
+const KERNEL_SELF_CONSUMED_EVENTS: ReadonlySet<string> = new Set(['sessionSwitched']);
+
 describe('Agent 事件宿主消费对账守卫（V-2）', () => {
   it('AGENT_EVENTS 全部事件应有宿主消费入口（chatPanel + settingsPanel 至少一处 on 订阅）', () => {
     // 真理源：内核事件定义
@@ -136,10 +146,10 @@ describe('Agent 事件宿主消费对账守卫（V-2）', () => {
       if (allEvents.has(name)) consumedAgentEvents.add(name);
     }
 
-    // 差集：真理源有但宿主没消费的事件
+    // 差集：真理源有但宿主没消费的事件（显式登记的内核自消费事件除外）
     const missingConsumption: string[] = [];
     for (const event of allEvents) {
-      if (!consumedAgentEvents.has(event)) {
+      if (!consumedAgentEvents.has(event) && !KERNEL_SELF_CONSUMED_EVENTS.has(event)) {
         missingConsumption.push(event);
       }
     }

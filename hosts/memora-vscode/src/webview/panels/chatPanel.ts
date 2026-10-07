@@ -1100,6 +1100,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
   };
 
+  /**
+   * sessionArchived：会话归档写入成功（updatedFields 非空）→ 重拉会话列表。
+   * 修「最后一公里」缺口：切走时的列表快照拿不到异步完成的 summary/keyTopics，
+   * 无此重拉则历史条目悬停 tooltip 恒空（载荷暂无消费——全量重拉，不按 sessionId 寻址）。
+   */
+  private readonly onSessionArchived = (): void => {
+    this.pushSessionList();
+  };
+
   // ─── 高价值事件 ───
 
   /**
@@ -1382,6 +1391,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.on('contextCompressed', this.onContextCompressed);
     a.off('archiveFailed', this.onArchiveFailed);
     a.on('archiveFailed', this.onArchiveFailed);
+    // 会话归档写入成功（内核异步归档完成后发）→ 重拉会话列表：历史条目摘要/keyTopics
+    // 即时更新，否则条目停留在切走时的快照、悬停 tooltip 恒空
+    a.off('sessionArchived', this.onSessionArchived);
+    a.on('sessionArchived', this.onSessionArchived);
     // 角色包切换 → UI 角色选择器实时对齐（内核粘性切换/显式激活）
     a.off('rolePackSwitched', this.onRolePackSwitched);
     a.on('rolePackSwitched', this.onRolePackSwitched);
@@ -3878,8 +3891,10 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
   <!-- 会话标题条：
        左侧 = 会话标题 + 改名笔；右侧 = 新建会话「＋」+ 历史记录按钮。
        无「清空对话」入口（删除会话记录覆盖该需求），会话导航全量在标题条。 -->
-  <div id="sessionTitleBar" class="session-title-bar" title="当前会话">
-    <span id="sessionTitleText" class="session-title-bar__text"></span>
+  <div id="sessionTitleBar" class="session-title-bar">
+    <!-- ⚠️ title 只挂在内层标题文本上：容器级 title 会被所有无 title 的后代继承显示
+         （历史下拉菜单挂在标题条内，空摘要条目悬停会误显示容器的「当前会话」） -->
+    <span id="sessionTitleText" class="session-title-bar__text" title="当前会话"></span>
     <button id="renameSessionBtn" class="session-title-bar__btn" title="重命名会话" aria-label="重命名会话">
       <span class="btn-icon" data-icon="edit"></span>
     </button>

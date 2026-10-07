@@ -16,7 +16,8 @@ import { createChatView } from '../../scripts/chatView.js';
 /** 覆盖 createChatView 全部 getElementById 引用的最小 HTML 骨架 */
 const HTML = `
   <div id="sessionTitleBar" class="session-title-bar">
-    <span id="sessionTitleText"></span>
+    <!-- title 与生产骨架同步：只挂内层标题文本（容器级 title 会被无 title 后代继承，历史菜单条目悬停误显示） -->
+    <span id="sessionTitleText" title="当前会话"></span>
     <button id="renameSessionBtn"><span class="btn-icon" data-icon="edit"></span></button>
     <span class="session-title-bar__spacer"></span>
     <button id="newSessionBtn"><span class="btn-icon" data-icon="plus"></span></button>

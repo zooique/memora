@@ -365,9 +365,44 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
   删 `off` → ④红且报「3 handler 累积」）
 - **⏳ 真机复验**：构造摘要失败（如摘要 LLM 返无效 JSON）时错误提示条应可见，且连跑多轮无 handler 累积
 
+### Added（内核 · 会话离场自动归档链路接通 + 归档成功事件 · `HIST-INFO-1`，已定档 3.1.0）
+
+**根因（注释谎报实锤）**：头注释与工具路标声称「会话切换前自动归档」，但 `switchToSession` 的归档
+链路**从未接线**——所有会话的 `summary`/`keyTopics` 恒空，历史列表悬停 tooltip 假显宿主容器的
+「当前会话」（真机 HIST-INFO-1 验收抓出）。三类自动触发（**切走 / 分叉离场 / 暂停超时**）统一由
+Agent 归档监听器接通，fire-and-forget 不阻塞切换主流程。
+
+**新增事件（2）**：
+
+- `sessionSwitched`：旧会话切走时广播（载荷指向被切走的旧会话）。**内核自消费事件**——agent 归档
+  监听器收；宿主零消费 = 刻意设计（宿主是切换发起方，无增量信息），protocolGuard V-2 已登记
+  `KERNEL_SELF_CONSUMED_EVENTS` 豁免（⚠ 分表触发器：内核自消费事件增多时拆独立内部事件通道）。
+- `sessionArchived`：归档写入成功（`updatedFields` 非空才发）发射，与 `archiveFailed` 对称，
+  手动触发同样经 ArchiveCoordinator 发射；宿主据此重拉会话列表。
+
+**防重**：`SessionArchiver` 新增 `skipIfUnchanged`（仅自动触发透传）：以上次**实际完成归档**的
+消息数快照为判据，消息数未变即跳过 LLM 调用。快照为进程内内存态（重启清零，首次多归档一次可接受）；
+**写入成功才记账**——LLM 判无价值/写入失败不记，下次自动触发保守重试。手动触发无条件重新归档。
+
+**注释清算（措辞折叠同族，5 处一次改齐）**：sessionArchiver 头注释 / archiveCoordinator 注释 /
+builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中「切换前自动归档」
+谎报全部订正为三类触发的真实枚举。
+
 ## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
+
+### Fixed（宿主 · 历史条目悬停假显「当前会话」+ 归档后条目不刷新 · `HIST-INFO-1`）
+
+- **title 泄漏**：会话标题条容器级 `title="当前会话"` 被所有无 title 的后代继承——历史下拉任何条目
+  悬停都显示「当前会话」。title 移至内层 `#sessionTitleText`；条目无摘要时诚实无 tooltip。
+  骨架 title 防泄漏守卫测试锁定（测试夹具同步）。
+- **归档完成无信号**：切走时归档异步执行，列表快照永远拿不到后到的 summary/keyTopics（悬停恒空）。
+  订阅内核 `sessionArchived` 重拉会话列表，条目摘要/keyTopics 即时更新。
+- **守卫反噬两处**：iconLanguage 守卫头注释声明「注释里的符号不管」但只剥 JS 注释、未剥 HTML 注释
+  （补 `<!-- -->` 跨行剥离状态机，对齐自身声明；HTML 注释被浏览器解析为不可见注释节点，剥离不藏
+  真 offender）；protocolGuard V-2 为内核自消费事件（`sessionSwitched`）增设显式豁免清单，
+  防造假订阅（订阅无真实语义 = 假账）。
 
 ### Fixed（宿主 · 异常终态轮缺「复制/分叉/删除 + 时间戳」底部栏 · settleRoundFooter 收口）
 

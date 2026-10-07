@@ -145,6 +145,42 @@ describe('SessionManager', () => {
     });
   });
 
+  describe('switchToSession（会话离场归档事件）', () => {
+    /** 给 mock history 补上 getCurrentSessionInfo 读取的当前会话指针 */
+    function withCurrentPointer(date: string, session: string) {
+      return { currentDateValue: date, currentSessionValue: session, currentSessionName: `${date}-${session}` };
+    }
+
+    it('切走旧会话 → 广播 sessionSwitched（载荷指向被切走的旧会话）', async () => {
+      Object.assign(history, withCurrentPointer('2026-06-27', 'main'));
+      await manager.switchToSession('2026-06-27-other');
+      expect(emitEvent).toHaveBeenCalledWith('sessionSwitched', {
+        date: '2026-06-27',
+        session: 'main',
+        fromSessionId: '2026-06-27-main',
+        toSessionId: '2026-06-27-other',
+      });
+    });
+
+    it('重复打开同一会话 → 不广播（无「切走」语义）', async () => {
+      Object.assign(history, withCurrentPointer('2026-06-27', 'main'));
+      await manager.switchToSession('2026-06-27-main');
+      expect(emitEvent).not.toHaveBeenCalledWith('sessionSwitched', expect.anything());
+    });
+
+    it('history 未就绪（无当前会话指针）→ 不广播', async () => {
+      // mock 未实现 currentDateValue/currentSessionValue = 无旧会话（首次调用场景）
+      await manager.switchToSession('2026-06-27-main');
+      expect(emitEvent).not.toHaveBeenCalledWith('sessionSwitched', expect.anything());
+    });
+
+    it('对话繁忙时应抛 configError 且不广播', async () => {
+      isChatBusy.mockReturnValue(true);
+      await expect(manager.switchToSession('2026-06-27-main')).rejects.toThrow('对话繁忙');
+      expect(emitEvent).not.toHaveBeenCalledWith('sessionSwitched', expect.anything());
+    });
+  });
+
   describe('getSessionMeta / renameSession（会话标题层）', () => {
     it('getSessionMeta 应委托 store.getSessionMeta', () => {
       manager.getSessionMeta('2026-06-27-main');

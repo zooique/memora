@@ -228,8 +228,8 @@ export interface UIMessages {
 // ─── 归档模式 ───────────────────────────────────────────
 
 /**
- * 归档模式二态：'full'（默认，content 在会话切换前自动归档）/'manual'（全部手动触发，
- * postProcess 跳过所有自动归档分支）。
+ * 归档模式二态：'full'（默认，content 在会话切走/分叉离场/暂停超时时自动归档）/'manual'
+ * （全部手动触发，自动触发传 autoTriggered 时被跳过）。
  */
 export type ArchiveMode = 'full' | 'manual';
 

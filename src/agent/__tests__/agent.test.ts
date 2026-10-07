@@ -13,6 +13,7 @@
  * 记忆模型：source 开放字符串（persona/rule/skill/content/round-summary 等，superseded 写时取代）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { ArchiveCoordinator } from '@/agent/managers/archiveCoordinator.js';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1829,6 +1830,48 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
     // 应返回归档结果结构（方案 C：updatedFields 替代 memories）
     expect(result).toHaveProperty('updatedFields');
     expect(result).toHaveProperty('sessionLabel', '2026-07-04-session-1');
+  });
+
+  it('会话切走接线：switchToSession 触发旧会话自动归档（full 模式）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, 'full');
+    await agent.init();
+
+    // 当前会话产生一轮真实对话（存在可切走的旧会话）
+    await agent.chatSync('你好');
+    const current = agent.sessionManager!.getCurrentSessionInfo();
+    expect(current).not.toBeNull();
+
+    // 切到新会话 → 旧会话离场 → 归档监听器 fire-and-forget 调 archiveSession
+    const archiveSpy = vi.spyOn(ArchiveCoordinator.prototype, 'archiveSession');
+    try {
+      await agent.sessionManager!.switchToSession(`${current!.date}-switched-away`);
+      // 等待异步归档调用落地
+      await new Promise((r) => setTimeout(r, 50));
+      expect(archiveSpy).toHaveBeenCalledWith(current!.date, current!.session, {
+        autoTriggered: true,
+      });
+    } finally {
+      archiveSpy.mockRestore();
+    }
+  });
+
+  it('会话切走接线：重复打开同一会话不触发归档', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, 'full');
+    await agent.init();
+
+    await agent.chatSync('你好');
+    const current = agent.sessionManager!.getCurrentSessionInfo();
+    expect(current).not.toBeNull();
+
+    const archiveSpy = vi.spyOn(ArchiveCoordinator.prototype, 'archiveSession');
+    try {
+      // 相同会话标识重复打开 = 无「切走」语义
+      await agent.sessionManager!.switchToSession(`${current!.date}-${current!.session}`);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(archiveSpy).not.toHaveBeenCalled();
+    } finally {
+      archiveSpy.mockRestore();
+    }
   });
 });
 

@@ -202,11 +202,28 @@ export class SessionManager {
       ]);
     }
     const { date, session } = splitSessionId(sessionId);
+    // 切换前记录旧会话身份（getCurrentSessionInfo 的唯一消费方）：
+    // 旧会话真实存在（history 已初始化）且 ≠ 目标会话时，切换完成后对旧会话触发归档事件——
+    // 旧会话由此进入历史列表，其 summary/keyTopics 归档必须在此发生（fire-and-forget，消费方在 Agent 层）
+    const previous = this.getCurrentSessionInfo();
+    // date/session 任一缺失（history 未初始化/测试 mock 未实现）视为无旧会话，不触发归档事件
+    const prevDate = previous?.date;
+    const prevSession = previous?.session;
+    const previousSessionId = prevDate && prevSession ? `${prevDate}-${prevSession}` : null;
     // 切换会话身份（内部含 busy/状态守卫 + 作废派生缓存）
     this.switchSession(session);
     // 加载/清空工作记忆：空会话 → restoreHistory([]) 清空（缓存已作废，无陈旧注入）
     const messages = await this.getHistory().loadSessionMessages(date, session);
     this.applySessionToLoop(messages);
+    // 切换成功才广播（失败路径已提前抛出）；重复打开同一会话无「切走」语义，不广播
+    if (prevDate && prevSession && previousSessionId !== sessionId) {
+      this.emitEvent('sessionSwitched', {
+        date: prevDate,
+        session: prevSession,
+        fromSessionId: previousSessionId,
+        toSessionId: sessionId,
+      });
+    }
     return messages.length;
   }
 

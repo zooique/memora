@@ -10,7 +10,7 @@
  *
  * 测试模式：MockProvider + MockSessionStore（实现 updateSessionMeta）
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
 import { LlmProvider } from '@/llm/provider.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
@@ -488,5 +488,69 @@ describe('SessionArchiver · SessionMeta 更新语义', () => {
     expect(result.updatedFields.length).toBeGreaterThan(0);
     // sessionStore.updateSessionMeta 应被调用
     expect(sessionStore.getUpdateCalls().length).toBeGreaterThan(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：自动触发防重（skipIfUnchanged）
+// ═══════════════════════════════════════════════════════════════
+
+describe('SessionArchiver · 自动触发防重（skipIfUnchanged）', () => {
+  let provider: MockProvider;
+  let sessionStore: MockSessionStore;
+  let archiver: SessionArchiver;
+
+  beforeEach(() => {
+    provider = new MockProvider();
+    sessionStore = new MockSessionStore(makeMessages(4));
+    archiver = new SessionArchiver(provider, sessionStore);
+  });
+
+  it('消息数未变 → 第二次自动归档跳过 LLM（防重）', async () => {
+    await archiver.archiveSession('2026-07-03', 'main', { skipIfUnchanged: true });
+    const chatSpy = vi.spyOn(provider, 'chat');
+
+    const result = await archiver.archiveSession('2026-07-03', 'main', { skipIfUnchanged: true });
+
+    expect(chatSpy).not.toHaveBeenCalled();
+    expect(result.updatedFields).toEqual([]);
+    expect(result.messageCount).toBe(4);
+  });
+
+  it('消息数变化（新增对话）→ 重新归档', async () => {
+    await archiver.archiveSession('2026-07-03', 'main', { skipIfUnchanged: true });
+    // 会话有新消息：4 → 5 条
+    sessionStore.setMessages(makeMessages(5));
+    const chatSpy = vi.spyOn(provider, 'chat');
+
+    const result = await archiver.archiveSession('2026-07-03', 'main', { skipIfUnchanged: true });
+
+    expect(chatSpy).toHaveBeenCalledTimes(1);
+    expect(result.updatedFields).toContain('summary');
+  });
+
+  it('手动触发（不传 skipIfUnchanged）→ 无条件重新归档', async () => {
+    await archiver.archiveSession('2026-07-03', 'main', { skipIfUnchanged: true });
+    const chatSpy = vi.spyOn(provider, 'chat');
+
+    // 消息数未变，但手动触发不受防重约束
+    const result = await archiver.archiveSession('2026-07-03', 'main');
+
+    expect(chatSpy).toHaveBeenCalledTimes(1);
+    expect(result.updatedFields).toContain('summary');
+  });
+
+  it('LLM 判无价值（返回 null）不记防重快照 → 下次自动触发仍重试', async () => {
+    provider.setResponse('null');
+    const first = await archiver.archiveSession('2026-07-03', 'main', { skipIfUnchanged: true });
+    expect(first.updatedFields).toEqual([]);
+
+    // 消息数未变，但因上次未实际归档，防重不生效 → 仍调 LLM
+    provider.setResponse('{"summary": "这次有值", "keyTopics": ["有"], "autoName": "有值"}');
+    const chatSpy = vi.spyOn(provider, 'chat');
+    const second = await archiver.archiveSession('2026-07-03', 'main', { skipIfUnchanged: true });
+
+    expect(chatSpy).toHaveBeenCalledTimes(1);
+    expect(second.updatedFields).toContain('summary');
   });
 });
