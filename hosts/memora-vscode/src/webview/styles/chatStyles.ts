@@ -51,6 +51,7 @@ export const chatStyles = `
     margin: 0;
     display: flex; flex-direction: column;
     height: 100vh; box-sizing: border-box;
+    position: relative;
     font-size: var(--font-base, 13px);
     background: var(--surface-page, #1e1e1e);
     color: var(--text-primary, #cccccc);
@@ -122,6 +123,40 @@ export const chatStyles = `
     background: var(--feedback-warn-accent, #d7ba7d);
   }
   .status-dock__chip:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  /* 收起态形态降级（用户诉求 2026-10-07）：常驻保留，但收起时收为输入框左侧小气泡，
+   * 不再占输入框上方整排；展开态完全保持现状（.is-collapsed 仅由收起态施加）。
+   * 气泡绝对定位于 body（position:relative），出布局流 ⇒ 不挤输入框、不破坏
+   * resolveDock「主位条/anchor 恒净」纪律（dockChip 仍为 inputBar 兄弟节点，
+   * 搬运锚 parent.insertBefore(e.el, dockChip) 不受影响）。 */
+  body.dock-collapsed .status-dock__chip.is-collapsed {
+    position: absolute;
+    left: var(--sp-4, 8px);
+    bottom: calc(var(--sp-5, 12px) + var(--sp-2, 4px));
+    z-index: 21;           /* 高于 #inputBar(z-index:20)，落在左轨道不被透明层压住 */
+    align-self: auto;
+    width: 24px; height: 24px; min-height: 0;
+    margin: 0; padding: 0;
+    border-radius: 50%;
+    justify-content: center;
+    font-size: 0;            /* 隐藏「活动」文案，气泡只显圆点 */
+    overflow: hidden;
+  }
+  /* 隐藏默认未读前导点，统一用 ::after 圆点承载（小尺寸下不挤压） */
+  body.dock-collapsed .status-dock__chip.is-collapsed::before { display: none; }
+  body.dock-collapsed .status-dock__chip.is-collapsed::after {
+    content: ''; width: 8px; height: 8px; border-radius: 50%;
+    background: currentColor; opacity: .9;
+  }
+  /* 未读：气泡用警示色实心点（去除描边/加粗，避免 24px 内挤压） */
+  body.dock-collapsed .status-dock__chip.is-collapsed.is-unread {
+    color: var(--feedback-warn-accent, #d7ba7d);
+    border-color: transparent; font-weight: 400;
+  }
+  body.dock-collapsed .status-dock__chip.is-collapsed.is-unread::after {
+    background: var(--feedback-warn-accent, #d7ba7d);
+  }
+  /* 收起态为气泡让出左侧轨道：输入框整体右移，气泡落在左留白，不压文字 */
+  body.dock-collapsed #inputBar { padding-left: 32px; }
   /* 抽屉体：纵向两段——#dockControls 控件段（被收纳活跃条）+ #activityDetail 时间段。
    * flex gap 只落在两个非 hidden 段之间（display:none 不生成盒、不占 gap）。 */
   .status-dock__panel {
@@ -133,6 +168,31 @@ export const chatStyles = `
     background: var(--surface-inset, rgba(128,128,128,.12));
   }
   .status-dock__panel[hidden] { display: none; }
+  /* 展开动画（用户诉求 2026-10-07 续）：点击左侧小气泡后，从左侧自然扩展出去。
+   * 纯 CSS、零 JS：animation 只挂在展开态 body:not(.dock-collapsed)，利用
+   * 「收起→展开时规则重新匹配才触发一次」的特性——重复 resolveDock 重排（展开态持续）
+   * 不会重放闪烁；收起态（dock-collapsed）不带 animation ⇒ 气泡常驻不闪。
+   * - pill 用 clip-path 从左向右揭示（文字不被压扁，比 scaleX 自然）；
+   * - 抽屉用 translateX 从左滑入，错层 40ms 制造「先长 pill、后滑抽屉」的层次。 */
+  @keyframes dockChipOpen {
+    from { clip-path: inset(0 100% 0 0); opacity: 0.35; }
+    to   { clip-path: inset(0 0 0 0);     opacity: 1; }
+  }
+  @keyframes dockPanelOpen {
+    from { transform: translateX(-14px); opacity: 0; }
+    to   { transform: translateX(0);      opacity: 1; }
+  }
+  body:not(.dock-collapsed) .status-dock__chip {
+    transform-origin: left center;
+    animation: dockChipOpen 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  body:not(.dock-collapsed) .status-dock__panel {
+    animation: dockPanelOpen 220ms cubic-bezier(0.2, 0.8, 0.2, 1) 40ms both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body:not(.dock-collapsed) .status-dock__chip,
+    body:not(.dock-collapsed) .status-dock__panel { animation: none; }
+  }
   /* 控件段：被收纳活跃条的单实例容器（节点由 resolveDock 搬运，事件监听随节点保留）。
    * 条原样式自带外边距，段内统一收紧——子选择器兜底所有未来入段条，免枚举漂移。 */
   .status-dock__controls { display: flex; flex-direction: column; gap: var(--sp-2, 4px); }

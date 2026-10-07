@@ -2684,6 +2684,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     );
     dockChip.setAttribute('aria-expanded', String(_dockExpanded));
     dockChip.classList.toggle('is-unread', hasUnread);
+    // 收起态形态降级（用户诉求 2026-10-07）：收起时 dockChip 收为输入框左侧小气泡，
+    // 展开态不带该类 ⇒ 完全保持现状（全宽 pill + 抽屉）。仅切换类，不触碰搬运锚/显隐纪律。
+    dockChip.classList.toggle('is-collapsed', !_dockExpanded);
+    document.body.classList.toggle('dock-collapsed', !_dockExpanded);
     dockPanel.hidden = !_dockExpanded;
   }
 

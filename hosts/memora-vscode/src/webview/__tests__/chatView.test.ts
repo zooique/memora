@@ -817,6 +817,24 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(metrics.textContent).toContain('正文 500（不含思考）');
   });
 
+  it('收起态 dockChip 收为左侧小气泡（is-collapsed），展开态恢复全宽 pill（用户诉求 2026-10-07）', () => {
+    mountChatView();
+    const dockChip = document.getElementById('dockChip') as HTMLElement;
+    // 推一条 metrics ⇒ 时间线有内容 ⇒ 入口常驻可见，且处于收起态
+    dispatch({
+      type: 'metrics',
+      fingerprints: { systemPromptHash: 'abc123' },
+      metrics: { llmCallCount: 1, toolFailureCount: 0, truncationCount: 0 },
+    });
+    expect(dockChip.hidden).toBe(false);
+    expect(dockChip.classList.contains('is-collapsed')).toBe(true);
+    expect(document.body.classList.contains('dock-collapsed')).toBe(true);
+    // 点开抽屉 = 展开态：is-collapsed 撤销，恢复现状全宽 pill + 抽屉
+    dockChip.click();
+    expect(dockChip.classList.contains('is-collapsed')).toBe(false);
+    expect(document.body.classList.contains('dock-collapsed')).toBe(false);
+  });
+
   it('metrics 渲染预算分配构成（④ 策略可视化，可选字段缺省不显示）', () => {
     mountChatView();
     const metrics = document.getElementById('activityMetrics') as HTMLElement;
