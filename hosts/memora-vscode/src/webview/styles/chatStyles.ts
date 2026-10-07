@@ -1152,12 +1152,18 @@ export const chatStyles = `
 
   /* 进场动画（P2 2026-10-07 续）：条件条随内容出现，复用 dock 已验证的「从左滑入 + 淡入」
    * 范式（dockPanelOpen），与活动抽屉同源。条件条经 [hidden] 显隐，display:none→flex 时
-   * animation 重跑一次 = 仅进场触发；内容增量变化（items 增删）不改 display ⇒ 不重放闪烁。
-   * 减弱动效（prefers-reduced-motion）由文件末 Utilities 全局兜底层统一关断，无需本地守卫。 */
+   * animation 重跑一次 = 仅进场触发；内容增量变化（items 增删）不改 display ⇒ 不重放闪烁。 */
   .file-changes-bar,
   .pending-queue-bar,
   .background-tasks-bar {
     animation: dockPanelOpen var(--dur-open) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  /* 减弱动效本地守卫：与 dock（line 192 同范式）完全对齐，显式关断进场动画；
+   * 文件末 Utilities 全局兜底仍保留（双重保险）。 */
+  @media (prefers-reduced-motion: reduce) {
+    .file-changes-bar,
+    .pending-queue-bar,
+    .background-tasks-bar { animation: none; }
   }
 
   /* 预算可视化：发送按钮旁的上下文占用圆环充能图标（常驻不占行；hover/聚焦**向上**弹窗出分层明细文字，
