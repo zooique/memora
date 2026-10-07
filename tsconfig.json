@@ -5,9 +5,9 @@
     "moduleResolution": "NodeNext",
     "lib": ["ES2022"],
     "outDir": "./dist",
-    "baseUrl": "./src",
+    "rootDir": "./src",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./src/*"]
     },
     "strict": true,
     "noImplicitAny": true,

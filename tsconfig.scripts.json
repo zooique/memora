@@ -8,12 +8,16 @@
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
+    // 本 program 输入 scripts/**、依赖经 paths 解析到 src/**——两目录公共祖先 = 项目根，
+    // 须显式覆盖根配置的 rootDir: "./src"，否则 TS6059（rootDir 须含全部输入文件）爆 18 个。
+    // noEmit 下 rootDir 无输出布局语义，显式仅为满足该输入校验（TS 6/7 要求 rootDir 显式化）。
+    "rootDir": ".",
     // 包自引用（hosts 源码经 @zooique/memora 消费内核）重定向到 src 单一真源，
     // 禁止 dist/*.d.ts 声明树混入本编译单元——src 与 dist 双份类型并行会互相遮蔽（幻影报错源）。
-    // 注意：paths 整体覆盖不合并，须连同 @/* 一并重申。
+    // 注意：paths 整体覆盖不合并，须连同 @/* 一并重申；目标基准 = tsconfig 位置（baseUrl 已弃用移除，TS 7 不再支持）。
     "paths": {
-      "@/*": ["./*"],
-      "@zooique/memora": ["./index.ts"]
+      "@/*": ["./src/*"],
+      "@zooique/memora": ["./src/index.ts"]
     }
   },
   "include": ["scripts/**/*.ts"]
