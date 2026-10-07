@@ -31,6 +31,7 @@ import { sanitizeExternalText } from '@/agent/textSanitize.js';
 import {
   okOutcome,
   failedOutcome,
+  failedOutcomeWithCode,
   blockedOutcome,
   type ToolOutcome,
 } from '@/agent/managers/toolCallHelpers.js';
@@ -1015,10 +1016,13 @@ export class ToolExecutor {
         // 使用注入的 webSearchProvider 执行网络搜索，带超时保护
         if (!this.webSearchProvider) {
           // 未注入提供方 = 工具能力缺失（执行失败事实，非主动拦截）→ 显式 emit failed
-          const notAvailableText =
-            '[ERR:TOOL:NOT_AVAILABLE] 错误：网络搜索功能未配置，请先注入 IWebSearchProvider';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode(
+            'NOT_AVAILABLE',
+            '错误：网络搜索功能未配置，请先注入 IWebSearchProvider',
+          );
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         const query = strArg('query');
         if (!query) {
@@ -1068,10 +1072,13 @@ export class ToolExecutor {
         // 使用注入的 fetchProvider 抓取网页正文，带超时保护；失败由 safeFetch 降级
         if (!this.fetchProvider) {
           // 未注入提供方 = 工具能力缺失（执行失败事实，非主动拦截）→ 显式 emit failed
-          const notAvailableText =
-            '[ERR:TOOL:NOT_AVAILABLE] 错误：网页抓取功能未配置，请先注入 IFetchProvider';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode(
+            'NOT_AVAILABLE',
+            '错误：网页抓取功能未配置，请先注入 IFetchProvider',
+          );
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         const url = strArg('url');
         if (!url) {
@@ -1126,10 +1133,13 @@ export class ToolExecutor {
         // 使用注入的 codeExecutionProvider 执行代码，带超时保护；失败由 safeExecuteCode 降级
         if (!this.codeExecutionProvider) {
           // 未注入执行器 = 工具能力缺失（旧口径 [ERR 开头亦判失败），显式 emit failed
-          const notAvailableText =
-            '[ERR:TOOL:NOT_AVAILABLE] 错误：代码执行功能未配置，请先注入 ICodeExecutionProvider';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode(
+            'NOT_AVAILABLE',
+            '错误：代码执行功能未配置，请先注入 ICodeExecutionProvider',
+          );
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         const language = strArg('language');
         const code = strArg('code');
@@ -1249,10 +1259,13 @@ export class ToolExecutor {
         // 使用注入的 projectSearchProvider 执行项目内搜索，带超时保护；失败由 safe* 降级
         if (!this.projectSearchProvider) {
           // 未注入提供方 = 工具能力缺失（执行失败事实，非主动拦截）→ 显式 emit failed
-          const notAvailableText =
-            '[ERR:TOOL:NOT_AVAILABLE] 错误：项目搜索功能未配置，请先注入 IProjectSearchProvider';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode(
+            'NOT_AVAILABLE',
+            '错误：项目搜索功能未配置，请先注入 IProjectSearchProvider',
+          );
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         const query = strArg('query');
         const mode = strArg('mode', 'name');
@@ -1330,9 +1343,10 @@ export class ToolExecutor {
         // 写入任务表（overwrite / append / replace）；items 每项可选 rolePack（会议表层装配角色）
         if (!this.planManager) {
           // 任务表能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
-          const notAvailableText = '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode('NOT_AVAILABLE', '任务表功能未就绪');
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         // mode 为 required（validateAndCoerceArgs 强制校验），不设缺省——设缺省即与 required 契约矛盾
         const writeMode = strArg('mode');
@@ -1363,9 +1377,10 @@ export class ToolExecutor {
         // 更新任务状态
         if (!this.planManager) {
           // 任务表能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
-          const notAvailableText = '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode('NOT_AVAILABLE', '任务表功能未就绪');
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         const planItemId = strArg('plan_item_id');
         if (!planItemId) {
@@ -1399,10 +1414,13 @@ export class ToolExecutor {
         // name 为必填参数，已由 validateAndCoerceArgs 校验，此处直接用
         if (!this.readSkill) {
           // 能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
-          const notAvailableText =
-            '[ERR:TOOL:NOT_AVAILABLE] read_skill 不可用：未装配角色包技能读取回调';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode(
+            'NOT_AVAILABLE',
+            'read_skill 不可用：未装配角色包技能读取回调',
+          );
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         const content = await this.readSkill(strArg('name'));
         if (content === null) {
@@ -1418,10 +1436,13 @@ export class ToolExecutor {
         // 渐进披露 L3：读取技能的参考资源文件
         if (!this.readResource) {
           // 能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
-          const notAvailableText =
-            '[ERR:TOOL:NOT_AVAILABLE] read_resource 不可用：未装配 L3 资源读取回调';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode(
+            'NOT_AVAILABLE',
+            'read_resource 不可用：未装配 L3 资源读取回调',
+          );
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         const skillName = strArg('skill_name');
         const resourcePath = strArg('resource_path');
@@ -1439,10 +1460,13 @@ export class ToolExecutor {
         // 渐进披露 L3：执行技能的可执行脚本（脚本源码不进上下文，仅结果返回）
         if (!this.runSkillScript) {
           // 未装配回调 = 工具能力缺失（旧口径 [ERR 开头亦判失败），显式 emit failed
-          const notAvailableText =
-            '[ERR:TOOL:NOT_AVAILABLE] run_skill_script 不可用：未装配 L3 脚本执行回调';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode(
+            'NOT_AVAILABLE',
+            'run_skill_script 不可用：未装配 L3 脚本执行回调',
+          );
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         const skillName = strArg('skill_name');
         const scriptPath = strArg('script_path');
@@ -1602,9 +1626,11 @@ export class ToolExecutor {
           const declineText =
             '[ERR:COMMAND_DECLINE] 命令未获执行许可（命中恒拦黑名单 / 用户拒绝 / 未注入确认回调 fail-closed）。' +
             '未执行任何命令；如确需执行，请改用等效手段或请用户调整审批设置。';
-          // 原生 outcome：语义是「主动挡下」⇒ blocked（permission_denied）。
-          // 双轨期编排层仍按 [ERR:COMMAND_DECLINE] 文本算 failed（已知口径分歧，
-          // B4 裁决，见方案 §六决策二）⇒ 文本逐字不变，仅新增结构化面。
+          // 语义是「主动挡下」⇒ blocked（permission_denied），不是 failed。
+          // ⚠️ 注释订正：原写「编排层仍按本前缀文本算 failed（已知口径分歧）」——**已不成立**，
+          // 失败计数唯一判据面是 `outcome.status`（见 `loop._processToolResults`），内核无
+          // 任何生产代码按文本算 failed，勿再去找那处并不存在的判据。
+          // 本前缀只是**渲染面**（LLM 自愈看的证据类别），与判据面解耦，保留是有意的。
           emitOutcome?.(blockedOutcome('permission_denied', declineText));
           return declineText;
         }
@@ -1614,10 +1640,13 @@ export class ToolExecutor {
         if (args['background'] === true || args['background'] === 1) {
           if (!this.backgroundTasks) {
             // 能力缺失如实说（B1 缺口补齐：补 emit，对齐 run_code/run_skill_script NOT_AVAILABLE 先例）
-            const notAvailableText =
-              '[ERR:TOOL:NOT_AVAILABLE] run_command 后台模式不可用：未装配后台任务注册表';
-            emitOutcome?.(failedOutcome(notAvailableText));
-            return notAvailableText;
+            // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+            const naOutcome = failedOutcomeWithCode(
+              'NOT_AVAILABLE',
+              'run_command 后台模式不可用：未装配后台任务注册表',
+            );
+            emitOutcome?.(naOutcome);
+            return naOutcome.text;
           }
           const rawTimeout = args['timeoutMs'];
           const taskId = this.backgroundTasks.start(
@@ -1651,10 +1680,13 @@ export class ToolExecutor {
         // 后台任务终止（§14.1 免裁决链：只可杀本 agent 起的自家任务，taskId 寻址非任意 pid）
         if (!this.backgroundTasks) {
           // 能力缺失 = 执行失败事实（非主动拦截）→ 显式 emit failed
-          const notAvailableText =
-            '[ERR:TOOL:NOT_AVAILABLE] kill_command 不可用：未装配后台任务注册表';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode(
+            'NOT_AVAILABLE',
+            'kill_command 不可用：未装配后台任务注册表',
+          );
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         const taskId = strArg('taskId');
         if (!taskId) {
@@ -1724,9 +1756,10 @@ export class ToolExecutor {
         // 渐进披露 L3：列出技能的资源清单
         if (!this.listResources) {
           // 能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
-          const notAvailableText = '[ERR:TOOL:NOT_AVAILABLE] list_resources 不可用';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode('NOT_AVAILABLE', 'list_resources 不可用');
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         const skillName = strArg('skill_name');
         return await this.listResources(skillName);
@@ -1735,9 +1768,10 @@ export class ToolExecutor {
         // 渐进披露 L1 补充：列出所有技能清单（>50 技能时使用）
         if (!this.listSkills) {
           // 能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
-          const notAvailableText = '[ERR:TOOL:NOT_AVAILABLE] list_skills 不可用';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode('NOT_AVAILABLE', 'list_skills 不可用');
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         return await this.listSkills();
       }
@@ -1745,10 +1779,13 @@ export class ToolExecutor {
         // 作品投影登记（registerWork 回调由 agent 装配注入；用户主动触发写索引卡片）
         if (!this.registerWork) {
           // 能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
-          const notAvailableText =
-            '[ERR:TOOL:NOT_AVAILABLE] register_work 不可用：未装配作品投影登记回调';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode(
+            'NOT_AVAILABLE',
+            'register_work 不可用：未装配作品投影登记回调',
+          );
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         const path = strArg('path');
         const description = strArg('description');
@@ -1765,10 +1802,13 @@ export class ToolExecutor {
         // 评估/评审型小组会议（runTeamMeeting 回调由 agent 装配注入；工具内嵌一次 LLM 调用）
         if (!this.runTeamMeeting) {
           // 能力未装配 = 执行失败事实（非主动拦截）→ 显式 emit failed
-          const notAvailableText =
-            '[ERR:TOOL:NOT_AVAILABLE] run_team_meeting 不可用：未装配小组会议回调';
-          emitOutcome?.(failedOutcome(notAvailableText));
-          return notAvailableText;
+          // 错误码与文本前缀经 failedOutcomeWithCode 同源产出（NOT_AVAILABLE 不可重试）
+          const naOutcome = failedOutcomeWithCode(
+            'NOT_AVAILABLE',
+            'run_team_meeting 不可用：未装配小组会议回调',
+          );
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
         }
         const group = strArg('group');
         const topic = strArg('topic');

@@ -1776,19 +1776,20 @@ export class AgentLoop {
       return 'aborted';
     }
 
-    // Reflection：本轮工具结果含 retryable 错误时，追加反思提示帮 LLM 聚焦修正而非放弃
-    // slice 按实际执行的 effectiveToolCalls.length 取窗口——若按 LLM 原始请求条数
-    // llmResult.toolCalls.length 切，toolStepLimit 截断时 slice 多看会把上一轮残留的
-    // tool 错误吸进判定窗口，误注入反思提示（坑）
-    // 重试轴 vs 计数轴分离（不动带伤）：
-    // 下方 isRetryableToolError 读文本前缀 [ERR:TOOL:…] 仅做「重试分类」——判定「哪个错误码可重试」，
-    // 需要错误类别信息，而 _processToolResults 的失败计数只读 outcome.status 三值（不编码类别）。
-    // 这是两条正交轴：计数承载「成/败/拦」，重试分类承载「败因是否可重试」；文本前缀在此只作
-    // 「错误类别渲染面」，不参与失败计数。非 SCRIPT-2 双轨残留（B5 后 isToolFailure 已物理删除，
-    // 计数轴零文本判据；此文本读取属独立的重试决策轴，须保留）。
-    const hasRetryableError = this.messages
-      .slice(-effectiveToolCalls.length) // 只看本轮工具结果
-      .some((m) => m.role === 'tool' && isRetryableToolError(m.content));
+    // Reflection：本轮工具结果含 retryable 错误时，追加反思提示帮 LLM 聚焦修正而非放弃。
+    // 判据改读 executeToolCalls **回流的 outcome**（本轮专属，天然不含上一轮残留）——
+    // 原实现按 effectiveToolCalls.length 反切 messages 取窗口，toolStepLimit 截断时切错
+    // 会把上一轮残留的 tool 错误吸进判定窗口，误注入反思提示（坑，随回流一并消除）。
+    //
+    // 重试轴 vs 计数轴分离（两条**正交**轴，判据面都是结构化字段）：
+    //   · 计数轴 —— `_processToolResults` 只读 `outcome.status` 三值（成/败/拦，不编码类别），零文本判据；
+    //   · 重试轴 —— 判「败因是否可重试」，读 `outcome.errorCode`；`isRetryableToolError` 传入
+    //     outcome 时**直接读该字段**，无码才回退解析文本前缀（兼容不入错误码体系的 `ABORTED`
+    //     与造裸文本 outcome 的测试桩）。
+    // `errorCode` 与文本前缀在 `failedOutcomeWithCode` **同源产出一次**，前缀是其渲染面
+    // ⇒ 读字段与读文本同解、不存在漂移。禁再散落手抄前缀：改一处漏一处会让 Reflection
+    // 静默失效（该重试的不再重试，无报错）。
+    const hasRetryableError = execResult.outcomes.some((o) => isRetryableToolError(o));
     if (hasRetryableError) {
       // 反思次数用显式计数器限制，避免 messages 裁剪导致计数失真
       if (this.reflectionCountThisTurn < this.maxReflectionRetries) {
@@ -1999,7 +2000,7 @@ export class AgentLoop {
     fullContent: string,
     signal: AbortSignal | undefined,
     stepIndex: number,
-  ): AsyncGenerator<AgentChunk, { aborted: boolean }, unknown> {
+  ): AsyncGenerator<AgentChunk, { aborted: boolean; outcomes: ToolOutcome[] }, unknown> {
     this.appendAssistantToolCall(fullContent, toolCalls);
 
     // 工具并行执行（保持顺序的并发）：Promise.all 并发所有工具（总耗时≈最慢工具），
@@ -2021,7 +2022,8 @@ export class AgentLoop {
           tc.id,
         );
       }
-      return { aborted: true };
+      // 一条工具都没跑 ⇒ 无 outcome（重试分类自然为空集，TOOL_ABORTED 本就不可重试）
+      return { aborted: true, outcomes: [] };
     }
 
     // 实际执行工具步：标记"本 turn 发生过工具调用"，作为自审查触发门槛（多轮 turn 才审查）
@@ -2324,10 +2326,12 @@ export class AgentLoop {
     // 循环结束后再查 abort：最后一个工具执行期间被 abort 时返回 aborted:true，
     // 否则 processUserInput 会进入下一轮 LLM 调用（浪费资源）
     if (signal?.aborted) {
-      return { aborted: true };
+      // 工具已跑完、本轮被中止：outcome 照常回流（重试分类仍基于真实结果，不因中止而失忆）
+      return { aborted: true, outcomes: results };
     }
     this.inAutonomousStep = false;
-    return { aborted: false };
+    // 回流本轮 outcome：重试分类据此读结构化 errorCode，不再回头解析 message 文本
+    return { aborted: false, outcomes: results };
   }
 
   /**

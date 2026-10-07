@@ -102,18 +102,31 @@ export function filterCallableToolCalls<T extends { function: { name: string } }
 }
 
 /**
- * 判断工具错误结果是否可重试。
+ * 判断工具错误结果是否可重试（Reflection 重试分类的唯一判据）。
+ *
+ * **判据面优先**：入参为 `ToolOutcome` 且带 `errorCode` 时**直接读字段**——错误码是
+ * 本文件自述文档要求的判据面真源，重试分类不得依赖渲染面（文本）。
+ * `failedOutcomeWithCode` 已让文本前缀由该字段派生，故读文本与读字段同解，
+ * 但**读字段才不依赖"文本恰好还是那个格式"这一隐性契约**。
+ *
+ * **回退（兼容路径，非并列真源）**：入参为纯文本、或 outcome 未带码（`ABORTED` 故意
+ * 不入错误码体系；测试桩 `mockExecutorReturning` 造的是裸文本 `failedOutcome`）
+ * 时，解析渲染面前缀——前缀由 `failedOutcomeWithCode` 从 `errorCode` 派生，与字段同源，
+ * 不会给出分歧答案。
  *
  * **不锚定行首**：结果被 `<tool_result>` 标签包裹后 `[ERR:TOOL:` 前缀位于标签之后，
  * 仍须正确识别（原 `AgentLoop.isRetryableToolError` 逐字一致）。
  */
-export function isRetryableToolError(result: string): boolean {
-  const match = result.match(/\[ERR:TOOL:(\w+)\]/);
+export function isRetryableToolError(input: ToolOutcome | string): boolean {
+  if (typeof input !== 'string' && input.errorCode) {
+    return isRetryableErrorCode(input.errorCode);
+  }
+  const text = typeof input === 'string' ? input : input.text;
+  const match = text.match(/\[ERR:TOOL:(\w+)\]/);
   if (!match) return false;
   const codeStr = match[1] ?? '';
   if (!codeStr) return false;
-  const code = codeStr as ToolErrorCodeValue;
-  return isRetryableErrorCode(code);
+  return isRetryableErrorCode(codeStr as ToolErrorCodeValue);
 }
 
 /**
@@ -191,11 +204,46 @@ export interface ToolOutcome {
   readonly blockedReason?: BlockedReason;
   /** blocked 背后是否藏真失败：仅 blocked 时出现；缺省 = false（主动挡下不藏失败） */
   readonly hasRealFailure?: boolean;
+  /**
+   * 失败错误码：仅 `status='failed'` 出现。
+   *
+   * **本字段是「重试分类」的判据面真源**：`text` 中的 `[ERR:TOOL:XXX]` 前缀由它派生
+   * （见 `failedOutcomeWithCode`），二者在**单一构造点同源产出一次**——杜绝 SCRIPT-2 前
+   * 「同一错误码在 N 处各自手写文本前缀、改一处漏一处」的漂移老伤（彼时重试分类
+   * 只能回头解析文本，正是本类型的自述文档痛批的「判据与渲染耦合」反模式）。
+   * `isRetryableToolError` **优先读本字段**，无码时回退解析文本前缀（兼容路径）。
+   *
+   * 注意：`blocked` 用 `blockedReason` 回答「为什么没成功」，与本字段正交，不在此列；
+   * `ABORTED` 故意不入错误码体系（不触发 Reflection，见 toolRunner 注释）。
+   */
+  readonly errorCode?: ToolErrorCodeValue;
 }
 
-/** 构造失败 outcome（成功不配此函数——成功是默认，直接构造对象更直白） */
+/**
+ * 构造失败 outcome（成功不配此函数——成功是默认，直接构造对象更直白）。
+ *
+ * **仅用于无错误码的失败**（典型 = 故意不入错误码体系的 `ABORTED`，见 toolRunner）；
+ * 凡有错误码的失败**一律走 `failedOutcomeWithCode`**，否则错误码又变成只在文本里存在一次。
+ */
 export function failedOutcome(text: string): ToolOutcome {
   return { status: 'failed', text };
+}
+
+/**
+ * 构造**带错误码**的失败 outcome（有码失败的构造出口，新增失败优先用此）。
+ *
+ * `text` = `` `[ERR:TOOL:${code}] ${detail}` `` 由本函数**统一派生**——错误码与其文本前缀
+ * 在此**同源产出一次**。必要性（不是"多包一层"）：此前 15 处各自手抄 `[ERR:TOOL:XXX]`
+ * 前缀，改一处漏一处即漂移；漂移后 `isRetryableToolError` 取不到码 ⇒ 该重试的错误
+ * **静默不再重试**（Reflection 失效），症状隐蔽且无报错。收口后前缀由 `errorCode` 派生，
+ * 二者不可能不一致。
+ *
+ * @param code   工具错误码（穷举于 `ToolErrorCode`；是否可重试见 `isRetryableErrorCode`）
+ * @param detail 结果文本主体（纯渲染面，原样呈现给 LLM 自愈；**不含** `[ERR:TOOL:..]` 前缀）
+ * @returns `status='failed'` 且携带 `errorCode` 的 outcome
+ */
+export function failedOutcomeWithCode(code: ToolErrorCodeValue, detail: string): ToolOutcome {
+  return { status: 'failed', text: `[ERR:TOOL:${code}] ${detail}`, errorCode: code };
 }
 
 /** 构造 ok outcome */

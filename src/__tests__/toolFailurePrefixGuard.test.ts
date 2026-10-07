@@ -82,7 +82,11 @@ import { formatExecutionResult } from '@/skill/skillScriptRunner.js';
 const SRC_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * 扫描面：工具结果产出者（7 个，逐个经实测确认——扩充前先跑探针确认它真的产出首标签）。
+ * 扫描面：工具结果产出者（8 个，逐个经实测确认——扩充前先跑探针确认它真的产出首标签）。
+ *
+ * ⚠️ `agent/managers/toolCallHelpers.ts` 于 4.0.0 入列：错误码前缀的产出已从 toolRunner /
+ * toolExecutor 的散落字面量**收口**到 `failedOutcomeWithCode()`（`[ERR:TOOL:${code}]` 由
+ * `errorCode` 派生），该模板现由此文件产出——不入列则守卫对这一族标签失明（反向对账假绿）。
  */
 const PRODUCER_FILES = [
   'agent/toolExecutor.ts',
@@ -92,6 +96,7 @@ const PRODUCER_FILES = [
   'agent/backgroundTasks.ts',
   'agent/builtinTools.ts',
   'agent/toolLedger.ts',
+  'agent/managers/toolCallHelpers.ts',
 ] as const;
 
 /**

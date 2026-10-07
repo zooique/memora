@@ -18,6 +18,9 @@ import {
   filterCallableToolCalls,
   isRetryableToolError,
   auditToolCallPairing,
+  failedOutcome,
+  failedOutcomeWithCode,
+  type ToolOutcome,
 } from '@/agent/managers/toolCallHelpers.js';
 
 // ─── parseAskCalls ────────────────────────────────────
@@ -178,6 +181,58 @@ describe('isRetryableToolError', () => {
 
   it('大小写敏感：小写错误码不识别（错误码为约定大写枚举）', () => {
     expect(isRetryableToolError('[ERR:TOOL:file_not_found] x')).toBe(false);
+  });
+});
+
+// ─── failedOutcomeWithCode（错误码 ⇄ 文本前缀同源守卫） ───
+// 为何单列：SCRIPT-2 的老伤是「同一错误码在 N 处各自手抄 [ERR:TOOL:XXX] 前缀」，
+// 改一处漏一处即漂移，且漂移后重试分类静默失效（该重试的不再重试，无报错）。
+// 收口到单一构造点后，前缀由 errorCode 派生——本组用例锁死这条不变式。
+
+describe('failedOutcomeWithCode', () => {
+  it('文本前缀由 errorCode 派生，结构化字段一并落上', () => {
+    const o = failedOutcomeWithCode('FILE_NOT_FOUND', '文件不存在');
+    expect(o.status).toBe('failed');
+    expect(o.errorCode).toBe('FILE_NOT_FOUND');
+    expect(o.text).toBe('[ERR:TOOL:FILE_NOT_FOUND] 文件不存在');
+  });
+
+  it('★ 同源不变式：text 前缀恒等于 errorCode（改字段而漏文本、或反之，本用例即红）', () => {
+    const codes = ['FILE_NOT_FOUND', 'PERMISSION_DENIED', 'NOT_AVAILABLE', 'UNKNOWN'] as const;
+    for (const code of codes) {
+      const o = failedOutcomeWithCode(code, 'detail');
+      expect(o.text.startsWith(`[ERR:TOOL:${code}] `)).toBe(true);
+      expect(o.errorCode).toBe(code);
+    }
+  });
+});
+
+// ─── isRetryableToolError · 结构化判据面（ToolOutcome 入参） ───
+
+describe('isRetryableToolError · 判据面读 errorCode（非解析文本）', () => {
+  it('带 errorCode 的 outcome：可重试码 → true', () => {
+    expect(isRetryableToolError(failedOutcomeWithCode('FILE_NOT_FOUND', 'boom'))).toBe(true);
+    expect(isRetryableToolError(failedOutcomeWithCode('ARGUMENT_ERROR', 'boom'))).toBe(true);
+  });
+
+  it('带 errorCode 的 outcome：不可重试码 → false', () => {
+    expect(isRetryableToolError(failedOutcomeWithCode('PERMISSION_DENIED', 'boom'))).toBe(false);
+    expect(isRetryableToolError(failedOutcomeWithCode('NOT_AVAILABLE', 'boom'))).toBe(false);
+  });
+
+  it('★ 变异守卫：判据读字段——errorCode 存在但 text 无前缀时仍判 true', () => {
+    // 若实现退回「只解析文本」，本用例会红（text 里根本没有 [ERR:TOOL: 前缀）
+    const outcome: ToolOutcome = {
+      status: 'failed',
+      text: '文件不存在（刻意不带前缀）',
+      errorCode: 'FILE_NOT_FOUND',
+    };
+    expect(isRetryableToolError(outcome)).toBe(true);
+  });
+
+  it('★ 变异守卫：无 errorCode 时回退文本前缀（兼容 ABORTED 与测试桩裸文本 outcome）', () => {
+    expect(isRetryableToolError(failedOutcome('[ERR:TOOL:DIR_NOT_FOUND] boom'))).toBe(true);
+    expect(isRetryableToolError(failedOutcome('普通失败文本'))).toBe(false);
   });
 });
 

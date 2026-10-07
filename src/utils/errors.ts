@@ -38,6 +38,15 @@ export const ToolErrorCode = {
   UNKNOWN_TOOL: 'UNKNOWN_TOOL',
   /** 自定义工具执行失败（可重试） */
   CUSTOM_TOOL_FAILED: 'CUSTOM_TOOL_FAILED',
+  /**
+   * 能力未装配 / 未注入回调（**不可重试**）。
+   *
+   * 语义 = 「这个工具当前根本没有实现方」，而非「执行了一次没成功」——
+   * 重试无意义（缺的是宿主装配，不是运气），故刻意不进 `RETRYABLE_ERROR_CODES`；
+   * 让 LLM 换手段或报告用户，而不是空转重试烧迭代。
+   * 覆盖 toolExecutor 全线 `[ERR:TOOL:NOT_AVAILABLE]` 出口（provider/回调未注入）。
+   */
+  NOT_AVAILABLE: 'NOT_AVAILABLE',
   /** 通用错误（不可重试） */
   UNKNOWN: 'UNKNOWN',
 } as const;

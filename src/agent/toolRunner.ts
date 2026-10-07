@@ -20,6 +20,7 @@ import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
 import {
   failedOutcome,
+  failedOutcomeWithCode,
   okOutcome,
   blockedOutcome,
   type ToolOutcome,
@@ -134,20 +135,26 @@ export class ToolRunner {
         // 若建议只在 `error.format()` 给宿主 UI、LLM 只收 title+detail——首击失败后
         // LLM 收不到「使用 list_dir 查看目录结构」这类确切指令，只能凭证据自己悟（多绕一次）。
         // 证据（siblingDirHint 清单）在 detail 内，本拼接补上命令式建议，双管齐下。
-        const result =
-          `[ERR:TOOL:${code}] 错误：${err.title}${err.detail ? ` — ${err.detail}` : ''}` +
-          (err.suggestions.length > 0 ? ` 建议：${err.suggestions.join('；')}` : '');
+        // 错误码与文本前缀经 failedOutcomeWithCode **同源产出一次**：
+        // 此前 `code` 算了却只拼进文本、结构化面被丢弃 ⇒ 重试分类（isRetryableToolError）
+        // 只能回头解析前缀，正是 ToolOutcome 自述文档痛批的「判据与渲染耦合」反模式。
+        const failed = failedOutcomeWithCode(
+          code,
+          `错误：${err.title}${err.detail ? ` — ${err.detail}` : ''}` +
+            (err.suggestions.length > 0 ? ` 建议：${err.suggestions.join('；')}` : ''),
+        );
         logger.warn(
           { tool: tc.function.name, errorCode: code, title: err.title },
           '工具执行失败，错误已回传给 LLM',
         );
-        this.deps.onToolExecuted?.(tc.function.name, tc.function.arguments, result, false);
-        return failedOutcome(result);
+        this.deps.onToolExecuted?.(tc.function.name, tc.function.arguments, failed.text, false);
+        return failed;
       } else {
-        const result = `[ERR:TOOL:UNKNOWN] 错误：工具执行异常 — ${e.message}`;
+        // 非 MemoraError 归入 UNKNOWN；同样经带码构造器产出，前缀不手抄
+        const failed = failedOutcomeWithCode('UNKNOWN', `错误：工具执行异常 — ${e.message}`);
         logger.error({ tool: tc.function.name, err }, '工具执行异常');
-        this.deps.onToolExecuted?.(tc.function.name, tc.function.arguments, result, false);
-        return failedOutcome(result);
+        this.deps.onToolExecuted?.(tc.function.name, tc.function.arguments, failed.text, false);
+        return failed;
       }
     } finally {
       span.end();

@@ -71,10 +71,10 @@ describe('MemoraError · 错误信息友好化', () => {
 // ─── ToolErrorCode 错误码值定义 ──────────────────────
 
 describe('ToolErrorCode · 错误码值定义', () => {
-  it('应定义 9 种错误码', () => {
-    // 验证 ToolErrorCode 对象包含 9 个键
+  it('应定义 10 种错误码', () => {
+    // 验证 ToolErrorCode 对象包含 10 个键（新增 NOT_AVAILABLE：能力未装配/未注入回调）
     const codes = Object.keys(ToolErrorCode);
-    expect(codes).toHaveLength(9);
+    expect(codes).toHaveLength(10);
   });
 
   it('每种错误码的键与值相同（as const 语义）', () => {
@@ -130,14 +130,19 @@ describe('isRetryableErrorCode · AgentLoop Reflection 核心', () => {
     expect(isRetryableErrorCode(ToolErrorCode.UNKNOWN)).toBe(false);
   });
 
-  it('4 个 retryable + 5 个 non-retryable 边界完整覆盖', () => {
-    // 统计验证：9 个错误码中恰好 4 个可重试 + 5 个不可重试
-    // 注：TOOL_TIMEOUT 删除后，retryable 从 5 → 4
+  it('4 个 retryable + 6 个 non-retryable 边界完整覆盖', () => {
+    // 统计验证：10 个错误码中恰好 4 个可重试 + 6 个不可重试
+    // 注：TOOL_TIMEOUT 删除后 retryable 从 5 → 4；新增 NOT_AVAILABLE（不可重试）后 non-retryable 5 → 6
     const allCodes = Object.values(ToolErrorCode);
     const retryable = allCodes.filter((c) => isRetryableErrorCode(c));
     const nonRetryable = allCodes.filter((c) => !isRetryableErrorCode(c));
     expect(retryable).toHaveLength(4);
-    expect(nonRetryable).toHaveLength(5);
+    expect(nonRetryable).toHaveLength(6);
+  });
+
+  it('NOT_AVAILABLE 不可重试（能力未装配，重试无意义）', () => {
+    // 语义：缺的是宿主注入，不是运气——重试只会空转烧迭代，应让 LLM 换手段或报告用户
+    expect(isRetryableErrorCode(ToolErrorCode.NOT_AVAILABLE)).toBe(false);
   });
 });
 
