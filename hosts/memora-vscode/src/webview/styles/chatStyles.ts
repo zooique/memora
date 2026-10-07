@@ -119,7 +119,7 @@ export const chatStyles = `
     font-weight: 600;
   }
   .status-dock__chip.is-unread::before {
-    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    content: ''; width: var(--dot-md); height: var(--dot-md); border-radius: 50%;
     background: var(--feedback-warn-accent, #d7ba7d);
   }
   .status-dock__chip:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
@@ -144,7 +144,7 @@ export const chatStyles = `
   /* 隐藏默认未读前导点，统一用 ::after 圆点承载（小尺寸下不挤压） */
   body.dock-collapsed .status-dock__chip.is-collapsed::before { display: none; }
   body.dock-collapsed .status-dock__chip.is-collapsed::after {
-    content: ''; width: 8px; height: 8px; border-radius: 50%;
+    content: ''; width: var(--dot-lg); height: var(--dot-lg); border-radius: 50%;
     background: currentColor; opacity: .9;
   }
   /* 未读：气泡用警示色实心点（去除描边/加粗，避免 24px 内挤压） */
@@ -184,10 +184,10 @@ export const chatStyles = `
   }
   body:not(.dock-collapsed) .status-dock__chip {
     transform-origin: left center;
-    animation: dockChipOpen 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation: dockChipOpen var(--dur-open) cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
   body:not(.dock-collapsed) .status-dock__panel {
-    animation: dockPanelOpen 220ms cubic-bezier(0.2, 0.8, 0.2, 1) 40ms both;
+    animation: dockPanelOpen var(--dur-open-soft) cubic-bezier(0.2, 0.8, 0.2, 1) var(--dur-open-delay) both;
   }
   @media (prefers-reduced-motion: reduce) {
     body:not(.dock-collapsed) .status-dock__chip,
@@ -273,7 +273,7 @@ export const chatStyles = `
     display: inline-flex; align-items: center; justify-content: center;
     width: 20px; height: 20px; padding: 0; border: none; border-radius: var(--radius-sm, 2px);
     background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
-    opacity: 0; transition: opacity .15s ease; /* 悬浮条目才显示（对齐 Trae 悬浮删除） */
+    opacity: 0; transition: opacity var(--dur-base) ease; /* 悬浮条目才显示（对齐 Trae 悬浮删除） */
   }
   .session-history .treedd__item:hover .session-history__item-del { opacity: 1; }
   .session-history__item-del:hover { color: var(--status-fail, #b3261e); }
@@ -319,7 +319,7 @@ export const chatStyles = `
     display: inline-flex; align-items: center; justify-content: center;
     width: 20px; height: 20px; padding: 0; border: none; border-radius: var(--radius-sm, 2px);
     background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
-    opacity: 0; transition: opacity .15s ease;
+    opacity: 0; transition: opacity var(--dur-base) ease;
   }
   .session-history .treedd__item:hover .session-history__item-keep { opacity: 1; }
   .session-history__item-keep:hover { color: var(--accent, #4c8dff); }
@@ -386,7 +386,7 @@ export const chatStyles = `
     display: flex; align-items: center; justify-content: flex-end;
     gap: var(--sp-2, 6px); margin-top: var(--sp-1, 4px);
     opacity: 0; transform: translateY(-2px);
-    transition: opacity 0.15s ease, transform 0.15s ease;
+    transition: opacity var(--dur-base) ease, transform var(--dur-base) ease;
   }
   .msg-wrapper:hover .msg-user-actions,
   .msg-user-actions:focus-within {
@@ -412,7 +412,7 @@ export const chatStyles = `
     color: var(--text-secondary, #9aa0a6);
     background: transparent;
     border: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     cursor: pointer;
   }
   .msg-user-more:hover {
@@ -451,7 +451,7 @@ export const chatStyles = `
     background: var(--surface-input, rgba(0,0,0,.2));
     color: var(--text-primary, #cccccc);
     border: 1px solid var(--border, rgba(128,128,128,.3));
-    border-radius: var(--radius-sm, 3px);
+    border-radius: var(--radius-sm, 2px);
     padding: 4px var(--sp-2, 6px);
   }
   .ask-inline__input::placeholder { color: var(--text-tertiary, #6e7681); }
@@ -471,7 +471,7 @@ export const chatStyles = `
     color: var(--accent-foreground, #ffffff);
     background: var(--accent, #0e639c);
     border: none;
-    border-radius: var(--radius-sm, 3px);
+    border-radius: var(--radius-sm, 2px);
     padding: 4px var(--sp-4, 10px);
     cursor: pointer;
   }
@@ -569,7 +569,7 @@ export const chatStyles = `
     font-weight: 600;
     color: var(--accent, #0e639c);
     background: var(--surface-normal, rgba(128,128,128,.16));
-    border-radius: var(--radius-sm, 3px);
+    border-radius: var(--radius-sm, 2px);
     padding: 1px var(--sp-2, 5px);
   }
   .round-block__input-row {
@@ -607,7 +607,7 @@ export const chatStyles = `
     width: 22px; height: 22px; padding: 0;
     border: none; border-radius: var(--radius, 6px);
     background: transparent; color: var(--text-secondary, #9aa0a6);
-    cursor: pointer; transition: all 0.15s ease;
+    cursor: pointer; transition: all var(--dur-base) ease;
   }
   .msg-icon-btn:hover {
     background: var(--surface-hover, rgba(128,128,128,.2));
@@ -874,7 +874,7 @@ export const chatStyles = `
     padding: var(--sp-2, 4px) var(--sp-3, 8px);
     border-left: 3px solid var(--warn, #cca700);
     border-radius: var(--radius-sm, 2px);
-    font-size: 12px;
+    font-size: var(--font-md);
     line-height: 1.4;
     color: var(--text-muted, #9a9a9a);
   }
@@ -920,8 +920,8 @@ export const chatStyles = `
     padding: var(--sp-2, 4px) var(--sp-3, 8px) var(--sp-2, 4px);
     border-left: 3px solid var(--accent, #0e639c);
     background: transparent;
-    border-radius: var(--radius-sm, 3px);
-    font-size: 12px;
+    border-radius: var(--radius-sm, 2px);
+    font-size: var(--font-md);
     line-height: 1.4;
     color: var(--text-muted, #9a9a9a);
     /* 左侧色条 + 透明底：轻盈贴近打断语义 */
@@ -941,7 +941,7 @@ export const chatStyles = `
     min-width: 16px;
     height: 16px;
     padding: 0 4px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--accent, #0e639c);
     color: var(--surface-inverse, #fff);
     font-size: 10px;
@@ -973,8 +973,8 @@ export const chatStyles = `
     align-items: center;
     gap: var(--sp-1, 2px);
     padding: 2px 2px;
-    border-radius: var(--radius-sm, 3px);
-    transition: background 0.12s;
+    border-radius: var(--radius-sm, 2px);
+    transition: background var(--dur-fast);
   }
   .pending-queue-bar__item:hover {
     background: var(--surface-hover, rgba(128,128,128,.10));
@@ -1006,14 +1006,14 @@ export const chatStyles = `
     height: 16px;
     padding: 0;
     border: none;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-muted, #888);
     cursor: pointer;
     font-size: 10px;
     line-height: 1;
     opacity: 0;
-    transition: opacity 0.12s, background 0.12s, color 0.12s;
+    transition: opacity var(--dur-fast), background var(--dur-fast), color var(--dur-fast);
   }
   .pending-queue-bar__item:hover .pending-queue-bar__item-del {
     opacity: 1;
@@ -1032,13 +1032,13 @@ export const chatStyles = `
     height: 18px;
     padding: 0;
     border: none;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-muted, #888);
     cursor: pointer;
     font-size: 11px;
     line-height: 1;
-    transition: background 0.12s, color 0.12s;
+    transition: background var(--dur-fast), color var(--dur-fast);
   }
   .pending-queue-bar__clear:hover {
     background: var(--feedback-error-bg, rgba(180, 40, 30, .14));
@@ -1059,8 +1059,8 @@ export const chatStyles = `
        两条的区分靠标题文案（「后台任务」/「待发送」）与行内容，不靠颜色编码。 */
     border-left: 3px solid var(--accent, #0e639c);
     background: transparent;
-    border-radius: var(--radius-sm, 3px);
-    font-size: 12px;
+    border-radius: var(--radius-sm, 2px);
+    font-size: var(--font-md);
     line-height: 1.4;
     color: var(--text-muted, #9a9a9a);
   }
@@ -1077,7 +1077,7 @@ export const chatStyles = `
     min-width: 16px;
     height: 16px;
     padding: 0 4px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--surface-active, rgba(128,128,128,.24));
     color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-xs, 11px);
@@ -1088,8 +1088,8 @@ export const chatStyles = `
     align-items: center;
     gap: var(--sp-2, 4px);
     padding: 2px;
-    border-radius: var(--radius-sm, 3px);
-    transition: background 0.12s;
+    border-radius: var(--radius-sm, 2px);
+    transition: background var(--dur-fast);
   }
   .background-tasks-bar__item:hover { background: var(--surface-hover, rgba(128,128,128,.10)); }
   /* 命令原文占满剩余宽度（过长由 JS 截断 + title 悬停看全文，此处只防溢出撑破布局） */
@@ -1114,12 +1114,12 @@ export const chatStyles = `
     padding: 0 var(--sp-2, 6px);
     height: 18px;
     border: 1px solid var(--border-subtle, rgba(128,128,128,.35));
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-xs, 11px);
     cursor: pointer;
-    transition: background 0.12s, color 0.12s;
+    transition: background var(--dur-fast), color var(--dur-fast);
   }
   .background-tasks-bar__kill:hover {
     background: var(--feedback-error-bg, rgba(180, 40, 30, .14));
@@ -1136,13 +1136,13 @@ export const chatStyles = `
     height: 18px;
     padding: 0;
     border: 1px solid transparent;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-muted, #888);
     font-size: 13px;
     line-height: 1;
     cursor: pointer;
-    transition: background 0.12s, color 0.12s;
+    transition: background var(--dur-fast), color var(--dur-fast);
   }
   .background-tasks-bar__dismiss:hover {
     background: var(--surface-hover, rgba(128,128,128,.18));
@@ -1233,7 +1233,7 @@ export const chatStyles = `
     background: var(--surface-input, #3c3c3c);
     box-shadow: var(--shadow-card, 0 2px 8px rgba(0, 0, 0, 0.15));
     position: relative; /* 下拉菜单定位以此为基准 */
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    transition: border-color var(--dur-base) ease, box-shadow var(--dur-base) ease;
     overflow: visible; /* 禁止裁剪向上弹出的菜单 */
   }
   #inputWrap[hidden] { display: none; }
@@ -1359,7 +1359,7 @@ export const chatStyles = `
     color: var(--accent, #0e639c);
     border-radius: var(--radius-sm, 4px);
     background: transparent;
-    transition: background var(--trae-duration-fast, 120ms) ease;
+    transition: background var(--dur-fast, 120ms) ease;
   }
   .team-meeting-icon:hover {
     background: var(--accent-hover, rgba(14, 99, 156, 0.15));
@@ -1395,7 +1395,7 @@ export const chatStyles = `
     border-radius: var(--radius-sm, 4px);
     color: var(--text-secondary, #9aa0a6);
     cursor: pointer;
-    transition: color 0.15s, background 0.15s, border-color 0.15s;
+    transition: color var(--dur-base), background var(--dur-base), border-color var(--dur-base);
   }
   .polish-btn-icon:hover {
     color: var(--accent, #0e639c);
@@ -1542,7 +1542,7 @@ export const chatStyles = `
     background: var(--accent, #0e639c);
     color: var(--accent-foreground, #ffffff);
     cursor: pointer;
-    transition: background 0.15s ease, filter 0.15s ease, transform 0.1s ease;
+    transition: background var(--dur-base) ease, filter var(--dur-base) ease, transform 0.1s ease;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   }
   .send-btn-primary:hover:not(.loading) {
@@ -1591,7 +1591,7 @@ export const chatStyles = `
     background: var(--surface-hover, rgba(128,128,128,.2));
     color: var(--text-secondary, #9aa0a6);
     cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+    transition: background var(--dur-base) ease, color var(--dur-base) ease, transform 0.1s ease;
   }
   .pause-btn:hover {
     background: var(--surface-code, rgba(0, 0, 0, 0.08));
@@ -1679,7 +1679,7 @@ export const chatStyles = `
     display: block; height: 100%;
     background: var(--accent, #0e639c);
     border-radius: 2px;
-    transition: width .3s ease-out;
+    transition: width var(--dur-slow) ease-out;
   }
   .plan-bar__current {
     flex-shrink: 0; max-width: 40%;
@@ -1748,7 +1748,7 @@ export const chatStyles = `
     margin-right: var(--sp-2, 4px);
     padding: 1px 4px;
     background: var(--surface-inset, rgba(128,128,128,.12));
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   /* ============ Components：round-block 任务过程折叠区（SSOT 单一容器） ============ */
@@ -1789,7 +1789,7 @@ export const chatStyles = `
   .round-block__plan-tag__icon { display: inline-flex; align-items: center; flex-shrink: 0; }
   .round-block__plan-tag__icon svg { display: block; }
   .round-block__dot {
-    width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+    width: var(--dot-sm); height: var(--dot-sm); border-radius: 50%; flex-shrink: 0;
     background: var(--text-secondary, #9aa0a6);
   }
   /* 流式中：圆点品牌色呼吸（复用 selfReviewPulse，遵守 prefers-reduced-motion） */
@@ -1801,13 +1801,13 @@ export const chatStyles = `
     display: flex; align-items: center; gap: var(--sp-2, 6px);
     padding: var(--sp-2, 6px) var(--sp-3, 10px);
     margin: var(--sp-2, 4px) 0;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
     background: var(--surface-thought, rgba(128,128,128,.08));
   }
   .pending-wait::before {
-    content: ''; width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+    content: ''; width: var(--dot-sm); height: var(--dot-sm); border-radius: 50%; flex-shrink: 0;
     background: var(--accent, #0e639c);
     animation: selfReviewPulse 1.2s ease-in-out infinite;
   }
@@ -1833,7 +1833,7 @@ export const chatStyles = `
   }
   .process-flow__phase.is-tool { color: var(--text-primary, #e6e6e6); font-weight: 600; }
   .process-flow__phase::before {
-    content: ''; width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+    content: ''; width: var(--dot-sm); height: var(--dot-sm); border-radius: 50%; flex-shrink: 0;
     background: var(--accent, #0e639c);
     animation: selfReviewPulse 1.2s ease-in-out infinite;
   }
@@ -1955,7 +1955,7 @@ export const chatStyles = `
     border-right: 1.5px solid currentColor;
     border-bottom: 1.5px solid currentColor;
     transform: rotate(-45deg); /* 收起态：右向「＞」 */
-    transition: transform 0.15s ease;
+    transition: transform var(--dur-base) ease;
   }
   /* flex summary（外层折叠区标题 / 工具批标题）：gap 已提供衔接间距，margin 归零防双倍；
      align-self/align-items 替代 vertical-align（flex item 上后者无效） */
@@ -2001,7 +2001,7 @@ export const chatStyles = `
     padding: var(--sp-1, 2px) var(--sp-3, 8px);
   }
   .round-block__phase::before {
-    content: ''; width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+    content: ''; width: var(--dot-sm); height: var(--dot-sm); border-radius: 50%; flex-shrink: 0;
     background: var(--accent, #0e639c);
     animation: selfReviewPulse 1.2s ease-in-out infinite;
   }

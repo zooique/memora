@@ -66,7 +66,7 @@ export const rolesStyles = `
   #roles-root .badge {
     font-size: var(--font-xs, 10px);
     padding: 1px 6px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     background: var(--accent, #007acc);
     color: var(--accent-foreground, #ffffff);
     font-weight: 500;
@@ -119,7 +119,7 @@ export const rolesStyles = `
   #roles-root .strategy-chip {
     font-size: var(--font-xs, 10px);
     padding: 1px 6px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     background: var(--surface-hover, rgba(128,128,128,.1));
     color: var(--text-secondary, #9aa0a6);
     line-height: 1.4;
@@ -193,7 +193,7 @@ export const rolesStyles = `
     content: '▸';
     display: inline-block;
     margin-right: var(--sp-1, 4px);
-    transition: transform 0.15s ease;
+    transition: transform var(--dur-base) ease;
   }
   #roles-root .card-details[open] summary::before {
     transform: rotate(90deg);
@@ -232,7 +232,7 @@ export const rolesStyles = `
     height: 100%;
     background: var(--accent, #007acc);
     border-radius: 2px;
-    transition: width 0.3s ease;
+    transition: width 0var(--dur-slow) ease;
   }
 
   /* ============ Components：卡片级组队 ============ */
@@ -254,7 +254,7 @@ export const rolesStyles = `
     position: fixed; inset: 0; z-index: 1000;
     background: var(--overlay-mask);
     display: flex; align-items: center; justify-content: center;
-    animation: roles-fade-in 0.15s ease;
+    animation: roles-fade-in var(--dur-base) ease;
   }
   #roles-root .team-modal {
     background: var(--surface-sidebar);

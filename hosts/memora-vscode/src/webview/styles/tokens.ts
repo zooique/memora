@@ -28,6 +28,8 @@ export const tokens = `
     --radius-sm: 2px; /* 紧凑圆角下界（用户消息气泡小角） */
     --radius: 6px; --radius-lg: 8px; --radius-xl: 14px;
     --radius-pill: 999px; /* 胶囊/徽章（无限大圆角） */
+    /* L1 基础令牌：状态圆点尺寸（呼吸点 / 未读点 / 角标指示） */
+    --dot-sm: 5px; --dot-md: 6px; --dot-lg: 8px;
 
     /* === L1 基础令牌：字号阶梯 === */
     --font-xs: 10px; --font-sm: 11px; --font-md: 12px; --font-base: 13px; --font-lg: 14px;
@@ -104,7 +106,7 @@ export const tokens = `
     --btn-danger-bg: var(--vscode-statusBarItem-errorBackground, #b3261e);
     --toast-ok-bg: var(--vscode-statusBarItem-prominentBackground, #2e7d32);
     --surface-sidebar: var(--vscode-sideBar-background, #252526);
-    --surface-code: var(--vscode-widget-shadow, rgba(0, 0, 0, 0.08));
+    --surface-code: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15));
     --surface-user-bubble: var(--vscode-editor-inactiveSelectionBackground, rgba(128, 128, 128, 0.2));
 
     /* === L2 语义令牌：AI 原生 UI（身份条 / 思考块） ===
@@ -172,8 +174,13 @@ export const tokens = `
     --dd-menu-min-w: 160px;      /* 胶囊菜单最小宽 */
     --dd-menu-max-w: 240px;      /* 胶囊菜单最大宽 */
 
-    /* === L1 基础令牌：动画时长（chatStyles 引用） === */
-    --trae-duration-fast: 120ms; /* 快速过渡（hover 等），全库唯一动画时长源 */
+    /* === L1 基础令牌：动画/过渡时长刻度（全库唯一动画时长源，chatStyles 引用） === */
+    --dur-fast: 120ms;        /* 快速过渡（hover / 瞬时反馈） */
+    --dur-base: 150ms;       /* 常规过渡（颜色 / 边框 / 位移） */
+    --dur-slow: 300ms;       /* 慢过渡（宽度收展等） */
+    --dur-open: 200ms;       /* 抽屉/面板展开：从左揭示（clip-path） */
+    --dur-open-soft: 220ms;  /* 抽屉滑入（translateX），与 --dur-open 错层 */
+    --dur-open-delay: 40ms;  /* 展开错层延迟（先 pill 后抽屉） */
 
     /* === L3 组件令牌：底部输入区内部尺寸契约 === */
     /* Composer 默认双行起步（大厂惯例），内容撑开自动增高，超限才滚
