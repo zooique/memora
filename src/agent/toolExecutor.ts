@@ -854,7 +854,7 @@ export class ToolExecutor {
     let baseTools = BUILTIN_TOOLS;
     if (this.webSearchProvider) baseTools = [...baseTools, WEB_SEARCH_TOOL];
     if (this.fetchProvider) baseTools = [...baseTools, WEB_FETCH_TOOL];
-    // run_code 定义按宿主执行器声明生成（§10.4-①(b)）：声明 supportedLanguages →
+    // run_code 定义按宿主执行器声明生成（命令执行能力方案 §10.4-①(b)）：声明 supportedLanguages →
     // 描述列举「支持：a、b、c」；未声明 → buildRunCodeTool 缺省形态（去承诺文案，不列举）
     if (this.codeExecutionProvider)
       baseTools = [...baseTools, buildRunCodeTool(this.codeExecutionProvider.supportedLanguages)];
@@ -1634,7 +1634,7 @@ export class ToolExecutor {
             command
           );
         }
-        // 同步路径：超时钳制与文案同源（resolveCommandTimeoutMs 单一真源，见 §13.6-C）
+        // 同步路径：超时钳制与文案同源（resolveCommandTimeoutMs 单一真源，见 命令执行能力方案 §13.6-C）
         const effectiveTimeoutMs = resolveCommandTimeoutMs(
           typeof args['timeoutMs'] === 'number' ? args['timeoutMs'] : undefined,
         );
@@ -1667,7 +1667,7 @@ export class ToolExecutor {
           );
         }
         const outcome = this.backgroundTasks.kill(taskId);
-        // 不静默成功：不存在与已终态是两种语义，必须让 LLM 知道（§13.6 未决二定案）
+        // 不静默成功：不存在与已终态是两种语义，必须让 LLM 知道（命令执行能力方案 §13.6 未决二定案）
         if (!outcome) {
           const notFoundText =
             `[ERR:TASK_NOT_FOUND] 未找到后台任务 "${taskId}"。` +

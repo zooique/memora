@@ -5,7 +5,7 @@
  *   1. formatScriptResult — 结果格式化（超时/错误/成功分支）+ 超时文案按实际超时（钳制后）生成
  *   2. runSkillScript — 子进程执行（成功/超时/失败/边界场景）
  *   3. resolveCommand 行为 — runtime→command 映射（间接测试）
- *   4. 进程治理缺口清偿（§13.6-A/B）— 超时强杀**进程树**（孙进程不再变孤儿）
+ *   4. 进程治理缺口清偿（命令执行能力方案 §13.6-A/B）— 超时强杀**进程树**（孙进程不再变孤儿）
  *      + 收集侧**内存护栏**（字节量纲，truncated/discardedBytes 诚实化上报）
  *
  * 注：runSkillScript 测试使用真实子进程，脚本内容尽量简单。
@@ -310,7 +310,7 @@ describe('skillScriptRunner — runSkillScript', () => {
       const slowScript = join(TMP_DIR, 'slow.js');
       writeFileSync(slowScript, 'setTimeout(() => console.log("done"), 3000);');
       const result = await runSkillScript(slowScript, 'node', [], 1000);
-      // 2026-10-03 语义变更（§13.6-A）：超时不再经 spawn `timeout` 选项 kill，故**不再有
+      // 2026-10-03 语义变更（命令执行能力方案 §13.6-A）：超时不再经 spawn `timeout` 选项 kill，故**不再有
       // close(null,'SIGTERM') 那条路径**——由手动计时器直接收场，退出码取 -1（对齐宿主
       // codeExecutor killer 的 `exitCode: -1 + timedOut: true` 同构形态）。旧断言 `toBe(0)`
       // 锁的是「`code ?? 0` 兜底」，该兜底仍存在于**正常 close 路径**（未被超时截断时），
@@ -361,14 +361,14 @@ describe('skillScriptRunner — runSkillScript', () => {
     }, 20_000);
   });
 
-  // ── §13.6-A 进程树强杀 + §13.6-B 收集侧内存护栏（2026-10-03 清偿）──
+  // ── 命令执行能力方案 §13.6-A 进程树强杀 + §13.6-B 收集侧内存护栏（2026-10-03 清偿）──
   describe('进程治理缺口清偿（§13.6-A/B）', () => {
     // ⚠️ 「孙进程是否真被收割」的**结果级**断言不放在本文件：本机（Windows）实测
     // `child.kill()` 单杀时孙进程**同样停止心跳**（共享控制台被销毁连带终止），
     // 故结果级探活在本环境无法区分「杀树」与「单杀」——断言会**因错误的原因通过**。
     // 该行为改由 skillScriptRunner-exec.test.ts 的**机制级**分平台断言锁定
     // （Windows `taskkill /T /F` 调用 / POSIX `process.kill(-pgid)`），
-    // 真机层面的「孙进程确实不再存活」列为阶段 1 手工验证项（方案文档 §13.6 未决三）。
+    // 真机层面的「孙进程确实不再存活」列为阶段 1 手工验证项（方案文档 命令执行能力方案 §13.6 未决三）。
 
     it('收集侧内存护栏：超量输出停止拼接并置 truncated + 丢弃字节数', async () => {
       // 48 × 64KB = 3MB > MAX_COLLECTED_OUTPUT_BYTES(2MB) → 护栏生效

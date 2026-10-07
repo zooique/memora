@@ -19,7 +19,7 @@ describe('codeExecutor（G2 本地子进程执行器）', () => {
 
   it('支持 javascript/js/nodejs/node，不支持其他语言返回明确提示', async () => {
     const exe = createLocalCodeExecutor();
-    // 声明一致性（§10.4-①(b)）：supportedLanguages 上报内核生成工具描述，
+    // 声明一致性（命令执行能力方案 §10.4-①(b)）：supportedLanguages 上报内核生成工具描述，
     // 必须与 execute 实际支持集合同源一致——声明了却不支持 = 对模型说谎
     expect([...exe.supportedLanguages!].sort()).toEqual(
       ['javascript', 'js', 'node', 'nodejs'].sort(),

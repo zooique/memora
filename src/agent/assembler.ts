@@ -74,7 +74,7 @@ const TURN_START_STRATEGY_PROMPT = `## Turn 起始策略
 简单问题直接回答。`;
 
 /**
- * 将宿主环境快照格式化为 system prompt 注入段（纯函数，方案 §10.4-②）
+ * 将宿主环境快照格式化为 system prompt 注入段（纯函数，命令执行能力方案 §10.4-②）
  *
  * 零解释转发：只做字段 → 文本的机械映射，不添加行为引导（环境事实自己会说话，
  * 「由模型自己决定」——Cline/Claude Code 共同点，见方案 §10.1）。
@@ -945,9 +945,9 @@ export async function assembleComponents(
   // 刷新失败不阻断装配——loadAndGetContextBlock 内部已容错，返回空串即不注入（投影是可选项，非装配硬依赖）
   const workProjectionContext = await workProjection.loadAndGetContextBlock();
 
-  // 运行环境事实段（方案 §10.4-②）：从宿主环境提供者同步取快照并格式化。
+  // 运行环境事实段（命令执行能力方案 §10.4-②）：从宿主环境提供者同步取快照并格式化。
   // getEnvironment 同步返回（探测节奏宿主自理，内核零等待）；未注入/返回 null → 空串不注入。
-  // 环境事实只进 prompt（给模型看），不进任何内核判据（§10.5 刻意不做）。
+  // 环境事实只进 prompt（给模型看），不进任何内核判据（命令执行能力方案 §10.5 刻意不做）。
   const environmentContext = buildEnvironmentContextBlock(
     input.environmentProvider?.getEnvironment() ?? null,
   );

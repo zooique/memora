@@ -320,7 +320,7 @@ export const BACKGROUND_TASK_STATUS_LABELS: Record<BackgroundTaskStatus, string>
  *
  * 来源标记前置且显式（`[后台命令完成]`）——消费方是 LLM，必须能让它分清
  * 「这是系统事件」而非「用户刚说了什么」（role 语义隔离，§14.2）。
- * 超时文案不编造秒数：注册表不存时限，缺省即不限时（§13.6-C）。
+ * 超时文案不编造秒数：注册表不存时限，缺省即不限时（命令执行能力方案 §13.6-C）。
  */
 export function formatBackgroundTaskNotice(task: BackgroundTask): string {
   const header = `[后台命令${task.status === 'killed' ? '已终止' : '完成'}] taskId=${task.taskId} · ${BACKGROUND_TASK_STATUS_LABELS[task.status]}`;

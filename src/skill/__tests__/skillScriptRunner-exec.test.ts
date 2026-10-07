@@ -10,7 +10,7 @@
  *   3. 参数映射 —— resolveCommand 的 node 命令映射、cwd 条件展开、timeoutMs 钳制
  *      （与超时文案同源的 normalizeTimeoutMs；2026-10-03 起钳制值落到**手动计时器**，
  *      不再下发 spawn `timeout` 选项）、spawn 同步抛错的启动失败态
- *   4. 进程树强杀（§13.6-A）—— 分平台机制断言（Windows `taskkill /T /F`
+ *   4. 进程树强杀（命令执行能力方案 §13.6-A）—— 分平台机制断言（Windows `taskkill /T /F`
  *      / POSIX `process.kill(-pgid)`）
  *   5. 同步杀树原语（exit 钩子兜底专用，方案-后台任务跨轮存活 §4.2）——
  *      Windows `execFileSync('taskkill', …)` 参数/128 静默/非 128 降级；POSIX 同步 kill(-pgid)
@@ -81,7 +81,7 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为', () => {
       expect(env.MEMORA_TEST_VAR).toBe('test-var-456');
       // 超时**不再**经 spawn `timeout` 选项下发：该选项到期只 kill 直接子进程，
       // 经 shell 派发时孙进程变孤儿 → 改为手动计时器 + killProcessTree 杀整棵树
-      // （方案文档 §13.6-A）。钳制后的值落到计时器，见下方 timeoutMs 用例。
+      // （方案文档 命令执行能力方案 §13.6-A）。钳制后的值落到计时器，见下方 timeoutMs 用例。
       expect(calls[0]!.opts).not.toHaveProperty('timeout');
       // POSIX：子进程自成进程组（收割按 -pid 杀组）；Windows 走 taskkill /T，无需 detached
       expect(calls[0]!.opts.detached).toBe(IS_WINDOWS ? undefined : true);
@@ -214,10 +214,10 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为', () => {
     }
   });
 
-  // ── §13.6-A 进程树强杀：机制级分平台断言 ──
+  // ── 命令执行能力方案 §13.6-A 进程树强杀：机制级分平台断言 ──
   // 为何锁机制而非结果：本机（Windows）实测 `child.kill()` 单杀时孙进程同样停止心跳
   // （共享控制台被销毁连带终止）⇒ 「孙进程是否已死」的结果级断言无法区分两种实现，
-  // 会**因错误的原因通过**。故在此锁定机制（与方案文档 §13.6-A 定案逐字对应），
+  // 会**因错误的原因通过**。故在此锁定机制（与方案文档 命令执行能力方案 §13.6-A 定案逐字对应），
   // 真机级验证列为阶段 1 手工项。
   it('超时收割走进程树强杀原语（Windows taskkill /T /F；POSIX kill(-pgid)）', async () => {
     vi.useFakeTimers();

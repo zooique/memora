@@ -490,11 +490,11 @@ export interface DuplicateCheckContext {
 }
 
 /**
- * 宿主环境事实快照（方案 §10.4-②，IEnvironmentProvider 的上报载荷）
+ * 宿主环境事实快照（命令执行能力方案 §10.4-②，IEnvironmentProvider 的上报载荷）
  *
  * 全字段可选：宿主只上报它知道的事实，未探测/未知的字段省略，内核不补猜。
  * 内核对快照**零解释转发**（仅格式化为 system prompt 段落）——环境事实不得
- * 升级为内核判据（§10.5 刻意不做：内核内置探测 = 派生判定律违规）。
+ * 升级为内核判据（命令执行能力方案 §10.5 刻意不做：内核内置探测 = 派生判定律违规）。
  */
 export interface HostEnvironmentInfo {
   /** 操作系统描述（如 "win32 10.0.22631"；宿主自行决定详细程度） */
@@ -611,9 +611,9 @@ export interface AgentOptions {
   /**
    * 宿主环境提供者（可选，不配则 system prompt 不注入环境段）：宿主上报运行环境事实
    * （OS / shell / 可用运行时），内核经 buildEnvironmentContextBlock 注入 system prompt。
-   * 方案 §10.4-②：探测环境 → 把事实告诉模型 → 由模型自己决定（对齐 Cline System
+   * 命令执行能力方案 §10.4-②：探测环境 → 把事实告诉模型 → 由模型自己决定（对齐 Cline System
    * Information 支柱与 Claude Code 每轮环境注入）。内核不裁决平台差异——环境事实
-   * 只有宿主知道，内核零解释转发（宿主内部事实不得提升为内核判据，§10.5）。
+   * 只有宿主知道，内核零解释转发（宿主内部事实不得提升为内核判据，命令执行能力方案 §10.5）。
    */
   environmentProvider?: IEnvironmentProvider;
   /**

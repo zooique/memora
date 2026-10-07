@@ -147,7 +147,7 @@ export { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
 
 // ─── 宿主环境导出（运行环境事实上报） ───────────────────────────
 // IEnvironmentProvider 接口 + HostEnvironmentInfo 载荷：宿主上报 OS/shell/可用运行时，
-// 内核注入 system prompt（方案 §10.4-②）；内核零解释转发，环境事实不升级为内核判据
+// 内核注入 system prompt（命令执行能力方案 §10.4-②）；内核零解释转发，环境事实不升级为内核判据
 export type { IEnvironmentProvider, HostEnvironmentInfo } from '@/agent/types.js';
 
 // ─── 项目搜索导出（等价 IDE 全局搜索） ─────────────────────────

@@ -348,11 +348,11 @@ export const WEB_FETCH_TOOL: ToolDefinition = {
 };
 
 /**
- * run_code 工具定义工厂（方案 §10.4-①(b)）
+ * run_code 工具定义工厂（命令执行能力方案 §10.4-①(b)）
  *
  * @param supportedLanguages 宿主执行器声明支持的语言清单（可选）：声明时 language 描述
  *        追加「支持：a、b、c」按实际生成；未声明（undefined / 空数组）→ 退化为现行
- *        去承诺文案，对模型不列举任何语言名（§11.6 拍板：声明列举 / 未声明不列举）。
+ *        去承诺文案，对模型不列举任何语言名（命令执行能力方案 §11.6 拍板：声明列举 / 未声明不列举）。
  * @returns run_code 工具定义
  */
 export function buildRunCodeTool(supportedLanguages?: readonly string[]): ToolDefinition {

@@ -68,7 +68,7 @@ describe('键集合与内核内置工具清单对齐', () => {
     )) {
       names.add(m[1]!);
     }
-    // ①-b 独立的工具常量定义·工厂形态（2026-10-03 buildRunCodeTool 引入，§10.4-①(b)）：
+    // ①-b 独立的工具常量定义·工厂形态（2026-10-03 buildRunCodeTool 引入，命令执行能力方案 §10.4-①(b)）：
     // export const XXX_TOOL: ToolDefinition = buildYYY(...) —— name 在工厂函数体内的
     // return { name: '...' }，从对应函数体提取（提取失效立即红，不静默通过）
     for (const m of src.matchAll(

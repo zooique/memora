@@ -160,7 +160,7 @@ function buildTaskkillArgs(pid: number): string[] {
  *   故 `process.kill(-pid, 'SIGKILL')` 杀整组；失败降级同上。
  *
  * ⚠️ 本原语是**私有**实现：宿主 codeExecutor 属另一进程上下文，够不着本函数；其同款缺口
- * （`child.kill()` 单杀）已独立登记立项（方案文档 §13.6 未决一）——**禁止**在宿主侧复制
+ * （`child.kill()` 单杀）已独立登记立项（方案文档 命令执行能力方案 §13.6 未决一）——**禁止**在宿主侧复制
  * 一份实现（双轨各造 = 并列腐化），要么阶段 2 一起提成内核内部共享原语，要么维持登记。
  */
 function killProcessTree(child: childProcess.ChildProcess): void {
@@ -181,7 +181,7 @@ function killProcessTree(child: childProcess.ChildProcess): void {
         // 强杀目标已达成（正常竞态：探活与 taskkill 之间进程自然结束），
         // 静默结束，不当降级也不打 WARN（2026-10-03 实锤：门禁日志噪音源）。
         // 主 pid 已死时孙进程成孤儿无人收割——child.kill 够不着，属残余边界
-        // （Windows pid 复用窗口下的 taskkill 误杀风险同样在此，见 §13.6-A 登记）。
+        // （Windows pid 复用窗口下的 taskkill 误杀风险同样在此，见 命令执行能力方案 §13.6-A 登记）。
         return;
       }
       if (code !== 0) {
@@ -243,7 +243,7 @@ export function killProcessTreeSync(child: childProcess.ChildProcess): void {
  * 输出收集器（内存护栏）：stdout/stderr **共享**一个字节预算，超限即停止拼接并累计丢弃量。
  *
  * 只在收集侧生效。**不做「头尾保留」**：尾部保留在此处是无效复杂度——下游
- * `sanitizeExternalText` 的头截断会把尾部抹掉（方案文档 §13.6-B / 缺口 D）。
+ * `sanitizeExternalText` 的头截断会把尾部抹掉（方案文档 命令执行能力方案 §13.6-B / 缺口 D）。
  */
 function createOutputCollector(limitBytes: number) {
   let collected = 0;
@@ -291,7 +291,7 @@ function buildSpawnOptions(cwd?: string): childProcess.SpawnOptions {
   return {
     // ⚠️ 不用 spawn 原生 `timeout` 选项：它到期只 kill **直接子进程**，
     // 经 shell 派发（`cmd /c npm test`）时孙进程会变孤儿继续跑。改为手动计时
-    // + `killProcessTree` 强杀整棵树（方案文档 §13.6-A）。
+    // + `killProcessTree` 强杀整棵树（方案文档 命令执行能力方案 §13.6-A）。
     // POSIX `detached`：子进程自成进程组（pgid == pid），收割按 -pid 杀组；
     // Windows 不需要 detached（走 taskkill /T /F）。
     ...(process.platform === 'win32' ? {} : { detached: true }),
@@ -338,7 +338,7 @@ function attachGovernance(
   let enoent = false;
   /** 是否已结算（超时强杀与 close/error 竞争时的单点守卫） */
   let settled = false;
-  /** 收集侧内存护栏：stdout/stderr 共享字节预算（方案文档 §13.6-B） */
+  /** 收集侧内存护栏：stdout/stderr 共享字节预算（方案文档 命令执行能力方案 §13.6-B） */
   const collector = createOutputCollector(MAX_COLLECTED_OUTPUT_BYTES);
 
   child.stdout?.on('data', (data: Buffer) => {
@@ -423,7 +423,7 @@ export function resolveShellCommand(
 }
 
 /**
- * 执行裸 shell 命令（**同步**）：与脚本执行共用同一套进程治理（§13.6-A/B），
+ * 执行裸 shell 命令（**同步**）：与脚本执行共用同一套进程治理（命令执行能力方案 §13.6-A/B），
  * 只多一层「命令 → shell 派发」解析。后台形态见 `backgroundTasks` 注册表——
  * 同一治理实现的另一条消费路径，不是另一套实现。
  */

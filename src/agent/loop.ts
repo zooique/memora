@@ -780,7 +780,7 @@ export class AgentLoop {
       taskSucceeded = false;
       throw err;
     } finally {
-      // turn 终态后台任务脱管（§14.5 脱管定案）：done / interrupted / error / 达到最大迭代
+      // turn 终态后台任务脱管（后台任务跨轮存活方案·脱管定案）：done / interrupted / error / 达到最大迭代
       // 四条收场路径都经过本 finally ⇒ 调用点唯一。
       // 判据 = pauseBoundaryReached：挂起是同 turn 续跑（后台继续跑、其回流照常注入），
       // 不算终态、不脱管。脱管 = 不杀进程（error 路径也不杀）；进程寿命的终点在另一处：
@@ -901,7 +901,7 @@ export class AgentLoop {
    * 与插话同机制（iteration 间检查点消费、挂起/恢复全链路复用），但**异质**——
    *   - 消费时进 `appendSystemMessage`（系统事件），不进 `appendUserMessage`（不伪装用户发言）；
    *   - 不占插话满员计数（`interject()` 的容量裁决只数 kind==='interject'）；
-   *   - **跨 turn 留存**（脱管定案，§14.5）：turn 终态不丢弃，下个 turn 的 step 边界照常吸收——
+   *   - **跨 turn 留存**（脱管定案，后台任务跨轮存活方案）：turn 终态不丢弃，下个 turn 的 step 边界照常吸收——
    *     与插话跨 turn 同标准，同性质数据不搞两套生命周期。
    *
    * @param content 已格式化的完成通知（含来源标记「后台命令完成」+ 命令 + 输出）
@@ -1326,7 +1326,7 @@ export class AgentLoop {
     // 导致"暂停态输入补充"被误路由进 interject 排队而无人消费（卡死坑）。
     if (reqs.some((r) => r.kind === 'pause')) {
       // pause 消费后 clearPauseRequest 已由 splice(0) 自动完成——无需额外清 flag
-      // 挂起**不是** turn 终态（§14.5）：同 turn 续跑，后台进程应继续跑、其回流照常注入。
+      // 挂起**不是** turn 终态（后台任务跨轮存活方案）：同 turn 续跑，后台进程应继续跑、其回流照常注入。
       // 标记必须在 yield 之前置位——宿主在 paused chunk 处 break 会让 generator 停在
       // 这个 yield 上并触发 finally（runIterationLoop 的收割判据），置位晚了就会
       // 把「续跑」误判成「终态」而错杀后台进程。

@@ -733,7 +733,7 @@ describe('buildSystemPromptPrefix · Turn 起始策略', () => {
   });
 });
 
-// ─── buildEnvironmentContextBlock · 宿主环境事实段（方案 §10.4-②）──
+// ─── buildEnvironmentContextBlock · 宿主环境事实段（命令执行能力方案 §10.4-②）──
 
 describe('buildEnvironmentContextBlock · 运行环境注入', () => {
   it('null → 空串（未注入 provider 时不产生环境段）', () => {

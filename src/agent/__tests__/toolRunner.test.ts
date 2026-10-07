@@ -285,7 +285,7 @@ describe('SCRIPT-2 B5-e：裸失败前缀 return 残留守卫（判据桥消亡�
   // 既能命中与生产同形的裸失败前缀 return，又不误伤语义非失败的软降级前缀。
   it('变异验证-命中：正则能抓裸失败前缀 return（与生产同形样本）', () => {
     expect(BARE_FAIL_RETURN.test("    return '[ERR:TOOL:FILE_NOT_FOUND] 文件不存在';")).toBe(true);
-    expect(BARE_FAIL_RETURN.test("  return (`[COMMAND_ERROR] 命令失败（退出码: 1）`);")).toBe(true);
+    expect(BARE_FAIL_RETURN.test('  return (`[COMMAND_ERROR] 命令失败（退出码: 1）`);')).toBe(true);
     expect(BARE_FAIL_RETURN.test("return '[SCRIPT_TIMEOUT] 超时';")).toBe(true);
   });
 

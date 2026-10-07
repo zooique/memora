@@ -2079,7 +2079,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(details.textContent).toContain('完成：是');
   });
 
-  it('后台任务收尾小节：background_report 事件 → finalize 渲染多行报告（§14.5 脱管定案）', () => {
+  it('后台任务收尾小节：background_report 事件 → finalize 渲染多行报告（后台任务跨轮存活方案·脱管定案）', () => {
     // 渲染单点 = renderRoundBlock（finalize 与重放共用）——单点有测试即双路有保障。
     // 无存活后台任务的轮无此事件 → 小节不出现（由上方用例的「无收尾内容」断言天然覆盖）。
     // ⚠️ 假数据必须是**脱管后的新文案**：沿用旧的「已全部终止」= 测试在固化一句对用户

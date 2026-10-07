@@ -1,8 +1,11 @@
 /**
  * 时间工具函数
  *
- * 从 messageHistory.ts 提取的公共时间格式化函数，
- * 消除跨模块 `new Date().toISOString()` 内联重复。
+ * 从 messageHistory.ts 提取的公共时间格式化函数，作用域 = **内核 `src/` 内部**。
+ *
+ * ⚠️ 「消除跨模块内联重复」不成立 —— `nowIso` **未**进 `src/index.ts` 公开导出面，
+ * 宿主拿不到它（实测宿主 `nowIso` 引用 = 0），宿主侧取当前时间仍是各自内联。
+ * 本文件只是内核内部的推荐入口，不是跨包单一真源。
  *
  * API 对齐：formatDateKey(date) 与精灵 shared/dateUtils.ts 语义一致，
  * 用于格式化任意 Date 为 YYYY-MM-DD（本地时区）。

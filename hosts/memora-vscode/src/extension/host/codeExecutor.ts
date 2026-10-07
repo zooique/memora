@@ -20,7 +20,7 @@
  * OS 级容器/沙箱（如专用受限用户 + rlimit + 网络隔离），不在本执行器范围。
  *
  * 语言支持：仅 JavaScript（javascript / js / nodejs / node）。经 supportedLanguages
- * 声明上报内核（§10.4-①(b)），run_code 工具描述按声明生成「支持：…」，描述与现实一致；
+ * 声明上报内核（命令执行能力方案 §10.4-①(b)），run_code 工具描述按声明生成「支持：…」，描述与现实一致；
  * 不支持的语言由执行器回知清单（同源自 SUPPORTED_LANGUAGES 派生）。
  * 「node」对齐 script_path 模式按扩展名推断（.js/.mjs/.cjs/.ts → node）。
  */
@@ -45,7 +45,7 @@ const SUPPORTED_LANGUAGES = new Set(['javascript', 'js', 'nodejs', 'node']);
  */
 export function createLocalCodeExecutor(): ICodeExecutionProvider {
   return {
-    // 支持语言声明（方案 §10.4-①(b)）：内核 run_code 工具描述按本声明生成「支持：a、b、c」，
+    // 支持语言声明（命令执行能力方案 §10.4-①(b)）：内核 run_code 工具描述按本声明生成「支持：a、b、c」，
     // 消灭「描述与现实不符」（描述真源 = 本字段，回知文案亦从 SUPPORTED_LANGUAGES 派生，不双写）
     supportedLanguages: [...SUPPORTED_LANGUAGES],
     /**

@@ -359,7 +359,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     fetchProvider: new FetchWebFetchProvider(),
     // 代码执行（local vm 沙箱，受限计算能力）——注入后内核暴露 run_code 工具给 LLM
     codeExecutionProvider: createLocalCodeExecutor(),
-    // 宿主环境提供者（方案 §10.4-②）：上报 OS/shell/可用运行时 → 内核注入 system prompt
+    // 宿主环境提供者（命令执行能力方案 §10.4-②）：上报 OS/shell/可用运行时 → 内核注入 system prompt
     // 「## 运行环境」段；环境事实只给模型看，内核零解释（不进判据）
     environmentProvider: createVscodeEnvironmentProvider(),
     // 脚本执行 node 路径（S3-接续）：用户经 memora.scriptNodePath 显式配置，

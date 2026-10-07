@@ -1,5 +1,5 @@
 /**
- * environmentProvider 测试 — VS Code 宿主环境提供者（方案 §10.4-②）
+ * environmentProvider 测试 — VS Code 宿主环境提供者（命令执行能力方案 §10.4-②）
  *
  * 覆盖：
  *   - getEnvironment 同步返回 OS/shell 基础快照（探测未完成也非 null）

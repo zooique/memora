@@ -1987,7 +1987,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         listEl.appendChild(row);
       });
     }
-    // § 后台任务收尾（§14.5 定案修订）：内核 turn 终态**脱管**（存活任务转后台常驻、进程不被杀）
+    // 后台任务收尾（后台任务跨轮存活方案·定案修订）：内核 turn 终态**脱管**（存活任务转后台常驻、进程不被杀）
     // 后产（无存活后台任务则无此事件、小节不出现——纯问答常态零块）。与 plan_snapshot 同型：
     // 实时仅入缓冲，finalize/重放在此单点消费（实时/重放同源，规避「实时建行 → finalize 重建删行」
     // 的双形态维护）。⚠️ 小节标题**不得**写「收割」——脱管定案下进程并未被杀，
