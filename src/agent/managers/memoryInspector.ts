@@ -183,35 +183,11 @@ export class MemoryInspector {
 
   // ─── 搜索 ─────────────────────────────────────────────
 
-  /**
-   * @deprecated 本同步通道已退役，功能由 `searchByKeyword()` 承担（后者含
-   * superseded 过滤 / excludeRoundIds 互斥 / accessedAt + 溯源揭示）。当前无生产/宿主消费方，
-   * 勿新增调用。
-   * 搜索记忆（关键词 + FTS5 索引），返回 CLI 友好扁平结构（已截断）。
-   */
-  search(query: string, limit = 10): AgentSearchHit[] {
-    // 空 query 会让 search() 退化为"返回所有"，对宿主程序是静默误导
-    if (!query || query.trim() === '') {
-      throw configError('搜索关键词为空', 'search() 需要非空 query', [
-        '传入非空字符串关键词',
-        '使用 snapshot().bootstrap.items 列出所有引导记忆',
-      ]);
-    }
-    if (limit <= 0 || !Number.isInteger(limit)) {
-      throw configError('无效 limit', `limit 必须是正整数，收到 ${limit}`, [
-        '使用 limit = 10（默认值）',
-      ]);
-    }
-    const hits = this.index.search(query, limit);
-    return hits.map((m: Memory) => ({
-      id: m.id,
-      name: m.name,
-      source: m.source,
-      // 截断长内容到搜索预览长度
-      contentPreview: truncate(m.content, SEARCH_PREVIEW_LEN),
-      createdAt: m.createdAt,
-    }));
-  }
+  // ⚠️ 原 `search()`（同步关键词搜索）已于 **4.0.0 移除**：被下方 `searchByKeyword()` 完全取代
+  // （后者含 superseded 过滤 / excludeRoundIds 互斥 / accessedAt 刷新 + 溯源揭示），
+  // 移除前已实测零生产消费、零宿主消费（宿主只调 `searchByKeyword`）。
+  // 旧版它标 `@deprecated` 却仍列在随包 API 文档里当正常方法——属「退役不彻底」的僵尸出口，
+  // 在 major 版本一并清掉。勿按旧文档找回该入口，一律用 `searchByKeyword()`。
 
   /**
    * 搜索记忆（纯关键词单通道，无向量通道、无融合排序）。

@@ -239,49 +239,10 @@ describe('MemoryInspector', () => {
   });
 
   // ════════════════════════════════════════════════════════
-  // 4. search（5 测试）
+  // 4. —— `search()` 已于 4.0.0 移除（被 searchByKeyword 完全取代，移除前零消费）。
+  //    原 5 条用例随之删除：测一个已不存在的方法必然红，留着即「测试在守一个僵尸」。
+  //    它独家的「长内容截断到 120 + '…'」行为已由下方 searchByKeyword 用例继承覆盖。
   // ════════════════════════════════════════════════════════
-
-  describe('search', () => {
-    it('空 query 应抛 configError', () => {
-      expect(() => inspector.search('')).toThrow('搜索关键词为空');
-    });
-
-    it('纯空格 query 应抛 configError', () => {
-      expect(() => inspector.search('   ')).toThrow('搜索关键词为空');
-    });
-
-    it('limit <= 0 应抛 configError', () => {
-      expect(() => inspector.search('query', 0)).toThrow('无效 limit');
-    });
-
-    it('非整数 limit 应抛 configError', () => {
-      expect(() => inspector.search('query', 1.5)).toThrow('无效 limit');
-    });
-
-    it('正常搜索：长内容截断到 120 字符 + "…"，短内容不截断', () => {
-      const longContent = 'B'.repeat(150);
-      storage.upsert(
-        createMemory({ id: 'content:long', source: 'content', name: 'long', content: longContent }),
-      );
-      storage.upsert(
-        createMemory({ id: 'content:short', source: 'content', name: 'short', content: 'short' }),
-      );
-      const hits = inspector.search('B', 10);
-      // InMemoryStorage.search 按关键词匹配
-      const longHit = hits.find((h) => h.name === 'long');
-      const shortHit = hits.find((h) => h.name === 'short');
-      if (longHit) {
-        // 长内容截断到 120 + '…' = 121 字符
-        expect(longHit.contentPreview).toHaveLength(121);
-        expect(longHit.contentPreview.endsWith('…')).toBe(true);
-      }
-      if (shortHit) {
-        // 短内容不截断
-        expect(shortHit.contentPreview).toBe('short');
-      }
-    });
-  });
 
   // ════════════════════════════════════════════════════════
   // 5. searchByKeyword（8 测试）
