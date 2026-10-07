@@ -696,7 +696,7 @@ export const chatStyles = `
   .msg-body[data-status='思考中']::after,
   .msg-body[data-status='运行工具中']::after,
   .msg-body[data-status='正在回答中']::after {
-    animation: selfReviewPulse 1.2s ease-in-out infinite;
+    animation: selfReviewPulse var(--dur-pulse) ease-in-out infinite;
   }
   @media (prefers-reduced-motion: reduce) {
     .msg-body[data-status='思考中']::after,
@@ -1150,6 +1150,16 @@ export const chatStyles = `
   }
   .background-tasks-bar[hidden] { display: none; }
 
+  /* 进场动画（P2 2026-10-07 续）：条件条随内容出现，复用 dock 已验证的「从左滑入 + 淡入」
+   * 范式（dockPanelOpen），与活动抽屉同源。条件条经 [hidden] 显隐，display:none→flex 时
+   * animation 重跑一次 = 仅进场触发；内容增量变化（items 增删）不改 display ⇒ 不重放闪烁。
+   * 减弱动效（prefers-reduced-motion）由文件末 Utilities 全局兜底层统一关断，无需本地守卫。 */
+  .file-changes-bar,
+  .pending-queue-bar,
+  .background-tasks-bar {
+    animation: dockPanelOpen var(--dur-open) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
   /* 预算可视化：发送按钮旁的上下文占用圆环充能图标（常驻不占行；hover/聚焦**向上**弹窗出分层明细文字，
    * 避免向下展开挤压面板底部出现外部滚动条） */
   .context-ring {
@@ -1174,7 +1184,7 @@ export const chatStyles = `
     stroke: var(--occ-dialogue, #3794ff); /* 充能色：占用越高弧越满 */
     stroke-width: 3;
     stroke-linecap: round;
-    transition: stroke-dashoffset 0.2s ease;
+    transition: stroke-dashoffset var(--dur-open) ease;
   }
   .context-ring__percent {
     position: absolute;
@@ -1359,7 +1369,7 @@ export const chatStyles = `
     color: var(--accent, #0e639c);
     border-radius: var(--radius-sm, 4px);
     background: transparent;
-    transition: background var(--dur-fast, 120ms) ease;
+    transition: background var(--dur-fast) ease;
   }
   .team-meeting-icon:hover {
     background: var(--accent-hover, rgba(14, 99, 156, 0.15));
@@ -1407,7 +1417,7 @@ export const chatStyles = `
     opacity: 0.6;
     pointer-events: none;
   }
-  .polish-btn-icon.loading svg { animation: spin 0.8s linear infinite; }
+  .polish-btn-icon.loading svg { animation: spin var(--dur-spin) linear infinite; }
 
   /* Skill 选择器胶囊差异（共用 .treedd--capsule 外壳，见 dropdown.ts）：
    * 单图标（⚡）触发器。胶囊底色/箭头/尺寸全复用 capsule；此处仅：
@@ -1542,7 +1552,7 @@ export const chatStyles = `
     background: var(--accent, #0e639c);
     color: var(--accent-foreground, #ffffff);
     cursor: pointer;
-    transition: background var(--dur-base) ease, filter var(--dur-base) ease, transform 0.1s ease;
+    transition: background var(--dur-base) ease, filter var(--dur-base) ease, transform var(--dur-fastest) ease;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   }
   .send-btn-primary:hover:not(.loading) {
@@ -1591,7 +1601,7 @@ export const chatStyles = `
     background: var(--surface-hover, rgba(128,128,128,.2));
     color: var(--text-secondary, #9aa0a6);
     cursor: pointer;
-    transition: background var(--dur-base) ease, color var(--dur-base) ease, transform 0.1s ease;
+    transition: background var(--dur-base) ease, color var(--dur-base) ease, transform var(--dur-fastest) ease;
   }
   .pause-btn:hover {
     background: var(--surface-code, rgba(0, 0, 0, 0.08));
@@ -1793,7 +1803,7 @@ export const chatStyles = `
     background: var(--text-secondary, #9aa0a6);
   }
   /* 流式中：圆点品牌色呼吸（复用 selfReviewPulse，遵守 prefers-reduced-motion） */
-  .round-block.is-running .round-block__dot { background: var(--accent, #0e639c); animation: selfReviewPulse 1.2s ease-in-out infinite; }
+  .round-block.is-running .round-block__dot { background: var(--accent, #0e639c); animation: selfReviewPulse var(--dur-pulse) ease-in-out infinite; }
   .round-block__stats { word-break: break-all; }
   /* 回答等待指示器：meta 前 prepare 阶段的可见反馈——
      呼吸圆点 + 相位文案 + 等待秒数；胶囊形态弱化打扰，role=status 尊重 reduced-motion */
@@ -1809,7 +1819,7 @@ export const chatStyles = `
   .pending-wait::before {
     content: ''; width: var(--dot-sm); height: var(--dot-sm); border-radius: 50%; flex-shrink: 0;
     background: var(--accent, #0e639c);
-    animation: selfReviewPulse 1.2s ease-in-out infinite;
+    animation: selfReviewPulse var(--dur-pulse) ease-in-out infinite;
   }
   @media (prefers-reduced-motion: reduce) {
     .pending-wait::before { animation: none; }
@@ -1835,7 +1845,7 @@ export const chatStyles = `
   .process-flow__phase::before {
     content: ''; width: var(--dot-sm); height: var(--dot-sm); border-radius: 50%; flex-shrink: 0;
     background: var(--accent, #0e639c);
-    animation: selfReviewPulse 1.2s ease-in-out infinite;
+    animation: selfReviewPulse var(--dur-pulse) ease-in-out infinite;
   }
   @media (prefers-reduced-motion: reduce) {
     .process-flow__phase::before { animation: none; }
@@ -2003,7 +2013,7 @@ export const chatStyles = `
   .round-block__phase::before {
     content: ''; width: var(--dot-sm); height: var(--dot-sm); border-radius: 50%; flex-shrink: 0;
     background: var(--accent, #0e639c);
-    animation: selfReviewPulse 1.2s ease-in-out infinite;
+    animation: selfReviewPulse var(--dur-pulse) ease-in-out infinite;
   }
   /* 相位行切「工具执行」态——进行中工具优先显示执行叙述，主色强调 + 呼吸点延续 */
   .round-block__phase.is-tool { color: var(--text-primary, #e6e6e6); font-weight: 600; }
@@ -2058,7 +2068,7 @@ export const chatStyles = `
     margin-right: var(--sp-2, 6px); vertical-align: -1px;
     border: 1.5px solid transparent; border-top-color: var(--accent, #0e639c);
     border-radius: 50%; box-sizing: border-box;
-    animation: toolSpinner .7s linear infinite;
+    animation: toolSpinner var(--dur-spin-soft) linear infinite;
   }
   /* 运行中行恒展开，环即状态即类型——chevron 无交互意义，压掉（防双状态标识） */
   .round-block__tool.is-tool-running > summary::after {

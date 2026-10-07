@@ -178,9 +178,14 @@ export const tokens = `
     --dur-fast: 120ms;        /* 快速过渡（hover / 瞬时反馈） */
     --dur-base: 150ms;       /* 常规过渡（颜色 / 边框 / 位移） */
     --dur-slow: 300ms;       /* 慢过渡（宽度收展等） */
-    --dur-open: 200ms;       /* 抽屉/面板展开：从左揭示（clip-path） */
+    --dur-open: 200ms;       /* 中速 200ms：抽屉/面板展开（clip-path）+ 通用中速过渡（进度环/Toast/设置/卡片） */
     --dur-open-soft: 220ms;  /* 抽屉滑入（translateX），与 --dur-open 错层 */
     --dur-open-delay: 40ms;  /* 展开错层延迟（先 pill 后抽屉） */
+    --dur-fastest: 100ms;    /* 最快过渡（transform 微动 / 列表项瞬态） */
+    --dur-med: 180ms;        /* 中速过渡（设置面板显隐） */
+    --dur-spin: 800ms;       /* 加载旋转（spin / loadingSpin） */
+    --dur-spin-soft: 700ms;  /* 工具结果旋转（toolSpinner，略快） */
+    --dur-pulse: 1200ms;     /* 呼吸脉冲（selfReviewPulse） */
 
     /* === L3 组件令牌：底部输入区内部尺寸契约 === */
     /* Composer 默认双行起步（大厂惯例），内容撑开自动增高，超限才滚

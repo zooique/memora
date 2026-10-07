@@ -42,7 +42,7 @@ export const memoryStyles = `
     border-radius: var(--radius, 6px);
     background: var(--surface-sidebar);
     cursor: pointer;
-    transition: border-color 0.1s;
+    transition: border-color var(--dur-fastest);
   }
   #memory-root .mem-card:hover { border-color: var(--text-secondary, #9aa0a6); }
   #memory-root .mem-card.expanded { border-color: var(--accent, #0e639c); }
@@ -191,7 +191,7 @@ export const memoryStyles = `
     line-height: 1;
     cursor: pointer;
     opacity: 0;
-    transition: opacity 0.1s, background 0.1s, color 0.1s;
+    transition: opacity var(--dur-fastest), background var(--dur-fastest), color var(--dur-fastest);
   }
   #memory-root .mem-card:hover .mem-del-btn,
   #memory-root .mem-del-btn:focus-visible { opacity: 1; }
@@ -213,7 +213,7 @@ export const memoryStyles = `
     line-height: 1;
     cursor: pointer;
     opacity: 0;
-    transition: opacity 0.1s, background 0.1s, color 0.1s;
+    transition: opacity var(--dur-fastest), background var(--dur-fastest), color var(--dur-fastest);
   }
   #memory-root .mem-card:hover .mem-edit-btn,
   #memory-root .mem-edit-btn:focus-visible { opacity: 1; }

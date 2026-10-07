@@ -35,7 +35,7 @@ export const settingsStyles = `
     background: var(--surface-card, #252526); color: var(--text-primary, #cccccc);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
     box-shadow: var(--shadow-toast);
-    opacity: 0; pointer-events: none; transition: opacity .18s ease;
+    opacity: 0; pointer-events: none; transition: opacity var(--dur-med) ease;
     z-index: 1000;
   }
   .settings-toast.show { opacity: 1; }
@@ -214,7 +214,7 @@ export const settingsStyles = `
     border: 1.5px solid var(--border-panel, rgba(128,128,128,.4));
     border-top-color: var(--accent, #0e639c);
     border-radius: 50%;
-    animation: loadingSpin 0.8s linear infinite;
+    animation: loadingSpin var(--dur-spin) linear infinite;
     flex-shrink: 0;
   }
   @keyframes loadingSpin { to { transform: rotate(360deg); } }
@@ -290,11 +290,11 @@ export const settingsStyles = `
   .toggle-slider {
     position: absolute; cursor: pointer; inset: 0;
     background-color: var(--border-panel, rgba(128,128,128,.4));
-    transition: .2s; border-radius: 22px;
+    transition: var(--dur-open); border-radius: 22px;
   }
   .toggle-slider:before {
     position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px;
-    background-color: white; transition: .2s; border-radius: 50%;
+    background-color: white; transition: var(--dur-open); border-radius: 50%;
   }
   .toggle-switch input:checked + .toggle-slider { background-color: var(--accent, #0e639c); }
   .toggle-switch input:checked + .toggle-slider:before { transform: translateX(18px); }

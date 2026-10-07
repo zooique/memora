@@ -200,7 +200,7 @@ export const skillsStyles = `
     cursor: pointer;
     inset: 0;
     background-color: var(--border-panel, rgba(128,128,128,.4));
-    transition: .2s;
+    transition: var(--dur-open);
     border-radius: 22px;
   }
   #skills-root .skill-disable-slider:before {
@@ -211,7 +211,7 @@ export const skillsStyles = `
     left: 3px;
     bottom: 3px;
     background-color: var(--accent-foreground, #ffffff);
-    transition: .2s;
+    transition: var(--dur-open);
     border-radius: 50%;
   }
   #skills-root .skill-disable-toggle input:checked + .skill-disable-slider {
