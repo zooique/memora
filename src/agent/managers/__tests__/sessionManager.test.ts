@@ -148,7 +148,11 @@ describe('SessionManager', () => {
   describe('switchToSession（会话离场归档事件）', () => {
     /** 给 mock history 补上 getCurrentSessionInfo 读取的当前会话指针 */
     function withCurrentPointer(date: string, session: string) {
-      return { currentDateValue: date, currentSessionValue: session, currentSessionName: `${date}-${session}` };
+      return {
+        currentDateValue: date,
+        currentSessionValue: session,
+        currentSessionName: `${date}-${session}`,
+      };
     }
 
     it('切走旧会话 → 广播 sessionSwitched（载荷指向被切走的旧会话）', async () => {
