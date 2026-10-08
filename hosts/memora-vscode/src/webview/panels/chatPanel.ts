@@ -250,8 +250,12 @@ const CONFIRM_TIMEOUT_MS = 30 * 60 * 1000;
 const CONFIRM_TIMEOUT_NOTICE = '用户未在时限内确认，已自动拒绝';
 
 /** ask 超时交互记录正文（镜像内核 orchestrator.ts ASK_TIMEOUT_NOTICE，防运行时/重放
- * 文案分叉——post 给 webview 即时渲染与内核落盘 content 必须同值；改此须同步内核。 */
-const ASK_TIMEOUT_NOTICE = '用户未在时限内回答，已自动继续';
+ * 文案分叉——post 给 webview 即时渲染与内核落盘 content 必须同值；改此须同步内核。
+ *
+ * 语义补充见内核 orchestrator.ts 同名常量注释（一个字符串服务「渲染给用户」+「进模型上下文」
+ * 两个语境，故含代选指令：模型须从选项中选一项推荐的并声明代选及理由）。 */
+const ASK_TIMEOUT_NOTICE =
+  '用户未在时限内回答，已自动继续——请从上面的选项里选一项你推荐的方案继续推进，并在答复中说明这是你代选的及理由；不可逆操作仍需向我确认';
 
 /** 文档上下文注入上限（字符，约 3~4k token，防大文档爆上下文） */
 const MAX_DOC_CONTEXT_CHARS = 12000;

@@ -664,7 +664,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       {
         id: 'i1',
         role: 'user',
-        content: '用户未在时限内回答，已自动继续',
+        content:
+          '用户未在时限内回答，已自动继续——请从上面的选项里选一项你推荐的方案继续推进，并在答复中说明这是你代选的及理由；不可逆操作仍需向我确认',
         timestamp: 't3',
         kind: 'timeout',
         question: '你想读哪个文件？',
@@ -687,7 +688,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(r.assistantLog?.[0]?.timestamp).toBe('t2');
     expect(inputs[0]).toMatchObject({
       kind: 'timeout',
-      content: '用户未在时限内回答，已自动继续',
+      content:
+        '用户未在时限内回答，已自动继续——请从上面的选项里选一项你推荐的方案继续推进，并在答复中说明这是你代选的及理由；不可逆操作仍需向我确认',
       timestamp: 't3',
       question: '你想读哪个文件？',
       options: ['probe.txt', 'config.json'],

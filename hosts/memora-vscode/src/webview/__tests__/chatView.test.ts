@@ -7633,7 +7633,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     // 宿主超时自动续跑：先投递「未回答」交互行（timeout 消息到达即销毁提问框）
     dispatch({
       type: 'user',
-      text: '用户未在时限内回答，已自动继续',
+      text: '用户未在时限内回答，已自动继续——请从上面的选项里选一项你推荐的方案继续推进，并在答复中说明这是你代选的及理由；不可逆操作仍需向我确认',
       ts: 't2',
       roundId: 'round-1',
       kind: 'timeout',
@@ -7686,7 +7686,8 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
         // 重放 middle 段 timeout 行（宿主 replayHistory → postTurnUpdate 按 kind 透传；带 question/options）
         interactiveInputs: [
           {
-            content: '用户未在时限内回答，已自动继续',
+            content:
+              '用户未在时限内回答，已自动继续——请从上面的选项里选一项你推荐的方案继续推进，并在答复中说明这是你代选的及理由；不可逆操作仍需向我确认',
             ts: 't3',
             kind: 'timeout',
             question: '你想读哪个文件？',
