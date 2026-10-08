@@ -182,7 +182,15 @@ export interface ProcessMetricsPayload {
   durationMs: number;
   /** 输入 token 用量（估算口径：每次 LLM 调用请求消息 `estimateTokens` 的**全程累计**，非服务端 usage 实测值；实测值在 actualInputTokens，宿主取证面未消费） */
   tokenIn: number;
-  /** 输出 token 用量（估算口径：各次 LLM 调用**正文**（fullContent）估算的全程累计——**不含 thinking、不含工具轮叙述**（二者不拼入 fullContent，见 llmCaller），推理模型下远小于真实输出预算消耗，勿据它判断「截断是否该发生」；判断输出压力用 maxTokens（生效值）+ truncationRecoveryCount + thinkingChars 佐证） */
+  /** 输出 token 用量（估算口径：各次 LLM 调用**正文**（fullContent）估算的全程累计——
+   * **不含 thinking、不含工具轮叙述、不含工具调用参数**（三者都不进 fullContent，见 llmCaller
+   * 只累加 chunk.content）：
+   *   - 不含 thinking / 工具轮叙述：CoT 与叙述走独立展示轨，不拼入正文（双轨隔离）；
+   *   - **不含工具调用参数**：`tool_calls.arguments` 从不进 fullContent ⇒ **工具密集轮系统性
+   *     低估**（真机 round-1791449684099 实测：工具参数 9,216 字符 / 44 次调用，落盘
+   *     tokenOut=646 ≈ 仅最终答复）。这是**有意口径**勿"修"成含参数（历史数字将不可比），
+   *     读它时按「答复正文量」理解，不当作本轮真实输出预算消耗。
+   * 判断输出压力用 maxTokens（生效值）+ truncationRecoveryCount + thinkingChars 佐证。 */
   tokenOut: number;
   /** 工具调用失败次数 */
   toolFailureCount: number;
