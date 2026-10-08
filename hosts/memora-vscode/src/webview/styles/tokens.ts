@@ -28,8 +28,10 @@ export const tokens = `
     --radius-sm: 2px; /* 紧凑圆角下界（用户消息气泡小角） */
     --radius: 6px; --radius-lg: 8px; --radius-xl: 14px;
     --radius-pill: 999px; /* 胶囊/徽章（无限大圆角） */
-    /* L1 基础令牌：状态圆点尺寸（呼吸点 / 未读点 / 角标指示） */
-    --dot-sm: 5px; --dot-md: 6px; --dot-lg: 8px;
+    /* L1 基础令牌：状态圆点尺寸（呼吸点 / 未读点 / 角标指示）
+     * --dot-lg 已删（2026-10-08）：唯一消费者是已删的收起态气泡 ::after 圆点，
+     * tokensClosure 僵尸令牌守卫拦截（webview mini-pill 化 94c0dba1 的连带清算）。 */
+    --dot-sm: 5px; --dot-md: 6px;
 
     /* === L1 基础令牌：字号阶梯 === */
     --font-xs: 10px; --font-sm: 11px; --font-md: 12px; --font-base: 13px; --font-lg: 14px;
