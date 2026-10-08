@@ -193,6 +193,7 @@ export type {
   ProcessEvent,
   ProcessThinkingPhase,
   ProcessMetaPayload,
+  ProcessMetricsPayload,
 } from '@/memory/roundStore.js';
 // Round 辅助函数：仅 isRoundSettled 挂公共面（「轮是否已收场」判据单一收口点：宿主与内核共用，
 // 禁止各端自写 status === 'complete'，否则中断轮会被静默排除出会话视图与 LLM 历史）；

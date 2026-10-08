@@ -15,7 +15,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Agent, AgentChunk, ProcessEvent, Round } from '@zooique/memora';
+import type {
+  Agent,
+  AgentChunk,
+  ProcessEvent,
+  ProcessMetricsPayload,
+  Round,
+} from '@zooique/memora';
 import type { RoundView, TurnState } from '../../shared/protocol.js';
 import { todayDate, resolveContextWindow } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
@@ -1957,6 +1963,120 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
   function ev(seq: number, type: ProcessEvent['type']): ProcessEvent {
     return { type, seq, ts: 't', payload: {} } as unknown as ProcessEvent;
   }
+
+  /** metrics 事件构造：payload 有真字段（段级增量口径），供合并断言 */
+  function metricsEv(
+    seq: number,
+    payload: Partial<ProcessMetricsPayload> & Pick<ProcessMetricsPayload, 'durationMs'>,
+  ): ProcessEvent {
+    return {
+      type: 'metrics',
+      seq,
+      ts: 't',
+      payload: {
+        tokenIn: 0,
+        tokenOut: 0,
+        toolFailureCount: 0,
+        success: false,
+        ...payload,
+      },
+    };
+  }
+
+  /** mergeProcessEvents 括号访问（私有方法直测：单测锁合并语义，不绕流驱动） */
+  function mergeFn(provider: MemoraChatViewProvider) {
+    return (
+      provider as unknown as {
+        mergeProcessEvents: (prior: ProcessEvent[], incoming: ProcessEvent[]) => ProcessEvent[];
+      }
+    ).mergeProcessEvents.bind(provider);
+  }
+
+  it('metrics 同轮合并：前段 7 次工具失败不被末段清零（计数求和 + success 取末段）', () => {
+    const { provider } = setup();
+    const merge = mergeFn(provider);
+    // 前段流（软暂停）：7 次工具失败 + success=false（这段流程没跑完）
+    const prior = [
+      ev(1, 'meta'),
+      ev(2, 'thinking'),
+      metricsEv(3, {
+        durationMs: 1000,
+        tokenIn: 100,
+        tokenOut: 200,
+        toolFailureCount: 7,
+        success: false,
+      }),
+    ];
+    // 末段流（续跑收尾）：零失败 + success=true；带新 thinking 与末段 metrics
+    const incoming = [
+      ev(4, 'thinking'),
+      metricsEv(5, {
+        durationMs: 500,
+        tokenIn: 50,
+        tokenOut: 80,
+        toolFailureCount: 0,
+        success: true,
+      }),
+    ];
+
+    const out = merge(prior, incoming);
+
+    // 前段 metrics 被并入末段单条（不重复、不双计）
+    const ms = out.filter((e) => e.type === 'metrics');
+    expect(ms).toHaveLength(1);
+    const p = (ms[0] as { payload: ProcessMetricsPayload }).payload;
+    expect(p.durationMs).toBe(1500); // 两段耗时之和
+    expect(p.tokenIn).toBe(150);
+    expect(p.tokenOut).toBe(280);
+    expect(p.toolFailureCount).toBe(7); // 🔴 修复点：旧实现恒剔 prior metrics → 前段 7 次失败静默清零
+    expect(p.success).toBe(true); // success 取末段（终局收尾状态以最后一段为准）
+    // seq 保序：前段 metrics(seq3) 已并入 incoming metrics(seq5)，输出按 seq 单调
+    expect(out.map((e) => e.seq)).toEqual([1, 2, 4, 5]);
+  });
+
+  it('metrics 可选字段：任一段携带即求和（缺段按 0）、两段都缺则保持缺省（不伪造信号）', () => {
+    const { provider } = setup();
+    const merge = mergeFn(provider);
+    // 前段带 unparsedToolIntentCount=2；末段带 unparsedToolIntentCount=1 + emptyResponseCount=1
+    const prior = [metricsEv(1, { durationMs: 100, unparsedToolIntentCount: 2 })];
+    const incoming = [
+      metricsEv(2, { durationMs: 200, unparsedToolIntentCount: 1, emptyResponseCount: 1 }),
+    ];
+
+    const merged = (merge(prior, incoming)[0] as { payload: ProcessMetricsPayload }).payload;
+    expect(merged.unparsedToolIntentCount).toBe(3); // 求和
+    expect(merged.emptyResponseCount).toBe(1); // 单侧携带（前段缺）按 0 计入
+    expect(merged.truncationRecoveryCount).toBeUndefined(); // 两段都缺 → 保持缺省
+
+    // 两段都无可选字段 → 输出三个可选字段全缺省（不伪造旧数据没有的信号面）
+    const plain = (
+      merge([metricsEv(1, { durationMs: 100 })], [metricsEv(2, { durationMs: 50 })])[0] as {
+        payload: ProcessMetricsPayload;
+      }
+    ).payload;
+    expect(plain.unparsedToolIntentCount).toBeUndefined();
+    expect(plain.emptyResponseCount).toBeUndefined();
+    expect(plain.truncationRecoveryCount).toBeUndefined();
+  });
+
+  it('step 检查点路径：incoming 无 metrics → prior metrics 原样保留（待流尾合并，防丢前段指标）', () => {
+    const { provider } = setup();
+    const merge = mergeFn(provider);
+    // 前段流尾已写 metrics；本次是 step 检查点（incoming 只有增量 thinking，无流尾 metrics）
+    const prior = [
+      ev(1, 'meta'),
+      metricsEv(2, { durationMs: 1000, toolFailureCount: 7, success: false }),
+    ];
+    const incoming = [ev(3, 'thinking')];
+
+    const out = merge(prior, incoming);
+
+    // prior metrics 不能被剔——检查点不带 metrics 是常态，剔了前段指标就丢了
+    const ms = out.filter((e) => e.type === 'metrics');
+    expect(ms).toHaveLength(1);
+    expect((ms[0] as { payload: ProcessMetricsPayload }).payload.toolFailureCount).toBe(7);
+    expect(out.map((e) => e.seq)).toEqual([1, 2, 3]);
+  });
 
   it('流中重放：replay:true rounds 并入 live 轮（半截正文 + 缓冲事件原位替换）', () => {
     const { provider, posted } = setupWithHistory();
