@@ -6085,6 +6085,43 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(0);
   });
 
+  it('G3 · 分支②区间回显：整读后回读中段 → 回显**请求的区间原文**（非顶头摘要）', async () => {
+    // 生产实证（round-1791449684099）：89 行章纲已整读，模型回读 offset=30 limit=35。
+    // 旧版恒回显「文件顶头 400 字符」替身——与请求区间零重叠，模型拿不到它要的内容，
+    // 只能绕道（run_command 乱码失败 → 写临时脚本 → run_project_script），8 个 step 换 2 次
+    // 本极便宜的 read_file。契约：**判据仍拦**（不重复执行工具），但回显内容必须是请求的区间。
+    const lines = Array.from({ length: 40 }, (_, i) => `L${i + 1}`).join('\n');
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation((name: string) => Promise.resolve(name === 'read_file' ? lines : ''));
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/a.md","offset":11,"limit":3}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      compactionStrategy: new ResultReplacementStrategy(1),
+    });
+
+    for await (const chunk of loop.processUserInput('回读中段')) {
+      void chunk;
+    }
+
+    // 拦截语义不变：c2 不落 ToolExecutor → 仍只执行过 c1
+    expect(toolExecutor).toHaveBeenCalledTimes(1);
+    expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(1);
+    const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
+    expect(stub).toBeDefined();
+    // 关键断言：回显的是**请求的 11–13 行原文**，不是顶头替身（旧版会给 L1 并带「要点：」前缀）
+    expect(stub!.content).toContain('第 11–13 行');
+    expect(stub!.content).toContain('L11\nL12\nL13');
+    expect(stub!.content).not.toContain('要点：');
+    // 真实性：回显标注「未重新读取文件」（确从上下文切出，未执行工具）
+    expect(stub!.content).toContain('未重新读取文件');
+  });
+
   it('A边界回归 · 大文件 coverEnd<total（脚注源真实总行数）时越界 limit 续读 → 放行（非归一拦）', async () => {
     // 边界 A 在 loop 层的真实链路：c1 读到 1–100（共 1000，coverEnd=100<totalLines=1000）。
     // c2 请求 offset=950 limit=100（reqEnd=1049 ≥ 1000 触顶），但 coverEnd(100) 远未达 total(1000)。

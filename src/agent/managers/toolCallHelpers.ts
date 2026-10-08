@@ -68,6 +68,36 @@ export function wrapToolResult(toolName: string, result: string): string {
   );
 }
 
+/** `wrapToolResult` 包裹体的两行固定头部（第 1 行 tool 属性 + 第 2 行注入隔离声明）行数 */
+const WRAP_HEAD_LINES = 2;
+/** `wrapToolResult` 包裹体的固定尾缀（与上方模板逐字同源，改模板必须同改此常量） */
+const WRAP_TAIL = '\n</tool_result>';
+
+/**
+ * `wrapToolResult` 的**逆操作**：剥出工具结果正文。
+ *
+ * 与包裹同模块同源（禁在别处按行/正则各自解析 —— 包裹模板一改，散落的解析器集体静默失配；
+ * 往返一致性由本模块测试守卫，与 `formatSegmentationFooter`/`parseReadFileCoverage` 同先例）。
+ *
+ * 消费语境（台账替身回显分支②）：原文仍在上下文时，模型回读某区间的请求不必放行真读——
+ * 直接从已落上下文的 tool 消息里按区间切出原文回显（见 `toolLedger.sliceCoveredLines`）。
+ * 拦截语义不变（仍不执行工具），变的只是回显内容：从「顶头 400 字符替身」升级为「请求的区间原文」。
+ *
+ * @returns 正文；非本函数包裹格式（压缩占位符 / 手工构造 / 历史形态）→ undefined（调用方退化）
+ */
+export function unwrapToolResultBody(wrapped: string): string | undefined {
+  if (!wrapped.startsWith('<tool_result tool="') || !wrapped.endsWith(WRAP_TAIL)) return undefined;
+  const body = wrapped.slice(0, wrapped.length - WRAP_TAIL.length);
+  // 剥 WRAP_HEAD_LINES 行头部：逐行推进（不用 split 整切，正文含任意换行也不受影响）
+  let cursor = 0;
+  for (let i = 0; i < WRAP_HEAD_LINES; i++) {
+    const nl = body.indexOf('\n', cursor);
+    if (nl < 0) return undefined;
+    cursor = nl + 1;
+  }
+  return body.slice(cursor);
+}
+
 /**
  * 服务端对 tool_call 函数名的约束 —— **字符集逐字取自 OpenAI 兼容端 400 错文**
  * （`function.name does not match pattern '^[a-zA-Z0-9_-]+$'`）。

@@ -199,9 +199,99 @@ export function formatLedgerStub(cov: FileCoverage): string {
     cov.coverStart === cov.coverEnd
       ? `${cov.coverStart} 行`
       : `第 ${cov.coverStart}–${cov.coverEnd} 行`;
+  // 已读到末尾时**不得**再给 `offset=coverEnd+1` 示例：那是越界行号（真机 round-1791449684099
+  // 实证：89 行文件已整读，文案仍引导 offset=90）。文案给的每条出路必须可走通，否则即假出路。
+  const guidance =
+    cov.coverEnd >= cov.totalLines
+      ? '该文件已读到末尾；如需重读某区间请用 read_file 的 offset/limit 指定'
+      : `如需其它区间请用 read_file 的 offset/limit 指定（如 offset=${cov.coverEnd + 1}）`;
   return (
     `[ALREADY_READ] 该文件已读过（第 ${cov.cachedAtIteration} 步，覆盖 ${range} / 共 ${cov.totalLines} 行）。` +
     `要点：${cov.digest}\n` +
-    `若原文仍在本次对话上文，可直接引用；如需其它区间请用 read_file 的 offset/limit 指定（如 offset=${cov.coverEnd + 1}）；不要无区间重读已覆盖部分。`
+    `若原文仍在本次对话上文，可直接引用；${guidance}；不要无区间重读已覆盖部分。`
+  );
+}
+
+/** 按请求区间切出的已读原文（供分支②回显，避免「拦了却给一段无关顶头摘要」） */
+export interface CoveredSlice {
+  /** 切片的起始行（文件绝对行号，1-based） */
+  startLine: number;
+  /** 切片的结束行（含） */
+  endLine: number;
+  /** 切片正文（按行拼回） */
+  text: string;
+}
+
+/**
+ * 从**已读正文**里按请求区间切出原文（分支②回显的取材真源）。
+ *
+ * 为什么需要它（生产实证 round-1791449684099）：判据拦的是「请求区间 ⊆ 已覆盖区间」，但旧回显
+ * 给的是**文件顶头 400 字符**替身——与模型请求的区间（章纲 offset=30 limit=35 / 第 3 章
+ * offset=75）零重叠。模型拿不到它要的内容，只能绕道（`run_command` 乱码失败 → 写临时脚本 →
+ * `run_project_script`），8 个 step 换 2 次本来极便宜的 read_file——防重净收益为负，且把模型推向
+ * 裁决链最弱的执行面。原文既然仍在上下文（`stillInContext` 已证），切片回显零额外成本。
+ *
+ * **不变量不动**：本函数只提供取材，不参与「拦不拦」的判据（判据仍由 `shouldEchoLedgerStub`
+ * 独占）。切不出来 → 返回 undefined → 调用方退化 `formatLedgerStub`（顶头替身），行为同旧。
+ *
+ * @param wrappedBody 已读正文（经 `unwrapToolResultBody` 剥壳；含分段脚注亦可，脚注在此剥掉）
+ * @param cov 该文件覆盖度台账条目（提供 coverStart/coverEnd 行号平移基准）
+ * @param subj 本次 read_file 请求的 offset/limit（缺省语义与 handler 一致）
+ * @returns 切片；请求区间未完整落在已覆盖区间内 / 正文行数不足 / 切片为空 → undefined
+ */
+export function sliceCoveredLines(
+  wrappedBody: string,
+  cov: FileCoverage,
+  subj: { offset?: number; limit?: number },
+): CoveredSlice | undefined {
+  // 已读正文：整读无脚注时 parseReadFileCoverage 返回 undefined → 用原串（脚注剥除的单一真源）
+  const parsed = parseReadFileCoverage(wrappedBody);
+  const lines = (parsed ? parsed.content : wrappedBody).split('\n');
+  const start = subj.offset ?? 1;
+  const reqEnd = subj.limit === undefined ? cov.totalLines : start + subj.limit - 1;
+  // 只回显已覆盖区间内的行：超出部分尚未读到，硬切即撒谎（宁退化顶头替身也不编造）
+  if (start < cov.coverStart || reqEnd > cov.coverEnd) return undefined;
+  // 已读正文首行 = 文件第 coverStart 行 → 行索引平移
+  const from = start - cov.coverStart;
+  const to = reqEnd - cov.coverStart + 1;
+  if (from < 0 || to > lines.length) return undefined;
+  const text = lines.slice(from, to).join('\n');
+  if (text.trim() === '') return undefined;
+  return { startLine: start, endLine: reqEnd, text };
+}
+
+/**
+ * 分支②回显文案 · **区间命中版**（单一真理源：`handleToolCalls` 分支②唯一调用点）。
+ *
+ * 与 `formatLedgerStub` 的关系：判据（`shouldEchoLedgerStub`）命中后，优先按**请求区间**回显原文；
+ * 切不出来（原文已不在上下文 / 区间越出覆盖 / 正文不足）→ 退化顶头替身版，行为与旧版逐字一致。
+ *
+ * 文案真实性纪律（对齐 `formatLedgerStub` 的既有守卫）：「回显自已读内容，未重新读取文件」
+ * 是两语境皆真的**事实陈述**（内容确从上下文 tool 消息切出，未执行工具），不是状态断言。
+ *
+ * @param cov 台账覆盖度条目
+ * @param subj 本次请求的 offset/limit
+ * @param wrappedBody 已读正文（undefined = 拿不到 → 直接退化）
+ */
+export function formatLedgerStubRange(
+  cov: FileCoverage,
+  subj: { offset?: number; limit?: number },
+  wrappedBody: string | undefined,
+): string {
+  if (wrappedBody === undefined) return formatLedgerStub(cov);
+  const slice = sliceCoveredLines(wrappedBody, cov, subj);
+  if (!slice) return formatLedgerStub(cov);
+  const range =
+    cov.coverStart === cov.coverEnd
+      ? `${cov.coverStart} 行`
+      : `第 ${cov.coverStart}–${cov.coverEnd} 行`;
+  const req =
+    slice.startLine === slice.endLine
+      ? `${slice.startLine} 行`
+      : `第 ${slice.startLine}–${slice.endLine} 行`;
+  return (
+    `[ALREADY_READ] 该文件已读过（第 ${cov.cachedAtIteration} 步，覆盖 ${range} / 共 ${cov.totalLines} 行）。` +
+    `你请求的 ${req} 原文如下（回显自已读内容，未重新读取文件）：\n${slice.text}\n` +
+    `如需其它区间请用 read_file 的 offset/limit 指定；不要无区间重读已覆盖部分。`
   );
 }

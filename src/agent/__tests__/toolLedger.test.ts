@@ -10,6 +10,8 @@ import {
   FileExposureLedger,
   parseReadFileCoverage,
   formatLedgerStub,
+  formatLedgerStubRange,
+  sliceCoveredLines,
   shouldEchoLedgerStub,
   formatSegmentationFooter,
   READ_DIGEST_CHARS,
@@ -316,5 +318,139 @@ describe('shouldEchoLedgerStub（分支②判定单一真理源）', () => {
     expect(shouldEchoLedgerStub({ offset: 1, limit: 500 }, fullCov, false)).toBe(false);
     // 已覆盖到末尾后的中段回读（边界B 场景）在压缩后同样放行
     expect(shouldEchoLedgerStub({ offset: 500, limit: 100 }, fullCov, false)).toBe(false);
+  });
+});
+
+describe('formatLedgerStub · 越界引导（真机 round-1791449684099 实证）', () => {
+  it('已读到末尾（coverEnd >= totalLines）→ 不再给出 offset=coverEnd+1 越界示例', () => {
+    // 生产实锤：89 行章纲已整读（coverEnd=89=total），旧文案仍引导 `offset=90`——越界行号，
+    // 模型照着走只会拿到越界提示。文案给的每条出路必须可走通，否则即假出路。
+    const cov: FileCoverage = {
+      totalLines: 89,
+      coverStart: 1,
+      coverEnd: 89,
+      digest: 'd',
+      cachedAtIteration: 4,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-a',
+    };
+    const stub = formatLedgerStub(cov);
+    expect(stub).not.toContain('offset=90');
+    expect(stub).toContain('已读到末尾');
+  });
+
+  it('未读到末尾 → 仍给 offset=coverEnd+1 续读指引（旧语义不受损）', () => {
+    const cov: FileCoverage = {
+      totalLines: 1000,
+      coverStart: 1,
+      coverEnd: 200,
+      digest: 'd',
+      cachedAtIteration: 2,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-a',
+    };
+    expect(formatLedgerStub(cov)).toContain('offset=201');
+  });
+});
+
+describe('sliceCoveredLines（分支②回显取材：按请求区间切已读原文）', () => {
+  // 已整读 1–10 行（真实总行数 10），正文逐行可辨
+  const body = 'L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8\nL9\nL10';
+  const cov: FileCoverage = {
+    totalLines: 10,
+    coverStart: 1,
+    coverEnd: 10,
+    digest: 'L1',
+    cachedAtIteration: 1,
+    lastToolCallId: 'c1',
+    fingerprint: 'fp-a',
+  };
+
+  it('命中：按 offset/limit 切出请求区间原文（模型要哪段给哪段）', () => {
+    const s = sliceCoveredLines(body, cov, { offset: 3, limit: 4 });
+    expect(s).toBeDefined();
+    expect(s!.startLine).toBe(3);
+    expect(s!.endLine).toBe(6);
+    expect(s!.text).toBe('L3\nL4\nL5\nL6');
+  });
+
+  it('命中：无 limit = 读到末尾', () => {
+    const s = sliceCoveredLines(body, cov, { offset: 8 });
+    expect(s!.text).toBe('L8\nL9\nL10');
+    expect(s!.endLine).toBe(10);
+  });
+
+  it('未命中：请求区间越出已覆盖 → undefined（宁退化顶头替身，也不编造未读内容）', () => {
+    const partial: FileCoverage = { ...cov, coverEnd: 5 };
+    expect(sliceCoveredLines(body, partial, { offset: 4, limit: 5 })).toBeUndefined();
+    expect(sliceCoveredLines(body, partial, { offset: 9, limit: 1 })).toBeUndefined();
+  });
+
+  it('未命中：起点早于覆盖起点 → undefined（前向未读区，交给放行真读）', () => {
+    const mid: FileCoverage = { ...cov, coverStart: 6, coverEnd: 10 };
+    expect(sliceCoveredLines(body, mid, { offset: 1, limit: 2 })).toBeUndefined();
+  });
+
+  it('行号平移正确：已读段非从头开始（coverStart=6）时，请求 offset=7 取的是正文第 2 行', () => {
+    // 盲区守卫：coverStart=1 的场景下「start-coverStart」与「start-1」等价，平移错了也测不出来。
+    // 本用例把已读段挪到中段，平移一旦写错（漏减 coverStart）取到的就是错行或直接越界。
+    const tailBody = 'L6\nL7\nL8\nL9\nL10';
+    const midCov: FileCoverage = {
+      totalLines: 10,
+      coverStart: 6,
+      coverEnd: 10,
+      digest: 'L6',
+      cachedAtIteration: 3,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-b',
+    };
+    const s = sliceCoveredLines(tailBody, midCov, { offset: 7, limit: 2 });
+    expect(s!.text).toBe('L7\nL8');
+  });
+
+  it('分段脚注正文也能切（脚注在本函数内剥除，与 parseReadFileCoverage 同源）', () => {
+    const seg = 'L1\nL2\nL3' + '\n' + formatSegmentationFooter(1, 3, 10);
+    const s = sliceCoveredLines(
+      seg,
+      { ...cov, coverStart: 1, coverEnd: 3 },
+      { offset: 2, limit: 2 },
+    );
+    expect(s!.text).toBe('L2\nL3');
+  });
+});
+
+describe('formatLedgerStubRange（分支②区间回显文案）', () => {
+  const cov: FileCoverage = {
+    totalLines: 10,
+    coverStart: 1,
+    coverEnd: 10,
+    digest: 'L1',
+    cachedAtIteration: 7,
+    lastToolCallId: 'c1',
+    fingerprint: 'fp-a',
+  };
+  const body = 'L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8\nL9\nL10';
+
+  it('命中：回显请求区间原文 + 标注未重新读取（事实陈述，非状态断言）', () => {
+    const stub = formatLedgerStubRange(cov, { offset: 4, limit: 3 }, body);
+    expect(stub).toContain('[ALREADY_READ]');
+    expect(stub).toContain('第 4–6 行');
+    expect(stub).toContain('L4\nL5\nL6');
+    expect(stub).toContain('未重新读取文件');
+    // 真实性守卫：不得断言「原文已在本文」（与 formatLedgerStub 同纪律）
+    expect(stub).not.toContain('原文已在本次对话上文');
+  });
+
+  it('拿不到原文（undefined）→ 退化顶头替身版，逐字同 formatLedgerStub', () => {
+    expect(formatLedgerStubRange(cov, { offset: 4, limit: 3 }, undefined)).toBe(
+      formatLedgerStub(cov),
+    );
+  });
+
+  it('区间切不出（越出覆盖）→ 同样退化顶头替身版', () => {
+    const partial: FileCoverage = { ...cov, coverEnd: 2 };
+    expect(formatLedgerStubRange(partial, { offset: 8, limit: 2 }, body)).toBe(
+      formatLedgerStub(partial),
+    );
   });
 });

@@ -47,6 +47,7 @@ import { deriveDialogueRounds } from '@/agent/budget.js';
 import {
   parseAskCalls,
   wrapToolResult,
+  unwrapToolResultBody,
   isRetryableToolError,
   // B4 判据切换：护栏/替身/compress/remember 的 outcome 就地构造用
   blockedOutcome,
@@ -71,6 +72,7 @@ import {
   FileExposureLedger,
   parseReadFileCoverage,
   formatLedgerStub,
+  formatLedgerStubRange,
   shouldEchoLedgerStub,
   READ_DIGEST_CHARS,
 } from '@/agent/toolLedger.js';
@@ -2138,8 +2140,8 @@ export class AgentLoop {
         });
         continue;
       }
-      // 台账替身回显分支（摘要顶替，不收口进 guardRail）：**原文仍在上下文**时，同参/变体重读
-      // 用摘要或引导 offset 续读替代；原文已被压缩链清出 → 放行真读（替身是死路，见 stillInContext 注）。
+      // 台账替身回显分支（不收口进 guardRail）：**原文仍在上下文**时，同参/变体重读用**请求区间
+      // 原文**（切不出则退化顶头摘要）替代；原文已被压缩链清出 → 放行真读（替身是死路，见 stillInContext 注）。
       // 其余保守放行分支：无摘要 / 区间超出覆盖 → 放行（宁可多读一次，不可死锁）。
       // 文件被 write/delete 修改 → 结果处理循环 invalidate 台账，放行合法重读。
       const ledgerSubject = DEDUP_SUBJECT_EXTRACTORS[tc.function.name]?.(tc.function.arguments);
@@ -2148,8 +2150,12 @@ export class AgentLoop {
         // 前置：原文仍在上下文才拦。摘要替身只服务「手边有原文可回顾」的语境；原文已被压缩链
         // 清出时回显替身 = 死路（模型要的中段 token 永远不在顶头摘要里，同参重读被反复拦），
         // 必须放行真读。判据与 read_dedup 分支①共用 isMessageStillUnmodified（同源）。
-        const stillInContext =
-          cov !== undefined && this.isMessageStillUnmodified(cov.lastToolCallId, cov.fingerprint);
+        // 顺带取回原文：拦下后按请求区间回显（见下方 formatLedgerStubRange），一次 find 两处消费。
+        const covContent =
+          cov !== undefined
+            ? this.stillUnmodifiedContent(cov.lastToolCallId, cov.fingerprint)
+            : undefined;
+        const stillInContext = covContent !== undefined;
         if (cov && shouldEchoLedgerStub(ledgerSubject, cov, stillInContext)) {
           // 观测「补缝过度拦截」候选：台账替身回显命中累加。
           this.metrics.ledgerStubEchoCount++;
@@ -2174,11 +2180,24 @@ export class AgentLoop {
               path: ledgerSubject.path,
               cov: `${cov.coverStart}-${cov.coverEnd}/${cov.totalLines}`,
             },
-            'read_file 台账替身回显：已用摘要顶替整读',
+            // 文案只陈述两形态皆真的事实（未重新读取文件）——不再写「摘要顶替整读」：
+            // 命中区间时回显的是请求的区间原文，写「摘要顶替」即与行为不符（改一处漏一处的老伤）。
+            'read_file 台账替身回显：未重新读取文件',
           );
           toolExecs.push({
             // 台账替身 = 主动挡下 ⇒ blockedOutcome（替身非护栏、不经 GuardHit：原因固定 ledger_stub）
-            promise: Promise.resolve(blockedOutcome('ledger_stub', formatLedgerStub(cov))),
+            // 回显取材：优先按**请求区间**切原文（原文仍在上下文时零成本可取）；切不出 → 退化顶头替身。
+            // 旧版恒给顶头 400 字符，与模型请求的区间零重叠 → 模型绕道（生产轮 round-1791449684099）。
+            promise: Promise.resolve(
+              blockedOutcome(
+                'ledger_stub',
+                formatLedgerStubRange(
+                  cov,
+                  ledgerSubject,
+                  covContent === undefined ? undefined : unwrapToolResultBody(covContent),
+                ),
+              ),
+            ),
           });
           continue;
         }
@@ -3427,9 +3446,22 @@ export class AgentLoop {
    * 误放行的代价是「多读一次」；误拦的代价是「内容已不在手上却读不回来 = 死锁」——两者不对称。
    */
   private isMessageStillUnmodified(toolCallId: string, fingerprint: string): boolean {
+    return this.stillUnmodifiedContent(toolCallId, fingerprint) !== undefined;
+  }
+
+  /**
+   * 指定 toolCallId 的 tool 消息**内容**（判「在不在」与取内容同源，避免两处各自 find 各算一次）。
+   *
+   * 判据与 `isMessageStillUnmodified` 完全一致（布尔版委托本方法），差别只在返回原文：
+   * 分支②拦截后要按请求区间回显原文，而「在不在」的判据本身已经把消息翻出来了——
+   * 再翻一次既浪费，又容易让两处对「同一结果在不在」的理解分叉（SSOT：翻找+指纹比对只此一处）。
+   *
+   * @returns 仍在上下文且未被压缩链改动的原始消息内容；否则 undefined
+   */
+  private stillUnmodifiedContent(toolCallId: string, fingerprint: string): string | undefined {
     const msg = this.messages.find((m) => m.role === 'tool' && m.toolCallId === toolCallId);
-    if (!msg) return false;
-    return sha256Fingerprint(msg.content) === fingerprint;
+    if (!msg) return undefined;
+    return sha256Fingerprint(msg.content) === fingerprint ? msg.content : undefined;
   }
 
   /**

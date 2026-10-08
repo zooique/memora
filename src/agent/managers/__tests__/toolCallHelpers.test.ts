@@ -14,6 +14,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseAskCalls,
   wrapToolResult,
+  unwrapToolResultBody,
   isCallableToolName,
   filterCallableToolCalls,
   isRetryableToolError,
@@ -143,6 +144,35 @@ describe('wrapToolResult', () => {
   it('工具名含特殊字符不破坏标签（直接插值，由调用方保证来源可信）', () => {
     const out = wrapToolResult('web_search', 'r');
     expect(out).toContain('tool="web_search"');
+  });
+});
+
+// ─── unwrapToolResultBody（wrapToolResult 的逆操作）──────
+
+describe('unwrapToolResultBody', () => {
+  it('往返一致：wrap → unwrap 逐字还原正文（包裹模板改了必须同步，此用例是同源守卫）', () => {
+    const body = '# 第一章\n\n正文第一行\n正文第二行';
+    expect(unwrapToolResultBody(wrapToolResult('read_file', body))).toBe(body);
+  });
+
+  it('正文含多行 / 空行 / 尾换行：换行结构不被剥壳吃掉', () => {
+    const body = 'a\n\n\nb\n';
+    expect(unwrapToolResultBody(wrapToolResult('t', body))).toBe(body);
+  });
+
+  it('正文恰为 `<tool_result ...>` 形态也不误判（只剥固定两行头 + 固定尾缀）', () => {
+    const body = '<tool_result tool="fake">\n嵌套内容\n</tool_result>';
+    expect(unwrapToolResultBody(wrapToolResult('t', body))).toBe(body);
+  });
+
+  it('非包裹格式 → undefined（压缩占位符 / 手工构造，调用方据此退化，禁硬切）', () => {
+    expect(unwrapToolResultBody('[Previous: used read_file]')).toBeUndefined();
+    expect(unwrapToolResultBody('裸正文')).toBeUndefined();
+    expect(unwrapToolResultBody('')).toBeUndefined();
+  });
+
+  it('头部残缺（不足两行）→ undefined（宁退化不臆造）', () => {
+    expect(unwrapToolResultBody('<tool_result tool="t">\n</tool_result>')).toBeUndefined();
   });
 });
 
