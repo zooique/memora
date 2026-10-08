@@ -1,8 +1,8 @@
-# Memora · 接入指南 v3.0.0
+# Memora · 接入指南 v4.0.0
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
-> **当前稳定版**：v3.0.0。各版完整变更见 [CHANGELOG](../CHANGELOG.md)。
+> **当前稳定版**：v4.0.0。各版完整变更见 [CHANGELOG](../CHANGELOG.md)。
 >
 > **对接入者有影响的迁移结论**（不含历史流水，细节见 [API 参考手册](./memora-api-reference.md)）：
 > - 1.0 为正式发布，API 已稳定；2.0 起设定记忆（persona/rules/skills）解耦为纯文件 + 内存缓存，唯一归角色包、不进记忆库（ADR-025），角色管理统一走 `agent.rolePack`。
@@ -235,8 +235,8 @@ const snap = agent.memory.snapshot();
 console.log('工作记忆:', snap.working.total, '条');
 console.log('引导记忆:', snap.bootstrap.total, '条');
 
-// 关键词搜索
-const hits = agent.memory.search('世界观');
+// 关键词搜索（异步 API，需 await）
+const hits = await agent.memory.searchByKeyword('世界观');
 hits.forEach(h => console.log(`${h.source}:${h.name}`));
 
 // 记忆库统计
@@ -448,9 +448,10 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 |------|------|------|
 | 构造 | `new Agent({ projectPath, provider, configDir, dataDir })` | §二 · AgentOptions |
 | 对话 | `agent.chat(input)`（流式）/ `agent.chatSync(input)` | §三 |
-| 记忆 | `agent.memory.snapshot()/search()/writeXxx()` | §四 |
+| 记忆 | `agent.memory.snapshot()/searchByKeyword()/writeXxx()` | §四 |
 | 角色包 | `agent.rolePack.listMeta()/activate()` | §七 |
 | 工具 | `agent.tools.registerTool()/execute()` | §八 |
+| 后台命令 | 内置工具 `run_command`（`background: true`）/ `agent.listBackgroundTasks()` / `agent.killBackgroundTask()` | §8.1 · §8.7 |
 | 会话 | `agent.forkSession()` / `agent.sessionManager.*` | §六 |
 
 > 记忆治理（去重/冲突）统一走 `agent.governance` 或 Agent 层方法，见参考手册 §四 与「记忆治理」章节。

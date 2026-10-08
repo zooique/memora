@@ -223,6 +223,10 @@ export type { SessionCheckpoint } from '@/agent/types.js';
 export type { BackgroundTask } from '@/agent/backgroundTasks.js';
 // 后台任务状态中文词表（宿主 UI 直接消费，禁自建第二套；Record 穷尽键 = 加状态忘补文案编译期红）
 export { BACKGROUND_TASK_STATUS_LABELS } from '@/agent/backgroundTasks.js';
+// 命令派发 shell 映射（「命令实际派发到哪个 shell」的唯一真源）：宿主环境快照的 shell 字段
+// 经本函数派生（environmentProvider），禁自写平台三元副本——两侧映射漂移 = 对模型说假话
+// （模型按 A shell 语法写命令却在 B shell 下执行，每次必败）。
+export { resolveShellCommand } from '@/skill/skillScriptRunner.js';
 // MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）
 export type { ForkResult } from '@/agent/messageHistory.js';
 // 注：extractKeywords 为 keywordsTouch 导出的内核分词 SSOT（project-search/terms.ts 同源消费，不另造分词器），

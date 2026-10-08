@@ -1,10 +1,10 @@
-# Memora 内核 API 参考手册（v3.0.0）
+# Memora 内核 API 参考手册（v4.0.0）
 
 > **核心定位**：Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 >
 > **本文件用途**：列出内核对外暴露的**全部公开接口**——从最基础的接入接口（〇），到 Agent 面类、对话、记忆、角色包、工具、各 Manager，再到类型导出与安全约束。
 >
-> **版本**：v3.0.0（对齐当前稳定版，纯净接口文档，不含历史变更流水）
+> **版本**：v4.0.0（对齐当前稳定版，纯净接口文档，不含历史变更流水）
 
 ---
 
@@ -622,6 +622,8 @@ const lock = rp.getSwitchLockStatus(); // 切换防抖状态
 | `search_memories` | 在记忆索引中搜索（支持 match/near 两种模式） | `query`, `limit?`, `mode?` | 默认常驻 |
 | `run_project_script` | 运行**项目内既有**脚本（内核子进程，cwd=项目根；路径白名单越界拒绝；扩展名推断 node/python/shell；超时 30s 上限 120s） | `script_path`, `args?` | 默认常驻（零注入） |
 | `run_skill_script` | 执行技能目录下的脚本（渐进披露 L3） | `skill_name`, `script_path`, `args?` | 默认常驻（来源=技能作者） |
+| `run_command` | 执行 shell 命令（裁决链：deny 恒拦 → 确认档位 → allow 白名单；`background: true` 转后台立即返回 taskId，结果经回流通知注入，详见 §8.7） | `command`, `cwd?`, `background?`, `timeoutMs?` | 默认常驻 |
+| `kill_command` | 终止后台命令任务并取回截至当时的输出（仅可杀本 agent 实例起的任务，§8.7） | `taskId` | 默认常驻 |
 | `web_search` | 搜索互联网 | `query`, `limit?` | 条件暴露（注入 `IWebSearchProvider`） |
 | `web_fetch` | 抓取网页正文（与 `web_search` 成对闭环） | `url`, `limit?` | 条件暴露（注入 `IFetchProvider`） |
 | `run_code` | LLM 现写代码执行（特权：`code:execute` 声明 + 宿主沙箱注入） | `language`, `code` 或 `script_path` | 条件暴露（注入 `ICodeExecutionProvider` 且角色包声明特权） |
@@ -867,7 +869,8 @@ interface BackgroundTask {
 
 > 注册表类 `BackgroundTaskRegistry` **不进公共导出面**（内核内部模块）：导出它会让宿主
 > 跨会话 kill，与「仅可杀本 agent 起的后台任务」定案冲突——故**只出方法、不出类**；
-> 类型 `BackgroundTask` 经 `@zooique/memora` 导出。
+> 类型 `BackgroundTask` 与状态词表 `BACKGROUND_TASK_STATUS_LABELS`（宿主 UI 渲染状态
+> 文案的唯一真源，禁自建第二套）经 `@zooique/memora` 导出。
 
 ---
 
@@ -1263,5 +1266,5 @@ Agent 内部只维护两个状态文件，路径全部由宿主传入的路径�
 
 ---
 
-**版本**：v3.0.0
+**版本**：v4.0.0
 **配套文档**：[memora-接入指南.md](./memora-接入指南.md)（步骤式教程）

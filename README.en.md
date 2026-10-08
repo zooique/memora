@@ -1,4 +1,4 @@
-﻿# Memora
+# Memora
 
 > **Agent Memory Kernel with Governance** — Local-first, Private, Zero-dep. Not a framework, a kernel.
 
@@ -85,7 +85,7 @@ await agent.close();
 
 Memora is a **brain kernel that cannot run standalone** — it has interfaces but no "form." A CLI, WebUI, desktop sprite, or novel generator can be its "host." The host gives it a body (UI), blood vessels (Provider), and neural circuits (event loops).
 
-> **Version positioning (v3.0.0)**: **Node.js-only · Zero third-party runtime deps Agent kernel**. v3.0.0 is the first stable baseline after architecture convergence.
+> **Version positioning (v3.0.0)**: **Node.js-only · Zero third-party runtime deps Agent kernel**. v3.0.0 is the first stable baseline after architecture convergence. **v4.0.0 (first major)**: public export surface collapsed (−55 exports) + `agent.memory.search()` removed (`searchByKeyword()` is the sole entry); see [CHANGELOG](./CHANGELOG.md).
 
 ---
 

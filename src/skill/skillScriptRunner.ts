@@ -410,8 +410,9 @@ function attachGovernance(
  * 宿主把该事实注入 system prompt「## 运行环境 · 默认 Shell」段供模型避坑，
  * 两侧若不一致 = 对模型说假话（曾发生：宿主报 `PowerShell` 而此处是 `cmd`，
  * 模型写 PowerShell 语法却由 cmd 执行，每次必败）。
- * **改本映射必须同批核对宿主镜像**：`hosts/memora-vscode/src/extension/host/environmentProvider.ts`
- * 的 `shell` 字段（与 `run_command` / `run_project_script` 的 shell 档共用此派发形态）。
+ * 宿主环境快照的 `shell` 字段经公开导出**直接消费本函数派生**（environmentProvider）——
+ * 单一真源无镜像副本，改映射即两侧同步生效（与 `run_command` / `run_project_script`
+ * 的 shell 档共用此派发形态）。
  */
 export function resolveShellCommand(
   command: string,
@@ -512,14 +513,13 @@ export function startBackgroundCommand(
  * @param timeoutMs 超时（毫秒，限制在 [1s, SYNC_MAX_TIMEOUT_MS] 内）
  * @param cwd 子进程工作目录（可选；run_project_script 以项目根为 cwd，
  *        使项目脚本可加载项目本地依赖/相对数据文件）
- * @param nodePath node 可执行文件路径（可选，缺省 'node' 走 PATH）——供宿主注入真实
- *        node 路径用。
- *        ⚠️ 宿主尚未接入——`hosts/memora-vscode` 零注入点，故实际恒走缺省 `'node'`。
- *        且真解不止「传个路径」：Electron 宿主（VS Code）的
- *        `process.execPath` 指向应用二进制，需配 `ELECTRON_RUN_AS_NODE` 一类环境变量才能以
- *        node 语义执行 `.mjs` **文件**，而内核只收路径、不收环境（边界铁律：内核不持有平台知识）。
- *        ⇒ 真解 = 接口扩展（宿主上报运行时环境，内核零解释转发），留待与宿主 shell 选型同批。
- *        此处保留该可选参数：接入点已就绪，扩展时无须再动调用链。
+ * @param nodePath node 可执行文件路径（可选，缺省 'node' 走 PATH）——宿主经
+ *        `AgentOptions.scriptNodePath` 注入用户显式配置（VS Code 宿主读
+ *        `memora.scriptNodePath` 工作区设置，未配置传 undefined 走缺省）。
+ *        ⚠️ 若宿主想自动注入 `process.execPath`（Electron 宿主该路径指向应用二进制），
+ *        需配 `ELECTRON_RUN_AS_NODE` 一类环境变量才能以 node 语义执行 `.mjs` **文件**，
+ *        而内核只收路径、不收环境（边界铁律：内核不持有平台知识）——故内核只留路径
+ *        注入点，运行时探测与环境变量配齐是宿主侧职责。
  */
 export async function runSkillScript(
   scriptPath: string,

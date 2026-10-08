@@ -21,6 +21,7 @@ import { describe, it, expect } from 'vitest';
 import {
   BackgroundTaskRegistry,
   BACKGROUND_TASK_STATUS_LABELS,
+  BACKGROUND_TASK_NOTICE_TAGS,
   formatBackgroundTaskNotice,
   type BackgroundTask,
 } from '../backgroundTasks.js';
@@ -323,5 +324,20 @@ describe('formatBackgroundTaskNotice（回流文案 · 2026-10-03 对抗式回�
   it('回流通知用同一词表（改词表即改通知，无第二套文案）', () => {
     const notice = formatBackgroundTaskNotice(makeTask('ok', 'timedOut'));
     expect(notice).toContain(BACKGROUND_TASK_STATUS_LABELS.timedOut);
+  });
+
+  it('timedOut 首标签不得谎报完成（回归锁：旧三元推导产出「[后台命令完成] · 超时被终止」自相矛盾）', () => {
+    const notice = formatBackgroundTaskNotice(makeTask('ok', 'timedOut'));
+    expect(notice.startsWith('[后台命令超时]')).toBe(true);
+    expect(notice).not.toContain('[后台命令完成]');
+  });
+
+  // 穷尽表逐态对账：每个状态的通知都必须以其专属首标签开头（Record 穷尽只保证
+  // 编译期有键，本断言锁运行期「产出 = 表值」——改表不改函数或反之即红）。
+  it('各状态通知首标签与 BACKGROUND_TASK_NOTICE_TAGS 逐态同源', () => {
+    for (const [status, tag] of Object.entries(BACKGROUND_TASK_NOTICE_TAGS)) {
+      const task = makeTask('ok', status as BackgroundTask['status']);
+      expect(formatBackgroundTaskNotice(task).startsWith(`[${tag}]`)).toBe(true);
+    }
   });
 });

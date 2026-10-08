@@ -186,6 +186,8 @@ const TOOL_RESULT_TAGS: Readonly<Record<string, string>> = {
     '重复读取拦截回显（主动挡下，未执行；由 guardRail/ledgerStub 产出，status=blocked）',
   后台命令完成: '后台任务自然完成通知（系统事件来源标记，非失败；body 承载结局）',
   后台命令已终止: '后台任务被终止通知（系统事件来源标记，非失败；刻意不贴退出码）',
+  后台命令超时: '后台任务超时被终止通知（系统事件来源标记，非失败；结局由 body 承载）',
+  后台命令运行中: '后台任务运行中通知（系统事件来源标记，非失败；穷尽表防御键，通知仅在终态发出）',
 };
 
 /** 软降级族（语义非失败）—— 精度用例点名用，与登记表语义理由互为交叉验证 */
@@ -225,65 +227,78 @@ function deriveToolErrorCodes(): readonly string[] {
 }
 
 /**
- * 后台通知标签模板（`backgroundTasks.ts` 的 `[后台命令${…}]`，含中文语系）。
+ * 后台通知标签模板（`backgroundTasks.ts` 首标签位，含中文语系）。
  *
  * ⚠️ **必须复用扫描器自身的提取路径**（`extractStringLiterals` + `TEMPLATE_TAG`），
- * 不得另写一条正则去 grep 同一段文本：首版用独立正则 `\`\[(后台命令[^`]*\$\{[^`]*)\]`
- * 抓模板，抓到的是**缺右花括号**的版本（`[^`]*` 贪婪吃掉了 `}`），
- * 与扫描器产出的键对不上 ⇒「已登记但生产不产出」双向对账恒红。
- * 教训：**同一口径只能有一处定义**（旧守卫的血泪史第4 条，2026-10-06）。
+ * 不得另写一条正则去 grep 同一段文本（旧守卫的血泪史第4 条，2026-10-06）。
+ *
+ * 判据 `${noticeTag`：生产侧以中间变量 `noticeTag` 承载查表结果再进模板——
+ * `BACKGROUND_TASK_NOTICE_TAGS[task.status]` 嵌套下标直写进模板会被 TEMPLATE_TAG
+ * 在内层 `]` 处提前截断，产出残缺键。**变量名改名须同批改此判据**，失明即本函数
+ * throw（响亮红，§5.6：提取失败不得静默跳过）。
  */
 function deriveBackgroundNoticeTemplate(): string {
   const src = readFileSync(join(SRC_ROOT, 'agent/backgroundTasks.ts'), 'utf8');
   const tag = extractStringLiterals(src)
     .map(firstTagOf)
-    .find((t) => t?.startsWith('后台命令'));
+    .find((t) => t?.startsWith('${noticeTag'));
   if (!tag) throw new Error('deriveBackgroundNoticeTemplate 提取失败：找不到后台通知标签模板');
   return tag;
 }
 
 /**
- * 抽出模板标签里**三元表达式两个分支**的字面量（`c ? 'A' : 'B'` ⇒ `['A','B']`）。
+ * 后台通知首标签全集（从 `BACKGROUND_TASK_NOTICE_TAGS` 穷尽表**真源**读出，不手抄）。
  *
- * ⚠️ 不能用「抽出模板里全部单引号字面量」这条粗规则：`cond` 里的比较操作数
- * （`task.status === 'killed'`）也会被抽进来，凭空多出一个 `后台命令killed`
- * （首版即如此，被「僵尸登记」用例当场抓红）。分支必须按 `? :` 定位。
- *
- * ⚠️ 也不能用 `lastIndexOf('}')` 切表达式：`==='killed'` 无花括号尚可，
- * 但形如 `f({a:1})` 的 cond 会让末位 `}` 落在内层，切出半个表达式（实测踩中）。
- * 插值右界由 `skipInterpolation` 的花括号配平给出。
+ * 展开成员 = 表值字面量：定位声明块（花括号配平取整块，跳过字符串防表值含 `}` 错切），
+ * 抽块内单引号字符串（键为标识符不占字面量）。旧实现从「三元分支」展开，穷尽表落地后
+ * 真源迁到表——提取路径随之改读表值（§5.6：期望值不手写，从真源读）。
  */
-function extractTernaryBranches(expr: string): readonly string[] {
-  const q = expr.indexOf('?');
-  const colon = expr.indexOf(':', q);
-  if (q < 0 || colon < 0) throw new Error(`三元表达式解析失败（缺 ? 或 :）：${expr}`);
-  const branches = [expr.slice(q + 1, colon), expr.slice(colon + 1)]
-    .map((part) => /^\s*'([^']*)'\s*$/.exec(part)?.[1])
-    .filter((x): x is string => x !== undefined);
-  if (branches.length !== 2) throw new Error(`三元分支不是两个字面量：${expr}`);
-  return branches;
+function deriveBackgroundNoticeTags(): readonly string[] {
+  const src = readFileSync(join(SRC_ROOT, 'agent/backgroundTasks.ts'), 'utf8');
+  const anchor = src.indexOf('BACKGROUND_TASK_NOTICE_TAGS: Record');
+  if (anchor < 0) throw new Error('BACKGROUND_TASK_NOTICE_TAGS 声明未找到——真源变形，必须红');
+  const open = src.indexOf('{', anchor);
+  let close = -1;
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    const c = src[i]!;
+    if (c === "'") {
+      i++;
+      while (i < src.length && src[i] !== "'") i++; // 跳过字符串字面量（防表值含花括号错切）
+      continue;
+    }
+    if (c === '{') depth++;
+    if (c === '}') {
+      depth--;
+      if (depth === 0) {
+        close = i;
+        break;
+      }
+    }
+  }
+  if (close < 0) throw new Error('BACKGROUND_TASK_NOTICE_TAGS 块未闭合——真源变形，必须红');
+  const tags = [...src.slice(open, close + 1).matchAll(/([\u4e00-\u9fa5][^']*)/g)].map(
+    (m) => m[1]!,
+  );
+  if (tags.length === 0)
+    throw new Error('BACKGROUND_TASK_NOTICE_TAGS 表值提取为空——真源变形，必须红');
+  return tags;
 }
 
 /**
  * 拼接标签模板 → 从真源展开的标签集合（§5.6：期望值不手写，从真源读）。
  *
- * `后台命令${task.status === 'killed' ? '已终止' : '完成'}` 的展开成员取自该三元表达式
- * 自身的两个字面量分支（按 `? :` 定位抽取，非手抄）。
+ * 后台通知的展开成员取自 `BACKGROUND_TASK_NOTICE_TAGS` 穷尽表值（真源推导，非手抄）。
  */
 function expandTemplateTags(): ReadonlyMap<string, readonly string[]> {
   const kinds = deriveKindUnion();
   const codes = deriveToolErrorCodes();
-  const bgTemplate = deriveBackgroundNoticeTemplate();
-  const bgExprStart = bgTemplate.indexOf('${') + 2;
-  const bgPrefix = bgTemplate.slice(0, bgTemplate.indexOf('${'));
-  const bgBranches = extractTernaryBranches(
-    bgTemplate.slice(bgExprStart, skipInterpolation(bgTemplate, bgExprStart)),
-  );
   return new Map<string, readonly string[]>([
     ['${labels.kind}_ERROR', kinds.map((k) => `${k}_ERROR`)],
     ['${labels.kind}_TIMEOUT', kinds.map((k) => `${k}_TIMEOUT`)],
     ['ERR:TOOL:${code}', codes.map((c) => `ERR:TOOL:${c}`)],
-    [bgTemplate, bgBranches.map((b) => `${bgPrefix}${b}`)],
+    // 后台通知查表产出：模板键从扫描器路径提取，展开成员 = 穷尽表值全集
+    [deriveBackgroundNoticeTemplate(), deriveBackgroundNoticeTags()],
   ]);
 }
 
@@ -461,6 +476,8 @@ describe('工具结果首标签 · 反向对账守卫（SCRIPT-2 B5-e 补丁）'
     expect(codes.length, 'ToolErrorCode 提取为空——判据输入失配，必须红').toBeGreaterThan(0);
     // 三态族必须恰好覆盖 SCRIPT / CODE / COMMAND 三条执行链路，缺一即真源变形
     expect([...kinds].sort()).toEqual(['CODE', 'COMMAND', 'SCRIPT']);
+    const bgTags = deriveBackgroundNoticeTags();
+    expect(bgTags.length, '后台通知表值提取为空——判据输入失配，必须红').toBeGreaterThan(0);
   });
 
   it('扫描面非空（扫描器没坏，否则反向对账恒真通过 = 假绿）', () => {
@@ -701,5 +718,38 @@ describe('扫描器自证（§5.4：先验证测量工具本身，再信它的�
     expect(TEMPLATE_TAG.test('普通文本 ${x} 无标签')).toBe(false);
     // 首字符即标签是前提：正文中间的插值不算
     expect(TEMPLATE_TAG.test('前缀 [${x}] 后缀')).toBe(false);
+  });
+});
+
+describe('failedOutcome 调用点台账对账（裸失败构造点登记）', () => {
+  /**
+   * 台账：允许调用**裸** `failedOutcome()`（无 errorCode，重试分类只能走文本兜底）的
+   * 文件 → 预期调用次数。定义处 `toolCallHelpers.ts` 不在册（它不是调用点）。
+   *
+   * 裸失败点必须自答「为什么这个失败给不出 errorCode」——toolRunner 的两处是 ABORTED
+   * （中断事实故意不入错误码体系，见 `failedOutcome` JSDoc）；toolExecutor / loop 的
+   * 存量点均为既定形态。新增调用点未登记即红；有码失败一律走 `failedOutcomeWithCode`。
+   */
+  const FAILED_OUTCOME_LEDGER: Readonly<Record<string, number>> = {
+    'agent/toolExecutor.ts': 16,
+    'agent/toolRunner.ts': 2,
+    'agent/loop.ts': 2,
+  };
+
+  it('裸 failedOutcome 调用点逐文件计数与台账相等（新增点未登记 / 存量点漂移即红）', () => {
+    const counts: Record<string, number> = {};
+    // listSourceFiles 返回相对 SRC_ROOT 的正斜杠路径（本文件 :411 实现），直接作台账键
+    for (const rel of listSourceFiles(SRC_ROOT)) {
+      // 定义处不是调用点；测试文件已被 listSourceFiles 排除（__tests__ 不扫描）
+      if (rel === 'agent/managers/toolCallHelpers.ts') continue;
+      const src = readFileSync(join(SRC_ROOT, rel), 'utf8');
+      const n = [...src.matchAll(/(?<![\w$])failedOutcome\(/g)].length;
+      if (n > 0) counts[rel] = n;
+    }
+    expect(
+      counts,
+      'failedOutcome 调用点漂移——新增裸失败点须登记 FAILED_OUTCOME_LEDGER 并自答' +
+        '「为何给不出 errorCode」（有码失败一律走 failedOutcomeWithCode）',
+    ).toEqual(FAILED_OUTCOME_LEDGER);
   });
 });

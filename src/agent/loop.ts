@@ -3446,7 +3446,8 @@ export class AgentLoop {
       const tc = toolCalls[i]!;
       const outcome = results[i]!;
       // 工具结果隔离：用 <tool_result> 包裹 + 指令前缀，防外部工具返回承载间接注入；
-      // ERR 前缀保留在包裹内，供 isRetryableToolError 识别（该正则不锚定行首）
+      // 重试分类主判据是 outcome.errorCode（结构化契约，toolCallHelpers），
+      // ERR 前缀仅兜底 errorCode 缺失的旧形态文本（该正则不锚定行首，包裹内仍可识别）
       const wrapped = wrapToolResult(tc.function.name, outcome.text);
       this.appendToolMessage(wrapped, tc.id);
 

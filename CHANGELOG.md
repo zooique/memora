@@ -1,41 +1,75 @@
 # Changelog
 
-本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号。`[Unreleased]` 按 ADR-033 双版本线拆为**两个同构子区**：`[Unreleased] · 内核`（随 3.1.0 发版，不提前 bump）与 `[Unreleased] · 宿主`（随做随用，攒批随 `vsce package` 定版）。
+本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号。`[Unreleased]` 按 ADR-033 双版本线拆分：内核变更定档独立版本号（当前 **[4.0.0]**），宿主变更在 `[Unreleased] · 宿主`（随做随用，攒批随 `vsce package` 定版），不占内核版本号。
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **版本定位（v3.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。早期版本（2.1.0 及以下）为探索性迭代；**3.0.0 是架构收敛后的第一个稳定基线**，API 与结构以 3.0.0 为准。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与单测（2700+ 用例）负责，不对"agent 整体行为稳定"作承诺。
+> **版本定位（v3.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。早期版本（2.1.0 及以下）为探索性迭代；**3.0.0 是架构收敛后的第一个稳定基线**，API 与结构以 3.0.0 为准；**4.0.0 起导出面收敛（-55）+ `search()` 退役，API 以 4.0.0 为准**。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与单测（2700+ 用例）负责，不对"agent 整体行为稳定"作承诺。
 
-## [Unreleased] · 内核（已定档 3.1.0 · 未发版）
+## [4.0.0] · 2026-10-08
 
-> **本区归属**：仅**内核**（`@zooique/memora`）变更，随 3.1.0 发版。**不提前 bump**——`package.json` 版本号仍为 3.0.1，bump 属发版动作而非落地动作（ADR-033）。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
+> **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：删 55 个公共导出 + 退役 `agent.memory.search()`，对外部消费者是编译期破坏。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
 
-### ⚠️ Breaking（内核 · 导出面收敛：53 个无消费、无文档承诺的公共导出降级为内部实现 · `REL-3.1`，已定档 3.1.0）
+### ⚠️ Breaking（内核 · 记忆搜索唯一入口收敛：删除已退役的 `MemoryInspector.search()` · `f552695e`）
+
+- 删除 `agent.memory.search(query, limit?)`（同步），含其 5 条测试。唯一入口 = `searchByKeyword()`
+  （返回 `Promise`，需 `await`；能力超集：superseded 过滤 / `excludeRoundIds` 互斥 / `accessedAt` 刷新 + 溯源揭示）。
+- 迁移：`agent.memory.search(q, n)` → `await agent.memory.searchByKeyword(q, n)`。
+
+### ⚠️ Breaking（内核 · 工具错误码收口为单一构造点，重试分类改读结构化字段 · `6ce81139`）
+
+- `ToolOutcome` 新增 `errorCode?: ToolErrorCodeValue`；带码失败一律走 `failedOutcomeWithCode(code, detail)`，
+  文本 `[ERR:TOOL:XXX]` 前缀由 `errorCode` 派生，单一构造点同源产出一次。
+- `isRetryableToolError` 优先读 `outcome.errorCode`，无码才回退解析文本前缀（兼容路径）。
+- 新增枚举值 `NOT_AVAILABLE`（不可重试：缺的是宿主装配，重试空转）。
+
+### Added（内核 · 公共导出面双向机器对账守卫 · `PUBLIC-API-SURFACE-1` · `536c54fa`）
+
+- 向 A：公开面 ⊆ 宿主真实消费 ∪ README/手册 §十六 承诺（防未登记公开）；
+  向 B：手册 §十六 承诺符号在 `src` 真实存在（防幻觉文档）；
+  向 C：手册 §十六 承诺的模块级符号必须在公开面（防「文档承诺但未导出」，消费者具名
+  import 得到 undefined）。C 向为发版前审查补建，豁免集冻结（import 示例噪声 9 + 类型/叙述词 4）。
+
+### Added（内核 · 公开导出 `resolveShellCommand`：宿主环境快照 shell 字段单一真源派生 · 发版前审查 H8）
+
+- `src/skill/skillScriptRunner.ts` 的 shell 派发映射函数挂公共面。VS Code 宿主环境快照的
+  `shell` 字段改为经内核公开导出直接派生（此前镜像手写平台三元——内核改映射宿主不知情，
+  上报值与实际派发值漂移即「假事实」；2026-10-03 审查 P0 同源教训的收口）。
+- 守卫保留：宿主侧同源守卫改读内核源码提取真源（重算 = 第二份判据，写错即红的形态不变）。
+
+### ⚠️ Breaking（内核 · 导出面收敛：55 个无消费、无文档承诺的公共导出降级为内部实现 · `REL-3.1`，已定档 4.0.0）
 
 **收敛判据（2026-10-06 定案）**：公共导出只保留 ① 宿主（`hosts/memora-vscode`）经 `@zooique/memora`
 实际 import 的符号；② README / API 手册 §十六 明文承诺的公共 API。两条都不占的符号从 `src/index.ts`
 公共面移除。**收编 ≠ 删除**：类型定义仍在原模块、随函数签名/结构推断可用，只是不再可显式 import；
-判定前全量重盘（历史快照「约 70 个」实测为 53 个）。
+判定前全量重盘（历史快照「约 70 个」重盘实测 53 个；终盘对账 3.0.1→4.0.0 实移 **55** 个——误报 2、补登 4，见下方清单分账注记）。
 
-**移除清单（53 个，按域分组）**：
+**移除清单（55 个，按域分组）**：
 
-- agent 内部类型/值（16）：`AbortStopReason` / `IdempotencyLevel` / `ToolExecutionRecord` /
-  `PauseMeta` / `PlanItemOutcome` / `PlanItem` / `BackgroundTaskStatus` /
+- agent 内部类型/值（15）：`AbortStopReason` / `IdempotencyLevel` / `ToolExecutionRecord` /
+  `PauseMeta` / `PlanItemOutcome` / `PlanItem` /
   `DefaultDuplicateCallInterceptor` / `DuplicateCallInterceptor` / `DuplicateCheckVerdict` /
   `DuplicateCheckContext` / `RoundSummaryGenerator` / `EstimateOccupancyInput` /
-  `estimateTokensText` / `EstimableMessage` / `COMPRESS_TARGETS`
-- LLM / 事件 / 记忆（3）：`TaskType` / `AGENT_EVENTS` / `SummaryType`
+  `estimateTokensText` / `EstimableMessage` / `WorkProjectionManager`
+- LLM / 事件 / 记忆（4）：`TaskType` / `AGENT_EVENTS` / `SummaryType` / `ProcessMetricsPayload`
 - Round 存储内部件（6）：`RoundEvidenceEvent` / `generateRoundId` / `generateMessageId` /
   `createPendingRound` / `completeRound` / `InMemoryRoundStore`
 - 工具定义常量（2）：`SEARCH_PROJECT_TOOL` / `TRACE_SUMMARY_TOOL`
-- 角色包子类型与装配内部件（22）：`RolePack` / `RolePackTeam` / `RolePackCapability` /
+- 角色包子类型与装配内部件（24）：`RolePack` / `RolePackTeam` / `RolePackCapability` /
   `RolePackManifestSkill` / `BehaviorStrategy` / `PrepareStrategy` / `ActStrategy` /
   `ReflectStrategy` / `GlobalStrategy` / `ToolReadonly` / `ProviderRouting` /
   `MultiStepReasoning` / `SelfReviewRounds` / `UserFollowup` / `ErrorHandling` /
   `DEFAULT_BEHAVIOR_STRATEGY` / `mergeStrategy` / `assembleRolePack` /
   `checkCompanionContentRedline` / `RolePackValidationIssue` / `RolePackValidationResult` /
-  `RolePackIssueSeverity`
+  `RolePackIssueSeverity` / `RolePackAssembly` / `validateManifest`
 - 杂项工具（4）：`safeSearch` / `isValidConfigName` / `parseConfigId` / `MAX_CONFIG_NAME_LENGTH`
+
+**分账注记（2026-10-08 终盘对账）**：初版清单（53）含 **误报 2**——`BackgroundTaskStatus` /
+`COMPRESS_TARGETS` 在 3.0.1 导出面上**不存在**（本开发周期内新增，旋经 `b69f85ff` 收敛收回），
+不构成 3.0.1→4.0.0 对外破坏，已从上方清单移出（`BackgroundTaskStatus` 的挂面史见下方后台任务
+可见性条目后注）；另 **漏登 4** 已补入上方分组——`WorkProjectionManager`（类值导出）、
+`validateManifest`（值导出）、`RolePackAssembly`、`ProcessMetricsPayload`，其中前两个是值导出，
+外部显式 import 在 4.0.0 直接编译红。
 
 **文档面同步修正（API 手册 §十六 5 处失真）**：删 4 个**幻影承诺**（`AgentProjectEntry` /
 `BOOST_INCREMENT` / `SCORE_CEILING` / `SCORE_FLOOR` / `SkillMatch`——src 无对应导出，属文档单方面
@@ -45,7 +79,7 @@
 **影响**：宿主零改动（tsc 双绿实证，收编清单与宿主消费面零交集）；外部消费者若显式 import 被收
 符号，改用类型推断或自有定义。
 
-### ⚠️ Breaking（内核 · 工具结果三值契约判据切换：执行层闸门 blocked 不再计入 toolFailureCount · `SCRIPT-2` B4，已定档 3.1.0）
+### ⚠️ Breaking（内核 · 工具结果三值契约判据切换：执行层闸门 blocked 不再计入 toolFailureCount · `SCRIPT-2` B4，已定档 4.0.0）
 
 **口径变更（Breaking）**：执行层闸门（宿主审批拒绝 `permission_denied` / 只读拒绝 `readonly_denied` /
 幂等跳过 `idempotent_skip`）此前被文本判据算作**失败**（`[ERR:TOOL:PERMISSION_DENIED]` 等前缀命中
@@ -74,7 +108,7 @@ B4 判据切换后编排层 / 计数层一律读 `ToolOutcome.status` 三值契�
 failedOutcome emit；kill_command 已终态分支的行首归属判据改读结构化进程终态（`timedOut` / `exitCode`），
 不再扫文本前缀。
 
-### ⚠️ Breaking（内核 · 判据桥消亡：失败语义全面结构化，文本前缀判据退役 · `SCRIPT-2` B5，已定档 3.1.0）
+### ⚠️ Breaking（内核 · 判据桥消亡：失败语义全面结构化，文本前缀判据退役 · `SCRIPT-2` B5，已定档 4.0.0）
 
 **B5（最终消亡批次）收口**：未切族全部 outcome 化，文本前缀判据（`isToolFailure` +
 `TOOL_FAILURE_PATTERNS`）及其守卫（`toolFailurePrefixGuard.test.ts` / 前缀契约测试段）**物理删除**。
@@ -105,7 +139,7 @@ failedOutcome emit；kill_command 已终态分支的行首归属判据改读结�
 （新增 `mockExecutorReturning` 辅助函数统一 7 处 mock 形态）；「执行器未 emit → 兜底 ok（即使
 文本长得像失败前缀）」由测试锁定——失败判据唯一来源 = emit，无第二判据。
 
-### ⚠️ Breaking（内核 · 工具失败判据收敛单点：脚本/代码/命令三态族不再漏计 · `SCRIPT-1` + `METRICS-PREFIX-1`①②，已定档 3.1.0）
+### ⚠️ Breaking（内核 · 工具失败判据收敛单点：脚本/代码/命令三态族不再漏计 · `SCRIPT-1` + `METRICS-PREFIX-1`①②，已定档 4.0.0）
 
 **口径缺陷（静默失败 = 假阴性）**：失败判据此前散落三处、各自手写 `result.startsWith('[ERR')`
 （`toolRunner` 执行层 / `loop` 编排层 / `loop` `toolFailureCount` 计数）。而脚本族失败产出的是
@@ -192,6 +226,18 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 - **边界**：内置包不参与对账（磁盘真理源 = dist，构建期同步，运行中恒定）；manifest.name 撞内置
   的用户包继承重名跳过判据。
 - **测试**：5 用例锁行为（新增注入 / 删除摘除 + 记账连续 / 改名 / 悬空兜底 / 内容更新净差）。
+
+### Fixed（内核 · 后台任务回流通知首标签穷尽化：`timedOut` 不再谎报「完成」· 发版前审查 H1）
+
+**行为修正**：`formatBackgroundTaskNotice` 旧首标签由二元三元推导（`killed ? '已终止' : '完成'`），
+`timedOut` 产出「[后台命令完成] · 超时被终止」自相矛盾、`running` 被谎报完成。
+
+- 新增穷尽表 `BACKGROUND_TASK_NOTICE_TAGS: Record<BackgroundTaskStatus, string>`（内核内部，
+  不挂公共面——消费面是内核回流通知文本，宿主无 import 需求；`Record` 穷尽键 = 状态枚举增补时
+  编译期红，同 `COMPRESS_TARGET_LABELS` 范式），四态各给诚实首标签；
+  状态文案渲染仍以既有 `BACKGROUND_TASK_STATUS_LABELS` 为唯一真源（不双轨）。
+- 测试：`timedOut` 首标签不得谎报完成（回归锁）+ 四态逐条与穷尽表同源断言；
+  变异验证（表值串档 → 精确转红）已做。
 
 ### Fixed（内核 · 宿主退出孤儿进程：补实例终态杀树 · 观察点 ⑧ 真机定类闭环）
 
@@ -298,12 +344,12 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 - **新增门面方法**（纯委托，零新逻辑）：`agent.listBackgroundTasks(): readonly BackgroundTask[]`、`agent.killBackgroundTask(taskId): BackgroundTask | null`；委托链 = agent → loop → 注册表，**不复制任何判据**（复制即第二真理源）
 - **只出方法不出类**：注册表是 **Agent 实例级**（单例会让 `kill_command` 杀掉别的会话起的进程），导出类 = 把实例化权交给宿主 = 破坏隔离不变量
 - **投影不泄漏句柄**：返回对象的键只有 `taskId / command / startedAt / status / result?`，`killNow` / `peek` 已由 `projection()` 剥离（有守卫测试钉死）
-- **新增类型导出**：`BackgroundTask` / `BackgroundTaskStatus`（只读投影类型）
+- **新增类型导出**：`BackgroundTask` / `BackgroundTaskStatus`（只读投影类型；**后注**：`BackgroundTaskStatus` 旋经 `REL-3.1` 导出面收敛收回——它在 3.0.1 导出面上不存在、本开发周期内曾短暂挂面，现版本已不挂面，本条保留真实历史）
 - **状态词表单点**：`BACKGROUND_TASK_STATUS_LABELS`（`Record` 穷尽键 = 新增状态忘补文案即**编译期红**，同 `COMPRESS_TARGET_LABELS` 定案）。**2026-10-04 自审补**：方案文档 §2.3 曾写「复用内核 `STATUS_LABELS`」——该标识符当时是模块私有、内核零导出，属**引用不存在导出的文档失真**（与旧台账 `inlinePlanBoard` 同型）⇒ 改为公开导出，宿主 UI 直接消费、**禁自建第二套**
 - **测试**：loop 层 5 条（未装配不抛 / 运行态可见 / kill 返回终态 / 未知 id 返回 null / 不泄漏句柄）+ 变异验证 2 组有效。**变异副产品**：原 `kill` 后的二次判空是**冗余分支**（`get()` 对未知 id 同为 null，删早退行为完全等价）→ 按无僵尸分支纪律删除，不留不可测代码
 - **方案文档**：`docs/方案-后台任务可见性与kill入口-20261004.md`（实施规格真源；宿主侧协议 + UI 见下方宿主区同批条目）
 
-### ⚠️ Breaking（内核 · 确认载荷与 chunk/事件变体 · 已定档 3.1.0）
+### ⚠️ Breaking（内核 · 确认载荷与 chunk/事件变体 · 已定档 4.0.0）
 
 **升级即需改代码**（TS 集成方必读）：
 
@@ -311,7 +357,7 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 - `AgentChunk` 新增变体 `{ type: 'background_report'; content: string }`（turn 终态对存活后台进程**脱管**后 emit，报告「已转后台常驻（未被终止）」；无存活进程则不产。语义随阶段 3 脱管定案修订，见上方 Breaking）。消费方 `for await` 的 switch/exhaustive 检查需处理新变体
 - `ProcessEvent` 新增同名变体 `{ type: 'background_report'; seq; ts; payload: { content: string } }`（落盘重放可见，与 `plan_snapshot` 同型）
 
-### Added（内核+宿主 · 命令行执行能力 `run_command` / `kill_command` · `CMD-1`，已定档 3.1.0）
+### Added（内核+宿主 · 命令行执行能力 `run_command` / `kill_command` · `CMD-1`，已定档 4.0.0）
 
 **能力缺口**：此前执行 shell 命令须「`write_file` 写脚本 → `run_project_script` 执行 → `delete_file` 清理」三步，且 `.sh` 在 Windows 上静默空跑（退出码 0 但输出全空）。
 
@@ -323,7 +369,7 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 - **宿主**：工具中文名两键 + 行动叙述（叙述命令原文 + 后台标记）+ 设置面板「执行二次确认」补 `run_command` 并显式声明 git 写操作/发布不受开关影响（ALWAYS_ASK 恒询问）；后台收尾报告上屏（「后台任务收尾」小节，实时/重放同源）
 - **未做（如实登记）**：命令前缀 allow 白名单（阶段 2）、`.ps1` 运行时档（后台任务运行态列表与用户侧 kill 入口阶段 1 未做，已由同日阶段 2/3 补齐，见下方宿主区 Added 与阶段 3 Fixed 条目）
 
-### Added（内核+宿主 · 环境能力宣告 · `CMD-2`，已定档 3.1.0）
+### Added（内核+宿主 · 环境能力宣告 · `CMD-2`，已定档 4.0.0）
 
 **缺口**：`run_code` 描述曾写「如 python、node、shell」而宿主执行器只支持 JS（对模型说了假话）；且模型对运行环境一无所知。
 
@@ -332,7 +378,7 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 - ⚠️ **`shell` 字段语义 = 本会话执行器实际派发的 shell**（不是集成终端/登录 shell）：内核 `resolveShellCommand` 恒定映射 win32 → `cmd /c`、其余 → `sh -c`，不读环境变量。两侧互为镜像，改一侧必须同批改另一侧（宿主测试从内核源码文本提取真源比对，防单边漂移）
 - **刻意不做**：内核内置探测（派生判定律：环境事实不得升级为内核判据）、执行期自动语言切换（抢模型决策权）、cwd/git 分支注入（阶段 2 观察）
 
-### Fixed（内核+宿主 · `compress_context` 单轮长 turn 压缩缺口 + 崩溃修复 · `CTX-WIN-2`，已定档 3.1.0）
+### Fixed（内核+宿主 · `compress_context` 单轮长 turn 压缩缺口 + 崩溃修复 · `CTX-WIN-2`，已定档 4.0.0）
 
 **问题（诊断实锤，非推断）**：长单轮任务（一个提问跑几十个 step）把上下文顶满时，`compress_context` 结构性无可压目标——台账原描述「只能靠换区间重读硬扛」，实测**比这更严重**：
 
@@ -348,14 +394,14 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 
 **兼容性**：`target` 仍为可选参数，缺省/非法值仍降级 `earliest_round`——既有集成方零改动。新增导出为纯增量。
 
-### Changed（内核 · 待注入插话上限裁决收口内核 · `KERNEL-QUEUE-LIMIT-1`，已定档 3.1.0）
+### Changed（内核 · 待注入插话上限裁决收口内核 · `KERNEL-QUEUE-LIMIT-1`，已定档 4.0.0）
 
 **债务清偿**：INPUT-LIMIT-1 落地时插话条数上限只做在宿主两层（webview 预检 + extension 闸门），内核 `loop.interruptQueue` 本体 push 前无上限——第三方集成方绕过宿主直调 `agent.interject()` 仍可塞爆队列（队列是内核资源不变量，该内核自己堵，不能指望每个集成方自带限额）。
 
 - **上限裁决单点收口内核**：`LOOP_CONSTANTS` 新增 `MAX_PENDING_INTERJECTIONS = 5`（值真源）；`loop.interject` 返回 `boolean`——达上限**整条拒收**返回 false 不入队（插话是原子思路不截半条）；`agent.interject` 改**先入队后持久化**（顺序即语义：拒收时零入队、零落盘，防「队列没进、落盘却写」数据不一致）
 - **宿主消费真源**：extension 闸门改消费 `interject()` 返回值（快照预检自写判据退役，宿主零裁决逻辑）；webview 预检仍用 `shared/constants.ts` 镜像常量（webview 无法 import 内核包），同值关系由宿主守卫测试锁定（漂移即红）；pause 条目不受上限管辖（内部控制语义非用户输入洪流）
 - **测试**：内核 loop 上限用例（满员拒收不入队 / 删一条可再入 / pause 不受限）+ 变异闭环（判据 off-by-one 精准红）；`constants.test` 键数守卫 24→25 同步；agent 层 +4 用例（未初始化断言 / 受理入队返回 true / 满员拒收返回 false 队列不增 / 删一腾位再入——返回值透传与队列状态链路贯通；落盘内容无公开读口，闭环节点持久化由 messageHistory.test 既有覆盖）；宿主 chatPanelInput 11 用例（桩默认受理态 / 满员拒收不上屏 / 防误伤上屏 / 跨包同值守卫）
-- **版本**：内核语义变更（接口返回值 void→boolean + 新增常量），随已定档的 3.1.0 一并发布，不单独发版
+- **版本**：内核语义变更（接口返回值 void→boolean + 新增常量），随已定档的 4.0.0 一并发布，不单独发版
 
 ### Fixed（宿主 · 轮次摘要失败可见化 + 摘要事件 handler 泄漏 · `MEM-1`）
 
@@ -378,7 +424,7 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
   删 `off` → ④红且报「3 handler 累积」）
 - **⏳ 真机复验**：构造摘要失败（如摘要 LLM 返无效 JSON）时错误提示条应可见，且连跑多轮无 handler 累积
 
-### Added（内核 · 会话离场自动归档链路接通 + 归档成功事件 · `HIST-INFO-1`，已定档 3.1.0）
+### Added（内核 · 会话离场自动归档链路接通 + 归档成功事件 · `HIST-INFO-1`，已定档 4.0.0）
 
 **根因（注释谎报实锤）**：头注释与工具路标声称「会话切换前自动归档」，但 `switchToSession` 的归档
 链路**从未接线**——所有会话的 `summary`/`keyTopics` 恒空，历史列表悬停 tooltip 假显宿主容器的

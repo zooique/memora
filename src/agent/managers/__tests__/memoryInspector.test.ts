@@ -257,6 +257,14 @@ describe('MemoryInspector', () => {
       await expect(inspector.searchByKeyword('query', 0)).rejects.toThrow('无效 limit');
     });
 
+    it('纯空格 query 应抛 configError（与空串同判据：trim 后为空）', async () => {
+      await expect(inspector.searchByKeyword('   ')).rejects.toThrow('搜索关键词为空');
+    });
+
+    it('非整数 limit 应抛 configError（小数不在正整数域）', async () => {
+      await expect(inspector.searchByKeyword('query', 1.5)).rejects.toThrow('无效 limit');
+    });
+
     it('纯关键词搜索（B0 收编：无向量通道）', async () => {
       storage.upsert(
         createMemory({ id: 'content:k1', source: 'content', name: 'k1', content: 'keyword test' }),
@@ -287,6 +295,28 @@ describe('MemoryInspector', () => {
       expect(hits).toHaveLength(1);
       // 长内容截断到 120 + '…'
       expect(hits[0]!.contentPreview.endsWith('…')).toBe(true);
+    });
+
+    it('截断精确长度断言：120 字符 + …（锁截断常量，防静默改小）', async () => {
+      const longContent = 'D'.repeat(200);
+      storage.upsert(
+        createMemory({
+          id: 'content:long2',
+          source: 'content',
+          name: 'long2',
+          content: longContent,
+        }),
+      );
+      const hits = await inspector.searchByKeyword('D');
+      // 120 字符 + 1 个 … = 121 字符——精确长度断言让「截断值被改小」的变异转红
+      expect(hits[0]!.contentPreview).toHaveLength(121);
+      expect(hits[0]!.contentPreview.endsWith('…')).toBe(true);
+      // 反面：短内容原样返回，不截断
+      storage.upsert(
+        createMemory({ id: 'content:short', source: 'content', name: 'short', content: '短内容' }),
+      );
+      const shortHits = await inspector.searchByKeyword('短内容');
+      expect(shortHits[0]!.contentPreview).toBe('短内容');
     });
 
     it('superseded 过滤：被 supersededBy 取代的摘要不返回（§3.3 过滤行）', async () => {

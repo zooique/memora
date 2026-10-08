@@ -17,6 +17,8 @@ describe('environmentProvider（§10.4-② 宿主环境快照）', () => {
   const PROBE_WAIT_MS = 8_000;
 
   // 内核 shell 派发真源（resolveShellCommand）—— 读源码文本提取，不重算映射
+  // 宿主 shell 字段现经内核公开导出直接派生（单一真源无镜像）；本守卫仍保留：
+  // ① 锁「宿主真的在消费内核函数」（改回手写三元且写错即红）；② 锁内核映射形态未漂移。
   // __dirname = hosts/memora-vscode/src/extension/host/__tests__ → 6 次上跳抵仓库根
   const KERNEL_SHELL_PATH = join(__dirname, '../../../../../../src/skill/skillScriptRunner.ts');
 
@@ -30,7 +32,7 @@ describe('environmentProvider（§10.4-② 宿主环境快照）', () => {
     expect(env!.shell).toBeTruthy();
   });
 
-  it('shell 字段与内核 resolveShellCommand 派发形态镜像一致（2026-10-03 审查 P0 守卫）', () => {
+  it('shell 字段与内核 resolveShellCommand 派发形态同源一致（2026-10-03 审查 P0 守卫）', () => {
     // 谎报后果：shell 字段唯一用途是「供模型避坑」，报集成终端的 shell 而非实际派发 shell
     // ⇒ 模型按 PowerShell 语法写命令却由 cmd 执行，每次必败（本仓真实发生过的伤）。
     //

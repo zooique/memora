@@ -8,9 +8,11 @@
  *    纯内部实现不挂公共面。桶导出时代「顺手 export 即公开」的零筛选默认态由此关门。
  *  - 向 B（防幻觉文档）：手册 §十六 承诺的符号必须在 src 源码中真实存在 —— 拦截「文档虚构 API」
  *    （历史事故：API 手册 5 处幻觉引用，src 无对应导出）。
- * 判据与参照系说明：手册 §十六 承诺的是 Agent 实例成员与模块级符号的混合叙述，与 index.ts
- * 模块导出面天然不同构，故 B 向不与公开面对账、只验「存在性」（幻觉符号的特征 = src 全库无此标识符）。
- * 验收标准不是变绿而是能红：变异验证见文件尾（加假导出 / 加幻觉符号 / 断言反转均须变红）。
+ * 判据与参照系说明：手册 §十六 现为纯模块级类型/函数清单，与 index.ts 导出面同构——
+ * B 向历史判据（只验「src 存在性」）保留，另以 C 向补「承诺 ⊆ 公开面」对账（防「src 有但
+ * 未导出」——消费者按文档具名 import 会得到 undefined）。
+ * 验收标准不是变绿而是能红：变异验证为提交前一次性动作（加假导出 / 加幻觉符号 /
+ * 承诺改词 / 断言反转均须变红），产物在提交记录，不驻留本文件。
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -147,6 +149,37 @@ const promisedSurface = new Set([
 ]);
 const manualTokens = extractIdentifierTokens(manualSection);
 
+/**
+ * §十六 非「具名导出承诺」的 token 豁免名单（C 向对账用，冻结自 2026-10-08 差集实测）。
+ *
+ * 两类分账：
+ *  - import 示例噪声（9）：§十六 示例代码 `import { … } from '@zooique/memora'` 被
+ *    token 化的残留词——非 API 承诺；
+ *  - 类型/叙述词（4）：`DedupReport` / `SourceHealthReport` 为事件载荷 `interface`
+ *    （模块内导出、不经桶导出——消费者经回调签名结构推导可用，不占具名导出）；
+ *    `LLM` / `IDE` 为叙述用缩写词，非符号。
+ *
+ * ⚠️ 名单是**冻结的封闭集**：§十六 新增承诺符号若未进公开面，C 向即红——
+ * 此时先补导出（真承诺），或确认属本名单同族后带分账理由加入。
+ */
+const SECTION_SIXTEEN_NON_EXPORT_TOKENS: ReadonlySet<string> = new Set([
+  // import 示例噪声
+  'export',
+  'from',
+  'index',
+  'memora',
+  'src',
+  'ts',
+  'type',
+  'typescript',
+  'zooique',
+  // 类型（结构推导可用）/ 叙述词
+  'DedupReport',
+  'SourceHealthReport',
+  'LLM',
+  'IDE',
+]);
+
 describe('公共 API 面登记门槛守卫（PUBLIC-API-SURFACE-1）', () => {
   it('扫描面自检：公开面与消费面均非空（防守卫失明假绿）', () => {
     expect(publicSurface.size).toBeGreaterThan(50);
@@ -180,6 +213,19 @@ describe('公共 API 面登记门槛守卫（PUBLIC-API-SURFACE-1）', () => {
     expect(
       phantom,
       `\n手册 §十六 幻觉符号：\n${phantom.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
+    ).toEqual([]);
+  });
+
+  it('向 C：手册 §十六 承诺的模块级符号必须在公开面（防「文档承诺但未导出」）', () => {
+    const unexported = [...manualTokens]
+      .filter((t) => !SECTION_SIXTEEN_NON_EXPORT_TOKENS.has(t))
+      .filter((t) => !publicSurface.has(t));
+    const hint =
+      `§十六 承诺的符号未出现在 src/index.ts 导出面——消费者按文档具名 import 会得到 undefined。\n` +
+      `修法：① 真承诺 → index.ts 补导出；② 类型/叙述词 → 登记进 SECTION_SIXTEEN_NON_EXPORT_TOKENS（带分账理由）。`;
+    expect(
+      unexported,
+      `\n§十六 承诺但未导出的符号：\n${unexported.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
     ).toEqual([]);
   });
 });

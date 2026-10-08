@@ -9,7 +9,10 @@
  * `kill_command` 就能杀掉别的会话起的进程——与「仅可杀本 turn 本 agent 起的后台任务」
  * 定案（§14.1）直接冲突。故注册表挂在 Agent 实例上，按实例隔离。
  *
- * ⚠️ 本模块是**内核内部**模块：不进 `src/index.ts` 公出面（宿主零消费、零新增契约面）。
+ * ⚠️ 公开面边界：只读投影类型（`BackgroundTask`）与状态词表（`BACKGROUND_TASK_STATUS_LABELS`）
+ * 经 `src/index.ts` 导出（宿主 UI 列表出口消费）；注册表类 `BackgroundTaskRegistry`
+ * **不导出**——进程治理留在内核，宿主只能经门面方法 `listBackgroundTasks()` /
+ * `killBackgroundTask()` 操作（防跨会话 kill，§14.1 定案）。
  */
 
 import { logger } from '@/logging/logger.js';
@@ -316,14 +319,36 @@ export const BACKGROUND_TASK_STATUS_LABELS: Record<BackgroundTaskStatus, string>
 };
 
 /**
+ * 后台任务状态 → 回流通知**首标签**（`[...]` 方括号内的系统事件标记）
+ *
+ * 与 `BACKGROUND_TASK_STATUS_LABELS` 分表的理由：两者句法位置不同——首标签进
+ * 方括号头（事件级措辞，如「后台命令超时」），状态标签跟在 `·` 后（状态级措辞，
+ * 如「超时被终止」）；合并成一张表会让某一侧被迫迁就另一侧的句法。
+ * 独立穷尽表 ⇒ 每个状态的首标签必然存在且**不串档**：旧实现用三元表达式
+ * `status === 'killed' ? '已终止' : '完成'` 推导首标签，timedOut 被推导成
+ * 「[后台命令完成] · 超时被终止」（自相矛盾），running 也会被谎报成「完成」。
+ * `Record` 穷尽键 ⇒ 新增状态忘补 = **编译期红闸**（同 `COMPRESS_TARGET_LABELS` 定案）。
+ */
+export const BACKGROUND_TASK_NOTICE_TAGS: Record<BackgroundTaskStatus, string> = {
+  running: '后台命令运行中',
+  completed: '后台命令完成',
+  timedOut: '后台命令超时',
+  killed: '后台命令已终止',
+};
+
+/**
  * 后台任务终局 → 回流通知文案（**格式化单点**：loop 回流与收尾报告共用）
  *
- * 来源标记前置且显式（`[后台命令完成]`）——消费方是 LLM，必须能让它分清
- * 「这是系统事件」而非「用户刚说了什么」（role 语义隔离，§14.2）。
+ * 来源标记前置且显式（首标签 = `BACKGROUND_TASK_NOTICE_TAGS[task.status]`，穷尽表
+ * 逐态给出，杜绝三元推导把 timedOut/running 谎报成「完成」）——消费方是 LLM，
+ * 必须能让它分清「这是系统事件」而非「用户刚说了什么」（role 语义隔离，§14.2）。
  * 超时文案不编造秒数：注册表不存时限，缺省即不限时（命令执行能力方案 §13.6-C）。
  */
 export function formatBackgroundTaskNotice(task: BackgroundTask): string {
-  const header = `[后台命令${task.status === 'killed' ? '已终止' : '完成'}] taskId=${task.taskId} · ${BACKGROUND_TASK_STATUS_LABELS[task.status]}`;
+  // 中间变量承载查表结果：模板串里保持 `[${noticeTag}]` 简单插值形态（嵌套下标
+  // `TAGS[task.status]` 直写进模板会让首标签截断判据看不清边界，且可读性差）
+  const noticeTag = BACKGROUND_TASK_NOTICE_TAGS[task.status];
+  const header = `[${noticeTag}] taskId=${task.taskId} · ${BACKGROUND_TASK_STATUS_LABELS[task.status]}`;
   if (!task.result) return `${header}\n命令：${task.command}\n（无已捕获输出）`;
   // killed 态走专用格式化：被主动终止没有退出码，套三态会谎报成「命令执行失败」
   const body =
