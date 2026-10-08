@@ -28,3 +28,6 @@ dist/**/*.map
 dist/.build-stamp.json
 # 编译产物中的测试文件（tsc 会把 src/__tests__ 一并编译进 dist，分发时排除）
 **/__tests__/**
+
+# 设计源稿（仅存档用，成品已固化为 icon.png / icon-activitybar.svg，不入安装包）
+resources/*.jpeg

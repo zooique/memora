@@ -4,6 +4,7 @@
   "description": "Memora 内核的 VS Code 落地宿主：通用对话 + 记忆 + 角色包定位（出厂自带文档打磨角色）",
   "version": "0.0.1",
   "publisher": "zooique",
+  "icon": "resources/icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -152,7 +153,7 @@
         {
           "id": "memora",
           "title": "Memora",
-          "icon": "resources/icon.svg"
+          "icon": "resources/icon-activitybar.svg"
         }
       ]
     },

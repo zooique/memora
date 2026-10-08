@@ -1,54 +1,52 @@
 # Memora VS Code 插件 · 目录结构
 
-> **定位**：`hosts/memora-vscode/` 的目录结构说明。当前已落地的用 ✅ 标注，预留的未来扩展点说明其用途。
+> **定位**：`hosts/memora-vscode/` 的目录结构说明。按职责分组，extension host（Node）与 webview（浏览器）严格分离。
 > **架构**：插件 = memora 内核通用落地宿主，定位由内置角色包承载（ADR-VC-001）。
-> 按职责分组，extension host（Node）与 webview（浏览器）严格分离。
+> **写法约定**：本树只点名稳定锚点文件，目录职责见 §二；逐文件清单会随迭代过期，以磁盘与 §二 职责为准。
 
 ---
 
-## 一、目标目录树
+## 一、目录树
 
 ```
 hosts/memora-vscode/
-├── package.json               # VS Code 插件清单（ESM，file: 依赖 memora）
+├── package.json               # VS Code 插件清单（ESM，file: 依赖 memora；命令/配置/视图贡献点）
 ├── tsconfig.json
-├── .gitignore                 # dist/node_modules/.memora
-├── media/                     # 静态资源（图标、logo、模板）
-│   └── icon.svg
-├── docs/
-│   ├── directory-structure.md # 本文件
-│   └── plugin-alignment.md    # 插件与内核设计对齐方案（差距清单 + 分层实施 + 排雷结论）
+├── .vscodeignore              # vsce 打包排除清单（源码/docs/设计源稿不入安装包）
+├── resources/                 # 静态资源（打包随 vsce 直收，见 .vscodeignore 排除项）
+│   ├── icon.png               # ✅ 市场图标（拟物全彩版，256px；市场不收 SVG）
+│   ├── icon-activitybar.svg   # ✅ 活动栏图标（单色线条版：线宽 1 + 珠线断点 + 圆头，mask 染色）
+│   └── memora-host-icon-design.jpeg # 设计源稿存档（1536px 原图，不入安装包）
+├── scripts/                   # 门禁验证脚本（.mts；不入安装包）
+├── docs/                      # 设计与审查文档（本文件 / host-overview / session-archive-design / ui-growth-review）
 ├── src/
 │   ├── extension/             # extension host（Node 环境，可 node:fs）
-│   │   ├── extension.ts       # ✅ 入口：activate + 命令注册（薄）
-│   │   ├── commands/          # 命令处理器（每命令一文件，逻辑不进 extension.ts）
-│   │   │   └── openChat.ts        # ✅ 打开通用对话面板（唯一命令，角色包承载定位）
-│   │   ├── host/              # ✅ 薄壳装配层（注入 memora 内核，不重复实现）
-│   │   │   ├── assemble.ts         # new Agent + 注入（含 UI 中文化 / preExecutionCheck / tracer）
-│   │   │   ├── llmConfig.ts        # LLM Provider 配置
-│   │   │   ├── tracer.ts           # ✅ VscodeTracer：ITracer 采集（指纹/指标，有界内存）
-│   │   │   ├── workspaceStorage.ts # IMemoryStorage（.memora/memories.json）
-│   │   │   └── sessionStore.ts     # ISessionStore（.memora/sessions.json）
-│   │   └── role-packs/        # 内置角色包（构建期从内核同步，宿主持源目录不自持副本）
+│   │   ├── extension.ts       # ✅ 入口：activate + 命令注册（轻量命令内联，重逻辑下放）
+│   │   ├── commands/          # 独立成文件的命令处理器（openChat / demo）
+│   │   ├── host/              # ✅ 薄壳装配层（new Agent + 注入；LLM 配置、会话/轮次存储、
+│   │   │                      #    文件改动追踪确认回退、代码执行、技能聚合、全局搜索等内核适配）
+│   │   └── providers/         # LLM Provider 凭据存取（providerStore，安全存储）
 │   │
 │   ├── webview/               # Webview UI（浏览器环境，仅 postMessage，禁 node API）
-│   │   ├── panels/            # 面板（每面板一个文件，UI 渲染）
-│   │   │   ├── chatPanel.ts       # ✅ 通用对话面板（唯一面板，角色包定位展示）
-│   │   │   └── providerConfigPanel.ts # ✅ 大模型配置面板
-│   │   ├── components/        # 可复用 UI 组件（气泡/输入/卡片）
-│   │   │   └── README.md
-│   │   ├── helpers/           # 渲染层纯函数（markdown/格式化）
-│   │   │   └── README.md
-│   │   └── styles/            # CSS（按面板/组件分组）
-│   │       └── README.md
+│   │   ├── panels/            # 面板壳（chatPanel / settingsPanel：生成 HTML + 挂载脚本）
+│   │   ├── scripts/           # 各视图前端逻辑（chatView / settingsView / rolesView /
+│   │   │                      #    configView / memoryView / pager / icons 等）
+│   │   ├── components/        # 可复用 UI 组件（dropdown）
+│   │   ├── helpers/           # 渲染层纯函数（markdown / 转义 / 格式化，可测试）
+│   │   └── styles/            # CSS（tokens 归一 + 按视图分组）
 │   │
-│   └── shared/                # extension ↔ webview 共享（消息协议 + 类型，单一真理源）
+│   └── shared/                # extension ↔ webview 共享（单一真理源）
 │       ├── protocol.ts        # ✅ postMessage 消息协议类型
-│       └── types.ts           # 未来：共享领域类型
+│       ├── constants.ts       # 共享常量
+│       ├── turnProjection.ts  # 轮次投影（内核 Round → UI 视图模型）
+│       └── errorText.ts       # 错误文案归一
 │
-└── .vscode/                   # 本地调试（主仓 .gitignore 忽略；独立仓库时提交）
-    └── launch.json
+└── .vscode/                   # 本地调试（launch / settings / tasks）
 ```
+
+测试（`__tests__/`）就近散布于各目录，vitest 统一收敛（`vitest.config.ts`）；编译时会被一并编进 dist，分发由 .vscodeignore 排除。
+
+> 角色包无宿主源目录：维护于内核 `role-packs/`，构建期由 esbuild 同步至 `dist/extension/role-packs/`（见 esbuild.config.mjs）。
 
 ---
 
@@ -56,15 +54,17 @@ hosts/memora-vscode/
 
 | 目录 | 环境 | 职责 | 禁止 |
 |------|------|------|------|
-| `extension/` 根 | Node | 入口 + 生命周期 | 业务逻辑（委托 commands/） |
-| `extension/commands/` | Node | 命令处理器（通用命令，无特定功能硬编码） | 直接操作 DOM/Webview 渲染 |
-| `extension/host/` | Node | 装配 memora 内核 + 持久化注入 | 重复实现内核能力 |
-| `extension/role-packs/` | Node | 内置角色包（构建期从内核 `role-packs/` 同步，产出在 `dist/extension/role-packs/`） | 插件内硬编码功能定位 / 自持可写角色包源 |
-| `webview/panels/` | 浏览器 | 面板 UI 渲染 + postMessage 收发 | 直接 import node 模块 |
+| `extension/` 根 | Node | 入口 + 生命周期 + 命令注册 | 业务逻辑（重逻辑下放 commands/ 或 host/） |
+| `extension/commands/` | Node | 独立成文件的命令处理器 | 直接操作 DOM/Webview 渲染 |
+| `extension/host/` | Node | 薄壳装配 memora 内核 + 注入持久化/适配能力 | 重复实现内核能力 |
+| `extension/providers/` | Node | LLM Provider 配置与凭据存取 | 把 API Key 写进明文配置 |
+| `webview/panels/` | 浏览器 | 面板壳 UI 渲染 + postMessage 收发 | 直接 import node 模块 |
+| `webview/scripts/` | 浏览器 | 各视图前端逻辑（事件/状态/渲染编排） | 直接 import node 模块 |
 | `webview/components/` | 浏览器 | 可复用 UI 组件 | 面板独有逻辑 |
 | `webview/helpers/` | 浏览器 | 纯函数（可测试） | 可变状态 |
-| `webview/styles/` | 浏览器 | CSS | — |
-| `shared/` | 双端 | 消息协议 + 共享类型 | Node/浏览器专有逻辑 |
+| `webview/styles/` | 浏览器 | CSS（tokens 归一 + 按视图分组） | — |
+| `shared/` | 双端 | 消息协议 + 共享类型/投影/文案 | Node/浏览器专有逻辑 |
+| `scripts/` | Node | 门禁验证脚本（发布前手工/CI 调用） | 进运行时依赖 |
 
 ## 三、核心约定
 
@@ -78,9 +78,11 @@ hosts/memora-vscode/
 
 | 角色包 | 定位 | 状态 |
 |--------|------|------|
+| `memora助手` | 内核通用助手（默认对话/记忆能力展示） | ✅ 出厂自带（内核同步） |
 | `白话方案设计师` | 融合方案设计（单一真理源·最小单元·网络为土壤）与文档编排，先用白话把设计讲清楚、再落实为可开发的专业文档 | ✅ 出厂自带（内核同步） |
 | `共鸣小说家` | 三层结构小说创作：需求洞察 / 内核提取 / 一致性检查 + 结构 / 人物 / 对白 / 伏笔 | ✅ 出厂自带（内核同步） |
-| （未来扩展） | 维护于内核 `role-packs/`，宿主构建期自动同步 | 预留 |
+
+新增角色包一律加在内核 `role-packs/`，宿主构建期自动同步，无需改宿主代码。
 
 角色包结构：
 ```
