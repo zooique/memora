@@ -740,9 +740,16 @@ describe('buildEnvironmentContextBlock · 运行环境注入', () => {
     expect(buildEnvironmentContextBlock(null)).toBe('');
   });
 
-  it('全字段缺省 → 空串（不产生空壳标题谎言段）', () => {
-    expect(buildEnvironmentContextBlock({})).toBe('');
-    expect(buildEnvironmentContextBlock({ runtimes: [] })).toBe('');
+  it('全字段缺省 → 空串（不产生空壳标题谎言段）；win32 下仅剩编码行则只产编码行（内核自陈事实独立于宿主快照）', () => {
+    // POSIX：无任何字段 → 段整体不产（空壳防线）
+    expect(buildEnvironmentContextBlock({}, 'linux')).toBe('');
+    expect(buildEnvironmentContextBlock({ runtimes: [] }, 'linux')).toBe('');
+    // win32：编码行是内核自陈执行器行为（不依赖宿主上报），宿主快照全空时仍成立——
+    // 宿主没配 provider 也不该让模型对 cmd 编码坑失明
+    const winOnly = buildEnvironmentContextBlock({}, 'win32');
+    expect(winOnly).toContain('## 运行环境');
+    expect(winOnly).toContain('- 命令输出编码：');
+    expect(winOnly).not.toContain('- 操作系统：');
   });
 
   it('字段 → 「## 运行环境」段逐行映射（零解释转发，无行为引导语）', () => {
@@ -757,6 +764,32 @@ describe('buildEnvironmentContextBlock · 运行环境注入', () => {
     expect(block).toContain('- 可用运行时：node v22.10.0、python 3.12.1');
     // 零解释：不添加「你应该…」类行为引导（环境事实自己会说话，方案 §10.2）
     expect(block).not.toContain('应该');
+  });
+
+  it('win32 平台追加命令输出编码事实行（OEM 代码页写出 vs 内核 UTF-8 解码，2026-10-08 实证）', () => {
+    // platform 显式传 'win32'（参数化可测，不依赖跑测试的本机平台）
+    const block = buildEnvironmentContextBlock(
+      { os: 'win32 10.0.22631', shell: 'cmd /c' },
+      'win32',
+    );
+    // 纯事实链（无行为引导语）：cmd 输出编码 → 内核解码方式 → 后果边界 → 对照面
+    expect(block).toContain('- 命令输出编码：');
+    expect(block).toContain('cmd 管道输出按系统 OEM 代码页写出（简中系统为 GBK）');
+    expect(block).toContain('内核按 UTF-8 解码');
+    expect(block).toContain('非 ASCII 输出会显示为乱码（ASCII 不受影响）');
+    expect(block).toContain('Node 脚本输出为 UTF-8');
+    expect(block).not.toContain('应该');
+    // 编码行紧跟 shell 行（与命令执行强相关），在 runtimes 之前
+    const shellIdx = block.indexOf('- 默认 Shell：');
+    const encIdx = block.indexOf('- 命令输出编码：');
+    expect(encIdx).toBeGreaterThan(shellIdx);
+  });
+
+  it('非 win32 平台不追加编码行（POSIX 无 OEM 代码页问题，不给 mac/linux 加噪音）', () => {
+    for (const platform of ['darwin', 'linux'] as const) {
+      const block = buildEnvironmentContextBlock({ os: platform, shell: '/bin/zsh' }, platform);
+      expect(block).not.toContain('命令输出编码');
+    }
   });
 
   it('environmentContext 作为第 5 参注入 prefix：位于作品投影后、时间戳前', () => {

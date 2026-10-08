@@ -81,13 +81,28 @@ const TURN_START_STRATEGY_PROMPT = `## Turn 起始策略
  * 全字段缺省/空 → 返回空串（调用方 filter(Boolean) 自动跳过，prompt 无空段）。
  *
  * @param env 宿主环境快照（IEnvironmentProvider.getEnvironment() 产出）
+ * @param platform 平台判定（缺省 process.platform；参数化与 resolveShellCommand 同先例，供测试）
  * @returns 「## 运行环境」段落（可能为空串）
  */
-export function buildEnvironmentContextBlock(env: HostEnvironmentInfo | null): string {
+export function buildEnvironmentContextBlock(
+  env: HostEnvironmentInfo | null,
+  platform: NodeJS.Platform = process.platform,
+): string {
   if (!env) return '';
   const lines: string[] = [];
   if (env.os) lines.push(`- 操作系统：${env.os}`);
   if (env.shell) lines.push(`- 默认 Shell：${env.shell}`);
+  // Windows 编码事实（内核自陈执行器行为，非宿主快照字段）：run_command 的 cmd
+  // 管道输出按系统 OEM 代码页写出（2026-10-08 实证：简中系统 chcp 65001 下仍输出
+  // GBK 字节 d6d0-cec4…），而内核执行器恒按 UTF-8 解码（skillScriptRunner 收流点）
+  // → 非 ASCII 输出乱码、ASCII 不受影响。只写事实链不写行为引导（对齐本函数
+  // 「零解释」纪律，模型据「Node 脚本输出为 UTF-8」可自行推出中文场景的选型）。
+  if (platform === 'win32') {
+    lines.push(
+      '- 命令输出编码：cmd 管道输出按系统 OEM 代码页写出（简中系统为 GBK），内核按 UTF-8 解码——' +
+        '非 ASCII 输出会显示为乱码（ASCII 不受影响）；Node 脚本输出为 UTF-8',
+    );
+  }
   if (env.runtimes && env.runtimes.length > 0) {
     lines.push(`- 可用运行时：${env.runtimes.join('、')}`);
   }
