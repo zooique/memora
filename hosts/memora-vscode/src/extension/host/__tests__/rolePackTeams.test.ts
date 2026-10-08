@@ -75,10 +75,7 @@ describe('inspectTeamsHealth —— 检测纯函数语义', () => {
   });
 
   it('空池护栏：包池为空（扫描失败窗口）→ 全部按健康处理跳过检测', () => {
-    const health = inspectTeamsHealth(
-      [{ leader: 'A', members: ['B'] }],
-      new Set<string>(),
-    );
+    const health = inspectTeamsHealth([{ leader: 'A', members: ['B'] }], new Set<string>());
     expect(health.get('A')).toEqual({ leaderMissing: false, missingMembers: [] });
   });
 });

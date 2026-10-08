@@ -906,9 +906,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
         await writePack(packsDir, name, { name, formatVersion: '1.0.0' }, {});
       }
       const manager = new RolePackManager(dir);
-      manager.setRolePackTeams([
-        { leader: '组长A', members: ['幽灵', '组员1', '组员2', '组员3'] },
-      ]);
+      manager.setRolePackTeams([{ leader: '组长A', members: ['幽灵', '组员1', '组员2', '组员3'] }]);
       await manager.load('组长A');
       // 截断(前4)→过滤(剔幽灵)=3 人；组员4 不回补（回补会使参会人数超上限语义）
       expect(manager.getTeam('组长A')?.members).toEqual(['组员1', '组员2', '组员3']);
@@ -1008,10 +1006,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
         const items = manager.tryBuildMeetingPlan('小组会议：讨论叙事平台');
         expect(items).not.toBeNull();
         // 组员项只含健康组员，各带 rolePack（触发表层装配硬切换）
-        expect(items!.filter((i) => i.rolePack).map((i) => i.rolePack)).toEqual([
-          '组员1',
-          '组员2',
-        ]);
+        expect(items!.filter((i) => i.rolePack).map((i) => i.rolePack)).toEqual(['组员1', '组员2']);
       });
 
       it('无「小组会议」keyword → null（回落普通闭环）', async () => {

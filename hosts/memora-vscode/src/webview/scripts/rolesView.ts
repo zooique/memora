@@ -66,7 +66,12 @@ interface RolesPayload {
    * 组（会议名单）：组长 + 组员（v0.13 S7）。受损组附加检测字段（读期派生，不落盘）：
    * leaderMissing=组长已卸载（遗留队伍）；missingMembers=已卸载组员名单（缺员标注）。
    */
-  teams: { leader: string; members: string[]; leaderMissing?: boolean; missingMembers?: string[] }[];
+  teams: {
+    leader: string;
+    members: string[];
+    leaderMissing?: boolean;
+    missingMembers?: string[];
+  }[];
   activeName: string;
   /** 组员数量上限（内核常量 MAX_TEAM_MEMBERS，由宿主随 roles_loaded 下发；UI 侧禁止写死） */
   maxTeamMembers: number;

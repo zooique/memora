@@ -181,12 +181,11 @@ function getOrCreateAgent(
       disabledSkills,
       scriptNodePath: scriptNodePath || undefined,
       outputChannel,
-    })
-      .catch((err) => {
-        // 装配失败则重置，下次命令重试
-        agentPromise = null;
-        throw err;
-      });
+    }).catch((err) => {
+      // 装配失败则重置，下次命令重试
+      agentPromise = null;
+      throw err;
+    });
   }
   // 缓存同步引用（供文件改动「回退本文件改动」同步取 agent.security 做写前校验）；
   // 两参 then：装配失败分支显式吞掉，避免产生未处理的 rejection。

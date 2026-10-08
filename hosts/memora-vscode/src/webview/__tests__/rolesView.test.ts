@@ -438,14 +438,10 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
 
     it('组长已卸载的组 → 独立遗留区块渲染 + 清理按钮发 roles_team_delete', () => {
       const { postMessage } = mountRolesView();
-      dispatchLoaded(
-        PACKS,
-        'memora助手',
-        [
-          // 遗留组：组长「方案设计师」已卸载（不在 packs 中）
-          { leader: '方案设计师', members: ['memora助手'], leaderMissing: true, missingMembers: [] },
-        ],
-      );
+      dispatchLoaded(PACKS, 'memora助手', [
+        // 遗留组：组长「方案设计师」已卸载（不在 packs 中）
+        { leader: '方案设计师', members: ['memora助手'], leaderMissing: true, missingMembers: [] },
+      ]);
       const block = document.querySelector('.legacy-teams') as HTMLElement;
       expect(block).not.toBeNull();
       expect(block.querySelector('.legacy-teams-title')?.textContent).toBe('遗留队伍（1）');
@@ -463,18 +459,14 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
 
     it('缺员组（组长健康）→ 组员名标注「已卸载」，不进遗留区块', () => {
       mountRolesView();
-      dispatchLoaded(
-        PACKS,
-        '白话方案设计师',
-        [
-          // 组长在池中（有卡片），组员「幽灵包」已卸载
-          {
-            leader: '白话方案设计师',
-            members: ['memora助手', '幽灵包'],
-            missingMembers: ['幽灵包'],
-          },
-        ],
-      );
+      dispatchLoaded(PACKS, '白话方案设计师', [
+        // 组长在池中（有卡片），组员「幽灵包」已卸载
+        {
+          leader: '白话方案设计师',
+          members: ['memora助手', '幽灵包'],
+          missingMembers: ['幽灵包'],
+        },
+      ]);
       // 组长健康 → 无遗留区块
       expect(document.querySelector('.legacy-teams')).toBeNull();
       // 队伍条缺员标注
