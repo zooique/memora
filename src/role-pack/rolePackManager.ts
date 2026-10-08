@@ -388,10 +388,10 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   /**
    * 获取当前 activePack 作为组长的队伍（供宿主 UI 消费的只读快照）。
    * SSOT 出口：宿主拿 team 数据的唯一公共方法，不绕过内核直接读 globalState。
-   * 内部成员名单走 activeTeamMembers 截断（会议消费端约束超限部分不参与），
-   * 保证宿主看到的参与名单与内核会议实际消费一致。
+   * 内部成员名单走 activeTeamMembers 截断 + 缺员过滤（会议消费端约束：超限不参与、
+   * 缺员不可参会），保证宿主看到的参与名单与内核会议实际消费一致。
    *
-   * @returns 队伍快照（组长 + 截断后的组员）；activePack 非组长或无队伍时返回 null
+   * @returns 队伍快照（组长 + 有效组员）；activePack 非组长或无队伍时返回 null
    */
   getActiveTeam(): RolePackTeam | null {
     if (!this.activePackName) return null;
@@ -401,19 +401,20 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
-   * 按组长名取队伍快照（run_team_meeting 等任意组解析入口，SSOT 与 getActiveTeam 同截断口径）。
+   * 按组长名取队伍快照（run_team_meeting 等任意组解析入口，SSOT 与 getActiveTeam 同口径）。
    *
    * 与 getActiveTeam 的区别：不依赖当前激活角色，显式按组名称解析（组名 = 组长的角色包名）。
-   * 组员名单同样经 MAX_TEAM_MEMBERS 截断（队长 1 + 组员 ≤ 4 = 5 人组，超出部分不参与会议）。
+   * 组员名单同样经 MAX_TEAM_MEMBERS 截断 + 缺员过滤（同 effectiveMembers 单一实现，
+   * 会议任务项不为已卸载角色包建空转发言项）。
    *
    * @param group 组名（= 组长的角色包名）
-   * @returns 队伍快照（组长 + 截断后的组员）；未找到该组时返回 null
+   * @returns 队伍快照（组长 + 有效组员）；未找到该组时返回 null
    */
   getTeam(group: string): RolePackTeam | null {
     if (!group) return null;
     const team = this.rolePackTeams.find((t) => t.leader === group);
     if (!team) return null;
-    return { leader: team.leader, members: team.members.slice(0, MAX_TEAM_MEMBERS) };
+    return { leader: team.leader, members: this.effectiveMembers(team) };
   }
 
   /**
@@ -479,16 +480,31 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
   /**
    * 会议组员的**唯一消费入口**（SSOT 收口）：当前激活角色作为组长时的会议组员名单，超限截断至
-   * `MAX_TEAM_MEMBERS` 名。
+   * `MAX_TEAM_MEMBERS` 名 + 缺员过滤（名单输出 = 实际可参会者）。
    *
-   * 截断只发生在消费端——`rolePackTeams` 存储保持原样（超限数据不裁切，用户可自行修正），
-   * 因此「超限仅影响会议、不影响日常」的语义成立。所有会议消费点（装配角色解析 / 上下文块 /
-   * 会议任务项）必须走本 getter，禁止直连 `team.members`，否则「超出部分不参与会议」即成假契约。
+   * 截断与缺员过滤只发生在消费端——`rolePackTeams` 存储保持原样（超限数据不裁切、幽灵组员
+   * 不摘除，宿主读期检测标注，用户可自行修正），因此「受损仅影响会议、不静默改用户数据」
+   * 的语义成立。所有会议消费点（装配角色解析 / 上下文块 / 会议任务项）必须走本 getter，
+   * 禁止直连 `team.members`，否则「超出部分不参与会议 / 缺员不可参会」即成假契约。
    */
   private get activeTeamMembers(): readonly string[] {
     if (!this.activePackName) return [];
     const team = this.rolePackTeams.find((t) => t.leader === this.activePackName);
-    return team ? team.members.slice(0, MAX_TEAM_MEMBERS) : [];
+    return team ? this.effectiveMembers(team) : [];
+  }
+
+  /**
+   * 有效参会名单（单一实现，消费端视图）：截断至 `MAX_TEAM_MEMBERS` 后过滤缺员组员。
+   *
+   * 缺员 = 组员引用的角色包已卸载（内置包收紧无删除事件 / 用户包目录被清理等），
+   * 该组员不可参会，从名单输出中剔除（tryBuildMeetingPlan 不为其建发言项）。
+   * 存储不裁切——幽灵引用的「提示用户清理/修复」由宿主读期检测承担，内核只保证
+   * 「输出即实际参会」这一个消费语义（与 resolveRoundAssemblyRole 的缺员跳过兜底同口径）。
+   */
+  private effectiveMembers(team: RolePackTeam): readonly string[] {
+    return team.members
+      .slice(0, MAX_TEAM_MEMBERS)
+      .filter((m) => this.items.some((p) => p.meta.name === m));
   }
 
   /**

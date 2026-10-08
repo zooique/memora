@@ -14,7 +14,7 @@ import * as vscode from 'vscode';
 import type { Agent, MemoryInspector } from '@zooique/memora';
 import type { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createBackgroundProvider } from '../../extension/host/llmConfig.js';
-import { reconcileRolePackTeams } from '../../extension/host/rolePackTeams.js';
+import { inspectRolePackTeams } from '../../extension/host/rolePackTeams.js';
 import { MemoraChatViewProvider } from './chatPanel.js';
 import type {
   ExtensionToWebviewMessage,
@@ -679,12 +679,24 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       });
       return;
     }
-    // 读期对账兜底（与启动对账共用单实现，幂等）：覆盖「面板打开早于启动对账写回」的竞态窗口，
-    // 清理幽灵队伍后再读存储，确保下发的 teams 是干净数据
-    await reconcileRolePackTeams(rpm, this._globalState);
+    // 读期健康检测（唯一接线点，只读不写回）：对照包池算出每支队伍的受损状态
+    // （组长失效=遗留队伍 / 组员失效=缺员），随 teams 下发供角色页持久标注；
+    // 「清理/修复」由用户主动触发（roles_team_delete / roles_team_save），宿主不静默改用户数据。
+    const teamHealth = inspectRolePackTeams(rpm, this._globalState);
     // 组（会议名单）用户级数据：组员仅作小组会议参与者
-    const teams =
-      this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
+    const teams = (
+      this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? []
+    ).map((t) => {
+      // 检测视图附加（读期派生，不落盘）：健康组不带标记字段，存量 webview 兼容旧载荷
+      const health = teamHealth.get(t.leader);
+      return health && (health.leaderMissing || health.missingMembers.length > 0)
+        ? {
+            ...t,
+            leaderMissing: health.leaderMissing,
+            missingMembers: health.missingMembers,
+          }
+        : t;
+    });
     const packs = rpm
       .listMeta()
       .filter((m) => m.name)

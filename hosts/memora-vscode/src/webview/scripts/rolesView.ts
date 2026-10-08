@@ -62,8 +62,11 @@ interface RolesPayload {
     /** manifest 校验问题（健康徽章，level+message 结构对齐 skills_loaded） */
     issues?: readonly { level: 'error' | 'warning'; message: string }[];
   }[];
-  /** 组（会议名单）：组长 + 组员（v0.13 S7） */
-  teams: { leader: string; members: string[] }[];
+  /**
+   * 组（会议名单）：组长 + 组员（v0.13 S7）。受损组附加检测字段（读期派生，不落盘）：
+   * leaderMissing=组长已卸载（遗留队伍）；missingMembers=已卸载组员名单（缺员标注）。
+   */
+  teams: { leader: string; members: string[]; leaderMissing?: boolean; missingMembers?: string[] }[];
   activeName: string;
   /** 组员数量上限（内核常量 MAX_TEAM_MEMBERS，由宿主随 roles_loaded 下发；UI 侧禁止写死） */
   maxTeamMembers: number;
@@ -360,6 +363,10 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       return;
     }
     activeName = data.activeName;
+    // 遗留队伍置顶（异常可见性优先）：组长已卸载的组不会出现在任何角色卡片上
+    // （组长卡片不存在），必须独立区块承载——标注 + 用户主动清理，宿主不静默删除
+    const legacy = buildLegacyTeams(data);
+    if (legacy) list.appendChild(legacy);
     // 激活角色置顶（主动可见：用户一眼看到当前定位）——恒显不参与分页
     const active = data.packs.filter((p) => p.name === activeName);
     if (active.length > 0) {
@@ -376,6 +383,52 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   }
 
   /**
+   * ② 遗留队伍区块（组长已卸载的组，检测视图置顶展示）。
+   * 组长卡片不存在 → 该组无法经 buildTeamRibbon 呈现，独立区块标注「遗留」状态；
+   * 「清理」按钮复用 roles_team_delete（用户主动触发，宿主不静默删用户数据）。
+   * 无遗留组时不渲染（返回 null）。
+   */
+  function buildLegacyTeams(data: RolesPayload): HTMLElement | null {
+    const legacyTeams = (data.teams ?? []).filter((t) => t.leaderMissing);
+    if (legacyTeams.length === 0) return null;
+    const block = document.createElement('div');
+    block.className = 'legacy-teams';
+    const title = document.createElement('div');
+    title.className = 'legacy-teams-title';
+    title.textContent = `遗留队伍（${legacyTeams.length}）`;
+    title.title =
+      '这些队伍的组长角色包已不存在（如内置包收紧、用户包被删除）。' +
+      '队伍数据已保留，确认不需要后可清理。';
+    block.appendChild(title);
+    for (const t of legacyTeams) {
+      const row = document.createElement('div');
+      row.className = 'legacy-teams-row';
+      const missing = new Set(t.missingMembers ?? []);
+      // 组长名按包名原样展示（组长包已卸载，无 displayName 可查）
+      const memberNames = t.members
+        .map((m) => {
+          const label = data.packs.find((x) => x.name === m)?.displayName ?? m;
+          return missing.has(m) ? `${label}（已卸载）` : label;
+        })
+        .join(' / ');
+      const label = document.createElement('span');
+      label.className = 'legacy-teams-label';
+      label.textContent = `组长「${t.leader}」已卸载 · 组员：${memberNames || '（无）'}`;
+      const clean = document.createElement('button');
+      clean.className = 'btn btn-danger legacy-teams-btn';
+      clean.textContent = '清理';
+      clean.title = '删除该遗留队伍（移除会议名单记录）';
+      clean.addEventListener('click', () => {
+        vscode.postMessage({ type: 'roles_team_delete', leader: t.leader });
+      });
+      row.appendChild(label);
+      row.appendChild(clean);
+      block.appendChild(row);
+    }
+    return block;
+  }
+
+  /**
    * ② 卡片级小组条（以角色包为单位组队）：卡片底部展示该角色包的队伍阵容 + 组队/编辑入口。
    * 缺省显示「暂无队伍」；组数据契约 { leader, members } 不变（复用 roles_team_save/delete）。
    */
@@ -386,13 +439,20 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     label.className = 'team-ribbon-label';
     const leadTeam = data.teams?.find((t) => t.leader === p.name);
     if (leadTeam) {
+      // 缺员标注（检测视图）：已卸载组员名后缀「（已卸载）」——保留原名单展示（不静默隐去），
+      // 用户可「编辑队伍」保存即修复（弹窗仅列现存包，缺员项不勾选即剔除）
+      const missing = new Set(leadTeam.missingMembers ?? []);
       const names = leadTeam.members
-        .map((m) => data.packs.find((x) => x.name === m)?.displayName ?? m)
+        .map((m) => {
+          const label = data.packs.find((x) => x.name === m)?.displayName ?? m;
+          return missing.has(m) ? `${label}（已卸载）` : label;
+        })
         .join(' / ');
       label.textContent = `队伍：${names}`;
-      // 超限组（存量/外部数据）：内核会议消费端截断至前 maxTeamMembers 名，
-      // 标注须与实际参会人数一致，不虚报（名单原样展示，用户可自行删减）。
-      const active = Math.min(leadTeam.members.length, data.maxTeamMembers);
+      // 超限/缺员组（存量/外部数据）：内核会议消费端先截断后过滤缺员（不回补），
+      // 参会计数须与该口径一致，不虚报（名单原样展示，用户可自行删减/修复）。
+      const truncated = leadTeam.members.slice(0, data.maxTeamMembers);
+      const active = truncated.filter((m) => !missing.has(m)).length;
       label.title =
         leadTeam.members.length > data.maxTeamMembers
           ? `${active} 名组员参与小组会议（名单共 ${leadTeam.members.length} 名，超出上限的 ${leadTeam.members.length - data.maxTeamMembers} 名不参与）`

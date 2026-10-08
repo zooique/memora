@@ -1,41 +1,35 @@
 /**
- * 角色包队伍对账测试（幽灵引用清理，ADR-028 收敛补记 2026-10-03）
+ * 角色包队伍健康检测测试（幽灵引用标注 · 只读不写回，ADR-028 收敛补记 2026-10-08 语义变更）
  *
  * 覆盖两组被测不变量：
  *
- * 1. `reconcileTeams` 纯函数语义：
- *    - 组长包已卸载 → 整组删除（组以组长为定义者）；
- *    - 组员包已卸载 → 从名单摘除，其余组员保留；
- *    - 摘后名单为空（含存量空名单组）→ 删组（对齐保存校验「至少 1 名组员」不变式）；
- *    - 健康数据原样返回（changed=false，未受损组保留原引用）。
+ * 1. `inspectTeamsHealth` 纯函数语义：
+ *    - 组长包已卸载 → leaderMissing=true（遗留队伍，UI 给清理入口）；
+ *    - 组员包已卸载 → missingMembers 列出缺员（UI 标注，用户编辑保存即修复）；
+ *    - 健康数据 → 全健康视图（不改输入，零删除语义）；
+ *    - 空池护栏：包池为空 = 扫描失败窗口（构建中/安装损坏），全部按健康处理跳过检测
+ *      （2026-10-07 事故根因：把瞬时状态当成永久事实，旧清理语义下曾静默删除全部队伍）。
  *
- * 2. `reconcileRolePackTeams` 编排语义：
- *    - 发现幽灵引用 → 写回 globalState（键 = ROLE_PACK_TEAMS_KEY）+ 热更新内核组数据；
- *    - 健康数据 → 零写回、零内核调用（幂等，不产生无意义持久化）；
- *    - 内核未就绪 / 存储缺失 → 安全跳过；
- *    - 存储写入失败 → 不抛出（对账失败不影响日常），且不热更新内核（双方保持旧态）。
+ * 2. `inspectRolePackTeams` 编排语义：
+ *    - 只读不写回：零 globalState.update、零内核调用（存储即真源，检测是派生视图）；
+ *    - 内核未就绪 / 存储缺失 → 返回空表（UI 不标注，安全跳过）；
+ *    - 检测异常 → 吞掉返回空表（不影响日常），存储保留原样。
  */
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
 import type { RolePackManager } from '@zooique/memora';
 import type { Memento } from 'vscode';
-import { reconcileTeams, reconcileRolePackTeams } from '../rolePackTeams.js';
+import { inspectTeamsHealth, inspectRolePackTeams } from '../rolePackTeams.js';
 import { ROLE_PACK_TEAMS_KEY } from '../../../shared/constants.js';
 
-/** 内核角色包管理器桩：listMeta 返回给定包名集合（真源面），setRolePackTeams 记录调用 */
-function rpmStub(names: string[]): {
-  rpm: RolePackManager;
-  setRolePackTeams: ReturnType<typeof vi.fn>;
-} {
-  const setRolePackTeams = vi.fn();
-  const rpm = {
-    listMeta: () => names.map((name) => ({ name })),
-    setRolePackTeams,
-  } as unknown as RolePackManager;
-  return { rpm, setRolePackTeams };
+/** 内核角色包管理器桩：listMeta 返回给定包名集合（真源面） */
+function rpmStub(names: string[]): { rpm: RolePackManager; listMeta: ReturnType<typeof vi.fn> } {
+  const listMeta = vi.fn(() => names.map((name) => ({ name })));
+  const rpm = { listMeta } as unknown as RolePackManager;
+  return { rpm, listMeta };
 }
 
-/** Memento 桩：get 读当前值，update 可变存储（模拟写回后重读），可注入拒绝行为 */
+/** Memento 桩：get 读当前值；update 记录调用（新语义下必须零调用） */
 function mementoStub(initial: unknown): {
   memento: Memento;
   update: ReturnType<typeof vi.fn>;
@@ -52,100 +46,92 @@ function mementoStub(initial: unknown): {
   };
 }
 
-describe('reconcileTeams —— 对账纯函数语义', () => {
-  it('组长包已卸载 → 整组删除（幽灵组长场景：内置包收紧后无删除事件）', () => {
-    const { teams, changed } = reconcileTeams(
+describe('inspectTeamsHealth —— 检测纯函数语义', () => {
+  it('组长包已卸载 → leaderMissing=true（遗留队伍场景：内置包收紧后无删除事件）', () => {
+    const health = inspectTeamsHealth(
       [{ leader: '方案设计师', members: ['memora助手'] }],
       new Set(['memora助手']),
     );
-    expect(teams).toEqual([]);
-    expect(changed).toBe(true);
+    expect(health.get('方案设计师')).toEqual({
+      leaderMissing: true,
+      missingMembers: [],
+    });
   });
 
-  it('组员包已卸载 → 从名单摘除，其余组员与组长保留', () => {
-    const healthy = { leader: 'A', members: ['B', 'C', 'D'] };
-    const { teams, changed } = reconcileTeams([healthy], new Set(['A', 'C', 'D']));
-    expect(teams).toEqual([{ leader: 'A', members: ['C', 'D'] }]);
-    expect(changed).toBe(true);
-  });
-
-  it('摘后名单为空 → 删组（组员全部失效）', () => {
-    const { teams, changed } = reconcileTeams(
-      [{ leader: 'A', members: ['X', 'Y'] }],
-      new Set(['A']),
+  it('组员包已卸载 → missingMembers 列出缺员，健康组员不列入', () => {
+    const health = inspectTeamsHealth(
+      [{ leader: 'A', members: ['B', 'C', 'D'] }],
+      new Set(['A', 'C', 'D']),
     );
-    expect(teams).toEqual([]);
-    expect(changed).toBe(true);
+    expect(health.get('A')).toEqual({ leaderMissing: false, missingMembers: ['B'] });
   });
 
-  it('存量空名单组 → 删组（不动组长的组员名单也为空的组不成立）', () => {
-    const { teams, changed } = reconcileTeams([{ leader: 'A', members: [] }], new Set(['A', 'B']));
-    expect(teams).toEqual([]);
-    expect(changed).toBe(true);
+  it('健康数据 → 全健康视图（零删除语义，输入原样不动）', () => {
+    const teams = [{ leader: 'A', members: ['B'] }];
+    const health = inspectTeamsHealth(teams, new Set(['A', 'B']));
+    expect(health.get('A')).toEqual({ leaderMissing: false, missingMembers: [] });
+    // 输入未被修改（纯函数）
+    expect(teams).toEqual([{ leader: 'A', members: ['B'] }]);
   });
 
-  it('健康数据 → 原样返回（changed=false，未受损组保留原引用）', () => {
-    const healthy = { leader: 'A', members: ['B'] };
-    const { teams, changed } = reconcileTeams([healthy], new Set(['A', 'B']));
-    expect(teams).toEqual([healthy]);
-    expect(teams[0]).toBe(healthy);
-    expect(changed).toBe(false);
+  it('空池护栏：包池为空（扫描失败窗口）→ 全部按健康处理跳过检测', () => {
+    const health = inspectTeamsHealth(
+      [{ leader: 'A', members: ['B'] }],
+      new Set<string>(),
+    );
+    expect(health.get('A')).toEqual({ leaderMissing: false, missingMembers: [] });
   });
 });
 
-describe('reconcileRolePackTeams —— 对账编排语义', () => {
-  it('发现幽灵引用 → 写回 globalState + 热更新内核组数据（双收敛）', async () => {
-    const { rpm, setRolePackTeams } = rpmStub(['memora助手']);
+describe('inspectRolePackTeams —— 检测编排语义', () => {
+  it('只读不写回：受损数据检出但零 globalState.update、零内核调用', () => {
+    const { rpm, listMeta } = rpmStub(['memora助手']);
     const { memento, update } = mementoStub([{ leader: '方案设计师', members: ['memora助手'] }]);
 
-    await reconcileRolePackTeams(rpm, memento);
+    const health = inspectRolePackTeams(rpm, memento);
 
-    expect(update).toHaveBeenCalledTimes(1);
-    expect(update).toHaveBeenCalledWith(ROLE_PACK_TEAMS_KEY, []);
-    // 内核热更新不可省：装配期已把幽灵队伍注入内核，仅写存储则本会话会议消费端仍见幽灵
-    expect(setRolePackTeams).toHaveBeenCalledTimes(1);
-    expect(setRolePackTeams).toHaveBeenCalledWith([]);
-  });
-
-  it('健康数据 → 零写回、零内核调用（幂等，不产生无意义持久化）', async () => {
-    const { rpm, setRolePackTeams } = rpmStub(['A', 'B']);
-    const { memento, update } = mementoStub([{ leader: 'A', members: ['B'] }]);
-
-    await reconcileRolePackTeams(rpm, memento);
-
+    // 存储即真源：检测是派生视图，禁止写回（2026-10-07 事故的语义断根）
     expect(update).not.toHaveBeenCalled();
-    expect(setRolePackTeams).not.toHaveBeenCalled();
+    // 检测结果正确下发
+    expect(health.get('方案设计师')).toEqual({ leaderMissing: true, missingMembers: [] });
+    expect(listMeta).toHaveBeenCalledTimes(1);
   });
 
-  it('内核未就绪（null）/ 存储缺失（undefined）→ 安全跳过', async () => {
-    const { rpm, setRolePackTeams } = rpmStub(['A']);
+  it('内核未就绪（null）/ 存储缺失（undefined）→ 返回空表安全跳过', () => {
+    const { rpm } = rpmStub(['A']);
     const { memento, update } = mementoStub([]);
 
-    await reconcileRolePackTeams(null, memento);
-    await reconcileRolePackTeams(rpm, undefined);
-
+    expect(inspectRolePackTeams(null, memento).size).toBe(0);
+    expect(inspectRolePackTeams(rpm, undefined).size).toBe(0);
     expect(update).not.toHaveBeenCalled();
-    expect(setRolePackTeams).not.toHaveBeenCalled();
   });
 
-  it('存储写入失败 → 不抛出且不热更新内核（对账失败不影响日常）', async () => {
+  it('存储读取/包池枚举异常 → 吞掉返回空表（检测失败不影响日常）', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      const { rpm, setRolePackTeams } = rpmStub(['memora助手']);
-      const update = vi.fn(async () => {
-        throw new Error('storage write failed');
-      });
+      const rpm = {
+        listMeta: () => {
+          throw new Error('pool scan failed');
+        },
+      } as unknown as RolePackManager;
       const memento = {
-        get: () => [{ leader: '幽灵组长', members: [] }],
-        update,
+        get: () => [{ leader: 'A', members: ['B'] }],
       } as unknown as Memento;
 
-      await expect(reconcileRolePackTeams(rpm, memento)).resolves.toBeUndefined();
-
-      expect(setRolePackTeams).not.toHaveBeenCalled();
+      expect(inspectRolePackTeams(rpm, memento).size).toBe(0);
       expect(warn).toHaveBeenCalled();
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('存储键不变（ROLE_PACK_TEAMS_KEY 读取，形态兼容旧数据）', () => {
+    const { rpm } = rpmStub(['A', 'B']);
+    const { memento } = mementoStub([{ leader: 'A', members: ['B'] }]);
+
+    // 旧语义写入的数据无需迁移，直接可检测
+    const health = inspectRolePackTeams(rpm, memento);
+    expect(health.get('A')).toEqual({ leaderMissing: false, missingMembers: [] });
+    expect(ROLE_PACK_TEAMS_KEY).toBe('memora.rolePackTeams');
   });
 });

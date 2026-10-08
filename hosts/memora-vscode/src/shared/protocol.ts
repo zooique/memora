@@ -852,8 +852,17 @@ export type ExtensionToWebviewMessage =
         /** manifest 校验问题（健康徽章数据源，镜像 skills_loaded 的 SkillIssueDto 结构） */
         issues?: readonly RoleIssueDto[];
       }[];
-      /** 组（会议名单）：组长 + 组员（宿主用户级数据） */
-      teams: { leader: string; members: string[] }[];
+      /**
+       * 组（会议名单）：组长 + 组员（宿主用户级数据）。
+       * 受损组附加检测字段（读期派生视图，不落盘）：leaderMissing=组长已卸载（遗留队伍），
+       * missingMembers=已卸载组员名单（缺员）。健康组不带标记字段。
+       */
+      teams: {
+        leader: string;
+        members: string[];
+        leaderMissing?: boolean;
+        missingMembers?: string[];
+      }[];
       activeName: string;
       /**
        * 小组会议组员数量上限（SSOT 下发）：由宿主从内核常量

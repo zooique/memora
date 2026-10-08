@@ -849,12 +849,13 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
   });
 
   describe('会议机制：resolveRoundAssemblyRole 范围校验 + 表层装配视角（S5）', () => {
-    /** 组长 = 组长A，组员 = 组员1 */
+    /** 组长 = 组长A，组员 = 组员1、组员2（两名健康组员） */
     async function writeTeamPacks(): Promise<void> {
       const packsDir = join(dir, 'role-packs');
       await mkdir(packsDir, { recursive: true });
       await writePack(packsDir, '组长A', { name: '组长A', formatVersion: '1.0.0' }, {});
       await writePack(packsDir, '组员1', { name: '组员1', formatVersion: '1.0.0' }, {});
+      await writePack(packsDir, '组员2', { name: '组员2', formatVersion: '1.0.0' }, {});
     }
 
     it('组长（activePack）恒有效；组员在名单内且存在 → 有效', async () => {
@@ -874,13 +875,44 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(manager.resolveRoundAssemblyRole('幻觉角色')).toBeNull();
     });
 
-    it('组员角色包不存在（缺员）→ 跳过返回 null', async () => {
+    it('组员角色包不存在（缺员）→ 消费端名单已过滤，越界路径忽略返回 null', async () => {
       await writeTeamPacks();
       const manager = new RolePackManager(dir);
       manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '缺员'] }]);
       await manager.load('组长A');
+      // 缺员组员已被 activeTeamMembers 消费端过滤（名单输出=实际参会），此处走越界兜底
       expect(manager.resolveRoundAssemblyRole('缺员')).toBeNull();
       expect(manager.resolveRoundAssemblyRole('组员1')).toBe('组员1');
+      // getTeam 快照同样过滤（会议任务项不为幽灵组员建发言项）
+      expect(manager.getTeam('组长A')?.members).toEqual(['组员1']);
+    });
+
+    it('getTeam/getActiveTeam 缺员过滤：幽灵组员剔除、健康组员保留（存储原样不裁切）', async () => {
+      await writeTeamPacks();
+      const manager = new RolePackManager(dir);
+      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '幽灵', '组员1'] }]);
+      await manager.load('组长A');
+      // 快照输出不含幽灵；存储原样（再取仍同口径，不写回裁切）
+      expect(manager.getTeam('组长A')?.members).toEqual(['组员1', '组员1']);
+      expect(manager.getTeam('组长A')?.members).toEqual(['组员1', '组员1']);
+    });
+
+    it('截断在过滤前、过滤不回补：截断线内的幽灵剔除后不把线外健康组员补进来', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '组长A', { name: '组长A', formatVersion: '1.0.0' }, {});
+      // 4 名健康组员（线外 1 名）+ 幽灵组员排在截断线内（上限 4）
+      for (const name of ['组员1', '组员2', '组员3', '组员4']) {
+        await writePack(packsDir, name, { name, formatVersion: '1.0.0' }, {});
+      }
+      const manager = new RolePackManager(dir);
+      manager.setRolePackTeams([
+        { leader: '组长A', members: ['幽灵', '组员1', '组员2', '组员3'] },
+      ]);
+      await manager.load('组长A');
+      // 截断(前4)→过滤(剔幽灵)=3 人；组员4 不回补（回补会使参会人数超上限语义）
+      expect(manager.getTeam('组长A')?.members).toEqual(['组员1', '组员2', '组员3']);
+      expect(manager.getActiveTeam()?.members).toEqual(['组员1', '组员2', '组员3']);
     });
 
     it('无声明 → 非会议（null）；会议视角设置后 skills 加载跟随装配视角', async () => {
@@ -965,6 +997,21 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
         // 末项汇总，无 rolePack（组长视角收尾）
         expect(items![3]).toEqual({ description: '汇总各方观点：讨论叙事平台' });
         expect(items).toHaveLength(4);
+      });
+
+      it('名单含缺员组员 → 只为健康组员建发言项（消费端缺员过滤，不为幽灵建空转项）', async () => {
+        await writeTeamPacks();
+        const manager = new RolePackManager(dir);
+        // 组员2 在包池（健康），「幽灵」不在 → 只被剔除幽灵
+        manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '幽灵', '组员2'] }]);
+        await manager.load('组长A');
+        const items = manager.tryBuildMeetingPlan('小组会议：讨论叙事平台');
+        expect(items).not.toBeNull();
+        // 组员项只含健康组员，各带 rolePack（触发表层装配硬切换）
+        expect(items!.filter((i) => i.rolePack).map((i) => i.rolePack)).toEqual([
+          '组员1',
+          '组员2',
+        ]);
       });
 
       it('无「小组会议」keyword → null（回落普通闭环）', async () => {

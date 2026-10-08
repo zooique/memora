@@ -249,6 +249,28 @@ export const rolesStyles = `
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
   }
   #roles-root .team-ribbon-btn { padding: 1px var(--sp-2, 6px); font-size: var(--font-xs, 10px); flex-shrink: 0; }
+  /* 遗留队伍区块：组长已卸载的组置顶标注（检测视图，用户主动清理）
+     令牌复用既有警示色（feedback-warn-* / --warn），不另造 status-warning-* 幽灵令牌 */
+  #roles-root .legacy-teams {
+    border: 1px solid var(--feedback-warn-accent, rgba(215, 186, 125, 0.4));
+    background: var(--feedback-warn-bg, rgba(196, 160, 0, 0.15));
+    border-radius: var(--radius-md, 6px);
+    padding: var(--sp-2, 6px) var(--sp-3, 8px);
+    margin: 0 var(--sp-3, 8px) var(--sp-2, 6px);
+  }
+  #roles-root .legacy-teams-title {
+    font-size: var(--font-xs, 10px); font-weight: 600;
+    color: var(--feedback-warn-fg, #d7ba7d); margin-bottom: var(--sp-1, 2px);
+  }
+  #roles-root .legacy-teams-row {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px);
+    padding: var(--sp-1, 2px) 0;
+  }
+  #roles-root .legacy-teams-label {
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
+  }
+  #roles-root .legacy-teams-btn { padding: 1px var(--sp-2, 6px); font-size: var(--font-xs, 10px); flex-shrink: 0; }
   /* 组队弹窗：遮罩 + 电话本式多选 + 反馈区 */
   #roles-root .team-modal-overlay {
     position: fixed; inset: 0; z-index: 1000;

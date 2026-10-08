@@ -428,6 +428,68 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       expect((document.querySelector('.pager-bar') as HTMLElement).hidden).toBe(true);
     });
   });
+
+  describe('遗留队伍区块（2026-10-08 检测不删除语义：组长已卸载的组置顶标注）', () => {
+    /** 基础包池：一个现役组长 + 一个组员（供缺员标注对照） */
+    const PACKS = [
+      { name: 'memora助手', displayName: 'memora助手', capabilities: [] },
+      { name: '白话方案设计师', displayName: '白话方案设计师', capabilities: [] },
+    ];
+
+    it('组长已卸载的组 → 独立遗留区块渲染 + 清理按钮发 roles_team_delete', () => {
+      const { postMessage } = mountRolesView();
+      dispatchLoaded(
+        PACKS,
+        'memora助手',
+        [
+          // 遗留组：组长「方案设计师」已卸载（不在 packs 中）
+          { leader: '方案设计师', members: ['memora助手'], leaderMissing: true, missingMembers: [] },
+        ],
+      );
+      const block = document.querySelector('.legacy-teams') as HTMLElement;
+      expect(block).not.toBeNull();
+      expect(block.querySelector('.legacy-teams-title')?.textContent).toBe('遗留队伍（1）');
+      expect(block.querySelector('.legacy-teams-label')?.textContent).toContain(
+        '组长「方案设计师」已卸载',
+      );
+      // 清理按钮：用户主动触发，复用已有删除消息契约
+      const clean = block.querySelector<HTMLButtonElement>('.legacy-teams-btn');
+      clean!.click();
+      expect(postMessage).toHaveBeenCalledWith({
+        type: 'roles_team_delete',
+        leader: '方案设计师',
+      });
+    });
+
+    it('缺员组（组长健康）→ 组员名标注「已卸载」，不进遗留区块', () => {
+      mountRolesView();
+      dispatchLoaded(
+        PACKS,
+        '白话方案设计师',
+        [
+          // 组长在池中（有卡片），组员「幽灵包」已卸载
+          {
+            leader: '白话方案设计师',
+            members: ['memora助手', '幽灵包'],
+            missingMembers: ['幽灵包'],
+          },
+        ],
+      );
+      // 组长健康 → 无遗留区块
+      expect(document.querySelector('.legacy-teams')).toBeNull();
+      // 队伍条缺员标注
+      const ribbonLabel = document.querySelector('.team-ribbon-label') as HTMLElement;
+      expect(ribbonLabel.textContent).toContain('memora助手 / 幽灵包（已卸载）');
+      // 参会计数与内核口径一致（先截断后过滤）：1 名健康组员参会
+      expect(ribbonLabel.title).toContain('1 名组员参与小组会议');
+    });
+
+    it('无受损队伍 → 不渲染遗留区块（健康组不带标记字段）', () => {
+      mountRolesView();
+      dispatchLoaded(PACKS, 'memora助手', [{ leader: 'memora助手', members: ['白话方案设计师'] }]);
+      expect(document.querySelector('.legacy-teams')).toBeNull();
+    });
+  });
 });
 
 describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () => {

@@ -23,7 +23,6 @@ import * as vscode from 'vscode';
 import { readFile, writeFile } from 'node:fs/promises';
 import type { Agent } from '@zooique/memora';
 import { MemoraSettingsViewProvider } from '../panels/settingsPanel.js';
-import { ROLE_PACK_TEAMS_KEY } from '../../shared/constants.js';
 
 // 可观测的 workspace 配置 mock（vi.hoisted：vi.mock 工厂被提升到文件顶部，闭包外变量
 // 必须先提升声明，否则工厂内引用报错）。get/update 供 toggleSkillDisabled 用例断言。
@@ -600,16 +599,17 @@ describe('settingsPanel.roles_save / roles_detail —— 角色策略保存链�
   });
 });
 
-describe('settingsPanel.loadRoles —— 读期队伍对账兜底（幽灵引用清理）', () => {
+describe('settingsPanel.loadRoles —— 读期队伍健康检测（只读标注，不写回）', () => {
   /**
-   * 场景：存储残留「组长已卸载」的幽灵队伍（如内置包收紧删掉「方案设计师」），
-   * 且启动对账尚未写回（面板打开早于装配完成的竞态窗口）。
-   * 不变量：loadRoles 读存储前先对账——写回清理结果 + 热更新内核，
-   * roles_loaded 下发的 teams 是干净数据（不得把幽灵队伍推给 webview）。
+   * 场景：存储残留受损队伍（如内置包收紧删掉「方案设计师」）。
+   * 不变量（2026-10-08 语义变更，推翻旧「清理写回」）：
+   *   - 存储原样保留（零 update，宿主不静默改用户数据）；
+   *   - roles_loaded 下发的 teams 附加检测字段（leaderMissing/missingMembers），
+   *     角色页据此持久标注，清理/修复由用户主动触发；
+   *   - 健康组不带标记字段（不产生无意义字段）。
    */
-  it('存储含幽灵队伍 → 读期对账写回 + 内核热更新 + roles_loaded 下发干净 teams', async () => {
-    const setRolePackTeams = vi.fn();
-    // agent 桩：只含 loadRoles / 对账消费面（ensureAgent 的事件绑定 + listMeta/get/activeName/setRolePackTeams）
+  it('存储含幽灵队伍 → 下发检测字段标注 + 零写回（数据原样保留）', async () => {
+    // agent 桩：只含 loadRoles 消费面（ensureAgent 的事件绑定 + listMeta/get/activeName）
     const agent = {
       on: vi.fn(),
       off: vi.fn(),
@@ -617,14 +617,11 @@ describe('settingsPanel.loadRoles —— 读期队伍对账兜底（幽灵引用
         listMeta: () => [{ name: 'memora助手' }],
         get: () => undefined,
         activeName: 'memora助手',
-        setRolePackTeams,
       },
     } as unknown as Agent;
-    // globalState 桩：get 读当前值、update 可变存储（loadRoles 在对账写回后重读存储）
-    let store: unknown = [{ leader: '方案设计师', members: ['memora助手'] }];
-    const globalUpdate = vi.fn(async (_key: string, value: unknown) => {
-      store = value;
-    });
+    // globalState 桩：get 读当前值；update 必须零调用（只读语义）
+    const store = [{ leader: '方案设计师', members: ['memora助手'] }];
+    const globalUpdate = vi.fn();
     const posted: { type: string; teams?: unknown }[] = [];
     const provider = new MemoraSettingsViewProvider({} as never, {} as never);
     provider.setAgentFactory(async () => agent);
@@ -640,9 +637,44 @@ describe('settingsPanel.loadRoles —— 读期队伍对账兜底（幽灵引用
 
     await (provider as unknown as { loadRoles(): Promise<void> }).loadRoles();
 
-    expect(globalUpdate).toHaveBeenCalledWith(ROLE_PACK_TEAMS_KEY, []);
-    expect(setRolePackTeams).toHaveBeenCalledWith([]);
+    // 不写回：队伍数据保留在存储（删除权交还用户）
+    expect(globalUpdate).not.toHaveBeenCalled();
+    // 检测字段随载荷下发：组长失效 → 遗留队伍标注
     const rolesLoaded = posted.find((m) => m.type === 'roles_loaded');
-    expect(rolesLoaded?.teams).toEqual([]);
+    expect(rolesLoaded?.teams).toEqual([
+      { leader: '方案设计师', members: ['memora助手'], leaderMissing: true, missingMembers: [] },
+    ]);
+  });
+
+  it('健康队伍 → 原样下发，不带检测标记字段', async () => {
+    const agent = {
+      on: vi.fn(),
+      off: vi.fn(),
+      rolePackManager: {
+        listMeta: () => [{ name: 'A' }, { name: 'B' }],
+        get: () => undefined,
+        activeName: 'A',
+      },
+    } as unknown as Agent;
+    const store = [{ leader: 'A', members: ['B'] }];
+    const globalUpdate = vi.fn();
+    const posted: { type: string; teams?: unknown }[] = [];
+    const provider = new MemoraSettingsViewProvider({} as never, {} as never);
+    provider.setAgentFactory(async () => agent);
+    provider.setGlobalState({ get: () => store, update: globalUpdate } as never);
+    (provider as unknown as { _view: unknown })._view = {
+      webview: {
+        postMessage: (msg: never) => {
+          posted.push(msg);
+          return Promise.resolve(true);
+        },
+      },
+    };
+
+    await (provider as unknown as { loadRoles(): Promise<void> }).loadRoles();
+
+    expect(globalUpdate).not.toHaveBeenCalled();
+    const rolesLoaded = posted.find((m) => m.type === 'roles_loaded');
+    expect(rolesLoaded?.teams).toEqual([{ leader: 'A', members: ['B'] }]);
   });
 });

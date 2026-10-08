@@ -19,7 +19,6 @@ import { mkdir } from 'node:fs/promises';
 import type { Agent, IRoundStore } from '@zooique/memora';
 import { accumulateStream } from '@zooique/memora';
 import { assembleAgent } from './host/assemble.js';
-import { reconcileRolePackTeams } from './host/rolePackTeams.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
@@ -183,12 +182,6 @@ function getOrCreateAgent(
       scriptNodePath: scriptNodePath || undefined,
       outputChannel,
     })
-      .then((agent) => {
-        // 启动对账（「启动时」语义，与设置面板读期兜底共用单实现）：清理指向已卸载
-        // 角色包的幽灵队伍记录（内置包收紧/用户删除无删除事件）后才交出 agent，
-        // 下游读到的 globalState 已是干净数据。await 串入装配链 = 对账必在可用前完成。
-        return reconcileRolePackTeams(agent.rolePackManager, globalState).then(() => agent);
-      })
       .catch((err) => {
         // 装配失败则重置，下次命令重试
         agentPromise = null;
