@@ -4,11 +4,11 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **版本定位（v3.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。早期版本（2.1.0 及以下）为探索性迭代；**3.0.0 是架构收敛后的第一个稳定基线**，API 与结构以 3.0.0 为准；**4.0.0 起导出面收敛（-55）+ `search()` 退役，API 以 4.0.0 为准**。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与单测（2700+ 用例）负责，不对"agent 整体行为稳定"作承诺。
+> **版本定位（v3.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。早期版本（2.1.0 及以下）为探索性迭代；**3.0.0 是架构收敛后的第一个稳定基线**，API 与结构以 3.0.0 为准；**4.0.0 起导出面收敛（-54）+ `search()` 退役，API 以 4.0.0 为准**。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与单测（2700+ 用例）负责，不对"agent 整体行为稳定"作承诺。
 
 ## [4.0.0] · 2026-10-08
 
-> **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：删 55 个公共导出 + 退役 `agent.memory.search()`，对外部消费者是编译期破坏。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
+> **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：删 54 个公共导出 + 退役 `agent.memory.search()`，对外部消费者是编译期破坏。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
 
 ### ⚠️ Breaking（内核 · 记忆搜索唯一入口收敛：删除已退役的 `MemoryInspector.search()` · `f552695e`）
 
@@ -45,21 +45,21 @@
 - 存储仍原样不裁切：受损名单的「提示清理/修复」由宿主读期检测承担，内核只保证输出即实际参会。
 - 守卫 3 用例：缺员过滤 + getTeam 快照 / 存储原样不裁切 / 截断在过滤前不回补。
 
-### ⚠️ Breaking（内核 · 导出面收敛：55 个无消费、无文档承诺的公共导出降级为内部实现 · `REL-3.1`，已定档 4.0.0）
+### ⚠️ Breaking（内核 · 导出面收敛：54 个无消费、无文档承诺的公共导出降级为内部实现 · `REL-3.1`，已定档 4.0.0）
 
 **收敛判据（2026-10-06 定案）**：公共导出只保留 ① 宿主（`hosts/memora-vscode`）经 `@zooique/memora`
 实际 import 的符号；② README / API 手册 §十六 明文承诺的公共 API。两条都不占的符号从 `src/index.ts`
 公共面移除。**收编 ≠ 删除**：类型定义仍在原模块、随函数签名/结构推断可用，只是不再可显式 import；
-判定前全量重盘（历史快照「约 70 个」重盘实测 53 个；终盘对账 3.0.1→4.0.0 实移 **55** 个——误报 2、补登 4，见下方清单分账注记）。
+判定前全量重盘（历史快照「约 70 个」重盘实测 53 个；终盘对账 3.0.1→4.0.0 实移 **55** 个、终盘后回归摘出 1 个（`ProcessMetricsPayload` 重新挂面，见分账注记）= 发布面 **54** 个——误报 2、补登 4，见下方清单分账注记）。
 
-**移除清单（55 个，按域分组）**：
+**移除清单（54 个，按域分组）**：
 
 - agent 内部类型/值（15）：`AbortStopReason` / `IdempotencyLevel` / `ToolExecutionRecord` /
   `PauseMeta` / `PlanItemOutcome` / `PlanItem` /
   `DefaultDuplicateCallInterceptor` / `DuplicateCallInterceptor` / `DuplicateCheckVerdict` /
   `DuplicateCheckContext` / `RoundSummaryGenerator` / `EstimateOccupancyInput` /
   `estimateTokensText` / `EstimableMessage` / `WorkProjectionManager`
-- LLM / 事件 / 记忆（4）：`TaskType` / `AGENT_EVENTS` / `SummaryType` / `ProcessMetricsPayload`
+- LLM / 事件 / 记忆（3）：`TaskType` / `AGENT_EVENTS` / `SummaryType`
 - Round 存储内部件（6）：`RoundEvidenceEvent` / `generateRoundId` / `generateMessageId` /
   `createPendingRound` / `completeRound` / `InMemoryRoundStore`
 - 工具定义常量（2）：`SEARCH_PROJECT_TOOL` / `TRACE_SUMMARY_TOOL`
@@ -78,6 +78,10 @@
 可见性条目后注）；另 **漏登 4** 已补入上方分组——`WorkProjectionManager`（类值导出）、
 `validateManifest`（值导出）、`RolePackAssembly`、`ProcessMetricsPayload`，其中前两个是值导出，
 外部显式 import 在 4.0.0 直接编译红。
+
+**终盘后回归 1（计数 55 → 54）**：`ProcessMetricsPayload` 在终盘后因「多流续跑 metrics 同轮合并」
+修复（见下方 metrics 合并 Fixed 条）需要重新挂面——宿主 chatPanel 的段级合并助手以其为参数类型
+（判据①「宿主真实 import」成立），从移除清单摘出；其余 54 个维持收敛不变。
 
 **文档面同步修正（API 手册 §十六 5 处失真）**：删 4 个**幻影承诺**（`AgentProjectEntry` /
 `BOOST_INCREMENT` / `SCORE_CEILING` / `SCORE_FLOOR` / `SkillMatch`——src 无对应导出，属文档单方面
@@ -234,6 +238,37 @@ turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI �
 - **边界**：内置包不参与对账（磁盘真理源 = dist，构建期同步，运行中恒定）；manifest.name 撞内置
   的用户包继承重名跳过判据。
 - **测试**：5 用例锁行为（新增注入 / 删除摘除 + 记账连续 / 改名 / 悬空兜底 / 内容更新净差）。
+
+### Fixed（内核 · 读取防重分支②死路回放：台账替身回显补「原文仍在上下文」前置 · 数据源取证 round-1791449684099）
+
+**真机死循环实锤**：一次 turn 内「整读文件 → 上下文压缩挤掉原文 → 中段重读」时，台账分支②
+（替身回显）在**原文已不在上下文**的情况下仍以「已有覆盖」为由把请求拦截成摘要替身——模型拿不到
+原文、重读又被拦，整读→压缩→重读→替身拦死循环（生产轮复现数据 round-1791449684099）。
+
+- **契约前置**：`shouldEchoLedgerStub(subj, cov, stillInContext)` 增第三必填参数，前置不过则
+  一切区间判定短路为放行（放行真读，新结果入上下文后由分支① `read_dedup` 接手防重复）——
+  宁可多读一次不可误拦（两个失败方向不对称，防永动机语义不变）。
+- **数据面收口**：`FileCoverage` 新增必填 `lastToolCallId` / `fingerprint`（定位锚 + 进上下文
+  内容指纹，与 toolResultCache 同口径同源计算）——禁 optional 兜底：缺锚则回退语义恒为「在」，
+  死路回放复发，宁编译期红。
+- **判据单一收口**：新抽 `AgentLoop.isMessageStillUnmodified(toolCallId, fingerprint)`，
+  分支①（`isCachedResultStillInContext` 委托）与分支②（回显前置）共用同一「原文是否仍在
+  上下文」判据，不双轨。
+- 测试：死路回放生产序列复现用例（整读→压缩→中段重读应放行 3 次真读、零回显）+ 压缩语境
+  放行组重写 + 归一拦截组重构保留；变异验证（短路放行分支 → 4 用例精确转红 → 恢复全绿）已做。
+
+### Fixed（内核 · Windows 命令输出编码事实缺失：模型对 cmd OEM/GBK 乱码失明 · CMD-2 补宣告）
+
+**实证坐实**：`run_command` 经 `cmd /c` 执行时，cmd 写管道输出用系统 OEM 代码页（简中系统为
+GBK；实测 `chcp 65001` 下仍输出 GBK 字节），而内核执行器恒按 UTF-8 解码收流——非 ASCII 输出
+必显示为乱码（ASCII 不受影响，故英文命令无感、中文场景模型反复踩坑且无法自查归因）。
+
+- **裁决 = 事实宣告（非解码改造）**：`buildEnvironmentContextBlock` 新增 win32 平台条件行
+  「命令输出编码：cmd 管道输出按系统 OEM 代码页写出（简中系统为 GBK），内核按 UTF-8 解码——
+  非 ASCII 输出会显示为乱码（ASCII 不受影响）；Node 脚本输出为 UTF-8」。纯事实链零行为引导
+  （对齐环境段「零解释转发」纪律）；平台参数化与 `resolveShellCommand` 同先例，POSIX 不加噪音。
+- 三方对照：内核执行路径（spawn `cmd /c` + UTF-8 收流）↔ 工具描述（无编码声明、不冲突）↔
+  环境宣告段（本条补齐）。
 
 ### Fixed（内核 · 后台任务回流通知首标签穷尽化：`timedOut` 不再谎报「完成」· 发版前审查 H1）
 
@@ -458,6 +493,20 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 ## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
+
+### Fixed（宿主 · 多流续跑 metrics 同轮合并：前段指标不再被静默清零 · 零 schema 变更）
+
+**真机实锤**：一次 turn 分多段流完成（软暂停续跑 / ask 回答后续跑）时，每段流尾各自 emit 一条
+段级 metrics；`mergeProcessEvents` 旧实现把 prior 的 metrics **恒剔除** → 前段全部指标丢失，
+回合终态只剩末段（前段 7 次工具失败被静默清零成 0，「不算成功收尾」诚实信号随之失真）。
+
+- **同轮合并**（新私有助手 `mergeMetricsPayload`）：`durationMs` / `tokenIn` / `tokenOut` /
+  `toolFailureCount` 求和；`success` 取末段（语义是「这段流程跑完没有」，终局收尾以最后一段
+  为准）；三个可选诚实信号任一段携带即求和（缺段按 0）、两段都缺保持缺省（不伪造信号面）。
+- **检查点路径保留**：incoming 无 metrics（step 检查点常态）时 prior metrics 原样保留待流尾
+  合并，防双计与丢失并存；emit 点与存储 schema 零变更。
+- 测试：合并求和 + success 取末段 / 可选字段三态 / 检查点保留 3 用例；变异验证（恒剔回退 →
+  检查点用例红、合并分支拆除 → 求和双用例红 → 恢复全绿）已做；宿主全量 57 文件回归绿。
 
 ### Fixed（宿主 · 队伍对账语义变更：清理写回 → 只检测标注，删除权交还用户 · 含内核消费端同口径收口）
 
