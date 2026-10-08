@@ -51,7 +51,6 @@ export const chatStyles = `
     margin: 0;
     display: flex; flex-direction: column;
     height: 100vh; box-sizing: border-box;
-    position: relative;
     font-size: var(--font-base, 13px);
     background: var(--surface-page, #1e1e1e);
     color: var(--text-primary, #cccccc);
@@ -123,40 +122,19 @@ export const chatStyles = `
     background: var(--feedback-warn-accent, #d7ba7d);
   }
   .status-dock__chip:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
-  /* 收起态形态降级（用户诉求 2026-10-07）：常驻保留，但收起时收为输入框左侧小气泡，
+  /* 收起态形态降级（用户诉求 2026-10-07）：常驻保留，但收起时收为输入框上方左侧短 pill，
    * 不再占输入框上方整排；展开态完全保持现状（.is-collapsed 仅由收起态施加）。
-   * 气泡绝对定位于 body（position:relative），出布局流 ⇒ 不挤输入框、不破坏
-   * resolveDock「主位条/anchor 恒净」纪律（dockChip 仍为 inputBar 兄弟节点，
-   * 搬运锚 parent.insertBefore(e.el, dockChip) 不受影响）。 */
+   * 与展开态的差异 = align-self: flex-start（全宽 pill 收为内容宽短 pill，靠左）
+   * + 两处间距修正（margin-left 对齐对话内容柱 / margin-bottom 与输入卡留隙）；
+   * 其余样式（边框/底色/字号/未读黄字+前导黄点）全部继承默认规则 ⇒ 单源、零坐标、
+   * 零魔法数字对账。dockChip 静态链本就在 inputBar 之上，位置由布局结构天然保证，
+   * 不破坏 resolveDock「主位条/anchor 恒净」纪律（搬运锚 parent.insertBefore(e.el, dockChip)
+   * 不受影响）。文案「活动/+N」由 resolveDock 动态赋值，收起态正常显示 ⇒ 无语义孤点。 */
   body.dock-collapsed .status-dock__chip.is-collapsed {
-    position: absolute;
-    left: var(--sp-4, 8px);
-    bottom: calc(var(--sp-5, 12px) + var(--sp-2, 4px));
-    z-index: 21;           /* 高于 #inputBar(z-index:20)，落在左轨道不被透明层压住 */
-    align-self: auto;
-    width: 24px; height: 24px; min-height: 0;
-    margin: 0; padding: 0;
-    border-radius: 50%;
-    justify-content: center;
-    font-size: 0;            /* 隐藏「活动」文案，气泡只显圆点 */
-    overflow: hidden;
+    align-self: flex-start;  /* 全宽 pill 收为内容宽短 pill，靠左；其余与展开态同源 */
+    margin-left: var(--sp-5, 12px);   /* 左缘对齐对话内容柱（默认 8px 偏贴边） */
+    margin-bottom: var(--sp-2, 4px);  /* 与输入卡留一口气（默认 0 = 物理贴死） */
   }
-  /* 隐藏默认未读前导点，统一用 ::after 圆点承载（小尺寸下不挤压） */
-  body.dock-collapsed .status-dock__chip.is-collapsed::before { display: none; }
-  body.dock-collapsed .status-dock__chip.is-collapsed::after {
-    content: ''; width: var(--dot-lg); height: var(--dot-lg); border-radius: 50%;
-    background: currentColor; opacity: .9;
-  }
-  /* 未读：气泡用警示色实心点（去除描边/加粗，避免 24px 内挤压） */
-  body.dock-collapsed .status-dock__chip.is-collapsed.is-unread {
-    color: var(--feedback-warn-accent, #d7ba7d);
-    border-color: transparent; font-weight: 400;
-  }
-  body.dock-collapsed .status-dock__chip.is-collapsed.is-unread::after {
-    background: var(--feedback-warn-accent, #d7ba7d);
-  }
-  /* 收起态为气泡让出左侧轨道：输入框整体右移，气泡落在左留白，不压文字 */
-  body.dock-collapsed #inputBar { padding-left: 32px; }
   /* 抽屉体：纵向两段——#dockControls 控件段（被收纳活跃条）+ #activityDetail 时间段。
    * flex gap 只落在两个非 hidden 段之间（display:none 不生成盒、不占 gap）。 */
   .status-dock__panel {
@@ -2122,13 +2100,9 @@ export const chatStyles = `
     padding-top: var(--sp-2, 4px);
     border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }
-  /* 段头「活动」：静态骨架文本，纯标签不可点（折叠职责已上移到抽屉入口）。 */
-  .status-dock__timeline-head {
-    padding: 0 0 var(--sp-1, 4px);
-    font-size: var(--font-xs, 10px);
-    color: var(--text-secondary, #9aa0a6);
-    user-select: none;
-  }
+  /* 段头「活动」已删（2026-10-08 SSOT 收口）：抽屉标签唯一真源 = dockChip 文案
+   * （resolveDock 单点动态赋值「活动/+N」），展开态 chip 紧邻面板上方，段头为第二份硬编码副本。
+   * 消费面三处已同步清：chatPanel 骨架 / chatViewTestEnv 镜像 / 本规则。 */
   .activity-list { padding: 0; }
   .activity-list__row {
     display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3, 8px);

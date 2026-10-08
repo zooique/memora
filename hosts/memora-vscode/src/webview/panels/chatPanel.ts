@@ -4020,7 +4020,6 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
   <div id="dockPanel" class="status-dock__panel" hidden>
     <div id="dockControls" class="status-dock__controls" hidden></div>
     <div id="activityDetail" class="status-dock__timeline">
-      <div class="status-dock__timeline-head">活动</div>
       <div id="activityList" class="activity-list"></div>
       <div id="activityMetrics" class="activity-metrics" hidden></div>
     </div>
