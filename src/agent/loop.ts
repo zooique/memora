@@ -2138,13 +2138,19 @@ export class AgentLoop {
         });
         continue;
       }
-      // 台账替身回显分支（摘要顶替，不收口进 guardRail）：原文已压缩/分段脚注时用摘要或引导 offset 续读替代重读。
-      // 保守放行分支：无摘要 / 区间超出覆盖 → 放行（宁可多读一次，不可死锁）。
+      // 台账替身回显分支（摘要顶替，不收口进 guardRail）：**原文仍在上下文**时，同参/变体重读
+      // 用摘要或引导 offset 续读替代；原文已被压缩链清出 → 放行真读（替身是死路，见 stillInContext 注）。
+      // 其余保守放行分支：无摘要 / 区间超出覆盖 → 放行（宁可多读一次，不可死锁）。
       // 文件被 write/delete 修改 → 结果处理循环 invalidate 台账，放行合法重读。
       const ledgerSubject = DEDUP_SUBJECT_EXTRACTORS[tc.function.name]?.(tc.function.arguments);
       if (ledgerSubject?.path) {
         const cov = this.fileExposure.get(ledgerSubject.path);
-        if (cov && shouldEchoLedgerStub(ledgerSubject, cov)) {
+        // 前置：原文仍在上下文才拦。摘要替身只服务「手边有原文可回顾」的语境；原文已被压缩链
+        // 清出时回显替身 = 死路（模型要的中段 token 永远不在顶头摘要里，同参重读被反复拦），
+        // 必须放行真读。判据与 read_dedup 分支①共用 isMessageStillUnmodified（同源）。
+        const stillInContext =
+          cov !== undefined && this.isMessageStillUnmodified(cov.lastToolCallId, cov.fingerprint);
+        if (cov && shouldEchoLedgerStub(ledgerSubject, cov, stillInContext)) {
           // 观测「补缝过度拦截」候选：台账替身回显命中累加。
           this.metrics.ledgerStubEchoCount++;
           // 裁决证据落盘（悬案取证）：计数判不了意图，「模型规避完整读取」vs「防重误拦合法
@@ -2240,18 +2246,20 @@ export class AgentLoop {
       }
       // 工具结果防重缓存：仅成功且是 info-fetch 类型的工具才写入（失败/拦截不缓存——
       // 失败可能是临时问题，拦截是我们主动挡的）。
-      // 一并记录 toolCallId + 内容指纹：拦截前据此判定「该结果是否仍在当前上下文中」。
-      // 指纹按进入上下文的包裹口径计算（复用 wrapToolResult 同一函数 → 同源，不会因模板改动失配）。
       const resultExtractor = DEDUP_SUBJECT_EXTRACTORS[tc.function.name];
       if (ok && resultExtractor) {
         const subject = resultExtractor(tc.function.arguments);
         if (subject) {
+          // 指纹按进入上下文的包裹口径计算（复用 wrapToolResult 同一函数 → 同源，不会因模板改动失配）。
+          // 一次计算两处消费（缓存 + 台账）：分支①分支②的「原文是否仍在上下文」比对同一份指纹。
+          const fingerprint = sha256Fingerprint(wrapToolResult(tc.function.name, result));
           this.toolResultCache.set(tc.function.name, subject, this.currentIteration, {
             toolCallId: tc.id,
-            fingerprint: sha256Fingerprint(wrapToolResult(tc.function.name, result)),
+            fingerprint,
           });
           // 文件覆盖度台账写侧：read_file 返回分段脚注（= 文件确实大/被截断，按需读取信号）
-          // 时记录覆盖区间 + 轻量替身摘要——供替身回显分支在原文被压缩后回显（防重读永动机 / 空拦死锁）。
+          // 时记录覆盖区间 + 轻量替身摘要——原文**仍在上下文**时替身回显分支据此拦截变体重读
+          // （防重读永动机）；原文被压缩后条目随指纹失配自动失效为放行（台账不清、判据把关）。
           if (tc.function.name === 'read_file' && subject.path) {
             const cov = parseReadFileCoverage(result);
             if (cov) {
@@ -2271,6 +2279,9 @@ export class AgentLoop {
                 // 替身 = 已读正文前 READ_DIGEST_CHARS 字符（轻量启发式，零 LLM 成本）
                 digest: cov.content.slice(0, READ_DIGEST_CHARS),
                 cachedAtIteration: this.currentIteration,
+                // 在上下文判定三件套：定位锚 + 指纹与缓存同源（见上方 fingerprint 注）
+                lastToolCallId: tc.id,
+                fingerprint,
               });
             } else {
               // 整读无脚注（= 已读到文件末尾 / 文件未超单段预算，读到末尾零噪音）：
@@ -2287,6 +2298,8 @@ export class AgentLoop {
                 coverEnd: totalLines,
                 digest: result.slice(0, READ_DIGEST_CHARS),
                 cachedAtIteration: this.currentIteration,
+                lastToolCallId: tc.id,
+                fingerprint,
               });
             }
           }
@@ -3401,22 +3414,36 @@ export class AgentLoop {
   }
 
   /**
-   * 缓存条目对应的工具结果是否**仍在当前上下文中** —— 防重拦截的前提（调用点见 handleToolCalls）。
+   * 指定 toolCallId 的 tool 消息是否仍在上下文中且内容未被改动 —— 「结果仍在上下文」的共用判据。
    *
-   * 三道判据全过才算「在」：① 条目带 toolCallId 与指纹；② `this.messages` 中仍有该 toolCallId 的
-   * tool 消息；③ 其内容指纹与记录一致（内容未被压缩链替换成 `[Previous: used x]` 占位符）。
+   * 两个消费语境（SSOT）：① read_dedup 分支①（经 isCachedResultStillInContext）；
+   * ② 台账替身回显分支②（按 FileCoverage.lastToolCallId + fingerprint 直调）。
+   * 二者比对口径必须一致（wrapped 后消息内容指纹），否则两路对「同一结果在不在」的理解分叉。
    *
-   * **保守方向：宁可放行，不可误拦。** 找不到消息 / 指纹不符 / 条目缺元信息 → 一律 false（放行）。
+   * 三道判据全过才算「在」：消息数组中仍有该 toolCallId 的 tool 消息，且内容指纹与记录一致
+   * （内容未被压缩链替换成 `[Previous: used x]` 占位符）。
+   *
+   * **保守方向：宁可放行，不可误拦。** 找不到消息 / 指纹不符 → false（放行）。
    * 误放行的代价是「多读一次」；误拦的代价是「内容已不在手上却读不回来 = 死锁」——两者不对称。
+   */
+  private isMessageStillUnmodified(toolCallId: string, fingerprint: string): boolean {
+    const msg = this.messages.find((m) => m.role === 'tool' && m.toolCallId === toolCallId);
+    if (!msg) return false;
+    return sha256Fingerprint(msg.content) === fingerprint;
+  }
+
+  /**
+   * 缓存条目对应的工具结果是否**仍在当前上下文中** —— read_dedup 分支①拦截的前提（调用点见 handleToolCalls）。
+   *
+   * 实际判定委托 `isMessageStillUnmodified`（与台账分支②共用判据）；本方法只补条目元信息缺失的
+   * 保守放行（条目没带 toolCallId/指纹 → 无从核验 → 视为「不在」放行）。
    *
    * 注：超阈结果经入口关落盘后，上下文里留的是「路径 + 预览」，与记录指纹（包裹后的原文）不符
    * → 判为「不在」，重读放行。这是正确语义：原文确实已不在上下文中。
    */
   private isCachedResultStillInContext(entry: CacheEntry): boolean {
     if (entry.toolCallId === undefined || entry.fingerprint === undefined) return false;
-    const msg = this.messages.find((m) => m.role === 'tool' && m.toolCallId === entry.toolCallId);
-    if (!msg) return false;
-    return sha256Fingerprint(msg.content) === entry.fingerprint;
+    return this.isMessageStillUnmodified(entry.toolCallId, entry.fingerprint);
   }
 
   /** 整体替换执行上下文（截断落盘 / 恢复历史 / 装配重排：传入的数组已是完整上下文） */

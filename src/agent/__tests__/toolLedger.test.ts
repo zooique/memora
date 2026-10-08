@@ -2,7 +2,8 @@
  * 文件覆盖度台账（工具读取防重 & 压缩协同）单元测试
  *
  * 覆盖：parseReadFileCoverage（脚注解析，"按需"信号）+ FileExposureLedger（记录/读回/失效/清空）
- *      + formatLedgerStub（分支②回显文案，非空拦）+ shouldEchoLedgerStub（分支②判定单一真理源）。
+ *      + formatLedgerStub（分支②回显文案，非空拦）+ shouldEchoLedgerStub（分支②判定单一真理源，
+ *      含「原文仍在上下文」前置——死路回放不变式的判定层守卫）。
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -57,7 +58,7 @@ describe('parseReadFileCoverage（read_file 脚注解析）', () => {
 });
 
 describe('FileExposureLedger（文件覆盖度台账）', () => {
-  it('record→get 按规范化路径读回', () => {
+  it('record→get 按规范化路径读回（含在上下文判定三件套：lastToolCallId + fingerprint 原样带出）', () => {
     const ledger = new FileExposureLedger();
     const entry: FileCoverage = {
       totalLines: 100,
@@ -65,6 +66,8 @@ describe('FileExposureLedger（文件覆盖度台账）', () => {
       coverEnd: 20,
       digest: '摘要',
       cachedAtIteration: 3,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-a',
     };
     ledger.record('docs/a.md', entry);
     expect(ledger.get('docs/a.md')).toBe(entry);
@@ -80,6 +83,8 @@ describe('FileExposureLedger（文件覆盖度台账）', () => {
       coverEnd: 1,
       digest: 'd',
       cachedAtIteration: 1,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-a',
     });
     ledger.invalidate('docs/a.md');
     expect(ledger.get('docs/a.md')).toBeUndefined();
@@ -94,6 +99,8 @@ describe('FileExposureLedger（文件覆盖度台账）', () => {
       coverEnd: 1,
       digest: 'd',
       cachedAtIteration: 1,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-a',
     });
     ledger.record('b', {
       totalLines: 2,
@@ -101,6 +108,8 @@ describe('FileExposureLedger（文件覆盖度台账）', () => {
       coverEnd: 2,
       digest: 'e',
       cachedAtIteration: 2,
+      lastToolCallId: 'c2',
+      fingerprint: 'fp-b',
     });
     ledger.clear();
     expect(ledger.size).toBe(0);
@@ -115,6 +124,8 @@ describe('formatLedgerStub（分支②回显文案）', () => {
       coverEnd: 20,
       digest: '第1行…'.slice(0, READ_DIGEST_CHARS),
       cachedAtIteration: 5,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-a',
     };
     const stub = formatLedgerStub(cov);
     expect(stub).toContain('[ALREADY_READ]');
@@ -134,6 +145,8 @@ describe('formatLedgerStub（分支②回显文案）', () => {
       coverEnd: 3,
       digest: 'd',
       cachedAtIteration: 1,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-a',
     };
     expect(formatLedgerStub(cov)).toContain('覆盖 3 行');
   });
@@ -145,6 +158,8 @@ describe('formatLedgerStub（分支②回显文案）', () => {
       coverEnd: 100,
       digest: 'd',
       cachedAtIteration: 1,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-a',
     };
     const stub = formatLedgerStub(cov);
     expect(stub).not.toContain('被压缩');
@@ -162,40 +177,45 @@ describe('shouldEchoLedgerStub（分支②判定单一真理源）', () => {
     coverEnd: 20,
     digest: 'd',
     cachedAtIteration: 1,
+    lastToolCallId: 'c1',
+    fingerprint: 'fp-a',
   };
+  // 本组专测「原文仍在上下文（true）」前提下的区间判定；前置本身的判定另设专门用例（见组尾）
+  const echo = (subj: { offset?: number; limit?: number }, c: FileCoverage) =>
+    shouldEchoLedgerStub(subj, c, true);
 
   it('区间续读完全落在覆盖内 → true（冗余重读，应回显摘要）', () => {
-    expect(shouldEchoLedgerStub({ offset: 1, limit: 20 }, cov)).toBe(true);
-    expect(shouldEchoLedgerStub({ offset: 5, limit: 10 }, cov)).toBe(true);
-    expect(shouldEchoLedgerStub({ offset: 20, limit: 1 }, cov)).toBe(true);
+    expect(echo({ offset: 1, limit: 20 }, cov)).toBe(true);
+    expect(echo({ offset: 5, limit: 10 }, cov)).toBe(true);
+    expect(echo({ offset: 20, limit: 1 }, cov)).toBe(true);
   });
 
   it('区间续读未指 offset（默认第 1 行起）且 limit 落在覆盖内 → true', () => {
-    expect(shouldEchoLedgerStub({ offset: undefined, limit: 20 }, cov)).toBe(true);
-    expect(shouldEchoLedgerStub({ limit: 10 }, cov)).toBe(true);
+    expect(echo({ offset: undefined, limit: 20 }, cov)).toBe(true);
+    expect(echo({ limit: 10 }, cov)).toBe(true);
   });
 
   it('区间续读触及覆盖起始之前 → false（回读前向区间，放行）', () => {
-    expect(shouldEchoLedgerStub({ offset: 0, limit: 20 }, cov)).toBe(false);
+    expect(echo({ offset: 0, limit: 20 }, cov)).toBe(false);
   });
 
   it('区间续读触及覆盖结束之后 → false（前向读取新区间，放行）', () => {
-    expect(shouldEchoLedgerStub({ offset: 21, limit: 20 }, cov)).toBe(false);
-    expect(shouldEchoLedgerStub({ offset: 1, limit: 21 }, cov)).toBe(false);
+    expect(echo({ offset: 21, limit: 20 }, cov)).toBe(false);
+    expect(echo({ offset: 1, limit: 21 }, cov)).toBe(false);
   });
 
   it('无 limit 整读：起点落在已覆盖区间内 → true（回显摘要引导续读，避免截断后反复整读）', () => {
-    expect(shouldEchoLedgerStub({ offset: 1 }, cov)).toBe(true); // 省略 offset ≡ 第 1 行起，落在 1–20 内
-    expect(shouldEchoLedgerStub({ offset: 20 }, cov)).toBe(true); // 起点仍在覆盖末行上（重叠 1 行）
+    expect(echo({ offset: 1 }, cov)).toBe(true); // 省略 offset ≡ 第 1 行起，落在 1–20 内
+    expect(echo({ offset: 20 }, cov)).toBe(true); // 起点仍在覆盖末行上（重叠 1 行）
     const fullCov: FileCoverage = { ...cov, coverEnd: 100 };
-    expect(shouldEchoLedgerStub({ offset: 1 }, fullCov)).toBe(true);
+    expect(echo({ offset: 1 }, fullCov)).toBe(true);
   });
 
   it('无 limit 续读：起点超出已覆盖区间 → false（放行真实执行，破「照引导走仍被拦」死循环）', () => {
     // cov 覆盖 1–20；offset=21 正是 formatLedgerStub 引导的续读写法（coverEnd+1）。
     // 旧判据只看 limit 有无，把这两条一并拦死 → 大文件截断后模型按引导续读仍被拦，永远读不到第二段。
-    expect(shouldEchoLedgerStub({ offset: 21 }, cov)).toBe(false);
-    expect(shouldEchoLedgerStub({ offset: 100 }, cov)).toBe(false);
+    expect(echo({ offset: 21 }, cov)).toBe(false);
+    expect(echo({ offset: 100 }, cov)).toBe(false);
   });
 
   it('从未覆盖过正文（coverEnd<=0）→ false（无摘要可回显，放行）', () => {
@@ -205,9 +225,11 @@ describe('shouldEchoLedgerStub（分支②判定单一真理源）', () => {
       coverEnd: 0,
       digest: 'd',
       cachedAtIteration: 1,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-a',
     };
-    expect(shouldEchoLedgerStub({ offset: 1, limit: 20 }, none)).toBe(false);
-    expect(shouldEchoLedgerStub({ offset: 1 }, none)).toBe(false);
+    expect(echo({ offset: 1, limit: 20 }, none)).toBe(false);
+    expect(echo({ offset: 1 }, none)).toBe(false);
   });
 
   it('limit 变体整读：已覆盖到末尾 + 请求覆盖到末尾 → true（归一拦截，真机逃逸修复）', () => {
@@ -219,12 +241,14 @@ describe('shouldEchoLedgerStub（分支②判定单一真理源）', () => {
       coverEnd: 200,
       digest: 'd',
       cachedAtIteration: 1,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-a',
     };
-    expect(shouldEchoLedgerStub({ offset: 1, limit: 500 }, cov)).toBe(true);
-    expect(shouldEchoLedgerStub({ offset: 1, limit: 250 }, cov)).toBe(true);
-    expect(shouldEchoLedgerStub({ offset: 1, limit: 400 }, cov)).toBe(true);
+    expect(echo({ offset: 1, limit: 500 }, cov)).toBe(true);
+    expect(echo({ offset: 1, limit: 250 }, cov)).toBe(true);
+    expect(echo({ offset: 1, limit: 400 }, cov)).toBe(true);
     // 未指 offset 但极限覆盖到末尾 → 同样归一
-    expect(shouldEchoLedgerStub({ offset: undefined, limit: 999 }, cov)).toBe(true);
+    expect(echo({ offset: undefined, limit: 999 }, cov)).toBe(true);
   });
 
   it('limit 变体但尚未读到末尾 → false（合法前向续读新内容，不误拦）', () => {
@@ -235,11 +259,13 @@ describe('shouldEchoLedgerStub（分支②判定单一真理源）', () => {
       coverEnd: 80,
       digest: 'd',
       cachedAtIteration: 1,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-a',
     };
     // reqEnd = 1+120-1 = 120 < 200 → 未触达末尾归一，走续读判定：120 > 80 → 放行
-    expect(shouldEchoLedgerStub({ offset: 1, limit: 120 }, cov)).toBe(false);
+    expect(echo({ offset: 1, limit: 120 }, cov)).toBe(false);
     // 完全落在已覆盖内 → 拦（保持原语义不受影响）
-    expect(shouldEchoLedgerStub({ offset: 1, limit: 80 }, cov)).toBe(true);
+    expect(echo({ offset: 1, limit: 80 }, cov)).toBe(true);
   });
 
   it('边界A · totalLines 为真实总行数（分段脚注源）：coverEnd 未达末尾 + 越界 limit 续读 → 放行', () => {
@@ -251,13 +277,15 @@ describe('shouldEchoLedgerStub（分支②判定单一真理源）', () => {
       coverEnd: 100,
       digest: 'd',
       cachedAtIteration: 1,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-a',
     };
     // reqEnd = 950+100-1 = 1049 ≥ 1000 → 覆盖到末尾归一，但 coverEnd(100) ≥ total(1000)? 否 → 放行（续读尾部真内容）
-    expect(shouldEchoLedgerStub({ offset: 950, limit: 100 }, cov)).toBe(false);
+    expect(echo({ offset: 950, limit: 100 }, cov)).toBe(false);
     // 越界大 limit：offset=1(实际从 1 起), limit=3000 → reqEnd=3000 ≥ 1000，coverEnd 100 < 1000 → 放行
-    expect(shouldEchoLedgerStub({ offset: 1, limit: 3000 }, cov)).toBe(false);
+    expect(echo({ offset: 1, limit: 3000 }, cov)).toBe(false);
     // 对照：完全落在已覆盖内的小段仍拦（旧语义不受损）
-    expect(shouldEchoLedgerStub({ offset: 1, limit: 100 }, cov)).toBe(true);
+    expect(echo({ offset: 1, limit: 100 }, cov)).toBe(true);
   });
 
   it('边界B · 已整读覆盖到末尾后回读中段 → 拦（完整落已覆盖区间，落既有区间判据）', () => {
@@ -269,9 +297,24 @@ describe('shouldEchoLedgerStub（分支②判定单一真理源）', () => {
       coverEnd: 1000,
       digest: 'd',
       cachedAtIteration: 1,
+      lastToolCallId: 'c1',
+      fingerprint: 'fp-a',
     };
-    expect(shouldEchoLedgerStub({ offset: 500, limit: 100 }, cov)).toBe(true);
+    expect(echo({ offset: 500, limit: 100 }, cov)).toBe(true);
     // 未指 offset（默认第 1 行起）的整段也在覆盖内 → 拦
-    expect(shouldEchoLedgerStub({ offset: undefined, limit: 500 }, cov)).toBe(true);
+    expect(echo({ offset: undefined, limit: 500 }, cov)).toBe(true);
+  });
+
+  it('前置 · 原文不在上下文（stillInContext=false）→ 一律放行（死路回放不变式的判定层守卫）', () => {
+    // 生产实锤（round-1791449684099）：整读→压缩→中段重读，原文已被压缩链清出，旧逻辑仍回显
+    // 顶头摘要替身——模型要的中段 token 永远不在替身里 → 同参重读被同一条判据反复拦 = 死路。
+    // 契约：前置不过则一切区间判定短路为放行（真读一次拿回内容，后续防重交分支①承接）。
+    expect(shouldEchoLedgerStub({ offset: 1, limit: 20 }, cov, false)).toBe(false);
+    expect(shouldEchoLedgerStub({ offset: 1 }, cov, false)).toBe(false);
+    // 区间判定本应拦的归一场景（已覆盖到末尾 + limit 变体整读）同样被前置放行
+    const fullCov: FileCoverage = { ...cov, totalLines: 200, coverEnd: 200 };
+    expect(shouldEchoLedgerStub({ offset: 1, limit: 500 }, fullCov, false)).toBe(false);
+    // 已覆盖到末尾后的中段回读（边界B 场景）在压缩后同样放行
+    expect(shouldEchoLedgerStub({ offset: 500, limit: 100 }, fullCov, false)).toBe(false);
   });
 });

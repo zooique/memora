@@ -5859,7 +5859,7 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(blk!.content).toContain('docs/a.md');
   });
 
-  it('D-2 · 结果已被压缩链替换为占位符 → 台账有覆盖 → 回显非空摘要而非放行（防死锁靠替身自带信息，非靠放行）', async () => {
+  it('D-2 · 结果已被压缩链替换为占位符 → 分支②放行真读（死路回放不变式）；新结果在手后再重读仍拦（防永动机交分支①承接）', async () => {
     const toolExecutor = vi
       .fn()
       .mockImplementation((name: string) =>
@@ -5870,8 +5870,11 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
         // 读第二个文件 → 使工具结果条数超过 keepRecent，逼压缩链在下一步前替换掉 a.md 的结果
         [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/b.md"}')] }],
-        // 此时 a.md 结果已被换成 [Previous: used read_file]，LLM 手边无内容 → 必须放行重读
+        // 此时 a.md 结果已被换成 [Previous: used read_file]，LLM 手边无内容 → 必须放行重读（真读）
         [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/a.md"}')] }],
+        // c3 的真读结果已回到上下文 → c4 同参重读被分支①（read_dedup）拦截：
+        // 防重读永动机的职责从「压缩后仍拦」移交「新结果在手后分支①拦 + 升级文案」
+        [{ toolCalls: [call('c4', 'read_file', '{"path":"docs/a.md"}')] }],
         [{ content: '完成' }],
       ]),
       bootstrapMemories: [],
@@ -5883,30 +5886,26 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
       void chunk;
     }
 
-    // 前置自检：压缩确实发生过，否则本用例没打到守卫分支（会假绿）
+    // 前置自检：压缩确实发生过，否则本用例没打到分支②前置（会假绿）
     expect(
       loop
         .getMessages()
         .some((m) => m.role === 'tool' && m.content === '[Previous: used read_file]'),
     ).toBe(true);
-    // 整读（无分段脚注）已记「全覆盖」台账 → 压缩后 a.md 属「有覆盖信息」→ 分支②拦 + 回显摘要
-    // （非空替身 + offset 续读指引，不构成死锁；老契约「无信息必须放行」已由本场景演进为「有信息拦+回显」）
-    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    // 死路回放不变式：c3 重读放行真读（c1/c2/c3 三次落 ToolExecutor），不再回显替身
+    expect(toolExecutor).toHaveBeenCalledTimes(3);
+    // 防永动机仍成立：c4 同参重读被拦（[ALREADY_READ] 在案——来自分支①文案）
     expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(true);
-    // 新契约的「不死锁」保证不在「放行」，而在**替身必须自带可用信息**，故此处锁死两条：
-    // ① 摘要非空（「要点：」之后必须有内容）② 给出续读出路（offset=）
-    // 只断言 [ALREADY_READ] 出现是不够的——digest 被吞掉时该断言仍绿，而 LLM 拿不回任何视角。
-    const stub =
-      loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'))?.content ?? '';
-    expect(stub).toMatch(/要点：\S/);
-    expect(stub).toContain('offset=');
+    // 分支②全程未回显（c3 前置不过放行；c4 被分支①先拦轮不到分支②）→ 回显计数保持 0
+    expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(0);
   });
 
-  it('E · 结果被压缩链清出上下文但台账有覆盖度摘要 → 分支②回显摘要非放行（治永动机）', async () => {
+  it('E · 结果被压缩链清出上下文（分段脚注源）→ 分支②前置不过 → 放行真读（治死路回放）', async () => {
     // read_file 返回**分段脚注**（= 文件被截断，按需信号的正确锚点）→ 写侧记录覆盖度摘要。
-    // 注：脚注报「已读到文件尾」（1–200 / 共 200），即**整文件已读尽**，coverEnd(200)>0——满足
-    //   shouldEchoLedgerStub 的「无 limit 且起点落在已覆盖区间内即拦」（此处省略 offset ≡ 第 1 行起），
-    //   故重读被分支②回显摘要而非放行。
+    // 契约更新（死路回放修复）：脚注报「已读到文件尾」（1–200 / 共 200），重读落点仍在覆盖内
+    //   区间判定本应拦，但原文已被压缩清出 → 「原文仍在上下文」前置不过 → 一律放行真读。
+    //   旧契约「压缩后回显替身」已废：替身只有顶头 400 字符摘要，模型要的中段 token 永远不在
+    //   替身里 → 同参重读被反复拦 = 死路回放（生产实锤 round-1791449684099）。
     const toolExecutor = vi
       .fn()
       .mockImplementation((name: string) =>
@@ -5921,7 +5920,7 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
         // 读第二个文件 → 工具结果数超 keepRecent，逼压缩链在下一步前替换掉 a.md 的结果
         [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/b.md"}')] }],
-        // a.md 原文已被换成 [Previous: used read_file]，但台账仍有其覆盖度摘要 → 分支②应回显摘要
+        // a.md 原文已被换成 [Previous: used read_file]，台账虽有覆盖度 → 前置不过 → 放行真读
         [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/a.md"}')] }],
         [{ content: '完成' }],
       ]),
@@ -5934,25 +5933,22 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
       void chunk;
     }
 
-    // 前置自检：压缩确实发生过（a.md 结果已换占位符），否则用例没打到分支②
+    // 前置自检：压缩确实发生过（a.md 结果已换占位符），否则用例没打到分支②前置
     expect(
       loop
         .getMessages()
         .some((m) => m.role === 'tool' && m.content === '[Previous: used read_file]'),
     ).toBe(true);
-    // c3 同参重读 → 分支②拦（回显台账摘要），不落 ToolExecutor → 仍为 2 次
-    expect(toolExecutor).toHaveBeenCalledTimes(2);
-    const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
-    expect(stub).toBeDefined();
-    // 非空拦：回显覆盖度 + 已读正文替身（LLM 手边有内容，不会死锁）
-    expect(stub!.content).toContain('共 200 行');
-    expect(stub!.content).toContain('第1行内容');
+    // c3 同参重读 → 前置不过放行真读 → 落 ToolExecutor（c1/c2/c3 共 3 次），无替身回显
+    expect(toolExecutor).toHaveBeenCalledTimes(3);
+    expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
+    expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(0);
   });
 
-  it('E’ · 未分段整读（小文件无脚注）也记全覆盖 → 压缩后重读被分支②回显（补 ADR-031 缝）', async () => {
+  it('E’ · 未分段整读（小文件无脚注）也记全覆盖 → 压缩后重读前置不过放行真读（记账不变式保留，拦截契约随死路回放更新）', async () => {
     // read_file 返回的是**整文件、无分段脚注**（小文件未超单段预算，「读到末尾零噪音」）。
-    // 若 parseReadFileCoverage 返回 undefined → 不记台账 → 分支②永不触发 → 压缩后重读放行（永动机，
-    // 真机 182 次 read_file 复发根因）。契约：整读也记「全文件覆盖」，压缩后重读仍被分支②回显。
+    // 记账不变式（ADR-031 补缝）不动：整读也记「全文件覆盖」，否则分支②对变体重读永不触发。
+    // 拦截契约更新：压缩后重读（原文不在上下文）→ 前置不过 → 放行真读，不再回显替身。
     const toolExecutor = vi
       .fn()
       .mockImplementation((name: string) =>
@@ -5963,7 +5959,7 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
         // 读第二个文件 → 逼压缩链在下一步前替换掉 a.md 的结果（keepRecent=1）
         [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/b.md"}')] }],
-        // a.md 原文已换成 [Previous: used read_file]，但台账已有「全覆盖」→ 分支②应回显摘要
+        // a.md 原文已换成 [Previous: used read_file] → 分支②前置不过 → 放行真读
         [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/a.md"}')] }],
         [{ content: '完成' }],
       ]),
@@ -5976,21 +5972,19 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
       void chunk;
     }
 
-    // c3 同参重读 → 分支②拦（回显台账摘要），不落 ToolExecutor → 仍为 2 次
-    expect(toolExecutor).toHaveBeenCalledTimes(2);
-    const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
-    expect(stub).toBeDefined();
-    // 回显的是全覆盖替身（共 3 行），非空拦
-    expect(stub!.content).toContain('共 3 行');
-    // 分支②命中 → ledgerStubEchoCount 计 1（观测 ADR-031 过度拦截的量化基线）
-    expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(1);
+    // c3 放行真读 → 共 3 次，无 [ALREADY_READ]，替身回显计数保持 0
+    expect(toolExecutor).toHaveBeenCalledTimes(3);
+    expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
+    expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(0);
   });
 
-  it('F · limit 变体整读（真机逃逸）→ 已覆盖到末尾后，同文件换大 limit 重读被归一拦截', async () => {
+  it('F · limit 变体整读（真机逃逸）→ 原文在上下文时，同文件换大 limit 重读被归一拦截', async () => {
     // 真机：宪法等短文件被 LLM 用 limit 500→250→400 反复 offset=1 整读，共 151 次 read_file。
     // 若 limit 纳入 DEDUP key → 每次变 limit 判为「不同主体」全放行（漏网）。
     // 契约：台账判定里「请求覆盖到文件末尾(offset+limit-1>=totalLines) 且 已覆盖到末尾(coverEnd>=totalLines)」
-    //   → 归一为同参整读 → 分支②拦 + 回显摘要，封死 limit 变体逃逸。
+    //   → 归一为同参整读；且**原文仍在上下文**（分支②前置，本用例不引入压缩即为此保持原文在场）
+    //   → 分支②拦 + 回显摘要，封死 limit 变体逃逸。压缩后的变体重读已改放行真读（死路回放
+    //   不变式，见 E / E’ / H），防永动机由「真读结果在手后分支①拦截」承接。
     const toolExecutor = vi
       .fn()
       .mockImplementation((name: string) =>
@@ -6000,10 +5994,8 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
       provider: mockMultiTurnProvider([
         // c1 整读 a.md（3 行，无脚注 → ADR-031 补缝记全覆盖 coverEnd=3=totalLines）
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
-        // 读第二个文件 → 逼压缩链替换掉 a.md 的结果（keepRecent=1）
-        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/b.md"}')] }],
-        // c3 用 limit=500（覆盖到末尾的**变体重读**）→ 物理内容与 c1 相同 → 归一拦，不该落 ToolExecutor
-        [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/a.md","offset":1,"limit":500}')] }],
+        // c2 用 limit=500（覆盖到末尾的**变体重读**）→ 物理内容与 c1 相同 → 归一拦，不该落 ToolExecutor
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/a.md","offset":1,"limit":500}')] }],
         [{ content: '完成' }],
       ]),
       bootstrapMemories: [],
@@ -6015,8 +6007,8 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
       void chunk;
     }
 
-    // c3 limit 变体整读 → 分支②拦 → 不落 ToolExecutor → 仍为 2 次（c1、c2）
-    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    // c2 limit 变体整读 → 分支②归一拦（原文在场，前置过）→ 不落 ToolExecutor → 仍为 1 次（c1）
+    expect(toolExecutor).toHaveBeenCalledTimes(1);
     const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
     expect(stub).toBeDefined();
     // 回显全覆盖替身（共 3 行），非空拦
@@ -6132,10 +6124,11 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(0);
   });
 
-  it('H · T1：无区间整读被截断后再次整读 → 分支②回显摘要引导续读（收敛整读重试）', async () => {
-    // c1 整读 a.md 被截断（覆盖 1–20 / 共 200，coverEnd<totalLines）；c2 读 b.md 把 a.md 挤出
-    // keepRecent → c3 依旧无 offset/limit 整读 a.md：按「无 limit + 已有覆盖度」判定 → 应回显
-    // 摘要（引导 offset=21 续读），而非放行重试（真机 217 次无区间整读的根因场景）。
+  it('H · 死路回放（生产 round-1791449684099 复现）：整读→压缩→已覆盖中段区间重读 → 放行真读', async () => {
+    // 生产实锤链路：c1 整读 a.md 被截断（覆盖 1–20 / 共 200）；c2 读 b.md 把 a.md 挤出 keepRecent；
+    // c3 对**已覆盖中段**做区间重读（区间判定本应拦）——旧契约回显顶头替身：模型要的中段 token
+    // 永远不在替身里 → 同参重读被同一条判据反复拦 = 死路回放。新契约：原文不在上下文 →
+    // 「原文仍在上下文」前置不过 → 一律放行真读（真读一次拿回内容，后续防重交分支①承接）。
     const toolExecutor = vi
       .fn()
       .mockImplementation((name: string) =>
@@ -6149,7 +6142,8 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
       provider: mockMultiTurnProvider([
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
         [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/b.md"}')] }],
-        [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/a.md"}')] }],
+        // c3 中段区间重读（5–14 完整落在已覆盖 1–20 内）→ 旧判据必拦；新契约前置不过 → 放行
+        [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/a.md","offset":5,"limit":10}')] }],
         [{ content: '完成' }],
       ]),
       bootstrapMemories: [],
@@ -6157,16 +6151,20 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
       compactionStrategy: new ResultReplacementStrategy(1),
     });
 
-    for await (const chunk of loop.processUserInput('整读已读半截文件')) {
+    for await (const chunk of loop.processUserInput('压缩后中段重读')) {
       void chunk;
     }
 
-    // c3 整读被拦回显摘要，不落 ToolExecutor → 仍执行 c1、c2 共 2 次
-    expect(toolExecutor).toHaveBeenCalledTimes(2);
-    const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
-    expect(stub).toBeDefined();
-    expect(stub!.content).toContain('第 1–20 行'); // 覆盖度
-    expect(stub!.content).toContain('offset=21'); // 引导续读而非整读
+    // 前置自检：压缩确实发生过（a.md 结果已换占位符），否则用例没打到分支②前置
+    expect(
+      loop
+        .getMessages()
+        .some((m) => m.role === 'tool' && m.content === '[Previous: used read_file]'),
+    ).toBe(true);
+    // c3 放行真读 → 落 ToolExecutor（c1/c2/c3 共 3 次），无替身回显、无 ALREADY_READ
+    expect(toolExecutor).toHaveBeenCalledTimes(3);
+    expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
+    expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(0);
   });
 
   it('F · 同主体连续失败达阈值 → 执行前硬拦（N2 同主体粒度，治幻觉文件风暴）', async () => {

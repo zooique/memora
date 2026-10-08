@@ -1,15 +1,17 @@
 /**
  * 文件覆盖度台账（大文本统一通道：账本与占用解耦的"账本"侧）
  *
- * `toolResultCache` 记「同参是否发生过 + 原文是否仍在上下文」；本台账只记**此文件读到第几行
- * + 轻量摘要（替身）**。二者数据不同（一个按调用入账、一个按文件记覆盖），故非 SSOT 并列。
+ * `toolResultCache` 记「同参是否发生过」；本台账按文件记**读到第几行 + 轻量摘要（替身）
+ * + 产出覆盖的那次调用 id/指纹**（后者供 loop 实测「原文是否仍在上下文」，与缓存口径同源）。
+ * 二者粒度不同（一个按调用入账、一个按文件记覆盖），故非 SSOT 并列。
  *
- * 用途：read_file 结果被压缩链清出上下文、LLM 又以**同参**重读时，loop 拦截分支②据此返回
- * 摘要 + 覆盖度，而非「放行重读（= 永远重读→压→重读的永动机）」或「空拦（= LLM 手边无内容
- * 却被告知已读过的死锁）」。
+ * 用途：read_file 重读（同参 / 变体）且**原文仍在上下文**时，loop 拦截分支②据此回显
+ * 摘要 + 覆盖度（防「重读→压→重读」永动机，非空拦死锁）；原文已被压缩链清出 → 分支②
+ * 判 stillInContext=false 放行真读（替身只有顶头摘要，是死路，见 shouldEchoLedgerStub）。
  *
- * 写侧触发：**只在 read_file 返回分段脚注时**记录 —— 脚注出现 ⇔ 文件确实大 /
- * 确实被截断，才是正确的"按需"信号（offload 对 read_file 结构性不触发，不能当筛子）。
+ * 写侧触发（loop 结果处理循环，两路）：① read_file 返回分段脚注（文件确实大/被截断，
+ * "按需"信号）→ 记覆盖区间；② 整读无脚注（读到末尾零噪音）→ 记「全文件覆盖」（ADR-031
+ * 补缝：小文件不记则分支②永不触发，真机 182 次 read_file 复发根因即此）。
  *
  * 生命周期：闭环内（每轮 resetTurnState 清），与 `toolResultCache` 同；跨闭环不复用。
  */
@@ -29,6 +31,12 @@ export interface FileCoverage {
   digest: string;
   /** 首次记录时的迭代序号（提示文案用） */
   cachedAtIteration: number;
+  /** 产出本次覆盖的那次工具调用 id（判「原文是否仍在上下文」的定位锚；禁 optional——缺它则
+   *  分支②无法核前置，回退语义 = 永远当「在」→ 死路回放复发，宁编译期报错也不留这个口子） */
+  lastToolCallId: string;
+  /** 进入上下文的最终内容指纹（对 wrapped 后消息内容算，与 toolResultCache 的 fingerprint 同口径
+   *  同源计算；比对实现 = loop 的 isMessageStillUnmodified，本条目只承载数据） */
+  fingerprint: string;
 }
 
 /** 从 read_file 原始结果解析出的覆盖度（无脚注 = 未截断 = 无需/无摘要） */
@@ -86,6 +94,10 @@ export function parseReadFileCoverage(result: string): ReadFileExposure | undefi
  * 判定一次 read_file 请求是否应回显台账摘要（分支②语义的**单一真理源**）。
  *
  * 语义（区分「无区间整读」「limit 变体整读」「续读区间」三类冗余）：
+ * - **原文不在上下文（stillInContext=false）→ 一律放行**：摘要替身只服务「手边有原文可回顾」
+ *   的语境；原文已被压缩链清出时，替身是死路（要点只有顶头 400 字符，模型要的中段 token
+ *   永远不在替身里 → 同参重读被同一条判据反复拦 = 死路回放）。放行真读一次，新结果回到
+ *   上下文后，后续重读交给分支①（read_dedup）拦截 + 升级文案承接防永动机。
  * - 该文件尚未覆盖过正文（coverEnd<=0）→ 不拦（无摘要可回显，放行）。
  * - **无 limit 请求**：语义 =「从 offset 读到文件末尾」。起点落在已覆盖区间内（含省略 offset
  *   的整读）→ 冗余 → 拦，由 formatLedgerStub 回显摘要 + 引导 `offset=coverEnd+1` 续读，
@@ -100,12 +112,17 @@ export function parseReadFileCoverage(result: string): ReadFileExposure | undefi
  *
  * @param subj read_file 去重主体的区间字段（offset/limit，缺省语义与 handler 一致）
  * @param cov  该文件已覆盖度台账条目
+ * @param stillInContext 原文是否仍在当前上下文中（loop 侧按条目 lastToolCallId + fingerprint
+ *   实测；判定实现与分支①同源，本函数不自行翻消息数组）
  * @returns true = 应回显摘要（拦截分支②），false = 放行真实执行
  */
 export function shouldEchoLedgerStub(
   subj: { offset?: number; limit?: number },
   cov: FileCoverage,
+  stillInContext: boolean,
 ): boolean {
+  // 前置：原文不在上下文 → 一律放行（死路回放不变式：整读→压缩→重读必须能拿回真内容）
+  if (!stillInContext) return false;
   // 未覆盖过正文：无摘要可回显，放行
   if (cov.coverEnd <= 0) return false;
   // 无 limit 请求：语义 =「从 offset 读到文件末尾」（handler 缺省 limit 即读到底）。
