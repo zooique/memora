@@ -1737,12 +1737,15 @@ describe('AgentLoop · processUserInput 工具调用 signal 中断', () => {
     expect(toolExecutor).not.toHaveBeenCalled();
   });
 
-  it('★ 工具执行前 abort（executeToolCalls 早退）→ 不得遗留未配对的 assistant.toolCalls（FAIL-1）', async () => {
+  it('★ 工具执行前 abort（executeToolCalls 早退）→ 逐条占位 + 文案不暗示已执行 + 会话仍可用（FAIL-1-A-T）', async () => {
     // 场景：signal 在「assistant(toolCalls) 已入史」之后、「工具执行与结果回填」之前被 abort
     // → executeToolCalls 在入口处的 abort 前置检查早退，_processToolResults 不再执行。
     // 不变量：发往 OpenAI 兼容端的 assistant.toolCalls 必须逐条配对 tool 消息；
     // 否则下一次请求要么被服务端 400 拒绝，要么被 llmCaller 发送边界守卫 auditToolCallPairing
     // 拒发并抛非临时错误（llmPairingGuardFires++）——用户在该会话的下一次发言即硬失败。
+    // 覆盖四面（FAIL-1-A-T 缺口清单）：① ≥2 条调用逐条有占位；② 占位文案含 [TOOL_ABORTED]
+    // 且不暗示任何执行结果（防模型幻觉「工具已跑过」）；③ 副作用边界（executor 零调用 /
+    // aborted chunk 携带 stopReason）；④ 中止后第二次 processUserInput 不硬失败（会话仍可用）。
     // 断言复用生产谓词（expectWellFormedToolPairing 复测 auditToolCallPairing），口径与实现同源。
     const ac = new AbortController();
     // 拦截器位于「LLM 已产出 toolCalls → 工具执行前」的窗口内（executeToolCalls 入口
@@ -1755,26 +1758,74 @@ describe('AgentLoop · processUserInput 工具调用 signal 中断', () => {
         return 'ok';
       },
     };
+    const toolExecutor = vi.fn().mockResolvedValue('不应执行到这里');
 
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
+        // 第 1 轮：两条 toolCalls（≥2 条形态，覆盖缺口①）
         [
           {
             toolCalls: [
-              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"a.md"}' },
+              },
+              {
+                id: 'c2',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"b.md"}' },
+              },
             ],
           },
         ],
+        // 第 2 轮：纯文本回答（覆盖缺口④——中止后会话可继续走完整 turn）
+        [{ content: '已恢复，继续回答' }],
       ]),
       bootstrapMemories: [],
-      toolExecutor: vi.fn().mockResolvedValue('不应执行到这里'),
+      toolExecutor,
       duplicateCallInterceptor: abortInWindow,
     });
 
+    const firstRunChunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试', ac.signal)) {
-      void chunk;
+      firstRunChunks.push(chunk);
     }
 
+    const messages = loop.getMessages();
+    // ① 每条 assistant.toolCalls 均有配对占位（生产谓词口径同源），且按 id 双向可对上
+    expectWellFormedToolPairing(messages);
+    const toolMsgs = messages.filter((m) => m.role === 'tool');
+    expect(toolMsgs.map((m) => m.toolCallId).sort()).toEqual(['c1', 'c2']);
+
+    // ② 占位文案：带 [TOOL_ABORTED] 标识 + 只声明未执行，不得含任何暗示已执行/有结果的表述
+    for (const tm of toolMsgs) {
+      expect(tm.content).toContain('[TOOL_ABORTED]');
+      expect(tm.content).toContain('未执行');
+      expect(tm.content).not.toMatch(/已执行|执行成功|成功写入|已产生结果/);
+    }
+
+    // ③ 副作用边界：工具 executor 零调用；aborted chunk 携带 stopReason:'user'
+    //   （非 timeout abort 的语义判据，宿主按此映射「用户取消」而非「超时」文案）
+    expect(toolExecutor).not.toHaveBeenCalled();
+    const abortedChunks = firstRunChunks.filter((c) => c.type === 'aborted');
+    expect(abortedChunks.length).toBeGreaterThan(0);
+    for (const ab of abortedChunks) {
+      expect((ab as { stopReason?: string }).stopReason).toBe('user');
+    }
+
+    // ④ 中止后会话仍可用：第二次 processUserInput 走完整 turn 不抛
+    //   （发送边界守卫若因配对破口拒发，此循环内即抛非临时错误 → 测试红）
+    const secondRunChunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('继续')) {
+      secondRunChunks.push(chunk);
+    }
+    const finalText = secondRunChunks
+      .filter((c) => c.type === 'text')
+      .map((c) => (c as { content: string }).content)
+      .join('');
+    expect(finalText).toContain('已恢复，继续回答');
+    // 全量消息（含第二轮）配对不变量仍成立
     expectWellFormedToolPairing(loop.getMessages());
   });
 
