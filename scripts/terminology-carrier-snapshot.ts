@@ -384,6 +384,8 @@ const BASELINE_CODE: readonly string[] = [
   'step0',
   'step1',
   'step2',
+  'step6',
+  'step9',
   'stepBoundary',
   'stepBucket',
   'stepBudget',
