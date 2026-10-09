@@ -6122,6 +6122,89 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(stub!.content).toContain('未重新读取文件');
   });
 
+  it('G4 · offset 续读到末尾按请求起点记账（真机 round-1791507775404 复现）：早段读放行、回显行号与内容同源', async () => {
+    // 真机实锤（round-1791507775404）：148 行文件，step6 整读后 step9 用 offset=54 limit=95
+    // 读到末尾（无脚注）——旧记账把该结果当「从第 1 行起的整读」记成 1–95/共95：
+    // ① 随后 offset=1 limit=53 的早段读被假区间拦截（早段从未被覆盖）；
+    // ② 回显声称「你请求的 第 1–53 行」实际内容从第 54 行起——行号与内容错位，模型被误导烧 step。
+    // 契约（handler 不变量，见 sliceFileByLineBudget 算法第 3 条）：无脚注结果 = 从请求 offset
+    // 读到文件末尾 → coverStart=offset、totalLines=offset+正文行数-1；命中回显的行号/总行数
+    // 必须与真实文件同源；起点之前的未覆盖区间必须放行（宁放行不误拦）。
+    const tail = Array.from({ length: 95 }, (_, i) => `T${i + 54}`).join('\n'); // 文件 148 行的第 54–148 行（尾段）
+    const early = Array.from({ length: 53 }, (_, i) => `L${i + 1}`).join('\n'); // 文件第 1–53 行（早段）
+    const toolExecutor = vi.fn().mockImplementation((name: string, args: string) => {
+      if (name !== 'read_file') return Promise.resolve('');
+      const offset = JSON.parse(args).offset as number | undefined;
+      return Promise.resolve(offset === 1 ? early : tail);
+    });
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // c1 offset 续读到末尾（无脚注）→ 应记 54–148/共148（错账会记 1–95/共95）
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md","offset":54,"limit":95}')] }],
+        // c2 区间 70–79 ⊆ 54–148 → 分支②拦，但回显的行号/总行数/内容必须真实同源
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/a.md","offset":70,"limit":10}')] }],
+        // c3 早段 1–53 从未覆盖（< coverStart）→ 必须放行真实执行（错账 1–95 会假拦）
+        [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/a.md","offset":1,"limit":53}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      // keepRecent=2：c3 放行必须走**区间判据**（start < coverStart，真机同款——真机上下文里
+      // c1 原文仍在），不能借道「原文被压缩清出 → stillInContext=false 放行」；且要保住 c2 回显
+      // 消息不被压缩替换（回显是最后断言的取材，被压掉则 find 落空）。
+      compactionStrategy: new ResultReplacementStrategy(2),
+    });
+
+    for await (const chunk of loop.processUserInput('offset 续读记账回归')) {
+      void chunk;
+    }
+
+    // c1 + c3 落真实执行（c3 早段读不被假拦）；仅 c2 命中分支②拦截
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(1);
+    const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
+    expect(stub).toBeDefined();
+    // 回显真相：覆盖区间与总行数来自按请求起点记的真实账（错账会写「第 1–95 行 / 共 95 行」）
+    expect(stub!.content).toContain('第 54–148 行');
+    expect(stub!.content).toContain('共 148 行');
+    // 回显内容与行号同源：请求 70–79 → 内容必须是 T70–T79（错账平移会给 T123 起的行）
+    expect(stub!.content).toContain('T70\nT71\nT72');
+    expect(stub!.content).not.toContain('第 1–53 行 原文');
+  });
+
+  it('G5 · read_file 越界提示不进覆盖度台账（非文件正文不记账）', async () => {
+    // handler 越界提示（offset > 总行数）返回的是**提示串不是文件正文**（sliceFileByLineBudget）。
+    // 旧整读记账分支对任何 ok 结果记账 → 提示被记成覆盖并顶掉真实条目；随后再次越界读会
+    // 命中「limit 变体整读」归一判据被假拦。契约：提示性返回不进台账（宁少记放行，不记错账）。
+    const notice =
+      '[read_file] docs/a.md 共 10 行；offset=200 已超出文件末尾，无可显示内容。';
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation((name: string) => Promise.resolve(name === 'read_file' ? notice : ''));
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md","offset":200}')] }],
+        // 再次越界读：台账无该文件条目 → 放行（错账 200–200/200 会命中归一判据被假拦）
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/a.md","offset":250,"limit":5}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      compactionStrategy: new ResultReplacementStrategy(1),
+    });
+
+    for await (const chunk of loop.processUserInput('越界提示不记账')) {
+      void chunk;
+    }
+
+    // 两次都落真实执行：无 [ALREADY_READ] 假拦、替身回显计数为 0
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    expect(
+      loop.getMessages().some((m) => m.role === 'tool' && m.content.includes('[ALREADY_READ]')),
+    ).toBe(false);
+    expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(0);
+  });
+
   it('A边界回归 · 大文件 coverEnd<total（脚注源真实总行数）时越界 limit 续读 → 放行（非归一拦）', async () => {
     // 边界 A 在 loop 层的真实链路：c1 读到 1–100（共 1000，coverEnd=100<totalLines=1000）。
     // c2 请求 offset=950 limit=100（reqEnd=1049 ≥ 1000 触顶），但 coverEnd(100) 远未达 total(1000)。

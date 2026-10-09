@@ -10,14 +10,27 @@
  * 判 stillInContext=false 放行真读（替身只有顶头摘要，是死路，见 shouldEchoLedgerStub）。
  *
  * 写侧触发（loop 结果处理循环，两路）：① read_file 返回分段脚注（文件确实大/被截断，
- * "按需"信号）→ 记覆盖区间；② 整读无脚注（读到末尾零噪音）→ 记「全文件覆盖」（ADR-031
- * 补缝：小文件不记则分支②永不触发，真机 182 次 read_file 复发根因即此）。
+ * "按需"信号）→ 记覆盖区间；② 整读无脚注（读到末尾零噪音）→ 按**请求起点**记覆盖区间
+ * （handler 不变量：无脚注 = 从请求 offset 读到文件末尾，coverStart=offset 而非 1——错记成
+ * 1 会把早段未覆盖误当已覆盖，真机 round-1791507775404 假拦根因即此；ADR-031 补缝：小文件
+ * 不记则分支②永不触发，真机 182 次 read_file 复发根因即此）。提示性返回（越界等，
+ * `READ_FILE_NOTICE_PREFIX` 开头）非文件正文 → 不进台账。
  *
  * 生命周期：闭环内（每轮 resetTurnState 清），与 `toolResultCache` 同；跨闭环不复用。
  */
 
 /** 摘要替身长度（字符）：够让 LLM 回想"这文件顶头 / 已读段讲了什么"，又不重新撑大上下文 */
 export const READ_DIGEST_CHARS = 400;
+
+/**
+ * read_file 提示性返回的文案前缀（生成侧 = `builtinToolHandlers.sliceFileByLineBudget` 越界
+ * 提示，识别侧 = loop 台账写入分支）：**单一真理源**，两侧同引防前缀漂移。
+ *
+ * 语义：该返回是提示串（「共 N 行；offset 超出末尾」）**不是文件正文**——进台账会把
+ * 「读过 200 行处」记成覆盖，随后再次越界读命中归一判据被假拦（G5 回归即此）。故识别
+ * 后不记账：宁少记放行，不记错账。
+ */
+export const READ_FILE_NOTICE_PREFIX = '[read_file] ';
 
 /** 覆盖度条目：此文件已读到的行区间 + 一段轻量替身文本 */
 export interface FileCoverage {

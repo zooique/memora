@@ -28,8 +28,9 @@ import type { ISessionStore, SessionMeta } from '@/memory/sessionStore.js';
 // 会话显示名回退单一真理源（displayName→autoName），sessionId 兜底留在调用端
 import { getSessionDisplayName } from '@/memory/sessionStore.js';
 import { splitSessionId } from '@/utils/time.js';
-// read_file 分段脚注格式单一真理源（生成侧在此用作「截断诚实化」文案）
-import { formatSegmentationFooter } from '@/agent/toolLedger.js';
+// read_file 分段脚注格式单一真理源（生成侧在此用作「截断诚实化」文案）；
+// 越界提示前缀同源引入——loop 台账写侧据此识别「提示串非正文」不记账，防两侧前缀漂移
+import { formatSegmentationFooter, READ_FILE_NOTICE_PREFIX } from '@/agent/toolLedger.js';
 // write_file 写入模式单一真理源（schema 描述与 handler 校验共用，避免双源漂移）
 import { WRITE_FILE_MODES, isWriteFileMode, type WriteFileMode } from '@/agent/builtinTools.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
@@ -397,7 +398,9 @@ export class BuiltinToolHandlers {
 
     const start = positiveInt(offset) ?? 1;
     if (start > total) {
-      return `[read_file] ${displayPath} 共 ${total} 行；offset=${start} 已超出文件末尾，无可显示内容。`;
+      // 提示性返回（非文件正文）：前缀是 loop 台账写侧的识别锚（READ_FILE_NOTICE_PREFIX SSOT），
+      // 改文案格式必须保持该前缀，否则提示会被当正文记进覆盖度台账（假拦复发）
+      return `${READ_FILE_NOTICE_PREFIX}${displayPath} 共 ${total} 行；offset=${start} 已超出文件末尾，无可显示内容。`;
     }
 
     const limitNum = positiveInt(limit);

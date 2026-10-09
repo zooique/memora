@@ -75,6 +75,7 @@ import {
   formatLedgerStubRange,
   shouldEchoLedgerStub,
   READ_DIGEST_CHARS,
+  READ_FILE_NOTICE_PREFIX,
 } from '@/agent/toolLedger.js';
 import type { RoundEvidenceEvent } from '@/memory/roundStore.js';
 import { nowIso } from '@/utils/time.js';
@@ -2302,24 +2303,41 @@ export class AgentLoop {
                 lastToolCallId: tc.id,
                 fingerprint,
               });
-            } else {
-              // 整读无脚注（= 已读到文件末尾 / 文件未超单段预算，读到末尾零噪音）：
-              // 同样记「全文件覆盖」——否则小文件整读后无台账 → 替身回显永不触发 → 压缩后重读狂飙
-              // （真机 182 次 read_file 复发根因正是小文件不记——「补缝过度拦截」的反例）。
-              const totalLines = result.split('\n').length;
+            } else if (!result.startsWith(READ_FILE_NOTICE_PREFIX)) {
+              // 整读无脚注 = handler 不变量（sliceFileByLineBudget）：请求区间读到文件末尾且
+              // 预算足，返回**从请求 offset 到末尾**的完整尾段（正文首行 = 文件第 offset 行）。
+              // 故覆盖区间按请求起点记：coverStart=offset、totalLines=offset+正文行数-1——
+              // 错记成「1 起的整读」会把早段未覆盖误当已覆盖（真机 round-1791507775404：
+              // offset=54 读到末尾被记 1–95/共95，随后 offset=1 早段读被假拦 + 回显行号错位）。
+              // offset≤1 时与旧记账数值完全等价（起点即 1，总行数=正文行数）。
+              const start = subject.offset ?? 1;
+              const totalLines = start + result.split('\n').length - 1;
               logger.debug(
-                { path: subject.path, totalLines, src: 'whole-read', peek: result.slice(0, 80) },
-                'read_file 台账写入（整读无脚注）',
+                {
+                  path: subject.path,
+                  start,
+                  totalLines,
+                  src: 'whole-read',
+                  peek: result.slice(0, 80),
+                },
+                'read_file 台账写入（整读无脚注，按请求起点记账）',
               );
               this.fileExposure.record(subject.path, {
                 totalLines,
-                coverStart: 1,
+                coverStart: start,
                 coverEnd: totalLines,
                 digest: result.slice(0, READ_DIGEST_CHARS),
                 cachedAtIteration: this.currentIteration,
                 lastToolCallId: tc.id,
                 fingerprint,
               });
+            } else {
+              // 提示性返回（越界等，READ_FILE_NOTICE_PREFIX 开头）：非文件正文，不进台账——
+              // 记了会把「不存在的覆盖」当真，随后再次越界读命中归一判据被假拦（宁少记放行）
+              logger.debug(
+                { path: subject.path, peek: result.slice(0, 80) },
+                'read_file 提示性返回，不进覆盖度台账',
+              );
             }
           }
         }
