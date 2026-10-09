@@ -10,6 +10,19 @@
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：删 54 个公共导出 + 退役 `agent.memory.search()`，对外部消费者是编译期破坏。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
 
+### Fixed（内核 · 摘要写入前三态：判断权归还 + 原料指纹精确去重 · 审查 P1-5a）
+
+- **`summary` 允许 `null`**（`SUMMARY_JSON_CONTRACT`）：摘要判断器可判「本轮无值得沉淀的信息」
+  （纯工具/后台轮），`generate()` 收到 null 不写入——此前契约强制非空，纯后台轮被挤出流水账摘要
+  （记忆库噪音根源）。null 是合法结论非错误，日志与「无效 JSON」警告分态可辨。
+- **前置精确去重**：新增 `materialFingerprint`（sha256(输入原文 + NUL + 回复原文)，顶层持久化字段，
+  同 `supersededBy` 先例）。`generate()` 入口比对存量摘要，原料全等 → 跳过（不调 LLM、零写入）；
+  判据取原文全文 + 字符串全等，仅铁重复时跳过（截断面外不同 / 回复略异一律放行），
+  近似重复仍归下游 `supersedeSimilar`（未动：阈值 / 打标不删 / 同 session 语义原样）。
+- **存量条目零动作**：无指纹字段不参与匹配，只拦新增；已落盘数据一字不改。
+- 守卫：三态用例（全等跳过零 LLM 调用 / 同输入异回复放行 / null 不写入且 memoryAdded 不误发 /
+  指纹随沉淀落盘 / 分隔符防拼接歧义）+ `parseMemory` 白名单与类型校验同步。
+
 ### ⚠️ Breaking（内核 · 记忆搜索唯一入口收敛：删除已退役的 `MemoryInspector.search()` · `f552695e`）
 
 - 删除 `agent.memory.search(query, limit?)`（同步），含其 5 条测试。唯一入口 = `searchByKeyword()`

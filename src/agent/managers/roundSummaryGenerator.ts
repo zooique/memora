@@ -13,6 +13,7 @@ import {
   roundSummarySessionPrefix,
 } from '@/memory/types.js';
 import { extractEnhancedKeywords, calculateWeightedJaccard } from '@/utils/segmenter.js';
+import { sha256Fingerprint } from '@/utils/hash.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { logger } from '@/logging/logger.js';
 import { parseLlmJson } from '@/utils/json.js';
@@ -42,14 +43,42 @@ const SUPERSEDE_CANDIDATE_WINDOW = 20;
 const LLM_TEMPERATURE = 0.3;
 
 /**
+ * 摘要原料指纹分隔符：不可见 NUL，用于拼接「输入 + 回复」后再哈希。
+ * 必须有分隔符——无分隔时 ("ab","c") 与 ("a","bc") 拼接结果相同，会把两个不同轮判成重复。
+ */
+const FINGERPRINT_SEPARATOR = '\u0000';
+
+/**
+ * 计算摘要原料指纹：sha256(输入原文 + NUL + 助手回复原文)。
+ *
+ * 取原文全文（非截断值）：截断面内相同、截断面外不同 → 严格不等 → 放行生成
+ * （宁可放行一条轻微重复，不误杀——判据取严，仅铁重复时跳过）。
+ * 摘要生成器只吃这两个原料（上下文差异最终体现为回复差异），故原料全等 ⇒ 摘要无增量。
+ *
+ * @param input 用户输入原文（不截断）
+ * @param assistantContent 助手回复原文（不截断）
+ * @returns 64 位 hex 指纹
+ */
+export function materialFingerprint(input: string, assistantContent: string): string {
+  return sha256Fingerprint(`${input}${FINGERPRINT_SEPARATOR}${assistantContent}`);
+}
+
+/**
  * 摘要 JSON 输出契约（内核硬契约，角色包不可替换）：输出格式与 SummaryType 分类必须稳定
  * （摘要写路径读取 summaryType 顶层字段且宿主依赖），角色包只可替换「提炼视角」（判断值得记什么）。
+ *
+ * summary 允许 null = 写入侧判断权（2026-10-09 归还）：判断器必须能说「本轮无值得沉淀的信息」，
+ * 否则纯后台/工具轮被强制挤出流水账摘要（P1-5 噪音根源）。
  */
 const SUMMARY_JSON_CONTRACT = `请以 JSON 格式输出：
 {
-  "summary": "摘要内容（1-3 句话，不超过 500 字）",
+  "summary": "摘要内容（1-3 句话，不超过 500 字），或 null",
   "type": "摘要类型（preference|fact|decision|intent|general）"
 }
+
+summary 判空纪律：
+- 本轮若为纯工具执行 / 后台任务、无用户实质意图或结论 → summary 输出 null
+- 只要用户有实质提问或实质回答，summary 必须为非空字符串，不得偷懒返回 null
 
 类型说明：
 - preference: 用户表达的个人偏好或喜好
@@ -118,6 +147,11 @@ export class RoundSummaryGenerator {
 
   /**
    * 生成并持久化轮次摘要。异步 fire-and-forget，内部捕获异常，仅记警告不阻塞主对话流程。
+   *
+   * 写入前三态（P1-5a，各态日志可区分，杜绝静默跳过）：
+   *   ① 原料指纹全等（重复轮）→ 跳过，不调 LLM；② LLM 判 summary=null（不值得记）→ 不写入；
+   *   ③ 正常沉淀 → upsert + memoryAdded 事件。②③ 之外事件链照走（宿主解锁不依赖写入与否）。
+   *
    * @param focus 角色包提炼视角（prepare.summaryFocus，undefined=通用浓缩）；存在时以其视角替换「值得记什么」判断主体，JSON 契约固定保留。
    */
   async generate(
@@ -128,6 +162,15 @@ export class RoundSummaryGenerator {
     focus?: string,
   ): Promise<void> {
     try {
+      // ── 前置精确去重（P1-5a）：原料全等 ⇒ 摘要无增量，不调 LLM 直接跳过 ──
+      // 判据取原文全文 + 字符串全等（确定性），仅铁重复时跳过；近似重复留给下游 supersedeSimilar。
+      // 存量条目无 materialFingerprint（不参与匹配），只拦新增重复。
+      const fingerprint = materialFingerprint(input, assistantContent);
+      if (this.isDuplicateMaterial(fingerprint)) {
+        logger.debug({ roundId, sessionName }, '轮次摘要跳过：原料与存量摘要全等（重复轮）');
+        return;
+      }
+
       // 有关注点则以角色包提炼视角替换通用视角，JSON 契约固定保留
       const userMessage = `用户输入：${truncate(input, USER_INPUT_LIMIT)}\n\n助手回复：${truncate(assistantContent, ASSISTANT_LIMIT)}`;
       const systemContent = focus ? SUMMARY_PERSPECTIVE_PROMPT(focus) : SUMMARY_SYSTEM_PROMPT;
@@ -137,9 +180,20 @@ export class RoundSummaryGenerator {
       ];
 
       const raw = await accumulateStream(this.provider, messages, { temperature: LLM_TEMPERATURE });
-      const result = parseLlmJson<{ summary: string; type: string }>(raw);
+      const result = parseLlmJson<{ summary: string | null; type: string }>(raw);
 
-      if (!result || !result.summary) {
+      if (!result) {
+        logger.warn({ roundId }, '轮次摘要生成失败：LLM 返回无效 JSON');
+        return;
+      }
+
+      // 判断权归还：summary 为 null = 判断器认定「本轮无值得沉淀的信息」（合法结论，非错误）
+      if (result.summary === null) {
+        logger.debug({ roundId, sessionName }, '轮次摘要判为不值得记（summary=null），不写入');
+        return;
+      }
+
+      if (!result.summary) {
         logger.warn({ roundId }, '轮次摘要生成失败：LLM 返回无效 JSON');
         return;
       }
@@ -164,6 +218,7 @@ export class RoundSummaryGenerator {
         summaryType,
         sessionName,
         roundId,
+        materialFingerprint: fingerprint,
       };
 
       this.storage.upsert(memory);
@@ -175,6 +230,22 @@ export class RoundSummaryGenerator {
     } catch (err) {
       logger.warn({ err, roundId }, '轮次摘要生成失败');
     }
+  }
+
+  /**
+   * 前置精确去重判定：存量 round-summary 中是否已有原料指纹全等的条目。
+   *
+   * 全库比对（不限 session）：精确重复无跨会话例外——同原料在哪个会话产生同一份摘要，
+   * 与语义近似取代（supersedeSimilar，刻意仅同 session）是两套判据，勿混。
+   * 软删条目经 getBySource 被过滤（活跃面才挡），用户已删的不复活也不拦新轮。
+   *
+   * @param fingerprint 本轮原料指纹
+   * @returns true = 存量已有全等原料摘要，本轮应跳过
+   */
+  private isDuplicateMaterial(fingerprint: string): boolean {
+    return this.storage
+      .getBySource(SOURCE_LABELS.ROUND_SUMMARY)
+      .some((m) => m.materialFingerprint === fingerprint);
   }
 
   /**

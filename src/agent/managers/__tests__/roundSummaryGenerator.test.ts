@@ -6,9 +6,13 @@
  *   2. 写路径取代检测：同 session 同主题旧摘要被标记 supersededBy
  *   3. 不同 session / 不同主题不误取代
  *   4. 已 superseded 的旧摘要不再被重复标记
+ *   5. P1-5a 写入前三态：原料指纹全等跳过 / summary=null 不写入 / 正常沉淀
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
+import {
+  RoundSummaryGenerator,
+  materialFingerprint,
+} from '@/agent/managers/roundSummaryGenerator.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { SOURCE_LABELS, roundSummaryMemoryId } from '@/memory/types.js';
 import type { SummaryType } from '@/memory/types.js';
@@ -189,5 +193,100 @@ describe('RoundSummaryGenerator', () => {
     expect(storage.getById('round-summary:session-a:r2')?.supersededBy).toBe(
       'round-summary:session-a:r-new',
     );
+  });
+
+  // ─── P1-5a 写入前三态：精确去重 / 判断权归还 / 正常沉淀 ───
+
+  /** 造一个计数型 mock provider：记录 LLM 调用次数并产出固定摘要 JSON */
+  function makeCountingProvider(
+    summary: string | null,
+    type: string,
+  ): {
+    provider: LlmProvider;
+    calls: () => number;
+  } {
+    let count = 0;
+    const content = JSON.stringify({ summary, type });
+    const provider = {
+      name: 'mock-provider',
+      chat: async function* () {
+        count += 1;
+        yield { content };
+      },
+    } as unknown as LlmProvider;
+    return { provider, calls: () => count };
+  }
+
+  it('前置精确去重：原料指纹全等 → 不调 LLM、不新增条目', async () => {
+    // 第一轮正常沉淀
+    const first = makeCountingProvider('用户偏好简洁 UI', 'preference');
+    const gen1 = new RoundSummaryGenerator(first.provider, storage);
+    await gen1.generate('测试提示词', '测试回复', 'r1', 'session-a');
+    expect(storage.getBySource(SOURCE_LABELS.ROUND_SUMMARY)).toHaveLength(1);
+
+    // 第二轮：输入 + 回复逐字相同（重复测试提示词场景）→ 指纹全等 → 跳过
+    const second = makeCountingProvider('用户偏好简洁 UI', 'preference');
+    const gen2 = new RoundSummaryGenerator(second.provider, storage);
+    await gen2.generate('测试提示词', '测试回复', 'r2', 'session-a');
+
+    expect(second.calls()).toBe(0); // LLM 零调用
+    expect(storage.getBySource(SOURCE_LABELS.ROUND_SUMMARY)).toHaveLength(1); // 零新增
+  });
+
+  it('前置精确去重：同输入但回复不同（上下文差异体现在回复）→ 正常放行', async () => {
+    const first = makeCountingProvider('A 轮摘要', 'fact');
+    const gen1 = new RoundSummaryGenerator(first.provider, storage);
+    await gen1.generate('继续', '第 5 章剧情推进', 'r1', 'session-a');
+
+    const second = makeCountingProvider('B 轮摘要', 'fact');
+    const gen2 = new RoundSummaryGenerator(second.provider, storage);
+    await gen2.generate('继续', '修复了循环引用 bug', 'r2', 'session-a');
+
+    expect(second.calls()).toBe(1); // 指纹不等 → 照常调 LLM
+    expect(storage.getBySource(SOURCE_LABELS.ROUND_SUMMARY)).toHaveLength(2); // 两条都沉淀
+  });
+
+  it('前置精确去重：跨 session 原料全等同样跳过（精确重复无跨会话例外）', async () => {
+    const first = makeCountingProvider('摘要内容', 'fact');
+    const gen1 = new RoundSummaryGenerator(first.provider, storage);
+    await gen1.generate('重复输入', '重复回复', 'r1', 'session-a');
+
+    const second = makeCountingProvider('摘要内容', 'fact');
+    const gen2 = new RoundSummaryGenerator(second.provider, storage);
+    await gen2.generate('重复输入', '重复回复', 'r9', 'session-b');
+
+    expect(second.calls()).toBe(0);
+    expect(storage.getBySource(SOURCE_LABELS.ROUND_SUMMARY)).toHaveLength(1);
+  });
+
+  it('判断权归还：LLM 判 summary=null → 不写入、不触发 memoryAdded、不抛错', async () => {
+    const { provider, calls } = makeCountingProvider(null, 'general');
+    const gen = new RoundSummaryGenerator(provider, storage);
+    let added = 0;
+    gen.setOnMemoryAdded(() => {
+      added += 1;
+    });
+
+    // 纯后台/工具轮的合法结论——generate 必须正常 resolve（宿主事件链不中断）
+    await expect(
+      gen.generate('ping 命令', '后台输出 90 行', 'r1', 'session-a'),
+    ).resolves.not.toThrow();
+
+    expect(calls()).toBe(1); // 判断需要一次 LLM 调用
+    expect(storage.getBySource(SOURCE_LABELS.ROUND_SUMMARY)).toHaveLength(0); // 零写入
+    expect(added).toBe(0); // 「已沉淀」通知不误发
+  });
+
+  it('正常沉淀：条目携带 materialFingerprint 且与原料指纹一致', async () => {
+    const { provider } = makeCountingProvider('用户偏好简洁 UI', 'preference');
+    const gen = new RoundSummaryGenerator(provider, storage);
+    await gen.generate('用户输入', '助手回复', 'r1', 'session-a');
+
+    const saved = storage.getById(roundSummaryMemoryId('session-a', 'r1'));
+    expect(saved?.materialFingerprint).toBe(materialFingerprint('用户输入', '助手回复'));
+  });
+
+  it('materialFingerprint 分隔符防拼接歧义：("ab","c") 与 ("a","bc") 指纹不同', () => {
+    expect(materialFingerprint('ab', 'c')).not.toBe(materialFingerprint('a', 'bc'));
   });
 });

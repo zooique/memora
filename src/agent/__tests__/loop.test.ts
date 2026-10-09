@@ -6176,8 +6176,7 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     // handler 越界提示（offset > 总行数）返回的是**提示串不是文件正文**（sliceFileByLineBudget）。
     // 旧整读记账分支对任何 ok 结果记账 → 提示被记成覆盖并顶掉真实条目；随后再次越界读会
     // 命中「limit 变体整读」归一判据被假拦。契约：提示性返回不进台账（宁少记放行，不记错账）。
-    const notice =
-      '[read_file] docs/a.md 共 10 行；offset=200 已超出文件末尾，无可显示内容。';
+    const notice = '[read_file] docs/a.md 共 10 行；offset=200 已超出文件末尾，无可显示内容。';
     const toolExecutor = vi
       .fn()
       .mockImplementation((name: string) => Promise.resolve(name === 'read_file' ? notice : ''));

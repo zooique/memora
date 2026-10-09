@@ -151,6 +151,7 @@ describe('parseMemory 白名单构造（阶段3 score 退役后的数据层清�
         'deletedAt',
         'id',
         'isModified',
+        'materialFingerprint',
         'metadata',
         'name',
         'roundId',
@@ -201,6 +202,9 @@ describe('parseMemory 白名单构造（阶段3 score 退役后的数据层清�
     expect(() => parseMemory({ ...legacyMemory(), supersededBy: ['x'] })).toThrow(
       /Memory 解析失败/,
     );
+    expect(() => parseMemory({ ...legacyMemory(), materialFingerprint: 42 })).toThrow(
+      /Memory 解析失败/,
+    );
   });
 
   it('合法可选字段应通过校验', () => {
@@ -213,6 +217,7 @@ describe('parseMemory 白名单构造（阶段3 score 退役后的数据层清�
         roundId: 'r1',
         isModified: false,
         supersededBy: 'round-summary:2026-06-02-main:r2',
+        materialFingerprint: 'a'.repeat(64),
       }),
     ).not.toThrow();
   });

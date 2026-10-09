@@ -59,6 +59,13 @@ export interface Memory {
    * metadata（宿主不持久化 metadata，而 superseded 须跨会话生效）
    */
   supersededBy?: string;
+  /**
+   * 摘要原料指纹：sha256(输入原文 + 分隔符 + 助手回复原文)，生成摘要时计算并随条目落盘。
+   * 供写路径前置精确去重（generate 入口比对，原料全等 → 跳过生成，不调 LLM）。
+   * 顶层持久化字段（同 supersededBy 先例）：去重须跨会话生效，metadata 不在存储契约内。
+   * 仅 round-summary 有意义；存量条目无此字段（不参与匹配，只管新增）。
+   */
+  materialFingerprint?: string;
 }
 
 /**
@@ -167,6 +174,13 @@ export function parseMemory(raw: unknown): Memory {
       ['检查数据源中 supersededBy 字段的类型'],
     );
   }
+  if (obj.materialFingerprint !== undefined && typeof obj.materialFingerprint !== 'string') {
+    throw configError(
+      'Memory 解析失败',
+      `materialFingerprint 必须是字符串（当前为 ${typeof obj.materialFingerprint}）`,
+      ['检查数据源中 materialFingerprint 字段的类型'],
+    );
+  }
 
   return {
     id: obj.id as string,
@@ -182,6 +196,7 @@ export function parseMemory(raw: unknown): Memory {
     roundId: obj.roundId as string | undefined,
     isModified: obj.isModified as boolean | undefined,
     supersededBy: obj.supersededBy as string | undefined,
+    materialFingerprint: obj.materialFingerprint as string | undefined,
   };
 }
 
