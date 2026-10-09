@@ -355,8 +355,10 @@ export class MessageHistory {
     // Round-based 路径：roundStore 注入且有 roundId 时完成 pending Round
     if (roundId && this.roundStore) {
       let completed: Round | null = null;
-      // 统一取现有轮：优先 pending 缓存（prepare 新建后未完成），否则 RoundStore（跨重启 / 暂停已完成轮）
-      const existing = this.pendingRounds.get(roundId) ?? this.roundStore.getById(roundId) ?? null;
+      // 统一取现有轮：优先 RoundStore（SSOT——含宿主 step 检查点已落盘的 processEvents），
+      // pending 缓存仅作 fallback（跨重启等 store 未命中时）。旧写法 pending 优先会用
+      // 无 processEvents 的 stale 快照覆盖 store → 检查点事件被静默丢弃（已修）
+      const existing = this.roundStore.getById(roundId) ?? this.pendingRounds.get(roundId) ?? null;
       if (existing) {
         // 旧 assistant 段入 assistantLog（仅当已存在 assistantMessage 时产生，普通单段轮零冗余）
         const assistantLog = existing.assistantLog
@@ -476,8 +478,9 @@ export class MessageHistory {
   ): Promise<void> {
     if (!roundId || !this.roundStore) return;
     try {
-      // 统一取现有轮：优先 pending 缓存（同实例未重启），否则 RoundStore（崩溃重启后的常态）
-      const existing = this.pendingRounds.get(roundId) ?? this.roundStore.getById(roundId) ?? null;
+      // 统一取现有轮：优先 RoundStore（SSOT——含宿主 step 检查点已落盘的 processEvents），
+      // pending 缓存仅作 fallback。与 appendAssistant 同源（store-first），防 stale 快照覆盖
+      const existing = this.roundStore.getById(roundId) ?? this.pendingRounds.get(roundId) ?? null;
       if (!existing) {
         logger.warn({ roundId }, 'appendInterrupted: Round 未找到，跳过升级');
         return;
@@ -494,7 +497,8 @@ export class MessageHistory {
       // 有恢复文本才写 assistantMessage（§一·五：无 assistantMessage 总结也按 stop 语义收场）
       const content = opts?.content?.trim() ?? '';
       const completed: Round = {
-        // 展开保留 userMessage / interactiveInputs / processEvents（宿主 step 检查点已落盘）等原字段
+        // 展开保留 userMessage / interactiveInputs / processEvents 等原字段
+        //（existing 取自 RoundStore 时含宿主检查点已落盘的 processEvents——store-first 优先保证）
         ...existing,
         ...(content
           ? {

@@ -5152,6 +5152,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         if (pausedResume) {
           // 暂停原位续写：锚点（pausedAssistantEl）与 currentEvents/round-block 全保留，
           // 不建骨架——由 chunk 分支的 pausedAssistantEl 原位续写路径消费。
+          // 恢复 streamingActive：暂停时置 false 导致 syncRunningCursor 被 L2304 门控挡住；
+          // 不恢复则 resume 后首个 thinking/tool 事件期间光标冻结「已暂停」——
+          // 必须在此处翻回 true，让 syncRunningCursor 自然放行推导运行三态
+          streamingActive = true;
+          syncRunningCursor();
           // 必须同时消费 resumePending：暂停态补充输入时前三态
           // 判定 pausedResume 优先、不会走到 else-if resumePending 分支 → resumePending 残留
           // true。诚实定性：当前路径 pausedResume 恒优先，残留是惰性状态（突变验证不红），
