@@ -544,7 +544,7 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
   ⇒ 保持手写字面量并补注释，避免误改成不存在的符号。
 - 变异验证：`PERMISSION_DENIED → UNKNOWN` 使新增断言转红后还原（证断言非空洞）。
 
-### Added（内核 · 发版前 Go/No-Go 中优先项清偿：文法盲区登记 + Reflection 设计口径显式声明 + 死分支不变式守卫 · M4/M6/M10）
+### Added（内核 · 发版前 Go/No-Go 中优先项清偿：文法盲区登记 + Reflection 设计口径显式声明 + 死分支不变式守卫 + 决策 ADR 补录 · M4/M6/M8/M10）
 
 - **`toolFailurePrefixGuard` 新增文法盲区对账**（`GRAMMAR_BLIND_TAGS`）：首字符即 `[` 但逃出
   「大写蛇形」与「插值前置」两种文法的标记（上下文注入分节头 / 工具结果正文软提示 / 提取器
@@ -559,6 +559,9 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
   且无专属分支的数值键）当前不可达——注释从「防御分支」改为「已登记的未来路径，由不变式测试
   守卫」。新增全量不变式测试：遍历 `STRATEGY_KEY_RULES` 所有 check 键，断言「无专属分支的
   check 键必带 range」。变异验证：删 `temperature` 的 `range` 后测试转红（精确点名该键），还原后全绿。
+- **决策 ADR 补录**（`ADR-038` 工具结果三值契约 / `ADR-039` 公共导出面挂面判据）：4.0.0 两条
+  Breaking 的决策 rationale 原只在不随包发布的过程稿里，现沉淀为仓库内定案锚；对外 rationale
+  入口不变（本文件上方 Breaking 条）。零代码、零消费面变更。
 
 ## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
 

@@ -44,6 +44,8 @@ description: Memora 关键决策年轮
 | [ADR-035](./ADR-035-max-tokens-intersection-adjudication.md) | 输出上限裁决收口（maxTokens 生效值 = min(per-LLM, 角色包 outputLimit) 单点裁决；0-哨兵装配层过滤；取证面记生效值不记配置快照；内核不设上限校验） | ✅ 已接受 | 架构 |
 | [ADR-036](./ADR-036-background-task-lifecycle-boundary.md) | 后台命令任务双生命周期边界（turn 终态脱管不杀 + 回流跨 turn 留存；Agent 实例终态 killAllRunning 真杀；主动终止单点不回调 listener；诚实边界仅覆盖正常退出） | ✅ 已接受 | 架构 |
 | [ADR-037](./ADR-037-dock-morphology-constitution.md) | 底部状态形态宪法：动/静分离抽屉化四条（决策贴输入区+留痕 / 状态不自己消失 / 常驻的是入口 / 抽屉不自动弹）+ 唯一折叠轴 + 入口常驻判据 | ✅ 已接受 | 前端 |
+| [ADR-038](./ADR-038-tool-outcome-three-state-contract.md) | 工具结果三值契约（status ok/failed/blocked 判据面唯一真源 + B5 文本判据桥物理删除 + B4 blocked 不计失败口径 + blockedReason 穷尽登记） | ✅ 已接受 | 架构 |
+| [ADR-039](./ADR-039-public-export-surface-admission.md) | 公共导出面挂面判据（宿主消费 OR 文档承诺两条准入 + 收编≠删除 + 守卫三向机器化对账 · REL-3.1） | ✅ 已接受 | 工程 |
 
 ### 插件宿主（VC 系列）
 
@@ -68,10 +70,10 @@ description: Memora 关键决策年轮
 | 运行时 | 1    | ADR-001 |
 | 数据层 | 2    | ADR-002, ADR-016 |
 | 集成层 | 2    | ADR-003, ADR-017-web-search |
-| 架构   | 17   | ADR-004, ADR-010~011, ADR-015, ADR-021~025, ADR-027~031, ADR-034~036 |
+| 架构   | 18   | ADR-004, ADR-010~011, ADR-015, ADR-021~025, ADR-027~031, ADR-034~036, ADR-038 |
 | 安全   | 1    | ADR-006 |
 | 质量   | 1    | ADR-007 |
-| 工程   | 4    | ADR-008, ADR-017, ADR-032, ADR-033 |
+| 工程   | 5    | ADR-008, ADR-017, ADR-032, ADR-033, ADR-039 |
 | 前端   | 2    | ADR-018, ADR-037 |
 | 形态   | 1    | ADR-VC-001 |
 
