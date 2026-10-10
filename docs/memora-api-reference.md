@@ -1123,6 +1123,8 @@ interface ToolOutcome {
 
 当工具执行失败且错误码为 retryable 时，AgentLoop 自动注入 `[REFLECTION_HINT]` 系统消息，引导 LLM 修正参数后重试。默认最多重试 2 次（`maxReflectionRetries`）。
 
+> ⚠️ **执行类失败不进自动 Reflection（设计口径，非回归）**：`run_command` / `run_code` / `run_project_script` / `run_skill_script` 四条执行链路失败时返回**不带 `errorCode`** 的失败结果，不满足上述「retryable 错误码」触发条件，AgentLoop 因此不注入 `[REFLECTION_HINT]`。结局事实（超时 / 非零退出码 / 许可拒绝等）已完整呈现在返回文本里，LLM 读到后自行决定是否调整重试；自动重试机制只服务于带 retryable 错误码的工具失败（错误码全集见 §十四）。
+
 ---
 
 ## 十六、类型导出

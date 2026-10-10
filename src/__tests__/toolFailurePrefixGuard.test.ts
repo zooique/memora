@@ -63,6 +63,11 @@
  * 钉死而非沉默的意义：有人在那些文件里加新标签时本守卫会响，迫使做出「纳入还是排除」的判断，
  * 而不是让新标签悄悄逃出视野。
  *
+ * **文法盲区**（首字符即 `[`、但逃出大写蛇形与插值前置两种文法的自然语言标记）
+ * 由 `GRAMMAR_BLIND_TAGS` 按文件登记并双向钉死——盲区原先对扫描面与排除清单双双不可见
+ * （双重静默，发版前 Go/No-Go 审查 M4），登记后新增盲区标记即红。
+ * 登记 ≠ 承认为工具结果，语义分类见该表表头。
+ *
  * ## 已知边界（诚实登记，勿默认为已覆盖）
  *
  * · **首标签判据 ≠ 全串扫描**：本守卫只认「首字符即标签」（与 SCRIPT-1 判据同口径——
@@ -151,6 +156,48 @@ const OUT_OF_SCOPE_TAGS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
+ * 文法盲区标记：首字符即 `[`、但逃出 `LITERAL_TAG`（大写蛇形）与 `TEMPLATE_TAG`
+ * （插值须在 `]` 之前）两种文法的标记，**按文件登记 + 双向钉死**（与 `OUT_OF_SCOPE_TAGS` 同纪律）。
+ *
+ * 为什么单列一张表：这些标记对扫描面与排除清单**双双不可见**——
+ * 如 `[Context summary of earlier conversation]`（首字母大写+空格不中蛇形，插值又在 `]` 之后），
+ * 属双重静默盲区（发版前 Go/No-Go 审查 M4）。登记把「看不见」变成「已披露」：
+ * 新增盲区标记/新文件产出盲区即红；升级文法后条目转红（僵尸）即迁入正表，不接受静默漂移。
+ *
+ * 语义两分（登记 ≠ 承认为工具结果）：
+ * · **上下文注入族**（assembler / contextManager / contextPreparer / loop / taskTableRenderer）
+ *   —— system prompt 分节头、摘要与进度提示，不进工具结果；
+ * · **工具结果正文族**（4 个，逐条读码实证）—— `[read_file] ` 提示串前缀、
+ *   `[该行超过单次读取预算，已截断]` 超预算首行、`[工具结果已卸载至磁盘]` 卸载首行，
+ *   三者运行时确为返回开头；`[read_file 分段]` 拼在返回处（本守卫判据是字面量首字符，
+ *   运行时未必在首行）。语义均为软提示而非失败——文法不可见是缺口，不是设计排除。
+ * · `web-search` 的 `^>` 是**提取器已知边界产物**（正则字面量内含引号致提取边界失配，
+ *   见文件头「已知边界」），登记的是「扫描器看到什么」，不是承认它是标签。
+ */
+const GRAMMAR_BLIND_TAGS: Readonly<Record<string, readonly string[]>> = {
+  // ── 上下文注入族 ──
+  'agent/assembler.ts': ['Earlier conversation summaries'],
+  'agent/contextManager.ts': ['Context summary of earlier conversation'],
+  'agent/contextPreparer.ts': ['Recent conversation'],
+  'agent/loop.ts': [
+    'Context window management',
+    'Recent conversation',
+    'compress_context',
+    '任务进度:',
+    '情报区',
+    '情报区 · 仅供你私有查看并作为后续作答的参考',
+    '本轮结束 · 后台任务继续运行',
+  ],
+  'agent/taskTableRenderer.ts': ['任务项推进记录'],
+  // ── 工具结果正文族（软提示，非失败）──
+  'agent/builtinToolHandlers.ts': ['该行超过单次读取预算，已截断'],
+  'agent/toolLedger.ts': ['read_file', 'read_file 分段'],
+  'agent/toolResultOffload.ts': ['工具结果已卸载至磁盘'],
+  // ── 提取器已知边界产物（非真实标签）──
+  'web-search/fetchWebSearchProvider.ts': ['^>'],
+};
+
+/**
  * 工具结果首标签登记表（标签 → 语义归属）。
  *
  * ⚠️ **本表是「语义归属」的 SSOT**：每个**字面量**产出的工具结果首标签都必须在此登记，
@@ -207,6 +254,8 @@ const SOFT_DEGRADE_KEYS = [
 const LITERAL_TAG = /^\[([A-Z][A-Z0-9_]*(?::[A-Z0-9_]+)*)\]/;
 /** 拼接标签：`[${…}…]`（首字符即标签、含插值；语系不限大写——中文标签也抓，见 backgroundTasks） */
 const TEMPLATE_TAG = /^\[([^\]\n]*\$\{[^\]\n]*)\]/;
+/** 原始标记：`[` 后至首个 `]` 或行尾——不判形态，供文法盲区对账（原始集 ∖ 可见集 = 盲区） */
+const RAW_TAG = /^\[([^\]\n]*)/;
 
 /** 归一化：`ERR:TOOL:NOT_AVAILABLE` → `ERR_TOOL_NOT_AVAILABLE`（登记表键形态） */
 function toRegistryKey(tag: string): string {
@@ -428,6 +477,31 @@ function scanProducedTags(files: readonly string[]): Map<string, string[]> {
   return found;
 }
 
+/**
+ * 全库文法盲区扫描：每文件「原始集 ∖ 文法可见集」（判据与守卫同源，不另写提取路径）。
+ *
+ * 原始集 = 首字符即 `[` 的字面量经 `RAW_TAG` 取出的标记（不判形态）；
+ * 可见集 = `firstTagOf` 能识别的标记。两者之差即文法两边都看不见的盲区。
+ */
+function scanGrammarBlindTags(): Map<string, string[]> {
+  const blind = new Map<string, string[]>();
+  for (const rel of listSourceFiles()) {
+    const src = readFileSync(join(SRC_ROOT, rel), 'utf8');
+    const raw = new Set<string>();
+    const visible = new Set<string>();
+    for (const lit of extractStringLiterals(src)) {
+      if (!lit.startsWith('[')) continue;
+      const r = RAW_TAG.exec(lit);
+      if (r) raw.add(r[1]!);
+      const v = firstTagOf(lit);
+      if (v) visible.add(v);
+    }
+    const gap = [...raw].filter((t) => !visible.has(t)).sort();
+    if (gap.length > 0) blind.set(rel, gap);
+  }
+  return blind;
+}
+
 /** 递归列出 `src/` 下所有非测试 `.ts` 文件（相对 `SRC_ROOT`，正斜杠分隔） */
 function listSourceFiles(dir = SRC_ROOT, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -530,6 +604,25 @@ describe('工具结果首标签 · 反向对账守卫（SCRIPT-2 B5-e 补丁）'
       zombieFiles,
       `OUT_OF_SCOPE_TAGS 登记了不再产出标签的文件：\n  ${zombieFiles.join('\n  ')}`,
     ).toEqual([]);
+  });
+
+  it('文法盲区：首 `[` 但逃出文法的标记按文件登记，双向相等（新增盲区/僵尸登记即红）', () => {
+    // M4 根治：盲区原先对扫描面与排除清单双双不可见（双重静默）。
+    // 双向钉死：全库实扫 == GRAMMAR_BLIND_TAGS——新增未登记盲区即红；登记项消失
+    // （升级文法 / 删除标记）即僵尸红，迫使迁入正表或同步删登记，不接受静默漂移。
+    const actual = scanGrammarBlindTags();
+    expect(
+      [...actual.keys()].sort(),
+      '以下文件产出文法盲区标记但未登记进 GRAMMAR_BLIND_TAGS：\n  ' +
+        [...actual.keys()].join('\n  ') +
+        `\n修法：读码判定语义后登记（上下文注入 / 工具结果正文 / 提取器产物），或升级文法纳入扫描面`,
+    ).toEqual(Object.keys(GRAMMAR_BLIND_TAGS).sort());
+    for (const [rel, tags] of Object.entries(GRAMMAR_BLIND_TAGS)) {
+      expect(
+        actual.get(rel) ?? [],
+        `${rel} 的文法盲区标记与 GRAMMAR_BLIND_TAGS 登记不符（新增/删除标记须同步登记并自答语义）`,
+      ).toEqual([...tags].sort());
+    }
   });
 
   it('生产产出的每个首标签都已在登记表（漏登记即红 · SCRIPT-1 复发锁）', () => {

@@ -503,7 +503,7 @@ Agent 归档监听器接通，fire-and-forget 不阻塞切换主流程。
 builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中「切换前自动归档」
 谎报全部订正为三类触发的真实枚举。
 
-> 以下 4 条为 **4.0.0 定档（2026-10-08）之后、发布之前**落地的内核变更（此前沿提交散落、未在本文件归集），随 4.0.0 一并发布。
+> 以下条目为 **4.0.0 定档（2026-10-08）之后、发布之前**落地的内核变更（此前沿提交散落、未在本文件归集），随 4.0.0 一并发布。
 
 ### Added（内核 · ask 超时后要求 LLM 代选推荐方案并声明 · `c2477907`）
 
@@ -543,6 +543,18 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 - `READONLY_DENIED` 经 tsc 实锤**并非**枚举成员（仅为 `toolFailurePrefixGuard` 独立登记标签）
   ⇒ 保持手写字面量并补注释，避免误改成不存在的符号。
 - 变异验证：`PERMISSION_DENIED → UNKNOWN` 使新增断言转红后还原（证断言非空洞）。
+
+### Added（内核 · 发版前 Go/No-Go 中优先两项清偿：文法盲区登记 + Reflection 设计口径显式声明 · M4/M10）
+
+- **`toolFailurePrefixGuard` 新增文法盲区对账**（`GRAMMAR_BLIND_TAGS`）：首字符即 `[` 但逃出
+  「大写蛇形」与「插值前置」两种文法的标记（上下文注入分节头 / 工具结果正文软提示 / 提取器
+  已知边界产物）原先对扫描面与排除清单**双双不可见**（双重静默），现按文件登记、全库双向钉死
+  ——新增未登记盲区即红，登记项消失（如升级文法）即僵尸红。变异验证：删登记 / 生产新增盲区
+  标记均转红后还原。
+- **api-ref §十五 显式声明「执行类失败不进自动 Reflection」（设计口径，非回归）**：
+  `run_command` / `run_code` / `run_project_script` / `run_skill_script` 四条执行链路失败返回
+  不带 `errorCode` 的失败结果，不满足 retryable 触发条件 ⇒ AgentLoop 不注入
+  `[REFLECTION_HINT]`；结局事实由返回文本承载，LLM 自行决定是否重试（错误码全集见 §十四）。
 
 ## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
 
