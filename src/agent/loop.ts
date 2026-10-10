@@ -122,7 +122,8 @@ export interface AgentLoopOptions {
   toolDefinitions?: ToolDefinition[];
   /** 内置工具定义列表，仅含内置工具，供只读模式（toolReadonly）查询 readonly 标记 */
   builtinTools?: ToolDefinition[];
-  /** 上下文窗口 token 上限（默认 120_000）。估算 token 超此阈值时裁剪中间段，
+  /** 上下文窗口 token 上限（缺省 = `AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS`，经 resolveContextWindow 兜底，
+   *  数字不在此落账——真源改值时注释不跟随会变撒谎）。估算 token 超此阈值时裁剪中间段，
    *  仅保留 system prompt + 最近 N 条消息，防上下文溢出。 */
   maxContextTokens?: number;
   /** 可观测性 Tracer（宿主注入，默认 NOOP_TRACER 静默丢弃所有 span） */
@@ -291,7 +292,7 @@ const INTEL_INTRO =
 export class AgentLoop {
   private messages: Message[] = [];
   private readonly maxIterations: number;
-  /** provider 上下文窗口（原始声明值，默认 120_000）。模型热切换经 setContextWindow 写入。 */
+  /** provider 上下文窗口（原始声明值；缺省 = `AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS`，数字不落账）。模型热切换经 setContextWindow 写入。 */
   private providerContextWindow: number;
   /** **有效上下文窗口** = min(providerContextWindow, strategy.contextLimit>0 ? contextLimit : ∞)。
    *  派生值（非独立真源）：由 #recomputeEffectiveWindow 在「provider 窗口变更」与「角色策略变更」

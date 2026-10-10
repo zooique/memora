@@ -178,7 +178,9 @@ describe('工具执行器（6 个工具）', () => {
   });
 
   describe('run_project_script（默认开放：项目内已有脚本执行）', () => {
-    it('成功执行项目内脚本（扩展名推断运行时，cwd=项目根）', async () => {
+    // 本族三条为真进程 spawn，与 run_command / run_code 族同口径显式放宽到 20s
+    // （5s 缺省在门禁负载下假超时，2026-10-07 实锤；耗时非被测行为，断言全在结果面）
+    it('成功执行项目内脚本（扩展名推断运行时，cwd=项目根）', { timeout: 20_000 }, async () => {
       // scripts/ 放脚本，验证相对根路径 + cwd=项目根（脚本可读项目相对文件）
       mkdirSync(join(tmpProject, 'scripts'), { recursive: true });
       writeFileSync(
@@ -195,22 +197,26 @@ describe('工具执行器（6 个工具）', () => {
       expect(result).toContain('stdout-ok');
     });
 
-    it('args 传入单字符串时被类型修正为数组（array 类型自动修正分支）', async () => {
-      // scripts/ 放脚本，读取 argv 验证 args 在修正后以数组形式透传
-      mkdirSync(join(tmpProject, 'scripts'), { recursive: true });
-      writeFileSync(
-        join(tmpProject, 'scripts/env-argv.js'),
-        "process.argv.forEach((a, i) => console.log('ARG', i, a));",
-        'utf-8',
-      );
-      // args 传 JSON 字符串（非数组）→ validateAndCoerceArgs 修正为 [单值]
-      const result = await executor.execute(
-        'run_project_script',
-        JSON.stringify({ script_path: 'scripts/env-argv.js', args: 'hello' }),
-      );
-      // 修正后 args=['hello'] 进入脚本 argv
-      expect(result).toContain('hello');
-    });
+    it(
+      'args 传入单字符串时被类型修正为数组（array 类型自动修正分支）',
+      { timeout: 20_000 },
+      async () => {
+        // scripts/ 放脚本，读取 argv 验证 args 在修正后以数组形式透传
+        mkdirSync(join(tmpProject, 'scripts'), { recursive: true });
+        writeFileSync(
+          join(tmpProject, 'scripts/env-argv.js'),
+          "process.argv.forEach((a, i) => console.log('ARG', i, a));",
+          'utf-8',
+        );
+        // args 传 JSON 字符串（非数组）→ validateAndCoerceArgs 修正为 [单值]
+        const result = await executor.execute(
+          'run_project_script',
+          JSON.stringify({ script_path: 'scripts/env-argv.js', args: 'hello' }),
+        );
+        // 修正后 args=['hello'] 进入脚本 argv
+        expect(result).toContain('hello');
+      },
+    );
 
     it('路径越界（../ 穿越项目根）时拒绝执行', async () => {
       const result = await executor.execute(
@@ -237,15 +243,19 @@ describe('工具执行器（6 个工具）', () => {
       expect(result).toContain('SCRIPT_DECLINE');
     });
 
-    it('timeout_ms 透传内核执行器：短超时脚本即 [SCRIPT_TIMEOUT]（超时弹性）', async () => {
-      // 死循环脚本 + 显式 1s（最小 clamp）超时：验证 timeout_ms 参数真实生效（不卡默认 60s）
-      writeFileSync(join(tmpProject, 'scripts/hang.js'), 'while (true) {}', 'utf-8');
-      const result = await executor.execute(
-        'run_project_script',
-        JSON.stringify({ script_path: 'scripts/hang.js', timeout_ms: 1 }),
-      );
-      expect(result).toContain('SCRIPT_TIMEOUT');
-    });
+    it(
+      'timeout_ms 透传内核执行器：短超时脚本即 [SCRIPT_TIMEOUT]（超时弹性）',
+      { timeout: 20_000 },
+      async () => {
+        // 死循环脚本 + 显式 1s（最小 clamp）超时：验证 timeout_ms 参数真实生效（不卡默认 60s）
+        writeFileSync(join(tmpProject, 'scripts/hang.js'), 'while (true) {}', 'utf-8');
+        const result = await executor.execute(
+          'run_project_script',
+          JSON.stringify({ script_path: 'scripts/hang.js', timeout_ms: 1 }),
+        );
+        expect(result).toContain('SCRIPT_TIMEOUT');
+      },
+    );
   });
 
   describe('read_skill（渐进披露 L2）', () => {
