@@ -1,15 +1,9 @@
 /**
  * 问答闭环（Round）存储接口 —— Memora 会话管理的 SSOT
  *
- * 设计理念：
- * - 问答闭环（Round）是独立的、全局唯一的实体
- * - 会话（Session）只是问答闭环 ID 的有序列表
- * - 分叉只是复制 ID 列表（指针复制），不复制数据
- *
- * 核心优势：
- * 1. 保持记忆系统的真理源设定（每个 roundId 对应唯一摘要）
- * 2. 保持会话的独立性（所有会话在存储层平等）
- * 3. 简洁的分叉实现（只需操作 ID 列表）
+ * 设计：Round 是独立全局唯一实体；Session 只是 roundId 的有序列表；
+ * 分叉只复制 ID 列表（指针复制，不复制数据）⇒ 每个 roundId 恒对应唯一摘要、
+ * 所有会话在存储层平等。
  */
 
 import type { MessageRole } from '@/memory/types.js';
@@ -18,21 +12,15 @@ import type { AbortStopReason, LlmErrorCategory } from '@/agent/types.js';
 // ─── 问答闭环消息 ───────────────────────────────────────
 
 /**
- * 问答闭环消息：与 LLM Message 兼容，包含持久化所需的时间戳信息
- *
- * 对齐现有结构：
- * - Message.role（'user' | 'assistant' | 'tool' | 'system'）
- * - Message.content（消息内容）
- * - Message.roundId（轮次标识，此处由 Round 本身承载）
+ * 问答闭环消息：与 LLM Message 兼容，额外带持久化所需时间戳。
+ * roundId 不在此处——由所属 Round 本身承载。
  */
 export interface RoundMessage {
   /** 消息唯一标识（格式：msg-{uuid}） */
   id: string;
 
-  /** 消息角色 */
   role: MessageRole;
 
-  /** 消息内容 */
   content: string;
 
   /** 时间戳（ISO 8601，持久化用） */
@@ -41,11 +29,8 @@ export interface RoundMessage {
   /** 消息来源名称（可选，对齐 LLM Message.name） */
   name?: string;
 
-  /** Token 用量统计（可选） */
   tokenUsage?: {
-    /** 输入 token 数 */
     input: number;
-    /** 输出 token 数 */
     output: number;
   };
 }
@@ -182,15 +167,13 @@ export interface ProcessMetricsPayload {
   durationMs: number;
   /** 输入 token 用量（估算口径：每次 LLM 调用请求消息 `estimateTokens` 的**全程累计**，非服务端 usage 实测值；实测值在 actualInputTokens，宿主取证面未消费） */
   tokenIn: number;
-  /** 输出 token 用量（估算口径：各次 LLM 调用**正文**（fullContent）估算的全程累计——
-   * **不含 thinking、不含工具轮叙述、不含工具调用参数**（三者都不进 fullContent，见 llmCaller
-   * 只累加 chunk.content）：
-   *   - 不含 thinking / 工具轮叙述：CoT 与叙述走独立展示轨，不拼入正文（双轨隔离）；
-   *   - **不含工具调用参数**：`tool_calls.arguments` 从不进 fullContent ⇒ **工具密集轮系统性
-   *     低估**（真机 round-1791449684099 实测：工具参数 9,216 字符 / 44 次调用，落盘
-   *     tokenOut=646 ≈ 仅最终答复）。这是**有意口径**勿"修"成含参数（历史数字将不可比），
-   *     读它时按「答复正文量」理解，不当作本轮真实输出预算消耗。
-   * 判断输出压力用 maxTokens（生效值）+ truncationRecoveryCount + thinkingChars 佐证。 */
+  /**
+   * 输出 token 用量（估算口径：各次 LLM 调用**正文**（fullContent）估算的全程累计——
+   * **不含 thinking、工具轮叙述与工具调用参数**（三者都不进 fullContent）。
+   * 工具密集轮因此**系统性低估**（真机 round-1791449684099：工具参数 9,216 字符 / 44 次调用，
+   * 落盘 tokenOut=646 ≈ 仅最终答复）。这是**有意口径，勿"修"成含参数**（历史数字将不可比），
+   * 读它时按「答复正文量」理解；判断输出压力用 maxTokens + truncationRecoveryCount + thinkingChars 佐证。
+   */
   tokenOut: number;
   /** 工具调用失败次数 */
   toolFailureCount: number;
@@ -226,13 +209,7 @@ export interface ProcessMetricsPayload {
  *
  * 由宿主在 consumeFlow 旁路从 AgentChunk / 主机事件派生，流结束时附到 Round.processEvents
  * 一次性落盘；重放时按 seq 有序重建 UI（运行时与重放共用同一渲染数据源）。
- *
- * 事件类型全量：
- * - meta：每轮首条，该轮回答身份
- * - thinking / memory_added / tool_start / tool_result：过程明细
- * - self_review / text_self_review：自审查过程与输出
- * - aborted：中断标记
- * - metrics：每轮末条，执行汇总
+ * 成员清单即下方联合类型（meta 首条 / metrics 末条，中间为过程明细与终态标记）。
  */
 export type ProcessEvent =
   | { type: 'meta'; seq: number; ts: string; payload: ProcessMetaPayload }
@@ -275,19 +252,15 @@ export type ProcessEvent =
   | { type: 'text_self_review'; seq: number; ts: string; payload: { content: string } }
   | { type: 'narrate'; seq: number; ts: string; payload: { content: string } }
   /**
-   * 模型思考内容流：reasoning_content 增量累积结果。
-   * 仅供重放重建「思考」折叠块；展示轨承载，正文轨/记忆轨不消费（CoT 防护）。命名用 thought——
-   * 区别于上方既有 `type:'thinking'`（phase 相位事件）与多模型路由任务 `TaskType='reasoning'`，
-   * 三者语义分离，避免同 union 判别式重复与跨层双义。
-   * payload.content 超长由宿主落盘前截断（MAX_THOUGHT_PAYLOAD_LENGTH，SSOT 常量单点定义于 chatPanel）。
-   * payload.stepIndex = 本条思考所属 step（一次 LLM 调用 + 可选工具执行）的轮内序号
-   * （内核 loop 打标、随内容同源落盘），「一个 step 一个思考折叠块」的归桶键；
-   * 缺省（旧数据）由展示层回落整轮单桶。
+   * 模型思考内容流（reasoning_content 累积）：仅用于重放重建「思考」折叠块，
+   * 正文轨/记忆轨不消费（CoT 防护）。命名 `thought` 以别于同 union 的 `thinking`
+   * （phase 相位事件）与 `TaskType='reasoning'`，三者语义分离。
+   * content 超长由宿主落盘前截断（常量单点定义于 chatPanel）；stepIndex = 所属 step 轮内序号，
+   * 「一个 step 一个思考块」的归桶键，缺省（旧数据）由展示层回落整轮单桶。
    */
   | { type: 'thought'; seq: number; ts: string; payload: { content: string; stepIndex?: number } }
   /**
-   * 任务项级折叠边界：active 任务项推进时由 loop 产，
-   * 宿主落盘此事件把后续 narrate/tool/问答归到对应任务项分组。无任务表不产。
+   * 任务项级折叠边界：active 任务项推进时由 loop 产出，把后续 narrate/tool/问答归到该任务项分组。
    */
   | {
       type: 'plan_item_boundary';
@@ -296,13 +269,10 @@ export type ProcessEvent =
       payload: { planItemId?: string; title?: string };
     }
   /**
-   * 任务表收尾快照：turn 收尾清空运行时任务表**之前**拍的全量终态（每条任务项的
-   * planItemId + status）。清空前拍 = 中断轮同样拍到；暂停/ask 挂起轮由 pauseMeta
-   * guard 保留 plan（不拍不清），最终收尾才拍。
+   * 任务表收尾快照：turn 收尾清空运行时任务表**之前**拍的全量终态；清空前拍 = 中断轮同样拍到。
    *
-   * 为什么必须有它：任务表状态是 turn 内瞬态（收尾即清 + 宿主推空看板），历史回看时
-   * 任务项完成态没有任何结构化真源。本快照是重放恢复「任务项完成态」的唯一数据来源；
-   * 存量历史轮无此事件 = 任务项组不显示状态图标（诚实降级，不伪造）。
+   * 为什么必须有它：任务表是 turn 内瞬态（收尾即清 + 宿主推空看板），本快照是重放恢复
+   * 「任务项完成态」的唯一数据来源；存量历史轮无此事件 = 不显示状态图标（诚实降级，不伪造）。
    */
   | {
       type: 'plan_snapshot';
@@ -313,11 +283,9 @@ export type ProcessEvent =
       };
     }
   /**
-   * 后台任务收尾报告：turn 终态对存活后台进程**脱管**（不杀，跨轮存活）后由内核产出
-   * （定案锚：ADR-036；无存活进程则不产，纯问答常态零块）。与 plan_snapshot 同型
-   * （turn 收尾瞬态信号）：中断硬关闭（generator.return()）路径下上屏 chunk 被丢弃，
-   * 但 LLM 历史的 system 消息已由内核写入（脱管报告双通道）；本事件承载「上屏通道」的
-   * 重放真相源——历史回看收尾条由此重建。
+   * 后台任务收尾报告：turn 终态对存活后台进程**脱管**（不杀，跨轮存活）后由内核产出，
+   * 无存活进程则不产。中断硬关闭路径下上屏 chunk 被丢弃，但 LLM 历史的 system 消息已由
+   * 内核写入（双通道）——本事件承载「上屏通道」的重放真相源。
    */
   | {
       type: 'background_report';
@@ -332,15 +300,13 @@ export type ProcessEvent =
       payload: { reason: string; stopReason?: AbortStopReason };
     }
   /**
-   * 流式错误（重放可见性）：失败轮在**实时流**里已有 `AgentChunk.error`（宿主据此即时弹
-   * 提示条），但该 chunk **不落 processEvents** → 回看历史时原因丢失、只剩 generic「对话已中断」，
-   * 用户无法回答「这轮为什么没答完」。本变体把 error 落进重放轨，宿主桥接点 =
-   * `chatPanel.consumeFlow` 的 `error` 分支。
+   * 流式错误（重放可见性）：实时流的 `AgentChunk.error` **不落 processEvents** ⇒ 回看历史时
+   * 原因丢失、只剩「对话已中断」。本变体把 error 落进重放轨（宿主桥接 = `chatPanel.consumeFlow`
+   * 的 `error` 分支）。
    *
-   * 与 `aborted` 的分工（**禁互相承载**，见 `agent/types.ts` 的 `AbortStopReason` 注释）：`aborted`
-   * 由 AbortSignal 触因产生（用户停止 / 锁超时），答「谁让它停的」；本变体答「出了什么错」。
-   * 二者在 failed 路径互斥（`signal.aborted === false` 才抛错），故不构成同轮双写。
-   * `category` 与 `AgentChunk.error.category` **同源**（`LlmErrorCategory`）——展示面文案映射共用一份。
+   * 与 `aborted` 分工（**禁互相承载**）：`aborted` 答「谁让它停的」（AbortSignal 触因），
+   * 本变体答「出了什么错」；二者在 failed 路径互斥，不构成同轮双写。
+   * `category` 与 `AgentChunk.error.category` **同源**（`LlmErrorCategory`）。
    */
   | {
       type: 'error';
@@ -436,24 +402,17 @@ export type RoundEvidenceEvent =
 /**
  * 问答闭环（Round）
  *
- * 设计约束：
- * 1. 全局唯一 ID：一个 roundId 在物理存储中只对应一个问答闭环
- * 2. 包含一轮完整的 User + AI 对话
- * 3. 独立于会话存储，可被多个会话引用（分叉场景）
- * 4. Append-only 设计：完成后不可修改，如需"修改"则创建新 Round
+ * 设计约束：全局唯一 ID、包含一轮完整 User+AI 对话、独立于会话存储（可被多会话引用）、
+ * **Append-only**（完成后不可修改，需"修改"则建新 Round）。
  */
 export interface Round {
   /**
    * 全局唯一 ID（格式：round-{uuid}）
    *
-   * 唯一性保证：
-   * - 物理存储层唯一标识
-   * - 记忆溯源的唯一锚点（Memory.roundId 指向此字段）
-   * - 分叉操作的唯一引用
+   * 同时是记忆溯源的唯一锚点（`Memory.roundId` 指向此字段）与分叉操作的唯一引用。
    */
   id: string;
 
-  /** 用户消息 */
   userMessage: RoundMessage;
 
   /** AI 消息（pending 状态时可能为空） */
@@ -486,7 +445,6 @@ export interface Round {
    */
   assistantLog?: RoundMessage[];
 
-  /** 问答闭环状态 */
   status: RoundStatus;
 
   /** 创建时间（ISO 8601） */
@@ -496,12 +454,7 @@ export interface Round {
   completedAt?: string;
 
   /**
-   * 引用计数（被多少个会话引用）
-   *
-   * 用途：
-   * - 分叉时增加引用（新会话引用同一个 Round）
-   * - 删除会话时减少引用
-   * - 引用计数为 0 时可被 GC 清理
+   * 引用计数（被多少个会话引用）：分叉 +1、删除会话 −1、**归零即可被 GC 清理**。
    */
   refCount: number;
 
@@ -509,8 +462,7 @@ export interface Round {
    * 过程事件（每轮 UI 状态重建真相源，可选）
    *
    * 与 assistantMessage 同在闭环完成时刻定型（Write-once），存储于同一 Round 文件——
-   * 删 round 即删事件、分叉即共享、截断即覆盖（v1.5 单文件内聚，见
-   * process-event-log-replay-design.md §3.4）。缺省仅因 pending/error 轮无过程数据。
+   * 删 round 即删事件、分叉即共享、截断即覆盖。缺省仅因 pending/error 轮无过程数据。
    */
   processEvents?: ProcessEvent[];
 }
@@ -608,17 +560,12 @@ export interface IRoundStore {
    * 列出指定日期最近未完成（pending/error）的崩溃残留轮（step 原子落盘）。
    *
    * 用途：崩溃残留轮升级前的**只读中转**——崩溃发生在 appendAssistant 完成前时，该轮
-   * refCount=0、未登记进会话 roundIds，宿主无法从会话列表发现；但其过程已由 step 原子
-   * 检查点落盘到 pending Round。宿主重启后经此口查回，「找到」后由宿主调用收场方法
-   * （MessageHistory.appendInterrupted）**升级为正常 stop turn** 并登记入会话。
+   * refCount=0、未登记进会话 roundIds（宿主无法从会话列表发现），但过程已由 step 检查点
+   * 落盘；宿主重启后经此口查回，再调 `MessageHistory.appendInterrupted` 升级为正常 stop turn。
    *
-   * 语义约束（SSOT）：
-   * - **只读查询**，不登记会话、不改写 Round、不改变 appendAssistant 完成语义；
-   *   升级登记是独立的「收场」动作（§一·五：中断轮 = 正常 stop turn，非半成品草稿）。
-   * - **不污染正式会话 roundIds**——升级登记完成（complete + refCount>0）前，中断轮
-   *   仍是无引用中间态，本接口只处理该短暂窗口的「找到」。
-   * - 中断轮超龄后仍由 GC sweepOrphans 正常回收（refCount=0 孤儿），本接口不改变其生命周期；
-   *   打捞窗口落在启动后的升级动作内（早于 24h 存活保护），不构成误回收。
+   * 语义约束（SSOT）：① **只读**——不登记会话、不改写 Round、不改变 appendAssistant 完成语义；
+   * ② **不污染正式会话 roundIds**（升级登记完成前中断轮仍是无引用中间态）；
+   * ③ 不改变生命周期——超龄仍由 GC sweepOrphans 按 refCount=0 孤儿回收，打捞窗口早于存活保护。
    *
    * @param date - YYYY-MM-DD，按 createdAt 的前缀匹配（ISO 日期头 10 位）
    * @param limit - 最多返回条数，按 createdAt 降序（最新在前）；缺省不截断
@@ -629,13 +576,8 @@ export interface IRoundStore {
 
 // ─── 辅助函数 ───────────────────────────────────────────
 
-/**
- * 生成 Round ID（格式：round-{uuid}）
- *
- * 使用 crypto.randomUUID() 保证全局唯一性
- */
+/** 生成 Round ID（格式：round-{uuid}） */
 export function generateRoundId(): string {
-  // 使用 crypto.randomUUID()（Node.js 19+ / 现代浏览器支持）
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return `round-${crypto.randomUUID()}`;
   }

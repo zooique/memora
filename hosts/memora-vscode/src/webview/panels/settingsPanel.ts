@@ -739,7 +739,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
           version: pack?.meta.version,
           // 兜底契约包禁删标记（组员反向索引已退役：组员不感知被引用，见 ADR-028 收敛补记）
           isFallback: m.name === BUILTIN_FALLBACK_PACK,
-          // 健康徽章：内核 validateManifest 全量 issues 透传给 webview（error/warning 均渲染）
+          // 健康徽章：内核装配期的校验 issues 全量透传给 webview（error/warning 均渲染）
           issues: (pack?.validationIssues ?? []).map((i) => ({
             level: i.severity,
             message: i.message,

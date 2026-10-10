@@ -1,17 +1,8 @@
 /**
- * 工具调用辅助纯函数 — 工具调用的确定性计算面（编排本体之外的纯函数子集）。
+ * 工具调用辅助纯函数 —— 工具调用的确定性计算面：参数解析 / 结果包装 / 错误码判定。
  *
- * 设计依据（架构哲学原则「代码与模型分工」）：
- *   本文件承载「能写成纯函数」的工具处理辅助——参数解析 / 结果包装 / 错误码判定。
- *   它们**零 IO、零 LLM、零 loop 状态**，仅输入 → 输出；
- *   loop 内的编排（执行、并发、挂起、计数）**不在此处**，仍属 AgentLoop 编排本体。
- *
- * 归属段（三段式）：①确定性面 —— 故本文件 grep `llm.chat(` / `providerRouter` 应为 0。
- *
- * 与相邻模块的边界：
- *   - `toolRunner.ts`：执行「一个」工具（有副作用）。
- *   - `toolExecutor.ts`：工具注册与分发（有副作用）。
- *   - 本文件：不执行任何工具，只做「工具调用」这件事的**纯计算辅助**。
+ * 零 IO、零 LLM、零 loop 状态（仅输入 → 输出）；工具的执行与编排分属 `toolRunner.ts`（执行单个）
+ * 与 `toolExecutor.ts`（注册分发），**不在此处**。故本文件 grep `llm.chat(` 应为 0。
  */
 
 import { isRetryableErrorCode, type ToolErrorCodeValue } from '@/utils/errors.js';
@@ -76,12 +67,12 @@ const WRAP_TAIL = '\n</tool_result>';
 /**
  * `wrapToolResult` 的**逆操作**：剥出工具结果正文。
  *
- * 与包裹同模块同源（禁在别处按行/正则各自解析 —— 包裹模板一改，散落的解析器集体静默失配；
+ * 与包裹同模块同源（**禁在别处按行/正则各自解析**——包裹模板一改，散落解析器集体静默失配；
  * 往返一致性由本模块测试守卫，与 `formatSegmentationFooter`/`parseReadFileCoverage` 同先例）。
  *
- * 消费语境（台账替身回显分支②）：原文仍在上下文时，模型回读某区间的请求不必放行真读——
- * 直接从已落上下文的 tool 消息里按区间切出原文回显（见 `toolLedger.sliceCoveredLines`）。
- * 拦截语义不变（仍不执行工具），变的只是回显内容：从「顶头 400 字符替身」升级为「请求的区间原文」。
+ * 消费语境（台账替身回显分支②）：原文仍在上下文时，直接从已落上下文的 tool 消息里按区间
+ * 切出原文回显（见 `toolLedger.sliceCoveredLines`）——拦截语义不变，只是回显从
+ * 「顶头 400 字符替身」升级为「请求的区间原文」。
  *
  * @returns 正文；非本函数包裹格式（压缩占位符 / 手工构造 / 历史形态）→ undefined（调用方退化）
  */
@@ -102,12 +93,10 @@ export function unwrapToolResultBody(wrapped: string): string | undefined {
  * 服务端对 tool_call 函数名的约束 —— **字符集逐字取自 OpenAI 兼容端 400 错文**
  * （`function.name does not match pattern '^[a-zA-Z0-9_-]+$'`）。
  *
- * 判据关系：**定义期判据 ≠ 服务端判据**。
- *   - 定义期规则（`toolExecutor` 的 `^[a-zA-Z_][a-zA-Z0-9_]*$`）**不容连字符**——拿它作判据，
- *     会把服务端**接受**的 `read-file` 误判为非法（血的教训，勿收严至此）。
- *   - 本判据 = 服务端判据的**完整面**：字符集（正则）+ 长度上界（OpenAI 规范 `function.name` 上限
- *     64 字符）。长度上界是**服务端约束**，补它只会让判据更贴近服务端，不会像定义期规则那样误伤。
- *   - 内置 23 个工具名最长 16 字符，全部满足；无守卫锁死该事实——若未来新增超长名应在此回归。
+ * **定义期判据 ≠ 服务端判据**：定义期规则（`toolExecutor` 的 `^[a-zA-Z_][a-zA-Z0-9_]*$`）
+ * **不容连字符**——拿它当判据会把服务端**接受**的 `read-file` 误判非法（血的教训，勿收严至此）。
+ * 本判据 = 服务端判据的完整面（字符集 + 长度上界 64）。内置工具名最长 16 字符，全部满足；
+ * 无守卫锁死该事实——未来新增超长名应在此回归。
  */
 const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
@@ -123,7 +112,7 @@ export function isCallableToolName(name: string): boolean {
  * 滤出可发出的工具调用（判据见 `isCallableToolName`）。
  *
  * 滤掉的是模型偶发吐出的「只有 id、无 function 载荷」条目（name 与 arguments 皆空串）——
- * 它一旦写入对话历史，下一次请求必被服务端以 400 拒绝，而本地失败只报 args 解析错、不露真因。
+ * 它一旦写入对话历史，下一次请求必被服务端 400 拒绝，而本地失败只报 args 解析错、不露真因。
  */
 export function filterCallableToolCalls<T extends { function: { name: string } }>(
   calls: readonly T[],
@@ -134,18 +123,12 @@ export function filterCallableToolCalls<T extends { function: { name: string } }
 /**
  * 判断工具错误结果是否可重试（Reflection 重试分类的唯一判据）。
  *
- * **判据面优先**：入参为 `ToolOutcome` 且带 `errorCode` 时**直接读字段**——错误码是
- * 本文件自述文档要求的判据面真源，重试分类不得依赖渲染面（文本）。
- * `failedOutcomeWithCode` 已让文本前缀由该字段派生，故读文本与读字段同解，
- * 但**读字段才不依赖"文本恰好还是那个格式"这一隐性契约**。
+ * **判据面优先**：入参带 `errorCode` 时**直接读字段**——读文本等于依赖"文本恰好还是那个格式"
+ * 这一隐性契约。**回退（兼容路径，非并列真源）**：纯文本入参或未带码的 outcome
+ * （`ABORTED` 故意不入错误码体系；测试桩造的是裸文本）才解析前缀——前缀由
+ * `failedOutcomeWithCode` 从 `errorCode` 派生，与字段同源，不会给出分歧答案。
  *
- * **回退（兼容路径，非并列真源）**：入参为纯文本、或 outcome 未带码（`ABORTED` 故意
- * 不入错误码体系；测试桩 `mockExecutorReturning` 造的是裸文本 `failedOutcome`）
- * 时，解析渲染面前缀——前缀由 `failedOutcomeWithCode` 从 `errorCode` 派生，与字段同源，
- * 不会给出分歧答案。
- *
- * **不锚定行首**：结果被 `<tool_result>` 标签包裹后 `[ERR:TOOL:` 前缀位于标签之后，
- * 仍须正确识别（原 `AgentLoop.isRetryableToolError` 逐字一致）。
+ * **不锚定行首**：结果被 `<tool_result>` 包裹后前缀位于标签之后，仍须正确识别。
  */
 export function isRetryableToolError(input: ToolOutcome | string): boolean {
   if (typeof input !== 'string' && input.errorCode) {
@@ -160,42 +143,27 @@ export function isRetryableToolError(input: ToolOutcome | string): boolean {
 }
 
 /**
- * 工具结果状态（三值，**SCRIPT-2 契约层**）。
+ * 工具结果状态（三值，**SCRIPT-2 契约层**；穷尽，勿增第四值）。
  *
- * ## 为什么要有这个类型（不是"再加个枚举"）
+ * 为什么要有它：此前失败语义**寄生在文本前缀**，实测三个结构性代价——改文案即判据失效、
+ * 行首归属是隐性契约（前缀被别的标签抢首行即漏判）、前缀守卫对插值模板串**完全失明**。
+ * 本类型让失败成为**结构化事实**：判据读字段，文本降为纯渲染面。
  *
- * 此前失败语义**寄生在文本里**（前缀约定），导致三个已实测的结构性代价：
- * 判据与渲染耦合（改文案即失效）、行首归属是隐性契约（前缀被别的标签抢首行即漏判）、
- * 前缀守卫对拼接型产出**完全失明**（实测 98 行含插值模板串扫不到）。
- * 本类型让失败成为**结构化事实** —— 判据读字段，文本降为纯渲染面。
- *
- * ## 三值语义（穷尽，勿增第四值）
- *
- * · `ok`      —— 工具正常执行完成（**含"成功但无输出"**：`exitCode 0` + 空输出仍是成功）
- * · `failed`  —— 工具真的跑了但失败（非零退出 / 超时 / 抛异常 / 参数非法 / 资源不存在）
- * · `blocked` —— **我们主动挡下的**（护栏拦截 / 只读拒绝 / 幂等跳过 / fail-closed 拒绝）。
- *   语义依据 = 纪律「主动挡下的 ≠ 工具跑失败的」：它既非成功也非失败。
- *
- * **`blocked` 的产出点（B4 后全路径覆盖）**：
- *   · 执行层闸门（宿主审批拒绝 / 只读拒绝 / 幂等跳过）⇒ `ToolRunner` 直接报 `blocked`；
- *   · loop 护栏 / 台账替身 ⇒ loop 分发段推送点就地构造 `blockedOutcome`；
- *   · loop 内旁路（compress_context / remember_intel）⇒ 各自实现内构造。
+ * · `ok` —— 正常执行完成（**含"成功但无输出"**：`exitCode 0` + 空输出仍是成功）
+ * · `failed` —— 真的跑了但失败（非零退出 / 超时 / 抛异常 / 参数非法 / 资源不存在）
+ * · `blocked` —— **我们主动挡下的**（护栏 / 只读拒绝 / 幂等跳过 / fail-closed），
+ *   依据纪律「主动挡下的 ≠ 工具跑失败的」：它既非成功也非失败。
+ *   产出点：执行层闸门 ⇒ `ToolRunner` 直报；loop 护栏 / 台账替身 ⇒ 分发段就地构造；
+ *   loop 内旁路（compress_context / remember_intel）⇒ 各自实现内构造。
  */
 export type ToolStatus = 'ok' | 'failed' | 'blocked';
 
 /**
  * blocked 的原因（**11 值穷尽 · 与 status 正交**——只回答「为什么没成功」）。
  *
- * ## 为什么是独立维度而非第 4 个 status 值
- *
- * 11 种主动挡下**全部是「没成功」**，没有一种例外；它们之间的差别回答的是
- * 「为什么没成功」——两个正交问题硬塞进一个字段，字段会随护栏增加持续膨胀且语义退化。
- * 新增原因值须对应真实新语义，**禁止硬塞进既有值**（硬塞 = 原因字段退化成第二个 status）。
- *
- * 按来源分三组：
- * · loop 护栏（5）：`search_limit` / `ask_limit` / `write_loop` / `read_failed` / `read_dedup`
- * · loop 内自执行旁路（3）：`ledger_stub` / `no_compress_target` / `invalid_intel_note`
- * · 执行层闸门（3）：`permission_denied` / `readonly_denied` / `idempotent_skip`
+ * 为什么是独立维度而非第 4 个 status 值：11 种主动挡下**全部是「没成功」**，无例外；
+ * 它们之间差别回答的是「为什么没成功」。两个正交问题硬塞一个字段 ⇒ 字段随护栏增加
+ * 持续膨胀且语义退化。新增值须对应真实新语义，**禁止硬塞进既有值**。
  */
 export type BlockedReason =
   // ── loop 护栏族（与 GuardRailId 经穷尽映射对应，见 guardRail.blockedReasonOfGuard）──
@@ -219,11 +187,6 @@ export type BlockedReason =
  * `text` 是**给 LLM 看的渲染面**（保留失败前缀与退出码等证据，LLM 靠它自愈）；
  * `status` 是**给机器看的判据面**。两者同源产出、不得各自演化 ——
  * 消费者判成败**一律读 `status`**，不再解析 `text`。
- *
- * @param status        三值状态（判据面）
- * @param text          结果文本（渲染面，原工具返回值逐字不变）
- * @param blockedReason blocked 原因（仅 `status='blocked'` 出现；拦截不许原因不明）
- * @param hasRealFailure blocked 背后是否藏真失败（仅 blocked；唯 `read_failed` 为 true）
  */
 export interface ToolOutcome {
   /** 三值状态（判据面唯一真源） */
@@ -235,25 +198,21 @@ export interface ToolOutcome {
   /** blocked 背后是否藏真失败：仅 blocked 时出现；缺省 = false（主动挡下不藏失败） */
   readonly hasRealFailure?: boolean;
   /**
-   * 失败错误码：仅 `status='failed'` 出现。
+   * 失败错误码：仅 `status='failed'` 出现，**是「重试分类」的判据面真源**——
+   * `text` 的 `[ERR:TOOL:XXX]` 前缀由它派生（见 `failedOutcomeWithCode`，二者在单一构造点
+   * 同源产出一次），杜绝 SCRIPT-2 前「N 处各手抄前缀、改一处漏一处」的漂移老伤。
+   * `isRetryableToolError` 优先读本字段，无码才回退解析文本。
    *
-   * **本字段是「重试分类」的判据面真源**：`text` 中的 `[ERR:TOOL:XXX]` 前缀由它派生
-   * （见 `failedOutcomeWithCode`），二者在**单一构造点同源产出一次**——杜绝 SCRIPT-2 前
-   * 「同一错误码在 N 处各自手写文本前缀、改一处漏一处」的漂移老伤（彼时重试分类
-   * 只能回头解析文本，正是本类型的自述文档痛批的「判据与渲染耦合」反模式）。
-   * `isRetryableToolError` **优先读本字段**，无码时回退解析文本前缀（兼容路径）。
-   *
-   * 注意：`blocked` 用 `blockedReason` 回答「为什么没成功」，与本字段正交，不在此列；
+   * 注：`blocked` 用 `blockedReason` 回答「为什么没成功」，与本字段正交；
    * `ABORTED` 故意不入错误码体系（不触发 Reflection，见 toolRunner 注释）。
    */
   readonly errorCode?: ToolErrorCodeValue;
 }
 
 /**
- * 构造失败 outcome（成功不配此函数——成功是默认，直接构造对象更直白）。
- *
- * **仅用于无错误码的失败**（典型 = 故意不入错误码体系的 `ABORTED`，见 toolRunner）；
+ * 构造失败 outcome —— **仅用于无错误码的失败**（典型 = 故意不入错误码体系的 `ABORTED`）；
  * 凡有错误码的失败**一律走 `failedOutcomeWithCode`**，否则错误码又变成只在文本里存在一次。
+ * 成功不配构造函数（成功是默认，直接构造对象更直白）。
  */
 export function failedOutcome(text: string): ToolOutcome {
   return { status: 'failed', text };
@@ -262,15 +221,12 @@ export function failedOutcome(text: string): ToolOutcome {
 /**
  * 构造**带错误码**的失败 outcome（有码失败的构造出口，新增失败优先用此）。
  *
- * `text` = `` `[ERR:TOOL:${code}] ${detail}` `` 由本函数**统一派生**——错误码与其文本前缀
- * 在此**同源产出一次**。必要性（不是"多包一层"）：此前 15 处各自手抄 `[ERR:TOOL:XXX]`
- * 前缀，改一处漏一处即漂移；漂移后 `isRetryableToolError` 取不到码 ⇒ 该重试的错误
- * **静默不再重试**（Reflection 失效），症状隐蔽且无报错。收口后前缀由 `errorCode` 派生，
- * 二者不可能不一致。
+ * `text` = `[ERR:TOOL:${code}] ${detail}` 由本函数**统一派生**——错误码与文本前缀在此
+ * **同源产出一次**。必要性（不是"多包一层"）：此前 15 处各自手抄前缀，改一处漏一处即漂移；
+ * 漂移后 `isRetryableToolError` 取不到码 ⇒ 该重试的错误**静默不再重试**（Reflection 失效）。
  *
- * @param code   工具错误码（穷举于 `ToolErrorCode`；是否可重试见 `isRetryableErrorCode`）
- * @param detail 结果文本主体（纯渲染面，原样呈现给 LLM 自愈；**不含** `[ERR:TOOL:..]` 前缀）
- * @returns `status='failed'` 且携带 `errorCode` 的 outcome
+ * @param code 工具错误码（穷举于 `ToolErrorCode`；是否可重试见 `isRetryableErrorCode`）
+ * @param detail 结果文本主体（纯渲染面；**不含** `[ERR:TOOL:..]` 前缀——由本函数派生）
  */
 export function failedOutcomeWithCode(code: ToolErrorCodeValue, detail: string): ToolOutcome {
   return { status: 'failed', text: `[ERR:TOOL:${code}] ${detail}`, errorCode: code };
@@ -284,10 +240,7 @@ export function okOutcome(text: string): ToolOutcome {
 /**
  * 构造 blocked outcome（主动挡下的唯一构造出口）。
  *
- * @param reason         挡下原因（**必给**：原因不明的拦截不允许入库）
- * @param text           结果文本（渲染面）
- * @param hasRealFailure 背后是否藏真失败（仅 `read_failed` 传 true；缺省 false）
- * @returns 带原因维度的 blocked outcome
+ * `reason` **必给**（原因不明的拦截不允许入库）；`hasRealFailure` 仅 `read_failed` 传 true。
  */
 export function blockedOutcome(
   reason: BlockedReason,
@@ -316,20 +269,17 @@ export type PairingViolation =
   | { kind: 'duplicateId'; toolCallId: string }; // 同批次内 id 重复
 
 /**
- * 批次成形审计（发送边界守卫的纯谓词）：
- * 「发往 OpenAI 兼容端的 assistant.toolCalls 必须成形」这一不变量的**单一真源**——
- * 逐条配对、名字合法、id 唯一。纯函数、无状态、只读。
+ * 批次成形审计（发送边界守卫的纯谓词）：「发往 OpenAI 兼容端的 assistant.toolCalls 必须成形」
+ * 这一不变量的**单一真源**——逐条配对、名字合法、id 唯一。
  *
- * SSOT 关系：构造期散点已按此保证成形，故健康态应零违规；
- * 一旦命中 = 某散点回归（内核 bug），由调用方 fail-fast（记录并停止发送）。
- * 测试断言助手 `expectWellFormedToolPairing` 是它的**薄壳**，实现判据与断言同源。
+ * 构造期散点已按此保证成形 ⇒ 健康态零违规；命中即某散点回归（内核 bug），由调用方 fail-fast。
+ * 测试断言助手 `expectWellFormedToolPairing` 是它的薄壳，与断言同源。
  *
- * 使用时机：对**最终定型**的消息流（turn 完成 / 恢复态）审计；挂起中间态
- * （ask 尚未回答那半批）刻意暂缺 ask 调用配对，不在本守卫覆盖范围。
+ * 使用时机：只对**最终定型**的消息流（turn 完成 / 恢复态）审计；挂起中间态（ask 未答的那半批）
+ * 刻意暂缺配对，不在覆盖范围内。
  *
- * 作用域语义：`duplicateId` 按**单条 assistant 消息内**判重（同批次内重复才是恶性）；
- * 跨消息的 id 重复（如 mock 重放同一批次）不算违规——构造期用实例自增保证
- * 跨批唯一。配对（unpaired/orphan）则按整条历史全局判。
+ * 作用域：`duplicateId` 按**单条 assistant 消息内**判重（跨消息的 id 重复不算违规，构造期用
+ * 实例自增保证跨批唯一）；配对（unpaired/orphan）按整条历史全局判。
  */
 export function auditToolCallPairing(
   messages: readonly ToolPairingCandidate[],

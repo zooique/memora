@@ -130,7 +130,7 @@ export class MemoryInspector {
 
   /**
    * 列出活跃记忆（供宿主记忆管理面板），按 accessedAt 降序。
-   * search() 拒绝空查询防"静默全量返回"误用；list() 是显式声明列举——但**默认仍带 50 条上限**
+   * searchByKeyword() 拒绝空查询防"静默全量返回"误用；list() 是显式声明列举——但**默认仍带 50 条上限**
    * （安全默认，与 listDeleted 的 undefined=全部 语义刻意不同）。需要全量的调用方须
    * 显式传入上限（如 stats().total），否则静默截断。
    */
