@@ -61,7 +61,7 @@
 |---|------|------|------|------|
 | M1 | 守卫承诺失实 | `publicApiSurfaceGuard.test.ts:13` | 头注释称「变异验证见文件尾」，185 行文件里无此段——注释描述不存在的内容（项目已知复发形态） | Archi |
 | M2 | 守卫边界 | `publicApiSurfaceGuard.test.ts:119-143` | B 向只扫 §十六 区间；§十六外 231 个 backtick token 有 12 个 src 不存在（多概念词，实害低）；README 20 个同理。建议守卫头注释登记「§十六区间外不受约束」为已知边界 | Tessa+Cody |
-| M3 | 文档侧缺口 | 公开面四集合分析 | **50 个公共导出（32.5%）仅靠宿主消费、零文档提及**——文档漏写它们守卫静默（判据本是"消费 OR 承诺"，非缺陷，但消费者视角是缺口）。名单已备好可交 Docu | Tessa |
+| M3 | 文档侧缺口 | 公开面四集合分析 | **50 个公共导出（32.5%）仅靠宿主消费、零文档提及**——原判「消费者视角是缺口」**系误判**（2026-10-10 复核订正）：挂面判据本是「消费 OR 承诺」，这 50 个走消费准入（判据①）**本无文档义务**，文档义务只对承诺面（api-ref §16）；§16 首注已披露「清单非全集、以 `src/index.ts` 为准」。原评「名单已备好可交 Docu」失实（全盘 grep 实测名单不存在），且补文档方向与判据相悖（= 把宿主内部形状扩成对外承诺面） | Tessa |
 | M4 | 文法盲区 | `toolFailurePrefixGuard.test.ts:201` | 首标签文法只认全大写蛇形，`[Context summary of earlier conversation]` 等 2 处既不在扫描面也不在排除清单（实害低：非工具结果通道） | Cody |
 | M5 | 命名误导 | `src/security/confirmEntries.ts` | 键集双向相等只对账 `OPAQUE_WRITE_TOOL_NAMES`（执行面），**写入确认闸不在表内**；模块名易被读成「全部确认入口 SSOT」。改名 `executionConfirmEntries` 或头注释首行明示 | Archi |
 | M6 | 死分支 | `src/role-pack/strategyKeys.ts:199` | 「防御分支：check 无 range 的数值键（当前无此类键）」——建议编译期穷尽或删除 | Archi |

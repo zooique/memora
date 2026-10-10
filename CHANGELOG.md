@@ -562,6 +562,10 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 - **决策 ADR 补录**（`ADR-038` 工具结果三值契约 / `ADR-039` 公共导出面挂面判据）：4.0.0 两条
   Breaking 的决策 rationale 原只在不随包发布的过程稿里，现沉淀为仓库内定案锚；对外 rationale
   入口不变（本文件上方 Breaking 条）。零代码、零消费面变更。
+- **api-ref §十六 限定句修正**：⚠️ 注主句由全称「可具名导入的公开面以本节清单为准」收窄为
+  「正文表格里的类型名以本节清单为准（本节非全集，未列出的导出以 `src/index.ts` 为准）」——
+  原全称与同节首注「清单外导出以 index.ts 为准」当面矛盾（措辞折叠同族）。语义未变，只消除
+  误读面：§十六 本就是精选子集而非全集。
 
 ## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
 
