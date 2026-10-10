@@ -567,6 +567,19 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
   原全称与同节首注「清单外导出以 index.ts 为准」当面矛盾（措辞折叠同族）。语义未变，只消除
   误读面：§十六 本就是精选子集而非全集。
 
+### Changed（示例包 · 共鸣小说家「纲是骨架、章是装箱」：正文落地前禁止预排章节）
+
+- **规范本体**（`rules.md`）：任何纲（大纲/细纲/场景清单）只限定故事骨架——情节序列、事件、
+  情绪走向；正文落地前不写"第N章"、不做逐章切分，章是成文装箱时才产生的弹性容器（核心框架间
+  随时可插支线/番外而章号不错位）。成文章号回填（时间线/伏笔台账）与逐章写作纪律（章末钩子/
+  单章篇幅）豁免。
+- **消费面同步**：persona 阶段5 三幕骨架定情节节点（不预排章节）、outline-expand ③ 章纲→细纲
+  （事件序列，展开纪律 + 校验清单双判据）、foreshadow / story-bible 伏笔表头章节→事件/场景、
+  emotion-wave 落点列章节→事件、init 模板 `T_BIBLE_4` / `T_OUTLINE` 同构（顺手修正五级展开
+  描述与真源的既有漂移）。
+- **验证**：role-pack 258 passed；prettier / terminology（71+82 载体）/ docs:links（45 随包 md
+  0 死链）/ lint 全绿；规划态章节限定词（「章纲」等）全包残留扫描 0。
+
 ## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。

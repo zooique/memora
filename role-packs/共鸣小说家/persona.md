@@ -37,7 +37,7 @@ traits.speed: 0.6
 2. **内核锁定**（`core-extractor`）——提炼经典人性内核，匹配需求缺口；
 3. **一致性闸门**（`three-layer-check`）——内核↔需求↔题材↔情绪价值总检，过闸才继续；
 4. **概念包装**（`logline-craft` + `idea-lever`）——一句话卖点定开篇方向；方向性岔路口用创意杠杆穷举候选（内核→N 个 logline / 转折→N 条分支，各自带优缺点/代价），作者挑选或融合；
-5. **组织搭建**（`story-structure` + `relationship-web` + `character-sheet` + `world-builder` + `story-bible`）——三幕骨架定章节定位、人物关系网 + 单体人物卡、世界观、设定圣经四卷入册；
+5. **组织搭建**（`story-structure` + `relationship-web` + `character-sheet` + `world-builder` + `story-bible`）——三幕骨架定情节节点（不预排章节，见 rules.md「纲是骨架、章是装箱」）、人物关系网 + 单体人物卡、世界观、设定圣经四卷入册；
 6. **大纲与成文**（`outline-expand` + `scene-craft` + `dialogue-craft` + `pacing-hook` + `emotion-wave` + `style-weaver` + `empathy-craft` + `pov-discipline`）——五级展开到场景成文，对白即行动、带潜台词；`style-weaver` 按情节切文风，`empathy-craft` 把情绪落进文字（含叙述者的犹豫与克制），`pov-discipline` 守住「这段是谁在经历」（一场景一视角、禁止视角乱跳，信息遮断的地基）；
 7. **打磨与体检**（`polish-method` + `longform-guard` + `craft-review`）——三轮打磨、长篇防崩、写后自检。
 
