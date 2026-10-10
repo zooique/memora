@@ -3,7 +3,7 @@
  *
  * ## 为什么需要这个文件（B4/B5 删掉旧守卫后留下的两个实锤缺口）
  *
- * 旧版 `toolFailurePrefixGuard.test.ts` 随 `isToolFailure` 判据桥一起被物理删除，
+ * 旧版 `toolFailurePrefixGuard.test.ts` 随文本判据桥一起被物理删除，
  * 只留下 `toolRunner.test.ts` 里那条「裸失败前缀return 残留守卫」。后者有两个**实测**缺口：
  *
  * 1. **覆盖面倒退**：旧守卫扫 4 个 producer，现存守卫的 `PROD_FILES` 只有 3 个 ——
@@ -86,7 +86,11 @@ const SRC_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
  *
  * ⚠️ `agent/managers/toolCallHelpers.ts` 于 4.0.0 入列：错误码前缀的产出已从 toolRunner /
  * toolExecutor 的散落字面量**收口**到 `failedOutcomeWithCode()`（`[ERR:TOOL:${code}]` 由
- * `errorCode` 派生），该模板现由此文件产出——不入列则守卫对这一族标签失明（反向对账假绿）。
+ * `errorCode` 派生），该模板**唯一**由此文件产出——不入列则守卫对这一族标签失明（反向对账假绿）。
+ * 消费侧不自持该模板：`toolRunner` denied 通道的 PERMISSION_DENIED 分支取
+ * `failedOutcomeWithCode(...).text`；`builtinToolHandlers` 抛 `toolError` 带码、
+ * 由捕获点同函数派生；`READONLY_DENIED` / `ABORTED` 非枚举成员，保持手写
+ * 登记标签（`TOOL_RESULT_TAGS` 在案）。
  */
 const PRODUCER_FILES = [
   'agent/toolExecutor.ts',
@@ -490,7 +494,7 @@ describe('工具结果首标签 · 反向对账守卫（SCRIPT-2 B5-e 补丁）'
     const patterns = [...produced.keys()].filter((t) => templateTags.has(t)).sort();
     expect(
       patterns,
-      '拼接位必须被抓到（`skillScriptRunner.ts` 的 `[${labels.kind}_…]`、`toolRunner.ts` 的 `[ERR:TOOL:${code}]`、`backgroundTasks.ts` 的中文通知标签）。为空 ⇒ 拼接盲区复发',
+      '拼接位必须被抓到（`skillScriptRunner.ts` 的 `[${labels.kind}_…]`、`toolCallHelpers.ts` 的 `[ERR:TOOL:${code}]`、`backgroundTasks.ts` 的中文通知标签）。为空 ⇒ 拼接盲区复发',
     ).toEqual(expectedTemplates);
   });
 

@@ -15,7 +15,7 @@ import type { ToolDefinition } from '@/agent/toolExecutor.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
 import type { ITracer } from '@/agent/tracer.js';
 import { TRACE_SPANS } from '@/agent/tracer.js';
-import { MemoraError } from '@/utils/errors.js';
+import { MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
 import {
@@ -110,7 +110,7 @@ export class ToolRunner {
       );
       // SCRIPT-2 B5 后无文本判据：失败事实一律由执行器在同点显式 emit（结构化产出，
       // status 与 text 同源）；未 emit = 工具正常完成（裸文本含软降级说明与成功输出），
-      // runOne 统一兜底 ok——兜底不再扫文本前缀（原 isToolFailure 判据桥已物理删除）。
+      // runOne 统一兜底 ok——兜底不再扫文本前缀。
       const outcome = nativeOutcome ?? okOutcome(result);
       // 通知上层工具执行完成（供 outbox 幂等模式记录是否已执行）；
       // ok 判据单点 = outcome.status（与文本派生/native 产出同源，无第二次独立判断）
@@ -175,10 +175,11 @@ export class ToolRunner {
       const toolDef = this.deps.builtinTools?.find((t) => t.name === name);
       if (toolDef && !toolDef.readonly) {
         logger.warn({ tool: name }, '工具只读模式：阻止写入工具执行');
+        // 只读拦截前缀 [ERR:TOOL:READONLY_DENIED] 是独立登记标签（非 ToolErrorCode 枚举成员，
+        // 见 toolFailurePrefixGuard TOOL_RESULT_TAGS）；denied 通道机器维度用 reason（readonly_denied）。
         return {
           kind: 'denied',
           result: `[ERR:TOOL:READONLY_DENIED] 工具 "${name}" 是写入操作，在只读模式下不可用`,
-          // 只读模式拦截：原因独立于宿主审批（readonly_denied）
           reason: 'readonly_denied',
         };
       }
@@ -189,11 +190,11 @@ export class ToolRunner {
     if (preCheck?.denied) {
       const reason = preCheck.reason ?? '工具调用被拒绝';
       logger.warn({ tool: name, reason }, '工具调用被拒绝（执行前检查）');
-      // PERMISSION_DENIED 不可重试，LLM 见后会调整策略而非重试
+      // 前缀经 failedOutcomeWithCode 由错误码派生（SSOT 单源出口），与 builtinToolHandlers 同口径；
+      // PERMISSION_DENIED 不可重试，LLM 见后会调整策略而非重试。denied 通道机器维度仍用 reason。
       return {
         kind: 'denied',
-        result: `[ERR:TOOL:PERMISSION_DENIED] ${reason}`,
-        // 宿主审批拒绝 / fail-closed：permission_denied
+        result: failedOutcomeWithCode(ToolErrorCode.PERMISSION_DENIED, reason).text,
         reason: 'permission_denied',
       };
     }

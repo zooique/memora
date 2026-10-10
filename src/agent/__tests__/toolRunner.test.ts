@@ -75,6 +75,8 @@ describe('ToolRunner 单工具执行', () => {
 
     expect(result.status).toBe('blocked');
     expect(result.blockedReason).toBe('readonly_denied');
+    // 前缀形态锁死（denied 通道 text 须带 [ERR:TOOL:READONLY_DENIED]，防前缀被误改/漏产）
+    expect(result.text).toContain('[ERR:TOOL:READONLY_DENIED]');
     expect(deps.execute).not.toHaveBeenCalled();
   });
 
@@ -112,6 +114,9 @@ describe('ToolRunner 单工具执行', () => {
     const result = await runner.runOne(tc());
 
     expect(result.blockedReason).toBe('permission_denied');
+    // 前缀形态锁死（denied 通道 text 须带 [ERR:TOOL:PERMISSION_DENIED]，该前缀经
+    // failedOutcomeWithCode 由 ToolErrorCode 派生，防回到手写字面量第二真源）
+    expect(result.text).toContain('[ERR:TOOL:PERMISSION_DENIED]');
     expect(deps.execute).not.toHaveBeenCalled();
   });
 
@@ -210,8 +215,8 @@ describe('SCRIPT-2 B4：runOne 返回 ToolOutcome（结构化事实，文本降�
   });
 
   it('执行器未 emit → 兜底 ok（B5 后无文本判据：失败必须显式 emit，裸文本=正常完成）', async () => {
-    // 未 emit + 裸文本：兜底 okOutcome（原 isToolFailure 判据桥已物理删除，
-    // 失败事实若不 emit 会被吞 ⇒ 由残留守卫测试锁「生产代码零裸失败前缀 return」）
+    // 未 emit + 裸文本：兜底 okOutcome（失败事实若不 emit 会被吞 ⇒
+    // 由残留守卫测试锁「生产代码零裸失败前缀 return」）
     const okRunner = new ToolRunner(makeDeps({ execute: vi.fn(async () => 'OK') }));
     expect((await okRunner.runOne(tc())).status).toBe('ok');
 
@@ -247,7 +252,7 @@ describe('SCRIPT-2 B4：runOne 返回 ToolOutcome（结构化事实，文本降�
 });
 
 describe('SCRIPT-2 B5-e：裸失败前缀 return 残留守卫（判据桥消亡后的永久锁）', () => {
-  // 判据桥（isToolFailure）已物理删除：runOne 兜底 = ok，失败事实的唯一出口 = 执行器显式 emit。
+  // 文本判据桥已随 SCRIPT-2 B5 物理删除：runOne 兜底 = ok，失败事实的唯一出口 = 执行器显式 emit。
   // 若有人新增「裸 return 失败前缀文本」，失败会被兜底吞成成功（静默假阴性，无测试会红）——
   // 本守卫把方案收尾时的手工 grep 证明固化为永久测试：生产代码零裸失败前缀 return。
   // 覆盖面 = 三个工具执行/装配文件；软降级前缀（[KILLED] / [TASK_ALREADY_SETTLED] /
