@@ -196,7 +196,11 @@ export function describeStrategyKeys(): StrategyKeyFace[] {
           range: { min: zeroAllowed ? 0 : rule.range.min, max: rule.range.max },
         });
       } else {
-        // 防御分支：check 无 range 的数值键（当前无此类键），UI 按无区间数字框呈现
+        // 已登记的未来路径（由不变式测试守卫，当前不可达）：
+        // check 无 range 的数值键当前不存在——askOn/summaryFocus 有专属分支，
+        // 其余 check 键全带 range。新增此类键时不变式测试会红，逼作者当场决策
+        // （补 range，或加专属分支，或有意识地更新本测试放行）。
+        // 保留此分支为将来合法路径的显式兜底（不删：删了则静默丢 UI 键面）。
         faces.push({ stage, key, kind: 'number' });
       }
     }

@@ -667,4 +667,25 @@ describe('strategyKeys — describeStrategyKeys 键面派生（RP-EDIT-1）', ()
       range: { min: 0, max: 2 },
     });
   });
+
+  // ── describeStrategyKeys else 分支不变式（M6 发版前清偿）──
+  // describeStrategyKeys 的 else 分支接住「check 无 range 且无专属分支的键」——
+  // 当前不可达（askOn/summaryFocus 有专属分支，其余 check 键全带 range）。
+  // 此断言把注释里的口头承诺升级为会红的硬判据：将来新增不带 range 的 check 键
+  // 且无专属分支 → 此处红灯，逼作者当场决策（补 range / 加专属分支 / 有意识放行）。
+  it('不变式：所有 check 键均带 range 或有专属分支（describeStrategyKeys 的 else 路径当前不可达）', () => {
+    /** 有专属分支的 check 键（askOn → multi，summaryFocus → text） */
+    const DEDICATED_BRANCH_KEYS: ReadonlySet<string> = new Set(['askOn', 'summaryFocus']);
+    for (const [stage, rules] of Object.entries(STRATEGY_KEY_RULES)) {
+      for (const [key, rule] of Object.entries(rules)) {
+        if (rule.kind !== 'check') continue; // 只看 check 键（enum 键走第一分支）
+        if (DEDICATED_BRANCH_KEYS.has(key)) continue; // 有专属分支的跳过
+        expect(
+          rule.range,
+          `${stage}.${key} 是 check 键且无专属分支，必须声明 range` +
+            '（否则走 describeStrategyKeys 的 else 路径，UI 键面静默丢失）',
+        ).toBeDefined();
+      }
+    }
+  });
 });

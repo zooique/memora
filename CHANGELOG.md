@@ -544,7 +544,7 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
   ⇒ 保持手写字面量并补注释，避免误改成不存在的符号。
 - 变异验证：`PERMISSION_DENIED → UNKNOWN` 使新增断言转红后还原（证断言非空洞）。
 
-### Added（内核 · 发版前 Go/No-Go 中优先两项清偿：文法盲区登记 + Reflection 设计口径显式声明 · M4/M10）
+### Added（内核 · 发版前 Go/No-Go 中优先项清偿：文法盲区登记 + Reflection 设计口径显式声明 + 死分支不变式守卫 · M4/M6/M10）
 
 - **`toolFailurePrefixGuard` 新增文法盲区对账**（`GRAMMAR_BLIND_TAGS`）：首字符即 `[` 但逃出
   「大写蛇形」与「插值前置」两种文法的标记（上下文注入分节头 / 工具结果正文软提示 / 提取器
@@ -555,6 +555,10 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
   `run_command` / `run_code` / `run_project_script` / `run_skill_script` 四条执行链路失败返回
   不带 `errorCode` 的失败结果，不满足 retryable 触发条件 ⇒ AgentLoop 不注入
   `[REFLECTION_HINT]`；结局事实由返回文本承载，LLM 自行决定是否重试（错误码全集见 §十四）。
+- **`strategyKeys` 死分支不变式守卫**：`describeStrategyKeys` 的 else 分支（check 无 range
+  且无专属分支的数值键）当前不可达——注释从「防御分支」改为「已登记的未来路径，由不变式测试
+  守卫」。新增全量不变式测试：遍历 `STRATEGY_KEY_RULES` 所有 check 键，断言「无专属分支的
+  check 键必带 range」。变异验证：删 `temperature` 的 `range` 后测试转红（精确点名该键），还原后全绿。
 
 ## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
 
