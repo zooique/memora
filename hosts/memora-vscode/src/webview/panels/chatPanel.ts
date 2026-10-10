@@ -4072,8 +4072,8 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
            第二个 answer 静默丢弃 ⇒ 用户视角「点了没反应」）。本提示 + 按钮 disabled 消解之。 -->
       <div class="write-confirm-card__hint" id="writeConfirmHint" hidden></div>
       <div class="write-confirm-card__actions">
-        <button id="writeConfirmReject" class="write-confirm-card__btn--reject">拒绝</button>
-        <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认</button>
+        <button id="writeConfirmReject" class="write-confirm-card__btn write-confirm-card__btn--reject">拒绝</button>
+        <button id="writeConfirmOk" class="write-confirm-card__btn write-confirm-card__btn--ok">确认</button>
       </div>
     </div>
   </div>

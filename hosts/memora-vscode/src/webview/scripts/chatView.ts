@@ -5764,10 +5764,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function enterConfirmAwaitingNext(approved: boolean): void {
     writeConfirmAwaitingNext = true;
     stopConfirmCountdown();
-    if (writeConfirmOk) {
-      writeConfirmOk.disabled = true;
-      writeConfirmOk.classList.add('write-confirm-card__btn');
-    }
+    // 两键同构：JS 只翻 disabled 布尔；等待态样式（cursor/opacity）由 CSS
+    // `.write-confirm-card__btn[disabled]` 接管（基类静态在骨架上），样式类不进 JS。
+    if (writeConfirmOk) writeConfirmOk.disabled = true;
     if (writeConfirmReject) writeConfirmReject.disabled = true;
     if (writeConfirmHint) {
       writeConfirmHint.hidden = false;
@@ -5780,10 +5779,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function exitConfirmAwaitingNext(): void {
     if (!writeConfirmAwaitingNext) return;
     writeConfirmAwaitingNext = false;
-    if (writeConfirmOk) {
-      writeConfirmOk.disabled = false;
-      writeConfirmOk.classList.remove('write-confirm-card__btn');
-    }
+    if (writeConfirmOk) writeConfirmOk.disabled = false;
     if (writeConfirmReject) writeConfirmReject.disabled = false;
     if (writeConfirmHint) {
       writeConfirmHint.hidden = true;

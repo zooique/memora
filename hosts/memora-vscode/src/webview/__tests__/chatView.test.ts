@@ -8761,6 +8761,48 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       src.indexOf('<div id="inputBar">'),
     );
   });
+
+  it('审批卡按钮基类守卫：生产与夹具两键静态带 write-confirm-card__btn，等待态周期 JS 不增删类', () => {
+    // 等待态样式真源 = CSS `.write-confirm-card__btn[disabled]`（chatStyles.ts）。基类必须
+    // 静态在骨架上、由原生 disabled 触发——若改回「进等待态时 JS 补类」，漏补的键会
+    // disabled=true 却无等待态样式（悬停仍手型、无降透明），且 jsdom 证不了计算样式。
+    const prod = readFileSync(join(__dirname, '..', 'panels', 'chatPanel.ts'), 'utf8');
+    const fixture = readFileSync(join(__dirname, 'helpers', 'chatViewTestEnv.ts'), 'utf8');
+    for (const [label, src] of [
+      ['生产', prod],
+      ['夹具', fixture],
+    ] as const) {
+      expect(src, `${label}骨架缺拒绝键基类`).toContain(
+        'id="writeConfirmReject" class="write-confirm-card__btn write-confirm-card__btn--reject"',
+      );
+      expect(src, `${label}骨架缺确认键基类`).toContain(
+        'id="writeConfirmOk" class="write-confirm-card__btn write-confirm-card__btn--ok"',
+      );
+    }
+    // DOM 层：等待态进出全程两键基类在场（JS 只翻 disabled，不碰 classList）
+    mountChatView();
+    const ok = document.getElementById('writeConfirmOk') as HTMLButtonElement;
+    const reject = document.getElementById('writeConfirmReject') as HTMLButtonElement;
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_basecls',
+      targetPath: '/workspace/src/base.ts',
+      tool: 'write_file',
+      description: '写文件：base.ts',
+      permission: '',
+      beforeContent: 'a',
+      afterContent: 'b',
+      hasDiff: true,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    ok.click(); // 进等待态
+    expect(ok.disabled).toBe(true);
+    expect(ok.classList.contains('write-confirm-card__btn')).toBe(true);
+    expect(reject.classList.contains('write-confirm-card__btn')).toBe(true);
+    dispatch({ type: 'write_confirm_closed', requestId: 'wc_basecls' }); // 收卡退等待态
+    expect(ok.classList.contains('write-confirm-card__btn')).toBe(true);
+    expect(reject.classList.contains('write-confirm-card__btn')).toBe(true);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════

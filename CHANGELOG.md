@@ -584,6 +584,17 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Fixed（宿主 · 审批卡等待态样式键面统一：基类静态上骨架，JS 只翻 disabled）
+
+**附带发现（2026-10-10，P9 代码推演时顺手修）**：等待态样式真源 = CSS `.write-confirm-card__btn[disabled]`，
+但基类原先不在骨架上、由 `enterConfirmAwaitingNext` 只给确认键补类 ⇒ 拒绝键 disabled 后不命中选择器
+（悬停仍手型光标、无 0.6 降透明；整卡 `data-pending` 0.55 仍生效——纯视觉瑕疵、零功能影响）。
+
+- **修法 = 样式状态归 CSS**：基类 `write-confirm-card__btn` 静态写入生产骨架（`chatPanel.ts`）与测试夹具
+  （`chatViewTestEnv.ts`），JS 删除类加删舞步、两键同构只翻 `disabled` 布尔（样式单一真源在 CSS disabled 态选择器）。
+- **测试**：新增守卫 1 用例（源码级锁生产 + 夹具两键基类 + DOM 层等待态进出周期类在场）；
+  变异两发实测转红（夹具去基类 → 静态轴点名红；JS 恢复类舞步 → 周期轴红）后还原全绿。
+
 ### Fixed（宿主 · 多流续跑 metrics 同轮合并：前段指标不再被静默清零 · 零 schema 变更）
 
 **真机实锤**：一次 turn 分多段流完成（软暂停续跑 / ask 回答后续跑）时，每段流尾各自 emit 一条

@@ -76,8 +76,8 @@ const HTML = `
       <!-- 等待态提示（2026-10-05 P5 落地 A）：与生产 chatPanel.ts 骨架同步 -->
       <div class="write-confirm-card__hint" id="writeConfirmHint" hidden></div>
       <div class="write-confirm-card__actions">
-        <button id="writeConfirmReject" class="write-confirm-card__btn--reject">拒绝</button>
-        <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认</button>
+        <button id="writeConfirmReject" class="write-confirm-card__btn write-confirm-card__btn--reject">拒绝</button>
+        <button id="writeConfirmOk" class="write-confirm-card__btn write-confirm-card__btn--ok">确认</button>
       </div>
     </div>
   </div>
