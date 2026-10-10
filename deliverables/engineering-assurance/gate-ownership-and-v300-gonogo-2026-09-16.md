@@ -156,8 +156,8 @@
 | 项 | 判定 | 依据 |
 |---|---|---|
 | **D1** 提交信息与内容不符 | ❌ **撤回（非缺陷）** | 见 E1 |
-| **D2** 台账缺记 | ✅ **成立，需补** | `已完成任务.md` 仅 `:7` 一条 09-16（`:76` 是 09-15）；全文对 `local-ci`/`ci:local`/`pairingGuardFires` **0 命中**；审查报告（未跟踪）在库但**结论未入账** → 违红线「报告入库 ≠ 结论入账」 |
-| **D3** 出口数字过期 | ✅ **成立，且是已推送的最实缺陷** | `README.md:9` / `README.en.md:9` = `3082`、`CHANGELOG.md:7` = `3082`、`kernel-ci.yml:11` = `2337` vs 实测 **3100**。`已完成任务.md:76,90` 记明 09-15 已从 3025 → 3077 → **现为第 5 次复发** |
+| **D2** 台账缺记 | ✅ **成立，需补** | `tasks/archive/completed-history.md` 仅 `:7` 一条 09-16（`:76` 是 09-15）；全文对 `local-ci`/`ci:local`/`pairingGuardFires` **0 命中**；审查报告（未跟踪）在库但**结论未入账** → 违红线「报告入库 ≠ 结论入账」 |
+| **D3** 出口数字过期 | ✅ **成立，且是已推送的最实缺陷** | `README.md:9` / `README.en.md:9` = `3082`、`CHANGELOG.md:7` = `3082`、`kernel-ci.yml:11` = `2337` vs 实测 **3100**。`tasks/archive/completed-history.md:76,90` 记明 09-15 已从 3025 → 3077 → **现为第 5 次复发** |
 | **D4** 新脚本不在门内 | ✅ **成立，但修法不完整** | `eslint.config.mjs:7` = `**/*.ts` + `package.json:47` = `--ext .ts`（**flat config 下 `--ext` 失效，实际由 `files` 决定**）→ `.mjs` 双不匹配；`tsconfig.json:30` include = `src/**` → 亦不类型检查。**修法须覆盖根目录 `commitlint.config.mjs` / `eslint.config.mjs`**（原修法只加 `scripts/**/*.mjs`，不完整）。建议**单开一 block 用默认 parser**，勿塞进含 `tsparser` 的对象 |
 
 **D3 修正补充（Cody 补漏，主理人采纳）**：原修法只点了 `README.md:9`/`README.en.md:9`/`CHANGELOG.md:7`，**遗漏 `README.md:8` / `README.en.md:8` 的 `coverage-90%` 徽章**（同为硬编码）。→ 硬编码徽章共 **4 处**。

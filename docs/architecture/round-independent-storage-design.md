@@ -607,7 +607,7 @@ for (const replacedRoundId of loop.getReplacedRoundIds()) {
 >
 > * **`recall()` 调用形态已失效**：`recall()` 召回编排已于 2026-09-10 随跨重启恢复链**整体退役**（唯一消费者 `warmRecall` 一并删除）。现行唯一检索入口 = `search_memories` 工具 → `memoryInspector.searchByKeyword`（原名 `searchHybrid`，2026-09-18 改名）。故上方 `recall(storage, input, {…})` 代码块仅存**设计意图**，非现行实现。
 > * **排除集计算偏离既定设计（历史记录 · 已由下一条收口）**：本节写的是 `getRecentRoundIds(dialogue.recentRoundCount)`（**动态轮数**，百分比预算派生）+ `getFirstRoundId()` + `getReplacedRoundIds()`；而当时的实现用的是 `getRecentRoundIds(HOT_MEMORY_MAX_ROUNDS = 20)`——**固定 20 轮**，且丢了「首轮」与「被替换轮」两项。更晚的 T1 修订（2026-09-01，`loop.getVisibleRoundIds()` doc「装配 exclude 用」）进一步指向「按**视图精确集合**」而非按计数。
-> * **排除集收口已落地（2026-09-10，commit `b2cef58c`）**：本节记的正解方向**已实现**——排除集改用**精确并集**（`loop.getExclusionRoundIds()` = `getVisibleRoundIds ∪ getReplacedRoundIds ∪ 在途轮`），删除了固定 20 窗口；接线收口于 `assembler` → `builtinToolHandlers.setExclusionRoundIdsProvider`。上文「退化实现（固定 20 轮）」的缺口已闭合，仅存历史记录价值。原任务账本随 2026-09-10 tasks 目录整理归档入 `tasks/已完成任务.md`。
+> * **排除集收口已落地（2026-09-10，commit `b2cef58c`）**：本节记的正解方向**已实现**——排除集改用**精确并集**（`loop.getExclusionRoundIds()` = `getVisibleRoundIds ∪ getReplacedRoundIds ∪ 在途轮`），删除了固定 20 窗口；接线收口于 `assembler` → `builtinToolHandlers.setExclusionRoundIdsProvider`。上文「退化实现（固定 20 轮）」的缺口已闭合，仅存历史记录价值。原任务账本随 2026-09-10 tasks 目录整理归档入 `tasks/archive/completed-history.md`。
 
 **恢复路径对称**：`checkpointRestoreCoordinator.warmRecall`（暂停恢复的温记忆召回）同样透传
 `sessionId`（restoreFromCheckpoint 已 loadSessionMessages 同步）与 `excludeRoundIds`

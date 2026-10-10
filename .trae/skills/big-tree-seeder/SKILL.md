@@ -156,7 +156,7 @@ description: 大树模型项目播种机（匠码）。集成创意设计（矛�
 
 > 播种完成后，在退出前**必须**执行此步骤，为 grower 的全自动循环准备可消费的输入。
 
-在样板验证通过后，读取创意设计单页纸，基于主要任务列表推导模块蓝图，生成 `tasks/待完成任务.md` 和 `tasks/已完成任务.md`。格式详见 [references/rules-generation-guide.md](references/rules-generation-guide.md)。
+在样板验证通过后，读取创意设计单页纸，基于主要任务列表推导模块蓝图，生成唯一台账 `tasks/待完成任务.md`。格式详见 [references/rules-generation-guide.md](references/rules-generation-guide.md)。
 
 退出后**必须**主动询问用户：播种阶段已完成。🌲 是否立即运行「种木成林」建造项目模块？ 用户确认后立即调用 `big-tree-grower` Skill 的种木成林模式。
 

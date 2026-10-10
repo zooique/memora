@@ -7,6 +7,6 @@
 #
 # 范围纪律：只圈 format:check 的作用面（ts/json）。md 已被 .prettierignore 全域挡住、
 # 不进格式化面，故不在本文件圈定；yaml/lock 等同理（若将来放宽 format 的 glob，
-# 须先另行加 .prettierignore，背景见 tasks/已完成任务.md 2026-09-27 节 FMT-PRETTIER-1）。
+# 须先另行加 .prettierignore，背景见 tasks/archive/completed-history.md 2026-09-27 节 FMT-PRETTIER-1）。
 *.ts text eol=lf
 *.json text eol=lf

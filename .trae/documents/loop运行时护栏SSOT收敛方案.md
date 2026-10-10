@@ -62,7 +62,7 @@ const GUARD_THRESHOLDS = { writeLoop: 5, readFailed: 3 } as const;
 //   maxWebSearch = LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS（=6）
 // 注：初版曾把 duplicateToolCall/askLimit:20/maxWebSearch:8 塞进静态表（duplicateToolCall 无 guard 消费、
 // askLimit/maxWebSearch 运行时恒被覆盖 → 均为死值），且 readFailed 误复用 duplicateToolCallThreshold
-// （隐藏耦合、S6 本意颠倒）。已经同日审查修正：readFailed 独立真源化、死键清除（见 tasks/已完成任务.md §五）。
+// （隐藏耦合、S6 本意颠倒）。已经同日审查修正：readFailed 独立真源化、死键清除（见 tasks/archive/completed-history.md §五）。
 ```
 
 - **统一判定入口**：插进 `executeToolCalls` per-tool 循环、`toolPromises.push`（L1680）之前一个点，有序遍历注册表首个 `matches && shouldBlock`。
@@ -95,7 +95,7 @@ const GUARD_THRESHOLDS = { writeLoop: 5, readFailed: 3 } as const;
 - **S3 迁 write_loop**：`onExec` 承载连写递增。测试：WRITE_LOOP_STOP 残留不跨轮 + 换路径重置 + 第5次硬拦。
 - **S4 迁 ask_limit**：`life:'perInput'`，验证暂停-续跑跨续跑累计。测试红线：askLimit 回归。
 - **S5 迁 search 硬上限含副钩**：guard + `afterBlock`，验证 rebuild 幂等。测试：MAX_WEB_SEARCH_CALLS 停搜。
-- **S6 收尾**：`duplicateToolCallThreshold` 改引 `GUARD_THRESHOLDS`；删 `WRITE_LOOP_THRESHOLD` 等散常；全量 loop.test.ts（~150）+ 更新 `docs/architecture/loop-design.md`（护栏子系统章节）+ `tasks/已完成任务.md`。
+- **S6 收尾**：`duplicateToolCallThreshold` 改引 `GUARD_THRESHOLDS`；删 `WRITE_LOOP_THRESHOLD` 等散常；全量 loop.test.ts（~150）+ 更新 `docs/architecture/loop-design.md`（护栏子系统章节）+ `tasks/archive/completed-history.md`。
 
 ## 五、不带伤自检清单（红线测试）
 
@@ -112,6 +112,6 @@ const GUARD_THRESHOLDS = { writeLoop: 5, readFailed: 3 } as const;
 
 ## 六、交付物与验证
 
-**改动文件**：新增 `src/agent/guardRail.ts`；改 `src/agent/loop.ts`（评估入口 + 迁移 + 删字段 + buildSystemPrompt 加节）；补 `src/agent/__tests__/guardRail.test.ts`（注册表/生命周期/提示词渲染）+ 维护 loop.test.ts 现有用例；更新 `docs/architecture/loop-design.md`、`tasks/已完成任务.md`。
+**改动文件**：新增 `src/agent/guardRail.ts`；改 `src/agent/loop.ts`（评估入口 + 迁移 + 删字段 + buildSystemPrompt 加节）；补 `src/agent/__tests__/guardRail.test.ts`（注册表/生命周期/提示词渲染）+ 维护 loop.test.ts 现有用例；更新 `docs/architecture/loop-design.md`、`tasks/archive/completed-history.md`。
 
 **验证**：每步 S1→S6 `npx tsc --noEmit` 零错误 + `npx vitest run loop.test.ts guardRail.test.ts sessionManager.test.ts` 全绿；S6 后 `git diff` 核对被删字段无残留引用。

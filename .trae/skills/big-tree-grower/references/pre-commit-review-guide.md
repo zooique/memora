@@ -117,8 +117,8 @@ description: 提交前审查执行指南
 
 ### 任务清单体系
 
-项目使用两份文档记录任务的完整生命周期，详见 [grow-plan-template.md](grow-plan-template.md) 的"任务清单更新规范"章节。
+项目使用**单一台账**记录任务的完整生命周期，详见 [grow-plan-template.md](grow-plan-template.md) 的"任务清单更新规范"章节。
 
-### 迁移与添加条件
+### 销项与添加条件
 
-迁移条件、移除条件和添加条件详见 [grow-plan-template.md](grow-plan-template.md) 的"任务清单更新规范"章节。
+销项条件（标 ✅ 留册）、移除条件和添加条件详见 [grow-plan-template.md](grow-plan-template.md) 的"任务清单更新规范"章节。

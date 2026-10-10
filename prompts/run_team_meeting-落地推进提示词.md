@@ -43,7 +43,7 @@
 
 ### 四、必须遵守的纪律
 
-- **探索期实现**：不预写 ADR、不改 `tasks/已完成任务.md` 标题生造编号（符合 `.trae/rules/generic/exploration-decision-sedimentation-rules.md` S1/S2）；如有 TODO 记录进 `tasks/待完成任务.md`。
+- **探索期实现**：不预写 ADR、不改 `tasks/待完成任务.md` 标题生造编号（符合 `.trae/rules/generic/exploration-decision-sedimentation-rules.md` S1/S2）；如有 TODO 记录进 `tasks/待完成任务.md`。
 - **自然生长**：优先复用 `buildSystemPrompt` / `rolePackTeams` 等现有原语，**不新造**编辑/调用模型；不足 3 次重复不提取抽象。
 - **SSOT / 不带伤**：不改现有三个机制的契约；实现只做串联，不引入"工具内嵌 LLM"之外的架构震动点（若触及请标注观察点）。
 - **两个已知边界须落实**（方案 §5.3）：

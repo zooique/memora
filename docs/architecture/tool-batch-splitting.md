@@ -139,4 +139,4 @@
 
 ## 引用
 
-术语 → [terminology-anchor-rules.md](../../.trae/rules/terminology-anchor-rules.md)；前置方案 → [方案-工具批折叠合并-20260925.md](../方案-工具批折叠合并-20260925.md)；同族先例 → [方案-任务项边界产出时机前移-20260926.md](../方案-任务项边界产出时机前移-20260926.md)；审计规则 → [legacy-contract-audit-rules.md](../../.trae/rules/generic/legacy-contract-audit-rules.md)；台账 → `tasks/待完成任务.md`（§62 / §87 / §164）、`BATCH-SPLIT-1` 归宿 → [已完成任务.md](../../tasks/已完成任务.md)（2026-09-27 节）。
+术语 → [terminology-anchor-rules.md](../../.trae/rules/terminology-anchor-rules.md)；前置方案 → [方案-工具批折叠合并-20260925.md](../方案-工具批折叠合并-20260925.md)；同族先例 → [方案-任务项边界产出时机前移-20260926.md](../方案-任务项边界产出时机前移-20260926.md)；审计规则 → [legacy-contract-audit-rules.md](../../.trae/rules/generic/legacy-contract-audit-rules.md)；台账 → `tasks/待完成任务.md`（§62 / §87 / §164）、`BATCH-SPLIT-1` 归宿 → [tasks/archive/completed-history.md](../../tasks/archive/completed-history.md)（2026-09-27 节）。

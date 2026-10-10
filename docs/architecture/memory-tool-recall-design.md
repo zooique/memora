@@ -169,7 +169,7 @@ SeedPrepare.run（seed/prepare.ts:99，策略解析 memoryRecallMode/contextAsse
 > * **本行原理由已失效**：「与恢复路径 warmRecall 同源同值」——`warmRecall` / `checkpointRestoreCoordinator` 已于 **2026-09-10 减法整体退役**，已无「恢复路径」可同源。
 > * **失效方向**：`recentRoundCount > 20` → 漏剔（已在场的轮摘要被重复返回，违背本行「干净」初衷）；`recentRoundCount < 20` → 多剔（视野外的摘要也拿不到）。
 >
-> **收口定案**：排除集改用上述**精确并集**（`getVisibleRoundIds ∪ getReplacedRoundIds ∪ first`），删除固定 20 窗口；`HOT_MEMORY_MAX_ROUNDS` 随之失去该用途。**收口已落地**（commit `b2cef58c`）；原任务账本随 2026-09-10 tasks 目录整理归档入 `tasks/已完成任务.md`。
+> **收口定案**：排除集改用上述**精确并集**（`getVisibleRoundIds ∪ getReplacedRoundIds ∪ first`），删除固定 20 窗口；`HOT_MEMORY_MAX_ROUNDS` 随之失去该用途。**收口已落地**（commit `b2cef58c`）；原任务账本随 2026-09-10 tasks 目录整理归档入 `tasks/archive/completed-history.md`。
 | 返回 | **结构化溯源字段**：round-summary 命中项显式附 `sessionId`/`roundId`（与 trace_summary 参数直通）。现状溯源参数**隐式埋在 name**（`轮次摘要 {date-session} {roundId}`，roundSummaryGenerator.ts:159——LLM 解析 name 可得，但为未文档化格式契约，name 一变链路即断） | 溯源链去隐式依赖：LLM 零解析直用 trace_summary（§3.5） |
 | 描述 | 删除"回答前仅注入一次召回记忆，运行中不自动补充"残留；改写为"记忆不再自动注入；回答涉及过往决定/历史事实/用户偏好/项目背景，或对答案不确定时，先检索记忆再作答" | 行为性描述与实现同批更新（血训 2c6e54b3）；触发词与 §3.2 首轮指令/§5.3 三层缓解一致 |
 | 幂等映射 | search_memories: 'read-only'（builtinTools.ts:79）不动 | 只读工具永不跳过，语义天然正确 |

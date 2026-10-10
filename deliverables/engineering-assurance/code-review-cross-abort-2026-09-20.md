@@ -106,7 +106,7 @@
 - **主理人（甄宇航）**：编排、去重合并、本报告汇编。
 
 **证据索引（本批实测）**：
-- 工作区 6 文件未提交：`src/agent/loop.ts`(+18/−1) · `src/agent/__tests__/loop.test.ts`(+46) · `src/agent/toolResultOffload.ts`(+2/−1) · `docs/大文本统一通道-探索方案.md`(+1 行 + 2 处计数) · `tasks/待完成任务.md`(+49) · `tasks/已完成任务.md`(+4)
+- 工作区 6 文件未提交：`src/agent/loop.ts`(+18/−1) · `src/agent/__tests__/loop.test.ts`(+46) · `src/agent/toolResultOffload.ts`(+2/−1) · `docs/大文本统一通道-探索方案.md`(+1 行 + 2 处计数) · `tasks/待完成任务.md`(+49) · `tasks/archive/completed-history.md`(+4)
 - 门禁实测：`scripts/local-ci.mjs --preset=fast` → **exit 0**（receipt: `preset=fast head=065aaa36 tree=b613bc87 dirty=6`；kernel:typecheck 19.5s / host:typecheck 11.9s）
 - eslint：`src/agent/loop.ts` + `src/agent/toolResultOffload.ts` `--max-warnings 0` → exit 0
 - commitlint 预验：msgfile `memora_commit_msg_20260920d.txt` → **exit 0**；负面控制（`BADTYPE`）→ **exit 1**（闸门真跑）
