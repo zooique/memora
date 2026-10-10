@@ -85,7 +85,7 @@ await agent.close();
 
 Memora is a **brain kernel that cannot run standalone** — it has interfaces but no "form." A CLI, WebUI, desktop sprite, or novel generator can be its "host." The host gives it a body (UI), blood vessels (Provider), and neural circuits (event loops).
 
-> **Version positioning (v3.0.0)**: **Node.js-only · Zero third-party runtime deps Agent kernel**. v3.0.0 is the first stable baseline after architecture convergence. **v4.0.0 (first major)**: public export surface collapsed (−55 exports) + `agent.memory.search()` removed (`searchByKeyword()` is the sole entry); see [CHANGELOG](./CHANGELOG.md).
+> **Version positioning (v3.0.0)**: **Node.js-only · Zero third-party runtime deps Agent kernel**. v3.0.0 is the first stable baseline after architecture convergence. **v4.0.0 (first major)**: public export surface collapsed (54 exports removed; full list in the `[4.0.0]` section of [CHANGELOG](./CHANGELOG.md)) + `agent.memory.search()` removed (`searchByKeyword()` is the sole entry).
 
 ---
 
@@ -281,7 +281,7 @@ npm run build        # Compile to dist/
 
 [memora-vscode](https://github.com/zooique/memora/tree/main/hosts/memora-vscode) — The VS Code extension host (primary host), demonstrating a complete Memora integration: JSON file persistence (`.memora/memories.json`), keyword-only search, role pack management, and memory views.
 
-## Why Memora?
+## Why not cloud or framework memory?
 
 | | Memora | Cloud memory services | Framework memory modules |
 |---|---|---|---|

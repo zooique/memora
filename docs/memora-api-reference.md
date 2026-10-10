@@ -876,6 +876,8 @@ interface BackgroundTask {
 
 ## 九、作品投影（`agent.works` · WorkProjectionManager）
 
+> 注：`WorkProjectionManager` 自 4.0.0 起为**内部类型**（不可具名 import），此处仅作 `agent.works` 的签名描述；可具名 import 的公开面以 §十六 为准。
+
 作品投影是文件内容的轻量级摘要（50-100 字概要 + 结构 + 关键决策），存储在**项目级目录** `<memoraDir>/projections/<slug>.json`（不进入记忆库）。原始文件内容不进投影，Agent 通过工具按需读取。
 
 > **与记忆系统的边界**：作品投影是"作品感知"而非"对话记忆"（对话记忆唯一为 round-summary，沉淀在记忆库）。它**不参与记忆召回、不参与记忆治理**（去重/冲突检测不覆盖），随项目隔离——换项目即消失。宿主如需让模型感知投影，可显式经 `agent.works.loadAll()` 注入。
@@ -1126,6 +1128,8 @@ interface ToolOutcome {
 ## 十六、类型导出
 
 > 以下**精选子集**为宿主最常用的公开导出，全部经 `@zooique/memora` 再导出（无幻影）；未在清单中的其他导出（如 `SessionManager` / `ProviderRouter` 等）以 `src/index.ts` 为准。导出面已于 2026-10-06 收敛：只保留「宿主消费」或「本手册 / README 明文承诺」的符号，内部实现不再挂公共面。治理报告类型（`DedupReport` / `SourceHealthReport` 等）经方法返回推断，不列为显式导出。
+
+> ⚠️ **可具名导入的公开面以本节清单为准**：正文（§二 ~ §十五）表格「类型」列里的名字只用于**描述签名**，其中一部分自 4.0.0 起已降为内部类型——它们**不可具名导入**（深导入不可达），类型随 agent 对象的返回值推断即可用。
 
 ```typescript
 // Agent 与流式事件

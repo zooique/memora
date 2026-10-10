@@ -503,6 +503,47 @@ Agent 归档监听器接通，fire-and-forget 不阻塞切换主流程。
 builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中「切换前自动归档」
 谎报全部订正为三类触发的真实枚举。
 
+> 以下 4 条为 **4.0.0 定档（2026-10-08）之后、发布之前**落地的内核变更（此前沿提交散落、未在本文件归集），随 4.0.0 一并发布。
+
+### Added（内核 · ask 超时后要求 LLM 代选推荐方案并声明 · `c2477907`）
+
+- `ASK_TIMEOUT_NOTICE` 常量改写：ask 超时自动继续时，除陈述事实外，要求模型**从它自己给出的选项里
+  选一项推荐方案继续推进，并在答复中说明这是代选的及理由**；不可逆操作仍需向用户确认。
+- **不改超时语义**：`ASK_TIMEOUT_MS`（120s 自动继续）与 `CONFIRM_TIMEOUT_MS`（30min 自动拒绝）的分级
+  刻意不同，本笔只补可观测性——不动时长、不动 fail-open/fail-closed 分级。
+- 病灶（真机 round-1791449684099 实证）：旧文案只说「已自动继续」⇒ 模型据此**暗中**替用户决策
+  （写完第 4 章后直接写死「下一步默认开工第 5 章」），用户回来只看到既定事实、无从否决。
+- 一个字符串服务两个语境（渲染气泡给用户看 + 作 user 消息进模型上下文）⇒ 措辞两端都必须成立；
+  宿主 `chatPanel` 同名常量为镜像，两侧注释互相要求同值（防运行时 / 重放文案分叉）。
+
+### Fixed（内核 · 收场取轮翻转 store-first：stale pending 快照不再覆盖已落盘事件 · `01388b1a`）
+
+- `MessageHistory` 两处取轮顺序翻转：优先 `RoundStore`（SSOT，含宿主 step 检查点已落盘的
+  `processEvents`），pending 缓存降为 fallback。旧写法 pending 优先会用**无 processEvents 的
+  stale 快照覆盖 store** ⇒ 前段事件 / metrics 被静默清零、merge 结构性不可达（`METRICS-XFLOW-1`）。
+- 订正 `appendInterrupted` 注释谎报（pending 优先时 `processEvents` 无从保留）。
+
+### Fixed（内核 · 整读记账按请求起点 + 台账替身回显改为请求区间原文 · `912c1e5b` / `5cd77fdb`）
+
+- **整读记账改按请求起点**：`loop` 依 handler 不变量（无脚注 = 从请求 offset 读到末尾）记
+  `coverStart=offset`、`totalLines=offset+正文行数-1`（`offset≤1` 与旧值等价）。旧写法把
+  `offset=54` 的续读（尾段无脚注）无条件记成 1–95 ⇒ ① `offset=1` 早段读（1–53 从未覆盖）被**假拦**；
+  ② 回显按错误 `coverStart` 平移，把 L54+ 内容标成「第 1–53 行 / 共 95 行」——**行号与内容错位的
+  假事实**误导模型（真机 round-1791507775404 实锤）。
+- 新增 `READ_FILE_NOTICE_PREFIX`（生成侧 / 识别侧同引）：越界提示串带该前缀且**不进覆盖度台账**
+  （原会被记成覆盖，二次越界读命中归一判据被假拦）。
+- 台账替身回显改为**请求区间原文**：防重拦截不再把模型逼进「拿不回整份视角」的死路（防绕道复发）。
+
+### Fixed（内核 · denied 通道 PERMISSION_DENIED 前缀收口到单一构造点 · `0c7b6247`）
+
+- `toolRunner` 的 denied 通道此前手写 `[ERR:TOOL:PERMISSION_DENIED]` 字面量，与 `builtinToolHandlers`
+  走 `failedOutcomeWithCode()` 的枚举派生构成第二真源漂移风险；改走
+  `failedOutcomeWithCode(ToolErrorCode.PERMISSION_DENIED, reason).text`，发射字符串逐字符不变，
+  denied 的机器维度 `reason` 保留。
+- `READONLY_DENIED` 经 tsc 实锤**并非**枚举成员（仅为 `toolFailurePrefixGuard` 独立登记标签）
+  ⇒ 保持手写字面量并补注释，避免误改成不存在的符号。
+- 变异验证：`PERMISSION_DENIED → UNKNOWN` 使新增断言转红后还原（证断言非空洞）。
+
 ## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
