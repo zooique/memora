@@ -584,6 +584,12 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Added（宿主 · `memora.open` 默认快捷键 · HOST-KB-1）
+
+- `contributes.keybindings` 新增：`ctrl+alt+m` 打开对话面板——最高频入口此前仅活动栏图标与命令面板可达。键位静态核查零占用（VS Code 内置 bundle 与本机已装扩展 `package.json` 扫描均无 `ctrl+alt+m`；用户自定义键位恒优先于扩展默认 ⇒ 增补键位非 breaking）。来源 = 2026-10-11 新枝破土宿主缺口扫描 + 排雷分流（台账 HOST-KB-1）。
+- 排雷钉入守卫（`fileChangeCommands.test.ts` 新增第三对拍面 `keybindings`，3 用例）：① 绑定命令必须已贡献（未贡献命令按键静默无效且无报错）；② `memora.open` 键值锁 `ctrl+alt+m`（改键位 = 显式契约变更，须同步改断言）；③ 块级 hunk 命令（`confirmHunk`/`rejectHunk`，需「路径 + 块指纹」参数）**禁配键**——无参调用必然静默失败。
+- 排雷收据：原扫描结论「13 命令零 keybinding = 操作流断点」经排雷推翻大半——文件变更审查流已有状态栏项 / 编辑器标题栏按钮 / 块级 CodeLens / 改动通知按钮 / 对话区常驻条多点入口（静态 `menus` 看不见运行时入口），真实残口仅 `memora.open` 无键；低频管理命令不配。
+
 ### Changed（宿主 · 输入区附件行入盒：skill chip 归位 `#inputWrap` 内）
 
 **分层判据（2026-10-11 拍板）**：「你亲手选的、发送前可撤销的」→ 输入盒边框内的**附件行**；

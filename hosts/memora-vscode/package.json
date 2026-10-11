@@ -197,7 +197,13 @@
           "group": "navigation@2"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "memora.open",
+        "key": "ctrl+alt+m"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
