@@ -109,7 +109,8 @@ export type WebviewToExtensionMessage =
    * 由 installWebviewErrorBoundary（chatViewMain / settingsViewMain 各装配一次）捕获
    * 未处理异常（error / unhandledrejection）时 post：webview console 只进开发者工具，
    * 用户报障时拿不到，故经本通道落宿主日志留痕。同帧的界面呈现（错误卡片）由 webview
-   * 就地渲染，本通道只负责留痕，**不驱动任何 UI 状态**（宿主侧分支仅 console.warn）。
+   * 就地渲染，本通道只负责留痕，**不驱动任何 UI 状态**（chat / settings 两面板路由
+   * 分支各消费自己 webview 的上报，均仅 console.warn）。
    */
   | { type: 'host_diag'; source: string; message: string; stack?: string }
   /**

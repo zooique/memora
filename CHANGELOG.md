@@ -588,11 +588,12 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 **诊断背景（2026-10-11 宿主缺陷排雷，两项均经实证确认）**：① 两个 webview 入口的业务脚本抛未捕获异常 / 未处理 rejection 时零兜底——面板静默卡死、宿主零日志（webview console 用户拿不到）；② 错位输入（迟到回答 / 竞态 resume）被相位路由丢弃时零观测，「答了没反应」无排障线索（宿主本有 console.warn 惯例，唯丢弃类是洞）。
 
-- **T1 错误边界**（`webview/helpers/errorBoundary.ts`，依赖注入纯函数可单测）：监听 `error` / `unhandledrejection` → ① 就地插错误卡片（`textContent` 防注入、卡片单例判据风暴只插一次、含「重新打开面板可恢复」指引）；② 经**新协议通道 `host_diag`** 上报，`chatPanel` 路由落 `console.warn`（source/message/stack）——排障线索进扩展宿主 Output 日志。装配：两入口（`chatViewMain` / `settingsViewMain`）acquire 一次后**先装边界再进工厂**（初始化期错误也能抓，工厂共用同一 api 实例不破 acquire 单次纪律）；CSP `script-src` 无 unsafe-inline ⇒ 边界随 esbuild 外部脚本加载，不动 CSP。
+- **T1 错误边界**（`webview/helpers/errorBoundary.ts`，依赖注入纯函数可单测）：监听 `error` / `unhandledrejection` → ① 就地插错误卡片（`textContent` 防注入、卡片单例判据风暴只插一次、含「重新打开面板可恢复」指引）；② 经**新协议通道 `host_diag`** 上报，chat / settings **两面板路由各落** `console.warn`（source/message/stack）——排障线索进扩展宿主 Output 日志。装配：两入口（`chatViewMain` / `settingsViewMain`）acquire 一次后**先装边界再进工厂**（初始化期错误也能抓，工厂共用同一 api 实例不破 acquire 单次纪律）；CSP `script-src` 无 unsafe-inline ⇒ 边界随 esbuild 外部脚本加载，不动 CSP。
 - **T2 丢弃留痕**（`chatPanel.handleInput` 两处丢弃点）：错位 answer / 错位 resume 丢弃时 `console.warn`（含当前相位与答案数）——**观测不改路由**：对用户仍静默、不改变裁决，只让排障线索可查。同族措辞一次改齐（路由分支注释、`handleInput` 头注释同步为「丢弃并落宿主日志留痕」）。
 - **边界（诚实登记）**：主脚本加载前的失败（HTML 生成失败 / 脚本 404）发生在边界运行前，兜不住——表现为面板全空，重开面板同样可恢复；错误风暴时 Output 可能连续多条，刻意不做节流过滤（过滤会丢真实线索）。
 - **IPC 通道计数同步**：`host_diag` 入册后按 protocolGuard 同源判据重算 107 → **111**（2026-10-11 实测；差值 = 审批卡 StatusDock / 插话吸收上屏 / 角色包刷新三批各 +1 + 本批 `host_diag`；`project-rules.md` §7.6 已同步，纪律范式引文中的具体数字改抽象形态防第二真源快照）。
 - **验证**：新增 21 用例全绿（errorBoundary 8 = helper 4 + 两 Main 装配源码守卫 4；`host_diag` 路由 2；chatPanelInput 扩 2 条丢弃留痕断言）；**变异验证三发全中后还原**（去边界监听 → 4 红 / 去 `host_diag` 路由 → 2 红 / 去丢弃 warn → 2 红），`git diff` 零 MUTANT 残留，还原复跑 21/21 绿。
+- **落地审查补伤（SSOT / 不带伤复核，2026-10-11，同批收口）**：复核发现 `settingsPanel.handleMessage` **漏接 `host_diag`**——边界在 `settingsViewMain` 已装配、上报已发出，但 settings 面板路由无此分支 ⇒ 静默落空：卡片插了、日志石沉大海，卡片文案「请附 Output 日志」在 settings 场景指的日志**不存在**（装配了边界 ≠ 链路通了，半个补丁）。补接与 chatPanel 同款分支（独立于 ready 握手——边界装在工厂之前，上报可先于握手到达）+ 新增 `settingsPanelHostDiag.test.ts` 2 用例（落日志 + 零下行 + 缺 stack 不炸），删分支变异转红；protocol 注释「宿主侧分支」改齐「chat / settings 两面板」。同族用例 21 → 23。
 
 ### Added（宿主 · 命令注册面守卫：`contributes` ↔ `registerCommand` 双向对拍（第四对拍面））
 

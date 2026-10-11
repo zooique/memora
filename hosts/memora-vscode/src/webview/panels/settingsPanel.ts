@@ -149,6 +149,13 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
 
   /** 处理 webview 发来的消息（ready 握手 + 三个子视图各自的消息路由） */
   private async handleMessage(msg: WebviewToExtensionMessage): Promise<void> {
+    // webview 错误边界上报（T1）：落扩展宿主日志留痕，不驱动任何 UI 状态——与 chatPanel
+    // 同款（各面板消费自己 webview 的上报）。必须独立成分支：边界装在工厂之前，
+    // 上报可先于 ready 握手到达
+    if (msg.type === 'host_diag') {
+      console.warn(`Memora webview 未处理异常 [${msg.source}] ${msg.message}`, msg.stack ?? '');
+      return;
+    }
     // ready 握手：webview 脚本已就绪（全部子视图监听器已注册）→ 补发待切选项卡 + 统一推送三个子视图数据
     if (msg.type === 'ready') {
       // configureModel 命令可能在视图未就绪时触发：待切选项卡缓存在此，就绪后补发，
