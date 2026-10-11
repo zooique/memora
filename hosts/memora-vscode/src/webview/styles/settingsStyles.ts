@@ -124,7 +124,7 @@ export const settingsStyles = `
   }
   #roles-root .badge, #config-root .badge {
     font-size: var(--font-sm, 11px);
-    padding: 1px var(--sp-2, 6px);
+    padding: var(--sp-hair, 1px) var(--sp-2, 6px);
     border-radius: var(--radius-pill, 999px);
     background: var(--accent, #0e639c);
     color: var(--accent-foreground, #ffffff);
@@ -169,7 +169,7 @@ export const settingsStyles = `
   /* Chip：小胶囊标签（cap-chip 形态） */
   #roles-root .cap-chip {
     display: inline-block;
-    padding: 1px var(--sp-2, 6px);
+    padding: var(--sp-hair, 1px) var(--sp-2, 6px);
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
     background: var(--surface-hover, rgba(128,128,128,.2));
@@ -233,7 +233,7 @@ export const settingsStyles = `
   .security-item {
     /* 卡片外壳语言对齐记忆/技能/角色卡（单一真理源）：surface-sidebar + border .4 + margin-bottom 间距；
        不用 surface-hover（会漏同步） */
-    padding: var(--sp-3, 8px) var(--sp-4, 12px);
+    padding: var(--sp-3, 8px) var(--sp-4, 10px);
     margin-bottom: var(--sp-2, 6px);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: var(--radius, 6px);
@@ -255,7 +255,7 @@ export const settingsStyles = `
     display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px);
     padding: var(--sp-1, 4px) var(--sp-2, 6px);
     border: 1px solid var(--border-panel, rgba(128,128,128,.3));
-    border-radius: var(--radius-sm, 4px);
+    border-radius: var(--radius-sm, 2px);
     margin-bottom: var(--sp-1, 4px);
     background: var(--surface-sidebar, rgba(128,128,128,.06));
   }
@@ -272,20 +272,20 @@ export const settingsStyles = `
   .allowed-paths-add { display: flex; gap: var(--sp-2, 6px); margin-top: var(--sp-2, 6px); }
   .allowed-paths-input {
     flex: 1; min-width: 0; padding: var(--sp-1, 4px) var(--sp-2, 6px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 4px);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 2px);
     background: var(--surface-input, rgba(255,255,255,.04)); color: var(--text-primary); font-size: var(--font-sm, 11px);
   }
   /* 网页搜索引擎下拉：与路径输入同视觉语言 */
   .security-select {
     margin-top: var(--sp-2, 6px); padding: var(--sp-1, 4px) var(--sp-2, 6px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 4px);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 2px);
     background: var(--surface-input, rgba(255,255,255,.04)); color: var(--text-primary); font-size: var(--font-sm, 11px);
     max-width: 280px;
   }
   .security-select option { background: var(--surface-panel, #1e1e1e); }
 
   /* Toggle Switch（写入二次确认开关） */
-  .toggle-switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+  .toggle-switch { position: relative; display: inline-block; width: 40px; height: var(--sq-md, 22px); }
   .toggle-switch input { opacity: 0; width: 0; height: 0; }
   .toggle-slider {
     position: absolute; cursor: pointer; inset: 0;
@@ -293,7 +293,7 @@ export const settingsStyles = `
     transition: var(--dur-open); border-radius: 22px;
   }
   .toggle-slider:before {
-    position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px;
+    position: absolute; content: ""; height: var(--sq-xs, 16px); width: var(--sq-xs, 16px); left: 3px; bottom: 3px;
     background-color: white; transition: var(--dur-open); border-radius: 50%;
   }
   .toggle-switch input:checked + .toggle-slider { background-color: var(--accent, #0e639c); }
@@ -312,8 +312,8 @@ export const settingsStyles = `
   }
   .pager-btn {
     font-size: var(--font-sm, 11px);
-    padding: var(--sp-1, 3px) var(--sp-3, 8px);
-    border-radius: var(--radius-sm, 4px);
+    padding: var(--sp-1, 4px) var(--sp-3, 8px);
+    border-radius: var(--radius-sm, 2px);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
     background: var(--surface-hover, rgba(128,128,128,.12));
     color: var(--text-primary, #cccccc);

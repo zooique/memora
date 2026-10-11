@@ -179,7 +179,7 @@ export const memoryStyles = `
   /* 卡片头部删除按钮：低扰，hover 才显形，避免与展开区抢视觉、不与「清理过期」红色危险按钮撞色 */
   #memory-root .mem-del-btn {
     flex-shrink: 0;
-    width: 18px; height: 18px;
+    width: var(--sq-sm, 18px); height: var(--sq-sm, 18px);
     display: inline-flex; align-items: center; justify-content: center;
     padding: 0;
     margin-left: var(--sp-1, 4px);
@@ -201,7 +201,7 @@ export const memoryStyles = `
   /* 卡片头部编辑按钮：低扰，hover 才显形，与删除按钮同视觉重量（编辑=中性、删除=danger 拉开强度差） */
   #memory-root .mem-edit-btn {
     flex-shrink: 0;
-    width: 18px; height: 18px;
+    width: var(--sq-sm, 18px); height: var(--sq-sm, 18px);
     display: inline-flex; align-items: center; justify-content: center;
     padding: 0;
     margin-left: var(--sp-1, 4px);

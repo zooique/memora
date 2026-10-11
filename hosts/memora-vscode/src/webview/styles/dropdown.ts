@@ -88,7 +88,7 @@ export const dropdownStyles = `
   /* 下拉箭头：flex-shrink:0 保证即使名称被截断也永远外露 */
   .treedd--capsule .treedd__trigger::after {
     content: '▾'; display: inline-block; flex-shrink: 0;
-    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); margin-left: 2px;
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); margin-left: var(--sp-0, 2px);
   }
   /* 名称文本容器：负责截断（配合触发器 max-width 兜底）。
    * 通用语义类 dd-trigger-name（模型/角色共用） */

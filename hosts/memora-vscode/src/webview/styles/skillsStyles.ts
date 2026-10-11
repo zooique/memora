@@ -62,7 +62,7 @@ export const skillsStyles = `
 
   #skills-root .hint code {
     background: var(--surface-hover, rgba(128,128,128,.2));
-    padding: 1px 4px;
+    padding: var(--sp-hair, 1px) var(--sp-1, 4px);
     border-radius: var(--radius-sm, 2px);
     font-size: var(--font-sm, 11px);
   }
@@ -156,7 +156,7 @@ export const skillsStyles = `
   #skills-root .health-badge {
     font-size: var(--font-xs, 10px);
     font-weight: 600;
-    padding: 2px 6px;
+    padding: var(--sp-0, 2px) var(--sp-2, 6px);
     border-radius: var(--radius-pill, 999px);
     flex-shrink: 0;
   }
@@ -174,7 +174,7 @@ export const skillsStyles = `
   #skills-root .disabled-badge {
     font-size: var(--font-xs, 10px);
     font-weight: 600;
-    padding: 2px 6px;
+    padding: var(--sp-0, 2px) var(--sp-2, 6px);
     border-radius: var(--radius-pill, 999px);
     flex-shrink: 0;
     color: var(--skill-health-warn);
@@ -190,7 +190,7 @@ export const skillsStyles = `
     position: relative;
     display: inline-block;
     width: 40px;
-    height: 22px;
+    height: var(--sq-md, 22px);
     flex-shrink: 0;
     margin-left: auto; /* 推至卡片头部右侧（徽章区左侧），与「查看正文」按钮同侧 */
   }
@@ -206,8 +206,8 @@ export const skillsStyles = `
   #skills-root .skill-disable-slider:before {
     position: absolute;
     content: '';
-    height: 16px;
-    width: 16px;
+    height: var(--sq-xs, 16px);
+    width: var(--sq-xs, 16px);
     left: 3px;
     bottom: 3px;
     background-color: var(--accent-foreground, #ffffff);
@@ -240,7 +240,7 @@ export const skillsStyles = `
   }
   #skills-root .skill-problems li {
     font-size: var(--font-sm, 11px);
-    margin-bottom: 2px;
+    margin-bottom: var(--sp-0, 2px);
     line-height: 1.4;
   }
   #skills-root .skill-problems .prob-error { color: var(--skill-health-error); }

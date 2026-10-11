@@ -19,6 +19,7 @@ export const tokens = `
     color-scheme: light dark;
 
     /* === L1 基础令牌：间距刻度 === */
+    --sp-hair: 1px; /* 极紧凑微调（chip 内 padding 等），刻度最细一档，非布局级间距 */
     --sp-0: 2px;  /* 紧凑间距下界（菜单项间距 / 紧凑 padding） */
     --sp-1: 4px;  --sp-2: 6px;  --sp-3: 8px;
     --sp-4: 10px; --sp-5: 12px; --sp-6: 16px;
@@ -32,6 +33,13 @@ export const tokens = `
      * --dot-lg 已删（2026-10-08）：唯一消费者是已删的收起态气泡 ::after 圆点，
      * tokensClosure 僵尸令牌守卫拦截（webview mini-pill 化 94c0dba1 的连带清算）。 */
     --dot-sm: 5px; --dot-md: 6px;
+
+    /* === L1 基础令牌：方形控件尺寸（图标 / 头像 / 方形按钮） ===
+     * 本库同构模式：width 与 height 取同值成对出现。此前以裸值散落 46 处，
+     * 抽刻度后改尺寸只需动一处。语义命名取中性（sq = square）——既承载图标，
+     * 也承载头像与方形按钮，不绑死在某个组件名上。 */
+    --sq-xs: 16px; --sq-sm: 18px; --sq-md: 22px;
+    --sq-lg: 24px; --sq-xl: 28px; --sq-2xl: 32px;
 
     /* === L1 基础令牌：字号阶梯 === */
     --font-2xs: 8px;  /* 极紧凑档：刻度下界，唯一消费者 .context-ring__percent（圆环内百分比数字） */
@@ -163,7 +171,9 @@ export const tokens = `
      * 样式文件引用即契约，tokens 修改全局跟随。 */ 
     --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
     --border-subtle: var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
-    --focus: var(--vscode-focusBorder, #007fd4);
+    /* 嫁接到 --border-focus 而非各自映射 --vscode-focusBorder：此前两个令牌做同一件事
+     * 却各带一套回退值（#0e639c / #007fd4），是同一契约的第二真理源。 */
+    --focus: var(--border-focus, #007fd4);
     --text-tertiary: var(--vscode-descriptionForeground, #6e7681);
     --text-muted: var(--vscode-descriptionForeground, #9a9a9a);
     --accent-hover: var(--vscode-button-hoverBackground, #1177bb);
@@ -223,6 +233,20 @@ export const tokens = `
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
+  }
+
+  /* === Utilities：键盘焦点环（跨视图统一契约） ===
+   * 焦点环是 WCAG 2.4.7 的硬性要求，本应跨所有视图完全一致。实测此前 37 条 focus 规则中
+   * 有 **15 条是同一条声明的重复拷贝**，且焦点色分散取自 --border-focus / --focus /
+   * --vscode-focusBorder 三个来源，outline-offset 还有 2px / 1px / 0 三种取值。
+   *
+   * 用 :where() 承载 ⇒ **特异性为 0**：各视图既有的自定义焦点样式（如 summary 用
+   * box-shadow、chip 用内阴影）都能原样覆盖它、不会打架；未来新增的可聚焦元素也自动获得
+   * 焦点环，堵住「新增元素忘了写 focus 样式」这个持续泄漏的口子。
+   * 渐进增强：老环境不认 :where() 时整条规则被丢弃，退化为现状，无回归风险。 */
+  :where(button, input, select, textarea, summary, a[href], [tabindex]):focus-visible {
+    outline: 2px solid var(--border-focus, #0e639c);
+    outline-offset: 2px;
   }
 
   /* === Utilities：强制色彩模式（Windows 高对比度主题） ===
