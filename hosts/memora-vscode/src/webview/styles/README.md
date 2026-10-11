@@ -22,7 +22,7 @@ styles/
 1. **令牌即契约**：裸值只允许出现在 `tokens.ts` 的令牌定义处；其余样式文件只能引用令牌。
 2. **定义用裸值，使用用引用**：`--red: #dc2626` 是定义，`color: red` 是泄露。
 3. **例外**：动画位移（入场 translateY 等）、边框宽度、SVG 描边等「非布局间距」值允许内联，不属于铁律范围。
-4. **面板注入令牌**：`chatStyles` / `configStyles` 在自身字符串头部拼接 `${tokens}`；组件样式（dropdown）只引用令牌并保留降级默认值，保证即使脱离令牌也能兜底渲染。
+4. **面板注入令牌（聚合单一注入点）**：`settingsStyles` 在自身字符串头部拼接 `${tokens}` 并**向后聚合**四个子视图样式（`rolesStyles` / `configStyles` / `memoryStyles` / `skillsStyles`）——四者只引用令牌、**不自带注入**；`chatStyles` 头部拼接 `${tokens}` 并聚合 `dropdownStyles`（组件样式 scoped 到 `.treedd`，同样不自带注入，由 chatPanel 随 chatStyles 一并注入）。组件样式只引用令牌并保留降级默认值，保证脱离令牌也能兜底渲染。
 
 ## 令牌刻度
 

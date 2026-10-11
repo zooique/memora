@@ -39,7 +39,7 @@ export const settingsStyles = `
     z-index: 1000;
   }
   .settings-toast.show { opacity: 1; }
-  .settings-toast.error { background: var(--feedback-error-toast-bg); color: var(--text-error, #f48771); border-color: var(--feedback-error-toast-border); }
+  .settings-toast.error { background: var(--feedback-error-toast-bg); color: var(--text-error, #f14c4c); border-color: var(--feedback-error-toast-border); }
 
   /* ============ Components：选项卡栏 ============ */
   .tabs {
@@ -97,7 +97,7 @@ export const settingsStyles = `
     font-size: var(--font-md, 12px);
   }
   #roles-root .btn-ghost:hover, #config-root .btn-ghost:hover, #memory-root .btn-ghost:hover, #skills-root .btn-ghost:hover, #security-root .btn-ghost:hover {
-    background: var(--vscode-list-hoverBackground, rgba(128,128,128,.3));
+    background: var(--accent-bg-hover);
     color: var(--text-primary, #cccccc);
   }
 
@@ -126,8 +126,8 @@ export const settingsStyles = `
   }
   /* 用户角色包来源徽章：区别于激活「当前」徽章（accent 蓝），用户来源用中性格调 */
   #roles-root .badge.badge-source-user {
-    background: var(--vscode-tag-background, rgba(90, 93, 94, 0.31));
-    color: var(--vscode-tag-foreground, #cccccc);
+    background: var(--tag-bg, rgba(90, 93, 94, 0.31));
+    color: var(--tag-fg, #cccccc);
   }
   /* 角色区头部操作组（「打开目录」按钮，对齐技能区 header-actions） */
   #roles-root .header-actions {
@@ -248,10 +248,10 @@ export const settingsStyles = `
   .allowed-path-row {
     display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px);
     padding: var(--sp-1, 4px) var(--sp-2, 6px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.3));
+    border: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
     border-radius: var(--radius-sm, 2px);
     margin-bottom: var(--sp-1, 4px);
-    background: var(--surface-sidebar, rgba(128,128,128,.06));
+    background: var(--surface-sidebar, #252526);
   }
   .allowed-path-base { color: var(--text-secondary); font-style: italic; }
   .allowed-path-text { font-size: var(--font-sm, 11px); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -267,13 +267,13 @@ export const settingsStyles = `
   .allowed-paths-input {
     flex: 1; min-width: 0; padding: var(--sp-1, 4px) var(--sp-2, 6px);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 2px);
-    background: var(--surface-input, rgba(255,255,255,.04)); color: var(--text-primary); font-size: var(--font-sm, 11px);
+    background: var(--surface-input, #3c3c3c); color: var(--text-primary); font-size: var(--font-sm, 11px);
   }
   /* 网页搜索引擎下拉：与路径输入同视觉语言 */
   .security-select {
     margin-top: var(--sp-2, 6px); padding: var(--sp-1, 4px) var(--sp-2, 6px);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 2px);
-    background: var(--surface-input, rgba(255,255,255,.04)); color: var(--text-primary); font-size: var(--font-sm, 11px);
+    background: var(--surface-input, #3c3c3c); color: var(--text-primary); font-size: var(--font-sm, 11px);
     max-width: 280px;
   }
   .security-select option { background: var(--surface-panel, #1e1e1e); }
@@ -311,7 +311,7 @@ export const settingsStyles = `
     padding: var(--sp-1, 4px) var(--sp-3, 8px);
     border-radius: var(--radius-sm, 2px);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
-    background: var(--surface-hover, rgba(128,128,128,.12));
+    background: var(--surface-hover, rgba(128, 128, 128, 0.2));
     color: var(--text-primary, #cccccc);
     cursor: pointer;
   }

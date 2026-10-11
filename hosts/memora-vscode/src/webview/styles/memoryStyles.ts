@@ -72,7 +72,7 @@ export const memoryStyles = `
     border-radius: var(--radius-pill, 999px);
     white-space: nowrap;
     flex-shrink: 0;
-    background: var(--surface-code, rgba(128,128,128,.12));
+    background: var(--surface-code, rgba(127, 127, 127, 0.15));
     color: var(--text-secondary, #9aa0a6);
   }
   #memory-root .source-badge-round-summary { background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff); }
@@ -86,14 +86,14 @@ export const memoryStyles = `
     border-radius: var(--radius-pill, 999px);
     white-space: nowrap;
     flex-shrink: 0;
-    background: var(--surface-code, rgba(128,128,128,.12));
+    background: var(--surface-code, rgba(127, 127, 127, 0.15));
     color: var(--text-secondary, #9aa0a6);
-    border: 1px solid var(--surface-hover, rgba(128,128,128,.3));
+    border: 1px solid var(--surface-hover, rgba(128, 128, 128, 0.2));
   }
 
   /* 取代态 / 编辑态：round-summary 治理语义的视觉提示 */
   #memory-root .mem-card-superseded { border-style: dashed; border-color: var(--text-secondary, #9aa0a6); opacity: 0.85; }
-  #memory-root .mem-card-modified { border-left: 3px solid var(--warn, #cca700); }
+  #memory-root .mem-card-modified { border-left: 3px solid var(--warn, #d7ba7d); }
 
   #memory-root .mem-card-tags { display: flex; gap: var(--sp-1, 4px); margin-top: var(--sp-1, 4px); flex-wrap: wrap; }
   #memory-root .tag {
@@ -104,7 +104,7 @@ export const memoryStyles = `
     line-height: 1.6;
   }
   #memory-root .tag-superseded { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-secondary, #9aa0a6); }
-  #memory-root .tag-modified { background: var(--feedback-warn-bg, rgba(204,167,0,.15)); color: var(--warn, #cca700); }
+  #memory-root .tag-modified { background: var(--feedback-warn-bg, rgba(196, 160, 0, 0.15)); color: var(--warn, #d7ba7d); }
 
   /* 内容预览：单行截断，供快速扫读 */
   #memory-root .mem-card-preview {
@@ -173,7 +173,7 @@ export const memoryStyles = `
     font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);
   }
-  #memory-root .governance-detail.gov-error { color: var(--vscode-errorForeground, #f48771); }
+  #memory-root .governance-detail.gov-error { color: var(--text-error, #f14c4c); }
 
   /* ============ Components：单条删除 / 回收站 ============ */
   /* 卡片头部删除按钮：低扰，hover 才显形，避免与展开区抢视觉、不与「清理过期」红色危险按钮撞色 */
@@ -327,7 +327,7 @@ export const memoryStyles = `
     font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);
   }
-  #memory-root .mem-hint.mem-hint-error { color: var(--vscode-errorForeground, #f48771); }
+  #memory-root .mem-hint.mem-hint-error { color: var(--text-error, #f14c4c); }
 
   /* 记忆诊断区样式已退役，勿再加：诊断粒度无终端用户场景，内核治理机制自动跑 */
 `;

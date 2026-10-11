@@ -19,7 +19,7 @@ export const dropdownStyles = `
     display: inline-flex; align-items: center; justify-content: center;
     width: 26px; height: 26px; padding: 0;
     border: none; border-radius: var(--radius, 6px); cursor: pointer;
-    background: transparent; color: var(--text-primary, #1f1f1f);
+    background: transparent; color: var(--text-primary, #cccccc);
     font-size: var(--font-lg, 14px); line-height: 1;
   }
   .treedd__trigger:hover { background: var(--surface-hover, rgba(128,128,128,.2)); }
@@ -29,10 +29,10 @@ export const dropdownStyles = `
     position: absolute; right: 0; top: calc(100% + var(--sp-1, 4px));
     min-width: 168px; z-index: 100; /* 浮层高 z-index，确保覆盖而非挤压布局 */
     padding: var(--sp-1, 4px); box-sizing: border-box;
-    border: 1px solid var(--vscode-menu-border, #ccc);
+    border: 1px solid var(--menu-border, #ccc);
     border-radius: var(--radius-lg, 8px);
-    background: var(--vscode-menu-background, #ffffff);
-    color: var(--vscode-menu-foreground, #1f1f1f);
+    background: var(--menu-bg, #ffffff);
+    color: var(--menu-fg, #1f1f1f);
     box-shadow: var(--shadow-modal, 0 4px 16px rgba(0, 0, 0, 0.3));
     display: none;
     flex-direction: column; gap: var(--sp-0, 2px);
@@ -48,13 +48,13 @@ export const dropdownStyles = `
     border: none; border-radius: var(--radius, 6px); text-align: left;
     background: transparent; cursor: pointer;
     font-size: var(--font-md, 12px); line-height: 1.5;
-    color: var(--vscode-menu-foreground, #1f1f1f);
+    color: var(--menu-fg, #1f1f1f);
   }
   .treedd__item:hover,
   .treedd__item:focus-visible {
     outline: none;
-    background: var(--vscode-menu-selectionBackground, #e0e0e0);
-    color: var(--vscode-menu-selectionForeground, #1f1f1f);
+    background: var(--menu-selection-bg, #e0e0e0);
+    color: var(--menu-selection-fg, #1f1f1f);
   }
   .treedd__item.is-danger { color: var(--status-fail); }
   .treedd__item.is-danger:hover { color: var(--status-fail); }
@@ -78,10 +78,10 @@ export const dropdownStyles = `
     position: sticky; top: 0; z-index: 1;
     display: block; width: 100%; box-sizing: border-box;
     padding: var(--sp-2, 6px) var(--sp-3, 8px);
-    border: none; border-bottom: 1px solid var(--vscode-menu-border, #ccc);
+    border: none; border-bottom: 1px solid var(--menu-border, #ccc);
     border-radius: 0;
-    background: var(--vscode-menu-background, #ffffff);
-    color: var(--vscode-menu-foreground, #1f1f1f);
+    background: var(--menu-bg, #ffffff);
+    color: var(--menu-fg, #1f1f1f);
     font-size: var(--font-md, 12px); line-height: 1.5;
   }
   .treedd__search::placeholder { color: var(--text-secondary, #9aa0a6); }
@@ -89,7 +89,7 @@ export const dropdownStyles = `
   /* 菜单内分隔线：隔开「清除项（逃逸舱）」与可过滤列表，纯装饰不参与点击委托 */
   .treedd__divider {
     height: var(--sp-hair, 1px); margin: var(--sp-0, 2px) 0;
-    background: var(--vscode-menu-border, #ccc);
+    background: var(--menu-border, #ccc);
   }
   /* 列表容器（唯一重建区）：承接菜单原有 gap 节奏（容器自身也在菜单 flex/gap 里，
    * 输入框 ↔ 列表、列表内部两段间距均 = --sp-0，与全量平铺时视觉一致） */

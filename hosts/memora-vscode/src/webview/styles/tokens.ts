@@ -102,7 +102,7 @@ export const tokens = `
 
     /* === L2 语义令牌：状态指示色（工具成功/失败） === */
     --status-pass: var(--vscode-testing-iconPassed, #4ec9b0);
-    --status-fail: var(--vscode-errorForeground, #b3261e);
+    --status-fail: var(--vscode-errorForeground, #f14c4c);
 
     /* === L2 语义令牌：控件（按钮/Toast/代码块底） ===
    * 设计决策：选择"可靠的 VSCode 变量"而非"可能 transparent 的变量"。
@@ -149,7 +149,7 @@ export const tokens = `
     /* 技能健康色：error 未生效 / warn 可优化
      * 用 VSCode charts.yellow，跟随主题 */
     --skill-health-error: var(--text-error, #f14c4c);
-    --skill-health-warn: var(--vscode-charts-yellow, #d9a22b);
+    --skill-health-warn: var(--vscode-charts-yellow, #d7ba7d);
     /* Accent 背景分级（badge/hover/active 三档，chatStyles/dropdown 统一引用）
      * 用 VSCode 语义变量，跟随主题自动适配亮/暗模式：
      *   hover = listHoverBackground（列表悬停态）
@@ -165,21 +165,45 @@ export const tokens = `
      * --occ-rolepack / --occ-memory / --occ-input / --occ-output 命名重建。 */
     --occ-dialogue: var(--vscode-charts-blue, #3794ff);
 
+    /* === L2 语义令牌：菜单（dropdown.ts 引用） ===
+     *  dropdown 浮层复用 VSCode 原生 menu 语义变量；此前直引 --vscode-menu-* 散落 11 处
+     *  （SSOT 泄漏）。收进语义层，裸值回退与直引时一致 ⇒ 视觉零变化。
+     *  命名对齐 --surface-*/--border-*/--text-* 族。 */
+    --menu-bg: var(--vscode-menu-background, #ffffff);
+    --menu-fg: var(--vscode-menu-foreground, #1f1f1f);
+    --menu-border: var(--vscode-menu-border, #ccc);
+    --menu-selection-bg: var(--vscode-menu-selectionBackground, #e0e0e0);
+    --menu-selection-fg: var(--vscode-menu-selectionForeground, #1f1f1f);
+
+    /* === L2 语义令牌：图表/策略色（rolesStyles 策略 chip 引用） ===
+     *  策略 chip 直引 --vscode-charts-* 散落 7 处（SSOT 泄漏）。收进语义层；
+     *  purple/blue 回退与既有 --skill-rolepack-accent / --occ-dialogue 对齐
+     *  （同引同值，无第二套值）。命名对齐 VSCode charts.* 源 + 既有 --chart-* 使用点。 */
+    --chart-orange: var(--vscode-charts-orange, #ffa500);
+    --chart-green: var(--vscode-charts-green, #4caf50);
+    --chart-purple: var(--vscode-charts-purple, #a78bfa);
+    --chart-cyan: var(--vscode-charts-cyan, #009688);
+    --chart-blue: var(--vscode-charts-blue, #3794ff);
+
+    /* === L2 语义令牌：来源标签（settingsStyles 引用） ===
+     *  角色包「用户来源」徽章直引 --vscode-tag-*（中性灰调，区别于 accent 蓝的「当前」徽章）。
+     *  收进语义层，裸值回退与直引一致 ⇒ 视觉零变化。 */
+    --tag-bg: var(--vscode-tag-background, rgba(90, 93, 94, 0.31));
+    --tag-fg: var(--vscode-tag-foreground, #cccccc);
+
     /* === L2 语义令牌：长尾引用 ===
      * 样式文件以 var(--xxx, 裸值) 引用的令牌须在此统一定义——若本文件未定义、仅靠
      * fallback 兜底，tokens 变更不跟随（坑）。本块定义值与各引用处 fallback 保持一致；
      * 样式文件引用即契约，tokens 修改全局跟随。 */ 
     --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
     --border-subtle: var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
-    /* 嫁接到 --border-focus 而非各自映射 --vscode-focusBorder：此前两个令牌做同一件事
-     * 却各带一套回退值（#0e639c / #007fd4），是同一契约的第二真理源。 */
-    --focus: var(--border-focus, #007fd4);
+    /* --focus 已折叠进 --border-focus（消费者直引 --border-focus，SSOT 收敛 2026-10-11） */
     --text-tertiary: var(--vscode-descriptionForeground, #6e7681);
     --text-muted: var(--vscode-descriptionForeground, #9a9a9a);
     --accent-hover: var(--vscode-button-hoverBackground, #1177bb);
     --accent-soft: var(--accent-bg-subtle, rgba(14, 99, 156, 0.12));
     --danger: var(--vscode-errorForeground, #f14c4c);
-    --surface: var(--surface-page, #252526);
+    /* --surface 已折叠进 --surface-page（消费者直引 --surface-page，SSOT 收敛 2026-10-11） */
     --surface-normal: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.16));
     --surface-inverse: var(--vscode-foreground, #ffffff);
     --surface-track: var(--vscode-progressBar-background, #2a2a2a);
@@ -189,7 +213,7 @@ export const tokens = `
     --surface-active: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.24));
     --radius-md: var(--radius, 6px);
     --radius-full: var(--radius-pill, 999px);
-    --warn: var(--vscode-charts-yellow, #cca700);
+    --warn: var(--vscode-charts-yellow, #d7ba7d);
     --text-error: var(--vscode-errorForeground, #f14c4c);
 
     /* === L3 组件令牌：下拉胶囊尺寸（dropdown.ts 引用） === */
@@ -262,4 +286,13 @@ export const tokens = `
     }
     :root { --border-focus: Highlight; }
   }
+
+  /* === Utilities：全局 [hidden] 兜底（治本而非打补丁，单一真理源） ===
+   * HTML hidden 属性的 display:none 来自 UA 样式表，author 层任何 display 声明都赢它；
+   * 本仓所有显隐均经 el.hidden 属性（无 removeAttribute/setAttribute 旁路），故全局
+   * !important 兜底无误伤面。任一面板（chat/settings）新增「声明 display 且会被 JS 切
+   * hidden」的元素，无需逐条补 .xxx[hidden]，此条自动兜住。
+   * 原仅 chatStyles 内嵌 ⇒ settings 面板缺位（依赖 UA 默认属脆弱）；现提至本文件
+   * （chat/settings 两面板共用注入基），一处定义、两处生效。 */
+  [hidden] { display: none !important; }
 `;

@@ -67,7 +67,7 @@ export const rolesStyles = `
     font-size: var(--font-xs, 10px);
     padding: var(--sp-hair, 1px) var(--sp-2, 6px);
     border-radius: var(--radius-sm);
-    background: var(--accent, #007acc);
+    background: var(--accent, #0e639c);
     color: var(--accent-foreground, #ffffff);
     font-weight: 500;
     flex-shrink: 0;
@@ -120,7 +120,7 @@ export const rolesStyles = `
     font-size: var(--font-xs, 10px);
     padding: var(--sp-hair, 1px) var(--sp-2, 6px);
     border-radius: var(--radius-sm);
-    background: var(--surface-hover, rgba(128,128,128,.1));
+    background: var(--surface-hover, rgba(128, 128, 128, 0.2));
     color: var(--text-secondary, #9aa0a6);
     line-height: 1.4;
   }
@@ -128,16 +128,16 @@ export const rolesStyles = `
    * 原形态为 10 组各自独立的 Material 硬编码「淡彩底 + 彩字」：既绕开主题变量（Light /
    * 高对比度主题下对比度失配），10 种不同透明彩底本身也是视觉噪音。现形态各处 dark/light
    * 主题的对比度由 VS Code 官方 charts 调色板保证，字形可读性不再依赖本仓裸色。 */
-  #roles-root .strategy-chip.readonly { color: var(--vscode-charts-orange, #ffa500); }
-  #roles-root .strategy-chip.full { color: var(--vscode-charts-green, #4caf50); }
-  #roles-root .strategy-chip.temp-high { color: var(--vscode-charts-purple, #9c27b0); }
-  #roles-root .strategy-chip.temp-mid { color: var(--vscode-charts-cyan, #009688); }
-  #roles-root .strategy-chip.temp-low { color: var(--vscode-charts-blue, #2196f3); }
-  #roles-root .strategy-chip.reasoning-auto { color: var(--vscode-charts-green, #4caf50); }
-  #roles-root .strategy-chip.reasoning-manual { color: var(--vscode-charts-orange, #ff9800); }
-  #roles-root .strategy-chip.output-limit { color: var(--text-secondary, #9e9e9e); }
+  #roles-root .strategy-chip.readonly { color: var(--chart-orange, #ffa500); }
+  #roles-root .strategy-chip.full { color: var(--chart-green, #4caf50); }
+  #roles-root .strategy-chip.temp-high { color: var(--chart-purple, #a78bfa); }
+  #roles-root .strategy-chip.temp-mid { color: var(--chart-cyan, #009688); }
+  #roles-root .strategy-chip.temp-low { color: var(--chart-blue, #3794ff); }
+  #roles-root .strategy-chip.reasoning-auto { color: var(--chart-green, #4caf50); }
+  #roles-root .strategy-chip.reasoning-manual { color: var(--chart-orange, #ffa500); }
+  #roles-root .strategy-chip.output-limit { color: var(--text-secondary, #9aa0a6); }
   /* 兜底契约包定位 chip（能力标签区，灰色系） */
-  #roles-root .strategy-chip.fallback { color: var(--text-tertiary, #607d8b); }
+  #roles-root .strategy-chip.fallback { color: var(--text-tertiary, #6e7681); }
 
   /* ============ Components：健康区（manifest 校验问题，镜像技能 health-badge 模式） ============ */
   /* 徽章样式：复制技能侧 #skills-root .health-badge 形态，但用 #roles-root 作用域——避免把技能
@@ -150,7 +150,7 @@ export const rolesStyles = `
     padding: var(--sp-2, 6px);
     border: 1px solid var(--border, rgba(128,128,128,.25));
     border-radius: var(--radius-md, 6px);
-    background: var(--surface, rgba(0,0,0,.06));
+    background: var(--surface-page, #1e1e1e);
   }
   #roles-root .role-health-badge {
     font-size: var(--font-xs, 10px);
@@ -179,12 +179,12 @@ export const rolesStyles = `
   /* ============ Components：折叠详情区（专家挖掘） ============ */
   #roles-root .card-details {
     margin-top: var(--sp-1, 4px);
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.15));
+    border-top: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
     padding-top: var(--sp-2, 6px);
   }
   #roles-root .card-details summary {
     font-size: var(--font-xs, 10px);
-    color: var(--text-tertiary, #666);
+    color: var(--text-tertiary, #6e7681);
     cursor: pointer;
     user-select: none;
     padding: var(--sp-0, 2px) 0;
@@ -223,19 +223,19 @@ export const rolesStyles = `
   }
   #roles-root .trait-label {
     font-size: var(--font-xs, 10px);
-    color: var(--text-tertiary, #666);
+    color: var(--text-tertiary, #6e7681);
     min-width: var(--sq-xl, 28px);
   }
   #roles-root .trait-bar {
     flex: 1;
     height: 3px;
-    background: var(--border-panel, rgba(128,128,128,.2));
+    background: var(--border-panel, rgba(128, 128, 128, 0.4));
     border-radius: var(--radius-sm, 2px);
     overflow: hidden;
   }
   #roles-root .trait-fill {
     height: 100%;
-    background: var(--accent, #007acc);
+    background: var(--accent, #0e639c);
     border-radius: var(--radius-sm, 2px);
     /* 🔴 曾长期写 width 0var(--dur-slow)：var() 替换后成 width 0300ms，整条声明
      * 语法非法被丢弃 ⇒ 特质条宽度过渡从未生效（0 是该行被删的旧时长残留）。 */
@@ -246,8 +246,8 @@ export const rolesStyles = `
   /* 小组条：卡片底部队伍阵容 + 创建/编辑队伍入口 */
   #roles-root .team-ribbon {
     display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px);
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.2));
-    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.2));
+    border-top: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
+    border-bottom: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
     padding: var(--sp-2, 6px) 0;
     margin: var(--sp-1, 4px) var(--sp-3, 8px) 0;
   }
@@ -259,7 +259,7 @@ export const rolesStyles = `
   /* 遗留队伍区块：组长已卸载的组置顶标注（检测视图，用户主动清理）
      令牌复用既有警示色（feedback-warn-* / --warn），不另造 status-warning-* 幽灵令牌 */
   #roles-root .legacy-teams {
-    border: 1px solid var(--feedback-warn-accent, rgba(215, 186, 125, 0.4));
+    border: 1px solid var(--feedback-warn-accent, #d7ba7d);
     background: var(--feedback-warn-bg, rgba(196, 160, 0, 0.15));
     border-radius: var(--radius-md, 6px);
     padding: var(--sp-2, 6px) var(--sp-3, 8px);
@@ -307,9 +307,9 @@ export const rolesStyles = `
     border-radius: var(--radius, 6px);
     cursor: pointer;
   }
-  #roles-root .team-modal-item:hover { background: var(--surface-hover, rgba(128,128,128,.08)); }
+  #roles-root .team-modal-item:hover { background: var(--surface-hover, rgba(128, 128, 128, 0.2)); }
   #roles-root .team-modal-item.checked { background: var(--surface-checked, rgba(156, 39, 176, 0.12)); }
-  #roles-root .team-modal-hint { font-size: var(--font-xs, 10px); color: var(--text-tertiary, #666); margin: var(--sp-2, 6px) 0; }
+  #roles-root .team-modal-hint { font-size: var(--font-xs, 10px); color: var(--text-tertiary, #6e7681); margin: var(--sp-2, 6px) 0; }
   #roles-root .team-modal-actions { display: flex; justify-content: flex-end; gap: var(--sp-2, 6px); }
   #roles-root .team-modal-actions .btn { padding: var(--sp-0, 2px) var(--sp-2, 6px); font-size: var(--font-xs, 10px); }
   #roles-root .team-modal-del { margin-right: auto; }
@@ -323,11 +323,11 @@ export const rolesStyles = `
   #roles-root .team-modal.role-detail { width: min(480px, calc(100vw - 48px)); }
   #roles-root .role-detail-body { overflow-y: auto; min-height: 60px; font-size: var(--font-sm, 11px); padding: var(--sp-1, 4px) 0; }
   /* 阶段组头（回答前/回答中/回答后/全局） */
-  #roles-root .role-detail-stage { font-weight: 600; font-size: var(--font-xs, 10px); color: var(--text-tertiary, #666); margin: var(--sp-2, 6px) 0 var(--sp-1, 4px); }
+  #roles-root .role-detail-stage { font-weight: 600; font-size: var(--font-xs, 10px); color: var(--text-tertiary, #6e7681); margin: var(--sp-2, 6px) 0 var(--sp-1, 4px); }
   /* 查看模式行：标签 + 值（title 悬停含义） */
   #roles-root .role-detail-row { display: flex; gap: var(--sp-2, 6px); padding: var(--sp-1, 4px); border-radius: var(--radius, 6px); }
-  #roles-root .role-detail-row:hover { background: var(--surface-hover, rgba(128,128,128,.08)); }
-  #roles-root .role-detail-label { color: var(--text-tertiary, #666); flex-shrink: 0; min-width: 96px; }
+  #roles-root .role-detail-row:hover { background: var(--surface-hover, rgba(128, 128, 128, 0.2)); }
+  #roles-root .role-detail-label { color: var(--text-tertiary, #6e7681); flex-shrink: 0; min-width: 96px; }
   #roles-root .role-detail-value { word-break: break-all; }
   /* 编辑模式行：标签 + 控件 */
   #roles-root .role-detail-form-row { display: flex; align-items: center; gap: var(--sp-2, 6px); padding: var(--sp-0, 2px) var(--sp-1, 4px); }
@@ -340,14 +340,14 @@ export const rolesStyles = `
     font-size: var(--font-sm, 11px);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: var(--radius, 6px);
-    background: var(--surface-input, rgba(128,128,128,.1));
+    background: var(--surface-input, #3c3c3c);
     color: inherit;
   }
   /* 数值键实时检测：超出键面 range（input[min]/max，与内核同源）即红框即时反馈。
      纯 CSS 消费既有属性零 JS；留空 = 用默认值（合法语义，:out-of-range 不命中空值）。
      失效前提是键面 range 缺失——由 rolesKeyface 守卫锁死（number 键必须带 range）。 */
   #roles-root .role-detail-form-row input[type='number']:out-of-range {
-    border-color: var(--status-fail, #b3261e);
+    border-color: var(--status-fail, #f14c4c);
   }
   /* 多选（askOn）：checkbox 组横排换行 */
   #roles-root .role-detail-multi { display: flex; flex-wrap: wrap; gap: var(--sp-1, 4px) var(--sp-2, 6px); flex: 1; min-width: 0; }
@@ -360,6 +360,6 @@ export const rolesStyles = `
   /* ============ Components：版本号 ============ */
   #roles-root .card-version {
     font-size: var(--font-xs, 10px);
-    color: var(--text-tertiary, #666);
+    color: var(--text-tertiary, #6e7681);
   }
 `;

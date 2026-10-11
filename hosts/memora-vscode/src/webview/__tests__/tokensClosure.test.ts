@@ -263,3 +263,144 @@ describe('设计令牌 fallback 一致性守卫（防第二套值）', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * 颜色版 fallback 一致性守卫 —— 堵住「第三套值」
+ *
+ * 背景：上方 px 守卫只管 `var(--x, Npx)` 的数值回退。颜色回退 `var(--sp-x, <color>)`
+ * 长期处于守卫盲区（见旧注释「颜色另行处理」）。实测（递归解析令牌定义最内层颜色后）
+ * 曾存在 84 处漂移：强度随手写（如 `--surface-hover` 回退散落 .04/.08/.10/.2）、
+ * 以及语义冲突（如 `--accent` 回退亮蓝 #4fc1ff vs 定义深蓝 #0e639c、--surface-code
+ * 黑透明 vs 灰透明）。已全量对齐到令牌最内层颜色（耦合主路径下回退是死值，零视觉影响）。
+ *
+ * 判据形态与 px 守卫同构，但更强调「最内层颜色」：
+ *   token 定义普遍是双层 `var(--vscode-y, INNER)`，样式回退只在该令牌整体缺失时生效，
+ *   故回退应等于 INNER（令牌定义的第二跳），而非任意裸色——否则脱钩场景会出现
+ *   「第三套值」与令牌定义不一致。
+ * 反向守卫：扫不到足量颜色回退引用即说明提取口径失效（空集恒过）。
+ */
+function findVarsBalanced(str: string): { name: string; fb?: string }[] {
+  const out: { name: string; fb?: string }[] = [];
+  let i = 0;
+  while (i < str.length) {
+    if (str.startsWith('var(', i)) {
+      const open = i + 3;
+      let depth = 0;
+      let j = open;
+      for (; j < str.length; j++) {
+        if (str[j] === '(') depth++;
+        else if (str[j] === ')') {
+          depth--;
+          if (depth === 0) break;
+        }
+      }
+      const inner = str.slice(open + 1, j);
+      const comma = inner.indexOf(',');
+      let name: string;
+      let fb: string | undefined;
+      if (comma === -1) {
+        name = inner.trim();
+        fb = undefined;
+      } else {
+        name = inner.slice(0, comma).trim();
+        fb = inner.slice(comma + 1).trim();
+      }
+      if (name.startsWith('--')) name = name.slice(2);
+      out.push({ name, fb });
+      i = j + 1;
+    } else {
+      i++;
+    }
+  }
+  return out;
+}
+
+const colorDefs = new Map<string, string>();
+for (const m of tokensText.matchAll(/--([\w-]+)\s*:\s*([^;]+);/g)) {
+  colorDefs.set(m[1], m[2].trim());
+}
+
+const colorInnermostMemo = new Map<string, string | undefined>();
+function colorInnermost(name: string, stack = new Set<string>()): string | undefined {
+  if (colorInnermostMemo.has(name)) return colorInnermostMemo.get(name);
+  if (stack.has(name)) return undefined;
+  stack.add(name);
+  const raw = colorDefs.get(name);
+  let result: string | undefined;
+  if (!raw) {
+    result = undefined;
+  } else {
+    const t = raw.trim();
+    if (/^#([0-9a-fA-F]{3,8})\b$/.test(t) || (/^rgba?\(/.test(t) && t.endsWith(')'))) {
+      result = t;
+    } else {
+      const vars = findVarsBalanced(raw);
+      if (vars.length === 1) {
+        const v = vars[0];
+        if (v.name.startsWith('vscode-')) {
+          result = v.fb;
+        } else {
+          const inner = colorInnermost(v.name, stack);
+          result = inner !== undefined ? inner : v.fb;
+        }
+      } else {
+        let fb: string | undefined;
+        for (let k = vars.length - 1; k >= 0; k--) {
+          if (vars[k].fb !== undefined) {
+            fb = vars[k].fb;
+            break;
+          }
+        }
+        result = fb;
+      }
+    }
+  }
+  stack.delete(name);
+  colorInnermostMemo.set(name, result);
+  return result;
+}
+
+function normalizeColor(s: string): string {
+  let r = s.trim().toLowerCase().replace(/\s+/g, '');
+  if (r[0] === '#') {
+    if (r.length === 4) r = '#' + r[1] + r[1] + r[2] + r[2] + r[3] + r[3];
+    if (r.length === 5) r = '#' + r[1] + r[1] + r[2] + r[2] + r[3] + r[3];
+    return r;
+  }
+  r = r.replace(/^rgba?\(/, 'rgba(');
+  r = r.replace(/(^|[^\d.])\.(\d)/g, '$10.$2');
+  return r;
+}
+
+describe('设计令牌颜色 fallback 一致性守卫（防第三套值）', () => {
+  it('样式层的 var(--sp-x, <color>) 回退值须等于令牌最内层颜色', () => {
+    const drift: string[] = [];
+    let scanned = 0;
+    for (const name of readdirSync(STYLES_DIR)) {
+      if (!name.endsWith('.ts') || name === 'tokens.ts') continue;
+      const text = readFileSync(join(STYLES_DIR, name), 'utf8');
+      for (const m of text.matchAll(
+        /var\(\s*--([\w-]+)\s*,\s*((?:#[0-9a-fA-F]{3,8}\b)|(?:rgba?\([^()]*(?:\([^()]*\))?[^()]*\)))\s*\)/g,
+      )) {
+        const tokenName = m[1];
+        const fb = m[2];
+        if (tokenName.startsWith('vscode-')) continue;
+        scanned++;
+        const target = colorInnermost(tokenName);
+        if (target === undefined) continue; // 主题-only 令牌（定义无颜色回退），其 fallback 是唯一安全网，豁免
+        if (normalizeColor(target) !== normalizeColor(fb)) {
+          drift.push(`${name}: var(--${tokenName}, ${fb}) 与令牌最内层颜色 ${target} 不一致`);
+        }
+      }
+    }
+    // 反向守卫：扫不到足量颜色回退引用说明提取口径已失效
+    expect(
+      scanned,
+      '未扫到任何 var(--sp-x, <color>) 形式的引用——提取正则或路径已失效',
+    ).toBeGreaterThan(100);
+    expect(
+      drift,
+      `以下颜色回退值与令牌最内层颜色漂移（脱钩场景会形成第三套值，修法：把回退值改为令牌最内层颜色）：\n${drift.join('\n')}`,
+    ).toEqual([]);
+  });
+});

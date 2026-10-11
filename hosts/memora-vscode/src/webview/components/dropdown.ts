@@ -11,6 +11,10 @@
  *     支持动态渲染的选项（模型列表等），杜绝 forEach 静态绑定漏绑问题；
  *   - 初始化遍历所有 .treedd 实例，而非只取第一个；
  *   - 样式见 styles/dropdown.ts；本组件导出 HTML 模板 + 初始化绑定两部分。
+ *   - **令牌注入前提（勿自带注入）**：dropdownStyles 不内嵌 `${tokens}`，其颜色/间距令牌
+ *     由挂载面板统一注入。当前唯一挂载点 = chatPanel（`styles: \`${chatStyles}\n${dropdownStyles}\``，
+ *     chatStyles 头部已注入 tokens）。若 dropdown 被移到不注入 tokens 的面板，必须在该面板
+ *     显式注入 tokens，否则 dropdown 的 sp-* 系列令牌会全部落到裸色回退（第三套值）。
  *   - 依赖方向：本组件引 `../scripts/icons.js`（纯叶子：常量 +
  *     纯函数，零副作用、零外部 import）供默认触发器取图标，并引 `../styles/dropdown.js`。
  *     注意 scripts/chatView.ts 反向引本组件 → 目录层面构成 **components ⇄ scripts 双向**。
