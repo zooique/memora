@@ -201,7 +201,8 @@ export const skillsStyles = `
     inset: 0;
     background-color: var(--border-panel, rgba(128,128,128,.4));
     transition: var(--dur-open);
-    border-radius: 22px;
+    /* 40×22 轨道的胶囊形态：--radius-pill（999px）经 CSS 半径 clamp 后与原 22px 渲染完全一致 */
+    border-radius: var(--radius-pill, 999px);
   }
   #skills-root .skill-disable-slider:before {
     position: absolute;

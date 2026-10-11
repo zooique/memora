@@ -65,7 +65,6 @@ export const settingsStyles = `
     color: var(--accent-foreground, #ffffff);
     background: var(--accent, #0e639c);
   }
-  .tab-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
 
   /* ============ Components：通用按钮变体 ============
    * 设置面板按钮形态单一真理源：primary / secondary / danger / ghost 四种变体，不一致即 SSOT 违规。
@@ -90,11 +89,6 @@ export const settingsStyles = `
   #roles-root .btn:disabled, #config-root .btn:disabled, #memory-root .btn:disabled, #skills-root .btn:disabled, #security-root .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-  #roles-root .btn:focus-visible, #config-root .btn:focus-visible, #memory-root .btn:focus-visible, #skills-root .btn:focus-visible,
-  #security-root .btn:focus-visible {
-    outline: 2px solid var(--border-focus, #0e639c);
-    outline-offset: 2px;
   }
   #roles-root .btn-ghost, #config-root .btn-ghost, #memory-root .btn-ghost, #skills-root .btn-ghost, #security-root .btn-ghost {
     background: var(--btn-secondary-bg);
@@ -290,7 +284,9 @@ export const settingsStyles = `
   .toggle-slider {
     position: absolute; cursor: pointer; inset: 0;
     background-color: var(--border-panel, rgba(128,128,128,.4));
-    transition: var(--dur-open); border-radius: 22px;
+    transition: var(--dur-open);
+    /* 40×22 轨道的胶囊形态：--radius-pill（999px）经 CSS 半径 clamp 后与原 22px 渲染完全一致 */
+    border-radius: var(--radius-pill, 999px);
   }
   .toggle-slider:before {
     position: absolute; content: ""; height: var(--sq-xs, 16px); width: var(--sq-xs, 16px); left: 3px; bottom: 3px;

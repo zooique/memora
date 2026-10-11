@@ -39,7 +39,6 @@ export const configStyles = `
     color: var(--text-input, #cccccc);
     font-size: var(--font-md, 12px);
   }
-  #config-root .cfg-bg-select:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
   #config-root .cfg-bg-hint { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); margin: var(--sp-2, 6px) 0 0; }
 
   /* ============ Components：Provider 卡片 ============ */
@@ -57,12 +56,6 @@ export const configStyles = `
   #config-root .modal-mask.visible { display: flex; }
   #config-root .modal { width: 90%; max-width: 360px; background: var(--surface-page, #1e1e1e); border-radius: var(--radius-lg, 8px); padding: var(--sp-6, 16px); box-shadow: var(--shadow-modal, 0 4px 16px rgba(0,0,0,.3)); overscroll-behavior: contain; }
   #config-root .modal h3 { margin: 0 0 var(--sp-5, 12px); font-size: var(--font-lg, 14px); }
-  /* 键盘焦点环：按钮与表单输入统一可见反馈（可访问性） */
-  #config-root .btn:focus-visible,
-  #config-root .field input:focus-visible {
-    outline: 2px solid var(--border-focus, #0e639c);
-    outline-offset: 2px;
-  }
   #config-root .field { margin-bottom: var(--sp-4, 10px); }
   #config-root .field label { display: block; font-size: var(--font-md, 12px); margin-bottom: var(--sp-1, 4px); color: var(--text-secondary, #9aa0a6); }
   #config-root .field input { width: 100%; box-sizing: border-box; padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); border: 1px solid var(--border-input, rgba(128,128,128,.5)); background: var(--surface-input, #3c3c3c); color: var(--text-input, #cccccc); font-size: var(--font-base, 13px); }

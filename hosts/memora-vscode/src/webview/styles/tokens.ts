@@ -243,8 +243,10 @@ export const tokens = `
    * 用 :where() 承载 ⇒ **特异性为 0**：各视图既有的自定义焦点样式（如 summary 用
    * box-shadow、chip 用内阴影）都能原样覆盖它、不会打架；未来新增的可聚焦元素也自动获得
    * 焦点环，堵住「新增元素忘了写 focus 样式」这个持续泄漏的口子。
+   * 「tabindex=-1」是编程聚焦目标（焦点陷阱/焦点恢复），不属 Tab 序，显示焦点环属视觉
+   * 噪音——但裸 [tabindex] 会连它一起匹配，故用 :not() 排除；:where() 内嵌 :not() 特异性仍为 0。
    * 渐进增强：老环境不认 :where() 时整条规则被丢弃，退化为现状，无回归风险。 */
-  :where(button, input, select, textarea, summary, a[href], [tabindex]):focus-visible {
+  :where(button, input, select, textarea, summary, a[href], [tabindex]:not([tabindex="-1"])):focus-visible {
     outline: 2px solid var(--border-focus, #0e639c);
     outline-offset: 2px;
   }

@@ -144,11 +144,12 @@ const EXEMPT_PROPS = new Set([
  *   173 → 2026-10-11 初始值（排除豁免属性与 0 值后）
  *   127 → 收敛方形控件尺寸（新增 --sq-* 刻度，46 处）后
  *    79 → 收敛 padding/gap/margin 到间距刻度（新增 --sp-hair，48 处）后
+ *    74 → 复核批次：5 处残留裸 border-radius（进度/特质条 2px ×3、开关轨道 22px ×2）全量消化后
  * 为何要跟着降：若基线停在初始值，消化出的 94 处会变成「可新增而不报错」的余额，
  * 等于给未来的裸值开了口子。门必须随债务一起往下走。
  * 升硬门条件：清单降到人工可核实的量级（例如 < 30）时，一并改为硬门并收紧白名单。
  */
-const FROZEN_VALUE_BASELINE = 79;
+const FROZEN_VALUE_BASELINE = 74;
 
 /** 剥离 var() 整体（含其 fallback），残留者才是真裸值 */
 const stripVar = (v: string): string => v.replace(/var\(\s*--[\w-]+(\s*,[^)]*)?\)/g, '');

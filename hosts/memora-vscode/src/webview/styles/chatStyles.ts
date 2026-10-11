@@ -510,10 +510,6 @@ export const chatStyles = `
   }
   .write-confirm-card__btn--ok { background: var(--status-pass, #4ec9b0); color: var(--accent-foreground, #fff); }
   .write-confirm-card__btn--reject { background: var(--surface-input, #3c3c3c); color: var(--text-primary, #cccccc); }
-  .write-confirm-card__btn--ok:focus-visible,
-  .write-confirm-card__btn--reject:focus-visible {
-    outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px;
-  }
   /* 🔴 等待态（2026-10-05 P5 落地A 时新增，消解 F1）
    * 病根：webview 点击后**同步**关卡、宿主**异步**推下一条 ⇒ 中间空档 = 闪烁，
    * 且用户点完若队列无下一条，卡片会带着「已裁决」的旧内容滞留 ⇒ 重复提交窗口。
@@ -1666,12 +1662,12 @@ export const chatStyles = `
   .plan-bar__progress {
     flex: 1; height: 4px; min-width: 60px;
     background: var(--border-panel, rgba(128,128,128,.4));
-    border-radius: 2px; overflow: hidden;
+    border-radius: var(--radius-sm, 2px); overflow: hidden;
   }
   .plan-bar__fill {
     display: block; height: 100%;
     background: var(--accent, #0e639c);
-    border-radius: 2px;
+    border-radius: var(--radius-sm, 2px);
     transition: width var(--dur-slow) ease-out;
   }
   .plan-bar__current {
@@ -2146,21 +2142,6 @@ export const chatStyles = `
     background: transparent; color: var(--feedback-warn-fg); cursor: pointer;
   }
   .opt-btn:hover { background: var(--feedback-warn-bg); }
-
-  /* ============ Utilities：键盘焦点环（可访问性） ============ */
-  /* 所有可交互控件：键盘 Tab 聚焦时显示品牌色外环。
-   * 仅对 :focus-visible 生效（鼠标点击不显示，避免干扰）。
-   * 下拉菜单项已在 dropdown.ts 用背景色替换 outline，不在此重复。 */
-  .send-btn-primary:focus-visible,
-  .msg-icon-btn:focus-visible,
-  .opt-btn:focus-visible,
-  .suggestion-chip:focus-visible,
-  .treedd__trigger:focus-visible,
-  .model-picker .treedd__trigger:focus-visible,
-  #clarifyInput:focus-visible {
-    outline: 2px solid var(--border-focus, #0e639c);
-    outline-offset: 2px;
-  }
 
   /* ============ Utilities：减少动效（可访问性） ============ */
   /* 全局通配选择器级 reduce 兜底已提升至 tokens（令牌层）——对话面板与设置面板由此统一

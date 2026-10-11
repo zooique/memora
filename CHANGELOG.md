@@ -584,6 +584,21 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Fixed（宿主 · 样式层复核批次：残留裸 border-radius 消化 + 焦点环排除负 tabindex）
+
+**复核实锤（2026-10-11 会话回顾前对抗式复核）**：上一批「样式层 SSOT 收紧」的指标表记
+「裸 border-radius 6 → 0」未复核即写 0，实测**残留 5 处**（plan-bar 进度条/角色特质条 2px ×3、
+技能/设置开关轨道 22px ×2）——守卫属性分布当时即自打印 `border-radius=5`，报告却未对表。
+
+- **消化**：2px ×3 → `var(--radius-sm, 2px)`；22px ×2 → `var(--radius-pill, 999px)`
+  （40×22 轨道下 CSS 半径 clamp 使 22px 与 999px 渲染完全一致 = 11px 完美胶囊，零视觉变化）。
+- **守卫**：冻结基线 79 → 74 同步下调（注释链补行）；tokensClosure 6/6 绿、存量 74 = 基线 74。
+- **预防性收紧**：全局焦点环 `:where([tabindex])` → `:where([tabindex]:not([tabindex="-1"]))`
+  ——负 tabindex 是编程聚焦目标（焦点陷阱/恢复），不属 Tab 序，显示焦点环属视觉噪音；
+  `:where()` 内嵌 `:not()` 特异性仍为 0。当前全库零处 tabindex 使用 = 零行为变化。
+- **文档订正**：两份 2026-10-11 UI 报告的失真数字（border-radius「0」、裸 px「235」中途快照）
+  已按实测口径回填并留订正注记。
+
 ### Fixed（宿主 · 审批卡等待态样式键面统一：基类静态上骨架，JS 只翻 disabled）
 
 **附带发现（2026-10-10，P9 代码推演时顺手修）**：等待态样式真源 = CSS `.write-confirm-card__btn[disabled]`，

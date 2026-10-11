@@ -189,13 +189,8 @@ export const rolesStyles = `
     user-select: none;
     padding: var(--sp-0, 2px) 0;
   }
-  /* summary 是原生可聚焦元素：原写法以 outline:none 抹掉焦点环且无任何替代 →
-   * 键盘 Tab 到此焦点不可见（违反 WCAG 2.4.7 Focus Visible）。
-   * 改为仅键盘聚焦态显示焦点环，鼠标点击不触发，不打扰鼠标用户。 */
-  #roles-root .card-details summary:focus-visible {
-    outline: 2px solid var(--border-focus, #0e639c);
-    outline-offset: 2px;
-  }
+  /* summary 是原生可聚焦元素：焦点环由 tokens 令牌层全局规则统一供给
+   * （:where(...):focus-visible，特异性 0），此处不再重复声明。 */
   #roles-root .card-details summary:hover {
     color: var(--text-secondary, #9aa0a6);
   }
@@ -235,7 +230,7 @@ export const rolesStyles = `
     flex: 1;
     height: 3px;
     background: var(--border-panel, rgba(128,128,128,.2));
-    border-radius: 2px;
+    border-radius: var(--radius-sm, 2px);
     overflow: hidden;
   }
   #roles-root .trait-fill {
