@@ -416,15 +416,19 @@ describe('设计令牌颜色 fallback 一致性守卫（防第三套值）', () 
  *      与 --surface-hover / --surface-active（交互态）视觉无差别 ⇒ hover 与选中反馈在
  *      主路径失效。塌缩靠「对齐数值」治不好，只能换变量/换语义。
  *
- * 本次已把**同义**令牌合并（--surface-normal→--surface-inset、--text-tertiary/--text-muted
+ * 本次先合并**同义**令牌（--surface-normal→--surface-inset、--text-tertiary/--text-muted
  * →--text-secondary、--surface-tip→--surface-card、--surface-panel→--surface-sidebar、
- * --surface-inverse→--accent-foreground），8 组降到 5 组。剩余 5 组均属「需换变量或换语义」
- * （border 三档 / warn-fg 变量选错 / 跨色系两组 / 静态表面 vs 交互态），已登记下批条目，
- * 故本门走**冻结式软门**而非硬门——与「裸值债务冻结」同构：只挡新增、允许并鼓励下降。
+ * --surface-inverse→--accent-foreground），8 组降到 5 组；真机验收后再落地 LAYER-2 / WARN-1
+ * （静态面改引 textCodeBlock 与 hover 不同源、--surface-active 按语义分流后退役、warn-fg
+ * 改引 inputValidation-warningForeground）⇒ 再降到 **3 组**（border 三档 / 跨色系两组）。
+ * 剩余 3 组均属「需换变量或换语义」（非对齐数值可解），已登记下批条目，故本门走
+ * **冻结式软门**而非硬门——与「裸值债务冻结」同构：只挡新增、允许并鼓励下降。
+ *
+ * ⚠️ 基线必须随消化同步下调：停在旧值等于给未来新增开口子。
  *
  * 反向守卫：断言扫到的定义层映射总量，防提取正则失效导致「空集恒过」的假绿。
  */
-const DEFINITION_FROZEN_BASELINE = 5;
+const DEFINITION_FROZEN_BASELINE = 3;
 
 describe('设计令牌定义层守卫（同 --vscode-* 变量须同回退）', () => {
   interface DefEntry {
