@@ -132,11 +132,25 @@ const STYLES_DIR = join(WEBVIEW_DIR, 'styles');
 
 /** 豁免属性：非布局间距类，tokens 头部注释明文允许内联 */
 const EXEMPT_PROPS = new Set([
-  'border', 'border-top', 'border-right', 'border-bottom', 'border-left', 'border-width',
-  'outline', 'outline-width', 'outline-offset',
-  'box-shadow', 'text-shadow', 'transform', 'translate',
-  'vertical-align', 'letter-spacing', 'word-spacing', 'stroke-width',
-  'mask-image', '-webkit-mask-image',
+  'border',
+  'border-top',
+  'border-right',
+  'border-bottom',
+  'border-left',
+  'border-width',
+  'outline',
+  'outline-width',
+  'outline-offset',
+  'box-shadow',
+  'text-shadow',
+  'transform',
+  'translate',
+  'vertical-align',
+  'letter-spacing',
+  'word-spacing',
+  'stroke-width',
+  'mask-image',
+  '-webkit-mask-image',
 ]);
 
 /**
