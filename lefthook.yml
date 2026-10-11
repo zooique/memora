@@ -2,7 +2,7 @@
 #
 # 分层（2026-09-16）：
 #   pre-commit → fast 档（两侧 tsc，≤60s）  —— 提交时便宜，默认路径才有人走
-#   pre-push   → full 档（10 步，≤8min）    —— 推送前完整体检，含宿主构建与 dist 契约
+#   pre-push   → full 档（步骤/耗时以 local-ci 收据日志为准）—— 推送前完整体检，含宿主构建与 dist 契约
 #
 # 步骤清单**只**在 scripts/local-ci.mjs 定义；本文件只传 --preset，禁止在此复制步骤
 # （复制即产生第二份"要跑什么"的清单 = 并列，见 single-truth-source-mindset.md）。
@@ -36,8 +36,8 @@ commit-msg:
     commitlint:
       run: npx commitlint --edit {1}
 
-# 门禁 full 档：10 步 —— 内核 typecheck/lint/test/coverage/build
-# + 宿主 typecheck/lint/test/build + dist 契约（宿主 bundle 与内核同代）
+# 门禁 full 档（步骤清单以 scripts/local-ci.mjs 的 ALL_STEPS 为真源，本文件不复制数字——
+# 复制即过期，见 single-truth-source-mindset.md「描述性计数 = 时点快照」）
 pre-push:
   commands:
     gate-full:

@@ -584,6 +584,12 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Added（宿主 · 命令注册面守卫：`contributes` ↔ `registerCommand` 双向对拍（第四对拍面））
+
+- **守卫盲区修复**：`fileChangeCommands.test.ts` 此前三面全钉在声明侧（`commands`/`menus`/`keybindings`），`registerCommand` 注册侧无守卫——改名 / 漏注册时三面照样全绿，命令面板条目或快捷键却静默无效（恰在真机点验时才暴露）。新增 4 用例：① **调用点文件范围钉死**：`src/` 下含 `registerCommand(` 的文件必须恰好 = 登记表（`extension.ts` / `fileChangeView.ts`），第三处出现即红，防「新文件注册」绕过提取的扫描盲区型假阴性；② **提取零漏**：字面量 / 常量两条路径必有产出，非常量标识符解析失败即红；③ **贡献必已注册**（13 条声明逐一对拍）；④ **注册必已贡献**（豁免仅 `confirmHunk`/`rejectHunk`——CodeLens 带参调用的内部命令，与既有「必须不贡献」守卫同一依据，显式登记不折叠）。
+- **变异验证三发转红**（还原后 11/11 绿）：注册侧改名 → ③④ 双向红、精确点名 `memora.open`；第三文件加注册 → ① 范围红；常量位改非常量标识符 → ② 提取红。
+- **lefthook.yml 描述性计数失实订正**：注释「full 档 10 步，≤8min」与实测收据（14 步 / 270s，2026-10-11 head=56be3cfa）漂移——步骤清单后加未同步 = 写死数字必然过期的同型复发。改指针：「步骤/耗时以 `scripts/local-ci.mjs` ALL_STEPS 与 local-ci 收据日志为准」，本文件不复制数字。
+
 ### Added（宿主 · `memora.open` 默认快捷键 · HOST-KB-1）
 
 - `contributes.keybindings` 新增：`ctrl+alt+m` 打开对话面板——最高频入口此前仅活动栏图标与命令面板可达。键位静态核查零占用（VS Code 内置 bundle 与本机已装扩展 `package.json` 扫描均无 `ctrl+alt+m`；用户自定义键位恒优先于扩展默认 ⇒ 增补键位非 breaking）。来源 = 2026-10-11 新枝破土宿主缺口扫描 + 排雷分流（台账 HOST-KB-1）。

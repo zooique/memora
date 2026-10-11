@@ -1,14 +1,12 @@
 /**
- * 文件改动命令 id 守卫（真源对拍：代码常量 ↔ `package.json#contributes`）
+ * package.json#contributes ↔ 源码守卫（真源对拍：声明面 / 注册面）
  *
- * 守卫对象：`registerCommand` 与 `contributes` 的漂移——代码里 `registerCommand`、
- * 却在 `contributes.commands` 漏声明时，webview 与状态栏都能用，唯独命令面板看不到，
- * 且无任何报错（漂移静默发生）。
+ * 守卫对象：命令 id 的三处物理存在（package.json 声明 / `registerCommand` 注册 / 代码常量）
+ * 之间的漂移——三者无法靠单一真理源消灭（JSON 无法 import），只能靠**守卫**钉死一致。
+ * 每一类漂移都**静默**：漏贡献 = 命令面板看不见；漏注册 = 按键无反应无报错；
+ * 漏键位 = 高频命令只能靠鼠标。无任何类型系统能拦，全靠本文件。
  *
- * 命令 id 物理上必然存在两处（TS 常量 + package.json 的 JSON，后者无法 import），
- * 所以无法靠「单一真理源」消灭，只能靠**守卫**钉死二者一致。本用例即那道守卫。
- *
- * 对拍面有三（缺一即半守卫）：
+ * 对拍面有四（缺一即半守卫）：
  *   - `commands`：对外命令（状态栏 / 对话区常驻条 / 命令面板 / **编辑器标题栏**）**必须**已贡献；
  *     块级命令（需「路径 + 块指纹」两个参数）**必须不**贡献——暴露到命令面板会得到
  *     无参调用而静默失败（见 `fileChangeView` 中两个 HUNK 常量的注释）。
@@ -16,6 +14,9 @@
  *   - `keybindings`：绑定命令必须已贡献（未贡献命令按键静默无效）；块级 hunk 命令
  *     **禁配键**（同「必须不贡献」，无参调用必然静默失败）；`memora.open` 默认键
  *     锁值（HOST-KB-1，改键位 = 显式契约变更，须同步改此断言）。
+ *   - `registerCommand` 注册面：贡献的必须已注册、注册的必须已贡献（两个 hunk 命令
+ *     显式豁免）——改名 / 漏注册时前三面全绿、按键静默失效，只有这面能红
+ *     （见下方「注册面守卫」）。
  *
  * ⚠️ 分类随形态走：文件级按钮放**标题栏**即属「对外命令」——菜单依赖声明才渲染；
  * 放正文 CodeLens 则属「内部命令」。分类不是写死的标签，
@@ -27,7 +28,7 @@
  * @module __tests__/fileChangeCommands.test
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
@@ -131,5 +132,100 @@ describe('keybindings ↔ package.json#contributes', () => {
   it('两个块级 hunk 命令禁配键（需「路径 + 指纹」参数，无参调用静默失败）', () => {
     expect(bound.has(CONFIRM_HUNK_COMMAND)).toBe(false);
     expect(bound.has(REJECT_HUNK_COMMAND)).toBe(false);
+  });
+});
+
+/** 包根目录（本文件位于 `<pkg>/src/extension/host/__tests__/` ⇒ 上溯四层） */
+const PKG_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
+
+/** `registerCommand` 调用点已登记的源文件（全库第三处出现 = 扫描盲区，须先登记再断言） */
+const REGISTER_SOURCES = [
+  resolve(PKG_ROOT, 'src/extension/extension.ts'),
+  resolve(PKG_ROOT, 'src/extension/host/fileChangeView.ts'),
+];
+
+/** 注册豁免：两个块级 hunk 命令刻意不贡献（CodeLens 带参调用，暴露即静默失败） */
+const INTERNAL_ONLY_COMMANDS = new Set([CONFIRM_HUNK_COMMAND, REJECT_HUNK_COMMAND]);
+
+/**
+ * 递归收集 `src/` 下全部 `.ts` 源文件（排除测试目录——mock 里的 `registerCommand`
+ * 是对象属性不是调用点，计入即误报）
+ */
+function collectSourceFiles(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== '__tests__') collectSourceFiles(fullPath, out);
+    } else if (entry.name.endsWith('.ts')) {
+      out.push(fullPath);
+    }
+  }
+  return out;
+}
+
+/**
+ * 注册面守卫（第四对拍面）
+ *
+ * 前三面全钉在 `package.json` 声明侧，**看不见 `registerCommand` 注册侧**：改名 /
+ * 漏注册时贡献面、键位面照样全绿，按命令面板条目或快捷键却无任何反应、无报错
+ * （漂移静默发生，且恰好在真机点验时才暴露）。本面补上注册侧对拍：
+ *   ① 调用点文件范围先钉死——提取逻辑只认登记过的两个文件，第三处出现即红，
+ *      防「新文件里注册的新命令」绕过下面全部断言（扫描盲区型假阴性）；
+ *   ② 声明了未注册 ⇒ 命令面板可见但按了没反应；
+ *   ③ 注册了未声明 ⇒ 代码能跑但用户永远够不着（豁免 = 两个 hunk 内部命令）。
+ */
+describe('registerCommand 注册面 ↔ package.json#contributes', () => {
+  // 注册点一：extension.ts 直接用字面量注册
+  const extensionSrc = readFileSync(REGISTER_SOURCES[0], 'utf-8');
+  const literalIds = [...extensionSrc.matchAll(/registerCommand\(\s*['"]([^'"]+)['"]/g)].map(
+    (match) => match[1],
+  );
+
+  // 注册点二：fileChangeView.ts 用常量注册（常量值另取自同文件 const 定义，非常量形态即解析失败）
+  const viewSrc = readFileSync(REGISTER_SOURCES[1], 'utf-8');
+  /** 常量名 → 命令 id 映射（`const XXX_COMMAND = 'memora.…'` 形态） */
+  const constantTable = new Map(
+    [...viewSrc.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*['"]([^'"]+)['"]/g)].map((match) => [
+      match[1],
+      match[2],
+    ]),
+  );
+  /** 调用点引用的常量名（形如 `registerCommand(\n  REVIEW_…`，允许跨行） */
+  const constantRefs = [...viewSrc.matchAll(/registerCommand\(\s*([A-Za-z_$][\w$]*)/g)].map(
+    (match) => match[1],
+  );
+  /** 解析失败的调用点（用了非常量标识符 ⇒ 提取对它失明，必须红） */
+  const unresolvedRefs = constantRefs.filter((name) => !constantTable.has(name));
+
+  /** 注册面全集 = 字面量注册 ∪ 常量注册 */
+  const registered = new Set([...literalIds, ...constantRefs.map((n) => constantTable.get(n)!)]);
+  /** 声明有、注册无（命令面板条目按了没反应） */
+  const declaredButNotRegistered = [...contributed].filter((id) => !registered.has(id));
+  /** 注册有、声明无、且不在豁免表（用户永远够不着的孤儿命令） */
+  const registeredButNotDeclared = [...registered].filter(
+    (id) => !contributed.has(id) && !INTERNAL_ONLY_COMMANDS.has(id),
+  );
+
+  it('调用点只出现在已登记文件（第三处出现 = 扫描盲区，红灯强制先登记）', () => {
+    // 含 registerCommand( 调用的源文件集合，必须恰好等于登记表——
+    // 多一个 = 新文件绕过提取（盲区）；少一个 = 登记表腐烂（僵尸条目）
+    const callSites = collectSourceFiles(resolve(PKG_ROOT, 'src')).filter((file) =>
+      /registerCommand\s*\(/.test(readFileSync(file, 'utf-8')),
+    );
+    expect([...callSites].sort()).toEqual([...REGISTER_SOURCES].sort());
+  });
+
+  it('提取零漏（字面量与常量两条提取路径都有产出，无解析失败的调用点）', () => {
+    expect(literalIds.length).toBeGreaterThan(0);
+    expect(constantRefs.length).toBeGreaterThan(0);
+    expect(unresolvedRefs).toEqual([]);
+  });
+
+  it('贡献的每条命令均已注册（声明未注册 = 命令面板/键位静默无效）', () => {
+    expect(declaredButNotRegistered).toEqual([]);
+  });
+
+  it('注册的每条命令均已贡献（豁免仅两个 hunk 内部命令）', () => {
+    expect(registeredButNotDeclared).toEqual([]);
   });
 });
