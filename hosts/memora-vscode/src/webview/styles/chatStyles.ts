@@ -128,7 +128,7 @@ export const chatStyles = `
    * - pill 用 clip-path 从左向右揭示（文字不被压扁，比 scaleX 自然）；
    * - 抽屉用 translateX 从左滑入，错层 40ms 制造「先长 pill、后滑抽屉」的层次。 */
   @keyframes dockChipOpen {
-    from { clip-path: inset(0 100% 0 0); opacity: 0.35; }
+    from { clip-path: inset(0 100% 0 0); opacity: var(--op-1); }
     to   { clip-path: inset(0 0 0 0);     opacity: 1; }
   }
   @keyframes dockPanelOpen {
@@ -223,7 +223,7 @@ export const chatStyles = `
   }
   .session-history__item-del {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 20px; height: 20px; padding: 0; border: none; border-radius: var(--radius-sm, 2px);
+    width: var(--icon-md); height: var(--icon-md); padding: 0; border: none; border-radius: var(--radius-sm, 2px);
     background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
     opacity: 0; transition: opacity var(--dur-base) ease; /* 悬浮条目才显示（对齐 Trae 悬浮删除） */
   }
@@ -272,7 +272,7 @@ export const chatStyles = `
   /* 分组动作（移入留存 / 移回）：与删除同尺寸同位置，视觉弱于删除（非破坏性动作） */
   .session-history__item-keep {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 20px; height: 20px; padding: 0; border: none; border-radius: var(--radius-sm, 2px);
+    width: var(--icon-md); height: var(--icon-md); padding: 0; border: none; border-radius: var(--radius-sm, 2px);
     background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
     opacity: 0; transition: opacity var(--dur-base) ease;
   }
@@ -284,7 +284,7 @@ export const chatStyles = `
   .empty-state {
     margin: auto; max-width: 320px; text-align: center;
     color: var(--text-secondary, #9aa0a6);
-    font-size: var(--font-base, 13px); line-height: 1.7;
+    font-size: var(--font-base, 13px); line-height: var(--lh-relaxed);
     padding: var(--sp-6, 16px);
   }
   .empty-title { font-size: var(--font-lg, 14px); color: var(--text-primary, #cccccc); font-weight: 600; margin-bottom: var(--sp-2, 6px); }
@@ -322,7 +322,7 @@ export const chatStyles = `
   }
   .date-divider::before, .date-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-panel, rgba(128,128,128,.4)); }
   /* 消息基类：默认无气泡（AI 铺满），正文与底部操作行分离 */
-  .msg { display: flex; flex-direction: column; white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
+  .msg { display: flex; flex-direction: column; white-space: pre-wrap; word-break: break-word; line-height: var(--lh-normal); }
   /* 用户消息外层包裹：气泡 + hover 操作按钮 */
   .msg-wrapper {
     display: flex; flex-direction: column; align-items: flex-end;
@@ -431,7 +431,7 @@ export const chatStyles = `
     cursor: pointer;
   }
   .ask-inline__submit:disabled {
-    opacity: .4;
+    opacity: var(--op-2);
     cursor: not-allowed;
   }
   .ask-inline__submit:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
@@ -494,8 +494,8 @@ export const chatStyles = `
    * （明示「这张已处理完，等下一张」）。透明度用既有 token 拼，不新增色板。
    * [hidden] 兜底：本状态类设 display:flex，历史上须配逐元素 [hidden] 兜底
    * （规则 10 血训）；现由 tokens.ts 全局 [hidden]{display:none!important} 统一兜住。 */
-  .write-confirm-card[data-pending='true'] { opacity: 0.55; }
-  .write-confirm-card__btn[disabled] { cursor: default; opacity: 0.6; }
+  .write-confirm-card[data-pending='true'] { opacity: var(--op-4); }
+  .write-confirm-card__btn[disabled] { cursor: default; opacity: var(--op-5); }
   .write-confirm-card__hint {
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
@@ -575,7 +575,7 @@ export const chatStyles = `
     background: var(--feedback-error-bg, #442726);
     color: var(--status-fail, #f14c4c);
   }
-  .msg-icon-btn:disabled { color: var(--text-secondary, #9aa0a6); cursor: default; opacity: .5; }
+  .msg-icon-btn:disabled { color: var(--text-secondary, #9aa0a6); cursor: default; opacity: var(--op-3); }
   /* AI 回答：顶部身份标签 + 任务过程折叠区 + 报告正文 + footer（对齐主流大厂 AI 对话设计）。
    * 结构（任务过程在上 · 报告在下，SSOT 单一折叠区）：
    *   .msg.assistant → 纵向
@@ -608,7 +608,7 @@ export const chatStyles = `
   }
   .msg-ai-label__role::before {
     content: '';
-    width: 5px; height: 5px;
+    width: var(--dot-sm); height: var(--dot-sm);
     border-radius: 50%;
     background: var(--brand, #4a9eff);
   }
@@ -659,8 +659,8 @@ export const chatStyles = `
    * 光标唯一安全位，无法走 getIconSvg 注入，以 mask 复刻同款轮廓；可见度分级：正常必须安静） */
   .msg-body[data-status='已完成']::after {
     content: '';
-    width: 12px; height: 12px; vertical-align: -1px;
-    background: var(--status-pass, #4ec9b0); opacity: 0.75;
+    width: var(--icon-2xs); height: var(--icon-2xs); vertical-align: -1px;
+    background: var(--status-pass, #4ec9b0); opacity: var(--op-6);
     -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='5.5'/%3E%3Cpath d='M5.6 8.3l1.7 1.7 3.3-3.5'/%3E%3C/svg%3E")
       no-repeat center / contain;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='5.5'/%3E%3Cpath d='M5.6 8.3l1.7 1.7 3.3-3.5'/%3E%3C/svg%3E")
@@ -672,11 +672,11 @@ export const chatStyles = `
     color: var(--danger, #f14c4c);
   }
   /* AI 正文段落间距（增加阅读舒适度） */
-  .msg.assistant .msg-body p { margin: 0 0 var(--sp-4, 10px); line-height: 1.75; }
+  .msg.assistant .msg-body p { margin: 0 0 var(--sp-4, 10px); line-height: var(--lh-loose); }
   .msg.assistant .msg-body > :last-child { margin-bottom: 0; }
   .msg.assistant .msg-body h1,
   .msg.assistant .msg-body h2,
-  .msg.assistant .msg-body h3 { font-weight: 600; line-height: 1.4; margin: var(--sp-4, 10px) 0 var(--sp-2, 6px); }
+  .msg.assistant .msg-body h3 { font-weight: 600; line-height: var(--lh-tight); margin: var(--sp-4, 10px) 0 var(--sp-2, 6px); }
   .msg.assistant .msg-body h1 { font-size: var(--font-lg, 14px); }
   .msg.assistant .msg-body h2 { font-size: var(--font-base, 13px); }
   .msg.assistant .msg-body h3 { font-size: var(--font-base, 13px); }
@@ -825,7 +825,7 @@ export const chatStyles = `
     border-left: 3px solid var(--warn, #d7ba7d);
     border-radius: var(--radius-sm, 2px);
     font-size: var(--font-md);
-    line-height: 1.4;
+    line-height: var(--lh-tight);
     color: var(--text-secondary, #9aa0a6);
   }
   .file-changes-bar__badge {
@@ -869,7 +869,7 @@ export const chatStyles = `
     background: transparent;
     border-radius: var(--radius-sm, 2px);
     font-size: var(--font-md);
-    line-height: 1.4;
+    line-height: var(--lh-tight);
     color: var(--text-secondary, #9aa0a6);
     /* 左侧色条 + 透明底：轻盈贴近打断语义 */
   }
@@ -893,7 +893,7 @@ export const chatStyles = `
     color: var(--accent-foreground, #fff);
     font-size: var(--font-xs, 10px);
     font-weight: 700;
-    line-height: 1;
+    line-height: var(--lh-flat);
   }
   /* 顶部标题行 */
   .pending-queue-bar__label {
@@ -939,7 +939,7 @@ export const chatStyles = `
     white-space: nowrap;
     text-overflow: ellipsis;
     color: var(--text-input, #cccccc);
-    opacity: 0.9;
+    opacity: var(--op-8);
   }
   /* 单条删除按钮：平时透明，hover 行时显现 */
   /* 单条删除按钮内的 close 图标（SVG） */
@@ -958,7 +958,7 @@ export const chatStyles = `
     color: var(--text-secondary, #9aa0a6);
     cursor: pointer;
     font-size: var(--font-xs, 10px);
-    line-height: 1;
+    line-height: var(--lh-flat);
     opacity: 0;
     transition: opacity var(--dur-fast), background var(--dur-fast), color var(--dur-fast);
   }
@@ -984,7 +984,7 @@ export const chatStyles = `
     color: var(--text-secondary, #9aa0a6);
     cursor: pointer;
     font-size: var(--font-sm, 11px);
-    line-height: 1;
+    line-height: var(--lh-flat);
     transition: background var(--dur-fast), color var(--dur-fast);
   }
   .pending-queue-bar__clear:hover {
@@ -1007,7 +1007,7 @@ export const chatStyles = `
     background: transparent;
     border-radius: var(--radius-sm, 2px);
     font-size: var(--font-md);
-    line-height: 1.4;
+    line-height: var(--lh-tight);
     color: var(--text-secondary, #9aa0a6);
   }
   .background-tasks-bar__head {
@@ -1085,7 +1085,7 @@ export const chatStyles = `
     background: transparent;
     color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-base, 13px);
-    line-height: 1;
+    line-height: var(--lh-flat);
     cursor: pointer;
     transition: background var(--dur-fast), color var(--dur-fast);
   }
@@ -1143,7 +1143,7 @@ export const chatStyles = `
     align-items: center;
     justify-content: center;
     font-size: var(--font-2xs, 8px);
-    line-height: 1;
+    line-height: var(--lh-flat);
     color: var(--text-secondary, #9aa0a6);
     font-variant-numeric: tabular-nums;
     pointer-events: none;
@@ -1164,7 +1164,7 @@ export const chatStyles = `
     border-radius: var(--radius-md, 8px);
     box-shadow: var(--shadow-card, 0 2px 8px rgba(0, 0, 0, 0.15));
     font-size: var(--font-sm, 11px);
-    line-height: 1.7;
+    line-height: var(--lh-relaxed);
     color: var(--text-input, #cccccc);
     white-space: pre-line; /* 保留 buildOccupancyTipText 的多行 \n */
     font-variant-numeric: tabular-nums;
@@ -1213,7 +1213,7 @@ export const chatStyles = `
     color: var(--text-input, #cccccc);
     font-family: inherit;
     font-size: var(--font-base, 13px);
-    line-height: 1.6;
+    line-height: var(--lh-normal);
     resize: none;
     /* 高度由 JS autoResize() 控制；默认 hidden 避免空内容时显示滚动条轨道，
      * 内容超过 --input-max-h 时 JS 切换为 auto 才显示滚动条（大厂惯例） */
@@ -1226,7 +1226,7 @@ export const chatStyles = `
     width: 100%;
   }
   #input:focus { outline: none; }
-  #input:disabled { opacity: 0.6; }
+  #input:disabled { opacity: var(--op-5); }
   /* 附件行在场时收 textarea 顶距：16px 顶距是**无附件时**文字贴盒顶的呼吸位（与左右
    * 16px 同刻度）；附件行在场时它叠在气泡下方 = 间距堆到约 20px，而盒顶↔气泡仅 6px，
    * 上下不对称即真机复验实锤的违和感。收到 sp-2（6px）与盒顶/附件行同刻度，
@@ -1307,7 +1307,7 @@ export const chatStyles = `
   }
   .role-badge::before {
     content: '';
-    width: 6px; height: 6px;
+    width: var(--dot-md); height: var(--dot-md);
     border-radius: 50%;
     background: var(--accent, #0e639c);
     flex-shrink: 0;
@@ -1367,7 +1367,7 @@ export const chatStyles = `
   }
   .polish-btn-icon:active { transform: scale(0.95); }
   .polish-btn-icon.loading {
-    opacity: 0.6;
+    opacity: var(--op-5);
     pointer-events: none;
   }
   .polish-btn-icon.loading svg { animation: spin var(--dur-spin) linear infinite; }
@@ -1411,7 +1411,7 @@ export const chatStyles = `
     max-width: 220px;
     padding: var(--sp-0, 2px) var(--sp-2, 6px);
     font-size: var(--font-xs, 10px);
-    line-height: 1.5;
+    line-height: var(--lh-snug);
     color: var(--accent, #0e639c);
     background: var(--accent-bg-subtle);
     border: 1px solid var(--accent, #0e639c);
@@ -1425,14 +1425,14 @@ export const chatStyles = `
     background: transparent;
     border: 1px dashed var(--text-secondary, #9aa0a6);
   }
-  .skill-chip__icon { font-size: var(--font-sm, 11px); line-height: 1; flex-shrink: 0; display: inline-flex; align-items: center; }
+  .skill-chip__icon { font-size: var(--font-sm, 11px); line-height: var(--lh-flat); flex-shrink: 0; display: inline-flex; align-items: center; }
   .skill-chip__icon svg { display: block; }
   .skill-chip__name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   /* chip 后缀徽记：与下拉项 .treedd__item-note 同语义、同观感（各自 BEM 归属） */
   .skill-chip__note {
     flex-shrink: 0;
     font-size: var(--font-xs, 10px);
-    opacity: 0.9;
+    opacity: var(--op-8);
   }
   /* 移除按钮内的 close 图标（SVG） */
   .skill-chip__remove svg { display: block; }
@@ -1441,7 +1441,7 @@ export const chatStyles = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 15px;
+    width: var(--icon-sm);
     height: 15px;
     padding: 0;
     border: none;
@@ -1449,7 +1449,7 @@ export const chatStyles = `
     background: transparent;
     color: inherit;
     font-size: var(--font-base, 13px);
-    line-height: 1;
+    line-height: var(--lh-flat);
     cursor: pointer;
   }
   .skill-chip__remove:hover {
@@ -1536,7 +1536,7 @@ export const chatStyles = `
   .send-btn-primary.paused .send-icon { display: none; }
   .send-btn-primary.paused .stop-icon { display: none; }
   .send-btn-primary.paused .play-icon { display: block; }
-  .send-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .send-btn-primary:disabled { opacity: var(--op-3); cursor: not-allowed; }
 
   /* 暂停按钮：生成中与「停止」并列的软暂停入口。
    * 次级控制，视觉弱化（同加载态灰调），与主发送按钮共列于右缘；
@@ -1574,7 +1574,7 @@ export const chatStyles = `
     gap: var(--sp-2, 6px);
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     font-size: var(--font-md, 12px);
-    line-height: 1.5;
+    line-height: var(--lh-snug);
     flex-shrink: 0;
     border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }
@@ -1651,7 +1651,7 @@ export const chatStyles = `
     color: var(--text-secondary, #9aa0a6);
   }
   /* SVG 指示器尺寸适配 */
-  .plan-bar__chevron svg { display: block; width: 11px; height: 11px; }
+  .plan-bar__chevron svg { display: block; width: var(--icon-3xs); height: var(--icon-3xs); }
   /* 锚定浮层：紧贴常驻条下方（top:100%），全量任务项列表 + planItemLog；卡片 + 阴影浮于对话上方。
    * 非 modal（无遮罩）：看进度时需同时看正文。max-height 超限滚动 */
   .plan-bar__panel {
@@ -1661,7 +1661,7 @@ export const chatStyles = `
     border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
     box-shadow: var(--shadow-card, 0 2px 8px rgba(0,0,0,.15));
     max-height: 320px; overflow-y: auto;
-    font-size: var(--font-md, 12px); line-height: 1.6;
+    font-size: var(--font-md, 12px); line-height: var(--lh-normal);
     color: var(--text-secondary, #9aa0a6);
   }
   .plan-board-list {
@@ -1683,7 +1683,7 @@ export const chatStyles = `
   .plan-item-title { flex: 1; word-break: break-all; }
   .plan-item-badge {
     flex-shrink: 0; font-size: var(--font-xs, 10px);
-    opacity: 0.85;
+    opacity: var(--op-7);
   }
   .plan-item-rounds {
     margin: var(--sp-1, 4px) 0 var(--sp-1, 4px) var(--sp-4, 10px);
@@ -1717,7 +1717,7 @@ export const chatStyles = `
    * 视觉延续过程性降级：灰字小字号 + 左细边框，不抢报告主体。 */
   .round-block {
     margin: var(--sp-1, 4px) var(--sp-5, 12px) 0;
-    font-size: var(--font-sm, 11px); line-height: 1.5;
+    font-size: var(--font-sm, 11px); line-height: var(--lh-snug);
     color: var(--text-secondary, #9aa0a6);
     border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
@@ -1800,7 +1800,7 @@ export const chatStyles = `
   }
   /* 叙述冒号行：平铺直示（非折叠）——「AI 说什么：」后接工具折叠块 */
   .process-flow__narrate {
-    font-size: var(--font-sm, 11px); line-height: 1.6;
+    font-size: var(--font-sm, 11px); line-height: var(--lh-normal);
     color: var(--text-primary, #cccccc);
     white-space: pre-wrap; word-break: break-all;
   }
@@ -1808,7 +1808,7 @@ export const chatStyles = `
   .round-block__interrupted {
     margin: var(--sp-2, 6px) 0 var(--sp-0, 2px); padding: var(--sp-1, 4px) 0;
     border-top: var(--divider-dashed);
-    font-size: var(--font-sm, 11px); line-height: 1.6; font-weight: 600;
+    font-size: var(--font-sm, 11px); line-height: var(--lh-normal); font-weight: 600;
     color: var(--danger, #f14c4c);
     word-break: break-all;
   }
@@ -1819,7 +1819,7 @@ export const chatStyles = `
   }
   .round-block__row {
     display: flex; align-items: baseline; gap: var(--sp-2, 6px);
-    padding: var(--sp-1, 4px) 0; line-height: 1.6;
+    padding: var(--sp-1, 4px) 0; line-height: var(--lh-normal);
     word-break: break-all;
   }
   /* 任务项级折叠容器：active 任务项推进时，后续 narrate/tool
@@ -1857,7 +1857,7 @@ export const chatStyles = `
   /* 过程叙述行：LLM 一段行动叙述 = 一行纯文本直显（流式 process-flow__narrate 同构形态），
    * 与工具行平级平铺 details 顶层——无折叠（叙述语义即短句，details+双份消费已废） */
   .round-block__narrate {
-    padding: var(--sp-1, 4px) 0; line-height: 1.6;
+    padding: var(--sp-1, 4px) 0; line-height: var(--lh-normal);
     font-size: var(--font-xs, 10px);
     color: var(--text-primary, #cccccc);
     word-break: break-all; white-space: pre-wrap;
@@ -1866,7 +1866,7 @@ export const chatStyles = `
    * <details> 折叠；process-flow 运行时与 round-block finalize/重放共用同构形态（按 seq 平铺）。
    * summary = 思考类型标 + 「思考」标签 + 首行预览，展开看全文；
    * 字形双层（批次三）：斜体 + 降饱和（非正文信号——icon 解决认出类型，字形解决「别当正文读」） */
-  .process-flow__thought, .round-block__thought { padding: var(--sp-1, 4px) 0; line-height: 1.6; }
+  .process-flow__thought, .round-block__thought { padding: var(--sp-1, 4px) 0; line-height: var(--lh-normal); }
   .process-flow__thought summary, .round-block__thought summary {
     cursor: pointer; font-size: var(--font-xs, 10px);
     font-style: italic;
@@ -1876,7 +1876,7 @@ export const chatStyles = `
   .process-flow__thought-body, .round-block__thought-body {
     margin-top: var(--sp-1, 4px); padding: var(--sp-2, 6px);
     border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
-    font-size: var(--font-xs, 10px); line-height: 1.7;
+    font-size: var(--font-xs, 10px); line-height: var(--lh-relaxed);
     color: var(--text-secondary, #9aa0a6);
     white-space: pre-wrap; word-break: break-all;
   }
@@ -1909,7 +1909,7 @@ export const chatStyles = `
     display: inline-block;
     margin-left: var(--sp-2, 6px); /* 与标题文字的衔接间距 */
     vertical-align: middle; /* 箭头居文字行中线 */
-    width: 5px; height: 5px;
+    width: var(--dot-sm); height: var(--dot-sm);
     border-right: 1.5px solid currentColor;
     border-bottom: 1.5px solid currentColor;
     transform: rotate(-45deg); /* 收起态：右向「＞」 */
@@ -1948,7 +1948,7 @@ export const chatStyles = `
     margin: var(--sp-1, 4px) 0; padding: var(--sp-2, 6px);
     background: var(--surface-code, rgba(127, 127, 127, 0.15));
     border-radius: var(--radius, 6px);
-    font-size: var(--font-xs, 10px); line-height: 1.5;
+    font-size: var(--font-xs, 10px); line-height: var(--lh-snug);
     white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere;
   }
   /* 实时相位行：进行中 details 顶部单条「当前正在做什么」（呼吸点动画，遵守 prefers-reduced-motion） */
@@ -2012,7 +2012,7 @@ export const chatStyles = `
   }
   .round-block__tool.is-tool-running > summary { color: var(--text-primary, #cccccc); font-weight: 600; }
   .round-block__tool.is-tool-running > summary::before {
-    content: ''; display: inline-block; width: 10px; height: 10px;
+    content: ''; display: inline-block; width: var(--dot-lg); height: var(--dot-lg);
     margin-right: var(--sp-2, 6px); vertical-align: -1px;
     border: 1.5px solid transparent; border-top-color: var(--accent, #0e639c);
     border-radius: 50%; box-sizing: border-box;
@@ -2029,7 +2029,7 @@ export const chatStyles = `
     border-left-color: var(--border-panel, rgba(128,128,128,.4));
   }
   .round-block__tool.is-tool-pending > summary::before {
-    content: ''; display: inline-block; width: 10px; height: 10px;
+    content: ''; display: inline-block; width: var(--dot-lg); height: var(--dot-lg);
     margin-right: var(--sp-2, 6px); vertical-align: -1px;
     border: 1.5px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: 50%; box-sizing: border-box;
@@ -2048,7 +2048,7 @@ export const chatStyles = `
   }
   @keyframes selfReviewPulse {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.35; }
+    50% { opacity: var(--op-1); }
   }
 
   /* ============ Components：活动状态区 · 抽屉时间段（历史 + 指标） ============ */
@@ -2070,7 +2070,7 @@ export const chatStyles = `
   .activity-list { padding: 0; }
   .activity-list__row {
     display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3, 8px);
-    padding: var(--sp-1, 4px) 0; line-height: 1.6;
+    padding: var(--sp-1, 4px) 0; line-height: var(--lh-normal);
   }
   .activity-list__row.error { color: var(--feedback-error-fg); }
   /* 决策记录行（C2 第三类事件）：左侧竖线与普通活动行区分，复用中性色不引入新 token */
@@ -2084,7 +2084,7 @@ export const chatStyles = `
   }
   .activity-metrics {
     /* 与历史列表的分隔线；横向/底部留白由抽屉体 padding 承担，不双倍 */
-    padding: var(--sp-2, 6px) 0 0; line-height: 1.7;
+    padding: var(--sp-2, 6px) 0 0; line-height: var(--lh-relaxed);
     white-space: pre-wrap; word-break: break-all;
     border-top: var(--divider-solid);
   }

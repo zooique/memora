@@ -17,10 +17,10 @@ export const dropdownStyles = `
   .treedd { position: relative; display: inline-flex; align-items: center; z-index: var(--z-float); }
   .treedd__trigger {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 26px; height: 26px; padding: 0;
+    width: var(--icon-lg); height: var(--icon-lg); padding: 0;
     border: none; border-radius: var(--radius, 6px); cursor: pointer;
     background: transparent; color: var(--text-primary, #cccccc);
-    font-size: var(--font-lg, 14px); line-height: 1;
+    font-size: var(--font-lg, 14px); line-height: var(--lh-flat);
   }
   .treedd__trigger:hover { background: var(--surface-hover, rgba(128,128,128,.2)); }
   /* 触发器内的 SVG 块级化，消除行内基线空隙（默认 ellipsis 与调用方自定义 SVG 共用）。 */
@@ -47,7 +47,7 @@ export const dropdownStyles = `
     display: block; width: 100%; padding: var(--sp-2, 6px) var(--sp-4, 10px); box-sizing: border-box;
     border: none; border-radius: var(--radius, 6px); text-align: left;
     background: transparent; cursor: pointer;
-    font-size: var(--font-md, 12px); line-height: 1.5;
+    font-size: var(--font-md, 12px); line-height: var(--lh-snug);
     color: var(--menu-fg, #1f1f1f);
   }
   .treedd__item:hover,
@@ -82,7 +82,7 @@ export const dropdownStyles = `
     border-radius: 0;
     background: var(--menu-bg, #ffffff);
     color: var(--menu-fg, #1f1f1f);
-    font-size: var(--font-md, 12px); line-height: 1.5;
+    font-size: var(--font-md, 12px); line-height: var(--lh-snug);
   }
   .treedd__search::placeholder { color: var(--text-secondary, #9aa0a6); }
   /* 过滤空态复用既有 .treedd__empty（真源 chatStyles.ts），不在此重复定义。 */
@@ -114,7 +114,7 @@ export const dropdownStyles = `
     background: var(--surface-card, #252526);
     border: 1px solid var(--border-input, rgba(128,128,128,.5));
     color: var(--text-primary, #cccccc);
-    font-size: var(--font-md, 12px); line-height: 1; font-weight: 500;
+    font-size: var(--font-md, 12px); line-height: var(--lh-flat); font-weight: 500;
     white-space: nowrap; overflow: visible; /* 由子 span.dd-trigger-name 负责截断 */
   }
   .treedd--capsule .treedd__trigger::before { content: none; } /* 显式清零，保证只有 1 个箭头 */
@@ -127,7 +127,7 @@ export const dropdownStyles = `
    * 通用语义类 dd-trigger-name（模型/角色共用） */
   .treedd--capsule .treedd__trigger .dd-trigger-name {
     min-width: 0; flex: 1 1 auto; overflow: hidden;
-    white-space: nowrap; text-overflow: ellipsis; line-height: 1;
+    white-space: nowrap; text-overflow: ellipsis; line-height: var(--lh-flat);
   }
   .treedd--capsule .treedd__trigger:hover {
     background: var(--surface-hover, rgba(128,128,128,.2));

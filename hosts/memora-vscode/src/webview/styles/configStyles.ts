@@ -45,7 +45,7 @@ export const configStyles = `
   /* Card 基类见 settingsStyles 通用块；此处保留对齐差异（center + space-between） */
   #config-root .card { align-items: center; justify-content: space-between; }
   /* 卡片图标：Provider 首字块，装饰性元素 aria-hidden */
-  #config-root .cfg-icon { width: 26px; height: 26px; border-radius: var(--radius, 6px); display: inline-flex; align-items: center; justify-content: center; background: var(--surface-ai-avatar); color: var(--accent-foreground, #ffffff); font-size: var(--font-md, 12px); font-weight: 600; flex-shrink: 0; user-select: none; }
+  #config-root .cfg-icon { width: var(--icon-lg); height: var(--icon-lg); border-radius: var(--radius, 6px); display: inline-flex; align-items: center; justify-content: center; background: var(--surface-ai-avatar); color: var(--accent-foreground, #ffffff); font-size: var(--font-md, 12px); font-weight: 600; flex-shrink: 0; user-select: none; }
   #config-root .card-info { display: flex; flex-direction: column; gap: var(--sp-0, 2px); min-width: 0; flex: 1; }
   #config-root .card-name { font-weight: 600; }
   #config-root .card-detail { font-size: var(--font-md, 12px); color: var(--text-secondary, #9aa0a6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -60,7 +60,7 @@ export const configStyles = `
   #config-root .field label { display: block; font-size: var(--font-md, 12px); margin-bottom: var(--sp-1, 4px); color: var(--text-secondary, #9aa0a6); }
   #config-root .field input { width: 100%; box-sizing: border-box; padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); border: 1px solid var(--border-input, rgba(128,128,128,.5)); background: var(--surface-input, #3c3c3c); color: var(--text-input, #cccccc); font-size: var(--font-base, 13px); }
   #config-root .field select { width: 100%; box-sizing: border-box; padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); border: 1px solid var(--border-input, rgba(128,128,128,.5)); background: var(--surface-input, #3c3c3c); color: var(--text-input, #cccccc); font-size: var(--font-base, 13px); }
-  #config-root .field input:disabled { opacity: 0.6; }
+  #config-root .field input:disabled { opacity: var(--op-5); }
   /* 本地工具能力位复选框：标签与复选框同行走排（本地 LLM 能力声明） */
   #config-root .field .checkbox-label { display: flex; align-items: center; gap: var(--sp-2, 6px); color: var(--text-input, #cccccc); font-size: var(--font-base, 13px); cursor: pointer; }
   #config-root .field .checkbox-label input[type="checkbox"] { width: auto; flex-shrink: 0; accent-color: var(--accent, #0e639c); }
@@ -69,7 +69,7 @@ export const configStyles = `
   /* key-hint 内联警告图标：12px 提示文字配 13px SVG，取 warn 令牌；
      vertical-align 微调与文字基线对齐（同 test-result__icon 模式） */
   #config-root .key-hint .hint-warn-icon { display: inline-flex; align-items: center; vertical-align: -2px; margin: 0 3px; color: var(--feedback-warn-accent); }
-  #config-root .key-hint .hint-warn-icon svg { display: block; width: 13px; height: 13px; }
+  #config-root .key-hint .hint-warn-icon svg { display: block; width: var(--icon-xs); height: var(--icon-xs); }
   #config-root .test-result { font-size: var(--font-md, 12px); padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); margin-bottom: var(--sp-4, 10px); word-break: break-all; }
   #config-root .test-result.ok { background: var(--feedback-info-bg); color: var(--feedback-info-fg); }
   #config-root .test-result.err { background: var(--feedback-error-bg); color: var(--feedback-error-fg); }

@@ -92,7 +92,7 @@ export const memoryStyles = `
   }
 
   /* 取代态 / 编辑态：round-summary 治理语义的视觉提示 */
-  #memory-root .mem-card-superseded { border-style: dashed; border-color: var(--text-secondary, #9aa0a6); opacity: 0.85; }
+  #memory-root .mem-card-superseded { border-style: dashed; border-color: var(--text-secondary, #9aa0a6); opacity: var(--op-7); }
   #memory-root .mem-card-modified { border-left: 3px solid var(--warn, #d7ba7d); }
 
   #memory-root .mem-card-tags { display: flex; gap: var(--sp-1, 4px); margin-top: var(--sp-1, 4px); flex-wrap: wrap; }
@@ -101,7 +101,7 @@ export const memoryStyles = `
     padding: 0 var(--sp-2, 6px);
     font-size: var(--font-xs, 10px);
     border-radius: var(--radius-pill, 999px);
-    line-height: 1.6;
+    line-height: var(--lh-normal);
   }
   #memory-root .tag-superseded { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-secondary, #9aa0a6); }
   #memory-root .tag-modified { background: var(--feedback-warn-bg, rgba(196, 160, 0, 0.15)); color: var(--warn, #d7ba7d); }
@@ -124,7 +124,7 @@ export const memoryStyles = `
     color: var(--text-primary, #cccccc);
     white-space: pre-wrap;
     word-break: break-word;
-    line-height: 1.5;
+    line-height: var(--lh-snug);
   }
   #memory-root .mem-card-meta {
     margin-top: var(--sp-1, 4px);
@@ -188,7 +188,7 @@ export const memoryStyles = `
     background: transparent;
     color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-md, 12px);
-    line-height: 1;
+    line-height: var(--lh-flat);
     cursor: pointer;
     opacity: 0;
     transition: opacity var(--dur-fastest), background var(--dur-fastest), color var(--dur-fastest);
@@ -210,7 +210,7 @@ export const memoryStyles = `
     background: transparent;
     color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-md, 12px);
-    line-height: 1;
+    line-height: var(--lh-flat);
     cursor: pointer;
     opacity: 0;
     transition: opacity var(--dur-fastest), background var(--dur-fastest), color var(--dur-fastest);
@@ -237,7 +237,7 @@ export const memoryStyles = `
     padding: var(--sp-2, 6px) var(--sp-3, 8px);
     font-size: var(--font-sm, 11px);
     font-family: inherit;
-    line-height: 1.5;
+    line-height: var(--lh-snug);
     color: var(--text-input, #cccccc);
     background: var(--surface-input, #3c3c3c);
     border: 1px solid var(--border-input, rgba(128,128,128,.5));

@@ -124,7 +124,7 @@ export const skillsStyles = `
     font-weight: 500;
     padding: var(--sp-0, 2px) var(--sp-2, 6px);
     border-radius: var(--radius-lg, 8px);
-    line-height: 1.4;
+    line-height: var(--lh-tight);
   }
 
   /* 内置徽章：surface-ai-avatar 底 + accent-foreground 字（与 cfg-icon 同语言） */
@@ -149,7 +149,7 @@ export const skillsStyles = `
     margin: 0 0 var(--sp-2, 6px) 0;
     font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);
-    line-height: 1.4;
+    line-height: var(--lh-tight);
   }
 
   /* 写→验→用：健康徽章 + 问题列表（error=未生效 / warn=可优化） */
@@ -242,7 +242,7 @@ export const skillsStyles = `
   #skills-root .skill-problems li {
     font-size: var(--font-sm, 11px);
     margin-bottom: var(--sp-0, 2px);
-    line-height: 1.4;
+    line-height: var(--lh-tight);
   }
   #skills-root .skill-problems .prob-error { color: var(--skill-health-error); }
   #skills-root .skill-problems .prob-warning { color: var(--skill-health-warn); }

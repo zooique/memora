@@ -30,7 +30,7 @@ export const settingsStyles = `
   .settings-toast {
     position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
     max-width: 88%; padding: var(--sp-2, 6px) var(--sp-4, 10px);
-    font-size: var(--font-sm, 11px); line-height: 1.4;
+    font-size: var(--font-sm, 11px); line-height: var(--lh-tight);
     border-radius: var(--radius, 6px);
     background: var(--surface-card, #252526); color: var(--text-primary, #cccccc);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
@@ -87,7 +87,7 @@ export const settingsStyles = `
     color: var(--accent-foreground, #ffffff);
   }
   #roles-root .btn:disabled, #config-root .btn:disabled, #memory-root .btn:disabled, #skills-root .btn:disabled, #security-root .btn:disabled {
-    opacity: 0.5;
+    opacity: var(--op-3);
     cursor: not-allowed;
   }
   #roles-root .btn-ghost, #config-root .btn-ghost, #memory-root .btn-ghost, #skills-root .btn-ghost, #security-root .btn-ghost {
@@ -204,7 +204,7 @@ export const settingsStyles = `
   .loading-hint::before {
     content: '';
     display: inline-block;
-    width: 12px; height: 12px;
+    width: var(--icon-2xs); height: var(--icon-2xs);
     border: 1.5px solid var(--border-panel, rgba(128,128,128,.4));
     border-top-color: var(--accent, #0e639c);
     border-radius: 50%;
@@ -240,7 +240,7 @@ export const settingsStyles = `
     margin-bottom: var(--sp-2, 6px);
   }
   .security-label { font-size: var(--font-md, 12px); font-weight: 600; color: var(--text-primary); }
-  .security-desc { font-size: var(--font-sm, 11px); color: var(--text-secondary); margin: 0; line-height: 1.5; }
+  .security-desc { font-size: var(--font-sm, 11px); color: var(--text-secondary); margin: 0; line-height: var(--lh-snug); }
   .security-status { margin-top: var(--sp-2, 6px); font-size: var(--font-sm, 11px); color: var(--text-secondary); }
 
   /* 白名单额外路径 */
@@ -316,7 +316,7 @@ export const settingsStyles = `
     cursor: pointer;
   }
   .pager-btn:hover:not(:disabled) { background: var(--surface-hover, rgba(128, 128, 128, 0.2)); }
-  .pager-btn:disabled { opacity: .4; cursor: default; }
+  .pager-btn:disabled { opacity: var(--op-2); cursor: default; }
   .pager-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
   .pager-info { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
 `;

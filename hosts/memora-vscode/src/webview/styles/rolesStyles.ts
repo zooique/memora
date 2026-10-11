@@ -94,7 +94,7 @@ export const rolesStyles = `
   #roles-root .card-detail {
     font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);
-    line-height: 1.4;
+    line-height: var(--lh-tight);
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -122,7 +122,7 @@ export const rolesStyles = `
     border-radius: var(--radius-sm);
     background: var(--surface-hover, rgba(128, 128, 128, 0.2));
     color: var(--text-secondary, #9aa0a6);
-    line-height: 1.4;
+    line-height: var(--lh-tight);
   }
   /* 策略 chip 变体：底色统一继承基类 --surface-hover，仅以 VS Code charts 语义色相区分。
    * 原形态为 10 组各自独立的 Material 硬编码「淡彩底 + 彩字」：既绕开主题变量（Light /
