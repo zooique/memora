@@ -93,8 +93,9 @@ const HTML = `
   </div>
   <div id="inputBar">
     <button id="scrollToBottomBtn" class="scroll-to-bottom" hidden><span class="btn-icon" data-icon="scroll-bottom"></span></button>
-    <div id="skillChips" class="skill-chip-row" hidden></div>
     <div id="inputWrap">
+      <!-- 与生产骨架同步：附件行在 inputWrap 内、textarea 上（P6 骨架双源同挪纪律） -->
+      <div id="skillChips" class="skill-chip-row" hidden></div>
       <textarea id="input"></textarea>
       <div id="inputFooter">
         <div class="composer-row composer-row--actions">

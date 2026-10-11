@@ -4098,10 +4098,11 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       title="回到底部" aria-label="回到底部">
       <span class="btn-icon" data-icon="scroll-bottom"></span>
     </button>
-    <!-- Grok 式：选中 Skill 后在输入框上方以「名称 + × 可移除」chip 展示（chatView renderSkillChip 动态构建）；
-         entry 仍是 Row1 的 bolt 图标触发器，此处只呈现已挂载的技能状态，保证透明 + 可控 -->
-    <div id="skillChips" class="skill-chip-row" hidden></div>
     <div id="inputWrap">
+      <!-- 附件行（选择态行）：你亲手选的内容（skill，将来图片/手动记忆等）统一排在盒内文字上方——
+           面单贴在信封上；盒外留给系统运行时条，两种来源由物理位置分界，不混住。
+           空态 hidden 零高度，盒子不预留空行 -->
+      <div id="skillChips" class="skill-chip-row" hidden></div>
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
         <!-- Row 1 · 一级直面：左侧功能群 + 右侧唯一发送按钮（发送突出化） -->

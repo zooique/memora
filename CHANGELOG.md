@@ -584,6 +584,20 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Changed（宿主 · 输入区附件行入盒：skill chip 归位 `#inputWrap` 内）
+
+**分层判据（2026-10-11 拍板）**：「你亲手选的、发送前可撤销的」→ 输入盒边框内的**附件行**；
+盒外留给系统运行时条——skill chip 原挂 `#inputBar` 首子位（盒外），与运行时条叠成一摞，
+气泡站错队伍 = 视觉上「抢位置」的根因；位置本身即分层判据的肉身（主流同款：
+ChatGPT / Claude / Cursor 附件 chip 均在盒内文字上方）。
+
+- **挪位**：`#skillChips` 从 `#inputBar` 孤儿位移入 `#inputWrap` 内、`textarea` 上方
+  （生产骨架 `chatPanel.ts` + 夹具 `chatViewTestEnv.ts` 双源同步同挪）。
+- **CSS**：chip 行横向 padding 对齐 textarea 文字列（`--sp-6` 16px，fallback 与 tokens 同值零漂移）；
+  空态 `hidden` 零高度，盒子不预留空行；显隐/渲染逻辑零改动（仍归 `renderSkillChip` 单点）、零内核改动。
+- **验证**：宿主全量 1057 passed / 2 skipped / 0 failed；typecheck 零错；eslint 零警告；prettier 合规。
+- **待真机复验**：可见 UI 改动，随下次真机验收确认盒内观感（台账 `UI-INPUT-1`）。
+
 ### Fixed（宿主 · 样式层复核批次：残留裸 border-radius 消化 + 焦点环排除负 tabindex）
 
 **复核实锤（2026-10-11 会话回顾前对抗式复核）**：上一批「样式层 SSOT 收紧」的指标表记

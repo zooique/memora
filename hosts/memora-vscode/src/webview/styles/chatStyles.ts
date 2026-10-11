@@ -1419,14 +1419,15 @@ export const chatStyles = `
    * 定义顺序在 .is-active 之后 ⇒ 禁用项即使被选中也保持弱化（选中态靠 font-weight 600 体现）。 */
   .skill-picker .treedd__item.is-disabled { color: var(--text-secondary, #9aa0a6); }
 
-  /* Grok 式技能 chip 行：选中 Skill 后显示在输入框上方（消息区之下、composer 之上）。
-   * 与入口触发器（Row1 ⚡）分离——此处只呈现「已挂载的技能状态」，保证透明 + 可移除。 */
+  /* 附件行（选择态行）：在 #inputWrap 盒内、textarea 上方——你亲手选的（skill，将来图片/手动记忆等）
+     排在文字上方；盒外留给系统运行时条，来源由物理位置分界。
+     横向 padding 对齐 textarea 文字列（sp-6）；空态 hidden 零高度，盒子不预留空行。 */
   .skill-chip-row {
     display: flex;
     align-items: center;
     gap: var(--sp-2, 6px);
     flex-wrap: wrap;
-    padding: 0 var(--sp-3, 8px) var(--sp-2, 6px);
+    padding: var(--sp-2, 6px) var(--sp-6, 16px) 0;
     flex-shrink: 0;
   }
   .skill-chip-row[hidden] { display: none; }

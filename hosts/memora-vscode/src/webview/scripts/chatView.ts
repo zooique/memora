@@ -150,7 +150,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const skillPickerTrigger = skillPicker
     ? skillPicker.querySelector<HTMLElement>('.treedd__trigger')
     : null;
-  // Grok 式技能 chip 行：输入框上方展示当前已选 Skill（名称 + × 可移除）
+  // 附件行（选择态行）：输入盒内、文字上方展示当前已选 Skill（名称 + × 可移除）
   const skillChipRow = document.getElementById('skillChips') as HTMLElement | null;
   let currentSkill: { name: string; disabled?: boolean } | null = null;
   // 活动状态条（瞬态单条：error/info 通知，info 2500ms / error 8000ms 自动撤）
@@ -6190,9 +6190,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     },
   });
 
-  /** 更新 Skill 选择器标签 + 输入框上方 chip（Grok 式）：
+  /** 更新 Skill 选择器标签 + 盒内附件行 chip：
    * 入口触发器 ⚡（accent 边框表示已启用）+ 菜单内 is-active 高亮 + title/aria 兜底；
-   * 输入框上方由 renderSkillChip 呈现「名称 + × 可移除」的状态 chip。 */
+   * 输入盒内文字上方由 renderSkillChip 呈现「名称 + × 可移除」的状态 chip。 */
   function updateSkillPickerLabel(): void {
     if (skillPickerTrigger) {
       if (currentSkill) {
@@ -6216,7 +6216,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     renderSkillChip();
   }
 
-  /** Grok 式：在输入框上方构建/清空「名称 + × 可移除」的技能 chip。
+  /** 在输入盒内、textarea 上方构建/清空「名称 + × 可移除」的技能 chip（附件行成员）。
    * 用 textContent 逐节点构建（skill 名来自 SKILL_PRESETS 常量，天然安全）；
    * × 点击移除 = 清空 currentSkill 并刷新（保持与菜单触发器同源，单一真理源）。 */
   function renderSkillChip(): void {
