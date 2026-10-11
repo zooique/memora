@@ -1257,6 +1257,13 @@ export const chatStyles = `
   }
   #input:focus { outline: none; }
   #input:disabled { opacity: 0.6; }
+  /* 附件行在场时收 textarea 顶距：16px 顶距是**无附件时**文字贴盒顶的呼吸位（与左右
+   * 16px 同刻度）；附件行在场时它叠在气泡下方 = 间距堆到约 20px，而盒顶↔气泡仅 6px，
+   * 上下不对称即真机复验实锤的违和感。收到 sp-2（6px）与盒顶/附件行同刻度，
+   * 视觉 gap ≈ 行距半高 ≈ 10px。空态不命中 :has，观感零变化。 */
+  #inputWrap:has(.skill-chip-row:not([hidden])) #input {
+    padding-top: var(--sp-2, 6px);
+  }
   /* 输入区布局：左侧功能群 + 右侧发送按钮 + 状态行
    * 对齐 visual-design-philosopher：发送按钮突出化（最大最亮），其他功能弱化。 */
   #inputFooter {

@@ -596,7 +596,10 @@ ChatGPT / Claude / Cursor 附件 chip 均在盒内文字上方）。
 - **CSS**：chip 行横向 padding 对齐 textarea 文字列（`--sp-6` 16px，fallback 与 tokens 同值零漂移）；
   空态 `hidden` 零高度，盒子不预留空行；显隐/渲染逻辑零改动（仍归 `renderSkillChip` 单点）、零内核改动。
 - **验证**：宿主全量 1057 passed / 2 skipped / 0 failed；typecheck 零错；eslint 零警告；prettier 合规。
-- **待真机复验**：可见 UI 改动，随下次真机验收确认盒内观感（台账 `UI-INPUT-1`）。
+- **待真机复验（间距修复）**：真机复验其余验收点全过（2026-10-11）；发现附件行↔文字
+  间距违和（textarea 16px 顶距叠在气泡下 ≈20px，与盒顶↔气泡 6px 不对称）→ 有附件时
+  条件收顶距至 sp-2（`#inputWrap:has(...)` 空态不命中零变化），修复观感待复看
+  （台账 `UI-INPUT-1`）。
 
 ### Added（宿主 · skill 菜单顶部搜索：名称 + 描述过滤）
 
@@ -624,8 +627,8 @@ skill 下拉菜单顶部常驻搜索框（台账 `UI-INPUT-3`）。搜索审查�
   硬约束 1 / 过滤 3（名称·描述·大小写）/ 禁用随行 1 / 空态 1 / 保词 1 / 焦点回归 1，
   + dropdown 键盘守卫 1）；typecheck 零错；eslint 零警告；
   prettier 合规；tokensClosure 6/6。
-- **待真机复验**：可见 UI 改动——连续打字不丢焦（拼音组合不被打断）/ sticky 观感 /
-  过滤与保词。
+- **真机复验通过（2026-10-11）**：连续打字不丢焦（拼音组合不被打断）/ sticky 观感 /
+  打字方向键不跳焦 / 过滤与保词——验收点全过，用户确认。
 
 ### Fixed（宿主 · 样式层复核批次：残留裸 border-radius 消化 + 焦点环排除负 tabindex）
 
