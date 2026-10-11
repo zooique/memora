@@ -244,7 +244,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   }
 
   function render(data: ProvidersPayload): void {
-    // 顶栏统计：已配置 N 个 API（ui-redesign.md §4.2 ①）
+    // 顶栏统计：已配置 N 个 API
     statBar.hidden = false;
     statBar.textContent = `已配置 ${data.providers?.length ?? 0} 个 API`;
     if (!data.providers || data.providers.length === 0) {

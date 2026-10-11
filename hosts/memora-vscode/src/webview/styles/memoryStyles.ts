@@ -104,7 +104,7 @@ export const memoryStyles = `
     line-height: 1.6;
   }
   #memory-root .tag-superseded { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-secondary, #9aa0a6); }
-  #memory-root .tag-modified { background: rgba(204,167,0,.15); color: var(--warn, #cca700); }
+  #memory-root .tag-modified { background: var(--feedback-warn-bg, rgba(204,167,0,.15)); color: var(--warn, #cca700); }
 
   /* 内容预览：单行截断，供快速扫读 */
   #memory-root .mem-card-preview {

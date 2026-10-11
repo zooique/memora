@@ -19,7 +19,7 @@ export const settingsStyles = `
 
   /* ============ Base：元素级基础（四个子视图共享 body 规则） ============ */
   body {
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: var(--font-ui, system-ui, -apple-system, sans-serif);
     margin: 0; box-sizing: border-box;
     font-size: var(--font-base, 13px);
     color: var(--text-primary, #cccccc);

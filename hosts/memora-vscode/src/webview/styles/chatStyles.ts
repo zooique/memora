@@ -1,7 +1,7 @@
 /**
  * 对话打磨面板样式 — 对齐 Trae AI 对话面板的视觉语言（简洁、克制、主动可见）
  *
- * 分层（对齐 ui-engineering-mindset-rules.md + ITCSS）：
+ * 分层（ITCSS）：
  *   - 设计令牌（间距/圆角/字号/阴影/颜色）由 tokens.ts 单一真理源提供，
  *     本文件只引用令牌，禁止裸值；
  *   - 分区遵循 ITCSS：Base（body）→ Layout（状态区/消息区/输入区）
@@ -47,7 +47,7 @@ export const chatStyles = `
   [hidden] { display: none !important; }
 
   body {
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: var(--font-ui, system-ui, -apple-system, sans-serif);
     margin: 0;
     display: flex; flex-direction: column;
     height: 100vh; box-sizing: border-box;
@@ -312,7 +312,7 @@ export const chatStyles = `
   }
   .empty-title { font-size: var(--font-lg, 14px); color: var(--text-primary, #cccccc); font-weight: 600; margin-bottom: var(--sp-2, 6px); }
   .empty-hint { font-size: var(--font-md, 12px); margin-bottom: var(--sp-5, 12px); }
-  /* 示例提问 chips：点击填入输入框（ui-redesign.md §6.1 空状态引导），主动引导新用户 */
+  /* 示例提问 chips：点击填入输入框，主动引导新用户 */
   .empty-suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2, 6px); }
   .suggestion-chip {
     padding: var(--sp-1, 4px) var(--sp-4, 10px); font-size: var(--font-md, 12px);
@@ -335,7 +335,7 @@ export const chatStyles = `
   .followup__caption { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); margin-bottom: var(--sp-2, 6px); letter-spacing: 0.3px; }
   .followup__chips { display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); }
 
-  /* ============ Components：日期分隔线（跨天合并分组，ui-redesign.md §7.4） ============ */
+  /* ============ Components：日期分隔线（跨天合并分组） ============ */
   /* 跨天合并视图在日期交界插入弱化分隔：居中灰字 + 两侧细线，aria-hidden 装饰性。 */
   .date-divider {
     display: flex; align-items: center; gap: var(--sp-3, 8px);
@@ -508,7 +508,7 @@ export const chatStyles = `
     border: none; border-radius: var(--radius-sm, 2px);
     padding: 4px var(--sp-5, 12px); cursor: pointer;
   }
-  .write-confirm-card__btn--ok { background: var(--status-pass, #4ec9b0); color: #fff; }
+  .write-confirm-card__btn--ok { background: var(--status-pass, #4ec9b0); color: var(--accent-foreground, #fff); }
   .write-confirm-card__btn--reject { background: var(--surface-input, #3c3c3c); color: var(--text-primary, #cccccc); }
   .write-confirm-card__btn--ok:focus-visible,
   .write-confirm-card__btn--reject:focus-visible {
@@ -642,7 +642,7 @@ export const chatStyles = `
   }
   /* 模型名：灰色小字，前面加分隔点 */
   .msg-ai-label__model {
-    font-family: ui-monospace, Consolas, monospace;
+    font-family: var(--font-mono, ui-monospace, Consolas, monospace);
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
   }
@@ -715,7 +715,7 @@ export const chatStyles = `
   .msg.assistant .msg-body a:hover { text-decoration: underline; }
   /* 行内代码 */
   .msg.assistant .msg-body code {
-    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-family: var(--font-mono, ui-monospace, Consolas, monospace);
     font-size: 0.92em;
     background: var(--surface-code, rgba(0, 0, 0, 0.08));
     padding: 1px 4px; border-radius: var(--radius-sm, 2px);
@@ -744,7 +744,7 @@ export const chatStyles = `
     user-select: none;
   }
   .code-block__header + pre { margin: 0; border-radius: 0 0 var(--radius, 6px) var(--radius, 6px); }
-  .code-block__lang { font-family: ui-monospace, Consolas, monospace; }
+  .code-block__lang { font-family: var(--font-mono, ui-monospace, Consolas, monospace); }
   .code-block__copy {
     padding: var(--sp-0, 2px) var(--sp-2, 6px); font-size: var(--font-sm, 11px);
     border: none; border-radius: var(--radius-sm, 2px);
@@ -879,7 +879,7 @@ export const chatStyles = `
     background: transparent;
     color: inherit;
     font-family: inherit;
-    font-size: 11px;
+    font-size: var(--font-sm, 11px);
     cursor: pointer;
   }
   .file-changes-bar__confirm:hover {
@@ -922,7 +922,7 @@ export const chatStyles = `
     border-radius: var(--radius-pill);
     background: var(--accent, #0e639c);
     color: var(--surface-inverse, #fff);
-    font-size: 10px;
+    font-size: var(--font-xs, 10px);
     font-weight: 700;
     line-height: 1;
   }
@@ -933,7 +933,7 @@ export const chatStyles = `
   }
   .pending-queue-bar__hint {
     flex: 1;
-    font-size: 11px;
+    font-size: var(--font-sm, 11px);
     color: var(--text-muted, #888);
     overflow: hidden;
     white-space: nowrap;
@@ -960,7 +960,7 @@ export const chatStyles = `
   .pending-queue-bar__num {
     flex-shrink: 0;
     width: 16px;
-    font-size: 11px;
+    font-size: var(--font-sm, 11px);
     color: var(--text-muted, #888);
     text-align: right;
   }
@@ -988,7 +988,7 @@ export const chatStyles = `
     background: transparent;
     color: var(--text-muted, #888);
     cursor: pointer;
-    font-size: 10px;
+    font-size: var(--font-xs, 10px);
     line-height: 1;
     opacity: 0;
     transition: opacity var(--dur-fast), background var(--dur-fast), color var(--dur-fast);
@@ -1014,7 +1014,7 @@ export const chatStyles = `
     background: transparent;
     color: var(--text-muted, #888);
     cursor: pointer;
-    font-size: 11px;
+    font-size: var(--font-sm, 11px);
     line-height: 1;
     transition: background var(--dur-fast), color var(--dur-fast);
   }
@@ -1077,9 +1077,8 @@ export const chatStyles = `
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    /* 等宽字体：随既有 code 块写法用字面量——tokens.ts 无字体令牌，
-       包一层 var() 会被 tokensClosure 守卫判为幽灵令牌（注释里连令牌名都不能写） */
-    font-family: ui-monospace, Consolas, monospace;
+    /* 等宽字体：经 --font-mono 跟随用户在 VS Code 设置的编辑器字体 */
+    font-family: var(--font-mono, ui-monospace, Consolas, monospace);
     color: var(--text-secondary, #cccccc);
   }
   .background-tasks-bar__status {
@@ -1117,7 +1116,7 @@ export const chatStyles = `
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-muted, #888);
-    font-size: 13px;
+    font-size: var(--font-base, 13px);
     line-height: 1;
     cursor: pointer;
     transition: background var(--dur-fast), color var(--dur-fast);
@@ -1176,7 +1175,7 @@ export const chatStyles = `
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 8px;
+    font-size: var(--font-2xs, 8px);
     line-height: 1;
     color: var(--text-muted, #9a9a9a);
     font-variant-numeric: tabular-nums;
@@ -1197,7 +1196,7 @@ export const chatStyles = `
     border: 1px solid var(--border-input, rgba(128,128,128,.5));
     border-radius: var(--radius-md, 8px);
     box-shadow: var(--shadow-card, 0 2px 8px rgba(0, 0, 0, 0.15));
-    font-size: 11px;
+    font-size: var(--font-sm, 11px);
     line-height: 1.7;
     color: var(--text-input, #cccccc);
     white-space: pre-line; /* 保留 buildOccupancyTipText 的多行 \n */
@@ -1456,7 +1455,7 @@ export const chatStyles = `
     background: transparent;
     border: 1px dashed var(--text-secondary, #9aa0a6);
   }
-  .skill-chip__icon { font-size: 11px; line-height: 1; flex-shrink: 0; display: inline-flex; align-items: center; }
+  .skill-chip__icon { font-size: var(--font-sm, 11px); line-height: 1; flex-shrink: 0; display: inline-flex; align-items: center; }
   .skill-chip__icon svg { display: block; }
   .skill-chip__name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   /* chip 后缀徽记：与下拉项 .treedd__item-note 同语义、同观感（各自 BEM 归属） */
@@ -1479,7 +1478,7 @@ export const chatStyles = `
     border-radius: 50%;
     background: transparent;
     color: inherit;
-    font-size: 13px;
+    font-size: var(--font-base, 13px);
     line-height: 1;
     cursor: pointer;
   }
@@ -1737,7 +1736,7 @@ export const chatStyles = `
   /* plan-board planItemLog 行内相对时间标签 */
   .plan-item-round-time {
     display: inline-block;
-    font-size: 10px;
+    font-size: var(--font-xs, 10px);
     color: var(--text-muted, #6e7681);
     margin-right: var(--sp-2, 4px);
     padding: 1px 4px;
@@ -2164,12 +2163,7 @@ export const chatStyles = `
   }
 
   /* ============ Utilities：减少动效（可访问性） ============ */
-  /* 系统开启「减弱动态效果」时，关闭所有动画/过渡，避免眩晕 */
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-    }
-  }
+  /* 全局通配选择器级 reduce 兜底已提升至 tokens（令牌层）——对话面板与设置面板由此统一
+   * 覆盖，不再各管一段。本文件保留下方各处针对 infinite spinner / 常驻条的精确降级：
+   * 它们需要 animation: none 断根治疾，而非仅把时长压到 0.01ms。 */
 `;

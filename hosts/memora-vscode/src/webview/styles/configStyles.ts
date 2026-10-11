@@ -1,7 +1,7 @@
 /**
  * 大模型子视图样式（设置视图选项卡内）— 对齐 memora-sprite 的功能域分组思路 + 与对话面板统一的设计刻度
  *
- * 分层（对齐 ui-engineering-mindset-rules.md + ITCSS）：
+ * 分层（ITCSS）：
  *   - 设计令牌由 tokens.ts 单一真理源提供，经 settingsStyles.ts 统一内嵌，本文件不再内嵌；
  *   - 选择器统一以 `#config-root` 前缀限定 —— 设置视图合并后三个子视图共存于同一文档，
  *     共享类名（.card / .btn / .empty-state 等）靠根容器前缀隔离，避免跨子视图样式串扰；
@@ -12,10 +12,10 @@ export const configStyles = `
   /* ============ Layout：面板骨架 ============ */
   #config-root .header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px); padding: var(--sp-4, 10px) var(--sp-5, 12px); border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4)); }
   #config-root .header h2 { font-size: var(--font-lg, 14px); margin: 0; }
-  /* 顶栏统计：已配置 N 个 API（ui-redesign.md §4.2 ①） */
+  /* 顶栏统计：已配置 N 个 API */
   #config-root .stat-bar { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin-left: auto; }
   #config-root #list { padding: var(--sp-3, 8px); }
-  /* 分区标题：「激活 Provider」/「其他 Provider」（ui-redesign.md §4.2 ②③） */
+  /* 分区标题：「激活 Provider」/「其他 Provider」 */
   #config-root .group-title { font-size: var(--font-xs, 10px); letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-secondary, #9aa0a6); margin: var(--sp-3, 8px) 0 var(--sp-1, 4px); }
 
   /* ============ Components：后台模型通道 ============ */
@@ -45,7 +45,7 @@ export const configStyles = `
   /* ============ Components：Provider 卡片 ============ */
   /* Card 基类见 settingsStyles 通用块；此处保留对齐差异（center + space-between） */
   #config-root .card { align-items: center; justify-content: space-between; }
-  /* 卡片图标：Provider 首字块（ui-redesign.md §6.2），装饰性元素 aria-hidden */
+  /* 卡片图标：Provider 首字块，装饰性元素 aria-hidden */
   #config-root .cfg-icon { width: 26px; height: 26px; border-radius: var(--radius, 6px); display: inline-flex; align-items: center; justify-content: center; background: var(--surface-ai-avatar); color: var(--accent-foreground, #ffffff); font-size: var(--font-md, 12px); font-weight: 600; flex-shrink: 0; user-select: none; }
   #config-root .card-info { display: flex; flex-direction: column; gap: var(--sp-0, 2px); min-width: 0; flex: 1; }
   #config-root .card-name { font-weight: 600; }

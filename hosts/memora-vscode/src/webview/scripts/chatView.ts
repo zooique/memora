@@ -6144,7 +6144,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
   });
 
-  // 空状态示例提问 chips：点击填入输入框并聚焦（ui-redesign.md §6.1 空状态引导）。
+  // 空状态示例提问 chips：点击填入输入框并聚焦。
   // 事件委托于 document，兼容 renderEmptySuggestions 动态渲染的 chips（角色切换后新增元素）。
   function onDocumentClick(e: Event): void {
     const chip = (e.target as HTMLElement).closest<HTMLElement>('.suggestion-chip');

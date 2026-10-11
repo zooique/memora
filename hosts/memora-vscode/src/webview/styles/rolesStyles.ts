@@ -124,16 +124,20 @@ export const rolesStyles = `
     color: var(--text-secondary, #9aa0a6);
     line-height: 1.4;
   }
-  #roles-root .strategy-chip.readonly { background: rgba(255, 165, 0, 0.2); color: #ffa500; }
-  #roles-root .strategy-chip.full { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
-  #roles-root .strategy-chip.temp-high { background: rgba(156, 39, 176, 0.2); color: #9c27b0; }
-  #roles-root .strategy-chip.temp-mid { background: rgba(0, 150, 136, 0.2); color: #009688; }
-  #roles-root .strategy-chip.temp-low { background: rgba(33, 150, 243, 0.2); color: #2196f3; }
-  #roles-root .strategy-chip.reasoning-auto { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
-  #roles-root .strategy-chip.reasoning-manual { background: rgba(255, 152, 0, 0.2); color: #ff9800; }
-  #roles-root .strategy-chip.output-limit { background: rgba(158, 158, 158, 0.2); color: #9e9e9e; }
+  /* 策略 chip 变体：底色统一继承基类 --surface-hover，仅以 VS Code charts 语义色相区分。
+   * 原形态为 10 组各自独立的 Material 硬编码「淡彩底 + 彩字」：既绕开主题变量（Light /
+   * 高对比度主题下对比度失配），10 种不同透明彩底本身也是视觉噪音。现形态各处 dark/light
+   * 主题的对比度由 VS Code 官方 charts 调色板保证，字形可读性不再依赖本仓裸色。 */
+  #roles-root .strategy-chip.readonly { color: var(--vscode-charts-orange, #ffa500); }
+  #roles-root .strategy-chip.full { color: var(--vscode-charts-green, #4caf50); }
+  #roles-root .strategy-chip.temp-high { color: var(--vscode-charts-purple, #9c27b0); }
+  #roles-root .strategy-chip.temp-mid { color: var(--vscode-charts-cyan, #009688); }
+  #roles-root .strategy-chip.temp-low { color: var(--vscode-charts-blue, #2196f3); }
+  #roles-root .strategy-chip.reasoning-auto { color: var(--vscode-charts-green, #4caf50); }
+  #roles-root .strategy-chip.reasoning-manual { color: var(--vscode-charts-orange, #ff9800); }
+  #roles-root .strategy-chip.output-limit { color: var(--text-secondary, #9e9e9e); }
   /* 兜底契约包定位 chip（能力标签区，灰色系） */
-  #roles-root .strategy-chip.fallback { background: rgba(96, 125, 139, 0.2); color: #607d8b; }
+  #roles-root .strategy-chip.fallback { color: var(--text-tertiary, #607d8b); }
 
   /* ============ Components：健康区（manifest 校验问题，镜像技能 health-badge 模式） ============ */
   /* 徽章样式：复制技能侧 #skills-root .health-badge 形态，但用 #roles-root 作用域——避免把技能
@@ -184,7 +188,13 @@ export const rolesStyles = `
     cursor: pointer;
     user-select: none;
     padding: 2px 0;
-    outline: none;
+  }
+  /* summary 是原生可聚焦元素：原写法以 outline:none 抹掉焦点环且无任何替代 →
+   * 键盘 Tab 到此焦点不可见（违反 WCAG 2.4.7 Focus Visible）。
+   * 改为仅键盘聚焦态显示焦点环，鼠标点击不触发，不打扰鼠标用户。 */
+  #roles-root .card-details summary:focus-visible {
+    outline: 2px solid var(--border-focus, #0e639c);
+    outline-offset: 2px;
   }
   #roles-root .card-details summary:hover {
     color: var(--text-secondary, #9aa0a6);
@@ -231,8 +241,10 @@ export const rolesStyles = `
   #roles-root .trait-fill {
     height: 100%;
     background: var(--accent, #007acc);
-    border-radius: 2px;
-    transition: width 0var(--dur-slow) ease;
+    border-radius: var(--radius-sm, 2px);
+    /* 🔴 曾长期写 width 0var(--dur-slow)：var() 替换后成 width 0300ms，整条声明
+     * 语法非法被丢弃 ⇒ 特质条宽度过渡从未生效（0 是该行被删的旧时长残留）。 */
+    transition: width var(--dur-slow) ease;
   }
 
   /* ============ Components：卡片级组队 ============ */
@@ -300,8 +312,8 @@ export const rolesStyles = `
     border-radius: var(--radius, 6px);
     cursor: pointer;
   }
-  #roles-root .team-modal-item:hover { background: rgba(128,128,128,.08); }
-  #roles-root .team-modal-item.checked { background: rgba(156, 39, 176, 0.12); }
+  #roles-root .team-modal-item:hover { background: var(--surface-hover, rgba(128,128,128,.08)); }
+  #roles-root .team-modal-item.checked { background: var(--surface-checked, rgba(156, 39, 176, 0.12)); }
   #roles-root .team-modal-hint { font-size: var(--font-xs, 10px); color: var(--text-tertiary, #666); margin: var(--sp-2, 6px) 0; }
   #roles-root .team-modal-actions { display: flex; justify-content: flex-end; gap: var(--sp-2, 6px); }
   #roles-root .team-modal-actions .btn { padding: 2px var(--sp-2, 6px); font-size: var(--font-xs, 10px); }
@@ -319,7 +331,7 @@ export const rolesStyles = `
   #roles-root .role-detail-stage { font-weight: 600; font-size: var(--font-xs, 10px); color: var(--text-tertiary, #666); margin: var(--sp-2, 6px) 0 var(--sp-1, 3px); }
   /* 查看模式行：标签 + 值（title 悬停含义） */
   #roles-root .role-detail-row { display: flex; gap: var(--sp-2, 6px); padding: var(--sp-1, 4px); border-radius: var(--radius, 6px); }
-  #roles-root .role-detail-row:hover { background: rgba(128,128,128,.08); }
+  #roles-root .role-detail-row:hover { background: var(--surface-hover, rgba(128,128,128,.08)); }
   #roles-root .role-detail-label { color: var(--text-tertiary, #666); flex-shrink: 0; min-width: 96px; }
   #roles-root .role-detail-value { word-break: break-all; }
   /* 编辑模式行：标签 + 控件 */

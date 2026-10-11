@@ -115,6 +115,7 @@ import { createProvider } from '../../extension/host/llmConfig.js';
 import { vscodeTracer } from '../../extension/host/tracer.js';
 import { buildDropdownHtml, dropdownStyles } from '../components/dropdown.js';
 import { chatStyles } from '../styles/chatStyles.js';
+import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
 import {
   buildDocContextBlock,
   buildInjectedContextEnvelope,
@@ -3938,18 +3939,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
  *  @param scriptUri 外部脚本 chatView.js 的 asWebviewUri（CSP script-src cspSource 加载）
  *  @param cspSource webview 本地资源源（webview.cspSource，供 CSP script-src 放行 asWebviewUri 外部脚本） */
 function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
-  return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src ${cspSource};" />
-<style>
-  ${chatStyles}
-  ${dropdownStyles}
-</style>
-</head>
+  return `${buildHtmlHead({
+    lang: resolveHtmlLang(vscode.env?.language),
+    cspSource,
+    styles: `${chatStyles}\n${dropdownStyles}`,
+  })}
 <body>
   <!-- SSOT：面板无顶部身份条，角色切换在「角色」视图。
        角色/模型/状态职责归位：模型选择在输入区 composer（model-picker），生成状态由

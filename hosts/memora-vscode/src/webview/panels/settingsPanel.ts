@@ -32,6 +32,7 @@ import {
   resolveSkill,
 } from '../../extension/host/skillAggregation.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
+import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
 import {
   ACTIVE_ROLE_PACK_KEY,
   CONFIRM_WRITES_KEY,
@@ -1558,17 +1559,11 @@ function toSearchDto(h: {
  *  @param scriptUri 外部脚本 settingsView.js 的 asWebviewUri（CSP script-src cspSource 加载）
  *  @param cspSource webview 本地资源源（webview.cspSource，供 CSP 放行外部脚本） */
 function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
-  return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src ${cspSource};" />
-<style>
-  ${settingsStyles}
-</style>
-</head>
+  return `${buildHtmlHead({
+    lang: resolveHtmlLang(vscode.env?.language),
+    cspSource,
+    styles: settingsStyles,
+  })}
 <body>
   <!-- 选项卡栏：记忆（默认首页）/ 角色 / 大模型 / 技能 / 安全 -->
   <div class="tabs" role="tablist" aria-label="设置选项卡">

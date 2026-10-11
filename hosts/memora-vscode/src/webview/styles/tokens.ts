@@ -1,7 +1,7 @@
 /**
  * 设计令牌 — 全插件 Webview 样式层的单一真理源（SSOT）
  *
- * 分层（对齐 ui-engineering-mindset-rules.md §一 设计令牌）：
+ * 分层（ITCSS 设计令牌层）：
  *   L1 基础令牌（foundation）：间距 / 圆角 / 字号 / 阴影 —— 裸值只允许出现在本文件
  *   L2 语义令牌：将 --vscode-* 主题变量映射为语义含义（surface / border / text / accent）
  *   L3 组件令牌：输入区等具体组件的内部尺寸契约
@@ -34,6 +34,7 @@ export const tokens = `
     --dot-sm: 5px; --dot-md: 6px;
 
     /* === L1 基础令牌：字号阶梯 === */
+    --font-2xs: 8px;  /* 极紧凑档：刻度下界，唯一消费者 .context-ring__percent（圆环内百分比数字） */
     --font-xs: 10px; --font-sm: 11px; --font-md: 12px; --font-base: 13px; --font-lg: 14px;
 
     /* === L1 基础令牌：阴影层级 === */
@@ -48,6 +49,7 @@ export const tokens = `
     --surface-input: var(--vscode-input-background, #3c3c3c);
     --surface-card: var(--vscode-editorWidget-background, #252526);
     --surface-hover: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+    --surface-checked: var(--vscode-list-activeSelectionBackground, rgba(156, 39, 176, 0.12)); /* 列表项选中底 */
 
     /* === L2 语义令牌：边框 === */
     --border-input: var(--vscode-input-border, rgba(128, 128, 128, 0.5));
@@ -58,6 +60,15 @@ export const tokens = `
     --text-primary: var(--vscode-foreground, #cccccc);
     --text-secondary: var(--vscode-descriptionForeground, #9aa0a6);
     --text-input: var(--vscode-input-foreground, #cccccc);
+
+    /* === L2 语义令牌：字体族（VS Code 原生契约） ===
+     * 此前 UI 字体栈与代码块等宽栈均以裸值散落各处（且等宽栈分裂为两套变体），
+     * 绕开 VS Code 主题变量，用户在设置里指定的编辑器字体对插件完全无效。
+     * 本组令牌是 webview 字体的唯一出口——样式文件不得再写字体栈裸值。
+     * ⚠️ 字号阶梯刻意**不**跟随 --vscode-font-size：本 UI 为高信息密度紧凑布局，
+     *    跟随用户的编辑器字号会撑破徽章 / 标签 / 圆环等固定尺寸控件。 */
+    --font-ui: var(--vscode-font-family, system-ui, -apple-system, sans-serif);
+    --font-mono: var(--vscode-editor-font-family, ui-monospace, Consolas, monospace);
 
     /* === L2 语义令牌：品牌色（accent） ===
    * 跟随 VSCode 主题，自动适配亮/暗/高对比度模式。 */
@@ -112,7 +123,7 @@ export const tokens = `
     --surface-user-bubble: var(--vscode-editor-inactiveSelectionBackground, rgba(128, 128, 128, 0.2));
 
     /* === L2 语义令牌：AI 原生 UI（身份条 / 思考块） ===
-     * 对齐 ui-redesign.md §5：仅新增真正需要的语义令牌，其余一律复用已有令牌。
+     * 仅新增真正需要的语义令牌，其余一律复用已有令牌。
      *   --surface-ai-avatar：AI 头像底色（badge 背景，克制弱化的品牌色）
      *   --surface-thought：思考折叠块底色（编辑器控件背景，与消息区分）
      * 工具状态色复用 --status-pass/fail；日期分隔线复用 --text-secondary；
@@ -198,5 +209,31 @@ export const tokens = `
     /* 注：不设 --input-footer-h（Footer 由 flex column 自适应高度，不用固定 min-height）。
      * 参考值：56px (Actions 28 + Context 24 + gap 4) */
     --control-h: 28px;         /* 输入区控制件统一高度 */
+  }
+
+  /* === Utilities：减少动效（无障碍） ===
+   * 系统开启「减弱动态效果」时压掉全部动画与过渡，避免前庭功能障碍用户眩晕。
+   * 置于令牌层＝全局兜底：各样式文件（含未来新增）自动覆盖，无需逐个打补丁
+   * ——原先这条兜底只挂在 chatStyles 内，导致设置面板侧四套样式完全无降级。
+   * ⚠️ animation-iteration-count: 1 不可省：仅压 duration 时 infinite 动画会退化为
+   *    极高频重绘（loadingSpin / selfReviewPulse 等 spinner 反而更糟）。 */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  /* === Utilities：强制色彩模式（Windows 高对比度主题） ===
+   * 进入 forced-colors 后系统接管调色板，本仓自定义投影会被整体丢弃——与其让部分元素
+   * 保留投影、部分丢失造成层次不一致，不如统一压平，层级改由 border 承载。
+   * 焦点环交回系统 Highlight 色，保证键盘焦点在任意高对比度配色下始终可见。 */
+  @media (forced-colors: active) {
+    *, *::before, *::after {
+      box-shadow: none !important;
+      text-shadow: none !important;
+    }
+    :root { --border-focus: Highlight; }
   }
 `;
