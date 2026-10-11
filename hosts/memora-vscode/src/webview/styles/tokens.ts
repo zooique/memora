@@ -229,14 +229,21 @@ export const tokens = `
     --occ-dialogue: var(--vscode-charts-blue, #3794ff);
 
     /* === L2 语义令牌：菜单（dropdown.ts 引用） ===
-     *  dropdown 浮层复用 VSCode 原生 menu 语义变量；此前直引 --vscode-menu-* 散落 11 处
-     *  （SSOT 泄漏）。收进语义层，裸值回退与直引时一致 ⇒ 视觉零变化。
-     *  命名对齐 --surface-*/--border-*/--text-* 族。 */
-    --menu-bg: var(--vscode-menu-background, #ffffff);
-    --menu-fg: var(--vscode-menu-foreground, #1f1f1f);
-    --menu-border: var(--vscode-menu-border, #ccc);
-    --menu-selection-bg: var(--vscode-menu-selectionBackground, #e0e0e0);
-    --menu-selection-fg: var(--vscode-menu-selectionForeground, #1f1f1f);
+     * ⚠️ 变量选错已修（2026-10-12 真机截图实锤，勿回改）：--vscode-menu-background /
+     * foreground / selectionBackground / selectionForeground **在 VS Code 主题色表里
+     * 不存在**（menu.* 仅 menu.border 与 menu.separatorBackground 存在）⇒ 主路径恒失效、
+     * 永远走亮色 fallback #ffffff ⇒ 暗色主题下浮层白底黑字（会话记录 / 技能搜索两个
+     * 下拉均中招）。此前 SEM-1 只是把这组不存在的变量从消费层搬进语义层——**搬家不是
+     * 修复**；SSOT-1 排雷时据 dropdown 头注判「复用原生 menu 变量 = 刻意设计意图」
+     * 亦系误判（设计意图建立在不存在的前提上）。教训：判「变量存在」要以 VS Code 官方
+     * 主题色表为准，不能以「有人这么写过」为准。改引**真实存在**的 dropdown.* 与
+     * list.hover* 族：亮色主题 dropdown-background = #ffffff ⇒ 亮色观感不变；
+     * 暗色主题浮层随主题转暗（本次视觉变化，真机已反馈白色问题，待复验）。 */
+    --menu-bg: var(--vscode-dropdown-background, #252526);
+    --menu-fg: var(--vscode-dropdown-foreground, #cccccc);
+    --menu-border: var(--vscode-dropdown-border, rgba(128, 128, 128, 0.4));
+    --menu-selection-bg: var(--vscode-list-hoverBackground, rgba(14, 99, 156, 0.06));
+    --menu-selection-fg: var(--vscode-list-hoverForeground, #cccccc);
 
     /* === L2 语义令牌：图表/策略色（rolesStyles 策略 chip 引用） ===
      *  策略 chip 直引 --vscode-charts-* 散落 7 处（SSOT 泄漏）。收进语义层；

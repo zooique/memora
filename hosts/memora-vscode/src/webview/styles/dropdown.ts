@@ -1,5 +1,5 @@
 /**
- * 下拉菜单样式 — Trae 风格紧凑下拉（复用 VSCode 原生 menu 语义变量，亮/暗主题自适应）
+ * 下拉菜单样式 — Trae 风格紧凑下拉（走 tokens 的 --menu-* 语义令牌，变量经 2026-10-12 订正为真实存在的 dropdown 族与 list.hover 族，亮/暗主题自适应）
  *
  * 结构约定（由 components/dropdown.ts 生成）：
  *   .treedd[data-treedd]           下拉容器（相对定位）
@@ -29,10 +29,10 @@ export const dropdownStyles = `
     position: absolute; right: 0; top: calc(100% + var(--sp-1, 4px));
     min-width: 168px; z-index: var(--z-menu); /* 浮层高 z-index，确保覆盖而非挤压布局 */
     padding: var(--sp-1, 4px); box-sizing: border-box;
-    border: 1px solid var(--menu-border, #ccc);
+    border: 1px solid var(--menu-border, rgba(128, 128, 128, 0.4));
     border-radius: var(--radius-lg, 8px);
-    background: var(--menu-bg, #ffffff);
-    color: var(--menu-fg, #1f1f1f);
+    background: var(--menu-bg, #252526);
+    color: var(--menu-fg, #cccccc);
     box-shadow: var(--shadow-modal, 0 4px 16px rgba(0, 0, 0, 0.3));
     display: none;
     flex-direction: column; gap: var(--sp-0, 2px);
@@ -48,13 +48,13 @@ export const dropdownStyles = `
     border: none; border-radius: var(--radius, 6px); text-align: left;
     background: transparent; cursor: pointer;
     font-size: var(--font-md, 12px); line-height: var(--lh-snug);
-    color: var(--menu-fg, #1f1f1f);
+    color: var(--menu-fg, #cccccc);
   }
   .treedd__item:hover,
   .treedd__item:focus-visible {
     outline: none;
-    background: var(--menu-selection-bg, #e0e0e0);
-    color: var(--menu-selection-fg, #1f1f1f);
+    background: var(--menu-selection-bg, rgba(14, 99, 156, 0.06));
+    color: var(--menu-selection-fg, #cccccc);
   }
   .treedd__item.is-danger { color: var(--status-fail); }
   .treedd__item.is-danger:hover { color: var(--status-fail); }
@@ -78,10 +78,10 @@ export const dropdownStyles = `
     position: sticky; top: 0; z-index: var(--z-base);
     display: block; width: 100%; box-sizing: border-box;
     padding: var(--sp-2, 6px) var(--sp-3, 8px);
-    border: none; border-bottom: 1px solid var(--menu-border, #ccc);
+    border: none; border-bottom: 1px solid var(--menu-border, rgba(128, 128, 128, 0.4));
     border-radius: 0;
-    background: var(--menu-bg, #ffffff);
-    color: var(--menu-fg, #1f1f1f);
+    background: var(--menu-bg, #252526);
+    color: var(--menu-fg, #cccccc);
     font-size: var(--font-md, 12px); line-height: var(--lh-snug);
   }
   .treedd__search::placeholder { color: var(--text-secondary, #9aa0a6); }
@@ -89,7 +89,7 @@ export const dropdownStyles = `
   /* 菜单内分隔线：隔开「清除项（逃逸舱）」与可过滤列表，纯装饰不参与点击委托 */
   .treedd__divider {
     height: var(--sp-hair, 1px); margin: var(--sp-0, 2px) 0;
-    background: var(--menu-border, #ccc);
+    background: var(--menu-border, rgba(128, 128, 128, 0.4));
   }
   /* 列表容器（唯一重建区）：承接菜单原有 gap 节奏（容器自身也在菜单 flex/gap 里，
    * 输入框 ↔ 列表、列表内部两段间距均 = --sp-0，与全量平铺时视觉一致） */

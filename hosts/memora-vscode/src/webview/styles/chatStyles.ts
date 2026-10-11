@@ -248,12 +248,14 @@ export const chatStyles = `
     cursor: pointer;
   }
   .session-tab:hover { color: var(--text-primary, #cccccc); }
-  /* 选中态归「选中」令牌：原用 --surface-active（= hover 色），与同组件徽章底主路径
-   * 同色 ⇒ 选中不可辨。迁 --surface-checked（list-activeSelectionBackground）后与
-   * hover 真正区分（UI-TOKEN-LAYER-2）。 */
+  /* 选中态 = accent 底 + 反色文字（2026-10-12 真机反馈实锤，勿回改）：LAYER-2 曾迁
+   * --surface-checked（list-activeSelectionBackground），但该变量在暗色主题是深蓝
+   * #04395E，与深灰底拉不开 ⇒ 用户实测「基本一个色调、看不到紫调」（此前把 fallback
+   * 的紫色误当主题实际色描述，失实）。改用 accent（button-background）底 +
+   * accent-foreground 文字——VS Code 选中高亮的标准强表达，暗/亮主题都与底面对比充分。 */
   .session-tab.is-active {
-    color: var(--text-primary, #cccccc); font-weight: 600;
-    background: var(--surface-checked, rgba(156, 39, 176, 0.12));
+    color: var(--accent-foreground, #ffffff); font-weight: 600;
+    background: var(--accent, #0e639c);
   }
   .session-tab__count { font-weight: 400; color: var(--text-secondary, #9aa0a6); }
   /* FD-3-A 元数据搜索框：贴在分组 tab 下、条目容器上；独立元素不随条目重建清空 */
