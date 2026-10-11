@@ -774,7 +774,7 @@ export const chatStyles = `
     gap: var(--sp-2, 6px);
     margin-top: var(--sp-1, 4px);
     padding: var(--sp-1, 4px) 0 0;
-    border-top: 1px dashed var(--border-panel, rgba(128, 128, 128, 0.4));
+    border-top: var(--divider-dashed);
     font-size: var(--font-sm, 11px);
   }
   /* 容器级 footer 的「内容未定稿」隐藏：与段级 .msg-footer.is-pending 同一语义。
@@ -1734,7 +1734,7 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px);
     color: var(--accent, #0e639c);
     padding: 0 0 var(--sp-1, 4px);
-    border-bottom: 1px dashed var(--border-panel, rgba(128, 128, 128, 0.4));
+    border-bottom: var(--divider-dashed);
     margin-bottom: var(--sp-1, 4px);
   }
   /* target 图标（SVG）：跟随 accent 色，不收缩 */
@@ -1801,7 +1801,7 @@ export const chatStyles = `
   /* 中断轮平铺收尾行（过程折叠、停止行折叠块外平铺常驻——RT/RP 同构） */
   .round-block__interrupted {
     margin: var(--sp-2, 6px) 0 var(--sp-0, 2px); padding: var(--sp-1, 4px) 0;
-    border-top: 1px dashed var(--border-panel, rgba(128,128,128,.4));
+    border-top: var(--divider-dashed);
     font-size: var(--font-sm, 11px); line-height: 1.6; font-weight: 600;
     color: var(--danger, #f14c4c);
     word-break: break-all;
@@ -2056,7 +2056,7 @@ export const chatStyles = `
   }
   .status-dock__controls:not([hidden]) + .status-dock__timeline {
     padding-top: var(--sp-2, 6px);
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-top: var(--divider-solid);
   }
   /* 段头「活动」已删（2026-10-08 SSOT 收口）：抽屉标签唯一真源 = dockChip 文案
    * （resolveDock 单点动态赋值「活动/+N」），展开态 chip 紧邻面板上方，段头为第二份硬编码副本。
@@ -2080,7 +2080,7 @@ export const chatStyles = `
     /* 与历史列表的分隔线；横向/底部留白由抽屉体 padding 承担，不双倍 */
     padding: var(--sp-2, 6px) 0 0; line-height: 1.7;
     white-space: pre-wrap; word-break: break-all;
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-top: var(--divider-solid);
   }
 
   /* 主动提问条 */

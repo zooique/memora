@@ -183,7 +183,7 @@ export const settingsStyles = `
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-top: var(--divider-solid);
     text-align: center;
   }
 

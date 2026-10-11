@@ -119,7 +119,7 @@ export const memoryStyles = `
   #memory-root .mem-card-detail {
     margin-top: var(--sp-2, 6px);
     padding-top: var(--sp-2, 6px);
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-top: var(--divider-solid);
     font-size: var(--font-sm, 11px);
     color: var(--text-primary, #cccccc);
     white-space: pre-wrap;
@@ -142,7 +142,7 @@ export const memoryStyles = `
   /* ============ Components：记忆治理区 ============ */
   #memory-root .governance {
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-top: var(--divider-solid);
   }
   /* 统计卡：三列（活跃 / 回收站 / 已被取代） */
   #memory-root .governance-stats {
@@ -228,7 +228,7 @@ export const memoryStyles = `
   #memory-root .mem-edit-wrap {
     margin-top: var(--sp-2, 6px);
     padding-top: var(--sp-2, 6px);
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-top: var(--divider-solid);
   }
   #memory-root .mem-edit-area {
     width: 100%;
@@ -255,7 +255,7 @@ export const memoryStyles = `
   #memory-root .recycle {
     margin: var(--sp-3, 8px) 0 0;
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-top: var(--divider-solid);
   }
   #memory-root .recycle > summary {
     cursor: pointer;

@@ -216,6 +216,24 @@ export const tokens = `
     --warn: var(--vscode-charts-yellow, #d7ba7d);
     --text-error: var(--vscode-errorForeground, #f14c4c);
 
+    /* === L3 组件令牌：分隔线（U5 组件层收拢 · 2026-10-12） ===
+     * 分隔线契约此前散落 13 处：颜色已走单源 --border-panel，但「1px + solid/dashed」
+     * 仍是逐处手写的重复文本 ⇒ 改线宽/线型要动 13 处。收成值令牌后单点可改。
+     * 命名**不绑方向、不绑元素**（solid/dashed 只表线的形态）：实线用于
+     * border-top 与 border-bottom 两向，绑方向名会逼出第二套令牌。
+     * 回退与收拢前逐字等价（rgba(128,128,128,.4) = --border-panel 的回退）⇒ 零视觉变化。
+     *
+     * ⚠️ 为何不用「全局 .divider-top 工具类」（U5 原提案）——实测否决，勿回改：
+     *   分隔线并非都是元素自身的无条件样式。chatStyles 的
+     *   「.status-dock__controls:not([hidden]) + .status-dock__timeline」是**条件性相邻
+     *   兄弟选择器**（仅控制段可见时才画线）；工具类靠给元素加 class 生效，一旦加上
+     *   就退化成无条件常驻画线 ⇒ 行为变化（带伤）。值令牌是纯值替换，选择器与
+     *   特异性原样保留，条件不丢。同理不采用「把 13 个选择器聚成一条分组规则」：
+     *   chat 与 settings 系是两个独立注入的样式串，跨串聚不了，且条件选择器入列表后
+     *   可读性反而更差。 */
+    --divider-solid: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
+    --divider-dashed: 1px dashed var(--border-panel, rgba(128, 128, 128, 0.4));
+
     /* === L3 组件令牌：下拉胶囊尺寸（dropdown.ts 引用） === */
     --dd-trigger-max-w: 200px;   /* 胶囊触发器最大宽（超长省略兜底） */
     --dd-menu-min-w: 160px;      /* 胶囊菜单最小宽 */

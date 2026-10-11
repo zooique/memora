@@ -179,7 +179,7 @@ export const rolesStyles = `
   /* ============ Components：折叠详情区（专家挖掘） ============ */
   #roles-root .card-details {
     margin-top: var(--sp-1, 4px);
-    border-top: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
+    border-top: var(--divider-solid);
     padding-top: var(--sp-2, 6px);
   }
   #roles-root .card-details summary {
@@ -246,8 +246,8 @@ export const rolesStyles = `
   /* 小组条：卡片底部队伍阵容 + 创建/编辑队伍入口 */
   #roles-root .team-ribbon {
     display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px);
-    border-top: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
-    border-bottom: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
+    border-top: var(--divider-solid);
+    border-bottom: var(--divider-solid);
     padding: var(--sp-2, 6px) 0;
     margin: var(--sp-1, 4px) var(--sp-3, 8px) 0;
   }
