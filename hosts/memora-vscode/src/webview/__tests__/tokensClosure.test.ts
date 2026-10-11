@@ -404,3 +404,69 @@ describe('设计令牌颜色 fallback 一致性守卫（防第三套值）', () 
     ).toEqual([]);
   });
 });
+
+/**
+ * 定义层守卫 —— tokens.ts 自己也要守「同变量同回退」
+ *
+ * 病灶：上列守卫都在比对「消费侧 ↔ 定义侧」，把 tokens.ts 当公理，于是**定义层自身的
+ * 第二真理源**长期无人看管：同一个 --vscode-* 变量被多个令牌引用却配了不同 fallback
+ * （2026-10-12 实测 8 组）。两类后果：
+ *   ① 脱钩路径分裂：令牌未注入时，同族令牌渲染成互不一致的颜色（第三套值）；
+ *   ② 更隐蔽的「主路径塌缩」：同变量 ⇒ 主路径恒同值，于是 --surface-inset（静态表面）
+ *      与 --surface-hover / --surface-active（交互态）视觉无差别 ⇒ hover 与选中反馈在
+ *      主路径失效。塌缩靠「对齐数值」治不好，只能换变量/换语义。
+ *
+ * 本次已把**同义**令牌合并（--surface-normal→--surface-inset、--text-tertiary/--text-muted
+ * →--text-secondary、--surface-tip→--surface-card、--surface-panel→--surface-sidebar、
+ * --surface-inverse→--accent-foreground），8 组降到 5 组。剩余 5 组均属「需换变量或换语义」
+ * （border 三档 / warn-fg 变量选错 / 跨色系两组 / 静态表面 vs 交互态），已登记下批条目，
+ * 故本门走**冻结式软门**而非硬门——与「裸值债务冻结」同构：只挡新增、允许并鼓励下降。
+ *
+ * 反向守卫：断言扫到的定义层映射总量，防提取正则失效导致「空集恒过」的假绿。
+ */
+const DEFINITION_FROZEN_BASELINE = 5;
+
+describe('设计令牌定义层守卫（同 --vscode-* 变量须同回退）', () => {
+  interface DefEntry {
+    token: string;
+    fb: string;
+  }
+
+  /** 收集定义层映射：--token: var(--vscode-x, fb) —— 按变量聚组 */
+  function collectDefinitionGroups(): Map<string, DefEntry[]> {
+    const groups = new Map<string, DefEntry[]>();
+    // 先剥块注释：注释里的示例定义（如折叠说明）不构成真实声明
+    const text = tokensText.replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const m of text.matchAll(/--([\w-]+)\s*:\s*([^;]+);/g)) {
+      const token = m[1] ?? '';
+      const head = findVarsBalanced(m[2] ?? '')[0];
+      // 只认「首跳即主题变量」的映射；--a: var(--b, ...) 的链式令牌归值守卫管
+      if (!head || !head.name.startsWith('vscode-') || head.fb === undefined) continue;
+      const list = groups.get(head.name) ?? [];
+      list.push({ token, fb: normalizeColor(head.fb) });
+      groups.set(head.name, list);
+    }
+    return groups;
+  }
+
+  it('提取口径有效（防提取失效导致的空集假绿）', () => {
+    let scanned = 0;
+    for (const list of collectDefinitionGroups().values()) scanned += list.length;
+    expect(scanned, '未扫到定义层的 --vscode-* 映射——提取正则已失效').toBeGreaterThan(40);
+  });
+
+  it('同变量不同回退的组数不得高于基线（新增即红，下降不受限）', () => {
+    const inconsistent: string[] = [];
+    for (const [vsc, list] of collectDefinitionGroups()) {
+      if (new Set(list.map((e) => e.fb)).size <= 1) continue;
+      inconsistent.push(`--${vsc}: ${list.map((e) => `--${e.token}=${e.fb}`).join(' | ')}`);
+    }
+    if (inconsistent.length > 0) {
+      console.warn(
+        `[定义层守卫] 同变量不同回退 ${inconsistent.length} 组（基线 ${DEFINITION_FROZEN_BASELINE}）—` +
+          ` 债务冻结中，新增即红、下降不受限。\n${inconsistent.join('\n')}`,
+      );
+    }
+    expect(inconsistent.length).toBeLessThanOrEqual(DEFINITION_FROZEN_BASELINE);
+  });
+});
