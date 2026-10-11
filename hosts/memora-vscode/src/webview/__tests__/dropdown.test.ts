@@ -192,4 +192,30 @@ describe('dropdown 键盘可访问性', () => {
     trigger.click();
     expect(el.classList.contains('treedd--drop-down')).toBe(false);
   });
+
+  it('菜单内输入框打字不被导航键劫持；Escape 仍走菜单语义关闭', () => {
+    // 场景 = 技能菜单顶部搜索框：方向键/首末键在文本输入中应移动光标，
+    // 若被菜单 keydown 接管会跳焦到菜单项（打字按 ←→ 却丢焦点的错乱体验）。
+    const { el, trigger, items } = mountDropdown();
+    const input = document.createElement('input');
+    input.className = 'treedd__search';
+    el.querySelector('.treedd__menu')!.appendChild(input);
+    trigger.click(); // 展开并聚焦首项
+    input.focus();
+    // 打字类按键：不劫持——焦点必须仍在输入框
+    key(input, 'ArrowRight');
+    expect(document.activeElement).toBe(input);
+    key(input, 'ArrowDown');
+    expect(document.activeElement).toBe(input);
+    key(input, 'Home');
+    expect(document.activeElement).toBe(input);
+    // Escape：仍走菜单语义——收起 + 回焦点触发器（输入框不吞关闭键）
+    key(input, 'Escape');
+    expect(el.classList.contains('is-open')).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+    // 反向守卫：菜单项上的同名按键仍照常导航（守卫只对输入框生效）
+    trigger.click();
+    key(items[0], 'ArrowDown');
+    expect(document.activeElement).toBe(items[1]);
+  });
 });

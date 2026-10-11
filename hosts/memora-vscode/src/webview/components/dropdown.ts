@@ -168,6 +168,12 @@ export function initDropdowns(
 
     // 菜单内键盘导航：方向键在项间移动、Home/End 跳首/末、Escape 关闭并回触发器
     menu.addEventListener('keydown', (e: KeyboardEvent) => {
+      // 菜单内输入框（如技能搜索）打字时不劫持导航键：方向键/首末键归文本光标；
+      // Escape / Tab 仍走菜单语义（关闭）。缺此守卫，搜索时按 ←→ 会跳焦到菜单项。
+      const evtTarget = e.target as HTMLElement | null;
+      if (evtTarget instanceof HTMLInputElement || evtTarget instanceof HTMLTextAreaElement) {
+        if (e.key !== 'Escape' && e.key !== 'Tab') return;
+      }
       const items = menuItems(el);
       if (items.length === 0) return;
       const idx = items.indexOf(root.activeElement as HTMLElement);

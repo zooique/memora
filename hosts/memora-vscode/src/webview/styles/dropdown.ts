@@ -66,6 +66,39 @@ export const dropdownStyles = `
     color: var(--text-secondary, #9aa0a6);
   }
 
+  /* ===== 菜单内搜索框（技能选择器过滤输入）=====
+   * 常驻菜单顶部：胶囊菜单 max-height:260px + overflow-y:auto，滚动时
+   * sticky 保证输入口不被项列表顶出可视区（复用会话搜索「框独立于条目容器」纪律）。
+   * 刻意不带 .treedd__item —— 菜单 click 委托 closest('.treedd__item') 命中才选中并
+   * 关闭，输入框带该类会一击收起浮层（同 chatView.test.ts 会话搜索硬约束先例）。
+   * 焦点样式不自写：tokens.ts 全局 :where(button, input, ...):focus-visible 已覆盖 input。
+   * 🔴 恒驻 DOM、出重建区（间距全交菜单/列表的 gap，自身不设 margin，
+   * 否则与 gap 叠成双倍）。 */
+  .treedd__search {
+    position: sticky; top: 0; z-index: 1;
+    display: block; width: 100%; box-sizing: border-box;
+    padding: var(--sp-2, 6px) var(--sp-3, 8px);
+    border: none; border-bottom: 1px solid var(--vscode-menu-border, #ccc);
+    border-radius: 0;
+    background: var(--vscode-menu-background, #ffffff);
+    color: var(--vscode-menu-foreground, #1f1f1f);
+    font-size: var(--font-md, 12px); line-height: 1.5;
+  }
+  .treedd__search::placeholder { color: var(--text-secondary, #9aa0a6); }
+  /* 过滤空态复用既有 .treedd__empty（真源 chatStyles.ts），不在此重复定义。 */
+  /* 菜单内分隔线：隔开「清除项（逃逸舱）」与可过滤列表，纯装饰不参与点击委托 */
+  .treedd__divider {
+    height: var(--sp-hair, 1px); margin: var(--sp-0, 2px) 0;
+    background: var(--vscode-menu-border, #ccc);
+  }
+  /* 列表容器（唯一重建区）：承接菜单原有 gap 节奏（容器自身也在菜单 flex/gap 里，
+   * 输入框 ↔ 列表、列表内部两段间距均 = --sp-0，与全量平铺时视觉一致） */
+  .treedd__list {
+    display: flex; flex-direction: column;
+    gap: var(--sp-0, 2px);
+    min-width: 0;
+  }
+
   /* ===== 胶囊变体（.treedd--capsule）=====
    * 模型选择 / 历史切换等「紧凑胶囊触发器」的通用外观，集中定义一次，面板复用。
    * 相比各面板以 !important 覆写组件默认样式（层叠污染的架构反模式），此变体以

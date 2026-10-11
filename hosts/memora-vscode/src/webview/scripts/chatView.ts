@@ -5559,39 +5559,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // `disabled` 必须随行带出——丢弃该字段会让用户通道看不出技能已禁用
       // （选它就等于静默落空）。标记仅供显示，**不做拦截**：
       // 真源判定在 host（`isSkillDisabled`），webview 若自行拒绝会在 reload 后假拒绝。
-      skillOptions = msg.skills.map((s) => ({ name: s.name, disabled: s.disabled }));
-      if (skillPickerMenu) {
-        skillPickerMenu.innerHTML = '';
-        const clearItem = document.createElement('div');
-        clearItem.className = 'treedd__item';
-        // 顶部项语义 = 「普通对话、不挂载技能」——用中性「未选择技能」替代原「不使用 Skill」：
-        // 原文字易被误读为「禁用技能」（禁用另属设置页禁用清单），且暗示「提及技能名即自动
-        // 命中」（当前机制是显式选择，见 title 提示）。
-        clearItem.textContent = '未选择技能';
-        clearItem.title =
-          '未挂载任何技能，进行普通对话（技能需从下方显式选择；提示词提及技能名不会自动加载）';
-        clearItem.dataset.treeddId = '__clear_skill';
-        skillPickerMenu.appendChild(clearItem);
-        const divider = document.createElement('div');
-        divider.className = 'treedd__divider';
-        skillPickerMenu.appendChild(divider);
-        for (const s of skillOptions) {
-          const item = document.createElement('div');
-          item.className = 'treedd__item';
-          item.textContent = s.name;
-          item.dataset.treeddId = s.name;
-          if (s.disabled) {
-            // 已禁用：弱化 + 后缀徽记（复用设置面板同一语义词汇，非隐蔽、不隐藏条目）
-            item.classList.add('is-disabled');
-            const note = document.createElement('span');
-            note.className = 'treedd__item-note';
-            note.textContent = '已禁用';
-            item.appendChild(note);
-          }
-          skillPickerMenu.appendChild(item);
-        }
-      }
-      updateSkillPickerLabel();
+      // `description` 随行带出：菜单搜索按「名称 + 描述」匹配（载荷本有，此前消费时被丢弃）。
+      skillOptions = msg.skills.map((s) => ({
+        name: s.name,
+        description: s.description,
+        disabled: s.disabled,
+      }));
+      renderSkillPickerMenu();
     } else if (msg.type === 'file_changes') {
       // 未确认文件改动快照：宿主在**改动集变化**时推 + **webview ready 时补推一次**
       // （两个时机缺一即漏面——只推变化的话，面板重开后常驻条会消失）
@@ -6276,23 +6250,98 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /** 动态技能清单（SSOT 收紧）：不硬编码预设，由 host 推 skills_loaded 填充，与设置面板同一来源。
-   * `disabled` 随行带出：下拉项据此弱化 + 标注「已禁用」，chip 据此提示 —— 纯显示，不拦截。 */
-  let skillOptions: { name: string; disabled?: boolean }[] = [];
-  // 初始化 Skill 选择器选项：先放「不使用 Skill + 分隔线」，具体清单由 skills_loaded 动态填充
-  if (skillPickerMenu) {
-    skillPickerMenu.innerHTML = '';
+   * `disabled` 随行带出：下拉项据此弱化 + 标注「已禁用」，chip 据此提示 —— 纯显示，不拦截。
+   * `description` 随行带出：供菜单顶部搜索按「名称 + 描述」匹配。 */
+  let skillOptions: { name: string; description?: string; disabled?: boolean }[] = [];
+  /** 菜单搜索词：跨 skills_loaded 全量重建保留——数据下发不清词（用户常在搜索结果上
+   * 连续操作，同会话搜索 FD-3-A 纪律） */
+  let skillSearchQuery = '';
+
+  /** 菜单顶部搜索框（元素只建一次，恒驻 DOM —— 重建绝不触碰它）。
+   * 不带 .treedd__item 类：点击不命中菜单项委托（防选中/收起），符合 dropdown 硬约束范式。
+   * 🔴 历史教训（2026-10-11 真机实锤）：曾随全量 innerHTML='' 重建被 detach 再插回，
+   * 聚焦中被摘即失焦 ⇒ 打一个字第二个字进不去（中文 IME 更明显）。故搜索框与列表
+   * 分容器：输入元素永不出重建区。 */
+  const skillSearchInput = document.createElement('input');
+  skillSearchInput.className = 'treedd__search';
+  skillSearchInput.type = 'search';
+  skillSearchInput.placeholder = '搜索技能（名称/描述）';
+  skillSearchInput.setAttribute('aria-label', '搜索技能');
+  skillSearchInput.title = '按名称或描述过滤技能列表';
+  skillSearchInput.addEventListener('input', () => {
+    skillSearchQuery = skillSearchInput.value;
+    renderSkillPickerMenu();
+  });
+
+  /** 列表容器：唯一重建区（清除项/分隔线/过滤项/空态都在这），搜索框在其外恒驻 */
+  const skillPickerList = document.createElement('div');
+  skillPickerList.className = 'treedd__list';
+
+  /** 菜单匹配（空词恒真、大小写不敏感）：名称 / 描述任一命中即匹配
+   * （形状同会话搜索 matchesSessionSearch；列表仅数十条，同步过滤不引入防抖） */
+  function matchesSkillSearch(s: (typeof skillOptions)[number], q: string): boolean {
+    if (!q) return true;
+    return `${s.name} ${s.description ?? ''}`.toLowerCase().includes(q);
+  }
+
+  /** 重建 Skill 菜单（初始装配 + skills_loaded 刷新 + 搜索过滤共用单点）：
+   * 顶部常驻搜索框（恒驻，出重建区）→ 列表容器内：恒显「未选择技能」清除项 + 分隔线
+   * （逃逸舱，不参与过滤）→ 过滤后的技能项（禁用标记随行、不因过滤隐藏）→ 空态「无匹配技能」。
+   * 🔴 只清 skillPickerList，绝不清 skillPickerMenu —— 内含恒驻的搜索框，
+   * 全量清空会把它 detach 致失焦（真机「打一个字就进不去」根因）。 */
+  function renderSkillPickerMenu(): void {
+    if (!skillPickerMenu) return;
+    // 首次装配：搜索框 + 列表容器入菜单，此后永不再动（重建只清列表容器）
+    if (skillSearchInput.parentElement !== skillPickerMenu) {
+      skillPickerMenu.appendChild(skillSearchInput);
+      skillPickerMenu.appendChild(skillPickerList);
+    }
+    skillPickerList.innerHTML = '';
+    skillSearchInput.value = skillSearchQuery;
     const clearItem = document.createElement('div');
     clearItem.className = 'treedd__item';
+    // 顶部项语义 = 「普通对话、不挂载技能」——用中性「未选择技能」替代原「不使用 Skill」：
+    // 原文字易被误读为「禁用技能」（禁用另属设置页禁用清单），且暗示「提及技能名即自动
+    // 命中」（当前机制是显式选择，见 title 提示）。
     clearItem.textContent = '未选择技能';
     clearItem.title =
       '未挂载任何技能，进行普通对话（技能需从下方显式选择；提示词提及技能名不会自动加载）';
     clearItem.dataset.treeddId = '__clear_skill';
-    skillPickerMenu.appendChild(clearItem);
+    skillPickerList.appendChild(clearItem);
     const divider = document.createElement('div');
     divider.className = 'treedd__divider';
-    skillPickerMenu.appendChild(divider);
+    skillPickerList.appendChild(divider);
+    const q = skillSearchQuery.trim().toLowerCase();
+    let visible = 0;
+    for (const s of skillOptions) {
+      if (!matchesSkillSearch(s, q)) continue;
+      visible++;
+      const item = document.createElement('div');
+      item.className = 'treedd__item';
+      item.textContent = s.name;
+      item.dataset.treeddId = s.name;
+      if (s.disabled) {
+        // 已禁用：弱化 + 后缀徽记（复用设置面板同一语义词汇，非隐蔽、不隐藏条目）
+        item.classList.add('is-disabled');
+        const note = document.createElement('span');
+        note.className = 'treedd__item-note';
+        note.textContent = '已禁用';
+        item.appendChild(note);
+      }
+      skillPickerList.appendChild(item);
+    }
+    // 空态：有技能但无命中才显示（不带 .treedd__item = 不参与选择委托）
+    if (skillOptions.length > 0 && visible === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'treedd__empty';
+      empty.textContent = '无匹配技能';
+      skillPickerList.appendChild(empty);
+    }
     updateSkillPickerLabel();
   }
+
+  // 初始装配：空清单（搜索框 + 清除项 + 分隔线），具体清单由 skills_loaded 动态填充
+  renderSkillPickerMenu();
 
   /**
    * 「（准备中）」预告行注销（生命周期契约：每条预告行**要么升级、要么注销**，不许常驻）。

@@ -8868,6 +8868,126 @@ describe('技能启停：对话区（用户通道）显式标注（SKILL-S2）',
 });
 
 // ═══════════════════════════════════════════════════════════
+// 技能菜单顶部搜索（名称 + 描述过滤 · 重建保词 · 硬约束）
+// ═══════════════════════════════════════════════════════════
+// 判据：搜索框常驻菜单顶部（元素单例，skills_loaded 全量重建时重插且保词——
+// 同会话搜索「数据下发不清词」纪律）；清除项 + 分隔线恒显不参与过滤；
+// 禁用标记随行不因过滤隐藏；空态仅在「有技能但零命中」时出现。
+describe('技能菜单搜索（名称/描述过滤 · 重建保词）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /** 模拟输入技能搜索词（input 事件驱动过滤） */
+  const search = (q: string): void => {
+    const box = document.querySelector('.skill-picker .treedd__search') as HTMLInputElement;
+    box.value = q;
+    box.dispatchEvent(new Event('input'));
+  };
+
+  /** 分发三条技能：名称/描述各带可区分关键词（覆盖双匹配域） */
+  function dispatchSearchableSkills(): void {
+    dispatch({
+      type: 'skills_loaded',
+      skills: [
+        { name: '排序算法', description: '实现快速排序', layer: 'builtin' },
+        { name: '翻译助手', description: '中英互译润色', layer: 'builtin' },
+        { name: '禁用技能', description: '已停用', layer: 'builtin', disabled: true },
+      ],
+    });
+  }
+
+  /** 菜单内可见的技能项 id 列表（不含清除项，升序对拍） */
+  const visibleSkillIds = (): string[] =>
+    [...document.querySelectorAll('.skill-picker .treedd__item')]
+      .map((el) => (el as HTMLElement).dataset.treeddId ?? '')
+      .filter((id) => id !== '__clear_skill')
+      .sort();
+
+  it('硬约束：技能搜索框不得携带 .treedd__item（菜单点击委托命中即选中收起）', () => {
+    mountChatView();
+    const box = document.querySelector('.skill-picker .treedd__search') as HTMLElement;
+    expect(box).not.toBeNull();
+    expect(box.classList.contains('treedd__item')).toBe(false);
+  });
+
+  it('按名称过滤：命中项保留、未命中项隐藏，清除项恒显（不参与过滤 = 逃逸舱）', () => {
+    mountChatView();
+    dispatchSearchableSkills();
+    search('排序');
+    expect(visibleSkillIds()).toEqual(['排序算法']);
+    // 清除项始终可达：过滤再狠也不能把「取消挂载」藏掉
+    const clear = document.querySelector('.skill-picker [data-treedd-id="__clear_skill"]');
+    expect(clear).not.toBeNull();
+    expect(clear?.textContent).toBe('未选择技能');
+  });
+
+  it('按描述匹配：名称不中但描述命中 → 仍显示（双匹配域判据）', () => {
+    mountChatView();
+    dispatchSearchableSkills();
+    search('润色'); // 「翻译助手」名称不含「润色」，描述含
+    expect(visibleSkillIds()).toEqual(['翻译助手']);
+  });
+
+  it('大小写不敏感 + 空词恒真：清空搜索词恢复全量', () => {
+    mountChatView();
+    dispatchSearchableSkills();
+    search('助手');
+    expect(visibleSkillIds()).toEqual(['翻译助手']);
+    search('');
+    expect(visibleSkillIds()).toEqual(['排序算法', '禁用技能', '翻译助手']);
+  });
+
+  it('禁用标记随行：过滤命中项仍带 is-disabled + 「已禁用」后缀（不过滤掉状态）', () => {
+    mountChatView();
+    dispatchSearchableSkills();
+    search('禁用');
+    const item = document.querySelector('.skill-picker [data-treedd-id="禁用技能"]') as HTMLElement;
+    expect(item.classList.contains('is-disabled')).toBe(true);
+    expect(item.querySelector('.treedd__item-note')?.textContent).toBe('已禁用');
+  });
+
+  it('空态：有技能但零命中 → 「无匹配技能」；无技能时不显示（区分两类空）', () => {
+    mountChatView();
+    dispatchSearchableSkills();
+    search('绝无此词');
+    expect(document.querySelector('.skill-picker .treedd__empty')?.textContent).toBe('无匹配技能');
+    // 反向守卫：技能清单为空时是「尚未下发」而非「无匹配」，不误报空态
+    mountChatView();
+    expect(document.querySelector('.skill-picker .treedd__empty')).toBeNull();
+  });
+
+  it('skills_loaded 全量重建保留搜索词（数据下发不清词，同会话搜索纪律）', () => {
+    mountChatView();
+    dispatchSearchableSkills();
+    search('排序');
+    dispatchSearchableSkills(); // 二次下发（宿主重推同批清单）
+    const box = document.querySelector('.skill-picker .treedd__search') as HTMLInputElement;
+    expect(box.value).toBe('排序');
+    expect(visibleSkillIds()).toEqual(['排序算法']);
+  });
+
+  it('打字不丢焦：过滤重建期间焦点与光标都留在搜索框（真机「打一个字就进不去」回归锁）', () => {
+    // 真机实锤（2026-10-11）：每次 input 触发全量重建时 innerHTML='' 会把**正在聚焦的
+    // 搜索框**整个从 DOM 摘掉再插回 —— detach 即失焦，第二个字符打不进（中文 IME
+    // 拼音组合中被打断更明显）。jsdom 此前只断言 value/结构、未断言 activeElement = 盲区。
+    mountChatView();
+    dispatchSearchableSkills();
+    const box = document.querySelector('.skill-picker .treedd__search') as HTMLInputElement;
+    box.focus();
+    box.value = '排';
+    box.setSelectionRange(1, 1); // 光标在字后（非末尾跳动）
+    box.dispatchEvent(new Event('input')); // 过滤重建发生在此刻
+    expect(document.activeElement).toBe(box); // 修复前红：焦点掉落 body
+    expect(box.selectionStart).toBe(1); // 光标不被弹到末尾（输入框全程未被摘动）
+    box.value = '排序';
+    box.dispatchEvent(new Event('input')); // 第二个字符仍能连续输入
+    expect(box.value).toBe('排序');
+    expect(visibleSkillIds()).toEqual(['排序算法']);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
 // 工具批折叠合并（toolBatch · groupToolBatches 三渲染上下文同源）
 // ═══════════════════════════════════════════════════════════
 // 判据（唯一声明 = chatView.ts `BATCH_SPLITTER_TYPES` + thought 步切换；此处只指路、不重述集合）：
