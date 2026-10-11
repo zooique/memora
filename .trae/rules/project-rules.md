@@ -178,5 +178,5 @@ src/
 | 类型 | 规则 |
 | ---- | ---- |
 | DO | 新增 IPC 通道前确认能否由现有通道组合达成，避免重复注册 |
-| DO | IPC 通道总数接近 130 条时启动治理评估（当前 **107** 条，2026-10-04 实测——后台任务出口新增 `background_tasks` / `background_kill` 两条后按守卫同源判据重算；阈值单一真源见 `hosts/memora-vscode/src/shared/__tests__/protocolGuard.test.ts`；⚠️ **该计数每次增删通道即过期，引用前须按守卫同源判据重算**——此前 2026-10-01 记「105」、2026-09-20 记「101」均已实测漂移） |
+| DO | IPC 通道总数接近 130 条时启动治理评估（当前 **111** 条，2026-10-11 实测——107 基线后宿主三批各增一条（审批卡 StatusDock / 插话吸收上屏 / 角色包刷新）+ 本批 webview 错误上报 `host_diag`，按守卫同源判据重算；阈值单一真源见 `hosts/memora-vscode/src/shared/__tests__/protocolGuard.test.ts`；⚠️ **该计数每次增删通道即过期，引用前须按守卫同源判据重算**——此前 2026-10-04 记「107」、2026-10-01 记「105」、2026-09-20 记「101」均已实测漂移） |
 | DO | 新增模块前先走 [new-module-guide.md](./generic/new-module-guide.md) 评估流程 |

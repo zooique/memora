@@ -104,6 +104,15 @@ export type WebviewToExtensionMessage =
   /** Webview 脚本已就绪（监听器已注册），extension 可安全回放会话/推送数据 */
   | { type: 'ready' }
   /**
+   * webview 运行时诊断上报（错误边界的唯一上行出口）
+   *
+   * 由 installWebviewErrorBoundary（chatViewMain / settingsViewMain 各装配一次）捕获
+   * 未处理异常（error / unhandledrejection）时 post：webview console 只进开发者工具，
+   * 用户报障时拿不到，故经本通道落宿主日志留痕。同帧的界面呈现（错误卡片）由 webview
+   * 就地渲染，本通道只负责留痕，**不驱动任何 UI 状态**（宿主侧分支仅 console.warn）。
+   */
+  | { type: 'host_diag'; source: string; message: string; stack?: string }
+  /**
    * 输入统一入口
    *
    * 宿主与 webview 同仓发布、同步切换，无过渡兼容窗：不保留已收口的旧消息类型
@@ -111,7 +120,7 @@ export type WebviewToExtensionMessage =
    * 宿主侧 handleInput 按当前 turn 相位（turn_update.state）单一路由（见 WebviewInputKind 注释）。
    *
    * 错位语义（单一判据）：answer 仅 waiting(ask) 相位生效，resume 仅 waiting(pause) 相位
-   * 生效；相位不符（如迟到回答）静默丢弃。
+   * 生效；相位不符（如迟到回答）丢弃——对用户静默，宿主落日志留痕（扩展宿主日志可查）。
    */
   | { type: 'input'; kind: WebviewInputKind; text?: string; answers?: string[]; skillName?: string }
   /**

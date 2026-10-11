@@ -5,7 +5,8 @@
  *   - running 态 send → agent.interject 排队（无缝插话，不发起新 chat）
  *   - waiting(ask) 态 answer → answerQuestion 回填 + resumeExecution('question-answer') 续跑
  *     （提问原文从 `_turnState.waiting.questions` 读，`_pendingQuestions` 整体清空）
- *   - 错位输入（相位不符）→ 静默丢弃（迟到回答不污染进行中的轮，与原各 handler 守卫等义）
+ *   - 错位输入（相位不符）→ 丢弃并落 console.warn 留痕（T2 观测：对用户仍静默、
+ *     不改变路由裁决，但「答了没反应」的排障线索必须在扩展宿主日志可查）
  *
  * 替身策略：agent 桩 + cast 注入私有状态（`_streaming` / `_abortController` / `_turnState` /
  * `_pendingQuestions` / `_currentSessionId`），与 chatPanelHistory.test 既有模式一致。
@@ -237,9 +238,10 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     expect(resumeExecution.mock.calls[0][0]).toBe('中文\n长篇');
   });
 
-  it('错位 answer（waiting(pause) 相位收回答）→ 静默丢弃', async () => {
+  it('错位 answer（waiting(pause) 相位收回答）→ 丢弃 + console.warn 留痕', async () => {
     const h = setupInput();
     const { answerQuestion, resumeExecution } = mount(h);
+    const warnSpy = vi.spyOn(console, 'warn');
     // 相位：waiting/pause（非 ask——迟到/错位回答）
     h.cast._streaming = false;
     h.cast._abortController = undefined;
@@ -254,11 +256,19 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     expect(
       h.posted.filter((m) => (m as { kind?: string }).kind === 'question-answer'),
     ).toHaveLength(0);
+    // T2 留痕：丢弃事实必须落日志（带相位上下文），排障时可查「为什么答了没反应」
+    const discardWarns = warnSpy.mock.calls.filter((args) =>
+      String(args[0]).includes('错位回答已丢弃'),
+    );
+    expect(discardWarns).toHaveLength(1);
+    expect(String(discardWarns[0][0])).toContain('waiting/pause');
+    warnSpy.mockRestore();
   });
 
-  it('错位 resume（idle 相位收继续）→ 静默丢弃', async () => {
+  it('错位 resume（idle 相位收继续）→ 丢弃 + console.warn 留痕', async () => {
     const h = setupInput();
     const { resumeExecution } = mount(h);
+    const warnSpy = vi.spyOn(console, 'warn');
     // 相位：idle（无流、无挂起——resume 无意义）
     h.cast._streaming = false;
     h.cast._turnState = { phase: 'idle' };
@@ -266,6 +276,13 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     await h.cast.handleInput({ kind: 'resume' });
 
     expect(resumeExecution).not.toHaveBeenCalled();
+    // T2 留痕：错位续跑同样必须落日志
+    const discardWarns = warnSpy.mock.calls.filter((args) =>
+      String(args[0]).includes('错位续跑已丢弃'),
+    );
+    expect(discardWarns).toHaveLength(1);
+    expect(String(discardWarns[0][0])).toContain('idle');
+    warnSpy.mockRestore();
   });
 
   it('waiting(pause) 态 resume → 纯续跑（resumeExecution 无文本身份）', async () => {

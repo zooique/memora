@@ -584,6 +584,16 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Added（宿主 · webview 全局错误边界（T1）+ 错位输入丢弃留痕（T2）· 静默失败可观测）
+
+**诊断背景（2026-10-11 宿主缺陷排雷，两项均经实证确认）**：① 两个 webview 入口的业务脚本抛未捕获异常 / 未处理 rejection 时零兜底——面板静默卡死、宿主零日志（webview console 用户拿不到）；② 错位输入（迟到回答 / 竞态 resume）被相位路由丢弃时零观测，「答了没反应」无排障线索（宿主本有 console.warn 惯例，唯丢弃类是洞）。
+
+- **T1 错误边界**（`webview/helpers/errorBoundary.ts`，依赖注入纯函数可单测）：监听 `error` / `unhandledrejection` → ① 就地插错误卡片（`textContent` 防注入、卡片单例判据风暴只插一次、含「重新打开面板可恢复」指引）；② 经**新协议通道 `host_diag`** 上报，`chatPanel` 路由落 `console.warn`（source/message/stack）——排障线索进扩展宿主 Output 日志。装配：两入口（`chatViewMain` / `settingsViewMain`）acquire 一次后**先装边界再进工厂**（初始化期错误也能抓，工厂共用同一 api 实例不破 acquire 单次纪律）；CSP `script-src` 无 unsafe-inline ⇒ 边界随 esbuild 外部脚本加载，不动 CSP。
+- **T2 丢弃留痕**（`chatPanel.handleInput` 两处丢弃点）：错位 answer / 错位 resume 丢弃时 `console.warn`（含当前相位与答案数）——**观测不改路由**：对用户仍静默、不改变裁决，只让排障线索可查。同族措辞一次改齐（路由分支注释、`handleInput` 头注释同步为「丢弃并落宿主日志留痕」）。
+- **边界（诚实登记）**：主脚本加载前的失败（HTML 生成失败 / 脚本 404）发生在边界运行前，兜不住——表现为面板全空，重开面板同样可恢复；错误风暴时 Output 可能连续多条，刻意不做节流过滤（过滤会丢真实线索）。
+- **IPC 通道计数同步**：`host_diag` 入册后按 protocolGuard 同源判据重算 107 → **111**（2026-10-11 实测；差值 = 审批卡 StatusDock / 插话吸收上屏 / 角色包刷新三批各 +1 + 本批 `host_diag`；`project-rules.md` §7.6 已同步，纪律范式引文中的具体数字改抽象形态防第二真源快照）。
+- **验证**：新增 21 用例全绿（errorBoundary 8 = helper 4 + 两 Main 装配源码守卫 4；`host_diag` 路由 2；chatPanelInput 扩 2 条丢弃留痕断言）；**变异验证三发全中后还原**（去边界监听 → 4 红 / 去 `host_diag` 路由 → 2 红 / 去丢弃 warn → 2 红），`git diff` 零 MUTANT 残留，还原复跑 21/21 绿。
+
 ### Added（宿主 · 命令注册面守卫：`contributes` ↔ `registerCommand` 双向对拍（第四对拍面））
 
 - **守卫盲区修复**：`fileChangeCommands.test.ts` 此前三面全钉在声明侧（`commands`/`menus`/`keybindings`），`registerCommand` 注册侧无守卫——改名 / 漏注册时三面照样全绿，命令面板条目或快捷键却静默无效（恰在真机点验时才暴露）。新增 4 用例：① **调用点文件范围钉死**：`src/` 下含 `registerCommand(` 的文件必须恰好 = 登记表（`extension.ts` / `fileChangeView.ts`），第三处出现即红，防「新文件注册」绕过提取的扫描盲区型假阴性；② **提取零漏**：字面量 / 常量两条路径必有产出，非常量标识符解析失败即红；③ **贡献必已注册**（13 条声明逐一对拍）；④ **注册必已贡献**（豁免仅 `confirmHunk`/`rejectHunk`——CodeLens 带参调用的内部命令，与既有「必须不贡献」守卫同一依据，显式登记不折叠）。

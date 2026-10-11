@@ -887,8 +887,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // ① 等 Agent 装配完成（在途即等待，见 ensureAgent 可等待化）② 打捞升级崩溃残留轮为
         // 正常 stop turn——保证升级轮随本次回放一次性投递，不与 _viewEpoch 折叠重建回放双发
         void this.handleWebviewReady();
+      } else if (msg.type === 'host_diag') {
+        // webview 错误边界上报（T1）：落扩展宿主日志留痕，不驱动任何 UI 状态——
+        // 界面呈现（错误卡片）由 webview 就地渲染，此处只负责「用户报障时有日志可查」
+        console.warn(`Memora webview 未处理异常 [${msg.source}] ${msg.message}`, msg.stack ?? '');
       } else if (msg.type === 'input') {
-        // 输入统一入口：宿主按当前 turn 相位单一路由，错位输入静默丢弃
+        // 输入统一入口：宿主按当前 turn 相位单一路由，错位输入丢弃并落宿主日志留痕
         void this.handleInput(msg);
       } else if (msg.type === 'open_config') {
         // 空态引导按钮：跳转大模型配置（复用既有 configureModel 命令，单一入口）
@@ -2617,9 +2621,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * （见 shared/protocol.ts 的 input 注释）。按 `_turnState.phase` 单一路由——每个相位
    * 都有明确归宿，无独立 per-handler 竞态守卫：
    *   - send：sendInput（相位 → chat / interject / 带文本续跑）；
-   *   - answer：仅 waiting(ask) 生效 → answerInput；错位（迟到回答）静默丢弃；
-   *   - resume：仅 waiting(pause) 生效 → resumeInput；错位静默丢弃。
+   *   - answer：仅 waiting(ask) 生效 → answerInput；错位（迟到回答）丢弃并落宿主日志留痕；
+   *   - resume：仅 waiting(pause) 生效 → resumeInput；错位丢弃并落宿主日志留痕。
    * 错位语义与单 handler 守卫等义（ask 超时自动续跑后的迟到回答不污染进行中的轮）。
+   * 留痕仅是观测（对用户仍静默），不改变路由裁决——排障时在扩展宿主日志查丢弃事实。
    *
    * @param msg 统一输入（kind 为用户意图，结果级分类由路由时定）
    */
@@ -2650,16 +2655,29 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       case 'answer': {
         const answers = (msg.answers ?? []).map((a) => a.trim()).filter(Boolean);
         if (answers.length === 0) return;
-        // 错位（迟到回答：提问已超时自动续跑 / 流异常结束）→ 静默丢弃，不污染进行中的轮
-        if (!this.isAskWaiting()) return;
+        // 错位（迟到回答：提问已超时自动续跑 / 流异常结束）→ 丢弃，不污染进行中的轮。
+        // 留痕（T2 观测）：对用户仍静默，但「答了没反应」的排障线索必须在日志可查
+        if (!this.isAskWaiting()) {
+          // 仅 waiting 相位有 reason 字段，其余相位如实显示降级符
+          const reason = 'reason' in this._turnState ? this._turnState.reason : '—';
+          console.warn(
+            `Memora：错位回答已丢弃（当前相位=${this._turnState.phase}/${reason}，答案数=${answers.length}）`,
+          );
+          return;
+        }
         await this.answerInput(answers);
         return;
       }
       case 'resume':
-        // 错位（非暂停态收到继续）→ 静默丢弃。按钮语义已在 waiting(ask) 空输入时不宣告
+        // 错位（非暂停态收到继续）→ 丢弃并留痕。按钮语义已在 waiting(ask) 空输入时不宣告
         // 纯续跑（deriveButtonSemantics 死键不渲染），正常操作流不可达此守卫——只兜
         // 跨消息竞态残留（如提问超时续跑后迟到的 resume），保留「不污染进行中的轮」语义
-        if (!this.isPauseWaiting()) return;
+        if (!this.isPauseWaiting()) {
+          // 仅 waiting 相位有 reason 字段，其余相位如实显示降级符
+          const reason = 'reason' in this._turnState ? this._turnState.reason : '—';
+          console.warn(`Memora：错位续跑已丢弃（当前相位=${this._turnState.phase}/${reason}）`);
+          return;
+        }
         await this.resumeInput();
         return;
     }

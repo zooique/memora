@@ -7,8 +7,14 @@
  */
 
 import { createChatView, type ChatViewDeps } from './chatView.js';
+import { installWebviewErrorBoundary } from '../helpers/errorBoundary.js';
 
 // webview 宿主提供的全局函数（@types/vscode 未声明，此处显式声明）
 declare const acquireVsCodeApi: ChatViewDeps['acquireVsCodeApi'];
 
-createChatView({ acquireVsCodeApi, window });
+// acquire 仅一次（VS Code 每会话限定）：实例由本入口持有，错误边界与工厂共用——
+// 边界先装配，工厂初始化期抛出的错误也能被抓到并上报留痕。
+const api = acquireVsCodeApi();
+installWebviewErrorBoundary({ post: (msg) => api.postMessage(msg), window, document });
+
+createChatView({ acquireVsCodeApi: () => api, window });
