@@ -276,7 +276,7 @@ export const settingsStyles = `
     background: var(--surface-input, #3c3c3c); color: var(--text-primary); font-size: var(--font-sm, 11px);
     max-width: 280px;
   }
-  .security-select option { background: var(--surface-panel, #1e1e1e); }
+  .security-select option { background: var(--surface-sidebar, #252526); }
 
   /* Toggle Switch（写入二次确认开关） */
   .toggle-switch { position: relative; display: inline-block; width: 40px; height: var(--sq-md, 22px); }

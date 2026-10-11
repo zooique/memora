@@ -403,7 +403,7 @@ export const chatStyles = `
     border-radius: var(--radius-sm, 2px);
     padding: var(--sp-1, 4px) var(--sp-2, 6px);
   }
-  .ask-inline__input::placeholder { color: var(--text-tertiary, #6e7681); }
+  .ask-inline__input::placeholder { color: var(--text-secondary, #9aa0a6); }
   .ask-inline__input:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 0; }
   /* 多 ask 聚合：ask 交互统一「逐题点选/输入 →
    * 全部答完才提交」；is-selected = 该题已作答（实心品牌色，可再点改选）；submit 为底部一次性
@@ -491,7 +491,7 @@ export const chatStyles = `
   .write-confirm-card[data-pending='true'] { opacity: 0.55; }
   .write-confirm-card__btn[disabled] { cursor: default; opacity: 0.6; }
   .write-confirm-card__hint {
-    font-size: var(--font-xs, 10px); color: var(--text-muted, #9a9a9a);
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
   /* 运行时输入条目行：question-answer / supplement / timeout 统一形态，
    * 对齐 thought/tool 过程行视觉（左缘 + 圆角 + 弱化字色）；非折叠块——内容恒可见，来源以 tag
@@ -512,7 +512,7 @@ export const chatStyles = `
     flex-shrink: 0;
     font-weight: 600;
     color: var(--accent, #0e639c);
-    background: var(--surface-normal, rgba(128,128,128,.16));
+    background: var(--surface-inset, rgba(128,128,128,.12));
     border-radius: var(--radius-sm, 2px);
     padding: var(--sp-hair, 1px) var(--sp-2, 6px);
   }
@@ -536,12 +536,12 @@ export const chatStyles = `
   }
   .round-block__input-q .round-block__input-text { max-width: none; white-space: normal; color: var(--text-secondary, #9aa0a6); }
   .round-block__input-q .round-block__input-tag {
-    background: transparent; color: var(--text-tertiary, #6e7681);
+    background: transparent; color: var(--text-secondary, #9aa0a6);
     padding-left: 0;
   }
   .round-block__input-opts {
     flex-basis: 100%;
-    color: var(--text-tertiary, #6e7681);
+    color: var(--text-secondary, #9aa0a6);
     white-space: normal;
     padding-left: var(--sp-2, 6px);
   }
@@ -820,14 +820,14 @@ export const chatStyles = `
     border-radius: var(--radius-sm, 2px);
     font-size: var(--font-md);
     line-height: 1.4;
-    color: var(--text-muted, #9a9a9a);
+    color: var(--text-secondary, #9aa0a6);
   }
   .file-changes-bar__badge {
     font-weight: 700;
     color: var(--warn, #d7ba7d);
   }
   .file-changes-bar__label {
-    color: var(--text-muted, #9a9a9a);
+    color: var(--text-secondary, #9aa0a6);
   }
   /* 占位撑开：把两个按钮推到行尾 */
   .file-changes-bar__spacer {
@@ -864,7 +864,7 @@ export const chatStyles = `
     border-radius: var(--radius-sm, 2px);
     font-size: var(--font-md);
     line-height: 1.4;
-    color: var(--text-muted, #9a9a9a);
+    color: var(--text-secondary, #9aa0a6);
     /* 左侧色条 + 透明底：轻盈贴近打断语义 */
   }
   /* 顶部行：徽章 + 标题 + 提示 + 清空按钮（flex 一行） */
@@ -884,7 +884,7 @@ export const chatStyles = `
     padding: 0 var(--sp-1, 4px);
     border-radius: var(--radius-pill);
     background: var(--accent, #0e639c);
-    color: var(--surface-inverse, #fff);
+    color: var(--accent-foreground, #fff);
     font-size: var(--font-xs, 10px);
     font-weight: 700;
     line-height: 1;
@@ -897,7 +897,7 @@ export const chatStyles = `
   .pending-queue-bar__hint {
     flex: 1;
     font-size: var(--font-sm, 11px);
-    color: var(--text-muted, #9a9a9a);
+    color: var(--text-secondary, #9aa0a6);
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -924,7 +924,7 @@ export const chatStyles = `
     flex-shrink: 0;
     width: var(--sq-xs, 16px);
     font-size: var(--font-sm, 11px);
-    color: var(--text-muted, #9a9a9a);
+    color: var(--text-secondary, #9aa0a6);
     text-align: right;
   }
   .pending-queue-bar__text {
@@ -949,7 +949,7 @@ export const chatStyles = `
     border: none;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--text-muted, #9a9a9a);
+    color: var(--text-secondary, #9aa0a6);
     cursor: pointer;
     font-size: var(--font-xs, 10px);
     line-height: 1;
@@ -975,7 +975,7 @@ export const chatStyles = `
     border: none;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--text-muted, #9a9a9a);
+    color: var(--text-secondary, #9aa0a6);
     cursor: pointer;
     font-size: var(--font-sm, 11px);
     line-height: 1;
@@ -1002,7 +1002,7 @@ export const chatStyles = `
     border-radius: var(--radius-sm, 2px);
     font-size: var(--font-md);
     line-height: 1.4;
-    color: var(--text-muted, #9a9a9a);
+    color: var(--text-secondary, #9aa0a6);
   }
   .background-tasks-bar__head {
     display: flex;
@@ -1045,7 +1045,7 @@ export const chatStyles = `
   }
   .background-tasks-bar__status {
     flex-shrink: 0;
-    color: var(--text-muted, #9a9a9a);
+    color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-xs, 10px);
   }
   .background-tasks-bar__kill {
@@ -1077,7 +1077,7 @@ export const chatStyles = `
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--text-muted, #9a9a9a);
+    color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-base, 13px);
     line-height: 1;
     cursor: pointer;
@@ -1138,7 +1138,7 @@ export const chatStyles = `
     justify-content: center;
     font-size: var(--font-2xs, 8px);
     line-height: 1;
-    color: var(--text-muted, #9a9a9a);
+    color: var(--text-secondary, #9aa0a6);
     font-variant-numeric: tabular-nums;
     pointer-events: none;
   }
@@ -1153,7 +1153,7 @@ export const chatStyles = `
     width: max-content;
     max-width: 320px;
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
-    background: var(--surface-tip, #2d2d2d);
+    background: var(--surface-card, #252526);
     border: 1px solid var(--border-input, rgba(128,128,128,.5));
     border-radius: var(--radius-md, 8px);
     box-shadow: var(--shadow-card, 0 2px 8px rgba(0, 0, 0, 0.15));
@@ -1642,7 +1642,7 @@ export const chatStyles = `
   }
   .plan-bar__chevron {
     flex-shrink: 0; display: inline-flex; align-items: center;
-    color: var(--text-muted, #9a9a9a);
+    color: var(--text-secondary, #9aa0a6);
   }
   /* SVG 指示器尺寸适配 */
   .plan-bar__chevron svg { display: block; width: 11px; height: 11px; }
@@ -1696,7 +1696,7 @@ export const chatStyles = `
   .plan-item-round-time {
     display: inline-block;
     font-size: var(--font-xs, 10px);
-    color: var(--text-muted, #9a9a9a);
+    color: var(--text-secondary, #9aa0a6);
     margin-right: var(--sp-2, 6px);
     padding: var(--sp-hair, 1px) var(--sp-1, 4px);
     background: var(--surface-inset, rgba(128,128,128,.12));

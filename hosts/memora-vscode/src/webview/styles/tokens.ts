@@ -198,18 +198,27 @@ export const tokens = `
     --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
     --border-subtle: var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
     /* --focus 已折叠进 --border-focus（消费者直引 --border-focus，SSOT 收敛 2026-10-11） */
-    --text-tertiary: var(--vscode-descriptionForeground, #6e7681);
-    --text-muted: var(--vscode-descriptionForeground, #9a9a9a);
+    /* --text-tertiary / --text-muted 已折叠进 --text-secondary（2026-10-12）：
+     *   三者同引 --vscode-descriptionForeground ⇒ 主路径恒为同一颜色，分级只在脱钩路径
+     *   存在 = 名字承诺层次而实现不分层次。消费者已迁 --text-secondary。 */
     --accent-hover: var(--vscode-button-hoverBackground, #1177bb);
     --accent-soft: var(--accent-bg-subtle, rgba(14, 99, 156, 0.12));
     --danger: var(--vscode-errorForeground, #f14c4c);
     /* --surface 已折叠进 --surface-page（消费者直引 --surface-page，SSOT 收敛 2026-10-11） */
-    --surface-normal: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.16));
-    --surface-inverse: var(--vscode-foreground, #ffffff);
+    /* --surface-normal 已折叠进 --surface-inset（同引 toolbar-hoverBackground、同为静态表面）；
+     * --surface-inverse 已折叠进 --accent-foreground（2026-10-12）：它引 --vscode-foreground，
+     * 与 --text-primary 同变量同语义＝实质别名；用在 accent 底色上时亮色主题对比度掉到
+     * 约 2.98:1，故改配 --accent-foreground（与 accent 底同源配对，约 4.43:1）。 */
     --surface-track: var(--vscode-progressBar-background, #2a2a2a);
-    --surface-tip: var(--vscode-editorWidget-background, #2d2d2d);
+    /* --surface-tip 已折叠进 --surface-card（同引 editorWidget-background，2026-10-12） */
     --surface-inset: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.12));
-    --surface-panel: var(--vscode-sideBar-background, #1e1e1e);
+    /* --surface-panel 已折叠进 --surface-sidebar（同引 sideBar-background，2026-10-12） */
+    /* ⚠️ 已知债（UI-TOKEN-LAYER-2，需真机验收后再动）：--surface-inset（静态表面）与
+     * --surface-hover / --surface-active（交互态）**同引** toolbar-hoverBackground ⇒ 主路径
+     * 下三者同色，hover / 选中反馈在主路径失效（例：.status-dock__chip 常态与 :hover 同色、
+     * .session-tab.is-active 与徽章底同色）。真分层要换变量（静态面改 editorWidget 系、
+     * 选中态改 --surface-checked 的 list-activeSelectionBackground）⇒ 有视觉变化，另立条目，
+     * 不在本条 churn。 */
     --surface-active: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.24));
     --radius-md: var(--radius, 6px);
     --radius-full: var(--radius-pill, 999px);
