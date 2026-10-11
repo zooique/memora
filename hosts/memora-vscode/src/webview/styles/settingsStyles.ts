@@ -36,7 +36,7 @@ export const settingsStyles = `
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
     box-shadow: var(--shadow-toast);
     opacity: 0; pointer-events: none; transition: opacity var(--dur-med) ease;
-    z-index: 1000;
+    z-index: var(--z-overlay);
   }
   .settings-toast.show { opacity: 1; }
   .settings-toast.error { background: var(--feedback-error-toast-bg); color: var(--text-error, #f14c4c); border-color: var(--feedback-error-toast-border); }
@@ -315,7 +315,7 @@ export const settingsStyles = `
     color: var(--text-primary, #cccccc);
     cursor: pointer;
   }
-  .pager-btn:hover:not(:disabled) { background: var(--surface-active, rgba(128,128,128,.24)); }
+  .pager-btn:hover:not(:disabled) { background: var(--surface-hover, rgba(128, 128, 128, 0.2)); }
   .pager-btn:disabled { opacity: .4; cursor: default; }
   .pager-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
   .pager-info { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }

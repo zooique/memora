@@ -52,6 +52,24 @@ export const tokens = `
     --shadow-toast: 0 2px 8px rgba(0, 0, 0, 0.3); /* 全局通知 toast 浮层阴影 */
     --overlay-mask: rgba(0, 0, 0, 0.4); /* 模态遮罩底（config modal-mask 与 roles team-modal 共用） */
 
+    /* === L1 基础令牌：层级刻度（z-index） ===
+     * 此前 z-index 以裸值散落 14 处、9 个层级（含 100 / 200 / 1000 魔法大数）：既违反
+     * 「裸值只在定义处」铁律，也让「谁能盖住谁」无从一眼看清（UI-TOKEN-AXIS-1）。
+     * 本组按**用途语义**命名，数值 1:1 沿用现状 ⇒ **零层级变化**（不改任何覆盖关系），
+     * 只把魔法数换成可读契约；日后要调整层序，在此单点改即可。
+     * 语义梯度：base（同层基准）< raise（浮于同层内容）< float（浮层锚定）
+     *   < bar（输入区 / toast）< anchor（弹窗锚点）< tip（悬浮提示）
+     *   < menu（下拉菜单）< menuTop（模型选择器）< overlay（全屏遮罩）。 */
+    --z-base: 1;       /* 同层基准：消息区 / 菜单 sticky 表头 */
+    --z-raise: 5;      /* 浮于同层内容：一键到底按钮 */
+    --z-float: 10;     /* 浮层锚定层：plan-bar / 模态遮罩 / 下拉触发器 */
+    --z-bar: 20;       /* 输入区与 toast：承载浮层、盖住消息区 */
+    --z-anchor: 25;    /* 弹窗锚点（占用环）：弹窗向上展开不被输入卡片裁切 */
+    --z-tip: 30;       /* 悬浮提示（占用环 tip）：盖住输入区 */
+    --z-menu: 100;     /* 下拉菜单浮层 */
+    --z-menu-top: 200; /* 模型选择器菜单：浮于所有内容之上 */
+    --z-overlay: 1000; /* 全屏模态遮罩 */
+
     /* === L2 语义令牌：表面 === */
     --surface-page: var(--vscode-editor-background, #1e1e1e);
     --surface-input: var(--vscode-input-background, #3c3c3c);
@@ -97,7 +115,10 @@ export const tokens = `
     --feedback-error-toast-bg: rgba(200, 60, 50, 0.18); /* settings toast 错误态底 */
     --feedback-error-toast-border: rgba(244, 135, 113, 0.4); /* settings toast 错误态边框 */
     --feedback-warn-bg: var(--vscode-inputValidation-warningBackground, rgba(196, 160, 0, 0.15));
-    --feedback-warn-fg: var(--vscode-descriptionForeground, #d7ba7d);
+    /* ⚠️ 变量选错已修（UI-TOKEN-WARN-1，2026-10-12）：原引 --vscode-descriptionForeground
+     * （次要灰）⇒ 主路径把「警告文字」渲染成灰色，与回退的警告黄 #d7ba7d 语义自相矛盾。
+     * 改引 inputValidation-warningForeground，与 --feedback-warn-bg 同族配套（真机验收）。 */
+    --feedback-warn-fg: var(--vscode-inputValidation-warningForeground, #d7ba7d);
     --feedback-warn-accent: var(--vscode-charts-yellow, #d7ba7d);
 
     /* === L2 语义令牌：状态指示色（工具成功/失败） === */
@@ -211,15 +232,16 @@ export const tokens = `
      * 约 2.98:1，故改配 --accent-foreground（与 accent 底同源配对，约 4.43:1）。 */
     --surface-track: var(--vscode-progressBar-background, #2a2a2a);
     /* --surface-tip 已折叠进 --surface-card（同引 editorWidget-background，2026-10-12） */
-    --surface-inset: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.12));
+    /* --surface-inset（静态内嵌面）：UI-TOKEN-LAYER-2（2026-10-12 真机验收）——原引
+     * toolbar-hoverBackground，与 --surface-hover 同变量 ⇒ 静态表面与 hover 主路径同色
+     * （.status-dock__chip 常态与 :hover 无差别）。改引 textCodeBlock-background 与 hover
+     * **不同源** ⇒ 静态面与交互态真分层；回退与 --surface-code 对齐（同引同值）。 */
+    --surface-inset: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15));
     /* --surface-panel 已折叠进 --surface-sidebar（同引 sideBar-background，2026-10-12） */
-    /* ⚠️ 已知债（UI-TOKEN-LAYER-2，需真机验收后再动）：--surface-inset（静态表面）与
-     * --surface-hover / --surface-active（交互态）**同引** toolbar-hoverBackground ⇒ 主路径
-     * 下三者同色，hover / 选中反馈在主路径失效（例：.status-dock__chip 常态与 :hover 同色、
-     * .session-tab.is-active 与徽章底同色）。真分层要换变量（静态面改 editorWidget 系、
-     * 选中态改 --surface-checked 的 list-activeSelectionBackground）⇒ 有视觉变化，另立条目，
-     * 不在本条 churn。 */
-    --surface-active: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.24));
+    /* --surface-active 已退役（2026-10-12）：它同引 toolbar-hoverBackground，与 --surface-hover
+     * 主路径恒同值 = 同义令牌。消费者按**语义**分流（不是一刀切改名）——hover 用途迁
+     * --surface-hover、选中用途（会话标签 .is-active）迁 --surface-checked、静态徽章迁
+     * --surface-inset ⇒ 选中态由此真正区别于 hover。 */
     --radius-md: var(--radius, 6px);
     --radius-full: var(--radius-pill, 999px);
     --warn: var(--vscode-charts-yellow, #d7ba7d);

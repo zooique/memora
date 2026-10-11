@@ -42,7 +42,7 @@ export const chatStyles = `
        不把滚轮事件继续泄漏给外层/相邻滚动容器（如输入框），避免"滚不上去"的串扰感 */
     overscroll-behavior: contain;
     display: flex; flex-direction: column; gap: var(--sp-4, 10px);
-    position: relative; z-index: 1;
+    position: relative; z-index: var(--z-base);
   }
   /* 一键到底按钮（对齐 TRAE App「上滚后回到底部」）：
    * 用户上滚离开底部时浮现于消息区右下角，点击回到底部后隐藏。
@@ -53,7 +53,7 @@ export const chatStyles = `
    * 恒钉消息区可视框右下角；输入区/活动条/技能 chips 增高时按钮自动跟随，零补偿逻辑。 */
   .scroll-to-bottom {
     position: absolute; right: var(--sp-4, 10px); bottom: calc(100% + var(--sp-4, 10px));
-    z-index: 5;
+    z-index: var(--z-raise);
     display: inline-flex; align-items: center; justify-content: center;
     width: var(--sq-xl, 28px); height: var(--sq-xl, 28px); padding: 0;
     border: 1px solid var(--border-input, rgba(128,128,128,.5));
@@ -77,12 +77,15 @@ export const chatStyles = `
     min-height: 20px;
     border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
     border-radius: var(--radius-sm, 2px);
-    background: var(--surface-inset, rgba(128,128,128,.12));
+    background: var(--surface-inset, rgba(127, 127, 127, 0.15));
     color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-xs, 10px);
     cursor: pointer;
   }
-  .status-dock__chip:hover { color: var(--text-primary, #cccccc); background: var(--surface-active, rgba(128,128,128,.24)); }
+  /* hover 归 hover：原用 --surface-active（同引 toolbar-hoverBackground，与常态
+   * --surface-inset 主路径同色 ⇒ hover 无反馈）；静态面改引 textCodeBlock 后此处
+   * 与常态真正分层（UI-TOKEN-LAYER-2）。 */
+  .status-dock__chip:hover { color: var(--text-primary, #cccccc); background: var(--surface-hover, rgba(128, 128, 128, 0.2)); }
   /* 未读徽章：警示色文字/描边 + 前导圆点（::before 纯装饰；读屏语义由 JS 的 aria-label 承担，
    * 伪元素内容测试与读屏都拿不到，不承载语义——同旧活动详情折叠 marker 血训）。 */
   .status-dock__chip.is-unread {
@@ -116,7 +119,7 @@ export const chatStyles = `
     padding: var(--sp-2, 6px);
     border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
     border-radius: var(--radius-sm, 2px);
-    background: var(--surface-inset, rgba(128,128,128,.12));
+    background: var(--surface-inset, rgba(127, 127, 127, 0.15));
   }
   /* 展开动画（用户诉求 2026-10-07 续）：点击左侧小气泡后，从左侧自然扩展出去。
    * 纯 CSS、零 JS：animation 只挂在展开态 body:not(.dock-collapsed)，利用
@@ -245,9 +248,12 @@ export const chatStyles = `
     cursor: pointer;
   }
   .session-tab:hover { color: var(--text-primary, #cccccc); }
+  /* 选中态归「选中」令牌：原用 --surface-active（= hover 色），与同组件徽章底主路径
+   * 同色 ⇒ 选中不可辨。迁 --surface-checked（list-activeSelectionBackground）后与
+   * hover 真正区分（UI-TOKEN-LAYER-2）。 */
   .session-tab.is-active {
     color: var(--text-primary, #cccccc); font-weight: 600;
-    background: var(--surface-active, rgba(128,128,128,.24));
+    background: var(--surface-checked, rgba(156, 39, 176, 0.12));
   }
   .session-tab__count { font-weight: 400; color: var(--text-secondary, #9aa0a6); }
   /* FD-3-A 元数据搜索框：贴在分组 tab 下、条目容器上；独立元素不随条目重建清空 */
@@ -257,7 +263,7 @@ export const chatStyles = `
     margin: var(--sp-2, 6px) var(--sp-3, 8px) 0;
     padding: var(--sp-1, 4px) var(--sp-2, 6px);
     font-size: var(--font-xs, 10px); color: var(--text-primary, #cccccc);
-    background: var(--surface-inset, rgba(128,128,128,.12));
+    background: var(--surface-inset, rgba(127, 127, 127, 0.15));
     border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
     border-radius: var(--radius-sm, 2px); outline: none;
   }
@@ -512,7 +518,7 @@ export const chatStyles = `
     flex-shrink: 0;
     font-weight: 600;
     color: var(--accent, #0e639c);
-    background: var(--surface-inset, rgba(128,128,128,.12));
+    background: var(--surface-inset, rgba(127, 127, 127, 0.15));
     border-radius: var(--radius-sm, 2px);
     padding: var(--sp-hair, 1px) var(--sp-2, 6px);
   }
@@ -800,7 +806,7 @@ export const chatStyles = `
     border-top: none;
     flex-shrink: 0;
     background: transparent;
-    position: relative; z-index: 20; /* 输入区层级高于消息区：下拉浮层正确覆盖而非挤压 */
+    position: relative; z-index: var(--z-bar); /* 输入区层级高于消息区：下拉浮层正确覆盖而非挤压 */
   }
   /* thinking 态 interject 队列可视化 —— 挂在 inputBar 前面的灰色条
    * 懒创建（chatView.updatePendingQueueBar），仅 items.length>0 时显示；
@@ -1018,7 +1024,7 @@ export const chatStyles = `
     height: var(--sq-xs, 16px);
     padding: 0 var(--sp-1, 4px);
     border-radius: var(--radius-pill);
-    background: var(--surface-active, rgba(128,128,128,.24));
+    background: var(--surface-inset, rgba(127, 127, 127, 0.15));
     color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-xs, 10px);
   }
@@ -1111,7 +1117,7 @@ export const chatStyles = `
     width: var(--sq-md, 22px);
     height: var(--sq-md, 22px);
     flex-shrink: 0;
-    z-index: 25; /* 高于输入卡片层级：弹窗可覆盖输入区而非被裁 */
+    z-index: var(--z-anchor); /* 高于输入卡片层级：弹窗可覆盖输入区而非被裁 */
   }
   .context-ring__svg {
     width: 100%;
@@ -1162,7 +1168,7 @@ export const chatStyles = `
     color: var(--text-input, #cccccc);
     white-space: pre-line; /* 保留 buildOccupancyTipText 的多行 \n */
     font-variant-numeric: tabular-nums;
-    z-index: 30;
+    z-index: var(--z-tip);
   }
   .context-ring:hover .context-ring__tip,
   .context-ring:focus-within .context-ring__tip { display: block; }
@@ -1607,7 +1613,7 @@ export const chatStyles = `
   .plan-bar {
     position: relative; /* 锚定浮层以本插槽为定位基准（top:100% 紧贴其下） */
     flex: 0 0 auto; /* 与 session-title-bar 同级非缩放，不随 #messages 滚动 */
-    z-index: 10; /* 高于消息区（z-index:1），浮层展开时可覆盖对话内容 */
+    z-index: var(--z-float); /* 高于消息区（z-index:1），浮层展开时可覆盖对话内容 */
     background: var(--surface-card, #252526);
     border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }
@@ -1699,7 +1705,7 @@ export const chatStyles = `
     color: var(--text-secondary, #9aa0a6);
     margin-right: var(--sp-2, 6px);
     padding: var(--sp-hair, 1px) var(--sp-1, 4px);
-    background: var(--surface-inset, rgba(128,128,128,.12));
+    background: var(--surface-inset, rgba(127, 127, 127, 0.15));
     border-radius: var(--radius-sm);
   }
 

@@ -14,7 +14,7 @@ export const dropdownStyles = `
   /* 下拉容器：inline-flex 使其在 flex 布局中只占触发器实际宽度，
    * 避免 block 默认为 100% 父宽导致的「视觉挤压」（flex item 被撑大变行）。
    * z-index:10 保证展开的菜单能浮于兄弟元素（如消息区）之上。 */
-  .treedd { position: relative; display: inline-flex; align-items: center; z-index: 10; }
+  .treedd { position: relative; display: inline-flex; align-items: center; z-index: var(--z-float); }
   .treedd__trigger {
     display: inline-flex; align-items: center; justify-content: center;
     width: 26px; height: 26px; padding: 0;
@@ -27,7 +27,7 @@ export const dropdownStyles = `
   .treedd__trigger svg { display: block; }
   .treedd__menu {
     position: absolute; right: 0; top: calc(100% + var(--sp-1, 4px));
-    min-width: 168px; z-index: 100; /* 浮层高 z-index，确保覆盖而非挤压布局 */
+    min-width: 168px; z-index: var(--z-menu); /* 浮层高 z-index，确保覆盖而非挤压布局 */
     padding: var(--sp-1, 4px); box-sizing: border-box;
     border: 1px solid var(--menu-border, #ccc);
     border-radius: var(--radius-lg, 8px);
@@ -75,7 +75,7 @@ export const dropdownStyles = `
    * 🔴 恒驻 DOM、出重建区（间距全交菜单/列表的 gap，自身不设 margin，
    * 否则与 gap 叠成双倍）。 */
   .treedd__search {
-    position: sticky; top: 0; z-index: 1;
+    position: sticky; top: 0; z-index: var(--z-base);
     display: block; width: 100%; box-sizing: border-box;
     padding: var(--sp-2, 6px) var(--sp-3, 8px);
     border: none; border-bottom: 1px solid var(--menu-border, #ccc);
@@ -143,7 +143,7 @@ export const dropdownStyles = `
     min-width: var(--dd-menu-min-w, 160px);
     max-width: min(var(--dd-menu-max-w, 240px), calc(100vw - 32px));
     max-height: 260px; overflow-y: auto;
-    z-index: 200; /* 模型选择器菜单最高层级，浮于所有内容之上（含消息区+输入卡片） */
+    z-index: var(--z-menu-top); /* 模型选择器菜单最高层级，浮于所有内容之上（含消息区+输入卡片） */
     transform: translateZ(0); /* 独立合成层：避免 webview 渲染引擎重排导致「挤压对话区」 */
   }
   /* 自动翻转：触发器贴近容器顶缘时向上放不下，由 applyDropDirection

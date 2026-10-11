@@ -52,7 +52,7 @@ export const configStyles = `
   #config-root .card-actions { display: flex; gap: var(--sp-1, 4px); flex-shrink: 0; }
 
   /* ============ Components：表单弹窗 ============ */
-  #config-root .modal-mask { display: none; position: fixed; inset: 0; background: var(--overlay-mask); z-index: 10; align-items: flex-start; justify-content: center; padding-top: 40px; }
+  #config-root .modal-mask { display: none; position: fixed; inset: 0; background: var(--overlay-mask); z-index: var(--z-float); align-items: flex-start; justify-content: center; padding-top: 40px; }
   #config-root .modal-mask.visible { display: flex; }
   #config-root .modal { width: 90%; max-width: 360px; background: var(--surface-page, #1e1e1e); border-radius: var(--radius-lg, 8px); padding: var(--sp-6, 16px); box-shadow: var(--shadow-modal, 0 4px 16px rgba(0,0,0,.3)); overscroll-behavior: contain; }
   #config-root .modal h3 { margin: 0 0 var(--sp-5, 12px); font-size: var(--font-lg, 14px); }
@@ -80,7 +80,7 @@ export const configStyles = `
   #config-root .modal-actions { display: flex; gap: var(--sp-3, 8px); justify-content: flex-end; margin-top: var(--sp-5, 12px); }
 
   /* ============ Components：Toast ============ */
-  #config-root #toast { position: fixed; bottom: var(--sp-6, 16px); left: 50%; transform: translateX(-50%); padding: var(--sp-3, 8px) var(--sp-5, 12px); border-radius: var(--radius, 6px); font-size: var(--font-md, 12px); color: var(--accent-foreground, #ffffff); opacity: 0; transition: opacity var(--dur-open); z-index: 20; max-width: 80%; }
+  #config-root #toast { position: fixed; bottom: var(--sp-6, 16px); left: 50%; transform: translateX(-50%); padding: var(--sp-3, 8px) var(--sp-5, 12px); border-radius: var(--radius, 6px); font-size: var(--font-md, 12px); color: var(--accent-foreground, #ffffff); opacity: 0; transition: opacity var(--dur-open); z-index: var(--z-bar); max-width: 80%; }
   #config-root #toast.ok { background: var(--toast-ok-bg); }
   #config-root #toast.err { background: var(--btn-danger-bg); }
   #config-root #toast.visible { opacity: 1; }

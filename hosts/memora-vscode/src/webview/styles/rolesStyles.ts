@@ -280,7 +280,7 @@ export const rolesStyles = `
   #roles-root .legacy-teams-btn { padding: var(--sp-hair, 1px) var(--sp-2, 6px); font-size: var(--font-xs, 10px); flex-shrink: 0; }
   /* 组队弹窗：遮罩 + 电话本式多选 + 反馈区 */
   #roles-root .team-modal-overlay {
-    position: fixed; inset: 0; z-index: 1000;
+    position: fixed; inset: 0; z-index: var(--z-overlay);
     background: var(--overlay-mask);
     display: flex; align-items: center; justify-content: center;
     animation: roles-fade-in var(--dur-base) ease;
