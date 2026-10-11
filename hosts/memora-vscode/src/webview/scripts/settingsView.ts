@@ -234,7 +234,7 @@ function createSkillsView({
           ? `<ul class="skill-problems">${s.issues.map((i) => `<li class="prob-${i.level}">${escapeHtml(i.message)}</li>`).join('')}</ul>`
           : ''
       }
-      <div class="skill-content" style="display:none" ${cached ? '' : 'data-pending="1"'}>${escapeHtml(cached)}</div>
+      <div class="skill-content" hidden ${cached ? '' : 'data-pending="1"'}>${escapeHtml(cached)}</div>
     </div>
   `;
       })
@@ -285,9 +285,9 @@ function createSkillsView({
     if (!contentEl) return;
     // 已加载 → 用缓存内容切换展开/折叠（切页重建 DOM 后缓存仍在，正文不丢）
     if (contentMap.has(skillName)) {
-      const isHidden = contentEl.style.display === 'none';
+      const isHidden = contentEl.hidden;
       contentEl.textContent = contentMap.get(skillName) || '（未找到技能正文）';
-      contentEl.style.display = isHidden ? 'block' : 'none';
+      contentEl.hidden = !isHidden;
       btn.textContent = isHidden ? '收起正文' : '查看正文';
       return;
     }
@@ -334,11 +334,11 @@ function createSkillsView({
         if (btn && contentEl) {
           if (msg.content) {
             contentEl.textContent = msg.content;
-            contentEl.style.display = 'block';
+            contentEl.hidden = false;
             btn.textContent = '收起正文';
           } else {
             contentEl.textContent = '（未找到技能正文）';
-            contentEl.style.display = 'block';
+            contentEl.hidden = false;
             btn.textContent = '查看正文';
           }
         }

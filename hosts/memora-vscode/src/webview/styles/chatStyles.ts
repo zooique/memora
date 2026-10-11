@@ -16,35 +16,10 @@ export const chatStyles = `
   ${tokens}
 
   /* ============ Base：元素级基础 ============ */
-  /* 🔴 全局 [hidden] 兜底（2026-10-05 真机实锤后新增，治本而非打补丁）
-   *
-   * 病灶：HTML hidden 属性的 display:none 来自 **UA 样式表**，author 层任何
-   * display 声明都赢它。本文件声明 display 的元素（flex/block/grid）遍布全表，
-   * 每处都曾或正会踩「JS 写了 el.hidden = true，视觉却纹丝不动」——而脚本报错
-   * 查不到（属性确实为 true）⇒ 结构性假绿。#inputWrap 是最新一例：
-   * A 类阻断面板激活时 composer 应被替换，真机却显示在面板「上方」。
-   *
-   * 为何此前逐个补 .xxx[hidden]{display:none} 仍漏：新增样式时没人会想起
-   * 要补这条，而漏了只在真机视觉暴露（jsdom 不加载样式表，测试恒绿）。
-   *
-   * 【实测盘点 2026-10-05】正则粗扫本文件 74 处 display 声明，约 60+ 处自身无
-   * [hidden] 兜底（该数字是**上界**：正则会误抓嵌套子选择器，如 .pending-queue-bar
-   * 本体有兜底而 __clear 子元素被计入）。即便打八折也是数十处 ⇒ 此前 18 处逐个
-   * 补丁是打补丁非治本，本条才是唯一有效防线。盘点方法（jsdom 不加载样式表 ⇒
-   * hidden 属性断言恒真，必须读 CSS 文本）：
-   *   [...css.matchAll(/(^|\})([^{}@]+)\{([^{}]*)\}/g)].filter(m => /display\s*:/.test(m[3]))
-   * 已知同列真实元素（自身确无兜底、且会被 JS 切 hidden）：
-   * .background-tasks-bar__head、.ask-inline__item、.round-block 等子组件。
-   * 其中 dock 条（.pending-queue-bar 本体 949 行、.background-tasks-bar 1033 行
-   * 已有兜底）侥幸无恙，但这是运气，不是设计。
-   *
-   * 为何用 !important：同 specificity 下后声明者胜，而本条在文件靠前位置，
-   * 无 !important 时会输给下方各条显式 .xxx[hidden]（那些恰好也要 display:none，
-   * 故本可接受）；但对「未来新增、忘了补兜底」的样式，只有 !important 才能
-   * 确保兜住。已核验全库零处依赖 hidden 属性做非显隐语义
-   * （交互一律经 el.hidden 属性赋值，无 removeAttribute/setAttribute 旁路），
-   * 故 !important 无误伤面。 */
-  [hidden] { display: none !important; }
+  /* 全局 [hidden] 兜底（[hidden]{display:none!important}）在 tokens.ts：chat/settings
+   * 两面板共用注入基，单一真理源。本文件历史上的逐元素 .xxx[hidden] 显式兜底
+   * 已全部删除（2026-10-11 死代码清理）：author 层任何非 !important 的 display
+   * 声明（含 JS 内联 style）都输给全局 !important 规则，逐元素兜底恒不生效。 */
 
   body {
     font-family: var(--font-ui, system-ui, -apple-system, sans-serif);
@@ -89,7 +64,6 @@ export const chatStyles = `
     cursor: pointer;
   }
   .scroll-to-bottom:hover { color: var(--text-primary, #cccccc); }
-  .scroll-to-bottom[hidden] { display: none; }
 
   /* ============ StatusDock：底部状态抽屉（ADR-037 形态宪法） ============ */
   /* 抽屉入口（C1 常驻化）：静态骨架节点，body flex 列中独立成行（stretch 整条可点）。
@@ -101,7 +75,7 @@ export const chatStyles = `
     margin: var(--sp-2, 6px) var(--sp-4, 10px) 0;
     padding: var(--sp-1, 4px) var(--sp-3, 8px);
     min-height: 20px;
-    border: 1px solid var(--border-subtle, rgba(128,128,128,.35));
+    border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
     border-radius: var(--radius-sm, 2px);
     background: var(--surface-inset, rgba(128,128,128,.12));
     color: var(--text-secondary, #9aa0a6);
@@ -109,7 +83,6 @@ export const chatStyles = `
     cursor: pointer;
   }
   .status-dock__chip:hover { color: var(--text-primary, #cccccc); background: var(--surface-active, rgba(128,128,128,.24)); }
-  .status-dock__chip[hidden] { display: none; }
   /* 未读徽章：警示色文字/描边 + 前导圆点（::before 纯装饰；读屏语义由 JS 的 aria-label 承担，
    * 伪元素内容测试与读屏都拿不到，不承载语义——同旧活动详情折叠 marker 血训）。 */
   .status-dock__chip.is-unread {
@@ -121,7 +94,7 @@ export const chatStyles = `
     content: ''; width: var(--dot-md); height: var(--dot-md); border-radius: 50%;
     background: var(--feedback-warn-accent, #d7ba7d);
   }
-  .status-dock__chip:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .status-dock__chip:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--border-focus); }
   /* 收起态形态降级（用户诉求 2026-10-07）：常驻保留，但收起时收为输入框上方左侧短 pill，
    * 不再占输入框上方整排；展开态完全保持现状（.is-collapsed 仅由收起态施加）。
    * 与展开态的差异 = align-self: flex-start（全宽 pill 收为内容宽短 pill，靠左）
@@ -141,11 +114,10 @@ export const chatStyles = `
     display: flex; flex-direction: column; gap: var(--sp-2, 6px);
     margin: var(--sp-2, 6px) var(--sp-4, 10px);
     padding: var(--sp-2, 6px);
-    border: 1px solid var(--border-subtle, rgba(128,128,128,.35));
+    border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
     border-radius: var(--radius-sm, 2px);
     background: var(--surface-inset, rgba(128,128,128,.12));
   }
-  .status-dock__panel[hidden] { display: none; }
   /* 展开动画（用户诉求 2026-10-07 续）：点击左侧小气泡后，从左侧自然扩展出去。
    * 纯 CSS、零 JS：animation 只挂在展开态 body:not(.dock-collapsed)，利用
    * 「收起→展开时规则重新匹配才触发一次」的特性——重复 resolveDock 重排（展开态持续）
@@ -174,7 +146,6 @@ export const chatStyles = `
   /* 控件段：被收纳活跃条的单实例容器（节点由 resolveDock 搬运，事件监听随节点保留）。
    * 条原样式自带外边距，段内统一收紧——子选择器兜底所有未来入段条，免枚举漂移。 */
   .status-dock__controls { display: flex; flex-direction: column; gap: var(--sp-2, 6px); }
-  .status-dock__controls[hidden] { display: none; }
   .status-dock__controls > * { margin: 0; }
 
   /* ============ Components：会话标题条（ADR-024 会话标题层） ============ */
@@ -254,7 +225,7 @@ export const chatStyles = `
     opacity: 0; transition: opacity var(--dur-base) ease; /* 悬浮条目才显示（对齐 Trae 悬浮删除） */
   }
   .session-history .treedd__item:hover .session-history__item-del { opacity: 1; }
-  .session-history__item-del:hover { color: var(--status-fail, #b3261e); }
+  .session-history__item-del:hover { color: var(--status-fail, #f14c4c); }
   .session-history__empty {
     padding: var(--sp-4, 10px); text-align: center;
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
@@ -264,7 +235,7 @@ export const chatStyles = `
   .session-tabs {
     display: flex; gap: var(--sp-1, 4px);
     padding: var(--sp-2, 6px) var(--sp-2, 6px) var(--sp-1, 4px);
-    border-bottom: 1px solid var(--border-subtle, rgba(128,128,128,.22));
+    border-bottom: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
   }
   .session-tab {
     display: inline-flex; align-items: center; gap: 3px;
@@ -287,7 +258,7 @@ export const chatStyles = `
     padding: var(--sp-1, 4px) var(--sp-2, 6px);
     font-size: var(--font-xs, 10px); color: var(--text-primary, #cccccc);
     background: var(--surface-inset, rgba(128,128,128,.12));
-    border: 1px solid var(--border-subtle, rgba(128,128,128,.22));
+    border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
     border-radius: var(--radius-sm, 2px); outline: none;
   }
   .session-search::placeholder { color: var(--text-secondary, #9aa0a6); }
@@ -300,7 +271,7 @@ export const chatStyles = `
     opacity: 0; transition: opacity var(--dur-base) ease;
   }
   .session-history .treedd__item:hover .session-history__item-keep { opacity: 1; }
-  .session-history__item-keep:hover { color: var(--accent, #4c8dff); }
+  .session-history__item-keep:hover { color: var(--accent, #0e639c); }
 
   /* ============ Components：消息 ============ */
   /* 空状态：克制的中性提示，垂直居中 */
@@ -325,10 +296,10 @@ export const chatStyles = `
   .empty-onboard-btn {
     padding: var(--sp-2, 6px) var(--sp-5, 12px); font-size: var(--font-md, 12px);
     border-radius: var(--radius-pill, 999px); cursor: pointer;
-    border: 1px solid var(--accent, #4fc1ff); color: var(--accent, #4fc1ff);
+    border: 1px solid var(--accent, #0e639c); color: var(--accent, #0e639c);
     background: transparent; margin-top: var(--sp-3, 8px);
   }
-  .empty-onboard-btn:hover { background: var(--accent-soft, rgba(79,193,255,.12)); }
+  .empty-onboard-btn:hover { background: var(--accent-soft, rgba(14, 99, 156, 0.08)); }
   /* Follow-up 建议块（回复后关联推荐）：AI 回复下方「接下来可以探索」，
      chips 与空状态示例共用 .suggestion-chip（左对齐，区别于空状态居中） */
   .followup { padding: var(--sp-1, 4px) var(--sp-2, 6px) var(--sp-5, 12px); }
@@ -403,8 +374,8 @@ export const chatStyles = `
   .ask-inline {
     margin: var(--sp-2, 6px) 0;
     padding: var(--sp-3, 8px);
-    background: var(--surface-hover, rgba(128,128,128,.08));
-    border: 1px solid var(--border-panel, rgba(128,128,128,.2));
+    background: var(--surface-hover, rgba(128, 128, 128, 0.2));
+    border: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
     border-radius: var(--radius-md, 6px);
     display: flex; flex-direction: column; gap: var(--sp-2, 6px);
     min-width: 0;
@@ -421,19 +392,19 @@ export const chatStyles = `
     padding: var(--sp-0, 2px) var(--sp-3, 8px);
     cursor: pointer;
   }
-  .ask-inline__opt:hover { background: var(--accent-soft, rgba(14,99,156,.12)); }
-  .ask-inline__opt:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 1px; }
+  .ask-inline__opt:hover { background: var(--accent-soft, rgba(14, 99, 156, 0.08)); }
+  .ask-inline__opt:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
   .ask-inline__input {
     flex: 1 1 auto; min-width: 0;
     font-size: var(--font-sm, 11px);
-    background: var(--surface-input, rgba(0,0,0,.2));
+    background: var(--surface-input, #3c3c3c);
     color: var(--text-primary, #cccccc);
-    border: 1px solid var(--border, rgba(128,128,128,.3));
+    border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
     border-radius: var(--radius-sm, 2px);
     padding: var(--sp-1, 4px) var(--sp-2, 6px);
   }
   .ask-inline__input::placeholder { color: var(--text-tertiary, #6e7681); }
-  .ask-inline__input:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 0; }
+  .ask-inline__input:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 0; }
   /* 多 ask 聚合：ask 交互统一「逐题点选/输入 →
    * 全部答完才提交」；is-selected = 该题已作答（实心品牌色，可再点改选）；submit 为底部一次性
    * 提交按钮（single 时「提交回答」/ multi 时「提交全部回答」），全部题目有答案才 enabled。
@@ -457,7 +428,7 @@ export const chatStyles = `
     opacity: .4;
     cursor: not-allowed;
   }
-  .ask-inline__submit:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 1px; }
+  .ask-inline__submit:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
   /* 写入审批卡：confirmWrites=true 写文件时浮现于消息区底部。
    * 浅底卡片 + 头部（工具/路径）+ 描述 + 可折叠 diff + 确认/拒绝按钮；
    * 确认用语义令牌 --status-pass、拒绝用 --status-fail —— 与工具执行状态色同源，不造新色。 */
@@ -515,13 +486,12 @@ export const chatStyles = `
    * 且用户点完若队列无下一条，卡片会带着「已裁决」的旧内容滞留 ⇒ 重复提交窗口。
    * 修法：点击后不关卡，改为等待态——按钮 disabled（防重复提交）+ 卡片整体降透明度
    * （明示「这张已处理完，等下一张」）。透明度用既有 token 拼，不新增色板。
-   * [hidden] 兜底：.write-confirm-card 本体无 display 声明（默认 block），
-   * 但本状态类会设 display:flex，故必须配 [hidden] 兜底（规则 10 血训）。 */
+   * [hidden] 兜底：本状态类设 display:flex，历史上须配逐元素 [hidden] 兜底
+   * （规则 10 血训）；现由 tokens.ts 全局 [hidden]{display:none!important} 统一兜住。 */
   .write-confirm-card[data-pending='true'] { opacity: 0.55; }
-  .write-confirm-card[data-pending='true'][hidden] { display: none; }
   .write-confirm-card__btn[disabled] { cursor: default; opacity: 0.6; }
   .write-confirm-card__hint {
-    font-size: var(--font-xs, 10px); color: var(--text-muted, #888);
+    font-size: var(--font-xs, 10px); color: var(--text-muted, #9a9a9a);
   }
   /* 运行时输入条目行：question-answer / supplement / timeout 统一形态，
    * 对齐 thought/tool 过程行视觉（左缘 + 圆角 + 弱化字色）；非折叠块——内容恒可见，来源以 tag
@@ -535,7 +505,7 @@ export const chatStyles = `
     font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);
     user-select: none;
-    background: var(--surface-hover, rgba(128,128,128,.04));
+    background: var(--surface-hover, rgba(128, 128, 128, 0.2));
   }
   .round-block__input-tag {
     display: inline-flex; align-items: center;
@@ -596,8 +566,8 @@ export const chatStyles = `
   .btn-icon svg { display: block; }
   /* 删除图标危险态 */
   .msg-delete-icon:hover:not(:disabled) {
-    background: var(--feedback-error-bg, rgba(180, 40, 30, .14));
-    color: var(--status-fail, #b3261e);
+    background: var(--feedback-error-bg, #442726);
+    color: var(--status-fail, #f14c4c);
   }
   .msg-icon-btn:disabled { color: var(--text-secondary, #9aa0a6); cursor: default; opacity: .5; }
   /* AI 回答：顶部身份标签 + 任务过程折叠区 + 报告正文 + footer（对齐主流大厂 AI 对话设计）。
@@ -713,12 +683,12 @@ export const chatStyles = `
   .msg.assistant .msg-body code {
     font-family: var(--font-mono, ui-monospace, Consolas, monospace);
     font-size: 0.92em;
-    background: var(--surface-code, rgba(0, 0, 0, 0.08));
+    background: var(--surface-code, rgba(127, 127, 127, 0.15));
     padding: var(--sp-hair, 1px) var(--sp-1, 4px); border-radius: var(--radius-sm, 2px);
   }
   /* 代码块：横向滚动防撑爆，独立底色 */
   .msg.assistant .msg-body pre {
-    background: var(--surface-code, rgba(0, 0, 0, 0.08));
+    background: var(--surface-code, rgba(127, 127, 127, 0.15));
     border: 1px solid var(--border-panel, rgba(128, 128, 128, .4));
     border-radius: var(--radius, 6px);
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
@@ -734,7 +704,7 @@ export const chatStyles = `
     display: flex; align-items: center; justify-content: space-between;
     padding: var(--sp-1, 4px) var(--sp-3, 8px);
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
-    background: var(--surface-code, rgba(0, 0, 0, 0.08));
+    background: var(--surface-code, rgba(127, 127, 127, 0.15));
     border: 1px solid var(--border-panel, rgba(128, 128, 128, .4));
     border-bottom: none; border-radius: var(--radius, 6px) var(--radius, 6px) 0 0;
     user-select: none;
@@ -804,7 +774,7 @@ export const chatStyles = `
     gap: var(--sp-2, 6px);
     margin-top: var(--sp-1, 4px);
     padding: var(--sp-1, 4px) 0 0;
-    border-top: 1px dashed var(--border-panel, rgba(128,128,128,.24));
+    border-top: 1px dashed var(--border-panel, rgba(128, 128, 128, 0.4));
     font-size: var(--font-sm, 11px);
   }
   /* 容器级 footer 的「内容未定稿」隐藏：与段级 .msg-footer.is-pending 同一语义。
@@ -834,7 +804,7 @@ export const chatStyles = `
   }
   /* thinking 态 interject 队列可视化 —— 挂在 inputBar 前面的灰色条
    * 懒创建（chatView.updatePendingQueueBar），仅 items.length>0 时显示；
-   * hidden 属性天然生效（display:block 被显式 [hidden] 覆盖为 none）。
+   * hidden 属性显隐由 tokens.ts 全局 [hidden]{display:none!important} 统一兜底。
    * 视觉定位：弱化灰色条（--surface-track），比输入卡片更轻，不抢注意力。
    * 布局：flex column（label+count+clear 在顶部一行 + list 在下方多行） */
   /* 文件改动常驻条（DIFF-1）：与 pending-queue-bar 同位置范式（插在输入栏之前）；
@@ -846,18 +816,15 @@ export const chatStyles = `
     gap: var(--sp-1, 4px);
     margin: 0 var(--sp-4, 10px) var(--sp-2, 6px);
     padding: var(--sp-2, 6px) var(--sp-3, 8px);
-    border-left: 3px solid var(--warn, #cca700);
+    border-left: 3px solid var(--warn, #d7ba7d);
     border-radius: var(--radius-sm, 2px);
     font-size: var(--font-md);
     line-height: 1.4;
     color: var(--text-muted, #9a9a9a);
   }
-  .file-changes-bar[hidden] {
-    display: none;
-  }
   .file-changes-bar__badge {
     font-weight: 700;
-    color: var(--warn, #cca700);
+    color: var(--warn, #d7ba7d);
   }
   .file-changes-bar__label {
     color: var(--text-muted, #9a9a9a);
@@ -925,12 +892,12 @@ export const chatStyles = `
   /* 顶部标题行 */
   .pending-queue-bar__label {
     font-weight: 500;
-    color: var(--text-secondary, #b0b0b0);
+    color: var(--text-secondary, #9aa0a6);
   }
   .pending-queue-bar__hint {
     flex: 1;
     font-size: var(--font-sm, 11px);
-    color: var(--text-muted, #888);
+    color: var(--text-muted, #9a9a9a);
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -951,13 +918,13 @@ export const chatStyles = `
     transition: background var(--dur-fast);
   }
   .pending-queue-bar__item:hover {
-    background: var(--surface-hover, rgba(128,128,128,.10));
+    background: var(--surface-hover, rgba(128, 128, 128, 0.2));
   }
   .pending-queue-bar__num {
     flex-shrink: 0;
     width: var(--sq-xs, 16px);
     font-size: var(--font-sm, 11px);
-    color: var(--text-muted, #888);
+    color: var(--text-muted, #9a9a9a);
     text-align: right;
   }
   .pending-queue-bar__text {
@@ -982,7 +949,7 @@ export const chatStyles = `
     border: none;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--text-muted, #888);
+    color: var(--text-muted, #9a9a9a);
     cursor: pointer;
     font-size: var(--font-xs, 10px);
     line-height: 1;
@@ -993,8 +960,8 @@ export const chatStyles = `
     opacity: 1;
   }
   .pending-queue-bar__item-del:hover {
-    background: var(--feedback-error-bg, rgba(180, 40, 30, .14));
-    color: var(--status-fail, #b3261e);
+    background: var(--feedback-error-bg, #442726);
+    color: var(--status-fail, #f14c4c);
   }
   /* 全局清空按钮（右上角）：hover 危险色暗示 */
   .pending-queue-bar__clear {
@@ -1008,17 +975,16 @@ export const chatStyles = `
     border: none;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--text-muted, #888);
+    color: var(--text-muted, #9a9a9a);
     cursor: pointer;
     font-size: var(--font-sm, 11px);
     line-height: 1;
     transition: background var(--dur-fast), color var(--dur-fast);
   }
   .pending-queue-bar__clear:hover {
-    background: var(--feedback-error-bg, rgba(180, 40, 30, .14));
-    color: var(--status-fail, #b3261e);
+    background: var(--feedback-error-bg, #442726);
+    color: var(--status-fail, #f14c4c);
   }
-  .pending-queue-bar[hidden] { display: none; }
 
   /* ============ 后台任务条（CMD-1 阶段 2）：与 pending-queue-bar 同构（左侧色条 + 透明底）；
    * 列表每行 = 命令原文 + 状态标签 + 终止按钮（终态行无按钮）。 ============ */
@@ -1056,7 +1022,7 @@ export const chatStyles = `
     color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-xs, 10px);
   }
-  .background-tasks-bar__label { color: var(--text-secondary, #cccccc); }
+  .background-tasks-bar__label { color: var(--text-secondary, #9aa0a6); }
   .background-tasks-bar__item {
     display: flex;
     align-items: center;
@@ -1065,7 +1031,7 @@ export const chatStyles = `
     border-radius: var(--radius-sm, 2px);
     transition: background var(--dur-fast);
   }
-  .background-tasks-bar__item:hover { background: var(--surface-hover, rgba(128,128,128,.10)); }
+  .background-tasks-bar__item:hover { background: var(--surface-hover, rgba(128, 128, 128, 0.2)); }
   /* 命令原文占满剩余宽度（过长由 JS 截断 + title 悬停看全文，此处只防溢出撑破布局） */
   .background-tasks-bar__text {
     flex: 1;
@@ -1075,18 +1041,18 @@ export const chatStyles = `
     white-space: nowrap;
     /* 等宽字体：经 --font-mono 跟随用户在 VS Code 设置的编辑器字体 */
     font-family: var(--font-mono, ui-monospace, Consolas, monospace);
-    color: var(--text-secondary, #cccccc);
+    color: var(--text-secondary, #9aa0a6);
   }
   .background-tasks-bar__status {
     flex-shrink: 0;
-    color: var(--text-muted, #888);
+    color: var(--text-muted, #9a9a9a);
     font-size: var(--font-xs, 10px);
   }
   .background-tasks-bar__kill {
     flex-shrink: 0;
     padding: 0 var(--sp-2, 6px);
     height: var(--sq-sm, 18px);
-    border: 1px solid var(--border-subtle, rgba(128,128,128,.35));
+    border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-secondary, #9aa0a6);
@@ -1095,8 +1061,8 @@ export const chatStyles = `
     transition: background var(--dur-fast), color var(--dur-fast);
   }
   .background-tasks-bar__kill:hover {
-    background: var(--feedback-error-bg, rgba(180, 40, 30, .14));
-    color: var(--status-fail, #b3261e);
+    background: var(--feedback-error-bg, #442726);
+    color: var(--status-fail, #f14c4c);
   }
   /* 终态行的「收起」：中性灰、不带危险色——它不杀进程（与「终止」视觉上必须可区分，
      否则用户会以为点了会杀东西）。hover 用普通高亮而非危险色。 */
@@ -1111,17 +1077,16 @@ export const chatStyles = `
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--text-muted, #888);
+    color: var(--text-muted, #9a9a9a);
     font-size: var(--font-base, 13px);
     line-height: 1;
     cursor: pointer;
     transition: background var(--dur-fast), color var(--dur-fast);
   }
   .background-tasks-bar__dismiss:hover {
-    background: var(--surface-hover, rgba(128,128,128,.18));
+    background: var(--surface-hover, rgba(128, 128, 128, 0.2));
     color: var(--text-secondary, #9aa0a6);
   }
-  .background-tasks-bar[hidden] { display: none; }
 
   /* 进场动画（P2 2026-10-07 续）：条件条随内容出现，复用 dock 已验证的「从左滑入 + 淡入」
    * 范式（dockPanelOpen），与活动抽屉同源。条件条经 [hidden] 显隐，display:none→flex 时
@@ -1210,9 +1175,9 @@ export const chatStyles = `
    * 漏这条导致 A 类阻断面板激活时 setComposerReplaced(true) 写了hidden=true，
    * 但 composer 视觉仍在（真机表现：确认卡显示在输入框「上方」而非替换之）。
    * 脚本报错也查不到（hidden 属性确实为 true）⇒ 假绿。
-   * 【根因防线】此前列此坑已18 处（.activity-bar / .plan-bar / 各 dock 条…），
-   * 逐个补[hidden] 是打补丁不是治本。根治 = 下方全局兜底规则：
-   * 凡声明 display 的元素一律带 [hidden]{display:none}，新样式自动被覆盖。 */
+   * 【根因防线】此前逐个补 .xxx[hidden] 是打补丁不是治本（18 处已全部删除，2026-10-11）。
+   * 根治 = tokens.ts 全局兜底规则 [hidden]{display:none!important}：author 层任何
+   * 非 !important 的 display 声明（含 JS 内联）都被它压住，新样式自动被覆盖。 */
   #inputWrap {
     display: flex;
     flex-direction: column;
@@ -1225,7 +1190,6 @@ export const chatStyles = `
     transition: border-color var(--dur-base) ease, box-shadow var(--dur-base) ease;
     overflow: visible; /* 禁止裁剪向上弹出的菜单 */
   }
-  #inputWrap[hidden] { display: none; }
   /* 聚焦态：边框色变品牌色 + 阴影加深 */
   #inputWrap:focus-within {
     border-color: var(--border-focus, #0e639c);
@@ -1328,7 +1292,7 @@ export const chatStyles = `
     padding: var(--sp-hair, 1px) var(--sp-2, 6px);
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
-    background: var(--surface-code, rgba(128,128,128,.12));
+    background: var(--surface-code, rgba(127, 127, 127, 0.15));
     border-radius: var(--radius-pill, 999px);
     white-space: nowrap;
     overflow: hidden;
@@ -1342,7 +1306,6 @@ export const chatStyles = `
     background: var(--accent, #0e639c);
     flex-shrink: 0;
   }
-  .role-badge[hidden] { display: none; }
   /** 小组会议启动图标（角色徽章右侧，Trae 风格 team SVG）
    * 复用 msg-icon-btn 基础样式（size/cursor/focus），差异化：
    *   - 更高优先级视觉（accent 色 + hover 背景）
@@ -1358,9 +1321,8 @@ export const chatStyles = `
     transition: background var(--dur-fast) ease;
   }
   .team-meeting-icon:hover {
-    background: var(--accent-hover, rgba(14, 99, 156, 0.15));
+    background: var(--accent-hover, #1177bb);
   }
-  .team-meeting-icon[hidden] { display: none; }
   /* 工具权限徽章（与角色徽章并列，展示工具模式与能力列表） */
   .capability-badge {
     display: inline-flex;
@@ -1376,7 +1338,6 @@ export const chatStyles = `
     text-overflow: ellipsis;
     user-select: none;
   }
-  .capability-badge[hidden] { display: none; }
 
   /* 润色按钮（图标化，弱化样式） */
   .polish-btn-icon {
@@ -1437,7 +1398,6 @@ export const chatStyles = `
     padding: var(--sp-2, 6px) var(--sp-6, 16px) 0;
     flex-shrink: 0;
   }
-  .skill-chip-row[hidden] { display: none; }
   .skill-chip {
     display: inline-flex;
     align-items: center;
@@ -1591,19 +1551,17 @@ export const chatStyles = `
     transition: background var(--dur-base) ease, color var(--dur-base) ease, transform var(--dur-fastest) ease;
   }
   .pause-btn:hover {
-    background: var(--surface-code, rgba(0, 0, 0, 0.08));
+    background: var(--surface-code, rgba(127, 127, 127, 0.15));
     color: var(--text-primary, #cccccc);
   }
   .pause-btn:active { transform: scale(0.97); }
-  /* display:inline-flex 会覆盖 HTML hidden 属性，需显式恢复隐藏 */
-  .pause-btn[hidden] { display: none; }
 
   /* ============ Components：活动状态区 · 主状态条 ============ */
   /* 会话异常等错误级反馈 + 低扰 info 统一走单一主状态条（#activityBar），不插入消息区，
    * 不污染对话历史。错误显示期间低扰不打断（优先级保护）；被覆盖的
    * 提示进抽屉「活动」时间段历史回溯（见下方 .status-dock__timeline）。
    * 分级：error 醒目（inputValidation error 色）、info 低扰（同记忆语义）。
-   * [hidden] 覆盖：display:flex 会覆盖 HTML hidden 属性，需显式恢复。 */
+   * [hidden] 显隐由 tokens.ts 全局 [hidden]{display:none!important} 统一兜底。 */
   .activity-bar {
     display: flex;
     align-items: center;
@@ -1614,7 +1572,6 @@ export const chatStyles = `
     flex-shrink: 0;
     border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }
-  .activity-bar[hidden] { display: none; }
   .activity-bar.info {
     color: var(--text-secondary, #9aa0a6);
     background: var(--feedback-info-bg);
@@ -1654,15 +1611,14 @@ export const chatStyles = `
     background: var(--surface-card, #252526);
     border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }
-  .plan-bar[hidden] { display: none; }
   .plan-bar__head {
     display: flex; align-items: center; gap: var(--sp-3, 8px);
     width: 100%; padding: var(--sp-2, 6px) var(--sp-5, 12px);
     background: transparent; border: none; cursor: pointer;
     font: inherit; color: inherit;
   }
-  .plan-bar__head:hover { background: var(--surface-hover, rgba(128,128,128,.1)); }
-  .plan-bar__head:focus-visible { box-shadow: inset 0 0 0 1px var(--vscode-focusBorder); outline: none; }
+  .plan-bar__head:hover { background: var(--surface-hover, rgba(128, 128, 128, 0.2)); }
+  .plan-bar__head:focus-visible { box-shadow: inset 0 0 0 1px var(--border-focus); outline: none; }
   .plan-bar__count {
     flex-shrink: 0; font-size: var(--font-xs, 10px); font-weight: 600;
     color: var(--text-primary, #cccccc);
@@ -1686,7 +1642,7 @@ export const chatStyles = `
   }
   .plan-bar__chevron {
     flex-shrink: 0; display: inline-flex; align-items: center;
-    color: var(--text-muted, #6e7681);
+    color: var(--text-muted, #9a9a9a);
   }
   /* SVG 指示器尺寸适配 */
   .plan-bar__chevron svg { display: block; width: 11px; height: 11px; }
@@ -1702,7 +1658,6 @@ export const chatStyles = `
     font-size: var(--font-md, 12px); line-height: 1.6;
     color: var(--text-secondary, #9aa0a6);
   }
-  .plan-bar__panel[hidden] { display: none; }
   .plan-board-list {
     list-style: none;
     margin: 0;
@@ -1718,7 +1673,7 @@ export const chatStyles = `
     display: flex; align-items: baseline; gap: var(--sp-2, 6px);
     cursor: pointer; user-select: none; outline: none;
   }
-  .plan-item summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .plan-item summary:focus-visible { box-shadow: 0 0 0 1px var(--border-focus); }
   .plan-item-title { flex: 1; word-break: break-all; }
   .plan-item-badge {
     flex-shrink: 0; font-size: var(--font-xs, 10px);
@@ -1734,14 +1689,14 @@ export const chatStyles = `
   .plan-item-done .plan-item-title { text-decoration: line-through; }
   .plan-item-active { color: var(--accent, #0e639c); font-weight: 500; }
   .plan-item-active .plan-item-title { font-weight: 600; }
-  .plan-item-blocked { color: var(--status-fail, #b3261e); }
+  .plan-item-blocked { color: var(--status-fail, #f14c4c); }
   /* pending：默认次级灰（继承 .plan-bar__panel 的 text-secondary，无需额外规则） */
 
   /* plan-board planItemLog 行内相对时间标签 */
   .plan-item-round-time {
     display: inline-block;
     font-size: var(--font-xs, 10px);
-    color: var(--text-muted, #6e7681);
+    color: var(--text-muted, #9a9a9a);
     margin-right: var(--sp-2, 6px);
     padding: var(--sp-hair, 1px) var(--sp-1, 4px);
     background: var(--surface-inset, rgba(128,128,128,.12));
@@ -1772,14 +1727,14 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px);
   }
   .round-block summary:focus-visible,
-  .process-flow summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .process-flow summary:focus-visible { box-shadow: 0 0 0 1px var(--border-focus); }
   /* round-block 任务项标签：active 任务项提示。prepend 到 details 最前（summary 上方） */
   .round-block__plan-tag {
     display: flex; align-items: center; gap: var(--sp-1, 4px);
     font-size: var(--font-xs, 10px);
     color: var(--accent, #0e639c);
     padding: 0 0 var(--sp-1, 4px);
-    border-bottom: 1px dashed var(--border-panel, rgba(128,128,128,.3));
+    border-bottom: 1px dashed var(--border-panel, rgba(128, 128, 128, 0.4));
     margin-bottom: var(--sp-1, 4px);
   }
   /* target 图标（SVG）：跟随 accent 色，不收缩 */
@@ -1801,7 +1756,7 @@ export const chatStyles = `
     border-radius: var(--radius-pill);
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
-    background: var(--surface-thought, rgba(128,128,128,.08));
+    background: var(--surface-thought, #252526);
   }
   .pending-wait::before {
     content: ''; width: var(--dot-sm); height: var(--dot-sm); border-radius: 50%; flex-shrink: 0;
@@ -1828,7 +1783,7 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
   }
-  .process-flow__phase.is-tool { color: var(--text-primary, #e6e6e6); font-weight: 600; }
+  .process-flow__phase.is-tool { color: var(--text-primary, #cccccc); font-weight: 600; }
   .process-flow__phase::before {
     content: ''; width: var(--dot-sm); height: var(--dot-sm); border-radius: 50%; flex-shrink: 0;
     background: var(--accent, #0e639c);
@@ -1840,7 +1795,7 @@ export const chatStyles = `
   /* 叙述冒号行：平铺直示（非折叠）——「AI 说什么：」后接工具折叠块 */
   .process-flow__narrate {
     font-size: var(--font-sm, 11px); line-height: 1.6;
-    color: var(--text-primary, #e0e0e0);
+    color: var(--text-primary, #cccccc);
     white-space: pre-wrap; word-break: break-all;
   }
   /* 中断轮平铺收尾行（过程折叠、停止行折叠块外平铺常驻——RT/RP 同构） */
@@ -1882,7 +1837,7 @@ export const chatStyles = `
     font-weight: 600;
   }
   .round-block__plan-item-summary::-webkit-details-marker { display: none; }
-  .round-block__plan-item-summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .round-block__plan-item-summary:focus-visible { box-shadow: 0 0 0 1px var(--border-focus); }
   /* 任务项状态图标（applyPlanItemStates 单一写入点的视觉承载，summary 前置）：
    * done = circle-check 完成绿 / active = target 进行中——颜色语义各一处，
    * 复用既有令牌（--status-pass 写确认 ok 按钮在用、--accent 相位行在用），不造新色。 */
@@ -1898,7 +1853,7 @@ export const chatStyles = `
   .round-block__narrate {
     padding: var(--sp-1, 4px) 0; line-height: 1.6;
     font-size: var(--font-xs, 10px);
-    color: var(--text-primary, #e0e0e0);
+    color: var(--text-primary, #cccccc);
     word-break: break-all; white-space: pre-wrap;
   }
   /* 思考折叠行/块：模型 thought 流，
@@ -1985,7 +1940,7 @@ export const chatStyles = `
   }
   .round-block__pre {
     margin: var(--sp-1, 4px) 0; padding: var(--sp-2, 6px);
-    background: var(--surface-code, rgba(0,0,0,.2));
+    background: var(--surface-code, rgba(127, 127, 127, 0.15));
     border-radius: var(--radius, 6px);
     font-size: var(--font-xs, 10px); line-height: 1.5;
     white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere;
@@ -2003,7 +1958,7 @@ export const chatStyles = `
     animation: selfReviewPulse var(--dur-pulse) ease-in-out infinite;
   }
   /* 相位行切「工具执行」态——进行中工具优先显示执行叙述，主色强调 + 呼吸点延续 */
-  .round-block__phase.is-tool { color: var(--text-primary, #e6e6e6); font-weight: 600; }
+  .round-block__phase.is-tool { color: var(--text-primary, #cccccc); font-weight: 600; }
   @media (prefers-reduced-motion: reduce) {
     .round-block__phase::before { animation: none; }
   }
@@ -2019,7 +1974,7 @@ export const chatStyles = `
     cursor: pointer; user-select: none; outline: none;
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
-  .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--border-focus); }
   .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 4px); }
   /* 工具批块（toolBatch）：前后相邻、中间无打断物的连续工具合并为一块（分组判据见 chatView
      groupToolBatches，方案-工具批折叠合并 §3.1）。块标题 = 工具叙述句（toolSummaryText，与
@@ -2036,8 +1991,8 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
   .round-block__tool-batch-summary::-webkit-details-marker { display: none; }
-  .round-block__tool-batch-summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
-  .round-block__tool-batch-title { font-weight: 600; color: var(--text-primary, #e0e0e0); }
+  .round-block__tool-batch-summary:focus-visible { box-shadow: 0 0 0 1px var(--border-focus); }
+  .round-block__tool-batch-title { font-weight: 600; color: var(--text-primary, #cccccc); }
   .round-block__tool-batch-body { display: flex; flex-direction: column; }
   /* 失败/被拒块级标红（口径②：留段内不拆块，块级提示错误密度） */
   .round-block__tool-batch.is-tool-batch-failed { border-left-color: var(--danger, #f14c4c); }
@@ -2047,9 +2002,9 @@ export const chatStyles = `
      运行期间正文光标由八态状态机切「运行工具中」态（无 CSS 隐性联动） */
   .round-block__tool.is-tool-running {
     border-left-color: var(--accent, #0e639c);
-    background: var(--surface-thought, rgba(128,128,128,.05));
+    background: var(--surface-thought, #252526);
   }
-  .round-block__tool.is-tool-running > summary { color: var(--text-primary, #e6e6e6); font-weight: 600; }
+  .round-block__tool.is-tool-running > summary { color: var(--text-primary, #cccccc); font-weight: 600; }
   .round-block__tool.is-tool-running > summary::before {
     content: ''; display: inline-block; width: 10px; height: 10px;
     margin-right: var(--sp-2, 6px); vertical-align: -1px;

@@ -8667,11 +8667,13 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     // 本守卫读**生产样式表源码**（chatStyles.ts），对每个声明 display 且
     //「初始 hidden / 会被 JS 切 hidden」的容器类名，要求存在 [hidden] 兜底。
     // 新增此类元素若忘补兜底 ⇒ 此用例变红。
-    const src = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf-8') as string;
-    // 治本防线：全局兜底规则必须在（它覆盖全部，逐条补 [hidden] 是打补丁不是治本）
-    expect(src).toMatch(/\[hidden\]\s*\{\s*display:\s*none\s*!important/);
-    // 本次真机翻车的那一条：显式兜底 + 注释登记（注释是给未来人的，不参与断言）
-    expect(src).toMatch(/#inputWrap\[hidden\]\s*\{\s*display:\s*none/);
+    const tokenSrc = readFileSync(join(__dirname, '..', 'styles', 'tokens.ts'), 'utf-8') as string;
+    // 治本防线：全局兜底规则必须在（它覆盖全部，逐条补 [hidden] 是打补丁不是治本）。
+    // 已提至 tokens.ts（chat/settings 两面板共用注入基），故在此校验 tokens 源。
+    expect(tokenSrc).toMatch(/\[hidden\]\s*\{\s*display:\s*none\s*!important/);
+    // 逐元素兜底断言已退役（2026-10-11 死代码清理）：全局 !important 规则严格强于
+    // 任何逐元素非 important 兜底（含 JS 内联 display 场景），要求 #inputWrap[hidden]
+    // 存在等于强迫死代码回归。本不变量由上方全局断言单点守住。
   });
 
   it('审批卡终结通知：write_confirm_closed 收卡，收卡后按钮不再回传（僵尸交互不留）', () => {
