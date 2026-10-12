@@ -188,12 +188,21 @@ export const rolesStyles = `
     cursor: pointer;
     user-select: none;
     padding: var(--sp-0, 2px) 0;
+    /* 双箭头排雷（2026-10-12 用户真机实锤）：summary 默认 display:list-item 带浏览器原生
+     * disclosure 三角，与下方 ::before 自绘 ▸ 叠加成双箭头。按 chatStyles 过程块体系
+     * 2026-10-05 真机实锤的同律三件套隐掉原生标记——只留自绘箭头（有主题色 + 旋转过渡，
+     * 且是 iconLanguage 守卫已登记的豁免形态）；原生标记是 UA 默认、无设计意图，即用户
+     * 所说的「小的箭头」。memory recycle 是同型反例（只改色不隐标记），勿混为一谈。 */
+    list-style: none;
   }
   /* summary 是原生可聚焦元素：焦点环由 tokens 令牌层全局规则统一供给
    * （:where(...):focus-visible，特异性 0），此处不再重复声明。 */
   #roles-root .card-details summary:hover {
     color: var(--text-secondary, #9aa0a6);
   }
+  /* 隐原生标记三件套（与 chatStyles:1899-1910 同律，跨引擎三写法） */
+  #roles-root .card-details summary::marker { content: none; }
+  #roles-root .card-details summary::-webkit-details-marker { display: none; }
   #roles-root .card-details summary::before {
     content: '▸';
     display: inline-block;
