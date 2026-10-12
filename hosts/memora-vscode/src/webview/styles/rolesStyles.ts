@@ -291,7 +291,7 @@ export const rolesStyles = `
     border-radius: var(--radius-lg, 8px);
     box-shadow: var(--shadow-modal, 0 4px 16px rgba(0, 0, 0, 0.3));
     padding: var(--sp-3, 8px);
-    width: min(360px, calc(100vw - 48px));
+    width: min(var(--dim-3xl), calc(100vw - 48px));
     max-height: 80vh; display: flex; flex-direction: column;
   }
   #roles-root .team-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-2, 6px); }
@@ -299,7 +299,7 @@ export const rolesStyles = `
   #roles-root .team-modal-close { display: inline-flex; align-items: center; justify-content: center; padding: 0 var(--sp-1, 4px); }
   /* 关闭图标（SVG）：按钮为纯图标容器，不设 text 字号定义 */
   #roles-root .team-modal-close svg { display: block; }
-  #roles-root .team-modal-list { display: flex; flex-direction: column; gap: var(--sp-1, 4px); overflow-y: auto; min-height: 60px; }
+  #roles-root .team-modal-list { display: flex; flex-direction: column; gap: var(--sp-1, 4px); overflow-y: auto; min-height: var(--dim-md); }
   #roles-root .team-modal-item {
     display: flex; align-items: center; gap: var(--sp-2, 6px);
     font-size: var(--font-sm, 11px);
@@ -321,7 +321,7 @@ export const rolesStyles = `
   /* ============ Components：角色配置详情弹窗（RP-EDIT-1） ============ */
   /* 复用 team-modal 遮罩/框架 token，仅扩内容形态：查看行 / 编辑表单行 / 键面宽度 */
   #roles-root .team-modal.role-detail { width: min(480px, calc(100vw - 48px)); }
-  #roles-root .role-detail-body { overflow-y: auto; min-height: 60px; font-size: var(--font-sm, 11px); padding: var(--sp-1, 4px) 0; }
+  #roles-root .role-detail-body { overflow-y: auto; min-height: var(--dim-md); font-size: var(--font-sm, 11px); padding: var(--sp-1, 4px) 0; }
   /* 阶段组头（回答前/回答中/回答后/全局） */
   #roles-root .role-detail-stage { font-weight: 600; font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); margin: var(--sp-2, 6px) 0 var(--sp-1, 4px); }
   /* 查看模式行：标签 + 值（title 悬停含义） */

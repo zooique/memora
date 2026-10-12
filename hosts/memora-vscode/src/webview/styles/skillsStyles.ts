@@ -189,7 +189,7 @@ export const skillsStyles = `
   #skills-root .skill-disable-toggle {
     position: relative;
     display: inline-block;
-    width: 40px;
+    width: var(--dim-sm);
     height: var(--sq-md, 22px);
     flex-shrink: 0;
     margin-left: auto; /* 推至卡片头部右侧（徽章区左侧），与「查看正文」按钮同侧 */

@@ -208,8 +208,8 @@ export const chatStyles = `
   }
   .session-history .treedd__trigger .btn-icon svg { display: block; }
   .session-history .treedd__menu {
-    min-width: 240px; max-width: min(280px, calc(100vw - 24px));
-    max-height: 280px; overflow-y: auto;
+    min-width: 240px; max-width: min(var(--dim-xl), calc(100vw - 24px));
+    max-height: var(--dim-xl); overflow-y: auto;
   }
   .session-history .treedd__item {
     display: flex; align-items: center; gap: var(--sp-2, 6px);
@@ -284,7 +284,7 @@ export const chatStyles = `
   /* ============ Components：消息 ============ */
   /* 空状态：克制的中性提示，垂直居中 */
   .empty-state {
-    margin: auto; max-width: 320px; text-align: center;
+    margin: auto; max-width: var(--dim-2xl); text-align: center;
     color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-base, 13px); line-height: var(--lh-relaxed);
     padding: var(--sp-6, 16px);
@@ -354,7 +354,7 @@ export const chatStyles = `
    * 底部渐隐暗示「还有内容」；「展开全文」按钮由 chatView 仅在**真溢出**时插入——
    * 未溢出的短消息既不加 is-clamped 也不留按钮（判定在 JS，此处只负责折叠态外观）。 */
   .msg.user .msg-body.is-clamped {
-    max-height: 160px;
+    max-height: var(--dim-lg);
     overflow: hidden;
     -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
     mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
@@ -479,7 +479,7 @@ export const chatStyles = `
     background: var(--surface-input, #3c3c3c);
     color: var(--text-primary, #cccccc);
     border-radius: var(--radius, 6px);
-    max-height: 160px; overflow-y: auto;
+    max-height: var(--dim-lg); overflow-y: auto;
   }
   .write-confirm-card__actions { display: flex; gap: var(--sp-3, 8px); justify-content: flex-end; }
   .write-confirm-card__btn--ok, .write-confirm-card__btn--reject {
@@ -1159,7 +1159,7 @@ export const chatStyles = `
     bottom: calc(100% + 6px);
     right: 0;
     width: max-content;
-    max-width: 320px;
+    max-width: var(--dim-2xl);
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
     background: var(--surface-card, #252526);
     border: var(--line-input);
@@ -1335,7 +1335,7 @@ export const chatStyles = `
   .capability-badge {
     display: inline-flex;
     align-items: center;
-    max-width: 160px;
+    max-width: var(--dim-lg);
     padding: var(--sp-hair, 1px) var(--sp-2, 6px);
     font-size: var(--font-xs, 10px);
     color: var(--accent, #0e639c);
@@ -1632,7 +1632,7 @@ export const chatStyles = `
     color: var(--text-primary, #cccccc);
   }
   .plan-bar__progress {
-    flex: 1; height: 4px; min-width: 60px;
+    flex: 1; height: 4px; min-width: var(--dim-md);
     background: var(--border-panel, rgba(128,128,128,.4));
     border-radius: var(--radius-sm, 2px); overflow: hidden;
   }
@@ -1662,7 +1662,7 @@ export const chatStyles = `
     background: var(--surface-card, #252526);
     border-bottom: var(--line-solid);
     box-shadow: var(--shadow-card, 0 2px 8px rgba(0,0,0,.15));
-    max-height: 320px; overflow-y: auto;
+    max-height: var(--dim-2xl); overflow-y: auto;
     font-size: var(--font-md, 12px); line-height: var(--lh-normal);
     color: var(--text-secondary, #9aa0a6);
   }

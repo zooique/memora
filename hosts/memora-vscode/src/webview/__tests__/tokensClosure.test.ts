@@ -168,11 +168,17 @@ const EXEMPT_PROPS = new Set([
  *    74 → 复核批次：5 处残留裸 border-radius（进度/特质条 2px ×3、开关轨道 22px ×2）全量消化后
  *    47 → 收敛内联图标与圆点尺寸（新增 --icon-* 六档 + --dot-lg 回归，14 处：9 内联图标 + 5 圆点）后（2026-10-12；实测 AXIS 弧净 diff 新增 icon 17 + dot 10）
  *    41 → 收紧白名单豁免定位偏移 top/bottom/left/right（与 transform/translate/vertical-align 同属定位类，非间距刻度；6 处：bottom 4 + left 2）后（2026-10-12）
- * 为何要跟着降：若基线停在初始值，消化出的 94 处会变成「可新增而不报错」的余额，
+ *    24 → 收敛大尺寸维度裸值（新增 --dim-* 六档中性刻度，17 处：280/320/160/60/40/360px，
+ *         跨 width/height/max-width/max-height/min-width/min-height 复用）后（2026-10-12）。
+ *         注：枚举脚本曾误报 19 处（把 calc(100vw - 48px) 里的 48px 当成独立消费者），
+ *         经内容级 Grep 复核为 17 处 ⇒ 守护卫是 SSOT，脚本/文档计数须以其为准。
+ * 为何要跟着降：若基线停在初始值，消化出的 94+ 处会变成「可新增而不报错」的余额，
  * 等于给未来的裸值开了口子。门必须随债务一起往下走。
- * 升硬门条件：清单降到人工可核实的量级（例如 < 30）时，一并改为硬门并收紧白名单。
+ * 现状（2026-10-12）：清单已降至 24（< 30 升档阈值）⇒ 已升硬门 toEqual(24)（见守卫断言）。
+ * 残余 24 = A 类 4（--dd-* 局部重定义，待独立收口 + 真机验收，改宽高 = 视觉变化）
+ *          + C 类 20（一次性维度，显式硬门例外）。
  */
-const FROZEN_VALUE_BASELINE = 41;
+const FROZEN_VALUE_BASELINE = 24;
 
 /** 剥离 var() 整体（含其 fallback），残留者才是真裸值 */
 const stripVar = (v: string): string => v.replace(/var\(\s*--[\w-]+(\s*,[^)]*)?\)/g, '');
@@ -212,19 +218,19 @@ describe('设计令牌值守卫（裸值冻结 + 防新增）', () => {
     expect(scanned, '扫描到的 CSS 声明为 0——提取正则或路径已失效').toBeGreaterThan(500);
   });
 
-  it('裸值债务冻结：不得高于基线（新增即红，下降不受限）', () => {
+  it('裸值债务硬门：必须等于 24（A 类 4 + C 类 20，偏离即红）', () => {
     const { violations } = collectValueViolations();
     if (violations.length > 0) {
       const byProp = new Map<string, number>();
       for (const v of violations) byProp.set(v.prop, (byProp.get(v.prop) ?? 0) + 1);
       const top = [...byProp].sort((a, b) => b[1] - a[1]).slice(0, 8);
       console.warn(
-        `[值守卫] 存量为 ${violations.length} 处（基线 ${FROZEN_VALUE_BASELINE}）—` +
-          ` 债务冻结中，新增即红、下降不受限。\n` +
+        `[值守卫] 存量 ${violations.length} 处（硬门 ${FROZEN_VALUE_BASELINE}）—` +
+          ` 硬门已生效：必须等于 24，偏离（新增或误删）即红。\n` +
           `[值守卫] 属性分布 TOP：${top.map(([p, n]) => `${p}=${n}`).join(', ')}`,
       );
     }
-    expect(violations.length).toBeLessThanOrEqual(FROZEN_VALUE_BASELINE);
+    expect(violations.length).toEqual(FROZEN_VALUE_BASELINE);
   });
 });
 

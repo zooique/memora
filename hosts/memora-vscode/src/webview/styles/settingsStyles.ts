@@ -274,12 +274,12 @@ export const settingsStyles = `
     margin-top: var(--sp-2, 6px); padding: var(--sp-1, 4px) var(--sp-2, 6px);
     border: var(--line-solid); border-radius: var(--radius-sm, 2px);
     background: var(--surface-input, #3c3c3c); color: var(--text-primary); font-size: var(--font-sm, 11px);
-    max-width: 280px;
+    max-width: var(--dim-xl);
   }
   .security-select option { background: var(--surface-sidebar, #252526); }
 
   /* Toggle Switch（写入二次确认开关） */
-  .toggle-switch { position: relative; display: inline-block; width: 40px; height: var(--sq-md, 22px); }
+  .toggle-switch { position: relative; display: inline-block; width: var(--dim-sm); height: var(--sq-md, 22px); }
   .toggle-switch input { opacity: 0; width: 0; height: 0; }
   .toggle-slider {
     position: absolute; cursor: pointer; inset: 0;
