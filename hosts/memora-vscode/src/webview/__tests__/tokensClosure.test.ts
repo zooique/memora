@@ -130,8 +130,15 @@ describe('设计令牌闭合守卫（tokens.ts ↔ 全样式层）', () => {
  */
 const STYLES_DIR = join(WEBVIEW_DIR, 'styles');
 
-/** 豁免属性：非布局间距类，tokens 头部注释明文允许内联 */
+/** 豁免属性：非布局间距类，tokens 头部注释明文允许内联
+ * 2026-10-12 收紧白名单（升档注释 line 127「收紧白名单」授权）：定位偏移
+ * top/bottom/left/right 是绝对定位元素的偏移量，非「间距刻度」取值，与已豁免的
+ * transform/translate/vertical-align 同属定位类 ⇒ 一并豁免，不强制令牌化。 */
 const EXEMPT_PROPS = new Set([
+  'top',
+  'bottom',
+  'left',
+  'right',
   'border',
   'border-top',
   'border-right',
@@ -159,12 +166,13 @@ const EXEMPT_PROPS = new Set([
  *   127 → 收敛方形控件尺寸（新增 --sq-* 刻度，46 处）后
  *    79 → 收敛 padding/gap/margin 到间距刻度（新增 --sp-hair，48 处）后
  *    74 → 复核批次：5 处残留裸 border-radius（进度/特质条 2px ×3、开关轨道 22px ×2）全量消化后
- *    47 → 收敛内联图标与圆点尺寸（新增 --icon-* 六档 + --dot-lg 回归，14 处：9 内联图标 + 5 圆点）后（2026-10-12；实测 da566eb5 新增引用数）
+ *    47 → 收敛内联图标与圆点尺寸（新增 --icon-* 六档 + --dot-lg 回归，14 处：9 内联图标 + 5 圆点）后（2026-10-12；实测 AXIS 弧净 diff 新增 icon 17 + dot 10）
+ *    41 → 收紧白名单豁免定位偏移 top/bottom/left/right（与 transform/translate/vertical-align 同属定位类，非间距刻度；6 处：bottom 4 + left 2）后（2026-10-12）
  * 为何要跟着降：若基线停在初始值，消化出的 94 处会变成「可新增而不报错」的余额，
  * 等于给未来的裸值开了口子。门必须随债务一起往下走。
  * 升硬门条件：清单降到人工可核实的量级（例如 < 30）时，一并改为硬门并收紧白名单。
  */
-const FROZEN_VALUE_BASELINE = 47;
+const FROZEN_VALUE_BASELINE = 41;
 
 /** 剥离 var() 整体（含其 fallback），残留者才是真裸值 */
 const stripVar = (v: string): string => v.replace(/var\(\s*--[\w-]+(\s*,[^)]*)?\)/g, '');
