@@ -605,6 +605,16 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 - **升硬门**：清单降至 24（< 30 升档阈值），裸值债守卫由冻结式软门 `toBeLessThanOrEqual(41)` 升为硬门 `toEqual(24)`——偏离（新增或误删）即红；`scanned > 500` 反向守卫保空集假绿。
 - **验证**：tokensClosure 16/16（含硬门 + 反向守卫）；宿主 tsc `--noEmit` 零错；eslint 零警告；变异验证（基线临时改 23 → 守卫生红 `expected 24 to deeply equal 23`，还原后 24/24 绿）已做。
 
+### Fixed（宿主 · Webview 设计令牌：A 类 `--dd-*` 局部重定义闭包为 tokens 变体令牌 · 2026-10-12）
+
+**续 598 节 B 类收口弧**：裸值债 24 → **20**（A 类 4 处闭包，1:1 零视觉变化）。
+
+- **A 类 4 处闭包（零视觉变化）**：`chatStyles` 内 `.skill-picker` / `.model-picker` 对 L3 下拉令牌的裸值局部重定义，升为 tokens.ts L3 区**具名变体令牌**——`--dd-trigger-max-w-narrow:120`（单图标胶囊）/ `--dd-menu-min-w-wide:200`（宽名胶囊）；`.model-picker` 菜单 max-w 的 280 档**复用 `--dim-xl`**（嫁接既有刻度，不造并列值）；`.model-picker` 的 `--dd-trigger-max-w:200` 与 L3 定义重复，直接删。chatStyles 只留 `var()` 引用 ⇒ 值归 tokens.ts 唯一，1:1 沿用现状值，任何宽度都不动。
+- **与 B 类判定差异（排雷，勿回改）**：A 类原判「改宽高 = 视觉变化，须真机验收」的隐含前提是「折叠进 L3 改组件默认」；实际走「变体具名化 + 只换引用」⇒ 宽度零变动，按 B 类同款 1:1 判据免真机。dropdown.ts 定制契约注释同步指向变体令牌（覆写禁裸值）。
+- **dim 族守卫当场抓漂移**：`.model-picker` 改引 `var(--dim-xl)` 使 dim 消费数 17→18——上批补钉的反向守卫**当即转红**，EXPECTED 随机械真值同步（无此钉则 CHANGELOG/台账的 17 静默失真）。**这是「新族同批登记」纪律的首次实战回报。**
+- **硬门基线 24→20（带实证，非改数字造假绿）**：闭包前后全量枚举 diff = 恰好这 4 处（24→20，残余与 C 类清单逐条一致）；变异验证：基线临时改 19 → 红（`expected 20 to deeply equal 19`），还原 17/17 绿。守卫 warn 里硬编码的「24」同批改为引用基线变量（又一型会腐烂的描述性计数）。
+- **验证**：tokensClosure 17/17（含硬门 + 反向守卫）；宿主 tsc `--noEmit` 零错；eslint 零警告；宿主全量套件 **1096 passed / 2 skipped（60 文件，官方串行口径 EXIT=0，193.9s）**。
+
 ### Added（宿主 · webview 全局错误边界（T1）+ 错位输入丢弃留痕（T2）· 静默失败可观测）
 
 **诊断背景（2026-10-11 宿主缺陷排雷，两项均经实证确认）**：① 两个 webview 入口的业务脚本抛未捕获异常 / 未处理 rejection 时零兜底——面板静默卡死、宿主零日志（webview console 用户拿不到）；② 错位输入（迟到回答 / 竞态 resume）被相位路由丢弃时零观测，「答了没反应」无排障线索（宿主本有 console.warn 惯例，唯丢弃类是洞）。
