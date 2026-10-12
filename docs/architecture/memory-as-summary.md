@@ -8,9 +8,9 @@
 >
 > **2026-09-10 收敛补记（G39 P2-2 收口）**：上述替代物 `DEFAULT_MEMORY_CAP_RATIO` **亦已删除**——记忆自动注入退役后该 cap 无任何约束消费者（`recalledMemories` 恒空），属「为不存在的量算上限」。连带清理 `budget` 的 `memoryLayerCapTokens` 与占用快照的 `memoryTokens`/`memoryCount`。**现行预算/占用模型均无记忆维度**。
 >
-> **2026-09-09 收敛补记（阶段3 score 物理退役）**：本文件正文中作为记忆权重论述的 `score` 字段（§3 字段表、`hybridMerge` 的 `vectorScore*0.6 + score*0.4` 融合、召回保底「按 score 降序」、boost 加分 `m.score + 0.05` 等）**已随阶段3 从 `Memory` 接口物理删除**——score 单调不减导致区分度趋零，且「只 touch 不 +score」后无写位。现状：排序 = 单语义分 `vectorScore` 降序，使用轨迹唯一事实源为 `accessedAt`，命中即刷新 `accessedAt`（不再加分）；读档经 `parseMemory` 白名单构造，旧档 score 自动剥离。注意与上一类补记区分：**「语义相似度分」不是记忆权重**——但语义通道已随 2026-09-18 B0 收编删除（`searchHybrid` 纯关键词，`AgentSearchHit.similarity` 恒 0，连同字段一并物理删除），无现行载体；排序 = 关键词命中序 + `accessedAt` 事实项。下文 score 相关表述除明确指相似度者外，均为退役前设计语义。
+> **2026-09-09 收敛补记（阶段3 score 物理退役）**：本文件正文中作为记忆权重论述的 `score` 字段（§3 字段表、`hybridMerge` 的 `vectorScore*0.6 + score*0.4` 融合、召回保底「按 score 降序」、boost 加分 `m.score + 0.05` 等）**已随阶段3 从 `Memory` 接口物理删除**——score 单调不减导致区分度趋零，且「只 touch 不 +score」后无写位。现状：排序 = 单语义分 `vectorScore` 降序，使用轨迹唯一事实源为 `accessedAt`，命中即刷新 `accessedAt`（不再加分）；读档经 `parseMemory` 白名单构造，旧档 score 自动剥离。注意与上一类补记区分：**「语义相似度分」不是记忆权重**——但语义通道已随 2026-09-18 B0 收编删除（`searchByKeyword`（原名 `searchHybrid`，2026-09-18 改名）纯关键词，`AgentSearchHit.similarity` 恒 0，连同字段一并物理删除），无现行载体；排序 = 关键词命中序 + `accessedAt` 事实项。下文 score 相关表述除明确指相似度者外，均为退役前设计语义。
 >
-> **2026-09-10 收敛补记（recall() 物理删除）**：**§四 全章（4.0-4.8 分层分轨召回）、§6 影响中的依赖链、§7 形态表、附录参照，所描述的 `recall()` 召回编排函数已物理删除**（同批「减法」，文件 `src/memory/recall.ts` 现仅存 `extractKeywords` / `touchScores` 两个工具函数，2026-09-18 更名为 `keywordsTouch.ts` 对齐职责）——`applyTrackPolicy` / `sortByLayer` / `applyCapAllocation` 三函数与 `recall()` 签名一体消失，L1/L2 分层、分轨进池、cap 内分配、minFallback 保底等**均为退役前设计语义，不再有现行实现**。**现行召回 = `search_memories` 工具**（`searchHybrid` 纯关键词，LLM 主动取用），prepare 不注入任何记忆、预算无记忆维度。下文凡提及 `recall()` 者请勿按现行机制解读。
+> **2026-09-10 收敛补记（recall() 物理删除）**：**§四 全章（4.0-4.8 分层分轨召回）、§6 影响中的依赖链、§7 形态表、附录参照，所描述的 `recall()` 召回编排函数已物理删除**（同批「减法」，文件 `src/memory/recall.ts` 现仅存 `extractKeywords` / `touchScores` 两个工具函数，2026-09-18 更名为 `keywordsTouch.ts` 对齐职责）——`applyTrackPolicy` / `sortByLayer` / `applyCapAllocation` 三函数与 `recall()` 签名一体消失，L1/L2 分层、分轨进池、cap 内分配、minFallback 保底等**均为退役前设计语义，不再有现行实现**。**现行召回 = `search_memories` 工具**（`searchByKeyword` 纯关键词，LLM 主动取用），prepare 不注入任何记忆、预算无记忆维度。下文凡提及 `recall()` 者请勿按现行机制解读。
 >
 > **定位**：设计文档，描述"记忆即摘要"架构——以摘要为唯一记忆单元，通过溯源标识实现记忆与对话记录的松耦合关联。
 >
@@ -365,13 +365,13 @@ async function recall(storage, query, options: RecallOptions): Promise<Memory[]>
 
 ### 4.5 hybridMerge 融合排序（退化为纯关键词恒序，预留补回）
 
-> **B0 收编失效标注（2026-09-18）**：语义向量通道已随 B0 收编整体移除（`vectorStore`/embedding），`searchHybrid` 现为**纯关键词**，`hybridMerge` 的 `vectorScore` 唯一产出恒 0 → 排序退化为「插入序 + slice 取前 limit」（stable-sort 保序，无实际排序动作）。本节下文的「语义召回」「vectorScore×0.6 + score×0.4」均属**退役前语义**——`memory.score` 权重已随阶段3排序纯化退役，语义通道已随 B0 删除。`vectorScore` 字段与排序函数保留为**预留键**：语义检索的 cache-recompute 形态记入探索期文档候选，等真实「关键词搜不到」复现再按缓存重算形态补回（见 `memoryInspector.ts` searchHybrid 注释），补回前恒 0。
+> **B0 收编失效标注（2026-09-18）**：语义向量通道已随 B0 收编整体移除（`vectorStore`/embedding），`searchByKeyword`（原名 `searchHybrid`，2026-09-18 改名）现为**纯关键词**，`hybridMerge` 的 `vectorScore` 唯一产出恒 0 → 排序退化为「插入序 + slice 取前 limit」（stable-sort 保序，无实际排序动作）。本节下文的「语义召回」「vectorScore×0.6 + score×0.4」均属**退役前语义**——`memory.score` 权重已随阶段3排序纯化退役，语义通道已随 B0 删除。`vectorScore` 字段与排序函数保留为**预留键**：语义检索的 cache-recompute 形态为预留补回位，等真实「关键词搜不到」复现再按缓存重算形态补回（见 `memoryInspector.ts` 的 `searchByKeyword` 注释），补回前恒 0。
 
 原设计（退役前）：语义召回内部使用 `hybridMerge` 按语义分选拔候选，但**不再做第二次排序覆盖**。`hybridMerge` 的结果直接返回，由外层按分层分轨规则合并排序。
 
 **与 v2 的区别**：v2 中 `hybridMerge` 的排序被"会话优先 + 时间"完全覆盖（双重排序问题）。v3 中 `hybridMerge` 只负责"选拔候选"，排序由分层分轨规则统一处理。
 
-> **边界标注（D2，2026-08-27）**：`memoryInspector.searchHybrid()` 与 `recall()` **共享** `hybridMerge` 融合排序，但 searchHybrid 是「记忆搜索工具」**不是召回管线**——保持融合排序**不分层分轨**（不应用 L1/L2 分层、不进池策略、不做 cap 内分配）。搜索工具暴露纯融合相关性结果，供宿主/上层按需自取。两者不互调用，边界清晰（见 `memoryInspector.ts` searchHybrid 注释）。**（2026-09-10 修订：`recall()` 已随召回编排物理删除，"分层分轨仅属 recall() 召回编排（contextPreparer 调用）"半句失效——现行唯一记忆检索入口 = `searchHybrid`；本条意图「searchHybrid 不分层分轨、暴露纯融合结果」仍现行）**。
+> **边界标注（D2，2026-08-27）**：`memoryInspector.searchByKeyword()` 与 `recall()` **共享** `hybridMerge` 融合排序，但 `searchByKeyword` 是「记忆搜索工具」**不是召回管线**——保持融合排序**不分层分轨**（不应用 L1/L2 分层、不进池策略、不做 cap 内分配）。搜索工具暴露纯融合相关性结果，供宿主/上层按需自取。两者不互调用，边界清晰（见 `memoryInspector.ts` 的 `searchByKeyword` 注释）。**（2026-09-10 修订：`recall()` 已随召回编排物理删除，"分层分轨仅属 recall() 召回编排（contextPreparer 调用）"半句失效——现行唯一记忆检索入口 = `searchByKeyword`（原名 `searchHybrid`，2026-09-18 改名）；本条意图「搜索工具不分层分轨、暴露纯融合结果」仍现行）**。
 
 ### 4.6 差异化召回（按 type）的历史与演进
 

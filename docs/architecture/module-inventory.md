@@ -148,7 +148,7 @@
 
 ### 2.4 记忆召回（知识内容 · 消费 L4 记忆系统）
 
-> **生长闭环（2026-09-10 更新：记忆纯工具化）**：记忆召回改由 LLM 按需调用 `search_memories` 工具触发（`memoryInspector.searchHybrid`），prepare 期**无自动注入**。原 `recall()` 召回编排（双通道 / 互斥排除 / minFallback 保底）唯一消费者是跨重启恢复链的 warmRecall，随该链整体退役。**其物理实现位于 L4 记忆系统**（hybridMerge.ts，见 §四 4.2）——这是「闭环 → 回答后沉淀记忆 → 下次按需召回」的生长闭环：记忆在 L4 诞生，在 L2 被消费。
+> **生长闭环（2026-09-10 更新：记忆纯工具化）**：记忆召回改由 LLM 按需调用 `search_memories` 工具触发（`memoryInspector.searchByKeyword`），prepare 期**无自动注入**。原 `recall()` 召回编排（双通道 / 互斥排除 / minFallback 保底）唯一消费者是跨重启恢复链的 warmRecall，随该链整体退役。**其物理实现位于 L4 记忆系统**（hybridMerge.ts，见 §四 4.2）——这是「闭环 → 回答后沉淀记忆 → 下次按需召回」的生长闭环：记忆在 L4 诞生，在 L2 被消费。
 >
 > 召回相关设计详见 [memory-as-summary.md](./memory-as-summary.md)（含互斥前置过滤语义）。
 
@@ -383,5 +383,5 @@
 >
 > * L6 含 `utils/` 20 文件（含 `recallDefaults.ts`、`backgroundTask.ts`）+ config/security/logging。
 >
-> * 2026-08-20 种子收敛（L0 `agent/seed/`，4 源文件）；2026-09-04/05 废弃清理：difficulty.ts/externalTaskLoop/runReport/Handoff 整体删除（多 turn 复杂度在单 turn 内自然生长）；2026-08-19 深度剪枝后：memory/ 移除 store/loader/multiHop 3 个文件，eval/ 整体移除（3 文件），reranker 收敛为接口（测试 3 条）；2026-09-11 群落二审查：reranker 接口文件移除（零生产消费、依赖已退役 recall 编排、现行 searchHybrid 无精排阶段）。
+> * 2026-08-20 种子收敛（L0 `agent/seed/`，4 源文件）；2026-09-04/05 废弃清理：difficulty.ts/externalTaskLoop/runReport/Handoff 整体删除（多 turn 复杂度在单 turn 内自然生长）；2026-08-19 深度剪枝后：memory/ 移除 store/loader/multiHop 3 个文件，eval/ 整体移除（3 文件），reranker 收敛为接口（测试 3 条）；2026-09-11 群落二审查：reranker 接口文件移除（零生产消费、依赖已退役 recall 编排、现行 searchByKeyword 无精排阶段）。
 
