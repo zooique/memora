@@ -555,7 +555,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
       // 反向守卫：确保真扫到引用（防提取正则失效→空集恒过假绿）
       expect(count, `未扫到任何 var(--${family} 引用——提取口径已失效`).toBeGreaterThan(0);
       // 精确钉死：任何提取回退 / 计数漂移当场红
-      expect(count, `var(--${family} 消费引用数漂移（CHANGELOG 须与此一致，禁止手数）`).toBe(expected);
+      expect(count, `var(--${family} 消费引用数漂移（CHANGELOG 须与此一致，禁止手数）`).toBe(
+        expected,
+      );
     });
   }
 });
