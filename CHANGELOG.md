@@ -584,6 +584,16 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Changed（宿主 · 0.1.0 定版与市场门面对齐 · 2026-10-12）
+
+**目标**：测试打包完全对齐正式版形态（不打 tag）；仓库全量对齐 GitHub。台账 = `ROADMAP-PLUGIN-1·MKT`（✅ 闭合）+ `·REL`（package 段首跑，保持 ⏳）。
+
+- **manifest 定版**：`version` 0.0.1 → **0.1.0**、删 `"private": true`、`keywords` 11 条、`repository`/`homepage`/`bugs` 从 gitee 全量对齐 `github.com/zooique/memora`；`categories` 查证后**定稿 `["Other"]`**——VS Code 官方 manifest 枚举无 AI/Chat 类（手册 Sources [4]，2026-10-12 实抓），`Other` 为该枚举下最诚实归类。
+- **README 市场定稿**：删「从源码运行 / F5 调试」开发向章节；安装改市场为主 + VSIX 备选；命令表 2 → 13 条；头部挂开源仓库链接 + **内核标记 `@zooique/memora@4.0.0`**（npm 实测同代，附「随宿主版本发布核对」重算指引）；「界面预览」挂截图 2 张（`resources/UI-images/`，随本批入库）。
+- **打包链三缺陷修复（`npm run package` 首跑暴露，全部修入脚本使 CI 可复现）**：① vsce `npm list` 在 pnpm 布局下必炸 ⇒ 加 `--no-dependencies`（esbuild 已全 bundle，依赖枚举本属多余）；② `.vscodeignore` 补排 4 项（`eslint.config.mjs` / `pnpm-lock.yaml` / `tsconfig.scripts.json` / `.memora/**` 运行时数据）；③ README 相对路径图片 + 仓库非 GitHub 自动识别 ⇒ 加 `--baseContentUrl/--baseImagesUrl`（指向 `raw.githubusercontent.com`，发布前须先推截图入库否则图裂）。
+- **发布手册同步**（`docs/marketplace-publish-flow.html`）：§1 缺口表加「同日后续」增量 callout（时点快照不改写原表）；§13 落地待办三件 → 四件（补 Open VSX 前置 + 文件名锁定）；gitee 残留 2 处 → github；引用锚 5 处修缮（Sources 补 cite-4 manifest / cite-5 Trusted Publishing，纠 2 处错锚 + 1 处悬空指针 + 1 处章节指错）。
+- **验证**：vsix 解包三重验证（Identity Version=0.1.0 / README 图片 raw.githubusercontent 绝对 URL / repository=github）；**用户真机装包实测通过**。
+
 ### Fixed（宿主 · Webview 设计令牌体系 SSOT 收口弧：定义层 / 语义层 / 层级 / 刻度 · 2026-10-12）
 
 **范围**：`src/webview/styles/` 全树 + 守卫（`tokensClosure.test.ts` 7→9 用例）。台账 SSOT = `tasks/待完成任务.md` UI 区块（12 条目全销项），审查与收口报告见 `tasks/审查报告-2026-10-12-*.md`。

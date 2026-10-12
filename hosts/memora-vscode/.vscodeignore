@@ -2,13 +2,22 @@
 src/**
 scripts/**
 tsconfig.json
+tsconfig.scripts.json
 vitest.config.ts
 esbuild.config.mjs
+eslint.config.mjs
+
+# 锁文件（依赖真源在仓库，运行时已 esbuild 内联，不入市场包）
+pnpm-lock.yaml
+package-lock.json
 
 # 版本控制
 .gitignore
 .git/**
 **/.gitkeep
+
+# 运行时数据（本地会话/锁文件，绝不入包）
+.memora/**
 
 # 文档
 docs/**

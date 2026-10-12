@@ -38,6 +38,7 @@ Thumbs.db
 
 # 工具内部状态
 .workbuddy/
+.trae-html-share-packages/
 
 # 用户特定数据
 .memora-data/
