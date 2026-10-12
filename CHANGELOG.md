@@ -615,6 +615,12 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 - **硬门基线 24→20（带实证，非改数字造假绿）**：闭包前后全量枚举 diff = 恰好这 4 处（24→20，残余与 C 类清单逐条一致）；变异验证：基线临时改 19 → 红（`expected 20 to deeply equal 19`），还原 17/17 绿。守卫 warn 里硬编码的「24」同批改为引用基线变量（又一型会腐烂的描述性计数）。
 - **验证**：tokensClosure 17/17（含硬门 + 反向守卫）；宿主 tsc `--noEmit` 零错；eslint 零警告；宿主全量套件 **1096 passed / 2 skipped（60 文件，官方串行口径 EXIT=0，193.9s）**。
 
+### Fixed（宿主 · 角色包卡片「详情」折叠双箭头 · 2026-10-12）
+
+- **根因**：`rolesStyles.ts` 的 `.card-details summary` 漏建 chatStyles 过程块体系 2026-10-05 真机实锤的「隐原生 marker 三件套」——`summary` 默认 `display:list-item` 的浏览器原生 disclosure 三角与自绘 `::before ▸` 叠加成双箭头（用户真机反馈：设置页角色包选项卡卡片「详情」处）。
+- **修法（同律收紧，非新造）**：补 `list-style:none` + `::marker{content:none}` + `::-webkit-details-marker{display:none}` 三件套（跨引擎三写法，与 chatStyles:1899-1910 同律），保留自绘 ▸（有主题色 + 旋转过渡 + iconLanguage 守卫已登记的豁免形态）；隐掉的是无设计意图的 UA 默认标记（即用户所说「小的箭头」）。memory recycle summary 为同型反例（只改色不隐标记），不涉。
+- **验证**：rolesView / rolesKeyface / iconLanguage / tokensClosure 四文件 53/53；宿主 tsc 零错；eslint 零警告；CSS 层视觉按项目惯例真机对照验收（待用户重载确认单箭头 + 展开旋转正常）。
+
 ### Added（宿主 · webview 全局错误边界（T1）+ 错位输入丢弃留痕（T2）· 静默失败可观测）
 
 **诊断背景（2026-10-11 宿主缺陷排雷，两项均经实证确认）**：① 两个 webview 入口的业务脚本抛未捕获异常 / 未处理 rejection 时零兜底——面板静默卡死、宿主零日志（webview console 用户拿不到）；② 错位输入（迟到回答 / 竞态 resume）被相位路由丢弃时零观测，「答了没反应」无排障线索（宿主本有 console.warn 惯例，唯丢弃类是洞）。
