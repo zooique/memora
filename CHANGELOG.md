@@ -584,6 +584,17 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Fixed（宿主 · Webview 设计令牌体系 SSOT 收口弧：定义层 / 语义层 / 层级 / 刻度 · 2026-10-12）
+
+**范围**：`src/webview/styles/` 全树 + 守卫（`tokensClosure.test.ts` 7→9 用例）。台账 SSOT = `tasks/待完成任务.md` UI 区块（12 条目全销项），审查与收口报告见 `tasks/审查报告-2026-10-12-*.md`。
+
+- **无障碍 / 跨主题修复（用户真机截图实锤）**：① 计数徽章 accent 底配错文字令牌（`--surface-inverse` 实质是 `--text-primary` 的别名），亮色主题对比度 ≈2.98:1 → 改 `--accent-foreground`（≈4.43:1，UI-TOKEN-PAIR-1）；② `--menu-*` 引**不存在**的 VS Code 变量（`menu.background` 等不在官方主题色表）⇒ 暗色主题下拉浮层白底黑字，改引真实存在的 `dropdown.*` / `list.hover*` 族（UI-TOKEN-MENU-1）；③ 会话标签选中态两轮增强：`list-activeSelection` 暗主题实为深蓝拉不开 → **accent 底 + 反色文字**；④ 警告文字引错变量渲染成灰 → `inputValidation-warningForeground`（UI-TOKEN-WARN-1）。
+- **定义层 SSOT 收敛（同变量不同回退 8 组 → 0）**：同义令牌合并 6 个（`--surface-normal` 等）+ `--border` / `--border-subtle` 退役（消费全是容器描边）+ 跨色系两组回退对齐；「分级令牌主路径塌缩」修复——静态面改引 `textCodeBlock-background` 与 hover **不同源**、`--surface-active` 按语义分流后退役 ⇒ hover / 选中反馈恢复（UI-TOKEN-LAYER-2 / MERGE-1）。
+- **设计系统补维度（除档位合并外全 1:1 零视觉变化）**：z-index 九档语义刻度（14 处）、行高刻度（46 处）、不透明度刻度（24 处中间态，`0/1` 按结构性常量豁免）、`--icon-*` 六档 + `--dot-lg` 回归（27 处）；`--line-*` 值令牌族统一分隔线与容器描边（61 处——两者值相同，按 SSOT 不并列）；档位合并 opacity 8→5 档、行高 6→5 档（微视觉 6 处，真机已验）。
+- **守卫升级**：新增「定义层同变量同回退」冻结门（含 `fbInnermost()` 嵌套 var 降级链解析，基线归零 = 等效硬门：新映射必须与同变量既有回退一致或引新变量）；裸值债务 74 → 47（基线随消化同步下调）。
+- **排雷误判订正（两笔既往结论受累，教训入台账）**：UI-SSOT-1「复用原生 menu 变量 = 刻意设计意图」与 UI-TOKEN-SEM-1「收进语义层」都建立在**变量不存在**的前提上——搬家不是修复。判「变量存在」以 VS Code 官方主题色表为准；变量存在性是同引同值审计的前置事实，脚本查不出前提错误。
+- **验证**：webview 5 文件 457/457（串行 EXIT=0）；宿主 tsc / eslint 零错零警；真机验收 A/B/C 八项 + D 四点 + MENU 复验 R1~R3 全通过（2026-10-12 用户逐项确认）。
+
 ### Added（宿主 · webview 全局错误边界（T1）+ 错位输入丢弃留痕（T2）· 静默失败可观测）
 
 **诊断背景（2026-10-11 宿主缺陷排雷，两项均经实证确认）**：① 两个 webview 入口的业务脚本抛未捕获异常 / 未处理 rejection 时零兜底——面板静默卡死、宿主零日志（webview console 用户拿不到）；② 错位输入（迟到回答 / 竞态 resume）被相位路由丢弃时零观测，「答了没反应」无排障线索（宿主本有 console.warn 惯例，唯丢弃类是洞）。
