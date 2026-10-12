@@ -584,6 +584,16 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Fixed（宿主 · 真机首装缺陷1：配置 LLM 后插件自动初始化，无需重启 · 2026-10-12）
+
+**背景**：新电脑首次装机实测——未配置 LLM 时提示配置（体验好），但配置完成并设为默认后插件不重新初始化、不能使用，只能重启。台账 = `HOST-BUG-1`（发布硬闸区）。
+
+- **根因（SSOT 排雷三层证据链，8 处复核无翻案）**：① 新装机首开面板装配 throw（`llmConfig.ts` 缺配置引导路径）；② `chatPanel.performAgentAssembly` 的 catch 吞错但**不重置 `_agentReady`** ⇒ Promise 缓存成「已 settle 但 `_agent` 仍 null」的僵尸，后续 `ensureAgent()` 永远 await 它、永不重试（extension.ts `agentPromise` 与 settingsPanel `_agentPromise` 两对照组 catch 均有重置，chatPanel 独缺）；③ 配置变更无通路触发重试（`cfg_set_active` 只写配置不通知；`onDidChangeConfiguration` 只认 `memora.disabledSkills`）。
+- **修法**：① `performAgentAssembly` catch 内重置 `_agentReady = null`（对齐两对照组）；② 新增公开入口 `retryAgentAssembly()`——「已装配 / 装配在途 / 面板未开」三态安全跳过（在途守卫防调用方挂死，`_view` 守卫防为配置变更预装配）；③ `onDidChangeConfiguration` 判据扩展 `memora.providers` / `memora.activeProvider` 两键 → 命中即调入口（`setActive` 走 `cfg.update` 本就是配置变更，无需 settingsPanel → chatPanel 新通路）。重试成功后 `refreshAfterAssemble` 既有收口自然补推 UI，**零新补推代码**。
+- **验证**：新增 `chatPanelAssemblyRetry.test.ts` 7 用例；两轮变异均恰好命中且零残留（移除 catch 重置 → 3 红/4 绿；移除入口守卫 → 2 红/5 绿）；宿主全量 61 文件 **1103 passed / 2 skipped / 0 failed**；tsc 双配置零错 + eslint 零警告 + prettier 合规；重建 dist 实读产物确认（`retryAgentAssembly` 定义 + 调用点、`affectsConfiguration` ×3、catch 内 `this._agentReady = null` 原文在 bundle）。extension.ts 监听段属零测试覆盖区，以 dist 实读兜底，测试注释已如实声明未覆盖面。
+- **不扩面**：`deactivate()` 不清模块级状态属 `HOST-BUG-2` 嫌疑B，未动。
+- **真机点验（待随发版链）**：新装机路径复跑——首开面板装配失败 → 配置 LLM → 不重启即用。
+
 ### Changed（宿主 · 0.1.0 定版与市场门面对齐 · 2026-10-12）
 
 **目标**：测试打包完全对齐正式版形态（不打 tag）；仓库全量对齐 GitHub。台账 = `ROADMAP-PLUGIN-1·MKT`（✅ 闭合）+ `·REL`（package 段首跑，保持 ⏳）。

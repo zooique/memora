@@ -495,6 +495,18 @@ export function activate(context: vscode.ExtensionContext): void {
   //（故**不用** getAgentForCommand —— 它会懒装配；此处只读已存在的 agentPromise）。
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
+      // HOST-BUG-1：LLM 配置（Provider 列表 / 激活项）变更 → 对话面板重试装配。
+      // 新装机首开面板装配失败（缺配置 throw）后，补全配置即自动初始化、无需重启。
+      // 注册点在 activate（恒存活）；入口内部对「已就绪 / 装配在途 / 面板未开」三态安全跳过。
+      if (
+        e.affectsConfiguration('memora.providers') ||
+        e.affectsConfiguration('memora.activeProvider')
+      ) {
+        void chatProvider.retryAgentAssembly().catch((err) => {
+          // 降级优先：重试失败不打断用户操作（后续配置变更 / 重开面板仍可重试）
+          console.warn('Memora LLM 配置变更后装配重试失败', err);
+        });
+      }
       if (!e.affectsConfiguration('memora.disabledSkills')) return;
       void (async () => {
         const agent = agentPromise ? await agentPromise.catch(() => null) : null;

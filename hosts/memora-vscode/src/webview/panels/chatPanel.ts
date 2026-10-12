@@ -1011,6 +1011,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     await this._agentReady;
   }
 
+  /**
+   * 配置变更后的装配重试入口（HOST-BUG-1：LLM 配置补全即初始化，无需重启）
+   *
+   * 由 extension.ts 的 onDidChangeConfiguration 在 `memora.providers` /
+   * `memora.activeProvider` 变更时调用。三态安全跳过：
+   *   - 已装配（_agent 在）→ 无需重试（provider 热切换归 handleSetProvider，非本入口职责）；
+   *   - 装配在途（_agentResolving）→ 不制造并行装配；
+   *   - 面板未打开（_view 空）→ 留给 resolveWebviewView 的 ensureAgent，不为配置变更预装配。
+   * 失败态可重试由 performAgentAssembly 的 catch 重置 _agentReady 保证
+   * （失败后 _agentReady=null ⇒ ensureAgent 真正重启装配，而非 await 僵尸 Promise）。
+   */
+  public async retryAgentAssembly(): Promise<void> {
+    if (this._agent || this._agentResolving || !this._view) return;
+    await this.ensureAgent();
+  }
+
   /** Agent 懒装配实际执行体（ensureAgent 分离：Promise 缓存 + 一次性执行） */
   private async performAgentAssembly(): Promise<void> {
     if (this._agentResolving || !this._getAgent) return;
@@ -1038,6 +1054,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       void vscode.window.showErrorMessage(`Memora 装配失败：${msg}`);
+      // HOST-BUG-1：失败必须重置 Promise 缓存——否则 _agentReady 成「已 settle 但
+      // _agent 仍 null」的僵尸，后续 ensureAgent 永远 await 它、永不重试。
+      // 对齐 extension.ts agentPromise / settingsPanel _agentPromise 两对照组的 catch 重置。
+      this._agentReady = null;
     } finally {
       this._agentResolving = false;
     }
