@@ -23,7 +23,8 @@ const STYLES_DIR = join(
 );
 
 // 与 tokensClosure.test.ts 的 EXPECTED 同源——改一边须同步另一边。
-const FAMILIES = ['z-', 'lh-', 'op-', 'icon-', 'dot-', 'line-', 'sq-'];
+// dim- 于 2026-10-12 随 --dim-* 刻度落地补登记（UI-TOKEN-RAW-3：新族须同批钉死）。
+const FAMILIES = ['z-', 'lh-', 'op-', 'icon-', 'dot-', 'line-', 'sq-', 'dim-'];
 
 console.log(`消费引用计数（排除定义层 tokens.ts）： dir=${STYLES_DIR}\n`);
 let total = 0;
@@ -39,4 +40,4 @@ for (const f of FAMILIES) {
   console.log(`  var(--${f.padEnd(5)} => ${count}`);
   total += count;
 }
-console.log(`\n合计（七族）：${total}`);
+console.log(`\n合计（${FAMILIES.length} 族）：${total}`);

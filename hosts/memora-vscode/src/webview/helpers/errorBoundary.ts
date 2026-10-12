@@ -72,6 +72,8 @@ export function installWebviewErrorBoundary(deps: ErrorBoundaryDeps): void {
     const card = deps.document.createElement('div');
     card.id = ERROR_CARD_ID;
     // 内联样式合法（CSP style-src 'unsafe-inline'）；高 z-index 压住面板内容
+    // 安全网自包含 = 不依赖被守护系统的样式注入（应用 <style> 挂了也要能亮）⇒ 裸值故意
+    // 不入户，属 tokensClosure 值守卫 Scope（仅 styles/）的已登记例外，勿顺手令牌化
     card.style.cssText =
       'position:fixed;top:8px;left:8px;right:8px;z-index:9999;' +
       'padding:10px 14px;border-radius:6px;background:rgba(244,67,54,0.95);color:#fff;' +
