@@ -73,7 +73,7 @@ export const skillsStyles = `
     /* 统一卡片外壳语言——surface-sidebar，与角色卡/Provider 卡/记忆卡对齐；
        边框不透明度 0.4，与 A 类卡片（角色/Provider/记忆）完全对齐 */
     background: var(--surface-sidebar);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid);
     border-radius: var(--radius, 6px);
   }
 

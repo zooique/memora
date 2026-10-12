@@ -112,7 +112,7 @@ export const dropdownStyles = `
     padding: 0 var(--sp-4, 10px); box-sizing: border-box;
     border-radius: var(--radius, 6px); cursor: pointer;
     background: var(--surface-card, #252526);
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border: var(--line-input);
     color: var(--text-primary, #cccccc);
     font-size: var(--font-md, 12px); line-height: var(--lh-flat); font-weight: 500;
     white-space: nowrap; overflow: visible; /* 由子 span.dd-trigger-name 负责截断 */

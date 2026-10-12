@@ -11,7 +11,7 @@
  */
 export const memoryStyles = `
   /* ============ Layout：面板骨架 ============ */
-  #memory-root .header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px); padding: var(--sp-4, 10px) var(--sp-5, 12px); border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4)); }
+  #memory-root .header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px); padding: var(--sp-4, 10px) var(--sp-5, 12px); border-bottom: var(--line-solid); }
   #memory-root .header h2 { font-size: var(--font-lg, 14px); margin: 0; }
   #memory-root .stat-bar { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin-left: auto; }
   #memory-root #list { padding: var(--sp-3, 8px); }
@@ -25,7 +25,7 @@ export const memoryStyles = `
     font-size: var(--font-md, 12px);
     color: var(--text-input, #cccccc);
     background: var(--surface-input, #3c3c3c);
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border: var(--line-input);
     border-radius: var(--radius, 6px);
     outline: none;
   }
@@ -38,7 +38,7 @@ export const memoryStyles = `
   #memory-root .mem-card {
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
     margin-bottom: var(--sp-2, 6px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid);
     border-radius: var(--radius, 6px);
     background: var(--surface-sidebar);
     cursor: pointer;
@@ -92,7 +92,7 @@ export const memoryStyles = `
   }
 
   /* 取代态 / 编辑态：round-summary 治理语义的视觉提示 */
-  #memory-root .mem-card-superseded { border-style: dashed; border-color: var(--text-secondary, #9aa0a6); opacity: var(--op-7); }
+  #memory-root .mem-card-superseded { border-style: dashed; border-color: var(--text-secondary, #9aa0a6); opacity: var(--op-8); }
   #memory-root .mem-card-modified { border-left: 3px solid var(--warn, #d7ba7d); }
 
   #memory-root .mem-card-tags { display: flex; gap: var(--sp-1, 4px); margin-top: var(--sp-1, 4px); flex-wrap: wrap; }
@@ -119,7 +119,7 @@ export const memoryStyles = `
   #memory-root .mem-card-detail {
     margin-top: var(--sp-2, 6px);
     padding-top: var(--sp-2, 6px);
-    border-top: var(--divider-solid);
+    border-top: var(--line-solid);
     font-size: var(--font-sm, 11px);
     color: var(--text-primary, #cccccc);
     white-space: pre-wrap;
@@ -142,7 +142,7 @@ export const memoryStyles = `
   /* ============ Components：记忆治理区 ============ */
   #memory-root .governance {
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
-    border-top: var(--divider-solid);
+    border-top: var(--line-solid);
   }
   /* 统计卡：三列（活跃 / 回收站 / 已被取代） */
   #memory-root .governance-stats {
@@ -157,7 +157,7 @@ export const memoryStyles = `
     align-items: center;
     gap: var(--sp-1, 4px);
     padding: var(--sp-3, 8px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid);
     border-radius: var(--radius, 6px);
     background: var(--surface-sidebar);
   }
@@ -228,7 +228,7 @@ export const memoryStyles = `
   #memory-root .mem-edit-wrap {
     margin-top: var(--sp-2, 6px);
     padding-top: var(--sp-2, 6px);
-    border-top: var(--divider-solid);
+    border-top: var(--line-solid);
   }
   #memory-root .mem-edit-area {
     width: 100%;
@@ -240,7 +240,7 @@ export const memoryStyles = `
     line-height: var(--lh-snug);
     color: var(--text-input, #cccccc);
     background: var(--surface-input, #3c3c3c);
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border: var(--line-input);
     border-radius: var(--radius, 6px);
     outline: none;
     resize: vertical;
@@ -255,7 +255,7 @@ export const memoryStyles = `
   #memory-root .recycle {
     margin: var(--sp-3, 8px) 0 0;
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
-    border-top: var(--divider-solid);
+    border-top: var(--line-solid);
   }
   #memory-root .recycle > summary {
     cursor: pointer;
@@ -274,7 +274,7 @@ export const memoryStyles = `
     gap: var(--sp-2, 6px);
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
     margin-bottom: var(--sp-2, 6px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid);
     border-radius: var(--radius, 6px);
     background: var(--surface-sidebar);
   }

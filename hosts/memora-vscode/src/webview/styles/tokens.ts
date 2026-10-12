@@ -61,15 +61,14 @@ export const tokens = `
     /* === L1 基础令牌：行高层级刻度（UI-TOKEN-AXIS-1 · 2026-10-12） ===
      * 行高此前以裸值散落 46 处、6 个值（1 / 1.4 / 1.5 / 1.6 / 1.7 / 1.75），排版这一
      * 核心维度完全没有刻度 ⇒ 相邻区域的视觉节奏靠「谁记得住上一次写的是 1.6 还是 1.7」
-     * 维系。本组按排版惯例语义命名，**1:1 沿用现状值** ⇒ 零视觉变化。
-     * ⚠️ 已知伪精度（待真机合并）：1.7 与 1.75 仅差 0.05（约 3%），肉眼不可辨，
-     *    下批可并为一档（届时属微视觉变化，须真机）。 */
+     * 维系。本组按排版惯例语义命名；2026-10-12 二次收口合并伪精度后 **5 档**：
+     *   --lh-loose(1.75 并入) → --lh-relaxed(1.7)，仅差 0.05（约 3%）肉眼不可辨，
+     *   取多数值 1.7（4 处 : 1 处）。⚠️ 微视觉变化（1 处），随本批真机验收。 */
     --lh-flat: 1;     /* 单行紧凑：徽章 / 计数 / 图标行（不做多行折行） */
     --lh-tight: 1.4;  /* 紧凑正文：chip / 标签 / 列表项 */
     --lh-snug: 1.5;   /* 偏紧多行：卡片说明文字 */
     --lh-normal: 1.6; /* 常规正文：消息体默认 */
-    --lh-relaxed: 1.7; /* 宽松正文：空态 / 提示 / 长段落 */
-    --lh-loose: 1.75; /* 最宽松：占用提示多行文本 */
+    --lh-relaxed: 1.7; /* 宽松正文：空态 / 提示 / 长段落 / 占用提示 */
 
     /* === L1 基础令牌：阴影层级 === */
     --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -100,17 +99,17 @@ export const tokens = `
      * 透明度此前以裸值散落 41 处、11 个值，且「.5」与「0.5」两种写法并存。
      * **豁免口径（与 px 零值同构）**：「opacity: 0 / 1」是结构性常量（完全隐藏 / 完全显示），
      * 不是「刻度取值」，不纳入本组、保持裸写（业界通行，且令牌化反而降低可读性）。
-     * 本组只收**中间态** 8 档，**1:1 沿用现状值** ⇒ 零视觉变化。
-     * ⚠️ 已知伪精度（待真机合并）：--op-1/.35 与 --op-2/.4、--op-4/.55 与 --op-5/.6、
-     *    --op-7/.85 与 --op-8/.9 三对各差 0.05，下批可并为 5 档（微视觉变化，须真机）。 */
-    --op-1: 0.35; /* 最弱：未读点 / 弱化装饰 */
-    --op-2: 0.4;  /* 弱：禁用态控件底 */
+     * 本组收**中间态**，合并伪精度后 **5 档**（2026-10-12 二次收口）：
+     *   --op-1(.35 并入) → --op-2(.4)；--op-4(.55 并入) → --op-5(.6)；--op-7(.85 并入) → --op-8(.9)。
+     *   三对各差 0.05 肉眼不可辨，合并方向取**较高值**（避免降低不透明度损可读性）。
+     *   ⚠️ 微视觉变化（6 处），随本批真机验收。
+     * **豁免口径（与 px 零值同构）**：「opacity: 0 / 1」是结构性常量（完全隐藏 / 完全显示），
+     * 不是「刻度取值」，不纳入本组、保持裸写（业界通行，且令牌化反而降低可读性）。 */
+    --op-2: 0.4;  /* 弱：未读点 / 弱化装饰 / 禁用态控件底 */
     --op-3: 0.5;  /* 半透：禁用按钮 */
-    --op-4: 0.55; /* 次弱：提示文字 */
-    --op-5: 0.6;  /* 次级：图标 / 次要信息 */
+    --op-5: 0.6;  /* 次级：提示文字 / 图标 / 次要信息 */
     --op-6: 0.75; /* 三级强调 */
-    --op-7: 0.85; /* 接近全显 */
-    --op-8: 0.9;  /* 最强中间态 */
+    --op-8: 0.9;  /* 接近全显 */
 
     /* === L2 语义令牌：表面 === */
     --surface-page: var(--vscode-editor-background, #1e1e1e);
@@ -219,8 +218,12 @@ export const tokens = `
      *   subtle = inactiveSelectionBackground（非活跃选区背景）
      *   active = button-secondaryHoverBackground（按钮激活态） */
     --accent-bg-hover: var(--vscode-list-hoverBackground, rgba(14, 99, 156, 0.06));
-    --accent-bg-subtle: var(--vscode-editor-inactiveSelectionBackground, rgba(14, 99, 156, 0.08));
-    --accent-bg-active: var(--vscode-button-secondaryHoverBackground, rgba(14, 99, 156, 0.1));
+    /* --accent-bg-subtle / --accent-bg-active 回退按同引同值对齐（2026-10-12）：
+     *   它们与 --surface-user-bubble / --btn-secondary-bg 同引同一 --vscode-* 变量，
+     *   回退曾各走蓝灰两套色系 ⇒ 脱钩路径会分裂。统一为中性灰（主路径零变化），
+     *   accent 蓝调语义由主题变量本身承载（注释留档，勿据回退色判断语义）。 */
+    --accent-bg-subtle: var(--vscode-editor-inactiveSelectionBackground, rgba(128, 128, 128, 0.2));
+    --accent-bg-active: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.35));
 
     /* === L2 语义令牌：上下文占用充能色（chatStyles 引用） ===
      * 占用指示器为圆环充能形态（单弧随占用率填充），只需一个充能色；令牌命名 dialogue
@@ -265,8 +268,11 @@ export const tokens = `
      * 样式文件以 var(--xxx, 裸值) 引用的令牌须在此统一定义——若本文件未定义、仅靠
      * fallback 兜底，tokens 变更不跟随（坑）。本块定义值与各引用处 fallback 保持一致；
      * 样式文件引用即契约，tokens 修改全局跟随。 */ 
-    --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
-    --border-subtle: var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
+    /* --border / --border-subtle 已折叠进 --border-panel（2026-10-12，勿回改）：
+     *   三者同引 --vscode-panel-border ⇒ 主路径恒为同一颜色，「面板 / 常规 / 弱化」
+     *   三档区分只在脱钩路径存在。其全部容器描边消费已收进 --line-* 值令牌族，
+     *   颜色引用统一 --border-panel（同引同值）。VS Code 无更弱的边框主题变量，
+     *   三档真分层需 color-mix 类技术，另行评估。 */
     /* --focus 已折叠进 --border-focus（消费者直引 --border-focus，SSOT 收敛 2026-10-11） */
     /* --text-tertiary / --text-muted 已折叠进 --text-secondary（2026-10-12）：
      *   三者同引 --vscode-descriptionForeground ⇒ 主路径恒为同一颜色，分级只在脱钩路径
@@ -296,23 +302,22 @@ export const tokens = `
     --warn: var(--vscode-charts-yellow, #d7ba7d);
     --text-error: var(--vscode-errorForeground, #f14c4c);
 
-    /* === L3 组件令牌：分隔线（U5 组件层收拢 · 2026-10-12） ===
-     * 分隔线契约此前散落 13 处：颜色已走单源 --border-panel，但「1px + solid/dashed」
-     * 仍是逐处手写的重复文本 ⇒ 改线宽/线型要动 13 处。收成值令牌后单点可改。
-     * 命名**不绑方向、不绑元素**（solid/dashed 只表线的形态）：实线用于
-     * border-top 与 border-bottom 两向，绑方向名会逼出第二套令牌。
-     * 回退与收拢前逐字等价（rgba(128,128,128,.4) = --border-panel 的回退）⇒ 零视觉变化。
+    /* === L3 组件令牌：线的形态（分隔线 + 容器描边统一族 · 2026-10-12） ===
+     * 演进：U5 先收「分隔线」13 处为 --divider-solid/dashed；真机批次发现容器描边
+     * 48 处与分隔线**值完全相同**（1px solid + 面板边框色）⇒ 按 SSOT「并列 = 腐化」
+     * 升级为中性 --line-* 族（不绑用途：线与描边同源），divider 系改名并入，另收
+     * 2px / 1.5px 变体与输入框描边。全族 1:1 沿用现状值 ⇒ 零视觉变化。
      *
      * ⚠️ 为何不用「全局 .divider-top 工具类」（U5 原提案）——实测否决，勿回改：
-     *   分隔线并非都是元素自身的无条件样式。chatStyles 的
-     *   「.status-dock__controls:not([hidden]) + .status-dock__timeline」是**条件性相邻
-     *   兄弟选择器**（仅控制段可见时才画线）；工具类靠给元素加 class 生效，一旦加上
-     *   就退化成无条件常驻画线 ⇒ 行为变化（带伤）。值令牌是纯值替换，选择器与
-     *   特异性原样保留，条件不丢。同理不采用「把 13 个选择器聚成一条分组规则」：
-     *   chat 与 settings 系是两个独立注入的样式串，跨串聚不了，且条件选择器入列表后
-     *   可读性反而更差。 */
-    --divider-solid: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
-    --divider-dashed: 1px dashed var(--border-panel, rgba(128, 128, 128, 0.4));
+     *   chatStyles 的「.status-dock__controls:not([hidden]) + .status-dock__timeline」
+     *   是**条件性相邻兄弟选择器**（仅控制段可见时才画线）；工具类靠加 class 生效，
+     *   一加就退化成无条件常驻画线 ⇒ 行为变化（带伤）。值令牌是纯值替换，选择器与
+     *   特异性原样保留，条件不丢。 */
+    --line-solid: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
+    --line-dashed: 1px dashed var(--border-panel, rgba(128, 128, 128, 0.4));
+    --line-solid-mid: 1.5px solid var(--border-panel, rgba(128, 128, 128, 0.4)); /* 强调描边（1.5px 渲染偏糊，待真机定去留） */
+    --line-solid-thick: 2px solid var(--border-panel, rgba(128, 128, 128, 0.4)); /* 左侧竖条强调 */
+    --line-input: 1px solid var(--border-input, rgba(128, 128, 128, 0.5)); /* 输入框描边（色域独立于面板边框） */
 
     /* === L3 组件令牌：下拉胶囊尺寸（dropdown.ts 引用） === */
     --dd-trigger-max-w: 200px;   /* 胶囊触发器最大宽（超长省略兜底） */

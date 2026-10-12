@@ -17,7 +17,7 @@
  */
 export const rolesStyles = `
   /* ============ Layout：面板骨架 ============ */
-  #roles-root .header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px); padding: var(--sp-4, 10px) var(--sp-5, 12px); border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4)); }
+  #roles-root .header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px); padding: var(--sp-4, 10px) var(--sp-5, 12px); border-bottom: var(--line-solid); }
   #roles-root .header h2 { font-size: var(--font-lg, 14px); margin: 0; }
   #roles-root .stat-bar { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin-left: auto; }
   #roles-root #list { padding: var(--sp-3, 8px); }
@@ -148,7 +148,7 @@ export const rolesStyles = `
     gap: var(--sp-2, 6px);
     margin: var(--sp-2, 6px) 0;
     padding: var(--sp-2, 6px);
-    border: 1px solid var(--border, rgba(128,128,128,.25));
+    border: var(--line-solid);
     border-radius: var(--radius-md, 6px);
     background: var(--surface-page, #1e1e1e);
   }
@@ -179,7 +179,7 @@ export const rolesStyles = `
   /* ============ Components：折叠详情区（专家挖掘） ============ */
   #roles-root .card-details {
     margin-top: var(--sp-1, 4px);
-    border-top: var(--divider-solid);
+    border-top: var(--line-solid);
     padding-top: var(--sp-2, 6px);
   }
   #roles-root .card-details summary {
@@ -246,8 +246,8 @@ export const rolesStyles = `
   /* 小组条：卡片底部队伍阵容 + 创建/编辑队伍入口 */
   #roles-root .team-ribbon {
     display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px);
-    border-top: var(--divider-solid);
-    border-bottom: var(--divider-solid);
+    border-top: var(--line-solid);
+    border-bottom: var(--line-solid);
     padding: var(--sp-2, 6px) 0;
     margin: var(--sp-1, 4px) var(--sp-3, 8px) 0;
   }
@@ -287,7 +287,7 @@ export const rolesStyles = `
   }
   #roles-root .team-modal {
     background: var(--surface-sidebar);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid);
     border-radius: var(--radius-lg, 8px);
     box-shadow: var(--shadow-modal, 0 4px 16px rgba(0, 0, 0, 0.3));
     padding: var(--sp-3, 8px);
@@ -338,7 +338,7 @@ export const rolesStyles = `
     flex: 1; min-width: 0;
     padding: var(--sp-0, 2px) var(--sp-1, 4px);
     font-size: var(--font-sm, 11px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid);
     border-radius: var(--radius, 6px);
     background: var(--surface-input, #3c3c3c);
     color: inherit;

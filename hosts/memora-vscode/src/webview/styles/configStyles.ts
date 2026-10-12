@@ -10,7 +10,7 @@
  */
 export const configStyles = `
   /* ============ Layout：面板骨架 ============ */
-  #config-root .header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px); padding: var(--sp-4, 10px) var(--sp-5, 12px); border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4)); }
+  #config-root .header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px); padding: var(--sp-4, 10px) var(--sp-5, 12px); border-bottom: var(--line-solid); }
   #config-root .header h2 { font-size: var(--font-lg, 14px); margin: 0; }
   /* 顶栏统计：已配置 N 个 API */
   #config-root .stat-bar { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin-left: auto; }
@@ -21,7 +21,7 @@ export const configStyles = `
   /* ============ Components：后台模型通道 ============ */
   #config-root .cfg-bg {
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
-    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-bottom: var(--line-solid);
   }
   #config-root .cfg-bg-label {
     display: block;
@@ -34,7 +34,7 @@ export const configStyles = `
     box-sizing: border-box;
     padding: var(--sp-2, 6px) var(--sp-3, 8px);
     border-radius: var(--radius, 6px);
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border: var(--line-input);
     background: var(--surface-input, #3c3c3c);
     color: var(--text-input, #cccccc);
     font-size: var(--font-md, 12px);
@@ -58,8 +58,8 @@ export const configStyles = `
   #config-root .modal h3 { margin: 0 0 var(--sp-5, 12px); font-size: var(--font-lg, 14px); }
   #config-root .field { margin-bottom: var(--sp-4, 10px); }
   #config-root .field label { display: block; font-size: var(--font-md, 12px); margin-bottom: var(--sp-1, 4px); color: var(--text-secondary, #9aa0a6); }
-  #config-root .field input { width: 100%; box-sizing: border-box; padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); border: 1px solid var(--border-input, rgba(128,128,128,.5)); background: var(--surface-input, #3c3c3c); color: var(--text-input, #cccccc); font-size: var(--font-base, 13px); }
-  #config-root .field select { width: 100%; box-sizing: border-box; padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); border: 1px solid var(--border-input, rgba(128,128,128,.5)); background: var(--surface-input, #3c3c3c); color: var(--text-input, #cccccc); font-size: var(--font-base, 13px); }
+  #config-root .field input { width: 100%; box-sizing: border-box; padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); border: var(--line-input); background: var(--surface-input, #3c3c3c); color: var(--text-input, #cccccc); font-size: var(--font-base, 13px); }
+  #config-root .field select { width: 100%; box-sizing: border-box; padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); border: var(--line-input); background: var(--surface-input, #3c3c3c); color: var(--text-input, #cccccc); font-size: var(--font-base, 13px); }
   #config-root .field input:disabled { opacity: var(--op-5); }
   /* 本地工具能力位复选框：标签与复选框同行走排（本地 LLM 能力声明） */
   #config-root .field .checkbox-label { display: flex; align-items: center; gap: var(--sp-2, 6px); color: var(--text-input, #cccccc); font-size: var(--font-base, 13px); cursor: pointer; }

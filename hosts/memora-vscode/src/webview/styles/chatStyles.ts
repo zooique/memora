@@ -56,7 +56,7 @@ export const chatStyles = `
     z-index: var(--z-raise);
     display: inline-flex; align-items: center; justify-content: center;
     width: var(--sq-xl, 28px); height: var(--sq-xl, 28px); padding: 0;
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border: var(--line-input);
     border-radius: 50%;
     background: var(--surface-input, #3c3c3c);
     color: var(--text-secondary, #9aa0a6);
@@ -75,7 +75,7 @@ export const chatStyles = `
     margin: var(--sp-2, 6px) var(--sp-4, 10px) 0;
     padding: var(--sp-1, 4px) var(--sp-3, 8px);
     min-height: 20px;
-    border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
+    border: var(--line-solid);
     border-radius: var(--radius-sm, 2px);
     background: var(--surface-inset, rgba(127, 127, 127, 0.15));
     color: var(--text-secondary, #9aa0a6);
@@ -117,7 +117,7 @@ export const chatStyles = `
     display: flex; flex-direction: column; gap: var(--sp-2, 6px);
     margin: var(--sp-2, 6px) var(--sp-4, 10px);
     padding: var(--sp-2, 6px);
-    border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
+    border: var(--line-solid);
     border-radius: var(--radius-sm, 2px);
     background: var(--surface-inset, rgba(127, 127, 127, 0.15));
   }
@@ -128,7 +128,7 @@ export const chatStyles = `
    * - pill 用 clip-path 从左向右揭示（文字不被压扁，比 scaleX 自然）；
    * - 抽屉用 translateX 从左滑入，错层 40ms 制造「先长 pill、后滑抽屉」的层次。 */
   @keyframes dockChipOpen {
-    from { clip-path: inset(0 100% 0 0); opacity: var(--op-1); }
+    from { clip-path: inset(0 100% 0 0); opacity: var(--op-2); }
     to   { clip-path: inset(0 0 0 0);     opacity: 1; }
   }
   @keyframes dockPanelOpen {
@@ -158,14 +158,14 @@ export const chatStyles = `
   .session-title-bar {
     display: flex; align-items: center;
     padding: var(--sp-2, 6px) var(--sp-5, 12px);
-    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-bottom: var(--line-solid);
     background: var(--surface-page, #1e1e1e);
     flex: 0 0 auto;
   }
   .session-title-bar__text {
     font-size: var(--font-sm, 11px); font-weight: 500;
     color: var(--text-secondary, #9aa0a6);
-    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
+    border-left: var(--line-solid-thick);
     padding-left: var(--sp-2, 6px);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     user-select: none;
@@ -238,7 +238,7 @@ export const chatStyles = `
   .session-tabs {
     display: flex; gap: var(--sp-1, 4px);
     padding: var(--sp-2, 6px) var(--sp-2, 6px) var(--sp-1, 4px);
-    border-bottom: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
+    border-bottom: var(--line-solid);
   }
   .session-tab {
     display: inline-flex; align-items: center; gap: 3px;
@@ -266,7 +266,7 @@ export const chatStyles = `
     padding: var(--sp-1, 4px) var(--sp-2, 6px);
     font-size: var(--font-xs, 10px); color: var(--text-primary, #cccccc);
     background: var(--surface-inset, rgba(127, 127, 127, 0.15));
-    border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
+    border: var(--line-solid);
     border-radius: var(--radius-sm, 2px); outline: none;
   }
   .session-search::placeholder { color: var(--text-secondary, #9aa0a6); }
@@ -295,7 +295,7 @@ export const chatStyles = `
   .empty-suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2, 6px); }
   .suggestion-chip {
     padding: var(--sp-1, 4px) var(--sp-4, 10px); font-size: var(--font-md, 12px);
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border: var(--line-input);
     border-radius: var(--radius-pill, 999px);
     background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
   }
@@ -307,7 +307,7 @@ export const chatStyles = `
     border: 1px solid var(--accent, #0e639c); color: var(--accent, #0e639c);
     background: transparent; margin-top: var(--sp-3, 8px);
   }
-  .empty-onboard-btn:hover { background: var(--accent-soft, rgba(14, 99, 156, 0.08)); }
+  .empty-onboard-btn:hover { background: var(--accent-soft, rgba(128, 128, 128, 0.2)); }
   /* Follow-up 建议块（回复后关联推荐）：AI 回复下方「接下来可以探索」，
      chips 与空状态示例共用 .suggestion-chip（左对齐，区别于空状态居中） */
   .followup { padding: var(--sp-1, 4px) var(--sp-2, 6px) var(--sp-5, 12px); }
@@ -368,7 +368,7 @@ export const chatStyles = `
     font-family: inherit;
     color: var(--text-secondary, #9aa0a6);
     background: transparent;
-    border: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
+    border: var(--line-solid);
     border-radius: var(--radius-pill);
     cursor: pointer;
   }
@@ -383,7 +383,7 @@ export const chatStyles = `
     margin: var(--sp-2, 6px) 0;
     padding: var(--sp-3, 8px);
     background: var(--surface-hover, rgba(128, 128, 128, 0.2));
-    border: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
+    border: var(--line-solid);
     border-radius: var(--radius-md, 6px);
     display: flex; flex-direction: column; gap: var(--sp-2, 6px);
     min-width: 0;
@@ -400,14 +400,14 @@ export const chatStyles = `
     padding: var(--sp-0, 2px) var(--sp-3, 8px);
     cursor: pointer;
   }
-  .ask-inline__opt:hover { background: var(--accent-soft, rgba(14, 99, 156, 0.08)); }
+  .ask-inline__opt:hover { background: var(--accent-soft, rgba(128, 128, 128, 0.2)); }
   .ask-inline__opt:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
   .ask-inline__input {
     flex: 1 1 auto; min-width: 0;
     font-size: var(--font-sm, 11px);
     background: var(--surface-input, #3c3c3c);
     color: var(--text-primary, #cccccc);
-    border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+    border: var(--line-solid);
     border-radius: var(--radius-sm, 2px);
     padding: var(--sp-1, 4px) var(--sp-2, 6px);
   }
@@ -444,7 +444,7 @@ export const chatStyles = `
     margin: var(--sp-3, 8px) 0;
     padding: var(--sp-5, 12px);
     background: var(--surface-card, #252526);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid);
     border-radius: var(--radius-lg, 8px);
     box-shadow: var(--shadow-card, 0 2px 8px rgba(0,0,0,.15));
   }
@@ -496,7 +496,7 @@ export const chatStyles = `
    * （明示「这张已处理完，等下一张」）。透明度用既有 token 拼，不新增色板。
    * [hidden] 兜底：本状态类设 display:flex，历史上须配逐元素 [hidden] 兜底
    * （规则 10 血训）；现由 tokens.ts 全局 [hidden]{display:none!important} 统一兜住。 */
-  .write-confirm-card[data-pending='true'] { opacity: var(--op-4); }
+  .write-confirm-card[data-pending='true'] { opacity: var(--op-5); }
   .write-confirm-card__btn[disabled] { cursor: default; opacity: var(--op-5); }
   .write-confirm-card__hint {
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
@@ -506,7 +506,7 @@ export const chatStyles = `
    * 区分（「你答 / 你补充 / 未回答」）。 */
   .round-block__input {
     display: block;
-    border-left: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-left: var(--line-solid);
     border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
     margin: var(--sp-1, 4px) 0;
     padding: var(--sp-1, 4px) var(--sp-3, 8px);
@@ -674,7 +674,7 @@ export const chatStyles = `
     color: var(--danger, #f14c4c);
   }
   /* AI 正文段落间距（增加阅读舒适度） */
-  .msg.assistant .msg-body p { margin: 0 0 var(--sp-4, 10px); line-height: var(--lh-loose); }
+  .msg.assistant .msg-body p { margin: 0 0 var(--sp-4, 10px); line-height: var(--lh-relaxed); }
   .msg.assistant .msg-body > :last-child { margin-bottom: 0; }
   .msg.assistant .msg-body h1,
   .msg.assistant .msg-body h2,
@@ -782,7 +782,7 @@ export const chatStyles = `
     gap: var(--sp-2, 6px);
     margin-top: var(--sp-1, 4px);
     padding: var(--sp-1, 4px) 0 0;
-    border-top: var(--divider-dashed);
+    border-top: var(--line-dashed);
     font-size: var(--font-sm, 11px);
   }
   /* 容器级 footer 的「内容未定稿」隐藏：与段级 .msg-footer.is-pending 同一语义。
@@ -845,7 +845,7 @@ export const chatStyles = `
   .file-changes-bar__revert {
     flex-shrink: 0;
     padding: var(--sp-0, 2px) var(--sp-3, 8px);
-    border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+    border: var(--line-solid);
     border-radius: var(--radius-sm, 2px);
     background: transparent;
     color: inherit;
@@ -1060,7 +1060,7 @@ export const chatStyles = `
     flex-shrink: 0;
     padding: 0 var(--sp-2, 6px);
     height: var(--sq-sm, 18px);
-    border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
+    border: var(--line-solid);
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-secondary, #9aa0a6);
@@ -1162,7 +1162,7 @@ export const chatStyles = `
     max-width: 320px;
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
     background: var(--surface-card, #252526);
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border: var(--line-input);
     border-radius: var(--radius-md, 8px);
     box-shadow: var(--shadow-card, 0 2px 8px rgba(0, 0, 0, 0.15));
     font-size: var(--font-sm, 11px);
@@ -1190,7 +1190,7 @@ export const chatStyles = `
     display: flex;
     flex-direction: column;
     min-height: var(--input-wrap-min-h, 128px);
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border: var(--line-input);
     border-radius: var(--radius-xl, 14px);
     background: var(--surface-input, #3c3c3c);
     box-shadow: var(--shadow-card, 0 2px 8px rgba(0, 0, 0, 0.15));
@@ -1356,7 +1356,7 @@ export const chatStyles = `
     height: var(--sq-lg, 24px);
     padding: 0;
     background: transparent;
-    border: 1px solid var(--border-subtle, rgba(128,128,128,.2));
+    border: var(--line-solid);
     border-radius: var(--radius-sm, 2px);
     color: var(--text-secondary, #9aa0a6);
     cursor: pointer;
@@ -1552,7 +1552,7 @@ export const chatStyles = `
     height: var(--sq-2xl, 32px);
     padding: 0;
     border-radius: var(--radius-md, 6px);
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border: var(--line-input);
     background: var(--surface-hover, rgba(128,128,128,.2));
     color: var(--text-secondary, #9aa0a6);
     cursor: pointer;
@@ -1578,7 +1578,7 @@ export const chatStyles = `
     font-size: var(--font-md, 12px);
     line-height: var(--lh-snug);
     flex-shrink: 0;
-    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-bottom: var(--line-solid);
   }
   .activity-bar.info {
     color: var(--text-secondary, #9aa0a6);
@@ -1596,7 +1596,7 @@ export const chatStyles = `
     font-size: var(--font-sm, 11px);
     color: var(--accent, #0e639c);
     background: transparent;
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid);
     border-radius: var(--radius, 6px);
     cursor: pointer;
   }
@@ -1617,7 +1617,7 @@ export const chatStyles = `
     flex: 0 0 auto; /* 与 session-title-bar 同级非缩放，不随 #messages 滚动 */
     z-index: var(--z-float); /* 高于消息区（z-index:1），浮层展开时可覆盖对话内容 */
     background: var(--surface-card, #252526);
-    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-bottom: var(--line-solid);
   }
   .plan-bar__head {
     display: flex; align-items: center; gap: var(--sp-3, 8px);
@@ -1660,7 +1660,7 @@ export const chatStyles = `
     position: absolute; left: 0; right: 0; top: 100%;
     padding: var(--sp-2, 6px) var(--sp-5, 12px) var(--sp-3, 8px);
     background: var(--surface-card, #252526);
-    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-bottom: var(--line-solid);
     box-shadow: var(--shadow-card, 0 2px 8px rgba(0,0,0,.15));
     max-height: 320px; overflow-y: auto;
     font-size: var(--font-md, 12px); line-height: var(--lh-normal);
@@ -1685,12 +1685,12 @@ export const chatStyles = `
   .plan-item-title { flex: 1; word-break: break-all; }
   .plan-item-badge {
     flex-shrink: 0; font-size: var(--font-xs, 10px);
-    opacity: var(--op-7);
+    opacity: var(--op-8);
   }
   .plan-item-rounds {
     margin: var(--sp-1, 4px) 0 var(--sp-1, 4px) var(--sp-4, 10px);
     padding-left: var(--sp-2, 6px);
-    border-left: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-left: var(--line-solid);
   }
   .plan-item-round { font-size: var(--font-xs, 10px); padding: var(--sp-1, 4px) 0; }
   .plan-item-done { color: var(--status-pass, #4ec9b0); }
@@ -1721,7 +1721,7 @@ export const chatStyles = `
     margin: var(--sp-1, 4px) var(--sp-5, 12px) 0;
     font-size: var(--font-sm, 11px); line-height: var(--lh-snug);
     color: var(--text-secondary, #9aa0a6);
-    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
+    border-left: var(--line-solid-thick);
     border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
     padding: var(--sp-1, 4px) var(--sp-3, 8px);
   }
@@ -1742,7 +1742,7 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px);
     color: var(--accent, #0e639c);
     padding: 0 0 var(--sp-1, 4px);
-    border-bottom: var(--divider-dashed);
+    border-bottom: var(--line-dashed);
     margin-bottom: var(--sp-1, 4px);
   }
   /* target 图标（SVG）：跟随 accent 色，不收缩 */
@@ -1809,7 +1809,7 @@ export const chatStyles = `
   /* 中断轮平铺收尾行（过程折叠、停止行折叠块外平铺常驻——RT/RP 同构） */
   .round-block__interrupted {
     margin: var(--sp-2, 6px) 0 var(--sp-0, 2px); padding: var(--sp-1, 4px) 0;
-    border-top: var(--divider-dashed);
+    border-top: var(--line-dashed);
     font-size: var(--font-sm, 11px); line-height: var(--lh-normal); font-weight: 600;
     color: var(--danger, #f14c4c);
     word-break: break-all;
@@ -1877,7 +1877,7 @@ export const chatStyles = `
   }
   .process-flow__thought-body, .round-block__thought-body {
     margin-top: var(--sp-1, 4px); padding: var(--sp-2, 6px);
-    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
+    border-left: var(--line-solid-thick);
     font-size: var(--font-xs, 10px); line-height: var(--lh-relaxed);
     color: var(--text-secondary, #9aa0a6);
     white-space: pre-wrap; word-break: break-all;
@@ -1973,7 +1973,7 @@ export const chatStyles = `
   /* 工具调用折叠行：summary 常显名称(状态)，body（args + result）按需展开；
      与 narrate 平级平铺 details 顶层，各自独立折叠 */
   .round-block__tool {
-    border-left: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-left: var(--line-solid);
     border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
     padding: var(--sp-1, 4px) var(--sp-3, 8px);
     margin: var(--sp-1, 4px) 0;
@@ -1990,7 +1990,7 @@ export const chatStyles = `
   .round-block__tool-batch {
     margin: var(--sp-1, 4px) 0;
     padding-left: var(--sp-3, 8px);
-    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
+    border-left: var(--line-solid-thick);
     border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
   }
   .round-block__tool-batch-summary {
@@ -2033,7 +2033,7 @@ export const chatStyles = `
   .round-block__tool.is-tool-pending > summary::before {
     content: ''; display: inline-block; width: var(--dot-lg); height: var(--dot-lg);
     margin-right: var(--sp-2, 6px); vertical-align: -1px;
-    border: 1.5px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid-mid);
     border-radius: 50%; box-sizing: border-box;
   }
   /* 工具运行期间的动态指示统一由工具旋转图标承担，正文光标由八态状态机切换为
@@ -2050,7 +2050,7 @@ export const chatStyles = `
   }
   @keyframes selfReviewPulse {
     0%, 100% { opacity: 1; }
-    50% { opacity: var(--op-1); }
+    50% { opacity: var(--op-2); }
   }
 
   /* ============ Components：活动状态区 · 抽屉时间段（历史 + 指标） ============ */
@@ -2064,7 +2064,7 @@ export const chatStyles = `
   }
   .status-dock__controls:not([hidden]) + .status-dock__timeline {
     padding-top: var(--sp-2, 6px);
-    border-top: var(--divider-solid);
+    border-top: var(--line-solid);
   }
   /* 段头「活动」已删（2026-10-08 SSOT 收口）：抽屉标签唯一真源 = dockChip 文案
    * （resolveDock 单点动态赋值「活动/+N」），展开态 chip 紧邻面板上方，段头为第二份硬编码副本。
@@ -2088,7 +2088,7 @@ export const chatStyles = `
     /* 与历史列表的分隔线；横向/底部留白由抽屉体 padding 承担，不双倍 */
     padding: var(--sp-2, 6px) 0 0; line-height: var(--lh-relaxed);
     white-space: pre-wrap; word-break: break-all;
-    border-top: var(--divider-solid);
+    border-top: var(--line-solid);
   }
 
   /* 主动提问条 */
@@ -2103,7 +2103,7 @@ export const chatStyles = `
   #clarifyRow { display: flex; gap: var(--sp-2, 6px); }
   #clarifyInput {
     flex: 1; padding: var(--sp-3, 8px); border-radius: var(--radius, 6px);
-    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border: var(--line-input);
     background: var(--surface-input, #3c3c3c); color: var(--text-input, #cccccc);
   }
   #clarifyOptions { display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); }

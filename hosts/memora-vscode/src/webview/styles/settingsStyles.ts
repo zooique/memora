@@ -33,7 +33,7 @@ export const settingsStyles = `
     font-size: var(--font-sm, 11px); line-height: var(--lh-tight);
     border-radius: var(--radius, 6px);
     background: var(--surface-card, #252526); color: var(--text-primary, #cccccc);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid);
     box-shadow: var(--shadow-toast);
     opacity: 0; pointer-events: none; transition: opacity var(--dur-med) ease;
     z-index: var(--z-overlay);
@@ -46,7 +46,7 @@ export const settingsStyles = `
     display: flex;
     gap: var(--sp-1, 4px);
     padding: var(--sp-2, 6px) var(--sp-3, 8px);
-    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-bottom: var(--line-solid);
     background: var(--surface-sidebar);
   }
   .tab-btn {
@@ -109,7 +109,7 @@ export const settingsStyles = `
     gap: var(--sp-3, 8px);
     padding: var(--sp-4, 10px);
     margin-bottom: var(--sp-3, 8px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid);
     border-radius: var(--radius-lg, 8px);
     background: var(--surface-sidebar);
   }
@@ -183,7 +183,7 @@ export const settingsStyles = `
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
-    border-top: var(--divider-solid);
+    border-top: var(--line-solid);
     text-align: center;
   }
 
@@ -205,7 +205,7 @@ export const settingsStyles = `
     content: '';
     display: inline-block;
     width: var(--icon-2xs); height: var(--icon-2xs);
-    border: 1.5px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid-mid);
     border-top-color: var(--accent, #0e639c);
     border-radius: 50%;
     animation: loadingSpin var(--dur-spin) linear infinite;
@@ -229,7 +229,7 @@ export const settingsStyles = `
        不用 surface-hover（会漏同步） */
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
     margin-bottom: var(--sp-2, 6px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid);
     border-radius: var(--radius, 6px);
     background: var(--surface-sidebar);
   }
@@ -248,7 +248,7 @@ export const settingsStyles = `
   .allowed-path-row {
     display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px);
     padding: var(--sp-1, 4px) var(--sp-2, 6px);
-    border: 1px solid var(--border-panel, rgba(128, 128, 128, 0.4));
+    border: var(--line-solid);
     border-radius: var(--radius-sm, 2px);
     margin-bottom: var(--sp-1, 4px);
     background: var(--surface-sidebar, #252526);
@@ -266,13 +266,13 @@ export const settingsStyles = `
   .allowed-paths-add { display: flex; gap: var(--sp-2, 6px); margin-top: var(--sp-2, 6px); }
   .allowed-paths-input {
     flex: 1; min-width: 0; padding: var(--sp-1, 4px) var(--sp-2, 6px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 2px);
+    border: var(--line-solid); border-radius: var(--radius-sm, 2px);
     background: var(--surface-input, #3c3c3c); color: var(--text-primary); font-size: var(--font-sm, 11px);
   }
   /* 网页搜索引擎下拉：与路径输入同视觉语言 */
   .security-select {
     margin-top: var(--sp-2, 6px); padding: var(--sp-1, 4px) var(--sp-2, 6px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 2px);
+    border: var(--line-solid); border-radius: var(--radius-sm, 2px);
     background: var(--surface-input, #3c3c3c); color: var(--text-primary); font-size: var(--font-sm, 11px);
     max-width: 280px;
   }
@@ -310,7 +310,7 @@ export const settingsStyles = `
     font-size: var(--font-sm, 11px);
     padding: var(--sp-1, 4px) var(--sp-3, 8px);
     border-radius: var(--radius-sm, 2px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border: var(--line-solid);
     background: var(--surface-hover, rgba(128, 128, 128, 0.2));
     color: var(--text-primary, #cccccc);
     cursor: pointer;
