@@ -197,10 +197,12 @@ export class MemoryInspector {
    * 分层分轨原属「召回编排」`recall()`；**现行实现中已无任何召回编排**，
    * 搜索工具只暴露过滤后的结果，供宿主/上层按需自取（见 memory-as-summary §4.5 边界标注）。
    *
-   * 无语义（向量）通道：embedding 写端缺失导致语义通道在生产从未生效，
-   * 属于「宣称能力零消费」的僵尸；且主流 agent（Anthropic Memory tool / Claude Code / Librarian Pattern）
-   * 已实证「LLM 消费者 + 小语料」下纯关键词足用——LLM 会自主改述重试（工具描述已提示）。向量语义检索
-   * 的 cache 形态方案记入探索期文档候选，等真实「关键词搜不到」复现再按缓存重算形态补回。
+   * 无语义（向量）通道：embedding 写端从未接通，语义通道生产从未生效，已随 B0 收编整体移除
+   * （vectorStore / embedding 配置段全删），工具描述亦已明文否认——此处仅存「为何无向量通道」的
+   * 历史说明，非现行能力宣称。设计依据：主流 agent（Anthropic Memory tool / Claude Code /
+   * Librarian Pattern）已实证「LLM 消费者 + 小语料」下纯关键词足用，LLM 会自主改述重试（工具
+   * 描述已提示）。cache-recompute 形态为预留补回位（见 memory-as-summary §4.5），等真实
+   * 「关键词搜不到」复现再按缓存重算形态补回。
    *
    * @param excludeRoundIds 排除的轮次 ID 集合（可选）：这些轮次的 round-summary 已被装配期载入正文，
    *                       不重复返回（工具召回与装配期正文互斥，§5.1）；缺省不过滤。
