@@ -481,3 +481,53 @@ describe('设计令牌定义层守卫（同 --vscode-* 变量须同回退）', (
     expect(inconsistent.length).toBeLessThanOrEqual(DEFINITION_FROZEN_BASELINE);
   });
 });
+
+/**
+ * 各令牌族「消费引用数」反向守卫（根治批量统计失真 · 2026-10-12）
+ *
+ * 背景：AXIS-1 维度计数反复人肉失真——同一批数据在 CHANGELOG / 台账被手数成
+ * 24→17、27→14、61→69 等多套互相矛盾的数字，连「订正」都在失真
+ * （原稿 icon/dot 27 本正确，上一轮误改为 14）。根因：计数无机械化校验，
+ * 全靠 grep 行数手加。本守卫把「各家族消费引用次数」钉死为单一机械真理，
+ * CHANGELOG / 台账直接引此数，禁止手数。
+ *
+ * 口径：与 tokensClosure 既有逻辑一致——只数「消费点」（`styles/` 下除 tokens.ts 定义层外的
+ * `var(--family` 出现次数，非行数；一行多引用计入多次）。数字经 count_tokens.mjs 实锤，
+ * 并经 AXIS 弧净 diff 交叉验证（迁移数 = 弧内新增）。
+ *
+ * 反向守卫双保险：① `count > 0` 防「提取失效→空集恒过」假绿（本项目已踩过）；
+ * ② `count === expected` 精确钉死，任何提取回退 / 手数漂移当场红。
+ */
+describe('各令牌族消费引用数反向守卫（根治批量统计失真）', () => {
+  const STYLES_DIR = join(WEBVIEW_DIR, 'styles');
+
+  // 单一机械真理：当前消费引用次数（occurrence，非行数）。
+  // 改 CHANGELOG / 台账前先跑 count_tokens.mjs 取此数，禁止手数。
+  const EXPECTED = {
+    'z-': 14,
+    'lh-': 46,
+    'op-': 17,
+    'icon-': 17,
+    'dot-': 20,
+    'line-': 69,
+    'sq-': 46,
+  } as const;
+
+  for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {
+    const expected = EXPECTED[family];
+    it(`var(--${family} 消费引用须精确等于 ${expected}（禁止手数，CHANGELOG 引此数）`, () => {
+      const re = new RegExp(`var\\(--${family}`, 'g');
+      let count = 0;
+      for (const name of readdirSync(STYLES_DIR)) {
+        if (!name.endsWith('.ts') || name === 'tokens.ts') continue;
+        const text = readFileSync(join(STYLES_DIR, name), 'utf8');
+        const m = text.match(re);
+        if (m) count += m.length;
+      }
+      // 反向守卫：确保真扫到引用（防提取正则失效→空集恒过假绿）
+      expect(count, `未扫到任何 var(--${family} 引用——提取口径已失效`).toBeGreaterThan(0);
+      // 精确钉死：任何提取回退 / 计数漂移当场红
+      expect(count, `var(--${family} 消费引用数漂移（CHANGELOG 须与此一致，禁止手数）`).toBe(expected);
+    });
+  }
+});
