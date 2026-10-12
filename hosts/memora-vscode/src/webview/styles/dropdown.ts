@@ -104,7 +104,9 @@ export const dropdownStyles = `
    * 相比各面板以 !important 覆写组件默认样式（层叠污染的架构反模式），此变体以
    * 更高特异性选择器在组件内自然覆盖默认 ellipsis 图标按钮，无需 !important。
    * 差异通过 CSS 变量定制：--dd-trigger-max-w（触发器最大宽，超长省略兜底）、
-   * --dd-menu-min-w / --dd-menu-max-w（菜单尺寸）。 */
+   * --dd-menu-min-w / --dd-menu-max-w（菜单尺寸）。
+   * 变体值（窄触发器 / 宽菜单）在 tokens.ts 具名（--dd-trigger-max-w-narrow /
+   * --dd-menu-min-w-wide，280 档复用 --dim-xl）——面板覆写时引令牌，禁写裸值。 */
   .treedd--capsule .treedd__trigger {
     display: inline-flex; align-items: center; gap: var(--sp-1, 4px);
     height: var(--control-h, 28px); width: auto; /* 宽度随内容自适应 */

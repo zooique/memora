@@ -337,6 +337,13 @@ export const tokens = `
     --dd-menu-min-w: 160px;      /* 胶囊菜单最小宽 */
     --dd-menu-max-w: 240px;      /* 胶囊菜单最大宽 */
 
+    /* 胶囊变体差异令牌（dropdown.ts「差异通过 CSS 变量定制」契约的具名化）：
+     * 原为 chatStyles 内的裸值局部重定义（A 类债）——值散在消费文件里，改一处漏一处。
+     * 2026-10-12 闭包：变体值升为本区具名令牌，面板只留 var() 引用 ⇒ 值归 tokens.ts 唯一，
+     * 1:1 沿用现状值 ⇒ 零视觉变化。280 档直接复用 --dim-xl（大尺寸刻度，不造并列值）。 */
+    --dd-trigger-max-w-narrow: 120px; /* 单图标胶囊（skill-picker）：触发器更窄兜底 */
+    --dd-menu-min-w-wide: 200px;      /* 宽名胶囊（model-picker）：长模型名不逼截菜单 */
+
     /* === L1 基础令牌：动画/过渡时长刻度（全库唯一动画时长源，chatStyles 引用） === */
     --dur-fast: 120ms;        /* 快速过渡（hover / 瞬时反馈） */
     --dur-base: 150ms;       /* 常规过渡（颜色 / 边框 / 位移） */

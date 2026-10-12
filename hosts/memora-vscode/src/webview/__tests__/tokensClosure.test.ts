@@ -122,8 +122,10 @@ describe('设计令牌闭合守卫（tokens.ts ↔ 全样式层）', () => {
  *
  * 判据演进：初版为**冻结式软门**（`toBeLessThanOrEqual(基线)`，只挡新增、允许下降），
  * 理由是存量债务一次性归零会逼出造伤式整改；2026-10-12 清单降至 24（< 30 升档阈值）
- * ⇒ 按既定升档条件升级为**硬门** `toEqual(24)`（A 类 4 + C 类 20，偏离即红），
- * 详见 FROZEN_VALUE_BASELINE 注释块。此后降基线必须带实测证据，禁「改数字造假绿」。
+ * ⇒ 按既定升档条件升级为**硬门** `toEqual(基线)`（A 类 4 + C 类 20，偏离即红）；
+ * 同日晚些 A 类 4 处闭包为 tokens.ts 变体令牌（1:1 零视觉变化，枚举实证 24→20）
+ * ⇒ 基线随债务降至 20，残余全为 C 类一次性维度。此后降基线必须带实测证据，
+ * 禁「改数字造假绿」。
  *
  * Scope：仅扫 styles/ 目录（tokens.ts 定义处豁免）。webview JS 里的内联样式
  * （errorBoundary.ts 错误边界安全网）是**已登记例外**——安全网必须自包含，不依赖
@@ -175,13 +177,17 @@ const EXEMPT_PROPS = new Set([
  *         跨 width/height/max-width/max-height/min-width/min-height 复用）后（2026-10-12）。
  *         注：枚举脚本曾误报 19 处（把 calc(100vw - 48px) 里的 48px 当成独立消费者），
  *         经内容级 Grep 复核为 17 处 ⇒ 守护卫是 SSOT，脚本/文档计数须以其为准。
+ *    20 → A 类 4 处 --dd-* 局部重定义闭包后（2026-10-12）：变体值升为 tokens.ts 具名
+ *         变体令牌（--dd-trigger-max-w-narrow:120 / --dd-menu-min-w-wide:200）+
+ *         model-picker 的 280 档复用 --dim-xl；.model-picker 的 --dd-trigger-max-w:200
+ *         与 L3 定义重复，直接删。chatStyles 只留 var() 引用 ⇒ 1:1 零视觉变化。
+ *         实证：闭包前后全量枚举 diff = 恰好这 4 处（24→20，残余与 C 类清单逐条一致）。
  * 为何要跟着降：若基线停在初始值，消化出的 94+ 处会变成「可新增而不报错」的余额，
  * 等于给未来的裸值开了口子。门必须随债务一起往下走。
- * 现状（2026-10-12）：清单已降至 24（< 30 升档阈值）⇒ 已升硬门 toEqual(24)（见守卫断言）。
- * 残余 24 = A 类 4（--dd-* 局部重定义，待独立收口 + 真机验收，改宽高 = 视觉变化）
- *          + C 类 20（一次性维度，显式硬门例外）。
+ * 现状（2026-10-12）：清单已降至 20 ⇒ 硬门 toEqual(20)（见守卫断言）。
+ * 残余 20 = C 类 20（一次性维度，显式硬门例外）；A 类 4 已于 2026-10-12 闭包（见上 20 行）。
  */
-const FROZEN_VALUE_BASELINE = 24;
+const FROZEN_VALUE_BASELINE = 20;
 
 /** 剥离 var() 整体（含其 fallback），残留者才是真裸值 */
 const stripVar = (v: string): string => v.replace(/var\(\s*--[\w-]+(\s*,[^)]*)?\)/g, '');
@@ -221,7 +227,7 @@ describe('设计令牌值守卫（裸值冻结 + 防新增）', () => {
     expect(scanned, '扫描到的 CSS 声明为 0——提取正则或路径已失效').toBeGreaterThan(500);
   });
 
-  it('裸值债务硬门：必须等于 24（A 类 4 + C 类 20，偏离即红）', () => {
+  it('裸值债务硬门：必须等于 20（A 类 4 已闭包；残余 = C 类 20 一次性维度，偏离即红）', () => {
     const { violations } = collectValueViolations();
     if (violations.length > 0) {
       const byProp = new Map<string, number>();
@@ -229,7 +235,7 @@ describe('设计令牌值守卫（裸值冻结 + 防新增）', () => {
       const top = [...byProp].sort((a, b) => b[1] - a[1]).slice(0, 8);
       console.warn(
         `[值守卫] 存量 ${violations.length} 处（硬门 ${FROZEN_VALUE_BASELINE}）—` +
-          ` 硬门已生效：必须等于 24，偏离（新增或误删）即红。\n` +
+          ` 硬门已生效：必须等于 ${FROZEN_VALUE_BASELINE}，偏离（新增或误删）即红。\n` +
           `[值守卫] 属性分布 TOP：${top.map(([p, n]) => `${p}=${n}`).join(', ')}`,
       );
     }
@@ -522,6 +528,8 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   // 改 CHANGELOG / 台账前先跑 scripts/count-token-refs.mjs 取此数，禁止手数。
   // dim- 于 2026-10-12 补登记（UI-TOKEN-RAW-3 复核发现）：--dim-* 六档随 B 类收口落地时
   // 漏钉 ⇒ 令牌互换类视觉变化（如 --dim-lg→--dim-xl）曾全门失明；新族必须同批登记。
+  // 17→18：A 类闭包时 .model-picker 菜单 max-w 改引 var(--dim-xl)（复用刻度不造并列值）
+  // ⇒ 新增 1 处 dim 消费者，本表随机械真值同步（该闭包提交的实测 diff）。
   const EXPECTED = {
     'z-': 14,
     'lh-': 46,
@@ -530,7 +538,7 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     'dot-': 20,
     'line-': 69,
     'sq-': 46,
-    'dim-': 17,
+    'dim-': 18,
   } as const;
 
   for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {

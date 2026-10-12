@@ -1378,8 +1378,9 @@ export const chatStyles = `
    * 单图标（⚡）触发器。胶囊底色/箭头/尺寸全复用 capsule；此处仅：
    * 1) 选中态 accent 边框回显（.active 由 chatView toggle）；2) 菜单左对齐
    * （左起触发器若沿用 capsule 的 right:0 会往左溢出面板边缘）；
-   * 3) 菜单内当前项高亮（icon-only 下，这是「我用了哪个 Skill」的唯一常驻入口）。 */
-  .skill-picker { --dd-trigger-max-w: 120px; }
+   * 3) 菜单内当前项高亮（icon-only 下，这是「我用了哪个 Skill」的唯一常驻入口）；
+   * 4) 触发器更窄（单图标不需要 200 兜底，引 tokens.ts 变体令牌，禁裸值）。 */
+  .skill-picker { --dd-trigger-max-w: var(--dd-trigger-max-w-narrow); }
   .skill-picker.active .treedd__trigger {
     border-color: var(--accent, #0e639c);
     color: var(--accent, #0e639c);
@@ -1473,10 +1474,12 @@ export const chatStyles = `
   .model-picker {
     flex: 1 1 auto; /* 窄窗下与左组其余项一起收缩，交给内部 max-width 省略 */
     min-width: 0;
-    /* 差异定制变量（capsule 变体读取）：超长模型名兜底省略 + 菜单尺寸 */
-    --dd-trigger-max-w: 200px;
-    --dd-menu-min-w: 200px;
-    --dd-menu-max-w: 280px;
+    /* 差异定制变量（capsule 变体读取）：超长模型名兜底省略 + 菜单尺寸。
+     * 触发器兜底沿用 L3 默认（--dd-trigger-max-w: 200）——本面板不需加宽，故不覆写；
+     * 菜单加宽经 tokens.ts 变体令牌供值（--dd-menu-min-w-wide / --dim-xl 复用），
+     * 覆写只留 var() 引用、禁裸值（A 类债收口，1:1 零视觉变化）。 */
+    --dd-menu-min-w: var(--dd-menu-min-w-wide);
+    --dd-menu-max-w: var(--dim-xl);
   }
   .model-picker .treedd__item.is-active {
     color: var(--accent, #0e639c);
