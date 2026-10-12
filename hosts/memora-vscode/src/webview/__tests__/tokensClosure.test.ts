@@ -419,17 +419,23 @@ describe('设计令牌颜色 fallback 一致性守卫（防第三套值）', () 
  *
  * 本次先合并**同义**令牌（--surface-normal→--surface-inset、--text-tertiary/--text-muted
  * →--text-secondary、--surface-tip→--surface-card、--surface-panel→--surface-sidebar、
- * --surface-inverse→--accent-foreground），8 组降到 5 组；真机验收后再落地 LAYER-2 / WARN-1
- * （静态面改引 textCodeBlock 与 hover 不同源、--surface-active 按语义分流后退役、warn-fg
- * 改引 inputValidation-warningForeground）⇒ 再降到 **3 组**（border 三档 / 跨色系两组）。
- * 剩余 3 组均属「需换变量或换语义」（非对齐数值可解），已登记下批条目，故本门走
- * **冻结式软门**而非硬门——与「裸值债务冻结」同构：只挡新增、允许并鼓励下降。
+ * --surface-inverse→--accent-foreground），8 组降到 5 组；真机验收后落地 LAYER-2 / WARN-1
+ * ⇒ 3 组；最终批：border 三档（--border / --border-subtle 全部消费是容器描边，收进
+ * --line-* 值令牌族后退役）+ 跨色系两组回退对齐（同引同值统一中性灰）⇒ **归零**。
  *
- * ⚠️ 基线必须随消化同步下调：停在旧值等于给未来新增开口子。
+ * ⚠️ 基线必须随消化同步下调：停在旧值等于给未来新增开口子。基线 0 ⇒ 本门等效硬门
+ * （任何新映射必须与同变量既有映射回退一致，或引新变量）。
  *
  * 反向守卫：断言扫到的定义层映射总量，防提取正则失效导致「空集恒过」的假绿。
  */
-const DEFINITION_FROZEN_BASELINE = 3;
+const DEFINITION_FROZEN_BASELINE = 0;
+
+/** 回退可能是嵌套 var 降级链（--a: var(--vscode-x, var(--vscode-y, fb))）——取最内层兜底色比对，
+ * 否则嵌套写法会被误判为与平面写法「不一致」（字符串级比较的假阳性）。 */
+function fbInnermost(fb: string): string {
+  const m = /^var\(\s*--[\w-]+\s*,\s*([\s\S]+)\)$/.exec(fb.trim());
+  return m ? fbInnermost(m[1] ?? '') : fb.trim();
+}
 
 describe('设计令牌定义层守卫（同 --vscode-* 变量须同回退）', () => {
   interface DefEntry {
@@ -448,7 +454,7 @@ describe('设计令牌定义层守卫（同 --vscode-* 变量须同回退）', (
       // 只认「首跳即主题变量」的映射；--a: var(--b, ...) 的链式令牌归值守卫管
       if (!head || !head.name.startsWith('vscode-') || head.fb === undefined) continue;
       const list = groups.get(head.name) ?? [];
-      list.push({ token, fb: normalizeColor(head.fb) });
+      list.push({ token, fb: normalizeColor(fbInnermost(head.fb)) });
       groups.set(head.name, list);
     }
     return groups;
