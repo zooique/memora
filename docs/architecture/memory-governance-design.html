@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<!--
+  文件：memory-governance-design.html
+  用途：内核记忆治理层设计图解（memory-as-summary 体系的可视化导读）
+  内容：三轨一端口全景 + 写入前三态门（指纹/null/沉淀，2026-10-08 P1-5a 落地）+ 写路径取代检测
+        （确定性加权 Jaccard）+ 召回治理（searchByKeyword 唯一入口、superseded 过滤、excludeRoundIds
+        互斥、工具层 touch）+ 排序哲学（governance.ts 原文）+ 数据模型 + 排雷对质记录 + 对抗式观察。
+  定位：导读非 SSOT——真源为 architecture/memory-as-summary.md 等 markdown 文档与 src/ 源码；
+        本文所有断言附源码锚点（file:line），排雷记录登记初版结论被源码推翻的 4 处。
+  关联：src/agent/managers/roundSummaryGenerator.ts · src/agent/managers/memoryInspector.ts ·
+        src/agent/builtinToolHandlers.ts · src/memory/governance.ts · src/memory/types.ts ·
+        src/memory/keywordsTouch.ts · src/agent/managers/memoryGovernance.ts · src/agent/managers/dedupManager.ts
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>记忆治理层设计导读 · Memora 内核</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --surface: #F7F7F8;
+      --surface-card: #FFFFFF;
+      --surface-muted: #EFEFF2;
+      --text: #171717;
+      --text-muted: #52525B;
+      --text-faint: #71717A;
+      --border: rgba(23, 23, 23, 0.12);
+      --border-strong: rgba(23, 23, 23, 0.22);
+      --brand: #4B3FE3;
+      --brand-soft: #F2F7FF;
+      --brand-soft-strong: #E5EAFF;
+      --brand-text: #1A1759;
+      --brand-on: #FFFFFF;
+      --accent: #0F766E;
+      --accent-soft: #EAFBF8;
+      --success: #15803D;
+      --success-soft: #F0FDF4;
+      --warning: #B45309;
+      --warning-soft: #FFFBEB;
+      --danger: #B91C1C;
+      --danger-soft: #FEF2F2;
+      --code-bg: #F4F4F5;
+      --dia-box-fill: #FFFFFF;
+      --dia-box-stroke: rgba(75, 63, 227, 0.45);
+      --dia-lane-fill: #F2F7FF;
+      --dia-lane-stroke: rgba(75, 63, 227, 0.28);
+      --dia-title: #1A1759;
+      --dia-sub: #52525B;
+      --dia-arrow: #4B3FE3;
+      --dia-neutral-fill: #EFEFF2;
+      --dia-neutral-stroke: rgba(23, 23, 23, 0.25);
+      --radius: 8px;
+      --radius-card: 12px;
+      --spacer-4: 4px;
+      --spacer-8: 8px;
+      --spacer-12: 12px;
+      --spacer-16: 16px;
+      --spacer-20: 20px;
+      --spacer-24: 24px;
+      --spacer-32: 32px;
+      --font-sans: "SF Pro Text", "PingFang SC", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      --text-caption: 12px/18px;
+      --text-body: 14px/20px;
+      --text-title: 16px/24px;
+      --text-code: 13px/20px;
+    }
+
+    :root[data-widget-theme="dark"] {
+      color-scheme: dark;
+      --surface: #171717;
+      --surface-card: #1F1F22;
+      --surface-muted: #262626;
+      --text: #E5E5E5;
+      --text-muted: #A1A1AA;
+      --text-faint: #8B8B93;
+      --border: rgba(229, 229, 229, 0.12);
+      --border-strong: rgba(229, 229, 229, 0.24);
+      --brand: #6054F1;
+      --brand-soft: #1A1759;
+      --brand-soft-strong: #3C2ECA;
+      --brand-text: #CFD8FF;
+      --accent: #5EEAD4;
+      --accent-soft: #123F3C;
+      --success: #4ADE80;
+      --success-soft: #14301E;
+      --warning: #FBBF24;
+      --warning-soft: #2E230B;
+      --danger: #F87171;
+      --danger-soft: #331111;
+      --code-bg: #262626;
+      --dia-box-fill: #262626;
+      --dia-box-stroke: rgba(96, 84, 241, 0.55);
+      --dia-lane-fill: #1A1759;
+      --dia-lane-stroke: rgba(96, 84, 241, 0.4);
+      --dia-title: #CFD8FF;
+      --dia-sub: #A1A1AA;
+      --dia-arrow: #6054F1;
+      --dia-neutral-fill: #262626;
+      --dia-neutral-stroke: rgba(229, 229, 229, 0.28);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --surface: #171717;
+        --surface-card: #1F1F22;
+        --surface-muted: #262626;
+        --text: #E5E5E5;
+        --text-muted: #A1A1AA;
+        --text-faint: #8B8B93;
+        --border: rgba(229, 229, 229, 0.12);
+        --border-strong: rgba(229, 229, 229, 0.24);
+        --brand: #6054F1;
+        --brand-soft: #1A1759;
+        --brand-soft-strong: #3C2ECA;
+        --brand-text: #CFD8FF;
+        --accent: #5EEAD4;
+        --accent-soft: #123F3C;
+        --success: #4ADE80;
+        --success-soft: #14301E;
+        --warning: #FBBF24;
+        --warning-soft: #2E230B;
+        --danger: #F87171;
+        --danger-soft: #331111;
+        --code-bg: #262626;
+        --dia-box-fill: #262626;
+        --dia-box-stroke: rgba(96, 84, 241, 0.55);
+        --dia-lane-fill: #1A1759;
+        --dia-lane-stroke: rgba(96, 84, 241, 0.4);
+        --dia-title: #CFD8FF;
+        --dia-sub: #A1A1AA;
+        --dia-arrow: #6054F1;
+        --dia-neutral-fill: #262626;
+        --dia-neutral-stroke: rgba(229, 229, 229, 0.28);
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: var(--spacer-24);
+      background: var(--surface-muted);
+      color: var(--text);
+      font: var(--text-body) var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page {
+      max-width: 880px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacer-20);
+    }
+
+    .card {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      padding: var(--spacer-20);
+    }
+
+    .hero { padding: var(--spacer-24); }
+
+    .hero h1 {
+      margin: 0 0 var(--spacer-8);
+      font-size: 22px;
+      line-height: 30px;
+      font-weight: 600;
+      color: var(--brand-text);
+    }
+
+    .hero .subtitle {
+      margin: 0 0 var(--spacer-16);
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .badges { display: flex; flex-wrap: wrap; gap: var(--spacer-8); }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--brand-soft);
+      color: var(--brand-text);
+      border: 1px solid var(--dia-lane-stroke);
+    }
+
+    .badge.neutral { background: var(--surface-muted); color: var(--text-muted); border-color: var(--border); }
+
+    h2 {
+      margin: 0 0 var(--spacer-4);
+      font-size: 17px;
+      line-height: 26px;
+      font-weight: 600;
+      color: var(--brand-text);
+      display: flex;
+      align-items: baseline;
+      gap: var(--spacer-8);
+    }
+
+    h2 .idx {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--brand);
+      font-weight: 500;
+    }
+
+    h3 {
+      margin: var(--spacer-20) 0 var(--spacer-8);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .lede { margin: 0 0 var(--spacer-16); color: var(--text-muted); }
+
+    p { margin: 0 0 var(--spacer-12); }
+
+    .diagram {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--spacer-16);
+      margin: var(--spacer-12) 0;
+      overflow-x: auto;
+    }
+
+    .diagram svg { display: block; width: 100%; height: auto; }
+
+    .diagram figcaption {
+      margin-top: var(--spacer-12);
+      font-size: 12px;
+      color: var(--text-faint);
+      text-align: center;
+    }
+
+    .d-lane { fill: var(--dia-lane-fill); stroke: var(--dia-lane-stroke); stroke-width: 0.5; }
+    .d-box { fill: var(--dia-box-fill); stroke: var(--dia-box-stroke); stroke-width: 0.5; }
+    .d-box-neutral { fill: var(--dia-neutral-fill); stroke: var(--dia-neutral-stroke); stroke-width: 0.5; }
+    .d-t { fill: var(--dia-title); font-size: 13px; font-weight: 500; }
+    .d-s { fill: var(--dia-sub); font-size: 12px; }
+    .d-l { fill: var(--brand); font-size: 12px; font-weight: 500; }
+    .d-cap { fill: var(--dia-sub); font-size: 12px; }
+    .d-br { fill: var(--dia-sub); font-size: 11px; }
+    .d-arrow { stroke: var(--dia-arrow); stroke-width: 1.5; fill: none; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: var(--spacer-12) 0;
+      font-size: 13px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    th {
+      font-weight: 500;
+      color: var(--text-muted);
+      background: var(--surface-muted);
+      white-space: nowrap;
+    }
+
+    td code, .inline-code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 1px 5px;
+      color: var(--brand-text);
+    }
+
+    :root[data-widget-theme="dark"] td code, :root[data-widget-theme="dark"] .inline-code { color: var(--brand-text); }
+    @media (prefers-color-scheme: dark) {
+      td code, .inline-code { color: var(--brand-text); }
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--spacer-12);
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: var(--text-code);
+      line-height: 1.6;
+      margin: var(--spacer-12) 0;
+    }
+
+    .src {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-faint);
+      display: block;
+      margin-top: 4px;
+    }
+
+    .callout {
+      border-radius: var(--radius);
+      padding: var(--spacer-12) var(--spacer-16);
+      margin: var(--spacer-12) 0;
+      font-size: 13px;
+      border: 1px solid;
+    }
+
+    .callout .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      margin-bottom: 4px;
+    }
+
+    .callout.ok { background: var(--success-soft); border-color: rgba(21, 128, 61, 0.3); }
+    .callout.ok .tag { color: var(--success); }
+    .callout.warn { background: var(--warning-soft); border-color: rgba(180, 83, 9, 0.35); }
+    .callout.warn .tag { color: var(--warning); }
+    .callout.danger { background: var(--danger-soft); border-color: rgba(185, 28, 28, 0.3); }
+    .callout.danger .tag { color: var(--danger); }
+    .callout.note { background: var(--brand-soft); border-color: var(--dia-lane-stroke); }
+    .callout.note .tag { color: var(--brand); }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--spacer-12);
+    }
+
+    @media (max-width: 720px) {
+      .grid-2 { grid-template-columns: 1fr; }
+      body { padding: var(--spacer-12); }
+    }
+
+    .mini-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--spacer-12);
+      background: var(--surface);
+    }
+
+    .mini-card h4 {
+      margin: 0 0 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--brand-text);
+    }
+
+    .mini-card p { margin: 0; font-size: 13px; color: var(--text-muted); }
+
+    ol.principles, ul.tensions { margin: 0; padding-left: 20px; }
+    ol.principles li, ul.tensions li { margin-bottom: var(--spacer-8); }
+    ol.principles li b, ul.tensions li b { color: var(--brand-text); }
+
+    .footer {
+      color: var(--text-faint);
+      font-size: 12px;
+      text-align: center;
+      padding: var(--spacer-8) 0 var(--spacer-16);
+    }
+
+    .toc { display: flex; flex-wrap: wrap; gap: var(--spacer-8); margin-top: var(--spacer-12); }
+    .toc a {
+      font-size: 12px;
+      color: var(--brand-text);
+      text-decoration: none;
+      padding: 2px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--dia-lane-stroke);
+      background: var(--brand-soft);
+    }
+    .toc a:hover { border-color: var(--brand); }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ═══════════ Hero ═══════════ -->
+  <section class="card hero">
+    <h1>记忆治理层设计导读</h1>
+    <p class="subtitle">Memora 内核 · memory-as-summary 体系 —— 三条轨道（写入 / 治理 / 召回）共用一个存储端口的治理闭环</p>
+    <div class="badges">
+      <span class="badge">导读非 SSOT</span>
+      <span class="badge">附源码锚点</span>
+      <span class="badge">含排雷对质记录</span>
+      <span class="badge neutral">2026-10-12 · 内核 4.0.0</span>
+    </div>
+    <nav class="toc">
+      <a href="#s0">§0 阅读须知</a>
+      <a href="#s1">§1 全景：三轨一端口</a>
+      <a href="#s2">§2 写入前三态门</a>
+      <a href="#s3">§3 写路径取代检测</a>
+      <a href="#s4">§4 召回治理</a>
+      <a href="#s5">§5 排序哲学</a>
+      <a href="#s6">§6 数据模型</a>
+      <a href="#s7">§7 五条第一性原理</a>
+      <a href="#s8">§8 排雷对质记录</a>
+      <a href="#s9">§9 对抗式观察</a>
+      <a href="#s10">§10 源码锚点</a>
+    </nav>
+  </section>
+
+  <!-- ═══════════ §0 阅读须知 ═══════════ -->
+  <section class="card" id="s0">
+    <h2><span class="idx">§0</span>阅读须知</h2>
+    <p class="lede">本文是架构文档的可视化导读，<b>不替代真源</b>。设计论述的真源是 markdown 文档，行为判据的真源是源码——本文每个断言都附 <span class="inline-code">file:line</span> 锚点，可逐条回查。</p>
+    <div class="callout note">
+      <span class="tag">真源索引</span>
+      <p style="margin:0">设计论述：<span class="inline-code">architecture/memory-as-summary.md</span>（61KB，体系总纲）、<span class="inline-code">architecture/memory-tool-recall-design.md</span>（召回设计）、<span class="inline-code">architecture/memory-recall-recency-design.md</span>（时效定案）、<span class="inline-code">architecture/memory-role-pack-boundary.md</span>（角色边界）。行为判据：本文 §10 所列七个源码文件。</p>
+    </div>
+    <div class="callout warn">
+      <span class="tag">排雷声明</span>
+      <p style="margin:0">本文初版结论（2026-10-12 会话中的口头与图示版本）曾与源码出现 <b>4 处冲突</b>——三态顺序、null 分支的 LLM 成本、取代检测的判定方式、accessedAt 的排序角色。全部已按源码订正并登记于 <a href="#s8" style="color:var(--warning)">§8 排雷对质记录</a>。<b>读本文时若与源码冲突，以源码为准</b>——这正是「文档是下游」纪律的执行现场。</p>
+    </div>
+  </section>
+
+  <!-- ═══════════ §1 全景 ═══════════ -->
+  <section class="card" id="s1">
+    <h2><span class="idx">§1</span>全景：三轨一端口</h2>
+    <p class="lede">记忆治理层不是「一个记忆模块加几个工具函数」，而是<b>三条轨道共用一个存储端口</b>：写入轨决定什么能进库，治理轨决定进库后新旧关系怎么处理，召回轨决定什么能出去。底部是 <span class="inline-code">IMemoryStorage</span> 注入端口（宿主持久化）与角色包边界（人格/规则/技能永不入库）。</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 680 500" role="img" aria-label="记忆治理层全景：写入轨、治理轨、召回轨与底部端口">
+        <defs>
+          <marker id="ar1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <rect x="40" y="24" width="600" height="471" rx="20" class="d-lane"/>
+        <text x="56" y="48" class="d-t" dominant-baseline="central">内核 · 记忆治理层（src/memory/ + agent/managers/）</text>
+
+        <text x="56" y="84" class="d-l" dominant-baseline="central">写入轨 · 摘要即记忆（memory-as-summary）</text>
+        <rect x="56" y="98" width="150" height="56" rx="8" class="d-box"/>
+        <text x="131" y="118" class="d-t" text-anchor="middle" dominant-baseline="central">回合结束</text>
+        <text x="131" y="138" class="d-s" text-anchor="middle" dominant-baseline="central">turn 闭环完成</text>
+        <path d="M206 126 L240 126" class="d-arrow" marker-end="url(#ar1)"/>
+        <rect x="246" y="98" width="220" height="56" rx="8" class="d-box"/>
+        <text x="356" y="118" class="d-t" text-anchor="middle" dominant-baseline="central">RoundSummaryGenerator</text>
+        <text x="356" y="138" class="d-s" text-anchor="middle" dominant-baseline="central">三态门：指纹 / null / 沉淀</text>
+        <path d="M466 126 L500 126" class="d-arrow" marker-end="url(#ar1)"/>
+        <rect x="506" y="98" width="134" height="56" rx="8" class="d-box"/>
+        <text x="573" y="118" class="d-t" text-anchor="middle" dominant-baseline="central">记忆条目落库</text>
+        <text x="573" y="138" class="d-s" text-anchor="middle" dominant-baseline="central">accessedAt 起算</text>
+
+        <text x="56" y="182" class="d-l" dominant-baseline="central">治理轨 · 写时取代，无衰减</text>
+        <rect x="56" y="196" width="270" height="56" rx="8" class="d-box"/>
+        <text x="191" y="216" class="d-t" text-anchor="middle" dominant-baseline="central">supersede 写时取代链</text>
+        <text x="191" y="236" class="d-s" text-anchor="middle" dominant-baseline="central">supersededBy 标记 · 打标不删</text>
+        <rect x="366" y="196" width="274" height="56" rx="8" class="d-box"/>
+        <text x="503" y="216" class="d-t" text-anchor="middle" dominant-baseline="central">MemoryGovernance 门面</text>
+        <text x="503" y="236" class="d-s" text-anchor="middle" dominant-baseline="central">deduplicate / detectConflicts · LLM 判断</text>
+        <text x="56" y="270" class="d-cap" dominant-baseline="central">生产唯一自动轨 = round-summary，其治理由 supersede 承担；GOVERNANCE_SOURCES 为空 ⇒ dedup / conflict 门面当前空转（测试可注入治理源）</text>
+
+        <text x="56" y="318" class="d-l" dominant-baseline="central">召回轨 · 工具化按需，单杠杆排序</text>
+        <rect x="56" y="332" width="170" height="56" rx="8" class="d-box"/>
+        <text x="141" y="352" class="d-t" text-anchor="middle" dominant-baseline="central">search_memories</text>
+        <text x="141" y="372" class="d-s" text-anchor="middle" dominant-baseline="central">LLM 按需调用 · 不自动注入</text>
+        <path d="M226 360 L260 360" class="d-arrow" marker-end="url(#ar1)"/>
+        <rect x="266" y="332" width="190" height="56" rx="8" class="d-box"/>
+        <text x="361" y="352" class="d-t" text-anchor="middle" dominant-baseline="central">searchByKeyword 唯一入口</text>
+        <text x="361" y="372" class="d-s" text-anchor="middle" dominant-baseline="central">superseded 过滤 · 互斥 · 溯源</text>
+        <path d="M456 360 L490 360" class="d-arrow" marker-end="url(#ar1)"/>
+        <rect x="496" y="332" width="144" height="56" rx="8" class="d-box"/>
+        <text x="568" y="352" class="d-t" text-anchor="middle" dominant-baseline="central">排序 = 关键词相关性</text>
+        <text x="568" y="372" class="d-s" text-anchor="middle" dominant-baseline="central">accessedAt 仅事实揭示</text>
+
+        <text x="56" y="416" class="d-l" dominant-baseline="central">端口与边界</text>
+        <rect x="56" y="428" width="200" height="44" rx="8" class="d-box-neutral"/>
+        <text x="156" y="450" class="d-s" text-anchor="middle" dominant-baseline="central">IMemoryStorage：宿主注入持久化</text>
+        <rect x="276" y="428" width="150" height="44" rx="8" class="d-box-neutral"/>
+        <text x="351" y="450" class="d-s" text-anchor="middle" dominant-baseline="central">GCService：孤立轮回收</text>
+        <rect x="446" y="428" width="194" height="44" rx="8" class="d-box-neutral"/>
+        <text x="543" y="450" class="d-s" text-anchor="middle" dominant-baseline="central">角色包边界：人格/规则/技能不入库</text>
+      </svg>
+      <figcaption>图 1 · 记忆治理层全景。治理轨右侧门面「空转」是诚实的前瞻预留，见 §3 与 §9。</figcaption>
+    </figure>
+
+    <div class="grid-2">
+      <div class="mini-card">
+        <h4>写入轨 · 什么能进库</h4>
+        <p>每轮对话结束后异步生成轮次摘要（<span class="inline-code">fire-and-forget</span>，不阻塞主对话），过三态门后才落库。摘要是<b>唯一记忆单元</b>，原始对话独立存储、可溯源。</p>
+      </div>
+      <div class="mini-card">
+        <h4>治理轨 · 新旧关系</h4>
+        <p>写路径取代检测（确定性加权 Jaccard）打 <span class="inline-code">supersededBy</span> 标记，<b>打标不删</b>；LLM 语义去重/冲突门面是预留扩展位（治理源列表当前为空）。</p>
+      </div>
+      <div class="mini-card">
+        <h4>召回轨 · 什么能出去</h4>
+        <p>LLM 按需调用 <span class="inline-code">search_memories</span> 工具，唯一入口 <span class="inline-code">searchByKeyword</span>，superseded 前置过滤 + 轮次互斥 + 溯源揭示。</p>
+      </div>
+      <div class="mini-card">
+        <h4>端口 · 怎么存</h4>
+        <p>内核只定义 <span class="inline-code">IMemoryStorage</span> 接口（CRUD + 关键词搜索 + touch），持久化由宿主注入（VS Code 宿主 = JSON 文件）。软删进回收站，30 天后物理清理。</p>
+      </div>
+    </div>
+    <span class="src">锚点：src/memory/storageInterface.ts · src/agent/managers/roundSummaryGenerator.ts:1-4 · src/memory/types.ts:36-37</span>
+  </section>
+
+  <!-- ═══════════ §2 写入前三态门 ═══════════ -->
+  <section class="card" id="s2">
+    <h2><span class="idx">§2</span>写入前三态门</h2>
+    <p class="lede"><span class="inline-code">RoundSummaryGenerator.generate()</span> 不是直接调 LLM 写摘要。原料（输入原文 + 回复原文）先过三道关卡，各态日志可区分、杜绝静默跳过（2026-10-08 随 4.0.0「摘要写入前三态」审查 P1-5a 落地）。</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 680 520" role="img" aria-label="写入前三态门流程：原料指纹比对、LLM 判 null、正常沉淀">
+        <defs>
+          <marker id="ar2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <rect x="230" y="24" width="220" height="44" rx="8" class="d-box"/>
+        <text x="340" y="46" class="d-t" text-anchor="middle" dominant-baseline="central">原料 = 输入原文 + 回复原文</text>
+        <path d="M340 68 L340 90" class="d-arrow" marker-end="url(#ar2)"/>
+
+        <rect x="230" y="92" width="220" height="56" rx="8" class="d-lane"/>
+        <text x="340" y="112" class="d-t" text-anchor="middle" dominant-baseline="central">态① 原料指纹比对（确定性）</text>
+        <text x="340" y="132" class="d-s" text-anchor="middle" dominant-baseline="central">sha256(输入‖NUL‖回复) · 全库比对</text>
+        <path d="M450 120 L484 120" class="d-arrow" marker-end="url(#ar2)"/>
+        <text x="467" y="106" class="d-br" text-anchor="middle" dominant-baseline="central">全等</text>
+        <rect x="490" y="98" width="150" height="44" rx="8" class="d-box-neutral"/>
+        <text x="565" y="120" class="d-s" text-anchor="middle" dominant-baseline="central">跳过 · 不调 LLM</text>
+        <path d="M340 148 L340 170" class="d-arrow" marker-end="url(#ar2)"/>
+        <text x="358" y="159" class="d-br" dominant-baseline="central">不等</text>
+
+        <rect x="230" y="172" width="220" height="44" rx="8" class="d-box"/>
+        <text x="340" y="194" class="d-t" text-anchor="middle" dominant-baseline="central">LLM 生成轮次摘要（温度 0.3）</text>
+        <path d="M340 216 L340 238" class="d-arrow" marker-end="url(#ar2)"/>
+
+        <rect x="230" y="240" width="220" height="56" rx="8" class="d-lane"/>
+        <text x="340" y="260" class="d-t" text-anchor="middle" dominant-baseline="central">态② summary = null？（LLM 判断权）</text>
+        <text x="340" y="280" class="d-s" text-anchor="middle" dominant-baseline="central">纯工具/后台轮 → 本轮无值得沉淀</text>
+        <path d="M450 268 L484 268" class="d-arrow" marker-end="url(#ar2)"/>
+        <text x="467" y="254" class="d-br" text-anchor="middle" dominant-baseline="central">null</text>
+        <rect x="490" y="246" width="150" height="44" rx="8" class="d-box-neutral"/>
+        <text x="565" y="268" class="d-s" text-anchor="middle" dominant-baseline="central">不写入（LLM 已调用）</text>
+        <path d="M340 296 L340 318" class="d-arrow" marker-end="url(#ar2)"/>
+        <text x="358" y="307" class="d-br" dominant-baseline="central">非 null</text>
+
+        <rect x="230" y="320" width="220" height="56" rx="8" class="d-box"/>
+        <text x="340" y="340" class="d-t" text-anchor="middle" dominant-baseline="central">态③ 正常沉淀</text>
+        <text x="340" y="360" class="d-s" text-anchor="middle" dominant-baseline="central">upsert + memoryAdded 事件 + 取代检测</text>
+        <path d="M340 376 L340 398" class="d-arrow" marker-end="url(#ar2)"/>
+        <rect x="230" y="400" width="220" height="44" rx="8" class="d-box"/>
+        <text x="340" y="422" class="d-t" text-anchor="middle" dominant-baseline="central">落库 · accessedAt 计时起算</text>
+
+        <text x="40" y="478" class="d-cap" dominant-baseline="central">指纹取原文全文（NUL 分隔防拼接歧义）；存量无指纹条目不参与匹配，只拦新增；近似重复归下游取代检测（§3）</text>
+        <text x="40" y="498" class="d-cap" dominant-baseline="central">喂给 LLM 的原料是截断值（输入 500 / 回复 2000 字符），与指纹的全丈口径刻意不同</text>
+      </svg>
+      <figcaption>图 2 · 写入前三态门。只有态①全等路径零 LLM 调用；态②的 null 是 LLM 调用之后的判断，代价是「零写入」而非「零调用」。</figcaption>
+    </figure>
+
+    <h3>三态各自的敌人</h3>
+    <table>
+      <thead>
+        <tr><th style="width:64px">关卡</th><th style="width:110px">判据</th><th>治什么 / 怎么治</th><th style="width:150px">成本</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>态①</b></td>
+          <td>原料指纹全等</td>
+          <td>治<b>铁重复</b>。<span class="inline-code">sha256(输入 + NUL + 回复)</span>，取原文全文、字符串全等才跳过；截断面外不同、回复略异一律放行——判据取严，宁可放行一条轻微重复，不误杀。全库比对（不限 session）：精确重复无跨会话例外。</td>
+          <td>确定性，<b>零 LLM 调用</b></td>
+        </tr>
+        <tr>
+          <td><b>态②</b></td>
+          <td>summary = null</td>
+          <td>治<b>流水账噪音</b>。2026-10-09 判断权归还：摘要契约允许 null，「本轮无值得沉淀的信息」是合法结论。此前强制非空，纯工具/后台轮被挤出摘要，是记忆库噪音根源（P1-5）。</td>
+          <td>LLM 调用后判断，<b>零写入</b></td>
+        </tr>
+        <tr>
+          <td><b>态③</b></td>
+          <td>正常沉淀</td>
+          <td>摘要类型（preference/fact/decision/intent/general）校验后落库，内容截断 500 字；触发 <span class="inline-code">memoryAdded</span> 事件（宿主「已沉淀」提示）；随后跑写路径取代检测（§3）。</td>
+          <td>1 次 LLM + 1 次 upsert</td>
+        </tr>
+      </tbody>
+    </table>
+    <span class="src">锚点：roundSummaryGenerator.ts:151-153（三态 docstring）· :165-172（态①）· :183-199（态②）· :206-229（态③）· :45-64（指纹）· :73-88（JSON 契约）· :28-43（常量）</span>
+
+    <div class="callout ok">
+      <span class="tag">设计决策 · 两个「原料」口径刻意不同</span>
+      <p style="margin:0">指纹取<b>原文全文</b>（保证判据严格），喂给 LLM 的是<b>截断值</b>（输入 500 / 回复 2000 字符，控成本）。摘要生成器只吃这两个原料——上下文差异最终体现为回复差异，故原料全等 ⇒ 摘要无增量。另：摘要生成走 backgroundProvider 优先（可用更便宜的模型做沉淀），fire-and-forget 异步，异常只 warn 不阻塞主对话。</p>
+    </div>
+  </section>
+
+  <!-- ═══════════ §3 取代检测 ═══════════ -->
+  <section class="card" id="s3">
+    <h2><span class="idx">§3</span>写路径取代检测：治理在写入时定，不留给检索时猜</h2>
+    <p class="lede">新摘要落库后立即对<b>同 session 最近 20 条</b>未取代摘要跑取代判定——「记忆冲突消解从读时猜移到写时定」。这是生产链路上唯一的记忆冲突治理，且<b>全程无 LLM</b>。</p>
+
+    <table>
+      <thead>
+        <tr><th style="width:130px">要素</th><th>定案</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>判定算法</td><td><b>确定性启发式</b>：新旧摘要提取增强关键词（动作词/实体词加权），加权 Jaccard 重叠率 <span class="inline-code">≥ 0.5</span> 判取代。源码明载「确定性启发式代替额外 LLM 判断（零成本可测）」。</td></tr>
+        <tr><td>候选窗口</td><td>仅<b>同 session</b>、未被取代、按 createdAt 倒序取最近 <b>20</b> 条。取代语义 =「本 session 内新决策替换旧同主题决策」；跨 session 长期历史不参与（无跨 session 覆盖语义），候选需全量读后过滤，窗口收敛的是重叠计算面。</td></tr>
+        <tr><td>取代动作</td><td>给旧摘要打 <span class="inline-code">supersededBy = 新摘要 id</span> 标记，<b>非删除</b>——本条保留，供 traceSummary 回溯原文。</td></tr>
+        <tr><td>已知取舍</td><td>不按 summaryType 做前置过滤：type 是纯语义标签，「同一主题不同类型是否算取代」需语义定夺 ⇒ 当前旁路（可能误取代），升级条件已写明（实测出现跨类型误取代困扰时加「type 相同」前置过滤，不预埋）。</td></tr>
+        <tr><td>与态①的分界</td><td>态① 指纹全等 = <b>全库</b>铁重复拦截（无跨会话例外）；取代检测 = <b>同 session</b> 近似主题覆盖。两套判据，勿混。</td></tr>
+      </tbody>
+    </table>
+    <span class="src">锚点：roundSummaryGenerator.ts:33-41（阈值与窗口）· :251-272（候选构造）· :274-313（取代检测）· :238-240（与指纹的分界）</span>
+
+    <div class="callout warn">
+      <span class="tag">诚实登记 · 门面空转</span>
+      <p style="margin:0"><span class="inline-code">MemoryGovernance.deduplicate() / detectConflicts()</span>（LLM 语义去重/冲突检测）在生产链路<b>空转</b>：<span class="inline-code">GOVERNANCE_SOURCES</span> 当前为空数组——源码注释明载「唯一自动轨 = round-summary，其治理由 supersede 承担，不入本数组；空列表时 dedup/冲突检测空转（测试可显式注入治理源）」。即：<b>生产的记忆治理 100% 走在确定性链上</b>，LLM 门面是给未来第二写入源预留的扩展位。这是「能力已建、生产未用」的诚实姿态，也是 §9 张力之一。</p>
+    </div>
+  </section>
+
+  <!-- ═══════════ §4 召回治理 ═══════════ -->
+  <section class="card" id="s4">
+    <h2><span class="idx">§4</span>召回治理：唯一入口 + 三道处理 + 工具层 touch</h2>
+    <p class="lede">召回是<b>工具</b>不是注入：LLM 必须自己决定调 <span class="inline-code">search_memories</span>，内核不把记忆自动塞进上下文窗口（自动注入已退役——顺带根除了「查询→加权→更易被查询」的正反馈）。4.0.0 把入口收敛为 <span class="inline-code">searchByKeyword()</span> 唯一一个（同步 <span class="inline-code">search()</span> 移除，含其 5 条测试）。</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 680 440" role="img" aria-label="召回轨治理：工具化按需调用、唯一入口三道处理、touch 旁路">
+        <defs>
+          <marker id="ar3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <rect x="40" y="40" width="160" height="56" rx="8" class="d-box"/>
+        <text x="120" y="60" class="d-t" text-anchor="middle" dominant-baseline="central">LLM 按需决定</text>
+        <text x="120" y="80" class="d-s" text-anchor="middle" dominant-baseline="central">不自动注入窗口</text>
+        <path d="M200 68 L218 68" class="d-arrow" marker-end="url(#ar3)"/>
+        <rect x="220" y="40" width="160" height="56" rx="8" class="d-box"/>
+        <text x="300" y="60" class="d-t" text-anchor="middle" dominant-baseline="central">search_memories 工具</text>
+        <text x="300" y="80" class="d-s" text-anchor="middle" dominant-baseline="central">near 模式 · 5s 超时降级</text>
+        <path d="M380 68 L398 68" class="d-arrow" marker-end="url(#ar3)"/>
+        <rect x="400" y="40" width="240" height="56" rx="8" class="d-box"/>
+        <text x="520" y="60" class="d-t" text-anchor="middle" dominant-baseline="central">searchByKeyword 唯一入口</text>
+        <text x="520" y="80" class="d-s" text-anchor="middle" dominant-baseline="central">空 query 抛错 · 单关键词通道</text>
+
+        <path d="M520 96 L520 122" class="d-arrow" marker-end="url(#ar3)"/>
+        <rect x="40" y="124" width="600" height="104" rx="12" class="d-lane"/>
+        <text x="56" y="144" class="d-l" dominant-baseline="central">入口三道处理</text>
+        <rect x="60" y="158" width="180" height="56" rx="8" class="d-box"/>
+        <text x="150" y="178" class="d-t" text-anchor="middle" dominant-baseline="central">superseded 过滤</text>
+        <text x="150" y="198" class="d-s" text-anchor="middle" dominant-baseline="central">截断前过滤，不占 top-N 槽</text>
+        <rect x="260" y="158" width="160" height="56" rx="8" class="d-box"/>
+        <text x="340" y="178" class="d-t" text-anchor="middle" dominant-baseline="central">excludeRoundIds 互斥</text>
+        <text x="340" y="198" class="d-s" text-anchor="middle" dominant-baseline="central">已入正文的轮次 · 不补位</text>
+        <rect x="440" y="158" width="180" height="56" rx="8" class="d-box"/>
+        <text x="530" y="178" class="d-t" text-anchor="middle" dominant-baseline="central">溯源揭示</text>
+        <text x="530" y="198" class="d-s" text-anchor="middle" dominant-baseline="central">sessionId + roundId 直通</text>
+
+        <path d="M230 228 L230 250" class="d-arrow" marker-end="url(#ar3)"/>
+        <rect x="120" y="252" width="220" height="56" rx="8" class="d-box"/>
+        <text x="230" y="272" class="d-t" text-anchor="middle" dominant-baseline="central">排序 = 关键词相关性</text>
+        <text x="230" y="292" class="d-s" text-anchor="middle" dominant-baseline="central">accessedAt 为事实字段，非排序键</text>
+        <path d="M340 280 L358 280" class="d-arrow" marker-end="url(#ar3)"/>
+        <rect x="360" y="252" width="280" height="56" rx="8" class="d-box"/>
+        <text x="500" y="272" class="d-t" text-anchor="middle" dominant-baseline="central">优先级判断归 LLM</text>
+        <text x="500" y="292" class="d-s" text-anchor="middle" dominant-baseline="central">「最近使用优先」由模型结合任务定夺</text>
+
+        <path d="M80 252 L80 330 L100 330" class="d-arrow" marker-end="url(#ar3)" stroke-dasharray="4 3"/>
+        <rect x="100" y="308" width="230" height="44" rx="8" class="d-box-neutral"/>
+        <text x="215" y="330" class="d-s" text-anchor="middle" dominant-baseline="central">工具层命中即 touch（fire-and-forget）</text>
+
+        <text x="40" y="384" class="d-l" dominant-baseline="central">纪律（§5 详述）</text>
+        <rect x="40" y="396" width="190" height="36" rx="8" class="d-box-neutral"/>
+        <text x="135" y="414" class="d-s" text-anchor="middle" dominant-baseline="central">只 touch · 无 score 写位</text>
+        <rect x="250" y="396" width="190" height="36" rx="8" class="d-box-neutral"/>
+        <text x="345" y="414" class="d-s" text-anchor="middle" dominant-baseline="central">无重要度加权</text>
+        <rect x="460" y="396" width="180" height="36" rx="8" class="d-box-neutral"/>
+        <text x="550" y="414" class="d-s" text-anchor="middle" dominant-baseline="central">无衰减 · 无自然遗忘</text>
+      </svg>
+      <figcaption>图 3 · 召回轨。touch 旁路（虚线）发生在工具处理器层，不在检索入口内——API 直调 searchByKeyword 不触发 touch。</figcaption>
+    </figure>
+
+    <h3>三道处理的精确语义</h3>
+    <table>
+      <thead>
+        <tr><th style="width:150px">处理</th><th>语义</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>superseded 过滤</td>
+          <td>被 <span class="inline-code">supersededBy</span> 取代的摘要「不作为当前事实返回」，<b>在截断前过滤</b>——避免占据 top-N 槽位挤掉有效命中。条目仍保留，traceSummary 可精确回溯。</td>
+        </tr>
+        <tr>
+          <td>excludeRoundIds 互斥</td>
+          <td>排除「正文或摘要已在眼前」的轮次——由调用方按 <span class="inline-code">loop.getExclusionRoundIds()</span> 精确派生（= 视图内 ∪ 被替换 ∪ 在途），天然不含当轮。<b>被排除者不补位</b>：工具语义是「返回更聚焦的结果」，不强制凑满 limit。</td>
+        </tr>
+        <tr>
+          <td>溯源揭示</td>
+          <td>round-summary 命中项显式附 <span class="inline-code">sessionId + roundId</span>（与 trace_summary 参数直通，LLM 零解析直用）——不隐式编码进 name 字段，不从 metadata 读（metadata 不在存储契约保证范围内）。</td>
+        </tr>
+      </tbody>
+    </table>
+    <span class="src">锚点：memoryInspector.ts:186-190（入口收敛）· :208-239（三道处理）· builtinToolHandlers.ts:1126-1165（touchHits）· keywordsTouch.ts:26-40（touchScores）</span>
+
+    <div class="callout note">
+      <span class="tag">纯关键词单通道的判据</span>
+      <p style="margin:0">无语义（向量）通道的理由写在源码里：① embedding 写端缺失导致语义通道<b>在生产从未生效</b>，属「宣称能力零消费」的僵尸；② 主流 agent（Anthropic Memory tool / Claude Code / Librarian Pattern）已实证「LLM 消费者 + 小语料」下纯关键词足用——LLM 会自主改述重试（工具描述已提示）。向量方案记入探索期候选，等真实「关键词搜不到」复现再按缓存重算形态补回。</p>
+    </div>
+  </section>
+
+  <!-- ═══════════ §5 排序哲学 ═══════════ -->
+  <section class="card" id="s5">
+    <h2><span class="idx">§5</span>排序哲学：单杠杆、无暗排序、无衰减</h2>
+    <p class="lede">治理层的「宪法条文」在 <span class="inline-code">src/memory/governance.ts</span> 头部，原文照录：</p>
+    <pre>排序单归语义分：使用轨迹唯一事实源为 accessedAt，无 score 写位/排序/clamp 位。
+
+治理模型：supersede（写时取代）；无衰减——
+摘要是事实记录无"过时"语义，记忆有效性由 superseded 写时取代判定，
+低频记忆经相关性排序自然后移退出召回面，无"沉底/自然遗忘归档"语义。</pre>
+    <span class="src">锚点：src/memory/governance.ts:1-8</span>
+
+    <h3>翻译成设计语言</h3>
+    <table>
+      <thead>
+        <tr><th style="width:150px">条文</th><th>落地形态</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>单杠杆</td>
+          <td>使用轨迹只有一根杠杆：<span class="inline-code">accessedAt</span>。命中即 touch（工具层 fire-and-forget，storage.touch 是唯一写位），<b>只 touch 不加权</b>——无 +score、无 clamp、无强化学习式的自反馈。score/boost 机制已整体退役。</td>
+        </tr>
+        <tr>
+          <td>accessedAt 是事实字段，不是排序键</td>
+          <td>检索入口<b>不引入 accessedAt 时间主序</b>（recency 定案 §5.2）：FTS 按相关性返回，accessedAt 只作为事实字段揭示给 LLM——「最近使用优先」由模型结合任务定夺，内核不替模型决定。</td>
+        </tr>
+        <tr>
+          <td>无衰减</td>
+          <td>摘要是<b>事实记录</b>，没有「过时」语义。记忆失效只有一条路：被新摘要 supersede 取代。低频记忆不删不归档，靠相关性排序自然后移退出召回面——没有「沉底」，也没有「自然遗忘」。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout ok">
+      <span class="tag">设计决策 · 可解释性优先</span>
+      <p style="margin:0">拒绝任何暗排序（score/boost）的代价是召回率小数点，换来的是<b>可解释性</b>：每条记忆为什么在结果里，因为关键词相关；为什么靠前，因为最近被想起——两个理由都经得起追问。配合溯源揭示（sessionId + roundId），LLM 和用户都能把结论回查到原始对话。</p>
+    </div>
+  </section>
+
+  <!-- ═══════════ §6 数据模型 ═══════════ -->
+  <section class="card" id="s6">
+    <h2><span class="idx">§6</span>数据模型：Memory 基元</h2>
+    <p class="lede">记忆即轮次摘要，source 是开放字符串（溯源标签，非封闭枚举）。所有治理字段都是<b>顶层持久化字段</b>——因为 metadata 不在存储契约保证范围内，而去重/取代/互斥须跨会话可靠生效。</p>
+    <table>
+      <thead>
+        <tr><th style="width:170px">字段</th><th style="width:90px">治理角色</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>id / content / source / name</code></td><td>基元</td><td>id 格式 <code>source:name</code>；round-summary 规范 id = <code>round-summary:{sessionName}:{roundId}</code>（单一构造函数，禁散落字面量）。</td></tr>
+        <tr><td><code>createdAt / accessedAt</code></td><td>时间双轨</td><td>createdAt 落库时起算；accessedAt 创建时同值，工具命中即刷新（唯一使用轨迹事实源）。</td></tr>
+        <tr><td><code>supersededBy</code></td><td>冲突治理</td><td>非 undefined = 已被更新的摘要覆盖；值为取代者的 id，本条保留供回溯。召回时确定性过滤。</td></tr>
+        <tr><td><code>materialFingerprint</code></td><td>精确去重</td><td>sha256(输入‖NUL‖回复)，生成时随条目落盘；存量无此字段（不参与匹配，只管新增）。</td></tr>
+        <tr><td><code>summaryType / sessionName / roundId</code></td><td>分类与溯源</td><td>preference/fact/decision/intent/general（LLM 判，非法值兜底 general）；溯源三件套供分轨召回与 trace 回溯。</td></tr>
+        <tr><td><code>deletedAt</code></td><td>软删除</td><td>回收站机制：软删后保留 30 天，<code>purgeExpired</code> 物理清理；恢复清标记。</td></tr>
+        <tr><td><code>isModified</code></td><td>人工修改标记</td><td>摘要被人工改过（可能与原始对话不一致）时置位。</td></tr>
+        <tr><td><code>metadata</code></td><td>透传（不进契约）</td><td>内核无生产写入方；不承载溯源/分类/治理字段——它们必须跨会话可靠读取。</td></tr>
+      </tbody>
+    </table>
+    <span class="src">锚点：src/memory/types.ts:23-69（字段）· :235-242（规范 id）· :94-201（parseMemory 白名单：旧档残留 score 一律剥离，宿主读旧档即完成数据层清洗，免迁移脚本）</span>
+
+    <div class="callout note">
+      <span class="tag">连带治理</span>
+      <p style="margin:0">① <b>孤立轮回收</b>：GCService 扫孤立问答闭环（宿主命令「立即执行孤儿回收」直达）；② <b>联动软删</b>：Round 被物理删除（引用归 0）时，其摘要清空溯源字段后软删进回收站（恢复后即为「无需溯源的独立记忆」）——治理页单条软删则不清溯源（误删恢复保留关联）；③ <b>残留 source 标签</b>（persona/rule/skill/work-projection）不写入记忆库，仅用于 typo 检测与存量识别，且不在治理源列表中。</p>
+    </div>
+  </section>
+
+  <!-- ═══════════ §7 第一性原理 ═══════════ -->
+  <section class="card" id="s7">
+    <h2><span class="idx">§7</span>五条第一性原理</h2>
+    <ol class="principles">
+      <li><b>记忆是结论，不是原料。</b>唯一记忆单元是轮次摘要；原始对话独立存储、经 sessionName + roundId 溯源可回查。不把历史原样堆进上下文窗口。</li>
+      <li><b>治理在写入时解决，不留给检索时。</b>三态门（指纹/null/沉淀）+ 写路径取代检测，把重复、噪音、冲突消灭在入库前；检索期只做确定性过滤（superseded/互斥），不猜。</li>
+      <li><b>拒绝暗排序。</b>accessedAt 是唯一使用轨迹事实源，无 score 写位、无重要度加权；优先级判断归 LLM（揭示事实，不替模型决定）。</li>
+      <li><b>只拦新增，不伤存量。</b>指纹匹配对无指纹旧条目零动作；宁可漏新不妄改旧；旧档经 parseMemory 白名单静默清洗（剥 score），不写迁移脚本。</li>
+      <li><b>人格与事实分离。</b>角色包（人格/规则/技能）与记忆库是两条永不相交的轨道——换角色不丢记忆；设定记忆唯一归角色包，Bootstrap 层已空置。</li>
+    </ol>
+  </section>
+
+  <!-- ═══════════ §8 排雷对质记录 ═══════════ -->
+  <section class="card" id="s8">
+    <h2><span class="idx">§8</span>排雷对质记录：初版结论 vs 源码</h2>
+    <p class="lede">本文初版结论（2026-10-12 会话口头 + 图示版本）成文前逐条回源对质，<b>4 处被源码推翻并订正</b>。登记于此，防文档腐化，也示范「文档是下游」的执行方式。</p>
+    <table>
+      <thead>
+        <tr><th style="width:36px">#</th><th style="width:200px">初版结论（错）</th><th>源码事实（订正后）</th><th style="width:130px">锚点</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>三态顺序：① null 判断 → ② 指纹比对 → ③ 近似重复</td>
+          <td><b>① 原料指纹全等 → ② LLM 判 null → ③ 正常沉淀</b>（supersedeSimilar 是态③ 内的写路径步骤，非独立态）。docstring 明载顺序。</td>
+          <td>roundSummaryGenerator.ts:151-153</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>null 分支「零 LLM 调用、零写入」</td>
+          <td>null 是 LLM 调用<b>之后</b>的判断（<code>result.summary === null</code>）——代价是<b>零写入</b>。「不调 LLM」仅属于态①指纹全等路径。</td>
+          <td>roundSummaryGenerator.ts:182-194</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>supersedeSimilar 是「LLM 阈值判定」</td>
+          <td><b>纯确定性</b>：加权 Jaccard ≥ 0.5。源码明载「确定性启发式代替额外 LLM 判断（零成本可测）」。取代检测全链路无 LLM；LLM 只出现在摘要生成本身。</td>
+          <td>roundSummaryGenerator.ts:283, :300-301</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>「排序 = 相关性 + accessedAt」「排序只有一根杠杆 accessedAt」</td>
+          <td>检索入口<b>不引入 accessedAt 时间主序</b>（§5.2 定案）：排序 = 关键词相关性（FTS）；accessedAt 仅作为<b>事实字段揭示</b>给 LLM 定「最近使用优先」。touch 发生在工具层，不在检索入口内。</td>
+          <td>memoryInspector.ts:237-238 · builtinToolHandlers.ts:1126-1129</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>被源码坐实（保留）的结论</h3>
+    <p style="color:var(--text-muted)">NUL 分隔符防拼接歧义（:45-49）· 指纹取原文全文、判据取严（:52-56）· 存量无指纹不参与匹配、只拦新增（:167,:248）· 指纹全库比对、取代仅同 session 近 20 条（:238,:254,:271）· 打标不删可回溯（:302-303）· accessedAt 落库时起算（:217）· GOVERNANCE_SOURCES 空 ⇒ 门面空转（governance.ts:15-19 · dedupManager.ts:85-93）· search() 4.0.0 已移除、唯一入口（memoryInspector.ts:186-190）· search_memories 工具化不自动注入（README · builtinToolHandlers.ts:1128）· 角色包边界（types.ts:204-211）· 回收站 30 天 + GCService（types.ts:36-37 · memoryInspector.ts:295-326）。</p>
+
+    <div class="callout danger">
+      <span class="tag">教训</span>
+      <p style="margin:0">4 处错误全部来自同一个动作：<b>把 CHANGELOG/注释的叙述重新排版时，丢失了时序与成本限定词</b>。「写入前三态」在 docstring 里有确定顺序，转述时凭语感重排；「不调 LLM」在原文里只属于态①，转述时泛化到了 null。文档腐化不一定是结论过期，更多是<b>转述即失真</b>——所以本文所有断言带锚点，且把对质表本身写进文档。</p>
+    </div>
+  </section>
+
+  <!-- ═══════════ §9 对抗式观察 ═══════════ -->
+  <section class="card" id="s9">
+    <h2><span class="idx">§9</span>对抗式观察：三处张力</h2>
+    <ul class="tensions">
+      <li><b>单杠杆是单瓶颈。</b>库小无差；库大后「最近被命中」会经 LLM 的「最近使用优先」判断间接垄断召回面——accessedAt 既是唯一事实源，也是唯一失效模式，没有第二杠杆兜底。无衰减哲学在此付出代价。</li>
+      <li><b>确定性链很强，但中间地带全交给 LLM 的一次判断。</b>指纹只防铁重复；近似取代是确定性算法（稳）；但「本轮值不值得记」（态② null）是 LLM 一次性判断——误杀无补救链（原料还在、可溯源，但没有重试机制）。摘要质量 = 记忆质量，单点风险在 LLM 状态。</li>
+      <li><b>门面空转是双刃。</b>GOVERNANCE_SOURCES 为空让生产链路干净（无 LLM 误判风险），但「冲突检测」停在能力层——一旦未来真有第二写入源（如宿主主动记忆、MCP 外部 source），这套空转门面是即用资产还是腐烂代码，取决于有没有人接着建。建议：要么明确「多 source 治理」的启用路线图，要么在文档明标「预留位，勿当已交付能力引用」。</li>
+    </ul>
+    <p style="color:var(--text-muted);margin-bottom:0">另注：取代检测不按 summaryType 前置过滤是<b>已知取舍</b>（跨类型可能误取代），升级条件已写在源码注释里——属于「有退出条件的取舍」，不计入张力。</p>
+  </section>
+
+  <!-- ═══════════ §10 源码锚点 ═══════════ -->
+  <section class="card" id="s10">
+    <h2><span class="idx">§10</span>源码锚点索引</h2>
+    <table>
+      <thead>
+        <tr><th style="width:300px">文件</th><th>职责</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>src/agent/managers/roundSummaryGenerator.ts</code></td><td>写入三态门 + 原料指纹 + 写路径取代检测（:1-313）</td></tr>
+        <tr><td><code>src/agent/managers/memoryInspector.ts</code></td><td>记忆读写入口 + searchByKeyword 唯一召回入口 + 快照 + 软删/恢复/清理（:1-327）</td></tr>
+        <tr><td><code>src/agent/builtinToolHandlers.ts</code></td><td>search_memories 工具层：near 模式、5s 超时降级、命中 touch、memoryRecalled 事件（:1120-1165）</td></tr>
+        <tr><td><code>src/memory/governance.ts</code></td><td>治理常量与哲学原文（排序单归语义分 / 无衰减 / GOVERNANCE_SOURCES）</td></tr>
+        <tr><td><code>src/memory/types.ts</code></td><td>Memory 基元 + 规范 id 构造 + parseMemory 白名单 + source 标签约定</td></tr>
+        <tr><td><code>src/memory/keywordsTouch.ts</code></td><td>分词 SSOT + touchScores（命中只刷 accessedAt，唯一写位）</td></tr>
+        <tr><td><code>src/agent/managers/memoryGovernance.ts · dedupManager.ts</code></td><td>LLM 语义治理门面（生产空转，测试可注入治理源）</td></tr>
+      </tbody>
+    </table>
+    <div class="callout note">
+      <span class="tag">导读边界</span>
+      <p style="margin:0">本文只画治理层骨架。更深的问题在真源里：召回设计的完整论证（memory-tool-recall-design.md 47KB）、时效定案（memory-recall-recency-design.md）、A/B benchmark（memory-tool-recall-ab-benchmark.md）、角色边界纪律（memory-role-pack-boundary.md）。本文与源码冲突时，<b>以源码为准</b>；本文与 markdown 真源冲突时，以真源为准。</p>
+    </div>
+  </section>
+
+  <div class="footer">Memora 内核记忆治理层设计导读 · 2026-10-12 · 本文为导读非 SSOT · 断言均附源码锚点 · 与源码冲突以源码为准</div>
+</div>
+</body>
+</html>
