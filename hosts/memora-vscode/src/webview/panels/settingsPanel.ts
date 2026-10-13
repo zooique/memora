@@ -69,19 +69,38 @@ const MEMORY_SEARCH_LIMIT = 20;
  * 避免 webview 与 host 各写一份规则而漂移；解析策略合法性与名称唯一性都在此裁决。
  * 返回错误原因；undefined = 全部合法。
  */
-function validateCustomEngines(
+export function validateCustomEngines(
   engines: readonly CustomSearchEngineConfig[] | undefined,
 ): string | undefined {
   if (!Array.isArray(engines)) return '自定义搜索引擎清单格式无效';
   const seen = new Set<string>();
   for (const e of engines) {
-    if (!e?.name) return '配置无效：需填写引擎名称';
+    // 口径统一按 trim 后裁决：不依赖 webview 已 trim（手工改 settings.json 可直接绕过 UI）
+    const name = e?.name?.trim();
+    if (!name) return '配置无效：需填写引擎名称';
+    // 自定义名不得与内置名重名：下拉选项经 Set 去重后同名只剩一项，
+    // 而 resolveSearchEndpoints 先查自定义 ⇒ 会静默遮蔽内置引擎，用户无从分辨
+    if ((PRESET_SEARCH_ENGINES as readonly string[]).includes(name)) {
+      return `配置无效：名称「${name}」与内置引擎重名，请更换`;
+    }
     if (!e.urlTemplate?.includes('{query}')) return '配置无效：URL 模板需含 {query} 占位符';
+    if (!isAllowedUrlScheme(e.urlTemplate)) {
+      return '配置无效：URL 模板须以 http:// 或 https:// 开头';
+    }
     if (!HOST_PARSE_STRATEGIES.includes(e.parseStrategy)) return '配置无效：解析策略不是宿主预置项';
-    if (seen.has(e.name)) return `名称「${e.name}」重复：引擎名在同一清单内必须唯一`;
-    seen.add(e.name);
+    if (seen.has(name)) return `配置无效：名称「${name}」重复，引擎名必须唯一`;
+    seen.add(name);
   }
   return undefined;
+}
+
+/**
+ * 协议白名单：只放行 http(s)。
+ * 挡掉 file:// / javascript: / data: 等 ⇒ 避免「粘贴一段别人给的配置」就让
+ * 宿主（extension）进程代为发起非预期请求，与项目既有的安全审计口径一致。
+ */
+function isAllowedUrlScheme(tpl: string): boolean {
+  return /^https?:\/\//i.test(tpl);
 }
 
 /** 设置视图提供者（合并角色 / 大模型 / 记忆三个子视图） */
