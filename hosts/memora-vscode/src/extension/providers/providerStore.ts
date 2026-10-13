@@ -19,15 +19,27 @@ import { createProviderFromConfig } from '@zooique/memora';
 import type { LlmProviderConfig } from '../../shared/protocol.js';
 
 /** configuration 段名（memora.providers） */
-const CFG_SECTION = 'memora';
+export const CFG_SECTION = 'memora';
 /** providers 数组配置键 */
-const CFG_PROVIDERS = 'providers';
+export const CFG_PROVIDERS = 'providers';
 /** activeProvider 配置键 */
 const CFG_ACTIVE = 'activeProvider';
 /** backgroundProvider 配置键（后台模型通道：空 = 与实时对话相同） */
 const CFG_BACKGROUND = 'backgroundProvider';
 /** SecretStorage apiKey key 前缀 */
 const SECRET_PREFIX = 'memora.provider';
+
+/**
+ * Provider apiKey 的 SecretStorage key（**单一构造点**，SSOT）
+ *
+ * 由「初始化」清空（userDataReset）与 ProviderStore 读写共用：清空侧必须按同一
+ * 构造式枚举待删 secret，禁拼第二份字面量（改了前缀一处同步、两处必漂移）。
+ *
+ * @param name Provider 别名
+ */
+export function providerSecretKey(name: string): string {
+  return `${SECRET_PREFIX}.${name}.apiKey`;
+}
 
 /** 脱敏占位符（apiKey 为空或已配置时展示） */
 const MASK = '••••••••';
@@ -92,11 +104,6 @@ export class ProviderStore {
       .update(CFG_PROVIDERS, stripped, vscode.ConfigurationTarget.Global);
   }
 
-  /** SecretStorage 的 apiKey key */
-  private secretKey(name: string): string {
-    return `${SECRET_PREFIX}.${name}.apiKey`;
-  }
-
   /**
    * 读取单个 Provider 的真实 apiKey（SecretStorage）
    *
@@ -104,7 +111,7 @@ export class ProviderStore {
    * @returns 真实 apiKey（未配置时为空字符串）
    */
   private async readApiKey(name: string): Promise<string> {
-    return (await this.secrets.get(this.secretKey(name))) ?? '';
+    return (await this.secrets.get(providerSecretKey(name))) ?? '';
   }
 
   /**
@@ -245,7 +252,7 @@ export class ProviderStore {
 
     // 写 apiKey：编辑且留空 → 保留原值（不覆盖）；否则写入新值
     if (!(isEditing && !trimmed.apiKey.trim())) {
-      await this.secrets.store(this.secretKey(trimmed.name), trimmed.apiKey.trim());
+      await this.secrets.store(providerSecretKey(trimmed.name), trimmed.apiKey.trim());
     }
     return { ok: true };
   }
@@ -262,7 +269,7 @@ export class ProviderStore {
     }
     const providers = this.readConfig().filter((p) => p.name !== name);
     await this.writeConfig(providers);
-    await this.secrets.delete(this.secretKey(name));
+    await this.secrets.delete(providerSecretKey(name));
     // 删除的若是后台模型 Provider，清除后台通道引用（避免悬空指向不存在的 name）
     if (name === this.getBackgroundName()) {
       await this.setBackground('');

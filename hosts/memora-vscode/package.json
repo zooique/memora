@@ -46,6 +46,11 @@
         "icon": "$(gear)"
       },
       {
+        "command": "memora.openRoles",
+        "title": "Memora: 管理角色包",
+        "icon": "$(person)"
+      },
+      {
         "command": "memora.memoryStats",
         "title": "Memora: 查看记忆统计"
       },
@@ -57,6 +62,10 @@
         "command": "memora.runGc",
         "title": "Memora: 立即执行孤儿回收",
         "icon": "$(trash)"
+      },
+      {
+        "command": "memora.resetUserData",
+        "title": "Memora: 恢复初始状态（清空用户级数据）"
       },
       {
         "command": "memora.demo",

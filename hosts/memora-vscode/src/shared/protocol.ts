@@ -131,6 +131,15 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'open_config' }
   /**
+   * 打开角色包管理视图（对话面板「当前角色」徽章点击触发）
+   *
+   * 由输入区下方状态行的当前角色徽章点击触发：host 打开设置视图并切到「角色」选项卡
+   * （导航链路与 open_config → memora.configureModel 同构：先记待切选项卡再 focus）。
+   * ⚠️ 本消息**只负责导航**：切换动作仍由角色视图「设为当前」→ roles_set_active →
+   * agent.switchRolePack 单路径发起，对话侧不新增切换执行逻辑（零并行推送路径）。
+   */
+  | { type: 'open_roles' }
+  /**
    * 新建会话（标题条「＋」按钮触发）
    *
    * 由标题条新建按钮触发，host 调 newSessionFromCommand 生成唯一会话名并切入空会话；
@@ -456,6 +465,17 @@ export type WebviewToExtensionMessage =
    * 装配期一次性注入，修改需重载窗口（或重建会话）后生效。
    */
   | { type: 'search_engine_set'; engine: SearchEngineSetting }
+  /**
+   * 「恢复初始状态」请求（设置面板「安全」tab 的初始化按钮）
+   *
+   * 一键清空插件宿主的全部**用户级**存储（globalState 用户键 / globalStorage 用户
+   * 技能与角色包目录 / 用户级 settings / SecretStorage 里的 API Key），恢复首次
+   * 使用状态。**项目级数据不碰**：.memora/ 的记忆与会话、工作区 settings.json 原样
+   * 保留（记忆与会话是项目的一部分）。
+   * host 侧形态：modal 二次确认（列明删/留）→ 清理 → 自动 reload window。
+   * 与命令面板入口 memora.resetUserData 共用同一处理函数（单一路径）。
+   */
+  | { type: 'reset_user_data' }
   // ─── 文件改动（DIFF-1 · 对话区常驻条）───
   /**
    * 全部确认文件改动（对话区常驻条「全部确认」按钮触发）
@@ -1111,6 +1131,16 @@ export type ExtensionToWebviewMessage =
    * 由 host 在 settings 视图 ready / 用户修改后推送，webview 据此渲染下拉选中项。
    */
   | { type: 'search_engine_status'; engine: SearchEngineSetting }
+  /**
+   * 「恢复初始状态」执行结果（设置面板「安全」tab 按钮的回执）
+   *
+   * 由 host 在 reset_user_data 处理完成后推送。三态：
+   *   - ok=true：清理已提交、窗口即将重载（webview 保持按钮禁用）；
+   *   - cancelled=true：用户在确认弹窗选择取消（webview 恢复按钮，中性提示，非错误）；
+   *   - 其余 = 失败（webview 恢复按钮 + 错误提示，host 侧各步骤幂等可重试）。
+   * ⚠️ 取消与失败必须分开——把取消显示成红色错误是谎报状态（用户主动取消不是故障）。
+   */
+  | { type: 'reset_user_data_result'; ok: boolean; cancelled?: boolean; message?: string }
   /**
    * 未确认文件改动快照（对话区常驻条数据源 · DIFF-1）
    *

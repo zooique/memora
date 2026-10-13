@@ -85,6 +85,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private _configDir: string | undefined;
   /** 用户角色包目录路径（extension 注入，用于打开目录功能 + 角色来源判定） */
   private _userRolePacksDir: string | undefined;
+  /** 「恢复初始状态」处理器（extension 注入：modal 确认 + 用户级数据清理 + reload window；
+   *  与命令面板 memora.resetUserData 共用同一函数，单一路径）。
+   *  返回 cancelled=true 表示用户在确认弹窗主动取消（非失败，webview 中性提示）。 */
+  private _resetHandler:
+    (() => Promise<{ ok: boolean; cancelled?: boolean; message?: string }>) | undefined;
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -125,6 +130,18 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     this._userRolePacksDir = dir;
   }
 
+  /**
+   * 注入「恢复初始状态」处理器（extension 装配时注入）
+   *
+   * 面板侧只做按钮 → 请求 → 回执三段，清理逻辑（清什么、什么顺序、何时 reload）
+   * 全在处理器内——与命令面板入口共用同一函数，杜绝两条路径漂移。
+   */
+  public setResetHandler(
+    handler: () => Promise<{ ok: boolean; cancelled?: boolean; message?: string }>,
+  ): void {
+    this._resetHandler = handler;
+  }
+
   /** 视图被解析（侧边栏展开）时初始化 */
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -132,6 +149,12 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken,
   ): void {
     this._view = webviewView;
+    // 视图被销毁（折叠/关闭/切走隐藏也会触发）时清理引用，避免向已销毁 webview postMessage；
+    // 与 chatPanel 同款。不清则 switchTab 把 _pendingTab 写进死 view 后清空，
+    // ready 握手的补发兜底失效 → 点角色徽章/配置大模型落在默认「记忆」页。
+    webviewView.onDidDispose(() => {
+      if (this._view === webviewView) this._view = undefined;
+    });
     webviewView.webview.options = {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
@@ -408,6 +431,36 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     if (msg.type === 'search_engine_set') {
       await this.setSearchEngine(msg.engine);
       return;
+    }
+    // 「恢复初始状态」：按钮 → 注入的处理器（extension 侧 modal + 清理 + reload），
+    // 结果回推 webview 恢复按钮态。面板不自行实现清理逻辑（单一路径，与命令面板共用）。
+    if (msg.type === 'reset_user_data') {
+      const result = await this.runReset();
+      this._view?.webview.postMessage({
+        type: 'reset_user_data_result',
+        ok: result.ok,
+        cancelled: result.cancelled,
+        message: result.message,
+      });
+      return;
+    }
+  }
+
+  /**
+   * 执行「恢复初始状态」（委托 extension 注入的处理器）
+   *
+   * 处理器未注入（理论不可达——activate 恒注入）时返回失败回执，
+   * 不静默吞掉（否则按钮点了没反应，用户无从判断是没点到还是坏了）。
+   */
+  private async runReset(): Promise<{ ok: boolean; cancelled?: boolean; message?: string }> {
+    if (!this._resetHandler) {
+      return { ok: false, message: '初始化功能未就绪，请重载窗口后重试' };
+    }
+    try {
+      return await this._resetHandler();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, message };
     }
   }
 
@@ -1116,7 +1169,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       `将永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆，此操作不可撤销。`,
       { modal: true },
       '确认清理',
-      '取消',
+      // 不传显式「取消」：VS Code modal 自带系统级取消，再传出现双取消（对齐全仓多数派）
     );
     if (confirmed !== '确认清理') return;
     try {
@@ -1801,6 +1854,14 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           <option value="baidu">百度（中文推荐）</option>
           <option value="sogou">搜狗</option>
         </select>
+      </div>
+      <div class="security-item">
+        <div class="security-item-header">
+          <label class="security-label">恢复初始状态</label>
+        </div>
+        <p class="security-desc">一键清空插件的<strong>全部用户级数据</strong>：用户技能、用户角色包、大模型配置（含 API Key）、激活角色包、角色包组、安全开关与用户级设置，恢复到第一次使用插件的状态。<strong>项目数据完整保留</strong>：当前项目的记忆、会话记录（.memora/）与项目设置不动——它们已经是项目的一部分。清理完成后将自动重载窗口，进行中的对话会中断。</p>
+        <button id="resetUserDataBtn" class="btn btn-danger security-reset-btn" type="button">清空用户级数据…</button>
+        <span id="resetUserDataHint" class="security-status security-reset-hint" hidden></span>
       </div>
     </div>
   </div>

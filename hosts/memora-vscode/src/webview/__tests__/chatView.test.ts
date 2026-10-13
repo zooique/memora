@@ -161,7 +161,7 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'ready' });
   });
 
-  it('chat_role_pack 渲染当前角色到输入区左侧角色徽章（只读状态展示，2026-08-17）', () => {
+  it('chat_role_pack 渲染当前角色到输入区状态行角色徽章（可点跳转，2026-10-13 起）', () => {
     mountChatView();
     const badge = document.getElementById('currentRoleBadge') as HTMLElement;
     // 初始无角色名 → 徽章隐藏
@@ -174,9 +174,19 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(badge.hidden).toBe(false);
     expect(badge.textContent).toBe('文档打磨');
 
+    // aria-label 动态拼当前角色名（读屏优先于按钮内容，写死文案会丢失「现在是谁」）
+    expect(badge.getAttribute('aria-label')).toBe('当前角色：文档打磨，点击管理角色包');
+
     // 切回空名 → 徽章重新隐藏
     dispatch({ type: 'chat_role_pack', rolePack: '' });
     expect(badge.hidden).toBe(true);
+  });
+
+  it('角色徽章点击 → post open_roles（导航到设置视图角色选项卡，切换逻辑不走本路径）', () => {
+    const { postMessage } = mountChatView();
+    const badge = document.getElementById('currentRoleBadge') as HTMLButtonElement;
+    badge.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'open_roles' });
   });
 
   it('小组会议图标单例幂等：chat_role_pack 重复到达不重复创建（身份即单例引用，非字符串复查找回）', () => {
@@ -2090,8 +2100,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // round-block details 各小节（档案：已沉淀/执行指标）
     const details = rb.querySelector('.round-block__details') as HTMLElement;
     expect(details.textContent).toContain('设计约束');
-    // 口径标注：入/出为估算、输出只计正文不含思考
-    expect(details.textContent).toContain('Tokens（估算）：入 100 / 正文 200（不含思考）');
+    // 口径标注：入=本轮全部 LLM 调用输入的**累加**（非窗口占用，每次调用重发全量上下文，
+    // 故可远超窗口值——勿据其判超窗）／出为估算且只计正文不含思考
+    expect(details.textContent).toContain('Tokens（估算）：入 100 累计 / 正文 200（不含思考）');
     // meta 未带 maxTokens（beginRound）→ 生效上限显示服务端默认
     expect(details.textContent).toContain('输出上限（生效）：服务端默认');
     expect(details.textContent).toContain('完成：是');

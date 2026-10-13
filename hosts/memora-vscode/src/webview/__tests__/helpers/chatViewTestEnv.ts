@@ -111,7 +111,7 @@ const HTML = `
         </div>
         <div class="composer-row composer-row--status">
           <div class="composer-status">
-            <span id="currentRoleBadge" class="role-badge"></span>
+            <button id="currentRoleBadge" class="role-badge" type="button" title="点击管理角色包"></button>
             <!-- 能力徽章：同polishBtn，消费侧 null 守卫 ⇒ 缺它不崩但恒不渲染＝静默失测。 -->
             <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
           </div>

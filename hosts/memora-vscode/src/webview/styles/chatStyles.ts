@@ -1290,8 +1290,14 @@ export const chatStyles = `
     gap: var(--sp-2, 6px);
     min-width: 0;
   }
-  /* Composer 当前角色只读徽章：胶囊 + accent 圆点，展示当前角色名让用户感知定位。
-   * 只读不承载切换（切换入口在「角色」视图）；textContent 赋值防注入（chatView 更新）。 */
+  /* Composer 当前角色徽章：胶囊 + accent 圆点，展示当前角色名让用户感知定位。
+   * 可点跳转（2026-10-13，UX 拍板 A 方案）：点击 → open_roles → host 打开设置视图「角色」选项卡；
+   * 切换执行仍走角色视图「设为当前」→ roles_set_active → agent.switchRolePack 单路径，
+   * 本徽章只导航、不承载切换（零并行切换路径）。
+   * 形态纪律：外观与旧只读徽章完全一致——不加箭头、不加边框增量，零常驻视觉负担；
+   * 「可点」仅经 hover 反馈 + title 提示传达（不加 ▾：与模型选择器同形会误导预期原地展开）。
+   * button 化须知：必须清零浏览器默认 border 与 font-family（否则破坏胶囊观感）；
+   * 焦点样式走 tokens.ts 全局 focus-visible，此处不自写；textContent 赋值防注入（chatView 更新）。 */
   .role-badge {
     display: inline-flex;
     align-items: center;
@@ -1299,13 +1305,21 @@ export const chatStyles = `
     max-width: 140px;
     padding: var(--sp-hair, 1px) var(--sp-2, 6px);
     font-size: var(--font-xs, 10px);
+    font-family: inherit;
     color: var(--text-secondary, #9aa0a6);
     background: var(--surface-code, rgba(127, 127, 127, 0.15));
+    border: 0;
     border-radius: var(--radius-pill, 999px);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     user-select: none;
+    cursor: pointer;
+  }
+  /* hover 才出反馈（常驻态零增量）：文字提亮 + 底妆加深，暗示可交互 */
+  .role-badge:hover {
+    color: var(--text-primary, #cccccc);
+    background: var(--surface-hover, rgba(128, 128, 128, 0.2));
   }
   .role-badge::before {
     content: '';

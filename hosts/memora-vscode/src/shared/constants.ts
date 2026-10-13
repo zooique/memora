@@ -35,6 +35,20 @@ export const CONFIRM_SCRIPTS_KEY = 'memora.confirmScripts';
  *  且只在用户显式触发清理时生效（无自动清理）。 */
 export const MEMORY_RECYCLE_RETENTION_DAYS = 30;
 
+/** 用户级 globalState 键前缀（「初始化」清空判据）：
+ *  globalState 是 VS Code **跨扩展共享**存储库，无脑枚举全清会删其他扩展的键
+ *  ⇒ 初始化只清本前缀的键。本插件全部 globalState 键（activeRolePack/rolePackTeams/
+ *  confirmWrites/confirmScripts）均带此前缀；新增用户级 globalState 键时自动纳入清空范围，
+ *  无需维护第二份清单（SSOT：清空判据从存储真源派生，不手写枚举）。 */
+export const USER_STATE_KEY_PREFIX = 'memora.';
+
+/** globalStorageUri 下的用户技能目录名（用户级）：extension 激活期创建、
+ *  「初始化」清空目标，三处（创建 / 打开目录 / 清空）共用本常量，禁散落字面量。 */
+export const USER_SKILLS_DIR_NAME = 'skills';
+
+/** globalStorageUri 下的用户角色包目录名（用户级）：同上，与技能目录对偶。 */
+export const USER_ROLE_PACKS_DIR_NAME = 'role-packs';
+
 /** 用户主输入长度上限（INPUT-LIMIT-1）：在**输入框阶段**以原生 maxLength 截断——
  *  超出部分进不了输入框，用户所见即所发；发送链路不做二次截断（发送时静默砍内容
  *  = 背刺，禁）。主输入框（#input textarea）= 任务指令语义，长档。 */

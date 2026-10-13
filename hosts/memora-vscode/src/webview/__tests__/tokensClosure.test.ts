@@ -533,7 +533,7 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   const EXPECTED = {
     'z-': 14,
     'lh-': 46,
-    'op-': 17,
+    'op-': 18, // 初始化按钮禁用态 opacity: var(--op-6)（settingsStyles）+1
     'icon-': 17,
     'dot-': 20,
     'line-': 69,

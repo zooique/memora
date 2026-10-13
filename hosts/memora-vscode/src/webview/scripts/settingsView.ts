@@ -534,6 +534,24 @@ function createSecurityView({
     }
   });
 
+  // ─── 恢复初始状态（清空用户级数据 + 自动重载；确认弹窗在 host 侧） ───
+  // webview 只做三件事：禁用按钮防重复点击 → 发请求 → 按回执恢复/保持禁用。
+  // 失败时按钮恢复可重试（清理各步骤幂等，host 侧重试安全）；成功时保持禁用
+  // （窗口即将重载，恢复无意义）。
+  const resetBtn = root.querySelector<HTMLButtonElement>('#resetUserDataBtn');
+  const resetHint = root.querySelector<HTMLElement>('#resetUserDataHint');
+  resetBtn?.addEventListener('click', () => {
+    if (resetBtn.disabled) return;
+    resetBtn.disabled = true;
+    resetBtn.textContent = '清理中…';
+    if (resetHint) {
+      resetHint.textContent = '';
+      resetHint.hidden = true;
+      resetHint.classList.remove('security-reset-error');
+    }
+    vscode.postMessage({ type: 'reset_user_data' });
+  });
+
   // 监听 host 的 security_status / allowed_paths_status / search_engine_status 消息
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
@@ -555,6 +573,24 @@ function createSecurityView({
     }
     if (msg.type === 'search_engine_status' && engineSelect) {
       engineSelect.value = msg.engine;
+    }
+    if (msg.type === 'reset_user_data_result') {
+      if (msg.ok) {
+        // 成功：窗口即将重载，按钮保持禁用（恢复无意义）
+        if (resetBtn) resetBtn.textContent = '即将重载…';
+      } else {
+        // 失败/取消：恢复按钮可重试（host 侧各步骤幂等，重试安全）
+        if (resetBtn) {
+          resetBtn.disabled = false;
+          resetBtn.textContent = '清空用户级数据…';
+        }
+        if (resetHint) {
+          resetHint.textContent = msg.message ?? '初始化失败，请重试';
+          resetHint.hidden = false;
+          // 取消 ≠ 失败：用户主动取消不渲染成红色错误（谎报状态）
+          resetHint.classList.toggle('security-reset-error', msg.cancelled !== true);
+        }
+      }
     }
   });
 }

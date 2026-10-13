@@ -242,6 +242,14 @@ export const settingsStyles = `
   .security-label { font-size: var(--font-md, 12px); font-weight: 600; color: var(--text-primary); }
   .security-desc { font-size: var(--font-sm, 11px); color: var(--text-secondary); margin: 0; line-height: var(--lh-snug); }
   .security-status { margin-top: var(--sp-2, 6px); font-size: var(--font-sm, 11px); color: var(--text-secondary); }
+  /* 「恢复初始状态」失败提示：错误态走反馈错误令牌（与 config key-hint.err 同源） */
+  .security-reset-hint.security-reset-error { color: var(--feedback-error-fg); }
+  /* hint 是 span（行内），不块级化则 margin-top 失效、提示会挤在按钮旁边而非下方 */
+  .security-reset-hint { display: block; }
+  /* 危险动作按钮与说明文字拉开一档（贴着 desc 显得挤，真机观感反馈） */
+  .security-reset-btn { margin-top: var(--sp-3, 8px); }
+  /* 执行中禁用态：按钮降透明度 + 禁指针（防重复点击连发清理） */
+  .security-reset-btn[disabled] { opacity: var(--op-6); pointer-events: none; }
 
   /* 白名单额外路径 */
   .allowed-paths-list { list-style: none; margin: var(--sp-2, 6px) 0 0; padding: 0; }

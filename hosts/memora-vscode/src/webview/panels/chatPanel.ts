@@ -229,19 +229,31 @@ export function foldThoughtEvents(events: ProcessEvent[]): ProcessEvent[] {
  * ask_user 提问等待超时（ms）：超时未答 → cancelAsk（[ASK_ABORTED] 占位）
  * + resumeExecution('timeout') 自动续跑（LLM 自决）。0/负值 = 禁用超时保底。
  * 语义 = 保底而非打扰：选项/自由输入仍是唯一主动通道，无「跳过」按钮。
+ *
+ * 时长取值（2026-10-13 真机实测订正，120s → 30min，用户拍板对齐 confirm 时长）：
+ * 依据 = ask 超时是**自动继续**（无副作用），超时长度不带来安全风险（风险来自「超时后做什么」
+ * 而非「等多久」）；代价仅是 loop 多挂起一会儿（不烧 token）。实测 2 分钟对「细纲/文风要不要
+ * 继续」这类需读完长文才能决策的问题偏短，且超时后模型代选继续 = 用户失去否决窗口。
+ *
+ * ⚠️ **只对齐时长，严禁对齐语义**（详见下方 CONFIRM_TIMEOUT_MS 注释的风险分级说明）：
+ * 本常量超时 = 自动**继续**，CONFIRM_TIMEOUT_MS 超时 = 自动**拒绝**。两者虽同为 30 分钟，
+ * **仍是两个独立常量、两种相反终态**——合并即 fail-open 安全模型反转 = 造伤。
  */
-const ASK_TIMEOUT_MS = 120_000;
+const ASK_TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
  * confirm 确认等待超时（ms）：无响应 → **自动拒绝**（fail-closed）。0/负值 = 禁用超时。
  *
  * ⚠️ 与 ASK_TIMEOUT_MS 的语义**刻意不同，勿统一**（2026-10-05 定案，登记为有意的风险分级）：
- *   - ask 超时（120s）→ 自动**继续**：不回答 = 什么都不执行，agent 空转往前走，无副作用；
+ *   - ask 超时 → 自动**继续**：不回答 = 什么都不执行，agent 空转往前走，无副作用；
  *   - confirm 超时 → 自动**拒绝**：不批准 = 不执行。执行有副作用（命令/脚本/写入），
  *     默认必须是「不做」。改成自动确认 = fail-open 安全模型反转，已驳回（见方案文档 §二）。
  *
  * 时长取值依据：fail-closed 下超时长度不带来安全风险（风险来自「超时后做什么」而非
  * 「等多久」），30 分钟覆盖「用户离开一会儿」的场景；代价仅是 loop 挂起更久（不烧 token）。
+ *
+ * ⚠️ 2026-10-13 起与 ASK_TIMEOUT_MS **数值同为 30 分钟**：这是**时长巧合**，不是同一判据。
+ * 二者终态相反（continue vs deny），**禁合并为同一常量**——合并即抹掉风险分级这一有意设计。
  */
 const CONFIRM_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -642,7 +654,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.bindWriteConfirmation();
     // 装配注入后统一补推（时序竞态）：
     // webview ready 时 agent 可能尚未装配，replaySession 的 chat_role_pack / pushRolePacks
-    // 会因 _agent 为空而跳过推送 → 输入区角色选择器永久缺失。此处装配完成即补推一次，
+    // 会因 _agent 为空而跳过推送 → 状态行角色徽章与角色列表永久缺失。此处装配完成即补推一次，
     // 面板未就绪时 post 静默忽略（_view 为空），由 replaySession 兜底再推。
     // 「装配后补推」（含历史会话占用补推）统一收口在 refreshAfterAssemble 内，
     // 本方法不另推一份（否则懒装配路径漏推）。
@@ -897,6 +909,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'open_config') {
         // 空态引导按钮：跳转大模型配置（复用既有 configureModel 命令，单一入口）
         void vscode.commands.executeCommand('memora.configureModel');
+      } else if (msg.type === 'open_roles') {
+        // 角色徽章点击：跳转角色包管理视图（复用 configureModel 同款两行命令，单一导航入口；
+        // 切换执行仍走角色视图 roles_set_active 单路径，本分支只导航）
+        void vscode.commands.executeCommand('memora.openRoles');
       } else if (msg.type === 'new_session') {
         // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史
         void this.newSessionFromCommand();
@@ -4173,10 +4189,13 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           </div>
         </div>
         <!-- Row 2 · 状态行：左角色/能力徽章 + 右上下文占用圆环（两端分布；占用属状态信息归本行，
-             不干扰 Row 1 主操作；hover/聚焦**向上**弹窗出分层明细文字，避免向下展开挤压面板底部） -->
+             不干扰 Row 1 主操作；hover/聚焦**向上**弹窗出分层明细文字，避免向下展开挤压面板底部）
+             角色徽章 = button（可点跳转角色管理视图，open_roles → memora.openRoles）：
+             外观与旧 span 徽章完全一致（零常驻视觉增量，仅 hover 反馈 + title 提示可点），
+             id 保持 currentRoleBadge 不变 ⇒ 现有 chat_role_pack 消费链路（含测试断言）零改动。 -->
         <div class="composer-row composer-row--status">
           <div class="composer-status">
-            <span id="currentRoleBadge" class="role-badge"></span>
+            <button id="currentRoleBadge" class="role-badge" type="button" title="点击管理角色包"></button>
             <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
           </div>
           <!-- 上下文占用圆环：常驻不占行，非噪点；首帧由 chat_providers 渲染所选模型容量上限，

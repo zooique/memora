@@ -23,6 +23,7 @@ import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
 import { ProviderStore } from './providers/providerStore.js';
+import { resetUserData } from './host/userDataReset.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { MemoraSettingsViewProvider } from '../webview/panels/settingsPanel.js';
 import { openChatCommand } from './commands/openChat.js';
@@ -35,6 +36,8 @@ import {
   CONFIRM_SCRIPTS_KEY,
   ROLE_PACK_TEAMS_KEY,
   MEMORY_RECYCLE_RETENTION_DAYS,
+  USER_SKILLS_DIR_NAME,
+  USER_ROLE_PACKS_DIR_NAME,
 } from '../shared/constants.js';
 
 /**
@@ -223,7 +226,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // 用户技能目录：使用 VS Code 全局存储目录
   // 路径示例：C:\Users\SJ\AppData\Roaming\Code\User\globalStorage\zooique.memora-vscode\skills\
   // 与内置技能分离，支持用户独立管理；目录不存在时自动创建
-  const userSkillsDir = join(context.globalStorageUri.fsPath, 'skills');
+  // （目录名常量 USER_SKILLS_DIR_NAME 与「初始化」清空目标共用，禁散落字面量）
+  const userSkillsDir = join(context.globalStorageUri.fsPath, USER_SKILLS_DIR_NAME);
   void mkdir(userSkillsDir, { recursive: true }).catch(() => {
     // 目录创建失败不阻塞插件启动，用户技能功能不可用而已
   });
@@ -235,7 +239,8 @@ export function activate(context: vscode.ExtensionContext): void {
   //
   // 使用方式：用户在此目录放置角色包文件夹（manifest.json + persona.md/rules.md/skills/）即生效；
   //   同名冲突内置优先（内核 loadExtraDir 跳过重名用户包）。目录创建失败不阻塞插件启动。
-  const userRolePacksDir = join(context.globalStorageUri.fsPath, 'role-packs');
+  // （目录名常量 USER_ROLE_PACKS_DIR_NAME 与「初始化」清空目标共用，禁散落字面量）
+  const userRolePacksDir = join(context.globalStorageUri.fsPath, USER_ROLE_PACKS_DIR_NAME);
   void mkdir(userRolePacksDir, { recursive: true }).catch(() => {
     // 目录创建失败不阻塞插件启动
   });
@@ -406,6 +411,17 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // 命令：管理角色包（聚焦设置视图并切换到「角色」子选项卡）
+  // 对话区「当前角色」徽章点击 → open_roles → 本命令；与 configureModel 同款两行模式
+  // （先记待切选项卡再聚焦；视图未就绪时由 settingsPanel 在 ready 握手后补发 settings_switch_tab）。
+  // 只导航、不切换：切换执行仍走角色视图「设为当前」→ roles_set_active → agent.switchRolePack。
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.openRoles', () => {
+      settingsProvider.switchTab('roles');
+      void vscode.commands.executeCommand(`${MemoraSettingsViewProvider.viewType}.focus`);
+    }),
+  );
+
   // 命令：运行能力演示（隔离演示区 → Output Channel）
   // 在全局隔离目录装配独立 Agent，注入编排提示词跑通「搜索→抓取→写文件→总结→记忆沉淀」
   // 完整链路，Output Channel 流式呈现；完整展示内核的角色包/loop/记忆/工具/可观测能力。
@@ -552,12 +568,12 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage('Memora Agent 未就绪，无法清理记忆');
         return;
       }
-      // 确认对话框——防止误操作
+      // 确认对话框——防止误操作。不传显式「取消」：VS Code modal 自带系统级取消
+      // （取消钮 / Esc / 关闭 X），再传会出现双取消；confirmed !== '确认清理' 已兼容 undefined
       const confirmed = await vscode.window.showWarningMessage(
         `将永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆，此操作不可撤销。`,
         { modal: true },
         '确认清理',
-        '取消',
       );
       if (confirmed !== '确认清理') return;
       try {
@@ -590,6 +606,76 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showErrorMessage(
           `垃圾回收失败：${err instanceof Error ? err.message : String(err)}`,
         );
+      }
+    }),
+  );
+
+  // ─── 恢复初始状态（清空用户级数据 · 与设置面板「安全」tab 按钮共用本函数） ───
+  //
+  // 单一路径：命令面板入口（memora.resetUserData）与 webview 按钮（reset_user_data 消息）
+  // 都调 performUserDataReset——确认形态、清理顺序、reload 时机只有一处定义，
+  // 杜绝两条路径漂移（按钮能清、命令漏 reload 之类）。
+  //
+  // 清空范围 = 全部用户级存储（明细判据见 userDataReset.ts 四条通道）；
+  // 项目级数据（.memora/ 记忆与会话、工作区 settings）一字节不碰——记忆与会话
+  // 已经是项目的一部分（用户拍板）。
+  //
+  // reload 是「回首装态」的组成部分而非可选项：activeRolePack / rolePackTeams /
+  // confirmWrites / confirmScripts 都是装配期读一次进内存，globalState 清了内存
+  // 不跟着变 ⇒ 清理成功后必须重载窗口。
+  const performUserDataReset = async (): Promise<{
+    ok: boolean;
+    cancelled?: boolean;
+    message?: string;
+  }> => {
+    // 不传显式「取消」：VS Code modal 自带系统级取消（取消钮 / Esc / 关闭 X），
+    // 再传会出现双取消（真机截图实锤）；confirmed !== '确认初始化并重载' 已兼容 undefined
+    const confirmed = await vscode.window.showWarningMessage(
+      '将清空插件的全部用户级数据：\n' +
+        '· 用户技能与用户角色包\n' +
+        '· 大模型配置与 API Key\n' +
+        '· 激活角色包、角色包组、安全开关与用户级设置\n\n' +
+        '保留：当前项目的记忆与会话记录（.memora/）、项目设置。\n' +
+        '清理完成后将自动重载窗口，进行中的对话会中断。此操作不可撤销。',
+      { modal: true },
+      '确认初始化并重载',
+    );
+    if (confirmed !== '确认初始化并重载') {
+      return { ok: false, cancelled: true, message: '已取消' };
+    }
+    try {
+      const report = await resetUserData({
+        globalState: context.globalState,
+        secrets: context.secrets,
+        globalStorageDir: context.globalStorageUri.fsPath,
+        packageJson: context.extension.packageJSON,
+      });
+      // 明细落输出通道（可追溯），提示语只给概要（不刷屏）
+      memoraOutput.appendLine(
+        `Memora 用户级数据初始化完成：globalState ${report.globalStateCleared.length} 键 / ` +
+          `SecretStorage ${report.secretsCleared.length} 条 / settings ${report.settingsCleared.length} 键 / ` +
+          `目录 ${report.dirsReset.length} 个`,
+      );
+      await vscode.commands.executeCommand('workbench.action.reloadWindow');
+      return { ok: true, message: '已清空用户级数据，窗口即将重载' };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      memoraOutput.appendLine(`Memora 用户级数据初始化失败：${message}`);
+      return { ok: false, message: `初始化失败：${message}` };
+    }
+  };
+
+  // 设置面板「安全」tab 的初始化按钮：委托同一处理器（单一路径）
+  settingsProvider.setResetHandler(performUserDataReset);
+
+  // 命令：恢复初始状态（命令面板入口，与设置面板按钮同一处理函数）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.resetUserData', async () => {
+      const result = await performUserDataReset();
+      // 取消：静默（用户主动选择，不弹提示）；失败：错误提示（清理幂等可重试）；
+      // 成功：无需提示——窗口正在重载
+      if (!result.ok && result.cancelled !== true && result.message) {
+        vscode.window.showErrorMessage(`Memora ${result.message}`);
       }
     }),
   );
@@ -710,6 +796,14 @@ export function activate(context: vscode.ExtensionContext): void {
  *   turn 终态刻意不杀（跨轮存活），但扩展停用时注册表随实例销毁，不杀即 OS 层孤儿
  *   （真机观察点 ⑧ 实锤）。扩展崩溃 / 被强杀时本函数来不及执行，该场景不承诺清理。
  * 失败不阻塞插件退出。
+ *
+ * ⚠️ 末尾**必须复位两个模块级单例**（`agentPromise` / `currentAgent`）：
+ * 本函数已把 Agent `close()`，而 `getOrCreateAgent` 的复用判据只看「有没有」、
+ * 不看「死没死」。若不清引用，同一扩展宿主进程内再次 `activate()`
+ * 时——即 VS Code 热卸载/重装载路径（真机实证：扩展宿主因第三方扩展 veto 未重启时
+ * 走的正是这条）——新面板会绑到一个已关闭的 Agent：功能全坏且**无任何报错**
+ * （命令能调、agent 是死的，最难查的那种）。
+ * `close()` 失败也要清：半关闭的实例比 `null` 更危险（`null` 会触发重新装配）。
  */
 export async function deactivate(): Promise<void> {
   if (!agentPromise) return;
@@ -718,5 +812,8 @@ export async function deactivate(): Promise<void> {
     await agent.close();
   } catch {
     // 关闭失败静默降级：不阻断插件退出（VS Code 不因 deactivate 异常而阻塞）
+  } finally {
+    agentPromise = null;
+    currentAgent = null;
   }
 }

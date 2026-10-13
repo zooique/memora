@@ -221,8 +221,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     ? modelPicker.querySelector<HTMLElement>('.treedd__trigger')
     : null;
 
-  // 当前角色只读徽章（输入区左侧，展示角色名让用户感知当前定位；切换入口在独立「角色」视图）
-  const roleBadge = document.getElementById('currentRoleBadge') as HTMLElement | null;
+  // 当前角色徽章（输入区状态行，展示角色名让用户感知当前定位）。
+  // 可点跳转：点击 → open_roles → host 打开设置视图「角色」选项卡（导航单点；切换执行仍走角色视图
+  // 「设为当前」→ roles_set_active → agent.switchRolePack 单路径，本徽章不承载切换逻辑）。
+  const roleBadge = document.getElementById('currentRoleBadge') as HTMLButtonElement | null;
   // 工具权限徽章（输入区角色徽章旁，展示工具模式与能力列表）
   const capabilityBadge = document.getElementById('currentCapabilityBadge') as HTMLElement | null;
   // 当前角色队伍快照（小组会议启动图标用；由 chat_role_pack.team 填充）
@@ -2066,9 +2068,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const effectiveLimit = roundMeta?.payload.maxTokens;
       const lines = [
         `耗时：${fmtDuration(metrics.payload.durationMs)}`,
-        // 口径须显式：入/出均为估算值；「出」只计正文——不含思考与工具轮叙述，
-        // 推理模型下远小于真实输出预算消耗（判压力看下行「输出上限」+ 截断重试救回）
-        `Tokens（估算）：入 ${metrics.payload.tokenIn} / 正文 ${metrics.payload.tokenOut}（不含思考）`,
+        // 口径须显式：入/出均为估算值；「入」是**本轮全部 LLM 调用输入的累加**（每次调用
+        // 重发全量上下文，N 步即累加 N 次，故可远超单轮窗口——**不是**窗口占用率，
+        // 勿据其判超窗）；「出」只计正文——不含思考与工具轮叙述，推理模型下远小于真实
+        // 输出预算消耗（判压力看下行「输出上限」+ 截断重试救回）
+        `Tokens（估算）：入 ${metrics.payload.tokenIn} 累计 / 正文 ${metrics.payload.tokenOut}（不含思考）`,
         // 生效上限直接亮给用户：配了面板却被角色包收紧时，这里与面板值不一致即可见
         `输出上限（生效）：${effectiveLimit ?? '服务端默认'}`,
         `工具失败：${metrics.payload.toolFailureCount} 次`,
@@ -3142,9 +3146,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 更新输入区左侧「当前角色」只读徽章（SSOT：角色名与 AI 消息头/空状态共用 currentRoleName）。
+   * 更新输入区状态行「当前角色」徽章（SSOT：角色名与 AI 消息头/空状态共用 currentRoleName）。
    *
-   * 角色切换入口已独立到「角色」视图，此处仅做只读状态展示——让用户在输入前感知当前定位。
+   * 徽章可点跳转：点击打开设置视图「角色」选项卡（open_roles 消息，host 侧 memora.openRoles），
+   * 切换动作仍由角色视图「设为当前」发起——本处只做状态展示与导航，不承载切换执行。
    * 可附加展示性格特征（traits）简要（取最高分 trait 的中文标签），让角色气质一眼可见。
    * 无角色名时隐藏徽章（保持输入区干净）；textContent 赋值防注入。
    */
@@ -3155,6 +3160,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       return;
     }
     roleBadge.hidden = false;
+    // 可访问性：aria-label 优先于按钮内容 ⇒ 须动态拼入当前角色名，
+    // 写死文案会让读屏用户丢失「现在是谁」这一关键信息（2026-10-13 徽章可点化时补）。
+    roleBadge.setAttribute('aria-label', `当前角色：${currentRoleName}，点击管理角色包`);
     // 附加最高分 trait 简要（可选），让角色气质一眼可见
     const traits = currentRoleTraits;
     if (traits && Object.keys(traits).length > 0) {
@@ -4695,10 +4703,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           : '') +
         ' · 截断 ' +
         msg.metrics.truncationCount,
-      // token 用量（可选字段，缺省不显示）：估算口径，「出」只计正文、不含思考——
-      // 与轮详情执行指标同口径标注，防推理模型下把正文数误读成总输出
+      // token 用量（可选字段，缺省不显示）：估算口径。「入」为**累计**（同轮详情执行指标
+      // 同源，勿据其判窗口占用）；「出」只计正文、不含思考——防推理模型下把正文数
+      // 误读成总输出
       'Tokens（估算）：' +
-        (typeof msg.metrics.llmTokenIn === 'number' ? '入 ' + msg.metrics.llmTokenIn : '入 -') +
+        (typeof msg.metrics.llmTokenIn === 'number'
+          ? '入 ' + msg.metrics.llmTokenIn + ' 累计'
+          : '入 -') +
         ' / 正文 ' +
         (typeof msg.metrics.llmTokenOut === 'number'
           ? msg.metrics.llmTokenOut + '（不含思考）'
@@ -6162,6 +6173,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         updateSkillPickerLabel();
       }
     },
+  });
+
+  // 角色徽章点击 → open_roles（host 打开设置视图「角色」选项卡，导航单点）。
+  // 拍板 2（2026-10-13）：**运行时不禁用**——跳界面不改变任何状态，禁 = 挡无害操作；
+  // 也不挂 updateSessionControlsLock 收口——该锁语义 = 「运行时禁用改变会话结构的操作」
+  // （新建/切历史/删除），导航不属于此类，塞进去即语义污染。
+  // 权限面如实声明：运行时切换能力**本就可及**（内核 switchRolePack 对话中允许，自动匹配依赖它，
+  // 设置视图「设为当前」无 busy 守门），本入口只是补上「发现性」，未放宽也未收紧任何切换权限。
+  roleBadge?.addEventListener('click', () => {
+    vscode.postMessage({ type: 'open_roles' });
   });
 
   /** 更新 Skill 选择器标签 + 盒内附件行 chip：

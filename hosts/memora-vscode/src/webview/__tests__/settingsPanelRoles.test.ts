@@ -48,6 +48,8 @@ vi.mock('vscode', () => ({
   },
   commands: { executeCommand: vi.fn() },
   ConfigurationTarget: { Global: 1 },
+  // resolveWebviewView → buildHtml 读 env.language 定 HTML lang
+  env: { language: 'zh-cn' },
 }));
 
 // mock node:fs/promises：保存链路（roles_detail 读原文 / roles_save 读原文+写盘）不触真实文件系统
@@ -676,5 +678,126 @@ describe('settingsPanel.loadRoles —— 读期队伍健康检测（只读标注
     expect(globalUpdate).not.toHaveBeenCalled();
     const rolesLoaded = posted.find((m) => m.type === 'roles_loaded');
     expect(rolesLoaded?.teams).toEqual([{ leader: 'A', members: ['B'] }]);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// switchTab 导航兜底 —— 视图销毁后 pending 保留（openRoles/configureModel 落点）
+// ══════════════════════════════════════════════════════════════
+
+describe('settingsPanel.switchTab —— 视图销毁后的导航兜底', () => {
+  /**
+   * 被测不变量（F1 回归锁）：
+   *   设置视图被销毁（折叠/关闭/切走隐藏均触发 onDidDispose）后，switchTab 不得把
+   *   _pendingTab 写进已销毁的 webview 后清空——必须保留 pending，等新 webview 的
+   *   ready 握手补发 settings_switch_tab。否则点角色徽章/配置大模型落在默认「记忆」页。
+   */
+  type PostedMsg = { type: string; tab?: string };
+  let posted: PostedMsg[];
+  let provider: MemoraSettingsViewProvider;
+  /** mock 视图的 dispose 触发器（捕获 resolveWebviewView 注册的 onDidDispose 回调） */
+  let fireDispose: () => void;
+  /** mock 视图的 onDidReceiveMessage 回调（ready 握手入口） */
+  let receiveMsg: ((msg: unknown) => void) | undefined;
+
+  /** 构造 resolveWebviewView 所需的最小 WebviewView mock（捕获 dispose/message 回调） */
+  function makeView(): { webview: unknown; onDidDispose: (cb: () => void) => { dispose(): void } } {
+    receiveMsg = undefined;
+    return {
+      webview: {
+        options: undefined,
+        html: '',
+        cspSource: 'test-csp',
+        // buildHtml 只消费 toString（scriptUri 拼 HTML）
+        asWebviewUri: () => ({ toString: () => 'mock://settingsView.js' }),
+        onDidReceiveMessage: (cb: (msg: unknown) => void) => {
+          receiveMsg = cb;
+          return { dispose: vi.fn() };
+        },
+        postMessage: (msg: PostedMsg) => {
+          posted.push(msg);
+          return Promise.resolve(true);
+        },
+      },
+      onDidDispose: (cb: () => void) => {
+        fireDispose = cb;
+        return { dispose: vi.fn() };
+      },
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    posted = [];
+    // ready 分支的数据推送（loadRoles/loadConfig/…）与导航兜底无关，置空隔离
+    provider = new MemoraSettingsViewProvider({} as never, {} as never);
+    provider.setAgentFactory(async () => ({ on: vi.fn(), off: vi.fn() }) as unknown as Agent);
+    provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
+    (
+      [
+        'loadRoles',
+        'loadConfig',
+        'loadMemory',
+        'loadSkills',
+        'loadSecurityStatus',
+        'loadAllowedPathsStatus',
+        'loadSearchEngineStatus',
+      ] as const
+    ).forEach((m) => {
+      vi.spyOn(provider as unknown as Record<string, () => Promise<void>>, m).mockResolvedValue(
+        undefined,
+      );
+    });
+  });
+
+  it('resolve → dispose → switchTab：不向死 view 发消息，pending 保留并在 ready 后补发', async () => {
+    provider.resolveWebviewView(makeView() as never, {} as never, {} as never);
+
+    // 视图销毁（折叠/切走）→ 引用清理，_view 不残留死对象
+    fireDispose();
+    expect((provider as unknown as { _view: unknown })._view).toBeUndefined();
+
+    // 死 view 下导航：不得 post（发了也是静默丢弃），pending 必须保留
+    provider.switchTab('roles');
+    expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([]);
+    expect((provider as unknown as { _pendingTab: string | undefined })._pendingTab).toBe('roles');
+
+    // 聚焦触发 VS Code 重新 resolve（新 webview），随后新 webview ready 握手 → 补发待切选项卡
+    provider.resolveWebviewView(makeView() as never, {} as never, {} as never);
+    await (provider as unknown as { handleMessage(m: unknown): Promise<void> }).handleMessage({
+      type: 'ready',
+    });
+    expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([
+      { type: 'settings_switch_tab', tab: 'roles' },
+    ]);
+    expect(
+      (provider as unknown as { _pendingTab: string | undefined })._pendingTab,
+    ).toBeUndefined();
+  });
+
+  it('活 view 下 switchTab：立即 post 且清 pending（既有行为不回归）', () => {
+    provider.resolveWebviewView(makeView() as never, {} as never, {} as never);
+
+    provider.switchTab('config');
+
+    expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([
+      { type: 'settings_switch_tab', tab: 'config' },
+    ]);
+    expect(
+      (provider as unknown as { _pendingTab: string | undefined })._pendingTab,
+    ).toBeUndefined();
+  });
+
+  it('重复 resolve 后旧 view dispose → 不误清新 view 的引用（守卫相等才清）', () => {
+    provider.resolveWebviewView(makeView() as never, {} as never, {} as never);
+    const oldDispose = fireDispose;
+    provider.resolveWebviewView(makeView() as never, {} as never, {} as never);
+    const currentView = (provider as unknown as { _view: unknown })._view;
+
+    oldDispose();
+
+    expect((provider as unknown as { _view: unknown })._view).toBe(currentView);
+    // receiveMsg 断言占位避免 unused（新 view 已注册，旧 view 的 dispose 不影响新引用）
+    expect(receiveMsg).toBeDefined();
   });
 });
