@@ -2309,32 +2309,64 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 中断轮平铺收尾行（形态定案：RT/RP 同构——过程收进折叠块、「用户停止了对话」平铺折叠块外）
+   * 中断轮终态单点分类（2026-10-13）：kind 写宿主 data-status、reason 给停止行文案——
+   * 一次计算两处消费，杜绝「标签与停止行各判一遍、不一致且无测试会红」的双写伤。
    *
-   * 语义映射同旧的 §已停止：error（失败：超时/连接中断）优先，其次 aborted（中断：用户停止/锁超时），
-   * 皆无则 generic 停文案（旧数据）。error 优先是保守排序——二者本应互斥（failed 路径 signal 未 abort），
-   * 此序仅防异常组合。执行指标留在折叠块 §执行指标/摘要（收起态摘要含耗时），停止行只承担
-   * 「这轮为何停」的常驻提示，不重复指标。data-interrupted-row 去重幂等（重放重复投递防叠加）。
+   * 语义映射同旧的 §已停止：error（失败：超时/连接中断）优先，其次 aborted（中断：
+   * 用户停止/锁超时），皆无则 generic 兜底（旧数据）。error 优先是保守排序——二者本应
+   * 互斥（failed 路径 signal 未 abort），此序仅防异常组合。
+   *
+   * @returns kind='用户中断' → 用户主动停止（停止行退役，底栏标签承载）；
+   *          kind='异常中断' → error/锁超时等意外（原因句留折叠块外当现场）；
+   *          kind=null      → 事件不足不猜态（诚实投影：无载体不撒状态，停止行照旧兜底）
+   */
+  function decideTerminus(events: ProcessEvent[]): {
+    kind: '用户中断' | '异常中断' | null;
+    reason: string;
+  } {
+    const errorEv = events.find(
+      (e): e is Extract<ProcessEvent, { type: 'error' }> => e.type === 'error',
+    );
+    if (errorEv) {
+      return {
+        kind: '异常中断',
+        reason: friendlyErrorMessage(errorEv.payload.category, errorEv.payload.message),
+      };
+    }
+    const aborted = events.find(
+      (e): e is Extract<ProcessEvent, { type: 'aborted' }> => e.type === 'aborted',
+    );
+    if (aborted) {
+      // 判据字段 = stopReason（reason 是自由文本描述，如 'User cancelled the conversation'）
+      return aborted.payload.stopReason === 'user'
+        ? { kind: '用户中断', reason: stopReasonLabel(aborted.payload) }
+        : { kind: '异常中断', reason: stopReasonLabel(aborted.payload) };
+    }
+    return { kind: null, reason: stopReasonLabel({ reason: 'interrupted' }) };
+  }
+
+  /**
+   * 中断轮平铺收尾行（形态定案：RT/RP 同构——过程收进折叠块、停止行平铺折叠块外）
+   *
+   * 2026-10-13 终态标签收口底栏：先按 decideTerminus 单点分类把终态写宿主 data-status
+   * （载体契约见 CursorStatus 注释：中断轮无正文块，挂宿主由 round-group 底栏 :has 消费）；
+   * 用户主动停止（kind='用户中断'）停止行退役——footer 标签 + 时间同区即可说清，不再铺行；
+   * 异常/兜底案保留停止行，只承担「这轮为何停」的原因句，不重复指标。执行指标留在折叠块
+   * §执行指标/摘要。去重按 data-status 幂等（user 案无停止行，不能按行去重）。
    *
    * @param host  折叠块宿主（RT = 当前 assistant 块；RP = 孤儿折叠宿主 .is-interrupted-host）
    * @param events 本轮 processEvents（含 error/aborted/metrics）
    */
   function appendInterruptedRow(host: HTMLElement, events: ProcessEvent[]): void {
-    if (host.querySelector('[data-interrupted-row]')) return;
+    // 已定格去重（重放重复投递防重入）：有态（用户/异常案）或有行（generic 兜底案，不写态）任一即返
+    if (host.dataset.status || host.querySelector('[data-interrupted-row]')) return;
+    const verdict = decideTerminus(events);
+    setCursorStatus(host, verdict.kind);
+    if (verdict.kind === '用户中断') return; // 用户中断：停止行退役，底栏标签承载
     const row = document.createElement('div');
     row.className = 'round-block__interrupted';
     row.dataset.interruptedRow = 'true';
-    const errorEv = events.find(
-      (e): e is Extract<ProcessEvent, { type: 'error' }> => e.type === 'error',
-    );
-    const aborted = events.find(
-      (e): e is Extract<ProcessEvent, { type: 'aborted' }> => e.type === 'aborted',
-    );
-    row.textContent = errorEv
-      ? friendlyErrorMessage(errorEv.payload.category, errorEv.payload.message)
-      : aborted
-        ? stopReasonLabel(aborted.payload)
-        : stopReasonLabel({ reason: 'interrupted' });
+    row.textContent = verdict.reason;
     // 挂载点：折叠块（round-block）之后——「过程折叠 · 停止行平铺在外」
     const rb = host.querySelector(':scope > .round-block');
     if (rb) rb.after(row);
@@ -4169,14 +4201,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   // ─── 光标状态机（UI-BLOCK-ICON 批次二，方案-过程块视觉辨识-20261001.md §三定案 B）───
-  // 八态单属性驱动：JS 只写 .msg-body[data-status]（文案即状态值；异常中断附
-  // data-status-detail=原因摘要），文案与样式全由 CSS ::after + attr() 承载——
-  // 挂容器上不受增量 markdown 重渲染影响（🔴 禁真实 span，会被增量渲染吃掉）。
+  // 八态单属性驱动：JS 只写 data-status（文案即状态值；异常中断附
+  // data-status-detail=原因摘要），文案与样式全由 CSS 承载——挂容器上不受增量
+  // markdown 重渲染影响（🔴 禁真实 span，会被增量渲染吃掉）。
+  // 载体契约（2026-10-13 终态标签收口底栏时立约）：有正文的轮挂 .msg-body；
+  // 中断轮（半截正文已删）挂宿主块（运行时 .msg.assistant / 重放 .is-interrupted-host）。
+  // 任何消费方（:has 选择器/读取方）一律泛匹配 [data-status]，不得只查 .msg-body。
 
   /**
    * 光标状态（八态，单一合成函数的输出域）：运行三态呼吸 / 挂起两态静态 / 终态三态分级。
-   * 「已停止」当前无写入点（中断轮正文块被移除，停止展示由 appendInterruptedRow 承担），
-   * 类型保留完备性。
+   * 终态三态的渲染位点（2026-10-13 收敛）：已完成/用户中断 → round-group 底栏
+   * （time 左侧标签，:has 消费）；异常中断 → 正文尾红字（其存活窗口与底栏显形时序互斥，
+   * 见 settleRoundWithFooter 收口名单），中断轮的异常中断档由 appendInterruptedRow
+   * 写宿主载体后同样由底栏承接。
    */
   type CursorStatus =
     | '思考中' // 运行：思考相位（process-flow 相位行非工具形态在途）
@@ -4184,9 +4221,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     | '正在回答中' // 运行：正文流式生成（默认态）
     | '等待输入' // 挂起：ask 预检停顿（提问框在途）
     | '已暂停' // 挂起：软暂停/用户暂停（半截正文静态展示）
-    | '已完成' // 终态：静默 circle-check 淡勾
-    | '已停止' // 终态：用户停止（当前载体 = interrupted 行，无正文块写入点）
-    | '异常中断'; // 终态：异常（红色 + data-status-detail 原因摘要）
+    | '已完成' // 终态：底栏 time 左侧淡勾（正文尾不再显示）
+    | '用户中断' // 终态：用户主动停止（载体 = 中断轮宿主块，底栏文字标签）
+    | '异常中断'; // 终态：异常（载体双位——正文红字+detail / 中断轮宿主→底栏红字标签）
 
   /**
    * 对指定正文块写入光标状态（全部写入点的唯一实现；null = 清除，幂等）
@@ -5445,7 +5482,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       resumePending = false; // 同节奏清续跑期待（P-1 对称：与 pausedAssistantEl 同一清理纪律）
       // 同 done 顺序纪律：先回填 roundId（供 fold 归属过滤）→ 收起任务过程折叠区 → 收敛 QA → 关流式。
       // 形态定案（与重放同构）：中断 = 掐断运行中的 step 内容（半截正文丢弃）→
-      // 过程收进折叠块（保留已完成 step）→ 「用户停止了对话」平铺折叠块外（收起态常驻可见）。
+      // 过程收进折叠块（保留已完成 step）→ 收尾分化（2026-10-13 终态标签收口底栏）：
+      // 用户主动停止不铺行，宿主态 + 底栏「用户中断」标签承接收口；异常/兜底原因句照旧平铺。
       commitRoundId(msg.roundId);
       finalizeRound();
       const interruptedHost = activeAssistantEl;

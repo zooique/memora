@@ -2431,10 +2431,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const toolRow = rb.querySelector('.round-block__details .round-block__tool') as HTMLElement;
     expect(toolRow?.textContent).toContain('读取文件');
     expect(toolRow?.textContent).toContain('失败');
-    // 「用户停止了对话」平铺折叠块外（收起态常驻可见）
-    expect(host.querySelector('.round-block__interrupted')?.textContent).toContain(
-      '用户停止了对话',
-    );
+    // 用户中断：停止行退役（2026-10-13 终态标签收口底栏），宿主载体如实定格（底栏 :has 消费）
+    expect(host.querySelector('.round-block__interrupted')).toBeNull();
+    expect(host.dataset.status).toBe('用户中断');
     // 收起态摘要含耗时（指标留折叠块，不重复平铺）
     expect(rb.querySelector('.round-block__stats')?.textContent).toContain('耗时');
   });
@@ -2567,7 +2566,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     });
   });
 
-  it('运行时中断（RT 形态定案 2026-09-19）：掐半截正文 + 过程折叠 + 「用户停止了对话」平铺折叠块外', () => {
+  it('运行时中断（RT 形态定案 2026-09-19 · 收口修订 2026-10-13）：掐半截正文 + 过程折叠 + 底栏「用户中断」标签（停止行退役）', () => {
     mountChatView();
     dispatch({ type: 'user', text: '读文件', ts: 't0', roundId: 'r1' });
     dispatch({
@@ -2623,10 +2622,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 半截正文被掐断：assistant 块不再有正文容器
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
     expect(assistant.querySelector('.msg-body')).toBeNull();
-    // 「用户停止了对话」平铺折叠块外（收起态常驻可见）+ 身份标签保留
-    expect(document.querySelector('.round-block__interrupted')?.textContent).toContain(
-      '用户停止了对话',
-    );
+    // 用户中断：停止行退役（2026-10-13 底栏标签收口），宿主载体如实定格 + 身份标签保留
+    expect(document.querySelector('.round-block__interrupted')).toBeNull();
+    expect(assistant.dataset.status).toBe('用户中断');
     expect(assistant.querySelector('.msg-ai-label__role')?.textContent).toBe('白话方案设计师');
     // 运行时平铺容器已收走（不残留 process-flow 呼吸相位行）
     expect(document.querySelector('.process-flow')).toBeNull();
@@ -4317,7 +4315,7 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     vi.restoreAllMocks();
   });
 
-  it('interrupted（aborted 事件）→ round-block §已停止 + 「用户停止了对话」平铺折叠块外，半截正文掐断（2026-09-19 形态定案）', () => {
+  it('interrupted（aborted 事件）→ round-block §已停止详情保留 + 停止行退役（底栏「用户中断」标签），半截正文掐断（2026-09-19 形态定案 · 收口修订 2026-10-13）', () => {
     mountChatView();
     dispatch({
       type: 'process_event',
@@ -4341,10 +4339,10 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     expect(rb.textContent).toContain('用户停止了对话');
     // 收尾即停止呼吸（is-running 收敛）
     expect(rb.classList.contains('is-running')).toBe(false);
-    // 停止行平铺折叠块外（收起态常驻可见，语义映射为「用户停止了对话」）
-    expect(document.querySelector('.round-block__interrupted')?.textContent).toContain(
-      '用户停止了对话',
-    );
+    // 用户中断：停止行退役（2026-10-13 底栏标签收口），宿主载体如实定格；
+    // 折叠块内 §已停止详情仍保留完整文案（详情记录层不受收口影响，上方已断言）
+    expect(document.querySelector('.round-block__interrupted')).toBeNull();
+    expect(document.querySelector<HTMLElement>('.msg.assistant')?.dataset.status).toBe('用户中断');
     // 半截正文掐断（丢弃运行中 step 的内容，与重放中断轮不显示正文同构）
     expect(document.querySelector('.msg.assistant .msg-body')).toBeNull();
   });
@@ -8709,6 +8707,25 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(tokenSrc).toMatch(/--dim-lg:\s*160px/);
   });
 
+  it('🔴 源码级守卫：终态标签收口底栏（三档 :has 规则 + 正文尾已完成压制 + 异常态正文尾自足）', () => {
+    // 形态定案（2026-10-13 终态标签收口底栏）：已完成/用户中断/异常中断三态标签
+    // 挂 round-group 底栏 ::before（time 左侧），正文尾回归光标纯度。jsdom 不算计算样式，
+    // 读生产样式表源码断言（与活动限高守卫同范式）——删任一档规则即红。
+    const styleSrc = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf-8') as string;
+    // 三档标签位点齐全（载体泛匹配 [data-status]，有正文挂 body、中断轮挂宿主）
+    for (const term of ['已完成', '用户中断', '异常中断']) {
+      expect(styleSrc).toContain(`:has([data-status='${term}']) .round-group__footer::before`);
+    }
+    // 贴时间隔壁：margin-left:auto 吸收 space-between 余量（标签右靠 time 左）
+    expect(styleSrc).toMatch(/margin-left:\s*auto/);
+    // 已完成正文尾必须显式 content:none——否则被基础档 attr(data-status) 回退显示「已完成」文字
+    const doneBody = styleSrc.match(/\.msg-body\[data-status='已完成'\]::after\s*\{([^}]*)\}/);
+    expect(doneBody?.[1] ?? '').toMatch(/content:\s*none/);
+    // 异常态正文尾自足：状态词前缀 + 原因（流错误案 footer 处 is-pending 隐藏期，正文尾是唯一展示位）
+    const errBody = styleSrc.match(/\.msg-body\[data-status='异常中断'\]::after\s*\{([^}]*)\}/);
+    expect(errBody?.[1] ?? '').toMatch(/'异常中断 · '/);
+  });
+
   it('审批卡终结通知：write_confirm_closed 收卡，收卡后按钮不再回传（僵尸交互不留）', () => {
     // 缺口背景：宿主超时自动拒绝时，webview 不知道请求已死 ⇒ 卡残留、按钮点了没反应
     // （对照后台任务行「终态无终止按钮」的既有纪律）。终结通知补上这一唯一真源。
@@ -9773,9 +9790,12 @@ describe('光标八态状态机（data-status）', () => {
         status: 'interrupted',
       }),
     );
-    // 中断轮：容器（is-interrupted-host）保留，但正文块不派生——无载体即无状态，不得伪造
+    // 中断轮：容器（is-interrupted-host）保留，但正文块不派生——状态挂宿主载体
+    //（载体契约 2026-10-13：有正文挂 .msg-body、中断轮挂宿主，appendInterruptedRow 单点写入）
     expect(document.querySelector('.msg.assistant .msg-body')).toBeNull();
-    expect(document.querySelector('[data-status]')).toBeNull();
+    expect(document.querySelector('.msg-body[data-status]')).toBeNull();
+    // 宿主载体按事件如实定格（本案 error 事件 → 异常中断；非伪造，是真实终态）
+    expect(document.querySelector<HTMLElement>('.is-interrupted-host')?.dataset.status).toBe('异常中断');
   });
 });
 

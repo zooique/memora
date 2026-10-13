@@ -657,20 +657,16 @@ export const chatStyles = `
       animation: none;
     }
   }
-  /* 终态「已完成」：静默 circle-check 淡勾（path 与 icons.ts circle-check 同形——::after 是
-   * 光标唯一安全位，无法走 getIconSvg 注入，以 mask 复刻同款轮廓；可见度分级：正常必须安静） */
+  /* 终态「已完成」：正文尾不显示（2026-10-13 收口底栏——淡勾迁至 round-group 底栏
+   * time 左侧，见 .round-group__footer::before）。content:none 显式压住基础档的
+   * attr(data-status) 文字，否则会回退显示「已完成」字样 */
   .msg-body[data-status='已完成']::after {
-    content: '';
-    width: var(--icon-2xs); height: var(--icon-2xs); vertical-align: -1px;
-    background: var(--status-pass, #4ec9b0); opacity: var(--op-6);
-    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='5.5'/%3E%3Cpath d='M5.6 8.3l1.7 1.7 3.3-3.5'/%3E%3C/svg%3E")
-      no-repeat center / contain;
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='5.5'/%3E%3Cpath d='M5.6 8.3l1.7 1.7 3.3-3.5'/%3E%3C/svg%3E")
-      no-repeat center / contain;
+    content: none;
   }
-  /* 终态「异常中断」：红色 + 原因摘要（detail 由 JS 截断写入） */
+  /* 终态「异常中断」：红字状态词 + 原因摘要（detail 由 JS 截断写入）。状态词必须在场——
+   * 流错误案 footer 处于 is-pending 不可见，正文尾是该态唯一展示位，须自足说清「什么结局 + 为什么」 */
   .msg-body[data-status='异常中断']::after {
-    content: attr(data-status-detail);
+    content: '异常中断 · ' attr(data-status-detail);
     color: var(--danger, #f14c4c);
   }
   /* AI 正文段落间距（增加阅读舒适度） */
@@ -793,6 +789,41 @@ export const chatStyles = `
   /* 段级 footer 隐藏：复制/分叉/删除/时间戳统一由容器级承载，段级不设
    * （避免「续接正文底部又有操作按钮」的重复入口） */
   .msg.assistant .msg-footer { display: none; }
+  /* 终态标签收口底栏（2026-10-13）：状态词/淡勾迁至 time 左侧，正文尾回归光标纯度。
+   * 载体泛匹配（契约见 chatView CursorStatus）：有正文轮挂 .msg-body、中断轮挂宿主块，
+   * round-group 内任一带终态 [data-status] 即点亮——运行态（思考中等）不在三档内不触发，
+   * 流式期 footer.is-pending 隐藏形成第二道屏蔽。margin-left:auto 吸收 space-between
+   * 余量使其紧贴 time 左侧（time 缺省时贴最右，仍是底栏右缘元信息区）。 */
+  .round-group:has([data-status='已完成']) .round-group__footer::before,
+  .round-group:has([data-status='用户中断']) .round-group__footer::before,
+  .round-group:has([data-status='异常中断']) .round-group__footer::before {
+    margin-left: auto;
+    margin-right: var(--sp-1, 4px);
+    font-size: var(--font-xs, 10px);
+    line-height: 1;
+  }
+  /* 「已完成」→ 静默 circle-check 淡勾（自正文尾 ::after 迁移；path 与 icons.ts
+   * circle-check 同形——伪元素无法走 getIconSvg 注入，以 mask 复刻同款轮廓） */
+  .round-group:has([data-status='已完成']) .round-group__footer::before {
+    content: '';
+    width: var(--icon-2xs); height: var(--icon-2xs);
+    background: var(--status-pass, #4ec9b0); opacity: var(--op-6);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='5.5'/%3E%3Cpath d='M5.6 8.3l1.7 1.7 3.3-3.5'/%3E%3C/svg%3E")
+      no-repeat center / contain;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='5.5'/%3E%3Cpath d='M5.6 8.3l1.7 1.7 3.3-3.5'/%3E%3C/svg%3E")
+      no-repeat center / contain;
+  }
+  /* 「用户中断」→ 中性文字标签（主动停止非错误，不抢注意力） */
+  .round-group:has([data-status='用户中断']) .round-group__footer::before {
+    content: '用户中断';
+    color: var(--text-secondary, #9aa0a6);
+  }
+  /* 「异常中断」→ 红字标签（中断轮案：锁超时等异常轮 footer 恒显形，标签在场；
+   * 流错误案 footer 隐藏期该规则不可见，正文尾红字自足承接，两相位不重复） */
+  .round-group:has([data-status='异常中断']) .round-group__footer::before {
+    content: '异常中断';
+    color: var(--danger, #f14c4c);
+  }
   .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
 
   /* ============ Components：底部输入卡片 ============
