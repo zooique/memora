@@ -683,6 +683,31 @@ describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-1
     expect(document.querySelector('.custom-engine.expanded .ce-dot')?.className).toContain('ok');
   });
 
+  it('custom_search_engine_test_result → 渲染 sample 样例（防协议字段悬空变僵尸）', () => {
+    mountExtended();
+    pushStatus([MY_SITE]);
+    clickOne('.ce-edit');
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'custom_search_engine_test_result',
+          result: {
+            engineName: 'MySite',
+            ok: true,
+            count: 2,
+            sample: [
+              { title: '结果一', url: 'https://a.test/1' },
+              { title: '结果二', url: 'https://b.test/2' },
+            ],
+          },
+        },
+      }),
+    );
+    const items = document.querySelectorAll<HTMLElement>('.custom-engine.expanded .ce-sample li');
+    expect(items).toHaveLength(2);
+    expect(items[0]?.textContent).toBe('结果一 · https://a.test/1');
+  });
+
   it('点「取消」→ 丢弃草稿回到收起态（持久化清单不受影响）', () => {
     const { postMessage } = mountExtended();
     pushStatus([MY_SITE]);

@@ -658,10 +658,11 @@ function createSecurityView({
         </select></label>
         <div class="ce-actions">
           <button class="ce-test btn btn-secondary" type="button">测试</button>
-          <button class="ce-save btn btn-primary" type="button">保存</button>
+          <button class="ce-save btn" type="button">保存</button>
           <button class="ce-cancel btn btn-secondary" type="button">取消</button>
           <span class="ce-test-status" role="status" aria-live="polite"></span>
         </div>
+        <ul class="ce-sample" role="list"></ul>
       </div>`
           : ''
       }
@@ -797,7 +798,7 @@ function createSecurityView({
     }
     if (msg.type === 'custom_search_engine_test_result') {
       // 回显到当前唯一展开的编辑区（谁发起测试就回显到谁）
-      const { ok, count, error } = msg.result;
+      const { ok, count, error, sample } = msg.result;
       const card = root.querySelector<HTMLElement>('.custom-engine.expanded');
       if (card) {
         setStatus(
@@ -806,6 +807,16 @@ function createSecurityView({
           ok ? 'ok' : 'fail',
         );
         if (ok) card.querySelector<HTMLElement>('.ce-dot')?.classList.add('ok');
+        const sampleEl = card.querySelector<HTMLElement>('.ce-sample');
+        if (sampleEl) {
+          sampleEl.innerHTML = '';
+          for (const s of sample ?? []) {
+            const li = document.createElement('li');
+            // textContent 安全路径：样例标题/URL 来自外部接口，绝不进 innerHTML
+            li.textContent = `${s.title} · ${s.url}`;
+            sampleEl.appendChild(li);
+          }
+        }
       }
     }
     if (msg.type === 'search_engine_status' && engineSelect) {

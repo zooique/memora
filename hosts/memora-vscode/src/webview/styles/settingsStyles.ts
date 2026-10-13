@@ -331,17 +331,17 @@ export const settingsStyles = `
   /* ============ Components：自定义搜索引擎（紧凑清单 + 手风琴单编辑区） ============ */
   .custom-search-engines { display: flex; flex-direction: column; gap: 6px; }
   .custom-engine {
-    border: 0.5px solid var(--border-tertiary, rgba(128, 128, 128, 0.35));
-    border-radius: var(--border-radius-md, 8px);
-    background: var(--surface-secondary, rgba(128, 128, 128, 0.06));
+    border: 0.5px solid var(--border-panel, rgba(128, 128, 128, 0.4));
+    border-radius: var(--radius-md, 6px);
+    background: var(--surface-card, #252526);
     overflow: hidden;
   }
   .custom-engine.expanded { background: transparent; }
   .ce-summary { display: flex; align-items: center; gap: 8px; padding: 7px 10px; min-height: 33px; }
   .ce-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--text-secondary, #9aa0a6); }
-  .ce-dot.ok { background: var(--feedback-pass, #3fb950); }
+  .ce-dot.ok { background: var(--status-pass, #4ec9b0); }
   .ce-dot.fail { background: var(--text-error, #f14c4c); }
-  .ce-label { font-size: var(--font-base, 12px); font-weight: 500; flex: none; }
+  .ce-label { font-size: var(--font-base, 13px); font-weight: 500; flex: none; }
   .ce-host {
     flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
@@ -349,13 +349,21 @@ export const settingsStyles = `
 
   .ce-editor {
     display: flex; flex-direction: column; gap: 8px;
-    padding: 10px; border-top: 0.5px solid var(--border-tertiary, rgba(128, 128, 128, 0.35));
+    padding: var(--sp-3, 8px); border-top: 0.5px solid var(--border-panel, rgba(128, 128, 128, 0.4));
   }
   .ce-field { display: flex; align-items: center; gap: 8px; }
   .ce-field > span { flex: 0 0 32px; font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
   .ce-field > input, .ce-field > select { flex: 1 1 auto; min-width: 0; }
-  .ce-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ce-actions { display: flex; align-items: center; gap: var(--sp-2, 6px); flex-wrap: wrap; }
+  .ce-sample {
+    display: flex; flex-direction: column; gap: var(--sp-0, 2px);
+    margin: 0; padding: 0; list-style: none;
+  }
+  .ce-sample li {
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .ce-test-status { font-size: var(--font-xs, 10px); }
-  .ce-test-status.ok { color: var(--feedback-pass, #3fb950); }
+  .ce-test-status.ok { color: var(--status-pass, #4ec9b0); }
   .ce-test-status.fail { color: var(--text-error, #f14c4c); }
 `;
