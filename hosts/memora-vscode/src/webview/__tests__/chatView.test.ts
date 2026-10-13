@@ -8711,7 +8711,10 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     // 形态定案（2026-10-13 终态标签收口底栏，布局返修同日）：已完成/用户中断/异常中断
     // 三态标签挂 round-group 底栏 ::after（time 之后），正文尾回归光标纯度。
     // jsdom 不算计算样式，读生产样式表源码断言（与活动限高守卫同范式）——删任一档规则即红。
-    const styleSrc = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf-8') as string;
+    const styleSrc = readFileSync(
+      join(__dirname, '..', 'styles', 'chatStyles.ts'),
+      'utf-8',
+    ) as string;
     // 三档标签位点齐全（载体泛匹配 [data-status]，有正文挂 body、中断轮挂宿主）
     for (const term of ['已完成', '用户中断', '异常中断']) {
       expect(styleSrc).toContain(`:has([data-status='${term}']) .round-group__footer::after`);
@@ -9802,7 +9805,9 @@ describe('光标八态状态机（data-status）', () => {
     expect(document.querySelector('.msg.assistant .msg-body')).toBeNull();
     expect(document.querySelector('.msg-body[data-status]')).toBeNull();
     // 宿主载体按事件如实定格（本案 error 事件 → 异常中断；非伪造，是真实终态）
-    expect(document.querySelector<HTMLElement>('.is-interrupted-host')?.dataset.status).toBe('异常中断');
+    expect(document.querySelector<HTMLElement>('.is-interrupted-host')?.dataset.status).toBe(
+      '异常中断',
+    );
   });
 });
 
