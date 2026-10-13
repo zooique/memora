@@ -10,11 +10,10 @@
  *      SecretStorage 无枚举 API，key 按 name 构造，name 只存在于 configuration；
  *      顺序反了 = name 先丢 = secret 成永久孤儿（K1，测试锁调用时序）。
  *   ② 用户级 settings：键清单从 package.json contributes.configuration.properties
- *      派生（package.json 是配置声明真源，新增配置键自动跟随）+ backgroundProvider
- *      显式补丁（该键被 ProviderStore 写入但 package.json 无声明，K7，见
- *      UNDECLARED_USER_SETTING_KEYS）；清单恒为完整设置 ID 形态，update 前经
- *      toRelativeSettingKey 换算为相对键（getConfiguration(section) 的入参形态）；
- *      逐键 update(undefined, Global)。只清 Global target——Workspace 一字节不动（K4）。
+ *      派生（package.json 是配置声明真源，新增配置键自动跟随）；清单恒为完整
+ *      设置 ID 形态，update 前经 toRelativeSettingKey 换算为相对键
+ *      （getConfiguration(section) 的入参形态）；逐键 update(undefined, Global)。
+ *      只清 Global target——Workspace 一字节不动（K4）。
  *   ③ globalState：keys() 枚举 → 只清 USER_STATE_KEY_PREFIX 前缀的键。
  *      globalState 是 VS Code **跨扩展共享**存储库，无脑全清会误删其他扩展的键（K3）。
  *   ④ globalStorage 目录：删 skills/ + role-packs/ 后**重建空目录**（与 activate 的
@@ -44,14 +43,8 @@ import {
 } from '../../shared/constants.js';
 
 /**
- * K7 补丁：被 ProviderStore 写入、但 package.json contributes.configuration **未声明**
- * 的用户级 settings 键（完整设置 ID 形态，与派生清单同一形态，禁短名混入）。
- * 派生清单只覆盖已声明键，漏此键会让后台模型通道配置在「初始化」后残留 ⇒ 显式补齐
- * 并登记；补 package.json 声明属独立小修，不混入本模块（批次边界）。
+ * 「初始化」执行上下文（依赖注入，便于单测：不直连 ExtensionContext）
  */
-const UNDECLARED_USER_SETTING_KEYS: readonly string[] = ['memora.backgroundProvider'];
-
-/** 「初始化」执行上下文（依赖注入，便于单测：不直连 ExtensionContext） */
 export interface UserDataResetScope {
   /** VS Code 全局状态（globalState，跨扩展共享存储库） */
   globalState: vscode.Memento;
@@ -76,13 +69,13 @@ export interface ResetReport {
 }
 
 /**
- * 派生用户级 settings 键清单（真源 = package.json 声明 + K7 补丁）
+ * 派生用户级 settings 键清单（真源 = package.json 声明）
  *
  * 两种合法形态都解析：contributes.configuration 为单对象（当前宿主）或对象数组
  * （VS Code 规范允许；防御将来有人拆分，届时不会静默漏清）。
  *
  * @param packageJson 插件 package.json 原文（不信任形状，逐层收窄）
- * @returns 完整设置 ID 清单（如 memora.providers；已含 K7 补丁且去重）
+ * @returns 完整设置 ID 清单（如 memora.providers）
  */
 export function listUserSettingKeys(packageJson: unknown): string[] {
   const keys = new Set<string>();
@@ -106,7 +99,6 @@ export function listUserSettingKeys(packageJson: unknown): string[] {
     if (typeof properties !== 'object' || properties === null) continue;
     for (const key of Object.keys(properties)) keys.add(key);
   }
-  for (const key of UNDECLARED_USER_SETTING_KEYS) keys.add(key);
   return [...keys];
 }
 

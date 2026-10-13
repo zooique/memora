@@ -75,6 +75,7 @@ const SAMPLE_PACKAGE_JSON = {
       properties: {
         'memora.providers': { type: 'array' },
         'memora.activeProvider': { type: 'string' },
+        'memora.backgroundProvider': { type: 'string' },
         'memora.disabledSkills': { type: 'array' },
       },
     },
@@ -147,12 +148,12 @@ describe('userDataReset.resetUserData', () => {
 
     const report = await resetUserData(makeScope());
 
-    // 派生清单（3 个样本键）+ K7 补丁，完整 ID 形态
+    // 派生清单（4 个样本键，package.json 声明序）
     expect(report.settingsCleared).toEqual([
       'memora.providers',
       'memora.activeProvider',
-      'memora.disabledSkills',
       'memora.backgroundProvider',
+      'memora.disabledSkills',
     ]);
     expect(h.updateCalls.length).toBe(4);
     for (const call of h.updateCalls) {
@@ -206,12 +207,12 @@ describe('userDataReset.resetUserData', () => {
 });
 
 describe('userDataReset.listUserSettingKeys', () => {
-  it('对象形态：取 properties 全部键 + K7 补丁', () => {
+  it('对象形态：取 properties 全部键', () => {
     expect(listUserSettingKeys(SAMPLE_PACKAGE_JSON)).toEqual([
       'memora.providers',
       'memora.activeProvider',
-      'memora.disabledSkills',
       'memora.backgroundProvider',
+      'memora.disabledSkills',
     ]);
   });
 
@@ -224,24 +225,27 @@ describe('userDataReset.listUserSettingKeys', () => {
         ],
       },
     });
-    expect(keys).toEqual(['memora.providers', 'memora.searchEngine', 'memora.backgroundProvider']);
+    expect(keys).toEqual(['memora.providers', 'memora.searchEngine']);
   });
 
-  it('补丁去重：package.json 已声明 backgroundProvider 不重复入列', () => {
+  it('多块重复声明同一键 → 只入列一次（Set 去重）', () => {
     const keys = listUserSettingKeys({
       contributes: {
-        configuration: { properties: { 'memora.backgroundProvider': {} } },
+        configuration: [
+          { properties: { 'memora.providers': {} } },
+          { properties: { 'memora.providers': {} } },
+        ],
       },
     });
-    expect(keys).toEqual(['memora.backgroundProvider']);
+    expect(keys).toEqual(['memora.providers']);
   });
 
-  it('畸形输入：无 contributes / 空值 / 非对象不炸，K7 补丁仍在', () => {
-    expect(listUserSettingKeys(undefined)).toEqual(['memora.backgroundProvider']);
-    expect(listUserSettingKeys({})).toEqual(['memora.backgroundProvider']);
-    expect(listUserSettingKeys('nope')).toEqual(['memora.backgroundProvider']);
-    expect(listUserSettingKeys({ contributes: { configuration: { properties: null } } })).toEqual([
-      'memora.backgroundProvider',
-    ]);
+  it('畸形输入：无 contributes / 空值 / 非对象不炸，返回空清单', () => {
+    expect(listUserSettingKeys(undefined)).toEqual([]);
+    expect(listUserSettingKeys({})).toEqual([]);
+    expect(listUserSettingKeys('nope')).toEqual([]);
+    expect(listUserSettingKeys({ contributes: { configuration: { properties: null } } })).toEqual(
+      [],
+    );
   });
 });
