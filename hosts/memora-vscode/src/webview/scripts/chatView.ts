@@ -4210,10 +4210,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /**
    * 光标状态（八态，单一合成函数的输出域）：运行三态呼吸 / 挂起两态静态 / 终态三态分级。
-   * 终态三态的渲染位点（2026-10-13 收敛）：已完成/用户中断 → round-group 底栏
-   * （time 左侧标签，:has 消费）；异常中断 → 正文尾红字（其存活窗口与底栏显形时序互斥，
-   * 见 settleRoundWithFooter 收口名单），中断轮的异常中断档由 appendInterruptedRow
-   * 写宿主载体后同样由底栏承接。
+   * 终态三态的渲染位点（2026-10-13 收敛，布局返修同日改挂 time 之后 ::after）：
+   * 已完成/用户中断 → round-group 底栏（time 之后标签，:has 消费）；异常中断 → 正文尾
+   * 红字（其存活窗口与底栏显形时序互斥，见 settleRoundWithFooter 收口名单），中断轮的
+   * 异常中断档由 appendInterruptedRow 写宿主载体后同样由底栏承接。
    */
   type CursorStatus =
     | '思考中' // 运行：思考相位（process-flow 相位行非工具形态在途）
@@ -4221,7 +4221,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     | '正在回答中' // 运行：正文流式生成（默认态）
     | '等待输入' // 挂起：ask 预检停顿（提问框在途）
     | '已暂停' // 挂起：软暂停/用户暂停（半截正文静态展示）
-    | '已完成' // 终态：底栏 time 左侧淡勾（正文尾不再显示）
+    | '已完成' // 终态：底栏 time 之后淡勾（正文尾不再显示）
     | '用户中断' // 终态：用户主动停止（载体 = 中断轮宿主块，底栏文字标签）
     | '异常中断'; // 终态：异常（载体双位——正文红字+detail / 中断轮宿主→底栏红字标签）
 

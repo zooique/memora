@@ -8708,16 +8708,23 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
   });
 
   it('🔴 源码级守卫：终态标签收口底栏（三档 :has 规则 + 正文尾已完成压制 + 异常态正文尾自足）', () => {
-    // 形态定案（2026-10-13 终态标签收口底栏）：已完成/用户中断/异常中断三态标签
-    // 挂 round-group 底栏 ::before（time 左侧），正文尾回归光标纯度。jsdom 不算计算样式，
-    // 读生产样式表源码断言（与活动限高守卫同范式）——删任一档规则即红。
+    // 形态定案（2026-10-13 终态标签收口底栏，布局返修同日）：已完成/用户中断/异常中断
+    // 三态标签挂 round-group 底栏 ::after（time 之后），正文尾回归光标纯度。
+    // jsdom 不算计算样式，读生产样式表源码断言（与活动限高守卫同范式）——删任一档规则即红。
     const styleSrc = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf-8') as string;
     // 三档标签位点齐全（载体泛匹配 [data-status]，有正文挂 body、中断轮挂宿主）
     for (const term of ['已完成', '用户中断', '异常中断']) {
-      expect(styleSrc).toContain(`:has([data-status='${term}']) .round-group__footer::before`);
+      expect(styleSrc).toContain(`:has([data-status='${term}']) .round-group__footer::after`);
     }
-    // 贴时间隔壁：margin-left:auto 吸收 space-between 余量（标签右靠 time 左）
-    expect(styleSrc).toMatch(/margin-left:\s*auto/);
+    // 两端分布（实测返修 2026-10-13「底部单边倒」）：auto margin 挂 footer 内 .msg-time
+    // ——time+标签成组靠右、操作按钮独占左端。首版挂在 ::before 上（首子伪元素吸收
+    // 全部余量把整组挤右端）即此 bug，断言两者互斥防回退：标签规则含 auto margin 即红
+    const footerTime = styleSrc.match(/\.round-group__footer \.msg-time\s*\{([^}]*)\}/);
+    expect(footerTime?.[1] ?? '').toMatch(/margin-left:\s*auto/);
+    const termRule = styleSrc.match(
+      /:has\(\[data-status='已完成'\]\) \.round-group__footer::after\s*\{([^}]*)\}/,
+    );
+    expect(termRule?.[1] ?? '').not.toMatch(/margin-left:\s*auto/);
     // 已完成正文尾必须显式 content:none——否则被基础档 attr(data-status) 回退显示「已完成」文字
     const doneBody = styleSrc.match(/\.msg-body\[data-status='已完成'\]::after\s*\{([^}]*)\}/);
     expect(doneBody?.[1] ?? '').toMatch(/content:\s*none/);

@@ -33,7 +33,7 @@ export function resolveHtmlLang(envLanguage: string | undefined): string {
  * 生成 `<!DOCTYPE>` 到 `</head>` 的完整文档头（不含 `<body>`，由调用方续接）。
  *
  * CSP `img-src data:`（2026-10-13 补）：样式层 mask 图标（如 AI 回答完成的「已完成」淡勾，
- * chatStyles `.round-group__footer::before` 底栏标签用 `data:image/svg+xml` 画，同日自
+ * chatStyles `.round-group__footer::after` 底栏标签用 `data:image/svg+xml` 画，同日自
  * `.msg-body[data-status='已完成']::after` 迁来）按 CSP 规范
  * 走 img-src；不显式声明则被 `default-src 'none'` 兜底拦截——实测被拦后 VS Code 报
  * "Note that 'img-src' was not explicitly set... The action has been blocked"，图标静默消失。

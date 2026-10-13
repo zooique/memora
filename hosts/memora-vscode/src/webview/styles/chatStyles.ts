@@ -658,8 +658,8 @@ export const chatStyles = `
     }
   }
   /* 终态「已完成」：正文尾不显示（2026-10-13 收口底栏——淡勾迁至 round-group 底栏
-   * time 左侧，见 .round-group__footer::before）。content:none 显式压住基础档的
-   * attr(data-status) 文字，否则会回退显示「已完成」字样 */
+   * time 之后的 ::after，见 .round-group__footer 标签规则）。content:none 显式压住
+   * 基础档的 attr(data-status) 文字，否则会回退显示「已完成」字样 */
   .msg-body[data-status='已完成']::after {
     content: none;
   }
@@ -789,22 +789,25 @@ export const chatStyles = `
   /* 段级 footer 隐藏：复制/分叉/删除/时间戳统一由容器级承载，段级不设
    * （避免「续接正文底部又有操作按钮」的重复入口） */
   .msg.assistant .msg-footer { display: none; }
-  /* 终态标签收口底栏（2026-10-13）：状态词/淡勾迁至 time 左侧，正文尾回归光标纯度。
-   * 载体泛匹配（契约见 chatView CursorStatus）：有正文轮挂 .msg-body、中断轮挂宿主块，
-   * round-group 内任一带终态 [data-status] 即点亮——运行态（思考中等）不在三档内不触发，
-   * 流式期 footer.is-pending 隐藏形成第二道屏蔽。margin-left:auto 吸收 space-between
-   * 余量使其紧贴 time 左侧（time 缺省时贴最右，仍是底栏右缘元信息区）。 */
-  .round-group:has([data-status='已完成']) .round-group__footer::before,
-  .round-group:has([data-status='用户中断']) .round-group__footer::before,
-  .round-group:has([data-status='异常中断']) .round-group__footer::before {
-    margin-left: auto;
-    margin-right: var(--sp-1, 4px);
+  /* 终态标签收口底栏（2026-10-13，布局返修同日）：状态词/淡勾挂底栏 time 之后的
+   * ::after，正文尾回归光标纯度。载体泛匹配（契约见 chatView CursorStatus）：有正文轮
+   * 挂 .msg-body、中断轮挂宿主块，round-group 内任一带终态 [data-status] 即点亮——
+   * 运行态（思考中等）不在三档内不触发，流式期 footer.is-pending 隐藏形成第二道屏蔽。
+   *
+   * 两端分布机制（首版 ::before+margin-left:auto 的返修教训：::before 是首子伪元素，
+   * 其 auto margin 吸收全部余量会把 actions/time/标签整组挤到右端、左侧全空——实测
+   * 「底部单边倒」）：标签用 ::after（DOM 序在 time 之后），auto margin 挂在 .msg-time
+   * 上（见 .round-group__footer .msg-time 规则）——time 与标签成组靠右，操作按钮独占
+   * 左端。无标签轮 time 独占右端，与 space-between 原效果一致。 */
+  .round-group:has([data-status='已完成']) .round-group__footer::after,
+  .round-group:has([data-status='用户中断']) .round-group__footer::after,
+  .round-group:has([data-status='异常中断']) .round-group__footer::after {
     font-size: var(--font-xs, 10px);
     line-height: 1;
   }
   /* 「已完成」→ 静默 circle-check 淡勾（自正文尾 ::after 迁移；path 与 icons.ts
    * circle-check 同形——伪元素无法走 getIconSvg 注入，以 mask 复刻同款轮廓） */
-  .round-group:has([data-status='已完成']) .round-group__footer::before {
+  .round-group:has([data-status='已完成']) .round-group__footer::after {
     content: '';
     width: var(--icon-2xs); height: var(--icon-2xs);
     background: var(--status-pass, #4ec9b0); opacity: var(--op-6);
@@ -814,16 +817,21 @@ export const chatStyles = `
       no-repeat center / contain;
   }
   /* 「用户中断」→ 中性文字标签（主动停止非错误，不抢注意力） */
-  .round-group:has([data-status='用户中断']) .round-group__footer::before {
+  .round-group:has([data-status='用户中断']) .round-group__footer::after {
     content: '用户中断';
     color: var(--text-secondary, #9aa0a6);
   }
   /* 「异常中断」→ 红字标签（中断轮案：锁超时等异常轮 footer 恒显形，标签在场；
    * 流错误案 footer 隐藏期该规则不可见，正文尾红字自足承接，两相位不重复） */
-  .round-group:has([data-status='异常中断']) .round-group__footer::before {
+  .round-group:has([data-status='异常中断']) .round-group__footer::after {
     content: '异常中断';
     color: var(--danger, #f14c4c);
   }
+  /* 底栏 time 吸收余量（两端分布的承载点）：auto margin 优先于 justify-content
+   * space-between——time（连同其后的终态标签 ::after）成组靠右，操作按钮独占左端；
+   * 无标签轮 time 独占右端，与 space-between 原效果一致。限定 footer 作用域：
+   * .msg-time 还用于用户消息操作栏（.msg-user-actions），全局 auto margin 会破坏其布局 */
+  .round-group__footer .msg-time { margin-left: auto; }
   .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
 
   /* ============ Components：底部输入卡片 ============
