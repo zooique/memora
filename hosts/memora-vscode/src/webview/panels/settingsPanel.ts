@@ -18,6 +18,7 @@ import { inspectRolePackTeams } from '../../extension/host/rolePackTeams.js';
 import { MemoraChatViewProvider } from './chatPanel.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 import type {
+  CustomSearchEngineConfig,
   ExtensionToWebviewMessage,
   GovernanceStatsDto,
   MemoryItemDto,
@@ -26,6 +27,8 @@ import type {
   SkillDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
+import { PRESET_SEARCH_ENGINES } from '../../shared/protocol.js';
+import { HOST_PARSE_STRATEGIES, probeSearchEngine } from '../../extension/host/searchEngines.js';
 import { capabilityLabel } from '../helpers/capabilityLabels.js';
 import {
   findUnmatchedDisabled,
@@ -199,6 +202,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       // 安全子视图：推送写入二次确认开关状态 + 白名单额外路径 + 网页搜索引擎
       this.loadSecurityStatus();
       this.loadAllowedPathsStatus();
+      this.loadCustomSearchEnginesStatus();
       this.loadSearchEngineStatus();
       return;
     }
@@ -431,6 +435,17 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     // 网页搜索引擎：持久化设置 + 回显选中下拉
     if (msg.type === 'search_engine_set') {
       await this.setSearchEngine(msg.engine);
+      return;
+    }
+    // 自定义搜索引擎清单：持久化 + 回显编辑器
+    if (msg.type === 'custom_search_engines_set') {
+      await this.setCustomSearchEngines(msg.engines);
+      return;
+    }
+    // 自定义搜索引擎连通性验证（保存前先验证的预览探针）
+    if (msg.type === 'custom_search_engine_test') {
+      const result = await probeSearchEngine(msg.engine);
+      this.post({ type: 'custom_search_engine_test_result', result });
       return;
     }
     // 「恢复初始状态」：按钮 → 注入的处理器（extension 侧 modal + 清理 + reload），
@@ -1519,6 +1534,14 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    * 装配期一次性注入，修改后需重载窗口（或重建会话）生效——此处仅持久化 + 回显，不做热装配。
    */
   private async setSearchEngine(engine: SearchEngineSetting): Promise<void> {
+    const customs = this.readCustomSearchEngines();
+    const valid =
+      (PRESET_SEARCH_ENGINES as readonly string[]).includes(engine) ||
+      customs.some((e) => e.name === engine);
+    if (!valid) {
+      this.post({ type: 'notice', level: 'error', message: `无效的搜索引擎：${engine}` });
+      return;
+    }
     try {
       await vscode.workspace
         .getConfiguration('memora')
@@ -1544,6 +1567,72 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       .getConfiguration('memora')
       .get<SearchEngineSetting>('searchEngine', 'auto');
     this.post({ type: 'search_engine_status', engine });
+  }
+
+  /** 读取用户自定义搜索引擎清单 */
+  private readCustomSearchEngines(): CustomSearchEngineConfig[] {
+    return vscode.workspace
+      .getConfiguration('memora')
+      .get<CustomSearchEngineConfig[]>('customSearchEngines', []);
+  }
+
+  /**
+   * 持久化用户自定义搜索引擎清单（custom_search_engines_set 消息处理）
+   *
+   * 校验：每项需名称非空、URL 模板含 {query}、解析策略合法；任一不合规整体拒绝并提示，
+   * 不写入（避免半合法状态）。合法则写入用户级设置 + 回推状态 + 提示。
+   */
+  private async setCustomSearchEngines(engines: CustomSearchEngineConfig[]): Promise<void> {
+    for (const e of engines) {
+      if (!e?.name || !e.urlTemplate?.includes('{query}') || !HOST_PARSE_STRATEGIES.includes(e.parseStrategy)) {
+        this.post({
+          type: 'notice',
+          level: 'error',
+          message: `自定义搜索引擎「${e?.name || '(空)'}」配置无效：需填写名称、含 {query} 的 URL 模板与合法解析策略`,
+        });
+        return;
+      }
+    }
+    // 保存前实测验证（host 权威门禁）：仅对相对已持久化清单发生变化的引擎探针（未变引擎跳过，避免重复网络探测）；
+    // 任一变化引擎验证未通过（网络失败 / 接口无结构化结果）→ 整体拒绝保存，webview 即便跳过「测试」也无法绕过。
+    const persisted = this.readCustomSearchEngines();
+    for (const e of engines) {
+      const unchanged = persisted.some(
+        (p) => p.name === e.name && p.urlTemplate === e.urlTemplate && p.parseStrategy === e.parseStrategy,
+      );
+      if (unchanged) continue;
+      const r = await probeSearchEngine(e);
+      if (!r.ok) {
+        this.post({
+          type: 'notice',
+          level: 'error',
+          message: `搜索引擎「${e.name || '(空)'}」验证未通过，未保存：${r.error ?? `接口未返回可解析结果（${r.count} 条）`}`,
+        });
+        return;
+      }
+    }
+    try {
+      await vscode.workspace
+        .getConfiguration('memora')
+        .update('customSearchEngines', engines, vscode.ConfigurationTarget.Global);
+      this.post({ type: 'custom_search_engines_status', engines });
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: `已保存 ${engines.length} 个自定义搜索引擎（重载窗口后生效）`,
+      });
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: `保存自定义搜索引擎失败：${toNoticeText(err)}`,
+      });
+    }
+  }
+
+  /** 加载并推送自定义搜索引擎清单（settings 视图 ready 时先于 search_engine_status 调用） */
+  private loadCustomSearchEnginesStatus(): void {
+    this.post({ type: 'custom_search_engines_status', engines: this.readCustomSearchEngines() });
   }
 
   /** 向 webview 发送消息 */
@@ -1848,13 +1937,11 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
         <div class="security-item-header">
           <label class="security-label" for="searchEngineSelect">网页搜索引擎</label>
         </div>
-        <p class="security-desc">「联网搜索」工具使用的内部搜索后端。自动 = Bing 优先降级 DuckDuckGo；中文场景推荐切「百度/搜狗」提升命中质量。修改后需重载窗口生效。</p>
-        <select id="searchEngineSelect" class="security-select" aria-label="网页搜索引擎">
-          <option value="auto">自动（Bing → DuckDuckGo）</option>
-          <option value="bing">必应（Bing）</option>
-          <option value="baidu">百度（中文推荐）</option>
-          <option value="sogou">搜狗</option>
-        </select>
+        <p class="security-desc">「联网搜索」工具使用的内部搜索后端。自动 = Bing 优先降级 DuckDuckGo；中文场景推荐切「百度/搜狗」提升命中质量。也可选用下方自定义引擎。修改后需重载窗口生效。</p>
+        <select id="searchEngineSelect" class="security-select" aria-label="网页搜索引擎"></select>
+        <p class="security-desc">自定义搜索引擎：名称 + 搜索 URL（用 <code>{query}</code> 作查询占位符）+ 解析策略。仅支持结构化结果源（OpenSearch RSS / JSON 搜索 API），自定义 HTML 解析不可行（安全红线）。</p>
+        <div id="customSearchEngines" class="custom-search-engines"></div>
+        <button id="addCustomEngineBtn" class="btn btn-secondary" type="button">+ 添加自定义搜索引擎</button>
       </div>
       <div class="security-item">
         <div class="security-item-header">

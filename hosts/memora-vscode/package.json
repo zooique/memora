@@ -143,20 +143,33 @@
         "memora.searchEngine": {
           "type": "string",
           "scope": "application",
-          "enum": [
-            "auto",
-            "bing",
-            "baidu",
-            "sogou"
-          ],
-          "enumDescriptions": [
-            "自动：Bing 优先，降级 DuckDuckGo（默认）",
-            "必应（Bing）",
-            "百度（中文场景命中通常更好）",
-            "搜狗"
-          ],
           "default": "auto",
-          "description": "内部网页搜索引擎（web_search 工具使用的后端）。auto 为内置降级链（Bing→DuckDuckGo）；选 baidu/sogou 时用户首选引擎在前、Bing 兜底。用户级偏好，随用户而非随项目。修改后重建会话（或重载窗口）生效。"
+          "description": "内部网页搜索引擎（web_search 工具使用的后端）。可选值：auto（Bing→DuckDuckGo 默认链）、bing、duckduckgo、baidu、sogou，或自定义搜索引擎名（在设置面板「自定义搜索引擎」中定义）。用户级偏好，随用户而非随项目。修改后重载窗口生效。"
+        },
+        "memora.customSearchEngines": {
+          "type": "array",
+          "scope": "application",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "引擎显示名（唯一，作为选择器值）"
+              },
+              "urlTemplate": {
+                "type": "string",
+                "description": "搜索 URL 模板，查询占位符用 {query}（如 https://example.com/search?q={query}）"
+              },
+              "parseStrategy": {
+                "type": "string",
+                "enum": ["openSearchRss", "jsonApi"],
+                "description": "结果解析策略（宿主预置，不可自定义解析逻辑）。openSearchRss=OpenSearch RSS/Atom；jsonApi=JSON 搜索 API（约定 {results:[{title,url,snippet}]} 或 {items:[...]}）"
+              }
+            },
+            "required": ["name", "urlTemplate", "parseStrategy"]
+          },
+          "default": [],
+          "description": "用户自定义网页搜索引擎（web_search 工具后端）。每项 = 名称 + URL 模板(?q={query}) + 宿主预置解析策略。仅支持结构化结果源，自定义 HTML 解析不可行（安全红线）。修改后重载窗口生效。"
         },
         "memora.scriptNodePath": {
           "type": "string",

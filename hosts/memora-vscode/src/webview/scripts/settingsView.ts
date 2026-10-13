@@ -18,10 +18,13 @@
  * webview.asWebviewUri 在 HTML 中 <script src> 引用（CSP script-src cspSource）。
  */
 import type {
+  CustomSearchEngineConfig,
   ExtensionToWebviewMessage,
+  HostParseStrategy,
   SkillDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
+import { PRESET_SEARCH_ENGINES } from '../../shared/protocol.js';
 import { createConfigView } from './configView.js';
 import { createMemoryView } from './memoryView.js';
 import { createRolesView } from './rolesView.js';
@@ -525,13 +528,109 @@ function createSecurityView({
     });
   }
 
-  // ─── 网页搜索引擎下拉 ───
+  // ─── 网页搜索引擎下拉（选项由 custom_search_engines_status 动态重建，单一真理源 PRESET_SEARCH_ENGINES）───
   const engineSelect = root.querySelector<HTMLSelectElement>('#searchEngineSelect');
+  let currentCustomEngines: CustomSearchEngineConfig[] = [];
   engineSelect?.addEventListener('change', () => {
     const engine = engineSelect.value;
-    if (engine === 'auto' || engine === 'bing' || engine === 'baidu' || engine === 'sogou') {
-      vscode.postMessage({ type: 'search_engine_set', engine });
+    // 下拉仅含合法选项；空值（占位）不推送
+    if (engine) vscode.postMessage({ type: 'search_engine_set', engine });
+  });
+
+  // ─── 自定义搜索引擎（SSOT：与内核 SearchEndpoint 单一嫁接，解析策略宿主预置）───
+  const customEnginesBox = root.querySelector<HTMLElement>('#customSearchEngines');
+  const addCustomBtn = root.querySelector<HTMLButtonElement>('#addCustomEngineBtn');
+
+  /** 依据预设 + 自定义重建下拉选项，保留当前选中 */
+  function rebuildEngineOptions(customs: CustomSearchEngineConfig[]): void {
+    if (!engineSelect) return;
+    const selected = engineSelect.value || 'auto';
+    const names = new Set<string>([...PRESET_SEARCH_ENGINES, ...customs.map((c) => c.name)]);
+    engineSelect.innerHTML = '';
+    for (const name of names) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name === 'auto' ? '自动（Bing → DuckDuckGo）' : name;
+      engineSelect.appendChild(opt);
     }
+    engineSelect.value = names.has(selected) ? selected : 'auto';
+  }
+
+  /** 渲染自定义引擎编辑器（增删改整体回推 custom_search_engines_set） */
+  function renderCustomEngines(engines: CustomSearchEngineConfig[]): void {
+    if (!customEnginesBox) return;
+    customEnginesBox.innerHTML = '';
+    engines.forEach((eng, idx) => {
+      const row = document.createElement('div');
+      row.className = 'custom-engine-row';
+      row.innerHTML = `
+        <input class="ce-name" type="text" placeholder="引擎名" aria-label="引擎名" value="${escapeHtml(eng.name)}" />
+        <input class="ce-url" type="text" placeholder="搜索URL，用 {query} 作占位符" aria-label="搜索URL" value="${escapeHtml(eng.urlTemplate)}" />
+        <select class="ce-parse" aria-label="解析策略">
+          <option value="openSearchRss">OpenSearch RSS</option>
+          <option value="jsonApi">JSON 搜索 API</option>
+        </select>
+        <button class="ce-test btn btn-secondary" type="button">测试</button>
+        <button class="ce-remove btn btn-secondary" type="button">删除</button>
+        <span class="ce-test-status" role="status" aria-live="polite"></span>
+      `;
+      const nameInput = row.querySelector<HTMLInputElement>('.ce-name');
+      const urlInput = row.querySelector<HTMLInputElement>('.ce-url');
+      const parseSelect = row.querySelector<HTMLSelectElement>('.ce-parse');
+      const testBtn = row.querySelector<HTMLButtonElement>('.ce-test');
+      const testStatus = row.querySelector<HTMLSpanElement>('.ce-test-status');
+      const removeBtn = row.querySelector<HTMLButtonElement>('.ce-remove');
+      if (!nameInput || !urlInput || !parseSelect || !testBtn || !testStatus || !removeBtn) return;
+      parseSelect.value = eng.parseStrategy;
+      const sync = (): void => {
+        const next = currentCustomEngines.slice();
+        next[idx] = {
+          name: nameInput.value.trim(),
+          urlTemplate: urlInput.value.trim(),
+          parseStrategy: parseSelect.value as HostParseStrategy,
+        };
+        currentCustomEngines = next;
+        rebuildEngineOptions(currentCustomEngines);
+        vscode.postMessage({ type: 'custom_search_engines_set', engines: currentCustomEngines });
+      };
+      nameInput.addEventListener('change', sync);
+      urlInput.addEventListener('change', sync);
+      parseSelect.addEventListener('change', sync);
+      removeBtn.addEventListener('click', () => {
+        currentCustomEngines = currentCustomEngines.filter((_, i) => i !== idx);
+        renderCustomEngines(currentCustomEngines);
+        rebuildEngineOptions(currentCustomEngines);
+        vscode.postMessage({ type: 'custom_search_engines_set', engines: currentCustomEngines });
+      });
+      // 「测试」：以当前行输入构造候选配置，静态预检通过后发 host 实测探针；结果经
+      // custom_search_engine_test_result 回显到本行状态（保存门禁在 host 侧，此处仅为即时预览）。
+      testBtn.addEventListener('click', () => {
+        const candidate: CustomSearchEngineConfig = {
+          name: nameInput.value.trim(),
+          urlTemplate: urlInput.value.trim(),
+          parseStrategy: parseSelect.value as HostParseStrategy,
+        };
+        if (!candidate.name || !candidate.urlTemplate.includes('{query}')) {
+          testStatus.textContent = '请先填写完整（名称 + 含 {query} 的 URL）';
+          testStatus.className = 'ce-test-status fail';
+          return;
+        }
+        testStatus.textContent = '验证中…';
+        testStatus.className = 'ce-test-status';
+        vscode.postMessage({ type: 'custom_search_engine_test', engine: candidate });
+      });
+      customEnginesBox.appendChild(row);
+    });
+  }
+
+  addCustomBtn?.addEventListener('click', () => {
+    currentCustomEngines = [
+      ...currentCustomEngines,
+      { name: '', urlTemplate: '', parseStrategy: 'openSearchRss' },
+    ];
+    renderCustomEngines(currentCustomEngines);
+    rebuildEngineOptions(currentCustomEngines);
+    vscode.postMessage({ type: 'custom_search_engines_set', engines: currentCustomEngines });
   });
 
   // ─── 恢复初始状态（清空用户级数据 + 自动重载；确认弹窗在 host 侧） ───
@@ -570,6 +669,24 @@ function createSecurityView({
       currentProjectPath = msg.projectPath;
       currentPaths = msg.paths ?? [];
       renderAllowedPaths();
+    }
+    if (msg.type === 'custom_search_engines_status') {
+      currentCustomEngines = msg.engines ?? [];
+      renderCustomEngines(currentCustomEngines);
+      rebuildEngineOptions(currentCustomEngines);
+    }
+    if (msg.type === 'custom_search_engine_test_result') {
+      const { engineName, ok, count, error } = msg.result;
+      root.querySelectorAll<HTMLElement>('.custom-engine-row').forEach((r) => {
+        const nameEl = r.querySelector<HTMLInputElement>('.ce-name');
+        const statusEl = r.querySelector<HTMLSpanElement>('.ce-test-status');
+        if (nameEl && statusEl && nameEl.value === engineName) {
+          statusEl.textContent = ok
+            ? `✓ 验证通过，返回 ${count} 条`
+            : `✗ 未通过：${error ?? `无结果（${count} 条）`}`;
+          statusEl.className = `ce-test-status ${ok ? 'ok' : 'fail'}`;
+        }
+      });
     }
     if (msg.type === 'search_engine_status' && engineSelect) {
       engineSelect.value = msg.engine;

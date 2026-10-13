@@ -19,7 +19,6 @@ import {
   FetchWebFetchProvider,
   setLogger,
   resolveContextWindow,
-  buildSearchEndpoints,
 } from '@zooique/memora';
 import type {
   ISessionStore,
@@ -27,9 +26,10 @@ import type {
   UIMessages,
   ProviderRouter,
   LlmProvider,
-  SearchEngineName,
 } from '@zooique/memora';
 import type { ILogger } from '@zooique/memora';
+import type { CustomSearchEngineConfig } from '../../shared/protocol.js';
+import { resolveSearchEndpoints } from './searchEngines.js';
 // vscode 命名空间类型引用（OutputChannel）：仅类型导入，无运行时依赖（宿主运行时由 VS Code 注入真实模块）
 import type { OutputChannel } from 'vscode';
 import { join } from 'node:path';
@@ -202,13 +202,16 @@ export interface AssembleOptions {
    */
   allowedPaths?: string[];
   /**
-   * 内置网页搜索引擎
-   *
-   * 由 extension 从 workspace 设置 memora.searchEngine 读取注入（'auto' | 'bing' | 'baidu' | 'sogou'）。
-   * auto = 默认降级链（Bing→DuckDuckGo）；选 baidu/sogou 时用户首选引擎在前、Bing 兜底。
-   * 修改需重建会话（装配是 activation 期一次性注入）。
+   * 当前激活的网页搜索引擎（预设名或自定义引擎名；auto = 默认降级链 Bing→DuckDuckGo）。
+   * 由 extension 从 workspace 设置 memora.searchEngine 读取注入；修改需重载窗口生效。
    */
-  searchEngine?: 'auto' | SearchEngineName;
+  searchEngine?: string;
+  /**
+   * 用户自定义搜索引擎清单（memora.customSearchEngines 设置形态）。
+   * 由 extension 读取注入；resolveSearchEndpoints 据此把激活引擎解析为内核 SearchEndpoint[]。
+   * 修改需重载窗口生效。
+   */
+  customSearchEngines?: CustomSearchEngineConfig[];
   /**
    * 禁用的技能名清单
    *
@@ -348,12 +351,11 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     sessionStore: store,
     // 问答闭环存储（round-based 模式，传入后内核启用独立 Round 存储）
     roundStore,
-    // 网络搜索（memora.searchEngine 可切换内置引擎；auto = Bing→DuckDuckGo 默认链，
-    // 选 baidu/sogou 时用户首选引擎在前、Bing 兜底——国内可达且解析稳定）
+    // 网络搜索（memora.searchEngine 可切换内置/自定义引擎；auto = Bing→DuckDuckGo 默认链）。
+    // 单一嫁接点 resolveSearchEndpoints：预设委托内核 REGISTRY，自定义走宿主预置解析策略，
+    // 解析逻辑零复制（见 extension/host/searchEngines.ts）。
     webSearchProvider: new FetchWebSearchProvider(
-      options.searchEngine && options.searchEngine !== 'auto'
-        ? buildSearchEndpoints([options.searchEngine, 'bing'])
-        : undefined,
+      resolveSearchEndpoints(options.searchEngine, options.customSearchEngines ?? []),
     ),
     // 网页抓取（补「搜索→抓取」闭环第二段；Node 内置 fetch 开箱即用，零依赖）
     fetchProvider: new FetchWebFetchProvider(),

@@ -82,10 +82,47 @@ export interface LlmProviderConfig {
 
 /** Webview → extension 消息 */
 /**
- * 内部网页搜索引擎设置值（与内核 SearchEngineName + auto 对齐）
- * auto = 默认降级链（Bing→DuckDuckGo）。
+ * 宿主设置面板暴露的预设搜索引擎（auto + 内核 SearchEngineName 全集）。
+ * 单一真理源：settingsView / settingsPanel 共用，禁散点硬编码
+ * （修复旧 package.json enum 比内核窄 + settingsView 守卫重复列表两处带伤）。
  */
-export type SearchEngineSetting = 'auto' | 'bing' | 'baidu' | 'sogou';
+export const PRESET_SEARCH_ENGINES = ['auto', 'bing', 'duckduckgo', 'baidu', 'sogou'] as const;
+
+/** 宿主预置的自定义搜索引擎结果解析策略（结构化结果源，与内核 4 个 HTML 解析器零重叠） */
+export type HostParseStrategy = 'openSearchRss' | 'jsonApi';
+
+/** 用户自定义网页搜索引擎配置（memora.customSearchEngines 设置形态） */
+export interface CustomSearchEngineConfig {
+  /** 引擎显示名（唯一；同时作为选择器值） */
+  name: string;
+  /** 搜索 URL 模板，查询占位符用 {query} */
+  urlTemplate: string;
+  /** 结果解析策略（宿主预置，用户不可自定义解析逻辑——RCE 红线） */
+  parseStrategy: HostParseStrategy;
+}
+
+/**
+ * 自定义搜索引擎连通性验证结果（host 实测抓取+解析后回传 webview）。
+ * sample 仅取 title/url/snippet 预览，与内核 SearchResult 同源字段、不引入内核类型耦合。
+ */
+export interface SearchEngineTestResult {
+  /** 被验证的引擎名（与编辑器行对应，用于回显定位） */
+  engineName: string;
+  /** 是否通过：抓取后解析出 ≥1 条结果 */
+  ok: boolean;
+  /** 解析出的结果条数 */
+  count: number;
+  /** 前几条样例（供 UI 预览） */
+  sample?: { title: string; url: string; snippet?: string }[];
+  /** 失败原因（网络错误 / 超时 / 异常信息） */
+  error?: string;
+}
+
+/**
+ * 当前激活的网页搜索引擎（预设名或自定义引擎名）。
+ * auto = 默认降级链（Bing→DuckDuckGo）；其余为内核预设或自定义引擎名。
+ */
+export type SearchEngineSetting = string;
 
 /**
  * 输入意图——四类输入的意图级分类
@@ -465,6 +502,18 @@ export type WebviewToExtensionMessage =
    * 装配期一次性注入，修改需重载窗口（或重建会话）后生效。
    */
   | { type: 'search_engine_set'; engine: SearchEngineSetting }
+  /**
+   * 设置用户自定义网页搜索引擎清单（custom_search_engines_set 消息处理）
+   *
+   * 由设置面板「自定义搜索引擎」增删改后整体下发：host 持久化到**用户级**设置
+   * （memora.customSearchEngines，ConfigurationTarget.Global）。修改需重载窗口生效。
+   */
+  | { type: 'custom_search_engines_set'; engines: CustomSearchEngineConfig[] }
+  /**
+   * 验证单个自定义搜索引擎连通性（host 实测抓取+解析），供 UI 在保存前先验证。
+   * 与 custom_search_engines_set 的 host 探针同源（均走 probeSearchEngine），属预览性探针。
+   */
+  | { type: 'custom_search_engine_test'; engine: CustomSearchEngineConfig }
   /**
    * 「恢复初始状态」请求（设置面板「安全」tab 的初始化按钮）
    *
@@ -1131,6 +1180,13 @@ export type ExtensionToWebviewMessage =
    * 由 host 在 settings 视图 ready / 用户修改后推送，webview 据此渲染下拉选中项。
    */
   | { type: 'search_engine_status'; engine: SearchEngineSetting }
+  /**
+   * 自定义搜索引擎清单推送（设置面板加载时先于 search_engine_status 推送当前配置，
+   * 供 webview 渲染下拉选项与编辑器）
+   */
+  | { type: 'custom_search_engines_status'; engines: CustomSearchEngineConfig[] }
+  /** 自定义搜索引擎验证结果回传（对应 custom_search_engine_test 请求） */
+  | { type: 'custom_search_engine_test_result'; result: SearchEngineTestResult }
   /**
    * 「恢复初始状态」执行结果（设置面板「安全」tab 按钮的回执）
    *

@@ -327,4 +327,15 @@ export const settingsStyles = `
   .pager-btn:disabled { opacity: var(--op-2); cursor: default; }
   .pager-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
   .pager-info { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
+
+  /* ============ Components：自定义搜索引擎编辑器行 ============ */
+  .custom-engine-row {
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: var(--sp-2, 6px); margin-bottom: var(--sp-2, 6px);
+  }
+  .custom-engine-row .ce-name { flex: 0 0 120px; }
+  .custom-engine-row .ce-url { flex: 1 1 240px; min-width: 180px; }
+  .ce-test-status { font-size: var(--font-sm, 11px); min-width: 120px; }
+  .ce-test-status.ok { color: var(--feedback-pass, #3fb950); }
+  .ce-test-status.fail { color: var(--text-error, #f14c4c); }
 `;

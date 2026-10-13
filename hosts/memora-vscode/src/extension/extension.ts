@@ -40,6 +40,7 @@ import {
   USER_SKILLS_DIR_NAME,
   USER_ROLE_PACKS_DIR_NAME,
 } from '../shared/constants.js';
+import type { CustomSearchEngineConfig } from '../shared/protocol.js';
 
 /**
  * 解析工作区持久化根路径（SSOT，extension 与 assemble 共用同一来源）
@@ -153,10 +154,14 @@ function getOrCreateAgent(
     const allowedPaths = vscode.workspace
       .getConfiguration('memora')
       .get<string[]>('allowedPaths', []);
-    // 内置网页搜索引擎（memora.searchEngine 设置，'auto' = Bing→DuckDuckGo 默认链）
+    // 内置网页搜索引擎（memora.searchEngine 设置；'auto' = Bing→DuckDuckGo 默认链，亦可为自定义引擎名）
     const searchEngine = vscode.workspace
       .getConfiguration('memora')
-      .get<'auto' | 'bing' | 'baidu' | 'sogou'>('searchEngine', 'auto');
+      .get<string>('searchEngine', 'auto');
+    // 用户自定义搜索引擎清单（memora.customSearchEngines 设置）
+    const customSearchEngines = vscode.workspace
+      .getConfiguration('memora')
+      .get<CustomSearchEngineConfig[]>('customSearchEngines', []);
     // 禁用的技能名清单（配置形态启停）：命中技能对 LLM 全链不可用
     // （L1 清单 / list_skills / read_skill / L3 全不可达）。此处只是**装配期快照**；
     // 用户改设置由 activate 内的配置监听实时重设，无需重新装配。
@@ -177,6 +182,7 @@ function getOrCreateAgent(
       rolePackTeams,
       configDir,
       searchEngine,
+      customSearchEngines,
       userSkillsDir,
       userRolePacksDir,
       confirmWrites,

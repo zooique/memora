@@ -520,3 +520,119 @@ describe('技能正文翻页重渲染防注入（HOST-S16）', () => {
     expect(contentEl.textContent).toBe(payload);
   });
 });
+
+describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-13）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const EXTENDED_HTML = `
+    <div class="tabs">
+      <button class="tab-btn" data-tab="security">安全</button>
+    </div>
+    <div id="security-root">
+      <select id="searchEngineSelect"></select>
+      <div id="customSearchEngines"></div>
+      <button id="addCustomEngineBtn" type="button">添加</button>
+    </div>
+  `;
+
+  function mountExtended(): { postMessage: ReturnType<typeof vi.fn> } {
+    document.body.innerHTML = EXTENDED_HTML;
+    const postMessage = vi.fn();
+    createSettingsView({
+      acquireVsCodeApi: () => ({ postMessage }),
+      window: window as unknown as Window,
+    });
+    return { postMessage };
+  }
+
+  it('custom_search_engines_status 重建下拉（预设 + 自定义）并渲染编辑器行', () => {
+    mountExtended();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'custom_search_engines_status',
+          engines: [{ name: 'MySite', urlTemplate: 'https://mysite.com/s?q={query}', parseStrategy: 'jsonApi' }],
+        },
+      }),
+    );
+    const select = document.getElementById('searchEngineSelect') as HTMLSelectElement;
+    const opts = Array.from(select.options).map((o) => o.value);
+    expect(opts).toContain('auto');
+    expect(opts).toContain('bing');
+    expect(opts).toContain('duckduckgo'); // 锁死：预设含 duckduckgo（旧 enum 漏列，宿主枚举比内核窄的带伤）
+    expect(opts).toContain('MySite'); // 自定义名进入下拉
+    expect(document.querySelectorAll('#customSearchEngines .custom-engine-row')).toHaveLength(1);
+  });
+
+  it('点击添加 → 整体回推 custom_search_engines_set（空白行）', () => {
+    const { postMessage } = mountExtended();
+    (document.getElementById('addCustomEngineBtn') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'custom_search_engines_set',
+      engines: [{ name: '', urlTemplate: '', parseStrategy: 'openSearchRss' }],
+    });
+  });
+
+  it('自定义引擎下拉切换 → 发 search_engine_set（去硬编码守卫，自定义名可推送）', () => {
+    const { postMessage } = mountExtended();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'custom_search_engines_status',
+          engines: [{ name: 'MySite', urlTemplate: 'https://mysite.com/s?q={query}', parseStrategy: 'jsonApi' }],
+        },
+      }),
+    );
+    const select = document.getElementById('searchEngineSelect') as HTMLSelectElement;
+    select.value = 'MySite';
+    select.dispatchEvent(new Event('change'));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'search_engine_set', engine: 'MySite' });
+  });
+
+  it('点击「测试」→ 回推 custom_search_engine_test（携带当前行配置）', () => {
+    const { postMessage } = mountExtended();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'custom_search_engines_status',
+          engines: [{ name: 'MySite', urlTemplate: 'https://mysite.com/s?q={query}', parseStrategy: 'jsonApi' }],
+        },
+      }),
+    );
+    const testBtn = document.querySelector<HTMLButtonElement>('.ce-test');
+    expect(testBtn).not.toBeNull();
+    testBtn!.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'custom_search_engine_test',
+      engine: { name: 'MySite', urlTemplate: 'https://mysite.com/s?q={query}', parseStrategy: 'jsonApi' },
+    });
+  });
+
+  it('custom_search_engine_test_result → 对应行回显通过状态', () => {
+    mountExtended();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'custom_search_engines_status',
+          engines: [{ name: 'MySite', urlTemplate: 'https://mysite.com/s?q={query}', parseStrategy: 'jsonApi' }],
+        },
+      }),
+    );
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'custom_search_engine_test_result',
+          result: { engineName: 'MySite', ok: true, count: 3 },
+        },
+      }),
+    );
+    const status = document.querySelector<HTMLSpanElement>('.ce-test-status');
+    expect(status?.textContent).toContain('验证通过');
+    expect(status?.className).toContain('ok');
+  });
+});
