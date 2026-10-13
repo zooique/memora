@@ -2187,7 +2187,7 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
  * 切一次会话即恢复，正因 switchToSession 把内核 current 同步到了宿主持有值。
  */
 describe('启动会话对齐（启动即分叉根因修复）', () => {
-  /** 让 setAgent 内 void 的 alignKernelSession 走完（同步读判据 + 一次 await 切换） */
+  /** 让装配收口（refreshAfterAssemble）内 void 的 alignKernelSession 走完（同步读判据 + 一次 await 切换） */
   async function flushAlign(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
@@ -2298,5 +2298,23 @@ describe('启动会话对齐（启动即分叉根因修复）', () => {
     expect(alignNotice!.message).toContain('打开会话');
     expect(alignNotice!.message).toContain('会话处于 running 态之外');
     expect(alignNotice!.message).toContain('等待当前对话完成后重试');
+  });
+
+  it('懒装配路径（ensureAgent 懒装配）同样对齐——首版只挂 setAgent 实测返修（2026-10-13）', async () => {
+    // 实测复现路径：点活动栏图标 / VS Code 重启恢复面板 → 不走 open 命令的 setAgent，
+    // 走 ensureAgent → performAgentAssembly 懒装配——首版对齐只挂 setAgent，
+    // 此路径漏对齐 ⇒ 内核 current 停在 today-main，启动即分叉报「当前会话不存在」。
+    // 修复 = 对齐收口 refreshAfterAssemble（两条装配路径唯一共用点），本用例锁死覆盖面。
+    const { provider } = setup();
+    setHostSession(provider, '2026-10-07-smuxokj29');
+    const { agent, switchToSession } = alignStub({
+      info: { date: todayDate(), session: 'main' },
+    });
+    // 刻意不调 setAgent——只走懒装配路径（工厂注入 + ensureAgent 触发装配）
+    provider.setAgentFactory(async () => agent);
+    await (provider as unknown as { ensureAgent(): Promise<void> }).ensureAgent();
+    await flushAlign();
+    expect(switchToSession).toHaveBeenCalledTimes(1);
+    expect(switchToSession).toHaveBeenCalledWith('2026-10-07-smuxokj29');
   });
 });

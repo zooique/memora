@@ -653,8 +653,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.bindSecurityAudit();
     // 绑定确认回调（写入 confirmWrites / 脚本与命令 confirmScripts / guest 恒确认，默认 fail-closed）
     this.bindWriteConfirmation();
-    // 启动对齐（2026-10-13 根因修复）：宿主与内核的「当前会话」必须一致
-    void this.alignKernelSession(agent);
     // 装配注入后统一补推（时序竞态）：
     // webview ready 时 agent 可能尚未装配，replaySession 的 chat_role_pack / pushRolePacks
     // 会因 _agent 为空而跳过推送 → 状态行角色徽章与角色列表永久缺失。此处装配完成即补推一次，
@@ -674,8 +672,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *   同根因的更深伤害：启动后第一条消息的 Round 会挂到内核的 `-main`，与 UI 显示的
    *   会话错位——对齐修的是这一类，不只分叉一个症状。
    *
-   * 对齐点选 setAgent：装配完成即调（open 命令 / webview ready 懒装配两条路径都汇聚），
-   * 早于任何用户交互。switchToSession 的「切身份」段（switchSession）在首个 await **之前**
+   * 对齐点选 refreshAfterAssemble：它是 setAgent（open 命令）与 ensureAgent
+   * （活动栏图标/面板恢复的懒装配）两条装配路径的唯一共用收口点，装配完成即调，
+   * 早于任何用户交互。⚠️ 首版把对齐只挂 setAgent，实测（2026-10-13）懒装配路径
+   * 漏对齐——启动即分叉仍报「当前会话不存在」：装配后动作必须收口在共用点，
+   * 不得在单条路径各钉一份（损害类：两条路径漏一条即整类失效）。
+   * switchToSession 的「切身份」段（switchSession）在首个 await **之前**
    * 同步完成——void 调用返回时 current 已切，无竞态窗口。
    *
    * 判据「不一致才切」：同会话重入（面板折叠重开的重复 setAgent）直接跳过——幂等无副作用，
@@ -2367,28 +2369,34 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 装配完成后统一补推（收口点：修复时序竞态、占用补推统一收口）
+   * 装配完成后统一收口（收口点：会话对齐 + 时序竞态补推 + 占用补推统一收口）
    *
    * 懒装配路径（直接点活动栏面板图标）：ensureAgent 异步装配，webview ready 时
    * _agent 往往尚未就绪，replaySession 会因 _agent 为空（pushRolePacks）或
    * _activeRolePack 未设置（chat_role_pack，仅 open 命令路径的 setRolePack 会设置）
    * 而跳过推送 → 输入区角色选择器永久缺失。装配完成即补推一次：
-   *   1. _activeRolePack 缺省时从 agent 实际激活角色补齐（懒装配路径没有 setRolePack）
-   *   2. 补推 chat_role_pack → 角色选择器 / AI 消息标签可见（即使无激活角色也推送，
+   *   1. 启动会话对齐（宿主 _currentSessionId 与内核 current 一致性校正，
+   *      见 alignKernelSession——首版只挂 setAgent，懒装配路径漏对齐实测返修）
+   *   2. _activeRolePack 缺省时从 agent 实际激活角色补齐（懒装配路径没有 setRolePack）
+   *   3. 补推 chat_role_pack → 角色选择器 / AI 消息标签可见（即使无激活角色也推送，
    *      让 webview 正确处理状态）
-   *   3. 补推 chat_role_packs → 角色切换入口数据
-   *   4. 补推历史会话占用 → 输入区圆环脱离空态 0%
+   *   4. 补推 chat_role_packs → 角色切换入口数据
+   *   5. 补推历史会话占用 → 输入区圆环脱离空态 0%
    *
-   * 任何装配后补推都只挂在本方法，不得在 setAgent / ensureAgent 各钉一份——
-   * 占用补推若只挂 setAgent，懒装配路径（ensureAgent）重启/侧栏打开面板时圆环恒为 0%。
+   * 任何装配后动作都只挂在本方法，不得在 setAgent / ensureAgent 各钉一份——
+   * 占用补推若只挂 setAgent，懒装配路径（ensureAgent）重启/侧栏打开面板时圆环恒为 0%；
+   * 会话对齐若只挂 setAgent（首版实测 2026-10-13）：点活动栏图标/重启恢复面板走懒装配
+   * 路径，内核 current 停在惰性初值 today-main ⇒ 启动即分叉报「当前会话不存在」。
    * 面板未就绪时 post 静默（_view 为空），由 replaySession 兜底；重复推送幂等。
    *
-   * SSOT：本方法是「装配后补推」的唯一入口，setAgent 与 ensureAgent 两条装配路径
-   * 都必须经过它。任何新增的装配后补推都挂在本方法内，不在调用方各钉一份——
+   * SSOT：本方法是「装配后动作」的唯一入口，setAgent 与 ensureAgent 两条装配路径
+   * 都必须经过它。任何新增的装配后动作都挂在本方法内，不在调用方各钉一份——
    * 挂两处必然漏掉对称的另一条路径。
    */
   private refreshAfterAssemble(): void {
     if (!this._agent) return;
+    // 启动会话对齐（装配即校正内核 current；幂等：同会话重入直接跳过，见方法注释清单 1）
+    void this.alignKernelSession(this._agent);
     // 懒装配路径从未调用 setRolePack：从 agent 实际激活角色补齐（无角色包时为 undefined）
     if (!this._activeRolePack) {
       // ?? undefined：activeName 可能为 null（内核未激活任何角色包），归一并避免 null 赋值
