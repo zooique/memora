@@ -1987,7 +1987,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
         <select id="searchEngineSelect" class="security-select" aria-label="网页搜索引擎"></select>
         <p class="security-desc">自定义引擎需返回结构化结果：OpenSearch RSS / Atom，或 JSON（<code>{results:[{title,url,…}]}</code>）。普通网页（一堆 HTML）与需登录的平台不支持。点「编辑」填写后先「测试」再「保存」。</p>
         <div id="customSearchEngines" class="custom-search-engines"></div>
-        <button id="addCustomEngineBtn" class="btn btn-secondary" type="button">+ 添加自定义搜索引擎</button>
+        <button id="addCustomEngineBtn" class="btn btn-secondary ce-add-btn" type="button">+ 添加自定义搜索引擎</button>
       </div>
       <div class="security-item">
         <div class="security-item-header">

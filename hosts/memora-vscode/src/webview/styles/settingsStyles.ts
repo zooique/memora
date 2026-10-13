@@ -329,7 +329,8 @@ export const settingsStyles = `
   .pager-info { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
 
   /* ============ Components：自定义搜索引擎（紧凑清单 + 手风琴单编辑区） ============ */
-  .custom-search-engines { display: flex; flex-direction: column; gap: 6px; }
+  /* margin-top 让「说明文案 → 引擎清单」拉开一档（容器 gap 只作用于卡片之间） */
+  .custom-search-engines { display: flex; flex-direction: column; gap: 6px; margin-top: var(--sp-2, 6px); }
   .custom-engine {
     border: 0.5px solid var(--border-panel, rgba(128, 128, 128, 0.4));
     border-radius: var(--radius-md, 6px);
@@ -366,4 +367,6 @@ export const settingsStyles = `
   .ce-test-status { font-size: var(--font-xs, 10px); }
   .ce-test-status.ok { color: var(--status-pass, #4ec9b0); }
   .ce-test-status.fail { color: var(--text-error, #f14c4c); }
+  /* 「+ 添加」按钮与引擎清单拉开一档（贴着卡片显得挤，真机观感反馈；同 .security-reset-btn 模式） */
+  .ce-add-btn { margin-top: var(--sp-3, 8px); }
 `;
