@@ -102,19 +102,32 @@ export async function probeSearchEngine(cfg: CustomSearchEngineConfig): Promise<
 
 // ─── 结构化结果解析（与内核 HTML 解析零重叠）───
 
+/** 剥离 CDATA 包裹 + 反转义常见 XML 实体（RSS/Atom 文本字段常见），得到干净文本 */
+function decodeXmlText(s: string): string {
+  return s
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
 /** OpenSearch RSS / Atom 风格：从 <item>/<entry> 抽取 title/link/description */
 function parseOpenSearchRss(raw: string, limit: number): SearchResult[] {
   const blocks = raw.match(/<(item|entry)[\s\S]*?<\/(item|entry)>/gi) ?? [];
   const results: SearchResult[] = [];
   for (const block of blocks) {
     if (results.length >= limit) break;
-    const title = pick(block, /<title>([\s\S]*?)<\/title>/i)?.trim() ?? '';
+    const titleRaw = pick(block, /<title>([\s\S]*?)<\/title>/i)?.trim();
+    // 标签名用非捕获组 (?:...)，内容捕获为第 1 组；pick() 取 [1] 即内容（修复旧版误取标签名导致 url="link"）
+    const linkInner = pick(block, /<(?:link|id)>([\s\S]*?)<\/(?:link|id)>/i)?.trim();
+    const descInner = pick(block, /<(?:description|summary)>([\s\S]*?)<\/(?:description|summary)>/i)?.trim();
+    const title = decodeXmlText(titleRaw ?? '');
+    // 内部文本为空（如 Atom <link href>）才回退到属性；decodeXmlText('') 为假值触发 || 兜底
     const url =
-      pick(block, /<(link|id)>([\s\S]*?)<\/(link|id)>/i)?.trim() ??
-      pickAttr(block, /<link[^>]*href="([^"]*)"/i) ??
-      '';
-    const snippet =
-      pick(block, /<(description|summary)>([\s\S]*?)<\/(description|summary)>/i)?.trim() ?? '';
+      decodeXmlText(linkInner ?? '') || decodeXmlText(pickAttr(block, /<link[^>]*href="([^"]*)"/i) ?? '');
+    const snippet = decodeXmlText(descInner ?? '');
     if (url) results.push({ title: title || url, url, snippet });
   }
   return results;

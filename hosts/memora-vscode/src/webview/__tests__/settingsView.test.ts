@@ -12,7 +12,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createSettingsView } from '../scripts/settingsView.js';
-import type { MemoryItemDto } from '../../shared/protocol.js';
+import type { CustomSearchEngineConfig, MemoryItemDto } from '../../shared/protocol.js';
 
 /** 覆盖 createSettingsView 全部查询引用 + 五个子视图骨架的最小 HTML（默认选项卡为「记忆」） */
 const HTML = `
@@ -540,6 +540,12 @@ describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-1
     </div>
   `;
 
+  const MY_SITE: CustomSearchEngineConfig = {
+    name: 'MySite',
+    urlTemplate: 'https://mysite.com/s?q={query}',
+    parseStrategy: 'jsonApi',
+  };
+
   function mountExtended(): { postMessage: ReturnType<typeof vi.fn> } {
     document.body.innerHTML = EXTENDED_HTML;
     const postMessage = vi.fn();
@@ -550,7 +556,26 @@ describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-1
     return { postMessage };
   }
 
-  it('custom_search_engines_status 重建下拉（预设 + 自定义）并渲染编辑器行', () => {
+  function pushStatus(engines: CustomSearchEngineConfig[]): void {
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'custom_search_engines_status', engines } }),
+    );
+  }
+  function clickOne(sel: string): void {
+    (document.querySelector(sel) as HTMLButtonElement).click();
+  }
+  /** 修改展开表单的输入并派发 input（模拟真实键入，触发草稿回写） */
+  function fillDraft(name: string, url: string): void {
+    const card = document.querySelector<HTMLElement>('.custom-engine.expanded')!;
+    const nameInput = card.querySelector<HTMLInputElement>('.ce-name')!;
+    const urlInput = card.querySelector<HTMLInputElement>('.ce-url')!;
+    nameInput.value = name;
+    nameInput.dispatchEvent(new Event('input'));
+    urlInput.value = url;
+    urlInput.dispatchEvent(new Event('input'));
+  }
+
+  it('custom_search_engines_status 重建下拉（预设 + 自定义）并渲染紧凑清单行', () => {
     mountExtended();
     window.dispatchEvent(
       new MessageEvent('message', {
@@ -566,16 +591,51 @@ describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-1
     expect(opts).toContain('bing');
     expect(opts).toContain('duckduckgo'); // 锁死：预设含 duckduckgo（旧 enum 漏列，宿主枚举比内核窄的带伤）
     expect(opts).toContain('MySite'); // 自定义名进入下拉
-    expect(document.querySelectorAll('#customSearchEngines .custom-engine-row')).toHaveLength(1);
+    // 收起态：每引擎一行、无编辑表单 ⇒ 不再线性膨胀
+    expect(document.querySelectorAll('#customSearchEngines .custom-engine')).toHaveLength(1);
+    expect(document.querySelectorAll('#customSearchEngines .ce-editor')).toHaveLength(0);
   });
 
-  it('点击添加 → 整体回推 custom_search_engines_set（空白行）', () => {
+  it('点击「+ 添加」→ 只落本地草稿并展开表单，不发消息（修复 host「（空）配置无效」误报）', () => {
     const { postMessage } = mountExtended();
-    (document.getElementById('addCustomEngineBtn') as HTMLButtonElement).click();
+    clickOne('#addCustomEngineBtn');
+    // 关键：空白草稿行不再被提交，故不会触发 host 校验失败（旧实现每次点击都报错）
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'custom_search_engines_set' }),
+    );
+    expect(document.querySelectorAll('.custom-engine.expanded')).toHaveLength(1);
+  });
+
+  it('编辑已有引擎 → 点「保存」才提交一次 custom_search_engines_set（显式保存）', () => {
+    const { postMessage } = mountExtended();
+    pushStatus([MY_SITE]);
+    postMessage.mockClear(); // 清掉 mount 期的 ready 等初始消息
+    clickOne('.ce-edit'); // 展开
+    // 展开与逐字段编辑均不发消息 ⇒ 中间态不会触发探针/报错
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'custom_search_engines_set' }),
+    );
+    fillDraft('MySite2', 'https://mysite.com/s?q={query}&v=2');
+    clickOne('.ce-save');
+    expect(postMessage).toHaveBeenCalledTimes(1); // 一次保存 = 一轮探针
     expect(postMessage).toHaveBeenCalledWith({
       type: 'custom_search_engines_set',
-      engines: [{ name: '', urlTemplate: '', parseStrategy: 'openSearchRss' }],
+      engines: [{ name: 'MySite2', urlTemplate: 'https://mysite.com/s?q={query}&v=2', parseStrategy: 'jsonApi' }],
     });
+  });
+
+  it('保存被 host 拒绝（回推状态与提交不一致）→ 草稿保留，改完可重试', () => {
+    const { postMessage } = mountExtended();
+    pushStatus([MY_SITE]);
+    clickOne('.ce-edit');
+    fillDraft('MySite2', 'https://mysite.com/s?q={query}&v=2');
+    clickOne('.ce-save');
+    postMessage.mockClear();
+    pushStatus([MY_SITE]); // host 拒绝：回推的仍是持久化时的旧清单
+    expect(document.querySelectorAll('.custom-engine.expanded')).toHaveLength(1);
+    expect(
+      document.querySelector<HTMLInputElement>('.custom-engine.expanded .ce-name')?.value,
+    ).toBe('MySite2');
   });
 
   it('自定义引擎下拉切换 → 发 search_engine_set（去硬编码守卫，自定义名可推送）', () => {
@@ -594,35 +654,21 @@ describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-1
     expect(postMessage).toHaveBeenCalledWith({ type: 'search_engine_set', engine: 'MySite' });
   });
 
-  it('点击「测试」→ 回推 custom_search_engine_test（携带当前行配置）', () => {
+  it('展开后点「测试」→ 回推 custom_search_engine_test（携带当前表单配置）', () => {
     const { postMessage } = mountExtended();
-    window.dispatchEvent(
-      new MessageEvent('message', {
-        data: {
-          type: 'custom_search_engines_status',
-          engines: [{ name: 'MySite', urlTemplate: 'https://mysite.com/s?q={query}', parseStrategy: 'jsonApi' }],
-        },
-      }),
-    );
-    const testBtn = document.querySelector<HTMLButtonElement>('.ce-test');
-    expect(testBtn).not.toBeNull();
-    testBtn!.click();
+    pushStatus([MY_SITE]);
+    clickOne('.ce-edit'); // 收起态无表单，展开后才出现「测试」
+    clickOne('.ce-test');
     expect(postMessage).toHaveBeenCalledWith({
       type: 'custom_search_engine_test',
-      engine: { name: 'MySite', urlTemplate: 'https://mysite.com/s?q={query}', parseStrategy: 'jsonApi' },
+      engine: MY_SITE,
     });
   });
 
-  it('custom_search_engine_test_result → 对应行回显通过状态', () => {
+  it('custom_search_engine_test_result → 回显到展开的编辑区并点亮状态点', () => {
     mountExtended();
-    window.dispatchEvent(
-      new MessageEvent('message', {
-        data: {
-          type: 'custom_search_engines_status',
-          engines: [{ name: 'MySite', urlTemplate: 'https://mysite.com/s?q={query}', parseStrategy: 'jsonApi' }],
-        },
-      }),
-    );
+    pushStatus([MY_SITE]);
+    clickOne('.ce-edit');
     window.dispatchEvent(
       new MessageEvent('message', {
         data: {
@@ -631,8 +677,23 @@ describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-1
         },
       }),
     );
-    const status = document.querySelector<HTMLSpanElement>('.ce-test-status');
+    const status = document.querySelector<HTMLElement>('.custom-engine.expanded .ce-test-status');
     expect(status?.textContent).toContain('验证通过');
     expect(status?.className).toContain('ok');
+    expect(document.querySelector('.custom-engine.expanded .ce-dot')?.className).toContain('ok');
+  });
+
+  it('点「取消」→ 丢弃草稿回到收起态（持久化清单不受影响）', () => {
+    const { postMessage } = mountExtended();
+    pushStatus([MY_SITE]);
+    clickOne('#addCustomEngineBtn'); // 新增本地草稿行
+    expect(document.querySelectorAll('.custom-engine')).toHaveLength(2);
+    clickOne('.ce-cancel');
+    expect(document.querySelectorAll('.custom-engine')).toHaveLength(1);
+    expect(document.querySelectorAll('.custom-engine.expanded')).toHaveLength(0);
+    // 取消不产生任何持久化请求（ready 除外）
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'custom_search_engines_set' }),
+    );
   });
 });

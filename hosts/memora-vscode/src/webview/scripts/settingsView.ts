@@ -556,81 +556,192 @@ function createSecurityView({
     engineSelect.value = names.has(selected) ? selected : 'auto';
   }
 
-  /** 渲染自定义引擎编辑器（增删改整体回推 custom_search_engines_set） */
+  /**
+   * 自定义搜索引擎编辑器：紧凑清单 + 手风琴单编辑区 + 显式保存。
+   *
+   * 状态分层（SSOT）：
+   *   - currentCustomEngines = **已持久化**清单，只由 host 回推的 custom_search_engines_status 更新 ⇒ 单一真相；
+   *   - editingDraft / editingIndex = 本地未保存草稿，及它要落到第几行（=length 表示新增）；
+   *   - pendingSave = 已提交待确认的清单，拿它和回推状态比对即可判定「保存成功 / 被拒回滚」。
+   *
+   * 由此得到两个关键收益：编辑过程不发消息（不触发网络探针、不被错误提示打扰）；
+   * 且无论成功还是被拒，界面最终都收敛到 host 的持久化真相。
+   */
+  let editingIndex: number | null = null;
+  let editingDraft: CustomSearchEngineConfig | null = null;
+  let pendingSave: CustomSearchEngineConfig[] | null = null;
+
+  /** 取 URL 模板的域名（收起态一行摘要用；不用 URL 构造器，避免 {query} 占位符误伤） */
+  function hostOf(tpl: string): string {
+    const m = tpl.match(/^(?:https?:\/\/)?([^/?#]+)/i);
+    return m ? m[1] : tpl;
+  }
+
+  /** 从展开表单读取当前草稿（不判合法性，交由 host 权威裁决） */
+  function readDraft(card: HTMLElement): CustomSearchEngineConfig {
+    return {
+      name: card.querySelector<HTMLInputElement>('.ce-name')?.value.trim() ?? '',
+      urlTemplate: card.querySelector<HTMLInputElement>('.ce-url')?.value.trim() ?? '',
+      parseStrategy: (card.querySelector<HTMLSelectElement>('.ce-parse')?.value ??
+        'openSearchRss') as HostParseStrategy,
+    };
+  }
+
+  function setStatus(card: HTMLElement, text: string, kind: 'ok' | 'fail' | 'idle'): void {
+    const el = card.querySelector<HTMLSpanElement>('.ce-test-status');
+    if (!el) return;
+    el.textContent = text;
+    el.className = `ce-test-status${kind === 'idle' ? '' : ` ${kind}`}`;
+  }
+
+  function sameEngines(
+    a: readonly CustomSearchEngineConfig[],
+    b: readonly CustomSearchEngineConfig[],
+  ): boolean {
+    return (
+      a.length === b.length &&
+      a.every(
+        (e, i) =>
+          e.name === b[i].name &&
+          e.urlTemplate === b[i].urlTemplate &&
+        e.parseStrategy === b[i].parseStrategy,
+      )
+    );
+  }
+
+  /** 渲染引擎清单：收起态一行一条；草稿（新增/编辑）展开唯一表单 */
   function renderCustomEngines(engines: CustomSearchEngineConfig[]): void {
     if (!customEnginesBox) return;
     customEnginesBox.innerHTML = '';
     engines.forEach((eng, idx) => {
-      const row = document.createElement('div');
-      row.className = 'custom-engine-row';
-      row.innerHTML = `
-        <input class="ce-name" type="text" placeholder="引擎名" aria-label="引擎名" value="${escapeHtml(eng.name)}" />
-        <input class="ce-url" type="text" placeholder="搜索URL，用 {query} 作占位符" aria-label="搜索URL" value="${escapeHtml(eng.urlTemplate)}" />
-        <select class="ce-parse" aria-label="解析策略">
-          <option value="openSearchRss">OpenSearch RSS</option>
-          <option value="jsonApi">JSON 搜索 API</option>
-        </select>
-        <button class="ce-test btn btn-secondary" type="button">测试</button>
-        <button class="ce-remove btn btn-secondary" type="button">删除</button>
-        <span class="ce-test-status" role="status" aria-live="polite"></span>
-      `;
-      const nameInput = row.querySelector<HTMLInputElement>('.ce-name');
-      const urlInput = row.querySelector<HTMLInputElement>('.ce-url');
-      const parseSelect = row.querySelector<HTMLSelectElement>('.ce-parse');
-      const testBtn = row.querySelector<HTMLButtonElement>('.ce-test');
-      const testStatus = row.querySelector<HTMLSpanElement>('.ce-test-status');
-      const removeBtn = row.querySelector<HTMLButtonElement>('.ce-remove');
-      if (!nameInput || !urlInput || !parseSelect || !testBtn || !testStatus || !removeBtn) return;
-      parseSelect.value = eng.parseStrategy;
-      const sync = (): void => {
-        const next = currentCustomEngines.slice();
-        next[idx] = {
-          name: nameInput.value.trim(),
-          urlTemplate: urlInput.value.trim(),
-          parseStrategy: parseSelect.value as HostParseStrategy,
-        };
-        currentCustomEngines = next;
-        rebuildEngineOptions(currentCustomEngines);
-        vscode.postMessage({ type: 'custom_search_engines_set', engines: currentCustomEngines });
-      };
-      nameInput.addEventListener('change', sync);
-      urlInput.addEventListener('change', sync);
-      parseSelect.addEventListener('change', sync);
-      removeBtn.addEventListener('click', () => {
-        currentCustomEngines = currentCustomEngines.filter((_, i) => i !== idx);
-        renderCustomEngines(currentCustomEngines);
-        rebuildEngineOptions(currentCustomEngines);
-        vscode.postMessage({ type: 'custom_search_engines_set', engines: currentCustomEngines });
-      });
-      // 「测试」：以当前行输入构造候选配置，静态预检通过后发 host 实测探针；结果经
-      // custom_search_engine_test_result 回显到本行状态（保存门禁在 host 侧，此处仅为即时预览）。
-      testBtn.addEventListener('click', () => {
-        const candidate: CustomSearchEngineConfig = {
-          name: nameInput.value.trim(),
-          urlTemplate: urlInput.value.trim(),
-          parseStrategy: parseSelect.value as HostParseStrategy,
-        };
-        if (!candidate.name || !candidate.urlTemplate.includes('{query}')) {
-          testStatus.textContent = '请先填写完整（名称 + 含 {query} 的 URL）';
-          testStatus.className = 'ce-test-status fail';
-          return;
-        }
-        testStatus.textContent = '验证中…';
-        testStatus.className = 'ce-test-status';
-        vscode.postMessage({ type: 'custom_search_engine_test', engine: candidate });
-      });
-      customEnginesBox.appendChild(row);
+      const expanded = editingIndex === idx;
+      // 展开态渲染草稿（含未保存修改）；收起态渲染已持久化值
+      const view = expanded && editingDraft ? editingDraft : eng;
+      customEnginesBox.appendChild(buildEngineCard(view, idx, expanded, false));
     });
+    // 新增草稿行（仅本地存在，未提交 ⇒ 不触发 host 校验/探针）
+    if (editingIndex !== null && editingIndex >= engines.length && editingDraft) {
+      customEnginesBox.appendChild(buildEngineCard(editingDraft, editingIndex, true, true));
+    }
   }
 
+  /**
+   * 构建一张引擎卡：
+   *   - 收起态：一行摘要（状态点 + 名称 + 域名 + 编辑/删除）≈ 33px，N 个引擎线性只涨行高；
+   *   - 展开态：摘要行下方展开唯一编辑表单（名称/URL/策略 + 测试/保存/取消）。
+   * 静态校验不在此实现——host 是唯一权威，非法配置由 host 回拒绝结果并回推状态。
+   */
+  function buildEngineCard(
+    cfg: CustomSearchEngineConfig,
+    idx: number,
+    expanded: boolean,
+    isDraft: boolean,
+  ): HTMLElement {
+    const card = document.createElement('div');
+    card.className = `custom-engine${expanded ? ' expanded' : ''}`;
+    card.innerHTML = `
+      <div class="ce-summary">
+        <span class="ce-dot"></span>
+        <span class="ce-label">${escapeHtml(cfg.name || '新引擎')}</span>
+        <span class="ce-host">${escapeHtml(cfg.urlTemplate ? hostOf(cfg.urlTemplate) : '未填写 URL')}</span>
+        <button class="ce-edit btn btn-secondary" type="button">${expanded ? '收起' : '编辑'}</button>
+        ${isDraft ? '' : '<button class="ce-remove btn btn-secondary" type="button">删除</button>'}
+      </div>
+      ${
+        expanded
+          ? `<div class="ce-editor">
+        <label class="ce-field"><span>名称</span><input class="ce-name" type="text" placeholder="引擎名" aria-label="引擎名" value="${escapeHtml(cfg.name)}" /></label>
+        <label class="ce-field"><span>URL</span><input class="ce-url" type="text" placeholder="https://example.com/search?q={query}" aria-label="搜索 URL" value="${escapeHtml(cfg.urlTemplate)}" /></label>
+        <label class="ce-field"><span>策略</span><select class="ce-parse" aria-label="解析策略">
+          <option value="openSearchRss">OpenSearch RSS / Atom</option>
+          <option value="jsonApi">JSON 搜索 API</option>
+        </select></label>
+        <div class="ce-actions">
+          <button class="ce-test btn btn-secondary" type="button">测试</button>
+          <button class="ce-save btn btn-primary" type="button">保存</button>
+          <button class="ce-cancel btn btn-secondary" type="button">取消</button>
+          <span class="ce-test-status" role="status" aria-live="polite"></span>
+        </div>
+      </div>`
+          : ''
+      }
+    `;
+    // 收起/展开：同一时刻仅一个编辑区（点已展开的行 = 收起）
+    card.querySelector<HTMLButtonElement>('.ce-edit')?.addEventListener('click', () => {
+      if (editingIndex === idx) {
+        editingIndex = null;
+        editingDraft = null;
+      } else {
+        editingIndex = idx;
+        editingDraft = { ...cfg };
+      }
+      pendingSave = null;
+      renderCustomEngines(currentCustomEngines);
+    });
+    // 删除：立即持久化（剩余项相对持久化清单未变 ⇒ 不触发探针）
+    card.querySelector<HTMLButtonElement>('.ce-remove')?.addEventListener('click', () => {
+      currentCustomEngines = currentCustomEngines.filter((_, i) => i !== idx);
+      editingIndex = null;
+      editingDraft = null;
+      pendingSave = null;
+      renderCustomEngines(currentCustomEngines);
+      rebuildEngineOptions(currentCustomEngines);
+      vscode.postMessage({ type: 'custom_search_engines_set', engines: currentCustomEngines });
+    });
+    if (expanded) {
+      const parseSelect = card.querySelector<HTMLSelectElement>('.ce-parse');
+      if (parseSelect) parseSelect.value = cfg.parseStrategy;
+      const labelEl = card.querySelector<HTMLSpanElement>('.ce-label');
+      const hostEl = card.querySelector<HTMLSpanElement>('.ce-host');
+      const nameInput = card.querySelector<HTMLInputElement>('.ce-name');
+      const urlInput = card.querySelector<HTMLInputElement>('.ce-url');
+      // 草稿是唯一权威：输入即回写 editingDraft（重渲染不丢字），摘要行同步更新
+      const commitDraft = (): void => {
+        const rawName = nameInput?.value.trim() ?? '';
+        const rawUrl = urlInput?.value.trim() ?? '';
+        editingDraft = {
+          name: rawName,
+          urlTemplate: rawUrl,
+          parseStrategy: (parseSelect?.value ?? 'openSearchRss') as HostParseStrategy,
+        };
+        if (labelEl) labelEl.textContent = rawName || '新引擎';
+        if (hostEl) hostEl.textContent = rawUrl ? hostOf(rawUrl) : '未填写 URL';
+      };
+      nameInput?.addEventListener('input', commitDraft);
+      urlInput?.addEventListener('input', commitDraft);
+      parseSelect?.addEventListener('change', commitDraft);
+      // 「测试」：把当前表单内容交给 host 实测抓取+解析（纯预览，无持久化语义）
+      card.querySelector<HTMLButtonElement>('.ce-test')?.addEventListener('click', () => {
+        setStatus(card, '验证中…', 'idle');
+        vscode.postMessage({ type: 'custom_search_engine_test', engine: readDraft(card) });
+      });
+      // 「保存」：草稿 → host（静态校验 + 仅变化项实测探针；失败由 host 回推状态回滚）
+      card.querySelector<HTMLButtonElement>('.ce-save')?.addEventListener('click', () => {
+        const draft = readDraft(card);
+        const next = currentCustomEngines.slice();
+        if (idx < next.length) next[idx] = draft;
+        else next.push(draft);
+        pendingSave = next;
+        currentCustomEngines = next;
+        vscode.postMessage({ type: 'custom_search_engines_set', engines: next });
+      });
+      // 「取消」：丢弃本次草稿，回到已持久化状态
+      card.querySelector<HTMLButtonElement>('.ce-cancel')?.addEventListener('click', () => {
+        editingIndex = null;
+        editingDraft = null;
+        pendingSave = null;
+        renderCustomEngines(currentCustomEngines);
+      });
+    }
+    return card;
+  }
+
+  // 「+ 添加」：只落一条本地草稿并展开表单，不发消息 ⇒ 不再触发 host「（空）配置无效」误报
   addCustomBtn?.addEventListener('click', () => {
-    currentCustomEngines = [
-      ...currentCustomEngines,
-      { name: '', urlTemplate: '', parseStrategy: 'openSearchRss' },
-    ];
+    editingIndex = currentCustomEngines.length;
+    editingDraft = { name: '', urlTemplate: '', parseStrategy: 'openSearchRss' };
+    pendingSave = null;
     renderCustomEngines(currentCustomEngines);
-    rebuildEngineOptions(currentCustomEngines);
-    vscode.postMessage({ type: 'custom_search_engines_set', engines: currentCustomEngines });
   });
 
   // ─── 恢复初始状态（清空用户级数据 + 自动重载；确认弹窗在 host 侧） ───
@@ -671,22 +782,31 @@ function createSecurityView({
       renderAllowedPaths();
     }
     if (msg.type === 'custom_search_engines_status') {
-      currentCustomEngines = msg.engines ?? [];
-      renderCustomEngines(currentCustomEngines);
-      rebuildEngineOptions(currentCustomEngines);
+      const next = msg.engines ?? [];
+      // 回推状态即 host 持久化真相：与本次提交一致 = 保存成功（收起表单）；
+      // 不一致 = 被拒回滚（保留草稿，方便改完重试）
+      const saved = pendingSave !== null && sameEngines(pendingSave, next);
+      currentCustomEngines = next;
+      if (saved) {
+        editingIndex = null;
+        editingDraft = null;
+      }
+      pendingSave = null;
+      renderCustomEngines(next);
+      rebuildEngineOptions(next);
     }
     if (msg.type === 'custom_search_engine_test_result') {
-      const { engineName, ok, count, error } = msg.result;
-      root.querySelectorAll<HTMLElement>('.custom-engine-row').forEach((r) => {
-        const nameEl = r.querySelector<HTMLInputElement>('.ce-name');
-        const statusEl = r.querySelector<HTMLSpanElement>('.ce-test-status');
-        if (nameEl && statusEl && nameEl.value === engineName) {
-          statusEl.textContent = ok
-            ? `✓ 验证通过，返回 ${count} 条`
-            : `✗ 未通过：${error ?? `无结果（${count} 条）`}`;
-          statusEl.className = `ce-test-status ${ok ? 'ok' : 'fail'}`;
-        }
-      });
+      // 回显到当前唯一展开的编辑区（谁发起测试就回显到谁）
+      const { ok, count, error } = msg.result;
+      const card = root.querySelector<HTMLElement>('.custom-engine.expanded');
+      if (card) {
+        setStatus(
+          card,
+          ok ? `✓ 验证通过，返回 ${count} 条` : `✗ 未通过：${error ?? `无结果（${count} 条）`}`,
+          ok ? 'ok' : 'fail',
+        );
+        if (ok) card.querySelector<HTMLElement>('.ce-dot')?.classList.add('ok');
+      }
     }
     if (msg.type === 'search_engine_status' && engineSelect) {
       engineSelect.value = msg.engine;

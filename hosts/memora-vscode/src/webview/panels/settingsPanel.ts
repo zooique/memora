@@ -24,6 +24,7 @@ import type {
   MemoryItemDto,
   MemoryStatsDto,
   SearchEngineSetting,
+  SearchEngineTestResult,
   SkillDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
@@ -62,6 +63,26 @@ import { readFile, writeFile } from 'node:fs/promises';
 const MEMORY_LIST_LIMIT = 20;
 /** 搜索结果条数 */
 const MEMORY_SEARCH_LIMIT = 20;
+
+/**
+ * 自定义搜索引擎清单的**静态校验唯一判据**（SSOT）：「测试」与「保存」共用同一函数，
+ * 避免 webview 与 host 各写一份规则而漂移；解析策略合法性与名称唯一性都在此裁决。
+ * 返回错误原因；undefined = 全部合法。
+ */
+function validateCustomEngines(
+  engines: readonly CustomSearchEngineConfig[] | undefined,
+): string | undefined {
+  if (!Array.isArray(engines)) return '自定义搜索引擎清单格式无效';
+  const seen = new Set<string>();
+  for (const e of engines) {
+    if (!e?.name) return '配置无效：需填写引擎名称';
+    if (!e.urlTemplate?.includes('{query}')) return '配置无效：URL 模板需含 {query} 占位符';
+    if (!HOST_PARSE_STRATEGIES.includes(e.parseStrategy)) return '配置无效：解析策略不是宿主预置项';
+    if (seen.has(e.name)) return `名称「${e.name}」重复：引擎名在同一清单内必须唯一`;
+    seen.add(e.name);
+  }
+  return undefined;
+}
 
 /** 设置视图提供者（合并角色 / 大模型 / 记忆三个子视图） */
 export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
@@ -444,7 +465,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     }
     // 自定义搜索引擎连通性验证（保存前先验证的预览探针）
     if (msg.type === 'custom_search_engine_test') {
-      const result = await probeSearchEngine(msg.engine);
+      // 静态校验先用同一判据过一遍（非法配置不必发网络请求），合法才实测抓取+解析
+      const problem = validateCustomEngines([msg.engine]);
+      const result: SearchEngineTestResult = problem
+        ? { engineName: msg.engine?.name || '(空)', ok: false, count: 0, error: problem }
+        : await probeSearchEngine(msg.engine);
       this.post({ type: 'custom_search_engine_test_result', result });
       return;
     }
@@ -1582,16 +1607,20 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    * 校验：每项需名称非空、URL 模板含 {query}、解析策略合法；任一不合规整体拒绝并提示，
    * 不写入（避免半合法状态）。合法则写入用户级设置 + 回推状态 + 提示。
    */
+  /**
+   * 拒绝一次保存：报出原因，并**回推当前已持久化状态**令 webview 收敛。
+   * 校验失败与探针未通过两条路径都走这里 ⇒ 回滚行为单点，不留第二份逻辑。
+   */
+  private rejectCustomEngines(reason: string): void {
+    this.post({ type: 'notice', level: 'error', message: reason });
+    this.post({ type: 'custom_search_engines_status', engines: this.readCustomSearchEngines() });
+  }
+
   private async setCustomSearchEngines(engines: CustomSearchEngineConfig[]): Promise<void> {
-    for (const e of engines) {
-      if (!e?.name || !e.urlTemplate?.includes('{query}') || !HOST_PARSE_STRATEGIES.includes(e.parseStrategy)) {
-        this.post({
-          type: 'notice',
-          level: 'error',
-          message: `自定义搜索引擎「${e?.name || '(空)'}」配置无效：需填写名称、含 {query} 的 URL 模板与合法解析策略`,
-        });
-        return;
-      }
+    const problem = validateCustomEngines(engines);
+    if (problem) {
+      this.rejectCustomEngines(`自定义搜索引擎${problem}，未保存`);
+      return;
     }
     // 保存前实测验证（host 权威门禁）：仅对相对已持久化清单发生变化的引擎探针（未变引擎跳过，避免重复网络探测）；
     // 任一变化引擎验证未通过（网络失败 / 接口无结构化结果）→ 整体拒绝保存，webview 即便跳过「测试」也无法绕过。
@@ -1603,11 +1632,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       if (unchanged) continue;
       const r = await probeSearchEngine(e);
       if (!r.ok) {
-        this.post({
-          type: 'notice',
-          level: 'error',
-          message: `搜索引擎「${e.name || '(空)'}」验证未通过，未保存：${r.error ?? `接口未返回可解析结果（${r.count} 条）`}`,
-        });
+        this.rejectCustomEngines(
+          `搜索引擎「${e.name || '(空)'}」验证未通过，未保存：${r.error ?? `接口未返回可解析结果（${r.count} 条）`}`,
+        );
         return;
       }
     }
@@ -1939,7 +1966,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
         </div>
         <p class="security-desc">「联网搜索」工具使用的内部搜索后端。自动 = Bing 优先降级 DuckDuckGo；中文场景推荐切「百度/搜狗」提升命中质量。也可选用下方自定义引擎。修改后需重载窗口生效。</p>
         <select id="searchEngineSelect" class="security-select" aria-label="网页搜索引擎"></select>
-        <p class="security-desc">自定义搜索引擎：名称 + 搜索 URL（用 <code>{query}</code> 作查询占位符）+ 解析策略。仅支持结构化结果源（OpenSearch RSS / JSON 搜索 API），自定义 HTML 解析不可行（安全红线）。</p>
+        <p class="security-desc">自定义引擎需返回结构化结果：OpenSearch RSS / Atom，或 JSON（<code>{results:[{title,url,…}]}</code>）。普通网页（一堆 HTML）与需登录的平台不支持。点「编辑」填写后先「测试」再「保存」。</p>
         <div id="customSearchEngines" class="custom-search-engines"></div>
         <button id="addCustomEngineBtn" class="btn btn-secondary" type="button">+ 添加自定义搜索引擎</button>
       </div>

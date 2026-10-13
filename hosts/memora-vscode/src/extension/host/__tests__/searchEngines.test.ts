@@ -48,3 +48,34 @@ describe('searchEngines.parseJsonApi — 多源字段别名宽容（2026-10-13 �
     expect(out).toEqual([]);
   });
 });
+
+describe('searchEngines.parseOpenSearchRss — 标签名误取修复 + CDATA/实体（2026-10-13 排雷补测）', () => {
+  function rssCfg(): CustomSearchEngineConfig {
+    return { name: 'UnitRss', urlTemplate: 'https://x.test/?q={query}', parseStrategy: 'openSearchRss' };
+  }
+
+  it('抽取 <item> 的 title/link/description：url 取内容而非标签名（修复 url="link" 静默损坏）', () => {
+    const raw = `<rss><channel><item><title>Hello</title><link>https://x.com/a</link><description>desc text</description></item></channel></rss>`;
+    const out = toSearchEndpoint(rssCfg()).parse(raw, 10);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toEqual({ title: 'Hello', url: 'https://x.com/a', snippet: 'desc text' });
+  });
+
+  it('CDATA 包裹被剥离 + &amp; 反转义为 &（URL 含查询参数场景）', () => {
+    const raw = `<item><title><![CDATA[W & A]]></title><link><![CDATA[https://x.com/?a=1&amp;b=2]]></link><description><![CDATA[<b>hi</b>]]></description></item>`;
+    const out = toSearchEndpoint(rssCfg()).parse(raw, 10);
+    expect(out[0].title).toBe('W & A');
+    expect(out[0].url).toBe('https://x.com/?a=1&b=2');
+  });
+
+  it('Atom <link href> 兜底（无内部文本）', () => {
+    const raw = `<entry><title>Atom</title><link href="https://atom.com/x"/></entry>`;
+    const out = toSearchEndpoint(rssCfg()).parse(raw, 10);
+    expect(out[0].url).toBe('https://atom.com/x');
+  });
+
+  it('无 <item>/<entry> 返回空数组', () => {
+    const out = toSearchEndpoint(rssCfg()).parse('<rss><channel></channel></rss>', 10);
+    expect(out).toEqual([]);
+  });
+});

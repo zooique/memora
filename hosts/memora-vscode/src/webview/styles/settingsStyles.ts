@@ -328,14 +328,34 @@ export const settingsStyles = `
   .pager-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
   .pager-info { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
 
-  /* ============ Components：自定义搜索引擎编辑器行 ============ */
-  .custom-engine-row {
-    display: flex; flex-wrap: wrap; align-items: center;
-    gap: var(--sp-2, 6px); margin-bottom: var(--sp-2, 6px);
+  /* ============ Components：自定义搜索引擎（紧凑清单 + 手风琴单编辑区） ============ */
+  .custom-search-engines { display: flex; flex-direction: column; gap: 6px; }
+  .custom-engine {
+    border: 0.5px solid var(--border-tertiary, rgba(128, 128, 128, 0.35));
+    border-radius: var(--border-radius-md, 8px);
+    background: var(--surface-secondary, rgba(128, 128, 128, 0.06));
+    overflow: hidden;
   }
-  .custom-engine-row .ce-name { flex: 0 0 120px; }
-  .custom-engine-row .ce-url { flex: 1 1 240px; min-width: 180px; }
-  .ce-test-status { font-size: var(--font-sm, 11px); min-width: 120px; }
+  .custom-engine.expanded { background: transparent; }
+  .ce-summary { display: flex; align-items: center; gap: 8px; padding: 7px 10px; min-height: 33px; }
+  .ce-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--text-secondary, #9aa0a6); }
+  .ce-dot.ok { background: var(--feedback-pass, #3fb950); }
+  .ce-dot.fail { background: var(--text-error, #f14c4c); }
+  .ce-label { font-size: var(--font-base, 12px); font-weight: 500; flex: none; }
+  .ce-host {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+  }
+
+  .ce-editor {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 10px; border-top: 0.5px solid var(--border-tertiary, rgba(128, 128, 128, 0.35));
+  }
+  .ce-field { display: flex; align-items: center; gap: 8px; }
+  .ce-field > span { flex: 0 0 32px; font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
+  .ce-field > input, .ce-field > select { flex: 1 1 auto; min-width: 0; }
+  .ce-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ce-test-status { font-size: var(--font-xs, 10px); }
   .ce-test-status.ok { color: var(--feedback-pass, #3fb950); }
   .ce-test-status.fail { color: var(--text-error, #f14c4c); }
 `;
