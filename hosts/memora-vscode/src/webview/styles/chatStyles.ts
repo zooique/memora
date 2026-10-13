@@ -2073,11 +2073,15 @@ export const chatStyles = `
   /* ============ Components：活动状态区 · 抽屉时间段（历史 + 指标） ============ */
   /* 时间段（C1）：#dockPanel 的静态第二段，不再是随瞬态条进出的 <details>。
    * 外边框/外边距由抽屉体承担，本段只留排版；与控件段并存时顶部分隔线（gap 已给间距）。
-   * 被主状态条覆盖的提示不丢失，全部在历史列表回溯（有界 MAX_ACTIVITY_HISTORY 条）。 */
+   * 被主状态条覆盖的提示不丢失，全部在历史列表回溯（有界 MAX_ACTIVITY_HISTORY 条）。
+   * 限高（2026-10-13 用户实测「攒很多很高」收口）：历史有界=20 条但每行 ~22px 全量铺开
+   * 仍可达 ~440px，叠加收纳控件段与指标段后抽屉过长 ⇒ 复用 --dim-lg（160px，兑现其
+   * 「活动详情面板高」注释，零新 token）限高 + 纵向滚动，超出隐藏滚动查看。 */
   .status-dock__timeline {
     margin: 0; font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);
     flex-shrink: 0; min-width: 0;
+    max-height: var(--dim-lg); overflow-y: auto;
   }
   .status-dock__controls:not([hidden]) + .status-dock__timeline {
     padding-top: var(--sp-2, 6px);

@@ -525,11 +525,14 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   const STYLES_DIR = join(WEBVIEW_DIR, 'styles');
 
   // 单一机械真理：当前消费引用次数（occurrence，非行数）。
-  // 改 CHANGELOG / 台账前先跑 scripts/count-token-refs.mjs 取此数，禁止手数。
+  // 改 CHANGELOG / 台账前先跑仓库根 scripts/count-token-refs.mjs（路径以仓库根为基准）
+  // 取此数，禁止手数。
   // dim- 于 2026-10-12 补登记（UI-TOKEN-RAW-3 复核发现）：--dim-* 六档随 B 类收口落地时
   // 漏钉 ⇒ 令牌互换类视觉变化（如 --dim-lg→--dim-xl）曾全门失明；新族必须同批登记。
   // 17→18：A 类闭包时 .model-picker 菜单 max-w 改引 var(--dim-xl)（复用刻度不造并列值）
   // ⇒ 新增 1 处 dim 消费者，本表随机械真值同步（该闭包提交的实测 diff）。
+  // 18→19：活动时间线限高（.status-dock__timeline max-height: var(--dim-lg)，兑现
+  // tokens.ts「活动详情面板高」注释）⇒ 新增 1 处 dim 消费者，同上随实测同步。
   const EXPECTED = {
     'z-': 14,
     'lh-': 46,
@@ -538,7 +541,7 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     'dot-': 20,
     'line-': 69,
     'sq-': 46,
-    'dim-': 18,
+    'dim-': 19,
   } as const;
 
   for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {

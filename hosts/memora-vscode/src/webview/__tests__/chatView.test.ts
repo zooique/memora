@@ -8687,6 +8687,28 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     // 存在等于强迫死代码回归。本不变量由上方全局断言单点守住。
   });
 
+  it('🔴 源码级守卫：活动时间线（.status-dock__timeline）必须限高 + 溢出滚动', () => {
+    // 用户实测（2026-10-13）：活动历史有界（MAX_ACTIVITY_HISTORY=20）但抽屉体无 max-height，
+    // 20 行全量铺开 ~440px 叠加收纳控件段/指标段后抽屉过长 ⇒ 限高 --dim-lg(160px) + 滚动。
+    // jsdom 不算计算样式，与上方 [hidden] 守卫同范式读生产样式表源码断言。
+    // 语义对（限高→滚动）是一对：只删 max-height ⇒ 被裁内容永不可达（overflow 形同隐藏），
+    // 故两声明同断，删任一即红。
+    const styleSrc = readFileSync(
+      join(__dirname, '..', 'styles', 'chatStyles.ts'),
+      'utf-8',
+    ) as string;
+    // 抽取 .status-dock__timeline 规则体（首个声明块，其后 :not([hidden]) + 相邻选择器变体不含 max-height）
+    const ruleMatch = styleSrc.match(/\.status-dock__timeline\s*\{([^}]*)\}/);
+    expect(ruleMatch).not.toBeNull();
+    const body = ruleMatch?.[1] ?? '';
+    expect(body).toMatch(/max-height:\s*var\(--dim-lg\)/);
+    expect(body).toMatch(/overflow-y:\s*auto/);
+    // 值与 token 真源同源：--dim-lg 注释明载「活动详情面板高」——本守卫同时兑现该注释，
+    // 若有人误删 var(--dim-lg) 改魔法数字（如 160px 裸值），下方 tokens 断言变红提示回源。
+    const tokenSrc = readFileSync(join(__dirname, '..', 'styles', 'tokens.ts'), 'utf-8') as string;
+    expect(tokenSrc).toMatch(/--dim-lg:\s*160px/);
+  });
+
   it('审批卡终结通知：write_confirm_closed 收卡，收卡后按钮不再回传（僵尸交互不留）', () => {
     // 缺口背景：宿主超时自动拒绝时，webview 不知道请求已死 ⇒ 卡残留、按钮点了没反应
     // （对照后台任务行「终态无终止按钮」的既有纪律）。终结通知补上这一唯一真源。
