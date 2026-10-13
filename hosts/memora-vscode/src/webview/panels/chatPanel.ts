@@ -653,6 +653,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.bindSecurityAudit();
     // 绑定确认回调（写入 confirmWrites / 脚本与命令 confirmScripts / guest 恒确认，默认 fail-closed）
     this.bindWriteConfirmation();
+    // 启动对齐（2026-10-13 根因修复）：宿主与内核的「当前会话」必须一致
+    void this.alignKernelSession(agent);
     // 装配注入后统一补推（时序竞态）：
     // webview ready 时 agent 可能尚未装配，replaySession 的 chat_role_pack / pushRolePacks
     // 会因 _agent 为空而跳过推送 → 状态行角色徽章与角色列表永久缺失。此处装配完成即补推一次，
@@ -660,6 +662,49 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 「装配后补推」（含历史会话占用补推）统一收口在 refreshAfterAssemble 内，
     // 本方法不另推一份（否则懒装配路径漏推）。
     this.refreshAfterAssemble();
+  }
+
+  /**
+   * 启动对齐：宿主持有的当前会话（_currentSessionId）与内核 current 不一致时切到一致。
+   *
+   * 根因（2026-10-13 实测「启动后立即分叉报『当前会话不存在』，切一次会话即恢复」）：
+   * - 宿主 chatPanel 构造即把 `_currentSessionId` 指向最近活跃会话（UI 启动回放它）；
+   * - 内核 MessageHistory 的惰性初值却是 `${todayDate()}-main`（meta 要首轮对话才建）；
+   * - 启动即分叉 ⇒ 内核查**自己** current 的 meta（不存在）→ 报错。
+   *   同根因的更深伤害：启动后第一条消息的 Round 会挂到内核的 `-main`，与 UI 显示的
+   *   会话错位——对齐修的是这一类，不只分叉一个症状。
+   *
+   * 对齐点选 setAgent：装配完成即调（open 命令 / webview ready 懒装配两条路径都汇聚），
+   * 早于任何用户交互。switchToSession 的「切身份」段（switchSession）在首个 await **之前**
+   * 同步完成——void 调用返回时 current 已切，无竞态窗口。
+   *
+   * 判据「不一致才切」：同会话重入（面板折叠重开的重复 setAgent）直接跳过——幂等无副作用，
+   * 也避开对话繁忙时 switchToSession 的 busy 守卫误报。判据不可得（桩缺方法 / history
+   * 未初始化返回 null）时同样跳过：不猜、不切，真实 SessionManager 恒有该读取口。
+   *
+   * 失败必须可见（notice）：静默则退回「启动即错位」的原症状。
+   */
+  private async alignKernelSession(agent: Agent): Promise<void> {
+    const target = this._currentSessionId;
+    const sm = agent.sessionManager;
+    if (!target || !sm) return;
+    let kernelCurrent: string | null = null;
+    try {
+      const info = sm.getCurrentSessionInfo();
+      kernelCurrent = info ? `${info.date}-${info.session}` : null;
+    } catch {
+      kernelCurrent = null;
+    }
+    if (kernelCurrent === null || kernelCurrent === target) return;
+    try {
+      await sm.switchToSession(target);
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: `启动会话对齐失败：${toNoticeText(err)}`,
+      });
+    }
   }
 
   /** 推送三源技能清单到 chatView（composer 动态下拉 SSOT：与设置面板共用 listVisibleSkills） */

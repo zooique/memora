@@ -23,7 +23,7 @@ import type {
   Round,
 } from '@zooique/memora';
 import type { RoundView, TurnState } from '../../shared/protocol.js';
-import { todayDate, resolveContextWindow } from '@zooique/memora';
+import { todayDate, resolveContextWindow, MemoraError } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
@@ -2175,5 +2175,128 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
     // 暂停前 checkpoint 事件（seq1/2）与续跑段（seq3）全在，seq 幂等保序
     expect(live?.processEvents?.map((e) => (e as { seq: number }).seq)).toEqual([1, 2, 3]);
     expect(live?.assistantMessage?.content).toBe('续跑正文');
+  });
+});
+
+/**
+ * 启动会话对齐 alignKernelSession（2026-10-13「启动即分叉报当前会话不存在」根因修复）
+ *
+ * 根因形态：宿主构造即把 _currentSessionId 指向最近活跃会话（UI 启动回放它），
+ * 内核 MessageHistory 惰性初值却是 `${todayDate()}-main`（meta 首轮对话才建）——
+ * 启动即分叉 → 内核查**自己** current 的 meta（不存在）→ 报「当前会话不存在」；
+ * 切一次会话即恢复，正因 switchToSession 把内核 current 同步到了宿主持有值。
+ */
+describe('启动会话对齐（启动即分叉根因修复）', () => {
+  /** 让 setAgent 内 void 的 alignKernelSession 走完（同步读判据 + 一次 await 切换） */
+  async function flushAlign(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  /**
+   * 构造带对齐读取口/切换口的 agent 桩：
+   * info = 'absent' 模拟桩缺 getCurrentSessionInfo；null 模拟 history 未初始化（真实 SessionManager 返回 null）
+   */
+  function alignStub(opts: {
+    /** getCurrentSessionInfo 返回值（缺省方法存在返回 null） */
+    info?: { date: string; session: string } | null | 'absent';
+    /** switchToSession 实现（缺省成功返回 0） */
+    switchImpl?: () => Promise<number>;
+  }): { agent: Agent; switchToSession: ReturnType<typeof vi.fn> } {
+    // 切换口：记录调用轨迹供断言，可注入失败实现
+    const switchToSession = vi.fn(opts.switchImpl ?? (() => Promise.resolve(0)));
+    // 会话管理器最小面：读取口按 opts 决定存在性与返回值
+    const sessionManager: Record<string, unknown> = { switchToSession, renameSession: vi.fn() };
+    if (opts.info !== 'absent') {
+      sessionManager.getCurrentSessionInfo = () => opts.info ?? null;
+    }
+    const agent = {
+      sessionManager,
+      memory: { softDeleteRoundSummaries: vi.fn() },
+      on: vi.fn(),
+      off: vi.fn(),
+      isPausePending: () => false,
+      getEffectiveMaxTokens: () => undefined,
+    } as unknown as Agent;
+    return { agent, switchToSession };
+  }
+
+  /** 直接改写宿主持有的当前会话（模拟构造初值 = 最近活跃会话） */
+  function setHostSession(provider: MemoraChatViewProvider, sessionId: string): void {
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = sessionId;
+  }
+
+  it('启动错位：内核 current（今天-main）≠ 宿主持有 → 切到宿主目标会话', async () => {
+    const { provider } = setup();
+    // 宿主构造初值：最近活跃会话（用户实测复现路径：启动后立即点它分叉）
+    setHostSession(provider, '2026-10-07-smuxokj29');
+    // 内核惰性初值形态：今天-main（meta 未建 → 分叉必报「当前会话不存在」）
+    const { agent, switchToSession } = alignStub({
+      info: { date: todayDate(), session: 'main' },
+    });
+    provider.setAgent(agent);
+    await flushAlign();
+    expect(switchToSession).toHaveBeenCalledTimes(1);
+    expect(switchToSession).toHaveBeenCalledWith('2026-10-07-smuxokj29');
+  });
+
+  it('判据一致：内核 current 已等于宿主持有 → 不切（幂等，避开 busy 守卫误报）', async () => {
+    const { provider } = setup();
+    setHostSession(provider, '2026-08-15-s1');
+    const { agent, switchToSession } = alignStub({ info: { date: '2026-08-15', session: 's1' } });
+    provider.setAgent(agent);
+    await flushAlign();
+    expect(switchToSession).not.toHaveBeenCalled();
+  });
+
+  it('判据不可得（缺读取口 / history 未初始化 null / 宿主无目标会话）→ 跳过不切不炸', async () => {
+    // 形态一：桩缺 getCurrentSessionInfo（TypeError 被 catch 归 null）
+    const { provider } = setup();
+    setHostSession(provider, '2026-08-15-s1');
+    const absent = alignStub({ info: 'absent' });
+    provider.setAgent(absent.agent);
+    await flushAlign();
+    expect(absent.switchToSession).not.toHaveBeenCalled();
+
+    // 形态二：真实 SessionManager 在 history 未初始化时返回 null（不猜、不切）
+    const { provider: p2 } = setup();
+    setHostSession(p2, '2026-08-15-s1');
+    const uninitialized = alignStub({ info: null });
+    p2.setAgent(uninitialized.agent);
+    await flushAlign();
+    expect(uninitialized.switchToSession).not.toHaveBeenCalled();
+
+    // 形态三：首次启动无任何会话（_currentSessionId 为空）→ 无可对齐目标
+    const { provider: p3 } = setup();
+    setHostSession(p3, '');
+    const noTarget = alignStub({ info: { date: todayDate(), session: 'main' } });
+    p3.setAgent(noTarget.agent);
+    await flushAlign();
+    expect(noTarget.switchToSession).not.toHaveBeenCalled();
+  });
+
+  it('对齐失败：error notice 含 toNoticeText 全文（MemoraError 原因/建议不被吞）', async () => {
+    const { provider, posted } = setup();
+    setHostSession(provider, '2026-08-15-s1');
+    // 构造带 detail/suggestions 的 MemoraError：若走 .message 则只剩标题（宿主吞 detail 的旧伤形态）
+    const kernelErr = new MemoraError({
+      title: '打开会话',
+      detail: '会话处于 running 态之外',
+      suggestions: ['等待当前对话完成后重试'],
+      category: 'config',
+    });
+    const { agent } = alignStub({
+      info: { date: todayDate(), session: 'main' },
+      switchImpl: () => Promise.reject(kernelErr),
+    });
+    provider.setAgent(agent);
+    await flushAlign();
+    const notices = ofType<{ type: string; level: string; message: string }>(posted, 'notice');
+    const alignNotice = notices.find((n) => n.message.includes('启动会话对齐失败'));
+    expect(alignNotice, '对齐失败必须发 error notice（静默则退回启动即错位原症状）').toBeDefined();
+    expect(alignNotice!.level).toBe('error');
+    // format() 全文三件套：标题 / 原因 / 建议都在
+    expect(alignNotice!.message).toContain('打开会话');
+    expect(alignNotice!.message).toContain('会话处于 running 态之外');
+    expect(alignNotice!.message).toContain('等待当前对话完成后重试');
   });
 });
