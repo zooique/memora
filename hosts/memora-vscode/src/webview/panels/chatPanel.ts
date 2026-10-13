@@ -110,6 +110,7 @@ import {
   type PendingLiveRound,
 } from '../../shared/turnProjection.js';
 import { friendlyErrorMessage } from '../../shared/errorText.js';
+import { toNoticeText } from '../../extension/host/noticeText.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
 import { vscodeTracer } from '../../extension/host/tracer.js';
@@ -1068,7 +1069,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 首次启动兜底：装配成功后若无任何会话记录，自动创建首个会话（用户可直接输入）
       void this.ensureInitialSession();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = toNoticeText(err);
       void vscode.window.showErrorMessage(`Memora 装配失败：${msg}`);
       // HOST-BUG-1：失败必须重置 Promise 缓存——否则 _agentReady 成「已 settle 但
       // _agent 仍 null」的僵尸，后续 ensureAgent 永远 await 它、永不重试。
@@ -1870,7 +1871,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: err instanceof Error ? err.message : String(err),
+        message: toNoticeText(err),
       });
       return false;
     }
@@ -1923,7 +1924,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: err instanceof Error ? err.message : String(err),
+        message: toNoticeText(err),
       });
     }
   }
@@ -1976,7 +1977,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: err instanceof Error ? err.message : String(err),
+        message: toNoticeText(err),
       });
     }
   }
@@ -2289,7 +2290,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'polish_input_result',
         ok: false,
-        message: err instanceof Error ? err.message : String(err),
+        message: toNoticeText(err),
       });
     }
   }
@@ -2462,7 +2463,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: err instanceof Error ? err.message : String(err),
+        message: toNoticeText(err),
       });
     }
   }
@@ -2811,7 +2812,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           this.post({
             type: 'notice',
             level: 'error',
-            message: err instanceof Error ? err.message : String(err),
+            message: toNoticeText(err),
           });
           return;
         }
@@ -2977,7 +2978,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } catch (err) {
       // 同步抛错路径：清理 controller，避免 AbortController 泄漏
       this._abortController = undefined;
-      this.post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+      this.post({ type: 'error', message: toNoticeText(err) });
     }
   }
 
@@ -3087,7 +3088,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: err instanceof Error ? err.message : String(err),
+        message: toNoticeText(err),
       });
     }
   }
@@ -3584,7 +3585,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // assistant 消息持久化由内核 appendAssistant 完成（写入当前会话 _currentSessionId），
       // 此处不再 persist，避免与内核双写同一条回复（SSOT 单一真理源）
     } catch (err) {
-      this.post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+      this.post({ type: 'error', message: toNoticeText(err) });
     } finally {
       this._agent.off('questionPending', onPendingQuestion);
       this._agent.off('memoryAdded', onMemoryAdded);

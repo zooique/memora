@@ -11,6 +11,7 @@
  */
 import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
+import { toNoticeText } from '../host/noticeText.js';
 import { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
 
 /**
@@ -49,7 +50,7 @@ export async function openChatCommand(
     // 聚焦侧边栏视图
     void vscode.commands.executeCommand(`${MemoraChatViewProvider.viewType}.focus`);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = toNoticeText(err);
     void vscode.window.showErrorMessage(`Memora 装配失败：${msg}`);
   }
 }

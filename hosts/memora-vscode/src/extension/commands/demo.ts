@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import type { Agent, AgentChunk } from '@zooique/memora';
 import { assembleAgent } from '../host/assemble.js';
+import { toNoticeText } from '../host/noticeText.js';
 import { vscodeTracer } from '../host/tracer.js';
 
 /** 全局隔离演示区目录名（存入用户主目录，彻底隔离于任意工作区） */
@@ -71,7 +72,7 @@ export async function runDemoCommand(configDir: string): Promise<void> {
   try {
     mkdirSync(demoPath, { recursive: true });
   } catch (err) {
-    output.appendLine(`✖ 无法创建演示区：${err instanceof Error ? err.message : String(err)}`);
+    output.appendLine(`✖ 无法创建演示区：${toNoticeText(err)}`);
     return;
   }
 
@@ -86,7 +87,7 @@ export async function runDemoCommand(configDir: string): Promise<void> {
     await agent.init();
     output.appendLine('• Agent 装配完成：角色包已加载，内置工具已注册');
   } catch (err) {
-    output.appendLine(`✖ Agent 装配失败：${err instanceof Error ? err.message : String(err)}`);
+    output.appendLine(`✖ Agent 装配失败：${toNoticeText(err)}`);
     output.appendLine('  请先在设置中配置并激活一个可用的大模型（memora.configureModel）。');
     return;
   }
@@ -102,7 +103,7 @@ export async function runDemoCommand(configDir: string): Promise<void> {
       appendChunk(output, chunk);
     }
   } catch (err) {
-    output.appendLine(`✖ 对话异常中断：${err instanceof Error ? err.message : String(err)}`);
+    output.appendLine(`✖ 对话异常中断：${toNoticeText(err)}`);
   } finally {
     await agent.close();
   }

@@ -29,15 +29,22 @@ export function resolveHtmlLang(envLanguage: string | undefined): string {
   return envLanguage || DEFAULT_HTML_LANG;
 }
 
-/** 生成 `<!DOCTYPE>` 到 `</head>` 的完整文档头（不含 `<body>`，由调用方续接） */
+/**
+ * 生成 `<!DOCTYPE>` 到 `</head>` 的完整文档头（不含 `<body>`，由调用方续接）。
+ *
+ * CSP `img-src data:`（2026-10-13 补）：样式层 mask 图标（如 AI 回答完成的「已完成」淡勾，
+ * chatStyles `.msg-body[data-status='已完成']::after` 用 `data:image/svg+xml` 画）按 CSP 规范
+ * 走 img-src；不显式声明则被 `default-src 'none'` 兜底拦截——实测被拦后 VS Code 报
+ * "Note that 'img-src' was not explicitly set... The action has been blocked"，图标静默消失。
+ * 只授 `data:`：webview 无真实 `<img>`（全库零 <img> 标签），不授任何外部源。
+ */
 export function buildHtmlHead({ lang, cspSource, styles }: HtmlHeadParams): string {
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src ${cspSource};" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src ${cspSource};" />
 <style>
 ${styles}
 </style>

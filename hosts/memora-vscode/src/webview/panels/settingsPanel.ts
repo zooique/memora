@@ -16,6 +16,7 @@ import type { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createBackgroundProvider } from '../../extension/host/llmConfig.js';
 import { inspectRolePackTeams } from '../../extension/host/rolePackTeams.js';
 import { MemoraChatViewProvider } from './chatPanel.js';
+import { toNoticeText } from '../../extension/host/noticeText.js';
 import type {
   ExtensionToWebviewMessage,
   GovernanceStatsDto,
@@ -283,7 +284,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         this.post({
           type: 'cfg_result',
           ok: false,
-          message: err instanceof Error ? err.message : String(err),
+          message: toNoticeText(err),
           action: 'save',
         });
       }
@@ -304,7 +305,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         this.post({
           type: 'cfg_result',
           ok: false,
-          message: err instanceof Error ? err.message : String(err),
+          message: toNoticeText(err),
           action: 'delete',
         });
       }
@@ -319,7 +320,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         this.post({
           type: 'cfg_result',
           ok: false,
-          message: err instanceof Error ? err.message : String(err),
+          message: toNoticeText(err),
           action: 'set_active',
         });
       }
@@ -338,7 +339,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         this.post({
           type: 'cfg_result',
           ok: false,
-          message: err instanceof Error ? err.message : String(err),
+          message: toNoticeText(err),
           action: 'test',
         });
       }
@@ -459,7 +460,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     try {
       return await this._resetHandler();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = toNoticeText(err);
       return { ok: false, message };
     }
   }
@@ -477,7 +478,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       // 装配失败清空 promise（允许下次重试）；并发调用共享同一次装配
       this._agentPromise = this._getAgent(ws).catch((err) => {
         this._agentPromise = undefined;
-        const message = err instanceof Error ? err.message : String(err);
+        const message = toNoticeText(err);
         void vscode.window.showErrorMessage(`Memora 装配失败：${message}`);
         return undefined;
       });
@@ -640,7 +641,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `读取角色包配置失败：${err instanceof Error ? err.message : String(err)}`,
+        message: `读取角色包配置失败：${toNoticeText(err)}`,
       });
     }
   }
@@ -720,7 +721,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `保存失败：${err instanceof Error ? err.message : String(err)}`,
+        message: `保存失败：${toNoticeText(err)}`,
       });
     }
   }
@@ -858,7 +859,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `切换后台模型失败：${err instanceof Error ? err.message : String(err)}`,
+        message: `切换后台模型失败：${toNoticeText(err)}`,
       });
     }
   }
@@ -892,7 +893,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       const hits = await memory.searchByKeyword(query, limit ?? MEMORY_SEARCH_LIMIT);
       this.post({ type: 'memory_search_result', query, hits: hits.map(toSearchDto) });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = toNoticeText(err);
       void vscode.window.showErrorMessage(`Memora 记忆搜索失败：${message}`);
       this.post({ type: 'memory_search_result', query, hits: [] });
     }
@@ -943,7 +944,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         type: 'memory_deleted',
         ok: false,
         id,
-        message: err instanceof Error ? err.message : String(err),
+        message: toNoticeText(err),
       });
     }
   }
@@ -970,7 +971,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         type: 'memory_restored',
         ok: false,
         id,
-        message: err instanceof Error ? err.message : String(err),
+        message: toNoticeText(err),
       });
     }
   }
@@ -1009,7 +1010,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         type: 'memory_purged',
         ok: false,
         id,
-        message: err instanceof Error ? err.message : String(err),
+        message: toNoticeText(err),
       });
     }
   }
@@ -1055,7 +1056,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         type: 'memory_recycle_cleared',
         ok: false,
         count: 0,
-        message: err instanceof Error ? err.message : String(err),
+        message: toNoticeText(err),
       });
     }
   }
@@ -1088,7 +1089,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         type: 'memory_edited',
         ok: false,
         id,
-        message: err instanceof Error ? err.message : String(err),
+        message: toNoticeText(err),
       });
     }
   }
@@ -1187,7 +1188,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'governance_result',
         ok: false,
-        message: err instanceof Error ? err.message : String(err),
+        message: toNoticeText(err),
         action: 'cleanup',
       });
     }
@@ -1292,7 +1293,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `设置技能禁用失败：${err instanceof Error ? err.message : String(err)}`,
+        message: `设置技能禁用失败：${toNoticeText(err)}`,
       });
     }
   }
@@ -1405,7 +1406,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `切换写入确认开关失败：${err instanceof Error ? err.message : String(err)}`,
+        message: `切换写入确认开关失败：${toNoticeText(err)}`,
       });
     }
   }
@@ -1442,7 +1443,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `切换脚本执行确认开关失败：${err instanceof Error ? err.message : String(err)}`,
+        message: `切换脚本执行确认开关失败：${toNoticeText(err)}`,
       });
     }
   }
@@ -1493,7 +1494,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `设置允许路径失败：${err instanceof Error ? err.message : String(err)}`,
+        message: `设置允许路径失败：${toNoticeText(err)}`,
       });
     }
   }
@@ -1532,7 +1533,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `设置搜索引擎失败：${err instanceof Error ? err.message : String(err)}`,
+        message: `设置搜索引擎失败：${toNoticeText(err)}`,
       });
     }
   }

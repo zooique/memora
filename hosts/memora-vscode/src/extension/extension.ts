@@ -24,6 +24,7 @@ import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceR
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { resetUserData } from './host/userDataReset.js';
+import { toNoticeText } from './host/noticeText.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { MemoraSettingsViewProvider } from '../webview/panels/settingsPanel.js';
 import { openChatCommand } from './commands/openChat.js';
@@ -488,9 +489,7 @@ export function activate(context: vscode.ExtensionContext): void {
           `技能已重载：全局技能 ${result.skill} 个 / 角色包技能 ${result.rolePack} 个`,
         );
       } catch (err) {
-        vscode.window.showWarningMessage(
-          `技能重载失败：${err instanceof Error ? err.message : String(err)}`,
-        );
+        vscode.window.showWarningMessage(`技能重载失败：${toNoticeText(err)}`);
       }
     }),
   );
@@ -582,9 +581,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const purged = agent.memory.writePurgeExpired(cutoff);
         vscode.window.showInformationMessage(`已清理 ${purged} 条过期记忆`);
       } catch (err) {
-        vscode.window.showErrorMessage(
-          `清理失败：${err instanceof Error ? err.message : String(err)}`,
-        );
+        vscode.window.showErrorMessage(`清理失败：${toNoticeText(err)}`);
       }
     }),
   );
@@ -603,9 +600,7 @@ export function activate(context: vscode.ExtensionContext): void {
           `孤儿回收完成：扫描 ${stats.scanned} 个问答闭环，清理 ${stats.deleted} 个孤立 Round + ${stats.memoryCleaned} 条摘要`,
         );
       } catch (err) {
-        vscode.window.showErrorMessage(
-          `垃圾回收失败：${err instanceof Error ? err.message : String(err)}`,
-        );
+        vscode.window.showErrorMessage(`垃圾回收失败：${toNoticeText(err)}`);
       }
     }),
   );
@@ -659,7 +654,7 @@ export function activate(context: vscode.ExtensionContext): void {
       await vscode.commands.executeCommand('workbench.action.reloadWindow');
       return { ok: true, message: '已清空用户级数据，窗口即将重载' };
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = toNoticeText(err);
       memoraOutput.appendLine(`Memora 用户级数据初始化失败：${message}`);
       return { ok: false, message: `初始化失败：${message}` };
     }
@@ -774,9 +769,7 @@ export function activate(context: vscode.ExtensionContext): void {
           vscode.window.showErrorMessage('作品登记失败，路径可能越界或发生其他错误');
         }
       } catch (err) {
-        vscode.window.showErrorMessage(
-          '登记失败：' + (err instanceof Error ? err.message : String(err)),
-        );
+        vscode.window.showErrorMessage('登记失败：' + toNoticeText(err));
       }
     }),
   );
