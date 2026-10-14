@@ -1610,7 +1610,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     const persisted = this.readCustomSearchEngines();
     for (const e of engines) {
       const unchanged = persisted.some(
-        (p) => p.name === e.name && p.urlTemplate === e.urlTemplate && p.parseStrategy === e.parseStrategy,
+        (p) =>
+          p.name === e.name &&
+          p.urlTemplate === e.urlTemplate &&
+          p.parseStrategy === e.parseStrategy,
       );
       if (unchanged) continue;
       const r = await probeSearchEngine(e);

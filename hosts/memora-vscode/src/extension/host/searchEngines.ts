@@ -176,7 +176,9 @@ export async function probeSearchEngine(
         engineName: cfg.name,
         ok: true,
         count: results.length,
-        sample: results.slice(0, 3).map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })),
+        sample: results
+          .slice(0, 3)
+          .map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })),
       };
     }
     // 0 命中差分：换其余宿主策略复探同一 URL，能解析出 ⇒ 策略错配（拦）
@@ -235,11 +237,15 @@ function parseOpenSearchRss(raw: string, limit: number): SearchResult[] {
     const titleRaw = pick(block, /<title>([\s\S]*?)<\/title>/i)?.trim();
     // 标签名用非捕获组 (?:...)，内容捕获为第 1 组；pick() 取 [1] 即内容（修复旧版误取标签名导致 url="link"）
     const linkInner = pick(block, /<(?:link|id)>([\s\S]*?)<\/(?:link|id)>/i)?.trim();
-    const descInner = pick(block, /<(?:description|summary)>([\s\S]*?)<\/(?:description|summary)>/i)?.trim();
+    const descInner = pick(
+      block,
+      /<(?:description|summary)>([\s\S]*?)<\/(?:description|summary)>/i,
+    )?.trim();
     const title = decodeXmlText(titleRaw ?? '');
     // 内部文本为空（如 Atom <link href>）才回退到属性；decodeXmlText('') 为假值触发 || 兜底
     const url =
-      decodeXmlText(linkInner ?? '') || decodeXmlText(pickAttr(block, /<link[^>]*href="([^"]*)"/i) ?? '');
+      decodeXmlText(linkInner ?? '') ||
+      decodeXmlText(pickAttr(block, /<link[^>]*href="([^"]*)"/i) ?? '');
     const snippet = decodeXmlText(descInner ?? '');
     if (url) results.push({ title: title || url, url, snippet });
   }

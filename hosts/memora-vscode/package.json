@@ -162,11 +162,18 @@
               },
               "parseStrategy": {
                 "type": "string",
-                "enum": ["openSearchRss", "jsonApi"],
+                "enum": [
+                  "openSearchRss",
+                  "jsonApi"
+                ],
                 "description": "结果解析策略（宿主预置，不可自定义解析逻辑）。openSearchRss=OpenSearch RSS/Atom；jsonApi=JSON 搜索 API（约定 {results:[{title,url,snippet}]} 或 {items:[...]}）"
               }
             },
-            "required": ["name", "urlTemplate", "parseStrategy"]
+            "required": [
+              "name",
+              "urlTemplate",
+              "parseStrategy"
+            ]
           },
           "default": [],
           "description": "用户自定义网页搜索引擎（web_search 工具后端）。每项 = 名称 + URL 模板(?q={query}) + 宿主预置解析策略。仅支持结构化结果源，自定义 HTML 解析不可行（安全红线）。修改后重载窗口生效。"

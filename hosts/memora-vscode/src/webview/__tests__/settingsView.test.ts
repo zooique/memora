@@ -581,7 +581,13 @@ describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-1
       new MessageEvent('message', {
         data: {
           type: 'custom_search_engines_status',
-          engines: [{ name: 'MySite', urlTemplate: 'https://mysite.com/s?q={query}', parseStrategy: 'jsonApi' }],
+          engines: [
+            {
+              name: 'MySite',
+              urlTemplate: 'https://mysite.com/s?q={query}',
+              parseStrategy: 'jsonApi',
+            },
+          ],
         },
       }),
     );
@@ -620,7 +626,13 @@ describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-1
     expect(postMessage).toHaveBeenCalledTimes(1); // 一次保存 = 一轮探针
     expect(postMessage).toHaveBeenCalledWith({
       type: 'custom_search_engines_set',
-      engines: [{ name: 'MySite2', urlTemplate: 'https://mysite.com/s?q={query}&v=2', parseStrategy: 'jsonApi' }],
+      engines: [
+        {
+          name: 'MySite2',
+          urlTemplate: 'https://mysite.com/s?q={query}&v=2',
+          parseStrategy: 'jsonApi',
+        },
+      ],
     });
   });
 
@@ -644,7 +656,13 @@ describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-1
       new MessageEvent('message', {
         data: {
           type: 'custom_search_engines_status',
-          engines: [{ name: 'MySite', urlTemplate: 'https://mysite.com/s?q={query}', parseStrategy: 'jsonApi' }],
+          engines: [
+            {
+              name: 'MySite',
+              urlTemplate: 'https://mysite.com/s?q={query}',
+              parseStrategy: 'jsonApi',
+            },
+          ],
         },
       }),
     );

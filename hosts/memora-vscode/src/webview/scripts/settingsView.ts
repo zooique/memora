@@ -604,7 +604,7 @@ function createSecurityView({
         (e, i) =>
           e.name === b[i].name &&
           e.urlTemplate === b[i].urlTemplate &&
-        e.parseStrategy === b[i].parseStrategy,
+          e.parseStrategy === b[i].parseStrategy,
       )
     );
   }

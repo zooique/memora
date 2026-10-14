@@ -55,13 +55,15 @@ describe('validateCustomEngines — 边界口径', () => {
   });
 
   it('URL 模板缺 {query} → 拒', () => {
-    expect(validateCustomEngines([{ ...OK, urlTemplate: 'https://mysite.com/s' }])).toContain('{query}');
+    expect(validateCustomEngines([{ ...OK, urlTemplate: 'https://mysite.com/s' }])).toContain(
+      '{query}',
+    );
   });
 
   it('解析策略非预置项 → 拒（防绕过 UI 直接改 settings.json）', () => {
-    expect(
-      validateCustomEngines([{ ...OK, parseStrategy: 'evil' as never }]),
-    ).toContain('解析策略');
+    expect(validateCustomEngines([{ ...OK, parseStrategy: 'evil' as never }])).toContain(
+      '解析策略',
+    );
     // 派生契约（2026-10-14 修正）：旧断言把 HOST_PARSE_STRATEGIES 写死成字面量，
     // 加第三个策略时必红，与「由 HOST_PARSERS 键派生、零维护」的声称自相矛盾。
     // 现改为逐策略验证「每个清单项都被判据放行」——加策略时本测试自动跟随、不红。
@@ -73,7 +75,9 @@ describe('validateCustomEngines — 边界口径', () => {
   });
 
   it('清单内名称重复 → 拒', () => {
-    expect(validateCustomEngines([OK, { ...OK, urlTemplate: 'https://other.com/?q={query}' }])).toContain('重复');
+    expect(
+      validateCustomEngines([OK, { ...OK, urlTemplate: 'https://other.com/?q={query}' }]),
+    ).toContain('重复');
   });
 
   it('自定义名与内置引擎重名 → 拒（防静默遮蔽内置）', () => {
@@ -83,7 +87,11 @@ describe('validateCustomEngines — 边界口径', () => {
   });
 
   it('非 http(s) 模板 → 拒', () => {
-    expect(validateCustomEngines([{ ...OK, urlTemplate: 'file:///etc/passwd?q={query}' }])).toContain('http');
-    expect(validateCustomEngines([{ ...OK, urlTemplate: '//evil.com/?q={query}' }])).toContain('http');
+    expect(
+      validateCustomEngines([{ ...OK, urlTemplate: 'file:///etc/passwd?q={query}' }]),
+    ).toContain('http');
+    expect(validateCustomEngines([{ ...OK, urlTemplate: '//evil.com/?q={query}' }])).toContain(
+      'http',
+    );
   });
 });
