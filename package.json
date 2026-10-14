@@ -55,6 +55,7 @@
     "eval:budget:check": "tsx scripts/eval-context-budget-snapshot.ts --check",
     "terminology:report": "tsx scripts/terminology-carrier-snapshot.ts",
     "terminology:check": "tsx scripts/terminology-carrier-snapshot.ts --check",
+    "terminology:changed": "tsx scripts/terminology-carrier-snapshot.ts --changed",
     "docs:links": "tsx scripts/check-publish-links.ts",
     "docs:links:repo": "tsx scripts/check-publish-links.ts --repo",
     "rules:refs": "tsx scripts/check-rule-refs.ts",

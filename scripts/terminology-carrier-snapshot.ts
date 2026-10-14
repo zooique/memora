@@ -23,6 +23,10 @@
  *      也不报警（集合没变）——与「脚本扫自身」是**同一失效模式的另一个载体**（`SELF_REL` 的教训，
  *      历史层是第二个续命源）。故 code 层（`src` / `hosts` / `scripts` = 现行契约）单独锁集合：
  *      旧词从 code 消失 = 正名完成信号；旧词出现在 code = 回归报警（门禁的牙在此）。
+ *   5. **`--changed` 是反馈环、不是第二判据（TERM-FDBK-1）**：只扫 git 变更文件、只报分层
+ *      「新增词形」——部分扫描下「消失」无意义（未扫文件不在结果里，报消失 = 假红）。
+ *      比对对象仍是同一份分层 BASELINE，判定规则零改动；git 清单拿不到则**报错退出**
+ *      （静默空集 = 反馈环永远绿，与「解析失败报错」§1 同族失效模式）。
  *
  * 扫描的词根族：
  *   - `step`（正名族，术语锚点 §1）
@@ -48,10 +52,13 @@
  *   npx tsx scripts/terminology-carrier-snapshot.ts           # 打印分类报表
  *   npx tsx scripts/terminology-carrier-snapshot.ts --json    # 输出 JSON（供工具消费）
  *   npx tsx scripts/terminology-carrier-snapshot.ts --check   # 与分层 BASELINE 比集合，漂移则 exit 1
+ *   npx tsx scripts/terminology-carrier-snapshot.ts --changed # 增量：只扫 git 变更文件，只报分层新增词形（写文档后秒级自检）
  *
  * 验收：--check 下两层集合各自一致 → exit 0；有新增 / 消失 → 按层打印两边清单 + 可直接粘贴的 BASELINE，exit 1。
+ *       --changed 下变更文件无新增词形 → exit 0；有 → 打印词形 + 样本文件，exit 1。
  */
-import { readFileSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, extname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -258,6 +265,102 @@ function walk(dir: string): void {
     }
     collect(text, rel, layer);
   }
+}
+
+// ─── 增量扫描（--changed · 反馈环，非第二判据） ────────────
+
+/**
+ * 读取 git 变更文件清单（相对仓库根，正斜杠）：已跟踪文件相对 HEAD 的改动 + 未跟踪新文件。
+ * 拿不到清单必须抛错——静默返回空集会让反馈环永远绿（同 §1「解析失败报错」的失效模式）。
+ */
+function listChangedFiles(): string[] {
+  const run = (args: string[]): string[] =>
+    execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' })
+      .split('\n')
+      .map((s) => s.split('\\').join('/').trim())
+      .filter(Boolean);
+  // staged + unstaged 相对 HEAD 的全部改动
+  const tracked = run(['diff', '--name-only', 'HEAD']);
+  // 未跟踪新文件（写文档/代码时的常见形态：还没 add）
+  const untracked = run(['ls-files', '--others', '--exclude-standard']);
+  return [...new Set([...tracked, ...untracked])];
+}
+
+/** 该相对路径是否落在与 walk() 相同的排除面（SKIP_DIRS / fixture / 自身） */
+function isExcludedRel(rel: string): boolean {
+  if (rel === SELF_REL) return true;
+  if (rel.split('/').some((seg) => SKIP_DIRS.has(seg))) return true;
+  // 与 walk 同判据：__tests__ 目录下的 fixtures 整树是录制证据，不是纪律对象
+  if (rel.includes('__tests__/fixtures/')) return true;
+  return false;
+}
+
+/**
+ * 增量快照：只扫给定变更文件，只登记这些文件里的载体。
+ * frozen 置空——报表不消费（--changed 走自己的输出），比对只用分层 BASELINE。
+ */
+function buildChangedSnapshot(relPaths: string[]): { snapshot: Snapshot; scanned: number } {
+  sink.clear();
+  let scanned = 0;
+  for (const rel of relPaths) {
+    if (!SCAN_EXTS.has(extname(rel)) || isExcludedRel(rel)) continue;
+    const abs = join(ROOT, rel);
+    if (!existsSync(abs)) continue; // 已删除文件：无内容可扫（walk 同款不中断）
+    const layer = layerOf(rel);
+    collect(rel, rel, layer); // 文件名 / 目录名本身也是载体
+    let text: string;
+    try {
+      text = readFileSync(abs, 'utf8');
+    } catch {
+      continue;
+    }
+    collect(text, rel, layer);
+    scanned += 1;
+  }
+  const carriers = [...sink.values()];
+  for (const c of carriers) c.sampleFiles.sort(byCodeUnit);
+  carriers.sort((a, b) => byCodeUnit(a.token, b.token));
+  return { snapshot: { frozen: [], carriers }, scanned };
+}
+
+/**
+ * `--changed` 模式主流程：变更文件 → 分层新增词形 → 有则 exit 1。
+ * 只报「新增」不报「消失」——部分扫描下未扫文件不在结果里，报消失 = 假红（见 §5）。
+ * 不打印可粘贴 BASELINE：基线更新仍走完整 `--check`（反馈环只指路，不代替门禁裁决）。
+ */
+function runChangedMode(): void {
+  let changed: string[];
+  try {
+    changed = listChangedFiles();
+  } catch (err) {
+    console.error(`❌ [--changed] git 变更清单获取失败（禁止静默空集）：${(err as Error).message}`);
+    process.exit(1);
+  }
+  if (changed.length === 0) {
+    console.log('✅ [--changed] 工作区无变更文件');
+    return;
+  }
+  const { snapshot, scanned } = buildChangedSnapshot(changed);
+  let totalAdded = 0;
+  for (const layer of LAYERS) {
+    const current = new Set(layerTokenSet(snapshot, layer));
+    const baselineSet = new Set(BASELINE_BY_LAYER[layer]);
+    const added = [...current].filter((t) => !baselineSet.has(t)).sort(byCodeUnit);
+    if (added.length === 0) continue;
+    totalAdded += added.length;
+    console.log(`\n❌ [--changed] ${layer} 层新增词形 ${added.length} 个：`);
+    for (const t of added) {
+      const rec = snapshot.carriers.find((c) => c.token === t);
+      console.log(`  + ${t}  ${rec?.sampleFiles.join(', ') ?? ''}`);
+    }
+  }
+  if (totalAdded > 0) {
+    console.log(
+      '\n逐词确认语义（新机制 or 旧词误用），确认后跑完整门禁 npm run terminology:check 更新基线。\n',
+    );
+    process.exit(1);
+  }
+  console.log(`\n✅ [--changed] 变更文件无分层新增词形（扫了 ${scanned} 个文件）\n`);
 }
 
 // ─── 锚点解析（冻结例外） ─────────────────────────
@@ -543,6 +646,13 @@ const BASELINE_BY_LAYER: Record<Layer, readonly string[]> = {
 
 function main(): void {
   const argv = process.argv.slice(2);
+
+  // --changed 是独立反馈环（只读不改判据），先于其余模式处理并返回
+  if (argv.includes('--changed')) {
+    runChangedMode();
+    return;
+  }
+
   const snapshot = buildSnapshot();
 
   if (argv.includes('--json')) {
