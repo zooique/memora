@@ -38,6 +38,7 @@ import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { sanitizeExternalText, stripControlChars } from '@/agent/toolExecutor.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 import { touchScores } from '@/memory/keywordsTouch.js';
+import type { AgentEventMap } from '@/utils/eventEmitter.js';
 import type { AgentSearchHit, MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 // token 估算唯一真理源（CJK 感知）——read_file 的分段预算与上下文占用/截断同口径
@@ -162,8 +163,9 @@ export class BuiltinToolHandlers {
   /** 当前会话「正文或摘要已在眼前」的轮次提供者（装配期注入；search_memories 用它与装配期内容互斥） */
   private exclusionRoundIdsProvider: (() => ReadonlySet<string>) | null = null;
 
-  /** memoryRecalled 事件发射回调（宿主感知「LLM 查询记忆命中 N 条」；装配期注入，缺省不发射） */
-  private onMemoryRecalled: ((info: { count: number; query: string }) => void) | null = null;
+  /** memoryRecalled 事件发射回调（宿主感知「LLM 查询记忆命中 N 条」；装配期注入，缺省不发射）。
+   * 载荷类型引用 AgentEventMap 单一真源（不内联复制，防与 eventEmitter 定义漂移）。 */
+  private onMemoryRecalled: ((info: AgentEventMap['memoryRecalled']) => void) | null = null;
 
   /**
    * 注入 MemoryInspector，启用 search_memories 的纯关键词搜索后端（memory-tool-recall-design §3.3）。
@@ -180,7 +182,7 @@ export class BuiltinToolHandlers {
    * **唯一触发位**：全库仅本类 emit memoryRecalled（无其他发射点）。
    * 缺省不注入则静默跳过（内置工具也可被测试/脚本直调，无宿主时 no-op）。
    */
-  setOnMemoryRecalled(callback: (info: { count: number; query: string }) => void): void {
+  setOnMemoryRecalled(callback: (info: AgentEventMap['memoryRecalled']) => void): void {
     this.onMemoryRecalled = callback;
   }
 
@@ -1128,9 +1130,15 @@ export class BuiltinToolHandlers {
     // 刷新访问时间、不写任何重要度字段——命中 = 被 LLM 想起，仅用于排序，不做记忆强化加权。查询低频，无自反馈（自动注入退役后根除正反馈）。
     this.touchHits(hits);
 
-    // memoryRecalled 事件（§2.4「保留改语义」定案）：LLM 查询记忆命中 N 条 → 宿主感知提示。
-    // 唯一发射位：此处是全库唯一 emit。
-    this.onMemoryRecalled?.({ count: hits.length, query });
+    // memoryRecalled 事件（§2.4「保留改语义」定案；4.1.0 MEM-EVENT-1 载荷扩展）：LLM 查询记忆
+    // 命中 N 条 → 宿主感知提示 + 命中明细（id/name/source，宿主 S3-1 可展开行渲染 / S3-3 反馈寻址）。
+    // 唯一发射位：此处是全库唯一 emit。明细取自现成搜索结果（零新增查询）；条数上限由
+    // parseLimit 钳制（50）单点保证，此处全量映射不截断（不另立截断常量）。
+    this.onMemoryRecalled?.({
+      count: hits.length,
+      query,
+      hits: hits.map((h) => ({ id: h.id, name: h.name, source: h.source })),
+    });
 
     const lines = hits.map((m, i) => {
       const preview = truncate(m.contentPreview ?? '', 80);

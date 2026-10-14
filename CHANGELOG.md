@@ -1,10 +1,26 @@
 # Changelog
 
-本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号。`[Unreleased]` 按 ADR-033 双版本线拆分：内核变更定档独立版本号（当前 **[4.0.0]**），宿主变更在 `[Unreleased] · 宿主`（随做随用，攒批随 `vsce package` 定版），不占内核版本号。
+本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号。`[Unreleased]` 按 ADR-033 双版本线拆分：内核变更定档独立版本号（当前 **[4.1.0]**，开发中），宿主变更在 `[Unreleased] · 宿主`（随做随用，攒批随 `vsce package` 定版），不占内核版本号。
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
 > **版本定位（v3.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。早期版本（2.1.0 及以下）为探索性迭代；**3.0.0 是架构收敛后的第一个稳定基线**，API 与结构以 3.0.0 为准；**4.0.0 起导出面收敛（-54）+ `search()` 退役，API 以 4.0.0 为准**。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与单测（2700+ 用例）负责，不对"agent 整体行为稳定"作承诺。
+
+## [4.1.0] · 未发布
+
+> **本区归属**：仅**内核**（`@zooique/memora`）变更。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
+
+### Added（内核 · `memoryRecalled` 事件载荷补命中明细 · `MEM-EVENT-1`）
+
+- `memoryRecalled` 新增**可选**字段 `hits`（`{ id, name, source }[]`）：`search_memories` 命中时把
+  命中条目随事件带给宿主，支撑宿主「本轮参考了 N 条记忆」可展开行（宿主 0.2.0 消费，内核先行）。
+- 数据真源 = 发射点现成搜索结果（`AgentSearchHit`），零新增查询；`count` 语义不变（总命中数）；
+  条数上限真源 = `parseLimit` 钳制（50），载荷全量映射不截断（不另立截断常量）。
+- **可选 = 跨 dist 契约**：4.0.x 内核不发 `hits`，宿主须容错缺失（降级为条数提示）——类型层可选
+  强制消费方容错。`id` 为宿主 S3-3 反馈寻址预留；`contentPreview` 不带（无登记消费面，不预支）。
+- 回调签名三处内联 `{ count, query }` 收敛为引用 `AgentEventMap['memoryRecalled']`
+  （载荷类型单一真源，防内联复制漂移）。
+- 守卫：命中载荷含 `hits` 且字段精确匹配（载荷形态哨兵，字段增删必须同步断言）+ 空命中不触发（已有）。
 
 ## [4.0.0] · 2026-10-08
 

@@ -729,9 +729,14 @@ describe('BuiltinToolHandlers.searchMemories', () => {
 
     await handlers.searchMemories('XylophoneFoo', '10', 'match');
 
-    // 命中 1 条 → 发射 { count, query } 供宿主感知提示
+    // 命中 1 条 → 发射 { count, query, hits } 供宿主感知提示 + 展开行明细（MEM-EVENT-1）。
+    // 精确匹配 = 载荷形态哨兵：字段增删必须同步改此断言，防未登记字段静默混入。
     expect(cb).toHaveBeenCalledTimes(1);
-    expect(cb).toHaveBeenCalledWith({ count: 1, query: 'XylophoneFoo' });
+    expect(cb).toHaveBeenCalledWith({
+      count: 1,
+      query: 'XylophoneFoo',
+      hits: [{ id: 'content:pref', name: '偏好', source: 'preference' }],
+    });
   });
 
   it('命中为空时不触发 memoryRecalled（无意义感知噪声）', async () => {

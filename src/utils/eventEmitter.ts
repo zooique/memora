@@ -81,7 +81,14 @@ export const AGENT_EVENT_SET: ReadonlySet<string> = new Set(Object.values(AGENT_
 export interface AgentEventMap extends Record<AgentEventName, unknown> {
   memoryAdded: { id: string; source: string; name: string };
   rolePackSwitched: { from: string | null; to: string };
-  memoryRecalled: { count: number; query: string };
+  memoryRecalled: {
+    count: number;
+    query: string;
+    /** 命中明细（4.1.0 新增，MEM-EVENT-1）：三字段各有消费面（宿主 S3-1 可展开行渲染 + S3-3 反馈按 id 寻址）。
+     * 可选 = 跨 dist 契约：4.0.x 内核不发此字段，宿主须容错缺失降级为条数提示（类型层强制消费方容错）。
+     * 条数上限真源 = search_memories 的 parseLimit 钳制（50），载荷全量映射不截断（不另立截断常量）。 */
+    hits?: { id: string; name: string; source: string }[];
+  };
   sessionForked: { from: string; to: string; roundCount: number };
   /** date/session = 被切走的旧会话（归档对象）；fromSessionId/toSessionId = 旧/新完整会话标识 */
   sessionSwitched: {

@@ -37,6 +37,7 @@ import {
 } from '@/agent/managers/toolCallHelpers.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
 import type { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
+import type { AgentEventMap } from '@/utils/eventEmitter.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { IWebSearchProvider } from '@/web-search/types.js';
 import { safeSearch } from '@/web-search/webSearchProvider.js';
@@ -711,9 +712,10 @@ export class ToolExecutor {
    * 转发给 builtinHandlers：search_memories 命中记忆时触发，为全库**唯一** memoryRecalled
    * 发射位（无 warmRecall 等其他发射路径）。
    *
-   * @param callback 命中回调（count 命中条数 / query 检索词），缺省注入则工具静默（无宿主 no-op）
+   * @param callback 命中回调（载荷类型 = AgentEventMap['memoryRecalled'] 单一真源：count 命中条数 /
+   *   query 检索词 / hits 命中明细），缺省注入则工具静默（无宿主 no-op）
    */
-  setOnMemoryRecalled(callback: (info: { count: number; query: string }) => void): void {
+  setOnMemoryRecalled(callback: (info: AgentEventMap['memoryRecalled']) => void): void {
     this.builtinHandlers.setOnMemoryRecalled(callback);
   }
 
