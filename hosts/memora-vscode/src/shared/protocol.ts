@@ -368,10 +368,11 @@ export type WebviewToExtensionMessage =
   | { type: 'memory_page'; page: number; pageSize: number }
   // ─── 记忆治理：单条删除 / 恢复 / 回收站 ───
   /**
-   * 删除单条记忆（记忆列表「删除」按钮）
+   * 删除单条记忆（双发送方：记忆列表「删除」按钮 / chat 命中行 ✕ 反馈）
    *
    * host 弹确认框后调 agent.memory.writeDelete(id) 软删除（进入回收站，可恢复），
-   * 完成后推送 memory_deleted + 刷新记忆列表与治理统计。
+   * 完成后推送 memory_deleted；后续动作**分路径**——settings 路径刷新记忆列表与
+   * 治理统计，chat 路径不刷新（chat webview 自按 data-memory-id 摘行）。
    */
   | { type: 'memory_delete'; id: string }
   /**
@@ -1028,9 +1029,10 @@ export type ExtensionToWebviewMessage =
   | { type: 'memory_page_result'; page: number; items: MemoryItemDto[] }
   // ─── 记忆治理：删除/恢复结果 + 回收站列表 ───
   /**
-   * 删除记忆结果（对 memory_delete 的应答）
+   * 删除记忆结果（对 memory_delete 的应答，双接收方 = settings / chat）
    *
-   * ok=true 时 host 已删除并刷新记忆列表 + 治理统计；webview 据此刷新回收站（若展开）。
+   * ok=true：settings 接收方刷新回收站（若展开，host 已刷列表 + 治理统计）；
+   * chat 接收方按 data-memory-id 全局摘除命中行（host 不刷列表）。
    */
   | { type: 'memory_deleted'; ok: boolean; id: string; message?: string }
   /**

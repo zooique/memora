@@ -5098,6 +5098,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     activeAssistantEl = null;
     // 清暂停续写锚：残留会让下一轮 meta 误判 pausedResume 原位续写
     pausedAssistantEl = null;
+    // 命中聚合复位（HOST-S3-1 复位完整性）：与各复位对称——meta 新轮分支虽也会清，
+    // 但复位函数不得依赖「每 turn 必经 meta」这一当前时序不变量兜底（防止未来不经 meta
+    // 的复位路径漏清跨会话残留）
+    currentMemoryHits.clear();
+    memoryHitsEl = null;
   }
 
   /**
@@ -5119,6 +5124,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）
     activeAssistantEl = null;
     pausedAssistantEl = null;
+    // 命中聚合复位（HOST-S3-1 复位完整性）：切换/清空会话时旧轮命中不得跨会话残留
+    //（DOM 行随 messages 清空已摘，此处清数据侧聚合 + 引用，与 resetForNewClosedLoop 对称）
+    currentMemoryHits.clear();
+    memoryHitsEl = null;
     // 流式状态复位：清空后不再累积/渲染半截流（下次 chunk 会 beginStreaming 重建）
     streamingActive = false;
     streamingRaw = '';
