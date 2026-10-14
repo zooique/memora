@@ -1,8 +1,10 @@
 /**
  * 自定义搜索引擎：静态校验判据（SSOT）边界测试
  *
- * validateCustomEngines 是「测试」与「保存」两条路径共用的唯一判据函数
- * （此前 webview 与 host 各写一份 ⇒ 漂移带伤）。本文件锁住它的边界口径：
+ * validateCustomEngines 定义在搜索引擎域（extension/host/searchEngines.ts）——「测试」与
+ * 「保存」两条 UI 路径、装配侧 resolveSearchEndpoints 的消费侧过滤共用同一函数
+ * （2026-10-14 审查：判据原先只守 UI 前门，手改 settings.json / 设置同步可绕过 ⇒ 已接到消费点）。
+ * 本文件锁住它的边界口径：
  *   ① 名称为空 / 仅空白 → 拒
  *   ② URL 模板缺 {query} → 拒
  *   ③ 解析策略非预置项（绕过 UI 改 settings.json）→ 拒
@@ -16,7 +18,7 @@
  */
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
-import { validateCustomEngines } from '../panels/settingsPanel.js';
+import { validateCustomEngines } from '../../extension/host/searchEngines.js';
 import { HOST_PARSE_STRATEGIES } from '../../extension/host/searchEngines.js';
 import type { CustomSearchEngineConfig } from '../../shared/protocol.js';
 
@@ -60,7 +62,14 @@ describe('validateCustomEngines — 边界口径', () => {
     expect(
       validateCustomEngines([{ ...OK, parseStrategy: 'evil' as never }]),
     ).toContain('解析策略');
-    expect(HOST_PARSE_STRATEGIES).toEqual(['openSearchRss', 'jsonApi']);
+    // 派生契约（2026-10-14 修正）：旧断言把 HOST_PARSE_STRATEGIES 写死成字面量，
+    // 加第三个策略时必红，与「由 HOST_PARSERS 键派生、零维护」的声称自相矛盾。
+    // 现改为逐策略验证「每个清单项都被判据放行」——加策略时本测试自动跟随、不红。
+    expect(HOST_PARSE_STRATEGIES.length).toBeGreaterThan(0);
+    expect(new Set(HOST_PARSE_STRATEGIES).size).toBe(HOST_PARSE_STRATEGIES.length);
+    for (const s of HOST_PARSE_STRATEGIES) {
+      expect(validateCustomEngines([{ ...OK, parseStrategy: s }])).toBeUndefined();
+    }
   });
 
   it('清单内名称重复 → 拒', () => {

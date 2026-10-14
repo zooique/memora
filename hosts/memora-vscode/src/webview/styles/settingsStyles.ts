@@ -330,16 +330,21 @@ export const settingsStyles = `
 
   /* ============ Components：自定义搜索引擎（紧凑清单 + 手风琴单编辑区） ============ */
   /* margin-top 让「说明文案 → 引擎清单」拉开一档（容器 gap 只作用于卡片之间） */
-  .custom-search-engines { display: flex; flex-direction: column; gap: 6px; margin-top: var(--sp-2, 6px); }
+  .custom-search-engines { display: flex; flex-direction: column; gap: var(--sp-2, 6px); margin-top: var(--sp-2, 6px); }
   .custom-engine {
-    border: 0.5px solid var(--border-panel, rgba(128, 128, 128, 0.4));
+    /* 0.5px 细边框：border-width 属 EXEMPT_PROPS（边框宽度不做间距刻度，业界一次性值），
+       拆出 border-width/-style/-color 三条以走豁免语义——视觉与缩写等价 */
+    border-width: 0.5px;
+    border-style: solid;
+    border-color: var(--border-panel, rgba(128, 128, 128, 0.4));
     border-radius: var(--radius-md, 6px);
     background: var(--surface-card, #252526);
     overflow: hidden;
   }
   .custom-engine.expanded { background: transparent; }
-  .ce-summary { display: flex; align-items: center; gap: 8px; padding: 7px 10px; min-height: 33px; }
-  .ce-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--text-secondary, #9aa0a6); }
+  /* 7px / 33px = C 类一次性维度（无对应刻度档，见 tokensClosure 基线注释逐条登记） */
+  .ce-summary { display: flex; align-items: center; gap: var(--sp-3, 8px); padding: 7px var(--sp-4, 10px); min-height: 33px; }
+  .ce-dot { width: var(--dot-md, 6px); height: var(--dot-md, 6px); border-radius: 50%; flex: none; background: var(--text-secondary, #9aa0a6); }
   .ce-dot.ok { background: var(--status-pass, #4ec9b0); }
   .ce-dot.fail { background: var(--text-error, #f14c4c); }
   .ce-label { font-size: var(--font-base, 13px); font-weight: 500; flex: none; }
@@ -349,11 +354,13 @@ export const settingsStyles = `
   }
 
   .ce-editor {
-    display: flex; flex-direction: column; gap: 8px;
-    padding: var(--sp-3, 8px); border-top: 0.5px solid var(--border-panel, rgba(128, 128, 128, 0.4));
+    display: flex; flex-direction: column; gap: var(--sp-3, 8px);
+    padding: var(--sp-3, 8px);
+    /* 0.5px 细边框同 .custom-engine（border-top-width 不在 EXEMPT_PROPS，故此处保留裸值并登记） */
+    border-top: 0.5px solid var(--border-panel, rgba(128, 128, 128, 0.4));
   }
-  .ce-field { display: flex; align-items: center; gap: 8px; }
-  .ce-field > span { flex: 0 0 32px; font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
+  .ce-field { display: flex; align-items: center; gap: var(--sp-3, 8px); }
+  .ce-field > span { flex: 0 0 var(--sq-2xl, 32px); font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
   .ce-field > input, .ce-field > select { flex: 1 1 auto; min-width: 0; }
   .ce-actions { display: flex; align-items: center; gap: var(--sp-2, 6px); flex-wrap: wrap; }
   .ce-sample {

@@ -801,12 +801,18 @@ function createSecurityView({
       const { ok, count, error, sample } = msg.result;
       const card = root.querySelector<HTMLElement>('.custom-engine.expanded');
       if (card) {
-        setStatus(
-          card,
-          ok ? `✓ 验证通过，返回 ${count} 条` : `✗ 未通过：${error ?? `无结果（${count} 条）`}`,
-          ok ? 'ok' : 'fail',
-        );
-        if (ok) card.querySelector<HTMLElement>('.ce-dot')?.classList.add('ok');
+        // ok = 管线通（URL 可达 + 响应体可解析）；count = 实际命中数，二者独立：
+        // 小众引擎对探测词 0 命中是正常的，此时显示「接口可达」而非误导为失败。
+        // 文案不带 ✓/✗ 字符图标（iconLanguage 守卫：UI 图标语言 = icons.ts SVG），
+        // 成败区分由 .ok/.fail 的语义色承担（状态点 + 文字色）。
+        const status = ok
+          ? count > 0
+            ? `验证通过，返回 ${count} 条`
+            : '接口可达，但未解析出结果（0 条）'
+          : `未通过：${error ?? `无结果（${count} 条）`}`;
+        setStatus(card, status, ok ? 'ok' : 'fail');
+        // 状态点只在「确有命中」时点亮 ok；接口可达但 0 命中保持中性，不误导
+        if (ok && count > 0) card.querySelector<HTMLElement>('.ce-dot')?.classList.add('ok');
         const sampleEl = card.querySelector<HTMLElement>('.ce-sample');
         if (sampleEl) {
           sampleEl.innerHTML = '';

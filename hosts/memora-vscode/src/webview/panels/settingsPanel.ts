@@ -29,7 +29,10 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { PRESET_SEARCH_ENGINES } from '../../shared/protocol.js';
-import { HOST_PARSE_STRATEGIES, probeSearchEngine } from '../../extension/host/searchEngines.js';
+// 判据单点复用：validateCustomEngines 定义在搜索引擎域（extension/host/searchEngines.ts），
+// 本面板的「测试 / 保存」两条路径与装配侧 resolveSearchEndpoints 共用同一函数；
+// probeSearchEngine 同域导入，禁在本文件另写校验规则。
+import { probeSearchEngine, validateCustomEngines } from '../../extension/host/searchEngines.js';
 import { capabilityLabel } from '../helpers/capabilityLabels.js';
 import {
   findUnmatchedDisabled,
@@ -63,45 +66,6 @@ import { readFile, writeFile } from 'node:fs/promises';
 const MEMORY_LIST_LIMIT = 20;
 /** 搜索结果条数 */
 const MEMORY_SEARCH_LIMIT = 20;
-
-/**
- * 自定义搜索引擎清单的**静态校验唯一判据**（SSOT）：「测试」与「保存」共用同一函数，
- * 避免 webview 与 host 各写一份规则而漂移；解析策略合法性与名称唯一性都在此裁决。
- * 返回错误原因；undefined = 全部合法。
- */
-export function validateCustomEngines(
-  engines: readonly CustomSearchEngineConfig[] | undefined,
-): string | undefined {
-  if (!Array.isArray(engines)) return '自定义搜索引擎清单格式无效';
-  const seen = new Set<string>();
-  for (const e of engines) {
-    // 口径统一按 trim 后裁决：不依赖 webview 已 trim（手工改 settings.json 可直接绕过 UI）
-    const name = e?.name?.trim();
-    if (!name) return '配置无效：需填写引擎名称';
-    // 自定义名不得与内置名重名：下拉选项经 Set 去重后同名只剩一项，
-    // 而 resolveSearchEndpoints 先查自定义 ⇒ 会静默遮蔽内置引擎，用户无从分辨
-    if ((PRESET_SEARCH_ENGINES as readonly string[]).includes(name)) {
-      return `配置无效：名称「${name}」与内置引擎重名，请更换`;
-    }
-    if (!e.urlTemplate?.includes('{query}')) return '配置无效：URL 模板需含 {query} 占位符';
-    if (!isAllowedUrlScheme(e.urlTemplate)) {
-      return '配置无效：URL 模板须以 http:// 或 https:// 开头';
-    }
-    if (!HOST_PARSE_STRATEGIES.includes(e.parseStrategy)) return '配置无效：解析策略不是宿主预置项';
-    if (seen.has(name)) return `配置无效：名称「${name}」重复，引擎名必须唯一`;
-    seen.add(name);
-  }
-  return undefined;
-}
-
-/**
- * 协议白名单：只放行 http(s)。
- * 挡掉 file:// / javascript: / data: 等 ⇒ 避免「粘贴一段别人给的配置」就让
- * 宿主（extension）进程代为发起非预期请求，与项目既有的安全审计口径一致。
- */
-function isAllowedUrlScheme(tpl: string): boolean {
-  return /^https?:\/\//i.test(tpl);
-}
 
 /** 设置视图提供者（合并角色 / 大模型 / 记忆三个子视图） */
 export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
