@@ -111,6 +111,8 @@ export interface GlobalStrategy {
   readonly askOn?: AskOnTrigger | readonly AskOnTrigger[];
   /** 主动提问次数上限：按一次用户输入（turn 粒度）计，防单次输入被打断过多次（默认 10） */
   readonly askLimit?: number;
+  /** 联网搜索次数上限：按一次用户输入（turn 粒度）计，web_search 硬护栏拦截超限调用（默认 6） */
+  readonly webSearchLimit?: number;
 }
 
 /**
@@ -119,7 +121,7 @@ export interface GlobalStrategy {
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
  * prepare 的 summaryFocus（round-summary 提炼视角）；
  * act 的 toolMode/temperature/outputLimit/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly；
- * reflect 的 summary/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/contextLimit/stepBudget。
+ * reflect 的 summary/selfReview/userFollowup；global 的 askOn/askLimit/webSearchLimit/errorHandling/contextLimit/stepBudget。
  * 边界纪律：无 understandingConfirm 开放键（并入 askOn['confirm']/ask_user，见文件头注）；无 costBudget 键（内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
  */
 export interface BehaviorStrategy {
@@ -161,6 +163,8 @@ export interface L2RuntimeStrategy {
   readonly multiStepReasoning: MultiStepReasoning;
   /** 主动提问次数上限（global.askLimit：turn 粒度防打扰；ask_user 硬护栏拦截超限调用） */
   readonly askLimit: number;
+  /** 联网搜索次数上限（global.webSearchLimit：turn 粒度；web_search 硬护栏拦截超限调用） */
+  readonly webSearchLimit: number;
   /** 工具只读模式（act.toolReadonly） */
   readonly toolReadonly: ToolReadonly;
 }

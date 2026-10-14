@@ -53,6 +53,14 @@ export const MAX_SELF_REVIEW_ROUNDS = 10;
 /** 主动提问次数上限：按一次用户输入（turn 粒度）计，10 次防打扰失控 */
 export const MAX_ASK_LIMIT = 10;
 /**
+ * 联网搜索次数上限的**角色包声明上界**：20。
+ * 上界选值依据（2026-10-14 联网检索）：同类 agent 搜索预算普遍 15~30 次/任务
+ * （mcp-web-hound 默认 15 搜索 + 30 抓取；通用实践为「显式预算 + 程序化拒绝」），
+ * 20 覆盖真实研究型任务上限、防资源失控（搜索 API 计费）。
+ * 缺省值 6 不在本常量——见 DEFAULT_BEHAVIOR_STRATEGY.global.webSearchLimit 镜像注释。
+ */
+export const MAX_WEB_SEARCH_LIMIT = 20;
+/**
  * 角色包上下文上限的**声明上界**：2_000_000，与 provider 窗口上界对齐（`src/config/loader.ts`
  * 的 `MAX_CONTEXT_WINDOW`）—— 使角色包在任何 provider 窗口下都能表达「收紧」意图。
  * 因有效窗口**取小值**，本上界永不放大窗口（2M provider 下声明 2M 等价于不设上限）。
@@ -254,6 +262,8 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     askOn: { kind: 'check', check: isAskOn },
     // 每轮主动提问次数（1~MAX_ASK_LIMIT）
     askLimit: intRange(1, MAX_ASK_LIMIT),
+    // 每问答闭环联网搜索次数（1~MAX_WEB_SEARCH_LIMIT；0 哨兵不适用——搜索无「不限」语义，同 askLimit 正数区间）
+    webSearchLimit: intRange(1, MAX_WEB_SEARCH_LIMIT),
     errorHandling: { kind: 'enum', values: ERROR_HANDLINGS },
     // 角色包上下文上限：0 = 不设额外上限（跟随 provider 窗口）∪ [MIN_CONTEXT_LIMIT, MAX_CONTEXT_LIMIT]。
     // 与 stepBudget 同构（0 承载"未声明"语义、正数走声明区间），故不用 intRange 而自定义 check；

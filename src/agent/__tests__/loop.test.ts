@@ -4491,6 +4491,49 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     ).toBe(true);
   });
 
+  it('webSearchLimit 策略键接管硬上限（GUARD-SEARCH-1）：声明 2 → 第 3 次拒，且提示文案数字与阈值同源', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('1. 结果A');
+    // 4 轮各调一次 web_search（策略上限 2 → 第 1-2 次执行，第 3 次被硬拦）
+    const turns: ChunkItem[][] = [];
+    for (let i = 0; i < 4; i++) {
+      turns.push([
+        {
+          content: `搜索第 ${i} 轮`,
+          toolCalls: [
+            {
+              id: `w${i}`,
+              type: 'function',
+              function: { name: 'web_search', arguments: `{"query":"Q${i}"}` },
+            },
+          ],
+        },
+      ]);
+    }
+    turns.push([{ content: '停止搜索，直接给出结论。' }]);
+    const provider = mockMultiTurnProvider(turns);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+    // 角色包策略键 global.webSearchLimit 注入（此前硬编码 LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS=6 不可调）
+    loop.setStrategy({ webSearchLimit: 2 });
+
+    for await (const {} of loop.processUserInput('做分析')) {
+      // drain
+    }
+
+    // 上限跟随策略值（2），非缺省 6 —— 变异验证：若仍取 LOOP_CONSTANTS，此处会执行 4 次而红
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    // 拒绝文案数字与阈值同源（文案取 guardThresholds.maxWebSearch，非 LOOP_CONSTANTS）
+    const messages = loop.getMessages();
+    expect(
+      messages.some(
+        (m) => m.role === 'system' && m.content.includes('[SEARCH_LIMIT] 联网搜索已达 2 次上限'),
+      ),
+    ).toBe(true);
+    // 非拦截的 system 文案（防误报来源）与 tool 拒绝文案双确认
+    expect(
+      messages.some((m) => m.role === 'tool' && m.content.includes('[SEARCH_LIMIT_REACHED]')),
+    ).toBe(true);
+  });
+
   it('web_search 达硬上限后从下一轮工具集移除并注入「未找到更多相关」提示（双闸终结拒绝风暴）', async () => {
     const toolExecutor = vi.fn().mockResolvedValue('1. 结果A');
     // 7 轮各调一次 web_search（前 6 次执行，第 7 次拒），第 8 轮无工具调用收尾

@@ -81,7 +81,7 @@ export interface GuardThresholds {
   readFailed: number;
   /** 单次用户输入提问上限（life:'perInput'）—— 动态真源 role-pack strategy.askLimit（不塞静态默认） */
   askLimit: number;
-  /** 单闭环联网搜索硬上限 —— 动态真源 LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS（不塞静态默认） */
+  /** 单闭环联网搜索硬上限 —— 动态真源 role-pack strategy.webSearchLimit（缺省镜像 LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS，不塞静态默认） */
   maxWebSearch: number;
 }
 
@@ -381,7 +381,7 @@ export function createDefaultGuards(): GuardRail {
     .register({
       id: 'search_limit',
       matches: (c) => c.toolName === 'web_search',
-      // 现有 loop 语义：`searchCallCount > MAX_WEB_SEARCH_CALLS`（超上限才拦）
+      // 现有 loop 语义：`searchCallCount > maxWebSearch`（超上限才拦；阈值 = strategy.webSearchLimit）
       shouldBlock: (c) => c.counters.searchCallCount > c.thresholds.maxWebSearch,
       blocked: true,
       promptId: 'search_limit',

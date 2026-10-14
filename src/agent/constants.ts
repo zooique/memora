@@ -232,6 +232,9 @@ export const LOOP_CONSTANTS = {
    * 搜索硬上限（实测软提示未能阻止 LLM 持续重搜，故确定性拒绝）。
    * 单 turn（问答闭环）内 web_search 调用次数超过此数后，后续搜索执行时直接拒绝并回填拒绝文案，
    * 不依赖 LLM 听从软提示——软提示引导收敛（< 上限时），硬限兜底（达到上限强制停）。
+   * ⚠️ 角色包策略键 `global.webSearchLimit`（GUARD-SEARCH-1）上线后，本值降为**缺省兜底**：
+   * 运行时取 `strategy.webSearchLimit`，镜像声明在 `DEFAULT_BEHAVIOR_STRATEGY.global.webSearchLimit`。
+   * 改本值须同步该镜像（依赖方向 agent → role-pack 单向，镜像不可 import 本层，重复 + 注释对冲）。
    */
   MAX_WEB_SEARCH_CALLS: 6,
 

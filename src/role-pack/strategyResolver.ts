@@ -16,6 +16,7 @@ import {
   MIN_CONTEXT_LIMIT,
   MIN_STEP_BUDGET,
   MAX_TOOL_STEP_LIMIT,
+  MAX_WEB_SEARCH_LIMIT,
   MULTI_STEP_REASONINGS,
   PROVIDER_ROUTINGS,
   SUMMARY_MODES,
@@ -87,6 +88,11 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     errorHandling: 'retry',
     askOn: ['ambiguity', 'decision', 'missing_info'],
     askLimit: 10,
+    // ⚠️ **真源 = `src/agent/constants.ts` 的 `LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS`**，
+    // 本值是其镜像（依赖方向 `agent → role-pack` 单向，本层不可 import agent，按本仓
+    // 既有做法「重复 + 注释对冲」）。角色包未声明 webSearchLimit 时，loop 护栏取本值
+    // = 改真源须同步本值，否则缺省行为与内核常量漂移。
+    webSearchLimit: 6,
   },
 } as const;
 
@@ -198,6 +204,21 @@ export function resolveAskLimit(strategy: BehaviorStrategy | undefined): number 
 }
 
 /**
+ * 解析联网搜索次数上限（内核已消费）：整数且 ∈ [1, MAX_WEB_SEARCH_LIMIT] 才采用，缺失/越界回退默认 6。
+ * web_search 工具的 turn 粒度硬护栏取值（与 resolveAskLimit 完全同构，SSOT：loop 护栏注入共用）。
+ */
+export function resolveWebSearchLimit(strategy: BehaviorStrategy | undefined): number {
+  const candidate = strategy?.global?.webSearchLimit;
+  const valid =
+    typeof candidate === 'number' &&
+    Number.isInteger(candidate) &&
+    candidate >= 1 &&
+    candidate <= MAX_WEB_SEARCH_LIMIT;
+  // 非法/缺失回退到 DEFAULT_BEHAVIOR_STRATEGY 的 webSearchLimit（SSOT 单点 = 内核缺省 6）
+  return valid ? candidate : DEFAULT_BEHAVIOR_STRATEGY.global!.webSearchLimit!;
+}
+
+/**
  * 解析角色包上下文上限。合法 = `0`（不设额外上限）或整数 ∈ [MIN_CONTEXT_LIMIT, MAX_CONTEXT_LIMIT]；
  * 其余（未声明 / 越界 / 小数 / 非数）→ 0（不设额外上限，有效窗口 = provider 窗口）。
  */
@@ -259,7 +280,7 @@ export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = resolveL2Strategy(undefine
  * 解析 L2 运行时策略（Agent 层单一装配入口，免逐项 setXxx）
  *
  * 聚合现有各 resolveXxx（工具模式→toolCallsBlocked、工具步数、错误处理、Provider 路由、
- * Token/步数预算、多步推理、主动提问上限、工具只读）+ reflect.selfReview；
+ * Token/步数预算、多步推理、主动提问上限、联网搜索上限、工具只读）+ reflect.selfReview；
  * 非法值经各 resolve* 归位内核默认；selfReview 归一为布尔数字「0=关闭 / 正整数 >0 归一为 1」。
  *
  * @param strategy 合并后的行为策略（角色包声明，可为空）
@@ -284,6 +305,7 @@ export function resolveL2Strategy(strategy: BehaviorStrategy | undefined): L2Run
     stepBudget: resolveStepBudget(strategy),
     multiStepReasoning: resolveMultiStepReasoning(strategy),
     askLimit: resolveAskLimit(strategy),
+    webSearchLimit: resolveWebSearchLimit(strategy),
     toolReadonly: resolveToolReadonly(strategy),
   };
 }

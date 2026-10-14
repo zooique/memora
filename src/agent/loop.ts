@@ -2054,12 +2054,16 @@ export class AgentLoop {
     // 运行时护栏阈值组装（真源分配见 guardRail.GuardThresholds）：
     //  写环=GUARD_THRESHOLDS.writeLoop，读闸=GUARD_THRESHOLDS.readFailed（独立静态真源，
     //  不再与 duplicateCallInterceptor 阈值复用——语义同宽，解开隐藏耦合）；
-    //  提问=strategy.askLimit、搜索=LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS（动态真源，不入静态默认）。
+    //  提问=strategy.askLimit、搜索=strategy.webSearchLimit（动态真源=角色包策略，缺省镜像
+    //  LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS，见 DEFAULT_BEHAVIOR_STRATEGY 镜像注释）。
     const guardThresholds: GuardThresholds = {
       writeLoop: GUARD_THRESHOLDS.writeLoop,
       readFailed: GUARD_THRESHOLDS.readFailed,
       askLimit: this.strategy.askLimit,
-      maxWebSearch: LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS,
+      // webSearchLimit 缺省 6 = LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS 镜像（GUARD-SEARCH-1：
+      // 硬上限抬为角色包策略键 global.webSearchLimit，此值为未声明时的兜底），
+      // 与下方 SEARCH_LIMIT 文案同源取 strategy，二者禁分头取值（否则文案数字说谎）。
+      maxWebSearch: this.strategy.webSearchLimit,
     };
     for (const tc of toolCalls) {
       this.metrics.toolCallCount++;
@@ -2105,7 +2109,7 @@ export class AgentLoop {
         if (!this.searchDisabledHintInjected) {
           this.searchDisabledHintInjected = true;
           this.appendSystemMessage(
-            `[SEARCH_LIMIT] 联网搜索已达 ${LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS} 次上限，视为未检索到更多相关内容。` +
+            `[SEARCH_LIMIT] 联网搜索已达 ${guardThresholds.maxWebSearch} 次上限，视为未检索到更多相关内容。` +
               `请停止调用 web_search，直接基于已有信息继续下一步或作答。`,
             { executionTemp: true },
           );

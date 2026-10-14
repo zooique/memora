@@ -30,6 +30,7 @@ import {
   MAX_TOOL_STEP_LIMIT,
   MAX_SELF_REVIEW_ROUNDS,
   MAX_ASK_LIMIT,
+  MAX_WEB_SEARCH_LIMIT,
   MAX_CONTEXT_LIMIT,
   MIN_CONTEXT_LIMIT,
   MAX_STEP_BUDGET,
@@ -150,7 +151,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       'toolReadonly',
     ],
     reflect: ['summary', 'selfReview', 'userFollowup'],
-    global: ['askOn', 'askLimit', 'errorHandling', 'contextLimit', 'stepBudget'],
+    global: ['askOn', 'askLimit', 'webSearchLimit', 'errorHandling', 'contextLimit', 'stepBudget'],
   };
 
   it('四个阶段都存在', () => {
@@ -328,6 +329,20 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       expect(checkRule.check(0)).toBe(false);
       expect(checkRule.range).toEqual({ min: 1, max: MAX_ASK_LIMIT });
     });
+
+    it('global.webSearchLimit 使用区间断言（1~MAX_WEB_SEARCH_LIMIT，GUARD-SEARCH-1）', () => {
+      const rule = STRATEGY_KEY_RULES.global!.webSearchLimit!;
+      expect(rule.kind).toBe('check');
+      const checkRule = rule as {
+        check: (v: unknown) => boolean;
+        range?: { min: number; max: number };
+      };
+      expect(checkRule.check(6)).toBe(true);
+      expect(checkRule.check(20)).toBe(true);
+      expect(checkRule.check(0)).toBe(false);
+      expect(checkRule.check(21)).toBe(false);
+      expect(checkRule.range).toEqual({ min: 1, max: MAX_WEB_SEARCH_LIMIT });
+    });
   });
 
   // ── 数值键区间上界（SSOT：开放键必须有上下限，防无条件填写）──
@@ -368,6 +383,13 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
         min: 1,
         max: MAX_ASK_LIMIT,
         probe: MAX_ASK_LIMIT + 1,
+      },
+      {
+        key: 'global.webSearchLimit',
+        rule: STRATEGY_KEY_RULES.global!.webSearchLimit!,
+        min: 1,
+        max: MAX_WEB_SEARCH_LIMIT,
+        probe: MAX_WEB_SEARCH_LIMIT + 1,
       },
       {
         key: 'global.contextLimit',
@@ -532,6 +554,7 @@ describe('strategyKeys — schema.json 与常量一致性', () => {
     { phase: 'act', key: 'toolStepLimit', expectedMax: MAX_TOOL_STEP_LIMIT },
     { phase: 'reflect', key: 'selfReview', expectedMax: MAX_SELF_REVIEW_ROUNDS },
     { phase: 'global', key: 'askLimit', expectedMax: MAX_ASK_LIMIT },
+    { phase: 'global', key: 'webSearchLimit', expectedMax: MAX_WEB_SEARCH_LIMIT },
     { phase: 'global', key: 'contextLimit', expectedMax: MAX_CONTEXT_LIMIT },
     { phase: 'global', key: 'stepBudget', expectedMax: MAX_STEP_BUDGET },
   ];
@@ -572,6 +595,7 @@ describe('strategyKeys — schema.json 与常量一致性', () => {
       { phase: 'act', key: 'toolStepLimit' },
       { phase: 'reflect', key: 'selfReview' },
       { phase: 'global', key: 'askLimit' },
+      { phase: 'global', key: 'webSearchLimit' },
     ] as const;
 
     for (const { phase, key } of MIN_CASES) {
@@ -660,6 +684,11 @@ describe('strategyKeys — describeStrategyKeys 键面派生（RP-EDIT-1）', ()
     expect(faceMap.get('global.askLimit')).toMatchObject({
       kind: 'number',
       range: { min: 1, max: MAX_ASK_LIMIT },
+    });
+    // webSearchLimit 同 askLimit（正数区间，无 0 哨兵——搜索无「不限」语义）
+    expect(faceMap.get('global.webSearchLimit')).toMatchObject({
+      kind: 'number',
+      range: { min: 1, max: MAX_WEB_SEARCH_LIMIT },
     });
     // temperature 0.0 合法且声明下限本就是 0
     expect(faceMap.get('act.temperature')).toMatchObject({
