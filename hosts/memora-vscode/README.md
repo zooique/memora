@@ -19,7 +19,7 @@ Memora 是内核驱动的 **VS Code AI 助手**：薄壳装配、复用内核全
   - **文档自洽检查**：在对话中让 AI 审阅文档的矛盾 / 缺口 / 悬空引用
   - **代码骨架生成**：自洽通过后，根据设计文档让 AI 生成代码骨架
 - **文件改动确认**：AI 改文件先进暂存，编辑器顶部一键确认 / 回退，不静默落盘
-- **网络搜索**：Agent 可联网查资料（Bing → DuckDuckGo 降级）
+- **网络搜索**：Agent 可联网查资料——auto（默认链 Bing→DuckDuckGo）/ Bing / DuckDuckGo / 百度 / 搜狗 五档预设可选，另可自定义搜索引擎（OpenSearch RSS / JSON API，保存前实测验证连通）
 - **多模型配置**：可添加多个大模型 API，随时切换，支持连接测试
 - **一键初始化**：设置 › 安全里一键清空用户级数据（大模型配置与 API Key、用户技能与角色包、安全开关等），恢复首次使用状态；当前项目的记忆与会话不受影响
 
@@ -115,6 +115,7 @@ set MEMORA_API_KEY=你的key
 |------|------|------|
 | 项目级 | 工作区 `.memora/` 目录 | 会话记录 `sessions.json` / 记忆 `memories.json` |
 | 用户级 | VS Code 用户设置 `settings.json` | 大模型 Provider 配置（别名 / 模型 / Base URL，**不含 API Key**） |
+| 用户级 | VS Code 用户设置 `settings.json` | 搜索引擎偏好：`memora.searchEngine`（预设或自定义引擎名）与 `memora.customSearchEngines`（自定义清单，`application` 作用域 = 跨项目共享） |
 | 用户级 | VS Code 全局存储 `globalStorage` | 激活角色包（跨项目共享） |
 | 用户级 | VS Code 安全存储 `SecretStorage` | API Key（加密存储） |
 

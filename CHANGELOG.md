@@ -584,6 +584,44 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Added（宿主 · 宿主侧自定义搜索引擎：保存前实测验证 + 紧凑编辑器 + 边界护栏 · 2026-10-13）
+
+`web_search` 后端从二值降级链扩为**五档预设 + 自定义引擎**（`206198d3` → `82e7c425` 六提交）。内核零改动（复用已发布 `SearchEndpoint`/`buildSearchEndpoints`/`FetchWebSearchProvider` 扩展点）；宿主单一嫁接点 = `extension/host/searchEngines.ts` 的 `resolveSearchEndpoints`（装配侧唯一出口）。
+
+- **预设正名**：`PRESET_SEARCH_ENGINES = ['auto','bing','duckduckgo','baidu','sogou']`（protocol.ts）取代旧 enum + 硬编码守卫；`memora.searchEngine` / `memora.customSearchEngines` 两键 `application` 作用域（用户级、跨项目共享，随做随用）。
+- **保存前实测验证门禁**：`probeSearchEngine` 复用生产 search 路径（零复制抓取编排），通不过拒绝写盘；解析器错配即抛错（JSON.parse 失败 / 无受支持数组键 / RSS 无 item-entry），不再静默空数组。jsonApi 别名宽容化（`results/items/hits` + `url/link/href` + `title/name` + `snippet/description/summary/content`，覆盖 HN / SearXNG / WordPress 等）；解析策略仅结构化源（openSearchRss / jsonApi），与内核 4 个 HTML 解析器零重叠。
+- **差分探针**（`82e7c425`）：`ok` 语义定为「管线正确性」（URL 可达 + 响应可解析）——小众/垂类引擎对固定探测词 0 命中不再被误判为配置错误；主策略 0 命中时借生产 search 路径用其余宿主策略复探同一 URL，另一策略能解析 ⇒ 判定策略选错并拦截（内核 anyOk 分不出错配与无命中，差分只补这一刀）。
+- **排雷**（`82e7c425`）：🔴 校验接消费点——`validateCustomEngines` 搬入搜索引擎域，`resolveSearchEndpoints` 按同一判据逐项过滤，手改 settings.json 的脏配置（非法 parseStrategy / 非协议 / 空名）坏项不进 fetch（此前 UI 有门禁、装配侧零校验 = 一调用即 TypeError）；🔴 自定义引擎单端点无兜底 → 改 `buildSearchEndpoints([custom,'bing'])`，与预设分支口径统一（解析不出不再静默失去全部结果）。
+- **边界护栏**（`e055e303`）：自定义名与内置引擎重名拒收（否则经 Set 去重后静默遮蔽内置引擎）；URL 模板非 `http(s)://` 拒收（宿主进程防被配置诱导发起非预期协议请求 + 报错可读）。
+- **编辑器形态**（`a37dfecc`）：改紧凑清单 + 手风琴（收起态一行 / 点编辑展开唯一表单 / 显式保存取消）——修「每字段 blur 即一轮探针」「点添加即提交空白行」「host 拒绝后一份配置两个真相」三处带伤；草稿态与持久化态分层，拒绝路径单点回滚（`rejectCustomEngines`）。`sample` 字段真消费（`3860ce92`）：验证反馈从「返回 N 条」升级为「+ 前几条样例」，消灭定义/生产/无消费三层脱节的僵尸字段。
+- **守卫与测试**：`settingsPanelSearchEngines` 新建（重名/缺占位/非 http(s)/非法策略等边界全覆盖）+ `searchEngines` 补用例（RSS 解析回归、`resolveSearchEndpoints` 三分支 + 兜底 + 脏配置过滤、`probeSearchEngine` mock fetch）+ `settingsView` 紧凑/手风琴/显式保存模型重写；策略断言改派生式（加策略自动跟随，防写死字面量）。用例计数以各测试文件自身为准（不落会腐烂的快照数字）。
+
+### Added（宿主 · 终态标签收口底栏：勾/用户中断/异常中断三档 · 正文尾回归光标纯度 · 2026-10-13）
+
+`b45a7bc0` + 布局返修 `8c74e78a`。正文尾孤立淡勾收敛到 round-group 底栏，三终态统一收口：
+
+- **三档渲染**：已完成 → 静默 circle-check 淡勾（mask svg）；用户中断 / 异常中断 → 状态词标签。挂 `.round-group:has([data-status=…])` 三档规则；载体契约立约——`data-status` 有正文轮挂 `.msg-body`、中断轮（半截正文已删）挂宿主块，消费方一律泛匹配 `[data-status]`。
+- **正文尾分工**：已完成档 `content:none` 压制（回归光标纯度）；异常中断档留正文尾且补状态词前缀自足（`'异常中断 · ' attr(data-status-detail)`）——红1 硬伤定案：error 不进 settle 收口名单，异常态定格时 footer 恒 `is-pending` 隐藏，正文尾是该态唯一展示位，故只有已完成/用户中断能收 footer。
+- **停止行退役**：`decideTerminus` 单点分类（kind 写状态 / reason 给停止行，防双判不一致）；user 主动停止（`stopReason==='user'`）不再创建停止行，宿主态 + 底栏标签承接；generic 兜底案停止行保留。🔴 判据字段纠偏：abort 判据须用 `stopReason`（`reason` 是自由文本，用错则 user 案误标异常且测试静默绿）。
+- **布局返修**（`8c74e78a`，实测「底部单边倒」）：标签挂 time 之后 `::after`，`margin-left:auto` 改挂 footer 内 `.msg-time`（限定作用域，不伤用户消息操作栏同名类）——首版 `::before` 首子伪元素吸收全部余量把整组挤右端即此 bug；源码级守卫加互斥断言（标签规则再带 auto margin 即红）。
+- **iconLanguage 豁免面**：结构约束 1→8 字符（新增「UI 状态词标签」正当类目，字面值不含 FORBIDDEN 字符；判据放宽记录带观测与退出条件）。测试：3 个 user 案形态定案用例改写 + 终态标签源码级守卫 + 互斥断言。
+
+### Added（宿主 · 启动会话对齐——修「启动即分叉报当前会话不存在」 · 2026-10-13）
+
+`6261c749` + 懒装配路径收口 `9fec1253`。根因：宿主构造即把 `_currentSessionId` 指向最近活跃会话（UI 回放它），内核 `MessageHistory` 惰性初值却是 `todayDate()-main`（meta 首轮才建）——启动即分叉，内核查自己 current 的 meta 不存在 ⇒ 报「当前会话不存在」；同根更深伤害：启动后首轮 Round 挂到 `-main` 与 UI 错位。
+
+- **对齐收口**：`alignKernelSession` 挂 `refreshAfterAssemble`（活动栏图标 / 重启恢复面板 / `open` 命令两装配路径唯一共用收口点）——初版挂 `setAgent` 漏了懒装配路径（注释谎称「两路径都汇聚」），实测翻车后返修；不一致才切（幂等避开 busy 误报），判据不可得即跳过，失败发 error notice 全文。
+- **回归**：错位切换 / 一致不切 / 三形态跳过 / 失败 notice 四件套 + 懒装配路径用例；4 条提交级回归 + 路径收口用例。
+
+### Fixed（宿主 · 错误诊断不吞 + 时间线限高 + 搜索引擎区间距/令牌 · 2026-10-13）
+
+- **内核错误诊断不再被宿主吞**（`29256015`）：新增 `noticeText.toNoticeText` 单一出口——`MemoraError` 走 `format()` 全文（标题+原因+建议），此前 37 处 `err.message` 转发把内核三层诊断在边界截成标题（实测：分叉失败只提示「无法分叉会话」，5 成因与建议全丢）。范围收敛扩展进程侧 catch（chatPanel 9 / settingsPanel 20 / extension 4 / openChat 1 / demo 3）。同批 CSP 补 `img-src data:` 修复已完成淡勾（mask 图标按规范走 img-src，此前被 `default-src 'none'` 静默拦截；只授 data: 不授外部源）。noticeText 测试 4 例。
+- **活动时间线限高滚动**（`c61323c7`）：`.status-dock__timeline` 补 `max-height: var(--dim-lg)` + `overflow-y: auto`（复用 160px 刻度零新 token，兑现 tokens.ts「活动详情面板高」注释——原为谎报位点）；源码级守卫 max-height 与 overflow 同断；dim 计数 18→19（机械真值同步）。
+- **搜索引擎区间距校正**（`4c98f0a0`）：「+ 添加」按钮与引擎清单零间距糊在一起 → `.ce-add-btn` 专用布局类 margin-top 8px（对齐既有 `.security-reset-btn` 模式）；`.custom-search-engines` 补 6px——布局差异走子视图专用类（ITCSS 分层纪律），零逻辑改动。
+- **样式令牌纠偏**（`3860ce92`）：新写样式引用 4 个 tokens.ts 不存在的变量名（恒走 fallback 裸色 = 绕过令牌契约）→ 改引真实语义令牌 `--surface-card`/`--border-panel`/`--radius-md`/`--status-pass`（fallback 与令牌默认同值，脱钩路径不分裂）。
+- **`HOST-RESET-2` 收口**（`6f697c8b`）：`package.json` 补 `memora.backgroundProvider` 声明（string/application/default 空），`userDataReset` 删 `UNDECLARED_USER_SETTING_KEYS` 硬编码补丁，`listUserSettingKeys` 回归纯派生；`RESET-OBS-1` 跨 section 口子分诊落账（不修，内部真源信任原则）。测试 10/10。
+
+
 ### Fixed（宿主 · 真机实测复盘三连：提问等待对齐 30 分钟 / 正文与工程记录分离 / token 口径标注 · 2026-10-13）
 
 **背景**：`round-1791810123073`（小说角色包 · 单轮 87 次工具调用 / 58 step / 墙钟 38.8 min）真机实测复盘五条问题，用户拍板「一三条只登记、提问与两条顺手修复」。台账 = `ASK-TIMEOUT-1` + `ROLEPACK-BODY-1` + `ROUND-ANALYTICS-1`（均✅ 已落地）。
