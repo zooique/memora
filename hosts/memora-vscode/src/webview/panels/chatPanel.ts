@@ -1462,9 +1462,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 唯一触发位 = search_memories 工具命中（assembler 接线），
    * 对齐内核 builtinToolHandlers.searchMemories 命中点。
    */
-  private readonly onMemoryRecalled = (
-    info: AgentEventMap['memoryRecalled'],
-  ): void => {
+  private readonly onMemoryRecalled = (info: AgentEventMap['memoryRecalled']): void => {
     this.post({ type: 'memory_hits', count: info.count, query: info.query, hits: info.hits });
   };
 
