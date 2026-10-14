@@ -1,0 +1,552 @@
+<!-- Generated for memora host publishing -->
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memora VS Code 插件 · 受限网络发布者注册桥接（GitHub Codespaces）</title>
+    <style>
+      :root {
+        --bg: #f6f8fa;
+        --bg2: #ffffff;
+        --ink: #1f2328;
+        --muted: #59636e;
+        --rule: #d7dce2;
+        --accent: #0e6fc7;
+        --accent2: #1a7f37;
+        --warn: #bc4c00;
+        --bad: #cf222e;
+        --code-bg: #f0f3f7;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+        font-size: 15.5px;
+        line-height: 1.75;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+      header.masthead {
+        border-bottom: 3px solid var(--accent);
+        padding-bottom: 1.2rem;
+        margin-bottom: 2rem;
+      }
+      .kicker {
+        font-size: 0.8rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--accent);
+        font-weight: 700;
+      }
+      h1 {
+        font-size: 1.9rem;
+        line-height: 1.3;
+        margin: 0.4rem 0 0.6rem;
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+      h2 {
+        font-size: 1.35rem;
+        margin: 3rem 0 1rem;
+        padding-bottom: 0.45rem;
+        border-bottom: 2px solid var(--accent);
+      }
+      h3 {
+        font-size: 1.08rem;
+        margin: 1.8rem 0 0.6rem;
+        color: var(--accent);
+      }
+      h4 {
+        font-size: 0.98rem;
+        margin: 1.3rem 0 0.4rem;
+      }
+      p {
+        margin: 0.6rem 0;
+      }
+      a {
+        color: var(--accent);
+      }
+      code {
+        font-family: Consolas, 'Cascadia Mono', Menlo, monospace;
+        background: var(--code-bg);
+        padding: 0.1em 0.38em;
+        border-radius: 4px;
+        font-size: 0.88em;
+        overflow-wrap: break-word;
+      }
+      pre {
+        background: var(--code-bg);
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+        padding: 0.9rem 1.1rem;
+        overflow-x: auto;
+        line-height: 1.6;
+      }
+      pre code {
+        background: none;
+        padding: 0;
+        font-size: 0.86rem;
+      }
+      .verdict {
+        background: var(--bg2);
+        border: 1px solid var(--rule);
+        border-left: 5px solid var(--bad);
+        border-radius: 8px;
+        padding: 1rem 1.2rem;
+        margin: 1.2rem 0;
+      }
+      .verdict.ok {
+        border-left-color: var(--accent2);
+      }
+      .verdict strong.hd {
+        display: block;
+        font-size: 1.05rem;
+        margin-bottom: 0.3rem;
+      }
+      .callout {
+        background: var(--bg2);
+        border: 1px solid var(--rule);
+        border-left: 4px solid var(--accent);
+        border-radius: 8px;
+        padding: 0.8rem 1.1rem;
+        margin: 1rem 0;
+        font-size: 0.95rem;
+      }
+      .callout.warn {
+        border-left-color: var(--warn);
+      }
+      .callout .ctag {
+        display: block;
+        font-weight: 700;
+        color: var(--accent);
+        font-size: 0.82rem;
+        letter-spacing: 0.06em;
+        margin-bottom: 0.2rem;
+      }
+      .callout.warn .ctag {
+        color: var(--warn);
+      }
+      .table-wrap {
+        overflow-x: auto;
+        overflow-y: auto;
+        max-height: 640px;
+        margin: 1rem 0;
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+        background: var(--bg2);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 0.9rem;
+      }
+      th,
+      td {
+        padding: 0.55rem 0.8rem;
+        text-align: left;
+        border-bottom: 1px solid var(--rule);
+        vertical-align: top;
+      }
+      th {
+        background: var(--code-bg);
+        font-size: 0.82rem;
+        letter-spacing: 0.03em;
+        position: sticky;
+        top: 0;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      .st-yes {
+        color: var(--accent2);
+        font-weight: 700;
+      }
+      .st-no {
+        color: var(--bad);
+        font-weight: 700;
+      }
+      .st-warn {
+        color: var(--warn);
+        font-weight: 700;
+      }
+      .steps {
+        counter-reset: step;
+        list-style: none;
+        padding: 0;
+        margin: 1rem 0;
+      }
+      .steps > li {
+        counter-increment: step;
+        position: relative;
+        padding: 0.15rem 0 0.9rem 2.6rem;
+        border-left: 2px solid var(--rule);
+        margin-left: 0.95rem;
+      }
+      .steps > li::before {
+        content: counter(step);
+        position: absolute;
+        left: -0.95rem;
+        top: 0.1rem;
+        width: 1.75rem;
+        height: 1.75rem;
+        border-radius: 50%;
+        background: var(--accent);
+        color: #fff;
+        font-size: 0.85rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .steps > li:last-child {
+        border-left-color: transparent;
+      }
+      .toc {
+        background: var(--bg2);
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+        padding: 0.9rem 1.2rem;
+        font-size: 0.9rem;
+      }
+      .toc ol {
+        margin: 0.3rem 0;
+        padding-left: 1.3rem;
+      }
+      .toc a {
+        text-decoration: none;
+      }
+      .toc a:hover {
+        text-decoration: underline;
+      }
+      hr.sep {
+        border: none;
+        border-top: 1px solid var(--rule);
+        margin: 2.5rem 0;
+      }
+      @media (max-width: 640px) {
+        .wrap {
+          padding: 1.5rem 1rem 3rem;
+        }
+        h1 {
+          font-size: 1.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <div class="kicker">发布操作指南 · hosts/memora-vscode</div>
+        <h1>受限网络发布者注册桥接（GitHub Codespaces）</h1>
+        <div class="meta">
+          本地网络无法完成 Microsoft 登录页 reCAPTCHA 时，一次性桥接到云端桌面完成 Publisher 注册与
+          PAT 创建 ｜ 编制/实测：2026-10-14 ｜ 状态：✅ 实测可用（命令行复制即用）
+        </div>
+      </header>
+
+      <nav class="toc">
+        <strong>目录</strong>
+        <ol>
+          <li><a href="#why">一、为什么是 Codespaces（网络根因）</a></li>
+          <li><a href="#cost">二、成本账</a></li>
+          <li><a href="#steps">三、操作步骤（命令复制即用）</a></li>
+          <li><a href="#rootcause">四、根因澄清：鼠标失控 = view-only 密码</a></li>
+          <li><a href="#pits">五、坑位清单</a></li>
+          <li><a href="#cheaper">六、更省的先手</a></li>
+        </ol>
+      </nav>
+
+      <!-- ═══════════════ §1 为什么 ═══════════════ -->
+      <h2 id="why">一、为什么是 Codespaces（网络根因）</h2>
+
+      <p>
+        发布流程主文档（<code>marketplace-publish-flow.html</code>）阶段 1–2 的两步——注册 Publisher
+        与创建 PAT——都在 Microsoft / Azure DevOps
+        的网页上完成。这些登录页的人机验证组件（reCAPTCHA）需要从 <code>google.com</code> /
+        <code>gstatic.com</code> 拉取脚本，在受限网络下被墙，导致登录卡死（台账缺口 7）。
+      </p>
+
+      <p>
+        <strong>GitHub Codespaces = 微软云（Azure）上的一台 Ubuntu 机器</strong>，预装网页版 VS
+        Code。你的代码、终端、网络出口全在那台云机器上。reCAPTCHA 资源在 Azure
+        出口下是直通的——这是它解决本问题的唯一理由。Publisher 与 PAT
+        按主文档定性是「一次性前置」，做完即删机，不需要任何长期通道。
+      </p>
+
+      <div class="callout">
+        <span class="ctag">关键区分</span>
+        <code>github.dev</code>（网页编辑器）网络仍走你本地，<strong>不解决</strong>；必须开真正的
+        Codespaces（拉起一台云主机，终端里
+        <code>curl -sI https://www.google.com/recaptcha/api.js</code> 返回 200 才对）。
+      </div>
+
+      <!-- ═══════════════ §2 成本 ═══════════════ -->
+      <h2 id="cost">二、成本账（2026-10 核实）</h2>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>项</th>
+              <th>数值</th>
+              <th>对本任务</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>个人免费额度</td>
+              <td>120 核时 / 月 + 15GB 存储</td>
+              <td>2 核机 = 60 小时真实使用</td>
+            </tr>
+            <tr>
+              <td>本任务耗时</td>
+              <td>几分钟真实使用</td>
+              <td>约 2–6 核时，占额度 2–5%</td>
+            </tr>
+            <tr>
+              <td>超后单价</td>
+              <td>$0.18 / 核时（2 核机）</td>
+              <td>不会触发</td>
+            </tr>
+            <tr>
+              <td>默认闲置超时</td>
+              <td>30 分钟</td>
+              <td>动手前调大或一口气做完</td>
+            </tr>
+            <tr>
+              <td>停止后保留</td>
+              <td>默认 30 天自动删</td>
+              <td>用完主动 Delete 更稳</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ═══════════════ §3 步骤 ═══════════════ -->
+      <h2 id="steps">三、操作步骤（命令复制即用）</h2>
+
+      <ol class="steps">
+        <li>
+          <h4>建 Codespaces</h4>
+          <p>
+            仓库页 → 绿色 <strong>Code</strong> → <strong>Codespaces</strong> 标签 →
+            <strong>Create codespace on main</strong>。2 核默认机足够。区域按 IP
+            自动分配（东南亚或美东），Google 均通。
+          </p>
+        </li>
+        <li>
+          <h4>验证网络确实通</h4>
+          <pre><code>curl -sI https://www.google.com/recaptcha/api.js | head -1   # 期望 200</code></pre>
+        </li>
+        <li>
+          <h4>装桌面 + 浏览器（整段复制即可）</h4>
+          <pre><code>sudo apt-get update
+sudo apt-get install -y xfce4 tigervnc-standalone-server novnc websockify dbus-x11 fonts-noto-cjk
+curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+sudo apt-get update &amp;&amp; sudo apt-get install -y google-chrome-stable</code></pre>
+          <div class="callout warn">
+            <span class="ctag">snap 坑</span>
+            <code>apt</code> 直接装 <code>chromium</code> 在官方源里是指向 snap 的桩包，Codespaces
+            没有 systemd，snapd 起不来。Chrome 必须走上面临时加的 Google 官方 <code>.deb</code> 源。
+          </div>
+        </li>
+        <li>
+          <h4>起 VNC 桌面 + noVNC 网页</h4>
+          <pre><code>mkdir -p ~/.vnc
+cat &gt; ~/.vnc/xstartup &lt;&lt;'EOF'
+#!/bin/sh
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+export XKL_XMODMAP_DISABLE=1
+exec startxfce4
+EOF
+chmod +x ~/.vnc/xstartup
+vncserver :1 -geometry 1600x1000 -depth 24
+websockify -D --web=/usr/share/novnc/ 6080 localhost:5901</code></pre>
+          <div class="callout warn">
+            <span class="ctag">密码双问（核心坑）</span>
+            <code>vncserver :1</code> 首次运行会要你设密码，紧接着问
+            <strong>「是否设置 view-only（只读）密码」</strong
+            >。全程只用<strong>第一问的常规密码</strong>登录 noVNC。view-only 密码登录 =
+            仅浏览权限，鼠标键盘全部禁掉。最省事：第二问直接
+            <code>n</code> 跳过，根本不设只读密码。详见第四节。
+          </div>
+        </li>
+        <li>
+          <h4>端口转发 + 打开</h4>
+          <p>
+            VS Code <strong>PORTS</strong> 面板 → 转发端口 <code>6080</code> → 右键可见性设为
+            <strong>Private</strong>（默认即
+            Private）。复制转发地址，在<strong>本地真实浏览器</strong>打开，末尾加
+            <code>/vnc.html</code> → Connect → 输入<strong>常规密码</strong>。
+          </p>
+          <div class="callout warn">
+            <span class="ctag">可见性</span>
+            不要设 Public：Public 链接谁拿到谁就能操作你的云桌面，而你正在上面登录微软账号。Private
+            仍要你的 GitHub 登录态，外人打不开。
+          </div>
+        </li>
+        <li>
+          <h4>桌面内完成注册</h4>
+          <p>
+            点底部 Dock 第一个图标（终端），或
+            <strong>Applications → Internet → Google Chrome</strong> 打开浏览器，访问：
+          </p>
+          <pre><code>https://marketplace.visualstudio.com/manage      # 登录 → Create Publisher，ID 照抄 zooique
+https://dev.azure.com                          # User settings → Personal access tokens → New Token
+                                                #   Organization = All accessible organizations
+                                                #   Expiration = 1 year
+                                                #   Scopes = Show all scopes → Marketplace → Manage</code></pre>
+          <p>
+            PAT <strong>只显示一次</strong>，当场复制，存进本地密码管理器（不落云机器任何文件、不进
+            git）。
+          </p>
+        </li>
+        <li>
+          <h4>回本地收尾</h4>
+          <pre><code>cd hosts/memora-vscode
+npx vsce login zooique   # 粘贴 PAT</code></pre>
+          <p>
+            之后按主文档走阶段 3–5。最后 <code>github.com/codespaces</code> → 该机
+            <code>...</code> → <strong>Delete</strong>，清掉微软登录态与 VNC 密码。
+          </p>
+        </li>
+      </ol>
+
+      <!-- ═══════════════ §4 根因 ═══════════════ -->
+      <h2 id="rootcause">四、根因澄清：鼠标失控 = view-only 密码</h2>
+
+      <div class="verdict ok">
+        <strong class="hd">✅ 实测根因（2026-10-14）</strong>
+        桌面能显示、但鼠标键盘完全无响应，原因是 <code>vncserver</code> 设密码时误用了
+        <strong>view-only（只读）密码</strong>登录 noVNC。view-only
+        模式天然只授予屏幕观看权限，输入被禁。改用第一问的<strong>常规密码</strong>登录，鼠标键盘即正常。
+      </div>
+
+      <p>
+        早期关于「VS Code 内置预览 / 网页版 VS Code 的 iframe
+        拦截指针事件」的猜测，在本次实测中被<strong>推翻</strong>——真正的拦截来自 VNC
+        的只读密码，与浏览器打开方式无关。结论：环境卡顿先查密码类型，再查别的。
+      </p>
+
+      <p>
+        顺带：noVNC <strong>永不锁住你的本地鼠标</strong>——本地光标永远在你这边，网页画布里那个是
+        noVNC 驱动的远端光标。远端光标不动 = 远端 X 会话没收到输入（只读密码），不是你鼠标坏了。
+      </p>
+
+      <!-- ═══════════════ §5 坑位 ═══════════════ -->
+      <h2 id="pits">五、坑位清单</h2>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>坑</th>
+              <th>表现 / 判据</th>
+              <th>处理</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>VNC 双密码</td>
+              <td>鼠标键盘全死，屏幕正常</td>
+              <td>用常规密码登录；第二问直接 n 跳过只读密码</td>
+            </tr>
+            <tr>
+              <td>snap 桩</td>
+              <td><code>apt install chromium</code> 装得上跑不了</td>
+              <td>Chrome 走 Google 官方 .deb 源</td>
+            </tr>
+            <tr>
+              <td>端口可见性</td>
+              <td>Public 链接可被任意人控桌面</td>
+              <td>设 Private</td>
+            </tr>
+            <tr>
+              <td>闲置超时 30 分钟</td>
+              <td>等验证码时机子停、VNC 进程失</td>
+              <td>动手前调大 Default idle timeout，或一口气做完</td>
+            </tr>
+            <tr>
+              <td>区域不可控</td>
+              <td>按 IP 分配东南亚/美东</td>
+              <td>均通 Google，不用纠结</td>
+            </tr>
+            <tr>
+              <td>日常代理滥用</td>
+              <td>60 小时/月烧光、非预期用途</td>
+              <td>一次性工具，用完即弃</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ═══════════════ §6 更省 ═══════════════ -->
+      <h2 id="cheaper">六、更省的先手</h2>
+
+      <p>
+        本方案是计划 B。<strong>先花 5 分钟试手机热点</strong>——reCAPTCHA
+        不一定每次都加载，热点能过则上面这整套命令一行都不用敲。若热点不行，再上 Codespaces。
+      </p>
+
+      <p>
+        补充观察：Open VSX 的登录走 GitHub 账号，天然没有这个卡点；但按主文档定性，Open VSX 是 0.1.0
+        的非阻塞可选项，不改变主路径。
+      </p>
+
+      <hr class="sep" />
+
+      <footer>
+        <div class="sources">
+          <h2>Sources</h2>
+          <ol>
+            <li>
+              <span class="src-title"
+                >Microsoft, Publishing a Visual Studio Code Extension — 官方发布流程。</span
+              ><a
+                class="src-url"
+                href="https://code.visualstudio.com/api/working-with-extensions/publishing-extension"
+                >https://code.visualstudio.com/api/working-with-extensions/publishing-extension</a
+              >
+            </li>
+            <li>
+              <span class="src-title">GitHub Codespaces 计费与额度 — 120 核时/月、15GB 存储。</span
+              ><a
+                class="src-url"
+                href="https://docs.github.com/en/billing/using-the-new-billing-platform/viewing-your-github-codespaces-usage"
+                >https://docs.github.com/en/billing/using-the-new-billing-platform/viewing-your-github-codespaces-usage</a
+              >
+            </li>
+            <li>
+              <span class="src-title"
+                >Google Chrome for Linux — 官方 .deb 安装源（绕过 snap）。</span
+              ><a class="src-url" href="https://www.google.com/linux/chrome/"
+                >https://www.google.com/linux/chrome/</a
+              >
+            </li>
+            <li>
+              <span class="src-title">项目发布流程主文档（阶段 1–2 正常路径与网关）。</span
+              ><a class="src-url" href="marketplace-publish-flow.html"
+                >marketplace-publish-flow.html</a
+              >
+            </li>
+          </ol>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>
