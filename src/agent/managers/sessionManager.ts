@@ -54,8 +54,6 @@ export class SessionManager {
   private stateMachine: SessionStateMachine;
   /** 当前会话检查点（运行时状态快照） */
   private checkpoint: SessionCheckpoint | null = null;
-  /** 检查点脏标记（内存态收口）：touchCheckpoint 置位、settleCheckpoint 清理（纯内存态，不落盘） */
-  private checkpointDirty = false;
   /** 目标一致性校验器（目标版本一致性校验） */
   private readonly consistencyChecker: GoalConsistencyChecker;
   /**
@@ -173,9 +171,7 @@ export class SessionManager {
 
     // 检查点是当前会话的工作状态，切换时清空内存态（检查点纯内存态，不落盘）
     if (this.checkpoint && this.checkpoint.sessionId !== newSession) {
-      this.settleCheckpoint(true);
       this.checkpoint = null;
-      this.checkpointDirty = false;
     }
 
     const result = this.getHistory().switchSession(newSession);
@@ -282,9 +278,7 @@ export class SessionManager {
 
     // 关键约束：分叉后清空 checkpoint，防止新分支的 plan/goal 写入源会话检查点。
     if (this.checkpoint) {
-      this.settleCheckpoint(true);
       this.checkpoint = null;
-      this.checkpointDirty = false;
     }
 
     this.emitEvent('sessionForked', {
@@ -441,33 +435,18 @@ export class SessionManager {
       lastHeartbeat: Date.now(),
     };
 
-    // 检查点内容已整体重算，强制清脏（纯内存，无落盘）
-    this.settleCheckpoint(true);
-
     return this.checkpoint;
   }
 
   /**
-   * 标记检查点已变更（内存写点统一入口）。刷新心跳并置脏标记。
-   * 所有修改 this.checkpoint 的方法都必须调用本方法，不得直接赋值 lastHeartbeat——否则变更不被后续清脏感知，内存与清脏链路静默分叉。
+   * 刷新检查点心跳（内存写点统一入口）。所有修改 `this.checkpoint` 的方法都必须调用本方法，
+   * 不得直接赋值 `lastHeartbeat`——心跳是暂停超时判定的兜底依据，绕过本方法会让超时判定读到陈旧值。
+   * ⚠️ 检查点不落盘：本方法**只刷心跳，无脏标记**（脏标记随 2026-10-14 CHKPT-3 减法删除——
+   * 曾经的 `checkpointDirty` 无外部消费者，属纯内耗）。
    */
   private touchCheckpoint(): void {
     if (!this.checkpoint) return;
     this.checkpoint.lastHeartbeat = Date.now(); // 心跳唯一写点
-    this.checkpointDirty = true;
-  }
-
-  /**
-   * 检查点脏标记清理（**纯内存态**）：
-   * `SessionCheckpoint` 不落盘——中止/断电走「中断轮补全为完整 turn」而非跨重启恢复，
-   * 运行时暂停是同 turn 内续跑（内存态），无跨进程载体需求。故本方法仅清理脏标记，
-   * 不再写存储层（保留方法语义边界，避免为纯净化波及 40+ 处调用点）。
-   */
-  private settleCheckpoint(force = false): void {
-    if (!this.checkpoint) return;
-    if (!force && !this.checkpointDirty) return;
-    // 纯内存：无落盘动作，仅清脏
-    this.checkpointDirty = false;
   }
 
   /** 获取当前检查点快照；未创建返回 null */
@@ -487,7 +466,7 @@ export class SessionManager {
         this.checkpoint.pausedAt = Date.now();
       }
       this.createCheckpoint();
-      // 首轮暂停无现有检查点，pausedAt 未被 spread 继承，补设并标脏
+      // 首轮暂停无现有检查点，pausedAt 未被 spread 继承，补设并刷心跳
       if (this.checkpoint && !this.checkpoint.pausedAt) {
         this.checkpoint.pausedAt = Date.now();
         this.touchCheckpoint();
@@ -603,7 +582,7 @@ export class SessionManager {
    *
    * 语义 = 用户决定**彻底放弃**暂停执行，不再 resume。清理内容：
    *   1. 停暂停超时定时器（防止已放弃的 checkpoint 继续被超时清理）
-   *   2. 清内存态 checkpoint + checkpointDirty + pauseMeta
+   *   2. 清内存态 checkpoint + pauseMeta
    *   3. 状态机 resetToRunning（回到 idle 之前的 running 基础态，下次 chat() 正常）
    *
    * 与 resume() 的区别：resume = 想继续跑暂停点；discardCheckpoint = 不想了，检查点作废。
@@ -623,7 +602,6 @@ export class SessionManager {
     this.stopPauseTimeoutTimer();
     // 2. 清内存态（检查点纯内存态不落盘，无存储清理动作）
     this.checkpoint = null;
-    this.checkpointDirty = false;
     this.setPauseMeta(undefined);
     // 3. 状态机回到 running
     this.stateMachine.resetToRunning();
@@ -648,8 +626,6 @@ export class SessionManager {
         this.checkpoint.status = this.stateMachine.status;
         this.touchCheckpoint();
       }
-      // 内存态收口（无落盘：recovered 只活内存，跨进程一律走中断补全）
-      this.settleCheckpoint();
       this.emitEvent('sessionRecovered', {
         sessionId: this.checkpoint?.sessionId,
       });
@@ -687,8 +663,6 @@ export class SessionManager {
     this.checkpoint.currentGoal = newGoal;
     this.checkpoint.goalChangeSeq++;
     this.touchCheckpoint();
-    // 目标变更是会话的语义骨架，立即清脏（纯内存，无落盘）
-    this.settleCheckpoint();
 
     // 检测到漂移则发射 goalDriftDetected 事件；drift 级自动低风险暂停强制用户确认（不计入连续计数）
     if (consistencyResult.level !== 'same') {
@@ -783,8 +757,7 @@ export class SessionManager {
   }
 
   /**
-   * 更新计划任务项状态（plan 任务项状态的唯一写点）。必须经此写点置 checkpointDirty，
-   * 否则状态变更可能丢失标脏，计划变更与标脏在此原子完成。
+   * 更新计划任务项状态（plan 任务项状态的唯一写点）。
    *
    * 写完后自动 ensureActivePlanItem：如果变更导致 active 空缺（如把 active 标记为 done/blocked），
    * 则推进下一个 pending → active。这保证任何时刻 plan 中恰好有一个 active 任务项。
@@ -824,7 +797,7 @@ export class SessionManager {
     const firstPending = plan.find((s) => s.status === 'pending');
     if (firstPending) {
       firstPending.status = 'active';
-      // 不 touchCheckpoint——调用方（updatePlanItemStatus / writePlan）会统一标脏
+      // 不 touchCheckpoint——调用方（updatePlanItemStatus / writePlan）会统一刷心跳
     }
   }
 
@@ -860,9 +833,8 @@ export class SessionManager {
 
     this.appendPlanItemLog({ planItemId, summary });
 
-    // 心跳 + 清脏：step 边界即检查点语义边界（纯内存态；检查点不落盘，崩溃走中断轮补全）
+    // 心跳刷新：step 边界即检查点语义边界（纯内存态；检查点不落盘，崩溃走中断轮补全）
     this.touchCheckpoint();
-    this.settleCheckpoint();
   }
 
   /** 写 step 边界日志（时间轴投影，不改 plan 状态）。迭代边界
@@ -871,7 +843,6 @@ export class SessionManager {
     if (!this.checkpoint) return;
     this.appendPlanItemLog(options);
     this.touchCheckpoint();
-    this.settleCheckpoint();
   }
 
   /**
@@ -932,17 +903,15 @@ export class SessionManager {
     this.checkpoint.plan = [];
     this.checkpoint.planItemLog = undefined;
     this.touchCheckpoint();
-    this.settleCheckpoint();
   }
 
-  /** 设置暂停元数据；传 undefined 清除。写后必须清脏（清除也清脏，纯内存态无磁盘残留） */
+  /** 设置暂停元数据；传 undefined 清除。写后刷心跳（纯内存态无磁盘残留） */
   setPauseMeta(meta: PauseMeta | undefined): void {
     // 意图：pauseMeta 通常随 pause()（建检查点后）写入，但检查点不一定已存在（首轮/未知状态），
     // 故保留防御性守卫——无检查点时静默 no-op，不抛弃 pause/resume 链路的其余语义。
     if (!this.checkpoint) return;
     this.checkpoint.pauseMeta = meta;
     this.touchCheckpoint();
-    this.settleCheckpoint();
   }
 
   /**
@@ -973,7 +942,6 @@ export class SessionManager {
 
   /**
    * 记录工具执行：追加到检查点日志（append-only，内存态）。
-   * 标脏策略：仅标脏不即时清脏（completePlanItem step 边界统一清脏、createCheckpoint 暂停/异常强制清脏）。
    * 检查点纯内存态不落盘：completedToolCalls 仅内存态，回合中途崩溃即整体丢弃、走中断轮补全恢复；
    * 「工具重跑排重」仅在单进程存活期内有效，无跨重启持久化。
    */
@@ -994,7 +962,6 @@ export class SessionManager {
       }
     }
     this.touchCheckpoint();
-    // 依赖 completePlanItem / createCheckpoint 在 step 边界统一清脏
   }
 
   /** 记录非幂等工具执行（补偿降级后仅日志）：不再逐副作用执行补偿，仅记录事实供宿主/人工排查 */
@@ -1073,9 +1040,8 @@ export class SessionManager {
 
     logger.warn({ sessionId, pauseDuration }, '运行时检测到暂停超时，自动清理检查点');
 
-    // 清除检查点 + 状态机回到 running；残留脏标记无对应内存态一并清除
+    // 清除检查点 + 状态机回到 running
     this.checkpoint = null;
-    this.checkpointDirty = false;
     this.stateMachine.resetToRunning();
 
     // 暂停超时意味着会话断裂，重置连续暂停计数（递增→衰减→重置闭合）
@@ -1086,19 +1052,6 @@ export class SessionManager {
 
     // 超时后不再需要继续检测
     this.stopPauseTimeoutTimer();
-  }
-
-  /** 关闭时清脏（纯内存，无落盘）：Agent 关闭、destroy 前调用。检查点不落盘，
-   *  本方法为保留语义边界的 no-op 清脏（无持久化动作） */
-  flushOnShutdown(): void {
-    this.settleCheckpoint(true);
-  }
-
-  /** 立即清脏（纯内存，无落盘）：非只读工具完成后调用。⚠️ 检查点不落盘，completedToolCalls 仅内存态——
-   *  「工具重跑排重」仅在单进程存活期内生效，进程崩溃/重启后失效（走中断轮补全）。无落盘设计，
-   *  本方法为保留语义边界的 no-op 清脏 */
-  flushNow(): void {
-    this.settleCheckpoint(true);
   }
 
   /** 销毁 SessionManager，清理所有定时器（防阻止进程退出或悬空回调） */

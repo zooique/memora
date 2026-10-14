@@ -59,6 +59,26 @@
   `{ cwd: projectPath }`——四执行面（run_command / run_project_script / run_skill_script /
   run_code）cwd 判据至此对称。守卫：code 模式 `cwd=项目根` 断言（变异回退即红）。
 
+### Removed（内核 · 检查点脏标记链统一减法 · `CHKPT-1/2/3`）
+
+> ⚠️ **版本归属待拍板**：本节删的是 `SessionManager` **公开方法**（编译期破坏 = SemVer major 信号），
+> 而 `[4.1.0]` 其余两节（`MEM-EVENT-1` / `GUARD-SEARCH-1`）均为输入面放宽的 minor 变更。
+> 若最终定档 major，本节整体迁出至 `[5.0.0]` 区；**未拍板前不发版**（见台账 CHKPT-3「版本轴冲突」）。
+
+- 删 `SessionManager.flushNow()` / `flushOnShutdown()` 两个 **no-op 公开方法**：检查点 2026-09-10 起
+  不落盘，二者仅清已无消费者的脏标记，方法名却宣称持久化（命名谎报类——后来者会按「有 flush 即有
+  落盘」接线）。真实调用点仅 2 处 + 1 处注释（原「40+ 调用点」估计失实，2026-10-09 已订正）。
+- 删 `checkpointDirty` 字段 + 私有 `settleCheckpoint()` 方法：脏标记写点（`touchCheckpoint` 置位）与
+  读点（`settleCheckpoint` 读清）构成自问自答的闭环，检查点不落盘后零外部效果 = 纯内耗。
+- **保留 `touchCheckpoint` 心跳半边**：`lastHeartbeat` 是暂停超时判定的兜底依据（`pausedAt` 缺失时
+  回退），职责收窄为「心跳唯一写点」，超时语义不受影响。
+- 调用点改真（不改判据）：`Agent.close()` 改为仅 `destroy()`；assembler 工具日志回调删空分支
+  （幂等分级语义不丢——`record.idempotent` 仍进 `logToolExecution`，FIFO 封顶丢弃判据即读它）。
+- `SessionCheckpoint.schemaVersion`（CHKPT-1）**已于 2026-09-20 站 22 先行删除**（commit `0863c6ec`），
+  本次复核 `src/` 零残留，仅补台账销项，非重复改动。
+- 守卫：`uninterruptedWorkflow` 场景 E 改断言「`updatePlanItem` 必须经 `touchCheckpoint` 写点」
+  （契约不降级，仅措辞去「脏」）；**变异验证**：注释该写点 → 用例红 → 复原绿。全量 3090 用例通过。
+
 ## [4.0.0] · 2026-10-08
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：删 54 个公共导出 + 退役 `agent.memory.search()`，对外部消费者是编译期破坏。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。

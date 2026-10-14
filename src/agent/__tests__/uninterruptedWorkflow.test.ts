@@ -3,7 +3,7 @@
  *
  * 覆盖全部核心功能：
  *   - 三态状态机流转（SessionStateMachine）
- *   - 检查点内存态生命周期（SessionManager.createCheckpoint/getCheckpoint/settleCheckpoint；
+ *   - 检查点内存态生命周期（SessionManager.createCheckpoint/getCheckpoint/touchCheckpoint；
  *     无跨重启恢复链）
  *   - 工具幂等性与 outbox 模式（preExecutionCheck / logToolExecution 持久化）
  *   - 补偿机制（compensateTool/compensateAllNonIdempotent 降级后仅日志）
@@ -1264,51 +1264,59 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   );
 
   /**
-   * 场景 E：task_table_update 更新任务项必须标脏
+   * 场景 E：task_table_update 更新任务项必须走 touchCheckpoint 写点
    *
-   * 旧缺陷：updatePlanItem 手写 lastHeartbeat 绕过 touchCheckpoint → checkpointDirty 未置位
-   * → 计划状态变更的脏标记永不置位（settleCheckpoint 见脏才清脏，未置脏即静默早退）。
+   * 旧缺陷：updatePlanItem 手写 lastHeartbeat 绕过 touchCheckpoint → 心跳未刷新。
+   * （原置脏半边已随 CHKPT-3 减法删除——脏标记无外部消费者；touchCheckpoint 仍承载
+   * 心跳唯一写点职责，绕过即破坏暂停超时判定的兜底依据。）
    *
    * 断言策略：直接 spy touchCheckpoint（运行时存在，TS private 仅编译期约束）。
-   * 行为级断言（updatePlanItem 后触发 flush 看写盘）不可靠——chatSync 路径存在其他
-   * touchCheckpoint（如 updateGoal），会干扰 dirty 的归属，导致变异验证误绿。
-   * 契约级断言直接锁定「updatePlanItem 必须走标脏路径」。
+   * 行为级断言不可靠——chatSync 路径存在其他 touchCheckpoint（如 updateGoal），
+   * 会干扰归属，导致变异验证误绿。
+   * 契约级断言直接锁定「updatePlanItem 必须经 touchCheckpoint 写点」。
    */
-  it('场景 E：task_table_update 更新任务项必须标脏', { timeout: 30000 }, async () => {
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: new MockProvider(),
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpData],
-      sessionStore,
-    });
-    await agent.init();
+  it(
+    '场景 E：task_table_update 更新任务项必须刷心跳（touchCheckpoint 写点）',
+    { timeout: 30000 },
+    async () => {
+      agent = new Agent({
+        projectPath: tmpProject,
+        provider: new MockProvider(),
+        configDir: tmpConfig,
+        dataDir: tmpData,
+        permission: 'owner',
+        allowedPaths: [tmpData],
+        sessionStore,
+      });
+      await agent.init();
 
-    // 创建检查点
-    agent.createCheckpoint('测试目标');
+      // 创建检查点
+      agent.createCheckpoint('测试目标');
 
-    // 模拟已存在的任务表：直接塞一个 pending 任务项
-    agent.getCheckpoint()!.plan.push({
-      id: 'step-1',
-      description: '测试步骤',
-      status: 'pending',
-      order: 1,
-    });
+      // 模拟已存在的任务表：直接塞一个 pending 任务项
+      agent.getCheckpoint()!.plan.push({
+        id: 'step-1',
+        description: '测试步骤',
+        status: 'pending',
+        order: 1,
+      });
 
-    // spy touchCheckpoint（脏标记唯一置位点）
-    const sm = agent.sessionManager!;
-    const touchSpy = vi.spyOn(sm as unknown as { touchCheckpoint: () => void }, 'touchCheckpoint');
+      // spy touchCheckpoint（心跳唯一写点）
+      const sm = agent.sessionManager!;
+      const touchSpy = vi.spyOn(
+        sm as unknown as { touchCheckpoint: () => void },
+        'touchCheckpoint',
+      );
 
-    // LLM 经 task_table_update 工具将任务项标记为 done
-    const result = agent.tools!.planManager!.updatePlanItem('step-1', 'done');
-    expect(result).toContain('已标记为 done');
-    expect(agent.getCheckpoint()!.plan[0]!.status).toBe('done');
+      // LLM 经 task_table_update 工具将任务项标记为 done
+      const result = agent.tools!.planManager!.updatePlanItem('step-1', 'done');
+      expect(result).toContain('已标记为 done');
+      expect(agent.getCheckpoint()!.plan[0]!.status).toBe('done');
 
-    // updatePlanItem 必须经标脏路径，touchCheckpoint 应被调用
-    expect(touchSpy).toHaveBeenCalledTimes(1);
-  });
+      // updatePlanItem 必须经 touchCheckpoint 写点，应被调用
+      expect(touchSpy).toHaveBeenCalledTimes(1);
+    },
+  );
 
   /**
    * turn 结束无条件清理任务表（任务表收紧为 turn 内能力，不跨 turn 残留）

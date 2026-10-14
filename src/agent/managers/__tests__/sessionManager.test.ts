@@ -8,7 +8,7 @@
  *   - restoreSession：恢复指定会话
  *   - loadSessionMessages：加载消息（会切换会话）
  *   - applySessionToLoop：private，通过 restore* 间接测试
- *   - 检查点生命周期：createCheckpoint / getCheckpoint / settleCheckpoint（内存态）
+ *   - 检查点生命周期：createCheckpoint / getCheckpoint / touchCheckpoint 心跳刷新（内存态）
  *     （跨重启恢复链已退役）
  *
  * Mock 策略：5 个回调注入用 vi.fn()，history/loop 用 Partial<T> as T 单层断言

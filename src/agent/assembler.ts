@@ -475,8 +475,8 @@ function wireRuntimeCallbacks(
         .join('\n')}`;
     },
     updatePlanItem: (planItemId, status) => {
-      // 状态变更收口 SessionManager.updatePlanItemStatus（内部标脏 + 心跳，唯一写点）。
-      // 必须经此写点置 checkpointDirty，否则计划变更可能丢失标脏（纯内存态）
+      // 状态变更收口 SessionManager.updatePlanItemStatus（内部刷心跳，唯一写点）。
+      // 必须经此写点 touchCheckpoint，否则计划变更可能绕过心跳刷新（纯内存态）
       if (!sessionManager.updatePlanItemStatus(planItemId, status)) {
         // 任务项寻址失败 = 执行失败事实 → 结构化抛错（经 runOne catch → failedOutcome）。
         // 不裸文本 return：B5 后 runOne 兜底=ok，裸失败前缀会被吞成成功（B5-e 消亡口径）。
@@ -651,12 +651,8 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
       };
       sessionManager.logToolExecution(record);
       // completedToolCalls 仅内存态（不落盘）：「工具重跑排重 / 补偿」仅在单进程存活期内生效，
-      // 崩溃/重启后失效（走中断轮补全）。此处 flushNow() 为语义边界上的 no-op 清脏，
-      // 调用无害但无持久化效果——幂等分级（non-idempotent/idempotent-key 优先清脏）仅作调用纪律保留。
-      if (idempotent === 'non-idempotent' || idempotent === 'idempotent-key') {
-        // 有写副作用且需持久化记录的工具：完成后立即清脏（SessionManager 恒实现，纯内存）
-        sessionManager.flushNow();
-      }
+      // 崩溃/重启后失效（走中断轮补全）。曾经此处的 flushNow() 为 no-op 清脏（宣称落盘、实无动作），
+      // 已随 CHKPT-2 减法删除——幂等分级（non-idempotent/idempotent-key）仍决定日志是否保留。
     },
     // 工具执行前检查（统一执行入口·单点聚合）：宿主审批优先（denied 短路返回），放行后再做内部幂等检查。
     // ⚠️ 宿主未注入 preExecutionCheck 时 → 完全降级为仅内部幂等检查。

@@ -1918,8 +1918,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 清理 SessionManager（须先于 nullifyAllComponents，destroy 需访问其内部状态）
     if (this._sessionManager) {
-      // 清脏后再 destroy（纯内存，无落盘；检查点不落盘，本调用为保留语义边界的 no-op）
-      this._sessionManager.flushOnShutdown();
       this._sessionManager.destroy();
     }
     // ArchiveCoordinator 无定时器，仅释放引用
