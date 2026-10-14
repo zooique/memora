@@ -584,6 +584,12 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Fixed（宿主 · 市场上传撞键：截图文件名 ASCII 化 · 2026-10-14）
+
+门户上传报 `Upload Error · Item has already been added`（实测阻断首版上传）。根因：门户构建资源字典时把非 ASCII 字节替换为 `?`，三张截图中「设置角色包」与「对话主界面」均 5 汉字（15 字节）⇒ 替换后 `?` 串等长同形撞键。修法 = 资产路径 ASCII 化（市场规范）：`memora对话主界面.jpg → memora-chat-main.jpg`、`memora设置记忆.jpg → memora-settings-memory.jpg`、`memora设置角色包.jpg → memora-settings-rolepacks.jpg`，README 3 处引用同步（全库 grep 零残留）。`dist/role-packs/` 中文目录**刻意不改**——三目录 `?` 串长度 21/15/12 互异不撞键，且目录名是运行时装载契约（改名破产品功能）；门户报错仅点名 UI-images，无证据表明市场拒绝非 ASCII 路径本身。
+
+> **时序注**：`vscode@0.1.0` tag 与 GitHub Release 创建于本修复**之前**，当时 tag 指向不含本修复的提交（那份 vsix 门户拒收 = 不可发布）。市场上传成功、版本定版后再将 tag 归位到含修复的提交——tag 未被市场/下游消费，移动无破坏面（先 tag 后发现不可发，属打早了）。
+
 ### Added（宿主 · 宿主侧自定义搜索引擎：保存前实测验证 + 紧凑编辑器 + 边界护栏 · 2026-10-13）
 
 `web_search` 后端从二值降级链扩为**五档预设 + 自定义引擎**（`206198d3` → `82e7c425` 六提交）。内核零改动（复用已发布 `SearchEndpoint`/`buildSearchEndpoints`/`FetchWebSearchProvider` 扩展点）；宿主单一嫁接点 = `extension/host/searchEngines.ts` 的 `resolveSearchEndpoints`（装配侧唯一出口）。
