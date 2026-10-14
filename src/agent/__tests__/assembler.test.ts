@@ -292,6 +292,49 @@ describe('assembleComponents', () => {
     });
   });
 
+  // ─── run_skill_script cwd 供给（SKILL-CWD-1 回归护栏）────
+  //
+  // 背景（2026-10-14 实锤）：assembler 两分支曾把 cwd 传 undefined → spawnOptions 不设 cwd →
+  // 子进程继承宿主进程 cwd（VS Code 安装目录）→ 技能脚本相对路径写文件可逃出项目根。
+  // 护栏口径：真实 spawn 端到端（与 skillScriptRunner-exec 同范式），断言子进程实际 cwd = 项目根；
+  // 修复回退（传回 undefined）时子进程继承 vitest cwd ≠ 临时项目目录 → 断言红。
+  // 未覆盖面如实登记：仅锚住全局技能分支——角色包分支夹具需完整 pack manifest + layer3 扫描链，
+  // 成本高且两分支同函数同供给源，角色包分支回归由台账收据登记而非本测试覆盖。
+
+  describe('run_skill_script cwd 供给（SKILL-CWD-1）', () => {
+    it('技能脚本 process.cwd() = 项目根（真实 spawn，非宿主进程 cwd）', async () => {
+      // 文件夹形态技能：skills/cwd-probe/SKILL.md + scripts/cwd-probe.mjs（L3 可发现）
+      const home = await mkdtemp(join(tmpdir(), 'memora-assembler-skillhome-'));
+      const skillDir = join(home, 'skills', 'cwd-probe');
+      mkdirSync(join(skillDir, 'scripts'), { recursive: true });
+      writeFileSync(
+        join(skillDir, 'SKILL.md'),
+        '---\nname: cwd-probe\ndescription: cwd 探针技能\n---\n正文',
+        'utf-8',
+      );
+      // 探针脚本：打印自身工作目录（真实子进程，无 mock 层）
+      writeFileSync(
+        join(skillDir, 'scripts', 'cwd-probe.mjs'),
+        'process.stdout.write(process.cwd());',
+        'utf-8',
+      );
+      try {
+        const output = await assembleComponents(
+          createPctx(),
+          createInput({ existingSkillManager: new SkillManager(home) }),
+        );
+        const result = await output.toolExec.execute(
+          'run_skill_script',
+          JSON.stringify({ skill_name: 'cwd-probe', script_path: 'cwd-probe.mjs' }),
+        );
+        // 判据：子进程实际 cwd（stdout 实测值）落在项目根——修复回退即红
+        expect(result).toContain(projectPath);
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
+    });
+  });
+
   // ─── 配置透传 ──────────────────────────────────────────
 
   describe('配置透传', () => {

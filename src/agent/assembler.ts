@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Agent 组件组装器 — 从 Agent 门面类拆出的工厂逻辑
  *
  * 职责：
@@ -853,6 +853,10 @@ export async function assembleComponents(
 
   // 渐进披露 L3：注入 run_skill_script 脚本执行回调
   toolExec.runSkillScript = async (skillName: string, scriptPath: string, args: string[]) => {
+    // cwd=项目根（SKILL-CWD-1，2026-10-14）：与 run_project_script 同款供给——修因不修果，
+    // 改喂给判据的事实：脚本内相对路径 / 省略 --dir 走默认，落点一律受 projectPath 约束。
+    // 修复前此处传 undefined → 子进程继承宿主进程 cwd（VS Code 安装目录）→ 写文件可逃出项目根。
+    // projectPath 恒存在（AgentOptions 必填），无「未打开项目」分支。
     // 先查激活角色包内嵌技能的脚本路径
     const rolePackPath = rolePackManager.getSkillScriptPath(skillName, scriptPath);
     if (rolePackPath) {
@@ -865,7 +869,7 @@ export async function assembleComponents(
           scriptInfo.runtime,
           args,
           undefined,
-          undefined,
+          projectPath,
           input.scriptNodePath,
         );
         // B2-a：返回结构化事实，formatScriptResult 由 ToolExecutor 单点收口
@@ -878,13 +882,13 @@ export async function assembleComponents(
       const scripts = skillManager.listScripts(skillName);
       const scriptInfo = scripts.find((s) => s.path === scriptPath);
       if (scriptInfo) {
-        // nodePath 沿用宿主注入：全局技能脚本 node runtime 分支可走真实 node 路径
+        // cwd=项目根 / nodePath 沿用宿主注入：与角色包分支同款供给（两分支分叉写法漂移即回归）
         const result = await runSkillScript(
           globalPath,
           scriptInfo.runtime,
           args,
           undefined,
-          undefined,
+          projectPath,
           input.scriptNodePath,
         );
         // B2-a：返回结构化事实，formatScriptResult 由 ToolExecutor 单点收口

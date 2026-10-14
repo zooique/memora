@@ -22,6 +22,17 @@
   （载荷类型单一真源，防内联复制漂移）。
 - 守卫：命中载荷含 `hits` 且字段精确匹配（载荷形态哨兵，字段增删必须同步断言）+ 空命中不触发（已有）。
 
+### Fixed（内核 · `run_skill_script` 子进程 cwd 缺省逃出项目根 · `SKILL-CWD-1`）
+
+- **技能脚本子进程 cwd 由「宿主进程 cwd」改为「项目根」**：assembler 注入的 `run_skill_script`
+  回调两分支此前把 `cwd` 传 `undefined`（spawnOptions 不设 cwd → 子进程继承宿主进程 cwd）——
+  VS Code 宿主下即 **VS Code 安装目录**，技能脚本内相对路径写文件可逃出项目根（实锤事故：小说
+  工程 29 个文件落在安装目录）。现与 `run_project_script` 分支同款供给 `projectPath`。
+- 修因不修果：改喂给判据的事实（cwd），不改判据、不动 runner——脚本内相对路径 / 省略 `--dir`
+  走默认一律落回项目根；`projectPath` 必填（`AgentOptions`），无「未打开项目」分支。
+- 守卫：`assembler` 测试真实 spawn 端到端断言子进程 `process.cwd()` = 项目根（回退即红）。
+  未覆盖面登记：测试锚全局技能分支；角色包分支同函数同供给源，由台账收据登记。
+
 ## [4.0.0] · 2026-10-08
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：删 54 个公共导出 + 退役 `agent.memory.search()`，对外部消费者是编译期破坏。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
