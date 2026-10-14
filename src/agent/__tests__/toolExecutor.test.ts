@@ -890,6 +890,15 @@ describe('工具执行器（6 个工具）', () => {
       expect(result).toContain('node:ok');
     });
 
+    it('code 模式（内联）cwd=项目根（SKILL-CWD-1 审查缺口：此前不传 → 继承宿主 cwd）', async () => {
+      const result = await execWithCode.execute(
+        'run_code',
+        JSON.stringify({ language: 'node', code: 'console.log(1)' }),
+      );
+      // 断言内联模式的子进程 cwd = 项目根——回退为「不指定由执行器决定」即红
+      expect(result).toContain(`cwd=${tmpProject}`);
+    });
+
     it('执行 run_code 失败（退出码非 0）应返回 CODE_ERROR', async () => {
       const result = await execWithCode.execute(
         'run_code',

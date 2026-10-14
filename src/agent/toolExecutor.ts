@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 工具执行器
  *
  * 4 个内置工具：read_file / write_file / list_dir / search_memories
@@ -1159,10 +1159,11 @@ export class ToolExecutor {
         // 统一执行入参：脚本源码 / 代码字符串 + 语言 + 工作目录
         let execCode: string;
         let execLanguage: string;
-        // 临时脚本模式 cwd=项目根（脚本可 require 项目本地依赖、读取项目数据）；code 模式不指定由执行器决定
-        const execOptions: { cwd?: string } | undefined = scriptPath
-          ? { cwd: this.builtinHandlers.projectPath }
-          : undefined;
+        // cwd 恒=项目根（两模式同源供给，SKILL-CWD-1 审查实锤的 code 模式缺口，2026-10-14 补）：
+        // 此前 code 模式不传 → 执行器 spawn 无 cwd → 子进程继承宿主进程 cwd（VS Code 启动目录，
+        // 不可控）→ 内联代码相对路径写文件可逃出项目根 / 读项目数据 ENOENT。
+        // 四执行面（run_command / run_project_script / run_skill_script / run_code）cwd 判据至此对称。
+        const execOptions: { cwd?: string } = { cwd: this.builtinHandlers.projectPath };
         if (scriptPath) {
           // 读取脚本文件原样执行（路径白名单 + 长度上限由 readScriptFile 负责，截断会破坏语法）
           execCode = await this.builtinHandlers.readScriptFile(scriptPath);

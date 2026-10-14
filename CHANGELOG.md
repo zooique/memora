@@ -32,6 +32,10 @@
   走默认一律落回项目根；`projectPath` 必填（`AgentOptions`），无「未打开项目」分支。
 - 守卫：`assembler` 测试真实 spawn 端到端断言子进程 `process.cwd()` = 项目根（回退即红）。
   未覆盖面登记：测试锚全局技能分支；角色包分支同函数同供给源，由台账收据登记。
+- **同族补漏（设计边界审查实锤）**：`run_code` **内联 code 模式**此前 `execOptions` 传 `undefined`
+  （执行器 spawn 无 cwd → 子进程继承宿主进程 cwd，VS Code 启动目录不可控）。现两模式恒传
+  `{ cwd: projectPath }`——四执行面（run_command / run_project_script / run_skill_script /
+  run_code）cwd 判据至此对称。守卫：code 模式 `cwd=项目根` 断言（变异回退即红）。
 
 ## [4.0.0] · 2026-10-08
 
