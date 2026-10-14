@@ -165,6 +165,12 @@
               "maximum": 10,
               "description": "每轮主动提问次数上限（默认 10，区间 1~10；userFollowup=ask 时生效）"
             },
+            "webSearchLimit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "description": "每轮联网搜索次数上限（web_search 硬护栏，超限确定性拒绝；默认 6，区间 1~20）"
+            },
             "errorHandling": {
               "type": "string",
               "enum": ["retry", "degrade", "stop"],

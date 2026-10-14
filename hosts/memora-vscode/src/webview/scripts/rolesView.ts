@@ -183,6 +183,10 @@ export const STRATEGY_KEY_META: Record<string, StrategyKeyMetaEntry> = {
     label: '提问次数上限',
     tip: '单轮回答最多主动提问几次（1~10）',
   },
+  webSearchLimit: {
+    label: '联网搜索上限',
+    tip: '单轮回答最多联网搜索几次（1~20，超限自动停止搜索）；留空用默认 6',
+  },
   errorHandling: {
     label: '出错处理',
     tip: '工具/模型出错时怎么办：retry=重试，degrade=降级继续，stop=终止本轮',

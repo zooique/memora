@@ -22,6 +22,28 @@
   （载荷类型单一真源，防内联复制漂移）。
 - 守卫：命中载荷含 `hits` 且字段精确匹配（载荷形态哨兵，字段增删必须同步断言）+ 空命中不触发（已有）。
 
+### Added（内核 · 联网搜索硬上限抬为角色包策略键 `webSearchLimit` · `GUARD-SEARCH-1`）
+
+- `global` 新增策略键 **`webSearchLimit`**（整数 1~20，默认 6）：web_search 的 turn 粒度硬上限
+  此前写死 `LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS=6`、宿主零配置通道（用户无法调整，只能改内核重发）。
+  与 `askLimit` **完全同构**：`intRange` 区间校验（validator 越界 error）+ `resolveWebSearchLimit`
+  越界回退默认 + `resolveL2Strategy` 聚合注入 + loop `GuardThresholds.maxWebSearch` 消费。
+- 修因不修果：上限改从 `strategy.webSearchLimit` 取（修「不可调」的供给面），**不改护栏本身**
+  （硬拦截语义、双闸停搜机制原样——台账红线：禁只把 6 改成 20 放松护栏）。
+- 同源纪律：`SEARCH_LIMIT` 提示文案数字改取 `guardThresholds.maxWebSearch`（与阈值同源，
+  否则策略改 2 文案仍说 6 = 数字说谎）；护栏文案 `{limit}` 本就动态渲染，零改动。
+- 缺省 6 = `LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS` **镜像**（依赖方向 `agent → role-pack` 单向，
+  按本仓「重复 + 注释对冲」既有做法），`constants.ts` 该键降为缺省兜底保留（公开导出键名不改）。
+- 上界 20 依据（2026-10-14 联网检索）：同类 agent 搜索预算普遍 15~30 次/任务，20 覆盖研究型
+  任务、防搜索 API 计费失控。**只解决「不能调」，不解决「搜不准」**（结果质量独立，禁合并落地）。
+- 守卫：resolver 合法透传/越界回退用例 + loop 运行时用例（声明 2 → 第 3 次拒、文案数字同源，
+  变异回退 `LOOP_CONSTANTS` 即红）+ schema/键面/区间三处一致性守卫 + 宿主键面双向一致。
+- SemVer：`L2RuntimeStrategy`/`BehaviorStrategy` 未进公开导出面（`src/index.ts` 无此二类型），
+  加键为**输入面放宽**（schema 接受新键、键面清单 +1）= **minor（4.1.0）**。
+- 同批订正同族失实（损害类扫全类）：`role-pack-spec`/`process-event-log-replay-design`/
+  白话设计文档两篇的 `askLimit` 默认值「3」→「10」（2026-08 已改默认值的漏网文档）；
+  键数计数 16 → 17（消费矩阵/接入指南/作者指南/创建器 SKILL/agent-design-philosophy）。
+
 ### Fixed（内核 · `run_skill_script` 子进程 cwd 缺省逃出项目根 · `SKILL-CWD-1`）
 
 - **技能脚本子进程 cwd 由「宿主进程 cwd」改为「项目根」**：assembler 注入的 `run_skill_script`

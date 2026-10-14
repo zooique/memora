@@ -157,6 +157,7 @@
 | --------------- | ---------------------------- | -------------------- | ------------------------------------- | ------------- | --------------------------- |
 | `askOn`         | 数组（元素见下）                     | 1\~4 个元素             | `[ambiguity, decision, missing_info]` | 主动提问触发场景（可组合） | `["ambiguity", "decision"]` |
 | `askLimit`      | 整数                           | `1 ~ 10`             | `10`                                   | 每轮主动提问次数上限    | `2`                         |
+| `webSearchLimit` | 整数                          | `1 ~ 20`             | `6`                                    | 每轮联网搜索次数上限（web_search 硬护栏，超限确定性拒绝 + 停搜；与 `askLimit` 同构） | `12`                        |
 | `errorHandling` | `retry` / `degrade` / `stop` | —                    | `retry`                               | 异常处理策略        | `"degrade"`                 |
 | `contextLimit`   | 整数                           | `0` 或 `120000 ~ 2000000` | 未声明→`0`（跟随 provider 窗口）                           | 角色包上下文上限（**推荐 0**）  | `0`                     |
 | `stepBudget`    | 整数                           | `0 ~ 500`（0=兜底，非不限）  | `50`                                  | 每轮工具步数上限（0=走内核 maxIterations 兜底，无「不限」路径） | `60`                        |
@@ -183,6 +184,7 @@
 | `toolStepLimit`       | 0    | 100     | error           | 回退默认 `0`（无限制）      |
 | `selfReview`          | 0    | 10      | error           | 回退 `0`（关闭）       |
 | `askLimit`            | 1    | 10      | error           | 回退默认 `10`          |
+| `webSearchLimit`      | 1    | 20      | error           | 回退默认 `6`           |
 | `contextLimit`         | 0    | 2000000 | error           | 回退 `0`（跟随 provider 窗口）  |
 | `stepBudget`          | 0    | 500     | error           | 回退默认 `50`          |
 
@@ -211,7 +213,7 @@
 
 | 状态          | 含义          | 键             |
 | ----------- | ----------- | ------------- |
-| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 16 键（prepare 1 / act 7 / reflect 3 / global 5） |
+| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 17 键（prepare 1 / act 7 / reflect 3 / global 6） |
 
 > 全部策略键现均已落地，无纯预留死键。`understandingConfirm` 已回收（2026-09-13，turn-intent-reasoning-design Part 3）：confirm 并入 `askOn['confirm']`/ask_user 工具通道，echo 由内核 Turn 起始策略指令覆盖——确认场景统一走 ask_user 单一通道，不再作为开放键。已撤键先例：`costBudget`（2026-08-28，内核无定价能力、宿主无执行者）、`taskLoopLimit`（2026-09-06，多 turn 编排删除 + 会议确定性预置退役后无常量消费方）、prepare 召回策略键族 6 键（2026-09-09 阶段2，记忆纯工具化召回后无自动注入消费端）、`toolApproval`（2026-09-11，审批链无执行方的展示性假承诺）、`streaming`（2026-09-11，写而不读的假旋钮——内核 provider 恒 `stream:true`）、`loopContinue`（2026-09-11，v0.13- 别名；安装基数 0 → 兼容防的是从未发生的场景，按版本契约分面「作者输入面可不兼容」删除）——**无消费者 / 无真实兼容对象的策略键不保留**。诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释。
 

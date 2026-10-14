@@ -78,12 +78,12 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 
 > ⚠️ **语义红线（已对齐特权模型）**：`capabilities: []`（空数组）= **仅默认常驻工具**（本地读写/记忆/技能/项目脚本全可用，不开放任何特权）——纯本地型角色应写 `[]` 而非省略；**省略** capabilities = 全部暴露（含特权工具）；声明特权键 = 常驻 + 白名单内的特权工具。「换角色 = 特权工具集切换」。详见 [tool-exposure-model.md](../../../../../../docs/architecture/tool-exposure-model.md)。
 
-#### strategy 键速查（16 键；未改动的键可删除 = 内核默认）
+#### strategy 键速查（17 键；未改动的键可删除 = 内核默认）
 
 `prepare`（1）默认值：`summaryFocus`(≤500字符，默认省略)。注：`understandingConfirm` 不作为开放键——confirm 并入 `askOn` 含 `'confirm'` 触发，echo 由内核 Turn 起始策略覆盖，勿再填写；`memoryRecall`/`memoryRecallPercent`/`minFallback`/`contextAssembly`/`recallConfidence`/`summaryRecall` 6 个召回键不存在——记忆检索改由 `memory_search` 工具触发，勿再填写。
 `act`（7）默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=0(0~65536，0=不干预、与 per-LLM 配置取更小值语义下不设额外上限)｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`multiStepReasoning`=auto｜`toolReadonly`=full
 `reflect`（3）默认值：`summary`=on｜`selfReview`=0(0~10，布尔数字：0=关闭，>0 一律收敛为 1=终审一次，写 2 与写 1 效果相同)｜`userFollowup`=silent
-`global`（5）默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=10(1~10)｜`errorHandling`=retry｜`contextLimit`=0(0~2000000，0=不设额外上限、跟随 provider 窗口)｜`stepBudget`=0(0~500，0=走内核兜底)
+`global`（6）默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=10(1~10)｜`webSearchLimit`=6(1~20，联网搜索硬护栏)｜`errorHandling`=retry｜`contextLimit`=0(0~2000000，0=不设额外上限、跟随 provider 窗口)｜`stepBudget`=0(0~500，0=走内核兜底)
 
 ### 第四步：校验（写→验→用闭环）
 
