@@ -6,7 +6,7 @@
 2. **内核 / 宿主分离**：文件名 `<version>-<kernel|host>.md`，双线互不混（ADR-033 双轨）。
 3. **只迁已关闭项**：主台账（`待完成任务.md`）的开放项、观察项、明确不做项**一律留主台账**；只搬 ✅ 销项 / 证伪关闭 / 全案闭合 的收据，不丢「开放信号」。
 4. **版本号以真值为准**：以 `package.json` / `CHANGELOG` / registry 实值为准。条目 **ID 沿用不改**（防跨文档引用断裂），文件头注明「ID → 版本」映射即可。
-5. **未真发标「待上架」**：版本已定档但未实际上架（如 4.0.0 / 0.1.0 当前态）标「待上架」而非「已发布」，发版动作跑完后再订正。
+5. **未真发标「待上架」**：版本已定档但未实际上架时标「待上架」而非「已发布」，发版动作跑完后再订正（实证：0.1.0 宿主曾标「待上架」，2026-10-14 真发后随归档一并订正——例子会过期，判据不会，勿据本表历史状态推论当前版本轴）。
 6. **单台账 + 按版本归档（2026-10-10 确立 · 用户拍板，原第 6 条「已完成任务.md 不再逆向重排」随之废止）**：`已完成任务.md` 已整体退役为历史记录（迁入本目录 `completed-history.md`，不再更新）。任务追踪**唯一台账 = `待完成任务.md`**；条目销项后标 ✅ 留原区在册，**每真发一版**时随版本号整区迁入本目录 `<version>-<kernel|host>.md`。销项不即迁、发版才归档；新销项**不再写入**历史合集。
 7. **主台账留指针**：迁出后在原位置留一行 `→ 见 tasks/archive/<file>.md`，保留「曾经在此」的溯源。
 
@@ -15,7 +15,7 @@
 | 文件 | 版本 | 线 | 状态 | 迁出来源 |
 | --- | --- | --- | --- | --- |
 | `completed-history.md` | （历史合集 · 非版本归档） | 双线 | 已退役（2026-10-10 整体迁入，不再更新） | 原 `tasks/已完成任务.md` 全文（3.0.0 / 3.0.1 及更早批次详表） |
-| `4.0.0-kernel.md` | 4.0.0 | 内核 npm | 待上架 | `待完成任务.md`：SCRIPT-1 / SCRIPT-2 / MEM-1（部分）+ 观察区 5 条闭合收据（READ-DEDUP-REALDEVICE-1 / METRICS-XFLOW-1 / METRICS-BGTASK-1 / METRICS-PREFIX-1 / RESUME-FAIL-FEEDBACK-1）+ 4.0.0 区定案归档整节（2026-10-10 · 分流表 + 原文快照） |
-| `0.1.0-host.md` | 0.1.0 | 宿主 vsce | 待上架 | `待完成任务.md`：10 条宿主 ✅ 项（UI-CONFIRM-P10/P10B/P10C/P14/P15、插话「吸收时上屏」、SCROLL-JUMP-1、RELEASE-HOST-0.1.0、LEDGER-SSOT-1、TEST-ENV-TIMEOUT-1） |
+| `4.0.0-kernel.md` | 4.0.0 | 内核 npm | 已发布（2026-10-10 · npm latest） | `待完成任务.md`：SCRIPT-1 / SCRIPT-2 / MEM-1（部分）+ 观察区 5 条闭合收据（READ-DEDUP-REALDEVICE-1 / METRICS-XFLOW-1 / METRICS-BGTASK-1 / METRICS-PREFIX-1 / RESUME-FAIL-FEEDBACK-1）+ 4.0.0 区定案归档整节（2026-10-10 · 分流表 + 原文快照） |
+| `0.1.0-host.md` | 0.1.0 | 宿主 vsce | 已发布（2026-10-14 · Marketplace 上架） | `待完成任务.md`：首批复迁 10 条宿主 ✅ 项（UI-CONFIRM-P10/P10B/P10C/P14/P15、插话「吸收时上屏」、SCROLL-JUMP-1、RELEASE-HOST-0.1.0、LEDGER-SSOT-1、TEST-ENV-TIMEOUT-1）+ 2026-10-14 发布收口批再迁（发布硬闸 ROADMAP-PLUGIN-1·MKT / ·REL / HOST-BUG-2、复盘 ROLEPACK-BODY-1 / ROUND-ANALYTICS-1、打磨残项全部 ✅❌ 闭合项——完整迁入清单见归档文件「2026-10-14 发布收口批迁入」批次引言）+ 2026-10-14 收尾闭合批再迁 3 条（HOST-BUG-1 真机点验通过 / UI-SSOT-2 / UI-HOST-0 终态拍板关闭），UI-ICON-1 移主台账观察区，0.1.0 全线收口 |
 
 > 注：3.0.0 / 3.0.1 已真发（`registry latest = 3.0.1`），其关闭项已在 `completed-history.md`（原 `已完成任务.md`）按用户约定保留、不入版本归档。
