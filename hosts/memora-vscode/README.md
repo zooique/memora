@@ -27,15 +27,15 @@ Memora 是内核驱动的 **VS Code AI 助手**：薄壳装配、复用内核全
 
 **对话面板**（角色徽章、模型切换、快捷动作一屏可达）：
 
-![Memora 对话主界面](resources/UI-images/memora对话主界面.jpg)
+![Memora 对话主界面](resources/UI-images/memora-chat-main.jpg)
 
 **设置 · 记忆**（记忆检索、角色 / 大模型 / 技能 / 安全分页，回收站与过期清理）：
 
-![Memora 设置与记忆](resources/UI-images/memora设置记忆.jpg)
+![Memora 设置与记忆](resources/UI-images/memora-settings-memory.jpg)
 
 **设置 · 角色**（角色包管理：多角色切换与设为当前、完整工具 / 温度徽章、团队编排）：
 
-![Memora 设置角色包](resources/UI-images/memora设置角色包.jpg)
+![Memora 设置角色包](resources/UI-images/memora-settings-rolepacks.jpg)
 
 ## 安装
 
