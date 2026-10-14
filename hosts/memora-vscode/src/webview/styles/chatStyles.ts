@@ -1886,6 +1886,23 @@ export const chatStyles = `
     padding: 0 var(--sp-2, 6px);
   }
   .memory-hits__name { color: var(--text-primary, #cccccc); }
+  /* 反馈入口（HOST-S3-3）：行尾 ✕，hover 行 / 键盘聚焦才显现（opacity 保 focus 可达）；
+   * 点击 = 发 memory_delete（宿主模态确认后软删，回收站可恢复），与 memoryView 卡片 ✕ 同语义 */
+  .memory-hits__remove {
+    flex-shrink: 0;
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    padding: 0 var(--sp-1, 4px);
+    font-size: var(--font-xs, 10px);
+    line-height: var(--lh-flat);
+    color: var(--text-secondary, #9aa0a6);
+    cursor: pointer;
+    opacity: 0;
+  }
+  .memory-hits__item:hover .memory-hits__remove,
+  .memory-hits__remove:focus-visible { opacity: 1; }
+  .memory-hits__remove:hover { color: var(--text-primary, #cccccc); }
   .round-block__details {
     margin-top: var(--sp-1, 4px);
     display: flex; flex-direction: column; gap: var(--sp-2, 6px);

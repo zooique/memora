@@ -10286,3 +10286,84 @@ describe('记忆命中可展开行（HOST-S3-1）', () => {
     expect(items[0]!.getAttribute('data-memory-id')).toBe('m2');
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// 记忆反馈通道（HOST-S3-3）：命中行 ✕ → memory_delete（宿主模态确认后软删，回收站可恢复）
+// → memory_deleted 应答驱动摘除。摘除契约 = 全局按 data-memory-id 摘（含已归档轮的行——
+// 反馈常发生在回看时，只摘当前轮会漏）+ 当前轮聚合同步 + 聚合空则整行摘除。
+describe('记忆反馈通道（HOST-S3-3）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('命中行 ✕ 点击 → 发 memory_delete（含 data-memory-id 寻址），title 写明回收站可恢复', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'chunk', content: '回答中' });
+    dispatch({
+      type: 'memory_hits',
+      count: 1,
+      query: '测试',
+      hits: [{ id: 'm1', name: '设计约束', source: 'note' }],
+    });
+    const btn = document.querySelector('.memory-hits__remove') as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    expect(btn.title).toContain('回收站');
+    btn.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_delete', id: 'm1' });
+  });
+
+  it('memory_deleted ok:true → 该 id 全局摘除（含旧轮行），当前轮聚合同步，info 提示', () => {
+    mountChatView();
+    // 旧轮命中行（随后轮归档固定于 DOM）
+    dispatch({ type: 'chunk', content: '第一轮' });
+    dispatch({
+      type: 'memory_hits',
+      count: 1,
+      query: '测试',
+      hits: [{ id: 'm1', name: 'A', source: 'note' }],
+    });
+    const oldRowItem = document.querySelector('.memory-hits__item') as HTMLElement;
+    expect(oldRowItem.getAttribute('data-memory-id')).toBe('m1');
+    // 新轮：m1 + m2 再命中
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: 'T1', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({ type: 'chunk', content: '第二轮' });
+    dispatch({
+      type: 'memory_hits',
+      count: 2,
+      query: '测试',
+      hits: [
+        { id: 'm1', name: 'A', source: 'note' },
+        { id: 'm2', name: 'B', source: 'round-summary' },
+      ],
+    });
+    // 反馈 m1 无用 → 两轮 DOM 中的 m1 全摘 + 当前轮聚合同步（剩 1 条）
+    dispatch({ type: 'memory_deleted', ok: true, id: 'm1' });
+    expect(document.querySelectorAll('[data-memory-id="m1"]')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-memory-id="m2"]')).toHaveLength(1);
+    const bar = document.querySelector('.activity-bar') as HTMLElement;
+    expect(bar.textContent).toContain('已反馈「无用」');
+  });
+
+  it('memory_deleted ok:false → error 提示，命中行不动', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '回答中' });
+    dispatch({
+      type: 'memory_hits',
+      count: 1,
+      query: '测试',
+      hits: [{ id: 'm1', name: 'A', source: 'note' }],
+    });
+    dispatch({ type: 'memory_deleted', ok: false, id: 'm1', message: '内核拒绝删除' });
+    const bar = document.querySelector('.activity-bar') as HTMLElement;
+    expect(bar.textContent).toContain('反馈失败');
+    expect(bar.textContent).toContain('内核拒绝删除');
+    // 删除失败行不摘（记忆仍在库中，行如实保留）
+    expect(document.querySelectorAll('.memory-hits__item')).toHaveLength(1);
+  });
+});

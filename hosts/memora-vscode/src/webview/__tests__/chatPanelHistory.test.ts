@@ -319,6 +319,47 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(ofType<{ type: string }>(posted, 'notice')).toHaveLength(0);
   });
 
+  it('deleteMemory：确认后 writeDelete 软删 + memory_deleted 应答（HOST-S3-3）', async () => {
+    const { provider, posted } = setup();
+    // 最小 agent：memory.writeDelete（deleteMemory 唯一消费面）+ on/off（setAgent 绑事件需要）
+    const writeDelete = vi.fn();
+    provider.setAgent({
+      memory: { writeDelete },
+      on: vi.fn(),
+      off: vi.fn(),
+    } as unknown as Agent);
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
+    await (provider as unknown as { deleteMemory(id: string): Promise<void> }).deleteMemory('m1');
+    expect(writeDelete).toHaveBeenCalledWith('m1');
+    const data = ofType<{ type: string; ok: boolean; id: string }>(posted, 'memory_deleted');
+    expect(data).toHaveLength(1);
+    expect(data[0]?.ok).toBe(true);
+    expect(data[0]?.id).toBe('m1');
+  });
+
+  it('deleteMemory：确认取消 → 不调 writeDelete、零应答（settingsPanel 同款契约）', async () => {
+    const { provider, posted } = setup();
+    const writeDelete = vi.fn();
+    provider.setAgent({
+      memory: { writeDelete },
+      on: vi.fn(),
+      off: vi.fn(),
+    } as unknown as Agent);
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never);
+    await (provider as unknown as { deleteMemory(id: string): Promise<void> }).deleteMemory('m1');
+    expect(writeDelete).not.toHaveBeenCalled();
+    expect(ofType<{ type: string }>(posted, 'memory_deleted')).toHaveLength(0);
+  });
+
+  it('deleteMemory：Agent 未就绪 → ok:false 应答（不发崩溃）', async () => {
+    const { provider, posted } = setup();
+    await (provider as unknown as { deleteMemory(id: string): Promise<void> }).deleteMemory('m1');
+    const data = ofType<{ type: string; ok: boolean; message?: string }>(posted, 'memory_deleted');
+    expect(data).toHaveLength(1);
+    expect(data[0]?.ok).toBe(false);
+    expect(data[0]?.message).toContain('Agent 未就绪');
+  });
+
   it('pushSessionList：无历史时返回空数组（webview 显示空态）', () => {
     const { provider, posted } = setup();
     (provider as unknown as { pushSessionList(): void }).pushSessionList();

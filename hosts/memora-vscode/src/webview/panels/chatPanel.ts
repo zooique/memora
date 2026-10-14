@@ -1048,6 +1048,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         } else {
           this.killBackgroundTask(msg.taskId);
         }
+      } else if (msg.type === 'memory_delete') {
+        // 记忆反馈删除（HOST-S3-3）：命中行 ✕ → 模态确认后软删（回收站可恢复），
+        // 应答 memory_deleted 驱动 webview 摘除；取消确认不推送（settingsPanel 同款契约）
+        void this.deleteMemory(msg.id);
       }
     });
   }
@@ -1464,6 +1468,36 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }): void => {
     this.post({ type: 'memory_hits', count: info.count, query: info.query, hits: info.hits });
   };
+
+  /**
+   * 记忆反馈删除（HOST-S3-3）：对话面板命中行 ✕ → 模态确认后软删。
+   *
+   * 复用内核软删契约 `agent.memory.writeDelete(id)`（进入回收站，可恢复），与记忆管理
+   * 视图的删除同契约（settingsPanel.deleteMemory）但**语境文案不同**：此处是「反馈
+   * 没用/已过时」而非管理删除，故不复用其方法（面板实例方法不可跨面板调用，抽共享
+   * helper 需为两处造回调抽象——两处仅一行内核调用相同，下沉收益低于抽象成本）。
+   * 应答 memory_deleted 驱动 webview 摘除；取消确认不推送（同款契约）。
+   */
+  private async deleteMemory(id: string): Promise<void> {
+    const agent = await this.getAgentOrWarn();
+    const memory = agent?.memory ?? undefined;
+    if (!memory) {
+      this.post({ type: 'memory_deleted', ok: false, id, message: 'Agent 未就绪，无法删除记忆' });
+      return;
+    }
+    const choice = await vscode.window.showWarningMessage(
+      '标记为无用并移入回收站？可随时在记忆管理中恢复。',
+      { modal: true },
+      '删除',
+    );
+    if (choice !== '删除') return;
+    try {
+      memory.writeDelete(id);
+      this.post({ type: 'memory_deleted', ok: true, id });
+    } catch (err) {
+      this.post({ type: 'memory_deleted', ok: false, id, message: toNoticeText(err) });
+    }
+  }
 
   /**
    * 绑定会话级可观测事件 → 错误提示

@@ -4707,7 +4707,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 同挂载语义——「过程在上 · 报告在下」，命中行属过程类元素，恒在正文上方带）。
    * 聚合更新复用同一元素（isConnected 守卫防翻列表重建后孤儿引用重复插入）；
    * 挂载时机 = 实时（search_memories 命中即见，回答产出前用户就能看到 AI 在翻哪些记忆）。
-   * 列表项 textContent 构建防注入；data-memory-id 为 S3-3 反馈通道预留寻址键。
+   * 列表项 textContent 构建防注入；data-memory-id 为反馈寻址键（S3-3 已接入：
+   * 行尾 ✕ 发 memory_delete，宿主确认后软删，memory_deleted 应答驱动摘除）。
    */
   function renderMemoryHits(): void {
     const host = activeAssistantEl;
@@ -4749,7 +4750,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const [id, hit] of currentMemoryHits) {
       const item = document.createElement('div');
       item.className = 'memory-hits__item';
-      // id 锚进 DOM：S3-3 反馈通道按此寻址（本条只预留，不渲染反馈入口）
+      // id 锚进 DOM：反馈通道按此寻址（memory_deleted 应答按 id 全局摘除，含已归档轮）
       item.dataset.memoryId = id;
       const source = document.createElement('span');
       source.className = 'memory-hits__source';
@@ -4759,6 +4760,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       name.textContent = hit.name || id; // 无名记忆回退 id（不静默空行）
       item.appendChild(source);
       item.appendChild(name);
+      // 反馈入口（HOST-S3-3）：「没用/已过时」→ 发 memory_delete 软删该记忆
+      //（宿主模态二次确认，回收站可恢复）；stopPropagation 防触发外层 <details> 折叠
+      //（与 memoryView 卡片 ✕ 同范式，图标用 icons.ts close——字符图标被 iconLanguage 守卫拦）。
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'memory-hits__remove';
+      removeBtn.type = 'button';
+      removeBtn.title = '没用/已过时？移入回收站（可恢复）';
+      removeBtn.setAttribute('aria-label', `反馈无用：${hit.name || id}`);
+      removeBtn.innerHTML = getIconSvg('close', 10, 10); // 静态 SVG，无外部输入
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'memory_delete', id });
+      });
+      item.appendChild(removeBtn);
       list.appendChild(item);
     }
   }
@@ -5782,6 +5797,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           currentMemoryHits.set(h.id, { name: h.name, source: h.source });
         }
         renderMemoryHits();
+      }
+    } else if (msg.type === 'memory_deleted') {
+      // HOST-S3-3 反馈应答：成功 → 全局摘除该记忆（实时聚合 + 含已归档轮的 DOM 行——
+      // 反馈常发生在回看时，只摘当前轮会漏）；失败 → error 提示。
+      // 宿主侧模态确认「取消」不发本消息（settingsPanel 同款契约），达此分支即真删/真败。
+      if (msg.ok) {
+        currentMemoryHits.delete(msg.id);
+        document.querySelectorAll<HTMLElement>('[data-memory-id]').forEach((el) => {
+          if (el.dataset.memoryId === msg.id) el.remove();
+        });
+        renderMemoryHits(); // 当前轮聚合空则整行摘除（renderMemoryHits 空态分支）
+        showActivity('info', '已反馈「无用」，记忆移入回收站（可在记忆管理中恢复）');
+      } else {
+        showActivity('error', `反馈失败：${msg.message ?? '未知错误'}`);
       }
     } else if (msg.type === 'goal_drift_detected') {
       // 目标漂移检测：展示原目标 vs 新目标 + 相似度，供用户确认或忽略
