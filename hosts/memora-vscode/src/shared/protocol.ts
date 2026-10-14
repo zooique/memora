@@ -876,6 +876,23 @@ export type ExtensionToWebviewMessage =
       kind?: 'decision';
     }
   /**
+   * 记忆命中明细（HOST-S3-1）：LLM 经 search_memories 查询记忆命中 → 宿主监听内核
+   * memoryRecalled 事件后**透明转发**（宿主零加工），webview 在当前轮回答上方渲染
+   * 可展开行「本轮参考了 N 条记忆」（id 去重聚合，一轮多次检索合并为一行）。
+   *
+   * 实时专属：内核 processEvents 落盘轨无此事件 ⇒ 重放历史轮不渲染（诚实降级，
+   * 「无数据源的段不得新造」——不伪造重放数据源）。
+   * hits 可选 = 跨 dist 契约：4.0.x 内核不发此字段，webview 收到缺 hits 的本消息时
+   * **单点降级**为 notice 条数提示（降级逻辑收敛在 webview 渲染层，宿主只转发）。
+   * id 字段为 S3-3 反馈通道预留寻址键（data-memory-id），本条不渲染反馈入口。
+   */
+  | {
+      type: 'memory_hits';
+      count: number;
+      query: string;
+      hits?: { id: string; name: string; source: string }[];
+    }
+  /**
    * Chat Panel 当前激活角色包（消息区顶部角色徽章数据）
    *
    * 面板为通用对话宿主，定位由内置角色包承载。host 在就绪回放时推送，

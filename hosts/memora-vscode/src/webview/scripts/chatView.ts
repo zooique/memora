@@ -527,6 +527,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let roundBlockEl: HTMLDetailsElement | null = null;
   /** round-block 已挂载的 assistant 块（重放去重判定：roundId 首次出现才挂） */
   let roundBlockHostEl: HTMLElement | null = null;
+  /**
+   * 本轮记忆命中聚合（HOST-S3-1）：id → {name, source}，一轮多次 search_memories 按 id
+   * 去重合并为一行「本轮参考了 N 条记忆」。键 = 记忆 id 全局唯一（S3-3 反馈寻址预留）。
+   * 实时专属：重放轨（processEvents）无此事件 ⇒ 重放历史轮不渲染（诚实降级）。
+   * 新轮 meta 清空（与 currentEvents 同点）；旧轮命中行留在旧轮 DOM 随轮固定。
+   */
+  const currentMemoryHits = new Map<string, { name: string; source: string }>(); // Map 原地清空（clear），引用不换
+  /** 当前轮命中行 DOM 引用（聚合更新复用同一元素，防重复插入） */
+  let memoryHitsEl: HTMLDetailsElement | null = null;
   /** 运行时过程平铺容器：运行时**无 round-block 大折叠壳**——
    *  过程（narrate 冒号行 / 工具折叠行 / 思考状态）按任务项时序平铺此容器（挂 label 与
    *  body 之间，透明无边框）；done/interrupted 时 finalize 全量重建 round-block 并移除本容器。
@@ -4692,6 +4701,69 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
+   * 记忆命中可展开行（HOST-S3-1）：当前轮「本轮参考了 N 条记忆」。
+   *
+   * 落位 = 当前 assistant 块内正文（.msg-body）之前（insertBeforeBody 锚点，与过程轨
+   * 同挂载语义——「过程在上 · 报告在下」，命中行属过程类元素，恒在正文上方带）。
+   * 聚合更新复用同一元素（isConnected 守卫防翻列表重建后孤儿引用重复插入）；
+   * 挂载时机 = 实时（search_memories 命中即见，回答产出前用户就能看到 AI 在翻哪些记忆）。
+   * 列表项 textContent 构建防注入；data-memory-id 为 S3-3 反馈通道预留寻址键。
+   */
+  function renderMemoryHits(): void {
+    const host = activeAssistantEl;
+    // 无宿主块 / 聚合为空 → 摘除（新轮清缓存后的兜底，防上一轮行残留引用）
+    if (!host || currentMemoryHits.size === 0) {
+      memoryHitsEl?.remove();
+      memoryHitsEl = null;
+      return;
+    }
+    let el = memoryHitsEl;
+    // 首挂或引用失效（块被翻列表重建）→ 新建并挂到正文之前
+    if (!el || !el.isConnected) {
+      el = document.createElement('details');
+      el.className = 'memory-hits';
+      const summary = document.createElement('summary');
+      summary.className = 'memory-hits__summary';
+      const icon = document.createElement('span');
+      icon.className = 'memory-hits__icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.innerHTML = getIconSvg('history', 12, 12); // 静态 SVG，无外部输入
+      summary.appendChild(icon);
+      const label = document.createElement('span');
+      label.className = 'memory-hits__label';
+      summary.appendChild(label);
+      const list = document.createElement('div');
+      list.className = 'memory-hits__list';
+      el.appendChild(summary);
+      el.appendChild(list);
+      insertBeforeBody(host, el);
+      memoryHitsEl = el;
+    }
+    // summary 文案（N = 聚合去重后条数，textContent 防注入）
+    const label = el.querySelector<HTMLElement>('.memory-hits__label');
+    if (label) label.textContent = `本轮参考了 ${currentMemoryHits.size} 条记忆`;
+    // 列表全量重建（事件量小，简单确定性——与 sectionOf 全量重建同构）
+    const list = el.querySelector<HTMLElement>('.memory-hits__list');
+    if (!list) return;
+    list.textContent = '';
+    for (const [id, hit] of currentMemoryHits) {
+      const item = document.createElement('div');
+      item.className = 'memory-hits__item';
+      // id 锚进 DOM：S3-3 反馈通道按此寻址（本条只预留，不渲染反馈入口）
+      item.dataset.memoryId = id;
+      const source = document.createElement('span');
+      source.className = 'memory-hits__source';
+      source.textContent = hit.source;
+      const name = document.createElement('span');
+      name.className = 'memory-hits__name';
+      name.textContent = hit.name || id; // 无名记忆回退 id（不静默空行）
+      item.appendChild(source);
+      item.appendChild(name);
+      list.appendChild(item);
+    }
+  }
+
+  /**
    * 从 metrics 载荷提取**诊断信号**（未读判据唯一事实源）。
    *
    * 口径：只收「出了事 / 配置变了」的量——工具失败、上下文截断、未解析工具意图、
@@ -5223,6 +5295,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         } else {
           resumePending = false; // 真新轮：清续跑期待——残留 true 会被本分支误消费成续跑（清理纪律与 done/interrupted 对称）
           currentEvents = [];
+          // 新轮：命中聚合重置（HOST-S3-1）——旧轮命中行留在旧轮 DOM 随轮固定，引用置 null 防误更新
+          currentMemoryHits.clear();
+          memoryHitsEl = null;
           livePlanStates = new Map(); // 新轮：实时任务项状态重置（残留会把上轮图标投影进新轮组）
           runtimeInteractiveInputs = []; // 新轮：运行时输入累积重置（形态甲）
           skeletonPendingItems = []; // 新轮：骨架期暂存重置——残留条目已 DOM 落地，清引用即可
@@ -5624,6 +5699,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       updateBackgroundTasksBar(msg.items);
     } else if (msg.type === 'notice') {
       showActivity(msg.level, msg.message, undefined, msg.kind);
+    } else if (msg.type === 'memory_hits') {
+      // HOST-S3-1：记忆命中明细（宿主透明转发内核 memoryRecalled）。
+      // 降级单点：hits 缺失/空 = 4.0.x 内核不发明细 → 回落条数提示（notice 同款形态），
+      // 宿主不分支（跨 dist 容错收敛在渲染层）。
+      if (!msg.hits || msg.hits.length === 0) {
+        showActivity('info', `LLM 查询记忆命中 ${msg.count} 条`);
+      } else {
+        // id 去重聚合：一轮多次检索命中同一条记忆只列一次（Map 键天然去重）
+        for (const h of msg.hits) {
+          currentMemoryHits.set(h.id, { name: h.name, source: h.source });
+        }
+        renderMemoryHits();
+      }
     } else if (msg.type === 'goal_drift_detected') {
       // 目标漂移检测：展示原目标 vs 新目标 + 相似度，供用户确认或忽略
       const pct = Math.round(msg.similarity * 100);

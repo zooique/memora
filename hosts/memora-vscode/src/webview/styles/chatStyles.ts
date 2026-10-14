@@ -1830,6 +1830,42 @@ export const chatStyles = `
   @media (prefers-reduced-motion: reduce) {
     .pending-wait::before { animation: none; }
   }
+  /* 记忆命中可展开行（HOST-S3-1）：本轮「参考了 N 条记忆」低扰胶囊 + 展开命中标题列表。
+   * 与 pending-wait 同族视觉（胶囊弱显），挂正文上方带；默认收起，展开才见明细。 */
+  .memory-hits {
+    margin: var(--sp-2, 6px) 0;
+    border-radius: var(--radius-pill);
+    background: var(--surface-thought, #252526);
+  }
+  .memory-hits > summary {
+    display: flex; align-items: center; gap: var(--sp-2, 6px);
+    padding: var(--sp-2, 6px) var(--sp-3, 8px);
+    cursor: pointer; user-select: none; outline: none;
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .memory-hits > summary:focus-visible { box-shadow: 0 0 0 1px var(--border-focus); }
+  .memory-hits__icon { display: inline-flex; align-items: center; flex-shrink: 0; }
+  .memory-hits__icon svg { display: block; }
+  /* 展开列表：胶囊内缩进平铺命中项（source 徽章 + 标题） */
+  .memory-hits__list {
+    display: flex; flex-direction: column; gap: var(--sp-1, 4px);
+    padding: 0 var(--sp-3, 8px) var(--sp-2, 6px);
+  }
+  .memory-hits__item {
+    display: flex; align-items: baseline; gap: var(--sp-2, 6px);
+    font-size: var(--font-sm, 11px); line-height: var(--lh-normal);
+    word-break: break-all;
+  }
+  .memory-hits__source {
+    flex-shrink: 0;
+    font-size: var(--font-xs, 10px);
+    color: var(--accent, #0e639c);
+    border: var(--line-solid);
+    border-radius: var(--radius-pill);
+    padding: 0 var(--sp-2, 6px);
+  }
+  .memory-hits__name { color: var(--text-primary, #cccccc); }
   .round-block__details {
     margin-top: var(--sp-1, 4px);
     display: flex; flex-direction: column; gap: var(--sp-2, 6px);
@@ -1958,11 +1994,13 @@ export const chatStyles = `
     content: none;
   }
   .round-block summary::-webkit-details-marker,
-  .process-flow summary::-webkit-details-marker {
+  .process-flow summary::-webkit-details-marker,
+  .memory-hits summary::-webkit-details-marker {
     display: none;
   }
   .round-block summary::after,
-  .process-flow summary::after {
+  .process-flow summary::after,
+  .memory-hits summary::after {
     content: '';
     display: inline-block;
     margin-left: var(--sp-2, 6px); /* 与标题文字的衔接间距 */
@@ -1977,7 +2015,8 @@ export const chatStyles = `
      align-self/align-items 替代 vertical-align（flex item 上后者无效） */
   .round-block > summary::after,
   .round-block .round-block__tool-batch-summary::after,
-  .process-flow .round-block__tool-batch-summary::after {
+  .process-flow .round-block__tool-batch-summary::after,
+  .memory-hits > summary::after {
     margin-left: 0;
     align-self: center;
   }
@@ -1987,7 +2026,8 @@ export const chatStyles = `
   }
   @media (prefers-reduced-motion: reduce) {
     .round-block summary::after,
-    .process-flow summary::after {
+    .process-flow summary::after,
+    .memory-hits summary::after {
       transition: none;
     }
   }

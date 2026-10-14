@@ -10089,3 +10089,100 @@ describe('骨架 id 三方一致性（UI-CONFIRM-P6 轻量版）', () => {
     expect(diff(fixture, prod)).toEqual([]);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// 记忆命中可展开行（HOST-S3-1）
+// ═══════════════════════════════════════════════════════════
+// 数据通路 = 宿主透明转发内核 memoryRecalled（memory_hits 消息，实时专属）。
+// 渲染契约：当前轮正文上方聚合行「本轮参考了 N 条记忆」；id 去重（一轮多次检索合并）；
+// hits 缺失 = 4.0.x 内核 → 单点降级条数提示（宿主不分支）；新轮 meta 聚合重置，
+// 旧轮命中行留在旧轮 DOM 随轮固定。变异锁：删去重 → ② 红；删降级 → ③ 红；删新轮清理 → ④ 红。
+describe('记忆命中可展开行（HOST-S3-1）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** 分发一条 memory_hits 消息（hits 传 undefined = 模拟 4.0.x 内核不发明细） */
+  function dispatchHits(
+    hits: { id: string; name: string; source: string }[] | undefined,
+    count?: number,
+  ): void {
+    dispatch({ type: 'memory_hits', count: count ?? hits?.length ?? 0, query: '测试', hits });
+  }
+
+  it('命中到达 → 正文上方渲染命中行（挂载位置 + summary 文案 + 列表项 title/source + data-memory-id）', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '回答中' }); // 建 assistant 块
+    dispatchHits([
+      { id: 'm1', name: '设计约束', source: 'note' },
+      { id: 'm2', name: '上轮方案', source: 'round-summary' },
+    ]);
+    const row = document.querySelector('.memory-hits') as HTMLElement;
+    expect(row).not.toBeNull();
+    // 挂在 assistant 块内、正文（.msg-body）之前（「回答上方一行」落位契约）
+    const assistant = document.querySelector('.msg.assistant') as HTMLElement;
+    const body = assistant.querySelector('.msg-body')!;
+    expect(assistant.contains(row)).toBe(true);
+    expect(body.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(row.querySelector('.memory-hits__label')?.textContent).toBe('本轮参考了 2 条记忆');
+    const items = row.querySelectorAll('.memory-hits__item');
+    expect(items).toHaveLength(2);
+    // 首项：id 锚进 data-memory-id（S3-3 反馈寻址预留）+ 标题 + 来源徽章
+    expect(items[0]!.getAttribute('data-memory-id')).toBe('m1');
+    expect(items[0]!.textContent).toContain('设计约束');
+    expect(items[0]!.querySelector('.memory-hits__source')?.textContent).toBe('note');
+    expect(items[1]!.getAttribute('data-memory-id')).toBe('m2');
+  });
+
+  it('一轮多次检索 → id 去重聚合（重复命中只列一次，N = 去重后条数）', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '回答中' });
+    dispatchHits([{ id: 'm1', name: 'A', source: 'note' }]);
+    // 第二次检索：m1 再次命中 + 新命中 m2 → 合并去重
+    dispatchHits([
+      { id: 'm1', name: 'A', source: 'note' },
+      { id: 'm2', name: 'B', source: 'round-summary' },
+    ]);
+    expect(document.querySelector('.memory-hits__label')?.textContent).toBe('本轮参考了 2 条记忆');
+    // 行复用同一元素（聚合更新不重复插入）
+    expect(document.querySelectorAll('.memory-hits')).toHaveLength(1);
+    expect(document.querySelectorAll('.memory-hits__item')).toHaveLength(2);
+  });
+
+  it('hits 缺失（4.0.x 内核）→ 单点降级条数提示，不渲染命中行', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '回答中' });
+    dispatchHits(undefined, 3);
+    expect(document.querySelector('.memory-hits')).toBeNull();
+    // 降级 = notice 同款形态（activity 条提示），对齐 0.1.0 行为
+    const bar = document.querySelector('.activity-bar') as HTMLElement;
+    expect(bar.textContent).toContain('LLM 查询记忆命中 3 条');
+  });
+
+  it('新轮 meta → 聚合重置：旧行随旧轮固定（计数不污染），新轮另起一行重新累计', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '第一轮' });
+    dispatchHits([{ id: 'm1', name: 'A', source: 'note' }]);
+    const firstRow = document.querySelector('.memory-hits')!;
+    // 真新轮（无暂停锚无续跑期待）→ 聚合清空
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: 'T1', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({ type: 'chunk', content: '第二轮' });
+    dispatchHits([{ id: 'm2', name: 'B', source: 'note' }]);
+    // 旧行：留在旧轮 DOM（随轮固定），计数不被新轮命中污染
+    expect(firstRow.querySelector('.memory-hits__label')?.textContent).toBe('本轮参考了 1 条记忆');
+    // 新轮：新元素另起一行，仅含新命中
+    const rows = document.querySelectorAll('.memory-hits');
+    expect(rows).toHaveLength(2);
+    const secondRow = rows[1] as HTMLElement;
+    expect(secondRow.querySelector('.memory-hits__label')?.textContent).toBe('本轮参考了 1 条记忆');
+    const items = secondRow.querySelectorAll('.memory-hits__item');
+    expect(items).toHaveLength(1);
+    expect(items[0]!.getAttribute('data-memory-id')).toBe('m2');
+  });
+});

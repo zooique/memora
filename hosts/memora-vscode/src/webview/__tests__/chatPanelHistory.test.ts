@@ -286,6 +286,39 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     ]);
   });
 
+  it('onMemoryRecalled：内核记忆命中 → 透明转发 memory_hits（HOST-S3-1，明细原样透传、不再发 notice）', () => {
+    const { provider, posted } = setup();
+    // 模拟内核 search_memories 命中（4.1.0 载荷形态：count + query + hits 明细）
+    (
+      provider as unknown as {
+        onMemoryRecalled(info: {
+          count: number;
+          query: string;
+          hits?: { id: string; name: string; source: string }[];
+        }): void;
+      }
+    ).onMemoryRecalled({
+      count: 2,
+      query: '测试',
+      hits: [
+        { id: 'm1', name: '设计约束', source: 'note' },
+        { id: 'm2', name: '上轮方案', source: 'round-summary' },
+      ],
+    });
+    const data = ofType<{
+      type: string;
+      count: number;
+      query: string;
+      hits?: { id: string }[];
+    }>(posted, 'memory_hits');
+    expect(data).toHaveLength(1);
+    expect(data[0]?.count).toBe(2);
+    expect(data[0]?.query).toBe('测试');
+    expect(data[0]?.hits?.map((h) => h.id)).toEqual(['m1', 'm2']);
+    // 宿主零加工（透明转发）：不另行截断/改写明细；条数提示已由命中行替代，不再发 notice
+    expect(ofType<{ type: string }>(posted, 'notice')).toHaveLength(0);
+  });
+
   it('pushSessionList：无历史时返回空数组（webview 显示空态）', () => {
     const { provider, posted } = setup();
     (provider as unknown as { pushSessionList(): void }).pushSessionList();

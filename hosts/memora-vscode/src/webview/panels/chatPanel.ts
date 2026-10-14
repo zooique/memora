@@ -1448,16 +1448,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * memoryRecalled：LLM 查询记忆库命中 N 条相关记忆
    *
-   * 纯感知增强——用户不知道 LLM 查了哪些历史/笔记，补一个 info 级提示条。
+   * HOST-S3-1：由 notice 条数提示升级为**透明转发** memory_hits——命中明细（hits）
+   * 由 webview 在当前轮回答上方渲染可展开行（「本轮参考了 N 条记忆」）。
+   * - 宿主零加工（不截断、不改写）：载荷形态真源 = 内核 AgentEventMap['memoryRecalled']，
+   *   明细上限由内核 parseLimit（50）单点钳制，此处只转发。
+   * - hits 可选 = 跨 dist 契约：4.0.x 内核不发此字段（内联类型层强制容错）；
+   *   缺 hits 时的条数提示降级收敛在 webview 渲染层单点处理（宿主不分支）。
    * 唯一触发位 = search_memories 工具命中（assembler 接线），
    * 对齐内核 builtinToolHandlers.searchMemories 命中点。
    */
-  private readonly onMemoryRecalled = (info: { count: number; query: string }): void => {
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `LLM 查询记忆命中 ${info.count} 条`,
-    });
+  private readonly onMemoryRecalled = (info: {
+    count: number;
+    query: string;
+    hits?: { id: string; name: string; source: string }[];
+  }): void => {
+    this.post({ type: 'memory_hits', count: info.count, query: info.query, hits: info.hits });
   };
 
   /**

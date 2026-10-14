@@ -539,13 +539,16 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   // ⇒ 新增 1 处 dim 消费者，本表随机械真值同步（该闭包提交的实测 diff）。
   // 18→19：活动时间线限高（.status-dock__timeline max-height: var(--dim-lg)，兑现
   // tokens.ts「活动详情面板高」注释）⇒ 新增 1 处 dim 消费者，同上随实测同步。
+  // lh- 46→47 / line- 69→70：HOST-S3-1 记忆命中行新增消费者各 1 处
+  //（.memory-hits__item 行高 var(--lh-normal) + .memory-hits__source 描边 var(--line-solid)），
+  // 实数经 scripts/count-token-refs.mjs 实锤同步（2026-10-14）。
   const EXPECTED = {
     'z-': 14,
-    'lh-': 46,
+    'lh-': 47,
     'op-': 18, // 初始化按钮禁用态 opacity: var(--op-6)（settingsStyles）+1
     'icon-': 17,
     'dot-': 22,
-    'line-': 69,
+    'line-': 70,
     'sq-': 47,
     'dim-': 19,
   } as const;
