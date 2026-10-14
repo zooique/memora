@@ -238,11 +238,15 @@ export const tokens = `
     --accent-bg-subtle: var(--vscode-editor-inactiveSelectionBackground, rgba(128, 128, 128, 0.2));
     --accent-bg-active: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.35));
 
-    /* === L2 语义令牌：上下文占用充能色（chatStyles 引用） ===
-     * 占用指示器为圆环充能形态（单弧随占用率填充），只需一个充能色；令牌命名 dialogue
-     * ——占用增长主要来自对话层。若恢复「按数据层分段着色」，按
-     * --occ-rolepack / --occ-memory / --occ-input / --occ-output 命名重建。 */
+    /* === L2 语义令牌：上下文占用充能/分段色（chatStyles 引用） ===
+     * 占用指示器双形态：圆环充能（--occ-dialogue 单弧随占用率填充）+ 构成条分段
+     * （HOST-S3-2 常驻轻量构成条，四段按数据层着色）。段名以 contextPreparer 真实结构为准：
+     * 角色包 / 对话 / 输入锚点 / 输出预留——**占用模型无记忆维度**（记忆不占上下文），
+     * 故无 --occ-memory，勿据旧注释重建。purple 回退与 --skill-rolepack-accent 对齐。 */
+    --occ-rolepack: var(--vscode-charts-purple, #a78bfa);
     --occ-dialogue: var(--vscode-charts-blue, #3794ff);
+    --occ-input: var(--vscode-charts-green, #4caf50);
+    --occ-output: var(--vscode-charts-orange, #ffa500);
 
     /* === L2 语义令牌：菜单（dropdown.ts 引用） ===
      * ⚠️ 变量选错已修（2026-10-12 真机截图实锤，勿回改）：--vscode-menu-background /

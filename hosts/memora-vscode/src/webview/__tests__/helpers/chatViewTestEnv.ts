@@ -115,7 +115,8 @@ const HTML = `
             <!-- 能力徽章：同polishBtn，消费侧 null 守卫 ⇒ 缺它不崩但恒不渲染＝静默失测。 -->
             <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
           </div>
-          <!-- ④ 预算可视化：状态行右端上下文占用圆环（容量上限由 chat_providers 实时渲染，真实占用由 context_occupancy 覆盖） -->
+          <!-- ④ 预算可视化：状态行右端上下文占用圆环 + 构成条（容量上限由 chat_providers 实时渲染，真实占用由 context_occupancy 覆盖） -->
+          <div id="occSegments" class="context-segments" hidden></div>
           <div id="contextOccupancy" class="context-ring" hidden>
             <svg class="context-ring__svg" viewBox="0 0 40 40" aria-hidden="true">
               <circle class="context-ring__track" cx="20" cy="20" r="16" />

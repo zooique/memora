@@ -4899,11 +4899,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     fill.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - pct / 100));
   }
 
+  /** 占用分段标签单点（HOST-S3-2）：hover 明细行与构成条段 title 共用，防两处文案漂移 */
+  const SEGMENT_LABELS = {
+    rolePack: '角色包/系统设定',
+    dialogue: '完整对话',
+    inputAnchor: '当前输入锚点',
+    outputReserve: '输出预留',
+    free: '剩余可用',
+  } as const;
+
   /**
    * 组装占用明细弹窗文字（纯文字，多行；供 hover/聚焦浮层展示）。
    *
    * 每行「标签：数量 · token（占比）」；rolePack 额外给「占窗口比例」；
    * UI 只渲染宿主透传的数字与条数，不重算（守内核/宿主边界）。
+   * 标签取自 SEGMENT_LABELS（与构成条段 title 单点共用）。
    */
   function buildOccupancyTipText(
     occ: Extract<ExtensionToWebviewMessage, { type: 'context_occupancy' }>['occupancy'],
@@ -4912,19 +4922,75 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const pctOf = (val: number): string => ((val / total) * 100).toFixed(1) + '%';
     const lines: string[] = [`上下文占用（总容量 ${fmtTokens(occ.totalTokens)}）`];
     lines.push(
-      `角色包/系统设定：${fmtTokens(occ.rolePackBaseTokens)}（占窗口 ${pctOf(occ.rolePackBaseTokens)}）`,
+      `${SEGMENT_LABELS.rolePack}：${fmtTokens(occ.rolePackBaseTokens)}（占窗口 ${pctOf(occ.rolePackBaseTokens)}）`,
     );
     lines.push(
-      `完整对话：${occ.dialogueCount} 条 · ${fmtTokens(occ.dialogueTokens)}（${pctOf(occ.dialogueTokens)}）`,
+      `${SEGMENT_LABELS.dialogue}：${occ.dialogueCount} 条 · ${fmtTokens(occ.dialogueTokens)}（${pctOf(occ.dialogueTokens)}）`,
     );
     lines.push(
-      `当前输入锚点：${fmtTokens(occ.inputAnchorTokens)}（${pctOf(occ.inputAnchorTokens)}）`,
+      `${SEGMENT_LABELS.inputAnchor}：${fmtTokens(occ.inputAnchorTokens)}（${pctOf(occ.inputAnchorTokens)}）`,
     );
     lines.push(
-      `输出预留：${fmtTokens(occ.outputReserveTokens)}（${pctOf(occ.outputReserveTokens)}）`,
+      `${SEGMENT_LABELS.outputReserve}：${fmtTokens(occ.outputReserveTokens)}（${pctOf(occ.outputReserveTokens)}）`,
     );
-    lines.push(`剩余可用：${fmtTokens(occ.freeTokens)}（${pctOf(occ.freeTokens)}）`);
+    lines.push(`${SEGMENT_LABELS.free}：${fmtTokens(occ.freeTokens)}（${pctOf(occ.freeTokens)}）`);
     return lines.join('\n');
+  }
+
+  /**
+   * 构成条渲染（HOST-S3-2）：四段真实占用 + 剩余按 token 数比例拼满常驻分段条。
+   *
+   * 每段 flex-grow = 该段 token 数（flex-basis 0 ⇒ 宽度精确按比例），原生 title 出
+   * 单段明细（与 buildOccupancyTipText 共用 SEGMENT_LABELS 及同一格式化口径，两处零漂移）；
+   * UI 只渲染宿主透传的数字，不重算（守内核/宿主边界）。每次全量重建（5 个 div，无需 diff）。
+   */
+  function renderOccupancySegments(
+    occ: Extract<ExtensionToWebviewMessage, { type: 'context_occupancy' }>['occupancy'],
+  ): void {
+    const bar = document.getElementById('occSegments');
+    if (!bar) return;
+    const total = Math.max(1, occ.totalTokens);
+    const pctOf = (val: number): string => ((val / total) * 100).toFixed(1) + '%';
+    // 段序 = 台账口径四段（角色包/对话/输入锚点/输出预留）+ 剩余；title 与 hover 明细行同格式
+    const segments: { cls: string; tokens: number; title: string }[] = [
+      {
+        cls: 'rolepack',
+        tokens: occ.rolePackBaseTokens,
+        title: `${SEGMENT_LABELS.rolePack}：${fmtTokens(occ.rolePackBaseTokens)}（占窗口 ${pctOf(occ.rolePackBaseTokens)}）`,
+      },
+      {
+        cls: 'dialogue',
+        tokens: occ.dialogueTokens,
+        title: `${SEGMENT_LABELS.dialogue}：${occ.dialogueCount} 条 · ${fmtTokens(occ.dialogueTokens)}（${pctOf(occ.dialogueTokens)}）`,
+      },
+      {
+        cls: 'input',
+        tokens: occ.inputAnchorTokens,
+        title: `${SEGMENT_LABELS.inputAnchor}：${fmtTokens(occ.inputAnchorTokens)}（${pctOf(occ.inputAnchorTokens)}）`,
+      },
+      {
+        cls: 'output',
+        tokens: occ.outputReserveTokens,
+        title: `${SEGMENT_LABELS.outputReserve}：${fmtTokens(occ.outputReserveTokens)}（${pctOf(occ.outputReserveTokens)}）`,
+      },
+      {
+        cls: 'free',
+        tokens: occ.freeTokens,
+        title: `${SEGMENT_LABELS.free}：${fmtTokens(occ.freeTokens)}（${pctOf(occ.freeTokens)}）`,
+      },
+    ];
+    bar.replaceChildren(
+      ...segments.map((seg) => {
+        // 段 div：flex-grow = token 数（比例真源），flex-basis 0 ⇒ 宽度按比例精确拼满
+        const el = document.createElement('div');
+        el.className = `context-segments__seg context-segments__seg--${seg.cls}`;
+        el.style.flexGrow = String(Math.max(0, seg.tokens));
+        el.style.flexBasis = '0';
+        el.title = seg.title;
+        return el;
+      }),
+    );
+    bar.hidden = false;
   }
 
   /**
@@ -4954,18 +5020,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (percentEl) percentEl.textContent = '0%';
     // 空态明细复用 buildOccupancyTipText（同一份明细拼装，不手写第二份）：
     // 全 0 占用 + free=total（100% 剩余），与真实态共用同一行结构与格式
+    const emptyOcc = {
+      totalTokens: active.limitTokens,
+      rolePackBaseTokens: 0,
+      dialogueTokens: 0,
+      dialogueCount: 0,
+      inputAnchorTokens: 0,
+      outputReserveTokens: 0,
+      freeTokens: active.limitTokens,
+    };
     const tipEl = document.getElementById('occTip');
     if (tipEl) {
-      tipEl.textContent = buildOccupancyTipText({
-        totalTokens: active.limitTokens,
-        rolePackBaseTokens: 0,
-        dialogueTokens: 0,
-        dialogueCount: 0,
-        inputAnchorTokens: 0,
-        outputReserveTokens: 0,
-        freeTokens: active.limitTokens,
-      });
+      tipEl.textContent = buildOccupancyTipText(emptyOcc);
     }
+    // 空态构成条同步渲染（全 free 段，真实占用待 context_occupancy 覆盖）
+    renderOccupancySegments(emptyOcc);
   }
 
   /**
@@ -4991,6 +5060,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (percentEl) percentEl.textContent = usedPct.toFixed(0) + '%';
     const tipEl = document.getElementById('occTip');
     if (tipEl) tipEl.textContent = buildOccupancyTipText(occ);
+    // 构成条（HOST-S3-2）同步更新：四段真实占用 + 剩余常驻一瞥
+    renderOccupancySegments(occ);
   }
 
   /**

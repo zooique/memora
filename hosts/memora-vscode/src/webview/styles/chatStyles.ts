@@ -1216,6 +1216,26 @@ export const chatStyles = `
   @media (prefers-reduced-motion: reduce) {
     .context-ring__fill { transition: none; }
   }
+  /* 构成条（HOST-S3-2）：圆环左侧常驻轻量分段比例条，四段真实占用 + 剩余按 token 数
+   * flex-grow（JS 内联）拼满；每段原生 title 出单段明细（与 hover 明细共用 SEGMENT_LABELS
+   * 单点文案，零新浮层）。圆环 hover 完整明细保留不动——常驻一瞥构成 + hover 精确数字分层。
+   * 宽度复用 --dim-md（进度条最小宽同用途域）；高度 4px 为 C 类一次性维度（无对应刻度档，
+   * 见 tokensClosure 值守卫基线注释登记）。 */
+  .context-segments {
+    display: flex;
+    width: var(--dim-md, 60px);
+    height: 4px;
+    border-radius: var(--radius-pill);
+    overflow: hidden; /* 段拼满条形，圆角裁切段边缘 */
+    background: var(--surface-track, #2a2a2a); /* free 段透明，剩余由底色承载 */
+    flex-shrink: 0;
+  }
+  .context-segments__seg { min-width: 0; }
+  .context-segments__seg--rolepack { background: var(--occ-rolepack); }
+  .context-segments__seg--dialogue { background: var(--occ-dialogue); }
+  .context-segments__seg--input { background: var(--occ-input); }
+  .context-segments__seg--output { background: var(--occ-output); }
+  .context-segments__seg--free { background: transparent; }
   /* 唯一视觉卡片：边框 + 圆角 + 阴影 + 背景（全部集中在此） */
   /* 🔴 [hidden] 覆盖（2026-10-05 真机实锤）：display:flex 会覆盖 HTML hidden 属性
    * （hidden 的 display:none 来自 UA 样式表，author 层任何 display 声明都赢它）——

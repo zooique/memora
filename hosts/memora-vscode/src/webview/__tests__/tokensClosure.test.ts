@@ -188,12 +188,15 @@ const EXEMPT_PROPS = new Set([
  *         settingsStyles .ce-summary `padding: 7px …`（摘要行上下内距，无 7px 档）、
  *         settingsStyles .ce-editor `border-top: 0.5px …`（border-top 不在边框宽度豁免属性内）。
  *         基线随实测同步（count-token-refs.mjs 机械真值），非放水：新增不登记即红。
+ *    23 → 占用构成条（HOST-S3-2，2026-10-14）：chatStyles .context-segments `height: 4px`
+ *         （分段比例条厚度，无对应刻度档——--dot-* 语义为圆点直径、--sq-* 下界 16px，均不适用）
+ *         按 C 类一次性维度登记，与 .ce-summary 7px 同路径。
  * 为何要跟着降：若基线停在初始值，消化出的 94+ 处会变成「可新增而不报错」的余额，
  * 等于给未来的裸值开了口子。门必须随债务一起往下走。
- * 现状（2026-10-14）：清单已至 22 ⇒ 硬门 toEqual(22)（见守卫断言）。
- * 残余 22 = C 类 22（一次性维度，显式硬门例外）；A 类 4 已于 2026-10-12 闭包（见上 20 行）。
+ * 现状（2026-10-14）：清单已至 23 ⇒ 硬门 toEqual(23)（见守卫断言）。
+ * 残余 23 = C 类 23（一次性维度，显式硬门例外）；A 类 4 已于 2026-10-12 闭包（见上 20 行）。
  */
-const FROZEN_VALUE_BASELINE = 22;
+const FROZEN_VALUE_BASELINE = 23;
 
 /** 剥离 var() 整体（含其 fallback），残留者才是真裸值 */
 const stripVar = (v: string): string => v.replace(/var\(\s*--[\w-]+(\s*,[^)]*)?\)/g, '');
@@ -233,7 +236,7 @@ describe('设计令牌值守卫（裸值冻结 + 防新增）', () => {
     expect(scanned, '扫描到的 CSS 声明为 0——提取正则或路径已失效').toBeGreaterThan(500);
   });
 
-  it('裸值债务硬门：必须等于 22（A 类 4 已闭包；残余 = C 类 22 一次性维度，偏离即红）', () => {
+  it('裸值债务硬门：必须等于 23（A 类 4 已闭包；残余 = C 类 23 一次性维度，偏离即红）', () => {
     const { violations } = collectValueViolations();
     if (violations.length > 0) {
       const byProp = new Map<string, number>();
@@ -542,6 +545,8 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   // lh- 46→47 / line- 69→70：HOST-S3-1 记忆命中行新增消费者各 1 处
   //（.memory-hits__item 行高 var(--lh-normal) + .memory-hits__source 描边 var(--line-solid)），
   // 实数经 scripts/count-token-refs.mjs 实锤同步（2026-10-14）。
+  // dim- 19→20：HOST-S3-2 占用构成条宽度 var(--dim-md)（.context-segments，复用「进度条
+  // 最小宽」同用途域刻度）新增 1 处消费者，同上随实测同步（2026-10-14）。
   const EXPECTED = {
     'z-': 14,
     'lh-': 47,
@@ -550,7 +555,7 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     'dot-': 22,
     'line-': 70,
     'sq-': 47,
-    'dim-': 19,
+    'dim-': 20,
   } as const;
 
   for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {

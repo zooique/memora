@@ -4257,6 +4257,9 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             <button id="currentRoleBadge" class="role-badge" type="button" title="点击管理角色包"></button>
             <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
           </div>
+          <!-- 构成条（HOST-S3-2）：常驻轻量分段比例条（四段真实占用 + 剩余），随 context_occupancy /
+               chat_providers 空态渲染；每段 title 出单段明细，圆环 hover 完整明细保留 -->
+          <div id="occSegments" class="context-segments" hidden></div>
           <!-- 上下文占用圆环：常驻不占行，非噪点；首帧由 chat_providers 渲染所选模型容量上限，
                真实分层占用由首轮后 context_occupancy 覆盖 -->
           <div id="contextOccupancy" class="context-ring" hidden>
