@@ -558,7 +558,7 @@ export interface AgentOptions {
    * 若 dataDir 是项目级目录，注册表随之落进各项目内、只含项目自身条目，按名切换不成立。
    */
   registryDir?: string;
-  /** 最大上下文 token 数（默认 120000） */
+  /** 最大上下文 token 数（缺省 = AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS，数字以该常量为真源、不在此落账） */
   maxContextTokens?: number;
   /**
    * per-LLM 输出预算默认值（token，可选）：宿主 per-LLM 配置（配置面板「输出上限」）透传，

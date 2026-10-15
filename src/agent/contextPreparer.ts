@@ -41,7 +41,7 @@ export interface ContextPreparerDeps {
     tracer: ITracer | null;
     /** 界面文案（最近对话 / 用户 / 助手标签） */
     messages: UIMessages | undefined;
-    /** 上下文窗口容量（token）：唯一真理源 = 宿主在构造内核前经 resolveContextWindow(window) 解析注入的单一数字（per-LLM 窗口，缺失回退默认 120K）。内核预算路径只消费单一数字，不认 provider/用户双层来源 */
+    /** 上下文窗口容量（token）：唯一真理源 = 宿主在构造内核前经 resolveContextWindow(window) 解析注入的单一数字（per-LLM 窗口，缺失回退 = AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS，数字以该常量为真源、不在此落账）。内核预算路径只消费单一数字，不认 provider/用户双层来源 */
     maxContextTokens: number;
   };
   /** 事件发射（桥接到 Agent 强类型 emit） */
@@ -90,7 +90,7 @@ export class ContextPreparer {
 
     // ── 上下文预算：动态预算装配（role-pack-spec §C） ──
     // 容量来源：windowTokens = deps.config.maxContextTokens —— 单一数字，已由宿主在构造内核 Agent 前
-    // 经内核 resolveContextWindow(window) 解析（per-LLM 窗口为唯一真理源，缺失回退默认 120K）后注入；内核预算路径只消费单一数字，不认 provider/用户双层来源。
+    // 经内核 resolveContextWindow(window) 解析（per-LLM 窗口为唯一真理源，缺失回退 = AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS）后注入；内核预算路径只消费单一数字，不认 provider/用户双层来源。
     // 固定开销取 system prompt；顶级锚点 = 本轮用户输入（独立划块，永不压缩）；完整对话层从最近往回塞到 ~90% 止
     const loop = deps.loop;
     const loopMessages = loop.getMessages();

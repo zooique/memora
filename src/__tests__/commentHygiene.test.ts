@@ -126,3 +126,93 @@ describe('注释定位守卫：禁止行号引用（行号无 SSOT）', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * JSDoc 记号卫生守卫——捕捉「注释正文含块注释止符记号」的破坏症状（孤儿星行）
+ *
+ * **实证背景**：2026-10-10 loop.ts 契约显化首批落地时，守卫初版 JSDoc 正文写了字面
+ * 止符记号，JSDoc 被提前终止，后续行被当作代码吞进模板字符串，连环 parse error。
+ * 结论（盘点真源 `deliverables/loop契约显化-盘点与首批落地-20261010.md` §五）：
+ * 止符记号进注释正文 = parse 破坏器，值得升门禁。
+ *
+ * **判据（症状检测，零意图猜测）**：单行字符串感知状态机跟踪 code / 块注释 / 行注释 /
+ * 字符串 / 模板串五态；凡**处于 code 态**的行以「星号 + 空格」或裸星号或止符记号开头
+ * ⇒ 该行是「本该在注释里、却被提前终止甩出注释」的孤儿星行 = 止符记号破坏的症状。
+ * 模板串/字符串内的星号行（提示词散文、markdown 列表）不误报——状态机已在字符串态跳过。
+ *
+ * **判据边界（诚实登记）**：① 只检症状（孤儿星行），不还原作者意图；② 不跟踪模板串
+ * `${}` 嵌套与正则字面量——嵌套反引号/正则内引号可造成状态漂移，按「宁可响亮失败，
+ * 不可静默放过」口径接受；③ 行注释里的止符记号无害（行注释到行尾为止），不检。
+ * 本文件自身亦被扫描——新增注释不得写出破坏性记号本体。
+ */
+describe('JSDoc 记号卫生守卫：注释正文止符记号 = parse 破坏器（孤儿星行检测）', () => {
+  it('src/ 无孤儿星行——code 态的星号行 = 注释被提前终止的症状', () => {
+    /** 五态状态机：code 态跨行携带；行注释/字符串到行尾复位（合法 TS 字符串不跨行）；块注释/模板串跨行携带 */
+    type ScanState = 'code' | 'block' | 'line' | 'dq' | 'sq' | 'tick';
+    const offenders: string[] = [];
+    let scannedLines = 0;
+    for (const file of collectSources(SRC_ROOT)) {
+      let state: ScanState = 'code';
+      readFileSync(file, 'utf8')
+        .split('\n')
+        .forEach((raw, idx) => {
+          const line = raw.replace(/\r$/, '');
+          const trimmed = line.trimStart();
+          // 孤儿星行：行首处于 code 态（上一行未处在块注释/模板串中）却呈注释续行形态
+          if (
+            state === 'code' &&
+            (trimmed === '*' || trimmed.startsWith('* ') || trimmed.startsWith('*/'))
+          ) {
+            offenders.push(`${relPath(file)}:${idx + 1} → ${trimmed.slice(0, 40)}`);
+          }
+          // 逐字符推进状态机（字符串感知，同 indexOfCommentStart 口径；模板串跨行携带）
+          for (let i = 0; i < line.length; i++) {
+            const c = line[i];
+            const n = line[i + 1];
+            switch (state) {
+              case 'code':
+                if (c === '/' && n === '/') state = 'line';
+                else if (c === '/' && n === '*') {
+                  state = 'block';
+                  i++;
+                } else if (c === '"') state = 'dq';
+                else if (c === "'") state = 'sq';
+                else if (c === '`') state = 'tick';
+                break;
+              case 'block':
+                if (c === '*' && n === '/') {
+                  state = 'code';
+                  i++;
+                }
+                break;
+              case 'dq':
+                if (c === '\\') i++;
+                else if (c === '"') state = 'code';
+                break;
+              case 'sq':
+                if (c === '\\') i++;
+                else if (c === "'") state = 'code';
+                break;
+              case 'tick':
+                if (c === '\\') i++;
+                else if (c === '`') state = 'code';
+                break;
+              case 'line':
+                break;
+            }
+          }
+          scannedLines++;
+          // 行注释与单行字符串必然在行尾闭合（合法 TS 不跨行）；块注释/模板串合法跨行
+          if (state === 'line' || state === 'dq' || state === 'sq') state = 'code';
+        });
+    }
+    // 非空反向守卫：扫描面塌陷立即红，防「空集假绿」（同上一 describe 口径）
+    expect(scannedLines, '扫描行数为 0——守卫路径或递归已失效').toBeGreaterThan(1000);
+    expect(
+      offenders,
+      `以下位置是「注释被提前终止后甩出的孤儿星行」——查该行上方的 JSDoc/块注释，` +
+        `正文里的块注释止符记号会提前终止注释、把后续代码吞进解析（本仓 2026-10-10 活案例）：\n` +
+        `${offenders.join('\n')}`,
+    ).toEqual([]);
+  });
+});

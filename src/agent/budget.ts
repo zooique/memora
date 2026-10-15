@@ -42,7 +42,7 @@ export const MIN_RUNNABLE_DIALOGUE_TOKENS = 128;
 
 /** 预算计算入参 */
 export interface ContextBudgetInput {
-  /** 上下文窗口容量（token）：唯一真理源 = 宿主在构造内核前经 resolveContextWindow(window) 解析注入的单一数字（per-LLM 窗口，缺失回退默认 120K）。内核预算路径只消费单一数字，不认 provider/用户双层来源 */
+  /** 上下文窗口容量（token）：唯一真理源 = 宿主在构造内核前经 resolveContextWindow(window) 解析注入的单一数字（per-LLM 窗口，缺失回退 = AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS，数字以该常量为真源、不在此落账）。内核预算路径只消费单一数字，不认 provider/用户双层来源 */
   readonly windowTokens: number;
   /** 固定开销（system+persona+rules+技能L1+工具schema，token） */
   readonly fixedOverheadTokens: number;
@@ -58,7 +58,8 @@ export interface ContextBudgetInput {
  * 解析有效上下文窗口（SSOT 单源公式，宿主在构造内核 Agent 前调用）。
  *
  * 唯一真理源 = 用户 per-LLM 配置的上下文上限（宿主装配时传入）；未配置 → 回退内核默认
- * DEFAULT_MAX_CONTEXT_TOKENS（120_000）。内核预算路径只吃单一数字 maxContextTokens，
+ * AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS（数字以该常量为真源，不在此落账——真源改值时
+ * 注释不跟随会变撒谎）。内核预算路径只吃单一数字 maxContextTokens，
  * 不认 provider/用户双来源、不施加全局封顶——用户对自己填写的参数负责。
  */
 export function resolveContextWindow(window?: number): number {
