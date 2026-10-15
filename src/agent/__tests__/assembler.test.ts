@@ -417,7 +417,7 @@ describe('assembleComponents', () => {
         }),
       );
       // 建立会话检查点（writePlan 依赖 checkpoint 已建）
-      output.sessionManager.createCheckpoint('小组会议：讨论');
+      output.sessionManager.createCheckpoint();
       // 预置多步会议计划：组员1 与组员2 各一项（均带 rolePack）
       output.sessionManager.writePlan('overwrite', [
         { description: '组员1发言', rolePack: '组员1' },
@@ -463,7 +463,7 @@ describe('assembleComponents', () => {
         createPctx(),
         createInput({ hooks: { emit: vi.fn(), isChatBusy: () => false, requestPause: vi.fn() } }),
       );
-      output.sessionManager.createCheckpoint('回归：任务表未完成约束');
+      output.sessionManager.createCheckpoint();
       output.sessionManager.writePlan('overwrite', [
         { description: '步骤一' },
         { description: '步骤二' },
@@ -486,7 +486,7 @@ describe('assembleComponents', () => {
         createPctx(),
         createInput({ hooks: { emit: vi.fn(), isChatBusy: () => false, requestPause: vi.fn() } }),
       );
-      output.sessionManager.createCheckpoint('回归：任务表全 done');
+      output.sessionManager.createCheckpoint();
       output.sessionManager.writePlan('overwrite', [{ description: '单步完成' }]);
       const cp = output.sessionManager.getCheckpoint()!;
       expect(output.sessionManager.updatePlanItemStatus(cp.plan[0]!.id, 'done')).toBe(true);
@@ -550,7 +550,7 @@ describe('assembleComponents', () => {
 
     it('writePlan 返回的 8 位短 id 经 task_table_update 可命中真实任务项（toolExecutor 解析 + 装配 updatePlanItem + sessionManager 全等）', async () => {
       const output = await assembleReal();
-      output.sessionManager.createCheckpoint('测试计划');
+      output.sessionManager.createCheckpoint();
       const newPlan = output.sessionManager.writePlan('overwrite', [
         { description: '第一步' },
         { description: '第二步' },
@@ -572,7 +572,7 @@ describe('assembleComponents', () => {
 
     it('行首序号经 task_table_update 在真实装配链同样命中（order 与 id 映射一致）', async () => {
       const output = await assembleReal();
-      output.sessionManager.createCheckpoint('测试计划');
+      output.sessionManager.createCheckpoint();
       const newPlan = output.sessionManager.writePlan('overwrite', [
         { description: '步骤甲' },
         { description: '步骤乙' },
@@ -591,7 +591,7 @@ describe('assembleComponents', () => {
 
     it('未知 8 位短 id → PLAN_ITEM_NOT_FOUND 且不触碰任何任务项', async () => {
       const output = await assembleReal();
-      output.sessionManager.createCheckpoint('测试计划');
+      output.sessionManager.createCheckpoint();
       output.sessionManager.writePlan('overwrite', [{ description: '唯一步骤' }]);
 
       const result = await output.toolExec.execute(
@@ -606,7 +606,7 @@ describe('assembleComponents', () => {
 
     it('最后一项标 done（≥3 项无验证任务项）→ 工具结果附收尾验证 nudge（ME-10）', async () => {
       const output = await assembleReal();
-      output.sessionManager.createCheckpoint('测试计划');
+      output.sessionManager.createCheckpoint();
       output.sessionManager.writePlan('overwrite', [
         { description: '实现功能 A' },
         { description: '实现功能 B' },
@@ -638,7 +638,7 @@ describe('assembleComponents', () => {
 
     it('全 done 但已有验证任务项 → 不附 nudge（零打扰）', async () => {
       const output = await assembleReal();
-      output.sessionManager.createCheckpoint('测试计划');
+      output.sessionManager.createCheckpoint();
       output.sessionManager.writePlan('overwrite', [
         { description: '实现功能 A' },
         { description: '实现功能 B' },
@@ -704,7 +704,7 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
 
   it('onPlanItemBoundary：写入当前 active 任务项的 planItemLog（形态②：不改 plan 状态）', async () => {
     const out = await assembleWithHooks();
-    out.sessionManager.createCheckpoint('测试计划');
+    out.sessionManager.createCheckpoint();
     const plan = out.sessionManager.writePlan('overwrite', [{ description: '步骤一' }]);
     const planItemId = plan[0]!.id;
     // 变更前快照：active 未 done（LLM 未显式 update，边界不得自动推进）
@@ -721,7 +721,7 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
 
   it('getActivePlanItemMeta：有 active 任务项返回 planItemId/title', async () => {
     const out = await assembleWithHooks();
-    out.sessionManager.createCheckpoint('测试计划');
+    out.sessionManager.createCheckpoint();
     const plan = out.sessionManager.writePlan('overwrite', [{ description: '活动步骤' }]);
     const meta = out.loop.getActivePlanItemMeta!();
     expect(meta).toEqual({ planItemId: plan[0]!.id, title: '活动步骤' });
@@ -734,7 +734,7 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
 
   it('hasInflightPlan：装配链上写入计划后为真（存在未完成任务项）', async () => {
     const out = await assembleWithHooks();
-    out.sessionManager.createCheckpoint('测试计划');
+    out.sessionManager.createCheckpoint();
     // 空 plan → 不在途
     expect(out.loop.hasInflightPlan!()).toBe(false);
     out.sessionManager.writePlan('overwrite', [{ description: '步骤一' }]);
@@ -744,7 +744,7 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
 
   it('hasInflightPlan：全部 done → 为假（ensureActivePlanItem 场景 3，无 pending/active）', async () => {
     const out = await assembleWithHooks();
-    out.sessionManager.createCheckpoint('测试计划');
+    out.sessionManager.createCheckpoint();
     const plan = out.sessionManager.writePlan('overwrite', [{ description: '唯一步骤' }]);
     out.sessionManager.updatePlanItemStatus(plan[0]!.id, 'done');
     // 全 done：既无 active 也无 pending → 不在途（区别于「表存在」口径）
@@ -753,7 +753,7 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
 
   it('planManager.writePlan：返回含任务项摘要与角色标注的渲染结果', async () => {
     const out = await assembleWithHooks();
-    out.sessionManager.createCheckpoint('测试计划');
+    out.sessionManager.createCheckpoint();
     // 直接触发装配的 planManager（writePlan 分发归 SessionManager）
     const rendered = out.toolExec.planManager!.writePlan('overwrite', [
       { description: '组员发言', rolePack: '组员1' },
@@ -764,7 +764,7 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
 
   it('planManager.updatePlanItem：不存在的任务项 → 结构化抛错（B5-e 消亡口径，不再裸文本）', async () => {
     const out = await assembleWithHooks();
-    out.sessionManager.createCheckpoint('测试计划');
+    out.sessionManager.createCheckpoint();
     await expect(
       Promise.resolve().then(() => out.toolExec.planManager!.updatePlanItem('nope', 'done')),
     ).rejects.toThrow('未找到任务项 nope');

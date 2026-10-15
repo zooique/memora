@@ -1230,31 +1230,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   };
 
   /**
-   * goalDriftDetected：会话目标漂移检测（相似度低于阈值）
-   *
-   * 内核 GoalConsistencyChecker 在每轮对话后检测当前目标与初始目标的相似度，
-   * 触发此事件时说明会话可能已偏离用户初衷。推送给 webview 展示确认交互。
-   */
-  private readonly onGoalDriftDetected = (info: {
-    sessionId: string;
-    mainGoal: string;
-    newGoal: string;
-    similarity: number;
-    level: 'same' | 'confirm' | 'drift';
-    constraints: string[];
-    goalChangeSeq: number;
-  }): void => {
-    this.post({
-      type: 'goal_drift_detected',
-      mainGoal: info.mainGoal,
-      newGoal: info.newGoal,
-      similarity: info.similarity,
-      level: info.level,
-      constraints: info.constraints,
-    });
-  };
-
-  /**
    * sessionForked：会话分叉成功（内核 SessionManager.forkSession 完成后触发）
    *
    * 补充通知路径：host 当前在 forkCurrentSession() 中直接处理分叉结果（同步切换+回放），
@@ -1550,11 +1525,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // memoryRecalled：LLM 回答前召回 N 条记忆 → info 级感知提示
     a.off('memoryRecalled', this.onMemoryRecalled);
     a.on('memoryRecalled', this.onMemoryRecalled);
-    // 高价值事件：输入过大预警 + 目标漂移检测
+    // 高价值事件：输入过大预警
     a.off('inputTooLarge', this.onInputTooLarge);
     a.on('inputTooLarge', this.onInputTooLarge);
-    a.off('goalDriftDetected', this.onGoalDriftDetected);
-    a.on('goalDriftDetected', this.onGoalDriftDetected);
     // 中价值事件：分叉完成 + 去重完成 + 槽位澄清
     a.off('sessionForked', this.onSessionForked);
     a.on('sessionForked', this.onSessionForked);

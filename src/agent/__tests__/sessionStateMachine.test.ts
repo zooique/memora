@@ -21,9 +21,6 @@ function makeErrorCheckpoint(cause: string, recovered = false): SessionCheckpoin
     sessionId: 'test-session',
     status: 'error',
     error: { cause, at: Date.now(), recovered },
-    mainGoal: 'test',
-    currentGoal: 'test',
-    goalChangeSeq: 1,
     plan: [],
     lastHeartbeat: Date.now(),
   };
@@ -34,9 +31,6 @@ function makeNoErrorCheckpoint(): SessionCheckpoint {
   return {
     sessionId: 'test-session',
     status: 'running',
-    mainGoal: 'test',
-    currentGoal: 'test',
-    goalChangeSeq: 1,
     plan: [],
     lastHeartbeat: Date.now(),
   };
@@ -283,9 +277,6 @@ describe('SessionStateMachine — ERROR 恢复校验', () => {
     const checkpoint: SessionCheckpoint = {
       sessionId: 'test',
       status: 'error',
-      mainGoal: 'test',
-      currentGoal: 'test',
-      goalChangeSeq: 1,
       plan: [],
       lastHeartbeat: Date.now(),
     };

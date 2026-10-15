@@ -24,8 +24,6 @@ import type {
   PauseMeta,
   PauseSource,
 } from '@/agent/types.js';
-import { GoalConsistencyChecker } from '@/agent/managers/goalConsistencyChecker.js';
-import type { GoalConsistencyResult } from '@/agent/managers/goalConsistencyChecker.js';
 import { SessionStateMachine } from '@/agent/sessionStateMachine.js';
 
 /**
@@ -54,8 +52,6 @@ export class SessionManager {
   private stateMachine: SessionStateMachine;
   /** 当前会话检查点（运行时状态快照） */
   private checkpoint: SessionCheckpoint | null = null;
-  /** 目标一致性校验器（目标版本一致性校验） */
-  private readonly consistencyChecker: GoalConsistencyChecker;
   /**
    * 连续暂停时间戳数组（防滥用窗口）：每次高风险暂停记录时间戳，窗口（1 小时）内连续 2 次则强制降为低风险暂停。
    * ⚠ 进程内状态，不入 SessionCheckpoint——重启归零是设计（反滥用卫生状态，非执行状态）；1h 窗口自愈防线，勿引入持久化。
@@ -86,7 +82,6 @@ export class SessionManager {
     this.isChatBusy = isChatBusy;
     this.emitEvent = emitEvent;
     this.stateMachine = new SessionStateMachine('running');
-    this.consistencyChecker = new GoalConsistencyChecker();
   }
 
   // ─── SSOT 状态机代理（封装 stateMachine，暴露有界接口） ───
@@ -384,30 +379,12 @@ export class SessionManager {
 
   // ─── 不中断工作模型：检查点 + 状态机 ──────────────────
 
-  /**
-   * 检查点必需字段默认值工厂（默认值单一真理源）。
-   * 仅 createCheckpoint 新建/合并时使用——反序列化采用严格模式，不做静默补齐。
-   * 必须返回新实例：数组/对象默认值共享引用会让不同检查点互相污染（一个 push 计划任务项另一凭空多出）。
-   */
-  private static checkpointDefaults(): Pick<
-    SessionCheckpoint,
-    'mainGoal' | 'currentGoal' | 'goalChangeSeq' | 'plan'
-  > {
-    return {
-      mainGoal: '',
-      currentGoal: '',
-      goalChangeSeq: 0,
-      plan: [],
-    };
-  }
-
   /** 从当前运行时状态创建检查点：快照消息历史与会话标识生成 SessionCheckpoint（纯内存态，
    *  不落盘——中止/断电走中断轮补全，运行时暂停同 turn 内存续跑） */
-  createCheckpoint(mainGoal?: string): SessionCheckpoint {
+  createCheckpoint(): SessionCheckpoint {
     const history = this.getHistory();
 
     const prev = this.checkpoint;
-    const defaults = SessionManager.checkpointDefaults();
 
     // 合并语义：以已有检查点为基底展开，仅覆写本次重算的字段。
     // 【禁止改回对象字面量整体重建】——整体重建≈隐式字段白名单，任何未显式列出的字段每次 pause 被静默丢弃
@@ -427,11 +404,8 @@ export class SessionManager {
             recovered: false,
           }
         : undefined,
-      mainGoal: mainGoal ?? prev?.mainGoal ?? defaults.mainGoal,
-      // 不传 mainGoal 时保留已有 currentGoal（防 pause() 内调用覆盖 updateGoal 的更新）
-      currentGoal: mainGoal ?? prev?.currentGoal ?? prev?.mainGoal ?? defaults.currentGoal,
-      goalChangeSeq: prev?.goalChangeSeq ?? defaults.goalChangeSeq,
-      plan: prev?.plan ?? defaults.plan,
+      // plan 缺省必须是新数组实例：默认值共享引用会让不同检查点互相污染（一个 push 计划任务项另一凭空多出）
+      plan: prev?.plan ?? [],
       lastHeartbeat: Date.now(),
     };
 
@@ -471,10 +445,8 @@ export class SessionManager {
         this.checkpoint.pausedAt = Date.now();
         this.touchCheckpoint();
       }
-      // pauseMeta 唯一写入点（SSOT）：三路暂停——用户 requestPause / ask_user 提问挂起 /
-      // 目标漂移强制确认（updateGoal 内 drift 级）——全部经本方法翻状态机，
-      // 故收敛到此处即可全覆盖，各调用方不再各自补写（此前只在 consumeFlow 的
-      // paused 分支写，drift 路径绕开该分支 ⇒ pauseMeta 缺失）。
+      // pauseMeta 唯一写入点（SSOT）：两路暂停——用户 requestPause / ask_user 提问挂起——
+      // 全部经本方法翻状态机，故收敛到此处即可全覆盖，各调用方不再各自补写。
       // ⚠ 消费方是**判据**不是展示：clearPlanOnTurnEnd 以 `cp.pauseMeta` 有无决定
       //   「turn 是否真正结束、任务表该不该清」。任一暂停路径漏写，恢复后任务表会被误清。
       this.setPauseMeta({ reason, source });
@@ -639,57 +611,6 @@ export class SessionManager {
       logger.info('会话已从异常恢复');
     }
     return result.allowed;
-  }
-
-  /**
-   * 更新检查点目标版本：递增 goalChangeSeq 触发漂移检测。漂移处置由内核自兜底不依赖宿主：
-   * drift 级内核直接低风险暂停强制确认；minor 级仅发射事件+日志不打断执行。
-   * goalDriftDetected 事件为可观测性出口，宿主可选订阅，不订阅不影响正确性。
-   */
-  updateGoal(newGoal: string): GoalConsistencyResult | null {
-    if (!this.checkpoint) {
-      this.createCheckpoint(newGoal);
-      return null;
-    }
-
-    // 幂等短路：目标值未变直接返回（返回 level='same'），不递增 goalChangeSeq、不触发漂移。
-    // 续跑/补充输入每轮喂相同 currentGoal，若无短路 goalChangeSeq 会退化为轮次计数器
-    if (newGoal === this.checkpoint.currentGoal) {
-      return {
-        level: 'same',
-        similarity: 1,
-        constraints: this.consistencyChecker.extractConstraints(this.checkpoint.mainGoal),
-        constraintsConsistent: true,
-      };
-    }
-
-    // 执行一致性校验，与 mainGoal 对比
-    const mainGoal = this.checkpoint.mainGoal;
-    const consistencyResult = this.consistencyChecker.checkConsistency(mainGoal, newGoal);
-
-    this.checkpoint.currentGoal = newGoal;
-    this.checkpoint.goalChangeSeq++;
-    this.touchCheckpoint();
-
-    // 检测到漂移则发射 goalDriftDetected 事件；drift 级自动低风险暂停强制用户确认（不计入连续计数）
-    if (consistencyResult.level !== 'same') {
-      this.emitEvent('goalDriftDetected', {
-        sessionId: this.checkpoint.sessionId,
-        mainGoal,
-        newGoal,
-        similarity: consistencyResult.similarity,
-        level: consistencyResult.level,
-        constraints: consistencyResult.constraints,
-        goalChangeSeq: this.checkpoint.goalChangeSeq,
-      });
-
-      if (consistencyResult.level === 'drift') {
-        const pauseReason = `目标漂移：新目标与原始目标不一致（相似度 ${consistencyResult.similarity.toFixed(2)}）`;
-        this.pause(pauseReason, 'system', true);
-      }
-    }
-
-    return consistencyResult;
   }
 
   /** 全量替换计划任务项（与 appendPlanItem 仅追加正交；保留已有任务项 id/status）。唯一生产点：task_table_write mode='replace' */

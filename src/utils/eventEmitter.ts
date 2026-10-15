@@ -45,7 +45,6 @@ export const AGENT_EVENTS = {
   inputTooLarge: 'inputTooLarge',
   /** 回答中 LLM 调 ask_user 工具主动提问（唯一「提问后暂停」通道） */
   questionPending: 'questionPending',
-  goalDriftDetected: 'goalDriftDetected',
   sessionPaused: 'sessionPaused',
   sessionResumed: 'sessionResumed',
   sessionError: 'sessionError',
@@ -130,16 +129,6 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     hint: string;
   };
   questionPending: AskQuestion[];
-  goalDriftDetected: {
-    sessionId: string;
-    mainGoal: string;
-    newGoal: string;
-    similarity: number;
-    level: 'same' | 'confirm' | 'drift';
-    constraints: string[];
-    /** 原名 goalVersion，仅载荷不承担校验 */
-    goalChangeSeq: number;
-  };
   sessionPaused: { reason: string; source: string; sessionId?: string };
   sessionResumed: { sessionId?: string };
   sessionError: { cause: string; sessionId?: string };

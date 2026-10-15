@@ -268,12 +268,12 @@ describe('SessionManager', () => {
 
     it('K2 分叉后应清空检查点（防新分支状态写回源会话）', () => {
       // 先创建检查点，模拟源会话已有检查点
-      manager.createCheckpoint('源会话目标');
+      manager.createCheckpoint();
       expect(manager.getCheckpoint()).not.toBeNull();
       expect(manager.getCheckpoint()?.sessionId).toBe('2026-06-27-main');
 
-      // 分叉后检查点必须被清空——否则 updateGoal 会把新分支
-      // 的 plan/goal 状态写入源会话检查点（跨会话数据污染）
+      // 分叉后检查点必须被清空——否则新分支的 plan 状态
+      // 会写入源会话检查点（跨会话数据污染）
       manager.forkSession();
       expect(manager.getCheckpoint()).toBeNull();
     });
@@ -662,196 +662,6 @@ describe('SessionManager', () => {
     });
   });
 
-  // ── goalChangeSeq 漂移强制暂停 ──────────────────────
-
-  describe('goalChangeSeq drift auto-pause', () => {
-    /**
-     * 辅助方法：创建带有 mainGoal 的检查点
-     * 首次调用 updateGoal 会创建检查点（返回 null），第二次调用才会触发一致性校验
-     */
-    function setupCheckpointWithGoal(mainGoal: string): void {
-      // 第一次调用：创建检查点，mainGoal 设为目标值
-      const result = manager.updateGoal(mainGoal);
-      expect(result).toBeNull();
-      // 状态机应保持 running
-      expect(manager.status).toBe('running');
-    }
-
-    it('drift 级别时应自动暂停', () => {
-      // 用长文本确保使用 Jaccard 相似度
-      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
-      const driftedGoal = '今天纽约的天气怎么样适合出行吗';
-
-      setupCheckpointWithGoal(mainGoal);
-
-      // 第二次调用 updateGoal，检测到漂移应自动暂停
-      const result = manager.updateGoal(driftedGoal);
-      expect(result).not.toBeNull();
-      expect(result!.level).toBe('drift');
-      // 状态机应为 paused
-      expect(manager.status).toBe('paused');
-    });
-
-    it('drift 自动暂停应写 pauseMeta（任务表保留判据）', () => {
-      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
-      const driftedGoal = '今天纽约的天气怎么样适合出行吗';
-
-      setupCheckpointWithGoal(mainGoal);
-      manager.updateGoal(driftedGoal);
-
-      // pauseMeta 不是展示字段，是**判据**：Agent.clearPlanOnTurnEnd 以「有无 pauseMeta」
-      // 决定 turn 是否真正结束 —— 有值则任务表保留（暂停是同 turn 内的挂起）。
-      // drift 暂停经 SessionManager.pause() 直接翻状态机、不过 consumeFlow 的 paused 分支，
-      // 若 pauseMeta 只在那个分支写，此处即缺失 ⇒ 恢复后续跑轮 finally 把任务表清空，
-      // 而 drift 的语义恰恰是「强制用户确认后按原计划继续」。
-      const meta = manager.getCheckpoint()?.pauseMeta;
-      expect(meta).toBeDefined();
-      expect(meta?.source).toBe('system');
-      expect(meta?.reason).toContain('目标漂移');
-    });
-
-    it('confirm 级别时应不自动暂停', () => {
-      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
-      const confirmGoal = '编写一个计算器应用程序支持加减乘除运算';
-
-      setupCheckpointWithGoal(mainGoal);
-
-      const result = manager.updateGoal(confirmGoal);
-      expect(result).not.toBeNull();
-      expect(result!.level).toBe('confirm');
-      // confirm 级别不应暂停
-      expect(manager.status).toBe('running');
-    });
-
-    it('same 级别时应不触发任何事件', () => {
-      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
-
-      setupCheckpointWithGoal(mainGoal);
-
-      const result = manager.updateGoal(mainGoal);
-      expect(result).not.toBeNull();
-      expect(result!.level).toBe('same');
-      // same 级别不应暂停
-      expect(manager.status).toBe('running');
-      // 不应发射 goalDriftDetected 事件
-      expect(emitEvent).not.toHaveBeenCalledWith('goalDriftDetected', expect.anything());
-    });
-
-    it('值未变时应幂等短路：不递增 goalChangeSeq、不发射任何事件', () => {
-      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
-
-      setupCheckpointWithGoal(mainGoal);
-      // 首次 updateGoal 创建检查点，goalChangeSeq = 0
-      expect(manager.getCheckpoint()!.goalChangeSeq).toBe(0);
-
-      // 值未变的 updateGoal（记忆延续每轮重复喂入）→ 幂等短路
-      const result = manager.updateGoal(mainGoal);
-      expect(result).not.toBeNull();
-      expect(result!.level).toBe('same');
-      expect(manager.getCheckpoint()!.goalChangeSeq).toBe(0);
-      expect(manager.status).toBe('running');
-      expect(emitEvent).not.toHaveBeenCalledWith('goalDriftDetected', expect.anything());
-    });
-
-    it('连续多轮不改目标时 goalChangeSeq 保持不变，真实修正仍递增（防轮次计数退化）', () => {
-      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
-
-      setupCheckpointWithGoal(mainGoal);
-      expect(manager.getCheckpoint()!.goalChangeSeq).toBe(0);
-
-      // 模拟 3 轮「继续」类延续：每轮 updateGoal 相同的 currentGoal
-      for (let i = 0; i < 3; i++) {
-        manager.updateGoal(mainGoal);
-      }
-      expect(manager.getCheckpoint()!.goalChangeSeq).toBe(0);
-
-      // 真实修正（不同目标）仍应递增
-      manager.updateGoal('改用 Python 重写计算器应用');
-      expect(manager.getCheckpoint()!.goalChangeSeq).toBe(1);
-    });
-
-    it('自动暂停应使用低风险（lowRisk=true），不增加连续暂停计数', () => {
-      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
-      const driftedGoal = '今天纽约的天气怎么样适合出行吗';
-
-      setupCheckpointWithGoal(mainGoal);
-      expect(manager.getConsecutivePauseCount()).toBe(0);
-
-      const result = manager.updateGoal(driftedGoal);
-      expect(result!.level).toBe('drift');
-      // 低风险暂停不应增加连续暂停计数
-      expect(manager.getConsecutivePauseCount()).toBe(0);
-    });
-
-    it('无检查点时 updateGoal 不触发暂停', () => {
-      // 首次调用 updateGoal，checkpoint 为 null，应创建检查点并返回 null
-      const result = manager.updateGoal('新的目标');
-      expect(result).toBeNull();
-      // 不应暂停
-      expect(manager.status).toBe('running');
-    });
-
-    it('drift 暂停时应发射 goalDriftDetected 事件', () => {
-      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
-      const driftedGoal = '今天纽约的天气怎么样适合出行吗';
-
-      setupCheckpointWithGoal(mainGoal);
-
-      manager.updateGoal(driftedGoal);
-      expect(emitEvent).toHaveBeenCalledWith(
-        'goalDriftDetected',
-        expect.objectContaining({
-          mainGoal,
-          newGoal: driftedGoal,
-          level: 'drift',
-        }),
-      );
-    });
-
-    it('confirm 级别目标变更应发射 goalDriftDetected（含完整载荷）', () => {
-      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
-      const newGoal = '编写一个计算器应用程序支持加减乘除运算';
-
-      setupCheckpointWithGoal(mainGoal);
-      emitEvent.mockClear();
-
-      manager.updateGoal(newGoal);
-
-      // goalUpdated 已并入 goalDriftDetected（SSOT 收敛：后者 payload 全包含前者）
-      expect(emitEvent).toHaveBeenCalledWith(
-        'goalDriftDetected',
-        expect.objectContaining({
-          level: 'confirm',
-          newGoal,
-          goalChangeSeq: 1,
-          sessionId: expect.any(String),
-        }),
-      );
-    });
-
-    it('drift 级别目标变更应发射 goalDriftDetected 并自动暂停', () => {
-      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
-      const driftedGoal = '今天纽约的天气怎么样适合出行吗';
-
-      setupCheckpointWithGoal(mainGoal);
-      emitEvent.mockClear();
-
-      manager.updateGoal(driftedGoal);
-
-      // goalUpdated 已并入 goalDriftDetected（SSOT 收敛：后者 payload 全包含前者）
-      expect(emitEvent).toHaveBeenCalledWith(
-        'goalDriftDetected',
-        expect.objectContaining({
-          level: 'drift',
-          newGoal: driftedGoal,
-          goalChangeSeq: 1,
-        }),
-      );
-      // drift 级内核自动低风险暂停
-      expect(manager.status).toBe('paused');
-    });
-  });
-
   // ── consecutivePauseCount 时间衰减 ────────────────
 
   // ── 检查点创建全路径 ──────────────────────────
@@ -882,41 +692,12 @@ describe('SessionManager', () => {
         emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
       );
 
-      const cp = mgr.createCheckpoint('测试主目标');
+      const cp = mgr.createCheckpoint();
 
       expect(cp.sessionId).toBe('2026-06-27-main');
-      expect(cp.mainGoal).toBe('测试主目标');
-      expect(cp.currentGoal).toBe('测试主目标'); // 首次创建 currentGoal == mainGoal
-      expect(cp.goalChangeSeq).toBe(0);
       expect(cp.status).toBe('running');
       expect(cp.plan).toEqual([]);
       expect(cp.lastHeartbeat).toBeGreaterThan(0);
-    });
-
-    it('createCheckpoint 后续调用应保留已有 currentGoal', () => {
-      const loop = createMockLoopWithMessages([{ role: 'user', content: '继续' }]);
-      const mgr = new SessionManager(
-        () => history,
-        () => loop,
-        sessionStore,
-        isChatBusy as unknown as () => boolean,
-        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
-      );
-
-      // 首次创建：设 mainGoal
-      mgr.createCheckpoint('原始目标');
-      expect(mgr.getCheckpoint()!.currentGoal).toBe('原始目标');
-
-      // 模拟 updateGoal 更新了 currentGoal
-      const cp = mgr.getCheckpoint()!;
-      cp.currentGoal = '用户调整后的目标';
-      cp.goalChangeSeq = 1;
-
-      // 再次 createCheckpoint（不传 mainGoal）→ currentGoal 应保留
-      mgr.createCheckpoint(); // 无参数
-      expect(mgr.getCheckpoint()!.mainGoal).toBe('原始目标');
-      expect(mgr.getCheckpoint()!.currentGoal).toBe('用户调整后的目标');
-      expect(mgr.getCheckpoint()!.goalChangeSeq).toBe(1);
     });
 
     it('sessionStore 未注入时 createCheckpoint 不应抛错', () => {
@@ -930,9 +711,8 @@ describe('SessionManager', () => {
       );
 
       // 不应抛错
-      expect(() => mgr.createCheckpoint('无存储测试')).not.toThrow();
+      expect(() => mgr.createCheckpoint()).not.toThrow();
       expect(mgr.getCheckpoint()).not.toBeNull();
-      expect(mgr.getCheckpoint()!.mainGoal).toBe('无存储测试');
     });
   });
 
@@ -1041,7 +821,7 @@ describe('SessionManager', () => {
     });
 
     it('logToolExecution 追加到 completedToolCalls', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       manager.logToolExecution(makeRecord('write_file'));
       manager.logToolExecution(makeRecord('run_project_script', 'idempotent'));
       const calls = manager.getCheckpoint()!.completedToolCalls ?? [];
@@ -1060,7 +840,7 @@ describe('SessionManager', () => {
     });
 
     it('compensateAllNonIdempotent：仅记录非幂等工具，幂等工具被过滤', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       manager.logToolExecution(makeRecord('write_file')); // non-idempotent
       manager.logToolExecution(makeRecord('run_project_script', 'idempotent')); // idempotent
       const msgs = manager.compensateAllNonIdempotent();
@@ -1070,7 +850,7 @@ describe('SessionManager', () => {
     });
 
     it('heartbeat：有检查点时刷新时间戳（不抛错）', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       expect(() => manager.heartbeat()).not.toThrow();
     });
 
@@ -1080,7 +860,7 @@ describe('SessionManager', () => {
     });
 
     it('getActivePlanItem / getNextPendingPlanItem：有 plan 时返回 active 与下一个 pending 任务项', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       const plan = manager.writePlan('overwrite', [
         { description: '步骤一' },
         { description: '步骤二' },
@@ -1094,7 +874,7 @@ describe('SessionManager', () => {
     });
 
     it('isPlanAllBlocked：全部 blocked 时返回 true，存在非 blocked 时返回 false', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       const plan = manager.writePlan('overwrite', [
         { description: '步骤一' },
         { description: '步骤二' },
@@ -1124,7 +904,7 @@ describe('SessionManager', () => {
     });
 
     it('logPlanItemBoundary：只写 planItemLog 不改 plan 状态（形态② 迭代边界语义）', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       const plan = manager.writePlan('overwrite', [{ description: '步骤一' }]);
       const planItemId = plan[0]!.id;
 
@@ -1138,7 +918,7 @@ describe('SessionManager', () => {
     });
 
     it('concludeActivePlanItemIfPlanFullyReached：无 pending 且有 active → 闭合最后到达的任务项（LLM 未显式 update 即收尾）', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       const plan = manager.writePlan('overwrite', [
         { description: '步骤一' },
         { description: '步骤二' },
@@ -1157,7 +937,7 @@ describe('SessionManager', () => {
     });
 
     it('concludeActivePlanItemIfPlanFullyReached：有 pending 不闭合（真实多轮任务的可续跑语义）', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       manager.writePlan('overwrite', [{ description: '步骤一' }, { description: '步骤二' }]);
       // 任务项二仍是 pending → 计划未「全部到达」，active 任务项一保持 active
       manager.concludeActivePlanItemIfPlanFullyReached('半程交付');
@@ -1167,7 +947,7 @@ describe('SessionManager', () => {
     });
 
     it('concludeActivePlanItemIfPlanFullyReached：无 active / 空计划直接早退（幂等）', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       // 空计划：早退不抛错
       expect(() => manager.concludeActivePlanItemIfPlanFullyReached('摘要')).not.toThrow();
       // 全 done 无 active：早退（不重复写日志）
@@ -1179,7 +959,7 @@ describe('SessionManager', () => {
     });
 
     it('writePlan replace 模式全量替换：未列出的任务项被丢弃（防回退为追加/合并语义）', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       // 先写 3 个任务项作为基线
       const base = manager.writePlan('overwrite', [
         { description: '步骤一' },

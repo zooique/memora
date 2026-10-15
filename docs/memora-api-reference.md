@@ -543,7 +543,7 @@ interface ISessionStore {
 | `sessionManager.loadSessionMessages(date, session)` → `Promise<SessionMessage[]>` | 加载指定日期/会话的消息（含时间戳） |
 | `sessionManager.restoreMostRecentSession()` → `Promise<number>` | 恢复最近活跃会话（SSOT：listSessionMetas[0]，updatedAt 降序；绝不隐式创建——新建会话唯一入口为宿主手动按钮） |
 | `sessionManager.restoreSession(date, session)` → `Promise<number>` | 恢复指定日期/会话 |
-| `sessionManager.createCheckpoint(mainGoal?)` → `SessionCheckpoint \| null` | 创建当前会话检查点（含热记忆、目标、计划、状态机快照），首次调用返回完整检查点，后续调用合并增量。**同进程内存态**（2026-09-10 减法后不落盘） |
+| `sessionManager.createCheckpoint()` → `SessionCheckpoint \| null` | 创建当前会话检查点（含计划、状态机快照），首次调用返回完整检查点，后续调用合并增量。**同进程内存态**（2026-09-10 减法后不落盘） |
 | `sessionManager.getCheckpoint()` → `SessionCheckpoint \| null` | 获取当前检查点（只读，不修改状态） |
 | `sessionManager.discardCheckpoint()` → `boolean` | **Phase 4 新增**：放弃当前暂停检查点（对称 pause 创建，宿主 handleStop paused 态调之；停定时器 + 清内存 + resetToRunning；无检查点返回 false） |
 
@@ -959,7 +959,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 对话 | `chat(input, signal?)` / `chatSync(input, signal?)` / `processEvent(event)` / `resumeExecution()` / `forceReleaseChatLock()` |
 | 事件 | `on()` / `off()` / `once()`（继承自 TypedEventEmitter） |
 | 暂停/继续 | `pause(reason, source?, lowRisk?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content)` / `removePendingInterject(index)` / `clearPendingInterjections()` / `getPendingInterjections()` / `discardCurrentCheckpoint()` / `canContinueWithoutInput()` |
-| 项目 / 会话 | `switchProject(nameOrPath)` / `rebuildComponents()` / `forkSession(targetSession?)` / `createCheckpoint(mainGoal?, role?, standard?)` / `getCheckpoint()` |
+| 项目 / 会话 | `switchProject(nameOrPath)` / `rebuildComponents()` / `forkSession(targetSession?)` / `createCheckpoint()` / `getCheckpoint()` |
 | Provider | `setProvider(provider)` / `setBackgroundProvider(provider)` |
 | 归档模式 | `setArchiveMode(mode)` / `getArchiveMode()` |
 | 角色 | `switchRolePack(name)` / `getRolePackSwitchLockStatus()` / `getActiveTraits()` / `injectAffect(affectString)` |

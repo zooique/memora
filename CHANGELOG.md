@@ -1,16 +1,61 @@
 # Changelog
 
-本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号。`[Unreleased]` 按 ADR-033 双版本线拆分：内核变更定档独立版本号（当前 **[4.1.0]**，开发中），宿主变更在 `[Unreleased] · 宿主`（随做随用，攒批随 `vsce package` 定版），不占内核版本号。
+本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号。`[Unreleased]` 按 ADR-033 双版本线拆分：内核变更定档独立版本号（当前 **[5.0.0]** 开发中：GOAL-DRIFT-1 退役 + CHKPT 减法 + 原 [4.1.0] 区 minor/fix 四小节整体归并——**4.1.0 已取消**，2026-10-15 二次拍板，见 [5.0.0] 区头），宿主变更在 `[Unreleased] · 宿主`（随做随用，攒批随 `vsce package` 定版），不占内核版本号。
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **版本定位（v3.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。早期版本（2.1.0 及以下）为探索性迭代；**3.0.0 是架构收敛后的第一个稳定基线**，API 与结构以 3.0.0 为准；**4.0.0 起导出面收敛（-54）+ `search()` 退役，API 以 4.0.0 为准**。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与单测（2700+ 用例）负责，不对"agent 整体行为稳定"作承诺。
+> **版本定位（v3.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。早期版本（2.1.0 及以下）为探索性迭代；**3.0.0 是架构收敛后的第一个稳定基线**，API 与结构以 3.0.0 为准；**4.0.0 起导出面收敛（-54）+ `search()` 退役；5.0.0 起目标漂移检测链与检查点 no-op 方法删除，API 以 5.0.0 为准**。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与单测（2700+ 用例）负责，不对"agent 整体行为稳定"作承诺。
 
-## [4.1.0] · 未发布
+## [5.0.0] · 未发布
 
-> **本区归属**：仅**内核**（`@zooique/memora`）变更。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
+> **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：目标漂移检测链整体删除（公开 API 编译期破坏）+ 检查点公开方法减法（CHKPT-1/2/3）+ **原 [4.1.0] 区四小节整体归并**（2026-10-15 二次拍板取消 4.1.0：npm 实查最新已发布 = 4.0.0，从未发布的 minor 区无消费者可保、归并窗口仅存在于发版前）。宿主变更在 `[Unreleased] · 宿主` 区，不占内核版本号。
 
-### Added（内核 · `memoryRecalled` 事件载荷补命中明细 · `MEM-EVENT-1`）
+### ⚠️ Breaking Removed（内核 · 字面相似度目标漂移检测链整体退役 · `GOAL-DRIFT-1`）
+
+- 删 `managers/goalConsistencyChecker.ts` 整模块（bigram+Jaccard 文本相似度 + same/confirm/drift 三级判定
+  + 约束提取与一致性检查）；删 `SessionManager.updateGoal()` 方法、`SessionCheckpoint` 三字段
+  `mainGoal`/`currentGoal`/`goalChangeSeq`、`AgentEventMap.goalDriftDetected` 事件；
+  `agent.createCheckpoint(mainGoal?)` 入参移除（签名收为无参）。
+- 宿主侧对称删除：protocol `goal_drift_detected` 消息成员、chatPanel 事件订阅转发、
+  chatView 提示分支（机制唯一 UI 面）。
+- **退役三条独立理由（任一单独成立）**：
+  ① **从未通电且接线即炸**——全仓零生产调用者；`mainGoal` 无独立设置入口，首个 checkpoint 必由
+  `writePlan()`/`pause()` 无参创建（基准恒为空串），而 `computeSimilarity('', x)` 早退返回 0 判 `drift`
+  并强制 `pause()`（fail-pause 方向倒错：空对空反得 1 = same 放行）；
+  ② **区分能力实测为零且双向不准**——12 组「主目标→正常子任务」12/12 判 drift（相似度 0.00–0.09），
+  6 组真跑偏 6/6 判 drift（全 0），两区间完全重叠、无阈值可分；否定翻转（「必须删除」→「不要删除」）
+  与技术栈偷换（TypeScript→JavaScript）仅判 confirm，危险翻转轻放；
+  ③ **判据性质违宪且天花板锁死**——「两段文本是否意图一致」是语义判断，违反架构哲学 §4
+  「代码做确定性、模型做语义」；内核零第三方运行时依赖 ⇒ 永无 embedding/monitor LLM 可接，非调参可解。
+- **关切不退役、不新建判据**：目标偏离的防范交还既有通道——用户在环 + `ask_user` 主动提问
+  （工具→挂起→答案回填→落盘生产链路完整）。「由角色包规则一句话引导模型自觉对齐」为目标态、
+  **当前零配置**（须人工在角色包 rules.md 补引导句），登记台账 `GOAL-DRIFT-2`（触发=真实跑偏反馈）。
+- 连带销项 `DRIFT-PAUSE-1`：updateGoal 直调 `pause()` 绕 loop 气口的接线前风险随能力删除自动解除。
+- 守卫：checker 专属测试 51 条整删 + drift/goal 相关用例清理（全量夹具改无参签名）；
+  双包全量用例与 tsc/esbuild 编译转绿（以发版前 CI 为准）；dist 整目录重建（防 stale 产物）+
+  宿主 pnpm file: 依赖重新链接。
+
+### ⚠️ Breaking Removed（内核 · 检查点脏标记链统一减法 · `CHKPT-1/2/3`，2026-10-15 随 GOAL-DRIFT-1 批次定档 5.0.0）
+
+> **版本轴拍板结果（2026-10-15 两拍）**：A 案定本节随 GOAL-DRIFT-1 批次归 5.0.0、4.1.0 保留 minor/fix；
+> 同日 B 案二次拍板**取消 4.1.0**（npm 实查最新已发布 = 4.0.0，从未发出的 minor 区无消费者可保），
+> 4.1.0 区四小节一并并入本区。
+
+- 删 `SessionManager.flushNow()` / `flushOnShutdown()` 两个 **no-op 公开方法**：检查点 2026-09-10 起
+  不落盘，二者仅清已无消费者的脏标记，方法名却宣称持久化（命名谎报类——后来者会按「有 flush 即有
+  落盘」接线）。真实调用点仅 2 处 + 1 处注释（原「40+ 调用点」估计失实，2026-10-09 已订正）。
+- 删 `checkpointDirty` 字段 + 私有 `settleCheckpoint()` 方法：脏标记写点（`touchCheckpoint` 置位）与
+  读点（`settleCheckpoint` 读清）构成自问自答的闭环，检查点不落盘后零外部效果 = 纯内耗。
+- **保留 `touchCheckpoint` 心跳半边**：`lastHeartbeat` 是暂停超时判定的兜底依据（`pausedAt` 缺失时
+  回退），职责收窄为「心跳唯一写点」，超时语义不受影响。
+- 调用点改真（不改判据）：`Agent.close()` 改为仅 `destroy()`；assembler 工具日志回调删空分支
+  （幂等分级语义不丢——`record.idempotent` 仍进 `logToolExecution`，FIFO 封顶丢弃判据即读它）。
+- `SessionCheckpoint.schemaVersion`（CHKPT-1）**已于 2026-09-20 站 22 先行删除**（commit `0863c6ec`），
+  本次复核 `src/` 零残留，仅补台账销项，非重复改动。
+- 守卫：`uninterruptedWorkflow` 场景 E 改断言「`updatePlanItem` 必须经 `touchCheckpoint` 写点」
+  （契约不降级，仅措辞去「脏」）；**变异验证**：注释该写点 → 用例红 → 复原绿。
+
+### Added（内核 · `memoryRecalled` 事件载荷补命中明细 · `MEM-EVENT-1`，原定 4.1.0、随 2026-10-15 归并）
 
 - `memoryRecalled` 新增**可选**字段 `hits`（`{ id, name, source }[]`）：`search_memories` 命中时把
   命中条目随事件带给宿主，支撑宿主「本轮参考了 N 条记忆」可展开行（宿主 0.2.0 消费，内核先行）。
@@ -22,7 +67,7 @@
   （载荷类型单一真源，防内联复制漂移）。
 - 守卫：命中载荷含 `hits` 且字段精确匹配（载荷形态哨兵，字段增删必须同步断言）+ 空命中不触发（已有）。
 
-### Added（内核 · 联网搜索硬上限抬为角色包策略键 `webSearchLimit` · `GUARD-SEARCH-1`）
+### Added（内核 · 联网搜索硬上限抬为角色包策略键 `webSearchLimit` · `GUARD-SEARCH-1`，原定 4.1.0、随 2026-10-15 归并）
 
 - `global` 新增策略键 **`webSearchLimit`**（整数 1~20，默认 6）：web_search 的 turn 粒度硬上限
   此前写死 `LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS=6`、宿主零配置通道（用户无法调整，只能改内核重发）。
@@ -39,7 +84,8 @@
 - 守卫：resolver 合法透传/越界回退用例 + loop 运行时用例（声明 2 → 第 3 次拒、文案数字同源，
   变异回退 `LOOP_CONSTANTS` 即红）+ schema/键面/区间三处一致性守卫 + 宿主键面双向一致。
 - SemVer：`L2RuntimeStrategy`/`BehaviorStrategy` 未进公开导出面（`src/index.ts` 无此二类型），
-  加键为**输入面放宽**（schema 接受新键、键面清单 +1）= **minor（4.1.0）**。
+  加键为**输入面放宽**（schema 接受新键、键面清单 +1）——按定级本属 minor；随 4.1.0 取消归并入
+  5.0.0（major 区内的 minor 项，单独定级已无受众）。
 - 同批订正同族失实（损害类扫全类）：`role-pack-spec`/`process-event-log-replay-design`/
   白话设计文档两篇的 `askLimit` 默认值「3」→「10」（2026-08 已改默认值的漏网文档）；
   键数计数 16 → 17（消费矩阵/接入指南/作者指南/创建器 SKILL/agent-design-philosophy）。
@@ -48,7 +94,7 @@
   role-pack-creator 模板 `global` 段同步补 `webSearchLimit: 6`（17 键速查 ↔ 模板键面齐）。
   示例包是该键的真实演示面（README 契约「全面覆盖当前角色包设计」），非单纯文档同步。
 
-### Added（内核 · web_search 执行留痕：「搜不准」归因取证轨 · `SEARCH-QUALITY-1` P1-1）
+### Added（内核 · web_search 执行留痕：「搜不准」归因取证轨 · `SEARCH-QUALITY-1` P1-1，原定 4.1.0、随 2026-10-15 归并）
 
 - **新增裁决证据变体 `web_search_result`**（`RoundEvidenceEvent` 第四成员，随 Round 持久化）：
   payload = `query`（LLM 实际发出的查询串——归因第一现场）/ `endpoint?`（降级分型证据）/
@@ -64,7 +110,7 @@
 - **P1-2 query 软引导暂缓**：反模式清单须留痕数据验证后再定（评估结论），不为「有候选修法」
   而预支判据。
 
-### Fixed（内核 · 登录墙识别 + Bing 摘要错位：「搜不准」两处代码级坐实 · `SEARCH-QUALITY-1` P2-1/P2-2）
+### Fixed（内核 · 登录墙识别 + Bing 摘要错位：「搜不准」两处代码级坐实 · `SEARCH-QUALITY-1` P2-1/P2-2，原定 4.1.0、随 2026-10-15 归并）
 
 - **P2-1 登录墙识别**（新建 `web-fetch/loginWall.ts` 纯函数）：HTTP 200 的登录页此前被
   `stripHtmlToText` 洗成「正文」交付——LLM 拿到登录表单碎片还以为是目标页内容（搜不准第二种
@@ -88,7 +134,7 @@
   （防小 limit 截断制造伪「短正文」，强信号不受影响）；④ 证据 payload 的 `query` 过
   `stripControlChars`（与 titles 同净化标准；长度仍由 200 字符校验单点管）。
 
-### Fixed（内核 · `run_skill_script` 子进程 cwd 缺省逃出项目根 · `SKILL-CWD-1`）
+### Fixed（内核 · `run_skill_script` 子进程 cwd 缺省逃出项目根 · `SKILL-CWD-1`，原定 4.1.0、随 2026-10-15 归并）
 
 - **技能脚本子进程 cwd 由「宿主进程 cwd」改为「项目根」**：assembler 注入的 `run_skill_script`
   回调两分支此前把 `cwd` 传 `undefined`（spawnOptions 不设 cwd → 子进程继承宿主进程 cwd）——
@@ -102,26 +148,6 @@
   （执行器 spawn 无 cwd → 子进程继承宿主进程 cwd，VS Code 启动目录不可控）。现两模式恒传
   `{ cwd: projectPath }`——四执行面（run_command / run_project_script / run_skill_script /
   run_code）cwd 判据至此对称。守卫：code 模式 `cwd=项目根` 断言（变异回退即红）。
-
-### Removed（内核 · 检查点脏标记链统一减法 · `CHKPT-1/2/3`）
-
-> ⚠️ **版本归属待拍板**：本节删的是 `SessionManager` **公开方法**（编译期破坏 = SemVer major 信号），
-> 而 `[4.1.0]` 其余两节（`MEM-EVENT-1` / `GUARD-SEARCH-1`）均为输入面放宽的 minor 变更。
-> 若最终定档 major，本节整体迁出至 `[5.0.0]` 区；**未拍板前不发版**（见台账 CHKPT-3「版本轴冲突」）。
-
-- 删 `SessionManager.flushNow()` / `flushOnShutdown()` 两个 **no-op 公开方法**：检查点 2026-09-10 起
-  不落盘，二者仅清已无消费者的脏标记，方法名却宣称持久化（命名谎报类——后来者会按「有 flush 即有
-  落盘」接线）。真实调用点仅 2 处 + 1 处注释（原「40+ 调用点」估计失实，2026-10-09 已订正）。
-- 删 `checkpointDirty` 字段 + 私有 `settleCheckpoint()` 方法：脏标记写点（`touchCheckpoint` 置位）与
-  读点（`settleCheckpoint` 读清）构成自问自答的闭环，检查点不落盘后零外部效果 = 纯内耗。
-- **保留 `touchCheckpoint` 心跳半边**：`lastHeartbeat` 是暂停超时判定的兜底依据（`pausedAt` 缺失时
-  回退），职责收窄为「心跳唯一写点」，超时语义不受影响。
-- 调用点改真（不改判据）：`Agent.close()` 改为仅 `destroy()`；assembler 工具日志回调删空分支
-  （幂等分级语义不丢——`record.idempotent` 仍进 `logToolExecution`，FIFO 封顶丢弃判据即读它）。
-- `SessionCheckpoint.schemaVersion`（CHKPT-1）**已于 2026-09-20 站 22 先行删除**（commit `0863c6ec`），
-  本次复核 `src/` 零残留，仅补台账销项，非重复改动。
-- 守卫：`uninterruptedWorkflow` 场景 E 改断言「`updatePlanItem` 必须经 `touchCheckpoint` 写点」
-  （契约不降级，仅措辞去「脏」）；**变异验证**：注释该写点 → 用例红 → 复原绿。全量 3090 用例通过。
 
 ## [4.0.0] · 2026-10-08
 

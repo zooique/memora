@@ -5821,11 +5821,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       } else {
         showActivity('error', `反馈失败：${msg.message ?? '未知错误'}`);
       }
-    } else if (msg.type === 'goal_drift_detected') {
-      // 目标漂移检测：展示原目标 vs 新目标 + 相似度，供用户确认或忽略
-      const pct = Math.round(msg.similarity * 100);
-      const levelLabel = msg.level === 'drift' ? '严重偏离' : '需要确认';
-      showActivity('info', `目标漂移（${levelLabel}，相似度 ${pct}%）：${msg.newGoal}`);
     } else if (msg.type === 'write_confirm_request') {
       // H0 写入审批卡：confirmWrites=true 时写文件触发 → 渲染审批卡等待用户确认/拒绝；
       // 用户点击后回传 write_confirm_answer。多请求**不再同时并存**：宿主侧已改为 FIFO

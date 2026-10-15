@@ -247,7 +247,7 @@ export type ArchiveMode = 'full' | 'manual';
 /** 会话状态（三态状态机） */
 export type SessionStatus = 'running' | 'paused' | 'error';
 
-/** 计划中单个任务项，用于目标漂移检测（文本相似度）和进度追踪 */
+/** 计划中单个任务项，用于任务表进度追踪（task_table 工具读写、暂停检查点随内存携带） */
 export interface PlanItem {
   /** 任务项唯一标识 */
   id: string;
@@ -349,15 +349,6 @@ export interface SessionCheckpoint {
     /** 是否已恢复（ERROR→RUNNING 前须为 true） */
     recovered: boolean;
   };
-  /** 原始目标（防漂移锚点，不随迭代改变） */
-  mainGoal: string;
-  /** 当前迭代目标（可随 plan 推进更新） */
-  currentGoal: string;
-  /**
-   * 目标变更事件序号（每次 currentGoal 变更递增，goalDriftDetected 事件载荷）。
-   * 仅作事件序号，不承担版本一致性校验——漂移碰撞由文本相似度完成，勿误用为版本校验。
-   */
-  goalChangeSeq: number;
   /** 执行计划任务项列表 */
   plan: PlanItem[];
   /**

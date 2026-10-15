@@ -739,8 +739,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           //   见 assembler.ts）。此处不另设第二载体，否则同一事实两个真源即漂移。
           const pauseReason = pendingInfo?.reason ?? '用户主动暂停';
           const pauseSource = pendingInfo?.source ?? 'user';
-          // pauseMeta 不在此写——已收口到 SessionManager.pause() 本体（本方法转发调用），
-          // 使 drift 等不经本分支的暂停路径同样拿到 pauseMeta。
+          // pauseMeta 不在此写——唯一写入点已收口到 SessionManager.pause()（本方法转发调用）。
           this.pause(pauseReason, pauseSource, true);
           paused = true;
         }
@@ -885,7 +884,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 空闲守卫：无活跃流时暂停无消费方——若此时同步翻状态机并落盘 checkpoint，
     // 「turn 已完成后的暂停」会把会话钉在 paused，后续新输入被宿主路由成
     // supplement（新意图被吞成"上一个回答的补充"，毒化闭环节点；loop 无流消费的延迟翻转亦无意义）。
-    // 任务已结束 = 暂停申请作废，返回 false 供宿主明确反馈；系统/Agent 触发（ask_user/drift）均在
+    // 任务已结束 = 暂停申请作废，返回 false 供宿主明确反馈；ask_user 提问挂起在
     // 流中（_flowActive=true）不经过此分支，不受影响。
     // ⚠ 判据必须用 _flowActive（流活跃）而非 chatLock.isBusy（锁持有）——chatLock 锁
     // 180s 超时后自动释放（不中断生成流），长任务运行超锁期后 isBusy=false 但流
@@ -1135,11 +1134,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 创建会话检查点：快照当前运行时状态（热记忆等），生成纯内存态快照
    * （不落盘、无序列化/恢复路径——中止/断电走「中断轮补全为完整 turn」）。
-   * 无 role/standard 会话能力位，createCheckpoint 仅收 mainGoal。
    */
-  createCheckpoint(mainGoal?: string): SessionCheckpoint | null {
+  createCheckpoint(): SessionCheckpoint | null {
     this.assertInitialized('createCheckpoint');
-    return this.requireSessionManager.createCheckpoint(mainGoal);
+    return this.requireSessionManager.createCheckpoint();
   }
 
   /**

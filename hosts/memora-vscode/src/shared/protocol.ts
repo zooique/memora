@@ -845,21 +845,6 @@ export type ExtensionToWebviewMessage =
       activeName?: string;
     }
   /**
-   * 目标漂移检测提示（事件：goalDriftDetected）
-   *
-   * 由 extension host 监听内核 goalDriftDetected 事件后转发，
-   * 当会话当前目标与初始目标相似度低于阈值时触发，webview 展示确认/忽略交互。
-   * level: 'confirm' 需用户确认目标变更；'drift' 提示可能已严重偏离。
-   */
-  | {
-      type: 'goal_drift_detected';
-      mainGoal: string;
-      newGoal: string;
-      similarity: number;
-      level: 'same' | 'confirm' | 'drift';
-      constraints: string[];
-    }
-  /**
    * 通用提示条（低扰 info / 错误级 error）
    *
    * 由 extension host 转发的非消息区通知，webview 用同一提示条分级呈现：

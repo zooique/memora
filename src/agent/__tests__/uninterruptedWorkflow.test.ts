@@ -8,7 +8,6 @@
  *   - 工具幂等性与 outbox 模式（preExecutionCheck / logToolExecution 持久化）
  *   - 补偿机制（compensateTool/compensateAllNonIdempotent 降级后仅日志）
  *   - 执行计划管理（advancePlan/completePlanItem/isPlanAllBlocked）
- *   - 目标版本一致性校验（updateGoal → goalDriftDetected）
  *   - 端到端场景（Agent 门面完整工作流）
  *
  * 设计原则：
@@ -26,7 +25,6 @@ import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
 import { BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
 import { SessionManager } from '@/agent/managers/sessionManager.js';
 import { SessionStateMachine } from '@/agent/sessionStateMachine.js';
-import { GoalConsistencyChecker } from '@/agent/managers/goalConsistencyChecker.js';
 import { LlmProvider } from '@/llm/provider.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
@@ -259,9 +257,6 @@ describe('SessionStateMachine · 三态流转', () => {
         sessionId: 'test',
         status: 'error',
         error: { cause: 'LLM 超时', at: Date.now(), recovered: true },
-        mainGoal: 'test',
-        currentGoal: 'test',
-        goalChangeSeq: 0,
         plan: [],
         lastHeartbeat: Date.now(),
       };
@@ -277,9 +272,6 @@ describe('SessionStateMachine · 三态流转', () => {
         sessionId: 'test',
         status: 'error',
         error: { cause: 'LLM 超时', at: Date.now(), recovered: false },
-        mainGoal: 'test',
-        currentGoal: 'test',
-        goalChangeSeq: 0,
         plan: [],
         lastHeartbeat: Date.now(),
       };
@@ -292,9 +284,6 @@ describe('SessionStateMachine · 三态流转', () => {
       const checkpoint: SessionCheckpoint = {
         sessionId: 'test',
         status: 'running',
-        mainGoal: 'test',
-        currentGoal: 'test',
-        goalChangeSeq: 0,
         plan: [],
         lastHeartbeat: Date.now(),
       };
@@ -358,67 +347,9 @@ describe('SessionManager · 检查点管理', () => {
     vi.useRealTimers();
   });
 
-  describe('createCheckpoint', () => {
-    it('应创建包含所有必要字段的检查点', () => {
-      const cp = manager.createCheckpoint('测试目标');
-      expect(cp).toHaveProperty('sessionId');
-      expect(cp).toHaveProperty('status');
-      expect(cp).toHaveProperty('mainGoal');
-      expect(cp).toHaveProperty('currentGoal');
-      expect(cp).toHaveProperty('goalChangeSeq');
-      expect(cp).toHaveProperty('plan');
-      expect(cp).toHaveProperty('lastHeartbeat');
-    });
-
-    it('mainGoal 和 currentGoal 应等于传入值', () => {
-      const cp = manager.createCheckpoint('写一个排序函数');
-      expect(cp.mainGoal).toBe('写一个排序函数');
-      expect(cp.currentGoal).toBe('写一个排序函数');
-    });
-
-    it('goalChangeSeq 应从 0 开始', () => {
-      const cp = manager.createCheckpoint('测试目标');
-      expect(cp.goalChangeSeq).toBe(0);
-    });
-
-    it('不传参创建检查点应使用已有值', () => {
-      manager.createCheckpoint('初始目标');
-      // 第二次创建检查点，不传参，应复用已有值
-      const cp = manager.createCheckpoint();
-      expect(cp.mainGoal).toBe('初始目标');
-    });
-  });
-
-  describe('updateGoal', () => {
-    it('应更新 currentGoal 并递增 goalChangeSeq', () => {
-      manager.createCheckpoint('初始目标');
-      manager.updateGoal('新目标');
-      const cp = manager.getCheckpoint();
-      expect(cp!.currentGoal).toBe('新目标');
-      expect(cp!.goalChangeSeq).toBe(1);
-    });
-
-    it('目标一致时不应发射 goalDriftDetected 事件', () => {
-      manager.createCheckpoint('写一个排序函数');
-      manager.updateGoal('写一个排序函数');
-      // 相同目标，不应发射漂移事件
-      const driftCalls = emitEvent.mock.calls.filter((c) => c[0] === 'goalDriftDetected');
-      expect(driftCalls).toHaveLength(0);
-    });
-
-    it('目标漂移时应发射 goalDriftDetected 事件', () => {
-      manager.createCheckpoint('写一个排序函数，使用快速排序算法');
-      manager.updateGoal('改为写一个网页爬虫，抓取新闻标题');
-      const driftCalls = emitEvent.mock.calls.filter((c) => c[0] === 'goalDriftDetected');
-      expect(driftCalls.length).toBeGreaterThanOrEqual(1);
-      const driftData = driftCalls[0]![1] as Record<string, unknown>;
-      expect(driftData.level).toBe('drift');
-    });
-  });
-
   describe('updatePlan / completePlanItem', () => {
     it('updatePlan 应更新检查点计划', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       const plan: PlanItem[] = [
         { id: 'step1', description: '步骤1', status: 'pending', order: 0 },
         { id: 'step2', description: '步骤2', status: 'pending', order: 1 },
@@ -428,7 +359,7 @@ describe('SessionManager · 检查点管理', () => {
     });
 
     it('completePlanItem 应标记任务项为完成并记录任务项推进日志', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       manager.updatePlan([{ id: 's1', description: '步骤1', status: 'active', order: 0 }]);
       manager.completePlanItem({ planItemId: 's1', summary: '测试 step' });
       const firstItem = manager.getCheckpoint()!.plan[0]!;
@@ -438,7 +369,7 @@ describe('SessionManager · 检查点管理', () => {
     });
 
     it('completePlanItem 必须走 updatePlanItemStatus 唯一写点（不得直改 status）', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       manager.updatePlan([{ id: 's1', description: '步骤1', status: 'active', order: 0 }]);
       // 契约级断言：直接锁住「写点收口」——未来若有人改回 step.status='done' 直改，此测试必红
       const spy = vi.spyOn(
@@ -453,7 +384,7 @@ describe('SessionManager · 检查点管理', () => {
     });
 
     it('无 planItemId 的 completePlanItem 仍记录任务项推进日志（收口不破无任务项路径）', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       manager.completePlanItem({ summary: '自由对话迭代' });
       const cp = manager.getCheckpoint()!;
       expect(cp.planItemLog).toHaveLength(1);
@@ -463,7 +394,7 @@ describe('SessionManager · 检查点管理', () => {
     });
 
     it('isPlanAllBlocked 全 blocked 应返回 true（预判短路收窄拦点）', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       manager.updatePlan([
         { id: 's1', description: '步骤1', status: 'blocked', order: 0 },
         { id: 's2', description: '步骤2', status: 'blocked', order: 1 },
@@ -472,18 +403,18 @@ describe('SessionManager · 检查点管理', () => {
     });
 
     it('isPlanAllBlocked 全 done 应返回 false（收窄后放行，继续=AI 产出）', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       manager.updatePlan([{ id: 's1', description: '步骤1', status: 'done', order: 0 }]);
       expect(manager.isPlanAllBlocked()).toBe(false);
     });
 
     it('isPlanAllBlocked 空计划应返回 false（普通问答暂停续跑放行）', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       expect(manager.isPlanAllBlocked()).toBe(false);
     });
 
     it('getNextPendingPlanItem 应返回下一个 pending 任务项', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       manager.updatePlan([
         { id: 's1', description: '步骤1', status: 'done', order: 0 },
         { id: 's2', description: '步骤2', status: 'pending', order: 1 },
@@ -495,7 +426,7 @@ describe('SessionManager · 检查点管理', () => {
     });
 
     it('getActivePlanItem 应返回当前活跃任务项', () => {
-      manager.createCheckpoint('测试');
+      manager.createCheckpoint();
       manager.updatePlan([{ id: 's1', description: '步骤1', status: 'active', order: 0 }]);
       const active = manager.getActivePlanItem();
       expect(active).not.toBeNull();
@@ -530,7 +461,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
       emitEvent,
     );
     // 创建检查点，确保 logToolExecution 有写入目标
-    manager.createCheckpoint('测试目标');
+    manager.createCheckpoint();
   });
 
   describe('logToolExecution 持久化', () => {
@@ -745,85 +676,7 @@ describe('SessionManager · 暂停/恢复/异常', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试 5：目标一致性校验器（GoalConsistencyChecker）
-// ═══════════════════════════════════════════════════════════════
-
-describe('GoalConsistencyChecker · 目标一致性校验', () => {
-  let checker: GoalConsistencyChecker;
-
-  beforeEach(() => {
-    checker = new GoalConsistencyChecker();
-  });
-
-  describe('extractConstraints', () => {
-    it('应提取包含"必须"的约束', () => {
-      const constraints = checker.extractConstraints('必须使用 TypeScript');
-      expect(constraints).toContain('必须使用 TypeScript');
-    });
-
-    it('应提取包含"不能"的约束', () => {
-      const constraints = checker.extractConstraints('不能使用 any 类型');
-      expect(constraints).toContain('不能使用 any 类型');
-    });
-
-    it('应提取包含"需要"的约束', () => {
-      const constraints = checker.extractConstraints('需要测试覆盖');
-      expect(constraints).toContain('需要测试覆盖');
-    });
-
-    it('空输入应返回空数组', () => {
-      expect(checker.extractConstraints('')).toEqual([]);
-    });
-
-    it('无关键词的输入应返回空数组', () => {
-      const constraints = checker.extractConstraints('写一个排序函数');
-      expect(constraints).toEqual([]);
-    });
-  });
-
-  describe('checkConsistency', () => {
-    it('完全相同目标应返回 same', () => {
-      const result = checker.checkConsistency('写一个排序函数', '写一个排序函数');
-      expect(result.level).toBe('same');
-      expect(result.similarity).toBeGreaterThan(0.7);
-    });
-
-    it('目标漂移应返回 drift', () => {
-      const result = checker.checkConsistency(
-        '写一个排序函数，使用快速排序算法',
-        '改为写一个网页爬虫，抓取新闻标题',
-      );
-      expect(result.level).toBe('drift');
-      expect(result.similarity).toBeLessThan(0.4);
-    });
-
-    it('目标有变化但部分相似应返回 confirm', () => {
-      const result = checker.checkConsistency(
-        '写一个排序函数，必须使用快速排序算法',
-        '写一个排序函数，改为使用归并排序算法',
-      );
-      expect(result.similarity).toBeGreaterThanOrEqual(0.4);
-      expect(result.similarity).toBeLessThanOrEqual(0.7);
-      expect(result.level).toBe('confirm');
-    });
-
-    it('mainGoal 为空时不应抛错', () => {
-      const result = checker.checkConsistency('', '新目标');
-      // computeSimilarity('', '新目标') 返回 0 → level 为 drift
-      expect(result.level).toBe('drift');
-      expect(result.similarity).toBe(0);
-    });
-
-    it('newGoal 为空时不应抛错', () => {
-      const result = checker.checkConsistency('mainGoal', '');
-      // computeSimilarity('mainGoal', '') 返回 0 → level 为 drift
-      expect(result.level).toBe('drift');
-    });
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════
-// 测试 6：Agent 门面集成——不中断工作模型 API
+// 测试 5：Agent 门面集成——不中断工作模型 API
 // ═══════════════════════════════════════════════════════════════
 
 describe('Agent 门面 · 不中断工作模型 API', () => {
@@ -924,7 +777,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
     it('全部 blocked 计划不应视为可续跑', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
-      agent.createCheckpoint('测试目标');
+      agent.createCheckpoint();
       agent
         .getCheckpoint()!
         .plan.push(
@@ -938,7 +791,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
     it('存在 pending/active 任务项时应视为可续跑（防过度修复）', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
-      agent.createCheckpoint('测试目标');
+      agent.createCheckpoint();
       agent
         .getCheckpoint()!
         .plan.push(
@@ -951,7 +804,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
     it('全部 done 计划不应视为可续跑', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
-      agent.createCheckpoint('测试目标');
+      agent.createCheckpoint();
       agent
         .getCheckpoint()!
         .plan.push({ id: 's1', description: '步骤1', status: 'done', order: 1 });
@@ -961,7 +814,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
     it('全 blocked 计划无输入续跑应提示阻塞而非"已完成"', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
-      agent.createCheckpoint('测试目标');
+      agent.createCheckpoint();
       agent
         .getCheckpoint()!
         .plan.push({ id: 's1', description: '步骤1', status: 'blocked', order: 1 });
@@ -984,7 +837,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
     it('错误态不应展示"继续"（error 守卫）', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
-      agent.createCheckpoint('测试目标');
+      agent.createCheckpoint();
       agent
         .getCheckpoint()!
         .plan.push({ id: 's1', description: '步骤1', status: 'pending', order: 1 });
@@ -1023,7 +876,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
     it('错误态续跑应 yield error chunk 且发射 sessionResumeFailed（非静默）', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
-      agent.createCheckpoint('测试目标');
+      agent.createCheckpoint();
       agent.triggerError('LLM 超时');
       expect(agent.sessionManager!.status).toBe('error');
 
@@ -1048,9 +901,8 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
 
-      const cp = agent.createCheckpoint('测试目标');
+      const cp = agent.createCheckpoint();
       expect(cp).not.toBeNull();
-      expect(cp!.mainGoal).toBe('测试目标');
     });
 
     it('getCheckpoint 应返回当前检查点', async () => {
@@ -1058,14 +910,14 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       await agent.init();
 
       expect(agent.getCheckpoint()).toBeNull();
-      agent.createCheckpoint('测试目标');
+      agent.createCheckpoint();
       expect(agent.getCheckpoint()).not.toBeNull();
     });
   });
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试 7：端到端场景——完整工作流
+// 测试 6：端到端场景——完整工作流
 // ═══════════════════════════════════════════════════════════════
 
 /**
@@ -1132,9 +984,8 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     await agent.init();
 
     // 1. 创建检查点
-    const cp = agent.createCheckpoint('编写一个 CLI 工具');
+    const cp = agent.createCheckpoint();
     expect(cp).not.toBeNull();
-    expect(cp!.mainGoal).toBe('编写一个 CLI 工具');
 
     // 2. 暂停会话
     const pauseResult = agent.pause('用户需要休息一下', 'user');
@@ -1184,7 +1035,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     await agent.init();
 
     // 1. 创建检查点
-    agent.createCheckpoint('处理文件');
+    agent.createCheckpoint();
 
     // 2. 触发异常
     const errorResult = agent.triggerError('LLM 请求超时');
@@ -1236,7 +1087,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
       await agent.init();
 
       // 创建检查点
-      agent.createCheckpoint('测试幂等性');
+      agent.createCheckpoint();
 
       // 模拟工具执行记录
       // 通过 sessionManager 的 logToolExecution 记录写工具（幂等键级别，恢复时排重用）
@@ -1272,7 +1123,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
    * 心跳唯一写点职责，绕过即破坏暂停超时判定的兜底依据。）
    *
    * 断言策略：直接 spy touchCheckpoint（运行时存在，TS private 仅编译期约束）。
-   * 行为级断言不可靠——chatSync 路径存在其他 touchCheckpoint（如 updateGoal），
+   * 行为级断言不可靠——chatSync 路径存在其他 touchCheckpoint（如任务表写入、工具执行登记），
    * 会干扰归属，导致变异验证误绿。
    * 契约级断言直接锁定「updatePlanItem 必须经 touchCheckpoint 写点」。
    */
@@ -1292,7 +1143,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
       await agent.init();
 
       // 创建检查点
-      agent.createCheckpoint('测试目标');
+      agent.createCheckpoint();
 
       // 模拟已存在的任务表：直接塞一个 pending 任务项
       agent.getCheckpoint()!.plan.push({
@@ -1343,7 +1194,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
       });
       await agent.init();
 
-      agent.createCheckpoint('测试目标');
+      agent.createCheckpoint();
       const planItemId = 'step-active-1';
       agent.getCheckpoint()!.plan.push({
         id: planItemId,
@@ -1385,7 +1236,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
 
-      agent.createCheckpoint('测试目标');
+      agent.createCheckpoint();
       agent
         .getCheckpoint()!
         .plan.push(
@@ -1431,7 +1282,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
         allowedPaths: [tmpData],
       });
       await agent.init();
-      agent.createCheckpoint('任务目标');
+      agent.createCheckpoint();
       agent
         .getCheckpoint()!
         .plan.push(
@@ -1473,7 +1324,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
 
-      agent.createCheckpoint('测试目标');
+      agent.createCheckpoint();
       // 翻状态机为 paused（与 chat() 第一半 pause 收场等价），使 resumeExecution 可进入
       agent.pause('测试暂停', 'user');
       // 模拟 loop 在暂停时挂起的 pauseMeta（生产由 loop.requestPause 写入；resume() 开头会卸载）
@@ -1594,7 +1445,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     await agent.init();
 
     // 创建检查点
-    agent.createCheckpoint('测试循环暂停恢复');
+    agent.createCheckpoint();
 
     // 执行 3 轮暂停-恢复循环
     for (let i = 0; i < 3; i++) {
@@ -1634,7 +1485,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     await agent.init();
 
     // 创建检查点
-    agent.createCheckpoint('测试补偿机制');
+    agent.createCheckpoint();
 
     // 记录非幂等工具执行
     agent.sessionManager!.logToolExecution({
@@ -2205,7 +2056,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
       });
       await agent.init();
       // 预置任务表（直接 push plan：S1 active + S2 pending）
-      agent.createCheckpoint('任务目标');
+      agent.createCheckpoint();
       agent
         .getCheckpoint()!
         .plan.push(
@@ -2239,7 +2090,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
         allowedPaths: [tmpData],
       });
       await agent.init();
-      agent.createCheckpoint('任务目标');
+      agent.createCheckpoint();
       agent
         .getCheckpoint()!
         .plan.push(
@@ -2469,7 +2320,7 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
 
       // 预置检查点 + 已完成的幂等工具记录：内部幂等本应跳过，但宿主 denied 必须优先短路
       // （logToolExecution 在 checkpoint 为 null 时静默返回，必须先建检查点）
-      agent.createCheckpoint('测试拒绝短路');
+      agent.createCheckpoint();
       agent.sessionManager!.logToolExecution({
         name: 'read_file',
         argsSignature: '{"path":"probe.txt"}',
@@ -2512,7 +2363,7 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
       await agent.init();
 
       // 预置检查点 + 已完成的幂等工具记录（write_file 为 'idempotent-key' 级别，可跳过）
-      agent.createCheckpoint('测试放行后幂等');
+      agent.createCheckpoint();
       agent.sessionManager!.logToolExecution({
         name: 'write_file',
         argsSignature: '{"path":"probe.txt"}',
@@ -2552,7 +2403,7 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
     });
     await agent.init();
 
-    agent.createCheckpoint('测试向后兼容');
+    agent.createCheckpoint();
     agent.sessionManager!.logToolExecution({
       name: 'write_file',
       argsSignature: '{"path":"probe.txt"}',
@@ -2596,7 +2447,7 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
       await agent.init();
 
       // 预置：上一轮已成功删除过同路径（第一次闭环的执行记录）
-      agent.createCheckpoint('测试 delete_file 不跳过');
+      agent.createCheckpoint();
       agent.sessionManager!.logToolExecution({
         name: 'delete_file',
         argsSignature: '{"path":"probe.txt"}',
@@ -2683,7 +2534,7 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
         archiveMode: 'manual',
       });
       await agent.init();
-      agent.createCheckpoint('测试 IDM-1 陈旧读');
+      agent.createCheckpoint();
 
       const reads: string[] = [];
       for await (const chunk of agent.chat('开始')) {
