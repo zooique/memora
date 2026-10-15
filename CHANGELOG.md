@@ -43,6 +43,10 @@
 - 同批订正同族失实（损害类扫全类）：`role-pack-spec`/`process-event-log-replay-design`/
   白话设计文档两篇的 `askLimit` 默认值「3」→「10」（2026-08 已改默认值的漏网文档）；
   键数计数 16 → 17（消费矩阵/接入指南/作者指南/创建器 SKILL/agent-design-philosophy）。
+- 示例面对齐（2026-10-15）：两个持 `web:search` 特权的示例包显式声明该键——
+  `共鸣小说家` 8（需求层热点扫描中度预算）/ `白话方案设计师` 12（研究型预算，同作者指南示例值）；
+  role-pack-creator 模板 `global` 段同步补 `webSearchLimit: 6`（17 键速查 ↔ 模板键面齐）。
+  示例包是该键的真实演示面（README 契约「全面覆盖当前角色包设计」），非单纯文档同步。
 
 ### Fixed（内核 · `run_skill_script` 子进程 cwd 缺省逃出项目根 · `SKILL-CWD-1`）
 

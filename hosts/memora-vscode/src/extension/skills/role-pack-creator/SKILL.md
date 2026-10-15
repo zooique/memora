@@ -38,7 +38,7 @@ layer: agent
 | 角色名 / 展示名 | 目录名 + `name`/`displayName` |
 | 一句话定位 | `description` + persona 第一句 |
 | 能力面 | `capabilities`（特权键，或省略 = 全部暴露；`[]` = 仅默认常驻） |
-| 行为偏好 | 温度 / 主动提问 / 召回等 → strategy 键 |
+| 行为偏好 | 温度 / 主动提问 / 联网搜索次数等 → strategy 键 |
 
 需求不足时按 [memora 角色包开放键指南](../../../../../../docs/role-pack-开放键指南.md) 或直接补问，不臆造。
 

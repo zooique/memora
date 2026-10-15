@@ -36,6 +36,7 @@
     "global": {
       "askOn": ["ambiguity", "decision", "confirm"],
       "askLimit": 10,
+      "webSearchLimit": 8,
       "errorHandling": "degrade",
       "contextLimit": 0,
       "stepBudget": 100

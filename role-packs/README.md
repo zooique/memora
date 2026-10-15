@@ -24,18 +24,19 @@
 | 角色包 | 说明 | 覆盖能力面 |
 |--------|------|-----------|
 | **memora助手** | **兜底契约包**（非示例，名字由内核常量 `BUILTIN_FALLBACK_PACK` 锁定，改名须走 ADR；**宿主 UI 禁删 + 构建期 existsSync 硬校验**）：领域无关的最小兜底角色，负责通用对话与任务执行 | 领域无关最小集：无 skills / 无 capabilities（省略 = 全部暴露）/ 无 strategy（走内核默认） |
-| 共鸣小说家 | 示例：方法论型角色包——三层结构小说创作（**需求层**：社会热点→痛点→精神需求缺口；**内核层**：经典人性内核，跨时代稳定；**形式层**：题材文笔是内核与读者的纽带），先需求再内核后形式，直接产出完整成稿 | 真实 skills/ 文件（**技能清单以 `skills/` 目录为唯一源、使用时机见 `persona.md` 七阶段流水线与 `rules.md`，此处不枚举**）+ capabilities（web:search 特权）+ strategy（高温度 / askOn 主动提问）+ handoffPrompt |
-| 白话方案设计师 | 示例：方法论型角色包——融合方案设计（单一真理源·最小单元·网络为土壤）与文档编排，先用白话把设计讲清楚，再落实为可开发的专业文档 | 真实 skills/ 文件（**技能清单以 `skills/` 目录为唯一源、使用时机见 `persona.md` / `rules.md`，此处不枚举**）+ capabilities（web:search 特权 / llm:summarize）+ strategy（白话优先 / askOn 含 confirm / 受众先定）+ handoffPrompt |
+| 共鸣小说家 | 示例：方法论型角色包——三层结构小说创作（**需求层**：社会热点→痛点→精神需求缺口；**内核层**：经典人性内核，跨时代稳定；**形式层**：题材文笔是内核与读者的纽带），先需求再内核后形式，直接产出完整成稿 | 真实 skills/ 文件（**技能清单以 `skills/` 目录为唯一源、使用时机见 `persona.md` 七阶段流水线与 `rules.md`，此处不枚举**）+ capabilities（web:search 特权）+ strategy（高温度 / askOn 主动提问 / 联网搜索上限 8 次）+ handoffPrompt |
+| 白话方案设计师 | 示例：方法论型角色包——融合方案设计（单一真理源·最小单元·网络为土壤）与文档编排，先用白话把设计讲清楚，再落实为可开发的专业文档 | 真实 skills/ 文件（**技能清单以 `skills/` 目录为唯一源、使用时机见 `persona.md` / `rules.md`，此处不枚举**）+ capabilities（web:search 特权 / llm:summarize）+ strategy（白话优先 / askOn 含 confirm / 联网搜索上限 12 次）+ handoffPrompt |
 
 > 兜底契约包与示例包**同目录但性质不同**：示例可删，契约包不可删（宿主 UI 禁删 + 构建期校验）；二者均随 `copyRolePacks()` 同步进宿主 `dist/extension/role-packs/`。
 
 > **本表不枚举技能**：只描述包的能力定位，不列技能名、不复述工作流程。技能清单的 SSOT 是各包 `skills/` 目录，使用时机的 SSOT 是 `persona.md` / `rules.md`——在此复述会形成第三份副本，技能增删时静默过期。引用覆盖由 `src/role-pack/__tests__/builtinPackCoverage.test.ts` 守卫。
 
 > **两包 strategy 参数差异是设计取向，不是疏漏**（勿当缺陷"对齐"）：
-> **共鸣小说家**取 `multiStepReasoning: manual`（即 `reasoning_effort=low`）+ 单步输出保持默认 + 高温度 + 多步预算，
-> 把复杂性外化到七阶段流水线与领域技能库——**靠 step 编排而非模型单步深度推理**完成任务
-> （与「代码做确定性、模型做不确定性」一致）；自检同理走领域化——`selfReview` 关闭，改由 `craft-review` 技能承担领域自检。
-> **白话方案设计师**取默认推理深度 + 大单步输出 + 低温度，设计收敛本身依赖模型推演。
+> **共鸣小说家**高温度（0.9）+ 出错降级继续（`degrade`）+ 自检领域化（`selfReview` 关闭，改由 `craft-review` 技能承担）+
+> 联网搜索中度预算（`webSearchLimit: 8`——需求层热点扫描与映射阶段都可能搜，默认 6 偏紧）——把交付质量押在七阶段流水线与领域技能库。
+> **白话方案设计师**低温度（0.4）+ 出错重试（`retry`）+ 内核终审（`selfReview` 开）+
+> 联网搜索研究型预算（`webSearchLimit: 12`——每个非平凡子方案都要 3-5 个信息源）——设计收敛本身依赖模型推演。
+> 推理深度（`multiStepReasoning: auto`）与单步输出（`outputLimit: 0` 不干预）两包同为默认、听服务端——2026-09-30 已对齐（manual 原动机随 outputLimit 放开弱化），**不再是差异点**（旧版本文档曾写 manual / 大单步输出，已订正）。
 > 二者是同一哲学在两类任务上的不同落点，参数不可互抄。
 
 > 两个示例包**全面覆盖当前角色包设计**：**内容文件零声明**（persona.md / rules.md 约定名 + skills/ 目录扫描，manifest 不含任何内容路径注册）、顶层 capabilities（能力面）、strategy 策略、handoffPrompt 衔接提示词。开放键使用与消费方说明见 [role-pack-开放键指南](../docs/role-pack-开放键指南.md)；完整中立规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)（仓库内文档）。

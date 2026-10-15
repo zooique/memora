@@ -28,7 +28,8 @@
     },
     "global": {
       "askOn": ["ambiguity", "decision", "missing_info", "confirm"],
-      "askLimit": 3,
+      "askLimit": 10,
+      "webSearchLimit": 6,
       "errorHandling": "retry",
       "contextLimit": 0,
       "stepBudget": 50
