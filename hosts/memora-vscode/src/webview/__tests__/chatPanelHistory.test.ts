@@ -836,7 +836,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       isPausePending: () => false,
     } as unknown as Agent;
     provider.setAgent(agent);
-    // providerStore 桩：listMasked 返回 [] + getActiveName undefined → totalTokens 回落内核默认 120K
+    // providerStore 桩：listMasked 返回 [] + getActiveName undefined → totalTokens 回落内核默认窗口
     (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
     // 等待 fire-and-forget 的 postHistoryOccupancy（async）落定
     await vi.waitFor(() => {

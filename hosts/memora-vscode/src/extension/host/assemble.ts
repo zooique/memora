@@ -313,7 +313,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     })();
 
   // 上下文窗口解析（SSOT 单源公式）：vscode 窗口上限唯一真理源 = 用户 per-LLM 的 contextWindow
-  // （LlmProviderConfig.contextWindow，由配置面板开放编辑）；未配置回落内核默认 120K（默认非真理源）。
+  // （LlmProviderConfig.contextWindow，由配置面板开放编辑）；未配置回落内核默认窗口（AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS）（默认非真理源）。
   // 无全局封顶——用户对自己填写的参数负责（见架构决策）。resolveContextWindow 单参：传 per-LLM 值，undefined 即兜底。
   const activeProviderCfg = providerStore ? await providerStore.getActive() : undefined;
   const maxContextTokens = resolveContextWindow(activeProviderCfg?.contextWindow);

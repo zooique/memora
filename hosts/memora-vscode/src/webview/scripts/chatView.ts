@@ -267,7 +267,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   // 当前 Provider 列表（由 chat_providers 消息填充）
   // limitTokens = 宿主经内核 resolveContextWindow 解析的上下文窗口上限
-  // （用户 per-LLM 配置的 contextWindow，未配置回落内核默认 120K）
+  // （用户 per-LLM 配置的 contextWindow，未配置回落内核默认窗口）
   interface ChatProviderItem {
     name: string;
     displayName: string;

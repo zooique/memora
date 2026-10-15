@@ -2361,7 +2361,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const providers = await this._providerStore.listMasked();
       const activeName = this._providerStore.getActiveName();
       // limitTokens = 每 Provider 的上下文窗口上限（SSOT：经内核 resolveContextWindow 解析，
-      // 用户填的 contextWindow 落回内核默认 120K），供 webview 首轮对话前实时渲染占用条容量
+      // 用户填的 contextWindow 落回内核默认窗口），供 webview 首轮对话前实时渲染占用条容量
       const list = providers.map((p) => ({
         name: p.name,
         displayName: p.displayName || p.name,
@@ -2502,7 +2502,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       if (this._agent) {
         await this._agent.setProvider(await createProvider(this._providerStore));
         // 随模型热切换同步上下文窗口上限（per-LLM contextWindow 唯一真理源；
-        // resolveContextWindow 回落内核默认 120K，与装配期口径一致），
+        // resolveContextWindow 回落内核默认窗口（AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS），与装配期口径一致），
         // 让内核预算/截断/占用快照与所选模型窗口对齐
         const active = await this._providerStore.getActive();
         this._agent.setContextWindow(resolveContextWindow(active?.contextWindow));

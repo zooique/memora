@@ -1865,8 +1865,8 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           </div>
           <div class="field">
             <label for="f-contextwindow">上下文窗口上限（K）</label>
-            <input id="f-contextwindow" name="contextWindow" type="text" inputmode="decimal" placeholder="如 128（留空用默认 120K）" autocomplete="off" />
-            <div class="key-hint">填千单位（K），如 128 表示 128K = 128,000 tokens；支持小数（如 1.5）；留空使用默认 120K。</div>
+            <input id="f-contextwindow" name="contextWindow" type="text" inputmode="decimal" placeholder="如 128（留空用默认窗口）" autocomplete="off" />
+            <div class="key-hint">填千单位（K），如 128 表示 128K = 128,000 tokens；支持小数（如 1.5）；留空使用内核默认窗口（默认值以内核 AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS 为真源，此处不写死数字）。</div>
             <div id="f-contextwindow-feedback" class="key-hint" hidden></div>
           </div>
           <div class="field">

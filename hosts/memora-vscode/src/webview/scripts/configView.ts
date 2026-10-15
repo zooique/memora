@@ -59,7 +59,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   const fModel = root.querySelector('#f-model') as HTMLInputElement;
   const fBaseUrl = root.querySelector('#f-baseurl') as HTMLInputElement;
   const fApiKey = root.querySelector('#f-apikey') as HTMLInputElement;
-  // 上下文窗口上限（per-LLM，可选；留空回落内核默认 120K；单一 K 单位输入）
+  // 上下文窗口上限（per-LLM，可选；留空回落内核默认窗口（真源 = AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS）；单一 K 单位输入）
   const fContextWindow = root.querySelector('#f-contextwindow') as HTMLInputElement;
   // 输出上限输入（T1，K 单位同 contextWindow）：per-LLM 输出预算，空 = 回服务端默认
   const fMaxTokens = root.querySelector('#f-maxtokens') as HTMLInputElement;
@@ -438,7 +438,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   });
 
   /** 上下文上限输入前置校验（submit 与 test 双路径共用，防非法值静默回落）：
-   *  非法（NaN）→ 就地报错并聚焦，返回 false 阻断发送；空串合法（回落默认 120K）。 */
+   *  非法（NaN）→ 就地报错并聚焦，返回 false 阻断发送；空串合法（回落内核默认窗口）。 */
   function validateContextWindow(): boolean {
     const cwRaw = fContextWindow.value.trim();
     if (cwRaw) {

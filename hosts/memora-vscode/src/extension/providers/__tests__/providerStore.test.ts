@@ -68,7 +68,7 @@ describe('ProviderStore.contextWindow 护栏 + 迁移', () => {
     expect(saved.apiKey).toBeUndefined();
   });
 
-  it('save：contextWindow 缺省（undefined）→ 仍允许保存（回落内核默认 120K）', async () => {
+  it('save：contextWindow 缺省（undefined）→ 仍允许保存（回落内核默认窗口）', async () => {
     const res = await store.save(
       {
         name: 'deepseek',

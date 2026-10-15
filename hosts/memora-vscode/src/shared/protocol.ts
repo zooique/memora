@@ -59,7 +59,7 @@ export interface LlmProviderConfig {
    * 每个用户添加的 LLM 独立配置自己的上下文上限（如 deepseek-chat 64K、gpt-4o 128K、
    * 本地模型 8K）。宿主无「模型真上限」权威（用户可能添加任意 OpenAI 兼容 endpoint，
    * 宿主不预置静态表、不动态探测），故本字段即窗口真相源，由用户在配置面板填写。
-   * 未填（undefined）→ 装配时经内核 resolveContextWindow 回落默认 120K（默认非真理源）。
+   * 未填（undefined）→ 装配时经内核 resolveContextWindow 回落内核默认窗口（真源 = AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS，数字不在此落账）。
    * 仅护栏 = 宿主 save 校验正整数 + 合理范围（防 0 / 防天文数字撑爆预算），不构成第二真理源。
    */
   contextWindow?: number;
@@ -831,7 +831,7 @@ export type ExtensionToWebviewMessage =
    * 扩展侧在渲染/切换时推送最新 Provider 列表及激活状态，
    * webview 下拉框据此刷新选项。
    * limitTokens = 该 Provider 的上下文窗口上限（宿主经内核 resolveContextWindow 解析：
-   * 用户 per-LLM 配置的 contextWindow，未配置回落内核默认 120K）——webview 据此在
+   * 用户 per-LLM 配置的 contextWindow，未配置回落内核默认窗口）——webview 据此在
    * 首轮对话前实时渲染输入区上下文占用条的容量上限，不重复引入内核默认值。
    */
   | {

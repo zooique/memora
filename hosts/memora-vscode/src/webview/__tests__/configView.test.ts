@@ -188,7 +188,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(detail.textContent).toBe('deepseek-model · https://api.example.com/v1 · 128K tokens');
   });
 
-  it('详情报文：未配置 contextWindow 时不附加 tokens 标注（回落默认 120K）', () => {
+  it('详情报文：未配置 contextWindow 时不附加 tokens 标注（回落内核默认窗口）', () => {
     mountConfigView();
     dispatchLoaded([makeProvider('deepseek')], 'deepseek');
     const detail = document.querySelector('.card-detail') as HTMLElement;
@@ -231,7 +231,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(sent.config.contextWindow).toBe(128000);
   });
 
-  it('保存提交：contextWindow 留空 → 上报 undefined（回落默认 120K）', () => {
+  it('保存提交：contextWindow 留空 → 上报 undefined（回落内核默认窗口）', () => {
     const { postMessage } = mountConfigView();
     dispatchLoaded([]);
     (document.getElementById('btnAdd') as HTMLButtonElement).click();
@@ -377,7 +377,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     (document.getElementById('f-baseurl') as HTMLInputElement).value = 'https://api.example.com/v1';
     (document.getElementById('f-contextwindow') as HTMLInputElement).value = 'abc';
     (document.getElementById('btnTest') as HTMLButtonElement).click();
-    // 必须经校验再发送（坑：btnTest 直接 readForm() 未经校验时 NaN 落 undefined，会静默以默认 120K 测连接）
+    // 必须经校验再发送（坑：btnTest 直接 readForm() 未经校验时 NaN 落 undefined，会静默以内核默认窗口测连接）
     expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'cfg_test' }));
     const feedback = document.getElementById('f-contextwindow-feedback') as HTMLElement;
     expect(feedback.hidden).toBe(false);
