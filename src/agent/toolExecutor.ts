@@ -27,7 +27,7 @@ import {
   SEARCH_PROJECT_TOOL,
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
-import { sanitizeExternalText } from '@/agent/textSanitize.js';
+import { sanitizeExternalText, stripControlChars } from '@/agent/textSanitize.js';
 import {
   okOutcome,
   failedOutcome,
@@ -43,6 +43,7 @@ import type { IWebSearchProvider } from '@/web-search/types.js';
 import { safeSearch } from '@/web-search/webSearchProvider.js';
 import type { IFetchProvider } from '@/web-fetch/types.js';
 import { safeFetch } from '@/web-fetch/webFetchProvider.js';
+import { isLoginWallPage } from '@/web-fetch/loginWall.js';
 import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
 import {
@@ -76,6 +77,31 @@ export type { ToolDefinition } from '@/agent/builtinTools.js';
 const WEB_SEARCH_QUERY_MAX_LEN = 200;
 /** web_search 单条结果字段最大长度（防长上下文注入） */
 const WEB_SEARCH_RESULT_MAX_LEN = 500;
+/**
+ * web_search 观测留痕的最大标题条数（证据面小帽）
+ *
+ * 留痕目的是归因取样（「搜到了什么」），不是全量镜像——全量计数由 count 承载，
+ * 标题只留前 N 条样本。与结果字段上限同族：证据落盘体积有界。
+ */
+const WEB_SEARCH_EVIDENCE_MAX_TITLES = 5;
+
+/**
+ * web_search 执行事实（观测留痕载荷，SEARCH-QUALITY-1 P1-1）
+ *
+ * toolExecutor 观察到的执行事实镜像（不是 `SearchResult` 的再导出——只带归因必要字段，
+ * 且标题已净化截断：落盘证据面不进原始外部内容）。loop 侧（recordWebSearchEvidence）
+ * 补 ts/meetingRound 后构造裁决证据事件，本接口不含时间与轮次语境（那归 loop）。
+ */
+export interface WebSearchExecInfo {
+  /** LLM 实际发出的查询串 */
+  query: string;
+  /** 实际服务的搜索后端名（与结果透出「搜索来源」同源；提供方未打标时缺省） */
+  endpoint?: string;
+  /** 结果条数（0 = 零结果搜索，同样留痕） */
+  count: number;
+  /** 结果标题（净化 + 截断后，最多 WEB_SEARCH_EVIDENCE_MAX_TITLES 条） */
+  titles: string[];
+}
 
 // ─── web_fetch / run_code 注入防御常量 ─────────────────
 
@@ -567,6 +593,22 @@ export class ToolExecutor {
   }
 
   /**
+   * web_search 执行事实观察者（可选，观测留痕）
+   *
+   * 由 agent 装配时注入（loop.recordWebSearchEvidence，「搜不准」归因取证）：
+   * 每次 web_search **实际执行后**（safeSearch 返回即发射，零结果/降级页同样发射——
+   * 「没搜到」与「搜到了但不对」同为归因现场，失败按原样记录 = 诚实镜像 LLM 实际所得）。
+   * 护栏硬拦的搜索不走此路（未执行即无结果面；拦截事实已在 tool 消息可见）。
+   * undefined = 未注入静默跳过（纯 ToolExecutor 单测场景）。
+   */
+  private searchResultObserver?: (info: WebSearchExecInfo) => void;
+
+  /** 注入 web_search 执行事实观察者（装配时由 loop 创建后注入，见 assembler） */
+  setSearchResultObserver(observer: (info: WebSearchExecInfo) => void): void {
+    this.searchResultObserver = observer;
+  }
+
+  /**
    * 注入后台任务注册表（装配层接线，run_command background / kill_command 数据源）
    *
    * 与 toolExec 构造解耦（注册表在 toolExec 之后创建，见 assembler），故用 setter。
@@ -1048,12 +1090,26 @@ export class ToolExecutor {
         }
         const limit = Math.min(Number.parseInt(strArg('limit', '5'), 10) || 5, 20);
         const results = await safeSearch(this.webSearchProvider, query, { limit });
+        // 搜索来源（降级透出 + 观测留痕同源）：同批次结果来自同一后端，取首条 endpoint
+        const endpoint = results[0]?.endpoint;
+        // 观测留痕（SEARCH-QUALITY-1 P1-1）：执行事实镜像给 loop 落裁决证据轨。
+        // 在空结果分支**之前**发射——零结果（count=0）是「没搜到」的归因现场，不静默跳过；
+        // safeSearch 降级页按原样记录（title 即「网络搜索暂不可用」）= 诚实镜像 LLM 实际所得。
+        // query 与 titles 同净化标准（stripControlChars 剥控制字符——落盘证据面不进原始
+        // 控制字符；长度已由 WEB_SEARCH_QUERY_MAX_LEN 校验管，不重复钳制）
+        this.searchResultObserver?.({
+          query: stripControlChars(query),
+          endpoint,
+          count: results.length,
+          titles: results
+            .slice(0, WEB_SEARCH_EVIDENCE_MAX_TITLES)
+            .map((r) => sanitizeExternalText(r.title, WEB_SEARCH_RESULT_MAX_LEN)),
+        });
         if (results.length === 0) {
           return `（未找到与 "${query}" 相关的搜索结果）`;
         }
         // 搜索来源透出：同批次结果来自同一后端，取首条 endpoint 告知用户实际使用的搜索源
         // （降级到 DuckDuckGo 时即透出「搜索来源：DuckDuckGo」），提升 in-flow 信任；宿主渲染工具结果文本即可见。
-        const endpoint = results[0]?.endpoint;
         const sourceLine = endpoint ? `（搜索来源：${endpoint}）` : '';
         // 返回净化：外部内容去控制字符 + 长度上限，防长上下文注入
         const body = results
@@ -1120,6 +1176,22 @@ export class ToolExecutor {
         const page = await safeFetch(this.fetchProvider, url, { maxChars });
         if (!page.content) {
           return `（未能从 "${url}" 提取到正文内容）`;
+        }
+        // 登录墙识别（SEARCH-QUALITY-1 P2-1）：HTTP 200 的登录页洗成正文 = 「抓到了一堵墙」，
+        // 明示不可读并引导换源——不把表单碎片当页面内容交付（LLM 会当正文啃）。
+        // 判据是保守启发式（漏判=现状，误判=藏可读页，见 loginWall.ts 文件头）；
+        // finalUrl 取重定向后实际地址 page.url（带登录态参数的原始 URL 常常正是要抓的页面）。
+        // 两条边界排除（落地自审 D-2/D-3）：
+        // · fetchFailed 降级页不判墙——「抓取失败」不得谎报成「可能需登录」（失败语义不改写）；
+        // · contentCap 传 maxChars——截断上限 < 弱信号阈值时「短正文」是截断假象，弱信号禁用。
+        if (
+          !page.fetchFailed &&
+          isLoginWallPage(page.url || url, page.title, page.content, maxChars)
+        ) {
+          return (
+            `（该页面（${page.url || url}）可能需要登录才能查看，本次只获取到登录表单而非正文。` +
+            `请改用其他来源，或请用户提供可访问的链接。）`
+          );
         }
         // 返回净化：外部内容去控制字符 + 长度上限，防长上下文注入
         const title = sanitizeExternalText(page.title, 500);

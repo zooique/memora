@@ -2,12 +2,16 @@
  * 裁决证据写点（悬案取证轨）单元测试
  *
  * 背景：带伤悬案「ADR-031 过度拦截 / 规避行为红旗 / 会议空响应」的裁决需要个案证据——
- * 计数器判不了意图、不落盘重启即失忆。本文件锁 loop 两个写点 + 会议轮操作化判据：
+ * 计数器判不了意图、不落盘重启即失忆。本文件锁 loop 三个写点 + 会议轮操作化判据：
  * 1. **空响应写点**：LLM 200 但无文本无工具调用 → 产 empty_response 证据（含轮内迭代位）。
  * 2. **回显写点**：read_file 台账替身回显命中 → 产 ledger_stub_echo 证据（含 path/覆盖区间/请求区间）。
- * 3. **会议轮判据**（操作化单点 isMeetingRound）：任务表 active 任务项声明 rolePack 才算会议轮。
+ * 3. **web_search 留痕写点**（SEARCH-QUALITY-1 P1-1）：toolExecutor 观察者镜像执行事实 →
+ *    loop.recordWebSearchEvidence 产 web_search_result 证据（query/endpoint/count/titles）——
+ *    「搜不准」归因的第一现场：结果页之外，query 本身落盘可裁。
+ * 4. **会议轮判据**（操作化单点 isMeetingRound）：任务表 active 任务项声明 rolePack 才算会议轮。
  *
- * 突变验证：写点处的 appendRoundEvidence 回调被摘除 → 本文件三条全部变红（证据归零）。
+ * 突变验证：写点处的 appendRoundEvidence 回调被摘除 → 本文件全部变红（证据归零）；
+ * recordWebSearchEvidence 被摘除 → web_search 两条变红（事件构造归 loop 单点）。
  */
 import { describe, it, expect, vi } from 'vitest';
 import { AgentLoop } from '@/agent/loop.js';
@@ -192,5 +196,62 @@ describe('AgentLoop · 裁决证据写点', () => {
         request: {},
       },
     });
+  });
+
+  it('web_search 留痕：recordWebSearchEvidence 产 web_search_result 证据（query/endpoint/count/titles 透传 + ts/meetingRound 归 loop）', () => {
+    const collected: RoundEvidenceEvent[] = [];
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([[]]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('ok'),
+    });
+    loop.appendRoundEvidence = (ev) => collected.push(ev);
+    // 会议轮数据源同其余写点（isMeetingRound 操作化单点）：active 任务项带 rolePack
+    loop.getActivePlanItemMeta = () => ({ planItemId: 's1', title: '调研', rolePack: 'pack-a' });
+
+    loop.recordWebSearchEvidence({
+      query: 'memora 架构',
+      endpoint: 'Bing',
+      count: 3,
+      titles: ['标题一', '标题二', '标题三'],
+    });
+
+    expect(collected).toHaveLength(1);
+    expect(collected[0]).toMatchObject({
+      type: 'web_search_result',
+      // ts/meetingRound 由 loop 构造（透传方只给执行事实，不伪造时间与轮次语境）
+      meetingRound: true,
+      payload: {
+        query: 'memora 架构',
+        endpoint: 'Bing',
+        count: 3,
+        titles: ['标题一', '标题二', '标题三'],
+      },
+    });
+    // ts 是 loop 现造的 ISO 8601（不是透传值——WebSearchExecInfo 无 ts 字段）
+    expect(collected[0]?.ts).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('web_search 留痕：零结果搜索同样留痕（count=0；「没搜到」与「搜到了但不对」同为归因现场）', () => {
+    const collected: RoundEvidenceEvent[] = [];
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([[]]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('ok'),
+    });
+    loop.appendRoundEvidence = (ev) => collected.push(ev);
+
+    loop.recordWebSearchEvidence({ query: '冷门查询', count: 0, titles: [] });
+
+    expect(collected).toHaveLength(1);
+    expect(collected[0]).toMatchObject({
+      type: 'web_search_result',
+      meetingRound: false,
+      payload: { query: '冷门查询', count: 0, titles: [] },
+    });
+    // endpoint 缺省 = 提供方未打标（自定义 IWebSearchProvider 向后兼容形状，不是漏记）
+    const first = collected[0];
+    const payload = first?.type === 'web_search_result' ? first.payload : undefined;
+    expect(payload?.endpoint).toBeUndefined();
   });
 });

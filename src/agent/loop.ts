@@ -12,7 +12,7 @@
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
-import type { ToolDefinition } from '@/agent/toolExecutor.js';
+import type { ToolDefinition, WebSearchExecInfo } from '@/agent/toolExecutor.js';
 import {
   ASK_USER_TOOL,
   COMPRESS_CONTEXT_TOOL,
@@ -3229,6 +3229,29 @@ export class AgentLoop {
   /** 获取当前轮次 ID（processUserInput 入口分配，多 iteration 共享），空串表示无活动轮次 */
   getCurrentRoundId(): string {
     return this.currentRoundId;
+  }
+
+  /**
+   * 记录 web_search 执行证据（悬案取证轨写点，SEARCH-QUALITY-1 P1-1 观测留痕）
+   *
+   * 驱动方 = 装配层接线 `toolExec.setSearchResultObserver`（toolExecutor 观察到的执行事实
+   * 镜像过来）。ts/meetingRound 构造归 loop（isMeetingRound 私有，与其余三个写点同构）；
+   * 载荷透传不加工（query/endpoint/count/titles 就是 toolExecutor 看到的原样）。
+   * 回答「搜不准」争议的第一现场：结果页之外，query 本身 + 端点 + 结果面落盘可裁。
+   * 护栏硬拦的搜索不走此路（拦截即未执行，无结果面；拦截事实已在 tool 消息可见）。
+   */
+  recordWebSearchEvidence(info: WebSearchExecInfo): void {
+    this.appendRoundEvidence?.({
+      type: 'web_search_result',
+      ts: nowIso(),
+      meetingRound: this.isMeetingRound(),
+      payload: {
+        query: info.query,
+        endpoint: info.endpoint,
+        count: info.count,
+        titles: info.titles,
+      },
+    });
   }
 
   /** 设置当前轮次 ID（appendUser 在 processUserInput 之前调用，故需提前生成供 RoundSummaryGenerator 使用） */

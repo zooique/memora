@@ -14,6 +14,14 @@ export interface FetchedPage {
   content: string;
   /** 内容类型（如 "text/html"、"application/pdf"），无法识别时为空串 */
   contentType?: string;
+  /**
+   * 抓取失败降级页标记（safeFetch 专有；成功路径恒缺省，宿主自定义 provider 不打标）
+   *
+   * 值恒 `true`：只有降级页会置位，无人能置 false——「这不是一次成功抓取」是单向事实。
+   * 消费方（toolExecutor 登录墙判断）据此排除「抓取失败 + 登录段 URL 被误报为登录墙」
+   * 的谎报路径（失败语义不得改写成别的原因）。可选字段 = 契约放宽，向后兼容。
+   */
+  fetchFailed?: true;
 }
 
 /** 抓取选项 */

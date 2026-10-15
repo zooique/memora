@@ -691,6 +691,12 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   // 预算紧张时自动下探结果条数上限（loop 创建后注入，与 read_skill 同款时序解耦）
   toolExec.setBudgetProvider(() => loop.getLastBudget()?.remainingTokens);
 
+  // 观测留痕接线（SEARCH-QUALITY-1 P1-1）：「搜不准」归因取证——toolExecutor 观察
+  // web_search 执行事实 → loop.recordWebSearchEvidence 构造证据事件（ts/meetingRound
+  // 归 loop）→ appendRoundEvidence 落当前轮随 Round 持久化。
+  // 与 setBudgetProvider 同款时序解耦（loop 创建后才可注入）；漏接 = 搜索照跑、证据归零。
+  toolExec.setSearchResultObserver((info) => loop.recordWebSearchEvidence(info));
+
   // 后台任务注册表（run_command background / kill_command 与后台回流的共享单点）：
   // 一个实例同时接两端——toolExec 写（start / kill）、loop 读（完成回流 + turn 终态脱管）。
   // **实例非单例**：每次装配新建一张任务表，多会话各自隔离（否则 kill_command 能杀别的会话的进程）。

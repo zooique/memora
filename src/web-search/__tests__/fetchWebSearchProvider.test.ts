@@ -132,7 +132,9 @@ describe('FetchWebSearchProvider', () => {
     });
 
     it('Bing HTML 实体应解码（&amp; → &）', async () => {
-      const html = '<h2><a href="https://x.com/a&amp;b=1">标题</a></h2>';
+      const html =
+        '<li class="b_algo"><h2><a href="https://x.com/a&amp;b=1">标题</a></h2>' +
+        '<p class="b_lineclamp2">摘要</p></li>';
       globalThis.fetch = asFetch(
         createUrlDispatchFetch(
           () => htmlResponse(html),
@@ -143,6 +145,34 @@ describe('FetchWebSearchProvider', () => {
       const results = await provider.search('测试');
 
       expect(results[0]!.url).toBe('https://x.com/a&b=1');
+    });
+
+    it('Bing 错位防护：结果块之外的 b_lineclamp 不得贴到结果标题上（块内配对）', async () => {
+      // 缺陷形态（SEARCH-QUALITY-1 P2-2）：旧实现全文收集 titles[]/snippets[] 两个数组
+      // 按 index 配对，结果块之外的干扰摘要（推荐位/广告位/侧栏）会把模块摘要贴到
+      // 下一个结果标题上——LLM 读到「标题二 + 干扰摘要」的错位组合（搜不准的解析层根因）。
+      // 构造：结果块一与结果块二之间放一个块外干扰 b_lineclamp。
+      const html =
+        '<html><body>' +
+        '<li class="b_algo"><h2><a href="https://x.com/1">标题一</a></h2>' +
+        '<p class="b_lineclamp2">摘要一</p></li>' +
+        '<div class="b_ans"><p class="b_lineclamp4">干扰摘要（不属于任何结果）</p></div>' +
+        '<li class="b_algo"><h2><a href="https://x.com/2">标题二</a></h2>' +
+        '<p class="b_lineclamp3">摘要二</p></li>' +
+        '</body></html>';
+      globalThis.fetch = asFetch(
+        createUrlDispatchFetch(
+          () => htmlResponse(html),
+          () => htmlResponse(MOCK_EMPTY_HTML),
+        ),
+      );
+
+      const results = await provider.search('测试');
+
+      expect(results).toHaveLength(2);
+      // 块内配对：每条结果的摘要必须取自同一结果块（旧 index 配对会把「干扰摘要」贴给标题二）
+      expect(results[0]).toMatchObject({ title: '标题一', snippet: '摘要一' });
+      expect(results[1]).toMatchObject({ title: '标题二', snippet: '摘要二' });
     });
   });
 

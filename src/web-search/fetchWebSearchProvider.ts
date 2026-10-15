@@ -15,38 +15,38 @@ import { BROWSER_UA, fetchWithTimeout } from '@/utils/http.js';
 const ENDPOINT_TIMEOUT_MS = 10_000;
 
 /**
- * 从 Bing 结果页 HTML 提取结果：标题+链接在 <h2><a>，摘要在 <p class="b_lineclamp*">。
+ * 从 Bing 结果页 HTML 提取结果：结果条目 = `<li class="b_algo">` 块，块内 `<h2><a>` 取
+ * 标题+链接、块内 `<p class="b_lineclamp*">` 取摘要。
  * 用正则而非 DOM 解析，避免引入 jsdom 依赖。
+ *
+ * **块内配对**（而非全文两个正则数组按 index 配对，SEARCH-QUALITY-1 P2-2 修订）：
+ * 标题与摘要必须在同一结果块内成对——全文收集 `titles[]`/`snippets[]` 后按 index 配对时，
+ * 结果块之外的任何 `b_lineclamp`（推荐位/广告位/侧栏）都会造成错位：模块摘要被贴到
+ * 下一个结果标题上，LLM 读到「标题二 + 干扰摘要」的错位组合（搜不准的解析层根因）。
+ * 结构漂移（无 b_algo 块）→ 零结果 → 降级链切下一端点 = 诚实失败，不产错位垃圾。
+ * 块内提取范式同 parseBaiduHtml（仓内既有正确先例，嫁接而非新造）。
  */
 function parseBingHtml(html: string, limit: number): SearchResult[] {
   const results: SearchResult[] = [];
-  const titleRegex = /<h2[^>]*><a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a><\/h2>/g;
-  const snippetRegex = /<p[^>]*class="b_lineclamp[^"]*"[^>]*>([\s\S]*?)<\/p>/g;
-
-  const titles: Array<{ url: string; title: string }> = [];
+  // 结果块：<li …b_algo…>…</li>（[^>]* 容忍附加 class/属性，如 b_algoBorder）。
+  // ⚠️ 正则内**禁写引号**（如 class="[^"]*b_algo…）：toolFailurePrefixGuard 的字符串字面量
+  // 提取器会把正则内的引号配对成伪字面量（`[^` → 盲区标记 `^`，旧 `^>` 同源产物）——
+  // 无引号写法对 Bing 的 <li class="b_algo"> 同等正确且不新增扫描噪声。
+  const blockRegex = /<li[^>]*b_algo[^>]*>([\s\S]*?)<\/li>/gi;
   let match: RegExpExecArray | null;
-  while ((match = titleRegex.exec(html)) !== null && titles.length < limit) {
-    const url = match[1]!.replace(/&amp;/g, '&').trim();
-    const title = match[2]!.replace(/<[^>]*>/g, '').trim();
-    if (title && url) {
-      titles.push({ url, title });
-    }
+  while ((match = blockRegex.exec(html)) !== null && results.length < limit) {
+    const block = match[1]!;
+    // 标题 + 链接：块内 <h2><a href>（块内无标题 = 非结果块，跳过不占结果位）
+    const titleMatch = /<h2[^>]*><a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i.exec(block);
+    if (!titleMatch) continue;
+    const url = titleMatch[1]!.replace(/&amp;/g, '&').trim();
+    const title = titleMatch[2]!.replace(/<[^>]*>/g, '').trim();
+    if (!url || !title) continue;
+    // 摘要：块内 <p class="b_lineclamp*>（块内无摘要 → 空串，不跨块借用）
+    const snipMatch = /<p[^>]*class="b_lineclamp[^"]*"[^>]*>([\s\S]*?)<\/p>/i.exec(block);
+    const snippet = snipMatch?.[1]?.replace(/<[^>]*>/g, '').trim() ?? '';
+    results.push({ title, url, snippet });
   }
-
-  const snippets: string[] = [];
-  while ((match = snippetRegex.exec(html)) !== null && snippets.length < limit) {
-    const snippet = match[1]!.replace(/<[^>]*>/g, '').trim();
-    if (snippet) snippets.push(snippet);
-  }
-
-  for (let i = 0; i < Math.min(titles.length, limit); i++) {
-    results.push({
-      title: titles[i]!.title,
-      url: titles[i]!.url,
-      snippet: snippets[i] ?? '',
-    });
-  }
-
   return results;
 }
 

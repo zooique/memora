@@ -36,6 +36,8 @@ import type { LlmProvider } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
 import type { Memory } from '@/memory/types.js';
+import type { IWebSearchProvider } from '@/web-search/types.js';
+import type { RoundEvidenceEvent } from '@/memory/roundStore.js';
 
 // ─── 测试夹具 ─────────────────────────────────────────────
 
@@ -491,6 +493,42 @@ describe('assembleComponents', () => {
       const table = output.loop.getTaskTable!();
       expect(table).toContain('已完成');
       expect(table).not.toContain('（执行约束');
+    });
+  });
+
+  // ─── web_search 观测留痕接线（SEARCH-QUALITY-1 P1-1） ───
+
+  describe('web_search 观测留痕接线', () => {
+    it('toolExec 观察者 → loop.recordWebSearchEvidence → appendRoundEvidence（摘线即红）', async () => {
+      // 缺陷形态：三个部件各自就位但装配线漏接 → 搜索照跑、证据归零（重启即失忆）。
+      // 本测试锁 createAgentLoopAndDeps 内的 setSearchResultObserver 接线：
+      // 走真实 toolExec.execute('web_search') 触发观察者，验证事件直达 loop 侧证据钩子。
+      const searchProvider: IWebSearchProvider = {
+        search: vi
+          .fn()
+          .mockResolvedValue([
+            { title: '架构标题', url: 'https://a.com/1', snippet: '摘要', endpoint: 'Bing' },
+          ]),
+      };
+      const output = await assembleComponents(
+        createPctx(),
+        createInput({ webSearchProvider: searchProvider }),
+      );
+
+      // 收集 loop 侧证据事件（替换装配侧 sink：只验证接线两端——观察者在位 + 事件构造正确；
+      // sink 归属 history.appendEvidence 的既有行为由 roundEvidence/messageHistory 测试覆盖）
+      const evidence: RoundEvidenceEvent[] = [];
+      output.loop.appendRoundEvidence = (ev) => evidence.push(ev);
+
+      await output.toolExec.execute('web_search', JSON.stringify({ query: 'memora 架构' }));
+
+      expect(evidence).toHaveLength(1);
+      expect(evidence[0]).toMatchObject({
+        type: 'web_search_result',
+        // 无 checkpoint → getActivePlanItemMeta 返回 null → 非会议轮（与既有写点同判据）
+        meetingRound: false,
+        payload: { query: 'memora 架构', endpoint: 'Bing', count: 1, titles: ['架构标题'] },
+      });
     });
   });
 

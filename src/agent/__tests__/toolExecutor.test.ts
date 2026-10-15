@@ -7,11 +7,12 @@
  *   - list_dir：默认项目根 / 递归 / 深度限制 / 忽略 node_modules / 黑名单
  *   - search_memories：match 模式 / near 模式 / 空查询 / 注入限制
  */
-import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ToolExecutor, sanitizeExternalText, BUILTIN_TOOLS } from '@/agent/toolExecutor.js';
+import type { WebSearchExecInfo } from '@/agent/toolExecutor.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { estimateTokensText } from '@/agent/contextManager.js';
 import { SecurityGuard, type WriteConfirmationInfo } from '@/security/pathGuard.js';
@@ -20,6 +21,8 @@ import { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import type { IProjectSearchProvider, ProjectTextSearchResult } from '@/project-search/types.js';
+import type { IWebSearchProvider, SearchResult } from '@/web-search/types.js';
+import type { IFetchProvider } from '@/web-fetch/types.js';
 import { MemoraError, toolError, ToolErrorCode } from '@/utils/errors.js';
 import { type ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
 
@@ -667,6 +670,114 @@ describe('工具执行器（6 个工具）', () => {
     });
   });
 
+  // ─── web_search 观测留痕（SEARCH-QUALITY-1 P1-1） ───
+  describe('web_search 观测留痕（setSearchResultObserver）', () => {
+    /** mock 搜索提供者（打标 endpoint，镜像 FetchWebSearchProvider 降级透出形状） */
+    function mockSearch(results: SearchResult[]): IWebSearchProvider {
+      return { search: vi.fn().mockResolvedValue(results) };
+    }
+
+    it('非空结果：observer 收到 query/endpoint/count/titles（标题走净化通道）', async () => {
+      const exec = new ToolExecutor(
+        tmpProject,
+        security,
+        index,
+        mockSearch([
+          { title: '标题一', url: 'https://a.com/1', snippet: '摘要一', endpoint: 'Bing' },
+          { title: '标题二', url: 'https://a.com/2', snippet: '摘要二', endpoint: 'Bing' },
+        ]),
+      );
+      const seen: WebSearchExecInfo[] = [];
+      exec.setSearchResultObserver((info) => seen.push(info));
+
+      await exec.execute('web_search', JSON.stringify({ query: '测试查询' }));
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toEqual({
+        query: '测试查询',
+        endpoint: 'Bing',
+        count: 2,
+        titles: ['标题一', '标题二'],
+      });
+    });
+
+    it('证据 payload 的 query 已剥控制字符（落地自审 D-4：titles 净化而 query 裸传 = 净化面不对称）', async () => {
+      const exec = new ToolExecutor(
+        tmpProject,
+        security,
+        index,
+        mockSearch([
+          { title: '标题一', url: 'https://a.com/1', snippet: '摘要一', endpoint: 'Bing' },
+        ]),
+      );
+      const seen: WebSearchExecInfo[] = [];
+      exec.setSearchResultObserver((info) => seen.push(info));
+
+      // query 带 ANSI 前缀 + 控制字符（JSON 合法承载 \u0001）——落盘证据面须与
+      // titles 同标准剥控制字符（长度由 WEB_SEARCH_QUERY_MAX_LEN 校验管，不重复钳制）
+      await exec.execute('web_search', JSON.stringify({ query: '\u001b[31m测试\u0001查询' }));
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.query).toBe('测试查询');
+    });
+
+    it('零结果：observer 仍收到 count=0（「没搜到」是归因现场，不静默跳过）', async () => {
+      const exec = new ToolExecutor(tmpProject, security, index, mockSearch([]));
+      const seen: WebSearchExecInfo[] = [];
+      exec.setSearchResultObserver((info) => seen.push(info));
+
+      const out = await exec.execute('web_search', JSON.stringify({ query: '冷门词' }));
+
+      expect(out).toContain('未找到');
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ query: '冷门词', count: 0, titles: [] });
+      // 空数组无首条 → endpoint 缺省（零结果时提供方不打标，与 provider 形状一致）
+      expect(seen[0]!.endpoint).toBeUndefined();
+    });
+
+    it('safeSearch 降级页按原样记录（失败也留痕 = 诚实镜像 LLM 实际所得）', async () => {
+      const failing: IWebSearchProvider = {
+        search: vi.fn().mockRejectedValue(new Error('ENOTFOUND')),
+      };
+      const exec = new ToolExecutor(tmpProject, security, index, failing);
+      const seen: WebSearchExecInfo[] = [];
+      exec.setSearchResultObserver((info) => seen.push(info));
+
+      await exec.execute('web_search', JSON.stringify({ query: 'Q' }));
+
+      // 降级页 title「网络搜索暂不可用」原样入 titles（不粉饰为「无结果」）
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ query: 'Q', count: 1 });
+      expect(seen[0]!.titles[0]).toContain('网络搜索暂不可用');
+    });
+
+    it('未注入 provider：NOT_AVAILABLE 路径不发射（无执行即无事实）', async () => {
+      const exec = new ToolExecutor(tmpProject, security, index);
+      const seen: WebSearchExecInfo[] = [];
+      exec.setSearchResultObserver((info) => seen.push(info));
+
+      const out = await exec.execute('web_search', JSON.stringify({ query: 'Q' }));
+
+      expect(out).toContain('未配置');
+      expect(seen).toHaveLength(0);
+    });
+
+    it('未设 observer：搜索正常执行不炸（可选注入，缺省静默）', async () => {
+      const exec = new ToolExecutor(
+        tmpProject,
+        security,
+        index,
+        mockSearch([
+          { title: '标题一', url: 'https://a.com/1', snippet: '摘要一', endpoint: 'Bing' },
+        ]),
+      );
+
+      const out = await exec.execute('web_search', JSON.stringify({ query: 'Q' }));
+
+      expect(out).toContain('标题一');
+    });
+  });
+
   describe('★ 原生 outcome（SCRIPT-2 B5-a · 信息获取族 status 断言）', () => {
     /**
      * 构造原生 outcome 捕获器：execute 第 4 参传入，按调用次序收集结构化结果。
@@ -845,6 +956,97 @@ describe('工具执行器（6 个工具）', () => {
       await expect(
         execWithFetch.execute('web_fetch', JSON.stringify({ url: 'file:///etc/passwd' })),
       ).rejects.toThrow(/协议不支持/);
+    });
+
+    // ─── 登录墙识别（SEARCH-QUALITY-1 P2-1） ───
+    it('登录页（URL 命中登录段）→ 明示可能需登录，不把表单碎片当正文交付', async () => {
+      const wallProvider: IFetchProvider = {
+        async fetch(url: string) {
+          return {
+            url, // 重定向后的 finalUrl = 登录页
+            title: '用户登录 - 示例站点',
+            content: '用户名 密码 登录 忘记密码 注册新账号',
+          };
+        },
+      };
+      const exec = new ToolExecutor(
+        tmpProject,
+        security,
+        index,
+        undefined,
+        undefined,
+        wallProvider,
+      );
+      const result = await exec.execute(
+        'web_fetch',
+        JSON.stringify({ url: 'https://example.com/login' }),
+      );
+      // hedged 提示（不谎称「无内容」——内容是登录表单；不交付表单碎片——那是噪声）
+      expect(result).toContain('可能需要登录');
+      expect(result).not.toContain('用户名');
+    });
+
+    it('登录墙判据未命中（普通页）→ 照常交付标题 + 正文（保守取向：漏判=现状）', async () => {
+      const result = await execWithFetch.execute(
+        'web_fetch',
+        JSON.stringify({ url: 'https://example.com/page' }),
+      );
+      expect(result).toContain('标题：抓取标题');
+      expect(result).not.toContain('可能需要登录');
+    });
+
+    it('抓取失败 + 登录段 URL → 如实报抓取失败，不谎报「可能需登录」（落地自审 D-2）', async () => {
+      // 缺口实录：safeFetch 降级页（网络失败）+ 登录段 URL 会命中 URL 强信号——
+      // 把「抓取失败」谎报成「可能需要登录」违反诚实原则（失败语义不得改写）。
+      const failingProvider: IFetchProvider = {
+        async fetch() {
+          throw new Error('ECONNREFUSED');
+        },
+      };
+      const exec = new ToolExecutor(
+        tmpProject,
+        security,
+        index,
+        undefined,
+        undefined,
+        failingProvider,
+      );
+      const result = await exec.execute(
+        'web_fetch',
+        JSON.stringify({ url: 'https://example.com/login' }),
+      );
+      expect(result).toContain('抓取失败');
+      expect(result).not.toContain('可能需要登录');
+    });
+
+    it('小 limit 截断长教程页 → 不因伪「短正文」误判墙（落地自审 D-3 集成面）', async () => {
+      // 缺口实录：LLM 传小 limit → maxChars 截断把长教程截成 < 600 字符 →
+      // 弱信号的「短正文」失真。cap < 弱信号阈值时弱信号禁用（强信号仍生效）。
+      const longGuideProvider: IFetchProvider = {
+        async fetch(_url: string, options?: { maxChars?: number }) {
+          const full = '如何登录系统的详细教程，第一步配置密码。'.repeat(200);
+          const maxChars = options?.maxChars ?? 8000;
+          return {
+            url: 'https://example.com/guide',
+            title: '如何登录示例站点',
+            content: full.slice(0, maxChars),
+          };
+        },
+      };
+      const exec = new ToolExecutor(
+        tmpProject,
+        security,
+        index,
+        undefined,
+        undefined,
+        longGuideProvider,
+      );
+      const result = await exec.execute(
+        'web_fetch',
+        JSON.stringify({ url: 'https://example.com/guide', limit: 300 }),
+      );
+      expect(result).toContain('如何登录示例站点');
+      expect(result).not.toContain('可能需要登录');
     });
   });
 

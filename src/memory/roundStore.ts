@@ -326,7 +326,7 @@ export type ProcessEvent =
  * 裁决证据事件（悬案取证轨，Round.evidence 元素）
  *
  * 定位：给「带伤悬案」提供跨会话可回溯的个案证据（回显命中 = 模型规避还是防重误拦、
- * 空响应是否偏爱会议轮），消费方是人工/抽样裁决，不是 UI 重放——
+ * 空响应是否偏爱会议轮、搜索 query 与结果面的归因对齐），消费方是人工/抽样裁决，不是 UI 重放——
  * 故不进 processEvents（宿主 UI 过程轨），由内核单点追加到在途 Round，
  * 宿主整对象 JSON 持久化天然携带。
  *
@@ -396,6 +396,31 @@ export type RoundEvidenceEvent =
          *   将来新增 `toolName` 字段，会**静默覆盖**这里的 `toolName`；增该字段时须同步调整透传顺序。
          */
         [dedupField: string]: string | number | undefined;
+      };
+    }
+  | {
+      /**
+       * web_search 执行结果留痕（SEARCH-QUALITY-1 P1-1：「搜不准」归因取证）
+       *
+       * 定位：结果质量争议的第一现场不在结果页，在 **query 本身**——旧台账只留「搜到什么」，
+       * 没留「搜的是什么」，归因只能猜。本变体把 query/endpoint/count/titles 落进取证轨，
+       * 复现争议时可直接对齐「模型问了什么 ⇄ 引擎回了什么」，裁决软引导/端点选择/解析缺陷。
+       * 零结果（count=0）同样留痕——「没搜到」与「搜到了但不对」是同级的归因现场。
+       */
+      type: 'web_search_result';
+      /** 事件时刻（ISO 8601） */
+      ts: string;
+      /** 事件时刻是否会议轮（判据见类型注释） */
+      meetingRound: boolean;
+      payload: {
+        /** LLM 实际发出的查询串（归因第一现场） */
+        query: string;
+        /** 实际服务的搜索后端（降级分型证据；提供方未打标时缺省） */
+        endpoint?: string;
+        /** 结果条数（0 = 零结果搜索） */
+        count: number;
+        /** 结果标题（净化 + 截断后）：定位「搜到了什么」的最小证据面（全量计数看 count） */
+        titles: string[];
       };
     };
 
