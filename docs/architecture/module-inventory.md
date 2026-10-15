@@ -256,7 +256,7 @@
 | `managers/dedupManager.ts`           | 🟢 已打磨 | `__tests__/dedupManager.test.ts`                      | 语义去重（LLM 判断）                              |
 | `managers/memoryAdvisor.ts`          | 🟢 已打磨 | `__tests__/memoryAdvisor.test.ts`                     | 来源健康诊断 / 冲突检测 / 关联推荐（sourceHealth 只读）     |
 | `managers/memoryInspector.ts`        | 🟢 已打磨 | `__tests__/memoryInspector.test.ts`                   | 记忆快照/诊断                                   |
-| `managers/goalConsistencyChecker.ts` | 🟢 已打磨 | `__tests__/goalConsistencyChecker.test.ts` (51 tests) | 约束提取/文本相似度（bigram+Jaccard）/漂移三级判定/约束一致性检查 |
+| `managers/goalConsistencyChecker.ts` | 🟡 部分打磨 | `__tests__/goalConsistencyChecker.test.ts` (51 tests) | 约束提取/文本相似度（bigram+Jaccard）/漂移三级判定/约束一致性检查。**⚠ 模块本体已打磨，但全仓零生产调用者**：`SessionManager.updateGoal` 无调用方、`mainGoal` 恒为空 ⇒ 漂移检测从未真实运行。且**实测区分能力为零**——正常子任务与真跑偏的相似度区间完全重叠（0.00–0.10 vs 0.00，无阈值可分），接线后 AI 每执行一个子任务都会被判 `drift`。**勿当闸门使用**；退役评估见 `tasks/待完成任务.md` |
 | `managers/chatLockManager.ts`        | 🟢 已打磨 | `__tests__/chatLockManager.test.ts`                   | 聊天锁管理                                     |
 | `managers/workProjection.ts`         | 🟢 已打磨 | `__tests__/workProjection.test.ts`                    | 作品投影管理                                    |
 | `managers/textPolishManager.ts`      | 🟢 已打磨 | `__tests__/textPolishManager.test.ts`                 | 文本润色                                      |

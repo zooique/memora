@@ -41,7 +41,7 @@ description: UI 工程化心智模型（设计令牌 + 组件抽象 + 样式继�
 | **DO** | **按类型收口**——按钮/卡片/输入/标签系统各归一个基类（`.btn` / `.btn--primary` / `.btn--sm`…）。表现可有 10 种变体，定义只在一个文件 |
 | **DO** | **封装完整交互状态**——`:hover` / `:focus` / `:focus-visible` / `:active` / `:disabled` / `[aria-busy]` / `:empty`。`focus-visible` 是增强，`:focus` 是底线。状态矩阵是组件契约，缺一状态 = 缺一承诺 |
 | **DO** | **变体用 BEM 修饰符**——`.btn--primary`（语义）/ `.btn--sm`（尺寸）/ `.card--flat`（风格）。修饰符只改它该改的属性，变体维度保持正交 |
-| **DO** | **组件接口 = 公共 API**——改 class 结构或自定义属性签名等同改被 N 处导入的函数签名；破坏性变更走 deprecation 周期（保留旧接口 + 标记废弃 + 下个大版本移除） |
+| **DO** | **组件接口 = 公共 API**——改 class 结构或自定义属性签名等同改被 N 处导入的函数签名；破坏性变更走 deprecation 周期（保留旧接口 + 标记废弃 + 下个大版本移除）。⚠️ **唯一豁免**：公开面 no-op 符号可直删，判据见 [legacy-contract-audit-rules.md §3.2.1](./legacy-contract-audit-rules.md)（三条件齐备，仅覆盖 no-op，真功能 API 不适用） |
 | **DON'T** | **不为每个页面建独立按钮样式**——页面级差异收敛为系统级变体，不写 `.login__btn` |
 | **DON'T** | **状态样式不散落组件外**——父组件传 className 模拟子组件 disabled/active 是状态失控；外部只传状态值，不传样式名 |
 
