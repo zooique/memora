@@ -119,7 +119,7 @@ new Agent({
   sessionStore,           // ISessionStore 实现（缺省仅内存保存）
   webSearchProvider,      // 网络搜索
   tracer,                 // 可观测
-  maxContextTokens,       // 默认 120000
+  maxContextTokens,       // 默认见 AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS（数字以该常量为真源，此处不落账）
   permission, allowedPaths, confirmWrites,   // 安全
   activeRolePack,         // 启动激活的角色包
 })
@@ -178,7 +178,7 @@ new Agent({
 | `configDir` | `string` | ❌ | 配置目录（role-packs / skills，设定记忆唯一归角色包） |
 | `dataDir` | `string` | ✅ | 记忆数据目录（必填，内核不提供默认值；传项目级还是用户级目录由宿主决定） |
 | `registryDir` | `string` | ❌ | 项目注册表目录（缺省与 dataDir 相同）。注册表用于**跨项目按名解析**，仅当多项目共用一份时才成立 |
-| `maxContextTokens` | `number` | ❌ | 上下文窗口上限（默认 120000） |
+| `maxContextTokens` | `number` | ❌ | 上下文窗口上限（缺省 = 内核 `AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS`，数字以该常量为真源，此处不落账） |
 | `activeRolePack` | `string` | ❌ | 启动激活的角色包名（缺失/不存在回退默认激活首个） |
 | `permission` | `'owner' \| 'guest'` | ❌ | 安全权限（默认 'owner'） |
 | `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |

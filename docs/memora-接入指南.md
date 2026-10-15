@@ -123,7 +123,7 @@ const agent = new Agent({
   backgroundProvider,    // 后台 Provider（可选）
   configDir: '/path/to/agent-config',
   dataDir: '/path/to/novel-project/.memora-data',  // 必填；相对路径会以进程 cwd 为基准，建议传绝对路径
-  maxContextTokens: 120000,
+  maxContextTokens: 120000, // 示例值——缺省时以内核 AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS 为真源，数字以该常量为准
   activeRolePack: '作家',
   permission: 'owner',
   allowedPaths: ['.'],

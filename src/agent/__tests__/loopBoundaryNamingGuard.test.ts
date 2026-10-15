@@ -15,7 +15,9 @@
  *
  * 判据边界（诚实声明）：types.ts 的类型联合、roundStore.ts 的重放映射不在扫描面
  * （它们是消费/重放面，非产出点）；本守卫只锁 loop.ts 产出点的方法名 ↔ 事件名对账，
- * 不锁事件时序（迭代开始 vs 迭代尾）——时序由 loop.test.ts 行为用例覆盖。
+ * 不锁事件时序（迭代开始 vs 迭代尾）——时序由 loop.test.ts 行为用例覆盖；
+ * **未来新文件的产出点不在覆盖**（扫描面 = loop.ts 单文件）：loop.ts 内新增第二产出点会红，
+ * 但若产出点整体搬去新文件，须回 ADR-034 定案并同步扩本守卫与方法头注释，本守卫不自动跟随。
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
