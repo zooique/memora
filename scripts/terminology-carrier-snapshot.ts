@@ -274,8 +274,13 @@ function walk(dir: string): void {
  * 拿不到清单必须抛错——静默返回空集会让反馈环永远绿（同 §1「解析失败报错」的失效模式）。
  */
 function listChangedFiles(): string[] {
+  // git 默认对非 ASCII 路径做 `core.quotepath` 转义：加双引号 + 字节转八进制
+  // （如 `tasks/\345\276\205\345\256\214...md`）。裸拿这份输出交给 extname → 后缀变成 `.md"`
+  // → 不匹配 SCAN_EXTS → **中文路径文件被静默跳过**，增量模式对本仓大量中文文档恒假绿
+  // （反馈环形同虚设）。关掉转义是根因修复；不做「剥引号」兜底——那只是把转义后的串洗回可用，
+  // 转义本身仍在，属掩盖而非消除。
   const run = (args: string[]): string[] =>
-    execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' })
+    execFileSync('git', ['-c', 'core.quotepath=false', ...args], { cwd: ROOT, encoding: 'utf8' })
       .split('\n')
       .map((s) => s.split('\\').join('/').trim())
       .filter(Boolean);

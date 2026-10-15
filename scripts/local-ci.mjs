@@ -187,6 +187,19 @@ const ALL_STEPS = [
     required: true,
     presets: ['full'],
   },
+  // 台账销项同步（告警档）：实现性提交携带台账条目 ID、但区间内 tasks/ 无对应变更 → 告警。
+  // 缺口实证：TERM-FDBK-1 随 feat 提交落地、同批 docs 提交没碰台账 → 台账仍挂「待排期」，
+  // 而既有 13 步对此零覆盖（都只认代码/文档事实，不认台账是否与提交同步）。
+  // **required:false 是刻意的**：存在正当反例（销项由同批另一笔 docs 提交完成、尚未落地），
+  // 先告警档跑，假阳性率实测可控后再升 fail 门（改判据 = 造伤，须先分诊）。
+  {
+    id: 'ledger:receipt',
+    name: '台账销项同步检查（告警档）',
+    cmd: 'node scripts/verify-ledger-receipt.mjs',
+    cwd: ROOT,
+    required: false,
+    presets: ['full'],
+  },
   // 排版格式检查（prettier）：FMT-PRETTIER-1 第③步——存量清零后才建闸（「存量不清零前不建闸」
   // 同族教训）。只进 full 不进 fast：全仓扫描 ~30s 且失败归因常是历史改动，不满足 fast 分层判据。
   {
