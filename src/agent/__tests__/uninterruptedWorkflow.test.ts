@@ -22,6 +22,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Agent } from '@/agent/agent.js';
+import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
 import { BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
 import { SessionManager } from '@/agent/managers/sessionManager.js';
 import { SessionStateMachine } from '@/agent/sessionStateMachine.js';
@@ -2133,6 +2134,52 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
 
       // (d) 续跑最终轮恰好产 1 条 round-summary（恒 1:1：暂停轮 0 + 续跑轮 1）
       await vi.waitFor(() => expect(askProvider.summaryRequestCount).toBe(1), { timeout: 2000 });
+    },
+  );
+
+  it(
+    '内核暂停超时兜底 → 在途提问被 cancelAsk 补齐占位（配对不变量不因宿主定时器丢失而破）',
+    { timeout: 30000 },
+    async () => {
+      const askProvider = new AskThenResumeProvider();
+      agent = new Agent({
+        projectPath: tmpProject,
+        provider: askProvider,
+        configDir: tmpConfig,
+        dataDir: tmpData,
+        permission: 'owner',
+        allowedPaths: [tmpData],
+      });
+      await agent.init();
+
+      // (a) 首轮 ask_user 挂起：在途提问未被消费（尚无 [ASK_ABORTED] 占位）
+      for await (const chunk of agent.chat('帮我读取一个文件')) {
+        void chunk;
+      }
+      expect(agent.sessionManager!.status).toBe('paused');
+      const abortedBefore = agent
+        .getMessages()
+        .filter((m) => m.role === 'tool' && String(m.content).includes('[ASK_ABORTED]'));
+      expect(abortedBefore).toHaveLength(0);
+
+      // (b) 宿主 webview 的 ASK_TIMEOUT 定时器随面板隐藏/销毁而失（retainContextWhenHidden 未启用），
+      //     只余内核 30min 暂停超时兜底。兜底若只清检查点、不清在途提问，
+      //     messages 尾部会留悬空 assistant(tool_calls)（ask_user 无配对 tool 消息）
+      //     → 下次 chat 装配被 OpenAI 兼容端以 400 拒绝。故超时监听器必须补 cancelAsk。
+      //     emit 为 protected：以 cast 驱动事件面（等价于 sessionManager 内部超时触发）。
+      const emitEvent = (agent as unknown as { emit(k: string, p: unknown): void }).emit.bind(
+        agent,
+      );
+      emitEvent(AGENT_EVENTS.sessionPauseTimedOut, {
+        sessionId: agent.sessionManager!.getCheckpoint()!.sessionId,
+        pauseDuration: 30 * 60 * 1000 + 1,
+      });
+
+      // cancelAsk 同步补齐占位 tool 结果（配对闭合），与宿主超时路径同构
+      const abortedAfter = agent
+        .getMessages()
+        .filter((m) => m.role === 'tool' && String(m.content).includes('[ASK_ABORTED]'));
+      expect(abortedAfter.length).toBeGreaterThan(0);
     },
   );
 

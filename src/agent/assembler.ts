@@ -368,7 +368,8 @@ export interface AssembleOutput {
  *
  * 这些闭包回填在组装器——接线本质是组件间协作，
  * 属装配职责（装配逻辑单一真理源）。
- * 注：loop.onPaused 不在此装配——暂停收口（Agent.consumeExecutionStream）统一写 pauseMeta。
+ * 注：loop.onPaused 不在此装配——pauseMeta 唯一写入点是 SessionManager.pause()；
+ *     consumeExecutionStream 只负责从状态机 pendingPause 取原因/来源并调 pause()，不自行写 pauseMeta。
  * 注：任务表停滞检测内嵌在单 turn step 循环中（无多 turn 编排）。
  *
  * @param loop AgentLoop（装配其 onPendingQuestion/onPlanItemBoundary/getTaskTable）
@@ -385,7 +386,9 @@ function wireRuntimeCallbacks(
   history: MessageHistory,
 ): void {
   // 主动提问（ask_user 工具检出）：发射 questionPending 事件（宿主渲染提问 UI）+
-  // 触发暂停（pauseMeta 记 reason/source，供重启恢复展示"问了什么"）。
+  // 注册软暂停申请（requestPause(reason, 'agent') → 状态机 pendingPause）。
+  // 注：pauseMeta 是**判据**（clearPlanOnTurnEnd 据此决定任务表清不清），不是展示字段；
+  //     旧注释所称「供重启恢复展示」已随跨重启恢复退役而失效，勿据此理解其用途。
   loop.onPendingQuestion = (questions) => {
     if (questions.length === 0) return;
     hooks?.emit(AGENT_EVENTS.questionPending, questions);

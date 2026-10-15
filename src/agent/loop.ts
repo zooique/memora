@@ -289,6 +289,12 @@ const INTEL_INTRO =
   '当你从大文本/工具结果获取到新的关键信息时，可用一句简短状态反馈用户进展（如：原来是这样… / 掌握了关键信息 / ' +
   '有一个问题… / 基本收集完毕），但不要在反馈中复述笔记/原文细节。';
 
+/** 「用户未回答该提问」占位 tool 结果（单一载体）：
+ *  消费点二——`cancelAsk`（整批跳过/超时未答）与 `answerQuestion`（**部分**题缺答案）。
+ *  两处共一常量而非各写字面量：改一处漏一处会让「未回答」这一事实在一条路径上失真，
+ *  而该事实直接进 LLM 决策上下文（静默失效、无报错）。 */
+const ASK_ABORTED_RESULT = '[ASK_ABORTED] 用户未回答该提问';
+
 export class AgentLoop {
   private messages: Message[] = [];
   private readonly maxIterations: number;
@@ -1857,6 +1863,8 @@ export class AgentLoop {
     for (const q of questions) {
       yield { type: 'question_pending', questions: [q] };
     }
+    // 挂起本身不携带来源：提问的原因/来源已由 onPendingQuestion → requestPause(reason,'agent')
+    // 注册进状态机 pendingPause（与用户暂停同一真源、同一入口），consumeExecutionStream 从 pending 取。
     yield { type: 'paused' };
     return 'paused';
   }
@@ -1864,17 +1872,25 @@ export class AgentLoop {
   /**
    * 回答在途提问（宿主在用户作答后调用，随后 continueAfterPause() 续跑）：
    * 答案以 ask_user 工具的 tool result 回填（<tool_result> 包裹防注入，与 assistant.tool_calls 配对）。
-   * answers 与提问按序一对一；不足时复用最后一条/空串兜底。返回 false 表示无在途提问。
+   * answers 与提问按序一对一；**不足的部分落 `[ASK_ABORTED]`「未回答」占位，不复用别题答案**。
+   * 返回 false 表示无在途提问。
    */
   answerQuestion(answers: readonly string[]): boolean {
     if (!this.pendingAsk) return false;
     const { toolCallIds } = this.pendingAsk;
     toolCallIds.forEach((id, i) => {
-      const answer = answers[i] ?? answers[answers.length - 1] ?? '';
-      this.appendToolMessage(
-        wrapToolResult(ASK_USER_TOOL.name, `[ASK_ANSWER] 用户回答：${answer}`),
-        id,
-      );
+      const answer = answers[i];
+      // 逐条按序一对一；**缺答案不得拿别题的答案顶替**。
+      // 旧兜底 `answers[answers.length - 1]`（不足时复用最后一条）会把同一条文本复制到剩余每题
+      // ⇒ 用户只答了一道，LLM 却收到「每题都有答案」——制造假事实、无报错、直接污染决策上下文。
+      // 多题场景下「底部只有一条文本的输入框」必然触发这条兜底（宿主已把回答统一走本入口）。
+      // 现改：缺答案落 [ASK_ABORTED] 占位（与 cancelAsk 同文案同源），把「未答」这一事实
+      // 显式告知模型；配对不变量不变——每条 toolCallId 恒有 tool 消息，不撞兼容端 400。
+      const result =
+        answer === undefined || answer.trim() === ''
+          ? ASK_ABORTED_RESULT
+          : `[ASK_ANSWER] 用户回答：${answer}`;
+      this.appendToolMessage(wrapToolResult(ASK_USER_TOOL.name, result), id);
     });
     // 已作答提问转存快照（runResume 落盘交互输入时随回答持久化），pendingAsk 即清空
     this.lastAnsweredAsk = this.pendingAsk.questions;
@@ -1908,10 +1924,7 @@ export class AgentLoop {
     if (!this.pendingAsk) return;
     const { toolCallIds } = this.pendingAsk;
     for (const id of toolCallIds) {
-      this.appendToolMessage(
-        wrapToolResult(ASK_USER_TOOL.name, '[ASK_ABORTED] 用户未回答该提问'),
-        id,
-      );
+      this.appendToolMessage(wrapToolResult(ASK_USER_TOOL.name, ASK_ABORTED_RESULT), id);
     }
     this.lastAnsweredAsk = this.pendingAsk.questions;
     this.pendingAsk = undefined;

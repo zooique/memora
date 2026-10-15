@@ -294,6 +294,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.on(AGENT_EVENTS.sessionPauseTimedOut, (payload) => {
       // pendingPauseReason 由 resetToRunning() 内部统一清理
       //（checkPauseTimeout 经 sessionManager resetToRunning 已覆盖，此处无需再补 cancelPendingPause）。
+      //
+      // 在途提问清理（配对不变量守卫）：宿主侧 ASK_TIMEOUT 定时器活在 webview 里，
+      // 而本面板未启用 retainContextWhenHidden ⇒ 面板隐藏/销毁即失，提问超时只能由
+      // 内核 30min 暂停超时兜底。兜底路径若只清检查点、不清在途提问，messages 尾部会留下
+      // assistant(tool_calls) 而 ask_user 无配对 tool 消息——下一次 chat 装配即被
+      // OpenAI 兼容端以 400 拒绝。补此调用后与宿主超时路径同构（同一守卫，非新增判据）。
+      // cancelAsk 对「无在途提问」天然 no-op，无条件调用安全；失败不阻断归档（隔离而非吞没）。
+      try {
+        this.cancelAsk();
+      } catch (err) {
+        logger.warn({ err }, '暂停超时清理在途提问失败（不阻断会话归档）');
+      }
       const { sessionId, date, session } = payload;
       if (!date || !session) return;
       // fire-and-forget：归档失败不阻塞主流程，仅记录
@@ -722,13 +734,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // 与 requestPause 空闲分支同源，须传 lowRisk=true 保持同一暂停事件契约（否则流中暂停计入连续暂停配额）
         if (chunk.type === 'paused') {
           const pendingInfo = this._sessionManager?.consumePendingPause();
-          // 暂停收口统一写 pauseMeta：reason/source 取自 pendingPause（与状态机一致）。
-          // ask_user 主动提问等"直接暂停路径"不走 loop.onPaused，在此自然补齐，
-          // 重启后宿主可展示"为什么暂停 + 问了什么"
+          // 原因/来源唯一真源 = 状态机 pendingPause：用户暂停与提问挂起**同源**注册
+          // （提问挂起经 assembler 的 onPendingQuestion → requestPause(reason,'agent')，
+          //   见 assembler.ts）。此处不另设第二载体，否则同一事实两个真源即漂移。
           const pauseReason = pendingInfo?.reason ?? '用户主动暂停';
           const pauseSource = pendingInfo?.source ?? 'user';
+          // pauseMeta 不在此写——已收口到 SessionManager.pause() 本体（本方法转发调用），
+          // 使 drift 等不经本分支的暂停路径同样拿到 pauseMeta。
           this.pause(pauseReason, pauseSource, true);
-          this._sessionManager?.setPauseMeta({ reason: pauseReason, source: pauseSource });
           paused = true;
         }
         yield chunk;

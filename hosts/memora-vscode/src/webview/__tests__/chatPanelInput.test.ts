@@ -5,6 +5,9 @@
  *   - running 态 send → agent.interject 排队（无缝插话，不发起新 chat）
  *   - waiting(ask) 态 answer → answerQuestion 回填 + resumeExecution('question-answer') 续跑
  *     （提问原文从 `_turnState.waiting.questions` 读，`_pendingQuestions` 整体清空）
+ *   - waiting(ask) 态 send（底部输入框回车）→ **同走 answer 通道**，不退化成 supplement：
+ *     提问等待态下任何输入都是对该提问的回应（含拒答），若走 supplement 会让在途提问被
+ *     cancelAsk 兜底成「用户未回答」、提问原文不落盘（同一意图两种记录 = SSOT 违约）
  *   - 错位输入（相位不符）→ 丢弃并落 console.warn 留痕（T2 观测：对用户仍静默、
  *     不改变路由裁决，但「答了没反应」的排障线索必须在扩展宿主日志可查）
  *
@@ -152,27 +155,43 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     expect(h.posted.filter((m) => (m as { type?: string }).type === 'status')).toHaveLength(0);
   });
 
-  it('waiting(ask) 态 send → 带文本续跑（resumeExecution supplement，不开新轮）', async () => {
+  it('waiting(ask) 态 send → 走 answer 通道回填（question-answer，不退化成 supplement）', async () => {
     const h = setupInput();
-    const { resumeExecution, chat } = mount(h);
-    // 相位：waiting/ask（提问挂起中，用户发补充）
+    const { answerQuestion, resumeExecution, chat } = mount(h);
+    const question: PendingQuestionDto = {
+      slot: 'q1',
+      question: '继续吗？',
+      options: ['继续', '停止'],
+    };
+    // 相位：waiting/ask（提问挂起中，用户在**底部输入框**打字回车）
     // 真实语义：内核 yield paused chunk 后 consumeFlow break → finally 复位 _streaming=false。
-    // sendInput 第一分支（流式插话）因此不可命中，补充正确路由到续跑分支。
+    // sendInput 第一分支（流式插话）因此不可命中，落到暂停态续跑分支。
     h.cast._streaming = false;
     h.cast._abortController = undefined;
-    h.cast._pendingQuestions = [{ slot: 'q1', question: '继续吗？' }];
-    h.cast._turnState = {
-      phase: 'waiting',
-      reason: 'ask',
-      questions: [{ slot: 'q1', question: '继续吗？' }],
-    };
+    h.cast._pendingQuestions = [question];
+    h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: [question] };
 
-    await h.cast.handleInput({ kind: 'send', text: '补充一点' });
+    await h.cast.handleInput({ kind: 'send', text: '继续' });
 
-    // 续跑注入（supplement 语义），不 chat
+    // R1：提问等待态下底部输入框的输入 = 对该提问的回答（含「你自己定」这类拒答），
+    //   故必须与 answer 意图同通道：answerQuestion 回填 + question-answer 落盘。
+    //   旧行为（合并进 supplement）会让在途提问被 runIterationLoop 兜底 cancelAsk 成
+    //   「用户未回答该提问」——用户明明答了，LLM 却被告知无人应答，且提问原文不落盘。
+    expect(answerQuestion).toHaveBeenCalledTimes(1);
+    expect(answerQuestion).toHaveBeenCalledWith(['继续']);
     expect(resumeExecution).toHaveBeenCalledTimes(1);
-    expect(resumeExecution.mock.calls[0][0]).toBe('补充一点');
-    expect(resumeExecution.mock.calls[0][2]).toBe('supplement');
+    expect(resumeExecution.mock.calls[0][0]).toBe('继续');
+    expect(resumeExecution.mock.calls[0][2]).toBe('question-answer');
+    // 提问原文随回答透出（重放可还原「问 → 你答」回顾行）
+    expect(h.posted).toContainEqual(
+      expect.objectContaining({
+        type: 'user',
+        kind: 'question-answer',
+        text: '继续',
+        question: '继续吗？',
+        options: ['继续', '停止'],
+      }),
+    );
     expect(chat).not.toHaveBeenCalled();
   });
 

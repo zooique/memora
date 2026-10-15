@@ -108,6 +108,10 @@ export type AgentChunk = (
    */
   | { type: 'error'; message: string; category?: LlmErrorCategory }
   | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }
+  /** 挂起（step 边界暂停 / ask_user 提问挂起共用）。
+   *  来源与原因**不由此事件承载**——唯一真源是 SessionStateMachine 的 pendingPause：
+   *  提问挂起同样经 assembler 的 onPendingQuestion → requestPause(reason, 'agent') 注册，
+   *  与用户暂停同一入口、同一套判据。事件带来源会造出第二个真源（并列即漂移）。 */
   | { type: 'paused' }
   /**
    * 主动提问（ask_user 工具）：LLM 调 ask_user 时 yield，

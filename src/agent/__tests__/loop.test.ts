@@ -4019,6 +4019,56 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     expect(loop.answerQuestion(['再次回答'])).toBe(false);
   });
 
+  it('多题只答部分 → 未答题落 [ASK_ABORTED]，不复用别题答案（防伪造「用户已答」）', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([
+        {
+          toolCalls: [
+            {
+              id: 'q1',
+              type: 'function',
+              function: { name: 'ask_user', arguments: JSON.stringify({ question: '语言？' }) },
+            },
+            {
+              id: 'q2',
+              type: 'function',
+              function: { name: 'ask_user', arguments: JSON.stringify({ question: '篇幅？' }) },
+            },
+            {
+              id: 'q3',
+              type: 'function',
+              function: { name: 'ask_user', arguments: JSON.stringify({ question: '风格？' }) },
+            },
+          ],
+        },
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    for await (const {} of loop.processUserInput('写篇文章')) {
+      // drain 到 paused
+    }
+
+    // 用户从「只有一条文本」的入口（底部输入框）只答了一道 ⇒ answers 长度 1 < 提问数 3
+    expect(loop.answerQuestion(['中文'])).toBe(true);
+    const messages = loop.getMessages();
+    const toolOf = (id: string) => messages.find((m) => m.role === 'tool' && m.toolCallId === id);
+
+    // 已答的题：原样回填
+    expect(toolOf('q1')?.content).toContain('[ASK_ANSWER] 用户回答：中文');
+    // 未答的题：**不得**复制 q1 的答案（旧兜底「不足时复用最后一条」会让 LLM 以为用户每题都答了
+    // ——制造假事实、无报错、直接污染决策上下文）
+    expect(toolOf('q2')?.content).not.toContain('[ASK_ANSWER]');
+    expect(toolOf('q3')?.content).not.toContain('[ASK_ANSWER]');
+    expect(toolOf('q2')?.content).toContain('[ASK_ABORTED] 用户未回答该提问');
+    expect(toolOf('q3')?.content).toContain('[ASK_ABORTED] 用户未回答该提问');
+    // 配对不变量保持：每条 toolCallId 恒有 tool 消息（不撞 OpenAI 兼容端 400）
+    for (const id of ['q1', 'q2', 'q3']) {
+      expect(toolOf(id)).toBeDefined();
+    }
+  });
+
   it('未回答直接续跑 → cancelAsk 兜底补占位 tool 结果（防结构非法/400）', async () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([

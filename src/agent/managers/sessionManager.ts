@@ -471,6 +471,13 @@ export class SessionManager {
         this.checkpoint.pausedAt = Date.now();
         this.touchCheckpoint();
       }
+      // pauseMeta 唯一写入点（SSOT）：三路暂停——用户 requestPause / ask_user 提问挂起 /
+      // 目标漂移强制确认（updateGoal 内 drift 级）——全部经本方法翻状态机，
+      // 故收敛到此处即可全覆盖，各调用方不再各自补写（此前只在 consumeFlow 的
+      // paused 分支写，drift 路径绕开该分支 ⇒ pauseMeta 缺失）。
+      // ⚠ 消费方是**判据**不是展示：clearPlanOnTurnEnd 以 `cp.pauseMeta` 有无决定
+      //   「turn 是否真正结束、任务表该不该清」。任一暂停路径漏写，恢复后任务表会被误清。
+      this.setPauseMeta({ reason, source });
       // 仅高风险暂停记录时间戳（低风险由 Agent 自动兜底不累积）
       if (!lowRisk) {
         this.consecutivePauseTimestamps.push(Date.now());

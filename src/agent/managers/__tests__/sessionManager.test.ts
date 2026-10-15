@@ -692,6 +692,24 @@ describe('SessionManager', () => {
       expect(manager.status).toBe('paused');
     });
 
+    it('drift 自动暂停应写 pauseMeta（任务表保留判据）', () => {
+      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
+      const driftedGoal = '今天纽约的天气怎么样适合出行吗';
+
+      setupCheckpointWithGoal(mainGoal);
+      manager.updateGoal(driftedGoal);
+
+      // pauseMeta 不是展示字段，是**判据**：Agent.clearPlanOnTurnEnd 以「有无 pauseMeta」
+      // 决定 turn 是否真正结束 —— 有值则任务表保留（暂停是同 turn 内的挂起）。
+      // drift 暂停经 SessionManager.pause() 直接翻状态机、不过 consumeFlow 的 paused 分支，
+      // 若 pauseMeta 只在那个分支写，此处即缺失 ⇒ 恢复后续跑轮 finally 把任务表清空，
+      // 而 drift 的语义恰恰是「强制用户确认后按原计划继续」。
+      const meta = manager.getCheckpoint()?.pauseMeta;
+      expect(meta).toBeDefined();
+      expect(meta?.source).toBe('system');
+      expect(meta?.reason).toContain('目标漂移');
+    });
+
     it('confirm 级别时应不自动暂停', () => {
       const mainGoal = '编写一个计算器应用程序支持基本数学运算';
       const confirmGoal = '编写一个计算器应用程序支持加减乘除运算';

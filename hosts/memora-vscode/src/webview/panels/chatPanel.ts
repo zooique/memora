@@ -2879,11 +2879,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.syncPendingQueue();
       return;
     }
-    // 暂停态补充输入（waiting/pause 或 waiting/ask，相位判据）→ 不发起新 chat()
+    // 提问等待态（waiting/ask）**单独分流，不与暂停态合并**：
+    // 此刻底部输入框里敲的任何文本，语义上都是对当前在途提问的回答——含「你自己定」「跳过」
+    // 这类拒答（拒答也是回答，必须让 LLM 知道用户看到了问题并做了决定，而非"无人应答"）。
+    // 走 answer 意图通道（与内联提问块 / 澄清栏同源）⇒ answerQuestion 回填 + 落盘带走
+    // question/options。此前与 pause 合并路由为 supplement ⇒ 在途提问被 cancelAsk 兜底成
+    // 「用户未回答该提问」，答案退化为普通补充消息、提问原文不落盘——同一用户意图两种
+    // 落盘形态，SSOT 违约。answerInput 内含 clearAskTimeout，此处不重复调用。
+    if (this.isAskWaiting()) {
+      await this.answerInput([input]);
+      return;
+    }
+    // 暂停态补充输入（waiting/pause，相位判据）→ 不发起新 chat()
     // → 走 resumeExecution 路由（保留闭环节点归属，不分裂）
     const now = new Date().toISOString();
-    if (this.isPauseWaiting() || this.isAskWaiting()) {
-      this.clearAskTimeout(); // 暂停态补充 = 已响应当前等待（含 ask 提问），关闭超时保底
+    if (this.isPauseWaiting()) {
+      this.clearAskTimeout(); // 暂停态补充 = 已响应当前等待，关闭超时保底
       this.post({ type: 'user', text: input, ts: now, kind: 'supplement' });
       await this.runFlow((signal) => agent.resumeExecution(input, signal, 'supplement'));
       return;
