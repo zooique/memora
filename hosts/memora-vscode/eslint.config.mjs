@@ -21,7 +21,7 @@ export default [
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'warn',
       'prefer-const': 'warn',
-      'eqeqeq': ['warn', 'always'],
+      eqeqeq: ['warn', 'always'],
     },
   },
   // 宿主根的构建脚本与配置也在门内——
@@ -71,10 +71,6 @@ export default [
     },
   },
   {
-    ignores: [
-      'dist/**',
-      'node_modules/**',
-      'src/**/__tests__/**',
-    ],
+    ignores: ['dist/**', 'node_modules/**', 'src/**/__tests__/**'],
   },
 ];

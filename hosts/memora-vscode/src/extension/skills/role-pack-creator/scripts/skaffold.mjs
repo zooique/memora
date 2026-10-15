@@ -41,12 +41,23 @@ function parseArgs(argv) {
   };
   for (let i = 1; i < argv.length; i++) {
     switch (argv[i]) {
-      case '--display': cfg.display = argv[++i] ?? ''; break;
-      case '--desc': cfg.desc = argv[++i] ?? ''; break;
-      case '--handoff': cfg.handoff = argv[++i] ?? ''; break;
-      case '--out': cfg.out = argv[++i] ?? ''; break;
-      case '--force': cfg.force = true; break;
-      default: throw new Error(`未知参数 "${argv[i]}"`);
+      case '--display':
+        cfg.display = argv[++i] ?? '';
+        break;
+      case '--desc':
+        cfg.desc = argv[++i] ?? '';
+        break;
+      case '--handoff':
+        cfg.handoff = argv[++i] ?? '';
+        break;
+      case '--out':
+        cfg.out = argv[++i] ?? '';
+        break;
+      case '--force':
+        cfg.force = true;
+        break;
+      default:
+        throw new Error(`未知参数 "${argv[i]}"`);
     }
   }
   return cfg;
@@ -59,7 +70,8 @@ function parseArgs(argv) {
  */
 function validateName(name) {
   if (!name) return '角色名不能为空';
-  if (name === BUILTIN_FALLBACK_PACK) return `保留名 "${BUILTIN_FALLBACK_PACK}" 不可创建/替换（memora 内置兜底角色，避免冲突）`;
+  if (name === BUILTIN_FALLBACK_PACK)
+    return `保留名 "${BUILTIN_FALLBACK_PACK}" 不可创建/替换（memora 内置兜底角色，避免冲突）`;
   if (name.startsWith('.')) return '角色名不能以 "." 开头';
   if (!NAME_RE.test(name)) return '角色名仅允许 中文/字母/数字/下划线/连字符（长度 1~64）';
   return '';
@@ -126,7 +138,9 @@ async function main() {
   console.log('下一步：');
   console.log(`  1. 编辑 ${targetDir}/manifest.json（增删 capabilities / 调整 strategy）`);
   console.log(`  2. 编辑 persona.md / rules.md / skills/（按角色精修）`);
-  console.log('  3. 校验：manifest 为合法 JSON；数值/枚举在 SKILL.md 键速查区间内；skills/*.md 含 description');
+  console.log(
+    '  3. 校验：manifest 为合法 JSON；数值/枚举在 SKILL.md 键速查区间内；skills/*.md 含 description',
+  );
   console.log('  4. 完成产物即交付用户，由用户决定复制到哪个 memora 宿主');
 }
 

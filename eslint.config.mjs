@@ -38,7 +38,8 @@ export default [
                   const comments = sourceCode.getAllComments();
                   // 首个代码 token 的位置（getTokens(ast) 不含前导注释；规避 getFirstToken() 底层崩溃）
                   const tokens = sourceCode.getTokens(sourceCode.ast);
-                  const firstCodePos = tokens.length > 0 ? tokens[0].range[0] : sourceCode.getText().length;
+                  const firstCodePos =
+                    tokens.length > 0 ? tokens[0].range[0] : sourceCode.getText().length;
                   for (let i = 0; i < comments.length - 1; i += 1) {
                     const a = comments[i];
                     const b = comments[i + 1];

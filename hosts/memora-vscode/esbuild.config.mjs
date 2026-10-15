@@ -175,7 +175,9 @@ async function main() {
     `${JSON.stringify({ schema: 1, kernelDistHash, builtAt: new Date().toISOString() }, null, 2)}\n`,
     'utf8',
   );
-  console.log(`✅ 构建戳写入：dist/.build-stamp.json（kernelDistHash=${String(kernelDistHash).slice(0, 12)}）`);
+  console.log(
+    `✅ 构建戳写入：dist/.build-stamp.json（kernelDistHash=${String(kernelDistHash).slice(0, 12)}）`,
+  );
 }
 
 main().catch((err) => {

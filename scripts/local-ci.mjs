@@ -126,9 +126,30 @@ const STEP_TIMEOUT_MS = 15 * 60 * 1000; // 单步 15 分钟上限，防挂死
  * @type {{id:string,name:string,cmd:string,cwd:string,required:boolean,presets:string[],optionalFlag?:string,env?:Record<string,string>}[]}
  */
 const ALL_STEPS = [
-  { id: 'kernel:typecheck', name: '内核 TypeScript 类型检查', cmd: 'npm run typecheck', cwd: ROOT, required: true, presets: ['fast', 'full'] },
-  { id: 'kernel:lint', name: '内核 ESLint（含 --max-warnings 0）', cmd: 'npm run lint', cwd: ROOT, required: true, presets: ['full'] },
-  { id: 'kernel:test', name: '内核单元测试', cmd: 'npm run test', cwd: ROOT, required: true, presets: ['full'] },
+  {
+    id: 'kernel:typecheck',
+    name: '内核 TypeScript 类型检查',
+    cmd: 'npm run typecheck',
+    cwd: ROOT,
+    required: true,
+    presets: ['fast', 'full'],
+  },
+  {
+    id: 'kernel:lint',
+    name: '内核 ESLint（含 --max-warnings 0）',
+    cmd: 'npm run lint',
+    cwd: ROOT,
+    required: true,
+    presets: ['full'],
+  },
+  {
+    id: 'kernel:test',
+    name: '内核单元测试',
+    cmd: 'npm run test',
+    cwd: ROOT,
+    required: true,
+    presets: ['full'],
+  },
   {
     id: 'kernel:coverage',
     name: '内核覆盖率闸门',
@@ -141,12 +162,49 @@ const ALL_STEPS = [
     // 置空 NODE_OPTIONS 可绕过（实测可行）。
     env: { NODE_OPTIONS: '' },
   },
-  { id: 'kernel:build', name: '内核生产构建', cmd: 'npm run build', cwd: ROOT, required: true, presets: ['full'], optionalFlag: 'skip-build' },
-  { id: 'host:typecheck', name: '宿主 TypeScript 类型检查', cmd: 'npm run typecheck', cwd: HOST, required: true, presets: ['fast', 'full'] },
-  { id: 'host:lint', name: '宿主 ESLint（含 --max-warnings 0）', cmd: 'npm run lint', cwd: HOST, required: true, presets: ['full'] },
-  { id: 'host:test', name: '宿主单元测试', cmd: 'npm run test', cwd: HOST, required: true, presets: ['full'] },
+  {
+    id: 'kernel:build',
+    name: '内核生产构建',
+    cmd: 'npm run build',
+    cwd: ROOT,
+    required: true,
+    presets: ['full'],
+    optionalFlag: 'skip-build',
+  },
+  {
+    id: 'host:typecheck',
+    name: '宿主 TypeScript 类型检查',
+    cmd: 'npm run typecheck',
+    cwd: HOST,
+    required: true,
+    presets: ['fast', 'full'],
+  },
+  {
+    id: 'host:lint',
+    name: '宿主 ESLint（含 --max-warnings 0）',
+    cmd: 'npm run lint',
+    cwd: HOST,
+    required: true,
+    presets: ['full'],
+  },
+  {
+    id: 'host:test',
+    name: '宿主单元测试',
+    cmd: 'npm run test',
+    cwd: HOST,
+    required: true,
+    presets: ['full'],
+  },
   // 宿主构建：产出用户实际运行的单文件 bundle（内联内核 dist）。缺此步则「门禁绿 + bundle 陈旧」可并存。
-  { id: 'host:build', name: '宿主构建（tsc + esbuild 内联内核）', cmd: 'npm run compile', cwd: HOST, required: true, presets: ['full'], optionalFlag: 'skip-build' },
+  {
+    id: 'host:build',
+    name: '宿主构建（tsc + esbuild 内联内核）',
+    cmd: 'npm run compile',
+    cwd: HOST,
+    required: true,
+    presets: ['full'],
+    optionalFlag: 'skip-build',
+  },
   // dist 契约：断言宿主 bundle 与内核 dist 同代（读构建戳比对哈希 + 核内核导出符号面）。
   // 依赖刚构建出的产物，故与 build 同受 --skip-build 约束。
   {
@@ -210,7 +268,15 @@ const ALL_STEPS = [
     required: true,
     presets: ['full'],
   },
-  { id: 'audit', name: '依赖安全审计（允许失败）', cmd: 'npm audit --audit-level=high', cwd: ROOT, required: false, presets: ['full'], optionalFlag: 'audit-invert' },
+  {
+    id: 'audit',
+    name: '依赖安全审计（允许失败）',
+    cmd: 'npm audit --audit-level=high',
+    cwd: ROOT,
+    required: false,
+    presets: ['full'],
+    optionalFlag: 'audit-invert',
+  },
 ];
 
 function selectSteps() {
@@ -229,7 +295,9 @@ function selectSteps() {
   if (from) {
     const idx = steps.findIndex((s) => s.id === from);
     if (idx < 0) {
-      console.error(`[local-ci] --from=${from} 不是有效步骤 id。可选：${ALL_STEPS.map((s) => s.id).join(', ')}`);
+      console.error(
+        `[local-ci] --from=${from} 不是有效步骤 id。可选：${ALL_STEPS.map((s) => s.id).join(', ')}`,
+      );
       process.exit(2);
     }
     steps = steps.slice(idx);
@@ -309,12 +377,21 @@ function runStep(step, index, total) {
       const label = `[${index}/${total}] ${step.name}`;
       const dots = '.'.repeat(Math.max(2, 46 - label.length));
       const verdict = ok ? '✅ PASS' : step.required ? '❌ FAIL' : '⚠️  WARN';
-      console.log(`${label} ${dots} ${verdict} ${(ms / 1000).toFixed(1)}s${stats ? `  (${stats})` : ''}`);
+      console.log(
+        `${label} ${dots} ${verdict} ${(ms / 1000).toFixed(1)}s${stats ? `  (${stats})` : ''}`,
+      );
       resolve({ ...step, ok, code, ms, text, stats });
     });
     child.on('error', (err) => {
       clearTimeout(timer);
-      resolve({ ...step, ok: false, code: -1, ms: Date.now() - started, text: String(err), stats: '' });
+      resolve({
+        ...step,
+        ok: false,
+        code: -1,
+        ms: Date.now() - started,
+        text: String(err),
+        stats: '',
+      });
     });
   });
 }
@@ -337,7 +414,12 @@ function gitOut(args) {
  */
 function buildReceipt(preset, stepCount) {
   const porcelain = gitOut(['status', '--porcelain']);
-  const dirtyCount = porcelain === null ? null : porcelain === '' ? 0 : porcelain.split('\n').filter((l) => l.trim() !== '').length;
+  const dirtyCount =
+    porcelain === null
+      ? null
+      : porcelain === ''
+        ? 0
+        : porcelain.split('\n').filter((l) => l.trim() !== '').length;
   return {
     when: new Date().toISOString(),
     preset,
@@ -367,8 +449,12 @@ async function main() {
   const steps = selectSteps();
   const receipt = buildReceipt(preset, steps.length);
   mkdirSync(LOG_DIR, { recursive: true });
-  console.log(`\n[local-ci] 开始本地门禁模拟 · preset=${preset} · 共 ${steps.length} 步 · 根因：GitHub CI 触发已停用`);
-  console.log(`[local-ci] 收据：preset=${receipt.preset} head=${receipt.head} tree=${receipt.tree} dirty=${receipt.dirty} steps=${receipt.steps}\n`);
+  console.log(
+    `\n[local-ci] 开始本地门禁模拟 · preset=${preset} · 共 ${steps.length} 步 · 根因：GitHub CI 触发已停用`,
+  );
+  console.log(
+    `[local-ci] 收据：preset=${receipt.preset} head=${receipt.head} tree=${receipt.tree} dirty=${receipt.dirty} steps=${receipt.steps}\n`,
+  );
 
   const results = [];
   for (let i = 0; i < steps.length; i++) {
@@ -378,7 +464,10 @@ async function main() {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const logPath = join(LOG_DIR, `local-ci-${stamp}.log`);
   const logBody = `${formatReceipt(receipt)}\n\n${results
-    .map((r) => `===== ${r.id} | ${r.cmd} | exit=${r.code} | ${(r.ms / 1000).toFixed(1)}s =====\n${r.text}`)
+    .map(
+      (r) =>
+        `===== ${r.id} | ${r.cmd} | exit=${r.code} | ${(r.ms / 1000).toFixed(1)}s =====\n${r.text}`,
+    )
     .join('\n\n')}`;
   writeFileSync(logPath, logBody, 'utf8');
 
@@ -387,10 +476,14 @@ async function main() {
 
   console.log('\n──────── 汇总 ────────');
   for (const r of results) {
-    console.log(`${r.ok ? '✅' : r.required ? '❌' : '⚠️ '} ${r.id.padEnd(18)} exit=${String(r.code).padStart(3)}  ${(r.ms / 1000).toFixed(1)}s  ${r.stats}`);
+    console.log(
+      `${r.ok ? '✅' : r.required ? '❌' : '⚠️ '} ${r.id.padEnd(18)} exit=${String(r.code).padStart(3)}  ${(r.ms / 1000).toFixed(1)}s  ${r.stats}`,
+    );
   }
   const totalMs = results.reduce((a, r) => a + r.ms, 0);
-  console.log(`\n总耗时 ${(totalMs / 1000).toFixed(1)}s · 失败 ${failed.length} · 告警 ${warned.length}`);
+  console.log(
+    `\n总耗时 ${(totalMs / 1000).toFixed(1)}s · 失败 ${failed.length} · 告警 ${warned.length}`,
+  );
   console.log(`完整日志：${logPath}`);
 
   if (failed.length) {

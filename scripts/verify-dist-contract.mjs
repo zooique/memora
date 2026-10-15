@@ -61,7 +61,10 @@ const fail = (msg) => {
 
 /** 非 ASCII 字符 → esbuild(ascii) 的 `\uXXXX` 大写十六进制转义形态 */
 const escapeNonAscii = (text) =>
-  text.replace(/[^\x20-\x7e]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
+  text.replace(
+    /[^\x20-\x7e]/g,
+    (ch) => `\\u${ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`,
+  );
 
 /** 转义感知的 token 命中判定（禁裸 includes，理由见文件头） */
 function containsToken(text, token) {
@@ -129,19 +132,27 @@ async function loadKernelRuntimeExports() {
     const mod = await import(pathToFileURL(KERNEL_ENTRY).href);
     return new Set(Object.keys(mod));
   } catch (err) {
-    console.log(`⚠️  ${TAG} 运行时导入内核 barrel 失败（${err.message}）→ 本轮不过滤类型导出，符号面断言可能偏严`);
+    console.log(
+      `⚠️  ${TAG} 运行时导入内核 barrel 失败（${err.message}）→ 本轮不过滤类型导出，符号面断言可能偏严`,
+    );
     return null;
   }
 }
 
 async function main() {
-  const missingPaths = [BUNDLE_PATH, STAMP_PATH].filter((p) => !existsSync(p)).map((p) => relative(ROOT, p).split(sep).join('/'));
+  const missingPaths = [BUNDLE_PATH, STAMP_PATH]
+    .filter((p) => !existsSync(p))
+    .map((p) => relative(ROOT, p).split(sep).join('/'));
   if (missingPaths.length > 0) {
     if (allowAbsent) {
-      console.log(`⚠️  ${TAG} 缺失：${missingPaths.join(' , ')} —— --allow-absent 出声跳过（未校验，不代表通过）`);
+      console.log(
+        `⚠️  ${TAG} 缺失：${missingPaths.join(' , ')} —— --allow-absent 出声跳过（未校验，不代表通过）`,
+      );
       return;
     }
-    fail(`缺失：${missingPaths.join(' , ')}\n   → 先构建宿主：cd hosts/memora-vscode && npm run compile`);
+    fail(
+      `缺失：${missingPaths.join(' , ')}\n   → 先构建宿主：cd hosts/memora-vscode && npm run compile`,
+    );
   }
 
   const currentHash = hashKernelDist(ROOT);
@@ -188,7 +199,8 @@ async function main() {
     }
     checked.push(name);
     const localName = aliasMap.get(name) ?? name; // barrel 别名 → 搜模块内本地名
-    if (!containsToken(bundleText, localName)) missing.push(`${name}${localName === name ? '' : `（本地名 ${localName}）`}`);
+    if (!containsToken(bundleText, localName))
+      missing.push(`${name}${localName === name ? '' : `（本地名 ${localName}）`}`);
   }
 
   if (missing.length > 0) {

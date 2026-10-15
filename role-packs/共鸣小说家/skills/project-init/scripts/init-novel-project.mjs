@@ -347,7 +347,9 @@ if (!bookName) {
 
 // 安全校验：书名不含空格 / 路径分隔符（Windows + git 中文空格路径会乱码）
 if (/\s/.test(bookName)) {
-  console.error(`✗ 书名不能含空格（Windows + git 处理含空格中文路径会乱码）→ 建议改用：${bookName.replace(/\s+/g, '-')}`);
+  console.error(
+    `✗ 书名不能含空格（Windows + git 处理含空格中文路径会乱码）→ 建议改用：${bookName.replace(/\s+/g, '-')}`,
+  );
   process.exit(1);
 }
 if (bookName.includes('/') || bookName.includes('\\') || bookName === '.' || bookName === '..') {
@@ -362,7 +364,9 @@ const targetDir = join(parentDir, bookName);
 if (existsSync(targetDir)) {
   const existing = await readdir(targetDir);
   if (existing.length > 0 && !flags.has('--force')) {
-    console.error(`✗ 目标目录已存在且非空：${targetDir}\n  加 --force 可继续（已存在文件会跳过，不覆盖）。`);
+    console.error(
+      `✗ 目标目录已存在且非空：${targetDir}\n  加 --force 可继续（已存在文件会跳过，不覆盖）。`,
+    );
     process.exit(1);
   }
 }

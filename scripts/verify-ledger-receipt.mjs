@@ -85,7 +85,9 @@ function normalizeRange(since) {
 
 /** ID 是否以「完整词」形态出现在文本中（防 `D8` 命中 `AD8`、`TERM-FDBK-1` 命中 `TERM-FDBK-10`） */
 function containsId(text, id) {
-  const re = new RegExp(`(?<![A-Za-z0-9])${id.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}(?![A-Za-z0-9-])`);
+  const re = new RegExp(
+    `(?<![A-Za-z0-9])${id.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}(?![A-Za-z0-9-])`,
+  );
   return re.test(text);
 }
 
@@ -97,7 +99,9 @@ function main() {
   }
   const ledgerIds = collectLedgerIds(readFileSync(ledgerPath, 'utf8'));
   if (ledgerIds.length === 0) {
-    console.error('❌ [ledger-receipt] 台账条目 ID 解析为 0 —— 条目格式可能已变，判据失明比假绿更危险');
+    console.error(
+      '❌ [ledger-receipt] 台账条目 ID 解析为 0 —— 条目格式可能已变，判据失明比假绿更危险',
+    );
     process.exit(1);
   }
 
@@ -149,10 +153,13 @@ function main() {
   }
 
   if (hits.length > 0) {
-    console.log(`⚠️  [ledger-receipt] ${hits.length} 处「实现性提交携带台账 ID，但区间内台账无对应变更」：`);
+    console.log(
+      `⚠️  [ledger-receipt] ${hits.length} 处「实现性提交携带台账 ID，但区间内台账无对应变更」：`,
+    );
     // 输出封顶：成片命中时刷屏只会让人直接忽略，截断 + 提示总数才有处置价值
     for (const h of hits.slice(0, 20)) console.log(`   ${h.id}  ← ${h.hash} ${h.subject}`);
-    if (hits.length > 20) console.log(`   … 另有 ${hits.length - 20} 条（先处理前 20 条，噪音成片说明判据该收紧）`);
+    if (hits.length > 20)
+      console.log(`   … 另有 ${hits.length - 20} 条（先处理前 20 条，噪音成片说明判据该收紧）`);
     console.log(
       '\n   处置：销项改 tasks/待完成任务.md 对应条目（标 ✅ + 收据，销项留主台账、发版才迁 archive）；' +
         '\n   或改提交信息去掉该 ID 引用（ID 若只是顺便提及，不是本笔落地项）。' +
