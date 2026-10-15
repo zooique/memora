@@ -48,6 +48,46 @@
   role-pack-creator 模板 `global` 段同步补 `webSearchLimit: 6`（17 键速查 ↔ 模板键面齐）。
   示例包是该键的真实演示面（README 契约「全面覆盖当前角色包设计」），非单纯文档同步。
 
+### Added（内核 · web_search 执行留痕：「搜不准」归因取证轨 · `SEARCH-QUALITY-1` P1-1）
+
+- **新增裁决证据变体 `web_search_result`**（`RoundEvidenceEvent` 第四成员，随 Round 持久化）：
+  payload = `query`（LLM 实际发出的查询串——归因第一现场）/ `endpoint?`（降级分型证据）/
+  `count`（0 = 零结果同样留痕）/ `titles[]`（净化 + 截断后前 5 条，全量计数看 count）。
+  旧台账只留「命中了什么页面」、没留「搜的是什么」⇒ 质量争议只能推断；留痕后可直接对齐
+  「模型问了什么 ⇄ 引擎回了什么」。
+- 落点嫁接既有缝点（零新机制）：toolExecutor `WebSearchExecInfo` + `setSearchResultObserver`
+  （web_search case 在 `safeSearch` 之后、空结果分支**之前**发射——safeSearch 降级页按原样记录
+  = 诚实镜像 LLM 实际所得；护栏硬拦的搜索不走此路，未执行无结果面）→ loop 新增 public
+  `recordWebSearchEvidence`（ts/meetingRound 构造归 loop，与其余三个证据写点同构）→
+  assembler 在 `setBudgetProvider` 旁接线（同款时序解耦；漏接 = 搜索照跑、证据归零，
+  装配测试走真实 `toolExec.execute('web_search')` 端到端锁线）。
+- **P1-2 query 软引导暂缓**：反模式清单须留痕数据验证后再定（评估结论），不为「有候选修法」
+  而预支判据。
+
+### Fixed（内核 · 登录墙识别 + Bing 摘要错位：「搜不准」两处代码级坐实 · `SEARCH-QUALITY-1` P2-1/P2-2）
+
+- **P2-1 登录墙识别**（新建 `web-fetch/loginWall.ts` 纯函数）：HTTP 200 的登录页此前被
+  `stripHtmlToText` 洗成「正文」交付——LLM 拿到登录表单碎片还以为是目标页内容（搜不准第二种
+  形态：搜到了、抓到了，但抓到的是一堵墙）。判据**保守取向（宁漏勿误：漏判 = 现状可读页照常
+  交付，误判 = 藏起可读页）**：URL 段边界强信号（login/logon/signin/sign-in/passport/sso，
+  连字符复合词 `how-to-login` 刻意放行、查询参数值不算、只认重定向后 finalUrl）**或**弱信号
+  组合（标题登录词 + 正文密码词 + 正文 < 600 字符三条件同时满足）；命中后 web_fetch 返回
+  hedged 提示（「可能需要登录…请改用其他来源」）而非表单文本。
+- **P2-2 Bing 配对修**：`parseBingHtml` 由「全文两个正则数组按 index 配对」改写为
+  `<li …b_algo…>` **块内提取**（标题+摘要同块成对，嫁接仓内 `parseBaiduHtml` 既有范式）——
+  旧实现下结果块之外的任何 `b_lineclamp`（推荐位/广告位/侧栏）都会把模块摘要贴到下一个
+  结果标题上（LLM 读到「标题二 + 干扰摘要」错位组合）。**不留旧路径**：结构漂移 → 零结果 →
+  降级链切下一端点是诚实失败，不产错位垃圾。块正则刻意无引号写法（防字符串字面量提取器
+  把正则内引号配对成伪字面量——`toolFailurePrefixGuard` 文法盲区对账实录）。
+- 同形态未实证项登记不落地：`parseDuckDuckGoHtml` 是同款 index 配对，但仓内无错位实证
+  （DDG 两锚点同在结果 div 内）⇒ 触发器 = P1-1 留痕数据显示 DDG 端点也出现错位。
+- **落地自审边界补漏（同日，4 缺口均红→绿验证）**：① 判墙前剥 `#fragment`（锚点是页内
+  位置不是页面身份，`article#login` 是文章）；② `FetchedPage` 新增可选 `fetchFailed?: true`
+  （safeFetch 降级页单向打标）——抓取失败不再被谎报为「可能需登录」（失败语义不改写）；
+  ③ `isLoginWallPage` 新增可选 `contentCap` 参——截断上限 < 弱信号阈值时禁用弱信号
+  （防小 limit 截断制造伪「短正文」，强信号不受影响）；④ 证据 payload 的 `query` 过
+  `stripControlChars`（与 titles 同净化标准；长度仍由 200 字符校验单点管）。
+
 ### Fixed（内核 · `run_skill_script` 子进程 cwd 缺省逃出项目根 · `SKILL-CWD-1`）
 
 - **技能脚本子进程 cwd 由「宿主进程 cwd」改为「项目根」**：assembler 注入的 `run_skill_script`
