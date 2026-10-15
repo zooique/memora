@@ -6,7 +6,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
 [![Coverage](https://img.shields.io/badge/coverage-covered-brightgreen)](https://vitest.dev)
-[![Tests](https://img.shields.io/badge/tests-2700%2B%20passed-brightgreen)](https://vitest.dev)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://vitest.dev)
 [![Dependencies](https://img.shields.io/badge/runtime%20deps-0-yellowgreen)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
@@ -251,13 +251,10 @@ src/
 
 | Metric | Value |
 |--------|-------|
-| Source | 117 production files (src/, zero third-party runtime deps) |
-| Tests | Dual vitest suites (kernel + host), run by the root vitest config (100+ files) |
-| Tests Passing | 2700+ passed / 1 skipped |
-| Statement Coverage | 90.65% |
-| Branch Coverage | 84.83% |
-| Function Coverage | 92.41% |
-| Line Coverage | 91.79% |
+| Source | All production files under src/ (zero third-party runtime deps; no count listed — any count is a point-in-time snapshot) |
+| Tests | Dual vitest suites (kernel + host), run by the root vitest config |
+| Tests Passing | All passing (pass/skip counts as measured by pre-release CI — point-in-time snapshots, not recorded here) |
+| Test Coverage | Statement / branch / function / line coverage: run `npm run test:cov` for current values (no percentages recorded here — they are point-in-time snapshots) |
 | Runtime Dependencies | **0** |
 | Architecture Decision Records | In-repo `.trae/decisions/` directory (see its `README.md` for the index; no count listed here — any count is a point-in-time snapshot) |
 

@@ -6,7 +6,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
 [![Coverage](https://img.shields.io/badge/coverage-covered-brightgreen)](https://vitest.dev)
-[![Tests](https://img.shields.io/badge/tests-2700%2B%20passed-brightgreen)](https://vitest.dev)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://vitest.dev)
 [![Dependencies](https://img.shields.io/badge/runtime%20deps-0-yellowgreen)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
@@ -255,13 +255,10 @@ src/
 
 | 指标 | 数值 |
 |------|------|
-| 源码 | 117 个生产文件（src/，零第三方运行时依赖） |
-| 测试 | 内核 + 宿主双套 vitest，根配置统一跑（100+ 文件） |
-| 测试通过 | 2700+ 通过 / 1 skip |
-| 语句覆盖 | 90.65% |
-| 分支覆盖 | 84.83% |
-| 函数覆盖 | 92.41% |
-| 行覆盖 | 91.79% |
+| 源码 | src/ 全量生产文件（零第三方运行时依赖；此处不登记个数——计数是时点快照） |
+| 测试 | 内核 + 宿主双套 vitest，根配置统一跑 |
+| 测试通过 | 全量通过（条数 / skipped 数以发版前 CI 实测为准——计数是时点快照，此处不落账） |
+| 测试覆盖率 | 语句 / 分支 / 函数 / 行覆盖率以 `npm run test:cov` 实测为准（此处不登记百分比——数值是时点快照） |
 | 运行时依赖 | **0** |
 | 架构决策记录 | 仓库 `.trae/decisions/` 目录（索引见该目录下的 `README.md`；此处不登记条数——计数是时点快照，每次新增即过期） |
 

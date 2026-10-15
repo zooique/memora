@@ -4,7 +4,7 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **版本定位（v3.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。早期版本（2.1.0 及以下）为探索性迭代；**3.0.0 是架构收敛后的第一个稳定基线**，API 与结构以 3.0.0 为准；**4.0.0 起导出面收敛（-54）+ `search()` 退役；5.0.0 起目标漂移检测链与检查点 no-op 方法删除，API 以 5.0.0 为准**。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与单测（2700+ 用例）负责，不对"agent 整体行为稳定"作承诺。
+> **版本定位（v3.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。早期版本（2.1.0 及以下）为探索性迭代；**3.0.0 是架构收敛后的第一个稳定基线**，API 与结构以 3.0.0 为准；**4.0.0 起导出面收敛（-54）+ `search()` 退役；5.0.0 起目标漂移检测链与检查点 no-op 方法删除，API 以 5.0.0 为准**。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与全量单测负责，不对"agent 整体行为稳定"作承诺。
 
 ## [5.0.0] · 未发布
 
@@ -15,7 +15,10 @@
 - 删 `managers/goalConsistencyChecker.ts` 整模块（bigram+Jaccard 文本相似度 + same/confirm/drift 三级判定
   + 约束提取与一致性检查）；删 `SessionManager.updateGoal()` 方法、`SessionCheckpoint` 三字段
   `mainGoal`/`currentGoal`/`goalChangeSeq`、`AgentEventMap.goalDriftDetected` 事件；
-  `agent.createCheckpoint(mainGoal?)` 入参移除（签名收为无参）。
+  `agent.createCheckpoint(mainGoal?)` 入参移除（签名收为无参）；同日边界审查补订返回类型
+  `SessionCheckpoint | null` → `SessionCheckpoint`（原 `| null` 是类型谎报：未 init 链路
+  双抛 `configError`、创建路径恒非空，`null` 只属于 `getCheckpoint()`；对消费者为非破坏收窄，
+  旧 null 防御分支变为死代码但仍编译）。
 - 宿主侧对称删除：protocol `goal_drift_detected` 消息成员、chatPanel 事件订阅转发、
   chatView 提示分支（机制唯一 UI 面）。
 - **退役三条独立理由（任一单独成立）**：

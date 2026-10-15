@@ -271,7 +271,8 @@ export class SessionManager {
     const sessionMessages = history.loadRoundBasedMessages(result.roundIds);
     this.applySessionToLoop(sessionMessages);
 
-    // 关键约束：分叉后清空 checkpoint，防止新分支的 plan/goal 写入源会话检查点。
+    // 关键约束：分叉后清空 checkpoint，防止新分支的 plan 等快照内容写入源会话检查点
+    // （曾连写 plan/goal，goal 三字段已随 5.0.0 GOAL-DRIFT-1 退役删除）。
     if (this.checkpoint) {
       this.checkpoint = null;
     }
