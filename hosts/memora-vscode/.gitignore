@@ -2,6 +2,9 @@
 dist/
 node_modules/
 *.vsix
+# 包管理器 = pnpm（pnpm-lock.yaml 为唯一真源）；npm lock 是 npm run / vsce 过程副产物，
+# 不入库——双 lock 并存会让「干净环境可复现」判据失真（HOST-LOCK-1，2026-10-15 拍板）
+package-lock.json
 
 # 会话/记忆本地数据（Memora 工作区存储）
 .memora/
