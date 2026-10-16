@@ -267,9 +267,9 @@ function parseCompressTarget(raw: string | undefined): CompressTarget {
  *   - 中断/暂停（interruptQueue + _handleInterrupt + interject 追加用户消息、step 边界 yield paused）
  *     与 sessionStateMachine 的「纯三态 + pendingPause」语义不同源（后者不承载 interject 追加与
  *     step 边界产出）——不并入，维持 loop 自持。
- *   - 消息写入口（append* / clean* + 观测埋点 recordBudget/recordOccupancy/refreshOccupancyDialogue）同判
+ *   - 消息写入口（append* / clean* + 观测埋点 recordBudget/recordOccupancy/refreshOccupancyFromMessages）同判
  *     不拆：写入口持有 messages / currentRoundId / executionTempSystem / offloadDir 四项 loop 私有状态，
- *     并回调 refreshOccupancyDialogue（**写消息→触发观测，跨域**），不满足 progressive-refactor-rules
+ *     并回调 refreshOccupancyFromMessages（**写消息→触发观测，跨域**），不满足 progressive-refactor-rules
  *     §2.2 模式 B「职责正交（不共享状态 / 不互相调用）」前提；模式 A（领域容器提取）只搬字段不搬逻辑，
  *     收益不足以覆盖改点面。保留监控，待自然生长触发。
  *   - 搜索生命周期：软上限/硬上限混沌形同构但为**同一意图的三级级联**——
@@ -3042,23 +3042,41 @@ export class AgentLoop {
   }
 
   /**
-   * 对话占用实时刷新（预算可视化 · 输入区常驻指示器）。
+   * 动态注入占用（`messages[0]` 之外的 system 消息）token 估算。
+   *
+   * 单一真理源 = `this.messages`：最近对话块 / 情报区 / 任务表 / 软上限与压力提示 /
+   * 搜索收敛提示 / 反思与自审查提示等运行时注入，皆以 system 消息落在 index > 0。
+   * 占用快照把它计入「动态注入」段（P1-1 修复）——此前该段未计入任何分段、被静默算进 free，
+   * 导致指示器偏乐观。与对话段共用同一估算器（SSOT）。
+   */
+  getDynamicSystemTokens(): number {
+    const dynamicSystem = this.messages.filter((m, i) => i > 0 && m.role === 'system');
+    return dynamicSystem.length > 0 ? this.estimateTokens(dynamicSystem) : 0;
+  }
+
+  /**
+   * 随工作记忆实时刷新占用快照中「由 messages 派生」的两段（预算可视化 · 输入区常驻指示器）。
    *
    * occupancy 主体在 prepare 期 record（见 contextPreparer），但 prepare 发生在 assistant
-   * 生成前，故快照的 dialogue 段天然不含本轮 assistant、且单轮对话结束后不再刷新。
-   * 本方法在 user 消息落库 / assistant 落盘后以最新 this.messages 重算 dialogue 段：
-   *   dialogueCount  = user 消息数（计数标准：一个问答闭环=1，残缺回答如实记录）
-   *   dialogueTokens = 全量 user+assistant 估算（容量诚实统计问答闭环总和）
-   * 其余段（rolePackBase/memory/inputAnchor/outputReserve）沿用 prepare 快照，不重算
+   * 生成前，且动态 system 注入在 prepare 之后陆续发生，故两段须在写入口以最新 this.messages 重算：
+   *   dialogue      = 全量 user+assistant 估算（容量诚实统计问答闭环总和）
+   *   dynamicSystem = `messages[0]` 之外的 system 消息估算（见 getDynamicSystemTokens）
+   * 其余段（rolePackBase/inputAnchor/outputReserve）沿用 prepare 快照，不重算
    * （守 SSOT：宿主只透传，内核单一真相源）。
    * 幂等：无快照时 no-op（如首轮 prepare 尚未发生）。
    */
-  private refreshOccupancyDialogue(): void {
+  private refreshOccupancyFromMessages(): void {
     if (!this.lastOccupancy) return;
     const conv = this.getConversationMessages();
     const dialogueCount = conv.filter((m) => m.role === 'user').length;
     const dialogueTokens = this.estimateTokens(conv);
-    this.lastOccupancy = { ...this.lastOccupancy, dialogueCount, dialogueTokens };
+    const dynamicSystemTokens = this.getDynamicSystemTokens();
+    this.lastOccupancy = {
+      ...this.lastOccupancy,
+      dialogueCount,
+      dialogueTokens,
+      dynamicSystemTokens,
+    };
   }
 
   /**
@@ -3368,11 +3386,11 @@ export class AgentLoop {
       content: `<user_input>${content}</user_input>`,
       roundId: this.currentRoundId,
     });
-    // 用户输入即刷新占用条数（问答闭环 +1，实时反映到输入区圆环）
-    this.refreshOccupancyDialogue();
+    // 用户输入即刷新占用（问答闭环 +1，实时反映到输入区圆环）
+    this.refreshOccupancyFromMessages();
   }
 
-  /** 追加一条 system 消息（技能注入、召回、任务表、自审查提示等通用注入通道） */
+  /** 追加一条 system 消息（技能注入、最近对话块、任务表、自审查提示等通用注入通道） */
   private appendSystemMessage(content: string, opts: { executionTemp?: boolean } = {}): void {
     const msg: Message = { role: 'system', content };
     this.messages.push(msg);
@@ -3380,6 +3398,9 @@ export class AgentLoop {
     if (opts.executionTemp) {
       this.executionTempSystem.add(msg);
     }
+    // system 注入即时刷新「动态注入」占用段（P1-1）：否则指示器只在 user/assistant 写入时更新，
+    // 动态注入占比被静默漏计、free 偏大。无快照时 no-op（首轮 prepare 前）。
+    this.refreshOccupancyFromMessages();
   }
 
   /** 会议轮判据（裁决证据用，操作化单点）：任务表 active 任务项声明 rolePack = 会议逐项切换生效中 */
@@ -3391,7 +3412,7 @@ export class AgentLoop {
   private appendAssistantText(content: string): void {
     this.messages.push({ role: 'assistant', content, roundId: this.currentRoundId });
     // assistant 落盘（含残缺/中止回复）后补算对话容量，使圆环即时含本轮回答
-    this.refreshOccupancyDialogue();
+    this.refreshOccupancyFromMessages();
   }
 
   /** 追加一条带 toolCalls 的 assistant 消息（executeToolCalls 前导）；附当前轮次 roundId */
@@ -3489,6 +3510,8 @@ export class AgentLoop {
     } else {
       this.messages.push({ role: 'system', content });
     }
+    // 情报区属「动态注入」段，刷新占用使指示器即时含其占用（P1-1）
+    this.refreshOccupancyFromMessages();
   }
 
   /**

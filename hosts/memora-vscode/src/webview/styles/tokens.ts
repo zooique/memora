@@ -240,10 +240,13 @@ export const tokens = `
 
     /* === L2 语义令牌：上下文占用充能/分段色（chatStyles 引用） ===
      * 占用指示器双形态：圆环充能（--occ-dialogue 单弧随占用率填充）+ 构成条分段
-     * （HOST-S3-2 常驻轻量构成条，四段按数据层着色）。段名以 contextPreparer 真实结构为准：
-     * 角色包 / 对话 / 输入锚点 / 输出预留——**占用模型无记忆维度**（记忆不占上下文），
-     * 故无 --occ-memory，勿据旧注释重建。purple 回退与 --skill-rolepack-accent 对齐。 */
+     * （HOST-S3-2 常驻轻量构成条，五段按数据层着色）。段名以 contextPreparer 真实结构为准：
+     * 角色包 / 动态注入 / 对话 / 输入锚点 / 输出预留——**占用模型无记忆维度**（记忆不占上下文），
+     * 故无 --occ-memory，勿据旧注释重建。purple 回退与 --skill-rolepack-accent 对齐。
+     * --occ-dynamic（2026-10-15 增）：动态 system 注入段（最近对话块/情报区/任务表/提示），
+     * 用 charts-red 与「已用但非对话」的语义呼应（此前未计入分段致 free 偏大，P1-1 修复）。 */
     --occ-rolepack: var(--vscode-charts-purple, #a78bfa);
+    --occ-dynamic: var(--vscode-charts-red, #f14c4c);
     --occ-dialogue: var(--vscode-charts-blue, #3794ff);
     --occ-input: var(--vscode-charts-green, #4caf50);
     --occ-output: var(--vscode-charts-orange, #ffa500);

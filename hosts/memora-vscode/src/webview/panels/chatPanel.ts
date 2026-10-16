@@ -2089,6 +2089,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const occ = estimateOccupancy({
         totalTokens,
         rolePackBaseTokens,
+        // 历史会话重算无动态 system 注入（持久化历史只含 user+assistant）→ 显式 0
+        dynamicSystemTokens: 0,
         dialogueTokens,
         // 计数标准：以用户输入条数计（一个问答闭环=1，残缺回答如实记录），与内核 dialogueCount 口径一致（SSOT）
         dialogueCount: history.filter((m) => m.role === 'user').length,
@@ -4272,7 +4274,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             <button id="currentRoleBadge" class="role-badge" type="button" title="点击管理角色包"></button>
             <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
           </div>
-          <!-- 构成条（HOST-S3-2）：常驻轻量分段比例条（四段真实占用 + 剩余），随 context_occupancy /
+          <!-- 构成条（HOST-S3-2）：常驻轻量分段比例条（五段真实占用 + 剩余），随 context_occupancy /
                chat_providers 空态渲染；每段 title 出单段明细，圆环 hover 完整明细保留 -->
           <div id="occSegments" class="context-segments" hidden></div>
           <!-- 上下文占用圆环：常驻不占行，非噪点；首帧由 chat_providers 渲染所选模型容量上限，

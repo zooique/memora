@@ -154,21 +154,45 @@ describe('estimateOccupancy · 上下文占用快照组装（SSOT 单点，运�
     const occ = estimateOccupancy({
       totalTokens: 120_000,
       rolePackBaseTokens: 3_000,
+      dynamicSystemTokens: 2_000,
       dialogueTokens: 12_000,
       dialogueCount: 3,
       inputAnchorTokens: 800,
     });
     expect(occ.outputReserveTokens).toBe(18_000); // 120000 × 0.15
-    // free = total − (rolepack + dialogue + input + reserve)
-    expect(occ.freeTokens).toBe(120_000 - (3_000 + 12_000 + 800 + 18_000));
+    // free = total − (rolepack + dynamicSystem + dialogue + input + reserve)
+    expect(occ.freeTokens).toBe(120_000 - (3_000 + 2_000 + 12_000 + 800 + 18_000));
     // 条数透传
     expect(occ.dialogueCount).toBe(3);
+  });
+
+  it('动态注入段计入占用（P1-1）：dynamicSystem 抬高已用、压低 free', () => {
+    const base = estimateOccupancy({
+      totalTokens: 100_000,
+      rolePackBaseTokens: 5_000,
+      dynamicSystemTokens: 0,
+      dialogueTokens: 10_000,
+      dialogueCount: 2,
+      inputAnchorTokens: 0,
+    });
+    const withDynamic = estimateOccupancy({
+      totalTokens: 100_000,
+      rolePackBaseTokens: 5_000,
+      dynamicSystemTokens: 8_000,
+      dialogueTokens: 10_000,
+      dialogueCount: 2,
+      inputAnchorTokens: 0,
+    });
+    // 动态注入 8000 恰从 free 中扣除（否则 free 系统性偏大、指示器偏乐观）
+    expect(base.freeTokens - withDynamic.freeTokens).toBe(8_000);
+    expect(withDynamic.dynamicSystemTokens).toBe(8_000);
   });
 
   it('自定义输出预留比例生效', () => {
     const occ = estimateOccupancy({
       totalTokens: 10_000,
       rolePackBaseTokens: 1_000,
+      dynamicSystemTokens: 0,
       dialogueTokens: 2_000,
       dialogueCount: 1,
       inputAnchorTokens: 0,
@@ -182,11 +206,12 @@ describe('estimateOccupancy · 上下文占用快照组装（SSOT 单点，运�
     const occ = estimateOccupancy({
       totalTokens: 5_000,
       rolePackBaseTokens: 3_000,
+      dynamicSystemTokens: 0,
       dialogueTokens: 3_000,
       dialogueCount: 2,
       inputAnchorTokens: 500,
     });
-    // used = 3000+3000+500+750 = 7250 > 5000 → free 收敛为 0（不出现负值）
+    // used = 3000+0+3000+500+750 = 7250 > 5000 → free 收敛为 0（不出现负值）
     expect(occ.freeTokens).toBe(0);
   });
 
@@ -194,12 +219,13 @@ describe('estimateOccupancy · 上下文占用快照组装（SSOT 单点，运�
     const occ = estimateOccupancy({
       totalTokens: 64_000,
       rolePackBaseTokens: 15_000,
+      dynamicSystemTokens: 0,
       dialogueTokens: 10_000,
       dialogueCount: 4,
       inputAnchorTokens: 0,
     });
     expect(occ.inputAnchorTokens).toBe(0);
-    // free = 64000 − (15000 + 10000 + 0 + 9600)
+    // free = 64000 − (15000 + 0 + 10000 + 0 + 9600)
     expect(occ.freeTokens).toBe(64_000 - (15_000 + 10_000 + 9_600));
   });
 });

@@ -29,6 +29,15 @@ export const SOFT_LIMIT_SUMMARY_MARKER_ROUND = 'Round summary · roundId:';
 /** 软上限摘要化判定标记：第二级压缩产物文案前缀（loop.compressContext） */
 export const SOFT_LIMIT_SUMMARY_MARKER_COMPRESS = 'Compressed context';
 
+/**
+ * 复用已存摘要产物的 token 上限比例（P2-4）。
+ *
+ * `roundSummaryLoader`（装配注入）拼装最多 5 条已存 round-summary，其长度**不受
+ * `SUMMARY_MAX_TOKENS`（生成侧参数）约束**——截断产物此前可被其撑爆（产超窗请求，一次注定
+ * 失败的调用）。复用路径按窗口比例封顶，超限即裁剪（保头部 + 省略标记）。
+ */
+const REUSED_SUMMARY_BUDGET_RATIO = 0.2;
+
 /** ContextManager 构造选项（模块私有，0 外部 import） */
 interface ContextManagerOptions {
   /** 上下文窗口 token 上限 */
@@ -378,15 +387,36 @@ export class ContextManager {
       content: this.contextTruncatedFn(skipped, tail.length),
     };
 
+    const summaryMsg: Message | undefined = summary
+      ? { role: 'system', content: summary }
+      : undefined;
     const truncated: Message[] = [systemMsg];
-    if (summary) {
-      truncated.push({ role: 'system', content: summary });
+    if (summaryMsg) {
+      truncated.push(summaryMsg);
     }
     truncated.push(...keyMessages);
     truncated.push(placeholder);
     truncated.push(...tail);
 
     const newEstimated = this.estimateTokens(truncated);
+
+    // ── 超窗观测守卫（P2-4） ─────────────────────────────────────
+    // system + tail 受 availableTokens（= floor(max × 0.9) − system）约束，但 summary（来自
+    // roundSummaryLoader）、keyMessages、placeholder **均不计入 availableTokens** ⇒ 组装产物可能
+    // 超 maxContextTokens（超窗 = 一次注定失败的 LLM 调用）。
+    // **此处只观测、不改造结构**——结构契约 = system→summary→keyMessages→placeholder→tail，
+    // 由用例锁定（改造即破约 = 造伤）；真正的止血落在源头：复用摘要产物封顶（见
+    // getOrCreateSummary → capSummary，按窗口比例裁剪 roundSummaryLoader 产物）。
+    if (newEstimated > this.maxContextTokens) {
+      logger.warn(
+        {
+          newTokens: newEstimated,
+          maxContextTokens: this.maxContextTokens,
+          summaryTokens: summaryMsg ? this.estimateTokens([summaryMsg]) : 0,
+        },
+        '截断产物超窗（summary/占位符未计入 availableTokens）：检查摘要长度或收紧 CONTEXT_TOKENS_BUFFER_RATIO',
+      );
+    }
 
     logger.info(
       {
@@ -481,6 +511,21 @@ export class ContextManager {
   }
 
   /**
+   * 复用摘要产物按窗口比例封顶（P2-4）。
+   *
+   * 超出 `maxContextTokens × REUSED_SUMMARY_BUDGET_RATIO` 的 token 预算即按**最保守**字符密度
+   * （CJK 1.5 字符/token）裁剪，附省略标记。目的：roundSummaryLoader 产物不受 SUMMARY_MAX_TOKENS
+   * 约束，原样复用可把截断产物撑爆超窗——封顶把它约束回窗口内可容纳的量级。
+   */
+  private capSummary(summary: string): string {
+    const budgetTokens = Math.floor(this.maxContextTokens * REUSED_SUMMARY_BUDGET_RATIO);
+    if (budgetTokens <= 0) return '';
+    if (estimateTokensText(summary) <= budgetTokens) return summary;
+    const charBudget = Math.floor(budgetTokens * LOOP_CONSTANTS.CJK_CHARS_PER_TOKEN);
+    return `${summary.slice(0, charBudget)}…`;
+  }
+
+  /**
    * 生成上下文摘要：把被裁剪段压缩成"遗忘补偿"注入 system prompt。
    *
    * 策略：
@@ -508,7 +553,8 @@ export class ContextManager {
         if (existing) {
           summarySpan.setAttribute('source', 'round-summary');
           logger.debug('上下文截断复用已存 round-summary，跳过 LLM 摘要生成');
-          return existing;
+          // P2-4：复用产物按窗口比例封顶（其长度不受 SUMMARY_MAX_TOKENS 约束）
+          return this.capSummary(existing);
         }
       }
 

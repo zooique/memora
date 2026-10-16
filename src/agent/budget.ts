@@ -81,8 +81,11 @@ export interface ContextBudget {
 /**
  * 上下文占用快照（真实用量，供输入区指示器展示；与 `ContextBudget` 的「预算上限」互补）。
  *
- * 设计：各段为 prepare 期**实际占用** token，互斥分段拼满整个窗口容量 `totalTokens`：
- *   角色包基础设定(system) | 完整对话 | 当前输入锚点 | 输出预留 | 剩余。
+ * 设计：各段为当前工作记忆的**实际占用** token，互斥分段拼满整个窗口容量 `totalTokens`：
+ *   角色包基础设定(system) | 动态注入(system) | 完整对话 | 当前输入锚点 | 输出预留 | 剩余。
+ * 「动态注入」= `messages[0]` 之外的**全部** system 消息（最近对话块 / 情报区 / 任务表 /
+ *   软上限与压力提示 / 搜索收敛提示 / 反思与自审查提示等运行时注入）——必须计入占用，
+ *   否则 free 系统性偏大、指示器偏乐观（用户按圆环判断"还能贴多少"必踩坑）。
  * 单一真理源 = 内核 prepare 计算（contextPreparer 经 loop.recordOccupancy 写入），
  * 宿主/webview 只渲染、不重算。free 非负收敛（窗口过小/输入过大时各段归零，free 不出现负值）。
  */
@@ -91,7 +94,14 @@ export interface ContextOccupancy {
   readonly totalTokens: number;
   /** 角色包/系统基础设定占用（system prompt：persona + rules + 技能 L1 + 工具 schema） */
   readonly rolePackBaseTokens: number;
-  /** 完整对话层实际占用（最近轮次注入正文 token） */
+  /**
+   * 动态注入占用（`messages[0]` 之外的 system 消息：最近对话块 / 情报区 / 任务表 /
+   * 软上限与压力提示 / 搜索收敛提示 / 反思与自审查提示等运行时注入）。
+   *
+   * 此前该段未计入任何分段、被静默算进 free ⇒ 指示器偏乐观（P1-1 修复）。
+   */
+  readonly dynamicSystemTokens: number;
+  /** 完整对话层实际占用（全量 user+assistant 问答闭环 token） */
   readonly dialogueTokens: number;
   /** 完整对话层注入的对话条数（user+assistant 消息总数；条数与 token 并存供宿主 hover 明细展示） */
   readonly dialogueCount: number;
@@ -109,6 +119,13 @@ export interface EstimateOccupancyInput {
   readonly totalTokens: number;
   /** 角色包/系统基础设定占用（system prompt 固定开销） */
   readonly rolePackBaseTokens: number;
+  /**
+   * 动态注入占用（`messages[0]` 之外的 system 消息）。
+   *
+   * **必填**（非可选默认 0）：漏填即 free 系统性偏大、指示器偏乐观——正是本段要根治的伤。
+   * 运行时路径由 `loop.getDynamicSystemTokens()` 提供；历史会话重算（无系统注入）显式传 0。
+   */
+  readonly dynamicSystemTokens: number;
   /** 完整对话层 token */
   readonly dialogueTokens: number;
   /** 完整对话层条数 */
@@ -131,11 +148,16 @@ export function estimateOccupancy(input: EstimateOccupancyInput): ContextOccupan
   const outputReserveRatio = input.outputReserveRatio ?? DEFAULT_OUTPUT_RESERVE_RATIO;
   const outputReserveTokens = Math.floor(input.totalTokens * outputReserveRatio);
   const usedBeforeFree =
-    input.rolePackBaseTokens + input.dialogueTokens + input.inputAnchorTokens + outputReserveTokens;
+    input.rolePackBaseTokens +
+    input.dynamicSystemTokens +
+    input.dialogueTokens +
+    input.inputAnchorTokens +
+    outputReserveTokens;
   const freeTokens = Math.max(0, input.totalTokens - usedBeforeFree);
   return {
     totalTokens: input.totalTokens,
     rolePackBaseTokens: input.rolePackBaseTokens,
+    dynamicSystemTokens: input.dynamicSystemTokens,
     dialogueTokens: input.dialogueTokens,
     dialogueCount: input.dialogueCount,
     inputAnchorTokens: input.inputAnchorTokens,

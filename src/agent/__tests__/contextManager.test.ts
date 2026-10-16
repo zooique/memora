@@ -73,11 +73,13 @@ function createMockProvider(
 function createContextManager(
   maxContextTokens: number,
   provider: LlmProvider = createMockProvider(),
+  roundSummaryLoader?: () => string,
 ): ContextManager {
   return new ContextManager({
     maxContextTokens,
     provider,
     contextTruncatedFn: (skipped, kept) => `[截断] 跳过 ${skipped} 条，保留 ${kept} 条`,
+    ...(roundSummaryLoader ? { roundSummaryLoader } : {}),
   });
 }
 
@@ -498,6 +500,39 @@ describe('ContextManager.truncateMessages()', () => {
       expect(newTokens).toBeLessThan(originalTokens);
       // 应不超过 maxContextTokens * 1.1（10% 缓冲 + 估算误差）
       expect(newTokens).toBeLessThanOrEqual(100 * 1.1);
+    });
+
+    it('超窗观测守卫不改造结构：summary 仍在 [1]（结构契约由用例锁定）', () => {
+      // 极小窗口（max=20）下组装产物必然超窗，但守卫只观测不改造——结构契约不可破约
+      const smallManager = createContextManager(20);
+      const messages = [
+        createMessage('SYS', { role: 'system' }),
+        createMessage('U1'),
+        createMessage('A1', { role: 'assistant' }),
+        createMessage('F'.repeat(60), { role: 'assistant' }),
+        createMessage('TU'),
+        createMessage('TA', { role: 'assistant' }),
+      ];
+      const summary = '上下文摘要内容';
+      const result = smallManager.truncateMessages(messages, summary);
+      expect(result[1]).toEqual({ role: 'system', content: summary });
+    });
+
+    it('复用摘要产物按窗口比例封顶（P2-4）：roundSummaryLoader 超长产物被裁剪到 ≤ 窗口 × 20%', async () => {
+      // roundSummaryLoader 产物不受 SUMMARY_MAX_TOKENS 约束（最多 5 条已存摘要拼接），
+      // 曾可撑爆截断产物；复用路径须按窗口比例封顶（保头部 + 省略标记）。
+      const loaderSummary = 'Z'.repeat(100_000); // 远超 1000 × 0.2 = 200 token 预算
+      const capped = createContextManager(1000, createMockProvider(), () => loaderSummary);
+      const messages = [
+        createMessage('SYS', { role: 'system' }),
+        createMessage('u1'),
+        createMessage('a1', { role: 'assistant' }),
+      ];
+      const out = await capped.getOrCreateSummary(messages);
+      expect(out.length).toBeLessThan(loaderSummary.length);
+      expect(out.endsWith('…')).toBe(true);
+      // 封顶后 ≤ 窗口 × 20% = 200 token
+      expect(capped.estimateTokens([{ role: 'user', content: out }])).toBeLessThanOrEqual(200);
     });
   });
 });

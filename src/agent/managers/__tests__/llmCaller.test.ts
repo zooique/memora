@@ -15,7 +15,7 @@ import {
   type LlmCallResult,
 } from '@/agent/managers/llmCaller.js';
 import { LoopMetrics } from '@/agent/managers/loopMetrics.js';
-import { NOOP_TRACER } from '@/agent/tracer.js';
+import { NOOP_TRACER, type ITracer, type ISpan } from '@/agent/tracer.js';
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { TaskType } from '@/llm/types.js';
 import type { AgentChunk } from '@/agent/types.js';
@@ -565,5 +565,78 @@ describe('LlmCaller.callWithRetry · 发送边界守卫', () => {
     expect(chatSpy).toHaveBeenCalledTimes(1);
     expect(metrics.llmPairingGuardFires).toBe(0);
     expect(result?.fullContent).toBe('ok');
+  });
+});
+
+describe('LlmCaller 输入 token 估算偏差告警（P1-2：接通 actualInputTokens 消费者）', () => {
+  /** 捕获 span 属性的最小 tracer（无 opentelemetry 依赖） */
+  function makeCapturingTracer(): { tracer: ITracer; attrs: Map<string, unknown> } {
+    const attrs = new Map<string, unknown>();
+    const tracer: ITracer = {
+      startSpan(): ISpan {
+        return {
+          setAttribute(key, value): void {
+            attrs.set(key, value);
+          },
+          end(): void {},
+          recordException(): void {},
+        };
+      },
+    };
+    return { tracer, attrs };
+  }
+
+  function makeDeps(
+    provider: LlmProvider,
+    estimatedInputTokens: number,
+    tracer: ITracer,
+  ): LlmCallerDeps {
+    return {
+      metrics: new LoopMetrics(),
+      getStrategy: () => ({
+        errorHandling: 'retry',
+        multiStepReasoning: 'auto',
+        providerRouting: 'fixed',
+      }),
+      getProvider: () => provider,
+      getProviderRouter: () => undefined,
+      getCachedProvider: () => undefined,
+      setCachedProvider: () => {},
+      contextManager: { estimateTokens: () => estimatedInputTokens },
+      tracer,
+      hasToolExecutedThisTurn: () => false,
+    };
+  }
+
+  async function drain(caller: LlmCaller): Promise<void> {
+    const gen = caller.callWithRetry([userMsg('hi')], {} as ChatOptions, undefined, 1);
+    let step = await gen.next();
+    while (!step.done) step = await gen.next();
+  }
+
+  it('实测输入 token > 估算 × 1.5 → span 记 inputTokenEstimateRatio（低估可见信号）', async () => {
+    const { tracer, attrs } = makeCapturingTracer();
+    const provider = {
+      name: 'p',
+      async *chat() {
+        yield { content: 'ok', usage: { inputTokens: 3000, outputTokens: 10 } };
+      },
+    } as unknown as LlmProvider;
+    await drain(new LlmCaller(makeDeps(provider, 100, tracer)));
+    // 实测 3000 / 估算 100 = 30（远超阈值 1.5）：比值与实测量入 span
+    expect(attrs.get('inputTokenEstimateRatio')).toBe(30);
+    expect(attrs.get('actualInputTokens')).toBe(3000);
+  });
+
+  it('实测与估算一致（ratio=1）→ 仍记比值但不告警（无误报）', async () => {
+    const { tracer, attrs } = makeCapturingTracer();
+    const provider = {
+      name: 'p',
+      async *chat() {
+        yield { content: 'ok', usage: { inputTokens: 100, outputTokens: 10 } };
+      },
+    } as unknown as LlmProvider;
+    await drain(new LlmCaller(makeDeps(provider, 100, tracer)));
+    expect(attrs.get('inputTokenEstimateRatio')).toBe(1);
   });
 });

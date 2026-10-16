@@ -35,6 +35,8 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
     })),
     // 完整对话消息（占用计量源；默认空，测试可覆写）
     getConversationMessages: (): Array<{ role: 'user' | 'assistant'; content: string }> => [],
+    // 动态注入占用（messages[0] 之外的 system 消息；默认 0，测试可覆写）
+    getDynamicSystemTokens: (): number => 0,
     getReplacedRoundIds: (): readonly string[] => [],
     getVisibleRoundIds: (): ReadonlySet<string> => new Set(),
     getExclusionRoundIds: (): ReadonlySet<string> => new Set(),
@@ -150,7 +152,11 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
     expect(occ.inputAnchorTokens).toBe(4);
     expect(occ.outputReserveTokens).toBe(18_000);
     const used =
-      occ.rolePackBaseTokens + occ.dialogueTokens + occ.inputAnchorTokens + occ.outputReserveTokens;
+      occ.rolePackBaseTokens +
+      occ.dynamicSystemTokens +
+      occ.dialogueTokens +
+      occ.inputAnchorTokens +
+      occ.outputReserveTokens;
     expect(occ.freeTokens).toBe(occ.totalTokens - used);
     expect(occ.freeTokens).toBeGreaterThanOrEqual(0);
   });
@@ -173,9 +179,30 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
     expect(occ.inputAnchorTokens).toBe(4);
     expect(occ.outputReserveTokens).toBe(18_000);
     const used =
-      occ.rolePackBaseTokens + occ.dialogueTokens + occ.inputAnchorTokens + occ.outputReserveTokens;
+      occ.rolePackBaseTokens +
+      occ.dynamicSystemTokens +
+      occ.dialogueTokens +
+      occ.inputAnchorTokens +
+      occ.outputReserveTokens;
     expect(occ.freeTokens).toBe(occ.totalTokens - used);
     expect(occ.freeTokens).toBeGreaterThanOrEqual(0);
+  });
+
+  it('动态注入段随 loop.getDynamicSystemTokens 计入占用（P1-1：不再静默算进 free）', async () => {
+    const { preparer, loop } = makePreparer();
+    loop.getDynamicSystemTokens = () => 500; // 模拟最近对话块/情报区/任务表等 system 注入
+
+    await preparer.assembleContext('正常问题');
+
+    const occ = vi.mocked(loop.recordOccupancy).mock.calls[0]![0];
+    expect(occ.dynamicSystemTokens).toBe(500);
+    const used =
+      occ.rolePackBaseTokens +
+      occ.dynamicSystemTokens +
+      occ.dialogueTokens +
+      occ.inputAnchorTokens +
+      occ.outputReserveTokens;
+    expect(occ.freeTokens).toBe(occ.totalTokens - used);
   });
 });
 

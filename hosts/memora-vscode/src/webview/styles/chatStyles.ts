@@ -1216,7 +1216,7 @@ export const chatStyles = `
   @media (prefers-reduced-motion: reduce) {
     .context-ring__fill { transition: none; }
   }
-  /* 构成条（HOST-S3-2）：圆环左侧常驻轻量分段比例条，四段真实占用 + 剩余按 token 数
+  /* 构成条（HOST-S3-2）：圆环左侧常驻轻量分段比例条，五段真实占用 + 剩余按 token 数
    * flex-grow（JS 内联）拼满；每段原生 title 出单段明细（与 hover 明细共用 SEGMENT_LABELS
    * 单点文案，零新浮层）。圆环 hover 完整明细保留不动——常驻一瞥构成 + hover 精确数字分层。
    * 宽度复用 --dim-md（进度条最小宽同用途域）；高度 4px 为 C 类一次性维度（无对应刻度档，
@@ -1232,6 +1232,7 @@ export const chatStyles = `
   }
   .context-segments__seg { min-width: 0; }
   .context-segments__seg--rolepack { background: var(--occ-rolepack); }
+  .context-segments__seg--dynamic { background: var(--occ-dynamic); }
   .context-segments__seg--dialogue { background: var(--occ-dialogue); }
   .context-segments__seg--input { background: var(--occ-input); }
   .context-segments__seg--output { background: var(--occ-output); }

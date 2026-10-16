@@ -42,6 +42,16 @@ export interface TokenEstimator {
 const TRUNCATION_RECOVERY_HINT = '上一次回复因思考耗尽输出预算被截断，请直接给出结论或工具调用';
 
 /**
+ * 输入 token 估算偏差告警阈值（P1-2）。
+ *
+ * 实测输入 token ÷ 估算输入 token 超过该比值 → 估算器**显著低估**（高密度文本如代码 / JSON、
+ * 或 tokenizer 密度与 3 字符/token 启发式偏离）。低估的后果：截断判定「没超」而服务端实际超窗
+ * → 请求失败/静默截断。此前 `actualInputTokens` 有采集有透出却**零消费者** = 观测断链；
+ * 本阈值把它接上消费者：超阈即 warn + span 属性（inputTokenEstimateRatio）持久化比值。
+ */
+const INPUT_TOKEN_DRIFT_ALERT_RATIO = 1.5;
+
+/**
  * 多模型路由所需的 loop 侧能力子集。
  * 全部为**取值器 / 回调**而非值快照——保证热切换（`setProvider` / `setStrategy`）即时生效。
  */
@@ -283,7 +293,8 @@ export class LlmCaller {
       try {
         attemptsMade++;
         metrics.llmCallCount++;
-        metrics.totalInputTokens += contextManager.estimateTokens(safeMessages);
+        const estimatedInputTokens = contextManager.estimateTokens(safeMessages);
+        metrics.totalInputTokens += estimatedInputTokens;
 
         // 截断型换策略（双轨，方案 T2）：①降推理深度已在下方 empty 分支随 truncatedRetry 置入
         // effectiveOpts.reasoning_effort='low'（复用 multiStepReasoning='manual' 既有转达通道，
@@ -294,6 +305,8 @@ export class LlmCaller {
         if (truncatedRetry) {
           requestMessages.push({ role: 'system', content: TRUNCATION_RECOVERY_HINT });
         }
+        // P1-2：估算/实测偏差告警（每次调用至多一次，防多 chunk 重复刷屏）
+        let inputDriftWarned = false;
         for await (const chunk of effectiveProvider.chat(requestMessages, effectiveOpts)) {
           streamStarted = true;
           if (signal?.aborted) {
@@ -306,6 +319,23 @@ export class LlmCaller {
             metrics.actualOutputTokens += chunk.usage.outputTokens;
             llmSpan.setAttribute('actualInputTokens', chunk.usage.inputTokens);
             llmSpan.setAttribute('actualOutputTokens', chunk.usage.outputTokens);
+            // P1-2：实测输入 token 相对估算的偏差告警（低估方向超阈即报，接通 actualInputTokens 消费者）
+            if (!inputDriftWarned && estimatedInputTokens > 0 && chunk.usage.inputTokens > 0) {
+              inputDriftWarned = true;
+              const ratio = chunk.usage.inputTokens / estimatedInputTokens;
+              llmSpan.setAttribute('inputTokenEstimateRatio', ratio);
+              if (ratio > INPUT_TOKEN_DRIFT_ALERT_RATIO) {
+                logger.warn(
+                  {
+                    estimatedInputTokens,
+                    actualInputTokens: chunk.usage.inputTokens,
+                    ratio,
+                  },
+                  '输入 token 估算显著低估（实测 > 估算 × 阈值）：估算器对高密度文本可能失准，' +
+                    '截断判定或将滞后（判定未超而实际超窗）',
+                );
+              }
+            }
           }
           // 诊断证据采集（末次口径）：finish_reason 随尾 chunk 回传（末条覆盖为准），
           // thinking 字符数按增量累计——空响应分型（截断/瞬态）的裁决依据

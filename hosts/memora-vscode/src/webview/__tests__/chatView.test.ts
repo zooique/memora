@@ -5486,6 +5486,7 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
       occupancy: {
         totalTokens: 128000,
         rolePackBaseTokens: 20000,
+        dynamicSystemTokens: 0,
         dialogueTokens: 2000,
         dialogueCount: 3,
         inputAnchorTokens: 0,
@@ -5554,6 +5555,7 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
       occupancy: {
         totalTokens: 64000,
         rolePackBaseTokens: 15000,
+        dynamicSystemTokens: 0,
         dialogueTokens: 1000,
         dialogueCount: 2,
         inputAnchorTokens: 50,
@@ -5583,7 +5585,7 @@ describe('chatView 占用构成条：常驻轻量分段比例条（HOST-S3-2，2
     vi.restoreAllMocks();
   });
 
-  it('context_occupancy 到达 → 构成条渲染五段，flex-grow 按 token 数比例，段 title 含单段明细', () => {
+  it('context_occupancy 到达 → 构成条渲染六段，flex-grow 按 token 数比例，段 title 含单段明细', () => {
     mountChatView();
     const segBar = document.getElementById('occSegments') as HTMLElement;
     expect(segBar.hidden).toBe(true);
@@ -5592,29 +5594,39 @@ describe('chatView 占用构成条：常驻轻量分段比例条（HOST-S3-2，2
       occupancy: {
         totalTokens: 128000,
         rolePackBaseTokens: 20000,
+        dynamicSystemTokens: 3000,
         dialogueTokens: 2000,
         dialogueCount: 3,
         inputAnchorTokens: 0,
         outputReserveTokens: 19200,
-        freeTokens: 86800,
+        freeTokens: 83800,
       },
     });
     expect(segBar.hidden).toBe(false);
     const segs = [...segBar.children] as HTMLElement[];
-    expect(segs.length).toBe(5);
-    // 段序与段类：rolepack → dialogue → input → output → free（台账口径四段 + 剩余）
+    expect(segs.length).toBe(6);
+    // 段序与段类：rolepack → dynamic → dialogue → input → output → free（台账口径五段 + 剩余）
     expect(segs.map((s) => s.className)).toEqual([
       'context-segments__seg context-segments__seg--rolepack',
+      'context-segments__seg context-segments__seg--dynamic',
       'context-segments__seg context-segments__seg--dialogue',
       'context-segments__seg context-segments__seg--input',
       'context-segments__seg context-segments__seg--output',
       'context-segments__seg context-segments__seg--free',
     ]);
     // 比例真源 = flex-grow 值（token 数），flex-basis 0 ⇒ 宽度精确按比例
-    expect(segs.map((s) => s.style.flexGrow)).toEqual(['20000', '2000', '0', '19200', '86800']);
+    expect(segs.map((s) => s.style.flexGrow)).toEqual([
+      '20000',
+      '3000',
+      '2000',
+      '0',
+      '19200',
+      '83800',
+    ]);
     // 段 title 出单段明细（与 hover 明细同格式）
     expect(segs[0]!.title).toContain('角色包/系统设定：20K');
-    expect(segs[1]!.title).toContain('完整对话：3 条 · 2K');
+    expect(segs[1]!.title).toContain('动态注入：3K');
+    expect(segs[2]!.title).toContain('完整对话：3 条 · 2K');
   });
 
   it('构成条段 title 与 hover 明细行逐字对拍（SEGMENT_LABELS 单点，两处零漂移）', () => {
@@ -5624,26 +5636,28 @@ describe('chatView 占用构成条：常驻轻量分段比例条（HOST-S3-2，2
       occupancy: {
         totalTokens: 64000,
         rolePackBaseTokens: 15000,
+        dynamicSystemTokens: 700,
         dialogueTokens: 1000,
         dialogueCount: 2,
         inputAnchorTokens: 50,
         outputReserveTokens: 9600,
-        freeTokens: 38350,
+        freeTokens: 37650,
       },
     });
-    // hover 明细 = 首行总容量 + 五段行；每段 title 与对应行逐字一致（共用格式化口径的守卫）
+    // hover 明细 = 首行总容量 + 六段行；每段 title 与对应行逐字一致（共用格式化口径的守卫）
     const tipLines = ((document.getElementById('occTip') as HTMLElement).textContent ?? '').split(
       '\n',
     );
     const segs = [
       ...(document.getElementById('occSegments') as HTMLElement).children,
     ] as HTMLElement[];
-    expect(tipLines.length).toBe(6);
+    expect(tipLines.length).toBe(7);
     expect(segs[0]!.title).toBe(tipLines[1]);
     expect(segs[1]!.title).toBe(tipLines[2]);
     expect(segs[2]!.title).toBe(tipLines[3]);
     expect(segs[3]!.title).toBe(tipLines[4]);
     expect(segs[4]!.title).toBe(tipLines[5]);
+    expect(segs[5]!.title).toBe(tipLines[6]);
   });
 
   it('chat_providers 空态 → 构成条全 free 段；切换模型 → 空态重置为新容量', () => {
@@ -5658,9 +5672,9 @@ describe('chatView 占用构成条：常驻轻量分段比例条（HOST-S3-2，2
     const segBar = document.getElementById('occSegments') as HTMLElement;
     expect(segBar.hidden).toBe(false);
     const segs = [...segBar.children] as HTMLElement[];
-    expect(segs.length).toBe(5);
+    expect(segs.length).toBe(6);
     // 空态 = 全部剩余：free 段 grow=总容量，其余 0
-    expect(segs.map((s) => s.style.flexGrow)).toEqual(['0', '0', '0', '0', '64000']);
+    expect(segs.map((s) => s.style.flexGrow)).toEqual(['0', '0', '0', '0', '0', '64000']);
     // 切换模型（上限变化）→ 空态重置为新容量（与圆环「切换即清零」语义一致）
     dispatch({
       type: 'chat_providers',
@@ -5671,7 +5685,7 @@ describe('chatView 占用构成条：常驻轻量分段比例条（HOST-S3-2，2
       activeName: 'local',
     });
     const segs2 = [...segBar.children] as HTMLElement[];
-    expect(segs2.map((s) => s.style.flexGrow)).toEqual(['0', '0', '0', '0', '8192']);
+    expect(segs2.map((s) => s.style.flexGrow)).toEqual(['0', '0', '0', '0', '0', '8192']);
   });
 });
 

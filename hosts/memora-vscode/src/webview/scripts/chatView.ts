@@ -4917,6 +4917,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /** 占用分段标签单点（HOST-S3-2）：hover 明细行与构成条段 title 共用，防两处文案漂移 */
   const SEGMENT_LABELS = {
     rolePack: '角色包/系统设定',
+    dynamicSystem: '动态注入',
     dialogue: '完整对话',
     inputAnchor: '当前输入锚点',
     outputReserve: '输出预留',
@@ -4940,6 +4941,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       `${SEGMENT_LABELS.rolePack}：${fmtTokens(occ.rolePackBaseTokens)}（占窗口 ${pctOf(occ.rolePackBaseTokens)}）`,
     );
     lines.push(
+      `${SEGMENT_LABELS.dynamicSystem}：${fmtTokens(occ.dynamicSystemTokens)}（${pctOf(occ.dynamicSystemTokens)}）`,
+    );
+    lines.push(
       `${SEGMENT_LABELS.dialogue}：${occ.dialogueCount} 条 · ${fmtTokens(occ.dialogueTokens)}（${pctOf(occ.dialogueTokens)}）`,
     );
     lines.push(
@@ -4953,11 +4957,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 构成条渲染（HOST-S3-2）：四段真实占用 + 剩余按 token 数比例拼满常驻分段条。
+   * 构成条渲染（HOST-S3-2）：五段实际占用 + 剩余按 token 数比例拼满常驻分段条。
    *
    * 每段 flex-grow = 该段 token 数（flex-basis 0 ⇒ 宽度精确按比例），原生 title 出
    * 单段明细（与 buildOccupancyTipText 共用 SEGMENT_LABELS 及同一格式化口径，两处零漂移）；
-   * UI 只渲染宿主透传的数字，不重算（守内核/宿主边界）。每次全量重建（5 个 div，无需 diff）。
+   * UI 只渲染宿主透传的数字，不重算（守内核/宿主边界）。每次全量重建（6 个 div，无需 diff）。
    */
   function renderOccupancySegments(
     occ: Extract<ExtensionToWebviewMessage, { type: 'context_occupancy' }>['occupancy'],
@@ -4966,12 +4970,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (!bar) return;
     const total = Math.max(1, occ.totalTokens);
     const pctOf = (val: number): string => ((val / total) * 100).toFixed(1) + '%';
-    // 段序 = 台账口径四段（角色包/对话/输入锚点/输出预留）+ 剩余；title 与 hover 明细行同格式
+    // 段序 = 台账口径五段（角色包/动态注入/对话/输入锚点/输出预留）+ 剩余；title 与 hover 明细行同格式
     const segments: { cls: string; tokens: number; title: string }[] = [
       {
         cls: 'rolepack',
         tokens: occ.rolePackBaseTokens,
         title: `${SEGMENT_LABELS.rolePack}：${fmtTokens(occ.rolePackBaseTokens)}（占窗口 ${pctOf(occ.rolePackBaseTokens)}）`,
+      },
+      {
+        cls: 'dynamic',
+        tokens: occ.dynamicSystemTokens,
+        title: `${SEGMENT_LABELS.dynamicSystem}：${fmtTokens(occ.dynamicSystemTokens)}（${pctOf(occ.dynamicSystemTokens)}）`,
       },
       {
         cls: 'dialogue',
@@ -5038,6 +5047,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const emptyOcc = {
       totalTokens: active.limitTokens,
       rolePackBaseTokens: 0,
+      dynamicSystemTokens: 0,
       dialogueTokens: 0,
       dialogueCount: 0,
       inputAnchorTokens: 0,
@@ -5075,7 +5085,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (percentEl) percentEl.textContent = usedPct.toFixed(0) + '%';
     const tipEl = document.getElementById('occTip');
     if (tipEl) tipEl.textContent = buildOccupancyTipText(occ);
-    // 构成条（HOST-S3-2）同步更新：四段真实占用 + 剩余常驻一瞥
+    // 构成条（HOST-S3-2）同步更新：五段真实占用 + 剩余常驻一瞥
     renderOccupancySegments(occ);
   }
 

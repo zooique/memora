@@ -728,8 +728,10 @@ export type ExtensionToWebviewMessage =
    * 上下文占用快照（预算可视化 · 输入区常驻指示器数据源）
    *
    * 每轮流式结束后由 extension host 推送（脱离 memora.showMetrics 独立常驻）：内核
-   * AgentMetrics.context.occupancy 透传，各段为 prepare 期**真实用量** token，互斥分段拼满
-   * 窗口总容量 totalTokens。webview 在输入区渲染比例条 + hover 明细。
+   * AgentMetrics.context.occupancy 透传，各段为当前工作记忆**实际占用** token（含动态 system
+   * 注入），互斥分段拼满窗口总容量 totalTokens。webview 在输入区渲染比例条 + hover 明细。
+   * ⚠️ 字段集须与内核 `ContextOccupancy`（src/agent/budget.ts）双向相等——守卫见
+   * host 侧 occupancyContract.test.ts（内核加/删段而宿主漏跟即红）。
    */
   | {
       type: 'context_occupancy';
@@ -738,7 +740,15 @@ export type ExtensionToWebviewMessage =
         totalTokens: number;
         /** 角色包/系统基础设定占用（system prompt） */
         rolePackBaseTokens: number;
-        /** 完整对话层实际占用（最近轮次注入正文） */
+        /**
+         * 动态注入占用（messages[0] 之外的 system 消息：最近对话块 / 情报区 / 任务表 /
+         * 软上限与压力提示 / 搜索收敛提示 / 反思与自审查提示等运行时注入）。
+         */
+        dynamicSystemTokens: number;
+        /**
+         * 完整对话层实际占用 = **全量** user+assistant 问答闭环 token（非"最近轮次注入正文"）。
+         * 口径 SSOT = 内核 loop.getConversationMessages()；N1 订正：旧注释误写为"最近轮次"。
+         */
         dialogueTokens: number;
         /**
          * 完整对话层注入的对话条数 = **user 消息数**（计数标准：一个问答闭环 = 1，

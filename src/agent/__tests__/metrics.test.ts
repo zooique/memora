@@ -594,6 +594,7 @@ describe('AgentMetrics · 类型结构', () => {
     loop.recordOccupancy({
       totalTokens: 120_000,
       rolePackBaseTokens: 3_000,
+      dynamicSystemTokens: 0,
       dialogueTokens: 12_000,
       dialogueCount: 3,
       inputAnchorTokens: 800,
@@ -625,6 +626,7 @@ describe('AgentMetrics · 类型结构', () => {
     loop.recordOccupancy({
       totalTokens: 120_000,
       rolePackBaseTokens: 3_000,
+      dynamicSystemTokens: 0,
       dialogueTokens: 12_000,
       dialogueCount: 99,
       inputAnchorTokens: 0,
@@ -657,6 +659,7 @@ describe('AgentMetrics · 类型结构', () => {
     loop.recordOccupancy({
       totalTokens: 120_000,
       rolePackBaseTokens: 3_000,
+      dynamicSystemTokens: 0,
       dialogueTokens: 5_000,
       dialogueCount: 99,
       inputAnchorTokens: 0,

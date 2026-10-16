@@ -142,15 +142,17 @@ export class ContextPreparer {
       logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
     }
 
-    // ── 上下文占用快照（预算可视化）：记录各层真实用量，供输入区指示器展示 ──
+    // ── 上下文占用快照（预算可视化）：记录各层实际用量，供输入区指示器展示 ──
     // 单一真理源 = 本 prepare 已算出的实际值；宿主/webview 只渲染、不重算。
-    //   rolePackBase = fixedOverheadTokens（system prompt：persona+rules+技能L1+工具schema）
-    //   dialogue     = 问答闭环完整对话 token（全量 user+assistant，与装配模式无关——容量诚实
-    //                  统计问答闭环总和；loop.append 侧 refreshOccupancyDialogue 以
-    //                  同一估算器重算覆盖，prepare 与实时刷新同源同数据，无口径漂移）
-    //   inputAnchor  = 顶级锚点（本轮用户输入，budget.anchorTokens）
-    //   outputReserve= 窗口 × 输出预留比例（留给模型回答的容量，非已用）
-    //   free         = 总容量 − 各段，≥ 0 收敛（窗口过小/输入过大时各段归零）
+    //   rolePackBase  = fixedOverheadTokens（system prompt：persona+rules+技能L1+工具schema）
+    //   dynamicSystem = messages[0] 之外的 system 消息 token（最近对话块/情报区/任务表/提示等
+    //                   运行时注入）——计入占用，否则 free 系统性偏大、指示器偏乐观（P1-1）
+    //   dialogue      = 问答闭环完整对话 token（全量 user+assistant，与装配模式无关——容量诚实
+    //                   统计问答闭环总和；loop 侧 refreshOccupancyFromMessages 以
+    //                   同一估算器重算覆盖，prepare 与实时刷新同源同数据，无口径漂移）
+    //   inputAnchor   = 顶级锚点（本轮用户输入，budget.anchorTokens）
+    //   outputReserve = 窗口 × 输出预留比例（留给模型回答的容量，非已用）
+    //   free          = 总容量 − 各段，≥ 0 收敛（窗口过小/输入过大时各段归零）
     // 注：记忆不占用上下文，占用模型无记忆维度。
     const dialogueTokens = loop.estimateTokens(loop.getConversationMessages());
     // 条数语义：以「用户输入」为计数标准——一个问答闭环（user 消息）计 1 条，
@@ -158,14 +160,17 @@ export class ContextPreparer {
     // 关键：dialogueCount 与 dialogueTokens 统一取 loop.messages 全量（user 计数 + 全量 token），
     // 与装配模式无关——否则 hybrid 模式下 getRecentHistoryWithinBudget 按预算截取「最近 N 轮」
     // 会把最新轮挤掉最旧轮、轮数守恒，导致「发一条消息后完整对话数不涨」（用户实测 bug），
-    // 且进窗口径与 loop 侧实时刷新（refreshOccupancyDialogue 按全量重算）产生语义漂移。
+    // 且进窗口径与 loop 侧实时刷新（refreshOccupancyFromMessages 按全量重算）产生语义漂移。
     // 统一全量后 prepare 与刷新共用同一估算器、同一数据源（SSOT），杜绝口径分叉。
     const dialogueCount = loop.getConversationMessages().filter((m) => m.role === 'user').length;
+    // 动态注入占用（messages[0] 之外的 system 消息）——单一真理源 = loop.getDynamicSystemTokens()
+    const dynamicSystemTokens = loop.getDynamicSystemTokens();
     // 占用组装复用 estimateOccupancy（SSOT 单点：free 收敛 + 拼满 + 输出预留，宿主历史会话重算共用）
     deps.loop.recordOccupancy(
       estimateOccupancy({
         totalTokens: deps.config.maxContextTokens,
         rolePackBaseTokens: fixedOverheadTokens,
+        dynamicSystemTokens,
         dialogueTokens,
         dialogueCount,
         inputAnchorTokens: budget.anchorTokens,
