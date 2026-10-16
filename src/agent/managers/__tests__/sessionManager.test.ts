@@ -847,86 +847,9 @@ describe('SessionManager', () => {
     });
   });
 
-  describe('consecutivePauseDecay', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it('暂停时间戳超过衰减窗口后应自动衰减', () => {
-      // 第一次高风险暂停
-      manager.pause('第一次暂停', 'user');
-      expect(manager.getConsecutivePauseCount()).toBe(1);
-
-      // 快进时间到暂停超时阈值之前（25 分钟），计数应仍为 1
-      vi.advanceTimersByTime(25 * 60 * 1000);
-      expect(manager.getConsecutivePauseCount()).toBe(1);
-
-      // 快进超过暂停超时阈值（再快进 10 分钟，总计 35 分钟）
-      // 暂停超时后 checkPauseTimeout 会重置连续暂停计数
-      vi.advanceTimersByTime(10 * 60 * 1000);
-      expect(manager.getConsecutivePauseCount()).toBe(0);
-
-      // 再快进超过衰减窗口，计数仍为 0
-      vi.advanceTimersByTime(30 * 60 * 1000);
-      expect(manager.getConsecutivePauseCount()).toBe(0);
-    });
-
-    it('多次暂停按时间衰减，只有窗口内的计数', () => {
-      // 第一次暂停
-      manager.pause('第一次暂停', 'user');
-      expect(manager.getConsecutivePauseCount()).toBe(1);
-
-      // 快进 10 分钟，恢复再暂停（模拟第二次暂停）
-      vi.advanceTimersByTime(10 * 60 * 1000);
-      manager.resume();
-      manager.pause('第二次暂停', 'user');
-      expect(manager.getConsecutivePauseCount()).toBe(2);
-
-      // 快进 25 分钟（总计 35 分钟），第二次暂停尚未超时（30 分钟阈值），
-      // 两次暂停均仍在衰减窗口内（60 分钟）
-      vi.advanceTimersByTime(25 * 60 * 1000);
-      expect(manager.getConsecutivePauseCount()).toBe(2);
-
-      // 再快进 10 分钟（总计 45 分钟），第二次暂停已超时（30 分钟阈值）
-      // 暂停超时后 checkPauseTimeout 重置连续暂停计数
-      vi.advanceTimersByTime(10 * 60 * 1000);
-      expect(manager.getConsecutivePauseCount()).toBe(0);
-    });
-
-    it('低风险暂停不记录时间戳，不影响衰减', () => {
-      // 高风险暂停
-      manager.pause('高风险暂停', 'user');
-      expect(manager.getConsecutivePauseCount()).toBe(1);
-
-      // 恢复后低风险暂停
-      manager.resume();
-      manager.pause('低风险暂停', 'system', true);
-      expect(manager.getConsecutivePauseCount()).toBe(1); // 仍为 1
-
-      // 快进时间超过衰减窗口，高风险暂停过期
-      vi.advanceTimersByTime(3_600_000 + 60_000);
-      expect(manager.getConsecutivePauseCount()).toBe(0);
-    });
-
-    it('resetConsecutivePauseCount 应清空所有时间戳', () => {
-      manager.pause('第一次暂停', 'user');
-      expect(manager.getConsecutivePauseCount()).toBe(1);
-
-      // 恢复再暂停第二次
-      manager.resume();
-      manager.pause('第二次暂停', 'user');
-      expect(manager.getConsecutivePauseCount()).toBe(2);
-
-      // 重置
-      manager.resetConsecutivePauseCount();
-      expect(manager.getConsecutivePauseCount()).toBe(0);
-      expect(manager.isPauseLimitReached()).toBe(false);
-    });
-  });
+  // 删后注记（2026-10-16 · 5.0.0）：曾有 consecutivePauseDecay 用例组（覆盖
+  // getConsecutivePauseCount / resetConsecutivePauseCount / isPauseLimitReached）——被测的
+  // 「连续暂停防滥用」机制已整体拆除（生产从未通电：判据零消费 + 计数恒空），用例随之删除。
 
   // ── 工具执行日志 + 补偿降级 + 计划查询 + 心跳（补充分支） ──
 

@@ -586,16 +586,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
   }
 
-  /**
-   * 强制释放对话锁
-   *
-   * 宿主在"无进展超时"确认 generator 挂起后调用，使用户能立即发起新对话（否则需等锁超时）。
-   * 安全机制委托 ChatLockManager.forceRelease：递增 token 让原 chat() 的 finally 跳过清理、abort signal 让响应点退出；
-   * 原 generator 仍可能后台运行但不影响新调用。幂等（未忙时 no-op）。
-   */
-  forceReleaseChatLock(): void {
-    this.internals.chatLockManager?.forceRelease();
-  }
+  // 删后注记（2026-10-16 · 5.0.0）：曾有公开 forceReleaseChatLock()——注释称宿主在「无进展超时」
+  // 后调用以强行释放对话锁，实际宿主全仓零真实调用（仅一句注释提及），承诺的兜底从未接线。
+  // 底层 ChatLockManager.forceRelease 随之无调用者，一并拆除（close 路径仍用 dispose 释放锁）。勿加回。
 
   /**
    * 发送用户消息，非流式返回完整回复
@@ -730,8 +723,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     try {
       for await (const chunk of source) {
-        // 内核事实驱动：loop 在 step 边界真正挂起时状态机才翻 PAUSED，非申请即翻转；
-        // 与 requestPause 空闲分支同源，须传 lowRisk=true 保持同一暂停事件契约（否则流中暂停计入连续暂停配额）
+        // 内核事实驱动：loop 在 step 边界真正挂起时状态机才翻 PAUSED，非申请即翻转
         if (chunk.type === 'paused') {
           const pendingInfo = this._sessionManager?.consumePendingPause();
           // 原因/来源唯一真源 = 状态机 pendingPause：用户暂停与提问挂起**同源**注册
@@ -740,7 +732,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           const pauseReason = pendingInfo?.reason ?? '用户主动暂停';
           const pauseSource = pendingInfo?.source ?? 'user';
           // pauseMeta 不在此写——唯一写入点已收口到 SessionManager.pause()（本方法转发调用）。
-          this.pause(pauseReason, pauseSource, true);
+          this.pause(pauseReason, pauseSource);
           paused = true;
         }
         yield chunk;
@@ -817,11 +809,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 暂停会话（用户/Agent/系统均可触发，暂停前自动创建检查点）
-   * @param lowRisk 低风险暂停不计入连续暂停计数（默认 false）
    */
-  pause(reason: string, source: 'user' | 'agent' | 'system' = 'user', lowRisk = false): boolean {
+  pause(reason: string, source: 'user' | 'agent' | 'system' = 'user'): boolean {
     this.assertInitialized('pause');
-    return this.requireSessionManager.pause(reason, source, lowRisk);
+    return this.requireSessionManager.pause(reason, source);
   }
 
   /**
@@ -1921,10 +1912,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         { reason: pendingInfo?.reason, source: pendingInfo?.source },
         'close() 时存在未消费的暂停请求，已自动清理',
       );
-      // 若状态机仍 running，同步翻 paused 使检查点内存态一致（无需触发挂起，仅修正一致性）；
-      // 系统清理不消耗连续暂停配额 → lowRisk=true
+      // 若状态机仍 running，同步翻 paused 使检查点内存态一致（无需触发挂起，仅修正一致性）
       if (sm.status === 'running') {
-        sm.pause('close 清理残留暂停', 'system', true);
+        sm.pause('close 清理残留暂停', 'system');
       }
       sm.cancelPendingPause();
     }

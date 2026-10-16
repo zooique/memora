@@ -11,7 +11,7 @@ import { logger } from '@/logging/logger.js';
 
 /**
  * chat() 并发锁管理器。acquire 返回 token+internalAbort，finally 中 release(token)。
- * forceRelease 供宿主无进展超时兜底；dispose 供 Agent.close。
+ * dispose 供 Agent.close（原 forceRelease 供宿主无进展超时兜底——宿主从未调用，已随 5.0.0 拆除）。
  */
 export class ChatLockManager {
   /** 并发锁标志 */
@@ -40,7 +40,7 @@ export class ChatLockManager {
     this._chatBusy = true;
     // 分配本调用 token，超时/finally 据此判断是否仍是持有者，避免误清新调用资源
     const token = ++this._chatLockToken;
-    // 中断信号（用户 stop / 插话 / 宿主 forceRelease 会 abort 它；锁自身超时不 abort）
+    // 中断信号（用户 stop / 插话 / 锁释放会 abort 它；锁自身超时不 abort）
     const internalAbort = new AbortController();
     this.chatAbortController = internalAbort;
 
@@ -91,30 +91,13 @@ export class ChatLockManager {
     }
   }
 
-  /**
-   * 强制释放对话锁（宿主无进展超时兜底）。幂等：_chatBusy 已 false 时 no-op。
-   * generator 可能卡在不可响应的 await 点，递增 token 让原 finally 跳过清理；
-   * abort controller 让响应 signal 的 await 点退出。原 generator 后台残留也无法影响新调用。
-   */
-  forceRelease(): void {
-    if (!this._chatBusy) return;
-    // 递增 token 让原 chat() finally 跳过清理（避免误清新调用者资源）
-    this._chatLockToken++;
-    if (this.chatAbortController) {
-      this.chatAbortController.abort();
-      this.chatAbortController = null;
-    }
-    if (this.chatLockTimer) {
-      clearSafeTimeout(this.chatLockTimer);
-      this.chatLockTimer = null;
-    }
-    this._chatBusy = false;
-    logger.warn('对话锁被强制释放（宿主无进展超时兜底）');
-  }
+  // 删后注记（2026-10-16 · 5.0.0）：曾有 forceRelease()——被公开 Agent.forceReleaseChatLock 唯一调用；
+  // 该门面宿主零真实调用（承诺的无进展超时兜底从未接线），门面拆除后本方法无调用者，一并删除。
+  // 锁释放现仅走 release(token)（正常路径）与 dispose()（Agent.close）。勿加回。
 
   /**
-   * 销毁管理器（Agent.close 时调用）。与 forceRelease 同行为但不记 warn 日志
-   * （close 为正常生命周期）。递增 token 使进行中 generator 的 finally 跳过清理。
+   * 销毁管理器（Agent.close 时调用）。递增 token 使进行中 generator 的 finally 跳过清理
+   * （close 为正常生命周期，已接管清理职责）。
    */
   dispose(): void {
     // 递增 token，让进行中 chat() finally 跳过资源清理（close 已接管清理职责）

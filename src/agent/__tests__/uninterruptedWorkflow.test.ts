@@ -758,19 +758,8 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       expect(agent.sessionManager!.status).toBe('running');
     });
 
-    it('用户主动暂停 lowRisk=true 不计入连续暂停配额（契约保留，改显式 pause 验证）', async () => {
-      agent = makeAgent(tmpProject, tmpConfig, tmpData);
-      await agent.init();
-      expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
-
-      // 空闲守卫收敛后，用户"暂停已完成任务"不再翻状态机（作废）；
-      // 用户主动暂停的 lowRisk 契约本体经显式 pause(lowRisk=true) 验证仍成立
-      const ok = agent.pause('空闲暂停', 'user', true);
-      expect(ok).toBe(true);
-      expect(agent.sessionManager!.status).toBe('paused');
-      // 契约：用户主动暂停不消耗连续暂停配额 → 计数保持 0（不挤占 Agent 澄清额度）
-      expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
-    });
+    // 删后注记（2026-10-16 · 5.0.0）：曾有「用户主动暂停 lowRisk=true 不计入连续暂停配额」用例——
+    // lowRisk 参数与连续暂停计数机制已整体拆除（生产从未通电），用例删除。
   });
 
   describe('canContinueWithoutInput（blocked 判据）', () => {
@@ -1791,24 +1780,8 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     },
   );
 
-  it(
-    '流中用户暂停（延迟翻转挂起）应透传 lowRisk=true，不计入连续暂停配额',
-    { timeout: 30000 },
-    async () => {
-      agent = makeMultiTurnAgent();
-      await agent.init();
-      expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
-
-      // 流中（带工具调用的 step 后）用户请求暂停 → 走延迟翻转路径，consumeExecutionStream :1117 真正挂起
-      for await (const chunk of agent.chat('读取探针文件')) {
-        if (chunk.type === 'tool_result') agent.requestPause('流中暂停', 'user');
-        if (chunk.type === 'paused') break;
-      }
-      expect(agent.sessionManager!.status).toBe('paused');
-      // 契约：流中用户暂停与空闲暂停同一 lowRisk 契约（:1117 透传 true），计数保持 0
-      expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
-    },
-  );
+  // 删后注记（2026-10-16 · 5.0.0）：曾有「流中用户暂停透传 lowRisk=true 不计入连续暂停配额」用例——
+  // lowRisk 参数与连续暂停计数机制已整体拆除，用例删除。
 
   it(
     '首轮无预建 checkpoint 的流中暂停，pauseMeta 必须落到检查点（防静默丢失）',
@@ -2124,64 +2097,10 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
   );
 });
 
-describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
-  let tmpProject: string;
-  let tmpConfig: string;
-  let tmpData: string;
-  let agent: Agent | null = null;
-
-  beforeEach(() => {
-    tmpData = mkdtempSync(join(tmpdir(), 'memora-ssot2-data-'));
-    tmpProject = mkdtempSync(join(tmpdir(), 'memora-ssot2-proj-'));
-    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-ssot2-cfg-'));
-    seedProject(tmpProject, tmpConfig, tmpData);
-  });
-
-  afterEach(async () => {
-    if (agent) {
-      try {
-        await agent.close();
-      } catch {
-        // 忽略关闭错误
-      }
-      agent = null;
-    }
-    rmSync(tmpProject, { recursive: true, force: true });
-    rmSync(tmpConfig, { recursive: true, force: true });
-    rmSync(tmpData, { recursive: true, force: true });
-  });
-
-  it('Agent.pause 门面必须转发 lowRisk 到 SessionManager（防契约窄化）', async () => {
-    // 注释 (:902) 承诺：澄清问题全为低风险时不计入连续暂停计数。
-    // 门面窄化会让 lowRisk 从公共 API 静默不可达——若 Agent.pause 丢弃该参数
-    // （始终传 false），下方低风险用例将错误地计数，本用例随之失败。
-    // 注：结构性 `.length` 断言在此无效（source 形参带默认值，函数 .length 恒为 1），
-    // 故以行为断言锁死契约，与下方 lowRisk 计数用例互为表里。
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-    const before = agent.sessionManager!.getConsecutivePauseCount();
-    agent.pause('低风险澄清', 'agent', true);
-    expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(before);
-  });
-
-  it('低风险暂停不应计入连续暂停计数', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-
-    const before = agent.sessionManager!.getConsecutivePauseCount();
-    agent.pause('低风险澄清', 'agent', true);
-    expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(before);
-  });
-
-  it('高风险暂停仍应计数（防过度修复）', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-
-    const before = agent.sessionManager!.getConsecutivePauseCount();
-    agent.pause('高风险决策确认', 'agent');
-    expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(before + 1);
-  });
-});
+// 删后注记（2026-10-16 · 5.0.0）：曾有 describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复')——
+// 覆盖 Agent.pause 门面转发 lowRisk / 低风险不计数 / 高风险仍计数三个用例。
+// lowRisk 参数与连续暂停计数机制（getConsecutivePauseCount 等）已整体拆除（生产路径从未通电），
+// 相关用例一并删除。防滥用已由 checkPauseTimeout 的暂停超时兜底承担。
 
 // ═══════════════════════════════════════════════════════════════
 // 工具执行前检查三态（统一执行前检查点 · 宿主审批通道）
@@ -2663,7 +2582,7 @@ describe('问答闭环内交互输入归属（同一闭环节点不分裂）', (
       // ── (3) 用户补充（supplement）→ 归属同一闭环节点 ──
       // 暂停后补充路由前置：模拟「已暂停 → 发补充」——空闲 requestPause 已收敛为作废守卫
       // （任务结束的暂停申请即作废），此处用显式 pause 构造暂停态
-      expect(agent.pause('暂停后补充', 'user', true)).toBe(true);
+      expect(agent.pause('暂停后补充', 'user')).toBe(true);
       expect(agent.sessionManager!.status).toBe('paused');
       for await (const _chunk of agent.resumeExecution(
         '补充：请同时读取测试配置',
@@ -2713,7 +2632,7 @@ describe('问答闭环内交互输入归属（同一闭环节点不分裂）', (
       }
       // 暂停态关闭：闭环节点仍锚定同一 Round（roundStore 唯一节点）
       // 显式 pause（空闲 requestPause 是作废守卫）
-      expect(agent.pause('重启前暂停', 'user', true)).toBe(true);
+      expect(agent.pause('重启前暂停', 'user')).toBe(true);
       expect(currentClosure().id).toBe(anchorRoundId);
       // 原闭环节点此刻：1 条交互输入（question-answer）
       expect(currentClosure().interactiveInputs).toHaveLength(1);

@@ -2461,7 +2461,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   // ─── 归档停滞兜底 ────────────────────────────────────────────
   // 根因修复：内核 postProcess 已改非阻塞，正常路径 archiving 后立即收到 done 折叠。
-  // 此兜底仅覆盖后端异常挂起（宿主 forceReleaseChatLock 超时前），避免 UI 永久停留在
+  // 此兜底仅覆盖后端异常挂起（归档迟迟不发 done），避免 UI 永久停留在
   // 「归档记忆中…」呼吸动画——答案已完整输出，归档是后台动作，不应让用户无限等待。
   const ARCHIVING_STALL_MS = 15000;
 

@@ -5,7 +5,6 @@
  *   - acquire() / release()：基本获取/释放锁 + token 递增
  *   - 超时保护：超时回调触发 + 锁释放
  *   - race condition 防护：release 时 token 不匹配跳过清理
- *   - forceRelease()：强制释放 + 未持锁时 no-op
  *   - attachExternalSignal()：外部 abort 触发内部 abort + 已 aborted 的 signal
  *   - isBusy 状态正确性
  *   - dispose()：销毁清理
@@ -197,64 +196,10 @@ describe('ChatLockManager', () => {
     });
   });
 
-  // ─── forceRelease() ──────────────────────────────────
-
-  describe('forceRelease()', () => {
-    it('强制释放锁', () => {
-      const { internalAbort } = manager.acquire(180_000);
-
-      expect(manager.isBusy).toBe(true);
-      expect(internalAbort.signal.aborted).toBe(false);
-
-      manager.forceRelease();
-
-      expect(manager.isBusy).toBe(false);
-      // forceRelease 应 abort 当前 controller
-      expect(internalAbort.signal.aborted).toBe(true);
-    });
-
-    it('forceRelease 后新 acquire 获取新 token', () => {
-      const { token: token1 } = manager.acquire(180_000);
-      manager.forceRelease();
-
-      const { token: token2 } = manager.acquire(180_000);
-      // forceRelease 递增了 token，新 acquire 又递增一次
-      expect(token2).toBe(token1 + 2);
-
-      manager.release(token2);
-    });
-
-    it('forceRelease 后旧 release 不应影响新锁', () => {
-      const { token: token1 } = manager.acquire(180_000);
-      manager.forceRelease();
-
-      const { token: token2 } = manager.acquire(180_000);
-      expect(manager.isBusy).toBe(true);
-
-      // 旧 token1 release 应跳过（token 不匹配）
-      manager.release(token1);
-      expect(manager.isBusy).toBe(true);
-
-      // 清理
-      manager.release(token2);
-    });
-
-    it('forceRelease 在未持锁时 no-op', () => {
-      // 未持锁时调用 forceRelease 不应抛错
-      expect(() => manager.forceRelease()).not.toThrow();
-      expect(manager.isBusy).toBe(false);
-    });
-
-    it('多次调用 forceRelease 安全（幂等）', () => {
-      manager.acquire(180_000);
-      manager.forceRelease();
-      expect(manager.isBusy).toBe(false);
-
-      // 再次调用不应抛错
-      expect(() => manager.forceRelease()).not.toThrow();
-      expect(manager.isBusy).toBe(false);
-    });
-  });
+  // 删后注记（2026-10-16 · 5.0.0）：曾有 describe('forceRelease()')——覆盖强制释放（abort controller /
+  // token 递增 / 幂等 / 未持锁 no-op）。forceRelease 被公开 Agent.forceReleaseChatLock 唯一调用，
+  // 该门面宿主零真实调用（承诺的无进展超时兜底从未接线），门面拆除后 forceRelease 无调用者，一并删除。
+  // 锁释放现仅走 release(token) 与 dispose()（下方 describe 已覆盖）。
 
   // ─── attachExternalSignal() ──────────────────────────
 

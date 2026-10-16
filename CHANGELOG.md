@@ -106,6 +106,26 @@
   `messages` 腐化字段订正为 `roundCount`/`roundIds`、§十一 `RECALL` span（已无发射点）与
   §十四 编号错误（应为 §十三）一并订正。
 
+### ⚠️ Breaking Removed（内核 · 公开面零消费防滥用链 + 强制释放锁门面 · 2026-10-16 批）
+
+- 删 **`SessionManager.isPauseLimitReached()` / `getConsecutivePauseCount()` / `resetConsecutivePauseCount()`**
+  三个公开方法 + 私有 `pruneStalePauseTimestamps()` + `consecutivePauseTimestamps` 字段 +
+  `CONSECUTIVE_PAUSE_WINDOW_MS` 常量 + `pause()` 的 `lowRisk` 参数（整条「连续暂停计数」链）：
+  **从未通电**——生产路径两处 `pause()` 调用均传 `lowRisk=true`（计数数组恒空），判据 `isPauseLimitReached`
+  零生产消费，`resetConsecutivePauseCount` 仅被私有超时处理空转调用；且其注释谎称「≥2 次强制降级」
+  却从不执行（**谎报型僵尸**，与诚实预留型区分）。防滥用已由 `checkPauseTimeout` 的暂停超时兜底承担。
+- 删 **`Agent.forceReleaseChatLock()`** + 连带私有 **`ChatLockManager.forceRelease()`**：门面被宿主
+  **零真实调用**（承诺的「无进展超时兜底」从未接线，宿主仅一句注释提及）；门面拆除后底层 `forceRelease`
+  无调用者。锁释放现仅走 `release(token)`（正常路径）与 `dispose()`（`Agent.close`）。
+- 守卫：`publicMemberSurfaceGuard.test.ts` EXPECTED 基线删 4 项（上述 3 个 SessionManager 方法 +
+  `forceReleaseChatLock`），走「守卫红 → 定性 → 更新基线」流程；手册 §十二「Agent 面类直接方法」
+  「对话」「暂停/继续」两行同步订正（去 `forceReleaseChatLock()`、`pause(…, lowRisk?)` → `pause(reason, source?)`）。
+- 受影响测试清理：`sessionManager.test.ts` 删 `consecutivePauseDecay` 用例组、
+  `uninterruptedWorkflow.test.ts` 删 3 个 `lowRisk` 用例 + 「SSOT 排雷防回归」describe 块、
+  `chatLockManager.test.ts` 删 `forceRelease()` describe 块（`dispose()` 独立用例保留，覆盖率不降）。
+- 宿主侧注释清算：`chatView.ts` 归档停滞兜底注释去掉 `forceReleaseChatLock` 引用（该 API 已不存在，
+  注释腐化会误导后人以为宿主有该兜底）。
+
 ### Added（内核 · 存储层 SQLite 实现内核切片 · 服务 `DSH-1` / `MCP-SERVER-1` 共同前置，2026-10-16）
 
 - 新增 **`createNodeSqliteStorage(dbPath)`**（同步工厂）+ **`ReadOnlyMemoryStorage`**（只读视图类型）两个公共

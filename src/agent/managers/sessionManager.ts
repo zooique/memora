@@ -52,14 +52,10 @@ export class SessionManager {
   private stateMachine: SessionStateMachine;
   /** 当前会话检查点（运行时状态快照） */
   private checkpoint: SessionCheckpoint | null = null;
-  /**
-   * 连续暂停时间戳数组（防滥用窗口）：每次高风险暂停记录时间戳，窗口（1 小时）内连续 2 次则强制降为低风险暂停。
-   * ⚠ 进程内状态，不入 SessionCheckpoint——重启归零是设计（反滥用卫生状态，非执行状态）；1h 窗口自愈防线，勿引入持久化。
-   */
-  private consecutivePauseTimestamps: number[] = [];
-
-  /** 连续暂停时间窗口（毫秒），1 小时前的暂停不计入连续计数 */
-  private static readonly CONSECUTIVE_PAUSE_WINDOW_MS = 3_600_000;
+  // 删后注记（2026-10-16 · 5.0.0）：曾有「连续暂停防滥用」计数器（consecutivePauseTimestamps +
+  // CONSECUTIVE_PAUSE_WINDOW_MS）——整条机制从未通电：判据 isPauseLimitReached 零生产消费、
+  // 生产路径 pause() 恒传 lowRisk=true 使计数数组恒空，注释却谎称「≥2 次强制降级」。
+  // 按 SSOT/不带伤裁决拆除（见 CHANGELOG 5.0.0）。勿加回。
 
   // ── 运行时暂停超时检测 ────────────────────────────────
 
@@ -427,11 +423,8 @@ export class SessionManager {
     return this.checkpoint;
   }
 
-  /**
-   * 暂停会话（用户/Agent/系统均可触发）。暂停前自动创建检查点；高风险暂停计入连续计数（防滥用），低风险不计。
-   * @param lowRisk 低风险暂停不计连续计数（默认 false）
-   */
-  pause(reason: string, source: PauseSource = 'user', lowRisk: boolean = false): boolean {
+  /** 暂停会话（用户/Agent/系统均可触发）。暂停前自动创建检查点。 */
+  pause(reason: string, source: PauseSource = 'user'): boolean {
     const result = this.stateMachine.pause(reason, source);
     if (result.allowed) {
       // 先在 createCheckpoint 前记 pausedAt，检查点经 spread 继承，省去 pause() 内的二次补设分支
@@ -449,16 +442,6 @@ export class SessionManager {
       // ⚠ 消费方是**判据**不是展示：clearPlanOnTurnEnd 以 `cp.pauseMeta` 有无决定
       //   「turn 是否真正结束、任务表该不该清」。任一暂停路径漏写，恢复后任务表会被误清。
       this.setPauseMeta({ reason, source });
-      // 仅高风险暂停记录时间戳（低风险由 Agent 自动兜底不累积）
-      if (!lowRisk) {
-        this.consecutivePauseTimestamps.push(Date.now());
-        logger.debug(
-          { consecutivePauseCount: this.consecutivePauseTimestamps.length, reason },
-          '高风险暂停已记录时间戳',
-        );
-      } else {
-        logger.debug({ reason }, '低风险暂停不记录时间戳（Agent 自动兜底）');
-      }
       // 启动暂停超时检测，防暂停会话长时间占用资源
       this.startPauseTimeoutTimer();
       this.emitEvent('sessionPaused', {
@@ -466,7 +449,7 @@ export class SessionManager {
         source,
         sessionId: this.checkpoint?.sessionId,
       });
-      logger.info({ reason, source, lowRisk }, '会话已暂停');
+      logger.info({ reason, source }, '会话已暂停');
     }
     return result.allowed;
   }
@@ -497,8 +480,6 @@ export class SessionManager {
         // 走 setPauseMeta 唯一写入口而非内联赋值，避免绕过其兜底链路（其内部已含 touch+settle，此处不再重复调用）
         this.setPauseMeta(undefined);
       }
-      // 连续暂停计数在暂停超时处理（checkPauseTimeout）对称重置，
-      // 不在 resume() 里清零——避免用户回答前过早清零导致防滥用机制无效
       this.emitEvent('sessionResumed', {
         sessionId: this.checkpoint?.sessionId,
       });
@@ -519,40 +500,6 @@ export class SessionManager {
       logger.warn({ cause }, '会话异常');
     }
     return result.allowed;
-  }
-
-  // ── 防滥用：连续暂停计数 ───────────────────────────────
-
-  /** 清理过期暂停时间戳（窗口过滤）：移除超过窗口（1 小时）的旧时间戳，仅保留窗口内暂停；每次查询计数时自动调用 */
-  private pruneStalePauseTimestamps(): void {
-    const cutoff = Date.now() - SessionManager.CONSECUTIVE_PAUSE_WINDOW_MS;
-    const before = this.consecutivePauseTimestamps.length;
-    this.consecutivePauseTimestamps = this.consecutivePauseTimestamps.filter((ts) => ts > cutoff);
-    const pruned = before - this.consecutivePauseTimestamps.length;
-    if (pruned > 0) {
-      logger.debug(
-        { pruned, remaining: this.consecutivePauseTimestamps.length },
-        '过期暂停时间戳已清理',
-      );
-    }
-  }
-
-  /** 检查连续暂停是否已达上限（防滥用）：先清理窗口外时间戳，再查窗口内暂停≥2 次则强制降为低风险暂停。低风险不计数 */
-  isPauseLimitReached(): boolean {
-    this.pruneStalePauseTimestamps();
-    return this.consecutivePauseTimestamps.length >= 2;
-  }
-
-  /** 获取当前连续暂停计数：先清理窗口外时间戳，返回窗口内有效暂停数 */
-  getConsecutivePauseCount(): number {
-    this.pruneStalePauseTimestamps();
-    return this.consecutivePauseTimestamps.length;
-  }
-
-  /** 重置连续暂停计数（防滥用）：暂停超时处理后调用。与 resume() 分离，防回答前过早清零致防滥用失效 */
-  resetConsecutivePauseCount(): void {
-    this.consecutivePauseTimestamps = [];
-    logger.debug('连续暂停时间戳已清空');
   }
 
   /**
@@ -968,9 +915,6 @@ export class SessionManager {
     // 清除检查点 + 状态机回到 running
     this.checkpoint = null;
     this.stateMachine.resetToRunning();
-
-    // 暂停超时意味着会话断裂，重置连续暂停计数（递增→衰减→重置闭合）
-    this.resetConsecutivePauseCount();
 
     // 记录超时会话 + 发射事件（唯一入口）
     this.markSessionTimedOut(sessionId, pauseDuration);
