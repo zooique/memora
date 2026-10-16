@@ -228,15 +228,10 @@ export const LOOP_CONSTANTS = {
     '你已成功执行多次联网搜索并获取了可用信息。若现有信息已足够支撑回答，请停止继续搜索，' +
     '直接基于已有信息作答；仅当存在明确信息缺口（如用户指定查询的最新数据确实缺失）时才继续搜索。',
 
-  /**
-   * 搜索硬上限（实测软提示未能阻止 LLM 持续重搜，故确定性拒绝）。
-   * 单 turn（问答闭环）内 web_search 调用次数超过此数后，后续搜索执行时直接拒绝并回填拒绝文案，
-   * 不依赖 LLM 听从软提示——软提示引导收敛（< 上限时），硬限兜底（达到上限强制停）。
-   * ⚠️ 角色包策略键 `global.webSearchLimit`（GUARD-SEARCH-1）上线后，本值降为**缺省兜底**：
-   * 运行时取 `strategy.webSearchLimit`，镜像声明在 `DEFAULT_BEHAVIOR_STRATEGY.global.webSearchLimit`。
-   * 改本值须同步该镜像（依赖方向 agent → role-pack 单向，镜像不可 import 本层，重复 + 注释对冲）。
-   */
-  MAX_WEB_SEARCH_CALLS: 6,
+  // 删后注记（2026-10-16 · 5.0.0）：曾有 MAX_WEB_SEARCH_CALLS: 6——GUARD-SEARCH-1 把搜索硬上限
+  // 抬为角色包策略键后，运行时只读 strategy.webSearchLimit（resolveWebSearchLimit 恒有值），
+  // 本常量零读取 = 幽灵旋钮（改它零行为变化）；缺省值真源唯一化到
+  // DEFAULT_BEHAVIOR_STRATEGY.global.webSearchLimit（role-pack 层）。勿加回（§3.2.1 删后注记）。
 
   /**
    * 工具调用导语纪律（分区式 UI 配套）：正文只承载最终交付，工具步的过程叙述

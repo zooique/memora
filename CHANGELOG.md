@@ -58,6 +58,48 @@
 - 守卫：`uninterruptedWorkflow` 场景 E 改断言「`updatePlanItem` 必须经 `touchCheckpoint` 写点」
   （契约不降级，仅措辞去「脏」）；**变异验证**：注释该写点 → 用例红 → 复原绿。
 
+### ⚠️ Breaking Removed（内核 · 发版前公开面历史遗留清理 · 2026-10-16 全公开 API 逐个审查批次）
+
+> **动机**：5.0.0 是 major 窗口——已知遗留问题一次清完，避免发版后清理被迫升 6.0.0；此后已知问题只在 5.x.x 打磨。
+
+- 删 **`AgentOptions.fileConsistencyCheck`** 字段 + **`FileConsistencyCheck`** 类型（僵尸声明）：
+  透传链路先删（2026-09-18「删僵尸透传」）后字段全仓零读取；`project-rules.md` 已宣告
+  「两段式契约（含 fileConsistencyCheck）已移除」——文档说删了、代码残留。类型从未过
+  `index.ts` 公开面（删除零破坏），字段删除对未消费者编译无影响；手册 §2.1 对应行同步删除。
+- 删 **`LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS`**（幽灵旋钮）：GUARD-SEARCH-1 把搜索硬上限抬为
+  策略键后，运行时恒读 `strategy.webSearchLimit`（`resolveWebSearchLimit` 必返回值），本键
+  **零读取**——改它零行为变化，且镜像注释谎称「真源」（实为重复 + 无同步机制的注释对冲）。
+  缺省值 6 真源唯一化到 `DEFAULT_BEHAVIOR_STRATEGY.global.webSearchLimit`（回退也回退该对象，
+  单点闭环）；`LOOP_CONSTANTS` 键数 27 → 26。**契约语义未变**（缺省值、护栏、文案同源全不动），
+  只删了一个骗人的旋钮。
+- 手册 **§十二 幻觉符号**：`processEvent(event)` 承诺行删除——Agent 无此方法（4.0.0 导出面
+  回扫漏网的文档侧谎报）。§2.1 `fileConsistencyCheck` 承诺行同步删除。
+- deprecation 废弃机制立起（此前内核侧公开 API 删除为政策空白）：`legacy-contract-audit-rules`
+  §3.2.1 补「登记落点三件套」（代码 `@deprecated` 标注 + 台账移除清单 + 守卫基线保留）；
+  台账观察区立 `DEPRECATE-1`（在册：`SessionManager.heartbeat` / `isPaused` / `isRunning`，
+  废弃于 5.0.0、计划移除 6.0.0——真功能/公开面方法不走直删豁免，走周期）。
+- 守卫：新增 **`publicMemberSurfaceGuard.test.ts`**（成员级清单快照，88 符号冻结基线）——
+  既有 `publicApiSurfaceGuard` 只夹导出名级，`flushNow` no-op 与 goal 僵尸字段曾全程绿灯；
+  本守卫夹「类/接口/常量对象成员级」增删，红须按 §3.2.1 定性后显式更新 EXPECTED。
+  **变异验证**：临时删 `isRunning` → 红并精确报位 → 还原绿；`fileConsistencyCheck` 删除
+  实战走完「守卫红 → 定性纠谎 → 更新基线」全流程。
+- 守卫：`publicApiSurfaceGuard` 补 **三向文档对账**（SSOT 复核批 · 2026-10-16 落地时新发现的盲区）：
+  ① **B-12**（§十二 完整 API 一览 → src 存在性）——首跑即抓 `memoryMutator`/`MemoryMutator` 2 个
+  漏网幻觉，已删；② **B-21**（§2.1 AgentOptions 表 ↔ 接口成员**双向**）——抓出 **9 个 4.0.0 后新增
+  字段零文档**欠账（roundStore/strategyOverride/confirmScripts/disabledSkills 等），本轮全部补入
+  手册表；③ **B-27**（§2.7 事件表 ↔ `AgentEventMap` **双向 + 载荷字段**）——抓出 **4 行谎报**：
+  `personaSwitched`（应为 `rolePackSwitched`，改名后文档+接入指南+宿主文档+测试注释共 8 处残留，
+  全改）、`skillMatched`（能力已删）、`sessionForked.messageCount`（实际 `roundCount`）、
+  `archiveFailed.stage 'content'`（实际 `'session'`）——`personaSwitched` 残留横跨手册/接入指南/
+  宿主文档/测试注释四处位点，按「谎报位点扫全类」一次改齐；原表仅 7/26 事件，按真源补齐至全量
+  26 行。三向**变异验证**：删表行 → 红并报位 → 还原绿。
+- 文档纠谎（SSOT 复核批 · 全手册单 token 幻觉扫描 + 人工对账）：扫描出 7 候选——1 为幻觉
+  （§十一 `skillMatched` 引用，已改真事件）、6 为历史删除留痕（`writeBoost`/`memoryMutator`/
+  `RecalledMemorySummary`/`RECALL_ACTUAL`/`isToolFailure` 等，语境即「已删除」，合法保留）；
+  另经人工对账修复：§三 fork 示例与 `AgentForkResult`/`ForkResult` 类型块的 `messageCount`/
+  `messages` 腐化字段订正为 `roundCount`/`roundIds`、§十一 `RECALL` span（已无发射点）与
+  §十四 编号错误（应为 §十三）一并订正。
+
 ### Added（内核 · 存储层 SQLite 实现内核切片 · 服务 `DSH-1` / `MCP-SERVER-1` 共同前置，2026-10-16）
 
 - 新增 **`createNodeSqliteStorage(dbPath)`**（同步工厂）+ **`ReadOnlyMemoryStorage`**（只读视图类型）两个公共

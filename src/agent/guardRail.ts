@@ -81,7 +81,7 @@ export interface GuardThresholds {
   readFailed: number;
   /** 单次用户输入提问上限（life:'perInput'）—— 动态真源 role-pack strategy.askLimit（不塞静态默认） */
   askLimit: number;
-  /** 单闭环联网搜索硬上限 —— 动态真源 role-pack strategy.webSearchLimit（缺省镜像 LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS，不塞静态默认） */
+  /** 单闭环联网搜索硬上限 —— 动态真源 role-pack strategy.webSearchLimit（缺省值定义在 DEFAULT_BEHAVIOR_STRATEGY.global.webSearchLimit，不塞静态默认） */
   maxWebSearch: number;
 }
 

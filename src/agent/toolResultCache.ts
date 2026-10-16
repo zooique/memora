@@ -5,7 +5,7 @@
  * 同一参数重复调用既浪费 token 又无增量价值（文件未变 / 同 query 网络结果近似）。
  * 本缓存以「闭环内去重」为粒度——闭环结束即清空，跨闭环不复用。
  *
- * 拦截语义与 loop 已有的 web_search MAX_WEB_SEARCH_CALLS / ask_user askLimit 同级：
+ * 拦截语义与 loop 已有的 web_search 搜索上限护栏 / ask_user askLimit 同级：
  * 检测到重复 → blocked=true（不算工具失败）→ 返回 [ALREADY_READ] 拒绝文案。
  *
  * **去重主体是结构化的**（`DedupSubject`），不是预先拼好的字符串 key：

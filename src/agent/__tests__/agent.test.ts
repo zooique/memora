@@ -803,7 +803,7 @@ describe('Agent · postProcess() · 对话后处理', () => {
     rmSync(tmpData, { recursive: true, force: true });
   });
 
-  it('角色手动切换：switchRolePack 触发 personaSwitched 事件（自动匹配已移除）', async () => {
+  it('角色手动切换：switchRolePack 触发 rolePackSwitched 事件（自动匹配已移除）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
@@ -811,7 +811,7 @@ describe('Agent · postProcess() · 对话后处理', () => {
     const initialName = agent.rolePack!.activeName;
     expect(initialName).toBe('memora助手');
 
-    // 监听 personaSwitched 事件
+    // 监听 rolePackSwitched 事件
     let switchedFrom: string | null = null;
     let switchedTo: string | null = null;
     agent.on('rolePackSwitched', (e) => {
@@ -1712,7 +1712,7 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
     const rpm = agent.rolePackManager!;
     rpm.activate('写作助手');
 
-    // 监听 personaSwitched 事件
+    // 监听 rolePackSwitched 事件
     let switched: { from: string | null; to: string } | null = null;
     agent.on('rolePackSwitched', (e) => {
       switched = e;
@@ -1803,17 +1803,17 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData, 'manual');
     await agent.init();
 
-    // 监听 personaSwitched 事件（非归档行为，应正常触发）
-    let personaSwitched = false;
+    // 监听 rolePackSwitched 事件（非归档行为，应正常触发）
+    let rolePackSwitched = false;
     agent.on('rolePackSwitched', () => {
-      personaSwitched = true;
+      rolePackSwitched = true;
     });
 
     // 手动切换是唯一入口（自动匹配已随 v0.13 移除）
     const ok = agent.switchRolePack('写作助手');
 
     expect(ok).toBe(true);
-    expect(personaSwitched).toBe(true);
+    expect(rolePackSwitched).toBe(true);
 
     agent.off('rolePackSwitched', () => {});
   });

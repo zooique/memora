@@ -167,7 +167,7 @@ describe('chatView clear_ok 消息区清理', () => {
     // 初始无角色名 → 徽章隐藏
     expect(badge.hidden).toBe(true);
 
-    // 推送当前角色（personaSwitched / 会话回放路径）
+    // 推送当前角色（rolePackSwitched / 会话回放路径）
     dispatch({ type: 'chat_role_pack', rolePack: '文档打磨' });
 
     // 徽章显示角色显示名（textContent 赋值防注入）

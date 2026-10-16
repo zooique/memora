@@ -419,12 +419,6 @@ import type { BehaviorStrategy } from '@/role-pack/types.js';
 import type { RolePackTeam } from '@/role-pack/types.js';
 
 /**
- * 文件层前置条件断言回调：注入时 deleteRule/deleteSkill/updateRule 入口先校验宿主是否已完成
- * 文件操作。expected='absent'/'exists' 分别校验已删/已写。id 格式 `rule:NAME` 或 `skill:NAME`。
- */
-export type FileConsistencyCheck = (id: string, expected: 'exists' | 'absent') => boolean;
-
-/**
  * 工具执行前检查的三态结果（所有工具调用统一入口，由 preExecutionCheck 做执行前检查）：
  * - 放行（skip=false）：允许执行，可选 overrideArgs 改写参数（审计/参数改写）
  * - 跳过（skip=true, 无 denied）：不执行，返回 previousResult 让 LLM 继续（幂等去重）
@@ -625,8 +619,9 @@ export interface AgentOptions {
    * 缺省空 = 全量技能可用（向后兼容）。
    */
   disabledSkills?: string[];
-  /** 文件层前置条件断言回调（可选，未注入则完全降级为现状） */
-  fileConsistencyCheck?: FileConsistencyCheck;
+  // 删后注记（2026-10-16 · 5.0.0）：曾有 fileConsistencyCheck（文件层前置条件断言回调，FileConsistencyCheck 类型）——
+  // 引入于「文件层前置条件断言」尝试，透传链路已先删，字段全仓零读取 = 僵尸声明（project-rules 已宣告移除）。
+  // 随 5.0.0 major 窗口删除；勿当「漏实现」加回（§3.2.1 删后注记）。
   /**
    * 工具执行前检查回调（宿主审批/审计/参数改写通道）：装配时与内部幂等检查组合为单点入口。
    *

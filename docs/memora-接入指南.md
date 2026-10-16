@@ -161,7 +161,7 @@ Agent 向宿主广播对话外事件（记忆变更、角色切换、会话分�
 import type { AgentEventMap } from '@zooique/memora';
 
 agent.on('memoryAdded', (e) => console.log(`新记忆: ${e.source}:${e.name}`));
-agent.on('personaSwitched', (e) => console.log(`角色: ${e.from} → ${e.to}`));
+agent.on('rolePackSwitched', (e) => console.log(`角色: ${e.from} → ${e.to}`));
 agent.on('memoryRecalled', (e) => console.log(`想起 ${e.count} 条记忆`));
 agent.on('sessionForked', (e) => console.log(`分叉: ${e.from} → ${e.to}，${e.roundCount} 个问答闭环`));
 

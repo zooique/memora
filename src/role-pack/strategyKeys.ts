@@ -57,7 +57,7 @@ export const MAX_ASK_LIMIT = 10;
  * 上界选值依据（2026-10-14 联网检索）：同类 agent 搜索预算普遍 15~30 次/任务
  * （mcp-web-hound 默认 15 搜索 + 30 抓取；通用实践为「显式预算 + 程序化拒绝」），
  * 20 覆盖真实研究型任务上限、防资源失控（搜索 API 计费）。
- * 缺省值 6 不在本常量——见 DEFAULT_BEHAVIOR_STRATEGY.global.webSearchLimit 镜像注释。
+ * 缺省值 6 不在本常量——见 DEFAULT_BEHAVIOR_STRATEGY.global.webSearchLimit（缺省值唯一真源）。
  */
 export const MAX_WEB_SEARCH_LIMIT = 20;
 /**

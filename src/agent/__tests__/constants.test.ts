@@ -146,7 +146,7 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
     // DEFAULT_MAX_ITERATIONS_REACHED_MARK（撞线收尾默认文案，
     // 与 DEFAULT_INTERRUPTED_MARK 同族对称，loop 引用）/
     // CONTEXT_PRESSURE_HINT（预算预警提示）/
-    // SEARCH_CONVERGENCE_THRESHOLD / SEARCH_CONVERGENCE_HINT / MAX_WEB_SEARCH_CALLS（搜索收敛）/
+    // SEARCH_CONVERGENCE_THRESHOLD / SEARCH_CONVERGENCE_HINT（搜索收敛）/
     // TOOL_NARRATION_DISCIPLINE（工具导语纪律，分区式 UI 配套）/
     // SUMMARY_MSG_COUNT / SUMMARY_CONTENT_SLICE / SUMMARY_MAX_TOKENS /
     // REASONING_INPUT_CHARS / TASK_TYPE_WINDOW /
@@ -155,7 +155,7 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
     // MAX_PENDING_INTERJECTIONS（待注入插话条数上限——loop.interject 满员拒收裁决）/
     // TOOL_RESULT_OFFLOAD_TAIL_PREVIEW_CHARS（落盘替换文本的尾部预览份额——
     // 长输出关键信息常在尾部，份额在既有预览预算内划分，不扩大预算）
-    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(27);
+    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(26);
   });
 
   it('TOOL_NARRATION_DISCIPLINE 为工具导语纪律（抑制工具步前长文规划，与 narrate 分区配套）', () => {

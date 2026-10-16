@@ -179,7 +179,12 @@ new Agent({
 | `dataDir` | `string` | ✅ | 记忆数据目录（必填，内核不提供默认值；传项目级还是用户级目录由宿主决定） |
 | `registryDir` | `string` | ❌ | 项目注册表目录（缺省与 dataDir 相同）。注册表用于**跨项目按名解析**，仅当多项目共用一份时才成立 |
 | `maxContextTokens` | `number` | ❌ | 上下文窗口上限（缺省 = 内核 `AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS`，数字以该常量为真源，此处不落账） |
+| `maxTokens` | `number` | ❌ | per-LLM 输出预算（token；宿主配置面板「输出上限」透传，undefined = 回服务端默认）。与角色包策略 `act.outputLimit` **取更小值**，`buildChatOptions` 单点裁决，宿主经 `agent.getEffectiveMaxTokens()` 读生效值 |
+| `confirmScripts` | `boolean` | ❌ | 脚本/代码执行确认（独立于写入确认；true 时 `run_code` / `run_project_script` 执行前弹窗，默认 false 不弹窗） |
 | `activeRolePack` | `string` | ❌ | 启动激活的角色包名（缺失/不存在回退默认激活首个） |
+| `rolePackTeams` | `RolePackTeam[]` | ❌ | 组（宿主装配级）：组长角色包 + 组员名单（会议名单容器；组长唯一、组员可跨组引用，仅用于小组会议，不用于日常） |
+| `builtinFallbackRole` | `string` | ❌ | 程序级内置兜底角色（覆盖内核常量 `BUILTIN_FALLBACK_PACK`；覆盖值须指向存在的包，否则回退内核常量） |
+| `strategyOverride` | `Partial<BehaviorStrategy>` | ❌ | 宿主装配级策略覆盖：经 `resolveActiveStrategy` 压过角色包声明（只影响 override 声明过的键），表达宿主产品能力边界 |
 | `permission` | `'owner' \| 'guest'` | ❌ | 安全权限（默认 'owner'） |
 | `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
@@ -187,6 +192,7 @@ new Agent({
 | ~~`vectorStore`~~ | ~~`IVectorStore`~~ | — | **已删除（2026-09-18 B0 收编）**：向量语义召回通道此前**写端缺失、从未在生产生效**（`upsert` 零调用 → 库恒空 → 语义分支永不触发 = 僵尸能力）。经主流 agent 调研（Anthropic Memory/Claude Code/Librarian Pattern 实证「LLM 消费者 + 小语料」纯关键词足用）拍板收编：`IVectorStore` 接口、`JsonVectorStore`、`EmbeddingProvider` 及 `config.embedding` 段全链删除；`search_memories` 走纯关键词，未命中提示 LLM 换词重试 |
 | ~~`recallExcludeSources`~~ | ~~`string[]`~~ | — | **已删除（2026-09-11）**：该配置随召回编排 `recall()` 退役后成为零消费者死配置，全链（AgentOptions → AgentConfig → AssembleInput → ContextPreparerDeps）物理删除。关联推荐的实际排除走 `Agent.governance.suggest(query, { excludeSources })` 显式参数 |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
+| `roundStore` | `IRoundStore` | ❌ | 问答闭环独立存储注入（round-based 落盘真源；未注入则消息仅内存保存，与 `sessionStore` 配套） |
 | `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
 | `messages` | `UIMessages` | ❌ | 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） |
 | `enableContextSummary` | `boolean` | ❌ | 上下文超限时是否自动生成摘要（默认 true，开启后首次截断时增加 ~1-2s 延迟） |
@@ -194,7 +200,10 @@ new Agent({
 | `webSearchProvider` | `IWebSearchProvider` | ❌ | 网络搜索提供者注入（提供时自动暴露 `web_search` 工具给 LLM，不传则不暴露） |
 | `fetchProvider` | `IFetchProvider` | ❌ | 网页抓取提供者注入（提供时自动暴露 `web_fetch` 工具给 LLM，与 `webSearchProvider` 成对构成「搜索→抓取」闭环，不传则不暴露） |
 | `codeExecutionProvider` | `ICodeExecutionProvider` | ❌ | 代码执行提供者注入（提供时自动暴露 `run_code` 工具给 LLM，沙箱执行能力完全由宿主 provider 决定，内核零运行时依赖，不传则不暴露） |
-| `fileConsistencyCheck` | `FileConsistencyCheck` | ❌ | 文件层前置条件断言回调（可选，未注入则完全降级为现状） |
+| `projectSearchProvider` | `IProjectSearchProvider` | ❌ | 项目内搜索提供者注入（提供时 LLM 获项目文件检索能力，不传则不暴露） |
+| `environmentProvider` | `IEnvironmentProvider` | ❌ | 宿主环境提供者（不配则 system prompt 不注入环境段）：宿主上报运行环境事实（OS / shell / 可用运行时），内核零解释转发 |
+| `scriptNodePath` | `string` | ❌ | node 可执行文件路径：宿主注入真实 node 路径给 L3 脚本执行器（`run_skill_script` / `run_project_script` 的 node 分支）；缺省走 `'node'`（PATH 查找），宿主机无独立 node 时注入可避免 ENOENT |
+| `disabledSkills` | `string[]` | ❌ | 禁用的技能名清单：命中的技能从 L1 清单消失、L2/L3 访问不可用（对 LLM 语义 = 技能不存在，宿主 UI 据同名设置标「已禁用」徽章） |
 | `preExecutionCheck` | `(name, args) => PreExecutionResult` | ❌ | 工具执行前检查回调（宿主审批/审计/参数改写通道；装配时与内部幂等检查组合为单点入口） |
 
 > **Logger 注入方式**：v1.0 起 `AgentOptions` 不再含 `logger` 字段。日志通过全局 `setLogger(customLogger)` 注入（详见 §十七 类型导出）；未注入时使用内核内置 console fallback（写 stderr，级别由 `MEMORA_LOG_LEVEL` 控制），内核不做任何运行时模块解析。注入即内核唯一日志出口，对**所有内核模块（含 utils 层）**生效。
@@ -264,12 +273,32 @@ agent.once<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[
 | 事件名 | 载荷 | 触发时机 |
 |--------|------|----------|
 | `memoryAdded` | `{ id, source, name }` | 记忆被写入存储（round-summary 沉淀等） |
-| `personaSwitched` | `{ from: string \| null, to }` | 角色被切换（手动指定） |
-| `memoryRecalled` | `{ count, query }` | 记忆被召回（用于 UI 展示） |
-| `sessionForked` | `{ from, to, messageCount }` | 会话被分叉（创建新分支） |
-| `projectSwitched` | `{ from: string \| null, to: string, projectName: string }` | 项目切换（宿主 UI 可据此刷新项目相关界面） |
-| `skillMatched` | `{ skill: string, score: number }` | 技能被匹配（宿主 UI 可据此展示当前激活技能） |
-| `archiveFailed` | `{ stage: 'content'; message: string }` | 归档操作失败（仅 content 阶段，fire-and-forget catch 分支发射，宿主可通知用户） |
+| `rolePackSwitched` | `{ from: string \| null, to }` | 角色包被切换（自动匹配 / 手动切换共用唯一切换入口） |
+| `memoryRecalled` | `{ count, query, hits? }` | LLM 经 `search_memories` 命中记忆（`hits` = 命中明细，4.1.0 起可选） |
+| `sessionForked` | `{ from, to, roundCount }` | 会话被分叉（`roundCount` = 新会话 Round 数） |
+| `sessionSwitched` | `{ date, session, fromSessionId, toSessionId }` | 会话身份切换完成（载荷指向被切走的旧会话；内核自消费，宿主零消费为刻意设计） |
+| `projectSwitched` | `{ from: string \| null, to, projectName }` | 项目切换（宿主 UI 据此刷新项目相关界面） |
+| `archiveFailed` | `{ stage: 'session', message }` | 归档异常（fire-and-forget catch 分支发射，宿主可通知用户） |
+| `sessionArchived` | `{ sessionId, updatedFields }` | 会话归档写入成功（宿主据此重拉会话列表刷新摘要） |
+| `contextTruncated` | `{ skippedCount, keptCount }` | 内核自动截断上下文 |
+| `contextCompressed` | `{ target, replacedCount, summaryLength }` | LLM 主动压缩完成（第二级压缩） |
+| `configReloaded` | `{ source }` | 配置重载 |
+| `archiveModeChanged` | `{ from, to }` | 归档模式切换 |
+| `rolePackSwitchLocked` | `{ reason, lockedSeconds }` | 角色包切换被锁定（如切换冷却期） |
+| `workProjectionGenerated` | `{ sourcePath, summary }` | 作品投影生成完成 |
+| `dedupCompleted` | `{ deduplicatedCount, demotedIds }` | 记忆去重完成 |
+| `sessionPauseTimedOut` | `{ sessionId, pauseDuration, date?, session? }` | 暂停超时（达到 `PAUSE_TIMEOUT_MS` 自动归档） |
+| `sessionResumeBlocked` | `{ sessionId, reason }` | 恢复被拒绝（如锁冲突） |
+| `sessionResumeFailed` | `{ sessionId?, reason }` | 恢复失败（宿主据此 toast 提示） |
+| `inputTooLarge` | `{ inputLength, remainingTokens, hint }` | 装配前判负：触发输入过大，剩余预算不足一轮正文 |
+| `questionPending` | `AskQuestion[]` | LLM 调 `ask_user` 主动提问（Agent 暂停等待回答） |
+| `sessionPaused` | `{ reason, source, sessionId? }` | 会话进入暂停态 |
+| `sessionResumed` | `{ sessionId? }` | 会话恢复运行 |
+| `sessionError` | `{ cause, sessionId? }` | 会话进入异常态 |
+| `sessionRecovered` | `{ sessionId? }` | 会话从异常态恢复 |
+| `sessionTitleUpdated` | `{ sessionId, title }` | LLM 自动更新会话标题（宿主据此刷新 UI） |
+| `roundSummaryGenerated` | `{ roundId, success }` | 轮次摘要生成收口（宿主据此解锁删除/分叉按钮，防孤儿摘要） |
+| `backgroundTaskSettled` | `{ taskId, command, status }` | 后台任务自然终态（自行跑完 / 超时强杀；主动 kill 刻意不发） |
 
 ```typescript
 // 使用示例
@@ -553,7 +582,7 @@ const projects = agent.projects.list;
 
 // 会话分叉示例（Agent 面类入口，等价于 agent.sessionManager.forkSession()）
 const forkResult = agent.forkSession();
-console.log(`分叉到 ${forkResult.newSession}，复制了 ${forkResult.messageCount} 条消息`);
+console.log(`分叉到 ${forkResult.newSession}，含 ${forkResult.roundCount} 个 Round（roundId 指针）`);
 
 // 自定义分支名
 const customFork = agent.forkSession('experiment');
@@ -568,14 +597,14 @@ const sessions = await agent.agentHistory?.listAllSessions();
 // Agent.forkSession() / sessionManager.forkSession() 返回值
 interface AgentForkResult {
   newSession: string;
-  messageCount: number;
+  roundCount: number; // 新会话 Round ID 数量（AgentForkResult = ForkResult & { roundCount }）
 }
 
 // MessageHistory.forkSession() 内部类型（从 memora 导出）
 export interface ForkResult {
   date: string;
   newSession: string;
-  messages: SessionMessage[];
+  roundIds: string[]; // 已复制到新会话的 Round ID 指针列表
 }
 ```
 
@@ -931,8 +960,8 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 > v1.0 起已移除 `getBuildCtx()` 和 `inspect()` 方法。宿主项目可通过以下渠道观察内核状态：
 >
-> - **事件系统**（§2.7）：订阅 `memoryAdded` / `memoryRecalled` / `skillMatched` 等事件获取运行时动态
-> - **可观测性 Tracer**（§十四）：注入 `ITracer` 实现获取 AgentLoop 关键 span（RECALL / LLM_CALL / TOOL_EXEC / RESPONSE）
+> - **事件系统**（§2.7）：订阅 `memoryAdded` / `memoryRecalled` / `sessionArchived` 等事件获取运行时动态
+> - **可观测性 Tracer**（§十三）：注入 `ITracer` 实现获取 AgentLoop 关键 span（LLM_CALL / TOOL_EXEC / RESPONSE——`RECALL` 已随自动召回退役、内核零发射点）
 > - **`agent.memory.snapshot()`**（§4.1）：获取 3 层记忆快照（working / bootstrap / archive）
 > - **`agent.agentLoop.getMessages()`**（§4.4）：获取工作记忆原始消息列表
 
@@ -945,7 +974,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 分组 | 方法 |
 |------|------|
 | 生命周期 | `init(projectPathOverride?)` / `close()` |
-| 对话 | `chat(input, signal?)` / `chatSync(input, signal?)` / `processEvent(event)` / `resumeExecution()` / `forceReleaseChatLock()` |
+| 对话 | `chat(input, signal?)` / `chatSync(input, signal?)` / `resumeExecution()` / `forceReleaseChatLock()` |
 | 事件 | `on()` / `off()` / `once()`（继承自 TypedEventEmitter） |
 | 暂停/继续 | `pause(reason, source?, lowRisk?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content)` / `removePendingInterject(index)` / `clearPendingInterjections()` / `getPendingInterjections()` / `discardCurrentCheckpoint()` / `canContinueWithoutInput()` |
 | 项目 / 会话 | `switchProject(nameOrPath)` / `rebuildComponents()` / `forkSession(targetSession?)` / `createCheckpoint()` / `getCheckpoint()` |
@@ -974,7 +1003,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.works` | `WorkProjectionManager` | `.registerWork(sourcePath, description)` / `.refresh()` / `.listWorks()` / `.contextBlock()` / `.loadAndGetContextBlock()` |
 | `agent.polish` | `TextPolishManager` | `.polish(...)`（文本润色：LLM 语法修正 + 表达优化） |
 
-> **说明**：`suggest()` / `sourceHealth()` 经 `agent.governance` 暴露，不挂在 `agent.memory` 下。旧的 `memoryMutator` 访问器与 `MemoryMutator` 类已合并回 `MemoryInspector`，请勿再使用。
+> **说明**：`suggest()` / `sourceHealth()` 经 `agent.governance` 暴露，不挂在 `agent.memory` 下。历史访问器 memoryMutator 与 MemoryMutator 类（4.0.0 前）已合并回 `MemoryInspector`——两个旧名已不在源码中，读旧文档时勿按其名查找。
 
 ---
 

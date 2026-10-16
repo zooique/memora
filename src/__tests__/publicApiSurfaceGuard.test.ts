@@ -128,6 +128,20 @@ function sliceManualSectionSixteen(manual: string): string {
   return manual.slice(start, end);
 }
 
+/**
+ * 手册 §十二 区间切片（2026-10-16 补盲区）：'## 十二、' 起，'## 十三、' 止——「完整 API 一览」
+ * 承诺了 Agent 面全部方法名，却在 §十六 之外 = 原 B 向盲区（实锤：`processEvent(event)`
+ * 幻觉行存活至 5.0.0 发版前审查才被人工发现）。与 §十六 同型 B 向对账：承诺符号必须在 src 存在。
+ */
+function sliceManualSectionTwelve(manual: string): string {
+  const start = manual.indexOf('## 十二、');
+  const end = manual.indexOf('## 十三、');
+  if (start < 0 || end < 0 || end <= start) {
+    throw new Error('手册 §十二/§十三 标题未找到——章节改名时须同步本守卫的区间标记');
+  }
+  return manual.slice(start, end);
+}
+
 /** src 全源码文本拼接（B 向存在性参照系） */
 const SRC_TEXT = listSourceFiles(join(ROOT, 'src'))
   .map((f) => readFileSync(f, 'utf8'))
@@ -148,6 +162,8 @@ const promisedSurface = new Set([
   ...extractIdentifierTokens(manualSection),
 ]);
 const manualTokens = extractIdentifierTokens(manualSection);
+/** §十二 token（B-12 向对账用） */
+const manualTwelveTokens = extractIdentifierTokens(sliceManualSectionTwelve(manualText));
 
 /**
  * §十六 非「具名导出承诺」的 token 豁免名单（C 向对账用，冻结自 2026-10-08 差集实测）。
@@ -220,6 +236,18 @@ describe('公共 API 面登记门槛守卫（PUBLIC-API-SURFACE-1）', () => {
     ).toEqual([]);
   });
 
+  it('向 B-12：手册 §十二 完整 API 一览的承诺符号在 src 真实存在（堵原盲区）', () => {
+    const phantom = [...manualTwelveTokens].filter((t) => !existsInSrc(t));
+    const hint =
+      `docs/memora-api-reference.md §十二 引用了 src 中不存在的符号——\n` +
+      `与 §十六 同型幻觉（实锤先例：processEvent(event) 行 2026-10-16 删除）。\n` +
+      `修法：删除该引用，或核实符号正确拼写。`;
+    expect(
+      phantom,
+      `\n手册 §十二 幻觉符号：\n${phantom.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
+    ).toEqual([]);
+  });
+
   it('向 C：手册 §十六 承诺的模块级符号必须在公开面（防「文档承诺但未导出」）', () => {
     const unexported = [...manualTokens]
       .filter((t) => !SECTION_SIXTEEN_NON_EXPORT_TOKENS.has(t))
@@ -230,6 +258,144 @@ describe('公共 API 面登记门槛守卫（PUBLIC-API-SURFACE-1）', () => {
     expect(
       unexported,
       `\n§十六 承诺但未导出的符号：\n${unexported.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
+    ).toEqual([]);
+  });
+
+  it('向 B-21：手册 §2.1 AgentOptions 表字段与接口成员双向对账（防「字段有·文档无」+ 幻觉行）', () => {
+    // 切 §2.1 区间（'### 2.1' 起，'### 2.2' 止）；表行第一列 `字段`（~~删除线~~ 行也抓，豁免另行处理）
+    const start = manualText.indexOf('### 2.1');
+    const end = manualText.indexOf('### 2.2');
+    if (start < 0 || end < 0 || end <= start) {
+      throw new Error('手册 §2.1/§2.2 标题未找到——章节改名时须同步本守卫');
+    }
+    const tableFields = new Set<string>();
+    for (const m of manualText.slice(start, end).matchAll(/^\|\s*(?:~~)?`([A-Za-z_]\w*)`/gm)) {
+      const f = m[1];
+      if (f) tableFields.add(f);
+    }
+    // 定位 src 中 interface AgentOptions 体，取顶层成员（缩进 2 空格的 `name?:` / `name:`）
+    const declIdx = SRC_TEXT.indexOf('interface AgentOptions');
+    expect(declIdx, 'src 中未找到 interface AgentOptions').toBeGreaterThan(-1);
+    let brace = 0;
+    let bodyEnd = declIdx;
+    for (let i = SRC_TEXT.indexOf('{', declIdx); i < SRC_TEXT.length; i++) {
+      if (SRC_TEXT[i] === '{') brace++;
+      else if (SRC_TEXT[i] === '}') {
+        brace--;
+        if (brace === 0) {
+          bodyEnd = i;
+          break;
+        }
+      }
+    }
+    const ifaceMembers = new Set<string>();
+    for (const m of SRC_TEXT.slice(declIdx, bodyEnd).matchAll(/^\s{2}([A-Za-z_]\w*)\??:/gm)) {
+      const f = m[1];
+      if (f) ifaceMembers.add(f);
+    }
+    // 双向差集：表有接口无 = 幻觉/已删未标（删除线历史行豁免）；接口有表无 = 新字段未补文档
+    const DELETED_FIELDS = new Set(['vectorStore', 'recallExcludeSources']); // 删除线历史行，合法
+    const phantom = [...tableFields].filter((f) => !ifaceMembers.has(f) && !DELETED_FIELDS.has(f));
+    const undocumented = [...ifaceMembers].filter((f) => !tableFields.has(f));
+    const hint =
+      `§2.1 表与 AgentOptions 接口不对账——消费者按表配构造项会拿到不存在/未记载的字段。\n` +
+      `修法：幻觉行删表行；新字段补表行（说明抄接口 JSDoc 要点）；新删除字段用 ~~删除线~~ 行留痕。\n` +
+      `实锤先例（2026-10-16）：9 个 4.0.0 后新增字段零文档，本轮补齐。`;
+    expect(
+      phantom,
+      `\n§2.1 表有·接口无（幻觉/未标删除）：\n${phantom.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
+    ).toEqual([]);
+    expect(
+      undocumented,
+      `\n接口有·§2.1 表无（承诺缺失）：\n${undocumented.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
+    ).toEqual([]);
+  });
+
+  it('向 B-27：手册 §2.7 事件表与 AgentEventMap 双向对账（事件名 + 载荷字段）', () => {
+    const start = manualText.indexOf('### 2.7');
+    const end = manualText.indexOf('## 三、');
+    if (start < 0 || end < 0 || end <= start) {
+      throw new Error('手册 §2.7/§三 标题未找到——章节改名时须同步本守卫');
+    }
+    const sec = manualText.slice(start, end);
+    // 表行：| `事件名` | `{ 载荷 }` | 触发时机 |
+    const rows = [...sec.matchAll(/^\|\s*`([A-Za-z_]\w*)`\s*\|\s*([^|]*)\|/gm)]
+      .map((r) => ({ name: r[1] ?? '', cell: r[2] ?? '' }))
+      .filter((r) => r.name);
+    const tableEvents = new Set(rows.map((r) => r.name));
+
+    // AgentEventMap 接口体（eventEmitter.ts）：顶层成员 = 事件名
+    const emitterPath = join(ROOT, 'src', 'utils', 'eventEmitter.ts');
+    const emitterText = readFileSync(emitterPath, 'utf8');
+    const declIdx = emitterText.indexOf('interface AgentEventMap');
+    expect(declIdx, 'eventEmitter.ts 中未找到 interface AgentEventMap').toBeGreaterThan(-1);
+    let brace = 0;
+    let bodyEnd = declIdx;
+    for (let i = emitterText.indexOf('{', declIdx); i < emitterText.length; i++) {
+      if (emitterText[i] === '{') brace++;
+      else if (emitterText[i] === '}') {
+        brace--;
+        if (brace === 0) {
+          bodyEnd = i;
+          break;
+        }
+      }
+    }
+    const ifaceBody = emitterText.slice(declIdx, bodyEnd);
+    const mapEvents = new Set<string>();
+    const eventSlices = new Map<string, string>();
+    // 顶层键位置切片：键起点 → 下一个顶层键起点（供载荷字段定位）
+    const keyMatches = [...ifaceBody.matchAll(/^\s{2}([A-Za-z_]\w*):/gm)];
+    for (let i = 0; i < keyMatches.length; i++) {
+      const cur = keyMatches[i];
+      if (!cur) continue;
+      const name = cur[1];
+      if (!name || mapEvents.has(name)) continue; // 顶层嵌套误抓（缩进恰为 2 的子键）按首现为准
+      mapEvents.add(name);
+      const from = cur.index ?? 0;
+      const to = keyMatches[i + 1]?.index ?? ifaceBody.length;
+      eventSlices.set(name, ifaceBody.slice(from, to));
+    }
+
+    const phantom = [...tableEvents].filter((t) => !mapEvents.has(t));
+    const missing = [...mapEvents].filter((t) => !tableEvents.has(t));
+
+    // 载荷字段对账：表行第二列 `{ a, b: T, c?: T }` 的字段名须在该事件的 Map 切片内
+    const badPayload: string[] = [];
+    for (const r of rows) {
+      const { name, cell } = r;
+      if (!mapEvents.has(name)) continue;
+      const slice = eventSlices.get(name) ?? '';
+      const obj = cell.match(/\{([^}]*)\}/);
+      if (!obj?.[1]) continue; // 纯类型单元格（如 AskQuestion[]）不在此对账
+      for (const part of obj[1].split(',')) {
+        const raw = part.split(':')[0] ?? '';
+        const field = raw.replace(/[?{}\s]/g, '');
+        if (!field) continue;
+        if (/[|\[\]]/.test(field)) continue; // 无字段名的类型片段
+        // 字段名须在该事件载荷定义内以 `field?:` / `field:` 出现
+        if (!new RegExp(`(?<!\\w)${field}\\s*[?:]`).test(slice)) {
+          badPayload.push(`${name}.${field}`);
+        }
+      }
+    }
+
+    const hint =
+      `手册 §2.7 事件表与 AgentEventMap 不对账——宿主按表订阅/解构会拿到 undefined。\n` +
+      `修法：删幻觉事件行 / 补缺失事件行 / 按 AgentEventMap 订正载荷字段名。\n` +
+      `实锤先例（2026-10-16）：personaSwitched（改名后残留）/ skillMatched（能力已删）/ ` +
+      `sessionForked.messageCount（实际 roundCount）/ archiveFailed.stage 'content'（实际 'session'）。`;
+    expect(
+      phantom,
+      `\n表有·Map 无（幻觉事件）：\n${phantom.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
+    ).toEqual([]);
+    expect(
+      missing,
+      `\nMap 有·表无（承诺缺失）：\n${missing.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
+    ).toEqual([]);
+    expect(
+      badPayload,
+      `\n载荷字段与 AgentEventMap 不符：\n${badPayload.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
     ).toEqual([]);
   });
 });

@@ -109,7 +109,7 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     expect(g.errorHandling).toBe('retry');
     expect(g.askOn).toEqual(['ambiguity', 'decision', 'missing_info']);
     expect(g.askLimit).toBe(10);
-    // 缺省 6 = LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS 镜像（GUARD-SEARCH-1，改真源须同步）
+    // 缺省 6 = DEFAULT_BEHAVIOR_STRATEGY.global.webSearchLimit（缺省值唯一真源，GUARD-SEARCH-1）
     expect(g.webSearchLimit).toBe(6);
   });
 });
@@ -191,7 +191,7 @@ describe('resolve* 函数 — 基础策略解析', () => {
       expect(resolveWebSearchLimit({ global: { webSearchLimit: 20 } })).toBe(20);
     });
 
-    it('非法/缺失值回退默认 6（= LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS 镜像）', () => {
+    it('非法/缺失值回退默认 6（= DEFAULT_BEHAVIOR_STRATEGY 缺省值唯一真源）', () => {
       expect(resolveWebSearchLimit({ global: { webSearchLimit: 0 } })).toBe(6);
       expect(resolveWebSearchLimit({ global: { webSearchLimit: 21 } })).toBe(6);
       expect(resolveWebSearchLimit({ global: { webSearchLimit: '6' as never } })).toBe(6);

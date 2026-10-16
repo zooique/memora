@@ -2067,15 +2067,15 @@ export class AgentLoop {
     // 运行时护栏阈值组装（真源分配见 guardRail.GuardThresholds）：
     //  写环=GUARD_THRESHOLDS.writeLoop，读闸=GUARD_THRESHOLDS.readFailed（独立静态真源，
     //  不再与 duplicateCallInterceptor 阈值复用——语义同宽，解开隐藏耦合）；
-    //  提问=strategy.askLimit、搜索=strategy.webSearchLimit（动态真源=角色包策略，缺省镜像
-    //  LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS，见 DEFAULT_BEHAVIOR_STRATEGY 镜像注释）。
+    //  提问=strategy.askLimit、搜索=strategy.webSearchLimit（动态真源=角色包策略，缺省值
+    //  定义在 DEFAULT_BEHAVIOR_STRATEGY.global.webSearchLimit）。
     const guardThresholds: GuardThresholds = {
       writeLoop: GUARD_THRESHOLDS.writeLoop,
       readFailed: GUARD_THRESHOLDS.readFailed,
       askLimit: this.strategy.askLimit,
-      // webSearchLimit 缺省 6 = LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS 镜像（GUARD-SEARCH-1：
-      // 硬上限抬为角色包策略键 global.webSearchLimit，此值为未声明时的兜底），
-      // 与下方 SEARCH_LIMIT 文案同源取 strategy，二者禁分头取值（否则文案数字说谎）。
+      // webSearchLimit 缺省 6 由 resolveWebSearchLimit 恒给（GUARD-SEARCH-1：
+      // 硬上限 = 角色包策略键 global.webSearchLimit），与下方 SEARCH_LIMIT 文案同源取
+      // strategy，二者禁分头取值（否则文案数字说谎）。
       maxWebSearch: this.strategy.webSearchLimit,
     };
     for (const tc of toolCalls) {

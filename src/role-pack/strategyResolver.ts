@@ -88,10 +88,9 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     errorHandling: 'retry',
     askOn: ['ambiguity', 'decision', 'missing_info'],
     askLimit: 10,
-    // ⚠️ **真源 = `src/agent/constants.ts` 的 `LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS`**，
-    // 本值是其镜像（依赖方向 `agent → role-pack` 单向，本层不可 import agent，按本仓
-    // 既有做法「重复 + 注释对冲」）。角色包未声明 webSearchLimit 时，loop 护栏取本值
-    // = 改真源须同步本值，否则缺省行为与内核常量漂移。
+    // 联网搜索硬上限缺省值（真源唯一 = 本键，2026-10-16 起）：运行时 loop 护栏恒读
+    // strategy.webSearchLimit，缺省 6 定义在本对象、回退也回退本对象（resolveWebSearchLimit），
+    // 曾经的镜像 LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS 已删（零读取幽灵旋钮，见其删后注记）。
     webSearchLimit: 6,
   },
 } as const;

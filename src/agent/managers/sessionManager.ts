@@ -106,12 +106,22 @@ export class SessionManager {
     return this.stateMachine.pendingPauseInfo;
   }
 
-  /** 检查是否处于暂停态 */
+  /**
+   * 检查是否处于暂停态
+   *
+   * @deprecated 废弃于 5.0.0（计划 6.0.0 移除，登记见台账 DEPRECATE-1）：内核+宿主双 grep 零
+   * 外部调用，替代物 = `status` getter（`session.status === 'paused'`）。
+   */
   isPaused(): boolean {
     return this.stateMachine.status === 'paused';
   }
 
-  /** 检查是否处于运行态 */
+  /**
+   * 检查是否处于运行态
+   *
+   * @deprecated 废弃于 5.0.0（计划 6.0.0 移除，登记见台账 DEPRECATE-1）：内核+宿主双 grep 零
+   * 外部调用，替代物 = `status` getter（`session.status === 'running'`）。
+   */
   isRunning(): boolean {
     return this.stateMachine.status === 'running';
   }
@@ -912,7 +922,13 @@ export class SessionManager {
       .map((r) => this.compensateTool(r));
   }
 
-  /** 发送心跳，防僵尸会话 */
+  /**
+   * 发送心跳，防僵尸会话
+   *
+   * @deprecated 废弃于 5.0.0（计划 6.0.0 移除，登记见台账 DEPRECATE-1）：真功能（写
+   * lastHeartbeat 供暂停超时判定回退），但生产零调用（仅本类测试直测消费）——按 §3.2.1
+   * 反滑坡边界不可直删，走 deprecation 周期；超时判定的主路径不经本方法。
+   */
   heartbeat(): void {
     if (this.checkpoint) {
       this.touchCheckpoint();
