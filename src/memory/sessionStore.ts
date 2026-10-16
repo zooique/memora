@@ -36,8 +36,8 @@ export interface ISessionStore {
   /**
    * 列出全部会话标题元数据，**必须按 updatedAt 降序**（最近活跃在前）。
    *
-   * 排序方向是本接口契约的一部分，不是各实现自由：`SessionManager.restoreMostRecentSession`
-   * 视 `[0]` 为「最近活跃会话」的唯一真理源；升序实现会让「恢复最近会话」恢复成最旧会话。
+   * 排序方向是本接口契约的一部分，不是各实现自由：宿主（chatPanel 构造器）视 `[0]` 为
+   * 「最近活跃会话」的唯一真理源（打开面板时定位初始会话）；升序实现会让初始定位落到最旧会话。
    */
   listSessionMetas(): SessionMeta[];
 

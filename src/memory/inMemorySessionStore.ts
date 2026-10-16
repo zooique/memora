@@ -137,8 +137,8 @@ export class InMemorySessionStore implements ISessionStore {
   /**
    * 列出所有会话元数据（按 updatedAt **降序**，最近活跃在前——ISessionStore 排序契约）
    *
-   * 方向必须与宿主实现一致：SessionManager.restoreMostRecentSession 视 [0] 为「最近活跃
-   * 唯一真理源」，升规则会恢复成最旧会话。
+   * 方向必须与宿主实现一致：宿主（chatPanel 构造器）视 [0] 为「最近活跃唯一真理源」
+   * （打开面板时定位初始会话），升规则会定位到最旧会话。
    */
   listSessionMetas(): SessionMeta[] {
     return Array.from(this.metas.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

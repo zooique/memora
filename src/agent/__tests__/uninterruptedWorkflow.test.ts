@@ -6,7 +6,6 @@
  *   - 检查点内存态生命周期（SessionManager.createCheckpoint/getCheckpoint/touchCheckpoint；
  *     无跨重启恢复链）
  *   - 工具幂等性与 outbox 模式（preExecutionCheck / logToolExecution 持久化）
- *   - 补偿机制（compensateTool/compensateAllNonIdempotent 降级后仅日志）
  *   - 执行计划管理（advancePlan/completePlanItem/isPlanAllBlocked）
  *   - 端到端场景（Agent 门面完整工作流）
  *
@@ -502,64 +501,9 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
     });
   });
 
-  describe('compensateTool', () => {
-    it('应生成包含工具名称的日志描述', () => {
-      const record: ToolExecutionRecord = {
-        name: 'write_file',
-        argsSignature: '{"path":"test.ts"}',
-        executedAt: Date.now(),
-        resultSummary: '写入成功',
-        ok: true,
-        idempotent: 'non-idempotent',
-      };
-      const result = manager.compensateTool(record);
-      expect(result).toContain('write_file');
-      expect(result).toContain('需人工确认');
-    });
-  });
-
-  describe('compensateAllNonIdempotent', () => {
-    it('无非幂等工具时应返回空数组', () => {
-      const results = manager.compensateAllNonIdempotent();
-      expect(results).toEqual([]);
-    });
-
-    it('有非幂等工具时应返回日志描述列表', () => {
-      manager.logToolExecution({
-        name: 'read_file',
-        argsSignature: '{}',
-        executedAt: Date.now(),
-        resultSummary: 'ok',
-        ok: true,
-        idempotent: 'idempotent',
-      });
-      manager.logToolExecution({
-        name: 'write_file',
-        argsSignature: '{"path":"a.ts"}',
-        executedAt: Date.now(),
-        resultSummary: 'ok',
-        ok: true,
-        idempotent: 'non-idempotent',
-      });
-      const results = manager.compensateAllNonIdempotent();
-      expect(results).toHaveLength(1);
-      expect(results[0]).toContain('write_file');
-    });
-
-    it('所有非幂等工具都应生成日志（不再检查 compensatedAt）', () => {
-      manager.logToolExecution({
-        name: 'write_file',
-        argsSignature: '{"path":"a.ts"}',
-        executedAt: Date.now(),
-        resultSummary: 'ok',
-        ok: true,
-        idempotent: 'non-idempotent',
-      });
-      // 降级后不再过滤已补偿记录，每次调用都返回所有非幂等工具
-      expect(manager.compensateAllNonIdempotent()).toHaveLength(1);
-      expect(manager.compensateAllNonIdempotent()).toHaveLength(1);
-    });
-  });
+  // 删后注记（2026-10-16 · 5.0.0）：曾有 describe('compensateTool') / describe('compensateAllNonIdempotent')
+  // 与「场景 E：补偿机制」——compensate 双方法生产零调用 + 仅日志零效果（no-op 型公开面），
+  // 已随 5.0.0 公开面清理批整体删除，用例一并移除。
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -1452,46 +1396,8 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     expect(reply).toContain('Mock 响应');
   });
 
-  /**
-   * 场景 E：补偿机制——非幂等工具恢复时日志（降级后仅日志）
-   *
-   * 验证降级后行为：
-   *   1. 记录非幂等工具执行
-   *   2. 通过 compensateAllNonIdempotent 生成日志描述
-   *   3. 验证日志描述包含工具名称
-   *   4. 不再检查 compensatedAt 标记
-   */
-  it('场景 E：补偿机制——非幂等工具恢复时日志（降级）', { timeout: 30000 }, async () => {
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: new MockProvider(),
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpData],
-      sessionStore,
-    });
-    await agent.init();
-
-    // 创建检查点
-    agent.createCheckpoint();
-
-    // 记录非幂等工具执行
-    agent.sessionManager!.logToolExecution({
-      name: 'write_file',
-      argsSignature: '{"path":"test.ts","content":"hello"}',
-      executedAt: Date.now(),
-      resultSummary: '写入成功',
-      ok: true,
-      idempotent: 'non-idempotent',
-    });
-
-    // 执行补偿（降级后仅日志）
-    const compensationResults = agent.sessionManager!.compensateAllNonIdempotent();
-    expect(compensationResults).toHaveLength(1);
-    expect(compensationResults[0]).toContain('write_file');
-    expect(compensationResults[0]).toContain('需人工确认');
-  });
+  // 删后注记（2026-10-16 · 5.0.0）：曾有「场景 E：补偿机制——非幂等工具恢复时日志（降级）」用例——
+  // 依赖的 compensateAllNonIdempotent（no-op 型公开面：仅日志零效果）已整体拆除，用例删除。
 });
 
 /**

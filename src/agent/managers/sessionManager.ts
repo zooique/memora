@@ -133,7 +133,7 @@ export class SessionManager {
 
   /**
    * 会话替换 chokepoint：作废所有会话级派生缓存。
-   * 任何替换 loop 工作记忆（switch/fork/restore）入口都必须经此，新增派生缓存在此注册一处避免"对称的另一半没写完"。
+   * 任何替换 loop 工作记忆（switch/fork/load）入口都必须经此，新增派生缓存在此注册一处避免"对称的另一半没写完"。
    */
   private invalidateSessionDerivedState(): void {
     // 真实 loop 必有 resetContextSummary；测试 mock 可能未实现，缺失时 no-op
@@ -141,7 +141,7 @@ export class SessionManager {
   }
 
   /**
-   * 会话替换前置闸（SSOT 收口）：任何替换 loop 工作记忆（switch/fork/restore/load）的入口都必须经此。
+   * 会话替换前置闸（SSOT 收口）：任何替换 loop 工作记忆（switch/fork/load）的入口都必须经此。
    * 合并「对话进行中」繁忙闸 + 「非 running 态拒绝」状态闸，消除 switch 有状态闸而
    * fork/restore/load 漏闸的对称性缺口（原 switchSession 注释谎称「与 fork/restore 繁忙守卫同构」，
    * 实际 fork/restore/load 无状态闸——属注释与实现不符的带伤，本次修复）。
@@ -162,7 +162,7 @@ export class SessionManager {
 
   /** 切换当前会话。底层 MessageHistory.switchSession 为纯同步操作，不引入无意义 async 包装。 */
   switchSession(newSession: string): string {
-    // 替换工作记忆前置闸（SSOT：与 fork/restore/load 共用断言，消除状态闸不对称）
+    // 替换工作记忆前置闸（SSOT：与 fork/load 共用断言，消除状态闸不对称）
     this.assertSessionReplaceable('切换会话');
 
     // 检查点是当前会话的工作状态，切换时清空内存态（检查点纯内存态，不落盘）
@@ -255,7 +255,7 @@ export class SessionManager {
    * @param targetSession - 可选，自定义新会话名；不传则自动生成
    */
   forkSession(roundId?: string, targetSession?: string): AgentForkResult {
-    // 替换工作记忆前置闸（SSOT：与 switch/restore/load 共用断言）
+    // 替换工作记忆前置闸（SSOT：与 switch/load 共用断言）
     this.assertSessionReplaceable('分叉');
 
     const history = this.getHistory();
@@ -292,68 +292,16 @@ export class SessionManager {
     };
   }
 
-  /**
-   * 恢复最近活跃会话：经 ISessionStore 加载最近消息到工作记忆；宿主未注入则返回 0。
-   *
-   * 会话管理纯度：会话一律手动创建（宿主标题条「＋」唯一入口），
-   * 本方法只做「恢复」、绝不隐式创建会话——无按天归档隐式语义
-   * （「今天-main 优先」类规则），也无 preferredSession 参数。最近活跃的唯一时间序真理源 = listSessionMetas[0]（updatedAt 降序）。
-   *
-   * @returns 恢复的消息条数（0 = 无可恢复会话）
-   */
-  async restoreMostRecentSession(): Promise<number> {
-    // 替换工作记忆前置闸（SSOT：与 switch/fork/restore/load 共用断言）
-    this.assertSessionReplaceable('恢复会话');
-
-    if (!this.sessionStore) {
-      logger.debug({ hasSessionStore: false }, '未注入 ISessionStore，无法恢复会话');
-      return 0;
-    }
-
-    // SSOT：listSessionMetas 依 updatedAt 降序，[0] 即最近活跃会话（唯一时间序真理源）
-    const metas = this.sessionStore.listSessionMetas();
-    const target = metas[0]?.sessionId;
-    if (!target) {
-      logger.debug({ sessionCount: metas.length }, '没有可恢复的历史会话');
-      return 0;
-    }
-
-    // 解析 "YYYY-MM-DD-session"（sessionId 格式契约真理源 = splitSessionId，session 名可含连字符）
-    const parsed = splitSessionId(target);
-    if (!parsed.session) {
-      logger.debug({ session: target }, '会话标识格式不匹配');
-      return 0;
-    }
-
-    const sessionMessages = this.sessionStore.loadMessages(parsed.date, parsed.session);
-    if (sessionMessages.length === 0) {
-      logger.debug({ messageCount: 0 }, '没有找到可恢复的历史会话');
-      return 0;
-    }
-
-    this.applySessionToLoop(sessionMessages);
-
-    return sessionMessages.length;
-  }
-
-  /** 恢复指定会话的对话 */
-  async restoreSession(date: string, session: string): Promise<number> {
-    // 替换工作记忆前置闸（SSOT：与 switch/fork/restoreMostRecent/load 共用断言）
-    this.assertSessionReplaceable('恢复会话');
-
-    const sessionMessages = await this.getHistory().loadSessionMessages(date, session);
-    if (sessionMessages.length === 0) {
-      return 0;
-    }
-
-    this.applySessionToLoop(sessionMessages);
-
-    return sessionMessages.length;
-  }
+  // 删后注记（2026-10-16 · 5.0.0，按 SSOT/不带伤裁决提前于 DEPRECATE-1 周期删除）：曾有公开
+  // restoreMostRecentSession() / restoreSession(date, session) 两个「从 ISessionStore 恢复会话到
+  // 工作记忆」入口——宿主零消费（宿主「打开最近/指定会话」走 chatPanel 读自家 HostSessionStore.
+  // listSessionMetas + switchToSession 对齐，不经内核恢复入口），且 listSessionMetas 降序契约的
+  // 真实消费者在宿主侧。恢复能力仍由 switchToSession（切换+加载，生产路径）与 forkSession 承担。
+  // 勿加回；若宿主将来要「重启后恢复内核 session 状态」，应基于 switchToSession 接线而非新开恢复面。
 
   /** 对外暴露的 loadSessionMessages 委托。⚠ 会切换当前会话（更新 currentDate/currentSession），加载后下一条 chat 写入被加载会话 */
   async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
-    // 替换工作记忆前置闸（SSOT：与 switch/fork/restore 共用断言）
+    // 替换工作记忆前置闸（SSOT：与 switch/fork 共用断言）
     this.assertSessionReplaceable('加载会话');
 
     return this.getHistory().loadSessionMessages(date, session);
@@ -838,20 +786,10 @@ export class SessionManager {
     this.touchCheckpoint();
   }
 
-  /** 记录非幂等工具执行（补偿降级后仅日志）：不再逐副作用执行补偿，仅记录事实供宿主/人工排查 */
-  compensateTool(record: ToolExecutionRecord): string {
-    const msg = `${record.name}(${record.argsSignature.slice(0, 50)})：非幂等工具，需人工确认是否需要补偿`;
-    logger.warn({ tool: record.name, argsSignature: record.argsSignature.slice(0, 80) }, msg);
-    return msg;
-  }
-
-  /** 记录所有非幂等工具执行（补偿降级后仅日志）：直接记录所有非幂等工具，每条生成一条日志 */
-  compensateAllNonIdempotent(): string[] {
-    if (!this.checkpoint?.completedToolCalls) return [];
-    return this.checkpoint.completedToolCalls
-      .filter((r) => r.idempotent === 'non-idempotent')
-      .map((r) => this.compensateTool(r));
-  }
+  // 删后注记（2026-10-16 · 5.0.0，按 SSOT/不带伤裁决提前于 DEPRECATE-1 周期删除）：曾有公开
+  // compensateTool() / compensateAllNonIdempotent()——「非幂等工具补偿」降级后仅生成文案 +
+  // logger.warn，零状态变更、零返回值消费者、生产零调用（仅测试直测），属 no-op 型公开面。
+  // 勿加回；真要做人工确认面，应经 tool_start/tool_result 事件流在宿主侧渲染。
 
   // 删后注记（2026-10-16 · 5.0.0，按 SSOT/不带伤裁决提前于 DEPRECATE-1 计划删除）：曾有公开
   // heartbeat()——把私有 touchCheckpoint（心跳唯一写点）包成公开方法，暗示接入者需手动打卡；

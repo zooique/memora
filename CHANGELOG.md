@@ -123,6 +123,11 @@
 - 受影响测试清理：`sessionManager.test.ts` 删 `consecutivePauseDecay` 用例组、
   `uninterruptedWorkflow.test.ts` 删 3 个 `lowRisk` 用例 + 「SSOT 排雷防回归」describe 块、
   `chatLockManager.test.ts` 删 `forceRelease()` describe 块（`dispose()` 独立用例保留，覆盖率不降）。
+- 删 **`SessionManager.restoreMostRecentSession()` / `restoreSession(date, session)`**（内核恢复会话双入口，用户 2026-10-16 拍板提前于 deprecation 周期直删）：三面零消费——宿主「打开最近/指定会话」走 webview 读自家 `HostSessionStore.listSessionMetas()[0]`（chatPanel 构造器）+ `sessionManager.switchToSession` 对齐，不经内核恢复入口。与同批其他删除的区别：**真功能零消费**（非 no-op 谎报），ADR-024 曾定位「只恢复、绝不隐式创建」契约；按「僵尸容器拒入库」+ 5.0.0 未发布（npm 最新 4.0.0）零外部破坏窗口裁决。**契约迁移**：`ISessionStore.listSessionMetas` 降序契约锚点改锚宿主 chatPanel 消费（三处源码注释同步）；恢复能力由 `switchToSession`（宿主生产路径）与 `forkSession` 承担，私有 `applySessionToLoop` 随两者保留、测试改接 `switchToSession` 间接覆盖；ADR-024 L88 失实表述（`restoreSession`/`switchSession` 宿主零命中）订正。⚠️ **对 4.x 升级者的代价**：随 4.0.0 已发布，直删使其失去 deprecation 预警期，由本条 Breaking 明示——内部消费面为零，仅外部接入者可能受影响。
+- 受影响测试清理：`sessionManager.test.ts` 删两个 restore describe 组 + paused/error 状态闸 4 例（switch/fork/load 入口的闸覆盖保留）、`agent.test.ts` 删 `restoreMostRecentSession` describe 组；守卫：`publicMemberSurfaceGuard.test.ts` EXPECTED 基线删 2 项。
+- 删 **`SessionManager.compensateTool()` / `compensateAllNonIdempotent()`**（非幂等工具补偿双方法，用户 2026-10-16 拍板）：no-op 型公开面——降级后仅生成文案 + `logger.warn`，零状态变更、零返回值消费者、生产零调用（仅测试直测），同 `forceReleaseChatLock` 型 §3.2.1 直删豁免。
+- 删 **`Agent.getRecentToolExecutions()`**（工具执行历史聚合出口）：三面零消费；loop 域 `tool_start`/`tool_result` 事件流才是宿主可自聚合的真源，本出口是多余中间层。
+- 删 **`Agent.getBackgroundTaskStats()`** 并**连坐拆除** utils 层 `getBackgroundTaskStats` 函数 + `BackgroundTaskStats` 接口 + `stats` 的 `completed`/`failed` 只写字段（删公开面后两字段无读者 = 僵尸；`pending` 仍服务 `awaitBackgroundTasks`，队列/限流机制不动）：后台任务门面回归「启动 + 兜底 + 限流」纯化形态。测试面 `backgroundTask.test.ts` 统计断言整体改写为行为断言（在途经 `awaitBackgroundTasks` 返回值、排队经「第 6 个任务被自动启动」可观测）。
 - 宿主侧注释清算：`chatView.ts` 归档停滞兜底注释去掉 `forceReleaseChatLock` 引用（该 API 已不存在，
   注释腐化会误导后人以为宿主有该兜底）。
 

@@ -1,28 +1,19 @@
 /**
- * 后台任务统一收口门面 —— 一个「后台副作用」的单一启动/观测入口。
+ * 后台任务统一收口门面 —— 一个「后台副作用」的单一启动入口。
  *
  * 收敛散落的 `fire-and-forget`（摘要生成 round-summary / 命中刷新 search_memories.touch / 会话命名 session-title）：
  * - 统一启动：不阻塞调用方，业务 Promise 交给门面兜底；
- * - 统一观测：按 label 累计 pending/completed/failed，宿主可读后台健康度；
  * - 统一兜底：失败统一记日志，业务侧补救经 onFailure 挂载（如宿主事件 emit）；
  * 统一限流：最大并发槽位防止上述三类任务无界并发耗尽资源。
  *
  * 与模块级 logger 同模式（全局单例，组件直接 import，零注入成本）。
+ *
+ * 删后注记（2026-10-16 · 5.0.0）：曾有 BackgroundTaskStats 统计快照出口
+ * （getBackgroundTaskStats + completed/failed 累计字段）——Agent 公开面包装零宿主消费，
+ * 连带拆除后 completed/failed 成只写字段（僵尸），遂整链删除。在途观测由
+ * awaitBackgroundTasks 的返回值承担；勿加回。
  */
 import { logger } from '@/logging/logger.js';
-
-/** 后台任务累计统计快照（宿主读后台健康度，纯只读） */
-export interface BackgroundTaskStats {
-  /** 在途任务数（含排队中的） */
-  pending: number;
-  /** 成功完成数（累计） */
-  completed: number;
-  /** 失败数（累计，未被业务侧消化的） */
-  failed: number;
-}
-
-/** 后台任务累计统计（模块级单例状态） */
-const stats: BackgroundTaskStats = { pending: 0, completed: 0, failed: 0 };
 
 /** 后台任务最大并发数（生产安全性：防止无界并发耗尽资源） */
 const MAX_CONCURRENT_BACKGROUND_TASKS = 5;
@@ -38,6 +29,9 @@ interface QueuedTask {
 }
 const pendingQueue: QueuedTask[] = [];
 
+/** 在途任务数（调用即纳入在途计数，无论立即执行还是排队等待） */
+let pendingCount = 0;
+
 /**
  * 启动一个后台任务（不阻塞调用方）。统一计数 + 兜底失败日志 + 并发槽位控制。
  * 保留「调用即纳入在途计数」的契约——无论立即执行还是排队等待。
@@ -51,7 +45,7 @@ export function backgroundTask(
   factory: () => Promise<unknown>,
   onFailure?: (err: unknown) => void,
 ): void {
-  stats.pending++;
+  pendingCount++;
 
   if (activeCount < MAX_CONCURRENT_BACKGROUND_TASKS) {
     // 有空闲槽位 → 立即执行
@@ -76,15 +70,13 @@ function executeTask(
   const task = factory();
   task.then(
     () => {
-      stats.pending--;
-      stats.completed++;
+      pendingCount--;
       activeCount--;
       logger.debug({ label }, '后台任务完成');
       drainQueue();
     },
     (err: unknown) => {
-      stats.pending--;
-      stats.failed++;
+      pendingCount--;
       activeCount--;
       logger.warn({ err, label }, '后台任务失败');
       onFailure?.(err);
@@ -105,11 +97,6 @@ function drainQueue(): void {
   executeTask(next.label, next.factory, next.onFailure);
 }
 
-/** 读取后台任务累计统计快照（只读副本，宿主可观测后台健康度） */
-export function getBackgroundTaskStats(): BackgroundTaskStats {
-  return { ...stats };
-}
-
 /**
  * 等待所有在途后台任务完成（带超时保护，防止任务永不返回阻塞 close）。
  * Agent.close() 必须调用此函数——否则后台命中刷新/摘要生成等任务可能在 storage 关闭后 upsert 失效。
@@ -121,15 +108,15 @@ export function getBackgroundTaskStats(): BackgroundTaskStats {
  *   `awaited > 0`），但**不可当作已完成计数**使用。
  */
 export async function awaitBackgroundTasks(timeoutMs = 5000): Promise<number> {
-  const initialPending = stats.pending;
+  const initialPending = pendingCount;
   if (initialPending === 0) return 0;
 
   logger.debug({ pending: initialPending }, '等待后台任务完成...');
 
   const startTime = Date.now();
-  while (stats.pending > 0) {
+  while (pendingCount > 0) {
     if (Date.now() - startTime > timeoutMs) {
-      logger.warn({ pending: stats.pending, timeoutMs }, '等待后台任务超时，放弃剩余任务');
+      logger.warn({ pending: pendingCount, timeoutMs }, '等待后台任务超时，放弃剩余任务');
       break;
     }
     // 等待下一个微任务周期，让 pending 计数有机会被更新
@@ -141,13 +128,11 @@ export async function awaitBackgroundTasks(timeoutMs = 5000): Promise<number> {
 
 /**
  * 重置模块级状态（仅测试使用，生产代码禁止调用）。
- * 清理 activeCount、pendingQueue、stats，确保测试用例间状态隔离。
+ * 清理 activeCount、pendingQueue、pendingCount，确保测试用例间状态隔离。
  * @internal
  */
 export function _resetBackgroundTaskState(): void {
-  stats.pending = 0;
-  stats.completed = 0;
-  stats.failed = 0;
+  pendingCount = 0;
   activeCount = 0;
   pendingQueue.length = 0;
 }

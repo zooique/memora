@@ -570,8 +570,6 @@ interface ISessionStore {
 | `sessionManager.switchSession(newName)` → `string` | 切换到指定会话（chatBusy 时抛 configError） |
 | `sessionManager.forkSession(targetSession?)` → `AgentForkResult` | 分叉当前会话 |
 | `sessionManager.loadSessionMessages(date, session)` → `Promise<SessionMessage[]>` | 加载指定日期/会话的消息（含时间戳） |
-| `sessionManager.restoreMostRecentSession()` → `Promise<number>` | 恢复最近活跃会话（SSOT：listSessionMetas[0]，updatedAt 降序；绝不隐式创建——新建会话唯一入口为宿主手动按钮） |
-| `sessionManager.restoreSession(date, session)` → `Promise<number>` | 恢复指定日期/会话 |
 | `sessionManager.createCheckpoint()` → `SessionCheckpoint` | 创建当前会话检查点（含计划、状态机快照），首次调用返回完整检查点，后续调用合并增量。**同进程内存态**（2026-09-10 减法后不落盘）。返回值恒非空（agent 层与 sessionManager 层皆然；未 `init()` 时抛 `configError` 而非返回 `null`）。会返回 `null` 的是下一行 `getCheckpoint()`（首个检查点尚未创建时），勿混 |
 | `sessionManager.getCheckpoint()` → `SessionCheckpoint \| null` | 获取当前检查点（只读，不修改状态） |
 | `sessionManager.discardCheckpoint()` → `boolean` | **Phase 4 新增**：放弃当前暂停检查点（对称 pause 创建，宿主 handleStop paused 态调之；停定时器 + 清内存 + resetToRunning；无检查点返回 false） |

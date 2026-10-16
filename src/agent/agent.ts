@@ -15,7 +15,6 @@ import type {
   AgentOptions,
   AgentContext,
   AgentConfig,
-  ToolExecutionRecord,
   SessionCheckpoint,
 } from '@/agent/types.js';
 import type { InteractiveInputKind } from '@/memory/roundStore.js';
@@ -75,11 +74,7 @@ import type { ProviderRouter } from '@/llm/types.js';
 import { logger } from '@/logging/logger.js';
 import { isValidSessionId, splitSessionId } from '@/utils/time.js';
 import type { AgentMetrics } from '@/agent/tracer.js';
-import {
-  getBackgroundTaskStats as readBackgroundTaskStats,
-  awaitBackgroundTasks,
-} from '@/utils/backgroundTask.js';
-import type { BackgroundTaskStats } from '@/utils/backgroundTask.js';
+import { awaitBackgroundTasks } from '@/utils/backgroundTask.js';
 
 // ─── 模块级常量 ─────────────────────────────────────────
 
@@ -1141,26 +1136,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.requireSessionManager.getCheckpoint();
   }
 
-  /**
-   * 获取最近一次处理线程的工具执行历史（loop 域聚合出口，补待办 #3）
-   *
-   * 数据源自 sessionManager 检查点的 completedToolCalls（已由
-   * AGENT_CONSTANTS.COMPLETED_TOOL_CALLS_MAX 做 FIFO 封顶）。本方法剥离「恢复/幂等」内部
-   * 语义，提供稳定的 execute 域只读契约——宿主可在透明面板/观测面消费本轮及历史的工具调用
-   * 明细（工具名 / 成败 / 结果摘要），与累计 AgentMetrics.tools 互补。
-   *
-   * @param limit 返回条数上限（默认取封顶上限，超界由调用方控制，取最近 limit 条）
-   * @returns 工具执行记录（记录顺序：时间正序即旧→新；无记录返回空数组；返回浅拷贝防宿主改动检查点）
-   */
-  getRecentToolExecutions(
-    limit: number = AGENT_CONSTANTS.COMPLETED_TOOL_CALLS_MAX,
-  ): ToolExecutionRecord[] {
-    this.assertInitialized('getRecentToolExecutions');
-    const calls = this.requireSessionManager.getCheckpoint()?.completedToolCalls;
-    if (!calls || calls.length === 0) return [];
-    // 取最近 limit 条并浅拷贝，避免宿主引用改动污染检查点（FIFO 封顶后 slice 安全）
-    return calls.slice(-limit).map((r) => ({ ...r }));
-  }
+  // 删后注记（2026-10-16 · 5.0.0，按 SSOT/不带伤裁决提前于 DEPRECATE-1 周期删除）：曾有公开
+  // getRecentToolExecutions()——聚合检查点 completedToolCalls 的「工具执行历史」出口，
+  // 内核+宿主+手册三面零消费（loop 域 tool_start/tool_result 事件流才是宿主可自聚合的真源，
+  // 本出口是多余中间层）。勿加回；观测需求经事件流自聚合。
 
   /**
    * 后台任务只读快照（宿主 UI 出口 · 见 `docs/方案-后台任务可见性与kill入口-20261004.md` §2.1）
@@ -2051,13 +2030,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // ─── 运行时指标 ────────────────────────────────
 
-  /**
-   * 后台任务统计快照（宿主观测后台副作用健康度，纯只读转发 utils 单例）。
-   * @returns 在途 / 成功 / 失败计数
-   */
-  getBackgroundTaskStats(): BackgroundTaskStats {
-    return readBackgroundTaskStats();
-  }
+  // 删后注记（2026-10-16 · 5.0.0，按 SSOT/不带伤裁决提前于 DEPRECATE-1 周期删除）：曾有公开
+  // getBackgroundTaskStats()——转发 utils 后台任务统计快照（pending/completed/failed），
+  // 宿主零消费；连带 utils 层 getBackgroundTaskStats 函数、BackgroundTaskStats 接口与
+  // stats 的 completed/failed 只写字段一并拆除（pending 仍服务 awaitBackgroundTasks）。
+  // 勿加回；后台健康度观测需求出现时经事件流或专用诊断面重建。
 
   /**
    * 获取 Agent 运行时指标快照（可观测性）：聚合 AgentLoop 指标与 Agent 层治理指标；

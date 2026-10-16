@@ -358,9 +358,9 @@ describe('ISessionStore — 可选方法契约', () => {
       });
 
       // 契约：降序，[0] = 最近活跃。
-      // SessionManager.restoreMostRecentSession 视 listSessionMetas[0] 为「最近活跃唯一真理源」，
-      // 若本实现升规则该契约崩塌（恢复到最旧会话）。宿主 WorkspaceSessionStore 已是降序，
-      // 两实现必须同向——排序方向属 ISessionStore 契约，非各实现自由。
+      // 宿主（chatPanel 构造器）视 listSessionMetas[0] 为「最近活跃唯一真理源」（打开面板时
+      // 定位初始会话），若本实现升序该契约崩塌（定位到最旧会话）。宿主 WorkspaceSessionStore
+      // 已是降序，两实现必须同向——排序方向属 ISessionStore 契约，非各实现自由。
       expect(store.listSessionMetas().map((m) => m.sessionId)).toEqual([
         '2026-08-03-b',
         '2026-08-02-c',

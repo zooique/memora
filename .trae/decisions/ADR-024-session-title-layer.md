@@ -85,7 +85,7 @@ renameSession(date: string, session: string, title: string): void;
 - 新增 `SessionNamer`（[sessionNamer.ts](../../src/agent/managers/sessionNamer.ts)）；
 - `Agent` 闭环 `appendUser` 后加 fire-and-forget 触发（[agent.ts](../../src/agent/agent.ts)）；
 - `SessionManager` 新增 `getSessionMeta`/`renameSession`（[sessionManager.ts](../../src/agent/managers/sessionManager.ts)）；
-- 历史列表导航、手动新建、改名 UI 由宿主基于 `restoreSession`/`switchSession`/`renameSession` 实现，内核不承担 UI。
+- 历史列表导航、手动新建、改名 UI 由宿主基于 `switchToSession`/`renameSession` + 自家 `HostSessionStore.listSessionMetas` 实现，内核不承担 UI。（2026-10-16 订正：原稿写 `restoreSession`/`switchSession`——两符号宿主零消费（实名为 `switchToSession`），`restoreSession` 已于 5.0.0 删除，见下方演进备注）
 
 ## 何时回顾
 
@@ -101,3 +101,21 @@ renameSession(date: string, session: string, title: string): void;
 > - 宿主初始化移除「今天-main」兜底：无历史会话时不自动创建，首次发送引导手动新建。
 >
 > 与 §1/§5 的张力说明：ADR 主体保留 2026-08-15 定案（标题层与身份解耦、手动会话可行）不变，仅"按天自动归档并存"的过渡语义在本轮剪除。
+
+## 演进备注（2026-10-16 · restore 族删除与排序契约锚点改宿主）
+
+> **背景**：5.0.0 发版前公开 API 全量审查实证——`SessionManager.restoreMostRecentSession()` /
+> `restoreSession(date, session)` 两个恢复入口**内核+宿主+手册三面零消费**：宿主「打开最近/指定
+> 会话」走 webview 读自家 `HostSessionStore.listSessionMetas()[0]`（chatPanel 构造器）+
+> `sessionManager.switchToSession` 对齐，不经内核恢复入口。按用户裁决（SSOT/不带伤 + 僵尸拒入）
+> 提前于 DEPRECATE-1 周期在 5.0.0 直删，CHANGELOG Breaking 段明示代价。
+>
+> **契约迁移**：`ISessionStore.listSessionMetas` 降序契约（§「排序方向是本接口契约的一部分」）
+> 的锚点从 `restoreMostRecentSession` 改锚到**宿主 chatPanel 构造器消费**（sessionStore.ts /
+> inMemorySessionStore.ts / sessionStore.test.ts 三处注释同步）。恢复能力仍由 `switchToSession`
+> （切换+加载，宿主生产路径）与 `forkSession`（分叉+加载）承担，私有 `applySessionToLoop`
+> 随两者保留。
+>
+> **本节效力**：上文「影响」节中涉及 `restoreSession`/`switchSession` 的表述以 2026-10-16
+> 订正行为准；本备忘记录的是删除事实与锚点迁移，不改变 ADR 主体定案（标题层与身份解耦、
+> 手动会话唯一入口）。

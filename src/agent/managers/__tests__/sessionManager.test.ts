@@ -4,10 +4,8 @@
  * 覆盖 SessionManager 全部公共方法：
  *   - switchSession：切换会话，isChatBusy 时抛 configError
  *   - forkSession：分叉会话，委托 history + applySessionToLoop + emitEvent
- *   - restoreMostRecentSession：恢复最近会话，多分支降级
- *   - restoreSession：恢复指定会话
  *   - loadSessionMessages：加载消息（会切换会话）
- *   - applySessionToLoop：private，通过 restore* 间接测试
+ *   - applySessionToLoop：private，通过 switchToSession/fork 间接测试
  *   - 检查点生命周期：createCheckpoint / getCheckpoint / touchCheckpoint 心跳刷新（内存态）
  *     （跨重启恢复链已退役）
  *
@@ -280,129 +278,6 @@ describe('SessionManager', () => {
     });
   });
 
-  describe('restoreMostRecentSession', () => {
-    it('对话繁忙时应抛 configError', async () => {
-      isChatBusy.mockReturnValue(true);
-      await expect(manager.restoreMostRecentSession()).rejects.toThrow('对话繁忙');
-    });
-
-    it('未注入 sessionStore 应返回 0', async () => {
-      // 重建 manager 不带 sessionStore
-      const mgr = new SessionManager(
-        () => history,
-        () => loop,
-        undefined,
-        isChatBusy,
-        emitEvent,
-      );
-      const count = await mgr.restoreMostRecentSession();
-      expect(count).toBe(0);
-    });
-
-    it('listSessionMetas 为空应返回 0', async () => {
-      (sessionStore as ISessionStore).listSessionMetas = vi.fn().mockReturnValue([]);
-      const count = await manager.restoreMostRecentSession();
-      expect(count).toBe(0);
-    });
-
-    it('按 updatedAt 降序恢复最近活跃会话（SSOT：listSessionMetas[0]）', async () => {
-      (sessionStore as ISessionStore).listSessionMetas = vi.fn().mockReturnValue([
-        // updatedAt 降序：最近活跃在前（mock 语义 = listSessionMetas 契约时序）
-        { sessionId: '2026-06-27-fork-a', updatedAt: '2026-06-27T10:00:00Z', messageCount: 4 },
-        { sessionId: '2026-06-26-main', updatedAt: '2026-06-26T10:00:00Z', messageCount: 2 },
-      ]);
-      (sessionStore as ISessionStore).loadMessages = vi
-        .fn()
-        .mockReturnValue([{ role: 'user', content: 'recent', timestamp: '2026-06-27T10:00:00Z' }]);
-      const count = await manager.restoreMostRecentSession();
-      expect(count).toBe(1);
-      expect(sessionStore!.loadMessages).toHaveBeenCalledWith('2026-06-27', 'fork-a');
-    });
-
-    it('会话标识格式不匹配（无日期前缀）应返回 0', async () => {
-      (sessionStore as ISessionStore).listSessionMetas = vi
-        .fn()
-        .mockReturnValue([
-          { sessionId: 'invalid-name', updatedAt: '2026-06-27T10:00:00Z', messageCount: 0 },
-        ]);
-      const count = await manager.restoreMostRecentSession();
-      expect(count).toBe(0);
-    });
-
-    it('最近活跃会话的消息为空应返回 0', async () => {
-      (sessionStore as ISessionStore).listSessionMetas = vi
-        .fn()
-        .mockReturnValue([
-          { sessionId: '2026-06-27-main', updatedAt: '2026-06-27T10:00:00Z', messageCount: 0 },
-        ]);
-      (sessionStore as ISessionStore).loadMessages = vi.fn().mockReturnValue([]);
-      const count = await manager.restoreMostRecentSession();
-      expect(count).toBe(0);
-    });
-
-    it('正常恢复应将消息恢复到 AgentLoop', async () => {
-      (sessionStore as ISessionStore).listSessionMetas = vi
-        .fn()
-        .mockReturnValue([
-          { sessionId: '2026-06-27-main', updatedAt: '2026-06-27T10:00:00Z', messageCount: 6 },
-        ]);
-      const messages: SessionMessage[] = [
-        { role: 'user', content: 'u1', timestamp: '2026-06-27T10:00:00Z' },
-        { role: 'assistant', content: 'a1', timestamp: '2026-06-27T10:00:01Z' },
-        { role: 'system', content: 's1', timestamp: '2026-06-27T10:00:02Z' },
-      ];
-      (sessionStore as ISessionStore).loadMessages = vi.fn().mockReturnValue(messages);
-      const count = await manager.restoreMostRecentSession();
-      expect(count).toBe(3);
-      expect(loop.restoreHistory).toHaveBeenCalledTimes(1);
-      // 验证 SessionMessage 被转换为 Message（保留所有角色，restoreHistory 自己过滤 system）
-      const restored = (loop.restoreHistory as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-      expect(restored).toHaveLength(3);
-      expect(restored[0]).toEqual({ role: 'user', content: 'u1' });
-    });
-  });
-
-  describe('restoreSession', () => {
-    it('对话繁忙时应抛 configError', async () => {
-      isChatBusy.mockReturnValue(true);
-      await expect(manager.restoreSession('2026-06-27', 'main')).rejects.toThrow('对话繁忙');
-    });
-
-    it('history 返回空数组应返回 0', async () => {
-      (history.loadSessionMessages as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue([]);
-      const count = await manager.restoreSession('2026-06-27', 'main');
-      expect(count).toBe(0);
-      expect(loop.restoreHistory).not.toHaveBeenCalled();
-    });
-
-    it('正常恢复应返回消息数并调用 loop.restoreHistory', async () => {
-      const messages: SessionMessage[] = [
-        { role: 'user', content: 'u', timestamp: '2026-06-27T10:00:00Z' },
-        { role: 'assistant', content: 'a', timestamp: '2026-06-27T10:00:01Z' },
-      ];
-      (history.loadSessionMessages as ReturnType<typeof vi.fn>) = vi
-        .fn()
-        .mockResolvedValue(messages);
-      const count = await manager.restoreSession('2026-06-27', 'main');
-      expect(count).toBe(2);
-      expect(history.loadSessionMessages).toHaveBeenCalledWith('2026-06-27', 'main');
-      expect(loop.restoreHistory).toHaveBeenCalledTimes(1);
-    });
-
-    it('应将 SessionMessage 转换为 Message（去除 timestamp）', async () => {
-      const messages: SessionMessage[] = [
-        { role: 'user', content: 'hello', timestamp: '2026-06-27T10:00:00Z' },
-      ];
-      (history.loadSessionMessages as ReturnType<typeof vi.fn>) = vi
-        .fn()
-        .mockResolvedValue(messages);
-      await manager.restoreSession('2026-06-27', 'main');
-      const restored = (loop.restoreHistory as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-      expect(restored[0]).toEqual({ role: 'user', content: 'hello' });
-      expect(restored[0].timestamp).toBeUndefined();
-    });
-  });
-
   describe('loadSessionMessages', () => {
     it('对话繁忙时应抛 configError', async () => {
       isChatBusy.mockReturnValue(true);
@@ -428,7 +303,7 @@ describe('SessionManager', () => {
     });
   });
 
-  describe('applySessionToLoop（间接测试）', () => {
+  describe('applySessionToLoop（经 switchToSession 间接测试）', () => {
     it('应过滤掉 timestamp 字段，只保留 role 和 content', async () => {
       const messages: SessionMessage[] = [
         { role: 'user', content: 'u', timestamp: '2026-06-27T10:00:00Z' },
@@ -437,7 +312,7 @@ describe('SessionManager', () => {
       (history.loadSessionMessages as ReturnType<typeof vi.fn>) = vi
         .fn()
         .mockResolvedValue(messages);
-      await manager.restoreSession('2026-06-27', 'main');
+      await manager.switchToSession('2026-06-27-main');
       const restored = (loop.restoreHistory as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(restored).toEqual([
         { role: 'user', content: 'u' },
@@ -453,7 +328,7 @@ describe('SessionManager', () => {
       (history.loadSessionMessages as ReturnType<typeof vi.fn>) = vi
         .fn()
         .mockResolvedValue(messages);
-      await manager.restoreSession('2026-06-27', 'main');
+      await manager.switchToSession('2026-06-27-main');
       const restored = (loop.restoreHistory as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       // applySessionToLoop 不过滤 system，全部传给 loop
       expect(restored).toHaveLength(2);
@@ -462,7 +337,7 @@ describe('SessionManager', () => {
   });
 
   describe('会话替换前置闸（状态闸对称收敛）', () => {
-    // 不变量：任何替换 loop 工作记忆的入口（switch/fork/restore/restoreMostRecent/load）都必须在 running 态执行，
+    // 不变量：任何替换 loop 工作记忆的入口（switch/fork/load）都必须在 running 态执行，
     // 暂停/错误态语义未定义，统一拒绝。本组验证状态闸在全部入口对称生效
     // （原 fork/restore/load 漏闸的带伤已修，见 sessionManager assertSessionReplaceable）。
 
@@ -501,24 +376,6 @@ describe('SessionManager', () => {
         }
         assertStatusRejection(caught);
       });
-      it('restoreMostRecentSession 在 paused 态应拒绝', async () => {
-        let caught: unknown;
-        try {
-          await manager.restoreMostRecentSession();
-        } catch (e) {
-          caught = e;
-        }
-        assertStatusRejection(caught);
-      });
-      it('restoreSession 在 paused 态应拒绝', async () => {
-        let caught: unknown;
-        try {
-          await manager.restoreSession('2026-06-27', 'main');
-        } catch (e) {
-          caught = e;
-        }
-        assertStatusRejection(caught);
-      });
       it('loadSessionMessages 在 paused 态应拒绝', async () => {
         let caught: unknown;
         try {
@@ -548,24 +405,6 @@ describe('SessionManager', () => {
         let caught: unknown;
         try {
           manager.forkSession();
-        } catch (e) {
-          caught = e;
-        }
-        assertStatusRejection(caught);
-      });
-      it('restoreMostRecentSession 在 error 态应拒绝', async () => {
-        let caught: unknown;
-        try {
-          await manager.restoreMostRecentSession();
-        } catch (e) {
-          caught = e;
-        }
-        assertStatusRejection(caught);
-      });
-      it('restoreSession 在 error 态应拒绝', async () => {
-        let caught: unknown;
-        try {
-          await manager.restoreSession('2026-06-27', 'main');
         } catch (e) {
           caught = e;
         }
@@ -625,7 +464,7 @@ describe('SessionManager', () => {
       (history.loadSessionMessages as ReturnType<typeof vi.fn>) = vi
         .fn()
         .mockResolvedValue([{ role: 'user', content: 'x', timestamp: '2026-06-27T10:00:00Z' }]);
-      await mgr.restoreSession('2026-06-27', 'main');
+      await mgr.switchToSession('2026-06-27-main');
       expect(newLoop.restoreHistory).toHaveBeenCalledTimes(1);
     });
   });
@@ -883,25 +722,8 @@ describe('SessionManager', () => {
       expect(calls[0]!.name).toBe('write_file');
     });
 
-    it('compensateTool：生成人工确认文案并记录日志', () => {
-      const msg = manager.compensateTool(makeRecord('write_file'));
-      expect(msg).toContain('write_file');
-      expect(msg).toContain('非幂等工具');
-    });
-
-    it('compensateAllNonIdempotent：无检查点返回空数组', () => {
-      expect(manager.compensateAllNonIdempotent()).toEqual([]);
-    });
-
-    it('compensateAllNonIdempotent：仅记录非幂等工具，幂等工具被过滤', () => {
-      manager.createCheckpoint();
-      manager.logToolExecution(makeRecord('write_file')); // non-idempotent
-      manager.logToolExecution(makeRecord('run_project_script', 'idempotent')); // idempotent
-      const msgs = manager.compensateAllNonIdempotent();
-      // 只有非幂等工具进入补偿清单
-      expect(msgs).toHaveLength(1);
-      expect(msgs[0]).toContain('write_file');
-    });
+    // 删后注记（2026-10-16 · 5.0.0）：曾有 compensateTool / compensateAllNonIdempotent 直测用例——
+    // 双方法生产零调用 + 仅日志零效果（no-op 型公开面），已随 5.0.0 公开面清理批整体删除。
 
     // 删后注记（2026-10-16）：曾有 heartbeat() 直测用例——heartbeat 公开方法已按 SSOT/不带伤
     // 裁决删除（touchCheckpoint 自动打卡仍在，其效果由上文 lastHeartbeat > 0 用例覆盖）。

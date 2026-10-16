@@ -520,7 +520,7 @@ Agent 基于装配好的上下文，调用 LLM 生成回答。生成过程的纪
 
 **手动改名透传**：标题是会话级元数据，用户在历史列表的手动改名通过 `SessionManager.renameSession` 透传到存储层，不参与会话身份。
 
-**与按天归档共存**：标题层对自动归档（每天 `main` 会话）与手动会话（唯一 id）都生效。历史列表加载 = `restoreSession`，手动新建 = `switchSession`——这两项能力本就存在，标题层只是补齐了"可被识别、可被导航"的最后一环。
+**与按天归档共存**：标题层对自动归档（每天 `main` 会话）与手动会话（唯一 id）都生效。历史列表导航由宿主基于 `switchToSession` + 自家 `HostSessionStore.listSessionMetas` 实现（内核 `restoreSession` 恢复入口三面零消费，已于 2026-10-16 · 5.0.0 删除），手动新建 = `switchToSession`——这两项能力本就存在，标题层只是补齐了"可被识别、可被导航"的最后一环。
 
 ### 8.2 衔接：让闭环继续生长
 
