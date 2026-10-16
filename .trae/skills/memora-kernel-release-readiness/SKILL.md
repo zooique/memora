@@ -10,7 +10,7 @@ description: "内核（src/）改动后的 npm 发布就绪度验证流程：三
 
 ## 三条铁律（违反即带伤发布）
 
-1. **宿主 dist 必随内核重建**：内核 `build` 不清 `dist`（旧产物残留）；宿主 bundle 若由旧内核代际构建，`verify:dist-contract` 会比较宿主 bundle 与内核 dist 的同代 hash——**不同代 EXIT=1 卡发布**。顺序：内核重建 dist → 宿主重编译 → 再跑契约闸门。
+1. **宿主 dist 必随内核重建**：内核 `build` 不清 `dist`（旧产物残留）；宿主以 `file:../..` **硬链接**依赖内核 dist——内核 `build` 后宿主 `node_modules` 镜像副本**不自动更新**，漏刷新则宿主加载旧内核（缺新导出 → test 批量红）。宿主 bundle 若由旧内核代际构建，`verify:dist-contract` 会比较宿主 bundle 与内核 dist 的同代 hash——**不同代 EXIT=1 卡发布**。顺序（**切片类提交收尾四步**）：内核重建 dist → 宿主镜像刷新（`cd hosts/memora-vscode && pnpm install --offline`）→ 宿主重编译 → 再跑契约闸门。full 门禁已在 `kernel:build` 后内置 `host:sync` 步自动完成此链（步骤唯一定义处 = `scripts/local-ci.mjs`）；手工链路（fast 档 / 未跑 full 的切片提交）必须按序手跑。
 2. **台账状态不可信**：「待提交/待发布」等台账状态一律 `git log` 实证——历史多次出现台账标「待提交」实为早已入库（git log 一查便知）。流水账状态会过期，git 历史才是真源。
 3. **发布边界 = `files` 白名单**：新增任何文件先核对 `package.json` `files`（`dist` + 显式清单）。不在白名单内的文件**不进包**（无风险）；在机敏感/无关文件也绝不临时加入白名单。用 `npm pack --dry-run` 核对实际打进包的清单。
 
