@@ -542,6 +542,8 @@ const BASELINE_TEXT: readonly string[] = [
   'data-step-bucket',
   'earliest_steps',
   'ensureActiveStep',
+  // 内核私有方法名（src/agent/loop.ts）：text 层命中的是审查报告对现行实现名的合法引用，2026-10-16 补基线
+  'findEarliestSteps',
   'getActiveStepMeta',
   'handleIteration',
   'handleIterationResult',
@@ -557,6 +559,8 @@ const BASELINE_TEXT: readonly string[] = [
   'perStep',
   'plan-step',
   'planStepId',
+  // dsh 插件事件名（agent/pre-step）：text 层命中的是 dsh 方案文档/ADR 对真实事件名的合法引用，2026-10-16 补基线
+  'pre-step',
   'resolveMultiStepReasoning',
   'resolveStepBudget',
   'resolveToolStepLimit',
