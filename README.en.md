@@ -204,7 +204,7 @@ The kernel interacts with the outside world through interfaces. Hosts inject imp
 
 | Interface | Responsibility | Built-in Implementation |
 |-----------|---------------|------------------------|
-| `IMemoryStorage` | Memory CRUD + search + query by source | `InMemoryStorage` |
+| `IMemoryStorage` | Memory CRUD + search + query by source | `InMemoryStorage` + optional persistent impl `createNodeSqliteStorage(dbPath)` (built-in `node:sqlite`, zero third-party deps) | Host picks the backend: create SQLite via the kernel factory, or implement its own (JSON / own SQLite) |
 | `ISessionStore` | Session history persistence | None (host implements) |
 | `ILogger` | Logging output | console fallback |
 | `ITracer` | Observability spans | `NOOP_TRACER` |
@@ -221,7 +221,7 @@ src/
 │   ├── contextManager.ts / contextPreparer.ts / toolExecutor.ts / toolRunner.ts ···
 │   ├── seed/         # Minimal execution loop (prepare → act/difficulty → reflect, incl. external task outer loop)
 │   └── managers/     # 16 specialized Managers/service classes (memoryInspector / memoryGovernance / roundSummaryGenerator / sessionManager / sessionArchiver / archiveCoordinator / workProjection / textPolishManager / chatLockManager, etc.)
-├── memory/           # Memory engine (IMemoryStorage + InMemoryStorage + keyword recall / fusion ranking / governance constants)
+├── memory/           # Memory engine (IMemoryStorage + InMemoryStorage + optional SQLite store + keyword recall / fusion ranking / governance constants)
 ├── role-pack/        # Role packs (manifest parsing + validator + strategyResolver + capability mapping)
 ├── skill/            # Skill management (global pool + role-pack binding, progressive disclosure + skillScriptRunner)
 ├── llm/              # LLM adapter layer (provider + openaiCompatible + factory)

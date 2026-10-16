@@ -105,3 +105,23 @@ export interface IMemoryStorage {
    */
   close?(): void;
 }
+
+/**
+ * 只读存储视图 —— `IMemoryStorage` 的**读方法子集**（`Pick` 派生，与接口同步、不会漂移）。
+ *
+ * 用途：只读宿主（如 memora-mcp 的 `readOnlyFileStore`）需要「读记忆」但不该有能力写——把只读保证
+ * **由结构表达**（外部拿不到写方法），而不是靠「约定不乱调」。
+ * 实现侧（`createNodeSqliteStorage(path, { readOnly: true })`）返回的正是本视图对应的对象。
+ */
+export type ReadOnlyMemoryStorage = Pick<
+  IMemoryStorage,
+  | 'getById'
+  | 'getBySource'
+  | 'search'
+  | 'count'
+  | 'countBySource'
+  | 'getAllSources'
+  | 'listDeleted'
+  | 'getDeletedById'
+  | 'close'
+>;

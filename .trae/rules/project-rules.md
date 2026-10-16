@@ -17,7 +17,7 @@ description: Memora 项目总则、技术栈清单、目录结构、硬约束与
 3. **记忆统一模型**：不引入「规则/技能/历史」等独立子系统；统一用 `source` 开放字符串区分（[ADR-004](../decisions/ADR-004-memory-unification.md)）
 4. **单 Agent 模型 + 三层架构**：memora.db 是 Agent 级共享资源，不随子项目切换重建（[§10](./architecture_philosophy_rules.md)）
 5. **配置文件是真理源**：配置文件持久化，SQLite 仅作运行时索引（[§10](./architecture_philosophy_rules.md)）
-6. **内核 Node.js 专属 + 零第三方依赖**：纯逻辑库，只用内置模块（`node:fs`/`node:path`/`node:os`/`node:crypto`），`dependencies` 为空。不引入 native 模块（better-sqlite3/electron）与宿主专属 API（Electron/browser）；**不做任何运行时三方模块解析**（不静态 import / 不动态 `import()` / 不 `require()`），`peerDependencies` 亦不声明。日志经 `setLogger()` 注入 `ILogger`，未注入用内置 console fallback（写 stderr）（[ADR-002](../decisions/ADR-002-storage-layer.md)）
+6. **内核 Node.js 专属 + 零第三方依赖**：纯逻辑库，只用内置模块（`node:fs`/`node:path`/`node:os`/`node:crypto`），`dependencies` 为空。不引入 native 模块（better-sqlite3/electron）与宿主专属 API（Electron/browser）；**不做任何运行时三方模块解析**（不静态 import / 不动态 `import()` / 不 `require()`），`peerDependencies` 亦不声明。**可选内建模块**（如 `node:sqlite`）须经 `process.getBuiltinModule('node:xxx')` **延迟取用**、以「返回 `undefined`」为不可用判据（`createNodeSqliteStorage` 即此形态），**不得**改写成静态 / 动态 `import()`——静态导入会把「模块是否可用」变成**加载期崩溃**（老环境连降级路径都用不了）。日志经 `setLogger()` 注入 `ILogger`，未注入用内置 console fallback（写 stderr）（[ADR-002](../decisions/ADR-002-storage-layer.md)）
 7. **设定记忆 = 纯文件装载**：persona/rules/skills 唯一归角色包 / 技能池，纯文件 + 内存缓存装载（[memory-role-pack-boundary-rules.md](./memory-role-pack-boundary-rules.md) R1/R3/R9），**不写 SQLite / 记忆库**。配置文件是真理源，内核只读；新增 / 修改由宿主落文件 + 扫描装载（skills 目录动态扫描）。历史 `ConfigManager` 两段式契约（`addRule`/`deleteRule`/`updateRule`/`deleteSkill` + `fileConsistencyCheck`）已移除，不再引用
 8. **检查点纯内存态**：`SessionCheckpoint` 是同进程内存态快照，**不落盘、无序列化 / 恢复路径**；中止 / 断电走「中断轮补全为完整 turn」，暂停为同 turn 内存续跑。`schemaVersion` 字段 + `AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION` **已彻底删除**（勿再引用）；**无版本迁移分发表**（`normalizeCheckpoint` / `checkpointMigrations` / `CURRENT_SCHEMA_VERSION` 已随恢复链退役）。新增字段只需内存态自洽，无需注册迁移
 
@@ -76,7 +76,9 @@ src/
 ```
 
 > **唯一真理源声明**：本节是**顶层目录结构的唯一冻结契约**（增删顶层模块必须先走 [new-module-guide.md](./generic/new-module-guide.md) 并经 ADR 记录）。模块**内部**文件命名（index.ts / types.ts / core.ts / helpers.ts）以 [backend_layers_rules.md §模块内文件命名](./backend_layers_rules.md) 为**快照性质**参考，随重构可能漂移、**不构成冻结契约**——两处冲突以本节为准。
-> **已移出**：`SqliteStorage` / `cli/` / `commander` / `better-sqlite3`（→ 宿主项目）
+> **已移出**：`SqliteStorage`（**原 better-sqlite3 实现**） / `cli/` / `commander` / `better-sqlite3`（→ 宿主项目）
+> **2026-10-16 补充**：内核另提供基于 `node:*` 内建模块的 SQLite 实现（`src/memory/nodeSqliteStorage.ts` 的
+> `createNodeSqliteStorage` 工厂）——上面「已移出」指的是 native 版实现，二者不矛盾（ADR-002 补充节）。
 
 ## 4. 命名规范（与 .trae/rules/ 一致）
 

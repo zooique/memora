@@ -208,7 +208,7 @@ await agent.close();
 
 | 接口 | 职责 | 内置实现 | 宿主注意 |
 |------|------|----------|----------|
-| `IMemoryStorage` | 记忆 CRUD + 搜索 + 按 source 查询 | `InMemoryStorage`（**仅内存占位，不持久化**） | 生产须宿主实现持久化（如 SQLite）；重启后数据依赖宿主实现 |
+| `IMemoryStorage` | 记忆 CRUD + 搜索 + 按 source 查询 | `InMemoryStorage`（**仅内存占位，不持久化**）+ **可选落盘实现** `createNodeSqliteStorage(dbPath)`（基于 `node:*` 内建模块，零第三方依赖） | 持久化后端由宿主选：经内核工厂建 SQLite，或自实现（JSON / 自有 SQLite）；重启后数据依赖所选实现 |
 | `ISessionStore` | 会话历史 + 标题元数据持久化 | 无（宿主实现） | **不含检查点持久化**（2026-09-10 减法：跨重启恢复链整体退役）——中止/断电一律把未完成 turn 补全为完整 turn 身份、下次会话按历史加载；运行时暂停是同 turn 内续跑（内存态），无需跨进程载体 |
 | `ILogger` | 日志输出 | console fallback | 无 |
 | `ITracer` | 可观测性 span | `NOOP_TRACER` | 无 |
@@ -225,7 +225,7 @@ src/
 │   ├── contextManager.ts / contextPreparer.ts / toolExecutor.ts / toolRunner.ts ···
 │   ├── seed/         # turn（prepare → act/difficulty → reflect，含多 turn 任务编排）
 │   └── managers/     # 16 个专职 Manager/服务类（memoryInspector / memoryGovernance / roundSummaryGenerator / sessionManager / sessionArchiver / archiveCoordinator / workProjection / textPolishManager / chatLockManager 等）
-├── memory/           # 记忆引擎（IMemoryStorage + InMemoryStorage + 纯关键词召回 / 融合排序 / 治理常量）
+├── memory/           # 记忆引擎（IMemoryStorage + InMemoryStorage + 可选 SQLite 落盘实现 + 纯关键词召回 / 融合排序 / 治理常量）
 ├── role-pack/        # 角色包（manifest 解析 + validator + strategyResolver + 能力映射）
 ├── skill/            # 技能管理（全局池 + 角色包绑定，渐进披露 + skillScriptRunner）
 ├── llm/              # LLM 适配层（provider + openaiCompatible + factory）

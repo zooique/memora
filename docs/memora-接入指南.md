@@ -6,7 +6,7 @@
 >
 > **对接入者有影响的迁移结论**（不含历史流水，细节见 [API 参考手册](./memora-api-reference.md)）：
 > - 1.0 为正式发布，API 已稳定；2.0 起设定记忆（persona/rules/skills）解耦为纯文件 + 内存缓存，唯一归角色包、不进记忆库（ADR-025），角色管理统一走 `agent.rolePack`。
-> - 已移除：`SqliteStorage`（移出内核，由宿主实现 `IMemoryStorage`）、洞察层（`insight.*`）、AutoConfigRefiner / ConfigManager、记忆关系图谱与用户画像层（偏好收敛为 round-summary，冲突改用 `supersededBy` 布尔标记）。
+> - 已移除：`SqliteStorage`（**原 better-sqlite3 实现**移出内核，由宿主实现 `IMemoryStorage`——注意这是 native 实现出内核，**不等于**内核不再提供任何 SQLite 实现；5.0.0 起内核另有基于 `node:*` 内建模块的 `createNodeSqliteStorage`）、洞察层（`insight.*`）、AutoConfigRefiner / ConfigManager、记忆关系图谱与用户画像层（偏好收敛为 round-summary，冲突改用 `supersededBy` 布尔标记）。
 >
 ---
 
@@ -468,6 +468,8 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | `createProviderFromConfig(name, config)` | 从命名配置创建单个 Provider 实例（扁平参数） |
 | `loadConfig(path?)` | 加载 `.memora/config.json` 项目级配置文件（或传入显式 configPath） |
 | `InMemoryStorage` | IMemoryStorage 的纯内存实现（测试用） |
+| `createNodeSqliteStorage(dbPath[, options])` | 内核提供的 SQLite 落盘实现**工厂**（基于 `node:*` 内建模块，零第三方依赖）。不可用时抛专属错误（错误码 `NOT_AVAILABLE`）——「当前环境能否用 SQLite」的**唯一判据**（勿自行解析版本号）。第二参数 `{ readOnly: true }` 返回只读视图 |
+| `ReadOnlyMemoryStorage` | 只读存储视图**类型**（`IMemoryStorage` 的读方法子集，结构上无写方法）。供只读宿主（如 MCP）复用同一实现，避免自写第二份 SQLite 语义 |
 | `setLogger(logger)` | 替换全局日志实现 |
 | `logger` | 全局日志实例 |
 | `segmentText(text)` | 中文分词工具 |
@@ -490,7 +492,22 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | `isRetryableErrorCode(code)` | 判断错误码是否可重试（5 种 retryable） |
 | `TypedEventEmitter` | 类型安全的事件发射器（Agent 继承此类） |
 
-**注意**：`SqliteStorage` 已移出到宿主项目，不再从 memora 导出。宿主需自行实现 `IMemoryStorage` 接口。
+**注意**：基于 **better-sqlite3** 的 `SqliteStorage` 仍已移出到宿主项目（native 编译模块不入内核），宿主可继续自行实现 `IMemoryStorage`。**但自 5.0.0 起，内核另提供可选的 SQLite 实现**：`createNodeSqliteStorage(dbPath)`——基于 `node:*` 内建模块（不引入第三方/native 依赖），宿主**无需自写**即可接入 SQLite；也可选择不接（继续 JSON / 内存实现）。用法：
+
+```typescript
+import { createNodeSqliteStorage, type IMemoryStorage } from '@zooique/memora';
+
+// 读写：文件不存在则建库（路径由宿主决定，内核不拼目录）
+let storage: IMemoryStorage;
+try {
+  storage = createNodeSqliteStorage(join(dataDir, 'memory.db'));
+} catch (err) {
+  // 唯一判据：工厂抛出的专属错误（errorCode = ToolErrorCode.NOT_AVAILABLE）→ 降级到 JSON/内存实现
+  storage = new MyJsonStorage(join(dataDir, 'memories.json'));
+}
+// 只读宿主：返回对象结构上不含写方法
+// const readOnly = createNodeSqliteStorage(join(dataDir, 'memory.db'), { readOnly: true });
+```
 
 `IMemoryStorage` 接口要求实现 `count()` 和 `countBySource(source)` 方法，用于高效统计记忆数量（避免全量加载数据）。详见 [API 参考手册](./memora-api-reference.md)。
 
@@ -600,7 +617,7 @@ for (const chapter of chapters) {
 
 ## 十、关键约束
 
-**前提：存储方案由宿主自选，内核只定契约。** 内核只定义 `IMemoryStorage` / `ISessionStore` 接口，**不规定后端**——SQLite（better-sqlite3）、JSON 文件、内存实现一视同仁，任何后端都不得被写进内核逻辑。接口方法为**同步语义**（对齐 better-sqlite3），异步后端需另行扩展接口；JSON 落地实现在同步路径上做全量重写，记忆量增长时由宿主自行评估更优后端（阈值与权衡见 `storageInterface.ts` 头注释）。第一宿主 memora-vscode 当前用 JSON 文件，换成 SQLite **不需要改内核**。
+**前提：存储方案由宿主自选，内核只定契约。** 内核只定义 `IMemoryStorage` / `ISessionStore` 接口，**不规定后端**——SQLite、JSON 文件、内存实现一视同仁，任何后端都不得被写进内核逻辑（5.0.0 起内核**提供**可选的 SQLite 实现 `createNodeSqliteStorage`，但那是「多一个可选实现」，**不是**把后端写进逻辑——选哪个仍归宿主，`Agent` 构造契约不变）。接口方法为**同步语义**（对齐 better-sqlite3），异步后端需另行扩展接口；JSON 落地实现在同步路径上做全量重写，记忆量增长时由宿主自行评估更优后端（阈值与权衡见 `storageInterface.ts` 头注释）。第一宿主 memora-vscode 当前用 JSON 文件，换成 SQLite **不需要改内核**。
 
 1. **`provider` 是必填项** — Agent 无法独立运行
 2. **configDir** 指向 Agent 级配置目录，所有项目共享

@@ -8,7 +8,7 @@
 
 ## [5.0.0] · 未发布
 
-> **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：目标漂移检测链整体删除（公开 API 编译期破坏）+ 检查点公开方法减法（CHKPT-1/2/3）+ **原 [4.1.0] 区四小节整体归并**（2026-10-15 二次拍板取消 4.1.0：npm 实查最新已发布 = 4.0.0，从未发布的 minor 区无消费者可保、归并窗口仅存在于发版前）。宿主变更在 `[Unreleased] · 宿主` 区，不占内核版本号。
+> **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：目标漂移检测链整体删除（公开 API 编译期破坏）+ 检查点公开方法减法（CHKPT-1/2/3）+ **原 [4.1.0] 区四小节整体归并**（2026-10-15 二次拍板取消 4.1.0：npm 实查最新已发布 = 4.0.0，从未发布的 minor 区无消费者可保、归并窗口仅存在于发版前）+ **存储层 SQLite 实现内核切片**（2026-10-16 新增 2 个导出，非破坏）。宿主变更在 `[Unreleased] · 宿主` 区，不占内核版本号。
 
 ### ⚠️ Breaking Removed（内核 · 字面相似度目标漂移检测链整体退役 · `GOAL-DRIFT-1`）
 
@@ -57,6 +57,30 @@
   本次复核 `src/` 零残留，仅补台账销项，非重复改动。
 - 守卫：`uninterruptedWorkflow` 场景 E 改断言「`updatePlanItem` 必须经 `touchCheckpoint` 写点」
   （契约不降级，仅措辞去「脏」）；**变异验证**：注释该写点 → 用例红 → 复原绿。
+
+### Added（内核 · 存储层 SQLite 实现内核切片 · 服务 `DSH-1` / `MCP-SERVER-1` 共同前置，2026-10-16）
+
+- 新增 **`createNodeSqliteStorage(dbPath)`**（同步工厂）+ **`ReadOnlyMemoryStorage`**（只读视图类型）两个公共
+  导出；实现类 `NodeSqliteStorage`（`src/memory/nodeSqliteStorage.ts`）为**内部实现、不挂公共面**——宿主须经
+  工厂创建（基址 / 只读 / PRAGMA 全在工厂收口，防绕过校验自建实例）。
+- **零第三方依赖、零 native**：基于 `node:sqlite` **内建模块**（`node:*`），`dependencies` 仍为空；经
+  `process.getBuiltinModule('node:sqlite')` **延迟加载**（非静态 / 动态 `import()`、非 `require()`）⇒ 老环境
+  「扩展不挂 + JSON 照常」，**`engines` 不收紧**。模块不可用时抛专属错误（`errorCode = ToolErrorCode.NOT_AVAILABLE`，
+  复用「能力缺席」码，不新增枚举值）。
+- **可用性判据唯一来源** = 调用工厂的结果（成功 / 专属错误）——宿主**禁止**自行解析 `process.versions.node` 推断。
+- **只读视图**：`{ readOnly: true }` 重载返回仅含读方法 + `close` 的对象（写方法**结构上不存在**，非「约定不调」），
+  连接以 SQLite 只读模式打开（不建库、不迁移）；供只读宿主（MCP 等）零并列复用。
+- **语义逐位对齐 `InMemoryStorage`**：新增共用契约套件 `src/memory/__tests__/storageContract.ts`，同一份断言
+  参数化跑两实现；顺手补齐此前缺失的契约面（`touch` 的 true/false 语义、`metadata` / 摘要分轨字段 / `isModified` 往返）。
+- **API 子集白名单（防「因错误的原因通过」）**：根 `@types/node` 版本高于运行时门槛 ⇒ 只允许 ≥22.13 已有 API
+  （选项仅 `readOnly`，`@since v22.12.0`）；**刻意不用** `timeout` 选项（`@since v24.0.0`），忙等待改经
+  `PRAGMA busy_timeout`；写模式设 `journal_mode = WAL`（多进程读写不互斥、互见）。
+- 文档：`docs/memora-api-reference.md` §十六 承诺 2 个新符号（`publicApiSurfaceGuard` 向 A/C 双向夹住——
+  **实现 / 导出 / §十六 承诺必须同一 commit**）+ 存储段说明；`docs/memora-接入指南.md` 导出表与「SQLite 移出内核」
+  旧表述订正（移出的是 **better-sqlite3 版**实现，不等于内核不提供实现）；`ADR-002` 补记（回顾触发达成 + 边界澄清）；
+  `project-rules` 规则 6 补「可选内建模块经 `getBuiltinModule` 延迟取用」形态。
+- **边界（刻意不含）**：宿主接入（vscode 装配切换 / 一次性迁移 / memora-mcp 只读连接）属「宿主接入」切片，等触发；
+  本次不含 **JSON 装载层下沉**（债务由迁移完成自然归零）；`IMemoryStorage` 接口 15 方法**零改动**。
 
 ### Added（内核 · `memoryRecalled` 事件载荷补命中明细 · `MEM-EVENT-1`，原定 4.1.0、随 2026-10-15 归并）
 

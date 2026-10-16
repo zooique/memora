@@ -157,7 +157,9 @@ const manualTokens = extractIdentifierTokens(manualSection);
  *    token 化的残留词——非 API 承诺；
  *  - 类型/叙述词（4）：`DedupReport` / `SourceHealthReport` 为事件载荷 `interface`
  *    （模块内导出、不经桶导出——消费者经回调签名结构推导可用，不占具名导出）；
- *    `LLM` / `IDE` 为叙述用缩写词，非符号。
+ *    `LLM` / `IDE` 为叙述用缩写词，非符号；
+ *  - 枚举成员/属性引用（1）：`NOT_AVAILABLE` 是 `ToolErrorCode` 对象的成员（属性），
+ *    非模块级导出——消费者按 `ToolErrorCode.NOT_AVAILABLE` 访问，不占具名导出。
  *
  * ⚠️ 名单是**冻结的封闭集**：§十六 新增承诺符号若未进公开面，C 向即红——
  * 此时先补导出（真承诺），或确认属本名单同族后带分账理由加入。
@@ -178,6 +180,8 @@ const SECTION_SIXTEEN_NON_EXPORT_TOKENS: ReadonlySet<string> = new Set([
   'SourceHealthReport',
   'LLM',
   'IDE',
+  // 枚举成员（属性引用，非模块级导出）
+  'NOT_AVAILABLE',
 ]);
 
 describe('公共 API 面登记门槛守卫（PUBLIC-API-SURFACE-1）', () => {

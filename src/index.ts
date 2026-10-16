@@ -112,8 +112,13 @@ export { parseMemory } from '@/memory/types.js';
 export { escapeLike, escapeLikeSnippet, validateSource } from '@/memory/sourceValidation.js';
 export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
-export type { IMemoryStorage } from '@/memory/storageInterface.js';
+export type { IMemoryStorage, ReadOnlyMemoryStorage } from '@/memory/storageInterface.js';
 export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+// SQLite 落盘实现（node:sqlite 内建模块，零第三方依赖）：只出工厂不出实现类——
+// 宿主经 createNodeSqliteStorage(dbPath) 消费；不可用时抛专属错误（errorCode=NOT_AVAILABLE）
+// 作为「能否用 SQLite」的唯一判据（禁宿主自行解析版本号）。{ readOnly: true } 重载返回
+// ReadOnlyMemoryStorage 只读视图（写方法结构上不存在），供只读宿主零并列复用。
+export { createNodeSqliteStorage } from '@/memory/nodeSqliteStorage.js';
 // 取代状态判据：所有消费 supersededBy 的位置（含宿主治理展示）统一经此判定，
 // 与移除路径解耦（见 supersedeResolve.ts）。
 export { hasActiveSuperseder } from '@/memory/supersedeResolve.js';

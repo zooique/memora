@@ -1183,6 +1183,9 @@ export { escapeLike, escapeLikeSnippet, validateSource } from '@zooique/memora';
 export type { SourceValidationSeverity } from '@zooique/memora';
 export type { IMemoryStorage } from '@zooique/memora';
 export { InMemoryStorage } from '@zooique/memora';
+// 记忆存储落盘实现（工厂 + 只读视图）
+export { createNodeSqliteStorage } from '@zooique/memora';
+export type { ReadOnlyMemoryStorage } from '@zooique/memora';
 export type { ISessionStore, SessionMessage } from '@zooique/memora';
 export type { ForkResult } from '@zooique/memora';
 
@@ -1249,6 +1252,14 @@ export type {
   WriteConfirmationRequest,
 } from '@zooique/memora';
 ```
+
+> **记忆存储落盘实现（2026-10-16 新增，内核切片）**：`createNodeSqliteStorage`（**同步工厂**，收数据库文件全长路径，
+> 返回 `IMemoryStorage`）与 `ReadOnlyMemoryStorage`（**只读视图类型**，即 `IMemoryStorage` 的读方法子集）。
+> 契约要点：① **只出工厂不出实现类**——实现类不挂公共面，须经工厂创建；② **可用性判据唯一来源 = 调用工厂的结果**
+> （模块不可用时抛专属错误，其错误码为 `ToolErrorCode.NOT_AVAILABLE`）；宿主**不得**自行解析 Node 版本号推断；
+> ③ **只读视图**：工厂第二参数为只读开关，返回对象**结构上不含写方法**（供只读宿主零并列复用同一实现），
+> 只读连接不建库、不迁移；④ 文件路径语义留在宿主侧（内核不拼目录、不定义文件名）；⑤ 实现仅依赖 Node 内建模块，
+> 不引入第三方运行时依赖。稳定性：随 `5.0.0` 起提供，语义受契约对拍测试（与 `InMemoryStorage` 逐位一致）约束。
 
 ---
 

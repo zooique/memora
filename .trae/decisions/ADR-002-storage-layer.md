@@ -108,6 +108,27 @@ IMemoryStorage **保持同步语义**，不新增 IAsyncMemoryStorage 兄弟接�
 ## 何时回顾
 
 - 阶段四启用 Web 形态时（可能需要 IAsyncMemoryStorage）
-- Node.js 内置 sqlite 稳定时（可提供 NodeSqliteStorage 实现，仍由宿主管理）
+- **Node.js 内置 sqlite 稳定时（可提供 NodeSqliteStorage 实现，仍由宿主管理）—— ✅ 已达成，见下补充节（2026-10-16）**
 - 宿主需要 IndexedDB / LevelDB 等非 SQLite 存储时
 - memora 新增任何依赖时（须通过零依赖硬约束审查）
+
+## 补充 · 「内置 sqlite 回顾条件」达成 + 边界澄清（2026-10-16）
+
+**触发达成**：上节第二条达成——内核落地「存储层 SQLite 升级」内核切片：新增 `createNodeSqliteStorage`
+（同步工厂）+ `ReadOnlyMemoryStorage`（只读视图类型）；实现类 `NodeSqliteStorage` 为**内部实现**，不挂公共面。
+
+**为什么不与「SQLite 实现移出内核」冲突（关键澄清）**：本 ADR 当日把 `SqliteStorage` 移出内核的**根因是
+better-sqlite3 属 native 编译模块**（见「理由」：内核零 native 依赖、`node_modules` 不含 C++ 编译模块）。
+被移出的是「**基于 better-sqlite3 的实现**」，**不是**「内核不得提供任何 SQLite 实现」。`node:sqlite` 是
+`node:*` **内建模块**——零第三方运行时依赖、零 native 编译产物，与本 ADR「定位定论」表（✅ 依赖 `node:*`
+内置模块合法；❌ 第三方运行时依赖；❌ native 编译模块）**全部相容**。
+
+**边界不变（仍然成立）**：
+- **存储实现仍由宿主注入**：内核提供实现，宿主决定「用哪个实现、连哪个文件、何时迁移」；`Agent` 构造契约零改动。
+- **内核不感知数据目录布局**：工厂收 `dbPath` **全长路径**，内核不拼 `.memora/`、不定义记忆文件名常量。
+- **内核不管生命周期与策略**：迁移时机、回收站保留期、并发编排均归宿主。
+- **不静态 import**：工厂经 `process.getBuiltinModule('node:sqlite')` 取模块（不是静态 / 动态 `import()`、
+  不是 `require()`）——老 Node 环境「扩展不挂、JSON 照常」，`engines` 无需收窄；不可用经专属错误
+  （`errorCode = NOT_AVAILABLE`）表达，「能否用 SQLite」判据唯一来源 = 工厂结果。
+
+**关联**：`docs/方案-存储层SQLite升级推演-20261016.md`（施工图 + 五条拍板）｜`tasks/待完成任务.md` `DSH-1`。
