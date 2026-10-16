@@ -137,6 +137,69 @@ describe('deriveTurnState', () => {
     });
   });
 
+  it('canContinue=false 注入 running（内核判据投影：暂停了也无输入可续跑）', () => {
+    // 判据 SSOT = 内核 agent.ts canContinueWithoutInput；宿主只投影不自判。
+    // 变异锚点：running 分支去掉条件展开 → 本例转红（字段丢失，webview 矩阵丢判据源）
+    expect(
+      deriveTurnState({
+        streaming: true,
+        paused: false,
+        liveRoundId: 'round-9',
+        canContinue: false,
+      }),
+    ).toEqual({ phase: 'running', roundId: 'round-9', canContinue: false });
+  });
+
+  it('canContinue=false 注入 waiting(ask) 与 waiting(pausePending)（按钮矩阵两个消费窗口）', () => {
+    expect(
+      deriveTurnState({
+        streaming: true,
+        paused: false,
+        pendingQuestions: [{ slot: 's', question: '选哪个？' }],
+        canContinue: false,
+      }),
+    ).toEqual({
+      phase: 'waiting',
+      reason: 'ask',
+      questions: [{ slot: 's', question: '选哪个？' }],
+      canContinue: false,
+    });
+    expect(
+      deriveTurnState({
+        streaming: true,
+        paused: false,
+        pausePending: true,
+        canContinue: false,
+      }),
+    ).toEqual({ phase: 'waiting', reason: 'pause', pausePending: true, canContinue: false });
+  });
+
+  it('paused 分支不投影 canContinue（内核不变量：paused ⇒ canContinueWithoutInput 恒 true）', () => {
+    // 不为不可能场景写代码：宿主 paused 分支携带该字段也无消费方（webview 矩阵 paused 相位不读）
+    expect(deriveTurnState({ streaming: false, paused: true, canContinue: false })).toEqual({
+      phase: 'waiting',
+      reason: 'pause',
+    });
+  });
+
+  it('canContinue 缺省 → 不写入 TurnState（旧生产者/测试；webview 侧按 true 处理）', () => {
+    expect(deriveTurnState({ streaming: true, paused: false })).toEqual({ phase: 'running' });
+  });
+
+  it('settled / idle 不投影 canContinue（done 相位无暂停按钮可门控）', () => {
+    expect(
+      deriveTurnState({
+        streaming: false,
+        paused: false,
+        lastRound: { id: 'round-1', status: 'complete' },
+        canContinue: false,
+      }),
+    ).toEqual({ phase: 'settled', roundId: 'round-1', status: 'complete' });
+    expect(deriveTurnState({ streaming: false, paused: false, canContinue: false })).toEqual({
+      phase: 'idle',
+    });
+  });
+
   it('已完成轮 → settled（round 级 status 原样透出）', () => {
     expect(
       deriveTurnState({

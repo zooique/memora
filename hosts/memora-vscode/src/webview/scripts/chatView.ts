@@ -2498,12 +2498,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let skeletonState: SkeletonState = { phase: 'idle' };
 
   /**
+   * 暂停按钮显隐判据缓存：内核 `canContinueWithoutInput` 投影（经 turn_update.state 送达）。
+   *
+   * 与 skeletonState **同船更新**（applySkeletonState 单写点内赋值），但单独存变量——
+   * `SkeletonState` 投影刻意不含它（该投影只服务「三态 + 申请在途」容器语义，判据是按钮
+   * 矩阵的自变量而非骨架态）。缺省 true = 旧宿主/首帧未送达，维持「运行中即显示」。
+   */
+  let canContinueFlag = true;
+
+  /**
    * 骨架状态单写点：更新容器 → 重算按钮语义。
    * 只做语义重算（与 legacy 调用集逐一对应）；`send.disabled`（syncSendEnabled）与
    * 会话控件锁由调用方按各自原有节奏调用，避免夹带行为变更。
    */
-  function applySkeletonState(next: SkeletonState): void {
+  function applySkeletonState(next: SkeletonState, canContinue = true): void {
     skeletonState = next;
+    canContinueFlag = canContinue;
     syncButtonSemantics();
     // 2b-2b 换真源：容器写入点从 setStatus（内部曾调 syncSendEnabled）迁到 turn_update 分支，
     // disabled 属按钮语义一部分，须在单写点同步——否则 running/paused/settled 切换后
@@ -2530,6 +2540,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return deriveButtonSemantics({
       state: skeletonState,
       hasInput: input.value.trim().length > 0,
+      canContinue: canContinueFlag,
     });
   }
 
@@ -5312,7 +5323,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 前值推演；宿主在流起始（running 投影）、流尾（settled/waiting）、申请在途（waiting pausePending）、
       // 重放（idle/settled）等一切 turn 状态变化点推送。legacy pause_pending 消息已删除
       //（宿主/ webview 双端同步删，申请在途统一由 turn_update.state 承载）。
-      applySkeletonState(skeletonFromTurnState(msg.state));
+      // canContinue 判据（内核 canContinueWithoutInput 投影）与骨架态同船送达——running/
+      // waiting 分支携带（paused 分支内核恒 true 不携带），缺省按 true 处理（见 applySkeletonState 形参缺省）。
+      const projectedCanContinue =
+        msg.state.phase === 'running' || msg.state.phase === 'waiting'
+          ? (msg.state.canContinue ?? true)
+          : true;
+      applySkeletonState(skeletonFromTurnState(msg.state), projectedCanContinue);
       // 待发送区渲染真源并入 turn_update 单通道（pending_queue_update 已删）。
       // pendingQueue 可选字段，缺省（旧宿主/测试构造）则不刷新待发送区（保持现状）。
       if (msg.pendingQueue) {

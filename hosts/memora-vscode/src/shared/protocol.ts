@@ -1324,7 +1324,17 @@ export type TurnState =
    * 而非造假占位（webview 骨架不消费 roundId，见 `SkeletonState` 投影）；
    * 流内已知后（`postTurnUpdate(live)`）补填。
    */
-  | { phase: 'running'; roundId?: string }
+  | {
+      phase: 'running';
+      roundId?: string;
+      /**
+       * 内核 `Agent.canContinueWithoutInput()` 投影（暂停按钮显隐判据 SSOT）：
+       * false = 纯单轮无在途计划 / 全 blocked 计划 / error 态——暂停了也无输入可续跑，
+       * 按内核设计不暴露暂停按钮（判据真源 = agent.ts canContinueWithoutInput）。
+       * 缺省 true = 旧宿主/测试构造未接线，维持「运行中即显示」的既有行为。
+       */
+      canContinue?: boolean;
+    }
   /**
    * 等待外部输入：pause（用户申请/已生效）与 ask（LLM 提问）UI 形态同构，
    * 差别只在 reason 与是否带 questions。
@@ -1335,6 +1345,8 @@ export type TurnState =
       reason: 'pause' | 'ask';
       pausePending?: boolean;
       questions?: PendingQuestionDto[];
+      /** 同 `running.canContinue`：申请在途窗口的暂停按钮显隐判据（paused 态内核恒 true） */
+      canContinue?: boolean;
     }
   /** 已收场（turn 级；不等于 round 级判据 isRoundSettled） */
   | { phase: 'settled'; roundId: string; status: RoundStatus };

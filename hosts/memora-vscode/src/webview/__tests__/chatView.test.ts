@@ -1320,6 +1320,21 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(pauseBtn.hidden).toBe(true);
   });
 
+  it('thinking + canContinue=false：暂停按钮隐藏；判据转真恢复（内核投影经 turn_update.state 单通道）', () => {
+    mountChatView();
+    const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
+    // 缺省（旧宿主/首帧未送达）：显示——维持接线前既有行为
+    dispatchTurn({ phase: 'running' });
+    expect(pauseBtn.hidden).toBe(false);
+    // 内核判定「暂停了也无输入可续跑」（纯单轮无在途计划 / 全 blocked 计划 / error 态）→ 隐藏，
+    // 不宣告无收尾能力的意图（按钮只宣告路由真实收下的意图）
+    dispatchTurn({ phase: 'running', canContinue: false });
+    expect(pauseBtn.hidden).toBe(true);
+    // 判据转真（计划落表 / 恢复可续跑）→ 恢复显示；同相位内反复，投影即快照
+    dispatchTurn({ phase: 'running', canContinue: true });
+    expect(pauseBtn.hidden).toBe(false);
+  });
+
   // ─── pending-queue-bar DOM 渲染（pendingQueue 并入 turn_update 单通道） ───
 
   it('turn_update.pendingQueue → 懒创建 .pending-queue-bar 并渲染全部条目', () => {

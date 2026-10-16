@@ -102,6 +102,18 @@ export interface ButtonSemanticsInput {
   state: SkeletonState;
   /** 输入框是否有非空内容（决定发送按钮是「停止」还是「补充/发送」） */
   hasInput: boolean;
+  /**
+   * 内核 `canContinueWithoutInput` 投影（暂停按钮显隐判据 SSOT，经 turn_update.state 送达）。
+   *
+   * false = 当前 turn 暂停了也无输入可续跑（纯单轮无在途计划 / 全 blocked 计划 /
+   * error 态）→ thinking 相位隐藏暂停按钮（不宣告无收尾能力的意图）。
+   * **缺省 true** = 旧宿主/测试未接线，维持「运行中即显示」的既有行为。
+   *
+   * 只作用于 thinking 相位：paused 相位下内核判据①（status === 'paused'）恒 true，
+   * 宿主投影因此不在 waiting(pause) 分支携带该字段——paused 分支不消费它（不为不可能
+   * 场景写代码）。
+   */
+  canContinue?: boolean;
 }
 
 /**
@@ -137,11 +149,18 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
   const pausePending = derivePausePending(state);
 
   if (sessionUiState === 'thinking') {
+    // 判据 SSOT 接线：内核判定「暂停了也无输入可续跑」（canContinue=false）时不暴露暂停
+    // 按钮——按钮只宣告路由真实收下的意图（与 ask 空输入隐藏续跑键同一条纪律）。
+    // 缺省 canContinue（旧宿主）= true，行为与接线前一致。
+    const canPause = input.canContinue ?? true;
     return {
       // 申请在途即切「继续 ▶」：用户心智 = 申请在了就是在暂停，可再点反悔（取消申请）
-      pause: pausePending
-        ? { icon: 'play', title: '继续（点击取消暂停申请）', ariaLabel: '继续（取消暂停申请）' }
-        : { icon: 'pause', title: '暂停生成', ariaLabel: '暂停生成' },
+      pause:
+        canPause || pausePending
+          ? pausePending
+            ? { icon: 'play', title: '继续（点击取消暂停申请）', ariaLabel: '继续（取消暂停申请）' }
+            : { icon: 'pause', title: '暂停生成', ariaLabel: '暂停生成' }
+          : null,
       send: hasInput
         ? {
             loading: false,

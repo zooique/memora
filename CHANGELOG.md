@@ -864,6 +864,15 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Added（宿主 · 暂停按钮显隐判据接线 `canContinueWithoutInput` · TurnState 单通道投影 · 2026-10-16）
+
+5.0.0 公开面清理批宿主接线：内核 `Agent.canContinueWithoutInput()` 判据（「暂停了也无输入可续跑」的形态不暴露暂停按钮）此前宿主是「运行中即显示」的旧行为近似。接线走 **TurnState 单通道投影**：protocol `TurnState` 运行中/提问等待两相位加 `canContinue?: boolean`（缺省 true 保旧行为）→ `deriveTurnState` 三分支条件展开 → `chatPanel.postTurnUpdate` 现取内核判据 → `deriveButtonSemantics` thinking 分支门控 → webview `canContinueFlag`。
+
+- **判据不复制**：false = 纯单轮无在途计划 / 全 blocked 计划 / error 态，真源 = 内核 agent.ts；paused 相位不投影（内核该态恒 true，投影即冗余）。
+- **修桩纪律（同型第四次）**：4 个 chatPanel 测试文件旧 agent 桩缺该方法 → postTurnUpdate TypeError 中断链路。按文件自带纪律「替身缺方法即抛错，宿主侧不得用 `?.()` 兜此类缺口」（那是在给替身违约打掩护、把真实契约缺口藏进 optional 链）——**修桩不修生产**。
+- **踩坑记账（「因错误的原因通过」实证）**：vitest/esbuild 不查类型——补桩 replace_all 的 4 空格模式作为子串误命中 6 空格行，与 6 空格 replace_all 双重插入重复键；运行期后者覆盖前者且同为 `() => true` ⇒ 4 文件 92 条复跑全绿但 `tsc --noEmit` TS1117 红。删重复行后复绿（「改完必跑 tsc」的又一实证）。
+- **守卫**：`chatPanelPauseProjection` +2 透传 / `turnProjection` +5（含 paused 不投影、缺省不写）/ `turnUiState` +5（thinking 门控 + pausePending 保留「继续 ▶」取消退路）/ `chatView` +1 端到端。
+
 ### Fixed（宿主 · 占用构成条补「动态注入」段（四段 → 五段）+ 协议口径订正 · `CTX-OCC-1` 宿主侧 · 2026-10-16）
 
 内核占用快照补段后宿主同步呈现：`context_occupancy` 协议新增 `dynamicSystemTokens` 必填字段；

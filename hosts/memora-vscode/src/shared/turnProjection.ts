@@ -74,6 +74,12 @@ export interface TurnStateInput {
   liveRoundId?: string;
   /** 最近一轮（settled 态需要 roundId + status） */
   lastRound?: { id: string; status: RoundStatus };
+  /**
+   * 内核 `Agent.canContinueWithoutInput()` 快照（暂停按钮显隐判据，SSOT 投影）。
+   * 宿主 `postTurnUpdate` 每次投影时现取；缺省（旧生产者/测试）= 不写入 TurnState
+   * （webview 侧按 true 处理，维持「运行中即显示暂停按钮」的既有行为）。
+   */
+  canContinue?: boolean;
 }
 
 /**
@@ -96,20 +102,36 @@ export function deriveTurnState(input: TurnStateInput): TurnState {
   // `_pendingQuestions` 生命周期保证语义成立：宿主仅事件/兜底全量写（chatPanel L2566/L2811），
   // 回答（L2338）与超时（L2299）整体清空——非空即「待答在途」，与 paused 无关。
   if (questions.length > 0) {
-    return { phase: 'waiting', reason: 'ask', questions: [...questions] };
+    return {
+      phase: 'waiting',
+      reason: 'ask',
+      questions: [...questions],
+      ...(input.canContinue !== undefined ? { canContinue: input.canContinue } : {}),
+    };
   }
   if (input.paused) {
+    // 内核不变量：paused ⇒ canContinueWithoutInput 恒 true（agent.ts 判据①最高优先级），
+    // 故本分支不投影 canContinue——webview 矩阵的 paused 相位同样不消费该字段。
     return { phase: 'waiting', reason: 'pause' };
   }
   if (input.pausePending) {
-    return { phase: 'waiting', reason: 'pause', pausePending: true };
+    return {
+      phase: 'waiting',
+      reason: 'pause',
+      pausePending: true,
+      ...(input.canContinue !== undefined ? { canContinue: input.canContinue } : {}),
+    };
   }
   if (input.streaming) {
     // 有流在跑即 running（不要求 liveRoundId 证据——流起始投影时首个 chunk 未到、
     // roundId 尚不可知，如实缺省而非造假占位；`TurnState.running.roundId` 因此可选）。
     // ⚠ 顺序依赖：paused / pausePending 判定在前，此处只兜「既非挂起也非申请在途」
     // 的纯运行态；三角色（ask / pause / 申请在途）不在此分支。
-    return { phase: 'running', roundId: input.liveRoundId };
+    return {
+      phase: 'running',
+      roundId: input.liveRoundId,
+      ...(input.canContinue !== undefined ? { canContinue: input.canContinue } : {}),
+    };
   }
   if (input.lastRound && isRoundSettled(input.lastRound.status)) {
     return { phase: 'settled', roundId: input.lastRound.id, status: input.lastRound.status };

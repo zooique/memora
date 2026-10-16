@@ -2670,6 +2670,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       pendingQuestions: questions.length > 0 ? questions : undefined,
       liveRoundId: live?.roundId,
       lastRound: last ? { id: last.id, status: last.status } : undefined,
+      // 暂停按钮显隐判据 SSOT：现取内核 canContinueWithoutInput（纯函数、无 init 断言），
+      // 每次投影刷新——plan_snapshot / 状态跃迁都经 postTurnUpdate 重投影，判据不腐化。
+      // agent 未就绪（ready 握手前）缺省 true = 维持「运行中即显示」的既有行为。
+      canContinue: this._agent?.canContinueWithoutInput() ?? true,
     });
     this.post({
       type: 'turn_update',

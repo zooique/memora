@@ -75,6 +75,8 @@ function inputAgentStub() {
     }),
     getCheckpoint: () => undefined,
     isPausePending: () => false,
+    // 暂停按钮显隐判据：postTurnUpdate 现取，缺则 TypeError（同型见 chatPanelHistory.test.ts）
+    canContinueWithoutInput: () => true,
     cancelPauseRequest: vi.fn(),
     interject,
     answerQuestion,
