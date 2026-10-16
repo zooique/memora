@@ -228,7 +228,7 @@ Agent 通过一组 getter 暴露专职 Manager 与组件。详见后续章节。
 | `agent.skills` | `SkillManager \| null` | 技能匹配与注入 |
 | `agent.governance` | `MemoryGovernance \| null` | 记忆治理（去重/冲突检测/建议） |
 | `agent.memory` | `MemoryInspector \| null` | 记忆查询 + 写入（`writeXxx` 前缀） |
-| `agent.works` | `WorkProjectionManager \| null` | 作品投影（工作内容摘要） |
+| `agent.works` | `WorkProjectionManager \| null` | 作品投影（项目文件指针索引） |
 | `agent.polish` | `TextPolishManager \| null` | 文本润色（LLM 语法修正 + 表达优化） |
 
 > **读写统一入口**：`agent.memory`（MemoryInspector）同时负责记忆的查询与写入——只读方法（snapshot/searchByKeyword/stats/list/getById/getBySource/listDeleted 等；**`search()` 已于 4.0.0 移除**，见 §4.2）与写方法（`writeXxx` 前缀：writeUpsert/writeDelete/writeRestore/writePurge/writePurgeExpired。`writeBoost` 已随 score 字段退役删除，2026-09-09）。旧的 `memoryMutator`/`MemoryMutator` 拆分已在后续迭代中合并回 `MemoryInspector`，二者均不再存在。
@@ -458,7 +458,7 @@ interface Memory {
 | `SOURCE_LABELS.PERSONA` | `'persona'` | 角色人格（残留兼容标签，已随 ADR-025 归角色包、不进记忆库） |
 | `SOURCE_LABELS.RULE` | `'rule'` | 创作规则（残留兼容标签，已随 ADR-025 归角色包、不进记忆库） |
 | `SOURCE_LABELS.SKILL` | `'skill'` | 技能定义（残留兼容标签，已随 ADR-025 归角色包、不进记忆库） |
-| `SOURCE_LABELS.WORK_PROJECTION` | `'work-projection'` | 作品投影（已移出记忆库，2026-08-20 落项目目录 projections/） |
+| `SOURCE_LABELS.WORK_PROJECTION` | `'work-projection'` | 作品投影（**残留兼容标签**：对应内容不归记忆库管理；现行投影为项目级 `work-projections.json` 指针索引，见 §九） |
 | `SOURCE_LABELS.ROUND_SUMMARY` | `'round-summary'` | 轮次摘要（当前实际写入记忆库的主要 source） |
 | `SOURCE_LABELS.UNKNOWN` | `'unknown'` | 未知来源（未被已知标签覆盖时的兜底值） |
 
@@ -878,21 +878,17 @@ interface BackgroundTask {
 
 > 注：`WorkProjectionManager` 自 4.0.0 起为**内部类型**（不可具名 import），此处仅作 `agent.works` 的签名描述；可具名 import 的公开面以 §十六 为准。
 
-作品投影是文件内容的轻量级摘要（50-100 字概要 + 结构 + 关键决策），存储在**项目级目录** `<memoraDir>/projections/<slug>.json`（不进入记忆库）。原始文件内容不进投影，Agent 通过工具按需读取。
+作品投影是**项目文件的「极简指针索引」**：一张清单，记录项目关键文件的 `name`（文件名）+ `description`（一句话说明）+ `source`（源文件路径），存储在**项目级文件** `<memoraDir>/work-projections.json`（JSON 数组，不进入记忆库）。**只存指针不存内容**——AI 按 `description` 自主判断相关性，再按需 `read_file` 读取 `source` 原文（设计详述见 [architecture/work-projection.md](architecture/work-projection.md)）。
 
-> **与记忆系统的边界**：作品投影是"作品感知"而非"对话记忆"（对话记忆唯一为 round-summary，沉淀在记忆库）。它**不参与记忆召回、不参与记忆治理**（去重/冲突检测不覆盖），随项目隔离——换项目即消失。宿主如需让模型感知投影，可显式经 `agent.works.loadAll()` 注入。
+> **与记忆系统的边界**：作品投影是"作品感知"而非"对话记忆"（对话记忆唯一为 round-summary，沉淀在记忆库）。它**不参与记忆召回、不参与记忆治理**（去重/冲突检测不覆盖），随项目隔离——换项目即消失。装配链已在系统提示词自动注入投影块（`contextBlock()`），宿主无需手动注入。
 
 ### 类型定义
 
 ```typescript
 interface WorkProjectionEntry {
-  id: string;            // 唯一 ID（work-proj-<slug>）
-  sourcePath: string;    // 文件路径
-  fileHash: string;      // 文件 hash（SHA-256，用于变更检测）
-  summary: string;       // 概要（50-100 字）
-  structure: string[];   // 结构（章节/模块列表，2-8 个）
-  keyDecisions: string[];// 关键决策（1-3 个）
-  updatedAt: string;     // 最后更新时间
+  name: string;        // 作品名（默认取源文件名去扩展名）
+  description: string; // 一句话说明（告诉 AI 这个文件是干什么的）
+  source: string;      // 源文件路径（相对项目根，指向真实文件）
 }
 ```
 
@@ -900,29 +896,22 @@ interface WorkProjectionEntry {
 
 | 方法 | 用途 |
 |------|------|
-| `agent.works.ensureProjection(filePath, content, fileName?)` | 检查并更新作品投影（核心方法）。计算 hash → 查询已有投影 → 无则生成 / hash 变则重新生成 / hash 同则跳过。同文件并发调用时复用 in-flight Promise，避免重复 LLM 调用 |
-| `agent.works.getProjection(filePath)` | 获取已有的作品投影（不触发生成） |
-| `agent.works.loadAll()` | 加载所有作品投影（扫描项目目录 `<memoraDir>/projections/`，非记忆召回） |
+| `agent.works.registerWork(sourcePath, description)` | 登记作品索引（`register_work` 工具数据源）：同 `source` 覆盖、否则追加；写入为「读盘 refresh → 追加 → 原子写盘」。预存文件格式异常（非顶层 JSON 数组）时**拒绝写入**防覆盖原索引（fail-safe） |
+| `agent.works.refresh()` | 从磁盘重新同步条目缓存，返回当前条目 |
+| `agent.works.listWorks()` | 列出全部投影条目（读盘同步后返回） |
+| `agent.works.contextBlock()` | 生成系统提示词注入块（`【项目索引】` 段；无条目返回空串） |
+| `agent.works.loadAndGetContextBlock()` | `refresh()` + `contextBlock()` 的组合 |
 
-> **注意**：`agent.works` 在 `init()` 前返回 `null`。`ensureProjection` 依赖后台 LLM Provider 生成摘要，未注入 `backgroundProvider` 时使用前台 Provider。
+> **注意**：`agent.works` 在 `init()` 前返回 `null`。内核侧**零 LLM 依赖**（纯读写、无后台任务）；`description` 可由宿主生成后传入（vscode 命令即先经 LLM 生成一句话描述、失败时用文件名兜底）。并发：当前为单 Agent 单进程场景，`registerWork` 无文件锁。
 
 ### 宿主接入示例
 
 ```typescript
-// 宿主工具读取文件后，调用 ensureProjection 生成/更新投影
-agent.tools.registerTool(
-  {
-    name: 'read_file',
-    description: '读取文件内容',
-    parameters: { /* ... */ },
-  },
-  async (args) => {
-    const content = await fs.readFile(args.path, 'utf-8');
-    // 异步生成投影（fire-and-forget，不阻塞工具返回）
-    void agent.works?.ensureProjection(args.path, content);
-    return content;
-  },
-);
+// vscode 宿主命令（memora.registerWork）：把工作区文件登记为作品索引
+const relativePath = vscode.workspace.asRelativePath(targetUri);
+// 宿主可选：先自行生成一句话描述（LLM 或用户输入）——内核只负责落盘
+const result = await agent.works?.registerWork(relativePath, description);
+// result: WorkProjectionEntry | null（null = 路径越界或索引文件格式异常被拒写）
 ```
 
 ---
@@ -982,7 +971,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.skills` | `SkillManager` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
 | `agent.governance` | `MemoryGovernance` | `.deduplicate()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()` |
 | `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.searchByKeyword()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()`（**`.search()` 已于 4.0.0 移除**）；写：`.writeUpsert()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` |
-| `agent.works` | `WorkProjectionManager` | `.ensureProjection(filePath, content, fileName?)` / `.getProjection(filePath)` / `.loadAll()` |
+| `agent.works` | `WorkProjectionManager` | `.registerWork(sourcePath, description)` / `.refresh()` / `.listWorks()` / `.contextBlock()` / `.loadAndGetContextBlock()` |
 | `agent.polish` | `TextPolishManager` | `.polish(...)`（文本润色：LLM 语法修正 + 表达优化） |
 
 > **说明**：`suggest()` / `sourceHealth()` 经 `agent.governance` 暴露，不挂在 `agent.memory` 下。旧的 `memoryMutator` 访问器与 `MemoryMutator` 类已合并回 `MemoryInspector`，请勿再使用。

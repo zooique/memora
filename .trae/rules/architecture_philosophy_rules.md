@@ -35,7 +35,7 @@ description: 架构哲学原则（12 条：摘要即记忆（memory-as-summary�
 | `rule` | 设定记忆，不参与 recall（角色包 rules.md 确定性注入，始终在线） |
 | `skill` | 设定记忆，不参与 recall |
 | `content` | 按相关度增量召回（治理页手动写入轨，非内核自动） |
-| `work-projection` | 不参与 recall（落项目 `<memoraDir>/projections/`） |
+| `work-projection` | 不参与 recall（残留兼容标签；投影为项目级 `<memoraDir>/work-projections.json` 指针索引） |
 | `round-summary` | 按相关度增量召回（唯一自动轨） |
 | `profile` | 按相关度增量召回（存量兼容，不再新写入） |
 
