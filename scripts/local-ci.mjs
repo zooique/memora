@@ -21,6 +21,10 @@
  *      缺此步 → 「门禁全绿」与「宿主 bundle 陈旧」可以并存。
  *   6. 补跑 **dist 契约**（`verify:dist-contract`）—— 断言宿主 bundle 与内核 dist **同代**。
  *      没有它，宿主 dist 陈旧这一失效模式在门禁里零覆盖（历史教训：未改宿主 TS ≠ 未影响宿主 dist）。
+ *   7. 补跑**宿主镜像刷新**（`host:sync`）—— 宿主以 `file:../..` **硬链接**依赖内核 dist，
+ *      内核 `build` 后宿主 `node_modules` 里的镜像副本**不会自动更新**；缺此步则宿主
+ *      test / build / dist 契约可因加载旧内核「同根红」（2026-10-16 实锤：漏刷一次 5 红，
+ *      `pnpm install --offline` 重链后三处全绿）。
  *
  * 用法：
  *   node scripts/local-ci.mjs                 # ≡ --preset=full（全量；步数由运行时打印，注释不写死）
@@ -167,6 +171,21 @@ const ALL_STEPS = [
     name: '内核生产构建',
     cmd: 'npm run build',
     cwd: ROOT,
+    required: true,
+    presets: ['full'],
+    optionalFlag: 'skip-build',
+  },
+  // 宿主镜像刷新：内核 build 出新 dist 后，宿主 node_modules 里的 file: 硬链接副本
+  // （hosts/memora-vscode/package.json "@zooique/memora": "file:../.."）不会自动更新——
+  // 2026-10-16 实锤：漏刷此步 → 宿主 test 32 failed（缺 nodeSqliteStorage 导出，加载旧镜像）
+  // + host:build + verify:dist-contract「5 红同根」；`pnpm install --offline` 重链后全绿。
+  // 位置约束：必须在 kernel:build 之后、任一宿主步骤之前（类型检查也读镜像）。
+  // 与 kernel:build 同受 --skip-build 约束：不重建内核则无需刷新。
+  {
+    id: 'host:sync',
+    name: '宿主镜像刷新（pnpm install --offline）',
+    cmd: 'pnpm install --offline',
+    cwd: HOST,
     required: true,
     presets: ['full'],
     optionalFlag: 'skip-build',
