@@ -1167,7 +1167,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     const deleted = memory.listDeleted().length;
     // supersede 治理模型：统计已被取代的活跃记忆（supersededBy 非空），对齐内核写路径取代语义。
     // list() 默认仅 50 条，须按 stats().total（精确活跃数）取全量，否则超量时低报。
-    const superseded = memory.list(stats.total).filter((m) => hasActiveSuperseder(m, memory)).length;
+    const superseded = memory
+      .list(stats.total)
+      .filter((m) => hasActiveSuperseder(m, memory)).length;
     const governance: GovernanceStatsDto = {
       active: stats.total,
       deleted,
