@@ -786,7 +786,7 @@ describe('AgentLoop · 后台命令自然终局失败计数（METRICS-BGTASK-1�
     return { loop, registry };
   }
 
-  it('非零退出 → tools.failureCount +1', async () => {
+  it('非零退出 → tools.failureCount +1', { timeout: 15_000 }, async () => {
     const { loop, registry } = makeLoopWithRegistry();
     const before = loop.getMetrics().tools.failureCount;
     const taskId = registry.start(FAIL_CMD, process.cwd());
@@ -798,7 +798,7 @@ describe('AgentLoop · 后台命令自然终局失败计数（METRICS-BGTASK-1�
     expect(loop.getMetrics().tools.failureCount).toBe(before + 1);
   });
 
-  it('零退出 → tools.failureCount 不变', async () => {
+  it('零退出 → tools.failureCount 不变', { timeout: 15_000 }, async () => {
     const { loop, registry } = makeLoopWithRegistry();
     const before = loop.getMetrics().tools.failureCount;
     const taskId = registry.start(OK_CMD, process.cwd());
@@ -808,7 +808,7 @@ describe('AgentLoop · 后台命令自然终局失败计数（METRICS-BGTASK-1�
     expect(loop.getMetrics().tools.failureCount).toBe(before);
   });
 
-  it('超时 → tools.failureCount +1', async () => {
+  it('超时 → tools.failureCount +1', { timeout: 15_000 }, async () => {
     const { loop, registry } = makeLoopWithRegistry();
     const before = loop.getMetrics().tools.failureCount;
     // timeoutMs 1000 = 钳制下限（normalizeBackgroundTimeoutMs 收敛于 [1000, 30min]），

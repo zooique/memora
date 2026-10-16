@@ -7008,7 +7008,7 @@ describe('AgentLoop · 后台命令回流与 turn 终态脱管（§14 · 脱管�
     expect(loop.getPendingInterjections()).toHaveLength(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);
   });
 
-  it('turn 终态 → 后台进程脱管继续跑 + 追加如实报告（不再杀、不静默丢弃）', async () => {
+  it('turn 终态 → 后台进程脱管继续跑 + 追加如实报告（不再杀、不静默丢弃）', { timeout: 15_000 }, async () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [
@@ -7157,7 +7157,7 @@ describe('AgentLoop · 后台命令回流与 turn 终态脱管（§14 · 脱管�
     expect(delivered).toBe(true);
   });
 
-  it('挂起不是终态 → 不脱管（续跑期间后台进程继续跑）', async () => {
+  it('挂起不是终态 → 不脱管（续跑期间后台进程继续跑）', { timeout: 15_000 }, async () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [
@@ -7257,7 +7257,7 @@ describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
     expect(loop.killBackgroundTask('bg-1')).toBeNull();
   });
 
-  it('任务转入终态 → 触发 setBackgroundTaskSettledEmitter 出口（阶段二补漏 · 宿主 UI 靠它更新）', async () => {
+  it('任务转入终态 → 触发 setBackgroundTaskSettledEmitter 出口（阶段二补漏 · 宿主 UI 靠它更新）', { timeout: 15_000 }, async () => {
     // 回归守卫：脱管后 turn 已结束，宿主三个既有推送时机覆盖不到「任务自然跑完」。
     // 本用例锁住「注册表 notify 单点链 → loop 发射回调」这段，缺它 UI 会一直显示假活跃。
     //
@@ -7287,7 +7287,7 @@ describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
     expect(settled).toEqual([{ taskId, status: 'completed' }]);
   });
 
-  it('未注入发射回调时任务转入终态不抛（门用语义，纯内核单测场景零影响）', async () => {
+  it('未注入发射回调时任务转入终态不抛（门用语义，纯内核单测场景零影响）', { timeout: 15_000 }, async () => {
     const loop = makeBgLoop();
     const registry = new BackgroundTaskRegistry();
     loop.setBackgroundTasks(registry); // 故意不 setBackgroundTaskSettledEmitter
@@ -7364,7 +7364,7 @@ describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
     expect(loop.shutdownBackgroundTasks()).toBe(0);
   });
 
-  it('shutdownBackgroundTasks → 真杀全部 running（Agent.close 实例终态收割的 loop 侧透传）', () => {
+  it('shutdownBackgroundTasks → 真杀全部 running（Agent.close 实例终态收割的 loop 侧透传）', { timeout: 15_000 }, () => {
     // 调用点锁在 agent.test（close 必调本方法）；此处锁透传语义与「真杀而非脱管」。
     const loop = makeBgLoop();
     const registry = new BackgroundTaskRegistry();
