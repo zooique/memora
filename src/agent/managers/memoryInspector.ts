@@ -6,6 +6,7 @@
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import { hasActiveSuperseder } from '@/memory/supersedeResolve.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import { configError } from '@/utils/errors.js';
@@ -225,9 +226,12 @@ export class MemoryInspector {
 
     // 单个通道：纯关键词搜索（无向量通道、无融合排序，FTS 索引已按相关性返回）
     const keywordResults = this.index.search(query, limit);
-    // 前置 superseded 过滤：被 supersededBy 取代的摘要不作为当前事实
-    // 返回（仍保留可回溯，trace_summary 可精确取原文）。在截断前过滤，避免占据 top-N 槽位挤掉有效命中。
-    const active = keywordResults.filter((m) => !m.supersededBy);
+    // 前置 superseded 过滤：被「现存且活跃」摘要取代的摘要不作为当前事实返回
+    // （仍保留可回溯，trace_summary 可精确取原文）；悬空指针（替代物已移除/软删）视为未取代，
+    // 旧摘要回退为当前版本——判据见 supersedeResolve.hasActiveSuperseder。
+    // 本过滤在 index.search 取回 top-limit 之后执行、被取代者不补位——已知边界：被取代条目
+    // 占槽位时返回可能少于 limit（不扩量重查；与 excludeRoundIds 的「不补位」同形态）。
+    const active = keywordResults.filter((m) => !hasActiveSuperseder(m, this.index));
     // 工具召回与装配期内容互斥（§5.1）：排除「正文或摘要已在眼前」轮次的 round-summary，
     // 避免 LLM 拿回眼前内容的摘要重复（excludeRoundIds 由调用方按 loop.getExclusionRoundIds 精确派生，
     // = 视图内 ∪ 被替换 ∪ 在途，天然不含当轮）。
@@ -306,6 +310,8 @@ export class MemoryInspector {
         count++;
       }
     }
+    // 无需在此收敛悬空取代指针：消费侧 hasActiveSuperseder 把悬空指针视为未取代，
+    // 被移除替代物的旧摘要自动回退为当前版本（见 supersedeResolve.ts），与移除路径解耦。
     return count;
   }
 

@@ -114,6 +114,9 @@ export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from '@/memory/storageInterface.js';
 export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+// 取代状态判据：所有消费 supersededBy 的位置（含宿主治理展示）统一经此判定，
+// 与移除路径解耦（见 supersedeResolve.ts）。
+export { hasActiveSuperseder } from '@/memory/supersedeResolve.js';
 
 // ─── 网络搜索导出 ──────────────────────────────────────────
 // IWebSearchProvider 接口：宿主项目可实现此接口注入自定义搜索引擎

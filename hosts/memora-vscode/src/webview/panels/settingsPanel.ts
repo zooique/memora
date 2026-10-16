@@ -12,6 +12,7 @@
  */
 import * as vscode from 'vscode';
 import type { Agent, MemoryInspector } from '@zooique/memora';
+import { hasActiveSuperseder } from '@zooique/memora';
 import type { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createBackgroundProvider } from '../../extension/host/llmConfig.js';
 import { inspectRolePackTeams } from '../../extension/host/rolePackTeams.js';
@@ -905,7 +906,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     const stats: MemoryStatsDto = memory.stats();
-    const memories: MemoryItemDto[] = memory.list(MEMORY_LIST_LIMIT).map(toItemDto);
+    const memories: MemoryItemDto[] = memory
+      .list(MEMORY_LIST_LIMIT)
+      .map((m) => toItemDto(m, memory));
     this.post({ type: 'memory_loaded', stats, memories });
   }
 
@@ -933,7 +936,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     const memory = await this.ensureMemory();
     if (!memory || page < 1 || pageSize < 1) return;
     const all = memory.list(page * pageSize);
-    const items: MemoryItemDto[] = all.slice((page - 1) * pageSize, page * pageSize).map(toItemDto);
+    const items: MemoryItemDto[] = all
+      .slice((page - 1) * pageSize, page * pageSize)
+      .map((m) => toItemDto(m, memory));
     this.post({ type: 'memory_page_result', page, items });
   }
 
@@ -1130,7 +1135,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     // 全量列举：内核契约 listDeleted(缺省) = 全部；回收站视图无分页，截断会静默丢条目
-    const items = memory.listDeleted().map(toItemDto);
+    const items = memory.listDeleted().map((m) => toItemDto(m, memory));
     this.post({ type: 'memory_recycle_loaded', items });
   }
 
@@ -1162,7 +1167,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     const deleted = memory.listDeleted().length;
     // supersede 治理模型：统计已被取代的活跃记忆（supersededBy 非空），对齐内核写路径取代语义。
     // list() 默认仅 50 条，须按 stats().total（精确活跃数）取全量，否则超量时低报。
-    const superseded = memory.list(stats.total).filter((m) => m.supersededBy !== undefined).length;
+    const superseded = memory.list(stats.total).filter((m) => hasActiveSuperseder(m, memory)).length;
     const governance: GovernanceStatsDto = {
       active: stats.total,
       deleted,
@@ -1669,20 +1674,23 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
 }
 
 /** 内核 Memory → 记忆条目 DTO（deletedAt 仅回收站条目携带；round-summary 顶层字段透传） */
-function toItemDto(m: {
-  id: string;
-  name: string;
-  source: string;
-  content: string;
-  createdAt?: string;
-  accessedAt?: string;
-  deletedAt?: string;
-  summaryType?: 'preference' | 'fact' | 'decision' | 'intent' | 'general';
-  sessionName?: string;
-  roundId?: string;
-  isModified?: boolean;
-  supersededBy?: string;
-}): MemoryItemDto {
+function toItemDto(
+  m: {
+    id: string;
+    name: string;
+    source: string;
+    content: string;
+    createdAt?: string;
+    accessedAt?: string;
+    deletedAt?: string;
+    summaryType?: 'preference' | 'fact' | 'decision' | 'intent' | 'general';
+    sessionName?: string;
+    roundId?: string;
+    isModified?: boolean;
+    supersededBy?: string;
+  },
+  lookup: MemoryInspector,
+): MemoryItemDto {
   return {
     id: m.id,
     name: m.name,
@@ -1695,7 +1703,9 @@ function toItemDto(m: {
     sessionName: m.sessionName,
     roundId: m.roundId,
     isModified: m.isModified,
-    supersededBy: m.supersededBy,
+    // 悬空取代指针（替代物已移除/软删）不呈现为「已被取代」——经内核单一判据 hasActiveSuperseder
+    // 判定，与内核召回口径一致（见 @zooique/memora supersedeResolve）。
+    supersededBy: hasActiveSuperseder(m, lookup) ? m.supersededBy : undefined,
   };
 }
 

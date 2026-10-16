@@ -121,6 +121,58 @@ describe('垃圾回收服务', () => {
       expect(memoryStorage.getById(summaryId)).toBeNull();
     });
 
+    it('GC purge 替代物后旧摘要仍存活（数据层不丢失；悬空指针由消费侧判据处理）', () => {
+      // 分叉场景：round A 仍被引用（refCount=1），round B 成孤儿（refCount=0）
+      const roundA = createPendingRound('被引用的轮');
+      const completedA = completeRound(roundA, '回答A');
+      completedA.refCount = 1;
+      roundStore.save(completedA);
+
+      const roundB = createPendingRound('孤儿的轮');
+      const completedB = completeRound(roundB, '回答B');
+      completedB.refCount = 0;
+      roundStore.save(completedB);
+
+      const sessionName = '2026-09-10-main';
+      const oldId = `round-summary:${sessionName}:${roundA.id}`;
+      const newId = `round-summary:${sessionName}:${roundB.id}`;
+      const oldSummary: Memory = {
+        id: oldId,
+        content: '旧摘要（仍为当前版本）',
+        source: 'round-summary',
+        name: roundA.id,
+        sessionName,
+        roundId: roundA.id,
+        createdAt: new Date().toISOString(),
+        accessedAt: new Date().toISOString(),
+      };
+      const newSummary: Memory = {
+        id: newId,
+        content: '新摘要（替代物）',
+        source: 'round-summary',
+        name: roundB.id,
+        sessionName,
+        roundId: roundB.id,
+        createdAt: new Date().toISOString(),
+        accessedAt: new Date().toISOString(),
+      };
+      memoryStorage.upsert(oldSummary);
+      memoryStorage.upsert(newSummary);
+      // 写入取代指针（写时取代模型，见 roundSummaryGenerator）
+      memoryStorage.upsert({ ...oldSummary, supersededBy: newId });
+
+      // 执行 GC：B 孤儿被删 + 新摘要 purge；A 仍被引用不删
+      const result = gc.run();
+      expect(result.deleted).toBe(1);
+      // 新摘要被 purge
+      expect(memoryStorage.getById(newId)).toBeNull();
+      // 旧摘要仍活跃（数据层不丢失）；GC 不改写取代指针——悬空指针由消费侧
+      // hasActiveSuperseder 视为未取代（见 supersedeResolve.ts），旧摘要自动回退当前版本。
+      const old = memoryStorage.getById(oldId);
+      expect(old).not.toBeNull();
+      expect(old?.supersededBy).toBe(newId);
+    });
+
     it('应该按批处理清理', () => {
       // 创建多个孤立的 Round
       for (let i = 0; i < 25; i++) {

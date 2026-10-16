@@ -15,6 +15,7 @@ import {
 import { extractEnhancedKeywords, calculateWeightedJaccard } from '@/utils/segmenter.js';
 import { sha256Fingerprint } from '@/utils/hash.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import { hasActiveSuperseder } from '@/memory/supersedeResolve.js';
 import { logger } from '@/logging/logger.js';
 import { parseLlmJson } from '@/utils/json.js';
 import { nowIso } from '@/utils/time.js';
@@ -262,10 +263,14 @@ export class RoundSummaryGenerator {
     const sessionPrefix = roundSummarySessionPrefix(sessionName);
 
     const all = this.storage.getBySource(SOURCE_LABELS.ROUND_SUMMARY);
-    // 同 session + 未取代（排除自身）：按 createdAt 降序，取最近 N 条作候选
+    // 同 session + 未被「现存且活跃」摘要取代（排除自身）：悬空指针（替代物已移除/软删）视为未取代，
+    // 该旧摘要回退为当前版本、仍可再被取代（判据见 hasActiveSuperseder）。按 createdAt 降序取最近 N 条。
     return all
       .filter(
-        (old) => old.id.startsWith(sessionPrefix) && !old.supersededBy && old.id !== newMemory.id,
+        (old) =>
+          old.id.startsWith(sessionPrefix) &&
+          !hasActiveSuperseder(old, this.storage) &&
+          old.id !== newMemory.id,
       )
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
       .slice(0, SUPERSEDE_CANDIDATE_WINDOW);

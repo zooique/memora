@@ -347,6 +347,63 @@ describe('MemoryInspector', () => {
       expect(hits[0]!.name).toBe('新摘要');
     });
 
+    it('悬空取代指针（物理删路径）：替代物被移除后旧摘要回退活跃、对召回可见', async () => {
+      storage.upsert(
+        createMemory({
+          id: 'round-summary:s:old',
+          source: 'round-summary',
+          sessionName: 's',
+          roundId: 'r1',
+          name: '旧摘要',
+          supersededBy: 'round-summary:s:new',
+          content: '共享内容',
+        }),
+      );
+      storage.upsert(
+        createMemory({
+          id: 'round-summary:s:new',
+          source: 'round-summary',
+          sessionName: 's',
+          roundId: 'r2',
+          name: '新摘要',
+          content: '共享内容',
+        }),
+      );
+      // 前置：替代物存在 → 旧摘要被过滤（仅新摘要返回）
+      expect((await inspector.searchByKeyword('共享内容')).map((h) => h.name)).toEqual(['新摘要']);
+      // 任意移除入口移除替代物（此处物理删）→ 指针悬空
+      storage.purge('round-summary:s:new');
+      // 悬空指针视为未取代 → 旧摘要回退为当前版本、对召回可见
+      expect((await inspector.searchByKeyword('共享内容')).map((h) => h.name)).toEqual(['旧摘要']);
+    });
+
+    it('悬空取代指针（软删路径）：替代物软删同样使旧摘要回退活跃', async () => {
+      storage.upsert(
+        createMemory({
+          id: 'round-summary:t:old',
+          source: 'round-summary',
+          sessionName: 't',
+          roundId: 'r1',
+          name: '旧摘要',
+          supersededBy: 'round-summary:t:new',
+          content: '共享内容',
+        }),
+      );
+      storage.upsert(
+        createMemory({
+          id: 'round-summary:t:new',
+          source: 'round-summary',
+          sessionName: 't',
+          roundId: 'r2',
+          name: '新摘要',
+          content: '共享内容',
+        }),
+      );
+      // 软删替代物（进回收站，getById 返回 null，与物理删同为「非活跃」）
+      storage.delete('round-summary:t:new');
+      expect((await inspector.searchByKeyword('共享内容')).map((h) => h.name)).toEqual(['旧摘要']);
+    });
+
     it('命中揭示 accessedAt + 溯源 sessionId/roundId（§3.3 返回行，round-summary 直通 trace_summary）', async () => {
       storage.upsert(
         createMemory({
@@ -598,6 +655,47 @@ describe('MemoryInspector', () => {
       expect(restored.deletedAt).toBeUndefined();
       expect(restored.sessionName).toBeUndefined();
       expect(restored.roundId).toBeUndefined();
+    });
+
+    it('softDeleteRoundSummaries：替代物被软删后旧摘要经召回判据回退活跃（不再静默不可召回）', async () => {
+      // 同 session 内：S_new（轮 r2）取代 S_old（轮 r1），S_old.supersededBy → S_new.id
+      inspector.writeUpsert(
+        createMemory({
+          id: 'round-summary:s:r1',
+          source: 'round-summary',
+          sessionName: 's',
+          roundId: 'r1',
+          name: '旧摘要',
+          content: '共享内容',
+        }),
+      );
+      inspector.writeUpsert(
+        createMemory({
+          id: 'round-summary:s:r2',
+          source: 'round-summary',
+          sessionName: 's',
+          roundId: 'r2',
+          name: '新摘要',
+          content: '共享内容',
+        }),
+      );
+      // 写入取代指针（写时取代模型，见 roundSummaryGenerator）
+      inspector.writeUpsert({
+        ...(inspector.getById('round-summary:s:r1') as Memory),
+        supersededBy: 'round-summary:s:r2',
+      });
+      expect(inspector.getById('round-summary:s:r1')?.supersededBy).toBe('round-summary:s:r2');
+
+      // 仅移除了轮 r2 的摘要（模拟宿主删会话/扫描：r1 仍被其他会话引用而存活）
+      const count = inspector.softDeleteRoundSummaries(['r2']);
+      expect(count).toBe(1);
+
+      // 新摘要进入回收站
+      expect(inspector.getDeletedById('round-summary:s:r2')).not.toBeNull();
+      // 旧摘要原始指针字段保持不变（本处不做数据改写），但召回判据将悬空指针视为未取代 → 对召回可见
+      const old = inspector.getById('round-summary:s:r1')!;
+      expect(old.supersededBy).toBe('round-summary:s:r2');
+      expect((await inspector.searchByKeyword('共享内容')).map((h) => h.name)).toEqual(['旧摘要']);
     });
   });
 });
