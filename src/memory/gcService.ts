@@ -16,7 +16,7 @@
 import type { IRoundStore, Round } from '@/memory/roundStore.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { logger } from '@/logging/logger.js';
-import { SOURCE_LABELS } from '@/memory/types.js';
+import { findRoundSummaries } from '@/memory/roundSummaryLookup.js';
 
 /**
  * GC 配置选项
@@ -211,10 +211,8 @@ export class GCService {
    * @param round - 要清理的 Round
    */
   private cleanUpRoundSummary(round: Round): void {
-    // 按 roundId 顶层字段反查全部会话命名空间的两段式摘要
-    const roundSummaries = this.memoryStorage
-      .getBySource(SOURCE_LABELS.ROUND_SUMMARY)
-      .filter((m) => m.roundId === round.id);
+    // 按 roundId 顶层字段反查全部会话命名空间的两段式摘要（寻址单源：roundSummaryLookup）
+    const roundSummaries = findRoundSummaries(this.memoryStorage, new Set([round.id]));
     for (const summary of roundSummaries) {
       this.purgeSummary(summary.id);
     }

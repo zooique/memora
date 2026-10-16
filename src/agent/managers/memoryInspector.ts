@@ -7,6 +7,7 @@ import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { hasActiveSuperseder } from '@/memory/supersedeResolve.js';
+import { findRoundSummaries } from '@/memory/roundSummaryLookup.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import { configError } from '@/utils/errors.js';
@@ -301,14 +302,15 @@ export class MemoryInspector {
   softDeleteRoundSummaries(roundIds: string[]): number {
     if (roundIds.length === 0) return 0;
     const idSet = new Set(roundIds);
+    // 寻址单源：与 GC 的 cleanUpRoundSummary 共用同一选择集（roundSummaryLookup），
+    // 分叉仅在处置动作（软删+脱钩 vs 物理 purge，见 memory-as-summary.md §5.1）
+    const roundSummaries = findRoundSummaries(this.index, idSet);
     let count = 0;
-    for (const memory of this.index.getBySource(SOURCE_LABELS.ROUND_SUMMARY)) {
-      if (memory.roundId && idSet.has(memory.roundId)) {
-        // 脱钩溯源（覆盖写为无溯源副本，仅清除顶层字段不动内容/权重）→ 软删进回收站
-        this.index.upsert({ ...memory, sessionName: undefined, roundId: undefined });
-        this.index.delete(memory.id);
-        count++;
-      }
+    for (const memory of roundSummaries) {
+      // 脱钩溯源（覆盖写为无溯源副本，仅清除顶层字段不动内容/权重）→ 软删进回收站
+      this.index.upsert({ ...memory, sessionName: undefined, roundId: undefined });
+      this.index.delete(memory.id);
+      count++;
     }
     // 无需在此收敛悬空取代指针：消费侧 hasActiveSuperseder 把悬空指针视为未取代，
     // 被移除替代物的旧摘要自动回退为当前版本（见 supersedeResolve.ts），与移除路径解耦。
