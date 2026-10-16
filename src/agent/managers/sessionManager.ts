@@ -106,25 +106,9 @@ export class SessionManager {
     return this.stateMachine.pendingPauseInfo;
   }
 
-  /**
-   * 检查是否处于暂停态
-   *
-   * @deprecated 废弃于 5.0.0（计划 6.0.0 移除，登记见台账 DEPRECATE-1）：内核+宿主双 grep 零
-   * 外部调用，替代物 = `status` getter（`session.status === 'paused'`）。
-   */
-  isPaused(): boolean {
-    return this.stateMachine.status === 'paused';
-  }
-
-  /**
-   * 检查是否处于运行态
-   *
-   * @deprecated 废弃于 5.0.0（计划 6.0.0 移除，登记见台账 DEPRECATE-1）：内核+宿主双 grep 零
-   * 外部调用，替代物 = `status` getter（`session.status === 'running'`）。
-   */
-  isRunning(): boolean {
-    return this.stateMachine.status === 'running';
-  }
+  // 删后注记（2026-10-16 · 5.0.0，按 SSOT/不带伤裁决提前于 DEPRECATE-1 计划删除）：曾有
+  // isPaused()/isRunning() 两个便捷布尔查询——判据与 status getter 重复（三态两布尔还吞掉 error 态），
+  // 内核+宿主+手册零消费的冗余别名。替代物 = `status`（`session.status === 'paused'`）。勿加回（§3.2.1）。
 
   /** 待处理暂停请求是否在等待中 */
   isPausePending(): boolean {
@@ -922,18 +906,10 @@ export class SessionManager {
       .map((r) => this.compensateTool(r));
   }
 
-  /**
-   * 发送心跳，防僵尸会话
-   *
-   * @deprecated 废弃于 5.0.0（计划 6.0.0 移除，登记见台账 DEPRECATE-1）：真功能（写
-   * lastHeartbeat 供暂停超时判定回退），但生产零调用（仅本类测试直测消费）——按 §3.2.1
-   * 反滑坡边界不可直删，走 deprecation 周期；超时判定的主路径不经本方法。
-   */
-  heartbeat(): void {
-    if (this.checkpoint) {
-      this.touchCheckpoint();
-    }
-  }
+  // 删后注记（2026-10-16 · 5.0.0，按 SSOT/不带伤裁决提前于 DEPRECATE-1 计划删除）：曾有公开
+  // heartbeat()——把私有 touchCheckpoint（心跳唯一写点）包成公开方法，暗示接入者需手动打卡；
+  // 实际心跳由每个修改检查点的方法自动刷新，且超时判定时钟钉在 pausedAt（设计已排除手动保活），
+  // 生产+宿主零调用。勿加回；真要「暂停保活」需求应开专用 API（见台账 DEPRECATE-1 销项记录）。
 
   /**
    * 标记会话暂停超时（超时事实唯一写点）。广播式：超时信息经事件载荷传递，多监听器并行消费互不干扰。

@@ -383,12 +383,9 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'getNextPendingPlanItem',
       'getSessionMeta',
       'hasInflightPlan',
-      'heartbeat',
       'isPauseLimitReached',
       'isPausePending',
-      'isPaused',
       'isPlanAllBlocked',
-      'isRunning',
       'loadSessionMessages',
       'logPlanItemBoundary',
       'logToolExecution',
@@ -928,9 +925,14 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `  · 新成员：是真能力（补消费/文档）还是 no-op 谎报（删）？\n` +
       `  · 消失成员：是纠谎/收回（更新基线 + CHANGELOG 登记）还是误删（还原）？\n` +
       `定性结论即审查落点：把差异显式写进本文件 EXPECTED（禁止无审查直接对齐）。\n` +
-      `已定性记录（2026-10-16 · 5.0.0）：AgentOptions.fileConsistencyCheck + FileConsistencyCheck 类型删除——\n` +
-      `  全仓零读取僵尸字段（透传链路先删、project-rules 已宣告移除），属纠谎非删能力；` +
-      `FileConsistencyCheck 从未过 index.ts 公开面，删除零破坏。`;
+      `已定性记录（2026-10-16 · 5.0.0）：\n` +
+      `  ① AgentOptions.fileConsistencyCheck + FileConsistencyCheck 类型删除——全仓零读取僵尸字段\n` +
+      `    （透传链路先删、project-rules 已宣告移除），属纠谎非删能力；FileConsistencyCheck 从未过\n` +
+      `    index.ts 公开面，删除零破坏。\n` +
+      `  ② SessionManager.heartbeat / isPaused / isRunning 提前于 DEPRECATE-1 计划删除（用户按\n` +
+      `    SSOT/不带伤裁决）——isPaused/isRunning 是 status getter 的判据重复（三态两布尔吞 error 态）、\n` +
+      `    heartbeat 是私有 touchCheckpoint 的机制外漏，三者内核+宿主+手册零消费；提前删除的代价\n` +
+      `    = 4.x 升级者失去 deprecation 预警期，已由 CHANGELOG Breaking 段明示。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

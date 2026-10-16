@@ -980,10 +980,8 @@ describe('SessionManager', () => {
       expect(msgs[0]).toContain('write_file');
     });
 
-    it('heartbeat：有检查点时刷新时间戳（不抛错）', () => {
-      manager.createCheckpoint();
-      expect(() => manager.heartbeat()).not.toThrow();
-    });
+    // 删后注记（2026-10-16）：曾有 heartbeat() 直测用例——heartbeat 公开方法已按 SSOT/不带伤
+    // 裁决删除（touchCheckpoint 自动打卡仍在，其效果由上文 lastHeartbeat > 0 用例覆盖）。
 
     it('getActivePlanItem / getNextPendingPlanItem：无检查点返回 null', () => {
       expect(manager.getActivePlanItem()).toBeNull();

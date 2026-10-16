@@ -74,10 +74,16 @@
   只删了一个骗人的旋钮。
 - 手册 **§十二 幻觉符号**：`processEvent(event)` 承诺行删除——Agent 无此方法（4.0.0 导出面
   回扫漏网的文档侧谎报）。§2.1 `fileConsistencyCheck` 承诺行同步删除。
+- 删 **`SessionManager.heartbeat()` / `isPaused()` / `isRunning()`**（SSOT 冗余接口，按用户裁决
+  **提前于 deprecation 计划**在 5.0.0 直删）：三项内核+宿主+手册三面零消费；`isPaused`/`isRunning`
+  是 `status` getter 的判据重复（三态两布尔还吞掉 error 态），`heartbeat` 是私有 `touchCheckpoint`
+  （心跳唯一写点）的机制外漏（且超时判定时钟钉 `pausedAt`，设计已排除手动保活——见台账 DEPRECATE-1
+  销项记录）。⚠️ **对 4.x 升级者的代价**：三者随 4.0.0 已发布，直删使其失去 deprecation 预警期，
+  由本条 Breaking 明示——内部消费面为零，仅外部接入者可能受影响。
 - deprecation 废弃机制立起（此前内核侧公开 API 删除为政策空白）：`legacy-contract-audit-rules`
   §3.2.1 补「登记落点三件套」（代码 `@deprecated` 标注 + 台账移除清单 + 守卫基线保留）；
-  台账观察区立 `DEPRECATE-1`（在册：`SessionManager.heartbeat` / `isPaused` / `isRunning`，
-  废弃于 5.0.0、计划移除 6.0.0——真功能/公开面方法不走直删豁免，走周期）。
+  台账观察区立 `DEPRECATE-1`（首批三项已于 5.0.0 提前删除并销项，见上条；条目保留为机制落点，
+  承载后续废弃项）。本机制与「发版前按 SSOT/不带伤主动清冗余」并行——周期是兜底，不是拖延理由。
 - 守卫：新增 **`publicMemberSurfaceGuard.test.ts`**（成员级清单快照，88 符号冻结基线）——
   既有 `publicApiSurfaceGuard` 只夹导出名级，`flushNow` no-op 与 goal 僵尸字段曾全程绿灯；
   本守卫夹「类/接口/常量对象成员级」增删，红须按 §3.2.1 定性后显式更新 EXPECTED。
