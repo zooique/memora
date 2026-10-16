@@ -1,0 +1,51 @@
+{
+  "name": "@zooique/memora-mcp",
+  "version": "0.1.0",
+  "description": "Expose your local memora .memora memory as searchable MCP tools.",
+  "license": "MIT",
+  "author": "zooique",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zooique/memora.git",
+    "directory": "hosts/memora-mcp"
+  },
+  "homepage": "https://github.com/zooique/memora#readme",
+  "keywords": [
+    "mcp",
+    "memora",
+    "memory",
+    "model-context-protocol",
+    "agent",
+    "local-first"
+  ],
+  "type": "module",
+  "bin": {
+    "memora-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "server.json"
+  ],
+  "mcpName": "io.github.zooique/memora-mcp",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js",
+    "smoke": "npm run build && node scripts/smoke.mjs",
+    "prepublishOnly": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@zooique/memora": "file:../.."
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
