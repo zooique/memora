@@ -137,6 +137,43 @@
 - **P1-2 query 软引导暂缓**：反模式清单须留痕数据验证后再定（评估结论），不为「有候选修法」
   而预支判据。
 
+### Fixed（内核 · 上下文占用快照补动态注入段：`usedPct` 不再偏小 · `CTX-OCC-1`，2026-10-16）
+
+- **P1-1 漏计修复**：占用快照此前只数「角色包 / 对话 / 输入锚点 / 输出预留」，漏计动态 system 注入
+  （最近对话块 / 情报区 / 任务表 / 软上限与压力提示 / 搜索收敛提示 / 反思提示等运行时注入）——
+  宿主圆环占用率偏小、free 偏大（用户可见误导）。`ContextOccupancy` 与 `EstimateOccupancyInput`
+  增 **`dynamicSystemTokens` 必填段**（杜绝漏填静默归零复现原伤）；`estimateOccupancy` 计入
+  `usedBeforeFree`。
+- **段值单一真理源**：loop 新增 `getDynamicSystemTokens()`（= `messages[0]` 之外的 system 消息）；
+  `refreshOccupancyDialogue` 改名 `refreshOccupancyFromMessages`（同刷 dialogue + dynamicSystem）；
+  `appendSystemMessage` / `injectIntelNote` 触发刷新、contextPreparer 接线——段值随注入实时更新。
+- **P2-4 截断 / 摘要止血**：`truncateMessages` 加超窗观测守卫（不改结构契约）；
+  `getOrCreateSummary` 复用路径补 `capSummary`（窗口 × 20% 封顶）。
+- **P1-2 估算忠实度告警**：`llmCaller` 接通 `actualInputTokens` 消费者——估算 / 实测比 > 1.5 告警 +
+  span `inputTokenEstimateRatio`（估算失准可观测，为口径校准留证据）。
+- 跨包守卫：宿主 `occupancyContract.test.ts` 对 protocol 与内核 `ContextOccupancy` 字段集**双向源码
+  对账**（内核加 / 删段而宿主漏跟即红）。N1 顺带订正 `dialogueTokens` 不实注释（「最近轮次注入正文」
+  →「全量 user+assistant 问答闭环」，口径 SSOT = `getConversationMessages()`）。
+
+### Fixed（内核 · 悬空取代改为消费侧单一判据 + 导出 `hasActiveSuperseder` · 2026-10-16）
+
+- **修复的伤**：写路径给旧摘要打 `supersededBy` 后，替代物经物理删 / 软删移除时，旧摘要因指针
+  「悬空」被永久过滤 ⇒ **有效记忆静默丢失**（此前在 GC purge / softDeleteRoundSummaries 两处做
+  「移除时收敛指针」是半修复：writeDelete / writePurge / writePurgeExpired / dedupManager 等
+  移除入口未穷尽）。**判据与移除路径解耦**：替代物「现存且活跃」才算取代（悬空 → 旧摘要回退
+  当前版本、可正常召回）。
+- `supersedeResolve.ts` 新增 `hasActiveSuperseder`（只读判据，不写存储）+ `src/index.ts` 导出
+  （供宿主复用，跨包 SSOT）；`searchByKeyword` / `getSessionCandidates` 取代过滤改用判据；摘除
+  两处 eager 收敛接线。**零数据删除、不改 `supersededBy` 写入语义、不动正常取代链**。
+- 守卫：新增用例「替代物经物理删 / 软删移除后旧摘要可被召回」（变异验证：判据回退即红）。
+
+### Fixed（内核 · 提问链路：未回答占位 + 暂停记账收口 · 2026-10-15）
+
+- **未回答占位**：提问回答缺答案时落 `[ASK_ABORTED]` 未回答占位（不复用别题答案——此前缺答案
+  场景存在回填他题答案的问答错配）。
+- **暂停记账收口**：暂停记账统一收口到 `pause()`（agent / assembler / sessionManager / types
+  随批）；内核超时路径亦清理在途提问——挂起语义单一入口，超时不留残。
+
 ### Fixed（内核 · 登录墙识别 + Bing 摘要错位：「搜不准」两处代码级坐实 · `SEARCH-QUALITY-1` P2-1/P2-2，原定 4.1.0、随 2026-10-15 归并）
 
 - **P2-1 登录墙识别**（新建 `web-fetch/loginWall.ts` 纯函数）：HTTP 200 的登录页此前被
@@ -753,6 +790,36 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 ## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
+
+### Fixed（宿主 · 占用构成条补「动态注入」段（四段 → 五段）+ 协议口径订正 · `CTX-OCC-1` 宿主侧 · 2026-10-16）
+
+内核占用快照补段后宿主同步呈现：`context_occupancy` 协议新增 `dynamicSystemTokens` 必填字段；
+构成条**四段 → 五段**（新增「动态注入」段，`--occ-dynamic` 令牌以 charts-red 与「已用但非对话」
+语义呼应）+ hover 明细行补该段；`dialogueTokens` 注释订正（「最近轮次注入正文」→「全量
+user+assistant 问答闭环」）。新增跨包契约守卫 `occupancyContract.test.ts`——宿主 protocol 与内核
+`ContextOccupancy` 字段集源码双向对账（内核加 / 删段而宿主漏跟即红；段名以 contextPreparer
+真实结构为准，**占用模型无记忆维度**，勿据旧注释重建）。
+
+### Fixed（宿主 · 悬空取代展示判据与内核召回口径归一 · 2026-10-16）
+
+记忆列表「已被取代」徽标与治理统计从 `supersededBy !== undefined` 切换为内核导出的
+`hasActiveSuperseder`——替代物已移除的旧记忆（悬空指针）不再被误标 / 误计（与内核「悬空 →
+可召回」口径零偏差；跨包复用同一判据，不再各持一套）。含 `toItemDto` 悬空指针剥离（喂 webview
+徽标）+ `loadGovernance` 计数同口径。
+
+### Fixed（宿主 · 提问等待态底部输入框走回答通道 · 2026-10-15）
+
+提问等待态（waiting/ask）下在底部输入框输入的文本改走 **answer 意图通道**（与内联提问块 /
+澄清栏同源，`answerQuestion` 回填 + 落盘带走 question/options）——此前与暂停态合并路由为
+supplement：在途提问被兜底成「用户未回答」、答案退化为普通补充且提问原文不落盘（**同一用户
+意图两种落盘形态 = SSOT 违约**）。含「拒答也是回答」语义（「你自己定」「跳过」类文本也回填
+到提问落盘，让 LLM 知道用户已决策而非无人应答）。
+
+### Changed（宿主 · 工程 SSOT 收敛：默认窗口同族数字指针化 ×16 + 删除 npm lock · 2026-10-15）
+
+- 宿主 10 文件 16 处 `120K` / `120000` 同族数字字面量收口为单一指针引用（`b6e2a681`，与 docs 面
+  同批 `e5ed3f78`）；`pnpm-lock.yaml` 唯一化，删 `package-lock.json`（`HOST-LOCK-1`，`4cc1450d`）。
+- 零行为变化。
 
 ### Fixed（宿主 · 市场上传撞键：截图文件名 ASCII 化 · 2026-10-14）
 
