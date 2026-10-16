@@ -21,6 +21,7 @@ import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
+import { MemoraError } from '@/utils/errors.js';
 
 /**
  * 创建 Mock MessageHistory
@@ -457,6 +458,136 @@ describe('SessionManager', () => {
       // applySessionToLoop 不过滤 system，全部传给 loop
       expect(restored).toHaveLength(2);
       expect(restored[0]).toEqual({ role: 'system', content: 'sys' });
+    });
+  });
+
+  describe('会话替换前置闸（状态闸对称收敛）', () => {
+    // 不变量：任何替换 loop 工作记忆的入口（switch/fork/restore/restoreMostRecent/load）都必须在 running 态执行，
+    // 暂停/错误态语义未定义，统一拒绝。本组验证状态闸在全部入口对称生效
+    // （原 fork/restore/load 漏闸的带伤已修，见 sessionManager assertSessionReplaceable）。
+
+    function assertStatusRejection(err: unknown): void {
+      expect(err).toBeInstanceOf(MemoraError);
+      const me = err as MemoraError;
+      expect(me.category).toBe('config');
+      // detail 含「无法替换」= 状态闸拒绝（区别于繁忙闸的「对话繁忙」），断言口径与不变量同源
+      expect(me.detail).toContain('无法替换');
+    }
+
+    describe('暂停态（paused）应拒绝所有替换入口', () => {
+      beforeEach(() => {
+        manager.pause('测试暂停', 'user');
+      });
+      afterEach(() => {
+        // 停 pause 启动的超时定时器，避免泄漏（已 unref，此处仅保干净）
+        manager.destroy();
+      });
+
+      it('switchSession 在 paused 态应抛 configError', () => {
+        let caught: unknown;
+        try {
+          manager.switchSession('other');
+        } catch (e) {
+          caught = e;
+        }
+        assertStatusRejection(caught);
+      });
+      it('forkSession 在 paused 态应抛 configError', () => {
+        let caught: unknown;
+        try {
+          manager.forkSession();
+        } catch (e) {
+          caught = e;
+        }
+        assertStatusRejection(caught);
+      });
+      it('restoreMostRecentSession 在 paused 态应拒绝', async () => {
+        let caught: unknown;
+        try {
+          await manager.restoreMostRecentSession();
+        } catch (e) {
+          caught = e;
+        }
+        assertStatusRejection(caught);
+      });
+      it('restoreSession 在 paused 态应拒绝', async () => {
+        let caught: unknown;
+        try {
+          await manager.restoreSession('2026-06-27', 'main');
+        } catch (e) {
+          caught = e;
+        }
+        assertStatusRejection(caught);
+      });
+      it('loadSessionMessages 在 paused 态应拒绝', async () => {
+        let caught: unknown;
+        try {
+          await manager.loadSessionMessages('2026-06-27', 'main');
+        } catch (e) {
+          caught = e;
+        }
+        assertStatusRejection(caught);
+      });
+    });
+
+    describe('异常态（error）应拒绝所有替换入口', () => {
+      beforeEach(() => {
+        manager.triggerError('测试异常');
+      });
+
+      it('switchSession 在 error 态应抛 configError', () => {
+        let caught: unknown;
+        try {
+          manager.switchSession('other');
+        } catch (e) {
+          caught = e;
+        }
+        assertStatusRejection(caught);
+      });
+      it('forkSession 在 error 态应抛 configError', () => {
+        let caught: unknown;
+        try {
+          manager.forkSession();
+        } catch (e) {
+          caught = e;
+        }
+        assertStatusRejection(caught);
+      });
+      it('restoreMostRecentSession 在 error 态应拒绝', async () => {
+        let caught: unknown;
+        try {
+          await manager.restoreMostRecentSession();
+        } catch (e) {
+          caught = e;
+        }
+        assertStatusRejection(caught);
+      });
+      it('restoreSession 在 error 态应拒绝', async () => {
+        let caught: unknown;
+        try {
+          await manager.restoreSession('2026-06-27', 'main');
+        } catch (e) {
+          caught = e;
+        }
+        assertStatusRejection(caught);
+      });
+      it('loadSessionMessages 在 error 态应拒绝', async () => {
+        let caught: unknown;
+        try {
+          await manager.loadSessionMessages('2026-06-27', 'main');
+        } catch (e) {
+          caught = e;
+        }
+        assertStatusRejection(caught);
+      });
+    });
+
+    it('running 态下各入口仍正常委托（闸不退化正常路径）', () => {
+      expect(manager.status).toBe('running');
+      expect(manager.switchSession('new-session')).toBe('2026-06-27-main');
+      expect(manager.forkSession()).toBeDefined();
+      expect(history.switchSession).toHaveBeenCalledWith('new-session');
+      expect(history.forkSession).toHaveBeenCalled();
     });
   });
 

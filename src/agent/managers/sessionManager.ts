@@ -150,19 +150,30 @@ export class SessionManager {
     this.getLoop()?.resetContextSummary?.();
   }
 
-  /** 切换当前会话。底层 MessageHistory.switchSession 为纯同步操作，不引入无意义 async 包装。 */
-  switchSession(newSession: string): string {
-    // 对话进行中切换会导致消息持久化分散
+  /**
+   * 会话替换前置闸（SSOT 收口）：任何替换 loop 工作记忆（switch/fork/restore/load）的入口都必须经此。
+   * 合并「对话进行中」繁忙闸 + 「非 running 态拒绝」状态闸，消除 switch 有状态闸而
+   * fork/restore/load 漏闸的对称性缺口（原 switchSession 注释谎称「与 fork/restore 繁忙守卫同构」，
+   * 实际 fork/restore/load 无状态闸——属注释与实现不符的带伤，本次修复）。
+   * 暂停/错误态替换语义未定义，保守拒绝；宿主未就绪/暂停态触发由宿主 try/catch 兜底转错误通知。
+   */
+  private assertSessionReplaceable(operation: string): void {
+    // 对话进行中替换会导致消息持久化分散 / loop 工作记忆被替换
     if (this.isChatBusy()) {
-      throw chatBusyError('切换会话');
+      throw chatBusyError(operation);
     }
-
-    // 暂停/错误态切换语义未定义，保守拒绝（与 fork/restore 繁忙守卫同构）
+    // 暂停/错误态替换语义未定义，保守拒绝（所有替换入口共用此闸，避免状态闸不对称）
     if (this.stateMachine.status !== 'running') {
-      throw configError('切换会话', `会话处于 ${this.stateMachine.status} 态，无法切换`, [
-        '仅 running 态允许 switchSession',
+      throw configError(operation, `会话处于 ${this.stateMachine.status} 态，无法替换`, [
+        '仅 running 态允许替换工作记忆',
       ]);
     }
+  }
+
+  /** 切换当前会话。底层 MessageHistory.switchSession 为纯同步操作，不引入无意义 async 包装。 */
+  switchSession(newSession: string): string {
+    // 替换工作记忆前置闸（SSOT：与 fork/restore/load 共用断言，消除状态闸不对称）
+    this.assertSessionReplaceable('切换会话');
 
     // 检查点是当前会话的工作状态，切换时清空内存态（检查点纯内存态，不落盘）
     if (this.checkpoint && this.checkpoint.sessionId !== newSession) {
@@ -254,9 +265,8 @@ export class SessionManager {
    * @param targetSession - 可选，自定义新会话名；不传则自动生成
    */
   forkSession(roundId?: string, targetSession?: string): AgentForkResult {
-    if (this.isChatBusy()) {
-      throw chatBusyError('分叉');
-    }
+    // 替换工作记忆前置闸（SSOT：与 switch/restore/load 共用断言）
+    this.assertSessionReplaceable('分叉');
 
     const history = this.getHistory();
 
@@ -302,10 +312,8 @@ export class SessionManager {
    * @returns 恢复的消息条数（0 = 无可恢复会话）
    */
   async restoreMostRecentSession(): Promise<number> {
-    // 对话进行中恢复会导致 loop 工作记忆被替换
-    if (this.isChatBusy()) {
-      throw chatBusyError('恢复会话');
-    }
+    // 替换工作记忆前置闸（SSOT：与 switch/fork/restore/load 共用断言）
+    this.assertSessionReplaceable('恢复会话');
 
     if (!this.sessionStore) {
       logger.debug({ hasSessionStore: false }, '未注入 ISessionStore，无法恢复会话');
@@ -340,10 +348,8 @@ export class SessionManager {
 
   /** 恢复指定会话的对话 */
   async restoreSession(date: string, session: string): Promise<number> {
-    // 对话进行中恢复会导致 loop 工作记忆被替换
-    if (this.isChatBusy()) {
-      throw chatBusyError('恢复会话');
-    }
+    // 替换工作记忆前置闸（SSOT：与 switch/fork/restoreMostRecent/load 共用断言）
+    this.assertSessionReplaceable('恢复会话');
 
     const sessionMessages = await this.getHistory().loadSessionMessages(date, session);
     if (sessionMessages.length === 0) {
@@ -357,10 +363,8 @@ export class SessionManager {
 
   /** 对外暴露的 loadSessionMessages 委托。⚠ 会切换当前会话（更新 currentDate/currentSession），加载后下一条 chat 写入被加载会话 */
   async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
-    // 对话进行中加载会切换 currentDate/currentSession，导致消息持久化分散
-    if (this.isChatBusy()) {
-      throw chatBusyError('加载会话');
-    }
+    // 替换工作记忆前置闸（SSOT：与 switch/fork/restore 共用断言）
+    this.assertSessionReplaceable('加载会话');
 
     return this.getHistory().loadSessionMessages(date, session);
   }
