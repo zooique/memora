@@ -12,7 +12,9 @@
  *
  * ⚠ 变异验证靶标：撤掉 setArchiveMode 里的 config.update → 「持久化」断言转红；
  * 撤掉 agent.setArchiveMode 调用 → 「热更新」断言转红；把繁忙 catch 改成回滚偏好
- * → 「偏好仍落盘」断言转红（那会让保存过的偏好下次装配又变回去）。
+ * → 「偏好仍落盘」断言转红（那会让保存过的偏好下次装配又变回去）；把 `applied` 初值
+ * 改回 true（或删掉 agent 未就绪的降级提示）→「Agent 未就绪」用例转红（假成功回归锚点）；
+ * 撤掉拒收分支的 loadArchiveModeStatus() → 「复位下拉」断言转红。
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -132,7 +134,7 @@ describe('settingsPanel.setArchiveMode —— 归档模式切换', () => {
     expect(notices(posted)[0]?.message).toContain('自动归档');
   });
 
-  it('非法枚举 → 整体拒绝（不落盘 / 不热更新 / 不回推；不依赖 webview 收敛）', async () => {
+  it('非法枚举 → 整体拒绝（不落盘 / 不热更新）+ 回推持久值复位下拉', async () => {
     const { agent, setArchiveMode } = agentStub();
     const { provider, posted } = setup(agent);
 
@@ -140,7 +142,8 @@ describe('settingsPanel.setArchiveMode —— 归档模式切换', () => {
 
     expect(vscodeConfigMock.cfgUpdate).not.toHaveBeenCalled();
     expect(setArchiveMode).not.toHaveBeenCalled();
-    expect(posted.some((m) => m.type === 'archive_mode_status')).toBe(false);
+    // 回推持久值（未配置 → 缺省 full）：下拉已被改到非法值，不回推就停在假值上（UI 谎报）
+    expect(posted).toContainEqual({ type: 'archive_mode_status', mode: 'full' });
     const msgs = notices(posted);
     expect(msgs).toHaveLength(1);
     expect(msgs[0]?.level).toBe('error');
@@ -167,6 +170,23 @@ describe('settingsPanel.setArchiveMode —— 归档模式切换', () => {
     expect(msgs[0]?.level).toBe('info');
     expect(msgs[0]?.message).toContain('偏好已保存');
     expect(msgs[0]?.message).toContain('对话结束后生效');
+  });
+
+  it('Agent 未就绪 → 偏好仍落盘 + status 回推，但不得推「已切换」成功提示（假成功回归锚点）', async () => {
+    // ensureAgent 的三条 undefined 出口之一（装配工厂返回空）：运行时零动作、无补应用载体。
+    // 变异靶标：把 applied 初值改回 true（或把降级提示删掉）→ 本例转红。
+    const { provider, posted } = setup(undefined as unknown as Agent);
+
+    await sendArchiveModeSet(provider, 'manual');
+
+    // 偏好照旧落盘（装配期读取）+ 回推持久值（下拉反映偏好）
+    expect(vscodeConfigMock.cfgUpdate).toHaveBeenCalledWith('archiveMode', 'manual', 1);
+    expect(posted).toContainEqual({ type: 'archive_mode_status', mode: 'manual' });
+    const msgs = notices(posted);
+    expect(msgs).toHaveLength(1);
+    // error 级降级提示，绝不出现「已切换归档模式」——那会让用户以为运行时已生效
+    expect(msgs[0]?.level).toBe('error');
+    expect(msgs.some((m) => m.message?.includes('已切换归档模式'))).toBe(false);
   });
 
   it('loadArchiveModeStatus：回推真相源 = 用户级设置（读到的值原样推送）', async () => {

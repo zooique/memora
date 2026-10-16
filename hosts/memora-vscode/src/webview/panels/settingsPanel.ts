@@ -1601,14 +1601,22 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    *
    * 流程（对齐 security_toggle / setAllowedPaths 的「持久化 + 热更新 + 回推」三段式）：
    *   ① 枚举校验（webview 下拉本只含合法值；直接发消息的越界值照拒——不依赖前端收敛）；
+   *      拒收后**回推一次持久值**——下拉可能已被改到非法值，不回推就停在假值上（UI 谎报）；
    *   ② 持久化用户级设置 memora.archiveMode（ConfigurationTarget.Global——用户偏好随人）；
    *   ③ 热更新 agent.setArchiveMode()：内核 assertNotBusy，对话进行中抛错。
    *      抛错时**偏好仍落盘**（装配期读取），运行时保留下一位模式直到对话结束——
    *      提示如实说明顺延，不谎报「已生效」。
+   *      ⚠ agent 未就绪（无装配工厂 / 无工作区 / 装配失败）时运行时**零动作**，且没有
+   *      「对话结束后补应用」的载体 ⇒ 走 error 级降级提示，**不得**推成功提示：
+   *      applied 初值恒真的旧实现把 `if (agent)` 的空分支也算成功，该路径会报
+   *      「已切换归档模式」而实际上什么都没切（假成功，2026-10-16 审查发现）。
    */
   private async setArchiveMode(mode: ArchiveMode): Promise<void> {
     if (mode !== 'full' && mode !== 'manual') {
       this.post({ type: 'notice', level: 'error', message: `无效的归档模式：${String(mode)}` });
+      // 拒收即复位：下拉此时已停在（被篡改的）非法值上，回推持久值让它回到真相。
+      // 口径与切换路径一致——archive_mode_status 恒推持久值，webview 据此回写 select。
+      this.loadArchiveModeStatus();
       return;
     }
     // 先落盘再热更新：用户偏好是持久真相，运行时切换是 hot-path 优化
@@ -1616,14 +1624,24 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     await vscode.workspace
       .getConfiguration('memora')
       .update('archiveMode', mode, vscode.ConfigurationTarget.Global);
-    let applied = true;
+    // ⚠ 初值必须 false：「已应用」只由「内核真的切了」这一个事实决定。旧实现初值 true
+    // 且把 `if (agent)` 的空分支也算成功 ⇒ agent 未就绪时报「已切换」而运行时零动作。
+    let applied = false;
     try {
       const agent = await this.ensureAgent();
       if (agent) {
         agent.setArchiveMode(mode); // 繁忙时抛错（内核 assertNotBusy）
+        applied = true;
+      } else {
+        // 降级：偏好已落盘（下次装配读取即生效），但运行时此刻没切、也没有补应用载体
+        // ⇒ 如实降级为 error 级，不谎报「已切换归档模式」。
+        this.post({
+          type: 'notice',
+          level: 'error',
+          message: '偏好已保存：Agent 未就绪，运行时未切换——将在下次装配（或重载窗口）后生效',
+        });
       }
     } catch (err) {
-      applied = false;
       this.post({
         type: 'notice',
         level: 'info',
