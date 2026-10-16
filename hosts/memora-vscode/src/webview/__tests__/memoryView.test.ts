@@ -45,6 +45,15 @@ const HTML = `
       <div id="recycleList"><p class="hint">回收站为空。</p></div>
     </details>
     <p id="memHint" class="mem-hint" hidden></p>
+    <div id="archiveMode" class="archive-mode">
+      <div class="archive-mode-item">
+        <label class="security-label" for="archiveModeSelect">会话归档模式</label>
+        <select id="archiveModeSelect" class="security-select">
+          <option value="full">自动归档</option>
+          <option value="manual">仅手动归档</option>
+        </select>
+      </div>
+    </div>
   </div>
 `;
 
@@ -623,5 +632,42 @@ describe('memoryView 展示层映射对齐内核契约', () => {
     for (const key of Object.keys(TYPE_BADGE_LABEL)) {
       expect(SUMMARY_TYPES).toContain(key);
     }
+  });
+});
+
+// ─── 会话归档模式（内核 archiveMode 投影，2026-10-16） ───
+// 下拉只做「变更发消息 + 状态回显」两件事：持久化/热更新/回推全在 host 侧
+// （settingsPanel.setArchiveMode），webview 不做乐观翻转（与搜索引擎下拉同范式）。
+describe('memoryView 会话归档模式', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('切换归档模式 → post archive_mode_set（合法枚举才发送）', () => {
+    const { postMessage } = mountMemoryView();
+    const select = document.getElementById('archiveModeSelect') as HTMLSelectElement;
+    select.value = 'manual';
+    select.dispatchEvent(new Event('change'));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'archive_mode_set', mode: 'manual' });
+  });
+
+  it('archive_mode_status 回推 → 下拉回显（host 真相覆盖本地值）', () => {
+    mountMemoryView();
+    const select = document.getElementById('archiveModeSelect') as HTMLSelectElement;
+    select.value = 'manual';
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'archive_mode_status', mode: 'full' } }),
+    );
+    expect(select.value).toBe('full');
+  });
+
+  it('首屏不发 archive_mode_set（等 host ready 握手回推，不主动推送偏好）', () => {
+    const { postMessage } = mountMemoryView();
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'archive_mode_set' }),
+    );
   });
 });

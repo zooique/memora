@@ -175,6 +175,23 @@ export const memoryStyles = `
   }
   #memory-root .governance-detail.gov-error { color: var(--text-error, #f14c4c); }
 
+  /* ============ Components：会话归档模式区 ============ */
+  /* 与治理区同构：顶部分隔线 + 内边距；内部复用安全选项卡的 label/select/desc 组件类
+     （security-label / security-select / security-desc 定义在 settingsStyles.ts，
+      同文档打包进同一 webview，禁在此复制第二份） */
+  #memory-root .archive-mode {
+    padding: var(--sp-3, 8px) var(--sp-5, 12px);
+    border-top: var(--line-solid);
+  }
+  #memory-root .archive-mode-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3, 8px);
+    margin-bottom: var(--sp-2, 6px);
+  }
+  #memory-root .archive-mode-item .security-select { flex-shrink: 0; }
+
   /* ============ Components：单条删除 / 回收站 ============ */
   /* 卡片头部删除按钮：低扰，hover 才显形，避免与展开区抢视觉、不与「清理过期」红色危险按钮撞色 */
   #memory-root .mem-del-btn {

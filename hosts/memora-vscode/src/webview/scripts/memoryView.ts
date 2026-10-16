@@ -102,6 +102,10 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   const recycleSummary = root.querySelector('#recycle > summary') as HTMLElement | null;
   const memHint = root.querySelector('#memHint') as HTMLElement | null;
 
+  // 会话归档模式下拉（内核 archiveMode 投影：full=自动归档 / manual=仅手动）。
+  // 与安全选项卡的搜索引擎下拉同范式：变更只发消息，回显由 host 推 archive_mode_status。
+  const archiveModeSelect = root.querySelector<HTMLSelectElement>('#archiveModeSelect');
+
   /** 当前搜索词（非空表示处于搜索模式，列表模式为空串） */
   let activeQuery = '';
   /** 记忆总数（memory_loaded 缓存，分页翻页时透传给 pager 计算页数） */
@@ -505,6 +509,9 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       pager.show(msg.page, msg.items, listTotal);
     } else if (msg.type === 'governance_loaded') {
       renderGovernance(msg.stats);
+    } else if (msg.type === 'archive_mode_status') {
+      // 归档模式回显（ready 握手 + 切换后回推；下拉只含合法枚举值，直接赋值）
+      if (archiveModeSelect) archiveModeSelect.value = msg.mode;
     } else if (msg.type === 'governance_result') {
       showGovernanceResult(msg);
     } else if (msg.type === 'memory_recycle_loaded') {
@@ -555,6 +562,15 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   // 治理按钮：清理过期（确认由 host 侧弹窗，webview 只发消息）
   btnCleanup?.addEventListener('click', () => {
     vscode.postMessage({ type: 'governance_cleanup' });
+  });
+
+  // 归档模式切换：只发消息（持久化 + 热更新 + 回推全在 host 侧，webview 不做乐观翻转）。
+  // 下拉是封闭枚举（full/manual）：越界值（DOM 被篡改）不发送——host 侧亦有同一校验。
+  archiveModeSelect?.addEventListener('change', () => {
+    const mode = archiveModeSelect.value;
+    if (mode === 'full' || mode === 'manual') {
+      vscode.postMessage({ type: 'archive_mode_set', mode });
+    }
   });
 
   // 回收站：展开时拉取列表

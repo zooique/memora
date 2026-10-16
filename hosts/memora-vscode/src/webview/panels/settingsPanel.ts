@@ -11,7 +11,7 @@
  *   - 选项卡切换时只切换 content 区域显示隐藏，不销毁/重建 DOM（保留子视图状态，减少闪烁）。
  */
 import * as vscode from 'vscode';
-import type { Agent, MemoryInspector } from '@zooique/memora';
+import type { Agent, ArchiveMode, MemoryInspector } from '@zooique/memora';
 import { hasActiveSuperseder } from '@zooique/memora';
 import type { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createBackgroundProvider } from '../../extension/host/llmConfig.js';
@@ -209,6 +209,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.loadAllowedPathsStatus();
       this.loadCustomSearchEnginesStatus();
       this.loadSearchEngineStatus();
+      // 记忆子视图：推送会话归档模式当前值（归档模式下拉的回显真源）
+      this.loadArchiveModeStatus();
       return;
     }
 
@@ -440,6 +442,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     // 网页搜索引擎：持久化设置 + 回显选中下拉
     if (msg.type === 'search_engine_set') {
       await this.setSearchEngine(msg.engine);
+      return;
+    }
+    // 会话归档模式：持久化用户级设置 + 热更新 agent.setArchiveMode（繁忙顺延）
+    if (msg.type === 'archive_mode_set') {
+      await this.setArchiveMode(msg.mode);
       return;
     }
     // 自定义搜索引擎清单：持久化 + 回显编辑器
@@ -1584,6 +1591,65 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'search_engine_status', engine });
   }
 
+  // ─── 会话归档模式（archive_mode_set 消息处理） ───
+
+  /**
+   * 设置会话归档模式（archive_mode_set 消息处理）
+   *
+   * 语义：full=自动归档（切走/分叉/暂停超时时自动生成会话摘要元数据）；manual=仅手动。
+   * 轮次摘要不受影响（无模式开关，总是生成）。
+   *
+   * 流程（对齐 security_toggle / setAllowedPaths 的「持久化 + 热更新 + 回推」三段式）：
+   *   ① 枚举校验（webview 下拉本只含合法值；直接发消息的越界值照拒——不依赖前端收敛）；
+   *   ② 持久化用户级设置 memora.archiveMode（ConfigurationTarget.Global——用户偏好随人）；
+   *   ③ 热更新 agent.setArchiveMode()：内核 assertNotBusy，对话进行中抛错。
+   *      抛错时**偏好仍落盘**（装配期读取），运行时保留下一位模式直到对话结束——
+   *      提示如实说明顺延，不谎报「已生效」。
+   */
+  private async setArchiveMode(mode: ArchiveMode): Promise<void> {
+    if (mode !== 'full' && mode !== 'manual') {
+      this.post({ type: 'notice', level: 'error', message: `无效的归档模式：${String(mode)}` });
+      return;
+    }
+    // 先落盘再热更新：用户偏好是持久真相，运行时切换是 hot-path 优化
+    // （失败不回滚偏好——那会让「保存了但下次装配又变回去」，更怪）。
+    await vscode.workspace
+      .getConfiguration('memora')
+      .update('archiveMode', mode, vscode.ConfigurationTarget.Global);
+    let applied = true;
+    try {
+      const agent = await this.ensureAgent();
+      if (agent) {
+        agent.setArchiveMode(mode); // 繁忙时抛错（内核 assertNotBusy）
+      }
+    } catch (err) {
+      applied = false;
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: `偏好已保存：${toNoticeText(err)}——运行时将在当前对话结束后生效`,
+      });
+    }
+    // 回推状态（持久值口径，与 search_engine_status 一致）：下拉反映偏好，
+    // 热更新失败的顺延语义由上方 notice 说明，不伪造「已生效」。
+    this.post({ type: 'archive_mode_status', mode });
+    if (applied) {
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: mode === 'full' ? '已切换归档模式：自动归档' : '已切换归档模式：仅手动归档',
+      });
+    }
+  }
+
+  /** 加载并推送当前归档模式（settings 视图 ready 时调用；真源 = 用户级设置 memora.archiveMode） */
+  private loadArchiveModeStatus(): void {
+    const mode = vscode.workspace
+      .getConfiguration('memora')
+      .get<ArchiveMode>('archiveMode', 'full');
+    this.post({ type: 'archive_mode_status', mode });
+  }
+
   /** 读取用户自定义搜索引擎清单 */
   private readCustomSearchEngines(): CustomSearchEngineConfig[] {
     return vscode.workspace
@@ -1789,6 +1855,18 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
         <button id="btnCleanup" class="btn btn-danger" title="永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆（不可撤销）">清理过期</button>
       </div>
       <p id="govDetail" class="governance-detail" hidden></p>
+    </div>
+
+    <!-- 会话归档模式：内核 archiveMode 投影（full=自动归档 / manual=仅手动；设置即热更新，繁忙顺延） -->
+    <div id="archiveMode" class="archive-mode" role="region" aria-label="会话归档">
+      <div class="archive-mode-item">
+        <label class="security-label" for="archiveModeSelect">会话归档模式</label>
+        <select id="archiveModeSelect" class="security-select" aria-label="会话归档模式">
+          <option value="full">自动归档</option>
+          <option value="manual">仅手动归档</option>
+        </select>
+      </div>
+      <p class="security-desc">自动归档：切换 / 分叉离开会话时自动生成会话摘要与主题（历史列表的检索数据）；仅手动归档：只在手动触发时生成。<strong>轮次摘要不受影响</strong>（总是生成，对话记忆照常沉淀）。对话进行中切换时，内核拒绝热改——偏好保存后到当前对话结束生效。</p>
     </div>
 
     <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>

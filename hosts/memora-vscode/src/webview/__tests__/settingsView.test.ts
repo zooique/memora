@@ -27,6 +27,12 @@ const HTML = `
     <div class="header"><h2>记忆</h2><span id="statBar" class="stat-bar" hidden></span></div>
     <div class="search-wrap"><input id="searchInput" class="search-input" type="text" placeholder="搜索记忆…" /></div>
     <div id="list"><p class="hint">加载中…</p></div>
+    <div id="archiveMode" class="archive-mode">
+      <select id="archiveModeSelect">
+        <option value="full">自动归档</option>
+        <option value="manual">仅手动归档</option>
+      </select>
+    </div>
     <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>
   </div>
   <div id="roles-root" hidden>
@@ -216,6 +222,20 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
       new MessageEvent('message', { data: { type: 'search_engine_status', engine: 'sogou' } }),
     );
     expect(select.value).toBe('sogou');
+  });
+
+  it('会话归档模式下拉：变更发 archive_mode_set，host 回推 archive_mode_status 回显', () => {
+    const { postMessage } = mountSettingsView();
+    const select = document.getElementById('archiveModeSelect') as HTMLSelectElement;
+    // 切换 → 通知 host（持久化 + 热更新 + 回推全在 host 侧）
+    select.value = 'manual';
+    select.dispatchEvent(new Event('change'));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'archive_mode_set', mode: 'manual' });
+    // host 回推持久值 → 下拉回显（ busy 顺延语义由 notice 说明，不伪造已生效）
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'archive_mode_status', mode: 'full' } }),
+    );
+    expect(select.value).toBe('full');
   });
 });
 

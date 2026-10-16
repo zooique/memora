@@ -1,4 +1,5 @@
 import type {
+  ArchiveMode,
   BackgroundTask,
   InteractiveInputKind,
   ProcessEvent,
@@ -503,6 +504,16 @@ export type WebviewToExtensionMessage =
    * 装配期一次性注入，修改需重载窗口（或重建会话）后生效。
    */
   | { type: 'search_engine_set'; engine: SearchEngineSetting }
+  /**
+   * 设置会话归档模式（设置面板「记忆」选项卡的归档模式下拉触发）
+   *
+   * full=自动归档（切换/分叉离开会话时自动生成会话摘要元数据，供历史列表检索）；
+   * manual=仅手动归档。轮次摘要不受影响（无模式开关，总是生成）。
+   * host 侧：校验枚举 → 持久化用户级设置 memora.archiveMode（ConfigurationTarget.Global）
+   * → 热更新 agent.setArchiveMode()（内核 assertNotBusy：对话进行中拒切，拒切时偏好
+   * 仍落盘、运行时顺延到对话结束——提示如实说明，不谎报「已生效」）。
+   */
+  | { type: 'archive_mode_set'; mode: ArchiveMode }
   /**
    * 设置用户自定义网页搜索引擎清单（custom_search_engines_set 消息处理）
    *
@@ -1194,6 +1205,14 @@ export type ExtensionToWebviewMessage =
    * 由 host 在 settings 视图 ready / 用户修改后推送，webview 据此渲染下拉选中项。
    */
   | { type: 'search_engine_status'; engine: SearchEngineSetting }
+  /**
+   * 会话归档模式状态推送（设置面板「记忆」选项卡下拉的回显真源）
+   *
+   * 推送时机：settings 视图 ready 握手 + 用户切换后回推。mode = 用户级设置
+   * memora.archiveMode 的持久值（与 search_engine_status 同口径：下拉反映偏好，
+   * 运行时热更新失败的顺延语义由 notice 说明，不伪造「已生效」）。
+   */
+  | { type: 'archive_mode_status'; mode: ArchiveMode }
   /**
    * 自定义搜索引擎清单推送（设置面板加载时先于 search_engine_status 推送当前配置，
    * 供 webview 渲染下拉选项与编辑器）

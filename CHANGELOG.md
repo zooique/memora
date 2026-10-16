@@ -873,6 +873,15 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 - **踩坑记账（「因错误的原因通过」实证）**：vitest/esbuild 不查类型——补桩 replace_all 的 4 空格模式作为子串误命中 6 空格行，与 6 空格 replace_all 双重插入重复键；运行期后者覆盖前者且同为 `() => true` ⇒ 4 文件 92 条复跑全绿但 `tsc --noEmit` TS1117 红。删重复行后复绿（「改完必跑 tsc」的又一实证）。
 - **守卫**：`chatPanelPauseProjection` +2 透传 / `turnProjection` +5（含 paused 不投影、缺省不写）/ `turnUiState` +5（thinking 门控 + pausePending 保留「继续 ▶」取消退路）/ `chatView` +1 端到端。
 
+### Added（宿主 · 会话归档模式设置 `memora.archiveMode` 接线 · 2026-10-16）
+
+5.0.0 公开面清理批宿主接线：内核 `Agent.setArchiveMode(mode)` 编排出口接用户设置（三段式范式，对齐 security_toggle / setAllowedPaths / search_engine_set）。落点 = 设置面板「记忆」选项卡（归档元数据治理域最近，复用 security 组件类 + governance 分区样式）。
+
+- **语义**：`full` = 切换/分叉离开会话时自动生成会话摘要元数据（历史列表检索用）；`manual` = 仅手动触发；**轮次摘要不受影响（无模式开关，总是生成）**。
+- **三段式**：校验枚举 → 持久化用户级设置 `memora.archiveMode`（ConfigurationTarget.Global）→ 热更新 `agent.setArchiveMode()`。**繁忙顺延**：内核 `assertNotBusy` 拒切时偏好仍落盘（用户偏好是持久真相，运行时热更新是 hot-path 优化）+ info 级提示「偏好已保存……对话结束后生效」——不谎报「已生效」，也不渲染成红色错误（用户主动保存偏好不是故障）。
+- **回显口径**：`archive_mode_status` 推持久值（与 search_engine_status 同口径）；装配期读 `memora.archiveMode` 透传 `assemble` → `new Agent`（默认 full 交内核回落，宿主不复制默认字面量）；memoryView 下拉 change 封闭枚举守卫零 cast。
+- **守卫**：`settingsPanelArchiveMode` 新建 6 例（合法 full/manual / 非法拒 / 繁忙顺延 / loadArchiveModeStatus 真源 + 缺省回落）+ `memoryView` +3 / `settingsView` +1；`tokensClosure` `var(--line-` 70→71（`.archive-mode` 描边新增 1 处消费，跑 `scripts/count-token-refs.mjs` 取机械真值后同步 EXPECTED + 日期注释）。
+
 ### Fixed（宿主 · 占用构成条补「动态注入」段（四段 → 五段）+ 协议口径订正 · `CTX-OCC-1` 宿主侧 · 2026-10-16）
 
 内核占用快照补段后宿主同步呈现：`context_occupancy` 协议新增 `dynamicSystemTokens` 必填字段；

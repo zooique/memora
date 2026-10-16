@@ -16,7 +16,7 @@ import * as vscode from 'vscode';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
-import type { Agent, IRoundStore } from '@zooique/memora';
+import type { Agent, ArchiveMode, IRoundStore } from '@zooique/memora';
 import { accumulateStream } from '@zooique/memora';
 import { assembleAgent } from './host/assemble.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
@@ -162,6 +162,12 @@ function getOrCreateAgent(
     const customSearchEngines = vscode.workspace
       .getConfiguration('memora')
       .get<CustomSearchEngineConfig[]>('customSearchEngines', []);
+    // 会话归档模式（memora.archiveMode 设置；'full'=自动归档允许，'manual'=仅手动）。
+    // 装配期一次性注入内核 AgentOptions.archiveMode（undefined 时内核回落 'full'）；
+    // 运行时切换走设置面板「记忆」选项卡热更新（agent.setArchiveMode，繁忙顺延）。
+    const archiveMode = vscode.workspace
+      .getConfiguration('memora')
+      .get<ArchiveMode>('archiveMode', 'full');
     // 禁用的技能名清单（配置形态启停）：命中技能对 LLM 全链不可用
     // （L1 清单 / list_skills / read_skill / L3 全不可达）。此处只是**装配期快照**；
     // 用户改设置由 activate 内的配置监听实时重设，无需重新装配。
@@ -183,6 +189,7 @@ function getOrCreateAgent(
       configDir,
       searchEngine,
       customSearchEngines,
+      archiveMode,
       userSkillsDir,
       userRolePacksDir,
       confirmWrites,

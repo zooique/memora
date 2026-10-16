@@ -548,13 +548,16 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   // scripts/count-token-refs.mjs 实锤同步（2026-10-14）。
   // dim- 19→20：HOST-S3-2 占用构成条宽度 var(--dim-md)（.context-segments，复用「进度条
   // 最小宽」同用途域刻度）新增 1 处消费者，同上随实测同步（2026-10-14）。
+  // line- 70→71：会话归档模式区（memoryStyles .archive-mode）分区描边 var(--line-solid)
+  //（与 .governance 同构：顶部分隔线），实数经 scripts/count-token-refs.mjs 实锤同步
+  // （2026-10-16 setArchiveMode 接线）。
   const EXPECTED = {
     'z-': 14,
     'lh-': 48,
     'op-': 18, // 初始化按钮禁用态 opacity: var(--op-6)（settingsStyles）+1
     'icon-': 17,
     'dot-': 22,
-    'line-': 70,
+    'line-': 71,
     'sq-': 47,
     'dim-': 20,
   } as const;

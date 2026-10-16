@@ -26,6 +26,7 @@ import type {
   UIMessages,
   ProviderRouter,
   LlmProvider,
+  ArchiveMode,
 } from '@zooique/memora';
 import type { ILogger } from '@zooique/memora';
 import type { CustomSearchEngineConfig } from '../../shared/protocol.js';
@@ -213,6 +214,15 @@ export interface AssembleOptions {
    */
   customSearchEngines?: CustomSearchEngineConfig[];
   /**
+   * 会话归档模式（memora.archiveMode 设置形态）
+   *
+   * full=自动归档（切走/分叉/暂停超时时自动生成会话摘要元数据）；manual=仅手动。
+   * 轮次摘要不受影响（无模式开关，总是生成）。透传 AgentOptions.archiveMode；
+   * 缺省（undefined）由内核回落 'full'——宿主不复制默认字面量（SSOT：默认值在内核）。
+   * 运行时切换走设置面板热更新（agent.setArchiveMode），无需重装。
+   */
+  archiveMode?: ArchiveMode;
+  /**
    * 禁用的技能名清单
    *
    * 由 extension 从 workspace 设置 memora.disabledSkills 读取注入，配置形态启停：
@@ -282,6 +292,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     outputChannel,
     disabledSkills,
     scriptNodePath,
+    archiveMode,
   } = options;
 
   // 日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核
@@ -397,6 +408,10 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 禁用技能清单（配置形态启停）：命中技能对 LLM 全链不可用（L1/L2/L3），
     // 宿主 settingsView 依据同名设置标注「已禁用」徽章
     disabledSkills: disabledSkills ?? [],
+    // 会话归档模式（用户级设置 memora.archiveMode；undefined → 内核回落 'full'）。
+    // 只做透传：默认值与模式判据的真源都在内核（archiveCoordinator.resolveAutoArchiveAllowed），
+    // 宿主不重算；运行时切换经 agent.setArchiveMode 热更新（设置面板）。
+    archiveMode,
   });
 
   // 4. 初始化（加载记忆/角色包/会话，注册内置工具）

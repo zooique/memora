@@ -146,6 +146,16 @@
           "default": "auto",
           "description": "内部网页搜索引擎（web_search 工具使用的后端）。可选值：auto（Bing→DuckDuckGo 默认链）、bing、duckduckgo、baidu、sogou，或自定义搜索引擎名（在设置面板「自定义搜索引擎」中定义）。用户级偏好，随用户而非随项目。修改后重载窗口生效。"
         },
+        "memora.archiveMode": {
+          "type": "string",
+          "scope": "application",
+          "default": "full",
+          "enum": [
+            "full",
+            "manual"
+          ],
+          "description": "会话归档模式。full=自动归档：切换/分叉离开会话时自动生成会话摘要与主题（历史列表检索用）；manual=仅手动归档：仅在用户手动触发时生成。轮次摘要不受本设置影响（总是生成）。用户级偏好，随用户而非随项目。设置面板切换即时生效（对话进行中内核拒切，偏好保存后顺延到对话结束）。"
+        },
         "memora.customSearchEngines": {
           "type": "array",
           "scope": "application",
