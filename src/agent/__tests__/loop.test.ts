@@ -4505,7 +4505,7 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     expect(hints).toHaveLength(0);
   });
 
-  it('web_search 达硬上限（MAX_WEB_SEARCH_CALLS）后确定性拒绝执行，不依赖 LLM 听从软提示', async () => {
+  it('web_search 达硬上限（缺省 webSearchLimit=6）后确定性拒绝执行，不依赖 LLM 听从软提示', async () => {
     const toolExecutor = vi.fn().mockResolvedValue('1. 结果A');
     // 7 轮各调一次 web_search（第 1-6 次应执行，第 7 次被硬上限拒绝）
     // 显式标注类型：push 动态拼装时保字面量（type: 'function' 不拓宽为 string）
@@ -4562,7 +4562,7 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     turns.push([{ content: '停止搜索，直接给出结论。' }]);
     const provider = mockMultiTurnProvider(turns);
     const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
-    // 角色包策略键 global.webSearchLimit 注入（此前硬编码 LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS=6 不可调）
+    // 角色包策略键 global.webSearchLimit 注入（GUARD-SEARCH-1 前硬编码 6 不可调）
     loop.setStrategy({ webSearchLimit: 2 });
 
     for await (const {} of loop.processUserInput('做分析')) {
@@ -7008,54 +7008,58 @@ describe('AgentLoop · 后台命令回流与 turn 终态脱管（§14 · 脱管�
     expect(loop.getPendingInterjections()).toHaveLength(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);
   });
 
-  it('turn 终态 → 后台进程脱管继续跑 + 追加如实报告（不再杀、不静默丢弃）', { timeout: 15_000 }, async () => {
-    const loop = new AgentLoop({
-      provider: mockMultiTurnProvider([
-        [
-          {
-            toolCalls: [
-              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
-            ],
-          },
-        ],
-        [{ content: '完成' }],
-      ]),
-      bootstrapMemories: [],
-      toolExecutor: vi.fn().mockResolvedValue('工具结果'),
-    });
-    const registry = new BackgroundTaskRegistry();
-    loop.setBackgroundTasks(registry);
+  it(
+    'turn 终态 → 后台进程脱管继续跑 + 追加如实报告（不再杀、不静默丢弃）',
+    { timeout: 15_000 },
+    async () => {
+      const loop = new AgentLoop({
+        provider: mockMultiTurnProvider([
+          [
+            {
+              toolCalls: [
+                { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+              ],
+            },
+          ],
+          [{ content: '完成' }],
+        ]),
+        bootstrapMemories: [],
+        toolExecutor: vi.fn().mockResolvedValue('工具结果'),
+      });
+      const registry = new BackgroundTaskRegistry();
+      loop.setBackgroundTasks(registry);
 
-    const taskId = registry.start(SLEEP_CMD);
-    expect(registry.get(taskId)?.status).toBe('running');
+      const taskId = registry.start(SLEEP_CMD);
+      expect(registry.get(taskId)?.status).toBe('running');
 
-    const chunks = await drain(loop.processUserInput('读取文件'));
+      const chunks = await drain(loop.processUserInput('读取文件'));
 
-    // ⚠️ 脱管 ≠ 终止（定案反转 · 见 docs/方案-后台任务跨轮存活-20261004.md）：
-    // turn 终态**不杀**进程，状态必须仍是 running。
-    // 变异验证：把 detachAll 改回 killNow+置 killed 即红。
-    expect(registry.get(taskId)?.status).toBe('running');
-    // 报告文案不得再宣称「已终止」——那正是真机被诟病的说谎点
-    const report = loop.getMessages().find((m) => m.content.includes('后台任务继续运行'));
-    expect(report).toBeDefined();
-    expect(report!.content).toContain(taskId);
-    expect(report!.content).not.toContain('已全部终止');
-    // 双通道上屏轨：turn 收尾 yield background_report chunk（宿主上屏 + 桥接落盘，
-    // 与 plan_snapshot 同型瞬态信号；system 消息轨已由上方断言覆盖）。
-    // ⚠️ 时序契约在**宿主消费层**而非 chunk 层：done chunk 由迭代循环产出（在本 chunk 之前），
-    // 但宿主 chatPanel 的 done 消息在流耗尽后才 post（webview finalizeRound 触发点），
-    // 故 background_report 的 process_event 投影必然先于 finalize 到达——chunk 层顺序不断言
-    // （与 plan_snapshot 既有测试同口径，不过度指定内核内部结构）。
-    const bgChunk = chunks.find(
-      (c): c is Extract<AgentChunk, { type: 'background_report' }> =>
-        c.type === 'background_report',
-    );
-    expect(bgChunk).toBeDefined();
-    expect(bgChunk!.content).toContain(taskId);
+      // ⚠️ 脱管 ≠ 终止（定案反转 · 见 docs/方案-后台任务跨轮存活-20261004.md）：
+      // turn 终态**不杀**进程，状态必须仍是 running。
+      // 变异验证：把 detachAll 改回 killNow+置 killed 即红。
+      expect(registry.get(taskId)?.status).toBe('running');
+      // 报告文案不得再宣称「已终止」——那正是真机被诟病的说谎点
+      const report = loop.getMessages().find((m) => m.content.includes('后台任务继续运行'));
+      expect(report).toBeDefined();
+      expect(report!.content).toContain(taskId);
+      expect(report!.content).not.toContain('已全部终止');
+      // 双通道上屏轨：turn 收尾 yield background_report chunk（宿主上屏 + 桥接落盘，
+      // 与 plan_snapshot 同型瞬态信号；system 消息轨已由上方断言覆盖）。
+      // ⚠️ 时序契约在**宿主消费层**而非 chunk 层：done chunk 由迭代循环产出（在本 chunk 之前），
+      // 但宿主 chatPanel 的 done 消息在流耗尽后才 post（webview finalizeRound 触发点），
+      // 故 background_report 的 process_event 投影必然先于 finalize 到达——chunk 层顺序不断言
+      // （与 plan_snapshot 既有测试同口径，不过度指定内核内部结构）。
+      const bgChunk = chunks.find(
+        (c): c is Extract<AgentChunk, { type: 'background_report' }> =>
+          c.type === 'background_report',
+      );
+      expect(bgChunk).toBeDefined();
+      expect(bgChunk!.content).toContain(taskId);
 
-    // 收尾清理（脱管后进程仍在跑，显式终止避免泄漏到后续用例）
-    registry.kill(taskId);
-  });
+      // 收尾清理（脱管后进程仍在跑，显式终止避免泄漏到后续用例）
+      registry.kill(taskId);
+    },
+  );
 
   it('纯问答无存活后台任务 → 不产 background_report（常态零块 · 反向守卫）', async () => {
     const loop = new AgentLoop({
@@ -7257,50 +7261,58 @@ describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
     expect(loop.killBackgroundTask('bg-1')).toBeNull();
   });
 
-  it('任务转入终态 → 触发 setBackgroundTaskSettledEmitter 出口（阶段二补漏 · 宿主 UI 靠它更新）', { timeout: 15_000 }, async () => {
-    // 回归守卫：脱管后 turn 已结束，宿主三个既有推送时机覆盖不到「任务自然跑完」。
-    // 本用例锁住「注册表 notify 单点链 → loop 发射回调」这段，缺它 UI 会一直显示假活跃。
-    //
-    // ⚠️ 只能走**自然完成**（settle），**不能用 kill**：主动 kill 刻意不回调 listener
-    // （`backgroundTasks.ts`：输出已由 kill_command 直接返回，再回流一次会让模型收到
-    // 同一份结果的第二份副本）。宿主「点终止 → 条刷新」走的是 kill 处理后的**显式回推**，
-    // 不依赖本事件——这条链由宿主用例覆盖。
-    // 命令用 `echo`（Windows cmd /c、POSIX sh -c 均支持）；等待显式给 5s
-    // （本机沙箱 spawn 慢，`vi.waitFor` 默认 1s 会先到 ⇒ 单跑靠运气绿、全量并发稳定红）。
-    const loop = makeBgLoop();
-    const registry = new BackgroundTaskRegistry();
-    const settled: { taskId: string; status: string }[] = [];
-    loop.setBackgroundTaskSettledEmitter((t) =>
-      settled.push({ taskId: t.taskId, status: t.status }),
-    );
-    loop.setBackgroundTasks(registry);
+  it(
+    '任务转入终态 → 触发 setBackgroundTaskSettledEmitter 出口（阶段二补漏 · 宿主 UI 靠它更新）',
+    { timeout: 15_000 },
+    async () => {
+      // 回归守卫：脱管后 turn 已结束，宿主三个既有推送时机覆盖不到「任务自然跑完」。
+      // 本用例锁住「注册表 notify 单点链 → loop 发射回调」这段，缺它 UI 会一直显示假活跃。
+      //
+      // ⚠️ 只能走**自然完成**（settle），**不能用 kill**：主动 kill 刻意不回调 listener
+      // （`backgroundTasks.ts`：输出已由 kill_command 直接返回，再回流一次会让模型收到
+      // 同一份结果的第二份副本）。宿主「点终止 → 条刷新」走的是 kill 处理后的**显式回推**，
+      // 不依赖本事件——这条链由宿主用例覆盖。
+      // 命令用 `echo`（Windows cmd /c、POSIX sh -c 均支持）；等待显式给 5s
+      // （本机沙箱 spawn 慢，`vi.waitFor` 默认 1s 会先到 ⇒ 单跑靠运气绿、全量并发稳定红）。
+      const loop = makeBgLoop();
+      const registry = new BackgroundTaskRegistry();
+      const settled: { taskId: string; status: string }[] = [];
+      loop.setBackgroundTaskSettledEmitter((t) =>
+        settled.push({ taskId: t.taskId, status: t.status }),
+      );
+      loop.setBackgroundTasks(registry);
 
-    const taskId = registry.start('echo memora-bg-done');
-    await vi.waitFor(
-      () => {
-        expect(registry.get(taskId)?.status).not.toBe('running');
-      },
-      { timeout: 5_000 },
-    );
-    // 出口只带只读投影（taskId/command/status），**不携带 result**——命令输出体量大，
-    // UI 不呈现（同 BackgroundTaskView 刻意不含 result 的口径）
-    expect(settled).toEqual([{ taskId, status: 'completed' }]);
-  });
+      const taskId = registry.start('echo memora-bg-done');
+      await vi.waitFor(
+        () => {
+          expect(registry.get(taskId)?.status).not.toBe('running');
+        },
+        { timeout: 5_000 },
+      );
+      // 出口只带只读投影（taskId/command/status），**不携带 result**——命令输出体量大，
+      // UI 不呈现（同 BackgroundTaskView 刻意不含 result 的口径）
+      expect(settled).toEqual([{ taskId, status: 'completed' }]);
+    },
+  );
 
-  it('未注入发射回调时任务转入终态不抛（门用语义，纯内核单测场景零影响）', { timeout: 15_000 }, async () => {
-    const loop = makeBgLoop();
-    const registry = new BackgroundTaskRegistry();
-    loop.setBackgroundTasks(registry); // 故意不 setBackgroundTaskSettledEmitter
-    const taskId = registry.start('echo memora-bg-done');
-    // 回调为 undefined 时 `?.()` 短路；跑到终态仍不抛即达标
-    await vi.waitFor(
-      () => {
-        expect(registry.get(taskId)?.status).not.toBe('running');
-      },
-      { timeout: 5_000 },
-    );
-    expect(registry.get(taskId)?.status).toBe('completed');
-  });
+  it(
+    '未注入发射回调时任务转入终态不抛（门用语义，纯内核单测场景零影响）',
+    { timeout: 15_000 },
+    async () => {
+      const loop = makeBgLoop();
+      const registry = new BackgroundTaskRegistry();
+      loop.setBackgroundTasks(registry); // 故意不 setBackgroundTaskSettledEmitter
+      const taskId = registry.start('echo memora-bg-done');
+      // 回调为 undefined 时 `?.()` 短路；跑到终态仍不抛即达标
+      await vi.waitFor(
+        () => {
+          expect(registry.get(taskId)?.status).not.toBe('running');
+        },
+        { timeout: 5_000 },
+      );
+      expect(registry.get(taskId)?.status).toBe('completed');
+    },
+  );
 
   it('装配后列表反映注册表运行态', () => {
     const loop = makeBgLoop();
@@ -7364,23 +7376,27 @@ describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
     expect(loop.shutdownBackgroundTasks()).toBe(0);
   });
 
-  it('shutdownBackgroundTasks → 真杀全部 running（Agent.close 实例终态收割的 loop 侧透传）', { timeout: 15_000 }, () => {
-    // 调用点锁在 agent.test（close 必调本方法）；此处锁透传语义与「真杀而非脱管」。
-    const loop = makeBgLoop();
-    const registry = new BackgroundTaskRegistry();
-    loop.setBackgroundTasks(registry);
-    const a = registry.start(BG_SLEEP_CMD);
-    const b = registry.start(BG_SLEEP_CMD);
-    try {
-      // 变异验证：若误接成 detachAll（纯读），返回值是投影数组（此处直接编译不过/数值不符），
-      // 且 a/b 状态仍 running → 下面断言红
-      expect(loop.shutdownBackgroundTasks()).toBe(2);
-      expect(registry.get(a)?.status).toBe('killed');
-      expect(registry.get(b)?.status).toBe('killed');
-    } finally {
-      // 幂等兜底：收割已置 killed，kill 对终态不再动杀树
-      registry.kill(a);
-      registry.kill(b);
-    }
-  });
+  it(
+    'shutdownBackgroundTasks → 真杀全部 running（Agent.close 实例终态收割的 loop 侧透传）',
+    { timeout: 15_000 },
+    () => {
+      // 调用点锁在 agent.test（close 必调本方法）；此处锁透传语义与「真杀而非脱管」。
+      const loop = makeBgLoop();
+      const registry = new BackgroundTaskRegistry();
+      loop.setBackgroundTasks(registry);
+      const a = registry.start(BG_SLEEP_CMD);
+      const b = registry.start(BG_SLEEP_CMD);
+      try {
+        // 变异验证：若误接成 detachAll（纯读），返回值是投影数组（此处直接编译不过/数值不符），
+        // 且 a/b 状态仍 running → 下面断言红
+        expect(loop.shutdownBackgroundTasks()).toBe(2);
+        expect(registry.get(a)?.status).toBe('killed');
+        expect(registry.get(b)?.status).toBe('killed');
+      } finally {
+        // 幂等兜底：收割已置 killed，kill 对终态不再动杀树
+        registry.kill(a);
+        registry.kill(b);
+      }
+    },
+  );
 });
