@@ -97,8 +97,8 @@ describe('settingsPanel.setArchiveMode —— 归档模式切换', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // 恢复基座实现（clearAllMocks 不清实现；各用例按需 mockImplementation 覆盖）
-    vscodeConfigMock.cfgGet.mockImplementation((_key: string, defaultValue?: unknown) =>
-      defaultValue,
+    vscodeConfigMock.cfgGet.mockImplementation(
+      (_key: string, defaultValue?: unknown) => defaultValue,
     );
   });
 
