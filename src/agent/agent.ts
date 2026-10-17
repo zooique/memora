@@ -142,7 +142,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     /**
      * 种子 turn 编排器（turn 的唯一编排真理源）：prepare → act → reflect。
      * chat() 委托 runChat()；续跑（continueAfterPause）走 runResume()，复用同一 turn 编排。
-     * 经 getParts() getter 取当前组件——rebuildComponents 更换组件后仍取到最新引用。
+     * 经 getParts() getter 取当前组件——组件重装配（init / reloadConfig）后仍取到最新引用。
      */
     seedOrchestrator: SeedOrchestrator | null;
     /** 孤儿 Round 垃圾回收服务（引用计数归零 + 超龄才清理，init 时启动周期任务、close 时停止） */
@@ -242,13 +242,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 初始化 Agent：加载索引、组装内部组件
+   *
+   * ⚠️ **项目在构造时钉死**（`AgentOptions.projectPath`），`init()` **不接受路径覆盖参数**——
+   * 形态定案「一个 Agent = 一个项目」：换项目请宿主新建一个 Agent 实例，不要在单实例内改绑
+   * （原 `init(projectPathOverride?)` 于 PR-SWITCH-2 删除：它与该原则直接冲突，且全仓零调用）。
    */
-  async init(projectPathOverride?: string): Promise<ProjectContext> {
+  async init(): Promise<ProjectContext> {
     await this.disposePreviousInstance();
-
-    if (projectPathOverride) {
-      this.#config.projectPath = projectPathOverride;
-    }
 
     const pctx = await this.initializeProject();
     await this.assembleComponents(pctx);
@@ -288,7 +288,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 注册暂停超时归档处理器（SessionManager 两条超时路径——启动加载与运行时定时器——统一在此消费）
    * 注册在 init() 内（close() 的 removeAllListeners + init 起始的 disposePreviousInstance 保证实例周期内恰好一个监听器），
-   * 挂在生命周期稳定的 Agent 上，rebuildComponents() 重建管理器后仍有效。
+   * 挂在生命周期稳定的 Agent 上，组件重装配后仍有效。
    */
   private registerPauseTimeoutArchiver(): void {
     this.on(AGENT_EVENTS.sessionPauseTimedOut, (payload) => {
@@ -416,7 +416,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // chat() 并发锁管理器（生命周期与 Agent 实例一致）
     this.internals.chatLockManager = new ChatLockManager();
 
-    // 孤儿 Round 垃圾回收服务：roundStore+storage 均为构造期稳定注入（不随 rebuildComponents 变化），
+    // 孤儿 Round 垃圾回收服务：roundStore+storage 均为构造期稳定注入（不随组件重装配变化），
     // 每日周期清理 refCount=0 且超龄的孤立问答闭环（崩溃残留 pending / 已删会话遗留），防止存储膨胀。
     // shouldSkip：对话进行中跳过本次（minAgeMs 判龄对长任务不可靠，防进行中轮被误清）
     if (this.#config.roundStore && this.#config.storage) {
@@ -454,7 +454,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 种子 turn 编排器（turn 唯一编排真理源）：依赖 sessionManager/loop/history 等
     // 均已就绪（assembleComponents 已完成 + sessionNamer 本方法前段创建），在此构造一次。
-    // getParts() 惰性取当前组件——rebuildComponents（switchProject）更换组件后仍取到最新引用。
+    // getParts() 惰性取当前组件——组件重装配后仍取到最新引用。
     this.internals.seedOrchestrator = this.createSeedOrchestrator();
   }
 
@@ -469,7 +469,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private createSeedOrchestrator(): SeedOrchestrator {
     return new SeedOrchestrator({
-      // 组件快照经 getter 惰性取当前引用：rebuildComponents 更换组件后仍读到最新（关键）
+      // 组件快照经 getter 惰性取当前引用：组件重装配后仍读到最新（关键）
       getParts: () => ({
         loop: this.loop!,
         history: this.history!,
@@ -1682,17 +1682,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // ─── 组件访问 ─────────────────────────────────────────
 
-  /**
-   * 重建内部组件（history / loop / managers）：通常由 switchProject() 自动触发，仅强制刷新时手动调用
-   */
-  async rebuildComponents(): Promise<void> {
-    // 对话进行中重建会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
-    this.assertNotBusy('重建组件');
-    if (!this.pctx) return;
-    // assembleComponents 内部重建 history/loop/managers，并返回新创建的 sessionManager
-    await this.assembleComponents(this.pctx);
-  }
-
   // ─── 守卫方法 ───────────────────────────────────────────
 
   /**
@@ -2074,11 +2063,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** 记忆查看器（快照 + 搜索 + 统计；宿主常用 `const mem = agent.memory; if (!mem) return []`） */
   get memory(): MemoryInspector | null {
     return this.memoryInspector;
-  }
-
-  /** 项目管理器（返回 null 表示 Agent 未初始化） */
-  get projects(): ProjectManager | null {
-    return this.projectManager;
   }
 
   /** 安全守卫（写入确认回调注册：`onWriteConfirmation` 返回 true 放行、false 拒绝；未初始化/projectPath 未设为 null） */

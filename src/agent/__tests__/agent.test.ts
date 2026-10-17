@@ -462,7 +462,6 @@ describe('Agent · 生命周期 E2E', () => {
       expect(agent.agentLoop).not.toBeNull();
       expect(agent.agentHistory).not.toBeNull();
       expect(agent.context).not.toBeNull();
-      expect(agent.projects).not.toBeNull();
       expect(agent.works).not.toBeNull();
       expect(agent.sessionManager).not.toBeNull();
       expect(agent.polish).not.toBeNull();
@@ -482,7 +481,6 @@ describe('Agent · 生命周期 E2E', () => {
       expect(agent.rolePack).toBeNull();
       expect(agent.tools).toBeNull();
       expect(agent.memory).toBeNull();
-      expect(agent.projects).toBeNull();
       expect(agent.works).toBeNull();
       expect(agent.sessionManager).toBeNull();
       expect(agent.polish).toBeNull();
@@ -1906,65 +1904,6 @@ describe('Agent · chat 并发锁 · 上一轮未完成时再次调用抛错', (
     }
     expect(agent.isBusy).toBe(false);
   }, 30000);
-});
-
-// ═══════════════════════════════════════════════════════════════
-// 测试：rebuildComponents() · 手动重建组件
-// ═══════════════════════════════════════════════════════════════
-
-describe('Agent · rebuildComponents() · 手动重建组件', () => {
-  let tmpProject: string;
-  let tmpConfig: string;
-  let tmpData: string;
-  let agent: Agent | null = null;
-
-  beforeEach(() => {
-    tmpData = mkdtempSync(join(tmpdir(), 'memora-rebuild-data-'));
-    tmpProject = mkdtempSync(join(tmpdir(), 'memora-rebuild-proj-'));
-    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-rebuild-cfg-'));
-    seedProject(tmpProject, tmpConfig, tmpData);
-  });
-
-  afterEach(async () => {
-    if (agent) {
-      await agent.close();
-      agent = null;
-    }
-    rmSync(tmpProject, { recursive: true, force: true });
-    rmSync(tmpConfig, { recursive: true, force: true });
-    rmSync(tmpData, { recursive: true, force: true });
-  });
-
-  it('rebuildComponents 后 agentLoop 应可用', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-
-    await agent.rebuildComponents();
-
-    expect(agent.agentLoop).not.toBeNull();
-    expect(agent.agentHistory).not.toBeNull();
-  });
-
-  it('rebuildComponents 后对话应正常', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-
-    await agent.rebuildComponents();
-
-    const reply = await agent.chatSync('重建后测试');
-    expect(reply).toContain('Mock 响应');
-  }, 30000);
-
-  it('rebuildComponents 后 Manager 应可用', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-
-    await agent.rebuildComponents();
-
-    expect(agent.rolePack).not.toBeNull();
-    expect(agent.tools).not.toBeNull();
-    expect(agent.memory).not.toBeNull();
-  });
 });
 
 // ═══════════════════════════════════════════════════════════════

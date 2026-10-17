@@ -97,7 +97,9 @@ export { buildSessionId, splitSessionId } from '@/utils/time.js';
 
 // ─── 可观测性导出 ────────────────────────────────────────
 export type { ITracer, ISpan, AgentMetrics } from '@/agent/tracer.js';
-export { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
+// NOOP_TRACER 为内核内部兜底实现（未注入 tracer 时的零开销降级），不挂公共面
+// （PUB-API-PRUNE-4 收面：宿主零消费；要「不追踪」只需不传 tracer，无需引用它）
+export { TRACE_SPANS } from '@/agent/tracer.js';
 
 // ─── 记忆层导出 ──────────────────────────────────────────
 export { SOURCE_LABELS, SUMMARY_TYPES } from '@/memory/types.js';

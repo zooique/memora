@@ -5,9 +5,9 @@
  * 本文件定义这三阶段的输入/输出契约，以及 seed 模块所需的依赖接口。
  *
  * 设计纪律：
- *   - getParts() 以「快照 getter」形式提供当前组件引用——switchProject/rebuildComponents
+ *   - getParts() 以「快照 getter」形式提供当前组件引用——组件重装配（init / reloadConfig）
  *     会更换 loop/history/sessionManager，seed 每次运行经 getParts() 取最新引用，
- *     否则 rebuild 后 seed 将残留陈旧组件引用（关键正确性约束）。
+ *     否则重装配后 seed 将残留陈旧组件引用（关键正确性约束）。
  *   - consumeExecutionStream 是「统一流收口协议」，物理实现仍在门面（Agent），
  *     本处仅声明类型，回答中阶段经依赖注入消费（方案的流收口协议归门面）。
  */
