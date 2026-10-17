@@ -546,12 +546,6 @@ export interface AgentOptions {
    * 是宿主的产品决策，内核不置喙，也不假设其下的文件形态。
    */
   dataDir: string;
-  /**
-   * 项目注册表目录（可选，缺省随 dataDir）。注册表存在的意义是**跨项目按名解析**，
-   * 故只有多项目共用同一 dataDir（或显式指定共同的 registryDir）时才真正兑现；
-   * 若 dataDir 是项目级目录，注册表随之落进各项目内、只含项目自身条目，按名切换不成立。
-   */
-  registryDir?: string;
   /** 最大上下文 token 数（缺省 = AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS，数字以该常量为真源、不在此落账） */
   maxContextTokens?: number;
   /**

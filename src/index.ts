@@ -178,11 +178,10 @@ export type {
 // （宿主 projectSearchProvider import 对齐，避免结果上限 / 忽略目录数值漂移）
 export { PROJECT_SEARCH_RESULT_MAX_LEN } from '@/agent/toolExecutor.js';
 export { IGNORED_DIR_NAMES } from '@/agent/builtinToolHandlers.js';
-// 项目注册表：只出条目类型，不出注册表类（PUB-API-PRUNE-3 收面）。
-// 类由 ProjectManager 内部专职持有（`agent.projects` 委托消费），导出它会额外放出
-// register/unregister 无锁写能力（多进程下正是撕裂风险面）；条目类型必须留——
-// `agent.projects.list` 返回 `ProjectEntry[]`，删则宿主无法标注该类型。
-export type { ProjectEntry } from '@/memory/projectRegistry.js';
+// 项目注册表整链已随 PR-SWITCH-1 删除（2026-10-18）：多项目由宿主各建一个 Agent 实例，
+// 内核既不切换项目、也不维护跨项目名单（`switchProject` / `agent.projects` / `registryDir` /
+// `ProjectEntry` / `projectSwitched` 事件 / `projects.json` 写入一并删除）。项目名只从路径
+// 推断，见 `projectManager.ts` 的模块级 `inferProjectName`。
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
 // 会话显示名回退单一真理源（displayName→autoName），宿主从内核取，避免重复实现

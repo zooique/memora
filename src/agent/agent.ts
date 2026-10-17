@@ -5,8 +5,6 @@
  * 负责组件组装和核心对话编排，领域专属操作委托给专职 Manager
  * （RolePackManager / ToolExecutor / SkillManager / MemoryInspector）。
  */
-import { isAbsolute } from 'node:path';
-import { getBaseName } from '@/utils/path.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type {
@@ -195,7 +193,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.#config = {
       projectPath: opts.projectPath,
       dataDir: opts.dataDir,
-      registryDir: opts.registryDir,
       maxContextTokens: opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS,
       // per-LLM 输出预算默认值（token）：宿主 per-LLM 配置透传；undefined = 不传 max_tokens
       //（回服务端默认）。与角色包策略 act.outputLimit 的最终关系由 buildChatOptions 取更小值。
@@ -369,7 +366,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.projectManager = new ProjectManager({
       dataDir: this.#config.dataDir,
       storage: this.#config.storage,
-      registryDir: this.#config.registryDir,
       // SecurityGuard 由 Agent 层创建，解除 memory→security 反向依赖
       createSecurityGuard: (
         projectPath: string,
@@ -1248,67 +1244,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       return;
     }
     await namer.ensureSessionTitle(result.date, result.newSession, firstUserContent);
-  }
-
-  /**
-   * 切换到指定项目：切换后自动 rebuildComponents()；Agent 级记忆存储（宿主注入，实例不随项目切换重建）保留，项目级配置（.memora/）重新加载
-   *
-   * `nameOrPath` 只接受两种输入：① 项目注册表中的项目名（依赖注册表跨项目共享，见 dataDir/registryDir）；
-   * ② 项目根目录的**绝对路径**。二者都不满足时抛 configError——否则相对串会以 process.cwd()
-   * 为基准解析，静默造出非预期的项目目录并占用其锁。
-   */
-  async switchProject(nameOrPath: string): Promise<AgentContext> {
-    this.assertInitialized('switchProject', ['projectManager', 'provider']);
-
-    // 对话进行中切换项目会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
-    this.assertNotBusy('切换项目');
-
-    const pm = this.projectManager!;
-    const projects = pm.list;
-    let target = projects.find((p) => p.name === nameOrPath || p.path === nameOrPath);
-    if (!target) {
-      const nameOrPathLower = nameOrPath.toLowerCase();
-      target = projects.find(
-        (p) => p.name.toLowerCase() === nameOrPathLower || p.path.toLowerCase() === nameOrPathLower,
-      );
-    }
-    // 注册表未命中时按路径处理。相对路径会以 process.cwd() 为基准解析——宿主进程的 cwd
-    // 不具项目语义，会静默创建出非预期的项目目录并占用其锁，故只接受绝对路径。
-    if (!target && !isAbsolute(nameOrPath)) {
-      throw configError('项目切换失败', `「${nameOrPath}」既不是已注册的项目名，也不是绝对路径`, [
-        '按名切换：先经 agent.projects.registerProject(项目路径, 项目名) 注册，并保证注册表跨项目共享（多项目共用同一 dataDir 或 registryDir）',
-        '按路径切换：传入项目根目录的绝对路径',
-      ]);
-    }
-    const projectPath = target ? target.path : nameOrPath;
-    const projectName = target ? target.name : getBaseName(nameOrPath);
-
-    const newPctx = await pm.initProject(projectPath, projectName, this.#config.configDir);
-
-    // 记录源项目路径（用于事件），切换前 pctx 可能不存在（首次初始化）
-    const fromProjectPath = this.pctx?.projectPath ?? null;
-
-    // 先尝试重建组件，失败时回滚 pctx 防止状态不一致
-    try {
-      this.pctx = newPctx;
-      await this.rebuildComponents();
-    } catch (err) {
-      // 回滚：恢复旧 pctx（若存在）
-      if (fromProjectPath) {
-        logger.warn({ err: toError(err) }, 'switchProject: 组件重建失败，回滚项目上下文');
-        this.pctx = { projectPath: fromProjectPath } as ProjectContext;
-      }
-      throw err;
-    }
-
-    // 发射项目切换事件（供宿主 UI 刷新项目相关界面）
-    this.emit(AGENT_EVENTS.projectSwitched, {
-      from: fromProjectPath,
-      to: projectPath,
-      projectName,
-    });
-
-    return newPctx;
   }
 
   // ─── 组件组装 ─────────────────────────────────────────

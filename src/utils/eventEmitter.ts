@@ -21,7 +21,6 @@ export const AGENT_EVENTS = {
    * protocolGuard V-2 已登记 KERNEL_SELF_CONSUMED_EVENTS 豁免。
    */
   sessionSwitched: 'sessionSwitched',
-  projectSwitched: 'projectSwitched',
   archiveFailed: 'archiveFailed',
   /**
    * 会话归档写入成功（updatedFields 非空才发，与 archiveFailed 对称）。
@@ -96,7 +95,6 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     fromSessionId: string;
     toSessionId: string;
   };
-  projectSwitched: { from: string | null; to: string; projectName: string };
   archiveFailed: { stage: 'session'; message: string };
   /** 会话归档写入成功载荷：sessionId = `${date}-${session}`；updatedFields = 实际落库字段（summary/keyTopics/autoName） */
   sessionArchived: { sessionId: string; updatedFields: string[] };

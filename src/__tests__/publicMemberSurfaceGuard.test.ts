@@ -247,7 +247,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'setContextWindow',
       'setMaxTokens',
       'setProvider',
-      'switchProject',
       'switchRolePack',
     ],
   },
@@ -296,7 +295,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'projectSearchProvider',
       'provider',
       'providerRouter',
-      'registryDir',
       'rolePackTeams',
       'roundStore',
       'scriptNodePath',
@@ -551,7 +549,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'inputTooLarge',
       'memoryAdded',
       'memoryRecalled',
-      'projectSwitched',
       'questionPending',
       'rolePackSwitchLocked',
       'rolePackSwitched',
@@ -672,7 +669,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'unreadableSkipped',
     ],
   },
-  ProjectEntry: { kind: 'interface', members: ['lastOpened', 'name', 'path'] },
   ISessionStore: {
     kind: 'interface',
     members: [
@@ -878,7 +874,7 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `\nEXPECTED 符号数 = ${count}，与本用例期望不符。\n` +
         `若本次确有增删符号：先在 EXPECTED 表反映差异 + 完成 §3.2.1 定性，再同步本数字；\n` +
         `若未增删：说明改动误触了基线表，撤销。`,
-    ).toBe(82);
+    ).toBe(81);
   });
 
   it('成员面与冻结基线一致（增删即红；红须按 §3.2.1 定性后显式更新 EXPECTED）', () => {
@@ -907,6 +903,17 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    （hosts 全仓 grep 零命中）、能力由 agent.projects（ProjectManager）完全覆盖，且导出类\n` +
       `    会额外放出 register/unregister 无锁写能力（多进程撕裂风险面，读无险写有险不对称）；\n` +
       `    ProjectEntry 条目类型保留——agent.projects.list 返回 ProjectEntry[]，删则宿主无法标注。\n` +
+      `    代价：4.x 升级者失去 deprecation 预警期，已由 CHANGELOG Breaking 段明示。\n` +
+      `  ⑤ PR-SWITCH-1 整链删除（2026-10-18 · 形态定案「内核单 Agent，多项目由宿主各建实例」）：\n` +
+      `    switchProject（Agent 方法）/ projectSwitched（事件）/ registryDir（AgentOptions 字段）/\n` +
+      `    agent.projects 的 list·registerProject·unregisterProject / projects.json 写入 /\n` +
+      `    ProjectEntry（类型）——六面同属「跨项目注册表」这一个概念，形态定案后全部落空：\n` +
+      `    按名分支永不命中（注册表随项目级 dataDir 各一份、只登记自身），且注入 storage\n` +
+      `    不随切换重建（换锚点不换配套）⇒ 不是没人用，是用会错。留任一角都会造出僵尸写入。\n` +
+      `    ⚠ ④ 保留 ProjectEntry 的理由（agent.projects.list 返回它）**由 ⑤ 推翻**——整链删后\n` +
+      `      该返回面不复存在。**推翻留痕、不回改 ④**：决策史按时间顺序保留原貌。\n` +
+      `    保留的能力：项目名推断（摘为 projectManager 模块级纯函数 inferProjectName，\n` +
+      `      供 ProjectContext.projectName 使用）；项目锁 / 存储编排 / 安全守卫全部不动。\n` +
       `    代价：4.x 升级者失去 deprecation 预警期，已由 CHANGELOG Breaking 段明示。`;
     expect(
       issues,

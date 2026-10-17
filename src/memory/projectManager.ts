@@ -1,11 +1,11 @@
 /**
- * 项目管理器 — 多项目生命周期编排（单 Agent 模型）。
- * 职责：项目初始化编排（关旧项目→加锁→加载资源→构建上下文）、Agent 级资源管理
- * （memora.db 全局共享不随切换重建）、两层记忆加载。注册表/锁文件委托专职模块 ProjectRegistry / LockManager。
- * 原则：memora.db 只有一个（Agent 级）；项目切换不重建库，只更新安全守卫+重扫项目规则；
- * 项目级 .memora/ 仅存放 rules 与 skills（无 memora.db）。
+ * 项目管理器 — 单个项目的生命周期编排（单 Agent 模型）。
+ * 职责：项目初始化编排（加锁 → 确保 Agent 级存储 → 构建上下文）、关闭与锁释放。
+ * 边界（2026-10-18 定案）：一个 Agent 绑定一个项目；**多项目由宿主创建多个 Agent 实例**，
+ * 内核既不提供单实例内切换、也不维护跨项目名单（历史 `switchProject` / `projects.json`
+ * 注册表整链已随 PR-SWITCH-1 删除）。项目名只从路径推断，内核不落任何跨项目状态。
  */
-import { resolve, join } from 'node:path';
+import { resolve } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -13,8 +13,17 @@ import type { SecurityGuard } from '@/security/pathGuard.js';
 import { logger } from '@/logging/logger.js';
 import { expandHome } from '@/utils/path.js';
 import { type Memory } from '@/memory/types.js';
-import { ProjectRegistry, type ProjectEntry } from '@/memory/projectRegistry.js';
 import { LockManager } from '@/memory/lockManager.js';
+
+/**
+ * 从路径推断项目名称（取最后一段目录名，无法推断返回 'unnamed'）。
+ * 原为 ProjectRegistry 静态方法，注册表整链删除后摘为本模块级纯函数——项目名是
+ * `ProjectContext.projectName` 的唯一来源，推断逻辑不该随注册表一起消失。
+ */
+function inferProjectName(projectPath: string): string {
+  const parts = projectPath.replace(/[/\\]+$/, '').split(/[/\\]/);
+  return parts[parts.length - 1] || 'unnamed';
+}
 
 // ─── 类型 ────────────────────────────────────────────────
 
@@ -40,8 +49,6 @@ export interface ProjectManagerOptions {
   dataDir: string;
   /** 外部注入存储实例（可选，不传则内部 InMemoryStorage 兜底） */
   storage?: IMemoryStorage;
-  /** 注册表目录（可选，缺省同 dataDir；跨项目按名解析需要多项目共用一份注册表） */
-  registryDir?: string;
   /**
    * SecurityGuard 工厂函数（Agent 层注入，解除 memory→security 反向依赖）。
    * 项目切换时调用；不提供则 ProjectContext.security 为 null。
@@ -76,23 +83,14 @@ export class ProjectManager {
     configDir?: string,
     agentDataDir?: string,
   ) => SecurityGuard;
-  /** 项目注册表（专职 projects.json） */
-  private readonly registry: ProjectRegistry;
   /** 锁文件管理器（专职 .memora/.lock） */
   private readonly lockManager: LockManager;
 
   constructor(options: ProjectManagerOptions) {
-    const { dataDir, storage, registryDir, createSecurityGuard } = options;
-    const memoraHome = resolve(expandHome(dataDir));
-    this.agentDataDir = memoraHome;
-    // 注册表目录：显式指定时用之（典型为用户级路径，使注册表跨项目共享）；
-    // 缺省随 dataDir——此时注册表能否跨项目取决于调用方传的 dataDir 是共享还是项目级，
-    // 内核不做假设：项目级 dataDir 下每个项目只注册自身，按名切换不成立（switchProject 已加守卫）。
-    const registryHome = registryDir ? resolve(expandHome(registryDir)) : memoraHome;
+    const { dataDir, storage, createSecurityGuard } = options;
+    this.agentDataDir = resolve(expandHome(dataDir));
     this.externalStorage = storage ?? null;
     this.createSecurityGuard = createSecurityGuard;
-    // 注册表/锁文件委托专职模块
-    this.registry = new ProjectRegistry(join(registryHome, 'projects.json'));
     this.lockManager = new LockManager();
   }
 
@@ -169,9 +167,7 @@ export class ProjectManager {
       ? this.createSecurityGuard(projectPath, memoraDir, configDir, this.agentDataDir)
       : null;
 
-    // 注册到项目表（委托 ProjectRegistry）
-    const name = projectName || ProjectRegistry.inferProjectName(projectPath);
-    this.registry.register(projectPath, name);
+    const name = projectName || inferProjectName(projectPath);
 
     logger.info(
       {
@@ -212,21 +208,6 @@ export class ProjectManager {
       }
       this.agentIndex = null;
     }
-  }
-
-  /** 列出已注册项目（委托 ProjectRegistry） */
-  get list(): ProjectEntry[] {
-    return this.registry.list;
-  }
-
-  /** 注册项目（委托 ProjectRegistry） */
-  registerProject(projectPath: string, name: string): void {
-    this.registry.register(projectPath, name);
-  }
-
-  /** 移除项目（委托 ProjectRegistry） */
-  unregisterProject(projectPath: string): void {
-    this.registry.unregister(projectPath);
   }
 
   /** 当前项目路径 */

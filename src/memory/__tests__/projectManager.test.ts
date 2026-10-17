@@ -1,10 +1,11 @@
 /**
  * 项目管理器测试
- * 覆盖 initProject / closeProject / list / registerProject / 锁文件
+ * 覆盖 initProject / 项目名推断 / closeProject / 锁文件
+ * （项目注册表整链已于 PR-SWITCH-1 删除，注册表相关用例随之移除）
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ProjectManager } from '@/memory/projectManager.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
@@ -96,15 +97,16 @@ describe('ProjectManager · initProject', () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 
-  it('应该注册项目到注册表', async () => {
+  it('项目名：显式传入优先，缺省由路径末段推断', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
     const pm = new ProjectManager({ dataDir: config.memory.dataDir });
-    await pm.initProject(tmpDir, 'test-project');
 
-    const projects = pm.list;
-    const found = projects.find((p) => p.path === tmpDir);
-    expect(found).toBeDefined();
-    expect(found?.name).toBe('test-project');
+    const ctx = await pm.initProject(tmpDir, 'test-project');
+    expect(ctx.projectName).toBe('test-project');
+
+    // 未传名 → 取路径最后一段（inferProjectName，原 ProjectRegistry 静态方法，摘为模块级纯函数）
+    const ctx2 = await pm.initProject(tmpDir);
+    expect(ctx2.projectName).toBe(basename(tmpDir));
 
     await pm.shutdown();
   });
@@ -175,75 +177,7 @@ describe('ProjectManager · initProject', () => {
   });
 });
 
-describe('ProjectManager · 项目注册表', () => {
-  let tmpHome: string;
-
-  beforeEach(() => {
-    tmpHome = mkdtempSync(join(tmpdir(), 'memora-pm-reg-'));
-    mkdirSync(join(tmpHome, '.memora'), { recursive: true });
-  });
-
-  afterEach(() => {
-    rmSync(tmpHome, { recursive: true, force: true });
-  });
-
-  it('应该读写项目注册表', async () => {
-    const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager({ dataDir: config.memory.dataDir });
-
-    pm.registerProject('/path/to/project-a', 'project-a');
-    pm.registerProject('/path/to/project-b', 'project-b');
-
-    const projects = pm.list;
-    expect(projects).toHaveLength(2);
-    expect(projects.find((p) => p.name === 'project-a')).toBeDefined();
-    expect(projects.find((p) => p.name === 'project-b')).toBeDefined();
-  });
-
-  it('注册相同路径应更新而非重复', async () => {
-    const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager({ dataDir: config.memory.dataDir });
-
-    pm.registerProject('/path/to/project-a', 'project-a');
-    pm.registerProject('/path/to/project-a', 'project-a-renamed');
-
-    const projects = pm.list;
-    expect(projects).toHaveLength(1);
-    expect(projects[0]!.name).toBe('project-a-renamed');
-  });
-
-  it('应该从注册表移除项目', async () => {
-    const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager({ dataDir: config.memory.dataDir });
-
-    pm.registerProject('/path/to/project-a', 'project-a');
-    pm.registerProject('/path/to/project-b', 'project-b');
-    pm.unregisterProject('/path/to/project-a');
-
-    const projects = pm.list;
-    expect(projects).toHaveLength(1);
-    expect(projects[0]!.name).toBe('project-b');
-  });
-
-  it('注册表 JSON 损坏时 list 降级为空列表，但 register 抛错避免覆盖', async () => {
-    const config = makeConfig(join(tmpHome, '.memora'));
-    // 写入损坏的 JSON
-    writeFileSync(join(tmpHome, '.memora', 'projects.json'), 'not valid{{{', 'utf-8');
-
-    const pm = new ProjectManager({ dataDir: config.memory.dataDir });
-    // list 是只读操作，损坏时降级返回空列表（不破坏磁盘数据）
-    const projects = pm.list;
-    expect(projects).toHaveLength(0);
-
-    // register 路径必须抛错，避免用空数据覆盖损坏文件导致数据永久丢失
-    expect(() => pm.registerProject('/path/to/project-a', 'project-a')).toThrow(/项目注册表损坏/);
-    // 损坏文件应仍保留原内容（未被空数据覆盖）
-    const rawContent = readFileSync(join(tmpHome, '.memora', 'projects.json'), 'utf-8');
-    expect(rawContent).toBe('not valid{{{');
-  });
-});
-
-describe('ProjectManager · 项目切换', () => {
+describe('ProjectManager · 连续 initProject（旧项目自动关闭）', () => {
   let tmpDir1: string;
   let tmpDir2: string;
   let tmpHome: string;
