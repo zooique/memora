@@ -29,7 +29,7 @@
 | `ILogger` | 可选 | `src/logging/loggerInterface.ts` | 日志，默认内置 |
 | `backgroundProvider` (`LlmProvider`) | 可选 | AgentOptions | 后台通道（归档/投影），不配复用前台 |
 
-\* 不传则内核自动用 `InMemoryStorage` / 内存会话（仅内存不落盘）；做产品必须实现。
+\* 不传则内核自动用内置内存实现 / 内存会话（仅内存不落盘；内存实现类为内部机制，不挂公共面——PUB-API-PRUNE-2 收面）；做产品必须实现。
 
 ### 〇.2 宿主提供的配置资源（`configDir` 下）
 
@@ -86,7 +86,7 @@ configDir/
 | 管什么 | "怎么存取记忆"（逻辑），内核不关心内部是 SQLite 还是内存 | "记忆库与项目注册表放哪个目录"（物理位置） |
 | 谁实现 | 宿主实现（如 SqliteMemoryStorage） | 宿主传路径 |
 | 关系 | `dataDir` 指向目录；宿主按自己的持久化形态构造 storage（JSON 文件 / SQLite 皆可） | 内核用 `dataDir` 推导注册表路径；**项目锁文件不由 `dataDir` 推导**，它固定落 `<projectPath>/.memora/.lock` |
-| 缺省 | 不传 → `InMemoryStorage`（仅内存） | **必填，无默认值**（目录位置与层级语义是宿主的产品决策，内核不假设） |
+| 缺省 | 不传 → 内置内存实现（仅内存，不挂公共面） | **必填，无默认值**（目录位置与层级语义是宿主的产品决策，内核不假设） |
 
 一句话：`storage` 是宿主**怎么**存取的实现，`dataDir` 是存取内容**落在哪个目录**的配置——一个管"如何"，一个管"何处"。
 
@@ -115,7 +115,7 @@ new Agent({
   configDir,              // 配置根目录（role-packs / skills；缺省用内置默认）
   dataDir,                // ✅ 必选：记忆数据落地目录（内核不提供默认值）
   backgroundProvider,     // 后台 LLM
-  storage,                // IMemoryStorage 实现（缺省 InMemoryStorage）
+  storage,                // IMemoryStorage 实现（缺省内置内存实现，不挂公共面）
   sessionStore,           // ISessionStore 实现（缺省仅内存保存）
   webSearchProvider,      // 网络搜索
   tracer,                 // 可观测
@@ -188,7 +188,7 @@ new Agent({
 | `permission` | `'owner' \| 'guest'` | ❌ | 安全权限（默认 'owner'） |
 | `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
-| `storage` | `IMemoryStorage` | ❌ | 存储层注入（默认 InMemoryStorage） |
+| `storage` | `IMemoryStorage` | ❌ | 存储层注入（默认内置内存实现，不挂公共面） |
 | ~~`vectorStore`~~ | ~~`IVectorStore`~~ | — | **已删除（2026-09-18 B0 收编）**：向量语义召回通道此前**写端缺失、从未在生产生效**（`upsert` 零调用 → 库恒空 → 语义分支永不触发 = 僵尸能力）。经主流 agent 调研（Anthropic Memory/Claude Code/Librarian Pattern 实证「LLM 消费者 + 小语料」纯关键词足用）拍板收编：`IVectorStore` 接口、`JsonVectorStore`、`EmbeddingProvider` 及 `config.embedding` 段全链删除；`search_memories` 走纯关键词，未命中提示 LLM 换词重试 |
 | ~~`recallExcludeSources`~~ | ~~`string[]`~~ | — | **已删除（2026-09-11）**：该配置随召回编排 `recall()` 退役后成为零消费者死配置，全链（AgentOptions → AgentConfig → AssembleInput → ContextPreparerDeps）物理删除。关联推荐的实际排除走 `Agent.governance.suggest(query, { excludeSources })` 显式参数 |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
@@ -495,7 +495,7 @@ interface Memory {
 
 ### 5.2 `IMemoryStorage` 接口
 
-宿主实现此接口注入 Agent，替代默认的 `InMemoryStorage`。共 **15 方法**（14 必需 + 可选 `close`），所有方法同步（与 better-sqlite3 API 对齐，`await` 同步值安全）。所有查询方法自动过滤已软删除的记忆（`deletedAt != undefined`）。
+宿主实现此接口注入 Agent，替代内核内置的内存默认实现（内部类，不挂公共面——PUB-API-PRUNE-2 收面）。共 **15 方法**（14 必需 + 可选 `close`），所有方法同步（与 better-sqlite3 API 对齐，`await` 同步值安全）。所有查询方法自动过滤已软删除的记忆（`deletedAt != undefined`）。
 
 ```typescript
 interface IMemoryStorage {
@@ -747,7 +747,7 @@ const agent = new Agent({
 
 > 宿主实现此接口并注入 `AgentOptions.fetchProvider`，即可让 Agent 读取 `web_search` 找到的候选链接正文。
 > 未注入时，Agent 不会暴露 `web_fetch` 工具给 LLM。
-> 内核提供 `FetchWebFetchProvider` 作为基于内置 `fetch` + 正则清洗 HTML 的零依赖默认实现；`safeFetch` 为带 30s 超时保护的包装（抓取失败/超时降级返回友好提示，不中断主流程）。
+> 内核提供 `FetchWebFetchProvider` 作为基于内置 `fetch` + 正则清洗 HTML 的零依赖默认实现。抓取调用由内核 `toolExecutor` 经内部超时包装执行（30s；抓取失败/超时降级返回友好提示，不中断主流程）——该包装为**内部机制，不挂公共面**（PUB-API-PRUNE-2 收面，4.x 的 `safeFetch` 导出已删）。
 
 ```typescript
 // 抓取结果
@@ -779,7 +779,7 @@ const agent = new Agent({
 
 > 宿主实现此接口并注入 `AgentOptions.codeExecutionProvider`，即可让 Agent 拥有通用代码执行能力（计算 / 数据处理 / 验证）。
 > 未注入时，Agent 不会暴露 `run_code` 工具给 LLM。
-> **内核零运行时依赖**：沙箱执行（语言白名单 / 资源限制 / 网络隔离）完全由宿主 provider 决定；`safeExecuteCode` 为带 120s 超时保护的包装（执行失败/超时降级返回错误结果，不中断主流程）。
+> **内核零运行时依赖**：沙箱执行（语言白名单 / 资源限制 / 网络隔离）完全由宿主 provider 决定。执行调用由内核 `toolExecutor` 经内部超时包装执行（120s；执行失败/超时降级返回错误结果，不中断主流程）——该包装为**内部机制，不挂公共面**（PUB-API-PRUNE-2 收面，4.x 的 `safeExecuteCode` 导出已删）。
 
 ```typescript
 // 执行结果
@@ -811,7 +811,7 @@ const agent = new Agent({
 
 > 宿主实现此接口并注入 `AgentOptions.projectSearchProvider`，即可让 Agent 具备「在当前项目（工作区）中搜索」能力（等价 IDE 全局搜索 `Ctrl+Shift+F`）。
 > 未注入时，Agent 不会暴露 `search_project` 工具给 LLM。
-> **内核零依赖**：目录遍历 / 忽略规则 / 扫描与结果上限全由宿主决定；内核提供 `safeSearchProjectFiles` / `safeSearchProjectText` 两个带 30s 超时保护的包装，并内置由分词 SSOT 产出的**放宽词表**（`buildSearchTerms`）。
+> **内核零依赖**：目录遍历 / 忽略规则 / 扫描与结果上限全由宿主决定。搜索调用由内核 `toolExecutor` 经内部超时包装执行（30s），并内置由分词 SSOT 产出的**放宽词表**（`buildSearchTerms`）——包装为**内部机制，不挂公共面**（PUB-API-PRUNE-2 收面，4.x 的 `safeSearchProjectFiles` / `safeSearchProjectText` 导出已删）。
 
 ```typescript
 // 文件名命中
@@ -1183,10 +1183,9 @@ export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@zooique/memora';
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@zooique/memora';
 // 网页抓取（搜索→抓取闭环第二段）
 export type { IFetchProvider, FetchedPage, FetchOptions } from '@zooique/memora';
-export { FetchWebFetchProvider, safeFetch } from '@zooique/memora';
+export { FetchWebFetchProvider } from '@zooique/memora';
 // 代码执行（通用计算底座）
 export type { ICodeExecutionProvider, CodeExecutionResult, CodeExecutionOptions } from '@zooique/memora';
-export { safeExecuteCode } from '@zooique/memora';
 
 // 作品投影
 export type { WorkProjectionEntry } from '@zooique/memora';
@@ -1197,17 +1196,15 @@ export type { Memory } from '@zooique/memora';
 export { validateSource } from '@zooique/memora';
 export type { SourceValidationSeverity } from '@zooique/memora';
 export type { IMemoryStorage } from '@zooique/memora';
-export { InMemoryStorage } from '@zooique/memora';
 // 记忆存储落盘实现（工厂 + 只读视图）
 export { createNodeSqliteStorage } from '@zooique/memora';
 export type { ReadOnlyMemoryStorage } from '@zooique/memora';
 export type { ISessionStore, SessionMessage } from '@zooique/memora';
 export type { ForkResult } from '@zooique/memora';
 
-// 项目注册表 + 锁文件管理
+// 项目注册表
 export { ProjectRegistry } from '@zooique/memora';
 export type { ProjectEntry } from '@zooique/memora';
-export { LockManager } from '@zooique/memora';
 
 // 事件系统
 export { TypedEventEmitter } from '@zooique/memora';
@@ -1228,9 +1225,6 @@ export { setLogger, logger } from '@zooique/memora';
 // 网络搜索
 export type { IWebSearchProvider, SearchResult, WebSearchOptions, SearchEndpoint } from '@zooique/memora';
 export { FetchWebSearchProvider } from '@zooique/memora';
-
-// 项目搜索（等价 IDE 全局搜索；IProjectSearchProvider 注入接口见 §8.6）
-export { safeSearchProjectFiles, safeSearchProjectText } from '@zooique/memora';
 
 // 角色包
 export type { RolePackMeta } from '@zooique/memora';
@@ -1270,7 +1264,7 @@ export type {
 > （模块不可用时抛专属错误，其错误码为 `ToolErrorCode.NOT_AVAILABLE`）；宿主**不得**自行解析 Node 版本号推断；
 > ③ **只读视图**：工厂第二参数为只读开关，返回对象**结构上不含写方法**（供只读宿主零并列复用同一实现），
 > 只读连接不建库、不迁移；④ 文件路径语义留在宿主侧（内核不拼目录、不定义文件名）；⑤ 实现仅依赖 Node 内建模块，
-> 不引入第三方运行时依赖。稳定性：随 `5.0.0` 起提供，语义受契约对拍测试（与 `InMemoryStorage` 逐位一致）约束。
+> 不引入第三方运行时依赖。稳定性：随 `5.0.0` 起提供，语义受契约对拍测试（与内核内置内存实现逐位一致）约束。
 
 ---
 

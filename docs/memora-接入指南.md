@@ -109,7 +109,8 @@ const backgroundProvider = createProviderFromConfig('background', {
   model: 'deepseek-chat', // 可用更便宜的模型
 });
 
-// 可选：注入存储层（不传则使用 InMemoryStorage）。后端由宿主自选，二选一即可：
+// 可选：注入存储层（不传则用内核内置内存实现，仅内存不落盘；该类不挂公共面——PUB-API-PRUNE-2 收面）。
+//         后端由宿主自选，二选一即可：
 const storage: IMemoryStorage = new MySqliteStorage('/path/to/memora.db'); // SQLite（同步实现天然对齐）
 // const storage: IMemoryStorage = new MyJsonStorage('/path/to/memories.json'); // JSON 文件（第一宿主 memora-vscode 的选法）
 
@@ -466,7 +467,6 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 |-----------|------|
 | `createProviderFromConfig(name, config)` | 从命名配置创建单个 Provider 实例（扁平参数） |
 | `loadConfig(path?)` | 加载 `.memora/config.json` 项目级配置文件（或传入显式 configPath） |
-| `InMemoryStorage` | IMemoryStorage 的纯内存实现（测试用） |
 | `createNodeSqliteStorage(dbPath[, options])` | 内核提供的 SQLite 落盘实现**工厂**（基于 `node:*` 内建模块，零第三方依赖）。不可用时抛专属错误（错误码 `NOT_AVAILABLE`）——「当前环境能否用 SQLite」的**唯一判据**（勿自行解析版本号）。第二参数 `{ readOnly: true }` 返回只读视图 |
 | `ReadOnlyMemoryStorage` | 只读存储视图**类型**（`IMemoryStorage` 的读方法子集，结构上无写方法）。供只读宿主（如 MCP）复用同一实现，避免自写第二份 SQLite 语义 |
 | `setLogger(logger)` | 替换全局日志实现 |

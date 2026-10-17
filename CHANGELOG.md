@@ -180,6 +180,39 @@
 - 守卫：`publicMemberSurfaceGuard` EXPECTED 删 1 项；手册 §6.3 方法表同步删行；接入指南
   「会话持久化特性」处 `loadSessionMessages()` 补「内部方法，非公开 API」限定。
 
+### ⚠️ Breaking Removed（内核 · 公开面收面第二批 · `PUB-API-PRUNE-2` · 用户 2026-10-17 拍板「两组照单全清」）
+
+> **性质**：延续 `PUB-API-PRUNE-1`（12 项通用工具 / 重复入口）的公开面剪枝第二批——内部机制、
+> 默认实现、纯转发门面不挂公共面。删除的 12 项**能力全部不消失**（内部实现 / 接口契约 /
+> 真身方法仍在），收回的只是 `index.ts` 的导出行 / 类成员位。
+
+- 删 **4 个 safe\* 超时包装导出**（`safeFetch` / `safeExecuteCode` / `safeSearchProjectFiles` /
+  `safeSearchProjectText`）：均为内核 `toolExecutor` 调宿主注入 provider（fetch / code-exec /
+  project-search）时的超时降级包装（30s / 120s），属**内部机制**——宿主注入接口
+  （`IFetchProvider` / `ICodeExecutionProvider` / `IProjectSearchProvider`）不变，超时保护照常
+  生效，只是不再对外可见。
+- 删 **3 个内部实现类导出**（`InMemoryStorage` / `InMemorySessionStore` / `LockManager`）：
+  不注入 storage / sessionStore 时的内置内存默认实现 + 项目注册表锁的内部实现。类保留在
+  内核内部（`projectManager` 等仍在用），宿主经 `IMemoryStorage` / `ISessionStore` 接口自选
+  后端（含 `createNodeSqliteStorage` 工厂）；锁机制对宿主不可见亦无需可见。
+- 删 **`Agent` 4 个纯转发门面**（`appendPlanItem` / `triggerError` / `recover` /
+  `injectSystemMessage`）：逐一薄委托 `sessionManager` 同名方法，删后经
+  `agent.sessionManager.*` 可达——能力不撤，只拆一层无语义转发。同轮复核的
+  `getActiveStrategy` **保留**（无真身转发、属 Agent 级策略领域读取器且内部自用，删它属
+  「为删而改代码」）。
+- **`RolePackManager.tryBuildMeetingPlan` 摘类**为模块级纯函数 `buildMeetingPlanSkeleton`
+  （同包 `seed/prepare.ts` 直调，不挂 `index.ts`）：会议骨架预置能力未撤（「小组会议」输入
+  照旧 overwrite 骨架任务表），组长 / 组员数据改经公开出口 `getActiveTeam()` 取——收回的
+  只是类方法这一个公开成员位。
+- 守卫：`publicMemberSurfaceGuard` EXPECTED 删 8 项（Agent 4 + RolePackManager 1 + 三类符号
+  条目），表头 88 → 85，补定性记录 ③；走「守卫红（精确 8 项）→ §3.2.1 定性 → 更新基线 →
+  复跑绿」全流程。`publicApiSurfaceGuard` 向 C 精确红 6 项（手册 §十六 仍承诺已删导出）→
+  手册 / 接入指南 / README 三文档同步删行改叙述（safe\* 改「内部机制，不挂公共面」、
+  InMemoryStorage 改「内置内存实现」）后转绿。
+- ⚠️ **对 4.x 升级者的代价**：12 项均随 4.0.0 已发布，直删使其失去 deprecation 预警期，由
+  本条 Breaking 明示——内部消费面为零（宿主经 `@zooique/memora` 包入口零消费已实证），仅
+  外部接入者可能受影响；替代路径 = 上述注入接口 / `agent.sessionManager.*` / 纯函数直调。
+
 ### Added（内核 · 存储层 SQLite 实现内核切片 · 服务 `DSH-1` / `MCP-SERVER-1` 共同前置，2026-10-16）
 
 - 新增 **`createNodeSqliteStorage(dbPath)`**（同步工厂）+ **`ReadOnlyMemoryStorage`**（只读视图类型）两个公共

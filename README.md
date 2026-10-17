@@ -207,7 +207,7 @@ await agent.close();
 
 | 接口 | 职责 | 内置实现 | 宿主注意 |
 |------|------|----------|----------|
-| `IMemoryStorage` | 记忆 CRUD + 搜索 + 按 source 查询 | `InMemoryStorage`（**仅内存占位，不持久化**）+ **可选落盘实现** `createNodeSqliteStorage(dbPath)`（基于 `node:*` 内建模块，零第三方依赖） | 持久化后端由宿主选：经内核工厂建 SQLite，或自实现（JSON / 自有 SQLite）；重启后数据依赖所选实现 |
+| `IMemoryStorage` | 记忆 CRUD + 搜索 + 按 source 查询 | 内置内存默认实现（**仅内存占位，不持久化**；内部类，不挂公共面——PUB-API-PRUNE-2 收面）+ **可选落盘实现** `createNodeSqliteStorage(dbPath)`（基于 `node:*` 内建模块，零第三方依赖） | 持久化后端由宿主选：经内核工厂建 SQLite，或自实现（JSON / 自有 SQLite）；重启后数据依赖所选实现 |
 | `ISessionStore` | 会话历史 + 标题元数据持久化 | 无（宿主实现） | **不含检查点持久化**（2026-09-10 减法：跨重启恢复链整体退役）——中止/断电一律把未完成 turn 补全为完整 turn 身份、下次会话按历史加载；运行时暂停是同 turn 内续跑（内存态），无需跨进程载体 |
 | `ILogger` | 日志输出 | console fallback | 无 |
 | `ITracer` | 可观测性 span | `NOOP_TRACER` | 无 |

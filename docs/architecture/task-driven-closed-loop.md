@@ -1,6 +1,6 @@
 # 任务驱动的多 turn 任务编排收敛模型
 
-> **⚠️ 2026-09-04 整体废弃**：本文论述的多 turn 任务编排架构（难度分级 `difficulty.ts` + `externalTaskLoop`/`runStepSequence` 跨 turn 串联 + `runReport` 汇报 turn）已全部删除（-1181 行）。**历史设计记录原样保留**——它记录了从"多 turn 串联"架构到"单 turn step 循环驱动"的完整探索过程。收敛后的现状：所有复杂度（任务表、会议多角色、动态进度追踪）在一个 turn 的 step 循环内自然生长，LLM 自主调 `task_table_write` 而非强制前置规划。任务表工具（`task_table_write/update/complete`）+ 会议机制（`tryBuildMeetingPlan` 预置 writePlan）全部保留。
+> **⚠️ 2026-09-04 整体废弃**：本文论述的多 turn 任务编排架构（难度分级 `difficulty.ts` + `externalTaskLoop`/`runStepSequence` 跨 turn 串联 + `runReport` 汇报 turn）已全部删除（-1181 行）。**历史设计记录原样保留**——它记录了从"多 turn 串联"架构到"单 turn step 循环驱动"的完整探索过程。收敛后的现状：所有复杂度（任务表、会议多角色、动态进度追踪）在一个 turn 的 step 循环内自然生长，LLM 自主调 `task_table_write` 而非强制前置规划。任务表工具（`task_table_write/update/complete`）+ 会议机制（会议骨架预置：2026-10-17 起为模块级纯函数 `buildMeetingPlanSkeleton`，由 `seed/prepare.ts` 经 `getActiveTeam()` 取数后直调，预置 writePlan）全部保留。
 >
 > 现状真理源：[agent-design-philosophy.md](./agent-design-philosophy.md)（头部收敛补记已更新）· 代码：[orchestrator.ts](../../src/agent/seed/orchestrator.ts) · [loop.ts](../../src/agent/loop.ts)
 >
