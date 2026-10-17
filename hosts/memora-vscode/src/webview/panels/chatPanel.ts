@@ -1352,24 +1352,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   };
 
   /**
-   * projectSwitched：项目切换（内核在 init/close 或显式切换时 emit）
-   *
-   * 转发为 notice info 级提示条，让用户感知当前工作目录已变更。
-   * 内核事件形状：{ from: string | null; to: string; projectName: string }
-   */
-  private readonly onProjectSwitched = (info: {
-    from: string | null;
-    to: string;
-    projectName: string;
-  }): void => {
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `项目已切换：${info.projectName ?? info.to}`,
-    });
-  };
-
-  /**
    * workProjectionGenerated：工作投影生成（内核后台投影完成时 emit）
    *
    * 转发为 notice info 级提示条，告知用户当前工作投影已更新。
@@ -1510,8 +1492,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.on('backgroundTaskSettled', this.onBackgroundTaskSettled);
 
     // 项目切换 + 工作投影生成事件 → info 级提示条
-    a.off('projectSwitched', this.onProjectSwitched);
-    a.on('projectSwitched', this.onProjectSwitched);
+    // 注：projectSwitched 事件随内核 PR-SWITCH-1 一并删除（多项目改为宿主各建一个 Agent
+    // 实例，内核不再切换项目）⇒ 此处原订阅为僵尸（永不触发），已移除。
     a.off('workProjectionGenerated', this.onWorkProjectionGenerated);
     a.on('workProjectionGenerated', this.onWorkProjectionGenerated);
     // 后台事件 → info 级提示条（调试可观测性）
