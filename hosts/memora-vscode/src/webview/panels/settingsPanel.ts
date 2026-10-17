@@ -210,7 +210,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.loadCustomSearchEnginesStatus();
       this.loadSearchEngineStatus();
       // 记忆子视图：推送会话归档模式当前值（归档模式下拉的回显真源）
-      this.loadArchiveModeStatus();
+      this.loadArchiveModePreference();
       return;
     }
 
@@ -1603,9 +1603,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    *   ① 枚举校验（webview 下拉本只含合法值；直接发消息的越界值照拒——不依赖前端收敛）；
    *      拒收后**回推一次持久值**——下拉可能已被改到非法值，不回推就停在假值上（UI 谎报）；
    *   ② 持久化用户级设置 memora.archiveMode（ConfigurationTarget.Global——用户偏好随人）；
-   *   ③ 热更新 agent.setArchiveMode()：内核 assertNotBusy，对话进行中抛错。
-   *      抛错时**偏好仍落盘**（装配期读取），运行时保留下一位模式直到对话结束——
-   *      提示如实说明顺延，不谎报「已生效」。
+   *   ③ 热更新 agent.setArchiveMode()：内核判 busy（chatLock.isBusy）后**暂存并抛错**
+   *      （ADR-041 方案 A2，对齐 reloadConfig 的 pendingConfigReload 契约）⇒ 偏好落盘
+   *      即排队，流退出时补执行到账；提示如实说明顺延，不谎报「已生效」。
    *      ⚠ agent 未就绪（无装配工厂 / 无工作区 / 装配失败）时运行时**零动作**，且没有
    *      「对话结束后补应用」的载体 ⇒ 走 error 级降级提示，**不得**推成功提示：
    *      applied 初值恒真的旧实现把 `if (agent)` 的空分支也算成功，该路径会报
@@ -1614,9 +1614,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private async setArchiveMode(mode: ArchiveMode): Promise<void> {
     if (mode !== 'full' && mode !== 'manual') {
       this.post({ type: 'notice', level: 'error', message: `无效的归档模式：${String(mode)}` });
-      // 拒收即复位：下拉此时已停在（被篡改的）非法值上，回推持久值让它回到真相。
+      // 拒收即复位：下拉此时已停在（被篡改的）非法值上，回推持久值让它回到偏好。
       // 口径与切换路径一致——archive_mode_status 恒推持久值，webview 据此回写 select。
-      this.loadArchiveModeStatus();
+      this.loadArchiveModePreference();
       return;
     }
     // 先落盘再热更新：用户偏好是持久真相，运行时切换是 hot-path 优化
@@ -1630,7 +1630,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     try {
       const agent = await this.ensureAgent();
       if (agent) {
-        agent.setArchiveMode(mode); // 繁忙时抛错（内核 assertNotBusy）
+        agent.setArchiveMode(mode); // 繁忙时暂存+抛错（内核 A2：流退出时补执行）
         applied = true;
       } else {
         // 降级：偏好已落盘（下次装配读取即生效），但运行时此刻没切、也没有补应用载体
@@ -1660,8 +1660,16 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** 加载并推送当前归档模式（settings 视图 ready 时调用；真源 = 用户级设置 memora.archiveMode） */
-  private loadArchiveModeStatus(): void {
+  /**
+   * 加载并回推归档模式**偏好**（settings 视图 ready 握手 + 切换/拒收后回推）
+   *
+   * 命名刻意说「偏好」不说「状态」：读的是用户级设置 `memora.archiveMode` 的**持久值**
+   * （真源 = 用户偏好），**不是运行时真相**（运行时真相的官方读口 = 内核 `getArchiveMode()`，
+   * 仅供内核侧往返测试消费，不进 UI——UI 层不开第二条真值运输通道）。旧名
+   * `loadArchiveModeStatus` 把「偏好」说成「状态」，正是批次四「下拉显示新值 / 运行时仍旧值」
+   * 这条缺口的认知来源之一。
+   */
+  private loadArchiveModePreference(): void {
     const mode = vscode.workspace
       .getConfiguration('memora')
       .get<ArchiveMode>('archiveMode', 'full');

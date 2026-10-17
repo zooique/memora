@@ -6,15 +6,15 @@
  *      + 热更新 agent.setArchiveMode + 回推 archive_mode_status + info 提示；
  *   ② 非法枚举 → 整体拒绝（不落盘 / 不热更新 / 不回推——不依赖 webview 下拉收敛，
  *      直接发消息的越界值照拒，与服务端校验同一条纪律）；
- *   ③ 对话繁忙（内核 assertNotBusy 抛错）→ **偏好仍落盘**（装配期读取）+ 回推 status
+ *   ③ 对话繁忙（内核 A2：判 busy 后暂存+抛错）→ **偏好仍落盘**（装配期读取）+ 回推 status
  *      + info 级顺延提示——不得谎报「已生效」，也不得把「用户偏好已保存」显示成红色错误；
- *   ④ loadArchiveModeStatus：ready 握手回推的真相源 = 用户级设置（缺省 full）。
+ *   ④ loadArchiveModePreference：ready 握手回推**偏好持久值**（下拉真源 = 用户级设置，缺省 full）。
  *
  * ⚠ 变异验证靶标：撤掉 setArchiveMode 里的 config.update → 「持久化」断言转红；
  * 撤掉 agent.setArchiveMode 调用 → 「热更新」断言转红；把繁忙 catch 改成回滚偏好
  * → 「偏好仍落盘」断言转红（那会让保存过的偏好下次装配又变回去）；把 `applied` 初值
  * 改回 true（或删掉 agent 未就绪的降级提示）→「Agent 未就绪」用例转红（假成功回归锚点）；
- * 撤掉拒收分支的 loadArchiveModeStatus() → 「复位下拉」断言转红。
+ * 撤掉拒收分支的 loadArchiveModePreference() → 「复位下拉」断言转红。
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -189,22 +189,22 @@ describe('settingsPanel.setArchiveMode —— 归档模式切换', () => {
     expect(msgs.some((m) => m.message?.includes('已切换归档模式'))).toBe(false);
   });
 
-  it('loadArchiveModeStatus：回推真相源 = 用户级设置（读到的值原样推送）', async () => {
+  it('loadArchiveModePreference：回推的是偏好持久值（下拉真源 = 用户级设置，非运行时真相）', async () => {
     vscodeConfigMock.cfgGet.mockImplementation((key: string) =>
       key === 'archiveMode' ? 'manual' : undefined,
     );
     const { provider, posted } = setup(agentStub().agent);
 
-    (provider as unknown as { loadArchiveModeStatus(): void }).loadArchiveModeStatus();
+    (provider as unknown as { loadArchiveModePreference(): void }).loadArchiveModePreference();
 
     expect(posted).toContainEqual({ type: 'archive_mode_status', mode: 'manual' });
   });
 
-  it('loadArchiveModeStatus 缺省 → full（配置未写时回落，与 package.json default 同口径）', async () => {
+  it('loadArchiveModePreference 缺省 → full（配置未写时回落，与 package.json default 同口径）', async () => {
     // 基座 mock 忠实 VS Code API：get('archiveMode', 'full') 未配置 → 回落 'full'
     const { provider, posted } = setup(agentStub().agent);
 
-    (provider as unknown as { loadArchiveModeStatus(): void }).loadArchiveModeStatus();
+    (provider as unknown as { loadArchiveModePreference(): void }).loadArchiveModePreference();
 
     expect(vscodeConfigMock.cfgGet).toHaveBeenCalledWith('archiveMode', 'full');
     expect(posted).toContainEqual({ type: 'archive_mode_status', mode: 'full' });
