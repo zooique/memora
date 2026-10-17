@@ -160,6 +160,26 @@
 - 宿主侧注释清算：`chatView.ts` 归档停滞兜底注释去掉 `forceReleaseChatLock` 引用（该 API 已不存在，
   注释腐化会误导后人以为宿主有该兜底）。
 
+### ⚠️ Breaking Removed（内核 · `loadSessionMessages` 委托出口直删 · 用户 2026-10-17 拍板不走 DEPRECATE-1 周期）
+
+> **性质**：单方法删除，属「半个 `switchToSession`」的语义不完整出口。原为
+> `MessageHistory.loadSessionMessages` 的薄委托（设 `currentDate`/`currentSession` + 经
+> `ISessionStore.loadMessages` 读消息）——**改了会话锚点却不 restore 到 AgentLoop 工作记忆**，
+> 调用后下一条 `chat` 写入被加载会话而上下文仍属旧会话 = 陷阱入口（JSDoc ⚠ 即防此）。
+
+- **退役路径变更**：该方法 2026-10-16 已按 DEPRECATE-1 三件套登记（代码 `@deprecated` + 台账在册 +
+  守卫基线保留），原计划 6.0.0 移除；用户 2026-10-17 拍板「5.0.0 已如此大动干戈，不差这一条」
+  ⇒ **提前于 deprecation 周期直删**，与 heartbeat/restore 族同型裁决（三面零消费 + 5.0.0 未发布
+  零外部破坏窗口 + 语义不完整无保留价值）。
+- **能力不消失**：「按 date/session 读消息」的真源 = `ISessionStorage.loadMessages` 接口契约
+  （宿主自家 store 已实现并直读，chatPanel `loadMessagesHistory` 路径在途）；`MessageHistory.
+  loadSessionMessages` 内部方法保留（`switchToSession` 内部消费，非公开面）。删的只是冗余委托出口。
+- ⚠️ **对 4.x 升级者的代价**：随 4.0.0 已发布，直删使其失去 deprecation 预警期，由本条 Breaking
+  明示——内部消费面为零，仅外部接入者可能受影响。替代 = `switchToSession`（切换+加载+应用 loop
+  的生产路径）。
+- 守卫：`publicMemberSurfaceGuard` EXPECTED 删 1 项；手册 §6.3 方法表同步删行；接入指南
+  「会话持久化特性」处 `loadSessionMessages()` 补「内部方法，非公开 API」限定。
+
 ### Added（内核 · 存储层 SQLite 实现内核切片 · 服务 `DSH-1` / `MCP-SERVER-1` 共同前置，2026-10-16）
 
 - 新增 **`createNodeSqliteStorage(dbPath)`**（同步工厂）+ **`ReadOnlyMemoryStorage`**（只读视图类型）两个公共
@@ -226,10 +246,16 @@
 ### Added（内核 · web_search 执行留痕：「搜不准」归因取证轨 · `SEARCH-QUALITY-1` P1-1，原定 4.1.0、随 2026-10-15 归并）
 
 - **新增裁决证据变体 `web_search_result`**（`RoundEvidenceEvent` 第四成员，随 Round 持久化）：
-  payload = `query`（LLM 实际发出的查询串——归因第一现场）/ `endpoint?`（降级分型证据）/
-  `count`（0 = 零结果同样留痕）/ `titles[]`（净化 + 截断后前 5 条，全量计数看 count）。
+  payload = `toolCallId?`（工具调用唯一 ID，= `tool_start.toolCallId`；旧持久化轮无此字段）/ `query`
+  （LLM 实际发出的查询串——归因第一现场）/ `endpoint?`（降级分型证据）/ `count`（0 = 零结果同样留痕）/
+  `titles[]`（净化 + 截断后前 5 条，全量计数看 count）。
   旧台账只留「命中了什么页面」、没留「搜的是什么」⇒ 质量争议只能推断；留痕后可直接对齐
   「模型问了什么 ⇄ 引擎回了什么」。
+- **证据配对根治**（2026-10-17 收尾批，内核 `8588d9fb` + 宿主同批）：宿主渲染原按「`query` 文本 +
+  行序猜」配对证据与工具行，同 query 多次搜索且其中一次被护栏硬拦（不产证据）时会顺延张冠李戴；
+  改为主配 `toolCallId`（`Map<toolCallId, ev>` 直配，无 ID 旧轮回退 query 游标）。内核侧穿参
+  `tc.id` → `ToolExecutor.execute` 第 5 参 → `WebSearchExecInfo.toolCallId` → 证据 payload，契约与
+  `WebSearchExecInfo` 均声明**可选**（跨 dist 兼容：4.0.x 内核发的旧轮无此字段，宿主须容错）。
 - 落点嫁接既有缝点（零新机制）：toolExecutor `WebSearchExecInfo` + `setSearchResultObserver`
   （web_search case 在 `safeSearch` 之后、空结果分支**之前**发射——safeSearch 降级页按原样记录
   = 诚实镜像 LLM 实际所得；护栏硬拦的搜索不走此路，未执行无结果面）→ loop 新增 public

@@ -323,7 +323,7 @@ const agent = new Agent({
 **会话持久化特性：**
 - 日期使用 `todayDate()` 动态获取，确保跨日后消息写入当天目录
 - `appendUser()` / `appendAssistant()` 自动调用 `appendMessage()`
-- `loadSessionMessages()` 自动调用 `loadMessages()`
+- `loadSessionMessages()`（内部方法，非公开 API）自动调用 `loadMessages()`
 - `SessionMessage.role` 支持 `'user' | 'assistant' | 'system'`，宿主直接调用 `appendMessage()` 时可传入任意角色
 
 ---
