@@ -10577,7 +10577,10 @@ describe('web_search 裁决证据（evidence 随 RoundView / 收场消息透传�
         id: 'round-blocked',
         user: { content: '同词两次，一次被拦', ts: 't1' },
         assistantMessage: { content: '第二次查了', ts: 't9' },
-        processEvents: [...wsEvents('w1', 'A', '被拦（未执行）', 2), ...wsEvents('w2', 'A', '第二次', 4)],
+        processEvents: [
+          ...wsEvents('w1', 'A', '被拦（未执行）', 2),
+          ...wsEvents('w2', 'A', '第二次', 4),
+        ],
         evidence: [
           {
             type: 'web_search_result',

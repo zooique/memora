@@ -265,8 +265,10 @@ export class ToolRunner {
 
     // race 结束清理监听器，避免并发工具调用累积残留监听器（{ once: true } 不保证未触发时被移除）。
     // ⚠️ 注意：execute 胜出时已完成（含可能的 emitOutcome）；abort 胜出时执行仍在后台跑但结果丢弃。
-    return Promise.race([execute(name, args, emitOutcome, toolCallId), abortPromise]).finally(() => {
-      if (onAbort) signal.removeEventListener('abort', onAbort);
-    });
+    return Promise.race([execute(name, args, emitOutcome, toolCallId), abortPromise]).finally(
+      () => {
+        if (onAbort) signal.removeEventListener('abort', onAbort);
+      },
+    );
   }
 }
