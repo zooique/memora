@@ -233,6 +233,13 @@ export const chatStyles = `
     padding: var(--sp-4, 10px); text-align: center;
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
+  /* 日期分组头（2026-10-17 按日期分组）：纯展示元素，**不可**长成 .treedd__item——
+     dropdown 键盘导航取全部 .treedd__item，组头若进 item 集会让方向键跳到不可选中元素。
+     日期真源 = sessionId 前缀（内核 buildSessionId 契约派生），零新协议字段。 */
+  .session-history__date-group {
+    padding: var(--sp-2, 6px) var(--sp-3, 8px) var(--sp-1, 4px);
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+  }
   /* 分组切换器（会话记录 / 留存区）：贴在下拉面板顶部，不随条目重建被清空。
      注意：用普通按钮样式，**不可**长成 .treedd__item（那会让点击委托收起整个菜单）。 */
   .session-tabs {

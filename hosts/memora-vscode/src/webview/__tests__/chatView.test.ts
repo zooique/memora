@@ -3800,6 +3800,51 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     expect(document.querySelectorAll('#historyMenu .treedd__item').length).toBe(0);
   });
 
+  it('session_list_data 按日期前缀分组渲染组头；组间 ISO 日期降序、组头带条数', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [
+        // 下发顺序刻意「旧日期在前」：Map 插入序 ≠ 降序 ⇒ 组间排序不是空转
+        // （变异实证：去掉 sort 后本测试红——若数据碰巧降序下发则 sort 空转、断言失真）
+        { sessionId: '2026-08-14-s1', title: '会话B', updatedAt: new Date().toISOString() },
+        { sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() },
+        { sessionId: '2026-08-14-s2', title: '会话C', updatedAt: new Date().toISOString() },
+      ],
+      archivedIds: [],
+    });
+    const heads = [...document.querySelectorAll('#historyMenu .session-history__date-group')];
+    // 两个日期 → 两个组头；组间降序（ISO 日期字符串可直接比较，与 updatedAt 降序同向）
+    expect(heads.map((h) => h.textContent)).toEqual(['2026-08-15 · 1 条会话', '2026-08-14 · 2 条会话']);
+    // 组内保留下发顺序：新日期组的条目在前，旧日期组内两条按原序
+    const items = [...document.querySelectorAll('#historyMenu .treedd__item')];
+    expect(items.map((i) => (i as HTMLElement).dataset.treeddId)).toEqual([
+      '2026-08-15-s1',
+      '2026-08-14-s1',
+      '2026-08-14-s2',
+    ]);
+  });
+
+  it('日期组头不是 treedd__item（dropdown 键盘导航契约：方向键不得跳到不可选中的组头）', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [
+        { sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() },
+      ],
+      archivedIds: [],
+    });
+    const heads = document.querySelectorAll('#historyMenu .session-history__date-group');
+    expect(heads.length).toBe(1);
+    for (const h of heads) {
+      expect(h.classList.contains('treedd__item')).toBe(false);
+      // 纯展示元素不占 menuitem 语义
+      expect(h.getAttribute('role')).toBeNull();
+    }
+    // item 总数 = 会话条目数（组头不计入）
+    expect(document.querySelectorAll('#historyMenu .treedd__item').length).toBe(1);
+  });
+
   it('点击外部区域收起历史菜单（treedd 外部关闭机制）', () => {
     mountChatView();
     const dd = document.getElementById('historyDd') as HTMLElement;

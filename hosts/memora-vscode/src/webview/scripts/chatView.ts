@@ -6354,7 +6354,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return haystack.toLowerCase().includes(q);
   }
 
-  /** 渲染当前分组的条目（单容器，一次只渲染一组；搜索词在组内二次过滤） */
+  /** 渲染当前分组的条目（单容器，一次只渲染一组；搜索词在组内二次过滤）。
+   *
+   * **按日期分组（2026-10-17）**：条目在日期组头下按 sessionId 前缀归组——
+   * 日期真源 = sessionId 前缀（契约锚定内核 `buildSessionId`/`splitSessionId`
+   * 「YYYY-MM-DD-name」格式，与 `fmtRelativeTime` 末尾 `slice(0, 10)` 同款派生，
+   * **不新加协议字段**——加了就是第二真相源，格式调整时必漂移）。
+   * 组头是**非 `.treedd__item` 的纯展示元素**：dropdown 键盘导航取全部
+   * `.treedd__item`，组头若长成 item 会让方向键跳到不可选中的组头。
+   * 组间按 ISO 日期降序（字符串可比，与 updatedAt 降序同向：最新活跃的日期组在前），
+   * 组内保持 updatedAt 降序（沿用下发顺序）。 */
   function renderHistoryView(): void {
     const archived = new Set(lastArchivedIds);
     const q = sessionSearchQuery.trim().toLowerCase();
@@ -6381,62 +6390,83 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       historyMenu.appendChild(empty);
       return;
     }
+    // 按日期前缀分组（Map 保插入序，再按日期降序排组——ISO 日期字符串可直接比较）
+    const byDay = new Map<string, typeof visible>();
     for (const s of visible) {
-      const item = document.createElement('button');
-      item.className = 'treedd__item';
-      item.dataset.treeddId = s.sessionId; // treedd 选择委托据此回调 __historyOnSelect
-      item.setAttribute('role', 'menuitem');
-      // 悬停摘要（原生 title，与 keepBtn 同款惯例）：summary/keyTopics 已随列表下发
-      // （FD-3-A 搜索域复用，零新协议），浏览态也可感知；截断防长摘要炸 tooltip
-      const topics = (s.keyTopics ?? []).slice(0, 5).join(' · ');
-      const brief = (s.summary ?? '').slice(0, 100) + ((s.summary ?? '').length > 100 ? '…' : '');
-      const tip = [topics, brief].filter(Boolean).join('\n');
-      if (tip) item.title = tip;
-      const titleEl = document.createElement('span');
-      titleEl.className = 'session-history__item-title';
-      titleEl.textContent = s.title; // textContent 防注入
-      const timeEl = document.createElement('span');
-      timeEl.className = 'session-history__item-time';
-      // 计数并槽（messageCount 缺省 = 旧会话未生成，只显示时间不显示 0）
-      timeEl.textContent =
-        typeof s.messageCount === 'number' && s.messageCount > 0
-          ? `${fmtRelativeTime(s.updatedAt)} · ${s.messageCount} 条`
-          : fmtRelativeTime(s.updatedAt);
-      // 分组动作：会话记录 → 移入留存区；留存区 → 移回会话记录。
-      // 两者都**不是删除**（数据一字不动），故图标与文案都不用删除类语言。
-      // 用 span 而非 button：treedd__item 本身是 button，HTML 规范 button 内不可嵌套 button
-      const keepBtn = document.createElement('span');
-      keepBtn.className = 'session-history__item-keep';
-      keepBtn.title =
-        sessionListView === 'archived' ? '移回会话记录' : '移入留存区（内容不丢，只是换个位置）';
-      keepBtn.setAttribute('role', 'button');
-      keepBtn.setAttribute('aria-label', keepBtn.title);
-      keepBtn.innerHTML = getIconSvg(
-        sessionListView === 'archived' ? 'restore' : 'archive',
-        14,
-        14,
-      );
-      keepBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        vscode.postMessage({
-          type: sessionListView === 'archived' ? 'restore_session' : 'archive_session',
-          sessionId: s.sessionId,
-        });
-      });
-      // 删除用 span 而非 button：同上（button 内不可嵌套 button）
-      const delBtn = document.createElement('span');
-      delBtn.className = 'session-history__item-del';
-      delBtn.title = '删除会话';
-      delBtn.setAttribute('role', 'button');
-      delBtn.setAttribute('aria-label', '删除会话');
-      delBtn.innerHTML = getIconSvg('trash', 14, 14);
-      delBtn.addEventListener('click', (e) => {
-        e.stopPropagation(); // 阻断冒泡到 menu 的选择委托，仅触发删除（菜单保持展开可连续删）
-        vscode.postMessage({ type: 'delete_session', sessionId: s.sessionId });
-      });
-      item.append(titleEl, timeEl, keepBtn, delBtn);
-      historyMenu.appendChild(item);
+      const day = s.sessionId.slice(0, 10);
+      const arr = byDay.get(day);
+      if (arr) arr.push(s);
+      else byDay.set(day, [s]);
     }
+    for (const [day, items] of [...byDay].sort(([a], [b]) => b.localeCompare(a))) {
+      const head = document.createElement('div');
+      head.className = 'session-history__date-group';
+      head.textContent = `${day} · ${items.length} 条会话`;
+      historyMenu.appendChild(head);
+      for (const s of items) {
+        renderHistoryItem(s);
+      }
+    }
+  }
+
+  /** 渲染单条历史会话条目（treedd__item 富内容：标题 + 时间/计数 + 归档 + 删除） */
+  function renderHistoryItem(
+    s: (typeof lastSessionList)[number],
+  ): void {
+    const item = document.createElement('button');
+    item.className = 'treedd__item';
+    item.dataset.treeddId = s.sessionId; // treedd 选择委托据此回调 __historyOnSelect
+    item.setAttribute('role', 'menuitem');
+    // 悬停摘要（原生 title，与 keepBtn 同款惯例）：summary/keyTopics 已随列表下发
+    // （FD-3-A 搜索域复用，零新协议），浏览态也可感知；截断防长摘要炸 tooltip
+    const topics = (s.keyTopics ?? []).slice(0, 5).join(' · ');
+    const brief = (s.summary ?? '').slice(0, 100) + ((s.summary ?? '').length > 100 ? '…' : '');
+    const tip = [topics, brief].filter(Boolean).join('\n');
+    if (tip) item.title = tip;
+    const titleEl = document.createElement('span');
+    titleEl.className = 'session-history__item-title';
+    titleEl.textContent = s.title; // textContent 防注入
+    const timeEl = document.createElement('span');
+    timeEl.className = 'session-history__item-time';
+    // 计数并槽（messageCount 缺省 = 旧会话未生成，只显示时间不显示 0）
+    timeEl.textContent =
+      typeof s.messageCount === 'number' && s.messageCount > 0
+        ? `${fmtRelativeTime(s.updatedAt)} · ${s.messageCount} 条`
+        : fmtRelativeTime(s.updatedAt);
+    // 分组动作：会话记录 → 移入留存区；留存区 → 移回会话记录。
+    // 两者都**不是删除**（数据一字不动），故图标与文案都不用删除类语言。
+    // 用 span 而非 button：treedd__item 本身是 button，HTML 规范 button 内不可嵌套 button
+    const keepBtn = document.createElement('span');
+    keepBtn.className = 'session-history__item-keep';
+    keepBtn.title =
+      sessionListView === 'archived' ? '移回会话记录' : '移入留存区（内容不丢，只是换个位置）';
+    keepBtn.setAttribute('role', 'button');
+    keepBtn.setAttribute('aria-label', keepBtn.title);
+    keepBtn.innerHTML = getIconSvg(
+      sessionListView === 'archived' ? 'restore' : 'archive',
+      14,
+      14,
+    );
+    keepBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      vscode.postMessage({
+        type: sessionListView === 'archived' ? 'restore_session' : 'archive_session',
+        sessionId: s.sessionId,
+      });
+    });
+    // 删除用 span 而非 button：同上（button 内不可嵌套 button）
+    const delBtn = document.createElement('span');
+    delBtn.className = 'session-history__item-del';
+    delBtn.title = '删除会话';
+    delBtn.setAttribute('role', 'button');
+    delBtn.setAttribute('aria-label', '删除会话');
+    delBtn.innerHTML = getIconSvg('trash', 14, 14);
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation(); // 阻断冒泡到 menu 的选择委托，仅触发删除（菜单保持展开可连续删）
+      vscode.postMessage({ type: 'delete_session', sessionId: s.sessionId });
+    });
+    item.append(titleEl, timeEl, keepBtn, delBtn);
+    historyMenu.appendChild(item);
   }
 
   // 分组 tab 切换：**只用点击 + 原生 Enter/Space 激活**——
