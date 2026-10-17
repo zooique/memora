@@ -263,6 +263,16 @@
   项目锁 / 存储编排 / 安全守卫全部不动。
 - ⚠️ **对 4.x 升级者的代价**：随 4.0.0 已发布，直删使其失去 deprecation 预警期，由本条
   Breaking 明示；替代路径 = 为每个项目创建一个 Agent 实例。
+- **文档 / 规则同步（形态定案落到 SSOT）**：
+  - `.trae/rules/architecture_philosophy_rules.md` §10 由「单 Agent 模型（配置文件是真理源）」
+    **订正并升级**为「单 Agent 模型（一个 Agent = 一个项目）」——原文明写 `memora.db` 与
+    「不随子项目切换重建」，与现状相反（宿主实际为项目级 `.memora/` + 注入 storage），
+    属 legacy 谎报，同批订正并写入形态定案 / 取舍 / 四条禁止。
+  - `README.md` / `README.en.md` 新增「多项目与 Agent 边界（形态定案）」：并行度按项目计、
+    项目内多会话共享记忆库、与主流「会话级 agent」的差异与代价（`MULTI-SESS-1`）。
+  - 接入指南 **§8「切换项目」为幻影章节**（API 已删），改写为「§8 多项目：一个项目一个
+    Agent」；同批修 §一 / §十 共 **5 处以已删 API 为叙述载体**的表述（原则本身成立，
+    载体换成「切会话」/「一个 Agent 实例」）。
 - 验证：双守卫绿（12 用例）+ `typecheck`（主 + scripts）零错 + eslint 0 + prettier 全过 +
   全量 **3057 passed / 4 skipped / 118 文件零失败**（用例 −48 精确对账：projectRegistry
   测试整文件 40 + agent 5 + 注册表 describe 4 − 新增推断用例 1）；收尾四步（build → 宿主

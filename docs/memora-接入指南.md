@@ -32,7 +32,7 @@
 
 **摘要即记忆（memory-as-summary）。** Memora 的记忆只有单一轨道——**对话记忆**（round-summary 摘要，宿主持久化 + **纯关键词召回**，带 `summaryType` 语义标签）；**设定**（角色包 persona/rules/skills）是 Agent 的骨骼，.md 文件 + 内存缓存，唯一归角色包、确定性注入不经过召回，不属记忆库（ADR-025）。二者边界一刀切：记忆系统只承载对话摘要、角色包承载设定；偏好类信息沉淀为摘要记忆，不设独立"用户画像"记忆层。
 
-**单 Agent 模型。** 一个 Agent 实例的对话与记忆由**同一组存储实例**承载（`storage` / `sessionStore` 均在构造时注入、实例级），**`switchProject()` 切换项目时复用同一实例，不重建、不丢记忆**。要按工作区彼此隔离，就各自 `new Agent`——隔离粒度由宿主决定，内核不规定。
+**单 Agent 模型（一个项目一个 Agent）。** 一个 Agent 实例的对话与记忆由**同一组存储实例**承载（`storage` / `sessionStore` 均在构造时注入、实例级），**切会话不换存储、不丢记忆**。要按项目彼此隔离，就各自 `new Agent`——**隔离粒度由宿主决定，内核不规定**（形态与取舍见 [§8](#8-多项目一个项目一个-agent形态定案)）。
 
 **配置文件是真理源，对话记忆由宿主持久化。** 角色包（persona/rules/skills）为纯文件 + 内存缓存，设定记忆唯一归角色包、不进记忆库（ADR-025）；对话记忆（round-summary 摘要记忆，带 `summaryType` 标签）经宿主注入的 `IMemoryStorage` 持久化——**后端由宿主自选**（SQLite / JSON 文件 / 内存皆可），检索为 **纯关键词召回**（向量语义通道已随 2026-09-18 B0 收编移除，见 [API 参考手册](./memora-api-reference.md) §〇.5 构造参数表）。
 
@@ -75,9 +75,8 @@
     └── <记忆库>        ← 由宿主的 storage 决定形态与文件名
 ```
 
-> **多项目怎么办**：一个 Agent 绑定一个项目，**不做项目切换**。多项目请为每个项目各创建一个
-> Agent 实例（各自 `projectPath` + `dataDir`），项目数据天然隔离。（5.0.0 前的 `switchProject`
-> / `agent.projects` / `projects.json` 跨项目注册表整链已随 PR-SWITCH-1 删除。）
+> **多项目怎么办**：一个 Agent 绑定一个项目，不做项目切换；多项目请为每个项目各创建一个
+> Agent 实例。完整形态、取舍与代码示例见 [§8 多项目：一个项目一个 Agent](#8-多项目一个项目一个-agent形态定案)。
 
 ---
 
@@ -267,22 +266,50 @@ if (rp) {
 }
 ```
 
-### 8. 切换项目
+### 8. 多项目：一个项目一个 Agent（形态定案）
+
+**一个 Agent 绑定一个项目**，内核不做项目切换。多项目请为**每个项目各创建一个 Agent 实例**：
 
 ```typescript
-// 按路径切换（最稳）：传项目根目录的绝对路径，无需预先注册
-const ctx = await agent.switchProject('/path/to/another-novel');
-console.log(`已切换到：${ctx.projectName}`);
+// 项目 A
+const agentA = new Agent({
+  projectPath: '/repo/app-a',
+  dataDir: '/repo/app-a/.memora',
+  storage: makeStorage('/repo/app-a'), // 宿主实现的 IMemoryStorage
+  sessionStore: makeSessionStore('/repo/app-a'),
+  provider, configDir,
+});
+await agentA.init();
 
-// 按名切换：依赖项目注册表命中，须先注册
-// 注册表缺省落在 dataDir 内 —— 只有多项目共用同一 dataDir（或显式指定共同的 registryDir）时，
-// 按名切换才成立；若 dataDir 是项目级目录，注册表会随之落进各项目、只含自身条目，按名切换不成立。
-agent.projects.registerProject('/path/to/another-novel', 'another-novel');
-const ctx2 = await agent.switchProject('another-novel');
+// 项目 B：独立实例，与 A 并行运行、互不干扰
+const agentB = new Agent({
+  projectPath: '/repo/app-b',
+  dataDir: '/repo/app-b/.memora',
+  storage: makeStorage('/repo/app-b'),
+  sessionStore: makeSessionStore('/repo/app-b'),
+  provider, configDir,
+});
+await agentB.init();
 ```
 
-> 未命中注册表且传入的又不是绝对路径时，`switchProject` 直接抛错（相对路径会以进程 cwd 为基准，
-> 可能静默创建出非预期的项目目录并占用其锁）。
+每个实例各自持有：记忆库（宿主注入的 storage）、会话存储、项目锁、安全守卫、角色包管理器。
+项目数据天然隔离在项目自己的 `.memora/` 下。
+
+| 维度 | 形态 |
+|------|------|
+| 并行度 | **按项目计** —— N 个项目 = N 个会话同时跑 |
+| 项目内多会话 | 可拥有 N 个会话（`switchSession` / `switchToSession` / `forkSession`），**同一时刻只跑一个** |
+| 项目内多会话的记忆 | **共享同一个记忆库**（`searchByKeyword` 无 sessionId 过滤）⇒ 经验跨会话连续 |
+
+**取舍（明写，勿反复重议）**：本形态**不对标主流「一个会话 = 一个 Agent 实例」**。代价是
+**同一项目内不能并行跑两个会话**（主流开两个终端各推各的任务即可）——已知并接受，登记
+`MULTI-SESS-1`（观察，不修）。**理由**：记忆库归**项目**所有，会话只是项目内的对话线程；
+把身份边界画在项目而非会话，才能让同一项目的经验跨会话连续。仅当出现「同一仓库要并行
+两个任务」的真实需求时才重议形态。
+
+> 历史留痕：5.0.0 前曾有 `agent.switchProject()` / `agent.projects.*` / `AgentOptions.registryDir`
+> / `projects.json` 跨项目注册表整链，随形态定案一并删除（PR-SWITCH-1）。**勿按旧文档找回**——
+> 内核既不切换项目，也不维护跨项目名单。
 
 ### 9. 关闭
 
@@ -616,14 +643,14 @@ for (const chapter of chapters) {
 2. **configDir** 指向 Agent 级配置目录，所有项目共享
 3. **项目级 `.memora/`** 放项目级配置（`rules/`、`skills/`）与内核写入的项目锁 `.lock`；`dataDir` 若指向此处（第一宿主 memora-vscode 即如此），记忆库与会话也落在这里
 4. **角色包只能手动切换**（`agent.switchRolePack(name)` / `agent.rolePack.activate(name)`）——无输入自动匹配、无粘性锁存、无互斥触发；已激活的角色包在当前会话内保持固定（v0.13 已移除自动匹配全链）
-5. **对话历史随 Agent 持久化** — `sessionStore` 是实例级注入的，`switchProject()` 不换存储；未注入则仅内存保存
+5. **对话历史随 Agent 持久化** — `sessionStore` 是实例级注入的，**切会话不换存储**；未注入则仅内存保存
 6. **Manager 访问器在 `init()` 前返回 `null`** — 所有 `agent.rolePack.xxx()` / `agent.memory.xxx()` 等调用必须在 `init()` 之后
 7. **作品原始内容不进记忆库**，Agent 通过工具按需读取（大文本走 `read_file` 分段，提炼后只留情报，不全量入库 / 入上下文）
 8. **配置文件是真理源**，`<configDir>/role-packs/` 下的角色包由 RolePackManager 启动时扫描加载
-9. **一个 Agent = 一份记忆库** — `storage` 与 `dataDir` 都是 **Agent 实例级**的：`switchProject()` 复用同一实例，不按项目 / 子项目分裂。**要按工作区彼此隔离，就各自 `new Agent`**——隔离粒度归宿主决定，内核不规定
-10. **项目切换不重建、不关闭存储** — `switchProject()` 复用已注入的实例，只在 `close()` 时关闭（`ProjectManager` 在 Agent 生命周期内缓存）
+9. **一个 Agent = 一份记忆库** — `storage` 与 `dataDir` 都是 **Agent 实例级**的：切会话复用同一实例，不按会话 / 子项目分裂。**要按项目彼此隔离，就各自 `new Agent`**——隔离粒度归宿主决定，内核不规定（见 [§8](#8-多项目一个项目一个-agent形态定案)）
+10. **切会话不重建、不关闭存储** — 会话切换只换身份（`sessionId`），复用已注入的实例；只在 `close()` 时关闭（`ProjectManager` 在 Agent 生命周期内缓存）
 11. **禁止把配置放进记忆库** — 配置（角色包 / persona / rules / skills）的真理源是文件（`configDir` / 角色包），设定记忆归角色包内容层、不进记忆库（ADR-025 / `memory-role-pack-boundary`）
-12. **项目切换** `switchProject()` 已自动 rebuild，通常无需手动调用 `rebuildComponents()`
+12. **组件重建** `rebuildComponents()` 由内核在配置重载等场景内部调用，通常无需手动调用
 13. **Tracer 未注入时**自动降级为 NoopTracer，零运行时开销
 
 ---
