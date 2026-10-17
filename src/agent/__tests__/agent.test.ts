@@ -3164,3 +3164,230 @@ describe('Agent · 后台任务出口（CMD-1 阶段 2）', () => {
     agent = null;
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：轮终补执行（flushPendingTurnEndTasks）
+//
+// 背景（2026-10-16 ADR-041 · P0-E）：本既有机制此前**全程零测试**——
+// 实证过「把 chat() finally 那行挂点整行删掉，内核 3104 条用例仍全绿」。
+// 因此本节用例均为**守卫性质**，且必须靠**真实 turn 驱动**：
+//   ① 禁用 internals.chatLockManager._chatBusy 私有字段注入造 busy（该字段是 isBusy 的
+//      私有实现，注入会把用例钉死在判据的私有实现上；判据日后改锚则用例静默失效）；
+//   ② 禁用直接调用私有 flushPendingTurnEndTasks —— 那样即使 finally 挂点被删也照样绿。
+// 四个变异靶标逐个删改必须**各自转红**：
+//   T1 删 setArchiveMode busy 分支的暂存行；T2 删 chat() finally 挂点；
+//   T3 删 resumeExecution() finally 挂点；T4 把补执行时机在「流退出 / turn 收场」间改动。
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · 轮终补执行（flushPendingTurnEndTasks）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-flush-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-flush-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-flush-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('P0-E 守卫：对话进行中 reloadConfig 暂存应在 chat() 收尾时被补执行（T2）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const reloaded: string[] = [];
+    agent.on(AGENT_EVENTS.configReloaded, (info) => {
+      reloaded.push(info.source);
+    });
+
+    // 真实 turn 持锁造 busy（仓库既定手法：见 setContextWindow busy 用例）
+    const gen = agent.chat('第一轮');
+    expect((await gen.next()).done).toBe(false);
+    expect(agent.isBusy).toBe(true);
+
+    // busy 期间重载 → 暂存 + 抛错；此刻**尚未**补执行
+    await expect(agent.reloadConfig('skill')).rejects.toThrow(/对话繁忙/);
+    expect(agent['pendingConfigReload'].has('skill')).toBe(true);
+    expect(reloaded).toEqual([]);
+
+    // 收尾：走完 generator ⇒ finally 触发补执行（挂点被删则下面两行必红）
+    for await (const {} of gen) {
+      // 消费 generator
+    }
+    expect(agent.isBusy).toBe(false);
+    expect(reloaded).toContain('skill');
+    expect(agent['pendingConfigReload'].size).toBe(0);
+  });
+
+  it('对话进行中 setArchiveMode 拒切后应在 chat() 收尾时补执行（T1/T2）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData); // 默认 full
+    await agent.init();
+
+    const changes: Array<{ from: string; to: string }> = [];
+    agent.on(AGENT_EVENTS.archiveModeChanged, (info) => {
+      changes.push({ from: info.from, to: info.to });
+    });
+
+    const gen = agent.chat('第一轮');
+    expect((await gen.next()).done).toBe(false);
+    expect(agent.isBusy).toBe(true);
+
+    expect(() => agent!.setArchiveMode('manual')).toThrow(/对话繁忙/);
+    // 未即时生效——如实状态（不得谎报「已切换」）
+    expect(agent.getArchiveMode()).toBe('full');
+    expect(changes).toEqual([]);
+
+    for await (const {} of gen) {
+      // 消费 generator
+    }
+    // 流退出后补执行到账：运行时真值与回执事件**同时**出现
+    expect(agent.getArchiveMode()).toBe('manual');
+    expect(changes).toEqual([{ from: 'full', to: 'manual' }]);
+  });
+
+  it('续跑（resumeExecution）期间拒切应在本半程收尾时补执行（T3）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    expect(agent.getArchiveMode()).toBe('full');
+
+    // 经 pause() 翻状态机为 PAUSED（与 canContinueWithoutInput 用例同手法），令 resumeExecution 可续跑
+    agent.pause('测试软暂停', 'user');
+    expect(agent.canContinueWithoutInput()).toBe(true);
+
+    const gen = agent.resumeExecution();
+    await gen.next();
+    expect(agent.isBusy).toBe(true);
+
+    expect(() => agent!.setArchiveMode('manual')).toThrow(/对话繁忙/);
+    expect(agent.getArchiveMode()).toBe('full');
+
+    for await (const {} of gen) {
+      // 消费 generator
+    }
+    // 缺 resumeExecution() finally 挂点 ⇒ 暂存滞留到下一次 chat()，此行必红
+    expect(agent.getArchiveMode()).toBe('manual');
+  });
+
+  it('末次为准：同一轮内多次拒切，只按最后一次补执行', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const gen = agent.chat('第一轮');
+    expect((await gen.next()).done).toBe(false);
+    expect(agent.isBusy).toBe(true);
+
+    expect(() => agent!.setArchiveMode('manual')).toThrow(/对话繁忙/);
+    // 用户改回主意（仍在 busy 中）→ 覆盖暂存
+    expect(() => agent!.setArchiveMode('full')).toThrow(/对话繁忙/);
+
+    for await (const {} of gen) {
+      // 消费 generator
+    }
+    // 末次为准 = full，不得按首次的 manual 落地
+    expect(agent.getArchiveMode()).toBe('full');
+  });
+
+  it('close() 应清空未补执行的归档暂存（防 re-init 残留）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const gen = agent.chat('第一轮');
+    expect((await gen.next()).done).toBe(false);
+    expect(() => agent!.setArchiveMode('manual')).toThrow(/对话繁忙/);
+    expect(agent['pendingArchiveMode']).toBe('manual');
+
+    // generator 悬停中直接 close（不 gen.return()、不消费完）：否则 finally 的 flush
+    // 先清槽，close() 的清理行为被掩盖 ⇒ 假绿。悬停态 finally 不运行，槽只能由 close() 清。
+    await agent.close();
+    expect(agent['pendingArchiveMode']).toBe(null);
+    agent = null; // 阻止 afterEach 重复 close
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：归档暂存清槽时机（R1 时序缺陷）
+//
+// 缺陷形态：t=10s 暂存 manual → 锁 180s 超时自动释放（isBusy=false、**不中断流**）
+// → 用户改回主意切回 full（非 busy，且命中幂等出口）→ 若清槽写在幂等 return **之后**，
+//   旧暂存 'manual' 会在轮终覆盖用户最后一次表态。
+// 本处用仓库既有的 HungProvider + fake timers 复现该真实场景，不注入私有字段。
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · 归档暂存清槽时机（锁超时场景）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-amclr-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-amclr-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-amclr-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    if (agent) {
+      try {
+        await agent.close();
+      } catch {
+        // 忽略关闭错误（流可能被部分清理）
+      }
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('锁超时后用户改回原值：幂等出口也须清槽，轮终不得被旧暂存覆盖', async () => {
+    const provider = new HungProvider();
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider,
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+    expect(agent.getArchiveMode()).toBe('full');
+
+    const gen = agent.chat('长任务');
+    await gen.next();
+    expect(agent.isBusy).toBe(true);
+
+    // ① 轮中拒切 → 暂存 manual
+    expect(() => agent!.setArchiveMode('manual')).toThrow(/对话繁忙/);
+    expect(agent['pendingArchiveMode']).toBe('manual');
+
+    // ② 推进到锁超时：isBusy=false，但**流仍在产出**（turn 未结束、未走 finally）
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(agent.isBusy).toBe(false);
+
+    // ③ 用户改回主意切回 full —— 非 busy 且 prev===mode，命中**幂等出口**
+    agent.setArchiveMode('full');
+    // 关键断言：清槽必须写在幂等 return **之前**，否则此行红（暂存仍是 'manual'）
+    expect(agent['pendingArchiveMode']).toBe(null);
+
+    // ④ 解除阻塞、走完轮 ⇒  finally 补执行；不得把运行时改回 manual
+    provider.outerResolve();
+    for await (const {} of gen) {
+      // 消费 generator
+    }
+    expect(agent.getArchiveMode()).toBe('full');
+  });
+});
