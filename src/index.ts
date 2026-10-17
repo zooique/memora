@@ -80,10 +80,9 @@ export type { PolishResult } from '@/agent/managers/textPolishManager.js';
 // 记忆即摘要架构：轮次摘要生成器为内核内部组件（Agent init 装配），不挂公共面
 export { loadConfig } from '@/config/loader.js';
 // LLM Provider 构造（边界：provider 选择/默认值归宿主，内核只做实例构造与校验）：
-//   createProviderFromConfig —— 【规范入口】宿主传入 baseUrl+model+apiKey，校验后创建；
-//   createLlmProvider —— 【配置驱动便利】从完整 Config 读 llm.active 解析激活 provider
-//     （选择策略在内核侧），仅当你把整份 Config 托管给内核时使用，边界守法的宿主应自建 provider 后调前者。
-export { createLlmProvider, createProviderFromConfig } from '@/llm/factory.js';
+//   createProviderFromConfig —— 【规范入口】宿主传入 baseUrl+model+apiKey，校验后创建。
+//   createLlmProvider（从整份 Config 解析激活 provider）为内核内部便利实现，不挂公共面。
+export { createProviderFromConfig } from '@/llm/factory.js';
 export type { ProviderConfig } from '@/llm/factory.js';
 export type { LlmProvider, ChatOptions } from '@/llm/provider.js';
 export type { LlmChunk, ProviderRouter } from '@/llm/types.js';
@@ -109,7 +108,8 @@ export type { Memory } from '@/memory/types.js';
  * 白名单构造：剥离未知字段（旧档 score 等），见 src/memory/types.ts
  */
 export { parseMemory } from '@/memory/types.js';
-export { escapeLike, escapeLikeSnippet, validateSource } from '@/memory/sourceValidation.js';
+// escapeLike 为记忆层内部 SQL LIKE 转义工具（内核 SQLite 实现自用；宿主 SQL 后端须自行转义 `%`/`_`），不挂公共面
+export { validateSource } from '@/memory/sourceValidation.js';
 export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage, ReadOnlyMemoryStorage } from '@/memory/storageInterface.js';
@@ -246,17 +246,11 @@ export type { ILogger } from '@/logging/loggerInterface.js';
 export { setLogger, logger } from '@/logging/logger.js';
 
 // ─── 工具导出 ────────────────────────────────────────────
-// 以下工具供宿主复用（分词/类型守卫/Frontmatter/安全定时器）；宿主按需接入，非强依赖
-export { segmentText, segmentLower } from '@/utils/segmenter.js';
-export { isPlainObject } from '@/utils/objects.js';
-export { parseFrontmatter, serializeFrontmatter } from '@/utils/frontmatter.js';
-// 安全定时器工具：供宿主主进程复用，统一跟踪清理定时器（防原生 setTimeout/setInterval 泄漏）
-export {
-  safeSetTimeout,
-  safeSetInterval,
-  clearSafeTimeout,
-  clearSafeInterval,
-} from '@/utils/safeTimer.js';
+// segmentLower（分词）/ parseFrontmatter（读 frontmatter）供宿主复用；
+// segmentText / isPlainObject / serializeFrontmatter / 安全定时器族为内核内部通用工具，
+// 宿主零消费，不挂公共面（收回误暴露）。
+export { segmentLower } from '@/utils/segmenter.js';
+export { parseFrontmatter } from '@/utils/frontmatter.js';
 export type { SkillEntry } from '@/skill/types.js';
 
 // ─── 安全层导出 ────────────────────────────────────────────
@@ -275,12 +269,11 @@ export { MAX_DIFF_CONTENT_LENGTH } from '@/security/pathGuard.js';
 
 // ─── 错误类型导出 ────────────────────────────────────────
 export { MemoraError, ToolErrorCode, isRetryableErrorCode } from '@/utils/errors.js';
-// toError 独立导出：浏览器端可直接 import 而不引入 logging/ 模块
-export { toError } from '@/utils/toError.js';
+// toError（任意值转 Error）为内核内部通用工具，宿主零消费，不挂公共面（收回误暴露）。
 export type { ToolErrorCodeValue } from '@/utils/errors.js';
 
 // ─── 通用工具导出 ────────────────────────────────────────
-// 通用工具供宿主复用：主进程可直接 import 本入口（渲染进程因浏览器环境保留 shared 副本）；
+// formatDateKey / todayDate 供宿主复用：主进程可直接 import 本入口（渲染进程因浏览器环境保留 shared 副本）；
+// truncate（字符串截断）为内核内部通用工具，宿主零消费，不挂公共面（收回误暴露）；
 // isValidConfigName / parseConfigId / MAX_CONFIG_NAME_LENGTH 为配置名内部校验，不挂公共面
-export { truncate } from '@/utils/strings.js';
 export { formatDateKey, todayDate } from '@/utils/time.js';

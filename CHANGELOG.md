@@ -10,6 +10,29 @@
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：目标漂移检测链整体删除（公开 API 编译期破坏）+ 检查点公开方法减法（CHKPT-1/2/3）+ **原 [4.1.0] 区四小节整体归并**（2026-10-15 二次拍板取消 4.1.0：npm 实查最新已发布 = 4.0.0，从未发布的 minor 区无消费者可保、归并窗口仅存在于发版前）+ **存储层 SQLite 实现内核切片**（2026-10-16 新增 2 个导出，非破坏）。宿主变更在 `[Unreleased] · 宿主` 区，不占内核版本号。
 
+### ⚠️ Breaking Removed（内核 · 公开面通用工具 / 重复入口收面 · `PUB-API-PRUNE-1`，2026-10-17）
+
+> **性质**：**非「零引用删除」**——这批符号**内核内部仍在使用**（如 `toError` 内部 96 处），
+> 收回的是**公开面那一行**（`src/index.ts` 导出行 + 手册 §十六 镜像行 + 接入指南 §六 工具表行），
+> 函数代码原样保留在 `src/`。判据 = **宿主 + 脚本零 import ∧ 非消费者须实现/命名的类型 ∧
+> 能力属通用小工具（与 Agent 领域无关）**。
+> **唯一例外**：`escapeLikeSnippet`（`escapeLike + slice` 组合便利）收面后**零生产调用**（仅自测），
+> 属僵尸工具，函数本体与自测一并删除；`escapeLike` 仍保留（内核 SQLite 实现 `nodeSqliteStorage` 自用）。
+
+- 删「重复入口」：`createLlmProvider`（从整份 `Config` 解析激活 provider 的便利入口，与规范入口
+  `createProviderFromConfig` 重复；README / 接入指南原注释自认「非规范入口」）。
+- 删「通用工具泄漏」：`truncate` `isPlainObject` `serializeFrontmatter` `safeSetTimeout`
+  `safeSetInterval` `clearSafeTimeout` `clearSafeInterval` `segmentText` `escapeLike`
+  `escapeLikeSnippet` `toError`——均为宿主零消费的内核内部通用工具。
+- **保留**（宿主零消费但属领域实现 / README 实义承诺）：`segmentLower` `parseFrontmatter`
+  `validateSource` `formatDateKey` `todayDate` `AGENT_CONSTANTS`（后者为按名引用的 SSOT 锚点，复核后不删）。
+- 连带：`IMemoryStorage.search()` 契约注释（`src/memory/storageInterface.ts`）原指引「宿主 SQL 后端
+  用 `escapeLike()` 转义」，随该函数收面改述为「宿主须自行转义 `%`/`_` 并写 `LIKE ? ESCAPE '\'`」
+  ——消除悬空符号指针（转义规则知识保留，去掉不可 import 的符号名）。
+- **代价已明示**：4.x 使用者若 import 上述符号将编译期断裂；告知义务由本 Breaking 段承担。
+- 守卫：`publicApiSurfaceGuard` 双向断言转绿（公开面 −12 + 手册 §十六 镜像行同步收面，
+  防「手册幻觉符号」红）；内核 tsc/esbuild 编译不受影响（代码保留，唯 `escapeLikeSnippet` 本体一并删）。
+
 ### ⚠️ Breaking Removed（内核 · 字面相似度目标漂移检测链整体退役 · `GOAL-DRIFT-1`）
 
 - 删 `managers/goalConsistencyChecker.ts` 整模块（bigram+Jaccard 文本相似度 + same/confirm/drift 三级判定

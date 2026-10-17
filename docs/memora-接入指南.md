@@ -464,7 +464,6 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 
 | 函数/类型 | 用途 |
 |-----------|------|
-| `createLlmProvider(config)` | 从完整 Config（`llm.providers` + `active`）创建激活 Provider（配合 `loadConfig`） |
 | `createProviderFromConfig(name, config)` | 从命名配置创建单个 Provider 实例（扁平参数） |
 | `loadConfig(path?)` | 加载 `.memora/config.json` 项目级配置文件（或传入显式 configPath） |
 | `InMemoryStorage` | IMemoryStorage 的纯内存实现（测试用） |
@@ -472,20 +471,11 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | `ReadOnlyMemoryStorage` | 只读存储视图**类型**（`IMemoryStorage` 的读方法子集，结构上无写方法）。供只读宿主（如 MCP）复用同一实现，避免自写第二份 SQLite 语义 |
 | `setLogger(logger)` | 替换全局日志实现 |
 | `logger` | 全局日志实例 |
-| `segmentText(text)` | 中文分词工具 |
 | `parseFrontmatter(text)` | 解析 Markdown frontmatter |
-| `serializeFrontmatter(fm, body)` | 序列化 frontmatter + body 为 Markdown |
-| `safeSetTimeout(fn, ms)` | 安全定时器（可跟踪清理） |
-| `safeSetInterval(fn, ms)` | 安全间隔器（可跟踪清理） |
-| `clearSafeTimeout(id)` | 清除安全定时器 |
-| `clearSafeInterval(id)` | 清除安全间隔器 |
 | `extractKeywords(text)` | 提取关键词 |
 | `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / WORK_PROJECTION / ROUND_SUMMARY / UNKNOWN） |
-| `escapeLike(query)` | 转义 SQLite LIKE 通配符（`%` / `_` → `\%` / `\_`）。**SQL 必须写成 `LIKE ? ESCAPE '\'`**——不写 ESCAPE 子句则反斜杠被视为普通字符，转义后的模式匹配不到任何字面值，查询**静默返回空** |
-| `escapeLikeSnippet(text, maxLen?)` | 截断至 maxLen（默认 50）后转义 LIKE 通配符——搜索输入防超长解析 + 防通配符被当模式符（SQL 后端检索的配套动作，同样须配 `ESCAPE '\'`） |
 | `validateSource(source)` | 校验 source 标签是否为已知标签（返回 warning，不阻止写入） |
 | `MemoraError` | 统一错误类型（结构化错误码 + 上下文） |
-| `toError(err)` | 将任意值转为 Error（浏览器端安全，不引入 `logging/` 模块） |
 | `NOOP_TRACER` | ITracer 的空实现（静默丢弃所有 span，零开销） |
 | `TRACE_SPANS` | AgentLoop 预定义 Span 名称常量（RECALL / LLM_CALL / TOOL_EXEC / RESPONSE） |
 | `ToolErrorCode` | 工具错误码枚举（10 种，含 PATH_NOT_ALLOWED / FILE_NOT_FOUND 等） |

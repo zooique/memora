@@ -123,8 +123,7 @@ npm install @zooique/memora
 import { Agent, createProviderFromConfig } from '@zooique/memora';
 
 // 宿主职责：创建 LLM Provider（兼容所有 OpenAI Chat Completions 协议的服务）
-// createProviderFromConfig 是唯一规范入口（baseUrl+model+apiKey → 校验后创建，provider 选择策略归宿主）；
-// createLlmProvider(loadConfig()) 仅当你把整份 Config 托管给内核时用作便利（active 选择在内核侧）。
+// createProviderFromConfig 是唯一规范入口（baseUrl+model+apiKey → 校验后创建，provider 选择策略归宿主）。
 const provider = createProviderFromConfig('primary', {
   provider: 'openaiCompatible',
   apiKey: process.env.LLM_API_KEY!,

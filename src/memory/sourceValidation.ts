@@ -46,21 +46,6 @@ export function escapeLike(str: string): string {
 }
 
 /**
- * 截取字符串前 maxLen 字符后转义 LIKE 通配符
- *
- * 用于将用户输入 / round-summary 记忆文本作为关键词搜索 SQL LIKE 查询的输入。
- * 截断避免超长输入导致 LIKE 解析性能问题，转义防止通配符被当作模式符。
- * 同 `escapeLike`：SQL 侧必须写 `LIKE ? ESCAPE '\'`，否则转义后的模式查不到字面值。
- *
- * @param text - 原始文本（用户输入 / round-summary 内容）
- * @param maxLen - 最大截取长度，默认 50
- * @returns 截断 + 转义后的字符串
- */
-export function escapeLikeSnippet(text: string, maxLen = 50): string {
-  return escapeLike(text.slice(0, maxLen));
-}
-
-/**
  * 校验 source 字段是否为已知标签
  *
  * 返回校验结果，包含严重级别与警告信息（如有）。

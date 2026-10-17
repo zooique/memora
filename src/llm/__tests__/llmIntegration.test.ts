@@ -14,7 +14,9 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { Agent, createLlmProvider, loadConfig } from '@/index.js';
+import { Agent, loadConfig } from '@/index.js';
+// createLlmProvider 为内核内部便利实现，本测试直接经源模块引用
+import { createLlmProvider } from '@/llm/factory.js';
 
 /**
  * 同步探测是否有可用的 LLM API key（模块加载期求值，供 describe.skipIf 使用）。

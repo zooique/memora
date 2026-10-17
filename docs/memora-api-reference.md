@@ -1195,7 +1195,7 @@ export type { WorkProjectionEntry } from '@zooique/memora';
 // 记忆
 export { SOURCE_LABELS } from '@zooique/memora';
 export type { Memory } from '@zooique/memora';
-export { escapeLike, escapeLikeSnippet, validateSource } from '@zooique/memora';
+export { validateSource } from '@zooique/memora';
 export type { SourceValidationSeverity } from '@zooique/memora';
 export type { IMemoryStorage } from '@zooique/memora';
 export { InMemoryStorage } from '@zooique/memora';
@@ -1220,7 +1220,6 @@ export { NOOP_TRACER, TRACE_SPANS } from '@zooique/memora';
 
 // 错误码
 export { MemoraError, ToolErrorCode, isRetryableErrorCode } from '@zooique/memora';
-export { toError } from '@zooique/memora';
 export type { ToolErrorCodeValue } from '@zooique/memora';
 
 // 日志
@@ -1241,7 +1240,7 @@ export type { RolePackMeta } from '@zooique/memora';
 export type { SkillEntry } from '@zooique/memora';
 
 // LLM
-export { createLlmProvider, createProviderFromConfig } from '@zooique/memora';
+export { createProviderFromConfig } from '@zooique/memora';
 export type { ProviderConfig } from '@zooique/memora';
 export type { LlmProvider, ChatOptions } from '@zooique/memora';
 export type { LlmChunk } from '@zooique/memora';
@@ -1251,11 +1250,8 @@ export { loadConfig } from '@zooique/memora';
 export type { Config } from '@zooique/memora';
 
 // 工具函数
-export { segmentText, segmentLower } from '@zooique/memora';
-export { parseFrontmatter, serializeFrontmatter } from '@zooique/memora';
-export { safeSetTimeout, safeSetInterval, clearSafeTimeout, clearSafeInterval } from '@zooique/memora';
-export { isPlainObject } from '@zooique/memora';
-export { truncate } from '@zooique/memora';
+export { segmentLower } from '@zooique/memora';
+export { parseFrontmatter } from '@zooique/memora';
 export { formatDateKey, todayDate } from '@zooique/memora';
 
 // 安全
