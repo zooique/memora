@@ -547,7 +547,12 @@ const BASELINE_TEXT: readonly string[] = [
   'getActiveStepMeta',
   'handleIteration',
   'handleIterationResult',
+  // 内核现行生产标识符（loop.ts 私有字段 inAutonomousStep + getter isInAutonomousStep，
+  // agent.ts canContinueWithoutInput 软暂停可续跑信号消费）：text 层命中为台账 ARCH-GAP-F1
+  // 条目对现行实现名的合法引用，2026-10-17 补基线（非旧词误用）
+  'inAutonomousStep',
   'insertStepInOrder',
+  'isInAutonomousStep',
   'iteration',
   'iterationBoundary',
   'iteration_boundary',
