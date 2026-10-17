@@ -2579,11 +2579,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           status: round.status,
           createdAt: round.createdAt,
           completedAt: round.completedAt,
-          // 过程事件从 Round 同文件读取；无 processEvents（纯问答轮/异常轮）为空数组
-          processEvents: this._eventLogRoundStore?.getById(round.id)?.processEvents ?? [],
-          // 裁决证据（悬案取证轨）：随 Round 整对象已在 view.rounds 中（与正文同源同文件），
-          // 直接透出——无证据轮为 undefined（零冗余）。仅重放路径消费（web_search 折叠块补
-          // endpoint/count/titles），运行时投影不带（证据轮末才落盘，见内核 RoundEvidenceEvent）。
+          // 过程事件与证据同源同轮：view.rounds 即 roundStore.getByIds 返回的完整 Round
+          // （含 processEvents/evidence），与正文同对象，直接透出——不再经 _eventLogRoundStore
+          // 二次 getById（同 store 重复查缓存，且与 evidence 取法不一致）。无则空/undefined。
+          processEvents: round.processEvents ?? [],
+          // 裁决证据（悬案取证轨）：随 Round 整对象已在 view.rounds 中，直接透出（无证据轮
+          // undefined，零冗余）。重放经本投影下发；运行时由宿主 settle 从同一 roundStore 读出随
+          // done/interrupted 下发（证据轮末才落盘，不进 processEvents，见内核 RoundEvidenceEvent）。
           evidence: round.evidence,
         });
       }
