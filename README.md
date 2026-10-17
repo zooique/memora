@@ -91,7 +91,7 @@ await agent.close();
 
 Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 
-> **版本定位（v3.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**。3.0.0 是架构收敛后的第一个稳定基线，API 与结构以 3.0.0 为准。**4.0.0（首个 major）**：导出面收敛（移除 54 个公共导出，逐条清单见 [CHANGELOG](./CHANGELOG.md) 的 `[4.0.0]` 区）+ `agent.memory.search()` 退役（唯一入口 `searchByKeyword()`）。
+> **版本定位（v3.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**。3.0.0 是架构收敛后的第一个稳定基线，API 与结构以 3.0.0 为准。**4.0.0（首个 major）**：导出面收敛（移除 54 个公共导出，逐条清单见 [CHANGELOG](./CHANGELOG.md) 的 `[4.0.0]` 区）+ `agent.memory.search()` 退役（唯一入口 `searchByKeyword()`）。**5.0.0（第二个 major，开发中）**：公开面收面（收回 12 项通用工具 / 重复入口）+ 目标漂移检测链整体退役 + 检查点公开方法减法；新增基于 `node:*` 内建模块的 SQLite 存储实现（`createNodeSqliteStorage`）。
 
 ---
 

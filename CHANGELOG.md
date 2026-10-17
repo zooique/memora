@@ -326,6 +326,15 @@
 - **测试（四个变异靶标逐个实证）**：新增「轮终补执行」describe——真实 turn 持锁造 busy（禁注入私有 `_chatBusy` 字段、禁直调私有 flush，防「删挂点仍全绿」的空转守卫）+ 锁超时时序用例（HungProvider + fake timers）。实测：删 `chat()` 挂点 → 恰 2 红；删 `resumeExecution()` 挂点 → 恰 1 红；还原复绿。
 - **已知边界（如实注明非回避）**：长轮跑过 180s 锁超时后 `setArchiveMode` 会即时生效而非暂存（本轮后半程即按新模式归档）——这是既有判据的缺陷，非本方法引入；判据统一问题已登记台账观察项（`ARCH-GAP-F3`）。
 
+### Fixed（内核 · 会话替换入口状态闸对称：`assertSessionReplaceable` 单一前置闸 · 2026-10-16）
+
+`switchSession` 具「非 `running` 态拒绝」状态闸，而 `forkSession` / `restoreSession` / `restoreMostRecentSession` / `loadSessionMessages` 仅持「对话进行中」繁忙闸、**缺状态闸**——暂停 / 错误态下触发替换会换掉工作记忆却不复位状态机 / 检查点，留下脏快照。
+
+- **抽单一前置闸**：`assertSessionReplaceable(operation)` 合并「繁忙闸 + 非 `running` 拒绝」，5 个替换入口全部改调此闸，状态闸由「唯 `switchSession` 有」变为「**全入口对称**」；修正原说谎注释，改为如实描述缺口与修复。
+- **测试**：新增 11 个状态闸对称用例（5 入口 × `paused`/`error` 双态 + `running` 正常路径）；断言口径与不变量同源（`category === 'config'` 且 detail 含「无法替换」，区别于繁忙闸）。
+- **质量门**：`tsc` 0 / `eslint` 0 / `vitest`（sessionManager + sessionStateMachine + uninterruptedWorkflow）218 passed。
+- **后续批连带**：同批「内核恢复会话双入口直删」（上方 Breaking ⑤）移除 `restoreSession` / `restoreMostRecentSession` 两个入口后，其状态闸用例随之清理（`switchSession` / `forkSession` / `loadSessionMessages` 的闸覆盖**保留**）。
+
 ## [4.0.0] · 2026-10-08
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：删 54 个公共导出 + 退役 `agent.memory.search()`，对外部消费者是编译期破坏。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。

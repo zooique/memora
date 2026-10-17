@@ -1,8 +1,8 @@
-# Memora · 接入指南 v4.0.0
+# Memora · 接入指南 v5.0.0
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
-> **当前稳定版**：v4.0.0。各版完整变更见 [CHANGELOG](../CHANGELOG.md)。
+> **当前内核版本**：v5.0.0（对齐当前内核包版本 `package.json`；npm 已发布最新为 v4.0.0、v5.0.0 待发布）。各版完整变更见 [CHANGELOG](../CHANGELOG.md)。
 >
 > **对接入者有影响的迁移结论**（不含历史流水，细节见 [API 参考手册](./memora-api-reference.md)）：
 > - 1.0 为正式发布，API 已稳定；2.0 起设定记忆（persona/rules/skills）解耦为纯文件 + 内存缓存，唯一归角色包、不进记忆库（ADR-025），角色管理统一走 `agent.rolePack`。
