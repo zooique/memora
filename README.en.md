@@ -208,6 +208,21 @@ The kernel interacts with the outside world through interfaces. Hosts inject imp
 | `ILogger` | Logging output | console fallback |
 | `ITracer` | Observability spans | `NOOP_TRACER` |
 
+### Multi-project and Agent boundaries (settled model)
+
+**One Agent binds to one project** — `projectPath` + one storage + one session domain. For multiple projects, the **host** creates one Agent instance per project; the kernel neither switches projects nor maintains a cross-project registry.
+
+| Dimension | Model |
+|-----------|-------|
+| One project (one Agent) | May own N sessions (`switchSession` / `switchToSession` / `forkSession`), but **only one runs at a time** |
+| N projects (N Agent instances) | Run **in parallel**, each with its own memory store / sessions / project lock |
+| Parallelism | **Counted by project, not by session** |
+| Sessions within a project | **Share one memory store** (search has no session filter) ⇒ experience carries across sessions |
+
+> **Trade-off (stated explicitly)**: this model deliberately does **not** mirror the mainstream "one session = one Agent instance" design. The cost: **two sessions cannot run in parallel within the same project** (mainstream tools just open two terminals). This is known and accepted, tracked as `MULTI-SESS-1` (observation only) — it is revisited only if a real need for "two parallel tasks in one repo" appears.
+> **Rationale**: the memory store belongs to the **project**; a session is just a conversation thread inside it. Drawing the identity boundary at the project (not the session) is what lets experience carry across sessions.
+> See the [integration guide](docs/memora-接入指南.md) ("多项目怎么办") for wiring details and data layout.
+
 ## Project Structure
 
 ```

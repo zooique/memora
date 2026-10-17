@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-description: 架构哲学原则（12 条：摘要即记忆（memory-as-summary）、永久性分级、冷热分离、模型分工、领域无关、增量召回、降级优先、自然遗忘、专注模式、单 Agent 模型、角色包插卡、可观测性边界；附 UI/UX 维度 Annex：Agent 信任设计 §13）
+description: 架构哲学原则（12 条：摘要即记忆（memory-as-summary）、永久性分级、冷热分离、模型分工、领域无关、增量召回、降级优先、自然遗忘、专注模式、单 Agent 模型（一个 Agent = 一个项目）、角色包插卡、可观测性边界；附 UI/UX 维度 Annex：Agent 信任设计 §13）
 ---
 
 # 架构哲学原则（精简版）
@@ -98,14 +98,33 @@ description: 架构哲学原则（12 条：摘要即记忆（memory-as-summary�
 
 **显式切换**：显式命令（如 `switchSession()`）最高优先级直接切换，切换后重新组装上下文；专注是默认、切换是例外。
 
-## 10. 单 Agent 模型（配置文件是真理源）
+## 10. 单 Agent 模型（一个 Agent = 一个项目）
 
-Memora 被宿主接入后即该程序唯一 Agent，`memora.db` 是 Agent 级共享资源，不随子项目切换重建。**配置文件是真理源，SQLite 是运行时索引**。
+**形态定案（2026-10-18）**：一个 Agent 绑定**一个项目**——`projectPath` + 一套存储 + 一个会话域。
+**多项目不由内核管**：宿主为每个项目各创建一个 Agent 实例。内核既不提供项目切换
+（`switchProject` 已删），也不维护跨项目名单（`projects.json` 注册表 / `agent.projects` /
+`AgentOptions.registryDir` / `ProjectEntry` 已随 `PR-SWITCH-1` 整链删除）。
+**配置文件仍是真理源**：设定类内容归角色包文件，记忆库只是运行时索引。
 
-- 项目级 `projectPath/.memora/` 只放 rules/skills，不放 memora.db；用户记忆（dataDir）存 memora.db + sessions/，纯数据。
+- **会话是项目内的线程，不是 Agent 的身份边界**：一个 Agent 可拥有 N 个会话
+  （`switchSession` / `switchToSession` / `forkSession`），但**同一时刻只跑一个**（chat 串行
+  + `assertNotBusy`）⇒ **并行度按项目计，不按会话计**。
+- **同一项目的多个会话共享同一个记忆库**：`searchByKeyword(query, limit, excludeRoundIds)`
+  **无 sessionId 过滤**（`sessionId` 只是命中项的溯源字段）⇒ 会话 A 的轮次摘要能被会话 B
+  召回。这是 memory-as-everything 的立身之本，也是身份边界画在**项目**而非会话的理由。
+- **数据落点**：项目级 `<projectPath>/.memora/` 放什么**由宿主定**（rules/skills + 记忆 + 会话 +
+  项目锁 `.lock`）；`dataDir` 只是 Agent 级资源目录——内核仅确保目录存在，宿主注入
+  `IMemoryStorage` 时内核在其下**零写入**。
+- **取舍（明写，勿反复重议）**：本形态**不对标主流「一个会话 = 一个 Agent 实例」**。
+  代价是**同一项目内不能并行跑两个会话**（主流可开两个终端各推各的任务）。该代价已知并被
+  接受，登记 `MULTI-SESS-1`（观察，不修）；**仅当**出现「同一仓库要并行两个任务」的真实
+  需求时才重议形态——在此之前勿为对齐主流而改。
 - 配置持久化由宿主直接落文件（历史 `ConfigManager` 两段式契约已移除；设定记忆纯文件装载见 §1）。
 
-**禁止**：❌ 每个子项目独立 memora.db；❌ 项目切换时关闭/重建数据库；❌ 将配置直接写入 SQLite 作为持久化存储。
+**禁止**：❌ 内核实现跨项目切换 / 项目注册表 / 跨项目名单（概念已废，勿按旧文档找回）；
+❌ 同一 `projectPath` 建多个 Agent 实例（会双写同一 store，且项目锁是**软锁**——只告警、不拦）；
+❌ 会话切换时关闭/重建存储实例（记忆库是 Agent 级，切会话只换身份不换库）；
+❌ 把身份边界下移到会话、做成「一个会话一个 Agent」。
 
 ## 11. 角色包是参数集，插卡解耦（通用引擎 ↔ 专业卡）
 
