@@ -260,7 +260,7 @@ export class SeedOrchestrator {
     spanName: string,
   ): Promise<void> {
     const tracer = this.deps.tracer ?? NOOP_TRACER;
-    const span = tracer.startSpan(spanName, { archiveMode: this.deps.archiveMode });
+    const span = tracer.startSpan(spanName, { archiveMode: this.deps.archiveMode() });
     try {
       const { history, loop, roundSummaryGenerator, rolePackManager } =
         this.deps.getParts() as SeedParts;

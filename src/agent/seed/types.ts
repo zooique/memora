@@ -70,8 +70,8 @@ export interface SeedDeps {
   getParts(): SeedParts;
   /** 可观测性 Tracer（缺省 Noop，reflect 阶段 span 用） */
   tracer: ITracer | null;
-  /** 归档模式（reflect 阶段 span 标注用） */
-  archiveMode: ArchiveMode;
+  /** 归档模式取当前值（reflect 阶段 span 标注用；getter 而非快照：setArchiveMode 改值后仍为真） */
+  archiveMode(): ArchiveMode;
   /** 界面文案（中断标记 / 用户中断提示，缺省用内置默认） */
   messages?: UIMessages;
   /** 门面能力：应用当前角色包的工具暴露面（回答前换角色后工具集切换） */

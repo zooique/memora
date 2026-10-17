@@ -219,7 +219,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
   const deps: SeedDeps = {
     getParts: () => buildParts(mocks),
     tracer: mocks.tracer as unknown as ITracer,
-    archiveMode: 'full',
+    archiveMode: () => 'full',
     messages: undefined,
     applyRolePackToolExposure:
       mocks.applyRolePackToolExposure as unknown as SeedDeps['applyRolePackToolExposure'],

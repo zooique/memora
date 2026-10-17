@@ -182,6 +182,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private pendingConfigReload = new Set<string>();
 
+  /**
+   * 对话期间被 chatLock 拒掉的归档模式切换：**末次为准**（不排队——VS Code 设置本身也是后写覆盖）。
+   *
+   * 与 pendingConfigReload 同族：轮终（chat() / resumeExecution() 的 frame 退出）统一补执行，
+   * 语义见 flushPendingTurnEndTasks。null = 无待补执行的切换。
+   */
+  private pendingArchiveMode: ArchiveMode | null = null;
+
   constructor(opts: AgentOptions) {
     super();
     this.#config = {
@@ -476,7 +484,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         roundSummaryGenerator: this.internals.roundSummaryGenerator,
       }),
       tracer: this.#config.tracer ?? null,
-      archiveMode: this.#config.archiveMode,
+      // 归档模式经 getter 惰性取：setArchiveMode 轮内/轮终改值后 span 标注仍为真（同 getParts）
+      archiveMode: () => this.#config.archiveMode,
       messages: this.#config.messages,
       // 门面私有能力经回调注入 seed（物理实现仍在门面）
       applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
@@ -531,7 +540,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // turn 结束自动收尾：非暂停态无条件清理任务表（turn 内能力，不跨 turn 残留）；
       // 清空前产出 plan_snapshot 快照 chunk（任务项完成态落盘真源）
       yield* this.clearPlanOnTurnEnd();
-      await this.flushPendingConfigReload();
+      await this.flushPendingTurnEndTasks();
     }
   }
 
@@ -565,9 +574,31 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 补执行对话期间暂存的配置重载请求
+   * 补执行对话期间暂存的**轮终任务**（当前两类：配置重载 source、归档模式切换）
+   *
+   * 挂载点 = **两处**都必须挂，缺一即同族缺陷（见 clearPlanOnTurnEnd 的「单一收口点」注释）：
+   *   - chat() 的 finally（本文件 chat() 生成器收尾块）
+   *   - resumeExecution() 的 finally——缺它则「暂停→续跑」期间暂存的项滞留到下一次 chat()，
+   *     用户若不再发问则**永久丢失**（2026-10-16 实证：此前仅 chat() 挂点存在，该缺陷为空头承诺）。
+   *
+   * 位置约束：必须在 release(myToken) **之后** ⇒ 到达时 chatLock 已释放，此处再申请不会撞 busy。
+   * 语义 = 「流退出」（generator frame exit）而非「turn 真正收场（非 paused）」：
+   *   暂停边界同样会执行本方法，这与「暂停期间直接改 = 即时生效」的现状一致（ADR-041 §2）。
+   *
+   * 失败策略：**成功才清槽**。失败保留暂存 + logger.warn，顺延下一个安全点（幂等保证重复应用无害）。
+   *   ⚠ 下方 reloadConfig 段仍是既有的「先 clear 再尝试」（失败即丢失）——同族债已登记，本批不动其行为。
    */
-  private async flushPendingConfigReload(): Promise<void> {
+  private async flushPendingTurnEndTasks(): Promise<void> {
+    if (this.pendingArchiveMode !== null) {
+      const mode = this.pendingArchiveMode;
+      try {
+        // 复用公开入口而非直改字段：幂等判定与 archiveModeChanged 回执走同一条路径
+        this.setArchiveMode(mode);
+        this.pendingArchiveMode = null; // 仅成功后清槽
+      } catch (err) {
+        logger.warn({ err, mode }, '轮终补执行归档模式切换失败，保留暂存待下一个安全点');
+      }
+    }
     if (this.pendingConfigReload.size === 0) return;
     const pending = Array.from(this.pendingConfigReload);
     this.pendingConfigReload.clear();
@@ -690,6 +721,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 两处 turn-end 清理统一为 clearPlanOnTurnEnd（单一收口点），plan 严格 turn 内、不跨 turn 残留；
       // 清空前产出 plan_snapshot 快照 chunk（任务项完成态落盘真源）
       yield* this.clearPlanOnTurnEnd();
+      // 与 chat() 同构：补执行对话期间暂存的轮终任务（归档模式 / 配置重载）。
+      // 缺本行 ⇒ 「暂停→续跑」半程内被拒切的偏好滞留到下一次 chat()，用户不再发问则永久丢失。
+      await this.flushPendingTurnEndTasks();
     }
   }
 
@@ -1480,10 +1514,29 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── 归档模式管理 ───────────────────────────
 
   /**
-   * 运行时切换归档模式：对话进行中禁止切换（避免本轮 postProcess 行为不一致），无变更幂等返回
+   * 运行时切换归档模式：**对话进行中不即时生效** → 暂存期望值 + 抛错，由 flushPendingTurnEndTasks 补执行。
+   *
+   * 契约与 reloadConfig(source) 逐字同构：
+   *   - busy 时 **既暂存、又抛错**——抛错是「已排期到轮终」的传输方式，不是「静默接受」。
+   *     宿主据此走 catch 分支向用户如实说明「运行时将在当前对话结束后生效」（settingsPanel.setArchiveMode）。
+   *   - 补执行点：chat() / resumeExecution() 的 finally（流退出），见 flushPendingTurnEndTasks。
+   *
+   * ⚠ 守卫用 chatLock.isBusy（`assertNotBusy` 同源），而该锁 180s 超时会**自动释放且不中断生成流**
+   *   （见 ChatLockManager.acquire 计时器）⇒ 长轮跑过 180s 后本方法会即时生效而非暂存，
+   *   此时本轮的**后半程**即按新模式归档。这是既有判据的缺陷，非本方法引入；
+   *   判据统一问题已登记专项（本批不动判据），此处如实注明而非回避。
    */
   setArchiveMode(mode: ArchiveMode): void {
-    this.assertNotBusy('切换归档模式');
+    if (this.internals.chatLockManager?.isBusy) {
+      // 先暂存后抛：任何一次拒切都排期到轮终，用户偏好既不会丢也不会被伪造为「已生效」
+      // （最坏情况还有「装配期读持久化配置注入」兜底，见 extension.ts getOrCreateAgent）。
+      this.pendingArchiveMode = mode;
+      logger.info({ mode }, '对话进行中，归档模式切换已暂存，将在流退出时补执行');
+      throw chatBusyError('切换归档模式');
+    }
+    // 清槽落点必须在幂等 return **之前**（三条出口全覆盖）：
+    // 否则「即时改成当前值」会命中幂等直接 return，旧暂存仍在轮终覆盖用户最后一次表态。
+    this.pendingArchiveMode = null;
     const prev = this.#config.archiveMode;
     if (prev === mode) return; // 幂等：无变更直接返回
     this.#config.archiveMode = mode;
@@ -1656,7 +1709,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── 配置重载（事件驱动） ───────────────────────
 
   /**
-   * 重载配置类记忆：从 configDir 重新扫描指定 source 并更新内存缓存（设定记忆纯文件装载，不写记忆库），使当前会话立即生效（无需重启）。
+   * 从 configDir 重新扫描指定 source 并更新内存缓存（设定记忆纯文件装载，不写记忆库）。
+   * **空闲时**使当前会话立即生效（无需重启）；**对话进行中**则暂存 source 并抛错（见下方 busy 分支），
+   *   由 flushPendingTurnEndTasks 在流退出时补执行——故此处不宜读作「无条件立即生效」。
    * - 'skill' → SkillManager.reload() 重扫 skills/
    * - 'rolePack' → RolePackManager.reload() 重扫 role-packs/（保持激活角色，刷新 AgentLoop 前缀）
    * - 'rule' → 经角色包管理机制热更新（即 rolePack）
@@ -1931,6 +1986,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 清理次要状态字段，防止 re-init 后残留上一会话状态
     this._lastInteractionAt = null;
     this.pendingConfigReload.clear();
+    this.pendingArchiveMode = null;
   }
 
   /**
