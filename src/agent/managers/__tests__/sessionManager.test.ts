@@ -4,7 +4,8 @@
  * 覆盖 SessionManager 全部公共方法：
  *   - switchSession：切换会话，isChatBusy 时抛 configError
  *   - forkSession：分叉会话，委托 history + applySessionToLoop + emitEvent
- *   - loadSessionMessages：加载消息（会切换会话）
+ *   - switchToSession：打开会话（切换+加载+应用 loop 的生产路径，原 loadSessionMessages 委托
+ *     已于 2026-10-17 随 5.0.0 直删，读消息能力真源 = ISessionStore.loadMessages）
  *   - applySessionToLoop：private，通过 switchToSession/fork 间接测试
  *   - 检查点生命周期：createCheckpoint / getCheckpoint / touchCheckpoint 心跳刷新（内存态）
  *     （跨重启恢复链已退役）
@@ -23,7 +24,8 @@ import { MemoraError } from '@/utils/errors.js';
 
 /**
  * 创建 Mock MessageHistory
- * 仅实现 SessionManager 用到的方法：switchSession / forkSession / loadSessionMessages / currentSessionName
+ * 仅实现 SessionManager 用到的方法：switchSession / forkSession / currentSessionName
+ * （loadSessionMessages mock 保留——switchToSession 内部经 history 同名方法读消息，非 SessionManager 公开面）
  */
 function createMockHistory(overrides: Partial<MessageHistory> = {}): MessageHistory {
   return {
@@ -278,31 +280,6 @@ describe('SessionManager', () => {
     });
   });
 
-  describe('loadSessionMessages', () => {
-    it('对话繁忙时应抛 configError', async () => {
-      isChatBusy.mockReturnValue(true);
-      await expect(manager.loadSessionMessages('2026-06-27', 'main')).rejects.toThrow('对话繁忙');
-    });
-
-    it('非繁忙时应委托 history.loadSessionMessages', async () => {
-      const messages: SessionMessage[] = [
-        { role: 'user', content: 'x', timestamp: '2026-06-27T10:00:00Z' },
-      ];
-      (history.loadSessionMessages as ReturnType<typeof vi.fn>) = vi
-        .fn()
-        .mockResolvedValue(messages);
-      const result = await manager.loadSessionMessages('2026-06-27', 'main');
-      expect(result).toEqual(messages);
-      expect(history.loadSessionMessages).toHaveBeenCalledWith('2026-06-27', 'main');
-    });
-
-    it('应返回空数组（history 返回空）', async () => {
-      (history.loadSessionMessages as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue([]);
-      const result = await manager.loadSessionMessages('2026-06-27', 'main');
-      expect(result).toEqual([]);
-    });
-  });
-
   describe('applySessionToLoop（经 switchToSession 间接测试）', () => {
     it('应过滤掉 timestamp 字段，只保留 role 和 content', async () => {
       const messages: SessionMessage[] = [
@@ -337,9 +314,10 @@ describe('SessionManager', () => {
   });
 
   describe('会话替换前置闸（状态闸对称收敛）', () => {
-    // 不变量：任何替换 loop 工作记忆的入口（switch/fork/load）都必须在 running 态执行，
+    // 不变量：任何替换 loop 工作记忆的入口（switch/fork）都必须在 running 态执行，
     // 暂停/错误态语义未定义，统一拒绝。本组验证状态闸在全部入口对称生效
-    // （原 fork/restore/load 漏闸的带伤已修，见 sessionManager assertSessionReplaceable）。
+    // （原 fork/restore 漏闸的带伤已修，见 sessionManager assertSessionReplaceable；
+    //  load 入口的 loadSessionMessages 委托已于 2026-10-17 随 5.0.0 直删）。
 
     function assertStatusRejection(err: unknown): void {
       expect(err).toBeInstanceOf(MemoraError);
@@ -376,15 +354,6 @@ describe('SessionManager', () => {
         }
         assertStatusRejection(caught);
       });
-      it('loadSessionMessages 在 paused 态应拒绝', async () => {
-        let caught: unknown;
-        try {
-          await manager.loadSessionMessages('2026-06-27', 'main');
-        } catch (e) {
-          caught = e;
-        }
-        assertStatusRejection(caught);
-      });
     });
 
     describe('异常态（error）应拒绝所有替换入口', () => {
@@ -405,15 +374,6 @@ describe('SessionManager', () => {
         let caught: unknown;
         try {
           manager.forkSession();
-        } catch (e) {
-          caught = e;
-        }
-        assertStatusRejection(caught);
-      });
-      it('loadSessionMessages 在 error 态应拒绝', async () => {
-        let caught: unknown;
-        try {
-          await manager.loadSessionMessages('2026-06-27', 'main');
         } catch (e) {
           caught = e;
         }

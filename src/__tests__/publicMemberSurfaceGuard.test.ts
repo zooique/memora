@@ -379,7 +379,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'hasInflightPlan',
       'isPausePending',
       'isPlanAllBlocked',
-      'loadSessionMessages',
       'logPlanItemBoundary',
       'logToolExecution',
       'pause',

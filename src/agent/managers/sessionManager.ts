@@ -10,7 +10,6 @@ import { chatBusyError, configError } from '@/utils/errors.js';
 import { isValidSessionId, splitSessionId } from '@/utils/time.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory, ForkResult } from '@/agent/messageHistory.js';
-import type { SessionMessage } from '@/memory/sessionStore.js';
 import type { ISessionStore, SessionMeta } from '@/memory/sessionStore.js';
 import type { Message } from '@/llm/provider.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
@@ -298,19 +297,15 @@ export class SessionManager {
   // listSessionMetas + switchToSession 对齐，不经内核恢复入口），且 listSessionMetas 降序契约的
   // 真实消费者在宿主侧。恢复能力仍由 switchToSession（切换+加载，生产路径）与 forkSession 承担。
   // 勿加回；若宿主将来要「重启后恢复内核 session 状态」，应基于 switchToSession 接线而非新开恢复面。
-
-  /**
-   * 对外暴露的 loadSessionMessages 委托。⚠ 会切换当前会话（更新 currentDate/currentSession），加载后下一条 chat 写入被加载会话
-   *
-   * @deprecated 6.0.0 移除候选（DEPRECATE-1 在册，2026-10-16 随 e4c5cb40 登记）：宿主零消费，
-   * 与已删的 restore 双入口同族。替代 = `switchToSession`（切换+加载的生产路径）。
-   */
-  async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
-    // 替换工作记忆前置闸（SSOT：与 switch/fork 共用断言）
-    this.assertSessionReplaceable('加载会话');
-
-    return this.getHistory().loadSessionMessages(date, session);
-  }
+  //
+  // 删后注记（2026-10-17 · 5.0.0，用户拍板不走 DEPRECATE-1 周期直删）：曾有公开委托
+  // loadSessionMessages(date, session)——仅薄委托 MessageHistory.loadSessionMessages（设 currentDate/
+  // currentSession + 经 ISessionStore.loadMessages 读消息），是「半个 switchToSession」：改了会话锚点
+  // 却不 restore 到 AgentLoop 工作记忆，调用后下一条 chat 写入被加载会话而上下文仍属旧会话 =
+  // 语义不完整的陷阱入口（JSDoc ⚠ 即防此）。替代 = switchToSession（切换+加载+应用 loop 的生产路径）；
+  // 「按 date/session 读消息」的能力真源 = ISessionStore.loadMessages 接口契约（宿主自家 store 已实现
+  // 并直读，chatPanel loadMessagesHistory 路径），不随本出口删除而消失。MessageHistory.
+  // loadSessionMessages 内部方法保留（switchToSession 内部消费，非公开面）。
 
   /** 将会话消息恢复到 AgentLoop 工作记忆 */
   private applySessionToLoop(
