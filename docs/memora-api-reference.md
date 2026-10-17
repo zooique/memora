@@ -556,12 +556,18 @@ interface ISessionStore {
 | `rebuildComponents()` → `Promise<void>` | 重建 history / loop（通常不需要手动调用，switchProject 已自动执行） |
 | `forkSession(targetSession?)` → `AgentForkResult` | 分叉当前会话（同步，复制完整消息历史到新分支） |
 
-### 6.2 `agent.projects` — ProjectManager
+### 6.2 `agent.projects` — 项目管理器
 
 | 方法 | 用途 |
 |------|------|
-| `projects.list` | 所有已注册项目（getter） |
-| `projects.listProjects()` → `ProjectEntry[]` | 列出所有已注册项目 |
+| `projects.list` | 所有已注册项目（getter），返回 `ProjectEntry[]` |
+| `projects.registerProject(path, name)` | 注册/更新一个项目（按路径大小写不敏感去重） |
+| `projects.unregisterProject(path)` | 移除一个项目 |
+| `projects.currentProject` | 当前项目绝对路径（getter） |
+
+> 注：`ProjectManager` 类型本身**不挂公开面**（管理器是 Agent 实例级组件，出类型会引导宿主绕过
+> Agent 生命周期自建实例）——宿主经 `agent.projects` 访问即可，无需具名标注该类型。
+> `ProjectRegistry`（注册表类）同为内部专职组件，不挂公开面；条目类型 `ProjectEntry` 例外保留。
 
 ### 6.3 `agent.sessionManager` — SessionManager
 
@@ -1202,8 +1208,7 @@ export type { ReadOnlyMemoryStorage } from '@zooique/memora';
 export type { ISessionStore, SessionMessage } from '@zooique/memora';
 export type { ForkResult } from '@zooique/memora';
 
-// 项目注册表
-export { ProjectRegistry } from '@zooique/memora';
+// 项目注册表（只出条目类型：注册表类为项目管理器内部专职组件，导出会放出无锁写能力）
 export type { ProjectEntry } from '@zooique/memora';
 
 // 事件系统

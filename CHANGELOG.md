@@ -213,6 +213,34 @@
   本条 Breaking 明示——内部消费面为零（宿主经 `@zooique/memora` 包入口零消费已实证），仅
   外部接入者可能受影响；替代路径 = 上述注入接口 / `agent.sessionManager.*` / 纯函数直调。
 
+### ⚠️ Breaking Removed（内核 · 公开面收面第三批 · `PUB-API-PRUNE-3` · `MULTI-PROJ-1` 连带销项，用户 2026-10-18 拍板）
+
+> **性质**：多项目形态定案「内核保持单 Agent（一个 Agent = 一个项目 + 一套存储 + 一个会话
+> 域），多项目由宿主创建多个 Agent 实例」后，跨项目注册表不再需要公开出口。收的是**类**，
+> 不是能力——`ProjectRegistry` 作为项目管理器的专职组件在内核内部照用。
+
+- 删 **`ProjectRegistry` 类导出**：能力完全由 `agent.projects`（项目管理器）覆盖且更强
+  （含存储实例 / 项目锁 / 安全守卫）。三条判据：
+  ① **消费面三面零命中**——hosts 全仓 grep `ProjectRegistry` / `switchProject` /
+  `registerProject` / `listProjects` 均 0 命中；
+  ② **形态不对称**——导出类 = 连 `register` / `unregister` 无锁写能力一起放出（多进程
+  撕裂面），而读无险、写有险，二者不该同面；
+  ③ **产品路失效**——宿主传 `dataDir = <project>/.memora` 且未传 `registryDir` ⇒
+  `projects.json` 每项目各一份、只登记自身 ⇒ `switchProject` 按名分支永远命中不到别的
+  项目；且注入的 storage **不随切换重建**（切了 projectPath，记忆库仍是旧的）⇒ 不是
+  「没人用」，是「用了会错」。
+- **保留 `ProjectEntry` 条目类型**：`agent.projects.list` 返回 `ProjectEntry[]`，删则宿主
+  无法标注该类型。未来若真需「不拉起 Agent 读名单」，正确形态是只读纯函数，不是这个类。
+- 同批修 **手册 §6.2 幻影行**：原写 `projects.listProjects()`（项目管理器上无此方法，
+  真实形态是 `projects.list` getter）；补 `registerProject` / `unregisterProject` /
+  `currentProject` 三行，并注明管理器类型不挂公开面（出类型会引导宿主绕过 Agent 生命周期
+  自建实例）。
+- ⚠️ **对 4.x 升级者的代价**：随 4.0.0 已发布，直删使其失去 deprecation 预警期，由本条
+  Breaking 明示；替代路径 = `agent.projects.*`。
+- 验证：双守卫绿（12 用例）。变异实证两轮：① 符号量机器夹 `toBe(82)` 改 83 → 精确红
+  （报「EXPECTED 符号数 = 82」）；② `index.ts` 恢复该导出 → 向 A「发现 1 个未登记公共
+  导出」+ 成员面「[新符号] ProjectRegistry」双红 ⇒ 加回路径被双向咬死。
+
 ### Added（内核 · 存储层 SQLite 实现内核切片 · 服务 `DSH-1` / `MCP-SERVER-1` 共同前置，2026-10-16）
 
 - 新增 **`createNodeSqliteStorage(dbPath)`**（同步工厂）+ **`ReadOnlyMemoryStorage`**（只读视图类型）两个公共
