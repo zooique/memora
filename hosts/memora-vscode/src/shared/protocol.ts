@@ -618,6 +618,13 @@ export type ExtensionToWebviewMessage =
        * webview 据此启用刚完成回答的分叉按钮；无 roundId（异常/空会话）时可缺省。
        */
       roundId?: string;
+      /**
+       * 本轮裁决证据（与 roundId 同族：本轮收场信息，同源取自 Round.evidence）。
+       * 轮末即时可见缺口补齐：证据轨只在轮末落盘，历史重放走 TurnState 整批轮已带 evidence，
+       * 但运行时 settle 早于落盘可见，故宿主在收场时从 RoundStore 读出随本消息下发——webview
+       * 在 finalizeRound 全量重建里补渲 web_search 归因三件套。无证据轮（未触发可取证工具）缺省。
+       */
+      evidence?: RoundView['evidence'];
     }
   | { type: 'error'; message: string; category?: 'connection' | 'timeout' | 'unknown' }
   /**
@@ -627,8 +634,9 @@ export type ExtensionToWebviewMessage =
    * 用于：(1) 恢复输入框/停止按钮状态；(2) 渲染「已停止」提示；
    * (3) 区分「正常结束(done)」与「用户主动打断(interrupted)」。同时携带本轮
    * roundId（与 done 同语义）：打断也可能产生部分回答，允许从该轮分叉。
+   * evidence 同 done：本轮裁决证据随收场下发（见 done 注释），供 finalizeRound 重建补渲。
    */
-  | { type: 'interrupted'; roundId?: string }
+  | { type: 'interrupted'; roundId?: string; evidence?: RoundView['evidence'] }
   /**
    * 回抽正文
    *

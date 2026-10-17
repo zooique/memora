@@ -4548,14 +4548,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /** 链路上 done/interrupted 共用收尾：收起任务过程折叠区（已完成态）+ 关流式光标。
    *  形态甲：finalize 全量重建（合并流含运行时输入）+ 移除运行时平铺容器——
-   *  QA 已由 renderRoundBlock 从合并流归位到对应任务项分组，无需再搬运（foldPending 已删）。 */
-  function finalizeRound(): void {
+   *  QA 已由 renderRoundBlock 从合并流归位到对应任务项分组，无需再搬运（foldPending 已删）。
+   *  evidence 随收场消息透传（done/interrupted 各带一轮证据）：重建时补渲 web_search 归因
+   *  三件套——运行时证据轨不进 processEvents，故必须由收场消息补入（缺口补齐）。 */
+  function finalizeRound(evidence?: RoundView['evidence']): void {
     // renderRoundBlock 曾在 plan_item_boundary 嵌套场景抛 NotFoundError，导致后续
     // 「移除 flowEl / 收敛 QA / 关流式光标」全部不执行（过程不折叠 + 光标不消失，且异常在事件
     // 监听器内被静默吞掉）。收口三步放 finally：即便渲染失败，流式态也必收敛（不再带伤共存）。
     // 异常本身继续向上抛（由 onMessage 兜底 console.error 观测）——兜底观测，不掩盖根因。
     try {
-      renderRoundBlock(currentEvents, true, runtimeInteractiveInputs);
+      renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, evidence);
     } finally {
       flowEl?.remove();
       flowEl = null;
@@ -5745,7 +5747,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 收起任务过程折叠区（finalize 全量渲染）→ 收敛 QA 行进折叠块 → 关流式
       // （QA 不留在折叠块与报告之间）
       commitRoundId(msg.roundId);
-      finalizeRound();
+      finalizeRound(msg.evidence);
       // 终态定格：静默「已完成」淡勾（finalize 清运行态后落终态，正常完成必须安静）
       setActiveSheetStatus('已完成');
       // 回填删除按钮 ts 锚 + 容器 footer 显形收口（commitTurnTs 前置契约已内嵌于
@@ -5766,7 +5768,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 过程收进折叠块（保留已完成 step）→ 收尾分化（2026-10-13 终态标签收口底栏）：
       // 用户主动停止不铺行，宿主态 + 底栏「用户中断」标签承接收口；异常/兜底原因句照旧平铺。
       commitRoundId(msg.roundId);
-      finalizeRound();
+      finalizeRound(msg.evidence);
       const interruptedHost = activeAssistantEl;
       if (interruptedHost?.isConnected) {
         // 丢弃半截正文（运行中 step 的内容因中断作废，与重放中断轮不显示正文同源同形）

@@ -3752,8 +3752,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 此处推一次快照让 webview 同步——正常/中断 → 空 items（顶部条收起）；
     // 暂停 → 保留当前 plan（paused 分支前面，plan 还没被清，继续供 resume 消费）
     this.postPlanUpdate();
+    // 本轮裁决证据（web_search 归因等）：证据轨不进 processEvents（消费面是裁决），
+    // 运行时投影不带——故在收场时从 Round 读出，随 done/interrupted 下发，webview 在
+    // finalizeRound 重建里补渲。SSOT：chatProvider 与内核共享同一 WorkspaceRoundStore 实例
+    // （extension.ts 单例接线），此处读到的即内核 appendEvidence/appendAssistant 刚落盘的真源。
+    // 无证据轮 / 无 store（未接线）→ undefined，按可选字段缺省，零冗余。
+    const settledEvidence = latestRoundId
+      ? this._eventLogRoundStore?.getById(latestRoundId)?.evidence
+      : undefined;
     if (controller.signal.aborted) {
-      this.post({ type: 'interrupted', roundId: latestRoundId });
+      this.post({ type: 'interrupted', roundId: latestRoundId, evidence: settledEvidence });
       this.post({ type: 'status', state: 'done' });
       this.postTurnUpdate(liveTurn);
     } else if (pausedOnPurpose) {
@@ -3761,7 +3769,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'status', state: 'paused' });
       this.postTurnUpdate(liveTurn);
     } else {
-      this.post({ type: 'done', roundId: latestRoundId });
+      this.post({ type: 'done', roundId: latestRoundId, evidence: settledEvidence });
       this.postTurnUpdate(liveTurn);
       // status:done 延后到摘要完成（或 5s 兜底）——防 done 后立即删除导致孤儿 round-summary
       // 摘要 Promise 的 then/catch 都会 emit roundSummaryGenerated（成功或失败），正常事件很快到达；

@@ -10400,14 +10400,9 @@ describe('记忆反馈通道（HOST-S3-3）', () => {
   });
 });
 
-describe('web_search 裁决证据（evidence 随 RoundView 透传，仅重放路径渲染）', () => {
+describe('web_search 裁决证据（evidence 随 RoundView / 收场消息透传：重放与运行时均渲染）', () => {
   /** web_search 工具行（tool_start + 按 toolCallId 配对的 tool_result）工厂 */
-  function wsEvents(
-    toolCallId: string,
-    query: string,
-    summary: string,
-    seq: number,
-  ): unknown[] {
+  function wsEvents(toolCallId: string, query: string, summary: string, seq: number): unknown[] {
     return [
       {
         type: 'tool_start',
@@ -10504,7 +10499,11 @@ describe('web_search 裁决证据（evidence 随 RoundView 透传，仅重放路
             type: 'tool_start',
             seq: 2,
             ts: 't2',
-            payload: { toolCallId: 'r1', name: 'read_file', args: JSON.stringify({ path: 'a.ts' }) },
+            payload: {
+              toolCallId: 'r1',
+              name: 'read_file',
+              args: JSON.stringify({ path: 'a.ts' }),
+            },
           },
           {
             type: 'tool_result',
@@ -10533,10 +10532,7 @@ describe('web_search 裁决证据（evidence 随 RoundView 透传，仅重放路
         id: 'round-dup',
         user: { content: '同词两次', ts: 't1' },
         assistantMessage: { content: '两次都查了', ts: 't9' },
-        processEvents: [
-          ...wsEvents('w1', 'A', '第一次', 2),
-          ...wsEvents('w2', 'A', '第二次', 4),
-        ],
+        processEvents: [...wsEvents('w1', 'A', '第一次', 2), ...wsEvents('w2', 'A', '第二次', 4)],
         evidence: [
           {
             type: 'web_search_result',
@@ -10563,5 +10559,80 @@ describe('web_search 裁决证据（evidence 随 RoundView 透传，仅重放路
     expect(first?.textContent).toContain('结果条数：1');
     expect(second?.textContent).toContain('搜索来源：E2');
     expect(second?.textContent).toContain('结果条数：2');
+  });
+
+  /** 运行时开新轮：meta 建 round-block → chunk 建本轮 assistant 容器（finalize 重建的宿主） */
+  function beginRuntimeRound(): void {
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'meta',
+        seq: 1,
+        ts: '',
+        payload: { role: '文档设计师', llm: 'deepseek-chat' },
+      },
+    });
+    dispatch({ type: 'chunk', content: '正文' });
+  }
+
+  it('运行时路径：收场 done 带 evidence → finalizeRound 重建补渲证据块（轮末即时可见）', () => {
+    mountChatView();
+    beginRuntimeRound();
+    for (const e of wsEvents('w1', 'A', '（搜索来源：DuckDuckGo）', 2)) {
+      dispatch({ type: 'process_event', event: e });
+    }
+    // 收场前（pending 轮）：证据轨随收场消息才下发 → 此时不应有证据块
+    expect(document.querySelector('.round-block__search-evidence')).toBeNull();
+    dispatch({
+      type: 'done',
+      roundId: 'round-rt-done',
+      evidence: [
+        {
+          type: 'web_search_result',
+          ts: 't3',
+          meetingRound: false,
+          payload: { query: 'A', endpoint: 'DuckDuckGo', count: 1, titles: ['结果A'] },
+        },
+      ],
+    });
+    const ev = document.querySelector<HTMLElement>('.round-block__search-evidence');
+    expect(ev).not.toBeNull();
+    expect(ev!.textContent).toContain('搜索来源：DuckDuckGo');
+    expect(ev!.textContent).toContain('结果条数：1');
+    expect(ev!.textContent).toContain('· 结果A');
+  });
+
+  it('运行时路径：收场 done 无 evidence → 不渲染证据块（无证据轮零冗余）', () => {
+    mountChatView();
+    beginRuntimeRound();
+    for (const e of wsEvents('w1', 'A', '结果摘要', 2)) {
+      dispatch({ type: 'process_event', event: e });
+    }
+    dispatch({ type: 'done', roundId: 'round-rt-noev' });
+    expect(document.querySelector('.round-block__search-evidence')).toBeNull();
+  });
+
+  it('运行时路径：interrupted 带 evidence → 同样补渲证据块（打断轮证据照常可见）', () => {
+    mountChatView();
+    beginRuntimeRound();
+    for (const e of wsEvents('w1', 'A', '（搜索来源：Bing）', 2)) {
+      dispatch({ type: 'process_event', event: e });
+    }
+    dispatch({
+      type: 'interrupted',
+      roundId: 'round-rt-int',
+      evidence: [
+        {
+          type: 'web_search_result',
+          ts: 't3',
+          meetingRound: false,
+          payload: { query: 'A', endpoint: 'Bing', count: 2, titles: ['甲', '乙'] },
+        },
+      ],
+    });
+    const ev = document.querySelector<HTMLElement>('.round-block__search-evidence');
+    expect(ev).not.toBeNull();
+    expect(ev!.textContent).toContain('搜索来源：Bing');
+    expect(ev!.textContent).toContain('结果条数：2');
   });
 });
