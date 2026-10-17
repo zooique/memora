@@ -7,7 +7,7 @@
  *
  * 装配：
  *   - LLM Provider：createProvider（配置面板激活 / 环境变量回退）
- *   - 记忆存储：WorkspaceStorage（.memora/memories.json）
+ *   - 记忆存储：SQLite（.memora/memories.db，经内核工厂；旧环境降级 JSON，见 host/memoryStorage.ts）
  *   - 会话存储：WorkspaceSessionStore（.memora/sessions.json）
  *   - 网络搜索：FetchWebSearchProvider（Bing→DuckDuckGo 降级）
  *   - 功能定位：内置角色包（dist/extension/role-packs/ 构建期同步）+ 用户角色包（globalStorageUri/role-packs 运行态注入）
@@ -38,7 +38,7 @@ import { createProvider, createBackgroundProvider } from './llmConfig.js';
 import { createLocalCodeExecutor } from './codeExecutor.js';
 import { createVscodeEnvironmentProvider } from './environmentProvider.js';
 import { createVscodeProjectSearchProvider } from './projectSearchProvider.js';
-import { WorkspaceStorage } from './workspaceStorage.js';
+import { createHostMemoryStorage } from './memoryStorage.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
 import { vscodeTracer } from './tracer.js';
 
@@ -295,11 +295,10 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     archiveMode,
   } = options;
 
-  // 日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核
-  if (outputChannel) {
-    const logger = createVscodeLogger(outputChannel);
-    setLogger(logger);
-  }
+  // 日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核；
+  // 同一 logger 同时交给记忆存储接线（迁移摘要等经它上报，避免迁移结果无痕）
+  const logger = outputChannel ? createVscodeLogger(outputChannel) : undefined;
+  if (logger) setLogger(logger);
 
   // 1. 创建 LLM Provider（宿主注入；优先配置面板的激活 Provider，回退环境变量）
   const provider = await createProvider(providerStore, env ?? process.env);
@@ -309,10 +308,10 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   const providerRouter = createProviderRouter(provider);
 
   // 2. 创建工作区记忆存储 + 会话存储（宿主注入持久化）
-  const storage = new WorkspaceStorage(projectPath);
-  storage.load();
-  // 设定记忆存量清理（R4 迁移出口）：persona/rule/skill 存量行软删出记忆库，幂等无残留即零动作
-  storage.migrateRetiredSettingSources();
+  // 记忆存储接线：按「迁移状态 × 环境能力」分档选实现（SQLite / 降级 JSON），
+  // 并内含旧 JSON 一次性迁移（含退役设定来源清理 + 旧档改名保留）——
+  // 装配点只调本工厂，判据与分档逻辑收口在 host/memoryStorage.ts（禁散点）
+  const storage = createHostMemoryStorage(projectPath, logger);
   // SSOT：复用 extension 单例 sessionStore（与 UI 面板共享同一实例，杜绝双实例覆盖写）；
   // 未注入时（独立用途/测试）才内部新建并加载，且共享同一 roundStore 实例。
   const store: ISessionStore =

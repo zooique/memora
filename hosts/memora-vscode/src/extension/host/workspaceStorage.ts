@@ -47,6 +47,21 @@ export class WorkspaceStorage implements IMemoryStorage {
     this.filePath = join(workspacePath, '.memora', 'memories.json');
   }
 
+  /** 记忆文件绝对路径（诊断 / 一次性迁移定位用；勿据此另写第二真源） */
+  get path(): string {
+    return this.filePath;
+  }
+
+  /**
+   * 全部记忆（含软删除）浅拷贝 —— 供**一次性迁移**枚举。
+   *
+   * 仅供 JSON 档全量装载后读取（`load()` 已完成白名单清洗）；内核消费面一律只读活跃子集，
+   * 勿在常规路径使用本方法（否则软删除记忆会漏到消费侧）。
+   */
+  all(): Memory[] {
+    return [...this.store.values()].map((m) => ({ ...m }));
+  }
+
   /**
    * 启动时从文件加载记忆（文件不存在则空库）
    *
