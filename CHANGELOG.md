@@ -286,6 +286,17 @@
   `{ cwd: projectPath }`——四执行面（run_command / run_project_script / run_skill_script /
   run_code）cwd 判据至此对称。守卫：code 模式 `cwd=项目根` 断言（变异回退即红）。
 
+### Fixed（内核 · 归档模式顺延契约：`setArchiveMode` 对齐 `reloadConfig` 推迟-补执行 · `ARCH-GAP-1` / ADR-041 · 2026-10-17）
+
+审查（`deliverables/engineering-assurance/code-review-archive-mode-gap-2026-10-17.md`）定性：四处承诺文案早已按「对话结束后生效」写好，缺的只是内核那一步「暂存 + 补执行」——**半成品接线**，非文案谎报。按 ADR-041 方案 A2 修复，**宿主 0 行代码**、零新增事件/消息/公开 API：
+
+- **暂存 + 抛错**：`setArchiveMode` 判 `chatLockManager.isBusy`（与 `assertNotBusy`/`reloadConfig`/宿主 `agent.isBusy` 三处同源）为真时，写入 `pendingArchiveMode` 槽并抛 `chatBusyError`——抛错是「已排期」的传输方式，用户偏好既不丢也不被伪造为「已生效」。
+- **双挂点补执行**：新增 `flushPendingTurnEndTasks`，挂 `chat()` 与 `resumeExecution()` **两处** finally（缺 resumeExecution 一处 ⇒ 「暂停→续跑」半程拒切的偏好滞留到下一次 chat()，用户不再发问即永久丢失——该缺陷此前为空头承诺）。**成功才清槽**：失败保留暂存 + `logger.warn` 顺延下一个安全点（修正旧 `flushPendingConfigReload`「先 clear 再尝试」失败即丢失的同族债——旧行为本版只登记未动）。
+- **R1 时序缺陷修复**：非 busy 成功路径**无条件清槽**，且落点必须在幂等 `if (prev === mode) return;` **之前**——锁 180s 超时会自动释放且不中断流，用户超时后改回原值走幂等出口，清槽写在 return 之后则旧暂存会在轮终静默覆盖用户最后一次表态。
+- **`close()` 清槽**防 re-init 残留；`SeedDeps.archiveMode` 静态快照改惰性 getter（`setArchiveMode` 热改后 trace span 不再永久错报归档模式）。
+- **测试（四个变异靶标逐个实证）**：新增「轮终补执行」describe——真实 turn 持锁造 busy（禁注入私有 `_chatBusy` 字段、禁直调私有 flush，防「删挂点仍全绿」的空转守卫）+ 锁超时时序用例（HungProvider + fake timers）。实测：删 `chat()` 挂点 → 恰 2 红；删 `resumeExecution()` 挂点 → 恰 1 红；还原复绿。
+- **已知边界（如实注明非回避）**：长轮跑过 180s 锁超时后 `setArchiveMode` 会即时生效而非暂存（本轮后半程即按新模式归档）——这是既有判据的缺陷，非本方法引入；判据统一问题已登记台账观察项（`ARCH-GAP-F3`）。
+
 ## [4.0.0] · 2026-10-08
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：删 54 个公共导出 + 退役 `agent.memory.search()`，对外部消费者是编译期破坏。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
@@ -872,15 +883,17 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 - **修桩纪律（同型第四次）**：4 个 chatPanel 测试文件旧 agent 桩缺该方法 → postTurnUpdate TypeError 中断链路。按文件自带纪律「替身缺方法即抛错，宿主侧不得用 `?.()` 兜此类缺口」（那是在给替身违约打掩护、把真实契约缺口藏进 optional 链）——**修桩不修生产**。
 - **踩坑记账（「因错误的原因通过」实证）**：vitest/esbuild 不查类型——补桩 replace_all 的 4 空格模式作为子串误命中 6 空格行，与 6 空格 replace_all 双重插入重复键；运行期后者覆盖前者且同为 `() => true` ⇒ 4 文件 92 条复跑全绿但 `tsc --noEmit` TS1117 红。删重复行后复绿（「改完必跑 tsc」的又一实证）。
 - **守卫**：`chatPanelPauseProjection` +2 透传 / `turnProjection` +5（含 paused 不投影、缺省不写）/ `turnUiState` +5（thinking 门控 + pausePending 保留「继续 ▶」取消退路）/ `chatView` +1 端到端。
+- **流完整性 + agent 强制依赖面守卫（2026-10-17，随 `ARCH-GAP-1` 审查批）**：新建 `chatPanelFlowIntegrity` 7 例——①「流没有静默中断」钉成显式契约：`postTurnUpdate` 的运行态起点投影在 `consumeFlow` 的 try **之前**，替身缺强制方法即 TypeError 逃出 consumeFlow、被 `runFlow` catch 降级为 error notice ⇒ **整条流被截断而 await 方 promise 正常 resolve**（此前「只看 interject/resumeExecution 调用次数」的用例在这类截断面前全部保持全绿）；② agent 强制依赖面登记表与源码三类写法机械对拍（严格项缺方法必抛 / 宽松项双 optional 给替身开后门）——新增/改动「哪些 agent 方法是宿主强制依赖」必须自觉登记。
 
 ### Added（宿主 · 会话归档模式设置 `memora.archiveMode` 接线 · 2026-10-16）
 
 5.0.0 公开面清理批宿主接线：内核 `Agent.setArchiveMode(mode)` 编排出口接用户设置（三段式范式，对齐 security_toggle / setAllowedPaths / search_engine_set）。落点 = 设置面板「记忆」选项卡（归档元数据治理域最近，复用 security 组件类 + governance 分区样式）。
 
 - **语义**：`full` = 切换/分叉离开会话时自动生成会话摘要元数据（历史列表检索用）；`manual` = 仅手动触发；**轮次摘要不受影响（无模式开关，总是生成）**。
-- **三段式**：校验枚举 → 持久化用户级设置 `memora.archiveMode`（ConfigurationTarget.Global）→ 热更新 `agent.setArchiveMode()`。**繁忙顺延**：内核 `assertNotBusy` 拒切时偏好仍落盘（用户偏好是持久真相，运行时热更新是 hot-path 优化）+ info 级提示「偏好已保存……对话结束后生效」——不谎报「已生效」，也不渲染成红色错误（用户主动保存偏好不是故障）。
+- **三段式**：校验枚举 → 持久化用户级设置 `memora.archiveMode`（ConfigurationTarget.Global）→ 热更新 `agent.setArchiveMode()`。**繁忙顺延**：内核判 busy 后**暂存并抛错**（ADR-041 方案 A2，对齐 `reloadConfig` 契约；流退出时补执行到账，见内核区 `ARCH-GAP-1` 条目）⇒ 偏好落盘即排队，info 级提示「偏好已保存……运行时将在当前对话结束后生效」——不谎报「已生效」，也不渲染成红色错误（用户主动保存偏好不是故障）。
 - **回显口径**：`archive_mode_status` 推持久值（与 search_engine_status 同口径）；装配期读 `memora.archiveMode` 透传 `assemble` → `new Agent`（默认 full 交内核回落，宿主不复制默认字面量）；memoryView 下拉 change 封闭枚举守卫零 cast。
-- **守卫**：`settingsPanelArchiveMode` 新建 6 例（合法 full/manual / 非法拒 / 繁忙顺延 / loadArchiveModeStatus 真源 + 缺省回落）+ `memoryView` +3 / `settingsView` +1；`tokensClosure` `var(--line-` 70→71（`.archive-mode` 描边新增 1 处消费，跑 `scripts/count-token-refs.mjs` 取机械真值后同步 EXPECTED + 日期注释）。
+- **守卫**：`settingsPanelArchiveMode` 7 例（合法 full/manual / 非法拒收即复位 / 繁忙顺延不谎报 / **agent 未就绪降级不假成功** / loadArchiveModePreference 偏好真源 + 缺省回落）+ `memoryView` +4（含 DOM 篡改注入越界 option 不发送——webview 侧不裸信 DOM）+ `settingsView` +1；`tokensClosure` `var(--line-` 70→71（`.archive-mode` 描边新增 1 处消费，跑 `scripts/count-token-refs.mjs` 取机械真值后同步 EXPECTED + 日期注释）。
+- **运行时真相层补测（2026-10-17，随 `ARCH-GAP-1` 审查批）**：新建 `settingsPanelArchiveModeRuntime` 7 例——替身带 `getArchiveMode()` 运行时真值读口（此前宿主侧零消费，物理上无法断言「偏好存了 ≠ 运行时改了」）+ busy 开关；钉死 `archive_mode_status` = 偏好回显口径（UI 不开第二条真值运输通道，生效回执由既有 `archiveModeChanged` 事件承担）；繁忙错误对接内核 `chatBusyError` 真实契约形态（MemoraError 分支，非手抄普通 Error）。「补应用」契约的权威守卫在内核侧（真实 Agent 驱动 + 变异靶标），宿主替身**不模拟第二拍**（自证预言禁区）。
 
 ### Fixed（宿主 · 占用构成条补「动态注入」段（四段 → 五段）+ 协议口径订正 · `CTX-OCC-1` 宿主侧 · 2026-10-16）
 
