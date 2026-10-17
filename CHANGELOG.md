@@ -241,6 +241,34 @@
   （报「EXPECTED 符号数 = 82」）；② `index.ts` 恢复该导出 → 向 A「发现 1 个未登记公共
   导出」+ 成员面「[新符号] ProjectRegistry」双红 ⇒ 加回路径被双向咬死。
 
+### ⚠️ Breaking Removed（内核 · 跨项目切换整链删除 · `PR-SWITCH-1` · 用户 2026-10-18 拍板形态定案）
+
+> **性质**：多项目形态定案「内核保持单 Agent，多项目由宿主各建一个 Agent 实例」后，「跨项目
+> 注册表」这个概念在内核整体失去立足点。**六面同删**，不留「写了没人读」的僵尸写入。
+
+- 删 **`Agent.switchProject(nameOrPath)`**：宿主零调用；按名分支在宿主现行配置下**永不命中**
+  （`projects.json` 随项目级 `dataDir` 各一份、只登记自身）；且注入的 storage **不随切换重建**
+  ⇒ 换锚点不换配套，**用了会错**。多项目改用「宿主为每项目各建一个 Agent 实例」。
+- 删 **`projectSwitched` 事件**（事件键 + 载荷类型）：只由 `switchProject` emit；宿主
+  `chatPanel.ts` 订阅了但永不触发 ⇒ **僵尸订阅**，同批清理宿主 handler 与 `off/on` 两行。
+- 删 **`AgentOptions.registryDir`**：唯一用途（跨项目注册表共享）随之落空，宿主本就零传。
+- 删 **`agent.projects` 公开面**（`list` / `registerProject` / `unregisterProject`）与
+  **`ProjectEntry` 条目类型** ⇒ `ProjectRegistry` 模块与其测试整个删除。
+  ⚠️ **`PUB-API-PRUNE-3` 保留 `ProjectEntry` 的理由（`agent.projects.list` 返回它）由本条推翻**——
+  整链删后该返回面不复存在。**推翻留痕、不回改上条**：决策史按时间顺序保留。
+- 删 **`projects.json` 写入**：`initProject` 不再注册项目 ⇒ 内核不再落任何跨项目状态；
+  `dataDir` 只剩「确保目录存在」，宿主注入 storage 时内核在其下**零写入**。
+- **保留**：项目名推断——原 `ProjectRegistry.inferProjectName` **摘为 `projectManager.ts`
+  模块级纯函数**（同 `buildMeetingPlanSkeleton` 摘法），供 `ProjectContext.projectName`；
+  项目锁 / 存储编排 / 安全守卫全部不动。
+- ⚠️ **对 4.x 升级者的代价**：随 4.0.0 已发布，直删使其失去 deprecation 预警期，由本条
+  Breaking 明示；替代路径 = 为每个项目创建一个 Agent 实例。
+- 验证：双守卫绿（12 用例）+ `typecheck`（主 + scripts）零错 + eslint 0 + prettier 全过 +
+  全量 **3057 passed / 4 skipped / 118 文件零失败**（用例 −48 精确对账：projectRegistry
+  测试整文件 40 + agent 5 + 注册表 describe 4 − 新增推断用例 1）；收尾四步（build → 宿主
+  `install --offline` → 宿主 tsc）。变异实证两轮：① 符号量夹 `toBe(81)` 改 82 → 精确红；
+  ② EXPECTED 误加 `Agent.switchProject` → 「[成员消失]」红。
+
 ### Added（内核 · 存储层 SQLite 实现内核切片 · 服务 `DSH-1` / `MCP-SERVER-1` 共同前置，2026-10-16）
 
 - 新增 **`createNodeSqliteStorage(dbPath)`**（同步工厂）+ **`ReadOnlyMemoryStorage`**（只读视图类型）两个公共

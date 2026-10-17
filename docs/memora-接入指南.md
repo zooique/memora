@@ -71,10 +71,13 @@
 ```
 小说项目/
 ├── .memora/           ← 项目级配置（rules + skills）+ 内核写入的 .lock
-└── .memora-data/      ← dataDir 指向此处（记住：内核只往这里写 projects.json 注册表）
-    ├── projects.json  ← 内核写入：项目注册表
+└── .memora-data/      ← dataDir 指向此处（Agent 级资源目录；宿主注入 storage 时内核不在此落文件）
     └── <记忆库>        ← 由宿主的 storage 决定形态与文件名
 ```
+
+> **多项目怎么办**：一个 Agent 绑定一个项目，**不做项目切换**。多项目请为每个项目各创建一个
+> Agent 实例（各自 `projectPath` + `dataDir`），项目数据天然隔离。（5.0.0 前的 `switchProject`
+> / `agent.projects` / `projects.json` 跨项目注册表整链已随 PR-SWITCH-1 删除。）
 
 ---
 

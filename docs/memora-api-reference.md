@@ -82,7 +82,7 @@ configDir/
 | | `storage`（IMemoryStorage） | `dataDir` |
 |---|---|---|
 | 本质 | 接口实例（宿主写的类） | 文件系统目录路径（字符串） |
-| 内核怎么用它 | 调方法：`upsert` / `getById` / `search` / `getAllSources`… | 用它定位项目注册表（`projects.json`）；记忆库落哪、叫什么名，由宿主自定，内核不参与 |
+| 内核怎么用它 | 调方法：`upsert` / `getById` / `search` / `getAllSources`… | 记忆库落哪、叫什么名，由宿主自定，内核不参与（`dataDir` 只是 Agent 级资源目录，内核不假设其下文件形态） |
 | 管什么 | "怎么存取记忆"（逻辑），内核不关心内部是 SQLite 还是内存 | "记忆库与项目注册表放哪个目录"（物理位置） |
 | 谁实现 | 宿主实现（如 SqliteMemoryStorage） | 宿主传路径 |
 | 关系 | `dataDir` 指向目录；宿主按自己的持久化形态构造 storage（JSON 文件 / SQLite 皆可） | 内核用 `dataDir` 推导注册表路径；**项目锁文件不由 `dataDir` 推导**，它固定落 `<projectPath>/.memora/.lock` |
@@ -141,7 +141,7 @@ new Agent({
 │  │  Memora 内核（Agent）                    │               │
 │  │  ┌──────────────────────────────────────┐│               │
 │  │  │  Agent 面类（编排层）                 ││               │
-│  │  │  - init/close · chat · switchProject ││               │
+│  │  │  - init/close · chat · forkSession  ││               │
 │  │  │  - .rolePack / .tools / .skills      ││               │
 │  │  │  - .governance / .memory             ││               │
 │  │  └──────────┬───────────────────────────┘│               │
@@ -177,7 +177,6 @@ new Agent({
 | `providerRouter` | `ProviderRouter` | ❌ | 按任务类型返回 Provider 的路由器（不配时全部使用同一 Provider，向后兼容） |
 | `configDir` | `string` | ❌ | 配置目录（role-packs / skills，设定记忆唯一归角色包） |
 | `dataDir` | `string` | ✅ | 记忆数据目录（必填，内核不提供默认值；传项目级还是用户级目录由宿主决定） |
-| `registryDir` | `string` | ❌ | 项目注册表目录（缺省与 dataDir 相同）。注册表用于**跨项目按名解析**，仅当多项目共用一份时才成立 |
 | `maxContextTokens` | `number` | ❌ | 上下文窗口上限（缺省 = 内核 `AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS`，数字以该常量为真源，此处不落账） |
 | `maxTokens` | `number` | ❌ | per-LLM 输出预算（token；宿主配置面板「输出上限」透传，undefined = 回服务端默认）。与角色包策略 `act.outputLimit` **取更小值**，`buildChatOptions` 单点裁决，宿主经 `agent.getEffectiveMaxTokens()` 读生效值 |
 | `confirmScripts` | `boolean` | ❌ | 脚本/代码执行确认（独立于写入确认；true 时 `run_code` / `run_project_script` 执行前弹窗，默认 false 不弹窗） |
@@ -277,7 +276,6 @@ agent.once<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[
 | `memoryRecalled` | `{ count, query, hits? }` | LLM 经 `search_memories` 命中记忆（`hits` = 命中明细，4.1.0 起可选） |
 | `sessionForked` | `{ from, to, roundCount }` | 会话被分叉（`roundCount` = 新会话 Round 数） |
 | `sessionSwitched` | `{ date, session, fromSessionId, toSessionId }` | 会话身份切换完成（载荷指向被切走的旧会话；内核自消费，宿主零消费为刻意设计） |
-| `projectSwitched` | `{ from: string \| null, to, projectName }` | 项目切换（宿主 UI 据此刷新项目相关界面） |
 | `archiveFailed` | `{ stage: 'session', message }` | 归档异常（fire-and-forget catch 分支发射，宿主可通知用户） |
 | `sessionArchived` | `{ sessionId, updatedFields }` | 会话归档写入成功（宿主据此重拉会话列表刷新摘要） |
 | `contextTruncated` | `{ skippedCount, keptCount }` | 内核自动截断上下文 |
@@ -542,32 +540,34 @@ interface ISessionStore {
 
 ## 六、项目 / 会话管理
 
-> **方法归属**：项目相关方法在 `agent.projects`（ProjectManager），会话相关方法在 `agent.sessionManager`（SessionManager），仅 `switchProject` / `rebuildComponents` / `forkSession` 保留在 Agent 面类作为常用入口。
+> **方法归属**：会话相关方法在 `agent.sessionManager`（SessionManager）；`rebuildComponents` /
+> `forkSession` 保留在 Agent 面类作为常用入口。**项目不再有切换入口**——多项目由宿主创建
+> 多个 Agent 实例（一个 Agent 绑定一个项目），见 §6.2。
 
 > **switch* 返回值约定**：各 switch 操作返回与其操作语义最匹配的值 ——
-> `switchSession` 返回新会话名（string）、`switchProject` 返回完整项目上下文（AgentContext，含 bootstrap 记忆等）、
-> `agent.switchRolePack` 返回布尔值（是否切换成功）。这是设计性差异，非 bug。
+> `switchSession` 返回新会话名（string）、`agent.switchRolePack` 返回布尔值（是否切换成功）。
+> 这是设计性差异，非 bug。（原 `switchProject` 随 PR-SWITCH-1 删除，不再有项目切换入口。）
 
 ### 6.1 Agent 面类方法（项目/会话入口）
 
 | 方法 | 用途 |
 |------|------|
-| `switchProject(nameOrPath)` → `Promise<AgentContext>` | 切换到指定项目（保留 Agent 级记忆，自动 rebuild） |
-| `rebuildComponents()` → `Promise<void>` | 重建 history / loop（通常不需要手动调用，switchProject 已自动执行） |
+| `rebuildComponents()` → `Promise<void>` | 重建 history / loop（强制刷新内部组件；通常由内核在配置重载等场景内部调用） |
 | `forkSession(targetSession?)` → `AgentForkResult` | 分叉当前会话（同步，复制完整消息历史到新分支） |
 
-### 6.2 `agent.projects` — 项目管理器
+### 6.2 多项目怎么办（形态定案）
 
-| 方法 | 用途 |
-|------|------|
-| `projects.list` | 所有已注册项目（getter），返回 `ProjectEntry[]` |
-| `projects.registerProject(path, name)` | 注册/更新一个项目（按路径大小写不敏感去重） |
-| `projects.unregisterProject(path)` | 移除一个项目 |
-| `projects.currentProject` | 当前项目绝对路径（getter） |
+**一个 Agent 绑定一个项目**——内核不提供项目切换，也不维护跨项目名单。多项目的正确做法是
+**宿主为每个项目各创建一个 Agent 实例**（项目数据本就隔离在项目自己的 `.memora/` 下：
+`dataDir = <projectPath>/.memora`，记忆 / 会话 / round 三家 store 同目录）。
 
-> 注：`ProjectManager` 类型本身**不挂公开面**（管理器是 Agent 实例级组件，出类型会引导宿主绕过
-> Agent 生命周期自建实例）——宿主经 `agent.projects` 访问即可，无需具名标注该类型。
-> `ProjectRegistry`（注册表类）同为内部专职组件，不挂公开面；条目类型 `ProjectEntry` 例外保留。
+需要「最近项目列表」时由宿主自持（VS Code 用 `recent folders`、扫 `.memora` 等），比内核管
+项目名单更合边界——内核不假设多项目目录的位置与形态。
+
+> 历史留痕：5.0.0 前曾有 `agent.projects`（项目管理器）与 `switchProject` / `projectSwitched`
+> 事件 / `registryDir` / `ProjectEntry` / `projects.json` 跨项目注册表整链，已于 PR-SWITCH-1
+> 一并删除（形态定案后整链落空：注册表随项目级 `dataDir` 各一份、按名切换永不命中，且注入
+> 存储不随切换重建 ⇒ 用了会错）。
 
 ### 6.3 `agent.sessionManager` — SessionManager
 
@@ -580,9 +580,6 @@ interface ISessionStore {
 | `sessionManager.discardCheckpoint()` → `boolean` | **Phase 4 新增**：放弃当前暂停检查点（对称 pause 创建，宿主 handleStop paused 态调之；停定时器 + 清内存 + resetToRunning；无检查点返回 false） |
 
 ```typescript
-// 项目列表
-const projects = agent.projects.list;
-
 // 会话分叉示例（Agent 面类入口，等价于 agent.sessionManager.forkSession()）
 const forkResult = agent.forkSession();
 console.log(`分叉到 ${forkResult.newSession}，含 ${forkResult.roundCount} 个 Round（roundId 指针）`);
@@ -980,7 +977,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 对话 | `chat(input, signal?)` / `chatSync(input, signal?)` / `resumeExecution()` |
 | 事件 | `on()` / `off()` / `once()`（继承自 TypedEventEmitter） |
 | 暂停/继续 | `pause(reason, source?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content)` / `removePendingInterject(index)` / `clearPendingInterjections()` / `getPendingInterjections()` / `discardCurrentCheckpoint()` / `canContinueWithoutInput()` |
-| 项目 / 会话 | `switchProject(nameOrPath)` / `rebuildComponents()` / `forkSession(targetSession?)` / `createCheckpoint()` / `getCheckpoint()` |
+| 会话 / 组件 | `rebuildComponents()` / `forkSession(targetSession?)` / `createCheckpoint()` / `getCheckpoint()` |
 | Provider | `setProvider(provider)` / `setBackgroundProvider(provider)` |
 | 归档模式 | `setArchiveMode(mode)` / `getArchiveMode()` |
 | 角色 | `switchRolePack(name)` / `getRolePackSwitchLockStatus()` / `getActiveTraits()` / `injectAffect(affectString)` |
@@ -1208,9 +1205,6 @@ export type { ReadOnlyMemoryStorage } from '@zooique/memora';
 export type { ISessionStore, SessionMessage } from '@zooique/memora';
 export type { ForkResult } from '@zooique/memora';
 
-// 项目注册表（只出条目类型：注册表类为项目管理器内部专职组件，导出会放出无锁写能力）
-export type { ProjectEntry } from '@zooique/memora';
-
 // 事件系统
 export { TypedEventEmitter } from '@zooique/memora';
 export type { AgentEventMap, AgentEventName, AgentEventHandler } from '@zooique/memora';
@@ -1286,10 +1280,12 @@ export type {
 
 ### 内部数据写入（不越界）
 
-Agent 内部只维护两个状态文件，路径全部由宿主传入的路径推导，内核不假设 `~/.memora/` 一类的用户级默认位置：
+Agent 内部只维护一个状态文件，路径全部由宿主传入的路径推导，内核不假设 `~/.memora/` 一类的用户级默认位置：
 
-- `projects.json`（项目注册表）——落 `dataDir` 内；若显式传了 `registryDir` 则落那里
 - `.lock`（项目锁）——固定落 `<projectPath>/.memora/.lock`，**不由 `dataDir` 推导**
+
+`dataDir` 仅作 Agent 级资源目录（确保存在）；宿主注入 `IMemoryStorage` 时内核**不**在该目录下
+落任何文件。（PR-SWITCH-1 前内核曾在此写 `projects.json` 跨项目注册表，随多项目形态定案删除。）
 
 ---
 
