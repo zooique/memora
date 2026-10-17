@@ -220,7 +220,7 @@ export class WorkspaceStorage implements IMemoryStorage {
     if (!q) {
       return this.topByAccessed(active, limit);
     }
-    // 规范分词（与内核 keywordsTouch.ts 的 extractKeywords 共用 segmentText）
+    // 规范分词（用内核公开导出 `segmentLower`——与内核关键词匹配口径同源）
     const tokens = segmentLower(q);
     if (tokens.length === 0) {
       return this.topByAccessed(active, limit);

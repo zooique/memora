@@ -63,7 +63,7 @@
   2. 把该会话引用的每个 `rounds/{roundId}.json` `move` 到 `archived/rounds/` 并更新两区 `index.json` 的 refCount（**先入后删，成对完整搬**）；
   3. 把 meta + roundIds 写入 `archived/sessions.json`，再从活动 `sessions.json` 移除；
   4. 全流程原子（失败可回滚：已搬的 round 移回）。
-- `restoreSession(sessionId)`：反向执行（archived → active），同样成对搬。
+- `unarchiveSession(sessionId)`：反向执行（archived → active），同样成对搬。
 - `deleteSession(sessionId)`：变为「先在 locating 结果所在分区内删除 meta + 其引用归零的 rounds」，语义不变。
 
 ### 界面
@@ -81,7 +81,7 @@
 2. `extension/host/sessionStore.ts`：
    - 引入 active / archived 两个 session 文件；
    - `listSessionMetas()`/`loadMessages`/`listSessions` 指向 active（`loadMessages` 对归档会话经 locate 兜底回读）；
-   - 新增 `archiveSession` / `restoreSession`。
+   - 新增 `archiveSession` / `unarchiveSession`。
 3. 控制器 / extension 注册 IPC：archive / restore / 列出归档。
 4. `webview` 归档视图（列表 + 恢复/删除）与入口（会话历史界面加「归档」按钮）。
 5. `src/shared/protocol.ts`：登记新消息类型。
