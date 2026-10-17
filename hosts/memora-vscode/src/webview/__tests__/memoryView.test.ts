@@ -670,4 +670,29 @@ describe('memoryView 会话归档模式', () => {
       expect.objectContaining({ type: 'archive_mode_set' }),
     );
   });
+
+  it('下拉被注入非法 option 并选中 → 不发送（DOM 篡改零信任，webview 侧不裸信 DOM）', () => {
+    // 生产判据：memoryView 下拉 change 处理器在发送 archive_mode_set 前的枚举自校验
+    // （`mode === 'full' || mode === 'manual'`）此前零覆盖——现有 3 例只喂合法值，等于假设「下拉枚举永不被改」。
+    // 下拉是封闭枚举只是**渲染层事实**，DOM 可被任意脚本/扩展篡改 ⇒ 发送前必须自校验，
+    // 否则会把越界值送进 host（host 侧亦有同一校验，属纵深防御的第二道）。
+    // 变异靶标：去掉配送侧的枚举判据 → 本例转红。
+    const { postMessage } = mountMemoryView();
+    const select = document.getElementById('archiveModeSelect') as HTMLSelectElement;
+    const rogue = document.createElement('option');
+    rogue.value = 'evil';
+    rogue.textContent = '越界值';
+    select.appendChild(rogue);
+    select.value = 'evil';
+
+    select.dispatchEvent(new Event('change'));
+
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'archive_mode_set' }),
+    );
+    // 对照：合法值仍然照发（证明上面的「不发」不是因为 change 监听没挂上）
+    select.value = 'manual';
+    select.dispatchEvent(new Event('change'));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'archive_mode_set', mode: 'manual' });
+  });
 });
