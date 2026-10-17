@@ -10432,7 +10432,14 @@ describe('web_search 裁决证据（evidence 随 RoundView / 收场消息透传�
             type: 'web_search_result',
             ts: 't3',
             meetingRound: false,
-            payload: { query: 'A', endpoint: 'DuckDuckGo', count: 2, titles: ['结果A', '结果B'] },
+            // 主配路径：证据带 toolCallId（= tool_start.payload.toolCallId），唯一配对
+            payload: {
+              toolCallId: 'w1',
+              query: 'A',
+              endpoint: 'DuckDuckGo',
+              count: 2,
+              titles: ['结果A', '结果B'],
+            },
           },
         ],
       }),
@@ -10525,7 +10532,7 @@ describe('web_search 裁决证据（evidence 随 RoundView / 收场消息透传�
     expect(document.querySelector('.round-block__search-evidence')).toBeNull();
   });
 
-  it('同一 query 多次搜索：证据按行序一一配对（不后者覆盖前者）', () => {
+  it('旧轮（证据无 toolCallId）回退 query 游标：同一 query 多次搜索按行序一一配对（不后者覆盖前者）', () => {
     mountChatView();
     dispatchReplay(
       makeRound({
@@ -10559,6 +10566,41 @@ describe('web_search 裁决证据（evidence 随 RoundView / 收场消息透传�
     expect(first?.textContent).toContain('结果条数：1');
     expect(second?.textContent).toContain('搜索来源：E2');
     expect(second?.textContent).toContain('结果条数：2');
+  });
+
+  it('主配（toolCallId）：同 query 下被护栏硬拦的搜索行不张冠李戴到另一次成功的证据', () => {
+    // 缺陷形态（旧 query 启发式的已知边界）：同一 query 搜两次，前一行被硬拦（不产证据），
+    // 旧逻辑按行序把后一行的证据顺延配对到被拦行 → 张冠李戴。带 toolCallId 后应各归其位。
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'round-blocked',
+        user: { content: '同词两次，一次被拦', ts: 't1' },
+        assistantMessage: { content: '第二次查了', ts: 't9' },
+        processEvents: [...wsEvents('w1', 'A', '被拦（未执行）', 2), ...wsEvents('w2', 'A', '第二次', 4)],
+        evidence: [
+          {
+            type: 'web_search_result',
+            ts: 't5',
+            meetingRound: false,
+            // 仅 w2 有证据（w1 被拦未执行）；带 toolCallId 直配回 w2，不得落到 w1
+            payload: { toolCallId: 'w2', query: 'A', endpoint: 'E2', count: 2, titles: ['二'] },
+          },
+        ],
+      }),
+    );
+    const blockedRow = document
+      .querySelector<HTMLElement>('.round-block__tool[data-tool-call-id="w1"]')
+      ?.querySelector<HTMLElement>('.round-block__search-evidence');
+    const okRow = document
+      .querySelector<HTMLElement>('.round-block__tool[data-tool-call-id="w2"]')
+      ?.querySelector<HTMLElement>('.round-block__search-evidence');
+    // w1 被拦不产证据 → 不挂证据块（旧启发式会在此误挂 w2 的证据）
+    expect(blockedRow).toBeNull();
+    // w2 的证据唯一配对回 w2
+    expect(okRow).not.toBeNull();
+    expect(okRow!.textContent).toContain('搜索来源：E2');
+    expect(okRow!.textContent).toContain('结果条数：2');
   });
 
   /** 运行时开新轮：meta 建 round-block → chunk 建本轮 assistant 容器（finalize 重建的宿主） */

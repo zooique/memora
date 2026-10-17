@@ -677,7 +677,7 @@ describe('工具执行器（6 个工具）', () => {
       return { search: vi.fn().mockResolvedValue(results) };
     }
 
-    it('非空结果：observer 收到 query/endpoint/count/titles（标题走净化通道）', async () => {
+    it('非空结果：observer 收到 toolCallId/query/endpoint/count/titles（标题走净化通道）', async () => {
       const exec = new ToolExecutor(
         tmpProject,
         security,
@@ -690,10 +690,18 @@ describe('工具执行器（6 个工具）', () => {
       const seen: WebSearchExecInfo[] = [];
       exec.setSearchResultObserver((info) => seen.push(info));
 
-      await exec.execute('web_search', JSON.stringify({ query: '测试查询' }));
+      // 第 5 参 toolCallId（证据配对通道）：随执行事实一并镜像，供宿主唯一配对渲染
+      await exec.execute(
+        'web_search',
+        JSON.stringify({ query: '测试查询' }),
+        undefined,
+        undefined,
+        'call-xyz',
+      );
 
       expect(seen).toHaveLength(1);
       expect(seen[0]).toEqual({
+        toolCallId: 'call-xyz',
         query: '测试查询',
         endpoint: 'Bing',
         count: 2,

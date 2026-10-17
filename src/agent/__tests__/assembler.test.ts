@@ -520,14 +520,28 @@ describe('assembleComponents', () => {
       const evidence: RoundEvidenceEvent[] = [];
       output.loop.appendRoundEvidence = (ev) => evidence.push(ev);
 
-      await output.toolExec.execute('web_search', JSON.stringify({ query: 'memora 架构' }));
+      // 第 5 参 toolCallId 透传：锁「工具调用唯一 ID → 证据 payload.toolCallId」全链，
+      // 使宿主渲染能把证据唯一配对回 tool_start（替代 query 文本启发式）
+      await output.toolExec.execute(
+        'web_search',
+        JSON.stringify({ query: 'memora 架构' }),
+        undefined,
+        undefined,
+        'call-integration',
+      );
 
       expect(evidence).toHaveLength(1);
       expect(evidence[0]).toMatchObject({
         type: 'web_search_result',
         // 无 checkpoint → getActivePlanItemMeta 返回 null → 非会议轮（与既有写点同判据）
         meetingRound: false,
-        payload: { query: 'memora 架构', endpoint: 'Bing', count: 1, titles: ['架构标题'] },
+        payload: {
+          toolCallId: 'call-integration',
+          query: 'memora 架构',
+          endpoint: 'Bing',
+          count: 1,
+          titles: ['架构标题'],
+        },
       });
     });
   });

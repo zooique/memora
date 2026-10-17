@@ -413,6 +413,15 @@ export type RoundEvidenceEvent =
       /** 事件时刻是否会议轮（判据见类型注释） */
       meetingRound: boolean;
       payload: {
+        /**
+         * 本次搜索的工具调用唯一 ID（= tool_start.payload.toolCallId）。
+         *
+         * 宿主渲染重放时据此把证据**唯一配对**回对应的 web_search 工具行，
+         * 替代旧的「按 query 文本猜 + 行序消费」启发式（同 query 多次搜索 / 被硬拦
+         * 的搜索会张冠李戴）。**可选**：旧持久化轮次的证据无此字段，缺失时宿主回退
+         * query 游标启发式（保不带伤——历史轮不因此丢证据渲染）。
+         */
+        toolCallId?: string;
         /** LLM 实际发出的查询串（归因第一现场） */
         query: string;
         /** 实际服务的搜索后端（降级分型证据；提供方未打标时缺省） */

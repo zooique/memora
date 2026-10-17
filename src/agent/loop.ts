@@ -99,11 +99,13 @@ export interface AgentLoopOptions {
   /**
    * 工具执行入口（装配层注入）。
    * 第 3 参 emitOutcome：已切族工具产出原生结构化 outcome 的通道（透传至 toolExecutor.execute）。
+   * 第 4 参 toolCallId：本次工具调用唯一 ID（web_search 证据配对通道，透传至 toolExecutor.execute）。
    */
   toolExecutor: (
     name: string,
     args: string,
     emitOutcome?: (outcome: ToolOutcome) => void,
+    toolCallId?: string,
   ) => Promise<string>;
   maxIterations?: number;
   /** 系统 prompt 前缀（角色包 prompt），注入到 bootstrap 记忆之前 */
@@ -666,8 +668,10 @@ export class AgentLoop {
 
     // 单工具执行器：注入 loop 稳定能力窄面，strategy 经闭包读最新（setStrategy 动态生效）
     this.toolRunner = new ToolRunner({
-      // 原生 outcome 回调逐跳透传：ToolRunner → opts.toolExecutor → toolExecutor.execute
-      execute: (name, args, emitOutcome) => this.opts.toolExecutor(name, args, emitOutcome),
+      // 原生 outcome 回调逐跳透传：ToolRunner → opts.toolExecutor → toolExecutor.execute；
+      // toolCallId 同步透传（web_search 证据配对通道，见 ToolRunnerDeps.execute 第 4 参）
+      execute: (name, args, emitOutcome, toolCallId) =>
+        this.opts.toolExecutor(name, args, emitOutcome, toolCallId),
       builtinTools: opts.builtinTools,
       preExecutionCheck: opts.preExecutionCheck,
       onToolExecuted: opts.onToolExecuted,
@@ -3254,7 +3258,7 @@ export class AgentLoop {
    *
    * 驱动方 = 装配层接线 `toolExec.setSearchResultObserver`（toolExecutor 观察到的执行事实
    * 镜像过来）。ts/meetingRound 构造归 loop（isMeetingRound 私有，与其余三个写点同构）；
-   * 载荷透传不加工（query/endpoint/count/titles 就是 toolExecutor 看到的原样）。
+   * 载荷透传不加工（toolCallId/query/endpoint/count/titles 就是 toolExecutor 看到的原样）。
    * 回答「搜不准」争议的第一现场：结果页之外，query 本身 + 端点 + 结果面落盘可裁。
    * 护栏硬拦的搜索不走此路（拦截即未执行，无结果面；拦截事实已在 tool 消息可见）。
    */
@@ -3264,6 +3268,8 @@ export class AgentLoop {
       ts: nowIso(),
       meetingRound: this.isMeetingRound(),
       payload: {
+        // toolCallId 透传（宿主渲染据此唯一配对证据回工具行）；缺省 = 未透传，宿主回退 query 启发式
+        toolCallId: info.toolCallId,
         query: info.query,
         endpoint: info.endpoint,
         count: info.count,

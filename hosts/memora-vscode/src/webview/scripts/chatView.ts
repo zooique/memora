@@ -1701,12 +1701,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   >;
 
   /**
-   * 构造「web_search 工具行 → 裁决证据」解析器（每轮重放渲染建一次，闭包持消费游标）。
+   * 构造「web_search 工具行 → 裁决证据」解析器（每轮重放渲染建一次）。
    *
-   * ⚠️ 配对是**启发式**：证据无 `toolCallId`（仅 query），故按 query 字符串分组 + 行序消费——
-   * 同一 query 多次搜索时按先后顺序各取一条，避免「后一次覆盖前一次」。被护栏硬拦的搜索
-   * 不产证据（未执行），若其 query 与被拦后另一次成功搜索相同，会顺延配对到那条——已知边界，
-   * 语料中极罕见，且正因如此**不做可点链接**（无 URL 锚点，误配不可进一步放大）。
+   * 配对策略（两级，SSOT = 工具调用唯一身份优先）：
+   * - **主配（toolCallId）**：新证据 payload 带 `toolCallId`（= tool_start.payload.toolCallId），
+   *   按唯一 ID 直配——同 query 多次搜索、被护栏硬拦的搜索（不产证据）都不再张冠李戴。
+   * - **回退（query 游标）**：旧持久化轮次的证据无 `toolCallId`，退回旧的「按 query 分组 + 行序消费」
+   *   启发式（保不带伤——历史轮证据照常渲染）。两级互不串味：某轮要么全带 ID 走主配、
+   *   要么全无 ID 走回退，不存在同轮混用的迁移缝。
+   * 证据面只留净化标题（无 URL 锚点），故误配不进一步放大——这也正是主配要消灭的不确定性。
    *
    * @param evidence 本轮 RoundView.evidence（可为空 → 解析器恒返回 undefined）
    * @returns 解析器：传入 tool_start，命中则回该 search 证据，否则 undefined
@@ -1714,18 +1717,28 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function buildSearchEvidenceResolver(
     evidence: RoundView['evidence'],
   ): (start: Extract<ProcessEvent, { type: 'tool_start' }>) => WebSearchEvidence | undefined {
-    // 按 query 分组（仅 web_search_result 变体，其余证据变体与搜索行无关）
+    // 主配：toolCallId → 证据（唯一身份，一对一；仅收带 ID 的新证据）
+    const byToolCallId = new Map<string, WebSearchEvidence>();
+    // 回退：按 query 分组（仅收无 ID 的旧证据，其余证据变体与搜索行无关）
     const byQuery = new Map<string, WebSearchEvidence[]>();
     for (const ev of evidence ?? []) {
       if (ev.type !== 'web_search_result') continue;
+      if (ev.payload.toolCallId) {
+        byToolCallId.set(ev.payload.toolCallId, ev);
+        continue;
+      }
       const bucket = byQuery.get(ev.payload.query);
       if (bucket) bucket.push(ev);
       else byQuery.set(ev.payload.query, [ev]);
     }
-    // 每 query 独立的消费游标（行序 = 证据追加序，二者同为轮内时间序）
+    // 每 query 独立的消费游标（行序 = 证据追加序，二者同为轮内时间序）——仅回退路径用
     const cursor = new Map<string, number>();
     return (start) => {
       if (start.payload.name !== 'web_search') return undefined;
+      // 主配：按工具调用唯一 ID 直取（新证据路径，命中即返回，无顺序敏感）
+      const byId = byToolCallId.get(start.payload.toolCallId);
+      if (byId) return byId;
+      // 回退：旧证据按 query 文本 + 行序消费（被硬拦行无证据时可能顺延，属历史数据的已知边界）
       const query = argStr(parseToolArgs(start.payload.args), 'query');
       if (!query) return undefined;
       const bucket = byQuery.get(query);

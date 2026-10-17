@@ -55,8 +55,8 @@ describe('ToolRunner 单工具执行', () => {
 
     expect(result.status).toBe('ok');
     expect(result.text).toBe('OK');
-    // raceToolWithSignal 始终把原生 outcome 回调作为第 3 参传入（未切族忽略即可）
-    expect(deps.execute).toHaveBeenCalledWith('echo', '{}', expect.any(Function));
+    // raceToolWithSignal 把原生 outcome 回调作第 3 参、工具调用唯一 ID（tc.id）作第 4 参传入
+    expect(deps.execute).toHaveBeenCalledWith('echo', '{}', expect.any(Function), 't1');
     expect(onToolExecuted).toHaveBeenCalledWith('echo', '{}', 'OK', true);
   });
 

@@ -198,7 +198,7 @@ describe('AgentLoop · 裁决证据写点', () => {
     });
   });
 
-  it('web_search 留痕：recordWebSearchEvidence 产 web_search_result 证据（query/endpoint/count/titles 透传 + ts/meetingRound 归 loop）', () => {
+  it('web_search 留痕：recordWebSearchEvidence 产 web_search_result 证据（toolCallId/query/endpoint/count/titles 透传 + ts/meetingRound 归 loop）', () => {
     const collected: RoundEvidenceEvent[] = [];
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([[]]),
@@ -210,6 +210,8 @@ describe('AgentLoop · 裁决证据写点', () => {
     loop.getActivePlanItemMeta = () => ({ planItemId: 's1', title: '调研', rolePack: 'pack-a' });
 
     loop.recordWebSearchEvidence({
+      // toolCallId 透传（宿主渲染据此唯一配对证据回工具行，替代 query 启发式）
+      toolCallId: 'call-abc',
       query: 'memora 架构',
       endpoint: 'Bing',
       count: 3,
@@ -222,6 +224,7 @@ describe('AgentLoop · 裁决证据写点', () => {
       // ts/meetingRound 由 loop 构造（透传方只给执行事实，不伪造时间与轮次语境）
       meetingRound: true,
       payload: {
+        toolCallId: 'call-abc',
         query: 'memora 架构',
         endpoint: 'Bing',
         count: 3,
@@ -253,5 +256,7 @@ describe('AgentLoop · 裁决证据写点', () => {
     const first = collected[0];
     const payload = first?.type === 'web_search_result' ? first.payload : undefined;
     expect(payload?.endpoint).toBeUndefined();
+    // toolCallId 缺省 = 调用方未透传（旧轮/纯单测）→ 证据不带 ID，宿主回退 query 启发式（保不带伤）
+    expect(payload?.toolCallId).toBeUndefined();
   });
 });

@@ -93,6 +93,12 @@ const WEB_SEARCH_EVIDENCE_MAX_TITLES = 5;
  * 补 ts/meetingRound 后构造裁决证据事件，本接口不含时间与轮次语境（那归 loop）。
  */
 export interface WebSearchExecInfo {
+  /**
+   * 本次搜索的工具调用唯一 ID（透传自 loop 传入的 toolCallId）。
+   * 供 loop 落证据时携带，使宿主渲染能把证据唯一配对回对应 web_search 工具行。
+   * 缺省（纯 ToolExecutor 单测直接 execute 不走 loop 时）→ 证据不带此字段，宿主回退 query 启发式。
+   */
+  toolCallId?: string;
   /** LLM 实际发出的查询串 */
   query: string;
   /** 实际服务的搜索后端名（与结果透出「搜索来源」同源；提供方未打标时缺省） */
@@ -975,6 +981,9 @@ export class ToolExecutor {
    * @param emitOutcome 原生结构化结果回调（可选 · SCRIPT-2 outcome 通道）：
    *   已切族工具在**返回字符串的同点**按执行事实产出 `ToolOutcome`（status 不读文本前缀）；
    *   未切族不调用 ⇒ ToolRunner 回落文本判据。每调用独立回调，无并发相关性问题。
+   * @param toolCallId 本次工具调用的唯一 ID（可选 · 证据配对通道）：web_search 执行时随
+   *   观测留痕一并携带，使宿主渲染能把证据唯一配对回工具行（不再按 query 文本猜）。
+   *   非 web_search 工具忽略此参；缺省 = 证据不带 ID，宿主回退 query 启发式（保不带伤）。
    * @returns 工具结果的字符串描述（渲染面，逐字保持）
    */
   async execute(
@@ -982,6 +991,7 @@ export class ToolExecutor {
     argsJson: string,
     extensions?: WriteExtensions,
     emitOutcome?: (outcome: ToolOutcome) => void,
+    toolCallId?: string,
   ): Promise<string> {
     let args: Record<string, unknown>;
     try {
@@ -1098,6 +1108,7 @@ export class ToolExecutor {
         // query 与 titles 同净化标准（stripControlChars 剥控制字符——落盘证据面不进原始
         // 控制字符；长度已由 WEB_SEARCH_QUERY_MAX_LEN 校验管，不重复钳制）
         this.searchResultObserver?.({
+          toolCallId,
           query: stripControlChars(query),
           endpoint,
           count: results.length,

@@ -43,11 +43,13 @@ type PreCheckDecision =
 /** 工具执行器依赖注入（loop 稳定的窄面；策略动态经 getStrategy 读取） */
 export interface ToolRunnerDeps {
   /** 执行单个工具（loop 的 opts.toolExecutor）。
-   *  第 3 参 emitOutcome：执行器按调用独立产出原生 outcome 的通道（见 toolExecutor.execute） */
+   *  第 3 参 emitOutcome：执行器按调用独立产出原生 outcome 的通道（见 toolExecutor.execute）
+   *  第 4 参 toolCallId：本次工具调用唯一 ID（web_search 证据配对通道，透传至 toolExecutor.execute） */
   execute: (
     name: string,
     args: string,
     emitOutcome?: (outcome: ToolOutcome) => void,
+    toolCallId?: string,
   ) => Promise<string>;
   /** 内置工具定义（只读闸查 readonly 标记） */
   builtinTools?: ToolDefinition[];
@@ -107,6 +109,8 @@ export class ToolRunner {
         (native) => {
           nativeOutcome = native;
         },
+        // 工具调用唯一 ID 透传：web_search 执行时随证据一并留痕，供宿主唯一配对渲染
+        tc.id,
       );
       // SCRIPT-2 B5 后无文本判据：失败事实一律由执行器在同点显式 emit（结构化产出，
       // status 与 text 同源）；未 emit = 工具正常完成（裸文本含软降级说明与成功输出），
@@ -224,17 +228,19 @@ export class ToolRunner {
    *
    * @param emitOutcome 原生 outcome 回调（透传给 execute；abort 出口也经它显式 emit failed，
    *   保证 runOne 兜底（nativeOutcome ?? ok）读到中断事实而非误判 ok）
+   * @param toolCallId 工具调用唯一 ID（透传给 execute，web_search 证据配对通道）
    */
   private async raceToolWithSignal(
     name: string,
     args: string,
     signal: AbortSignal | undefined,
     emitOutcome: (outcome: ToolOutcome) => void,
+    toolCallId?: string,
   ): Promise<string> {
     const { execute } = this.deps;
     // 无 signal 时直接执行工具（保持原行为，测试场景常用）
     if (!signal) {
-      return execute(name, args, emitOutcome);
+      return execute(name, args, emitOutcome, toolCallId);
     }
 
     // signal 已 abort：直接返回中断错误，不发起工具调用
@@ -259,7 +265,7 @@ export class ToolRunner {
 
     // race 结束清理监听器，避免并发工具调用累积残留监听器（{ once: true } 不保证未触发时被移除）。
     // ⚠️ 注意：execute 胜出时已完成（含可能的 emitOutcome）；abort 胜出时执行仍在后台跑但结果丢弃。
-    return Promise.race([execute(name, args, emitOutcome), abortPromise]).finally(() => {
+    return Promise.race([execute(name, args, emitOutcome, toolCallId), abortPromise]).finally(() => {
       if (onAbort) signal.removeEventListener('abort', onAbort);
     });
   }

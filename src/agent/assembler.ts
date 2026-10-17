@@ -600,9 +600,10 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     provider,
     providerRouter: providerRouter ?? undefined,
     bootstrapMemories: pctx.bootstrapMemories,
-    // 第 3 参透传：ToolRunner 的原生 outcome 回调必须直达 ToolExecutor（不透传 = 已切族静默回落文本判据）
-    toolExecutor: (name: string, args: string, emitOutcome) =>
-      toolExec.execute(name, args, undefined, emitOutcome),
+    // 第 5 参透传：ToolRunner 的原生 outcome 回调必须直达 ToolExecutor（不透传 = 已切族静默回落文本判据）；
+    // toolCallId 透传 = web_search 证据按调用唯一 ID 配对（宿主渲染不再按 query 文本猜）
+    toolExecutor: (name: string, args: string, emitOutcome, toolCallId) =>
+      toolExec.execute(name, args, undefined, emitOutcome, toolCallId),
     systemPromptPrefix,
     rolePackBaseTokens,
     toolDefinitions: toolExec.list,
