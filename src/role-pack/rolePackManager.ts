@@ -497,7 +497,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * 有效参会名单（单一实现，消费端视图）：截断至 `MAX_TEAM_MEMBERS` 后过滤缺员组员。
    *
    * 缺员 = 组员引用的角色包已卸载（内置包收紧无删除事件 / 用户包目录被清理等），
-   * 该组员不可参会，从名单输出中剔除（tryBuildMeetingPlan 不为其建发言项）。
+   * 该组员不可参会，从名单输出中剔除（buildMeetingPlanSkeleton 不为其建发言项）。
    * 存储不裁切——幽灵引用的「提示用户清理/修复」由宿主读期检测承担，内核只保证
    * 「输出即实际参会」这一个消费语义（与 resolveRoundAssemblyRole 的缺员跳过兜底同口径）。
    */
@@ -549,8 +549,9 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * 仅当 activePack 是某个组的组长且名单非空时产出；非组长返回空串（不注入）。
    *
    * 文案正文在模块级 buildTeamContextBlockText（纯函数，供 how 单源守卫直测；本方法只做前置守卫）。
-   * 文案指挥 LLM 用 `task_table_write` 自主建表（确定性骨架预置见 tryBuildMeetingPlan，
-   * 二者互补：骨架补首轮确定性，文案约束 LLM 后续走 task_table 单通道）：
+   * 文案指挥 LLM 用 `task_table_write` 自主建表（确定性骨架预置见模块级纯函数
+   * buildMeetingPlanSkeleton，由 seed/prepare.ts 直调，二者互补：骨架补首轮确定性，
+   * 文案约束 LLM 后续走 task_table 单通道）：
    * 明确组员发言任务项需声明 `rolePack` 以触发表层装配切换，汇总任务项不声明回到组长视角；
    * 并显式禁止用 write_file 模拟任务表（write_file 写 `.memora/task-table.md`
    * 伪建表会绕过 PlanItem 通道，导致顶部任务板不渲染）。
@@ -560,43 +561,6 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const members = this.activeTeamMembers;
     if (members.length === 0) return '';
     return buildTeamContextBlockText(this.activePackName, members);
-  }
-
-  /**
-   * 会议机制：确定性骨架预置（SSOT 单一入口，「最小受控起点」半反转——
-   * 骨架确定性预置、内容与推进交 LLM，与 buildTeamContextBlock 文案互补）。
-   *
-   * 用户消息含「小组会议」**且** activePack 是某组组长 → 程序化预置占位骨架：
-   * 组长开场项（无 rolePack = 默认组长视角）+ 组员各一项（`rolePack=成员`，触发表层装配硬切换）
-   * + 汇总项尾（无 rolePack = 组长视角）。不固化发言内容与推进顺序，推进交 LLM；
-   * LLM 可经 task_table_write 追加额外任务项（骨架以 append 扩项，不锁死多轮交互）。
-   * 不引入会议引擎：任务项执行靠任务表每轮注入（assembler.getTaskTable）驱动 LLM 按项标记 done/blocked，
-   * 装配视角逐项切换（getTaskTable → applyActivePlanItemAssembly → applyActivePlanItemAssemblyIfChanged）。
-   *
-   * 主题取自「小组会议」后文（冒号/逗号/空格分隔均可），为空则任务项仅标「发言/汇总」由 LLM 见用户消息展开。
-   * 无 keyword / activePack 非组长 / 组名单空 → 返回 null（不触发，回落普通闭环）。
-   *
-   * @param input 用户输入
-   * @returns 预置骨架任务项（description + 可选 rolePack）；不触发返回 null
-   */
-  tryBuildMeetingPlan(input: string): Array<{ description: string; rolePack?: string }> | null {
-    if (!this.activePackName) return null;
-    if (!/小组会议/.test(input)) return null;
-    const members = this.activeTeamMembers;
-    if (members.length === 0) return null;
-    const topic = input.replace(/^\s*小组会议\s*[:：,，]?\s*/, '').trim();
-    const suffix = topic ? `：${topic}` : '';
-    // 组长开场项：无 rolePack（默认组长视角），语义上"主持引入议题"
-    const items: Array<{ description: string; rolePack?: string }> = [
-      { description: `${this.activePackName} 主持开场${suffix}` },
-    ];
-    // 组员各一项发言，rolePack=组员（触发表层装配切换为该组员视角）
-    for (const m of members) {
-      items.push({ description: `${m} 发言${suffix}`, rolePack: m });
-    }
-    // 汇总项尾：无 rolePack（回到组长视角收尾）
-    items.push({ description: `汇总各方观点${suffix}` });
-    return items;
   }
 
   // ── 生命周期 ──────────────────────────────────────
@@ -1293,3 +1257,50 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 }
 
 // statSyncSafe / existsSyncSafe 已收口到 utils/fileSafe（SSOT，与全局技能共用同一实现）
+
+/**
+ * 会议机制：确定性骨架预置（「最小受控起点」半反转——骨架确定性预置、内容与推进交 LLM，
+ * 与 buildTeamContextBlock 文案互补）。
+ *
+ * 用户消息含「小组会议」**且** activePack 是某组组长 → 程序化预置占位骨架：
+ * 组长开场项（无 rolePack = 默认组长视角）+ 组员各一项（`rolePack=成员`，触发表层装配硬切换）
+ * + 汇总项尾（无 rolePack = 组长视角）。不固化发言内容与推进顺序，推进交 LLM；
+ * LLM 可经 task_table_write 追加额外任务项（骨架以 append 扩项，不锁死多轮交互）。
+ * 不引入会议引擎：任务项执行靠任务表每轮注入（assembler.getTaskTable）驱动 LLM 按项标记 done/blocked，
+ * 装配视角逐项切换（getTaskTable → applyActivePlanItemAssembly → applyActivePlanItemAssemblyIfChanged）。
+ *
+ * 主题取自「小组会议」后文（冒号/逗号/空格分隔均可），为空则任务项仅标「发言/汇总」由 LLM 见用户消息展开。
+ * 无 keyword / 组名单空 → 返回 null（不触发，回落普通闭环）。
+ *
+ * **形态沿革**：原为 RolePackManager.tryBuildMeetingPlan 类方法，2026-10-17 PUB-API-PRUNE-2
+ * 摘为模块级纯函数——宿主零消费 + 手册零承诺的内部机制，挂类成员即公开面泄漏。
+ * 摘类后由 seed/prepare.ts 直调，组长/组员数据经 getActiveTeam()（公开 SSOT 出口）取，
+ * 「activePack 非组长」守卫随 getActiveTeam() 返回 null 由调用方承担，语义与原方法一致。
+ * 本函数经模块 export 供同包 prepare.ts 使用，**不经 index.ts 挂公共面**。
+ *
+ * @param leader 组长角色包名（= activePackName）
+ * @param members 有效组员名单（getActiveTeam 已做截断 + 缺员过滤）
+ * @param input 用户输入
+ * @returns 预置骨架任务项（description + 可选 rolePack）；不触发返回 null
+ */
+export function buildMeetingPlanSkeleton(
+  leader: string,
+  members: readonly string[],
+  input: string,
+): Array<{ description: string; rolePack?: string }> | null {
+  if (!/小组会议/.test(input)) return null;
+  if (members.length === 0) return null;
+  const topic = input.replace(/^\s*小组会议\s*[:：,，]?\s*/, '').trim();
+  const suffix = topic ? `：${topic}` : '';
+  // 组长开场项：无 rolePack（默认组长视角），语义上"主持引入议题"
+  const items: Array<{ description: string; rolePack?: string }> = [
+    { description: `${leader} 主持开场${suffix}` },
+  ];
+  // 组员各一项发言，rolePack=组员（触发表层装配切换为该组员视角）
+  for (const m of members) {
+    items.push({ description: `${m} 发言${suffix}`, rolePack: m });
+  }
+  // 汇总项尾：无 rolePack（回到组长视角收尾）
+  items.push({ description: `汇总各方观点${suffix}` });
+  return items;
+}

@@ -90,13 +90,14 @@ describe('SeedPrepare 回答前', () => {
     const { mocks, deps } = createHarness();
     // 无检查点（无在途计划）
     mocks.sessionManager.getCheckpoint.mockReturnValue(null);
-    // 骨架预置：组长开场 + 组员各一项（rolePack）+ 汇总（与 tryBuildMeetingPlan 单入口一致）
+    // 骨架数据经 getActiveTeam（公开 SSOT 出口：组长 + 有效组员）取；组装由真函数
+    // buildMeetingPlanSkeleton 承担（不经 mock）：组长开场 + 组员各一项（rolePack）+ 汇总
     const items = [
       { description: '组长 主持开场：讨论X' },
       { description: '组员1 发言：讨论X', rolePack: '组员1' },
       { description: '汇总各方观点：讨论X' },
     ];
-    mocks.rolePackManager.tryBuildMeetingPlan.mockReturnValue(items);
+    mocks.rolePackManager.getActiveTeam.mockReturnValue({ leader: '组长', members: ['组员1'] });
 
     await collectGen(new SeedPrepare(deps).run('小组会议：讨论X', new AbortController().signal));
 
@@ -122,9 +123,8 @@ describe('SeedPrepare 回答前', () => {
         { id: 's3', description: '汇总各方观点：讨论X', status: 'pending', order: 2 },
       ],
     });
-    // 即便 tryBuildMeetingPlan 判定可触发（输入含「小组会议」），守卫也必须拦截
-    const items = [{ description: '组员1 发言', rolePack: '组员1' }];
-    mocks.rolePackManager.tryBuildMeetingPlan.mockReturnValue(items);
+    // 即便 getActiveTeam 返回有效队伍且输入含「小组会议」（骨架判定可触发），守卫也必须拦截
+    mocks.rolePackManager.getActiveTeam.mockReturnValue({ leader: '组长', members: ['组员1'] });
     // active 任务项（组员1）在名单内 → 范围校验通过
     mocks.rolePackManager.resolveRoundAssemblyRole.mockReturnValue('组员1');
 

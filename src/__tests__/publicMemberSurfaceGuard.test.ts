@@ -172,7 +172,7 @@ function collectActualSurface(): Record<string, { kind: string; members: string[
 }
 
 /**
- * 冻结基线（EXPECTED）——88 个有成员面的公开符号。
+ * 冻结基线（EXPECTED）——85 个有成员面的公开符号。
  * 更新规则：仅在人工按 legacy-contract-audit-rules §3.2.1 定性后，把实际差异显式写进本表；
  * 禁止「先改基线后补审查」。基线生成于 2026-10-16 公开 API 面全量审查（5.0.0 发版前）。
  */
@@ -181,7 +181,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
     kind: 'class',
     members: [
       'answerQuestion',
-      'appendPlanItem',
       'archiveSession',
       'canContinueWithoutInput',
       'cancelAsk',
@@ -226,14 +225,12 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'getRolePackSwitchLockStatus',
       'init',
       'injectAffect',
-      'injectSystemMessage',
       'interject',
       'isPausePending',
       'killBackgroundTask',
       'listBackgroundTasks',
       'pause',
       'rebuildComponents',
-      'recover',
       'reloadConfig',
       'removePendingInterject',
       'requestPause',
@@ -246,7 +243,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'setProvider',
       'switchProject',
       'switchRolePack',
-      'triggerError',
     ],
   },
   UIMessages: {
@@ -450,7 +446,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'setBuiltinFallbackRole',
       'setRolePackTeams',
       'setRoundAssemblyRole',
-      'tryBuildMeetingPlan',
     ],
   },
   StrategyKeyFace: {
@@ -627,26 +622,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'upsert',
     ],
   },
-  InMemoryStorage: {
-    kind: 'class',
-    members: [
-      'close',
-      'count',
-      'countBySource',
-      'delete',
-      'getAllSources',
-      'getById',
-      'getBySource',
-      'getDeletedById',
-      'listDeleted',
-      'purge',
-      'purgeExpired',
-      'restore',
-      'search',
-      'touch',
-      'upsert',
-    ],
-  },
   IWebSearchProvider: { kind: 'interface', members: ['search'] },
   SearchResult: { kind: 'interface', members: ['endpoint', 'snippet', 'title', 'url'] },
   WebSearchOptions: { kind: 'interface', members: ['limit'] },
@@ -696,7 +671,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
     members: ['get list', 'inferProjectName', 'register', 'unregister'],
   },
   ProjectEntry: { kind: 'interface', members: ['lastOpened', 'name', 'path'] },
-  LockManager: { kind: 'class', members: ['acquire', 'get currentPath', 'release'] },
   ISessionStore: {
     kind: 'interface',
     members: [
@@ -792,24 +766,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   InMemorySessionViewLoader: {
     kind: 'class',
     members: ['getMessageCount', 'loadBatchSummaries', 'loadSummary', 'loadView', 'loadViewUpTo'],
-  },
-  InMemorySessionStore: {
-    kind: 'class',
-    members: [
-      'appendRoundId',
-      'appendRoundIds',
-      'clear',
-      'createSession',
-      'deleteSession',
-      'getRoundIds',
-      'getSessionMeta',
-      'listSessionMetas',
-      'listSessions',
-      'loadMessages',
-      'setRoundIds',
-      'setSessionTitle',
-      'updateSessionMeta',
-    ],
   },
   SessionCheckpoint: {
     kind: 'interface',
@@ -921,7 +877,14 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `  ② SessionManager.heartbeat / isPaused / isRunning 提前于 DEPRECATE-1 计划删除（用户按\n` +
       `    SSOT/不带伤裁决）——isPaused/isRunning 是 status getter 的判据重复（三态两布尔吞 error 态）、\n` +
       `    heartbeat 是私有 touchCheckpoint 的机制外漏，三者内核+宿主+手册零消费；提前删除的代价\n` +
-      `    = 4.x 升级者失去 deprecation 预警期，已由 CHANGELOG Breaking 段明示。`;
+      `    = 4.x 升级者失去 deprecation 预警期，已由 CHANGELOG Breaking 段明示。\n` +
+      `  ③ PUB-API-PRUNE-2 收面（2026-10-17 · 用户拍板照单全清）：\n` +
+      `    - InMemoryStorage / InMemorySessionStore / LockManager 三类从公开面收回——默认实现/内部\n` +
+      `      机制不挂公共面，宿主经接口（IStorage / ISessionStore）注入或走 createNodeSqliteStorage；\n` +
+      `    - Agent 4 转发门面（appendPlanItem / injectSystemMessage / recover / triggerError）+\n` +
+      `      RolePackManager.tryBuildMeetingPlan（摘类为模块级纯函数 buildMeetingPlanSkeleton）——\n` +
+      `      纯转发/内部真用，删除不撤能力（真身在 sessionManager / prepare.ts 直调）；\n` +
+      `    - 代价：4.x 升级者失去 deprecation 预警期，已由 CHANGELOG Breaking 段明示。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

@@ -775,7 +775,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
         .getCheckpoint()!
         .plan.push({ id: 's1', description: '步骤1', status: 'pending', order: 1 });
       // 即便存在可推进的 pending 任务项，error 态也不应诱导用户点"继续"后静默无反应
-      agent.triggerError('LLM 超时');
+      agent.sessionManager!.triggerError('LLM 超时');
       expect(agent.sessionManager!.status).toBe('error');
       expect(agent.canContinueWithoutInput()).toBe(false);
     });
@@ -786,7 +786,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
 
-      const result = agent.triggerError('LLM 超时');
+      const result = agent.sessionManager!.triggerError('LLM 超时');
       expect(result).toBe(true);
       expect(agent.sessionManager!.status).toBe('error');
     });
@@ -795,11 +795,11 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
 
-      agent.triggerError('LLM 超时');
+      agent.sessionManager!.triggerError('LLM 超时');
       const cp = agent.getCheckpoint()!;
       cp.error!.recovered = true;
 
-      const result = agent.recover();
+      const result = agent.sessionManager!.recover();
       expect(result).toBe(true);
       expect(agent.sessionManager!.status).toBe('running');
     });
@@ -810,7 +810,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       agent.createCheckpoint();
-      agent.triggerError('LLM 超时');
+      agent.sessionManager!.triggerError('LLM 超时');
       expect(agent.sessionManager!.status).toBe('error');
 
       const events: unknown[] = [];
@@ -971,7 +971,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     agent.createCheckpoint();
 
     // 2. 触发异常
-    const errorResult = agent.triggerError('LLM 请求超时');
+    const errorResult = agent.sessionManager!.triggerError('LLM 请求超时');
     expect(errorResult).toBe(true);
     expect(agent.sessionManager!.status).toBe('error');
 
@@ -987,7 +987,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     errorCp!.error!.recovered = true;
 
     // 5. 恢复
-    const recoverResult = agent.recover();
+    const recoverResult = agent.sessionManager!.recover();
     expect(recoverResult).toBe(true);
     expect(agent.sessionManager!.status).toBe('running');
 
@@ -1341,7 +1341,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     await agent.init();
 
     // 1. 触发异常
-    agent.triggerError('LLM 超时');
+    agent.sessionManager!.triggerError('LLM 超时');
 
     // 2. 异常状态下 chat 应被拒绝
     await expect(agent.chatSync('你好')).rejects.toThrow();
@@ -1349,7 +1349,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     // 3. 标记恢复并恢复
     const cp = agent.getCheckpoint()!;
     cp.error!.recovered = true;
-    agent.recover();
+    agent.sessionManager!.recover();
 
     // 4. 恢复后 chat 应正常
     const reply = await agent.chatSync('继续对话');

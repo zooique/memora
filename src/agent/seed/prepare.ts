@@ -12,6 +12,7 @@
 import type { AgentChunk } from '@/agent/types.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 import { resolveL2Strategy, resolveActiveStrategy } from '@/role-pack/strategyResolver.js';
+import { buildMeetingPlanSkeleton } from '@/role-pack/rolePackManager.js';
 import { type SeedDeps, type SeedParts, type SeedPrepareResult } from './types.js';
 
 /**
@@ -65,9 +66,14 @@ export class SeedPrepare {
     // 在途判定经 SessionManager.hasInflightPlan 单点（SSOT）：与 loop 侧「已有在途任务表则跳过
     // nudge」共用同一命题口径，禁此处再内联谓词另起一份判定。
     const hasInflightPlan = sessionManager?.hasInflightPlan() ?? false;
-    const meetingPlanItems = hasInflightPlan
-      ? null
-      : (rolePackManager?.tryBuildMeetingPlan?.(input) ?? null);
+    // 骨架数据经 getActiveTeam()（公开 SSOT 出口：组长 + 截断/缺员过滤后的有效组员）取，
+    // 纯函数 buildMeetingPlanSkeleton 组装（PUB-API-PRUNE-2 从 RolePackManager 摘类）；
+    // activePack 非组长/无队伍 → getActiveTeam() 返回 null ⇒ 不触发，同原方法内部守卫
+    const activeTeam = rolePackManager?.getActiveTeam() ?? null;
+    const meetingPlanItems =
+      hasInflightPlan || !activeTeam
+        ? null
+        : buildMeetingPlanSkeleton(activeTeam.leader, activeTeam.members, input);
     if (meetingPlanItems && sessionManager) {
       // 骨架预置：overwrite = 真重写，新会议替换一切旧计划
       sessionManager.writePlan('overwrite', meetingPlanItems);

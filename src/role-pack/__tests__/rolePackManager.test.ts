@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { RolePackManager } from '@/role-pack/rolePackManager.js';
+import { RolePackManager, buildMeetingPlanSkeleton } from '@/role-pack/rolePackManager.js';
 
 /** 单技能角色包（persona + rules + 单技能） */
 const MANIFEST_TECH = {
@@ -970,7 +970,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '组员2'] }]);
       await manager.load('组长A');
       const block = manager.buildTeamContextBlock();
-      // 确定性骨架已由 tryBuildMeetingPlan 预置（「最小受控起点」半反转），文案告知 LLM 骨架存在
+      // 确定性骨架已由 buildMeetingPlanSkeleton 预置（「最小受控起点」半反转），文案告知 LLM 骨架存在
       expect(block).toContain('小组会议');
       expect(block).toContain('骨架');
       expect(block).toContain('rolePack=对应组员');
@@ -979,13 +979,14 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(block).toContain('禁止用 write_file');
     });
 
-    describe('tryBuildMeetingPlan：骨架预置（最小受控起点半反转）', () => {
+    describe('会议骨架预置（PUB-API-PRUNE-2 摘类：getActiveTeam 数据出口 + buildMeetingPlanSkeleton 纯函数）', () => {
       it('组长 + 「小组会议」→ 组长开场项 + 组员各一项(带 rolePack) + 汇总项(无 rolePack)', async () => {
         await writeTeamPacks();
         const manager = new RolePackManager(dir);
         manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '组员2'] }]);
         await manager.load('组长A');
-        const items = manager.tryBuildMeetingPlan('小组会议：讨论叙事平台');
+        const team = manager.getActiveTeam()!;
+        const items = buildMeetingPlanSkeleton(team.leader, team.members, '小组会议：讨论叙事平台');
         expect(items).not.toBeNull();
         // 组长开场项：无 rolePack = 默认组长视角（主持引入议题）
         expect(items![0]).toEqual({ description: '组长A 主持开场：讨论叙事平台' });
@@ -997,15 +998,17 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
         expect(items).toHaveLength(4);
       });
 
-      it('名单含缺员组员 → 只为健康组员建发言项（消费端缺员过滤，不为幽灵建空转项）', async () => {
+      it('名单含缺员组员 → getActiveTeam 剔除幽灵 + 只为健康组员建发言项', async () => {
         await writeTeamPacks();
         const manager = new RolePackManager(dir);
         // 组员2 在包池（健康），「幽灵」不在 → 只被剔除幽灵
         manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '幽灵', '组员2'] }]);
         await manager.load('组长A');
-        const items = manager.tryBuildMeetingPlan('小组会议：讨论叙事平台');
-        expect(items).not.toBeNull();
-        // 组员项只含健康组员，各带 rolePack（触发表层装配硬切换）
+        // 第一层（getActiveTeam 缺员过滤，消费端约束的 SSOT 出口）
+        const team = manager.getActiveTeam()!;
+        expect(team.members).toEqual(['组员1', '组员2']);
+        // 第二层（纯函数组装）：组员项只含健康组员，各带 rolePack（触发表层装配硬切换）
+        const items = buildMeetingPlanSkeleton(team.leader, team.members, '小组会议：讨论叙事平台');
         expect(items!.filter((i) => i.rolePack).map((i) => i.rolePack)).toEqual(['组员1', '组员2']);
       });
 
@@ -1014,15 +1017,16 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
         const manager = new RolePackManager(dir);
         manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
         await manager.load('组长A');
-        expect(manager.tryBuildMeetingPlan('请评审这份文档')).toBeNull();
+        const team = manager.getActiveTeam()!;
+        expect(buildMeetingPlanSkeleton(team.leader, team.members, '请评审这份文档')).toBeNull();
       });
 
-      it('activePack 非组长 → null', async () => {
+      it('activePack 非组长 → getActiveTeam 返回 null（调用方不触发，同原方法内部守卫）', async () => {
         await writeTeamPacks();
         const manager = new RolePackManager(dir);
         manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
         await manager.load('组员1'); // 激活的是组员，非组长
-        expect(manager.tryBuildMeetingPlan('小组会议：讨论xxx')).toBeNull();
+        expect(manager.getActiveTeam()).toBeNull();
       });
 
       it('主题可缺省（仅「小组会议」）→ 任务项不带主题后缀', async () => {
@@ -1030,7 +1034,8 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
         const manager = new RolePackManager(dir);
         manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
         await manager.load('组长A');
-        const items = manager.tryBuildMeetingPlan('小组会议');
+        const team = manager.getActiveTeam()!;
+        const items = buildMeetingPlanSkeleton(team.leader, team.members, '小组会议');
         expect(items![0]).toEqual({ description: '组长A 主持开场' });
         expect(items![1]).toEqual({ description: '组员1 发言', rolePack: '组员1' });
         expect(items![2]).toEqual({ description: '汇总各方观点' });

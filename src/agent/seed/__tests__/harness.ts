@@ -69,8 +69,9 @@ export interface SeedMocks {
     resolveRoundAssemblyRole: ReturnType<typeof vi.fn>;
     setRoundAssemblyRole: ReturnType<typeof vi.fn>;
     buildTeamContextBlock: ReturnType<typeof vi.fn>;
-    // 会议机制骨架预置：确定性骨架单入口（默认 null 不触发）
-    tryBuildMeetingPlan: ReturnType<typeof vi.fn>;
+    // 会议机制骨架数据：getActiveTeam 公开 SSOT 出口（默认 null 不触发；
+    // 骨架组装由真函数 buildMeetingPlanSkeleton 承担，不经 mock）
+    getActiveTeam: ReturnType<typeof vi.fn>;
   };
   contextPreparer: {
     assembleContext: ReturnType<typeof vi.fn>;
@@ -195,7 +196,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       resolveRoundAssemblyRole: vi.fn(() => null),
       setRoundAssemblyRole: vi.fn(),
       buildTeamContextBlock: vi.fn(() => ''),
-      tryBuildMeetingPlan: vi.fn(() => null),
+      getActiveTeam: vi.fn(() => null),
     },
     contextPreparer: {
       assembleContext: vi.fn(async () => {}),

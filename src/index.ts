@@ -112,8 +112,8 @@ export { parseMemory } from '@/memory/types.js';
 export { validateSource } from '@/memory/sourceValidation.js';
 export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
+// （InMemoryStorage 内存实现为内核内部/测试默认，不挂公共面——PUB-API-PRUNE-2 收面）
 export type { IMemoryStorage, ReadOnlyMemoryStorage } from '@/memory/storageInterface.js';
-export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 // SQLite 落盘实现（node:sqlite 内建模块，零第三方依赖）：只出工厂不出实现类——
 // 宿主经 createNodeSqliteStorage(dbPath) 消费；不可用时抛专属错误（errorCode=NOT_AVAILABLE）
 // 作为「能否用 SQLite」的唯一判据（禁宿主自行解析版本号）。{ readOnly: true } 重载返回
@@ -143,9 +143,9 @@ export {
 // ─── 网页抓取导出（搜索→抓取闭环第二段） ──────────────────────
 // IFetchProvider 接口：宿主项目可实现此接口注入自定义抓取实现
 export type { IFetchProvider, FetchedPage, FetchOptions } from '@/web-fetch/types.js';
-// FetchWebFetchProvider：默认抓取实现（零依赖开箱即用）；safeFetch：带超时保护的抓取包装（宿主可复用）
+// FetchWebFetchProvider：默认抓取实现（零依赖开箱即用）；safeFetch 为内核 toolExecutor
+// 调注入 provider 时的超时降级包装（内部机制，不挂公共面——PUB-API-PRUNE-2 收面）
 export { FetchWebFetchProvider } from '@/web-fetch/fetchWebFetchProvider.js';
-export { safeFetch } from '@/web-fetch/webFetchProvider.js';
 
 // ─── 代码执行导出（通用计算底座） ────────────────────────────
 // ICodeExecutionProvider 接口：宿主项目可实现此接口注入沙箱执行器（内核不内置执行器，保持零依赖）
@@ -154,8 +154,7 @@ export type {
   CodeExecutionResult,
   CodeExecutionOptions,
 } from '@/code-exec/types.js';
-// safeExecuteCode：带超时保护的执行包装（宿主可复用）
-export { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
+// safeExecuteCode：内核 toolExecutor 调注入 provider 时的超时降级包装（内部机制，不挂公共面——PUB-API-PRUNE-2 收面）
 
 // ─── 宿主环境导出（运行环境事实上报） ───────────────────────────
 // IEnvironmentProvider 接口 + HostEnvironmentInfo 载荷：宿主上报 OS/shell/可用运行时，
@@ -173,19 +172,15 @@ export type {
   ProjectTextSearchOptions,
   ProjectTextSearchResult,
 } from '@/project-search/types.js';
-// safeSearchProjectFiles/safeSearchProjectText：带超时保护的项目搜索包装（宿主可复用）
-export {
-  safeSearchProjectFiles,
-  safeSearchProjectText,
-} from '@/project-search/projectSearchProvider.js';
+// safeSearchProjectFiles/safeSearchProjectText：内核 toolExecutor 调注入 provider 时的
+// 超时降级包装（内部机制，不挂公共面——PUB-API-PRUNE-2 收面）
 // PROJECT_SEARCH_RESULT_MAX_LEN / IGNORED_DIR_NAMES：search_project 调用面与宿主实现方共享的单一真理源
 // （宿主 projectSearchProvider import 对齐，避免结果上限 / 忽略目录数值漂移）
 export { PROJECT_SEARCH_RESULT_MAX_LEN } from '@/agent/toolExecutor.js';
 export { IGNORED_DIR_NAMES } from '@/agent/builtinToolHandlers.js';
-// 项目注册表 + 锁文件管理：宿主可直接使用或通过 ProjectManager 间接委托
+// 项目注册表：宿主可直接使用或通过 ProjectManager 间接委托
 export { ProjectRegistry } from '@/memory/projectRegistry.js';
 export type { ProjectEntry } from '@/memory/projectRegistry.js';
-export { LockManager } from '@/memory/lockManager.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
 // 会话显示名回退单一真理源（displayName→autoName），宿主从内核取，避免重复实现
@@ -220,9 +215,9 @@ export type {
 // 通用会话视图加载器实现（宿主注入存储后直接委托；非仅测试/开发用）
 export { InMemorySessionViewLoader } from '@/memory/inMemorySessionViewLoader.js';
 
-// 内存版实现：InMemorySessionStore 承诺面（README「ISessionStore → InMemorySessionStore」+ API 参考）；
-// InMemoryRoundStore 为内核内部测试实现，不挂公共面
-export { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
+// InMemoryRoundStore 为内核内部测试实现，不挂公共面；
+// InMemorySessionStore 内存版为内核内部/测试默认，同不挂公共面（PUB-API-PRUNE-2 收面；
+// README「接口 + 内存默认实现」的架构叙述仍成立——内核内部仍备该实现）
 // 会话占位标题单一真理源，避免宿主重复实现
 export { defaultTitle as defaultSessionTitle } from '@/agent/managers/sessionNamer.js';
 // 不中断工作模型类型（API 参考 §6.3 createCheckpoint/getCheckpoint 的返回值契约）

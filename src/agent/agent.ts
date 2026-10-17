@@ -865,7 +865,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const status = sm.status;
     if (status === 'error') {
       throw configError('会话异常', '会话处于异常状态，无法接收新消息', [
-        '先标记 error.recovered=true 并调用 agent.recover()',
+        '先标记 error.recovered=true 并调用 agent.sessionManager.recover()',
       ]);
     }
     if (status === 'paused') {
@@ -1060,14 +1060,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.requireLoop.answerQuestion(answers);
   }
 
-  /**
-   * 追加计划任务项（SESSION_APPEND_TASK 落点）：在现有 plan 末尾追加新任务项
-   */
-  appendPlanItem(description: string): number {
-    this.assertInitialized('appendPlanItem');
-    const sm = this.requireSessionManager;
-    return sm.appendPlanItem(description);
-  }
+  // 删后注记（2026-10-17 · 5.0.0，PUB-API-PRUNE-2）：Agent 面类曾有 4 个纯转发门面——
+  // appendPlanItem / triggerError / recover / injectSystemMessage——均 3-13 行薄委托
+  // （sessionManager / loop 层实现），宿主零调用 + 手册零承诺 + 真身在对应类公开可用
+  // （sessionManager.appendPlanItem/triggerError/recover、loop.injectSystemMessage）。
+  // 与 loadSessionMessages 同型裁决：转门口不留。getActiveStrategy 经复核**保留**——
+  // 它不是转发门面（rolePackManager 无同名方法），是 Agent 级策略读取器且内部自用
+  // （buildChatOptionsFromStrategy），「读当前生效策略」属合理外部能力。
 
   /**
    * 卸载运行态挂载物：清空检查点计划与任务项推进日志（宿主任务流结束/停止/异常广播 idle 前调用），
@@ -1124,31 +1123,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   canContinueWithoutInput(): boolean {
     if (this._sessionManager?.status === 'paused') return true;
-    // 错误态不展示"继续"：error 态由检查点恢复回填进入，须显式处理（重新开始或 recover），避免点了静默无反应
+    // 错误态不展示"继续"：error 态由检查点恢复回填进入，须显式处理（重新开始或 sessionManager.recover），避免点了静默无反应
     if (this._sessionManager?.status === 'error') return false;
     // 仅 pending/active（可推进）任务项计入"可续跑"——blocked 不续（全 blocked 由 isPlanAllBlocked 拦，
     // 避免全 blocked 计划按钮可点但 resumeExecution 早退）。判定走 SessionManager.hasInflightPlan
     // 单一真理源（禁内联谓词，SSOT 见 sessionManager.ts hasInflightPlan 注释），与 prepare/loop 同源。
     const hasPendingPlan = this._sessionManager?.hasInflightPlan() ?? false;
     return this.requireLoop.isInAutonomousStep || hasPendingPlan;
-  }
-
-  /**
-   * 触发会话异常（公开 API，宿主显式调用）：仅 RUNNING 状态可触发，异常时自动创建检查点保存状态。
-   * 生产内部无调用者——运行时异常（LLM 超时/工具失败）走 yield {type:'error'} 事件流不翻状态机；
-   * 本 API 供宿主在自定义异常（如外部服务故障）显式触发，或经检查点恢复回填进入 ERROR 态。
-   */
-  triggerError(cause: string): boolean {
-    this.assertInitialized('triggerError');
-    return this.requireSessionManager.triggerError(cause);
-  }
-
-  /**
-   * 从异常恢复：校验恢复条件（error.recovered === true 且 cause 已解除）
-   */
-  recover(): boolean {
-    this.assertInitialized('recover');
-    return this.requireSessionManager.recover();
   }
 
   /**
@@ -1204,13 +1185,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   killBackgroundTask(taskId: string): BackgroundTask | null {
     this.assertInitialized('killBackgroundTask');
     return this.requireLoop.killBackgroundTask(taskId);
-  }
-
-  /**
-   * 向 loop 注入 system 消息
-   */
-  injectSystemMessage(message: string): void {
-    this.requireLoop.injectSystemMessage(message);
   }
 
   /**
