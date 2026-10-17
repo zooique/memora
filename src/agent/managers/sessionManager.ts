@@ -299,7 +299,12 @@ export class SessionManager {
   // 真实消费者在宿主侧。恢复能力仍由 switchToSession（切换+加载，生产路径）与 forkSession 承担。
   // 勿加回；若宿主将来要「重启后恢复内核 session 状态」，应基于 switchToSession 接线而非新开恢复面。
 
-  /** 对外暴露的 loadSessionMessages 委托。⚠ 会切换当前会话（更新 currentDate/currentSession），加载后下一条 chat 写入被加载会话 */
+  /**
+   * 对外暴露的 loadSessionMessages 委托。⚠ 会切换当前会话（更新 currentDate/currentSession），加载后下一条 chat 写入被加载会话
+   *
+   * @deprecated 6.0.0 移除候选（DEPRECATE-1 在册，2026-10-16 随 e4c5cb40 登记）：宿主零消费，
+   * 与已删的 restore 双入口同族。替代 = `switchToSession`（切换+加载的生产路径）。
+   */
   async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
     // 替换工作记忆前置闸（SSOT：与 switch/fork 共用断言）
     this.assertSessionReplaceable('加载会话');
