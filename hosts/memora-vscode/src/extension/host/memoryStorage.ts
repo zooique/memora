@@ -119,10 +119,7 @@ export function createHostMemoryStorage(
  * @param sqlite 目标 SQLite 存储（读写模式）
  * @returns 迁移结果（是否迁移 + 条数 + 旧档保存路径）
  */
-function migrateLegacyJsonToSqlite(
-  projectPath: string,
-  sqlite: IMemoryStorage,
-): MigrationResult {
+function migrateLegacyJsonToSqlite(projectPath: string, sqlite: IMemoryStorage): MigrationResult {
   // 复用 `WorkspaceStorage` 作「JSON 装载器」：load() 完成 parseMemory 清洗，
   // migrateRetiredSettingSources() 完成退役设定来源软删（两者皆既有出口，零复制）
   const legacy = new WorkspaceStorage(projectPath);

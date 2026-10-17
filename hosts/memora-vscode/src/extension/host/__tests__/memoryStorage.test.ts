@@ -10,10 +10,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MemoraError, ToolErrorCode, type Memory } from '@zooique/memora';
-import {
-  createHostMemoryStorage,
-  type MemoryStorageDeps,
-} from '../memoryStorage.js';
+import { createHostMemoryStorage, type MemoryStorageDeps } from '../memoryStorage.js';
 
 /** 临时工作区路径（每用例独立，避免落盘互相污染） */
 let dir: string;
