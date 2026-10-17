@@ -45,7 +45,7 @@ description: Memora 关键决策年轮
 | [ADR-036](./ADR-036-background-task-lifecycle-boundary.md) | 后台命令任务双生命周期边界（turn 终态脱管不杀 + 回流跨 turn 留存；Agent 实例终态 killAllRunning 真杀；主动终止单点不回调 listener；诚实边界仅覆盖正常退出） | ✅ 已接受 | 架构 |
 | [ADR-037](./ADR-037-dock-morphology-constitution.md) | 底部状态形态宪法：动/静分离抽屉化四条（决策贴输入区+留痕 / 状态不自己消失 / 常驻的是入口 / 抽屉不自动弹）+ 唯一折叠轴 + 入口常驻判据 | ✅ 已接受 | 前端 |
 | [ADR-038](./ADR-038-tool-outcome-three-state-contract.md) | 工具结果三值契约（status ok/failed/blocked 判据面唯一真源 + B5 文本判据桥物理删除 + B4 blocked 不计失败口径 + blockedReason 穷尽登记） | ✅ 已接受 | 架构 |
-| [ADR-039](./ADR-039-public-export-surface-admission.md) | 公共导出面挂面判据（宿主消费 OR 文档承诺两条准入 + 收编≠删除 + 守卫三向机器化对账 · REL-3.1） | ✅ 已接受 | 工程 |
+| [ADR-039](./ADR-039-public-export-surface-admission.md) | 公共导出面挂面判据（宿主消费 OR 文档承诺两条准入 + 收编≠删除 + 守卫四向机器化对账 · REL-3.1） | ✅ 已接受 | 工程 |
 | [ADR-040](./ADR-040-script-run-security-three-forms.md) | 脚本运行三形态与安全防线（技能/临时/项目三形态统一执行单元 + 暴露/边界/执行三层防线 + confirmScriptRun 统一确认闸：owner 默认放行审计、guest 恒确认、confirmScripts 单开关约束全脚本；沙箱与 classifier 不进内核） | ✅ 已接受 | 安全 |
 
 ### 插件宿主（VC 系列）

@@ -8,6 +8,10 @@
  *    纯内部实现不挂公共面。桶导出时代「顺手 export 即公开」的零筛选默认态由此关门。
  *  - 向 B（防幻觉文档）：手册 §十六 承诺的符号必须在 src 源码中真实存在 —— 拦截「文档虚构 API」
  *    （历史事故：API 手册 5 处幻觉引用，src 无对应导出）。
+ *  - 向 D（防自消费悬空）：src 内部经公开入口（`@/index.js` / `@zooique/memora`）的 import 符号必须
+ *    仍在公开面 —— 堵「删公开导出后 src 内部（尤其 __tests__）import 悬空而守卫照绿」的盲区。
+ *    结构成因：向 A 只迭代「现存公开面」符号，被删符号不再被其检查。实锤先例（2026-10-17 收面
+ *    12 项）：`src/llm/__tests__/llmIntegration.test.ts` 曾 import 被删的 `createLlmProvider`（仅 tsc 兜住）。
  * 判据与参照系说明：手册 §十六 现为纯模块级类型/函数清单，与 index.ts 导出面同构——
  * B 向历史判据（只验「src 存在性」）保留，另以 C 向补「承诺 ⊆ 公开面」对账（防「src 有但
  * 未导出」——消费者按文档具名 import 会得到 undefined）。
@@ -102,6 +106,52 @@ function parseConsumerSurface(): { symbols: Set<string>; namespaceImports: strin
 }
 
 /**
+ * 自消费面：`src/` 内部（排除 index.ts 自身）经**公开入口** import 的符号。
+ *
+ * 公开入口 = 解析到 `src/index.ts` 的模块说明符（`@/index.js` 别名 / `@zooique/memora` 包名 /
+ * 指向该文件的相对路径）。这些是「仓库内、非宿主」的消费者：**不计入向 A 的登记面**
+ * （登记只认外部消费者），但其**引用必须有效**——删公开导出而此处仍 import 即悬空。
+ *
+ * 结构盲区成因：向 A 只迭代「现存公开面」符号，被删符号不再被其检查 ⇒ 结构上照绿
+ * （此前仅 `tsc --noEmit` 兜底）。本向 D 补此盲区。
+ *
+ * @returns filesBySymbol（符号 → 导入它的源文件列表）+ scannedFiles（扫描文件数，供失明自检）
+ */
+function parseSelfConsumptionSurface(): {
+  filesBySymbol: Map<string, string[]>;
+  scannedFiles: number;
+} {
+  const filesBySymbol = new Map<string, string[]>();
+  /** 说明符 → 目标文件：包名 / @ 别名 / 相对路径三种解析（统一归一为 .ts 路径） */
+  const resolveSpecifier = (spec: string, fromFile: string): string => {
+    if (spec === '@zooique/memora') return INDEX_TS;
+    if (spec.startsWith('@/')) return join(ROOT, 'src', spec.slice(2).replace(/\.js$/, '.ts'));
+    if (spec.startsWith('.')) return join(dirname(fromFile), spec).replace(/\.js$/, '.ts');
+    return spec;
+  };
+  let scannedFiles = 0;
+  for (const full of listSourceFiles(join(ROOT, 'src'))) {
+    if (full === INDEX_TS) continue; // index.ts 是公开面真源本身，非自消费方
+    scannedFiles++;
+    const sf = parseAst(full, readFileSync(full, 'utf8'));
+    for (const st of sf.statements) {
+      if (!ts.isImportDeclaration(st)) continue;
+      if (resolveSpecifier((st.moduleSpecifier as ts.StringLiteral).text, full) !== INDEX_TS)
+        continue;
+      const bindings = st.importClause?.namedBindings;
+      if (!bindings || !ts.isNamedImports(bindings)) continue; // namespace import 无法枚举，略过
+      for (const el of bindings.elements) {
+        const name = (el.propertyName ?? el.name).text;
+        const arr = filesBySymbol.get(name);
+        if (arr) arr.push(full);
+        else filesBySymbol.set(name, [full]);
+      }
+    }
+  }
+  return { filesBySymbol, scannedFiles };
+}
+
+/**
  * 从文本的 backtick 片段中提取标识符形态的候选符号。
  * `agent.chat(input)` 这类带点成员访问会产出 agent / chat 两个 token——A 向不受影响
  * （对账方向是公开面出发，多余 token 只放大承诺面不漏报）；B 向靠「src 存在性」过滤。
@@ -154,6 +204,8 @@ function existsInSrc(token: string): boolean {
 
 const publicSurface = parsePublicSurface();
 const { symbols: consumerSurface, namespaceImports } = parseConsumerSurface();
+const { filesBySymbol: selfConsumption, scannedFiles: selfScannedFiles } =
+  parseSelfConsumptionSurface();
 const readmeText = readFileSync(README, 'utf8');
 const manualText = readFileSync(API_MANUAL, 'utf8');
 const manualSection = sliceManualSectionSixteen(manualText);
@@ -201,9 +253,10 @@ const SECTION_SIXTEEN_NON_EXPORT_TOKENS: ReadonlySet<string> = new Set([
 ]);
 
 describe('公共 API 面登记门槛守卫（PUBLIC-API-SURFACE-1）', () => {
-  it('扫描面自检：公开面与消费面均非空（防守卫失明假绿）', () => {
+  it('扫描面自检：公开面 / 消费面 / 自消费面均非空（防守卫失明假绿）', () => {
     expect(publicSurface.size).toBeGreaterThan(50);
     expect(consumerSurface.size).toBeGreaterThan(10);
+    expect(selfScannedFiles).toBeGreaterThan(50); // src 源文件被扫到，防扫错根目录
   });
 
   it('namespace import 当前为零（无法枚举符号，出现即须人工定性）', () => {
@@ -258,6 +311,22 @@ describe('公共 API 面登记门槛守卫（PUBLIC-API-SURFACE-1）', () => {
     expect(
       unexported,
       `\n§十六 承诺但未导出的符号：\n${unexported.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
+    ).toEqual([]);
+  });
+
+  it('向 D：src 内部经公开入口的导入符号必须在公开面（堵 __tests__ 自消费盲区）', () => {
+    const dangling = [...selfConsumption.keys()].filter((s) => !publicSurface.has(s));
+    const located = [...selfConsumption.entries()]
+      .map(([s, files]) => `  - ${s} ← ${files.join(' / ')}`)
+      .join('\n');
+    const hint =
+      `src 内部经公开入口（@/index.js / @zooique/memora）import 的符号必须仍在 src/index.ts 公开面。\n` +
+      `悬空 = 某次收面删了导出、但此处 import 未同步（向 A 只看现存符号，删掉的不再被它检查 ⇒ 照绿）。\n` +
+      `修法：① 改深路径 import（内部代码走 @/<模块>.js，不经公开面）；② 或恢复该导出（真外部承诺）。\n` +
+      `当前自消费清单（供定位，非异常）：\n${located}`;
+    expect(
+      dangling,
+      `\n自消费悬空 ${dangling.length} 项：\n${dangling.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
     ).toEqual([]);
   });
 

@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-description: 公共导出面挂面判据定案（REL-3.1）——「宿主消费 OR 文档明文承诺」两条准入、收编≠删除、publicApiSurfaceGuard 三向机器化对账；导出面 3.0.1→4.0.0 收敛 54 个的分账口径
+description: 公共导出面挂面判据定案（REL-3.1）——「宿主消费 OR 文档明文承诺」两条准入、收编≠删除、publicApiSurfaceGuard 四向机器化对账；导出面 3.0.1→4.0.0 收敛 54 个的分账口径
 ---
 
 # ADR-039 · 公共导出面收敛判据（REL-3.1 挂面判据）
@@ -17,10 +17,11 @@ description: 公共导出面挂面判据定案（REL-3.1）——「宿主消费
 
 1. **挂面判据（两条准入，OR 关系）**：公共导出只保留 ① 宿主（`hosts/memora-vscode`）/ 脚本经 `@zooique/memora` **真实 import** 的符号；② README / API 手册 §十六 **明文承诺**的公共 API。两条都不占 ⇒ 从 `src/index.ts` 移除。纯内部实现不挂公共面。
 2. **收编 ≠ 删除**：被收编的类型定义仍留在原模块、随函数签名/结构推断可用，只是不再可显式具名 import——外部消费者改用类型推断或自有定义。
-3. **守卫三向机器化**（`publicApiSurfaceGuard`，验收标准不是变绿而是能红）：
+3. **守卫四向机器化**（`publicApiSurfaceGuard`，验收标准不是变绿而是能红）：
    - **向 A**（防未登记公开）：`index.ts` 公开面 ⊆ 消费面 ∪ 承诺面——新增公共导出必须先过两条准入之一；
    - **向 B**（防幻觉文档）：手册 §十六 承诺的符号必须在 src 真实存在；
-   - **向 C**（防承诺落空）：承诺的模块级符号必须仍在公开面——「文档承诺但未导出」的具名 import 会得到 undefined。
+   - **向 C**（防承诺落空）：承诺的模块级符号必须仍在公开面——「文档承诺但未导出」的具名 import 会得到 undefined；
+   - **向 D**（防自消费悬空，2026-10-17 补）：src 内部经公开入口（`@/index.js` / `@zooique/memora`）import 的符号必须在公开面——堵「收面删导出后 src 内部（尤其 `src/__tests__`）import 悬空，而向 A 只迭代现存符号故照绿」的盲区。
    豁免名单（import 示例噪声 / 结构推导类型 / 叙述词）为冻结封闭集，新增须带分账理由。
 4. **判定前全量重盘 + 双独立路径对账**：历史快照「约 70 个」重盘实测 53；终盘 3.0.1→4.0.0 实移 55，分账诚实登记——误报 2（3.0.1 后新增再收回，不构成对外破坏）/ 漏登 4 补登 / 终盘后回归 1（`ProcessMetricsPayload` 因宿主真实 import 重新挂面）= 发布面 **54**。
 
@@ -41,11 +42,12 @@ description: 公共导出面挂面判据定案（REL-3.1）——「宿主消费
 
 ## 引用方
 
-- `src/__tests__/publicApiSurfaceGuard.test.ts`：三向对账判据与豁免冻结名单的唯一定义处
+- `src/__tests__/publicApiSurfaceGuard.test.ts`：四向对账判据与豁免冻结名单的唯一定义处
 - `src/index.ts`：公开面真源（准入判据的裁决对象）
 - `docs/memora-api-reference.md` §十六：承诺面真源（可具名导入的清单以本节为准）
 - `CHANGELOG.md` 4.0.0 Breaking（导出面收敛条）：54 个移除清单与分账注记（随包发布，外部消费者可见的 rationale 入口）
 - 台账 `GONOGO-M1-M10`：M3（50 个仅消费、零文档承诺的导出——判据①下合法，文档缺口另案）挂靠本判据
+- **5.0.0 再收敛执行实例（`PUB-API-PRUNE-1`，2026-10-17）**：按本判据收面 12 项（重复入口 `createLlmProvider` 1 + 通用工具 11），均为「宿主零消费 + §十六 仅镜像列名」的过曝项；过程稿 `deliverables/内核公开API-剪枝方案-20261017.md`（处置触发见该稿头部），收据 `CHANGELOG.md` `[5.0.0]` Breaking 段 + 台账 `DEPRECATE-1`
 
 ## 何时回顾
 

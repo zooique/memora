@@ -122,6 +122,12 @@
   `archiveFailed.stage 'content'`（实际 `'session'`）——`personaSwitched` 残留横跨手册/接入指南/
   宿主文档/测试注释四处位点，按「谎报位点扫全类」一次改齐；原表仅 7/26 事件，按真源补齐至全量
   26 行。三向**变异验证**：删表行 → 红并报位 → 还原绿。
+- 守卫：`publicApiSurfaceGuard` 补 **向 D · 自消费完整性**（2026-10-17 收面批暴露的盲区）——
+  src 内部经公开入口（`@/index.js` / `@zooique/memora`）import 的符号必须仍在公开面：向 A 只迭代
+  「现存公开面」符号，被删符号不再被其检查 ⇒ 此前删导出而内部（尤其 `src/__tests__`）仍 import
+  时守卫照绿（仅 `tsc` 兜底）。**变异验证**：临时把已收面的 `escapeLike` 塞进
+  `llmIntegration.test.ts` 的 `@/index.js` import → 红并精确报位（`escapeLike ← …/llmIntegration.test.ts`）
+  → 还原绿。
 - 文档纠谎（SSOT 复核批 · 全手册单 token 幻觉扫描 + 人工对账）：扫描出 7 候选——1 为幻觉
   （§十一 `skillMatched` 引用，已改真事件）、6 为历史删除留痕（`writeBoost`/`memoryMutator`/
   `RecalledMemorySummary`/`RECALL_ACTUAL`/`isToolFailure` 等，语境即「已删除」，合法保留）；
