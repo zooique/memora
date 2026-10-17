@@ -2581,6 +2581,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           completedAt: round.completedAt,
           // 过程事件从 Round 同文件读取；无 processEvents（纯问答轮/异常轮）为空数组
           processEvents: this._eventLogRoundStore?.getById(round.id)?.processEvents ?? [],
+          // 裁决证据（悬案取证轨）：随 Round 整对象已在 view.rounds 中（与正文同源同文件），
+          // 直接透出——无证据轮为 undefined（零冗余）。仅重放路径消费（web_search 折叠块补
+          // endpoint/count/titles），运行时投影不带（证据轮末才落盘，见内核 RoundEvidenceEvent）。
+          evidence: round.evidence,
         });
       }
 

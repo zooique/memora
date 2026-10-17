@@ -1315,6 +1315,7 @@ export type RoundView = Pick<
   | 'status'
   | 'createdAt'
   | 'completedAt'
+  | 'evidence'
 > & {
   /** 末段回答（pending 轮无值）；跨暂停-续跑的前序段在 assistantLog */
   assistantMessage?: RoundMessage;

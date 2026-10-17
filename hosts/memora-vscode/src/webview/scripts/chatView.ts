@@ -1687,9 +1687,82 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       : { label: '失败', open: true, running: false };
   }
 
+  /**
+   * web_search 裁决证据（内核 Round.evidence 的 web_search_result 变体）——证据轨的 UI 消费面。
+   *
+   * 定位：过程轨（processEvents）只到「工具×N（网络搜索 1）」粒度，展开后是 args(query)
+   * + 结果摘要；本证据补的是**归因三件套**——实际服务端点（降级分型）、结果条数、
+   * 命中标题（「搜到了什么」的最小面）。结果摘要已含搜索来源与标题文本时的重叠属**有意冗余**
+   * （结构化字段比正文摘要更可靠，摘要被截断也不丢条数）。
+   */
+  type WebSearchEvidence = Extract<
+    NonNullable<RoundView['evidence']>[number],
+    { type: 'web_search_result' }
+  >;
+
+  /**
+   * 构造「web_search 工具行 → 裁决证据」解析器（每轮重放渲染建一次，闭包持消费游标）。
+   *
+   * ⚠️ 配对是**启发式**：证据无 `toolCallId`（仅 query），故按 query 字符串分组 + 行序消费——
+   * 同一 query 多次搜索时按先后顺序各取一条，避免「后一次覆盖前一次」。被护栏硬拦的搜索
+   * 不产证据（未执行），若其 query 与被拦后另一次成功搜索相同，会顺延配对到那条——已知边界，
+   * 语料中极罕见，且正因如此**不做可点链接**（无 URL 锚点，误配不可进一步放大）。
+   *
+   * @param evidence 本轮 RoundView.evidence（可为空 → 解析器恒返回 undefined）
+   * @returns 解析器：传入 tool_start，命中则回该 search 证据，否则 undefined
+   */
+  function buildSearchEvidenceResolver(
+    evidence: RoundView['evidence'],
+  ): (start: Extract<ProcessEvent, { type: 'tool_start' }>) => WebSearchEvidence | undefined {
+    // 按 query 分组（仅 web_search_result 变体，其余证据变体与搜索行无关）
+    const byQuery = new Map<string, WebSearchEvidence[]>();
+    for (const ev of evidence ?? []) {
+      if (ev.type !== 'web_search_result') continue;
+      const bucket = byQuery.get(ev.payload.query);
+      if (bucket) bucket.push(ev);
+      else byQuery.set(ev.payload.query, [ev]);
+    }
+    // 每 query 独立的消费游标（行序 = 证据追加序，二者同为轮内时间序）
+    const cursor = new Map<string, number>();
+    return (start) => {
+      if (start.payload.name !== 'web_search') return undefined;
+      const query = argStr(parseToolArgs(start.payload.args), 'query');
+      if (!query) return undefined;
+      const bucket = byQuery.get(query);
+      if (!bucket) return undefined;
+      const idx = cursor.get(query) ?? 0;
+      cursor.set(query, idx + 1);
+      return bucket[idx];
+    };
+  }
+
+  /**
+   * 渲染 web_search 裁决证据块（单次搜索的归因三件套）。
+   *
+   * 纯文本构建（textContent，防注入）：端点 / 条数 / 命中标题各占一行，标题行前导圆点。
+   * 标题**不做可点链接**——内核证据面只留净化后的标题文本，无 URL 可锚。
+   * 零结果（count=0）照渲染——「没搜到」与「搜到了但不对」同为归因现场。
+   */
+  function renderSearchEvidenceBlock(ev: WebSearchEvidence): HTMLElement {
+    const box = document.createElement('div');
+    box.className = 'round-block__search-evidence';
+    const addLine = (text: string): void => {
+      const d = document.createElement('div');
+      d.textContent = text;
+      box.appendChild(d);
+    };
+    if (ev.payload.endpoint) addLine(`搜索来源：${ev.payload.endpoint}`);
+    addLine(`结果条数：${ev.payload.count}`);
+    for (const title of ev.payload.titles) addLine(`· ${title}`);
+    return box;
+  }
+
   function renderToolRow(
     start: Extract<ProcessEvent, { type: 'tool_start' }>,
     events: ProcessEvent[],
+    resolveSearchEvidence?: (
+      start: Extract<ProcessEvent, { type: 'tool_start' }>,
+    ) => WebSearchEvidence | undefined,
   ): HTMLDetailsElement {
     const result = events.find(
       (e): e is Extract<ProcessEvent, { type: 'tool_result' }> =>
@@ -1734,6 +1807,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       sum.className = 'round-block__tool-summary';
       sum.textContent = result.payload.summary;
       row.appendChild(sum);
+    }
+    // web_search 裁决证据块（仅重放路径解析器在场时追加）：展开行体补归因三件套
+    if (resolveSearchEvidence) {
+      const ev = resolveSearchEvidence(start);
+      if (ev) row.appendChild(renderSearchEvidenceBlock(ev));
     }
     // 返回行元素：由调用方按 seq 插入 details 顶层（扁平化，不再自挂容器）
     return row;
@@ -1795,12 +1873,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param finalize  是否为本轮收尾
    * @param interactiveInputs 运行时输入缓存（finalize 传；重放路径 QA 经 appendInteractiveInput
    *                          增量插入 round-block，不重复渲染）
+   * @param evidence  本轮裁决证据（仅重放路径传 RoundView.evidence；运行时/中断轮缺省 →
+   *                  web_search 行不加证据块。证据轮末才落盘，实时路径自然无此字段）
    */
   function renderRoundBlock(
     events: ProcessEvent[],
     finalize: boolean,
     interactiveInputs?: RuntimeInteractiveInput[],
+    evidence?: RoundView['evidence'],
   ): void {
+    // 每次重建都现建解析器（闭包持消费游标）：同一轮多次重放各自从头消费，结果确定不累积
+    const resolveSearchEvidence = buildSearchEvidenceResolver(evidence);
     const rb = ensureRoundBlock();
     if (!rb) return; // 正文块未创建（meta 先到）：挂载推迟到正文块出现时再补一次（beginStreaming）
     // summary：统计摘要（计数 + 耗时）
@@ -1912,7 +1995,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 归组定位与逐条插入同锚（段内首个 tool_start 的 ts/seq）——批块不越任务项边界
       const { host } = planItemContainerFor(details, events, batch.anchorTs, batch.segId);
       if (!multi) {
-        const row = renderToolRow(batch.entries[0]!.start, events);
+        const row = renderToolRow(batch.entries[0]!.start, events, resolveSearchEvidence);
         // 行即批：批容器 key（段 id）挂行自身（口径③：批 key = 段 id，非 toolCallId）
         row.dataset.toolBatch = String(batch.segId);
         insertPlanItemInOrder(host, row, batch.anchorTs);
@@ -1920,7 +2003,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
       const block = createToolBatchBlock(batch, false);
       const body = block.querySelector('.round-block__tool-batch-body') as HTMLElement;
-      for (const entry of batch.entries) body.appendChild(renderToolRow(entry.start, events));
+      for (const entry of batch.entries)
+        body.appendChild(renderToolRow(entry.start, events, resolveSearchEvidence));
       insertPlanItemInOrder(host, block, batch.anchorTs);
     }
     // § 思考（per-step 聚合折叠块）：**一个 step 一个折叠块**（同 step 碎片原样连续拼接，
@@ -5215,8 +5299,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         flowEl = null;
         renderInterruptedRound(r.id);
       } else {
-        // 普通轮：任务过程折叠区一次性渲染（finalize=true，收起态）
-        renderRoundBlock(currentEvents, true);
+        // 普通轮：任务过程折叠区一次性渲染（finalize=true，收起态）；证据随轮透传（web_search 行补归因）
+        renderRoundBlock(currentEvents, true, undefined, r.evidence);
       }
     }
     // 3) 中间段：前序 assistant 段 + 交互输入按时间升序交织（还原打断点 / 提问点时序）
@@ -5245,7 +5329,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (item.kind === 'seg') {
         // 正文块建立后补挂任务过程折叠区 + 回收同轮 fallback 残留
         append('assistant', item.content, item.ts, r.id);
-        renderRoundBlock(currentEvents, true, runtimeInteractiveInputs);
+        renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, r.evidence);
         if (r.id && roundBlockEl?.isConnected) {
           messages
             .querySelectorAll<HTMLElement>(`.round-block__input[data-round-id="${r.id}"]`)
@@ -5289,7 +5373,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // live 轮重放接手运行态：与实时流同一推导函数（工具在途/思考相位/默认回答）
         syncRunningCursor();
       }
-      renderRoundBlock(currentEvents, true, runtimeInteractiveInputs);
+      renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, r.evidence);
       if (r.id && roundBlockEl?.isConnected) {
         messages
           .querySelectorAll<HTMLElement>(`.round-block__input[data-round-id="${r.id}"]`)

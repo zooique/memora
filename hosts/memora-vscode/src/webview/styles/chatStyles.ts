@@ -2118,6 +2118,16 @@ export const chatStyles = `
   }
   .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--border-focus); }
   .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 4px); }
+  /* web_search 裁决证据块：工具行展开体内的归因三件套（端点/条数/命中标题），与结果摘要同层。
+     仅重放路径渲染（证据轮末才落盘，实时无此字段）；逐行紧凑、弱化色，展开行体时随行可见 */
+  .round-block__search-evidence {
+    margin-top: var(--sp-1, 4px);
+    padding-top: var(--sp-1, 4px);
+    border-top: var(--line-solid);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    line-height: 1.5;
+  }
   /* 工具批块（toolBatch）：前后相邻、中间无打断物的连续工具合并为一块（分组判据见 chatView
      groupToolBatches，方案-工具批折叠合并 §3.1）。块标题 = 工具叙述句（toolSummaryText，与
      轮收尾摘要同源）、不带序号；单工具批不包裹（行即批，视觉等价现状零回归）。 */

@@ -67,6 +67,8 @@ function makeRound(over: {
   }[];
   assistantMessage?: { content: string; ts?: string };
   processEvents?: unknown[];
+  /** 裁决证据（web_search 归因三件套等）；缺省 = 无 evidence 字段 */
+  evidence?: RoundView['evidence'];
   status?: 'pending' | 'complete' | 'error' | 'interrupted';
 }): RoundView {
   const roundId = over.id ?? 'round-x';
@@ -118,6 +120,7 @@ function makeRound(over: {
         }
       : {}),
     ...(over.processEvents ? { processEvents: over.processEvents as ProcessEvent[] } : {}),
+    ...(over.evidence ? { evidence: over.evidence } : {}),
     status: over.status ?? 'complete',
     createdAt: over.user?.ts ?? '',
     ...(over.assistantMessage ? { completedAt: over.assistantMessage.ts ?? '' } : {}),
@@ -10394,5 +10397,171 @@ describe('记忆反馈通道（HOST-S3-3）', () => {
     expect(bar.textContent).toContain('内核拒绝删除');
     // 删除失败行不摘（记忆仍在库中，行如实保留）
     expect(document.querySelectorAll('.memory-hits__item')).toHaveLength(1);
+  });
+});
+
+describe('web_search 裁决证据（evidence 随 RoundView 透传，仅重放路径渲染）', () => {
+  /** web_search 工具行（tool_start + 按 toolCallId 配对的 tool_result）工厂 */
+  function wsEvents(
+    toolCallId: string,
+    query: string,
+    summary: string,
+    seq: number,
+  ): unknown[] {
+    return [
+      {
+        type: 'tool_start',
+        seq,
+        ts: `t${seq}`,
+        payload: { toolCallId, name: 'web_search', args: JSON.stringify({ query }) },
+      },
+      {
+        type: 'tool_result',
+        seq: seq + 1,
+        ts: `t${seq + 1}`,
+        payload: { toolCallId, name: 'web_search', ok: true, summary },
+      },
+    ];
+  }
+
+  it('web_search 工具行展开体内渲染归因三件套（端点/条数/命中标题），纯文本无链接', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'round-ev',
+        user: { content: '帮我查一下', ts: 't1' },
+        assistantMessage: { content: '查到了', ts: 't9' },
+        processEvents: wsEvents('w1', 'A', '（搜索来源：DuckDuckGo）\n\n1. 结果A', 2),
+        evidence: [
+          {
+            type: 'web_search_result',
+            ts: 't3',
+            meetingRound: false,
+            payload: { query: 'A', endpoint: 'DuckDuckGo', count: 2, titles: ['结果A', '结果B'] },
+          },
+        ],
+      }),
+    );
+    const row = document.querySelector<HTMLElement>('.round-block__tool[data-tool-call-id="w1"]');
+    expect(row).not.toBeNull();
+    const ev = row!.querySelector<HTMLElement>('.round-block__search-evidence');
+    expect(ev).not.toBeNull();
+    expect(ev!.textContent).toContain('搜索来源：DuckDuckGo');
+    expect(ev!.textContent).toContain('结果条数：2');
+    expect(ev!.textContent).toContain('· 结果A');
+    expect(ev!.textContent).toContain('· 结果B');
+    // 纯文本证据面：不得产生可点链接（内核证据无 URL 可锚）
+    expect(ev!.querySelector('a')).toBeNull();
+  });
+
+  it('零结果搜索（count=0）照渲染条数行——「没搜到」同为归因现场', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'round-zero',
+        user: { content: '查个冷门词', ts: 't1' },
+        assistantMessage: { content: '没搜到', ts: 't9' },
+        processEvents: wsEvents('w1', '冷门词', '（未找到与 "冷门词" 相关的搜索结果）', 2),
+        evidence: [
+          {
+            type: 'web_search_result',
+            ts: 't3',
+            meetingRound: false,
+            payload: { query: '冷门词', count: 0, titles: [] },
+          },
+        ],
+      }),
+    );
+    const ev = document.querySelector<HTMLElement>('.round-block__search-evidence');
+    expect(ev).not.toBeNull();
+    expect(ev!.textContent).toContain('结果条数：0');
+    // 无 endpoint（提供方未打标）→ 不渲染来源行
+    expect(ev!.textContent).not.toContain('搜索来源：');
+  });
+
+  it('无 evidence 或缺省（实时/无证据轮）不渲染证据块', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'round-noev',
+        user: { content: '普通轮', ts: 't1' },
+        assistantMessage: { content: '答复', ts: 't9' },
+        processEvents: wsEvents('w1', 'A', '结果摘要', 2),
+      }),
+    );
+    expect(document.querySelector('.round-block__search-evidence')).toBeNull();
+  });
+
+  it('非 web_search 行即使本轮有证据也不挂证据块（证据只对应搜索行）', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'round-other',
+        user: { content: '读文件', ts: 't1' },
+        assistantMessage: { content: '读完了', ts: 't9' },
+        processEvents: [
+          {
+            type: 'tool_start',
+            seq: 2,
+            ts: 't2',
+            payload: { toolCallId: 'r1', name: 'read_file', args: JSON.stringify({ path: 'a.ts' }) },
+          },
+          {
+            type: 'tool_result',
+            seq: 3,
+            ts: 't3',
+            payload: { toolCallId: 'r1', name: 'read_file', ok: true, summary: 'ok' },
+          },
+        ],
+        evidence: [
+          {
+            type: 'web_search_result',
+            ts: 't2',
+            meetingRound: false,
+            payload: { query: 'A', count: 1, titles: ['T'] },
+          },
+        ],
+      }),
+    );
+    expect(document.querySelector('.round-block__search-evidence')).toBeNull();
+  });
+
+  it('同一 query 多次搜索：证据按行序一一配对（不后者覆盖前者）', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'round-dup',
+        user: { content: '同词两次', ts: 't1' },
+        assistantMessage: { content: '两次都查了', ts: 't9' },
+        processEvents: [
+          ...wsEvents('w1', 'A', '第一次', 2),
+          ...wsEvents('w2', 'A', '第二次', 4),
+        ],
+        evidence: [
+          {
+            type: 'web_search_result',
+            ts: 't3',
+            meetingRound: false,
+            payload: { query: 'A', endpoint: 'E1', count: 1, titles: ['一'] },
+          },
+          {
+            type: 'web_search_result',
+            ts: 't5',
+            meetingRound: false,
+            payload: { query: 'A', endpoint: 'E2', count: 2, titles: ['二'] },
+          },
+        ],
+      }),
+    );
+    const first = document
+      .querySelector<HTMLElement>('.round-block__tool[data-tool-call-id="w1"]')
+      ?.querySelector<HTMLElement>('.round-block__search-evidence');
+    const second = document
+      .querySelector<HTMLElement>('.round-block__tool[data-tool-call-id="w2"]')
+      ?.querySelector<HTMLElement>('.round-block__search-evidence');
+    expect(first?.textContent).toContain('搜索来源：E1');
+    expect(first?.textContent).toContain('结果条数：1');
+    expect(second?.textContent).toContain('搜索来源：E2');
+    expect(second?.textContent).toContain('结果条数：2');
   });
 });

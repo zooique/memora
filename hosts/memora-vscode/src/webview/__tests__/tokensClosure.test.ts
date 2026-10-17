@@ -551,13 +551,16 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   // line- 70→71：会话归档模式区（memoryStyles .archive-mode）分区描边 var(--line-solid)
   //（与 .governance 同构：顶部分隔线），实数经 scripts/count-token-refs.mjs 实锤同步
   // （2026-10-16 setArchiveMode 接线）。
+  // line- 71→72：web_search 裁决证据块（.round-block__search-evidence）顶部分隔线
+  // var(--line-solid)（与 .round-block__tool-summary 同层但加分隔），实数经
+  // scripts/count-token-refs.mjs 实锤同步（2026-10-17 web_search_result 证据接入宿主重放）。
   const EXPECTED = {
     'z-': 14,
     'lh-': 48,
     'op-': 18, // 初始化按钮禁用态 opacity: var(--op-6)（settingsStyles）+1
     'icon-': 17,
     'dot-': 22,
-    'line-': 71,
+    'line-': 72,
     'sq-': 47,
     'dim-': 20,
   } as const;
