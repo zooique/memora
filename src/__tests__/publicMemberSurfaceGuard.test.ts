@@ -672,10 +672,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'unreadableSkipped',
     ],
   },
-  ProjectRegistry: {
-    kind: 'class',
-    members: ['get list', 'inferProjectName', 'register', 'unregister'],
-  },
   ProjectEntry: { kind: 'interface', members: ['lastOpened', 'name', 'path'] },
   ISessionStore: {
     kind: 'interface',
@@ -882,7 +878,7 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `\nEXPECTED 符号数 = ${count}，与本用例期望不符。\n` +
         `若本次确有增删符号：先在 EXPECTED 表反映差异 + 完成 §3.2.1 定性，再同步本数字；\n` +
         `若未增删：说明改动误触了基线表，撤销。`,
-    ).toBe(83);
+    ).toBe(82);
   });
 
   it('成员面与冻结基线一致（增删即红；红须按 §3.2.1 定性后显式更新 EXPECTED）', () => {
@@ -906,7 +902,12 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    - Agent 4 转发门面（appendPlanItem / injectSystemMessage / recover / triggerError）+\n` +
       `      RolePackManager.tryBuildMeetingPlan（摘类为模块级纯函数 buildMeetingPlanSkeleton）——\n` +
       `      纯转发/内部真用，删除不撤能力（真身在 sessionManager / prepare.ts 直调）；\n` +
-      `    - 代价：4.x 升级者失去 deprecation 预警期，已由 CHANGELOG Breaking 段明示。`;
+      `    - 代价：4.x 升级者失去 deprecation 预警期，已由 CHANGELOG Breaking 段明示。\n` +
+      `  ④ PUB-API-PRUNE-3 收面（2026-10-18）：ProjectRegistry 类从公开面收回——宿主零消费\n` +
+      `    （hosts 全仓 grep 零命中）、能力由 agent.projects（ProjectManager）完全覆盖，且导出类\n` +
+      `    会额外放出 register/unregister 无锁写能力（多进程撕裂风险面，读无险写有险不对称）；\n` +
+      `    ProjectEntry 条目类型保留——agent.projects.list 返回 ProjectEntry[]，删则宿主无法标注。\n` +
+      `    代价：4.x 升级者失去 deprecation 预警期，已由 CHANGELOG Breaking 段明示。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

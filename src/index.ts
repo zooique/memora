@@ -178,8 +178,10 @@ export type {
 // （宿主 projectSearchProvider import 对齐，避免结果上限 / 忽略目录数值漂移）
 export { PROJECT_SEARCH_RESULT_MAX_LEN } from '@/agent/toolExecutor.js';
 export { IGNORED_DIR_NAMES } from '@/agent/builtinToolHandlers.js';
-// 项目注册表：宿主可直接使用或通过 ProjectManager 间接委托
-export { ProjectRegistry } from '@/memory/projectRegistry.js';
+// 项目注册表：只出条目类型，不出注册表类（PUB-API-PRUNE-3 收面）。
+// 类由 ProjectManager 内部专职持有（`agent.projects` 委托消费），导出它会额外放出
+// register/unregister 无锁写能力（多进程下正是撕裂风险面）；条目类型必须留——
+// `agent.projects.list` 返回 `ProjectEntry[]`，删则宿主无法标注该类型。
 export type { ProjectEntry } from '@/memory/projectRegistry.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
