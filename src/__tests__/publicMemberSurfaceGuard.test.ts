@@ -172,9 +172,15 @@ function collectActualSurface(): Record<string, { kind: string; members: string[
 }
 
 /**
- * 冻结基线（EXPECTED）——85 个有成员面的公开符号。
+ * 冻结基线（EXPECTED）——有成员面的公开符号清单。
+ *
  * 更新规则：仅在人工按 legacy-contract-audit-rules §3.2.1 定性后，把实际差异显式写进本表；
  * 禁止「先改基线后补审查」。基线生成于 2026-10-16 公开 API 面全量审查（5.0.0 发版前）。
+ *
+ * ⚠️ **符号量不自称数字（2026-10-17 自审坐实的虚数教训）**：表头曾手写「88 个符号」——
+ * 实测自 Guard 诞生即 86（历史虚 2），后续维护照抄该基数算出「85」，而实际为 **83**；
+ * 手写计数与实现无机器关联 ⇒ 必然腐化。现改由下方「符号量自检」用例 `toBe()` 机器夹住：
+ * 增删符号不同步改数字即红，杜绝「文档数字 = 无人负责的谎」。
  */
 const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   Agent: {
@@ -861,6 +867,22 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
     const exportCount = parseIndexExports().length;
     expect(exportCount).toBeGreaterThan(50);
     expect(Object.keys(actual).length).toBeGreaterThan(80);
+  });
+
+  /**
+   * 符号量自检（2026-10-17 补）：把「EXPECTED 有多少个符号」从表头手写字改成机器夹。
+   *
+   * 判据 = 冻结基线顶层键数精确值。增删符号必须同步本数字（随 §3.2.1 定性流程一并改），
+   * 不同步即红 ⇒ 表头虚数（历史曾自称 88、实为 86；自称 85、实为 83）不再可能。
+   */
+  it('符号量自检：EXPECTED 冻结符号数精确匹配（防表头自称计数腐化）', () => {
+    const count = Object.keys(EXPECTED).length;
+    expect(
+      count,
+      `\nEXPECTED 符号数 = ${count}，与本用例期望不符。\n` +
+        `若本次确有增删符号：先在 EXPECTED 表反映差异 + 完成 §3.2.1 定性，再同步本数字；\n` +
+        `若未增删：说明改动误触了基线表，撤销。`,
+    ).toBe(83);
   });
 
   it('成员面与冻结基线一致（增删即红；红须按 §3.2.1 定性后显式更新 EXPECTED）', () => {
