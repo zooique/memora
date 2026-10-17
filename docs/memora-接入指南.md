@@ -506,7 +506,7 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / WORK_PROJECTION / ROUND_SUMMARY / UNKNOWN） |
 | `validateSource(source)` | 校验 source 标签是否为已知标签（返回 warning，不阻止写入） |
 | `MemoraError` | 统一错误类型（结构化错误码 + 上下文） |
-| `NOOP_TRACER` | ITracer 的空实现（静默丢弃所有 span，零开销） |
+| （无 Noop 导出） | 不注入 `tracer` 即自动降级为内核内部 Noop 实现（静默丢弃所有 span，零开销） |
 | `TRACE_SPANS` | AgentLoop 预定义 Span 名称常量（RECALL / LLM_CALL / TOOL_EXEC / RESPONSE） |
 | `ToolErrorCode` | 工具错误码枚举（10 种，含 PATH_NOT_ALLOWED / FILE_NOT_FOUND 等） |
 | `isRetryableErrorCode(code)` | 判断错误码是否可重试（5 种 retryable） |
@@ -592,7 +592,7 @@ const agent = new Agent({
 });
 ```
 
-> **不注入时**：默认使用 `NOOP_TRACER`（静默丢弃所有 span，零运行时开销）。
+> **不注入时**：内核自动降级为内部 Noop 实现（静默丢弃所有 span，零运行时开销）——无需引用任何实现类。
 
 ---
 
@@ -650,7 +650,7 @@ for (const chapter of chapters) {
 9. **一个 Agent = 一份记忆库** — `storage` 与 `dataDir` 都是 **Agent 实例级**的：切会话复用同一实例，不按会话 / 子项目分裂。**要按项目彼此隔离，就各自 `new Agent`**——隔离粒度归宿主决定，内核不规定（见 [§8](#8-多项目一个项目一个-agent形态定案)）
 10. **切会话不重建、不关闭存储** — 会话切换只换身份（`sessionId`），复用已注入的实例；只在 `close()` 时关闭（`ProjectManager` 在 Agent 生命周期内缓存）
 11. **禁止把配置放进记忆库** — 配置（角色包 / persona / rules / skills）的真理源是文件（`configDir` / 角色包），设定记忆归角色包内容层、不进记忆库（ADR-025 / `memory-role-pack-boundary`）
-12. **组件重建** `rebuildComponents()` 由内核在配置重载等场景内部调用，通常无需手动调用
+12. **组件重装配** 由内核在 `init()` / `reloadConfig()` 内部完成，无公开重建入口，宿主无需也无法手动触发
 13. **Tracer 未注入时**自动降级为 NoopTracer，零运行时开销
 
 ---

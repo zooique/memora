@@ -212,7 +212,7 @@ new Agent({
 | 方法 | 用途 |
 |------|------|
 | `new Agent(opts)` | 构造函数（无副作用，不连接 LLM） |
-| `init(projectPathOverride?)` → `Promise<ProjectContext>` | 初始化：建立存储、加载配置、组装组件 |
+| `init()` → `Promise<ProjectContext>` | 初始化：建立存储、加载配置、组装组件。**项目在构造时钉死**（`AgentOptions.projectPath`）——换项目请新建一个 Agent 实例，单实例内不可改绑 |
 | `close()` → `Promise<void>` | 关闭：释放项目锁、关闭数据库 |
 
 ### 2.3 Agent 只读访问器
@@ -344,13 +344,14 @@ type AgentChunk =
 
 `ThinkingPhase` 取值：`'recalling' | 'processing' | 'archiving'`
 
-### 3.2 `chatSync(input, signal?)` — 同步版（仅供测试用）
+### 3.2 `chatSync(input, signal?)` — 同步版（聚合完整回复）
 
 ```typescript
 async chatSync(input: string, signal?: AbortSignal): Promise<string>
 ```
 
-收集所有 `text` 事件拼接成完整字符串返回。
+收集所有 `text` 事件拼接成完整字符串返回。适合 CLI / 脚本宿主等不需要流式处理的场景；
+需要中间过程可观测或长任务可中断时用流式 `chat()`。
 
 ---
 
@@ -540,9 +541,9 @@ interface ISessionStore {
 
 ## 六、项目 / 会话管理
 
-> **方法归属**：会话相关方法在 `agent.sessionManager`（SessionManager）；`rebuildComponents` /
-> `forkSession` 保留在 Agent 面类作为常用入口。**项目不再有切换入口**——多项目由宿主创建
-> 多个 Agent 实例（一个 Agent 绑定一个项目），见 §6.2。
+> **方法归属**：会话相关方法在 `agent.sessionManager`（SessionManager）；`forkSession` 保留在
+> Agent 面类作为常用入口。**项目既无切换入口、也无重建入口**——多项目由宿主创建多个 Agent
+> 实例（一个 Agent 绑定一个项目），见 §6.2。
 
 > **switch* 返回值约定**：各 switch 操作返回与其操作语义最匹配的值 ——
 > `switchSession` 返回新会话名（string）、`agent.switchRolePack` 返回布尔值（是否切换成功）。
@@ -552,7 +553,6 @@ interface ISessionStore {
 
 | 方法 | 用途 |
 |------|------|
-| `rebuildComponents()` → `Promise<void>` | 重建 history / loop（强制刷新内部组件；通常由内核在配置重载等场景内部调用） |
 | `forkSession(targetSession?)` → `AgentForkResult` | 分叉当前会话（同步，复制完整消息历史到新分支） |
 
 ### 6.2 多项目怎么办（形态定案）
@@ -973,11 +973,11 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 | 分组 | 方法 |
 |------|------|
-| 生命周期 | `init(projectPathOverride?)` / `close()` |
+| 生命周期 | `init()` / `close()` |
 | 对话 | `chat(input, signal?)` / `chatSync(input, signal?)` / `resumeExecution()` |
 | 事件 | `on()` / `off()` / `once()`（继承自 TypedEventEmitter） |
 | 暂停/继续 | `pause(reason, source?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content)` / `removePendingInterject(index)` / `clearPendingInterjections()` / `getPendingInterjections()` / `discardCurrentCheckpoint()` / `canContinueWithoutInput()` |
-| 会话 / 组件 | `rebuildComponents()` / `forkSession(targetSession?)` / `createCheckpoint()` / `getCheckpoint()` |
+| 会话 | `forkSession(targetSession?)` / `createCheckpoint()` / `getCheckpoint()` |
 | Provider | `setProvider(provider)` / `setBackgroundProvider(provider)` |
 | 归档模式 | `setArchiveMode(mode)` / `getArchiveMode()` |
 | 角色 | `switchRolePack(name)` / `getRolePackSwitchLockStatus()` / `getActiveTraits()` / `injectAffect(affectString)` |
@@ -1029,14 +1029,10 @@ interface ISpan {
 }
 ```
 
-### 13.3 NoopTracer（默认实现）
+### 13.3 NoopTracer（内核内部默认实现，**不挂公共面**）
 
-```typescript
-import { NOOP_TRACER } from '@zooique/memora';
-
-// 不注入 tracer 时自动使用 NOOP_TRACER，零运行时开销
-// NOOP_TRACER.startSpan() 返回共享的 NoopSpan 单例，所有方法为空操作
-```
+**不注入 `tracer` 即零运行时开销**——内核自动降级为内部 Noop 实现，所有 span 方法为空操作。
+宿主无需、也不应引用任何 Noop 实现类；要「关闭追踪」就是不传 `tracer`。
 
 ### 13.4 TRACE_SPANS 常量
 
@@ -1211,7 +1207,7 @@ export type { AgentEventMap, AgentEventName, AgentEventHandler } from '@zooique/
 
 // 可观测性
 export type { ITracer, ISpan, AgentMetrics } from '@zooique/memora';
-export { NOOP_TRACER, TRACE_SPANS } from '@zooique/memora';
+export { TRACE_SPANS } from '@zooique/memora';
 
 // 错误码
 export { MemoraError, ToolErrorCode, isRetryableErrorCode } from '@zooique/memora';

@@ -213,6 +213,34 @@
   本条 Breaking 明示——内部消费面为零（宿主经 `@zooique/memora` 包入口零消费已实证），仅
   外部接入者可能受影响；替代路径 = 上述注入接口 / `agent.sessionManager.*` / 纯函数直调。
 
+### ⚠️ Breaking Removed（内核 · 收净「切换项目」侧门与三处僵尸出口 · `PR-SWITCH-2` / `PUB-API-PRUNE-4` · 2026-10-18）
+
+> **性质**：`PR-SWITCH-1` 删了「跨项目注册表」六面，但留下三个**同一概念的侧门**——
+> `init(projectPathOverride?)` 仍能让单实例换绑项目、`agent.projects` getter 仍能拿到一个
+> 已无能方法的管理器、`rebuildComponents()` 失去唯一调用者后仍在公开面。本批收净。
+
+- 删 **`Agent.init(projectPathOverride?)` 的路径覆盖参数**（`init()` 变无参）：它是「一个 Agent
+  一个项目」的**后门**——传入路径即改绑 `#config.projectPath`。全仓零调用（宿主/测试均无参），
+  与新原则直接冲突。换项目请新建 Agent 实例。
+- 删 **`Agent.get projects()`**：`ProjectManager` 的公开方法已在 PR-SWITCH-1 全删，该 getter 返回
+  的对象只剩 `currentProject` 一个 getter ⇒ 宿主要它没有意义；宿主零调用、内核零自消费、仅测试
+  引用。⇒ `ProjectManager` 彻底退为内部类，**不再出现在任何公开签名**。
+- 删 **`Agent.rebuildComponents()`**：原唯一调用者是 `switchProject`，后者删除后**连内核自身都不再
+  调用**（`grep this.rebuildComponents` 零命中）；组件重装配由 `init()` / `reloadConfig()` 内部完成。
+- 删 **`NOOP_TRACER` 导出**（`PUB-API-PRUNE-4`）：内核内部兜底（`contextManager` / `loop` 未注入
+  tracer 时降级），宿主零消费；要「关闭追踪」就是不传 `tracer`，无需引用实现类。
+- **口径统一**：`chatSync` 手册原标「仅供测试用」，但 README 首页两处拿它做示例 ⇒ 改为「同步版
+  （聚合完整回复）」，注明长任务 / 需中间过程用流式 `chat()`。同符号两处定性相反即谎报。
+- ⚠️ **对 4.x 升级者的代价**：直删失 deprecation 预警期（同前批口径）；替代路径 = 新建 Agent
+  实例（换项目）/ 不传 `tracer`（关追踪）/ 用 `chat()`（流式）。
+- **排雷记录（推翻一条上游结论）**：上一轮审计曾把 `MemoryGovernance` 类列为「收回导出」候选，
+  排雷发现 **`agent.governance` 的公开签名返回 `MemoryGovernance`**（`dist/agent/agent.d.ts:591`）
+  ⇒ 收回导出会破坏 d.ts 类型引用（宿主按签名解析会指向私有模块）。**该候选撤销**，登记不改。
+- 验证：双守卫绿（12 用例，符号量仍 81）+ `typecheck`（主 + scripts）零错 + eslint 0 +
+  prettier 全过 + 全量 **3053 passed / 4 skipped / 118 文件**（用例 −3 = rebuildComponents 测试段
+  整删，精确对账；另 1 个 toolExecutor 超时用例为沙箱假红，隔离复跑绿、AssertionError=0）+
+  收尾四步。变异实证：EXPECTED 误加回 `get projects` → 「[成员消失] Agent.get projects」红。
+
 ### ⚠️ Breaking Removed（内核 · 公开面收面第三批 · `PUB-API-PRUNE-3` · `MULTI-PROJ-1` 连带销项，用户 2026-10-18 拍板）
 
 > **性质**：多项目形态定案「内核保持单 Agent（一个 Agent = 一个项目 + 一套存储 + 一个会话

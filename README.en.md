@@ -206,7 +206,7 @@ The kernel interacts with the outside world through interfaces. Hosts inject imp
 | `IMemoryStorage` | Memory CRUD + search + query by source | Built-in in-memory default (placeholder, non-persistent; internal class, not on the public surface — PUB-API-PRUNE-2) + optional persistent impl `createNodeSqliteStorage(dbPath)` (built-in `node:sqlite`, zero third-party deps) | Host picks the backend: create SQLite via the kernel factory, or implement its own (JSON / own SQLite) |
 | `ISessionStore` | Session history persistence | None (host implements) |
 | `ILogger` | Logging output | console fallback |
-| `ITracer` | Observability spans | `NOOP_TRACER` |
+| `ITracer` | Observability spans | Internal noop (not on the public surface; omit `tracer` for zero overhead) |
 
 ### Multi-project and Agent boundaries (settled model)
 
