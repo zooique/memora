@@ -199,7 +199,9 @@ if (args.has('--with-tests')) {
     kernel: run(ROOT, 'node ./node_modules/vitest/vitest.mjs run'),
     host: run(
       join(ROOT, 'hosts', 'memora-vscode'),
-      'node ../../node_modules/vitest/vitest.mjs run',
+      // ⚠️ 必须带 --no-file-parallelism：宿主官方口径（package.json 的 test 脚本）是串行，
+      // 并行会稳定吃掉 3 条 I/O 密集用例 ⇒ 报出来的用例数是假的。
+      'node ../../node_modules/vitest/vitest.mjs run --no-file-parallelism',
     ),
   };
 }
