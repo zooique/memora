@@ -444,7 +444,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('memora.demo', () => runDemoCommand(configDir)),
   );
 
-  // ─── 记忆治理命令（宿主补齐 agent.memory.* / agent.governance.* API 消费） ───
+  // ─── 记忆治理命令（宿主补齐 agent.memory.* API 消费） ───
+  // ⚠ 术语消歧（2026-10-18）：本节的「记忆治理」是**宿主产品概念**（面板展示活跃/回收站/
+  // 来源分布/已被取代数），数据全部来自 `agent.memory.stats()` / `listDeleted()` / `list()`。
+  // 它与内核那个已于 5.0.0 整链退役的 `agent.governance` **门面无关**，别再据旧注释去内核找它。
 
   /** 获取当前工作区的 Agent 实例（懒装配，已装配则直接返回缓存） */
   const getAgentForCommand = async (): Promise<Agent | null> => {

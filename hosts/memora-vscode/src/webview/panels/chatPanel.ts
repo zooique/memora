@@ -1247,25 +1247,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
   };
 
-  /**
-   * dedupCompleted：L1 工具调用去重完成（连续重复工具调用被自动优化）
-   *
-   * 内核 Assembler 在 L1 层检测到连续多次相同工具+参数时自动去重，
-   * 完成后 emit 此事件让宿主透明化这一自动优化行为。
-   */
-  private readonly onDedupCompleted = (info: {
-    deduplicatedCount: number;
-    demotedIds: string[];
-  }): void => {
-    if (info.deduplicatedCount > 0) {
-      this.post({
-        type: 'notice',
-        level: 'info',
-        message: `已自动优化 ${info.deduplicatedCount} 次重复工具调用`,
-      });
-    }
-  };
-
   // ─── 低价值事件（状态冗余确认） ───
 
   /** sessionPaused：对话被暂停（状态可视化补充 + 骨架投影刷新）
@@ -1513,8 +1494,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 中价值事件：分叉完成 + 去重完成 + 槽位澄清
     a.off('sessionForked', this.onSessionForked);
     a.on('sessionForked', this.onSessionForked);
-    a.off('dedupCompleted', this.onDedupCompleted);
-    a.on('dedupCompleted', this.onDedupCompleted);
+    // 删后注记（2026-10-18 · 5.0.0）：此处曾订阅内核 `dedupCompleted`（记忆去重完成）
+    // 并弹 notice。该事件随内核治理链整链退役（GOVERNANCE-SRC-1），订阅一并拆除——
+    // 留着就是「僵尸订阅」（监听一个永不发射的事件，永不触发的 handler 静态通过类型检查）。
+    // 勿加回；内核 `AgentEventMap` 已无此键。
     // 低价值事件：会话状态冗余确认
     a.off('sessionPaused', this.onSessionPaused);
     a.on('sessionPaused', this.onSessionPaused);
@@ -3796,8 +3779,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         unlockDone();
       };
       agent?.on('roundSummaryGenerated', onSummary);
-      // Follow-up 建议：仅正常结束时推送（零 LLM、纯计算；打断/异常不给不完整回复挂建议）
-      this.postSuggestions();
+      // 删后注记（2026-10-18 · 5.0.0）：此处曾在轮次正常收尾时推送 Follow-up 建议
+      // （governance.suggest() → 'suggestions' 协议）。该连锁随内核治理链整链退役同步拆除。
     }
     // 本轮流式结束 → 推送活动指标快照（指纹 + 累计指标，默认折叠展示）
     this.postMetrics();
@@ -4041,32 +4024,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     this.post({ type: 'context_occupancy', occupancy: occ });
-  }
-
-  /**
-   * 推送 Follow-up 建议（回复后关联推荐）
-   *
-   * 复用内核 governance.suggest()——零 LLM、纯计算（基于记忆库 accessedAt 时效 + 多样性，
-   * 见 memoryAdvisor.suggest），把「与你当前关注相关但未直接搜到」的记忆映射为
-   * 「下一步可探索」chips 推给 webview。记忆名作 chip 标签（label），prompt 为填入输入框
-   * 的完整下一步提问。记忆库为空/未装配（governance null）时不推送（webview 无建议块）。
-   *
-   * ⚠ **当前恒早退（2026-10-18 实测）**：`suggest(undefined, …)` 的采样分支逐内核
-   * `GOVERNANCE_SOURCES` 取样，该列表当前为空数组 ⇒ 恒返回 `[]` ⇒ 本方法在第一行
-   * `hits.length === 0` 就返回，chips 从未真正推过。通道保留未删（接线后即可生效），
-   * 处置随内核 `GOVERNANCE-SRC-1` 一并拍板——勿据本注释前半段认定功能已生效。
-   */
-  private postSuggestions(): void {
-    if (!this._agent) return;
-    const hits = this._agent.governance?.suggest(undefined, { limit: 3 }) ?? [];
-    if (hits.length === 0) return;
-    this.post({
-      type: 'suggestions',
-      items: hits.map((h) => ({
-        prompt: `继续深入：${h.name}`,
-        label: h.name,
-      })),
-    });
   }
 }
 

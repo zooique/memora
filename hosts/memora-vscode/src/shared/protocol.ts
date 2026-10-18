@@ -1113,14 +1113,6 @@ export type ExtensionToWebviewMessage =
   | { type: 'skill_content'; skillName: string; content: string }
   // ─── Follow-up 建议消息 ───
   /**
-   * 回复完成后的 Follow-up 建议（对 governance.suggest() 的结果推送）
-   *
-   * host 在本轮流式正常结束后调 agent.governance.suggest()（零 LLM、纯计算，
-   * 基于记忆库 accessedAt 时效 + 多样性推荐），映射为「下一步可探索」chips 推给 webview；
-   * 用户打断/异常时不推送（避免给不完整回复挂建议）。
-   */
-  | { type: 'suggestions'; items: FollowupSuggestionDto[] }
-  /**
    * 预填输入框（角色 handoff 上下文传递）
    *
    * host 在 roles_handoff 切换激活角色包并聚焦对话视图后，推送一句"以新角色视角继续"的
@@ -1391,18 +1383,6 @@ export interface RoleStrategyIndicatorDto {
   summaryFocus?: string;
   /** 单轮输出上限（token，0=不限制） */
   outputLimit?: number;
-}
-
-/** Follow-up 建议条目（回复后关联推荐）
- *
- * 由 host 对 governance.suggest() 的 SuggestHit 归一化：label 为 chip 展示文案（记忆名），
- * prompt 为点击后填入输入框的完整下一步提问（「继续深入：{记忆名}」）。
- */
-export interface FollowupSuggestionDto {
-  /** 填入输入框的完整提问 */
-  prompt: string;
-  /** chip 展示文案 */
-  label: string;
 }
 
 /** 记忆库统计（记忆视图顶栏，对齐内核 AgentStats 扁平化） */

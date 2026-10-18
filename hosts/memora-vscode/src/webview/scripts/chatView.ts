@@ -3505,40 +3505,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     });
   }
 
-  /**
-   * 渲染 Follow-up 建议（回复后关联推荐）
-   *
-   * 在最新一条 AI 消息下方追加「接下来可以探索」chips 块；点击 chip 填入输入框并聚焦
-   * （与空状态示例 chips 共用 .suggestion-chip 点击委托，SSOT 复用同一交互）。
-   * 文案一律 textContent 防注入；渲染前先移除上一次的 follow-up 块（幂等，
-   * 避免多轮建议堆叠成「残影」，对齐 memoryView 搜索结果的竞态清理思路）。
-   */
-  function renderFollowUpSuggestions(items: { prompt: string; label: string }[]): void {
-    if (items.length === 0) return;
-    const prev = messages.querySelector('.followup');
-    if (prev) prev.remove();
-    const block = document.createElement('div');
-    block.className = 'followup';
-    const caption = document.createElement('div');
-    caption.className = 'followup__caption';
-    caption.textContent = '接下来可以探索';
-    block.appendChild(caption);
-    const row = document.createElement('div');
-    row.className = 'followup__chips';
-    items.forEach((s) => {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'suggestion-chip';
-      chip.dataset.prompt = s.prompt;
-      chip.title = s.prompt;
-      chip.textContent = s.label;
-      row.appendChild(chip);
-    });
-    block.appendChild(row);
-    messages.appendChild(block);
-    scrollToBottom(messages);
-  }
-
   // 滚动到底部（rAF 节流，helpers/scrollToBottom 单一实现）：流式渲染时每 chunk
   // 都可能触发滚动，用 requestAnimationFrame 合并为每帧一次，避免强制 reflow。
   // 此处统一以 messages 为滚动容器；scrollToBottom + scrollRafPending
@@ -5797,9 +5763,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 早相位中断（骨架未归位）走「建容器」分支——两相位都保证中断轮有底部栏
       settleRoundWithFooter(msg.roundId, interruptedHost);
       showActivity('info', '已停止生成');
-    } else if (msg.type === 'suggestions') {
-      // Follow-up 建议：回复结束后「下一步可探索」chips（点击填入输入框并聚焦）
-      renderFollowUpSuggestions(msg.items);
     } else if (msg.type === 'prefill_input') {
       // 角色 handoff 上下文传递：填入输入框并聚焦，不自动发送（用户可编辑后回车）
       input.value = msg.text;
