@@ -241,8 +241,9 @@
 | `memory/storageInterface.ts` | ⚪ 接口   | 无独立测试                                  | IMemoryStorage 接口定义                   |
 | `memory/lockManager.ts`      | 🟢 已打磨 | `__tests__/lockManager.test.ts`        | 锁文件管理                                 |
 | `memory/sourceValidation.ts` | 🟢 已打磨 | `__tests__/sourceValidation.test.ts`   | Source 校验                             |
-| `memory/projectManager.ts`   | 🟢 已打磨 | `__tests__/projectManager.test.ts`     | 项目管理                                  |
-| `memory/projectRegistry.ts`  | 🟢 已打磨 | `__tests__/projectRegistry.test.ts`    | 项目注册表                                 |
+| `memory/projectManager.ts`   | 🟢 已打磨 | `__tests__/projectManager.test.ts`     | 单项目生命周期编排（加锁 / 存储装配 / 上下文构建） |
+
+> **2026-10-18 补记**：`memory/projectRegistry.ts` 与 `__tests__/projectRegistry.test.ts` 已随 `PR-SWITCH-1` 整链删除（跨项目注册表概念废止——一个 Agent 绑定一个项目，多项目由宿主各建实例）。
 
 > **2026-08-19 深度剪枝**：`memory/store.ts`（FileStore）、`memory/loader.ts`（MemoryLoader）随「设定记忆归角色包（ADR-025）」整链移除——设定记忆不再由文件扫描进记忆索引，FileStore 无生产消费者；`memory/multiHop.ts`（多跳推理）为内核零消费的僵尸公共 API，随剪枝移除。
 

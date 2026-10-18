@@ -252,12 +252,12 @@ Agent 通过一组 getter 暴露专职 Manager 与组件。详见后续章节。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `projectPath` | `string` | 项目根目录的绝对路径 |
-| `projectName` | `string` | 项目名称（从注册表读取，或取目录名） |
+| `projectPath` | `string` | 项目根目录的绝对路径（构造时钉死，不可改绑） |
+| `projectName` | `string` | 项目名称（显式传入优先，否则取目录名；内核不读任何注册表） |
 | `memoraDir` | `string` | `.memora/` 目录的绝对路径 |
 | `index` | `IMemoryStorage` | 记忆存储接口 |
-| `security` | `SecurityGuard` | 安全守卫 |
-| `bootstrapMemories` | `Memory[]` | 启动时加载的必召记忆 |
+| `security` | `SecurityGuard \| null` | 安全守卫（未注入 `createSecurityGuard` 工厂时为 `null`） |
+| `bootstrapMemories` | `Memory[]` | 启动必召记忆——**恒为空数组**（设定记忆归角色包内容层，ADR-025） |
 
 ### 2.7 事件订阅（`agent.on()` / `agent.off()` / `agent.once()`）
 
@@ -527,15 +527,47 @@ interface IMemoryStorage {
 
 ### 5.3 `ISessionStore` 接口
 
-宿主实现此接口提供会话消息的持久化能力。
+宿主实现此接口提供会话消息的持久化能力。共 **12 方法**（11 必需 + 可选 `setSessionTitle`），
+按职责分三组：会话消息读写 / 元数据 / round-based 引用。**方法签名以本节为准，勿按旧版（含
+`appendMessage` 的 3 方法版）实现**——那是 round-based 改造前的历史形态，已被删除。
 
 ```typescript
 interface ISessionStore {
-  appendMessage(date: string, session: string, message: SessionMessage): void;
+  // ─── 会话消息读写（1 方法） ───
+  /**
+   * 加载指定会话的完整消息列表（从 roundIds → RoundStore 展开），不存在返回空数组。
+   * **只返回 `user` / `assistant` 两种角色**：tool 结果属执行中间态，不落会话消息。
+   * 这不是实现自由，而是接口契约——上下文中 tool 消息的唯一来源是 Loop 的入口落盘。
+   */
   loadMessages(date: string, session: string): SessionMessage[];
+
+  // ─── 元数据（5 方法，1 可选） ───
+  /** 列出所有会话标识（YYYY-MM-DD-session） */
   listSessions(): string[];
+  /** 读取会话标题元数据，不存在返回 undefined */
+  getSessionMeta(sessionId: string): SessionMeta | undefined;
+  /** 设置用户可修改的显示名（displayName）；首轮自动命名走 updateSessionMeta 写 autoName */
+  setSessionTitle?(sessionId: string, title: string): void;
+  /** 更新元数据（autoName/keyTopics/summary/createdAt 等） */
+  updateSessionMeta(sessionId: string, meta: Partial<SessionMeta>): void;
+  /** 列出全部会话标题元数据，**必须按 updatedAt 降序**（最近活跃在前） */
+  listSessionMetas(): SessionMeta[];
+
+  // ─── round-based 引用（4 方法） ───
+  appendRoundId(sessionId: string, roundId: string): void;
+  appendRoundIds(sessionId: string, roundIds: string[]): void;
+  getRoundIds(sessionId: string): string[];
+  setRoundIds(sessionId: string, roundIds: string[]): void;
+
+  // ─── 会话生命周期（2 方法） ───
+  createSession(meta: SessionMeta): void;
+  /** 删除会话（同时清理 Round ID 引用） */
+  deleteSession(sessionId: string): void;
 }
 ```
+
+> **`listSessionMetas` 排序方向是契约的一部分**：宿主视 `[0]` 为「最近活跃会话」的唯一真理源
+> （打开面板时定位初始会话）；升序实现会让初始定位落到最旧会话。
 
 ---
 
