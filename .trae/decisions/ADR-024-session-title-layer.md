@@ -9,6 +9,8 @@ description: 会话标题层——会话身份（date-session）与展示标题�
 > **日期**：2026-08-15
 > **来源**：宿主改造需求（从"按天自动归档"→"手动创建会话 + 自动命名/改名 + 历史列表导航"）+ 网络土壤（Trae 历史面板 / WorkBuddy 任务制会话设计）
 > **依赖**：[agent-design-philosophy.md §8.1](../../docs/architecture/agent-design-philosophy.md)（回答后沉淀）；ADR-013 已删除（git 历史可溯）
+>
+> **退役注记（2026-10-18）**：下文决策 1 代码块注释「与 `saveCheckpoint` 同模式」中的 `saveCheckpoint` 已于 **2026-09-10** 随检查点落盘链退役删除（实测 `src/` 零命中）——该类比只示意「可选方法追加」这一模式，**不构成对 `saveCheckpoint` 存在的断言**。按 ADR 纪律「不重写正文、只加退役注记」，正文保留原样。
 
 ## 背景
 
