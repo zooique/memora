@@ -509,7 +509,7 @@
       </div>
       <div class="mini-card">
         <h4>端口 · 怎么存</h4>
-        <p>内核只定义 <span class="inline-code">IMemoryStorage</span> 接口（CRUD + 关键词搜索 + touch），持久化由宿主注入（VS Code 宿主 = JSON 文件）。软删进回收站，30 天后物理清理。</p>
+        <p>内核只定义 <span class="inline-code">IMemoryStorage</span> 接口（CRUD + 关键词搜索 + touch），持久化由宿主注入（VS Code 宿主 = JSON 文件）。软删进回收站，保留期由宿主策略决定（当前 30 天），物理清理须由宿主入口显式触发（无自动清理）。</p>
       </div>
     </div>
     <span class="src">锚点：src/memory/storageInterface.ts · src/agent/managers/roundSummaryGenerator.ts:1-4 · src/memory/types.ts:36-37</span>
@@ -768,7 +768,7 @@
         <tr><td><code>supersededBy</code></td><td>冲突治理</td><td>非 undefined = 已被更新的摘要覆盖；值为取代者的 id，本条保留供回溯。召回时确定性过滤。</td></tr>
         <tr><td><code>materialFingerprint</code></td><td>精确去重</td><td>sha256(输入‖NUL‖回复)，生成时随条目落盘；存量无此字段（不参与匹配，只管新增）。</td></tr>
         <tr><td><code>summaryType / sessionName / roundId</code></td><td>分类与溯源</td><td>preference/fact/decision/intent/general（LLM 判，非法值兜底 general）；溯源三件套供分轨召回与 trace 回溯。</td></tr>
-        <tr><td><code>deletedAt</code></td><td>软删除</td><td>回收站机制：软删后保留 30 天，<code>purgeExpired</code> 物理清理；恢复清标记。</td></tr>
+        <tr><td><code>deletedAt</code></td><td>软删除</td><td>回收站机制：软删后进入回收站（保留期归宿主策略，当前 30 天），<code>purgeExpired</code> 由宿主入口显式触发物理清理（无自动清理）；恢复清标记。</td></tr>
         <tr><td><code>isModified</code></td><td>人工修改标记</td><td>摘要被人工改过（可能与原始对话不一致）时置位。</td></tr>
         <tr><td><code>metadata</code></td><td>透传（不进契约）</td><td>内核无生产写入方；不承载溯源/分类/治理字段——它们必须跨会话可靠读取。</td></tr>
       </tbody>
