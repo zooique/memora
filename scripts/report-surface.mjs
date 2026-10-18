@@ -16,6 +16,11 @@
  * 判据边界（诚实登记）：
  * - 成员消费扫描用 `\.member\b`，**getter/setter 去掉前缀后可能撞上同名局部变量**
  *   ⇒ 只会「少报零消费」、不会「多报」，方向保守。
+ * - **同名跨类会互相借消费点**（实测 2026-10-18）：`MemoryGovernance.detectConflicts`
+ *   转调 `MemoryAdvisor.detectConflicts`，两者同名 ⇒ 前者被误判为「有外部消费」而漏报。
+ *   同理「类内自用」也会把**对下游同名方法的调用**算成自用（`Agent.clearPlan` 里
+ *   `this.requireSessionManager.clearPlan()` 被记成 Agent 自调 1 次，实际是调 SessionManager）。
+ *   ⇒ 本脚本的零消费清单是**下限**，精确结论须用 `this.<member>` 逐个人工复核。
  * - 只扫 `src/` 与 `hosts/<pkg>/src/` 的非测试文件；`.d.ts`、`dist/`、`node_modules/` 排除。
  */
 import { execSync } from 'node:child_process';
