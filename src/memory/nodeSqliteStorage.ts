@@ -24,7 +24,8 @@
  * ## 只读视图
  * `{ readOnly: true }` 重载返回 `ReadOnlyMemoryStorage`（仅读方法）：连接以 SQLite 只读模式打开，且返回对象
  * **结构上不含写方法**（不是「约定不乱调」）。供只读宿主（如 memora-mcp）零并列复用本实现，避免各宿主自写
- * 第二份 SQLite 语义实现（三份并列 = 语义漂移）。
+ * 第二份 SQLite 语义实现（三份并列 = 语义漂移）。**只读模式不建库**：库不存在时抛
+ * `MemoraError{ errorCode: FILE_NOT_FOUND }`，宿主据此区分「未初始化」与「真故障」。
  *
  * ## API 子集约束（防「因错误的原因通过」）
  * 根 `@types/node` 版本高于运行时门槛（22.13）⇒ `tsc` 绿**不等于**运行时有该 API。本文件只使用 ≥22.13
@@ -36,6 +37,7 @@
  * 写锁为整库级，多进程（vscode / mcp / dsh）同写须排队（SQLite 默认 `busy_timeout = 0` = 立即报
  * `SQLITE_BUSY`）⇒ 构造时设忙等待；写模式另设 `journal_mode = WAL`（读写不互斥，多进程互见）。
  */
+import { existsSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
 import type { IMemoryStorage, ReadOnlyMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
@@ -150,7 +152,31 @@ function sqliteUnavailableError(): MemoraError {
   });
 }
 
-/** 行 → Memory：字段白名单校验**单一来源** = `parseMemory`（禁在本文件复写字段类型/取值校验） */
+/**
+ * 专属错误：「只读打开时库文件不存在」。
+ *
+ * 为什么不把驱动的裸 `ERR_SQLITE_ERROR: unable to open database file` 抛出去：只读宿主
+ * （memora-mcp / dsh 等）必须能用**错误码**区分「本工作区还没建库」与「真故障」，
+ * 否则每个宿主都得自己 `existsSync`（判据散点），用户看到的也是不可操作的驱动原文。
+ *
+ * 复用 `FILE_NOT_FOUND`：语义就是「文件不存在」，不为存储另开枚举码。
+ */
+function memoryDbNotFoundError(dbPath: string): MemoraError {
+  return new MemoraError({
+    title: '记忆库文件不存在',
+    detail: `${dbPath} 尚未创建（只读模式不建库）`,
+    suggestions: [
+      '先用写宿主（如 Memora VS Code 插件）打开该工作区一次，以创建并迁移记忆库',
+      '确认传入的是工作区根目录，而不是它的子目录',
+    ],
+    category: 'config',
+    errorCode: ToolErrorCode.FILE_NOT_FOUND,
+  });
+}
+
+/**
+ * 行 → Memory：字段白名单校验**单一来源** = `parseMemory`（禁在本文件复写字段类型/取值校验）。
+ */
 function rowToMemory(row: SqliteRow): Memory {
   return parseMemory({
     id: row.id,
@@ -464,6 +490,9 @@ export function createNodeSqliteStorage(
   const mod = loadSqliteModule();
   if (!mod) throw sqliteUnavailableError();
   const readOnly = options?.readOnly === true;
+  // 只读模式不建库：先判存在，把「未初始化」收成专属错误码（见 memoryDbNotFoundError）。
+  // 判存在与打开之间存在 TOCTOU 窗口，但文件被删时 DatabaseSync 会抛裸错——真故障原样暴露，不吞。
+  if (readOnly && !existsSync(dbPath)) throw memoryDbNotFoundError(dbPath);
   // 注意：不能写 `new DatabaseSync(path, undefined)`——第二个实参一旦出现，Node 参数校验即要求它是对象
   const db = readOnly
     ? new mod.DatabaseSync(dbPath, { readOnly: true })

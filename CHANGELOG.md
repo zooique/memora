@@ -52,6 +52,19 @@
 - 术语消歧（防再次误判）：宿主设置面板的「记忆治理」页是**产品概念**（活跃/回收站/来源分布/已被取代数），
   数据全部来自 `agent.memory.*`，与本次退役的内核门面无关——已在 `extension.ts` 就地写明差异。
 
+### 🔧 修复（内核 · 只读工厂「库不存在」语义 · `HOST-ALIGN-1` · 2026-10-18）
+
+> **性质**：非破坏增强。只读宿主的**判据**从「驱动原文」升级为「专属错误码」，不改变任何既有签名。
+
+- `createNodeSqliteStorage(dbPath, { readOnly: true })` 在库文件不存在时改抛
+  `MemoraError{ errorCode: FILE_NOT_FOUND }`——原为 `node:sqlite` 的裸 `Error`
+  （`code=ERR_SQLITE_ERROR`、无 `errorCode`）。理由：只读宿主必须能用错误码区分
+  「本工作区还没建库」与「真故障」，否则每个宿主都得自己 `existsSync`（判据散点），
+  用户看到的也是不可操作的驱动原文。
+- **只读模式仍不建库**：语义未变（原本也抛错），只是抛得可判。写模式行为完全不变。
+- 消费方：`hosts/memora-mcp` 据此把缺失成因分三态（未初始化 / 仍是旧 JSON / 布局漂移），
+  路径契约见 `ADR-041`。
+
 ### 📄 文档与守卫修正（非 Breaking · 2026-10-18 · `DOC-CLAIM-1` / `GUARD-METHOD-1` / `DIST-ORPHAN-1`）
 
 > 本节修的是**「代码已删、文档还在宣称」**这类不改变 API 的伤。发版前必须收口：
@@ -288,8 +301,9 @@
   外部接入者可能受影响；替代路径 = 上述注入接口 / `agent.sessionManager.*` / 纯函数直调。
   > 🔴 **订正（2026-10-18 实锤，勿再引用上句）**：「宿主零消费已实证」**不成立**。
   > `hosts/memora-mcp/src/readOnlyFileStore.ts:32`（建于 2026-10-16 `78206a00`）当时就从包入口
-  > import `InMemoryStorage`，比本条收面早一天。当时的证据链是「vscode 宿主 tsc 零错 + 单宿主
-  > grep」，把「宿主」当成了单数；`hosts/memora-mcp` 从不进 tsc 门 ⇒ 漏判。后果 = mcp 编译
+  > import `InMemoryStorage`，比本条收面早一天。**可复原的最可能口径**（当时的命令未留痕，此处属
+  > 推断而非实锤）是「vscode 宿主 tsc 零错 + 单宿主 grep」，把「宿主」当成了单数；
+  > `hosts/memora-mcp` 从不进 tsc 门 ⇒ 漏判。后果 = mcp 编译
   > `TS2724` + 旧 dist 运行时抛 `does not provide an export named 'InMemoryStorage'`。
   > 详见 `tasks/审查报告-2026-10-18-内核改动-宿主对齐审查.md` 与台账 `HOST-ALIGN-1`。
   > **口径提醒**：`scripts/report-surface.mjs:101` 本就扫 `hosts`（复数）——脚本无误，

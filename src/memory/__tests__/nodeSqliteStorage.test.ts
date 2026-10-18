@@ -78,8 +78,18 @@ describe('NodeSqliteStorage · 专属行为', () => {
     view.close?.();
   });
 
-  it('只读打开不存在的文件 → 抛错（只读宿主不做建库/迁移）', () => {
-    expect(() => createNodeSqliteStorage(join(dir, 'absent.db'), { readOnly: true })).toThrow();
+  it('只读打开不存在的文件 → FILE_NOT_FOUND 专属错误码（只读宿主不做建库/迁移）', () => {
+    const absent = join(dir, 'absent.db');
+    // 判据在错误码上，不在 message 上：宿主靠 code 分支，驱动原文（ERR_SQLITE_ERROR）不构成契约
+    let caught: unknown;
+    try {
+      createNodeSqliteStorage(absent, { readOnly: true });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MemoraError);
+    expect((caught as MemoraError).errorCode).toBe(ToolErrorCode.FILE_NOT_FOUND);
+    expect((caught as MemoraError).detail).toContain(absent);
   });
 
   it('search：LIKE 通配符被转义，% 与 _ 按字面值匹配（不误当模式符）', () => {

@@ -74,6 +74,9 @@ SemVer 定为 major 的依据：**编译期破坏**（删导出 + 删成员 + �
 > 那会和内核并列、漂移后同一份数据搜出两种结果。直接用
 > `createNodeSqliteStorage(dbPath, { readOnly: true })` 拿 `ReadOnlyMemoryStorage`
 > （仅 9 个读方法，写方法在类型上就不存在），见 §5。
+>
+> 注意：只读模式**不建库**——库文件不存在时抛 `MemoraError{ errorCode: FILE_NOT_FOUND }`（5.0.0 起）。
+> 请据此提示用户「先用写宿主打开一次工作区」，**不要**自己 `existsSync` 后再猜（判据散点）。
 
 ### 2.2 内核内部工具，不再对外（能力不需要）
 
