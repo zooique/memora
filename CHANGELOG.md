@@ -48,6 +48,38 @@
 - 术语消歧（防再次误判）：宿主设置面板的「记忆治理」页是**产品概念**（活跃/回收站/来源分布/已被取代数），
   数据全部来自 `agent.memory.*`，与本次退役的内核门面无关——已在 `extension.ts` 就地写明差异。
 
+### 📄 文档与守卫修正（非 Breaking · 2026-10-18 · `DOC-CLAIM-1` / `GUARD-METHOD-1` / `DIST-ORPHAN-1`）
+
+> 本节修的是**「代码已删、文档还在宣称」**这类不改变 API 的伤。发版前必须收口：
+> 5.0.0 的 README 是新用户第一入口，宣称已退役能力等于发版即失信。
+
+- **README 中英 6 处能力宣称收回**（原仍写「语义去重 / 冲突检测」）：
+  「"干净"意味着…」段、能力对比表「✅ 去重+冲突+写时取代」、生态定位护城河论证、架构图节点，
+  中英各 3 处。统一改为「写时取代（`supersededBy` 软指针）」+ 一句「治理只发生在写入那一刻，
+  订阅式事后治理已于 5.0.0 整链退役」。**原同一份 README 内「✅ 去重+冲突」与「已整链退役」自相矛盾。**
+- **模块清单 `module-inventory.md` 3 处幻影行删除**：已删的 `utils/recallDefaults.ts` 仍出现在
+  打磨推荐表、无测试文件清单、L6 成员叙述中。§八 覆盖统计改为**「历史基线 · 已过期，勿引用数字」**
+  ——该表自 2026-08-20 起累计删 7 个源文件从未重算；与其编精确数字，不如明确它不可信。
+- **API 手册补 9 个字段**（面 B 守卫首次运行实测）：`ToolDefinition.readonly` / `diskWrite`、
+  `AgentSearchHit.accessedAt` / `sessionId` / `roundId`、`Memory.materialFingerprint`、
+  `FetchedPage.fetchFailed`、`CodeExecutionOptions.cwd`、`ICodeExecutionProvider.supportedLanguages`。
+  其中 `readonly` 缺失属**功能性**：宿主照手册注册工具会让只读工具在 readonly 模式被误阻。
+  `AgentForkResult` 的展示形态由 `interface`（错）改为 `interface … extends ForkResult`（与源码
+  `type = ForkResult & { roundCount }` 语义等价）。
+- **新增守卫面 B**（`src/__tests__/docInterfaceGuard.test.ts`）：手册 `interface` / `type = {}` 代码块
+  与源码同名声明的成员集双向比对（漏写 + 虚构）。带类型语义处理：方法参数跨行、`extends` 递归展开、
+  交叉类型展开、联合类型跳过（设跳过上限自检）。**首版探针三处假阳性证明「面 B 的成本在类型语义、
+  不在 markdown 解析」**——原按「成本最高」挂起是误判，触发条件（差 ≥ 2 处）实测早已满足（差 9 处）。
+- **面 A 守卫加固**（`src/__tests__/docSurfaceGuard.test.ts`）：原只匹配「表格第一列」，
+  同一清单的推荐表第 2 列 / 散文列表 / 计数行三形态全部逃逸。现改为「文档任意位置的反引号 `.ts` 路径」，
+  历史语境行（`>` 开头 + 补记/已删除等词）豁免；失明自检从「匹配到 N 条」改为反向三条
+  （解析量、豁免不得过半、必须存在非首列被检查项）。变异实证：散文 / 第 2 列两种注入均精确红。
+- **发布流程**：`prepublishOnly` 改 `prepack`。原只挂 `npm publish`，而 `npm pack` 走 `prepack`
+  ⇒ 发版前用 `npm pack` 本地验证会打出**含已退役模块产物**的 tarball（实测 `dist/*.js` 122 个 vs
+  `src/` 非测试 `.ts` 115 个，7 个孤儿，其中一个跨了两轮未发现）。清后精确对齐 115。
+- **报数脚本口径修正**：`scripts/report-surface.mjs --with-tests` 的宿主命令补 `--no-file-parallelism`
+  （原缺，与 `package.json` 的官方串行口径不一致，会踩已知并行假红）。
+
 ### ⚠️ Breaking Removed（内核 · 公开面通用工具 / 重复入口收面 · `PUB-API-PRUNE-1`，2026-10-17）
 
 > **性质**：**非「零引用删除」**——这批符号**内核内部仍在使用**（如 `toError` 内部 96 处），
