@@ -286,6 +286,14 @@
 - ⚠️ **对 4.x 升级者的代价**：12 项均随 4.0.0 已发布，直删使其失去 deprecation 预警期，由
   本条 Breaking 明示——内部消费面为零（宿主经 `@zooique/memora` 包入口零消费已实证），仅
   外部接入者可能受影响；替代路径 = 上述注入接口 / `agent.sessionManager.*` / 纯函数直调。
+  > 🔴 **订正（2026-10-18 实锤，勿再引用上句）**：「宿主零消费已实证」**不成立**。
+  > `hosts/memora-mcp/src/readOnlyFileStore.ts:32`（建于 2026-10-16 `78206a00`）当时就从包入口
+  > import `InMemoryStorage`，比本条收面早一天。当时的证据链是「vscode 宿主 tsc 零错 + 单宿主
+  > grep」，把「宿主」当成了单数；`hosts/memora-mcp` 从不进 tsc 门 ⇒ 漏判。后果 = mcp 编译
+  > `TS2724` + 旧 dist 运行时抛 `does not provide an export named 'InMemoryStorage'`。
+  > 详见 `tasks/审查报告-2026-10-18-内核改动-宿主对齐审查.md` 与台账 `HOST-ALIGN-1`。
+  > **口径提醒**：`scripts/report-surface.mjs:101` 本就扫 `hosts`（复数）——脚本无误，
+  > 错在收面判据未走脚本。禁因本事故改脚本。
 
 ### ⚠️ Breaking Removed（内核 · 收净「切换项目」侧门与三处僵尸出口 · `PR-SWITCH-2` / `PUB-API-PRUNE-4` · 2026-10-18）
 

@@ -68,6 +68,12 @@ SemVer 定为 major 的依据：**编译期破坏**（删导出 + 删成员 + �
 
 > `InMemoryStorage` / `InMemorySessionStore` 的**类本体仍在内核内部使用**，只是不再挂公共面。
 > 如果你之前 `new` 它们当作「默认实现」，现在请显式实现接口——这是有意的边界收紧。
+>
+> ⚠️ **只读容器场景别自己复刻检索语义**：若你原来用 `InMemoryStorage` 只是「装载一份数据 + 借用
+> 内核的分词/排序/软删过滤」（典型 = 只读宿主），**不要**自己写第二套 `Map + 分词 + 排序`——
+> 那会和内核并列、漂移后同一份数据搜出两种结果。直接用
+> `createNodeSqliteStorage(dbPath, { readOnly: true })` 拿 `ReadOnlyMemoryStorage`
+> （仅 9 个读方法，写方法在类型上就不存在），见 §5。
 
 ### 2.2 内核内部工具，不再对外（能力不需要）
 
