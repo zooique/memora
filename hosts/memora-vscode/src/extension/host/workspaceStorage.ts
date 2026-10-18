@@ -177,7 +177,7 @@ export class WorkspaceStorage implements IMemoryStorage {
    * 一次性迁移（设定记忆出口）：把设定记忆存量行（source ∈ persona/rule/skill）软删出记忆库
    *
    * 设定归角色包承载，记忆库单轨只留摘要记忆。存量行按删除语义打
-   * deletedAt——回收站可 restore 兜底，purgeExpired 定期彻底回收（迁移不直删）。
+   * deletedAt——回收站可 restore 兜底，清理由宿主入口显式触发（无自动/周期回收，迁移不直删）。
    * 幂等：已软删行与非退役 source 行不重复标记，二次执行零动作、不重复落盘。
    *
    * @returns 本次软删的行数

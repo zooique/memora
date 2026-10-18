@@ -509,7 +509,7 @@
       </div>
       <div class="mini-card">
         <h4>端口 · 怎么存</h4>
-        <p>内核只定义 <span class="inline-code">IMemoryStorage</span> 接口（CRUD + 关键词搜索 + touch），持久化由宿主注入（VS Code 宿主 = JSON 文件）。软删进回收站，保留期由宿主策略决定（当前 30 天），物理清理须由宿主入口显式触发（无自动清理）。</p>
+        <p>内核只定义 <span class="inline-code">IMemoryStorage</span> 接口（CRUD + 关键词搜索 + touch），持久化由宿主注入（VS Code 宿主 = SQLite，库文件 <span class="inline-code">.memora/memories.db</span>；旧 JSON 仅一次性迁移）。软删进回收站，保留期由宿主策略决定（当前 30 天），物理清理须由宿主入口显式触发（无自动清理）。</p>
       </div>
     </div>
     <span class="src">锚点：src/memory/storageInterface.ts · src/agent/managers/roundSummaryGenerator.ts:1-4 · src/memory/types.ts:36-37</span>

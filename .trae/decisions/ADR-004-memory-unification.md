@@ -29,7 +29,7 @@ v1.0 模型用 `memory_type`（6 枚举）× `permanence`（4 枚举）区分记
 
 > **GAP-6 软删除扩展（2026-07-03）**：新增 `deletedAt` 实现"删除即软删除"——undefined 为活跃，ISO 时间戳为已软删除；召回/搜索自动过滤。`delete()` 改软删除，新增 `purge()` 物理删除。软删除不删向量索引（restore 免重嵌入）。回收站保留 30 天（`recycleBinRetentionDays` 可配，0 禁用），宿主定时 `purgeExpired` 清理。
 >
-> **注记（2026-10-18）**：上句两项与现状不符——① 内核**零定时器**（回收站无自动清理），清理已改由**宿主手动入口**显式触发（`memora.cleanupMemories` 命令 / 设置面板「清理过期」）；② `recycleBinRetentionDays` 已不存在（全库零命中），保留期常量现为宿主 `shared/constants.ts` 的 `MEMORY_RECYCLE_RETENTION_DAYS`（30 天）。历史决策正文按 ADR 纪律「不重写正文、只加注记」保留原样。
+> **注记（2026-10-18）**：上句两项与现状不符——① 回收站**无内核定时清理器**（`purgeExpired` 无自动/周期调用方；注意内核**另有**定时器——`gcService` 的 Round GC、`sessionManager` 的暂停超时——均不涉回收站，勿据此断言「内核零定时器」），清理已改由**宿主手动入口**显式触发（`memora.cleanupMemories` 命令 / 设置面板「清理过期」）；② `recycleBinRetentionDays` 已不存在（全库零命中），保留期常量现为宿主 `shared/constants.ts` 的 `MEMORY_RECYCLE_RETENTION_DAYS`（30 天）。历史决策正文按 ADR 纪律「不重写正文、只加注记」保留原样。
 
 > **GAP-7 content 多用途（2026-07-07）**：`content` 默认 Markdown，但对部分 source 允许 JSON 编码承载元数据（如 `profile` 为 `{category,value}`、`work-projection` 为投影字段），由对应 `parseContentField()` 解码并兼容旧格式降级。避免为每类设计侧车造成过度工程化。
 
