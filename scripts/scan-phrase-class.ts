@@ -116,13 +116,38 @@ interface ScanClass {
   selfTest: readonly SelfCase[];
 }
 
-// 他子系统同名动作的文件面（「自动/定期清理」一词在本仓另有多种正当用法，均非回收站类）
-// 为什么按文件切而不用关键词切：同词异义在本仓是按**子系统边界**分布的（定时器兜底 / 锁 / GC / 构建），
-// 按文件面分类才可复现、可审计；若按「定时器/锁」等词切，会与回收站语境混在一起、判据漂移。
+// 他子系统同名动作的**双层**判据（缺一层即有洞，见下）：
+//   ① 文件面（子系统边界）：「自动/定期清理」在本仓另有多种正当用法（定时器兜底 / 锁 / GC / 构建），
+//      同词异义按**子系统边界**分布，按文件面分类可复现、可审计。
+//   ② 文本面（OFF_CLASS_TEXT_RE）：**仅靠文件面会吞掉「他子系统文件里新写的回收站假话」**（审查发现的结构洞 2）——
+//      如有人在 loop.ts 写「回收站到期自动清理」，会被文件级放行误判为「他子系统」。故另加组合约束。
 const OFF_CLASS_TIMER_RE =
   /^(hosts\/memora-vscode\/src\/(webview\/scripts\/chatView\.ts|extension\/host\/codeExecutor\.ts)|src\/(utils\/(safeTimer\.ts|__tests__\/safeTimer\.test\.ts)|agent\/(agent\.ts|loop\.ts|managers\/(sessionManager\.ts|__tests__\/sessionManager\.test\.ts)|__tests__\/uninterruptedWorkflow\.test\.ts)|llm\/__tests__\/abortSignal\.test\.ts|code-exec\/codeExecutionProvider\.ts))$/;
 const OFF_CLASS_GC_LOCK_RE =
   /^(src\/memory\/(lockManager\.ts|gcService\.ts|__tests__\/(lockManager|projectManager)\.test\.ts)|docs\/architecture\/round-independent-storage-design\.md)$/;
+
+/**
+ * 他子系统同名词形（**正向限定**）：off-class 放行必须命中其一，证明确非回收站语境。
+ * 词形按本仓他子系统实际写法收集（定时器兜底 / 暂停超时 / 锁残留 / Round GC / 构建脚本…）。
+ */
+const OFF_CLASS_MARKER_RE =
+  /定时器|计时器|Timeout|Interval|Timer|注册表|超时|检查点|心跳|兜底|残留|孤儿|锁|引用计数|GC|暂停|unref|abort|dispose|postinstall|ABI/;
+
+/**
+ * 回收站/记忆清理语形（**负向限定**）：off-class 放行**必须不含**这些词——否则他子系统文件里的
+ * 回收站假话会被文件级放行静默吞掉（结构洞 2 的根因）。用前瞻 `(?!…)` 表达「不含」：JS 正则支持前瞻
+ * （rg 的 Rust regex 不支持 —— 这也是本判据用 TS 而非 rg 的实现理由之一）。
+ */
+const RECYCLE_SCOPE_RE =
+  /回收站|软删|deletedAt|purgeExpired|writePurgeExpired|保留期|回收期|MEMORY_RECYCLE/;
+
+/**
+ * off-class 组合文本判据：行须**含他子系统词形 且 不含回收站语形**。
+ * `^(?=.*标记)(?!.*回收站语形)` —— 两者同时满足才判定为「确实的他子系统同名动作」。
+ */
+const OFF_CLASS_TEXT_RE = new RegExp(
+  `^(?=.*(?:${OFF_CLASS_MARKER_RE.source}))(?!.*(?:${RECYCLE_SCOPE_RE.source}))`,
+);
 
 /**
  * 类 1：memory-recycle-cleanup —— 「回收站/记忆清理被自动·周期·定时器驱动」的假话。
@@ -170,19 +195,23 @@ const MEMORY_RECYCLE_CLEANUP: ScanClass = {
     {
       id: 'off-class-timer',
       file: OFF_CLASS_TIMER_RE,
+      text: OFF_CLASS_TEXT_RE,
       reason:
-        '他子系统同名动作：运行时定时器兜底清理 / 暂停超时清理检查点 / 工具等待轮询 / 进程退出兜底，均非回收站类',
+        '他子系统同名动作：运行时定时器兜底清理 / 暂停超时清理检查点 / 工具等待轮询 / 进程退出兜底，均非回收站类（且该行不含回收站语形，见 OFF_CLASS_TEXT_RE）',
     },
     {
       id: 'off-class-gc-lock',
       file: OFF_CLASS_GC_LOCK_RE,
+      text: OFF_CLASS_TEXT_RE,
       reason:
-        '他子系统同名动作：Round GC（引用计数自动清理）/ 残留锁文件清理 / 孤儿对账，均非回收站类',
+        '他子系统同名动作：Round GC（引用计数自动清理）/ 残留锁文件清理 / 孤儿对账，均非回收站类（且该行不含回收站语形）',
     },
     {
       id: 'off-class-build',
       file: /^\.trae\/decisions\/ADR-001-runtime-stack\.md$/,
-      reason: '他子系统同名动作：postinstall 构建脚本清理 ABI 冲突副本，非回收站类',
+      text: OFF_CLASS_TEXT_RE,
+      reason:
+        '他子系统同名动作：postinstall 构建脚本清理 ABI 冲突副本，非回收站类（且该行不含回收站语形）',
     },
     {
       id: 'skills-manual',
@@ -206,6 +235,16 @@ const MEMORY_RECYCLE_CLEANUP: ScanClass = {
     { probe: '30 天自动清理后的孤儿向量', file: 'CHANGELOG.md', hits: 1, classified: true },
     // [D] 普通文本无触发词 → 0 命中（反向护栏：触发词正则过宽会误抓一切文本）
     { probe: '这是一行与短语类无关的普通文本', file: 'src/__probe__.ts', hits: 0 },
+    // [E] 回归护栏（结构洞 2）：回收站假话落在**他子系统文件**里 → 仍须未归类
+    //     （证 off-class 的文件级放行不吞回收站语境；该行含「回收站」⇒ OFF_CLASS_TEXT_RE 负向失败）
+    { probe: '回收站到期自动清理', file: 'src/agent/loop.ts', hits: 2, classified: false },
+    // [F] 反向护栏：**真·他子系统同名动作**（定时器清理检查点）→ 仍须被 off-class 归类
+    {
+      probe: '暂停超时定时器清理检查点并重置状态机',
+      file: 'src/agent/managers/sessionManager.ts',
+      hits: 1,
+      classified: true,
+    },
   ],
 };
 
@@ -324,6 +363,50 @@ function enumerateClass(cls: ScanClass, files: readonly string[]): Hit[] {
   return hits;
 }
 
+/**
+ * 完整性独立复核：**第二遍独立遍历**，只数命中行数（不接触 enumerateClass 的结果数组）。
+ *
+ * 为什么必须：`enumerateClass` 若被人在内部加 `.slice(0, N)`，它返回的数组长度**本身就已是截断后的数**，
+ * 于是「printed === hits.length」恒真（断言与被断言同源）⇒ 本脚本「防静默截断」的承诺落空（结构洞 1）。
+ * 本函数与 enumerateClass 的唯一共享面只有 `files` 与 `scanLine`（判据本身），故任何对**结果数组**的
+ * 截断都会与它不等 → 爆红。**断根工具自己必须防截断**，这是该承诺的闭环。
+ */
+function countMatchLines(cls: ScanClass, files: readonly string[]): number {
+  let n = 0;
+  for (const rel of files) {
+    let text: string;
+    try {
+      text = readFileSync(join(ROOT, rel), 'utf8');
+    } catch {
+      continue; // 与 enumerateClass 同款容错：读不动就跳过，保证两遍扫描文件面一致
+    }
+    for (const line of text.split(/\r?\n/)) {
+      if (scanLine(cls, line).length > 0) n += 1;
+    }
+  }
+  return n;
+}
+
+/**
+ * 完整性断言（结构洞 1 收口）：hits 长度 / 独立复核数 / 实际打印数 三者必须一致。
+ * 任一不等 = 存在截断，直接 exit 2 —— 本脚本存在的理由即防此类静默失效。
+ * @param printed 打印循环实际输出的条数；check 模式不逐条打印，传 hits.length 占位（仅核两路一致）
+ */
+function assertComplete(
+  cls: ScanClass,
+  hits: readonly Hit[],
+  independent: number,
+  printed: number,
+): void {
+  if (hits.length !== independent || hits.length !== printed) {
+    console.error(
+      `\n❌ 完整性断言失败 [${cls.id}]：hits=${hits.length} · 独立复核=${independent} · 打印=${printed}\n` +
+        '   三者不等 = 存在截断（enumerateClass 或打印循环被加了上限）。',
+    );
+    process.exit(2);
+  }
+}
+
 // ─── 输出 ──────────────────────────────────────
 
 /** 打印一个类的枚举结果；返回**实际打印条数**（供主流程硬断言 == hits.length） */
@@ -421,7 +504,10 @@ function main(): void {
   if (argv.includes('--check')) {
     let totalUnclassified = 0;
     for (const cls of selected) {
-      totalUnclassified += printCheck(cls, enumerateClass(cls, files));
+      const hits = enumerateClass(cls, files);
+      // 结构洞 1 收口：门禁模式同样必须先证「枚举完整」，否则「0 未归类」可能是截断后的假象
+      assertComplete(cls, hits, countMatchLines(cls, files), hits.length);
+      totalUnclassified += printCheck(cls, hits);
     }
     if (totalUnclassified > 0) {
       console.log(`\n门禁未通过：合计 ${totalUnclassified} 条未归类命中。`);
@@ -439,11 +525,8 @@ function main(): void {
   for (const cls of selected) {
     const hits = enumerateClass(cls, files);
     const printed = printEnumeration(cls, hits);
-    // 硬断言：打印数必须 == 命中总数 —— 任何未来的 `slice` 截断都会在此爆红（本脚本存在的理由）
-    if (printed !== hits.length) {
-      console.error(`\n❌ 断言失败：打印 ${printed} 条 ≠ 命中 ${hits.length} 条（存在截断）`);
-      process.exit(2);
-    }
+    // 结构洞 1 收口：独立复核数（第二遍遍历）+ 实际打印数 与 hits 长度三方对账 —— 任何截断都爆红
+    assertComplete(cls, hits, countMatchLines(cls, files), printed);
   }
   console.log('');
 }
