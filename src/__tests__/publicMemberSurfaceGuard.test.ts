@@ -203,7 +203,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'get agentHistory',
       'get agentLoop',
       'get context',
-      'get governance',
       'get initialized',
       'get isBusy',
       'get lastInteractionAt',
@@ -494,10 +493,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
     ],
   },
   AgentStats: { kind: 'interface', members: ['bySource', 'total'] },
-  MemoryGovernance: {
-    kind: 'class',
-    members: ['deduplicate', 'detectConflicts', 'sourceHealth', 'suggest'],
-  },
   WorkProjectionEntry: { kind: 'interface', members: ['description', 'name', 'source'] },
   PolishResult: { kind: 'interface', members: ['changed', 'polished'] },
   ProviderConfig: {
@@ -543,7 +538,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'configReloaded',
       'contextCompressed',
       'contextTruncated',
-      'dedupCompleted',
       'inputTooLarge',
       'memoryAdded',
       'memoryRecalled',
@@ -856,7 +850,7 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
   it('扫描面自检：成员面符号量与总导出量非空（防守卫失明假绿）', () => {
     const exportCount = parseIndexExports().length;
     expect(exportCount).toBeGreaterThan(50);
-    expect(Object.keys(actual).length).toBeGreaterThan(80);
+    expect(Object.keys(actual).length).toBeGreaterThan(70);
   });
 
   /**
@@ -872,7 +866,7 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `\nEXPECTED 符号数 = ${count}，与本用例期望不符。\n` +
         `若本次确有增删符号：先在 EXPECTED 表反映差异 + 完成 §3.2.1 定性，再同步本数字；\n` +
         `若未增删：说明改动误触了基线表，撤销。`,
-    ).toBe(81);
+    ).toBe(80);
   });
 
   it('成员面与冻结基线一致（增删即红；红须按 §3.2.1 定性后显式更新 EXPECTED）', () => {
@@ -912,6 +906,15 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `      该返回面不复存在。**推翻留痕、不回改 ④**：决策史按时间顺序保留原貌。\n` +
       `    保留的能力：项目名推断（摘为 projectManager 模块级纯函数 inferProjectName，\n` +
       `      供 ProjectContext.projectName 使用）；项目锁 / 存储编排 / 安全守卫全部不动。\n` +
+      `    代价：4.x 升级者失去 deprecation 预警期，已由 CHANGELOG Breaking 段明示。` +
+      `\n  ⑥ GOVERNANCE-SRC-1 整链退役（2026-10-18 · 用户拍板方案②，非走完 DEPRECATE-1 周期）：\n` +
+      `    MemoryGovernance（类）/ agent.governance（getter）/ AgentEventMap.dedupCompleted 三面同删。\n` +
+      `    判据 = **结构性恒空**，不是「暂时零消费」：门面四方法里 deduplicate / detectConflicts /\n` +
+      `    suggest(undefined) 均逐 GOVERNANCE_SOURCES 取样，而该常量固定为空数组 ⇒ 恒返回空/零报告；\n` +
+      `    唯一有效的 sourceHealth 走 getAllSources()，其信息已由 memory.stats().bySource 覆盖。\n` +
+      `    治理模型现为写时取代（roundSummaryGenerator 的 supersedeSimilar + supersededBy 软指针）。\n` +
+      `    连带拆除：MemoryAdvisor / DedupManager / GOVERNANCE_SOURCES / llmJudgeHelper /\n` +
+      `      recallDefaults / 宿主 suggestions 通道（原恒早退，用户从未见过）。\n` +
       `    代价：4.x 升级者失去 deprecation 预警期，已由 CHANGELOG Breaking 段明示。`;
     expect(
       issues,

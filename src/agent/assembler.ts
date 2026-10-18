@@ -21,10 +21,6 @@ import { SkillManager } from '@/skill/skillManager.js';
 import { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
-// DedupManager 在组合根装配，承担 L1 语义去重
-import { DedupManager } from '@/agent/managers/dedupManager.js';
-// MemoryAdvisor 在组合根装配，注入 MemoryInspector（组合根一致性）
-import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 import { SessionManager } from '@/agent/managers/sessionManager.js';
@@ -305,7 +301,7 @@ type LoopAndDepsParams = Pick<
  *
  * 同 LoopAndDepsParams（收敛的第二半）。
  */
-type LoopDependentParams = Pick<AssembleInput, 'backgroundProvider' | 'hooks'> & {
+type LoopDependentParams = {
   pctx: ProjectContext;
   loop: AgentLoop;
   history: MessageHistory;
@@ -319,20 +315,6 @@ export interface AssembleOutput {
   workProjection: WorkProjectionManager;
   skillManager: SkillManager;
   memoryInspector: MemoryInspector;
-  /**
-   * 语义去重管理器（L1 LLM 记忆治理）
-   *
-   * 承担 deduplicateMemories 职责，MemoryInspector 回归纯存储读写。
-   * Agent.deduplicateMemories() 委托本对象。
-   */
-  dedupManager: DedupManager;
-  /**
-   * 记忆顾问（L3 冲突检测 / sourceHealth / suggest）
-   *
-   * Agent.detectConflicts 直接调用 advisor，不再经 MemoryInspector 转发。
-   * assembler 显式返回 advisor 供 Agent 持有。
-   */
-  memoryAdvisor: MemoryAdvisor;
   /** 会话归档器（负责生成/更新 SessionMeta） */
   sessionArchiver: SessionArchiver;
   /** 文本润色管理器（LLM 语法修正 + 表达优化） */
@@ -354,7 +336,7 @@ export interface AssembleOutput {
  *   1. 无依赖组件：history, workProjection, toolExec
  *   2. 依赖 Provider 的组件：skillManager, rolePackManager
  *   3. AgentLoop（依赖 toolExec + systemPromptPrefix）
- *   4. 依赖 Loop 的组件：memoryAdvisor, memoryInspector, dedupManager
+ *   4. 依赖 Loop 的组件：memoryInspector
  *
  * @param pctx 项目上下文
  * @param input 组装参数
@@ -712,18 +694,14 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
  * 创建依赖 Loop 的组件
  */
 function createLoopDependentComponents(params: LoopDependentParams) {
-  const { pctx, loop, history, backgroundProvider, hooks } = params;
+  const { pctx, loop, history } = params;
 
+  // 删后注记（2026-10-18 · GOVERNANCE-SRC-1 方案②）：此处曾装配 MemoryAdvisor +
+  // DedupManager 并 emit dedupCompleted 事件。两者唯一消费方是已退役的 MemoryGovernance
+  // 门面，且其取样源 GOVERNANCE_SOURCES 恒为空 ⇒ 拆后无能力损失。勿加回。
   const memoryInspector = new MemoryInspector(pctx.index, loop, history);
-  const memoryAdvisor = new MemoryAdvisor(pctx.index, backgroundProvider ?? null);
-  const dedupManager = new DedupManager(pctx.index, backgroundProvider ?? null, (report) => {
-    hooks?.emit(AGENT_EVENTS.dedupCompleted, {
-      deduplicatedCount: report.deduplicatedCount,
-      demotedIds: report.demotedIds,
-    });
-  });
 
-  return { memoryAdvisor, memoryInspector, dedupManager };
+  return { memoryInspector };
 }
 
 // ── 主组装函数 ─────────────────────────────────────────────
@@ -1004,12 +982,10 @@ export async function assembleComponents(
 
   // ── 依赖 Loop 的组件 ──
 
-  const { memoryAdvisor, memoryInspector, dedupManager } = createLoopDependentComponents({
+  const { memoryInspector } = createLoopDependentComponents({
     pctx,
     loop,
     history,
-    backgroundProvider,
-    hooks,
   });
 
   // 绑定记忆写入回调：round-summary 沉淀后广播 memoryAdded 事件
@@ -1053,8 +1029,6 @@ export async function assembleComponents(
     workProjection,
     skillManager,
     memoryInspector,
-    dedupManager,
-    memoryAdvisor,
     sessionArchiver,
     textPolisher,
     rolePackManager,

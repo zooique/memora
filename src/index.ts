@@ -69,7 +69,6 @@ export type {
   AgentSearchHit,
   AgentStats,
 } from '@/agent/managers/memoryInspector.js';
-export { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 // 作品投影只出类型不出类：Manager 为 Agent 实例级组件（宿主经 agent.workProjection 访问器消费），
 // 出类会引导宿主绕过 Agent 生命周期自建实例
 export type { WorkProjectionEntry } from '@/agent/managers/workProjection.js';

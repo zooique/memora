@@ -168,8 +168,6 @@ describe('assembleComponents', () => {
         'workProjection',
         'skillManager',
         'memoryInspector',
-        'dedupManager',
-        'memoryAdvisor',
         'roundSummaryGenerator',
         'sessionArchiver',
         'textPolisher',
@@ -189,8 +187,6 @@ describe('assembleComponents', () => {
       expect(output.workProjection).toBeDefined();
       expect(output.skillManager).toBeDefined();
       expect(output.memoryInspector).toBeDefined();
-      expect(output.memoryAdvisor).toBeDefined();
-      expect(output.dedupManager).toBeDefined();
       expect(output.rolePackManager).toBeDefined();
       expect(output.sessionManager).toBeDefined();
     });

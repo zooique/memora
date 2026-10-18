@@ -33,8 +33,6 @@ import type { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
-import type { DedupManager } from '@/agent/managers/dedupManager.js';
-import type { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { createDefaultGCService, type GCService, type GCResult } from '@/memory/gcService.js';
 import {
   assembleComponents,
@@ -56,7 +54,6 @@ import { toError } from '@/utils/toError.js';
 // SessionManager 实例由组装器创建，Agent 仅持有类型引用
 import type { SessionManager, AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
-import { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 import {
   ArchiveCoordinator,
   type ArchiveTriggerOptions,
@@ -108,8 +105,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // 拆分出的专职 Manager
   private memoryInspector: MemoryInspector | null = null;
-  /** 记忆治理统一门面（L0/L1/L2/L3 + 诊断） */
-  private _governance: MemoryGovernance | null = null;
   /** TextPolishManager（文本润色管理器，LLM 语法修正 + 表达优化） */
   private textPolisher: TextPolishManager | null = null;
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
@@ -123,10 +118,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 减少门面扁平字段数；宿主 getter 契约字段（memory/works/polish 等）不在此列。
    */
   private internals: {
-    /** 语义去重管理器（L1 LLM 记忆治理，从 MemoryInspector 拆出，令其回归纯存储读写） */
-    dedupManager: DedupManager | null;
-    /** 记忆顾问（L3 冲突检测 / sourceHealth / suggest，经 governance 门面统一暴露） */
-    memoryAdvisor: MemoryAdvisor | null;
     /** SessionArchiver（会话归档器，负责生成/更新 SessionMeta） */
     sessionArchiver: SessionArchiver | null;
     /** 会话命名器（新建会话首次问答自动命名标题） */
@@ -148,8 +139,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     /** 孤儿 Round 垃圾回收服务（引用计数归零 + 超龄才清理，init 时启动周期任务、close 时停止） */
     gcService: GCService | null;
   } = {
-    dedupManager: null,
-    memoryAdvisor: null,
     sessionArchiver: null,
     sessionNamer: null,
     roundSummaryGenerator: null,
@@ -445,12 +434,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         this.emit(AGENT_EVENTS.sessionTitleUpdated, { sessionId, title });
       },
     });
-
-    // 记忆治理统一门面（去重 / 冲突 / 诊断）
-    this._governance = new MemoryGovernance(
-      this.internals.dedupManager,
-      this.internals.memoryAdvisor,
-    );
 
     // 种子 turn 编排器（turn 唯一编排真理源）：依赖 sessionManager/loop/history 等
     // 均已就绪（assembleComponents 已完成 + sessionNamer 本方法前段创建），在此构造一次。
@@ -1332,8 +1315,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.emit(AGENT_EVENTS.rolePackSwitchLocked, { reason, lockedSeconds });
     });
     this.memoryInspector = result.memoryInspector;
-    this.internals.dedupManager = result.dedupManager;
-    this.internals.memoryAdvisor = result.memoryAdvisor;
     this.workProjection = result.workProjection;
     this.internals.sessionArchiver = result.sessionArchiver;
     this.textPolisher = result.textPolisher;
@@ -1898,7 +1879,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.skillManager = null;
     this._rolePackManager = null;
     this.memoryInspector = null;
-    this._governance = null;
     this.workProjection = null;
     this.textPolisher = null;
     this._sessionManager = null;
@@ -1906,8 +1886,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.pctx = null;
     // 纯内部组件聚合整体置 null（新增内部组件只需在字段声明与 createPostInitComponents 登记）
     this.internals = {
-      dedupManager: null,
-      memoryAdvisor: null,
       sessionArchiver: null,
       sessionNamer: null,
       roundSummaryGenerator: null,
@@ -1977,10 +1955,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this._lastInteractionAt;
   }
 
-  /** 记忆治理统一门面（语义去重 / 来源健康诊断 / 冲突检测 / 建议推荐），Agent 上的记忆管理方法统一收口于此（无显式衰减层面） */
-  get governance(): MemoryGovernance | null {
-    return this._governance;
-  }
+  // 删后注记（2026-10-18 · 5.0.0，批次 GOVERNANCE-SRC-1 方案②「整链退役」，用户拍板）：
+  // 曾有公开 getter `governance`（MemoryGovernance 门面：deduplicate / detectConflicts /
+  // sourceHealth / suggest）。退役理由 = **结构性恒空**，非「暂时没人用」：四个方法里三个
+  // 逐 `GOVERNANCE_SOURCES` 取样，而该常量自「设定记忆归角色包」后固定为空数组 ⇒
+  // deduplicate 恒 0 条 / detectConflicts 恒 skippedReason / suggest(undefined) 恒 []；
+  // 仅 sourceHealth 走 getAllSources() 有效，而其信息已由 `memory.stats().bySource` 覆盖。
+  // 治理模型现为写时取代（roundSummaryGenerator 的 supersedeSimilar + supersededBy）。
+  // 连带拆除：MemoryAdvisor / DedupManager / GOVERNANCE_SOURCES / llmJudgeHelper /
+  // recallDefaults / dedupCompleted 事件 + 宿主 suggestions 通道。勿加回。
 
   // ─── 运行时指标 ────────────────────────────────
 

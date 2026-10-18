@@ -35,7 +35,6 @@ export const AGENT_EVENTS = {
   archiveModeChanged: 'archiveModeChanged',
   rolePackSwitchLocked: 'rolePackSwitchLocked',
   workProjectionGenerated: 'workProjectionGenerated',
-  dedupCompleted: 'dedupCompleted',
   sessionPauseTimedOut: 'sessionPauseTimedOut',
   sessionResumeBlocked: 'sessionResumeBlocked',
   /** 订阅时宿主据此判断重要事件并 toast 提示 */
@@ -111,7 +110,6 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   archiveModeChanged: { from: string; to: string };
   rolePackSwitchLocked: { reason: string; lockedSeconds: number };
   workProjectionGenerated: { sourcePath: string; summary: string };
-  dedupCompleted: { deduplicatedCount: number; demotedIds: string[] };
   sessionPauseTimedOut: {
     sessionId: string;
     pauseDuration: number;
