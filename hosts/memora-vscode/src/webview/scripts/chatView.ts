@@ -6410,9 +6410,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /** 渲染单条历史会话条目（treedd__item 富内容：标题 + 时间/计数 + 归档 + 删除） */
-  function renderHistoryItem(
-    s: (typeof lastSessionList)[number],
-  ): void {
+  function renderHistoryItem(s: (typeof lastSessionList)[number]): void {
     const item = document.createElement('button');
     item.className = 'treedd__item';
     item.dataset.treeddId = s.sessionId; // treedd 选择委托据此回调 __historyOnSelect
@@ -6442,11 +6440,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       sessionListView === 'archived' ? '移回会话记录' : '移入留存区（内容不丢，只是换个位置）';
     keepBtn.setAttribute('role', 'button');
     keepBtn.setAttribute('aria-label', keepBtn.title);
-    keepBtn.innerHTML = getIconSvg(
-      sessionListView === 'archived' ? 'restore' : 'archive',
-      14,
-      14,
-    );
+    keepBtn.innerHTML = getIconSvg(sessionListView === 'archived' ? 'restore' : 'archive', 14, 14);
     keepBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       vscode.postMessage({

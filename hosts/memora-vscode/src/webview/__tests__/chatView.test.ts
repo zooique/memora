@@ -3815,7 +3815,10 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     });
     const heads = [...document.querySelectorAll('#historyMenu .session-history__date-group')];
     // 两个日期 → 两个组头；组间降序（ISO 日期字符串可直接比较，与 updatedAt 降序同向）
-    expect(heads.map((h) => h.textContent)).toEqual(['2026-08-15 · 1 条会话', '2026-08-14 · 2 条会话']);
+    expect(heads.map((h) => h.textContent)).toEqual([
+      '2026-08-15 · 1 条会话',
+      '2026-08-14 · 2 条会话',
+    ]);
     // 组内保留下发顺序：新日期组的条目在前，旧日期组内两条按原序
     const items = [...document.querySelectorAll('#historyMenu .treedd__item')];
     expect(items.map((i) => (i as HTMLElement).dataset.treeddId)).toEqual([
