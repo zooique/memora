@@ -1214,6 +1214,18 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'archive_mode_status'; mode: ArchiveMode }
   /**
+   * 会话归档模式**运行时**真值推送（chat webview「移入留存区」按钮文案的回显真源）
+   *
+   * 与上方 `archive_mode_status`（**持久偏好**，设置面板下拉用）**刻意分开，不可复用**：
+   * 偏好保存后运行时可能顺延未生效（内核 assertNotBusy 拒切 → 轮终补执行），两者此刻不同值；
+   * 按钮文案必须反映**点击时真实发生什么**（运行时），用偏好值会在顺延窗口内说谎
+   * （文案说「归档并留存」、点击却只留存）。
+   *
+   * 推送时机：chat webview ready + `archiveModeChanged` 事件（内核 setArchiveMode 成功）。
+   * 真源 = `agent.getArchiveMode()`（宿主不维护副本镜像）。
+   */
+  | { type: 'chat_archive_mode'; mode: ArchiveMode }
+  /**
    * 自定义搜索引擎清单推送（设置面板加载时先于 search_engine_status 推送当前配置，
    * 供 webview 渲染下拉选项与编辑器）
    */

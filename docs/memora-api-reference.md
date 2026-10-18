@@ -1033,6 +1033,12 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 记忆治理 | ~~经治理门面暴露~~ **该组方法已于 2026-10-18（5.0.0）整链退役**，理由为结构性恒空；`sourceHealth()` 的等价替代 = `agent.memory.stats().bySource`（见 §四 注记） |
 | 指标 | `getMetrics()` |
 
+> **手动归档触发选项**（`archiveSession(date, session, options?)`，2026-10-19 起）：
+> `options.autoTriggered`（系统自动触发；受 `archiveMode` 门控）+ `options.skipIfUnchanged`
+> （防重：距上次**实际完成归档**消息数未变则跳过 LLM。**缺省随 `autoTriggered`**——自动=防重、
+> 手动=无条件；显式传 `true` = 便捷手势也防重；显式 `false` = 强制重归档）。判据本体在
+> `SessionArchiver`（单点），协调器只转发意图。
+
 ### Agent 面类只读访问器
 
 `initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory` / `projects` / `security` / `sessionManager` / `rolePack` / `tools` / `skills` / `memory` / `works` / `polish`

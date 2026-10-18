@@ -3737,6 +3737,77 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     void postMessage;
   });
 
+  it('留存按钮文案随归档模式运行时真值：manual 模式说全「归档并留存」（不瞒报 LLM 调用）', () => {
+    mountChatView();
+    // 运行时真值后到/先到都成立（按钮文案只读 currentArchiveMode，与列表下发顺序无关）
+    dispatch({ type: 'chat_archive_mode', mode: 'manual' });
+    dispatch({
+      type: 'session_list_data',
+      sessions: [
+        { sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() },
+      ],
+      archivedIds: [],
+    });
+    const keep = document.querySelector(
+      '#historyMenu .session-history__item-keep',
+    ) as HTMLElement | null;
+    expect(keep?.title).toBe('归档并留存：生成会话摘要并移入留存区（内容不丢，只是换个位置）');
+    // aria-label 与 title 同源（无障碍面不得分叉）
+    expect(keep?.getAttribute('aria-label')).toBe(keep?.title);
+  });
+
+  it('full 模式（含未收推送的缺省）：留存按钮文案与改动前一字不差', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [
+        { sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() },
+      ],
+      archivedIds: [],
+    });
+    const keep = document.querySelector(
+      '#historyMenu .session-history__item-keep',
+    ) as HTMLElement | null;
+    expect(keep?.title).toBe('移入留存区（内容不丢，只是换个位置）');
+  });
+
+  it('模式后到（列表先渲染、chat_archive_mode 后收）→ 就地重渲染，按钮文案跟着变', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [
+        { sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() },
+      ],
+      archivedIds: [],
+    });
+    const before = document.querySelector(
+      '#historyMenu .session-history__item-keep',
+    ) as HTMLElement | null;
+    expect(before?.title).toBe('移入留存区（内容不丢，只是换个位置）');
+    dispatch({ type: 'chat_archive_mode', mode: 'manual' });
+    const after = document.querySelector(
+      '#historyMenu .session-history__item-keep',
+    ) as HTMLElement | null;
+    expect(after?.title).toContain('归档并留存');
+  });
+
+  it('留存区视图下按钮为「移回会话记录」，不受归档模式影响', () => {
+    mountChatView();
+    dispatch({ type: 'chat_archive_mode', mode: 'manual' });
+    dispatch({
+      type: 'session_list_data',
+      sessions: [
+        { sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() },
+      ],
+      archivedIds: ['2026-08-15-s1'],
+    });
+    (document.getElementById('historyTabArchived') as HTMLElement).click();
+    const keep = document.querySelector(
+      '#historyMenu .session-history__item-keep',
+    ) as HTMLElement | null;
+    expect(keep?.title).toBe('移回会话记录');
+  });
+
   it('历史条目悬停 title 载摘要：keyTopics + summary（超 100 字截断以…收尾）', () => {
     mountChatView();
     const longSummary = '长'.repeat(120);

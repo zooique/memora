@@ -1360,13 +1360,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
   };
 
-  /** archiveModeChanged：归档模式切换 */
+  /**
+   * archiveModeChanged：归档模式切换（内核 setArchiveMode **成功**才发 ⇒ 即运行时真值已变）
+   *
+   * 顺带把运行时真值推给 chat webview：留存按钮文案随之切换（manual 模式按钮兼做归档触发）。
+   * 拒切（busy）不发本事件 ⇒ 偏好已存而运行时未生效的窗口内，文案保持旧值——**如实**，
+   * 与「点击时真实发生什么」一致（偏好改了但按钮还按 full 行事，就该显示 full 的文案）。
+   */
   private readonly onArchiveModeChanged = (info: { from: string; to: string }): void => {
     this.post({
       type: 'notice',
       level: 'info',
       message: `归档模式已切换：${info.from} → ${info.to}`,
     });
+    this.pushArchiveModeRuntime();
   };
 
   /**
@@ -1793,6 +1800,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *   ③ **给可见反馈**：改位是不可见的动作，没有反馈用户不知道发生了什么（静默改位 =
    *      「点了没反应」的观感）。
    *
+   * **manual 模式顺带触发会话归档**（用户拍板嫁接 · 2026-10-19）：`archiveMode = manual`
+   * 时自动归档被内核关掉（离场不生成摘要），设置的承诺「仅手动触发时生成」需要宿主给入口——
+   * 嫁接到本按钮（用户「这个会话我处理完了」的既有手势），衔接见 `triggerManualArchive`。
+   *
    * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
    */
   private handleArchiveSession(sessionId: string): void {
@@ -1806,12 +1817,70 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'notice', level: 'info', message: '该会话已在留存区' });
       return;
     }
+    // manual 模式顺带触发会话归档（fire-and-forget，成败走既有事件；full 模式零动作）
+    const archiveTriggered = this.triggerManualArchive(sessionId);
     this.post({
       type: 'notice',
       level: 'info',
-      message: '已移入留存区（会话内容保留，可随时移回）',
+      // 触发了才提摘要：未触发（full 模式）时文案与改动前**一字不差**（不打扰既有用户）
+      message: archiveTriggered
+        ? '已移入留存区 · 已顺带请求会话摘要更新（内容未变则跳过）'
+        : '已移入留存区（会话内容保留，可随时移回）',
     });
     this.pushSessionList();
+  }
+
+  /**
+   * manual 模式下「移入留存区」顺带触发会话归档（用户拍板嫁接 · 2026-10-19）
+   *
+   * 四条定案（改前必读，均属判据/边界，勿顺手改）：
+   *   ① **模式门控**：仅 `archiveMode === 'manual'` 触发。full 模式零动作——自动归档已在离场
+   *      时跑过，再点按钮重复调 LLM 等于给既有用户加成本与时延（**带伤**，不做）。
+   *   ② **防重判据不在宿主**：传 `{ skipIfUnchanged: true }` 交内核 `SessionArchiver`
+   *      单点判断（消息数快照）。宿主**不**自查「summary 是否存在」——那判据更粗，会把
+   *      「归档后又聊了新内容、本该刷新」的摘要永久挡掉（防重 ≠ 防更新）。
+   *   ③ **fire-and-forget**：成败走既有 `sessionArchived`（重拉列表 → 悬停 tooltip 落摘要）
+   *      / `archiveFailed`（notice）事件，不阻塞点击；防重跳过 = 静默（无浪费亦无噪音）。
+   *   ④ **重复点击到不了这里**：留存幂等（`sessionStore.archiveSession` 返回 false）已在
+   *      调用方早退；「移出再移入」由 ② 的快照挡住。
+   *
+   * 术语：本文件的「留存」= 视图分组标记（本地/可逆/不动数据）；「归档」= 会话摘要生成
+   * （LLM/可失败/写 SessionMeta）。二者**同词不同义**，注释与文案不得混用。
+   *
+   * @returns 是否触发了归档（false = full 模式 / Agent 未就绪 / 会话标识非法）
+   */
+  private triggerManualArchive(sessionId: string): boolean {
+    const agent = this._agent;
+    if (!agent) return false; // Agent 未装配：无运行时可触发（留存照常生效，文案不提摘要）
+    if (agent.getArchiveMode() !== 'manual') return false;
+    const { date, session } = splitSessionId(sessionId);
+    if (!date || !session) return false;
+    void agent.archiveSession(date, session, { skipIfUnchanged: true }).catch((err) => {
+      // 内核 ArchiveCoordinator 已吞掉归档内部异常并发 archiveFailed 事件；此处兜的是
+      // 更外层的失败（如 Agent 未初始化时 assertInitialized 抛错）——不藏错，给用户可见提示
+      console.warn('Memora 手动归档触发失败', err);
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: '会话摘要归档失败：Agent 未就绪',
+      });
+    });
+    return true;
+  }
+
+  /**
+   * 推送归档模式**运行时**真值给 chat webview（`chat_archive_mode`）
+   *
+   * 与设置面板的 `archive_mode_status`（**持久偏好**）刻意分开：偏好保存后运行时可能顺延
+   * 未生效（内核 busy 拒切 → 轮终补执行），按钮文案若读偏好会在顺延窗口内说谎。
+   *
+   * 真源 = `agent.getArchiveMode()`（宿主不维护镜像副本）。Agent 未装配时**不推送**——
+   * 运行时真值此刻不存在，推送任何值都是编造（webview 维持初值 'full' = 内核缺省）。
+   */
+  private pushArchiveModeRuntime(): void {
+    const agent = this._agent;
+    if (!agent) return;
+    this.post({ type: 'chat_archive_mode', mode: agent.getArchiveMode() });
   }
 
   /**
@@ -2173,6 +2242,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     //    收到过该消息 ⇒ 条凭空消失，而进程还在跑、用户看不到也砍不掉。
     //    **必须走 'force' 绕签名去重**（签名跨重建残留）。
     this.postBackgroundTasks('force');
+    // ⑥ 归档模式运行时真值补推：与 ④⑤ 同型的时间面漏面——该值平时只由 archiveModeChanged
+    //    事件驱动（切换才推），面板重开时新 webview 从未收到 ⇒ 留存按钮文案退回初值 'full'，
+    //    在 manual 模式下会漏说「顺带归档」这一层（用户点了才发现多做了事）。
+    this.pushArchiveModeRuntime();
     // 角色 handoff 预填补发：视图解析后 webview 监听器已就绪，安全投递
     if (this._pendingPrefill !== undefined) {
       this.post({ type: 'prefill_input', text: this._pendingPrefill });

@@ -3,7 +3,8 @@
  * （成功且 updatedFields 非空 → sessionArchived；异常 → archiveFailed）。
  * 归档=更新 SessionMeta（summary/keyTopics/autoName），仅用于搜索索引，不进记忆召回。
  * 自动触发源（均经本类 archiveSession，autoTriggered: true）：会话切走 / 分叉离场 / 暂停超时；
- * 手动触发（Agent.archiveSession）不受 archiveMode 门控。
+ * 手动触发（Agent.archiveSession）不受 archiveMode 门控；手动亦可显式传 `skipIfUnchanged: true`
+ * 享同一防重判据（宿主「移入留存区」等便捷手势，见 ArchiveTriggerOptions 注释）。
  */
 
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
@@ -31,6 +32,16 @@ export interface ArchiveCoordinatorOptions {
 export interface ArchiveTriggerOptions {
   /** 系统自动触发（默认 false=手动触发，不受模式限制） */
   autoTriggered?: boolean;
+  /**
+   * 防重：内容未变（消息数同上次**实际完成归档**）则跳过 LLM 调用。
+   *
+   * **缺省随 `autoTriggered`**（自动=防重、手动=无条件零开销重归档，既有语义不动）；
+   * 显式传 true = 便捷手势也要防重（宿主「移入留存区」顺带归档：未变则跳、变了才刷新）；
+   * 显式 false = 强制重新归档（自动触发下亦可）。
+   *
+   * 判据本体在 `SessionArchiver.lastArchivedMessageCount`（**单点**，本类只转发意图，不复制判据）。
+   */
+  skipIfUnchanged?: boolean;
 }
 
 export class ArchiveCoordinator {
@@ -53,9 +64,10 @@ export class ArchiveCoordinator {
   }
 
   /**
-   * 归档会话。模式判断：自动触发+manual→跳过；自动+auto→执行；手动触发→无条件执行。
+   * 归档会话。模式判断：自动触发+manual→跳过；自动+auto→执行；手动触发→无条件执行
+   * （不受模式门控；是否防重由 `skipIfUnchanged` 单独表达，见该字段注释）。
    * 异常 catch 后发射 archiveFailed 事件并返回空降级结果，保证调用方不中断主流程。
-   * @returns updatedFields 可能为空（无归档价值或 LLM 失败）
+   * @returns updatedFields 可能为空（防重跳过 / 无归档价值 / LLM 失败三者同为空数组）
    */
   async archiveSession(
     date: string,
@@ -75,10 +87,15 @@ export class ArchiveCoordinator {
       return { updatedFields: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
     try {
-      // 调用形态即语义：自动触发带防重（内容未变不重复调 LLM）；手动触发零选项（无条件重新归档）
-      const result = options?.autoTriggered
-        ? await sessionArchiver.archiveSession(date, session, { skipIfUnchanged: true })
-        : await sessionArchiver.archiveSession(date, session);
+      // 防重意图显式化：显式 skipIfUnchanged 优先，否则随 autoTriggered（自动带防重、手动无条件
+      // ——既有语义一行不差）。宿主「便捷手势」传 { skipIfUnchanged: true } 即可在**不被模式门控**
+      // 的前提下享同一防重判据（防重判据本体仍在 SessionArchiver，本类只转发意图）。
+      // 无意图（undefined）时保持原有「零选项」委托形态，不无谓改动既有调用面。
+      const skipIfUnchanged = options?.skipIfUnchanged ?? options?.autoTriggered;
+      const result =
+        skipIfUnchanged === undefined
+          ? await sessionArchiver.archiveSession(date, session)
+          : await sessionArchiver.archiveSession(date, session, { skipIfUnchanged });
       // 归档写入成功（有字段落库）→ 发射 sessionArchived：宿主据此重拉会话列表。
       // 缺此信号则切走时的列表快照永远拿不到异步完成的 summary/keyTopics（tooltip 恒空）；
       // 防重跳过 / LLM 判无价值（updatedFields 空）不发，避免宿主做无意义的全量重拉。

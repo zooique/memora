@@ -290,4 +290,47 @@ describe('ArchiveCoordinator', () => {
       expect(sessionArchiver.archiveSession).toHaveBeenCalled();
     });
   });
+
+  // ─── skipIfUnchanged 防重意图显式化（宿主「移入留存区」便捷手势 · 2026-10-19） ───
+  //
+  // 判据本体在 SessionArchiver.lastArchivedMessageCount（单点）；本类只负责**转发意图**——
+  // 故此处断言的是「透传形态」，不是「跳没跳」（跳不跳归 sessionArchiver 的用例）。
+  describe('skipIfUnchanged 防重意图透传', () => {
+    it('手动触发 + { skipIfUnchanged: true } → 透传 true 且**不受 manual 模式门控**（宿主手势关键路径）', async () => {
+      const sessionArchiver = createMockSessionArchiver({
+        updatedFields: ['summary'],
+        sessionLabel: '2026-07-04-s-1',
+        messageCount: 5,
+      });
+      const coordinator = createCoordinator(emitSpy, sessionArchiver, 'manual');
+
+      const result = await coordinator.archiveSession('2026-07-04', 's-1', {
+        skipIfUnchanged: true,
+      });
+
+      // 无 autoTriggered ⇒ 不走模式门控（manual 模式下仍执行，否则宿主手势在 manual 模式永不起作用）
+      expect(result.updatedFields).toHaveLength(1);
+      expect(sessionArchiver.archiveSession).toHaveBeenCalledWith('2026-07-04', 's-1', {
+        skipIfUnchanged: true,
+      });
+    });
+
+    it('自动触发 + 显式 skipIfUnchanged: false → 透传 false（强制重归档通道保留）', async () => {
+      const sessionArchiver = createMockSessionArchiver({
+        updatedFields: ['summary'],
+        sessionLabel: '2026-07-04-s-1',
+        messageCount: 5,
+      });
+      const coordinator = createCoordinator(emitSpy, sessionArchiver, 'full');
+
+      await coordinator.archiveSession('2026-07-04', 's-1', {
+        autoTriggered: true,
+        skipIfUnchanged: false,
+      });
+
+      expect(sessionArchiver.archiveSession).toHaveBeenCalledWith('2026-07-04', 's-1', {
+        skipIfUnchanged: false,
+      });
+    });
+  });
 });

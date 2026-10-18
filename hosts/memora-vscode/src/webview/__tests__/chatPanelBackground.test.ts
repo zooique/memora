@@ -80,6 +80,11 @@ function backgroundAgentStub(initial: BackgroundTask[] = [taskWithResult()]) {
       handlers.set(event, list);
     },
     off: vi.fn((event: string) => handlers.set(event, [])),
+    // 归档模式运行时真值读取口（handleWebviewReady → pushArchiveModeRuntime 消费，2026-10-19）：
+    // 真实 Agent 必有此公开方法（publicMemberSurfaceGuard 冻结），替身缺方法会让 ready 链路
+    // 抛 TypeError。**不**在生产代码用 `?.()` 兜此类缺口——那是给替身违约打掩护，
+    // 把真实契约缺口藏进 optional 链（本文件 on/off 转发同款约定）。
+    getArchiveMode: () => 'full',
   } as unknown as Agent;
   return { agent, listBackgroundTasks, killBackgroundTask, settle, onCalls, handlers };
 }

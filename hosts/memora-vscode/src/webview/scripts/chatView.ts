@@ -17,7 +17,8 @@ import type {
   BackgroundTaskView,
 } from '../../shared/protocol.js';
 // ProcessThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
-import type { ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
+// ArchiveMode 纯类型导入（同 ProcessEvent）：仅编译期用，esbuild 剥离，不引入运行时依赖
+import type { ArchiveMode, ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
 // 错误文案映射单一真理源（与 Node 侧 chatPanel 实时提示条共用，防文案双源漂移）
 import { friendlyErrorMessage } from '../../shared/errorText.js';
 // 输入长度上限（INPUT-LIMIT-1）：值真源 = shared/constants.ts，两侧输入口同源消费
@@ -5821,6 +5822,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'session_list_data') {
       // 历史会话列表：渲染到 treedd 历史下拉菜单（全量 + 留存区标记，前端过滤分两组）
       renderHistoryMenu(msg.sessions, msg.archivedIds ?? []);
+    } else if (msg.type === 'chat_archive_mode') {
+      // 归档模式运行时真值：只驱动留存按钮文案（manual 模式按钮兼做归档触发）。
+      // 已渲染则就地重渲染（按钮 title/aria 由 currentArchiveMode 派生，无数据时不重建空菜单）。
+      currentArchiveMode = msg.mode;
+      if (lastSessionList.length > 0) renderHistoryMenu(lastSessionList, lastArchivedIds);
     } else if (msg.type === 'chat_providers') {
       currentProviders = msg.providers || [];
       currentActive = msg.activeName;
@@ -6268,6 +6274,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }[] = [];
   /** 最近一次下发的留存区标记（**单一真源**：分组归属只认它） */
   let lastArchivedIds: string[] = [];
+  /**
+   * 会话归档模式**运行时**真值（回显源 = host 推送的 `chat_archive_mode`，初值 'full' = 内核缺省）。
+   *
+   * 只用于**留存按钮文案**（manual 模式按钮兼做归档触发 ⇒ 文案必须说清做了两件事）。
+   * ⚠️ 不可改用持久偏好值：偏好保存后运行时可能顺延未生效，文案会在顺延窗口内说谎。
+   */
+  let currentArchiveMode: ArchiveMode = 'full';
 
   /**
    * 渲染历史菜单（对 session_list_data 的应答）：复用 treedd 组件——
@@ -6403,8 +6416,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 用 span 而非 button：treedd__item 本身是 button，HTML 规范 button 内不可嵌套 button
     const keepBtn = document.createElement('span');
     keepBtn.className = 'session-history__item-keep';
+    // 文案随归档模式：manual 模式下本按钮**兼做归档触发**（顺带生成会话摘要），
+    // 文案必须说全两件事——只写「移入留存区」等于瞒报了一次 LLM 调用（本项目禁 UI 说谎）。
+    // full 模式文案一字不动（自动归档已在离场时跑过；按钮纯留存）。
     keepBtn.title =
-      sessionListView === 'archived' ? '移回会话记录' : '移入留存区（内容不丢，只是换个位置）';
+      sessionListView === 'archived'
+        ? '移回会话记录'
+        : currentArchiveMode === 'manual'
+          ? '归档并留存：生成会话摘要并移入留存区（内容不丢，只是换个位置）'
+          : '移入留存区（内容不丢，只是换个位置）';
     keepBtn.setAttribute('role', 'button');
     keepBtn.setAttribute('aria-label', keepBtn.title);
     keepBtn.innerHTML = getIconSvg(sessionListView === 'archived' ? 'restore' : 'archive', 14, 14);
