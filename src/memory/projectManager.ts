@@ -31,7 +31,7 @@ function inferProjectName(projectPath: string): string {
 export interface ProjectContext {
   /** 项目根目录的绝对路径 */
   projectPath: string;
-  /** 项目名称（注册表读取或取目录名） */
+  /** 项目名称（显式传入优先，否则取目录名；内核不读任何注册表） */
   projectName: string;
   /** .memora/ 目录的绝对路径 */
   memoraDir: string;
@@ -51,7 +51,7 @@ export interface ProjectManagerOptions {
   storage?: IMemoryStorage;
   /**
    * SecurityGuard 工厂函数（Agent 层注入，解除 memory→security 反向依赖）。
-   * 项目切换时调用；不提供则 ProjectContext.security 为 null。
+   * 在 initProject 时调用一次；不提供则 ProjectContext.security 为 null。
    */
   createSecurityGuard?: (
     projectPath: string,
@@ -64,13 +64,14 @@ export interface ProjectManagerOptions {
 // ─── 类 ──────────────────────────────────────────────────
 
 /**
- * 项目管理器：管理多项目生命周期——初始化当前项目（加锁+加载两层配置）、
- * 切换到新项目（解锁旧+锁新）、退出清理锁文件。注册表/锁文件委托专职模块，本类聚焦编排。
+ * 项目管理器：**单个**项目的生命周期编排——初始化（加锁 → 确保存储 → 构建上下文）、
+ * 关闭与锁释放。一个 Agent 绑定一个项目（2026-10-18 形态定案），因此本类**不持跨项目状态**：
+ * 无切换入口、无注册表、无项目名单。多项目由宿主各建一个 Agent 实例。
  */
 export class ProjectManager {
   /** Agent 级数据目录（宿主传入；内核不假设其下的文件形态） */
   private readonly agentDataDir: string;
-  /** Agent 级存储实例（全局共享，不随项目切换重建） */
+  /** Agent 级存储实例（实例内唯一，init 后不再重建） */
   private agentIndex: IMemoryStorage | null = null;
   /** 当前打开的项目路径 */
   private currentProjectPath: string | null = null;
@@ -95,7 +96,7 @@ export class ProjectManager {
   }
 
   /**
-   * 确保 Agent 级资源（存储实例）已初始化，生命周期内共享不随项目切换重建。
+   * 确保 Agent 级资源（存储实例）已初始化，Agent 实例生命周期内保持同一实例。
    * 构造注入的外部实例直接用，否则内部 InMemoryStorage（非持久化，仅开发/测试）。
    */
   private async ensureAgentResources(): Promise<{ index: IMemoryStorage }> {
@@ -116,7 +117,7 @@ export class ProjectManager {
   }
 
   /**
-   * 初始化项目：关闭旧项目→取项目级锁→确保共享存储→构建上下文。
+   * 初始化项目：防重入释放旧锁→取项目级锁→确保存储→构建上下文。
    * 任一步失败释放锁并重置状态，防锁文件残留导致下次启动检测失败。
    */
   async initProject(
@@ -124,7 +125,7 @@ export class ProjectManager {
     projectName?: string,
     configDir?: string,
   ): Promise<ProjectContext> {
-    // 1) 关闭旧项目（释放旧锁，不关 Agent 级 DB）
+    // 1) 防重入：本实例已打开过项目则先释放旧锁（不关 Agent 级 DB）
     if (this.currentProjectPath) {
       await this.closeProject();
     }
@@ -150,7 +151,7 @@ export class ProjectManager {
   }
 
   /**
-   * 构建项目上下文：bootstrap 过滤（恒为空，设定记忆归角色包层）+ 安全守卫创建 + 项目注册 + 日志。
+   * 构建项目上下文：bootstrap 过滤（恒为空，设定记忆归角色包层）+ 安全守卫创建 + 名称推断 + 日志。
    */
   private buildProjectContext(
     projectPath: string,
@@ -195,7 +196,7 @@ export class ProjectManager {
     this.currentProjectPath = null;
   }
 
-  /** 完全关闭：释放项目锁 + 关闭 Agent 级数据库（应在 Agent 整体关闭而非项目切换时调用） */
+  /** 完全关闭：释放项目锁 + 关闭 Agent 级数据库（由 `Agent.close()` 调用） */
   async shutdown(): Promise<void> {
     if (this.currentProjectPath) {
       await this.closeProject();
