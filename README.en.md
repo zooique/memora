@@ -280,6 +280,7 @@ npm run build        # Compile to dist/
 ## Documentation
 
 - [Integration Guide](docs/memora-接入指南.md) — Complete host developer onboarding manual (Chinese)
+- [**Upgrading from 4.x to 5.0.0**](docs/memora-升级指南-4.x-到-5.0.0.md) — What was removed and how to migrate each item (Chinese; required for the major upgrade)
 - [API Reference](docs/memora-api-reference.md) — Public API quick reference (Chinese)
 - [Config Example](config.example.json) — LLM / Security config template
 

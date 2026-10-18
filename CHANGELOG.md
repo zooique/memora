@@ -8,6 +8,10 @@
 
 ## [5.0.0] · 未发布
 
+> **📖 升级必读**：[`docs/memora-升级指南-4.x-到-5.0.0.md`](docs/memora-升级指南-4.x-到-5.0.0.md)
+> —— 本区所有 Breaking 项的**改法**都在那篇（23 个导出符号 / 31 个公开成员 / 3 个事件，逐项给替代路径）。
+> 本区只记录**为什么删**，不重复**怎么改**。
+
 > **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：目标漂移检测链整体删除（公开 API 编译期破坏）+ 检查点公开方法减法（CHKPT-1/2/3）+ **原 [4.1.0] 区四小节整体归并**（2026-10-15 二次拍板取消 4.1.0：npm 实查最新已发布 = 4.0.0，从未发布的 minor 区无消费者可保、归并窗口仅存在于发版前）+ **存储层 SQLite 实现内核切片**（2026-10-16 新增 2 个导出，非破坏）。宿主变更在 `[Unreleased] · 宿主` 区，不占内核版本号。
 
 ### ⚠️ Breaking Removed（内核 · 记忆治理门面整链退役 · `GOVERNANCE-SRC-1`，2026-10-18）
@@ -16,9 +20,9 @@
 > `deduplicate()` / `detectConflicts()` / `suggest()` 逐 `GOVERNANCE_SOURCES`（`src/memory/governance.ts`）
 > 取样，而该常量是**字面量空数组、非注入项** ⇒ 代码路径上永远拿不到输入，无论用户怎么配置都不会生效。
 > 这与「暂时没有消费者」（接线即可复活）性质不同：**没有可接线的地方**。
-> 唯一有效的 `sourceHealth()` 也随门面一起走——它的等价能力 `agent.memory.stats().bySource`
-> **早已存在且是宿主真实消费口径**（`memora.memoryStats` 命令读 `stats?.bySource`），
-> 留一个重复入口只会让「健康度」两处算法漂移。
+> 唯一有效的 `sourceHealth()` 也随门面一起走——它给出的 per-source 计数已由 `agent.memory.stats().bySource`
+> **覆盖且是宿主真实消费口径**（`memora.memoryStats` 命令读 `stats?.bySource`），留一个重复入口只会让
+> 「健康度」两处算法漂移；代价是 `daysSinceLastAccess` / `diagnosedAt` 无替代（宿主从未消费，非能力丢失）。
 
 - 删模块（6 个）：`agent/managers/memoryGovernance.ts`（门面）/ `agent/managers/memoryAdvisor.ts`
   （suggest + sourceHealth）/ `agent/managers/dedupManager.ts`（LLM 语义去重）/ `agent/managers/llmJudgeHelper.ts`
@@ -262,7 +266,7 @@
   （`IFetchProvider` / `ICodeExecutionProvider` / `IProjectSearchProvider`）不变，超时保护照常
   生效，只是不再对外可见。
 - 删 **3 个内部实现类导出**（`InMemoryStorage` / `InMemorySessionStore` / `LockManager`）：
-  不注入 storage / sessionStore 时的内置内存默认实现 + 项目注册表锁的内部实现。类保留在
+  不注入 storage / sessionStore 时的内置内存默认实现 + 项目级 `.memora/.lock` 文件锁。类保留在
   内核内部（`projectManager` 等仍在用），宿主经 `IMemoryStorage` / `ISessionStore` 接口自选
   后端（含 `createNodeSqliteStorage` 工厂）；锁机制对宿主不可见亦无需可见。
 - 删 **`Agent` 4 个纯转发门面**（`appendPlanItem` / `triggerError` / `recover` /

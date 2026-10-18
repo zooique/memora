@@ -282,6 +282,7 @@ npm run build        # 编译到 dist/
 ## 文档
 
 - [接入指南](docs/memora-接入指南.md) — 宿主项目开发者完整接入手册
+- [**从 4.x 升级到 5.0.0**](docs/memora-升级指南-4.x-到-5.0.0.md) — 删了哪些 API、每项怎么改（major 升级必读）
 - [API 参考](docs/memora-api-reference.md) — 公共 API 速查
 - [角色包开放键指南](docs/role-pack-开放键指南.md) — manifest.json 开放键使用指南（三层消费方 + 速查）
 - [配置示例](config.example.json) — LLM / 安全配置模板
