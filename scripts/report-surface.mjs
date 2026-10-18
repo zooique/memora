@@ -101,13 +101,27 @@ const fileTexts = files.map((f) => ({
   text: readFileSync(f, 'utf8'),
 }));
 
-/** 统计一个成员名的消费点（排除定义所在文件） */
-function consumersOf(member, ownerFileHint) {
-  const re = new RegExp(`\\.${member}\\b`);
-  return fileTexts
-    .filter((f) => re.test(f.text))
-    .map((f) => f.path)
-    .filter((p) => !ownerFileHint.some((h) => p.endsWith(h)));
+/**
+ * 统计一个成员的消费面，**分内外两侧**（判据不可混）：
+ * - `external`：定义文件之外的引用点 → 决定「这个公开成员有没有外部消费者」
+ * - `internal`：定义文件内部的 `this.x` 引用数 → 决定「它是死代码还是内部实现」
+ *
+ * 为什么必须分开（2026-10-18 实测教训）：首版只报 external，把
+ * `SessionManager.completePlanItem`（唯一消费方是同文件的
+ * `concludeActivePlanItemIfPlanFullyReached`）也报成「零消费」——
+ * 听起来像死代码，实际是「public 但只内部用」，处置方式是降 private 而非删除。
+ */
+function scanMember(member, ownerFileHint) {
+  const re = new RegExp(`\\.${member}\\b`, 'g');
+  const external = [];
+  let internal = 0;
+  for (const f of fileTexts) {
+    const hits = (f.text.match(re) || []).length;
+    if (hits === 0) continue;
+    if (ownerFileHint.some((h) => f.path.endsWith(h))) internal += hits;
+    else external.push(f.path);
+  }
+  return { external, internal };
 }
 
 /** 符号名 → 定义文件（用于把定义点排除出消费面） */
@@ -133,14 +147,18 @@ function git(cmd) {
 const expected = parseExpected();
 const classSymbols = expected.filter((s) => s.kind === 'class');
 
-/** 零消费成员清单（只对 class 有意义：interface 的成员由实现方消费，不计） */
+/**
+ * 零外部消费成员清单（只对 class 有意义：interface 的成员由实现方消费，不计）。
+ * `internal` 列 = 类内自用次数：> 0 说明不是死代码，只是「public 但外部没人用」，
+ * 处置方向是降 private / 收回公开面；= 0 才是真僵尸，需按 §3.2.1 三条件定性。
+ */
 const deadMembers = [];
 for (const sym of classSymbols) {
   const hint = ownerFilesOf(sym.name);
   if (hint.length === 0) continue;
   for (const m of sym.members) {
-    const consumers = consumersOf(m, hint);
-    if (consumers.length === 0) deadMembers.push({ symbol: sym.name, member: m });
+    const { external, internal } = scanMember(m, hint);
+    if (external.length === 0) deadMembers.push({ symbol: sym.name, member: m, internal });
   }
 }
 
@@ -201,17 +219,21 @@ if (args.has('--json')) {
   console.log(`|---|---|`);
   for (const [k, v] of Object.entries(report.membersBySymbol)) console.log(`| ${k} | ${v} |`);
   console.log('');
-  console.log(`### 零消费成员（生产代码零引用 · 供人工定性，勿直接删）\n`);
+  console.log(`### 零外部消费成员（供人工定性，勿直接删）\n`);
   if (deadMembers.length === 0) {
     console.log('（无）');
   } else {
-    console.log(`| 符号 | 成员 |`);
-    console.log(`|---|---|`);
-    for (const d of deadMembers) console.log(`| ${d.symbol} | ${d.member} |`);
+    console.log(`| 符号 | 成员 | 类内自用 | 性质 |`);
+    console.log(`|---|---|---|---|`);
+    for (const d of deadMembers) {
+      const kind = d.internal > 0 ? 'public 但只内部用' : '真零（仅测试）';
+      console.log(`| ${d.symbol} | ${d.member} | ${d.internal} | ${kind} |`);
+    }
     console.log('');
     console.log(
-      '> 零消费 ≠ 该删：可能是治理机制人工入口、宿主待接线能力、或继承成员。须按\n' +
-        '> legacy-contract-audit-rules §3.2.1 三条件定性后再动。',
+      '> 「类内自用 > 0」= 不是死代码，处置方向是降 private / 收回公开面；\n' +
+        '> 「真零」才需按 legacy-contract-audit-rules §3.2.1 三条件定性（预留键 / 僵尸 / 该接没接）。\n' +
+        '> 两者都**不是**「可以直接删」的同义词。',
     );
   }
   if (report.tests) {
