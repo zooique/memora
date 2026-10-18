@@ -37,6 +37,7 @@ import {
 } from '@/agent/managers/toolCallHelpers.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
 import type { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
+import type { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 import type { AgentEventMap } from '@/utils/eventEmitter.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { IWebSearchProvider } from '@/web-search/types.js';
@@ -776,6 +777,16 @@ export class ToolExecutor {
    */
   setExclusionRoundIdsProvider(provider: () => ReadonlySet<string>): void {
     this.builtinHandlers.setExclusionRoundIdsProvider(provider);
+  }
+
+  /**
+   * 注入后台任务槽位调度器，转发给 builtinHandlers：search_memories 命中 touch 走实例级限流。
+   * 与 SeedDeps 的调度器同一实例（装配期 wiring），纳入 Agent.close() 单点等待。
+   *
+   * @param scheduler Agent 实例级后台任务调度器
+   */
+  setBackgroundTaskScheduler(scheduler: BackgroundTaskScheduler): void {
+    this.builtinHandlers.setBackgroundTaskScheduler(scheduler);
   }
 
   /**

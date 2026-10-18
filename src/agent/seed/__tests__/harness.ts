@@ -26,6 +26,7 @@ import type { AgentChunk } from '@/agent/types.js';
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { ITracer } from '@/agent/tracer.js';
+import { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 import type { StreamConsumeResult, SeedDeps, SeedParts } from '@/agent/seed/types.js';
 
 /** 可注入的流消费结果（默认正常完成） */
@@ -219,6 +220,8 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
 
   const deps: SeedDeps = {
     getParts: () => buildParts(mocks),
+    // 后台任务槽位调度器（实例级）：测试用真实例（未注入即无宿主调用方，摘要/命名经它 fire-and-forget）
+    backgroundTasks: new BackgroundTaskScheduler(),
     tracer: mocks.tracer as unknown as ITracer,
     archiveMode: () => 'full',
     messages: undefined,

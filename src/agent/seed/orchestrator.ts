@@ -21,7 +21,6 @@ import { type StreamConsumeResult, type SeedDeps, type SeedParts } from './types
 import { SeedPrepare, refreshAssemblyForRolePack } from './prepare.js';
 import { resolveSummary, resolveSummaryFocus } from '@/role-pack/strategyResolver.js';
 import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
-import { backgroundTask } from '@/utils/backgroundTask.js';
 
 /**
  * ask_user 提问超时未答的交互记录正文：
@@ -172,7 +171,10 @@ export class SeedOrchestrator {
    * @param assistantContent 助手回答（摘要输出侧）
    */
   private backgroundReflect(input: string, assistantContent: string): void {
-    backgroundTask('round-summary', () => this.reflect(input, assistantContent));
+    // 后台槽位调度器归属本 Agent 实例（SeedDeps 注入）——摘要 fire-and-forget 不阻塞回答返回
+    this.deps.backgroundTasks.schedule('round-summary', () =>
+      this.reflect(input, assistantContent),
+    );
   }
 
   /** 回答中：消费 produce() 生成的 loop 执行流，统一尾处理。

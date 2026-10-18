@@ -20,7 +20,7 @@ import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
 import { SecurityGuard, type WriteConfirmationInfo } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { MemoryInspector, type AgentSearchHit } from '@/agent/managers/memoryInspector.js';
-import { awaitBackgroundTasks } from '@/utils/backgroundTask.js';
+import { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 import { MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
@@ -36,6 +36,8 @@ let security: SecurityGuard;
 let storage: InMemoryStorage;
 /** 被测对象 */
 let handlers: BuiltinToolHandlers;
+/** 后台任务槽位调度器（实例级，注入后 search_memories 命中 touch 才生效） */
+let scheduler: BackgroundTaskScheduler;
 
 beforeEach(async () => {
   // 创建临时项目目录
@@ -45,6 +47,9 @@ beforeEach(async () => {
   storage = new InMemoryStorage();
   // 注：作品投影改为用户主动触发（register_work 工具），read_file 不再自动登记——BuiltinToolHandlers 不再持有投影管理器
   handlers = new BuiltinToolHandlers(projectPath, security, storage);
+  // 注入实例级调度器：命中 touch 走它（未注入则静默跳过，touch 断言会落空）
+  scheduler = new BackgroundTaskScheduler();
+  handlers.setBackgroundTaskScheduler(scheduler);
 });
 
 afterEach(async () => {
@@ -607,7 +612,7 @@ describe('BuiltinToolHandlers.searchMemories', () => {
     expect(result).toContain('accessedAt=2026-01-01T00:00:00Z');
 
     // 命中即 touch：等后台任务落地后 accessedAt 被刷新（只 touch，不维护 score）
-    await awaitBackgroundTasks(2000);
+    await scheduler.awaitPending(2000);
     const touched = storage.getById('round-summary:2026-08-28-main:r1');
     expect(touched!.accessedAt).not.toBe(oldAccess);
   });

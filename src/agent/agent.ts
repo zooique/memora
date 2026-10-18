@@ -69,7 +69,7 @@ import type { ProviderRouter } from '@/llm/types.js';
 import { logger } from '@/logging/logger.js';
 import { isValidSessionId, splitSessionId } from '@/utils/time.js';
 import type { AgentMetrics } from '@/agent/tracer.js';
-import { awaitBackgroundTasks } from '@/utils/backgroundTask.js';
+import type { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 
 // ─── 模块级常量 ─────────────────────────────────────────
 
@@ -126,6 +126,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     roundSummaryGenerator: RoundSummaryGenerator | null;
     /** 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点） */
     contextPreparer: ContextPreparer | null;
+    /**
+     * 后台任务槽位调度器（实例级，装配期由 assembler 创建并返回）：
+     * 承载摘要/会话命名/命中 touch 的 fire-and-forget 限流，close() 单点等待 + 清队列（防关后写入）。
+     */
+    backgroundTasks: BackgroundTaskScheduler | null;
     /** chat() 并发锁管理器（并发锁 + token 校验 + 超时保护 + 外部 signal 合并，init 时创建、close 时销毁） */
     chatLockManager: ChatLockManager | null;
     /** 归档协调器（归档操作委托给 ArchiveCoordinator） */
@@ -143,6 +148,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     sessionNamer: null,
     roundSummaryGenerator: null,
     contextPreparer: null,
+    backgroundTasks: null,
     chatLockManager: null,
     archiveCoordinator: null,
     seedOrchestrator: null,
@@ -462,6 +468,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         sessionNamer: this.internals.sessionNamer,
         roundSummaryGenerator: this.internals.roundSummaryGenerator,
       }),
+      // 后台任务槽位调度器（实例级，装配期由 assembler 创建）：摘要/会话命名 fire-and-forget 经此
+      backgroundTasks: this.internals.backgroundTasks!,
       tracer: this.#config.tracer ?? null,
       // 归档模式经 getter 惰性取：setArchiveMode 轮内/轮终改值后 span 标注仍为真（同 getParts）
       archiveMode: () => this.#config.archiveMode,
@@ -1323,6 +1331,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this._sessionManager = result.sessionManager;
     // 输入增强管线由组装器创建，Agent 只保留编排调用点
     this.internals.contextPreparer = result.contextPreparer;
+    // 后台任务槽位调度器（实例级）：assembler 创建时已注入 toolExec（命中 touch）；
+    // 此处持有 → 下方创建 seedOrchestrator 时注入 SeedDeps（摘要/命名）+ close() 单点等待。
+    this.internals.backgroundTasks = result.backgroundTasks;
   }
 
   // ─── Provider 管理 ────────────────────────────────────
@@ -1792,22 +1803,29 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.internals.gcService?.stopPeriodic();
     this.internals.gcService = null;
     // 等待 WorkProjection 无 inflight 概念（作品投影改为用户主动触发同步写，无后台 LLM 任务）
-    // 背景任务统一由下方 awaitBackgroundTasks 兜底
-    // 关键约束：等待 backgroundTask 全局在途任务完成（如 touchScores）。
+    // 背景任务统一由下方调度器等待兜底
+    // 关键约束：等待**本实例**后台任务在途任务完成（如 touchScores）。
     // 否则 close 后后台任务仍可能 upsert 已关闭的 storage，触发写失效或异常。
-    try {
-      const awaited = await awaitBackgroundTasks(AGENT_CONSTANTS.SHUTDOWN_ARCHIVE_TIMEOUT_MS);
-      if (awaited > 0) {
-        logger.debug(
-          { awaited },
-          'close: 背景任务等待结束（awaited = 初始在途数，超时放弃时非完成数）',
+    const backgroundTasks = this.internals.backgroundTasks;
+    if (backgroundTasks) {
+      try {
+        const awaited = await backgroundTasks.awaitPending(
+          AGENT_CONSTANTS.SHUTDOWN_ARCHIVE_TIMEOUT_MS,
         );
+        // 超时后丢弃**未启动**的排队任务（只清队列，不中断在途）——防关后从队列启动新任务写已关 storage
+        const discarded = backgroundTasks.cancelPending();
+        if (awaited > 0) {
+          logger.debug(
+            { awaited, discarded },
+            'close: 背景任务等待结束（awaited = 初始在途数，超时放弃时非完成数）',
+          );
+        }
+      } catch (err) {
+        logger.warn({ err: toError(err) }, 'close: 后台任务等待失败');
       }
-    } catch (err) {
-      logger.warn({ err: toError(err) }, 'close: awaitBackgroundTasks 失败');
     }
-    // 后台「命令」任务实例终态收割——与上方 awaitBackgroundTasks 是同名异物：
-    // 上方等的是归档/打分类内存任务，此处杀的是注册表持有的 shell 子进程。
+    // 后台「命令」任务实例终态收割——与上方 BackgroundTaskScheduler 是同名异物：
+    // 上方等的是归档/打分/命名类内存副作用，此处杀的是注册表（BackgroundTaskRegistry）持有的 shell 子进程。
     // turn 终态刻意脱管不杀（跨轮存活），但注册表按 Agent 实例隔离，实例销毁后任务
     // 不可寻址，不杀就是 OS 层孤儿（观察点 ⑧ 真机实锤：父进程退出后 ping.exe 仍在）。
     // 本调用同时注销注册表的 exit 兜底钩子（close 内同步杀树若因关窗窗口赶不上，
@@ -1890,6 +1908,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       sessionNamer: null,
       roundSummaryGenerator: null,
       contextPreparer: null,
+      backgroundTasks: null,
       chatLockManager: null,
       archiveCoordinator: null,
       seedOrchestrator: null,
@@ -1970,7 +1989,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // 删后注记（2026-10-16 · 5.0.0，按 SSOT/不带伤裁决提前于 DEPRECATE-1 周期删除）：曾有公开
   // getBackgroundTaskStats()——转发 utils 后台任务统计快照（pending/completed/failed），
   // 宿主零消费；连带 utils 层 getBackgroundTaskStats 函数、BackgroundTaskStats 接口与
-  // stats 的 completed/failed 只写字段一并拆除（pending 仍服务 awaitBackgroundTasks）。
+  // stats 的 completed/failed 只写字段一并拆除（pending 仍服务后台任务等待/收口）。
   // 勿加回；后台健康度观测需求出现时经事件流或专用诊断面重建。
 
   /**

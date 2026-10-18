@@ -31,7 +31,6 @@ import { InMemoryStorage } from '../src/memory/inMemoryStorage.js';
 import { InMemorySessionStore } from '../src/memory/inMemorySessionStore.js';
 import { Agent } from '../src/agent/agent.js';
 import { AGENT_EVENTS } from '../src/utils/eventEmitter.js';
-import { awaitBackgroundTasks } from '../src/utils/backgroundTask.js';
 import { BENCH_SEEDS, loadBenchmarkSeed, type BenchmarkSeed } from './benchmark-seeds.js';
 
 // Node 24 + undici 已知 bug：fetch 401/403 后 keep-alive stream 残留，process.exit 时触发
@@ -114,8 +113,12 @@ async function runCase(seed: BenchmarkSeed): Promise<CaseVerdict> {
 
   // 5. 真实对话（chatSync = 流式聚合返回最终文本）
   const answer = await agent.chatSync(seed.input);
-  // 命中即 touch 为 fire-and-forget（backgroundTask），等待其落库后再对比
-  await awaitBackgroundTasks(2000);
+  // 命中即 touch 为 fire-and-forget（Agent 实例级调度器），轮询等待其落库后再对比（≤2s）
+  // 注：调度器实例归 Agent 私有，无公开等待出口；此处以「accessedAt 变化」为落库信号自等待
+  const touchDeadline = Date.now() + 2000;
+  while (Date.now() < touchDeadline && storage.getById(seed.expectId)?.accessedAt === before) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 
   const after = storage.getById(seed.expectId)?.accessedAt; // 跑后 accessedAt
   const hit = before !== after; // accessedAt 变化 = 目标记忆被 search_memories 命中 touch

@@ -162,7 +162,7 @@ describe('Logging · 多次 setLogger 覆盖警告', () => {
 
     // firstLogger.warn 应被调用（覆盖警告）
     expect(firstLogger.warn).toHaveBeenCalledWith(
-      'setLogger 覆盖了已有的自定义 logger（单 Agent 模型下不应出现此情况）',
+      'setLogger 覆盖了已有的自定义 logger（进程级日志出口应只注入一次；多处注入时后者覆盖前者）',
     );
   });
 

@@ -64,7 +64,14 @@ export class BackgroundTaskRegistry {
   /** exit 钩子是否已注销（Agent 实例终态 shutdown 后置真，钩子空转防重复收割） */
   private disposed = false;
 
-  /** 进程退出兜底钩子（构造注册 / shutdown 注销，**配对**——防多实例钩子堆积） */
+  /**
+   * 进程退出兜底钩子（构造注册 / shutdown 注销，**配对**——防多实例钩子堆积）
+   *
+   * ⚠️ 已知代价（台账 `MULTI-AGENT-1` D8）：监听按**实例**注册 ⇒ 同进程**同时存活 >10 个**
+   * Agent 实例会触发 Node `MaxListenersExceededWarning`——仅警告、无功能损害（钩子 `disposed`
+   * 幂等空转，`close()`→`shutdown()` 配对注销即释放）。不引模块级共享钩子（= 回退单例、反 SSOT）、
+   * 不调 `setMaxListeners`（进程级调参有副作用）；触发 = 真实出现 >10 个并发存活项目。
+   */
   private readonly exitHook = (): void => {
     if (this.disposed) return; // Agent.close 已收割并注销，幂等空转
     const killed = this.flushRunningSync();

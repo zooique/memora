@@ -14,6 +14,34 @@
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：目标漂移检测链整体删除（公开 API 编译期破坏）+ 检查点公开方法减法（CHKPT-1/2/3）+ **原 [4.1.0] 区四小节整体归并**（2026-10-15 二次拍板取消 4.1.0：npm 实查最新已发布 = 4.0.0，从未发布的 minor 区无消费者可保、归并窗口仅存在于发版前）+ **存储层 SQLite 实现内核切片**（2026-10-16 新增 2 个导出，非破坏）。宿主变更在 `[Unreleased] · 宿主` 区，不占内核版本号。
 
+### 🔧 变更（内核 · 后台任务槽位按 Agent 实例隔离 · `MULTI-AGENT-1` 销项 · 2026-10-18）
+
+> **性质**：非公开 API 变更（`utils/backgroundTask.ts` 不在 `index.ts` 导出），属**执行上下文状态归位实例**——
+> 形态定案「内核保持单 Agent，多项目由宿主各建一个 Agent 实例」后，同进程多 Agent 从「未来可能」变为
+> **形态内必然**，模块级后台任务槽位即成**定型即带伤**（跨项目挤占 + `close` 交叉等待）⇒ 按 SSOT 归位。
+
+- **`utils/backgroundTask.ts` 门面 → `class BackgroundTaskScheduler`（实例级）**：原模块级
+  `activeCount` / `pendingQueue` / `pendingCount` 改为实例字段；`backgroundTask()` → `schedule()`、
+  `awaitBackgroundTasks()` → `awaitPending()`；新增 `cancelPending()`（**只清「未启动」排队队列、不中断在途任务**，
+  与 `close()` 超时后清场配对，防「关后从队列启动任务 → 写已关 storage」）。
+  **旧模块级三导出（`backgroundTask` / `awaitBackgroundTasks` / `_resetBackgroundTaskState`）整体删除**
+  （防静默回退全局，对齐本仓「编译期红闸」文化）。
+- **装配接线**：assembler 创建**单一实例** → 注入 `SeedDeps`（摘要 `round-summary` / 会话命名 `session-title`）
+  + `BuiltinToolHandlers`（命中 touch `search_memories.touch`）——**该 Agent 全部 fire-and-forget 副作用共用一实例**；
+  `Agent.close()` 经该实例 `awaitPending()` + `cancelPending()` 收口；`AssembleOutput` 新增 `backgroundTasks` 字段。
+- **logger 口径固化（明示约束，非隔离）**：全局 `setLogger` 保留——logging 是进程级 cross-cutting sink，
+  per-instance 化须改 20+ 模块注入（过度设计）；口径 = **一台宿主进程只应注入一次**（原注释「单 Agent 模型下
+  不会冲突」失实，已订正为「进程级唯一出口」明示 + 运行时 warn 串 + `logging/__tests__/logger.test.ts` 断言三处一次改齐）。
+- **同源风险留存（非本批覆盖）**：`close()` 超时后**在途**任务仍会跑完并可能写已关 storage——属「同源」
+  （任何 close 都可能有在途任务），非多实例特有；`cancelPending()` 语义已明写「不中断在途」，故**不因本批关闭**。
+- **已知代价留存（机制既有 · 多实例形态下显形 · `MULTI-AGENT-1` D8）**：`BackgroundTaskRegistry` 的 exit
+  兜底钩子按**实例**注册 ⇒ 同进程**同时存活 >10 个** Agent 实例会触发 Node `MaxListenersExceededWarning`
+  （仅警告、无功能损害；`close()`→`shutdown()` 配对注销即释放，配对有机器守卫）——不引共享单例钩子（反 SSOT）、
+  不调 `setMaxListeners`（进程级调参有副作用）；触发 = 真实出现 >10 个并发存活项目。
+- **测试**：`backgroundTask.test.ts` 改实例化 + 新增 `cancelPending` 语义 3 例；`MULTI-AGENT-1` 块由
+  「事实测量」翻转为**隔离验证**（实例 A 占满 5 槽不影响实例 B、A 的 `awaitPending` 不交叉等待 B、
+  A 的 `cancelPending` 不清 B 队列）。
+
 ### ⚠️ Breaking Removed（内核 · 记忆治理门面整链退役 · `GOVERNANCE-SRC-1`，2026-10-18）
 
 > **性质**：删掉的是**一整套永不产出结果的能力**，不是「零引用 API 收面」。判据 = **结构性恒空**：

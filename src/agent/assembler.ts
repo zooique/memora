@@ -55,6 +55,7 @@ import { runTeamMeetingAssessment } from '@/agent/builtinToolHandlers.js';
 // L3 脚本执行器（静态导入，避免每次调用动态加载）
 import { runSkillScript } from '@/skill/skillScriptRunner.js';
 import { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
+import { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 
 /**
  * Turn 起始策略固定段（内核行为约束）。
@@ -312,6 +313,8 @@ export interface AssembleOutput {
   history: MessageHistory;
   loop: AgentLoop;
   toolExec: ToolExecutor;
+  /** 后台任务槽位调度器（实例级，Agent 持有 → 注入 SeedDeps + BuiltinToolHandlers，close 单点等待） */
+  backgroundTasks: BackgroundTaskScheduler;
   workProjection: WorkProjectionManager;
   skillManager: SkillManager;
   memoryInspector: MemoryInspector;
@@ -765,6 +768,13 @@ export async function assembleComponents(
     input.scriptNodePath,
   );
 
+  // ── 后台任务槽位调度器（实例级）──
+  // 归属本 Agent 实例（SSOT：一个 Agent = 一个项目）：摘要（round-summary）/ 会话命名（session-title）
+  // 经 SeedDeps 注入 seed 使用；命中 touch（search_memories.touch）经 toolExec 注入 builtinHandlers——
+  // **两路共用同一实例**，故 close() 单点等待即可覆盖全部后台副作用（旧模块级单例已按 SSOT 归位到实例）。
+  const backgroundTasks = new BackgroundTaskScheduler();
+  toolExec.setBackgroundTaskScheduler(backgroundTasks);
+
   // ── 会话管理器（先于 loop 创建）──
 
   // SessionManager 构造只存 getter（getHistory/getLoop 惰性取用），不访问 history/loop 本体——
@@ -1026,6 +1036,7 @@ export async function assembleComponents(
     history,
     loop,
     toolExec,
+    backgroundTasks,
     workProjection,
     skillManager,
     memoryInspector,

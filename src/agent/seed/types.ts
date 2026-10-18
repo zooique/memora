@@ -22,6 +22,7 @@ import type { SessionNamer } from '@/agent/managers/sessionNamer.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { ITracer } from '@/agent/tracer.js';
+import type { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 
 /**
@@ -68,6 +69,12 @@ export interface SeedParts {
 export interface SeedDeps {
   /** 取当前组件快照（rebuild 后仍为最新引用） */
   getParts(): SeedParts;
+  /**
+   * 后台任务槽位调度器（实例级）：摘要生成（round-summary）/ 会话命名（session-title）
+   * 经此 fire-and-forget 启动。**归属 Agent 实例**（SSOT：一个 Agent = 一个项目），
+   * 与 builtinToolHandlers 的命中 touch 共用同一实例 → close() 单点等待。必填。
+   */
+  backgroundTasks: BackgroundTaskScheduler;
   /** 可观测性 Tracer（缺省 Noop，reflect 阶段 span 用） */
   tracer: ITracer | null;
   /** 归档模式取当前值（reflect 阶段 span 标注用；getter 而非快照：setArchiveMode 改值后仍为真） */

@@ -36,7 +36,7 @@ import { WRITE_FILE_MODES, isWriteFileMode, type WriteFileMode } from '@/agent/b
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { sanitizeExternalText, stripControlChars } from '@/agent/toolExecutor.js';
-import { backgroundTask } from '@/utils/backgroundTask.js';
+import type { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 import { touchScores } from '@/memory/keywordsTouch.js';
 import type { AgentEventMap } from '@/utils/eventEmitter.js';
 import type { AgentSearchHit, MemoryInspector } from '@/agent/managers/memoryInspector.js';
@@ -160,6 +160,14 @@ export class BuiltinToolHandlers {
   /** 记忆搜索器（search_memories 语义后端，装配期注入；未注入时回退关键词 memoryIndex.search） */
   private memoryInspector: MemoryInspector | null = null;
 
+  /**
+   * 后台任务槽位调度器（装配期注入，与 SeedDeps 的调度器**同一实例**）：
+   * search_memories 命中即 touch 经此 fire-and-forget，共享 Agent 实例的 5 槽限流，
+   * 并纳入 close() 单点等待。未注入时 touch 静默跳过（与 onMemoryRecalled?.() 同款可选链，
+   * 保持「内置工具可被测试/脚本直调、无宿主即 no-op」语义）。
+   */
+  private backgroundTasks: BackgroundTaskScheduler | null = null;
+
   /** 当前会话「正文或摘要已在眼前」的轮次提供者（装配期注入；search_memories 用它与装配期内容互斥） */
   private exclusionRoundIdsProvider: (() => ReadonlySet<string>) | null = null;
 
@@ -195,6 +203,17 @@ export class BuiltinToolHandlers {
    */
   setExclusionRoundIdsProvider(provider: () => ReadonlySet<string>): void {
     this.exclusionRoundIdsProvider = provider;
+  }
+
+  /**
+   * 注入后台任务槽位调度器（装配期注入，与 SeedDeps 的调度器同一实例）。
+   * 装配依赖 loop/history，toolExec 在 assembler 中先于它构造，故用「构造后注入」而非构造参数。
+   * 注入后 search_memories 命中 touch 走实例级限流，并纳入 Agent.close() 等待；未注入则 touch 静默跳过。
+   *
+   * @param scheduler Agent 实例级后台任务调度器
+   */
+  setBackgroundTaskScheduler(scheduler: BackgroundTaskScheduler): void {
+    this.backgroundTasks = scheduler;
   }
 
   // ─── 路径安全（内置 + 自定义工具共享） ──────────────────────────
@@ -1157,14 +1176,15 @@ export class BuiltinToolHandlers {
    * 命中即 touch：fire-and-forget 刷新命中记忆的 accessedAt（不涉及任何重要度字段）。
    *
    * 收敛到 keywordsTouch.ts 的单一真理源 touchScores（§5.2 只 touch 不加权，内部只调 storage.touch）——
-   * 不为工具命中另造写分路径。backgroundTask 保证 fire-and-forget 不阻塞搜索返回，
-   * 且统一并发限流；失败兜底记日志即可（touch 是排序副作用，非主线流程）。
+   * 不为工具命中另造写分路径。实例级调度器保证 fire-and-forget 不阻塞搜索返回，
+   * 且统一并发限流（同一 Agent 实例 5 槽）；失败兜底记日志即可（touch 是排序副作用，非主线流程）。
+   * 调度器未注入（测试/独立调用）→ 静默跳过 touch，不另造无主 Promise。
    *
    * @param hits 搜索命中项（取其 id 定位，实际写入交由 touchScores 收敛）
    */
   private touchHits(hits: readonly AgentSearchHit[]): void {
     if (hits.length === 0) return;
-    backgroundTask('search_memories.touch', () =>
+    this.backgroundTasks?.schedule('search_memories.touch', () =>
       touchScores(
         this.memoryIndex,
         hits.map((h) => h.id),

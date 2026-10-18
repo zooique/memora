@@ -10,7 +10,6 @@
  */
 
 import type { AgentChunk } from '@/agent/types.js';
-import { backgroundTask } from '@/utils/backgroundTask.js';
 import { resolveL2Strategy, resolveActiveStrategy } from '@/role-pack/strategyResolver.js';
 import { buildMeetingPlanSkeleton } from '@/role-pack/rolePackManager.js';
 import { type SeedDeps, type SeedParts, type SeedPrepareResult } from './types.js';
@@ -104,7 +103,8 @@ export class SeedPrepare {
 
     // 会话标题自动命名（fire-and-forget）：仅新建会话首次问答触发（以"会话无标题"判定，不覆盖手动改名）
     if (sessionNamer) {
-      backgroundTask('session-title', () =>
+      // 后台槽位调度器归属本 Agent 实例（SeedDeps 注入）——命名 fire-and-forget 不阻塞回答前
+      this.deps.backgroundTasks.schedule('session-title', () =>
         sessionNamer.ensureSessionTitle(
           history.currentDateValue,
           history.currentSessionValue,

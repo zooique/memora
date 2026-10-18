@@ -102,13 +102,18 @@ export const logger: ILogger = {
  * 替换全局日志实现：宿主在 Agent 初始化前调用注入自定义 logger；传入 undefined 恢复默认。
  * 注入即成为内核**唯一**日志出口：同时桥接 utils 层（`loggerHolder`），
  * 使 scanner / eventEmitter / rolePackManager 等 utils 侧模块也走注入实现（而非停留在 console fallback）。
- * 修改全局状态：单 Agent 模型下不会冲突；若多处注入，后者覆盖前者并输出警告。
+ *
+ * ⚠️ 进程级全局 sink（口径固化）：一个宿主进程只应注入**一次** logger。
+ * 多项目单进程宿主（每项目一个 Agent 实例）下，日志出口**按进程唯一**——这是**明示约束**而非多实例隔离：
+ * 若要按项目区分日志，请在注入的 logger 实现内自行加项目前缀。多处注入时后者覆盖前者并输出警告。
  */
 export function setLogger(newLogger: ILogger | undefined): void {
   if (newLogger) {
     // 检测覆盖：当前已被宿主注入且新实例不同，说明有多处注入
     if (_loggerInjected && _logger !== newLogger) {
-      _logger.warn('setLogger 覆盖了已有的自定义 logger（单 Agent 模型下不应出现此情况）');
+      _logger.warn(
+        'setLogger 覆盖了已有的自定义 logger（进程级日志出口应只注入一次；多处注入时后者覆盖前者）',
+      );
     }
     _loggerInjected = true;
     _logger = newLogger;
