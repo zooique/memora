@@ -830,7 +830,7 @@
     </table>
 
     <h3>被源码坐实（保留）的结论</h3>
-    <p style="color:var(--text-muted)">NUL 分隔符防拼接歧义（:45-49）· 指纹取原文全文、判据取严（:52-56）· 存量无指纹不参与匹配、只拦新增（:167,:248）· 指纹全库比对、取代仅同 session 近 20 条（:238,:254,:271）· 打标不删可回溯（:302-303）· accessedAt 落库时起算（:217）· GOVERNANCE_SOURCES 空 ⇒ 门面空转（governance.ts:15-19 · dedupManager.ts:85-93）· search() 4.0.0 已移除、唯一入口（memoryInspector.ts:186-190）· search_memories 工具化不自动注入（README · builtinToolHandlers.ts:1128）· 角色包边界（types.ts:204-211）· 回收站 30 天 + GCService（types.ts:36-37 · memoryInspector.ts:295-326）。</p>
+    <p style="color:var(--text-muted)">NUL 分隔符防拼接歧义（:45-49）· 指纹取原文全文、判据取严（:52-56）· 存量无指纹不参与匹配、只拦新增（:167,:248）· 指纹全库比对、取代仅同 session 近 20 条（:238,:254,:271）· 打标不删可回溯（:302-303）· accessedAt 落库时起算（:217）· GOVERNANCE_SOURCES 空 ⇒ 门面空转（governance.ts:15-19 · dedupManager.ts:85-93）· search() 4.0.0 已移除、唯一入口（memoryInspector.ts:186-190）· search_memories 工具化不自动注入（README · builtinToolHandlers.ts:1128）· 角色包边界（types.ts:204-211）· 回收站保留期归宿主策略（宿主入口显式触发，无自动清理）+ GCService（types.ts:36-37 · memoryInspector.ts:295-326）。</p>
 
     <div class="callout danger">
       <span class="tag">教训</span>

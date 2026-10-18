@@ -333,7 +333,7 @@ export class MemoryInspector {
     this.index.purge(id);
   }
 
-  /** 清理 deletedAt 早于 before 的软删除记忆（宿主定时器调用，默认 30 天保留期） */
+  /** 清理 deletedAt 早于 before 的软删除记忆（宿主入口显式调用；保留期归宿主策略，当前默认 30 天） */
   writePurgeExpired(before: Date): number {
     return this.index.purgeExpired(before);
   }

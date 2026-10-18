@@ -109,7 +109,7 @@ export class InMemoryStorage implements IMemoryStorage {
     return { ...mem };
   }
 
-  /** 物理删除 deletedAt 早于 before 的软删除记忆，返回清理数量（宿主定时器默认 30 天保留期调用） */
+  /** 物理删除 deletedAt 早于 before 的软删除记忆，返回清理数量（宿主入口显式调用；保留期归宿主策略，当前默认 30 天） */
   purgeExpired(before: Date): number {
     const beforeIso = before.toISOString();
     let count = 0;

@@ -29,7 +29,7 @@ export interface IMemoryStorage {
 
   /**
    * 软删除（移入回收站）：写入 deletedAt，不物理移除；对已软删除的记忆为 no-op。
-   * 召回/搜索/列表/统计自动过滤，可 restore 恢复，回收站保留期满由 purgeExpired 物理清理
+   * 召回/搜索/列表/统计自动过滤，可 restore 恢复；回收站保留期归宿主策略，物理清理由宿主入口显式触发（purgeExpired）
    */
   delete(id: string): void;
 
