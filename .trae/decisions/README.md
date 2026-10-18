@@ -47,6 +47,7 @@ description: Memora 关键决策年轮
 | [ADR-038](./ADR-038-tool-outcome-three-state-contract.md) | 工具结果三值契约（status ok/failed/blocked 判据面唯一真源 + B5 文本判据桥物理删除 + B4 blocked 不计失败口径 + blockedReason 穷尽登记） | ✅ 已接受 | 架构 |
 | [ADR-039](./ADR-039-public-export-surface-admission.md) | 公共导出面挂面判据（宿主消费 OR 文档承诺两条准入 + 收编≠删除 + 守卫四向机器化对账 · REL-3.1） | ✅ 已接受 | 工程 |
 | [ADR-040](./ADR-040-script-run-security-three-forms.md) | 脚本运行三形态与安全防线（技能/临时/项目三形态统一执行单元 + 暴露/边界/执行三层防线 + confirmScriptRun 统一确认闸：owner 默认放行审计、guest 恒确认、confirmScripts 单开关约束全脚本；沙箱与 classifier 不进内核） | ✅ 已接受 | 安全 |
+| [ADR-041](./ADR-041-host-data-layout-contract.md) | 宿主数据布局契约（写宿主定义 `.memora/memories.db`、只读宿主跟随且不建库/不回退 JSON；一致性判据 = 跨宿主契约测试而非文档；库缺失 `FILE_NOT_FOUND` 三态诊断；门禁宿主集合按目录发现） | ✅ 已接受 | 数据层 |
 
 ### 插件宿主（VC 系列）
 
@@ -75,7 +76,7 @@ description: Memora 关键决策年轮
 | 类别   | 数量 | ADR 列表             |
 | ------ | ---- | -------------------- |
 | 运行时 | 1    | ADR-001 |
-| 数据层 | 2    | ADR-002, ADR-016 |
+| 数据层 | 3    | ADR-002, ADR-016, ADR-041 |
 | 集成层 | 2    | ADR-003, ADR-017-web-search |
 | 架构   | 18   | ADR-004, ADR-010~011, ADR-015, ADR-021~025, ADR-027~031, ADR-034~036, ADR-038 |
 | 安全   | 2    | ADR-006, ADR-040 |

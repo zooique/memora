@@ -4,6 +4,17 @@
 > 状态：**草案 / 待拍板** —— 尚未登记 `tasks/待完成任务.md`，尚未立 ADR（按项目纪律，新部署面须立 ADR）
 > 关联：2026-10-12 战略报告（"内核 MCP 化 = 服务端护城河"论点）、`docs/未来迭代方案-探索.md` §四方向1（客户端 MCP / `D1-MCP`）
 
+> ⚠️ **落地后订正（2026-10-18，`HOST-ALIGN-1`）**：本文 §四/§五/§十 的三处技术判断已被实际落地推翻，
+> **勿再据此实施**（原文保留作决策轨迹）：
+> 1. **「复用 `workspaceStorage.ts` 的 JSON 实现」→ 改 SQLite**。写宿主在 `node:sqlite` 可用时把
+>    `memories.json` 一次性迁移到 `memories.db`（旧档改名 `.migrated-<date>` 保留），MCP 改为
+>    `createNodeSqliteStorage(dbPath, { readOnly: true })` 只读打开活库。原因：读 JSON 在已迁移工作区
+>    **恒返回空**，且是「启动时快照」，运行期新记忆看不见。
+> 2. **「内核只 ship `InMemoryStorage`」→ 已收回**。5.0.0 `PUB-API-PRUNE-2` 起该导出不存在，只读宿主用
+>    `ReadOnlyMemoryStorage`（写方法结构上不存在）。
+> 3. **「`.memora/` 存储格式由 JSON 承载」→ 真源是 `.memora/memories.db`（SQLite，WAL）**。
+>    路径契约与缺失三态见 **ADR-041**；一致性判据 = `hosts/memora-vscode/src/__tests__/crossHostLayout.test.ts`。
+
 ## 一、结论先给
 
 **落点：当前仓库，新建 `hosts/memora-mcp/`（新宿主），不新开仓库、不塞内核。**
