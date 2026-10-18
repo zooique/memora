@@ -4050,6 +4050,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 见 memoryAdvisor.suggest），把「与你当前关注相关但未直接搜到」的记忆映射为
    * 「下一步可探索」chips 推给 webview。记忆名作 chip 标签（label），prompt 为填入输入框
    * 的完整下一步提问。记忆库为空/未装配（governance null）时不推送（webview 无建议块）。
+   *
+   * ⚠ **当前恒早退（2026-10-18 实测）**：`suggest(undefined, …)` 的采样分支逐内核
+   * `GOVERNANCE_SOURCES` 取样，该列表当前为空数组 ⇒ 恒返回 `[]` ⇒ 本方法在第一行
+   * `hits.length === 0` 就返回，chips 从未真正推过。通道保留未删（接线后即可生效），
+   * 处置随内核 `GOVERNANCE-SRC-1` 一并拍板——勿据本注释前半段认定功能已生效。
    */
   private postSuggestions(): void {
     if (!this._agent) return;
