@@ -49,13 +49,30 @@
  * 发布前清单一行比对即可发现（自觉不可观测，缺口可观测）。
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const HOST = join(ROOT, 'hosts', 'memora-vscode');
+
+/**
+ * 全部宿主 —— 判据 = `hosts/` 下**有 package.json 的目录**，不手写清单。
+ *
+ * 2026-10-18 `HOST-ALIGN-1` P1-C 的教训：旧实现只把 `hosts/memora-vscode` 挂在门禁上，
+ * `hosts/memora-mcp` 编译断裂 24 小时无人知（「宿主有两个，门禁只夹一个」）。
+ * 手写第二个常量只能补一次洞；按目录发现才能保证**新增宿主自动进类型检查面**。
+ *
+ * 分层（不是所有宿主都有完整基线，如实分层而非假装一致）：
+ * - **类型检查面**：所有宿主（缺 `typecheck` 脚本 = 配置错误，直接 exit 2）。
+ * - **深度面**（lint / test / build 五步）：仅主宿主；二级宿主按自身 scripts 声明生成。
+ */
+const HOSTS = readdirSync(join(ROOT, 'hosts'), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => join(ROOT, 'hosts', entry.name))
+  .filter((dir) => existsSync(join(dir, 'package.json')));
+const SECONDARY_HOSTS = HOSTS.filter((dir) => dir !== HOST);
 const LOG_DIR = join(ROOT, '.workbuddy', 'tmp');
 // 门禁互斥锁：两份全量门禁并发 = spawn 资源对撞（2026-10-03 实锤：两个 push
 // 任务并发各触发一份 gate-full，spawn 类测试成片假失败 + 步骤耗时暴涨 5-7 倍）。
@@ -297,6 +314,53 @@ const ALL_STEPS = [
     optionalFlag: 'audit-invert',
   },
 ];
+
+/**
+ * 二级宿主步骤 —— 由目录发现生成（当前 = memora-mcp），不手写宿主清单。
+ *
+ * 顺序约束：**必须插在 `host:test` 之前**——vscode 的跨宿主布局契约测试会加载 mcp 的
+ * `dist/` 并断言它不旧于源码；若先跑 test 后 build，测的就是历史行为（「因错误的原因通过」）。
+ */
+const SECONDARY_HOST_STEPS = [];
+for (const hostDir of SECONDARY_HOSTS) {
+  const label = basename(hostDir);
+  const pkg = JSON.parse(readFileSync(join(hostDir, 'package.json'), 'utf8'));
+  const scripts = pkg.scripts ?? {};
+  if (typeof scripts.typecheck !== 'string') {
+    // 配置错误而非测试失败：门禁要求每个宿主都能被类型检查，缺脚本就必须先补
+    console.error(
+      `[local-ci] 宿主 ${label} 缺 package.json#scripts.typecheck —— 门禁无法覆盖它，请先补齐`,
+    );
+    process.exit(2);
+  }
+  SECONDARY_HOST_STEPS.push({
+    id: `host:${label}:typecheck`,
+    name: `${label} TypeScript 类型检查`,
+    cmd: 'npm run typecheck',
+    cwd: hostDir,
+    required: true,
+    presets: ['fast', 'full'],
+  });
+  if (typeof scripts.build === 'string') {
+    SECONDARY_HOST_STEPS.push({
+      id: `host:${label}:build`,
+      name: `${label} 构建`,
+      cmd: 'npm run build',
+      cwd: hostDir,
+      required: true,
+      presets: ['full'],
+      optionalFlag: 'skip-build',
+    });
+  }
+}
+
+{
+  const insertAt = ALL_STEPS.findIndex((step) => step.id === 'host:test');
+  if (insertAt < 0) {
+    throw new Error('local-ci: 找不到 host:test 步骤，二级宿主步骤的插入点失效（请更新本处）');
+  }
+  ALL_STEPS.splice(insertAt, 0, ...SECONDARY_HOST_STEPS);
+}
 
 function selectSteps() {
   const preset = argOf('preset') ?? 'full';
