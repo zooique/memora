@@ -50,11 +50,6 @@ for await (const chunk of agent.chat('I love TypeScript')) {
 // Next session — the LLM can call search_memories to retrieve this memory
 const reply = await agent.chatSync('What language do I like?');
 
-// Memory governance — dedup / conflict detection / source health
-await agent.governance.deduplicate();
-await agent.governance.detectConflicts();
-const health = agent.governance.sourceHealth();
-
 await agent.close();
 ```
 
@@ -158,15 +153,14 @@ const reply = await agent.chatSync('What language do I like?');
 // Search memories (keyword-only; semantic vector channel removed via B0, 2026-09-18), limit is a number
 const hits = await agent.memory.searchByKeyword('TypeScript preference', 5);
 
-// Governance (exposed via agent.governance facade, LLM-judged)
-const report = await agent.governance.deduplicate();
-console.log(`Deduplicated ${report.deduplicatedCount} memories`);
-
-const conflicts = await agent.governance.detectConflicts();
-
-// Source health diagnosis (pure computation, no LLM): per-source count / days since last access (score retired → factual observation only)
+// Source health diagnosis (pure computation, no LLM): sources are discovered dynamically
+// via getAllSources(); per-source count / days since last access
 const health = agent.governance.sourceHealth();
 console.log(health?.sources);
+
+// Post-hoc governance (deduplicate / detectConflicts / suggest) reads GOVERNANCE_SOURCES,
+// which is currently an empty array => all three are no-ops. Write-time governance is
+// handled by supersede. See "governance facade" in the API reference manual.
 ```
 
 ### Cleanup

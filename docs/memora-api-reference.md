@@ -454,6 +454,10 @@ agent.memory.searchByKeyword(query: string, limit?: number): Promise<AgentSearch
 ```
 
 > **注意**：`suggest()` / `sourceHealth()` 经 `agent.governance` 暴露（`.suggest()` / `.sourceHealth()`），不挂在 `agent.memory` 下，避免经 MemoryInspector 转发产生多余代理层。
+>
+> **⚠ 治理门面输入现状（2026-10-18 实测）**：`deduplicate()` / `detectConflicts()` 逐 `GOVERNANCE_SOURCES`（`src/memory/governance.ts`）取样，`suggest()` 无 `query` 时同样逐该列表采样；该常量**当前为空数组**
+> （「设定记忆已归角色包」后被清空，未随新记忆模型补入新 source 名）⇒ 除 `sourceHealth()` 走 `getAllSources()` 动态发现仍有效外，其余三者恒返回空/零报告。写时治理由
+> `supersede`（写时取代）承担，不经本门面。**处置待拍板**：① 三方法改用 `getAllSources()` 动态发现（与 `sourceHealth` 对齐，能力复活）；② 随 3-track-1-port 重设计整链退役。台账见 `tasks/待完成任务.md` `GOVERNANCE-SRC-1`。
 
 ---
 
@@ -1016,7 +1020,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 手动归档 | `archiveSession(...)` |
 | 配置热更新 | `reloadConfig(source?)` |
 | 后台任务 | `listBackgroundTasks()` / `killBackgroundTask(taskId)`（见 §8.7；未 `init()` 抛 `configError`，不静默降级） |
-| 记忆治理 | 经 `agent.governance` 暴露（`.deduplicate()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()`，见下方 Manager 成员） |
+| 记忆治理 | 经 `agent.governance` 暴露（`.deduplicate()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()`，见下方 Manager 成员；**`deduplicate` / `detectConflicts` / `suggest` 当前恒空转**，`sourceHealth()` 仍有效，见 §四 治理门面输入现状） |
 | 指标 | `getMetrics()` |
 
 ### Agent 面类只读访问器
@@ -1030,7 +1034,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.rolePack` | `RolePackManager` | `.listMeta()` / `.activeName` / `.getActive()` / `.getActiveRules()` / `.activate()` / `.getSwitchLockStatus()` / `.getActiveTraits()` |
 | `agent.tools` | `ToolExecutor` | `.list` / `.registerTool()` / `.execute()` |
 | `agent.skills` | `SkillManager` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
-| `agent.governance` | `MemoryGovernance` | `.deduplicate()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()` |
+| `agent.governance` | `MemoryGovernance` | `.deduplicate()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()`（**前三者恒空转，见 §四 治理门面输入现状**） |
 | `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.searchByKeyword()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()`（**`.search()` 已于 4.0.0 移除**）；写：`.writeUpsert()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` |
 | `agent.works` | `WorkProjectionManager` | `.registerWork(sourcePath, description)` / `.refresh()` / `.listWorks()` / `.contextBlock()` / `.loadAndGetContextBlock()` |
 | `agent.polish` | `TextPolishManager` | `.polish(...)`（文本润色：LLM 语法修正 + 表达优化） |

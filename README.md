@@ -50,11 +50,6 @@ for await (const chunk of agent.chat('我喜欢 TypeScript')) {
 // 下次对话 — LLM 可自行调用 search_memories 取回这条记忆
 const reply = await agent.chatSync('我喜欢什么语言？');
 
-// 记忆治理 — 语义去重 / 冲突检测 / 来源健康诊断
-await agent.governance.deduplicate();
-await agent.governance.detectConflicts();
-const health = agent.governance.sourceHealth();
-
 await agent.close();
 ```
 
@@ -162,15 +157,13 @@ const reply = await agent.chatSync('我喜欢什么语言？');
 // 搜索记忆（limit 为数字）
 const hits = await agent.memory.searchByKeyword('TypeScript 偏好', 5);
 
-// 记忆治理（经 agent.governance 门面委托暴露，LLM 判断）
-const report = await agent.governance.deduplicate();
-console.log(`去重 ${report.deduplicatedCount} 条`);
-
-const conflicts = await agent.governance.detectConflicts();
-
-// 来源健康诊断（纯计算，不调 LLM）：逐 source 统计数量 / 距最近访问天数（score 退役后仅存事实观测）
+// 来源健康诊断（纯计算，不调 LLM）：经 getAllSources() 动态发现，逐 source 统计数量 / 距最近访问天数
 const health = agent.governance.sourceHealth();
 console.log(health?.sources);
+
+// 事后治理（deduplicate / detectConflicts / suggest）以 GOVERNANCE_SOURCES 为输入，
+// 该列表当前为空数组 ⇒ 三者恒空转；写时治理由 supersede（写时取代）承担。
+// 状态与后续处置见 API 参考手册 §四 治理门面说明。
 ```
 
 ### 关闭
