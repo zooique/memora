@@ -183,10 +183,14 @@ const ALL_STEPS = [
     // 置空 NODE_OPTIONS 可绕过（实测可行）。
     env: { NODE_OPTIONS: '' },
   },
+  // 内核生产构建 —— **先清 dist 再 build**。`build:clean` 与 npm `prepack` 共用同一脚本定义（单一真源）：
+  // 裸 `tsc` 不删旧产物 ⇒ src 已删模块的编译产物残留（DIST-ORPHAN-1 实测：dist 122 vs src 非测试 115，
+  // 差 7 模块 = 28 产物，且坑跨两轮未被发现）。门禁与发布走同一条「清后建」路径，
+  // 孤儿由构造消除、非事后捕获——门禁通过 = 与 `npm pack` 内容物一致。
   {
     id: 'kernel:build',
-    name: '内核生产构建',
-    cmd: 'npm run build',
+    name: '内核生产构建（清 dist + build）',
+    cmd: 'npm run build:clean',
     cwd: ROOT,
     required: true,
     presets: ['full'],
@@ -346,6 +350,20 @@ for (const hostDir of SECONDARY_HOSTS) {
       id: `host:${label}:build`,
       name: `${label} 构建`,
       cmd: 'npm run build',
+      cwd: hostDir,
+      required: true,
+      presets: ['full'],
+      optionalFlag: 'skip-build',
+    });
+  }
+  if (typeof scripts.smoke === 'string') {
+    // 端到端冒烟：真实 MCP Client 走 stdio 全链路（initialize/tools/list/tools/call + 取代过滤断言）。
+    // 收编进全量门禁 = 把「只读宿主真能答对」从手工自证变成每轮可见——mcp 的 SQLite 只读活库
+    // 改造（17b742c6）只被人工 `npm run smoke` 验过，机器面此前零覆盖。
+    SECONDARY_HOST_STEPS.push({
+      id: `host:${label}:smoke`,
+      name: `${label} 端到端冒烟（stdio 全链路）`,
+      cmd: 'npm run smoke',
       cwd: hostDir,
       required: true,
       presets: ['full'],

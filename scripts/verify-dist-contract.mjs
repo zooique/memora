@@ -9,7 +9,7 @@
  *   宿主源码没动，门禁照样绿，用户跑起来的却是旧内核。这正是项目自己记录过的
  *   「未改宿主 TS ≠ 未影响宿主 dist」，此前**零覆盖**。
  *
- * 两条断言（分工不同，缺一不可）：
+ * 三条断言（分工不同，缺一不可）：
  *
  *   ① **同代性（强判据）**：宿主构建期写入的 `kernelDistHash` == 当前内核 dist 哈希。
  *      哈希口径见 `scripts/lib/dist-hash.mjs`（**单一实现**，宿主构建侧共用同一函数）。
@@ -18,6 +18,15 @@
  *      `@zooique/memora` 解析到的就是这份 dist**（junction / node_modules 缓存可能指向
  *      另一份旧拷贝——此时戳与当前 dist 一致、bundle 里却仍是旧内核）。
  *      故再断言：宿主源码里 import 自内核**且被用到**的导出，其实现必须出现在 bundle 中。
+ *
+ *   ③ **内核 dist 自洽（补 ①② 的共同盲区）**：①② 只保证「宿主 bundle 用对了内核」，
+ *      不保证内核 `dist/` 自身**没夹带孤儿**。裸 `tsc`（不清 dist）会让 src 已删模块的
+ *      产物残留——DIST-ORPHAN-1 实测（dist 122 vs src 非测试 115，差 7 模块 28 产物）即此类，
+ *      且**门禁此前对该类零覆盖**。故断言：递归取 `dist/` 全部 `.js` 的文件集，与
+ *      `src/` 全部 `.ts`（排除 `__tests__` 与 `.d.ts`）映射而来的文件集**一一对应**。
+ *      门禁的 `kernel:build` 现走 `npm run build:clean`（清后建，定义见 package.json、
+ *      与 `prepack` 共用同一脚本），故正常恒过；其价值在 **tsconfig.build.json 配置漂移**
+ *      （误纳入非 src 文件）时红——非事后人工巡检。
  *
  *   ②的三处必要修正（均由变异验证实测暴露，不是预防性放宽）：
  *     - **别名解析**：内核 barrel 做别名导出时（实测 `src/index.ts:247` 唯一的
@@ -83,6 +92,23 @@ function collectHostSources(dir, out = []) {
       continue;
     }
     if (entry.name.endsWith('.ts')) out.push(full);
+  }
+  return out;
+}
+
+/**
+ * 递归收集目录下满足 filter 的文件**相对路径集**（`/` 分隔，跨平台稳定）。
+ * 排除 `__tests__` 与 `node_modules`——与 dist 产物无关的目录，纳入会造成假红。
+ */
+function collectRelPaths(dir, filter, base = dir, out = new Set()) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === '__tests__' || entry.name === 'node_modules') continue;
+      collectRelPaths(full, filter, base, out);
+      continue;
+    }
+    if (filter(entry.name)) out.add(relative(base, full).split(sep).join('/'));
   }
   return out;
 }
@@ -209,6 +235,27 @@ async function main() {
         `   → 重跑宿主构建：cd hosts/memora-vscode && npm run compile`,
     );
   }
+
+  // ── 断言 ③：内核 dist ↔ src 一一对应（零孤儿 / 零缺失）─────────────
+  const srcFileSet = new Set(
+    [...collectRelPaths(join(ROOT, 'src'), (n) => n.endsWith('.ts') && !n.endsWith('.d.ts'))].map(
+      (p) => p.replace(/\.ts$/, '.js'),
+    ),
+  );
+  const distFileSet = collectRelPaths(join(ROOT, 'dist'), (n) => n.endsWith('.js'));
+  const orphans = [...distFileSet].filter((f) => !srcFileSet.has(f));
+  const missingOut = [...srcFileSet].filter((f) => !distFileSet.has(f));
+  if (orphans.length > 0 || missingOut.length > 0) {
+    fail(
+      `内核 dist 与 src 不一一对应（应零孤儿 / 零缺失）\n` +
+        (orphans.length > 0 ? `   dist 孤儿（src 已无对应）：${orphans.join(', ')}\n` : '') +
+        (missingOut.length > 0
+          ? `   dist 缺失（src 有而未编译）：${missingOut.join(', ')}\n`
+          : '') +
+        `   → 清后重建：npm run build:clean`,
+    );
+  }
+  console.log(`✅ ${TAG} 内核 dist ↔ src 一一对应（各 ${srcFileSet.size} 项，零孤儿 / 零缺失）`);
 
   console.log(
     `✅ ${TAG} 宿主 bundle 与内核 dist 同代（hash=${currentHash.slice(0, 12)}）· ` +

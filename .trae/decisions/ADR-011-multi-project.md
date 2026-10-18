@@ -1,12 +1,19 @@
 ---
 alwaysApply: false
-description: 单 Agent 模型（Agent 级 DB + 三层架构 + 项目切换不重建）
+description: 单 Agent 模型（Agent 级 DB + 三层架构；「项目切换」已随 PR-SWITCH-1 删除 → 一个 Agent = 一个项目）
 ---
 
 # ADR-011 · 单 Agent 模型
 
 > **状态**：✅ 已采纳（v2 修订） **日期**：2026-06-05（原 v1 日期 2026-06-03）
 > **来源**：接入指南 v1.0 §一/§三/§四
+
+> **修订注记（2026-10-18 · 部分决策被取代）**：本 ADR 的**核心决策**（单 Agent 模型 + 三层架构 +
+> Agent 级 DB 不随项目重建）**仍然生效**；但「**项目切换**」这一子决策已随 `PR-SWITCH-1` **整链删除**——
+> 现行形态是「**一个 Agent 一个项目**」：宿主为每个项目各创建一个 Agent 实例，内核既不提供单实例内
+> 切换、也不维护跨项目名单（`switchProject` / `projects.json` / `AgentOptions.registryDir` /
+> `ProjectEntry` 已删）。故下文**决策第 4 条**与**后果**中「切换子项目」相关表述，一律按此新形态理解；
+> 权威口径以 [architecture_philosophy_rules.md](../rules/architecture_philosophy_rules.md) §10 为准。
 
 ## 背景
 

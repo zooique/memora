@@ -41,6 +41,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
+    "build:clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
@@ -61,7 +62,7 @@
     "docs:links:repo": "tsx scripts/check-publish-links.ts --repo",
     "rules:refs": "tsx scripts/check-rule-refs.ts",
     "prepare": "lefthook install || true",
-    "prepack": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && npm run build"
+    "prepack": "npm run build:clean"
   },
   "engines": {
     "node": ">=22.0.0"

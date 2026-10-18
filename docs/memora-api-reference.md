@@ -500,7 +500,7 @@ interface Memory {
 | `SOURCE_LABELS.ROUND_SUMMARY` | `'round-summary'` | 轮次摘要（当前实际写入记忆库的主要 source） |
 | `SOURCE_LABELS.UNKNOWN` | `'unknown'` | 未知来源（未被已知标签覆盖时的兜底值） |
 
-> source 是开放字符串，宿主可自定义新标签。`validateSource()` 可检测常见 typo（基于 Levenshtein 距离）。PERSONA/RULE/SKILL/WORK_PROJECTION 四标签**仅作历史兼容与 typo 检测**保留，已不进入治理范围（`GOVERNANCE_SOURCES`）——当前写入记忆库的主要 source 为 `round-summary`。
+> source 是开放字符串，宿主可自定义新标签。`validateSource()` 可检测常见 typo（基于 Levenshtein 距离）。PERSONA/RULE/SKILL/WORK_PROJECTION 四标签**仅作历史兼容与 typo 检测**保留，已不进入治理范围——圈定该范围的 `GOVERNANCE_SOURCES` 常量已随 5.0.0 事后治理链**整链退役**删除（见上文「历史留痕」注记）；当前写入记忆库的主要 source 为 `round-summary`。
 
 ### 5.2 `IMemoryStorage` 接口
 

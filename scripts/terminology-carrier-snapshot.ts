@@ -445,6 +445,7 @@ const BASELINE_CODE: readonly string[] = [
   'MULTI_STEP_PATTERNS',
   'MULTI_STEP_REASONINGS',
   'MultiStepReasoning',
+  'SECONDARY_HOST_STEPS',
   'STEP',
   'STEP_TIMEOUT_MS',
   'Step',
@@ -518,6 +519,8 @@ const BASELINE_TEXT: readonly string[] = [
   'MultiStepReasoning',
   'PlanStep',
   'PlanStepDto',
+  // 台账 ALIGN-DOC-1 点名引用的门禁常量（local-ci 流水线语义，与 ALL_STEPS 同族），2026-10-18 补基线
+  'SECONDARY_HOST_STEPS',
   'STEP',
   'STEP_DESC_MAX_CHARS',
   'STEP_LOG_CAP',
