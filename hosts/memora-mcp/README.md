@@ -1,6 +1,6 @@
 # @zooique/memora-mcp
 
-把本机 **memora 记忆库**（`.memora/memories.json`）通过 **MCP 协议**暴露给其他本地 AI agent。
+把本机 **memora 记忆库**（`.memora/memories.db`，SQLite）通过 **MCP 协议**暴露给其他本地 AI agent。
 
 > **当前形态：只读切片。** 只提供检索与读取，不提供写入。
 > 设计见 [`docs/方案-服务端MCP宿主-memora-mcp-20261015.md`](../../docs/方案-服务端MCP宿主-memora-mcp-20261015.md)。
@@ -51,8 +51,12 @@ claude mcp add memora -- npx -y @zooique/memora-mcp --db /path/to/your/workspace
 }
 ```
 
-> `--db` 指向**工作区根目录**（其下含 `.memora/memories.json`），语义与 VS Code 插件一致。
+> `--db` 指向**工作区根目录**（其下含 `.memora/memories.db`），语义与 VS Code 插件一致。
 > 不传则用当前工作目录。
+>
+> **前置条件**：Node ≥22.13（内置 `node:sqlite`）；该工作区须先用 Memora VS Code 插件
+> （≥1.101）打开过一次——库由插件创建、旧 `memories.json` 也由插件迁移。
+> MCP 只读，不建库、不迁移；库不存在会**报错退出**并说明成因，不会静默返回空结果。
 
 ### 本地构建后直接跑
 
@@ -118,5 +122,7 @@ mcp-publisher login github           # 3. 证明 io.github.zooique 命名空间
 mcp-publisher publish                # 4. 登记官方 MCP Registry（下游市场自动同步）
 ```
 
-> **本地联调坑**：内核 `dist/` 变更后，`file:../..` 是**硬链接副本**（pnpm nodeLinker=isolated），
-> 需重新 `pnpm install --offline` 刷新，否则宿主会加载旧版内核。
+> **本地联调事实（2026-10-18 实测）**：`hosts/memora-mcp/node_modules/@zooique/memora`
+> 是指向仓库根的**符号链接**（`ls -la` 显示 `-> /f/zooique/memora`），不是硬链接副本。
+> 内核 `npm run build` 后 mcp 立即读到新 `dist`，无需重装。若某次显示为副本而非链接，
+> 才需要 `pnpm install --offline` 刷新。

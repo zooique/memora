@@ -2,7 +2,8 @@
 // 重点验收：取代过滤（hasActiveSuperseder）语义是否正确
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { createNodeSqliteStorage } from '@zooique/memora';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -47,7 +48,11 @@ const memories = [
     accessedAt: iso(3),
   },
 ];
-writeFileSync(join(db, '.memora', 'memories.json'), JSON.stringify(memories, null, 2));
+// 用**内核写实现**建 fixture（不再手写 JSON）：与真实写宿主同一套 parseMemory 校验，
+// 顺带验证「内核写 → MCP 只读」这条跨进程链路的存储格式兼容性。
+const storage = createNodeSqliteStorage(join(db, '.memora', 'memories.db'));
+for (const memory of memories) storage.upsert(memory);
+storage.close();
 
 const transport = new StdioClientTransport({
   command: process.execPath,
