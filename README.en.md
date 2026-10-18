@@ -17,7 +17,7 @@
 ## What problem are you facing?
 
 - **LLM forgets everything between sessions** — Your users remember what they said, your agent doesn't
-- **Existing memory solutions are either too heavy (framework-bound) or too shallow (CRUD only)** — No dedup, conflict detection, or write-time supersede
+- **Existing memory solutions are either too heavy (framework-bound) or too shallow (CRUD only)** — No write-time supersede: either decay-only forgetting, or old and new memories coexist and contradict each other
 - **Memory and persona are tangled** — Switch personas and lose your history
 - **You don't want to send data to the cloud** — Need a local, private memory layer with zero external dependencies
 
@@ -25,7 +25,7 @@
 
 Memora is an **Agent memory kernel** — framework-agnostic, cloud-independent, focused on one thing: **giving your agent cross-session, cross-topic long-term memory that stays clean.**
 
-"Clean" means: semantic deduplication, conflict detection, write-time supersede, and last-used refresh (accessedAt, used for ordering) — no importance weighting, and not just stuffing history into the context window.
+"Clean" means: write-time supersede (soft `supersededBy` pointer, traceable) and last-used refresh (accessedAt, used for ordering) — no importance weighting, and not just stuffing history into the context window. **Governance happens at write time only**: there is no subscription-style post-hoc sweep (dedup / conflict detection / related suggestions were retired as a whole in 5.0.0 — see the Core Capabilities table).
 
 ```typescript
 import { Agent, createProviderFromConfig } from '@zooique/memora';
@@ -293,7 +293,7 @@ npm run build        # Compile to dist/
 |---|---|---|---|
 | Data privacy | ✅ 100% local | ❌ Cloud-dependent | ⚠️ Varies |
 | Runtime deps | ✅ Zero | N/A (SaaS) | ❌ Heavy |
-| Memory lifecycle | ✅ Full (dedup/conflict/supersede) | ⚠️ Partial | ❌ CRUD only |
+| Memory lifecycle | ✅ Write-time supersede | ⚠️ Partial | ❌ CRUD only |
 | Domain-agnostic | ✅ Open-string source | ⚠️ Opinionated | ⚠️ Framework-locked |
 | Embeddable | ✅ Any Node.js host | ❌ API calls only | ⚠️ Framework-bound |
 | Relation graph | ✅ Built-in sidecar | ❌ Rare | ❌ Rare |

@@ -354,11 +354,18 @@
 | - | --------------------------------------------------------- | ---------------------------------------------------- | --- |
 | 1 | `memory/storageInterface.ts`、`logging/loggerInterface.ts` | 为 IMemoryStorage / ILogger 补独立契约测试（当前主路径已由消费方集成测试覆盖） | 低   |
 | 2 | `skill/types.ts`、`llm/types.ts`、`web-search/types.ts`     | 纯类型定义，随消费方集成测试覆盖即可，无需独立测试                            | 低   |
-| 3 | `utils/recallDefaults.ts`                                 | 单常量（`DEFAULT_RECALL_EXCLUDE_SOURCES`），无需测试           | —   |
+
+> **已出列（2026-10-18）**：原第 3 项 `utils/recallDefaults.ts` 已随 `GOVERNANCE-SRC-1` 整链退役删除，
+> 不再是「待打磨模块」。
 
 ***
 
-## 八、测试覆盖统计（按生长层）
+## 八、测试覆盖统计（**历史基线 · 2026-08-20 · 已过期，勿引用数字**）
+
+> 🔴 **本节数字已停止维护**（2026-10-18 定性）：此后累计删除 7 个源文件均未逐文件重算。
+> 保留表格仅作**分层结构参考**；需要精确口径用 `git ls-files src` 或
+> `node scripts/report-surface.mjs`。下面「无测试文件」点名清单已按最新事实订正（7 个），
+> 与表格中的基线数字（8）不一致时，**以点名清单为准**。
 
 > 覆盖统计按**生长层**组织（与正文模块编排一致）；纯类型/接口文件（⚪）按"消费方集成测试覆盖"计为无独立测试（与目录视角统计口径一致）。
 
@@ -375,13 +382,20 @@
 
 > **计数口径**：
 >
-> * 无测试的 8 个文件：`skill/types.ts`、`llm/types.ts`、`web-search/types.ts`、`memory/storageInterface.ts`（纯类型/接口，消费方集成测试覆盖）+ `utils/recallDefaults.ts`（单常量，无需测试）+ `logging/loggerInterface.ts`（纯接口）+ `seed/index.ts`（桶导出）+ `seed/types.ts`（纯类型/契约，经 seed 各单测消费）。
+> * 无测试的 7 个文件：`skill/types.ts`、`llm/types.ts`、`web-search/types.ts`、`memory/storageInterface.ts`（纯类型/接口，消费方集成测试覆盖）+ `logging/loggerInterface.ts`（纯接口）+ `seed/index.ts`（桶导出）+ `seed/types.ts`（纯类型/契约，经 seed 各单测消费）。
 >
 > * L0 含 `agent/seed/`（4 源文件：index/types/prepare/orchestrator；2 个有独立单测 prepare.test.ts + orchestrator.test.ts，index/types 无独立测试；orchestrator 编排两阶段 prepare/act，reflect 在 agent.ts 后处理）；`seed/__tests__/harness.ts` 为测试装备非测试文件，不单列。
 >
-> * L4 含 `memory/` 12 文件（`sessionStore.ts` 计入 L5）+ 摘要/治理/会话沉淀 15 个 managers 文件。
+> * L4 含 `memory/` 部分文件（`sessionStore.ts` 计入 L5）+ 摘要 / 会话沉淀类 managers 文件
+>   （**记忆治理类 managers 已于 2026-10-18 随 `GOVERNANCE-SRC-1` 整链退役**，不再计入）。
 >
-> * L6 含 `utils/` 20 文件（含 `recallDefaults.ts`、`backgroundTask.ts`）+ config/security/logging。
+> * L6 含 `utils/` 文件（含 `backgroundTask.ts`）+ config/security/logging。
+>
+> * 🔴 **§八 计数不是 SSOT，勿作数量依据**：本表停留 2026-08-20 基线，此后累计删除
+>   7 个源文件（2026-10-18 `projectRegistry.ts` + 4 个治理 managers + `recallDefaults.ts`，
+>   以及更早的 `governance.ts`）均**未逐文件重算**。需要精确口径时用 `git ls-files src`
+>   或 `node scripts/report-surface.mjs`（后者只报符号/成员数，不报文件数）。
+>   本表仅用于「分层结构参考」，不承诺数字准确——加数字守卫前不要引用具体值。
 >
 > * 2026-08-20 种子收敛（L0 `agent/seed/`，4 源文件）；2026-09-04/05 废弃清理：difficulty.ts/externalTaskLoop/runReport/Handoff 整体删除（多 turn 复杂度在单 turn 内自然生长）；2026-08-19 深度剪枝后：memory/ 移除 store/loader/multiHop 3 个文件，eval/ 整体移除（3 文件），reranker 收敛为接口（测试 3 条）；2026-09-11 群落二审查：reranker 接口文件移除（零生产消费、依赖已退役 recall 编排、现行 searchByKeyword 无精排阶段）。
 
