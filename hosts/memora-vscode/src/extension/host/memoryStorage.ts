@@ -47,6 +47,17 @@ const DATA_DIR_NAME = '.memora';
 /** SQLite 库文件名（宿主侧定义；内核不感知，见文件头「路径语义」） */
 const MEMORY_DB_FILENAME = 'memories.db';
 
+/**
+ * 解析工作区记忆库绝对路径 —— **跨宿主路径契约的唯一计算点**。
+ *
+ * `hosts/memora-mcp` 用同一布局只读打开该文件（`readOnlyFileStore.ts` 自己 join 同两个常量）。
+ * 两侧一致性由 `src/__tests__/crossHostLayout.test.ts` 守护：它加载 mcp 的构建产物，
+ * 断言两侧对同一工作区算出**同一个绝对路径**。改这里的目录/文件名必须同时改 mcp，否则契约测试红。
+ */
+export function resolveHostMemoryDbPath(projectPath: string): string {
+  return join(projectPath, DATA_DIR_NAME, MEMORY_DB_FILENAME);
+}
+
 /** 一次性迁移结果（内部结构，供日志上报用） */
 interface MigrationResult {
   /** 是否真的发生迁移（旧档存在且已处理） */
@@ -79,7 +90,7 @@ export function createHostMemoryStorage(
   logger?: ILogger,
   deps: MemoryStorageDeps = { openSqlite: createNodeSqliteStorage },
 ): IMemoryStorage {
-  const dbPath = join(projectPath, DATA_DIR_NAME, MEMORY_DB_FILENAME);
+  const dbPath = resolveHostMemoryDbPath(projectPath);
 
   let sqlite: IMemoryStorage;
   try {
