@@ -412,6 +412,9 @@ interface AgentSearchHit {
   source: string;         // 来源标签
   contentPreview: string; // 内容预览（截断到 120 字符）
   createdAt?: string;     // 创建时间（ISO 8601，供 UI 层时间筛选/排序使用）
+  accessedAt?: string;    // 最近使用时间（命中即刷新；LLM 按此判断「最近使用优先」）
+  sessionId?: string;     // 溯源（round-summary 命中项）：会话标识，trace_summary 参数直通
+  roundId?: string;       // 溯源（round-summary 命中项）：轮次 ID，LLM 零解析直用
 }
 ```
 
@@ -480,6 +483,7 @@ interface Memory {
   roundId?: string;      // round-summary 归属轮次标识（顶层持久化字段，仅 round-summary 有意义）
   isModified?: boolean;  // 摘要是否已被人工修改（仅 round-summary 有意义）
   supersededBy?: string; // 写路径取代标记：非 undefined 表示已被更新的摘要覆盖，召回时确定性过滤
+  materialFingerprint?: string; // 摘要原料指纹（sha256(原文+分隔符+回复)），写路径前置精确去重：原料全等则跳过生成、不调 LLM。仅 round-summary 有意义，存量条目无此字段
 }
 ```
 
@@ -633,9 +637,8 @@ const sessions = await agent.agentHistory?.listAllSessions();
 
 ```typescript
 // Agent.forkSession() / sessionManager.forkSession() 返回值
-interface AgentForkResult {
-  newSession: string;
-  roundCount: number; // 新会话 Round ID 数量（AgentForkResult = ForkResult & { roundCount }）
+interface AgentForkResult extends ForkResult {
+  roundCount: number; // 新会话获得的 Round ID 数量（源码 = ForkResult & { roundCount }）
 }
 
 // MessageHistory.forkSession() 内部类型（从 memora 导出）
@@ -713,6 +716,8 @@ interface ToolDefinition {
     properties: Record<string, { type: string; description: string }>;
     required: string[];        // 必填参数列表（不可省略）
   };
+  readonly?: boolean;          // 只读工具标记：true = readonly 模式下保留；缺省 false = 写操作，readonly 模式被阻止
+  diskWrite?: 'path' | 'opaque'; // 改盘声明（与 readonly 正交）：'path' 按 args.path 定位目标做写串行；'opaque' 与一切写互斥；缺省 = 不改盘
 }
 
 // 宿主注册领域工具示例
@@ -797,6 +802,7 @@ interface FetchedPage {
   title: string;
   content: string;
   contentType?: string;
+  fetchFailed?: true;  // 抓取失败降级页标记（safeFetch 专有，值恒 true）；消费方据此区分「失败降级」与「成功但内容为空」
 }
 
 // 抓取选项
@@ -833,11 +839,13 @@ interface CodeExecutionResult {
 
 // 执行选项
 interface CodeExecutionOptions {
-  timeoutMs?: number;  // 单次执行超时上限
+  timeoutMs?: number;  // 单次执行超时上限（毫秒，默认 30000，最大 120000）
+  cwd?: string;        // 工作目录（可选，未传由执行器决定）
 }
 
 // 代码执行提供者接口
 interface ICodeExecutionProvider {
+  readonly supportedLanguages?: readonly string[]; // 支持的语言别名（如 ['javascript','js','node']）；声明后 run_code 工具描述按实际生成「支持：…」，缺省则退化为去承诺文案
   execute(code: string, language: string, options?: CodeExecutionOptions): Promise<CodeExecutionResult>;
 }
 
