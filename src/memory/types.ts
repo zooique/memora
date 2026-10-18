@@ -33,7 +33,7 @@ export interface Memory {
   createdAt: string;
   /** 最后访问时间（每次召回时刷新） */
   accessedAt: string;
-  /** 软删除时间；非 undefined 表示已删除，回收站保留 30 天后物理清理 */
+  /** 软删除时间；非 undefined 表示已删除。回收站**不自动清理**：保留期由宿主策略决定（当前宿主为 30 天），物理清理须显式调用 `purgeExpired` */
   deletedAt?: string;
   /**
    * 额外的键值对元数据（可选透传字段，内核侧无生产写入方）。
