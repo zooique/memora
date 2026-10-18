@@ -285,6 +285,18 @@ const ALL_STEPS = [
     required: true,
     presets: ['full'],
   },
+  // 短语类穷尽扫描（MEM-PURGE-1 血训）：类谎报的「无 head 全量枚举 + 逐条分类」断根。
+  // 缺口动因：验证「扫全」曾用带 `head_limit` 的临时 grep → 命中被截断即漏判，同会话内二次复发。
+  // 本步把「每条同类命中必须被 allow 规则归类（带 reason）」做成闸门——新增未归类命中即红。
+  // 确定性 FS 扫描、秒级、零依赖；类注册表锁在 scripts/scan-phrase-class.ts（单一真源）。
+  {
+    id: 'phrase:scan',
+    name: '短语类穷尽扫描（枚举 + 逐条分类）',
+    cmd: 'npm run scan:phrase:check',
+    cwd: ROOT,
+    required: true,
+    presets: ['full'],
+  },
   // 台账销项同步（告警档）：实现性提交携带台账条目 ID、但区间内 tasks/ 无对应变更 → 告警。
   // 缺口实证：TERM-FDBK-1 随 feat 提交落地、同批 docs 提交没碰台账 → 台账仍挂「待排期」，
   // 而既有 13 步对此零覆盖（都只认代码/文档事实，不认台账是否与提交同步）。
