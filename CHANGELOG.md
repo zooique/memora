@@ -1190,6 +1190,17 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Changed（宿主 · 输入条进度信号去重 + 会话记录量词订正 · 2026-10-18）
+
+- **占用构成条移入圆环 hover 卡片底部（HOST-S3-2 真机点验订正）**：真机反馈「输入条底部横条与
+  圆环功能冲突」——同一 `context_occupancy` 在状态行双渲染（圆环=总量占比，构成条=分段构成）。
+  按拍板方案：`#occSegments` 由状态行常驻**移入圆环 hover 卡片**（明细文字在上、构成条在下），
+  输入条只留圆环一个进度信号；构成条能力不撤（段 title 明细 + 逐字对拍守卫原样保留），
+  条宽 60px 令牌 → 卡片内 100%（`--dim-` 消费 20→19，`count-token-refs.mjs` 实测同步）。
+  新增结构断言：构成条在 hover 卡片内、不在状态行。
+- **会话记录日期头量词订正**：「N 条会话」→「N 会话」——会话是多个 turn 的集合，「条」量词
+  易误读为消息条数（会话行内「· N 条」才是消息数，保持不动）；日期头分组测试断言随契约同步。
+
 ### Added（宿主 · 暂停按钮显隐判据接线 `canContinueWithoutInput` · TurnState 单通道投影 · 2026-10-16）
 
 5.0.0 公开面清理批宿主接线：内核 `Agent.canContinueWithoutInput()` 判据（「暂停了也无输入可续跑」的形态不暴露暂停按钮）此前宿主是「运行中即显示」的旧行为近似。接线走 **TurnState 单通道投影**：protocol `TurnState` 运行中/提问等待两相位加 `canContinue?: boolean`（缺省 true 保旧行为）→ `deriveTurnState` 三分支条件展开 → `chatPanel.postTurnUpdate` 现取内核判据 → `deriveButtonSemantics` thinking 分支门控 → webview `canContinueFlag`。

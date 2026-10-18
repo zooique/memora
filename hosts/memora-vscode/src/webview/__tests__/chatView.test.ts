@@ -3815,10 +3815,8 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     });
     const heads = [...document.querySelectorAll('#historyMenu .session-history__date-group')];
     // 两个日期 → 两个组头；组间降序（ISO 日期字符串可直接比较，与 updatedAt 降序同向）
-    expect(heads.map((h) => h.textContent)).toEqual([
-      '2026-08-15 · 1 条会话',
-      '2026-08-14 · 2 条会话',
-    ]);
+    // 量词口径（2026-10-18 真机订正）：会话 = 多 turn 集合，日期头只计数不量词（「条」留给消息数）
+    expect(heads.map((h) => h.textContent)).toEqual(['2026-08-15 · 1 会话', '2026-08-14 · 2 会话']);
     // 组内保留下发顺序：新日期组的条目在前，旧日期组内两条按原序
     const items = [...document.querySelectorAll('#historyMenu .treedd__item')];
     expect(items.map((i) => (i as HTMLElement).dataset.treeddId)).toEqual([
@@ -5591,7 +5589,7 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
   });
 });
 
-describe('chatView 占用构成条：常驻轻量分段比例条（HOST-S3-2，2026-10-14）', () => {
+describe('chatView 占用构成条：圆环 hover 卡片内分段比例条（HOST-S3-2 · 2026-10-18 由状态行移入卡片底部）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -5617,6 +5615,12 @@ describe('chatView 占用构成条：常驻轻量分段比例条（HOST-S3-2，2
       },
     });
     expect(segBar.hidden).toBe(false);
+    // 结构契约（2026-10-18 移入）：构成条在圆环 hover 卡片内、不在状态行**直接子节点**位
+    // （同源信号不双渲染——输入条只留圆环一个进度信号；圆环本身在状态行内，故判「直接 children」）
+    expect((document.getElementById('occTip') as HTMLElement).contains(segBar)).toBe(true);
+    const statusRow = segBar.closest('.composer-row--status') as HTMLElement | null;
+    expect(statusRow).not.toBeNull();
+    expect([...(statusRow as HTMLElement).children]).not.toContain(segBar);
     const segs = [...segBar.children] as HTMLElement[];
     expect(segs.length).toBe(6);
     // 段序与段类：rolepack → dynamic → dialogue → input → output → free（台账口径五段 + 剩余）
@@ -5659,9 +5663,11 @@ describe('chatView 占用构成条：常驻轻量分段比例条（HOST-S3-2，2
       },
     });
     // hover 明细 = 首行总容量 + 六段行；每段 title 与对应行逐字一致（共用格式化口径的守卫）
-    const tipLines = ((document.getElementById('occTip') as HTMLElement).textContent ?? '').split(
-      '\n',
-    );
+    // （2026-10-18 起明细文字在 #occTipText 子节点——occTip 本身还含构成条子节点与模板
+    //   空白文本节点，行数判据必须读文本节点本身，读 occTip.textContent 会把缩进空白算成行）
+    const tipLines = (
+      (document.getElementById('occTipText') as HTMLElement).textContent ?? ''
+    ).split('\n');
     const segs = [
       ...(document.getElementById('occSegments') as HTMLElement).children,
     ] as HTMLElement[];

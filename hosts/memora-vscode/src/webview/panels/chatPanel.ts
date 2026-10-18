@@ -4227,7 +4227,8 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           </div>
         </div>
         <!-- Row 2 · 状态行：左角色/能力徽章 + 右上下文占用圆环（两端分布；占用属状态信息归本行，
-             不干扰 Row 1 主操作；hover/聚焦**向上**弹窗出分层明细文字，避免向下展开挤压面板底部）
+             不干扰 Row 1 主操作；hover/聚焦**向上**弹卡片出「分层明细文字 + 占用构成条」，
+             避免向下展开挤压面板底部）
              角色徽章 = button（可点跳转角色管理视图，open_roles → memora.openRoles）：
              外观与旧 span 徽章完全一致（零常驻视觉增量，仅 hover 反馈 + title 提示可点），
              id 保持 currentRoleBadge 不变 ⇒ 现有 chat_role_pack 消费链路（含测试断言）零改动。 -->
@@ -4236,18 +4237,22 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             <button id="currentRoleBadge" class="role-badge" type="button" title="点击管理角色包"></button>
             <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
           </div>
-          <!-- 构成条（HOST-S3-2）：常驻轻量分段比例条（五段真实占用 + 剩余），随 context_occupancy /
-               chat_providers 空态渲染；每段 title 出单段明细，圆环 hover 完整明细保留 -->
-          <div id="occSegments" class="context-segments" hidden></div>
           <!-- 上下文占用圆环：常驻不占行，非噪点；首帧由 chat_providers 渲染所选模型容量上限，
-               真实分层占用由首轮后 context_occupancy 覆盖 -->
+               真实分层占用由首轮后 context_occupancy 覆盖。
+               hover 卡片 = 分层明细文字（上）+ 占用构成条（下）。构成条（HOST-S3-2）2026-10-18
+               由状态行常驻**移入卡片底部**：圆环（总量占比）与构成条（分段构成）同吃
+               context_occupancy，在输入条并排 = 同源信号双渲染（真机反馈「功能冲突」）⇒
+               输入条只留圆环一个进度信号，构成一瞥改驻 hover 卡片，能力不撤。 -->
           <div id="contextOccupancy" class="context-ring" hidden>
             <svg class="context-ring__svg" viewBox="0 0 40 40" aria-hidden="true">
               <circle class="context-ring__track" cx="20" cy="20" r="16" />
               <circle class="context-ring__fill" id="occFill" cx="20" cy="20" r="16" />
             </svg>
             <span class="context-ring__percent" id="occPercent">0%</span>
-            <div class="context-ring__tip" id="occTip" role="tooltip"></div>
+            <div class="context-ring__tip" id="occTip" role="tooltip">
+              <div class="context-ring__tip-text" id="occTipText"></div>
+              <div id="occSegments" class="context-segments" hidden></div>
+            </div>
           </div>
         </div>
       </div>

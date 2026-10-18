@@ -5033,11 +5033,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 构成条渲染（HOST-S3-2）：五段实际占用 + 剩余按 token 数比例拼满常驻分段条。
+   * 构成条渲染（HOST-S3-2）：五段实际占用 + 剩余按 token 数比例拼满**圆环 hover 卡片底部**的分段条。
    *
    * 每段 flex-grow = 该段 token 数（flex-basis 0 ⇒ 宽度精确按比例），原生 title 出
    * 单段明细（与 buildOccupancyTipText 共用 SEGMENT_LABELS 及同一格式化口径，两处零漂移）；
    * UI 只渲染宿主透传的数字，不重算（守内核/宿主边界）。每次全量重建（6 个 div，无需 diff）。
+   * 2026-10-18 由状态行常驻移入卡片（输入条同源双渲染去重，见 chatPanel.ts 结构注释）。
    */
   function renderOccupancySegments(
     occ: Extract<ExtensionToWebviewMessage, { type: 'context_occupancy' }>['occupancy'],
@@ -5130,9 +5131,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       outputReserveTokens: 0,
       freeTokens: active.limitTokens,
     };
-    const tipEl = document.getElementById('occTip');
-    if (tipEl) {
-      tipEl.textContent = buildOccupancyTipText(emptyOcc);
+    const tipTextEl = document.getElementById('occTipText');
+    if (tipTextEl) {
+      tipTextEl.textContent = buildOccupancyTipText(emptyOcc);
     }
     // 空态构成条同步渲染（全 free 段，真实占用待 context_occupancy 覆盖）
     renderOccupancySegments(emptyOcc);
@@ -5159,8 +5160,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     setRingFill(el, usedPct);
     const percentEl = document.getElementById('occPercent');
     if (percentEl) percentEl.textContent = usedPct.toFixed(0) + '%';
-    const tipEl = document.getElementById('occTip');
-    if (tipEl) tipEl.textContent = buildOccupancyTipText(occ);
+    // 明细文字写入 tip 的文本子节点（勿写 tip 本身——构成条是 tip 的子节点，textContent 会连它一起清掉）
+    const tipTextEl = document.getElementById('occTipText');
+    if (tipTextEl) tipTextEl.textContent = buildOccupancyTipText(occ);
     // 构成条（HOST-S3-2）同步更新：五段真实占用 + 剩余常驻一瞥
     renderOccupancySegments(occ);
   }
@@ -6364,7 +6366,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const [day, items] of [...byDay].sort(([a], [b]) => b.localeCompare(a))) {
       const head = document.createElement('div');
       head.className = 'session-history__date-group';
-      head.textContent = `${day} · ${items.length} 条会话`;
+      // 会话是多个 turn 的集合，「N 条会话」的「条」易误读为消息条数（行内「· N 条」才是消息数）
+      // ⇒ 2026-10-18 真机反馈订正：日期头只计数不量词
+      head.textContent = `${day} · ${items.length} 会话`;
       historyMenu.appendChild(head);
       for (const s of items) {
         renderHistoryItem(s);

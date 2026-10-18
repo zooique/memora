@@ -1190,7 +1190,9 @@ export const chatStyles = `
     font-variant-numeric: tabular-nums;
     pointer-events: none;
   }
-  /* hover/聚焦弹窗：白底浮层多行文字明细（含条数 · token · 占比 · 角色包比例）。
+  /* hover/聚焦弹卡片：白底浮层，上为分层明细文字（含条数 · token · 占比 · 角色包比例）、
+   * 下为占用构成条（HOST-S3-2，2026-10-18 由状态行常驻移入卡片底部——圆环与构成条同吃
+   * context_occupancy，输入条不双渲染同一信号）。
    * 向上弹出（bottom 贴圆环上沿）：底部是输入区/面板边界，向下展开会撑出外部滚动条。
    * 宽度弹性：max-content 由最长一行自然决定（贴合内容不留白），max-width 兜底防极端长数撑太宽 */
   .context-ring__tip {
@@ -1208,23 +1210,30 @@ export const chatStyles = `
     font-size: var(--font-sm, 11px);
     line-height: var(--lh-relaxed);
     color: var(--text-input, #cccccc);
-    white-space: pre-line; /* 保留 buildOccupancyTipText 的多行 \n */
     font-variant-numeric: tabular-nums;
     z-index: var(--z-tip);
+  }
+  /* 明细文字子节点：pre-line 保留 buildOccupancyTipText 的多行 \n
+   * （原写在 tip 本件上；2026-10-18 构成条入迁后 tip 含两个子节点，换行职责移入文本节点） */
+  .context-ring__tip-text {
+    white-space: pre-line;
   }
   .context-ring:hover .context-ring__tip,
   .context-ring:focus-within .context-ring__tip { display: block; }
   @media (prefers-reduced-motion: reduce) {
     .context-ring__fill { transition: none; }
   }
-  /* 构成条（HOST-S3-2）：圆环左侧常驻轻量分段比例条，五段真实占用 + 剩余按 token 数
-   * flex-grow（JS 内联）拼满；每段原生 title 出单段明细（与 hover 明细共用 SEGMENT_LABELS
-   * 单点文案，零新浮层）。圆环 hover 完整明细保留不动——常驻一瞥构成 + hover 精确数字分层。
-   * 宽度复用 --dim-md（进度条最小宽同用途域）；高度 4px 为 C 类一次性维度（无对应刻度档，
-   * 见 tokensClosure 值守卫基线注释登记）。 */
+  /* 占用构成条（HOST-S3-2）：圆环 hover 卡片**底部**的分段比例条（2026-10-18 由状态行常驻
+   * 移入——与圆环同吃 context_occupancy，输入条只留圆环一个进度信号），五段真实占用 + 剩余
+   * 按 token 数 flex-grow（JS 内联）拼满；每段原生 title 出单段明细（与 hover 明细共用
+   * SEGMENT_LABELS 单点文案，零新浮层）。
+   * 宽度 = 卡片内 100%（原状态行常驻宽 --dim-md 60px 随移入废除；dim- 消费 20→19 经
+   * count-token-refs.mjs 机械实测同步 tokensClosure）；上距 --sp-3 与文字明细分层。
+   * 高度 4px 为 C 类一次性维度（无对应刻度档，见 tokensClosure 值守卫基线注释登记）。 */
   .context-segments {
     display: flex;
-    width: var(--dim-md, 60px);
+    width: 100%;
+    margin-top: var(--sp-3, 8px);
     height: 4px;
     border-radius: var(--radius-pill);
     overflow: hidden; /* 段拼满条形，圆角裁切段边缘 */
