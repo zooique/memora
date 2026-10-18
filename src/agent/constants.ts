@@ -9,8 +9,9 @@
 
 // 上下文预算装配后，最近对话注入轮数由预算动态派生（见 budget.ts / contextPreparer.ts），
 // agent 常量层不再持有固定轮数默认。
-// SSOT：召回排除默认值下沉到 utils/recallDefaults（记忆层与 agent 层共享，避免两处定义），
-// 消费方 MemoryAdvisor 直接 import 源头，agent 常量层不 re-export。
+// 删后注记（2026-10-18 · GOVERNANCE-SRC-1）：此处原有「召回排除默认值下沉到 utils/recallDefaults，
+// 消费方 MemoryAdvisor 直接 import 源头」的 SSOT 说明。两边已于治理链整链退役时一并删除
+// （recallDefaults 最后一个消费方消失），故本段说明随之作废。
 
 /**
  * Agent 门面层常量

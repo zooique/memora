@@ -11,8 +11,9 @@
  *   - stats：记忆库统计
  *   - 写操作：writeUpsert / writeDelete / writeRestore / writePurge / writePurgeExpired
  *
- * sourceHealth / suggest 由 Agent 门面直连 MemoryAdvisor（与 detectConflicts 同模式），
- * 相关测试见 memoryAdvisor.test.ts + agent.test.ts。本测试不再 import MemoryAdvisor。
+ * sourceHealth / suggest 已不在本类，也不在任何内核类里——它们曾由 Agent 门面直连
+ * MemoryAdvisor，该类已随 GOVERNANCE-SRC-1（2026-10-18）整链退役。健康度需求改走
+ * `stats().bySource`（本文件 stats 区块即覆盖该口径）。
  *
  * Mock 策略：
  *   - InMemoryStorage 用真实实现（测试夹具，已被 store.test.ts 验证）
@@ -476,16 +477,9 @@ describe('MemoryInspector', () => {
     });
   });
 
-  // ════════════════════════════════════════════════════════
-  // 8. sourceHealth + suggest 委托（已迁移）
-  // ════════════════════════════════════════════════════════
-  //
-  // sourceHealth / suggest 已从 MemoryInspector 删除，
-  // 迁移至 Agent 门面直连 MemoryAdvisor（与 detectConflicts 同模式）。
-  // 相关测试见：
-  //   - memoryAdvisor.test.ts（advisor 单元测试，覆盖 sourceHealth/suggest 全场景）
-  //   - agent.test.ts（Agent 门面委托测试）
-  //   - host.test.ts（宿主 sourceHealth() 集成测试）
+  // §8 曾为「sourceHealth + suggest 委托」区块，先迁至 MemoryAdvisor、后随 GOVERNANCE-SRC-1
+  // （2026-10-18）整链退役而整体消失（含 memoryAdvisor.test.ts / agent.test.ts 对应用例）。
+  // 故本节编号空缺保留为决策史留痕，不复用编号——避免旧版本文档/讨论中的「§8」指错对象。
 
   // ════════════════════════════════════════════════════════
   // 9. 写操作（writeXxx 前缀）

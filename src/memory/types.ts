@@ -208,7 +208,8 @@ export function parseMemory(raw: unknown): Memory {
  * persona / rule / skill / work-projection 为残留兼容标签：对应内容不归记忆库管理
  * （角色包内容由角色包管理，作品投影落项目目录 projections/），标签保留用于
  * typo 检测（sourceValidation.ts：KNOWN_SOURCES 集合）与存量行/外部导入识别；
- * 它们不出现在 GOVERNANCE_SOURCES 中（治理系统只治理实际写入记忆库的 source）。
+ * 它们不出现在「治理取样列表」中（治理系统只治理实际写入记忆库的 source）。原 `GOVERNANCE_SOURCES`
+ * 常量已随 GOVERNANCE-SRC-1（2026-10-18）整链退役；该约定仍成立——写时取代只对实际写入的记忆生效。
  */
 export const SOURCE_LABELS = {
   /** 角色人格（角色包 content/persona.md）— 残留兼容标签，不写入记忆库 */
