@@ -144,3 +144,68 @@ describe('backgroundTask 后台任务收口', () => {
     expect(awaited).toBe(6);
   });
 });
+
+/**
+ * MULTI-AGENT-1 —— 多实例共享后台槽位（形态定案的代价面，2026-10-18 实测）。
+ *
+ * 背景：内核形态定案「一个 Agent = 一个项目，多项目由宿主各建实例」，但本门面的
+ * `activeCount` / `pendingQueue` / `pendingCount` 三个绑定是**模块级**而非实例级
+ * （`src/utils/backgroundTask.ts` 顶部模块作用域）⇒ N 个 Agent 实例共享同一 5 槽位与同一 FIFO 队列。
+ *
+ * 为什么测机制而不是端到端起两个 Agent：根因就在模块级可变状态，起两个真 Agent 需要注入
+ * store/provider/hooks，链路噪声远大于信号；本块用「标签分组」模拟两个实例的调用来源，
+ * 直接对根因下断言。端到端行为差异已由本块两条用例的结论完整覆盖（挤占 + 交叉等待）。
+ *
+ * 本块是**事实测量**，不是缺陷断言——形态定案的既定代价，修不修由台账 `MULTI-AGENT-1` 定，
+ * 这里只负责让「已知代价」变成「可执行、可回归的证据」。
+ */
+describe('MULTI-AGENT-1 · 多 Agent 实例共享后台槽位（事实测量）', () => {
+  beforeEach(() => {
+    _resetBackgroundTaskState();
+  });
+
+  it('槽位全局共享：实例 A 占满 5 槽后，实例 B 的任务被挤进同一队列', async () => {
+    const started: string[] = [];
+    const gates: Array<() => void> = [];
+    const slow = (label: string) => () =>
+      new Promise<void>((res) => {
+        started.push(label);
+        gates.push(res);
+      });
+
+    // 实例 A 起 5 个长任务（占满全局槽位）
+    for (let i = 0; i < 5; i++) backgroundTask(`A-${i}`, slow(`A-${i}`));
+    expect(started.filter((s) => s.startsWith('A-'))).toHaveLength(5);
+
+    // 实例 B 起 1 个任务 —— 明明 A、B 是两个项目，B 却抢不到槽位
+    backgroundTask('B-0', slow('B-0'));
+    expect(started).not.toContain('B-0');
+
+    // 只有 A 释放一个槽位，B 才能启动（挤占实证）
+    gates[0]!();
+    await vi.waitFor(() => {
+      expect(started).toContain('B-0');
+    });
+
+    // 清理
+    for (const g of gates) g();
+    await awaitBackgroundTasks(5000);
+  });
+
+  it('awaitBackgroundTasks 是全局口径：实例 A 的 close 会等实例 B 的在途任务', async () => {
+    let releaseB!: () => void;
+    backgroundTask(
+      'B-long',
+      () =>
+        new Promise<void>((res) => {
+          releaseB = res;
+        }),
+    );
+
+    // 「实例 A」调 close → awaitBackgroundTasks 读到的是 B 的在途数（交叉等待实证）
+    const waitPromise = awaitBackgroundTasks(5000);
+    releaseB();
+    const awaited = await waitPromise;
+    expect(awaited).toBe(1);
+  });
+});
