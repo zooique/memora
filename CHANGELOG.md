@@ -10,6 +10,44 @@
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：目标漂移检测链整体删除（公开 API 编译期破坏）+ 检查点公开方法减法（CHKPT-1/2/3）+ **原 [4.1.0] 区四小节整体归并**（2026-10-15 二次拍板取消 4.1.0：npm 实查最新已发布 = 4.0.0，从未发布的 minor 区无消费者可保、归并窗口仅存在于发版前）+ **存储层 SQLite 实现内核切片**（2026-10-16 新增 2 个导出，非破坏）。宿主变更在 `[Unreleased] · 宿主` 区，不占内核版本号。
 
+### ⚠️ Breaking Removed（内核 · 记忆治理门面整链退役 · `GOVERNANCE-SRC-1`，2026-10-18）
+
+> **性质**：删掉的是**一整套永不产出结果的能力**，不是「零引用 API 收面」。判据 = **结构性恒空**：
+> `deduplicate()` / `detectConflicts()` / `suggest()` 逐 `GOVERNANCE_SOURCES`（`src/memory/governance.ts`）
+> 取样，而该常量是**字面量空数组、非注入项** ⇒ 代码路径上永远拿不到输入，无论用户怎么配置都不会生效。
+> 这与「暂时没有消费者」（接线即可复活）性质不同：**没有可接线的地方**。
+> 唯一有效的 `sourceHealth()` 也随门面一起走——它的等价能力 `agent.memory.stats().bySource`
+> **早已存在且是宿主真实消费口径**（`memora.memoryStats` 命令读 `stats?.bySource`），
+> 留一个重复入口只会让「健康度」两处算法漂移。
+
+- 删模块（6 个）：`agent/managers/memoryGovernance.ts`（门面）/ `agent/managers/memoryAdvisor.ts`
+  （suggest + sourceHealth）/ `agent/managers/dedupManager.ts`（LLM 语义去重）/ `agent/managers/llmJudgeHelper.ts`
+  （去重与冲突共用的 LLM 判定器，唯一消费者全在被删文件里）/ `memory/governance.ts`（`GOVERNANCE_SOURCES`）/
+  `utils/recallDefaults.ts`（`recall()` 退役后残留的默认值容器，零消费者）。
+- 删公开面：`Agent.governance` getter（含 `_governance` 字段与 `new MemoryGovernance(...)` 装配块）、
+  `src/index.ts` 的 `export { MemoryGovernance }`、`AgentEventMap.dedupCompleted` 事件与
+  `AGENT_EVENTS` 同名常量项（**两处同删**，只删一处会留下永不触发的僵尸事件键）、
+  `AssembleOutput.dedupManager` / `AssembleOutput.memoryAdvisor` 两个装配产物。
+- 删测试（5 个文件 / 73 条）：`memoryGovernance.test.ts`(8) / `memoryAdvisor.test.ts`(34) /
+  `dedupManager.test.ts`(9) / `llmJudgeHelper.test.ts`(18) / `memory/governance.test.ts`(4)；
+  `agent.test.ts` 摘 5 条 governance 用例、`assembler.test.ts` 摘 2 条产物断言。
+- 宿主对称拆除（防「僵尸订阅 + 死协议」三族残留）：`chatPanel` 的 `dedupCompleted` 订阅与
+  `postSuggestions()`（该方法因门面恒空而**从未推送过一次**，JSDoc 早前已标「恒早退」）、
+  `protocol` 的 `'suggestions'` 消息成员与 `FollowupSuggestionDto`、`chatView` 的
+  `renderFollowUpSuggestions` 与消息分支、`.followup*` 样式、`chatView.test.ts` 5 条用例。
+  **保留**空状态示例 chips（`.suggestion-chip` / `renderEmptySuggestions`）——那是角色包示例提问，
+  与治理无关，勿一并删。
+- **代价已明示**：5.0.0 起 `agent.governance` 不存在，4.x 使用者 import `MemoryGovernance` 或读
+  `agent.governance?.xxx` 将编译期断裂；`dedupCompleted` 订阅者得到的是类型错误而非静默失效（有意为之）。
+  原「去重 / 冲突检测 / 关联推荐」三条**能力**没有任何替代实现——这是能力退回，写时治理（`supersede`
+  写时取代 + `supersededBy` 软指针）仍在，且它才是真实生效的那条治理路径。
+- 守卫：`publicMemberSurfaceGuard`（−3 成员，基线 81→80 符号数自检同步）、`publicApiSurfaceGuard`
+  （向 A/B/B-12/C/D/B-21 六向转绿，§十六 删承诺行）、`docSurfaceGuard` 面 A（清单 6 行幽灵模块）
+  + 面 C（手册 5 处 `agent.governance` 引用改「历史留痕」）全部转绿；`module-inventory` §4.3 改题
+  「记忆维护（managers/ · 只读查询与诊断）」并补 3 段删除补记。
+- 术语消歧（防再次误判）：宿主设置面板的「记忆治理」页是**产品概念**（活跃/回收站/来源分布/已被取代数），
+  数据全部来自 `agent.memory.*`，与本次退役的内核门面无关——已在 `extension.ts` 就地写明差异。
+
 ### ⚠️ Breaking Removed（内核 · 公开面通用工具 / 重复入口收面 · `PUB-API-PRUNE-1`，2026-10-17）
 
 > **性质**：**非「零引用删除」**——这批符号**内核内部仍在使用**（如 `toError` 内部 96 处），

@@ -16,8 +16,9 @@
  * 判据边界（诚实登记）：
  * - 成员消费扫描用 `\.member\b`，**getter/setter 去掉前缀后可能撞上同名局部变量**
  *   ⇒ 只会「少报零消费」、不会「多报」，方向保守。
- * - **同名跨类会互相借消费点**（实测 2026-10-18）：`MemoryGovernance.detectConflicts`
- *   转调 `MemoryAdvisor.detectConflicts`，两者同名 ⇒ 前者被误判为「有外部消费」而漏报。
+ * - **同名跨类会互相借消费点**（实测 2026-10-18，案例已退役但仍成立）：`MemoryGovernance.detectConflicts`
+ *   转调 `MemoryAdvisor.detectConflicts`，两者同名 ⇒ 前者被误判为「有外部消费」而漏报
+ *   （这两类已于 5.0.0 随治理链整链退役，案例保留为方法论留痕）。
  *   同理「类内自用」也会把**对下游同名方法的调用**算成自用（`Agent.clearPlan` 里
  *   `this.requireSessionManager.clearPlan()` 被记成 Agent 自调 1 次，实际是调 SessionManager）。
  *   ⇒ 本脚本的零消费清单是**下限**，精确结论须用 `this.<member>` 逐个人工复核。
@@ -37,7 +38,7 @@ const args = new Set(process.argv.slice(2));
  *
  * ⚠️ 不能用「一行一个正则」——EXPECTED 里同时存在**单行条目**
  * （`ToolContext: { kind: 'interface', members: ['guardPath'] },`）与**多行条目**，
- * 且部分成员数组也写成单行（`MemoryGovernance`）。此处按花括号配平切块，
+ * 且部分成员数组也写成单行（历史上 `MemoryGovernance` 即如此，5.0.0 已删）。此处按花括号配平切块，
  * 再提取块内全部单引号字符串：第一个是 kind，其余是成员。
  * 血训：首版用行正则只数出 46 个符号（真值 81）、MemoryGovernance 成员数算出 0。
  */

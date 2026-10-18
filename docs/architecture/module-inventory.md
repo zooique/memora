@@ -226,7 +226,6 @@
 | ----------------------------------- | ------ | ------------------------------------------------ | ----------------------------------------------- |
 | `managers/roundSummaryGenerator.ts` | 🟢 已打磨 | `__tests__/roundSummaryGenerator.test.ts`        | 轮次摘要生成（含 superseded 写时取代检测、summaryFocus 提炼视角注入） |
 | `managers/streamAccumulator.ts`     | 🟢 已打磨 | `__tests__/streamAccumulator.test.ts` (15 tests) | chunk.content 拼接/空内容跳过/异常传播/options 透传          |
-| `managers/llmJudgeHelper.ts`        | 🟢 已打磨 | `__tests__/llmJudgeHelper.test.ts` (18 tests)    | 三件套模式：流式累积 → parseLlmJson → configError 抛错      |
 
 ### 4.2 记忆底座（memory/ · 存储与召回）
 
@@ -236,7 +235,6 @@
 | ---------------------------- | ------ | -------------------------------------- | ------------------------------------- |
 | `memory/keywordsTouch.ts`     | 🟡 已收敛 | `__tests__/keywordsTouch.test.ts`      | 原名 `recall.ts`（2026-09-18 更名对齐职责）；仅余 `extractKeywords`（关键词提取）+ `touchScores`（命中回写）；召回编排 `recall()` 已随跨重启恢复链退役（2026-09-10） |
 | `memory/types.ts`            | 🟢 已打磨 | `__tests__/types.test.ts`              | 记忆类型定义                                |
-| `memory/governance.ts`       | 🟢 已打磨 | `__tests__/governance.test.ts`         | 治理常量（boost 增量/上下限 + 健康度阈值 + 治理源）      |
 | `memory/inMemoryStorage.ts`  | 🟢 已打磨 | `__tests__/inMemoryStorage.test.ts`    | 内存存储实现                                |
 | `memory/storageInterface.ts` | ⚪ 接口   | 无独立测试                                  | IMemoryStorage 接口定义                   |
 | `memory/lockManager.ts`      | 🟢 已打磨 | `__tests__/lockManager.test.ts`        | 锁文件管理                                 |
@@ -245,21 +243,22 @@
 
 > **2026-10-18 补记**：`memory/projectRegistry.ts` 与 `__tests__/projectRegistry.test.ts` 已随 `PR-SWITCH-1` 整链删除（跨项目注册表概念废止——一个 Agent 绑定一个项目，多项目由宿主各建实例）。
 
+> **2026-10-18 补记（GOVERNANCE-SRC-1）**：`memory/governance.ts`（`GOVERNANCE_SOURCES` 常量）与 `__tests__/governance.test.ts` 已随事后治理整链退役删除——该常量自「设定记忆归角色包」后固定为空数组，是三个治理方法恒空转的根因。
+
 > **2026-08-19 深度剪枝**：`memory/store.ts`（FileStore）、`memory/loader.ts`（MemoryLoader）随「设定记忆归角色包（ADR-025）」整链移除——设定记忆不再由文件扫描进记忆索引，FileStore 无生产消费者；`memory/multiHop.ts`（多跳推理）为内核零消费的僵尸公共 API，随剪枝移除。
 
-### 4.3 记忆治理（managers/ · 记忆维护）
+### 4.3 记忆维护（managers/ · 只读查询与诊断）
 
-> **生长来源**：记忆系统长期运行会产生"记忆腐烂"（重复/覆盖/过时）。治理层是回答后沉淀的**维护侧**——语义去重、冲突检测（supersede 写时取代 + boost 越用越重要）、快照诊断，保证低价值记忆经相关性排序自然后移退出召回面（显式 score 衰减调度已于 2026-08-27 移除，无沉底/归档语义）。
+> **现行形态（2026-10-18 · GOVERNANCE-SRC-1 整链退役）**：记忆治理只剩「写时取代」一条——`roundSummaryGenerator` 写入后由 `supersedeSimilar` 给旧条打 `supersededBy` 软指针（见 §4.1）。**事后治理层（语义去重 / 冲突检测 / 关联推荐 / 源健康诊断）已整链删除**：四个方法里三个逐 `GOVERNANCE_SOURCES` 取样，而该常量恒为空数组 ⇒ 结构性恒空；唯一有效的 `sourceHealth` 信息由 `memory.stats().bySource` 覆盖。本节仅剩只读查询面。
 
 | 模块文件                                 | 状态     | 测试文件                                                  | 质量说明                                      |
 | ------------------------------------ | ------ | ----------------------------------------------------- | ----------------------------------------- |
-| `managers/memoryGovernance.ts`       | 🟢 已打磨 | `__tests__/memoryGovernance.test.ts`                  | 记忆治理统一门面（聚合去重 + 建议委托）                     |
-| `managers/dedupManager.ts`           | 🟢 已打磨 | `__tests__/dedupManager.test.ts`                      | 语义去重（LLM 判断）                              |
-| `managers/memoryAdvisor.ts`          | 🟢 已打磨 | `__tests__/memoryAdvisor.test.ts`                     | 来源健康诊断 / 冲突检测 / 关联推荐（sourceHealth 只读）     |
 | `managers/memoryInspector.ts`        | 🟢 已打磨 | `__tests__/memoryInspector.test.ts`                   | 记忆快照/诊断                                   |
 | `managers/chatLockManager.ts`        | 🟢 已打磨 | `__tests__/chatLockManager.test.ts`                   | 聊天锁管理                                     |
 | `managers/workProjection.ts`         | 🟢 已打磨 | `__tests__/workProjection.test.ts`                    | 作品投影管理                                    |
 | `managers/textPolishManager.ts`      | 🟢 已打磨 | `__tests__/textPolishManager.test.ts`                 | 文本润色                                      |
+
+> **2026-10-18 补记（GOVERNANCE-SRC-1 整链退役）**：`managers/memoryGovernance.ts`（统一门面）/ `managers/dedupManager.ts`（语义去重）/ `managers/memoryAdvisor.ts`（健康诊断·冲突检测·关联推荐）及三者测试已删除。连带：`managers/llmJudgeHelper.ts`（唯一消费方是去重与冲突检测）、`utils/recallDefaults.ts`（唯一消费方是 advisor 的 `excludeSources` 缺省值）。能力去向——冲突消解 = 写时取代；源统计 = `memory.stats().bySource`；去重/推荐 = 无替代（本无输出）。
 
 ### 4.4 会话级沉淀（managers/ · 会话归档与命名）
 
@@ -325,7 +324,8 @@
 | `utils/configResourceManager.ts` | 🟢 已打磨 | `__tests__/configResourceManager.test.ts`  | 配置资源管理（角色包/技能复用的基类）                   |
 | `utils/loggerHolder.ts`          | 🟢 已打磨 | `__tests__/loggerHolder.test.ts`           | Logger 持有者                            |
 | `utils/atomicWrite.ts`           | 🟢 已打磨 | `__tests__/atomicWrite.test.ts` (12 tests) | 原子写：临时文件+rename/覆盖写入/大内容/特殊字符/目录不存在异常 |
-| `utils/recallDefaults.ts`        | ⚪ 工具   | 无需测试                                       | 单常量 `DEFAULT_RECALL_EXCLUDE_SOURCES`（排除源白名单；`DEFAULT_MIN_FALLBACK` 已随召回编排退役） |
+
+> **2026-10-18 补记**：`utils/recallDefaults.ts`（`DEFAULT_RECALL_EXCLUDE_SOURCES`）已随 `GOVERNANCE-SRC-1` 删除——唯一消费方是已退役的 `MemoryAdvisor.suggest()`。
 
 ### 6.3 安全（security/）
 

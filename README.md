@@ -96,7 +96,7 @@ Memora 是一个**无法独立运行**的智能大脑内核——它只有接口
 |------|------|
 | **长期记忆沉淀** | 跨会话、跨话题的记忆持久化 + 工具化召回（`search_memories`；**不自动注入**） |
 | **记忆检索工具** | 纯关键词检索（`search_memories`），命中刷新 `accessedAt`（语义向量通道已随 B0 收编，2026-09-18） |
-| **记忆治理** | supersede 写时取代 + 命中刷新（`accessedAt` 参与排序，**不做重要度加权**）+ 语义去重 + 冲突检测，经 `agent.governance` 门面暴露（去重 / 冲突由 LLM 判断） |
+| **记忆治理** | 只有**写时治理**：supersede 写时取代 + 命中刷新（`accessedAt` 参与排序，**不做重要度加权**）。订阅式事后治理（去重 / 冲突检测 / 关联推荐）已于 5.0.0 整链退役 |
 | **Agent 与角色分离** | Agent 是纯记忆引擎，角色是人格载体。换角色不丢记忆 |
 | **统一记忆模型** | 一切统一为「记忆」，通过 `source` 开放字符串区分，无封闭枚举 |
 | **领域可插拔** | 同一套架构，加载不同记忆配置即可适配不同领域 |
@@ -157,13 +157,13 @@ const reply = await agent.chatSync('我喜欢什么语言？');
 // 搜索记忆（limit 为数字）
 const hits = await agent.memory.searchByKeyword('TypeScript 偏好', 5);
 
-// 来源健康诊断（纯计算，不调 LLM）：经 getAllSources() 动态发现，逐 source 统计数量 / 距最近访问天数
-const health = agent.governance.sourceHealth();
-console.log(health?.sources);
+// 来源分布（纯计算，不调 LLM）：逐 source 统计活跃记忆数
+const stats = agent.memory.stats();
+console.log(stats.bySource);
 
-// 事后治理（deduplicate / detectConflicts / suggest）以 GOVERNANCE_SOURCES 为输入，
-// 该列表当前为空数组 ⇒ 三者恒空转；写时治理由 supersede（写时取代）承担。
-// 状态与后续处置见 API 参考手册 §四 治理门面说明。
+// 写时治理由 supersede（写时取代）承担：新记忆写入时取代旧记忆，旧记忆留
+// supersededBy 软指针（不删除，可回溯）。订阅式事后治理（去重 / 冲突检测 /
+// 关联推荐）已于 5.0.0 整链退役，详见 API 参考手册 §四 注记。
 ```
 
 ### 关闭
@@ -231,7 +231,7 @@ src/
 │   ├── assembler.ts  # 组件组装器（纯工厂）
 │   ├── contextManager.ts / contextPreparer.ts / toolExecutor.ts / toolRunner.ts ···
 │   ├── seed/         # turn（prepare → act/difficulty → reflect，含多 turn 任务编排）
-│   └── managers/     # 16 个专职 Manager/服务类（memoryInspector / memoryGovernance / roundSummaryGenerator / sessionManager / sessionArchiver / archiveCoordinator / workProjection / textPolishManager / chatLockManager 等）
+│   └── managers/     # 专职 Manager/服务类（memoryInspector / roundSummaryGenerator / sessionManager / sessionArchiver / archiveCoordinator / workProjection / textPolishManager / chatLockManager 等）
 ├── memory/           # 记忆引擎（IMemoryStorage + InMemoryStorage + 可选 SQLite 落盘实现 + 纯关键词召回 / 融合排序 / 治理常量）
 ├── role-pack/        # 角色包（manifest 解析 + validator + strategyResolver + 能力映射）
 ├── skill/            # 技能管理（全局池 + 角色包绑定，渐进披露 + skillScriptRunner）

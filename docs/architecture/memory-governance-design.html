@@ -8,8 +8,11 @@
   定位：导读非 SSOT——真源为 architecture/memory-as-summary.md 等 markdown 文档与 src/ 源码；
         本文所有断言附源码锚点（file:line），排雷记录登记初版结论被源码推翻的 4 处。
   关联：src/agent/managers/roundSummaryGenerator.ts · src/agent/managers/memoryInspector.ts ·
-        src/agent/builtinToolHandlers.ts · src/memory/governance.ts · src/memory/types.ts ·
-        src/memory/keywordsTouch.ts · src/agent/managers/memoryGovernance.ts · src/agent/managers/dedupManager.ts
+        src/agent/builtinToolHandlers.ts · src/memory/types.ts · src/memory/keywordsTouch.ts
+  ⚠ 2026-10-18（5.0.0）整链退役：治理**门面**（memoryGovernance / memoryAdvisor / dedupManager /
+     governance.ts / llmJudgeHelper / recallDefaults + dedupCompleted 事件）已物理删除，本文 §1 的
+     「治理」一轨与 §5 排序哲学中涉及 GOVERNANCE_SOURCES 的部分仅作历史留痕，**不代表现行代码**。
+     仍有效的部分：§2 写入前三态门、§3 写路径取代检测（supersede）、§4 召回治理。
 -->
 <html lang="zh-CN">
 <head>
@@ -391,11 +394,15 @@
   <section class="card hero">
     <h1>记忆治理层设计导读</h1>
     <p class="subtitle">Memora 内核 · memory-as-summary 体系 —— 三条轨道（写入 / 治理 / 召回）共用一个存储端口的治理闭环</p>
+    <p class="subtitle" style="color:var(--warning);font-weight:600">⚠ 2026-10-18（5.0.0）：「治理」一轨的<strong>门面层</strong>已整链退役（结构性恒空，非零消费）。阅读本文时，凡涉及
+      deduplicate / detectConflicts / sourceHealth / suggest / GOVERNANCE_SOURCES / dedupCompleted 的段落均为<strong>历史留痕</strong>；
+      写入期治理（supersede）与召回治理（§2 / §3 / §4）仍是现行形态。</p>
     <div class="badges">
       <span class="badge">导读非 SSOT</span>
       <span class="badge">附源码锚点</span>
       <span class="badge">含排雷对质记录</span>
       <span class="badge neutral">2026-10-12 · 内核 4.0.0</span>
+      <span class="badge" style="background:var(--warning-soft);color:var(--warning)">2026-10-18 部分退役（治理门面整链删除）</span>
     </div>
     <nav class="toc">
       <a href="#s0">§0 阅读须知</a>

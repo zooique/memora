@@ -38,7 +38,7 @@
 
 **内核零越界。** 核心库模块不直接调用 `console.*`（唯一日志出口为 `logging/` 单例，默认实现写 stderr）、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
 
-**Manager 委托模式。** Agent 面类只做编排，领域操作委托给专职 Manager：`agent.rolePack`（角色包）/ `agent.tools`（工具）/ `agent.skills`（技能）/ `agent.memory`（记忆查询+写入）/ `agent.governance`（记忆治理）/ `agent.works`（作品投影）/ `agent.polish`（文本润色）共 7 个业务 Manager（另有 `projects` / `security` / `sessionManager` 等）。
+**Manager 委托模式。** Agent 面类只做编排，领域操作委托给专职 Manager：`agent.rolePack`（角色包）/ `agent.tools`（工具）/ `agent.skills`（技能）/ `agent.memory`（记忆查询+写入）/ `agent.works`（作品投影）/ `agent.polish`（文本润色）共 6 个业务 Manager（另有 `projects` / `security` / `sessionManager` 等）。
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -51,7 +51,7 @@
 │  ┌──────────────────────────────────────────┐               │
 │  │  Memora 内核（Agent）                    │               │
 │  │  - chat(input) → 流式响应                │               │
-│  │  - 7 个业务 Manager getter（rolePack/tools/skills/memory/governance/works/polish，委托模式）      │               │
+│  │  - 6 个业务 Manager getter（rolePack/tools/skills/memory/works/polish，委托模式）            │               │
 │  │  ⚠️ 不包含：UI / LLM 配置 / 用户配置模板 │               │
 │  └──────────────────────────────────────────┘               │
 └────────────────────────────────────────────────────────────┘
@@ -485,7 +485,8 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | 后台命令 | 内置工具 `run_command`（`background: true`）/ `agent.listBackgroundTasks()` / `agent.killBackgroundTask()` | §8.1 · §8.7 |
 | 会话 | `agent.forkSession()` / `agent.sessionManager.*` | §六 |
 
-> 记忆治理（去重/冲突）统一走 `agent.governance` 或 Agent 层方法，见参考手册 §四 与「记忆治理」章节。
+> 记忆**写入期**治理由 `supersede`（写时取代）承担，无需宿主调用；写入入口统一是 `agent.memory.writeXxx()`。
+> 订阅式事后治理（去重 / 冲突检测 / 关联推荐）已于 5.0.0 整链退役，`agent.governance` 不再存在——见参考手册 §四 注记。
 
 ---
 

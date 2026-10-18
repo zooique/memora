@@ -61,14 +61,14 @@ await agent.close();
 
 | | Memora | Vector memory libs (agent-memory, MemStack) | Framework-builtin memory (Mastra, LangGraph) |
 |---|---|---|---|
-| **Memory governance** | ✅ Dedup+conflict+write-time supersede | ⚠️ Decay only or none | ⚠️ Partial |
+| **Memory governance** | ✅ Write-time supersede (soft `supersededBy`, traceable) | ⚠️ Decay only or none | ⚠️ Partial |
 | **Framework lock-in** | ✅ Zero — pure kernel | ✅ Standalone | ❌ Tied to framework |
 | **Data privacy** | ✅ 100% local | ✅ Local | ⚠️ Partially cloud |
 | **Runtime deps** | ✅ Zero (node:* only) | ❌ SQLite / better-sqlite3 | ❌ Heavy |
 | **Persona/memory separation** | ✅ Role-pack boundary discipline | ❌ No persona concept | ⚠️ Simple prompt |
 | **Embeddable** | ✅ Any Node.js host | ✅ Standalone lib | ❌ Framework-internal |
 
-**One-line positioning**: If you want a **framework-agnostic, governance-capable, zero-dependency** memory layer, Memora is currently the only option on npm.
+**One-line positioning**: If you want a **framework-agnostic, governance-capable (write-time supersede), zero-dependency** memory layer, Memora is currently the only option on npm.
 
 ---
 
@@ -90,7 +90,7 @@ Memora is a **brain kernel that cannot run standalone** — it has interfaces bu
 |-----------|-------------|
 | **Long-term Memory** | Cross-session, cross-topic memory persistence with tool-based recall (`search_memories`; no automatic injection) |
 | **Memory Search Tool** | Keyword-only retrieval (`search_memories`), refreshes `accessedAt` on hit (semantic vector channel removed via B0, 2026-09-18) |
-| **Memory Governance** | Write-time supersede + last-used refresh (`accessedAt` used for ordering; no importance weighting) + semantic dedup + conflict detection via `agent.governance` facade (dedup / conflict judged by LLM) |
+| **Memory Governance** | **Write-time governance only**: write-time supersede + last-used refresh (`accessedAt` used for ordering; no importance weighting). Subscription-style post-hoc governance (dedup / conflict detection / related suggestions) was retired as a whole in 5.0.0 |
 | **Agent-Persona Separation** | Agent is a pure memory engine; persona is a personality vessel. Switch personas without losing memories |
 | **Unified Memory Model** | Everything is a "Memory" primitive, distinguished by open-string `source` — no closed enums |
 | **Domain-agnostic** | Same architecture, different memory configs → different domains |
@@ -155,12 +155,13 @@ const hits = await agent.memory.searchByKeyword('TypeScript preference', 5);
 
 // Source health diagnosis (pure computation, no LLM): sources are discovered dynamically
 // via getAllSources(); per-source count / days since last access
-const health = agent.governance.sourceHealth();
-console.log(health?.sources);
+const stats = agent.memory.stats();
+console.log(stats.bySource);
 
-// Post-hoc governance (deduplicate / detectConflicts / suggest) reads GOVERNANCE_SOURCES,
-// which is currently an empty array => all three are no-ops. Write-time governance is
-// handled by supersede. See "governance facade" in the API reference manual.
+// Write-time governance is handled by supersede: a new memory replaces the old one and
+// leaves a soft `supersededBy` pointer (nothing is deleted, history stays traceable).
+// Subscription-style post-hoc governance (dedup / conflict detection / related
+// suggestions) was retired as a whole in 5.0.0 - see the note in API reference §4.
 ```
 
 ### Cleanup
@@ -182,8 +183,8 @@ await agent.close();
 │  ┌──────────────────────────────────────────┐               │
 │  │  Memora Kernel (Agent)                   │               │
 │  │  - chat(input) → streaming response      │               │
-│  │  - Keyword-only search (semantic vector channel removed via B0)│               │
-│  │  - Memory governance (dedup/conflict/supersede) │         │
+│  │  - Keyword-only search                   │               │
+│  │  - Write-time governance (supersede)     │               │
 │  │  - Role pack matching / Skill matching   │               │
 │  │  - Tool registration / execution         │               │
 │  │  - Session archive / round persistence   │               │
@@ -228,8 +229,8 @@ src/
 │   ├── assembler.ts  # Component assembler (pure factory)
 │   ├── contextManager.ts / contextPreparer.ts / toolExecutor.ts / toolRunner.ts ···
 │   ├── seed/         # Minimal execution loop (prepare → act/difficulty → reflect, incl. external task outer loop)
-│   └── managers/     # 16 specialized Managers/service classes (memoryInspector / memoryGovernance / roundSummaryGenerator / sessionManager / sessionArchiver / archiveCoordinator / workProjection / textPolishManager / chatLockManager, etc.)
-├── memory/           # Memory engine (IMemoryStorage + InMemoryStorage + optional SQLite store + keyword recall / fusion ranking / governance constants)
+│   └── managers/     # Specialized Managers/service classes (memoryInspector / roundSummaryGenerator / sessionManager / sessionArchiver / archiveCoordinator / workProjection / textPolishManager / chatLockManager, etc.)
+├── memory/           # Memory engine (IMemoryStorage + InMemoryStorage + optional SQLite store + keyword recall / supersede resolution)
 ├── role-pack/        # Role packs (manifest parsing + validator + strategyResolver + capability mapping)
 ├── skill/            # Skill management (global pool + role-pack binding, progressive disclosure + skillScriptRunner)
 ├── llm/              # LLM adapter layer (provider + openaiCompatible + factory)

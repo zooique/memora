@@ -143,13 +143,12 @@ new Agent({
 │  │  │  Agent 面类（编排层）                 ││               │
 │  │  │  - init/close · chat · forkSession  ││               │
 │  │  │  - .rolePack / .tools / .skills      ││               │
-│  │  │  - .governance / .memory             ││               │
+│  │  │  - .memory / .works / .polish        ││               │
 │  │  └──────────┬───────────────────────────┘│               │
 │  │             │ 委托                         │               │
 │  │  ┌──────────┼───────────────────────────┐│               │
 │  │  │ RolePackManager / SkillManager       ││               │
 │  │  │ ToolExecutor / MemoryInspector       ││               │
-│  │  │ MemoryGovernance                     ││               │
 │  │  └──────────────────────────────────────┘│               │
 │  │  ⚠️ 不包含：UI / LLM 配置 / 用户配置模板 │               │
 │  └──────────────────────────────────────────┘               │
@@ -189,7 +188,7 @@ new Agent({
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入（默认内置内存实现，不挂公共面） |
 | ~~`vectorStore`~~ | ~~`IVectorStore`~~ | — | **已删除（2026-09-18 B0 收编）**：向量语义召回通道此前**写端缺失、从未在生产生效**（`upsert` 零调用 → 库恒空 → 语义分支永不触发 = 僵尸能力）。经主流 agent 调研（Anthropic Memory/Claude Code/Librarian Pattern 实证「LLM 消费者 + 小语料」纯关键词足用）拍板收编：`IVectorStore` 接口、`JsonVectorStore`、`EmbeddingProvider` 及 `config.embedding` 段全链删除；`search_memories` 走纯关键词，未命中提示 LLM 换词重试 |
-| ~~`recallExcludeSources`~~ | ~~`string[]`~~ | — | **已删除（2026-09-11）**：该配置随召回编排 `recall()` 退役后成为零消费者死配置，全链（AgentOptions → AgentConfig → AssembleInput → ContextPreparerDeps）物理删除。关联推荐的实际排除走 `Agent.governance.suggest(query, { excludeSources })` 显式参数 |
+| ~~`recallExcludeSources`~~ | ~~`string[]`~~ | — | **已删除（2026-09-11）**：该配置随召回编排 `recall()` 退役后成为零消费者死配置，全链（AgentOptions → AgentConfig → AssembleInput → ContextPreparerDeps）物理删除。**原消费者已彻底消失**：它当时服务的关联推荐通道 `Agent.governance.suggest(query, { excludeSources })` 于 2026-10-18 随治理链整链退役（见 §四 注记），无替代通道 |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `roundStore` | `IRoundStore` | ❌ | 问答闭环独立存储注入（round-based 落盘真源；未注入则消息仅内存保存，与 `sessionStore` 配套） |
 | `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
@@ -234,10 +233,13 @@ Agent 通过一组 getter 暴露专职 Manager 与组件。详见后续章节。
 | `agent.rolePack` | `RolePackManager \| null` | 角色包管理 |
 | `agent.tools` | `ToolExecutor \| null` | 工具注册与执行 |
 | `agent.skills` | `SkillManager \| null` | 技能匹配与注入 |
-| `agent.governance` | `MemoryGovernance \| null` | 记忆治理（去重/冲突检测/建议） |
 | `agent.memory` | `MemoryInspector \| null` | 记忆查询 + 写入（`writeXxx` 前缀） |
 | `agent.works` | `WorkProjectionManager \| null` | 作品投影（项目文件指针索引） |
 | `agent.polish` | `TextPolishManager \| null` | 文本润色（LLM 语法修正 + 表达优化） |
+
+> **历史留痕（2026-10-18 · 5.0.0）**：本表原有 `agent.governance` 一行（类型 `MemoryGovernance | null`，职责「记忆治理：去重/冲突检测/建议」），已随治理链**整链退役**删除——
+> 理由为**结构性恒空**（非「暂时没人用」）：`deduplicate()` / `detectConflicts()` / `suggest()` 逐 `GOVERNANCE_SOURCES` 取样，而该常量是字面量空数组、非注入项，代码路径上永远拿不到输入。
+> 唯一有效的 `sourceHealth()` 已有等价替代 `agent.memory.stats().bySource`。连带删除 `MemoryAdvisor` / `DedupManager` / `llmJudgeHelper` / `recallDefaults` 与 `dedupCompleted` 事件。详见 §四 注记。
 
 > **读写统一入口**：`agent.memory`（MemoryInspector）同时负责记忆的查询与写入——只读方法（snapshot/searchByKeyword/stats/list/getById/getBySource/listDeleted 等；**`search()` 已于 4.0.0 移除**，见 §4.2）与写方法（`writeXxx` 前缀：writeUpsert/writeDelete/writeRestore/writePurge/writePurgeExpired。`writeBoost` 已随 score 字段退役删除，2026-09-09）。旧的 `memoryMutator`/`MemoryMutator` 拆分已在后续迭代中合并回 `MemoryInspector`，二者均不再存在。
 
@@ -284,7 +286,7 @@ agent.once<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[
 | `archiveModeChanged` | `{ from, to }` | 归档模式切换 |
 | `rolePackSwitchLocked` | `{ reason, lockedSeconds }` | 角色包切换被锁定（如切换冷却期） |
 | `workProjectionGenerated` | `{ sourcePath, summary }` | 作品投影生成完成 |
-| `dedupCompleted` | `{ deduplicatedCount, demotedIds }` | 记忆去重完成 |
+| ~~`dedupCompleted`~~ | ~~`{ deduplicatedCount, demotedIds }`~~ | **已移除（2026-10-18 · 5.0.0）**：随治理链整链退役，`AGENT_EVENTS` 与 `AgentEventMap` 两处同删。宿主侧的订阅与 `suggestions` 渲染通道一并拆除，勿加回 |
 | `sessionPauseTimedOut` | `{ sessionId, pauseDuration, date?, session? }` | 暂停超时（达到 `PAUSE_TIMEOUT_MS` 自动归档） |
 | `sessionResumeBlocked` | `{ sessionId, reason }` | 恢复被拒绝（如锁冲突） |
 | `sessionResumeFailed` | `{ sessionId?, reason }` | 恢复失败（宿主据此 toast 提示） |
@@ -453,11 +455,11 @@ agent.memory.getDeletedById(id: string): Memory | null;
 agent.memory.searchByKeyword(query: string, limit?: number): Promise<AgentSearchHit[]>; // 纯关键词通道
 ```
 
-> **注意**：`suggest()` / `sourceHealth()` 经 `agent.governance` 暴露（`.suggest()` / `.sourceHealth()`），不挂在 `agent.memory` 下，避免经 MemoryInspector 转发产生多余代理层。
->
-> **⚠ 治理门面输入现状（2026-10-18 实测）**：`deduplicate()` / `detectConflicts()` 逐 `GOVERNANCE_SOURCES`（`src/memory/governance.ts`）取样，`suggest()` 无 `query` 时同样逐该列表采样；该常量**当前为空数组**
-> （「设定记忆已归角色包」后被清空，未随新记忆模型补入新 source 名）⇒ 除 `sourceHealth()` 走 `getAllSources()` 动态发现仍有效外，其余三者恒返回空/零报告。写时治理由
-> `supersede`（写时取代）承担，不经本门面。**处置待拍板**：① 三方法改用 `getAllSources()` 动态发现（与 `sourceHealth` 对齐，能力复活）；② 随 3-track-1-port 重设计整链退役。台账见 `tasks/待完成任务.md` `GOVERNANCE-SRC-1`。
+> **历史留痕 · 治理门面整链退役（2026-10-18 · 5.0.0）**：`agent.governance` 曾暴露 `deduplicate()` / `detectConflicts()` / `sourceHealth()` / `suggest()`。
+> 其中前三者逐 `GOVERNANCE_SOURCES`（`src/memory/governance.ts`）取样，而该常量是**字面量空数组、非注入项** ⇒ 三者**结构性恒空**（不是「暂时没人用」，是代码路径上永远拿不到输入）。
+> 唯一有效的 `sourceHealth()` 已有等价替代：`agent.memory.stats().bySource`（宿主 `memora.memoryStats` 命令即消费此字段）。
+> 故按「结构性恒空」判据整链退役——**这是能力退回，不是 API 兼容性妥协**：原有的去重/冲突检测/建议三条能力，从 5.0.0 起**不存在**，不会「偶发不生效」。
+> 写时治理由 `supersede`（写时取代）承担，不经本门面。退役决策与代价见 `tasks/待完成任务.md` `GOVERNANCE-SRC-1`，删后注记见 `src/agent/agent.ts`。
 
 ---
 
@@ -1020,12 +1022,12 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 手动归档 | `archiveSession(...)` |
 | 配置热更新 | `reloadConfig(source?)` |
 | 后台任务 | `listBackgroundTasks()` / `killBackgroundTask(taskId)`（见 §8.7；未 `init()` 抛 `configError`，不静默降级） |
-| 记忆治理 | 经 `agent.governance` 暴露（`.deduplicate()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()`，见下方 Manager 成员；**`deduplicate` / `detectConflicts` / `suggest` 当前恒空转**，`sourceHealth()` 仍有效，见 §四 治理门面输入现状） |
+| 记忆治理 | ~~经治理门面暴露~~ **该组方法已于 2026-10-18（5.0.0）整链退役**，理由为结构性恒空；`sourceHealth()` 的等价替代 = `agent.memory.stats().bySource`（见 §四 注记） |
 | 指标 | `getMetrics()` |
 
 ### Agent 面类只读访问器
 
-`initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory` / `projects` / `security` / `sessionManager` / `rolePack` / `tools` / `skills` / `governance` / `memory` / `works` / `polish`
+`initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory` / `projects` / `security` / `sessionManager` / `rolePack` / `tools` / `skills` / `memory` / `works` / `polish`
 
 ### 各 Manager / 组件公开成员
 
@@ -1034,12 +1036,12 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.rolePack` | `RolePackManager` | `.listMeta()` / `.activeName` / `.getActive()` / `.getActiveRules()` / `.activate()` / `.getSwitchLockStatus()` / `.getActiveTraits()` |
 | `agent.tools` | `ToolExecutor` | `.list` / `.registerTool()` / `.execute()` |
 | `agent.skills` | `SkillManager` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
-| `agent.governance` | `MemoryGovernance` | `.deduplicate()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()`（**前三者恒空转，见 §四 治理门面输入现状**） |
+| ~~记忆治理门面~~ | ~~`MemoryGovernance`~~ | **已移除（2026-10-18 · 5.0.0）**：整链退役，无成员可调；健康度需求改走 `agent.memory.stats().bySource`（见 §四 注记） |
 | `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.searchByKeyword()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()`（**`.search()` 已于 4.0.0 移除**）；写：`.writeUpsert()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` |
 | `agent.works` | `WorkProjectionManager` | `.registerWork(sourcePath, description)` / `.refresh()` / `.listWorks()` / `.contextBlock()` / `.loadAndGetContextBlock()` |
 | `agent.polish` | `TextPolishManager` | `.polish(...)`（文本润色：LLM 语法修正 + 表达优化） |
 
-> **说明**：`suggest()` / `sourceHealth()` 经 `agent.governance` 暴露，不挂在 `agent.memory` 下。历史访问器 memoryMutator 与 MemoryMutator 类（4.0.0 前）已合并回 `MemoryInspector`——两个旧名已不在源码中，读旧文档时勿按其名查找。
+> **说明**：记忆查询与写入**只有** `agent.memory`（`MemoryInspector`）一个入口。历史访问器 memoryMutator 与 MemoryMutator 类（4.0.0 前）已合并回 `MemoryInspector`；治理门面已于 5.0.0 整链退役（§四 注记）——三个旧名都不在源码中，读旧文档时勿按其名查找。
 
 ---
 
@@ -1208,8 +1210,7 @@ export type {
   AgentSearchHit,
   AgentStats,
 } from '@zooique/memora';
-// 记忆治理统一门面（治理 / 健康度报告类型经方法返回推断，未列为公开显式导出）
-export { MemoryGovernance } from '@zooique/memora';
+// 记忆治理门面已于 5.0.0（2026-10-18）整链退役，健康度替代通道见 §四 注记
 // 文本润色
 export type { PolishResult } from '@zooique/memora';
 export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@zooique/memora';
