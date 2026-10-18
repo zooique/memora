@@ -18,12 +18,12 @@ import { join } from 'node:path';
 import os from 'node:os';
 import {
   Agent,
-  InMemoryStorage,
   type LlmProvider,
   type ChatOptions,
   type LlmChunk,
   type Memory,
 } from '@zooique/memora';
+import { createHostMemoryStorage } from '../src/extension/host/memoryStorage.js';
 import { createBackgroundProvider } from '../src/extension/host/llmConfig.js';
 import { WorkspaceSessionStore } from '../src/extension/host/sessionStore.js';
 import type { ProviderStore } from '../src/extension/providers/providerStore.js';
@@ -64,7 +64,9 @@ function report(name: string, ok: boolean, detail: string): void {
 
 /** 装配一个已 init 的 Agent（纯关键词链路，无向量注入） */
 async function makeAgent(workspace: string): Promise<Agent> {
-  const storage = new InMemoryStorage();
+  // 存储走宿主自己的工厂：内核自 5.0.0 起不再提供 InMemoryStorage 导出（内置内存默认实现
+  // 收回内核内部），宿主必须自选后端——本脚本选与生产同一条装配路径（SQLite，环境不支持则 JSON）。
+  const storage = createHostMemoryStorage(workspace);
   storage.upsert(MEMORY); // 预置记忆供检索
   const sessionStore = new WorkspaceSessionStore(workspace);
   sessionStore.load();
