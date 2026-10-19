@@ -1,0 +1,1380 @@
+# CHANGELOG 归档（4.0.0 及更早版本）
+
+> 本文件 = `CHANGELOG.md` 的历史版本归档（`CHLOG-TRIM-1`，2026-10-19 迁入）。
+> 迁入内容为**原文逐行复制**，未做任何改写；`[4.0.0]` 区与 `[3.0.1]`~`[0.3.0]` 区全文在此，
+> git 历史亦可溯（迁移提交前的 `CHANGELOG.md`）。新版本内容见根目录 `CHANGELOG.md`。
+
+---
+
+## [4.0.0] · 2026-10-08
+
+> **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：删 54 个公共导出 + 退役 `agent.memory.search()`，对外部消费者是编译期破坏。宿主变更在下方 `[Unreleased] · 宿主` 区，不占内核版本号。
+
+### Fixed（内核 · 摘要写入前三态：判断权归还 + 原料指纹精确去重 · 审查 P1-5a）
+
+- **`summary` 允许 `null`**（`SUMMARY_JSON_CONTRACT`）：摘要判断器可判「本轮无值得沉淀的信息」
+  （纯工具/后台轮），`generate()` 收到 null 不写入——此前契约强制非空，纯后台轮被挤出流水账摘要
+  （记忆库噪音根源）。null 是合法结论非错误，日志与「无效 JSON」警告分态可辨。
+- **前置精确去重**：新增 `materialFingerprint`（sha256(输入原文 + NUL + 回复原文)，顶层持久化字段，
+  同 `supersededBy` 先例）。`generate()` 入口比对存量摘要，原料全等 → 跳过（不调 LLM、零写入）；
+  判据取原文全文 + 字符串全等，仅铁重复时跳过（截断面外不同 / 回复略异一律放行），
+  近似重复仍归下游 `supersedeSimilar`（未动：阈值 / 打标不删 / 同 session 语义原样）。
+- **存量条目零动作**：无指纹字段不参与匹配，只拦新增；已落盘数据一字不改。
+- 守卫：三态用例（全等跳过零 LLM 调用 / 同输入异回复放行 / null 不写入且 memoryAdded 不误发 /
+  指纹随沉淀落盘 / 分隔符防拼接歧义）+ `parseMemory` 白名单与类型校验同步。
+
+### ⚠️ Breaking（内核 · 记忆搜索唯一入口收敛：删除已退役的 `MemoryInspector.search()` · `f552695e`）
+
+- 删除 `agent.memory.search(query, limit?)`（同步），含其 5 条测试。唯一入口 = `searchByKeyword()`
+  （返回 `Promise`，需 `await`；能力超集：superseded 过滤 / `excludeRoundIds` 互斥 / `accessedAt` 刷新 + 溯源揭示）。
+- 迁移：`agent.memory.search(q, n)` → `await agent.memory.searchByKeyword(q, n)`。
+
+### ⚠️ Breaking（内核 · 工具错误码收口为单一构造点，重试分类改读结构化字段 · `6ce81139`）
+
+- `ToolOutcome` 新增 `errorCode?: ToolErrorCodeValue`；带码失败一律走 `failedOutcomeWithCode(code, detail)`，
+  文本 `[ERR:TOOL:XXX]` 前缀由 `errorCode` 派生，单一构造点同源产出一次。
+- `isRetryableToolError` 优先读 `outcome.errorCode`，无码才回退解析文本前缀（兼容路径）。
+- 新增枚举值 `NOT_AVAILABLE`（不可重试：缺的是宿主装配，重试空转）。
+
+### Added（内核 · 公共导出面双向机器对账守卫 · `PUBLIC-API-SURFACE-1` · `536c54fa`）
+
+- 向 A：公开面 ⊆ 宿主真实消费 ∪ README/手册 §十六 承诺（防未登记公开）；
+  向 B：手册 §十六 承诺符号在 `src` 真实存在（防幻觉文档）；
+  向 C：手册 §十六 承诺的模块级符号必须在公开面（防「文档承诺但未导出」，消费者具名
+  import 得到 undefined）。C 向为发版前审查补建，豁免集冻结（import 示例噪声 9 + 类型/叙述词 4）。
+
+### Added（内核 · 公开导出 `resolveShellCommand`：宿主环境快照 shell 字段单一真源派生 · 发版前审查 H8）
+
+- `src/skill/skillScriptRunner.ts` 的 shell 派发映射函数挂公共面。VS Code 宿主环境快照的
+  `shell` 字段改为经内核公开导出直接派生（此前镜像手写平台三元——内核改映射宿主不知情，
+  上报值与实际派发值漂移即「假事实」；2026-10-03 审查 P0 同源教训的收口）。
+- 守卫保留：宿主侧同源守卫改读内核源码提取真源（重算 = 第二份判据，写错即红的形态不变）。
+
+### Added（内核 · 会议组员消费端缺员过滤：名单输出 = 实际可参会者）
+
+- `effectiveMembers`（截断 + 缺员过滤，单一实现）收口 `activeTeamMembers` / `getTeam`：
+  组员引用的角色包已卸载（幽灵引用）从参会名单输出中剔除——`tryBuildMeetingPlan` 不再为
+  幽灵组员建空转发言项，宿主 UI 所见与会议实际消费一致（SSOT 消费端视图，ADR-028 收敛补记二）。
+- 存储仍原样不裁切：受损名单的「提示清理/修复」由宿主读期检测承担，内核只保证输出即实际参会。
+- 守卫 3 用例：缺员过滤 + getTeam 快照 / 存储原样不裁切 / 截断在过滤前不回补。
+
+### ⚠️ Breaking（内核 · 导出面收敛：54 个无消费、无文档承诺的公共导出降级为内部实现 · `REL-3.1`，已定档 4.0.0）
+
+**收敛判据（2026-10-06 定案）**：公共导出只保留 ① 宿主（`hosts/memora-vscode`）经 `@zooique/memora`
+实际 import 的符号；② README / API 手册 §十六 明文承诺的公共 API。两条都不占的符号从 `src/index.ts`
+公共面移除。**收编 ≠ 删除**：类型定义仍在原模块、随函数签名/结构推断可用，只是不再可显式 import；
+判定前全量重盘（历史快照「约 70 个」重盘实测 53 个；终盘对账 3.0.1→4.0.0 实移 **55** 个、终盘后回归摘出 1 个（`ProcessMetricsPayload` 重新挂面，见分账注记）= 发布面 **54** 个——误报 2、补登 4，见下方清单分账注记）。
+
+**移除清单（54 个，按域分组）**：
+
+- agent 内部类型/值（15）：`AbortStopReason` / `IdempotencyLevel` / `ToolExecutionRecord` /
+  `PauseMeta` / `PlanItemOutcome` / `PlanItem` /
+  `DefaultDuplicateCallInterceptor` / `DuplicateCallInterceptor` / `DuplicateCheckVerdict` /
+  `DuplicateCheckContext` / `RoundSummaryGenerator` / `EstimateOccupancyInput` /
+  `estimateTokensText` / `EstimableMessage` / `WorkProjectionManager`
+- LLM / 事件 / 记忆（3）：`TaskType` / `AGENT_EVENTS` / `SummaryType`
+- Round 存储内部件（6）：`RoundEvidenceEvent` / `generateRoundId` / `generateMessageId` /
+  `createPendingRound` / `completeRound` / `InMemoryRoundStore`
+- 工具定义常量（2）：`SEARCH_PROJECT_TOOL` / `TRACE_SUMMARY_TOOL`
+- 角色包子类型与装配内部件（24）：`RolePack` / `RolePackTeam` / `RolePackCapability` /
+  `RolePackManifestSkill` / `BehaviorStrategy` / `PrepareStrategy` / `ActStrategy` /
+  `ReflectStrategy` / `GlobalStrategy` / `ToolReadonly` / `ProviderRouting` /
+  `MultiStepReasoning` / `SelfReviewRounds` / `UserFollowup` / `ErrorHandling` /
+  `DEFAULT_BEHAVIOR_STRATEGY` / `mergeStrategy` / `assembleRolePack` /
+  `checkCompanionContentRedline` / `RolePackValidationIssue` / `RolePackValidationResult` /
+  `RolePackIssueSeverity` / `RolePackAssembly` / `validateManifest`
+- 杂项工具（4）：`safeSearch` / `isValidConfigName` / `parseConfigId` / `MAX_CONFIG_NAME_LENGTH`
+
+**分账注记（2026-10-08 终盘对账）**：初版清单（53）含 **误报 2**——`BackgroundTaskStatus` /
+`COMPRESS_TARGETS` 在 3.0.1 导出面上**不存在**（本开发周期内新增，旋经 `b69f85ff` 收敛收回），
+不构成 3.0.1→4.0.0 对外破坏，已从上方清单移出（`BackgroundTaskStatus` 的挂面史见下方后台任务
+可见性条目后注）；另 **漏登 4** 已补入上方分组——`WorkProjectionManager`（类值导出）、
+`validateManifest`（值导出）、`RolePackAssembly`、`ProcessMetricsPayload`，其中前两个是值导出，
+外部显式 import 在 4.0.0 直接编译红。
+
+**终盘后回归 1（计数 55 → 54）**：`ProcessMetricsPayload` 在终盘后因「多流续跑 metrics 同轮合并」
+修复（见下方 metrics 合并 Fixed 条）需要重新挂面——宿主 chatPanel 的段级合并助手以其为参数类型
+（判据①「宿主真实 import」成立），从移除清单摘出；其余 54 个维持收敛不变。
+
+**文档面同步修正（API 手册 §十六 5 处失真）**：删 4 个**幻影承诺**（`AgentProjectEntry` /
+`BOOST_INCREMENT` / `SCORE_CEILING` / `SCORE_FLOOR` / `SkillMatch`——src 无对应导出，属文档单方面
+承诺了不存在的 API）+ 1 处**滞后承诺**（`extractKeywords`——代码已定案收回，文档未跟）；
+`SummaryType` 字段描述改行内联合类型写法。手册 §十六 收敛口径改写为与 `src/index.ts` 同判据。
+
+**影响**：宿主零改动（tsc 双绿实证，收编清单与宿主消费面零交集）；外部消费者若显式 import 被收
+符号，改用类型推断或自有定义。
+
+### ⚠️ Breaking（内核 · 工具结果三值契约判据切换：执行层闸门 blocked 不再计入 toolFailureCount · `SCRIPT-2` B4，已定档 4.0.0）
+
+**口径变更（Breaking）**：执行层闸门（宿主审批拒绝 `permission_denied` / 只读拒绝 `readonly_denied` /
+幂等跳过 `idempotent_skip`）此前被文本判据算作**失败**（`[ERR:TOOL:PERMISSION_DENIED]` 等前缀命中
+`isToolFailure`）计入 `toolFailureCount`——「我们主动挡下的」与「工具真的跑失败了」混在一个数字里。
+B4 判据切换后编排层 / 计数层一律读 `ToolOutcome.status` 三值契约：**blocked 归入
+`toolBlockedCount`（主动挡下），不再计入 `toolFailureCount`**（方案 §六决策二）。
+
+**数字变化（历史不可比，跨版本比较该字段须先对齐此边界）**：
+
+- `toolFailureCount` / `AgentMetrics.tools.failureCount` **下降**（执行层闸门剔除 + run_command
+  cwd 越界 `[ERR:PATH_DENIED]` 转 blocked）；
+- `toolBlockedCount` **上升**（执行层闸门 + 旁路拒绝 `no_compress_target` / `invalid_intel_note` 计入）；
+- `compress_context` 摘要生成失败 / 压缩异常**重归类为 failed**（原无失败前缀、被静默算成功）⇒ 计入 failureCount；
+- chunk 呈现：执行层拒绝 / 幂等跳过从「失败」变「已拦截」（`tool_result` chunk `blocked: true`）；
+- `guardier.notifyExec` 收到执行层拒绝从 `'failed'` 变 `'blocked'`（write_loop 自持不再把用户拒绝当失败升级文案）。
+
+**双轨设施同批整体退役**：`ToolRunner.runOne` 返回值 `string` → `Promise<ToolOutcome>`（结构化事实
+直通编排层）；`onToolSettled` 旁路通道、`stepOutcomes` 注册表、`_crossCheckOutcome` 双轨核对、
+`stepBlockedDisagreements` / `stepUnreportedOutcomes` 观测集及其 metrics 出闸字段
+（`toolBlockedDisagreementCount` / `toolOutcomeUnreportedCount`）、`toolOutcomeConsistency.test.ts`
+一致性测试**全部删除**——status 是唯一判据，不再有第二轨道。
+
+**判据桥收窄（非退役）**：`isToolFailure` 降格为**未切 19 族文本 → status 的边界转换器**（唯一生产
+消费点 = `toolRunner.runOne` 回落），由前缀契约测试 + `toolFailurePrefixGuard` 守卫锁定；其物理删除
+随 B5（最终消亡批次：19 族 outcome 化）执行。B1 缺口补齐：run_command 后台模式未装配注册表出口补
+failedOutcome emit；kill_command 已终态分支的行首归属判据改读结构化进程终态（`timedOut` / `exitCode`），
+不再扫文本前缀。
+
+### ⚠️ Breaking（内核 · 判据桥消亡：失败语义全面结构化，文本前缀判据退役 · `SCRIPT-2` B5，已定档 4.0.0）
+
+**B5（最终消亡批次）收口**：未切族全部 outcome 化，文本前缀判据（`isToolFailure` +
+`TOOL_FAILURE_PATTERNS`）及其守卫（`toolFailurePrefixGuard.test.ts` / 前缀契约测试段）**物理删除**。
+`SCRIPT-2` 全案闭合：失败语义唯一承载 = `ToolOutcome.status`，文本只喂 LLM / 渲染。
+
+**落地内容（B5-a～e 五子批）**：
+
+- **全族 outcome 化**：信息获取族（web_search / web_fetch / search_project）、任务表族
+  （task_table_write / update）、渐进披露/回调族（read_skill / read_resource / list_resources /
+  list_skills / register_work / run_team_meeting）共 **21 个失败点**显式 emit failedOutcome；
+  kill_command 六出口全 emit（NOT_AVAILABLE / TASK_NOT_FOUND = failed，KILLED / SETTLED = ok）；
+  `assembler.planManager.updatePlanItem` 任务项寻址失败改抛结构化 `toolError`
+  （经 runOne catch → failedOutcome，不再裸文本 return）。
+- **runOne 兜底改写**：`nativeOutcome ?? okOutcome(result)`——执行器未 emit = 工具正常完成
+  （裸文本含软降级说明），不再扫文本前缀派生 status；abort 两出口（已 abort 提前返回 / abort 胜出）
+  显式 emit failedOutcome（中断 = 失败事实，防兜底误判 ok）。
+- **残留守卫固化**：新增「生产代码零裸失败前缀 return」守卫测试（扫 toolExecutor / toolRunner /
+  assembler 三文件，失败必须显式 emit），把方案的 grep 证明固化为永久测试。
+- **list_sessions 裁决登记**：两处软降级（未配置存储 / 读取失败返回说明文本）是文档化的
+  「降级优先」刻意设计（JSDoc 明示不抛错、不阻塞对话），非伪装失败，不改 throw。
+
+**数字变化（历史不可比）**：kill_command 终止「已终态的失败任务」时，失败已在后台完成点
+（B3 `setBackgroundTasks` 回调）单点结算；B5 前该场景被 B4-c 行首 `[COMMAND_ERROR]` 桥判**重复
+计 1 次 failed（双计伤，2026-10-06 实测）**——B5-d 起 kill 回传 status 恒 ok（文本层
+`[COMMAND_ERROR]` 保留给 LLM 看结局），`toolFailureCount` 对该场景**下降**（去重）。
+
+**测试口径（B5-e 契约同构）**：loop 层 mock toolExecutor 返回失败文本时必须伴随显式 emit
+（新增 `mockExecutorReturning` 辅助函数统一 7 处 mock 形态）；「执行器未 emit → 兜底 ok（即使
+文本长得像失败前缀）」由测试锁定——失败判据唯一来源 = emit，无第二判据。
+
+### ⚠️ Breaking（内核 · 工具失败判据收敛单点：脚本/代码/命令三态族不再漏计 · `SCRIPT-1` + `METRICS-PREFIX-1`①②，已定档 4.0.0）
+
+**口径缺陷（静默失败 = 假阴性）**：失败判据此前散落三处、各自手写 `result.startsWith('[ERR')`
+（`toolRunner` 执行层 / `loop` 编排层 / `loop` `toolFailureCount` 计数）。而脚本族失败产出的是
+`formatExecutionResult` 的**三态前缀** —— `[SCRIPT_ERROR]` / `[CODE_ERROR]` / `[COMMAND_ERROR]` /
+`[SCRIPT_TIMEOUT]` / `[CODE_TIMEOUT]` / `[COMMAND_TIMEOUT]`（`kind: 'SCRIPT' | 'CODE' | 'COMMAND'`），
+**一个都不以 `[ERR` 开头** ⇒ `run_skill_script` / `run_code` / `run_command`
+的**全部失败与超时恒判为成功**，`toolFailureCount` / `AgentMetrics.tools.failureCount` **恒少计**。
+
+**⚠️ 口径边界（2026-10-06 二次审查订正，勿夸大）**：后台命令**自然终局**（`backgroundTasks` 的
+`formatBackgroundTaskNotice` → `enqueueCommandResult` → `appendSystemMessage`）**结构上不产生
+`tool_result` chunk**，因此其失败**不经过本判据、也不计入 `toolFailureCount`** —— 这不是判据漏计，
+而是该路径**没有工具结果承载点**。台账已拆独立条目 `METRICS-BGTASK-1` 待排（修法与判据字段化强耦合）。
+本条闭合范围 = **三个工具族的同步执行面**（`run_skill_script` / `run_code` / `run_command` 同步路径
++ `kill_command` 回传），**不含后台自然终局**。
+
+**变更**：新增 `toolCallHelpers.isToolFailure()` 为失败判据**唯一真源**（两族正则），三处散点全部改调它；
+生产代码 `startsWith('[ERR')` 零残留。`_processToolResults` 签名新增 `blockedFlags?`（调用点传
+`toolExecs.map(e => e.blocked)`），使「策略拦截不算失败」由**隐性约定**（靠护栏文案刻意避开 `[ERR`）
+转为**显式排除** —— 原为脆弱不变量：新护栏文案一旦用 `[ERR` 前缀即静默误计拦截为失败。
+`tracer.ts` 的 `failureCount` JSDoc 原以「结果以 `[ERR` 开头」定义字段，已改指判据函数（防文档层留失效定义）。
+
+**⚠️ 对下游的口径影响（诚实登记）**：`toolFailureCount` / `failureCount` 的**历史数字与修复后不可比**
+——修复后**上升**。已落盘 round 的 metrics 属旧口径，跨版本比较该字段须先对齐此边界。
+**宿主落盘侧同受影响**：宿主收场的 `toolFailureCount` 自行从 processEvents 数（`!ok && !blocked`），
+`ok` 来源统一后**两侧口径首次自动一致**（此前内核漏三态族、宿主跟着一起漏，两侧同错故看似一致），
+故**宿主已落盘 round 的该字段数字同样上升**。
+实测影响面（12 案例）：**精确翻转 5 条**（三族的非零退出码 + 超时），**零误伤**
+（策略拦截族 `[SEARCH_LIMIT_REACHED]` / `[ALREADY_READ]` / `[ASK_LIMIT]`、`[KILLED]` 主动终止、
+正常输出、旧 `[ERR` 族共 7 条判定均不变）。
+
+**前缀约定已由测试锁定**：`toolCallHelpers.test.ts` 的「isToolFailure · 前缀约定契约」段逐条断言
+失败族 10 条 + **豁免族 9 条**（策略拦截 3 / 未执行·幂等 4 / 护栏提示 2）—— 新增护栏文案未登记归属即转红，
+「记得避开」的隐性约定转为可执行纪律。豁免清单由**全量 grep 生产代码 `[XXX]` 标签逐个过判据**得出
+（共 31 个标签，判失败 6 个全为执行三态族、无一误判），非仅照抄既有台账。
+**未闭合**：`METRICS-XFLOW-1`（跨流 metrics 低估）独立待排 —— 判据收敛只修「单流内漏计」，跨流漏计照旧。
+
+### ⚠️ Breaking（内核 · `background` 语义修订：turn 终态不再杀后台进程 · CMD-1 阶段 3）
+
+**真机实锤的缺陷**（`round-1791074929352.json`）：用户起 `ping -n 90`（`background=true`），
+turn 仅 **6.286 秒**结束就触发 `reapAll` 把 90 秒的进程杀了，UI 底部条从「运行中」变「已终止」
+而**用户从未点过终止**；助手正文还说「后台运行中，完成后结果会自动回到上下文」。
+⇒ **内核文案在骗模型，模型在骗用户。**
+
+**行为反转（两句话）**：**一、别杀它。二、别扔它的结果。**
+
+- `BackgroundTaskRegistry.reapAll()` → **`detachAll()`**（脱管不杀）。旧方法**直接删除、不留兼容**——
+  旧行为已被真机证伪，留着等于留一个陷阱。脱管实际是**纯读**：不杀进程、不改 status、不清注册表
+- `loop.finalizeBackgroundTasksOnTurnEnd()` **删除** `command-result` 丢弃行；`background_report`
+  报告文案改「已转为后台常驻（未被终止）」，**不再宣称「已全部终止」**
+- ⚠️ **撤销「回流不跨 turn」定案**：该定案只封杀 `command-result` 却放行 `interject`，而两者性质完全
+  相同（外部产生的事实、显式一条消息、分别经 `appendSystem` / `appendUser`）⇒ **同一现象两套标准 =
+  违反 SSOT**；且 turn 内跑的 `command-result` 走的就是同一通路（`_handleInterrupt` →
+  `appendSystem`），**机制在 turn 边界突然失效是一致性缺口，不是保护**。本条**不是推翻定案，
+  是补齐一条没贯彻到底的判据**
+- **零新机制**：`loop` 是 Agent 级单例（`agent.ts:1350` 装配时创建一次，`:1907` close 才置 null）
+  ⇒ `interruptQueue` 天然跨 turn 存活；`clearPendingInterjections()` 只清 `interject` 不动
+  `command-result` ⇒ 两个清理点本就分流、无冲突。**零新工具 / 零新队列 / 零新状态机**
+- **诚实口径修订**（文案层是真机问题的源头①）：`[BACKGROUND_STARTED]` 回执与工具描述删去
+  「结果会自动回到你的上下文」承诺，改为显式告知「不会自动进上下文，需要时用 `kill_command` 取回」+
+  「本轮结束不会终止它」
+- **诚实边界**（2026-10-04 审查订正；⑧ 已闭环见下方 Fixed「退出杀树」条）：进程活过 turn；
+  宿主寿命边界经观察点 ⑧ 真机定类（OS 层孤儿实锤）后已补退出杀树——正常退出 VS Code 终止，
+  崩溃/被强杀不保证。
+  超时同理：`BACKGROUND_MAX_TIMEOUT_MS`（30min）只是**显式传 timeoutMs 时的钳制上限**，
+  缺省不传 = 永不超时，脱管窗口**无内核侧时限**
+- **回归守卫翻转 1 条**：`aborted 收场 → 回流被丢弃，不跨 turn` 与新定案直接冲突，改为
+  「跨 turn 留存 + 下一轮被吸收」。该守卫原始意图（陈旧结果不该凭空注入）**仍成立**，但旧实现手段
+  （turn 边界一刀切丢弃）过宽；改后模型仍是**显式看到**该 system 消息，不吞声、不偷注
+- **测试**：`detachAll` 脱管不杀（3 处断言：status 仍 `running` / 仍可 `kill` 取回 / 再脱管仍能列出）
+  + turn 终态脱管 + 报告文案不得含「已全部终止」+ 纯问答不产 `background_report`（反向守卫）
+- **变异验证 2 组**（逐组精确转红）：`detachAll` 改回 `killNow`+置 `killed` → 3 红；
+  恢复 `command-result` 丢弃行 → `aborted` 留存守卫红
+- **方案文档**：`docs/方案-后台任务跨轮存活-20261004.md`（含主流对标实锤、SSOT 论证、刻意不做清单）
+
+### Added（内核 · 用户角色包目录重扫对账 `resyncUserPacks` · 角色包「刷新」按钮内核落点）
+
+- **背景**：`loadExtraDir` 仅在 Agent 装配时执行一次，面板折叠展开读内存快照——用户在用户
+  角色包目录新增/改名/删除/修改角色包后，不重启宿主不生效（真机 RP-EDIT-1 冒烟实证）。
+- **语义（净差对账，对用户诚实）**：摘除全部运行时注入项（`runtimeNames` 记账名单）→ 重新
+  `loadExtraDir` → 同名重注入 = 内容更新生效（`updated`），不算新增/移除；真消失（目录已删 /
+  改名旧名）才进 `removed`，全新名字才计 `added`。
+- **激活悬空走 §4.1 单链兜底**：原激活包被摘除时复用 `activateFallback()`（与 reload 激活包被删
+  同源同判据），经 `onActiveChanged` 同步宿主 UI；不自造第二套回退规则。
+- **边界**：内置包不参与对账（磁盘真理源 = dist，构建期同步，运行中恒定）；manifest.name 撞内置
+  的用户包继承重名跳过判据。
+- **测试**：5 用例锁行为（新增注入 / 删除摘除 + 记账连续 / 改名 / 悬空兜底 / 内容更新净差）。
+
+### Fixed（内核 · 读取防重分支②死路回放：台账替身回显补「原文仍在上下文」前置 · 数据源取证 round-1791449684099）
+
+**真机死循环实锤**：一次 turn 内「整读文件 → 上下文压缩挤掉原文 → 中段重读」时，台账分支②
+（替身回显）在**原文已不在上下文**的情况下仍以「已有覆盖」为由把请求拦截成摘要替身——模型拿不到
+原文、重读又被拦，整读→压缩→重读→替身拦死循环（生产轮复现数据 round-1791449684099）。
+
+- **契约前置**：`shouldEchoLedgerStub(subj, cov, stillInContext)` 增第三必填参数，前置不过则
+  一切区间判定短路为放行（放行真读，新结果入上下文后由分支① `read_dedup` 接手防重复）——
+  宁可多读一次不可误拦（两个失败方向不对称，防永动机语义不变）。
+- **数据面收口**：`FileCoverage` 新增必填 `lastToolCallId` / `fingerprint`（定位锚 + 进上下文
+  内容指纹，与 toolResultCache 同口径同源计算）——禁 optional 兜底：缺锚则回退语义恒为「在」，
+  死路回放复发，宁编译期红。
+- **判据单一收口**：新抽 `AgentLoop.isMessageStillUnmodified(toolCallId, fingerprint)`，
+  分支①（`isCachedResultStillInContext` 委托）与分支②（回显前置）共用同一「原文是否仍在
+  上下文」判据，不双轨。
+- 测试：死路回放生产序列复现用例（整读→压缩→中段重读应放行 3 次真读、零回显）+ 压缩语境
+  放行组重写 + 归一拦截组重构保留；变异验证（短路放行分支 → 4 用例精确转红 → 恢复全绿）已做。
+
+### Fixed（内核 · Windows 命令输出编码事实缺失：模型对 cmd OEM/GBK 乱码失明 · CMD-2 补宣告）
+
+**实证坐实**：`run_command` 经 `cmd /c` 执行时，cmd 写管道输出用系统 OEM 代码页（简中系统为
+GBK；实测 `chcp 65001` 下仍输出 GBK 字节），而内核执行器恒按 UTF-8 解码收流——非 ASCII 输出
+必显示为乱码（ASCII 不受影响，故英文命令无感、中文场景模型反复踩坑且无法自查归因）。
+
+- **裁决 = 事实宣告（非解码改造）**：`buildEnvironmentContextBlock` 新增 win32 平台条件行
+  「命令输出编码：cmd 管道输出按系统 OEM 代码页写出（简中系统为 GBK），内核按 UTF-8 解码——
+  非 ASCII 输出会显示为乱码（ASCII 不受影响）；Node 脚本输出为 UTF-8」。纯事实链零行为引导
+  （对齐环境段「零解释转发」纪律）；平台参数化与 `resolveShellCommand` 同先例，POSIX 不加噪音。
+- 三方对照：内核执行路径（spawn `cmd /c` + UTF-8 收流）↔ 工具描述（无编码声明、不冲突）↔
+  环境宣告段（本条补齐）。
+
+### Fixed（内核 · 后台任务回流通知首标签穷尽化：`timedOut` 不再谎报「完成」· 发版前审查 H1）
+
+**行为修正**：`formatBackgroundTaskNotice` 旧首标签由二元三元推导（`killed ? '已终止' : '完成'`），
+`timedOut` 产出「[后台命令完成] · 超时被终止」自相矛盾、`running` 被谎报完成。
+
+- 新增穷尽表 `BACKGROUND_TASK_NOTICE_TAGS: Record<BackgroundTaskStatus, string>`（内核内部，
+  不挂公共面——消费面是内核回流通知文本，宿主无 import 需求；`Record` 穷尽键 = 状态枚举增补时
+  编译期红，同 `COMPRESS_TARGET_LABELS` 范式），四态各给诚实首标签；
+  状态文案渲染仍以既有 `BACKGROUND_TASK_STATUS_LABELS` 为唯一真源（不双轨）。
+- 测试：`timedOut` 首标签不得谎报完成（回归锁）+ 四态逐条与穷尽表同源断言；
+  变异验证（表值串档 → 精确转红）已做。
+
+### Fixed（内核 · 宿主退出孤儿进程：补实例终态杀树 · 观察点 ⑧ 真机定类闭环）
+
+**真机实锤**：完全退出 VS Code 约 10 秒后，后台 `ping -n 300`（PID 15456）仍在运行，
+其父进程（扩展宿主）已不存在——Windows 不回收脱离控制台的子进程，Job Object 兜底在此
+环境不成立。旧代码 `Agent.close` 不处置后台注册表，每次退出留一批 OS 孤儿（dev server
+类更会永久占端口）。
+
+- **两个生命周期终点分开**（勿折叠）：turn 终态 `detachAll` **不杀**（跨轮存活）；
+  Agent 实例终态新增 `BackgroundTaskRegistry.killAllRunning()` **真杀**——注册表按
+  实例隔离是硬不变量，实例销毁后任务不可寻址，不杀即孤儿
+- **接线**：`AgentLoop.shutdownBackgroundTasks()` 纯透传（未装配返 0）；`Agent.close()`
+  在 loop null 化前调用；宿主 `deactivate` 本就 await close，**宿主侧零行为改动**。
+  主动终止逻辑抽单点 `terminate`（`kill` / `killAllRunning` 共用），不回调 listener
+  （退出时回流队列已无消费方），不推 UI 快照
+- **诚实边界**：只覆盖扩展正常停用；扩展崩溃 / 被 OS 强杀时 `close` 来不及执行，该场景
+  依旧不承诺清理。文案三处（工具描述 / `[BACKGROUND_STARTED]` 回执 / turn 收尾报告）
+  统一为「正常退出 VS Code 时终止；崩溃 / 被强杀不保证」
+  ⚠️ 本条的「正常停用」承诺当时仍是谎（见下一条 31ms 窗口实锤），由下一条补第二触发通路后才成真
+- **测试**：注册表混合态收割（running 真杀 / completed、killed 不碰 / 不回调 listener）+
+  loop 透传（含未装配返 0）+ `Agent.close` 调用点 spy 守卫；**变异验证 2 组**（断 close
+  接线 → spy 红；收割改纯读 → 状态断言红）
+- **定案沉淀**：ADR-036（后台命令任务双生命周期边界 + 回流留存；S2 固化触发 1 = src 引用
+  ≥1），src 定案注释锚改指 ADR
+- **顺带修测试夹具假活（同批实锤的既有缺陷）**：`backgroundTasks.test.ts` 的
+  `SLEEP_CMD` 原写法 `node -e "setTimeout(()=>{},120000)"` 在 Windows `cmd /c` 下
+  **引号被原样传给 node，eval 的是字符串字面量（空语句）→ 秒退 exit 0**，而既有用例
+  只在 start 占位 `running` 的窗口内断言，从未真验进程存活。改为平台分叉
+  （win32 无引号 function 版 / POSIX 双引号版，引号在两个 shell 命运相反），
+  `loop.test.ts` 同型夹具一并修；新用例以「起后 300ms 复查仍 running」挡占位假活
+
+### Fixed（内核 · 关窗 31ms 窗口实锤：exit 钩子同步兜底收割 · 观察点 ⑧ 第二轮）
+
+**真机实锤（第二轮，新 dist 含杀树重测）**：renderer 发 terminate 到扩展宿主进程消失仅
+**31ms**（16:15:28.817 → 16:15:28.848，exit 0），Memora 日志零收割痕迹，`ping -n 300`
+成孤儿跑至自然结束。async `close()` 深处的杀树在 Windows 正常关窗的清理窗口里根本
+跑不到 ⇒ 上一条的「正常退出时终止」当时是谎（诚实边界承诺跑不到代码路径）。
+
+- **exit 钩子同步兜底**：注册表构造时 `process.on('exit')`，钩子内遍历 running 用**同步**
+  杀树原语 `killProcessTreeSync`（Windows `execFileSync('taskkill', …)`；POSIX
+  `process.kill(-pgid)` 本就同步）。为何必须同步：异步 spawn 的 fork 由 libuv 线程池派发，
+  exit 钩子返回后 Node 即退出，fork 可能来不及完成 ⇒ 杀树静默失败（假阴性同族）
+- **同源防双真理源**：同步 / 异步原语共享 `buildTaskkillArgs` 参数构造（改一处漏一处无测试
+  报警 = 第二真理源反模式）；terminate 单点加 `mode` 档位且**必传**（缺省值语义 = 语境含糊
+  静默回落），close 通路走异步、exit 通路走同步，共用同一终止单点
+- **注册/注销配对**：`shutdown()` = `killAllRunning()` + 注销钩子——钩子是**进程级**监听、
+  注册表是**实例级**对象，不配对 = 多实例钩子堆积 + 闭包泄漏；注销后经 `disposed` 判空转（幂等）
+- **测试 +6**：同步原语机制级（taskkill 参数同源断言 / 128 静默达成 / 非 128 降级单杀 /
+  POSIX `kill(-pgid)`）+ 钩子注册恰一个、注销回原数（配对守卫）+ 兜底收割行为（置 killed、
+  不回调 listener、重复触发幂等）+ 注销后空转；存量用例收尾统一改 `shutdown()`
+  （测试自身不得复制「注册不注销」的堆积模式，防 Node MaxListeners 告警）
+- **诚实边界更新**：「正常退出 VS Code 时终止」自本条起**成真**（close 通路一 + exit 钩子
+  通路二双触发）；扩展崩溃 / 被 OS 强杀 / 断电时两通路都来不及执行，**依旧不承诺清理**。
+  定案锚 ADR-036 决策 1 已同步双通路口径
+- **真机复测第三轮（2026-10-04 16:58）✅ 通过**：新 dist（16:56:39 构建，exitHook 符号确认）→
+  16:57 起后台 `ping -n 300`（自然寿命应到 ~17:02）→ 16:58:00 关 VS Code（**26ms** 窗口，
+  比第二轮更紧）→ 16:59 查证**零 ping 残留**。判定：ping 在自然寿命内消失 = 被杀树收割，
+  非自然结束；同轮「turn 终态脱管不杀」（ping 活过 turn）与「实例终态杀树」两个定案同机验证
+  ⚠️ **通路归因存灰区（如实登记）**：OutputChannel 日志在退出瞬间来不及 flush，杀树日志未落盘，
+  无法从日志直接指认 exit 钩子还是 deactivate 恰好跑完；26ms 窗口下后者概率极低，
+  结果层验收锚（退出零孤儿）达成即本轮验收目标
+
+### Fixed（内核+宿主 · 后台任务终态 UI 不准 + 终态行可手动收起 · CMD-1 阶段 3 补漏）
+
+**缺口（阶段一自查漏判）**：脱管落地后，任务自然跑完时**宿主完全收不到通知**——
+`setCompletionListener` 的回调只做 `enqueueCommandResult`（入队给模型），无任何出宿主的面。
+而宿主推 UI 只有三个时机（`step_boundary` / `background_report` / kill 后回推），脱管后 turn 已结束，
+三个全不覆盖 ⇒ **条上一律写「运行中」，实际早已跑完**。
+
+> 比原缺陷更坏：原缺陷是「进程死了却显示已终止」（假终态），本漏是「进程活着却显示运行中」
+> （**假活跃**）——让用户以为还有事在跑，而真相是结果早已躺在队列里。
+
+- **新增内核事件 `backgroundTaskSettled`**（入 `AgentEventMap` + `AGENT_EVENTS`）：挂在注册表
+  `notify` 单点链上（**仅自然终态 settle 经此；主动 kill 刻意不回调**——输出已直接返回，回调会
+  造成双份消费；UI 终止路径由宿主 kill 后自行回拉快照）⇒ `loop.setBackgroundTaskSettledEmitter` →
+  `agent.emit` → 宿主 `bindAgentNoticeEvents` 订阅。**不新增注册表 listener**
+  （`setCompletionListener` 是单点 setter 且已被回流占用，加第二个即第二真理源）；
+  **走既有 `TypedEventEmitter`** 而非独立回调字段（与宿主 `off`/`on` 幂等模式对齐）。
+  载荷只带 `taskId` / `command` / `status`——**刻意不含输出**（同 `BackgroundTaskView`
+  不含 `result` 的口径）
+- **终态行可手动收起**：webview 终态行给 `×` → `background_kill` + `reason:'dismiss'`；宿主记入
+  `Set` 并在投影出口过滤 ⇒ **只关掉「眼睛」**，内核条目与输出都留着（`kill_command` 随时取回）。
+  **可逆 > 不可逆**。**「记住了」放宿主不放 webview**（放 webview 则面板一折叠即忘，刚收起又冒出来）
+- ⚠️ **running 行刻意不给 `×`**：只有「终止」（真杀）。进程在跑必须始终可见——不能让它能被藏起来，
+  那正是本缺口最初的样子（「派了人出去办事却不知道他还在不在」）
+- **单通道复用**：`background_kill` 加 `reason?: 'terminate' | 'dismiss'`（缺省 `terminate`
+  兼容旧 webview）⇒ **协议通道 107 → 107 不变**（治理阈值 130）。一个通道两个明确动作优于开第二条
+- **踩坑并已修（真缺陷，非测试问题）**：dismiss 后把签名哨兵置 `''` ⇒ **最后一条被收起时过滤后
+  `items` 为空、签名也是空串** ⇒ 去重判成 no-op ⇒ **条根本收不起来**。改用 `null` 哨兵
+  （`_backgroundSignature: string | null`）。这是「去重守卫 + 空集合」交互的典型陷阱
+- **踩坑并已修**：回滚变异时误插成两行 `a.on(...)` ⇒ 一次终态推两遍相同快照（签名去重在处理器
+  内部拦不住，那是两条独立调用）。已加**订阅幂等守卫**（同一事件只 `on` 一次）并用变异验证其有效
+- **测试**：内核 +2（终态触发发射回调 / 未注入回调时不抛）；宿主 +5（dismiss 只收视图不碰内核 /
+  记在宿主侧面板重建不复活 / 终态事件推快照且桩 `on` 真转发 / 订阅幂等 / `×` 载荷带 `dismiss`
+  且 running 行无 `×`）。测试**桩的 `on` 必须是真转发**（`vi.fn()` 空实现会让「事件名错配」测不出来）；
+  **不暴露 `emit`**（真实 Agent 上是 `protected`，测试直调会绕过事件名检查 ⇒ 改用捕获的订阅处理器）
+- **变异验证 4 组**：拆终态发射 → 出口用例红 / 拆宿主订阅 → 事件用例红 / 拆 dismiss 过滤 → 2 条红 /
+  注入重复订阅 → 幂等守卫红
+
+### Added（内核 · 后台任务宿主出口 `listBackgroundTasks` / `killBackgroundTask` · CMD-1 阶段 2 缺口）
+
+**缺口**：后台任务运行态对用户零可见、无 kill 入口——`BackgroundTaskRegistry` 的 `list()` / `kill()` 能力早已齐备，但 `src/index.ts` **零导出**，宿主拿不到数据通道（不是「没画 UI」，是「取不到数」）。
+
+- **新增门面方法**（纯委托，零新逻辑）：`agent.listBackgroundTasks(): readonly BackgroundTask[]`、`agent.killBackgroundTask(taskId): BackgroundTask | null`；委托链 = agent → loop → 注册表，**不复制任何判据**（复制即第二真理源）
+- **只出方法不出类**：注册表是 **Agent 实例级**（单例会让 `kill_command` 杀掉别的会话起的进程），导出类 = 把实例化权交给宿主 = 破坏隔离不变量
+- **投影不泄漏句柄**：返回对象的键只有 `taskId / command / startedAt / status / result?`，`killNow` / `peek` 已由 `projection()` 剥离（有守卫测试钉死）
+- **新增类型导出**：`BackgroundTask` / `BackgroundTaskStatus`（只读投影类型；**后注**：`BackgroundTaskStatus` 旋经 `REL-3.1` 导出面收敛收回——它在 3.0.1 导出面上不存在、本开发周期内曾短暂挂面，现版本已不挂面，本条保留真实历史）
+- **状态词表单点**：`BACKGROUND_TASK_STATUS_LABELS`（`Record` 穷尽键 = 新增状态忘补文案即**编译期红**，同 `COMPRESS_TARGET_LABELS` 定案）。**2026-10-04 自审补**：方案文档 §2.3 曾写「复用内核 `STATUS_LABELS`」——该标识符当时是模块私有、内核零导出，属**引用不存在导出的文档失真**（与旧台账 `inlinePlanBoard` 同型）⇒ 改为公开导出，宿主 UI 直接消费、**禁自建第二套**
+- **测试**：loop 层 5 条（未装配不抛 / 运行态可见 / kill 返回终态 / 未知 id 返回 null / 不泄漏句柄）+ 变异验证 2 组有效。**变异副产品**：原 `kill` 后的二次判空是**冗余分支**（`get()` 对未知 id 同为 null，删早退行为完全等价）→ 按无僵尸分支纪律删除，不留不可测代码
+- **方案文档**：`docs/方案-后台任务可见性与kill入口-20261004.md`（实施规格真源；宿主侧协议 + UI 见下方宿主区同批条目）
+
+### ⚠️ Breaking（内核 · 确认载荷与 chunk/事件变体 · 已定档 4.0.0）
+
+**升级即需改代码**（TS 集成方必读）：
+
+- `WriteConfirmationInfo`（`onWriteConfirmation` 载荷）新增**必填**字段 `hasDiff: boolean`——**编译期破坏**（自建该对象的集成方需补字段；只消费不构造的集成方不受影响）。语义 = 「本次确认卡是否有 diff 对比域」：写入场景恒 `true`，命令 / 代码 / 脚本执行三类恒 `false`。**判据归内核单点**（`confirmGate` 的 `diff !== undefined`），宿主不再用 `beforeContent`/`afterContent` 的 truthy 自猜——那属「措辞折叠型带伤」（非写入场景被归一为 `beforeContent: null`，truthy 与 `!== undefined` 判据都会把命令确认渲染成假的「写入前/写入后」对比）
+- `AgentChunk` 新增变体 `{ type: 'background_report'; content: string }`（turn 终态对存活后台进程**脱管**后 emit，报告「已转后台常驻（未被终止）」；无存活进程则不产。语义随阶段 3 脱管定案修订，见上方 Breaking）。消费方 `for await` 的 switch/exhaustive 检查需处理新变体
+- `ProcessEvent` 新增同名变体 `{ type: 'background_report'; seq; ts; payload: { content: string } }`（落盘重放可见，与 `plan_snapshot` 同型）
+
+### Added（内核+宿主 · 命令行执行能力 `run_command` / `kill_command` · `CMD-1`，已定档 4.0.0）
+
+**能力缺口**：此前执行 shell 命令须「`write_file` 写脚本 → `run_project_script` 执行 → `delete_file` 清理」三步，且 `.sh` 在 Windows 上静默空跑（退出码 0 但输出全空）。
+
+- **工具层**：`run_command`（任意 shell 命令字符串 + `cwd` + `timeoutMs` + `background`；`diskWrite:'opaque'` 与一切写互斥）+ `kill_command`（按 `taskId` 终止并取回截至当时的输出；只能杀本会话自起任务，非任意 pid）。两者入 `DEFAULT_EXPOSED_TOOLS` 常驻开放
+- **安全边界**：`SecurityGuard.classifyCommand` 三档裁决（deny 黑名单恒拦 / always-ask 恒确认 / normal）+ `confirmCommandRun`（**复用既有 `confirmGate`**，零新确认通道）。⚠️ **已知边界（如实登记）**：deny 是**命令字面量护栏**，凡执行内容由间接载体承载处（脚本文件 / `run_code` 内联代码）结构性失效——裁决面登记见 `src/security/confirmEntries.ts`，绕过成本 = 一次工具调用
+- **后台执行**：`background: true` 显式发起（**不做超时自动转后台**，拒绝隐式状态切换）→ 立即返回 `taskId`，完成后经 step 边界气口以 system 消息回流（role 语义隔离，不占插话满员）；`LOOP_CONSTANTS.MAX_PENDING_COMMAND_RESULTS` 限量注入（超量留队续投，不截半丢弃）；turn 终态（done/interrupted/error）对存活进程**脱管**（不杀）并出常驻报告，完成回流**跨 turn 留存**（阶段 3 修订见上方 Breaking 区）
+- **进程治理**：`skillScriptRunner.buildSpawnOptions` + `attachGovernance` 收为单点（同步/后台共用），Windows 走 `taskkill /T /F` 杀树、POSIX 走 `kill(-pgid)`；`SYNC_MAX_TIMEOUT_MS`(600s) / `BACKGROUND_MAX_TIMEOUT_MS`(1800s=30min) 双常量分治（30min 只钳制**显式传入**的 timeoutMs，缺省不传 = 不限时，见上方诚实边界），`normalizeTimeoutMs(timeoutMs, maxMs)` 参数化取上限（不给 SSOT 函数开 mode 分支）
+- **诚实口径**：「被主动终止」不是「执行失败」——强杀态独立 `formatKilledCommandOutput`，不声称任何退出状态（防 `[COMMAND_ERROR] 退出码 -1` 谎报）；命令结果定长真源上移到格式化层（脚本/命令/后台回流三面共用，杜绝第二消费面看不到上限）
+- **宿主**：工具中文名两键 + 行动叙述（叙述命令原文 + 后台标记）+ 设置面板「执行二次确认」补 `run_command` 并显式声明 git 写操作/发布不受开关影响（ALWAYS_ASK 恒询问）；后台收尾报告上屏（「后台任务收尾」小节，实时/重放同源）
+- **未做（如实登记）**：命令前缀 allow 白名单（阶段 2）、`.ps1` 运行时档（后台任务运行态列表与用户侧 kill 入口阶段 1 未做，已由同日阶段 2/3 补齐，见下方宿主区 Added 与阶段 3 Fixed 条目）
+
+### Added（内核+宿主 · 环境能力宣告 · `CMD-2`，已定档 4.0.0）
+
+**缺口**：`run_code` 描述曾写「如 python、node、shell」而宿主执行器只支持 JS（对模型说了假话）；且模型对运行环境一无所知。
+
+- **消灭谎言（声明列举）**：`ICodeExecutionProvider` 增**可选** `supportedLanguages?: readonly string[]`；`RUN_CODE_TOOL` 改工厂 `buildRunCodeTool(supportedLanguages?)`——声明时按实际生成语言清单，未声明退化为去承诺文案（零感知向后兼容）。工具描述与「暂不支持语言」回知文案**同源自宿主声明**，杜绝双写漂移
+- **环境事实注入**：新增 `IEnvironmentProvider`（**同步** `getEnvironment(): HostEnvironmentInfo | null`）+ `HostEnvironmentInfo`（`os`/`shell`/`runtimes` 全可选），公开导出；`buildEnvironmentContextBlock` 纯函数格式化为 system prompt「## 运行环境」段（插作品投影后、时间戳前；全空字段不产生空壳标题段）。**零解释转发**——只做字段→文本机械映射，不加行为引导语
+- ⚠️ **`shell` 字段语义 = 本会话执行器实际派发的 shell**（不是集成终端/登录 shell）：内核 `resolveShellCommand` 恒定映射 win32 → `cmd /c`、其余 → `sh -c`，不读环境变量。两侧互为镜像，改一侧必须同批改另一侧（宿主测试从内核源码文本提取真源比对，防单边漂移）
+- **刻意不做**：内核内置探测（派生判定律：环境事实不得升级为内核判据）、执行期自动语言切换（抢模型决策权）、cwd/git 分支注入（阶段 2 观察）
+
+### Fixed（内核+宿主 · `compress_context` 单轮长 turn 压缩缺口 + 崩溃修复 · `CTX-WIN-2`，已定档 4.0.0）
+
+**问题（诊断实锤，非推断）**：长单轮任务（一个提问跑几十个 step）把上下文顶满时，`compress_context` 结构性无可压目标——台账原描述「只能靠换区间重读硬扛」，实测**比这更严重**：
+
+- `target=earliest_round` 在单轮 turn 内**恒返回 null**：锚点是「第一个 user vs 最后一个 user」，而单轮内只有一个 user（当前触发输入）⇒ 必然重合
+- `target=largest_tool_result` **用了就崩**：原实现只压单条 tool 消息，其所属 `assistant.toolCalls` 留在上下文 ⇒ 发送边界守卫 `unpairedAssistantCall` fail-fast 抛错，**整个 turn 中断**
+
+**根因**：不是「压缩能力不足」，而是**锚点粒度选错**——单轮内的历史是 **step 序列**，而既有定位器的锚点是 **user 消息**。
+
+- **新增 `target=earliest_steps`**（step 粒度，长任务首选）：step 边界 = 一条 `assistant` 消息 → 下一条 `assistant` 之前；「已回齐」判据 = 区间内每个 `assistant.toolCalls.id` 都有配对 tool 消息（未回齐不压，避免丢未完成语义）
+- **`largest_tool_result` 改整段替换**：该 tool 消息 + 所属 assistant 消息同进同出 ⇒ 配对恒成立，修掉崩溃
+- **target 枚举单点化并公开导出**：`CompressTarget` / `COMPRESS_TARGETS` / `COMPRESS_TARGET_LABELS`。标签表用 `Record<CompressTarget, string>` **穷尽键** ⇒ 日后加 target 忘改宿主文案 = **编译期红闸**（原宿主三元 `target === 'earliest_round' ? A : B` 会把新值静默显示成「最大工具结果摘要」= 对用户说谎）
+- 工具描述补 target 选型指引；「无可压目标」的回传串列出合法 target 值（此前只说「目标不存在」，模型无法自纠）
+
+**兼容性**：`target` 仍为可选参数，缺省/非法值仍降级 `earliest_round`——既有集成方零改动。新增导出为纯增量。
+
+### Changed（内核 · 待注入插话上限裁决收口内核 · `KERNEL-QUEUE-LIMIT-1`，已定档 4.0.0）
+
+**债务清偿**：INPUT-LIMIT-1 落地时插话条数上限只做在宿主两层（webview 预检 + extension 闸门），内核 `loop.interruptQueue` 本体 push 前无上限——第三方集成方绕过宿主直调 `agent.interject()` 仍可塞爆队列（队列是内核资源不变量，该内核自己堵，不能指望每个集成方自带限额）。
+
+- **上限裁决单点收口内核**：`LOOP_CONSTANTS` 新增 `MAX_PENDING_INTERJECTIONS = 5`（值真源）；`loop.interject` 返回 `boolean`——达上限**整条拒收**返回 false 不入队（插话是原子思路不截半条）；`agent.interject` 改**先入队后持久化**（顺序即语义：拒收时零入队、零落盘，防「队列没进、落盘却写」数据不一致）
+- **宿主消费真源**：extension 闸门改消费 `interject()` 返回值（快照预检自写判据退役，宿主零裁决逻辑）；webview 预检仍用 `shared/constants.ts` 镜像常量（webview 无法 import 内核包），同值关系由宿主守卫测试锁定（漂移即红）；pause 条目不受上限管辖（内部控制语义非用户输入洪流）
+- **测试**：内核 loop 上限用例（满员拒收不入队 / 删一条可再入 / pause 不受限）+ 变异闭环（判据 off-by-one 精准红）；`constants.test` 键数守卫 24→25 同步；agent 层 +4 用例（未初始化断言 / 受理入队返回 true / 满员拒收返回 false 队列不增 / 删一腾位再入——返回值透传与队列状态链路贯通；落盘内容无公开读口，闭环节点持久化由 messageHistory.test 既有覆盖）；宿主 chatPanelInput 11 用例（桩默认受理态 / 满员拒收不上屏 / 防误伤上屏 / 跨包同值守卫）
+- **版本**：内核语义变更（接口返回值 void→boolean + 新增常量），随已定档的 4.0.0 一并发布，不单独发版
+
+### Fixed（宿主 · 轮次摘要失败可见化 + 摘要事件 handler 泄漏 · `MEM-1`）
+
+**现象**：complete 轮缺少 round-summary 摘要记忆（记忆库无条目），而**用户与排查者都无从得知原因**。
+
+**前提订正（原文「无任何可观测信号」只对一半）**：内核 `orchestrator.runSummary` **早已**在三条路径上
+`emit('roundSummaryGenerated', { roundId, success })` —— 异步 reject / 同步 catch 均发 `success: false`，
+「摘要关闭」发 `success: true`。**信号在事件层一直存在**；断点在**宿主消费点** ——
+`chatPanel` 的 `onSummary` 只拿 `roundId` 解锁 UI 定时器，把 `success` **整个丢弃**。
+
+- **观测出口接线**：`onSummary` 增 `if (!info.success)` → `post({ type:'notice', level:'error' })`，
+  走本文件既有的**错误级 `notice` 单通道**（`protocol.ts` 的 `level:'info'|'error'` 已有承载）——
+  **零协议变更、零内核改动、零判据改动**
+- **⚠️ 对抗式审查推翻「记日志、不弹 UI」的原建议**：静默失败正是本缺陷的成因；低频（仅真失败时出现）
+  的错误提示条才真正闭合可观测链（用户可自证「这轮没沉淀」），仅日志留痕等于把问题继续藏着
+- **顺带修同处第二个独立缺陷**：`agent.on('roundSummaryGenerated', …)` **非 `.once`**，此前仅
+  `setTimeout` 分支 `off`、**事件触发分支不解绑** ⇒ 每轮正常收场遗留一个 handler 累积；已补**对称解绑**
+- **测试**：新增 `chatPanelSummaryFailure.test.ts` 4 用例（失败 → 错误 notice / 成功 → 不误报 /
+  notice 不阻断 UI 解锁 / 连跑三轮 handler 零残留）+ **变异双闸门已实证红→绿**（删 `if` → ①红；
+  删 `off` → ④红且报「3 handler 累积」）
+- **⏳ 真机复验**：构造摘要失败（如摘要 LLM 返无效 JSON）时错误提示条应可见，且连跑多轮无 handler 累积
+
+### Added（内核 · 会话离场自动归档链路接通 + 归档成功事件 · `HIST-INFO-1`，已定档 4.0.0）
+
+**根因（注释谎报实锤）**：头注释与工具路标声称「会话切换前自动归档」，但 `switchToSession` 的归档
+链路**从未接线**——所有会话的 `summary`/`keyTopics` 恒空，历史列表悬停 tooltip 假显宿主容器的
+「当前会话」（真机 HIST-INFO-1 验收抓出）。三类自动触发（**切走 / 分叉离场 / 暂停超时**）统一由
+Agent 归档监听器接通，fire-and-forget 不阻塞切换主流程。
+
+**新增事件（2）**：
+
+- `sessionSwitched`：旧会话切走时广播（载荷指向被切走的旧会话）。**内核自消费事件**——agent 归档
+  监听器收；宿主零消费 = 刻意设计（宿主是切换发起方，无增量信息），protocolGuard V-2 已登记
+  `KERNEL_SELF_CONSUMED_EVENTS` 豁免（⚠ 分表触发器：内核自消费事件增多时拆独立内部事件通道）。
+- `sessionArchived`：归档写入成功（`updatedFields` 非空才发）发射，与 `archiveFailed` 对称，
+  手动触发同样经 ArchiveCoordinator 发射；宿主据此重拉会话列表。
+
+**防重**：`SessionArchiver` 新增 `skipIfUnchanged`（仅自动触发透传）：以上次**实际完成归档**的
+消息数快照为判据，消息数未变即跳过 LLM 调用。快照为进程内内存态（重启清零，首次多归档一次可接受）；
+**写入成功才记账**——LLM 判无价值/写入失败不记，下次自动触发保守重试。手动触发无条件重新归档。
+
+**注释清算（措辞折叠同族，5 处一次改齐）**：sessionArchiver 头注释 / archiveCoordinator 注释 /
+builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中「切换前自动归档」
+谎报全部订正为三类触发的真实枚举。
+
+> 以下条目为 **4.0.0 定档（2026-10-08）之后、发布之前**落地的内核变更（此前沿提交散落、未在本文件归集），随 4.0.0 一并发布。
+
+### Added（内核 · ask 超时后要求 LLM 代选推荐方案并声明 · `c2477907`）
+
+- `ASK_TIMEOUT_NOTICE` 常量改写：ask 超时自动继续时，除陈述事实外，要求模型**从它自己给出的选项里
+  选一项推荐方案继续推进，并在答复中说明这是代选的及理由**；不可逆操作仍需向用户确认。
+- **不改超时语义**：`ASK_TIMEOUT_MS`（120s 自动继续）与 `CONFIRM_TIMEOUT_MS`（30min 自动拒绝）的分级
+  刻意不同，本笔只补可观测性——不动时长、不动 fail-open/fail-closed 分级。
+- 病灶（真机 round-1791449684099 实证）：旧文案只说「已自动继续」⇒ 模型据此**暗中**替用户决策
+  （写完第 4 章后直接写死「下一步默认开工第 5 章」），用户回来只看到既定事实、无从否决。
+- 一个字符串服务两个语境（渲染气泡给用户看 + 作 user 消息进模型上下文）⇒ 措辞两端都必须成立；
+  宿主 `chatPanel` 同名常量为镜像，两侧注释互相要求同值（防运行时 / 重放文案分叉）。
+
+### Fixed（内核 · 收场取轮翻转 store-first：stale pending 快照不再覆盖已落盘事件 · `01388b1a`）
+
+- `MessageHistory` 两处取轮顺序翻转：优先 `RoundStore`（SSOT，含宿主 step 检查点已落盘的
+  `processEvents`），pending 缓存降为 fallback。旧写法 pending 优先会用**无 processEvents 的
+  stale 快照覆盖 store** ⇒ 前段事件 / metrics 被静默清零、merge 结构性不可达（`METRICS-XFLOW-1`）。
+- 订正 `appendInterrupted` 注释谎报（pending 优先时 `processEvents` 无从保留）。
+
+### Fixed（内核 · 整读记账按请求起点 + 台账替身回显改为请求区间原文 · `912c1e5b` / `5cd77fdb`）
+
+- **整读记账改按请求起点**：`loop` 依 handler 不变量（无脚注 = 从请求 offset 读到末尾）记
+  `coverStart=offset`、`totalLines=offset+正文行数-1`（`offset≤1` 与旧值等价）。旧写法把
+  `offset=54` 的续读（尾段无脚注）无条件记成 1–95 ⇒ ① `offset=1` 早段读（1–53 从未覆盖）被**假拦**；
+  ② 回显按错误 `coverStart` 平移，把 L54+ 内容标成「第 1–53 行 / 共 95 行」——**行号与内容错位的
+  假事实**误导模型（真机 round-1791507775404 实锤）。
+- 新增 `READ_FILE_NOTICE_PREFIX`（生成侧 / 识别侧同引）：越界提示串带该前缀且**不进覆盖度台账**
+  （原会被记成覆盖，二次越界读命中归一判据被假拦）。
+- 台账替身回显改为**请求区间原文**：防重拦截不再把模型逼进「拿不回整份视角」的死路（防绕道复发）。
+
+### Fixed（内核 · denied 通道 PERMISSION_DENIED 前缀收口到单一构造点 · `0c7b6247`）
+
+- `toolRunner` 的 denied 通道此前手写 `[ERR:TOOL:PERMISSION_DENIED]` 字面量，与 `builtinToolHandlers`
+  走 `failedOutcomeWithCode()` 的枚举派生构成第二真源漂移风险；改走
+  `failedOutcomeWithCode(ToolErrorCode.PERMISSION_DENIED, reason).text`，发射字符串逐字符不变，
+  denied 的机器维度 `reason` 保留。
+- `READONLY_DENIED` 经 tsc 实锤**并非**枚举成员（仅为 `toolFailurePrefixGuard` 独立登记标签）
+  ⇒ 保持手写字面量并补注释，避免误改成不存在的符号。
+- 变异验证：`PERMISSION_DENIED → UNKNOWN` 使新增断言转红后还原（证断言非空洞）。
+
+### Added（内核 · 发版前 Go/No-Go 中优先项清偿：文法盲区登记 + Reflection 设计口径显式声明 + 死分支不变式守卫 + 决策 ADR 补录 + §十六 限定句修正 · M3/M4/M6/M8/M10）
+
+- **`toolFailurePrefixGuard` 新增文法盲区对账**（`GRAMMAR_BLIND_TAGS`）：首字符即 `[` 但逃出
+  「大写蛇形」与「插值前置」两种文法的标记（上下文注入分节头 / 工具结果正文软提示 / 提取器
+  已知边界产物）原先对扫描面与排除清单**双双不可见**（双重静默），现按文件登记、全库双向钉死
+  ——新增未登记盲区即红，登记项消失（如升级文法）即僵尸红。变异验证：删登记 / 生产新增盲区
+  标记均转红后还原。
+- **api-ref §十五 显式声明「执行类失败不进自动 Reflection」（设计口径，非回归）**：
+  `run_command` / `run_code` / `run_project_script` / `run_skill_script` 四条执行链路失败返回
+  不带 `errorCode` 的失败结果，不满足 retryable 触发条件 ⇒ AgentLoop 不注入
+  `[REFLECTION_HINT]`；结局事实由返回文本承载，LLM 自行决定是否重试（错误码全集见 §十四）。
+- **`strategyKeys` 死分支不变式守卫**：`describeStrategyKeys` 的 else 分支（check 无 range
+  且无专属分支的数值键）当前不可达——注释从「防御分支」改为「已登记的未来路径，由不变式测试
+  守卫」。新增全量不变式测试：遍历 `STRATEGY_KEY_RULES` 所有 check 键，断言「无专属分支的
+  check 键必带 range」。变异验证：删 `temperature` 的 `range` 后测试转红（精确点名该键），还原后全绿。
+- **决策 ADR 补录**（`ADR-038` 工具结果三值契约 / `ADR-039` 公共导出面挂面判据）：4.0.0 两条
+  Breaking 的决策 rationale 原只在不随包发布的过程稿里，现沉淀为仓库内定案锚；对外 rationale
+  入口不变（本文件上方 Breaking 条）。零代码、零消费面变更。
+- **api-ref §十六 限定句修正**：⚠️ 注主句由全称「可具名导入的公开面以本节清单为准」收窄为
+  「正文表格里的类型名以本节清单为准（本节非全集，未列出的导出以 `src/index.ts` 为准）」——
+  原全称与同节首注「清单外导出以 index.ts 为准」当面矛盾（措辞折叠同族）。语义未变，只消除
+  误读面：§十六 本就是精选子集而非全集。
+
+### Changed（示例包 · 共鸣小说家「纲是骨架、章是装箱」：正文落地前禁止预排章节）
+
+- **规范本体**（`rules.md`）：任何纲（大纲/细纲/场景清单）只限定故事骨架——情节序列、事件、
+  情绪走向；正文落地前不写"第N章"、不做逐章切分，章是成文装箱时才产生的弹性容器（核心框架间
+  随时可插支线/番外而章号不错位）。成文章号回填（时间线/伏笔台账）与逐章写作纪律（章末钩子/
+  单章篇幅）豁免。
+- **消费面同步**：persona 阶段5 三幕骨架定情节节点（不预排章节）、outline-expand ③ 章纲→细纲
+  （事件序列，展开纪律 + 校验清单双判据）、foreshadow / story-bible 伏笔表头章节→事件/场景、
+  emotion-wave 落点列章节→事件、init 模板 `T_BIBLE_4` / `T_OUTLINE` 同构（顺手修正五级展开
+  描述与真源的既有漂移）。
+- **验证**：role-pack 258 passed；prettier / terminology（71+82 载体）/ docs:links（45 随包 md
+  0 死链）/ lint 全绿；规划态章节限定词（「章纲」等）全包残留扫描 0。
+
+
+## [3.0.1] · 2026-09-30
+
+### Changed（开源归口翻转：GitHub 升主仓库）
+
+- **README / README.en**：反馈、宿主项目链接、ADR 位置共 6 处归口从 Gitee 翻转为 GitHub 主仓库（Gitee 降为同步镜像，保留国内访问提及）
+- **package.json**：`repository` / `homepage` / `bugs` 指向 `github.com/zooique/memora`（npm 页面导流、dependents 与搜索入口随 GitHub 生态）
+
+> 纯元数据与文档归口变更，`dist` 产物与 3.0.0 无差异。
+
+## [3.0.0] · 2026-09-30
+
+### Added（内核+宿主 · 截断救回计数 truncationRecoveryCount：换策略重试效力的观测面 + 文案口径订正）
+
+**背景（EMPTY-RESP-R1，T1–T5 收官复审缺口）**：T2 换策略重试**成功救回**的轮落盘无任何「曾发生截断」痕迹（`empty_response` 证据只在最终仍空时落）⇒ 台账「T2 reasoning_effort 真机验证」观察项**结构上验不了**（无法从 round 文件确认救回发生过）。本条补观测面，同批捎带复审发现的文案 off-by-one 与两处注释口径漂移。
+
+- **`truncationRecoveryCount` 诚实信号**（与 `emptyResponseCount` 互补镜像）：llmCaller 空响应收场点判「曾截断换策略（`truncatedRetry`）+ 收场非空」→ 计数 +1（每 call 恒 ≤1）；早退路径（degrade 降级文案 / 抛错 / aborted）不计入——降级文本非模型产出。链路同 `emptyResponseCount` 先例：`LoopMetrics` → `AgentMetrics.llm` → `ProcessMetricsPayload`（选填、旧数据缺省）→ 宿主流尾 diff 本轮增量 → chatView「截断重试救回：N 次」指标行（**观测信号不参与成功否决**——救回轮正文是真实模型产出，与 `emptyResponseCount` 语义相反）
+- **文案 off-by-one 订正**：截断兜底文案「已自动**重试** N 次」传入的实为**尝试总数**（1 首试 + N 重试，恒多报 1）→ 中英双文案统一「尝试 N 次」口径（`empty after N attempts` / 「已自动尝试 N 次仍为空」），`UIMessages` jsdoc 钉死口径防改回
+- **注释口径订正（HOST-S11 同族注释漂移）**：meta 取证包 `reasoningEffort` 原注释「与内核 llmCaller 转达口径同源」已被 T2 打破（`'low'` 有策略键 manual / `truncatedRetry` 运行时置入**两条**发送路径，meta 只镜像配置面）→ 改述「流首**配置面**快照，实际发送面以 `truncationRecoveryCount` 佐证」（chatPanel + roundStore 两处）；`foldThoughtEvents` jsdoc 补**前提不变量**（seq 幂等依赖「检查点只在 step 边界触发」，破坏即静默丢内容——T4-FOLD-1 修法 A）
+- **测试**：llmCaller 救回计数正反面（救回 +1 / 截断耗尽·瞬态救回·正常产出均 0）+ metrics 出闸守卫（镜像 `pairingGuardFires` 先例：只自增不外露 = 僵尸计数）+ roundEvidence 默认文案口径守卫（禁写 `retried N`）+ chatView 指标行/缺省面 2 例。**变异 4 方向**（摘计数行 / 去 `truncatedRetry` 条件致瞬态误计 / 摘指标行 / 文案改回 off-by-one）各恰红 → 恢复复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2830 passed | 4 skipped**、宿主 `tsc` / `eslint` 0 / 全量 **835 passed | 2 skipped**、format 0、`terminology:check` 零漂移（测试游标命名蹭了 step 族载体被门禁拦下，改 cursor 前缀消漂移）
+- **真机复核收口（2026-09-29 · 小说项目）**：用户配置 maxTokens=64K 后连跑 2 轮（round-1790686368607 / round-1790686698903）——meta 取证包 `maxTokens: 64000`（T1 配置链路端到端实证）；round-...6368607 `truncationRecoveryCount: 1`（真机截断被换策略重试**实战救活**，收场真实正文——T2 效力实证）；两轮 `emptyResponseCount: 0`；round 文件 26KB / 37KB < 200KB（T4 折叠真机复核过）。T2 真机验证清单三件全答（组合策略有效 / 尾部注入被中转接受 / 救回计数可读），`EMPTY-RESP-1` 观察行核销（收据：`tasks/archive/completed-history.md` 2026-09-29 收口条）
+
+### Fixed（内核 · maxTokens 上限不再静默丢弃：上限不裁决，交服务端可见报错）
+
+**问题（哲学不对称 · 跨包镜像同源）**：`normalizeMaxTokens`（请求参数归一）原对 `maxTokens` 做 1–65536 区间裁决、超限**静默丢弃**（不传 `max_tokens`）——与同申请书参数 `contextWindow` 的既有裁决（`resolveContextWindow` 只做 undefined 回落默认、**不裁决区间**）不对称；且逼出宿主护栏**跨包数值复制**（宿主无法 import 内核私有常量，只能注释对齐 65536）——单侧漂移即重现「UI 显示值 ≠ 真实生效值」（护栏本要防的坑）。对第三方 npm 集成方是结构性考题：内核只要保留静默丢弃，集成方护栏无论松紧都难根治。
+
+- **修法**：`normalizeMaxTokens` 只做**形态防御**（非数值 / 非有限 / <1 → undefined 不传，回服务端默认；正整数 floor 透传）；**上限不裁决**（有意为之，注释钉死「勿加回」）。超模型能力的值原样进请求体，由服务端**可见报错**——本地任何一层静默替换都造「显示 ≠ 生效」的坑（与 contextWindow 同哲学）
+- **宿主护栏定位重写（零行为变更）**：`providerStore.MAX_TOKENS_MAX = 65_536` 由「对齐内核」改述为**独立 sanity**（宿主是输入边界的唯一可见裁决点，只防手滑；真实上限由模型/API 决定）。UI 行为不变（仍 1–65536 可见拒绝）。跨包数值镜像由此消除，§7 登记不再必要
+- **验证（变异双端）**：上限裁决加回 → 恰 1 红（70_000 被吞）；形态防御去掉 → 恰 1 红（-5 透传）；均还原复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2824 passed | 4 skipped**；宿主 `typecheck` / `eslint` 0 / 全量 **826 passed | 2 skipped**
+- **文档清算**：`tasks/审查-空响应根因排雷与优化方案-20260929.md` §五 T1 行与「依赖与边界」两处过时表述修订（原文「护栏对齐 normalizeMaxTokens / 越界→undefined」已不成立）
+
+### Changed（宿主 · thought 落盘按 step 聚合折叠：信封开销收敛）
+
+**背景（EMPTY-RESP-1 · T4 · 附带观察销项）**：真机单轮 round 文件 1.37MB（7461 事件中 thought 占 99%）——主因是碎片**信封开销**（每条 seq/ts/type/payload 键）而非思考正文（正文约 67KB）。本条落盘前按 step 把碎片折成批次（排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。
+
+- **foldThoughtEvents**（纯函数，chatPanel 导出）：同 stepIndex **相邻** thought 碎片合并为 ≤`MAX_THOUGHT_PAYLOAD_LENGTH` 批次事件——内容零损失（满批开新批，不二次截断）、seq/ts 取首碎片（同输入恒同结果，与 `mergeProcessEvents` 的 seq 去重幂等兼容）、**UI 流式不变**（emitEvent 逐碎片投影不动；重放渲染无差——webview 本就按 stepIndex 把连续碎片聚成折叠块，批次边界恰是其归桶边界）
+- **接线**：`checkpointRound` 单点折叠（step 边界检查点 + 流尾终局两条落盘路径全覆盖）。估算真机场景信封数 7461 → ~20，round 文件约 70KB（验收线 <200KB；最终以真机观察复核）
+- **测试**：foldThoughtEvents 3 例（同 step 合批 / 超限分批内容零丢失 / 异 step·隔断不合并）+ checkpointRound 调用点集成钉（3 碎片 → 落盘恰 1 条）；变异 3 方向（不折叠 / 无分批上限 / 跨 step 合并）各恰红 → 恢复复绿。门禁：宿主 `typecheck` / `eslint` 0 / 全量 **833 passed | 2 skipped**（内核零改动，沿用 **2827**）；`terminology:check` 零漂移
+
+### Added（内核+宿主 · T5 取证与引导收尾：ALREADY_READ 条件引导句 + meta 关键调用参数包）
+
+**背景（EMPTY-RESP-1 · T5）**：真机异常破案靠截图/口问（调用参数不可见）；`ALREADY_READ` 替身回显不引导「引用已有原文」致 LLM 绕道写脚本（ALREADY-READ-1）。本条落地（排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。
+
+- **ALREADY_READ 引导句（对方案原句的规格订正）**：`formatLedgerStub` 补「**若原文仍在**本次对话上文，可直接引用」——方案原句「原文已在本次对话上文」是断言语气，与该函数 jsdoc 约束直接冲突（两语境共用：压缩链替换后原文已不在上文，断言即撒谎；既有真实性守卫 `not.toContain('被压缩')` 同族），故改**条件语气**（两语境皆真）+ 新增守卫断言禁改回断言
+- **meta 取证包**：`ProcessMetaPayload` 扩四选填字段 `{ contextWindow, maxTokens, reasoningEffort, providerKind }`（role/llm 既有）——每轮 meta 自带关键调用参数面。宿主 `buildRoundMeta`（流首取激活 Provider 配置快照）：contextWindow 取 `resolveContextWindow` 生效值（非裸透传）、maxTokens 取 per-LLM 配置（缺省=服务端默认不入包）、reasoningEffort 由策略键 `multiStepReasoning='manual'` 派生 'low'（与内核 llmCaller 转达口径同源，未发送即缺省）、providerKind 恒 'openai-compatible'（内核工厂唯一适配器形态，前向字段）
+- **测试**：toolLedger 真实性守卫增强 + chatPanelHistory `buildRoundMeta` 2 例；变异 4 方向（断言语气 / 派生恒 'low' / contextWindow 裸透传 / 摘 providerKind）各恰红 → 恢复复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2827 passed | 4 skipped**；宿主 `typecheck` / `eslint` 0 / 全量 **829 passed | 2 skipped**
+
+### Added（内核 · 截断型空响应换策略重试：降思考 + 纠正提示双轨）
+
+**背景（EMPTY-RESP-1 · T2）**：同参重试对确定性截断无效（真机 3 连空、5 分钟白烧）——thinking 吃满输出预算后原参重发必然再炸。本条让截断型在**迭代内部**被救回（依赖 T3 的 finishReason 消费约定；排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。
+
+- **截断判定**：llmCaller 空响应分支消费末次 `finishReason='length'` = 截断型 → 换策略重试（粘性至收场）；无 finishReason（中转不回传）= 瞬态型 → 维持同参重试（降级不劣化）
+- **双轨策略**：① `effectiveOpts.reasoning_effort='low'`（复用 `multiStepReasoning='manual'` 既有转达通道，provider 支持才生效）；② 纠正提示「上一次回复因思考耗尽输出预算被截断，请直接给出结论或工具调用」注入消息尾（`TRUNCATION_RECOVERY_HINT` 内联常量——协议级模型指令，非 UI 文案不进 UIMessages）——**每请求恰一条**：requestMessages 每次从 safeMessages 重建、提示不进历史，多轮重试恒 1 条（一次性 = 不堆叠，非只注首次）
+- **测试**：2 例（换策略救回 + 双轨断言 / 粘性 + 恒 1 条不堆叠），mock 救回行为与双轨耦合——变异 2 方向（判定 `'length'`→`'stop'` / 摘提示注入）各恰红（「去策略则仍空」实证）→ 恢复复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2827 passed | 4 skipped**（宿主零改动，沿用上批 827）
+
+### Added（内核+宿主 · 空响应诊断分型：证据三字段 + 兜底文案分型 + metrics 诚实信号）
+
+**背景（EMPTY-RESP-1 · T3）**：真机空响应轮（round-1790649685702）暴露「截断型与瞬态型混为一谈」——finishReason 流层已透传但消费端未用、兜底文案单一无诊断、metrics 把兜底轮记成 `success:true`。本条落地诊断分型（排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。
+
+- **证据三字段**：`empty_response` 证据 payload 补 `{ finishReason, thinkingChars, attempts }`——llmCaller 逐 chunk 采集（finish_reason 末条覆盖、thinking 增量累计，重试重置取**末次尝试口径**）→ `LlmCallResult` 透传 → loop 落盘；`attempts` = 收场前 chat 尝试总数（空响应重试属**同一步内**多次尝试，step 术语红线不破）
+- **文案分型**：`UIMessages.emptyResponseFallbackTruncated(attempts)` 新键——末次 `finishReason='length'` 判截断型 →「模型思考过长耗尽输出预算，已自动重试 N 次——建议调大模型输出上限」（宿主中文覆盖，内核默认英文）；无 finishReason（中转不回传）按瞬态型降级，维持现状文案不劣化
+- **metrics 诚实信号**：`ProcessMetricsPayload.emptyResponseCount`（可选、旧数据缺省，镜像 `unparsedToolIntentCount` 模式）——**不动 `success`**（其语义是「流程跑完没有」，空响应轮正常收场；置 false 会把「流程未完」与「产出不合格」压进一个布尔）；宿主 chatPanel 流尾 diff 取本轮增量，chatView `finalSuccess` 合成 +「空响应兜底 N 次」指标行
+- **测试**：roundEvidence 2 例（瞬态/截断分型 + 末次口径 7≠15）+ llmCaller 三字段 + chatView 展示合成；变异 4 方向（分型判据 `'length'`→`'stop'` / thinkingChars 重置摘除 / `finalSuccess` 摘 `emptyResp` / 证据 payload 摘 `attempts`）各恰红 → 恢复复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2825 passed | 4 skipped**；宿主 `typecheck` / `eslint` 0 / 全量 **827 passed | 2 skipped**
+
+### Added（内核 · `AgentOptions.maxTokens` 输出预算透传链 + 热切换）
+
+**背景（EMPTY-RESP-1 根治）**：推理模型 thinking 与正文共享输出预算，无显式 `max_tokens` 时 thinking 吃满服务端默认 → 正文被挤空（空响应）。本条补齐配置向根治链（排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。
+
+- **内核**：`AgentOptions` 新增 `maxTokens` → assembler 解构 → loop 持有 `defaultMaxTokens` → `buildChatOptions` 填底座（角色包 `chatOptions` 可覆盖，优先级：角色包 > per-LLM 默认）；`setMaxTokens` 热切换配套
+- **宿主**：配置面板新增「输出上限 (K)」（K = ×1000 口径，`TOKENS_PER_K` 单一真理源；厂商口径自相矛盾——gpt-4o 同卡混用 128,000/16,384、Claude 3.7 输出上限 64,000 十进制——按误差方向安全性裁决：×1000 低估优雅降级、×1024 高估有 400 硬风险）→ `LlmProviderConfig.maxTokens` → assemble → AgentOptions；providerStore 护栏 + chatPanel 热同步
+- **请求层归一**：`normalizeMaxTokens` 唯一收口；**归一语义后经上方 Fixed 条（2026-09-29）收敛**——只做形态防御、上限不裁决（本条落地时的 1–65536 越界裁决不再保留）
+- **测试**：内核 loop 新增 4 例 + 变异验证（摘注入 → 恰红 → 恢复复绿）；宿主 configView / settingsView / providerStore 全绿；两侧 `tsc` / `eslint` 0 错
+
+### Added（内核 · write_file 新增 `replace` 精确串替换 + mode 枚举双源收敛）
+
+**问题（两项）**：① `write_file` 只有 overwrite/append/insert——大文件改一处局部时，模型手上没有整份内容（读不全），只能 overwrite 全量重写硬凑、或退回大量 append/insert 拼接，token 与出错面双高；② `mode` 枚举**双源并列**：schema 描述（`builtinTools.ts`）与 handler 校验清单（`builtinToolHandlers.ts`）各写一份，漏改一处即「描述允许而校验拒绝」的静默漂移（与 TASKTABLE-NAME-1 同族）。
+
+- **收敛（SSOT）**：`builtinTools.WRITE_FILE_MODES` 作单一真理源（枚举 + 简介表）；schema 描述与 handler `validModes` 均从它派生，工具描述里的模式数量也由 `length` 派生（不写死「三种」）⇒ 新增模式只改一处
+- **原语**：新增 `mode=replace`，配 `old_string`（须在文件中**唯一**出现）——只替换命中片段、不动其余。**匹配不到 → 报错**（禁静默 no-op）；**多处匹配 → 报错**要求补足上下文，**不做 replace_all**（改错地方毁代码 > 让模型多试一次，与 `toolResultCache` 同哲学）；目标文件不存在 → `FILE_NOT_FOUND`（新文件走 overwrite）
+- **零额外接线的自动对齐（本方案最省事处）**：`diskWrite:'path'` 派生 ⇒ replace 自动进同 step 写串行闸（`WRITE_PATH_EXTRACTORS`）；`WriteExtensions.onBeforeWrite` 无条件调用 ⇒ 自动被已落地的 diff 可视化捕获；`invalidateFile` 按路径失效读缓存 ⇒ replace 自动作废旧读缓存
+- **描述引导**：`write_file` 描述改为「改局部优先 replace（无需持有整份文件）；大文件没有完整内容无法 overwrite；文末追加 append / 单点插入 insert；只有新建或结构性多处重写才 overwrite」
+- **SSOT 问诊 · 炼化归元（同族静默回落 2 处，顺手收口）**：① 结果标签 `modeLabel` 原以 `: '精确替换'` 作三元链**隐式兜底** ⇒ 未来新增模式会被静默标成「精确替换」，改为显式 `replace` 分支 + `default: mode` 如实回显；② `computeWriteContent` 原 `default: return content` 会在模式表与本 switch 脱节时**静默按 overwrite 落盘**（假阴性）⇒ 改抛 `ARGUMENT_ERROR` 响亮失败。两处均属「静默回落 = 缺陷行为」同族
+- **验证**：handler `replace` 6 例（唯一匹配成功 / 未匹配报错且文件不变 / 多处报错且文件不变 / 新文件 FILE_NOT_FOUND / 缺 old_string ARGUMENT_ERROR / `onBeforeWrite` 收到替换前后完整内容）+ `builtinTools` 补「mode 描述与 `WRITE_FILE_MODES` 同源」守卫（防描述退回手工硬编码）。门禁：`typecheck` 0 / `eslint` 0 / `format:check` 0 / `docs:links` 0 / `rules:refs` 0 / `terminology:check` 0 / 全量 **2820 passed | 4 skipped**
+- **顺带对齐**：宿主 `fileChangeTracker.ts` 注释模式清单与 `docs/memora-api-reference.md` 工具表补 `replace` / `old_string`（描述层跟随，无行为变更）
+
+### Fixed（内核 · 读取防重回显文案诚实化：删「原文已在流程中被压缩」状态断言）
+
+**问题**：`formatLedgerStub`（台账替身文案）被两个语境共用——① 压缩链把 read_file 结果**原位替换**为台账摘要（loop 装配 `readFileReplacement`）；② LLM 变体/同参重读被分支②拦截时的**回显**。文案写死「原文已在流程中被压缩」：压缩语境为真，但回显语境原文可能仍在上下文（变体重读不经 L2 精确判重的「仍在上下文」前提）⇒ **文案撒谎**——guardRail 防死锁前提（「告知基于已有 = 指令撒谎」）的同型问题在台账分支复现。
+
+- **修法**：删状态断言，只陈述两语境皆真的事实（读过 / 覆盖区间 / 要点 / 续读出路）；SSOT 不破（两语境仍共用一个 formatter，文档注释钉死「不得内嵌单语境状态断言」）
+- **验证**：守卫 `not.toContain('被压缩')`（二字根，咬住「已被压缩 / 已在流程中被压缩」一切改写回潮）+ **变异实弹**：子句回潮 → 恰 1 红（红在断言本体）→ 还原复绿。（守卫针头首版误写「已被压缩」——非真实字面的子串、恒绿咬不到人，排雷实证后与文案一并修正、变异补做通过）
+
+### Fixed（内核 · 读取防重续读死结：无 limit 续读被台账分支②误拦）
+
+**问题（可用性级 · 大文件必然触发）**：`shouldEchoLedgerStub`（分支②判定的单一真理源）原判据「无 limit 请求一律拦」只看了 limit 有无、未看 offset 落点。而 `offset=N` 不带 limit 的 handler 语义是「从 N 读到文件末尾」——**合法续读**。后果：文件被单次读取预算（`SINGLE_TOOL_RESULT_MAX_TOKENS` 5900，约 300–500 行）截断后，模型照分段脚注与拦截文案给出的写法（二者均为 `offset=coverEnd+1`、均不带 limit）续读，**会被同一条判据再次拦下** ⇒ 拦据与引导互为死结，memora 体量的大文件（如 `loop.ts` 约 4000 行，需约 10 次续读）永远读不到第二段。登记行「ADR-031 补缝过度拦截候选」的原始假设（「全文比对」类任务被迫绕路）由此**代码级实锤**——且成因比设想的更硬，非仅「摘要替身信息不足」。
+
+- **修法（判据面，非场景特判）**：无 limit 分支改按 offset 落点判定——`(offset ?? 1) <= coverEnd` → 拦（起点落在已覆盖区间内，含省略 offset 的整读；截断后返回的仍是同一段已读头部）；起点超出覆盖区间 → 放行（真续读，恰是引导给出的那一步）。`limit` 变体整读与区间续读两条既有判据不动。
+- **先红后绿（实证，非推理）**：探针复现旧行为下 `offset=401`（台账覆盖 1–400）判 `true`；原用例 `expect({ offset: 100 }).toBe(true)` 即**把该 bug 固化成期望**，一并订正为「整读拦 / 续读放行」两条。
+- **验证（变异双端）**：**变异 A**（判据还原旧行为「一律拦」）→ 恰 1 红、**恰红在续读放行断言本体**；**变异 B**（改「全放行」）→ 恰 1 红、红在整读拦断言 ⇒ 两端都真在咬人，均还原复绿。`typecheck` 0 / `eslint` 0 / `format:check` 0 / 全量 **2813 passed | 4 skipped**。
+- **未闭合（如实记）**：本修只解「无 limit 续读」这一成因；`ADR-031 补缝`（整读小文件记全覆盖）本身未动，§7 该登记行维持观察其余面向。
+
+### Fixed（内核 · 读取防重证据字段面镜像收敛：三处手工枚举 → 一处定义 + 一处透传）
+
+**问题**：`DedupSubject`（去重主体，形状真源 = `toolResultCache`）字段面被**三处手工枚举**——类型定义 ↔ loop 侧证据落盘逐字段展开 ↔ roundStore `read_dedup_block` payload。因 `memory → agent` **类型禁向**（真源 `.trae/rules/backend_layers_rules.md`，不随包故不作链接），roundStore 无法 import 该类型，只能人肉抄字段清单 ⇒ `DedupSubject` 增字段时另两处**静默漏采**（探针丢定位字段，逐案裁决无米下锅）。
+
+- **修法（第三路，非登记时列的两路）**：loop 侧 `payload: { toolName, ...dedupSubject }` 整体 spread 透传（不再逐字段 `x !== undefined ? { x } : {}`）；roundStore payload 改**开放式索引签名** `[dedupField: string]: string | number | undefined` **停止枚举**。镜像由此降为「一处定义（`DedupSubject`）+ 一处透传」，两侧零同步。**为何不走原两路**：下沉共享层 = 新增单元（违最小单元）；`Record<keyof DedupSubject, …>` 编译期对拍仍要求 roundStore 侧知道字段清单 = 镜像未除。
+- **契约等价（实证）**：落盘 JSON 形状**不变**（`undefined` 值由 `JSON.stringify` 自然丢弃）；`read_dedup_block` 全库**零代码消费**（grep 仅命中类型定义、落盘点与登记文档）；`memory → agent` 类型禁向未破。
+- **验证**：`typecheck` 0 / `eslint` 0 / `format:check` 0 / `rules:refs` 0（闸门自检 8/8 + 裸路径引用全可解析）/ 全量 **2813 passed | 4 skipped**。`legacy-contract-audit-rules.md` §7「读取防重证据字段镜像」登记行 → **收敛（结案）**。
+
+### Added（内核 · read_dedup 撞墙升级 + 兜底观测 + 读后即记引导）
+
+- **撞墙升级**：同一读取主体被 `read_dedup` 硬拦 2 次后，第 3 次命中起文案升级为强禁令（`[ALREADY_READ] 你已第 {count} 次尝试重复获取…`）。出口引导收敛 `{tail}` 单源按主体分流：read_file 给 offset/limit 续读出口，非文件主体（query/url/会话等）不给——单语境断言不内嵌共用文案；另加 `search_memories` 记忆检索。阈值 `READ_DEDUP_ESCALATE_THRESHOLD = 2`（用户裁决 2026-09-28：第 2 次即升级太激进、第 3 次合适）；计数经 `GuardRail.notifyBlocked` **拦截归属回喂**（新钩子 `onBlocked`）喂数——`onExec` 只知「被某种护栏拦」，台账替身回显等非本护栏拦截不会误计；随 `reset('perTurn')` 轮界归零
+- **兜底观测**：`readDedupBlockCount` 指标（`LoopMetrics` / `AgentMetrics.tools` / tracer 透传）+ `read_dedup_block` 裁决证据（`RoundEvidenceEvent` 新变体，含 toolName + 去重主体字段）——判「模型乒乓」vs「合理重读被误拦」的量化基线，与 `ledgerStubEchoCount`（L3 变体顶替）互补；证据字段面三处镜像已登记 `legacy-contract-audit-rules.md` §7 待验证候选（**该镜像已于同版收敛结案**，见上方 Fixed 条）
+- **读后即记引导（内核侧，非角色包）**：`read_file` 工具描述追加「读到需长期引用的要点随即 `remember_intel` 记入工作笔记，查证用 `search_memories`，不要靠重复读文件」——工具描述是工具行为的 how 单源（用户裁决：该引导属内核职责，不进角色包）
+- **验证（变异闭合）**：`guardRail.test.ts` 升级判定 6 例（前两次温和 / 第 3 次升级保留 read_file 出口 / web_search 主体不带 offset/limit / 主体隔离 / 轮界归零 / 阈值语义钉）+ `loop.test.ts` 集成 1 例（loop→guard 连线 + 指标 + 文案落位，按文案特征分流计数——压缩替身同含 `[ALREADY_READ]` 令牌，按令牌计数会误算）；**变异四组均还原复绿**：阈值 2→1 → 恰 2 红、断开 `notifyBlocked` 连线 → 恰 1 红（集成）、断开 `promptArgs` 裁决连线 → 恰 2 红、出口分流回潮 → 恰 1 红。`typecheck` 0 / `eslint` 0 / `rules:refs` 0 / `format:check` 0 / 全量 **2812 passed | 4 skipped**
+
+### Fixed（内核 · 写串行闸收口：`diskWrite` 声明位 + 不透明写屏障，DIFF-4/5）
+
+- **问题**：「谁会改盘」散在两处枚举（builtinTools 工具表语义 ↔ `WRITE_PATH_EXTRACTORS` 键），新增写工具忘加提取器 = 串行不防 + 追踪不报 + 契约钉不红的三重静默（DIFF-5）；且 `run_code` / `run_*_script` 等**无 `args.path` 的写工具**不进串行闸——同 step 并行脚本写/脚本×write_file 同目标 = DIFF-3 同型丢内容（DIFF-4）
+- **修复（SSOT：构造级单源）**：`ToolDefinition` 增 `diskWrite?: 'path' | 'opaque'` **行内声明**（真源 = 定义行，与 `readonly` 正交）；`PATH_WRITE_TOOL_NAMES` / `OPAQUE_WRITE_TOOL_NAMES` / `WRITE_PATH_EXTRACTORS` 全部**派生**（漂移不可构造），`toolExecutor.builtinDefinitions` 与 loop 的「写后失效 read_file 缓存」分支**同批收编**各自的内联枚举（后者顺带修掉潜伏 miss：原用 raw 路径失效台账，`./a.md` 式入参会失效不中，改走同一提取器的归一路径）。契约钉 3 例（含 `'path'` 行必带 `path` 参数的语义自洽断言）
+- **串行闸补齐（不带伤三条件齐）**：不透明写（`run_code` / `run_skill_script` / `run_project_script` / `register_work`，后者经核查证实为异步读-改-写）升为**屏障**——与一切写互斥；声明 `'path'` 但目标提取失败 → **降级屏障**（不确定即保守串行）；同路径串行维持现状、不同路径仍并发（反向守卫保绿）
+- **验证（变异闭合）**：loop 峰值活跃数断言 ×3 新例；变异 3 场精确命中（删声明→恰 1 红 / 短路屏障→恰 3 红 / 拆降级半→恰 1 红），既有 DIFF-3 两例与反向守卫全程零误伤
+- **边界（如实记）**：自定义工具的 `diskWrite` 声明暂不生效；「新工具整行忘声明」靠行内同处 + 契约钉复审兜住；脚本改盘的**可视化盲区**保留（宿主 FS watcher 触发驱动，见台账 DIFF-4）
+
+### Added（内核 · 公开导出面补齐：`MAX_DIFF_CONTENT_LENGTH` / `WRITE_PATH_EXTRACTORS`）
+
+- `src/security/pathGuard.ts` 导出 `MAX_DIFF_CONTENT_LENGTH`（diff 内容上限 10240），`src/index.ts` 安全层导出面收录——宿主 UI 展示阈值 `import` 对齐，消除跨包同值并列（DIFF-2）。⚠️ 两侧超限行为不同（内核 = 截断后加「已截断」标记照常展示 / 宿主 = 跳过对比只提示），导出只统一**数值**、不统一行为
+- `src/agent/toolResultCache.ts` 的 `WRITE_PATH_EXTRACTORS`（按 `args.path` 改盘工具清单，loop 同路径写串行闸判据）经 `src/index.ts` 导出——宿主改动追踪据其键派生触发集合，跨包双枚举收编为单源（内核新增按 path 写工具时宿主自动跟随）
+- **覆盖边界（如实记）**：清单只认 `args.path` 定位的写工具，`run_code` / `run_*_script` 类不在内（台账 DIFF-4 / DIFF-5 登记）
+
+### Fixed（内核 · 同一 step 并行写同一文件会丢内容 DIFF-3：按目标路径批内串行）
+
+**问题证据（真机两次实证）**：一个 step 内模型可能**并行**多次写同一文件（`round-1790411133316` / `round-1790412202553` 两轮实测 `insert` + `append` 同时发出）。`write_file` 是「读盘 → 改 → 写盘」，并行时两次都基于**同一份旧快照**（两条结果的 summary 各自自报「旧文件: 28 行」）⇒ 后落地者整体覆盖先落地者，**插入的行被静默吃掉**（31 → 34 行，插入内容丢失）；模型串行重发才恢复。
+
+- **改法**：新增 `WRITE_PATH_EXTRACTORS`（`toolResultCache.ts`）——与 `DEDUP_SUBJECT_EXTRACTORS` **并列而非合并**（后者是**防重**判据，写工具正是被防重刻意排除的对象；并入会让「同文件分次追加」被误拦，属语义反转）。loop 发起工具时按**规范化目标路径**（复用 `normalizePathKey`，路径等价语义只有一套）把同路径的写**串成链**；不同路径之间维持完全并发
+- **边界（不改单次语义）**：只串行「同路径的**写**」（`write_file` / `delete_file`），不排队所有写工具、**读不参与**（读-写竞态本次不动，未观察到损害）；工具结果仍按 `toolCalls` 原序对齐回填，`tool_start` 仍批量先发。**覆盖边界（如实记）**：清单只认 `args.path` 定位的写工具 ⇒ `run_code` / `run_skill_script` / `run_project_script`（能改盘但无 `path`）不在闸内
+- **验证（变异闭合）**：`loop.test.ts` 新增 2 例——同路径写串行（峰值活跃数恒 1，且 `a.md` / `./a.md` 等价写法被归一为同一文件）、不同路径写仍并发（峰值 ≥ 2，**反向守卫**防「凡写工具一律排队」的退化实现）。**变异**：短路串行分支 → 串行例**恰 1 红**（`maxActive` 2→1 失守）、并发例仍绿；恢复后 `grep` 复核零残留。内核全量 **2795 passed**（较改动前 +2，零回归）
+- **归属口径**：原登记在 3.1.0，2026-09-26 决议**改归 3.0.0**——代码已过 13 步门禁落在 main，为保标签去切发布源的成本 > 收益；且它是带守卫的 bug fix，纳入 3.0.0 不破坏任何契约。决策留档见 `tasks/待完成任务.md` DIFF-3 行
+
+### Fixed（内核 · 任务表工具契约收敛：必填参数删除不可达缺省 + `update` 模式全量替换语义钉死）
+
+**问题（五类带伤复审 · 口径伤 + 命名伤）**：① `task_table_write` 的 `mode` 与 `task_table_update` 的 `status` 在 `builtinTools` 工具表标 `required`，却在 `toolExecutor` 派发处各给 `'overwrite'` / `'done'` 缺省——schema 与实现自相矛盾（**口径伤**）；② `task_table_write` 的 `update` 模式按 `items` 索引全量重建（`writePlan` 整体替换 `checkpoint.plan`），对外描述只说「替换」，LLM 极易与单任务项工具 `task_table_update` 混淆、漏列即丢项（**命名伤 + 口径伤**）。
+
+- **修法（止血不造伤 · 零行为变更）**：① 删 `task_table_write`/`task_table_update` 派发处两处**不可达**缺省（`strArg('mode')` / `strArg('status')` 不再给回退值）——`required` 校验层（`validateAndCoerceArgs`）本就在派发前拦截缺失，缺省是永不可达的死代码，删后唯一区别是「校验被绕过时 fail-loud 而非静默覆盖」；② `task_table_write` 的 `update` 模式描述补全「须传完整任务项列表，未列出的会被丢弃——勿与 `task_table_update` 混淆」（工具级描述 + `mode` 参数级描述双处对齐，单一口径）
+- **验证（回归钉锁死契约）**：新增 `sessionManager.test.ts` 守卫「`writePlan` update 模式全量替换：未列出的任务项被丢弃」（3 项基线 → update 传 2 项 → plan 长度=2、保留原 id、第 3 项消失）。**实测**：`builtinTools.test.ts` 70 passed / `toolExecutor.test.ts` task_table 14 passed / `sessionManager.test.ts` 整文件 74 passed，全绿零回归
+- **残留已知伤（已收口，见下方 Changed）**：`update` 模式 与 `task_table_update` 工具**撞名**是结构性命名带伤，描述缓解仅止血；改名已于同批落地（见下方 Changed 段），台账 `TASKTABLE-NAME-1` 销项
+
+### Changed（任务表写入模式正名：`task_table_write` 的 `update` → `replace`，TASKTABLE-NAME-1 收口）
+
+**问题**：`task_table_write` 的 `update` 模式（全量替换整张表）与单任务项工具 `task_table_update` 撞名——两种语义共用一个词，内核注释已被污染（`updatePlan` 头注释曾把生产点误写成 `task_table_update mode='update'`）。
+
+- **改名窗口（证伪旧定性）**：`git tag` 最高 `v2.0.3`、`package.json` 虽为 3.0.0 但未发布 npm ⇒ **不存在任何已发布消费者**，改名是纯内部改动，无需 deprecation 周期（原「须走 deprecation」定性已被 tag 实证推翻）
+- **选词**：`replace` 与 `overwrite`（清空重写）/`append`（追加）三词互不重叠，与 `task_table_update`（单项状态）彻底不撞
+- **自愈路径**：mode 校验本就 fail-loud（`[ERR:INVALID_ARG]` 列出全部可用值）——模型输出旧词 `update` 会拿到含 `replace` 的明确错误，可自行重试；守卫钉死「旧词不得静默下发（writePlan else 兜底是 no-op，下发即静默丢写）」
+- **二次收口（自审揪出漏网）**：`assembler.ts` 任务表「未完成硬约束」nudge（每轮注入 LLM 的生产提示词）仍写 `task_table_write (update)`——首轮 grep 判据只扫 mode 字面量赋值，漏了形态相异的提示词文案；且该句语义本就与工具契约不符（`task_table_write` 任何 mode 都不改 status，「标记已阻塞」只有 `task_table_update` 能置 `blocked`）。一并正名 + 纠语义（改指 `task_table_update` 置 `blocked`），并补 `assembler.test.ts` 词表 + 语义双钉
+- **改动面**：`builtinTools.ts` 描述 ×2、`toolExecutor.ts` 校验 + 接口类型 + 注释、`sessionManager.ts` 类型/分支/注释（顺带修正生产点工具名笔误）、`assembler.ts` 未完成硬约束 nudge 正名 + 纠语义、测试 ×5；宿主零消费（只按工具名匹配）、docs/角色包零提及 mode
+- **验证（变异闭合）**：变异 A（判据改回 `update`）→ 新钉 2 条**恰 2 红**；变异 B（`replace` 分支短路 no-op）→ 语义钉**恰 1 红**；变异 C（nudge 还原旧词 + `task_table_write` 误引）→ `assembler.test.ts` 新钉**恰 1 红**，零误伤。恢复后 `tsc` 0、`eslint` 0、`sessionManager`+`builtinTools` **144 passed**、`toolExecutor` task_table **16 passed**、`assembler` **34 passed**
+
+### Added（新增门禁 `rules:refs`：规则裸路径引用有效性 · 补 `docs:links` 同族盲区）
+
+**问题证据（血训）**：`413e1046` 把 14 个规则文件从 `.trae/rules/` 移入 `.trae/rules/generic/`，引用漏改分**两类书写形态**——① markdown 链接形态（`](...)`，`docs:links` 能抓，已修 15 处）；② **反引号 / 纯文本形态的裸路径**（本次修 12 处）。后者是**判据失明的盲区**：`docs:links` 只认 `](...)` 语法，且**主动剥离行内代码跨度**（见 `check-publish-links.ts` 的 `LINK_RE` / `INLINE_CODE_RE`）→ 裸路径根本不在其扫描面内。两类是同一族「参考腐烂」，只是书写形态不同。
+
+- **新增 `scripts/check-rule-refs.ts`**：扫全仓文本文件（`.md` / `.ts` / `.mjs` / `.yml`）里的 `.trae/rules/` 裸路径引用，解析不到目标文件即 exit 1。与 `check-publish-links.ts` 同型（纯 FS / 零三方依赖 / 零网络 / 确定性 / 只读 + 退出码），可进 CI
+- **判据边界（刻意排除，非豁免清单）**：① 源文件位于 `.trae/skills/**` —— 技能手册是**可移植模板**，其中引用的规则文件由 big-tree-seeder 在**目标项目**生成，本仓内本就不该存在；② **脚本自身** —— 否则脚本内作为样例的旧路径文本会给「旧路径基线」续命（同术语门禁教训：扫自身 → 消失检测失效）
+- **闸门自检（每次运行都跑，不可关闭）**：先对 3 条内置样例跑**同一套判据**（`scanLine`，与主扫描同源，非另写一套），未全过即 exit 2 —— 「0 命中即成功」这类断言若判据本身失明（正则改坏 / 排除逻辑写反）会**静默假绿**
+- **修复 12 处陈旧裸路径引用（9 文件）**：`docs/` × 4、`prompts/` × 1、`tasks/` × 2、`vitest.config.ts` × 1 —— 全部补 `generic/`。其中 `vitest.config.ts` 一处是首轮 grep 正则漏掉下划线文件名所致（`[a-z0-9-]` → `[A-Za-z0-9_./-]` 才现形），属「排雷发现取证不完整」的实例
+- **接线**：`package.json` 新增 `rules:refs` 脚本；`scripts/local-ci.mjs` 步骤清单 full 档新增同名步骤（位于术语门禁之后、audit 之前）
+- **验证（变异闭合）**：自检 **3/3**、扫 **556** 文本文件、**0 命中** EXIT=0；临时把 `vitest.config.ts` 引用改回旧路径 → **恰 1 红**（正确定位到该行）→ 恢复全绿；`docs:links:repo` 自检 4/4 / 208 链接 / 0 死链；`terminology:check` 零漂移；`tsc -p tsconfig.scripts.json` / `eslint --max-warnings 0` EXIT=0
+### Changed（任务项折叠边界 `plan_item_boundary` 产出时机前移：边界产在它所罩住的内容之前）
+
+**问题证据**：真机观察「触发任务表后 step 没收进任务项折叠块」。先打掉误判——宿主两条渲染路径（运行时 `renderProcessFlow` / 收尾 `renderRoundBlock`）共用同一归组判据 `planItemContainerFor`，实测（3 迭代 / 2 任务项 / 真实递增 `ts`）两路径结果**逐字相同**（组内 `t2,t3`、游离 `t1`），**不存在「运行时不收、收尾收」的机制差异**。真身是：**每个任务项的首个迭代（思考 + 首批工具）恒在折叠块外**——因为边界产在本迭代工具落定**之后**，而宿主判据 `b.ts < ts` 只能**向前**找边界，对首个迭代必然落空；且批块首次插入即定位容器、之后不搬家。
+
+- **产出点前移**：`_maybeEmitPlanItemBoundary()` 从「工具落定后 / 无工具分支」**两处**调用点，收敛为**唯一一处**——`handleIteration` 内 `_handleInterrupt` 之后、`_prepareContext` 之前（迭代开始、LLM 调用前）。边界语义由「我现在在这项」回到「**以下内容**属于该项」
+- **落点必须早于 LLM 调用**（而非 `onPlanItemBoundary` 所在的「LLM 后 / 工具前」）：后者会把边界插在本 step 思考流之后，把思考与它驱动的工具劈进两个任务项容器
+- **调用次数不变**：原实现每迭代调一次（工具分支经 `_emitStepBoundary` / 无工具分支单独调），前移后仍是每迭代一次（迭代开头），挂起/中止迭代因 `_handleInterrupt` 提前返回而不调——与原来一致。**不是新增开销**
+- **不带伤判定（五类逐条）**：双轨镜像——2 处产出点收敛为 1 处 🟢 净减伤；降级兜底残留——旧实现里边界产在内容**之后**，末尾那条边界之后已无内容 → 只剩标题的**空折叠块**；前移后边界必然罩住本迭代内容，空折叠块消失 🟢 净减伤（注意：**终态迭代仍会产边界**，旧实现同样会——工具分支的 `_maybeEmitPlanItemBoundary()` 原本就是无条件调用，只有 `step_boundary` 条件化。差别只在边界的**位置**，不在有无）；类型 hack / 重复实现 🟢 无伤；僵尸声明 🟡 需注释回扫（已做）
+- **被否决的备选**：宿主侧放宽判据允许「归入紧随其后的边界」——判据与内核语义对不上，形成双判据，属拿实现迁就显示
+- **语义后果（可接受，非缺陷）**：任务表若由本轮某迭代的工具**新建**，该迭代仍留在组外（那个时刻任务表还不存在）。本次修的是「任务表在本轮开始前已存在」（续会 / prepare 预置 / 上一 turn 遗留 / checkpoint 恢复）的场景
+- **`lastBoundaryPlanItemId` 跨 turn 不重置**：刻意设计（`metrics.test.ts` 两个用例锁死），本次不动
+- **文档同步**：`docs/方案-任务项边界产出时机前移-20260926.md`（闭合闭环，先文档后代码）；`docs/architecture/step-atomic-persistence.md` 档 3 两处订正（原述「复用两个既有调用点」「由 `_emitStepBoundary` 单函数内串联两者」已废止，先后序改由「分居迭代首尾」保证）；`types.ts` 顺序契约注释、`assembler.ts` 装配注释、`loop.ts` 时序分叉注释同步
+- **验证（变异闭合）**：新增用例先红（`expected 4 to be less than 1`——边界下标 4 晚于思考下标 1，实锤旧行为）→ 改实现转绿；`stepBoundary.test.ts` 10/10，顺序契约 / STEP-BUCKET-1 / TOOL-RUN-1 三条老守卫全绿零误伤；内核 `tsc --noEmit` EXIT=0
+
+### Removed（`ProjectContext.dbPath` 退役：内核不再持宿主持久化形态）
+
+`ProjectContext.dbPath` 是「内核自带 SqliteStorage」时代的遗留字段。ADR-002 把 SqliteStorage 移出内核、持久化改由宿主经 `IMemoryStorage` 注入之后，它的消费者已清零：内核既不创建也不打开它，第一宿主 memora-vscode 的 `WorkspaceStorage` 走自己的 `.memora/memories.json`，从未读它。字段注释自称「Agent 级 `memora.db` 路径（全局共享）」，实值却是 `join(agentDataDir, 'memora.db')`，而 `agentDataDir` 由宿主传入的 `dataDir` 决定（vscode 宿主传的是项目级 `.memora`）——照它开库会得到「每个子项目一个 `memora.db`」，正撞架构规则明令禁止的形态。
+
+- **删除 `ProjectContext.dbPath`** 字段声明与赋值；`ProjectContext.index` 注释去掉「SQLite 索引」具象化（内核不假设宿主持久化形态）
+- **文档同步**：`docs/memora-api-reference.md` 的 `ProjectContext` 字段表移除该行；`storage` × `dataDir` 对照表去掉 `join(dataDir, 'memora.db')` 与「内核推导 dbPath」两处表述
+- **破坏性但零成本**：`ProjectContext` 经 `src/index.ts` 导出的 `AgentContext` 别名对外可见，故此行属公共 API 变更；**不提供兼容层**——3.0.0 尚未发布（npm 最新为 2.0.3），无外部用户依赖该字段，且它本身零消费者、无行为可兼容
+
+### Changed（`AgentOptions.dataDir` 收紧为必填 + `switchProject` 拒绝未解析的非绝对路径）
+
+同一根因的两处收口：**「Agent 级数据目录」在内核与宿主之间没有定死**。`dataDir` 类型标可选、文档称「缺省 `~/.memora`」，代码却写着 `opts.dataDir!` 非空断言——而 `src/` 里从来没有 `~/.memora` 这个默认值（`homedir` 仅出现在 `expandHome` 内部；唯一的 `~/.memora` 在 `config.example.json`，且 `config.memory.dataDir` 内核**不消费**，全仓只有测试读它）。照文档省略 `dataDir` 的后果是 `expandHome(undefined)` 抛 `Cannot read properties of undefined`。
+
+- **`dataDir` 改为必填**：`AgentOptions.dataDir?: string` → `dataDir: string`，并删掉 `agent.ts` 的 `!` 断言——把运行期爆炸换成编译期保证。目录位置与其层级语义（项目级 / 用户级）是宿主的产品决策，内核不提供默认值、也不做假设
+- **`registryDir` 注释诚实化**：缺省随 `dataDir`（原注释自称「优先宿主指定用户级路径，避免每项目重复存储」，而缺省分支恰恰就是每项目一份）。注册表的用途是**跨项目按名解析**，只有多项目共用一份目录时才兑现；`dataDir` 为项目级时，注册表随项目落盘、只含项目自身条目
+- **`switchProject` 加守卫**：`nameOrPath` 只接受「注册表中的项目名」或「项目根目录的绝对路径」，二者都不满足时抛 `configError`。此前未命中会原样当路径 → `resolve('...', '.memora')` 以 `process.cwd()` 为基准，**静默建出伪项目目录、占用其锁、写入注册表**
+- **文档同步**：api-reference §〇.3 去掉 `dataDir` 的假默认、补「`config.json` 的 `memory.dataDir` 内核不读」、订正「锁文件由 `dataDir` 推导」（锁固定落 `<projectPath>/.memora/.lock`，与 `dataDir` 无关）；README 中英双版与接入指南的构造示例原先**漏传 `dataDir` 或传相对路径**，补绝对路径；接入指南 §8 拆「按路径（推荐）/ 按名（需先注册 + 注册表共享）」两式
+- **随包文档两处冲突表述订正**：api-reference「内部数据写入（不越界）」段与接入指南 §十 关键约束 3 原先分别称两个状态文件在 `~/.memora/`、`.memora/` 只放 `rules/`+`skills/`——均与本次收敛后的路径契约矛盾，同步改正
+
+> **破坏性但零成本**（对齐本文件既有口径）：`AgentOptions.dataDir` 由可选改必填是对外可见的类型变更；但仓内**无一处**省略它——内核 `tsc --noEmit`（`include` 覆盖 `src/**/*`，含全部测试文件）与宿主 10 处构造点全数通过，改动实质是把 `!` 断言换成编译期保证。`registryDir` 保留（它是宿主把注册表提到用户级的唯一通道），仅订正注释；宿主零消费 `switchProject`，故守卫不构成在网行为变更。
+
+### Changed（术语正名：任务项 `PlanStep` → `PlanItem` + `step_boundary` 归位为迭代边界）
+
+根治项目内两个「step」的术语撞车——① **loop 迭代 step**（一次 LLM 交互 + 其工具执行，`stepBudget` 属此阵营）；② **任务表 plan step**（一行任务）。阵营②此前占用 `step_boundary` 事件名，导致阵营①没有自己的边界信号——这同时是「无任务表长工具循环零增量落盘」缺口的根因。
+
+- **事件对调**：迭代边界 `iteration_boundary` **归位**为 `step_boundary`；任务表边界 `step_boundary` 改名 **`plan_item_boundary`**
+- **内核标识符**：`PlanStep` → `PlanItem`（连同 `planStepId` → `planItemId` / `getActiveStepMeta` → `getActivePlanItemMeta` / `updatePlanStepStatus` → `updatePlanItemStatus` / `appendPlanStep` → `appendPlanItem` / `completeStep` → `completePlanItem` / `STEP_DESC_MAX_CHARS` → `PLAN_ITEM_DESC_MAX_CHARS`）
+- **宿主标识符 / 协议 / 样式**：`PlanStepDto` → `PlanItemDto`、`currentPlanSteps` → `currentPlanItems`、`insertStepInOrder` → `insertPlanItemInOrder` 等；`plan_update` 消息字段 `steps` → `items`；CSS 类 `.plan-step*` → `.plan-item*`、`.round-block__step*` → `.round-block__plan-item*`；DOM 属性 `data-step` → `data-plan-item`（**仅任务项段**；`data-step-bucket` = thought 按 stepIndex 分桶，属 step 阵营，**不改、也不得改**）；折叠块标题 `step-N` → **「任务项 N」**
+- **不动（硬边界）**：`stepBudget` / `multiStepReasoning` / `toolStepLimit`（角色包策略键 = 对外契约）、`task_table_*`（工具名，见下条）、CSS 关键字 `step-end`、历史档号与本文件旧版本条目（`step_id` / `steps` 两个**参数名**当时一并保留，已于 Unreleased 内后续条目正名）
+
+> **对内核公共 API 非破坏**：改动集中在内部标识符与宿主协议；`Round.processEvents` / `SessionCheckpoint` 等持久化 schema 未动。**唯一语义变更是事件名 `step_boundary`**（原任务表边界 → 现迭代边界），宿主与内核须同批升级。**不提供兼容层**（测试阶段无外部用户；`.memora/` 为本地桌面数据，重新生成即可）。
+
+### Changed（术语收口补完：函数名归位 + LLM 可见文案与错误码正名）
+
+承接上条 `PlanStep → PlanItem` 正名——上条落到**事件名与标识符**为止，遗留两处半补丁：① `_maybeEmitStepBoundary` 名为 step 却产 `plan_item_boundary`、`_emitIterationBoundary` 用历史别名命名却产 `step_boundary`（**函数名与产出事件互换**——只修事件名不修函数名，正是术语锚点 §7 后果链第一环的复刻）；② LLM 可见文案与错误码仍以「步骤」指任务项。3.0.0 未发布，此处无兼容代价，一次收口。
+
+- **函数名归位**：`_maybeEmitStepBoundary` → `_maybeEmitPlanItemBoundary`、`_emitIterationBoundary` → `_emitStepBoundary`（均 `private`，零外部契约；`docs/architecture/step-atomic-persistence.md` 与 `loop-design.md` 同步）
+- **错误码正名**：`[ERR:STEP_NOT_FOUND]` → `[ERR:PLAN_ITEM_NOT_FOUND]`（LLM 可见，无外部消费者）
+- **LLM 可见文案与注释**：「步骤」→「任务项」——`builtinTools`（两个任务表工具描述）、`assembler`（任务表回执 / 未完成硬约束 / `updatePlanItem` 回执）、`toolExecutor`（寻址三类错误提示）、`taskTableRenderer`、`sessionManager`、`types.ts`、`scripts/test-tasktable-real.ts`
+- **宿主注释**：`protocol.ts` / `chatView.ts` / `chatStyles.ts` / `chatPanel.ts` 共 33 处「步骤」「步级」→「任务项」「任务项级」（**纯注释，零字符串与标识符变更**）
+- **仍不动（冻结例外）**：`task_table_*`（工具名）、`stepBudget` / `multiStepReasoning` / `toolStepLimit`、CSS 关键字 `step-end`、`data-step-bucket`（thought 按 stepIndex 分桶，属 step 阵营）；`handoffPrompt` 属**同名异义**（角色接手话术，非已废的 Handoff 衔接决策）——已补入术语锚点 §3 冻结例外（`step_id` / `steps` 两个参数名当时暂留，见下条正名）
+- **fixture 边界**：录制轮次 fixture `realRound-*.ts` 内的「步骤 [xxx]」为**当时真实输出**，不改（改了即伪造证据）
+
+### Added（术语载体扫描门禁：把「载体清单」机械化）
+
+前两条落到「已发现的载体」为止，而三次半补丁（`.prettierignore` 只挡一半 / 函数名改了事件名没改 / 本文件过度声明）的共同根因是**载体清单不完整**。本轮把这个清单本身机械化。
+
+- **新增 `scripts/terminology-carrier-snapshot.ts`**（`npm run terminology:report` 看报表 / `terminology:check` 做门禁，已接入 `ci:local` full 档）：扫全仓抽取 `step` 正名族与 `iteration` / `迭代` / `内循环` 历史别名族的**全部载体**（标识符 / 事件名 / CSS 类 / DOM 属性 / 中文词 / 文件名与目录名），与基线集合比对，有新增或消失即 `exit 1` 并打印可直接粘贴的基线。
+- **不建第二份例外清单**：冻结例外由 `.trae/rules/terminology-anchor-rules.md` §3 表格**解析**得到（解析数不足即报错退出，防「静默返回空集 → 门禁永远绿」）。
+- **只锁集合、不锁次数**：次数会因任意一次注释改动而漂移，门禁天天红必然被绕过；锁集合只对「新词出现 / 旧词消失」报警，语义对错仍由人显式确认（git diff 即审计痕迹）。
+- **扫描范围边界（非逐词豁免）**：排除录制 fixture（`__tests__/fixtures/`，改了即伪造证据）与依赖 / 构建产物 / 工具内部状态。基线首版 102 个载体（随后续正名条目更新：见下两条）。
+
+### Changed（术语载体扫描查出的 src 层三处漏网正名）
+
+上一轮审计按「事件名 / 函数名 / 文案 / 错误码」分类去查，未扫全词根，漏了三处在 `src/` 生产代码里的 `step` 撞车——本轮由扫描清单反查出来。
+
+- **`perStep` → `perTurn`**（`guardRail.ts` 的 `GuardRailDef.life` / `GuardRail.reset` + 4 处护栏定义、`loop.ts` 调用点、`guardRail.test.ts`）：该 `life` 的归零点在 `resetTurnState`，其原注释亦自称「按闭环累计」——**名字说 step、语义是 turn**，与「step 指任务项」方向相反的同族撞车。`GuardRailDef` 未经 `src/index.ts` 导出、宿主零消费，改动无外部契约影响。
+- **`STEP_LOG_PER_STEP_LIMIT` → `PLAN_ITEM_LOG_PER_ITEM_LIMIT`**（`sessionManager.appendPlanItemLog`，连同其 JSDoc 4 处「step」）：该段全程按 `planItemId` 分组，`step` 在此即任务项（术语锚点 §4.1 红线）。同步测试内局部量 `stepLogLenBefore` → `planItemLogLenBefore`。
+- **仍不动（冻结例外）**：`task_table_*`（工具名）、`stepBudget` / `multiStepReasoning` / `toolStepLimit`、CSS 关键字 `step-end` / `animation-iteration-count`、GitHub Actions 的 `steps`（外部生态词，非本仓术语）、过程文档与台账内的历史记录（`PlanStep` / `getActiveStepMeta` 等旧名属「怎么变过来的」，改写即伪造记录）（`step_id` / `steps` 两个参数名当时暂留，见下条正名）
+
+### Changed（任务表工具参数正名：`step_id` → `plan_item_id` / `steps` → `items` + 同族 bare「步」收尾）
+
+上三条把正名推到「事件名 / 函数名 / 文案 / 错误码」，仍把两个**工具参数名**留在冻结例外里。3.0.0 未发布 ⇒ 改名零成本；而工具参数名是**每轮都进 LLM 上下文的契约面**，长期占用 `step` 就是持续教坏模型与后来者（术语锚点 §4.1 明文禁止用 `step` 表任务表语义）。本轮把它降级为**历史别名**，并顺手扫掉同族漏网的第三种形态——bare「步」（前几轮只认「步骤 / 步级」两词，`某步` / `逐步` / `该步` / `active 步` 全在网外）。
+
+- **工具参数正名**：`task_table_update` 寻址参数 `step_id` → **`plan_item_id`**；`task_table_write` 列表参数 `steps` → **`items`**。全链同步：内核 `builtinTools`（工具描述 + JSON schema）、`toolExecutor`（寻址解析 + 三类错误文案）、`assembler` / `sessionManager` 的 `writePlan` 形参、`scripts/test-tasktable-real.ts`、宿主 `chatView.test.ts`
+- **术语锚点同步**：§2 任务表阵营新增「任务表工具参数」行（`plan_item_id` / `items`）；§3 **删除 `step_id` 条目**（冻结例外收敛为 3 个 `stepBudget` 词根键 + `handoffPrompt` 同名异义）；§4.1 明列「含**工具参数名**」；§6 新增历史别名行——旧名只可用于读懂历史记录
+- **内核注释同族收尾（bare「步」形态）**：`assembler`（会议逐项切换 / 任务项边界回调 / 末项兜底）、`agent`（turn 收尾清空 / 可续跑判据 / 装配视角日志）、`loop`（任务项日志回调 / 在途判定注释 / 会议轮判据）、`sessionManager`（`ensureActivePlanItem` / `hasInflightPlan` / `completePlanItem` / `concludeActivePlanItemIfPlanFullyReached` / `getActivePlanItem` 的 JSDoc 与内联注释）、`orchestrator`（续跑对称刷新 / 兜底收尾）、`prepare`（会议骨架守卫 + 装配入口说明）、`rolePackManager`（会议组上下文文案注释）、`types`（`plan_item_boundary` / `plan` / `planItemLog` 字段注释）、`taskTableRenderer`（收尾验证 nudge 注释与**文案正文**）、`builtinToolHandlers`（保留文件名错误的建议条）、`needsPlanning`（`PLAN_NUDGE_PROMPT` 正文）
+- **活跃架构文档**：`docs/architecture/role-pack-exclusivity-relocation.md` 全篇把任务项称「步」的表述正名（含 §4.3 装配驱动点、§4.5 会议执行流、S5 行的 2026-08-29 补强注记、`task_table_write` 参数示例 `steps` → `items`）；§6.3 的「实施步骤 S0→S8 / | 步 |」属**通用程序步骤**（第三种语义），不动
+- **边界（不改）**：测试样本数据字面量（`description: '步骤一'` / `id: 'a1b2c3d4-step-1'`）与录制 fixture 内「步骤 [xxx] 已标记为 done」是**内容而非术语载体**，改即纯 churn 或伪造证据；`step` 本义用法（`stepBudget` / 多步推理 / 工具步 / `data-step-bucket`）与通用程序用词（`needsPlanning` 的用户输入检测词 `多步` / `分步骤`）一并不动
+- **本条作废前三条的「仍不动」表述**：`step_id` / `steps` 曾被列为硬边界或冻结例外，正名后该表述作废；`task_table_*`（工具名）与 `stepBudget` / `multiStepReasoning` / `toolStepLimit` 仍在硬边界内不动
+
+### Fixed（术语载体门禁结构性失效：脚本扫自身致「旧词消失」永不报警）
+
+- **根因**：`scripts/terminology-carrier-snapshot.ts` 的 `walk()` 扫全仓时**包含自身**，而 `BASELINE` 常量里的字面量本身就是 step 族 token ⇒ 基线里的旧词永远被自己续命 ⇒「旧词消失」这条检测**结构性失效**（只报新增、不报消失）。实证：本轮正名后 `terminology:check` 仍报「无漂移（104 个载体）」。
+- **修复**：新增 `SELF_REL` 自排除（本文件是门禁工具＝元数据，不属被纪律的载体对象），并在文件头「明确不扫」清单写明理由；复跑立刻得到真实的 `新增 0 / 消失 4`，删掉那 4 条基线条目后 104 → 100 复绿（`MIN_FROZEN` 仍为 3，与锚点 §3 解析数一致）。⚠️ 本条**刻意不列出那 4 个 token 的字面量**——本文件也在扫描范围内，写出旧名等于把它们重新挂回载体集合，门禁会立刻报「新增 4」。
+- **已知边界（设计使然，非缺陷）**：历史记录（本文件旧条目、`tasks/` 台账、`.trae/documents/` 过程方案）会被扫描且**理应**保留旧名 ⇒ 旧名只要还在记录里被引用，就不会被判为「消失」。集合纪律的重心在**新增报警**（新代码误用旧词根），消失报警只是次级信号。
+
+### Changed（内核零运行时模块解析：移除 pino 可选 peer 与内核侧文件日志）
+
+内核定位「零第三方运行时依赖」的收口——移除内核**唯一**的运行时第三方模块解析点，让声明与实现一致。
+
+- **移除 `import('pino')`**：删除 `tryCreatePinoLogger()` / `wrapPinoAsLogger()` / `maybeUpgradeToPino()` 及配套懒升级机制；内核不再加载任何第三方日志库、不做任何运行时模块解析（此前该动态导入会被宿主 bundle 内联，把内核运行时绑到宿主模块图）
+- **`package.json`**：删除 `peerDependencies` / `peerDependenciesMeta`（pino 为唯一条目）；`devDependencies` 删除 `pino` / `pino-pretty`
+- **内核侧文件日志退场**：随之删除 `MEMORA_DATA_DIR` / `MEMORA_LOG_FILE` 两个进程级隐式契约（仅文件日志在用，宿主从未设置）
+- **日志形态对宿主零影响**：仍为「默认内置 console fallback（写 stderr，级别由 `MEMORA_LOG_LEVEL` 控制）+ 宿主经 `setLogger()` 注入」，VS Code 宿主注入通道（`hosts/memora-vscode/src/extension/host/assemble.ts`）不变；`logger` 门面由 getter 改为普通委托闭包（函数身份稳定）
+- **`setLogger` 注入即唯一出口**：注入分支补齐 utils 层桥接（`utils/loggerHolder`），`scanner` / `eventEmitter` / `rolePackManager` 等 utils 侧模块随宿主注入统一切换（此前注入只覆盖 `logging/` 门面，utils 侧停留在 console fallback）
+- **文档收口**：api-reference / 接入指南 / ADR-002 补充节同步订正「零控制台输出」「pino 可选 peer」等过时表述
+
+> 非破坏性变更：宿主注入通道与 `ILogger` 契约不变；未注入时行为从「尝试 pino、失败降级 console」变为「始终内置 console fallback」。README 双语（console fallback 口径）此前已一致，无需变更。
+
+### Added（外部世界工具族：`web_fetch` 搜索→抓取闭环 + `run_code` 通用代码执行）
+
+源自工具面盘点（tool-surface-roadmap.md）：`web_search` 只搜不抓、通用计算缺失。沿既有范式（接口注入 + 条件性暴露 + 降级优先 + 零依赖边界）补齐两个「连接外部世界」的条件工具。
+
+- **网页抓取（`src/web-fetch/`）**：`IFetchProvider` 接口（与 `IWebSearchProvider` 同构）；`FetchWebFetchProvider` 零依赖默认实现（内置 fetch + 正则清洗 HTML + `<title>` 提取 + maxChars 截断）；`safeFetch` 30s 超时保护包装（失败/超时降级友好提示，不中断主流程）
+- **代码执行（`src/code-exec/`）**：`ICodeExecutionProvider` 接口（沙箱完全由宿主 provider 决定，内核零运行时依赖）；`safeExecuteCode` 120s 超时保护包装（失败/超时降级返回错误结果）
+- **工具集成（`agent/builtinTools.ts` + `toolExecutor.ts`）**：新增 `WEB_FETCH_TOOL` / `RUN_CODE_TOOL` 定义 + 幂等标记（web_fetch=idempotent，run_code=non-idempotent）；条件性暴露（注入 provider 才进入 LLM 工具面）；执行分支含 URL 协议白名单 / 长度上限 / 结果净化 / 三态格式化
+- **注入链打通**：`AgentOptions.fetchProvider` / `codeExecutionProvider` 经 `assembler.ts` → `agent.ts` → `index.ts` 导出（接口 + 默认实现 + safe 包装）
+- **能力映射**：`capabilityMap` 新增 `web:fetch` → web_fetch、`code:execute` → run_code
+- **文档收口**：api-reference（注入接口 / AgentOptions / 内置工具表 / §8.4-8.5 / 类型导出）、接入指南（§4.5 外部世界工具注入）、module-inventory（§3.5）、README（核心能力 + 示例角色包随包）
+- **测试**：新增 7 组（provider 纯函数 × 2、默认实现解析 × 1、工具定义 × 2、条件暴露/执行/冲突 × 2、capability 映射 × 2），含本次 web-fetch/code-exec 共 130 用例全绿
+
+> 非破坏性变更：未注入 provider 时工具不暴露（零依赖边界保持）；`run_code` 沙箱隔离等级由宿主 provider 决定，接入前需评估安全边界。
+
+### Added（结构化信息保真 + 提炼侧视角下沉：`summaryFocus` 提炼视角机制）
+
+源自 LLM 视角 memora-as-agent 体感评估 P1 缺口「结构化信息保真」 + P2「提炼侧视角对齐」——代码/diff/表格等结构化信息经 round-summary 浓缩后保真度低，且提炼侧「值得记什么」仍为通用视角。沿内核哲学（领域无关 + 角色包插卡）落地的通用机制，让角色包声明「摘要提炼的视角（判断维度 + 结构保留形式）」。
+
+- **内核机制（`role-pack/types.ts`）**：`PrepareStrategy` 新增可选 `summaryFocus`（角色包提炼视角）；新增 `resolveSummaryFocus` 解析函数（合法非空字符串采用、缺失/空白归位 undefined=通用浓缩）
+- **摘要参数化（`roundSummaryGenerator.ts`）**：拆出 `SUMMARY_JSON_CONTRACT`（JSON 输出 + SummaryType 硬契约，角色包不可替换，写路径 metadata 稳定）与 `DEFAULT_SUMMARY_PERSPECTIVE`（通用"意图/回答/决策"归纳）；`generate` 第 5 参 `focus` 存在时以角色包提炼视角**替换**通用视角；缺省时逐字节零回归
+- **装配接线（`agent.ts`）**：postProcess 注入激活角色包的 `summaryFocus`（`resolveSummaryFocus(this.getActiveStrategy())`）
+- **验证器（`validator.ts`）**：`STRATEGY_KEY_RULES.prepare` 注册 `summaryFocus`（非空字符串校验），避免角色包声明产生未知键警告
+- **角色包消费者**：示例库 `代码助手`、两库 `方案设计师` 声明完整提炼视角（判断维度 + 结构保留，首个消费者，尚未触发「≥2 处复用」机制化提炼）
+
+> 非破坏性变更：内核零领域特化（提炼视角内容全由角色包提供，未 hardcode 代码/表格）；角色包未声明 `summaryFocus` 时摘要输出与升级前逐字节一致；typecheck + 全量测试通过。
+
+### Added（插件 MVP：方案设计师 showcase 体验——空状态示例提问随角色特化）
+
+插件 MVP 落地——让用户能通过插件一键体验 memora 最吸引人的设计魅力。审查插件与 memora 内核对齐情况后，聚焦「方案设计师 showcase」体验：把空状态示例提问从"文档打磨通用引导"升级为"随 showcase 角色动态渲染"，新用户切到方案设计师时，首屏即见「种子收敛」引导示例。
+
+- **空状态示例提问动态化（chatView.ts）**：新增 `ROLE_SUGGESTION_SETS`（SSOT 映射，key=角色显示名）+ `DEFAULT_SUGGESTIONS` 通用回退；`renderEmptySuggestions(name)` 按激活角色渲染示例 chips——方案设计师展示「设计知识库 / 设计记忆系统 / 找最小单元」种子收敛引导，其余角色回退「审阅架构 / 精简表达 / 对齐实现」通用打磨引导
+- **示例容器改造（chatPanel.ts）**：`#emptySuggestions` 从静态三个 chip 改为空容器，由脚本填充；HTML 注释同步更新
+- **事件委托**：chips 点击改为 document 级委托，兼容动态渲染新增元素（dropdown 同类惯例）
+- **测试**：chatView.test.ts 新增 showcase 特化用例（方案设计师专属 / 非 showcase 回退通用），测试骨架补 `#emptySuggestions` 容器
+
+> 非破坏性变更：仅插件 UI 层空状态引导演进，内核与角色包内容零改动；插件 typecheck / 66 测试 / esbuild 构建（webview 打包）全通过。
+
+### Added（方案设计师角色包：memora 设计哲学沉淀为可复用装载卡）
+
+把 memora 的设计哲学（单一真理源 · 最小单元 · 网络为土壤）抽象为可复用的角色包「方案设计师」，供新开项目方案时直接装载复用——基于 `.trae/rules/` 的 `single-truth-source-mindset` / `network-soil-mindset` / `architecture_philosophy_rules` 提炼为 LLM 可执行的设计指令。
+
+- **persona.md**：定位「从模糊想法设计自洽项目方案的顾问」，承载种子（最小单元锚点）/ 土壤（网络信息养分）两条设计主线
+- **rules.md**：设计指令——先搜索再构思、种子定位、SSOT、最小单元解题、识别补丁思维、外部方案种子过滤、搜索结论进入决策、记录来源、种子收敛交互、产出结构、SSOT 三问收敛自检、不越界生成骨架
+- **manifest.skills**：声明 `file:read` / `file:write` / `web:search` / `memory:recall` / `llm:summarize` 五个可调用能力，让角色能真正「先搜索再构思」、读写方案文档
+- **落地**：插件生产库（`hosts/memora-vscode/src/extension/role-packs/方案设计师/`，随 VSIX 分发）+ 根示例库（`role-packs/方案设计师/`，参考指引），两包 manifest 均通过标准校验（`validateManifestText` valid=true）
+
+> 非破坏性变更：纯新增角色包，内核零改动；新增包经 validator 校验合规，全量测试无回归。
+
+### Added（方案设计师：种子收敛交互引导）
+
+设计评审收敛——最小单元（种子）藏在用户业务里，LLM 无法凭空替用户定义，故把角色包从"被动澄清"升级为"主动引导用户收敛种子"的交互方法论（承载于 persona.md + rules.md，非工具能力）。
+
+- **persona.md 新增「种子收敛交互」章节**：收敛五步——问最小闭环（一次触发→处理→输出）→ 问边界（谁触发/给谁用）→ 问不可再拆 → 问三性（自足/可重复/可观察）→ 复述确认；拿到用户确认的种子前不急于设计
+- **核心能力「种子识别」→「种子引导收敛」**：从"替用户提炼"改为"引导用户自己收敛"
+- **rules.md「主动澄清」→「种子收敛交互」**：设计前先收敛种子，不替用户定义；用户明确拒绝探讨时，提示"种子未锁定可能返工"并按指示继续
+- 两库（生产 + 示例）persona.md / rules.md 同步更新；manifest 未变
+
+> 非破坏性变更：仅角色包内容演进，内核与 manifest 零改动。
+
+### Added（召回互斥前置过滤：跨会话记忆补位 top-limit）
+
+基于设计评审（recall-mutex-pre-filter）落地——把"召回后互斥排除"改为"recall 内取 limit 前过滤"，修复单会话聚焦时跨会话记忆被挤出 top-limit 的缺陷，补齐新会话 0 上下文时召回最近摘要的自然行为（memory-as-summary §4.3）。
+
+- **`recall` 新增 `excludeRoundIds` 选项**：在 `hybridMerge` 排序取 limit **前**过滤命中集合的 round-summary，让跨会话/更早轮次记忆补位；保底补足同样应用该过滤，避免把正文已加载的摘要补回（重复注入）
+- **`agent.ts` 移除后置互斥过滤块**：`recallAndInject` 把 `getRecentRoundIds(recentRounds)` 结果作为 `excludeRoundIds` 传入 recall()，去重职责收敛到 recall 一处（SSOT）
+- **向后兼容**：`excludeRoundIds` 缺省为空集合，纯检索调用方（multiHop、memoryInspector 等）行为完全不变
+
+> 非破坏性变更：仅新增可选参数；去重语义等价（同一 roundId 集合、同一 N 来源 `resolveRecentRounds`），跨会话召回能力修复。
+
+### Added（建议B落地："模型看到了什么"的指纹可追溯）
+
+基于 Harness 排雷评估（harness-borrowing-assessment 建议B），落地可观测性指纹埋点——记录"模型看到了什么"的指纹 hash，**不记录全量内容、不入 sessionStore**（memory-as-summary §5.2.1 可追溯性边界）。
+
+- **新增 `sha256Fingerprint`**：`src/utils/hash.ts` 通用 SHA-256 指纹纯函数，并复用于 `workProjection.ts`（消除重复 createHash 实现）
+- **`llm.call` span 补 `systemPromptHash`**：最终发给模型的全部 system 消息内容指纹（loop.ts LLM_CALL 埋点）
+- **`recall.recall` span 补 `attachedMemoryCount` / `attachedMemoryFingerprint`**：附着进上下文的记忆条数与 ID 集合指纹（loop.ts 记忆注入点埋点）
+- **零开销边界**：宿主未注入 Tracer（NOOP）时不计算指纹；span 属性由宿主自行采集/落盘/展示（机制/策略分离）
+
+> 非破坏性变更：仅新增 span 属性与工具函数，无公共 API 变更。
+
+### Added（召回保底：兜底最近记忆，保证每轮记忆下限）
+
+基于会话冷启动评估收敛（放弃独立"固定注入摘要"、信任 recall）后的落地补充——当语义召回结果不足时，用最近记忆补足，避免"零召回/极少召回"导致 LLM 完全无记忆可依（memory-as-summary §4.7）。
+
+- **`recall` 新增 `minFallback` 选项**：语义召回结果少于阈值时，经 `storage.search('', n)` 空查询通道按 score 降序补足最近记忆；补足项排语义命中之后、与主流程同过滤（excludeSources + 差异化时间窗口 + 去 superseded）；置 0 彻底关闭
+- **角色包 `prepare.minFallback`**：宿主可配置召回保底下限，非法/缺失回退内核默认 2；`resolveMinFallback` SSOT 归位
+- **`DEFAULT_MIN_FALLBACK` 下沉 `utils/recallDefaults.ts`**：跨 role-pack 与 memory 共享同一默认值（SSOT 单一来源）
+
+> 非破坏性变更：仅新增可选参数与配置维度，默认值 2 保持原有召回行为，无公共 API 破坏。
+
+### Removed（洞察层移除，记忆收敛为 round-summary 单轨）
+
+基于"摘要即记忆"架构定案（memory-as-summary §七 最终形态），移除独立洞察提炼层——其能力被 round-summary 的 type 分类吸收，记忆收敛为单一存储层。同时移除用户画像层（已收敛为 `type=preference` 差异化召回）。
+
+- **移除 InsightExtractor 自动抽取**：`src/agent/managers/insightExtractor.ts` 删除，`assembler` 不再装配，`Agent.archiveInsight()` / `insight` getter 删除
+- **移除 `insightExtracted` 事件**：不再有发射方，从 `AGENT_EVENTS` 与 `AgentEventMap` 清除
+- **`archiveFailed.stage` 收敛为 `'content'`**：原 `'insight' | 'content'`，洞察阶段移除后仅剩 content
+- **`ArchiveMode` 三态收敛为二态 `'full' | 'manual'`**：原 `'insights-only'`（仅洞察自动）因洞察移除失去语义，与 `manual` 等价，一并移除
+- **memoryAdded 事件出口迁移**：由 RoundSummaryGenerator 在 round-summary 写入后发射（`setOnMemoryAdded`），替代原洞察层"已沉淀"通知
+- **SessionArchiver（content 会话归档）保留**：非洞察，承载会话级综合提炼，粒度（会话级）与 round-summary（轮次级）不同
+
+> ⚠️ **破坏性变更**：移除 `ArchiveMode` 的 `'insights-only'` 值与 `insightExtracted` 事件。宿主若使用需适配（sprite 适配另行处理）。
+
+### Changed（架构文档排雷：角色包优先级后置）
+
+基于架构交叉审查（agent-design-philosophy / memory-as-summary / role-pack-spec / mvp-scope），确立**角色包优先级后置于内核基础**（问答闭环 + 记忆系统），并解除基础模块对未定型角色包键的耦合——避免角色包接口随基础演进反复横跳。纯文档/架构层变更，无公共 API 变更。
+
+- **记忆模块解耦**：互斥窗口 N 改由内核上下文装配提供默认值，角色包 `recentRounds` 仅作后置可覆盖项（memory-as-summary §4.3），记忆模块不再依赖草案键即可独立运行
+- **召回开关 × type 差异化**：新增 §4.2.1 明确角色包召回开关（memoryRecall/summaryRecall，角色级总开关）与 type 差异化召回（召回内策略）的两层协作语义
+- **配额分层**：§6.5 补记忆/摘要 token 配额分层约束
+- **§14.3 定位澄清**：明确为 memora 内部设计全景，是否入标准由角色包标准双闸门裁决（避免僵尸键）
+- **主动提问定位**：§14.3 全局策略补 `askOn/askLimit`，统一"理解确认/用户追问/askOn"命名关系
+- **标准滞后修正**：`reflect.insightExtraction` 标注为兼容键（独立洞察层已随"记忆即摘要"移除）
+- **标准演进状态**：role-pack-spec 声明处草案演进期，v1 字段冻结延后至基础定型
+- **MVP 对齐**：角色包样例重写为 spec §2.3 标准格式；记忆措辞对齐"摘要即记忆"；补记忆跨任务验收项；temperature 改为不承诺随包生效
+
+第二轮质量审查（对齐设计哲学 + 2026 行业）排雷落地——纯文档/架构层变更：
+
+- **记忆维护取舍声明**（memory-as-summary §5.4）：显式声明 append-only 模型将"重复/冲突/过期"交 LLM 时间序聚合是有意取舍，type 分层作确定性兜底；记忆维护列为远期锚点（在闭环后处理内生长，不引入 merge/supersede 状态机）
+- **检索侧补写**（memory-as-summary §4.7）：rerank / 同窗口优先对齐实现；query 改写等标远期不预埋
+- **自审查轮定义**（mvp-scope，正文已随 2026-09-18 瘦身）：判据绑定外部确定性验证信号，防纯 LLM 自审的"自说自话"
+- **可观察契约**（agent-design-philosophy §13.x）：闭环"可观察"固有属性产品化为"内核产活动事件、宿主渲染"，守零依赖内核边界
+
+第三轮对抗性审查（第一性原理 + SSOT 自检）排雷落地——纯文档/架构层变更：
+
+- **G2 写路径取代检测**（memory-as-summary §5.4）：记忆冲突消解从"读时靠 LLM 时间序猜"改为"写时定"——闭环后处理生成摘要时检测同类覆盖，给旧摘要打确定性 `superseded` 标记；SSOT 自检通过（不新增存储/系统/关系图，效率挪移）
+- **G5 结构化提问事件**（mvp-scope（正文已随 2026-09-18 瘦身）/ philosophy §13.x / §14.3）：LLM 以 `[ASK]` 结构化输出 → 内核确定性解析为 `question_pending` 事件，消除"避免启发式却靠宿主猜文本"的逻辑矛盾；为活动事件流落地首个真实用例
+- **G4 对话记录定位统一**（memory-as-summary §5.2）：从"展示层"改为"展示层 + 溯源兜底的运行依赖"，消除定位分裂
+- **G1 摘要保真声明**（§5.4）：摘要是"有损线索"，保真由 traceSummary 兜底，诚实声明
+- **G3 串行边界声明**（philosophy §13）：串行是单 Agent 阶段刻意约束，非普适真理，化解与多 Agent 愿景的张力
+- **G6 角色包差异化天花板**（role-pack-spec §三 L2）：声明 L2 枚举只承诺行为参数，价值分层 = L1 专业性 / L2 行为偏好 / L3 能力扩展
+- **G9 删 Trigger 三元组预埋**（philosophy §2.1）：删除 `{意图,载荷}` 预埋字段，保留扩展性说明，遵守"不预埋接口"
+- **G0 三阶段措辞**（philosophy §1.2）：明确三阶段是"经验证的合理划分"而非"公理必然"
+
+第四轮质量审查（安全 / 可观测 / 2026 生态）排雷落地——纯文档/架构层变更：
+
+- **H1 信任边界**（philosophy §6.3）：装配区分信任等级——召回/工具结果是 untrusted data、保持来源标记，system prompt 只由高信任源构成，防间接注入/记忆投毒
+- **H3 评估视角**（philosophy §13.x，远期）：事件流承载 run/session 两级轨迹可回放，结合自审查轮验证信号导出回归用例；复用已有组件，不引入独立评估引擎
+- **H2 角色包安全审计**（role-pack-spec §七）：确立"安全审计是角色包发布前提"硬门槛（行业实证 36% 注入），当前声明、远期实现
+
+第五轮排雷落地（梁文锋视角对抗审查 → 真实代码核实）——ADR-023 + 设计文档更新：
+
+- **C1 摘要成本重构**（philosophy §12.2 / ADR-023）：修正"截断时现调 LLM"实现缺口——截断优先取用 round-summary、保留更多原始对话靠 prompt cache、摘要生成退出关键路径
+- **C2 即时注入防御**（philosophy §6.3 / ADR-023）：工具结果 `<tool_result>` 隔离包裹 + 参数校验 + 返回净化，防间接注入
+- **C3 loop 收敛方向**（ADR-023）：解耦 UI/可观测/外围策略，让最小闭环（调 LLM→路由→循环）渐进可见
+
+SSOT 第三轮排雷：15 项契约/一致性缺陷清零，无公共 API 变更（内部修复）。
+
+### Fixed（修复）
+
+- **执行流单一收口**：`processEvent` / `executeChatLoop` / `resumeExecution` 统一走 `consumeExecutionStream`，清理放 finally；修复 async generator 被 `void` 调用导致函数体不执行（跨进程边界断裂）（T0-1）
+- **门面等宽**：`Agent.pause` 透传 `lowRisk`，连续暂停计数不再误计；`requestPause` 空闲态立即翻转、流中延迟翻转两端对称（T0-2 / T1-1 / T2-8）
+- **状态恢复强制归零**：`restoreFromCheckpoint` 统一 `resetToRunning()`，检查点与状态机不再分叉（T0-3）
+- **checkpoint schema 版本化**：`CURRENT_SCHEMA_VERSION` 写入/比对（T1-4）
+- **暂停超时信息事件化**：`sessionPauseTimedOut` 载荷携带 sessionId/date/session（T1-2）
+- **任务项状态唯一写点**：`completeRound` 改走 `updatePlanItemStatus`，消灭旁路直改（T2-1）
+- **暂停元数据时序修正**：`setPauseMeta` 首轮 checkpoint 兜底，注释纠正 onPaused 先于 pause()（T2-6）
+- **配置建议重建复活**：`confirmConfigSuggestion` upsert 前 restore 同名软删记忆 + name 白名单堵路径穿越（T2-4）
+- **暂停起点与心跳解耦**：新增 `checkpoint.pausedAt`，暂停后 touchCheckpoint 刷新不再推迟超时判定（T2-2）
+- **孤儿向量清理**：`writePurge` / `writePurgeExpired` 同步清理 vectorStore，消除 30 天自动清理后的孤儿向量（T2-5）
+
+### Removed（移除）
+
+- 零注册的 `onBootstrapSyncFailed` 死回调（失败可观测性由 logger.warn 承担）（T2-3）
+- `SessionStateMachine.onEvent` 空壳与失效注释（T2-7）
+
+### Internal（内部变更，不影响公共 API）
+
+- 测试用例总数 1949 → 1983（+34，80 个测试文件）
+
+### Fixed（术语载体门禁「历史层续命」：旧词消失检测失效 + 旧词复活不可见）
+
+- **根因**：CHANGELOG / ADR / 过程文档 / 台账按「历史不改写」纪律永久保留旧词，与代码共锁一份集合时旧词被历史层**续命**——①「旧词消失」对已正名词永不报警；②旧词**复活进代码**也不报警（集合没变）。与「脚本扫自身」是同一失效模式的第二个载体（`SELF_REL` 的教训推广到历史层）。
+- **收敛（同模式，非新机制）**：分层基线——**code 层**（`src` / `hosts` / `scripts` = 现行契约）与 **text 层**（文档 / 台账 / 历史档）各锁一份集合（`BASELINE_CODE` / `BASELINE_TEXT`）。旧词从 code 消失 = 正名完成信号；旧词出现在 code = 回归报警（门禁的牙在此）。text 层为弱判据（历史续命仍在层内，文档层回归靠审查）——边界写进脚本「范围边界与已知盲区」。
+- **本条更新两条旧表述**：①「Fixed（脚本扫自身）」条的「已知边界」——消失报警在 code 层内已是一级信号，且分层后该条「写出旧名即报新增」的自限不再适用于 text 层旧词；②同条 `MIN_FROZEN` 随锚点 §3 收口升为 6。
+- **变异实测（双向）**：`PlanStep` / `perStep` / `step_id` 注入 code 层 → code 层报警「新增 3」、text 层纹丝不动（修复前此场景静默绿）；基线幽灵条目 → 报警「消失 1」；还原后 code 63 / text 75 双绿。
+
+### Changed（冻结例外收口锚点 §3 单一真源 + 测试注释 bare「步」收尾）
+
+- **冻结例外单一真源**：`step-end` / `data-step-bucket` / `animation-iteration-count` 补入术语锚点 §3（原先仅在本文件口头列为硬边界，门禁 frozen 解析不知情）；门禁 `MIN_FROZEN` 阈值 3 → 6。
+- **测试注释收尾（58 处）**：测试文件注释与 it 标题中指任务表一行的「步骤 / 提问步 / 当前步 / 下一步」等正名为「任务项 / 项」；「工具步」（step 阵营 = 一次产工具调用的 LLM 调用）统一为「带工具调用的 step」。**边界不动**：样本数据字面量（`description: '步骤一'` 等，内容非载体）、断言引用的生产原文、通用词（同步 / 逐步 / 多步 / 按步推进）。
+
+### Changed（收尾叙述句正名「执行 N 步工具」→「工具×N（分型）」+ 宿主测试注释收尾）
+
+- **UI 文案（`hosts/memora-vscode` webview）**：收尾叙述句「执行 N 步工具（读取 x · 搜索 y）」把**一次工具调用**叫「步」——违术语锚点 §1「step 不是一次工具调用」+ 工具类文案「用批或纯计数」约定。改「工具×N（读取 x · 搜索 y · 写入 z）」：形状取纯计数，拼写并入既有 `工具×N`（U+00D7 语义乘号）形态，与同表达式 fallback 及 `iconLanguage` 判据同拼写，不造第二种乘号写法。测试断言联动 2 处。
+- **宿主测试注释收尾（14 处）**：`chatView.test.ts` 任务表语义「步 / 步骤 / 步级」（按步归组 / ≥3 步 / 当前步骤 / 两步边界 / 工具步）→「任务项 / 项」或「工具叙述」；样本数据字面量与 step 阵营断言（「第 1 步」等）不动。
+- **顺带**：webview 注释「active step」→「active 任务项」（同句 UI 文案本就是「执行任务项 N」）。
+- **门禁首次实战（消失信号）**：「步级」随正名从 code 层消失 → 分层基线报警「消失·code 1」→ 回填后 code 62 / text 75 双绿——「正名完成信号」按设计工作，非误报。
+
+### Added（tool 的 step 归属补齐：`tool_start.stepIndex` 与 thought 同构）
+
+- **内核事实层**：`AgentChunk.tool_start` 与 `ProcessEvent.tool_start.payload` 增可选 `stepIndex`（与 `thought.stepIndex` 逐字同构，缺省 = 无归属）；`loop.executeToolCalls` 发射点单点打标（`handleToolCalls` → `executeToolCalls` 调用链逐级传号）。**单点纪律**：`tool_result` 刻意不盖章——经 `toolCallId` 归属 `tool_start`（防双写守卫测试在案）。
+- **宿主**：`chatPanel` `tool_start` 透传落盘——重放可读「工具是第几步执行的」，tool×step 交叉事实（同号对齐 / 按 step 统计工具用量）自此有据可查。
+- **测试**：内核 4 例（多 step 递增 / 同 step 并发同号 / 续跑续号 / 新轮起数）+ 防双写守卫 1 例 + 落盘断言 1 例；**变异捕红 2 场精确命中**（删打标 → 3 红零误伤；双写 tool_result → 恰 1 红 = 守卫）。
+- **设计裁决留档**：`step_boundary` **维持不落盘的既定契约**（`types.ts`「触发点非历史内容」）——`stepIndex` 落地后 step 边界在重放中可由序号跳变直接读出，再落盘 = 同一事实两处记载（双轨镜像），「同族半补丁」判断作废。
+
+## 历史试验版本（已在 npm 作废，请勿使用）
+
+## [2.1.0] - 2026-08-08
+
+不中断工作模式 v2.0 与网络搜索接口版本。
+
+### Added（新增）
+
+- **不中断工作模式 v2.0**：支持会话暂停/恢复/分叉，通过检查点机制实现断点续跑；四级补全机制（P1-explicit / P2-memory / P3-builtin / P4-clarify）确保不中断场景下的输入完整性
+- **IWebSearchProvider 接口**：网络搜索能力抽象，宿主可注入自定义搜索引擎实现，内核提供默认降级策略
+- **FetchWebSearchProvider**：基于 DuckDuckGo HTML 的零依赖默认搜索实现，内置超时保护与错误降级
+- **web_search 工具**：条件性暴露，注入 IWebSearchProvider 时自动可用，未注入时 LLM 被告知搜索不可用
+
+### Fixed（修复）
+
+- **P0-1: MemoryRelation 孤儿边清理**：`memoryInspector.writeDelete()` / `writePurge()` 前置清理关系边，防止记忆删除后关系边残留
+- **P0-2: 运行时暂停超时检测**：暂停状态启动定时器，30 秒检测一次心跳，超 30 分钟自动清理检查点并重置状态机
+- **P1: Composer 停滞时忽略显式任务输入**：计划停滞路径前增加 `event.delta?.task === undefined` 判断，确保用户显式指定任务时优先走 P1 显式输入而非 P4 澄清
+- **P1-1: refreshBootstrapMemories 改为必选参数**：修复 SSOT 违反——CRUD 操作后 system prompt 中的 bootstrap 段必须同步
+- **P1-2: goalVersion 漂移强制暂停**：`updateGoal()` 检测到 drift 级别时自动暂停（低风险，不计入连续暂停计数）
+- **P2-1: consecutivePauseCount 时间衰减**：用时间戳数组替代简单计数，1 小时衰减窗口，旧暂停自动过期
+- **P2-2: ChatMessage 增加 name 字段**：`extractHotMemory()` 和 `restoreFromCheckpoint()` 透传 name 字段，LLM 上下文一致性增强
+
+### Internal（内部变更，不影响公共 API）
+
+- 版本号 v2.0.3 → v2.1.0
+- 新增 `src/web-search/` 模块（fetchWebSearchProvider.ts / webSearchProvider.ts / 类型定义）
+- `ToolExecutor` 扩展：支持 `IWebSearchProvider` 注入，条件性注册 `web_search` 工具
+- `builtinTools.ts` 新增 `WEB_SEARCH_TOOL` 定义与幂等性映射
+- 新增 16 个测试用例覆盖 web search 功能（工具结构完整性 / 执行逻辑 / provider 行为）
+- SSOT 修复新增 17 个测试用例（Composer 边缘场景 + checkpoint 全路径 + FetchWebSearchProvider 降级场景）
+- 测试文件总数 80 个，测试用例总数增至 1949 个
+
+## [2.0.3] - 2026-08-01
+
+npm 发布配置修复与质量加固版本。
+
+### Added（新增）
+
+- **`publishConfig.access = "public"`**：修复 scoped package 发布阻塞（@zooique/memora 是私有作用域，npm 默认拒绝发布）
+- **`keywords` 扩充至 18 个**：新增 memora / agent-memory / local-ai / embedding / vector-search / rag / zero-dependency / semantic-search / knowledge-base 及中文关键词，提升 npm 搜索曝光
+- **`exports` 增加 `default` 回退条件**：增强混合解析场景的兼容性
+
+### Internal（内部变更，不影响公共 API）
+
+- 版本号 v2.0.2 → v2.0.3
+
+## [2.0.2] - 2026-07-27
+
+设定模块（Persona/Skill/Rule）全链路审查与修复版本。核心收敛：角色/技能从 SQLite 记忆索引解耦、"万物皆记忆"升级为 v2 双轨模型、技能从延迟注入改为当轮实时生效。
+
+### Changed（变更）
+
+- **万物皆记忆 v2**：Persona 和 Skill 从 SQLite 索引解耦，改为纯文件 + 内存缓存（设定记忆不参与 recall 管线）
+- **Skill 当轮实时生效**：`matchAndInjectSkill()` 在 `chat()` 内 recall 后执行，匹配即注入，不再延迟到下一轮
+- **Persona 默认回退泛化**：`shouldFallbackToDefault()` 从硬编码 `'default'` 改为 `list[0]?.name`
+- **bootstrap 收敛**：`bootstrapMemories` 从 `rule + skill + persona` 收敛为仅 `rule`
+- **PersonaManager / SkillManager 去 SQLite 依赖**：移除 `IMemoryStorage` 构造参数，移除 `writeAllToIndex()` 调用
+- **自动匹配时机统一**：Persona 和 Skill 均在 `chat()` 开头执行匹配，LLM 当轮即用新设定
+
+### Fixed（修复）
+
+- **P0: Manual 模式角色回退**：`shouldFallbackToDefault()` 新增 mode 检查，manual 模式下不再自动回退
+- **P1: 消息角色标签不一致**：`chatStreamHandler` 的 `SPRITE_STREAM_START` 延迟到首个 chunk 后发送，确保 persona 已匹配
+- **Persona 切换参数同步**：锁定时长从 60s/3次/5分钟 更正为 30s/5次/2分钟（日志 + JSDoc + 测试）
+- **关键词匹配同分 tie-break**：Persona/Skill 匹配同分时增加 name 字母序二级排序
+
+### Internal（内部变更，不影响公共 API）
+
+- `PersonaManager.autoMatch()` 去 async（函数体无 await）
+- `configIndexWriter.ts` 移除（共享工具不再有消费者）
+- `skillManager.ts` 移除 `writeAllToIndex()` / `writeSkillToIndex()` 方法
+- `activeSkill` 字段移除（匹配改为当轮注入，无需跨轮状态）
+- `injectActiveSkill()` 方法移除（被 `matchAndInjectSkill()` 替代）
+- `personaManager.ts` / `skillManager.ts` 移除 `IMemoryStorage` 类型导入
+- 架构文档 `architecture_philosophy_rules.md` v0.8→v1.0（万物皆记忆 v2）
+- 分层文档 `backend_layers_rules.md` v1.1→v1.2（persona/skill 去 memory 依赖）
+
+从 1.0.1 到 2.0.0 的架构收敛版本。核心目标：读写统一、记忆治理 L1~L4 全链路、god function 拆分、可观测性补全。
+
+### Breaking Changes
+
+> **升级指南**：以下变更需要消费者修改代码。
+
+#### 1. MemoryMutator 移除，读写统一入口
+
+`MemoryMutator` 类（1.0.0 引入的读写分离）已合并回 `MemoryInspector`。写方法以 `writeXxx` 前缀命名，与读方法统一在 `agent.memory` 上。
+
+| 1.0.1 调用方式 | 2.0.0 迁移路径 |
+|---|---|
+| `agent.memoryMutator.upsert(memory)` | `agent.memory.writeUpsert(memory)` |
+| `agent.memoryMutator.delete(id)` | `agent.memory.writeDelete(id)` |
+| `agent.memoryMutator.restore(id)` | `agent.memory.writeRestore(id)` |
+| `agent.memoryMutator.purge(id)` | `agent.memory.writePurge(id)` |
+| `agent.memoryMutator.purgeExpired(before)` | `agent.memory.writePurgeExpired(before)` |
+| `agent.memoryMutator.addRelation(rel)` | `agent.memory.writeAddRelation(rel)` |
+| `agent.memoryMutator.removeRelation(...)` | `agent.memory.writeRemoveRelation(...)` |
+| `import type { MemoryMutator }` | 移除，不再导出 |
+
+**保留在 `agent.memory` 的只读方法**：`snapshot()` / `search()` / `searchHybrid()` / `stats()` / `getById()` / `list()` / `listDeleted()` / 关系查询方法等（不变）。
+
+### Added（新增功能）
+
+- **LLM 记忆治理 L1~L4**：
+  - L1 语义去重：`agent.deduplicateMemories()` — 扫描名称相似记忆对，LLM 判断语义等价，降级重复记忆
+  - L2 时效性评估：`agent.evaluateTimeliness()` — 扫描低分记忆，LLM 判断是否过时，降级过时记忆
+  - L3 冲突检测：`agent.detectConflicts()` — 同 source 内配对，LLM 判断语义冲突，仅检测不修复
+  - L0 手动衰减：`agent.runMemoryDecayOnce()` — 触发一次 score 衰减
+  - 新增类型：`DedupPair` / `DedupVerdict` / `DedupReport`、`TimelinessVerdict` / `TimelinessReport`、`ConflictVerdict` / `ConflictReport`
+- **TextPolishManager**：LLM 文本润色（语法修正 + 表达优化），独立于 Agent 生命周期，通过 `TextPolishManager` 类使用
+- **EvalRunner 公开**：评估框架从 `@internal` 提升为公开 API，新增 `EVAL_SCENARIOS` / `EvalRunner` / `EvalRunnerOptions` / `EvalSummary` 导出
+- **segmentLower**：分词工具扩展，返回小写分词结果（宿主 SqliteStorage 依赖）
+- **isPlainObject**：纯对象类型守卫（宿主 spriteConfig 依赖，校验 JSON.parse 结果）
+- **ChatLockManager**：对话锁管理器（从 AgentLoop 拆分），基于 token 的并发安全机制
+- **ArchiveCoordinator**：归档协调器（从 postProcessInner 拆分），统一管理会话归档 + 洞察提取 + 角色匹配
+- **MemoryDecayScheduler**：记忆衰减调度器（从 agent.ts 拆分），定时衰减 + L2 时效性评估 + 指标统计
+- **MemoryAdvisor**：记忆顾问（从 MemoryInspector 拆分），sourceHealth 诊断 + suggest 关联推荐 + L3 冲突检测
+- `TypedEventEmitter` 新增 `emitAsync` 方法（支持异步事件处理器的 await 等待）
+
+### Changed（改进）
+
+- **processUserInput 拆分**：从 550+ 行 god function 拆分为 4 个职责清晰的子方法（`handleRecallAndInputGuard` / `handleIteration` / `handleToolCalls` / `handleTextResponse`），每个方法独立可测
+- **nullifyAllComponents 统一**：Agent.close() 中 13 个组件字段置空集中到 `nullifyAllComponents()` 私有方法，消除遗漏风险
+- **requireNonNull 消除**：全量替换为局部变量提取 + non-null assertion `!`，减少代码噪音
+- **personaManager LLM 调用迁移**：角色匹配的 LLM 调用从 persona 层迁移到 agent 层（架构分层合规）
+- **toError 行为对齐**：跨模块统一错误处理，`toError(nonError)` 不再抛出 TypeError
+- **formatDateKey 提取**：消除 3 处重复的日期格式化逻辑
+- **抽象剪枝 3 轮**：DRY 收敛——消除重复的工具函数、常量定义、类型推导
+- **types.ts 依赖图注释**：index.ts 新增完整的类型依赖图，降低新开发者学习成本
+- 提示词优化 + 并发工具调用 + 可观测性补全（Tracer Span 覆盖衰减/归档/冲突检测）
+
+### Fixed（修复）
+
+- 神木回天 6 项修复：日志改进、硬约束测试补全、错误处理路径修复
+- 感知层模式陈旧 bug：`welcomeBack` 文案 + 冷启动 blend 逻辑修复
+- P3 静默 catch 修复：不再吞掉关键错误
+- 归档失败事件 `archiveFailed` 可观测性补全（11 处测试覆盖）
+
+### Internal（内部变更）
+
+- `memoryMutator.ts` 文件删除，写方法合并到 `memoryInspector.ts`（`writeXxx` 前缀）
+- `archiveCoordinator.ts` 独立模块（从 `agent.ts` 提取）
+- `chatLockManager.ts` 独立模块（从 `loop.ts` 提取）
+- `memoryDecayScheduler.ts` 独立模块（从 `agent.ts` 提取）
+- `memoryAdvisor.ts` 独立模块（从 `memoryInspector.ts` 提取）
+- `textPolishManager.ts` 新增模块（纯 LLM 调用，无存储依赖）
+- 测试补强：L2 时效性评估测试、衰减边界测试、各 Manager 测试大幅扩展（+500+ 测试用例）
+
+## [1.0.2] - 2026-07-11
+
+### Changed
+
+- `EmbeddingOptions` 接口归属位置从 `llm/embedding.ts` 调整到 `memory/vectorStore.ts`（符合依赖倒置原则：消费者定义接口，提供者通过 `import type` 引入）
+- 顶层导出不变（`index.ts` 已同步更新导出路径），外部消费者无需修改导入语句
+
+## [1.0.1] - 2026-07-08
+
+### Fixed（P2 遗留项修复）
+
+- coverage 阈值从 75/85/70/75 提升至 80/88/75/80
+- pathGuard 黑名单新增 `.envrc` 拦截规则（direnv 配置文件）
+- decisions/README.md ADR 索引补全 ADR-005 保留行
+- kernel-ci.yml 测试数量注释更新
+
+## [1.0.0] - 2026-07-08
+
+从 0.3.0 到 1.0.0 的完整架构收敛版本。核心目标：接口稳定化、职责分离、韧性补齐、公共 API 收敛。
+
+### Breaking Changes
+
+> **升级指南**：以下变更需要消费者修改代码。所有 Breaking Changes 均有 1:1 迁移路径。
+
+#### 1. 记忆读写分离：`agent.memory` → `agent.memoryMutator`
+
+`MemoryInspector` 中的写操作方法已迁移到新类 `MemoryMutator`，实现读写职责严格分离（ADR-010 补充）。
+
+| 0.3 写方法（`agent.memory.xxx`） | 1.0 迁移路径（`agent.memoryMutator.xxx`） |
+|---|---|
+| `agent.memory.upsert(memory)` | `agent.memoryMutator.upsert(memory)` |
+| `agent.memory.delete(id)` | `agent.memoryMutator.delete(id)` |
+| `agent.memory.restore(id)` | `agent.memoryMutator.restore(id)` |
+| `agent.memory.purge(id)` | `agent.memoryMutator.purge(id)` |
+| `agent.memory.purgeExpired(before)` | `agent.memoryMutator.purgeExpired(before)` |
+| `agent.memory.addRelation(rel)` | `agent.memoryMutator.addRelation(rel)` |
+| `agent.memory.removeRelation(...)` | `agent.memoryMutator.removeRelation(...)` |
+
+**保留在 `agent.memory` 的只读方法**：`snapshot()` / `search()` / `searchHybrid()` / `stats()` / `getById()` / `list()` / `listDeleted()` / `getDeletedById()` / 关系查询方法等。
+
+#### 2. `VectorStore` 重命名为 `JsonVectorStore`
+
+向量存储从具体类重构为接口 + 实现（ADR-016）。
+
+| 0.3 导出 | 1.0 迁移路径 |
+|---|---|
+| `import { VectorStore } from '@zooique/memora'` | `import { JsonVectorStore } from '@zooique/memora'` |
+| `new VectorStore(path, embeddingProvider)` | `new JsonVectorStore(path, embeddingProvider)` |
+
+新增 `IVectorStore` 接口，宿主可实现自定义向量存储（如 SqliteVectorStore / LanceDBVectorStore）。
+
+#### 3. `ChatOptions.channel` 字段移除
+
+`ChatOptions.channel?: 'chat' | 'background'` 字段从未被任何 LLM 调用路径读取，已移除。多 Provider 路由通过 `AgentOptions.backgroundProvider` 注入独立 LlmProvider 实例实现，不通过 `ChatOptions` 字段路由。
+
+#### 4. `AgentChunk` 流式事件结构变化
+
+多个 chunk 类型的字段结构发生变化，宿主需更新 chunk 处理逻辑：
+
+| chunk 类型 | 0.3 结构 | 1.0 结构 |
+|---|---|---|
+| `recall` | `{ type: 'recall'; count: number }` | `{ type: 'recall'; memories: RecalledMemorySummary[] }`（携带记忆摘要列表，非计数） |
+| `text` | `{ type: 'text'; content: string }` | `{ type: 'text'; content: string; guardrailBlocked?: boolean }`（新增护栏阻断标志） |
+| `tool_start` | `{ type: 'tool_start'; name: string; args?: string }` | `{ type: 'tool_start'; toolCallId: string; name: string; args?: string }`（新增 toolCallId） |
+| `tool_result` | `{ type: 'tool_result'; name: string; ok: boolean; summary?: string }` | `{ type: 'tool_result'; toolCallId: string; name: string; ok: boolean; summary?: string }`（新增 toolCallId） |
+| `error` | 不存在 | `{ type: 'error'; message: string }`（新增，流式错误替代裸 throw） |
+| `retry` | 不存在 | `{ type: 'retry'; attempt; maxRetries; delayMs; error }`（新增，指数退避重试信号） |
+
+新增 `RecalledMemorySummary` 类型（`{ id, name, score, source }`），仅暴露 UI 展示所需字段，不含 `content`。
+
+#### 5. `Memory` 类型新增 `deletedAt` 字段（7→8 字段）
+
+`Memory` 接口新增可选字段 `deletedAt?: string`（ISO 8601），支持软删除/回收站机制（ADR-004 GAP-6 扩展）。所有查询方法自动过滤 `deletedAt != undefined` 的记忆。
+
+#### 6. `IMemoryStorage` 接口扩展（7→15 方法）
+
+新增 8 个方法，宿主实现的 `IMemoryStorage` 需补全：
+
+| 新增方法 | 用途 |
+|---|---|
+| `restore(id)` | 恢复软删除记忆 |
+| `purge(id)` | 物理删除（不可恢复） |
+| `listDeleted(limit?)` | 列出回收站 |
+| `getDeletedById(id)` | 按 ID 获取软删除记忆 |
+| `purgeExpired(before)` | 清理过期回收站 |
+| `decayScores(sources, now)` | 批量衰减 score |
+| `getAllSources()` | 获取 source→count 映射 |
+
+（`close?()` 已在 0.3 存在）
+
+#### 7. `AgentOptions` 字段变化
+
+| 变化 | 0.3 | 1.0 | 迁移路径 |
+|---|---|---|---|
+| `logger` 字段移除 | `AgentOptions.logger?: ILogger` | 移除 | 改用全局 `setLogger(customLogger)` 注入 |
+| `archiveMode` 新增 | 不存在 | `archiveMode?: ArchiveMode`（默认 `'full'`） | 可选，不传则默认 `'full'` 全自动归档 |
+| `enableContextSummary` 默认值 | `false` | `true` | 如需关闭显式传 `false` |
+
+#### 8. 事件载荷变化
+
+三个事件的载荷结构变化，宿主事件处理器需更新：
+
+| 事件 | 0.3 载荷 | 1.0 载荷 |
+|---|---|---|
+| `conflictDetected` | `{ memoryId, conflictingId, relationType }` | `{ newMemoryId, newInsight, targetId, targetContent }` |
+| `projectSwitched` | `{ from, to }` | `{ from: string \| null, to: string, projectName: string }` |
+| `skillMatched` | `{ skillName, keywords }` | `{ skill: string, score: number }` |
+
+#### 9. 会话/项目方法迁移到专职 Manager
+
+以下方法从 Agent 面类迁移到专职 Manager（P1-4 拆分）：
+
+| 0.3 调用方式 | 1.0 迁移路径 |
+|---|---|
+| `agent.switchSession(name)` | `agent.sessionManager.switchSession(name)` |
+| `agent.loadSessionMessages(date, session)` | `agent.sessionManager.loadSessionMessages(date, session)` |
+| `agent.restoreMostRecentSession(...)` | `agent.sessionManager.restoreMostRecentSession(...)` |
+| `agent.restoreSession(date, session)` | `agent.sessionManager.restoreSession(date, session)` |
+| `agent.listProjects()` | `agent.projects.listProjects()` |
+
+**保留在 Agent 面类**：`switchProject()` / `rebuildComponents()` / `forkSession()`（常用入口）。
+
+#### 10. `ToolExecutor` 移除 `getToolDefinitions()`
+
+`agent.tools.getToolDefinitions()` 已移除，改用 `agent.tools.list`（getter）。
+
+| 0.3 调用 | 1.0 迁移路径 |
+|---|---|
+| `agent.tools.getToolDefinitions()` | `agent.tools.list` |
+
+#### 11. Agent 移除 `inspect()` / `getBuildCtx()`
+
+`agent.inspect()` 和 `agent.getBuildCtx()` 已移除。宿主可通过事件系统、ITracer、`agent.memory.snapshot()` 观察内核状态。
+
+### Added（新增功能）
+
+- **`MemoryMutator`**：记忆写入器，与 `MemoryInspector` 严格分工（读写分离）
+- **`RelationBuilder`**：关系构建器，从 `InsightExtractor` 提取（P1-3），支持冲突检测回调
+- **`ProjectRegistry`** + **`LockManager`**：从 `ProjectManager` 拆分（P1-4），宿主可直接使用
+- **`IVectorStore`** 接口：向量存储抽象，宿主可注入自定义实现（ADR-016）
+- **`EmbeddingOptions`**：embedding 调用选项（`signal?: AbortSignal` + `timeoutMs?: number`），`EmbeddingProvider.embed/batchEmbed` 和 `IVectorStore` 方法支持外部取消 + 超时中断（P1-8）
+- **`ConflictInfo`** 类型：关系冲突信息，`RelationBuilder.bindOnConflict()` 回调参数
+- **`RecalledMemorySummary`** 类型：recall chunk 载荷，仅暴露 UI 展示所需字段（id/name/score/source），不含 content
+- **`archiveMode`** 选项：ADR-015 三态归档控制（`full` / `insights-only` / `manual`），默认 `full`
+- **AgentChunk 新增 `error` / `retry` 类型**：流式错误事件替代裸 throw，指数退避重试信号让宿主感知重试
+- **`mergeSignals`** 工具：AbortSignal 合并工具，将多个 signal 合并为一个（用于工具执行超时 + 用户取消合并）
+- **`guardrail.ts`** 独立模块：内容护栏纯函数 `runGuardrails()`，从 `AgentLoop` 提取（P1-1）
+- **`sourceValidation.ts`**：source 校验工具从 `types.ts` 拆分（P1-2）
+- **AgentChunk `guardrailBlocked`** 标志位：结构化护栏信号，替代中文字符串匹配（P0-7）
+- **`SessionArchiver`**：会话内容归档器，支持 content 类记忆归档
+- **`MemoryAdvisor`**：记忆建议器，提供 suggest / sourceHealth 查询
+- **`MemoryDecayScheduler`**：记忆衰减调度器，init 首次 + 每小时定时衰减
+- **ADR-016**：向量存储接口化决策记录
+- **ADR-015**：archiveMode 三态归档控制决策记录
+- **ADR-002/004/014 补充**：Logger 懒初始化、content 多用途、关系查询归属 + RelationBuilder 拆分
+
+### Changed（改进）
+
+- **zod schema 单一真理源**：`DEFAULT_CONFIG` 常量移除，配置默认值由 zod schema `.default()` 声明（P0-1）
+- **Logger 懒初始化**：`maybeUpgradeToPino()` 延迟触发，import 零 fs 副作用（P0-6）
+- **EmbeddingProvider 默认超时**：60 秒默认请求超时（可通过 `timeoutMs` 覆盖）
+- **`ProjectManager` 瘦身**：从 640 行缩减到 410 行，注册表/锁文件操作委托给 `ProjectRegistry`/`LockManager`
+- **`InsightExtractor` 瘦身**：关系构建逻辑委托给 `RelationBuilder`
+- **测试目录镜像**：`managers/__tests__/` 严格镜像 `src/` 目录结构（ADR-007）
+
+### Fixed（修复）
+
+- **zod schema 与 DEFAULT_CONFIG 不一致**：配置默认值单一真理源
+- **eval 护栏检测依赖中文魔法字符串**：改用 `guardrailBlocked` 结构化标志位
+- **Logger import 触发 fs 副作用**：懒初始化，import 零 IO
+- **Embedding 请求无超时/取消保护**：支持 AbortSignal + timeoutMs
+- **`insightExtractor.ts` inline `import()` 类型**：改为顶层 type import
+
+### Internal（内部变更，不影响公共 API）
+
+- `types.ts` 拆分为 `types.ts` + `sourceValidation.ts` + `segmenter.ts`（STOPWORDS 迁移）
+- `MemoryInspector` 移除写方法，保留只读编排职责
+- `safeTimer` 的 `clearAllSafeTimers`/`getActiveTimerCount` 已不在公共导出（早期迭代已收敛）
+- 11 个 manager 测试文件迁移到 `managers/__tests__/`
+
+## [0.3.0] - 2026-06-27
+
+Phase 5.1/5.2 初始 npm 发布版本。
