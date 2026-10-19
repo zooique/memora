@@ -515,6 +515,52 @@ describe('WorkspaceSessionStore.updateSessionMeta（双层命名写点）', () =
     expect(persisted?.createdAt).toBe('2026-09-21T00:00:00.000Z');
     expect(persisted?.messageCount).toBe(6);
   });
+
+  // ── 归档防重快照（archivedMessageCount）透传与保护 ──
+  // 背景：内核 SessionArchiver 把「上次实际归档时的消息数」并入既有 updateSessionMeta
+  // 的 partialMeta 同批落盘（ARCH-GAP-2 排雷修复）。本宿主是该字段的落盘真相源 ⇒ 透传
+  // 与「缺省不抹既有」必须在此钉死，否则跨进程防重在真实环境静默失效。
+
+  it('归档防重快照透传：updateSessionMeta 写入 → getSessionMeta 读回', () => {
+    seedRound(store, roundStore, '2026-10-19', 'main', { content: '第一问', ts: 't1' });
+    store.updateSessionMeta('2026-10-19-main', { archivedMessageCount: 6 });
+
+    expect(store.getSessionMeta('2026-10-19-main')?.archivedMessageCount).toBe(6);
+  });
+
+  it('归档防重快照：后续写入其他字段不被抹（缺省 = 保留既有）', () => {
+    seedRound(store, roundStore, '2026-10-19', 'main', { content: '第一问', ts: 't1' });
+    store.updateSessionMeta('2026-10-19-main', { archivedMessageCount: 6 });
+    // 内核下一轮回归档写 summary 时不会重传 archivedMessageCount（值未变）
+    store.updateSessionMeta('2026-10-19-main', { summary: '本次摘要' });
+
+    const meta = store.getSessionMeta('2026-10-19-main');
+    expect(meta?.summary).toBe('本次摘要');
+    expect(meta?.archivedMessageCount).toBe(6);
+  });
+
+  it('归档防重快照：显式传 undefined 不抹既有（与 autoName/summary 同族保护）', () => {
+    seedRound(store, roundStore, '2026-10-19', 'main', { content: '第一问', ts: 't1' });
+    store.updateSessionMeta('2026-10-19-main', { archivedMessageCount: 6 });
+    // Partial 允许显式 undefined；若被 spread 覆盖，跨进程防重即失效（重启后又烧一次 LLM）
+    store.updateSessionMeta('2026-10-19-main', {
+      archivedMessageCount: undefined,
+      displayName: '改个名',
+    });
+
+    expect(store.getSessionMeta('2026-10-19-main')?.archivedMessageCount).toBe(6);
+  });
+
+  it('归档防重快照跨进程：落盘 JSON 往返后仍可读（防重的宿主侧真实闭环）', () => {
+    seedRound(store, roundStore, '2026-10-19', 'main', { content: '第一问', ts: 't1' });
+    store.updateSessionMeta('2026-10-19-main', { archivedMessageCount: 6 });
+
+    // 模拟宿主重启：新实例 + load（内核重启后正是这样拿回跨进程判据）
+    const reopened = new WorkspaceSessionStore(dir);
+    reopened.load();
+
+    expect(reopened.getSessionMeta('2026-10-19-main')?.archivedMessageCount).toBe(6);
+  });
 });
 
 describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（v1.5 单文件内聚）', () => {

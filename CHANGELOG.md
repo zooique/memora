@@ -49,8 +49,17 @@
 - **兼容性**：字段可选，老数据 / 从未归档的会话读不到 ⇒ **不跳过**（自然降级，不多不少一次）。
 - **变异实证**：删落盘回退 → 恰 1 红；删落盘写入 → 恰 1 红；还原 → `sessionArchiver.test.ts`
   28/28 绿（新增 2 例：跨进程防重 / 跨进程后新增对话仍重归档）。
-- **附带**：`ArchiveTriggerOptions` 补 `index.ts` 具名导出（`docs/memora-api-reference.md`
-  已把它写进公开 API 说明，此前宿主只能靠结构字面量 ⇒ 文档与导出面不同源）。
+- **附带（已撤回，留痕）**：曾设想给 `ArchiveTriggerOptions` 补 `index.ts` 具名导出
+  （因 `docs/memora-api-reference.md` 已把它写进公开 API 说明）——**被
+  `publicApiSurfaceGuard`（PUBLIC-API-SURFACE-1）判红而撤回**：无具名消费即纯增面，
+  类型随 `archiveSession` 签名推导仍可用。改为在文档注明「未具名导出、按结构字面量传」。
+- **宿主侧闭环（同日二批 · 防「只在 Mock 上绿」）**：内核测试只覆盖 Mock 替身，跨进程防重
+  须在真实宿主存储上成立。逐行核实 `WorkspaceSessionStore` 三关无损（`load` JSON 全量恢复 /
+  `save` 全量序列化 / `getSessionMeta` spread 保留），并补一处同族保护：`updateSessionMeta`
+  显式行原只护 `autoName/displayName/keyTopics/summary`，新字段被传显式 `undefined` 会遭
+  spread 抹除 ⇒ 跨进程防重静默失效。已补保护行 + 宿主新增 4 例（含**落盘 JSON 往返仍可读**）；
+  变异实证：去保护行 → 恰 1 红。⚠ `getSessionMeta` 每次现场派生 `messageCount`，即
+  `archivedMessageCount` 不可复用 `messageCount` 的实证（当前值 ≠ 上次归档值）。
 
 ### 🔧 变更（内核 · 后台任务槽位按 Agent 实例隔离 · `MULTI-AGENT-1` 销项 · 2026-10-18）
 

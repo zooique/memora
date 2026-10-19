@@ -391,6 +391,11 @@ export class WorkspaceSessionStore implements ISessionStore {
       displayName: meta.displayName ?? existing?.displayName ?? defaultSessionTitle(),
       keyTopics: meta.keyTopics ?? existing?.keyTopics,
       summary: meta.summary ?? existing?.summary,
+      // 归档防重快照（同族保护）：调用方显式传 `undefined` 不抹既有值——与上方
+      // autoName/keyTopics/summary 同语义（缺省 = 保留既有）。⚠ 被抹的后果不是丢个展示值，
+      // 而是**跨进程防重失效**：重启后内核回退读本字段拿到 undefined ⇒ 判「无归档记录」
+      // ⇒ 对「内容未变、早归档过」的会话又烧一次 LLM——正是该字段要治的那个重复烧。
+      archivedMessageCount: meta.archivedMessageCount ?? existing?.archivedMessageCount,
       // 改名/命名非活跃事件：不重置 updatedAt 与计数
       updatedAt: existing?.updatedAt ?? new Date().toISOString(),
       messageCount: existing?.messageCount ?? this.deriveMessageCount(sessionId),
