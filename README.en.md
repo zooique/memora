@@ -80,7 +80,7 @@ await agent.close();
 
 Memora is a **brain kernel that cannot run standalone** — it has interfaces but no "form." A CLI, WebUI, desktop sprite, or novel generator can be its "host." The host gives it a body (UI), blood vessels (Provider), and neural circuits (event loops).
 
-> **Version positioning (v3.0.0)**: **Node.js-only · Zero third-party runtime deps Agent kernel**. v3.0.0 is the first stable baseline after architecture convergence. **v4.0.0 (first major)**: public export surface collapsed (54 exports removed; full list in the `[4.0.0]` section of [CHANGELOG](./CHANGELOG.md)) + `agent.memory.search()` removed (`searchByKeyword()` is the sole entry). **v5.0.0 (second major, in development)**: public surface trimmed (12 general utilities / duplicate entries withdrawn) + goal-drift detection chain retired + checkpoint public-method slimming; a `node:*` built-in SQLite storage implementation added (`createNodeSqliteStorage`).
+> **Version positioning (v5.0.0)**: **Node.js-only · Zero third-party runtime deps Agent kernel**. **v5.0.0 (current)**: major public surface pruning (23 exports + 32 public members + 3 events removed) + multi-project shape finalized (one Agent = one project) + three never-live chains retired (goal-drift detection / memory governance facade / checkpoint fake-flushing) + a `node:*` built-in SQLite storage implementation added (`createNodeSqliteStorage`) — see the [upgrade guide](docs/memora-升级指南-4.x-到-5.0.0.md) for per-item migration. **v4.0.0**: public export surface collapsed (54 exports removed; full list in the `[4.0.0]` section of [CHANGELOG](./CHANGELOG.md)) + `agent.memory.search()` removed (`searchByKeyword()` is the sole entry).
 
 ---
 

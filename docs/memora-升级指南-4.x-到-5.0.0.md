@@ -239,7 +239,7 @@ agent.on('goalDriftDetected', () => {});// 随目标漂移链退役
 
 **新增字段（1 处）**：`FetchedPage.fetchFailed?: true` —— 据此区分「抓取失败降级」与「成功但内容为空」。
 
-> `Agent` 本身**没有任何新增公开成员**（70 → 59 全是删，见 §1 差额列）。
+> `Agent` 本身**没有任何新增公开成员**（70 → 58 全是删，见 §1 差额列）。
 
 ---
 
@@ -373,10 +373,13 @@ for (const name of ['Agent', 'SessionManager', 'RolePackManager', 'AgentOptions'
 
 ```text
 EXPORTS 4.0.0=156 5.0.0=136 removed=23 added=3
-Agent 70→59   SessionManager 50→36   RolePackManager 32→31
+Agent 70→58   SessionManager 50→36   RolePackManager 32→31
 AgentOptions 33→31   AgentEventMap 28→25
 SessionCheckpoint 12→9   FetchedPage 4→5
 IMemoryStorage 15→15   ISessionStore 12→12
 ```
+
+> 时点注记：Agent 首次实测为 70→59（当时 `canContinueWithoutInput` 尚未删除）；
+> `PUB-API-PRUNE-5`（2026-10-19）删除该方法后终值 70→58，已按上文「以脚本结果为准并回改本文」原则回改。
 
 > 这组数字与 §1 表格逐格对应——§1 若与你的重跑结果不一致，**以脚本结果为准并回改本文**。
