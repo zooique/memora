@@ -25,7 +25,9 @@ export type IconName =
   | 'delete' // 删除/垃圾桶
   | 'folder' // 打开目录/文件夹
   | 'file' // 文件
-  | 'lock' // 常驻锁（chip 钉住开关：钉住的发送后不消失）
+  // 常驻锁成对出现：同一锁体，仅锁梁闭合/开口二态——形状即状态，不靠颜色单点区分
+  | 'lock' // 常驻锁·闭合态（chip 已钉住：发送后保留）
+  | 'lock-open' // 常驻锁·开口态（chip 未钉住：发送后清除）
   | 'refresh' // 刷新
   | 'check' // 勾选/确认
   | 'close' // 关闭/叉号
@@ -68,8 +70,12 @@ const ICON_PATHS: Record<IconName, string> = {
     '<path d="M2.5 4h3.5l1 1h6.5a1 1 0 0 1 1 1v1H3L2 5l.5-1z"/><path d="M2 5.5h12l-1 7a1 1 0 0 1-1 .95H3a1 1 0 0 1-1-.95L2 5.5z"/>',
   // 文件：带折角的文档
   file: '<path d="M4 2.5h5l2.5 2.5V13a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 3 13V3a.5.5 0 0 1 .5-.5z"/><path d="M9 2.5V5h2.5"/>',
-  // 常驻锁：挂锁（锁体圆角矩形 + 上方锁梁），与 close 同在 chip 行内成对出现
+  // 常驻锁·闭合态：挂锁（锁体圆角矩形 + 完整 ∩ 形锁梁），与 close 同在 chip 行内成对出现
   lock: '<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>',
+  // 常驻锁·开口态：锁体与 lock 完全一致，锁梁只画到右上弧中途即断开（不回落右侧）
+  // ⇒ 与 lock 仅差「梁是否闭合」，同一视觉族内可一眼分辨，无需依赖颜色。
+  'lock-open':
+    '<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 3 -1.4"/>',
   // 刷新：循环箭头
   refresh:
     '<path d="M13 2.5v3h-3"/><path d="M3 13.5v-3h3"/><path d="M12.5 5.5a5 5 0 0 0-9.5-1.5"/><path d="M3.5 10.5a5 5 0 0 0 9.5 1.5"/>',
@@ -188,7 +194,11 @@ export function getIconSvg(name: IconName, width = 16, height = 16): string {
   })
     .map(([k, v]) => `${k}="${v}"`)
     .join(' ');
-  return `<svg ${attrs}>${ICON_PATHS[name]}</svg>`;
+  // ⚠️ 属性名必须是 data-icon-name、不能是 data-icon：populateIcons 以 `[data-icon]` 扫描容器
+  // 并对命中元素注入 SVG，若产物自带 data-icon 会被二次命中→svg 套 svg（视觉错乱）。
+  // 带名字的产物让「渲染的是哪个图标」可被断言（状态二态回归锁的前提），
+  // 否则测试只能比 innerHTML 全串——改一处 path 就腐。
+  return `<svg ${attrs} data-icon-name="${name}">${ICON_PATHS[name]}</svg>`;
 }
 
 /**

@@ -1547,12 +1547,15 @@ export const chatStyles = `
     border-radius: var(--radius-pill, 999px);
     white-space: nowrap;
   }
-  /* 常驻锁（pinned）：钉住的 chip 发送后不消失（渲染侧由 pinned 排序到附件行最前）；
-   * 视觉仅强化底色，不改 chip 形态——与 is-disabled 同为状态修饰类，故置于其前：
-   * 被禁用的技能即便钉住也仍保持虚线禁用观感（后写的 is-disabled 覆盖 background）。 */
-  .skill-chip.is-pinned {
-    background: var(--accent-bg-active);
-  }
+  /* 常驻锁（pinned）**刻意不在 chip 级做视觉**——钉住与否的表达单点落在 chip 内的 🔒
+   * 按钮（形状 lock/lock-open + .is-on 着色，均由 JS 从 pinned 投影）。
+   * 不再用 chip 底色的理由（两条，各自独立成立）：
+   *   ① 下方 .is-disabled 的 background: transparent 会覆盖它 ⇒ 禁用技能钉住后视觉归零；
+   *   ② --accent-bg-subtle 与 --accent-bg-active 是同色系浅底，肉眼几乎不可辨（真机实测）。
+   * 状态只留一个表达通道，杜绝两处漂移（SSOT）。钉住者的顺序差异由渲染侧稳定排序
+   * 上浮表达，与底色无关。
+   * ⚠️ 因此本文件**没有 .is-pinned 选择器**；JS 仍给 chip 挂该 class，其唯一职责是
+   * **chip 级状态标记与测试锚点**（无视觉职责），勿据此以为漏写了样式。 */
   /* 已禁用技能 chip：虚线边框 + 次要色，与「已挂载且生效」的实线 accent 形态区分。
    * 语义 = 挂在输入框上但发送时不会注入；用户可据此自行移除或去设置里启用。 */
   .skill-chip.is-disabled {
@@ -1589,10 +1592,45 @@ export const chatStyles = `
     line-height: var(--lh-flat);
     cursor: pointer;
   }
-  .skill-chip__remove:hover,
+  /* 常驻锁 🔒 = 状态载体，**常显不藏**：状态必须在不 hover、键盘操作、触屏下都可读。
+   * （✕ 同样是常显不藏——见下方注释：隐藏的代价是空洞与抖动，两个按钮都不藏。）
+   * 二态双通道：形状（lock 闭合 / lock-open 开口，JS 投影）+ 着色（次要色 / accent）。 */
+  /* 弱化**只用降色、不用降透明度**：半透明图标在真机下观感像「没渲染好 / 被禁用」
+   * （用户实测反馈），而灰色是完全不透明但依然不抢眼——信号清晰、视觉安静，两者兼得。
+   * 二态靠 **形状（开口/闭合）+ 颜色（灰/accent）** 两个明确通道，不依赖透明度。 */
+  .skill-chip__pin {
+    color: var(--text-secondary);
+  }
+  /* 已钉住（常驻）：形状闭合 + accent 实色。着色在按钮自身，不被 .is-disabled 影响 */
+  .skill-chip__pin.is-on {
+    color: var(--accent);
+  }
+  /* 🔒 的 hover 只改背景、不改颜色——若 hover 把颜色提到 accent，未钉住的锁会在鼠标下
+   * 伪装成钉住态（曾与 .is-pinned 撞同一 --accent-bg-active，属同一类混淆源）。 */
   .skill-chip__pin:hover {
+    background: var(--accent-bg-subtle);
+  }
+  /* 移除 ✕ = 动作，**常显 + 降色**（次要色，完全不透明），hover 提亮并转失败色提示破坏性。
+   * 与 🔒 未钉态共用同一套「常显 + 降色」语言：同一 chip 内的两个按钮必须是同一种可见性
+   * 语言，否则视觉逻辑不自洽（SSOT：一类元素一种处理）。
+   * 显隐方案三易其稿，终态理由（单元绿不算数，真机才是判据）：
+   *   ① hover 才显形（opacity: 0 + 保留占位）⇒ 真机留常驻 15px 空洞，比一枚淡 ✕ 更突兀；
+   *   ② 改 display: none 消空洞 ⇒ hover 时 chip 宽度突变、同行 chip 位移，且鼠标停边缘
+   *      会「变宽→移出→变窄→移入」振荡；
+   *   ③ 常显但压 opacity 到 0.75 ⇒ 真机观感「淡淡的像没渲染好 / 被禁用」；
+   *   ④ 终态 = 常显 + 降色（**降噪走颜色，不走隐藏、也不走透明度**）：同时避开空洞、
+   *      抖动与残影观感，可发现性与可点击性不丢，也无需 :focus-visible 兜底（本就可见）。 */
+  .skill-chip__remove {
+    color: var(--text-secondary);
+    transition: color var(--dur-base) ease;
+  }
+  /* 破坏性动作 hover 用更深的 active 底 + 失败色，与 🔒（状态按钮，hover 只给 subtle 底）
+   * 有意区分——不是不一致，是语义不同：确认删除需要更强的视觉重量。
+   * ⚠️ 此处是 --accent-bg-active 在样式层**唯一**的消费点，改掉它会让该令牌变僵尸
+   * （tokensClosure「无僵尸令牌」守卫当场红）；要改配色须先安排去处。 */
+  .skill-chip__remove:hover {
     background: var(--accent-bg-active);
-    color: var(--accent, #0e639c);
+    color: var(--status-fail);
   }
 
   /* 动画：spin for loading state */

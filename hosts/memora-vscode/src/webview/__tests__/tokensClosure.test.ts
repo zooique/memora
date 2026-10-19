@@ -560,7 +560,10 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   const EXPECTED = {
     'z-': 14,
     'lh-': 49, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1
-    'op-': 18, // 初始化按钮禁用态 opacity: var(--op-6)（settingsStyles）+1
+    // 18：回到原值。中途曾 +2（🔒 未钉态 / ✕ 弱化态各用 opacity: var(--op-6)），后经真机
+    // 实测废掉该做法——**弱化只用降色、不用降透明度**（半透明图标观感像没渲染好/被禁用），
+    // 二态改由「形状 + 颜色」两个明确通道承载；实数经 scripts/count-token-refs.mjs 实锤。
+    'op-': 18,
     'icon-': 17,
     'dot-': 22,
     'line-': 73, // MEM-EVENT-2：工具行内命中块 border-top: var(--line-solid)（chatStyles）+1

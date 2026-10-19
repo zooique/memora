@@ -9358,6 +9358,64 @@ describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () =>
     send.click();
     expect(document.querySelectorAll('#skillChips .skill-chip').length).toBe(0);
   });
+
+  // 回归锁：曾把 pin 图标写死为常量 'lock' ⇒ 钉住/未钉同一把锁，用户真机无法分辨状态。
+  // 断言「两态渲染的图标必须互异 + 按钮 is-on 必须随状态翻转」，形状即状态的前提。
+  it('🔒 形状即状态：未钉渲染 lock-open、钉住渲染 lock，两态必须互异（防回退镜像断言）', () => {
+    mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    const pin = () =>
+      document.querySelector('#refChips .skill-chip .skill-chip__pin') as HTMLElement;
+    const iconOf = (): unknown => pin().querySelector('svg')?.getAttribute('data-icon-name');
+    // 未钉住：开口锁 + 按钮无 is-on
+    expect(iconOf()).toBe('lock-open');
+    expect(pin().classList.contains('is-on')).toBe(false);
+    pin().click();
+    // 钉住：闭合锁 + 按钮 is-on
+    expect(iconOf()).toBe('lock');
+    expect(pin().classList.contains('is-on')).toBe(true);
+    // 反向切回：两态互异且可逆，否则「状态可辨识」即回归
+    pin().click();
+    expect(iconOf()).toBe('lock-open');
+    expect(pin().classList.contains('is-on')).toBe(false);
+  });
+
+  // 缺陷 B 回归锁：二态着色落在 pin 按钮自身，故禁用技能（chip 走 .is-disabled，
+  // 其 background: transparent 会盖掉 chip 级底色）钉住后 🔒 仍可辨识。
+  it('禁用技能钉住后 🔒 仍带 is-on（二态在按钮自身，不吃 .is-disabled 的样式覆盖）', () => {
+    mountChatView();
+    dispatch({
+      type: 'skills_loaded',
+      skills: [{ name: '禁用技能', description: 'd', layer: 'builtin', disabled: true }],
+    });
+    (document.querySelector('.skill-picker [data-treedd-id="禁用技能"]') as HTMLElement).click();
+    const chip = document.querySelector('#skillChips .skill-chip') as HTMLElement;
+    const pin = chip.querySelector('.skill-chip__pin') as HTMLElement;
+    expect(chip.classList.contains('is-disabled')).toBe(true); // 前置：确实处在禁用态
+    expect(pin.classList.contains('is-on')).toBe(true); // 锁预开常驻，视觉不被禁用态吞掉
+    expect(pin.querySelector('svg')?.getAttribute('data-icon-name')).toBe('lock');
+  });
+
+  // ✕ 的显隐 100% 由 CSS 决定（颜色 / hover），JS 只负责它在不在 DOM 里。
+  // 锁定「任何 JS 动作都不得给 ✕ 挂状态 class 或内联样式」——否则就会出现「平时藏着、
+  // 某个动作后突然冒出来」这类用户无法归因的显隐漂移（真机实测疑问点即由此而来）。
+  it('✕ 可见性不受 JS 驱动：发送前后 class / 内联样式恒一致（防显隐漂移）', () => {
+    mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    // 先钉住，保证发送后 chip 仍存活可比
+    (document.querySelector('#refChips .skill-chip .skill-chip__pin') as HTMLElement).click();
+    const removeOf = () =>
+      document.querySelector('#refChips .skill-chip .skill-chip__remove') as HTMLElement;
+    const before = { cls: removeOf().className, style: removeOf().getAttribute('style') };
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = 'x';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    (document.getElementById('send') as HTMLButtonElement).click();
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(1); // 发送后仍存活
+    expect(removeOf().className).toBe(before.cls);
+    expect(removeOf().getAttribute('style')).toBe(before.style);
+    expect(removeOf().hidden).toBe(false);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════

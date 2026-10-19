@@ -6859,7 +6859,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const skill = currentSkill;
     const chip = document.createElement('span');
     chip.className = 'skill-chip';
-    // 钉住（常驻锁）= 发送后保留不消失，视觉强化底色（.is-pinned）
+    // 钉住（常驻锁）= 发送后保留不消失。chip 级 .is-pinned **无视觉职责**，仅作状态标记
+    // 与测试锚点——视觉交给 pin 按钮的 is-on + 图标形状（chip 底色会被 .is-disabled 吃掉）
     if (skill.pinned) {
       chip.classList.add('is-pinned');
     }
@@ -6889,7 +6890,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const pin = document.createElement('button');
     pin.type = 'button';
     pin.className = 'skill-chip__pin';
-    pin.innerHTML = getIconSvg('lock', 11, 11);
+    // 二态落在 pin 按钮自身（class + 图标形状），**不依赖 chip 底色**——chip 底色会被
+    // .is-disabled 覆盖吃掉（禁用技能钉住后视觉归零），按钮自己的着色不受其影响。
+    if (skill.pinned) {
+      pin.classList.add('is-on');
+    }
+    // 图标 = 状态投影（SSOT）：闭合锁 = 已钉住常驻，开口锁 = 未钉住发送后清除。
+    // 曾写死为常量 'lock' ⇒ 两态同图标、用户无法分辨钉住与否（真机实测缺陷）。
+    pin.innerHTML = getIconSvg(skill.pinned ? 'lock' : 'lock-open', 11, 11);
     pin.setAttribute('aria-pressed', String(skill.pinned));
     pin.setAttribute('title', skill.pinned ? '取消常驻（发送后清除）' : '常驻（发送后保留）');
     pin.setAttribute('aria-label', (skill.pinned ? '取消常驻：' : '常驻：') + skill.name);
@@ -6944,7 +6952,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const ref of ordered) {
       const chip = document.createElement('span');
       chip.className = 'skill-chip';
-      // 钉住（常驻锁）= 发送后保留不消失，视觉强化底色（.is-pinned）
+      // 同 skill chip：.is-pinned 只是 chip 级状态标记与测试锚点，视觉在 pin 按钮上
       if (ref.pinned) {
         chip.classList.add('is-pinned');
       }
@@ -6961,7 +6969,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const pin = document.createElement('button');
       pin.type = 'button';
       pin.className = 'skill-chip__pin';
-      pin.innerHTML = getIconSvg('lock', 11, 11);
+      // 与 skill chip 同一组二态规则：class + 图标形状都由 pinned 投影（详见 skill 侧注释）
+      if (ref.pinned) {
+        pin.classList.add('is-on');
+      }
+      pin.innerHTML = getIconSvg(ref.pinned ? 'lock' : 'lock-open', 11, 11);
       pin.setAttribute('aria-pressed', String(ref.pinned));
       pin.setAttribute('title', ref.pinned ? '取消常驻（发送后清除）' : '常驻（发送后保留）');
       pin.setAttribute('aria-label', (ref.pinned ? '取消常驻：' : '常驻：') + ref.path);
