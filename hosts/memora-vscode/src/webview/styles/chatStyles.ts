@@ -801,6 +801,7 @@ export const chatStyles = `
    * ::after，正文尾回归光标纯度。载体泛匹配（契约见 chatView TerminusKind）：有正文轮
    * 挂 .msg-body、中断轮挂宿主块，round-group 内任一带终态 [data-terminus] 即点亮——
    * 运行态（思考中等）不在三档内不触发，流式期 footer.is-pending 隐藏形成第二道屏蔽。
+   * 各档文案与下方「容器外」宿主尾兜底同名（「用户中断」/「异常中断」字面量各两处，改须同步）。
    *
    * 两端分布机制（首版 ::before+margin-left:auto 的返修教训：::before 是首子伪元素，
    * 其 auto margin 吸收全部余量会把 actions/time/标签整组挤到右端、左侧全空——实测
@@ -840,7 +841,8 @@ export const chatStyles = `
    * （早期错误/早停，ensureRoundGroup 不建容器）容器缺席 ⇒ 上方 :has 底栏规则无处匹配，
    * 终态既无底栏标签、正文尾又无兜底 ⇒ 静默消失。此处由宿主块尾自足承接，保证「轮已收场」
    * 这个事实恒有展示位（与「异常中断」正文尾兜底同一相位机制，统一到三档）。
-   * 有容器轮由底栏承接，下方压制宿主块尾避免双显（「单一位点」纪律）。 */
+   * 有容器轮由底栏承接，下方压制宿主块尾避免双显（「单一位点」纪律）。
+   * 文案与上方底栏标签同名（字面量两处，改须同步）。 */
   .msg.assistant[data-terminus='用户中断']::after {
     content: '用户中断';
     margin-left: var(--sp-2, 6px);

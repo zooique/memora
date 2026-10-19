@@ -2494,7 +2494,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const planBounds = events.filter(isPlanItemBoundaryEvent);
     for (const b of planBounds) getOrCreatePlanItemGroup(flow, b, planBounds);
     if (livePlanStates.size > 0) applyPlanItemStates(flow, livePlanStates);
-    // 4) 光标运行态同步：工具/思考 DOM 刚被本函数更新 → 推导一次（批次二单一合成点；
+    // 4) 光标运行态同步：工具/思考 DOM 刚被本函数更新 → 推导一次（批次二推导单一入口；
     //    仅流式中生效——重放/骨架期调用无活动流式块，guard 内 no-op）
     if (streamingActive) syncRunningCursor();
   }
@@ -4433,7 +4433,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 运行态推导（单一合成点）：优先级固定 = 工具在途 > 思考相位 > 默认回答。
+   * 运行态推导（单一入口）：优先级固定 = 工具在途 > 思考相位 > 默认回答。
    * 判定源与过程渲染同源（DOM 单查询，无第二套状态轨道）：
    * 工具在途 = 活动容器内 .is-tool-running 行 / 相位行 --tool 形态（正在执行：xxx）；
    * 思考相位 = 相位行非工具形态（.process-flow__phase，renderProcessFlow 单条维护）。

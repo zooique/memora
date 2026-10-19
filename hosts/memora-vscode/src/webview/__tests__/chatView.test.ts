@@ -9892,8 +9892,8 @@ describe('任务项完成态（plan_snapshot 快照 → 状态图标）', () => 
 // 光标状态机（运行态 data-status / 终态 data-terminus，UI-BLOCK-ICON 批次二）
 // ═══════════════════════════════════════════════════════════
 // 运行态真源 = setCursorStatus（data-status 值即中文文案，CSS 按值分档渲染）；终态真源 = setTerminus
-//（data-terminus / data-terminus-detail，2026-10-19 双通道分离）；运行态唯一合成点 = syncRunningCursor
-//（优先级 = 工具在途 > 思考相位 > 默认回答）。
+//（data-terminus / data-terminus-detail，2026-10-19 双通道分离）；运行态「推导」单一入口 = syncRunningCursor
+//（优先级 = 工具在途 > 思考相位 > 默认回答）；显式转移（默认回答/续写/清态）由 setCursorStatus 直写，不经该入口。
 // 变异锁：删 chunk 尾覆盖 / 删 done 落「已完成」/ 删 error detail 透传 → 对应用例转红。
 describe('光标状态机（运行态 data-status / 终态 data-terminus）', () => {
   beforeEach(() => {

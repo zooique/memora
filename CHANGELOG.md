@@ -1308,7 +1308,7 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
   底栏三档 `:has([data-status=…])` 无处匹配 ⇒ 终态静默消失（「偶尔」真因）。
 - **修法（SSOT 收敛，不迁移载体）**：拆为**两条单一语义通道**——运行/挂起态 `data-status`
   （`CursorStatus` 五态）+ 终态独立属性 `data-terminus`（`TerminusKind` 三档，异常附
-  `data-terminus-detail`）；写入单点 = `setCursorStatus` / `setActiveSheetStatus`（运行）与
+  `data-terminus-detail`）；写入单一实现 = `setCursorStatus` / `setActiveSheetStatus`（运行）与
   `setTerminus`（终态），turn 结束由调用方**显式清运行态**。CSS 三档 `:has` 与宿主尾兜底改键
   `data-terminus`；「已完成」压制**限定容器内**（`.round-group`）、容器外回退终态基础档文字自足承接。
 - **载体契约不变（证据依据）**：有正文轮终态挂 `.msg-body`、中断轮挂宿主块——流错误案 footer 处于
