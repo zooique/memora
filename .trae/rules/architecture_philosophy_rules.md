@@ -85,7 +85,7 @@ description: 架构哲学原则（12 条：摘要即记忆（memory-as-summary�
 
 **无主动衰减**（`MemoryDecayScheduler` 已移除）。治理 = **supersede（写时取代）+ 命中刷新 accessedAt（只 touch、不做重要度加权；score 已物理退役）**；物理清理靠回收站（保留期归宿主策略、当前默认 30 天；由宿主入口显式触发，无自动清理）。
 
-- round-summary 记忆有效性由 superseded 写时取代 + 召回相关性承担；**type 不设时效**（有效否由 superseded + 召回相关性判定，不由时间）。
+- round-summary 记忆有效性由 superseded 写时取代判定；**type 不设时效**（有效否由 superseded 判定，不由时间）。检索只决定「能否被关键词召回」，**不参与有效性判定、无相关度评分**（返回排序 = `accessedAt` 倒序，§5.2 2026-10-19 改定案）。
 - `writePurgeExpired(before)`（memoryInspector）清理过期软删除记忆；内核不做主动衰减/沉底清理（记忆无时间归档语义）。
 
 **禁止**：❌ 永不删除任何记忆；❌ 所有记忆一视同仁；❌ 召回越多越好（会击穿上下文窗口）。
