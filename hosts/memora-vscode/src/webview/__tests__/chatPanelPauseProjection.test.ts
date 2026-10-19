@@ -131,8 +131,7 @@ describe('暂停/恢复：真源翻转事件必须刷新骨架投影', () => {
   it('投影载荷不再携带 canContinue（判据撤除：暂停按钮在 running 相位恒显示）', () => {
     const { provider, posted } = setup();
     const cast = provider as unknown as ProjectionCast;
-    crystal:
-    cast._agent = projectionAgentStub('running');
+    crystal: cast._agent = projectionAgentStub('running');
     cast._streaming = true;
     cast._pendingQuestions = [];
 

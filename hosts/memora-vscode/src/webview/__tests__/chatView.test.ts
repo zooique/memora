@@ -4479,7 +4479,9 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     // 用户中断：停止行退役（2026-10-13 底栏标签收口），宿主载体如实定格；
     // 折叠块内 §已停止详情仍保留完整文案（详情记录层不受收口影响，上方已断言）
     expect(document.querySelector('.round-block__interrupted')).toBeNull();
-    expect(document.querySelector<HTMLElement>('.msg.assistant')?.dataset.terminus).toBe('用户中断');
+    expect(document.querySelector<HTMLElement>('.msg.assistant')?.dataset.terminus).toBe(
+      '用户中断',
+    );
     // 半截正文掐断（丢弃运行中 step 的内容，与重放中断轮不显示正文同构）
     expect(document.querySelector('.msg.assistant .msg-body')).toBeNull();
   });
@@ -8943,7 +8945,9 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     );
     expect(doneBody?.[1] ?? '').toMatch(/content:\s*none/);
     // 反断言：不得存在**无容器前缀**的全局压制（负向锁定，防回退到「容器外也压死」= 静默消失）
-    expect(styleSrc).not.toMatch(/(?<!\.round-group )\.msg-body\[data-terminus='已完成'\]::after\s*\{/);
+    expect(styleSrc).not.toMatch(
+      /(?<!\.round-group )\.msg-body\[data-terminus='已完成'\]::after\s*\{/,
+    );
     // 异常态正文尾自足：状态词前缀 + 原因（流错误案 footer 处 is-pending 隐藏期，正文尾是唯一展示位）
     const errBody = styleSrc.match(/\.msg-body\[data-terminus='异常中断'\]::after\s*\{([^}]*)\}/);
     expect(errBody?.[1] ?? '').toMatch(/'异常中断 · '/);

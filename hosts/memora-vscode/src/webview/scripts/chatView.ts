@@ -4407,10 +4407,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /** 活动正文块运行态写入（实时流路径统一入口：activeAssistantEl 为正文块 SSOT） */
   function setActiveSheetStatus(status: CursorStatus | null): void {
-    setCursorStatus(
-      activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
-      status,
-    );
+    setCursorStatus(activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'), status);
   }
 
   /**
@@ -5532,10 +5529,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // isRoundSettled 判据单源守卫按此片段登记豁免
       const settledReplay = r.status === 'complete';
       if (settledReplay) {
-        setTerminus(
-          activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
-          '已完成',
-        );
+        setTerminus(activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'), '已完成');
       }
       // live 轮流式状态接手：重放正文同步进 streamingRaw——finalize 终渲染以 streamingRaw
       // 为全量真源（body.innerHTML = renderMarkdown(streamingRaw)），不同步则流尾 done
@@ -5922,10 +5916,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       finalizeRound(msg.evidence);
       // 终态定格：静默「已完成」淡勾（finalize 清运行态后落终态，正常完成必须安静）
       // 终态走独立通道 data-terminus（与运行态 data-status 严格分离，2026-10-19 SSOT 收敛）
-      setTerminus(
-        activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
-        '已完成',
-      );
+      setTerminus(activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'), '已完成');
       // 回填删除按钮 ts 锚 + 容器 footer 显形收口（commitTurnTs 前置契约已内嵌于
       // settleRoundWithFooter，无需调用方记顺序——时间戳补建读首段 ts）
       settleRoundWithFooter(msg.roundId, activeAssistantEl);
