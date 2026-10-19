@@ -96,6 +96,7 @@ const SNAPSHOT_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 /** 全量快照文件数上限（8000）：海量小文件场景同样降级 */
 const SNAPSHOT_MAX_FILES = 8000;
 import type {
+  ChatRef,
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
   WebviewInputKind,
@@ -121,6 +122,7 @@ import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
 import {
   buildDocContextBlock,
   buildInjectedContextEnvelope,
+  buildRefContextBlock,
   stripInjectedContextPrefix,
 } from '../helpers/docContext.js';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
@@ -322,6 +324,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _view: vscode.WebviewView | undefined;
   /** 角色 handoff 预填缓冲：对话视图未就绪时暂存，ready 后补发（消除时序竞态） */
   private _pendingPrefill?: string;
+  /** 右键「添加到对话」引用缓冲：对话视图未就绪时暂存，ready 后补发（与 _pendingPrefill 同构） */
+  private _pendingRefs?: ChatRef[];
   /** 当前装配的 Agent（由 extension 装配后注入） */
   private _agent: Agent | undefined;
   /** 系统内置配置目录 + 用户技能目录（extension 注入，composer 动态技能清单来源判定） */
@@ -900,6 +904,28 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'prefill_input', text });
     } else {
       this._pendingPrefill = text;
+    }
+  }
+
+  /**
+   * 右键「添加到对话」：推送文件/目录引用到对话输入盒上方气泡行
+   *
+   * 对话视图已就绪 → 立即投递；未就绪（用户从资源管理器首次带入对话）→ 缓冲到
+   * _pendingRefs，待 webview ready 后由 handleWebviewReady 补发，避免 postMessage
+   * 在 webview 脚本监听器注册前丢失（与 prefillInput 同构）。
+   */
+  public pushRefs(refs: ChatRef[]): void {
+    if (this._view) {
+      this.post({ type: 'addRef', refs });
+    } else {
+      // 合并缓冲（多次右键累积，不覆盖），去重按 path
+      const merged = [...(this._pendingRefs ?? []), ...refs];
+      const seen = new Set<string>();
+      this._pendingRefs = merged.filter((r) => {
+        if (seen.has(r.path)) return false;
+        seen.add(r.path);
+        return true;
+      });
     }
   }
 
@@ -2258,6 +2284,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'prefill_input', text: this._pendingPrefill });
       this._pendingPrefill = undefined;
     }
+    if (this._pendingRefs !== undefined) {
+      this.post({ type: 'addRef', refs: this._pendingRefs });
+      this._pendingRefs = undefined;
+    }
   }
 
   /**
@@ -2785,6 +2815,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     text?: string;
     answers?: string[];
     skillName?: string;
+    refs?: ChatRef[];
   }): Promise<void> {
     if (!this._agent) {
       // Agent 未装配（可能仍在懒装配中）：提示用户稍候，而非静默无反应
@@ -2801,7 +2832,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       case 'send': {
         const text = msg.text?.trim() ?? '';
         if (!text) return;
-        await this.sendInput(text, msg.skillName);
+        await this.sendInput(text, msg.skillName, msg.refs);
         return;
       }
       case 'answer': {
@@ -2855,7 +2886,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 判据为 `isPauseWaiting() || isAskWaiting()`（相位蕴含
    * status，且区分 ask/pause 两形态由 handleInput 的 kind 分流，此处仅需「暂停可续」为真）。
    */
-  private async sendInput(input: string, skillName?: string): Promise<void> {
+  private async sendInput(input: string, skillName?: string, refs?: ChatRef[]): Promise<void> {
     // 防御守卫（单一路由下 handleInput 已前置检查 Agent 就绪；此处局部收窄供 TS 控制流使用，
     // 属性访问不受方法间守卫影响，需非空局部变量）
     const agent = this._agent;
@@ -2975,7 +3006,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 信封构造与剥离同源收口在 helpers/docContext（技能块在前、文档块在后；无任何块时
     // **不加信封**，不注入「用户请求：」分隔符），回放侧因此可安全以分隔符为界还原用户请求。
     const docBlock = this._docContext ? buildDocContextBlock(this._docContext) : '';
-    const chatInput = buildInjectedContextEnvelope([skillBlock, docBlock], input);
+    // 引用块（右键「添加到对话」）：仅挂路径与形态，不注入内容（内容由模型按需 read_file）
+    const refsBlock = refs && refs.length > 0 ? buildRefContextBlock(refs) : '';
+    const chatInput = buildInjectedContextEnvelope([skillBlock, docBlock, refsBlock], input);
 
     // runFlow 统一管理 AbortController + consumeFlow + 同步抛错兜底
     // seed：把开轮用户输入交给 live 轮投影。内容用 `chatInput`（与内核 `appendUser`
@@ -4282,6 +4315,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
            面单贴在信封上；盒外留给系统运行时条，两种来源由物理位置分界，不混住。
            空态 hidden 零高度，盒子不预留空行 -->
       <div id="skillChips" class="skill-chip-row" hidden></div>
+      <div id="refChips" class="skill-chip-row" hidden></div>
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
         <!-- Row 1 · 一级直面：左侧功能群 + 右侧唯一发送按钮（发送突出化） -->

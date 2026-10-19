@@ -138,6 +138,9 @@ export type SearchEngineSetting = string;
  */
 export type WebviewInputKind = 'send' | 'answer' | 'resume';
 
+/** 对话引用（右键「添加到对话」挂到下一轮上下文）：文件或目录，仅存路径与形态，不携内容 */
+export type ChatRef = { path: string; kind: 'file' | 'folder' };
+
 export type WebviewToExtensionMessage =
   /** Webview 脚本已就绪（监听器已注册），extension 可安全回放会话/推送数据 */
   | { type: 'ready' }
@@ -161,7 +164,7 @@ export type WebviewToExtensionMessage =
    * 错位语义（单一判据）：answer 仅 waiting(ask) 相位生效，resume 仅 waiting(pause) 相位
    * 生效；相位不符（如迟到回答）丢弃——对用户静默，宿主落日志留痕（扩展宿主日志可查）。
    */
-  | { type: 'input'; kind: WebviewInputKind; text?: string; answers?: string[]; skillName?: string }
+  | { type: 'input'; kind: WebviewInputKind; text?: string; answers?: string[]; skillName?: string; refs?: ChatRef[] }
   /**
    * 打开大模型配置视图（对话面板空态引导按钮触发）
    *
@@ -1124,6 +1127,12 @@ export type ExtensionToWebviewMessage =
    * 对话视图未就绪时由 chatPanel 缓冲，待 webview ready 后补发（消除时序竞态）。
    */
   | { type: 'prefill_input'; text: string }
+  /**
+   * 宿主→webview 推送文件/目录引用（右键「添加到对话」触发）：webview 把 refs 挂到
+   * 输入盒上方气泡行，发送时随 input 消息的 refs 字段带走（仅挂引用，不注入内容）。
+   * webview 未就绪时由宿主 _pendingRefs 缓冲，ready 后补发（与 prefill_input 同构）。
+   */
+  | { type: 'addRef'; refs: ChatRef[] }
   /**
    * 输入框文本润色结果（对 polish_input 的应答）
    *

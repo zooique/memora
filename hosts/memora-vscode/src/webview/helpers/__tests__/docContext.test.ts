@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildDocContextBlock,
   buildInjectedContextEnvelope,
+  buildRefContextBlock,
   stripInjectedContextPrefix,
 } from '../docContext.js';
 
@@ -33,6 +34,26 @@ describe('stripInjectedContextPrefix', () => {
   it('仅技能块（无文档上下文）时同样剥离', () => {
     const content = buildInjectedContextEnvelope([SKILL_BLOCK], INPUT);
     expect(stripInjectedContextPrefix(content)).toBe(INPUT);
+  });
+
+  it('仅引用块（右键「添加到对话」，无技能/文档）时同样剥离，只留用户请求', () => {
+    const refs = [
+      { path: 'src/foo.ts', kind: 'file' as const },
+      { path: 'src/utils', kind: 'folder' as const },
+    ];
+    const content = buildInjectedContextEnvelope([buildRefContextBlock(refs)], INPUT);
+    expect(stripInjectedContextPrefix(content)).toBe(INPUT);
+  });
+
+  it('buildRefContextBlock 目录显式标注按需读取、文件不带后缀', () => {
+    const block = buildRefContextBlock([
+      { path: 'src/foo.ts', kind: 'file' as const },
+      { path: 'src/utils', kind: 'folder' as const },
+    ]);
+    expect(block).toContain('[参考文件/目录]');
+    expect(block).toContain('[/参考文件/目录]');
+    expect(block).toContain('- 参考文件：src/foo.ts');
+    expect(block).toContain('- 参考目录：src/utils（内容按需经 read_file 读取）');
   });
 
   it('无前缀消息原样返回（resume 补写 / 无上下文场景）', () => {

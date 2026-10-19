@@ -108,6 +108,36 @@ describe('文件级按钮 ↔ package.json#menus.editor/title', () => {
 });
 
 /**
+ * explorer/context 菜单 `when` 守卫（随 addToChat / registerWork 收口新增，2026-10-19）
+ *
+ * 两个根因错位（均无类型系统可拦，只能靠对拍钉死）：
+ *   ① `memora.registerWork` 是文件专用命令（`readFile` 对目录抛 EISDIR，被 try/catch 吞成
+ *      含糊「登记失败：<errno>」）——其 `when` **必须**含 `!explorerResourceIsFolder`，否则
+ *      文件夹右键会暴露该入口、运行时才失败（契约错位型 latent bug，已实锤并修）。
+ *   ② `memora.addToChat` 设计面**同时支持**文件与目录（仅挂引用、不注入内容），
+ *      其 `when` **不得**含 `!explorerResourceIsFolder`——否则目录引用入口被误删。
+ *  两条断言互为镜像：任一命令 `when` 写反都会红，把「准入判据 ↔ 命令契约」钉死。
+ */
+describe('explorer/context 菜单 when ↔ 命令契约（文件/目录准入）', () => {
+  const explorerContext = pkg.contributes?.menus?.['explorer/context'] ?? [];
+
+  const findWhen = (command: string): string | undefined =>
+    explorerContext.find((entry) => entry.command === command)?.when;
+
+  it('memora.registerWork 仅对文件出现，when 必须排除文件夹（否则目录右键暴露入口→运行时失败）', () => {
+    const when = findWhen('memora.registerWork');
+    expect(when).toBeDefined();
+    expect(when).toContain('!explorerResourceIsFolder');
+  });
+
+  it('memora.addToChat 同时支持文件与目录，when 不得排除文件夹（否则目录引用入口被误删）', () => {
+    const when = findWhen('memora.addToChat');
+    expect(when).toBeDefined();
+    expect(when).not.toContain('!explorerResourceIsFolder');
+  });
+});
+
+/**
  * keybindings 声明面守卫（HOST-KB-1 随批新增）
  *
  * 键位是用户可见契约，两条漏声明型漂移同样静默：绑定到未贡献/未注册的命令

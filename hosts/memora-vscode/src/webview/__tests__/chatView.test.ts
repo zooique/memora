@@ -9162,6 +9162,77 @@ describe('技能启停：对话区（用户通道）显式标注（SKILL-S2）',
 });
 
 // ═══════════════════════════════════════════════════════════
+// 右键「添加到对话」：输入盒上方引用气泡（file/folder 二态 · 去重 · 发送即清空）
+// 与技能 chip 同构复用 .skill-chip* 样式；SSOT = currentRefs 数组（addRefs 合并去重、渲染唯一）。
+// ═══════════════════════════════════════════════════════════
+describe('添加到对话：引用气泡（file/folder · 去重 · 发送清空）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('addRef(file) → 输入盒上方出现引用气泡（路径可辨 + × 移除）', () => {
+    mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    const chips = document.querySelectorAll('#refChips .skill-chip');
+    expect(chips.length).toBe(1);
+    expect(chips[0].querySelector('.skill-chip__name')?.textContent).toBe('src/foo.ts');
+    expect(chips[0].querySelector('.skill-chip__remove')).not.toBeNull();
+  });
+
+  it('addRef(folder) → 同样渲染气泡（file/folder 二态共用样式）', () => {
+    mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'src/utils', kind: 'folder' }] });
+    const chips = document.querySelectorAll('#refChips .skill-chip');
+    expect(chips.length).toBe(1);
+    expect(chips[0].querySelector('.skill-chip__name')?.textContent).toBe('src/utils');
+  });
+
+  it('同一 path 重复 addRef 只留一个气泡（去重，SSOT = currentRefs）', () => {
+    mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(1);
+  });
+
+  it('× 移除 → 气泡消失且 refChips 收起 hidden', () => {
+    mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    const chip = document.querySelector('#refChips .skill-chip') as HTMLElement;
+    (chip.querySelector('.skill-chip__remove') as HTMLElement).click();
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(0);
+    expect(document.getElementById('refChips')?.hasAttribute('hidden')).toBe(true);
+  });
+
+  it('发送时引用随 input 带走，且发送后气泡清空（一次性挂载，不泄漏后续消息）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const send = document.getElementById('send') as HTMLButtonElement;
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    input.value = '讲讲这个文件';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    send.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'send',
+      text: '讲讲这个文件',
+      refs: [{ path: 'src/foo.ts', kind: 'file' }],
+    });
+    // 发送后清空：无残留气泡
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(0);
+  });
+
+  it('无引用时发送载荷不含 refs 字段（向后兼容，不污染纯文本消息）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const send = document.getElementById('send') as HTMLButtonElement;
+    input.value = '普通提问';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    send.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'send', text: '普通提问' });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
 // 技能菜单顶部搜索（名称 + 描述过滤 · 重建保词 · 硬约束）
 // ═══════════════════════════════════════════════════════════
 // 判据：搜索框常驻菜单顶部（元素单例，skills_loaded 全量重建时重插且保词——

@@ -154,6 +154,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 附件行（选择态行）：输入盒内、文字上方展示当前已选 Skill（名称 + × 可移除）
   const skillChipRow = document.getElementById('skillChips') as HTMLElement | null;
   let currentSkill: { name: string; disabled?: boolean } | null = null;
+  // 引用行（右键「添加到对话」挂的文件/目录，与 skillChipRow 同构复用样式；file/folder 二态）
+  const refChipRow = document.getElementById('refChips') as HTMLElement | null;
+  let currentRefs: { path: string; kind: 'file' | 'folder' }[] = [];
   // 活动状态条（瞬态单条：error/info 通知，info 2500ms / error 8000ms 自动撤）
   const activityBar = document.getElementById('activityBar') as HTMLElement;
   // 状态抽屉（C1，2026-10-05）：静态骨架，入口 chip + 下拉体 panel（内含控件段 controls
@@ -5982,6 +5985,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       autoResize();
       syncSendEnabled(); // 程序化预填不触发 input 事件，须手动同步可用性
       syncButtonSemantics(); // 程序化预填同理不触发 input 事件，须同步按钮语义（标题随相位+输入重算），避免窗口期文案过期
+    } else if (msg.type === 'addRef') {
+      // 右键「添加到对话」：接收宿主推送的文件/目录引用，挂到输入盒上方气泡行
+      addRefs(msg.refs);
     } else if (msg.type === 'plan_update') {
       // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（renderPlanBoard 自建/更新容器）
       renderPlanBoard(msg.items);
@@ -6439,8 +6445,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       kind: 'send' as const,
       text,
       ...(currentSkill ? { skillName: currentSkill.name } : {}),
+      ...(currentRefs.length
+        ? { refs: currentRefs.map((r) => ({ path: r.path, kind: r.kind })) }
+        : {}),
     };
     vscode.postMessage(payload);
+    // 引用为「下一轮上下文」一次性挂载：发送后即消费清除，避免静默带入后续无关消息
+    currentRefs = [];
+    renderRefChips();
   }
   // 发送按钮：空闲点击 = 发送；生成中点击 = 停止（按钮已切换为停止方块，
   // mvp-scope 打断能力）；暂停中点击 = 继续（恢复 Agent 执行）。
@@ -6867,6 +6879,57 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     });
     chip.appendChild(remove);
     skillChipRow.appendChild(chip);
+  }
+
+  /** 接收宿主推送的引用（右键「添加到对话」）：合并去重后渲染气泡行。
+   * SSOT = currentRefs 数组；同一 path 不重复挂（多次右键同一文件只留一个气泡）。 */
+  function addRefs(refs: { path: string; kind: 'file' | 'folder' }[]): void {
+    const seen = new Set(currentRefs.map((r) => r.path));
+    for (const r of refs) {
+      if (!seen.has(r.path)) {
+        currentRefs.push({ path: r.path, kind: r.kind });
+        seen.add(r.path);
+      }
+    }
+    renderRefChips();
+  }
+
+  /** 在输入盒内、textarea 上方构建/清空「路径 + × 可移除」的引用 chip（附件行成员）。
+   * 与技能 chip 同构复用 .skill-chip* 样式；file/folder 二态仅图标与 title 区分，不造新 CSS 范式。
+   * × 点击移除 = 从 currentRefs 过滤并刷新（单一真理源，渲染路径唯一）。 */
+  function renderRefChips(): void {
+    if (!refChipRow) return;
+    refChipRow.textContent = '';
+    if (currentRefs.length === 0) {
+      refChipRow.hidden = true;
+      return;
+    }
+    refChipRow.hidden = false;
+    for (const ref of currentRefs) {
+      const chip = document.createElement('span');
+      chip.className = 'skill-chip';
+      const icon = document.createElement('span');
+      icon.className = 'skill-chip__icon';
+      icon.innerHTML = getIconSvg(ref.kind === 'folder' ? 'folder' : 'file', 11, 11);
+      icon.setAttribute('aria-hidden', 'true');
+      chip.appendChild(icon);
+      const name = document.createElement('span');
+      name.className = 'skill-chip__name';
+      name.textContent = ref.path;
+      chip.appendChild(name);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'skill-chip__remove';
+      remove.innerHTML = getIconSvg('close', 11, 11);
+      remove.setAttribute('title', `移除引用：${ref.path}`);
+      remove.setAttribute('aria-label', `移除引用：${ref.path}`);
+      remove.addEventListener('click', () => {
+        currentRefs = currentRefs.filter((r) => r.path !== ref.path);
+        renderRefChips();
+      });
+      chip.appendChild(remove);
+      refChipRow.appendChild(chip);
+    }
   }
 
   /** 润色按钮事件绑定：对输入框内容进行润色（图标按钮，无文本） */

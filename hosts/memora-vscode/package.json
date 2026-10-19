@@ -82,6 +82,11 @@
         "icon": "$(file-text)"
       },
       {
+        "command": "memora.addToChat",
+        "title": "Memora: 添加到对话",
+        "icon": "$(references)"
+      },
+      {
         "command": "memora.reviewFileChanges",
         "title": "Memora: 查看文件改动",
         "icon": "$(diff)"
@@ -231,12 +236,21 @@
     "menus": {
       "explorer/context": [
         {
-          "command": "memora.registerWork",
+          "command": "memora.addToChat",
           "when": "!explorerResourceIsRoot",
+          "group": "navigation@8"
+        },
+        {
+          "command": "memora.registerWork",
+          "when": "!explorerResourceIsRoot && !explorerResourceIsFolder",
           "group": "navigation@9"
         }
       ],
       "editor/context": [
+        {
+          "command": "memora.addToChat",
+          "group": "navigation@8"
+        },
         {
           "command": "memora.registerWork",
           "group": "navigation@9"

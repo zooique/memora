@@ -789,6 +789,34 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
   );
+
+  // 命令：添加到对话（右键文件/目录 → 把引用挂到对话输入盒上方气泡，发送时随消息带走；
+  // 仅挂路径与形态，不注入内容——内容由模型按需经 read_file 读取，贴合 token 预算哲学）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.addToChat', async (uri) => {
+      // 仅支持从右键菜单触发（必须带 uri 参数）；Explorer 多选返回 uri 数组
+      const uris = Array.isArray(uri) ? uri : uri ? [uri] : [];
+      if (uris.length === 0) {
+        vscode.window.showWarningMessage('请在文件或目录上右键，选择「Memora: 添加到对话」');
+        return;
+      }
+      // 逐个判定 file/folder（stat type），算相对路径；stat 失败（如已删除）按 file 兜底
+      const refs: { path: string; kind: 'file' | 'folder' }[] = [];
+      for (const u of uris) {
+        let kind: 'file' | 'folder' = 'file';
+        try {
+          const stat = await vscode.workspace.fs.stat(u);
+          if (stat.type === vscode.FileType.Directory) kind = 'folder';
+        } catch {
+          // 保持 file 兜底（相对路径仍可用）
+        }
+        refs.push({ path: vscode.workspace.asRelativePath(u), kind });
+      }
+      // 先确保对话面板可见（未聚焦时 pushRefs 缓冲到 ready 后补发，与 prefillInput 同构）
+      await vscode.commands.executeCommand('memora.chat.focus');
+      chatProvider.pushRefs(refs);
+    }),
+  );
   // 会话管理入口在 webview 标题条：
   //   - 新建会话「＋」/ 历史记录（模态浮层）/ 改名笔 均由 webview 内按钮触发（W→E 消息）
   // 故 memora.clearChat / memora.switchSession 两命令不注册（「清空对话」由「删除会话记录」

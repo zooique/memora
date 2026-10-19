@@ -1,5 +1,7 @@
+import type { ChatRef } from '../../shared/protocol.js';
+
 /**
- * 对话上下文信封 — 宿主注入的上下文块（技能块 / 文档块）的构造与剥离
+ * 对话上下文信封 — 宿主注入的上下文块（技能块 / 文档块 / 引用块）的构造与剥离
  *
  * 说明：宿主在 handleSend 将「选中技能正文」与「当前打磨文档」作为上下文注入 chat
  * 输入，内核 appendUser 持久化的 user 消息因此带信封前缀。回放历史时应剥离全部注入
@@ -15,6 +17,33 @@ export const DOC_CONTEXT_OPEN = '[当前打磨文档内容]';
 
 /** 文档上下文块闭标签（剥离侧的锚点） */
 export const DOC_CONTEXT_CLOSE = '[/当前打磨文档内容]';
+
+/**
+ * 引用上下文块开标签（右键「添加到对话」挂的文件/目录引用，仅路径、不注入内容）
+ *
+ * 与技能块/文档块同构进入信封：无块消息不含分隔符、回放侧以分隔符为界还原用户请求。
+ * 剥离判据（stripInjectedContextPrefix）须识别本开标签，否则仅挂引用时回放会把
+ * 引用块残留在用户消息里。
+ */
+export const REF_CONTEXT_OPEN = '[参考文件/目录]';
+
+/** 引用上下文块闭标签 */
+export const REF_CONTEXT_CLOSE = '[/参考文件/目录]';
+
+/**
+ * 构造引用上下文块（仅挂引用，不注入文件内容——内容由模型按需经 read_file 读取，
+ * 贴合 token 预算哲学；目录显式标注「按需读取」避免模型误以为全文已在上下文）。
+ */
+export function buildRefContextBlock(refs: readonly ChatRef[]): string {
+  const items = refs
+    .map((r) =>
+      r.kind === 'folder'
+        ? `- 参考目录：${r.path}（内容按需经 read_file 读取）`
+        : `- 参考文件：${r.path}`,
+    )
+    .join('\n');
+  return `${REF_CONTEXT_OPEN}\n${items}\n${REF_CONTEXT_CLOSE}`;
+}
 
 /**
  * 技能上下文块开标签
@@ -79,7 +108,8 @@ export function buildInjectedContextEnvelope(
 export function stripInjectedContextPrefix(content: string): string {
   const openIdx = content.indexOf(DOC_CONTEXT_OPEN);
   // 判据 1：无宿主注入块 → 普通消息（resume 补写 / 无上下文），原样返回
-  if (openIdx < 0 && !content.startsWith(SKILL_CONTEXT_OPEN)) return content;
+  if (openIdx < 0 && !content.startsWith(SKILL_CONTEXT_OPEN) && !content.includes(REF_CONTEXT_OPEN))
+    return content;
 
   let from = 0;
   if (openIdx >= 0) {
