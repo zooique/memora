@@ -846,7 +846,7 @@
     <ul class="tensions">
       <li><b>单杠杆是单瓶颈。</b>库小无差；库大后「最近被命中」会经 LLM 的「最近使用优先」判断间接垄断召回面——accessedAt 既是唯一事实源，也是唯一失效模式，没有第二杠杆兜底。无衰减哲学在此付出代价。</li>
       <li><b>确定性链很强，但中间地带全交给 LLM 的一次判断。</b>指纹只防铁重复；近似取代是确定性算法（稳）；但「本轮值不值得记」（态② null）是 LLM 一次性判断——误杀无补救链（原料还在、可溯源，但没有重试机制）。摘要质量 = 记忆质量，单点风险在 LLM 状态。</li>
-      <li><b>门面空转是双刃。</b>GOVERNANCE_SOURCES 为空让生产链路干净（无 LLM 误判风险），但「冲突检测」停在能力层——一旦未来真有第二写入源（如宿主主动记忆、MCP 外部 source），这套空转门面是即用资产还是腐烂代码，取决于有没有人接着建。建议：要么明确「多 source 治理」的启用路线图，要么在文档明标「预留位，勿当已交付能力引用」。</li>
+      <li><b>门面空转是双刃。</b>GOVERNANCE_SOURCES 为空让生产链路干净（无 LLM 误判风险），但「冲突检测」停在能力层——一旦未来真有第二写入源（如宿主主动记忆、MCP 外部 source），这套空转门面是即用资产还是腐烂代码，取决于有没有人接着建。建议：要么明确「多 source 治理」的启用路线图，要么在文档明标「预留位，勿当已交付能力引用」。<b>2026-10-18 处置：按后者判定并物理删除</b>（GOVERNANCE-SRC-1）——空转门面被认定为腐烂代码而非即用资产；将来若真出现第二写入源，须重新立项，不得以「旧门面还在」为由复活。</li>
     </ul>
     <p style="color:var(--text-muted);margin-bottom:0">另注：取代检测不按 summaryType 前置过滤是<b>已知取舍</b>（跨类型可能误取代），升级条件已写在源码注释里——属于「有退出条件的取舍」，不计入张力。</p>
   </section>
@@ -859,15 +859,17 @@
         <tr><th style="width:300px">文件</th><th>职责</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>src/agent/managers/roundSummaryGenerator.ts</code></td><td>写入三态门 + 原料指纹 + 写路径取代检测（:1-313）</td></tr>
-        <tr><td><code>src/agent/managers/memoryInspector.ts</code></td><td>记忆读写入口 + searchByKeyword 唯一召回入口 + 快照 + 软删/恢复/清理（:1-327）</td></tr>
-        <tr><td><code>src/agent/builtinToolHandlers.ts</code></td><td>search_memories 工具层：near 模式、5s 超时降级、命中 touch、memoryRecalled 事件（:1120-1165）</td></tr>
-        <tr><td><code>src/memory/governance.ts</code></td><td>治理常量与哲学原文（排序单归语义分 / 无衰减 / GOVERNANCE_SOURCES）</td></tr>
+        <tr><td><code>src/agent/managers/roundSummaryGenerator.ts</code></td><td>写入三态门 + 原料指纹 + 写路径取代检测</td></tr>
+        <tr><td><code>src/agent/managers/memoryInspector.ts</code></td><td>记忆读写入口 + searchByKeyword 唯一召回入口 + 快照 + 软删/恢复/清理</td></tr>
+        <tr><td><code>src/agent/builtinToolHandlers.ts</code></td><td>search_memories 工具层：near 模式、5s 超时降级、命中 touch、memoryRecalled 事件</td></tr>
         <tr><td><code>src/memory/types.ts</code></td><td>Memory 基元 + 规范 id 构造 + parseMemory 白名单 + source 标签约定</td></tr>
         <tr><td><code>src/memory/keywordsTouch.ts</code></td><td>分词 SSOT + touchScores（命中只刷 accessedAt，唯一写位）</td></tr>
-        <tr><td><code>src/agent/managers/memoryGovernance.ts · dedupManager.ts</code></td><td>LLM 语义治理门面（生产空转，测试可注入治理源）</td></tr>
       </tbody>
     </table>
+    <div class="callout note">
+      <span class="tag">已删除文件</span>
+      <p style="margin:0"><code>src/memory/governance.ts</code> 与 <code>src/agent/managers/memoryGovernance.ts</code> · <code>dedupManager.ts</code>（连同 <code>memoryAdvisor.ts</code>）已于 2026-10-18 随 GOVERNANCE-SRC-1 物理删除，不再列入索引；前者承载的哲学原文见 <a href="#s5" style="color:var(--accent)">§5 引文</a>，后一组是已退役的空转门面。<b>本表只承诺「文件 → 职责」，不钉行号</b>——行号随代码移动必然腐化，旧版 <code>:1-313</code> / <code>:1-327</code> / <code>:1120-1165</code> 已实测漂移。</p>
+    </div>
     <div class="callout note">
       <span class="tag">导读边界</span>
       <p style="margin:0">本文只画治理层骨架。更深的问题在真源里：召回设计的完整论证（memory-tool-recall-design.md 47KB）、时效定案（memory-recall-recency-design.md）、A/B benchmark（memory-tool-recall-ab-benchmark.md）、角色边界纪律（memory-role-pack-boundary.md）。本文与源码冲突时，<b>以源码为准</b>；本文与 markdown 真源冲突时，以真源为准。</p>

@@ -542,6 +542,51 @@ describe('assembleComponents', () => {
     });
   });
 
+  // ─── search_memories 证据留痕接线（MEM-EVENT-3 装配级契约） ───
+
+  describe('search_memories 证据留痕接线', () => {
+    it('toolExec 命中 → loop.recordMemoryHitsEvidence → appendRoundEvidence（摘线即红）', async () => {
+      // 缺陷形态：recordMemoryHitsEvidence 自身单测全绿，但装配层 setOnMemoryRecalled 漏接
+      // → 事件照发、证据归零，重放历史轮仍看不到命中明细（MEM-EVENT-3 真正会复发的回归面）。
+      // 与上方 web_search 接线测试同范式：走真实 toolExec.execute 触发回调，验证证据直达 loop。
+      const memory: Memory = {
+        id: 'round-summary:sess-a:r1',
+        content: 'memora 架构：turn 包 loop 包 step',
+        source: 'round-summary',
+        name: '2026-10-19-sess-a',
+        createdAt: '2026-10-19T00:00:00.000Z',
+        accessedAt: '2026-10-19T00:00:00.000Z',
+      };
+      storage.upsert(memory);
+
+      const output = await assembleComponents(createPctx(), createInput());
+
+      // 替换装配侧 sink：只验证接线两端——观察者在位 + 证据构造正确
+      // （sink 归属 history.appendEvidence 的既有行为由 roundEvidence 测试覆盖）
+      const evidence: RoundEvidenceEvent[] = [];
+      output.loop.appendRoundEvidence = (ev) => evidence.push(ev);
+
+      await output.toolExec.execute(
+        'search_memories',
+        JSON.stringify({ query: 'memora 架构' }),
+        undefined,
+        undefined,
+        'call-mem-integration',
+      );
+
+      expect(evidence).toHaveLength(1);
+      expect(evidence[0]).toMatchObject({
+        type: 'memory_hits',
+        payload: {
+          toolCallId: 'call-mem-integration',
+          query: 'memora 架构',
+          count: 1,
+          hits: [{ id: 'round-summary:sess-a:r1', source: 'round-summary' }],
+        },
+      });
+    });
+  });
+
   // ─── task_table_update 全链寻址（防 mock 盲区）────────────────
 
   describe('task_table_update 全链寻址：短 id → 真实 sessionManager 命中', () => {
