@@ -502,6 +502,21 @@
 - **边界（刻意不含）**：宿主接入（vscode 装配切换 / 一次性迁移 / memora-mcp 只读连接）属「宿主接入」切片，等触发；
   本次不含 **JSON 装载层下沉**（债务由迁移完成自然归零）；`IMemoryStorage` 接口 15 方法**零改动**。
 
+### Added（内核 · `Round.evidence` 新增 `memory_hits` 变体 · `MEM-EVENT-3` · 2026-10-19）
+
+- **缺口（真机二轮）**：`memoryRecalled` 是**实时专属**事件（不进 processEvents）⇒ 宿主重放历史轮
+  时无数据源，命中明细整块消失，只剩 `tool_result.summary` 的 100 字截断副本。用户回看时
+  「这轮参考了哪几条记忆」不可考。
+- **修法（复用既有证据轨，不造第二观测通道）**：`RoundEvidenceEvent` 新增变体
+  `memory_hits`（`{ toolCallId?, query, count, hits[] }`），与 `web_search_result` 同一条通道、
+  同一处置——**实时面走事件（即时可见）、落盘面走证据（可回看）**。
+- `AgentLoop.recordMemoryHitsEvidence`：唯一写点，`ts` / `meetingRound` 由 loop 构造（与其余四个
+  证据写点同构）；`toolCallId` 可选透传（缺省不带键）；**无命中不落盘**——内核本就只在有命中时
+  发射 `memoryRecalled`，证据轨不为「查了但没查到」另造路径。
+- 驱动方 = 装配层同一处 `setOnMemoryRecalled` 接线：`hooks.emit(...)` 与 `loop.record…(...)`
+  在同一回调内（同源一次触发，不同消费面）。宿主侧零加工，读 `RoundView.evidence` 即可。
+- 守卫：3 例（三字段透传 + ts/meetingRound 归 loop / 空明细不落 / 缺 ID 不带键）。
+
 ### Added（内核 · `memoryRecalled` 载荷补 `toolCallId` 配对键 · `MEM-EVENT-2` · 2026-10-19）
 
 - `memoryRecalled` 新增**可选**字段 `toolCallId`：值 = 发起本次召回的那次 tool_call 的唯一 ID，
@@ -1250,6 +1265,31 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 ## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
+
+### Fixed（宿主 · 重渲染丢记忆明细且只剩 100 字截断副本 · `MEM-EVENT-3` · 2026-10-19）
+
+- **现象（真机二轮）**：实时态已正常（明细在工具行内），但**会话重渲染后明细整块消失**，
+  工具行只剩 `tool_result.summary` 的半句截断文本（`… round-1790724953745] (a`）——用户既看
+  不到「命中了哪几条」，连那半句也没法展开。
+- **根因（数据源缺失，非渲染 bug）**：`memoryRecalled` 是**实时专属**事件（不进 `processEvents`），
+  重放历史轮时宿主手上没有任何命中数据；而 `summary` 是 `loop.ts` 的 `result.slice(0, 100)`
+  产物 —— **截断副本顶替了结构化明细**，两件事互相掩盖。
+- **修法（复用既有证据轨）**：读 `Round.evidence` 的 `memory_hits` 变体（内核 `MEM-EVENT-3`
+  同步落地），`buildMemoryHitsEvidenceResolver` 把证据重建为 `Map<toolCallId, Map<id, entry>>`；
+  `renderRoundBlock` **单点裁决 `live ?? evidence`**——实时模型更新（含本轮删除反馈），
+  缺实时才回退证据，**不按事件源分叉渲染**。
+- **截断副本退位**：有结构化命中块时不出 `summary`（`renderToolRow` / `updateToolRowState` /
+  `attachMemoryHitsToToolRow` 三处同口径）；命中晚到时摘掉已渲染的 summary。
+- **中断轮一并补齐**：`renderInterruptedRound` 新增 `evidence` 形参并透传 `r.evidence` ——
+  原签名无此参，与 done 轮同缺口，只修 done 轮会留一半。
+- **边界（诚实降级）**：无 `toolCallId` 的老证据跳过（无法定位归属）；无证据（4.0.x 内核 /
+  未落盘）仍退回轮次兜底行 + summary，**不静默丢信息**。
+- **守卫**：webview 5 例（重放重建+摘要不出现 / 无证据降级 / 缺 `toolCallId` 跳过 / 多证据
+  合并去重 / 中断轮重建）+「降级路径②」强化为带 evidence 的双写红线（`.round-block__memory-hits`
+  为 null 且 `[data-memory-id="m1"]` 恰 1 个）；内核 3 例。
+- **变异实证（3 次，均转红后还原）**：① 拆掉证据回退 → 重放用例红；② 把置空认领改回删键 →
+  双写用例红（删键会让 `live ?? evidence` 落到证据上，工具块与轮次行各写一份）；③ 摘掉
+  `attachMemoryHitsToToolRow` 的 summary 移除 → 截断副本复发。
 
 ### Fixed（宿主 · 记忆命中明细沉底遮挡运行时状态 → 收进对应工具折叠行 · `MEM-EVENT-2` · 2026-10-19）
 

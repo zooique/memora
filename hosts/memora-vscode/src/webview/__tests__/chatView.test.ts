@@ -10458,10 +10458,26 @@ describe('记忆命中明细（HOST-S3-1 · MEM-EVENT-2 落位）', () => {
     beginRoundWithBody(); // 只有正文块，工具行还没到（时序竞态）
     dispatchHits([{ id: 'm1', name: 'A', source: 'note' }], undefined, 't1');
     expect(document.querySelector('.memory-hits__label')?.textContent).toBe('本轮参考了 1 条记忆');
-    // 行的缺失属时序，不改变归属决策：数据已从 byCall 撤出 →
-    // 随后工具行出现并收场重建，也不会在工具行里二次挂载（防「同一批命中两处同现」）
+    // 行的缺失属时序，不改变归属决策：该 callId 在实时模型里**置空认领**（不删键）→
+    // 收场重建的 `live ?? evidence` 取到空表而非证据副本，故不会再往工具行里挂一遍。
     beginToolCall('t1', 3);
-    dispatch({ type: 'done' });
+    dispatch({
+      type: 'done',
+      // 证据副本照实带上（内核会为同一次命中落盘）——双写防线正是在「live 置空 vs evidence 有货」时生效
+      evidence: [
+        {
+          type: 'memory_hits',
+          ts: 't9',
+          meetingRound: false,
+          payload: {
+            toolCallId: 't1',
+            query: 'x',
+            count: 1,
+            hits: [{ id: 'm1', name: 'A', source: 'note' }],
+          },
+        },
+      ],
+    });
     expect(document.querySelector('.round-block__memory-hits')).toBeNull();
     expect(document.querySelectorAll('[data-memory-id="m1"]')).toHaveLength(1);
   });
@@ -10509,9 +10525,7 @@ describe('记忆命中明细（HOST-S3-1 · MEM-EVENT-2 落位）', () => {
     const boxes = document.querySelectorAll('.round-block__memory-hits');
     expect(boxes).toHaveLength(2);
     expect(boxes[1]!.querySelectorAll('.memory-hits__item')).toHaveLength(1);
-    expect(boxes[1]!.querySelector('[data-memory-id]')?.getAttribute('data-memory-id')).toBe(
-      'm2',
-    );
+    expect(boxes[1]!.querySelector('[data-memory-id]')?.getAttribute('data-memory-id')).toBe('m2');
   });
 });
 
@@ -10631,6 +10645,201 @@ describe('记忆反馈通道（HOST-S3-3）', () => {
     dispatch({ type: 'memory_deleted', ok: true, id: 'm2' });
     expect(document.querySelector('.round-block__memory-hits')).toBeNull();
     expect(document.querySelector('.round-block__memory-badge')).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// 记忆命中明细重放（MEM-EVENT-3）：memoryRecalled 是实时专属事件，重放无数据源 →
+// 明细整块消失，只剩 tool_result.summary 的 100 字截断副本（真机「重新渲染后无法完成查看」）。
+// 修法 = 内核同一次发射同时落 Round.evidence 的 memory_hits 变体，重放据此重建。
+// 变异锁：删 buildMemoryHitsEvidenceResolver → ①③ 红；删摘要抑制 → ② 红。
+describe('记忆命中明细重放（MEM-EVENT-3 · evidence 轨重建）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** search_memories 工具行事件（args + 100 字截断 summary，与内核 loop 同形） */
+  function memEvents(toolCallId: string, summary: string, seq = 2): unknown[] {
+    return [
+      {
+        type: 'tool_start',
+        seq,
+        ts: `t${seq}`,
+        payload: { toolCallId, name: 'search_memories', args: '{"query":"项目 小说 创作"}' },
+      },
+      {
+        type: 'tool_result',
+        seq: seq + 1,
+        ts: `t${seq + 1}`,
+        payload: { toolCallId, name: 'search_memories', ok: true, summary },
+      },
+    ];
+  }
+
+  const TRUNCATED =
+    '搜索 "项目 小说 创作" 找到 8 条（match 模式）：\n1. [round-summary:轮次摘要 2026-09-30-smunbdxhj round-1790724953745] (a';
+
+  it('重放带 memory_hits 证据 → 工具行重建明细块 + 徽章，截断摘要不再出现', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'round-mem',
+        user: { content: '用记忆回答', ts: 't1' },
+        assistantMessage: { content: '好的', ts: 't9' },
+        processEvents: memEvents('c1', TRUNCATED),
+        evidence: [
+          {
+            type: 'memory_hits',
+            ts: 't3',
+            meetingRound: false,
+            payload: {
+              toolCallId: 'c1',
+              query: '项目 小说 创作',
+              count: 2,
+              hits: [
+                { id: 'content:a', name: '写作偏好', source: 'preference' },
+                { id: 'round-summary:b', name: '轮次摘要', source: 'round-summary' },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+    const row = document.querySelector<HTMLElement>('.round-block__tool[data-tool-call-id="c1"]');
+    expect(row).not.toBeNull();
+    const box = row!.querySelector<HTMLElement>('.round-block__memory-hits');
+    expect(box).not.toBeNull();
+    expect(box!.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 2 条记忆');
+    expect(box!.querySelectorAll('.memory-hits__item')).toHaveLength(2);
+    expect(row!.querySelector('.round-block__memory-badge')?.textContent).toBe('记忆 2');
+    // 100 字截断副本与结构化明细同源 → 有块即不出摘要（否则用户看到半句 `(a`）
+    expect(row!.querySelector('.round-block__tool-summary')).toBeNull();
+    // 重放行同样可反馈（data-memory-id 是寻址键，与实时行同构）
+    expect(box!.querySelector('[data-memory-id]')?.getAttribute('data-memory-id')).toBe(
+      'content:a',
+    );
+  });
+
+  it('重放无 memory_hits 证据（旧轮次 / 老内核）→ 不出明细块，保留原摘要（诚实降级）', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'round-old',
+        user: { content: '旧轮', ts: 't1' },
+        assistantMessage: { content: '好', ts: 't9' },
+        processEvents: memEvents('c1', TRUNCATED),
+      }),
+    );
+    const row = document.querySelector<HTMLElement>('.round-block__tool[data-tool-call-id="c1"]');
+    expect(row).not.toBeNull();
+    expect(row!.querySelector('.round-block__memory-hits')).toBeNull();
+    expect(row!.querySelector('.round-block__memory-badge')).toBeNull();
+    // 无结构化源时摘要仍是唯一结果面——不得一并抹掉
+    expect(row!.querySelector('.round-block__tool-summary')?.textContent).toContain('找到 8 条');
+  });
+
+  it('证据缺 toolCallId（不可达形态：hits 与 toolCallId 同批引入）→ 跳过，不猜配对', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'round-nokey',
+        user: { content: '无键', ts: 't1' },
+        assistantMessage: { content: '好', ts: 't9' },
+        processEvents: memEvents('c1', TRUNCATED),
+        evidence: [
+          {
+            type: 'memory_hits',
+            ts: 't3',
+            meetingRound: false,
+            payload: {
+              query: '项目 小说 创作',
+              count: 1,
+              hits: [{ id: 'content:a', name: '写作偏好', source: 'preference' }],
+            },
+          },
+        ],
+      }),
+    );
+    const row = document.querySelector<HTMLElement>('.round-block__tool[data-tool-call-id="c1"]');
+    // 不按「本轮只有一个 search_memories 行」之类启发式硬配（那是第二套判据）
+    expect(row!.querySelector('.round-block__memory-hits')).toBeNull();
+  });
+
+  it('同一 toolCallId 的多条证据按到达序合并，同 id 以首次为准（与实时侧去重同口径）', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'round-merge',
+        user: { content: '两次', ts: 't1' },
+        assistantMessage: { content: '好', ts: 't9' },
+        processEvents: memEvents('c1', TRUNCATED),
+        evidence: [
+          {
+            type: 'memory_hits',
+            ts: 't3',
+            meetingRound: false,
+            payload: {
+              toolCallId: 'c1',
+              query: 'q',
+              count: 1,
+              hits: [{ id: 'm1', name: '首次名', source: 'note' }],
+            },
+          },
+          {
+            type: 'memory_hits',
+            ts: 't4',
+            meetingRound: false,
+            payload: {
+              toolCallId: 'c1',
+              query: 'q',
+              count: 2,
+              hits: [
+                { id: 'm1', name: '二次名', source: 'note' },
+                { id: 'm2', name: 'B', source: 'round-summary' },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+    const box = document.querySelector<HTMLElement>('.round-block__memory-hits');
+    expect(box).not.toBeNull();
+    // 两批合并去重后 2 条；m1 保留首次的名字
+    expect(box!.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 2 条记忆');
+    const items = box!.querySelectorAll('.memory-hits__item');
+    expect(items).toHaveLength(2);
+    expect(items[0]!.textContent).toContain('首次名');
+  });
+
+  it('中断轮重放同样带证据重建（与 done 轮同一缺口，一并补齐）', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'round-int',
+        status: 'interrupted',
+        user: { content: '被打断', ts: 't1' },
+        processEvents: memEvents('c1', TRUNCATED),
+        evidence: [
+          {
+            type: 'memory_hits',
+            ts: 't3',
+            meetingRound: false,
+            payload: {
+              toolCallId: 'c1',
+              query: 'q',
+              count: 1,
+              hits: [{ id: 'm1', name: 'A', source: 'note' }],
+            },
+          },
+        ],
+      }),
+    );
+    const box = document.querySelector<HTMLElement>('.round-block__memory-hits');
+    expect(box).not.toBeNull();
+    expect(box!.querySelectorAll('.memory-hits__item')).toHaveLength(1);
   });
 });
 

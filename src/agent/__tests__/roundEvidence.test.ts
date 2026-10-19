@@ -259,4 +259,79 @@ describe('AgentLoop · 裁决证据写点', () => {
     // toolCallId 缺省 = 调用方未透传（旧轮/纯单测）→ 证据不带 ID，宿主回退 query 启发式（保不带伤）
     expect(payload?.toolCallId).toBeUndefined();
   });
+
+  it('记忆命中留痕：recordMemoryHitsEvidence 产 memory_hits 证据（重放可重建的落盘副本，MEM-EVENT-3）', () => {
+    const collected: RoundEvidenceEvent[] = [];
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([[]]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('ok'),
+    });
+    loop.appendRoundEvidence = (ev) => collected.push(ev);
+    loop.getActivePlanItemMeta = () => ({ planItemId: 's1', title: '写作', rolePack: 'pack-a' });
+
+    loop.recordMemoryHitsEvidence({
+      toolCallId: 'call-mem-1',
+      query: '项目 小说 创作',
+      count: 2,
+      hits: [
+        { id: 'content:a', name: '写作偏好', source: 'preference' },
+        { id: 'round-summary:b', name: '轮次摘要', source: 'round-summary' },
+      ],
+    });
+
+    expect(collected).toHaveLength(1);
+    expect(collected[0]).toMatchObject({
+      type: 'memory_hits',
+      // ts/meetingRound 由 loop 构造（与其余四个证据写点同构：透传方只给执行事实）
+      meetingRound: true,
+      payload: {
+        toolCallId: 'call-mem-1',
+        query: '项目 小说 创作',
+        count: 2,
+        hits: [
+          { id: 'content:a', name: '写作偏好', source: 'preference' },
+          { id: 'round-summary:b', name: '轮次摘要', source: 'round-summary' },
+        ],
+      },
+    });
+    expect(collected[0]?.ts).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('记忆命中留痕：无明细 / 空明细不落证据（不为「查了但没查到」造第二条路径）', () => {
+    const collected: RoundEvidenceEvent[] = [];
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([[]]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('ok'),
+    });
+    loop.appendRoundEvidence = (ev) => collected.push(ev);
+
+    // 4.0.x 形态载荷（无 hits 字段）+ 空数组两种「无明细」形态
+    loop.recordMemoryHitsEvidence({ query: 'x', count: 3 });
+    loop.recordMemoryHitsEvidence({ query: 'y', count: 0, hits: [] });
+
+    expect(collected).toEqual([]);
+  });
+
+  it('记忆命中留痕：toolCallId 缺省 → 证据不带该键（老内核形态，宿主走轮次级兜底）', () => {
+    const collected: RoundEvidenceEvent[] = [];
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([[]]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('ok'),
+    });
+    loop.appendRoundEvidence = (ev) => collected.push(ev);
+
+    loop.recordMemoryHitsEvidence({
+      query: 'z',
+      count: 1,
+      hits: [{ id: 'm1', name: 'A', source: 'note' }],
+    });
+
+    const first = collected[0];
+    const payload = first?.type === 'memory_hits' ? first.payload : undefined;
+    expect(payload?.toolCallId).toBeUndefined();
+    expect(Object.keys(payload ?? {})).toEqual(['query', 'count', 'hits']);
+  });
 });

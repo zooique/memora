@@ -1008,7 +1008,13 @@ export async function assembleComponents(
   // 接线 memoryRecalled 事件（§2.4 保留改语义定案）：search_memories 命中记忆 → 宿主广播
   // 「LLM 查询记忆命中 N 条」。唯一发射位 = search_memories 命中
   // （无 warmRecall 等其他发射路径）。
-  toolExec.setOnMemoryRecalled((info) => hooks?.emit(AGENT_EVENTS.memoryRecalled, info));
+  // MEM-EVENT-3：同一次发射再落一份证据（Round.evidence），让重放历史轮能重建命中明细——
+  // 事件是实时专属（不进 processEvents），只广播不落盘 ⇒ 回看时明细永久不可考。
+  // 两者同源一次触发（不同消费面：实时可见 / 落盘可回看），不是两条观测通道。
+  toolExec.setOnMemoryRecalled((info) => {
+    hooks?.emit(AGENT_EVENTS.memoryRecalled, info);
+    loop.recordMemoryHitsEvidence(info);
+  });
   // 接线工具召回与装配期内容互斥（§5.1）：search_memories 排除「正文或摘要已在眼前」的轮次
   // round-summary，避免 LLM 拿回眼前内容的摘要重复。排除集从 loop 工作记忆视图精确派生
   // （getExclusionRoundIds = 视图内 ∪ 被替换 ∪ 在途），与模型窗口无关，不用固定轮数代理量。

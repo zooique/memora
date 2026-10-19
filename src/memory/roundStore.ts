@@ -431,6 +431,43 @@ export type RoundEvidenceEvent =
         /** 结果标题（净化 + 截断后）：定位「搜到了什么」的最小证据面（全量计数看 count） */
         titles: string[];
       };
+    }
+  | {
+      /**
+       * search_memories 命中明细留痕（MEM-EVENT-3：重放可重建的落盘副本）
+       *
+       * 定位：`memoryRecalled` 是**实时专属**事件（不进 processEvents），宿主重放历史轮时无数据源，
+       * 命中明细整块消失——用户回看时「这次到底参考了哪几条记忆」永久不可考。本变体把
+       * 同一份明细写进取证轨（Round.evidence 随轮落盘），与 web_search_result 同一条通道、
+       * 同一处置：**实时面照旧走事件（即时可见），落盘面走证据（可回看）**，二者同源一次发射。
+       *
+       * 与 `memoryRecalled` 载荷的差异（刻意，不是漏项）：`count` 保留原值（发射时命中条数），
+       * `hits` 全量（不截断——条数上限真源仍是 parseLimit 的 50，不另立证据侧常量）。
+       *
+       * ⚠ 未命中（hits 为空）不进本轨：内核 `memoryRecalled` 本身只在有命中时发射，
+       * 证据轨不为「查了但没查到」造第二条路径（查询行为已在 tool_start/tool_result 可见）。
+       */
+      type: 'memory_hits';
+      /** 事件时刻（ISO 8601） */
+      ts: string;
+      /** 事件时刻是否会议轮（判据见类型注释） */
+      meetingRound: boolean;
+      payload: {
+        /**
+         * 本次召回的 tool_call 唯一 ID（= tool_start.payload.toolCallId）。
+         *
+         * 宿主重放时据此把命中明细**唯一配对**回对应的 search_memories 工具行。
+         * **可选**：旧内核（4.1.x 首版）不发该字段，缺失时宿主走轮次级兜底落位
+         * （保不带伤——历史轮不因缺配对键而丢明细）。
+         */
+        toolCallId?: string;
+        /** LLM 实际发出的检索词（与 web_search 的 query 同语义：归因第一现场） */
+        query: string;
+        /** 发射时命中条数（= hits.length，保留原字段供纯计数消费方） */
+        count: number;
+        /** 命中明细（记忆 id 全局唯一，兼宿主反馈寻址键） */
+        hits: { id: string; name: string; source: string }[];
+      };
     };
 
 /**

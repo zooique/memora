@@ -1766,6 +1766,35 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
+   * 记忆命中证据解析器（MEM-EVENT-3）：`Round.evidence` 的 `memory_hits` 变体 → toolCallId → 命中表。
+   *
+   * 为什么需要它：`memoryRecalled` 是**实时专属**事件（不进 processEvents），重放历史轮时
+   * 宿主手上只有 `tool_result.summary` 里那 100 字截断副本——真机「重新渲染后无法完成查看」
+   * 就是这个现场（截到 `(a` 半截）。证据轨给重放补上可重建的结构化明细。
+   *
+   * 合并口径：同一 toolCallId 的多条证据按到达序合并，**同 id 以首次为准**（与实时侧
+   * `currentMemoryHitsByCall` 的 Map 去重口径一致，避免两套去重规则）。
+   * 无配对键的证据跳过：`hits` 与 `toolCallId` 同批引入、从未有发行版只发其一
+   * （4.1.0 已取消，5.0.0 未发布），不为不可达形态另造一套轮次级重放渲染。
+   */
+  function buildMemoryHitsEvidenceResolver(
+    evidence: RoundView['evidence'],
+  ): Map<string, Map<string, MemoryHitEntry>> {
+    const byCall = new Map<string, Map<string, MemoryHitEntry>>();
+    for (const ev of evidence ?? []) {
+      if (ev.type !== 'memory_hits') continue;
+      const callId = ev.payload.toolCallId;
+      if (!callId) continue;
+      const bucket = byCall.get(callId) ?? new Map<string, MemoryHitEntry>();
+      for (const h of ev.payload.hits) {
+        if (!bucket.has(h.id)) bucket.set(h.id, { name: h.name, source: h.source });
+      }
+      byCall.set(callId, bucket);
+    }
+    return byCall;
+  }
+
+  /**
    * 渲染 web_search 裁决证据块（单次搜索的归因三件套）。
    *
    * 纯文本构建（textContent，防注入）：端点 / 条数 / 命中标题各占一行，标题行前导圆点。
@@ -1832,7 +1861,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       pre.textContent = start.payload.args;
       row.appendChild(pre);
     }
-    if (result?.payload.summary) {
+    // 结构化命中明细（本行可用时先取，供下方摘要取舍复用同一份判据）
+    const memHits = resolveMemoryHits?.(start.payload.toolCallId);
+    // 结果摘要：`search_memories` 的 summary 是同一份内容的 **100 字硬截断副本**
+    // （loop.ts `result.slice(0, 100)`，真机截图截到 `(a` 半句）——有结构化命中块时不再渲染，
+    // 同源信息不双渲染（与 HOST-S3-2「同源信号不双渲染」同一纪律）。
+    // 无命中块时保持原样（零命中 / 被拦 / 非记忆工具都靠它传达结果）。
+    if (result?.payload.summary && !(memHits && memHits.size > 0)) {
       const sum = document.createElement('div');
       sum.className = 'round-block__tool-summary';
       sum.textContent = result.payload.summary;
@@ -1843,19 +1878,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const ev = resolveSearchEvidence(start);
       if (ev) row.appendChild(renderSearchEvidenceBlock(ev));
     }
-    // 记忆命中明细（MEM-EVENT-2）：仅收场重建路径传解析器——运行时由 memory_hits 消息
-    // 增量挂载（attachMemoryHitsToToolRow），此处负责「DOM 全量重建后明细不丢」。
-    // 重放历史轮不传（processEvents 落盘轨无此事件，诚实降级不伪造数据源）。
-    if (resolveMemoryHits) {
-      const hits = resolveMemoryHits(start.payload.toolCallId);
-      if (hits && hits.size > 0) {
-        const badge = document.createElement('span');
-        badge.className = 'round-block__memory-badge';
-        badge.textContent = `记忆 ${hits.size}`;
-        badge.title = `本次调用命中 ${hits.size} 条记忆（展开查看明细）`;
-        summary.appendChild(badge);
-        row.appendChild(buildMemoryHitsBlock(hits));
-      }
+    // 记忆命中明细（MEM-EVENT-2 / MEM-EVENT-3）：两条源在 renderRoundBlock 已裁决完毕
+    // （实时模型 > 证据副本），这里只负责「DOM 全量重建后明细不丢」——收场重建与重放历史轮
+    // 都走本函数，重放靠 evidence 的 memory_hits 变体供数（无则自然为空，不伪造）。
+    if (memHits && memHits.size > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'round-block__memory-badge';
+      badge.textContent = `记忆 ${memHits.size}`;
+      badge.title = `本次调用命中 ${memHits.size} 条记忆（展开查看明细）`;
+      summary.appendChild(badge);
+      row.appendChild(buildMemoryHitsBlock(memHits));
     }
     // 返回行元素：由调用方按 seq 插入 details 顶层（扁平化，不再自挂容器）
     return row;
@@ -1891,8 +1923,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         row.classList.toggle('is-tool-running', running);
         // 工具已出结果 → 移除该行等待时长标签（瞬态退场，不再刷新）
         row.querySelector(':scope .round-block__elapsed')?.remove();
-        // 结果摘要：首次到达补 DOM（后续到达不重复）
-        if (result.payload.summary && !row.querySelector('.round-block__tool-summary')) {
+        // 结果摘要：首次到达补 DOM（后续到达不重复）；已有命中块则不出——
+        // 与 renderToolRow 同一取舍（那里按解析结果判、这里按已渲染 DOM 判，
+        // 两条路径互斥：实时增量走本函数，收场/重放走 renderToolRow）
+        if (
+          result.payload.summary &&
+          !row.querySelector('.round-block__tool-summary') &&
+          !row.querySelector('.round-block__memory-hits')
+        ) {
           const s = document.createElement('div');
           s.className = 'round-block__tool-summary';
           s.textContent = result.payload.summary;
@@ -1917,21 +1955,26 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param finalize  是否为本轮收尾
    * @param interactiveInputs 运行时输入缓存（finalize 传；重放路径 QA 经 appendInteractiveInput
    *                          增量插入 round-block，不重复渲染）
-   * @param evidence  本轮裁决证据（仅重放路径传 RoundView.evidence；运行时/中断轮缺省 →
-   *                  web_search 行不加证据块。证据轮末才落盘，实时路径自然无此字段）
-   * @param resolveMemoryHits 记忆命中解析器（仅**收场重建**路径传：finalizeRound 从
-   *                  currentMemoryHitsByCall 取）。作用 = DOM 全量重建后把已挂过的命中明细
-   *                  补回对应工具行；重放历史轮/中断轮孤儿重建不传（无实时数据源）。
+   * @param evidence  本轮裁决证据（重放路径传 RoundView.evidence；运行时收场经 done 消息透传；
+   *                  web_search 归因与 memory_hits 明细两条证据面都从它取。证据轮末才落盘）
+   * @param liveMemoryHits 实时命中模型（仅 `finalizeRound` 传 currentMemoryHitsByCall）：
+   *                  比证据**更新**（含本轮删除反馈），故优先于证据；重放/中断重建不传，
+   *                  由 evidence 的 memory_hits 变体独立供数（MEM-EVENT-3）。
    */
   function renderRoundBlock(
     events: ProcessEvent[],
     finalize: boolean,
     interactiveInputs?: RuntimeInteractiveInput[],
     evidence?: RoundView['evidence'],
-    resolveMemoryHits?: (toolCallId: string) => Map<string, MemoryHitEntry> | undefined,
+    liveMemoryHits?: Map<string, Map<string, MemoryHitEntry>>,
   ): void {
     // 每次重建都现建解析器（闭包持消费游标）：同一轮多次重放各自从头消费，结果确定不累积
     const resolveSearchEvidence = buildSearchEvidenceResolver(evidence);
+    // 命中明细两条源：实时模型（收场时最新）> 证据副本（重放唯一源）。同源同键（toolCallId），
+    // 一份渲染——不按来源分叉出两种形态（`??` 是唯一裁决点，勿在别处再判一次）。
+    const byEvidence = buildMemoryHitsEvidenceResolver(evidence);
+    const resolveMemoryHits = (toolCallId: string): Map<string, MemoryHitEntry> | undefined =>
+      liveMemoryHits?.get(toolCallId) ?? byEvidence.get(toolCallId);
     const rb = ensureRoundBlock();
     if (!rb) return; // 正文块未创建（meta 先到）：挂载推迟到正文块出现时再补一次（beginStreaming）
     // summary：统计摘要（计数 + 耗时）
@@ -2057,7 +2100,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const block = createToolBatchBlock(batch, false);
       const body = block.querySelector('.round-block__tool-batch-body') as HTMLElement;
       for (const entry of batch.entries)
-        body.appendChild(renderToolRow(entry.start, events, resolveSearchEvidence, resolveMemoryHits));
+        body.appendChild(
+          renderToolRow(entry.start, events, resolveSearchEvidence, resolveMemoryHits),
+        );
       insertPlanItemInOrder(host, block, batch.anchorTs);
     }
     // § 思考（per-step 聚合折叠块）：**一个 step 一个折叠块**（同 step 碎片原样连续拼接，
@@ -2549,8 +2594,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * （narrate）拼接（半截正文已随中断丢弃；拼接逻辑在 narrateChainText 单点，重放与运行时共用）。
    *
    * @param roundId 本轮 ID（孤儿宿主归属标记）
+   * @param evidence 本轮裁决证据（重放透传）：中断轮同样可能有记忆命中/搜索证据，
+   *   不传则该轮重放时明细与归因一并丢失（与 done 轮同一缺口，一并补齐）
    */
-  function renderInterruptedRound(roundId?: string): void {
+  function renderInterruptedRound(roundId?: string, evidence?: RoundView['evidence']): void {
     const host = document.createElement('div');
     host.className = 'msg assistant is-interrupted-host';
     // 真实闭环起点（首条带 ts 的过程事件）；空事件/空 ts 兜底当前时间（旧行为，删除仍禁用）
@@ -2569,7 +2616,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     try {
       // 容器化：中断轮与 done 轮同构进 .round-group（建容器 footer），已定稿传 pending=false
       ensureRoundGroup(roundId, host, false);
-      renderRoundBlock(currentEvents, true);
+      renderRoundBlock(currentEvents, true, undefined, evidence);
       appendInterruptedRow(host, currentEvents);
     } finally {
       activeAssistantEl = prevAssistant;
@@ -4566,9 +4613,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 异常本身继续向上抛（由 onMessage 兜底 console.error 观测）——兜底观测，不掩盖根因。
     try {
       // 命中明细随收场一起回填：finalize 会全量重建工具行（运行时增量挂的 DOM 被丢弃），
-      // 这里把 currentMemoryHitsByCall 交给渲染器按 toolCallId 重新挂回，避免「收场即丢明细」。
-      renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, evidence, (toolCallId) =>
-        currentMemoryHitsByCall.get(toolCallId),
+      // 交实时模型比证据更新（含本轮删除反馈）；同一 toolCallId 实时缺位时渲染器回退证据副本。
+      renderRoundBlock(
+        currentEvents,
+        true,
+        runtimeInteractiveInputs,
+        evidence,
+        currentMemoryHitsByCall,
       );
     } finally {
       flowEl?.remove();
@@ -4910,6 +4961,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     row.querySelector('.round-block__memory-hits')?.remove();
     const hits = currentMemoryHitsByCall.get(toolCallId);
     if (!hits || hits.size === 0) return true;
+    // 命中块出现 ⇒ 撤掉 100 字截断摘要（同源不双渲染；先到摘要、后到命中的时序在此收口）
+    row.querySelector('.round-block__tool-summary')?.remove();
     const summary = row.querySelector('.round-block__tool-name');
     if (summary) {
       const badge = document.createElement('span');
@@ -5399,7 +5452,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         if (prevInterrupted) (prevInterrupted.closest('.round-group') ?? prevInterrupted).remove();
         flowEl?.remove();
         flowEl = null;
-        renderInterruptedRound(r.id);
+        renderInterruptedRound(r.id, r.evidence);
       } else {
         // 普通轮：任务过程折叠区一次性渲染（finalize=true，收起态）；证据随轮透传（web_search 行补归因）
         renderRoundBlock(currentEvents, true, undefined, r.evidence);
@@ -6021,9 +6074,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         currentMemoryHitsByCall.set(callId, bucket);
         if (!attachMemoryHitsToToolRow(callId)) {
           // 目标行尚未进 DOM（时序竞态）→ 数据转入兜底聚合行：信息不丢，位置退回旧行为。
-          // 必须先撤出 byCall——否则收场重建时解析器会再挂一次，同一批命中在工具块和
-          // 轮次行双写（用户看到重复），是本迁移最易踩的带伤形态。
-          currentMemoryHitsByCall.delete(callId);
+          // 必须把该 callId 在 byCall 里**置空**（而不是删键）：删键会让收场重建的
+          // `live ?? evidence` 落到证据副本上，同一批命中在工具块与轮次行双写；
+          // 置空 = 「这次调用的明细已认领，但不在行内渲染」的唯一表达，且空表下
+          // attach 会把块/徽章一并摘除（幂等重建的空态分支）。
+          currentMemoryHitsByCall.set(callId, new Map());
           for (const h of msg.hits) currentMemoryHits.set(h.id, { name: h.name, source: h.source });
           renderMemoryHits();
         }

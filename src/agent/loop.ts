@@ -78,6 +78,7 @@ import {
   READ_FILE_NOTICE_PREFIX,
 } from '@/agent/toolLedger.js';
 import type { RoundEvidenceEvent } from '@/memory/roundStore.js';
+import type { AgentEventMap } from '@/utils/eventEmitter.js';
 import { nowIso } from '@/utils/time.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
 import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
@@ -3274,6 +3275,34 @@ export class AgentLoop {
         endpoint: info.endpoint,
         count: info.count,
         titles: info.titles,
+      },
+    });
+  }
+
+  /**
+   * 记录 search_memories 命中明细证据（MEM-EVENT-3：实时事件的落盘副本）
+   *
+   * 驱动方 = 装配层同一处 `setOnMemoryRecalled` 接线（事件广播 + 证据落盘同源一次发射）——
+   * 不新造第二个观测通道，也不在宿主侧二次拼装。
+   * 动机：`memoryRecalled` 是实时专属事件（不进 processEvents），宿主重放历史轮无数据源
+   * ⇒ 命中明细整块消失，「这轮参考了哪几条记忆」回看时不可考。落盘副本让重放可重建。
+   *
+   * 载荷透传不加工（id/name/source 就是搜索结果的现成三字段）；无命中不落盘——内核
+   * `memoryRecalled` 本就只在有命中时发射，证据轨不为「查了但没查到」另造路径。
+   */
+  recordMemoryHitsEvidence(info: AgentEventMap['memoryRecalled']): void {
+    // 防御：无明细 = 4.0.x 形态的载荷（老调用方/直调），没有可重建的内容，不写空证据
+    if (!info.hits || info.hits.length === 0) return;
+    this.appendRoundEvidence?.({
+      type: 'memory_hits',
+      ts: nowIso(),
+      meetingRound: this.isMeetingRound(),
+      payload: {
+        // toolCallId 可选透传：宿主重放据此唯一配对工具行；缺省走轮次级兜底落位
+        ...(info.toolCallId ? { toolCallId: info.toolCallId } : {}),
+        query: info.query,
+        count: info.count,
+        hits: info.hits.map((h) => ({ id: h.id, name: h.name, source: h.source })),
       },
     });
   }
