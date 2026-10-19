@@ -81,6 +81,26 @@ export interface SessionMeta {
   updatedAt: string;
   /** 会话消息条数（命名信号与列表展示） */
   messageCount: number;
+
+  // ── 归档防重（跨进程） ──
+  /**
+   * 上次**实际完成归档**时的消息数快照（防重判据的落盘副本，2026-10-19 起）。
+   *
+   * ⚠️ 与上方 `messageCount` **语义不同、不可复用**：
+   *   - `messageCount` = 会话**当前**消息总数（列表展示 / 命名信号，随对话增长）；
+   *   - 本字段 = **上次归档那一刻**的消息数（防重用，只在归档写入成功后更新）。
+   *
+   * 为何要落盘：`SessionArchiver` 的内存快照（`Map`）随进程销毁清零，重启后首次触发会
+   * 对「内容未变、早归档过」的会话**重复烧一次 LLM**——手动归档入口（manual 模式「移入
+   * 留存区」）落地后这条路径变成用户可见的重复开销，故判据须跨进程存活。
+   *
+   * 判据可靠性：对话记录 append-only（单条消息不删）⇒ 本值等于当前消息数 = 内容未变。
+   * 缺省 `undefined`（老数据 / 从未归档）= 无归档记录 ⇒ **不跳过**（自然降级，不多不少一次）。
+   *
+   * 单点：`SessionArchiver` 唯一写入与读取（`getSessionMeta` 读、`updateSessionMeta` 写）。
+   */
+  archivedMessageCount?: number;
+
   /** 创建时间（ISO 8601） */
   createdAt?: string;
 }

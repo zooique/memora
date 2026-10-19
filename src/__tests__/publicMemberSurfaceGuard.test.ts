@@ -682,6 +682,8 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   SessionMeta: {
     kind: 'interface',
     members: [
+      // 2026-10-19 新增（定性见下方 ⑦）：归档防重快照的落盘副本，可选字段、非破坏
+      'archivedMessageCount',
       'autoName',
       'createdAt',
       'displayName',
@@ -915,7 +917,15 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    治理模型现为写时取代（roundSummaryGenerator 的 supersedeSimilar + supersededBy 软指针）。\n` +
       `    连带拆除：MemoryAdvisor / DedupManager / GOVERNANCE_SOURCES / llmJudgeHelper /\n` +
       `      recallDefaults / 宿主 suggestions 通道（原恒早退，用户从未见过）。\n` +
-      `    代价：4.x 升级者失去 deprecation 预警期，已由 CHANGELOG Breaking 段明示。`;
+      `    代价：4.x 升级者失去 deprecation 预警期，已由 CHANGELOG Breaking 段明示。` +
+      `\n  ⑦ SessionMeta.archivedMessageCount 新增（2026-10-19 · ARCH-GAP-2 排雷，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：它是归档防重判据的**落盘副本**，真消费者明确且唯一\n` +
+      `    —— SessionArchiver 写入（成功后并入 updateSessionMeta 的 partialMeta）+ 双源读取\n` +
+      `    （内存 Map 未命中时回退本字段）；宿主 sessionStore 为「基底 spread + 覆盖」语义，\n` +
+      `    透传落盘无损（JSON.parse 亦无损）。要它就是为了跨进程存活：否则宿主重启后对「内容\n` +
+      `    未变、早归档过」的会话会重复烧一次 LLM。\n` +
+      `    ⚠️ 与既有 messageCount（**当前**消息总数，列表展示用）语义不同、不可复用，故另立字段。\n` +
+      `    代价 = 零（可选字段：老数据读不到即「不跳过」，自然降级，无 deprecation 需求）。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

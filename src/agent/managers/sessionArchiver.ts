@@ -4,7 +4,8 @@
  *   - 会话切走（sessionSwitched，switchToSession 后旧会话离场）；
  *   - 分叉离场（sessionForked，源会话脱离当前态）；
  *   - 暂停超时（sessionPauseTimedOut，30min watchdog）；
- *   三类自动触发经 ArchiveCoordinator 统一入口（archiveMode=manual 时跳过），手动调用无条件执行。
+ *   三类自动触发经 ArchiveCoordinator 统一入口（archiveMode=manual 时跳过）；手动调用不受模式
+ *   门控（是否防重由 `skipIfUnchanged` 单独表达，宿主「移入留存区」等便捷手势显式传 true）。
  * 降级：LLM 不可用/消息为空/sessionStore 未注入时静默跳过或返回空结果，不阻塞会话切换（best-effort）。
  */
 
@@ -27,9 +28,16 @@ export interface SessionArchiveResult {
 /** 归档触发选项 */
 export interface SessionArchiveOptions {
   /**
-   * 内容未变则跳过（仅自动触发传 true）：对比上次实际归档时的消息数，相同即跳过 LLM 调用。
-   * 对话记录 append-only（单条消息不删），消息数相同 = 内容未变，判据可靠。
-   * 手动触发不跳过（用户意图优先，无条件重新归档）。
+   * 内容未变则跳过：对比上次**实际完成归档**时的消息数，相同即跳过 LLM 调用。
+   *
+   * 判据可靠性：对话记录 append-only（单条消息不删）⇒ 消息数相同 = 内容未变；
+   * 反之只要又聊过（消息数必增）就一定重新归档 —— **防重 ≠ 防更新**。
+   *
+   * 调用形态（2026-10-19 起）：自动触发默认带；手动触发**默认不带**（用户意图优先、
+   * 无条件重归档），但宿主便捷手势可显式传 true 享同一判据（见 ArchiveTriggerOptions）。
+   *
+   * 判据本体在本类（内存 Map + `SessionMeta.archivedMessageCount` 落盘副本双源，
+   * 跨进程存活），比较对象是 `messages.length`。
    */
   skipIfUnchanged?: boolean;
 }
@@ -58,8 +66,14 @@ export class SessionArchiver {
   /** 会话存储（加载原始对话消息 + 写入 SessionMeta） */
   private sessionStore: ISessionStore | undefined;
   /**
-   * 已归档会话的消息数快照（防重判据，进程内内存态）：sessionLabel → 上次**实际完成归档**时的消息数。
-   * 仅自动触发的 skipIfUnchanged 消费；重启后清零（首次自动触发多归档一次，可接受）。
+   * 已归档会话的消息数快照（防重判据）：sessionLabel → 上次**实际完成归档**时的消息数。
+   *
+   * **双源**（顺序不可换）：本内存 Map 优先（同进程内准确、零 I/O）；未命中则回退落盘副本
+   * `SessionMeta.archivedMessageCount`（跨进程存活）。
+   *
+   * 为何必须双源：纯内存态随进程销毁清零 ⇒ 重启后首次触发会对「内容未变、早归档过」的会话
+   * **重复烧一次 LLM**；手动归档入口（manual 模式「移入留存区」）落地后该重复变成用户可见
+   * 的开销。写入成功后**两源同写**（见 archiveSession 末段），故重启不丢判据。
    */
   private lastArchivedMessageCount = new Map<string, number>();
 
@@ -105,8 +119,13 @@ export class SessionArchiver {
       return { ...emptyResult, messageCount: messages.length };
     }
 
-    // 自动触发防重：消息数与上次实际归档时相同 → 内容未变，跳过 LLM 调用
-    const lastCount = this.lastArchivedMessageCount.get(sessionLabel);
+    // 自动触发防重：消息数与上次实际归档时相同 → 内容未变，跳过 LLM 调用。
+    // 判据双源：内存快照优先，未命中回退落盘 SessionMeta.archivedMessageCount（跨进程存活，
+    // 否则重启后对「内容未变、早归档过」的会话会重复烧一次 LLM）。两者都是同一语义的单点
+    // 副本，不存在第二套判据。
+    const lastCount =
+      this.lastArchivedMessageCount.get(sessionLabel) ??
+      this.sessionStore.getSessionMeta?.(sessionLabel)?.archivedMessageCount;
     if (options?.skipIfUnchanged && lastCount !== undefined && lastCount === messages.length) {
       logger.debug(
         { sessionLabel, messageCount: messages.length },
@@ -141,6 +160,9 @@ export class SessionArchiver {
     }
 
     if (updatedFields.length > 0) {
+      // 防重快照同批落盘（与 summary/keyTopics 一次写入）：内存态供本进程、落盘副本供跨进程，
+      // 两源同一值、同一写入点（无第二套判据）。
+      partialMeta.archivedMessageCount = messages.length;
       this.sessionStore.updateSessionMeta?.(sessionLabel, partialMeta);
       // 写入成功才记防重快照：LLM 判无价值/写入失败不记，下次自动触发仍会重试
       this.lastArchivedMessageCount.set(sessionLabel, messages.length);

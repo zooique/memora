@@ -540,6 +540,32 @@ describe('SessionArchiver · 自动触发防重（skipIfUnchanged）', () => {
     expect(result.updatedFields).toContain('summary');
   });
 
+  it('跨进程防重：重启后（新 SessionArchiver 实例）内容未变 → 跳过（不重复烧 LLM）', async () => {
+    await archiver.archiveSession('2026-07-03', 'main', { skipIfUnchanged: true });
+    // 进程重启：内存快照清零，但 sessionStore 是**落盘**真相源 → 防重判据必须跨进程存活
+    const rebooted = new SessionArchiver(provider, sessionStore);
+    const chatSpy = vi.spyOn(provider, 'chat');
+
+    const result = await rebooted.archiveSession('2026-07-03', 'main', { skipIfUnchanged: true });
+
+    expect(chatSpy).not.toHaveBeenCalled();
+    expect(result.updatedFields).toEqual([]);
+    expect(result.messageCount).toBe(4);
+  });
+
+  it('跨进程后新增对话 → 仍重新归档（防重不得把「该刷新的」挡掉）', async () => {
+    await archiver.archiveSession('2026-07-03', 'main', { skipIfUnchanged: true });
+    const rebooted = new SessionArchiver(provider, sessionStore);
+    // 重启后又聊了：4 → 6 条
+    sessionStore.setMessages(makeMessages(6));
+    const chatSpy = vi.spyOn(provider, 'chat');
+
+    const result = await rebooted.archiveSession('2026-07-03', 'main', { skipIfUnchanged: true });
+
+    expect(chatSpy).toHaveBeenCalledTimes(1);
+    expect(result.updatedFields).toContain('summary');
+  });
+
   it('LLM 判无价值（返回 null）不记防重快照 → 下次自动触发仍重试', async () => {
     provider.setResponse('null');
     const first = await archiver.archiveSession('2026-07-03', 'main', { skipIfUnchanged: true });

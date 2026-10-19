@@ -1037,7 +1037,14 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 > `options.autoTriggered`（系统自动触发；受 `archiveMode` 门控）+ `options.skipIfUnchanged`
 > （防重：距上次**实际完成归档**消息数未变则跳过 LLM。**缺省随 `autoTriggered`**——自动=防重、
 > 手动=无条件；显式传 `true` = 便捷手势也防重；显式 `false` = 强制重归档）。判据本体在
-> `SessionArchiver`（单点），协调器只转发意图。
+> `SessionArchiver`（单点），协调器只转发意图。防重快照跨进程存活（内存态 + `SessionMeta.
+> archivedMessageCount` 落盘副本双源），宿主重启后不会重复烧 LLM；又聊过（消息数增）则一定
+> 重新归档。
+>
+> ⚠️ **该选项类型未具名导出**（`ArchiveTriggerOptions` 不在包导出面内）：调用方传**结构字面量**
+> 即可（`archiveSession(d, s, { skipIfUnchanged: true })`），TS 随 `archiveSession` 签名推导类型。
+> 刻意不导出——公开面登记门槛守卫（`PUBLIC-API-SURFACE-1`）要求新增导出必须有真实具名消费或
+> 文档承诺，本类型两者皆无（宿主只按字面量用），导出即纯增面。
 
 ### Agent 面类只读访问器
 
