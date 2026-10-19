@@ -1290,6 +1290,10 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 - **变异实证（3 次，均转红后还原）**：① 拆掉证据回退 → 重放用例红；② 把置空认领改回删键 →
   双写用例红（删键会让 `live ?? evidence` 落到证据上，工具块与轮次行各写一份）；③ 摘掉
   `attachMemoryHitsToToolRow` 的 summary 移除 → 截断副本复发。
+- **真机验证（2026-10-19 三轮真机 · 磁盘实证）**：新轮 `round-1792377390175` 落盘 3 条
+  `memory_hits`（各 `count=7 / hits=7 / 唯一 id=7`，命中集合互不相同），其 `toolCallId` 与
+  3 条 `tool_result`（seq 68/69/104）1:1 配对零悬空；同批 `summary` 长度恰 100/100/100、
+  末尾 `] ( ac` / `5] ( a` / `53745]` —— 截断现场实证，重渲染后可回看，用户复测通过。
 
 ### Fixed（宿主 · 记忆命中明细沉底遮挡运行时状态 → 收进对应工具折叠行 · `MEM-EVENT-2` · 2026-10-19）
 
