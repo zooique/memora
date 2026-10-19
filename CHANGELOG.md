@@ -1305,6 +1305,12 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Fixed（宿主 · 历史浮层切换卡片与搜索框被长列表滚出视野 → 滚动职责下移条目容器 · 2026-10-19）
+
+- **现象（真机）**：会话上百后滚动历史浮层，「会话记录 / 留存区」切换卡片与搜索框随条目一起滚出视野，想换分组或改搜索词必须先滚回顶部。
+- **根因**：滚动容器套在 `.treedd__menu`（面板层），tab / 搜索框 / `#historyMenu` 三个孩子一起滚——骨架注释早已规定「tab 与条目容器不可合并、必须独立」，但滚动职责没跟着分层。
+- **修法（纯 CSS，零结构零协议）**：滚动职责下移到条目容器单点——`.session-tabs` / `.session-search` `flex: 0 0 auto` 恒置顶；`#historyMenu` `flex: 1 1 auto; overflow-y: auto; min-height: 0`（flex 子项防撑破）成为唯一滚动面。**排雷记录（真机复测抓出初版回归）**：初版在 `.session-history .treedd__menu` 上写了 `display: flex`，其 (0,2,0) 特异性压过 treedd 基础态 `display: none`（dropdown.ts）⇒ **浮层常驻关不上**；且基础态本就自带 `flex-direction: column`，该声明纯属多余。修复 = 布局规则不含任何 display 声明 + 就地留防复发注释。
+
 ### Fixed（宿主 · 底栏终态偶尔不显示 → 光标运行/终态双通道分离（SSOT 收敛）· 2026-10-19）
 
 - **现象**：宿主底栏终态标签（勾 / 用户中断 / 异常中断）**偶尔不显示**——会话结束或早停时无终态落位，

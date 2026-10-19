@@ -209,7 +209,13 @@ export const chatStyles = `
   .session-history .treedd__trigger .btn-icon svg { display: block; }
   .session-history .treedd__menu {
     min-width: 240px; max-width: min(var(--dim-xl), calc(100vw - 24px));
-    max-height: var(--dim-xl); overflow-y: auto;
+    max-height: var(--dim-xl);
+    /* 🔴 禁在此写 display：treedd 显隐 = 基础态 display:none（dropdown.ts）×
+       .is-open 态 display:flex。此处 (0,2,0) 特异性会压过基础态 none ⇒ 浮层常驻
+       （2026-10-19 初版实踩，已撤）。布局按需补 non-display 属性即可——基础态
+       已自带 display:flex + flex-direction:column，子项 flex 规则仅展开态生效。 */
+    /* 滚动职责单点 = 条目容器 #historyMenu（2026-10-19 真机反馈：长列表把 tab/搜索框
+       滚出视野）。面板只限高不滚；tab 与搜索框 flex:0 恒置顶，仅条目独立滚动。 */
   }
   .session-history .treedd__item {
     display: flex; align-items: center; gap: var(--sp-2, 6px);
@@ -244,6 +250,7 @@ export const chatStyles = `
      注意：用普通按钮样式，**不可**长成 .treedd__item（那会让点击委托收起整个菜单）。 */
   .session-tabs {
     display: flex; gap: var(--sp-1, 4px);
+    flex: 0 0 auto; /* 恒置顶：不随条目滚动（滚动面 = #historyMenu，见 .treedd__menu 注释） */
     padding: var(--sp-2, 6px) var(--sp-2, 6px) var(--sp-1, 4px);
     border-bottom: var(--line-solid);
   }
@@ -268,6 +275,7 @@ export const chatStyles = `
   /* FD-3-A 元数据搜索框：贴在分组 tab 下、条目容器上；独立元素不随条目重建清空 */
   .session-search {
     display: block; box-sizing: border-box;
+    flex: 0 0 auto; /* 恒置顶：不随条目滚动（滚动面 = #historyMenu） */
     width: calc(100% - var(--sp-3, 8px) * 2);
     margin: var(--sp-2, 6px) var(--sp-3, 8px) 0;
     padding: var(--sp-1, 4px) var(--sp-2, 6px);
@@ -278,6 +286,9 @@ export const chatStyles = `
   }
   .session-search::placeholder { color: var(--text-secondary, #9aa0a6); }
   .session-search:focus { border-color: var(--accent-hover, #1177bb); }
+  /* 条目容器 = 浮层唯一滚动面：flex 子项须 min-height:0 防内容撑破面板限高；
+     日期组头随条目滚动（数据在 #historyMenu 内，置顶的只有 tab 与搜索框）。 */
+  #historyMenu { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
   /* 分组动作（移入留存 / 移回）：与删除同尺寸同位置，视觉弱于删除（非破坏性动作） */
   .session-history__item-keep {
     display: inline-flex; align-items: center; justify-content: center;
