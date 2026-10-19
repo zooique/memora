@@ -1158,13 +1158,19 @@ export class BuiltinToolHandlers {
     this.touchHits(hits);
 
     // memoryRecalled 事件（§2.4「保留改语义」定案；4.1.0 MEM-EVENT-1 载荷扩展）：LLM 查询记忆
-    // 命中 N 条 → 宿主感知提示 + 命中明细（id/name/source，宿主 S3-1 可展开行渲染 / S3-3 反馈寻址）。
+    // 命中 N 条 → 宿主感知提示 + 命中明细（id/name/source/contentPreview，宿主 S3-1 可展开行渲染 /
+    // S3-3 反馈寻址）。contentPreview 5.0.0 起携带（宿主命中行按用户心智显示内容）。
     // 唯一发射位：此处是全库唯一 emit。明细取自现成搜索结果（零新增查询）；条数上限由
     // parseLimit 钳制（50）单点保证，此处全量映射不截断（不另立截断常量）。
     this.onMemoryRecalled?.({
       count: hits.length,
       query,
-      hits: hits.map((h) => ({ id: h.id, name: h.name, source: h.source })),
+      hits: hits.map((h) => ({
+        id: h.id,
+        name: h.name,
+        source: h.source,
+        contentPreview: h.contentPreview,
+      })),
       // 条件展开而非 `toolCallId` 恒在：缺省时载荷不出现该键（老内核载荷形态零变化，
       // 消费方按「键存在」分流配对/兜底两条路径，不靠 undefined 嗅探）。
       ...(toolCallId ? { toolCallId } : {}),

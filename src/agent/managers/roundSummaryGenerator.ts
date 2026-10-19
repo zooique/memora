@@ -135,13 +135,14 @@ export class RoundSummaryGenerator {
     this.provider = provider ?? this.defaultProvider;
   }
 
-  /** 记忆写入回调（memoryAdded 事件出口）：摘要即记忆，新摘要写入后通知宿主「已沉淀」 */
-  private _onMemoryAdded: ((info: { id: string; source: string; name: string }) => void) | null =
-    null;
+  /** 记忆写入回调（memoryAdded 事件出口）：摘要即记忆，新摘要写入后通知宿主「已沉淀」。
+   * content = 记忆正文（宿主提示按用户心智显示内容，回退 name） */
+  private _onMemoryAdded:
+    ((info: { id: string; source: string; name: string; content: string }) => void) | null = null;
 
   /** 绑定记忆写入回调（Agent.init 调用）；传 null 解除绑定 */
   setOnMemoryAdded(
-    fn: ((info: { id: string; source: string; name: string }) => void) | null,
+    fn: ((info: { id: string; source: string; name: string; content: string }) => void) | null,
   ): void {
     this._onMemoryAdded = fn;
   }
@@ -224,7 +225,12 @@ export class RoundSummaryGenerator {
 
       this.storage.upsert(memory);
       // memoryAdded 事件出口：宿主「已沉淀」提示的可观测通道
-      this._onMemoryAdded?.({ id: memory.id, source: memory.source, name: memory.name });
+      this._onMemoryAdded?.({
+        id: memory.id,
+        source: memory.source,
+        name: memory.name,
+        content: memory.content,
+      });
       // 写路径取代检测：仅对「同 session 最近 N 条」摘要做取代判定（收敛重叠计算面，避免对全库摘要逐一计算）
       this.supersedeSimilar(memory, this.getSessionCandidates(memory));
       logger.debug({ memoryId, summaryType, sessionName, roundId }, '轮次摘要已生成');

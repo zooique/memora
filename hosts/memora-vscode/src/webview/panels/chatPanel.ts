@@ -3376,9 +3376,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     };
     this._agent.on('questionPending', onPendingQuestion);
     // 监听记忆沉淀事件（memoryAdded，非 chunk 通道）→ 与 chunk 同源进过程事件缓冲（单源，
-    // 渲染/落盘同一份 ProcessEvent）
-    const onMemoryAdded = (info: { id: string; source: string; name: string }) => {
-      emitEvent('memory_added', { id: info.id, name: info.name, source: info.source });
+    // 渲染/落盘同一份 ProcessEvent）。content 5.0.0 起携带（可选 = 跨 dist 契约），
+    // webview「已沉淀」提示按用户心智显示内容（缺失回退 name）。
+    const onMemoryAdded = (info: {
+      id: string;
+      source: string;
+      name: string;
+      content?: string;
+    }) => {
+      emitEvent('memory_added', {
+        id: info.id,
+        name: info.name,
+        source: info.source,
+        ...(info.content !== undefined ? { content: info.content } : {}),
+      });
     };
     this._agent.on('memoryAdded', onMemoryAdded);
 

@@ -907,7 +907,8 @@ export type ExtensionToWebviewMessage =
       type: 'memory_hits';
       count: number;
       query: string;
-      hits?: { id: string; name: string; source: string }[];
+      /** contentPreview 可选 = 跨 dist 契约：4.x 内核 hits 元素无此字段，webview 容错缺失回退 name */
+      hits?: { id: string; name: string; source: string; contentPreview?: string }[];
       toolCallId?: string;
     }
   /**

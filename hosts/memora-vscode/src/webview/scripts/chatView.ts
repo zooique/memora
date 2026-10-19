@@ -529,7 +529,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /** round-block 已挂载的 assistant 块（重放去重判定：roundId 首次出现才挂） */
   let roundBlockHostEl: HTMLElement | null = null;
   /** 单条命中项（记忆 id → 展示面）：id 为 Map 键（同调用内去重）兼反馈寻址键（data-memory-id） */
-  type MemoryHitEntry = { name: string; source: string };
+  type MemoryHitEntry = { name: string; source: string; contentPreview?: string };
   /**
    * 本轮记忆命中·**按调用分组**（MEM-EVENT-2 落位收口）：toolCallId → (记忆 id → 命中项)。
    *
@@ -1787,7 +1787,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (!callId) continue;
       const bucket = byCall.get(callId) ?? new Map<string, MemoryHitEntry>();
       for (const h of ev.payload.hits) {
-        if (!bucket.has(h.id)) bucket.set(h.id, { name: h.name, source: h.source });
+        if (!bucket.has(h.id))
+          bucket.set(h.id, { name: h.name, source: h.source, contentPreview: h.contentPreview });
       }
       byCall.set(callId, bucket);
     }
@@ -4877,7 +4878,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 记忆命中项构建器（单一真理源）：source 徽章 + 名称 + ✕ 反馈按钮。
+   * 正文首行截断（「已沉淀」提示用）：取首行去空白，超长省略号收尾。
+   * 内核 truncate 定案「宿主零消费，不挂公共面」→ 本地私有实现，不 import。
+   *
+   * @param text 记忆正文（可缺省：老内核 / 历史轮无 content 字段）
+   * @param max 最大字符数
+   * @returns 截断后的单行文本；无正文返回空串（调用方回退 name / 通用文案）
+   */
+  function firstLine(text: string | undefined, max: number): string {
+    if (!text) return '';
+    const line = text.split('\n', 1)[0].trim();
+    return line.length > max ? line.slice(0, max - 1) + '…' : line;
+  }
+
+  /**
+   * 记忆命中项构建器（单一真理源）：source 徽章 + 正文主行 + ✕ 反馈按钮。
    *
    * 两个消费面共用本函数——① 工具折叠块体内明细（MEM-EVENT-2 主落位，见
    * buildMemoryHitsBlock）；② 无配对对象的兜底轮次行（见 renderMemoryHits）。
@@ -4897,9 +4912,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const source = document.createElement('span');
       source.className = 'memory-hits__source';
       source.textContent = hit.source;
+      // 主行 = 命中正文（用户心智：这条记忆记住了什么）；contentPreview 缺失
+      //（老内核/老证据）回退 name，name 也缺回退 id（不静默空行）。
       const name = document.createElement('span');
       name.className = 'memory-hits__name';
-      name.textContent = hit.name || id; // 无名记忆回退 id（不静默空行）
+      name.textContent = hit.contentPreview || hit.name || id;
+      name.title = hit.contentPreview ? hit.name : '';
       item.appendChild(source);
       item.appendChild(name);
       // 反馈入口（HOST-S3-3）：「没用/已过时」→ 发 memory_delete 软删该记忆
@@ -4909,7 +4927,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       removeBtn.className = 'memory-hits__remove';
       removeBtn.type = 'button';
       removeBtn.title = '没用/已过时？移入回收站（可恢复）';
-      removeBtn.setAttribute('aria-label', `反馈无用：${hit.name || id}`);
+      removeBtn.setAttribute('aria-label', `反馈无用：${hit.contentPreview || hit.name || id}`);
       removeBtn.innerHTML = getIconSvg('close', 10, 10); // 静态 SVG，无外部输入
       removeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -5682,7 +5700,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 交互（qa/supp/timeout）不制造 turn 分段，resume 一律原位续写同回合
       } else {
         if (ev.type === 'memory_added') {
-          showActivity('info', `已沉淀：${ev.payload.name || ev.payload.id}`);
+          // 主句 = 记忆正文首行截断（用户心智：记住了什么）；缺 content（老内核/历史轮）
+          // 回退 name，再回退通用文案（不裸显 id）
+          showActivity(
+            'info',
+            `已沉淀：${firstLine(ev.payload.content, 48) || ev.payload.name || '本轮摘要'}`,
+          );
         } else if (ev.type === 'thinking') {
           // 归档停滞兜底：archiving 激活即调度超时收起呼吸点
           if (ev.payload.phase === 'archiving') {

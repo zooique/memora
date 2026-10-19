@@ -3302,7 +3302,14 @@ export class AgentLoop {
         ...(info.toolCallId ? { toolCallId: info.toolCallId } : {}),
         query: info.query,
         count: info.count,
-        hits: info.hits.map((h) => ({ id: h.id, name: h.name, source: h.source })),
+        // contentPreview 直接赋值：5.0.0 起实时载荷恒携带；undefined 经 JSON 序列化自然消失
+        //（与可选透传语义一致），重放轨与实时轨同构，宿主缺失时回退 name。
+        hits: info.hits.map((h) => ({
+          id: h.id,
+          name: h.name,
+          source: h.source,
+          contentPreview: h.contentPreview,
+        })),
       },
     });
   }

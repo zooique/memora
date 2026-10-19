@@ -740,7 +740,14 @@ describe('BuiltinToolHandlers.searchMemories', () => {
     expect(cb).toHaveBeenCalledWith({
       count: 1,
       query: 'XylophoneFoo',
-      hits: [{ id: 'content:pref', name: '偏好', source: 'preference' }],
+      hits: [
+        {
+          id: 'content:pref',
+          name: '偏好',
+          source: 'preference',
+          contentPreview: '偏好 XylophoneFoo 独特配置',
+        },
+      ],
     });
     // toolCallId 缺省 = 键不存在（不是 undefined 值）：条件展开的契约面，
     // 消费方按「键存在」分流配对/兜底，故此处锁 keys 而非 lock undefined。
@@ -765,7 +772,14 @@ describe('BuiltinToolHandlers.searchMemories', () => {
     expect(cb).toHaveBeenCalledWith({
       count: 1,
       query: 'ZebraQuux',
-      hits: [{ id: 'content:pair', name: '配对', source: 'preference' }],
+      hits: [
+        {
+          id: 'content:pair',
+          name: '配对',
+          source: 'preference',
+          contentPreview: '配对 ZebraQuux 配置',
+        },
+      ],
       toolCallId: 'call_abc123',
     });
   });

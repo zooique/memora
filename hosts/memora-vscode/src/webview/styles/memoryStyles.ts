@@ -47,21 +47,12 @@ export const memoryStyles = `
   #memory-root .mem-card:hover { border-color: var(--text-secondary, #9aa0a6); }
   #memory-root .mem-card.expanded { border-color: var(--accent, #0e639c); }
 
-  /* 卡片头部：名称 + source 徽章 + 类型徽章 */
+  /* 卡片头部：source 徽章 + 类型徽章 + 操作按钮（name 已撤位，正文预览是卡片主位） */
   #memory-root .mem-card-head {
     display: flex;
     align-items: center;
     gap: var(--sp-2, 6px);
     margin-bottom: var(--sp-1, 4px);
-  }
-  #memory-root .mem-card-name {
-    font-weight: 600;
-    font-size: var(--font-md, 12px);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-    flex: 1;
   }
 
   /* source 徽章：已知 3 种预设来源有颜色约定，其余回退中性（开放字符串制动） */
@@ -106,10 +97,11 @@ export const memoryStyles = `
   #memory-root .tag-superseded { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-secondary, #9aa0a6); }
   #memory-root .tag-modified { background: var(--feedback-warn-bg, rgba(196, 160, 0, 0.15)); color: var(--warn, #d7ba7d); }
 
-  /* 内容预览：单行截断，供快速扫读 */
+  /* 内容预览：卡片主位（name 撤位后正文即标题——主色 + 字重 600，单行截断快速扫读） */
   #memory-root .mem-card-preview {
-    font-size: var(--font-sm, 11px);
-    color: var(--text-secondary, #9aa0a6);
+    font-size: var(--font-md, 12px);
+    font-weight: 600;
+    color: var(--text-primary, #cccccc);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

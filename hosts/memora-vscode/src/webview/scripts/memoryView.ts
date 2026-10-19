@@ -173,14 +173,11 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     card.setAttribute('aria-expanded', 'false');
     card.title = '点击展开 / 收起详情';
 
-    // 头部：名称 + source 徽章 + 类型徽章
+    // 头部：source 徽章 + 类型徽章 + 操作按钮。name（「轮次摘要 {session} {roundId}」）
+    // 撤出视觉层——机器标识对用户是黑话，正文预览才是卡片主位（用户心智：这条记忆
+    // 记住了什么）；溯源在展开详情「会话 X · 轮次 Y」行，id 仍在 source 徽章 tooltip。
     const head = document.createElement('div');
     head.className = 'mem-card-head';
-    const name = document.createElement('span');
-    name.className = 'mem-card-name';
-    name.textContent = m.name;
-    name.title = m.name;
-    head.appendChild(name);
 
     const sourceBadge = document.createElement('span');
     sourceBadge.className = 'source-badge ' + (SOURCE_BADGE_CLASS[m.source] ?? '');
@@ -223,7 +220,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     head.appendChild(delBtn);
     card.appendChild(head);
 
-    // 内容预览：单行截断（快速扫读）
+    // 内容预览：卡片主位（单行截断快速扫读；name 撤位后正文即标题，用户心智第一眼 = 内容）
     const preview = document.createElement('div');
     preview.className = 'mem-card-preview';
     preview.textContent = m.content;
@@ -404,11 +401,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
 
     const head = document.createElement('div');
     head.className = 'mem-card-head';
-    const name = document.createElement('span');
-    name.className = 'mem-card-name';
-    name.textContent = m.name;
-    name.title = m.name;
-    head.appendChild(name);
+    // 回收站卡片同主卡：name 撤出视觉层，source 徽章 + 正文预览承载（机器层 id 在徽章 tooltip）
 
     const sourceBadge = document.createElement('span');
     sourceBadge.className = 'source-badge ' + (SOURCE_BADGE_CLASS[m.source] ?? '');

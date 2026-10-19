@@ -204,8 +204,9 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
       }),
     );
     expect(document.querySelector('#memory-root .mem-card')).not.toBeNull();
-    expect(document.querySelector('#memory-root .mem-card-name')?.textContent).toContain(
-      '设计决策',
+    // 正文预览为主位（name 撤位）：用 content 断言渲染进的是这条记忆
+    expect(document.querySelector('#memory-root .mem-card-preview')?.textContent).toContain(
+      '确认合并选项卡。',
     );
   });
 

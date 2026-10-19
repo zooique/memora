@@ -3,7 +3,7 @@
  *
  * 覆盖新增的记忆管理视图渲染路径：
  *   - 顶栏统计（statBar：总数 + source 分布）
- *   - 记忆卡片（名称 + source 徽章 + 单行预览）
+ *   - 记忆卡片（正文预览为主位 + source 徽章；name 已撤出视觉层，id/name 只进 dataset/tooltip）
  *   - 点击展开详情（全文 content + 创建时间元数据）
  *   - 搜索结果渲染（search-summary 摘要 + 命中条目）
  *   - 空态引导（memory_loaded 空列表 / 搜索无命中）
@@ -122,7 +122,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'memory_load' });
   });
 
-  it('memory_loaded 渲染顶栏统计 + 记忆卡片（名称/source 徽章/预览）', () => {
+  it('memory_loaded 渲染顶栏统计 + 记忆卡片（正文预览/source 徽章；name 撤位）', () => {
     mountMemoryView();
     dispatchLoaded({ total: 3, bySource: { 'round-summary': 2, profile: 1 } }, [
       makeMemory(),
@@ -139,8 +139,8 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     );
     const cards = document.querySelectorAll('.mem-card');
     expect(cards).toHaveLength(2);
-    // 名称 + source 徽章
-    expect(cards[0]?.querySelector('.mem-card-name')?.textContent).toBe('设计决策');
+    // name 撤位哨兵：正文预览升主位后 .mem-card-name 不再渲染（id/name 只进 dataset/tooltip）
+    expect(cards[0]?.querySelector('.mem-card-name')).toBeNull();
     expect(cards[0]?.querySelector('.source-badge')?.textContent).toBe('round-summary');
     // 单行预览
     expect(cards[0]?.querySelector('.mem-card-preview')?.textContent).toBe(
@@ -185,10 +185,14 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     dispatchLoaded({ total: 1, bySource: { 'round-summary': 1 } }, [makeMemory()]);
     expect(document.querySelectorAll('.mem-card')).toHaveLength(1);
     // 用户已清空输入，迟到的旧搜索结果（query 仍为 '记忆视图'）应被丢弃
-    dispatchSearchResult('记忆视图', [makeMemory({ name: '过期结果' })]);
+    // 迟到结果带区分性 content：若误渲染可从正文预览识别出来
+    dispatchSearchResult('记忆视图', [makeMemory({ name: '过期结果', content: '过期内容' })]);
     expect(document.querySelector('.search-summary')).toBeNull();
     expect(document.querySelectorAll('.mem-card')).toHaveLength(1);
-    expect(document.querySelector('.mem-card-name')?.textContent).toBe('设计决策');
+    // 列表态卡片未被覆盖：正文预览仍是首屏那条
+    expect(document.querySelector('.mem-card-preview')?.textContent).toBe(
+      '确认采用独立记忆视图承载资产全貌。',
+    );
   });
 
   it('memory_loaded 空列表 → 渲染空态引导', () => {
@@ -573,13 +577,14 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       expect(postMessage).toHaveBeenCalledWith({ type: 'memory_page', page: 2, pageSize: 20 });
 
       // 宿主返回第 2 页：渲染新卡片 + 计数更新
+      // 第 2 页带区分性 content：用正文预览验证渲染的确实是第 2 页数据
       const page2 = Array.from({ length: 20 }, (_, i) =>
-        makeMemory({ id: `p2-${i}`, name: `页二${i}` }),
+        makeMemory({ id: `p2-${i}`, name: `页二${i}`, content: `页二内容${i}` }),
       );
       dispatchPageResult(2, page2);
       const cards = document.querySelectorAll('.mem-card');
       expect(cards).toHaveLength(20);
-      expect(cards[0]?.querySelector('.mem-card-name')?.textContent).toBe('页二0');
+      expect(cards[0]?.querySelector('.mem-card-preview')?.textContent).toBe('页二内容0');
       expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 45 条）');
     });
 
@@ -593,15 +598,19 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       document.querySelectorAll<HTMLButtonElement>('.pager-btn')[1]!.click();
       dispatchPageResult(
         2,
-        Array.from({ length: 20 }, (_, i) => makeMemory({ id: `b2-${i}`, name: `正确页${i}` })),
+        Array.from({ length: 20 }, (_, i) =>
+          makeMemory({ id: `b2-${i}`, name: `正确页${i}`, content: `正确页内容${i}` }),
+        ),
       );
-      // 迟到的第 1 页应答（page=1 ≠ 当前页 2）→ 丢弃
+      // 迟到的第 1 页应答（page=1 ≠ 当前页 2）→ 丢弃（带区分性 content 以便识别误渲染）
       dispatchPageResult(
         1,
-        Array.from({ length: 20 }, (_, i) => makeMemory({ id: `stale-${i}`, name: `迟到${i}` })),
+        Array.from({ length: 20 }, (_, i) =>
+          makeMemory({ id: `stale-${i}`, name: `迟到${i}`, content: `迟到内容${i}` }),
+        ),
       );
       const cards = document.querySelectorAll('.mem-card');
-      expect(cards[0]?.querySelector('.mem-card-name')?.textContent).toBe('正确页0');
+      expect(cards[0]?.querySelector('.mem-card-preview')?.textContent).toBe('正确页内容0');
       expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 45 条）');
     });
 

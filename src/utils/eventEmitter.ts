@@ -76,7 +76,14 @@ export const AGENT_EVENT_SET: ReadonlySet<string> = new Set(Object.values(AGENT_
 
 /** 事件名 → 载荷类型映射（键集受 AgentEventName 约束） */
 export interface AgentEventMap extends Record<AgentEventName, unknown> {
-  memoryAdded: { id: string; source: string; name: string };
+  memoryAdded: {
+    id: string;
+    source: string;
+    name: string;
+    /** 记忆正文（5.0.0 起可选携带）：宿主「已沉淀」提示按用户心智显示内容而非 name 标识。
+     * 可选 = 跨 dist 契约：4.x 内核不发此字段，宿主须容错缺失回退 name（老数据 name 可读性有限）。 */
+    content?: string;
+  };
   rolePackSwitched: { from: string | null; to: string };
   memoryRecalled: {
     count: number;
@@ -84,7 +91,14 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     /** 命中明细（4.1.0 新增，MEM-EVENT-1）：三字段各有消费面（宿主 S3-1 可展开行渲染 + S3-3 反馈按 id 寻址）。
      * 可选 = 跨 dist 契约：4.0.x 内核不发此字段，宿主须容错缺失降级为条数提示（类型层强制消费方容错）。
      * 条数上限真源 = search_memories 的 parseLimit 钳制（50），载荷全量映射不截断（不另立截断常量）。 */
-    hits?: { id: string; name: string; source: string }[];
+    hits?: {
+      id: string;
+      name: string;
+      source: string;
+      /** 命中正文（5.0.0 起可选携带）：宿主命中明细按用户心智显示内容而非 name 标识。
+       * 可选 = 跨 dist 契约：4.x 内核 hits 元素无此字段，宿主须容错缺失回退 name。 */
+      contentPreview?: string;
+    }[];
     /** 发起本次召回的 tool_call 唯一 ID（4.1.x 新增，MEM-EVENT-2）：宿主据此把命中明细挂回
      * 对应 search_memories 工具折叠块，而非按轮次全局堆在回复体上方。
      * 可选 = 跨 dist 契约 + 直调容错：老内核/测试直调 searchMemories 不带 ID，宿主须回退

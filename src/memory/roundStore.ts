@@ -218,7 +218,12 @@ export type ProcessEvent =
       type: 'memory_added';
       seq: number;
       ts: string;
-      payload: { id: string; name: string; source: string };
+      payload: {
+        id: string;
+        name: string;
+        source: string;
+        /** 正文（5.0.0 起可选：老数据无） */ content?: string;
+      };
     }
   /**
    * 工具调用开始。payload.stepIndex = 所属 step 的轮内序号（内核 loop 单点打标、与 thought.stepIndex
@@ -465,8 +470,8 @@ export type RoundEvidenceEvent =
         query: string;
         /** 发射时命中条数（= hits.length，保留原字段供纯计数消费方） */
         count: number;
-        /** 命中明细（记忆 id 全局唯一，兼宿主反馈寻址键） */
-        hits: { id: string; name: string; source: string }[];
+        /** 命中明细（记忆 id 全局唯一，兼宿主反馈寻址键）；contentPreview 可选 = 跨 dist 契约（4.x 载荷无） */
+        hits: { id: string; name: string; source: string; contentPreview?: string }[];
       };
     };
 
