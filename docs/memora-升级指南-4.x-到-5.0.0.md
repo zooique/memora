@@ -9,7 +9,7 @@
 
 ## 一句话
 
-5.0.0 是 major，删了 **23 个导出符号 + 31 个公开成员 + 3 个事件**。
+5.0.0 是 major，删了 **23 个导出符号 + 32 个公开成员 + 3 个事件**。
 被删的东西分两类：
 
 1. **从未通电**（写了但没人调用、或调用后无效果）；
@@ -28,7 +28,7 @@
 | 你做过这些吗 | 去哪看 |
 |---|---|
 | `import { MemoryGovernance / ProjectRegistry / InMemoryStorage / safe* / truncate / toError ... }` | §2 符号级删除 |
-| 调过 `agent.governance` / `agent.projects` / `agent.switchProject` / `agent.recover` / `agent.injectSystemMessage` | §3 成员级删除 |
+| 调过 `agent.governance` / `agent.projects` / `agent.switchProject` / `agent.recover` / `agent.injectSystemMessage` / `agent.canContinueWithoutInput()` | §3 成员级删除 |
 | 订阅过 `dedupCompleted` / `projectSwitched` / `goalDriftDetected` | §4 事件删除 |
 | **都没有** → 直接升级，跑一次 `tsc --noEmit` 即可 | §6 核对清单 |
 
@@ -39,7 +39,7 @@
 | 项 | 4.0.0 | 5.0.0 | 差额 |
 |---|---|---|---|
 | 导出符号（含类型） | 156 | 136 | −23 删 / +3 新增 |
-| `Agent` 公开成员 | 70 | 59 | −11 删 / 0 新增 |
+| `Agent` 公开成员 | 70 | 58 | −12 删 / 0 新增 |
 | `SessionManager` 公开成员 | 50 | 36 | −14 删 / 0 新增 |
 | `RolePackManager` 公开成员 | 32 | 31 | −1 删 |
 | `AgentOptions` 字段 | 33 | 31 | −2 删 |
@@ -47,7 +47,7 @@
 | `SessionCheckpoint` 字段 | 12 | 9 | −3 删 |
 | `FetchedPage` 字段 | 4 | 5 | +1 新增 |
 
-**算术可自证**：`31 = 11（§3.1）+ 14（§3.2）+ 6（§3.4：RolePackManager 1 + AgentOptions 2 + SessionCheckpoint 3）`。
+**算术可自证**：`32 = 12（§3.1）+ 14（§3.2）+ 6（§3.4：RolePackManager 1 + AgentOptions 2 + SessionCheckpoint 3）`。
 
 口径：只数**消费者看得见**的成员（`private` / `protected` 在 d.ts 里留存但不计入）。
 
@@ -134,12 +134,13 @@ function agentFor(projectPath: string) {
 
 ---
 
-## §3 成员级删除（31 个）
+## §3 成员级删除（32 个）
 
-### 3.1 `Agent`（11 个）
+### 3.1 `Agent`（12 个）
 
 | 4.x | 5.0.0 改成 |
 |---|---|
+| `agent.canContinueWithoutInput()` | **无替代，也不需要**。软暂停模型下暂停恒安全（无在途目标时暂停即收场）、空输入续跑由 waiting 原因位表达——「可否无输入续跑」不再需要向宿主暴露查询口（5.0.0 内翻案删除，见 CHANGELOG `PUB-API-PRUNE-5`） |
 | `agent.appendPlanItem(desc, pack?)` | `agent.sessionManager.appendPlanItem(desc, pack?)` |
 | `agent.triggerError(cause)` | `agent.sessionManager.triggerError(cause)` |
 | `agent.recover()` | `agent.sessionManager.recover()` |

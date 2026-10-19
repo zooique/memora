@@ -188,7 +188,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
     members: [
       'answerQuestion',
       'archiveSession',
-      'canContinueWithoutInput',
       'cancelAsk',
       'cancelPauseRequest',
       'chat',

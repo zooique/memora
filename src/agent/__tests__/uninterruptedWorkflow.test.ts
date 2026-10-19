@@ -706,8 +706,12 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
     // lowRisk 参数与连续暂停计数机制已整体拆除（生产从未通电），用例删除。
   });
 
-  describe('canContinueWithoutInput（blocked 判据）', () => {
-    it('全部 blocked 计划不应视为可续跑', async () => {
+  // （2026-10-19 删后注记 · PUB-API-PRUNE-5：原 describe 名 canContinueWithoutInput（blocked 判据）
+  // 随该方法整删改名。blocked/pending 判据语义由 hasInflightPlan（SSOT）断言接管；
+  // 「错误态不展示继续」用例随方法删除（该守卫只服务于已删的按钮显隐消费，error 态处置
+  // 由 triggerError/recover 用例覆盖）。resumeExecution 全 blocked 行为用例原样保留。）
+  describe('hasInflightPlan（blocked 判据）', () => {
+    it('全部 blocked 计划不视为在途', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       agent.createCheckpoint();
@@ -717,11 +721,11 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
           { id: 's1', description: '步骤1', status: 'blocked', order: 1 },
           { id: 's2', description: '步骤2', status: 'blocked', order: 2 },
         );
-      // blocked 任务项不视为可续（仅 pending/active 可续）
-      expect(agent.canContinueWithoutInput()).toBe(false);
+      // blocked 任务项不算在途（仅 pending/active 可续）
+      expect(agent.sessionManager!.hasInflightPlan()).toBe(false);
     });
 
-    it('存在 pending/active 任务项时应视为可续跑（防过度修复）', async () => {
+    it('存在 pending/active 任务项时应视为在途（防过度修复）', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       agent.createCheckpoint();
@@ -731,17 +735,17 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
           { id: 's1', description: '步骤1', status: 'done', order: 1 },
           { id: 's2', description: '步骤2', status: 'pending', order: 2 },
         );
-      expect(agent.canContinueWithoutInput()).toBe(true);
+      expect(agent.sessionManager!.hasInflightPlan()).toBe(true);
     });
 
-    it('全部 done 计划不应视为可续跑', async () => {
+    it('全部 done 计划不视为在途', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       agent.createCheckpoint();
       agent
         .getCheckpoint()!
         .plan.push({ id: 's1', description: '步骤1', status: 'done', order: 1 });
-      expect(agent.canContinueWithoutInput()).toBe(false);
+      expect(agent.sessionManager!.hasInflightPlan()).toBe(false);
     });
 
     it('全 blocked 计划无输入续跑应提示阻塞而非"已完成"', async () => {
@@ -765,19 +769,6 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       // 全 blocked 计划应提示阻塞而非误报"已完成"
       expect(text).toContain('阻塞');
       expect(text).not.toContain('已完成');
-    });
-
-    it('错误态不应展示"继续"（error 守卫）', async () => {
-      agent = makeAgent(tmpProject, tmpConfig, tmpData);
-      await agent.init();
-      agent.createCheckpoint();
-      agent
-        .getCheckpoint()!
-        .plan.push({ id: 's1', description: '步骤1', status: 'pending', order: 1 });
-      // 即便存在可推进的 pending 任务项，error 态也不应诱导用户点"继续"后静默无反应
-      agent.sessionManager!.triggerError('LLM 超时');
-      expect(agent.sessionManager!.status).toBe('error');
-      expect(agent.canContinueWithoutInput()).toBe(false);
     });
   });
 

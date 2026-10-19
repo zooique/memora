@@ -211,7 +211,8 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
   // ─── 暂停按钮恒显示（2026-10-19 撤除 canContinue 门控，ARCH-GAP-F1）───
 
   it('thinking：暂停按钮恒存在（不再由「暂停后能否无输入续跑」门控）', () => {
-    // 真机回归锁：宿主在流启动前采样 canContinueWithoutInput 恒 false → 曾整轮无暂停按钮，
+    // 真机回归锁：宿主在流启动前采样 canContinueWithoutInput 恒 false（该方法后随内核
+    // 5.0.0 整删）→ 曾整轮无暂停按钮，
     // 且流内无重投影点，用户被剥夺中断能力。判据撤除后 running 相位无论有无输入都必须可点。
     for (const hasInput of [false, true]) {
       const spec = deriveButtonSemantics({ state: { phase: 'running' }, hasInput });

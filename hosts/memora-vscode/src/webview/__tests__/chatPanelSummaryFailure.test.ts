@@ -99,8 +99,6 @@ function summaryAgentStub(chatFn: () => AsyncGenerator<AgentChunk, void, unknown
     memory: { softDeleteRoundSummaries: vi.fn() },
     getCheckpoint: () => null,
     isPausePending: () => false,
-    // 暂停按钮显隐判据：postTurnUpdate 现取，缺则 TypeError（同型见 chatPanelHistory.test.ts）
-    canContinueWithoutInput: () => true,
     getEffectiveMaxTokens: () => undefined,
     listBackgroundTasks: () => [],
   } as unknown as Agent;

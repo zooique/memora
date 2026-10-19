@@ -70,15 +70,13 @@ function agentStub(): {
   const renameSession = vi.fn();
   const softDeleteRoundSummaries = vi.fn().mockReturnValue(0);
   // 最小 agent：仅暴露会话管理子对象 + 记忆联动 + 事件订阅空实现（bindAgentNoticeEvents 需要）
-  // + 暂停在途判据（postTurnUpdate 折叠 TurnState 时读取，缺则抛错中断链路）
-  // + 暂停按钮显隐判据 canContinueWithoutInput（同型：postTurnUpdate 现取，缺则抛错），其余方法留空
+  // + 暂停在途判据（postTurnUpdate 折叠 TurnState 时读取，缺则抛错中断链路），其余方法留空
   const agent = {
     sessionManager: { switchToSession, renameSession },
     memory: { softDeleteRoundSummaries },
     on: vi.fn(),
     off: vi.fn(),
     isPausePending: () => false,
-    canContinueWithoutInput: () => true,
     // 输出上限**生效值**读取口（取证面用）：缺省 undefined = 未传 max_tokens（回服务端默认）；
     // 需非缺省的用例就地覆盖（替身约定：只补约定内的最小面）
     getEffectiveMaxTokens: () => undefined,
@@ -224,7 +222,6 @@ function chatAgentStub(chatFn: () => AsyncGenerator<AgentChunk, void, unknown>):
     getCheckpoint: () => null,
     // 暂停在途判据（postTurnUpdate 折叠 TurnState 时读取，真实 handlePause 同 API）
     isPausePending: () => false,
-    canContinueWithoutInput: () => true,
     // 输出上限**生效值**读取口（流首 meta 取证包消费）：缺省 undefined = 未传 max_tokens。
     // 替身契约单点——consumeFlow 每轮都经 buildRoundMeta，缺此方法会让整条落盘链路空转
     getEffectiveMaxTokens: () => undefined,
@@ -837,7 +834,6 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
         context: { occupancy: { rolePackBaseTokens: 15000 } },
       }),
       isPausePending: () => false,
-      canContinueWithoutInput: () => true,
     } as unknown as Agent;
     provider.setAgent(agent);
     // providerStore 桩：listMasked 返回 [] + getActiveName undefined → totalTokens 回落内核默认窗口
@@ -959,8 +955,9 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
   // ─── 软暂停入口：生成中暂停走 step 边界挂起 requestPause（与内核 step 边界软暂停语义一致）
   // handlePause = 先读 isPausePending toggle 再调 requestPause/cancelPauseRequest
   // （chatPanel.ts L2026），mock 必须同步新增 isPausePending + cancelPauseRequest，否则 TypeError。
-  // postTurnUpdate 折叠判据同型第四次（isPausePending → getBackgroundTasks/listBackgroundTasks →
-  // canContinueWithoutInput）：替身缺方法即抛错中断链路，宿主侧禁加 `?.()` 掩护（见 L231 注释）。 ───
+  // postTurnUpdate 折叠判据同型第四次（isPausePending → getBackgroundTasks/listBackgroundTasks；
+  // canContinueWithoutInput 曾并列，已随内核 PUB-API-PRUNE-5 整删）：替身缺方法即抛错中断链路，
+  // 宿主侧禁加 `?.()` 掩护（见 L231 注释）。 ───
   function pauseAgentStub(): {
     agent: Agent;
     requestPause: ReturnType<typeof vi.fn>;
@@ -978,8 +975,6 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       pause,
       isPausePending,
       cancelPauseRequest,
-      // 暂停按钮显隐判据（postTurnUpdate 现取；缺则 TypeError 中断 handlePause 后的投影）
-      canContinueWithoutInput: () => true,
       on: vi.fn(),
       off: vi.fn(),
     } as unknown as Agent;
@@ -1337,7 +1332,6 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
       }),
       // postTurnUpdate 折叠 TurnState 时读取（真实 handlePause 同 API）
       isPausePending: () => false,
-      canContinueWithoutInput: () => true,
     } as unknown as Agent);
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
     await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('小组会议');
@@ -2298,7 +2292,6 @@ describe('启动会话对齐（启动即分叉根因修复）', () => {
       on: vi.fn(),
       off: vi.fn(),
       isPausePending: () => false,
-      canContinueWithoutInput: () => true,
       getEffectiveMaxTokens: () => undefined,
     } as unknown as Agent;
     return { agent, switchToSession };

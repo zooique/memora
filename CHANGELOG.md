@@ -9,10 +9,17 @@
 ## [5.0.0] · 未发布
 
 > **📖 升级必读**：[`docs/memora-升级指南-4.x-到-5.0.0.md`](docs/memora-升级指南-4.x-到-5.0.0.md)
-> —— 本区所有 Breaking 项的**改法**都在那篇（23 个导出符号 / 31 个公开成员 / 3 个事件，逐项给替代路径）。
+> —— 本区所有 Breaking 项的**改法**都在那篇（23 个导出符号 / 32 个公开成员 / 3 个事件，逐项给替代路径）。
 > 本区只记录**为什么删**，不重复**怎么改**。
 
 > **本区归属**：仅**内核**（`@zooique/memora`）变更。本版按 SemVer 定为 **major**：目标漂移检测链整体删除（公开 API 编译期破坏）+ 检查点公开方法减法（CHKPT-1/2/3）+ **原 [4.1.0] 区四小节整体归并**（2026-10-15 二次拍板取消 4.1.0：npm 实查最新已发布 = 4.0.0，从未发布的 minor 区无消费者可保、归并窗口仅存在于发版前）+ **存储层 SQLite 实现内核切片**（2026-10-16 新增 2 个导出，非破坏）。宿主变更在 `[Unreleased] · 宿主` 区，不占内核版本号。
+
+### Breaking（内核 · 删除 `Agent.canContinueWithoutInput()` · `PUB-API-PRUNE-5` · 2026-10-19）
+
+- **是什么**：软暂停模型的「可续跑信号」查询口——聚合三个时刻敏感状态（已暂停 / 自主工具步中 / 有在途计划）返回布尔值，曾服务于宿主暂停按钮显隐门控。
+- **为什么删（同日翻案，推翻 ARCH-GAP-F1「保留」裁定）**：① 存在理由已消亡——软暂停模型下暂停**恒安全**（无在途目标时暂停即优雅收场，不是错误路径），宿主门控已撤（运行中恒显示），「可否无输入续跑」的区分由 waiting 的**原因位**表达（`pause` 可空输入续跑 / `ask` 须答题），不再需要查询口；② **带陷阱的死面**——三输入在一轮内反复翻转，任何宿主在错误时刻采样就会复现「整轮无暂停按钮」的同类 bug（ARCH-GAP-F1 根因），保留它 = 留一个会过期的快照诱人误用；③ 零生产消费（真零，仅测试）。
+- **改法**：无替代也不需要——「是否已暂停」看 `sessionManager.status`，「是否有在途计划」看 `sessionManager.hasInflightPlan()`（两稳定真源本就公开）。
+- **配套**：`isInAutonomousStep` 剩余唯一消费者 = `resumeExecution` 预判短路（getter 保留）；`hasInflightPlan` 消费方由三处改两处；blocked/pending 判据测试移植到 `hasInflightPlan` 断言，全 blocked 续跑提示的行为用例原样保留。
 
 ### Added（内核 · 归档防重意图 `skipIfUnchanged` 与 `autoTriggered` 解耦 · `ARCH-GAP-2` · 2026-10-19）
 
@@ -1376,7 +1383,7 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
   （`postTurnUpdate`）** 全链删除，running 相位暂停按钮**恒显示**。原台账拍板的
   `canContinueChanged` 事件方向**作废**（价值不对等 + 采样时机在架构上不可靠 + 补了也可能在工具 step
   与 LLM 调用间反复重投影，见台账本条）。
-- **内核不删**：`Agent.canContinueWithoutInput()` 保留为公共能力 —— 删的是宿主 UI 门控，不是内核判据。
+- **内核不删 → 翻案（2026-10-19 晚 · PUB-API-PRUNE-5）**：`Agent.canContinueWithoutInput()` 当时裁定保留为公共能力，同日翻案**整删**——软暂停模型下暂停恒安全（无在途目标时暂停即收场），「可否无输入续跑」由 waiting 原因位表达，该方法成为零消费且采样时机不可靠的带陷阱死面。见下方 Breaking 条目。
 - **守卫**：新增「`turn_update` 载荷不含 `canContinue`」（宿主投影，锁键不存在而非值为 true）+
   「thinking 相位暂停按钮恒存在」（矩阵，空 / 有输入两态）+「running 相位恒显示」（webview，含申请
   在途切「继续 ▶」）；`chatPanelFlowIntegrity` 强制依赖表撤该项，对照用例改用 `isPausePending`。

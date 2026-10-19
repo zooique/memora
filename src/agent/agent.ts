@@ -1102,24 +1102,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 内核→宿主信号：当前会话是否可"无输入续跑"（决定暂停按钮显隐 + 暂停后继续 UI）
-   *
-   * 真值条件：① 状态机已 paused（已软暂停必可续跑，最高优先级——pauseRequested 在下一 step 边界才挂起，
-   * 彼时 inAutonomousStep 已重置为 false，仅看它会误报）；② loop 在自主工具步（可暴露暂停按钮在边界挂起）；
-   * ③ 存在未完成的计划任务项（多轮任务可续跑下一轮）。三者皆否（纯单轮、无待续目标）→ 隐藏暂停按钮（仅停止）。
-   */
-  canContinueWithoutInput(): boolean {
-    if (this._sessionManager?.status === 'paused') return true;
-    // 错误态不展示"继续"：error 态由检查点恢复回填进入，须显式处理（重新开始或 sessionManager.recover），避免点了静默无反应
-    if (this._sessionManager?.status === 'error') return false;
-    // 仅 pending/active（可推进）任务项计入"可续跑"——blocked 不续（全 blocked 由 isPlanAllBlocked 拦，
-    // 避免全 blocked 计划按钮可点但 resumeExecution 早退）。判定走 SessionManager.hasInflightPlan
-    // 单一真理源（禁内联谓词，SSOT 见 sessionManager.ts hasInflightPlan 注释），与 prepare/loop 同源。
-    const hasPendingPlan = this._sessionManager?.hasInflightPlan() ?? false;
-    return this.requireLoop.isInAutonomousStep || hasPendingPlan;
-  }
-
-  /**
    * 创建会话检查点：快照当前运行时状态（热记忆等），生成纯内存态快照
    * （不落盘、无序列化/恢复路径——中止/断电走「中断轮补全为完整 turn」）。
    * 返回值恒非空：未 init 时由 assertInitialized/requireSessionManager 抛错（configError），

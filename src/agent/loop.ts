@@ -446,7 +446,7 @@ export class AgentLoop {
   private toolExecutedThisTurn = false;
   /** 当前轮次 ID（processUserInput 入口分配一次，各 iteration 共享），用于溯源式摘要 */
   private currentRoundId = '';
-  /** 是否正处于自主工具步执行中（内核自用：resumeExecution 预判短路 / canContinueWithoutInput；宿主零消费） */
+  /** 是否正处于自主工具步执行中（内核自用：resumeExecution 预判短路；宿主零消费） */
   private inAutonomousStep = false;
   /* 策略类字段（toolCallsBlocked/toolStepLimit/errorHandling/providerRouting 等）定义在
    * 单一 L2RuntimeStrategy 对象（见上方 strategy），读取统一走 this.strategy.<field> */
@@ -828,7 +828,7 @@ export class AgentLoop {
     }
   }
 
-  /** 是否正处于自主工具步执行中（消费者 = agent.ts 预判短路/canContinueWithoutInput，内核内部） */
+  /** 是否正处于自主工具步执行中（消费者 = agent.ts 预判短路，内核内部） */
   get isInAutonomousStep(): boolean {
     return this.inAutonomousStep;
   }

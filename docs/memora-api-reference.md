@@ -1024,7 +1024,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 生命周期 | `init()` / `close()` |
 | 对话 | `chat(input, signal?)` / `chatSync(input, signal?)` / `resumeExecution()` |
 | 事件 | `on()` / `off()` / `once()`（继承自 TypedEventEmitter） |
-| 暂停/继续 | `pause(reason, source?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content)` / `removePendingInterject(index)` / `clearPendingInterjections()` / `getPendingInterjections()` / `discardCurrentCheckpoint()` / `canContinueWithoutInput()` |
+| 暂停/继续 | `pause(reason, source?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content)` / `removePendingInterject(index)` / `clearPendingInterjections()` / `getPendingInterjections()` / `discardCurrentCheckpoint()` |
 | 会话 | `forkSession(targetSession?)` / `createCheckpoint()` / `getCheckpoint()` |
 | Provider | `setProvider(provider)` / `setBackgroundProvider(provider)` |
 | 归档模式 | `setArchiveMode(mode)` / `getArchiveMode()` |

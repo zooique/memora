@@ -52,8 +52,6 @@ function interjectAgentStub(items: string[]): Agent {
       return n;
     },
     isPausePending: () => false,
-    // 暂停按钮显隐判据：postTurnUpdate 现取，缺则 TypeError（同型见 chatPanelHistory.test.ts）
-    canContinueWithoutInput: () => true,
     discardCurrentCheckpoint: () => true,
     security: { onWriteConfirmation: () => () => {}, onAudit: () => () => {} },
   } as unknown as Agent;

@@ -141,7 +141,8 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
       // 暂停按钮在 running 相位**恒暴露**，不再由「暂停后能否无输入续跑」门控。
       //
       // 🔴 为什么撤掉该门控（ARCH-GAP-F1 真机 2026-10-19 实证）：宿主在流**启动前**采样
-      // canContinueWithoutInput()，此刻 isInAutonomousStep 尚未置位、计划尚未建立 →
+      // canContinueWithoutInput()（该方法后随内核 5.0.0 整删），此刻 isInAutonomousStep
+      // 尚未置位、计划尚未建立 →
       // 恒为 false → 整轮隐藏暂停按钮；而流内没有重投影点，用户整个回合都无法暂停。
       // 撤除判据而非「补事件重投影」的原因：门控的价值（不宣告无收尾能力的意图）远小于
       // 代价（用户丧失中断能力），且判据的采样时机在架构上不可靠（状态在流内持续变化）。

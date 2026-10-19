@@ -626,9 +626,8 @@ export class SessionManager {
   /**
    * 是否存在「在途计划」= 有未完成任务项（pending 或 active）。
    *
-   * SSOT：全库该命题唯一实现。消费方三处——会议骨架预置守卫（prepare，判断续会不重开）、
-   * 任务表 nudge 跳过（loop，已有在途表则不再诱导建表）、canContinueWithoutInput（agent，
-   * 可续跑信号）。禁任一消费方自行内联谓词。
+   * SSOT：全库该命题唯一实现。消费方两处——会议骨架预置守卫（prepare，判断续会不重开）、
+   * 任务表 nudge 跳过（loop，已有在途表则不再诱导建表）。禁任一消费方自行内联谓词。
    *
    * 口径取 pending||active（非仅 active）：与 ensureActivePlanItem 的补偿语义对齐——
    * plan 非空时恒有一个 active（见 :826 场景 1/2），全 done/blocked 时无 active（场景 3），

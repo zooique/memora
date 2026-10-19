@@ -106,7 +106,6 @@ function flowAgentStub(opts: FlowStubOptions = {}): Agent {
     }),
     getCheckpoint: () => null,
     isPausePending: () => false,
-    canContinueWithoutInput: () => true,
     getEffectiveMaxTokens: () => undefined,
     getPendingInterjections: () => [],
     clearPendingInterjections: () => [],

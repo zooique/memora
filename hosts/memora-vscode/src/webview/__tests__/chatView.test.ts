@@ -1326,7 +1326,8 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
   it('running 相位暂停按钮恒显示（不因内核 canContinue 判据隐藏——ARCH-GAP-F1 回归锁）', () => {
     mountChatView();
     const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
-    // 真机 2026-10-19：流启动前采样的 canContinueWithoutInput 恒 false，曾导致整轮无暂停按钮。
+    // 真机 2026-10-19：流启动前采样的 canContinueWithoutInput 恒 false（该方法后随内核
+    // 5.0.0 整删），曾导致整轮无暂停按钮。
     // 判据已从协议/投影/矩阵撤除 ⇒ 只要相位是 running，按钮必须在且可点。
     dispatchTurn({ phase: 'running' });
     expect(pauseBtn.hidden).toBe(false);
