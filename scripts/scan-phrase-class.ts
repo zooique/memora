@@ -182,6 +182,12 @@ const MEMORY_RECYCLE_CLEANUP: ScanClass = {
         'CHANGELOG 为历史发布记录，按「历史不改写」纪律保留原措辞（其中「30 天自动清理」是当时实现的记述）',
     },
     {
+      id: 'history-changelog-archive',
+      file: /^docs\/CHANGELOG-归档\.md$/,
+      reason:
+        '旧版 CHANGELOG 逐行原文归档（CHLOG-TRIM-1 迁入，零改写纪律）——与 history-changelog 同理，历史措辞不因迁移而改写',
+    },
+    {
       id: 'history-ledger',
       file: /^tasks\//,
       reason: '台账/归档自身引述该类短语（登记纪律、销项过程、复查留痕），是对过程而非对真源的断言',
@@ -233,6 +239,13 @@ const MEMORY_RECYCLE_CLEANUP: ScanClass = {
     },
     // [C] 历史档里的旧措辞 → 被 history-changelog 归类（证明历史面放行生效）
     { probe: '30 天自动清理后的孤儿向量', file: 'CHANGELOG.md', hits: 1, classified: true },
+    // [C2] 同型：归档文件（旧版 CHANGELOG 原文迁入）→ 被 history-changelog-archive 归类
+    {
+      probe: '30 天自动清理后的孤儿向量',
+      file: 'docs/CHANGELOG-归档.md',
+      hits: 1,
+      classified: true,
+    },
     // [D] 普通文本无触发词 → 0 命中（反向护栏：触发词正则过宽会误抓一切文本）
     { probe: '这是一行与短语类无关的普通文本', file: 'src/__probe__.ts', hits: 0 },
     // [E] 回归护栏（结构洞 2）：回收站假话落在**他子系统文件**里 → 仍须未归类
