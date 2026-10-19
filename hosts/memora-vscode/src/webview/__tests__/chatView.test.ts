@@ -1323,19 +1323,21 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(pauseBtn.hidden).toBe(true);
   });
 
-  it('thinking + canContinue=false：暂停按钮隐藏；判据转真恢复（内核投影经 turn_update.state 单通道）', () => {
+  it('running 相位暂停按钮恒显示（不因内核 canContinue 判据隐藏——ARCH-GAP-F1 回归锁）', () => {
     mountChatView();
     const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
-    // 缺省（旧宿主/首帧未送达）：显示——维持接线前既有行为
+    // 真机 2026-10-19：流启动前采样的 canContinueWithoutInput 恒 false，曾导致整轮无暂停按钮。
+    // 判据已从协议/投影/矩阵撤除 ⇒ 只要相位是 running，按钮必须在且可点。
     dispatchTurn({ phase: 'running' });
     expect(pauseBtn.hidden).toBe(false);
-    // 内核判定「暂停了也无输入可续跑」（纯单轮无在途计划 / 全 blocked 计划 / error 态）→ 隐藏，
-    // 不宣告无收尾能力的意图（按钮只宣告路由真实收下的意图）
-    dispatchTurn({ phase: 'running', canContinue: false });
-    expect(pauseBtn.hidden).toBe(true);
-    // 判据转真（计划落表 / 恢复可续跑）→ 恢复显示；同相位内反复，投影即快照
-    dispatchTurn({ phase: 'running', canContinue: true });
+    expect(pauseBtn.title).toBe('暂停生成');
+    // 申请在途 → 切成可反悔的「继续 ▶」，仍然可见（不因判据转 false 消失）
+    dispatchTurn({ phase: 'waiting', reason: 'pause', pausePending: true });
     expect(pauseBtn.hidden).toBe(false);
+    // 回到纯运行态 → 恢复「暂停生成」
+    dispatchTurn({ phase: 'running' });
+    expect(pauseBtn.hidden).toBe(false);
+    expect(pauseBtn.title).toBe('暂停生成');
   });
 
   // ─── pending-queue-bar DOM 渲染（pendingQueue 并入 turn_update 单通道） ───
@@ -10296,13 +10298,17 @@ describe('骨架 id 三方一致性（UI-CONFIRM-P6 轻量版）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════
-// 记忆命中可展开行（HOST-S3-1）
+// 记忆命中明细（HOST-S3-1 / MEM-EVENT-2）
 // ═══════════════════════════════════════════════════════════
 // 数据通路 = 宿主透明转发内核 memoryRecalled（memory_hits 消息，实时专属）。
-// 渲染契约：当前轮正文上方聚合行「本轮参考了 N 条记忆」；id 去重（一轮多次检索合并）；
-// hits 缺失 = 4.0.x 内核 → 单点降级条数提示（宿主不分支）；新轮 meta 聚合重置，
-// 旧轮命中行留在旧轮 DOM 随轮固定。变异锁：删去重 → ② 红；删降级 → ③ 红；删新轮清理 → ④ 红。
-describe('记忆命中可展开行（HOST-S3-1）', () => {
+// 渲染契约（MEM-EVENT-2 落位收口）：命中明细**收进对应那次 search_memories 调用的工具
+// 折叠块**（按 toolCallId 配对；块内按记忆 id 去重，跨调用不合并）；行摘要挂「记忆 N」徽章，
+// 保证收起的工具行仍可见「这次调用看过记忆」。无配对键（老内核）/ 目标行未就绪 → 降级为
+// 轮次级聚合行「本轮参考了 N 条记忆」（信息不丢，位置退回旧行为）；hits 缺失 = 4.0.x 内核
+// → 单点降级条数提示。收场全量重建后明细必须仍在（不带伤）。
+// 变异锁：删配对 → ① 红；删块内去重 / 跨调用合并 → ② 红；删收场回填 → ⑤ 红；
+// 删「行未就绪转兜底」→ ④ 红；删降级条数提示 → ③ 红。
+describe('记忆命中明细（HOST-S3-1 · MEM-EVENT-2 落位）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -10314,81 +10320,198 @@ describe('记忆命中可展开行（HOST-S3-1）', () => {
   function dispatchHits(
     hits: { id: string; name: string; source: string }[] | undefined,
     count?: number,
+    toolCallId?: string,
   ): void {
-    dispatch({ type: 'memory_hits', count: count ?? hits?.length ?? 0, query: '测试', hits });
+    dispatch({
+      type: 'memory_hits',
+      count: count ?? hits?.length ?? 0,
+      query: '测试',
+      hits,
+      toolCallId,
+    });
   }
 
-  it('命中到达 → 正文上方渲染命中行（挂载位置 + summary 文案 + 列表项 title/source + data-memory-id）', () => {
+  /** 建一轮（meta + 正文块）：工具行挂载的前提，也是「命中先于工具行到达」的构造基础 */
+  function beginRoundWithBody(): void {
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: 'T1', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({ type: 'chunk', content: '回答中' });
+  }
+
+  /** 追加一次 search_memories 工具调用行（= 命中明细的配对目标） */
+  function beginToolCall(toolCallId = 't1', seq = 2): void {
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq,
+        ts: `T${seq}`,
+        payload: { toolCallId, name: 'search_memories', args: '{"query":"x"}' },
+      },
+    });
+  }
+
+  /** 一轮 + 一次 search_memories 调用（主路径用例的通用起点） */
+  function beginMemoryCall(toolCallId = 't1', seq = 2): void {
+    beginRoundWithBody();
+    beginToolCall(toolCallId, seq);
+  }
+
+  /** 取工具行（配对断言锚点） */
+  function toolRow(toolCallId: string): HTMLElement | null {
+    return document.querySelector<HTMLElement>(
+      `.round-block__tool[data-tool-call-id="${toolCallId}"]`,
+    );
+  }
+
+  it('命中到达 → 明细收进对应 search_memories 工具折叠块（配对 + 徽章 + 明细项）', () => {
     mountChatView();
-    dispatch({ type: 'chunk', content: '回答中' }); // 建 assistant 块
-    dispatchHits([
-      { id: 'm1', name: '设计约束', source: 'note' },
-      { id: 'm2', name: '上轮方案', source: 'round-summary' },
-    ]);
-    const row = document.querySelector('.memory-hits') as HTMLElement;
+    beginMemoryCall('t1');
+    dispatchHits(
+      [
+        { id: 'm1', name: '设计约束', source: 'note' },
+        { id: 'm2', name: '上轮方案', source: 'round-summary' },
+      ],
+      undefined,
+      't1',
+    );
+    const row = toolRow('t1');
     expect(row).not.toBeNull();
-    // 挂在 assistant 块内、正文（.msg-body）之前（「回答上方一行」落位契约）
-    const assistant = document.querySelector('.msg.assistant') as HTMLElement;
-    const body = assistant.querySelector('.msg-body')!;
-    expect(assistant.contains(row)).toBe(true);
-    expect(body.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
-    expect(row.querySelector('.memory-hits__label')?.textContent).toBe('本轮参考了 2 条记忆');
-    const items = row.querySelectorAll('.memory-hits__item');
+    const box = row!.querySelector<HTMLElement>('.round-block__memory-hits');
+    expect(box).not.toBeNull();
+    // 归属：明细在工具行**内部**（随行收起，不再沉在底部遮挡运行时状态）
+    expect(row!.contains(box)).toBe(true);
+    // 收起态可见信号 = 摘要徽章（没有它，明细藏进折叠体 = 信息静默消失）
+    expect(row!.querySelector('.round-block__memory-badge')?.textContent).toBe('记忆 2');
+    expect(box!.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 2 条记忆');
+    const items = box!.querySelectorAll('.memory-hits__item');
     expect(items).toHaveLength(2);
-    // 首项：id 锚进 data-memory-id（S3-3 反馈寻址预留）+ 标题 + 来源徽章
+    // 反馈寻址键与来源徽章（S3-3 通道靠它定位）
     expect(items[0]!.getAttribute('data-memory-id')).toBe('m1');
     expect(items[0]!.textContent).toContain('设计约束');
     expect(items[0]!.querySelector('.memory-hits__source')?.textContent).toBe('note');
     expect(items[1]!.getAttribute('data-memory-id')).toBe('m2');
+    // 旧落位（正文上方轮次行）不再出现——同一批命中不得两处同现
+    expect(document.querySelector('.memory-hits')).toBeNull();
   });
 
-  it('一轮多次检索 → id 去重聚合（重复命中只列一次，N = 去重后条数）', () => {
+  it('配对边界：同一次调用重复命中 → 块内去重；不同调用 → 各自成块不合并', () => {
     mountChatView();
-    dispatch({ type: 'chunk', content: '回答中' });
-    dispatchHits([{ id: 'm1', name: 'A', source: 'note' }]);
-    // 第二次检索：m1 再次命中 + 新命中 m2 → 合并去重
-    dispatchHits([
-      { id: 'm1', name: 'A', source: 'note' },
-      { id: 'm2', name: 'B', source: 'round-summary' },
-    ]);
-    expect(document.querySelector('.memory-hits__label')?.textContent).toBe('本轮参考了 2 条记忆');
-    // 行复用同一元素（聚合更新不重复插入）
-    expect(document.querySelectorAll('.memory-hits')).toHaveLength(1);
-    expect(document.querySelectorAll('.memory-hits__item')).toHaveLength(2);
+    beginMemoryCall('t1');
+    beginToolCall('t2', 4); // 本轮第二次 search_memories 调用 → 独立工具行
+    dispatchHits([{ id: 'm1', name: 'A', source: 'note' }], undefined, 't1');
+    // 同一调用再来一批：m1 重复 + m2 新增 → 块内去重后 2 条
+    dispatchHits(
+      [
+        { id: 'm1', name: 'A', source: 'note' },
+        { id: 'm2', name: 'B', source: 'round-summary' },
+      ],
+      undefined,
+      't1',
+    );
+    dispatchHits([{ id: 'm1', name: 'A', source: 'note' }], undefined, 't2');
+    const box1 = toolRow('t1')!.querySelector<HTMLElement>('.round-block__memory-hits')!;
+    expect(box1.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 2 条记忆');
+    expect(box1.querySelectorAll('.memory-hits__item')).toHaveLength(2);
+    // 跨调用不去重：同一条 m1 在两次调用里各出现一次（各自的事实，不互相吞并）
+    const box2 = toolRow('t2')!.querySelector<HTMLElement>('.round-block__memory-hits')!;
+    expect(box2.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 1 条记忆');
+    expect(box2.querySelectorAll('.memory-hits__item')).toHaveLength(1);
+    // 幂等重建：反复更新不产生重复块 / 重复徽章
+    expect(toolRow('t1')!.querySelectorAll('.round-block__memory-hits')).toHaveLength(1);
+    expect(toolRow('t1')!.querySelectorAll('.round-block__memory-badge')).toHaveLength(1);
   });
 
-  it('hits 缺失（4.0.x 内核）→ 单点降级条数提示，不渲染命中行', () => {
+  it('hits 缺失（4.0.x 内核）→ 单点降级条数提示，不渲染任何明细', () => {
     mountChatView();
-    dispatch({ type: 'chunk', content: '回答中' });
-    dispatchHits(undefined, 3);
+    beginMemoryCall('t1');
+    dispatchHits(undefined, 3, 't1');
+    expect(document.querySelector('.round-block__memory-hits')).toBeNull();
     expect(document.querySelector('.memory-hits')).toBeNull();
     // 降级 = notice 同款形态（activity 条提示），对齐 0.1.0 行为
     const bar = document.querySelector('.activity-bar') as HTMLElement;
     expect(bar.textContent).toContain('LLM 查询记忆命中 3 条');
   });
 
-  it('新轮 meta → 聚合重置：旧行随旧轮固定（计数不污染），新轮另起一行重新累计', () => {
+  it('降级路径①：无 toolCallId（老内核 / 直调）→ 轮次级聚合行，不做猜测式配对', () => {
     mountChatView();
-    dispatch({ type: 'chunk', content: '第一轮' });
-    dispatchHits([{ id: 'm1', name: 'A', source: 'note' }]);
-    const firstRow = document.querySelector('.memory-hits')!;
-    // 真新轮（无暂停锚无续跑期待）→ 聚合清空
+    beginMemoryCall('t1');
+    dispatchHits([
+      { id: 'm1', name: 'A', source: 'note' },
+      { id: 'm2', name: 'B', source: 'round-summary' },
+    ]);
+    const row = document.querySelector('.memory-hits') as HTMLElement;
+    expect(row).not.toBeNull();
+    // 落位 = 正文上方（旧行为不变）
+    const body = document.querySelector('.msg.assistant .msg-body')!;
+    expect(body.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(row.querySelector('.memory-hits__label')?.textContent).toBe('本轮参考了 2 条记忆');
+    expect(row.querySelectorAll('.memory-hits__item')).toHaveLength(2);
+    // 即便此刻已经有工具行，也不往行里挂（无配对键 = 无归属依据）
+    expect(document.querySelector('.round-block__memory-hits')).toBeNull();
+  });
+
+  it('降级路径②：有 toolCallId 但目标行未进 DOM → 转兜底行，收场后不重复挂回', () => {
+    mountChatView();
+    beginRoundWithBody(); // 只有正文块，工具行还没到（时序竞态）
+    dispatchHits([{ id: 'm1', name: 'A', source: 'note' }], undefined, 't1');
+    expect(document.querySelector('.memory-hits__label')?.textContent).toBe('本轮参考了 1 条记忆');
+    // 行的缺失属时序，不改变归属决策：数据已从 byCall 撤出 →
+    // 随后工具行出现并收场重建，也不会在工具行里二次挂载（防「同一批命中两处同现」）
+    beginToolCall('t1', 3);
+    dispatch({ type: 'done' });
+    expect(document.querySelector('.round-block__memory-hits')).toBeNull();
+    expect(document.querySelectorAll('[data-memory-id="m1"]')).toHaveLength(1);
+  });
+
+  it('收场全量重建 → 明细按 toolCallId 回填进重建后的工具行（收场不丢明细）', () => {
+    mountChatView();
+    beginMemoryCall('t1');
+    dispatchHits(
+      [
+        { id: 'm1', name: '设计约束', source: 'note' },
+        { id: 'm2', name: '上轮方案', source: 'round-summary' },
+      ],
+      undefined,
+      't1',
+    );
     dispatch({
       type: 'process_event',
-      event: { type: 'meta', seq: 1, ts: 'T1', payload: { role: 'AI', llm: 'm' } },
+      event: {
+        type: 'tool_result',
+        seq: 3,
+        ts: 'T3',
+        payload: { toolCallId: 't1', name: 'search_memories', ok: true, summary: '找到 2 条' },
+      },
     });
-    dispatch({ type: 'chunk', content: '第二轮' });
-    dispatchHits([{ id: 'm2', name: 'B', source: 'note' }]);
-    // 旧行：留在旧轮 DOM（随轮固定），计数不被新轮命中污染
-    expect(firstRow.querySelector('.memory-hits__label')?.textContent).toBe('本轮参考了 1 条记忆');
-    // 新轮：新元素另起一行，仅含新命中
-    const rows = document.querySelectorAll('.memory-hits');
-    expect(rows).toHaveLength(2);
-    const secondRow = rows[1] as HTMLElement;
-    expect(secondRow.querySelector('.memory-hits__label')?.textContent).toBe('本轮参考了 1 条记忆');
-    const items = secondRow.querySelectorAll('.memory-hits__item');
-    expect(items).toHaveLength(1);
-    expect(items[0]!.getAttribute('data-memory-id')).toBe('m2');
+    dispatch({ type: 'done' }); // finalizeRound → 工具行全量重建（运行时 DOM 被整体丢弃）
+    const box = document.querySelector('.round-block__memory-hits') as HTMLElement;
+    expect(box).not.toBeNull();
+    expect(box.querySelectorAll('.memory-hits__item')).toHaveLength(2);
+    expect(box.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 2 条记忆');
+    expect(document.querySelector('.round-block__memory-badge')?.textContent).toBe('记忆 2');
+  });
+
+  it('新轮 meta → 模型重置：旧轮明细随旧轮 DOM 固定，新轮不继承旧计数', () => {
+    mountChatView();
+    beginMemoryCall('t1');
+    dispatchHits([{ id: 'm1', name: 'A', source: 'note' }], undefined, 't1');
+    const firstBox = document.querySelector('.round-block__memory-hits') as HTMLElement;
+    // 真新轮（meta 无暂停锚/续跑期待）→ byCall 清空
+    beginMemoryCall('t2', 5);
+    dispatchHits([{ id: 'm2', name: 'B', source: 'note' }], undefined, 't2');
+    // 旧块：仍是 1 条（不被新轮命中污染）
+    expect(firstBox.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 1 条记忆');
+    expect(firstBox.querySelectorAll('.memory-hits__item')).toHaveLength(1);
+    // 新块：只含新轮命中
+    const boxes = document.querySelectorAll('.round-block__memory-hits');
+    expect(boxes).toHaveLength(2);
+    expect(boxes[1]!.querySelectorAll('.memory-hits__item')).toHaveLength(1);
+    expect(boxes[1]!.querySelector('[data-memory-id]')?.getAttribute('data-memory-id')).toBe(
+      'm2',
+    );
   });
 });
 
@@ -10470,6 +10593,44 @@ describe('记忆反馈通道（HOST-S3-3）', () => {
     expect(bar.textContent).toContain('内核拒绝删除');
     // 删除失败行不摘（记忆仍在库中，行如实保留）
     expect(document.querySelectorAll('.memory-hits__item')).toHaveLength(1);
+  });
+
+  it('memory_deleted ok:true（配对落位）→ 工具行内明细同步摘除 + 徽章计数更新，清空后块整体消失', () => {
+    mountChatView();
+    // 一次 search_memories 调用命中 2 条 → 明细收在工具行内（MEM-EVENT-2 主落位）
+    dispatch({ type: 'chunk', content: '回答中' });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: 'T2',
+        payload: { toolCallId: 't1', name: 'search_memories', args: '{"query":"x"}' },
+      },
+    });
+    dispatch({
+      type: 'memory_hits',
+      count: 2,
+      query: '测试',
+      hits: [
+        { id: 'm1', name: 'A', source: 'note' },
+        { id: 'm2', name: 'B', source: 'round-summary' },
+      ],
+      toolCallId: 't1',
+    });
+    expect(document.querySelector('.round-block__memory-badge')?.textContent).toBe('记忆 2');
+
+    dispatch({ type: 'memory_deleted', ok: true, id: 'm1' });
+    // 模型同步 → 块与徽章按剩余条数重建（不清模型会被收场重建「复活」）
+    expect(document.querySelectorAll('[data-memory-id="m1"]')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-memory-id="m2"]')).toHaveLength(1);
+    expect(document.querySelector('.round-block__memory-badge')?.textContent).toBe('记忆 1');
+    expect(document.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 1 条记忆');
+
+    // 删到空 → 块与徽章一并摘除（不留空壳标题行）
+    dispatch({ type: 'memory_deleted', ok: true, id: 'm2' });
+    expect(document.querySelector('.round-block__memory-hits')).toBeNull();
+    expect(document.querySelector('.round-block__memory-badge')).toBeNull();
   });
 });
 

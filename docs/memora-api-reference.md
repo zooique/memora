@@ -275,7 +275,7 @@ agent.once<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[
 |--------|------|----------|
 | `memoryAdded` | `{ id, source, name }` | 记忆被写入存储（round-summary 沉淀等） |
 | `rolePackSwitched` | `{ from: string \| null, to }` | 角色包被切换（自动匹配 / 手动切换共用唯一切换入口） |
-| `memoryRecalled` | `{ count, query, hits? }` | LLM 经 `search_memories` 命中记忆（`hits` = 命中明细，4.1.0 起可选） |
+| `memoryRecalled` | `{ count, query, hits?, toolCallId? }` | LLM 经 `search_memories` 命中记忆（`hits` = 命中明细，4.1.0 起可选；`toolCallId` = 本次调用的配对键，4.1.x 起可选，宿主据此把明细挂回对应工具行，缺省回退轮次级落位） |
 | `sessionForked` | `{ from, to, roundCount }` | 会话被分叉（`roundCount` = 新会话 Round 数） |
 | `sessionSwitched` | `{ date, session, fromSessionId, toSessionId }` | 会话身份切换完成（载荷指向被切走的旧会话；内核自消费，宿主零消费为刻意设计） |
 | `archiveFailed` | `{ stage: 'session', message }` | 归档异常（fire-and-forget catch 分支发射，宿主可通知用户） |

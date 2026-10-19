@@ -1398,17 +1398,24 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * memoryRecalled：LLM 查询记忆库命中 N 条相关记忆
    *
-   * HOST-S3-1：由 notice 条数提示升级为**透明转发** memory_hits——命中明细（hits）
-   * 由 webview 在当前轮回答上方渲染可展开行（「本轮参考了 N 条记忆」）。
-   * - 宿主零加工（不截断、不改写）：载荷形态真源 = 内核 AgentEventMap['memoryRecalled']，
-   *   明细上限由内核 parseLimit（50）单点钳制，此处只转发。
-   * - hits 可选 = 跨 dist 契约：4.0.x 内核不发此字段（内联类型层强制容错）；
-   *   缺 hits 时的条数提示降级收敛在 webview 渲染层单点处理（宿主不分支）。
+   * HOST-S3-1 / MEM-EVENT-2：由 notice 条数提示升级为**透明转发** memory_hits——命中明细
+   * （hits）由 webview 收进对应那次 search_memories 调用的工具折叠块（按 toolCallId 配对；
+   * 无 ID / 行未就绪则回退轮次级聚合行）。
+   * - 宿主零加工（不截断、不改写、不做配对决策）：载荷形态真源 = 内核
+   *   AgentEventMap['memoryRecalled']（含 toolCallId），明细上限由内核 parseLimit（50）单点钳制。
+   * - hits / toolCallId 均可选 = 跨 dist 契约：老内核不发这些字段（类型层强制 webview 容错）。
+   *   配对与否、落位退化的分支**全在 webview 渲染层**，宿主只搬字段。
    * 唯一触发位 = search_memories 工具命中（assembler 接线），
    * 对齐内核 builtinToolHandlers.searchMemories 命中点。
    */
   private readonly onMemoryRecalled = (info: AgentEventMap['memoryRecalled']): void => {
-    this.post({ type: 'memory_hits', count: info.count, query: info.query, hits: info.hits });
+    this.post({
+      type: 'memory_hits',
+      count: info.count,
+      query: info.query,
+      hits: info.hits,
+      toolCallId: info.toolCallId,
+    });
   };
 
   /**
@@ -2714,10 +2721,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       pendingQuestions: questions.length > 0 ? questions : undefined,
       liveRoundId: live?.roundId,
       lastRound: last ? { id: last.id, status: last.status } : undefined,
-      // 暂停按钮显隐判据 SSOT：现取内核 canContinueWithoutInput（纯函数、无 init 断言），
-      // 每次投影刷新——plan_snapshot / 状态跃迁都经 postTurnUpdate 重投影，判据不腐化。
-      // agent 未就绪（ready 握手前）缺省 true = 维持「运行中即显示」的既有行为。
-      canContinue: this._agent?.canContinueWithoutInput() ?? true,
     });
     this.post({
       type: 'turn_update',

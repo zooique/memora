@@ -528,14 +528,29 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let roundBlockEl: HTMLDetailsElement | null = null;
   /** round-block 已挂载的 assistant 块（重放去重判定：roundId 首次出现才挂） */
   let roundBlockHostEl: HTMLElement | null = null;
+  /** 单条命中项（记忆 id → 展示面）：id 为 Map 键（同调用内去重）兼反馈寻址键（data-memory-id） */
+  type MemoryHitEntry = { name: string; source: string };
   /**
-   * 本轮记忆命中聚合（HOST-S3-1）：id → {name, source}，一轮多次 search_memories 按 id
-   * 去重合并为一行「本轮参考了 N 条记忆」。键 = 记忆 id 全局唯一（S3-3 反馈寻址预留）。
-   * 实时专属：重放轨（processEvents）无此事件 ⇒ 重放历史轮不渲染（诚实降级）。
-   * 新轮 meta 清空（与 currentEvents 同点）；旧轮命中行留在旧轮 DOM 随轮固定。
+   * 本轮记忆命中·**按调用分组**（MEM-EVENT-2 落位收口）：toolCallId → (记忆 id → 命中项)。
+   *
+   * 归属判据单一真源 = 内核 memoryRecalled.toolCallId（源自 tool_call 唯一 ID），宿主不猜、
+   * 不按 query 文本或行序配对。一块 = 一次 search_memories 调用，块内按 id 去重（同一次
+   * 调用里重复命中同一记忆只列一次）；跨调用不去重（各调用各自的事实，不互相吞并）。
+   * 消费面两处共用同一模型：① 实时 `attachMemoryHitsToToolRow` 增量挂载；
+   * ② finalize/中断重建时 `renderToolRow` 经 resolver 回填（DOM 全量重建后明细不丢）。
+   * 实时专属：重放轨（processEvents）无此事件 ⇒ 重放历史轮不渲染（诚实降级，本次迁移不变）。
+   * 新轮 meta / 复位清空（与 currentEvents 同点）；已成轮的明细随该轮 DOM 固定。
    */
-  const currentMemoryHits = new Map<string, { name: string; source: string }>(); // Map 原地清空（clear），引用不换
-  /** 当前轮命中行 DOM 引用（聚合更新复用同一元素，防重复插入） */
+  const currentMemoryHitsByCall = new Map<string, Map<string, MemoryHitEntry>>();
+  /**
+   * 本轮记忆命中·**无配对对象的兜底聚合**（id → 命中项）：一轮合并为一行「本轮参考了 N 条记忆」。
+   *
+   * 仅在「无 toolCallId（老内核 / 直调）」或「配对目标工具行尚未在 DOM」时承接数据——
+   * 宁可退回旧落位也不丢信息（不带伤）。有配对键且行就绪的数据**不进这里**，避免同一批
+   * 命中同时出现在工具块和轮次行两处（双写 = 用户看到重复）。
+   */
+  const currentMemoryHits = new Map<string, MemoryHitEntry>(); // Map 原地清空（clear），引用不换
+  /** 兜底命中行 DOM 引用（聚合更新复用同一元素，防重复插入） */
   let memoryHitsEl: HTMLDetailsElement | null = null;
   /** 运行时过程平铺容器：运行时**无 round-block 大折叠壳**——
    *  过程（narrate 冒号行 / 工具折叠行 / 思考状态）按任务项时序平铺此容器（挂 label 与
@@ -1777,6 +1792,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     resolveSearchEvidence?: (
       start: Extract<ProcessEvent, { type: 'tool_start' }>,
     ) => WebSearchEvidence | undefined,
+    resolveMemoryHits?: (toolCallId: string) => Map<string, MemoryHitEntry> | undefined,
   ): HTMLDetailsElement {
     const result = events.find(
       (e): e is Extract<ProcessEvent, { type: 'tool_result' }> =>
@@ -1826,6 +1842,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (resolveSearchEvidence) {
       const ev = resolveSearchEvidence(start);
       if (ev) row.appendChild(renderSearchEvidenceBlock(ev));
+    }
+    // 记忆命中明细（MEM-EVENT-2）：仅收场重建路径传解析器——运行时由 memory_hits 消息
+    // 增量挂载（attachMemoryHitsToToolRow），此处负责「DOM 全量重建后明细不丢」。
+    // 重放历史轮不传（processEvents 落盘轨无此事件，诚实降级不伪造数据源）。
+    if (resolveMemoryHits) {
+      const hits = resolveMemoryHits(start.payload.toolCallId);
+      if (hits && hits.size > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'round-block__memory-badge';
+        badge.textContent = `记忆 ${hits.size}`;
+        badge.title = `本次调用命中 ${hits.size} 条记忆（展开查看明细）`;
+        summary.appendChild(badge);
+        row.appendChild(buildMemoryHitsBlock(hits));
+      }
     }
     // 返回行元素：由调用方按 seq 插入 details 顶层（扁平化，不再自挂容器）
     return row;
@@ -1889,12 +1919,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *                          增量插入 round-block，不重复渲染）
    * @param evidence  本轮裁决证据（仅重放路径传 RoundView.evidence；运行时/中断轮缺省 →
    *                  web_search 行不加证据块。证据轮末才落盘，实时路径自然无此字段）
+   * @param resolveMemoryHits 记忆命中解析器（仅**收场重建**路径传：finalizeRound 从
+   *                  currentMemoryHitsByCall 取）。作用 = DOM 全量重建后把已挂过的命中明细
+   *                  补回对应工具行；重放历史轮/中断轮孤儿重建不传（无实时数据源）。
    */
   function renderRoundBlock(
     events: ProcessEvent[],
     finalize: boolean,
     interactiveInputs?: RuntimeInteractiveInput[],
     evidence?: RoundView['evidence'],
+    resolveMemoryHits?: (toolCallId: string) => Map<string, MemoryHitEntry> | undefined,
   ): void {
     // 每次重建都现建解析器（闭包持消费游标）：同一轮多次重放各自从头消费，结果确定不累积
     const resolveSearchEvidence = buildSearchEvidenceResolver(evidence);
@@ -2009,7 +2043,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 归组定位与逐条插入同锚（段内首个 tool_start 的 ts/seq）——批块不越任务项边界
       const { host } = planItemContainerFor(details, events, batch.anchorTs, batch.segId);
       if (!multi) {
-        const row = renderToolRow(batch.entries[0]!.start, events, resolveSearchEvidence);
+        const row = renderToolRow(
+          batch.entries[0]!.start,
+          events,
+          resolveSearchEvidence,
+          resolveMemoryHits,
+        );
         // 行即批：批容器 key（段 id）挂行自身（口径③：批 key = 段 id，非 toolCallId）
         row.dataset.toolBatch = String(batch.segId);
         insertPlanItemInOrder(host, row, batch.anchorTs);
@@ -2018,7 +2057,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const block = createToolBatchBlock(batch, false);
       const body = block.querySelector('.round-block__tool-batch-body') as HTMLElement;
       for (const entry of batch.entries)
-        body.appendChild(renderToolRow(entry.start, events, resolveSearchEvidence));
+        body.appendChild(renderToolRow(entry.start, events, resolveSearchEvidence, resolveMemoryHits));
       insertPlanItemInOrder(host, block, batch.anchorTs);
     }
     // § 思考（per-step 聚合折叠块）：**一个 step 一个折叠块**（同 step 碎片原样连续拼接，
@@ -2596,22 +2635,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let skeletonState: SkeletonState = { phase: 'idle' };
 
   /**
-   * 暂停按钮显隐判据缓存：内核 `canContinueWithoutInput` 投影（经 turn_update.state 送达）。
-   *
-   * 与 skeletonState **同船更新**（applySkeletonState 单写点内赋值），但单独存变量——
-   * `SkeletonState` 投影刻意不含它（该投影只服务「三态 + 申请在途」容器语义，判据是按钮
-   * 矩阵的自变量而非骨架态）。缺省 true = 旧宿主/首帧未送达，维持「运行中即显示」。
-   */
-  let canContinueFlag = true;
-
-  /**
    * 骨架状态单写点：更新容器 → 重算按钮语义。
    * 只做语义重算（与 legacy 调用集逐一对应）；`send.disabled`（syncSendEnabled）与
    * 会话控件锁由调用方按各自原有节奏调用，避免夹带行为变更。
    */
-  function applySkeletonState(next: SkeletonState, canContinue = true): void {
+  function applySkeletonState(next: SkeletonState): void {
     skeletonState = next;
-    canContinueFlag = canContinue;
     syncButtonSemantics();
     // 2b-2b 换真源：容器写入点从 setStatus（内部曾调 syncSendEnabled）迁到 turn_update 分支，
     // disabled 属按钮语义一部分，须在单写点同步——否则 running/paused/settled 切换后
@@ -2638,7 +2667,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return deriveButtonSemantics({
       state: skeletonState,
       hasInput: input.value.trim().length > 0,
-      canContinue: canContinueFlag,
     });
   }
 
@@ -4537,7 +4565,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 监听器内被静默吞掉）。收口三步放 finally：即便渲染失败，流式态也必收敛（不再带伤共存）。
     // 异常本身继续向上抛（由 onMessage 兜底 console.error 观测）——兜底观测，不掩盖根因。
     try {
-      renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, evidence);
+      // 命中明细随收场一起回填：finalize 会全量重建工具行（运行时增量挂的 DOM 被丢弃），
+      // 这里把 currentMemoryHitsByCall 交给渲染器按 toolCallId 重新挂回，避免「收场即丢明细」。
+      renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, evidence, (toolCallId) =>
+        currentMemoryHitsByCall.get(toolCallId),
+      );
     } finally {
       flowEl?.remove();
       flowEl = null;
@@ -4778,14 +4810,126 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 记忆命中可展开行（HOST-S3-1）：当前轮「本轮参考了 N 条记忆」。
+   * 记忆命中项构建器（单一真理源）：source 徽章 + 名称 + ✕ 反馈按钮。
    *
-   * 落位 = 当前 assistant 块内正文（.msg-body）之前（insertBeforeBody 锚点，与过程轨
-   * 同挂载语义——「过程在上 · 报告在下」，命中行属过程类元素，恒在正文上方带）。
-   * 聚合更新复用同一元素（isConnected 守卫防翻列表重建后孤儿引用重复插入）；
-   * 挂载时机 = 实时（search_memories 命中即见，回答产出前用户就能看到 AI 在翻哪些记忆）。
-   * 列表项 textContent 构建防注入；data-memory-id 为反馈寻址键（S3-3 已接入：
-   * 行尾 ✕ 发 memory_delete，宿主确认后软删，memory_deleted 应答驱动摘除）。
+   * 两个消费面共用本函数——① 工具折叠块体内明细（MEM-EVENT-2 主落位，见
+   * buildMemoryHitsBlock）；② 无配对对象的兜底轮次行（见 renderMemoryHits）。
+   * 共用理由不是省代码：S3-3 反馈通道靠 `data-memory-id` 寻址，两处各写一份必然腐化
+   * （漏挂一处 = 该处 ✕ 静默失效，而失效表现为「点了没反应」，是最难被发现的带伤形态）。
+   * 列表项 textContent 构建防注入。
+   *
+   * @param hits [记忆 id, 命中项] 序列（Map 迭代序 = 到达序）
+   */
+  function buildMemoryHitItems(hits: Iterable<[string, MemoryHitEntry]>): HTMLElement[] {
+    const items: HTMLElement[] = [];
+    for (const [id, hit] of hits) {
+      const item = document.createElement('div');
+      item.className = 'memory-hits__item';
+      // id 锚进 DOM：反馈通道按此寻址（memory_deleted 应答按 id 全局摘除，含已归档轮）
+      item.dataset.memoryId = id;
+      const source = document.createElement('span');
+      source.className = 'memory-hits__source';
+      source.textContent = hit.source;
+      const name = document.createElement('span');
+      name.className = 'memory-hits__name';
+      name.textContent = hit.name || id; // 无名记忆回退 id（不静默空行）
+      item.appendChild(source);
+      item.appendChild(name);
+      // 反馈入口（HOST-S3-3）：「没用/已过时」→ 发 memory_delete 软删该记忆
+      //（宿主模态二次确认，回收站可恢复）；stopPropagation 防触发外层 <details> 折叠
+      //（与 memoryView 卡片 ✕ 同范式，图标用 icons.ts close——字符图标被 iconLanguage 守卫拦）。
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'memory-hits__remove';
+      removeBtn.type = 'button';
+      removeBtn.title = '没用/已过时？移入回收站（可恢复）';
+      removeBtn.setAttribute('aria-label', `反馈无用：${hit.name || id}`);
+      removeBtn.innerHTML = getIconSvg('close', 10, 10); // 静态 SVG，无外部输入
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'memory_delete', id });
+      });
+      item.appendChild(removeBtn);
+      items.push(item);
+    }
+    return items;
+  }
+
+  /**
+   * 单次记忆召回工具行内的命中明细块（MEM-EVENT-2 主落位）。
+   *
+   * 形态 = `标题行（本次命中 N 条记忆）+ 命中项平铺`，**刻意不再套一层 <details>**：
+   * 父级工具行本身已是折叠体，双层折叠是同义重复（用户要点两次才见到明细）。
+   * 代价与补偿：明细随工具行默认收起（成功行 open=false），故行摘要另挂「记忆 N」徽章
+   * （见 attachMemoryHitsToToolRow），保证收起态仍保留「这次调用看过记忆」这一事实——
+   * 落位迁移不得吃掉原本可见的信息。
+   *
+   * @param hits 该 toolCallId 下的命中（块内已按记忆 id 去重）
+   */
+  function buildMemoryHitsBlock(hits: Map<string, MemoryHitEntry>): HTMLElement {
+    const box = document.createElement('div');
+    box.className = 'round-block__memory-hits';
+    const label = document.createElement('div');
+    label.className = 'memory-hits__label';
+    label.textContent = `本次命中 ${hits.size} 条记忆`;
+    box.appendChild(label);
+    const list = document.createElement('div');
+    list.className = 'memory-hits__list';
+    for (const item of buildMemoryHitItems(hits)) list.appendChild(item);
+    box.appendChild(list);
+    return box;
+  }
+
+  /**
+   * 按 toolCallId 定位工具行（属性扫描，不拼选择器）。
+   *
+   * 不用 `[data-tool-call-id="${id}"]`：toolCallId 源自 LLM 供应商，理论可含引号/反斜杠，
+   * 拼进选择器会抛 SyntaxError 或被误解析。扫描成本 O(工具行数)，一次成轮几十行的量级可忽略，
+   * 换掉一整类逃逸风险。（既有 updateToolRowState 的拼接式选择器不在本次改动范围，未联动。）
+   */
+  function findToolRow(toolCallId: string): HTMLDetailsElement | null {
+    for (const row of messages.querySelectorAll<HTMLDetailsElement>('.round-block__tool')) {
+      if (row.dataset.toolCallId === toolCallId) return row;
+    }
+    return null;
+  }
+
+  /**
+   * 把某次 search_memories 调用的命中明细挂进对应工具折叠块（幂等重建）。
+   *
+   * 幂等策略 = 「先摘后建」而非增量对账：同一 toolCallId 可能多次更新（一轮多次检索同一调用
+   * 的追加、memory_deleted 后的重算），每次都从 currentMemoryHitsByCall 重建，
+   * 保证「模型是什么样，DOM 就是什么样」，不会留下孤儿节点或错位计数。
+   *
+   * @returns 目标工具行是否存在（false ⇒ 调用方须把数据转入兜底聚合——行未就绪或老内核无
+   *   配对键时，宁可退回旧落位也不丢信息）
+   */
+  function attachMemoryHitsToToolRow(toolCallId: string): boolean {
+    const row = findToolRow(toolCallId);
+    if (!row) return false;
+    row.querySelector('.round-block__memory-badge')?.remove();
+    row.querySelector('.round-block__memory-hits')?.remove();
+    const hits = currentMemoryHitsByCall.get(toolCallId);
+    if (!hits || hits.size === 0) return true;
+    const summary = row.querySelector('.round-block__tool-name');
+    if (summary) {
+      const badge = document.createElement('span');
+      badge.className = 'round-block__memory-badge';
+      badge.textContent = `记忆 ${hits.size}`;
+      badge.title = `本次调用命中 ${hits.size} 条记忆（展开查看明细）`;
+      summary.appendChild(badge);
+    }
+    row.appendChild(buildMemoryHitsBlock(hits));
+    return true;
+  }
+
+  /**
+   * 记忆命中兜底行（HOST-S3-1 落位的**降级路径**）：当前轮「本轮参考了 N 条记忆」。
+   *
+   * 出场条件仅两种：`memory_hits` 缺 toolCallId（老内核 / 测试直调），或配对目标工具行
+   * 尚未进 DOM（时序竞态）。有配对键且行就绪的命中走 attachMemoryHitsToToolRow——
+   * 两者数据源分离（byCall Map / 本函数读的兜底 Map），同一批命中不会两处同现。
+   * 落位 = 当前 assistant 块内正文（.msg-body）之前；聚合更新复用同一元素
+   * （isConnected 守卫防翻列表重建后孤儿引用重复插入）。
    */
   function renderMemoryHits(): void {
     const host = activeAssistantEl;
@@ -4824,35 +4968,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const list = el.querySelector<HTMLElement>('.memory-hits__list');
     if (!list) return;
     list.textContent = '';
-    for (const [id, hit] of currentMemoryHits) {
-      const item = document.createElement('div');
-      item.className = 'memory-hits__item';
-      // id 锚进 DOM：反馈通道按此寻址（memory_deleted 应答按 id 全局摘除，含已归档轮）
-      item.dataset.memoryId = id;
-      const source = document.createElement('span');
-      source.className = 'memory-hits__source';
-      source.textContent = hit.source;
-      const name = document.createElement('span');
-      name.className = 'memory-hits__name';
-      name.textContent = hit.name || id; // 无名记忆回退 id（不静默空行）
-      item.appendChild(source);
-      item.appendChild(name);
-      // 反馈入口（HOST-S3-3）：「没用/已过时」→ 发 memory_delete 软删该记忆
-      //（宿主模态二次确认，回收站可恢复）；stopPropagation 防触发外层 <details> 折叠
-      //（与 memoryView 卡片 ✕ 同范式，图标用 icons.ts close——字符图标被 iconLanguage 守卫拦）。
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'memory-hits__remove';
-      removeBtn.type = 'button';
-      removeBtn.title = '没用/已过时？移入回收站（可恢复）';
-      removeBtn.setAttribute('aria-label', `反馈无用：${hit.name || id}`);
-      removeBtn.innerHTML = getIconSvg('close', 10, 10); // 静态 SVG，无外部输入
-      removeBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        vscode.postMessage({ type: 'memory_delete', id });
-      });
-      item.appendChild(removeBtn);
-      list.appendChild(item);
-    }
+    for (const item of buildMemoryHitItems(currentMemoryHits)) list.appendChild(item);
   }
 
   /**
@@ -5189,7 +5305,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     pausedAssistantEl = null;
     // 命中聚合复位（HOST-S3-1 复位完整性）：与各复位对称——meta 新轮分支虽也会清，
     // 但复位函数不得依赖「每 turn 必经 meta」这一当前时序不变量兜底（防止未来不经 meta
-    // 的复位路径漏清跨会话残留）
+    // 的复位路径漏清跨会话残留）。byCall / 兜底两份模型同点清（任漏一处 = 跨轮串味）
+    currentMemoryHitsByCall.clear();
     currentMemoryHits.clear();
     memoryHitsEl = null;
   }
@@ -5215,6 +5332,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     pausedAssistantEl = null;
     // 命中聚合复位（HOST-S3-1 复位完整性）：切换/清空会话时旧轮命中不得跨会话残留
     //（DOM 行随 messages 清空已摘，此处清数据侧聚合 + 引用，与 resetForNewClosedLoop 对称）
+    currentMemoryHitsByCall.clear();
     currentMemoryHits.clear();
     memoryHitsEl = null;
     // 流式状态复位：清空后不再累积/渲染半截流（下次 chunk 会 beginStreaming 重建）
@@ -5391,13 +5509,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 前值推演；宿主在流起始（running 投影）、流尾（settled/waiting）、申请在途（waiting pausePending）、
       // 重放（idle/settled）等一切 turn 状态变化点推送。legacy pause_pending 消息已删除
       //（宿主/ webview 双端同步删，申请在途统一由 turn_update.state 承载）。
-      // canContinue 判据（内核 canContinueWithoutInput 投影）与骨架态同船送达——running/
-      // waiting 分支携带（paused 分支内核恒 true 不携带），缺省按 true 处理（见 applySkeletonState 形参缺省）。
-      const projectedCanContinue =
-        msg.state.phase === 'running' || msg.state.phase === 'waiting'
-          ? (msg.state.canContinue ?? true)
-          : true;
-      applySkeletonState(skeletonFromTurnState(msg.state), projectedCanContinue);
+      // 暂停按钮显隐只看相位（running 恒显示）——不再消费 canContinue：该判据在流启动前
+      // 采样恒 false，曾导致整轮无暂停按钮（ARCH-GAP-F1，判据已从协议/投影/矩阵单点撤除）。
+      applySkeletonState(skeletonFromTurnState(msg.state));
       // 待发送区渲染真源并入 turn_update 单通道（pending_queue_update 已删）。
       // pendingQueue 可选字段，缺省（旧宿主/测试构造）则不刷新待发送区（保持现状）。
       if (msg.pendingQueue) {
@@ -5486,6 +5600,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           resumePending = false; // 真新轮：清续跑期待——残留 true 会被本分支误消费成续跑（清理纪律与 done/interrupted 对称）
           currentEvents = [];
           // 新轮：命中聚合重置（HOST-S3-1）——旧轮命中行留在旧轮 DOM 随轮固定，引用置 null 防误更新
+          currentMemoryHitsByCall.clear();
           currentMemoryHits.clear();
           memoryHitsEl = null;
           livePlanStates = new Map(); // 新轮：实时任务项状态重置（残留会把上轮图标投影进新轮组）
@@ -5892,16 +6007,29 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'notice') {
       showActivity(msg.level, msg.message, undefined, msg.kind);
     } else if (msg.type === 'memory_hits') {
-      // HOST-S3-1：记忆命中明细（宿主透明转发内核 memoryRecalled）。
+      // HOST-S3-1 / MEM-EVENT-2：记忆命中明细（宿主透明转发内核 memoryRecalled）。
       // 降级单点：hits 缺失/空 = 4.0.x 内核不发明细 → 回落条数提示（notice 同款形态），
       // 宿主不分支（跨 dist 容错收敛在渲染层）。
       if (!msg.hits || msg.hits.length === 0) {
         showActivity('info', `LLM 查询记忆命中 ${msg.count} 条`);
-      } else {
-        // id 去重聚合：一轮多次检索命中同一条记忆只列一次（Map 键天然去重）
-        for (const h of msg.hits) {
-          currentMemoryHits.set(h.id, { name: h.name, source: h.source });
+      } else if (msg.toolCallId) {
+        // 主路径：按 toolCallId 收进**对应那次调用**的工具折叠块（一次调用一块，块内按 id
+        // 去重——同一次调用重复命中同一记忆只列一次；跨调用各算各的，不互相吞并）。
+        const callId = msg.toolCallId;
+        const bucket = currentMemoryHitsByCall.get(callId) ?? new Map<string, MemoryHitEntry>();
+        for (const h of msg.hits) bucket.set(h.id, { name: h.name, source: h.source });
+        currentMemoryHitsByCall.set(callId, bucket);
+        if (!attachMemoryHitsToToolRow(callId)) {
+          // 目标行尚未进 DOM（时序竞态）→ 数据转入兜底聚合行：信息不丢，位置退回旧行为。
+          // 必须先撤出 byCall——否则收场重建时解析器会再挂一次，同一批命中在工具块和
+          // 轮次行双写（用户看到重复），是本迁移最易踩的带伤形态。
+          currentMemoryHitsByCall.delete(callId);
+          for (const h of msg.hits) currentMemoryHits.set(h.id, { name: h.name, source: h.source });
+          renderMemoryHits();
         }
+      } else {
+        // 无配对键（老内核 / 直调）→ 轮次级聚合行（旧落位，不改行为）
+        for (const h of msg.hits) currentMemoryHits.set(h.id, { name: h.name, source: h.source });
         renderMemoryHits();
       }
     } else if (msg.type === 'memory_deleted') {
@@ -5910,10 +6038,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 宿主侧模态确认「取消」不发本消息（settingsPanel 同款契约），达此分支即真删/真败。
       if (msg.ok) {
         currentMemoryHits.delete(msg.id);
+        // 按调用分组同步摘除：收场重建从 byCall 取数，模型不清则明细会被重新挂回来
+        //（表现为「删了又出现」的鬼打墙，用户视角是反馈无效）。
+        for (const [callId, bucket] of currentMemoryHitsByCall) {
+          if (!bucket.delete(msg.id)) continue;
+          // 该调用仍有明细 → 重建块与徽章计数；已清空 → 块与徽章一并摘除（重建器内部处理空态）
+          attachMemoryHitsToToolRow(callId);
+        }
+        // 已归档轮的命中行只存在于 DOM（数据随轮固定，不在任何 Map 里）→ 按 id 全局摘除
         document.querySelectorAll<HTMLElement>('[data-memory-id]').forEach((el) => {
           if (el.dataset.memoryId === msg.id) el.remove();
         });
-        renderMemoryHits(); // 当前轮聚合空则整行摘除（renderMemoryHits 空态分支）
+        renderMemoryHits(); // 兜底聚合空则整行摘除（renderMemoryHits 空态分支）
         showActivity('info', '已反馈「无用」，记忆移入回收站（可在记忆管理中恢复）');
       } else {
         showActivity('error', `反馈失败：${msg.message ?? '未知错误'}`);

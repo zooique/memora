@@ -1084,8 +1084,16 @@ export class BuiltinToolHandlers {
    * @param query 搜索关键词
    * @param limitStr 返回数量上限
    * @param modeStr 搜索模式："match"（任一命中，默认）或 "near"（全部命中）
+   * @param toolCallId 本次 tool_call 唯一 ID（可选 · 宿主配对通道，MEM-EVENT-2）：原样透传进
+   *   memoryRecalled 载荷，供宿主把命中明细挂回对应工具折叠块。缺省 = 载荷不带该字段，
+   *   宿主回退轮次级兜底落位（测试/直调均可省略，不新造默认值）。
    */
-  async searchMemories(query: string, limitStr: string, modeStr: string): Promise<string> {
+  async searchMemories(
+    query: string,
+    limitStr: string,
+    modeStr: string,
+    toolCallId?: string,
+  ): Promise<string> {
     if (!query) {
       throw toolError(
         'search_memories 工具调用缺少 query 参数',
@@ -1157,6 +1165,9 @@ export class BuiltinToolHandlers {
       count: hits.length,
       query,
       hits: hits.map((h) => ({ id: h.id, name: h.name, source: h.source })),
+      // 条件展开而非 `toolCallId` 恒在：缺省时载荷不出现该键（老内核载荷形态零变化，
+      // 消费方按「键存在」分流配对/兜底两条路径，不靠 undefined 嗅探）。
+      ...(toolCallId ? { toolCallId } : {}),
     });
 
     const lines = hits.map((m, i) => {

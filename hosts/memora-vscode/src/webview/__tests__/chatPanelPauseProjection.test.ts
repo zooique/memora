@@ -13,9 +13,9 @@
  * ⚠ 变异验证靶标（新增断言必做）：撤掉任一分支的 `this.postTurnUpdate()` → 对应用例
  * `turnUpdates(posted)` 长度为 0 → 用例转红。已实证。
  *
- * 追加靶标（2026-10-16 canContinue 接线）：撤掉 `postTurnUpdate` 里的
- * `canContinue: this._agent?.canContinueWithoutInput() ?? true` → 「canContinue=false 透传」
- * 用例转红（state.canContinue 缺省，webview 按钮矩阵丢判据源）。
+ * 追加靶标（2026-10-19 撤除 canContinue 判据）：在 `postTurnUpdate` 的
+ * `deriveTurnState({...})` 里重新塞回 `canContinue: ...` → 「载荷不携带 canContinue」
+ * 用例转红（该字段一旦回流，webview 的暂停按钮门控就会复活，ARCH-GAP-F1 复发）。
  */
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
@@ -43,14 +43,13 @@ vi.mock('vscode', async () => ({
   },
 }));
 
-/** agent 桩：投影消费 status / isPausePending / getPendingInterjections / canContinueWithoutInput 四源 */
-function projectionAgentStub(status: 'running' | 'paused', canContinue = true): Agent {
+/** agent 桩：投影消费 status / isPausePending / getPendingInterjections 三源（不再是四源——
+ * `canContinueWithoutInput` 已从投影撤除，桩刻意不留该方法是「不再消费」的事实表达） */
+function projectionAgentStub(status: 'running' | 'paused'): Agent {
   return {
     sessionManager: { status },
     isPausePending: () => false,
     getPendingInterjections: () => [],
-    // 暂停按钮显隐判据快照（宿主 postTurnUpdate 每次投影现取内核，不自判）
-    canContinueWithoutInput: () => canContinue,
     on: vi.fn(),
     off: vi.fn(),
     getMetrics: () => ({
@@ -129,11 +128,11 @@ describe('暂停/恢复：真源翻转事件必须刷新骨架投影', () => {
     expect((updates[0] as { state: { reason?: string } }).state.reason).toBe('pause');
   });
 
-  it('canContinue=false → turn_update.state 透传（暂停按钮显隐判据 SSOT 接线，宿主只投影）', () => {
+  it('投影载荷不再携带 canContinue（判据撤除：暂停按钮在 running 相位恒显示）', () => {
     const { provider, posted } = setup();
     const cast = provider as unknown as ProjectionCast;
-    // 内核判定「暂停了也无输入可续跑」（纯单轮无在途计划 / 全 blocked 计划 / error 态）
-    cast._agent = projectionAgentStub('running', false);
+    crystal:
+    cast._agent = projectionAgentStub('running');
     cast._streaming = true;
     cast._pendingQuestions = [];
 
@@ -141,20 +140,10 @@ describe('暂停/恢复：真源翻转事件必须刷新骨架投影', () => {
 
     const updates = turnUpdates(posted);
     expect(updates).toHaveLength(1);
-    expect((updates[0] as { state: { canContinue?: boolean } }).state.canContinue).toBe(false);
-  });
-
-  it('canContinue=true（内核判据默认）→ state.canContinue 显式 true（webview 矩阵维持显示）', () => {
-    const { provider, posted } = setup();
-    const cast = provider as unknown as ProjectionCast;
-    cast._agent = projectionAgentStub('running', true);
-    cast._streaming = true;
-    cast._pendingQuestions = [];
-
-    cast.onSessionResumed({ sessionId: 's1' });
-
-    const updates = turnUpdates(posted);
-    expect(updates).toHaveLength(1);
-    expect((updates[0] as { state: { canContinue?: boolean } }).state.canContinue).toBe(true);
+    const state = (updates[0] as { state: Record<string, unknown> }).state;
+    expect(state.phase).toBe('running');
+    // 键存在即等于把「暂停了也无输入可续跑」的门控重新引回 webview（ARCH-GAP-F1 复发），
+    // 故这里锁「键不存在」而不是「值为 true」——后者会让旧消费面继续生效。
+    expect(state).not.toHaveProperty('canContinue');
   });
 });

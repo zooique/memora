@@ -559,11 +559,11 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   // scripts/count-token-refs.mjs 实锤同步（2026-10-17 web_search_result 证据接入宿主重放）。
   const EXPECTED = {
     'z-': 14,
-    'lh-': 48,
+    'lh-': 49, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1
     'op-': 18, // 初始化按钮禁用态 opacity: var(--op-6)（settingsStyles）+1
     'icon-': 17,
     'dot-': 22,
-    'line-': 72,
+    'line-': 73, // MEM-EVENT-2：工具行内命中块 border-top: var(--line-solid)（chatStyles）+1
     'sq-': 47,
     'dim-': 19,
   } as const;

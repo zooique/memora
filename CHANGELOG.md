@@ -502,6 +502,20 @@
 - **边界（刻意不含）**：宿主接入（vscode 装配切换 / 一次性迁移 / memora-mcp 只读连接）属「宿主接入」切片，等触发；
   本次不含 **JSON 装载层下沉**（债务由迁移完成自然归零）；`IMemoryStorage` 接口 15 方法**零改动**。
 
+### Added（内核 · `memoryRecalled` 载荷补 `toolCallId` 配对键 · `MEM-EVENT-2` · 2026-10-19）
+
+- `memoryRecalled` 新增**可选**字段 `toolCallId`：值 = 发起本次召回的那次 tool_call 的唯一 ID，
+  由 `ToolExecutor.execute(..., toolCallId)` → `BuiltinToolHandlers.searchMemories(..., toolCallId)`
+  三级透传，条件展开写入载荷（**缺省时键不存在**，不是 `undefined` 值——消费方按「键存在」分流，
+  不靠 undefined 嗅探）。
+- **为什么**：宿主原把命中明细渲染成轮次级独立行（`insertBeforeBody` 挂正文上方），运行时与
+  `.process-flow` 平铺容器争同一锚点 ⇒ 后插入的明细行沉到底部遮挡运行时状态。归属真源本就在
+  `toolCallId`（一次调用一块），补上它，宿主即可把明细挂回对应工具折叠块，渲染层不再自造归属关系。
+- **可选 = 跨 dist 契约 + 直调容错**：4.0.x 内核不发该字段，测试 / 脚本直调 `searchMemories` 也可省略；
+  宿主须容错并回退「轮次级兜底落位」（信息不丢，位置退回旧行为）。
+- 守卫：`builtinToolHandlers` 载荷哨兵补 `Object.keys` 锁（缺省不得出现该键）+ 透传用例；
+  `toolExecutor` 新增两条（第 5 参透传到载荷 / 未传则载荷无该键），锁「执行层→处理器→事件」三级链。
+
 ### Added（内核 · `memoryRecalled` 事件载荷补命中明细 · `MEM-EVENT-1`，原定 4.1.0、随 2026-10-15 归并）
 
 - `memoryRecalled` 新增**可选**字段 `hits`（`{ id, name, source }[]`）：`search_memories` 命中时把
@@ -1236,6 +1250,43 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 ## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
+
+### Fixed（宿主 · 记忆命中明细沉底遮挡运行时状态 → 收进对应工具折叠行 · `MEM-EVENT-2` · 2026-10-19）
+
+- **现象（真机 round-1792370027060）**：运行时触发记忆召回，命中明细行**沉到底部成为独立一栏**，
+  遮挡运行时状态行；会话结束后才回到角色名 / 模型名下方正确位置。
+- **根因（落位冲突，非挂载 bug）**：`renderMemoryHits` 用 `insertBeforeBody`（插到 `.msg-body` 之前），
+  但运行时同一锚点还有 `.process-flow` 平铺容器 —— 后插入的命中行成了**最后一个过程类兄弟**，故沉底；
+  收场时 `renderRoundBlock` 把内容收进 round-block 并 `flowEl.remove()`，命中行这才落到 label 下方。
+- **修法（归属真源已有，不再自造）**：明细改为按 `toolCallId` 收进**对应那次 `search_memories` 调用的
+  工具折叠块**（`attachMemoryHitsToToolRow`，先摘后建幂等），块内 = 「本次命中 N 条记忆」+ 命中项列表；
+  行摘要加「记忆 N」徽章，保证成功行默认收起时该事实仍可见。父级工具行已是折叠体，**不再套第二层
+  `<details>`**（双层折叠要连点两次）。
+- **收场不丢明细**：`renderToolRow` 增 `resolveMemoryHits` 解析器，`finalizeRound` 传闭包从
+  `currentMemoryHitsByCall` 回填 —— finalize 会全量重建工具行（运行时增量 DOM 全部丢弃），不回填即丢。
+- **两条降级路**：无 `toolCallId`（老内核 / 直调）/ 目标行尚未进 DOM（时序竞态）→ 退回轮次级兜底行
+  「本轮参考了 N 条记忆」；行未就绪时**先从 byCall 撤出**，防收场重建「工具块 + 兜底行」双写同现。
+- **语义变化（明示，非遗漏）**：计数口径由「本轮 N 条」变「本次调用 N 条」；跨调用不去重（各调用
+  各自的事实）。**未变**：实时专属（重放轨无数据源，诚实降级）；`memory_deleted` 全局按
+  `data-memory-id` 摘除 + byCall 模型同步（不清模型会被收场重建「复活」）。
+- **守卫**：`tokensClosure` `lh-` 48→49 / `line-` 72→73（`count-token-refs.mjs` 实锤，禁止手数）；
+  webview 7 用例 + 内核 3 用例；变异实证（拆掉 finalize 解析器 → 「收场全量重建」转红，还原即绿）。
+
+### Fixed（宿主 · 运行时整轮无暂停按钮：撤除 `canContinue` 门控 · `ARCH-GAP-F1` · 2026-10-19）
+
+- **现象（真机 round-1792370027060）**：会话运行中**没有暂停 / 继续按钮**，整个回合无法中断。
+- **根因**：`consumeFlow` 在 `for await` **之前**调 `postTurnUpdate`，此刻 `isInAutonomousStep=false`、
+  计划未建 ⇒ `canContinueWithoutInput()` 恒 `false` ⇒ 按钮矩阵 `pause: null`；流内无重投影点，整轮不恢复。
+- **修法（撤判据，不补刷新通道）**：`canContinue` 从 **协议（`TurnState` ×2）→ 投影（`TurnStateInput`
+  + 3 处条件展开）→ 按钮矩阵（`ButtonSemanticsInput` + `canPause` 门控）→ 宿主采样
+  （`postTurnUpdate`）** 全链删除，running 相位暂停按钮**恒显示**。原台账拍板的
+  `canContinueChanged` 事件方向**作废**（价值不对等 + 采样时机在架构上不可靠 + 补了也可能在工具 step
+  与 LLM 调用间反复重投影，见台账本条）。
+- **内核不删**：`Agent.canContinueWithoutInput()` 保留为公共能力 —— 删的是宿主 UI 门控，不是内核判据。
+- **守卫**：新增「`turn_update` 载荷不含 `canContinue`」（宿主投影，锁键不存在而非值为 true）+
+  「thinking 相位暂停按钮恒存在」（矩阵，空 / 有输入两态）+「running 相位恒显示」（webview，含申请
+  在途切「继续 ▶」）；`chatPanelFlowIntegrity` 强制依赖表撤该项，对照用例改用 `isPausePending`。
+  变异实证（矩阵 thinking 分支把 pause 改 `null` → 用例转红，还原即绿）。
 
 ### Added（宿主 · manual 模式归档入口：嫁接「移入留存区」· `ARCH-GAP-2` · 2026-10-19）
 

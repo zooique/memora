@@ -4,7 +4,7 @@
  * 两类此前的结构性盲区：
  *
  * ① **流被静默截断无人知晓**（P1-1）
- *    `postTurnUpdate` 现在是 `_agent` 的多个方法的强制消费者（如 `canContinueWithoutInput()`），
+ *    `postTurnUpdate` 现在是 `_agent` 的多个方法的强制消费者（如 `isPausePending()`），
  *    替身缺任一方法即 TypeError。关键在于**这个错从哪里冒出来**：
  *      · `postTurnUpdate` 的运行态起点投影在 `consumeFlow` 的 try **之前**
  *        ⇒ 抛出逃出 consumeFlow，被 **runFlow 的 catch** 捕获并降级成一条
@@ -16,14 +16,14 @@
  *
  * ② **没有任何守卫界定「哪些 agent 方法是强制依赖」**（P1-2）
  *    同一个 `postTurnUpdate` 内并存两套**互相矛盾**的写法：
- *      - 严格（缺方法必抛）：`canContinueWithoutInput` / `isPausePending`
+ *      - 严格（缺方法必抛）：`isPausePending` / `getEffectiveMaxTokens`
  *      - 宽松（给替身开后门）：`getPendingInterjections?.()` —— 双 optional，
  *        且 `syncPendingQueue` 注释明文写着「测试桩可能缺该方法——缺则跳过」。
  *    ⇒ 把方法上下游挪一挪（给严格项补 `?.`、或给宽松项去掉 `?.`）**不会有任何测试变红**。
  *   本文件从源码提取真实写法并与显式登记的表比对 ⇒ 新增/改动阳离子面孔必须自觉登记。
  *
  * ⚠ 变异验证靶标：
- *   把 `chatPanel` 里 `canContinueWithoutInput` 的调用改成 `canContinueWithoutInput?.()` → 「依赖面」+「矩阵」两处转红；
+ *   把 `chatPanel` 里 `isPausePending` 的调用改成 `isPausePending?.()` → 「依赖面」+「矩阵」两处转红；
  *   把 `getPendingInterjections?.()` 的双 optional 去掉 → 「宽松面」断言转红；
  *   在 chatPanel 里新增一个 `this._agent?.foo()` 而不登记 → 「登记完整性」转红；
  *   把 runFlow 的 catch 去掉（让流错误直接抛）→ 「流截断可见性」用例转红。
@@ -201,7 +201,7 @@ describe('chatPanel 流完整性（P1-1：不得被静默截断）', () => {
     // 这条是上一例的对照：如果抽掉一个强制依赖后三条断言依然全绿，
     // 就说明这套断言没有实际承重 ⇒ 现有 chatPanelInput 那批「只看调用次数」的用例
     // 正是因为这个原因保持了全绿。
-    const h = setupPanel(flowAgentStub({ omit: ['canContinueWithoutInput'] }));
+    const h = setupPanel(flowAgentStub({ omit: ['isPausePending'] }));
     h.cast._currentSessionId = '2026-10-17-s1';
 
     await h.cast.sendInput('你好');
@@ -232,7 +232,6 @@ describe('chatPanel · agent 强制依赖面守卫（P1-2）', () => {
 
   /** 已登记的强制依赖（严格写法）：缺方法必抛，替身不得省略 */
   const REGISTERED_STRICT = [
-    'canContinueWithoutInput',
     'clearPendingInterjections',
     'getEffectiveMaxTokens',
     'isPausePending',

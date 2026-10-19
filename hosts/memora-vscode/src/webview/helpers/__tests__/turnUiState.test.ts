@@ -10,8 +10,8 @@
  *      → 「done + 空输入 → 禁用」转红
  *   `deriveButtonSemantics` 的 paused 分支去掉 `plainResume` 判据（ask 空输入也渲染续跑键）
  *      → 「waiting(ask) + 空输入 → pause null」转红
- *   `deriveButtonSemantics` 的 thinking 分支去掉 `canContinue ?? true` 门控（恒显暂停钮）
- *      → 「thinking + canContinue=false → 暂停隐藏」转红（内核判据断链，无续跑能力仍宣告）
+ *   `deriveButtonSemantics` 的 thinking 分支给 pause 加回任何隐藏条件（如 canContinue 门控）
+ *      → 「thinking：暂停按钮恒存在」转红（ARCH-GAP-F1：判据撤除，running 必须可中断）
  */
 
 import { describe, expect, it } from 'vitest';
@@ -208,39 +208,24 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     expect(filled.send.title).toBe('发送补充（排队等 step 边界注入）');
   });
 
-  // ─── canContinue 门控（内核 canContinueWithoutInput 投影；判据 SSOT 接线 2026-10-16）───
+  // ─── 暂停按钮恒显示（2026-10-19 撤除 canContinue 门控，ARCH-GAP-F1）───
 
-  it('thinking + canContinue=false：暂停按钮隐藏（内核判定无续跑能力，不宣告）', () => {
-    // 变异锚点：thinking 分支去掉 canContinue 门控 → 本例转红
-    const spec = deriveButtonSemantics({
-      state: { phase: 'running' },
-      hasInput: false,
-      canContinue: false,
-    });
-    expect(spec.pause).toBeNull();
-    // 发送按钮职责不受影响（空输入 = 停止）
-    expect(spec.send).toEqual({
-      loading: true,
-      title: '停止生成',
-      ariaLabel: '停止生成',
-      disabled: false,
-    });
+  it('thinking：暂停按钮恒存在（不再由「暂停后能否无输入续跑」门控）', () => {
+    // 真机回归锁：宿主在流启动前采样 canContinueWithoutInput 恒 false → 曾整轮无暂停按钮，
+    // 且流内无重投影点，用户被剥夺中断能力。判据撤除后 running 相位无论有无输入都必须可点。
+    for (const hasInput of [false, true]) {
+      const spec = deriveButtonSemantics({ state: { phase: 'running' }, hasInput });
+      expect(spec.pause).toEqual({
+        icon: 'pause',
+        title: '暂停生成',
+        ariaLabel: '暂停生成',
+      });
+    }
   });
 
-  it('thinking + 有输入 + canContinue=false：暂停按钮同样隐藏（与输入内容无关）', () => {
-    const spec = deriveButtonSemantics({
-      state: { phase: 'running' },
-      hasInput: true,
-      canContinue: false,
-    });
-    expect(spec.pause).toBeNull();
-    expect(spec.send.title).toBe('发送补充（排队等 step 边界注入）');
-  });
-
-  it('thinking + 申请在途 + canContinue=false：暂停按钮保留「继续 ▶」（取消申请退路不被判据锁死）', () => {
-    // 申请已入队：按钮此刻的职责是「反悔」，不是「发起暂停」——canContinue=false 不得吞掉退路
+  it('thinking + 申请在途：暂停按钮保留「继续 ▶」（取消申请退路恒可达）', () => {
     const pending: SkeletonState = { phase: 'waiting', reason: 'pause', pausePending: true };
-    const spec = deriveButtonSemantics({ state: pending, hasInput: false, canContinue: false });
+    const spec = deriveButtonSemantics({ state: pending, hasInput: false });
     expect(spec.pause).toEqual({
       icon: 'play',
       title: '继续（点击取消暂停申请）',
@@ -248,23 +233,10 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     });
   });
 
-  it('thinking + canContinue 缺省 / true：暂停按钮显示（缺省 = 旧宿主未接线，维持接线前行为）', () => {
-    const fallback = deriveButtonSemantics({ state: { phase: 'running' }, hasInput: false });
-    const explicit = deriveButtonSemantics({
-      state: { phase: 'running' },
-      hasInput: false,
-      canContinue: true,
-    });
-    expect(fallback.pause?.icon).toBe('pause');
-    expect(explicit.pause?.icon).toBe('pause');
-  });
-
-  it('paused 相位不消费 canContinue（内核 paused ⇒ canContinueWithoutInput 恒 true，宿主不携带）', () => {
-    // 不为不可能场景写代码：即使调用方误传 false，paused 分支也不门控（无消费方即无判据）
+  it('paused 相位：续跑键职责不因任何附加判据收缩（纯续跑是真能力）', () => {
     const spec = deriveButtonSemantics({
       state: { phase: 'waiting', reason: 'pause' },
       hasInput: false,
-      canContinue: false,
     });
     expect(spec.pause).toEqual({ icon: 'play', title: '继续生成', ariaLabel: '继续生成' });
   });

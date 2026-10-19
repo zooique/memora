@@ -85,6 +85,12 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
      * 可选 = 跨 dist 契约：4.0.x 内核不发此字段，宿主须容错缺失降级为条数提示（类型层强制消费方容错）。
      * 条数上限真源 = search_memories 的 parseLimit 钳制（50），载荷全量映射不截断（不另立截断常量）。 */
     hits?: { id: string; name: string; source: string }[];
+    /** 发起本次召回的 tool_call 唯一 ID（4.1.x 新增，MEM-EVENT-2）：宿主据此把命中明细挂回
+     * 对应 search_memories 工具折叠块，而非按轮次全局堆在回复体上方。
+     * 可选 = 跨 dist 契约 + 直调容错：老内核/测试直调 searchMemories 不带 ID，宿主须回退
+     * 「无配对目标 → 轮次级兜底落位」路径（类型层强制消费方容错）。
+     * 唯一来源 = toolExecutor.execute 的 toolCallId 形参（loop → toolRunner 已全程透传）。 */
+    toolCallId?: string;
   };
   sessionForked: { from: string; to: string; roundCount: number };
   /** date/session = 被切走的旧会话（归档对象）；fromSessionId/toSessionId = 旧/新完整会话标识 */

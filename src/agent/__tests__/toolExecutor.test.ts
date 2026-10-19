@@ -2054,6 +2054,34 @@ describe('工具执行器（6 个工具）', () => {
       expect(result).toContain('找到');
     });
 
+    it('toolCallId（execute 第 5 参）透传到 memoryRecalled 载荷（MEM-EVENT-2 配对通道全链锁）', async () => {
+      // 锁的是「执行层 → 处理器 → 事件载荷」这条三级透传链：任何一环丢参，
+      // 宿主就拿不到配对键、命中明细只能退回轮次级兜底——此断言是该回归的唯一哨兵。
+      const cb = vi.fn();
+      executor.setOnMemoryRecalled(cb);
+
+      await executor.execute(
+        'search_memories',
+        JSON.stringify({ query: 'memora', limit: '1' }),
+        undefined,
+        undefined,
+        'call_pipe_001',
+      );
+
+      expect(cb).toHaveBeenCalledTimes(1);
+      expect(cb).toHaveBeenCalledWith(expect.objectContaining({ toolCallId: 'call_pipe_001' }));
+    });
+
+    it('未传 toolCallId 时载荷不含该键（老载荷形态零变化）', async () => {
+      const cb = vi.fn();
+      executor.setOnMemoryRecalled(cb);
+
+      await executor.execute('search_memories', JSON.stringify({ query: 'memora', limit: '1' }));
+
+      expect(cb).toHaveBeenCalledTimes(1);
+      expect(cb.mock.calls[0]![0]).not.toHaveProperty('toolCallId');
+    });
+
     it('缺少 query 参数应抛 MemoraError', async () => {
       try {
         await executor.execute('search_memories', JSON.stringify({}));

@@ -1914,6 +1914,34 @@ export const chatStyles = `
   .memory-hits__item:hover .memory-hits__remove,
   .memory-hits__remove:focus-visible { opacity: 1; }
   .memory-hits__remove:hover { color: var(--text-primary, #cccccc); }
+  /* 记忆命中明细·工具行内落位（MEM-EVENT-2）：挂在 search_memories 工具折叠体尾部。
+   * 刻意不复用 .memory-hits 的胶囊外壳（那是轮次级兜底行的样式，自带 summary 箭头）——
+   * 父级工具行已是折叠体，这里只做「标题 + 列表」的内嵌块，避免双层折叠要连点两次。
+   * 子项类（__item/__source/__name/__remove）与兜底行**共用同一套样式**，此处只做容器级
+   * 微调（列表左内缩进归零，与工具行体对齐）——改子项样式会同时影响两处，勿在此就地覆写。 */
+  .round-block__memory-hits {
+    margin-top: var(--sp-2, 6px);
+    padding-top: var(--sp-2, 6px);
+    border-top: var(--line-solid);
+  }
+  .round-block__memory-hits > .memory-hits__label {
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    margin-bottom: var(--sp-1, 4px);
+  }
+  .round-block__memory-hits .memory-hits__list { padding: 0; }
+  /* 摘要徽章：工具行收起（成功行 open=false）时**唯一可见**的「这次调用看过记忆」信号。
+   * 落位迁移不得吃掉原本可见的信息——没有这枚徽章，命中明细会藏进折叠体变成事实性隐没。 */
+  .round-block__memory-badge {
+    flex-shrink: 0;
+    margin-left: var(--sp-2, 6px);
+    padding: 0 var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    line-height: var(--lh-flat);
+    color: var(--text-secondary, #9aa0a6);
+    background: var(--surface-thought, #252526);
+    border-radius: var(--radius-pill);
+  }
   .round-block__details {
     margin-top: var(--sp-1, 4px);
     display: flex; flex-direction: column; gap: var(--sp-2, 6px);

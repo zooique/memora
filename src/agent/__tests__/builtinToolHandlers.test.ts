@@ -742,6 +742,32 @@ describe('BuiltinToolHandlers.searchMemories', () => {
       query: 'XylophoneFoo',
       hits: [{ id: 'content:pref', name: '偏好', source: 'preference' }],
     });
+    // toolCallId 缺省 = 键不存在（不是 undefined 值）：条件展开的契约面，
+    // 消费方按「键存在」分流配对/兜底，故此处锁 keys 而非 lock undefined。
+    expect(Object.keys(cb.mock.calls[0]![0] as object)).toEqual(['count', 'query', 'hits']);
+  });
+
+  it('传 toolCallId 时随 memoryRecalled 原样透出（MEM-EVENT-2 宿主配对通道）', async () => {
+    storage.upsert(
+      createMemory({
+        id: 'content:pair',
+        source: 'preference',
+        name: '配对',
+        content: '配对 ZebraQuux 配置',
+      }),
+    );
+    const cb = vi.fn();
+    handlers.setOnMemoryRecalled(cb);
+
+    await handlers.searchMemories('ZebraQuux', '10', 'match', 'call_abc123');
+
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith({
+      count: 1,
+      query: 'ZebraQuux',
+      hits: [{ id: 'content:pair', name: '配对', source: 'preference' }],
+      toolCallId: 'call_abc123',
+    });
   });
 
   it('命中为空时不触发 memoryRecalled（无意义感知噪声）', async () => {

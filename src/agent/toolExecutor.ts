@@ -762,7 +762,7 @@ export class ToolExecutor {
    * 发射位（无 warmRecall 等其他发射路径）。
    *
    * @param callback 命中回调（载荷类型 = AgentEventMap['memoryRecalled'] 单一真源：count 命中条数 /
-   *   query 检索词 / hits 命中明细），缺省注入则工具静默（无宿主 no-op）
+   *   query 检索词 / hits 命中明细 / toolCallId 本次调用配对键），缺省注入则工具静默（无宿主 no-op）
    */
   setOnMemoryRecalled(callback: (info: AgentEventMap['memoryRecalled']) => void): void {
     this.builtinHandlers.setOnMemoryRecalled(callback);
@@ -1063,10 +1063,13 @@ export class ToolExecutor {
           strArg('maxDepth', '2'),
         );
       case 'search_memories':
+        // toolCallId 透传给处理器：命中明细随 memoryRecalled 携带配对键，宿主据此挂回工具行
+        // （与 web_search 证据配对同源通道；缺省 undefined 时处理器不带该字段，宿主走兜底落位）。
         return this.builtinHandlers.searchMemories(
           strArg('query'),
           strArg('limit', '10'),
           strArg('mode', 'match'),
+          toolCallId,
         );
       case 'trace_summary':
         return this.builtinHandlers.traceSummary(

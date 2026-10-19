@@ -891,21 +891,24 @@ export type ExtensionToWebviewMessage =
       kind?: 'decision';
     }
   /**
-   * 记忆命中明细（HOST-S3-1）：LLM 经 search_memories 查询记忆命中 → 宿主监听内核
-   * memoryRecalled 事件后**透明转发**（宿主零加工），webview 在当前轮回答上方渲染
-   * 可展开行「本轮参考了 N 条记忆」（id 去重聚合，一轮多次检索合并为一行）。
+   * 记忆命中明细（HOST-S3-1 / MEM-EVENT-2）：LLM 经 search_memories 查询记忆命中 → 宿主监听
+   * 内核 memoryRecalled 事件后**透明转发**（宿主零加工），webview 把明细挂进**对应那次
+   * search_memories 调用的工具折叠块**（按 toolCallId 配对；一次调用一块，块内按 id 去重）。
    *
    * 实时专属：内核 processEvents 落盘轨无此事件 ⇒ 重放历史轮不渲染（诚实降级，
-   * 「无数据源的段不得新造」——不伪造重放数据源）。
+   * 「无数据源的段不得新造」——不伪造重放数据源；本次挂载位迁移不改变该边界）。
    * hits 可选 = 跨 dist 契约：4.0.x 内核不发此字段，webview 收到缺 hits 的本消息时
    * **单点降级**为 notice 条数提示（降级逻辑收敛在 webview 渲染层，宿主只转发）。
-   * id 字段为 S3-3 反馈通道预留寻址键（data-memory-id），本条不渲染反馈入口。
+   * id 字段为 S3-3 反馈通道寻址键（data-memory-id，✕ → memory_delete 软删）。
+   * toolCallId 可选 = 配对键（4.1.x 内核起可选透出）：存在且**目标工具行已在 DOM**时明细
+   * 收进该行折叠体；缺失 / 行未就绪 → 回退轮次级聚合行（信息不丢，位置退回旧行为）。
    */
   | {
       type: 'memory_hits';
       count: number;
       query: string;
       hits?: { id: string; name: string; source: string }[];
+      toolCallId?: string;
     }
   /**
    * Chat Panel 当前激活角色包（消息区顶部角色徽章数据）
@@ -1359,13 +1362,6 @@ export type TurnState =
   | {
       phase: 'running';
       roundId?: string;
-      /**
-       * 内核 `Agent.canContinueWithoutInput()` 投影（暂停按钮显隐判据 SSOT）：
-       * false = 纯单轮无在途计划 / 全 blocked 计划 / error 态——暂停了也无输入可续跑，
-       * 按内核设计不暴露暂停按钮（判据真源 = agent.ts canContinueWithoutInput）。
-       * 缺省 true = 旧宿主/测试构造未接线，维持「运行中即显示」的既有行为。
-       */
-      canContinue?: boolean;
     }
   /**
    * 等待外部输入：pause（用户申请/已生效）与 ask（LLM 提问）UI 形态同构，
@@ -1377,8 +1373,6 @@ export type TurnState =
       reason: 'pause' | 'ask';
       pausePending?: boolean;
       questions?: PendingQuestionDto[];
-      /** 同 `running.canContinue`：申请在途窗口的暂停按钮显隐判据（paused 态内核恒 true） */
-      canContinue?: boolean;
     }
   /** 已收场（turn 级；不等于 round 级判据 isRoundSettled） */
   | { phase: 'settled'; roundId: string; status: RoundStatus };
