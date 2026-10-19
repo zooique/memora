@@ -580,7 +580,6 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 - **验证**：role-pack 258 passed；prettier / terminology（71+82 载体）/ docs:links（45 随包 md
   0 死链）/ lint 全绿；规划态章节限定词（「章纲」等）全包残留扫描 0。
 
-
 ## [3.0.1] · 2026-09-30
 
 ### Changed（开源归口翻转：GitHub 升主仓库）
