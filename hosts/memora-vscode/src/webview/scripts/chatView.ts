@@ -6110,7 +6110,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 去重——同一次调用重复命中同一记忆只列一次；跨调用各算各的，不互相吞并）。
         const callId = msg.toolCallId;
         const bucket = currentMemoryHitsByCall.get(callId) ?? new Map<string, MemoryHitEntry>();
-        for (const h of msg.hits) bucket.set(h.id, { name: h.name, source: h.source });
+        for (const h of msg.hits)
+          bucket.set(h.id, { name: h.name, source: h.source, contentPreview: h.contentPreview });
         currentMemoryHitsByCall.set(callId, bucket);
         if (!attachMemoryHitsToToolRow(callId)) {
           // 目标行尚未进 DOM（时序竞态）→ 数据转入兜底聚合行：信息不丢，位置退回旧行为。
@@ -6119,12 +6120,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           // 置空 = 「这次调用的明细已认领，但不在行内渲染」的唯一表达，且空表下
           // attach 会把块/徽章一并摘除（幂等重建的空态分支）。
           currentMemoryHitsByCall.set(callId, new Map());
-          for (const h of msg.hits) currentMemoryHits.set(h.id, { name: h.name, source: h.source });
+          for (const h of msg.hits)
+            currentMemoryHits.set(h.id, {
+              name: h.name,
+              source: h.source,
+              contentPreview: h.contentPreview,
+            });
           renderMemoryHits();
         }
       } else {
         // 无配对键（老内核 / 直调）→ 轮次级聚合行（旧落位，不改行为）
-        for (const h of msg.hits) currentMemoryHits.set(h.id, { name: h.name, source: h.source });
+        for (const h of msg.hits)
+          currentMemoryHits.set(h.id, {
+            name: h.name,
+            source: h.source,
+            contentPreview: h.contentPreview,
+          });
         renderMemoryHits();
       }
     } else if (msg.type === 'memory_deleted') {

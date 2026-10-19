@@ -10347,7 +10347,7 @@ describe('记忆命中明细（HOST-S3-1 · MEM-EVENT-2 落位）', () => {
 
   /** 分发一条 memory_hits 消息（hits 传 undefined = 模拟 4.0.x 内核不发明细） */
   function dispatchHits(
-    hits: { id: string; name: string; source: string }[] | undefined,
+    hits: { id: string; name: string; source: string; contentPreview?: string }[] | undefined,
     count?: number,
     toolCallId?: string,
   ): void {
@@ -10424,6 +10424,34 @@ describe('记忆命中明细（HOST-S3-1 · MEM-EVENT-2 落位）', () => {
     expect(items[1]!.getAttribute('data-memory-id')).toBe('m2');
     // 旧落位（正文上方轮次行）不再出现——同一批命中不得两处同现
     expect(document.querySelector('.memory-hits')).toBeNull();
+  });
+
+  it('实时命中带 contentPreview → 主行显示正文预览（MEM-UI-1：正文主位，name 退到 title）', () => {
+    mountChatView();
+    beginMemoryCall('t1');
+    dispatchHits(
+      [
+        {
+          id: 'm1',
+          name: '轮次摘要 2026-10-19-x round-123',
+          source: 'round-summary',
+          contentPreview: '结局已拍板为分支C，分支A废弃。',
+        },
+        { id: 'm2', name: '无预览记忆', source: 'note' },
+      ],
+      undefined,
+      't1',
+    );
+    const items = toolRow('t1')!.querySelectorAll('.memory-hits__item');
+    // 主行 = 正文（黑话 name 不再上屏）；解析点必须透传 contentPreview（漏传 = 恒回退 name）
+    expect(items[0]!.querySelector('.memory-hits__name')?.textContent).toBe(
+      '结局已拍板为分支C，分支A废弃。',
+    );
+    expect(items[0]!.querySelector('.memory-hits__name')?.getAttribute('title')).toBe(
+      '轮次摘要 2026-10-19-x round-123',
+    );
+    // 无 contentPreview 的条目（老内核/老证据）回退 name（跨 dist 容错链）
+    expect(items[1]!.querySelector('.memory-hits__name')?.textContent).toBe('无预览记忆');
   });
 
   it('配对边界：同一次调用重复命中 → 块内去重；不同调用 → 各自成块不合并', () => {
