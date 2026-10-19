@@ -631,20 +631,24 @@ export const chatStyles = `
 
   /* ============ Components：AI 回复 Markdown 渲染 ============
    * 大厂对话流（ChatGPT / Claude / Trae）均以 Markdown 渲染 AI 回复，代码块/列表/表格可读。
-   * 流式期间按 markdown 增量渲染 + 末尾八态光标（data-status）；流结束后终渲染。
+   * 流式期间按 markdown 增量渲染 + 末尾光标（运行态 data-status / 终态 data-terminus）；流结束后终渲染。
    * 表格 display:block + 横向滚动防撑爆气泡（pure CSS 降维，不写复杂正表格补全）。 */
   .msg.assistant .msg-body { white-space: normal; }
-  /* 八态光标（UI-BLOCK-ICON 批次二，方案-过程块视觉辨识-20261001.md §三定案 B）：
-   * JS 只写 .msg-body[data-status]（文案即状态值；异常中断附 data-status-detail=原因摘要），
-   * 文案与样式全部由本 ::after 承载——挂在容器上不受增量 markdown 重渲染影响（禁真实 span）。
-   * 档位：运行三态呼吸 / 挂起两态静态淡色（基础档即覆盖）/ 终态三态分级可见度。 */
-  .msg-body[data-status]::after {
-    content: attr(data-status);
+  /* 光标双通道（UI-BLOCK-ICON 批次二，方案-过程块视觉辨识-20261001.md §三定案 B；2026-10-19 SSOT 收敛）：
+   * 运行/挂起态写 .msg-body[data-status]，终态写 [data-terminus]（异常中断附 data-terminus-detail=原因摘要）
+   * ——一属性背两语义 = 双真相源，且终态覆盖运行态令「运行结束」表现为被覆盖而非自然消失；
+   * 分属性后各通道单一语义、互不覆盖。文案与样式全部由本 ::after 承载——挂在容器上不受增量
+   * markdown 重渲染影响（禁真实 span）。
+   * 档位：运行三态呼吸 / 挂起两态静态淡色（基础档即覆盖）/ 终态三档分级可见度。 */
+  .msg-body[data-status]::after,
+  .msg-body[data-terminus]::after {
     display: inline-block; vertical-align: baseline;
     margin-left: var(--sp-2, 6px);
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
   }
+  .msg-body[data-status]::after { content: attr(data-status); }
+  .msg-body[data-terminus]::after { content: attr(data-terminus); }
   /* 运行三态：呼吸动画（淡色「活着」信号；复用 selfReviewPulse，与相位行/圆点同源） */
   .msg-body[data-status='思考中']::after,
   .msg-body[data-status='运行工具中']::after,
@@ -658,16 +662,19 @@ export const chatStyles = `
       animation: none;
     }
   }
-  /* 终态「已完成」：正文尾不显示（2026-10-13 收口底栏——淡勾迁至 round-group 底栏
-   * time 之后的 ::after，见 .round-group__footer 标签规则）。content:none 显式压住
-   * 基础档的 attr(data-status) 文字，否则会回退显示「已完成」字样 */
-  .msg-body[data-status='已完成']::after {
+  /* 终态「已完成」：**容器内**由底栏承接（2026-10-13 收口底栏——淡勾迁至 round-group
+   * 底栏 time 之后的 ::after，见 .round-group__footer 标签规则），正文尾压制。content:none
+   * 显式压住终态基础档的 attr(data-terminus) 文字。压制**限定在容器内**：无 roundId 的兜底轮
+   * （早期错误/早停，ensureRoundGroup 不建容器）容器缺席，若全局压制则终态无任何展示位
+   * 而静默消失（2026-10-19 修复「底栏偶尔不显示」；与「异常中断」正文尾兜底同一相位机制）；
+   * 容器外回退终态基础档 attr(data-terminus)「已完成」文字自足承接。 */
+  .round-group .msg-body[data-terminus='已完成']::after {
     content: none;
   }
   /* 终态「异常中断」：红字状态词 + 原因摘要（detail 由 JS 截断写入）。状态词必须在场——
    * 流错误案 footer 处于 is-pending 不可见，正文尾是该态唯一展示位，须自足说清「什么结局 + 为什么」 */
-  .msg-body[data-status='异常中断']::after {
-    content: '异常中断 · ' attr(data-status-detail);
+  .msg-body[data-terminus='异常中断']::after {
+    content: '异常中断 · ' attr(data-terminus-detail);
     color: var(--danger, #f14c4c);
   }
   /* AI 正文段落间距（增加阅读舒适度） */
@@ -791,8 +798,8 @@ export const chatStyles = `
    * （避免「续接正文底部又有操作按钮」的重复入口） */
   .msg.assistant .msg-footer { display: none; }
   /* 终态标签收口底栏（2026-10-13，布局返修同日）：状态词/淡勾挂底栏 time 之后的
-   * ::after，正文尾回归光标纯度。载体泛匹配（契约见 chatView CursorStatus）：有正文轮
-   * 挂 .msg-body、中断轮挂宿主块，round-group 内任一带终态 [data-status] 即点亮——
+   * ::after，正文尾回归光标纯度。载体泛匹配（契约见 chatView TerminusKind）：有正文轮
+   * 挂 .msg-body、中断轮挂宿主块，round-group 内任一带终态 [data-terminus] 即点亮——
    * 运行态（思考中等）不在三档内不触发，流式期 footer.is-pending 隐藏形成第二道屏蔽。
    *
    * 两端分布机制（首版 ::before+margin-left:auto 的返修教训：::before 是首子伪元素，
@@ -800,15 +807,15 @@ export const chatStyles = `
    * 「底部单边倒」）：标签用 ::after（DOM 序在 time 之后），auto margin 挂在 .msg-time
    * 上（见 .round-group__footer .msg-time 规则）——time 与标签成组靠右，操作按钮独占
    * 左端。无标签轮 time 独占右端，与 space-between 原效果一致。 */
-  .round-group:has([data-status='已完成']) .round-group__footer::after,
-  .round-group:has([data-status='用户中断']) .round-group__footer::after,
-  .round-group:has([data-status='异常中断']) .round-group__footer::after {
+  .round-group:has([data-terminus='已完成']) .round-group__footer::after,
+  .round-group:has([data-terminus='用户中断']) .round-group__footer::after,
+  .round-group:has([data-terminus='异常中断']) .round-group__footer::after {
     font-size: var(--font-xs, 10px);
     line-height: 1;
   }
   /* 「已完成」→ 静默 circle-check 淡勾（自正文尾 ::after 迁移；path 与 icons.ts
    * circle-check 同形——伪元素无法走 getIconSvg 注入，以 mask 复刻同款轮廓） */
-  .round-group:has([data-status='已完成']) .round-group__footer::after {
+  .round-group:has([data-terminus='已完成']) .round-group__footer::after {
     content: '';
     width: var(--icon-2xs); height: var(--icon-2xs);
     background: var(--status-pass, #4ec9b0); opacity: var(--op-6);
@@ -818,15 +825,37 @@ export const chatStyles = `
       no-repeat center / contain;
   }
   /* 「用户中断」→ 中性文字标签（主动停止非错误，不抢注意力） */
-  .round-group:has([data-status='用户中断']) .round-group__footer::after {
+  .round-group:has([data-terminus='用户中断']) .round-group__footer::after {
     content: '用户中断';
     color: var(--text-secondary, #9aa0a6);
   }
   /* 「异常中断」→ 红字标签（中断轮案：锁超时等异常轮 footer 恒显形，标签在场；
    * 流错误案 footer 隐藏期该规则不可见，正文尾红字自足承接，两相位不重复） */
-  .round-group:has([data-status='异常中断']) .round-group__footer::after {
+  .round-group:has([data-terminus='异常中断']) .round-group__footer::after {
     content: '异常中断';
     color: var(--danger, #f14c4c);
+  }
+  /* 终态标签「容器外」兜底（2026-10-19 修复「底栏偶尔不显示」）：中断轮无正文块，终态写入
+   * 宿主块 data-terminus（见 appendInterruptedRow / TerminusKind 载体契约）。无 roundId 的兜底轮
+   * （早期错误/早停，ensureRoundGroup 不建容器）容器缺席 ⇒ 上方 :has 底栏规则无处匹配，
+   * 终态既无底栏标签、正文尾又无兜底 ⇒ 静默消失。此处由宿主块尾自足承接，保证「轮已收场」
+   * 这个事实恒有展示位（与「异常中断」正文尾兜底同一相位机制，统一到三档）。
+   * 有容器轮由底栏承接，下方压制宿主块尾避免双显（「单一位点」纪律）。 */
+  .msg.assistant[data-terminus='用户中断']::after {
+    content: '用户中断';
+    margin-left: var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px); line-height: 1;
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .msg.assistant[data-terminus='异常中断']::after {
+    content: '异常中断';
+    margin-left: var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px); line-height: 1;
+    color: var(--danger, #f14c4c);
+  }
+  .round-group .msg.assistant[data-terminus='用户中断']::after,
+  .round-group .msg.assistant[data-terminus='异常中断']::after {
+    content: none;
   }
   /* 底栏 time 吸收余量（两端分布的承载点）：auto margin 优先于 justify-content
    * space-between——time（连同其后的终态标签 ::after）成组靠右，操作按钮独占左端；

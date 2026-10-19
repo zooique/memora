@@ -1298,6 +1298,24 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不在内核发布包 `files` 白名单内、无独立 marketplace 节奏 ⇒ 不编内核版本号，随做随用，攒批随下次 `vsce package` 定版（`vscode@x.y.z` tag，ADR-033）。
 
+### Fixed（宿主 · 底栏终态偶尔不显示 → 光标运行/终态双通道分离（SSOT 收敛）· 2026-10-19）
+
+- **现象**：宿主底栏终态标签（勾 / 用户中断 / 异常中断）**偶尔不显示**——会话结束或早停时无终态落位，
+  时好时坏（有容器轮正常、无容器轮静默消失）。
+- **根因（两处，深的一处是通道语义）**：① **通道双语义**——运行态与终态共用一条 `.msg-body[data-status]`，
+  终态覆盖运行态 ⇒「运行结束」表现为被覆盖而非自然消失，一属性背两语义 = 双真相源；
+  ② **终态展示位点依赖容器**——`ensureRoundGroup` 无 roundId 时 `return null` 不建 `.round-group`，
+  底栏三档 `:has([data-status=…])` 无处匹配 ⇒ 终态静默消失（「偶尔」真因）。
+- **修法（SSOT 收敛，不迁移载体）**：拆为**两条单一语义通道**——运行/挂起态 `data-status`
+  （`CursorStatus` 五态）+ 终态独立属性 `data-terminus`（`TerminusKind` 三档，异常附
+  `data-terminus-detail`）；写入单点 = `setCursorStatus` / `setActiveSheetStatus`（运行）与
+  `setTerminus`（终态），turn 结束由调用方**显式清运行态**。CSS 三档 `:has` 与宿主尾兜底改键
+  `data-terminus`；「已完成」压制**限定容器内**（`.round-group`）、容器外回退终态基础档文字自足承接。
+- **载体契约不变（证据依据）**：有正文轮终态挂 `.msg-body`、中断轮挂宿主块——流错误案 footer 处于
+  `is-pending` 隐藏，正文尾是该态**唯一**展示位，统一到宿主会在容器内被压制规则吃掉，故不迁移。
+- **守卫**：源码级守卫用例（三档 `:has([data-terminus=…])` 齐全 + 压制限定容器内 + 负向锁定无全局压制
+  + 宿主尾兜底 + error 清运行态不变量）；webview 3 套件 411 例 / 宿主全量 1258 例 + tsc 0 + eslint 0。
+
 ### Fixed（宿主 · 重渲染丢记忆明细且只剩 100 字截断副本 · `MEM-EVENT-3` · 2026-10-19）
 
 - **现象（真机二轮）**：实时态已正常（明细在工具行内），但**会话重渲染后明细整块消失**，

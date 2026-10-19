@@ -116,4 +116,45 @@ describe('异常终态轮容器 footer 显形（chatView · settleRoundFooter �
     // done 无停止行（正文保留）
     expect(group!.querySelector('[data-interrupted-row]')).toBeNull();
   });
+
+  it('回归（2026-10-19）：无 roundId 的终态轮载体落在容器外——兜底位点生效前提', () => {
+    // 缺口背景：无 roundId（早期错误/早停）时 ensureRoundGroup 不建容器，终态载体（正文块）
+    // 留在消息流外 ⇒ 底栏 :has 规则无处匹配，而正文尾压制又把它压死 ⇒ 静默消失。
+    // 修复由 CSS 载体尾兜底承接——本用例锁定「载体确实在容器外」这一前提
+    // （jsdom 不算计算样式，故断言结构位点；样式规则由源码级守卫锁定）。
+    dispatch({ type: 'user', text: '问', ts: '2026-10-05T13:00:00.000Z' });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({ type: 'chunk', content: '答', ts: '2026-10-05T13:00:01.000Z' });
+    dispatch({ type: 'done' });
+    expect(document.querySelector('.round-group')).toBeNull();
+    const carrier = document.querySelector<HTMLElement>('.msg-body[data-terminus="已完成"]');
+    expect(carrier).not.toBeNull();
+    expect(carrier!.closest('.round-group')).toBeNull();
+  });
+
+  it('回归（2026-10-19）：无 roundId 的中断轮宿主态落容器外——宿主尾兜底前提', () => {
+    dispatch({ type: 'user', text: '问', ts: '2026-10-05T14:00:00.000Z' });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({ type: 'chunk', content: '半截', ts: '2026-10-05T14:00:01.000Z' });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'aborted',
+        seq: 2,
+        ts: '2026-10-05T14:00:02.000Z',
+        payload: { reason: 'stop', stopReason: 'user' },
+      },
+    });
+    dispatch({ type: 'interrupted' });
+    expect(document.querySelector('.round-group')).toBeNull();
+    const host = document.querySelector<HTMLElement>('.msg.assistant[data-terminus="用户中断"]');
+    expect(host).not.toBeNull();
+    expect(host!.closest('.round-group')).toBeNull();
+  });
 });

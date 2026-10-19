@@ -2500,7 +2500,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 中断轮终态单点分类（2026-10-13）：kind 写宿主 data-status、reason 给停止行文案——
+   * 中断轮终态单点分类（2026-10-13）：kind 写宿主 data-terminus、reason 给停止行文案——
    * 一次计算两处消费，杜绝「标签与停止行各判一遍、不一致且无测试会红」的双写伤。
    *
    * 语义映射同旧的 §已停止：error（失败：超时/连接中断）优先，其次 aborted（中断：
@@ -2539,20 +2539,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 中断轮平铺收尾行（形态定案：RT/RP 同构——过程收进折叠块、停止行平铺折叠块外）
    *
-   * 2026-10-13 终态标签收口底栏：先按 decideTerminus 单点分类把终态写宿主 data-status
-   * （载体契约见 CursorStatus 注释：中断轮无正文块，挂宿主由 round-group 底栏 :has 消费）；
+   * 2026-10-13 终态标签收口底栏：先按 decideTerminus 单点分类把终态写宿主 data-terminus
+   * （载体契约见 TerminusKind 注释：中断轮无正文块，挂宿主由 round-group 底栏 :has 消费）；
    * 用户主动停止（kind='用户中断'）停止行退役——footer 标签 + 时间同区即可说清，不再铺行；
    * 异常/兜底案保留停止行，只承担「这轮为何停」的原因句，不重复指标。执行指标留在折叠块
-   * §执行指标/摘要。去重按 data-status 幂等（user 案无停止行，不能按行去重）。
+   * §执行指标/摘要。去重按 data-terminus 幂等（user 案无停止行，不能按行去重）。
    *
    * @param host  折叠块宿主（RT = 当前 assistant 块；RP = 孤儿折叠宿主 .is-interrupted-host）
    * @param events 本轮 processEvents（含 error/aborted/metrics）
    */
   function appendInterruptedRow(host: HTMLElement, events: ProcessEvent[]): void {
     // 已定格去重（重放重复投递防重入）：有态（用户/异常案）或有行（generic 兜底案，不写态）任一即返
-    if (host.dataset.status || host.querySelector('[data-interrupted-row]')) return;
+    if (host.dataset.terminus || host.querySelector('[data-interrupted-row]')) return;
     const verdict = decideTerminus(events);
-    setCursorStatus(host, verdict.kind);
+    // 终态走独立通道（宿主块 data-terminus）；kind=null 案不写态（诚实投影）
+    if (verdict.kind) setTerminus(host, verdict.kind);
     if (verdict.kind === '用户中断') return; // 用户中断：停止行退役，底栏标签承载
     const row = document.createElement('div');
     row.className = 'round-block__interrupted';
@@ -4360,60 +4361,78 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   // ─── 光标状态机（UI-BLOCK-ICON 批次二，方案-过程块视觉辨识-20261001.md §三定案 B）───
-  // 八态单属性驱动：JS 只写 data-status（文案即状态值；异常中断附
-  // data-status-detail=原因摘要），文案与样式全由 CSS 承载——挂容器上不受增量
-  // markdown 重渲染影响（🔴 禁真实 span，会被增量渲染吃掉）。
-  // 载体契约（2026-10-13 终态标签收口底栏时立约）：有正文的轮挂 .msg-body；
-  // 中断轮（半截正文已删）挂宿主块（运行时 .msg.assistant / 重放 .is-interrupted-host）。
-  // 任何消费方（:has 选择器/读取方）一律泛匹配 [data-status]，不得只查 .msg-body。
+  // 双属性两条通道（2026-10-19 SSOT 收敛）：运行/挂起态写 data-status、终态写 data-terminus
+  //（异常中断附 data-terminus-detail=原因摘要），各自单一语义、互不覆盖。文案与样式全由 CSS
+  // 承载——挂容器上不受增量 markdown 重渲染影响（🔴 禁真实 span，会被增量渲染吃掉）。
+  // 载体契约：运行态挂 .msg-body；终态有正文轮挂 .msg-body、中断轮（半截正文已删）挂宿主块
+  //（运行时 .msg.assistant / 重放 .is-interrupted-host）。消费方泛匹配属性，不得只查 .msg-body。
 
   /**
-   * 光标状态（八态，单一合成函数的输出域）：运行三态呼吸 / 挂起两态静态 / 终态三态分级。
-   * 终态三态的渲染位点（2026-10-13 收敛，布局返修同日改挂 time 之后 ::after）：
-   * 已完成/用户中断 → round-group 底栏（time 之后标签，:has 消费）；异常中断 → 正文尾
-   * 红字（其存活窗口与底栏显形时序互斥，见 settleRoundWithFooter 收口名单），中断轮的
-   * 异常中断档由 appendInterruptedRow 写宿主载体后同样由底栏承接。
+   * 运行/挂起态（单一合成函数的输出域）：运行三态呼吸 / 挂起两态静态。**不含终态**——
+   * 终态三档已分离到 TerminusKind（data-terminus），运行结束由调用方显式清除本通道。
    */
   type CursorStatus =
     | '思考中' // 运行：思考相位（process-flow 相位行非工具形态在途）
     | '运行工具中' // 运行：工具在途（is-tool-running 存在）
     | '正在回答中' // 运行：正文流式生成（默认态）
     | '等待输入' // 挂起：ask 预检停顿（提问框在途）
-    | '已暂停' // 挂起：软暂停/用户暂停（半截正文静态展示）
+    | '已暂停'; // 挂起：软暂停/用户暂停（半截正文静态展示）
+
+  /**
+   * 终态三档（data-terminus 输出域，与运行态 data-status 通道严格分离，2026-10-19）。
+   * 渲染位点（2026-10-13 收敛 / 2026-10-19 属性分离）：已完成/用户中断 → round-group 底栏
+   *（:has 消费）；异常中断 → 正文尾红字（存活窗口与底栏显形时序互斥，见 settleRoundWithFooter
+   * 收口名单）；中断轮的异常中断档由 appendInterruptedRow 写宿主载体后同样由底栏承接；
+   * 无容器轮（ensureRoundGroup 不建容器）由载体尾自足兜底（见 chatStyles 载体尾规则）。
+   */
+  type TerminusKind =
     | '已完成' // 终态：底栏 time 之后淡勾（正文尾不再显示）
     | '用户中断' // 终态：用户主动停止（载体 = 中断轮宿主块，底栏文字标签）
     | '异常中断'; // 终态：异常（载体双位——正文红字+detail / 中断轮宿主→底栏红字标签）
 
   /**
-   * 对指定正文块写入光标状态（全部写入点的唯一实现；null = 清除，幂等）
+   * 对指定正文块写入运行/挂起态（唯一实现；null = 清除，幂等）
    *
    * @param body    正文块（.msg-body）；null/未连接时 no-op（诚实投影：无载体不撒状态）
-   * @param status  八态文案之一；null 清除
-   * @param detail  异常中断的原因摘要（仅 error 态消费，JS 侧负责截断）
+   * @param status  运行/挂起态之一；null 清除
    */
   function setCursorStatus(
     body: HTMLElement | null | undefined,
     status: CursorStatus | null,
-    detail?: string,
   ): void {
     if (!body || !body.isConnected) return;
-    if (status) {
-      body.dataset.status = status;
-      if (detail) body.dataset.statusDetail = detail;
-      else delete body.dataset.statusDetail;
-    } else {
-      delete body.dataset.status;
-      delete body.dataset.statusDetail;
-    }
+    if (status) body.dataset.status = status;
+    else delete body.dataset.status;
   }
 
-  /** 活动正文块状态写入（实时流路径统一入口：activeAssistantEl 为正文块 SSOT） */
-  function setActiveSheetStatus(status: CursorStatus | null, detail?: string): void {
+  /** 活动正文块运行态写入（实时流路径统一入口：activeAssistantEl 为正文块 SSOT） */
+  function setActiveSheetStatus(status: CursorStatus | null): void {
     setCursorStatus(
       activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
       status,
-      detail,
     );
+  }
+
+  /**
+   * 终态写入（结束后状态的唯一实现；与 setCursorStatus 的运行态通道严格分离）
+   *
+   * SSOT 收敛（2026-10-19）：一个属性背两种语义 = 双真相源，且终态覆盖运行态令「运行结束」
+   * 表现为「被覆盖」而非「自然消失」。分属性后：运行态由调用方显式清除（finalizeStreaming
+   * 清 / error 分支清），终态独立定格，互不污染。
+   *
+   * @param el      终态载体（有正文轮 = .msg-body；中断轮 = 宿主块 .msg.assistant）
+   * @param kind    终态三档之一
+   * @param detail  异常中断的原因摘要（仅 error 态消费，JS 侧负责截断）
+   */
+  function setTerminus(
+    el: HTMLElement | null | undefined,
+    kind: TerminusKind,
+    detail?: string,
+  ): void {
+    if (!el || !el.isConnected) return;
+    el.dataset.terminus = kind;
+    if (detail) el.dataset.terminusDetail = detail;
+    else delete el.dataset.terminusDetail;
   }
 
   /**
@@ -5513,7 +5532,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // isRoundSettled 判据单源守卫按此片段登记豁免
       const settledReplay = r.status === 'complete';
       if (settledReplay) {
-        setCursorStatus(
+        setTerminus(
           activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
           '已完成',
         );
@@ -5870,10 +5889,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       updateContextOccupancy(msg.occupancy);
     } else if (msg.type === 'error') {
       clearPendingWait(); // 失败即收尾，等待指示器退场
-      // 光标终态「异常中断」：红色 + 原因摘要（::after 的 data-status-detail 承载，JS 侧截断）。
+      // 光标终态「异常中断」：红色 + 原因摘要（::after 的 data-terminus-detail 承载，JS 侧截断）。
+      // 先清运行态（data-status）——终态与运行态分属两条通道，不得并存（2026-10-19 SSOT 收敛）。
       // 若主路径随后发 done 收尾 → finalize 清态后落「已完成」（诚实：流确实收尾）；
       // done 不来（宿主异常）→ error 态定格，不留呼吸运行态撒谎。
-      setActiveSheetStatus(
+      setActiveSheetStatus(null);
+      setTerminus(
+        activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
         '异常中断',
         msg.message.length > 80 ? `${msg.message.slice(0, 80)}…` : msg.message,
       );
@@ -5899,7 +5921,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       commitRoundId(msg.roundId);
       finalizeRound(msg.evidence);
       // 终态定格：静默「已完成」淡勾（finalize 清运行态后落终态，正常完成必须安静）
-      setActiveSheetStatus('已完成');
+      // 终态走独立通道 data-terminus（与运行态 data-status 严格分离，2026-10-19 SSOT 收敛）
+      setTerminus(
+        activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
+        '已完成',
+      );
       // 回填删除按钮 ts 锚 + 容器 footer 显形收口（commitTurnTs 前置契约已内嵌于
       // settleRoundWithFooter，无需调用方记顺序——时间戳补建读首段 ts）
       settleRoundWithFooter(msg.roundId, activeAssistantEl);

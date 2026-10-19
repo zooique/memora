@@ -2453,7 +2453,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(toolRow?.textContent).toContain('失败');
     // 用户中断：停止行退役（2026-10-13 终态标签收口底栏），宿主载体如实定格（底栏 :has 消费）
     expect(host.querySelector('.round-block__interrupted')).toBeNull();
-    expect(host.dataset.status).toBe('用户中断');
+    expect(host.dataset.terminus).toBe('用户中断');
     // 收起态摘要含耗时（指标留折叠块，不重复平铺）
     expect(rb.querySelector('.round-block__stats')?.textContent).toContain('耗时');
   });
@@ -2644,7 +2644,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(assistant.querySelector('.msg-body')).toBeNull();
     // 用户中断：停止行退役（2026-10-13 底栏标签收口），宿主载体如实定格 + 身份标签保留
     expect(document.querySelector('.round-block__interrupted')).toBeNull();
-    expect(assistant.dataset.status).toBe('用户中断');
+    expect(assistant.dataset.terminus).toBe('用户中断');
     expect(assistant.querySelector('.msg-ai-label__role')?.textContent).toBe('白话方案设计师');
     // 运行时平铺容器已收走（不残留 process-flow 呼吸相位行）
     expect(document.querySelector('.process-flow')).toBeNull();
@@ -3417,7 +3417,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(rb).not.toBeNull();
     // 现象2：会话结束后光标收口 → 终态定格「已完成」（批次二：运行态消失 + 静默淡勾）
     const body = document.querySelector<HTMLElement>('.msg.assistant .msg-body');
-    expect(body?.dataset.status).toBe('已完成');
+    expect(body?.dataset.terminus).toBe('已完成');
     // 过程平铺容器（进度条）finalize 后被移除，不在消息流底部残留
     expect(document.querySelector('.process-flow')).toBeNull();
   });
@@ -3526,7 +3526,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(document.querySelector('.plan-inline.plan-inline-done')).toBeNull();
     // 光标收口 → 终态「已完成」
     const body = document.querySelector<HTMLElement>('.msg.assistant .msg-body');
-    expect(body?.dataset.status).toBe('已完成');
+    expect(body?.dataset.terminus).toBe('已完成');
     // 过程平铺容器已收
     expect(document.querySelector('.process-flow')).toBeNull();
   });
@@ -3633,7 +3633,7 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     // 运行时平铺容器 .process-flow 被移除（若异常跳过 flowEl.remove() 会残留）
     expect(document.querySelector('.process-flow')).toBeNull();
     // 且 finalizeStreaming 被执行到 → 运行态清 + 终态「已完成」定格
-    expect(document.querySelector('.msg-body[data-status]')?.getAttribute('data-status')).toBe(
+    expect(document.querySelector('.msg-body[data-terminus]')?.getAttribute('data-terminus')).toBe(
       '已完成',
     );
     // 折叠内容完整性（兜底掩盖防线）：折叠块必须真的装进过程内容（思考折叠 + 小节）。
@@ -4479,7 +4479,7 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     // 用户中断：停止行退役（2026-10-13 底栏标签收口），宿主载体如实定格；
     // 折叠块内 §已停止详情仍保留完整文案（详情记录层不受收口影响，上方已断言）
     expect(document.querySelector('.round-block__interrupted')).toBeNull();
-    expect(document.querySelector<HTMLElement>('.msg.assistant')?.dataset.status).toBe('用户中断');
+    expect(document.querySelector<HTMLElement>('.msg.assistant')?.dataset.terminus).toBe('用户中断');
     // 半截正文掐断（丢弃运行中 step 的内容，与重放中断轮不显示正文同构）
     expect(document.querySelector('.msg.assistant .msg-body')).toBeNull();
   });
@@ -4543,7 +4543,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
 
     // done → 终态定格「已完成」，Markdown 保持渲染（加粗/行内代码成元素）
     dispatch({ type: 'done' });
-    expect(body.dataset.status).toBe('已完成');
+    expect(body.dataset.terminus).toBe('已完成');
     expect(body.querySelector('strong')).not.toBeNull();
     expect(body.querySelector('code')).not.toBeNull();
   });
@@ -4972,7 +4972,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
     // 历史重放非流式：直接渲染 Markdown（标题成 <h2>），complete 轮终态定格「已完成」
     expect(body.querySelector('h2')).not.toBeNull();
-    expect(body.dataset.status).toBe('已完成');
+    expect(body.dataset.terminus).toBe('已完成');
   });
 });
 
@@ -6442,7 +6442,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     // finalize 完成：流式态结清（终态「已完成」）、单块形态；补充行随过程折入折叠块（G31 收敛，rb 文本断言——
     // collectAllBodyText 是正文收集器，折叠块内容不在其范围）
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    expect(body.dataset.status).toBe('已完成');
+    expect(body.dataset.terminus).toBe('已完成');
     expect(document.querySelectorAll('.msg.assistant')).toHaveLength(1);
     const rbText = document.querySelector('details.round-block')?.textContent ?? '';
     expect(rbText).toContain('你补充');
@@ -8922,9 +8922,9 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       join(__dirname, '..', 'styles', 'chatStyles.ts'),
       'utf-8',
     ) as string;
-    // 三档标签位点齐全（载体泛匹配 [data-status]，有正文挂 body、中断轮挂宿主）
+    // 三档标签位点齐全（载体泛匹配 [data-terminus]，有正文挂 body、中断轮挂宿主）
     for (const term of ['已完成', '用户中断', '异常中断']) {
-      expect(styleSrc).toContain(`:has([data-status='${term}']) .round-group__footer::after`);
+      expect(styleSrc).toContain(`:has([data-terminus='${term}']) .round-group__footer::after`);
     }
     // 两端分布（实测返修 2026-10-13「底部单边倒」）：auto margin 挂 footer 内 .msg-time
     // ——time+标签成组靠右、操作按钮独占左端。首版挂在 ::before 上（首子伪元素吸收
@@ -8932,15 +8932,35 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     const footerTime = styleSrc.match(/\.round-group__footer \.msg-time\s*\{([^}]*)\}/);
     expect(footerTime?.[1] ?? '').toMatch(/margin-left:\s*auto/);
     const termRule = styleSrc.match(
-      /:has\(\[data-status='已完成'\]\) \.round-group__footer::after\s*\{([^}]*)\}/,
+      /:has\(\[data-terminus='已完成'\]\) \.round-group__footer::after\s*\{([^}]*)\}/,
     );
     expect(termRule?.[1] ?? '').not.toMatch(/margin-left:\s*auto/);
-    // 已完成正文尾必须显式 content:none——否则被基础档 attr(data-status) 回退显示「已完成」文字
-    const doneBody = styleSrc.match(/\.msg-body\[data-status='已完成'\]::after\s*\{([^}]*)\}/);
+    // 已完成正文尾压制必须**限定容器内**（.round-group 前缀）——容器外回退终态基础档
+    // attr(data-terminus) 文字自足承接；若全局压制，无 roundId 兜底轮（ensureRoundGroup
+    // 不建容器）终态无任何展示位而静默消失（2026-10-19 修复「底栏偶尔不显示」的核心不变量）
+    const doneBody = styleSrc.match(
+      /\.round-group\s+\.msg-body\[data-terminus='已完成'\]::after\s*\{([^}]*)\}/,
+    );
     expect(doneBody?.[1] ?? '').toMatch(/content:\s*none/);
+    // 反断言：不得存在**无容器前缀**的全局压制（负向锁定，防回退到「容器外也压死」= 静默消失）
+    expect(styleSrc).not.toMatch(/(?<!\.round-group )\.msg-body\[data-terminus='已完成'\]::after\s*\{/);
     // 异常态正文尾自足：状态词前缀 + 原因（流错误案 footer 处 is-pending 隐藏期，正文尾是唯一展示位）
-    const errBody = styleSrc.match(/\.msg-body\[data-status='异常中断'\]::after\s*\{([^}]*)\}/);
+    const errBody = styleSrc.match(/\.msg-body\[data-terminus='异常中断'\]::after\s*\{([^}]*)\}/);
     expect(errBody?.[1] ?? '').toMatch(/'异常中断 · '/);
+    // 中断终态「容器外」兜底（宿主块尾）：用户中断/异常中断各一条内容规则 + 容器内压制规则
+    // ——无 roundId 的中断轮容器缺席，宿主体尾是唯一展示位（与上文 body 兜底同一相位机制）
+    for (const term of ['用户中断', '异常中断']) {
+      const hostTail = styleSrc.match(
+        new RegExp(`\\.msg\\.assistant\\[data-terminus='${term}'\\]::after\\s*\\{([^}]*)\\}`),
+      );
+      expect(hostTail?.[1] ?? '').toContain(`'${term}'`);
+    }
+    // 容器内压制宿主块尾（避免与底栏标签双显；与「单一位点」纪律配套）——两条选择器同组
+    const hostSuppress = styleSrc.match(
+      /\.round-group \.msg\.assistant\[data-terminus='用户中断'\]::after,[^}]*content:\s*none/,
+    );
+    expect(hostSuppress).not.toBeNull();
+    expect(styleSrc).toMatch(/\.round-group \.msg\.assistant\[data-terminus='异常中断'\]/);
   });
 
   it('审批卡终结通知：write_confirm_closed 收卡，收卡后按钮不再回传（僵尸交互不留）', () => {
@@ -9865,12 +9885,13 @@ describe('任务项完成态（plan_snapshot 快照 → 状态图标）', () => 
 });
 
 // ═══════════════════════════════════════════════════════════
-// 光标八态状态机（data-status，UI-BLOCK-ICON 批次二）
+// 光标状态机（运行态 data-status / 终态 data-terminus，UI-BLOCK-ICON 批次二）
 // ═══════════════════════════════════════════════════════════
-// 状态真源 = setCursorStatus 单一写入点（data-status 值即中文文案，CSS 按值分档渲染）；
-// 运行态唯一合成点 = syncRunningCursor（优先级 = 工具在途 > 思考相位 > 默认回答）。
+// 运行态真源 = setCursorStatus（data-status 值即中文文案，CSS 按值分档渲染）；终态真源 = setTerminus
+//（data-terminus / data-terminus-detail，2026-10-19 双通道分离）；运行态唯一合成点 = syncRunningCursor
+//（优先级 = 工具在途 > 思考相位 > 默认回答）。
 // 变异锁：删 chunk 尾覆盖 / 删 done 落「已完成」/ 删 error detail 透传 → 对应用例转红。
-describe('光标八态状态机（data-status）', () => {
+describe('光标状态机（运行态 data-status / 终态 data-terminus）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -9966,13 +9987,15 @@ describe('光标八态状态机（data-status）', () => {
     dispatch({ type: 'chunk', content: '流式中' });
     dispatch({ type: 'error', message: 'HTTP 500: internal error' });
     const body = bodyOf();
-    expect(body.dataset.status).toBe('异常中断');
-    // detail 落独立属性（CSS 取 attr(data-status-detail) 红字展示），不污染状态值本身
-    expect(body.dataset.statusDetail).toBe('HTTP 500: internal error');
+    expect(body.dataset.terminus).toBe('异常中断');
+    // 运行态与终态分属两通道：error 先清 data-status（不并存），终态落 data-terminus
+    expect(body.dataset.status).toBeUndefined();
+    // detail 落独立属性（CSS 取 attr(data-terminus-detail) 红字展示），不污染终态值本身
+    expect(body.dataset.terminusDetail).toBe('HTTP 500: internal error');
     // done 兜底收尾：finalize 清态后落「已完成」（诚实收尾，不留异常态定格撒谎）
     dispatch({ type: 'done' });
-    expect(body.dataset.status).toBe('已完成');
-    expect(body.dataset.statusDetail).toBeUndefined();
+    expect(body.dataset.terminus).toBe('已完成');
+    expect(body.dataset.terminusDetail).toBeUndefined();
   });
 
   it('重放 live 轮接手运行态（无工具/相位 → 默认「正在回答中」）；重放 interrupted 轮无正文块、无状态撒谎', () => {
@@ -9990,7 +10013,7 @@ describe('光标八态状态机（data-status）', () => {
     const liveBody = document.querySelector<HTMLElement>('.msg.assistant .msg-body');
     expect(liveBody?.dataset.status).toBe('正在回答中');
 
-    // interrupted 轮：正文块整体不派生（诚实降级）——不得伪造任何 data-status
+    // interrupted 轮：正文块整体不派生（诚实降级）——不得伪造任何运行态 data-status
     mountChatView();
     dispatchReplay(
       makeRound({
@@ -10011,8 +10034,9 @@ describe('光标八态状态机（data-status）', () => {
     //（载体契约 2026-10-13：有正文挂 .msg-body、中断轮挂宿主，appendInterruptedRow 单点写入）
     expect(document.querySelector('.msg.assistant .msg-body')).toBeNull();
     expect(document.querySelector('.msg-body[data-status]')).toBeNull();
+    expect(document.querySelector('.msg-body[data-terminus]')).toBeNull();
     // 宿主载体按事件如实定格（本案 error 事件 → 异常中断；非伪造，是真实终态）
-    expect(document.querySelector<HTMLElement>('.is-interrupted-host')?.dataset.status).toBe(
+    expect(document.querySelector<HTMLElement>('.is-interrupted-host')?.dataset.terminus).toBe(
       '异常中断',
     );
   });
