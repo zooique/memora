@@ -25,6 +25,7 @@ export type IconName =
   | 'delete' // 删除/垃圾桶
   | 'folder' // 打开目录/文件夹
   | 'file' // 文件
+  | 'lock' // 常驻锁（chip 钉住开关：钉住的发送后不消失）
   | 'refresh' // 刷新
   | 'check' // 勾选/确认
   | 'close' // 关闭/叉号
@@ -67,6 +68,8 @@ const ICON_PATHS: Record<IconName, string> = {
     '<path d="M2.5 4h3.5l1 1h6.5a1 1 0 0 1 1 1v1H3L2 5l.5-1z"/><path d="M2 5.5h12l-1 7a1 1 0 0 1-1 .95H3a1 1 0 0 1-1-.95L2 5.5z"/>',
   // 文件：带折角的文档
   file: '<path d="M4 2.5h5l2.5 2.5V13a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 3 13V3a.5.5 0 0 1 .5-.5z"/><path d="M9 2.5V5h2.5"/>',
+  // 常驻锁：挂锁（锁体圆角矩形 + 上方锁梁），与 close 同在 chip 行内成对出现
+  lock: '<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>',
   // 刷新：循环箭头
   refresh:
     '<path d="M13 2.5v3h-3"/><path d="M3 13.5v-3h3"/><path d="M12.5 5.5a5 5 0 0 0-9.5-1.5"/><path d="M3.5 10.5a5 5 0 0 0 9.5 1.5"/>',

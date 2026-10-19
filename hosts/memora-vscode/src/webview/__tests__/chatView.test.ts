@@ -9233,6 +9233,134 @@ describe('添加到对话：引用气泡（file/folder · 去重 · 发送清空
 });
 
 // ═══════════════════════════════════════════════════════════
+// 常驻锁（pinned）：chip 发送后是否保留——ref 默认不钉（发送即清，现状）/ skill 默认钉住（锁预开）
+// SSOT = chip 的 pinned 属性（两类 chip 共用同一判据，不另建 pinned 数组）；
+// pinned 纯 UI 态，不进协议/内核——每轮发送照旧带全部当前 chip（模型每轮要完整上下文）。
+// ═══════════════════════════════════════════════════════════
+describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /** 派发一条已启用技能清单（供 skill chip 用例选中） */
+  function dispatchSkills(): void {
+    dispatch({
+      type: 'skills_loaded',
+      skills: [{ name: '正常技能', description: 'd', layer: 'builtin' }],
+    });
+  }
+
+  it('引用默认不钉住；🔒 后 chip 得 is-pinned，且发送后仍保留（核心：不再消失）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const send = document.getElementById('send') as HTMLButtonElement;
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    const chip = document.querySelector('#refChips .skill-chip') as HTMLElement;
+    // 默认不钉住（反向守卫：默认钉会让「发送即清」现状静默反转）
+    expect(chip.classList.contains('is-pinned')).toBe(false);
+    (chip.querySelector('.skill-chip__pin') as HTMLElement).click();
+    expect(
+      (document.querySelector('#refChips .skill-chip') as HTMLElement).classList.contains(
+        'is-pinned',
+      ),
+    ).toBe(true);
+    input.value = '讲讲';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    send.click();
+    // 钉住的仍随本轮消息发出（模型每轮要完整上下文）
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'send',
+      text: '讲讲',
+      refs: [{ path: 'src/foo.ts', kind: 'file' }],
+    });
+    // 发送后保留不消失
+    const after = document.querySelectorAll('#refChips .skill-chip');
+    expect(after.length).toBe(1);
+    expect(after[0].querySelector('.skill-chip__name')?.textContent).toBe('src/foo.ts');
+  });
+
+  it('引用取消常驻（再点 🔒）→ 退回 transient：下一轮发送后清除', () => {
+    mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const send = document.getElementById('send') as HTMLButtonElement;
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    const pin = () =>
+      document.querySelector('#refChips .skill-chip .skill-chip__pin') as HTMLElement;
+    pin().click(); // 钉住
+    pin().click(); // 取消
+    expect(
+      (document.querySelector('#refChips .skill-chip') as HTMLElement).classList.contains(
+        'is-pinned',
+      ),
+    ).toBe(false);
+    input.value = 'x';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    send.click();
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(0);
+  });
+
+  it('钉住的引用上浮到附件行最前（锁定在顶部）', () => {
+    mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'a-first.ts', kind: 'file' }] });
+    dispatch({ type: 'addRef', refs: [{ path: 'b-second.ts', kind: 'file' }] });
+    const names = () =>
+      [...document.querySelectorAll('#refChips .skill-chip .skill-chip__name')].map(
+        (n) => n.textContent,
+      );
+    expect(names()).toEqual(['a-first.ts', 'b-second.ts']); // 均未钉 → 插入序
+    (
+      document.querySelectorAll('#refChips .skill-chip')[1].querySelector(
+        '.skill-chip__pin',
+      ) as HTMLElement
+    ).click();
+    expect(names()).toEqual(['b-second.ts', 'a-first.ts']); // 钉住者上浮，同组内序不变
+  });
+
+  it('技能默认钉住（锁预开）→ chip 带 is-pinned，发送后不清除（保持既有常驻行为）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const send = document.getElementById('send') as HTMLButtonElement;
+    dispatchSkills();
+    (document.querySelector('.skill-picker [data-treedd-id="正常技能"]') as HTMLElement).click();
+    expect(
+      (document.querySelector('#skillChips .skill-chip') as HTMLElement).classList.contains(
+        'is-pinned',
+      ),
+    ).toBe(true);
+    input.value = 'x';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    send.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'send',
+      text: 'x',
+      skillName: '正常技能',
+    });
+    // 常驻：发送后 chip 仍在（这是「锁预开」要保住的既有行为）
+    expect(document.querySelectorAll('#skillChips .skill-chip').length).toBe(1);
+  });
+
+  it('技能取消常驻 → 发送后清除（与引用同一 pinned 判据，非两条规则）', () => {
+    mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const send = document.getElementById('send') as HTMLButtonElement;
+    dispatchSkills();
+    (document.querySelector('.skill-picker [data-treedd-id="正常技能"]') as HTMLElement).click();
+    (document.querySelector('#skillChips .skill-chip .skill-chip__pin') as HTMLElement).click();
+    expect(
+      (document.querySelector('#skillChips .skill-chip') as HTMLElement).classList.contains(
+        'is-pinned',
+      ),
+    ).toBe(false);
+    input.value = 'x';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    send.click();
+    expect(document.querySelectorAll('#skillChips .skill-chip').length).toBe(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
 // 技能菜单顶部搜索（名称 + 描述过滤 · 重建保词 · 硬约束）
 // ═══════════════════════════════════════════════════════════
 // 判据：搜索框常驻菜单顶部（元素单例，skills_loaded 全量重建时重插且保词——

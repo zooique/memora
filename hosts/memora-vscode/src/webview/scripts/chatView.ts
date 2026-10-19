@@ -153,10 +153,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     : null;
   // 附件行（选择态行）：输入盒内、文字上方展示当前已选 Skill（名称 + × 可移除）
   const skillChipRow = document.getElementById('skillChips') as HTMLElement | null;
-  let currentSkill: { name: string; disabled?: boolean } | null = null;
+  // pinned = 常驻锁（发送后是否保留）：skill 默认 true = 锁预开常驻，保持既有「发送不消失」行为；
+  // ref 默认 false = 发送即清（现状）。两类 chip 共用这一个属性，不另建 pinned 数组（SSOT：
+  // 钉住集与上下文集同源，杜绝两处漂移）。pinned 纯 UI 状态，不进协议/内核。
+  let currentSkill: { name: string; disabled?: boolean; pinned: boolean } | null = null;
   // 引用行（右键「添加到对话」挂的文件/目录，与 skillChipRow 同构复用样式；file/folder 二态）
   const refChipRow = document.getElementById('refChips') as HTMLElement | null;
-  let currentRefs: { path: string; kind: 'file' | 'folder' }[] = [];
+  let currentRefs: { path: string; kind: 'file' | 'folder'; pinned: boolean }[] = [];
   // 活动状态条（瞬态单条：error/info 通知，info 2500ms / error 8000ms 自动撤）
   const activityBar = document.getElementById('activityBar') as HTMLElement;
   // 状态抽屉（C1，2026-10-05）：静态骨架，入口 chip + 下拉体 panel（内含控件段 controls
@@ -6450,9 +6453,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         : {}),
     };
     vscode.postMessage(payload);
-    // 引用为「下一轮上下文」一次性挂载：发送后即消费清除，避免静默带入后续无关消息
-    currentRefs = [];
+    // 引用发送后处置（判据 = chip 的 pinned 属性，SSOT）：未钉住的即消费清除（避免静默
+    // 带入后续无关消息）；钉住的常驻——下一轮仍随消息作为上下文发出（用户显式 🔒 决定，
+    // 非隐式残留）。每轮发送照旧带全部当前引用（pinned + 未钉），模型每轮要完整上下文。
+    currentRefs = currentRefs.filter((r) => r.pinned);
     renderRefChips();
+    // 技能同一 pinned 判据：默认钉住常驻（锁预开）⇒ 发送不清除；用户解锁后才随发送清除。
+    // updateSkillPickerLabel 尾部会 renderSkillChip，故不必再调一次。
+    if (currentSkill && !currentSkill.pinned) {
+      currentSkill = null;
+      updateSkillPickerLabel();
+    }
   }
   // 发送按钮：空闲点击 = 发送；生成中点击 = 停止（按钮已切换为停止方块，
   // mvp-scope 打断能力）；暂停中点击 = 继续（恢复 Agent 执行）。
@@ -6787,7 +6798,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (found) {
         // 随行带出 disabled（选择时刻的快照）——仅供 chip 显示提示，
         // 发送时的**判定**仍由 host 真源（`isSkillDisabled`）负责，webview 不拦截。
-        currentSkill = { name: id, disabled: !!found.disabled };
+        // 新挂载 = 锁预开常驻（pinned 默认 true，与「skill 发送后不消失」的既有行为一致）
+        currentSkill = { name: id, disabled: !!found.disabled, pinned: true };
         updateSkillPickerLabel();
       } else if (id === '__clear_skill') {
         currentSkill = null;
@@ -6843,8 +6855,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       return;
     }
     skillChipRow.hidden = false;
+    // 闭包内 let 的 narrowing 失效 → 取局部副本供 🔒 处理器读取当前挂载态
+    const skill = currentSkill;
     const chip = document.createElement('span');
     chip.className = 'skill-chip';
+    // 钉住（常驻锁）= 发送后保留不消失，视觉强化底色（.is-pinned）
+    if (skill.pinned) {
+      chip.classList.add('is-pinned');
+    }
     // 选中的技能已禁用 → 标记 chip。否则用户以为「已挂载」，实际发送时不注入。
     // 术语沿用设置页同一词汇「已禁用」，不新增概念。
     if (currentSkill.disabled) {
@@ -6867,6 +6885,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       note.textContent = '已禁用';
       chip.appendChild(note);
     }
+    // 常驻锁切换（🔒）：与 ✕ 语义二分——🔒 只切「发送后是否保留」，✕ 才是移除。
+    const pin = document.createElement('button');
+    pin.type = 'button';
+    pin.className = 'skill-chip__pin';
+    pin.innerHTML = getIconSvg('lock', 11, 11);
+    pin.setAttribute('aria-pressed', String(skill.pinned));
+    pin.setAttribute('title', skill.pinned ? '取消常驻（发送后清除）' : '常驻（发送后保留）');
+    pin.setAttribute('aria-label', (skill.pinned ? '取消常驻：' : '常驻：') + skill.name);
+    pin.addEventListener('click', () => {
+      currentSkill = { ...skill, pinned: !skill.pinned };
+      renderSkillChip();
+    });
+    chip.appendChild(pin);
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'skill-chip__remove';
@@ -6887,7 +6918,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const seen = new Set(currentRefs.map((r) => r.path));
     for (const r of refs) {
       if (!seen.has(r.path)) {
-        currentRefs.push({ path: r.path, kind: r.kind });
+        // 新挂载默认不钉住（发送即清，保持现状）；已存在同 path 的走上面 seen 分支，
+        // 不会重置其 pinned（保留用户已钉的锁）。
+        currentRefs.push({ path: r.path, kind: r.kind, pinned: false });
         seen.add(r.path);
       }
     }
@@ -6905,9 +6938,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       return;
     }
     refChipRow.hidden = false;
-    for (const ref of currentRefs) {
+    // 钉住的排最前（「锁定在顶部」）：稳定排序保同组内插入序；只影响渲染顺序，
+    // 不改 currentRefs 本体——pinned 判据仍以 currentRefs 为唯一真源（SSOT）。
+    const ordered = [...currentRefs].sort((a, b) => Number(b.pinned) - Number(a.pinned));
+    for (const ref of ordered) {
       const chip = document.createElement('span');
       chip.className = 'skill-chip';
+      // 钉住（常驻锁）= 发送后保留不消失，视觉强化底色（.is-pinned）
+      if (ref.pinned) {
+        chip.classList.add('is-pinned');
+      }
       const icon = document.createElement('span');
       icon.className = 'skill-chip__icon';
       icon.innerHTML = getIconSvg(ref.kind === 'folder' ? 'folder' : 'file', 11, 11);
@@ -6917,6 +6957,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       name.className = 'skill-chip__name';
       name.textContent = ref.path;
       chip.appendChild(name);
+      // 常驻锁切换（🔒）：与 ✕ 语义二分——🔒 只切「发送后是否保留」，✕ 才是移除。
+      const pin = document.createElement('button');
+      pin.type = 'button';
+      pin.className = 'skill-chip__pin';
+      pin.innerHTML = getIconSvg('lock', 11, 11);
+      pin.setAttribute('aria-pressed', String(ref.pinned));
+      pin.setAttribute('title', ref.pinned ? '取消常驻（发送后清除）' : '常驻（发送后保留）');
+      pin.setAttribute('aria-label', (ref.pinned ? '取消常驻：' : '常驻：') + ref.path);
+      pin.addEventListener('click', () => {
+        currentRefs = currentRefs.map((r) =>
+          r.path === ref.path ? { ...r, pinned: !r.pinned } : r,
+        );
+        renderRefChips();
+      });
+      chip.appendChild(pin);
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'skill-chip__remove';

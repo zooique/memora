@@ -1547,6 +1547,12 @@ export const chatStyles = `
     border-radius: var(--radius-pill, 999px);
     white-space: nowrap;
   }
+  /* 常驻锁（pinned）：钉住的 chip 发送后不消失（渲染侧由 pinned 排序到附件行最前）；
+   * 视觉仅强化底色，不改 chip 形态——与 is-disabled 同为状态修饰类，故置于其前：
+   * 被禁用的技能即便钉住也仍保持虚线禁用观感（后写的 is-disabled 覆盖 background）。 */
+  .skill-chip.is-pinned {
+    background: var(--accent-bg-active);
+  }
   /* 已禁用技能 chip：虚线边框 + 次要色，与「已挂载且生效」的实线 accent 形态区分。
    * 语义 = 挂在输入框上但发送时不会注入；用户可据此自行移除或去设置里启用。 */
   .skill-chip.is-disabled {
@@ -1564,8 +1570,10 @@ export const chatStyles = `
     opacity: var(--op-8);
   }
   /* 移除按钮内的 close 图标（SVG） */
-  .skill-chip__remove svg { display: block; }
-  .skill-chip__remove {
+  .skill-chip__remove svg,
+  .skill-chip__pin svg { display: block; }
+  .skill-chip__remove,
+  .skill-chip__pin {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -1581,7 +1589,8 @@ export const chatStyles = `
     line-height: var(--lh-flat);
     cursor: pointer;
   }
-  .skill-chip__remove:hover {
+  .skill-chip__remove:hover,
+  .skill-chip__pin:hover {
     background: var(--accent-bg-active);
     color: var(--accent, #0e639c);
   }
