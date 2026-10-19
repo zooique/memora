@@ -218,7 +218,7 @@ searchByKeyword：纯关键词单通道检索（无向量、无语义融合、�
 ① 前置 superseded 过滤：被 supersededBy 取代的摘要不作为当前事实返回（仍保留，trace_summary 可回溯）
 ② excludeRoundIds 互斥：正文/摘要已在视图内的轮次不重复返回（工具语义：不补位凑满）
     ↓
-③ 截断到 limit（默认 10）：不引入 accessedAt 时间主序——accessedAt 只作事实字段揭示（命中 touch 刷新），优先级由 LLM 结合任务定夺
+③ 截断到 limit（默认 10）：**排序 = `accessedAt` 倒序**（最近写入 / 最近被想起者靠前；§5.2 2026-10-19 改定案），无相关度评分
     ↓
 返回命中项（附 sessionId/roundId 结构化溯源，与 trace_summary 参数直通）
 ```
@@ -240,9 +240,11 @@ searchByKeyword：纯关键词单通道检索（无向量、无语义融合、�
 
 **判定来源（确定性，非运行时状态）**：`excludeRoundIds` 由调用方按 `loop.getExclusionRoundIds()` 精确派生 = 视图内 ∪ 被替换 ∪ 在途轮次（天然不含当轮），传入 `searchByKeyword` 在截断前过滤命中该集合的摘要。**不依赖运行时注入时序**——纯确定性判定，只依赖调用方传入的集合，缺省为空（行为等同纯检索）。
 
-### 4.4 排序：关键词命中 + accessedAt 事实项
+### 4.4 排序：`accessedAt` 倒序（2026-10-19 改定案）
 
-现行排序 = **关键词命中序**（FTS/分词命中）+ `accessedAt` 作为事实字段（命中刷新，揭示使用轨迹），**无分层分轨、无 cap 内分配、无 score 主序**。limit 截断是唯一的"上限有界"保证。
+现行排序 = **`accessedAt` 倒序**（`ORDER BY accessed_at DESC`）：命中判定是分词后任一词对 `content`/`name` 子串命中（OR），**命中本身不产生次序**；`accessedAt` 初值 = 写入时刻、命中即 touch 刷新 ⇒ 「最近写入 / 最近被想起」者靠前。**无 FTS 索引、无 bm25、无相关度评分**，也无分层分轨、无 cap 内分配、无 score 主序。limit 截断是唯一的"上限有界"保证。
+
+> 改定案说明（2026-10-19）：旧表述「排序 = 关键词命中序（FTS/分词命中），accessedAt 只是事实字段」与实现不符——语义通道（hybridMerge）早已随 B0 整体删除，且从未有 FTS 索引；纯关键词下不存在"贴合度"，不承认时间序就只剩后端的偶然序。用户拍板**承认 `accessedAt` 排序**，缘由、代价与重启相关度排序的条件见 [memory-tool-recall-design.md §5.2](memory-tool-recall-design.md)。
 
 > 历史说明（已退役）：v3 时代确实存在「分层分轨（L1 会话内 / L2 会话外）+ 语义相关性 + cap 内分配」的召回编排（`recall()` 函数），连同 `score` 字段、`minSemanticShare`/`memoryRecallPercent` 等记忆层 cap/召回键，已于 2026-09-04 ~ 2026-09-18 经多轮"减法"整体删除（见附录 A）。**现行不再有 `recall()` 函数、不再有分层分轨召回、不再有任何记忆层 token cap**——记忆不进 prepare 装配管线，检索唯一入口 = `search_memories` 工具，由 LLM 主动取用、按需拉取 token（非常驻预算）。
 
@@ -438,7 +440,7 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 | **记忆模型** | 摘要单轨（round-summary，唯一自动轨；会话级摘要归 SessionMeta） |
 | **召回方式** | 单一召回入口（`search_memories` 工具，纯关键词，LLM 主动取用） |
 | **过滤** | superseded 过滤（`!hasActiveSuperseder`，悬空指针视为未取代）+ excludeRoundIds 互斥（正文/摘要已在眼前不重复返回） |
-| **排序** | 关键词命中序 + `accessedAt` 事实字段（命中刷新），无分层分轨、无 cap 内分配、无 score 主序 |
+| **排序** | `accessedAt` 倒序（最近写入 / 最近被想起者靠前；§5.2 2026-10-19 改定案），无 FTS/相关度评分、无分层分轨、无 cap 内分配、无 score 主序 |
 | **治理** | supersede（写时取代，同 session 加权 Jaccard ≥ 0.5）+ 悬空取代指针消费侧判据（替代物移除后旧摘要回退活跃） |
 
 **详细说明**：

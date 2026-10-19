@@ -22,7 +22,7 @@
 2. **排序难题随之消解**：工具返回 top-N 候选由 LLM 看内容自选，排序从"决定上下文存活权"降级为"候选清单次序"——0.90 vs 0.88 的微差不再重要。recency 设计文档（复合键/accessedAt 次级键/score 退役）**整体降级为候选清单的 P2 次序问题**。
 3. **实证半落地**：`search_memories` 工具已存在（builtinTools.ts:407，纯关键词后端 builtinToolHandlers.ts:817），且 `memoryInspector.searchHybrid` 注释自称"记忆搜索工具，不是召回管线"（memoryInspector.ts:230）——**搜索能力已按工具语义设计，缺的是接给 LLM + 语义通道 + 退役自动注入**。
 4. **保留层**：对话层管理（loop 最近历史/互斥/压缩）、预算派生与占用快照（上下文指示器真理源）、记忆写入/supersede/compaction。**退役层**：每轮自动语义召回段 + prepare 召回策略键族（6 键，见 §4.2）。
-5. **本设计取代 recency 文档的问题域**：recency 文档的复合键/排序/score 退役全部是"自动注入语境"下的问题；纯工具化后该语境消失。recency 文档仅保留一条有效结论，**已在 §5.2 定案（2026-09-09 补充）**：accessedAt 由**工具命中即 touch** 刷新，作为「最近使用优先」规则的事实字段暴露给 LLM（不预排时间主序，不做加权/复合键）。
+5. **本设计取代 recency 文档的问题域**：recency 文档的复合键/排序/score 退役全部是"自动注入语境"下的问题；纯工具化后该语境消失。recency 文档仅保留一条有效结论，**已在 §5.2 定案（2026-09-09 补充；2026-10-19 改定案）**：accessedAt 由**工具命中即 touch** 刷新，且**返回排序即为 accessedAt 倒序**（改定案已承认时间主序；不做加权/复合键）。
 6. **确定性触发 = 首步记忆检索**（2026-09-09 二轮拍板）：纯自发工具调用不可靠（模型会忘查）→ 有查询意图的轮次，**首个 LLM 调用只暴露只读探查工具面**（结构性收窄，复刻 TS-7 searchDisabled 按轮过滤先例），指令点名 memory_search 优先——"第一个 step 理解意图、第二个 step 搜记忆"由**编排保证**而非模型自律；自发调用保留为任意轮兜底（§3.2）。
 7. **记忆职责 = 被想起（默认动作），找到只是兜底**（2026-09-09 三轮拍板/四轮澄清，§1.4）：LLM 收到要求时**第一反应恒为回忆判断**——"这值得回忆吗"，默认动作、判断机会由首轮收窄结构性保证；判断结果允许"不需要 → 直接干"（简单任务，合理产物非失败）；"用户显式提点才查到"（被找到）是**最差兜底线**（亦须 ≈100% 命中），不是设计目标。
 
@@ -160,7 +160,7 @@ SeedPrepare.run（seed/prepare.ts:99，策略解析 memoryRecallMode/contextAsse
 | 过滤 | supersededBy 过滤（recall 读路径现行行为 recall.ts:221） | 工具返回被取代摘要会误导 LLM |
 | 参数 | 保留 query/limit/mode；新增可选 `source`（round-summary/preference/…）过滤 | 承接 summaryRecall 键语义（§5.1），不引全局键 |
 | 命中 touch | 工具命中 → fire-and-forget 刷新 accessedAt（复用 backgroundTask + memoryRecalled 事件模式，contextPreparer.ts:229 同构） | accessedAt 语义"被想起即刷新"在新范式下的唯一触发位——**"被 LLM 使用"以命中为准**（命中 = 被想起 = 记忆强化，同 §3.4 人类隐喻）；规则同步告知 LLM（下行「优先级规则」） |
-| 优先级规则（2026-09-09 补充定案） | 命中项显式附 `accessedAt` 结构化字段（与 sessionId/roundId 溯源增强同批）；工具描述明示：「候选默认按语义相关性排序；多个候选贴题度相近时，按上次被使用先后（accessedAt 新者优先）定优先级；命中会刷新该记忆的最近使用时间」 | 「最近使用优先」作为**规则暴露给 LLM 决策、代码不预排时间主序**（§5.2）：判断归模型，时间只提供事实字段 |
+| 优先级规则（2026-09-09 补充定案 → 2026-10-19 改定案） | 命中项显式附 `accessedAt` 结构化字段（与 sessionId/roundId 溯源增强同批）；工具描述明示：「返回顺序 = `accessedAt` 倒序（最近写入 / 最近被想起者靠前）；纯关键词只有命中/不命中二分，**无贴合度评分**，勿把排序当相关度；未命中请改述关键词重试」 | 排序由存储层按 `accessedAt` 倒序（§5.2 **2026-10-19 改定案**，承认时间主序）；`accessedAt` 同时作为事实字段揭示。原「代码不预排时间主序」的表述与实现相反，已作废 |
 | 互斥过滤（审查补 → 2026-09-09 已落地） | **不暴露为工具参数**：装配期注入 `recentRoundIdsProvider`（`getRecentRoundIds(HOT_MEMORY_MAX_ROUNDS)`，与恢复路径 warmRecall 同源同值），search_memories 内部算 `excludeRoundIds` 传给 `searchHybrid`，过滤 roundId∈集合的命中（在 superseded 过滤后、融合排序前剔除；不补位凑满——工具语义返回更聚焦结果即可） | 原 `recall()` 的 excludeRoundIds（recall.ts:85/:188/:252）在工具直连查库路径下**无天然继承者**，不加则 LLM 首轮检索会把已在上下文的最近轮摘要重复搜回（违背"干净"）；**传给调用方（LLM/角色包）则互斥可被关掉而失效**，故固化为内核装配注入（builtinToolHandlers.setRecentRoundIdsProvider），不开放（§5.1 边界同批）；明文溯源行见 §8 |
 
 > **补记（2026-09-10，互斥口径收口）**：上表落地方式经复核**存在真相源错位**，本行「实现方式」已不准确，**待收口**：
@@ -236,7 +236,7 @@ SeedPrepare.run（seed/prepare.ts:99，策略解析 memoryRecallMode/contextAsse
 
 | 消费端 | 处置 | 理由 |
 |---|---|---|
-| `hybridMerge` score×0.4 | **退役**：排序纯化 = 单语义分 `vectorScore` 降序 | score 单调不减无区分度（P0-1）；`只 touch 不 +score`（§5.2）后 score 不再更新，排序残件。同贴题下的次序交由 LLM 依据暴露的 `accessedAt` 字段决策（§5.2 定案：代码不预排时间主序） |
+| `hybridMerge` score×0.4 | **退役**：排序纯化 = 单语义分 `vectorScore` 降序 | score 单调不减无区分度（P0-1）；`只 touch 不 +score`（§5.2）后 score 不再更新，排序残件。同贴题下的次序交由 LLM 依据暴露的 `accessedAt` 字段决策（§5.2：**2026-10-19 改定案后，次序 = `accessedAt` 倒序**） |
 | `boostScore`（recall.ts 副本提升） | **删除**：收敛为 touch | 唯一排序消费者（hybridMerge score 项）退役后，boost 副作用失效；`touchScores` 内部只调 `storage.touch(id, now)` 已落地（只刷 accessedAt），是唯一写位 |
 | `SCORE_FLOOR` | **已删除** | 与 `BOOST_INCREMENT` / `SCORE_CEILING` 同批随阶段3 清理（`src/memory/__tests__/governance.test.ts:10` 留有记录，`src/` 已无定义与消费）；原「保留作存储 clamp 下限」的理由随 score 物理退役（2026-09-09）一并失效 |
 | `memoryAdvisor` avgScore 健康判定 | **回退判定基准**（本周另议指标，候选=accessedAt 冷度｜弃用 status） | G34 已定性记忆无沉底语义、`listFading` 更名「冷记忆观测」；score 不再更新 → avgScore 冻结失去时效含义，健康判定基础消失 |
@@ -245,7 +245,7 @@ SeedPrepare.run（seed/prepare.ts:99，策略解析 memoryRecallMode/contextAsse
 
 **批次序（渐进重构 + progressive-refactor，每批独立提交 + 全量回归）**：
 
-- **3A 排序纯化**：`hybridMerge` 移除 `memoryScoreWeight` 项与 `HybridWeights` 权重参数 → 变量 `sort 单向量分`；recall() 与 searchHybrid() 同步生效（同一函数，一处改处处生效）。`keyword-only` 回退通道（vectorScore=0）失去 score 打破平局 → 次序依赖 stable-sort 插入序，可接受（兜底后端，语义缺失本就无主序）。
+- **3A 排序纯化**：`hybridMerge` 移除 `memoryScoreWeight` 项与 `HybridWeights` 权重参数 → 变量 `sort 单向量分`；recall() 与 searchHybrid() 同步生效（同一函数，一处改处处生效）。`keyword-only` 回退通道（vectorScore=0）失去 score 打破平局 → 次序依赖 stable-sort 插入序，可接受（兜底后端，语义缺失本就无主序）。**现行补记（2026-10-19）**：真实存储实现（SQLite / 内存）均显式 `ORDER BY accessedAt DESC`，不依赖 stable-sort 插入序——见 §5.2 改定案。
 - **3B boost 收敛**：recall.ts 删除 `boostScore`，确认 `touchScores`（内部只调 `storage.touch(id, now)`）为唯一写位。
 - **3C 判定回退**：`memoryAdvisor` 健康状态改基准（拍板见下表①），`SOURCE_HEALTH_THRESHOLDS` 随速随拆记录在案（2026-09-09 教训：新增后未住即拆，勿留孤儿）。
 - **3D 常量清理**：`BOOST_INCREMENT`/`SCORE_CEILING` 去孤儿（3B 后 grep 消费方归零则删，`src/index.ts:139` 导出面同步）。
@@ -275,14 +275,18 @@ SeedPrepare.run（seed/prepare.ts:99，策略解析 memoryRecallMode/contextAsse
 
 `summaryRecall='off'`（只召回原始记忆、过滤 round-summary）在工具化下的等价物 = memory_search 的 `source` 过滤参数（不引全局键，查询时自选）。全局键语义消失（用户不能一边说"永不看摘要"一边主动查摘要——矛盾）。
 
-### 5.2 排序语义与「最近使用优先」规则（2026-09-09 补充定案）
+### 5.2 排序语义与「最近使用优先」规则（2026-09-09 补充定案 → **2026-10-19 改定案：承认按 accessedAt 排序**）
 
-**工具返回排序 = searchHybrid 的 hybridMerge 融合序（语义相关主，同 §3.3「后端」行）**——**不引入时间主排序**：若按 accessedAt 主导排序，近的边缘记忆会淹没远的核心记忆（"昨天查过的琐事"压过"三个月前的重要决策"），违背记忆检索"相关性优先"的常识，也与范式切换"排序微差不再重要"的结论相悖。
+**现行定案（2026-10-19，用户拍板「改定案」）**：**工具返回排序 = `accessedAt` 倒序**。
 
-**「最近使用优先」作为规则暴露给 LLM，不由代码预排**（呼应用户补充：更新调用时间 + 让 LLM 按调用时间定优先级）：
-- **事实层**：命中项显式携带 `accessedAt`（工具命中即 touch 刷新，§3.4），LLM 零解析可读——「上次被使用」进入候选清单，作为决策输入；
-- **规则层**：工具描述明示「多个候选贴题度相近时，按 accessedAt 新者优先定优先级」＋「命中会刷新该记忆的最近使用时间」——**判断归模型**：语义相当的两条候选该选哪条（最近用过 / 更久远但更权威），由 LLM 结合当前任务定夺；
-- **代码层**：**不引入复合键/加权/时间主序**（§1.1 排雷教训：连续浮点语义分上次序决胜器形同虚设），**仅字段揭示定案**（2026-09-09 收敛）——`accessedAt` 只作为事实字段随命中项返回，代码不做任何按时间重排/分档/同档稳定排序；**「后端分档」岔口废弃**：它 = 代码按时间重排，违背本自然段的「时间只提供事实，判断归模型」原则，与 §1.1 排雷同源，不预埋。
+- **实现真源**：`IMemoryStorage.search()`（`nodeSqliteStorage.ts:396-425`；`inMemoryStorage.ts:141-159` 同口径）= query 分词后逐 token 对 `content` / `name` 做子串匹配，**任一 token 命中即入选（OR）**，随后 `ORDER BY accessedAt DESC LIMIT n`；`searchByKeyword` 再依次做 superseded 过滤、`excludeRoundIds` 互斥、`slice(0, limit)`，**被滤掉者不补位**。**全链路无 FTS 索引、无 bm25、无相关度评分**（真机库 `sqlite_master` 仅一张 `memories` 表 + 主键索引）。
+- **为什么改（旧定案的前提消失了）**：2026-09-09 原文写「工具返回排序 = searchHybrid 的 hybridMerge 融合序（语义相关主），不引入时间主排序」。但那条语义通道从未在生产接通，并已于 2026-09-18 随 B0 收编整体删除（`vectorStore` / `embedding` / `searchHybrid` 全删）。**纯关键词下不存在可排序的"贴合度"**——只有命中 / 不命中二分；此时若不承认时间序，实际次序就是后端的偶然序（SQLite 无显式 ORDER BY 时按 rowid、内存按插入序），反而不可解释。承认 `accessedAt` 是唯一稳定的次序键，比保留一句"按相关性返回"的空承诺更诚实。
+- **accessedAt 语义**：初值 = 写入时刻（`roundSummaryGenerator.ts:218` `accessedAt: now`），命中即 touch 刷新（§3.4，**只刷新不加权**）⇒「**最近写入 / 最近被想起**」者靠前。
+- **明示代价（已知，并从设计上接受）**：① 泛词命中会占满槽位——真机实证（2026-10-19，小说项目，50 条摘要）：query「小说 结局 拍板」返回 7 条，**7 条全部只命中 1/3 token**，而含「结局分支C…已于 2026-09-29 拍板为定稿口径」的 `round-1791507775404` 被挤出槽位（按命中词覆盖率排序它是第 2 位）；② 近轮天然压过陈年决策（新写入的 `accessedAt` 最新）；③ **缓解手段归 LLM**：改述关键词重试（工具描述已明示）或 `trace_summary` 溯源——**不在代码侧另造排序器**（那会重造"暗排序"，与 §1.1 排雷同源）。
+- **不变量（未变）**：`accessedAt` 仍是「使用轨迹」唯一事实源；touch 只刷新、不加权；`score` / `boost` 保持退役；`limit` 截断是唯一的"上限有界"保证。
+- **重启相关度排序的条件（须另立定案）**：只有出现真实证据显示「按 `accessedAt` 排序导致决策类记忆系统性漏召回、且影响回答质量」时，才评估 FTS5 bm25 或「命中词覆盖率」排序；届时**必须一次同步全部载体**——本文 §3.3/§5.2、`memory-as-summary.md` §4.1/§4.4/§7、`memory-governance-design.html` §4/§5/§8、`module-inventory.md`、`memora-api-reference.md`、`白话设计文档-模块篇.md`、`memoryInspector.ts` 注释、`builtinTools.ts` 的 `search_memories` 描述。
+
+> **历史（已被上条取代，保留供决策链回溯，勿据此回改代码）**：2026-09-09 原文主张「工具返回排序 = searchHybrid 的 hybridMerge 融合序（语义相关主）——不引入时间主排序：若按 accessedAt 主导排序，近的边缘记忆会淹没远的核心记忆（"昨天查过的琐事"压过"三个月前的重要决策"），违背记忆检索"相关性优先"的常识」。其论证前提（语义通道存在）已消失，结论对现行实现不成立；它描述的次序从未在发行版中出现过。
 
 >> 与 §6 开放点 5 联动：倾向**只 touch 不 +score**——accessedAt 是「使用轨迹」唯一事实源；若 vote +score，使用越频繁 score 越高，与「最近使用优先」时间规则叠加两轨，反而引回自强化（§3.4 已因自动注入退役根除正反馈，勿重建）。
 

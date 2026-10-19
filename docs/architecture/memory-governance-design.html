@@ -480,8 +480,8 @@
         <text x="361" y="372" class="d-s" text-anchor="middle" dominant-baseline="central">superseded 过滤 · 互斥 · 溯源</text>
         <path d="M456 360 L490 360" class="d-arrow" marker-end="url(#ar1)"/>
         <rect x="496" y="332" width="144" height="56" rx="8" class="d-box"/>
-        <text x="568" y="352" class="d-t" text-anchor="middle" dominant-baseline="central">排序 = 关键词相关性</text>
-        <text x="568" y="372" class="d-s" text-anchor="middle" dominant-baseline="central">accessedAt 仅事实揭示</text>
+        <text x="568" y="352" class="d-t" text-anchor="middle" dominant-baseline="central">排序 = accessedAt 倒序</text>
+        <text x="568" y="372" class="d-s" text-anchor="middle" dominant-baseline="central">2026-10-19 改定案 · 无 FTS</text>
 
         <text x="56" y="416" class="d-l" dominant-baseline="central">端口与边界</text>
         <rect x="56" y="428" width="200" height="44" rx="8" class="d-box-neutral"/>
@@ -666,12 +666,12 @@
 
         <path d="M230 228 L230 250" class="d-arrow" marker-end="url(#ar3)"/>
         <rect x="120" y="252" width="220" height="56" rx="8" class="d-box"/>
-        <text x="230" y="272" class="d-t" text-anchor="middle" dominant-baseline="central">排序 = 关键词相关性</text>
-        <text x="230" y="292" class="d-s" text-anchor="middle" dominant-baseline="central">accessedAt 为事实字段，非排序键</text>
+        <text x="230" y="272" class="d-t" text-anchor="middle" dominant-baseline="central">排序 = accessedAt 倒序</text>
+        <text x="230" y="292" class="d-s" text-anchor="middle" dominant-baseline="central">最近写入 / 最近被想起者靠前</text>
         <path d="M340 280 L358 280" class="d-arrow" marker-end="url(#ar3)"/>
         <rect x="360" y="252" width="280" height="56" rx="8" class="d-box"/>
-        <text x="500" y="272" class="d-t" text-anchor="middle" dominant-baseline="central">优先级判断归 LLM</text>
-        <text x="500" y="292" class="d-s" text-anchor="middle" dominant-baseline="central">「最近使用优先」由模型结合任务定夺</text>
+        <text x="500" y="272" class="d-t" text-anchor="middle" dominant-baseline="central">相关度判断归 LLM</text>
+        <text x="500" y="292" class="d-s" text-anchor="middle" dominant-baseline="central">排序只给新鲜度 · 换词重搜 / trace_summary</text>
 
         <path d="M80 252 L80 330 L100 330" class="d-arrow" marker-end="url(#ar3)" stroke-dasharray="4 3"/>
         <rect x="100" y="308" width="230" height="44" rx="8" class="d-box-neutral"/>
@@ -725,7 +725,9 @@
 治理模型：supersede（写时取代）；无衰减——
 摘要是事实记录无"过时"语义，记忆有效性由 superseded 写时取代判定，
 低频记忆经相关性排序自然后移退出召回面，无"沉底/自然遗忘归档"语义。</pre>
-    <span class="src">锚点：src/memory/governance.ts:1-8</span>
+    <span class="src">锚点：src/memory/governance.ts:1-8（该文件已于 2026-10-18 随 GOVERNANCE-SRC-1 物理删除，以下为历史引文）</span>
+
+    <p class="lede"><b>⚠ 2026-10-19 改定案（现行口径，以此为准）</b>：引文中「低频记忆经<b>相关性排序</b>自然后移退出召回面」一句<b>不成立</b>——检索从未有过 FTS 索引或相关度评分。现行排序 = <span class="inline-code">accessedAt</span> 倒序（最近写入 / 最近被想起者靠前），已由用户拍板<b>承认时间主序</b>；缘由、代价与「何时才重启相关度排序」的条件见 <span class="inline-code">memory-tool-recall-design.md §5.2</span>。下方表格已按现行口径订正。</p>
 
     <h3>翻译成设计语言</h3>
     <table>
@@ -738,12 +740,12 @@
           <td>使用轨迹只有一根杠杆：<span class="inline-code">accessedAt</span>。命中即 touch（工具层 fire-and-forget，storage.touch 是唯一写位），<b>只 touch 不加权</b>——无 +score、无 clamp、无强化学习式的自反馈。score/boost 机制已整体退役。</td>
         </tr>
         <tr>
-          <td>accessedAt 是事实字段，不是排序键</td>
-          <td>检索入口<b>不引入 accessedAt 时间主序</b>（recency 定案 §5.2）：FTS 按相关性返回，accessedAt 只作为事实字段揭示给 LLM——「最近使用优先」由模型结合任务定夺，内核不替模型决定。</td>
+          <td>accessedAt 就是排序键（2026-10-19 改定案）</td>
+          <td>检索入口<b>按 <span class="inline-code">accessedAt</span> 倒序</b>（§5.2 改定案）：无 FTS 索引、无相关度评分，命中只有「命中 / 不命中」二分；<span class="inline-code">accessedAt</span> <b>既是排序键、也作为事实字段</b>揭示给 LLM。touch 发生在工具层，不在检索入口内。</td>
         </tr>
         <tr>
           <td>无衰减</td>
-          <td>摘要是<b>事实记录</b>，没有「过时」语义。记忆失效只有一条路：被新摘要 supersede 取代。低频记忆不删不归档，靠相关性排序自然后移退出召回面——没有「沉底」，也没有「自然遗忘」。</td>
+          <td>摘要是<b>事实记录</b>，没有「过时」语义。记忆失效只有一条路：被新摘要 supersede 取代。低频记忆不删不归档，只会在按 <span class="inline-code">accessedAt</span> 倒序的结果里自然靠后（且因「被滤掉不补位」可能本次直接不返回）——这是<b>结果位次后果</b>，不是归档/遗忘语义：数据仍在库里，换更准的关键词仍能捞回。</td>
         </tr>
       </tbody>
     </table>
@@ -823,7 +825,7 @@
         <tr>
           <td>4</td>
           <td>「排序 = 相关性 + accessedAt」「排序只有一根杠杆 accessedAt」</td>
-          <td>检索入口<b>不引入 accessedAt 时间主序</b>（§5.2 定案）：排序 = 关键词相关性（FTS）；accessedAt 仅作为<b>事实字段揭示</b>给 LLM 定「最近使用优先」。touch 发生在工具层，不在检索入口内。</td>
+          <td><b>以 2026-10-19 改定案为准：后一种说法成立</b>——排序键就是 <span class="inline-code">accessedAt</span>（倒序），检索入口无 FTS、无相关度评分；accessedAt 同时也是事实字段。本文旧版此格曾写「不引入时间主序 / 排序 = 关键词相关性（FTS）」，属<b>与实现相反的纠正</b>，已作废。touch 发生在工具层，不在检索入口内。</td>
           <td>memoryInspector.ts:237-238 · builtinToolHandlers.ts:1126-1129</td>
         </tr>
       </tbody>

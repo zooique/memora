@@ -393,7 +393,9 @@ agent.memory.searchByKeyword(
 ): Promise<AgentSearchHit[]>
 ```
 
-纯关键词单通道（FTS5 索引；**无向量通道、无融合排序**）。返回前做两级过滤：
+纯关键词单通道（分词后任一词对 `content`/`name` 子串命中；**无向量通道、无融合排序、无 FTS 索引**）。
+返回顺序 = **`accessedAt` 倒序**（最近写入 / 最近被想起者靠前；`memory-tool-recall-design.md` §5.2 2026-10-19 改定案），
+**不按相关度排序**。返回前做两级过滤：
 `superseded` 过滤（被 `supersededBy` 取代的摘要不作为当前事实返回，仍可经 `trace_summary`
 回溯原文）与 `excludeRoundIds` 互斥（工具召回与装配期正文不重复）。
 

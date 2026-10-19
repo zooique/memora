@@ -34,16 +34,16 @@ description: 架构哲学原则（12 条：摘要即记忆（memory-as-summary�
 | `persona` | 设定记忆，不参与 recall |
 | `rule` | 设定记忆，不参与 recall（角色包 rules.md 确定性注入，始终在线） |
 | `skill` | 设定记忆，不参与 recall |
-| `content` | 按相关度增量召回（治理页手动写入轨，非内核自动） |
+| `content` | 参与关键词检索（排序 = `accessedAt` 倒序；治理页手动写入轨，非内核自动） |
 | `work-projection` | 不参与 recall（残留兼容标签；投影为项目级 `<memoraDir>/work-projections.json` 指针索引） |
-| `round-summary` | 按相关度增量召回（唯一自动轨） |
-| `profile` | 按相关度增量召回（存量兼容，不再新写入） |
+| `round-summary` | 参与关键词检索（排序 = `accessedAt` 倒序；唯一自动轨） |
+| `profile` | 参与关键词检索（存量兼容，不再新写入） |
 
 > **存量兼容注**：`persona` / `rule` / `skill` 三个 source 已随「设定记忆归角色包」（ADR-025）退役——不再有新写入，保留仅作存量行解析兼容（宿主经一次性迁移软删出记忆库）。设定内容的**唯一载体是角色包**，不属记忆库（§1）。
 
 ## 3. 冷热分离（File vs DB）
 
-文件承载记忆本体（可读可编辑），SQLite 承载索引（标签/永久性/权重/关键词，FTS5）。**写文件 + 写索引必须事务对齐**。
+记忆本体落**单库**（现代环境 = `.memora/memories.db` 的 `memories` 表；老环境降级 JSON 文件），**无文件副本、无 FTS5 索引**；宿主经 `IMemoryStorage` 注入实现，内核只经接口读写。检索 = 纯关键词子串匹配 + `accessedAt` 倒序（定案见 `docs/architecture/memory-tool-recall-design.md` §5.2）。
 
 ## 4. 代码与模型分工
 

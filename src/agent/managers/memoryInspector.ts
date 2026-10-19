@@ -228,7 +228,8 @@ export class MemoryInspector {
       ]);
     }
 
-    // 单个通道：纯关键词搜索（无向量通道、无融合排序，FTS 索引已按相关性返回）
+    // 单个通道：纯关键词搜索（无向量通道、无融合排序、**无 FTS 索引**）——顺序由存储层
+    // 按 `accessedAt` 倒序给出（§5.2 2026-10-19 改定案：承认时间主序），命中本身不产生次序。
     const keywordResults = this.index.search(query, limit);
     // 前置 superseded 过滤：被「现存且活跃」摘要取代的摘要不作为当前事实返回
     // （仍保留可回溯，trace_summary 可精确取原文）；悬空指针（替代物已移除/软删）视为未取代，
@@ -244,8 +245,9 @@ export class MemoryInspector {
       excludeRoundIds && excludeRoundIds.size > 0
         ? active.filter((m) => !m.roundId || !excludeRoundIds.has(m.roundId))
         : active;
-    // 截断到 limit；不引入 accessedAt 时间主序（§5.2 定案）——
-    // accessedAt 只作为事实字段揭示（工具命中 touch 刷新），优先级判断归 LLM 结合任务定夺。
+    // 截断到 limit。排序**不由本层再动**：存储层已按 accessedAt 倒序（§5.2 2026-10-19 改定案），
+    // 本层只做过滤与截断，不重排/不分档（重排会造第二种次序判据）。accessedAt 同时随命中项
+    // 作为事实字段揭示（工具命中 touch 刷新），供 LLM 判断新鲜度。
     const result = unexcluded.slice(0, limit);
 
     return result.map((memory) => ({

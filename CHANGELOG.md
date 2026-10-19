@@ -502,6 +502,32 @@
 - **边界（刻意不含）**：宿主接入（vscode 装配切换 / 一次性迁移 / memora-mcp 只读连接）属「宿主接入」切片，等触发；
   本次不含 **JSON 装载层下沉**（债务由迁移完成自然归零）；`IMemoryStorage` 接口 15 方法**零改动**。
 
+### 📄 定案订正（内核 · 记忆检索排序「改定案」：承认按 `accessedAt` 倒序 · `MEM-RECALL-3` · 2026-10-19）
+
+- **定案变更（用户拍板）**：`memory-tool-recall-design.md` §5.2 由「不引入时间主序 / 语义相关主」
+  改为「**承认按 `accessedAt` 倒序排序**」。原论证的前提（`searchHybrid` 语义通道）已于 2026-09-18
+  随 B0 收编整体删除，纯关键词下不存在可排序的"贴合度"——只有命中 / 不命中二分；不承认时间序，
+  实际次序就只剩后端的偶然序。旧定案原文在本节留档，**勿据此回改代码**。
+- **实现真源（未改一行执行逻辑）**：`IMemoryStorage.search()` = 分词后逐 token 子串匹配（OR 命中）
+  + `ORDER BY accessedAt DESC` + `LIMIT`；`searchByKeyword` 再叠 superseded 过滤与
+  `excludeRoundIds` 互斥（被滤掉不补位）。**无 FTS 索引、无 bm25、无相关度评分**
+  （真机 `memories.db` 的 `sqlite_master` 仅一张表 + 主键索引）。
+- **LLM 可见面（此前与实现相反，本批纠正）**：`search_memories` 工具描述原写「优先级判据：命中
+  贴合度为主；多个候选贴合度相近时，accessedAt 较新者优先（**勿让时间压倒贴合度**）」——实际排序
+  恰恰是「时间压倒一切」。改为「返回顺序 = accessedAt 倒序（写入与命中都会刷新它）；纯关键词只有
+  命中/不命中二分，**无贴合度评分**——排序不代表相关度，只代表新鲜度」，并补「每条命中只回约 80 字
+  预览，结论/决策常落在预览之外 → 判断相关后调 `trace_summary`」。
+- **连带订正载体（7 处）**：`memory-as-summary.md`（§4.1 步骤③ / §4.4 标题与正文 / §7 表）、
+  `memory-governance-design.html`（§1 与 §4 图标签、§5 引文加改定案注、§5 表两行、§8 排雷表第 4 行
+  ——该行原「纠正」本身即与实现相反）、`module-inventory.md`、`memora-api-reference.md`、
+  `白话设计文档-模块篇.md`（并删除凭空的「多捞 ×2」）、`.trae/rules/architecture_philosophy_rules.md`
+  （§2 表三行 + §3「FTS5 索引」段）。另有 `memoryInspector.ts` 两处注释（FTS 谎报 / 时间主序）。
+- **明示代价（设计上接受）**：泛词命中会占满槽位——真机实证 query「小说 结局 拍板」返回的 7 条
+  全部只命中 1/3 token，含「结局分支C…09-29 拍板为定稿口径」的摘要被挤出；缓解归 LLM（改述重试 /
+  `trace_summary`），**不在代码侧另造排序器**。
+- 变更性质：**仅文本与注释，零执行逻辑改动**；内核 dist 已重建、宿主 bundle 已重编
+  （`kernelDistHash=c91d36023660`）。重启相关度排序须另立定案（条件与载体清单见 §5.2）。
+
 ### Added（内核 · `Round.evidence` 新增 `memory_hits` 变体 · `MEM-EVENT-3` · 2026-10-19）
 
 - **缺口（真机二轮）**：`memoryRecalled` 是**实时专属**事件（不进 processEvents）⇒ 宿主重放历史轮
