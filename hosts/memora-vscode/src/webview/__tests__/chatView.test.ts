@@ -9420,6 +9420,24 @@ describe('添加到对话：引用气泡（file/folder · 去重 · 发送清空
     );
     expect(postMessage).not.toHaveBeenCalledWith({ type: 'mention_open' });
   });
+
+  it('IME 路径触发 → 挂载成功后同样按触发点撤除（offset = selectionStart - 1）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    // IME 插入后字符已落位：'@' 在索引 2、光标在 3 —— 触发点须算成 2（字符已插入，
+    // 与 keydown 期「尚未落入、offset 即落点」相反）。
+    input.value = '帮我@';
+    input.setSelectionRange(3, 3);
+    input.dispatchEvent(
+      new InputEvent('input', { inputType: 'insertText', data: '@', bubbles: true }),
+    );
+    expect(postMessage).toHaveBeenCalledWith({ type: 'mention_open' });
+    dispatch({ type: 'addRef', refs: [{ path: 'src/a.ts', kind: 'file' }], source: 'mention' });
+    // 端到端断言：@ 被撤且**前一个字没被误删**——若 offset 忘了减 1，删的会落在索引 3
+    // （越界 → 不撤，残留 @）或错位字符，而此前三条 IME 用例只断言上行、无一能抓到。
+    expect(input.value).toBe('帮我');
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(1);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════
