@@ -9310,9 +9310,9 @@ describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () =>
       );
     expect(names()).toEqual(['a-first.ts', 'b-second.ts']); // 均未钉 → 插入序
     (
-      document.querySelectorAll('#refChips .skill-chip')[1].querySelector(
-        '.skill-chip__pin',
-      ) as HTMLElement
+      document
+        .querySelectorAll('#refChips .skill-chip')[1]
+        .querySelector('.skill-chip__pin') as HTMLElement
     ).click();
     expect(names()).toEqual(['b-second.ts', 'a-first.ts']); // 钉住者上浮，同组内序不变
   });
@@ -9540,10 +9540,13 @@ describe('引用 chip 点击跳转（open_ref）', () => {
 
   it('单行区间 title 不带区间尾巴（#L7 → 「定位到第 7 行」）', () => {
     mountChatView();
-    dispatch({ type: 'addRef', refs: [{ path: 'src/bar.ts', kind: 'file', range: { start: 7, end: 7 } }] });
-    expect(
-      (document.querySelector('#refChips .skill-chip__name') as HTMLElement).title,
-    ).toBe('点击在编辑器中打开并定位到第 7 行');
+    dispatch({
+      type: 'addRef',
+      refs: [{ path: 'src/bar.ts', kind: 'file', range: { start: 7, end: 7 } }],
+    });
+    expect((document.querySelector('#refChips .skill-chip__name') as HTMLElement).title).toBe(
+      '点击在编辑器中打开并定位到第 7 行',
+    );
   });
 
   it('键盘 Enter 同样触发（span 补 role/tabindex 后的鼠标/键盘同构）', () => {
@@ -9570,9 +9573,7 @@ describe('引用 chip 点击跳转（open_ref）', () => {
     postMessage.mockClear();
     (document.querySelector('#refChips .skill-chip__pin') as HTMLElement).click();
     (document.querySelector('#refChips .skill-chip__remove') as HTMLElement).click();
-    expect(postMessage).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'open_ref' }),
-    );
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'open_ref' }));
   });
 });
 

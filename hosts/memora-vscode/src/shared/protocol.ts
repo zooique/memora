@@ -199,7 +199,14 @@ export type WebviewToExtensionMessage =
    * 错位语义（单一判据）：answer 仅 waiting(ask) 相位生效，resume 仅 waiting(pause) 相位
    * 生效；相位不符（如迟到回答）丢弃——对用户静默，宿主落日志留痕（扩展宿主日志可查）。
    */
-  | { type: 'input'; kind: WebviewInputKind; text?: string; answers?: string[]; skillName?: string; refs?: ChatRef[] }
+  | {
+      type: 'input';
+      kind: WebviewInputKind;
+      text?: string;
+      answers?: string[];
+      skillName?: string;
+      refs?: ChatRef[];
+    }
   /**
    * 打开大模型配置视图（对话面板空态引导按钮触发）
    *
