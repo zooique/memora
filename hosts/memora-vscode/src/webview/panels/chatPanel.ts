@@ -16,12 +16,12 @@
  */
 import * as vscode from 'vscode';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.js';
 import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
-// 引用路径 ↔ 首根的双向判据唯一真源 = refPath（生成侧 relativeUnderPrimaryRoot 归 addToChat 用，
-// 消费侧 resolveUnderPrimaryRoot 归本文件 openRefInEditor 用）——两半分居必漂移，故同模块。
-import { resolveUnderPrimaryRoot } from '../../extension/host/refPath.js';
+// 引用路径 ↔ 首根的双向判据唯一真源 = refPath（生成侧 relativeUnderPrimaryRoot 归 addToChat /
+// mention QuickPick 用，消费侧 resolveUnderPrimaryRoot 归本文件 openRefInEditor 用）——两半分居必漂移，故同模块。
+import { relativeUnderPrimaryRoot, resolveUnderPrimaryRoot } from '../../extension/host/refPath.js';
 // 命令 id 唯一真源 = fileChangeView（与 package.json#contributes.commands 的值同源维护）。
 // 对话区常驻条的两个按钮**不自己实现动作**，只 executeCommand 复用已注册命令——
 // 与文件内 CodeLens、状态栏 QuickPick、命令面板走同一实现（SSOT，无第二份清理逻辑）。
@@ -1180,6 +1180,67 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * HOST-CTX-1：@ 提及的文件选择器（输入框键入 @ 触发，W→E `mention_open`）
+   *
+   * 语义红线（引用模式定案）：@ 只是「挂引用的快捷入口」——选中即走 addRef 推送挂 chip，
+   * **零内容注入**，不照搬主流 @ 提及的「全文进上下文」语义。
+   *
+   * 三个 SSOT 归属（本方法零自建）：
+   *   - 文件列表 = `vscode.workspace.findFiles`（VS Code SSOT：ripgrep 模糊检索，
+   *     自动尊重 files.exclude / search.exclude / gitignore——webview 不养索引副本）；
+   *   - 首根归属判据 = `relativeUnderPrimaryRoot`（与 addToChat 生成侧同源，第二根 /
+   *     根外文件 fail-closed 不列出——挂一条注定读错的指针比不挂更坏）；
+   *   - 挂载链路 = `pushRefs` 的 addRef 推送（source='mention'，webview 据此撤触发 @）。
+   *
+   * 边界：findFiles 只列**文件**，目录 @ 不支持（目录引用沿用资源管理器右键入口，
+   * 那里有 explorer/context 菜单）。上限 2000 条防超大仓首开卡顿（QuickPick 自带模糊过滤）。
+   */
+  public async openMentionQuickPick(): Promise<void> {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root) {
+      // 未打开工作区：引用判据（首根相对路径）无处安放，提示而非静默失败
+      void vscode.window.showInformationMessage('未打开工作区，无法选择引用文件');
+      return;
+    }
+    const uris = await vscode.workspace.findFiles('**/*', undefined, 2000);
+    // 首根归属判定前置到列表期（fail-closed）：第二根 / 根外的文件连列表都不进，
+    // 用户选不到就挂不上——与 addToChat 拒挂第二根是同一契约的两半。
+    const items: { label: string; description: string; rel: string }[] = [];
+    for (const uri of uris) {
+      const rel = relativeUnderPrimaryRoot(root, uri.fsPath);
+      if (!rel) continue;
+      items.push({ label: basename(rel), description: rel, rel });
+    }
+    items.sort((a, b) => a.description.localeCompare(b.description));
+    const qp = vscode.window.createQuickPick();
+    qp.items = items;
+    qp.canSelectMany = true;
+    qp.matchOnDescription = true;
+    qp.placeholder = '选择要挂为引用的文件（可多选，Esc 取消）…';
+    qp.show();
+    const picked = await new Promise<readonly vscode.QuickPickItem[] | undefined>((resolve) => {
+      // accept = 确认（含多选）；hide = Esc / 点外部关闭（两者互斥，先到先 resolve）
+      qp.onDidAccept(() => resolve(qp.selectedItems));
+      qp.onDidHide(() => resolve(undefined));
+    });
+    qp.dispose();
+    if (!picked || picked.length === 0) return; // 取消：静默返回，正文里的 @ 保留（用户可继续编辑）
+    const refs: ChatRef[] = [];
+    for (const p of picked) {
+      // 防御：QuickPickItem.description 类型可选，本 items 恒有值——异常缺省则跳过（不挂 path=undefined 的伪引用）
+      if (typeof p.description !== 'string') continue;
+      refs.push({ path: p.description, kind: 'file' });
+    }
+    if (this._view) {
+      this.post({ type: 'addRef', refs, source: 'mention' });
+    } else {
+      // 退化路径（webview 未就绪）：走现成缓冲。ready 补发后无 source → @ 不撤，
+      // 仅多留一个字符，无功能损（比给缓冲链路加 source 通道更简）。
+      this.pushRefs(refs);
+    }
+  }
+
   /** 视图被解析（侧边栏展开）时初始化 */
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -1244,6 +1305,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 引用 chip 点击：在编辑器打开并定位到行区间——「我到底加了哪几行」的直接答案
         // （1-based → 0-based 逆转换等定位细节归 openRefInEditor 单点，webview 只上报意图）
         void this.openRefInEditor(msg.ref);
+      } else if (msg.type === 'mention_open') {
+        // HOST-CTX-1：输入框键入 @ → 打开文件 QuickPick（多选），选中后走 addRef 推送
+        // （source='mention'，webview 据此撤掉触发用的 @ 字符）。文件列表真源 =
+        // vscode.workspace.findFiles（VS Code SSOT，吃 files.exclude / search.exclude），
+        // webview 不养文件索引（第二真理源）。取消（Esc / 关闭）→ 静默返回，@ 保留在正文。
+        void this.openMentionQuickPick();
       } else if (msg.type === 'set_active_file_attach') {
         // 当前文件 chip 的 ✕ / 关闭态点击：改会话级开关，回推投影（webview 以回推为准）
         this.setActiveFileAttach(msg.enabled);

@@ -216,6 +216,14 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'open_ref'; ref: ChatRef }
   /**
+   * 输入框键入 @ → 宿主开文件 QuickPick（W→E，HOST-CTX-1）
+   *
+   * 语义 =「挂引用的快捷入口」：宿主开多选 QuickPick（列表真源 = findFiles，首根
+   * fail-closed），选中后经 addRef（source='mention'）回推挂 chip，**零内容注入**。
+   * webview 只上报意图、不传过滤词（QuickPick 自带模糊过滤）；取消即无后续（@ 留在正文）。
+   */
+  | { type: 'mention_open' }
+  /**
    * 开关「附加当前打开文件」（W→E）——当前文件 chip 上的 ✕ / 关闭态点击
    *
    * 语义 = **本会话**是否把活动文件作为上下文带上（`enabled:false` 连指针都不挂）。
@@ -1218,8 +1226,13 @@ export type ExtensionToWebviewMessage =
    * 宿主→webview 推送文件/目录引用（右键「添加到对话」触发）：webview 把 refs 挂到
    * 输入盒上方气泡行，发送时随 input 消息的 refs 字段带走（仅挂引用，不注入内容）。
    * webview 未就绪时由宿主 _pendingRefs 缓冲，ready 后补发（与 prefill_input 同构）。
+   *
+   * `source?: 'mention'`（HOST-CTX-1）：标记本轮 refs 来自输入框 @ 提及通道——webview
+   * 收到时须撤掉输入框里触发 QuickPick 的那个 '@' 字符（否则键入的 @ 残留在正文里）。
+   * 右键/右键批量等其余入口不携带该字段（不撤除，防止误删正文里合法的 @ 字样）。
+   * @ 提及触发时 webview 未就绪的退化路径不带 source（ready 补发后 @ 不撤——无害：只是多留一个字符）。
    */
-  | { type: 'addRef'; refs: ChatRef[] }
+  | { type: 'addRef'; refs: ChatRef[]; source?: 'mention' }
   /**
    * 活动文件投影推送（E→W）：当前打开文件是否进本轮上下文、以指针还是注入正文
    *

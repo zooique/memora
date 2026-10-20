@@ -6022,6 +6022,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'addRef') {
       // 右键「添加到对话」：接收宿主推送的文件/目录引用，挂到输入盒上方气泡行
       addRefs(msg.refs);
+      // HOST-CTX-1：@ 提及通道（source='mention'）挂载成功 → 撤掉输入框里触发 QuickPick
+      // 的那个 '@' 字符（否则键入的 @ 残留在正文里）。其余入口（右键等）不带 source、
+      // 不撤——防止误删正文里合法的 @ 字样（如邮箱）。offset 失效（文本被编辑过）则不猜不删。
+      if (msg.source === 'mention') removeMentionAt();
     } else if (msg.type === 'active_file') {
       // 活动文件投影（宿主判定结果的单向展示）：整体替换后重绘附件行。
       // 不合并、不推断——状态全是宿主的，webview 只负责画（见 activeFile 变量注释）。
@@ -6540,6 +6544,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   input.addEventListener('keydown', (e) => {
     // isComposing 守卫：中文输入法组合确认（如打字中途按 Enter 选字）不误触发发送
     if (e.isComposing) return;
+    // HOST-CTX-1：键入 @ → 请求宿主开文件 QuickPick（多选，选中即挂引用 chip，不注入内容）。
+    // '@' 先留在正文（用户 Esc 取消时文本无扰动、想打 @ 字符零骚扰）；宿主确认挂载
+    // （addRef source='mention'）后才按触发点撤除。默认的 Enter 发送分支不受影响。
+    if (e.key === '@') {
+      // selectionStart 在 keydown 期 = '@' 尚未落入文本（keydown 先于字符插入），
+      // 故触发点就是当前光标位；记录之，mention_attached 时按此处撤除。
+      mentionTriggerOffset = input.selectionStart;
+      vscode.postMessage({ type: 'mention_open' });
+      return; // 不 preventDefault：让 '@' 正常落入文本（取消场景文本无扰动）
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
@@ -6551,6 +6565,30 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     syncButtonSemantics();
     syncSendEnabled();
   });
+
+  /** HOST-CTX-1：@ 提及触发点（键入 @ 时的光标位，用于挂载成功后精准撤除该字符） */
+  let mentionTriggerOffset: number | null = null;
+
+  /**
+   * HOST-CTX-1：撤掉触发 @ 提及的那个 '@' 字符（宿主确认挂载后调用）
+   *
+   * 判据（缺一不删，不猜）：触发时记录的光标位有效、该位置**恰好是 '@'**——keydown 期
+   * selectionStart 就是 '@' 的落点（尚未落入），故直接按索引比对；文本已被用户编辑过
+   * （offset 失效）时原样不动。只删一个字符，恢复光标到删除位。
+   */
+  function removeMentionAt(): void {
+    const at = mentionTriggerOffset;
+    if (at === null || at < 0 || at >= input.value.length) return; // 无记录 / 越界：不猜
+    if (input.value[at] !== '@') return; // 落点已变（用户编辑过）：不猜
+    input.value = input.value.slice(0, at) + input.value.slice(at + 1);
+    mentionTriggerOffset = null; // 一次性：撤完即清，防后续 addRef 误删同一位置
+    input.focus();
+    const caret = at;
+    input.setSelectionRange(caret, caret);
+    autoResize();
+    syncSendEnabled();
+    syncButtonSemantics();
+  }
 
   // ─── 会话管理（标题条收敛全部入口）───
   // 相对时间（历史列表副标题，本地辅助；重复 3 次再提取 helper）

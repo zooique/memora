@@ -9314,6 +9314,43 @@ describe('添加到对话：引用气泡（file/folder · 去重 · 发送清空
     });
     expect(document.querySelector('#refChips .ref-chips__clear')).toBeNull();
   });
+
+  // ── HOST-CTX-1：输入框 @ 提及（触发 → QuickPick 挂载 → 撤除触发字符）──
+  it('键入 @ → 上行 mention_open，@ 照常落入文本（取消场景零扰动）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '帮我看';
+    // jsdom 的 keydown 不自动插字符：手动预置光标位（浏览器 keydown 期 selectionStart 即触发点）
+    input.setSelectionRange(3, 3);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: '@', bubbles: true }));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'mention_open' });
+    // 模拟浏览器随后把 '@' 插入文本：光标位 3 = 触发点
+    input.value = '帮我看@';
+  });
+
+  it('mention 通道挂载成功 → 触发点的 @ 被撤除（文本回到键入前）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '帮我看';
+    input.setSelectionRange(3, 3);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: '@', bubbles: true }));
+    // 模拟浏览器插入 '@'（触发点 offset=3 → @ 在 value[2]）
+    input.value = '帮我看@';
+    input.setSelectionRange(4, 4);
+    dispatch({ type: 'addRef', refs: [{ path: 'src/a.ts', kind: 'file' }], source: 'mention' });
+    // @ 被撤、chip 已挂、引用仍会随发送上行（挂引用语义不变，@ 只是快捷键）
+    expect(input.value).toBe('帮我看');
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(1);
+    expect(postMessage).toHaveBeenCalledWith({ type: 'mention_open' });
+  });
+
+  it('普通 addRef（右键入口，无 source）→ 不撤正文里的 @（防误删邮箱等合法字样）', () => {
+    mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '联系 foo@bar.com 看';
+    dispatch({ type: 'addRef', refs: [{ path: 'src/a.ts', kind: 'file' }] });
+    expect(input.value).toBe('联系 foo@bar.com 看');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════
