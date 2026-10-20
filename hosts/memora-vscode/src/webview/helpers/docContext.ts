@@ -32,10 +32,6 @@ export const REF_CONTEXT_OPEN = '[参考文件/目录]';
 export const REF_CONTEXT_CLOSE = '[/参考文件/目录]';
 
 /**
- * 构造引用上下文块（仅挂引用，不注入文件内容——内容由模型按需经 read_file 读取，
- * 贴合 token 预算哲学；目录显式标注「按需读取」避免模型误以为全文已在上下文）。
- */
-/**
  * 单条引用的信封行（**引用模式**：只给指针 + 读取参数，不注入内容）
  *
  * 带行区间时把 `read_file` 的 offset/limit **算好摆出来**——模型不必自己算
@@ -48,7 +44,10 @@ export const REF_CONTEXT_CLOSE = '[/参考文件/目录]';
  */
 function refItemLine(ref: ChatRef): string {
   if (ref.kind === 'folder') {
-    return `- 参考目录：${ref.path}（内容按需经 read_file 读取）`;
+    // 工具名必须是 list_dir：read_file 只读文件（内核 `read_file` 描述原文「读取项目内文件
+    // 内容」），对目录给 read_file 等于给模型一条必然失败的指令。目录也不做整体注入——
+    // 显式标注「按需读取」避免模型误以为全文已在上下文。
+    return `- 参考目录：${ref.path}（内容按需经 list_dir 读取）`;
   }
   const range = normalizeRefRange(ref.range);
   if (!range) return `- 参考文件：${ref.path}`;

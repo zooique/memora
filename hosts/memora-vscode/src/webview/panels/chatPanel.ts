@@ -575,9 +575,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 注册/重注册活动编辑器追踪监听（幂等：先释放旧订阅再注册，防止重复监听累积）
-   */
-  /**
    * 引用 chip 点击 → 在编辑器打开并定位（open_ref，W→E 分支）
    *
    * 语义（协议 open_ref 注释为 SSOT）：引用是指针，**点指针就该跳过去看**——

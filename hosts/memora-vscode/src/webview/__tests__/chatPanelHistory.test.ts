@@ -844,6 +844,85 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(snapshotDocContext(undefined)).toBeUndefined();
   });
 
+  it('文档上下文信封：干净文件只出现指针行、脏文件才出现正文块（判据的**消费点**守卫）', async () => {
+    // 上一例只验判据本身（mustInjectDocBody）。**判据对了而调用点没接上**正是本次 P0 的
+    // 原始病灶形态（定案已拍、实现没迁），单测分别守住两半却守不住接缝 ⇒ 此处驱动真实
+    // sendInput，直接断言「送达模型的信封」：
+    //   干净 ⇒ 有 `当前打开文件：` 指针行、无文档块、无正文；
+    //   脏   ⇒ 有文档块与正文、无指针行（指针会让模型读到磁盘旧版）。
+    const captured: string[] = [];
+    const makeEditor = (isDirty: boolean) =>
+      ({
+        document: {
+          fileName: '/mock/workspace/docs/方案.md',
+          uri: { fsPath: '/mock/workspace/docs/方案.md' },
+          isDirty,
+          isUntitled: false,
+          getText: () => '文档内容A',
+        },
+      }) as never;
+    // 与上面技能用例同构的最小 agent 桩（chat 只捕获入参后立即收场）
+    const agent = {
+      chat: async function* (input: string) {
+        captured.push(input);
+        yield { type: 'done' };
+      },
+      getMetrics: () => ({
+        llm: { totalInputTokens: 0, totalOutputTokens: 0 },
+        tools: { callCount: 0, failureCount: 0, unparsedToolIntentCount: 0 },
+      }),
+      on: vi.fn(),
+      off: vi.fn(),
+      memory: { softDeleteRoundSummaries: vi.fn() },
+      getCheckpoint: () => null,
+      isPausePending: () => false,
+      sessionManager: {
+        getCurrentSessionInfo: () => ({ date: '2026-08-15', session: 's1' }),
+        switchToSession: async () => 0,
+      },
+      skills: {
+        list: () => [],
+        get: () => null,
+        buildSystemPrompt: (n: string) => `【当前技能】${n}`,
+        disabledSkillNames: [],
+      },
+      rolePackManager: {
+        listMeta: () => [],
+        listSkills: () => [],
+        readSkillContent: async () => null,
+        getActive: () => null,
+      },
+    } as unknown as Agent;
+
+    const sendWithEditor = async (isDirty: boolean): Promise<string> => {
+      captured.length = 0;
+      (vscode.window as unknown as { activeTextEditor: unknown }).activeTextEditor =
+        makeEditor(isDirty);
+      const { store, roundStore, provider } = setup();
+      provider.setRoundStore(roundStore);
+      seedSession(store, roundStore, '2026-08-15-s1', [
+        { role: 'user', content: '你好', ts: 't0' },
+        { role: 'assistant', content: '回复', ts: 't1' },
+      ]);
+      provider.setAgent(agent);
+      (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+      await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('请继续');
+      (vscode.window as unknown as { activeTextEditor: unknown }).activeTextEditor = undefined;
+      return captured[0]!;
+    };
+
+    const clean = await sendWithEditor(false);
+    expect(clean).toContain('- 当前打开文件：docs/方案.md');
+    expect(clean).not.toContain('[当前打磨文档内容]');
+    expect(clean).not.toContain('文档内容A');
+    expect(clean).toContain('请继续');
+
+    const dirty = await sendWithEditor(true);
+    expect(dirty).toContain('[当前打磨文档内容]');
+    expect(dirty).toContain('文档内容A');
+    expect(dirty).not.toContain('当前打开文件');
+  });
+
   // ─── 历史会话占用重算（轻量版）：切会话后圆环展示真实占用而非空态 0% ───
   it('replayCurrentSession 推送历史会话占用：对话层重算 + 角色包当前值', async () => {
     const { store, roundStore, provider, posted } = setup();

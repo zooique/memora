@@ -53,7 +53,7 @@ describe('stripInjectedContextPrefix', () => {
     expect(block).toContain('[参考文件/目录]');
     expect(block).toContain('[/参考文件/目录]');
     expect(block).toContain('- 参考文件：src/foo.ts');
-    expect(block).toContain('- 参考目录：src/utils（内容按需经 read_file 读取）');
+    expect(block).toContain('- 参考目录：src/utils（内容按需经 list_dir 读取）');
   });
 
   it('带行区间的引用：输出 #L 区间 + read_file 的 offset/limit 参数（引用模式精确到行）', () => {
