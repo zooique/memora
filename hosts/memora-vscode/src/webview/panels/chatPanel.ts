@@ -1267,6 +1267,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         qp.onDidHide(() => resolve(undefined));
       });
       qp.dispose();
+      // 焦点归还（HOST-CTX-16）：QuickPick 是宿主全局 UI，开启时焦点被它拿走，Esc 取消 /
+      // 确认收场后 VS Code 都不会自动还给 webview 里的输入框 ⇒ 用户想继续打字得先点一下。
+      // accept / cancel 两条路都经过这里——一条 post 覆盖两路，不各写一份。
+      // 例外：findFiles 抛错 / 未打开工作区时 QuickPick 从未开出，焦点没被拿走，不发。
+      this.post({ type: 'focus_input' });
       if (!picked || picked.length === 0) return; // 取消：静默返回，正文里的 @ 保留（用户可继续编辑）
       const refs: ChatRef[] = [];
       for (const p of picked) {

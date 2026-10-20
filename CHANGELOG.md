@@ -103,6 +103,9 @@
 
 ### Fixed（宿主）
 
+- **@ 提及列表收起后焦点自动回到输入框**（`HOST-CTX-16`，2026-10-20 真机验收通过后反馈即修）：Esc 取消或确认选中文件后，VS Code 不会把焦点还给 webview 输入框（QuickPick 是宿主全局 UI，焦点被它拿走就不还）⇒ 想继续打字得先用鼠标点一下。协议加 E→W `focus_input`，宿主在 QuickPick dispose 后、确认/取消分叉前发一条（两条收场路共用一个出口；未开工作区 / findFiles 抛错时 QuickPick 从未开出，天然不发），webview 只 focus、不动文本（@ 撤不撤归 addRef 的 source 分支）。守卫 accept/cancel 两路 + webview focus 例，变异双红后还原。
+- **引用气泡只显示文件名**（`HOST-CTX-17`，2026-10-20 真机反馈即修）：附件行引用 chip 的可见文本从完整相对路径改为文件名（`src/webview/scripts/chatView.ts` → `chatView.ts`）——信息不丢：chip title 末尾括号（hover 消歧同名文件）、pin/remove 的 aria-label（屏幕阅读器）、open_ref 载荷与发送信封三处各司其职。范围只及用户添加的引用；活动文件 chip（自动投射）语义不同不动。已知限制：同名文件可见标签相同靠 hover 区分（刻意不上父目录消歧，复杂度守恒）。
+
 - **@ 文件列表不再被 node_modules 挤爆 + 排除语义注释谎言订正**（`HOST-CTX-14`，2026-10-20 当日三审发现即修）：输入 `@` 弹出的文件 QuickPick 此前给 `findFiles` 传 `undefined` 排除——VS Code 源码一手实读：legacy `findFiles` 只应用 `files.exclude`、**不应用** `search.exclude`、`.gitignore` **默认不尊重**（1.87 起硬编码，PR #204845）⇒ `node_modules`（本仓实测 32,040 文件）/ `dist` / `coverage` 全进列表、撞 2,000 上限**静默截断**，用户想引的源码文件随机缺席，而 placeholder 只说「已截断」不说原因（搜不到还以为没有）。修：① 新建 `extension/host/ignoredDirs.ts` 单一真源（派生自内核 `IGNORED_DIR_NAMES`，与 `search_project` / `list_dir` 同一套忽略规则），mention 与 `projectSearchProvider` 两处 `findFiles` 同挂（消一份行内第二基线）；② placeholder 补「内置忽略目录已排除、仍超上限」；③ 订正两处注释的三项断两项谎话。守卫 chatPanelMention +1 例 + 截断例 +1 断言；变异三连均红后还原；全量 78 套件 1396 passed / 2 skipped。
 
 - **编辑器右键「登记作品投影」在选中行时仍出现**（`HOST-MENU-2`，2026-10-20）：该命令只登记整个文件（`works` 存储无区间字段），带选区时出现会让人以为「登记了这几行」⇒ `editor/context` 的 `when` 加 `!editorHasSelection`，编辑器入口只在无选区时出现；命令面板入口不变。

@@ -16,6 +16,8 @@
  * 传 undefined 排除时无关文件挤占 MENTION_FILE_LIMIT 上限 ⇒ 用户想引的文件随机缺席。
  * 截断 placeholder 须说明「忽略目录已排除、仍超限」的原因（只说超上限，用户会以为额度
  * 被无关文件占着——那正是 CTX-14 修掉的旧形态）。
+ * HOST-CTX-16 补一契约：⑧ QuickPick 收场（确认 / Esc 取消两条路）后必须发 focus_input
+ * 把焦点还给输入框——QuickPick 是宿主全局 UI，收场后 VS Code 不自动归还 webview 焦点。
  *
  * 替身策略：vscode mock（findFiles / createQuickPick / workspaceFolders），QuickPick 桩以
  * onDidAccept / onDidHide 回调手动触发，selectedItems 由测试预置——与 chatPanelInput.test 同款。
@@ -156,6 +158,8 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
       ],
       source: 'mention',
     });
+    // HOST-CTX-16：确认收场同样归还焦点（与 Esc 取消同一条路，一条 post 覆盖两路）
+    expect(h.posted).toContainEqual({ type: 'focus_input' });
   });
 
   it('取消（hide 回调）→ 静默返回无 post（@ 留在正文，webview 不撤）', async () => {
@@ -168,7 +172,10 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
     await vi.waitFor(() => expect(qp.onDidHide).toHaveBeenCalled());
     (qp.onDidHide.mock.calls[0][0] as () => void)();
     await p;
-    expect(h.posted).toHaveLength(0);
+    // HOST-CTX-16：取消收场只发焦点归还**一条**——不发 addRef（不挂引用）、@ 留正文。
+    // 「有且仅有一条」是强断言：既防漏发（焦点丢失、用户得点鼠标），也防多发（误挂引用）。
+    // （CTX-16 前的旧断言是 toHaveLength(0)——焦点归还是新增的、唯一的合法 post）
+    expect(h.posted).toEqual([{ type: 'focus_input' }]);
   });
 
   it('findFiles 命中上限 → placeholder 明示已截断 + 原因（HOST-CTX-11/14：大仓搜不到目标还以为没有该文件）', async () => {

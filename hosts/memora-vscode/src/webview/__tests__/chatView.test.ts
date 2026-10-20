@@ -9184,12 +9184,13 @@ describe('添加到对话：引用气泡（file/folder · 去重 · 发送清空
     document.body.innerHTML = '';
   });
 
-  it('addRef(file) → 输入盒上方出现引用气泡（路径可辨 + × 移除）', () => {
+  it('addRef(file) → 输入盒上方出现引用气泡（文件名可辨 + × 移除）', () => {
     mountChatView();
     dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
     const chips = document.querySelectorAll('#refChips .skill-chip');
     expect(chips.length).toBe(1);
-    expect(chips[0].querySelector('.skill-chip__name')?.textContent).toBe('src/foo.ts');
+    // HOST-CTX-17：可见文本只含文件名（全路径降级到 title / aria-label，见专用守卫例）
+    expect(chips[0].querySelector('.skill-chip__name')?.textContent).toBe('foo.ts');
     expect(chips[0].querySelector('.skill-chip__remove')).not.toBeNull();
   });
 
@@ -9198,7 +9199,23 @@ describe('添加到对话：引用气泡（file/folder · 去重 · 发送清空
     dispatch({ type: 'addRef', refs: [{ path: 'src/utils', kind: 'folder' }] });
     const chips = document.querySelectorAll('#refChips .skill-chip');
     expect(chips.length).toBe(1);
-    expect(chips[0].querySelector('.skill-chip__name')?.textContent).toBe('src/utils');
+    expect(chips[0].querySelector('.skill-chip__name')?.textContent).toBe('utils');
+  });
+
+  it('引用 chip 可见文本只含文件名、完整路径不丢（HOST-CTX-17 降噪）', () => {
+    mountChatView();
+    dispatch({
+      type: 'addRef',
+      refs: [{ path: 'src/webview/scripts/chatView.ts', kind: 'file' }],
+    });
+    const chip = document.querySelector('#refChips .skill-chip') as HTMLElement;
+    const name = chip.querySelector('.skill-chip__name') as HTMLElement;
+    expect(name.textContent).toBe('chatView.ts');
+    // 全路径仍在三处：title（hover 消歧）/ aria-label（屏幕阅读器）/ 上行载荷（功能面）
+    expect(name.title).toContain('src/webview/scripts/chatView.ts');
+    expect(chip.querySelector('.skill-chip__remove')?.getAttribute('aria-label')).toContain(
+      'src/webview/scripts/chatView.ts',
+    );
   });
 
   it('引用 chip title 首句即指针语义（CTX-6①：挂了 ≠ 注入了，目录尤其如此）', () => {
@@ -9344,6 +9361,22 @@ describe('添加到对话：引用气泡（file/folder · 去重 · 发送清空
     expect(postMessage).toHaveBeenCalledWith({ type: 'mention_open' });
   });
 
+  it('focus_input 归还焦点到输入框（HOST-CTX-16：QuickPick 收场后继续打字不用点鼠标）', () => {
+    mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    // 先把焦点弄丢（模拟 QuickPick 开着——焦点被宿主全局 UI 拿走的状态）。用 blur 而非
+    // 「focus 别的元素」：#send 在空输入时是 disabled、吃不到焦点（实测踩过，假红），
+    // blur 对焦点态无前提要求。不先弄丢的话焦点本就在输入框，断言会假绿。
+    input.focus();
+    input.blur();
+    expect(document.activeElement).not.toBe(input);
+    // Esc 取消后 @ 保留在正文：焦点归还只动焦点、不动文本（撤不撤归 addRef 的 source 分支）
+    input.value = '帮我@';
+    dispatch({ type: 'focus_input' });
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe('帮我@');
+  });
+
   it('普通 addRef（右键入口，无 source）→ 不撤正文里的 @（防误删邮箱等合法字样）', () => {
     mountChatView();
     const input = document.getElementById('input') as HTMLTextAreaElement;
@@ -9485,7 +9518,7 @@ describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () =>
     // 发送后保留不消失
     const after = document.querySelectorAll('#refChips .skill-chip');
     expect(after.length).toBe(1);
-    expect(after[0].querySelector('.skill-chip__name')?.textContent).toBe('src/foo.ts');
+    expect(after[0].querySelector('.skill-chip__name')?.textContent).toBe('foo.ts');
   });
 
   it('引用取消常驻（再点 🔒）→ 退回 transient：下一轮发送后清除', () => {
@@ -9837,8 +9870,9 @@ describe('引用行区间（选区引用）', () => {
     document.body.innerHTML = '';
   });
 
-  // 可见标签 = 路径 span + 行号 span 拼接（行号拆独立 span 防 ellipsis 截断，见 chatView
-  // renderRefChips；拼接口径即「用户眼里的一枚 chip 文本」）
+  // 可见标签 = 文件名 span + 行号 span 拼接（HOST-CTX-17 降噪：路径段不进可见文本，
+  // 完整路径在 title；行号拆独立 span 防 ellipsis 截断，见 chatView renderAttachmentRow；
+  // 拼接口径即「用户眼里的一枚 chip 文本」）
   const chipNames = (): (string | null)[] =>
     [...document.querySelectorAll('#refChips .skill-chip')].map(
       (chip) =>
@@ -9855,7 +9889,7 @@ describe('引用行区间（选区引用）', () => {
         { path: 'src/bar.ts', kind: 'file', range: { start: 7, end: 7 } },
       ],
     });
-    expect(chipNames()).toEqual(['src/foo.ts#L5-L24', 'src/bar.ts#L7']);
+    expect(chipNames()).toEqual(['foo.ts#L5-L24', 'bar.ts#L7']);
   });
 
   it('同文件「整文件」与「某段选区」是两条引用（去重键含区间）——回归锁', () => {
@@ -9865,8 +9899,9 @@ describe('引用行区间（选区引用）', () => {
       type: 'addRef',
       refs: [{ path: 'src/foo.ts', kind: 'file', range: { start: 5, end: 24 } }],
     });
-    // 按 path 去重会让第二次操作静默失效（用户「加了等于没加」）
-    expect(chipNames()).toEqual(['src/foo.ts', 'src/foo.ts#L5-L24']);
+    // 按 path 去重会让第二次操作静默失效（用户「加了等于没加」）。可见文本降噪后两条都叫
+    // foo.ts（靠 #L 区间分辨）——去重键是身份键（path+range），与显示形态无关。
+    expect(chipNames()).toEqual(['foo.ts', 'foo.ts#L5-L24']);
   });
 
   it('移除一条选区引用不误伤同 path 的另一条（按身份键过滤，非 path）', () => {
@@ -9879,9 +9914,9 @@ describe('引用行区间（选区引用）', () => {
       type: 'addRef',
       refs: [{ path: 'src/foo.ts', kind: 'file', range: { start: 30, end: 40 } }],
     });
-    expect(chipNames()).toEqual(['src/foo.ts#L5-L24', 'src/foo.ts#L30-L40']);
+    expect(chipNames()).toEqual(['foo.ts#L5-L24', 'foo.ts#L30-L40']);
     (document.querySelector('#refChips .skill-chip .skill-chip__remove') as HTMLElement).click();
-    expect(chipNames()).toEqual(['src/foo.ts#L30-L40']);
+    expect(chipNames()).toEqual(['foo.ts#L30-L40']);
   });
 
   it('发送载荷带 range；无 range 时不带该字段（保持「缺省」语义）', () => {
@@ -9938,9 +9973,10 @@ describe('引用 chip 点击跳转（open_ref）', () => {
       refs: [{ path: 'src/foo.ts', kind: 'file', range: { start: 5, end: 24 } }],
     });
     const name = document.querySelector('#refChips .skill-chip__name') as HTMLElement;
-    // title 提示与行号对价（hover 可见的定位预告）；CTX-6① 后首句是指针语义，定位预告随后
+    // title 提示与行号对价（hover 可见的定位预告）；CTX-6① 后首句是指针语义，定位预告随后；
+    // HOST-CTX-17 起末尾附完整相对路径（可见文本降噪，同名文件靠 hover 消歧）
     expect(name.title).toBe(
-      '仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开并定位到第 5-24 行',
+      '仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开并定位到第 5-24 行（src/foo.ts）',
     );
     (document.querySelector('#refChips .skill-chip__range') as HTMLElement).click();
     expect(postMessage).toHaveBeenCalledWith({
@@ -9956,7 +9992,7 @@ describe('引用 chip 点击跳转（open_ref）', () => {
       refs: [{ path: 'src/bar.ts', kind: 'file', range: { start: 7, end: 7 } }],
     });
     expect((document.querySelector('#refChips .skill-chip__name') as HTMLElement).title).toBe(
-      '仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开并定位到第 7 行',
+      '仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开并定位到第 7 行（src/bar.ts）',
     );
   });
 

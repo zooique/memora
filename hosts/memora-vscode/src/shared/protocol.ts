@@ -1234,6 +1234,16 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'addRef'; refs: ChatRef[]; source?: 'mention' }
   /**
+   * 宿主→webview：把焦点还给主输入框（HOST-CTX-16）
+   *
+   * 场景：@ 提及 QuickPick 收场后（确认选中 / Esc 取消两条路）——QuickPick 是宿主
+   * 全局 UI，开启时焦点被它拿走，收场后 VS Code **不会**自动还给 webview 里的输入框
+   * ⇒ 用户想继续打字得先用鼠标点一下输入框。宿主在 QuickPick dispose 后发本消息。
+   * webview 只 focus、不改文本（@ 撤不撤归 addRef 的 source='mention' 分支——焦点
+   * 与文本是两个关注点，不混在一条消息里）。通知类消息，无回复。
+   */
+  | { type: 'focus_input' }
+  /**
    * 活动文件投影推送（E→W）：当前打开文件是否进本轮上下文、以指针还是注入正文
    *
    * 推送时机（宿主侧三处，同一份快照派生，不各算一遍）：

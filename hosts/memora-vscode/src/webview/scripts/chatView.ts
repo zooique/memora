@@ -6019,6 +6019,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       autoResize();
       syncSendEnabled(); // 程序化预填不触发 input 事件，须手动同步可用性
       syncButtonSemantics(); // 程序化预填同理不触发 input 事件，须同步按钮语义（标题随相位+输入重算），避免窗口期文案过期
+    } else if (msg.type === 'focus_input') {
+      // HOST-CTX-16：@ 提及 QuickPick 收场后宿主归还焦点——QuickPick 开着时焦点在它那，
+      // 收场后 VS Code 不自动还给网页输入框，用户继续打字前得先点一下。只 focus 不改文本
+      // （@ 撤不撤归下面 addRef 的 source='mention' 分支，两个关注点不混）。
+      input.focus();
     } else if (msg.type === 'addRef') {
       // 右键「添加到对话」：接收宿主推送的文件/目录引用，挂到输入盒上方气泡行
       addRefs(msg.refs);
@@ -7159,11 +7164,32 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return chip;
   }
 
-  /** 构建/清空附件行：**活动文件 chip + 引用 chip** 共用一个容器（`#refChips`）。
+  /**
+ * 引用 chip 的**可见**文件名（HOST-CTX-17：全路径降噪）
+ *
+ * 真机反馈「气泡显示完整相对路径噪音太多」——可见文本只留文件名（`a/b/foo.ts` → `foo.ts`）。
+ * 这不是把路径信息删掉，完整路径仍在三处：① chip title（hover 即见，同名文件可辨）；
+ * ② pin/remove 的 aria-label（屏幕阅读器要全量信息）；③ open_ref 上行载荷与发送信封
+ * （功能面，本就不随显示形态改）。
+ * 已知限制：同一批引用里两个同名文件（如两个 `index.ts`）可见标签相同，靠 title 区分——
+ * 刻意不做 VS Code 式「父目录消歧」：附件行通常个位数 chip，hover 成本低于维护歧义判据
+ * （复杂度守恒；真痛了再按 tab 同款算法加）。
+ *
+ * 路径形态 = `relativeUnderPrimaryRoot` 的规范形（POSIX `/`、无冗余段，消费侧 round-trip
+ * 校验保证）⇒ 按 `/` 切末段即可；webview 包不引 node:path，一个 split 不造依赖。
+ */
+function refDisplayName(path: string): string {
+  const segs = path.split('/');
+  return segs[segs.length - 1] || path;
+}
+
+/** 构建/清空附件行：**活动文件 chip + 引用 chip** 共用一个容器（`#refChips`）。
    *
-   * 引用 chip 形态不变：`路径(+行号) + 🔒 + ×`，与技能 chip 同构复用 `.skill-chip*` 样式；
+   * 引用 chip 形态：`文件名(+行号) + 🔒 + ×`（HOST-CTX-17 降噪：可见文本只留文件名，
+   * 完整相对路径降级到 title / aria-label——hover 与屏幕阅读器仍拿得到，见 refDisplayName），
+   * 与技能 chip 同构复用 `.skill-chip*` 样式；
    * 🔒 切 pinned（发送后是否保留），× 移除 = 从 currentRefs 过滤并刷新（单一真理源），
-   * 路径/行号 span 点击 = 上报 open_ref 跳编辑器定位。
+   * 文件名/行号 span 点击 = 上报 open_ref 跳编辑器定位。
    * 显隐判据只写一次（`hasAttachment`）：两类 chip 任一存在即显示——分成两处各判一次，
    * 必然出现「refs 清空后活动文件 chip 被连坐隐藏」这类漂移。 */
   function renderAttachmentRow(): void {
@@ -7195,6 +7221,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 区间先归一再渲染：非法区间（start>end / 非整数）不渲染行号 span、不上行，
       // 视觉与协议两处同时降级为「整文件引用」，不产生 `#Lundefined` 这类脏标签。
       const markedRange = normalizeRefRange(ref.range);
+      // aria-label 用**全路径**+行号（屏幕阅读器要全量信息）；可见文本用文件名——两个受众
+      // 两种形态，见 refDisplayName（HOST-CTX-17 降噪）。
       const label = `${ref.path}${formatRefRange(markedRange)}`;
       // 点击跳转（open_ref，W→E）：**路径与行号两个 span 都可点**——行号 span 不参与
       // 截断（flex-shrink: 0），窄路径被 ellipsis 截掉尾部时行号依然点得中。
@@ -7208,7 +7236,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       };
       const name = document.createElement('span');
       name.className = 'skill-chip__name';
-      name.textContent = ref.path;
+      // HOST-CTX-17 降噪：可见文本只留文件名（全路径在 title 与 aria-label，见下）。
+      name.textContent = refDisplayName(ref.path);
       // 定位提示是**中文语句**而非协议标签，故不复用 formatRefRange（两者语言不同、不可共享）；
       // 但端点同样取归一化结果，避免出现「第 NaN 行」。
       const rangeHint = markedRange
@@ -7217,7 +7246,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // CTX-6①：指针语义提示放最前（用户 hover 的第一问是「这挂的是啥、占不占」）——
       // 引用只挂指针不注入内容，目录更是只给模型一张目录地图（内容按需 list_dir）。
       // 与信封侧 buildRefContextBlock 的「按需读取」标注同义：信封说给模型听，这里说给用户听。
-      name.title = `仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开${rangeHint}`;
+      // HOST-CTX-17：全路径附在末尾括号——可见文本降噪后，同名文件的区分靠 hover 这一眼。
+      name.title = `仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开${rangeHint}（${ref.path}）`;
       // 键盘可达：span 非原生按钮，补 role/tabindex/Enter-Space 与鼠标同构
       // （焦点环走 tokens.ts 全局 focus-visible，此处不自写）
       name.setAttribute('role', 'button');
