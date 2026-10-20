@@ -6965,10 +6965,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     renderRefChips();
   }
 
-  /** 在输入盒内、textarea 上方构建/清空「路径 + 🔒 + ×」的引用 chip（附件行成员）。
+  /** 在输入盒内、textarea 上方构建/清空「路径(+行号) + 🔒 + ×」的引用 chip（附件行成员）。
    * 与技能 chip 同构复用 .skill-chip* 样式；file/folder 二态仅图标与 title 区分，不造新 CSS 范式。
    * 🔒 点击切 pinned（发送后是否保留）；× 点击移除 = 从 currentRefs 过滤并刷新
-   * （单一真理源，渲染路径唯一）。 */
+   * （单一真理源，渲染路径唯一）；路径/行号 span 点击 = 上报 open_ref 跳编辑器定位。 */
   function renderRefChips(): void {
     if (!refChipRow) return;
     refChipRow.textContent = '';
@@ -6992,11 +6992,53 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       icon.innerHTML = getIconSvg(ref.kind === 'folder' ? 'folder' : 'file', 11, 11);
       icon.setAttribute('aria-hidden', 'true');
       chip.appendChild(icon);
+      const label = refLabel(ref);
+      // 点击跳转（open_ref，W→E）：**路径与行号两个 span 都可点**——行号 span 不参与
+      // 截断（flex-shrink: 0），窄路径被 ellipsis 截掉尾部时行号依然点得中。
+      // 载荷只带协议字段（path/kind/range）：webview 私有的 pinned 不随上行（协议契约，
+      // 见 open_ref 注释）；行号保持 1-based 原样上行，逆转换归宿主单点。
+      const openRef = (): void => {
+        vscode.postMessage({
+          type: 'open_ref',
+          ref: { path: ref.path, kind: ref.kind, ...(ref.range ? { range: ref.range } : {}) },
+        });
+      };
       const name = document.createElement('span');
       name.className = 'skill-chip__name';
-      const label = refLabel(ref);
-      name.textContent = label;
+      name.textContent = ref.path;
+      name.title = `点击在编辑器中打开${ref.range ? `并定位到第 ${ref.range.start}${ref.range.start === ref.range.end ? '' : `-${ref.range.end}`} 行` : ''}`;
+      // 键盘可达：span 非原生按钮，补 role/tabindex/Enter-Space 与鼠标同构
+      // （焦点环走 tokens.ts 全局 focus-visible，此处不自写）
+      name.setAttribute('role', 'button');
+      name.tabIndex = 0;
+      name.addEventListener('click', openRef);
+      name.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openRef();
+        }
+      });
       chip.appendChild(name);
+      if (ref.range) {
+        // 行号独立 span：语义与可点性与路径对等，但**不继承 name 的 ellipsis 截断**
+        const rng = document.createElement('span');
+        rng.className = 'skill-chip__range';
+        rng.textContent =
+          ref.range.start === ref.range.end
+            ? `#L${ref.range.start}`
+            : `#L${ref.range.start}-L${ref.range.end}`;
+        rng.title = name.title;
+        rng.setAttribute('role', 'button');
+        rng.tabIndex = 0;
+        rng.addEventListener('click', openRef);
+        rng.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openRef();
+          }
+        });
+        chip.appendChild(rng);
+      }
       // 常驻锁切换（🔒）：与 ✕ 语义二分——🔒 只切「发送后是否保留」，✕ 才是移除。
       const pin = document.createElement('button');
       pin.type = 'button';

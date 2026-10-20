@@ -171,6 +171,15 @@ export type WebviewToExtensionMessage =
   /** Webview 脚本已就绪（监听器已注册），extension 可安全回放会话/推送数据 */
   | { type: 'ready' }
   /**
+   * 引用 chip 点击 → 宿主在编辑器打开并定位（W→E）
+   *
+   * 引用是指针，**点指针就该跳过去看**——用户由此确认「我到底加了哪几行」：
+   * 文件（无论有无行区间）= 打开 + reveal，有区间再加选中高亮（用户直接看到是哪几行）；
+   * 目录 = 资源管理器露出（目录没有「打开成文档」的概念）。
+   * 定位细节（1-based → 0-based 逆转换）归宿主单点，webview 只上报意图。
+   */
+  | { type: 'open_ref'; ref: ChatRef }
+  /**
    * webview 运行时诊断上报（错误边界的唯一上行出口）
    *
    * 由 installWebviewErrorBoundary（chatViewMain / settingsViewMain 各装配一次）捕获

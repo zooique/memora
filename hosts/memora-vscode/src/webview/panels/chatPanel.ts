@@ -546,6 +546,70 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * 引用 chip 点击 → 在编辑器打开并定位（open_ref，W→E 分支）
+   *
+   * 语义（协议 open_ref 注释为 SSOT）：引用是指针，**点指针就该跳过去看**——
+   *   - 文件（无论有无行区间）：打开文档 + reveal；有区间 = 选中高亮该区间，
+   *     用户由此**直接看到「我到底加了哪几行」**，无需自行数行；
+   *   - 目录：资源管理器露出（目录没有「打开成文档」的概念）。
+   *
+   * 路径解析：`ref.path` 是**工作区相对路径**（生产点 = extension.ts addToChat 的
+   * `asRelativePath`）；多根工作区下 asRelativePath 相对的是「所在根」，故按存在性
+   * 逐根匹配——单根工作区直接命中首个（零额外开销）。
+   *
+   * 行号是**指针不是快照**（协议 ChatRef 注释）：引用后文件可能已改短，区间越界——
+   * 统一 clamp 到文档末尾，不让 Position/lineAt 抛异常（仍定位到最接近的行）。
+   *
+   * 失败态（文件已删 / 不可读 / 无工作区）：一律走面板 notice 单一出口
+   * （与其它用户可见反馈同 surface，不混用 showWarningMessage 弹toast）。
+   */
+  private async openRefInEditor(ref: ChatRef): Promise<void> {
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    let uri: vscode.Uri | undefined;
+    for (const folder of folders) {
+      const candidate = vscode.Uri.joinPath(folder.uri, ref.path);
+      try {
+        await vscode.workspace.fs.stat(candidate);
+        uri = candidate;
+        break;
+      } catch {
+        // 该根下不存在（多根错配 / 引用已过期）：试下一个根
+      }
+    }
+    if (!uri) {
+      if (folders.length === 0) {
+        this.post({ type: 'notice', level: 'error', message: '请先打开一个工作区' });
+        return;
+      }
+      // 所有根都不存在：仍取首根构造，让 openTextDocument 抛标准错误走下方统一 catch
+      // （失败提示单一出口，不按「解析失败 / 打开失败」分叉两套文案）
+      uri = vscode.Uri.joinPath(folders[0].uri, ref.path);
+    }
+    try {
+      if (ref.kind === 'folder') {
+        await vscode.commands.executeCommand('revealInExplorer', uri);
+        return;
+      }
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const editor = await vscode.window.showTextDocument(doc);
+      if (ref.range) {
+        // 协议 1-based 闭区间 → VS Code 0-based：逆转换唯一收口（协议 ChatRef 注释 SSOT，
+        // webview 与协议层保持 1-based，两处各转一次必漂移）
+        const lastLine = Math.max(0, doc.lineCount - 1);
+        const startLine = Math.min(Math.max(ref.range.start - 1, 0), lastLine);
+        const endLine = Math.min(Math.max(ref.range.end - 1, startLine), lastLine);
+        const start = new vscode.Position(startLine, 0);
+        const end = doc.lineAt(endLine).range.end;
+        editor.selection = new vscode.Selection(start, end);
+        editor.revealRange(new vscode.Range(start, end), vscode.TextEditorRevealType.InCenter);
+      }
+    } catch (err) {
+      this.post({ type: 'notice', level: 'error', message: `无法打开引用：${ref.path}` });
+      console.warn(`Memora open_ref 失败 [${ref.path}]`, err);
+    }
+  }
+
+  /**
    * 注入会话视图加载器（用于 round-based 模式会话的历史加载）
    *
    * @param viewLoader 工作区会话视图加载器实例
@@ -985,6 +1049,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 角色徽章点击：跳转角色包管理视图（复用 configureModel 同款两行命令，单一导航入口；
         // 切换执行仍走角色视图 roles_set_active 单路径，本分支只导航）
         void vscode.commands.executeCommand('memora.openRoles');
+      } else if (msg.type === 'open_ref') {
+        // 引用 chip 点击：在编辑器打开并定位到行区间——「我到底加了哪几行」的直接答案
+        // （1-based → 0-based 逆转换等定位细节归 openRefInEditor 单点，webview 只上报意图）
+        void this.openRefInEditor(msg.ref);
       } else if (msg.type === 'new_session') {
         // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史
         void this.newSessionFromCommand();

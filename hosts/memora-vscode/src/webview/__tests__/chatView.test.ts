@@ -9428,8 +9428,14 @@ describe('引用行区间（选区引用）', () => {
     document.body.innerHTML = '';
   });
 
+  // 可见标签 = 路径 span + 行号 span 拼接（行号拆独立 span 防 ellipsis 截断，见 chatView
+  // renderRefChips；拼接口径即「用户眼里的一枚 chip 文本」）
   const chipNames = (): (string | null)[] =>
-    [...document.querySelectorAll('#refChips .skill-chip__name')].map((e) => e.textContent);
+    [...document.querySelectorAll('#refChips .skill-chip')].map(
+      (chip) =>
+        (chip.querySelector('.skill-chip__name')?.textContent ?? '') +
+        (chip.querySelector('.skill-chip__range')?.textContent ?? ''),
+    );
 
   it('chip 显示 #L 区间（多行 #L5-L24 / 单行 #L7）', () => {
     mountChatView();
@@ -9492,6 +9498,81 @@ describe('引用行区间（选区引用）', () => {
         { path: 'src/bar.ts', kind: 'file' },
       ],
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+// 引用 chip 点击跳转（open_ref，W→E）：路径 / 行号两个 span 均可点
+// 语义（协议 open_ref 注释）：引用是指针，点指针就该跳过去看——宿主打开 + 定位；
+// 行号 1-based **原样上行**（逆转换归宿主单点，webview 不二次转换）；
+// pinned 等 webview 私有态不随上行（协议契约只认 path/kind/range）。
+// ═══════════════════════════════════════════════════════
+describe('引用 chip 点击跳转（open_ref）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('点路径 span → 上报 open_ref（整文件引用不带 range 字段）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    (document.querySelector('#refChips .skill-chip__name') as HTMLElement).click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'open_ref',
+      ref: { path: 'src/foo.ts', kind: 'file' },
+    });
+  });
+
+  it('点行号 span → 同样上报 open_ref（range 1-based 原样上行，宿主才转 0-based）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'addRef',
+      refs: [{ path: 'src/foo.ts', kind: 'file', range: { start: 5, end: 24 } }],
+    });
+    const name = document.querySelector('#refChips .skill-chip__name') as HTMLElement;
+    // title 提示与行号对价（hover 可见的定位预告）
+    expect(name.title).toBe('点击在编辑器中打开并定位到第 5-24 行');
+    (document.querySelector('#refChips .skill-chip__range') as HTMLElement).click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'open_ref',
+      ref: { path: 'src/foo.ts', kind: 'file', range: { start: 5, end: 24 } },
+    });
+  });
+
+  it('单行区间 title 不带区间尾巴（#L7 → 「定位到第 7 行」）', () => {
+    mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'src/bar.ts', kind: 'file', range: { start: 7, end: 7 } }] });
+    expect(
+      (document.querySelector('#refChips .skill-chip__name') as HTMLElement).title,
+    ).toBe('点击在编辑器中打开并定位到第 7 行');
+  });
+
+  it('键盘 Enter 同样触发（span 补 role/tabindex 后的鼠标/键盘同构）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'addRef',
+      refs: [{ path: 'src/foo.ts', kind: 'file', range: { start: 7, end: 7 } }],
+    });
+    const name = document.querySelector('#refChips .skill-chip__name') as HTMLElement;
+    expect(name.getAttribute('role')).toBe('button');
+    expect(name.tabIndex).toBe(0);
+    name.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    );
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'open_ref',
+      ref: { path: 'src/foo.ts', kind: 'file', range: { start: 7, end: 7 } },
+    });
+  });
+
+  it('🔒 / ✕ 点击不误触跳转（处理器只挂路径/行号 span，不在 chip 上冒泡）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    postMessage.mockClear();
+    (document.querySelector('#refChips .skill-chip__pin') as HTMLElement).click();
+    (document.querySelector('#refChips .skill-chip__remove') as HTMLElement).click();
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'open_ref' }),
+    );
   });
 });
 

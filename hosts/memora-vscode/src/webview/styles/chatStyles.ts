@@ -1566,6 +1566,24 @@ export const chatStyles = `
   .skill-chip__icon { font-size: var(--font-sm, 11px); line-height: var(--lh-flat); flex-shrink: 0; display: inline-flex; align-items: center; }
   .skill-chip__icon svg { display: block; }
   .skill-chip__name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  /* 引用 chip 行号 span（#L5-L24 / #L7）：与路径 span 对等可点（open_ref 的定位目标），
+   * 但**不参与截断**——窄路径下 ellipsis 吃掉路径尾部时，行号必须完整可辨可点。
+   * 颜色继承 chip 的 accent；可点性只靠 hover 下划线 + pointer 表达，不引入新令牌。 */
+  .skill-chip__range {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  /* 引用 chip 的可点域 = 路径 / 行号两个 span，**刻意不是整枚 chip**：🔒 与 ✕ 两个按钮
+   * 在 chip 内，整枚可点会把按钮点击也卷进跳转（冒泡冲突，需逐按钮 stopPropagation 兜）。
+   * 作用域用 #refChips 限定——技能 chip 同名 class 但不可点，不继承该指针/下划线。 */
+  #refChips .skill-chip__name,
+  #refChips .skill-chip__range {
+    cursor: pointer;
+  }
+  #refChips .skill-chip__name:hover,
+  #refChips .skill-chip__range:hover {
+    text-decoration: underline;
+  }
   /* chip 后缀徽记：与下拉项 .treedd__item-note 同语义、同观感（各自 BEM 归属） */
   .skill-chip__note {
     flex-shrink: 0;
