@@ -8722,6 +8722,20 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(card.compareDocumentPosition(inputBar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('大纲导航条锚点守卫（HOST-NAV-1）：#roundNav 须与 #messages 同级，严禁挪回滚动容器内', () => {
+    // 同款血训（planBar / scrollToBottomBtn / 审批卡三次实证）：#messages 是
+    // overflow-y:auto 滚动容器，absolute 子元素随内容滚走/顶到消息流顶端——
+    // 大纲条必须钉在视口右缘（body absolute），挪进 #messages 即「和会话记录一起滚走」。
+    mountChatView();
+    const nav = document.getElementById('roundNav') as HTMLElement;
+    const messages = document.getElementById('messages') as HTMLElement;
+    expect(messages.contains(nav)).toBe(false);
+    expect(nav.parentElement).toBe(messages.parentElement);
+    // 外壳结构：条列 + 浮层两容器（roundNav.ts 控制器 querySelector 的契约面）
+    expect(nav.querySelector('.round-nav__track')).toBeTruthy();
+    expect(nav.querySelector('.round-nav__panel')).toBeTruthy();
+  });
+
   it('载荷缺 timeoutMs 必显式报错（禁静默失效：倒计时无声消失且无痕可查）', () => {
     // 反向守卫：startConfirmCountdown 曾对非法 timeoutMs 静默 return——宿主一旦漏填
     // （真源漂移），倒计时无声消失，用户只见一张永不提示的卡，直到 30 分钟后突然被拒，

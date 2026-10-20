@@ -4519,6 +4519,16 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
          锁定本约束）。 -->
   </div>
 
+  <!-- 会话大纲导航条（HOST-NAV-1）：右缘按轮锚点外壳，条列/浮层由 chatView 经
+       helpers/roundNav.ts 动态构建；不足两轮或不可滚动时整条 hidden。
+       🔴 挂 #messages 之外（同 scrollToBottomBtn 血训：滚动容器内 absolute 随内容滚走）；
+       🔴 panel 不挂 hidden 属性（显形走 :hover/:focus-within，全局 [hidden]!important
+       会压死 CSS 显形，见 chatStyles .round-nav 段注释）。 -->
+  <div id="roundNav" class="round-nav" hidden>
+    <div class="round-nav__track"></div>
+    <div class="round-nav__panel"></div>
+  </div>
+
   <!-- 活动状态条（错误/低扰通知的**瞬态单条**：info 2500ms / error 8000ms 自动撤）。
        归位/显隐由 resolveDock 单点裁决。历史与指标**不在本条**——固定归下方
        #dockPanel 的时间段（C1，2026-10-05）：本条再怎么生灭，时间线都不陪葬。

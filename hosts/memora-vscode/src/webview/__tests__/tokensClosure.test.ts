@@ -191,12 +191,17 @@ const EXEMPT_PROPS = new Set([
  *    23 → 占用构成条（HOST-S3-2，2026-10-14）：chatStyles .context-segments `height: 4px`
  *         （分段比例条厚度，无对应刻度档——--dot-* 语义为圆点直径、--sq-* 下界 16px，均不适用）
  *         按 C 类一次性维度登记，与 .ce-summary 7px 同路径。
+ *    26 → 会话大纲导航条（HOST-NAV-1，2026-10-20）：chatStyles .round-nav 段新增 3 处 C 类
+ *         一次性维度逐条登记：条视觉厚 2px（.round-nav__bar::before height）+ 当前轮加粗 3px
+ *         （.is-active::before height）+ 条端圆角 1px（border-radius；--radius-sm 2px 会把
+ *         2px 高的条削成胶囊，失真）。可令牌化项已令牌化：触达高 12px→--sp-5、条宽 16px→--sp-6、
+ *         浮层 160/320px→--dim-lg/--dim-2xl、60vh/130%/0.12s 非 px 口径不入户。
  * 为何要跟着降：若基线停在初始值，消化出的 94+ 处会变成「可新增而不报错」的余额，
  * 等于给未来的裸值开了口子。门必须随债务一起往下走。
- * 现状（2026-10-14）：清单已至 23 ⇒ 硬门 toEqual(23)（见守卫断言）。
- * 残余 23 = C 类 23（一次性维度，显式硬门例外）；A 类 4 已于 2026-10-12 闭包（见上 20 行）。
+ * 现状（2026-10-20）：清单已至 26 ⇒ 硬门 toEqual(26)（见守卫断言）。
+ * 残余 26 = C 类 26（一次性维度，显式硬门例外）；A 类 4 已于 2026-10-12 闭包（见上 20 行）。
  */
-const FROZEN_VALUE_BASELINE = 23;
+const FROZEN_VALUE_BASELINE = 26;
 
 /** 剥离 var() 整体（含其 fallback），残留者才是真裸值 */
 const stripVar = (v: string): string => v.replace(/var\(\s*--[\w-]+(\s*,[^)]*)?\)/g, '');
@@ -558,7 +563,7 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   // var(--line-solid)（与 .round-block__tool-summary 同层但加分隔），实数经
   // scripts/count-token-refs.mjs 实锤同步（2026-10-17 web_search_result 证据接入宿主重放）。
   const EXPECTED = {
-    'z-': 14,
+    'z-': 15, // HOST-NAV-1：大纲条 var(--z-float)（chatStyles）+1（2026-10-20）
     'lh-': 49, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1
     // 18：回到原值。中途曾 +2（🔒 未钉态 / ✕ 弱化态各用 opacity: var(--op-6)），后经真机
     // 实测废掉该做法——**弱化只用降色、不用降透明度**（半透明图标观感像没渲染好/被禁用），
@@ -566,9 +571,10 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     'op-': 18,
     'icon-': 17,
     'dot-': 22,
-    'line-': 73, // MEM-EVENT-2：工具行内命中块 border-top: var(--line-solid)（chatStyles）+1
+    'line-': 74, // MEM-EVENT-2：工具行内命中块 border-top: var(--line-solid)（chatStyles）+1；
+    //             HOST-NAV-1：大纲条浮层 border: var(--line-input)（chatStyles）再 +1（2026-10-20）
     'sq-': 47,
-    'dim-': 19,
+    'dim-': 21, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）
   } as const;
 
   for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {

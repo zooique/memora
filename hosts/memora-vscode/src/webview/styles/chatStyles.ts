@@ -65,6 +65,65 @@ export const chatStyles = `
   }
   .scroll-to-bottom:hover { color: var(--text-primary, #cccccc); }
 
+  /* ============ 会话大纲导航条（HOST-NAV-1） ============ */
+  /* 右缘按轮锚点：每轮用户输入一根细横条，hover 弹浮层列预览，点击定位（ChatGPT 同款）。
+   * 定位锚 = body（absolute，视口等效）——🔴 不挂 #messages 内：滚动容器的 absolute
+   * 子元素随内容滚走（planBar / scrollToBottomBtn 两次同款血训）。z-float 层：浮于
+   * 消息区与一键到底按钮之上、低于输入区。浮层显形走 :hover/:focus-within（键盘焦点
+   * 进入也显形）——🔴 panel 不可挂 hidden 属性：全局 [hidden]{display:none!important}
+   * 恒赢，hover 的 display 切不回来（显形只能走 CSS 默认态）。 */
+  .round-nav {
+    position: absolute; right: var(--sp-2, 6px); top: 50%; transform: translateY(-50%);
+    z-index: var(--z-float);
+    display: flex; align-items: center; max-height: 60vh; /* C 类一次性维度（视口比例，无 vh 档） */
+    padding: var(--sp-2, 6px) var(--sp-1, 4px);
+    border-radius: var(--radius-sm, 2px);
+  }
+  .round-nav[hidden] { display: none; } /* 与 flex 声明同 specificity 下兜底（全局 !important 亦覆盖） */
+  /* 条列：竖排细横条；触达区（12px 高）大于视觉条（2px），hover 容器时条加长提示可点 */
+  .round-nav__track { display: flex; flex-direction: column; gap: var(--sp-2, 6px); }
+  .round-nav__bar {
+    display: flex; align-items: center; justify-content: center;
+    width: var(--sp-6, 16px); height: var(--sp-5, 12px); padding: 0;
+    border: none; background: transparent; cursor: pointer;
+  }
+  /* 视觉条 = ::before（2px 细线）；is-active 加粗提亮（当前轮）。
+     2px/3px 厚度 = C 类一次性维度（--dot-* 语义为圆点直径、--sq-* 下界 16px，均不适用） */
+  .round-nav__bar::before {
+    content: ''; width: 100%; height: 2px; border-radius: 1px;
+    background: var(--surface-hover, rgba(128, 128, 128, 0.2));
+    transition: width 0.12s ease, background 0.12s ease; /* C 类一次性微交互时长（无时长档） */
+  }
+  .round-nav__bar.is-active::before {
+    height: 3px; background: var(--text-primary, #cccccc);
+  }
+  .round-nav:hover .round-nav__bar::before { width: 130%; } /* C 类一次性维度（相对加长比例） */
+  .round-nav__bar:hover::before { background: var(--text-primary, #cccccc); }
+  /* 预览浮层：常态不显形，hover/键盘焦点进入容器时向左展开；行点击定位 */
+  .round-nav__panel {
+    display: none;
+    position: absolute; right: 100%; top: 50%; transform: translateY(-50%);
+    margin-right: var(--sp-2, 6px);
+    min-width: var(--dim-lg, 160px); max-width: var(--dim-2xl, 320px); max-height: 60vh;
+    overflow-y: auto; /* max-height 60vh 与 .round-nav 同判：C 类一次性维度 */
+    padding: var(--sp-2, 6px);
+    border: var(--line-input);
+    border-radius: var(--radius-sm, 2px);
+    background: var(--surface-input, #3c3c3c);
+    box-shadow: var(--shadow-card, 0 2px 8px rgba(0,0,0,.15));
+  }
+  .round-nav:hover .round-nav__panel,
+  .round-nav:focus-within .round-nav__panel { display: block; }
+  .round-nav__item {
+    display: block; width: 100%; padding: var(--sp-1, 4px) var(--sp-2, 6px);
+    border: none; border-radius: var(--radius-sm, 2px);
+    background: transparent; color: var(--text-secondary, #9aa0a6);
+    font-size: var(--font-xs, 10px); text-align: left; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .round-nav__item:hover { background: var(--surface-hover, rgba(128, 128, 128, 0.2)); color: var(--text-primary, #cccccc); }
+  .round-nav__item.is-active { color: var(--text-primary, #cccccc); font-weight: 600; }
+
   /* ============ StatusDock：底部状态抽屉（ADR-037 形态宪法） ============ */
   /* 抽屉入口（C1 常驻化）：静态骨架节点，body flex 列中独立成行（stretch 整条可点）。
    * 可达 = 有被收纳条（文案「+N」）或时间段有内容（文案「活动」）；未读只亮 .is-unread

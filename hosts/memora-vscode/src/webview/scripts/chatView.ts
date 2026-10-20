@@ -43,6 +43,8 @@ import {
 } from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
+// 会话大纲导航条（HOST-NAV-1）：逻辑收口于 helpers/roundNav.ts（SSOT），本文件只接线
+import { createRoundNav } from '../helpers/roundNav.js';
 // 骨架（会话控件）语义派生纯函数层：矩阵与状态容器在 turnUiState.ts，
 // 本文件只做「取数 → 派生 → 施加」；容器写入只走 skeletonFromTurnState（真源 = turn_update.state）
 import {
@@ -591,15 +593,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let flowShellEl: HTMLElement | null = null;
   // 一键到底按钮：用户上滚阅读时浮现，点击回到底部
   const scrollToBottomBtn = document.getElementById('scrollToBottomBtn') as HTMLButtonElement;
-  // 消息区滚动监听：更新吸底状态 + 一键到底按钮显隐
+  // 会话大纲导航条（HOST-NAV-1）：右缘按轮锚点（外壳 #roundNav 静态骨架，条列动态构建）。
+  // sync/refresh 的挂点在下方 MutationObserver rAF 拍子与 scroll 监听——与吸底同一通道同一节拍
+  const roundNavController = createRoundNav(
+    messages,
+    document.getElementById('roundNav') as HTMLElement,
+  );
+  // 消息区滚动监听：更新吸底状态 + 一键到底按钮显隐 + 大纲条当前轮高亮
   messages.addEventListener('scroll', () => {
     const atBottom = trackScroll(messages);
     scrollToBottomBtn.hidden = atBottom;
+    roundNavController.refresh();
   });
   // 内容高度变更自动吸底：MutationObserver 统一订阅消息区任意高度变更（展开/收起折叠块、
   // 工具流式增删、长气泡展开、中断轮重建……），rAF 去抖后 delegate 到 followIfPinned——
   // 闭合「高度变化不派发 scroll 事件 → 吸底标记与实际位置脱节」整类缺口，逻辑仍收口于
   // helpers/scrollToBottom.ts（SSOT），此处只做接线（不复制吸底逻辑、不碰 DOM 模板）。
+  // 大纲条全量重建挂同一拍子（HOST-NAV-1）：结构变更（轮次增删）后重建条列——
+  // 与渲染同源（不在各渲染路径埋点），签名比对防流式期每帧重建（roundNav.ts 内部裁决）。
   let followRaf = 0;
   function scheduleFollow(): void {
     if (followRaf) return;
@@ -608,6 +619,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     followRaf = win.requestAnimationFrame(() => {
       followRaf = 0;
       scrollToBottomBtn.hidden = followIfPinned(messages);
+      roundNavController.sync();
     });
   }
   const followObserver = new MutationObserver(scheduleFollow);
