@@ -927,10 +927,25 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       },
     } as unknown as Agent;
 
-    // CTX-6② 归因捕获：发送后的本轮回推 / 击键后的实时投影各取最后一条 active_file
+    // CTX-6② / HOST-CTX-4 ② 归因捕获：本轮注入量已**从 active_file 投影迁出**，改由
+    // `injection_summary` 按源分项承载（活动文件降为其中一个分项）⇒ 归因断言读分项，
+    // 投影断言只读「有没有注入」这件事本身。
     type ActiveFileMsg = { type: 'active_file'; projection: Record<string, unknown> };
+    type SummaryMsg = {
+      type: 'injection_summary';
+      summary: {
+        segments: { source: string; injected: boolean; tokens?: number }[];
+        total: number;
+      };
+    };
+    /** 汇总里活动文件那一项（注入归因的唯一真源） */
+    const activeFileSegment = (
+      s: SummaryMsg['summary'] | undefined,
+    ): { source: string; injected: boolean; tokens?: number } | undefined =>
+      s?.segments.find((seg) => seg.source === 'active-file');
     let lastSentProjection: Record<string, unknown> | undefined;
     let lastRealtimeProjection: Record<string, unknown> | undefined;
+    let lastSummary: SummaryMsg['summary'] | undefined;
     const sendWithEditor = async (isDirty: boolean, attach = true): Promise<string> => {
       captured.length = 0;
       (vscode.window as unknown as { activeTextEditor: unknown }).activeTextEditor =
@@ -949,9 +964,17 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       const activeFilePosts = () =>
         (posted as unknown as ActiveFileMsg[]).filter((m) => m.type === 'active_file');
       lastSentProjection = activeFilePosts().at(-1)?.projection;
+      lastSummary = (posted as unknown as SummaryMsg[])
+        .filter((m) => m.type === 'injection_summary')
+        .at(-1)?.summary;
       // 模拟一次击键后的显示订阅推送（编辑器仍挂着 ⇒ attached 投影；无 force，可能被去重）
       (provider as unknown as { pushActiveFile(): void }).pushActiveFile();
       lastRealtimeProjection = activeFilePosts().at(-1)?.projection;
+      // 实时显示订阅**不回推注入汇总**（CTX-3 收尾的正文惰性纪律：若为实时显示 token
+      // 恢复「每击键读全文」即回归）。汇总条数恒为 1 = 只有发送那一次产出。
+      expect(
+        (posted as unknown as SummaryMsg[]).filter((m) => m.type === 'injection_summary').length,
+      ).toBe(1);
       (vscode.window as unknown as { activeTextEditor: unknown }).activeTextEditor = undefined;
       return captured[0]!;
     };
@@ -962,17 +985,20 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(clean).not.toContain('文档内容A');
     expect(clean).toContain('请继续');
     // CTX-6② 归因（判据的**消费点**守卫）：指针态无注入 ⇒ 无规模可归因（缺省，不是 0）
-    expect(lastSentProjection?.['injectedTokens']).toBeUndefined();
+    expect(activeFileSegment(lastSummary)?.injected).toBe(false);
+    expect(activeFileSegment(lastSummary)?.tokens).toBeUndefined();
 
     const dirty = await sendWithEditor(true);
     expect(dirty).toContain('[当前打磨文档内容]');
     expect(dirty).toContain('文档内容A');
     expect(dirty).not.toContain('当前打开文件');
-    // 发送时刻取数（docBlock 已在手，零额外读取），本轮 force 回推带正数 token 估算；
+    // 发送时刻取数（docBlock 已在手，零额外读取），本轮回推带正数 token 估算；
     // 击键后的实时投影**刻意不带**——正文惰性纪律（CTX-3 收尾）不被显示需求破坏，
-    // 若为实时显示 token 恢复每击键读全文即回归。
-    expect(lastSentProjection?.['injectedTokens']).toBeGreaterThan(0);
-    expect(lastRealtimeProjection?.['injectedTokens']).toBeUndefined();
+    // 若为实时显示 token 恢复每击键读全文即回归（上条「汇总条数恒为 1」即此守卫）。
+    expect(activeFileSegment(lastSummary)?.injected).toBe(true);
+    expect(activeFileSegment(lastSummary)?.tokens).toBeGreaterThan(0);
+    expect(lastSentProjection?.['injected']).toBe(true);
+    expect(lastRealtimeProjection).toBeTruthy();
 
     // 关掉开关 ⇒ 既不注入正文、也不挂指针（「关了还偷偷给指针」是自相矛盾的中间态）
     const offClean = await sendWithEditor(false, false);

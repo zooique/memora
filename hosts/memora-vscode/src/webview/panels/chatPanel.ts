@@ -116,9 +116,10 @@ const SNAPSHOT_MAX_FILES = 8000;
 import type {
   ActiveFileProjection,
   ChatRef,
+  InjectionSegment,
+  InjectionSource,
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
-  WebviewInputKind,
   RoundView,
   TurnState,
   PendingQuestionDto,
@@ -145,9 +146,12 @@ import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
 import {
   buildDocContextBlock,
   buildInjectedContextEnvelope,
+  buildProblemsContextBlock,
   buildRefContextBlock,
   stripInjectedContextPrefix,
 } from '../helpers/docContext.js';
+// HOST-CTX-4 第一笔：@problems 诊断的有界采集（依赖注入式、零 vscode 依赖，可单测）
+import { collectProblemsText } from '../../extension/host/problemsCollector.js';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
 import {
   isSkillDisabled,
@@ -361,6 +365,60 @@ function readDocBody(editor: vscode.TextEditor): string {
       ? `${content.slice(0, MAX_DOC_CONTEXT_CHARS)}\n\n…[内容过长已截断]`
       : content;
   return `文件名：${fileName}\n${truncated}`;
+}
+
+/**
+ * 诊断的「源码行」读取（生产实现，注入给 `collectProblemsText`）
+ *
+ * **优先读已打开文档的 buffer**：诊断是语言服务基于 buffer 算出来的（含未保存修改），
+ * 读磁盘会与诊断给出的行号错位——与 `registerWork` 读磁盘的旧版隐患（HOST-MENU-2）
+ * 是同一个病根，此处反向处置（要新不要旧）。未打开的文件才回退读盘（有界：读一次、取整行）。
+ *
+ * 任何失败一律返回 undefined ⇒ 该条诊断降级为「不带源码行」（功能不残，只是少一点上下文），
+ * 不因取不到源码而整块放弃。
+ */
+async function readProblemsSourceLine(uri: string, line: number): Promise<string | undefined> {
+  if (line < 0) return undefined;
+  const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri);
+  if (open) {
+    const idx = Math.min(line, open.lineCount - 1);
+    return idx >= 0 ? open.lineAt(idx).text : undefined;
+  }
+  try {
+    const bytes = await vscode.workspace.fs.readFile(vscode.Uri.parse(uri));
+    const lines = new TextDecoder().decode(bytes).split(/\r?\n/);
+    return lines[line];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 本轮诊断正文采集（HOST-CTX-4 ④：**发送时刻**才取数）
+ *
+ * 挂载只记通道标记（webview 组合态），宿主不持有注入态 ⇒ 无缓存、无第二真理源。
+ * 缓存的快照 ≠ 发送时刻的真相（CTX-3 的 `_docContext` 缓存撒谎就是死在这上面）。
+ */
+async function collectProblemsBody(): Promise<string> {
+  try {
+    const groups = vscode.languages.getDiagnostics().map(([uri, diagnostics]) => ({
+      uri: uri.toString(),
+      fsPath: uri.fsPath,
+      diagnostics,
+    }));
+    return await collectProblemsText({
+      groups,
+      // 首根 SSOT：诊断路径必须投影到与 read_file cwd / 引用解析同一个根，否则模型读不到
+      rootFsPath: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      readLine: readProblemsSourceLine,
+    });
+  } catch (err) {
+    // 取数失败**不得**让整条发送挂掉（用户点发送后毫无反应 = 静默失败族，本项目已四次踩）。
+    // 与采集器「永不返回空串」同纪律：失败也要在信封里留一句**事实**，模型知道用户挂了
+    // 但没拿到，而不是收到一个空块后凭空编诊断。
+    console.warn('[memora] 采集工作区诊断失败，本轮以事实行代替：', err);
+    return '工作区诊断采集失败（本轮未能取到错误 / 警告列表）。';
+  }
 }
 
 /**
@@ -1241,13 +1299,25 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const uris = await vscode.workspace.findFiles('**/*', IGNORED_DIR_GLOB, MENTION_FILE_LIMIT);
       // 首根归属判定前置到列表期（fail-closed）：第二根 / 根外的文件连列表都不进，
       // 用户选不到就挂不上——与 addToChat 拒挂第二根是同一契约的两半。
-      const items: { label: string; description: string; rel: string }[] = [];
+      // @ 下拉的两类项：**文件项**（挂指针，走 addRef）+ **特殊关键字项**（走 add_injection，
+      // 挂载注入型上下文）。与 Roo Code / Cursor 同款（下拉里除文件外还建议 problems /
+      // terminal / git-changes 这类关键字）；关键字项恒置顶，不与文件项混排。
+      type MentionItem = vscode.QuickPickItem & { rel?: string; injection?: 'problems' };
+      const fileItems: MentionItem[] = [];
       for (const uri of uris) {
         const rel = relativeUnderPrimaryRoot(root, uri.fsPath);
         if (!rel) continue;
-        items.push({ label: basename(rel), description: rel, rel });
+        fileItems.push({ label: basename(rel), description: rel, rel });
       }
-      items.sort((a, b) => a.description.localeCompare(b.description));
+      fileItems.sort((a, b) => (a.description ?? '').localeCompare(b.description ?? ''));
+      const items: MentionItem[] = [
+        {
+          label: '诊断（问题面板）',
+          description: '注入当前工作区的错误 / 警告（发送时取最新，占预算）',
+          injection: 'problems',
+        },
+        ...fileItems,
+      ];
       // 截断告知（HOST-CTX-11）：>= 上限即视为可能截断（恰好等于上限不截断的极小概率
       // 也在提示范围内——多一句提示远好过用户找不到文件）。走 placeholder 而非塞一条
       // 「提示项」进 items：QuickPickItem 没有 disabled，提示项一旦被选中就会变成一条
@@ -1259,9 +1329,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       qp.matchOnDescription = true;
       qp.placeholder = truncated
         ? `文件数超 ${MENTION_FILE_LIMIT} 已截断（内置忽略目录已排除、仍超上限），请输入关键词缩小范围（可多选，Esc 取消）…`
-        : '选择要挂为引用的文件（可多选，Esc 取消）…';
+        : '选择要挂为引用的文件，或选「诊断（问题面板）」注入当前错误（可多选，Esc 取消）…';
       qp.show();
-      const picked = await new Promise<readonly vscode.QuickPickItem[] | undefined>((resolve) => {
+      const picked = await new Promise<readonly MentionItem[] | undefined>((resolve) => {
         // accept = 确认（含多选）；hide = Esc / 点外部关闭（两者互斥，先到先 resolve）
         qp.onDidAccept(() => resolve(qp.selectedItems));
         qp.onDidHide(() => resolve(undefined));
@@ -1273,12 +1343,23 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 例外：findFiles 抛错 / 未打开工作区时 QuickPick 从未开出，焦点没被拿走，不发。
       this.post({ type: 'focus_input' });
       if (!picked || picked.length === 0) return; // 取消：静默返回，正文里的 @ 保留（用户可继续编辑）
+      // 关键字项与文件项**分道**：关键字项挂注入 chip（add_injection），文件项挂引用 chip
+      // （addRef）。刻意不复用 addRef——ChatRef 的契约是「只挂指针不携内容」（CTX-4 前置边界）。
+      let wantProblems = false;
       const refs: ChatRef[] = [];
       for (const p of picked) {
+        if (p.injection === 'problems') {
+          wantProblems = true;
+          continue;
+        }
         // 防御：QuickPickItem.description 类型可选，本 items 恒有值——异常缺省则跳过（不挂 path=undefined 的伪引用）
         if (typeof p.description !== 'string') continue;
         refs.push({ path: p.description, kind: 'file' });
       }
+      // via='mention'：与 addRef 同款，让 webview 撤掉输入框里那个 '@'（只选关键字项时
+      // 如果没有这条，'@' 会残留在正文里被一起发出去）。
+      if (wantProblems) this.post({ type: 'add_injection', source: 'problems', via: 'mention' });
+      if (refs.length === 0) return;
       if (this._view) {
         this.post({ type: 'addRef', refs, source: 'mention' });
       } else {
@@ -3225,13 +3306,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * @param msg 统一输入（kind 为用户意图，结果级分类由路由时定）
    */
-  private async handleInput(msg: {
-    kind: WebviewInputKind;
-    text?: string;
-    answers?: string[];
-    skillName?: string;
-    refs?: ChatRef[];
-  }): Promise<void> {
+  // ⚠️ 入参类型**必须**从协议联合里 Extract，不得内联复述字段（HOST-CTX-4 落地时发现）：
+  // 内联副本 = 第二真理源，协议新增字段时此处**静默不转发**（无编译错、无测试红，
+  // 表现就是「webview 发了、宿主没收到」）——与 CTX-12「未知消息静默丢弃」同族。
+  private async handleInput(
+    msg: Extract<WebviewToExtensionMessage, { type: 'input' }>,
+  ): Promise<void> {
     if (!this._agent) {
       // Agent 未装配（可能仍在懒装配中）：提示用户稍候，而非静默无反应
       void vscode.window.showWarningMessage('Memora：Agent 尚未就绪，请稍候片刻再发送');
@@ -3247,7 +3327,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       case 'send': {
         const text = msg.text?.trim() ?? '';
         if (!text) return;
-        await this.sendInput(text, msg.skillName, msg.refs);
+        await this.sendInput(text, msg.skillName, msg.refs, msg.injections);
         return;
       }
       case 'answer': {
@@ -3301,7 +3381,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 判据为 `isPauseWaiting() || isAskWaiting()`（相位蕴含
    * status，且区分 ask/pause 两形态由 handleInput 的 kind 分流，此处仅需「暂停可续」为真）。
    */
-  private async sendInput(input: string, skillName?: string, refs?: ChatRef[]): Promise<void> {
+  private async sendInput(
+    input: string,
+    skillName?: string,
+    refs?: ChatRef[],
+    injections?: Exclude<InjectionSource, 'active-file'>[],
+  ): Promise<void> {
     // 防御守卫（单一路由下 handleInput 已前置检查 Agent 就绪；此处局部收窄供 TS 控制流使用，
     // 属性访问不受方法间守卫影响，需非空局部变量）
     const agent = this._agent;
@@ -3447,17 +3532,44 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       injectDoc ? undefined : docSnap?.relativePath,
       missingFileRefPaths,
     );
-    const chatInput = buildInjectedContextEnvelope([skillBlock, docBlock, refsBlock], input);
+    // 注入型上下文（HOST-CTX-4 ④）：**发送时刻**采集。挂载只记通道标记（webview 组合态），
+    // 宿主此刻才 getDiagnostics() ⇒ 模型拿到的是最新一份；零诊断时采集器返回「事实行」
+    // 而非空串（用户挂了标签就有权知道「确实没有」——静默空块 = 静默失败族）。
+    const problemsMounted = injections?.includes('problems') ?? false;
+    const problemsBlock = problemsMounted
+      ? buildProblemsContextBlock(await collectProblemsBody())
+      : '';
+    // 块序：技能 / 文档 / 诊断（注入内容在前）→ 引用（指针在后）。剥离侧以「最后一个
+    // 成对块闭标签」为锚点，顺序不影响正确性，但注入块与指针块分组便于人读。
+    const chatInput = buildInjectedContextEnvelope(
+      [skillBlock, docBlock, problemsBlock, refsBlock],
+      input,
+    );
+    // 本轮注入汇总（HOST-CTX-4 ②）：**唯一真源** = 按源分项 + 合计。活动文件的 token 数
+    // 原长在 ActiveFileProjection 的私有字段上（CTX-6②），注入源一多就是并列腐化且违反
+    // 硬约束②「同一处呈现」⇒ 统一迁到此处，活动文件降为其中一个分项。
+    // 估算口径仍 = 内核 estimateTokensText（宿主自估即第二真理源）；total 恒等于分项之和
+    // （webview 不得再算一遍——两个口径必然漂移）。
+    const segments: InjectionSegment[] = [
+      injectDoc
+        ? { source: 'active-file', injected: true, tokens: estimateTokensText(docBlock) }
+        : { source: 'active-file', injected: false },
+    ];
+    if (problemsMounted) {
+      segments.push({
+        source: 'problems',
+        injected: true,
+        tokens: estimateTokensText(problemsBlock),
+      });
+    }
+    const total = segments.reduce((sum, s) => sum + (s.tokens ?? 0), 0);
+    // 先发汇总、再回推活动文件投影：chip 徽记读的是汇总里 active-file 分项，两条跨帧到达时
+    // 先渲染成「无数字」再补上会闪一帧（同批发 + 顺序在先即无此窗口）。
+    // MUTATION-TEST: 临时对调顺序
+    this.post({ type: 'injection_summary', summary: { segments, total } });
     // 用**本轮实际消费的那份快照**回推 chip：抹平「chip 显示的是切换瞬间的文件、
     // 真正发出去却是另一个」的窗口（force 绕去重——同状态也要让用户看到这一轮确实带了）。
-    // 注入量归因（HOST-CTX-6②）：token 估算**只在发送时刻取**——此刻 docBlock 已在手
-    // （零额外读取），估算口径 = 内核 estimateTokensText（宿主自估即第二真理源）。
-    // 实时投影（每击键）不带此字段：正文惰性纪律（CTX-3 收尾）不被显示需求破坏。
-    const projection =
-      injectDoc && activeFile.projection.kind === 'attached'
-        ? { ...activeFile.projection, injectedTokens: estimateTokensText(docBlock) }
-        : activeFile.projection;
-    this.postActiveFile(projection, true);
+    this.postActiveFile(activeFile.projection, true);
 
     // runFlow 统一管理 AbortController + consumeFlow + 同步抛错兜底
     // seed：把开轮用户输入交给 live 轮投影。内容用 `chatInput`（与内核 `appendUser`
@@ -4817,6 +4929,10 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             <button id="currentRoleBadge" class="role-badge" type="button" title="点击管理角色包"></button>
             <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
           </div>
+          <!-- 本轮注入汇总徽记（HOST-CTX-4 ②）：与圆环同处状态行、紧邻其左——「本轮注入 ≈N」
+               是**发送后**才有的一次性回执（token 数只有发送时刻量得准），下一轮发送覆盖、
+               复位清。分项明细进 title（hover 可辨），与 S3-2「常驻一瞥 + hover 精确」同款分层。 -->
+          <span id="injectionBadge" class="injection-badge" hidden></span>
           <!-- 上下文占用圆环：常驻不占行，非噪点；首帧由 chat_providers 渲染所选模型容量上限，
                真实分层占用由首轮后 context_occupancy 覆盖。
                hover 卡片 = 分层明细文字（上）+ 占用构成条（下）。构成条（HOST-S3-2）2026-10-18

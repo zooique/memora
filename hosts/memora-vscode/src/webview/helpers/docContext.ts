@@ -32,6 +32,27 @@ export const REF_CONTEXT_OPEN = '[参考文件/目录]';
 export const REF_CONTEXT_CLOSE = '[/参考文件/目录]';
 
 /**
+ * 诊断上下文块开标签（HOST-CTX-4 · `@problems` 有界注入）
+ *
+ * 与文档块同为「成对块」（有开有闭）⇒ 剥离侧（`stripInjectedContextPrefix`）以**闭标签**
+ * 为锚点，避免块内正文（诊断消息 / 源码行可能含「用户请求：」字样）干扰分隔符搜索。
+ * 判据与文档块同源，不另造一套。
+ */
+export const PROBLEMS_CONTEXT_OPEN = '[工作区诊断]';
+
+/** 诊断上下文块闭标签（剥离侧锚点） */
+export const PROBLEMS_CONTEXT_CLOSE = '[/工作区诊断]';
+
+/**
+ * 构造诊断上下文块（`[工作区诊断]\n{body}\n[/工作区诊断]`）
+ *
+ * `body` 由 `problemsCollector.collectProblemsText` 在**发送时刻**产出（有界、含截断说明）。
+ */
+export function buildProblemsContextBlock(body: string): string {
+  return `${PROBLEMS_CONTEXT_OPEN}\n${body}\n${PROBLEMS_CONTEXT_CLOSE}`;
+}
+
+/**
  * 单条引用的信封行（**引用模式**：只给指针 + 读取参数，不注入内容）
  *
  * 带行区间时把 `read_file` 的 offset/limit **算好摆出来**——模型不必自己算
@@ -147,11 +168,13 @@ export function buildInjectedContextEnvelope(
  * 剥离 user 消息中宿主注入的上下文前缀，还原用户请求原文（仅用于 UI 回显）
  *
  * 判据（缺一不剥）：
- *   1. 消息中确有宿主注入块 —— 含文档块开标签，或**以技能块开标签开头**
- *      （技能块恒为信封首块；普通消息即便含「用户请求：」字样也不满足此条）；
+ *   1. 消息中确有宿主注入块 —— 含文档块 / 诊断块开标签，或含引用块开标签，或
+ *      **以技能块开标签开头**（技能块恒为信封首块；普通消息即便含「用户请求：」
+ *      字样也不满足此条）；
  *   2. 锚点之后存在信封分隔符。
- * 锚点：含文档块时取**开标签之后的首个闭标签**（文档正文可能自带「用户请求：」字样，
- * 必须排除在搜索区外）；技能块无闭标签，故纯技能场景自 0 起搜索。
+ * 锚点：取**最后一个成对块（文档块 / 诊断块）闭标签之后**（块内正文可能自带
+ * 「用户请求：」字样，必须排除在搜索区外）；技能块无闭标签、引用块旧例不进锚点计算，
+ * 故纯技能 / 仅引用场景自 0 起搜索。
  * 用户 input 内含「用户请求：」必然出现在注入分隔符之后，不会被误剥。
  *
  * 已知局限（非破坏性）：技能正文为载体自由撰写，若正文自身含「用户请求：」，
@@ -164,14 +187,30 @@ export function buildInjectedContextEnvelope(
 export function stripInjectedContextPrefix(content: string): string {
   const openIdx = content.indexOf(DOC_CONTEXT_OPEN);
   // 判据 1：无宿主注入块 → 普通消息（resume 补写 / 无上下文），原样返回
-  if (openIdx < 0 && !content.startsWith(SKILL_CONTEXT_OPEN) && !content.includes(REF_CONTEXT_OPEN))
+  if (
+    openIdx < 0 &&
+    !content.startsWith(SKILL_CONTEXT_OPEN) &&
+    !content.includes(REF_CONTEXT_OPEN) &&
+    !content.includes(PROBLEMS_CONTEXT_OPEN)
+  )
     return content;
 
+  // 锚点 = 最后一个**成对块**闭标签之后（文档块 / 诊断块）：块内正文若自带
+  // `\n\n用户请求：`，不排除在搜索区外就会从块内截断 ⇒ 注入内容被当用户请求回显。
+  // 有开无闭 = 畸形消息 ⇒ 该块不进锚点（保持既有「不误剥」语义）。
+  // ⚠️ 新增成对块（未来的终端输出 / diff）**必须在此登记**：诊断块当前正文经采集器 clip
+  // 压平（不含空行）⇒ 本条对它属纵深而非必需；未压平的块缺登记即锚点失效。
   let from = 0;
-  if (openIdx >= 0) {
-    const closeIdx = content.indexOf(DOC_CONTEXT_CLOSE, openIdx);
-    if (closeIdx < 0) return content; // 有开无闭 → 畸形消息，不误剥
-    from = closeIdx + DOC_CONTEXT_CLOSE.length;
+  const paired: readonly [string, string][] = [
+    [DOC_CONTEXT_OPEN, DOC_CONTEXT_CLOSE],
+    [PROBLEMS_CONTEXT_OPEN, PROBLEMS_CONTEXT_CLOSE],
+  ];
+  for (const [open, close] of paired) {
+    const o = content.indexOf(open);
+    if (o < 0) continue;
+    const c = content.indexOf(close, o);
+    if (c < 0) continue;
+    from = Math.max(from, c + close.length);
   }
 
   // 判据 2：锚点之后无分隔符 → 无信封（如仅注入块、无用户请求），原样返回

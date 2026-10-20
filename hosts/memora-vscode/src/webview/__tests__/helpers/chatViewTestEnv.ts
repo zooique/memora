@@ -123,6 +123,8 @@ const HTML = `
           </div>
           <!-- ④ 预算可视化：状态行右端上下文占用圆环；构成条在圆环 hover 卡片内（2026-10-18 移入，
                镜像生产 chatPanel.ts：卡片 = 明细文字 + 构成条，输入条只留圆环单信号） -->
+          <!-- 本轮注入汇总徽记（HOST-CTX-4 ②，镜像生产 chatPanel.ts：与圆环同处状态行、紧邻其左） -->
+          <span id="injectionBadge" class="injection-badge" hidden></span>
           <div id="contextOccupancy" class="context-ring" hidden>
             <svg class="context-ring__svg" viewBox="0 0 40 40" aria-hidden="true">
               <circle class="context-ring__track" cx="20" cy="20" r="16" />

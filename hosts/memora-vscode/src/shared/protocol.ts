@@ -185,16 +185,52 @@ export type ActiveFileProjection =
       injected: boolean;
       /** 必须注入的原因（`injected=false` 时缺省） */
       reason?: 'dirty' | 'untitled' | 'outside';
-      /**
-       * **本轮**注入正文块的 token 估算（内核 `estimateTokensText` 同源口径；CTX-6②归因）。
-       *
-       * ⚠️ 仅「发送后用本轮实际快照 force 回推」时携带——取数时机 = 发送时刻
-       * （`docBlock` 已在手，零额外读取）；实时投影（每击键）**刻意不带**：正文惰性
-       * （CTX-3 收尾），若为实时显示 token 而恢复每击键读全文，就是把效率回退请回来。
-       * 下一次显示订阅推送会自然抹掉本字段 ⇒ chip 上它是「本轮带了多大」，非常驻值。
-       */
-      injectedTokens?: number;
     };
+
+/**
+ * 注入型上下文的来源（HOST-CTX-4 定案）
+ *
+ * `HOST-CTX-0` 定案 = 引用模式（只挂指针、模型自取）；本枚举承载的是该定案**唯一**的
+ * 例外——无引用对象的瞬态 / 派生数据（内核工具箱里没有 git / 诊断 / 终端读取，
+ * 「提示模型去看」此路不通）⇒ 允许有界注入。四条硬约束（有界 / 计预算 / 明示 / 不泛化）
+ * 的真源在台账 HOST-CTX-0「定案例外清单」，此处只登记枚举。
+ *
+ * ⚠️ **不预建未落地的源**：本枚举随落地逐笔追加（第一笔 = `problems`）。把未来源写进来
+ * 等于给「未拍板的语义」发身份证（D6：不预支）。
+ * `active-file` 是既有的注入源（脏 / 未命名 / 工作区外时注入正文），随 CTX-4 ② 一起
+ * 降为本枚举的一个分项（原先它的 token 数长在 `ActiveFileProjection` 私有字段上）。
+ */
+export type InjectionSource = 'active-file' | 'problems';
+
+/** 注入汇总的一个分项（**按源归因**，HOST-CTX-4 ②） */
+export type InjectionSegment = {
+  source: InjectionSource;
+  /**
+   * 本轮该源**是否真的注入了内容**。
+   *
+   * `false` 的两种形态（都必须在 UI 上如实表达，不得静默）：① 挂了标记但发送时刻
+   * 无内容可取（如当前工作区零诊断）⇒ 信封里给一行「当前无诊断」，模型知道用户
+   * 挂了、也知道确实没有；② 该源本轮未挂载。
+   */
+  injected: boolean;
+  /** token 估算（内核 `estimateTokensText` 同源口径）；仅**发送后回推**携带 */
+  tokens?: number;
+};
+
+/**
+ * 本轮注入汇总（E→W，**发送后**回推一次）
+ *
+ * ⚠️ 这是「本轮注入了多少」的**唯一真源**：原先该数字长在 `ActiveFileProjection`
+ * 的私有字段上（CTX-6②），三个注入源各挂一个字段 = 并列腐化 + 违反硬约束②「与
+ * CTX-6 同一处呈现」。现统一按源分项，活动文件降为其中一个分项。
+ *
+ * ⚠️ `total` **恒等于各分项之和**（由发送侧单点计算，webview 不得再算一遍；
+ * 另算一个整块估算 = 第二真理源，两口径必然漂移）。
+ */
+export type InjectionSummary = {
+  segments: InjectionSegment[];
+  total: number;
+};
 
 /**
  * 引用的身份键与去重规则见 `shared/refKey.ts`（**独立小模块**，非本文件）。
@@ -259,6 +295,17 @@ export type WebviewToExtensionMessage =
       answers?: string[];
       skillName?: string;
       refs?: ChatRef[];
+      /**
+       * 本轮挂载的**注入型**上下文来源（HOST-CTX-4 ④：挂载只记通道标记）
+       *
+       * 与 `refs` 的关键差别：引用挂载即定值（路径 / 行号点下那刻就定了），注入类是
+       * **瞬态数据**——挂载时**不取数**，宿主收到本字段后在**发送时刻**才去采集
+       * （`getDiagnostics()` / 未来的 diff、终端），保证模型看到的是最新的一份。
+       * 宿主不持有注入态（无第二真理源），组合态归 webview，本字段只作「本轮要哪些」的声明。
+       *
+       * `Exclude<…,'active-file'>`：活动文件是宿主自动附加（CTX-3），不是用户挂载项。
+       */
+      injections?: Exclude<InjectionSource, 'active-file'>[];
     }
   /**
    * 打开大模型配置视图（对话面板空态引导按钮触发）
@@ -1253,6 +1300,39 @@ export type ExtensionToWebviewMessage =
    * webview 未就绪时无需缓冲：②承担补齐（状态可随时由宿主重算，不像 refs 是用户输入）。
    */
   | { type: 'active_file'; projection: ActiveFileProjection }
+  /**
+   * 挂载一枚注入型上下文 chip（E→W，HOST-CTX-4）
+   *
+   * 由宿主 @ 提及 QuickPick 里的**特殊关键字项**（「诊断（问题面板）」）选中后发出，
+   * 与 `addRef` 同构（宿主发、webview 挂），但**刻意不复用 `addRef`**——`ChatRef`
+   * 的契约是「只挂指针不携内容」，把注入源塞进去会当场破掉该不变量（CTX-4 前置边界）。
+   *
+   * 挂载是**幂等**的：同一 `source` 重复挂载保持一枚（身份判据 = 来源枚举，不是内容
+   * 哈希——瞬态数据每轮内容都变，哈希判据会把「新一轮」误判为重复吞掉）。
+   *
+   * `via: 'mention'` 与 `addRef` 的 `source: 'mention'` **同义**（入口通道标记）：本条由
+   * @ 提及通道触发，webview 收到后撤掉输入框里那个 '@'（只选了关键字项时若不撤，'@'
+   * 会当正文一起发出去）。字段名不能也叫 `source`——本消息的 `source` 已是**来源枚举**。
+   */
+  | {
+      type: 'add_injection';
+      source: Exclude<InjectionSource, 'active-file'>;
+      via?: 'mention';
+    }
+  /**
+   * 本轮注入汇总回推（E→W，HOST-CTX-4 ②）：按源分项 + 合计
+   *
+   * **只在发送后推一次**——token 数只有在发送时刻才量得准（此刻内容已在手，零额外读取）；
+   * 实时投影（每击键）刻意不发 ⇒ 不为显示需求恢复惰性读取（CTX-3 收尾的同款纪律）。
+   * 呈现落点：输入条状态区（上下文圆环旁）「本轮注入 ≈N」+ title 出分项明细；活动文件
+   * chip 的徽记也读本消息（渲染两处、数据一次）。
+   *
+   * ⚠️ 与 `active_file` **同批发且本条在先**（sendInput 内相邻两行）：本消息只把数字
+   * 「预备」下来，由紧随其后的 `active_file` 投影认领后才上 chip——顺序颠倒 chip 就借
+   * 不到本轮数字；而中途（编辑器切换等）不带本消息的投影推送一律清零，不借用上一轮
+   * 的数字给新文件（数字错配比不显示更坏）。
+   */
+  | { type: 'injection_summary'; summary: InjectionSummary }
   /**
    * 输入框文本润色结果（对 polish_input 的应答）
    *

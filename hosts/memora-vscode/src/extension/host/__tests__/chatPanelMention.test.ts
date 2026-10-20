@@ -111,9 +111,7 @@ function setup() {
      * 分发方法）而非 onDidReceiveMessage——setup() 不跑 resolveWebviewView，回调未注册。
      */
     dispatch: (msg: unknown) =>
-      (provider as unknown as { handleWebviewMessage(m: unknown): void }).handleWebviewMessage(
-        msg,
-      ),
+      (provider as unknown as { handleWebviewMessage(m: unknown): void }).handleWebviewMessage(msg),
   };
 }
 
@@ -138,7 +136,13 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
     const p = h.cast.openMentionQuickPick();
     // 等回调注册完成（openMentionQuickPick 内部先填充 items 再注册 accept/hide）
     await vi.waitFor(() => expect(qp.onDidAccept).toHaveBeenCalled());
+    // HOST-CTX-4：关键字项（诊断）**恒置顶**，不与文件项混排（与 Roo Code / Cursor 同款）
     expect(qp.items).toEqual([
+      {
+        label: '诊断（问题面板）',
+        description: '注入当前工作区的错误 / 警告（发送时取最新，占预算）',
+        injection: 'problems',
+      },
       { label: 'b.md', description: 'docs/b.md', rel: 'docs/b.md' },
       { label: 'a.ts', description: 'src/a.ts', rel: 'src/a.ts' },
     ]);

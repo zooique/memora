@@ -9709,9 +9709,15 @@ describe('活动文件 chip（是否进本轮上下文 · 本会话开关）', (
     expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('已附全文');
   });
 
-  it('注入量归因（CTX-6②）：本轮回推带 injectedTokens → 徽记短显 ≈k、title 给全数', () => {
+  it('注入量归因（CTX-6② / HOST-CTX-4 ②）：汇总在先 + 投影认领 → 徽记短显 ≈k、title 给全数', () => {
     mountChatView();
-    dispatch(attached({ injected: true, reason: 'dirty', injectedTokens: 3258 }));
+    // 数字不再长在投影字段上（HOST-CTX-4 ② 迁出）：由 injection_summary 预备、紧随的
+    // active_file 投影认领。顺序反了就借不到数（把下面两行对调 ⇒ 本例即红）。
+    dispatch({
+      type: 'injection_summary',
+      summary: { segments: [{ source: 'active-file', injected: true, tokens: 3258 }], total: 3258 },
+    });
+    dispatch(attached({ injected: true, reason: 'dirty' }));
     const chip = document.querySelector('#refChips .active-file-chip') as HTMLElement;
     // 短显（3258 → ≈3.3k）挤得进徽记；全数在 title（悬停可见精确值）
     expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('未保存·全文已附 ≈3.3k');
@@ -9720,9 +9726,16 @@ describe('活动文件 chip（是否进本轮上下文 · 本会话开关）', (
     );
   });
 
-  it('常态投影（无 injectedTokens）不显示估算（判据已知、本轮规模未知，不造假数）', () => {
+  it('中途投影推送（不带汇总）不借上一轮数字（数字错配比不显示更坏）', () => {
     mountChatView();
+    dispatch({
+      type: 'injection_summary',
+      summary: { segments: [{ source: 'active-file', injected: true, tokens: 3258 }], total: 3258 },
+    });
     dispatch(attached({ injected: true, reason: 'dirty' }));
+    // 编辑器切换到另一个脏文件：宿主只推投影、不推汇总 ⇒ 本轮规模未知，必须清零，
+    // 不能把上一个文件（3258）的数字按在新文件 chip 上。
+    dispatch(attached({ injected: true, reason: 'dirty', label: 'docs/其他.md' }));
     const chip = document.querySelector('#refChips .active-file-chip') as HTMLElement;
     expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('未保存·全文已附');
     expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).not.toContain('token');

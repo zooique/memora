@@ -16,6 +16,7 @@
  */
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
+import { join } from 'node:path';
 import type { Agent } from '@zooique/memora';
 import { MAX_PENDING_INTERJECTIONS } from '../../shared/constants.js';
 import type { PendingQuestionDto, TurnState } from '../../shared/protocol.js';
@@ -39,7 +40,10 @@ vi.mock('vscode', async () => ({
   workspace: {
     workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],
     getConfiguration: vi.fn(() => ({ get: vi.fn(() => false) })),
+    textDocuments: [],
   },
+  // HOST-CTX-4：@problems 在**发送时刻**经本 API 取数（挂载只记通道标记，不取数）
+  languages: { getDiagnostics: vi.fn(() => []) },
 }));
 
 /** agent 桩：覆盖输入路由 + consumeFlow 尾部依赖的最小面 */
@@ -124,6 +128,7 @@ interface InputCast {
     text?: string;
     answers?: string[];
     skillName?: string;
+    injections?: 'problems'[];
   }): Promise<void>;
 }
 
@@ -377,5 +382,134 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     // （webview 无法 import 内核包）——两处声明靠本守卫锁同值，任一侧改值漂移即红
     const { LOOP_CONSTANTS } = await import('@zooique/memora');
     expect(MAX_PENDING_INTERJECTIONS).toBe(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// HOST-CTX-4 注入型上下文：`@problems` 发送时刻采集 + 按源归因
+//
+// 守两条（对应四问的 ② 与 ④）：
+//   ④ 采集时机 —— 上行只带**通道标记**，宿主在发送时刻才 getDiagnostics()；
+//      挂载即取数 / 缓存快照都会让模型看到过期的一份（CTX-3 缓存撒谎同款病根）。
+//   ② 承载位 —— 本轮注入量按源分项回推，合计 = 分项之和（webview 不得再算一遍）。
+// ═══════════════════════════════════════════════════════════
+describe('HOST-CTX-4 注入型上下文（@problems）', () => {
+  /** 造一个落在首根 `/mock/workspace` 下的诊断分组（getDiagnostics 的返回形） */
+  function diagGroup(rel: string, message: string, severity = 0) {
+    const fsPath = join('/mock/workspace', ...rel.split('/'));
+    return [
+      { toString: () => `file://${fsPath}`, fsPath },
+      [{ message, severity, range: { start: { line: 0, character: 0 } } }],
+    ];
+  }
+
+  it('挂载 @problems → 发送时刻取数并注入信封（上行只带通道标记，不带任何内容）', async () => {
+    const h = setupInput();
+    const { chat } = mount(h);
+    const vscodeMock = await import('vscode');
+    (vscodeMock.languages.getDiagnostics as ReturnType<typeof vi.fn>).mockReturnValue([
+      diagGroup('src/a.ts', 'boom'),
+    ]);
+
+    await h.cast.handleInput({ kind: 'send', text: '帮我修', injections: ['problems'] });
+
+    const sent = chat.mock.calls[0][0] as string;
+    expect(sent).toContain('[工作区诊断]');
+    expect(sent).toContain('src/a.ts');
+    expect(sent).toContain('boom');
+    // 用户请求仍在信封末尾（剥离契约：回放可还原）
+    expect(sent).toContain('帮我修');
+  });
+
+  it('未挂载 → 信封不含诊断块（反向守卫：不悄悄塞内容）', async () => {
+    const h = setupInput();
+    const { chat } = mount(h);
+    const vscodeMock = await import('vscode');
+    (vscodeMock.languages.getDiagnostics as ReturnType<typeof vi.fn>).mockReturnValue([
+      diagGroup('src/a.ts', 'boom'),
+    ]);
+
+    await h.cast.handleInput({ kind: 'send', text: '普通提问' });
+
+    expect(chat.mock.calls[0][0]).not.toContain('[工作区诊断]');
+    expect(chat.mock.calls[0][0]).not.toContain('boom');
+  });
+
+  it('零诊断仍注入“事实行”（用户挂了标签却什么都没送出去 = 静默失败）', async () => {
+    const h = setupInput();
+    const { chat } = mount(h);
+    const vscodeMock = await import('vscode');
+    (vscodeMock.languages.getDiagnostics as ReturnType<typeof vi.fn>).mockReturnValue([]);
+
+    await h.cast.handleInput({ kind: 'send', text: '有错吗', injections: ['problems'] });
+
+    const sent = chat.mock.calls[0][0] as string;
+    expect(sent).toContain('[工作区诊断]');
+    expect(sent).toContain('没有错误或警告诊断');
+  });
+
+  it('回推 injection_summary：按源分项，合计 = 分项之和（唯一真源，webview 不再算）', async () => {
+    const h = setupInput();
+    mount(h);
+    const vscodeMock = await import('vscode');
+    (vscodeMock.languages.getDiagnostics as ReturnType<typeof vi.fn>).mockReturnValue([
+      diagGroup('src/a.ts', 'boom'),
+    ]);
+
+    await h.cast.handleInput({ kind: 'send', text: '帮我修', injections: ['problems'] });
+
+    const summary = h.posted.find((m) => (m as { type?: string }).type === 'injection_summary') as {
+      summary: {
+        segments: { source: string; injected: boolean; tokens?: number }[];
+        total: number;
+      };
+    };
+    expect(summary).toBeTruthy();
+    // 活动文件也降为一个分项（本例无活动编辑器 ⇒ injected=false、无 tokens）
+    const af = summary.summary.segments.find((s) => s.source === 'active-file');
+    const pb = summary.summary.segments.find((s) => s.source === 'problems');
+    expect(af?.injected).toBe(false);
+    expect(pb?.injected).toBe(true);
+    expect(typeof pb?.tokens).toBe('number');
+    expect(summary.summary.total).toBe(
+      summary.summary.segments.reduce((n, s) => n + (s.tokens ?? 0), 0),
+    );
+  });
+
+  it('汇总先于活动文件投影回推（同批发、顺序在先：否则 chip 借不到本轮数字）', async () => {
+    const h = setupInput();
+    mount(h);
+    const vscodeMock = await import('vscode');
+    (vscodeMock.languages.getDiagnostics as ReturnType<typeof vi.fn>).mockReturnValue([]);
+
+    await h.cast.handleInput({ kind: 'send', text: '走一轮', injections: ['problems'] });
+
+    const types = h.posted.map((m) => (m as { type?: string }).type);
+    const iSummary = types.indexOf('injection_summary');
+    const iActive = types.lastIndexOf('active_file');
+    expect(iSummary).toBeGreaterThanOrEqual(0);
+    expect(iActive).toBeGreaterThanOrEqual(0);
+    expect(iSummary).toBeLessThan(iActive);
+  });
+
+  it('取数失败不得让整条发送挂掉（信封里留一句事实，而非静默空块）', async () => {
+    const h = setupInput();
+    const { chat } = mount(h);
+    const vscodeMock = await import('vscode');
+    // getDiagnostics 抛错（现实中极少，但若发生：没有兜底 = 用户点发送后毫无反应，
+    // 正是本项目已踩过四次的「静默失败」族）
+    (vscodeMock.languages.getDiagnostics as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error('diagnostics blew up');
+    });
+
+    await h.cast.handleInput({ kind: 'send', text: '帮我修', injections: ['problems'] });
+
+    // ① 消息照常发出（不挂）
+    expect(chat).toHaveBeenCalledTimes(1);
+    const sent = chat.mock.calls[0][0] as string;
+    // ② 信封里有**事实**：挂了但没拿到 ⇒ 模型知道，而不是收到空块后凭空编诊断
+    expect(sent).toContain('[工作区诊断]');
+    expect(sent).toContain('采集失败');
+    expect(sent).toContain('帮我修');
   });
 });

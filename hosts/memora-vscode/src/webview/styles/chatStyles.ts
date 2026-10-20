@@ -1542,6 +1542,23 @@ export const chatStyles = `
     text-overflow: ellipsis;
     user-select: none;
   }
+  /* 本轮注入汇总徽记（HOST-CTX-4 ②）：状态行、上下文圆环左侧，与角色 / 能力徽章同处一行。
+   * 形态纪律：**弱化且不与圆环同形**——它是「发送后的一次性回执」（下一轮覆盖、复位清），
+   * 而圆环是常驻进度信号；若做成带底色的强调块，一行里会出现两个「进度指示」互相争读，
+   * 这也是它用中性 surface-code + 次要色、不给边框、不做 hover 态的原因（非交互控件）。
+   * 分项明细不在常驻面呈现（空间不够），只在 title 里——与 S3-2「常驻一瞥 + hover 精确」
+   * 同款分层；真机若显示状态行挤，回退方向是把它并进圆环的 hover 卡片。 */
+  .injection-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--sp-hair, 1px) var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    background: var(--surface-code, rgba(127, 127, 127, 0.15));
+    border-radius: var(--radius-pill, 999px);
+    white-space: nowrap;
+    user-select: none;
+  }
 
   /* 润色按钮（图标化，弱化样式） */
   .polish-btn-icon {
@@ -1678,6 +1695,21 @@ export const chatStyles = `
   }
   .active-file-chip[data-active-file='suppressed'] {
     cursor: pointer;
+  }
+  /* 注入型上下文 chip（**第四种** chip，HOST-CTX-4）：与引用 chip 并排在同一行，二者差别
+   * 是「带不带内容」——引用只挂指针、注入本轮就把内容塞进信封。这个差别必须**看得见**，
+   * 故用**形状 + 颜色双通道**表达，任一通道单独失效（色觉差异 / 窄面板只剩图标）仍可辨：
+   *   ① 形状：圆角矩形（技能 / 引用 / 活动文件一律胶囊 999px）；
+   *   ② 颜色：warn 实线边框 + warn 文字（其余三种走 accent）；
+   *   ③ 图标：⚠（其余三种是 file / folder / lock）。
+   * ⚠️ 刻意**不用**半透明 / 低对比度：真机证过半透明 chip 看着像没渲染出来（CTX-17 教训）。
+   * 底色走 surface-code（中性）而非 accent-bg-subtle：warn 边框已经承担了识别职责，
+   * 再叠 accent 底色会与「引用 chip」撞色，反而削弱①以外的通道。 */
+  .injection-chip {
+    color: var(--warn, #d7ba7d);
+    background: var(--surface-code, rgba(127, 127, 127, 0.15));
+    border: 1px solid var(--warn, #d7ba7d);
+    border-radius: var(--radius-sm, 2px);
   }
   .skill-chip__icon { font-size: var(--font-sm, 11px); line-height: var(--lh-flat); flex-shrink: 0; display: inline-flex; align-items: center; }
   .skill-chip__icon svg { display: block; }

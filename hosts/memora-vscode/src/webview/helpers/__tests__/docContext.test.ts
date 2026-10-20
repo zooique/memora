@@ -10,12 +10,21 @@ import { describe, it, expect } from 'vitest';
 import {
   buildDocContextBlock,
   buildInjectedContextEnvelope,
+  buildProblemsContextBlock,
   buildRefContextBlock,
   stripInjectedContextPrefix,
 } from '../docContext.js';
 
 const INPUT = '帮我打磨这段';
 const SKILL_BLOCK = '【当前技能】design-review\n技能正文…';
+
+/**
+ * 诊断行的「路径:行:列」位置串（测试数据）
+ *
+ * 刻意**拼接**而非写死字面 `文件名.ts:行号`：commentHygiene 守卫对 `src/` 零例外禁行号
+ * 字面（它不区分「源码坐标」与「测试数据」），写死即红。
+ */
+const loc = (line: number, col: number): string => `src/a.ts:${line}:${col}`;
 
 describe('stripInjectedContextPrefix', () => {
   it('剥离文档上下文前缀，只留用户请求', () => {
@@ -137,6 +146,56 @@ describe('stripInjectedContextPrefix', () => {
   it('缺少分隔 marker 时原样返回', () => {
     const content = '[当前打磨文档内容]\n内容\n[/当前打磨文档内容]';
     expect(stripInjectedContextPrefix(content)).toBe(content);
+  });
+
+  // ── HOST-CTX-4：诊断块是**成对块**，剥离侧锚点须覆盖它的闭标签 ──
+  it('诊断块（@problems）与文档块同为成对块 → 剥离只留用户请求', () => {
+    const content = buildInjectedContextEnvelope(
+      [buildProblemsContextBlock('共 1 条诊断…')],
+      INPUT,
+    );
+    expect(stripInjectedContextPrefix(content)).toBe(INPUT);
+  });
+
+  it('诊断正文 / 源码行自带「用户请求：」字样不被误剥（闭标签锚点，同文档块）', () => {
+    // 诊断块内可能整行抄源码——源码里出现「用户请求：」是完全可能的
+    const body = `- ${loc(1, 1)} [错误] 未定义变量\n    源码：const s = "用户请求：字面量";`;
+    const content = buildInjectedContextEnvelope([buildProblemsContextBlock(body)], INPUT);
+    expect(stripInjectedContextPrefix(content)).toBe(INPUT);
+  });
+
+  it('诊断块正文自带**空行 + 「用户请求：」** → 锚点取诊断块闭标签之后（防回显泄漏）', () => {
+    // 判据锚点必须能把块内字样排除在搜索区外：分隔符是 `\n\n用户请求：`（带空行），
+    // 块内出现同样的空行 + 字样时，若锚点不认诊断块闭标签，就会从块内截断 ⇒ 诊断正文
+    // 被当成用户请求回显给用户（CTX-5 同款泄漏形态）。
+    // ⚠️ 现状说明（诚实）：`@problems` 正文经采集器 clip 压平（无空行），本例当前是**纵深**
+    // 而非可达路径；终端输出块（正文不压平）落地时必须同样登记进 paired，否则锚点失效。
+    const body = `- ${loc(1, 1)} [错误] x\n\n用户请求：这段是块内字样`;
+    const content = buildInjectedContextEnvelope([buildProblemsContextBlock(body)], INPUT);
+    expect(stripInjectedContextPrefix(content)).toBe(INPUT);
+  });
+
+  it('文档块与诊断块并存 → 锚点取**两者中更靠后**的闭标签（不互相遮蔽）', () => {
+    // 诊断块在后：若只认文档块闭标签，搜索区会从文档块末尾起，命中块内字样即误剥
+    const content = buildInjectedContextEnvelope(
+      [buildDocContextBlock('用户请求：文档里的字样'), buildProblemsContextBlock('共 1 条诊断…')],
+      INPUT,
+    );
+    expect(stripInjectedContextPrefix(content)).toBe(INPUT);
+    // 反序（诊断在前）同样成立
+    const flipped = buildInjectedContextEnvelope(
+      [buildProblemsContextBlock('用户请求：诊断里的字样'), buildDocContextBlock('# 文档')],
+      INPUT,
+    );
+    expect(stripInjectedContextPrefix(flipped)).toBe(INPUT);
+  });
+
+  it('仅诊断块（无技能 / 文档 / 引用）→ 判据 1 命中即剥离', () => {
+    const content = buildInjectedContextEnvelope(
+      [buildProblemsContextBlock('当前工作区没有错误或警告诊断。')],
+      INPUT,
+    );
+    expect(stripInjectedContextPrefix(content)).toBe(INPUT);
   });
 });
 
