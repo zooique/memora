@@ -31,6 +31,7 @@ import { openChatCommand } from './commands/openChat.js';
 import { runDemoCommand } from './commands/demo.js';
 import { FileChangeTracker } from './host/fileChangeTracker.js';
 import { FileChangeView } from './host/fileChangeView.js';
+import { selectionToRefRange } from './host/selectionRange.js';
 import {
   ACTIVE_ROLE_PACK_KEY,
   CONFIRM_WRITES_KEY,
@@ -40,7 +41,7 @@ import {
   USER_SKILLS_DIR_NAME,
   USER_ROLE_PACKS_DIR_NAME,
 } from '../shared/constants.js';
-import type { CustomSearchEngineConfig } from '../shared/protocol.js';
+import type { ChatRef, CustomSearchEngineConfig } from '../shared/protocol.js';
 
 /**
  * 解析工作区持久化根路径（SSOT，extension 与 assemble 共用同一来源）
@@ -801,7 +802,10 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       // 逐个判定 file/folder（stat type），算相对路径；stat 失败（如已删除）按 file 兜底
-      const refs: { path: string; kind: 'file' | 'folder' }[] = [];
+      const refs: ChatRef[] = [];
+      // 编辑器选区（仅「右键目标 = 当前编辑器文件」且非折叠选区时才带行区间）
+      const editor = vscode.window.activeTextEditor;
+      const sel = editor?.selection;
       for (const u of uris) {
         let kind: 'file' | 'folder' = 'file';
         try {
@@ -810,7 +814,14 @@ export function activate(context: vscode.ExtensionContext): void {
         } catch {
           // 保持 file 兜底（相对路径仍可用）
         }
-        refs.push({ path: vscode.workspace.asRelativePath(u), kind });
+        const ref: ChatRef = { path: vscode.workspace.asRelativePath(u), kind };
+        const isActiveFile = !!editor && editor.document.uri.fsPath === u.fsPath;
+        if (kind === 'file' && isActiveFile && sel) {
+          // 基准转换 + 空尾行边界都收在 selectionToRefRange 内（纯函数，可单测）
+          const range = selectionToRefRange(sel);
+          if (range) ref.range = range;
+        }
+        refs.push(ref);
       }
       // 先确保对话面板可见（未聚焦时 pushRefs 缓冲到 ready 后补发，与 prefillInput 同构）
       await vscode.commands.executeCommand('memora.chat.focus');

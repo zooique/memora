@@ -112,6 +112,8 @@ import {
   type PendingLiveRound,
 } from '../../shared/turnProjection.js';
 import { friendlyErrorMessage } from '../../shared/errorText.js';
+// 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
+import { dedupeRefs } from '../../shared/refKey.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
@@ -918,14 +920,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (this._view) {
       this.post({ type: 'addRef', refs });
     } else {
-      // 合并缓冲（多次右键累积，不覆盖），去重按 path
-      const merged = [...(this._pendingRefs ?? []), ...refs];
-      const seen = new Set<string>();
-      this._pendingRefs = merged.filter((r) => {
-        if (seen.has(r.path)) return false;
-        seen.add(r.path);
-        return true;
-      });
+      // 合并缓冲（多次右键累积，不覆盖）——去重走共享判据（含行区间，见 shared/refKey.ts）：
+      // 同文件不同选区是两条引用，按 path 去重会让第二次操作静默失效。
+      this._pendingRefs = dedupeRefs([...(this._pendingRefs ?? []), ...refs]);
     }
   }
 

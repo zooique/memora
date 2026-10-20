@@ -138,8 +138,34 @@ export type SearchEngineSetting = string;
  */
 export type WebviewInputKind = 'send' | 'answer' | 'resume';
 
-/** 对话引用（右键「添加到对话」挂到下一轮上下文）：文件或目录，仅存路径与形态，不携内容 */
-export type ChatRef = { path: string; kind: 'file' | 'folder' };
+/**
+ * 对话引用（右键「添加到对话」挂到下一轮上下文）：文件或目录
+ *
+ * **契约 = 引用模式**：只挂**指针**（路径 + 形态 + 可选行号），**不携内容**——
+ * 内容由模型按需经 `read_file` 读取（宿主上下文策略定案，见台账 HOST-CTX-0；
+ * 唯一例外是无引用对象的瞬态派生数据，见同条「定案例外清单」）。
+ */
+export type ChatRef = {
+  path: string;
+  kind: 'file' | 'folder';
+  /**
+   * 行范围（**1-based 闭区间**）。基准对齐内核 `read_file` 工具的 `offset` 参数
+   * （其描述明写「起始行号（从 1 开始）」）；整文件引用时缺省。
+   *
+   * ⚠️ **基准转换只在宿主侧做一次**：VS Code `selection.line` 是 0-based，
+   * 协议与 webview 一律 1-based——两处各转一次必漂移（SSOT）。
+   * ⚠️ 行号是**指针不是快照**：引用后文件被改动，行号指向的内容会变（已知代价，
+   * 由 `buildRefContextBlock` 在信封里提示模型以实际内容为准，不做拦截）。
+   */
+  range?: { start: number; end: number };
+};
+
+/**
+ * 引用的身份键与去重规则见 `shared/refKey.ts`（**独立小模块**，非本文件）。
+ *
+ * 不放本文件的理由：webview 需**值导入**这两个函数（不是 type），若放本协议文件
+ * 会把 1500+ 行协议的运行时常量一并打进 webview bundle；独立模块零依赖、体积可控。
+ */
 
 export type WebviewToExtensionMessage =
   /** Webview 脚本已就绪（监听器已注册），extension 可安全回放会话/推送数据 */

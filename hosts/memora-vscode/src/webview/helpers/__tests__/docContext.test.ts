@@ -56,6 +56,25 @@ describe('stripInjectedContextPrefix', () => {
     expect(block).toContain('- 参考目录：src/utils（内容按需经 read_file 读取）');
   });
 
+  it('带行区间的引用：输出 #L 区间 + read_file 的 offset/limit 参数（引用模式精确到行）', () => {
+    const block = buildRefContextBlock([
+      { path: 'src/foo.ts', kind: 'file' as const, range: { start: 5, end: 24 } },
+    ]);
+    expect(block).toContain('- 参考文件：src/foo.ts#L5-L24');
+    // 参数由宿主算好，模型不必自己推 limit = end - start + 1（算错即读偏）
+    expect(block).toContain('offset=5 limit=20');
+    // 行号是指针不是快照：明确提示模型以实际内容为准
+    expect(block).toContain('以实际内容为准');
+  });
+
+  it('单行区间（start === end）→ limit 为 1，不带冗余区间', () => {
+    const block = buildRefContextBlock([
+      { path: 'src/foo.ts', kind: 'file' as const, range: { start: 7, end: 7 } },
+    ]);
+    expect(block).toContain('#L7-L7');
+    expect(block).toContain('offset=7 limit=1');
+  });
+
   it('无前缀消息原样返回（resume 补写 / 无上下文场景）', () => {
     expect(stripInjectedContextPrefix('普通对话消息')).toBe('普通对话消息');
   });

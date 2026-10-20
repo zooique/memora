@@ -9,6 +9,7 @@
  * webview.asWebviewUri 在 HTML 中 <script src> 引用（CSP script-src 'self'）。
  */
 import type {
+  ChatRef,
   ExtensionToWebviewMessage,
   PendingQuestionDto,
   PlanItemDto,
@@ -16,6 +17,9 @@ import type {
   WebviewToExtensionMessage,
   BackgroundTaskView,
 } from '../../shared/protocol.js';
+// 引用身份键与去重判据：**必须**与宿主缓冲共用同一实现——同文件不同选区是两条引用，
+// 若各自按 path 判等，chip 的锁 / 移除会误伤同 path 的另一条（见 shared/refKey.ts）。
+import { dedupeRefs, refKeyOf } from '../../shared/refKey.js';
 // ProcessThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
 // ArchiveMode 纯类型导入（同 ProcessEvent）：仅编译期用，esbuild 剥离，不引入运行时依赖
 import type { ArchiveMode, ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
@@ -159,7 +163,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let currentSkill: { name: string; disabled?: boolean; pinned: boolean } | null = null;
   // 引用行（右键「添加到对话」挂的文件/目录，与 skillChipRow 同构复用样式；file/folder 二态）
   const refChipRow = document.getElementById('refChips') as HTMLElement | null;
-  let currentRefs: { path: string; kind: 'file' | 'folder'; pinned: boolean }[] = [];
+  let currentRefs: {
+    path: string;
+    kind: 'file' | 'folder';
+    /** 行区间（1-based 闭区间，宿主已转换；整文件引用时缺省） */
+    range?: { start: number; end: number };
+    pinned: boolean;
+  }[] = [];
   // 活动状态条（瞬态单条：error/info 通知，info 2500ms / error 8000ms 自动撤）
   const activityBar = document.getElementById('activityBar') as HTMLElement;
   // 状态抽屉（C1，2026-10-05）：静态骨架，入口 chip + 下拉体 panel（内含控件段 controls
@@ -6449,7 +6459,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       text,
       ...(currentSkill ? { skillName: currentSkill.name } : {}),
       ...(currentRefs.length
-        ? { refs: currentRefs.map((r) => ({ path: r.path, kind: r.kind })) }
+        ? {
+            refs: currentRefs.map((r) => ({
+              path: r.path,
+              kind: r.kind,
+              ...(r.range ? { range: r.range } : {}),
+            })),
+          }
         : {}),
     };
     vscode.postMessage(payload);
@@ -6920,24 +6936,39 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     skillChipRow.appendChild(chip);
   }
 
+  /** 引用 chip 显示名：整文件 = 路径；带选区 = 路径#L{start}（单行）或 #L{start}-L{end} */
+  function refLabel(ref: { path: string; range?: { start: number; end: number } }): string {
+    if (!ref.range) return ref.path;
+    const { start, end } = ref.range;
+    return start === end ? `${ref.path}#L${start}` : `${ref.path}#L${start}-L${end}`;
+  }
+
   /** 接收宿主推送的引用（右键「添加到对话」）：合并去重后渲染气泡行。
-   * SSOT = currentRefs 数组；同一 path 不重复挂（多次右键同一文件只留一个气泡）。 */
-  function addRefs(refs: { path: string; kind: 'file' | 'folder' }[]): void {
-    const seen = new Set(currentRefs.map((r) => r.path));
-    for (const r of refs) {
-      if (!seen.has(r.path)) {
-        // 新挂载默认不钉住（发送即清，保持现状）；已存在同 path 的走上面 seen 分支，
-        // 不会重置其 pinned（保留用户已钉的锁）。
-        currentRefs.push({ path: r.path, kind: r.kind, pinned: false });
-        seen.add(r.path);
+   * SSOT = currentRefs 数组；去重判据 = `refKeyOf`（**含行区间**，与宿主缓冲同源）：
+   * 整文件与其某段选区是**两条**引用，按 path 去重会让后加的那条静默失效。 */
+  function addRefs(refs: ChatRef[]): void {
+    const seen = new Set(currentRefs.map(refKeyOf));
+    for (const r of dedupeRefs(refs)) {
+      const key = refKeyOf(r);
+      if (!seen.has(key)) {
+        // 新挂载默认不钉住（发送即清，保持现状）；已存在的走上面 seen 分支，
+        // 不会重置其 pinned（保留用户已钉的锁）。无 range 时不写该字段（保持「缺省」语义）。
+        currentRefs.push({
+          path: r.path,
+          kind: r.kind,
+          ...(r.range ? { range: r.range } : {}),
+          pinned: false,
+        });
+        seen.add(key);
       }
     }
     renderRefChips();
   }
 
-  /** 在输入盒内、textarea 上方构建/清空「路径 + × 可移除」的引用 chip（附件行成员）。
+  /** 在输入盒内、textarea 上方构建/清空「路径 + 🔒 + ×」的引用 chip（附件行成员）。
    * 与技能 chip 同构复用 .skill-chip* 样式；file/folder 二态仅图标与 title 区分，不造新 CSS 范式。
-   * × 点击移除 = 从 currentRefs 过滤并刷新（单一真理源，渲染路径唯一）。 */
+   * 🔒 点击切 pinned（发送后是否保留）；× 点击移除 = 从 currentRefs 过滤并刷新
+   * （单一真理源，渲染路径唯一）。 */
   function renderRefChips(): void {
     if (!refChipRow) return;
     refChipRow.textContent = '';
@@ -6963,7 +6994,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       chip.appendChild(icon);
       const name = document.createElement('span');
       name.className = 'skill-chip__name';
-      name.textContent = ref.path;
+      const label = refLabel(ref);
+      name.textContent = label;
       chip.appendChild(name);
       // 常驻锁切换（🔒）：与 ✕ 语义二分——🔒 只切「发送后是否保留」，✕ 才是移除。
       const pin = document.createElement('button');
@@ -6976,10 +7008,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       pin.innerHTML = getIconSvg(ref.pinned ? 'lock' : 'lock-open', 11, 11);
       pin.setAttribute('aria-pressed', String(ref.pinned));
       pin.setAttribute('title', ref.pinned ? '取消常驻（发送后清除）' : '常驻（发送后保留）');
-      pin.setAttribute('aria-label', (ref.pinned ? '取消常驻：' : '常驻：') + ref.path);
+      pin.setAttribute('aria-label', (ref.pinned ? '取消常驻：' : '常驻：') + label);
       pin.addEventListener('click', () => {
+        // 按身份键匹配（非 path）：同文件不同选区是两条引用，按 path 会一并翻转
+        const key = refKeyOf(ref);
         currentRefs = currentRefs.map((r) =>
-          r.path === ref.path ? { ...r, pinned: !r.pinned } : r,
+          refKeyOf(r) === key ? { ...r, pinned: !r.pinned } : r,
         );
         renderRefChips();
       });
@@ -6988,10 +7022,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       remove.type = 'button';
       remove.className = 'skill-chip__remove';
       remove.innerHTML = getIconSvg('close', 11, 11);
-      remove.setAttribute('title', `移除引用：${ref.path}`);
-      remove.setAttribute('aria-label', `移除引用：${ref.path}`);
+      remove.setAttribute('title', `移除引用：${label}`);
+      remove.setAttribute('aria-label', `移除引用：${label}`);
       remove.addEventListener('click', () => {
-        currentRefs = currentRefs.filter((r) => r.path !== ref.path);
+        // 同 pin：按身份键过滤（非 path），否则删一条会带走同 path 的另一条选区引用
+        const key = refKeyOf(ref);
+        currentRefs = currentRefs.filter((r) => refKeyOf(r) !== key);
         renderRefChips();
       });
       chip.appendChild(remove);

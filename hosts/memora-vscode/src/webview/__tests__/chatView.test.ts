@@ -9419,6 +9419,83 @@ describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () =>
 });
 
 // ═══════════════════════════════════════════════════════════
+// 引用行区间（编辑器选区）：chip 显示 · 同文件多区间共存 · 移除不误伤
+// 引伸自引用模式定案（台账 HOST-CTX-0）：只挂指针 + 读取参数，不注入内容；
+// 行号 1-based 由宿主转换，本层不二次转换（转换唯一发生地 = extension/host/selectionRange.ts）。
+// ═══════════════════════════════════════════════════════════
+describe('引用行区间（选区引用）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const chipNames = (): (string | null)[] =>
+    [...document.querySelectorAll('#refChips .skill-chip__name')].map((e) => e.textContent);
+
+  it('chip 显示 #L 区间（多行 #L5-L24 / 单行 #L7）', () => {
+    mountChatView();
+    dispatch({
+      type: 'addRef',
+      refs: [
+        { path: 'src/foo.ts', kind: 'file', range: { start: 5, end: 24 } },
+        { path: 'src/bar.ts', kind: 'file', range: { start: 7, end: 7 } },
+      ],
+    });
+    expect(chipNames()).toEqual(['src/foo.ts#L5-L24', 'src/bar.ts#L7']);
+  });
+
+  it('同文件「整文件」与「某段选区」是两条引用（去重键含区间）——回归锁', () => {
+    mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    dispatch({
+      type: 'addRef',
+      refs: [{ path: 'src/foo.ts', kind: 'file', range: { start: 5, end: 24 } }],
+    });
+    // 按 path 去重会让第二次操作静默失效（用户「加了等于没加」）
+    expect(chipNames()).toEqual(['src/foo.ts', 'src/foo.ts#L5-L24']);
+  });
+
+  it('移除一条选区引用不误伤同 path 的另一条（按身份键过滤，非 path）', () => {
+    mountChatView();
+    dispatch({
+      type: 'addRef',
+      refs: [{ path: 'src/foo.ts', kind: 'file', range: { start: 5, end: 24 } }],
+    });
+    dispatch({
+      type: 'addRef',
+      refs: [{ path: 'src/foo.ts', kind: 'file', range: { start: 30, end: 40 } }],
+    });
+    expect(chipNames()).toEqual(['src/foo.ts#L5-L24', 'src/foo.ts#L30-L40']);
+    (document.querySelector('#refChips .skill-chip .skill-chip__remove') as HTMLElement).click();
+    expect(chipNames()).toEqual(['src/foo.ts#L30-L40']);
+  });
+
+  it('发送载荷带 range；无 range 时不带该字段（保持「缺省」语义）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'addRef',
+      refs: [
+        { path: 'src/foo.ts', kind: 'file', range: { start: 5, end: 24 } },
+        { path: 'src/bar.ts', kind: 'file' },
+      ],
+    });
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const send = document.getElementById('send') as HTMLButtonElement;
+    input.value = '讲讲这两处';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    send.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'send',
+      text: '讲讲这两处',
+      refs: [
+        { path: 'src/foo.ts', kind: 'file', range: { start: 5, end: 24 } },
+        { path: 'src/bar.ts', kind: 'file' },
+      ],
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
 // 技能菜单顶部搜索（名称 + 描述过滤 · 重建保词 · 硬约束）
 // ═══════════════════════════════════════════════════════════
 // 判据：搜索框常驻菜单顶部（元素单例，skills_loaded 全量重建时重插且保词——
