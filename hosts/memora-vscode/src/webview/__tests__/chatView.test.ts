@@ -9351,6 +9351,35 @@ describe('添加到对话：引用气泡（file/folder · 去重 · 发送清空
     dispatch({ type: 'addRef', refs: [{ path: 'src/a.ts', kind: 'file' }] });
     expect(input.value).toBe('联系 foo@bar.com 看');
   });
+
+  // ── HOST-CTX-11：撤除判据的守卫（此前唯一语义判据零测试，实测删掉该行全绿）──
+  it('offset 失效（触发后文本被编辑，落点已非 @）→ 不撤不猜', () => {
+    mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '帮我看';
+    input.setSelectionRange(3, 3);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: '@', bubbles: true }));
+    // 用户在 QuickPick 打开期间继续编辑：触发点 offset=3 已被别的字符占据
+    input.value = '帮我看xyz';
+    input.setSelectionRange(6, 6);
+    dispatch({ type: 'addRef', refs: [{ path: 'src/a.ts', kind: 'file' }], source: 'mention' });
+    // 落点不是 @ ⇒ 原样不动：宁可残留一个 @，也不删错一个字（引用 chip 照常挂）
+    expect(input.value).toBe('帮我看xyz');
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(1);
+  });
+
+  it('offset 越界（触发后 @ 已被删除）→ 不撤不猜', () => {
+    mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '帮我看';
+    input.setSelectionRange(3, 3);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: '@', bubbles: true }));
+    // 用户把刚键入的 @ 删掉：offset=3 现已越界（length=3）
+    input.value = '帮我看';
+    dispatch({ type: 'addRef', refs: [{ path: 'src/a.ts', kind: 'file' }], source: 'mention' });
+    expect(input.value).toBe('帮我看');
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(1);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════

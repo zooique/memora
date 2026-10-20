@@ -22,6 +22,16 @@ import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
 // 引用路径 ↔ 首根的双向判据唯一真源 = refPath（生成侧 relativeUnderPrimaryRoot 归 addToChat /
 // mention QuickPick 用，消费侧 resolveUnderPrimaryRoot 归本文件 openRefInEditor 用）——两半分居必漂移，故同模块。
 import { relativeUnderPrimaryRoot, resolveUnderPrimaryRoot } from '../../extension/host/refPath.js';
+
+/**
+ * HOST-CTX-1：@ 提及 QuickPick 的 findFiles 结果上限（防超大仓首开卡顿）
+ *
+ * 命中上限 = `findFiles` **静默截断**（超限返回上限条数、遍历序非确定、不报错）——
+ * 「静默失败」族。故命中时必须在 placeholder 告知用户已截断、请输关键词缩小范围
+ * （HOST-CTX-11 补：此前无任何提示，大仓里搜不到目标还以为没有该文件）。
+ * 提为常量是为了测试断言同一个数，不各写一份字面量。
+ */
+export const MENTION_FILE_LIMIT = 2000;
 // 命令 id 唯一真源 = fileChangeView（与 package.json#contributes.commands 的值同源维护）。
 // 对话区常驻条的两个按钮**不自己实现动作**，只 executeCommand 复用已注册命令——
 // 与文件内 CodeLens、状态栏 QuickPick、命令面板走同一实现（SSOT，无第二份清理逻辑）。
@@ -432,6 +442,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _pendingPrefill?: string;
   /** 右键「添加到对话」引用缓冲：对话视图未就绪时暂存，ready 后补发（与 _pendingPrefill 同构） */
   private _pendingRefs?: ChatRef[];
+  /**
+   * @ 提及 QuickPick 是否正开着（HOST-CTX-11）：防连按 @ 时后开的列表静默覆盖先开的。
+   * 纯 in-flight 标志（不缓存任何选中/意图），openMentionQuickPick 用 try/finally 保证
+   * 异常路径也归位——否则一次 findFiles 抛错就把这个门永久焊死。
+   */
+  private _mentionQuickPickOpen = false;
   /** 当前装配的 Agent（由 extension 装配后注入） */
   private _agent: Agent | undefined;
   /** 系统内置配置目录 + 用户技能目录（extension 注入，composer 动态技能清单来源判定） */
@@ -1194,50 +1210,74 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *   - 挂载链路 = `pushRefs` 的 addRef 推送（source='mention'，webview 据此撤触发 @）。
    *
    * 边界：findFiles 只列**文件**，目录 @ 不支持（目录引用沿用资源管理器右键入口，
-   * 那里有 explorer/context 菜单）。上限 2000 条防超大仓首开卡顿（QuickPick 自带模糊过滤）。
+   * 那里有 explorer/context 菜单）。上限 `MENTION_FILE_LIMIT` 条防超大仓首开卡顿，
+   * 命中即静默截断（findFiles 语义）⇒ placeholder 必须明示，否则用户搜不到目标文件
+   * 还以为没有（HOST-CTX-11）。
    */
   public async openMentionQuickPick(): Promise<void> {
+    // in-flight 守卫（HOST-CTX-11）：连按两次 @ 会各来一条 mention_open。不拦的话后开的
+    // QuickPick 静默覆盖先开的（VS Code 语义：新 show 使旧的 hide → 旧的 resolve
+    // undefined 丢弃），且 webview 的 mentionTriggerOffset 已被第二次覆盖 ⇒ 最终只撤一个
+    // @、另一个残留正文。列表已开着时再来一条 = 用户没看到响应，最合理的解释就是
+    // 「已经在开着的状态」，静默返回即可。
+    if (this._mentionQuickPickOpen) return;
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!root) {
       // 未打开工作区：引用判据（首根相对路径）无处安放，提示而非静默失败
       void vscode.window.showInformationMessage('未打开工作区，无法选择引用文件');
       return;
     }
-    const uris = await vscode.workspace.findFiles('**/*', undefined, 2000);
-    // 首根归属判定前置到列表期（fail-closed）：第二根 / 根外的文件连列表都不进，
-    // 用户选不到就挂不上——与 addToChat 拒挂第二根是同一契约的两半。
-    const items: { label: string; description: string; rel: string }[] = [];
-    for (const uri of uris) {
-      const rel = relativeUnderPrimaryRoot(root, uri.fsPath);
-      if (!rel) continue;
-      items.push({ label: basename(rel), description: rel, rel });
-    }
-    items.sort((a, b) => a.description.localeCompare(b.description));
-    const qp = vscode.window.createQuickPick();
-    qp.items = items;
-    qp.canSelectMany = true;
-    qp.matchOnDescription = true;
-    qp.placeholder = '选择要挂为引用的文件（可多选，Esc 取消）…';
-    qp.show();
-    const picked = await new Promise<readonly vscode.QuickPickItem[] | undefined>((resolve) => {
-      // accept = 确认（含多选）；hide = Esc / 点外部关闭（两者互斥，先到先 resolve）
-      qp.onDidAccept(() => resolve(qp.selectedItems));
-      qp.onDidHide(() => resolve(undefined));
-    });
-    qp.dispose();
-    if (!picked || picked.length === 0) return; // 取消：静默返回，正文里的 @ 保留（用户可继续编辑）
-    const refs: ChatRef[] = [];
-    for (const p of picked) {
-      // 防御：QuickPickItem.description 类型可选，本 items 恒有值——异常缺省则跳过（不挂 path=undefined 的伪引用）
-      if (typeof p.description !== 'string') continue;
-      refs.push({ path: p.description, kind: 'file' });
-    }
-    if (this._view) {
-      this.post({ type: 'addRef', refs, source: 'mention' });
-    } else {
-      // 退化路径（webview 未就绪）：走现成缓冲。ready 补发后无 source → @ 不撤，
-      // 仅多留一个字符，无功能损（比给缓冲链路加 source 通道更简）。
-      this.pushRefs(refs);
+    this._mentionQuickPickOpen = true;
+    try {
+      const uris = await vscode.workspace.findFiles('**/*', undefined, MENTION_FILE_LIMIT);
+      // 首根归属判定前置到列表期（fail-closed）：第二根 / 根外的文件连列表都不进，
+      // 用户选不到就挂不上——与 addToChat 拒挂第二根是同一契约的两半。
+      const items: { label: string; description: string; rel: string }[] = [];
+      for (const uri of uris) {
+        const rel = relativeUnderPrimaryRoot(root, uri.fsPath);
+        if (!rel) continue;
+        items.push({ label: basename(rel), description: rel, rel });
+      }
+      items.sort((a, b) => a.description.localeCompare(b.description));
+      // 截断告知（HOST-CTX-11）：>= 上限即视为可能截断（恰好等于上限不截断的极小概率
+      // 也在提示范围内——多一句提示远好过用户找不到文件）。走 placeholder 而非塞一条
+      // 「提示项」进 items：QuickPickItem 没有 disabled，提示项一旦被选中就会变成一条
+      // path 是文案的伪引用。
+      const truncated = uris.length >= MENTION_FILE_LIMIT;
+      const qp = vscode.window.createQuickPick();
+      qp.items = items;
+      qp.canSelectMany = true;
+      qp.matchOnDescription = true;
+      qp.placeholder = truncated
+        ? `文件数超 ${MENTION_FILE_LIMIT} 已截断，请输入关键词缩小范围（可多选，Esc 取消）…`
+        : '选择要挂为引用的文件（可多选，Esc 取消）…';
+      qp.show();
+      const picked = await new Promise<readonly vscode.QuickPickItem[] | undefined>((resolve) => {
+        // accept = 确认（含多选）；hide = Esc / 点外部关闭（两者互斥，先到先 resolve）
+        qp.onDidAccept(() => resolve(qp.selectedItems));
+        qp.onDidHide(() => resolve(undefined));
+      });
+      qp.dispose();
+      if (!picked || picked.length === 0) return; // 取消：静默返回，正文里的 @ 保留（用户可继续编辑）
+      const refs: ChatRef[] = [];
+      for (const p of picked) {
+        // 防御：QuickPickItem.description 类型可选，本 items 恒有值——异常缺省则跳过（不挂 path=undefined 的伪引用）
+        if (typeof p.description !== 'string') continue;
+        refs.push({ path: p.description, kind: 'file' });
+      }
+      if (this._view) {
+        this.post({ type: 'addRef', refs, source: 'mention' });
+      } else {
+        // 退化路径（HOST-CTX-11 订正）：**不是**「webview 未就绪」——mention_open 只能从
+        // webview 发出，收到时 _view 必然在。唯一可达场景 = QuickPick 打开期间视图被销毁
+        // （侧栏折叠 / 切走别的视图）：用户选中后 _view 已 undefined。走 _pendingRefs 缓冲、
+        // 下次 ready 补发（不带 source ⇒ @ 不撤）。取舍：选中是用户显式意图，缓冲保留它；
+        // 代价是 chip 可能在用户已切换上下文后才出现（早期注释低估为「仅多留一个字符」，
+        // 订正于此——代价是「多出一个延迟注入的引用」，仍判定为可接受：不挂则用户白选）。
+        this.pushRefs(refs);
+      }
+    } finally {
+      this._mentionQuickPickOpen = false;
     }
   }
 

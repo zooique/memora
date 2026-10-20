@@ -6541,6 +6541,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       vscode.postMessage({ type: 'pause' });
     }
   });
+  /**
+   * HOST-CTX-1：@ 提及触发点（键入 @ 时的光标位，用于挂载成功后精准撤除该字符）
+   *
+   * 声明**先于**下方 keydown 监听器注册（HOST-CTX-11：曾置于监听器之后，虽因回调晚于
+   * 声明执行而运行时安全，但任何在「注册监听」与「声明」之间插入的同步派发都会踩 TDZ
+   * 崩——声明挨着使用点放，不赌执行时序）。
+   */
+  let mentionTriggerOffset: number | null = null;
+
   input.addEventListener('keydown', (e) => {
     // isComposing 守卫：中文输入法组合确认（如打字中途按 Enter 选字）不误触发发送
     if (e.isComposing) return;
@@ -6566,20 +6575,23 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     syncSendEnabled();
   });
 
-  /** HOST-CTX-1：@ 提及触发点（键入 @ 时的光标位，用于挂载成功后精准撤除该字符） */
-  let mentionTriggerOffset: number | null = null;
-
   /**
    * HOST-CTX-1：撤掉触发 @ 提及的那个 '@' 字符（宿主确认挂载后调用）
    *
-   * 判据（缺一不删，不猜）：触发时记录的光标位有效、该位置**恰好是 '@'**——keydown 期
+   * 判据（不猜）：触发时记录的光标位有效、该位置**恰好是 '@'**——keydown 期
    * selectionStart 就是 '@' 的落点（尚未落入），故直接按索引比对；文本已被用户编辑过
    * （offset 失效）时原样不动。只删一个字符，恢复光标到删除位。
+   *
+   * HOST-CTX-11 订正「判据三重」的夸大：三条 guard 里真正带语义的**只有落点校验**
+   * （`input.value[at] !== '@'`）——另两条（null / 越界）删掉行为等价：`at` 为 null 或
+   * 越界时 `input.value[at]` 得 undefined，落点校验同样拦住。故守卫强度配得上「缺一不删」
+   * 的只有第三条，而它此前**零测试**（实测：删掉该行 → chatView 448 例全绿）。测试已补
+   * （offset 失效 / 越界两例），此处保留前两条是廉价纵深，不是「三重」同权。
    */
   function removeMentionAt(): void {
     const at = mentionTriggerOffset;
-    if (at === null || at < 0 || at >= input.value.length) return; // 无记录 / 越界：不猜
-    if (input.value[at] !== '@') return; // 落点已变（用户编辑过）：不猜
+    if (at === null || at < 0 || at >= input.value.length) return; // 无记录 / 越界：不猜（纵深，等价于落点校验）
+    if (input.value[at] !== '@') return; // 落点已变（用户编辑过）：不猜（唯一语义判据，有守卫）
     input.value = input.value.slice(0, at) + input.value.slice(at + 1);
     mentionTriggerOffset = null; // 一次性：撤完即清，防后续 addRef 误删同一位置
     input.focus();
