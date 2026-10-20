@@ -98,6 +98,14 @@ function setup() {
     provider,
     posted,
     cast: provider as unknown as { openMentionQuickPick(): Promise<void> },
+    /**
+     * 模拟 webview 发来一条消息。走 `handleWebviewMessage`（HOST-CTX-12 从匿名回调摘出的
+     * 分发方法）而非 onDidReceiveMessage——setup() 不跑 resolveWebviewView，回调未注册。
+     */
+    dispatch: (msg: unknown) =>
+      (provider as unknown as { handleWebviewMessage(m: unknown): void }).handleWebviewMessage(
+        msg,
+      ),
   };
 }
 
@@ -199,5 +207,16 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
     await vi.waitFor(() => expect(vscode.window.createQuickPick).toHaveBeenCalledTimes(2));
     (qp.onDidHide.mock.calls[1][0] as () => void)();
     await second;
+  });
+
+  it('未知消息类型 → 落宿主 warn 而非静默丢弃（HOST-CTX-12：webview 新/宿主旧时唯一线索）', () => {
+    const h = setup();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // 直接经 onDidReceiveMessage 入口派发一个不在协议内的类型——正常不可能到达，
+    // 一旦到达即 webview 脚本与扩展宿主不同版本（最常见：重编译了 dist 没重启宿主）
+    h.dispatch({ type: 'not_a_real_message_type' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('not_a_real_message_type'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('扩展宿主未重启'));
+    warn.mockRestore();
   });
 });

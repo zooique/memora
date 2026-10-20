@@ -1281,6 +1281,155 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * webview → 扩展的消息分发（HOST-CTX-12：自 onDidReceiveMessage 匿名回调摘出）
+   *
+   * 摘出的理由：原先整条链挤在匿名回调里、**零可测入口**——任何新消息类型与兜底分支都
+   * 无从单测（本次 else 兜底就是加上之后才发现「有守卫却验证不了」）。现与 handleInput /
+   * handleWebviewReady / setActiveFileAttach 同构，测试经 provider.handleWebviewMessage
+   * 直接驱动。转发时 this 不变：链内零闭包变量依赖（只用 this.* 与 msg.*，不碰 webviewView）。
+   */
+  private handleWebviewMessage(msg: WebviewToExtensionMessage): void {
+    if (msg.type === 'ready') {
+      // webview 脚本就绪后才回放会话（历史 + Provider 列表）。回放前置：
+      // ① 等 Agent 装配完成（在途即等待，见 ensureAgent 可等待化）② 打捞升级崩溃残留轮为
+      // 正常 stop turn——保证升级轮随本次回放一次性投递，不与 _viewEpoch 折叠重建回放双发
+      void this.handleWebviewReady();
+    } else if (msg.type === 'host_diag') {
+      // webview 错误边界上报（T1）：落扩展宿主日志留痕，不驱动任何 UI 状态——
+      // 界面呈现（错误卡片）由 webview 就地渲染，此处只负责「用户报障时有日志可查」
+      console.warn(`Memora webview 未处理异常 [${msg.source}] ${msg.message}`, msg.stack ?? '');
+    } else if (msg.type === 'input') {
+      // 输入统一入口：宿主按当前 turn 相位单一路由，错位输入丢弃并落宿主日志留痕
+      void this.handleInput(msg);
+    } else if (msg.type === 'open_config') {
+      // 空态引导按钮：跳转大模型配置（复用既有 configureModel 命令，单一入口）
+      void vscode.commands.executeCommand('memora.configureModel');
+    } else if (msg.type === 'open_roles') {
+      // 角色徽章点击：跳转角色包管理视图（复用 configureModel 同款两行命令，单一导航入口；
+      // 切换执行仍走角色视图 roles_set_active 单路径，本分支只导航）
+      void vscode.commands.executeCommand('memora.openRoles');
+    } else if (msg.type === 'open_ref') {
+      // 引用 chip 点击：在编辑器打开并定位到行区间——「我到底加了哪几行」的直接答案
+      // （1-based → 0-based 逆转换等定位细节归 openRefInEditor 单点，webview 只上报意图）
+      void this.openRefInEditor(msg.ref);
+    } else if (msg.type === 'mention_open') {
+      // HOST-CTX-1：输入框键入 @ → 打开文件 QuickPick（多选），选中后走 addRef 推送
+      // （source='mention'，webview 据此撤掉触发用的 @ 字符）。文件列表真源 =
+      // vscode.workspace.findFiles（VS Code SSOT，吃 files.exclude / search.exclude），
+      // webview 不养文件索引（第二真理源）。取消（Esc / 关闭）→ 静默返回，@ 保留在正文。
+      void this.openMentionQuickPick();
+    } else if (msg.type === 'set_active_file_attach') {
+      // 当前文件 chip 的 ✕ / 关闭态点击：改会话级开关，回推投影（webview 以回推为准）
+      this.setActiveFileAttach(msg.enabled);
+    } else if (msg.type === 'new_session') {
+      // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史
+      void this.newSessionFromCommand();
+    } else if (msg.type === 'fork_session') {
+      // AI 回复底部「分叉」按钮 → 从指定 Round 位置分叉新会话
+      void this.forkCurrentSession(msg.roundId);
+    } else if (msg.type === 'session_list') {
+      // 标题条「历史」按钮 → 返回非当前会话列表供 webview 渲染模态浮层
+      this.pushSessionList();
+    } else if (msg.type === 'switch_session') {
+      // 历史浮层点击条目 → 切入该会话并回放
+      void this.switchToSession(msg.sessionId);
+    } else if (msg.type === 'delete_session') {
+      // 历史浮层垃圾桶删除 → host 确认不可恢复后删除会话记录
+      void this.handleDeleteSession(msg.sessionId);
+    } else if (msg.type === 'archive_session') {
+      // 历史浮层「移入留存」→ 仅改显示分组，不动数据（与删除是两种不同强度的动作）
+      this.handleArchiveSession(msg.sessionId);
+    } else if (msg.type === 'restore_session') {
+      // 留存区条目「移回」→ 同上的逆操作
+      this.handleRestoreSession(msg.sessionId);
+    } else if (msg.type === 'rename_request') {
+      // 标题条改名笔 → 弹 InputBox 输入新标题写入元数据
+      void this.renameCurrentSession();
+    } else if (msg.type === 'delete_turn') {
+      // 删除单个问答闭环（AI 消息「删除」按钮触发）：确认不可恢复后截断该问答及之后所有
+      void this.deleteTurnFrom(msg.ts);
+    } else if (msg.type === 'chat_set_provider') {
+      void this.handleSetProvider(msg.name);
+    } else if (msg.type === 'stop') {
+      // 停止生成：中断当前流式输出（mvp-scope 打断能力）
+      this.handleStop();
+    } else if (msg.type === 'pause') {
+      // 暂停生成：调 agent.requestPause()（step 边界软暂停）暂停当前流
+      this.handlePause();
+    } else if (msg.type === 'clear_pending_queue') {
+      // 清理由内核 clearPendingInterjections 原子操作 + getter 读，宿主不维护镜像副本
+      //  （坑：手动镜像双写易出错）
+      // 先读后清：丢弃信号需要被丢条目文本（webview diff 据此分流「消失 = 丢弃不上屏」）
+      const before = this._agent?.getPendingInterjections?.() ?? [];
+      const cleared = this._agent?.clearPendingInterjections() ?? 0;
+      if (cleared > 0) {
+        this.post({ type: 'notice', level: 'info', message: `已清空 ${cleared} 条待发送内容` });
+        this.postPendingDiscarded(before);
+      }
+      this.syncPendingQueue();
+    } else if (msg.type === 'remove_pending_item') {
+      // 删除单条 interject（待发送区某条的独立 × 按钮）：
+      // 内核 removePendingInterject 内部已做越界检查，宿主直接调内核 +
+      // 从内核读当前值渲染（SSOT 源头 = loop.pendingInterjections）
+      // 先读后删：按 index 取被删文本，删除成功才发丢弃信号（失败 = 队列未变，零信号）
+      const before = this._agent?.getPendingInterjections?.() ?? [];
+      const removed = before[msg.index];
+      const ok = this._agent?.removePendingInterject(msg.index) ?? false;
+      if (ok && removed !== undefined) {
+        this.postPendingDiscarded([removed]);
+      }
+      this.syncPendingQueue();
+    } else if (msg.type === 'polish_input') {
+      // 文本润色（输入框入口）：调 agent.polish(text) 润色输入框内容，
+      // 回执 polish_input_result（无 msgId——输入框润色不回写单条消息）
+      void this.handlePolishInput(msg.text);
+    } else if (msg.type === 'write_confirm_answer') {
+      // 写入审批卡回传：用户确认/拒绝写入操作
+      const pending = this._pendingWriteConfirmations.get(msg.requestId);
+      if (pending) {
+        pending.resolve(msg.approved);
+        // 决议留痕（唯一发点 _logDecision）：批准/拒绝与超时拒同构入时间线（C2）
+        this._logDecision(msg.requestId, msg.approved ? 'approved' : 'declined');
+        // 终结 + 泵下一条（卡片关闭/覆盖的唯一真源在宿主「请求已终结」这一事实，
+        // webview 侧不再自行假设「点了就算关」）
+        this._settleConfirm(msg.requestId);
+      }
+    } else if (msg.type === 'confirm_all_file_changes') {
+      // 对话区常驻条「全部确认」：复用已注册命令（纯内存清理，零风险，无需二次确认）
+      void vscode.commands.executeCommand(CONFIRM_ALL_FILE_CHANGES_COMMAND);
+    } else if (msg.type === 'revert_all_file_changes') {
+      // 对话区常驻条「全部回退」：命令内部含模态二次确认（破坏性操作，勿绕过）
+      void vscode.commands.executeCommand(REVERT_ALL_FILE_CHANGES_COMMAND);
+    } else if (msg.type === 'background_kill') {
+      // 两种语义共用一个通道（方案 §5.2.4）：`terminate` 真终止进程 / `dismiss` 仅收起这一行。
+      // 缺省按 terminate（兼容旧 webview 发出的无 reason 消息）。
+      if (msg.reason === 'dismiss') {
+        this.dismissBackgroundTask(msg.taskId);
+      } else {
+        this.killBackgroundTask(msg.taskId);
+      }
+    } else if (msg.type === 'memory_delete') {
+      // 记忆反馈删除（HOST-S3-3）：命中行 ✕ → 模态确认后软删（回收站可恢复），
+      // 应答 memory_deleted 驱动 webview 摘除；取消确认不推送（settingsPanel 同款契约）
+      void this.deleteMemory(msg.id);
+    } else {
+      // 未知消息类型（HOST-CTX-12）：**不静默丢弃**。
+      //
+      // 正常不可能到达——webview 与宿主编译自同一份 protocol.ts，类型面在编译期共享。
+      // 一旦出现 = webview 脚本与扩展宿主**不是同一版本**。最常见根因：改了 src 后
+      // 重编译了 dist、却没重启扩展宿主——webview 脚本是**外部文件**（dist/webview/
+      // scripts/chatView.js，从磁盘读 ⇒ 是新的），而这条 switch 活在扩展宿主进程内存
+      // 里（旧的）⇒ 表现为「某功能凭空消失、零任何反馈」（用户实测：输入 @ 无反应）。
+      //
+      // 落宿主日志（VS Code 输出面板 → Memora）供排查，**不驱动 UI、不弹提示**——
+      // 也可能是无害的旧版本残留消息，用户无感知能力，不该被打断。
+      console.warn(
+        `[memora] 未知 webview 消息类型：${(msg as { type: string }).type}（最可能原因：扩展宿主未重启，webview 脚本与宿主不同版本）`,
+      );
+    }
+  }
+
   /** 视图被解析（侧边栏展开）时初始化 */
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -1321,131 +1470,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
 
     // 处理来自 webview 的用户输入
+    // 消息分发入口（HOST-CTX-12）：整条 if-else 链已摘为 private handleWebviewMessage，
+    // 此处只转调。链上 120+ 分支原先挤在匿名回调里、零可测入口（「判据对、接线没接上」
+    // 同族：新消息类型与兜底分支都无从单测）——摘出后与 handleInput 等同构、可单测。
     webviewView.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
-      if (msg.type === 'ready') {
-        // webview 脚本就绪后才回放会话（历史 + Provider 列表）。回放前置：
-        // ① 等 Agent 装配完成（在途即等待，见 ensureAgent 可等待化）② 打捞升级崩溃残留轮为
-        // 正常 stop turn——保证升级轮随本次回放一次性投递，不与 _viewEpoch 折叠重建回放双发
-        void this.handleWebviewReady();
-      } else if (msg.type === 'host_diag') {
-        // webview 错误边界上报（T1）：落扩展宿主日志留痕，不驱动任何 UI 状态——
-        // 界面呈现（错误卡片）由 webview 就地渲染，此处只负责「用户报障时有日志可查」
-        console.warn(`Memora webview 未处理异常 [${msg.source}] ${msg.message}`, msg.stack ?? '');
-      } else if (msg.type === 'input') {
-        // 输入统一入口：宿主按当前 turn 相位单一路由，错位输入丢弃并落宿主日志留痕
-        void this.handleInput(msg);
-      } else if (msg.type === 'open_config') {
-        // 空态引导按钮：跳转大模型配置（复用既有 configureModel 命令，单一入口）
-        void vscode.commands.executeCommand('memora.configureModel');
-      } else if (msg.type === 'open_roles') {
-        // 角色徽章点击：跳转角色包管理视图（复用 configureModel 同款两行命令，单一导航入口；
-        // 切换执行仍走角色视图 roles_set_active 单路径，本分支只导航）
-        void vscode.commands.executeCommand('memora.openRoles');
-      } else if (msg.type === 'open_ref') {
-        // 引用 chip 点击：在编辑器打开并定位到行区间——「我到底加了哪几行」的直接答案
-        // （1-based → 0-based 逆转换等定位细节归 openRefInEditor 单点，webview 只上报意图）
-        void this.openRefInEditor(msg.ref);
-      } else if (msg.type === 'mention_open') {
-        // HOST-CTX-1：输入框键入 @ → 打开文件 QuickPick（多选），选中后走 addRef 推送
-        // （source='mention'，webview 据此撤掉触发用的 @ 字符）。文件列表真源 =
-        // vscode.workspace.findFiles（VS Code SSOT，吃 files.exclude / search.exclude），
-        // webview 不养文件索引（第二真理源）。取消（Esc / 关闭）→ 静默返回，@ 保留在正文。
-        void this.openMentionQuickPick();
-      } else if (msg.type === 'set_active_file_attach') {
-        // 当前文件 chip 的 ✕ / 关闭态点击：改会话级开关，回推投影（webview 以回推为准）
-        this.setActiveFileAttach(msg.enabled);
-      } else if (msg.type === 'new_session') {
-        // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史
-        void this.newSessionFromCommand();
-      } else if (msg.type === 'fork_session') {
-        // AI 回复底部「分叉」按钮 → 从指定 Round 位置分叉新会话
-        void this.forkCurrentSession(msg.roundId);
-      } else if (msg.type === 'session_list') {
-        // 标题条「历史」按钮 → 返回非当前会话列表供 webview 渲染模态浮层
-        this.pushSessionList();
-      } else if (msg.type === 'switch_session') {
-        // 历史浮层点击条目 → 切入该会话并回放
-        void this.switchToSession(msg.sessionId);
-      } else if (msg.type === 'delete_session') {
-        // 历史浮层垃圾桶删除 → host 确认不可恢复后删除会话记录
-        void this.handleDeleteSession(msg.sessionId);
-      } else if (msg.type === 'archive_session') {
-        // 历史浮层「移入留存」→ 仅改显示分组，不动数据（与删除是两种不同强度的动作）
-        this.handleArchiveSession(msg.sessionId);
-      } else if (msg.type === 'restore_session') {
-        // 留存区条目「移回」→ 同上的逆操作
-        this.handleRestoreSession(msg.sessionId);
-      } else if (msg.type === 'rename_request') {
-        // 标题条改名笔 → 弹 InputBox 输入新标题写入元数据
-        void this.renameCurrentSession();
-      } else if (msg.type === 'delete_turn') {
-        // 删除单个问答闭环（AI 消息「删除」按钮触发）：确认不可恢复后截断该问答及之后所有
-        void this.deleteTurnFrom(msg.ts);
-      } else if (msg.type === 'chat_set_provider') {
-        void this.handleSetProvider(msg.name);
-      } else if (msg.type === 'stop') {
-        // 停止生成：中断当前流式输出（mvp-scope 打断能力）
-        this.handleStop();
-      } else if (msg.type === 'pause') {
-        // 暂停生成：调 agent.requestPause()（step 边界软暂停）暂停当前流
-        this.handlePause();
-      } else if (msg.type === 'clear_pending_queue') {
-        // 清理由内核 clearPendingInterjections 原子操作 + getter 读，宿主不维护镜像副本
-        //  （坑：手动镜像双写易出错）
-        // 先读后清：丢弃信号需要被丢条目文本（webview diff 据此分流「消失 = 丢弃不上屏」）
-        const before = this._agent?.getPendingInterjections?.() ?? [];
-        const cleared = this._agent?.clearPendingInterjections() ?? 0;
-        if (cleared > 0) {
-          this.post({ type: 'notice', level: 'info', message: `已清空 ${cleared} 条待发送内容` });
-          this.postPendingDiscarded(before);
-        }
-        this.syncPendingQueue();
-      } else if (msg.type === 'remove_pending_item') {
-        // 删除单条 interject（待发送区某条的独立 × 按钮）：
-        // 内核 removePendingInterject 内部已做越界检查，宿主直接调内核 +
-        // 从内核读当前值渲染（SSOT 源头 = loop.pendingInterjections）
-        // 先读后删：按 index 取被删文本，删除成功才发丢弃信号（失败 = 队列未变，零信号）
-        const before = this._agent?.getPendingInterjections?.() ?? [];
-        const removed = before[msg.index];
-        const ok = this._agent?.removePendingInterject(msg.index) ?? false;
-        if (ok && removed !== undefined) {
-          this.postPendingDiscarded([removed]);
-        }
-        this.syncPendingQueue();
-      } else if (msg.type === 'polish_input') {
-        // 文本润色（输入框入口）：调 agent.polish(text) 润色输入框内容，
-        // 回执 polish_input_result（无 msgId——输入框润色不回写单条消息）
-        void this.handlePolishInput(msg.text);
-      } else if (msg.type === 'write_confirm_answer') {
-        // 写入审批卡回传：用户确认/拒绝写入操作
-        const pending = this._pendingWriteConfirmations.get(msg.requestId);
-        if (pending) {
-          pending.resolve(msg.approved);
-          // 决议留痕（唯一发点 _logDecision）：批准/拒绝与超时拒同构入时间线（C2）
-          this._logDecision(msg.requestId, msg.approved ? 'approved' : 'declined');
-          // 终结 + 泵下一条（卡片关闭/覆盖的唯一真源在宿主「请求已终结」这一事实，
-          // webview 侧不再自行假设「点了就算关」）
-          this._settleConfirm(msg.requestId);
-        }
-      } else if (msg.type === 'confirm_all_file_changes') {
-        // 对话区常驻条「全部确认」：复用已注册命令（纯内存清理，零风险，无需二次确认）
-        void vscode.commands.executeCommand(CONFIRM_ALL_FILE_CHANGES_COMMAND);
-      } else if (msg.type === 'revert_all_file_changes') {
-        // 对话区常驻条「全部回退」：命令内部含模态二次确认（破坏性操作，勿绕过）
-        void vscode.commands.executeCommand(REVERT_ALL_FILE_CHANGES_COMMAND);
-      } else if (msg.type === 'background_kill') {
-        // 两种语义共用一个通道（方案 §5.2.4）：`terminate` 真终止进程 / `dismiss` 仅收起这一行。
-        // 缺省按 terminate（兼容旧 webview 发出的无 reason 消息）。
-        if (msg.reason === 'dismiss') {
-          this.dismissBackgroundTask(msg.taskId);
-        } else {
-          this.killBackgroundTask(msg.taskId);
-        }
-      } else if (msg.type === 'memory_delete') {
-        // 记忆反馈删除（HOST-S3-3）：命中行 ✕ → 模态确认后软删（回收站可恢复），
-        // 应答 memory_deleted 驱动 webview 摘除；取消确认不推送（settingsPanel 同款契约）
-        void this.deleteMemory(msg.id);
-      }
+      this.handleWebviewMessage(msg);
     });
   }
 
