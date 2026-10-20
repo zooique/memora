@@ -194,8 +194,8 @@ const EXEMPT_PROPS = new Set([
  *    26 → 会话大纲导航条（HOST-NAV-1，2026-10-20）：chatStyles .round-nav 段新增 3 处 C 类
  *         一次性维度逐条登记：条视觉厚 2px（.round-nav__bar::before height）+ 当前轮加粗 3px
  *         （.is-active::before height）+ 条端圆角 1px（border-radius；--radius-sm 2px 会把
- *         2px 高的条削成胶囊，失真）。可令牌化项已令牌化：触达高 12px→--sp-5、条宽 16px→--sp-6、
- *         浮层 160/320px→--dim-lg/--dim-2xl、60vh/130%/0.12s 非 px 口径不入户。
+ *         2px 高的条削成胶囊，失真）。可令牌化项已令牌化：触达高 12px→--sp-5、条宽 12px→--sp-5、
+ *         浮层 160/320px→--dim-lg/--dim-2xl、条列横向 padding 2px→--sp-0、50vh/130%/0.12s 非 px 口径不入户。
  * 为何要跟着降：若基线停在初始值，消化出的 94+ 处会变成「可新增而不报错」的余额，
  * 等于给未来的裸值开了口子。门必须随债务一起往下走。
  * 现状（2026-10-20）：清单已至 26 ⇒ 硬门 toEqual(26)（见守卫断言）。
@@ -241,7 +241,7 @@ describe('设计令牌值守卫（裸值冻结 + 防新增）', () => {
     expect(scanned, '扫描到的 CSS 声明为 0——提取正则或路径已失效').toBeGreaterThan(500);
   });
 
-  it('裸值债务硬门：必须等于 23（A 类 4 已闭包；残余 = C 类 23 一次性维度，偏离即红）', () => {
+  it('裸值债务硬门：必须等于 26（A 类 4 已闭包；残余 = C 类 26 一次性维度，偏离即红）', () => {
     const { violations } = collectValueViolations();
     if (violations.length > 0) {
       const byProp = new Map<string, number>();

@@ -73,18 +73,29 @@ export const chatStyles = `
    * 进入也显形）——🔴 panel 不可挂 hidden 属性：全局 [hidden]{display:none!important}
    * 恒赢，hover 的 display 切不回来（显形只能走 CSS 默认态）。 */
   .round-nav {
-    position: absolute; right: var(--sp-2, 6px); top: 50%; transform: translateY(-50%);
+    position: absolute; right: var(--sp-1, 4px); top: 50%; transform: translateY(-50%);
     z-index: var(--z-float);
-    display: flex; align-items: center; max-height: 60vh; /* C 类一次性维度（视口比例，无 vh 档） */
-    padding: var(--sp-2, 6px) var(--sp-1, 4px);
+    display: flex; align-items: center;
+    padding: var(--sp-2, 6px) 0; /* 横向内距去零收紧右缘（纵向保留触达） */
     border-radius: var(--radius-sm, 2px);
   }
   .round-nav[hidden] { display: none; } /* 与 flex 声明同 specificity 下兜底（全局 !important 亦覆盖） */
-  /* 条列：竖排细横条；触达区（12px 高）大于视觉条（2px），hover 容器时条加长提示可点 */
-  .round-nav__track { display: flex; flex-direction: column; gap: var(--sp-2, 6px); }
+  /* 条列：竖排细横条；触达区（12px 高）大于视觉条（2px），hover 容器时条加长提示可点。
+   * 高度上限由 JS（roundNav.applyMetrics）按视口高内联下发 —— CSS 不设 max-height：
+   * 上限是单一真理源（防第二套值静默漂移）。overflow 为**极端轮数兜底**：压密到极限仍
+   * 超高时条列自身滚动，绝不外溢到输入区（全长条「压密不截断」形态的结构性保证）；
+   * 滚动条隐藏（条列仅 12px 宽，滚动条反占宽，且 hover 加长不能被横向裁掉）。
+   * 横向 padding（--sp-0）给 hover 的 130% 加长留出免裁余量。 */
+  .round-nav__track {
+    display: flex; flex-direction: column; gap: var(--sp-2, 6px);
+    padding: 0 var(--sp-0, 2px);
+    overflow-y: auto; overflow-x: hidden;
+    scrollbar-width: none;
+  }
+  .round-nav__track::-webkit-scrollbar { display: none; }
   .round-nav__bar {
     display: flex; align-items: center; justify-content: center;
-    width: var(--sp-6, 16px); height: var(--sp-5, 12px); padding: 0;
+    width: var(--sp-5, 12px); height: var(--sp-5, 12px); padding: 0;
     border: none; background: transparent; cursor: pointer;
   }
   /* 视觉条 = ::before（2px 细线）；is-active 加粗提亮（当前轮）。
@@ -104,8 +115,8 @@ export const chatStyles = `
     display: none;
     position: absolute; right: 100%; top: 50%; transform: translateY(-50%);
     margin-right: var(--sp-2, 6px);
-    min-width: var(--dim-lg, 160px); max-width: var(--dim-2xl, 320px); max-height: 60vh;
-    overflow-y: auto; /* max-height 60vh 与 .round-nav 同判：C 类一次性维度 */
+    min-width: var(--dim-lg, 160px); max-width: var(--dim-2xl, 320px); max-height: 50vh;
+    overflow-y: auto; /* max-height 50vh（视口比例，无 vh 档）：浮层自身滚动，与导航条同判 C 类一次性维度 */
     padding: var(--sp-2, 6px);
     border: var(--line-input);
     border-radius: var(--radius-sm, 2px);

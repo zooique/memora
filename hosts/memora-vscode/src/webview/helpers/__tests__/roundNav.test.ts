@@ -12,9 +12,31 @@
  */
 
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildInjectedContextEnvelope, buildDocContextBlock } from '../docContext.js';
-import { computeActiveIndex, createRoundNav, extractPreview, jumpToRound } from '../roundNav.js';
+import {
+  computeActiveIndex,
+  computeDensity,
+  createRoundNav,
+  extractPreview,
+  jumpToRound,
+} from '../roundNav.js';
+
+/** jsdom 默认视口高（测试内覆写后须还原，防跨用例污染） */
+const ORIGINAL_INNER_HEIGHT = window.innerHeight;
+
+/** 覆写视口高（压密预算随它变化） */
+function stubInnerHeight(h: number): void {
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: h });
+}
+
+/** 还原视口高（用例收尾用） */
+function restoreInnerHeight(): void {
+  Object.defineProperty(window, 'innerHeight', {
+    configurable: true,
+    value: ORIGINAL_INNER_HEIGHT,
+  });
+}
 
 /** 打桩元素几何（configurable 覆写，测后可还原） */
 function stubRect(el: Element, top: number): void {
@@ -113,6 +135,37 @@ describe('computeActiveIndex（当前轮判定纯函数）', () => {
   });
 });
 
+describe('computeDensity（自适应压密纯函数）', () => {
+  it('未就绪（轮数 0 或可用高 0）→ 宽松态默认，不误压', () => {
+    expect(computeDensity(0, 500)).toEqual({ barH: 12, gap: 6 });
+    expect(computeDensity(5, 0)).toEqual({ barH: 12, gap: 6 });
+  });
+
+  it('宽松布局装得下 → 保持宽松（绝大多数会话形态）', () => {
+    // 5 轮宽松总高 = 5*12 + 4*6 = 84 ≤ 1000
+    expect(computeDensity(5, 1000)).toEqual({ barH: 12, gap: 6 });
+  });
+
+  it('第一步：条高保持，先压间隙到下限之上', () => {
+    // 10 轮宽松总高 174 > 150；gapFit = (150-120)/9 = 3.33 → 3 → {12,3}
+    expect(computeDensity(10, 150)).toEqual({ barH: 12, gap: 3 });
+  });
+
+  it('第二步：间隙触底后再压条高（下限之上）', () => {
+    // 10 轮 gapFit < 1 → barFit = (100-9)/10 = 9.1 → 9 → {9,1}
+    expect(computeDensity(10, 100)).toEqual({ barH: 9, gap: 1 });
+  });
+
+  it('单轮且空间极小：直接压下条高（不过间隙分支）', () => {
+    expect(computeDensity(1, 5)).toEqual({ barH: 5, gap: 1 });
+  });
+
+  it('极端轮数：压到双下限（barH=3 / gap=1），余量交条列滚动兜底', () => {
+    // 100 轮 gapFit < 1 → barFit = (150-99)/100 = 0.51 → 0 → 取下限 3 → {3,1}
+    expect(computeDensity(100, 150)).toEqual({ barH: 3, gap: 1 });
+  });
+});
+
 describe('jumpToRound（点击定位）', () => {
   it('按 rect 差值把目标块顶滚到可视顶 inset 处，并显式重算吸底标记', () => {
     const messages = document.createElement('div');
@@ -170,6 +223,10 @@ describe('createRoundNav（控制器集成）', () => {
     const btn = document.createElement('button');
     btn.id = 'scrollToBottomBtn';
     root.appendChild(btn);
+  });
+
+  afterEach(() => {
+    restoreInnerHeight();
   });
 
   it('fail-fast：外壳缺条列/浮层容器时抛清晰错误（夹具镜像失同步立即暴露）', () => {
@@ -268,5 +325,49 @@ describe('createRoundNav（控制器集成）', () => {
     const bars = track.querySelectorAll('.round-nav__bar');
     expect(bars[1].classList.contains('is-active')).toBe(true);
     expect(bars[0].classList.contains('is-active')).toBe(false);
+  });
+
+  it('指纹全量：仅中段预览变化也重建（堵重放/分叉「条数+首尾长」静默失效）', () => {
+    mountUserBubble(messages, 'AAA');
+    mountUserBubble(messages, 'BBB');
+    mountUserBubble(messages, 'CCC');
+    stubScrollBox(messages, { scrollHeight: 2000, clientHeight: 400 });
+    const { sync } = createRoundNav(messages, nav);
+    sync();
+    const barBefore = track.querySelector('.round-nav__bar');
+    // 条数（3）与首尾长度（3/3）均不变，仅中段文本换字（同长度）——旧「首尾长」指纹会误判未变
+    const midBody = messages.querySelectorAll('.msg-body')[1] as HTMLElement;
+    midBody.textContent = 'ZZZ';
+    sync();
+    expect(track.querySelector('.round-nav__bar')).not.toBe(barBefore);
+    expect((track.querySelectorAll('.round-nav__bar')[1] as HTMLElement).title).toBe('ZZZ');
+  });
+
+  it('压密接线：按视口高预算下发条列限高/间隙/条高（resize 复用 sync 重算）', () => {
+    stubInnerHeight(300); // 预算 = 300 * 0.5 = 150
+    for (let i = 0; i < 10; i++) mountUserBubble(messages, `第 ${i + 1} 轮`);
+    stubScrollBox(messages, { scrollHeight: 4000, clientHeight: 400 });
+    const { sync } = createRoundNav(messages, nav);
+    sync();
+    // computeDensity(10, 150) = { barH: 12, gap: 3 }
+    expect(track.style.maxHeight).toBe('150px');
+    expect(track.style.gap).toBe('3px');
+    expect((track.querySelector('.round-nav__bar') as HTMLElement).style.height).toBe('12px');
+    // 缩小视口 → 预算变小 → 重算压密（模拟 resize）
+    stubInnerHeight(80); // 预算 = 40 → barFit = (40-9)/10 = 3.1 → 取下限 3
+    sync();
+    expect(track.style.maxHeight).toBe('40px');
+    expect((track.querySelector('.round-nav__bar') as HTMLElement).style.height).toBe('3px');
+  });
+
+  it('极端轮数：全量条不截断，压到双下限（gap=1 / barH=3）交条列滚动兜底', () => {
+    stubInnerHeight(300);
+    for (let i = 0; i < 100; i++) mountUserBubble(messages, `第 ${i + 1} 轮`);
+    stubScrollBox(messages, { scrollHeight: 9000, clientHeight: 400 });
+    const { sync } = createRoundNav(messages, nav);
+    sync();
+    expect(track.querySelectorAll('.round-nav__bar').length).toBe(100);
+    expect(track.style.gap).toBe('1px');
+    expect((track.querySelector('.round-nav__bar') as HTMLElement).style.height).toBe('3px');
   });
 });

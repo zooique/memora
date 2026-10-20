@@ -13,8 +13,11 @@
  *    Round，带注入前缀）与运行时（回显原始 input，无前缀）两路上屏形态不同，经同一
  *    纯函数归一；不另从 round-store 拉第二套文本（防运行时与重放两套口径）。
  *  - **重建时机与渲染同源**：调用方（chatView）把 sync 挂进既有 MutationObserver 的
- *    rAF 拍子（吸底同一通道同一节拍），不在各渲染路径埋点；内部用签名比对
- *    （条数 + 首尾块文本长）防流式期每帧重建。
+ *    rAF 拍子（吸底同一通道同一节拍），不在各渲染路径埋点；内部用签名比对防流式期
+ *    每帧重建。
+ *  - **高度与压密 = 本文件唯一所有**（自适应压密，用户拍板「全量条 + 压密」）：CSS
+ *    不设条列 max-height，由 applyMetrics 按视口高下发（同源单点）；轮数超出预算时
+ *    先压间隙再压条高，极端仍不足交给条列自身滚动兜底（CSS overflow，见 chatStyles）。
  *  - **滚动复用 helpers/scrollToBottom**：点击定位后显式 trackScroll 重算吸底标记
  *    （程序化 scrollTop 赋值是否派发 scroll 事件不确定，对齐 jumpToBottom 纪律），
  *    不复制吸底逻辑。
@@ -34,6 +37,25 @@ const ACTIVE_THRESHOLD = 96;
 
 /** 浮层预览截断长度（字符）：浮层行宽有限，超长输入截断即可辨认 */
 const PREVIEW_MAX = 60;
+
+/* ---- 自适应压密参数（全量条 + 压密，台账 HOST-NAV-1） ---- */
+/** 宽松态条高（px）：与 CSS .round-nav__bar 默认高同判（镜像 --sp-5；根因见 applyMetrics 注释） */
+const BAR_MAX_H = 12;
+/** 极限态条高（px）：细到仍可辨、可点 */
+const BAR_MIN_H = 3;
+/** 宽松态条间隙（px）：与 CSS .round-nav__track 默认 gap 同判（镜像 --sp-2） */
+const GAP_MAX = 6;
+/** 极限态条间隙（px） */
+const GAP_MIN = 1;
+/**
+ * 导航条可用高度预算 = 视口高 × 该比例。
+ *
+ * 取 0.5 的理由：导航条竖向居中锚定（top:50%），占视口高一半即上下各占至 25%~75%
+ * 区间，恒不与右下角「一键到底」按钮（贴底约 5% 内）重叠 —— 这正是「侧边栏位置紧张」
+ * 的结构性解，而非再挪一个边距。**SSOT：高度上限的唯一真源在此**，经 applyMetrics
+ * 下发条列内联 max-height；CSS 不设 max-height（避免第二套值静默漂移）。
+ */
+const NAV_HEIGHT_RATIO = 0.5;
 
 /**
  * 提取轮次预览文本：上屏文本 → 剥注入前缀 → 压缩空白成单行 → 截断
@@ -69,6 +91,35 @@ export function computeActiveIndex(
 }
 
 /**
+ * 自适应压密（纯函数，jsdom 可直接测）
+ *
+ * 全量条 + 压密策略（用户拍板）：轮数再多也保留全部条（不截断，保住「全量地图 +
+ * 一点即达」的形态），靠压缩条高与间隙适配可用高度；极端仍不足时由条列自身滚动
+ * 兜底（CSS overflow，见 chatStyles 注释）。
+ *
+ * 压密次序 —— 先动间隙、后动条高（间隙视觉权重低，先牺牲）：①间隙压到 GAP_MIN；
+ * ②仍不足再压条高（下限 BAR_MIN_H，保证每根仍可辨可点）。
+ *
+ * @param count  轮数（条数）
+ * @param availH 条列可用高度（px）；count<=0 或 availH<=0（视口未就绪）返回宽松态默认
+ * @returns 条高与间隙（px）
+ */
+export function computeDensity(count: number, availH: number): { barH: number; gap: number } {
+  const relaxed = { barH: BAR_MAX_H, gap: GAP_MAX };
+  if (count <= 0 || availH <= 0) return relaxed;
+  // 宽松布局已装得下 → 不压（绝大多数会话命中此分支，条列保持 ChatGPT 同款呼吸感）
+  if (count * BAR_MAX_H + (count - 1) * GAP_MAX <= availH) return relaxed;
+  // ① 条高保持宽松，先把间隙压到下限之上
+  if (count > 1) {
+    const gapFit = (availH - count * BAR_MAX_H) / (count - 1);
+    if (gapFit >= GAP_MIN) return { barH: BAR_MAX_H, gap: Math.floor(gapFit) };
+  }
+  // ② 间隙触底：再压条高（下限 BAR_MIN_H；仍不足 ⇒ 被条列滚动接住，不外溢）
+  const barFit = count > 1 ? (availH - (count - 1) * GAP_MIN) / count : availH;
+  return { barH: Math.max(BAR_MIN_H, Math.floor(barFit)), gap: GAP_MIN };
+}
+
+/**
  * 点击定位：把目标轮滚到容器可视顶附近，返回重算后的吸底真值
  *
  * 用 rect 差值累加到 scrollTop（不依赖 offsetParent 链——round-group 等中间层
@@ -83,17 +134,22 @@ export function jumpToRound(messages: HTMLElement, target: HTMLElement): boolean
   return trackScroll(messages);
 }
 
-/** 控制器句柄：sync = 结构变更后全量重建（MutationObserver 拍子）；refresh = 滚动后轻量刷高亮 */
+/** 控制器句柄：sync = 结构变更/尺寸变更后重建与压密；refresh = 滚动后轻量刷高亮 */
 export interface RoundNavController {
   sync(): void;
   refresh(): void;
 }
 
-/** 重建签名：条数 + 首尾块文本长。数量不变且尾块不再增长 ⇒ 内容没变，跳过重建 */
+/**
+ * 重建签名：条数 + 全量预览文本拼接（分隔符防歧义）。
+ *
+ * ⚠️ **勿退回「条数 + 首尾块文本长」**：重放 / 分叉时条数与首尾长度都可能不变、仅中段
+ * 文本不同，长度式签名会误判「未变」而跳过重建 ⇒ 条预览与浮层静默失效（读者信了、
+ * 无测试会红类伤）。全量拼接对「任一预览变化」敏感，且用户气泡文本在流式期不变
+ * （.msg-wrapper 只包用户消息）⇒ 不会因 AI 流式增长而每帧重建。
+ */
 function signatureOf(previews: string[]): string {
-  const first = previews[0]?.length ?? -1;
-  const last = previews[previews.length - 1]?.length ?? -1;
-  return `${previews.length}:${first}:${last}`;
+  return `${previews.length}\u0000${previews.join('\u0000')}`;
 }
 
 /**
@@ -101,7 +157,8 @@ function signatureOf(previews: string[]): string {
  *
  * @param messages 滚动容器（#messages）
  * @param nav      静态外壳（#roundNav，含 .round-nav__track 条列 + .round-nav__panel 浮层）
- * @returns 控制器句柄（chatView 把 sync/refresh 分别挂进 MutationObserver rAF 拍子与 scroll 监听）
+ * @returns 控制器句柄（chatView 把 sync 挂进 MutationObserver rAF 拍子与 resize，
+ *          refresh 挂进 scroll）
  */
 export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNavController {
   // fail-fast：外壳是静态骨架（生产 buildHtml 与测试夹具都有），缺失 = 夹具镜像失同步，
@@ -119,6 +176,8 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
   let lastSignature = '';
   /** 最近一次构建时的轮次气泡（点击定位按它寻址；与条列/浮层行同序） */
   let cachedWrappers: HTMLElement[] = [];
+  /** 压密缓存键：轮数 + 预算 + 条高 + 间隙 任一变化才重写内联样式（防流式期每帧重写 DOM） */
+  let lastMetricsKey = '';
 
   /** 收集当前轮次气泡 + 各自预览文本（上屏文本 = 渲染同源，读 DOM 不另存状态） */
   function collect(): { wrappers: HTMLElement[]; previews: string[] } {
@@ -130,21 +189,14 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
     return { wrappers, previews };
   }
 
-  /** 全量重建条列与浮层行（仅签名变化时真重建；流式期同帧多次调用被签名挡住） */
-  function sync(): void {
-    const { wrappers, previews } = collect();
-    const signature = signatureOf(previews);
-    cachedWrappers = wrappers;
-    // 显隐裁决：不足两轮（无导航价值）或容器不可滚动（全在视口内）⇒ 整条隐藏
-    const scrollable = messages.scrollHeight > messages.clientHeight;
-    nav.hidden = wrappers.length < 2 || !scrollable;
-    if (nav.hidden || signature === lastSignature) return;
-    lastSignature = signature;
+  /** 全量重建条列与浮层行（仅签名变化时真重建） */
+  function rebuild(previews: string[]): void {
     track.textContent = '';
     panel.textContent = '';
-    wrappers.forEach((_, i) => {
-      const preview = previews[i] || '（空输入）';
-      // 条：视觉 2px 横线，触达区由 CSS 撑高；aria-label 让读屏与 title 都可读
+    previews.forEach((raw, i) => {
+      const preview = raw || '（空输入）';
+      // 条：视觉矩形由 CSS ::before 画（默认 2px 细线），触达区高于视觉条；条高由
+      // applyMetrics 按压密结果内联下发（默认 --sp-5）。aria-label 让读屏与 title 都可读
       const bar = document.createElement('button');
       bar.type = 'button';
       bar.className = 'round-nav__bar';
@@ -160,7 +212,47 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
       item.textContent = preview;
       panel.appendChild(item);
     });
-    refresh();
+  }
+
+  /**
+   * 自适应压密应用：按视口高算预算 → 算条高/间隙 → 下发条列限高与条尺寸。
+   *
+   * 预算随视口变化而变，故**每次 sync 都调用**（resize 触发 sync 时即重算）；缓存键
+   * 确保同预算同轮数下不重写内联样式（流式期 sync 高频，避免无谓 DOM 写）。
+   * 镜像说明：CSS 侧 .round-nav__bar 高与 .round-nav__track gap 仍留令牌默认值，仅作
+   * 「JS 未及接管前的宽松态兜底」；接管后**唯一真源 = 本函数下发值**（BAR_MAX_H /
+   * GAP_MAX 与令牌同值，是刻意镜像，改一处须核另一处）。
+   */
+  function applyMetrics(count: number): void {
+    const win = messages.ownerDocument.defaultView;
+    const budget = Math.round((win?.innerHeight ?? 0) * NAV_HEIGHT_RATIO);
+    const { barH, gap } = computeDensity(count, budget);
+    const key = `${count}:${budget}:${barH}:${gap}`;
+    if (key === lastMetricsKey) return;
+    lastMetricsKey = key;
+    // 条列限高：唯一高度上限真源（预算 0 = 视口未就绪时不设，交还 CSS 默认态）
+    if (budget > 0) track.style.maxHeight = `${budget}px`;
+    track.style.gap = `${gap}px`;
+    track.querySelectorAll<HTMLElement>('.round-nav__bar').forEach((bar) => {
+      bar.style.height = `${barH}px`;
+    });
+  }
+
+  /** 结构/尺寸变更后：重建裁决 + 压密 + 高亮 */
+  function sync(): void {
+    const { wrappers, previews } = collect();
+    const signature = signatureOf(previews);
+    cachedWrappers = wrappers;
+    // 显隐裁决：不足两轮（无导航价值）或容器不可滚动（全在视口内）⇒ 整条隐藏
+    const scrollable = messages.scrollHeight > messages.clientHeight;
+    nav.hidden = wrappers.length < 2 || !scrollable;
+    if (!nav.hidden && signature !== lastSignature) {
+      lastSignature = signature;
+      rebuild(previews);
+    }
+    // 压密总会跑：resize 改变预算但轮数/签名不变时，仍需按新预算重排条列
+    applyMetrics(wrappers.length);
+    if (!nav.hidden) refresh();
   }
 
   /** 滚动后轻量刷新：只读几何判当前轮、切高亮类（不重建条列） */

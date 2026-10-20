@@ -7260,6 +7260,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     () => {
       syncRowEdges(skillChipRow);
       syncRowEdges(refChipRow);
+      // 大纲条（HOST-NAV-1）：视口高变 ⇒ 压密预算重算。sync 内 applyMetrics 总会跑，
+      // 故即便轮数/签名未变，也会按新预算重排条列（与上面两行同一 resize 拍子）。
+      roundNavController.sync();
     },
     { passive: true },
   );
