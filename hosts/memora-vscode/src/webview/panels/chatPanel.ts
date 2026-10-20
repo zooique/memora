@@ -19,6 +19,9 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.js';
 import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
+// 引用路径 ↔ 首根的双向判据唯一真源 = refPath（生成侧 relativeUnderPrimaryRoot 归 addToChat 用，
+// 消费侧 resolveUnderPrimaryRoot 归本文件 openRefInEditor 用）——两半分居必漂移，故同模块。
+import { resolveUnderPrimaryRoot } from '../../extension/host/refPath.js';
 // 命令 id 唯一真源 = fileChangeView（与 package.json#contributes.commands 的值同源维护）。
 // 对话区常驻条的两个按钮**不自己实现动作**，只 executeCommand 复用已注册命令——
 // 与文件内 CodeLens、状态栏 QuickPick、命令面板走同一实现（SSOT，无第二份清理逻辑）。
@@ -280,12 +283,16 @@ const ASK_TIMEOUT_NOTICE =
 /** 文档正文注入上限（字符，约 3~4k token，防大文档爆上下文）——仅脏/未命名/工作区外文件走注入 */
 const MAX_DOC_CONTEXT_CHARS = 12000;
 
-/** 活动编辑器快照：判「注入正文」还是「只给指针」所需的全部事实 */
+/**
+ * 活动编辑器**廉价快照**：判「注入正文」还是「只给指针」所需的全部事实
+ *
+ * ⚠️ **刻意不含正文**：显示订阅（换文件 / 编辑 / 保存）每次击键都取本快照，若把正文
+ * （`getText()` 全篇 + 截断）并进来，就成「每敲一个字全量读一遍文档」——那是修复
+ * 「缓存撒谎」时自己引入的效率回退。正文只在**真要注入**时经 `readDocBody` 惰性读取。
+ */
 type DocContextSnapshot = {
-  /** 文件名（注入正文时的首行） */
+  /** 文件名（注入正文时的首行，也用作 chip 标签的回退显示） */
   fileName: string;
-  /** 可直接注入的正文（`文件名：X\n{内容}`，超上限截断） */
-  body: string;
   /** 有未保存修改 ⇒ buffer 才是真相，磁盘不是 */
   isDirty: boolean;
   /** 未命名文档 ⇒ 无磁盘版本可读 */
@@ -295,15 +302,40 @@ type DocContextSnapshot = {
 };
 
 /**
- * 读取活动编辑器快照（**发送时实时取，不缓存**）
+ * 读取活动编辑器**廉价快照**（**发送时实时取，不缓存；不含正文**）
  *
  * 为什么不缓存：脏态是高频变化的量，而 `onDidChangeActiveTextEditor` 只覆盖「切文件」，
  * 不覆盖「同一文件被编辑」——缓存会让判据撒谎（打开时干净、改完仍判干净 ⇒ 不注入旧版）。
+ *
+ * ⚠️ 本函数**不读正文**：它被显示订阅按**每次击键**调用（见 `ensureActiveFileTracking`），
+ * 在此 `getText()` 等于每敲一个字全量读一遍文档。正文只在确定要注入时经 `readDocBody` 取。
  *
  * @param editor 当前活动编辑器（无则返回 undefined ⇒ 本轮无文档上下文）
  */
 function snapshotDocContext(editor: vscode.TextEditor | undefined): DocContextSnapshot | undefined {
   if (!editor) return undefined;
+  const doc = editor.document;
+  // 未命名文档没有磁盘身份；工作区外文件 asRelativePath 会回退成绝对路径形态，
+  // 对「模型 read_file」与「宿主 open_ref 定位」都不可用 ⇒ 一律视为无相对路径。
+  const rel = doc.isUntitled ? undefined : vscode.workspace.asRelativePath(doc.uri);
+  return {
+    fileName: doc.fileName.split(/[\\/]/).pop() || doc.fileName,
+    isDirty: doc.isDirty,
+    isUntitled: doc.isUntitled,
+    relativePath: rel && !isAbsolutePathLike(rel) ? rel : undefined,
+  };
+}
+
+/**
+ * 读取活动编辑器**注入正文**（**昂贵**：`getText()` 全篇 + 超上限截断）
+ *
+ * 与 `snapshotDocContext` 分家的唯一理由：正文读取只该发生在「脏 / 未命名 / 工作区外」这三类
+ * **真注入**路径上，不该被每击键触发的显示订阅带上（那是修复「缓存撒谎」时引入的效率回退）。
+ * 返回体格式（`文件名：{name}\n{正文}`）是信封契约的一部分，勿在此改格式。
+ *
+ * @param editor 活动编辑器（调用方须确知本轮会注入正文，通常已由 `docInjectReason` 判定）
+ */
+function readDocBody(editor: vscode.TextEditor): string {
   const doc = editor.document;
   const fileName = doc.fileName.split(/[\\/]/).pop() || doc.fileName;
   const content = doc.getText();
@@ -311,16 +343,7 @@ function snapshotDocContext(editor: vscode.TextEditor | undefined): DocContextSn
     content.length > MAX_DOC_CONTEXT_CHARS
       ? `${content.slice(0, MAX_DOC_CONTEXT_CHARS)}\n\n…[内容过长已截断]`
       : content;
-  // 未命名文档没有磁盘身份；工作区外文件 asRelativePath 会回退成绝对路径形态，
-  // 对「模型 read_file」与「宿主 open_ref 定位」都不可用 ⇒ 一律视为无相对路径。
-  const rel = doc.isUntitled ? undefined : vscode.workspace.asRelativePath(doc.uri);
-  return {
-    fileName,
-    body: `文件名：${fileName}\n${truncated}`,
-    isDirty: doc.isDirty,
-    isUntitled: doc.isUntitled,
-    relativePath: rel && !isAbsolutePathLike(rel) ? rel : undefined,
-  };
+  return `文件名：${fileName}\n${truncated}`;
 }
 
 /**
@@ -371,16 +394,11 @@ function projectActiveFile(
 
 // 判据与快照以命名导出供单测直接驱动（沿既有 `foldThoughtEvents` 先例：纯逻辑、无 webview 依赖）。
 // 导出仅为可测，不构成对外 API——调用点仍在 sendInput 一处。
-export { snapshotDocContext, mustInjectDocBody, docInjectReason, projectActiveFile };
+export { snapshotDocContext, readDocBody, mustInjectDocBody, docInjectReason, projectActiveFile };
 
 /** 绝对路径判定（跨平台）：Windows 盘符 / UNC / POSIX 根 */
 function isAbsolutePathLike(p: string): boolean {
   return /^([A-Za-z]:[\\/]|[\\/]{1,2})/.test(p);
-}
-
-/** 是否含 `..` 路径段（会逃出工作区根） */
-function hasParentSegment(p: string): boolean {
-  return p.split(/[\\/]/).includes('..');
 }
 
 /** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（删除会话记录 + 会话标题元数据）。
@@ -636,20 +654,27 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 一次快照同时产出两样东西：进信封的 `snap` / `inject`（判据）与给用户看的
    * `projection`（投影）。**两样必须同源**——各算一遍就会出现「chip 说只给指针、
    * 实际却注入了全文」这类自相矛盾，且无法被任何单测发现。
+   *
+   * **正文惰性（`withBody`）**：显示订阅（{@link pushActiveFile}，每击键触发）走 `withBody=false`，
+   * 绝不 `getText()`；只有 {@link sendInput} 走 `withBody=true`，且仅在本轮**真要注入**时才读正文。
+   * 这样「昂贵读取」与「是否真需要」严格绑定，杜绝每击键全量读文档的效率回退。
    */
-  private resolveActiveFile(): {
+  private resolveActiveFile(withBody = false): {
     snap: DocContextSnapshot | undefined;
     inject: boolean;
     projection: ActiveFileProjection;
+    body: string;
   } {
     // 开关关掉 ⇒ 连快照都不取：指针与正文一并消失（无「关了还挂指针」中间态）
-    const snap = this._attachActiveFile
-      ? snapshotDocContext(vscode.window.activeTextEditor)
-      : undefined;
+    const editor = this._attachActiveFile ? vscode.window.activeTextEditor : undefined;
+    const snap = snapshotDocContext(editor);
+    const inject = !!snap && mustInjectDocBody(snap);
     return {
       snap,
-      inject: !!snap && mustInjectDocBody(snap),
+      inject,
       projection: projectActiveFile(snap, this._attachActiveFile),
+      // 正文只在本轮真要注入、且调用方索取（withBody）时才读——显示路径零 getText
+      body: withBody && inject && editor ? readDocBody(editor) : '',
     };
   }
 
@@ -717,11 +742,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *     用户由此**直接看到「我到底加了哪几行」**，无需自行数行；
    *   - 目录：资源管理器露出（目录没有「打开成文档」的概念）。
    *
-   * 路径解析：`ref.path` 是**工作区相对路径**（生产点 = extension.ts addToChat 的
-   * `asRelativePath`）。项目根**恒取 `workspaceFolders[0]`**，与内核同源——内核
-   * `read_file` 的 cwd 只有一个根（`extension.ts` 的 resolveProjectPath 同样只取首根），
-   * 逐根遍历会在多根工作区打开第二根的同名文件，而模型读的是首根那份
+   * 路径解析：`ref.path` 是**首根下的相对路径**（生产点 = extension.ts addToChat，经
+   * `refPath.relativeUnderPrimaryRoot` 产出规范形）。项目根**恒取 `workspaceFolders[0]`**，
+   * 与内核同源——内核 `read_file` 的 cwd 只有一个根（`extension.ts` 的 resolveProjectPath
+   * 同样只取首根），逐根遍历会在多根工作区打开第二根的同名文件，而模型读的是首根那份
    * ⇒ 用户核对的与模型读到的**不是同一个文件**（伪多根支持，已删）。
+   * 解析与越界守卫收口在 `refPath.resolveUnderPrimaryRoot`——与生成侧**同一模块同一判据**
+   * （绝对路径 / `..` 段 / 非规范形一律拒，解析结果须往返落回首根），webview 上行通道
+   * 不能各写一套字符串守卫。
    *
    * 行号是**指针不是快照**（协议 ChatRef 注释）：引用后文件可能已改短，区间越界——
    * 统一 clamp 到文档末尾，不让 Position/lineAt 抛异常（仍定位到最接近的行）。
@@ -735,13 +763,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'notice', level: 'error', message: '请先打开一个工作区' });
       return;
     }
-    // 越界路径拒绝：ref.path 由 webview 回传，等于一条「打开任意文件」的上行通道。
-    // 绝对路径 / 含 `..` 段一律不解析（正常引用的 path 恒为工作区内相对路径）。
-    if (!ref.path || isAbsolutePathLike(ref.path) || hasParentSegment(ref.path)) {
+    // 越界路径拒绝（判据 SSOT = refPath.resolveUnderPrimaryRoot，与 addToChat 生成侧同模块）：
+    // ref.path 由 webview 回传，等于一条「打开任意文件」的上行通道——绝对路径 / `..` 段 /
+    // 非规范形一律不解析，解析结果须往返落回首根（详见 refPath.ts 顶部契约）。
+    const abs = resolveUnderPrimaryRoot(root.uri.fsPath, ref.path);
+    if (!abs) {
       this.post({ type: 'notice', level: 'error', message: `无法打开引用：${ref.path}` });
       return;
     }
-    const uri = vscode.Uri.joinPath(root.uri, ref.path);
+    const uri = vscode.Uri.file(abs);
     try {
       if (ref.kind === 'folder') {
         await vscode.commands.executeCommand('revealInExplorer', uri);
@@ -3240,10 +3270,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     //   开关关掉 → 连快照都不取（指针与正文一并消失）。
     // 信封构造与剥离同源收口在 helpers/docContext（技能块在前、文档块在后；无任何块时
     // **不加信封**，不注入「用户请求：」分隔符），回放侧因此可安全以分隔符为界还原用户请求。
-    const activeFile = this.resolveActiveFile();
+    // withBody=true：只有本轮真要注入时，正文才由 resolveActiveFile 惰性读取（见其 JSDoc）
+    const activeFile = this.resolveActiveFile(true);
     const injectDoc = activeFile.inject;
     const docSnap = activeFile.snap;
-    const docBlock = docSnap && injectDoc ? buildDocContextBlock(docSnap.body) : '';
+    const docBlock = injectDoc ? buildDocContextBlock(activeFile.body) : '';
     // 引用块（右键「添加到对话」）：仅挂路径与形态，不注入内容（内容由模型按需 read_file）；
     // 干净态活动文件在此并成指针行（同 path 已有引用则不重复）
     const refsBlock = buildRefContextBlock(

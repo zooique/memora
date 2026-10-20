@@ -34,6 +34,7 @@ import {
   docInjectReason,
   mustInjectDocBody,
   projectActiveFile,
+  readDocBody,
   snapshotDocContext,
 } from '../panels/chatPanel.js';
 
@@ -827,7 +828,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // ① 干净 + 工作区内 ⇒ 不注入，只把相对路径当指针传给模型
     const clean = snapshotDocContext(makeEditor({ fsPath: '/mock/workspace/docs/方案.md' }));
     expect(clean?.relativePath).toBe('docs/方案.md');
-    expect(clean?.body).toBe('文件名：方案.md\n文档内容A');
+    // 正文已与快照分家（惰性读取，格式归 readDocBody）——见下一例；此处只验判据
     expect(mustInjectDocBody(clean!)).toBe(false);
 
     // ② 有未保存修改 ⇒ buffer ≠ 磁盘，指针会让模型读到旧版 ⇒ 必须注入
@@ -848,6 +849,32 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     // 无活动编辑器 ⇒ 本轮无文档上下文（退化为普通对话）
     expect(snapshotDocContext(undefined)).toBeUndefined();
+  });
+
+  it('文档正文惰性化：快照不读正文、readDocBody 才读（防每击键全量读文的效率回退）', () => {
+    // 显示订阅（换文件 / 编辑 / 保存）按**每次击键**取快照 ⇒ 快照绝不能 getText()，
+    // 否则大文件下每敲一个字全量读一遍文档（修复「缓存撒谎」时引入的效率回退）。
+    // 正文只在真要注入时由 readDocBody 惰性读取，且格式 = 信封契约。
+    let reads = 0;
+    const editor = {
+      document: {
+        fileName: '/mock/workspace/docs/方案.md',
+        uri: { fsPath: '/mock/workspace/docs/方案.md' },
+        isDirty: false,
+        isUntitled: false,
+        getText: () => {
+          reads += 1;
+          return '文档内容A';
+        },
+      },
+    } as never;
+    // ① 廉价快照（判据与 chip 投影的唯一数据源）绝不触发 getText
+    const snap = snapshotDocContext(editor);
+    expect(snap?.relativePath).toBe('docs/方案.md');
+    expect(reads).toBe(0);
+    // ② 仅当显式取注入正文时才读一次，格式 = `文件名：{name}\n{正文}`
+    expect(readDocBody(editor)).toBe('文件名：方案.md\n文档内容A');
+    expect(reads).toBe(1);
   });
 
   it('文档上下文信封：干净文件只出现指针行、脏文件才出现正文块（判据的**消费点**守卫）', async () => {
