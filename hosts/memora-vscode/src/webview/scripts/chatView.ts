@@ -6568,11 +6568,34 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       sendMessage();
     }
   });
-  input.addEventListener('input', () => {
+  input.addEventListener('input', (e) => {
     autoResize();
     // 输入内容变化时，按钮语义（classList 图标）和 disabled 态都要重算
     syncButtonSemantics();
     syncSendEnabled();
+    // HOST-CTX-13：@ 提及的**兜底触发路径**（中文输入法 / 粘贴）。
+    //
+    // 根因：上方 keydown 路径的判据是 `e.key === '@'`——那是**按键事实**，依赖键盘布局
+    // 与 IME 行为。中文输入法插入的 @ 不保证走这条路（IME 可能吞掉 keydown 或上报
+    // 'Process'/'Unidentified'），粘贴 @ 则根本不产生 keydown ⇒ 真机实测「需要英文 @ 才
+    // 有反应」。判据改为**文本事实**：光标前一个字符恰为 '@'。
+    //
+    // 为何两条路径并存（而非只留 input）：keydown 期 selectionStart 即 '@' 落点（字符
+    // 尚未插入），offset 语义直接；input 期字符已插入，要减 1。保留 keydown 作快路径，
+    // input 兜住它漏掉的场景。双触发由宿主 `_mentionQuickPickOpen` in-flight 守卫拦掉
+    // （HOST-CTX-11 的守卫在此成为复用地基——不新建第二套防抖机制）。
+    //
+    // 为何要 inputType 判据：删除文本同样触发 input，若光标恰好停在 '@' 前会把「删到 @
+    // 前面」误判成「插入 @」。只认 insert 家族（insertText / insertCompositionText /
+    // insertFromPaste / …）即可精确表达「刚刚有个字符被放进来」。
+    const ie = e as InputEvent;
+    if (typeof ie.inputType === 'string' && ie.inputType.startsWith('insert')) {
+      const at = input.selectionStart - 1;
+      if (at >= 0 && input.value[at] === '@') {
+        mentionTriggerOffset = at;
+        vscode.postMessage({ type: 'mention_open' });
+      }
+    }
   });
 
   /**

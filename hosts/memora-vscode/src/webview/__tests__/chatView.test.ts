@@ -9380,6 +9380,46 @@ describe('添加到对话：引用气泡（file/folder · 去重 · 发送清空
     expect(input.value).toBe('帮我看');
     expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(1);
   });
+
+  // ── HOST-CTX-13：触发判据从「按键」改「文本事实」——IME / 粘贴路径 ──
+  // keydown 路径的判据是 e.key === '@'（按键事实，依赖键盘布局与 IME 行为）；中文输入法
+  // 插入的 @ 不保证走 keydown、粘贴 @ 根本不产生 keydown ⇒ 真机实测「需要英文 @ 才有反应」。
+  // 兜底判据落在 input 事件：光标前一个字符恰为 '@' 且 inputType 属 insert 家族。
+  it('中文输入法插入 @（inputType=insertText）→ 上行 mention_open（IME 不走 keydown）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    // IME 插入后字符已落位、光标在 @ 之后（与 keydown 期的「尚未落入」相反）
+    input.value = '帮我@';
+    input.setSelectionRange(3, 3);
+    input.dispatchEvent(
+      new InputEvent('input', { inputType: 'insertText', data: '@', bubbles: true }),
+    );
+    expect(postMessage).toHaveBeenCalledWith({ type: 'mention_open' });
+  });
+
+  it('粘贴 @（inputType=insertFromPaste）→ 上行（该路径无 keydown 可言）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '帮我@';
+    input.setSelectionRange(3, 3);
+    input.dispatchEvent(
+      new InputEvent('input', { inputType: 'insertFromPaste', data: '@', bubbles: true }),
+    );
+    expect(postMessage).toHaveBeenCalledWith({ type: 'mention_open' });
+  });
+
+  it('删除到 @ 前（inputType=deleteContentBackward）→ 不上行（防把删除误判成插入）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    // 用户在「帮我@x」里向前删掉「我」：结果态「帮@x」、光标仍在 @ 之后。
+    // 若无 inputType 判据，光标前恰为 @ 会被误判成「刚插入了 @」而弹列表。
+    input.value = '帮@x';
+    input.setSelectionRange(3, 3);
+    input.dispatchEvent(
+      new InputEvent('input', { inputType: 'deleteContentBackward', bubbles: true }),
+    );
+    expect(postMessage).not.toHaveBeenCalledWith({ type: 'mention_open' });
+  });
 });
 
 // ═══════════════════════════════════════════════════════════
