@@ -7084,7 +7084,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * 把「当前打开文件会不会进本轮上下文」摊在输入框上方——此前它完全隐形，用户既看不到
    * 也没法关。两形态：
-   *   - attached：`📄 docs/白话设计文档.md · 未保存（全文已附）` + ✕（本会话不再附加）
+   *   - attached：`📄 白话设计文档.md · 未保存（全文已附）` + ✕（本会话不再附加）
    *   - suppressed：虚线胶囊「当前文件未附加 · 点击启用」（整枚可点回开，不留死路）
    *
    * 为什么要标「全文已附」：干净文件只给指针（不占预算），脏/未命名/工作区外才注入正文
@@ -7131,15 +7131,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     chip.appendChild(icon());
     const name = document.createElement('span');
     name.className = 'skill-chip__name';
-    name.textContent = p.label;
+    // HOST-CTX-18 降噪（对齐 CTX-17 引用气泡）：可见文本只留文件名，完整相对路径降级到
+    // title 末尾括号（hover 可辨）——投影 label 仍是全路径（aria-label 与去重判据都用它）。
+    // 活动文件永远只有一个，不存在引用气泡那种同名撞车，纯文件名无歧义代价。
+    name.textContent = refDisplayName(p.label);
     // title 承载「本轮以什么方式附加」——不能只靠徽记（窄面板下徽记可能被省略号吃掉）。
     // 注入量归因（CTX-6②）：injectedTokens 只在「发送后本轮回推」里出现（非常驻值，
     // 下次显示订阅推送自然抹掉），挂在「全文已附」同一句上——CTX-3/CTX-6 文案不拆两处。
+    // CTX-18：完整路径附在末尾括号——可见文本降噪后，目录位置靠 hover 这一眼。
     name.title = p.injected
       ? `本轮已附全文（${ACTIVE_FILE_REASON_LABELS[p.reason ?? 'dirty']}）${
           p.injectedTokens !== undefined ? `· 注入约 ${p.injectedTokens} token（估算）` : ''
-        }`
-      : '本轮仅给路径指针，正文由模型按需读取（不占预算）';
+        }（${p.label}）`
+      : `本轮仅给路径指针，正文由模型按需读取（不占预算）（${p.label}）`;
     chip.appendChild(name);
     if (p.injected) {
       const note = document.createElement('span');

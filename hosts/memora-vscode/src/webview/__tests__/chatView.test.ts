@@ -9679,11 +9679,25 @@ describe('活动文件 chip（是否进本轮上下文 · 本会话开关）', (
     dispatch(attached());
     const chip = document.querySelector('#refChips .active-file-chip') as HTMLElement;
     expect(chip.dataset.activeFile).toBe('attached');
-    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('docs/方案.md');
+    // HOST-CTX-18 降噪（对齐 CTX-17 引用气泡）：可见文本只含文件名
+    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('方案.md');
     // 干净态不标徽记：指针不占预算，标了反而让人以为占了
     expect(chip.querySelector('.skill-chip__note')).toBeNull();
     expect(chip.querySelector('.skill-chip__remove')).not.toBeNull();
     expect(document.getElementById('refChips')?.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('活动文件 chip 可见文本只含文件名、完整路径不丢（HOST-CTX-18 对齐 CTX-17）', () => {
+    mountChatView();
+    dispatch(attached());
+    const chip = document.querySelector('#refChips .active-file-chip') as HTMLElement;
+    const name = chip.querySelector('.skill-chip__name') as HTMLElement;
+    expect(name.textContent).toBe('方案.md');
+    // 全路径仍在两处：title 末尾括号（hover 可见目录位置）/ remove 的 aria-label（屏幕阅读器）
+    expect(name.title).toContain('docs/方案.md');
+    expect(chip.querySelector('.skill-chip__remove')?.getAttribute('aria-label')).toContain(
+      'docs/方案.md',
+    );
   });
 
   it('脏文件 → 徽记「未保存·全文已附」（用户看得懂这条消息为什么贵）', () => {
