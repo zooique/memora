@@ -138,6 +138,42 @@ describe('explorer/context 菜单 when ↔ 命令契约（文件/目录准入）
 });
 
 /**
+ * editor/context 菜单 `when` 守卫（HOST-MENU-2，2026-10-20 用户真机提出）
+ *
+ * 用户实测现象：在编辑器里**选中若干行**后右键，「登记作品投影」也出现在菜单里——
+ * 但该命令根本不看选区：它 `readFile` 读**整文件**（头部 8000 字符）生成一句话描述，
+ * 再按 `relativePath` 登记到 works。选中 20 行点下去 = 登记了整个文件，
+ * 语义错位（用户以为登记的是「这几行」）。
+ *
+ * 判据（准入 ↔ 契约）：
+ *   ① `memora.registerWork` 是**文件级**命令（无 range 概念，works 存储也无区间字段），
+ *      编辑器入口**只在无选区时**出现 ⇒ `when` 必须含 `!editorHasSelection`
+ *      （`editorHasSelection` = VS Code 内置上下文键，官方 when-clause 文档定义
+ *      "Text is selected in the editor."）。
+ *   ② `memora.addToChat` **不得**带该键——它的编辑器入口正是靠选区挂行区间（HOST-CTX-2），
+ *      加守卫等于把「选中代码 → 添加到对话」这个主用法关掉。
+ *   两条互为镜像：把 `when` 互串（给 addToChat 加 / 给 registerWork 删）任一方向都红。
+ */
+describe('editor/context 菜单 when ↔ 命令契约（选区准入）', () => {
+  const editorContext = pkg.contributes?.menus?.['editor/context'] ?? [];
+
+  const findEditorWhen = (command: string): string | undefined =>
+    editorContext.find((entry) => entry.command === command)?.when;
+
+  it('memora.registerWork 在编辑器入口必须排除选区（否则「选中几行」会误导为登记这几行）', () => {
+    const when = findEditorWhen('memora.registerWork');
+    expect(when).toBeDefined();
+    expect(when).toContain('!editorHasSelection');
+  });
+
+  it('memora.addToChat 不得排除选区（选区正是行区间引用的唯一来源，关掉=砍掉主用法）', () => {
+    const when = findEditorWhen('memora.addToChat');
+    // 无 when 或 when 不带该键均合法；带了即误伤
+    expect(when ?? '').not.toContain('editorHasSelection');
+  });
+});
+
+/**
  * keybindings 声明面守卫（HOST-KB-1 随批新增）
  *
  * 键位是用户可见契约，两条漏声明型漂移同样静默：绑定到未贡献/未注册的命令
