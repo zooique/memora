@@ -155,3 +155,60 @@ describe('buildInjectedContextEnvelope ↔ stripInjectedContextPrefix 对偶', (
     }
   });
 });
+
+// HOST-CTX-9 发送侧：失效引用（添加后文件已删 / 改名）降级为「裸指针 + 标记」。
+// 核心纪律「绝不给 read_file 一条必然失败的指令」——死文件上连 #L 区间与 offset/limit
+// 也必须去掉（同样注定读空），故断言不仅查标记，还断言参数形态消失。
+describe('引用失效标记（发送前 stat 降级）', () => {
+  it('失效文件引用 → 裸指针 + 标记，去掉 #L 区间与 read_file 参数', () => {
+    const block = buildRefContextBlock(
+      [
+        { path: 'src/gone.ts', kind: 'file' as const, range: { start: 5, end: 24 } },
+        { path: 'src/ok.ts', kind: 'file' as const, range: { start: 1, end: 3 } },
+      ],
+      undefined,
+      new Set(['src/gone.ts']),
+    );
+    expect(block).toContain('- 参考文件：src/gone.ts（注意：添加后已不存在，请向用户确认）');
+    // 死文件不得带 #L 区间与 offset/limit（与「无 range」同一条纪律）
+    expect(block).not.toContain('src/gone.ts#L');
+    expect(block).not.toContain('offset=5');
+    // 未失效引用不受影响，仍带精确读参数
+    expect(block).toContain('src/ok.ts#L1-L3');
+    expect(block).toContain('offset=1 limit=3');
+  });
+
+  it('失效且无 range → 同样裸指针 + 标记', () => {
+    const block = buildRefContextBlock(
+      [{ path: 'src/gone.ts', kind: 'file' as const }],
+      undefined,
+      new Set(['src/gone.ts']),
+    );
+    expect(block).toContain('- 参考文件：src/gone.ts（注意：添加后已不存在，请向用户确认）');
+  });
+
+  it('目录引用即使传入 missingPaths 也不标（目录不检测）', () => {
+    const block = buildRefContextBlock(
+      [{ path: 'src/utils', kind: 'folder' as const }],
+      undefined,
+      new Set(['src/utils']),
+    );
+    expect(block).toContain('- 参考目录：src/utils（内容按需经 list_dir 读取）');
+    expect(block).not.toContain('已不存在');
+  });
+
+  it('未命中失效集合 → 引用行与当前文件行原样（向后兼容：第三参缺省亦同）', () => {
+    const block = buildRefContextBlock(
+      [{ path: 'src/ok.ts', kind: 'file' as const }],
+      'docs/方案.md',
+      new Set(['other.ts']),
+    );
+    expect(block).toContain('- 参考文件：src/ok.ts');
+    expect(block).toContain('- 当前打开文件：docs/方案.md（内容未注入，按需经 read_file 读取）');
+    expect(block).not.toContain('已不存在');
+    // 缺省第三参（旧调用点）行为不变
+    expect(buildRefContextBlock([{ path: 'src/ok.ts', kind: 'file' as const }])).toContain(
+      '- 参考文件：src/ok.ts',
+    );
+  });
+});

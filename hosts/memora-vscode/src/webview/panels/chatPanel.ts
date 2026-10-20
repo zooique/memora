@@ -120,6 +120,8 @@ import { friendlyErrorMessage } from '../../shared/errorText.js';
 // 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
 import { dedupeRefs } from '../../shared/refKey.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
+// 引用发送前存在性核实（HOST-CTX-9 发送侧）：解析器复用 refPath（首根 SSOT），不由本文件另写
+import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
 import { vscodeTracer } from '../../extension/host/tracer.js';
@@ -3278,9 +3280,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const docBlock = injectDoc ? buildDocContextBlock(activeFile.body) : '';
     // 引用块（右键「添加到对话」）：仅挂路径与形态，不注入内容（内容由模型按需 read_file）；
     // 干净态活动文件在此并成指针行（同 path 已有引用则不重复）
+    //
+    // 发送前存在性核实（HOST-CTX-9 发送侧）：引用自添加后可能已被删 / 改名——失效者在块内
+    // 降级为「裸指针 + 标记」，避免给模型一条注定失败的 read_file 指令。基准根与
+    // `openRefInEditor` / 内核 read_file cwd **同源**（恒取首根）；解析器复用 refPath（无第二真理源）。
+    // 目录引用与「当前打开文件」指针行不核实（见 refProbe 边界说明）。
+    const missingFileRefPaths = await collectMissingFileRefPaths(
+      refs ?? [],
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      async (absPath) => vscode.workspace.fs.stat(vscode.Uri.file(absPath)),
+    );
     const refsBlock = buildRefContextBlock(
       refs ?? [],
       injectDoc ? undefined : docSnap?.relativePath,
+      missingFileRefPaths,
     );
     const chatInput = buildInjectedContextEnvelope([skillBlock, docBlock, refsBlock], input);
     // 用**本轮实际消费的那份快照**回推 chip：抹平「chip 显示的是切换瞬间的文件、

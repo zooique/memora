@@ -41,13 +41,26 @@ export const REF_CONTEXT_CLOSE = '[/参考文件/目录]';
  * 区间先经 `normalizeRefRange` 归一：非法区间（`start > end` / 非整数）降级为整文件行，
  * 绝不让 `limit` 算出 0 或负数——那种行喂给模型等于给一个「读不到东西」的指令且无报错。
  * 标签由 `formatRefRange` 单点产出（与 chip / 去重键同一格式，勿在此拼串）。
+ *
+ * @param missingPaths 发送前实测**已不存在**的文件引用路径集合（HOST-CTX-9 发送侧 stat，
+ *   由 `collectMissingFileRefPaths` 产出）；命中即降级为裸指针 + 标记。缺省 = 不做失效标记。
  */
-function refItemLine(ref: ChatRef): string {
+function refItemLine(ref: ChatRef, missingPaths?: ReadonlySet<string>): string {
   if (ref.kind === 'folder') {
     // 工具名必须是 list_dir：read_file 只读文件（内核 `read_file` 描述原文「读取项目内文件
     // 内容」），对目录给 read_file 等于给模型一条必然失败的指令。目录也不做整体注入——
     // 显式标注「按需读取」避免模型误以为全文已在上下文。
+    // 目录不做失效检测（由模型经 list_dir 自行发现）。
     return `- 参考目录：${ref.path}（内容按需经 list_dir 读取）`;
+  }
+  // 失效引用（添加后文件已消失）：降级为**裸指针 + 标记**——把死指针变成模型可读事实。
+  // 关键纪律「绝不给 read_file 一条必然失败的指令」⇒ 连行区间标签一并去掉（死文件上的
+  // `#L5-L24` 与 offset/limit 同样是注定读空的精确指令）。标记仅行内追加文案，
+  // 不新增标签/分隔符 ⇒ 剥离契约（stripInjectedContextPrefix 认 REF_CONTEXT_OPEN）零触碰。
+  // 标记用**纯文本**而非 `⚠` 符号：本块会被剥离契约从 UI 隐藏、只喂模型，且
+  // `iconLanguage` 守卫把 `⚠`(U+26A0) 列为 webview 代码内禁用的字符图标（代码内出现即红）。
+  if (missingPaths?.has(ref.path)) {
+    return `- 参考文件：${ref.path}（注意：添加后已不存在，请向用户确认）`;
   }
   const range = normalizeRefRange(ref.range);
   if (!range) return `- 参考文件：${ref.path}`;
@@ -64,6 +77,9 @@ function refItemLine(ref: ChatRef): string {
  *
  * @param refs 用户显式挂的引用（右键 / 后续 @ 提及）
  * @param currentFilePath 当前活动编辑器文件的**工作区相对路径**（干净态才传）
+ * @param missingPaths 发送前实测已不存在的文件引用路径集合（HOST-CTX-9）；缺省 = 不标失效。
+ *   注意 `.map` 的隐式第二参是下标，故须写成 `(r) => refItemLine(r, missingPaths)`，
+ *   不可直接 `.map(refItemLine)`（后者会把下标当 missingPaths 传入）。
  *
  * 为什么当前文件只给指针、不注入正文：宿主上下文定案是「引用模式 Reference-Only」——
  * 所有上下文选择一律只挂指针。干净文件的磁盘内容就是真相，模型需要时 `read_file` 一次即可；
@@ -72,8 +88,12 @@ function refItemLine(ref: ChatRef): string {
  *
  * 空块返回空串（**不产出空信封**）——调用方据此判断「无任何上下文块」。
  */
-export function buildRefContextBlock(refs: readonly ChatRef[], currentFilePath?: string): string {
-  const items = refs.map(refItemLine);
+export function buildRefContextBlock(
+  refs: readonly ChatRef[],
+  currentFilePath?: string,
+  missingPaths?: ReadonlySet<string>,
+): string {
+  const items = refs.map((r) => refItemLine(r, missingPaths));
   if (currentFilePath && !refs.some((r) => r.path === currentFilePath)) {
     items.push(`- 当前打开文件：${currentFilePath}（内容未注入，按需经 read_file 读取）`);
   }
