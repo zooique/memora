@@ -10,6 +10,12 @@
  *
  * HOST-CTX-11 补两契约：④ findFiles 命中上限 = 静默截断 ⇒ placeholder 必须明示；⑤ in-flight
  * 守卫（连按 @ 不重开列表）。
+ * HOST-CTX-12 补一契约：⑥ 未知消息类型落宿主 warn 而非静默丢弃。
+ * HOST-CTX-14 补一契约：⑦ findFiles 必须显式排除内置忽略目录（node_modules 等）——
+ * 源码实读：findFiles 只应用 files.exclude、不应用 search.exclude、.gitignore 默认不尊重，
+ * 传 undefined 排除时无关文件挤占 MENTION_FILE_LIMIT 上限 ⇒ 用户想引的文件随机缺席。
+ * 截断 placeholder 须说明「忽略目录已排除、仍超限」的原因（只说超上限，用户会以为额度
+ * 被无关文件占着——那正是 CTX-14 修掉的旧形态）。
  *
  * 替身策略：vscode mock（findFiles / createQuickPick / workspaceFolders），QuickPick 桩以
  * onDidAccept / onDidHide 回调手动触发，selectedItems 由测试预置——与 chatPanelInput.test 同款。
@@ -165,7 +171,7 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
     expect(h.posted).toHaveLength(0);
   });
 
-  it('findFiles 命中上限 → placeholder 明示已截断（HOST-CTX-11：大仓搜不到目标还以为没有该文件）', async () => {
+  it('findFiles 命中上限 → placeholder 明示已截断 + 原因（HOST-CTX-11/14：大仓搜不到目标还以为没有该文件）', async () => {
     const h = setup();
     // 恰好 = 上限即视为「可能截断」（不截断的极小概率也在提示范围内：多一句提示远好过找不到）
     const many = Array.from(
@@ -177,8 +183,35 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
     const p = h.cast.openMentionQuickPick();
     await vi.waitFor(() => expect(qp.onDidHide).toHaveBeenCalled());
     expect(qp.placeholder).toContain('已截断');
+    // HOST-CTX-14：截断须交代原因——「内置忽略目录已排除、仍超限」。只说超上限时，
+    // 用户会以为额度被无关文件占着（那正是本项修掉的旧形态），徒劳换关键词。
+    expect(qp.placeholder).toContain('忽略目录已排除');
     (qp.onDidHide.mock.calls[0][0] as () => void)();
     await p;
+  });
+
+  it('findFiles 显式排除内置忽略目录（HOST-CTX-14：undefined 排除会让 node_modules 挤占上限）', async () => {
+    const h = setup();
+    (vscode.workspace.findFiles as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    const qp = stubQuickPick([]);
+    const p = h.cast.openMentionQuickPick();
+    await vi.waitFor(() => expect(qp.onDidHide).toHaveBeenCalled());
+    (qp.onDidHide.mock.calls[0][0] as () => void)();
+    await p;
+    const findFiles = vscode.workspace.findFiles as ReturnType<typeof vi.fn>;
+    // include / maxResults 字面量照旧；exclude 是被测契约位
+    expect(findFiles).toHaveBeenCalledWith('**/*', expect.any(String), MENTION_FILE_LIMIT);
+    // 黄金串字面量写死（与内核 IGNORED_DIR_NAMES 逐条对应，不 import 被测常量——镜像断言
+    // 两边同错照样绿）。内核新增忽略目录时本例先红，逼一次跨包同步的有意识决策。
+    const excludeArg = findFiles.mock.calls[0]![1] as string;
+    expect(excludeArg.split(',')).toEqual([
+      '**/.git/**',
+      '**/node_modules/**',
+      '**/.memora/**',
+      '**/dist/**',
+      '**/coverage/**',
+      '**/.next/**',
+    ]);
   });
 
   it('in-flight 中第二次调用静默返回：不重开 QuickPick、无 post（HOST-CTX-11：防连按 @ 覆盖）', async () => {

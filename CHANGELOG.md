@@ -103,6 +103,8 @@
 
 ### Fixed（宿主）
 
+- **@ 文件列表不再被 node_modules 挤爆 + 排除语义注释谎言订正**（`HOST-CTX-14`，2026-10-20 当日三审发现即修）：输入 `@` 弹出的文件 QuickPick 此前给 `findFiles` 传 `undefined` 排除——VS Code 源码一手实读：legacy `findFiles` 只应用 `files.exclude`、**不应用** `search.exclude`、`.gitignore` **默认不尊重**（1.87 起硬编码，PR #204845）⇒ `node_modules`（本仓实测 32,040 文件）/ `dist` / `coverage` 全进列表、撞 2,000 上限**静默截断**，用户想引的源码文件随机缺席，而 placeholder 只说「已截断」不说原因（搜不到还以为没有）。修：① 新建 `extension/host/ignoredDirs.ts` 单一真源（派生自内核 `IGNORED_DIR_NAMES`，与 `search_project` / `list_dir` 同一套忽略规则），mention 与 `projectSearchProvider` 两处 `findFiles` 同挂（消一份行内第二基线）；② placeholder 补「内置忽略目录已排除、仍超上限」；③ 订正两处注释的三项断两项谎话。守卫 chatPanelMention +1 例 + 截断例 +1 断言；变异三连均红后还原；全量 78 套件 1396 passed / 2 skipped。
+
 - **编辑器右键「登记作品投影」在选中行时仍出现**（`HOST-MENU-2`，2026-10-20）：该命令只登记整个文件（`works` 存储无区间字段），带选区时出现会让人以为「登记了这几行」⇒ `editor/context` 的 `when` 加 `!editorHasSelection`，编辑器入口只在无选区时出现；命令面板入口不变。
 - **引用标签与定位的四处漂移**（`HOST-CTX-2` / `HOST-CTX-8` 收尾，2026-10-20）：① `#L` 标签改由 `shared/refKey.formatRefRange` 单点产出——此前键 / chip / 行号 span / 信封各写一套，单行引用在 chip 显示 `#L7`、喂给模型却是 `#L7-L7`；② `open_ref` 定位改用与内核 `read_file` cwd **同源的首个工作区根**（原「逐根取第一个存在」在多根工作区会打开另一根的同名文件，用户核对的和模型读到的不是同一个）；③ 非法行区间（`start > end`）统一降级为整文件引用，不再算出 0 或负数 `limit`；④ 目录引用的读取工具名改为 `list_dir`（原写 `read_file`，而 `read_file` 只读文件——等于给模型一条必然失败的指令）。
 - **当前文件上下文：显示订阅不再每次击键读全文**（`HOST-CTX-3` 收尾，2026-10-20）：为修「缓存撒谎」把快照改为发送时实时读之后，显示订阅（换文件 / 同文件被编辑 / 保存）按**每次击键**取快照，而旧快照顺带产出注入正文（`getText()` 全篇）⇒ 大文件下**每敲一个字就全量读一遍文档**。已拆为「廉价事实快照（文件名 / 脏态 / 相对路径，不读正文）+ `readDocBody` 惰性读取」，`resolveActiveFile(withBody)` 显示路径恒 `withBody=false`（零 `getText`）、仅发送且本轮**真要注入**时才读。守卫 `chatPanelHistory` +1 例（快照 `getText` 读取次数恒 0）。

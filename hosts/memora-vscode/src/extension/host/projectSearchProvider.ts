@@ -31,6 +31,9 @@ import {
   type ProjectTextSearchOptions,
   type ProjectTextSearchResult,
 } from '@zooique/memora';
+// 列文件排除 glob 单一真源（HOST-CTX-14）：mention QuickPick 同挂——findFiles 只应用
+// files.exclude，不显式排除时 node_modules 等噪音挤占结果上限（实读依据见 ignoredDirs.ts）
+import { IGNORED_DIR_GLOB } from './ignoredDirs.js';
 
 /** content 搜索最大扫描文件数（防超大项目遍历失控卡死主循环） */
 const MAX_FILES_SCANNED = 500;
@@ -91,11 +94,12 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
      */
     async searchFiles(options?: ProjectFileSearchOptions): Promise<ProjectFileSearchResult> {
       const include = options?.query || '**/*';
-      // name 模式与 content 模式忽略语义对齐：findFiles 显式排除 IGNORED_DIR_NAMES（含 .memora），
+      // name 模式与 content 模式忽略语义对齐：findFiles 显式排除内置忽略目录（含 .memora），
       // 否则 LLM 会搜到数据目录内的 task-table.md 等内核管理文件，形成「伪建表」自我强化
       // （实证：LLM search_project "task-table" 命中 .memora/task-table.md 后继续沿用 write_file）。
-      const ignoreGlob = IGNORED_DIR_NAMES.map((d) => `**/${d}/**`).join(',');
-      const exclude = options?.exclude ? `${ignoreGlob},${options.exclude}` : ignoreGlob;
+      // 排除形态真源 = ignoredDirs.ts（派生自内核 IGNORED_DIR_NAMES，与 mention QuickPick /
+      // list_dir 共用；此前的行内 map 属第二份基线，已收敛——HOST-CTX-14）。
+      const exclude = options?.exclude ? `${IGNORED_DIR_GLOB},${options.exclude}` : IGNORED_DIR_GLOB;
       const maxResults = Math.min(
         options?.maxResults ?? PROJECT_SEARCH_RESULT_MAX_LEN,
         PROJECT_SEARCH_RESULT_MAX_LEN,

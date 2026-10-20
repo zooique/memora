@@ -22,6 +22,10 @@ import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
 // 引用路径 ↔ 首根的双向判据唯一真源 = refPath（生成侧 relativeUnderPrimaryRoot 归 addToChat /
 // mention QuickPick 用，消费侧 resolveUnderPrimaryRoot 归本文件 openRefInEditor 用）——两半分居必漂移，故同模块。
 import { relativeUnderPrimaryRoot, resolveUnderPrimaryRoot } from '../../extension/host/refPath.js';
+// 列工作区文件的排除 glob 单一真源（HOST-CTX-14）：与 projectSearchProvider 同挂一处，
+// 派生自内核 IGNORED_DIR_NAMES——findFiles 只吃 files.exclude，不显式传 exclude 时
+// node_modules 等噪音会挤占 MENTION_FILE_LIMIT 上限（排除语义实读见 ignoredDirs.ts）
+import { IGNORED_DIR_GLOB } from '../../extension/host/ignoredDirs.js';
 
 /**
  * HOST-CTX-1：@ 提及 QuickPick 的 findFiles 结果上限（防超大仓首开卡顿）
@@ -1204,7 +1208,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * 三个 SSOT 归属（本方法零自建）：
    *   - 文件列表 = `vscode.workspace.findFiles`（VS Code SSOT：ripgrep 模糊检索，
-   *     自动尊重 files.exclude / search.exclude / gitignore——webview 不养索引副本）；
+   *     webview 不养索引副本）——⚠️ 排除语义按 2026-10-20 源码一手实读订正
+   *     （extHostWorkspace.ts）：`findFiles` 只应用 `files.exclude`、**不应用**
+   *     `search.exclude`、`.gitignore` **默认不尊重**（VS Code 1.87 起硬编码，
+   *     PR #204845；opt-in 开关 `search.experimental.useIgnoreFilesInFindFiles`）⇒
+   *     忽略目录必须显式传 `IGNORED_DIR_GLOB`（HOST-CTX-14，真源 `ignoredDirs.ts`，
+   *     与 projectSearchProvider 同挂），传 `undefined` 时 node_modules 等会挤占上限；
    *   - 首根归属判据 = `relativeUnderPrimaryRoot`（与 addToChat 生成侧同源，第二根 /
    *     根外文件 fail-closed 不列出——挂一条注定读错的指针比不挂更坏）；
    *   - 挂载链路 = `pushRefs` 的 addRef 推送（source='mention'，webview 据此撤触发 @）。
@@ -1229,7 +1238,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     this._mentionQuickPickOpen = true;
     try {
-      const uris = await vscode.workspace.findFiles('**/*', undefined, MENTION_FILE_LIMIT);
+      const uris = await vscode.workspace.findFiles('**/*', IGNORED_DIR_GLOB, MENTION_FILE_LIMIT);
       // 首根归属判定前置到列表期（fail-closed）：第二根 / 根外的文件连列表都不进，
       // 用户选不到就挂不上——与 addToChat 拒挂第二根是同一契约的两半。
       const items: { label: string; description: string; rel: string }[] = [];
@@ -1249,7 +1258,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       qp.canSelectMany = true;
       qp.matchOnDescription = true;
       qp.placeholder = truncated
-        ? `文件数超 ${MENTION_FILE_LIMIT} 已截断，请输入关键词缩小范围（可多选，Esc 取消）…`
+        ? `文件数超 ${MENTION_FILE_LIMIT} 已截断（内置忽略目录已排除、仍超上限），请输入关键词缩小范围（可多选，Esc 取消）…`
         : '选择要挂为引用的文件（可多选，Esc 取消）…';
       qp.show();
       const picked = await new Promise<readonly vscode.QuickPickItem[] | undefined>((resolve) => {
@@ -1316,8 +1325,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } else if (msg.type === 'mention_open') {
       // HOST-CTX-1：输入框键入 @ → 打开文件 QuickPick（多选），选中后走 addRef 推送
       // （source='mention'，webview 据此撤掉触发用的 @ 字符）。文件列表真源 =
-      // vscode.workspace.findFiles（VS Code SSOT，吃 files.exclude / search.exclude），
-      // webview 不养文件索引（第二真理源）。取消（Esc / 关闭）→ 静默返回，@ 保留在正文。
+      // vscode.workspace.findFiles（VS Code SSOT——显式排除 IGNORED_DIR_GLOB 派生自
+      // 内核 IGNORED_DIR_NAMES + files.exclude 由 VS Code 应用；不吃 search.exclude、
+      // 默认不尊重 gitignore，HOST-CTX-14 源码实读），webview 不养文件索引（第二真理源）。
+      // 取消（Esc / 关闭）→ 静默返回，@ 保留在正文。
       void this.openMentionQuickPick();
     } else if (msg.type === 'set_active_file_attach') {
       // 当前文件 chip 的 ✕ / 关闭态点击：改会话级开关，回推投影（webview 以回推为准）
