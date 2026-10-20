@@ -9255,6 +9255,65 @@ describe('添加到对话：引用气泡（file/folder · 去重 · 发送清空
     send.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'send', text: '普通提问' });
   });
+
+  // ── CTX-7：批量出口「清空全部引用」──
+  it('清空全部：按钮随引用出现，点击后全部 chip 消失且行收起（纯本地，无上行消息）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'addRef',
+      refs: [
+        { path: 'src/foo.ts', kind: 'file' },
+        { path: 'src/bar.ts', kind: 'file' },
+      ],
+    });
+    const clear = document.querySelector('#refChips .ref-chips__clear') as HTMLElement;
+    expect(clear).not.toBeNull();
+    clear.click();
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(0);
+    expect(document.getElementById('refChips')?.hasAttribute('hidden')).toBe(true);
+    // 纯本地过滤（SSOT = currentRefs），不照抄 pending-queue 的上行清空（其 SSOT 在宿主）
+    const ups = (postMessage as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c) => (c[0] as { type?: string }).type,
+    );
+    expect(ups).not.toContain('clear_refs');
+  });
+
+  it('清空全部连 pinned 一并清（与 ✕ 语义一致：🔒 只管发送后是否保留）', () => {
+    mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    (document.querySelector('#refChips .skill-chip__pin') as HTMLElement).click();
+    // 前置确认：chip 已钉住
+    expect(
+      (document.querySelector('#refChips .skill-chip') as HTMLElement).classList.contains(
+        'is-pinned',
+      ),
+    ).toBe(true);
+    (document.querySelector('#refChips .ref-chips__clear') as HTMLElement).click();
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(0);
+  });
+
+  it('清空范围只及引用：活动文件 chip 不受牵连，行不收起（两类 chip 显隐判据独立）', () => {
+    mountChatView();
+    dispatch({
+      type: 'active_file',
+      projection: { kind: 'attached', label: 'docs/a.md', injected: false },
+    });
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    (document.querySelector('#refChips .ref-chips__clear') as HTMLElement).click();
+    // 引用没了，活动文件 chip 还在（CTX-3 本会话开关是宿主投影，webview 不得代管）
+    const active = document.querySelector('#refChips .active-file-chip') as HTMLElement;
+    expect(active).not.toBeNull();
+    expect(document.getElementById('refChips')?.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('无引用（纯活动文件）→ 无清空按钮（批量出口只属引用行）', () => {
+    mountChatView();
+    dispatch({
+      type: 'active_file',
+      projection: { kind: 'attached', label: 'docs/a.md', injected: false },
+    });
+    expect(document.querySelector('#refChips .ref-chips__clear')).toBeNull();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════

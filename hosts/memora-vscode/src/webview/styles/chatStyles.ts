@@ -1706,11 +1706,14 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px);
     opacity: var(--op-8);
   }
-  /* 移除按钮内的 close 图标（SVG） */
+  /* 移除按钮内的 close 图标（SVG）；ref-chips__clear（CTX-7 清空全部引用）与单删 ✕
+   * 同形同观感——批量出口不另造样式，并列进同一选择器组（一份规则、多锚点） */
   .skill-chip__remove svg,
-  .skill-chip__pin svg { display: block; }
+  .skill-chip__pin svg,
+  .ref-chips__clear svg { display: block; }
   .skill-chip__remove,
-  .skill-chip__pin {
+  .skill-chip__pin,
+  .ref-chips__clear {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -1762,7 +1765,8 @@ export const chatStyles = `
    * 有意区分——不是不一致，是语义不同：确认删除需要更强的视觉重量。
    * ⚠️ 此处是 --accent-bg-active 在样式层**唯一**的消费点，改掉它会让该令牌变僵尸
    * （tokensClosure「无僵尸令牌」守卫当场红）；要改配色须先安排去处。 */
-  .skill-chip__remove:hover {
+  .skill-chip__remove:hover,
+  .ref-chips__clear:hover {
     background: var(--accent-bg-active);
     color: var(--status-fail);
   }

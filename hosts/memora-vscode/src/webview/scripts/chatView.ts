@@ -7210,6 +7210,26 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       chip.appendChild(remove);
       refChipRow.appendChild(chip);
     }
+    // CTX-7：批量出口「清空全部引用」——同一 chip 行缺同类批量出口（挂 6 条要逐个点 ✕ 六次）。
+    // 范式照抄 pending-queue-bar__clear（图标同 close、title/aria 同款），但**不走上行消息**：
+    // 待发送队列的 SSOT 在宿主（须 post clear_pending_queue 由宿主清），而引用 SSOT =
+    // 本文件 currentRefs，单删 ✕ 同为纯本地过滤——批量移除只是同一过滤的全量版，
+    // 上行反而让宿主镜像一份引用状态（第二真理源）。显隐与范式一致：有引用即在（单条也无害）。
+    // 范围只清引用：活动文件 chip 是另一语义（CTX-3 本会话开关，宿主投影），不受牵连；
+    // pinned 一并清——与 ✕ 语义一致（✕ 也能删 pinned），🔒 只管「发送后是否保留」。
+    if (currentRefs.length > 0) {
+      const clearAll = document.createElement('button');
+      clearAll.type = 'button';
+      clearAll.className = 'ref-chips__clear';
+      clearAll.innerHTML = getIconSvg('close', 11, 11);
+      clearAll.setAttribute('title', '清空全部引用（含常驻）');
+      clearAll.setAttribute('aria-label', '清空全部引用');
+      clearAll.addEventListener('click', () => {
+        currentRefs = [];
+        renderAttachmentRow();
+      });
+      refChipRow.appendChild(clearAll);
+    }
     // 同一行里既有活动文件 chip 又有引用：重建后必须按新宽度重算渐隐（见 syncRowEdges）
     syncRowEdges(refChipRow);
   }
