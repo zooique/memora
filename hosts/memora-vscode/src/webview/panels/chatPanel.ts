@@ -52,6 +52,7 @@ import {
   OPAQUE_WRITE_TOOL_NAMES,
   IGNORED_DIR_NAMES,
   COMPRESS_TARGET_LABELS,
+  estimateTokensText,
   type CompressTarget,
   BACKGROUND_TASK_STATUS_LABELS,
 } from '@zooique/memora';
@@ -3284,7 +3285,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const chatInput = buildInjectedContextEnvelope([skillBlock, docBlock, refsBlock], input);
     // 用**本轮实际消费的那份快照**回推 chip：抹平「chip 显示的是切换瞬间的文件、
     // 真正发出去却是另一个」的窗口（force 绕去重——同状态也要让用户看到这一轮确实带了）。
-    this.postActiveFile(activeFile.projection, true);
+    // 注入量归因（HOST-CTX-6②）：token 估算**只在发送时刻取**——此刻 docBlock 已在手
+    // （零额外读取），估算口径 = 内核 estimateTokensText（宿主自估即第二真理源）。
+    // 实时投影（每击键）不带此字段：正文惰性纪律（CTX-3 收尾）不被显示需求破坏。
+    const projection =
+      injectDoc && activeFile.projection.kind === 'attached'
+        ? { ...activeFile.projection, injectedTokens: estimateTokensText(docBlock) }
+        : activeFile.projection;
+    this.postActiveFile(projection, true);
 
     // runFlow 统一管理 AbortController + consumeFlow + 同步抛错兜底
     // seed：把开轮用户输入交给 live 轮投影。内容用 `chatInput`（与内核 `appendUser`

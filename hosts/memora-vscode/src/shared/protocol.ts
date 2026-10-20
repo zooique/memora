@@ -185,6 +185,15 @@ export type ActiveFileProjection =
       injected: boolean;
       /** 必须注入的原因（`injected=false` 时缺省） */
       reason?: 'dirty' | 'untitled' | 'outside';
+      /**
+       * **本轮**注入正文块的 token 估算（内核 `estimateTokensText` 同源口径；CTX-6②归因）。
+       *
+       * ⚠️ 仅「发送后用本轮实际快照 force 回推」时携带——取数时机 = 发送时刻
+       * （`docBlock` 已在手，零额外读取）；实时投影（每击键）**刻意不带**：正文惰性
+       * （CTX-3 收尾），若为实时显示 token 而恢复每击键读全文，就是把效率回退请回来。
+       * 下一次显示订阅推送会自然抹掉本字段 ⇒ chip 上它是「本轮带了多大」，非常驻值。
+       */
+      injectedTokens?: number;
     };
 
 /**

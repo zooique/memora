@@ -25,8 +25,11 @@ export { resolveContextWindow } from '@/agent/budget.js';
 // 上下文占用快照组装（SSOT 单点）：宿主历史会话重算占用时与内核 prepare 共用同一收敛口径
 export { estimateOccupancy } from '@/agent/budget.js';
 // token 估算（CJK 感知，零状态纯函数）：消息序列口径（先累计后取整，与运行时 prepare 同源），
-// 宿主历史会话重算占用用它；单段文本估算 estimateTokensText 为内部实现，不挂公共面
-export { estimateTokensMessages } from '@/agent/contextManager.js';
+// 宿主历史会话重算占用用它。estimateTokensText 原为内部实现（「不挂公共面」是当时无消费面的
+// 决定），2026-10-20 起**宿主注入量归因（HOST-CTX-6②）**需要单段文本计量——若宿主自估
+// （自写 CHARS_PER_TOKEN）就是第二真理源，与内核运行时口径漂移只是时间问题，故挂出。
+// ⚠️ 单段用本函数；逐段调用会放大取整误差，多段一律 estimateTokensMessages。
+export { estimateTokensMessages, estimateTokensText } from '@/agent/contextManager.js';
 export { type AgentForkResult } from '@/agent/managers/sessionManager.js';
 // 第二级压缩的中文标签（宿主 notice 文案真源）：
 // 宿主**不得**自己写 target→文案映射——三元/else 在枚举增补时会把新值静默落到旧标签上

@@ -927,11 +927,15 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       },
     } as unknown as Agent;
 
+    // CTX-6② 归因捕获：发送后的本轮回推 / 击键后的实时投影各取最后一条 active_file
+    type ActiveFileMsg = { type: 'active_file'; projection: Record<string, unknown> };
+    let lastSentProjection: Record<string, unknown> | undefined;
+    let lastRealtimeProjection: Record<string, unknown> | undefined;
     const sendWithEditor = async (isDirty: boolean, attach = true): Promise<string> => {
       captured.length = 0;
       (vscode.window as unknown as { activeTextEditor: unknown }).activeTextEditor =
         makeEditor(isDirty);
-      const { store, roundStore, provider } = setup();
+      const { store, roundStore, provider, posted } = setup();
       provider.setRoundStore(roundStore);
       seedSession(store, roundStore, '2026-08-15-s1', [
         { role: 'user', content: '你好', ts: 't0' },
@@ -942,6 +946,12 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       // 开关是会话级闸门：关掉后连快照都不取（指针与正文一并消失，无中间态）
       (provider as unknown as { _attachActiveFile: boolean })._attachActiveFile = attach;
       await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('请继续');
+      const activeFilePosts = () =>
+        (posted as unknown as ActiveFileMsg[]).filter((m) => m.type === 'active_file');
+      lastSentProjection = activeFilePosts().at(-1)?.projection;
+      // 模拟一次击键后的显示订阅推送（编辑器仍挂着 ⇒ attached 投影；无 force，可能被去重）
+      (provider as unknown as { pushActiveFile(): void }).pushActiveFile();
+      lastRealtimeProjection = activeFilePosts().at(-1)?.projection;
       (vscode.window as unknown as { activeTextEditor: unknown }).activeTextEditor = undefined;
       return captured[0]!;
     };
@@ -951,11 +961,18 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(clean).not.toContain('[当前打磨文档内容]');
     expect(clean).not.toContain('文档内容A');
     expect(clean).toContain('请继续');
+    // CTX-6② 归因（判据的**消费点**守卫）：指针态无注入 ⇒ 无规模可归因（缺省，不是 0）
+    expect(lastSentProjection?.['injectedTokens']).toBeUndefined();
 
     const dirty = await sendWithEditor(true);
     expect(dirty).toContain('[当前打磨文档内容]');
     expect(dirty).toContain('文档内容A');
     expect(dirty).not.toContain('当前打开文件');
+    // 发送时刻取数（docBlock 已在手，零额外读取），本轮 force 回推带正数 token 估算；
+    // 击键后的实时投影**刻意不带**——正文惰性纪律（CTX-3 收尾）不被显示需求破坏，
+    // 若为实时显示 token 恢复每击键读全文即回归。
+    expect(lastSentProjection?.['injectedTokens']).toBeGreaterThan(0);
+    expect(lastRealtimeProjection?.['injectedTokens']).toBeUndefined();
 
     // 关掉开关 ⇒ 既不注入正文、也不挂指针（「关了还偷偷给指针」是自相矛盾的中间态）
     const offClean = await sendWithEditor(false, false);

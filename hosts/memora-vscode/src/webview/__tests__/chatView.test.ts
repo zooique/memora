@@ -9187,6 +9187,17 @@ describe('添加到对话：引用气泡（file/folder · 去重 · 发送清空
     expect(chips[0].querySelector('.skill-chip__name')?.textContent).toBe('src/utils');
   });
 
+  it('引用 chip title 首句即指针语义（CTX-6①：挂了 ≠ 注入了，目录尤其如此）', () => {
+    mountChatView();
+    // 目录是重灾区：用户以为整目录内容已注入，实际信封只给一张目录地图（按需 list_dir）
+    dispatch({ type: 'addRef', refs: [{ path: 'src/utils', kind: 'folder' }] });
+    const chip = document.querySelector('#refChips .skill-chip') as HTMLElement;
+    const title = chip.querySelector('.skill-chip__name')?.getAttribute('title') ?? '';
+    expect(title).toContain('仅挂指针');
+    expect(title).toContain('按需读取');
+    expect(title).toContain('点击在编辑器中打开');
+  });
+
   it('同一 path 重复 addRef 只留一个气泡（去重，SSOT = currentRefs）', () => {
     mountChatView();
     dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
@@ -9454,6 +9465,25 @@ describe('活动文件 chip（是否进本轮上下文 · 本会话开关）', (
     expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('已附全文');
   });
 
+  it('注入量归因（CTX-6②）：本轮回推带 injectedTokens → 徽记短显 ≈k、title 给全数', () => {
+    mountChatView();
+    dispatch(attached({ injected: true, reason: 'dirty', injectedTokens: 3258 }));
+    const chip = document.querySelector('#refChips .active-file-chip') as HTMLElement;
+    // 短显（3258 → ≈3.3k）挤得进徽记；全数在 title（悬停可见精确值）
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('未保存·全文已附 ≈3.3k');
+    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain(
+      '注入约 3258 token',
+    );
+  });
+
+  it('常态投影（无 injectedTokens）不显示估算（判据已知、本轮规模未知，不造假数）', () => {
+    mountChatView();
+    dispatch(attached({ injected: true, reason: 'dirty' }));
+    const chip = document.querySelector('#refChips .active-file-chip') as HTMLElement;
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('未保存·全文已附');
+    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).not.toContain('token');
+  });
+
   it('✕ → 只上报关闭，不改本地状态（状态以宿主回推为准，单通道）', () => {
     const { postMessage } = mountChatView();
     dispatch(attached());
@@ -9711,8 +9741,10 @@ describe('引用 chip 点击跳转（open_ref）', () => {
       refs: [{ path: 'src/foo.ts', kind: 'file', range: { start: 5, end: 24 } }],
     });
     const name = document.querySelector('#refChips .skill-chip__name') as HTMLElement;
-    // title 提示与行号对价（hover 可见的定位预告）
-    expect(name.title).toBe('点击在编辑器中打开并定位到第 5-24 行');
+    // title 提示与行号对价（hover 可见的定位预告）；CTX-6① 后首句是指针语义，定位预告随后
+    expect(name.title).toBe(
+      '仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开并定位到第 5-24 行',
+    );
     (document.querySelector('#refChips .skill-chip__range') as HTMLElement).click();
     expect(postMessage).toHaveBeenCalledWith({
       type: 'open_ref',
@@ -9727,7 +9759,7 @@ describe('引用 chip 点击跳转（open_ref）', () => {
       refs: [{ path: 'src/bar.ts', kind: 'file', range: { start: 7, end: 7 } }],
     });
     expect((document.querySelector('#refChips .skill-chip__name') as HTMLElement).title).toBe(
-      '点击在编辑器中打开并定位到第 7 行',
+      '仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开并定位到第 7 行',
     );
   });
 

@@ -6984,6 +6984,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     outside: '工作区外',
   };
 
+  /** token 数的短显（3258 → ≈3.3k；842 → 842）：chip 徽记空间窄，长数字难扫读 */
+  function formatTokensShort(n: number): string {
+    return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+  }
+
   /**
    * 活动文件 chip（**第三种 chip**，与 skill / ref 同构）
    *
@@ -6995,6 +7000,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 为什么要标「全文已附」：干净文件只给指针（不占预算），脏/未命名/工作区外才注入正文
    * （3~4k token）。不标，用户永远看不懂「这条消息为什么突然贵了、模型为什么看到了我
    * 没保存的东西」。**文案与 HOST-CTX-6 预算可视化共用这一句**，不拆两处。
+   * CTX-6② 归因：发送后的本轮回推带 `injectedTokens`，徽记短显 `≈3.3k`、title 给全数——
+   * 让「这轮贵在哪」有归因入口（圆环只示总量，这里示出处）。
    *
    * 视觉上复用 `.skill-chip` 基类（不造新范式）；suppressed 复用 `.is-disabled`
    * （虚线 + 次要色，语义正是「挂着但不会生效」）。
@@ -7035,15 +7042,23 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const name = document.createElement('span');
     name.className = 'skill-chip__name';
     name.textContent = p.label;
-    // title 承载「本轮以什么方式附加」——不能只靠徽记（窄面板下徽记可能被省略号吃掉）
+    // title 承载「本轮以什么方式附加」——不能只靠徽记（窄面板下徽记可能被省略号吃掉）。
+    // 注入量归因（CTX-6②）：injectedTokens 只在「发送后本轮回推」里出现（非常驻值，
+    // 下次显示订阅推送自然抹掉），挂在「全文已附」同一句上——CTX-3/CTX-6 文案不拆两处。
     name.title = p.injected
-      ? `本轮已附全文（${ACTIVE_FILE_REASON_LABELS[p.reason ?? 'dirty']}）`
+      ? `本轮已附全文（${ACTIVE_FILE_REASON_LABELS[p.reason ?? 'dirty']}）${
+          p.injectedTokens !== undefined ? `· 注入约 ${p.injectedTokens} token（估算）` : ''
+        }`
       : '本轮仅给路径指针，正文由模型按需读取（不占预算）';
     chip.appendChild(name);
     if (p.injected) {
       const note = document.createElement('span');
       note.className = 'skill-chip__note';
-      note.textContent = `${ACTIVE_FILE_REASON_LABELS[p.reason ?? 'dirty']}·全文已附`;
+      // 徽记带短显估算（≈3.3k）：全数字（3258）在窄 chip 里挤且难扫读；无值时不显示
+      // （常态附加 chip = 判据已知、本轮规模未知，不造假数）
+      note.textContent =
+        `${ACTIVE_FILE_REASON_LABELS[p.reason ?? 'dirty']}·全文已附` +
+        (p.injectedTokens !== undefined ? ` ≈${formatTokensShort(p.injectedTokens)}` : '');
       chip.appendChild(note);
     }
     const remove = document.createElement('button');
@@ -7114,7 +7129,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const rangeHint = markedRange
         ? `并定位到第 ${markedRange.start}${markedRange.start === markedRange.end ? '' : `-${markedRange.end}`} 行`
         : '';
-      name.title = `点击在编辑器中打开${rangeHint}`;
+      // CTX-6①：指针语义提示放最前（用户 hover 的第一问是「这挂的是啥、占不占」）——
+      // 引用只挂指针不注入内容，目录更是只给模型一张目录地图（内容按需 list_dir）。
+      // 与信封侧 buildRefContextBlock 的「按需读取」标注同义：信封说给模型听，这里说给用户听。
+      name.title = `仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开${rangeHint}`;
       // 键盘可达：span 非原生按钮，补 role/tabindex/Enter-Space 与鼠标同构
       // （焦点环走 tokens.ts 全局 focus-visible，此处不自写）
       name.setAttribute('role', 'button');
