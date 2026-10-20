@@ -43,11 +43,9 @@ function setupDiag() {
   // 与本用例无关的三件事桩掉：HTML 渲染 / 编辑器追踪 / Agent 装配
   const p = provider as unknown as {
     render(): void;
-    ensureEditorTracking(): void;
     ensureAgent(): Promise<void>;
   };
   p.render = () => {};
-  p.ensureEditorTracking = () => {};
   p.ensureAgent = async () => {};
   const posted: unknown[] = [];
   let receive: ((msg: unknown) => void) | undefined;

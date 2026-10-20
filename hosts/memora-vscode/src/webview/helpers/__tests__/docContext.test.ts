@@ -71,8 +71,34 @@ describe('stripInjectedContextPrefix', () => {
     const block = buildRefContextBlock([
       { path: 'src/foo.ts', kind: 'file' as const, range: { start: 7, end: 7 } },
     ]);
-    expect(block).toContain('#L7-L7');
+    // 单行折叠成 `#L7`：标签格式唯一产地 = formatRefRange，与 chip 显示同形
+    // （旧断言要求 `#L7-L7` —— 那正是「信封与 UI 各写一套」的漂移，与用例标题「不带冗余区间」自相矛盾）
+    expect(block).toContain('src/foo.ts#L7');
+    expect(block).not.toContain('#L7-L7');
     expect(block).toContain('offset=7 limit=1');
+  });
+
+  it('非法区间（start > end）降级为整文件行，不产出负数 limit', () => {
+    // range 可能从协议外部上行（webview 构造的 open_ref 载荷）；不归一会算出 limit<=0，
+    // 模型据此读不到任何内容且无报错。归一化单点 = normalizeRefRange。
+    const block = buildRefContextBlock([
+      { path: 'src/foo.ts', kind: 'file' as const, range: { start: 24, end: 5 } },
+    ]);
+    expect(block).toContain('- 参考文件：src/foo.ts\n');
+    expect(block).not.toContain('offset=');
+  });
+
+  it('当前打开文件（干净态）作为指针行并入同块，已挂同 path 引用时不重复', () => {
+    const withFile = buildRefContextBlock([], 'docs/方案.md');
+    expect(withFile).toContain('- 当前打开文件：docs/方案.md（内容未注入，按需经 read_file 读取）');
+    // 已显式挂同一文件 ⇒ 引用行已经告诉模型，不再追加
+    const dup = buildRefContextBlock(
+      [{ path: 'docs/方案.md', kind: 'file' as const }],
+      'docs/方案.md',
+    );
+    expect(dup).not.toContain('当前打开文件');
+    // 无引用且无当前文件 ⇒ 空串（调用方据此不产空信封）
+    expect(buildRefContextBlock([], undefined)).toBe('');
   });
 
   it('无前缀消息原样返回（resume 补写 / 无上下文场景）', () => {

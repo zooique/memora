@@ -31,6 +31,8 @@ import {
   MemoraChatViewProvider,
   MAX_THOUGHT_PAYLOAD_LENGTH,
   foldThoughtEvents,
+  mustInjectDocBody,
+  snapshotDocContext,
 } from '../panels/chatPanel.js';
 
 // mock vscode：仅提供 chatPanel / ProviderStore 用到的最小 API
@@ -53,6 +55,12 @@ vi.mock('vscode', async () => {
     workspace: {
       workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],
       getConfiguration: vi.fn(() => ({ get: vi.fn(() => false) })),
+      // 文档上下文判据：活动文档 → 工作区相对路径。替身**忠实模拟**官方语义——
+      // 工作区内返回相对路径，工作区外回退绝对路径（被 mustInjectDocBody 判为「指针不可用」）。
+      asRelativePath: (u: { fsPath: string }) =>
+        u.fsPath.startsWith('/mock/workspace/')
+          ? u.fsPath.slice('/mock/workspace/'.length)
+          : u.fsPath,
     },
   };
 });
@@ -794,24 +802,46 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(r.assistantMessage?.content).toBe('回答A');
   });
 
-  it('跟随活动编辑器：编辑器变化实时更新文档上下文（A 层，2026-08-17）', () => {
-    const { provider } = setup();
-    // 捕获 provider 构造时注册的 onDidChangeActiveTextEditor 回调
-    const cb = vi.mocked(vscode.window.onDidChangeActiveTextEditor).mock.calls[0]?.[0];
-    expect(cb).toBeTypeOf('function');
-    // 切换到某文档编辑器 → docContext 含文件名 + 内容（超长截断兜底）
-    const editor = {
-      document: { fileName: '/workspace/docs/方案.md', getText: () => '文档内容A' },
-    } as never;
-    cb?.(editor);
-    const docContext = (provider as unknown as { _docContext: string | undefined })._docContext;
-    expect(docContext).toContain('文件名：方案.md');
-    expect(docContext).toContain('文档内容A');
-    // 无活动编辑器 → 清空（退化为普通对话）
-    cb?.(undefined);
-    expect(
-      (provider as unknown as { _docContext: string | undefined })._docContext,
-    ).toBeUndefined();
+  it('文档上下文判据：干净态只给指针，脏 / 未命名 / 工作区外才注入正文（HOST-CTX-0 引用模式）', () => {
+    // 原「onDidChangeActiveTextEditor 实时更新缓存」的用例已随缓存一并退役：
+    // 该订阅覆盖不到「同一文件被编辑」，脏态判据会停在打开时的干净态（P0 撒谎源）。
+    // 现语义 = 发送时实时读活动编辑器，判据单点 mustInjectDocBody：
+    //   磁盘是真相（干净 + 工作区内）⇒ 只给指针，不注入正文；其余三种情形必须注入。
+    const makeEditor = (opts: { fsPath: string; isDirty?: boolean; isUntitled?: boolean }) =>
+      ({
+        document: {
+          fileName: opts.fsPath,
+          uri: { fsPath: opts.fsPath },
+          isDirty: opts.isDirty ?? false,
+          isUntitled: opts.isUntitled ?? false,
+          getText: () => '文档内容A',
+        },
+      }) as never;
+
+    // ① 干净 + 工作区内 ⇒ 不注入，只把相对路径当指针传给模型
+    const clean = snapshotDocContext(makeEditor({ fsPath: '/mock/workspace/docs/方案.md' }));
+    expect(clean?.relativePath).toBe('docs/方案.md');
+    expect(clean?.body).toBe('文件名：方案.md\n文档内容A');
+    expect(mustInjectDocBody(clean!)).toBe(false);
+
+    // ② 有未保存修改 ⇒ buffer ≠ 磁盘，指针会让模型读到旧版 ⇒ 必须注入
+    const dirty = snapshotDocContext(
+      makeEditor({ fsPath: '/mock/workspace/docs/方案.md', isDirty: true }),
+    );
+    expect(mustInjectDocBody(dirty!)).toBe(true);
+
+    // ③ 未命名 ⇒ 无磁盘版本可读 ⇒ 必须注入
+    const untitled = snapshotDocContext(makeEditor({ fsPath: 'Untitled-1', isUntitled: true }));
+    expect(untitled?.relativePath).toBeUndefined();
+    expect(mustInjectDocBody(untitled!)).toBe(true);
+
+    // ④ 工作区外 ⇒ asRelativePath 回退绝对路径，指针不可用 ⇒ 必须注入
+    const outside = snapshotDocContext(makeEditor({ fsPath: '/other/notes.md' }));
+    expect(outside?.relativePath).toBeUndefined();
+    expect(mustInjectDocBody(outside!)).toBe(true);
+
+    // 无活动编辑器 ⇒ 本轮无文档上下文（退化为普通对话）
+    expect(snapshotDocContext(undefined)).toBeUndefined();
   });
 
   // ─── 历史会话占用重算（轻量版）：切会话后圆环展示真实占用而非空态 0% ───

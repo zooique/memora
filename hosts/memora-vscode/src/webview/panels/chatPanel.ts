@@ -276,28 +276,76 @@ const CONFIRM_TIMEOUT_NOTICE = '用户未在时限内确认，已自动拒绝';
 const ASK_TIMEOUT_NOTICE =
   '用户未在时限内回答，已自动继续——请从上面的选项里选一项你推荐的方案继续推进，并在答复中说明这是你代选的及理由；不可逆操作仍需向我确认';
 
-/** 文档上下文注入上限（字符，约 3~4k token，防大文档爆上下文） */
+/** 文档正文注入上限（字符，约 3~4k token，防大文档爆上下文）——仅脏/未命名/工作区外文件走注入 */
 const MAX_DOC_CONTEXT_CHARS = 12000;
 
+/** 活动编辑器快照：判「注入正文」还是「只给指针」所需的全部事实 */
+type DocContextSnapshot = {
+  /** 文件名（注入正文时的首行） */
+  fileName: string;
+  /** 可直接注入的正文（`文件名：X\n{内容}`，超上限截断） */
+  body: string;
+  /** 有未保存修改 ⇒ buffer 才是真相，磁盘不是 */
+  isDirty: boolean;
+  /** 未命名文档 ⇒ 无磁盘版本可读 */
+  isUntitled: boolean;
+  /** 工作区相对路径（未命名 / 落在工作区外时 undefined ⇒ 指针不可用） */
+  relativePath?: string;
+};
+
 /**
- * 从活动编辑器快照「当前文档上下文」（实时跟随活动编辑器）
+ * 读取活动编辑器快照（**发送时实时取，不缓存**）
  *
- * 返回内容含「文件名」首行 + 文档全文（超上限截断）。宿主在 sendInput 将其作为
- * 「当前任务上下文」注入对话，让 Agent 能看到用户当前打开的文档，无需手动粘贴。
+ * 为什么不缓存：脏态是高频变化的量，而 `onDidChangeActiveTextEditor` 只覆盖「切文件」，
+ * 不覆盖「同一文件被编辑」——缓存会让判据撒谎（打开时干净、改完仍判干净 ⇒ 不注入旧版）。
  *
- * @param editor 当前活动编辑器（无则返回 undefined → 不注入，退化为普通对话）
- * @returns 注入文本（文件名首行 + 截断全文），或 undefined
+ * @param editor 当前活动编辑器（无则返回 undefined ⇒ 本轮无文档上下文）
  */
-function snapshotDocContext(editor: vscode.TextEditor | undefined): string | undefined {
+function snapshotDocContext(editor: vscode.TextEditor | undefined): DocContextSnapshot | undefined {
   if (!editor) return undefined;
   const doc = editor.document;
-  const name = doc.fileName.split(/[\\/]/).pop() || doc.fileName;
+  const fileName = doc.fileName.split(/[\\/]/).pop() || doc.fileName;
   const content = doc.getText();
   const truncated =
     content.length > MAX_DOC_CONTEXT_CHARS
       ? `${content.slice(0, MAX_DOC_CONTEXT_CHARS)}\n\n…[内容过长已截断]`
       : content;
-  return `文件名：${name}\n${truncated}`;
+  // 未命名文档没有磁盘身份；工作区外文件 asRelativePath 会回退成绝对路径形态，
+  // 对「模型 read_file」与「宿主 open_ref 定位」都不可用 ⇒ 一律视为无相对路径。
+  const rel = doc.isUntitled ? undefined : vscode.workspace.asRelativePath(doc.uri);
+  return {
+    fileName,
+    body: `文件名：${fileName}\n${truncated}`,
+    isDirty: doc.isDirty,
+    isUntitled: doc.isUntitled,
+    relativePath: rel && !isAbsolutePathLike(rel) ? rel : undefined,
+  };
+}
+
+/**
+ * 是否必须注入正文（引用模式失效的三种情形）
+ *
+ * 引用模式（HOST-CTX-0 定案）的前提是「**磁盘是真相**」，只给指针让模型自己读。以下三种
+ * 情形磁盘不是真相，给指针会让模型读到错内容 / 读不到，故必须注入：
+ *   ① 有未保存修改（buffer ≠ 磁盘）；② 未命名文档（无磁盘版本）；③ 不在工作区内（相对路径无意义）。
+ * 其余一律只给指针——**此处是「注入 vs 指针」的唯一判据**，调用方不得另写一套。
+ */
+function mustInjectDocBody(s: DocContextSnapshot): boolean {
+  return s.isDirty || s.isUntitled || !s.relativePath;
+}
+
+// 判据与快照以命名导出供单测直接驱动（沿既有 `foldThoughtEvents` 先例：纯逻辑、无 webview 依赖）。
+// 导出仅为可测，不构成对外 API——调用点仍在 sendInput 一处。
+export { snapshotDocContext, mustInjectDocBody };
+
+/** 绝对路径判定（跨平台）：Windows 盘符 / UNC / POSIX 根 */
+function isAbsolutePathLike(p: string): boolean {
+  return /^([A-Za-z]:[\\/]|[\\/]{1,2})/.test(p);
+}
+
+/** 是否含 `..` 路径段（会逃出工作区根） */
+function hasParentSegment(p: string): boolean {
+  return p.split(/[\\/]/).includes('..');
 }
 
 /** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（删除会话记录 + 会话标题元数据）。
@@ -339,10 +387,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._configDir = configDir;
     this._userSkillsDir = userSkillsDir;
   }
-  /** 当前打磨文档上下文（实时跟随活动编辑器，非一次性快照） */
-  private _docContext: string | undefined;
-  /** 活动编辑器追踪订阅（vscode.window 全局事件，需随面板销毁显式释放，见 ensureEditorTracking） */
-  private _editorSub: vscode.Disposable | null = null;
   /** 大模型配置存储（用于底部模型下拉框 + 切换） */
   private readonly _providerStore: ProviderStore;
   /** Agent 懒装配工厂（由 extension 注入，打开面板即装配，不依赖先执行 open 命令） */
@@ -525,26 +569,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 初始会话：最近活跃会话（SSOT：listSessionMetas 按 updatedAt 降序，[0] 即最近）；
     // 无任何历史会话时不自动创建——新建会话唯一入口为标题条「＋」。
     this._currentSessionId = this.sessionStore.listSessionMetas()[0]?.sessionId ?? '';
-    // 跟随当前活动编辑器：实时注入「当前打开文档」为对话上下文。
-    // 必须持续跟随 activeTextEditor 而非只在 memora.open 命令路径注入一次快照——否则
-    // 从活动栏图标打开面板时完全不注入，Agent 看不到当前文档。
-    // 任何打开方式（点图标/命令/首次就绪）都生效，切换文档自动更新。
-    // 监听生命周期：面板关闭（onDidDispose）释放，面板重建（resolveWebviewView）幂等重注册，
-    // 避免折叠/展开反复重建时全局监听泄漏（vscode.window 为全局事件，不随 webview 自动释放）。
-    this.ensureEditorTracking();
+    // 文档上下文**不在此处预取**：改为发送时实时读活动编辑器（见 snapshotDocContext）。
+    // 曾用 onDidChangeActiveTextEditor 维护一份缓存——它覆盖不到「同一文件被编辑」，
+    // 脏态判据会停在「打开时干净」，于是每轮都把磁盘旧版当真相（P0：注入判据撒谎源）。
   }
 
   /**
    * 注册/重注册活动编辑器追踪监听（幂等：先释放旧订阅再注册，防止重复监听累积）
    */
-  private ensureEditorTracking(): void {
-    this._editorSub?.dispose();
-    this._editorSub = vscode.window.onDidChangeActiveTextEditor((editor) => {
-      this._docContext = snapshotDocContext(editor);
-    });
-    this._docContext = snapshotDocContext(vscode.window.activeTextEditor);
-  }
-
   /**
    * 引用 chip 点击 → 在编辑器打开并定位（open_ref，W→E 分支）
    *
@@ -554,37 +586,30 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *   - 目录：资源管理器露出（目录没有「打开成文档」的概念）。
    *
    * 路径解析：`ref.path` 是**工作区相对路径**（生产点 = extension.ts addToChat 的
-   * `asRelativePath`）；多根工作区下 asRelativePath 相对的是「所在根」，故按存在性
-   * 逐根匹配——单根工作区直接命中首个（零额外开销）。
+   * `asRelativePath`）。项目根**恒取 `workspaceFolders[0]`**，与内核同源——内核
+   * `read_file` 的 cwd 只有一个根（`extension.ts` 的 resolveProjectPath 同样只取首根），
+   * 逐根遍历会在多根工作区打开第二根的同名文件，而模型读的是首根那份
+   * ⇒ 用户核对的与模型读到的**不是同一个文件**（伪多根支持，已删）。
    *
    * 行号是**指针不是快照**（协议 ChatRef 注释）：引用后文件可能已改短，区间越界——
    * 统一 clamp 到文档末尾，不让 Position/lineAt 抛异常（仍定位到最接近的行）。
    *
-   * 失败态（文件已删 / 不可读 / 无工作区）：一律走面板 notice 单一出口
+   * 失败态（文件已删 / 不可读 / 无工作区 / 路径越界）：一律走面板 notice 单一出口
    * （与其它用户可见反馈同 surface，不混用 showWarningMessage 弹toast）。
    */
   private async openRefInEditor(ref: ChatRef): Promise<void> {
-    const folders = vscode.workspace.workspaceFolders ?? [];
-    let uri: vscode.Uri | undefined;
-    for (const folder of folders) {
-      const candidate = vscode.Uri.joinPath(folder.uri, ref.path);
-      try {
-        await vscode.workspace.fs.stat(candidate);
-        uri = candidate;
-        break;
-      } catch {
-        // 该根下不存在（多根错配 / 引用已过期）：试下一个根
-      }
+    const root = vscode.workspace.workspaceFolders?.[0];
+    if (!root) {
+      this.post({ type: 'notice', level: 'error', message: '请先打开一个工作区' });
+      return;
     }
-    if (!uri) {
-      if (folders.length === 0) {
-        this.post({ type: 'notice', level: 'error', message: '请先打开一个工作区' });
-        return;
-      }
-      // 所有根都不存在：仍取首根构造，让 openTextDocument 抛标准错误走下方统一 catch
-      // （失败提示单一出口，不按「解析失败 / 打开失败」分叉两套文案）
-      uri = vscode.Uri.joinPath(folders[0].uri, ref.path);
+    // 越界路径拒绝：ref.path 由 webview 回传，等于一条「打开任意文件」的上行通道。
+    // 绝对路径 / 含 `..` 段一律不解析（正常引用的 path 恒为工作区内相对路径）。
+    if (!ref.path || isAbsolutePathLike(ref.path) || hasParentSegment(ref.path)) {
+      this.post({ type: 'notice', level: 'error', message: `无法打开引用：${ref.path}` });
+      return;
     }
+    const uri = vscode.Uri.joinPath(root.uri, ref.path);
     try {
       if (ref.kind === 'folder') {
         await vscode.commands.executeCommand('revealInExplorer', uri);
@@ -997,8 +1022,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken,
   ): void {
     this._view = webviewView;
-    // 面板重建（折叠/展开）时幂等重注册编辑器追踪（先释放旧订阅），保证监听存活
-    this.ensureEditorTracking();
     // 视图重建代数自增：本次流若跨重建，流尾据此补移植（见 _viewEpoch 注释）
     this._viewEpoch += 1;
     // 折叠/展开（对话卡 ↔ 设置卡切换、侧边栏收起再展开）会触发 resolve 重建 HTML。
@@ -1020,12 +1043,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 打开面板即确保 Agent 装配（不依赖先执行 open 命令），避免发送无反应
     void this.ensureAgent();
 
-    // 视图被销毁（折叠/关闭）时清理引用，避免向已销毁 webview postMessage；
-    // 同时释放全局编辑器监听（vscode.window 事件不随 webview 自动释放）
+    // 视图被销毁（折叠/关闭）时清理引用，避免向已销毁 webview postMessage
+    // （已无全局编辑器监听需要释放：文档上下文改为发送时实时读取，不持有订阅）
     webviewView.onDidDispose(() => {
       if (this._view === webviewView) this._view = undefined;
-      this._editorSub?.dispose();
-      this._editorSub = null;
     });
 
     // 处理来自 webview 的用户输入
@@ -3067,12 +3088,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         });
       }
     }
-    // 注入文档上下文（当前任务上下文，不进入记忆召回）。
+    // 文档上下文：**发送时实时读**活动编辑器（不缓存，理由见 snapshotDocContext）。
+    // 判据单点 = `mustInjectDocBody`（引用模式 HOST-CTX-0：磁盘是真相时只给指针）：
+    //   脏 / 未命名 / 工作区外 → 注入正文（磁盘不是真相，指针会让模型读错）；
+    //   干净态 → 不注入正文，活动文件作为**一行指针**并入下面引用块（模型按需 read_file）。
     // 信封构造与剥离同源收口在 helpers/docContext（技能块在前、文档块在后；无任何块时
     // **不加信封**，不注入「用户请求：」分隔符），回放侧因此可安全以分隔符为界还原用户请求。
-    const docBlock = this._docContext ? buildDocContextBlock(this._docContext) : '';
-    // 引用块（右键「添加到对话」）：仅挂路径与形态，不注入内容（内容由模型按需 read_file）
-    const refsBlock = refs && refs.length > 0 ? buildRefContextBlock(refs) : '';
+    const docSnap = snapshotDocContext(vscode.window.activeTextEditor);
+    const injectDoc = !!docSnap && mustInjectDocBody(docSnap);
+    const docBlock = docSnap && injectDoc ? buildDocContextBlock(docSnap.body) : '';
+    // 引用块（右键「添加到对话」）：仅挂路径与形态，不注入内容（内容由模型按需 read_file）；
+    // 干净态活动文件在此并成指针行（同 path 已有引用则不重复）
+    const refsBlock = buildRefContextBlock(
+      refs ?? [],
+      injectDoc ? undefined : docSnap?.relativePath,
+    );
     const chatInput = buildInjectedContextEnvelope([skillBlock, docBlock, refsBlock], input);
 
     // runFlow 统一管理 AbortController + consumeFlow + 同步抛错兜底

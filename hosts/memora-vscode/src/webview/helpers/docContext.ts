@@ -1,4 +1,5 @@
 import type { ChatRef } from '../../shared/protocol.js';
+import { formatRefRange, normalizeRefRange } from '../../shared/refKey.js';
 
 /**
  * 对话上下文信封 — 宿主注入的上下文块（技能块 / 文档块 / 引用块）的构造与剥离
@@ -40,24 +41,45 @@ export const REF_CONTEXT_CLOSE = '[/参考文件/目录]';
  * 带行区间时把 `read_file` 的 offset/limit **算好摆出来**——模型不必自己算
  * `limit = end - start + 1`（算错即读偏）。这是引用模式能精确到行的关键：
  * 指针给准了，模型一次调用就能取到，无需把内容塞进上下文。
+ *
+ * 区间先经 `normalizeRefRange` 归一：非法区间（`start > end` / 非整数）降级为整文件行，
+ * 绝不让 `limit` 算出 0 或负数——那种行喂给模型等于给一个「读不到东西」的指令且无报错。
+ * 标签由 `formatRefRange` 单点产出（与 chip / 去重键同一格式，勿在此拼串）。
  */
 function refItemLine(ref: ChatRef): string {
   if (ref.kind === 'folder') {
     return `- 参考目录：${ref.path}（内容按需经 read_file 读取）`;
   }
-  if (!ref.range) return `- 参考文件：${ref.path}`;
-  const { start, end } = ref.range;
-  const limit = end - start + 1;
+  const range = normalizeRefRange(ref.range);
+  if (!range) return `- 参考文件：${ref.path}`;
+  const limit = range.end - range.start + 1;
   return (
-    `- 参考文件：${ref.path}#L${start}-L${end}` +
-    `（read_file 时 offset=${start} limit=${limit}；行号基于添加时快照，` +
+    `- 参考文件：${ref.path}${formatRefRange(range)}` +
+    `（read_file 时 offset=${range.start} limit=${limit}；行号是添加时记下的**指针而非内容快照**，` +
     `若与读到的内容不符以实际内容为准）`
   );
 }
 
-export function buildRefContextBlock(refs: readonly ChatRef[]): string {
-  const items = refs.map(refItemLine).join('\n');
-  return `${REF_CONTEXT_OPEN}\n${items}\n${REF_CONTEXT_CLOSE}`;
+/**
+ * 构造引用上下文块（可选并入「当前打开文件」的指针行）
+ *
+ * @param refs 用户显式挂的引用（右键 / 后续 @ 提及）
+ * @param currentFilePath 当前活动编辑器文件的**工作区相对路径**（干净态才传）
+ *
+ * 为什么当前文件只给指针、不注入正文：宿主上下文定案是「引用模式 Reference-Only」——
+ * 所有上下文选择一律只挂指针。干净文件的磁盘内容就是真相，模型需要时 `read_file` 一次即可；
+ * 仅当文件**有未保存修改**（磁盘不是真相）时才由调用方改走有界注入。
+ * 已有同 path 引用时不重复追加（引用行本身已经告诉模型这个文件）。
+ *
+ * 空块返回空串（**不产出空信封**）——调用方据此判断「无任何上下文块」。
+ */
+export function buildRefContextBlock(refs: readonly ChatRef[], currentFilePath?: string): string {
+  const items = refs.map(refItemLine);
+  if (currentFilePath && !refs.some((r) => r.path === currentFilePath)) {
+    items.push(`- 当前打开文件：${currentFilePath}（内容未注入，按需经 read_file 读取）`);
+  }
+  if (items.length === 0) return '';
+  return `${REF_CONTEXT_OPEN}\n${items.join('\n')}\n${REF_CONTEXT_CLOSE}`;
 }
 
 /**

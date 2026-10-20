@@ -19,7 +19,7 @@ import type {
 } from '../../shared/protocol.js';
 // 引用身份键与去重判据：**必须**与宿主缓冲共用同一实现——同文件不同选区是两条引用，
 // 若各自按 path 判等，chip 的锁 / 移除会误伤同 path 的另一条（见 shared/refKey.ts）。
-import { dedupeRefs, refKeyOf } from '../../shared/refKey.js';
+import { dedupeRefs, formatRefRange, normalizeRefRange, refKeyOf } from '../../shared/refKey.js';
 // ProcessThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
 // ArchiveMode 纯类型导入（同 ProcessEvent）：仅编译期用，esbuild 剥离，不引入运行时依赖
 import type { ArchiveMode, ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
@@ -6936,13 +6936,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     skillChipRow.appendChild(chip);
   }
 
-  /** 引用 chip 显示名：整文件 = 路径；带选区 = 路径#L{start}（单行）或 #L{start}-L{end} */
-  function refLabel(ref: { path: string; range?: { start: number; end: number } }): string {
-    if (!ref.range) return ref.path;
-    const { start, end } = ref.range;
-    return start === end ? `${ref.path}#L${start}` : `${ref.path}#L${start}-L${end}`;
-  }
-
   /** 接收宿主推送的引用（右键「添加到对话」）：合并去重后渲染气泡行。
    * SSOT = currentRefs 数组；去重判据 = `refKeyOf`（**含行区间**，与宿主缓冲同源）：
    * 整文件与其某段选区是**两条**引用，按 path 去重会让后加的那条静默失效。 */
@@ -6953,10 +6946,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (!seen.has(key)) {
         // 新挂载默认不钉住（发送即清，保持现状）；已存在的走上面 seen 分支，
         // 不会重置其 pinned（保留用户已钉的锁）。无 range 时不写该字段（保持「缺省」语义）。
+        // 区间经 `normalizeRefRange` 归一后才入列：非法区间一律降级为整文件引用，
+        // 否则它会以「无标签」形态存活在 currentRefs 里，与真正的整文件引用撞同一个键。
+        const range = normalizeRefRange(r.range);
         currentRefs.push({
           path: r.path,
           kind: r.kind,
-          ...(r.range ? { range: r.range } : {}),
+          ...(range ? { range } : {}),
           pinned: false,
         });
         seen.add(key);
@@ -6992,7 +6988,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       icon.innerHTML = getIconSvg(ref.kind === 'folder' ? 'folder' : 'file', 11, 11);
       icon.setAttribute('aria-hidden', 'true');
       chip.appendChild(icon);
-      const label = refLabel(ref);
+      // 区间先归一再渲染：非法区间（start>end / 非整数）不渲染行号 span、不上行，
+      // 视觉与协议两处同时降级为「整文件引用」，不产生 `#Lundefined` 这类脏标签。
+      const markedRange = normalizeRefRange(ref.range);
+      const label = `${ref.path}${formatRefRange(markedRange)}`;
       // 点击跳转（open_ref，W→E）：**路径与行号两个 span 都可点**——行号 span 不参与
       // 截断（flex-shrink: 0），窄路径被 ellipsis 截掉尾部时行号依然点得中。
       // 载荷只带协议字段（path/kind/range）：webview 私有的 pinned 不随上行（协议契约，
@@ -7000,13 +6999,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const openRef = (): void => {
         vscode.postMessage({
           type: 'open_ref',
-          ref: { path: ref.path, kind: ref.kind, ...(ref.range ? { range: ref.range } : {}) },
+          ref: { path: ref.path, kind: ref.kind, ...(markedRange ? { range: markedRange } : {}) },
         });
       };
       const name = document.createElement('span');
       name.className = 'skill-chip__name';
       name.textContent = ref.path;
-      name.title = `点击在编辑器中打开${ref.range ? `并定位到第 ${ref.range.start}${ref.range.start === ref.range.end ? '' : `-${ref.range.end}`} 行` : ''}`;
+      // 定位提示是**中文语句**而非协议标签，故不复用 formatRefRange（两者语言不同、不可共享）；
+      // 但端点同样取归一化结果，避免出现「第 NaN 行」。
+      const rangeHint = markedRange
+        ? `并定位到第 ${markedRange.start}${markedRange.start === markedRange.end ? '' : `-${markedRange.end}`} 行`
+        : '';
+      name.title = `点击在编辑器中打开${rangeHint}`;
       // 键盘可达：span 非原生按钮，补 role/tabindex/Enter-Space 与鼠标同构
       // （焦点环走 tokens.ts 全局 focus-visible，此处不自写）
       name.setAttribute('role', 'button');
@@ -7019,14 +7023,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         }
       });
       chip.appendChild(name);
-      if (ref.range) {
+      if (markedRange) {
         // 行号独立 span：语义与可点性与路径对等，但**不继承 name 的 ellipsis 截断**
         const rng = document.createElement('span');
         rng.className = 'skill-chip__range';
-        rng.textContent =
-          ref.range.start === ref.range.end
-            ? `#L${ref.range.start}`
-            : `#L${ref.range.start}-L${ref.range.end}`;
+        rng.textContent = formatRefRange(markedRange);
         rng.title = name.title;
         rng.setAttribute('role', 'button');
         rng.tabIndex = 0;

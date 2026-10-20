@@ -76,11 +76,9 @@ function setup(items: string[]) {
   // 与本用例无关的三件事桩掉：HTML 渲染 / 编辑器追踪 / Agent 装配（后者 async 且要真配置）
   const p = provider as unknown as {
     render(): void;
-    ensureEditorTracking(): void;
     ensureAgent(): Promise<void>;
   };
   p.render = () => {};
-  p.ensureEditorTracking = () => {};
   p.ensureAgent = async () => {};
   const posted: Array<Record<string, unknown>> = [];
   let receive: ((msg: unknown) => void) | undefined;

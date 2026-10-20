@@ -303,11 +303,9 @@ describe('后台任务宿主出口（chatPanel · 方案 §2.1/§2.2）', () => 
     // 与本用例无关的三件事桩掉：HTML 渲染 / 编辑器追踪 / Agent 装配（后者是 async 且要真配置）
     const p = h.provider as unknown as {
       render(): void;
-      ensureEditorTracking(): void;
       ensureAgent(): Promise<void>;
     };
     p.render = () => {};
-    p.ensureEditorTracking = () => {};
     p.ensureAgent = async () => {};
 
     let handler: ((msg: unknown) => void) | undefined;
