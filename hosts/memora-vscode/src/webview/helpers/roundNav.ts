@@ -6,9 +6,12 @@
  * 平时几乎隐形（不滚动/不足两轮时整条隐藏），不占布局。
  *
  * SSOT 决策：
- *  - **锚定对象 = 用户气泡 .msg-wrapper，不依赖 roundId**——运行时发送时刻还没有
+ *  - **锚定对象 = 用户消息气泡 .msg.user，不依赖 roundId**——运行时发送时刻还没有
  *    roundId（meta/chunk 到达才回填），重放路径才有。大纲条只做「定位 + 预览 + 高亮」，
  *    全部可由气泡 DOM 位置与上屏文本表达，绕开「运行时无 id」的时序问题。
+ *    🔴 刻意**不锚** `.msg-wrapper`：该外壳由 chatView `append()` 的 else 分支创建，
+ *    同时包 **user 与 error** 两种 role，按它会误把 error 气泡算作一轮（多一根条 +
+ *    错误文案进预览 + 点击跳到错误气泡）——详见 collect() 注释。
  *  - **预览文本 = 上屏 .msg-body 文本过 stripInjectedContextPrefix**——重放（读落盘
  *    Round，带注入前缀）与运行时（回显原始 input，无前缀）两路上屏形态不同，经同一
  *    纯函数归一；不另从 round-store 拉第二套文本（防运行时与重放两套口径）。
@@ -39,12 +42,16 @@ const ACTIVE_THRESHOLD = 96;
 const PREVIEW_MAX = 60;
 
 /* ---- 自适应压密参数（全量条 + 压密，台账 HOST-NAV-1） ---- */
-/** 宽松态条高（px）：与 CSS .round-nav__bar 默认高同判（镜像 --sp-5；根因见 applyMetrics 注释） */
-const BAR_MAX_H = 12;
+/**
+ * 宽松态条高（px）：镜像令牌 --sp-5（12）。
+ * ⚠️ 该镜像由 roundNav.test.ts「压密常量镜像守卫」钉死与令牌同值——漂移即红，
+ * 不再靠人肉核对（镜像说明见 applyMetrics 注释）。
+ */
+export const BAR_MAX_H = 12;
 /** 极限态条高（px）：细到仍可辨、可点 */
 const BAR_MIN_H = 3;
-/** 宽松态条间隙（px）：与 CSS .round-nav__track 默认 gap 同判（镜像 --sp-2） */
-const GAP_MAX = 6;
+/** 宽松态条间隙（px）：镜像令牌 --sp-2（6），同上由镜像守卫钉死 */
+export const GAP_MAX = 6;
 /** 极限态条间隙（px） */
 const GAP_MIN = 1;
 /**
@@ -52,10 +59,12 @@ const GAP_MIN = 1;
  *
  * 取 0.5 的理由：导航条竖向居中锚定（top:50%），占视口高一半即上下各占至 25%~75%
  * 区间，恒不与右下角「一键到底」按钮（贴底约 5% 内）重叠 —— 这正是「侧边栏位置紧张」
- * 的结构性解，而非再挪一个边距。**SSOT：高度上限的唯一真源在此**，经 applyMetrics
- * 下发条列内联 max-height；CSS 不设 max-height（避免第二套值静默漂移）。
+ * 的结构性解，而非再挪一个边距。**SSOT：条列高度上限的唯一真源在此**，经 applyMetrics
+ * 下发条列内联 max-height；**条列** CSS 不设 max-height（避免第二套值静默漂移）。
+ * 浮层 `.round-nav__panel` 另有 `max-height:50vh`（CSS，C 类）与本比例同判——该对镜像
+ * 由 roundNav.test.ts 镜像守卫钉死（比例漂移即红）。
  */
-const NAV_HEIGHT_RATIO = 0.5;
+export const NAV_HEIGHT_RATIO = 0.5;
 
 /**
  * 提取轮次预览文本：上屏文本 → 剥注入前缀 → 压缩空白成单行 → 截断
@@ -145,8 +154,8 @@ export interface RoundNavController {
  *
  * ⚠️ **勿退回「条数 + 首尾块文本长」**：重放 / 分叉时条数与首尾长度都可能不变、仅中段
  * 文本不同，长度式签名会误判「未变」而跳过重建 ⇒ 条预览与浮层静默失效（读者信了、
- * 无测试会红类伤）。全量拼接对「任一预览变化」敏感，且用户气泡文本在流式期不变
- * （.msg-wrapper 只包用户消息）⇒ 不会因 AI 流式增长而每帧重建。
+ * 无测试会红类伤）。全量拼接对「任一预览变化」敏感，且锚 `.msg.user` = **仅用户输入**
+ * （AI / error 气泡不在列，用户气泡在流式期文本不变）⇒ 不会因 AI 流式增长而每帧重建。
  */
 function signatureOf(previews: string[]): string {
   return `${previews.length}\u0000${previews.join('\u0000')}`;
@@ -179,11 +188,22 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
   /** 压密缓存键：轮数 + 预算 + 条高 + 间隙 任一变化才重写内联样式（防流式期每帧重写 DOM） */
   let lastMetricsKey = '';
 
-  /** 收集当前轮次气泡 + 各自预览文本（上屏文本 = 渲染同源，读 DOM 不另存状态） */
+  /**
+   * 收集当前轮次锚点 + 各自预览文本（上屏文本 = 渲染同源，读 DOM 不另存状态）。
+   *
+   * 🔴 锚 **用户消息**（`.msg.user`），**不是** `.msg-wrapper`——`.msg-wrapper` 由 chatView
+   * `append()` 的 else 分支创建，而该分支同时覆盖 **user 与 error** 两种 role
+   * （签名 `role: 'user' | 'assistant' | 'error'`）。按 `.msg-wrapper` 收轮次会把 error
+   * 气泡也当成一轮（多一根条、错误文案进预览、点击跳到错误气泡）；error 气泡是
+   * `msg.error`、无 `.user` 类 ⇒ 锚 `.msg.user` 天然筛除，无需维护 role 白名单。
+   * 定位仍取外层 `.msg-wrapper`（气泡壳，滚动落点更稳）；无壳者（降级渲染的
+   * `.msg-user-fallback` 直挂消息流）回退锚自身。
+   */
   function collect(): { wrappers: HTMLElement[]; previews: string[] } {
-    const wrappers = Array.from(messages.querySelectorAll<HTMLElement>('.msg-wrapper'));
-    const previews = wrappers.map((w) => {
-      const body = w.querySelector<HTMLElement>('.msg-body');
+    const userMsgs = Array.from(messages.querySelectorAll<HTMLElement>('.msg.user'));
+    const wrappers = userMsgs.map((m) => m.closest<HTMLElement>('.msg-wrapper') ?? m);
+    const previews = userMsgs.map((m) => {
+      const body = m.querySelector<HTMLElement>('.msg-body');
       return extractPreview(body?.textContent ?? '');
     });
     return { wrappers, previews };
@@ -221,7 +241,7 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
    * 确保同预算同轮数下不重写内联样式（流式期 sync 高频，避免无谓 DOM 写）。
    * 镜像说明：CSS 侧 .round-nav__bar 高与 .round-nav__track gap 仍留令牌默认值，仅作
    * 「JS 未及接管前的宽松态兜底」；接管后**唯一真源 = 本函数下发值**（BAR_MAX_H /
-   * GAP_MAX 与令牌同值，是刻意镜像，改一处须核另一处）。
+   * GAP_MAX 与令牌同值，由 roundNav.test.ts 镜像守卫钉死——漂移即红，不再靠人肉核对）。
    */
   function applyMetrics(count: number): void {
     const win = messages.ownerDocument.defaultView;

@@ -7006,7 +7006,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * 把「当前打开文件会不会进本轮上下文」摊在输入框上方——此前它完全隐形，用户既看不到
    * 也没法关。两形态：
-   *   - attached：`📄 docs/方案.md · 未保存（全文已附）` + ✕（本会话不再附加）
+   *   - attached：`📄 docs/白话设计文档.md · 未保存（全文已附）` + ✕（本会话不再附加）
    *   - suppressed：虚线胶囊「当前文件未附加 · 点击启用」（整枚可点回开，不留死路）
    *
    * 为什么要标「全文已附」：干净文件只给指针（不占预算），脏/未命名/工作区外才注入正文

@@ -12,9 +12,15 @@
  */
 
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildInjectedContextEnvelope, buildDocContextBlock } from '../docContext.js';
 import {
+  BAR_MAX_H,
+  GAP_MAX,
+  NAV_HEIGHT_RATIO,
   computeActiveIndex,
   computeDensity,
   createRoundNav,
@@ -81,6 +87,26 @@ function mountUserBubble(messages: HTMLElement, text: string): HTMLElement {
   wrapper.className = 'msg-wrapper';
   const bubble = document.createElement('div');
   bubble.className = 'msg user';
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  body.textContent = text;
+  bubble.appendChild(body);
+  wrapper.appendChild(bubble);
+  messages.appendChild(wrapper);
+  return wrapper;
+}
+
+/**
+ * 建一个 error 气泡（与 append() 的 else 分支同构：wrapper > msg.error > msg-body）。
+ *
+ * 🔴 与用户气泡**共用** `.msg-wrapper` 外壳（append 的 else 分支覆盖 user|error 两 role），
+ * 但消息类为 `msg.error`（无 `.user`）——用作「非轮次不得入列」的判据样本。
+ */
+function mountErrorBubble(messages: HTMLElement, text: string): HTMLElement {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg-wrapper';
+  const bubble = document.createElement('div');
+  bubble.className = 'msg error';
   const body = document.createElement('div');
   body.className = 'msg-body';
   body.textContent = text;
@@ -252,6 +278,20 @@ describe('createRoundNav（控制器集成）', () => {
     expect(items[1].textContent).toBe('第二轮 多行输入');
   });
 
+  it('error 气泡（.msg-wrapper 但非 .msg.user）不计入轮次——不污染条列与预览', () => {
+    mountUserBubble(messages, '第一轮');
+    mountErrorBubble(messages, '出错了：连接超时');
+    mountUserBubble(messages, '第二轮');
+    stubScrollBox(messages, { scrollHeight: 2000, clientHeight: 400 });
+    const { sync } = createRoundNav(messages, nav);
+    sync();
+    const bars = track.querySelectorAll('.round-nav__bar');
+    // 3 个 .msg-wrapper（2 user + 1 error），但仅 2 轮用户输入 → 只应 2 根条
+    expect(bars.length).toBe(2);
+    expect((bars[0] as HTMLElement).title).toBe('第一轮');
+    expect((bars[1] as HTMLElement).title).toBe('第二轮');
+  });
+
   it('不足两轮或容器不可滚动 → 整条隐藏（平时几乎隐形，不占布局）', () => {
     mountUserBubble(messages, '唯一一轮');
     stubScrollBox(messages, { scrollHeight: 2000, clientHeight: 400 });
@@ -369,5 +409,37 @@ describe('createRoundNav（控制器集成）', () => {
     expect(track.querySelectorAll('.round-nav__bar').length).toBe(100);
     expect(track.style.gap).toBe('1px');
     expect((track.querySelector('.round-nav__bar') as HTMLElement).style.height).toBe('3px');
+  });
+});
+
+/**
+ * 压密常量镜像守卫（JS ↔ 令牌，防「已登记未闭合」的静默漂移）
+ *
+ * roundNav.ts 的 BAR_MAX_H / GAP_MAX / NAV_HEIGHT_RATIO 是「JS 侧数值镜像」——须与令牌
+ * --sp-5 / --sp-2 及浮层 `max-height:50vh` 同值。此前该镜像只在注释里写「改一处须核另一处」，
+ * **无任何测试会红**（本轮审计实锤的「镜像伤」）⇒ 本守卫把镜像钉成强制：漂移即红。
+ * 读源码文本比对（与 tokensClosure 同法：镜像两侧涉及 CSS 文本常量，类型系统看不见）。
+ */
+describe('压密常量镜像守卫（JS ↔ 令牌/浮层 max-height）', () => {
+  const HERE = dirname(fileURLToPath(import.meta.url));
+  const read = (rel: string): string => readFileSync(join(HERE, rel), 'utf8');
+  const tokensText = read('../../styles/tokens.ts');
+  const chatStylesText = read('../../styles/chatStyles.ts');
+  /** 取令牌 px 定义值（--name: Npx）；缺失即抛，防「提取失效→假绿」 */
+  const tokenPx = (name: string): number => {
+    const m = new RegExp(`--${name}\\s*:\\s*(\\d+)px`).exec(tokensText);
+    if (!m) throw new Error(`令牌 --${name} 未找到（镜像守卫无法比对）`);
+    return Number(m[1]);
+  };
+
+  it('BAR_MAX_H / GAP_MAX 必须等于令牌 --sp-5 / --sp-2', () => {
+    expect(BAR_MAX_H).toBe(tokenPx('sp-5'));
+    expect(GAP_MAX).toBe(tokenPx('sp-2'));
+  });
+
+  it('NAV_HEIGHT_RATIO 必须与浮层 .round-nav__panel 的 max-height(50vh) 同判', () => {
+    const m = /\.round-nav__panel\s*\{[\s\S]*?max-height:\s*(\d+)vh/.exec(chatStylesText);
+    expect(m, '.round-nav__panel 的 max-height 未找到').not.toBeNull();
+    expect(Math.round(NAV_HEIGHT_RATIO * 100)).toBe(Number(m![1]));
   });
 });
