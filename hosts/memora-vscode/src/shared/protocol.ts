@@ -142,8 +142,8 @@ export type WebviewInputKind = 'send' | 'answer' | 'resume';
  * 对话引用（右键「添加到对话」挂到下一轮上下文）：文件或目录
  *
  * **契约 = 引用模式**：只挂**指针**（路径 + 形态 + 可选行号），**不携内容**——
- * 内容由模型按需经 `read_file` 读取（宿主上下文策略定案，见台账 HOST-CTX-0；
- * 唯一例外是无引用对象的瞬态派生数据，见同条「定案例外清单」）。
+ * 内容由模型按需读取（文件走 `read_file`，目录走 `list_dir`；宿主上下文策略定案，
+ * 见台账 HOST-CTX-0；唯一例外是无引用对象的瞬态派生数据，见同条「定案例外清单」）。
  */
 export type ChatRef = {
   path: string;
@@ -159,6 +159,33 @@ export type ChatRef = {
    */
   range?: { start: number; end: number };
 };
+
+/**
+ * 活动文件投影（E→W，**显示用**）：把「当前打开文件会不会进这一轮上下文」摊在用户眼前
+ *
+ * 三种状态互斥、无非法组合（判别联合，不用可选字段拼）：
+ *   - `none`：没有活动编辑器 ⇒ 不渲染 chip（本轮无当前文件上下文）；
+ *   - `suppressed`：用户主动关掉了「附加当前文件」⇒ 渲染为可点回开的关闭态；
+ *   - `attached`：会附加。`injected` 区分两种附加方式——`false` = 只给一行指针
+ *     （磁盘是真相，模型按需读），`true` = 注入正文（`reason` 说明为什么必须注入）。
+ *
+ * ⚠️ **这是判据结果的投影，不是判据本身**：宿主用同一份快照既拼信封又产出本投影
+ * （见 `chatPanel.resolveActiveFile`），webview 只渲染、**不得据本状态反推会不会注入**。
+ * 曾用「活动编辑器缓存」当注入判据（覆盖不到同一文件被编辑 ⇒ 每轮注入磁盘旧版），
+ * 故此处刻意只做单向投影。
+ */
+export type ActiveFileProjection =
+  | { kind: 'none' }
+  | { kind: 'suppressed' }
+  | {
+      kind: 'attached';
+      /** 展示标签（工作区相对路径；未命名 / 工作区外回落文件名） */
+      label: string;
+      /** 是否注入正文（false = 只给指针，不占预算） */
+      injected: boolean;
+      /** 必须注入的原因（`injected=false` 时缺省） */
+      reason?: 'dirty' | 'untitled' | 'outside';
+    };
 
 /**
  * 引用的身份键与去重规则见 `shared/refKey.ts`（**独立小模块**，非本文件）。
@@ -179,6 +206,15 @@ export type WebviewToExtensionMessage =
    * 定位细节（1-based → 0-based 逆转换）归宿主单点，webview 只上报意图。
    */
   | { type: 'open_ref'; ref: ChatRef }
+  /**
+   * 开关「附加当前打开文件」（W→E）——当前文件 chip 上的 ✕ / 关闭态点击
+   *
+   * 语义 = **本会话**是否把活动文件作为上下文带上（`enabled:false` 连指针都不挂）。
+   * 开关状态归宿主（注入判据的唯一持有者），webview 只上报意图；宿主改态后回推
+   * `active_file` 投影，chip 以回推为准（不回显式确认，单通道）。
+   * 会话级而非持久设置：重开面板即复位为开——不留「关掉后找不到再启用入口」的死角。
+   */
+  | { type: 'set_active_file_attach'; enabled: boolean }
   /**
    * webview 运行时诊断上报（错误边界的唯一上行出口）
    *
@@ -1175,6 +1211,16 @@ export type ExtensionToWebviewMessage =
    * webview 未就绪时由宿主 _pendingRefs 缓冲，ready 后补发（与 prefill_input 同构）。
    */
   | { type: 'addRef'; refs: ChatRef[] }
+  /**
+   * 活动文件投影推送（E→W）：当前打开文件是否进本轮上下文、以指针还是注入正文
+   *
+   * 推送时机（宿主侧三处，同一份快照派生，不各算一遍）：
+   *   ① 活动编辑器切换 / 文档内容变化（含未保存标记翻转）——空闲态显示；
+   *   ② webview ready（重建后补推，否则折叠展开一次 chip 就消失）；
+   *   ③ 每次发送后——用**本轮实际使用的快照**回推，保证「你看到的 = 发出去的」。
+   * webview 未就绪时无需缓冲：②承担补齐（状态可随时由宿主重算，不像 refs 是用户输入）。
+   */
+  | { type: 'active_file'; projection: ActiveFileProjection }
   /**
    * 输入框文本润色结果（对 polish_input 的应答）
    *

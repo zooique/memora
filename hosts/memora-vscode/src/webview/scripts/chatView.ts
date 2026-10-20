@@ -9,6 +9,7 @@
  * webview.asWebviewUri 在 HTML 中 <script src> 引用（CSP script-src 'self'）。
  */
 import type {
+  ActiveFileProjection,
   ChatRef,
   ExtensionToWebviewMessage,
   PendingQuestionDto,
@@ -170,6 +171,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     range?: { start: number; end: number };
     pinned: boolean;
   }[] = [];
+  /**
+   * 活动文件投影（宿主推送，**纯显示**）：当前打开文件会不会进本轮上下文
+   *
+   * ⚠️ 只渲染，不据此推断注入——判据与投影同源在宿主（`chatPanel.resolveActiveFile`），
+   * webview 侧任何「看 chip 状态猜要不要读文件」的写法都是第二真理源。
+   * 初值 `none`：宿主 ready 后必推一次（`handleWebviewReady` ⑦），故无需前端猜。
+   */
+  let activeFile: ActiveFileProjection = { kind: 'none' };
   // 活动状态条（瞬态单条：error/info 通知，info 2500ms / error 8000ms 自动撤）
   const activityBar = document.getElementById('activityBar') as HTMLElement;
   // 状态抽屉（C1，2026-10-05）：静态骨架，入口 chip + 下拉体 panel（内含控件段 controls
@@ -6001,6 +6010,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'addRef') {
       // 右键「添加到对话」：接收宿主推送的文件/目录引用，挂到输入盒上方气泡行
       addRefs(msg.refs);
+    } else if (msg.type === 'active_file') {
+      // 活动文件投影（宿主判定结果的单向展示）：整体替换后重绘附件行。
+      // 不合并、不推断——状态全是宿主的，webview 只负责画（见 activeFile 变量注释）。
+      activeFile = msg.projection;
+      renderAttachmentRow();
     } else if (msg.type === 'plan_update') {
       // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（renderPlanBoard 自建/更新容器）
       renderPlanBoard(msg.items);
@@ -6473,7 +6487,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 带入后续无关消息）；钉住的常驻——下一轮仍随消息作为上下文发出（用户显式 🔒 决定，
     // 非隐式残留）。每轮发送照旧带全部当前引用（pinned + 未钉），模型每轮要完整上下文。
     currentRefs = currentRefs.filter((r) => r.pinned);
-    renderRefChips();
+    renderAttachmentRow();
     // 技能同一 pinned 判据：默认钉住常驻（锁预开）⇒ 发送不清除；用户解锁后才随发送清除。
     // updateSkillPickerLabel 尾部会 renderSkillChip，故不必再调一次。
     if (currentSkill && !currentSkill.pinned) {
@@ -6958,21 +6972,109 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         seen.add(key);
       }
     }
-    renderRefChips();
+    renderAttachmentRow();
   }
 
-  /** 在输入盒内、textarea 上方构建/清空「路径(+行号) + 🔒 + ×」的引用 chip（附件行成员）。
-   * 与技能 chip 同构复用 .skill-chip* 样式；file/folder 二态仅图标与 title 区分，不造新 CSS 范式。
-   * 🔒 点击切 pinned（发送后是否保留）；× 点击移除 = 从 currentRefs 过滤并刷新
-   * （单一真理源，渲染路径唯一）；路径/行号 span 点击 = 上报 open_ref 跳编辑器定位。 */
-  function renderRefChips(): void {
+  /** 注入原因 → 中文短语（唯一产地：chip 徽记与 title 共用，别在调用点各写一套） */
+  const ACTIVE_FILE_REASON_LABELS: Record<'dirty' | 'untitled' | 'outside', string> = {
+    dirty: '未保存',
+    untitled: '未命名',
+    outside: '工作区外',
+  };
+
+  /**
+   * 活动文件 chip（**第三种 chip**，与 skill / ref 同构）
+   *
+   * 把「当前打开文件会不会进本轮上下文」摊在输入框上方——此前它完全隐形，用户既看不到
+   * 也没法关。两形态：
+   *   - attached：`📄 docs/方案.md · 未保存（全文已附）` + ✕（本会话不再附加）
+   *   - suppressed：虚线胶囊「当前文件未附加 · 点击启用」（整枚可点回开，不留死路）
+   *
+   * 为什么要标「全文已附」：干净文件只给指针（不占预算），脏/未命名/工作区外才注入正文
+   * （3~4k token）。不标，用户永远看不懂「这条消息为什么突然贵了、模型为什么看到了我
+   * 没保存的东西」。**文案与 HOST-CTX-6 预算可视化共用这一句**，不拆两处。
+   *
+   * 视觉上复用 `.skill-chip` 基类（不造新范式）；suppressed 复用 `.is-disabled`
+   * （虚线 + 次要色，语义正是「挂着但不会生效」）。
+   */
+  function buildActiveFileChip(p: ActiveFileProjection): HTMLElement | null {
+    if (p.kind === 'none') return null;
+    const icon = (): HTMLElement => {
+      const el = document.createElement('span');
+      el.className = 'skill-chip__icon';
+      el.innerHTML = getIconSvg('file', 11, 11);
+      el.setAttribute('aria-hidden', 'true');
+      return el;
+    };
+    if (p.kind === 'suppressed') {
+      // 整枚是按钮：关闭态若只显示不给回开入口，就成了用户抱怨过的「关不掉」的反面
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'skill-chip active-file-chip is-disabled';
+      chip.dataset.activeFile = 'suppressed';
+      chip.title = '当前打开文件未作为上下文附加（本会话）——点击重新启用';
+      chip.setAttribute('aria-label', '重新启用当前文件上下文');
+      const name = document.createElement('span');
+      name.className = 'skill-chip__name';
+      name.textContent = '当前文件未附加';
+      const note = document.createElement('span');
+      note.className = 'skill-chip__note';
+      note.textContent = '点击启用';
+      chip.append(icon(), name, note);
+      chip.addEventListener('click', () => {
+        vscode.postMessage({ type: 'set_active_file_attach', enabled: true });
+      });
+      return chip;
+    }
+    const chip = document.createElement('span');
+    chip.className = 'skill-chip active-file-chip';
+    chip.dataset.activeFile = 'attached';
+    chip.appendChild(icon());
+    const name = document.createElement('span');
+    name.className = 'skill-chip__name';
+    name.textContent = p.label;
+    // title 承载「本轮以什么方式附加」——不能只靠徽记（窄面板下徽记可能被省略号吃掉）
+    name.title = p.injected
+      ? `本轮已附全文（${ACTIVE_FILE_REASON_LABELS[p.reason ?? 'dirty']}）`
+      : '本轮仅给路径指针，正文由模型按需读取（不占预算）';
+    chip.appendChild(name);
+    if (p.injected) {
+      const note = document.createElement('span');
+      note.className = 'skill-chip__note';
+      note.textContent = `${ACTIVE_FILE_REASON_LABELS[p.reason ?? 'dirty']}·全文已附`;
+      chip.appendChild(note);
+    }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'skill-chip__remove';
+    remove.innerHTML = getIconSvg('close', 11, 11);
+    remove.setAttribute('title', '本会话不再附加当前文件');
+    remove.setAttribute('aria-label', `关闭当前文件上下文：${p.label}`);
+    remove.addEventListener('click', () => {
+      vscode.postMessage({ type: 'set_active_file_attach', enabled: false });
+    });
+    chip.appendChild(remove);
+    return chip;
+  }
+
+  /** 构建/清空附件行：**活动文件 chip + 引用 chip** 共用一个容器（`#refChips`）。
+   *
+   * 引用 chip 形态不变：`路径(+行号) + 🔒 + ×`，与技能 chip 同构复用 `.skill-chip*` 样式；
+   * 🔒 切 pinned（发送后是否保留），× 移除 = 从 currentRefs 过滤并刷新（单一真理源），
+   * 路径/行号 span 点击 = 上报 open_ref 跳编辑器定位。
+   * 显隐判据只写一次（`hasAttachment`）：两类 chip 任一存在即显示——分成两处各判一次，
+   * 必然出现「refs 清空后活动文件 chip 被连坐隐藏」这类漂移。 */
+  function renderAttachmentRow(): void {
     if (!refChipRow) return;
     refChipRow.textContent = '';
-    if (currentRefs.length === 0) {
+    if (activeFile.kind === 'none' && currentRefs.length === 0) {
       refChipRow.hidden = true;
       return;
     }
     refChipRow.hidden = false;
+    // 活动文件在前（常态背景上下文），引用在后（本轮临时挂载）
+    const activeChip = buildActiveFileChip(activeFile);
+    if (activeChip) refChipRow.appendChild(activeChip);
     // 钉住的排最前（「锁定在顶部」）：稳定排序保同组内插入序；只影响渲染顺序，
     // 不改 currentRefs 本体——pinned 判据仍以 currentRefs 为唯一真源（SSOT）。
     const ordered = [...currentRefs].sort((a, b) => Number(b.pinned) - Number(a.pinned));
@@ -7058,7 +7160,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         currentRefs = currentRefs.map((r) =>
           refKeyOf(r) === key ? { ...r, pinned: !r.pinned } : r,
         );
-        renderRefChips();
+        renderAttachmentRow();
       });
       chip.appendChild(pin);
       const remove = document.createElement('button');
@@ -7071,7 +7173,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 同 pin：按身份键过滤（非 path），否则删一条会带走同 path 的另一条选区引用
         const key = refKeyOf(ref);
         currentRefs = currentRefs.filter((r) => refKeyOf(r) !== key);
-        renderRefChips();
+        renderAttachmentRow();
       });
       chip.appendChild(remove);
       refChipRow.appendChild(chip);

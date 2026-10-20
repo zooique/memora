@@ -1563,6 +1563,16 @@ export const chatStyles = `
     background: transparent;
     border: 1px dashed var(--text-secondary, #9aa0a6);
   }
+  /* 活动文件 chip（第三种 chip）：基类仍走 .skill-chip，此处只补两件按钮态必需物——
+   * ① font-family 继承（关闭态整枚是 <button>，UA 默认字体会与相邻 span chip 不一致）；
+   * ② pointer（关闭态可点回开）。不改颜色：attached 用 accent 实线、suppressed 复用
+   * 上方 .is-disabled 的虚线次要色——「挂着但不会生效」正是它的语义。 */
+  .active-file-chip {
+    font-family: inherit;
+  }
+  .active-file-chip[data-active-file='suppressed'] {
+    cursor: pointer;
+  }
   .skill-chip__icon { font-size: var(--font-sm, 11px); line-height: var(--lh-flat); flex-shrink: 0; display: inline-flex; align-items: center; }
   .skill-chip__icon svg { display: block; }
   .skill-chip__name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }

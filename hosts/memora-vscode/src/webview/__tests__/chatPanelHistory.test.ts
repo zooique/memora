@@ -31,7 +31,9 @@ import {
   MemoraChatViewProvider,
   MAX_THOUGHT_PAYLOAD_LENGTH,
   foldThoughtEvents,
+  docInjectReason,
   mustInjectDocBody,
+  projectActiveFile,
   snapshotDocContext,
 } from '../panels/chatPanel.js';
 
@@ -48,13 +50,17 @@ vi.mock('vscode', async () => {
       showInputBox: vi.fn(),
       showWarningMessage: vi.fn(),
       showErrorMessage: vi.fn(),
-      // 文档上下文跟随（A 层）：provider 构造时注册监听 + 读初始 activeTextEditor
+      // 活动文件 chip 的显示订阅：换文件在 window，文档变化/保存在 workspace。
+      // 注入判据**不**靠这些订阅（那是上一版缓存撒谎源），它们只喂显示投影
       onDidChangeActiveTextEditor: vi.fn(() => ({ dispose: vi.fn() })),
       activeTextEditor: undefined,
     },
     workspace: {
       workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],
       getConfiguration: vi.fn(() => ({ get: vi.fn(() => false) })),
+      // 活动文件 chip 的两条 workspace 侧订阅（同文件被编辑 / 保存翻 isDirty）
+      onDidChangeTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidSaveTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
       // 文档上下文判据：活动文档 → 工作区相对路径。替身**忠实模拟**官方语义——
       // 工作区内返回相对路径，工作区外回退绝对路径（被 mustInjectDocBody 判为「指针不可用」）。
       asRelativePath: (u: { fsPath: string }) =>
@@ -894,7 +900,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       },
     } as unknown as Agent;
 
-    const sendWithEditor = async (isDirty: boolean): Promise<string> => {
+    const sendWithEditor = async (isDirty: boolean, attach = true): Promise<string> => {
       captured.length = 0;
       (vscode.window as unknown as { activeTextEditor: unknown }).activeTextEditor =
         makeEditor(isDirty);
@@ -906,6 +912,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       ]);
       provider.setAgent(agent);
       (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+      // 开关是会话级闸门：关掉后连快照都不取（指针与正文一并消失，无中间态）
+      (provider as unknown as { _attachActiveFile: boolean })._attachActiveFile = attach;
       await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('请继续');
       (vscode.window as unknown as { activeTextEditor: unknown }).activeTextEditor = undefined;
       return captured[0]!;
@@ -921,6 +929,109 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(dirty).toContain('[当前打磨文档内容]');
     expect(dirty).toContain('文档内容A');
     expect(dirty).not.toContain('当前打开文件');
+
+    // 关掉开关 ⇒ 既不注入正文、也不挂指针（「关了还偷偷给指针」是自相矛盾的中间态）
+    const offClean = await sendWithEditor(false, false);
+    expect(offClean).not.toContain('当前打开文件');
+    expect(offClean).not.toContain('[当前打磨文档内容]');
+    const offDirty = await sendWithEditor(true, false);
+    expect(offDirty).not.toContain('[当前打磨文档内容]');
+    expect(offDirty).not.toContain('文档内容A');
+  });
+
+  it('活动文件投影：与注入判据同源（干净指针 / 三种注入原因 / 关闭态 / 无文件）', () => {
+    // 投影是 chip 的唯一数据源，必须与 mustInjectDocBody 同源——若各算一套 if 链，
+    // 就会出现「chip 说只给指针、实际注入了全文」这类无法被任何单测发现的自相矛盾。
+    const snap = (opts: { fsPath: string; isDirty?: boolean; isUntitled?: boolean }) =>
+      snapshotDocContext({
+        document: {
+          fileName: opts.fsPath,
+          uri: { fsPath: opts.fsPath },
+          isDirty: opts.isDirty ?? false,
+          isUntitled: opts.isUntitled ?? false,
+          getText: () => 'x',
+        },
+      } as never)!;
+
+    // 干净 + 工作区内 ⇒ 指针：injected=false 且不带 reason（前端据此不画「全文已附」）
+    expect(projectActiveFile(snap({ fsPath: '/mock/workspace/docs/方案.md' }), true)).toEqual({
+      kind: 'attached',
+      label: 'docs/方案.md',
+      injected: false,
+    });
+    // 三种「磁盘不是真相」逐一给出原因（原因即判据本体，布尔是它的派生）
+    const dirty = snap({ fsPath: '/mock/workspace/docs/方案.md', isDirty: true });
+    expect(docInjectReason(dirty)).toBe('dirty');
+    expect(projectActiveFile(dirty, true)).toMatchObject({ injected: true, reason: 'dirty' });
+    expect(projectActiveFile(snap({ fsPath: 'Untitled-1', isUntitled: true }), true)).toMatchObject(
+      {
+        label: 'Untitled-1',
+        reason: 'untitled',
+      },
+    );
+    expect(projectActiveFile(snap({ fsPath: '/other/notes.md' }), true)).toMatchObject({
+      label: 'notes.md',
+      reason: 'outside',
+    });
+    // 关掉开关：只表达「已关闭」——快照本就不取（传 undefined），也不该暴露文件名
+    expect(projectActiveFile(undefined, false)).toEqual({ kind: 'suppressed' });
+    expect(projectActiveFile(dirty, false)).toEqual({ kind: 'suppressed' });
+    // 开着但无活动编辑器 ⇒ none（不渲染 chip）
+    expect(projectActiveFile(undefined, true)).toEqual({ kind: 'none' });
+  });
+
+  it('set_active_file_attach 消息 → 宿主改闸门并回推投影（webview 只认回推）', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setRoundStore(roundStore);
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '你好', ts: 't0' },
+      { role: 'assistant', content: '回复', ts: 't1' },
+    ]);
+
+    // 该消息分支只在 resolveWebviewView 内注册：捕获它注册的 handler，才算真测到分支
+    // （只测 setActiveFileAttach 方法会漏掉「没接线」——那正是上一轮 P0 的形态）
+    let handle: ((msg: unknown) => void) | undefined;
+    const view = {
+      webview: {
+        asWebviewUri: () => ({ toString: () => 'mock://script' }),
+        options: {},
+        html: '',
+        cspSource: 'mock:',
+        postMessage: (m: unknown) => {
+          posted.push(m);
+          return Promise.resolve(true);
+        },
+        onDidReceiveMessage: (cb: (msg: unknown) => void) => {
+          handle = cb;
+          return { dispose: () => {} };
+        },
+      },
+      onDidDispose: () => ({ dispose: () => {} }),
+    } as never;
+    // 装配链与 HTML 渲染不在本用例范围（render 需 vscode.env / 模板资源），桩掉；
+    // 被测的是「消息分支 → 闸门 → 回推」这段接线
+    (provider as unknown as { ensureAgent: () => Promise<void> }).ensureAgent = async () => {};
+    (provider as unknown as { render: () => void }).render = () => {};
+    provider.resolveWebviewView(view, {} as never, {} as never);
+    expect(handle).toBeTypeOf('function');
+
+    handle!({ type: 'set_active_file_attach', enabled: false });
+    expect((provider as unknown as { _attachActiveFile: boolean })._attachActiveFile).toBe(false);
+    const projections = ofType<{ type: string; projection: { kind: string } }>(
+      posted,
+      'active_file',
+    );
+    expect(projections[projections.length - 1]?.projection.kind).toBe('suppressed');
+
+    // 同态重入不重推：否则每次点同一个图钉都会刷一条消息
+    const before = projections.length;
+    handle!({ type: 'set_active_file_attach', enabled: false });
+    expect(ofType(posted, 'active_file').length).toBe(before);
+
+    // 回开 → 恢复 attached（有无活动编辑器不重要：此处无编辑器，投影按「开关已开」重算）
+    handle!({ type: 'set_active_file_attach', enabled: true });
+    const after = ofType<{ type: string; projection: { kind: string } }>(posted, 'active_file');
+    expect(after[after.length - 1]?.projection.kind).toBe('none');
   });
 
   // ─── 历史会话占用重算（轻量版）：切会话后圆环展示真实占用而非空态 0% ───

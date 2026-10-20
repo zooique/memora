@@ -9419,7 +9419,80 @@ describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () =>
 });
 
 // ═══════════════════════════════════════════════════════════
-// 引用行区间（编辑器选区）：chip 显示 · 同文件多区间共存 · 移除不误伤
+// 活动文件 chip（HOST-CTX-3）：当前打开文件是否进本轮上下文 · 本会话开关
+// 投影由宿主推送（与注入判据同源），webview **只渲染不推断**；
+// 关闭态整枚可点回开——不留「关掉后找不到再启用入口」的死角。
+// ═══════════════════════════════════════════════════════════
+describe('活动文件 chip（是否进本轮上下文 · 本会话开关）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const attached = (over: Record<string, unknown> = {}) => ({
+    type: 'active_file',
+    projection: { kind: 'attached', label: 'docs/方案.md', injected: false, ...over },
+  });
+
+  it('干净文件 → 只有文件名，无「全文已附」，✕ 可关', () => {
+    mountChatView();
+    dispatch(attached());
+    const chip = document.querySelector('#refChips .active-file-chip') as HTMLElement;
+    expect(chip.dataset.activeFile).toBe('attached');
+    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('docs/方案.md');
+    // 干净态不标徽记：指针不占预算，标了反而让人以为占了
+    expect(chip.querySelector('.skill-chip__note')).toBeNull();
+    expect(chip.querySelector('.skill-chip__remove')).not.toBeNull();
+    expect(document.getElementById('refChips')?.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('脏文件 → 徽记「未保存·全文已附」（用户看得懂这条消息为什么贵）', () => {
+    mountChatView();
+    dispatch(attached({ injected: true, reason: 'dirty' }));
+    const chip = document.querySelector('#refChips .active-file-chip') as HTMLElement;
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('未保存·全文已附');
+    // title 兜住窄面板下徽记被省略号吃掉的情况
+    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('已附全文');
+  });
+
+  it('✕ → 只上报关闭，不改本地状态（状态以宿主回推为准，单通道）', () => {
+    const { postMessage } = mountChatView();
+    dispatch(attached());
+    (
+      document.querySelector('#refChips .active-file-chip .skill-chip__remove') as HTMLElement
+    ).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'set_active_file_attach', enabled: false });
+    // 本地不自行翻成关闭态：两侧各改一次必然漂移（宿主改态后会推 active_file 回来）
+    expect(
+      (document.querySelector('#refChips .active-file-chip') as HTMLElement).dataset.activeFile,
+    ).toBe('attached');
+  });
+
+  it('关闭态 = 整枚可点回开的按钮（不留死角），视觉走 is-disabled 虚线', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'active_file', projection: { kind: 'suppressed' } });
+    const chip = document.querySelector('#refChips .active-file-chip') as HTMLElement;
+    expect(chip.tagName).toBe('BUTTON');
+    expect(chip.classList.contains('is-disabled')).toBe(true);
+    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('当前文件未附加');
+    chip.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'set_active_file_attach', enabled: true });
+  });
+
+  it('无活动文件且无引用 → 整行收起；两者共存 → 同排两类 chip 均可见', () => {
+    mountChatView();
+    dispatch({ type: 'active_file', projection: { kind: 'none' } });
+    expect(document.getElementById('refChips')?.hasAttribute('hidden')).toBe(true);
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    dispatch(attached());
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(2);
+    expect(document.querySelectorAll('#refChips .active-file-chip').length).toBe(1);
+    // 活动文件 chip 不冒充引用：没有行号域与常驻锁（那两样是引用的语义）
+    expect(document.querySelector('#refChips .active-file-chip .skill-chip__pin')).toBeNull();
+    expect(document.querySelector('#refChips .active-file-chip .skill-chip__range')).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
 // 引伸自引用模式定案（台账 HOST-CTX-0）：只挂指针 + 读取参数，不注入内容；
 // 行号 1-based 由宿主转换，本层不二次转换（转换唯一发生地 = extension/host/selectionRange.ts）。
 // ═══════════════════════════════════════════════════════════

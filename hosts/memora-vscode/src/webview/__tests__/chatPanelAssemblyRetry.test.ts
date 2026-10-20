@@ -47,6 +47,10 @@ vi.mock('vscode', async () => {
     workspace: {
       workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],
       getConfiguration: vi.fn(() => ({ get: vi.fn(() => false) })),
+      // 活动文件 chip 的两条 workspace 侧订阅（同文件被编辑 / 保存翻 isDirty）：
+      // resolveWebviewView 装配时注册，替身缺任一条即 TypeError——不是可选事件
+      onDidChangeTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidSaveTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
     },
   };
 });
