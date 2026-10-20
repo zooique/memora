@@ -9493,6 +9493,115 @@ describe('活动文件 chip（是否进本轮上下文 · 本会话开关）', (
 });
 
 // ═══════════════════════════════════════════════════════════
+// HOST-CTX-10 附件行单轨（技能行 + 引用行同一套判据）：chip 不换行、溢出隐藏，
+// 纵向滚轮转横向滚动，两侧按溢出位置渐隐。判据单点 = syncRowEdges / bindSingleTrackRow。
+// ═══════════════════════════════════════════════════════════
+describe('附件行单轨滚动（HOST-CTX-10：溢出横向滚 · 滚轮切换 · 边缘渐隐）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /**
+   * jsdom 无布局引擎：scrollWidth / clientWidth 恒 0、scrollLeft 赋值即丢，
+   * 「是否溢出」在测试环境里无法自然发生。本辅助把三者打桩成可读写值
+   * （scrollLeft 走闭包存储），用来驱动单轨判据；真实布局表现由真机验收兜。
+   */
+  function stubScroll(
+    el: HTMLElement,
+    box: { scrollWidth: number; clientWidth: number; scrollLeft?: number },
+  ): { scrollLeft: number } {
+    const state = { scrollLeft: box.scrollLeft ?? 0 };
+    Object.defineProperty(el, 'scrollWidth', { configurable: true, get: () => box.scrollWidth });
+    Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => box.clientWidth });
+    Object.defineProperty(el, 'scrollLeft', {
+      configurable: true,
+      get: () => state.scrollLeft,
+      set: (v: number) => {
+        state.scrollLeft = v;
+      },
+    });
+    return state;
+  }
+
+  const refRow = (): HTMLElement => document.getElementById('refChips') as HTMLElement;
+
+  function wheel(el: HTMLElement, init: { deltaX?: number; deltaY?: number }): WheelEvent {
+    const ev = new WheelEvent('wheel', { cancelable: true, ...init });
+    el.dispatchEvent(ev);
+    return ev;
+  }
+
+  it('溢出时纵向滚轮 → 转成横向滚动（滚动条已隐藏，鼠标用户没有别的横向手势）', () => {
+    mountChatView();
+    const row = refRow();
+    const st = stubScroll(row, { scrollWidth: 900, clientWidth: 300 });
+    const ev = wheel(row, { deltaY: 120 });
+    expect(ev.defaultPrevented).toBe(true);
+    expect(st.scrollLeft).toBe(120);
+  });
+
+  it('不溢出时绝不拦截滚轮（光标停在附件行上也照样滚对话，不劫持）', () => {
+    mountChatView();
+    const row = refRow();
+    const st = stubScroll(row, { scrollWidth: 300, clientWidth: 300 });
+    const ev = wheel(row, { deltaY: 120 });
+    // 常态（一两个 chip 装得下）被拦 = 无理由抢走页面滚动，比不滚动更糟
+    expect(ev.defaultPrevented).toBe(false);
+    expect(st.scrollLeft).toBe(0);
+  });
+
+  it('横向手势（deltaX）不拦：触控板原生横滑交还浏览器（会与增量叠加，拦了就双重滚动）', () => {
+    mountChatView();
+    const row = refRow();
+    const st = stubScroll(row, { scrollWidth: 900, clientWidth: 300 });
+    const ev = wheel(row, { deltaX: 80, deltaY: 0 });
+    expect(ev.defaultPrevented).toBe(false);
+    expect(st.scrollLeft).toBe(0);
+  });
+
+  it('渲染后立即按新宽度切边缘类（不靠滚动事件补：滚不动时永远收不到 scroll）', () => {
+    mountChatView();
+    const row = refRow();
+    stubScroll(row, { scrollWidth: 900, clientWidth: 300 });
+    dispatch({ type: 'addRef', refs: [{ path: 'a.ts', kind: 'file' }] });
+    // 起点在左端：右侧还有内容 → 只亮右侧渐隐；左侧无内容 → 不许亮
+    expect(row.classList.contains('is-overflow-end')).toBe(true);
+    expect(row.classList.contains('is-overflow-start')).toBe(false);
+  });
+
+  it('滚动位置驱动两侧渐隐：中段两侧都亮 · 贴右端只剩左侧（滚动条隐藏后这是唯一线索）', () => {
+    mountChatView();
+    const row = refRow();
+    const st = stubScroll(row, { scrollWidth: 900, clientWidth: 300 }); // max = 600
+    dispatch({ type: 'addRef', refs: [{ path: 'a.ts', kind: 'file' }] });
+
+    st.scrollLeft = 300;
+    row.dispatchEvent(new Event('scroll'));
+    expect(row.classList.contains('is-overflow-start')).toBe(true);
+    expect(row.classList.contains('is-overflow-end')).toBe(true);
+
+    st.scrollLeft = 600;
+    row.dispatchEvent(new Event('scroll'));
+    expect(row.classList.contains('is-overflow-start')).toBe(true);
+    expect(row.classList.contains('is-overflow-end')).toBe(false);
+  });
+
+  it('技能行与引用行同一套绑定（防只给引用行施工，技能行仍旧换行堆高）', () => {
+    mountChatView();
+    dispatch({
+      type: 'skills_loaded',
+      skills: [{ name: '正常技能', description: 'd', layer: 'builtin' }],
+    });
+    (document.querySelector('.skill-picker [data-treedd-id="正常技能"]') as HTMLElement).click();
+    const row = document.getElementById('skillChips') as HTMLElement;
+    const st = stubScroll(row, { scrollWidth: 900, clientWidth: 300 });
+    const ev = wheel(row, { deltaY: 100 });
+    expect(ev.defaultPrevented).toBe(true);
+    expect(st.scrollLeft).toBe(100);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
 // 引伸自引用模式定案（台账 HOST-CTX-0）：只挂指针 + 读取参数，不注入内容；
 // 行号 1-based 由宿主转换，本层不二次转换（转换唯一发生地 = extension/host/selectionRange.ts）。
 // ═══════════════════════════════════════════════════════════

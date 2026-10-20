@@ -1529,14 +1529,50 @@ export const chatStyles = `
     display: flex;
     align-items: center;
     gap: var(--sp-2, 6px);
-    flex-wrap: wrap;
-    padding: var(--sp-2, 6px) var(--sp-6, 16px) 0;
+    /* 单轨（HOST-CTX-10，2026-10-20）：**不折行**——挂 4 个引用就吃掉输入框上方近一半
+     * 高度（真机截图实锤），而这里展示的是「附加了什么」，不是正文，占多行不划算。
+     * 溢出改横向滚动，滚动条刻意隐藏（侧栏里一根横条比折行更吵）；
+     * 「还有内容」的线索交给边缘渐隐（见下方 is-overflow-*），不靠滚动条。
+     * ⚠️ 溢出**只能滚动、不能让 chip 缩**（.skill-chip 带 flex:0 0 auto）：缩到 120px 时
+     * 三个同目录文件的名字会截断在同一处，恰好把「第2章 / 第7章」这个区分点吃掉。 */
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    /* 底部留 6px：全局焦点环 outline 2px + offset 2px 会向外扩 4px，而滚动容器在
+     * padding box 裁切——不留就会被切掉下半圈（键盘用户可见，鼠标用户永远发现不了）。 */
+    padding: var(--sp-2, 6px) var(--sp-6, 16px);
     flex-shrink: 0;
+  }
+  .skill-chip-row::-webkit-scrollbar {
+    display: none;
+  }
+  /* 边缘渐隐 = 单轨下「这一侧还有 chip」的唯一可见线索。
+   * 只渐隐真正被截断的那一侧（JS 按 scrollLeft 切类），静止态不渐隐——
+   * 否则单枚 chip 的圆形胶囊会被剜掉一块，看着像渲染 bug。
+   * mask 用 alpha 通道，颜色无所谓；不引入新令牌。 */
+  .skill-chip-row.is-overflow-start {
+    mask-image: linear-gradient(to right, transparent, #000 16px);
+  }
+  .skill-chip-row.is-overflow-end {
+    mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+  }
+  .skill-chip-row.is-overflow-start.is-overflow-end {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 16px,
+      #000 calc(100% - 16px),
+      transparent
+    );
   }
   .skill-chip {
     display: inline-flex;
     align-items: center;
     gap: var(--sp-1, 4px);
+    /* 单轨前提：chip 不参与压缩（理由见 .skill-chip-row 注释）——名字保持可辨，
+     * 装不下就让行滚动，而不是把三个名字都截成同一个前缀。 */
+    flex: 0 0 auto;
     max-width: 220px;
     padding: var(--sp-0, 2px) var(--sp-2, 6px);
     font-size: var(--font-xs, 10px);

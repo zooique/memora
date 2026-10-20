@@ -6948,6 +6948,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     });
     chip.appendChild(remove);
     skillChipRow.appendChild(chip);
+    // 重建后 scrollLeft 归零、内容宽度也变了：边缘渐隐必须按新尺寸重算
+    syncRowEdges(skillChipRow);
   }
 
   /** 接收宿主推送的引用（右键「添加到对话」）：合并去重后渲染气泡行。
@@ -7178,7 +7180,59 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       chip.appendChild(remove);
       refChipRow.appendChild(chip);
     }
+    // 同一行里既有活动文件 chip 又有引用：重建后必须按新宽度重算渐隐（见 syncRowEdges）
+    syncRowEdges(refChipRow);
   }
+
+  /**
+   * 单轨附件行的边缘状态同步（**唯一写入点**，技能行与引用行共用）
+   *
+   * 只做一件事：按当前滚动位置给容器切 `is-overflow-start/end` 类，CSS 据此渐隐。
+   * 渐隐是单轨方案下「这一侧还有 chip」的唯一可见线索——滚动条已隐藏，不渐隐等于让人猜。
+   * `+1` 容差：Windows 125% 缩放下 `scrollLeft` 常带 0.5~1px 亚像素误差，严格比较会让
+   * 渐隐在贴边时闪一下。
+   */
+  function syncRowEdges(row: HTMLElement | null): void {
+    if (!row) return;
+    const max = row.scrollWidth - row.clientWidth;
+    row.classList.toggle('is-overflow-start', row.scrollLeft > 1);
+    row.classList.toggle('is-overflow-end', max > 1 && row.scrollLeft < max - 1);
+  }
+
+  /**
+   * 给附件行绑定单轨滚动行为（HOST-CTX-10）
+   *
+   * 纵向滚轮 → 横向滚动：滚动条已隐藏，鼠标用户没有别的横向手势可用（触控板用户仍走原生
+   * 横向手势，`deltaX` 不拦）。**只在真的溢出时才拦截**——常态（一两个 chip 装得下）绝不
+   * `preventDefault`，否则用户把光标停在附件行上就滚不动对话，属于无理由劫持。
+   */
+  function bindSingleTrackRow(row: HTMLElement | null): void {
+    if (!row) return;
+    row.addEventListener('scroll', () => syncRowEdges(row), { passive: true });
+    row.addEventListener(
+      'wheel',
+      (e) => {
+        if (e.deltaY === 0 || row.scrollWidth <= row.clientWidth) return; // 无溢出 / 横向手势：交还原生
+        e.preventDefault();
+        row.scrollLeft += e.deltaY;
+      },
+      { passive: false }, // 要 preventDefault，不能是 passive
+    );
+  }
+
+  // 两行的绑定在此一次完成（行元素在脚本加载时已存在）；窗口尺寸变化只影响是否溢出，
+  // 重算一次边缘类即可——不为「侧栏拖宽」引入 ResizeObserver（Chat 面板拖宽不触发
+  // window resize，但此时行内也不滚动，渐隐最多残留到下次滚动/重渲染，代价可接受）。
+  bindSingleTrackRow(skillChipRow);
+  bindSingleTrackRow(refChipRow);
+  window.addEventListener(
+    'resize',
+    () => {
+      syncRowEdges(skillChipRow);
+      syncRowEdges(refChipRow);
+    },
+    { passive: true },
+  );
 
   /** 润色按钮事件绑定：对输入框内容进行润色（图标按钮，无文本） */
   if (polishBtn) {
