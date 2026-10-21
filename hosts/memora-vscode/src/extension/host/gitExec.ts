@@ -5,7 +5,8 @@
  * 「memora 允许对 git 做什么」的**唯一真源**）：
  *   ① spawn 前校验 args **逐项命中**白名单，不命中即拒绝——采集器只构造三组只读
  *      args，但 wrapper 不信任上游：纵深防御让写操作从结构上进不来；
- *   ② env 带 `NO_COLOR=1`（防 `color.diff = always` 用户的 ANSI 污染注入正文）；
+ *   ② env 带 `NO_COLOR=1`（**辅助**：实测挡不住显式 `color.diff=always`，主力是白名单
+ *      args 里的 `--no-color`，见 `gitCollector.GIT_COMMANDS` 注释）；
  *   ③ `windowsHide:true`（`environmentProvider.probeRuntime` 先例，禁弹控制台窗口）；
  *   ④ 超时强杀并按失败处置（大仓库 status/diff 可能慢，勿照搬 --version 量级 5s）；
  *   ⑤ cwd 透传（生产 = 首个工作区根，与 `read_file` cwd 同根，模型按清单路径才读得到）。
@@ -63,8 +64,15 @@ export const gitExec: GitExec = (args, cwd) =>
       env: { ...process.env, NO_COLOR: '1' },
       cwd,
     });
+    // UTF-8 解码口径（实测：359KB 中文输出跨管道块时 `String(d)` 逐块解码产生 7~12 个
+    // U+FFFD）——`setEncoding` 由 StringDecoder 兜住被切断的多字节序列，块间不断字。
+    // ⚠️ 与本处配套的另一半：开了 encoding 后 `d` 变 string，`d.length` 是**字符数**
+    // 不再是字节数 ⇒ 上限计数必须走 `Buffer.byteLength`（对 Buffer / string 同口径），
+    // 否则 8MB 阈值在中文场景被放宽约 3 倍。两者成对改，拆一个即留伤。
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
     child.stdout.on('data', (d: Buffer | string) => {
-      stdoutBytes += d.length;
+      stdoutBytes += Buffer.byteLength(d);
       if (stdoutBytes > GIT_STDOUT_MAX_BYTES) {
         // 超限即杀：语义截断（三道闸）管不了「先全量累进内存」的进程级风险
         overflow = true;

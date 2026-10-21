@@ -39,25 +39,67 @@
  */
 
 /**
+ * 每次 git 调用的**固定开关前缀**（值真源：三组命令共享派生，勿在各组里各写一遍）
+ *
+ * 每条开关都挡一类**实测**形态（2026-10-22 临时仓实测，git 2.55.0.windows.3）：
+ *   ① `core.quotePath=false` —— 默认 `quotePath=true` 把中文路径输出成八进制转义
+ *      **字面量**（`"\"\\344\\270\\255…\""`），模型照它 `read_file` 必然失败；
+ *   ② `core.fsmonitor=false` —— 仓库 config 的 `core.fsmonitor` 会让 `git status`
+ *      **执行仓库指定的外部程序**（实测命中）；置 false 即不启用。
+ *
+ * 🔴 **红线：本数组只许整体替换，禁止参数化**（如按配置拼 `-c <key>=<value>`）。
+ * 参数化 = 允许覆盖任意 git 配置 = 可把 `core.quotePath` 换成 `core.fsmonitor`，
+ * 于是「只读采集」在陌生仓库里变成「执行仓库指定的程序」——信任类声明当场作废。
+ * 白名单靠「整组逐项相等」守卫（`gitExec.isWhitelisted`），固定前缀**不是**开放的 `-c` 口子。
+ */
+export const GIT_GLOBAL_ARGS: readonly string[] = [
+  '-c',
+  'core.quotePath=false',
+  '-c',
+  'core.fsmonitor=false',
+];
+
+/**
+ * diff 两口的**输出形态开关**（与 `GIT_GLOBAL_ARGS` 同族：`GIT_COMMANDS` 派生用，只写一处）
+ *
+ * `status --porcelain` 是机器格式、实测不受 color 配置影响 ⇒ 不需要这三个开关。
+ */
+export const GIT_DIFF_OUTPUT_ARGS: readonly string[] = [
+  '--no-color',
+  '--no-ext-diff',
+  '--no-textconv',
+];
+
+/**
  * 只读子命令白名单（拍板口径：同 Roo Code `@git-changes` 三口，只读、无写操作）
  *
  * 这是「memora 允许对 git 做什么」的**唯一真源**：采集器只构造这三组 args，
  * wrapper 只执行命中本清单的 args——双向收窄，写操作从结构上进不来。
+ *
+ * 三组都由 `GIT_GLOBAL_ARGS` 派生（前缀只写一处）。diff 两口另带三个**输出形态**开关，
+ * 缺一即出真伤（同样实测）：
+ *   - `--no-color`：ANSI 污染不止是花屏——行首不再是 `diff --git `，`splitDiffChunks`
+ *     的切点整体失效（实测 3 文件 → 1 段）⇒ 被 200 行闸当「一个文件」截断且注记撒谎。
+ *     ⚠️ `NO_COLOR=1` **挡不住**显式 `color.diff=always`（实测），故本开关不可省；
+ *   - `--no-ext-diff` / `--no-textconv`：`.gitattributes` + 仓库 config 指定的外部
+ *     diff 驱动 / textconv 程序会被 `git diff` 执行（实测命中）——「只读」名不副实。
  */
-export const GIT_COMMANDS = {
+export const GIT_COMMANDS: Record<'status' | 'diffUnstaged' | 'diffStaged', readonly string[]> = {
   /** 文件清单（porcelain v1 机器格式：两列状态位 + 路径） */
-  status: ['status', '--porcelain'],
+  status: [...GIT_GLOBAL_ARGS, 'status', '--porcelain'],
   /** 未暂存改动 */
-  diffUnstaged: ['diff'],
+  diffUnstaged: [...GIT_GLOBAL_ARGS, 'diff', ...GIT_DIFF_OUTPUT_ARGS],
   /** 已暂存改动（提交候选，展示优先级高于未暂存） */
-  diffStaged: ['diff', '--cached'],
-} as const;
+  diffStaged: [...GIT_GLOBAL_ARGS, 'diff', '--cached', ...GIT_DIFF_OUTPUT_ARGS],
+};
 
 /**
  * wrapper 守卫用：白名单扁平化
  *
  * 第 3 笔 spawn 实现必须：① spawn 前校验 args 命中本清单（逐项相等），不命中即拒绝；
- * ② env 带 `NO_COLOR: '1'`（防 `color.diff = always` 用户的 ANSI 污染注入正文）；
+ * ② env 带 `NO_COLOR: '1'`（**辅助**而非主力：实测挡不住显式 `color.diff=always`，
+ * ANSI 主责由白名单里的 `--no-color` 承担——两者不是替代关系，别因前者「看起来没用」
+ * 就删它，它对 `color.ui=auto` 形态仍有价值）；
  * ③ `windowsHide: true`（同 environmentProvider 的 `probeRuntime` 先例，禁弹控制台窗口）；
  * ④ 设超时并按超时失败处置（大仓库 status/diff 可能慢，勿照搬 --version 量级的 5s）；
  * ⑤ cwd = 首个工作区根（与 `read_file` 的 cwd 同根，模型按清单路径才读得到）。

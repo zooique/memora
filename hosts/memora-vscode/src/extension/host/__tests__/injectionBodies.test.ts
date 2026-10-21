@@ -15,7 +15,12 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('vscode', () => ({}));
 
 import { collectGitChangesBody } from '../injectionBodies.js';
-import type { GitExec, GitExecResult } from '../gitCollector.js';
+import {
+  GIT_DIFF_OUTPUT_ARGS,
+  GIT_GLOBAL_ARGS,
+  type GitExec,
+  type GitExecResult,
+} from '../gitCollector.js';
 
 /** 假执行器：记录调用 + 按序应答（status 之后才跑 diff 的顺序也由此可观测） */
 function fakeExec(answers: GitExecResult[]): GitExec & { calls: (readonly string[])[] } {
@@ -40,8 +45,13 @@ describe('collectGitChangesBody — git-changes 源正文装配', () => {
     ]);
     await collectGitChangesBody('/repo/root', exec);
 
-    // 顺序 = 采集器契约（M7 变异锁定）：status → diff --cached（提交候选，展示优先）→ diff
-    expect(exec.calls).toEqual([['status', '--porcelain'], ['diff', '--cached'], ['diff']]);
+    // 顺序 = 采集器契约（M7 变异锁定）：status → diff --cached（提交候选，展示优先）→ diff。
+    // args 逐字形态由 gitCollector.test.ts「固定开关前缀」用例单点锁定（此处派生免重复）
+    expect(exec.calls).toEqual([
+      [...GIT_GLOBAL_ARGS, 'status', '--porcelain'],
+      [...GIT_GLOBAL_ARGS, 'diff', '--cached', ...GIT_DIFF_OUTPUT_ARGS],
+      [...GIT_GLOBAL_ARGS, 'diff', ...GIT_DIFF_OUTPUT_ARGS],
+    ]);
     // cwd 由 collectGitChangesText 经 GitCollectInput.cwd 透传给 exec（真执行器的 cwd
     // 锁定在 gitExec.test.ts 的 spawn 选项断言）
     expect(exec.calls.length).toBe(3);

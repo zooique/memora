@@ -16,6 +16,8 @@ import { describe, it, expect } from 'vitest';
 import {
   collectGitChangesText,
   GIT_COMMANDS,
+  GIT_DIFF_OUTPUT_ARGS,
+  GIT_GLOBAL_ARGS,
   GIT_COMMAND_WHITELIST,
   GIT_FILES_LIMIT,
   GIT_FILE_DIFF_MAX_LINES,
@@ -35,7 +37,12 @@ function fakeExec(script: Record<string, GitExecResult>): {
   const exec: GitExec = async (args, cwd) => {
     calls.push([...args]);
     cwds.push(cwd);
-    return script[args.join(' ')] ?? { code: 0, stdout: '', stderr: '' };
+    // 应答按**子命令**路由（剥掉两组固定开关，故脚本 key 仍写 `status --porcelain` 形态）；
+    // 真实 args（含开关）由各用例的 `calls` 断言与「固定开关前缀」用例另行锁定。
+    const route = args
+      .filter((a) => !GIT_GLOBAL_ARGS.includes(a) && !GIT_DIFF_OUTPUT_ARGS.includes(a))
+      .join(' ');
+    return script[route] ?? { code: 0, stdout: '', stderr: '' };
   };
   return { exec, calls, cwds };
 }
@@ -65,7 +72,12 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
     });
     await collectGitChangesText({ exec, cwd: '/repo' });
 
-    expect(calls).toEqual([['status', '--porcelain'], ['diff', '--cached'], ['diff']]);
+    // 真实 args = 固定开关 + 子命令（逐字形态由「固定开关前缀」用例锁定，此处派生免重复）
+    expect(calls).toEqual([
+      [...GIT_GLOBAL_ARGS, 'status', '--porcelain'],
+      [...GIT_GLOBAL_ARGS, 'diff', '--cached', ...GIT_DIFF_OUTPUT_ARGS],
+      [...GIT_GLOBAL_ARGS, 'diff', ...GIT_DIFF_OUTPUT_ARGS],
+    ]);
     // cwd 逐字转发（生产 = 首个工作区根；模型按清单路径 read_file 才读得到）
     expect(cwds.every((c) => c === '/repo')).toBe(true);
     // 每次调用都命中白名单（防未来加命令时静默越权）
@@ -79,6 +91,31 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
       GIT_COMMANDS.diffUnstaged,
       GIT_COMMANDS.diffStaged,
     ]);
+  });
+
+  it('固定开关前缀：三组共享同一前缀（只写一处）+ diff 两口带输出形态开关，逐字锁定', () => {
+    // ① `core.quotePath=false` = 中文路径不转义（否则模型 read_file 必失败）；
+    //    ② `core.fsmonitor=false` = status 不执行仓库 config 指定的外部程序。
+    // 逐字断言：改一个字符即红，防「顺手换个配置名」把只读采集变成执行任意程序。
+    expect(GIT_GLOBAL_ARGS).toEqual(['-c', 'core.quotePath=false', '-c', 'core.fsmonitor=false']);
+    expect(GIT_COMMAND_WHITELIST).toHaveLength(3);
+    for (const args of GIT_COMMAND_WHITELIST) {
+      expect(args.slice(0, GIT_GLOBAL_ARGS.length)).toEqual([...GIT_GLOBAL_ARGS]);
+    }
+    // 输出形态开关（缺一即出真伤）：--no-color 防 ANSI 让 `\n(?=diff --git )` 切点失效
+    // （实测 3 文件 → 1 段）；--no-ext-diff / --no-textconv 防 diff 执行外部驱动 / textconv。
+    expect(GIT_DIFF_OUTPUT_ARGS).toEqual(['--no-color', '--no-ext-diff', '--no-textconv']);
+    expect(GIT_COMMANDS.diffUnstaged.slice(GIT_GLOBAL_ARGS.length)).toEqual([
+      'diff',
+      ...GIT_DIFF_OUTPUT_ARGS,
+    ]);
+    expect(GIT_COMMANDS.diffStaged.slice(GIT_GLOBAL_ARGS.length)).toEqual([
+      'diff',
+      '--cached',
+      ...GIT_DIFF_OUTPUT_ARGS,
+    ]);
+    // status 走 porcelain 机器格式（实测不受 color 影响），无需颜色开关
+    expect(GIT_COMMANDS.status.slice(GIT_GLOBAL_ARGS.length)).toEqual(['status', '--porcelain']);
   });
 
   it('fail-closed：非 git 仓库（128 + fatal）→ 事实行进正文，且不跑 diff（fail-fast）', async () => {
