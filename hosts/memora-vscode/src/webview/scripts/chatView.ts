@@ -34,7 +34,7 @@ import {
   MAX_PENDING_INTERJECTIONS,
 } from '../../shared/constants.js';
 import { fmtTime } from '../helpers/fmtTime.js';
-import { fmtTokens, fmtCompactTokens } from '../helpers/fmtTokens.js';
+import { fmtTokens } from '../helpers/fmtTokens.js';
 import {
   forceScrollToBottom,
   followIfPinned,
@@ -64,6 +64,8 @@ import { createPlanBarView } from './planBarView.js';
 import { createHistoryMenuView } from './historyMenuView.js';
 // 上下文占用（圆环/构成条/明细）：渲染与防误清零状态收口于 contextOccupancyView（HOST-SPLIT-1 chatView 第 3 刀）
 import { createContextOccupancyView } from './contextOccupancyView.js';
+// 活动抽屉（活动条/时间线/指标/未读位）：渲染与未读判定收口于 activityDrawerView（HOST-SPLIT-1 chatView 第 4 刀）
+import { createActivityDrawerView } from './activityDrawerView.js';
 
 /** chatView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ChatViewDeps {
@@ -220,8 +222,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const dockChip = document.getElementById('dockChip') as HTMLButtonElement | null;
   const dockPanel = document.getElementById('dockPanel') as HTMLElement | null;
   const dockControls = document.getElementById('dockControls') as HTMLElement | null;
-  const activityList = document.getElementById('activityList') as HTMLElement;
-  const activityMetrics = document.getElementById('activityMetrics') as HTMLElement;
   const inputBar = document.getElementById('inputBar') as HTMLElement;
   const inputWrap = document.getElementById('inputWrap') as HTMLElement | null;
   const clarifyBar = document.getElementById('clarifyBar') as HTMLElement;
@@ -2609,6 +2609,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     send.setAttribute('aria-label', spec.send.ariaLabel);
   }
 
+  // ── 活动抽屉域（活动条/时间线/指标/未读位）：渲染与未读判定收口于 activityDrawerView
+  // （HOST-SPLIT-1 chatView 第 4 刀，模块头见该文件）。创建须早于下方 registerDockEntry('activity')
+  // 与一切 resolveDock 执行点（deps 的函数引用经声明提升与闭包捕获，创建时机安全）──
+  const activityDrawerView = createActivityDrawerView({
+    document,
+    activityBar,
+    activityList: document.getElementById('activityList') as HTMLElement,
+    activityMetrics: document.getElementById('activityMetrics') as HTMLElement,
+    setDockActive,
+    setDockFixed,
+    notifyDockChanged: resolveDock,
+    isDockExpanded: () => _dockExpanded,
+  });
+
   // ─── 底部状态条收纳器（StatusDock，ADR-037 形态宪法；实现契约详见
   // docs/方案-底部状态条收纳-20261001.md §三）───
   // 底部三条（fileChanges / pendingQueue / activityBar 非错误态）同屏堆叠收紧：
@@ -2753,7 +2767,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 「chip/panel 反复插拔把确认卡挤开、主位条瞬移闪烁」的结构根在此不复存在。
     if (head) {
       // 免重排守卫（P8 主位条瞬移闪烁血训）：head 已物理紧邻 anchor 就不搬。
-      // 本函数会被重复触发（重复通知时 active/fixed 未变，见 showActivity 尾部说明），
+      // 本函数会被重复触发（重复通知时 active/fixed 未变，见 activityDrawerView.showActivity 尾部说明），
       // 其余节点同位置重放是同步无帧操作，唯 head 可见、重复 insertBefore 真机上=整条瞬移。
       if (head.el.nextElementSibling !== anchor) {
         parent.insertBefore(head.el, anchor);
@@ -2769,9 +2783,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 抽屉入口：有被收纳的活跃条（+N）**或**时间段有内容（历史/指标）才可达。
     // 时间线一旦有内容不清空（历史有界保留、metrics 渲染后常驻）⇒ 入口首次出现后常驻，
     // 单条 error 8s 撤后历史仍可从这里拉开——C1 闭合的最后残余缺口（台账 P15 病③）。
-    const timelineReady = activityHistory.length > 0 || !activityMetrics.hidden;
+    // timelineReady/hasUnread 判据真源随活动抽屉域收口于 activityDrawerView.getDockState（第 4 刀）。
+    const { timelineReady, hasUnread } = activityDrawerView.getDockState();
     const chipVisible = rest.length > 0 || timelineReady;
-    const hasUnread = activityUnread || metricsUnread;
     // 空态（入口不可达）时展开态无意义，强制收起；其余时刻**不替用户合抽屉**
     // （正在看历史时条全撤 = P10C open 轴血训的同一条纪律，折叠轴只剩这一个）。
     if (!chipVisible) _dockExpanded = false;
@@ -2798,11 +2812,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   dockChip?.addEventListener('click', () => {
     _dockExpanded = !_dockExpanded;
-    if (_dockExpanded) {
-      activityUnread = false;
-      metricsUnread = false;
-      metricsSignalSeen = metricsSignalLatest;
-    }
+    // 拉开＝已读：未读位与信号消费真源随活动抽屉域收口于 activityDrawerView（第 4 刀）
+    if (_dockExpanded) activityDrawerView.markDrawerOpened();
     resolveDock();
   });
 
@@ -4598,154 +4609,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     settleRoundFooter(roundId, hostEl);
   }
 
-  // ─── 活动状态区（三合一：P0 错误 / P1 低扰 / P2 指标） ───
-  // 单一主状态条（#activityBar）同时只显示一条；被覆盖的提示不丢失，
-  // 全部进抽屉「活动」时间段的历史列表（最近 MAX_ACTIVITY_HISTORY 条，带时间戳）。
-  // 优先级策略：P0 错误显示期间，P1/P2 不打断它（错误优先保护）；P2 指标常驻时间段。
-
-  /** 详情历史最大条数（有界，防长期使用累积） */
-  const MAX_ACTIVITY_HISTORY = 20;
-  /** 活动历史记录：level=error 时标红、info 时灰显；仅用于详情回溯，不含指标 */
-  interface ActivityRecord {
-    level: 'error' | 'info';
-    text: string;
-    ts: string;
-    /** 时间线第三类事件「决策记录」（C2）：批准/拒绝/超时自动拒，只记工具面+裁决结果 */
-    kind?: 'decision';
-  }
-  const activityHistory: ActivityRecord[] = [];
-
-  /**
-   * 详情「有未读」标记（P4 / UI-CONFIRM-P10 治本）
-   *
-   * 🔴 旧判据是「历史非空即显示」而历史**从不清空**（只 shift 截断到MAX 条）⇒ 出现过
-   * 任意一条活动后折叠区永久可见，即用户反馈的「基本常驻」。C1 起事实与呈现分离：
-   * 历史非空只决定**入口可达**（chip 显「活动」），是否提示由未读位决定——
-   * 用户点开抽屉看过即消（唯一折叠轴 #dockChip 点击回调，拉开＝已读）。
-   *
-   * 为何不用「历史空才隐藏」：那只是把常驻改成「最后一次活动后才消」，用户读过之后
-   * 仍常驻 ⇒ 换壳不换病。
-   */
-  let activityUnread = false;
-
-  /**
-   * 指标未读位（与 activityUnread 同构，判据的第二个事实源）
-   *
-   * 🔴 病根（2026-10-05 审查实锤）：旧判据把 `activityMetrics.hidden`（**渲染结果**，
-   * 且只置 false 从不复位）当「有没有指标要看」的事实喂给显隐判据 ⇒ 首次 metrics
-   * 之后详情区恒显形。第二版改喂「渲染全文快照对比」仍错——宿主每轮都推 metrics，
-   * 而 llmCallCount / token 是**累计计数**、每轮必涨 ⇒ 全文每轮都不同 ⇒ 退化成
-   * 「每轮弹一次」，换壳不换病。
-   *
-   * 定案修法：未读只由**诊断信号**驱动（失败数 / 截断数 / 未解析意图数 / 安全审计数 /
-   * 指纹变化，见 `metricsSignalOf`）——累计计数是仪表盘读数，不是「新闻」。
-   * 指标块本身的显隐仍归 `activityMetrics.hidden`（渲染职责，两件事互不侵占）。
-   */
-  let metricsUnread = false;
-  /** 最近一次 metrics 的诊断信号（每次推送都更新；展开中现场消费的依据） */
-  let metricsSignalLatest = '';
-  /** 用户已读的诊断信号快照（空串 = 从未读过；与 latest 不同 ⇒ 有未读信号） */
-  let metricsSignalSeen = '';
-
-  let activityTimer: number | null = null;
-
-  // C1：#activityDetail 的 <details>.open 折叠轴与 toggle 监听已整组拆除——时间线静态
-  // 固定在 #dockPanel 内，其可见性纯粹随抽屉（#dockPanel.hidden），未读消费统一在
-  // #dockChip 点击回调（拉开＝已读），展开中现场消费见 showActivity/renderMetrics。
-
-  /**
-   * 渲染时间段的活动历史列表（内容职责；C1 起不再裁决任何显隐——
-   * 时间线可见性是 #dockPanel.hidden 的纯函数，徽章/入口显隐归 resolveDock）。
-   */
-  function renderActivityDetail(): void {
-    // 历史列表：textContent 构建防注入（全部来自内核/宿主文案或用户输入）
-    activityList.textContent = '';
-    for (const r of activityHistory) {
-      const row = document.createElement('div');
-      row.className = 'activity-list__row ' + r.level + (r.kind === 'decision' ? ' decision' : '');
-      const text = document.createElement('span');
-      text.className = 'activity-list__text';
-      text.textContent = r.text;
-      const time = document.createElement('span');
-      time.className = 'activity-list__time';
-      time.textContent = r.ts;
-      row.appendChild(text);
-      row.appendChild(time);
-      activityList.appendChild(row);
-    }
-  }
-
-  /**
-   * 显示主状态条（P0 错误 / P1 低扰）
-   *
-   * 优先级：P0 显示期间 P1 不覆盖（错误优先保护，P1 仅记历史）；新 P0 覆盖旧 P0。
-   * 停留时长按档位分级——error 醒目停留更久，info 低扰短暂（对齐排雷雷-4 语义分离）。
-   *
-   * 支持可选 action 按钮：当宿主标记错误为「可重试」时，action.label 显示按钮文案、
-   * action.onClick 绑定重试回调。当前宿主暂未接入（框架先行就绪），不传 action 时该能力不生效。
-   */
-  function showActivity(
-    level: 'error' | 'info',
-    text: string,
-    action?: { label: string; onClick: () => void },
-    kind?: 'decision',
-  ): void {
-    // 全部活动先入历史（被覆盖的提示不丢失，详情可回溯）
-    const record: ActivityRecord = {
-      level,
-      text,
-      ts: fmtTime(new Date().toISOString()),
-      ...(kind ? { kind } : {}),
-    };
-    activityHistory.push(record);
-    if (activityHistory.length > MAX_ACTIVITY_HISTORY) activityHistory.shift();
-    // 新活动 ⇒ 标未读（抽屉收起态才标；拉开着说明用户正在看，不标）。
-    // 未读只亮 #dockChip 徽章、不弹时间线（宪法④）；事实位在此，呈现在 resolveDock。
-    if (!_dockExpanded) {
-      activityUnread = true;
-    }
-    renderActivityDetail();
-    // 入口显式刷新（必须在 P0 早退判据**之前**）：history 与未读位是 resolveDock 的输入，
-    // 但重复通知时 active/fixed 往往没变——setDockActive/setDockFixed 判重 no-op 不触发裁决，
-    // 不补这一下则「收抽屉后第二条通知到达，徽章不亮」（与 renderMetrics 尾部同款刷新）。
-    // 紧接着的 setter 若状态真变化会再裁决一次：两次同帧、幂等，head 有免重排守卫不搬。
-    resolveDock();
-
-    // P0 保护：当前显示 error 时，后续 info 不打断（仅进历史，主条保持错误可见）
-    if (level === 'info' && activityBar.dataset.level === 'error') return;
-
-    activityBar.dataset.level = level;
-    activityBar.className = 'activity-bar ' + level;
-    // 文本 + 可选操作按钮：action 存在时用 span 包裹文本 + button，否则纯 textContent
-    if (action) {
-      activityBar.textContent = '';
-      const textSpan = document.createElement('span');
-      textSpan.className = 'activity-bar__text';
-      textSpan.textContent = text;
-      activityBar.appendChild(textSpan);
-      const btn = document.createElement('button');
-      btn.className = 'activity-bar__action';
-      btn.textContent = action.label;
-      btn.addEventListener('click', action.onClick);
-      activityBar.appendChild(btn);
-    } else {
-      activityBar.textContent = text;
-    }
-    // StatusDock 接线：error 豁免恒主位（fail-visible），非错误态参与收纳（垫底优先级）。
-    // hidden 归 resolveDock 裁决（setDockActive 触发全量重排），此处不直写。
-    setDockActive('activity', true);
-    setDockFixed('activity', level === 'error');
-    if (activityTimer) window.clearTimeout(activityTimer);
-    activityTimer = window.setTimeout(
-      () => {
-        delete activityBar.dataset.level;
-        // 自动消失 → 撤出收纳器（fixed 随之撤销；hidden 与归位由 resolveDock 统一裁决）
-        setDockActive('activity', false);
-        setDockFixed('activity', false);
-      },
-      level === 'error' ? 8000 : 2500,
-    );
-  }
+  // ── 活动状态区（三合一：P0 错误 / P1 低扰 / P2 指标）已整体外置：活动条/时间线/未读位
+  // 收口于 activityDrawerView（HOST-SPLIT-1 chatView 第 4 刀，容器创建见 StatusDock 区块头部）──
 
   /**
    * 正文首行截断（「已沉淀」提示用）：取首行去空白，超长省略号收尾。
@@ -4928,119 +4793,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const item of buildMemoryHitItems(currentMemoryHits)) list.appendChild(item);
   }
 
-  /**
-   * 从 metrics 载荷提取**诊断信号**（未读判据唯一事实源）。
-   *
-   * 口径：只收「出了事 / 配置变了」的量——工具失败、上下文截断、未解析工具意图、
-   * 路径守卫**拒绝数**、系统提示指纹。判据不是「累计 vs 瞬时」，而是
-   * **「正常轮次这个值会不会变」**：fail/trunc/unparsed/denied 只在异常时增长，
-   * 正常轮次恒定；llmCallCount / token / budget 每轮必涨。
-   *
-   * 🔴 血训（2026-10-05 真机触发链复核实锤）：audit 字段**只准用 denied，不准用 total**。
-   * 内核 SecurityGuard 对**白名单正常放行也发 path-allow 审计**，宿主 total 无条件累加
-   * （含 allow）⇒ AI 真实编码每轮都读文件 ⇒ total 每轮必涨，与 llmCallCount 同病。
-   * v3 曾误收 total，变异测试因构造数据没让审计数逐轮涨而漏网；守卫用例见
-   * `chatView.test.ts`「P4 补审 A」审计守卫条。total 仍在指标块正常展示（仪表盘读数），
-   * 只是不入信号。trace 是操作流镜像，同样不是新闻。
-   */
-  function metricsSignalOf(msg: Extract<ExtensionToWebviewMessage, { type: 'metrics' }>): string {
-    return JSON.stringify({
-      fp: msg.fingerprints.systemPromptHash ?? '',
-      fail: msg.metrics.toolFailureCount ?? 0,
-      trunc: msg.metrics.truncationCount ?? 0,
-      unparsed: msg.metrics.unparsedToolIntentCount ?? 0,
-      // 只认拒绝数：total 含每轮必发生的 path-allow，入信号 = 每轮弹一次（见函数头血训）
-      audit: msg.securityAudit?.denied ?? 0,
-    });
-  }
-
-  /**
-   * 渲染活动指标详情（P2：§13.x 透明面板 + §5.2.1 指纹可见）
-   *
-   * 指纹（系统提示 hash 前 12 位）+ 累计指标（LLM / 工具失败 / 截断）。
-   * textContent 赋值防注入；指标只进详情折叠区，不占用主状态条。
-   * 注：「附着记忆条数 / 召回命中率」已退役——自动记忆注入与
-   * recall 指标随自动召回退役恒零（假指标），显示即误导。
-   */
-  function renderMetrics(msg: Extract<ExtensionToWebviewMessage, { type: 'metrics' }>): void {
-    const fp = msg.fingerprints;
-    const lines = [
-      // 指纹行：只显示 hash，不显示内容（可追溯性边界）
-      '本轮指纹：' + (fp.systemPromptHash ? '系统提示 ' + fp.systemPromptHash : '系统提示 -'),
-      // 累计指标行（未解析工具意图累计，诊断面板可见文本 tool_call 静默失败）
-      '累计：LLM ' +
-        msg.metrics.llmCallCount +
-        ' 次 · 工具失败 ' +
-        msg.metrics.toolFailureCount +
-        (msg.metrics.unparsedToolIntentCount && msg.metrics.unparsedToolIntentCount > 0
-          ? ' · 未解析工具意图 ' + msg.metrics.unparsedToolIntentCount
-          : '') +
-        ' · 截断 ' +
-        msg.metrics.truncationCount,
-      // token 用量（可选字段，缺省不显示）：估算口径。「入」为**累计**（同轮详情执行指标
-      // 同源，勿据其判窗口占用）；「出」只计正文、不含思考——防推理模型下把正文数
-      // 误读成总输出
-      'Tokens（估算）：' +
-        (typeof msg.metrics.llmTokenIn === 'number'
-          ? '入 ' + msg.metrics.llmTokenIn + ' 累计'
-          : '入 -') +
-        ' / 正文 ' +
-        (typeof msg.metrics.llmTokenOut === 'number'
-          ? msg.metrics.llmTokenOut + '（不含思考）'
-          : '-'),
-      // ④ 预算分配构成（可选字段，缺省不显示）——窗口内空间如何被 锚点/对话层 瓜分
-      ...(msg.metrics.budget
-        ? [
-            '预算：可用 ' +
-              fmtCompactTokens(msg.metrics.budget.availableTokens) +
-              ' · 锚点 ' +
-              fmtCompactTokens(msg.metrics.budget.anchorTokens) +
-              ' · 对话层 ' +
-              fmtCompactTokens(msg.metrics.budget.dialogueBudgetTokens) +
-              ' · 剩余 ' +
-              fmtCompactTokens(msg.metrics.budget.remainingTokens),
-          ]
-        : []),
-      // B9 可观测补齐：最近操作流（span 标签新→旧，指标区末尾渲染，缺省不显示）
-      ...(msg.trace && msg.trace.length > 0
-        ? ['操作流：', ...msg.trace.map((t) => '  › ' + t.label)]
-        : []),
-      // 安全/装配透明：路径守卫审计概要（有审计事件才显示；basename 路径）
-      ...(msg.securityAudit && msg.securityAudit.total > 0
-        ? [
-            '安全审计 ' +
-              msg.securityAudit.total +
-              ' 次 · 拒绝 ' +
-              msg.securityAudit.denied +
-              (msg.securityAudit.recent.length > 0
-                ? ' · 最近：' +
-                  msg.securityAudit.recent
-                    .map((r) => r.type + ' ' + r.path + (r.reason ? ' (' + r.reason + ')' : ''))
-                    .join(', ')
-                : ''),
-          ]
-        : []),
-    ];
-    const next = lines.join('\n');
-    activityMetrics.textContent = next;
-    activityMetrics.hidden = false;
-    // 未读由**诊断信号变化**驱动（不是「推过」、不是渲染全文 diff——见 metricsSignalOf）。
-    // 抽屉拉开中到达的新信号当场消费（更新已读快照），避免用户现场看过、收起后反被标未读。
-    const signal = metricsSignalOf(msg);
-    metricsSignalLatest = signal;
-    if (signal !== metricsSignalSeen) {
-      if (_dockExpanded) {
-        metricsSignalSeen = signal;
-      } else {
-        metricsUnread = true;
-      }
-    }
-    renderActivityDetail();
-    // metrics 路径不经过 setDockActive（活动瞬态条可能根本没激活），徽章/入口状态
-    // 必须在此显式刷新：首推 metrics 即让入口可达（内容已渲染、信号未读 ⇒ 亮「活动」徽章，
-    // 但抽屉仍不自动弹——可见性只由用户点击翻转）。
-    resolveDock();
-  }
+  // 指标信号（metricsSignalOf）与指标渲染（renderMetrics）随活动抽屉域外置
+  // （HOST-SPLIT-1 chatView 第 4 刀，容器 activityDrawerView，创建见 StatusDock 区块头部）
 
   // ── 上下文占用域（圆环/构成条/明细）：渲染与防误清零状态收口于 contextOccupancyView
   // （HOST-SPLIT-1 chatView 第 3 刀）；防误清零判据与类型同源取型说明见该模块头 ──
@@ -5384,7 +5138,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         if (ev.type === 'memory_added') {
           // 主句 = 记忆正文首行截断（用户心智：记住了什么）；缺 content（老内核/历史轮）
           // 回退 name，再回退通用文案（不裸显 id）
-          showActivity(
+          activityDrawerView.showActivity(
             'info',
             `已沉淀：${firstLine(ev.payload.content, 48) || ev.payload.name || '本轮摘要'}`,
           );
@@ -5557,10 +5311,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
     } else if (msg.type === 'retry') {
       // LLM 失败重试 → 低扰提示条（活动透明，对齐 UX 基线）
-      showActivity('info', `LLM 调用重试 ${msg.attempt}/${msg.maxRetries}…`);
+      activityDrawerView.showActivity('info', `LLM 调用重试 ${msg.attempt}/${msg.maxRetries}…`);
     } else if (msg.type === 'paused') {
       // Agent 暂停（输入待定/step 边界软暂停）→ 提示条
-      showActivity('info', 'Agent 已暂停');
+      activityDrawerView.showActivity('info', 'Agent 已暂停');
       // 记录暂停块（resume 原位续接锚）：无输入 continue 的首 text chunk 复用此块
       // 续写，避免 beginStreaming 新建第 2 个 assistant 块（视觉双回答分裂）；块 A 保留静态展示。
       if (activeAssistantEl && activeAssistantEl.isConnected) {
@@ -5582,7 +5336,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       updateCapabilityBadge(msg.toolMode, msg.capabilities);
     } else if (msg.type === 'metrics') {
       // 活动指标（透明面板 + 指纹可见）：每轮结束后刷新详情折叠区
-      renderMetrics(msg);
+      activityDrawerView.renderMetrics(msg);
     } else if (msg.type === 'context_occupancy') {
       // ④ 预算可视化：更新输入区常驻上下文占用条
       occupancyView.updateOccupancy(msg.occupancy);
@@ -5655,7 +5409,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 容器 footer 显形收口（commitTurnTs 前置契约已内嵌）：正文流中断走「容器已建」分支，
       // 早相位中断（骨架未归位）走「建容器」分支——两相位都保证中断轮有底部栏
       settleRoundWithFooter(msg.roundId, interruptedHost);
-      showActivity('info', '已停止生成');
+      activityDrawerView.showActivity('info', '已停止生成');
     } else if (msg.type === 'prefill_input') {
       // 角色 handoff 上下文传递：填入输入框并聚焦，不自动发送（用户可编辑后回车）
       input.value = msg.text;
@@ -5729,7 +5483,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         polishBtn.classList.remove('loading');
       }
       if (!msg.ok && msg.message) {
-        showActivity('info', `润色失败：${msg.message}`);
+        activityDrawerView.showActivity('info', `润色失败：${msg.message}`);
       }
     } else if (msg.type === 'clear_ok') {
       // 清空消息区与全部渲染状态（resetChatView，重放渲染 renderReplayFromRounds 复用
@@ -5814,13 +5568,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 后台任务快照（宿主按事件点推、已内建内容签名去重）→ 空列表即隐藏（无任务零占用）
       updateBackgroundTasksBar(msg.items);
     } else if (msg.type === 'notice') {
-      showActivity(msg.level, msg.message, undefined, msg.kind);
+      activityDrawerView.showActivity(msg.level, msg.message, undefined, msg.kind);
     } else if (msg.type === 'memory_hits') {
       // HOST-S3-1 / MEM-EVENT-2：记忆命中明细（宿主透明转发内核 memoryRecalled）。
       // 降级单点：hits 缺失/空 = 4.0.x 内核不发明细 → 回落条数提示（notice 同款形态），
       // 宿主不分支（跨 dist 容错收敛在渲染层）。
       if (!msg.hits || msg.hits.length === 0) {
-        showActivity('info', `LLM 查询记忆命中 ${msg.count} 条`);
+        activityDrawerView.showActivity('info', `LLM 查询记忆命中 ${msg.count} 条`);
       } else if (msg.toolCallId) {
         // 主路径：按 toolCallId 收进**对应那次调用**的工具折叠块（一次调用一块，块内按 id
         // 去重——同一次调用重复命中同一记忆只列一次；跨调用各算各的，不互相吞并）。
@@ -5872,9 +5626,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           if (el.dataset.memoryId === msg.id) el.remove();
         });
         renderMemoryHits(); // 兜底聚合空则整行摘除（renderMemoryHits 空态分支）
-        showActivity('info', '已反馈「无用」，记忆移入回收站（可在记忆管理中恢复）');
+        activityDrawerView.showActivity(
+          'info',
+          '已反馈「无用」，记忆移入回收站（可在记忆管理中恢复）',
+        );
       } else {
-        showActivity('error', `反馈失败：${msg.message ?? '未知错误'}`);
+        activityDrawerView.showActivity('error', `反馈失败：${msg.message ?? '未知错误'}`);
       }
     } else if (msg.type === 'write_confirm_request') {
       // H0 写入审批卡：confirmWrites=true 时写文件触发 → 渲染审批卡等待用户确认/拒绝；
@@ -6108,7 +5865,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 既有观测兜底保留（根因定位靠 Extension Host Console，不掩盖）——补用户侧非阻断红条，
       // 避免「渲染抛异常 → 冻住/半成品 UI + 零报错」的可见性黑洞（观察点③）。
       console.error('[chatView] 消息处理异常（已兜底，UI 可能不完整）：', err);
-      showActivity('error', '界面渲染异常，详情见开发者控制台');
+      activityDrawerView.showActivity('error', '界面渲染异常，详情见开发者控制台');
     }
   }
 
@@ -6136,7 +5893,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 队列，不预检。宿主闸门保留：投影经 turn_update 送达有延迟窗口，竞态漏网由宿主裁决兜底。
     const isInterjectRoute = deriveSessionUiState(skeletonState) === 'thinking';
     if (isInterjectRoute && _pendingQueueItems.length >= MAX_PENDING_INTERJECTIONS) {
-      showActivity(
+      activityDrawerView.showActivity(
         'info',
         `待发送已满 ${MAX_PENDING_INTERJECTIONS} 条——先在待发送区删减，本条仍保留在输入框`,
       );
@@ -7177,7 +6934,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (archivingFallbackTimer !== undefined) clearTimeout(archivingFallbackTimer);
     if (pendingWaitTimer !== undefined) clearInterval(pendingWaitTimer);
     if (toolElapsedTimer !== undefined) clearInterval(toolElapsedTimer);
-    if (activityTimer !== null) window.clearTimeout(activityTimer);
+    activityDrawerView.dispose(); // 瞬态条撤出计时器随活动抽屉域收口（第 4 刀）
     stopConfirmCountdown();
   }
 

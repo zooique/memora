@@ -49,8 +49,8 @@ export default [
   // - 重算指引：瘦身提交后按上法刷新该条 max 调低；**禁止只更新数字不改行数**（无判据作用的
   //   描述性行数已从注释清除，此处仅留闸门阈值）。
   {
-    files: ['src/webview/scripts/chatView.ts'], // TARGET（单闭包；计划栏域、历史菜单域、占用域已外置）
-    rules: { 'max-lines': ['error', { max: 7185 }] },
+    files: ['src/webview/scripts/chatView.ts'], // TARGET（单闭包；计划栏域、历史菜单域、占用域、活动抽屉域已外置）
+    rules: { 'max-lines': ['error', { max: 6942 }] },
   },
   {
     files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法）
