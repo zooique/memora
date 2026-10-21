@@ -35,11 +35,14 @@ function fakeExec(answers: GitExecResult[]): GitExec & { calls: (readonly string
 
 const ok = (stdout: string): GitExecResult => ({ code: 0, stdout, stderr: '' });
 
+/** 造 `git status --porcelain -z` 输出（NUL 分隔、路径原样） */
+const st = (...fields: string[]): string => fields.map((f) => `${f}\u0000`).join('');
+
 describe('collectGitChangesBody — git-changes 源正文装配', () => {
   it('root 透传为 git cwd（首根 SSOT：与 read_file cwd / 引用解析同根）', async () => {
     // status 必须非空（有改动）才会继续跑 diff 两口——零改动时采集器正确地短路
     const exec = fakeExec([
-      ok(' M src/a.ts\n'),
+      ok(st(' M src/a.ts')),
       ok('diff --git a/staged\n'),
       ok('diff --git a/f\n'),
     ]);
@@ -48,7 +51,7 @@ describe('collectGitChangesBody — git-changes 源正文装配', () => {
     // 顺序 = 采集器契约（M7 变异锁定）：status → diff --cached（提交候选，展示优先）→ diff。
     // args 逐字形态由 gitCollector.test.ts「固定开关前缀」用例单点锁定（此处派生免重复）
     expect(exec.calls).toEqual([
-      [...GIT_GLOBAL_ARGS, 'status', '--porcelain'],
+      [...GIT_GLOBAL_ARGS, 'status', '--porcelain', '-z'],
       [...GIT_GLOBAL_ARGS, 'diff', '--cached', ...GIT_DIFF_OUTPUT_ARGS],
       [...GIT_GLOBAL_ARGS, 'diff', ...GIT_DIFF_OUTPUT_ARGS],
     ]);
@@ -61,7 +64,7 @@ describe('collectGitChangesBody — git-changes 源正文装配', () => {
     const exec = fakeExec([ok('')]);
     const body = await collectGitChangesBody('/repo/root', exec);
 
-    expect(body).toBe('当前没有未提交的改动（git status --porcelain 为空）。');
+    expect(body).toBe('当前没有未提交的改动（git status --porcelain -z 为空）。');
     expect(exec.calls).toHaveLength(1); // 零改动不跑 diff（无必要开销）
   });
 

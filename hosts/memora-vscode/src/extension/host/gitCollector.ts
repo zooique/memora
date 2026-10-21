@@ -43,7 +43,9 @@
  *
  * 每条开关都挡一类**实测**形态（2026-10-22 临时仓实测，git 2.55.0.windows.3）：
  *   ① `core.quotePath=false` —— 默认 `quotePath=true` 把中文路径输出成八进制转义
- *      **字面量**（`"\"\\344\\270\\255…\""`），模型照它 `read_file` 必然失败；
+ *      **字面量**（status 清单与 diff 头部实测都中招：`diff --git "a/\344\270\255…"`），
+ *      模型照它 `read_file` 必然失败。⚠️ status 侧现已改用 `-z`（该形态不做 quoting，
+ *      本开关对它无意义），**保留它是为了 diff**——diff 正文没有 `-z` 等价物；
  *   ② `core.fsmonitor=false` —— 仓库 config 的 `core.fsmonitor` 会让 `git status`
  *      **执行仓库指定的外部程序**（实测命中）；置 false 即不启用。
  *
@@ -85,8 +87,14 @@ export const GIT_DIFF_OUTPUT_ARGS: readonly string[] = [
  *     diff 驱动 / textconv 程序会被 `git diff` 执行（实测命中）——「只读」名不副实。
  */
 export const GIT_COMMANDS: Record<'status' | 'diffUnstaged' | 'diffStaged', readonly string[]> = {
-  /** 文件清单（porcelain v1 机器格式：两列状态位 + 路径） */
-  status: [...GIT_GLOBAL_ARGS, 'status', '--porcelain'],
+  /**
+   * 文件清单（porcelain v1 **`-z`**：NUL 分隔、路径原样、无引号 / 转义）
+   *
+   * 不加 `-uall`（登记不落地）：它能展开未跟踪目录里的文件，但会让 status 输出随项目
+   * 未 ignore 的文件量膨胀，大仓可能直接撞 exec 层 8MB 上限 ⇒ 整块退化成事实行。
+   * 「清单少一层目录内容」是可接受的降级，「整块采不到」不是。
+   */
+  status: [...GIT_GLOBAL_ARGS, 'status', '--porcelain', '-z'],
   /** 未暂存改动 */
   diffUnstaged: [...GIT_GLOBAL_ARGS, 'diff', ...GIT_DIFF_OUTPUT_ARGS],
   /** 已暂存改动（提交候选，展示优先级高于未暂存） */
@@ -156,6 +164,56 @@ function firstLine(text: string): string | undefined {
     .split('\n')
     .map((line) => line.trim())
     .find((line) => line.length > 0);
+}
+
+/** `git status --porcelain -z` 的一条记录（解析后） */
+type StatusEntry = {
+  /** 两列状态位（porcelain v1：`XY`；第一列 = 已暂存，第二列 = 未暂存） */
+  xy: string;
+  /** 当前路径（重命名 / 复制 = **目标**路径，即磁盘上存在的那个） */
+  path: string;
+  /** 重命名 / 复制的**源**路径（其余记录无此字段；该路径已不存在） */
+  from?: string;
+};
+
+/**
+ * 解析 `git status --porcelain -z` 输出（**NUL 分隔、路径原样**）
+ *
+ * 为什么是 `-z` 而不是默认 porcelain：默认形态对含特殊字符（空格 / `"` / `\`）的路径
+ * 加 C 风格引号 —— 实测**关掉 `core.quotePath` 也挡不住**（`"新 文件.md"` 仍带引号），
+ * 模型照它 `read_file` 必然失败，撞「绝不给模型一条必然失败的指令」红线。`-z` 形态下
+ * git 不做 quoting（实测：连 `quotePath=true` 也原样输出中文路径）⇒ 拿到的就是真实
+ * 文件名，因此本模块**不写反转义器**：能不造的判据就不造（反转义还带来「转义里的 `\n`
+ * 还原成真换行会撑破行结构」的次生伤）。
+ *
+ * 记录形态（v1 `-z`）：`XY 路径\0`；重命名 / 复制（XY 含 `R` / `C`）**多带一个字段**：
+ * 目标在前、源在后（实测 `R  已改名.ts\0待改.ts\0`）⇒ 必须成对消费，否则源路径会被
+ * 当成下一条记录（凭空多出一个「文件」，而它已不在磁盘上）。
+ */
+function parseStatusEntries(raw: string): StatusEntry[] {
+  const fields = raw.split('\0');
+  const entries: StatusEntry[] = [];
+  for (let i = 0; i < fields.length; i += 1) {
+    const field = fields[i];
+    // 空字段不是记录：每条记录后都带一个 NUL ⇒ 最后一个 NUL 之后必切出一个空串。
+    // （守这一条就够，不必再额外 `pop()` 尾部——同一事实两处表达就是冗余双防御。）
+    if (!field) continue;
+    const xy = field.slice(0, 2);
+    const path = field.slice(3);
+    if (xy.includes('R') || xy.includes('C')) {
+      entries.push({ xy, path, from: fields[i + 1] });
+      i += 1;
+      continue;
+    }
+    entries.push({ xy, path });
+  }
+  return entries;
+}
+
+/** 清单行：重命名显式带出源路径（不标注 = 给模型一条必然读不到的路径） */
+function formatStatusEntry(entry: StatusEntry): string {
+  const line = `${entry.xy} ${entry.path}`;
+  return entry.from ? `${line}（重命名自 ${entry.from}；旧路径已不存在）` : line;
 }
 
 /**
@@ -249,20 +307,17 @@ export async function collectGitChangesText(input: GitCollectInput): Promise<str
     return `git status ${statusFailure}，无法采集未提交改动。`;
   }
 
-  const entries = statusRes.stdout
-    .split('\n')
-    .map((line) => line.replace(/\r$/, ''))
-    .filter((line) => line.trim().length > 0);
+  const entries = parseStatusEntries(statusRes.stdout);
   if (entries.length === 0) {
     // 零改动 = 诚实事实行（用户挂了标签就有权知道「确实干净」）
-    return '当前没有未提交的改动（git status --porcelain 为空）。';
+    return '当前没有未提交的改动（git status --porcelain -z 为空）。';
   }
 
-  const untracked = entries.filter((line) => line.startsWith('??')).length;
-  const listed = entries.slice(0, GIT_FILES_LIMIT);
+  const untracked = entries.filter((entry) => entry.xy.startsWith('??')).length;
+  const listed = entries.slice(0, GIT_FILES_LIMIT).map(formatStatusEntry);
   const statusSection = [
     `共 ${entries.length} 个文件有未提交改动（含 ${untracked} 个未跟踪项，git diff 不含未跟踪内容）：`,
-    '（清单格式：两列状态位 + 路径；第一列 = 已暂存，第二列 = 未暂存，?? = 未跟踪）',
+    '（清单格式：两列状态位 + 路径；第一列 = 已暂存，第二列 = 未暂存，?? = 未跟踪；路径可直接用于 read_file）',
     ...listed.map((line) => clipLine(line, GIT_STATUS_LINE_MAX_CHARS)),
     entries.length > GIT_FILES_LIMIT
       ? `（清单仅列前 ${GIT_FILES_LIMIT} 个，共 ${entries.length} 个）`

@@ -49,6 +49,14 @@ function fakeExec(script: Record<string, GitExecResult>): {
 
 const ok = (stdout: string): GitExecResult => ({ code: 0, stdout, stderr: '' });
 
+/**
+ * 造 `git status --porcelain -z` 输出（**NUL 分隔、路径原样**，与实测字节一致）
+ *
+ * 传的是**字段**序列：重命名 / 复制是连续两个字段（目标在前、源在后），
+ * 故 `st('R  新名.ts', '旧名.ts')` 即 git 的真实形态。
+ */
+const st = (...fields: string[]): string => fields.map((f) => `${f}\u0000`).join('');
+
 /** 构造 N 个文件、每文件 L 行的假 `git diff` 输出（保持 unified diff 真实结构） */
 function diffOf(files: number, linesPerFile: number): string {
   return Array.from({ length: files }, (_, f) =>
@@ -66,7 +74,7 @@ function diffOf(files: number, linesPerFile: number): string {
 describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
   it('白名单三口拼装：status --porcelain → diff --cached → diff，且 cwd 转发', async () => {
     const { exec, calls, cwds } = fakeExec({
-      'status --porcelain': ok(' M src/a.ts'),
+      'status --porcelain -z': ok(st(' M src/a.ts')),
       'diff --cached': ok(diffOf(1, 1)),
       diff: ok(diffOf(1, 1)),
     });
@@ -74,7 +82,7 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
 
     // 真实 args = 固定开关 + 子命令（逐字形态由「固定开关前缀」用例锁定，此处派生免重复）
     expect(calls).toEqual([
-      [...GIT_GLOBAL_ARGS, 'status', '--porcelain'],
+      [...GIT_GLOBAL_ARGS, 'status', '--porcelain', '-z'],
       [...GIT_GLOBAL_ARGS, 'diff', '--cached', ...GIT_DIFF_OUTPUT_ARGS],
       [...GIT_GLOBAL_ARGS, 'diff', ...GIT_DIFF_OUTPUT_ARGS],
     ]);
@@ -114,13 +122,17 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
       '--cached',
       ...GIT_DIFF_OUTPUT_ARGS,
     ]);
-    // status 走 porcelain 机器格式（实测不受 color 影响），无需颜色开关
-    expect(GIT_COMMANDS.status.slice(GIT_GLOBAL_ARGS.length)).toEqual(['status', '--porcelain']);
+    // status 走 porcelain v1 -z（NUL 分隔、路径原样无引号；实测不受 color 影响）
+    expect(GIT_COMMANDS.status.slice(GIT_GLOBAL_ARGS.length)).toEqual([
+      'status',
+      '--porcelain',
+      '-z',
+    ]);
   });
 
   it('fail-closed：非 git 仓库（128 + fatal）→ 事实行进正文，且不跑 diff（fail-fast）', async () => {
     const { exec, calls } = fakeExec({
-      'status --porcelain': {
+      'status --porcelain -z': {
         code: 128,
         stdout: '',
         stderr: 'fatal: not a git repository (or any of the parent directories): .git\n',
@@ -135,7 +147,7 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
 
   it('fail-closed：git 未安装（ENOENT）→ 事实行，不跑 diff', async () => {
     const { exec, calls } = fakeExec({
-      'status --porcelain': { code: null, stdout: '', stderr: '', error: 'spawn git ENOENT' },
+      'status --porcelain -z': { code: null, stdout: '', stderr: '', error: 'spawn git ENOENT' },
     });
     const body = await collectGitChangesText({ exec });
     expect(body).toContain('未能启动 git');
@@ -145,7 +157,7 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
 
   it('fail-closed：单个 diff 段失败 → 清单照给 + 该段事实行，另一段照常', async () => {
     const { exec, calls } = fakeExec({
-      'status --porcelain': ok('M  src/a.ts'),
+      'status --porcelain -z': ok(st('M  src/a.ts')),
       'diff --cached': { code: 1, stdout: '', stderr: 'fatal: ambiguous argument\n' },
       diff: ok(diffOf(1, 2)),
     });
@@ -159,7 +171,7 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
   });
 
   it('零改动：porcelain 为空 → 干净事实行，不跑 diff', async () => {
-    const { exec, calls } = fakeExec({ 'status --porcelain': ok('') });
+    const { exec, calls } = fakeExec({ 'status --porcelain -z': ok('') });
     const body = await collectGitChangesText({ exec });
     expect(body).toContain('没有未提交的改动');
     expect(calls).toHaveLength(1);
@@ -168,8 +180,8 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
   it('第一道闸（文件数）：status 超限 → 清单截断 + 明示；每个 diff 段各自截断 + 明示', async () => {
     const total = GIT_FILES_LIMIT + 5;
     const { exec } = fakeExec({
-      'status --porcelain': ok(
-        Array.from({ length: total }, (_, i) => ` M src/f${i}.ts`).join('\n'),
+      'status --porcelain -z': ok(
+        st(...Array.from({ length: total }, (_, i) => ` M src/f${i}.ts`)),
       ),
       'diff --cached': ok(diffOf(total, 2)),
       diff: ok(diffOf(total, 2)),
@@ -188,7 +200,7 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
 
   it('第二道闸（单文件行数）：超 200 行的段整行截断 + 明示，尾部行不出现', async () => {
     const { exec } = fakeExec({
-      'status --porcelain': ok(' M src/f0.ts'),
+      'status --porcelain -z': ok(st(' M src/f0.ts')),
       'diff --cached': ok(diffOf(1, GIT_FILE_DIFF_MAX_LINES + 50)),
       diff: ok(''),
     });
@@ -202,7 +214,7 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
   it('第三道闸（正文总长）：超 12K → 严格尾部丢块 + 明示；清单恒不被丢', async () => {
     // 20 个文件 × 60 行 ≈ 17K > 12K，必然触发总闸
     const { exec } = fakeExec({
-      'status --porcelain': ok(Array.from({ length: 5 }, (_, i) => ` M src/s${i}.ts`).join('\n')),
+      'status --porcelain -z': ok(st(...Array.from({ length: 5 }, (_, i) => ` M src/s${i}.ts`))),
       'diff --cached': ok(diffOf(20, 60)),
       diff: ok(diffOf(20, 60)),
     });
@@ -222,7 +234,7 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
 
   it('分组与顺序：已暂存段在未暂存段前（提交候选优先），各自标签正确', async () => {
     const { exec } = fakeExec({
-      'status --porcelain': ok('M  src/staged.ts\n M src/unstaged.ts'),
+      'status --porcelain -z': ok(st('M  src/staged.ts', ' M src/unstaged.ts')),
       'diff --cached': ok(diffOf(1, 1).replace(/f0/g, 'staged')),
       diff: ok(diffOf(1, 1).replace(/f0/g, 'unstaged')),
     });
@@ -238,7 +250,7 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
 
   it('未跟踪项：?? 项计入头部说明（git diff 不含未跟踪内容，模型有权知道）', async () => {
     const { exec } = fakeExec({
-      'status --porcelain': ok('?? a.txt\n M b.ts'),
+      'status --porcelain -z': ok(st('?? a.txt', ' M b.ts')),
       'diff --cached': ok(''),
       diff: ok(diffOf(1, 1).replace(/f0/g, 'b')),
     });
@@ -246,20 +258,52 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
     expect(body).toContain('共 2 个文件有未提交改动（含 1 个未跟踪项，git diff 不含未跟踪内容）');
   });
 
-  it('CRLF 兼容：git 在 Windows 可能输出 \\r\\n，清单行不得残留 \\r', async () => {
+  it('NUL 收尾不产生空记录：末尾分隔符被丢弃，清单不出现空行 / 幽灵文件', async () => {
+    // `-z` 每条记录后都带 NUL ⇒ 切分后末尾必有一个空串，它不是文件（否则「共 N 个」虚增）
     const { exec } = fakeExec({
-      'status --porcelain': ok(' M a.ts\r\n M b.ts\r\n'),
+      'status --porcelain -z': ok(st(' M a.ts', ' M b.ts')),
       'diff --cached': ok(''),
       diff: ok(''),
     });
     const body = await collectGitChangesText({ exec });
-    expect(body).not.toContain('\r');
+    expect(body).toContain('共 2 个文件有未提交改动');
     expect(body).toContain(' M a.ts');
+    expect(body).toContain(' M b.ts');
+    // 换行的活儿交给组装层（`-z` 里本就没有 \r）
+    expect(body).not.toContain('\r');
+  });
+
+  it('含空格的中文路径原样进清单（不带引号）——模型可直接 read_file', async () => {
+    // 默认 porcelain 给含空格路径加 C 风格引号（实测 `"新 文件.md"`；关 quotePath 也挡不住）
+    // ⇒ 走 `-z` 拿原样路径。清单里的路径必须是能直接喂 read_file 的那一个，否则就是
+    // 给模型一条必然失败的指令（docContext 引用行已写死的红线）。
+    const { exec } = fakeExec({
+      'status --porcelain -z': ok(st(' M 新 文件.md')),
+      'diff --cached': ok(''),
+      diff: ok(''),
+    });
+    const body = await collectGitChangesText({ exec });
+    expect(body).toContain(' M 新 文件.md');
+    expect(body).not.toContain('"新 文件.md"');
+  });
+
+  it('重命名：目标在前 + 显式标注源路径，且源字段不被当成独立文件', async () => {
+    // `-z` 形态下 rename = 两个字段（目标在前、源在后）：不显式标注 ⇒ 模型拿到
+    // 默认 porcelain 的 `old -> new` 会去读已不存在的 old（又一条必然失败的指令）。
+    const { exec } = fakeExec({
+      'status --porcelain -z': ok(st('R  已改名.ts', '旧名字.ts', ' M 其他.ts')),
+      'diff --cached': ok(''),
+      diff: ok(''),
+    });
+    const body = await collectGitChangesText({ exec });
+    expect(body).toContain('R  已改名.ts（重命名自 旧名字.ts；旧路径已不存在）');
+    // 计数按文件 = 2（重命名算一个），源字段被误计成一条记录即 3
+    expect(body).toContain('共 2 个文件有未提交改动');
   });
 
   it('空 diff 段省略：改动全是未跟踪项时不出空段标签（空输出 = 确实没有，不是失败）', async () => {
     const { exec } = fakeExec({
-      'status --porcelain': ok('?? new.txt'),
+      'status --porcelain -z': ok(st('?? new.txt')),
       'diff --cached': ok(''),
       diff: ok(''),
     });
