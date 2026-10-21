@@ -7,11 +7,11 @@
  * 宿主拿不到它（实测宿主 `nowIso` 引用 = 0），宿主侧取当前时间仍是各自内联。
  * 本文件只是内核内部的推荐入口，不是跨包单一真源。
  *
- * API 对齐：formatDateKey(date) 与精灵 shared/dateUtils.ts 语义一致，
+ * API 对齐（历史）：formatDateKey(date) 曾与精灵宿主 shared/dateUtils.ts 语义一致（该宿主已移除），
  * 用于格式化任意 Date 为 YYYY-MM-DD（本地时区）。
  */
 
-/** 一天对应的毫秒数（跨层共享，供天数差换算：诊断展示 daysSinceLastAccess / 推荐时效权重） */
+/** 一天对应的毫秒数（天数差换算基准；当前消费者 = 存储契约测试构造 purgeExpired 过期时间戳） */
 export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -30,7 +30,7 @@ export function nowIso(): string {
  * 修复场景：Asia/Shanghai 凌晨 00:00-08:00 期间 UTC 仍是前一天，导致按日期分组的
  * 计数（chatTurns / dailyMessageCount）写入错误的日期 key。
  *
- * 与精灵 shared/dateUtils.ts:formatDateKey 行为完全对齐。
+ * 历史对齐对象：精灵宿主 shared/dateUtils.ts:formatDateKey（该宿主已移除，现本函数为内核内唯一实现）。
  *
  * @param date Date 对象
  * @returns YYYY-MM-DD 字符串（本地日期）

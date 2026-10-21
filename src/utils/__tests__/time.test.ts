@@ -99,7 +99,7 @@ describe('utils/time', () => {
       expect(formatDateKey(new Date(2026, 0, 1, 0, 0, 0))).toBe('2026-01-01');
     });
 
-    it('应与精灵 shared/dateUtils.ts:formatDateKey 行为对齐（本地时区 YYYY-MM-DD）', () => {
+    it('formatDateKey 应按本地时区输出 YYYY-MM-DD（历史对齐对象精灵宿主 shared/dateUtils.ts 已移除）', () => {
       // 验证内核版与精灵版逻辑等价：对同一 Date 返回相同 YYYY-MM-DD
       vi.setSystemTime(new Date(2026, 6, 16, 14, 30, 0));
       const date = new Date();

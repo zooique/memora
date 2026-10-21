@@ -1,7 +1,7 @@
 /**
  * 单元测试：toError 错误转换
  *
- * 覆盖 toError 的 5 条转换规则（与精灵 shared/toError.ts 行为对齐）：
+ * 覆盖 toError 的 5 条转换规则（历史对齐对象精灵宿主 shared/toError.ts 已移除）：
  *   - Error 实例原样返回
  *   - 字符串包装为 Error
  *   - 含 message 属性的对象提取 message

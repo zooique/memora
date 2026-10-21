@@ -85,7 +85,7 @@ describe('MemoryInspector', () => {
     storage = new InMemoryStorage();
     loop = createMockLoop();
     history = createMockHistory();
-    // inspector 不持有 advisor；sourceHealth/suggest 由 Agent 门面直连 advisor（见 memoryAdvisor.test.ts）
+    // inspector 不持有 advisor（sourceHealth/suggest 与 memoryAdvisor 已随 GOVERNANCE-SRC-1 整链退役）
     inspector = new MemoryInspector(storage, loop, history);
   });
 

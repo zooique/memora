@@ -1,27 +1,27 @@
 /**
  * 记忆存储接口 — Memora 内核与具体数据库实现的解耦边界
  *
- * 内核（agent/ + memory/ + persona/ + skill/）不依赖具体数据库：宿主（如泊文 Electron
- * 主进程）持有 better-sqlite3 实例并实现此接口注入 Agent；测试用 InMemoryStorage；不注入时
- * Agent 内部用 InMemoryStorage 作 fallback（重启后数据丢失）。方法保持同步语义，调用方已有
- * await 调用仍安全。软删除语义：delete 写入 deletedAt，查询类方法自动过滤已删除记忆，
+ * 内核业务模块不依赖具体数据库：宿主实现此接口注入 Agent（vscode 宿主默认直接用内核
+ * `createNodeSqliteStorage()`，SQLite 不可用时降级旧 JSON 实现）；测试用 InMemoryStorage；
+ * 不注入时 Agent 内部用 InMemoryStorage 作 fallback（重启后数据丢失）。方法保持同步语义，
+ * 调用方已有 await 调用仍安全。软删除语义：delete 写入 deletedAt，查询类方法自动过滤已删除记忆，
  * restore 恢复，purge 物理删，listDeleted/purgeExpired 管理回收站。
  */
 import type { Memory } from '@/memory/types.js';
 
 /**
- * 记忆存储接口 — 所有方法同步（对齐 better-sqlite3），可后续新增 IAsyncMemoryStorage 支持异步后端。
+ * 记忆存储接口 — 所有方法同步（对齐 node:sqlite 同步 API），可后续新增 IAsyncMemoryStorage 支持异步后端。
  *
- * ⚠️ 契约隐含假设（宿主实现须知）：同步语义要求单次调用低延迟。JSON 文件落地实现（如 vscode 宿主
- * workspaceStorage）在记忆量增长时，upsert 等写路径会触发全量 `JSON.stringify` 重写，
- * 1 万条规模即达 MB 级单次同步 I/O，会阻塞事件循环。因此：**生产由宿主注入持久化实现**——当前
- * vscode 宿主为 JSON 文件（WorkspaceStorage，小规模够用）；记忆量增长时建议宿主评估更优存储
- * （如 better-sqlite3，同步语义与本接口对齐）；InMemoryStorage 仅用于测试与未注入时 fallback。
+ * ⚠️ 契约隐含假设（宿主实现须知）：同步语义要求单次调用低延迟。5.0.0 起内核自带
+ * `createNodeSqliteStorage()`（node:sqlite 内建模块延迟加载，零三方依赖，WAL）——宿主优先用它，
+ * 不必自引三方驱动。JSON 全量重写实现（记忆量增长时 upsert 触发全量 `JSON.stringify`，1 万条
+ * 规模即达 MB 级单次同步 I/O，会阻塞事件循环）自 5.0.0 起降为「环境不支持 SQLite」时的降级档，
+ * 不再是默认形态。InMemoryStorage 仅用于测试与未注入时 fallback。
  */
 export interface IMemoryStorage {
   /**
    * 插入或更新记忆；source 为开放字符串可自定义，但写入须经 validateSource 统一校验
-   *（内核 inMemoryStorage 与宿主 workspaceStorage 均接入 block/warn 分级拦截）。
+   *（内核 inMemoryStorage 与宿主 JSON 降级实现 WorkspaceStorage 均接入 block/warn 分级拦截）。
    * 契约：整对象覆盖、无 CAS 乐观锁——单 Agent 设计假设；
    * 多 Agent 并发写同会话需扩展版本字段/条件更新，内核当前不承诺并发一致性。
    */
@@ -94,7 +94,7 @@ export interface IMemoryStorage {
   touch(id: string, now: string): boolean;
 
   /**
-   * 获取所有 source 标签及活跃记忆数量；替代 stats()/sourceHealth() 的全量遍历，
+   * 获取所有 source 标签及活跃记忆数量；供 MemoryInspector.stats() 一次取来源分布，
    * 宿主用 SQL GROUP BY source，InMemoryStorage 维护增量 source→count 缓存
    */
   getAllSources(): Map<string, number>;

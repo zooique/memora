@@ -1,7 +1,7 @@
 /**
  * 内存存储实现 — IMemoryStorage 的纯 JS 内存版。
  * 零依赖零 IO，用于单元测试、宿主注入前的临时占位、沙箱。不持久化（进程退出即丢失），
- * 仅限测试/开发；生产由宿主注入持久化实现（当前 vscode 宿主为 WorkspaceStorage，JSON 文件落地）。
+ * 仅限测试/开发；生产由宿主注入持久化实现（vscode 宿主默认 SQLite，SQLite 不可用时降级 JSON）。
  */
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
@@ -14,7 +14,7 @@ import { nowIso } from '@/utils/time.js';
 
 /**
  * 内存存储：Map 存储，核心操作 O(1)~O(log n)。
- * 维护 source→count 增量缓存，stats()/sourceHealth() 无需全量遍历。
+ * 维护 source→count 增量缓存，getAllSources() 无需全量遍历（上层 MemoryInspector.stats() 直接消费）。
  */
 export class InMemoryStorage implements IMemoryStorage {
   /** 记忆存储（id → Memory） */

@@ -12,7 +12,7 @@
  * 勿按旧注释去改分类集合。
  *
  * ⚠️ 与宿主 `LlmErrorCategory`（'connection'|'timeout'|'unknown'）**不是同一个联合**：
- * 后者是**流式 error chunk** 的分类（见 hosts shared/protocol.ts），本文件只管 MemoraError。
+ * 后者是**流式 error chunk** 的分类（见 hosts/memora-vscode/src/shared/protocol.ts），本文件只管 MemoraError。
  */
 
 type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'security' | 'unknown';

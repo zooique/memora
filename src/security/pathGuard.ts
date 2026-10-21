@@ -289,7 +289,7 @@ export class SecurityGuard {
     public readonly permission: Permission = 'owner',
     /** 脚本执行确认开关（独立于写入确认，供对 run_code/run_project_script 单独收紧） */
     confirmScripts: boolean = false,
-    /** Agent 级配置目录（personas/rules/skills 所在目录） */
+    /** Agent 级配置目录（role-packs/rules/skills 所在目录） */
     configDir?: string,
     /** Agent 级数据目录（宿主传入；内核不假设其下的文件形态） */
     agentDataDir?: string,

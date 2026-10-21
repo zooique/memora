@@ -65,13 +65,27 @@ class MockProvider extends LlmProvider {
  * 写入项目骨架文件，让 init() 能正常加载
  */
 function seedProject(_projectPath: string, configDir: string, _dataDir: string): void {
-  mkdirSync(join(configDir, 'personas'), { recursive: true });
-  mkdirSync(join(configDir, 'rules'), { recursive: true });
+  // 现行 role-packs/<name>/ 形态（RolePackManager 只扫 role-packs/）。
+  // 旧夹具写的是 3.0.0 前的 personas/ 扁平卡片（带已物理退役的 score 字段），
+  // 该目录内核根本不扫 ⇒ 造的是无人消费的骨架，测试绿在「没加载到」而非「加载对了」。
+  const rolePackDir = join(configDir, 'role-packs', '默认助手');
+  mkdirSync(rolePackDir, { recursive: true });
   writeFileSync(
-    join(configDir, 'personas', 'default.md'),
-    '---\nid: persona:default\nsource: persona\nname: 默认人格\nscore: 1\n---\n\n你是一个测试助手。',
+    join(rolePackDir, 'manifest.json'),
+    JSON.stringify({ name: '默认助手', displayName: '默认助手', strategy: {} }),
     'utf-8',
   );
+  writeFileSync(join(rolePackDir, 'persona.md'), '你是一个测试助手。', 'utf-8');
+  // 兜底契约包（§4.1 单链：无 activePack 注入时落兜底包，非 items[0]）
+  const fallbackDir = join(configDir, 'role-packs', 'memora助手');
+  mkdirSync(fallbackDir, { recursive: true });
+  writeFileSync(
+    join(fallbackDir, 'manifest.json'),
+    JSON.stringify({ name: 'memora助手', formatVersion: '1.0.0' }),
+    'utf-8',
+  );
+  writeFileSync(join(fallbackDir, 'persona.md'), '你是一个通用助手。', 'utf-8');
+  mkdirSync(join(configDir, 'rules'), { recursive: true });
 }
 
 /**

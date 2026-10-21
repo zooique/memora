@@ -4,7 +4,7 @@
  * 将 catch 块中的 unknown 值安全转换为 Error 对象。
  * 从 errors.ts 中提取，确保浏览器端可直接 import 而不引入 logging/ 模块。
  *
- * 转换规则（5 分支，与精灵 shared/toError.ts 行为对齐）：
+ * 转换规则（5 分支；历史对齐对象精灵宿主 shared/toError.ts 已随该宿主移除，现为内核内唯一实现）：
  *   1. Error 实例：原样返回
  *   2. 字符串：包装为 Error
  *   3. 含 message 属性的对象：提取 message 包装为 Error

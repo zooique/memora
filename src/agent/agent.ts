@@ -92,7 +92,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** Provider 路由选择器（多模型路由基础，可选） */
   #providerRouter: ProviderRouter | null = null;
 
-  // 运行时组件（init 后填充）——宿主 getter 契约字段（projects/memory/works/polish/sessionManager 等）保持独立
+  // 运行时组件（init 后填充）——宿主 getter 契约字段（memory/works/polish/sessionManager 等）保持独立
   private projectManager: ProjectManager | null = null;
   private history: MessageHistory | null = null;
   private loop: AgentLoop | null = null;
