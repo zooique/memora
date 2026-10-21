@@ -54,7 +54,9 @@ export interface AskDeps {
    * 类型只声明第 1 参：域内只用 factory，`seed?` 是可选参数（函数类型兼容），
    * 故 chatPanel 侧传 `(factory) => this.runFlow(factory)` 即可。
    */
-  runFlow: (factory: (signal: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>) => Promise<void>;
+  runFlow: (
+    factory: (signal: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>,
+  ) => Promise<void>;
 }
 
 /**

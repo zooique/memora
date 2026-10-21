@@ -86,7 +86,8 @@ function makeCoordinator(opts: { state?: TurnState; isAskWaiting?: boolean; agen
     state,
     coordinator,
     /** 取全部 user 交互行 */
-    userRows: () => posted.filter((m) => m.type === 'user') as Array<{ kind?: string; text: string }>,
+    userRows: () =>
+      posted.filter((m) => m.type === 'user') as Array<{ kind?: string; text: string }>,
   };
 }
 
@@ -262,7 +263,8 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
 
   it('超时链路：runFlow 收到可调用的 factory，且该 factory 调用 agent.resumeExecution（域不自建流）', async () => {
     const stub = agentStub();
-    let receivedFactory: ((s: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>) | undefined;
+    let receivedFactory:
+      ((s: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>) | undefined;
     const coordinator = new AskCoordinator({
       getAgent: () => stub.agent,
       isAskWaiting: () => true,

@@ -100,7 +100,9 @@ export function readDocBody(editor: vscode.TextEditor): string {
  * 其余一律只给指针。**判据以原因枚举表达，布尔与 UI 文案都由它派生**——若判据返回布尔、
  * 原因另算一套 if 链，chip 就会出现「说已注入却说不出为什么」的漂移。
  */
-export function docInjectReason(s: DocContextSnapshot): 'dirty' | 'untitled' | 'outside' | undefined {
+export function docInjectReason(
+  s: DocContextSnapshot,
+): 'dirty' | 'untitled' | 'outside' | undefined {
   if (s.isDirty) return 'dirty';
   if (s.isUntitled) return 'untitled';
   if (!s.relativePath) return 'outside';

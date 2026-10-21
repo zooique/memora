@@ -99,7 +99,9 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
       // （实证：LLM search_project "task-table" 命中 .memora/task-table.md 后继续沿用 write_file）。
       // 排除形态真源 = ignoredDirs.ts（派生自内核 IGNORED_DIR_NAMES，与 mention QuickPick /
       // list_dir 共用；此前的行内 map 属第二份基线，已收敛——HOST-CTX-14）。
-      const exclude = options?.exclude ? `${IGNORED_DIR_GLOB},${options.exclude}` : IGNORED_DIR_GLOB;
+      const exclude = options?.exclude
+        ? `${IGNORED_DIR_GLOB},${options.exclude}`
+        : IGNORED_DIR_GLOB;
       const maxResults = Math.min(
         options?.maxResults ?? PROJECT_SEARCH_RESULT_MAX_LEN,
         PROJECT_SEARCH_RESULT_MAX_LEN,

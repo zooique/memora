@@ -82,7 +82,8 @@ function makeCoordinator() {
     requests: () =>
       posted.filter((m) => m.type === 'write_confirm_request') as Array<{ requestId: string }>,
     /** 取全部决策记录消息（kind='decision' 的 notice） */
-    decisions: () => posted.filter((m) => m.kind === 'decision') as Array<{ level: string; message: string }>,
+    decisions: () =>
+      posted.filter((m) => m.kind === 'decision') as Array<{ level: string; message: string }>,
     /** 取全部收卡消息 */
     closed: () => posted.filter((m) => m.type === 'write_confirm_closed'),
   };

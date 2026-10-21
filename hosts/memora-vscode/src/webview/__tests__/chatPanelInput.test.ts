@@ -125,7 +125,11 @@ interface InputCast {
   _streaming: boolean;
   _abortController?: AbortController;
   _turnState: TurnState;
-  _ask: { setPending(q: PendingQuestionDto[]): void; clearPending(): void; pendingQuestions(): PendingQuestionDto[] };
+  _ask: {
+    setPending(q: PendingQuestionDto[]): void;
+    clearPending(): void;
+    pendingQuestions(): PendingQuestionDto[];
+  };
   _currentSessionId: string;
   _agent: Agent;
   handleInput(msg: {

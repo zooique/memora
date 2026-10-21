@@ -42,7 +42,9 @@ vi.mock('vscode', () => ({
   workspace: {
     // 忠实模拟官方语义：工作区内返回相对路径，工作区外回退绝对路径
     asRelativePath: (u: { fsPath: string }) =>
-      u.fsPath.startsWith('/mock/workspace/') ? u.fsPath.slice('/mock/workspace/'.length) : u.fsPath,
+      u.fsPath.startsWith('/mock/workspace/')
+        ? u.fsPath.slice('/mock/workspace/'.length)
+        : u.fsPath,
     onDidChangeTextDocument: (cb: (e: { document: unknown }) => void) => {
       h.docSubs.push(cb);
       return h.disposable();
@@ -58,7 +60,12 @@ import { ActiveFileTracker } from '../activeFileTracker.js';
 import type { ExtensionToWebviewMessage } from '../../../shared/protocol.js';
 
 /** 计数器型编辑器替身：getText 次数可断言（与 chatPanelHistory.test.ts 同款手法） */
-function makeEditor(opts: { fsPath: string; isDirty?: boolean; isUntitled?: boolean; text?: string }) {
+function makeEditor(opts: {
+  fsPath: string;
+  isDirty?: boolean;
+  isUntitled?: boolean;
+  text?: string;
+}) {
   const reads = { getText: 0 };
   const editor = {
     reads,

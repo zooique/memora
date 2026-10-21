@@ -962,8 +962,9 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       // HOST-SPLIT-1 第 1 刀：闸门字段随活动文件域迁至 tracker，驱动/断言路径随迁
       // （断言语义不变；⚠️ 不改成读 tracker 会**静默失效**——给不存在的字段赋值不报错，
       //  而 attach 默认 true 恰等于 tracker 初值，故本刀之前无用例因此转红）
-      (provider as unknown as { _activeFile: { _attachActiveFile: boolean } })._activeFile._attachActiveFile =
-        attach;
+      (
+        provider as unknown as { _activeFile: { _attachActiveFile: boolean } }
+      )._activeFile._attachActiveFile = attach;
       await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('请继续');
       const activeFilePosts = () =>
         (posted as unknown as ActiveFileMsg[]).filter((m) => m.type === 'active_file');
@@ -973,7 +974,9 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
         .at(-1)?.summary;
       // 模拟一次击键后的显示订阅推送（编辑器仍挂着 ⇒ attached 投影；无 force，可能被去重）
       // HOST-SPLIT-1 第 1 刀：pushActiveFile 随域迁至 tracker，路径随迁（驱动方式不变）
-      (provider as unknown as { _activeFile: { pushActiveFile(): void } })._activeFile.pushActiveFile();
+      (
+        provider as unknown as { _activeFile: { pushActiveFile(): void } }
+      )._activeFile.pushActiveFile();
       lastRealtimeProjection = activeFilePosts().at(-1)?.projection;
       // 实时显示订阅**不回推注入汇总**（CTX-3 收尾的正文惰性纪律：若为实时显示 token
       // 恢复「每击键读全文」即回归）。汇总条数恒为 1 = 只有发送那一次产出。
