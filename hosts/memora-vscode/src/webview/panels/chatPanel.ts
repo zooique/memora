@@ -114,7 +114,6 @@ const SNAPSHOT_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 /** 全量快照文件数上限（8000）：海量小文件场景同样降级 */
 const SNAPSHOT_MAX_FILES = 8000;
 import type {
-  ActiveFileProjection,
   ChatRef,
   InjectionSegment,
   InjectionSource,
@@ -161,6 +160,19 @@ import {
 import type { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
 // 文件改动追踪接入面（唯一接入点；仅依赖窄接口，不直接依赖渲染实现）
 import type { FileChangeSink } from '../../extension/host/fileChangeTracker.js';
+// HOST-SPLIT-1 第 1 刀：活动文件跟踪域（自本文件迁出；投递点经构造闭包注入）
+import { ActiveFileTracker } from '../../extension/host/activeFileTracker.js';
+
+// 判据与快照的真源已迁至 activeFileTracker.ts；此处 re-export **仅为保住既有测试的导入路径**
+// （chatPanelHistory.test.ts 直驱这 5 个纯函数）——按规则 §6.2「sugar API 保留、内部委托」。
+// ⚠️ 禁在此新增同类纯函数：新判据/新投影一律写进真源模块，再按需在此加 re-export。
+export {
+  snapshotDocContext,
+  readDocBody,
+  mustInjectDocBody,
+  docInjectReason,
+  projectActiveFile,
+} from '../../extension/host/activeFileTracker.js';
 
 /** 历史回放单次最大条数：跨天合并视图聚焦近期对话，
  *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM。 */
@@ -301,72 +313,6 @@ const CONFIRM_TIMEOUT_NOTICE = '用户未在时限内确认，已自动拒绝';
 const ASK_TIMEOUT_NOTICE =
   '用户未在时限内回答，已自动继续——请从上面的选项里选一项你推荐的方案继续推进，并在答复中说明这是你代选的及理由；不可逆操作仍需向我确认';
 
-/** 文档正文注入上限（字符，约 3~4k token，防大文档爆上下文）——仅脏/未命名/工作区外文件走注入 */
-const MAX_DOC_CONTEXT_CHARS = 12000;
-
-/**
- * 活动编辑器**廉价快照**：判「注入正文」还是「只给指针」所需的全部事实
- *
- * ⚠️ **刻意不含正文**：显示订阅（换文件 / 编辑 / 保存）每次击键都取本快照，若把正文
- * （`getText()` 全篇 + 截断）并进来，就成「每敲一个字全量读一遍文档」——那是修复
- * 「缓存撒谎」时自己引入的效率回退。正文只在**真要注入**时经 `readDocBody` 惰性读取。
- */
-type DocContextSnapshot = {
-  /** 文件名（注入正文时的首行，也用作 chip 标签的回退显示） */
-  fileName: string;
-  /** 有未保存修改 ⇒ buffer 才是真相，磁盘不是 */
-  isDirty: boolean;
-  /** 未命名文档 ⇒ 无磁盘版本可读 */
-  isUntitled: boolean;
-  /** 工作区相对路径（未命名 / 落在工作区外时 undefined ⇒ 指针不可用） */
-  relativePath?: string;
-};
-
-/**
- * 读取活动编辑器**廉价快照**（**发送时实时取，不缓存；不含正文**）
- *
- * 为什么不缓存：脏态是高频变化的量，而 `onDidChangeActiveTextEditor` 只覆盖「切文件」，
- * 不覆盖「同一文件被编辑」——缓存会让判据撒谎（打开时干净、改完仍判干净 ⇒ 不注入旧版）。
- *
- * ⚠️ 本函数**不读正文**：它被显示订阅按**每次击键**调用（见 `ensureActiveFileTracking`），
- * 在此 `getText()` 等于每敲一个字全量读一遍文档。正文只在确定要注入时经 `readDocBody` 取。
- *
- * @param editor 当前活动编辑器（无则返回 undefined ⇒ 本轮无文档上下文）
- */
-function snapshotDocContext(editor: vscode.TextEditor | undefined): DocContextSnapshot | undefined {
-  if (!editor) return undefined;
-  const doc = editor.document;
-  // 未命名文档没有磁盘身份；工作区外文件 asRelativePath 会回退成绝对路径形态，
-  // 对「模型 read_file」与「宿主 open_ref 定位」都不可用 ⇒ 一律视为无相对路径。
-  const rel = doc.isUntitled ? undefined : vscode.workspace.asRelativePath(doc.uri);
-  return {
-    fileName: doc.fileName.split(/[\\/]/).pop() || doc.fileName,
-    isDirty: doc.isDirty,
-    isUntitled: doc.isUntitled,
-    relativePath: rel && !isAbsolutePathLike(rel) ? rel : undefined,
-  };
-}
-
-/**
- * 读取活动编辑器**注入正文**（**昂贵**：`getText()` 全篇 + 超上限截断）
- *
- * 与 `snapshotDocContext` 分家的唯一理由：正文读取只该发生在「脏 / 未命名 / 工作区外」这三类
- * **真注入**路径上，不该被每击键触发的显示订阅带上（那是修复「缓存撒谎」时引入的效率回退）。
- * 返回体格式（`文件名：{name}\n{正文}`）是信封契约的一部分，勿在此改格式。
- *
- * @param editor 活动编辑器（调用方须确知本轮会注入正文，通常已由 `docInjectReason` 判定）
- */
-function readDocBody(editor: vscode.TextEditor): string {
-  const doc = editor.document;
-  const fileName = doc.fileName.split(/[\\/]/).pop() || doc.fileName;
-  const content = doc.getText();
-  const truncated =
-    content.length > MAX_DOC_CONTEXT_CHARS
-      ? `${content.slice(0, MAX_DOC_CONTEXT_CHARS)}\n\n…[内容过长已截断]`
-      : content;
-  return `文件名：${fileName}\n${truncated}`;
-}
-
 /**
  * 诊断的「源码行」读取（生产实现，注入给 `collectProblemsText`）
  *
@@ -419,61 +365,6 @@ async function collectProblemsBody(): Promise<string> {
     console.warn('[memora] 采集工作区诊断失败，本轮以事实行代替：', err);
     return '工作区诊断采集失败（本轮未能取到错误 / 警告列表）。';
   }
-}
-
-/**
- * 「为什么必须注入正文」的**唯一判据**（undefined = 不必注入，走指针）
- *
- * 引用模式（HOST-CTX-0 定案）的前提是「**磁盘是真相**」，只给指针让模型自己读。以下三种
- * 情形磁盘不是真相，给指针会让模型读到错内容 / 读不到，故必须注入：
- *   ① `dirty` 有未保存修改（buffer ≠ 磁盘）；② `untitled` 未命名（无磁盘版本）；
- *   ③ `outside` 不在工作区内（相对路径无意义）。
- * 其余一律只给指针。**判据以原因枚举表达，布尔与 UI 文案都由它派生**——若判据返回布尔、
- * 原因另算一套 if 链，chip 就会出现「说已注入却说不出为什么」的漂移。
- */
-function docInjectReason(s: DocContextSnapshot): 'dirty' | 'untitled' | 'outside' | undefined {
-  if (s.isDirty) return 'dirty';
-  if (s.isUntitled) return 'untitled';
-  if (!s.relativePath) return 'outside';
-  return undefined;
-}
-
-/** 是否必须注入正文（布尔视图，由 {@link docInjectReason} 派生，不独立判定） */
-function mustInjectDocBody(s: DocContextSnapshot): boolean {
-  return docInjectReason(s) !== undefined;
-}
-
-/**
- * 活动文件投影（**显示用**，见协议 `ActiveFileProjection`）
- *
- * 只吃「已取到的快照 + 开关态」，不读 vscode 环境（纯函数，可单测）——取快照的地方
- * 与注入判据是**同一处**（`resolveActiveFile`），确保 chip 显示的就是本轮会发出去的。
- */
-function projectActiveFile(
-  snap: DocContextSnapshot | undefined,
-  attachEnabled: boolean,
-): ActiveFileProjection {
-  // 开关关掉时连「有没有文件」都不展示：chip 只表达「当前文件已关闭」，点了就回开。
-  // 刻意**不**在「关闭 + 无编辑器」时返回 none——那会把回开入口一起藏掉，用户再打开
-  // 文件前没有任何办法把开关打开（死路）。「当前文件未附加」在无文件时依然为真。
-  if (!attachEnabled) return { kind: 'suppressed' };
-  if (!snap) return { kind: 'none' };
-  const reason = docInjectReason(snap);
-  return {
-    kind: 'attached',
-    label: snap.relativePath ?? snap.fileName,
-    injected: reason !== undefined,
-    ...(reason ? { reason } : {}),
-  };
-}
-
-// 判据与快照以命名导出供单测直接驱动（沿既有 `foldThoughtEvents` 先例：纯逻辑、无 webview 依赖）。
-// 导出仅为可测，不构成对外 API——调用点仍在 sendInput 一处。
-export { snapshotDocContext, readDocBody, mustInjectDocBody, docInjectReason, projectActiveFile };
-
-/** 绝对路径判定（跨平台）：Windows 盘符 / UNC / POSIX 根 */
-function isAbsolutePathLike(p: string): boolean {
-  return /^([A-Za-z]:[\\/]|[\\/]{1,2})/.test(p);
 }
 
 /** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（删除会话记录 + 会话标题元数据）。
@@ -690,25 +581,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _processSeq = 0;
 
   /**
-   * 「附加当前打开文件」开关（**会话级**：provider 实例存活期内有效，重开面板复位为开）
+   * 活动文件跟踪器（HOST-SPLIT-1 第 1 刀迁出域，真源见 `extension/host/activeFileTracker.ts`）
    *
-   * 它是注入判据的**上游闸门**：关掉 ⇒ 连快照都不取（`resolveActiveFile` 第一分支），
-   * 于是指针与正文一起不出现——不存在「关了还偷偷挂指针」的中间态。
-   * 归宿主持有的理由：注入事实只发生在宿主（webview 拿不到编辑器），开关若放 webview，
-   * 面板一重建就丢，用户会看到「关掉又自己开了」。
-   */
-  private _attachActiveFile = true;
-  /** 活动文件显示投影的上次推送值（JSON）：状态没变就不推，防每次击键刷屏 */
-  private _lastActiveFileJson = '';
-  /**
-   * 活动文件显示订阅（活动编辑器切换 + 文档内容变化）
+   * **注入而非继承**：tracker 要往 webview 推 `active_file`，而投递单点是本类的 `post`。
+   * 经构造闭包把 `post` 交给 tracker——不引入新的依赖方向，也不让 tracker 反向持有
+   * provider 实例（否则域与宿主互相持有，销毁顺序成隐患）。
    *
-   * ⚠️ **只喂显示，不喂判据**：注入仍由 `sendInput` 现场取快照决定。这两个事件刻意
-   * 覆盖「同一文件被编辑」（`onDidChangeActiveTextEditor` 覆盖不到，正是上一版缓存
-   * 判据撒谎的根因）——但订阅产出的只是一份**投影**，随时可由宿主重算，故不构成
-   * 第二真理源；发送后还会用本轮实际快照回推一次，抹平「看到」与「发出」的窗口。
+   * 该域的「附加开关」是**会话级**用户意图（provider 实例存活期内有效，重开面板复位为开），
+   * 故随 tracker 实例共存亡；它也是注入判据的上游闸门——关掉 ⇒ 连快照都不取，
+   * 不存在「关了还偷偷挂指针」的中间态。归宿主持有的理由：注入事实只发生在宿主
+   * （webview 拿不到编辑器），开关若放 webview，面板一重建就丢。
    */
-  private _activeFileSubs: vscode.Disposable[] = [];
+  private readonly _activeFile = new ActiveFileTracker({
+    post: (msg) => this.post(msg),
+  });
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -727,92 +613,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 文档上下文**不在此处预取**：改为发送时实时读活动编辑器（见 snapshotDocContext）。
     // 曾用 onDidChangeActiveTextEditor 维护一份缓存——它覆盖不到「同一文件被编辑」，
     // 脏态判据会停在「打开时干净」，于是每轮都把磁盘旧版当真相（P0：注入判据撒谎源）。
-  }
-
-  /**
-   * 取本轮活动文件事实（**注入判据与 chip 投影的唯一取数点**）
-   *
-   * 一次快照同时产出两样东西：进信封的 `snap` / `inject`（判据）与给用户看的
-   * `projection`（投影）。**两样必须同源**——各算一遍就会出现「chip 说只给指针、
-   * 实际却注入了全文」这类自相矛盾，且无法被任何单测发现。
-   *
-   * **正文惰性（`withBody`）**：显示订阅（{@link pushActiveFile}，每击键触发）走 `withBody=false`，
-   * 绝不 `getText()`；只有 {@link sendInput} 走 `withBody=true`，且仅在本轮**真要注入**时才读正文。
-   * 这样「昂贵读取」与「是否真需要」严格绑定，杜绝每击键全量读文档的效率回退。
-   */
-  private resolveActiveFile(withBody = false): {
-    snap: DocContextSnapshot | undefined;
-    inject: boolean;
-    projection: ActiveFileProjection;
-    body: string;
-  } {
-    // 开关关掉 ⇒ 连快照都不取：指针与正文一并消失（无「关了还挂指针」中间态）
-    const editor = this._attachActiveFile ? vscode.window.activeTextEditor : undefined;
-    const snap = snapshotDocContext(editor);
-    const inject = !!snap && mustInjectDocBody(snap);
-    return {
-      snap,
-      inject,
-      projection: projectActiveFile(snap, this._attachActiveFile),
-      // 正文只在本轮真要注入、且调用方索取（withBody）时才读——显示路径零 getText
-      body: withBody && inject && editor ? readDocBody(editor) : '',
-    };
-  }
-
-  /** 推送活动文件投影的唯一投递点（`force` 绕状态去重，用于重建后补推 / 发送后回推） */
-  private postActiveFile(projection: ActiveFileProjection, force: boolean): void {
-    const json = JSON.stringify(projection);
-    if (!force && json === this._lastActiveFileJson) return;
-    this._lastActiveFileJson = json;
-    this.post({ type: 'active_file', projection });
-  }
-
-  /** 现取现推（事件驱动 / ready 补推的入口） */
-  private pushActiveFile(force = false): void {
-    this.postActiveFile(this.resolveActiveFile().projection, force);
-  }
-
-  /**
-   * 注册活动文件显示订阅（幂等：先释放旧的再注册，防折叠/展开反复重建累积监听）
-   *
-   * 三个事件缺一不可（各自覆盖一种「显示会变」的路径；注意**分居两个命名空间**——
-   * 活动编辑器在 `window`，文档变化/保存在 `workspace`，曾在 window 上找后者而编译不过）：
-   *   - `window.onDidChangeActiveTextEditor`：换文件；
-   *   - `workspace.onDidChangeTextDocument`：**同一文件被编辑**（上一版拿活动编辑器缓存当
-   *     判据就是栽在覆盖不到这条上），只处理活动文档自身，避免无关文档刷屏；
-   *   - `workspace.onDidSaveTextDocument`：保存不改内容 ⇒ 不触发上一条，但 `isDirty` 会翻成
-   *     false，不订阅就会出现「已保存还标着未保存」的假徽记。
-   */
-  private ensureActiveFileTracking(): void {
-    this.disposeActiveFileTracking();
-    this._activeFileSubs = [
-      vscode.window.onDidChangeActiveTextEditor(() => this.pushActiveFile()),
-      vscode.workspace.onDidChangeTextDocument((e) => {
-        if (e.document === vscode.window.activeTextEditor?.document) this.pushActiveFile();
-      }),
-      vscode.workspace.onDidSaveTextDocument(() => this.pushActiveFile()),
-    ];
-    // 新视图是空白：清掉去重基线，否则「状态没变」会把 ready 后的首推吞掉。
-    // **注册时不推**：此刻 webview 脚本尚未就绪（监听器未注册），推了也是丢；
-    // 补推由 handleWebviewReady ⑦ 统一承担（force 绕去重），顺带保证「重建一次即补一次」。
-    this._lastActiveFileJson = '';
-  }
-
-  /** 释放活动文件显示订阅（视图销毁 / 重注册前调用） */
-  private disposeActiveFileTracking(): void {
-    for (const sub of this._activeFileSubs) sub.dispose();
-    this._activeFileSubs = [];
-  }
-
-  /**
-   * 开关「附加当前打开文件」（W→E 消息入口）
-   *
-   * 同态直接返回：避免点了又点造成无意义重推（重推本身无害，但会让 `force` 语义变糊）。
-   */
-  private setActiveFileAttach(enabled: boolean): void {
-    if (this._attachActiveFile === enabled) return;
-    this._attachActiveFile = enabled;
-    this.pushActiveFile(true);
   }
 
   /**
@@ -1418,7 +1218,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       void this.openMentionQuickPick();
     } else if (msg.type === 'set_active_file_attach') {
       // 当前文件 chip 的 ✕ / 关闭态点击：改会话级开关，回推投影（webview 以回推为准）
-      this.setActiveFileAttach(msg.enabled);
+      this._activeFile.setActiveFileAttach(msg.enabled);
     } else if (msg.type === 'new_session') {
       // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史
       void this.newSessionFromCommand();
@@ -1538,7 +1338,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._viewEpoch += 1;
     // 活动文件显示订阅随视图装配：面板折叠/展开会重建 webview，必须重注册并补推一次
     // （vscode.window 事件是全局的，不随 webview 自动释放，见 onDidDispose）
-    this.ensureActiveFileTracking();
+    this._activeFile.ensureActiveFileTracking();
     // 折叠/展开（对话卡 ↔ 设置卡切换、侧边栏收起再展开）会触发 resolve 重建 HTML。
     // 走「ready 回放」这一确定性机制：重建后 webview 脚本就绪发 ready，extension 再回放
     // 已落盘会话，保证数据不丢（正在运行的 turn 由 replaySession 的
@@ -1563,7 +1363,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 开关态 `_attachActiveFile` **不重置**：它是会话级用户意图，折叠一次不该被悄悄改回开。
     webviewView.onDidDispose(() => {
       if (this._view === webviewView) this._view = undefined;
-      this.disposeActiveFileTracking();
+      this._activeFile.disposeActiveFileTracking();
     });
 
     // 处理来自 webview 的用户输入
@@ -2774,7 +2574,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // ⑦ 活动文件 chip 补推：与 ④⑤⑥ 同型的时间面漏面——投影平时只由编辑器事件驱动，
     //    面板重开时新 webview 从未收到 ⇒ chip 凭空消失（用户失去「本轮带了什么」的唯一入口）。
     //    **必须 force**：去重基线跨重建残留，不绕就会把首推吞掉。
-    this.pushActiveFile(true);
+    this._activeFile.pushActiveFile(true);
     // 角色 handoff 预填补发：视图解析后 webview 监听器已就绪，安全投递
     if (this._pendingPrefill !== undefined) {
       this.post({ type: 'prefill_input', text: this._pendingPrefill });
@@ -3511,7 +3311,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 信封构造与剥离同源收口在 helpers/docContext（技能块在前、文档块在后；无任何块时
     // **不加信封**，不注入「用户请求：」分隔符），回放侧因此可安全以分隔符为界还原用户请求。
     // withBody=true：只有本轮真要注入时，正文才由 resolveActiveFile 惰性读取（见其 JSDoc）
-    const activeFile = this.resolveActiveFile(true);
+    const activeFile = this._activeFile.resolveActiveFile(true);
     const injectDoc = activeFile.inject;
     const docSnap = activeFile.snap;
     const docBlock = injectDoc ? buildDocContextBlock(activeFile.body) : '';
@@ -3569,7 +3369,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'injection_summary', summary: { segments, total } });
     // 用**本轮实际消费的那份快照**回推 chip：抹平「chip 显示的是切换瞬间的文件、
     // 真正发出去却是另一个」的窗口（force 绕去重——同状态也要让用户看到这一轮确实带了）。
-    this.postActiveFile(activeFile.projection, true);
+    this._activeFile.postActiveFile(activeFile.projection, true);
 
     // runFlow 统一管理 AbortController + consumeFlow + 同步抛错兜底
     // seed：把开轮用户输入交给 live 轮投影。内容用 `chatInput`（与内核 `appendUser`
