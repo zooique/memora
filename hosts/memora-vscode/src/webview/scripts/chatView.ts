@@ -16,7 +16,6 @@ import type {
   InjectionSource,
   InjectionSummary,
   PendingQuestionDto,
-  PlanItemDto,
   RoundView,
   WebviewToExtensionMessage,
   BackgroundTaskView,
@@ -60,14 +59,8 @@ import {
 import { initDropdowns } from '../components/dropdown.js';
 import { applyIcon, createIcon, getIconSvg, populateIcons } from './icons.js';
 import { createSanitizer } from '../helpers/sanitizer.js';
-
-/** 任务项状态 → 中文标签（状态枚举固定，缺一即编译报错，无需运行时兜底） */
-const PLAN_ITEM_STATUS_LABEL: Record<PlanItemDto['status'], string> = {
-  pending: '待执行',
-  active: '进行中',
-  done: '已完成',
-  blocked: '阻塞',
-};
+// 计划常驻条（任务看板）：渲染与状态收口于 planBarView（HOST-SPLIT-1 chatView 首刀）
+import { createPlanBarView } from './planBarView.js';
 
 /** chatView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ChatViewDeps {
@@ -292,7 +285,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const capabilityBadge = document.getElementById('currentCapabilityBadge') as HTMLElement | null;
   // 当前角色队伍快照（小组会议启动图标用；由 chat_role_pack.team 填充）
   let currentActiveTeam: { leader: string; members: readonly string[] } | null = null;
-  // 小组会议启动图标单例（懒创建，同计划常驻条 getPlanBarEl 范式）：身份即本引用。
+  // 小组会议启动图标单例（懒创建，同计划常驻条的惰性单例范式（planBarView 模块））：身份即本引用。
   // 不得改用字符串键（getElementById/querySelector）复查找回——创建键与查找键一旦不一致
   // 就会每次推送各新建一个，表现为重复图标（SSOT：单例身份只有这一个声明）。
   let teamMeetingIcon: HTMLElement | null = null;
@@ -340,45 +333,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let currentProviders: ChatProviderItem[] = [];
   let currentActive: string | undefined;
 
-  /**
-   * 任务看板（任务驱动多步闭环，单轨呈现）
-   *
-   * 单轨呈现：
-   *   ① planBar：顶部固定插槽（#planBar，与 #messages **同级**、非其子节点——#messages 是
-   *      overflow-y:auto 滚动容器，插进它内部一滚即滚出视野）。默认一行
-   *      N/M + 进度条 + 当前 active 任务项摘要，点击展开**锚定浮层**看全量任务项 + planItemLog。
-   *      常驻门槛 ≥3 个任务项 —— **webview 展示层自身的门槛**（2 个任务项的小任务常驻成噪音）。
-   *      ⚠️ 与内核 `detectNeedsPlanning` **无对应关系**：后者是关键词/结构命中式**布尔判定**
-   *      （src/agent/needsPlanning.ts），**不含任何任务项数阈值**。二者职责正交：本门槛只管**是否常驻展示**，
-   *      内核判定只管**是否注入规划引导**，不存在互相「同步」关系。（内核另有 `taskTableRenderer`
-   *      的 `plan.length < 3` 收尾验证门槛，同数字但别义，亦非同源——见 renderPlanBoard 内注释。）
-   *   ② 运行时**不渲染 inline 轨**，内容区零卡片：任务过程全部由 round-block 折叠块承载，
-   *      plan 清空（turn 收尾）时顶部条随空 plan_update 收起，不在对话流里留投影。
-   *
-   * 数据源头：plan_update 协议消息（plan 数据由内核 checkpoint.plan 驱动，宿主 postPlanUpdate
-   * 做只读快照推送）。webview 只消费不写，SSOT 不变。**零新增协议字段。**
-   */
-  /** 顶部常驻进度条插槽（HTML #planBar；hidden 由 renderPlanBoard 直控）。惰性查询（getPlanBarEl） */
-  let planBarEl: HTMLElement | null = null;
-  /** 锚定浮层展开态（点击 head 切换；浮层非 modal——看进度时需同时看正文） */
-  let planBarExpanded = false;
-  /** 当前计划快照缓存（供 round-block 任务项标签 + 浮层复用，零新增协议）。
-   *  保持「最近一次非空 plan」：plan 清空时不覆写（round-block 重建时任务项标签仍可读） */
-  let currentPlanItems: PlanItemDto[] = [];
-
-  /** 惰性获取常驻条插槽（单例：同一 DOM 节点，避免每次渲染重新 getElementById） */
-  function getPlanBarEl(): HTMLElement | null {
-    if (!planBarEl) planBarEl = document.getElementById('planBar');
-    return planBarEl;
-  }
-
-  /** 移除所有任务看板（常驻条隐藏 + 浮层收起 + 状态缓存重置）。
-   *  注意：clear_ok/切换会话时调用，与 plan 清空（autoClearPlan）的「顶部条收起」语义不同——
-   *  clear_ok 意味着完全重置对话区，缓存也应一起清 */
-  function removeAllPlanBoards(): void {
-    setPlanBarVisible(false);
-    currentPlanItems = [];
-  }
+  // 计划常驻条（任务看板，单轨呈现）：渲染、缓存与开合态收口于 planBarView
+  // （HOST-SPLIT-1 chatView 首刀）。三条设计约束（≥3 常驻门槛与内核判定无关 / 缓存保持
+  // 「最近一次非空 plan」/ 浮层懒构建）随域迁移至该模块头，此处不再重述。
+  // ⚠️ `#planBar` 是 `#messages` 的**同级**节点，不得插进滚动容器内部（一滚即滚出视野）。
+  // 数据源仍为 plan_update 协议消息（webview 只消费不写，零新增协议字段）。
+  const planBar = createPlanBarView({ document });
 
   /**
    * 「过程在上 · 报告在下」挂载锚点（SSOT）：把过程类元素插到 assistant 块报告正文之前。
@@ -410,159 +370,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     host.prepend(el);
   }
 
-  /** 常驻条可见性切换（幂等：hidden 布尔直控；隐藏时同步收起浮层，防浮层孤儿） */
-  function setPlanBarVisible(visible: boolean): void {
-    const bar = getPlanBarEl();
-    if (!bar) return;
-    bar.hidden = !visible;
-    if (!visible) setPlanBarExpanded(false);
-  }
-
-  /** 锚定浮层展开/收起（点击 head 切换；浮层非 modal——看进度时需同时看正文）。
-   *  展开态同时写 aria-expanded（可访问性）与 chevron 图标（chevron-right 收起态 /
-   *  chevron-down 展开态，icons.ts 的 SVG）。
-   *  懒构建：展开时才从当前快照补建面板（收起态 renderPlanBar 不建 DOM，省运行期开销）。
-   *  ⚠ 收起时清空面板内容：plan 清空（收尾 autoClearPlan）后 setPlanBarVisible(false) 把
-   *  planBarExpanded 置 false，若旧面板 DOM 残留——再次展开时懒构建门 childElementCount===0
-   *  被残留 DOM 挡住不重建，任务表保持第一次展开的快照（数字更新但完成状态不更新）。坑：
-   *  清空后展开必重建为最新快照。 */
-  function setPlanBarExpanded(expanded: boolean): void {
-    planBarExpanded = expanded;
-    const bar = getPlanBarEl();
-    const head = bar?.querySelector<HTMLElement>('#planBarHead');
-    const panel = bar?.querySelector<HTMLElement>('#planBarPanel');
-    const chevron = bar?.querySelector<HTMLElement>('#planBarChevron');
-    if (head) head.setAttribute('aria-expanded', String(expanded));
-    if (panel) {
-      // 展开且面板尚未构建（收起态跳过建 DOM）→ 从当前快照补建
-      if (expanded && panel.childElementCount === 0 && currentPlanItems.length > 0) {
-        renderPlanBarPanel(currentPlanItems);
-      } else if (!expanded) {
-        // 收起即视为「未构建」：清空面板，防残留 DOM 挡住下次展开的懒构建重建
-        panel.innerHTML = '';
-      }
-      panel.hidden = !expanded;
-    }
-    if (chevron) applyIcon(chevron, expanded ? 'chevron-down' : 'chevron-right');
-  }
-
-  /** 渲染常驻条（一行头 + 锚定浮层内容）。头 = N/M + 进度条 + 当前 active 任务项摘要。
-   *  浮层懒构建：仅展开态重建面板（运行时 plan_update 频繁，收起态不建 DOM——省开销） */
-  function renderPlanBar(items: PlanItemDto[]): void {
-    const bar = getPlanBarEl();
-    if (!bar) return;
-    const doneCount = items.filter((s) => s.status === 'done').length;
-    const total = items.length;
-    const percent = total > 0 ? (doneCount / total) * 100 : 0;
-    const activePlanItem = items.find((s) => s.status === 'active');
-    // 头行各槽位（HTML #planBar 内固定 id；零新增协议）
-    const countEl = bar.querySelector<HTMLElement>('#planBarCount');
-    const fillEl = bar.querySelector<HTMLElement>('#planBarFill');
-    const currentEl = bar.querySelector<HTMLElement>('#planBarCurrent');
-    if (countEl) countEl.textContent = `${doneCount}/${total}`;
-    if (fillEl) fillEl.style.width = `${percent}%`;
-    if (currentEl) {
-      if (doneCount === total && total > 0) {
-        currentEl.textContent = '已完成';
-      } else if (activePlanItem) {
-        const brief =
-          activePlanItem.description.length > 28
-            ? `${activePlanItem.description.slice(0, 28)}…`
-            : activePlanItem.description;
-        currentEl.textContent = brief;
-      } else {
-        currentEl.textContent = '';
-      }
-    }
-    if (planBarExpanded) {
-      renderPlanBarPanel(items); // 展开态：面板跟随最新快照重建
-    }
-    setPlanBarExpanded(planBarExpanded); // 保持展开态（aria/chevron 同步；收起态不建面板）
-  }
-
-  /** 渲染锚定浮层内容（全量任务项列表 + 折叠 planItemLog） */
-  function renderPlanBarPanel(items: PlanItemDto[]): void {
-    const bar = getPlanBarEl();
-    const panel = bar?.querySelector<HTMLElement>('#planBarPanel');
-    if (!panel) return;
-    panel.innerHTML = '';
-    panel.appendChild(buildPlanItemList(items));
-  }
-
-  /** 构建全量任务项列表（ul.plan-board-list；任务浮层专用——round-block 内任务项组标题走
-   *  round-block__plan-item-summary 独立实现，两处不同构） */
-  function buildPlanItemList(items: PlanItemDto[]): HTMLUListElement {
-    const ul = document.createElement('ul');
-    ul.className = 'plan-board-list';
-    for (const planItem of items) {
-      // 任务节点折叠：每个任务项一个 details，summary = 序号+描述+状态徽标
-      const item = document.createElement('details');
-      item.className = `plan-item plan-item-${planItem.status}`;
-      item.open = false;
-      const summary = document.createElement('summary');
-      summary.className = 'plan-item-summary';
-      const label = document.createElement('span');
-      label.className = 'plan-item-title';
-      label.textContent = `${planItem.order + 1}. ${planItem.description}`;
-      summary.appendChild(label);
-      const badge = document.createElement('span');
-      badge.className = 'plan-item-badge';
-      badge.textContent = PLAN_ITEM_STATUS_LABEL[planItem.status];
-      summary.appendChild(badge);
-      item.appendChild(summary);
-      const logs = planItem.planItemLog;
-      if (logs.length > 0) {
-        const body = document.createElement('div');
-        body.className = 'plan-item-rounds';
-        const now = Date.now();
-        for (const r of logs) {
-          const row = document.createElement('div');
-          row.className = 'plan-item-round';
-          // 相对时间：completedAt 可选，有则显示"3s 前 / 2m 前 / 1h 前"
-          if (r.completedAt) {
-            const span = document.createElement('span');
-            span.className = 'plan-item-round-time';
-            span.textContent = formatRelativeTime(r.completedAt, now);
-            row.appendChild(span);
-            const text = document.createElement('span');
-            text.textContent = r.summary;
-            row.appendChild(text);
-          } else {
-            row.textContent = r.summary;
-          }
-          body.appendChild(row);
-        }
-        item.appendChild(body);
-      }
-      ul.appendChild(item);
-    }
-    return ul;
-  }
-
-  /** 渲染/刷新单轨任务看板（收到 plan_update 消息时调用）。
-   *  非空 plan → 缓存 + 常驻条（≥3 个任务项才显示；该门槛属**展示层自身决策**，与内核
-   *  needsPlanning 的布尔判定无对应关系——详见上方任务看板设计注释）；
-   *  空 plan → 收起常驻条（内容区零投影——任务过程由 round-block 折叠块承载，不留完成卡片） */
-  function renderPlanBoard(items: PlanItemDto[]): void {
-    if (items.length === 0) {
-      // 空计划（turn 收尾 autoClearPlan / LLM 写入空表）→ 收起顶部条
-      setPlanBarVisible(false);
-      return;
-    }
-    // 非空计划：缓存（供 round-block 任务项标签 + 浮层复用）；plan 清空时不清此缓存
-    currentPlanItems = items;
-    // 常驻门槛 ≥3 个任务项：webview 展示层自身决策（2 个任务项的小任务常驻成噪音）。
-    // ⚠️ 勿称「对齐内核 needsPlanning 阈值」——内核 detectNeedsPlanning 是关键词/结构式
-    // 布尔判定，**无任务项数阈值**；二者无对应关系，也**不构成需互相同步的一致约束**。
-    // ⚠️ 另注意别把内核里那个同数字的 `plan.length < 3` 当成本门槛的真源：它属
-    // `agent/taskTableRenderer.buildCompletionVerifyNudge`（≥3 个任务项才注入「补验证任务项」nudge，
-    // 理由是「太短不值得打断」）——**收尾验证门槛，与 UI 是否常驻无关**。两处同为 3 属巧合，
-    // 改任一处**不需要**同步另一处。
-    setPlanBarVisible(items.length >= 3);
-    if (items.length >= 3) {
-      renderPlanBar(items);
-    }
-  }
   // 当前角色包列表（由 chat_role_packs 消息填充；description 供空状态提示副文案）。
   // 角色切换在独立「角色」视图，本面板仅消费角色名用于展示，不承载切换。
   let currentRolePacks: { name: string; displayName: string; description?: string }[] = [];
@@ -690,19 +497,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     ).padStart(2, '0')}`;
   }
 
-  /** 相对时间格式化（planItemLog 完成时间 → "3s 前 / 2m 前 / 1h 前"） */
-  function formatRelativeTime(timestamp: number, now: number = Date.now()): string {
-    const diff = Math.max(0, now - timestamp);
-    const seconds = Math.floor(diff / 1000);
-    if (seconds < 60) return `${seconds}s 前`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m 前`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h 前`;
-    const days = Math.floor(hours / 24);
-    return `${days}d 前`;
-  }
-
   /** thinking 阶段 → 中文标签（展示面）。相位取值来自内核 **`ProcessThinkingPhase`**
    *  （memory/roundStore.ts，随 ProcessEvent 下发）；勿误引 agent 层类型 `ThinkingPhase`
    *  ——那是 agent/types.ts 的**另一个类型**（当前同值，但非同一符号、非本条数据来源）。 */
@@ -714,7 +508,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       archiving: '归档记忆中…',
     };
     // `?? '思考中…'` 是**有意保留的兜底，不属「类型兜底残留」**——勿按本文件
-    // PLAN_ITEM_STATUS_LABEL 的「枚举固定、无需运行时兜底」原则删掉它：
+    // 计划栏状态标签（PLAN_ITEM_STATUS_LABEL，同包枚举）的「枚举固定、无需运行时兜底」原则删掉它：
     // 相位经 postMessage 跨进程到达且**未经运行时校验**，且 replay 会把旧持久化轮的
     // 事件原样重放——历史轮文件可能携带已下线的 `recalling`（现归并为 `assembling`）。
     // 删兜底 → 旧数据渲染出 `undefined`（用户可见的破图）。
@@ -2080,10 +1874,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       rb.classList.toggle('is-running', !finalize);
     }
     // round-block 任务项标签——如果有 active 任务项，在 summary 上方显示"📍 执行任务项 N: xxx"
-    // 从 currentPlanItems 缓存读（plan_update 消息存，零新增协议）；每次重建保证始终正确
+    // 从计划栏只读快照读（plan_update 消息写入缓存，零新增协议）；每次重建保证始终正确
     const existingTag = rb.querySelector(':scope .round-block__plan-tag') as HTMLElement | null;
-    if (currentPlanItems.length > 0) {
-      const activePlanItem = currentPlanItems.find((s) => s.status === 'active');
+    const planItems = planBar.getItems();
+    if (planItems.length > 0) {
+      const activePlanItem = planItems.find((s) => s.status === 'active');
       if (activePlanItem) {
         const brief =
           activePlanItem.description.length > 36
@@ -2109,11 +1904,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           rb.prepend(tag);
         }
       } else if (existingTag) {
-        // 无 active step（全部 done 或 pending）→ 移除标签
+        // 无 active 任务项（全部 done 或 pending）→ 移除标签
         existingTag.remove();
       }
     } else if (existingTag) {
-      // currentPlanItems 为空 → 移除旧标签
+      // 计划缓存为空 → 移除旧标签
       existingTag.remove();
     }
     // 展开态：进行中自动展开（任务过程实时可见），完成自动收起（只留摘要，报告干净）
@@ -3505,7 +3300,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 交互：hover 显示队员名单（title），点击 → 填充「小组会议：」前缀到输入框并聚焦。
    *
    * 数据源：currentActiveTeam 由 chat_role_pack.team 消息填充（SSOT：内核 rolePackManager.getActiveTeam 截断过滤后下发）。
-   * 实现：单例引用 teamMeetingIcon（懒创建，同计划常驻条 getPlanBarEl 范式）+ 复用 icons.ts 统一图标管理。
+   * 实现：单例引用 teamMeetingIcon（懒创建，同计划常驻条的惰性单例范式（planBarView 模块））+ 复用 icons.ts 统一图标管理。
    *      幂等：chat_role_pack 可能多次到达（replaySession 与装配后补推各一次），
    *      重复调用只切换显隐，不重复创建。
    */
@@ -5485,7 +5280,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       )
       .forEach((el) => el.remove());
     // H4：清空/切换会话时移除任务看板（global + inline 双轨 + 缓存，避免旧计划残留污染新会话）
-    removeAllPlanBoards();
+    planBar.removeAll();
     // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）
     activeAssistantEl = null;
     pausedAssistantEl = null;
@@ -6097,8 +5892,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       )?.tokens;
       renderInjectionReceipt(msg.summary);
     } else if (msg.type === 'plan_update') {
-      // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（renderPlanBoard 自建/更新容器）
-      renderPlanBoard(msg.items);
+      // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（容器内自建/更新）
+      planBar.renderBoard(msg.items);
       // 任务项组状态实时同步（单一写入点 applyPlanItemStates 的实时消费点）：
       // 看板数据即状态真源投影，同步点亮过程区任务项组图标（done 绿勾 / active 靶心）。
       // 全量重建 livePlanStates（LLM 显式表态 = 权威，覆盖 boundary 累加的 active）——
@@ -6932,22 +6727,23 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   });
 
   // 任务常驻条（合并单轨）：点击头部展开/收起锚定浮层；浮层轻交互——
-  // 点击浮层外区域收起（非 modal：看进度时需同时看正文，故不遮罩全屏）
+  // 点击浮层外区域收起（非 modal：看进度时需同时看正文，故不遮罩全屏）。
+  // 监听器**留在本文件**：注册时机与顺序保持原样（匿名监听器原本就未随 dispose 移除），
+  // 拆分刀不改时序面，只把内部调用换成容器窄接口。
   const planBarHead = document.getElementById('planBarHead');
   planBarHead?.addEventListener('click', () => {
-    setPlanBarExpanded(!planBarExpanded);
+    planBar.toggleExpanded();
   });
   document.addEventListener('click', (e) => {
-    const bar = getPlanBarEl();
-    if (planBarExpanded && bar && !bar.contains(e.target as Node)) {
-      setPlanBarExpanded(false);
+    if (planBar.isExpanded() && !planBar.containsTarget(e.target as Node)) {
+      planBar.collapse();
     }
   });
   // Esc 收起对齐 dropdown 族键盘契约（dropdown.ts 同款）：展开态任意焦点位置均可关，
   // 仅展开态生效，不干扰输入框（输入框 Esc 无既有语义）
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && planBarExpanded) {
-      setPlanBarExpanded(false);
+    if (e.key === 'Escape' && planBar.isExpanded()) {
+      planBar.collapse();
     }
   });
 
