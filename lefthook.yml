@@ -14,11 +14,26 @@
 # 设计只保证「① 默认路径便宜 ② 绕过可被外部发现」——每次运行落盘带 tree/head 收据的日志，
 # 绕过一次即无收据，发布前检查清单一行比对即可发现。详见 ADR-032。
 #
+# ⚠️ 拍板（2026-10-21）：**推送绕过 full（LEFTHOOK=0）是故意设计**——full 档含 LLM 相关测试，
+# 每次推送都跑浪费算力；不是缺口、禁止"修复"成强制。
+# 由此产生的唯一盲区 = format/rules:refs 类潜伏红只有 full 能抓（子集门禁不含）；
+# 对策不是改推送，而是**把 prettier 就地修复下沉到 pre-commit**（见下方 prettier-fix），
+# 让最易红的 format 项在便宜的提交层就地清零——绕过 full 也不再潜伏。
+#
 # 提交规范（conventional commits）见 .trae/rules/project-rules.md §6
 
 pre-commit:
   parallel: false
   commands:
+    # 就地修复 · 格式（P0 门禁链补钩，2026-10-21）：只碰 ts/mjs/json——md 被 .prettierignore
+    # 全域挡（frontmatter 改写 + CJK 表格对齐两处实证损害，勿放宽）。
+    # 为何必须在提交层：此前格式修复只靠 full 档 format:check，而 full 挂 pre-push 且
+    # 推送常绕（拍板的省算力设计）⇒ 格式欠账长期潜伏、只在跑 full 时才爆（本轮实锤 9 文件）。
+    prettier-fix:
+      glob: "*.{ts,mjs,json}"
+      run: npx prettier --write {staged_files}
+      stage_fixed: true
+
     # fast 档前的「就地修复」：只扫 staged 的 .ts 并自动修格式（preset 刻意不含全量 lint）
     lint-staged:
       glob: "*.ts"
