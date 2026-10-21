@@ -136,12 +136,18 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
     const p = h.cast.openMentionQuickPick();
     // 等回调注册完成（openMentionQuickPick 内部先填充 items 再注册 accept/hide）
     await vi.waitFor(() => expect(qp.onDidAccept).toHaveBeenCalled());
-    // HOST-CTX-4：关键字项（诊断）**恒置顶**，不与文件项混排（与 Roo Code / Cursor 同款）
+    // HOST-CTX-4：关键字项（problems / git-changes）**恒置顶**，不与文件项混排
+    // （与 Roo Code / Cursor 同款）；顺序 = MOUNTABLE_INJECTION_META 登记序
     expect(qp.items).toEqual([
       {
         label: '诊断（问题面板）',
         description: '注入当前工作区的错误 / 警告（发送时取最新，占预算）',
         injection: 'problems',
+      },
+      {
+        label: 'git 未提交改动',
+        description: '注入 git 未提交改动（只读 status/diff，发送时取最新，占预算）',
+        injection: 'git-changes',
       },
       { label: 'b.md', description: 'docs/b.md', rel: 'docs/b.md' },
       { label: 'a.ts', description: 'src/a.ts', rel: 'src/a.ts' },
@@ -163,6 +169,32 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
       source: 'mention',
     });
     // HOST-CTX-16：确认收场同样归还焦点（与 Esc 取消同一条路，一条 post 覆盖两路）
+    expect(h.posted).toContainEqual({ type: 'focus_input' });
+  });
+
+  it('选中关键字项（problems + git-changes）→ 每源一条 add_injection(via=mention)，不挂引用', async () => {
+    const h = setup();
+    (vscode.workspace.findFiles as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    const qp = stubQuickPick([
+      { label: '诊断（问题面板）', injection: 'problems' } as never,
+      { label: 'git 未提交改动', injection: 'git-changes' } as never,
+    ]);
+    const p = h.cast.openMentionQuickPick();
+    await vi.waitFor(() => expect(qp.onDidAccept).toHaveBeenCalled());
+    (qp.onDidAccept.mock.calls[0][0] as () => void)();
+    await p;
+
+    // HOST-CTX-4：挂载流泛化（MOUNTABLE_INJECTION_META 有几源就挂几源——加源零改 accept
+    // 循环）。每源一条 add_injection；本条守住「泛化循环真的按源逐发」而非只发第一源。
+    expect(h.posted).toContainEqual({ type: 'add_injection', source: 'problems', via: 'mention' });
+    expect(h.posted).toContainEqual({
+      type: 'add_injection',
+      source: 'git-changes',
+      via: 'mention',
+    });
+    // 只选关键字项（无文件项）⇒ 不发 addRef——ChatRef 契约是「只挂指针不携内容」，
+    // 注入型上下文与引用型上下文分道，刻意不复用 addRef。
+    expect(h.posted).not.toContainEqual(expect.objectContaining({ type: 'addRef' }));
     expect(h.posted).toContainEqual({ type: 'focus_input' });
   });
 

@@ -200,7 +200,7 @@ export type ActiveFileProjection =
  * `active-file` 是既有的注入源（脏 / 未命名 / 工作区外时注入正文），随 CTX-4 ② 一起
  * 降为本枚举的一个分项（原先它的 token 数长在 `ActiveFileProjection` 私有字段上）。
  */
-export type InjectionSource = 'active-file' | 'problems';
+export type InjectionSource = 'active-file' | 'problems' | 'git-changes';
 
 /** 注入汇总的一个分项（**按源归因**，HOST-CTX-4 ②） */
 export type InjectionSegment = {

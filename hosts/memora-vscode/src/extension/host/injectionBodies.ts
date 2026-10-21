@@ -18,6 +18,8 @@
  */
 import * as vscode from 'vscode';
 import { collectProblemsText } from './problemsCollector.js';
+import { collectGitChangesText, type GitExec } from './gitCollector.js';
+import { gitExec } from './gitExec.js';
 
 /** 诊断的「源码行」读取（生产实现，注入给 `collectProblemsText`）
  *
@@ -66,5 +68,28 @@ export async function collectProblemsBody(): Promise<string> {
     // 但没拿到，而不是收到一个空块后凭空编诊断。
     console.warn('[memora] 采集工作区诊断失败，本轮以事实行代替：', err);
     return '工作区诊断采集失败（本轮未能取到错误 / 警告列表）。';
+  }
+}
+
+/**
+ * 本轮 git 未提交改动正文采集（HOST-CTX-4 ④ git-changes 源；时序与失败纪律见模块头）
+ *
+ * 与 problems 的对称点：cwd = 首个工作区根（与 `read_file` cwd / 引用解析同根，模型按
+ * 清单路径才读得到）。fail-closed 事实行（非 git 仓库 / git 缺失 / 段执行失败 / 零改动）
+ * 由 `collectGitChangesText` 负责；此处只兜「装配自身抛错」——同样不得挂掉整条发送。
+ *
+ * @param root 首个工作区根（无工作区时 undefined ⇒ git 自寻 .git 或给事实行，都不炸）
+ * @param exec 命令执行器（生产 = `gitExec` spawn wrapper；测试 = 假执行器，refProbe
+ *   stat 注入同款先例——默认参数让调用方零心智负担）
+ */
+export async function collectGitChangesBody(
+  root: string | undefined,
+  exec: GitExec = gitExec,
+): Promise<string> {
+  try {
+    return await collectGitChangesText({ exec, cwd: root });
+  } catch (err) {
+    console.warn('[memora] 采集 git 未提交改动失败，本轮以事实行代替：', err);
+    return 'git 未提交改动采集失败（本轮未能取到改动清单）。';
   }
 }

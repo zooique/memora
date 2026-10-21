@@ -49,6 +49,19 @@ describe('注入型上下文 chip（HOST-CTX-4 · @problems 第一笔）', () =>
     expect(document.getElementById('refChips')?.hasAttribute('hidden')).toBe(false);
   });
 
+  it('git-changes chip：可见名 / note / title 全走 injectionSourceMeta 单点（加源零改 webview）', () => {
+    mountChatView();
+    dispatch({ type: 'add_injection', source: 'git-changes' });
+    expect(injectionChips().length).toBe(1);
+    const chip = injectionChips()[0];
+    expect(chip.dataset.injection).toBe('git-changes');
+    // 三面都从 MOUNTABLE_INJECTION_META / INJECTION_SEGMENT_LABELS 派生——本用例守的是
+    // 「Record 穷尽性让新源渲染自动」不是空话：任一值漂移这三条断言即红
+    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('git 未提交改动');
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('内容已注入');
+    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('已注入');
+  });
+
   it('幂等：同一 source 重复挂载恒一枚（身份判据 = 来源枚举，非内容哈希）', () => {
     mountChatView();
     dispatch({ type: 'add_injection', source: 'problems' });
@@ -127,6 +140,20 @@ describe('发送：只声明通道，不携带内容（HOST-CTX-4 ④）', () =>
     expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'send', text: '普通提问' });
   });
 
+  it('多源并挂 → 上行载荷带全部通道标记（顺序 = 挂载序，宿主按 includes 取数）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'add_injection', source: 'problems' });
+    dispatch({ type: 'add_injection', source: 'git-changes' });
+    sendText('帮我看诊断和未提交改动');
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'send',
+      text: '帮我看诊断和未提交改动',
+      injections: ['problems', 'git-changes'],
+    });
+    expect(injectionChips().length).toBe(0); // 两枚都发送即清
+  });
+
   it('发送即作废上一轮回执（数字只属于刚发出那一轮，不跨轮残留）', () => {
     mountChatView();
     dispatch({
@@ -172,6 +199,23 @@ describe('本轮注入回执行（HOST-CTX-4 ② · 圆环 hover 卡片底部）
     });
     expect(receipt().hidden).toBe(true);
     expect(receipt().textContent).toBe('');
+  });
+
+  it('git-changes 分项按 segmentLabel 单点入回执（多源并存时按源归因不串名）', () => {
+    mountChatView();
+    dispatch({
+      type: 'injection_summary',
+      summary: {
+        segments: [
+          { source: 'problems', injected: true, tokens: 120 },
+          { source: 'git-changes', injected: true, tokens: 8600 },
+        ],
+        total: 8720,
+      },
+    });
+    expect(receipt().textContent).toBe(
+      '本轮注入 8,720（工作区诊断 120 · git 未提交改动 8,600）· 发送时刻估算，下一轮覆盖',
+    );
   });
 
   it('清空会话（clear_ok）→ 注入 chip 与回执行一并复位（不跨会话残留）', () => {

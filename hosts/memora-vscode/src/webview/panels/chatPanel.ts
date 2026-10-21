@@ -144,14 +144,18 @@ import { chatStyles } from '../styles/chatStyles.js';
 import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
 import {
   buildDocContextBlock,
+  buildGitChangesContextBlock,
   buildInjectedContextEnvelope,
   buildProblemsContextBlock,
   buildRefContextBlock,
   stripInjectedContextPrefix,
 } from '../helpers/docContext.js';
-// HOST-CTX-4：发送时刻的注入正文采集（problems 诊断 / 未来的 git-changes）——自本文件拆出
+// HOST-CTX-4：发送时刻的注入正文采集（problems 诊断 / git-changes 未提交改动）——自本文件拆出
 // （贴 max-lines 上限；「每加一个注入源加一个 collectXxxBody」是线性增长域，留此必爆线）
-import { collectProblemsBody } from '../../extension/host/injectionBodies.js';
+import {
+  collectGitChangesBody,
+  collectProblemsBody,
+} from '../../extension/host/injectionBodies.js';
 import {
   isSkillDisabled,
   listVisibleSkills,
@@ -1002,7 +1006,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // @ 下拉的两类项：**文件项**（挂指针，走 addRef）+ **特殊关键字项**（走 add_injection，
       // 挂载注入型上下文）。与 Roo Code / Cursor 同款（下拉里除文件外还建议 problems /
       // terminal / git-changes 这类关键字）；关键字项恒置顶，不与文件项混排。
-      type MentionItem = vscode.QuickPickItem & { rel?: string; injection?: 'problems' };
+      type MentionItem = vscode.QuickPickItem & {
+        rel?: string;
+        injection?: Exclude<InjectionSource, 'active-file'>;
+      };
       const fileItems: MentionItem[] = [];
       for (const uri of uris) {
         const rel = relativeUnderPrimaryRoot(root, uri.fsPath);
@@ -1010,12 +1017,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         fileItems.push({ label: basename(rel), description: rel, rel });
       }
       fileItems.sort((a, b) => (a.description ?? '').localeCompare(b.description ?? ''));
-      // label / description 值真源 = shared/injectionSourceMeta；placeholder 与本项绑同一对象（曾两处各写一句「诊断（问题面板）」、改一处漏一处）
-      const problemsItem: MentionItem = {
-        ...MOUNTABLE_INJECTION_META.problems.quickPick,
-        injection: 'problems',
-      };
-      const items: MentionItem[] = [problemsItem, ...fileItems];
+      // 关键字项由 MOUNTABLE_INJECTION_META **派生**（加源零改本处——第 1 笔 Record
+      // 穷尽性兜底：新源漏配 meta 即 tsc 红）。label / description 值真源 = 该单点。
+      const mountableItems: MentionItem[] = (
+        Object.keys(MOUNTABLE_INJECTION_META) as Exclude<InjectionSource, 'active-file'>[]
+      ).map((source) => ({ ...MOUNTABLE_INJECTION_META[source].quickPick, injection: source }));
+      const items: MentionItem[] = [...mountableItems, ...fileItems];
       // 截断告知（HOST-CTX-11）：>= 上限即视为可能截断（恰好等于上限不截断的极小概率
       // 也在提示范围内——多一句提示远好过用户找不到文件）。走 placeholder 而非塞一条
       // 「提示项」进 items：QuickPickItem 没有 disabled，提示项一旦被选中就会变成一条
@@ -1025,9 +1032,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       qp.items = items;
       qp.canSelectMany = true;
       qp.matchOnDescription = true;
+      // placeholder 内嵌的关键字项 label 从同一派生数组取（勿在此内嵌字面量——
+      // 曾两处各写一句「诊断（问题面板）」、改一处漏一处 = 下拉提示与实际选项对不上）
+      const mountableHint = mountableItems.map((i) => `「${i.label}」`).join(' / ');
       qp.placeholder = truncated
         ? `文件数超 ${MENTION_FILE_LIMIT} 已截断（内置忽略目录已排除、仍超上限），请输入关键词缩小范围（可多选，Esc 取消）…`
-        : `选择要挂为引用的文件，或选「${problemsItem.label}」注入当前错误（可多选，Esc 取消）…`;
+        : `选择要挂为引用的文件，或选 ${mountableHint} 注入上下文（可多选，Esc 取消）…`;
       qp.show();
       const picked = await new Promise<readonly MentionItem[] | undefined>((resolve) => {
         // accept = 确认（含多选）；hide = Esc / 点外部关闭（两者互斥，先到先 resolve）
@@ -1043,11 +1053,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       if (!picked || picked.length === 0) return; // 取消：静默返回，正文里的 @ 保留（用户可继续编辑）
       // 关键字项与文件项**分道**：关键字项挂注入 chip（add_injection），文件项挂引用 chip
       // （addRef）。刻意不复用 addRef——ChatRef 的契约是「只挂指针不携内容」（CTX-4 前置边界）。
-      let wantProblems = false;
+      // 泛化：不再按源名分支——MOUNTABLE_INJECTION_META 有几源就挂几源（加源零改此处）。
+      const mounted: Exclude<InjectionSource, 'active-file'>[] = [];
       const refs: ChatRef[] = [];
       for (const p of picked) {
-        if (p.injection === 'problems') {
-          wantProblems = true;
+        if (p.injection) {
+          mounted.push(p.injection);
           continue;
         }
         // 防御：QuickPickItem.description 类型可选，本 items 恒有值——异常缺省则跳过（不挂 path=undefined 的伪引用）
@@ -1056,7 +1067,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       }
       // via='mention'：与 addRef 同款，让 webview 撤掉输入框里那个 '@'（只选关键字项时
       // 如果没有这条，'@' 会残留在正文里被一起发出去）。
-      if (wantProblems) this.post({ type: 'add_injection', source: 'problems', via: 'mention' });
+      for (const source of mounted) this.post({ type: 'add_injection', source, via: 'mention' });
       if (refs.length === 0) return;
       if (this._view) {
         this.post({ type: 'addRef', refs, source: 'mention' });
@@ -3113,16 +3124,23 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       missingFileRefPaths,
     );
     // 注入型上下文（HOST-CTX-4 ④）：**发送时刻**采集。挂载只记通道标记（webview 组合态），
-    // 宿主此刻才 getDiagnostics() ⇒ 模型拿到的是最新一份；零诊断时采集器返回「事实行」
-    // 而非空串（用户挂了标签就有权知道「确实没有」——静默空块 = 静默失败族）。
+    // 宿主此刻才 getDiagnostics() / 跑只读 git ⇒ 模型拿到的是最新一份；零诊断 / 零改动时
+    // 采集器返回「事实行」而非空串（用户挂了标签就有权知道「确实没有」——静默空块 =
+    // 静默失败族）。
     const problemsMounted = injections?.includes('problems') ?? false;
     const problemsBlock = problemsMounted
       ? buildProblemsContextBlock(await collectProblemsBody())
       : '';
-    // 块序：技能 / 文档 / 诊断（注入内容在前）→ 引用（指针在后）。剥离侧以「最后一个
-    // 成对块闭标签」为锚点，顺序不影响正确性，但注入块与指针块分组便于人读。
+    const gitMounted = injections?.includes('git-changes') ?? false;
+    const gitBlock = gitMounted
+      ? buildGitChangesContextBlock(
+          await collectGitChangesBody(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath),
+        )
+      : '';
+    // 块序：技能 / 文档 / 诊断 / git 改动（注入内容在前）→ 引用（指针在后）。剥离侧以
+    // 「最后一个成对块闭标签」为锚点，顺序不影响正确性，但注入块与指针块分组便于人读。
     const chatInput = buildInjectedContextEnvelope(
-      [skillBlock, docBlock, problemsBlock, refsBlock],
+      [skillBlock, docBlock, problemsBlock, gitBlock, refsBlock],
       input,
     );
     // 本轮注入汇总（HOST-CTX-4 ②）：**唯一真源** = 按源分项 + 合计。活动文件的 token 数
@@ -3140,6 +3158,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         source: 'problems',
         injected: true,
         tokens: estimateTokensText(problemsBlock),
+      });
+    }
+    if (gitMounted) {
+      segments.push({
+        source: 'git-changes',
+        injected: true,
+        tokens: estimateTokensText(gitBlock),
       });
     }
     const total = segments.reduce((sum, s) => sum + (s.tokens ?? 0), 0);

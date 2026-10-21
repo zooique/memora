@@ -18,8 +18,9 @@
  * 加源时两张表都由 `Record<…>` 穷尽性强制补齐——漏一张 = tsc 红，运行期
  * `undefined` 文案比编译期红难发现得多。
  *
- * **只登记已落地的源**（protocol.ts D6：不预建未落地的源）：`git-changes` / `terminal`
- * 各自拍板落地那笔再追加，勿提前写——给未拍板的语义发身份证即预支。
+ * **只登记已落地的源**（protocol.ts D6：不预建未落地的源）：`git-changes` 已随
+ * 第 3.1 笔接线落地追加；`terminal` 待各自拍板落地那笔再追加，勿提前写——给未拍板的
+ * 语义发身份证即预支。
  *
  * 守卫面（本模块自 2026-10-21 回填起，新旧值逐字相同、零行为变更）：
  * chatPanelMention 断言下拉 label / description、chatViewInjections 断言 chip note 与
@@ -38,6 +39,7 @@ export type MountableInjectionSource = Exclude<InjectionSource, 'active-file'>;
 export const INJECTION_SEGMENT_LABELS: Record<InjectionSource, string> = {
   'active-file': '当前文件正文',
   problems: '工作区诊断',
+  'git-changes': 'git 未提交改动',
 };
 
 /**
@@ -68,5 +70,17 @@ export const MOUNTABLE_INJECTION_META: Record<
       title: '内容已注入本轮正文（不是指针），发送时取最新的错误 / 警告，占预算；发送后自动清除',
     },
     envelope: { open: '[工作区诊断]', close: '[/工作区诊断]' },
+  },
+  'git-changes': {
+    quickPick: {
+      label: 'git 未提交改动',
+      description: '注入 git 未提交改动（只读 status/diff，发送时取最新，占预算）',
+    },
+    chip: {
+      note: '内容已注入',
+      title:
+        '内容已注入本轮正文（不是指针），发送时取最新的未提交改动（只读 status/diff），占预算；发送后自动清除',
+    },
+    envelope: { open: '[git 未提交改动]', close: '[/git 未提交改动]' },
   },
 };

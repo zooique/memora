@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildDocContextBlock,
+  buildGitChangesContextBlock,
   buildInjectedContextEnvelope,
   buildProblemsContextBlock,
   buildRefContextBlock,
@@ -196,6 +197,51 @@ describe('stripInjectedContextPrefix', () => {
       INPUT,
     );
     expect(stripInjectedContextPrefix(content)).toBe(INPUT);
+  });
+
+  // ── HOST-CTX-4：git 块（@git-changes）同为成对块；diff 正文**不压平** ⇒ paired 登记是
+  //    可达路径而非纵深（诊断块那条是纵深，见上方「现状说明」） ──
+  it('git 块（@git-changes）与文档块同为成对块 → 剥离只留用户请求', () => {
+    const content = buildInjectedContextEnvelope(
+      [buildGitChangesContextBlock(' M src/a.ts\n+改动一行')],
+      INPUT,
+    );
+    expect(stripInjectedContextPrefix(content)).toBe(INPUT);
+  });
+
+  it('git diff 正文自带**空行 + 「用户请求：」** → 锚点取 git 块闭标签之后（paired 必达路径）', () => {
+    // 与诊断块那条「纵深」用例的关键差别：diff 正文**不压平**，且用户改的代码 / 提交
+    // 信息里完全可能出现空行 + 行首「用户请求：」⇒ 本条是 paired 登记的**必达路径**而非
+    // 纵深：若 paired 漏登记 git 块，锚点停在 0，块内字样会抢在真分隔符之前被截
+    // ⇒ diff 正文被当成用户请求回显（CTX-5 同款泄漏形态）。
+    // ⚠️ 数据形态即判据：必须是 `\n\n用户请求：`（空行 + 行首）才命中锚点搜索模式——
+    // 行内字样（`="用户请求：`）不触发，曾据此写出「逃逸变异」的假守卫（2026-10-21）。
+    const body = ' M src/a.ts\n\n用户请求：这段是 diff 正文里的字样\n+const tip = 1;';
+    const content = buildInjectedContextEnvelope([buildGitChangesContextBlock(body)], INPUT);
+    expect(stripInjectedContextPrefix(content)).toBe(INPUT);
+  });
+
+  it('文档块与 git 块并存 → 锚点取**两者中更靠后**的闭标签（不互相遮蔽）', () => {
+    const content = buildInjectedContextEnvelope(
+      [
+        buildDocContextBlock('用户请求：文档里的字样'),
+        buildGitChangesContextBlock('用户请求：diff 里的字样'),
+      ],
+      INPUT,
+    );
+    expect(stripInjectedContextPrefix(content)).toBe(INPUT);
+    // 反序（git 在前）同样成立
+    const flipped = buildInjectedContextEnvelope(
+      [buildGitChangesContextBlock('用户请求：diff 里的字样'), buildDocContextBlock('# 文档')],
+      INPUT,
+    );
+    expect(stripInjectedContextPrefix(flipped)).toBe(INPUT);
+  });
+
+  it('git 块有开无闭（畸形）→ paired 循环 continue 不炸，无分隔符时原样返回', () => {
+    // 与文档块同款语义：无闭标签 ⇒ 该块不进锚点（from 保持 0），无分隔符即判据 2 不满足
+    const content = '[git 未提交改动]\n无关闭标签的异常消息';
+    expect(stripInjectedContextPrefix(content)).toBe(content);
   });
 });
 

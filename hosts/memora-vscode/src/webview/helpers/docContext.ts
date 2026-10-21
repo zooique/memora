@@ -51,12 +51,34 @@ export const PROBLEMS_CONTEXT_OPEN = MOUNTABLE_INJECTION_META.problems.envelope.
 export const PROBLEMS_CONTEXT_CLOSE = MOUNTABLE_INJECTION_META.problems.envelope.close;
 
 /**
+ * git 未提交改动上下文块开标签（HOST-CTX-4 · `@git-changes` 有界注入）
+ *
+ * 值真源同 problems（`shared/injectionSourceMeta.ts`），本常量是信封侧派生名。
+ * ⚠️ 新增成对块必须在 `stripInjectedContextPrefix` 的 `paired` 登记（该处注释明载）——
+ * git diff 正文**未经 clip 压平**（诊断正文压平过），缺登记即锚点失效。
+ */
+export const GIT_CHANGES_CONTEXT_OPEN = MOUNTABLE_INJECTION_META['git-changes'].envelope.open;
+
+/** git 未提交改动上下文块闭标签（剥离侧锚点；值真源同开标签） */
+export const GIT_CHANGES_CONTEXT_CLOSE = MOUNTABLE_INJECTION_META['git-changes'].envelope.close;
+
+/**
  * 构造诊断上下文块（`[工作区诊断]\n{body}\n[/工作区诊断]`）
  *
  * `body` 由 `problemsCollector.collectProblemsText` 在**发送时刻**产出（有界、含截断说明）。
  */
 export function buildProblemsContextBlock(body: string): string {
   return `${PROBLEMS_CONTEXT_OPEN}\n${body}\n${PROBLEMS_CONTEXT_CLOSE}`;
+}
+
+/**
+ * 构造 git 未提交改动上下文块（`[git 未提交改动]\n{body}\n[/git 未提交改动]`）
+ *
+ * `body` 由 `injectionBodies.collectGitChangesBody` 在**发送时刻**产出（三口只读 +
+ * 三道闸有界，截断在正文里明示）。
+ */
+export function buildGitChangesContextBlock(body: string): string {
+  return `${GIT_CHANGES_CONTEXT_OPEN}\n${body}\n${GIT_CHANGES_CONTEXT_CLOSE}`;
 }
 
 /**
@@ -175,7 +197,7 @@ export function buildInjectedContextEnvelope(
  * 剥离 user 消息中宿主注入的上下文前缀，还原用户请求原文（仅用于 UI 回显）
  *
  * 判据（缺一不剥）：
- *   1. 消息中确有宿主注入块 —— 含文档块 / 诊断块开标签，或含引用块开标签，或
+ *   1. 消息中确有宿主注入块 —— 含文档块 / 诊断块 / git 块开标签，或含引用块开标签，或
  *      **以技能块开标签开头**（技能块恒为信封首块；普通消息即便含「用户请求：」
  *      字样也不满足此条）；
  *   2. 锚点之后存在信封分隔符。
@@ -198,19 +220,22 @@ export function stripInjectedContextPrefix(content: string): string {
     openIdx < 0 &&
     !content.startsWith(SKILL_CONTEXT_OPEN) &&
     !content.includes(REF_CONTEXT_OPEN) &&
-    !content.includes(PROBLEMS_CONTEXT_OPEN)
+    !content.includes(PROBLEMS_CONTEXT_OPEN) &&
+    !content.includes(GIT_CHANGES_CONTEXT_OPEN)
   )
     return content;
 
-  // 锚点 = 最后一个**成对块**闭标签之后（文档块 / 诊断块）：块内正文若自带
+  // 锚点 = 最后一个**成对块**闭标签之后（文档块 / 诊断块 / git 块）：块内正文若自带
   // `\n\n用户请求：`，不排除在搜索区外就会从块内截断 ⇒ 注入内容被当用户请求回显。
   // 有开无闭 = 畸形消息 ⇒ 该块不进锚点（保持既有「不误剥」语义）。
-  // ⚠️ 新增成对块（未来的终端输出 / diff）**必须在此登记**：诊断块当前正文经采集器 clip
-  // 压平（不含空行）⇒ 本条对它属纵深而非必需；未压平的块缺登记即锚点失效。
+  // ⚠️ 新增成对块（未来的终端输出）**必须在此登记**：诊断块正文经采集器 clip 压平
+  // （不含空行）⇒ 本条对它属纵深而非必需；**git diff 正文未经压平**（diff 行天然多行），
+  // 缺登记即锚点失效——正文里的「用户请求：」字样会抢在真分隔符之前被截。
   let from = 0;
   const paired: readonly [string, string][] = [
     [DOC_CONTEXT_OPEN, DOC_CONTEXT_CLOSE],
     [PROBLEMS_CONTEXT_OPEN, PROBLEMS_CONTEXT_CLOSE],
+    [GIT_CHANGES_CONTEXT_OPEN, GIT_CHANGES_CONTEXT_CLOSE],
   ];
   for (const [open, close] of paired) {
     const o = content.indexOf(open);
