@@ -18,7 +18,6 @@ import type {
   PendingQuestionDto,
   RoundView,
   WebviewToExtensionMessage,
-  BackgroundTaskView,
 } from '../../shared/protocol.js';
 // 引用身份键与去重判据：**必须**与宿主缓冲共用同一实现——同文件不同选区是两条引用，
 // 若各自按 path 判等，chip 的锁 / 移除会误伤同 path 的另一条（见 shared/refKey.ts）。
@@ -66,6 +65,7 @@ import { createHistoryMenuView } from './historyMenuView.js';
 import { createContextOccupancyView } from './contextOccupancyView.js';
 // 活动抽屉（活动条/时间线/指标/未读位）：渲染与未读判定收口于 activityDrawerView（HOST-SPLIT-1 chatView 第 4 刀）
 import { createActivityDrawerView } from './activityDrawerView.js';
+import { createStatusBarsView } from './statusBarsView.js';
 
 /** chatView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ChatViewDeps {
@@ -342,6 +342,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // ⚠️ `#planBar` 是 `#messages` 的**同级**节点，不得插进滚动容器内部（一滚即滚出视野）。
   // 数据源仍为 plan_update 协议消息（webview 只消费不写，零新增协议字段）。
   const planBar = createPlanBarView({ document });
+
+  // StatusDock 挂载条域容器（待发送 / 文件改动 / 后台任务三条件，第 6 刀外置，见 statusBarsView.ts）
+  const statusBars = createStatusBarsView({
+    document,
+    inputBar,
+    setDockActive,
+    registerDockEntry,
+    appendInteractiveInput,
+    postMessage: (msg) => vscode.postMessage(msg as WebviewToExtensionMessage),
+  });
 
   /**
    * 「过程在上 · 报告在下」挂载锚点（SSOT）：把过程类元素插到 assistant 块报告正文之前。
@@ -2817,243 +2827,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     resolveDock();
   });
 
-  /**
-   * 待发送区（interject 队列可视化）：由 turn_update.pendingQueue 更新。
-   * 非空时懒创建 DOM 元素（归位/显隐由 StatusDock 单点裁决）——列出全部待发补充，每条带序号 + 文本 + 独立 × 按钮；空队列不创建。
-   * 仅 thinking 态有排队时显示；paused 宿主已清队列；done 不可能有队列。
-   *
-   * 连续补充的用户心智：用户在 LLM 思考期间连发多条 → 每条独立显示 + 可删除，
-   * step 边界时内核一次性注入全部 → UI 渲染层 appendInterruptDivider 合并成一个气泡展示。
-   */
-  let _pendingQueueBar: HTMLElement | null = null;
-  /** 待发送队列投影缓存（内核 interruptQueue 的视觉镜像，随 turn_update.pendingQueue 同步）：
-   *  仅供 sendMessage 插话满员预检用（真源在内核，宿主闸门仍裁决竞态漏网）；
-   *  同时是「吸收时上屏」diff 的上一帧（消费检测 = 本帧与上帧的内容差）。 */
-  let _pendingQueueItems: readonly string[] = [];
-  /** 丢弃信号缓冲（pending_discarded 事件载荷暂存）：diff 分流的依据——
-   *  消失条目命中缓冲 = 丢弃（不上屏）；未命中 = 消费（内核已落盘 → 上屏「你补充」行）。
-   *  生命周期 = 一帧（宿主契约：信号后必跟新快照，随下帧 diff 消耗）；视图复位时清空。 */
-  let _pendingDiscardedBuffer: string[] = [];
-  function updatePendingQueueBar(items: readonly string[]): void {
-    // —— 吸收时上屏：队列快照 diff（必须在缓存覆盖前取上一帧）——
-    // 消失条目 = 上帧有、本帧无（内容可能重复，按出现次数消耗）；再扣除丢弃缓冲，
-    // 剩余 = 被内核消费（appendUserMessage 已落盘）→ 按 prev 顺序逐条上屏「你补充」行。
-    // ts 用检测时刻 ≈ 内核落盘时刻（与重放排序同相）；行形态复用 appendInteractiveInput
-    // 过程条目行（与 thought/tool 同源同序），不进消息流、不打断正文单块续写。
-    const prevItems = _pendingQueueItems;
-    if (prevItems.length > 0) {
-      const remain = new Map<string, number>();
-      for (const t of items) remain.set(t, (remain.get(t) ?? 0) + 1);
-      const gone: string[] = [];
-      for (const t of prevItems) {
-        const c = remain.get(t) ?? 0;
-        if (c > 0) remain.set(t, c - 1);
-        else gone.push(t);
-      }
-      for (const t of gone) {
-        const bi = _pendingDiscardedBuffer.indexOf(t);
-        if (bi >= 0) {
-          _pendingDiscardedBuffer.splice(bi, 1); // 丢弃：缓冲消耗，不上屏
-        } else {
-          appendInteractiveInput(t, new Date().toISOString(), 'supplement');
-        }
-      }
-    }
-    // 投影缓存先于一切：空队列也要落缓存，否则满员预检读到上一次的残留长度
-    _pendingQueueItems = [...items];
-    // 空态在懒创建之前返回（与 updateFileChangesBar 同范式）：dock 注册初值 active=false，
-    // 若先创建再以空数组 setDockActive(false) 属状态未变 no-op，resolveDock 永不裁决该节点，
-    // 裸插入的空条会永久可见且任何后续空投影都关不掉。未创建 = DOM 中无此条，无需撤出。
-    if (items.length === 0) {
-      if (_pendingQueueBar) setDockActive('pendingQueue', false); // 显隐裁决归 StatusDock（SSOT）
-      return;
-    }
-    if (!_pendingQueueBar) {
-      // 懒创建：顶行（徽章 + 标题 + 清空按钮）+ 列表（每条可独立删除）
-      // 计数为圆形徽章（视觉聚焦），结构保持轻量无重造
-      _pendingQueueBar = document.createElement('div');
-      _pendingQueueBar.className = 'pending-queue-bar';
-      _pendingQueueBar.innerHTML = `
-        <div class="pending-queue-bar__head">
-          <span class="pending-queue-bar__badge"></span>
-          <span class="pending-queue-bar__label">待发送</span>
-          <span class="pending-queue-bar__hint">补充将紧随当前步骤后注入</span>
-          <button class="pending-queue-bar__clear" type="button" title="清空全部" aria-label="清空全部待发送"><span class="btn-icon" data-icon="close"></span></button>
-        </div>
-        <div class="pending-queue-bar__list"></div>
-      `;
-      inputBar.parentNode?.insertBefore(_pendingQueueBar, inputBar);
-      // 本节点运行期创建 → 初始化时的 populateIcons（document.body）未覆盖 → 此处补填充 data-icon
-      populateIcons(_pendingQueueBar);
-      registerDockEntry('pendingQueue', _pendingQueueBar);
-      const clearBtn = _pendingQueueBar.querySelector('.pending-queue-bar__clear');
-      clearBtn?.addEventListener('click', () => {
-        // 清空全部 interject（宿主层 chatPanel 清 _pendingQueue 并 post 空队列通知）
-        vscode.postMessage({ type: 'clear_pending_queue' });
-      });
-    }
-    // 顶部：计数徽章（圆形，数字）+ 标题
-    const badgeEl = _pendingQueueBar.querySelector('.pending-queue-bar__badge')!;
-    badgeEl.textContent = String(items.length);
-    // 列表容器重建（每次全量重渲染，items.length 小时成本可忽略）
-    const listEl = _pendingQueueBar.querySelector('.pending-queue-bar__list')!;
-    listEl.innerHTML = '';
-    items.forEach((text, idx) => {
-      const row = document.createElement('div');
-      row.className = 'pending-queue-bar__item';
-      // 序号（1. / 2. / 3.）
-      const num = document.createElement('span');
-      num.className = 'pending-queue-bar__num';
-      num.textContent = `${idx + 1}.`;
-      // 文本（过长截断，title 悬停看全文）
-      const preview = document.createElement('span');
-      preview.className = 'pending-queue-bar__text';
-      preview.textContent = text.length > 100 ? text.slice(0, 100) + '…' : text;
-      preview.title = text;
-      // 单条删除按钮
-      const delBtn = document.createElement('button');
-      delBtn.className = 'pending-queue-bar__item-del';
-      delBtn.type = 'button';
-      delBtn.title = '删除这条';
-      // 图标语言唯一 = icons.ts 柔和线条 SVG（注意 × 兼作语义乘号，
-      // 如「工具×3」——“乘号”与“关闭图标”须靠位置区分，不可机械替换）
-      delBtn.innerHTML = getIconSvg('close', 10, 10);
-      delBtn.addEventListener('click', () => {
-        vscode.postMessage({ type: 'remove_pending_item', index: idx });
-      });
-      row.append(num, preview, delBtn);
-      listEl.appendChild(row);
-    });
-    setDockActive('pendingQueue', true); // 显隐裁决归 StatusDock（SSOT）
-  }
-
-  // ─── 文件改动常驻条（DIFF-1）───
-  let _fileChangesBar: HTMLElement | null = null;
-  /**
-   * 未确认文件改动常驻条（懒创建，与 pending-queue-bar 同范式：插在输入栏之前）
-   *
-   * 两个动作按钮**不自己实现逻辑**，只 postMessage 给宿主 → 宿主 executeCommand 复用已注册命令
-   * （与文件内 CodeLens / 状态栏 QuickPick / 命令面板同一实现，SSOT，无第二份清理逻辑）。
-   * 「全部回退」是破坏性操作，宿主侧必弹模态二次确认——webview 不做前置拦截（拦截逻辑只能落 host）。
-   * 计数只在宿主推来 file_changes 时更新：**webview 不自维护副本**（真源 = 宿主 tracker）。
-   */
-  function updateFileChangesBar(files: readonly string[]): void {
-    if (files.length === 0) {
-      if (_fileChangesBar) setDockActive('fileChanges', false); // 显隐裁决归 StatusDock（SSOT）
-      return;
-    }
-    if (!_fileChangesBar) {
-      _fileChangesBar = document.createElement('div');
-      _fileChangesBar.className = 'file-changes-bar';
-      _fileChangesBar.innerHTML = `
-        <span class="file-changes-bar__badge"></span>
-        <span class="file-changes-bar__label">个文件有未确认改动</span>
-        <span class="file-changes-bar__spacer"></span>
-        <button class="file-changes-bar__confirm" type="button" title="确认全部改动（仅清除本提示，不改文件内容）">全部确认</button>
-        <button class="file-changes-bar__revert" type="button" title="回退全部改动到 agent 之前（不可撤销，需二次确认）">全部回退</button>
-      `;
-      inputBar.parentNode?.insertBefore(_fileChangesBar, inputBar);
-      registerDockEntry('fileChanges', _fileChangesBar);
-      _fileChangesBar.querySelector('.file-changes-bar__confirm')?.addEventListener('click', () => {
-        vscode.postMessage({ type: 'confirm_all_file_changes' });
-      });
-      _fileChangesBar.querySelector('.file-changes-bar__revert')?.addEventListener('click', () => {
-        vscode.postMessage({ type: 'revert_all_file_changes' });
-      });
-    }
-    const badge = _fileChangesBar.querySelector('.file-changes-bar__badge');
-    if (badge) badge.textContent = String(files.length);
-    // 悬停看完整文件清单（相对路径由宿主下发，webview 只展示不解析）
-    _fileChangesBar.title = files.join('\n');
-    setDockActive('fileChanges', true); // 显隐裁决归 StatusDock（SSOT）
-  }
-
-  // ─── 后台任务条（CMD-1 阶段 2 · 方案-后台任务可见性与kill入口-20261004.md）───
-  let _backgroundBar: HTMLElement | null = null;
-  /**
-   * 后台命令任务条（懒创建，与 pending-queue-bar 同范式）
-   *
-   * **webview 零自维护副本**：任务列表与状态标签（`statusLabel`，extension 侧读内核
-   * `BACKGROUND_TASK_STATUS_LABELS` 填充后下发）全部来自快照，webview 只做「取数 → 渲染」。
-   * 状态文案不下发枚举再自转（那要建第二套词表 = 双源漂移）。
-   *
-   * 「终止」按钮**不自己实现终止**：只 `postMessage` 回宿主（杀进程是宿主侧能力，
-   * 且内核按 Agent 实例隔离——同 `confirm_all_file_changes` 的「拦截/执行只能落 host」定案）。
-   *
-   * 刻意不做：批量「全部终止」——破坏性批量操作，且内核只提供单任务 `kill`，超出本缺口。
-   */
-  function updateBackgroundTasksBar(items: readonly BackgroundTaskView[]): void {
-    if (items.length === 0) {
-      if (_backgroundBar) setDockActive('background', false); // 显隐裁决归 StatusDock（SSOT）
-      return;
-    }
-    if (!_backgroundBar) {
-      _backgroundBar = document.createElement('div');
-      _backgroundBar.className = 'background-tasks-bar';
-      _backgroundBar.innerHTML = `
-        <div class="background-tasks-bar__head">
-          <span class="background-tasks-bar__badge"></span>
-          <span class="background-tasks-bar__label">后台任务</span>
-        </div>
-        <div class="background-tasks-bar__list"></div>
-      `;
-      inputBar.parentNode?.insertBefore(_backgroundBar, inputBar);
-      registerDockEntry('background', _backgroundBar);
-    }
-    const badge = _backgroundBar.querySelector('.background-tasks-bar__badge');
-    if (badge) badge.textContent = String(items.length);
-    // 列表容器全量重建（条数是个位数，成本可忽略）
-    const listEl = _backgroundBar.querySelector('.background-tasks-bar__list')!;
-    listEl.innerHTML = '';
-    for (const task of items) {
-      const row = document.createElement('div');
-      row.className = 'background-tasks-bar__item';
-      // 命令原文（过长截断，title 悬停看全文）——不解析、不改写
-      const text = document.createElement('span');
-      text.className = 'background-tasks-bar__text';
-      text.textContent =
-        task.command.length > 100 ? `${task.command.slice(0, 100)}…` : task.command;
-      text.title = task.command;
-      const status = document.createElement('span');
-      status.className = 'background-tasks-bar__status';
-      status.textContent = task.statusLabel;
-      row.append(text, status);
-      // 终态行不给「终止」按钮：已结束的任务点终止 → 宿主 kill 返回 null（按「已终结」处理），
-      // 按钮留着即「点了没反应」的僵尸交互
-      if (task.status === 'running') {
-        const killBtn = document.createElement('button');
-        killBtn.className = 'background-tasks-bar__kill';
-        killBtn.type = 'button';
-        killBtn.textContent = '终止';
-        killBtn.title = '终止这条后台命令';
-        killBtn.addEventListener('click', () => {
-          vscode.postMessage({ type: 'background_kill', taskId: task.taskId });
-        });
-        row.appendChild(killBtn);
-      } else {
-        // 终态行给 `×` 收起。⚠️ running 行**刻意不给收起**：进程在跑必须始终可见
-        //（这正是本缺口最初的样子：「派了人出去办事，却不知道他还在不在」）。
-        // 收起只对已结束的行开放，且**只关掉「眼睛」**——任务与输出仍在宿主侧，
-        // `kill_command` 随时可取回（可逆 > 不可逆）。
-        const dismissBtn = document.createElement('button');
-        dismissBtn.className = 'background-tasks-bar__dismiss';
-        dismissBtn.type = 'button';
-        dismissBtn.textContent = '×';
-        dismissBtn.title = '从列表收起这条（不终止进程，输出仍可取回）';
-        dismissBtn.setAttribute('aria-label', '收起这条后台任务');
-        dismissBtn.addEventListener('click', () => {
-          vscode.postMessage({
-            type: 'background_kill',
-            taskId: task.taskId,
-            reason: 'dismiss',
-          });
-        });
-        row.appendChild(dismissBtn);
-      }
-      listEl.appendChild(row);
-    }
-    setDockActive('background', true); // 显隐裁决归 StatusDock（SSOT）
-  }
 
   /**
    * 切换 LLM 运行状态：thinking → 发送按钮切换为「停止」方块（loading 类驱动图标切换），
@@ -4870,7 +4643,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     lastAssistantRoundId = undefined;
     resumePending = false;
     // 视图复位 = 队列投影清空（新会话无插话排队，防残留长度误拦 sendMessage 预检）
-    _pendingQueueItems = [];
+    statusBars.reset(); // 待发送投影缓冲随视图复位清空（防跨会话残留误拦 sendMessage 预检）
     // 注入挂载与本轮回执一并复位（HOST-CTX-4 ③）：清空 / 切会话后旧的注入 chip 与本轮
     // 注入量都是上一会话的残留，留着会把「本轮注入 N」按到新会话第一轮头上。
     currentInjections = [];
@@ -4879,7 +4652,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     hideInjectionReceipt();
     renderAttachmentRow();
     // 丢弃缓冲同步清空：跨会话残留会让新会话首帧消费条目被误吞（不上屏 = 内容蒸发）
-    _pendingDiscardedBuffer = [];
+    // 丢弃缓冲随 statusBars.reset() 一并清空（见上行；原 _pendingDiscardedBuffer = []）
     roundGroupEl = null;
     lastShownDate = undefined;
     // 视图复位 = 吸底标记复位：新会话默认从底部看起。容器清空时高度塌缩未必派发
@@ -5035,7 +4808,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 待发送区渲染真源并入 turn_update 单通道（pending_queue_update 已删）。
       // pendingQueue 可选字段，缺省（旧宿主/测试构造）则不刷新待发送区（保持现状）。
       if (msg.pendingQueue) {
-        updatePendingQueueBar(msg.pendingQueue);
+        statusBars.updatePendingQueue(msg.pendingQueue);
       }
       // 会话重放快照（replay:true）→ 整批渲染 rounds。
       // ⚠ 顺序契约（必须排在提问渲染之前）：renderReplayFromRounds 首行 resetChatView
@@ -5059,7 +4832,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'pending_discarded') {
       // 插话丢弃信号：压入缓冲，随下一帧队列快照 diff 消耗（消失条目命中缓冲 = 丢弃不上屏）。
       // 时序契约：宿主保证本事件先于携带新快照的 turn_update 到达（postMessage FIFO）。
-      _pendingDiscardedBuffer.push(...msg.items);
+      statusBars.pushDiscarded(msg.items);
     } else if (msg.type === 'tool_pending') {
       // 工具意图预告：LLM 流式生成 tool_call 参数期间（name 成形即上报），
       // 工具尚未执行——提前渲染「准备中」工具行。瞬态展示轨：不落 events[]、不参与
@@ -5563,10 +5336,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'file_changes') {
       // 未确认文件改动快照：宿主在**改动集变化**时推 + **webview ready 时补推一次**
       // （两个时机缺一即漏面——只推变化的话，面板重开后常驻条会消失）
-      updateFileChangesBar(msg.files);
+      statusBars.updateFileChanges(msg.files);
     } else if (msg.type === 'background_tasks') {
       // 后台任务快照（宿主按事件点推、已内建内容签名去重）→ 空列表即隐藏（无任务零占用）
-      updateBackgroundTasksBar(msg.items);
+      statusBars.updateBackgroundTasks(msg.items);
     } else if (msg.type === 'notice') {
       activityDrawerView.showActivity(msg.level, msg.message, undefined, msg.kind);
     } else if (msg.type === 'memory_hits') {
@@ -5892,7 +5665,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 原地保留在输入框。paused 带补充走 resumeExecution、done 走 chat，均不入插话
     // 队列，不预检。宿主闸门保留：投影经 turn_update 送达有延迟窗口，竞态漏网由宿主裁决兜底。
     const isInterjectRoute = deriveSessionUiState(skeletonState) === 'thinking';
-    if (isInterjectRoute && _pendingQueueItems.length >= MAX_PENDING_INTERJECTIONS) {
+    if (isInterjectRoute && statusBars.getPendingCount() >= MAX_PENDING_INTERJECTIONS) {
       activityDrawerView.showActivity(
         'info',
         `待发送已满 ${MAX_PENDING_INTERJECTIONS} 条——先在待发送区删减，本条仍保留在输入框`,
@@ -6935,6 +6708,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (pendingWaitTimer !== undefined) clearInterval(pendingWaitTimer);
     if (toolElapsedTimer !== undefined) clearInterval(toolElapsedTimer);
     activityDrawerView.dispose(); // 瞬态条撤出计时器随活动抽屉域收口（第 4 刀）
+    statusBars.dispose(); // 三挂载条 DOM 随状态条域收口（第 6 刀）
     stopConfirmCountdown();
   }
 
