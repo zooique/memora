@@ -120,7 +120,6 @@ import type {
   WebviewToExtensionMessage,
   RoundView,
   TurnState,
-  PendingQuestionDto,
   LlmProviderConfig,
 } from '../../shared/protocol.js';
 // 错误文案映射单一真理源（与 webview 重放渲染共用，防文案双源漂移）
@@ -162,6 +161,9 @@ import type { FileChangeSink } from '../../extension/host/fileChangeTracker.js';
 import { ActiveFileTracker } from '../../extension/host/activeFileTracker.js';
 // HOST-SPLIT-1 第 2 刀：确认队列域（自本文件迁出；注入 getAgent / post 两个依赖）
 import { ConfirmCoordinator } from '../../extension/host/confirmCoordinator.js';
+// HOST-SPLIT-1 第 4 刀：ask 提问域（自本文件迁出；注入 5 个依赖：getAgent / isAskWaiting /
+// getTurnState / post / runFlow——runFlow 是 18 行包装，**不是** consumeFlow 主循环）
+import { AskCoordinator } from '../../extension/host/askCoordinator.js';
 
 // 判据与快照的真源已迁至 activeFileTracker.ts；此处 re-export **仅为保住既有测试的导入路径**
 // （chatPanelHistory.test.ts 直驱这 5 个纯函数）——按规则 §6.2「sugar API 保留、内部委托」。
@@ -268,32 +270,7 @@ export function foldThoughtEvents(events: ProcessEvent[]): ProcessEvent[] {
   return out;
 }
 
-/**
- * ask_user 提问等待超时（ms）：超时未答 → cancelAsk（[ASK_ABORTED] 占位）
- * + resumeExecution('timeout') 自动续跑（LLM 自决）。0/负值 = 禁用超时保底。
- * 语义 = 保底而非打扰：选项/自由输入仍是唯一主动通道，无「跳过」按钮。
- *
- * 时长取值（2026-10-13 真机实测订正，120s → 30min，用户拍板对齐 confirm 时长）：
- * 依据 = ask 超时是**自动继续**（无副作用），超时长度不带来安全风险（风险来自「超时后做什么」
- * 而非「等多久」）；代价仅是 loop 多挂起一会儿（不烧 token）。实测 2 分钟对「细纲/文风要不要
- * 继续」这类需读完长文才能决策的问题偏短，且超时后模型代选继续 = 用户失去否决窗口。
- *
- * ⚠️ **只对齐时长，严禁对齐语义**（详见 `confirmCoordinator.ts` 的 `CONFIRM_TIMEOUT_MS` 注释的风险分级说明）：
- * 本常量超时 = 自动**继续**，confirm 侧超时 = 自动**拒绝**。两者虽同为 30 分钟，
- * **仍是两个独立常量、两种相反终态**——合并即 fail-open 安全模型反转 = 造伤。
- */
-const ASK_TIMEOUT_MS = 30 * 60 * 1000;
-
-/** ask 超时交互记录正文（镜像内核 orchestrator.ts ASK_TIMEOUT_NOTICE，防运行时/重放
- * 文案分叉——post 给 webview 即时渲染与内核落盘 content 必须同值；改此须同步内核。
- *
- * 语义补充见内核 orchestrator.ts 同名常量注释（一个字符串服务「渲染给用户」+「进模型上下文」
- * 两个语境，故含代选指令：模型须从选项中选一项推荐的并声明代选及理由）。 */
-const ASK_TIMEOUT_NOTICE =
-  '用户未在时限内回答，已自动继续——请从上面的选项里选一项你推荐的方案继续推进，并在答复中说明这是你代选的及理由；不可逆操作仍需向我确认';
-
-/**
- * 诊断的「源码行」读取（生产实现，注入给 `collectProblemsText`）
+/** 诊断的「源码行」读取（生产实现，注入给 `collectProblemsText`）
  *
  * **优先读已打开文档的 buffer**：诊断是语言服务基于 buffer 算出来的（含未保存修改），
  * 读磁盘会与诊断给出的行号错位——与 `registerWork` 读磁盘的旧版隐患（HOST-MENU-2）
@@ -480,21 +457,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private _turnState: TurnState = { phase: 'idle' };
   /**
-   * 在途主动提问（questionPending 事件 / 流尾兜底 chunk 的**写入源头**）
-   *
-   * overwrite 全量写入（新提问覆盖旧提问），读取一律经 `_turnState.waiting.questions`
-   * （postTurnUpdate 每次投影时派生），仅在提问被回答 / 超时 / 被新提问覆盖时整体清空——
-   * 无「消费式 splice 逐条弹出」的时序约束。
-   * 提问的原始权威仍在内核 loop.pendingAsk（宿主侧仅此一处 intake，非第二真相）。
-   */
-  private _pendingQuestions: PendingQuestionDto[] = [];
-  /**
-   * ask 提问等待超时计时器（超时保底）：onPendingQuestion / 流尾兜底提问渲染时
-   * 启动（覆写式），用户回答/补充消费提问时清除；到点未答 → handleAskTimeout 自动续跑。
-   * 生命周期仅限「存在未答提问」窗口——不随 consumeFlow finally 清（ask 暂停后流已结束但等待仍活）。
-   */
-  private _askTimeout: ReturnType<typeof setTimeout> | undefined;
-  /**
    * 会话视图加载器（round-based 模式专用，可选）
    *
    * 注入后支持加载 round-based 会话的历史消息。
@@ -557,6 +519,29 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private readonly _confirm = new ConfirmCoordinator({
     getAgent: () => this._agent,
     post: (msg) => this.post(msg),
+  });
+
+  /**
+   * ask 提问域协调器（HOST-SPLIT-1 第 4 刀迁出域，真源见 `extension/host/askCoordinator.ts`）
+   *
+   * **五个依赖逐一说明（比前两刀多，须逐个设计）**：
+   *   ① `getAgent` getter 委托（禁快照：`setAgent` 会替换 `_agent`）；
+   *   ② `isAskWaiting` **判据单点注入**——🔴 禁在域内重写 `phase/reason` 判据，
+   *      那会造成相位判据第二处 = SSOT 违例（判据真源在 chatPanel，另有 2 个调用点）；
+   *   ③ `getTurnState` getter 委托（`_turnState` 每次投影被整体替换，必须读最新）；
+   *   ④ `post` 同前两刀；
+   *   ⑤ `runFlow` = 本类既有的 **18 行包装**（建 controller + 挂 `_currentFlow` + 同步错兜底），
+   *      **不是** 529 行的 `consumeFlow` 主循环 ⇒ 注入它不等于把主循环交给域。
+   *
+   * **订阅不搬**：agent 事件订阅/退订的生命周期归宿主（`bindAgentEvents` 另订 6 个事件），
+   * 域只接收写入（`setPending`）——避免事件注册散落两处。
+   */
+  private readonly _ask = new AskCoordinator({
+    getAgent: () => this._agent,
+    isAskWaiting: () => this.isAskWaiting(),
+    getTurnState: () => this._turnState,
+    post: (msg) => this.post(msg),
+    runFlow: (factory) => this.runFlow(factory),
   });
 
   /**
@@ -1528,7 +1513,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * ⚠ 投影刷新点（SSOT）：sessionPaused 是状态机真正翻 PAUSED 的事件信号，
    * 骨架必须在此刻重投影——否则 `_turnState` 停留在翻转前的值，暂停按钮不切「继续」。
-   * 只读真源（status / isPausePending / _streaming / _pendingQuestions）+ 幂等；
+   * 只读真源（status / isPausePending / _streaming / ask 域在途提问）+ 幂等；
    * chat 路径不 emit 本事件，故零影响。 */
   private readonly onSessionPaused = (info: {
     reason: string;
@@ -2882,8 +2867,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const history = this._viewLoader ? this.loadRoundBasedHistory() : [];
     const rounds = mergeLiveRound(history, live);
     const last = rounds[rounds.length - 1];
-    const questions = this._pendingQuestions;
-    // 派生结果写回宿主唯一状态——handleInput / handleAskTimeout 的提问原文
+    const questions = this._ask.pendingQuestions();
+    // 派生结果写回宿主唯一状态——handleInput / askCoordinator.handleAskTimeout 的提问原文
     // 统一从 _turnState.waiting.questions 读，不维护独立生命周期 + 消费式 splice 的镜像。
     this._turnState = deriveTurnState({
       streaming: this._streaming,
@@ -3087,7 +3072,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 走 answer 意图通道（与内联提问块 / 澄清栏同源）⇒ answerQuestion 回填 + 落盘带走
     // question/options。此前与 pause 合并路由为 supplement ⇒ 在途提问被 cancelAsk 兜底成
     // 「用户未回答该提问」，答案退化为普通补充消息、提问原文不落盘——同一用户意图两种
-    // 落盘形态，SSOT 违约。answerInput 内含 clearAskTimeout，此处不重复调用。
+    // 落盘形态，SSOT 违约。answerInput 内含关超时保底（ask 域 clearAskTimeout），此处不重复调用。
     if (this.isAskWaiting()) {
       await this.answerInput([input]);
       return;
@@ -3096,7 +3081,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // → 走 resumeExecution 路由（保留闭环节点归属，不分裂）
     const now = new Date().toISOString();
     if (this.isPauseWaiting()) {
-      this.clearAskTimeout(); // 暂停态补充 = 已响应当前等待，关闭超时保底
+      this._ask.clearAskTimeout(); // 暂停态补充 = 已响应当前等待，关闭超时保底
       this.post({ type: 'user', text: input, ts: now, kind: 'supplement' });
       await this.runFlow((signal) => agent.resumeExecution(input, signal, 'supplement'));
       return;
@@ -3225,53 +3210,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  /** 启动/重置 ask 等待超时计时器（覆写式；超时保底入口） */
-  private armAskTimeout(): void {
-    this.clearAskTimeout();
-    if (!ASK_TIMEOUT_MS || ASK_TIMEOUT_MS <= 0) return;
-    this._askTimeout = setTimeout(() => {
-      void this.handleAskTimeout();
-    }, ASK_TIMEOUT_MS);
-  }
-
-  /** 清除 ask 等待超时计时器（用户回答/补充消费提问、离开等待态时调用） */
-  private clearAskTimeout(): void {
-    if (this._askTimeout) {
-      clearTimeout(this._askTimeout);
-      this._askTimeout = undefined;
-    }
-  }
-
-  /**
-   * ask 提问等待超时（保底，非打扰通道）：用户未在时限内回答 →
-   * ① 渲染「问 + 未回答」交互行（与 qa 同构，question/options 随行透出）；
-   * ② cancelAsk 注入 [ASK_ABORTED] 占位 tool result（转存提问快照供落盘）；
-   * ③ resumeExecution('timeout') 自动续跑——LLM 看到「用户未回答该提问」自决最优方案。
-   * 选项/自由输入仍是唯一主动通道，超时只是保底（用户明确不要「跳过」按钮）。
-   */
-  private async handleAskTimeout(): Promise<void> {
-    if (!this._agent) return;
-    this._askTimeout = undefined; // 一次性触发
-    if (this._pendingQuestions.length === 0) return; // 已被回答/补充消费
-    if (!this.isAskWaiting()) return; // 已离开 waiting(ask)（异常/新流）；守卫用相位判据（不查 sessionManager.status）
-    // 提问原文从 _turnState.waiting.questions 读（统一读取源，不维护镜像）
-    const state = this._turnState;
-    const pendingQ =
-      state.phase === 'waiting' && state.reason === 'ask' ? state.questions?.[0] : undefined;
-    this._pendingQuestions = []; // 提问已超时消费（整体清空，非 splice 逐条弹出）
-    const now = new Date().toISOString();
-    this.post({
-      type: 'user',
-      text: ASK_TIMEOUT_NOTICE, // 镜像内核 orchestrator ASK_TIMEOUT_NOTICE（运行时 = 重放同构）
-      ts: now,
-      kind: 'timeout',
-      ...(pendingQ?.question ? { question: pendingQ.question, options: pendingQ.options } : {}),
-    });
-    // cancelAsk 先于 resume：注入 [ASK_ABORTED] 占位 + 转存提问快照（runResume timeout 分支取走落盘 question）
-    this._agent.cancelAsk();
-    await this.runFlow((signal) => this._agent!.resumeExecution(undefined, signal, 'timeout'));
-  }
-
   /**
    * answer 意图：处理用户对主动提问的回答——answerQuestion 结构化回填 + resumeExecution 续跑
    *  内核提问由 ask_user 工具承载——先 answerQuestion 以 tool result 回填
@@ -3283,13 +3221,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *  resumeExecution 以 join 全文注入（内核 answerQuestion 原生支持数组）。
    *  守卫（Agent 就绪/会话存在）与错位拦截收归 handleInput 相位路由
    *  （单一判据），提问原文读 turn_update 投影（`_turnState.waiting.questions`
-   *  单点真源，`_pendingQuestions` 仅事件写入源，非消费式 splice）。
+   *  单点真源，ask 域的在途提问仅事件写入源，非消费式 splice）。
    * @param answers 归一后的回答数组（单问=单元素，answer 意图恒数组）
    */
   private async answerInput(answers: string[]): Promise<void> {
-    this.clearAskTimeout(); // 提问被回答：关闭超时保底
+    this._ask.clearAskTimeout(); // 提问被回答：关闭超时保底
     // 迟到回答（提问已超时自动续跑/流异常结束 → 相位脱离 waiting）已在 handleInput 路由层丢弃，
-    // 此处相位必为 waiting/ask；提问快照从 state 读、_pendingQuestions 整体清空（overwrite 语义）
+    // 此处相位必为 waiting/ask；提问快照从 state 读、ask 域在途提问整体清空（overwrite 语义）
     const now = new Date().toISOString();
     // 回答上屏（折叠块标记；与重放 qa 行同构——question/options 透出，webview 渲染「问→你答」回顾行）；
     // 持久化由内核 resumeExecution → runResume 按交互归属写入同闭环节点，宿主不双写。
@@ -3297,7 +3235,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const state = this._turnState;
     const pendingQs =
       state.phase === 'waiting' && state.reason === 'ask' ? (state.questions ?? []) : [];
-    this._pendingQuestions = [];
+    this._ask.clearPending();
     for (let i = 0; i < answers.length; i++) {
       const pendingQ = pendingQs[i];
       this.post({
@@ -3606,12 +3544,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     ) => {
       clarifyEventDriven = true;
       clarifyChunkQueue.length = 0; // 事件为准，丢弃可能残留的 chunk 缓存
-      this._pendingQuestions = questions; // 事件写入源头（overwrite 全量写；派生见 postTurnUpdate，消费见 answerInput）
+      this._ask.setPending(questions); // 事件写入源头（overwrite 全量写；派生见 postTurnUpdate，消费见 answerInput）
       // 提问这一刻立即补推 turn_update——问答卡渲染真源 = turn_update.state（waiting/ask）。
       // 此刻内核尚未 yield paused chunk（sessionStatus≈running），但 deriveTurnState 判据
       // 是「questions 非空即 ask」，故本投影即派生 waiting(ask)，即时渲染，不延迟。
       this.postTurnUpdate();
-      this.armAskTimeout(); // 超时保底：未答 → 自动续跑
+      this._ask.armAskTimeout(); // 超时保底：未答 → 自动续跑
     };
     this._agent.on('questionPending', onPendingQuestion);
     // 监听记忆沉淀事件（memoryAdded，非 chunk 通道）→ 与 chunk 同源进过程事件缓冲（单源，
@@ -3951,12 +3889,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         }
       }
       // 流尾兜底：本流产生提问 chunk 但事件未驱动（监听未就绪/异常）→ 用 chunk 缓存装载提问，问题不丢失。
-      // 兜底渲染同样靠 turn_update.state——先写 _pendingQuestions（postTurnUpdate
+      // 兜底渲染同样靠 turn_update.state——先写提问（postTurnUpdate
       // 投影真源）再补推 turn_update（等待 ask 渲染）。
       if (!clarifyEventDriven && clarifyChunkQueue.length > 0) {
-        this._pendingQuestions = clarifyChunkQueue;
+        this._ask.setPending(clarifyChunkQueue);
         this.postTurnUpdate();
-        this.armAskTimeout(); // 兜底渲染同享超时保底
+        this._ask.armAskTimeout(); // 兜底渲染同享超时保底
       }
       // assistant 消息持久化由内核 appendAssistant 完成（写入当前会话 _currentSessionId），
       // 此处不再 persist，避免与内核双写同一条回复（SSOT 单一真理源）

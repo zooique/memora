@@ -86,12 +86,17 @@ function setup() {
   return { provider, posted };
 }
 
-/** 事件监听为私有箭头字段：cast 直呼（它们就是实例属性，非原型方法） */
+/** 事件监听为私有箭头字段：cast 直呼（它们就是实例属性，非原型方法）
+ *
+ * ⚠️ HOST-SPLIT-1 第 4 刀：ask 域迁至 `_ask`，**闸门字段随迁**——驱动路径经
+ * `_ask.clearPending()` / `_ask.setPending()`。
+ * 🔴 不改成直接改 tracker 内部字段会**静默失效**：给不存在的字段赋值不报错，运行时不抛，
+ * 而「无在途提问」的默认态恰等于 clearPending 后的空态 ⇒ 无一用例因此转红。 */
 interface ProjectionCast {
   onSessionPaused(info: { reason: string; source: string; sessionId?: string }): void;
   onSessionResumed(info: { sessionId?: string }): void;
   _streaming: boolean;
-  _pendingQuestions: unknown[];
+  _ask: { clearPending(): void; setPending(q: unknown[]): void };
   _agent: Agent;
 }
 
@@ -104,7 +109,7 @@ describe('暂停/恢复：真源翻转事件必须刷新骨架投影', () => {
     const cast = provider as unknown as ProjectionCast;
     cast._agent = projectionAgentStub('running');
     cast._streaming = true; // 续跑流已启动
-    cast._pendingQuestions = [];
+    cast._ask.clearPending();
 
     cast.onSessionResumed({ sessionId: 's1' });
 
@@ -118,7 +123,7 @@ describe('暂停/恢复：真源翻转事件必须刷新骨架投影', () => {
     const cast = provider as unknown as ProjectionCast;
     cast._agent = projectionAgentStub('paused');
     cast._streaming = true;
-    cast._pendingQuestions = [];
+    cast._ask.clearPending();
 
     cast.onSessionPaused({ reason: 'user-pause', source: 'user' });
 
@@ -133,7 +138,7 @@ describe('暂停/恢复：真源翻转事件必须刷新骨架投影', () => {
     const cast = provider as unknown as ProjectionCast;
     crystal: cast._agent = projectionAgentStub('running');
     cast._streaming = true;
-    cast._pendingQuestions = [];
+    cast._ask.clearPending();
 
     cast.onSessionResumed({ sessionId: 's1' });
 

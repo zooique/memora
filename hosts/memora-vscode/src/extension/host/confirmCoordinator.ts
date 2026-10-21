@@ -15,7 +15,7 @@ import { getToolDisplayName } from '../../webview/helpers/toolNameMap.js';
  *
  * ⚠️ 2026-10-13 起与 ASK_TIMEOUT_MS **数值同为 30 分钟**：这是**时长巧合**，不是同一判据。
  * 二者终态相反（continue vs deny），**禁合并为同一常量**——合并即抹掉风险分级这一有意设计。
- * （ASK 侧的真源与对应说明在 `chatPanel.ts` 的 `ASK_TIMEOUT_MS`。）
+ * （ASK 侧的真源与对应说明在 `askCoordinator.ts` 的 `ASK_TIMEOUT_MS`。）
  */
 const CONFIRM_TIMEOUT_MS = 30 * 60 * 1000;
 

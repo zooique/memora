@@ -4,7 +4,7 @@
  * 验证 `handleInput` 单一入口按 turn 相位路由（单一判据）：
  *   - running 态 send → agent.interject 排队（无缝插话，不发起新 chat）
  *   - waiting(ask) 态 answer → answerQuestion 回填 + resumeExecution('question-answer') 续跑
- *     （提问原文从 `_turnState.waiting.questions` 读，`_pendingQuestions` 整体清空）
+ *     （提问原文从 `_turnState.waiting.questions` 读，ask 域在途提问整体清空）
  *   - waiting(ask) 态 send（底部输入框回车）→ **同走 answer 通道**，不退化成 supplement：
  *     提问等待态下任何输入都是对该提问的回应（含拒答），若走 supplement 会让在途提问被
  *     cancelAsk 兜底成「用户未回答」、提问原文不落盘（同一意图两种记录 = SSOT 违约）
@@ -12,7 +12,12 @@
  *     不改变路由裁决，但「答了没反应」的排障线索必须在扩展宿主日志可查）
  *
  * 替身策略：agent 桩 + cast 注入私有状态（`_streaming` / `_abortController` / `_turnState` /
- * `_pendingQuestions` / `_currentSessionId`），与 chatPanelHistory.test 既有模式一致。
+ * `_ask`（ask 域协调器）/ `_currentSessionId`），与 chatPanelHistory.test 既有模式一致。
+ *
+ * ⚠️ HOST-SPLIT-1 第 4 刀：ask 域迁至 `_ask`，**闸门字段随迁**——驱动经 `setPending` /
+ * `clearPending`，断言经 `pendingQuestions()`。
+ * 🔴 不改成直接改 tracker 内部字段会**静默失效**（给不存在的字段赋值不报错、运行时不抛），
+ * 而本文件多数用例先 `setPending` 再经宿主读同一状态 ⇒ 自洽仍绿，但生产逻辑已不经该字段。
  */
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
@@ -120,7 +125,7 @@ interface InputCast {
   _streaming: boolean;
   _abortController?: AbortController;
   _turnState: TurnState;
-  _pendingQuestions: PendingQuestionDto[];
+  _ask: { setPending(q: PendingQuestionDto[]): void; clearPending(): void; pendingQuestions(): PendingQuestionDto[] };
   _currentSessionId: string;
   _agent: Agent;
   handleInput(msg: {
@@ -173,7 +178,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     // sendInput 第一分支（流式插话）因此不可命中，落到暂停态续跑分支。
     h.cast._streaming = false;
     h.cast._abortController = undefined;
-    h.cast._pendingQuestions = [question];
+    h.cast._ask.setPending([question]);
     h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: [question] };
 
     await h.cast.handleInput({ kind: 'send', text: '继续' });
@@ -211,7 +216,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     // 相位：waiting/ask（内核 yield paused → 流已收场，_streaming=false）
     h.cast._streaming = false;
     h.cast._abortController = undefined;
-    h.cast._pendingQuestions = [question];
+    h.cast._ask.setPending([question]);
     h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: [question] };
 
     await h.cast.handleInput({ kind: 'answer', answers: ['继续'] });
@@ -232,8 +237,8 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     expect(resumeExecution).toHaveBeenCalledTimes(1);
     expect(resumeExecution.mock.calls[0][0]).toBe('继续');
     expect(resumeExecution.mock.calls[0][2]).toBe('question-answer');
-    // _pendingQuestions 整体清空（overwrite 语义，非消费式 splice）
-    expect(h.cast._pendingQuestions).toEqual([]);
+    // ask 域在途提问整体清空（overwrite 语义，非消费式 splice）
+    expect(h.cast._ask.pendingQuestions()).toEqual([]);
   });
 
   it('多 ask 聚合 answer（P2）：answers 与提问按序一对一，逐条透出 + join 续跑', async () => {
@@ -245,7 +250,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     ];
     h.cast._streaming = false;
     h.cast._abortController = undefined;
-    h.cast._pendingQuestions = qs;
+    h.cast._ask.setPending(qs);
     h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: qs };
 
     await h.cast.handleInput({ kind: 'answer', answers: ['中文', '长篇'] });
@@ -269,7 +274,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     // 相位：waiting/pause（非 ask——迟到/错位回答）
     h.cast._streaming = false;
     h.cast._abortController = undefined;
-    h.cast._pendingQuestions = []; // 无在途提问
+    h.cast._ask.clearPending(); // 无在途提问
     h.cast._turnState = { phase: 'waiting', reason: 'pause' };
 
     await h.cast.handleInput({ kind: 'answer', answers: ['迟到回答'] });
@@ -315,7 +320,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     // 相位：waiting/pause（软暂停后流已收场，_streaming=false）
     h.cast._streaming = false;
     h.cast._abortController = undefined;
-    h.cast._pendingQuestions = [];
+    h.cast._ask.clearPending();
     h.cast._turnState = { phase: 'waiting', reason: 'pause', pausePending: false };
 
     await h.cast.handleInput({ kind: 'resume' });

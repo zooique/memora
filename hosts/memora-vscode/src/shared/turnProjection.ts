@@ -93,8 +93,9 @@ export function deriveTurnState(input: TurnStateInput): TurnState {
   // 原因：ask_user 的提问是「LLM 调工具 → 内核 emit questionPending → 随后 yield paused chunk」，
   // 提问那一刻会话状态器尚未置 paused（宿主 postTurnUpdate 读 sessionManager.status）。若判据
   // 硬绑 paused，webview 切到 turn_update.state 后提问卡渲染会**延迟一个 chunk 边界**（劣化）。
-  // `_pendingQuestions` 生命周期保证语义成立：宿主仅事件/兜底全量写（chatPanel L2566/L2811），
-  // 回答（L2338）与超时（L2299）整体清空——非空即「待答在途」，与 paused 无关。
+  // ask 域在途提问（`askCoordinator` 的 `_pending`）生命周期保证语义成立：宿主仅在
+  // 事件回调与流尾兜底两处全量写（chatPanel 的 onPendingQuestion / consumeFlow 兜底），
+  // 回答与超时整体清空（`answerInput` / `handleAskTimeout`）——非空即「待答在途」，与 paused 无关。
   if (questions.length > 0) {
     return {
       phase: 'waiting',
