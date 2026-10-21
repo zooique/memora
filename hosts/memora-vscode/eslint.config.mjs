@@ -30,21 +30,50 @@ export default [
       'max-lines': ['error', { max: 1000 }],
     },
   },
-  // 存量超标豁免清单（HOST-SPLIT-1，逐个瘦身达标后**逐条删除本块对应行**）。
-  // 集中式豁免 ≠ 文件内 disable：清单在配置里可见、可审计、可收敛；
+  // 存量超标清单（HOST-SPLIT-1 第 0 步 · 2026-10-21 闭环为「只降不升」闸）。
+  // 集中式配置 ≠ 文件内 disable：清单在配置里可见、可审计、可收敛；
   // ❌ 严禁在超标文件内写 `/* eslint-disable max-lines */`——那会把债务埋进文件、
   //    永久不可见且无人回收（内核侧 agent.ts/loop.ts 走的就是集中豁免，形态对齐）。
-  // 性质标注：TARGET = 拆分目标｜DOC = 注释型（有效行远低于物理行，非拆分目标）｜DATA = 纯数据
+  //
+  // 两类分野（勿一刀切）：
+  // - TARGET/观察 → **按文件具体 max = 基线**：行数只降不升，涨回即 lint 红。
+  //   瘦身达标（≤1000）后把该条删掉，回到上一块通用 1000 闸；中途减完一段也可**调低 max**。
+  // - DOC/DATA → 维持 off：物理行**不是**这两个文件的债务判据（protocol.ts 71% 是契约注释、
+  //   chatStyles.ts 主体是一个模板字符串），给它们套下降闸会逼「削契约注释」凑数 = 造伤。
+  //   标注为 DOC/DATA 而非 TARGET，即防误拆。
+  //
+  // 数字三件套（描述性计数纪律）：
+  // - **取数口径 = 本闸门自报**：把该条 max 临时改成 1 跑 `npm run lint`，报错消息
+  //   「File has N lines」即该文件基线（与闸门判定同源，杜绝手数/ wc 第二口径）。
+  // - 时点：2026-10-21 实测。
+  // - 重算指引：瘦身提交后按上法刷新该条 max 调低；**禁止只更新数字不改行数**（无判据作用的
+  //   描述性行数已从注释清除，此处仅留闸门阈值）。
   {
-    files: [
-      'src/webview/scripts/chatView.ts', // TARGET 7789 行（单闭包，178 个内层函数）
-      'src/webview/panels/chatPanel.ts', // TARGET 4962 行（类体 4211 行 / 38 字段 / 126 方法）
-      'src/webview/styles/chatStyles.ts', // DATA   2563 行（第 15→2563 行仅一个模板字符串）
-      'src/webview/panels/settingsPanel.ts', // TARGET 2089 行（一 class 扛 5 个 tab）
-      'src/shared/protocol.ts', // DOC    1703 行（有效行仅 461，71% 是契约注释）
-      'src/extension/host/fileChangeView.ts', // TARGET 1322 行
-      'src/webview/scripts/rolesView.ts', // 观察   1149 行（变异验证已实测：摘本行即报 1149>1000，EXIT=1）
-    ],
+    files: ['src/webview/scripts/chatView.ts'], // TARGET（单闭包，178 个内层函数）
+    rules: { 'max-lines': ['error', { max: 7789 }] },
+  },
+  {
+    files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法）
+    rules: { 'max-lines': ['error', { max: 4546 }] },
+  },
+  {
+    files: ['src/webview/panels/settingsPanel.ts'], // TARGET（一 class 扛 5 个 tab）
+    rules: { 'max-lines': ['error', { max: 2089 }] },
+  },
+  {
+    files: ['src/extension/host/fileChangeView.ts'], // TARGET
+    rules: { 'max-lines': ['error', { max: 1322 }] },
+  },
+  {
+    files: ['src/webview/scripts/rolesView.ts'], // 观察（超 1000，先冻结基线）
+    rules: { 'max-lines': ['error', { max: 1149 }] },
+  },
+  {
+    files: ['src/shared/protocol.ts'], // DOC（契约注释型，物理行非判据 → off）
+    rules: { 'max-lines': 'off' },
+  },
+  {
+    files: ['src/webview/styles/chatStyles.ts'], // DATA（纯数据模板字符串 → off）
     rules: { 'max-lines': 'off' },
   },
   // 宿主根的构建脚本与配置也在门内——
