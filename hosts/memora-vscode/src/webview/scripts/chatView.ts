@@ -22,6 +22,13 @@ import type {
 // 引用身份键与去重判据：**必须**与宿主缓冲共用同一实现——同文件不同选区是两条引用，
 // 若各自按 path 判等，chip 的锁 / 移除会误伤同 path 的另一条（见 shared/refKey.ts）。
 import { dedupeRefs, formatRefRange, normalizeRefRange, refKeyOf } from '../../shared/refKey.js';
+// 注入源命名 / 信封标记单一真源（HOST-CTX-4 第 1 笔 SSOT 化）：chip 可见名、回执分项名、
+// @ 下拉 label、信封块头同读一处——曾四处并列写字面量，「短名双写」已付过一次代价。
+import {
+  INJECTION_SEGMENT_LABELS,
+  MOUNTABLE_INJECTION_META,
+  type MountableInjectionSource,
+} from '../../shared/injectionSourceMeta.js';
 // ProcessEvent / ProcessThinkingPhase 纯类型导入（ArchiveMode 随历史菜单域迁至 historyMenuView）：仅编译期用，esbuild 剥离，不引入运行时依赖
 import type { ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
 // 错误文案映射单一真理源（与 Node 侧 chatPanel 实时提示条共用，防文案双源漂移）
@@ -2826,7 +2833,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (_dockExpanded) activityDrawerView.markDrawerOpened();
     resolveDock();
   });
-
 
   /**
    * 切换 LLM 运行状态：thinking → 发送按钮切换为「停止」方块（loading 类驱动图标切换），
@@ -6185,42 +6191,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return segs[segs.length - 1] || path;
   }
 
-  /**
-   * 注入来源的**显示短名**（含 active-file——回执行要按源归因，活动文件也是一源）
-   *
-   * ⚠️ 这是短名的**唯一真源**：chip 的可见名与回执行的分项名**同读这一张表**——
-   * 各写一套必然出现「chip 叫 A、回执里叫 B」的漂移（本文件曾短暂存在两份「工作区诊断」，
-   * 2026-10-21 审查合并于此）。只登记**已落地**的源。
-   */
-  const INJECTION_SEGMENT_LABELS: Record<InjectionSource, string> = {
-    'active-file': '当前文件正文',
-    problems: '工作区诊断',
-  };
-
   /** 回执归零（新一轮发送 / 清空会话 / 本轮无注入）：不做「本轮注入 0」这种无信息显示 */
   function hideInjectionReceipt(): void {
     if (!injectionReceipt) return;
     injectionReceipt.hidden = true;
     injectionReceipt.textContent = '';
   }
-
-  /**
-   * 注入 chip 的补充说明（**只有用户可挂载的源需要**，`active-file` 是宿主自动附加的不在内）
-   *
-   * 短名不在此表——它在 `INJECTION_SEGMENT_LABELS`（唯一真源），此处只放 chip 专属的
-   * note 与 title。**不重声明 name**：两表各写一次「工作区诊断」即同一事实的第二处表达。
-   * 说明句必须与引用 chip 的「仅挂指针，正文由模型按需读取（不占预算）」**语义相反**——
-   * 两类 chip 并排在同一行，唯一能区分它们的就是这句话（外加形状 / 颜色双通道）。
-   */
-  const INJECTION_CHIP_META: Record<
-    Exclude<InjectionSource, 'active-file'>,
-    { note: string; title: string }
-  > = {
-    problems: {
-      note: '内容已注入',
-      title: '内容已注入本轮正文（不是指针），发送时取最新的错误 / 警告，占预算；发送后自动清除',
-    },
-  };
 
   /**
    * 注入型上下文 chip（**第四种 chip**，HOST-CTX-4）
@@ -6236,8 +6212,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 无 🔒（硬约束④「不泛化」）：常驻 = 每轮都悄悄塞一份进信封，用户会失去预算控制；
    * 要再用就重新挂一次。✕ 即移除（从 currentInjections 过滤，单一真理源）。
    */
-  function buildInjectionChip(source: Exclude<InjectionSource, 'active-file'>): HTMLElement {
-    const meta = INJECTION_CHIP_META[source];
+  function buildInjectionChip(source: MountableInjectionSource): HTMLElement {
+    const meta = MOUNTABLE_INJECTION_META[source];
     const sourceName = INJECTION_SEGMENT_LABELS[source];
     const chip = document.createElement('span');
     // .skill-chip 基类 + .injection-chip 差异化（形状 / 颜色）；data-injection 是测试锚点
@@ -6251,10 +6227,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     name.className = 'skill-chip__name';
     name.textContent = sourceName;
     // 可见文本只有四个字，全部说明进 title（hover 第一问就是「这挂的是啥、占不占」）
-    name.title = meta.title;
+    name.title = meta.chip.title;
     const note = document.createElement('span');
     note.className = 'skill-chip__note';
-    note.textContent = meta.note;
+    note.textContent = meta.chip.note;
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'skill-chip__remove';

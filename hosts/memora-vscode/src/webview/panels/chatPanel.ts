@@ -26,6 +26,8 @@ import { relativeUnderPrimaryRoot, resolveUnderPrimaryRoot } from '../../extensi
 // 派生自内核 IGNORED_DIR_NAMES——findFiles 只吃 files.exclude，不显式传 exclude 时
 // node_modules 等噪音会挤占 MENTION_FILE_LIMIT 上限（排除语义实读见 ignoredDirs.ts）
 import { IGNORED_DIR_GLOB } from '../../extension/host/ignoredDirs.js';
+// 注入源命名单一真源（HOST-CTX-4 ①）：@ 下拉 label 与 chip 短名 / 信封头同读一处，勿内嵌字面量
+import { MOUNTABLE_INJECTION_META } from '../../shared/injectionSourceMeta.js';
 
 /**
  * HOST-CTX-1：@ 提及 QuickPick 的 findFiles 结果上限（防超大仓首开卡顿）
@@ -1060,14 +1062,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         fileItems.push({ label: basename(rel), description: rel, rel });
       }
       fileItems.sort((a, b) => (a.description ?? '').localeCompare(b.description ?? ''));
-      const items: MentionItem[] = [
-        {
-          label: '诊断（问题面板）',
-          description: '注入当前工作区的错误 / 警告（发送时取最新，占预算）',
-          injection: 'problems',
-        },
-        ...fileItems,
-      ];
+      // label / description 值真源 = shared/injectionSourceMeta；placeholder 与本项绑同一对象（曾两处各写一句「诊断（问题面板）」、改一处漏一处）
+      const problemsItem: MentionItem = {
+        ...MOUNTABLE_INJECTION_META.problems.quickPick,
+        injection: 'problems',
+      };
+      const items: MentionItem[] = [problemsItem, ...fileItems];
       // 截断告知（HOST-CTX-11）：>= 上限即视为可能截断（恰好等于上限不截断的极小概率
       // 也在提示范围内——多一句提示远好过用户找不到文件）。走 placeholder 而非塞一条
       // 「提示项」进 items：QuickPickItem 没有 disabled，提示项一旦被选中就会变成一条
@@ -1079,7 +1079,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       qp.matchOnDescription = true;
       qp.placeholder = truncated
         ? `文件数超 ${MENTION_FILE_LIMIT} 已截断（内置忽略目录已排除、仍超上限），请输入关键词缩小范围（可多选，Esc 取消）…`
-        : '选择要挂为引用的文件，或选「诊断（问题面板）」注入当前错误（可多选，Esc 取消）…';
+        : `选择要挂为引用的文件，或选「${problemsItem.label}」注入当前错误（可多选，Esc 取消）…`;
       qp.show();
       const picked = await new Promise<readonly MentionItem[] | undefined>((resolve) => {
         // accept = 确认（含多选）；hide = Esc / 点外部关闭（两者互斥，先到先 resolve）

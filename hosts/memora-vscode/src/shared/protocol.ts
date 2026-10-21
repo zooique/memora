@@ -1303,7 +1303,8 @@ export type ExtensionToWebviewMessage =
   /**
    * 挂载一枚注入型上下文 chip（E→W，HOST-CTX-4）
    *
-   * 由宿主 @ 提及 QuickPick 里的**特殊关键字项**（「诊断（问题面板）」）选中后发出，
+   * 由宿主 @ 提及 QuickPick 里的**特殊关键字项**（label / description 值真源 =
+   * `shared/injectionSourceMeta.ts`）选中后发出，
    * 与 `addRef` 同构（宿主发、webview 挂），但**刻意不复用 `addRef`**——`ChatRef`
    * 的契约是「只挂指针不携内容」，把注入源塞进去会当场破掉该不变量（CTX-4 前置边界）。
    *

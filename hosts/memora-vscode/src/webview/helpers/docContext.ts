@@ -1,5 +1,9 @@
 import type { ChatRef } from '../../shared/protocol.js';
 import { formatRefRange, normalizeRefRange } from '../../shared/refKey.js';
+// 信封块头的值真源 = shared/injectionSourceMeta（HOST-CTX-4 第 1 笔 SSOT 化）：曾与
+// @ 下拉 label / chip 短名四处并列写字面量；此处保留导出名（剥离契约与测试的消费点），
+// 值改从单点派生——改名不改值，既有调用方零改动。
+import { MOUNTABLE_INJECTION_META } from '../../shared/injectionSourceMeta.js';
 
 /**
  * 对话上下文信封 — 宿主注入的上下文块（技能块 / 文档块 / 引用块）的构造与剥离
@@ -34,14 +38,17 @@ export const REF_CONTEXT_CLOSE = '[/参考文件/目录]';
 /**
  * 诊断上下文块开标签（HOST-CTX-4 · `@problems` 有界注入）
  *
+ * 值真源 = `shared/injectionSourceMeta.ts`（`MOUNTABLE_INJECTION_META.problems.envelope`），
+ * 本常量是其在信封侧的派生名——保留导出名供剥离契约与测试消费，勿在此另写字面量。
+ *
  * 与文档块同为「成对块」（有开有闭）⇒ 剥离侧（`stripInjectedContextPrefix`）以**闭标签**
  * 为锚点，避免块内正文（诊断消息 / 源码行可能含「用户请求：」字样）干扰分隔符搜索。
  * 判据与文档块同源，不另造一套。
  */
-export const PROBLEMS_CONTEXT_OPEN = '[工作区诊断]';
+export const PROBLEMS_CONTEXT_OPEN = MOUNTABLE_INJECTION_META.problems.envelope.open;
 
-/** 诊断上下文块闭标签（剥离侧锚点） */
-export const PROBLEMS_CONTEXT_CLOSE = '[/工作区诊断]';
+/** 诊断上下文块闭标签（剥离侧锚点；值真源同开标签） */
+export const PROBLEMS_CONTEXT_CLOSE = MOUNTABLE_INJECTION_META.problems.envelope.close;
 
 /**
  * 构造诊断上下文块（`[工作区诊断]\n{body}\n[/工作区诊断]`）

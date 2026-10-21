@@ -42,6 +42,9 @@ describe('注入型上下文 chip（HOST-CTX-4 · @problems 第一笔）', () =>
     expect(chip.dataset.injection).toBe('problems');
     // 与引用 chip 的「仅挂指针」语义相反，必须在可见面说清
     expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('内容已注入');
+    // chip 可见名 = injectionSourceMeta 的 segmentLabel 单点（2026-10-21 SSOT 化回填时补：
+    // 此前只断言 note/title，变异 segmentLabel 仅回执一例红——chip 可见名面零覆盖）
+    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('工作区诊断');
     expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('已注入');
     expect(document.getElementById('refChips')?.hasAttribute('hidden')).toBe(false);
   });
