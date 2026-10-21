@@ -149,8 +149,9 @@ import {
   buildRefContextBlock,
   stripInjectedContextPrefix,
 } from '../helpers/docContext.js';
-// HOST-CTX-4 第一笔：@problems 诊断的有界采集（依赖注入式、零 vscode 依赖，可单测）
-import { collectProblemsText } from '../../extension/host/problemsCollector.js';
+// HOST-CTX-4：发送时刻的注入正文采集（problems 诊断 / 未来的 git-changes）——自本文件拆出
+// （贴 max-lines 上限；「每加一个注入源加一个 collectXxxBody」是线性增长域，留此必爆线）
+import { collectProblemsBody } from '../../extension/host/injectionBodies.js';
 import {
   isSkillDisabled,
   listVisibleSkills,
@@ -270,59 +271,6 @@ export function foldThoughtEvents(events: ProcessEvent[]): ProcessEvent[] {
     out.push(ev);
   }
   return out;
-}
-
-/** 诊断的「源码行」读取（生产实现，注入给 `collectProblemsText`）
- *
- * **优先读已打开文档的 buffer**：诊断是语言服务基于 buffer 算出来的（含未保存修改），
- * 读磁盘会与诊断给出的行号错位——与 `registerWork` 读磁盘的旧版隐患（HOST-MENU-2）
- * 是同一个病根，此处反向处置（要新不要旧）。未打开的文件才回退读盘（有界：读一次、取整行）。
- *
- * 任何失败一律返回 undefined ⇒ 该条诊断降级为「不带源码行」（功能不残，只是少一点上下文），
- * 不因取不到源码而整块放弃。
- */
-async function readProblemsSourceLine(uri: string, line: number): Promise<string | undefined> {
-  if (line < 0) return undefined;
-  const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri);
-  if (open) {
-    const idx = Math.min(line, open.lineCount - 1);
-    return idx >= 0 ? open.lineAt(idx).text : undefined;
-  }
-  try {
-    const bytes = await vscode.workspace.fs.readFile(vscode.Uri.parse(uri));
-    const lines = new TextDecoder().decode(bytes).split(/\r?\n/);
-    return lines[line];
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * 本轮诊断正文采集（HOST-CTX-4 ④：**发送时刻**才取数）
- *
- * 挂载只记通道标记（webview 组合态），宿主不持有注入态 ⇒ 无缓存、无第二真理源。
- * 缓存的快照 ≠ 发送时刻的真相（CTX-3 的 `_docContext` 缓存撒谎就是死在这上面）。
- */
-async function collectProblemsBody(): Promise<string> {
-  try {
-    const groups = vscode.languages.getDiagnostics().map(([uri, diagnostics]) => ({
-      uri: uri.toString(),
-      fsPath: uri.fsPath,
-      diagnostics,
-    }));
-    return await collectProblemsText({
-      groups,
-      // 首根 SSOT：诊断路径必须投影到与 read_file cwd / 引用解析同一个根，否则模型读不到
-      rootFsPath: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-      readLine: readProblemsSourceLine,
-    });
-  } catch (err) {
-    // 取数失败**不得**让整条发送挂掉（用户点发送后毫无反应 = 静默失败族，本项目已四次踩）。
-    // 与采集器「永不返回空串」同纪律：失败也要在信封里留一句**事实**，模型知道用户挂了
-    // 但没拿到，而不是收到一个空块后凭空编诊断。
-    console.warn('[memora] 采集工作区诊断失败，本轮以事实行代替：', err);
-    return '工作区诊断采集失败（本轮未能取到错误 / 警告列表）。';
-  }
 }
 
 /** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（删除会话记录 + 会话标题元数据）。
