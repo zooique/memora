@@ -62,7 +62,7 @@ export default [
   },
   {
     files: ['src/extension/host/fileChangeView.ts'], // TARGET
-    rules: { 'max-lines': ['error', { max: 1322 }] },
+    rules: { 'max-lines': ['error', { max: 974 }] },
   },
   {
     files: ['src/webview/scripts/rolesView.ts'], // 观察（超 1000，先冻结基线）
