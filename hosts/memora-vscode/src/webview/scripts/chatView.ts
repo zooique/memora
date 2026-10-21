@@ -23,9 +23,8 @@ import type {
 // 引用身份键与去重判据：**必须**与宿主缓冲共用同一实现——同文件不同选区是两条引用，
 // 若各自按 path 判等，chip 的锁 / 移除会误伤同 path 的另一条（见 shared/refKey.ts）。
 import { dedupeRefs, formatRefRange, normalizeRefRange, refKeyOf } from '../../shared/refKey.js';
-// ProcessThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
-// ArchiveMode 纯类型导入（同 ProcessEvent）：仅编译期用，esbuild 剥离，不引入运行时依赖
-import type { ArchiveMode, ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
+// ProcessEvent / ProcessThinkingPhase 纯类型导入（ArchiveMode 随历史菜单域迁至 historyMenuView）：仅编译期用，esbuild 剥离，不引入运行时依赖
+import type { ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
 // 错误文案映射单一真理源（与 Node 侧 chatPanel 实时提示条共用，防文案双源漂移）
 import { friendlyErrorMessage } from '../../shared/errorText.js';
 // 输入长度上限（INPUT-LIMIT-1）：值真源 = shared/constants.ts，两侧输入口同源消费
@@ -61,6 +60,8 @@ import { applyIcon, createIcon, getIconSvg, populateIcons } from './icons.js';
 import { createSanitizer } from '../helpers/sanitizer.js';
 // 计划常驻条（任务看板）：渲染与状态收口于 planBarView（HOST-SPLIT-1 chatView 首刀）
 import { createPlanBarView } from './planBarView.js';
+// 历史菜单（会话记录/留存区）：渲染与分组状态收口于 historyMenuView（HOST-SPLIT-1 chatView 第 2 刀）
+import { createHistoryMenuView } from './historyMenuView.js';
 
 /** chatView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ChatViewDeps {
@@ -5938,12 +5939,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       sessionTitleText.textContent = msg.title;
     } else if (msg.type === 'session_list_data') {
       // 历史会话列表：渲染到 treedd 历史下拉菜单（全量 + 留存区标记，前端过滤分两组）
-      renderHistoryMenu(msg.sessions, msg.archivedIds ?? []);
+      historyMenuApi.renderMenu(msg.sessions, msg.archivedIds ?? []);
     } else if (msg.type === 'chat_archive_mode') {
-      // 归档模式运行时真值：只驱动留存按钮文案（manual 模式按钮兼做归档触发）。
-      // 已渲染则就地重渲染（按钮 title/aria 由 currentArchiveMode 派生，无数据时不重建空菜单）。
-      currentArchiveMode = msg.mode;
-      if (lastSessionList.length > 0) renderHistoryMenu(lastSessionList, lastArchivedIds);
+      // 归档模式运行时真值：只驱动留存按钮文案（manual 模式按钮兼做归档触发）；
+      // 「有数据才就地重渲染」的判断收在容器 setArchiveMode 内
+      historyMenuApi.setArchiveMode(msg.mode);
     } else if (msg.type === 'chat_providers') {
       currentProviders = msg.providers || [];
       currentActive = msg.activeName;
@@ -6495,235 +6495,28 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     syncButtonSemantics();
   }
 
-  // ─── 会话管理（标题条收敛全部入口）───
-  // 相对时间（历史列表副标题，本地辅助；重复 3 次再提取 helper）
-  function fmtRelativeTime(iso: string): string {
-    const diff = Date.now() - new Date(iso).getTime();
-    if (Number.isNaN(diff) || diff < 0) return '';
-    const min = Math.floor(diff / 60000);
-    if (min < 1) return '刚刚';
-    if (min < 60) return `${min} 分钟前`;
-    const hr = Math.floor(min / 60);
-    if (hr < 24) return `${hr} 小时前`;
-    const day = Math.floor(hr / 24);
-    if (day < 30) return `${day} 天前`;
-    return iso.slice(0, 10);
-  }
-  /** 当前分组视图：recent=会话记录 / archived=留存区 */
-  let sessionListView: 'recent' | 'archived' = 'recent';
-  /** 当前搜索词（FD-3-A 元数据搜索）：空串 = 不过滤；只作用于当前分组的渲染 */
-  let sessionSearchQuery = '';
-  /** 最近一次下发的全量会话列表（切 tab 的前端过滤数据源；keyTopics/summary 为搜索匹配域） */
-  let lastSessionList: {
-    sessionId: string;
-    title: string;
-    updatedAt: string;
-    keyTopics?: string[];
-    summary?: string;
-    messageCount?: number;
-  }[] = [];
-  /** 最近一次下发的留存区标记（**单一真源**：分组归属只认它） */
-  let lastArchivedIds: string[] = [];
-  /**
-   * 会话归档模式**运行时**真值（回显源 = host 推送的 `chat_archive_mode`，初值 'full' = 内核缺省）。
-   *
-   * 只用于**留存按钮文案**（manual 模式按钮兼做归档触发 ⇒ 文案必须说清做了两件事）。
-   * ⚠️ 不可改用持久偏好值：偏好保存后运行时可能顺延未生效，文案会在顺延窗口内说谎。
-   */
-  let currentArchiveMode: ArchiveMode = 'full';
-
-  /**
-   * 渲染历史菜单（对 session_list_data 的应答）：复用 treedd 组件——
-   * 条目为 .treedd__item（id=sessionId，点击走 initDropdowns 选择委托加载会话并收起）；
-   * 内嵌动作（span，点击 stopPropagation 阻断选择委托，菜单保持展开）；
-   * 空态为非 item 文本（委托不命中，纯展示）。
-   *
-   * **分组形态（留存区）**：列表只有一份数据，分组切换是**前端过滤**——
-   * `sessions` 全量 + `archivedIds` 标记，切 tab 只重渲染当前容器，不回 host 请求。
-   * 这样两个分组不可能出现「同一会话两边都有 / 两边都没有」的归属漂移，
-   * 也避免把菜单项集合变成两份（dropdown 的键盘导航取全部 `.treedd__item`，
-   * 多容器显隐会让方向键跳到不可见条目）。
-   *
-   * 分组视图的改变时机**只有两处**：① tab 点击（用户主动）；② 点历史按钮
-   * 重新打开浮层（新一轮浏览回到默认分组）。数据下发（含归档/移回后的
-   * 列表刷新）只按**当前视图**渲染——若在下发时机强制重置，留存区里点
-   * 「移回」会把用户踢回会话记录，连续管理被打断。
-   */
-  function renderHistoryMenu(
-    sessions: {
-      sessionId: string;
-      title: string;
-      updatedAt: string;
-      keyTopics?: string[];
-      summary?: string;
-      messageCount?: number;
-    }[],
-    archivedIds: string[],
-  ): void {
-    lastSessionList = sessions;
-    lastArchivedIds = archivedIds;
-    renderHistoryView(); // 按当前视图渲染新数据（视图重置不挂下发时机，见上）
-  }
-
-  /** 切换分组并同步 tab 高亮（含 aria-selected），随后重渲染条目 */
-  function setSessionListView(view: 'recent' | 'archived'): void {
-    sessionListView = view;
-    historyTabRecent.classList.toggle('is-active', view === 'recent');
-    historyTabArchived.classList.toggle('is-active', view === 'archived');
-    historyTabRecent.setAttribute('aria-selected', String(view === 'recent'));
-    historyTabArchived.setAttribute('aria-selected', String(view === 'archived'));
-    renderHistoryView();
-  }
-
-  /** FD-3-A 元数据匹配：标题 / 主题 / 摘要任一命中即匹配（大小写不敏感，空词恒真） */
-  function matchesSessionSearch(s: (typeof lastSessionList)[number], q: string): boolean {
-    if (!q) return true;
-    const haystack = [s.title, s.summary ?? '', (s.keyTopics ?? []).join(' ')].join(' ');
-    return haystack.toLowerCase().includes(q);
-  }
-
-  /** 渲染当前分组的条目（单容器，一次只渲染一组；搜索词在组内二次过滤）。
-   *
-   * **按日期分组（2026-10-17）**：条目在日期组头下按 sessionId 前缀归组——
-   * 日期真源 = sessionId 前缀（契约锚定内核 `buildSessionId`/`splitSessionId`
-   * 「YYYY-MM-DD-name」格式，与 `fmtRelativeTime` 末尾 `slice(0, 10)` 同款派生，
-   * **不新加协议字段**——加了就是第二真相源，格式调整时必漂移）。
-   * 组头是**非 `.treedd__item` 的纯展示元素**：dropdown 键盘导航取全部
-   * `.treedd__item`，组头若长成 item 会让方向键跳到不可选中的组头。
-   * 组间按 ISO 日期降序（字符串可比，与 updatedAt 降序同向：最新活跃的日期组在前），
-   * 组内保持 updatedAt 降序（沿用下发顺序）。 */
-  function renderHistoryView(): void {
-    const archived = new Set(lastArchivedIds);
-    const q = sessionSearchQuery.trim().toLowerCase();
-    const visible = lastSessionList.filter((s) => {
-      const inGroup =
-        sessionListView === 'archived' ? archived.has(s.sessionId) : !archived.has(s.sessionId);
-      return inGroup && matchesSessionSearch(s, q);
-    });
-    // 留存区计数（0 条时不显数字，避免「留存区 0」的噪音）
-    historyArchivedCount.textContent =
-      lastArchivedIds.length > 0 ? ` ${lastArchivedIds.length}` : '';
-    historyMenu.textContent = '';
-    if (visible.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'session-history__empty';
-      // 搜索无匹配 ≠ 分组为空：两种空态语义不同，文案必须区分（否则搜不到会被误读成「分组是空的」）
-      empty.textContent = q
-        ? sessionListView === 'archived'
-          ? `留存区中没有匹配「${sessionSearchQuery.trim()}」的会话`
-          : `没有匹配「${sessionSearchQuery.trim()}」的会话`
-        : sessionListView === 'archived'
-          ? '留存区还是空的——把不想看的会话移进来，内容不会丢'
-          : '暂无历史会话，新建会话后自动归档到此';
-      historyMenu.appendChild(empty);
-      return;
-    }
-    // 按日期前缀分组（Map 保插入序，再按日期降序排组——ISO 日期字符串可直接比较）
-    const byDay = new Map<string, typeof visible>();
-    for (const s of visible) {
-      const day = s.sessionId.slice(0, 10);
-      const arr = byDay.get(day);
-      if (arr) arr.push(s);
-      else byDay.set(day, [s]);
-    }
-    for (const [day, items] of [...byDay].sort(([a], [b]) => b.localeCompare(a))) {
-      const head = document.createElement('div');
-      head.className = 'session-history__date-group';
-      // 会话是多个 turn 的集合，「N 条会话」的「条」易误读为消息条数（行内「· N 条」才是消息数）
-      // ⇒ 2026-10-18 真机反馈订正：日期头只计数不量词
-      head.textContent = `${day} · ${items.length} 会话`;
-      historyMenu.appendChild(head);
-      for (const s of items) {
-        renderHistoryItem(s);
-      }
-    }
-  }
-
-  /** 渲染单条历史会话条目（treedd__item 富内容：标题 + 时间/计数 + 归档 + 删除） */
-  function renderHistoryItem(s: (typeof lastSessionList)[number]): void {
-    const item = document.createElement('button');
-    item.className = 'treedd__item';
-    item.dataset.treeddId = s.sessionId; // treedd 选择委托据此回调 __historyOnSelect
-    item.setAttribute('role', 'menuitem');
-    // 悬停摘要（原生 title，与 keepBtn 同款惯例）：summary/keyTopics 已随列表下发
-    // （FD-3-A 搜索域复用，零新协议），浏览态也可感知；截断防长摘要炸 tooltip
-    const topics = (s.keyTopics ?? []).slice(0, 5).join(' · ');
-    const brief = (s.summary ?? '').slice(0, 100) + ((s.summary ?? '').length > 100 ? '…' : '');
-    const tip = [topics, brief].filter(Boolean).join('\n');
-    if (tip) item.title = tip;
-    const titleEl = document.createElement('span');
-    titleEl.className = 'session-history__item-title';
-    titleEl.textContent = s.title; // textContent 防注入
-    const timeEl = document.createElement('span');
-    timeEl.className = 'session-history__item-time';
-    // 计数并槽（messageCount 缺省 = 旧会话未生成，只显示时间不显示 0）
-    timeEl.textContent =
-      typeof s.messageCount === 'number' && s.messageCount > 0
-        ? `${fmtRelativeTime(s.updatedAt)} · ${s.messageCount} 条`
-        : fmtRelativeTime(s.updatedAt);
-    // 分组动作：会话记录 → 移入留存区；留存区 → 移回会话记录。
-    // 两者都**不是删除**（数据一字不动），故图标与文案都不用删除类语言。
-    // 用 span 而非 button：treedd__item 本身是 button，HTML 规范 button 内不可嵌套 button
-    const keepBtn = document.createElement('span');
-    keepBtn.className = 'session-history__item-keep';
-    // 文案随归档模式：manual 模式下本按钮**兼做归档触发**（顺带生成会话摘要），
-    // 文案必须说全两件事——只写「移入留存区」等于瞒报了一次 LLM 调用（本项目禁 UI 说谎）。
-    // full 模式文案一字不动（自动归档已在离场时跑过；按钮纯留存）。
-    keepBtn.title =
-      sessionListView === 'archived'
-        ? '移回会话记录'
-        : currentArchiveMode === 'manual'
-          ? '归档并留存：生成会话摘要并移入留存区（内容不丢，只是换个位置）'
-          : '移入留存区（内容不丢，只是换个位置）';
-    keepBtn.setAttribute('role', 'button');
-    keepBtn.setAttribute('aria-label', keepBtn.title);
-    keepBtn.innerHTML = getIconSvg(sessionListView === 'archived' ? 'restore' : 'archive', 14, 14);
-    keepBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      vscode.postMessage({
-        type: sessionListView === 'archived' ? 'restore_session' : 'archive_session',
-        sessionId: s.sessionId,
-      });
-    });
-    // 删除用 span 而非 button：同上（button 内不可嵌套 button）
-    const delBtn = document.createElement('span');
-    delBtn.className = 'session-history__item-del';
-    delBtn.title = '删除会话';
-    delBtn.setAttribute('role', 'button');
-    delBtn.setAttribute('aria-label', '删除会话');
-    delBtn.innerHTML = getIconSvg('trash', 14, 14);
-    delBtn.addEventListener('click', (e) => {
-      e.stopPropagation(); // 阻断冒泡到 menu 的选择委托，仅触发删除（菜单保持展开可连续删）
-      vscode.postMessage({ type: 'delete_session', sessionId: s.sessionId });
-    });
-    item.append(titleEl, timeEl, keepBtn, delBtn);
-    historyMenu.appendChild(item);
-  }
-
-  // 分组 tab 切换：**只用点击 + 原生 Enter/Space 激活**——
-  // ⚠️ 不得依赖 Tab 键移动焦点：dropdown 把菜单内 Tab 处理为「收起菜单」，
-  // 依赖它会导致切 tab 时浮层关闭。
-  historyTabRecent.addEventListener('click', () => setSessionListView('recent'));
-  historyTabArchived.addEventListener('click', () => setSessionListView('archived'));
-  // FD-3-A 搜索：输入即过滤（纯前端，数据已在内存），作用于当前分组视图；
-  // 数据下发（归档/移回后的刷新）不清词——用户常在搜索结果上连续操作
-  historySearch.addEventListener('input', () => {
-    sessionSearchQuery = historySearch.value;
-    renderHistoryView();
+  // 历史菜单（会话记录 / 留存区）：渲染、分组与搜索状态收口于 historyMenuView
+  // （HOST-SPLIT-1 chatView 第 2 刀，域外置工厂；开合/外部收起/Escape/条目委托由
+  // initDropdowns treedd 组件管理，本域只管数据——协作与分组形态论证见该模块头）。
+  // tab/search 监听随元素归属入容器（方案 §2.2 判据）；historyBtn 监听留本文件：
+  // 同元素双监听器（treedd 开合）顺序敏感，原位置零变化。
+  const historyMenuApi = createHistoryMenuView({
+    document,
+    menuEl: historyMenu,
+    tabRecent: historyTabRecent,
+    tabArchived: historyTabArchived,
+    archivedCountEl: historyArchivedCount,
+    searchInput: historySearch,
+    postMessage: (msg) => vscode.postMessage(msg),
   });
+
   // 标题条按钮：改名笔 / 新建「＋」（分叉统一收敛到消息底部——任意 LLM 回答处可分叉，标题条不再冗余入口）
   renameSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'rename_request' }));
   newSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'new_session' }));
-  // 历史按钮：开合由 treedd 管理（initDropdowns），本层只负责「打开时请求最新列表」——
-  // 二者协作不耦合（SSOT 单一职责：treedd 管交互状态、本层管数据）
+  // 历史按钮：开合由 treedd 管理（initDropdowns），本层只负责「打开时重置浏览态并请求最新列表」
+  //（动作体收口于容器 openFresh；「视图重置挂打开时机、不挂数据下发」的论证见容器模块头 ②）
   historyBtn.addEventListener('click', () => {
-    // 视图重置挂「打开浮层」时机（新一轮浏览回默认分组），不挂数据下发——
-    // 否则归档/移回后的列表刷新会把用户踢出当前分组（见 renderHistoryMenu 注释）
-    setSessionListView('recent');
-    // 新一轮浏览同样清搜索词（与视图重置同批：都是「重新开始浏览」语义）
-    sessionSearchQuery = '';
-    historySearch.value = '';
-    vscode.postMessage({ type: 'session_list' });
+    historyMenuApi.openFresh();
   });
 
   // 任务常驻条（合并单轨）：点击头部展开/收起锚定浮层；浮层轻交互——
@@ -7417,7 +7210,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   skillPickerList.className = 'treedd__list';
 
   /** 菜单匹配（空词恒真、大小写不敏感）：名称 / 描述任一命中即匹配
-   * （形状同会话搜索 matchesSessionSearch；列表仅数十条，同步过滤不引入防抖） */
+   * （形状同历史菜单的元数据匹配，见 historyMenuView；列表仅数十条，同步过滤不引入防抖） */
   function matchesSkillSearch(s: (typeof skillOptions)[number], q: string): boolean {
     if (!q) return true;
     return `${s.name} ${s.description ?? ''}`.toLowerCase().includes(q);
