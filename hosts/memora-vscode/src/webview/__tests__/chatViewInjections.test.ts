@@ -1,5 +1,5 @@
 /**
- * 注入型上下文（`HOST-CTX-4`）webview 侧验收：chip / 汇总徽记 / 发送 / 复位
+ * 注入型上下文（`HOST-CTX-4`）webview 侧验收：chip / 汇总回执 / 发送 / 复位
  *
  * 守的是拍板四问在 webview 的落点：
  *   ① 身份判据 = 来源枚举（同 source 幂等一枚，不按内容哈希）；
@@ -18,7 +18,7 @@ import { dispatch, mountChatView } from './helpers/chatViewTestEnv.js';
 const injectionChips = (): NodeListOf<HTMLElement> =>
   document.querySelectorAll('#refChips .injection-chip');
 
-const badge = (): HTMLElement => document.getElementById('injectionBadge') as HTMLElement;
+const receipt = (): HTMLElement => document.getElementById('occInjection') as HTMLElement;
 
 /** 走一遍「输入框有内容 → 点发送」的标准动作 */
 function sendText(text: string): void {
@@ -130,19 +130,19 @@ describe('发送：只声明通道，不携带内容（HOST-CTX-4 ④）', () =>
       type: 'injection_summary',
       summary: { segments: [{ source: 'problems', injected: true, tokens: 120 }], total: 120 },
     });
-    expect(badge().hidden).toBe(false);
+    expect(receipt().hidden).toBe(false);
     sendText('再来一轮');
-    expect(badge().hidden).toBe(true);
-    expect(badge().textContent).toBe('');
+    expect(receipt().hidden).toBe(true);
+    expect(receipt().textContent).toBe('');
   });
 });
 
-describe('本轮注入汇总徽记（HOST-CTX-4 ②）', () => {
+describe('本轮注入回执行（HOST-CTX-4 ② · 圆环 hover 卡片底部）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
 
-  it('发送后回推 → 徽记显「本轮注入 ≈N」，title 出分项明细', () => {
+  it('发送后回推 → 回执行显「本轮注入 N」，分项明细同屏（不再藏 title）', () => {
     mountChatView();
     dispatch({
       type: 'injection_summary',
@@ -154,24 +154,24 @@ describe('本轮注入汇总徽记（HOST-CTX-4 ②）', () => {
         total: 3378,
       },
     });
-    expect(badge().hidden).toBe(false);
-    expect(badge().textContent).toBe('本轮注入 ≈3.4k');
-    // 分项归因（圆环只示总量，这里示「贵在哪」）
-    expect(badge().title).toContain('当前文件正文 3258');
-    expect(badge().title).toContain('工作区诊断 120');
+    expect(receipt().hidden).toBe(false);
+    // 数字口径与卡片其余行统一（fmtTokens 精确式：非整千走千分位）
+    expect(receipt().textContent).toBe(
+      '本轮注入 3,378（当前文件正文 3,258 · 工作区诊断 120）· 发送时刻估算，下一轮覆盖',
+    );
   });
 
-  it('本轮零注入 → 徽记保持隐藏（「≈0」是纯噪音且像「挂了没生效」）', () => {
+  it('本轮零注入 → 回执行保持隐藏（「本轮注入 0」是纯噪音且像「挂了没生效」）', () => {
     mountChatView();
     dispatch({
       type: 'injection_summary',
       summary: { segments: [{ source: 'active-file', injected: false }], total: 0 },
     });
-    expect(badge().hidden).toBe(true);
-    expect(badge().textContent).toBe('');
+    expect(receipt().hidden).toBe(true);
+    expect(receipt().textContent).toBe('');
   });
 
-  it('清空会话（clear_ok）→ 注入 chip 与徽记一并复位（不跨会话残留）', () => {
+  it('清空会话（clear_ok）→ 注入 chip 与回执行一并复位（不跨会话残留）', () => {
     mountChatView();
     dispatch({ type: 'add_injection', source: 'problems' });
     dispatch({
@@ -179,9 +179,21 @@ describe('本轮注入汇总徽记（HOST-CTX-4 ②）', () => {
       summary: { segments: [{ source: 'problems', injected: true, tokens: 120 }], total: 120 },
     });
     expect(injectionChips().length).toBe(1);
-    expect(badge().hidden).toBe(false);
+    expect(receipt().hidden).toBe(false);
     dispatch({ type: 'clear_ok' });
     expect(injectionChips().length).toBe(0);
-    expect(badge().hidden).toBe(true);
+    expect(receipt().hidden).toBe(true);
+  });
+
+  it('回执行挂圆环 hover 卡片内、状态行无徽记（2026-10-21 真机反馈后的防回潮守卫）', () => {
+    mountChatView();
+    dispatch({
+      type: 'injection_summary',
+      summary: { segments: [{ source: 'problems', injected: true, tokens: 120 }], total: 120 },
+    });
+    // 承载位 = 圆环 hover 卡片（预算域），不在状态行（稳定身份徽章的行）
+    expect(receipt().closest('.context-ring__tip')).not.toBeNull();
+    // 旧徽记整模移除：状态行再出现数字 pill 即回潮
+    expect(document.getElementById('injectionBadge')).toBeNull();
   });
 });

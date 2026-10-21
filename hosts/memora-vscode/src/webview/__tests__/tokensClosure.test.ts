@@ -562,6 +562,10 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   // line- 71→72：web_search 裁决证据块（.round-block__search-evidence）顶部分隔线
   // var(--line-solid)（与 .round-block__tool-summary 同层但加分隔），实数经
   // scripts/count-token-refs.mjs 实锤同步（2026-10-17 web_search_result 证据接入宿主重放）。
+  // line- 74→75：本轮注入回执行（.context-ring__injection）卡片底部分隔线
+  // border-top: var(--line-solid)（chatStyles）新增 1 处——CTX-4 真机反馈后徽记由状态行
+  // 迁入圆环 hover 卡片（旧 .injection-badge 无 line 消费，净 +1），实数经
+  // scripts/count-token-refs.mjs 实锤同步（2026-10-21）。
   const EXPECTED = {
     'z-': 15, // HOST-NAV-1：大纲条 var(--z-float)（chatStyles）+1（2026-10-20）
     'lh-': 49, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1
@@ -571,8 +575,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     'op-': 18,
     'icon-': 17,
     'dot-': 22,
-    'line-': 74, // MEM-EVENT-2：工具行内命中块 border-top: var(--line-solid)（chatStyles）+1；
-    //             HOST-NAV-1：大纲条浮层 border: var(--line-input)（chatStyles）再 +1（2026-10-20）
+    'line-': 75, // MEM-EVENT-2：工具行内命中块 border-top: var(--line-solid)（chatStyles）+1；
+    //             HOST-NAV-1：大纲条浮层 border: var(--line-input)（chatStyles）再 +1（2026-10-20）；
+    //             CTX-4 真机反馈：本轮注入回执行 .context-ring__injection 分隔线 +1（2026-10-21）
     'sq-': 47,
     'dim-': 21, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）
   } as const;

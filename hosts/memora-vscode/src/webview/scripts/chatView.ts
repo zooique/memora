@@ -195,8 +195,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 诊断进信封」，与硬约束④「不泛化」直接冲突；要再用就重新挂（一次点击）。
    */
   let currentInjections: Exclude<InjectionSource, 'active-file'>[] = [];
-  /** 状态行「本轮注入 ≈N」徽记（HOST-CTX-4 ② 的呈现落点；发送后一次性回执） */
-  const injectionBadge = document.getElementById('injectionBadge') as HTMLElement | null;
+  /**
+   * 圆环 hover 卡片底部「本轮注入」回执行（HOST-CTX-4 ② 的呈现落点；发送后一次性回执）
+   *
+   * 2026-10-21 由状态行徽记迁入（真机反馈）：状态行是稳定身份徽章（角色 / 能力）的行，
+   * 一枚随挂载忽隐忽现的数字 pill 混在其中突兀；而它是**预算归因数**，与圆环同属预算域——
+   * 圆环「常驻一瞥 + hover 精确」，回执归「精确」层，分项明细同屏可见（不再藏 title）。
+   * ⚠️ 圆环本体在选中 Provider 前 hidden ⇒ 回执行同理不显示：无「当前模型窗口」可依托时，
+   * 预算数没有可证参照（迁移前徽记在状态行恒可见，此差异有意接受）。
+   */
+  const injectionReceipt = document.getElementById('occInjection') as HTMLElement | null;
   /**
    * 活动文件 chip 徽记上的本轮注入量（`injection_summary` 里 active-file 分项的投影）
    *
@@ -5507,11 +5515,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 视图复位 = 队列投影清空（新会话无插话排队，防残留长度误拦 sendMessage 预检）
     _pendingQueueItems = [];
     // 注入挂载与本轮回执一并复位（HOST-CTX-4 ③）：清空 / 切会话后旧的注入 chip 与本轮
-    // 注入量都是上一会话的残留，留着会把「本轮注入 ≈N」按到新会话第一轮头上。
+    // 注入量都是上一会话的残留，留着会把「本轮注入 N」按到新会话第一轮头上。
     currentInjections = [];
     activeFileTokens = undefined;
     pendingActiveFileTokens = undefined;
-    hideInjectionBadge();
+    hideInjectionReceipt();
     renderAttachmentRow();
     // 丢弃缓冲同步清空：跨会话残留会让新会话首帧消费条目被误吞（不上屏 = 内容蒸发）
     _pendingDiscardedBuffer = [];
@@ -6083,11 +6091,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       renderAttachmentRow();
     } else if (msg.type === 'injection_summary') {
       // 本轮注入汇总（发送后一次性回执）：先预备活动文件分项的数字给紧随的投影认领，
-      // 再把合计与分项写进状态行徽记（分项明细进 title，hover 可辨）。
+      // 再把合计与分项写进圆环 hover 卡片底部的回执行（分项明细同屏，不再藏 title）。
       pendingActiveFileTokens = msg.summary.segments.find(
         (s) => s.source === 'active-file' && s.injected,
       )?.tokens;
-      renderInjectionBadge(msg.summary);
+      renderInjectionReceipt(msg.summary);
     } else if (msg.type === 'plan_update') {
       // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（renderPlanBoard 自建/更新容器）
       renderPlanBoard(msg.items);
@@ -6565,7 +6573,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     currentInjections = [];
     activeFileTokens = undefined;
     pendingActiveFileTokens = undefined;
-    hideInjectionBadge();
+    hideInjectionReceipt();
     // 引用发送后处置（判据 = chip 的 pinned 属性，SSOT）：未钉住的即消费清除（避免静默
     // 带入后续无关消息）；钉住的常驻——下一轮仍随消息作为上下文发出（用户显式 🔒 决定，
     // 非隐式残留）。每轮发送照旧带全部当前引用（pinned + 未钉），模型每轮要完整上下文。
@@ -7252,9 +7260,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 注入来源的**显示短名**（含 active-file——徽记 title 要按源归因，活动文件也是一源）
+   * 注入来源的**显示短名**（含 active-file——回执行要按源归因，活动文件也是一源）
    *
-   * ⚠️ 这是短名的**唯一真源**：chip 的可见名与徽记 title 的分项名**同读这一张表**——
+   * ⚠️ 这是短名的**唯一真源**：chip 的可见名与回执行的分项名**同读这一张表**——
    * 各写一套必然出现「chip 叫 A、回执里叫 B」的漂移（本文件曾短暂存在两份「工作区诊断」，
    * 2026-10-21 审查合并于此）。只登记**已落地**的源。
    */
@@ -7263,12 +7271,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     problems: '工作区诊断',
   };
 
-  /** 徽记归零（新一轮发送 / 清空会话 / 本轮无注入）：不做「≈0」这种无信息显示 */
-  function hideInjectionBadge(): void {
-    if (!injectionBadge) return;
-    injectionBadge.hidden = true;
-    injectionBadge.textContent = '';
-    injectionBadge.removeAttribute('title');
+  /** 回执归零（新一轮发送 / 清空会话 / 本轮无注入）：不做「本轮注入 0」这种无信息显示 */
+  function hideInjectionReceipt(): void {
+    if (!injectionReceipt) return;
+    injectionReceipt.hidden = true;
+    injectionReceipt.textContent = '';
   }
 
   /**
@@ -7337,29 +7344,30 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 状态行「本轮注入 ≈N」徽记（HOST-CTX-4 ② 的呈现落点）
+   * 圆环 hover 卡片底部「本轮注入」回执行（HOST-CTX-4 ② 的呈现落点）
    *
    * 一次性回执：只在**发送后**由 `injection_summary` 驱动，下一轮发送 / 清空会话时清。
-   * 显示判据 = 至少一个分项真的注入了内容且合计 > 0——「本轮注入 ≈0」是纯噪音，
-   * 且会让人误以为「挂了但没生效」。分项明细进 title（与圆环「常驻一瞥 + hover 精确」同款分层）。
+   * 显示判据 = 至少一个分项真的注入了内容且合计 > 0——「本轮注入 0」是纯噪音，
+   * 且会让人误以为「挂了但没生效」。
+   * 分项明细**同屏可见**（徽记时代只能进 title）：hover 卡片本就是「精确」层，
+   * 明细没有理由再藏一层；数字口径与卡片其余行统一走 `fmtTokens`（精确式）。
    */
-  function renderInjectionBadge(summary: InjectionSummary): void {
-    if (!injectionBadge) return;
+  function renderInjectionReceipt(summary: InjectionSummary): void {
+    if (!injectionReceipt) return;
     // 类型谓词收窄（不是「过滤后再取」）：分项名后跟的必须是 number，若过滤条件改松，
     // `${s.tokens}` 会静默印出 `undefined`——收窄后 tsc 直接拦住。
     const injected = summary.segments.filter(
       (s): s is InjectionSegment & { tokens: number } => s.injected && typeof s.tokens === 'number',
     );
     if (summary.total <= 0 || injected.length === 0) {
-      hideInjectionBadge();
+      hideInjectionReceipt();
       return;
     }
     const detail = injected
-      .map((s) => `${INJECTION_SEGMENT_LABELS[s.source]} ${s.tokens}`)
+      .map((s) => `${INJECTION_SEGMENT_LABELS[s.source]} ${fmtTokens(s.tokens)}`)
       .join(' · ');
-    injectionBadge.textContent = `本轮注入 ≈${formatTokensShort(summary.total)}`;
-    injectionBadge.title = `本轮注入约 ${summary.total} token（估算）：${detail}。数值只在发送时刻量得准，下一轮发送覆盖`;
-    injectionBadge.hidden = false;
+    injectionReceipt.textContent = `本轮注入 ${fmtTokens(summary.total)}（${detail}）· 发送时刻估算，下一轮覆盖`;
+    injectionReceipt.hidden = false;
   }
 
   /** 构建/清空附件行：**活动文件 chip + 注入 chip + 引用 chip** 共用一个容器（`#refChips`）。

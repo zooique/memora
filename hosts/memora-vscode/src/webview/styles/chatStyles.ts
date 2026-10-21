@@ -1303,8 +1303,9 @@ export const chatStyles = `
     pointer-events: none;
   }
   /* hover/聚焦弹卡片：白底浮层，上为分层明细文字（含条数 · token · 占比 · 角色包比例）、
-   * 下为占用构成条（HOST-S3-2，2026-10-18 由状态行常驻移入卡片底部——圆环与构成条同吃
-   * context_occupancy，输入条不双渲染同一信号）。
+   * 中为占用构成条（HOST-S3-2，2026-10-18 由状态行常驻移入卡片底部——圆环与构成条同吃
+   * context_occupancy，输入条不双渲染同一信号）、最底为本轮注入回执行（HOST-CTX-4 ②，
+   * 2026-10-21 由状态行徽记迁入）。
    * 向上弹出（bottom 贴圆环上沿）：底部是输入区/面板边界，向下展开会撑出外部滚动条。
    * 宽度弹性：max-content 由最长一行自然决定（贴合内容不留白），max-width 兜底防极端长数撑太宽 */
   .context-ring__tip {
@@ -1359,6 +1360,20 @@ export const chatStyles = `
   .context-segments__seg--input { background: var(--occ-input); }
   .context-segments__seg--output { background: var(--occ-output); }
   .context-segments__seg--free { background: transparent; }
+  /* 本轮注入回执行（HOST-CTX-4 ②，2026-10-21 由状态行徽记迁入卡片底部）：
+   * 迁移理由（真机反馈「突然出现在这里有点奇怪」）：状态行是稳定身份徽章（角色 / 能力）
+   * 的行，一枚随挂载忽隐忽现的数字 pill 混在其中突兀；而它是预算归因数，与圆环同属
+   * 预算域——圆环「常驻一瞥 + hover 精确」，回执归「精确」层，分项明细同屏可见
+   * （徽记时代只能进 title）。
+   * 形态 = 卡片底部分节：细线分隔 + 次要色（它是瞬态回执，不是卡片常驻主体），无交互。
+   * 隐藏时卡片与迁移前完全一致（零视觉增量）；分隔线走 --line-solid（面板边框族，
+   * 比卡片自身描边 --line-input 更弱，不与卡片边界争读）。 */
+  .context-ring__injection {
+    margin-top: var(--sp-3, 8px);
+    padding-top: var(--sp-2, 6px);
+    border-top: var(--line-solid);
+    color: var(--text-secondary, #9aa0a6);
+  }
   /* 唯一视觉卡片：边框 + 圆角 + 阴影 + 背景（全部集中在此） */
   /* 🔴 [hidden] 覆盖（2026-10-05 真机实锤）：display:flex 会覆盖 HTML hidden 属性
    * （hidden 的 display:none 来自 UA 样式表，author 层任何 display 声明都赢它）——
@@ -1542,24 +1557,6 @@ export const chatStyles = `
     text-overflow: ellipsis;
     user-select: none;
   }
-  /* 本轮注入汇总徽记（HOST-CTX-4 ②）：状态行、上下文圆环左侧，与角色 / 能力徽章同处一行。
-   * 形态纪律：**弱化且不与圆环同形**——它是「发送后的一次性回执」（下一轮覆盖、复位清），
-   * 而圆环是常驻进度信号；若做成带底色的强调块，一行里会出现两个「进度指示」互相争读，
-   * 这也是它用中性 surface-code + 次要色、不给边框、不做 hover 态的原因（非交互控件）。
-   * 分项明细不在常驻面呈现（空间不够），只在 title 里——与 S3-2「常驻一瞥 + hover 精确」
-   * 同款分层；真机若显示状态行挤，回退方向是把它并进圆环的 hover 卡片。 */
-  .injection-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--sp-hair, 1px) var(--sp-2, 6px);
-    font-size: var(--font-xs, 10px);
-    color: var(--text-secondary, #9aa0a6);
-    background: var(--surface-code, rgba(127, 127, 127, 0.15));
-    border-radius: var(--radius-pill, 999px);
-    white-space: nowrap;
-    user-select: none;
-  }
-
   /* 润色按钮（图标化，弱化样式） */
   .polish-btn-icon {
     display: inline-flex;

@@ -121,10 +121,9 @@ const HTML = `
             <!-- 能力徽章：同polishBtn，消费侧 null 守卫 ⇒ 缺它不崩但恒不渲染＝静默失测。 -->
             <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
           </div>
-          <!-- ④ 预算可视化：状态行右端上下文占用圆环；构成条在圆环 hover 卡片内（2026-10-18 移入，
-               镜像生产 chatPanel.ts：卡片 = 明细文字 + 构成条，输入条只留圆环单信号） -->
-          <!-- 本轮注入汇总徽记（HOST-CTX-4 ②，镜像生产 chatPanel.ts：与圆环同处状态行、紧邻其左） -->
-          <span id="injectionBadge" class="injection-badge" hidden></span>
+          <!-- ④ 预算可视化：状态行右端上下文占用圆环；构成条 + 本轮注入回执行都在圆环 hover
+               卡片内（2026-10-18 移入 / 2026-10-21 迁入，镜像生产 chatPanel.ts：卡片 = 明细文字 +
+               构成条 + 回执行，输入条只留圆环单信号） -->
           <div id="contextOccupancy" class="context-ring" hidden>
             <svg class="context-ring__svg" viewBox="0 0 40 40" aria-hidden="true">
               <circle class="context-ring__track" cx="20" cy="20" r="16" />
@@ -134,6 +133,8 @@ const HTML = `
             <div class="context-ring__tip" id="occTip" role="tooltip">
               <div class="context-ring__tip-text" id="occTipText"></div>
               <div id="occSegments" class="context-segments" hidden></div>
+              <!-- 本轮注入回执行（HOST-CTX-4 ②，镜像生产 chatPanel.ts：2026-10-21 由状态行徽记迁入卡片底部） -->
+              <div id="occInjection" class="context-ring__injection" hidden></div>
             </div>
           </div>
         </div>

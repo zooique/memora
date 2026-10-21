@@ -4919,8 +4919,8 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           </div>
         </div>
         <!-- Row 2 · 状态行：左角色/能力徽章 + 右上下文占用圆环（两端分布；占用属状态信息归本行，
-             不干扰 Row 1 主操作；hover/聚焦**向上**弹卡片出「分层明细文字 + 占用构成条」，
-             避免向下展开挤压面板底部）
+             不干扰 Row 1 主操作；hover/聚焦**向上**弹卡片出「分层明细文字 + 占用构成条 +
+             本轮注入回执行」，避免向下展开挤压面板底部）
              角色徽章 = button（可点跳转角色管理视图，open_roles → memora.openRoles）：
              外观与旧 span 徽章完全一致（零常驻视觉增量，仅 hover 反馈 + title 提示可点），
              id 保持 currentRoleBadge 不变 ⇒ 现有 chat_role_pack 消费链路（含测试断言）零改动。 -->
@@ -4929,16 +4929,13 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             <button id="currentRoleBadge" class="role-badge" type="button" title="点击管理角色包"></button>
             <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
           </div>
-          <!-- 本轮注入汇总徽记（HOST-CTX-4 ②）：与圆环同处状态行、紧邻其左——「本轮注入 ≈N」
-               是**发送后**才有的一次性回执（token 数只有发送时刻量得准），下一轮发送覆盖、
-               复位清。分项明细进 title（hover 可辨），与 S3-2「常驻一瞥 + hover 精确」同款分层。 -->
-          <span id="injectionBadge" class="injection-badge" hidden></span>
           <!-- 上下文占用圆环：常驻不占行，非噪点；首帧由 chat_providers 渲染所选模型容量上限，
                真实分层占用由首轮后 context_occupancy 覆盖。
-               hover 卡片 = 分层明细文字（上）+ 占用构成条（下）。构成条（HOST-S3-2）2026-10-18
-               由状态行常驻**移入卡片底部**：圆环（总量占比）与构成条（分段构成）同吃
-               context_occupancy，在输入条并排 = 同源信号双渲染（真机反馈「功能冲突」）⇒
-               输入条只留圆环一个进度信号，构成一瞥改驻 hover 卡片，能力不撤。 -->
+               hover 卡片 = 分层明细文字（上）+ 占用构成条（中）+ 本轮注入回执行（最下）。
+               构成条（HOST-S3-2）2026-10-18 由状态行常驻**移入卡片底部**：圆环（总量占比）与
+               构成条（分段构成）同吃 context_occupancy，在输入条并排 = 同源信号双渲染
+               （真机反馈「功能冲突」）⇒ 输入条只留圆环一个进度信号，构成一瞥改驻 hover 卡片，
+               能力不撤。 -->
           <div id="contextOccupancy" class="context-ring" hidden>
             <svg class="context-ring__svg" viewBox="0 0 40 40" aria-hidden="true">
               <circle class="context-ring__track" cx="20" cy="20" r="16" />
@@ -4948,6 +4945,10 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             <div class="context-ring__tip" id="occTip" role="tooltip">
               <div class="context-ring__tip-text" id="occTipText"></div>
               <div id="occSegments" class="context-segments" hidden></div>
+              <!-- 本轮注入回执行（HOST-CTX-4 ②）：2026-10-21 由状态行徽记迁入卡片底部——
+                   状态行是稳定身份徽章的行，随挂载忽隐忽现的数字 pill 混入其中突兀（真机反馈）；
+                   而它是预算归因数、与圆环同域 ⇒ 回位 hover 卡片，分项明细同屏可见。 -->
+              <div id="occInjection" class="context-ring__injection" hidden></div>
             </div>
           </div>
         </div>
