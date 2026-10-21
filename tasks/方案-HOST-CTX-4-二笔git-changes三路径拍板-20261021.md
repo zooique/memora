@@ -83,7 +83,7 @@
 ## §9 实施预案（已开工，分笔；每笔门禁 + 变异）
 
 1. **第 1 笔（零行为变更）✅ 已落地（2026-10-21 · `9530c8d4`）**：`shared/injectionSourceMeta.ts` + 4 处命名改读单点 + problems 数据回填（新旧值逐字相同）；守卫 = 既有 chip/徽记/信封/QuickPick 测试零改动全绿（实测 5 套件 508 例 + 全量 84 文件 / 1467 passed / 2 skipped / EXIT=0，与基线逐字一致）；变异 = segmentLabel 施加即 2 红（回执 + chip name）、还原即绿；chip name 断言本次新增（原仅回执一面有覆盖）。**暴露缺口**：chatPanel max-lines 贴限 4546/4546，第 3 笔动它前须先拆域或零净增设计。
-2. **第 2 笔（采集器）**：`gitCollector.ts`（或 A 的 changesCollector）+ 纯 node 单测（spawn 注入式，`environmentProvider` 测试先例）；三道闸 + fail-closed 事实行（非 git 仓库 / git 缺失 / 超时）。
+2. **第 2 笔（采集器）✅ 已落地（2026-10-21 · `8038c431`）**：`gitCollector.ts`（拍板路径 C）+ 纯 node 单测（exec 注入式假执行器，不真跑 git）；三道闸 + fail-closed 事实行（非 git 仓库 / git 缺失 / 段执行失败 / 零改动）。守卫：12 例全绿 + 全量 85 文件 / 1479 passed / 2 skipped；变异 7 发全擒。spawn wrapper（第 3 笔）契约已写进 `GIT_COMMAND_WHITELIST` 注释。
 3. **第 3 笔（接线）**：协议枚举 +1（protocol.ts:203）+ QuickPick 关键字项（`chatPanel.ts:1055` 的 `injection?: 'problems'` 字面量同步拓宽）+ sendInput 采集（挂载只记 source、发送时刻取数）+ 信封块（`docContext` 成对 OPEN/CLOSE，`stripInjectedContextPrefix` 同步认新标记——第一笔踩过的点）+ `INJECTION_SEGMENT_LABELS`/`INJECTION_CHIP_META` 加源。
 4. **变异计划（≥5 发）**：三道闸各一（超限不截断即红）、fail-closed 摘除（非 git 仓库返空串即红）、枚举漏加（tsc 穷尽性红——`Record<InjectionSource,string>` 兜底）、接线断裂（挂载不发 `add_injection` 即红）、strip 漏认新标记（重放露出原文即红）。
 5. **真机验收四态**：非 git 仓库 / git 未安装（或 PATH 无 git）/ 大 diff 截断明示 / 用户手改 + 助手改动混合。
