@@ -264,7 +264,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 滞留，用户再点一次 → 宿主 pending 已 delete ⇒ 第二个 answer 静默丢弃（点了没反应）。
    * 等待态把「点了 → 下一张」显式化：按钮 disabled（防重复）+ 卡片降透明度（明示过渡）。
    *
-   * 🔴 显隐真源仍在宿主（chatPanel._settleConfirm）：本状态只改**按钮可用性与提示**，
+   * 🔴 显隐真源仍在宿主（确认协调器 `ConfirmCoordinator` 的收卡逻辑）：本状态只改**按钮可用性与提示**，
    * 绝不开关卡片——否则又回到「两个显隐写入点」（双源）。
    */
   let writeConfirmAwaitingNext = false;
@@ -6407,7 +6407,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * 🔴 真源已迁至宿主（2026-10-05 P5 落地 A）：卡片显隐只由本函数与 renderWriteConfirmCard
    * 两处**互斥**触发，且两处的内容源都是宿主消息——
-   * ① `write_confirm_request` ⇒ 覆盖渲染（队列还有下一条，宿主 _settleConfirm 不推 closed）
+   * ① `write_confirm_request` ⇒ 覆盖渲染（队列还有下一条，宿主协调器不推 closed）
    * ② `write_confirm_closed` ⇒ 收卡（队列已空）
    * 用户点击**不再**调本函数（改调 enterConfirmAwaitingNext），否则会造出第三处显隐写入点
    * 并造成「同步关卡 / 异步开卡」两帧空档（用户实测的闪烁，F1 重复提交窗口）。

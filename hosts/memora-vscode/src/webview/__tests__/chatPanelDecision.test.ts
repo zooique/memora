@@ -1,7 +1,7 @@
 /**
  * C2 决策记录宿主出口测试（方案 §6.6-C2：确认决议留痕）
  *
- * 覆盖 `_logDecision` 唯一发点的三路径行为：
+ * 覆盖宿主确认协调器 `ConfirmCoordinator._logDecision` 唯一发点的三路径行为：
  *   ① 用户批准 / 拒绝（write_confirm_answer）→ 时间线决策记录（kind:'decision'）；
  *   ② 超时自动拒 → 同构决策记录（level 保留 error 红条警示）；
  *   ③ 载荷纪律反向守卫：**不记载荷全文**（info.description 不得进 message）——
