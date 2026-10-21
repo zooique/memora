@@ -75,6 +75,7 @@
 
 1. **路径 = C**（推荐采纳）。理由 = §4 矩阵 + §5 对齐行；A/B 否决理由登记于台账。
 2. **采集器白名单含 `--cached`**：三口 `git status --porcelain` + `git diff` + `git diff --cached`；三边界（只读 / 用户触发 / 禁写操作）写进模块头。
+   - **订正（2026-10-22 硬化笔实测后追加）**：「三口」的**真实 args** = 固定开关前缀 + 子命令 —— `['-c','core.quotePath=false','-c','core.fsmonitor=false']` + 子命令，diff 两口再加 `['--no-color','--no-ext-diff','--no-textconv']`。理由是三条实测：中文路径被八进制转义（模型读不到）、`NO_COLOR` 挡不住 `color.diff=always` 且 ANSI 让 diff 切分退化（3 段→1 段）、仓库 config 的外部 diff 驱动 / fsmonitor 会被执行（「只读」此前名不副实）。前缀**禁参数化**（开放任意 `-c` = 可把 quotePath 换成 fsmonitor）。白名单仍靠「整组逐项相等」守卫，故固定前缀不是开放的 `-c` 口子。
 3. **三道闸**：文件 ≤20 / 单文件 diff ≤200 行 / 合计 ≤12K token，截断明示。
 4. **建命名 SSOT 单点** `shared/injectionSourceMeta.ts`（§6 建议采纳），第 1 笔零行为变更落地。
 5. **跨源总量兜底 = 登记缺口**（§7 建议采纳），不引总量软顶机制；git diff 闸单独设。
