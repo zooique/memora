@@ -526,8 +526,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * **五个依赖逐一说明（比前两刀多，须逐个设计）**：
    *   ① `getAgent` getter 委托（禁快照：`setAgent` 会替换 `_agent`）；
-   *   ② `isAskWaiting` **判据单点注入**——🔴 禁在域内重写 `phase/reason` 判据，
-   *      那会造成相位判据第二处 = SSOT 违例（判据真源在 chatPanel，另有 2 个调用点）；
+   *   ② `isAskWaiting` **判据单点注入**——🔴 禁在域内另立「是否 ask 等待」的守卫/分流判断，
+   *      那会造成相位判据第二处 = SSOT 违例（判据真源在 chatPanel，另有 2 个调用点）。
+   *      例外仅为 TS 类型收窄的 `state.phase === 'waiting'` 字面（`questions` 仅 waiting 变体
+   *      存在，`boolean` 返回值不收窄），详见 `AskDeps.isAskWaiting` 注释；`reason` 半句不重写；
    *   ③ `getTurnState` getter 委托（`_turnState` 每次投影被整体替换，必须读最新）；
    *   ④ `post` 同前两刀；
    *   ⑤ `runFlow` = 本类既有的 **18 行包装**（建 controller + 挂 `_currentFlow` + 同步错兜底），
@@ -3195,7 +3197,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const total = segments.reduce((sum, s) => sum + (s.tokens ?? 0), 0);
     // 先发汇总、再回推活动文件投影：chip 徽记读的是汇总里 active-file 分项，两条跨帧到达时
     // 先渲染成「无数字」再补上会闪一帧（同批发 + 顺序在先即无此窗口）。
-    // MUTATION-TEST: 临时对调顺序
     this.post({ type: 'injection_summary', summary: { segments, total } });
     // 用**本轮实际消费的那份快照**回推 chip：抹平「chip 显示的是切换瞬间的文件、
     // 真正发出去却是另一个」的窗口（force 绕去重——同状态也要让用户看到这一轮确实带了）。

@@ -100,7 +100,7 @@ import type { PendingQuestionDto, TurnState, ExtensionToWebviewMessage } from '.
 /** ask 域全部反向依赖（5 个，逐一按 §1.3 设计） */
 export interface AskDeps {
   getAgent: () => Agent | undefined;
-  /** 相位判据单点（chatPanel.isAskWaiting）——🔴 禁在域内重写判据（SSOT） */
+  /** 相位判据单点（chatPanel.isAskWaiting）——🔴 禁在域内另立守卫/分流判断（SSOT）；例外仅 TS 收窄的 `phase` 字面 */
   isAskWaiting: () => boolean;
   getTurnState: () => TurnState;
   post: (msg: ExtensionToWebviewMessage) => void;

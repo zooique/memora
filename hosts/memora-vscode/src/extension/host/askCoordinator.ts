@@ -36,8 +36,12 @@ export interface AskDeps {
   /**
    * 相位判据单点（`chatPanel.isAskWaiting`）
    *
-   * 🔴 **禁在本模块重写判据**（如 `phase === 'waiting' && reason === 'ask'`）：那是相位判据的
-   * 第二处 = SSOT 违例。判据真源与另外两个调用点都在 chatPanel，此处只消费。
+   * 🔴 **本模块不得另立「是否 ask 等待」的守卫/分流判断**（第二处判据 = SSOT 违例）：
+   * 判据真源与另外两个调用点都在 chatPanel，此处一律消费注入的 `isAskWaiting()`。
+   *
+   * 唯一例外 = **TS 类型收窄**（不算另立判据）：`TurnState` 是可辨识联合、`questions` 只存在于
+   * waiting 变体，访问前必须写 `state.phase === 'waiting'`（`boolean` 返回值不做收窄，注入替代不了）。
+   * 该字面只此半句；`reason === 'ask'` 的语义判断走注入判据，不在本模块重写。
    */
   isAskWaiting: () => boolean;
   /** 读**最新** `_turnState`（getter 委托——postTurnUpdate 每次投影整体替换该对象） */
@@ -128,10 +132,12 @@ export class AskCoordinator {
     this._timer = undefined; // 一次性触发
     if (this._pending.length === 0) return; // 已被回答/补充消费
     if (!this._deps.isAskWaiting()) return; // 已离开 waiting(ask)（异常/新流）；守卫用相位判据（不查 sessionManager.status）
-    // 提问原文从 _turnState.waiting.questions 读（统一读取源，不维护镜像）
+    // 提问原文从 _turnState.waiting.questions 读（统一读取源，不维护镜像）；
+    // `phase` 字面 = TS 收窄所必需（questions 仅 waiting 变体存在，见 AskDeps.isAskWaiting 注释），
+    // 不另写 `reason === 'ask'`——ask 语义由上方 isAskWaiting() 守卫 + 投影真源双保证
+    //（deriveTurnState 恒派生：pause/pausePending 分支不带 questions，questions 非空即 ask）
     const state = this._deps.getTurnState();
-    const pendingQ =
-      state.phase === 'waiting' && state.reason === 'ask' ? state.questions?.[0] : undefined;
+    const pendingQ = state.phase === 'waiting' ? state.questions?.[0] : undefined;
     this._pending = []; // 提问已超时消费（整体清空，非 splice 逐条弹出）
     const now = new Date().toISOString();
     this._deps.post({
