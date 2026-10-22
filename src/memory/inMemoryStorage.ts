@@ -1,7 +1,8 @@
 /**
  * 内存存储实现 — IMemoryStorage 的纯 JS 内存版。
  * 零依赖零 IO，用于单元测试、宿主注入前的临时占位、沙箱。不持久化（进程退出即丢失），
- * 仅限测试/开发；生产由宿主注入持久化实现（vscode 宿主默认 SQLite，SQLite 不可用时降级 JSON）。
+ * 仅限测试/开发；生产由宿主注入持久化实现（vscode 宿主默认 SQLite；SQLite 不可用且
+ * 尚未迁移时降级 JSON，已迁移则响亮失败——禁真源分叉，见宿主 `memoryStorage.ts`）。
  */
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';

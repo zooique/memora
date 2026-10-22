@@ -11,8 +11,9 @@
  * 被 security/pathGuard 生产消费 4 处；`unknown` 为兜底值（当前无工厂产出，供直接构造保留）。
  * 勿按旧注释去改分类集合。
  *
- * ⚠️ 与宿主 `LlmErrorCategory`（'connection'|'timeout'|'unknown'）**不是同一个联合**：
- * 后者是**流式 error chunk** 的分类（见 hosts/memora-vscode/src/shared/protocol.ts），本文件只管 MemoraError。
+ * ⚠️ 与 `LlmErrorCategory`（'connection'|'timeout'|'unknown'）**不是同一个联合**：
+ * 后者是**流式 error chunk** 的分类，唯一定义在 `src/agent/types.ts`（宿主
+ * `shared/protocol.ts` 的 error 变体以同值内联字面量复刻，改值须两处同步）；本文件只管 MemoraError。
  */
 
 type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'security' | 'unknown';

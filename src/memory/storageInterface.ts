@@ -2,7 +2,8 @@
  * 记忆存储接口 — Memora 内核与具体数据库实现的解耦边界
  *
  * 内核业务模块不依赖具体数据库：宿主实现此接口注入 Agent（vscode 宿主默认直接用内核
- * `createNodeSqliteStorage()`，SQLite 不可用时降级旧 JSON 实现）；测试用 InMemoryStorage；
+ * `createNodeSqliteStorage()`；SQLite 不可用时**仅当尚未迁移**才降级旧 JSON，已有 `.db`
+ * 则响亮失败——见宿主 `memoryStorage.ts`「禁数据分叉」）；测试用 InMemoryStorage；
  * 不注入时 Agent 内部用 InMemoryStorage 作 fallback（重启后数据丢失）。方法保持同步语义，
  * 调用方已有 await 调用仍安全。软删除语义：delete 写入 deletedAt，查询类方法自动过滤已删除记忆，
  * restore 恢复，purge 物理删，listDeleted/purgeExpired 管理回收站。
@@ -15,8 +16,8 @@ import type { Memory } from '@/memory/types.js';
  * ⚠️ 契约隐含假设（宿主实现须知）：同步语义要求单次调用低延迟。5.0.0 起内核自带
  * `createNodeSqliteStorage()`（node:sqlite 内建模块延迟加载，零三方依赖，WAL）——宿主优先用它，
  * 不必自引三方驱动。JSON 全量重写实现（记忆量增长时 upsert 触发全量 `JSON.stringify`，1 万条
- * 规模即达 MB 级单次同步 I/O，会阻塞事件循环）自 5.0.0 起降为「环境不支持 SQLite」时的降级档，
- * 不再是默认形态。InMemoryStorage 仅用于测试与未注入时 fallback。
+ * 规模即达 MB 级单次同步 I/O，会阻塞事件循环）自 5.0.0 起降为「环境不支持 SQLite **且
+ * 尚未迁移**」时的降级档，不再是默认形态（已迁移后不可用 = 响亮失败，禁真源分叉）。
  */
 export interface IMemoryStorage {
   /**
