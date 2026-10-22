@@ -2815,10 +2815,15 @@ describe('工具执行器（6 个工具）', () => {
 /**
  * run_command / kill_command 工具层（方案文档 §13.2 裁决链 + §14 后台能力）
  *
- * 命令构造纪律（实测教训 / CI 跨平台真红）：`node -e "<expr>"` 里的 `expr` 含 `()` 时，
- * 必须在 POSIX `sh` 下用双引号包裹——否则 `(` 被当成子 shell 元字符报
- * `Syntax error: "(" unexpected`、命令秒退（exit 2），连带退出码/超时断言全崩。
- * `cmd` 同样需引号防拆参。故非零/长驻命令统一写成 `node -e "process.exit(3)"` 形态。
+ * 命令构造纪律（双平台实证，勿再凭直觉改）：
+ *  - POSIX `sh`：`()` 是元字符 ⇒ 含 `()` 的 `node -e` 表达式**必须**双引号包裹，否则
+ *    报 `Syntax error: "(" unexpected`、命令秒退（exit 2），退出码/超时断言全崩。
+ *  - Windows `cmd`：把 `node -e` 表达式里的双引号**当字面量**传给 node ⇒ node 收到的是
+ *    字符串而非代码，静默 exit 0（不是崩溃，是最坏的「假成功」）⇒ cmd 下含 `()` 的表达式
+ *    **必须裸写**（cmd 不把 `()` 当元字符）。
+ *  - ⇒ 含 `()` 的表达式无单一跨平台形态，按 `process.platform` 分叉（win32 裸写 /
+ *    POSIX 加引号），同 `backgroundTasks.test.ts` / `loop.test.ts` 既有先例；
+ *    不含 `()` 的表达式（如 `process.exitCode=3`）两侧通吃，优先选它。
  */
 describe('run_command / kill_command（命令执行工具层）', () => {
   let tmpProject: string;
@@ -2832,10 +2837,13 @@ describe('run_command / kill_command（命令执行工具层）', () => {
   const OK_CMD = 'node -v';
   /** 工具层命令长度上限（对齐 run_code 的 RUN_CODE_CODE_MAX_LEN；测试按此构造超长命令） */
   const RUN_COMMAND_MAX_LEN_FOR_TEST = 50_000;
-  /** 跨平台非零退出命令 */
-  const FAIL_CMD = 'node -e "process.exit(3)"';
-  /** 跨平台长驻命令（供 kill_command 终止） */
-  const SLEEP_CMD = 'node -e "setTimeout(function(){},20000)"';
+  /** 跨平台非零退出命令：无 `()` 无引号，cmd / sh 两侧通吃（实测均 exit 3） */
+  const FAIL_CMD = 'node -e process.exitCode=3';
+  /** 跨平台长驻命令（供 kill_command 终止）：`setTimeout` 的 `()` 避不开，按平台分叉 */
+  const SLEEP_CMD =
+    process.platform === 'win32'
+      ? 'node -e setTimeout(function(){},20000)'
+      : 'node -e "setTimeout(()=>{},20000)"';
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

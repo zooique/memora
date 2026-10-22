@@ -754,13 +754,18 @@ describe('AgentLoop · 配对守卫计数出闸（僵尸声明消缺）', () => 
 // ═══════════════════════════════════════════════════════════════
 
 describe('AgentLoop · 后台命令自然终局失败计数（METRICS-BGTASK-1）', () => {
-  // 跨平台命令：node -e 表达式含 () 须用双引号包裹（POSIX sh 下 () 是元字符、报 Syntax error），同 toolExecutor.test.ts 先例
+  // 跨平台命令纪律（双平台实证，同 toolExecutor.test.ts）：`()` 在 POSIX sh 是元字符必须加引号，
+  // 而 cmd 会把 `node -e` 的双引号当字面量传给 node（收到字符串而非代码 → 静默 exit 0）⇒ 含 `()`
+  // 的表达式只能按平台分叉；不含 `()` 的 `process.exitCode=3` 两侧通吃，优先选。
   /** 零退出命令（打印 node 版本，无元字符） */
   const OK_CMD = 'node -v';
-  /** 非零退出命令 */
-  const FAIL_CMD = 'node -e "process.exit(3)"';
-  /** 长驻命令（配合 1s 超时限触发 timedOut） */
-  const SLEEP_CMD = 'node -e "setTimeout(function(){},20000)"';
+  /** 非零退出命令：无 `()` 无引号，cmd / sh 两侧通吃 */
+  const FAIL_CMD = 'node -e process.exitCode=3';
+  /** 长驻命令（配合 1s 超时限触发 timedOut）：`setTimeout` 的 `()` 避不开，按平台分叉 */
+  const SLEEP_CMD =
+    process.platform === 'win32'
+      ? 'node -e setTimeout(function(){},20000)'
+      : 'node -e "setTimeout(()=>{},20000)"';
 
   /** 本 describe 建过的注册表（afterEach 统一收割，防孤儿进程 + exit 钩子堆积） */
   const registries: BackgroundTaskRegistry[] = [];

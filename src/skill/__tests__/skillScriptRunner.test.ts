@@ -343,20 +343,26 @@ describe('skillScriptRunner — runSkillScript', () => {
       expect(result.stdout).toContain('memora-shell-ok');
     });
 
-    // 命令构造纪律（跨平台）：`node -e` 的表达式必须用双引号包裹——`()` 在
-    // POSIX sh 里是元字符，裸写会 `Syntax error: "(" unexpected`（Node 22 / Ubuntu
-    // CI 实测）；cmd 与 sh 都会剥离这层双引号，两侧均可执行。
+    // 命令构造纪律（双平台实证，勿再凭直觉改）：
+    //  - POSIX `sh`：`()` 是元字符 ⇒ 含 `()` 的表达式必须双引号包裹，否则
+    //    `Syntax error: "(" unexpected` 秒退。
+    //  - Windows `cmd`：把 `node -e` 表达式里的双引号**当字面量**传给 node ⇒ node 收到字符串
+    //    而非代码，静默 exit 0（假成功，比崩溃更危险）⇒ cmd 下含 `()` 的表达式必须裸写。
+    //    （此处原注释「cmd 与 sh 都会剥离这层双引号」是错的，已按实测订正。）
+    //  ⇒ 含 `()` 的表达式无单一跨平台形态，按平台分叉；不含 `()` 的 `process.exitCode=3` 通吃。
+    /** 长驻命令（cmd 裸写 / sh 加引号，供超时用例触发杀树） */
+    const SLEEP_CMD =
+      process.platform === 'win32'
+        ? 'node -e setTimeout(function(){},30000)'
+        : 'node -e "setTimeout(()=>{},30000)"';
+
     it('runShellCommand：非零退出码如实回传（不把失败粉饰为成功）', async () => {
-      const result = await runShellCommand('node -e "process.exit(3)"');
+      const result = await runShellCommand('node -e process.exitCode=3');
       expect(result.exitCode).toBe(3);
     });
 
     it('runShellCommand：超时走杀树原语并置 timedOut（与脚本路径同一治理）', async () => {
-      const result = await runShellCommand(
-        'node -e "setTimeout(function(){},30000)"',
-        undefined,
-        1_000,
-      );
+      const result = await runShellCommand(SLEEP_CMD, undefined, 1_000);
       expect(result.timedOut).toBe(true);
       expect(result.exitCode).toBe(-1);
     }, 20_000);
