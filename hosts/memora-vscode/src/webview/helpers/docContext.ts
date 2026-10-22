@@ -74,8 +74,8 @@ export function buildProblemsContextBlock(body: string): string {
 /**
  * 构造 git 未提交改动上下文块（`[git 未提交改动]\n{body}\n[/git 未提交改动]`）
  *
- * `body` 由 `injectionBodies.collectGitChangesBody` 在**发送时刻**产出（三口只读 +
- * 三道闸有界，截断在正文里明示）。
+ * `body` 由 `injectionBodies.collectGitChangesBody` 在**发送时刻**产出（四口只读：
+ * 三组采集 + 工作区前缀换算；三道闸有界，截断在正文里明示）。
  */
 export function buildGitChangesContextBlock(body: string): string {
   return `${GIT_CHANGES_CONTEXT_OPEN}\n${body}\n${GIT_CHANGES_CONTEXT_CLOSE}`;

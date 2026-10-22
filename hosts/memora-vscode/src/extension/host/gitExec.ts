@@ -3,7 +3,7 @@
  *
  * 落实 `gitCollector` 模块头钉下的五条 wrapper 契约（`GIT_COMMAND_WHITELIST` 是
  * 「memora 允许对 git 做什么」的**唯一真源**）：
- *   ① spawn 前校验 args **逐项命中**白名单，不命中即拒绝——采集器只构造三组只读
+ *   ① spawn 前校验 args **逐项命中**白名单，不命中即拒绝——采集器只构造四组只读
  *      args，但 wrapper 不信任上游：纵深防御让写操作从结构上进不来；
  *   ② env 带 `NO_COLOR=1`（**辅助**：实测挡不住显式 `color.diff=always`，主力是白名单
  *      args 里的 `--no-color`，见 `gitCollector.GIT_COMMANDS` 注释）；
@@ -28,7 +28,7 @@ const GIT_EXEC_TIMEOUT_MS = 10_000;
 /** stdout 字节上限（exec 层进程级防护）：超出即强杀——语义截断是采集器三道闸的事 */
 const GIT_STDOUT_MAX_BYTES = 8_000_000;
 
-/** args 逐项命中白名单某组才放行（长度相等 + 逐项相等；三组只读命令外一律拒绝） */
+/** args 逐项命中白名单某组才放行（长度相等 + 逐项相等；四组只读命令外一律拒绝） */
 function isWhitelisted(args: readonly string[]): boolean {
   return GIT_COMMAND_WHITELIST.some(
     (allowed) => allowed.length === args.length && allowed.every((a, i) => a === args[i]),

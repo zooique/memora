@@ -40,24 +40,26 @@ const st = (...fields: string[]): string => fields.map((f) => `${f}\u0000`).join
 
 describe('collectGitChangesBody — git-changes 源正文装配', () => {
   it('root 透传为 git cwd（首根 SSOT：与 read_file cwd / 引用解析同根）', async () => {
-    // status 必须非空（有改动）才会继续跑 diff 两口——零改动时采集器正确地短路
+    // status 必须非空（有改动）才会继续跑前缀换算与 diff 两口——零改动时采集器正确地短路
     const exec = fakeExec([
       ok(st(' M src/a.ts')),
+      ok('\n'),
       ok('diff --git a/staged\n'),
       ok('diff --git a/f\n'),
     ]);
     await collectGitChangesBody('/repo/root', exec);
 
-    // 顺序 = 采集器契约（M7 变异锁定）：status → diff --cached（提交候选，展示优先）→ diff。
-    // args 逐字形态由 gitCollector.test.ts「固定开关前缀」用例单点锁定（此处派生免重复）
+    // 顺序 = 采集器契约（M7 变异锁定）：status → 前缀换算 → diff --cached（提交候选，
+    // 展示优先）→ diff。args 逐字形态由 gitCollector.test.ts「固定开关前缀」用例单点锁定
     expect(exec.calls).toEqual([
-      [...GIT_GLOBAL_ARGS, 'status', '--porcelain', '-z'],
-      [...GIT_GLOBAL_ARGS, 'diff', '--cached', ...GIT_DIFF_OUTPUT_ARGS],
-      [...GIT_GLOBAL_ARGS, 'diff', ...GIT_DIFF_OUTPUT_ARGS],
+      [...GIT_GLOBAL_ARGS, 'status', '--porcelain', '-z', '--', '.'],
+      [...GIT_GLOBAL_ARGS, 'rev-parse', '--show-prefix'],
+      [...GIT_GLOBAL_ARGS, 'diff', '--cached', '--relative', ...GIT_DIFF_OUTPUT_ARGS],
+      [...GIT_GLOBAL_ARGS, 'diff', '--relative', ...GIT_DIFF_OUTPUT_ARGS],
     ]);
     // cwd 由 collectGitChangesText 经 GitCollectInput.cwd 透传给 exec（真执行器的 cwd
     // 锁定在 gitExec.test.ts 的 spawn 选项断言）
-    expect(exec.calls.length).toBe(3);
+    expect(exec.calls.length).toBe(4);
   });
 
   it('零改动：采集器事实行原样透传（用户挂了标签就有权知道「确实没有」）', async () => {

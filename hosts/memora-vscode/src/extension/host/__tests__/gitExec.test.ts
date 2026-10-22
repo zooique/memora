@@ -4,7 +4,7 @@
  * 与 gitCollector.test.ts（假执行器、纯逻辑）隔离：本文件对 `node:child_process`
  * 做文件级 mock（codeExecutor-exec.test.ts 同款先例），锁定 gitCollector 模块头
  * 钉下的五条 wrapper 契约：
- *   ① 白名单逐项守卫（三组只读外连 spawn 都不发生）
+ *   ① 白名单逐项守卫（四组只读外连 spawn 都不发生）
  *   ② env NO_COLOR=1（ANSI 不进注入正文的**辅助**手段：实测挡不住 `color.diff=always`，
  *      主力是白名单 args 里的 `--no-color`——本文件锁「env 带上」，不宣称它单独够用）
  *   ③ windowsHide:true（禁弹控制台窗口）
@@ -58,12 +58,13 @@ describe('gitExec — 生产 spawn wrapper 契约锁定', () => {
     vi.useRealTimers();
   });
 
-  it('白名单三组放行：git + 逐项相等 args（status --porcelain / diff / diff --cached）', async () => {
+  it('白名单四组放行：git + 逐项相等 args（status / diff / diff --cached / 前缀换算）', async () => {
     mockedSpawn.mockImplementation((() => fakeChild()) as never);
     const cases: readonly (readonly string[])[] = [
       GIT_COMMANDS.status,
       GIT_COMMANDS.diffUnstaged,
       GIT_COMMANDS.diffStaged,
+      GIT_COMMANDS.workspacePrefix,
     ];
     for (const args of cases) {
       mockedSpawn.mockClear();
@@ -90,6 +91,7 @@ describe('gitExec — 生产 spawn wrapper 契约锁定', () => {
       ['-c', 'core.fsmonitor=/evil', 'status', '--porcelain'],
       ['-c', 'core.quotePath=false', 'status', '--porcelain'],
       ['-c', 'core.quotePath=false', 'diff', '--cached', '--no-color'],
+      ['rev-parse', '--show-toplevel'],
     ];
     for (const args of rejects) {
       const r = await gitExec(args, '/repo');

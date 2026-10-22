@@ -11,9 +11,10 @@
  * 标签叫 `@git-changes` 就必须给 git 语义的数据；贴错标签 = 对模型撒谎。
  *
  * 🔴 **信任类声明（拍板记录第 6 项，C 路径成立的前提，勿删）**：本采集由**用户挂载 chip
- * 显式触发**、只跑三条只读子命令、不经裁决链（`classifyCommand` / `confirmCommandRun`
- * 一概不经过）——「用户挂载触发的只读采集 ≠ 代理发起命令」。wrapper 侧仍须守白名单守卫
- * （见文件尾契约），防后世审查者按「宿主 exec = 该管」误伤，也防真的被塞进写操作。
+ * 显式触发**、只跑四条只读子命令（三组采集 + `rev-parse --show-prefix` 坐标换算）、
+ * 不经裁决链（`classifyCommand` / `confirmCommandRun` 一概不经过）——「用户挂载触发的
+ * 只读采集 ≠ 代理发起命令」。wrapper 侧仍须守白名单守卫（见文件尾契约），防后世审查者
+ * 按「宿主 exec = 该管」误伤，也防真的被塞进写操作。
  *
  * HOST-CTX-0 四条硬约束在本模块的落点（与 `collectProblemsText` 同族口径）：
  *   ① **有界** —— 文件数 / 单文件 diff 行数 / 正文总长三道闸，命中即**明示**（静默截断 =
@@ -34,12 +35,12 @@
  * 不另出结构化字段——另出即同一事实的第二处表达，且调用方无处消费（chip 发送即清）。
  *
  * 本文件零 `vscode` 依赖（exec 注入式）⇒ 可纯 node 单测（同 problemsCollector /
- * refProbe 的 stat 注入先例）。真正的 spawn wrapper 属第 3 笔接线，契约见
- * `GIT_COMMAND_WHITELIST` 注释。
+ * refProbe 的 stat 注入先例）。生产 spawn wrapper 已落地于 `gitExec.ts`；wrapper 五契约
+ * 与白名单守卫见 `GIT_COMMAND_WHITELIST` 注释。
  */
 
 /**
- * 每次 git 调用的**固定开关前缀**（值真源：三组命令共享派生，勿在各组里各写一遍）
+ * 每次 git 调用的**固定开关前缀**（值真源：四组命令共享派生，勿在各组里各写一遍）
  *
  * 每条开关都挡一类**实测**形态（2026-10-22 临时仓实测，git 2.55.0.windows.3）：
  *   ① `core.quotePath=false` —— 默认 `quotePath=true` 把中文路径输出成八进制转义
@@ -73,41 +74,57 @@ export const GIT_DIFF_OUTPUT_ARGS: readonly string[] = [
 ];
 
 /**
- * 只读子命令白名单（拍板口径：同 Roo Code `@git-changes` 三口，只读、无写操作）
+ * 只读子命令白名单（同 Roo Code `@git-changes` 三口采集 + 一口工作区坐标换算）
  *
- * 这是「memora 允许对 git 做什么」的**唯一真源**：采集器只构造这三组 args，
+ * 这是「memora 允许对 git 做什么」的**唯一真源**：采集器只构造这四组 args，
  * wrapper 只执行命中本清单的 args——双向收窄，写操作从结构上进不来。
  *
- * 三组都由 `GIT_GLOBAL_ARGS` 派生（前缀只写一处）。diff 两口另带三个**输出形态**开关，
- * 缺一即出真伤（同样实测）：
+ * 四组都由 `GIT_GLOBAL_ARGS` 派生（前缀只写一处）。三组采集命令另带形态开关：
+ *   - `status ... -- .`：pathspec 把采集范围收窄到工作区子树。不加则子目录工作区会混入
+ *     仓库其他部分的改动——那些路径在 `read_file` 根之外，模型读不到；
+ *   - `diff --relative`：让 diff 头部路径与清单同一坐标系（相对 cwd），并排除 cwd 之外
+ *     的改动。缺它则子目录工作区的 diff 头部仍是仓库根相对路径，与清单不一致；
  *   - `--no-color`：ANSI 污染不止是花屏——行首不再是 `diff --git `，`splitDiffChunks`
  *     的切点整体失效（实测 3 文件 → 1 段）⇒ 被 200 行闸当「一个文件」截断且注记撒谎。
  *     ⚠️ `NO_COLOR=1` **挡不住**显式 `color.diff=always`（实测），故本开关不可省；
  *   - `--no-ext-diff` / `--no-textconv`：`.gitattributes` + 仓库 config 指定的外部
  *     diff 驱动 / textconv 程序会被 `git diff` 执行（实测命中）——「只读」名不副实。
  */
-export const GIT_COMMANDS: Record<'status' | 'diffUnstaged' | 'diffStaged', readonly string[]> = {
+export const GIT_COMMANDS: Record<
+  'status' | 'diffUnstaged' | 'diffStaged' | 'workspacePrefix',
+  readonly string[]
+> = {
   /**
    * 文件清单（porcelain v1 **`-z`**：NUL 分隔、路径原样、无引号 / 转义）
+   *
+   * ⚠️ porcelain 的路径**恒相对仓库根**（`status.relativePaths` 对 porcelain 无效，
+   * 实测）⇒ 子目录工作区必须靠 `workspacePrefix` 裁成工作区相对路径，否则模型按清单
+   * `read_file` 必失败。`-- .` 同时把清单收窄到工作区。
    *
    * 不加 `-uall`（登记不落地）：它能展开未跟踪目录里的文件，但会让 status 输出随项目
    * 未 ignore 的文件量膨胀，大仓可能直接撞 exec 层 8MB 上限 ⇒ 整块退化成事实行。
    * 「清单少一层目录内容」是可接受的降级，「整块采不到」不是。
    */
-  status: [...GIT_GLOBAL_ARGS, 'status', '--porcelain', '-z'],
-  /** 未暂存改动 */
-  diffUnstaged: [...GIT_GLOBAL_ARGS, 'diff', ...GIT_DIFF_OUTPUT_ARGS],
+  status: [...GIT_GLOBAL_ARGS, 'status', '--porcelain', '-z', '--', '.'],
+  /** 未暂存改动（`--relative` = 路径相对工作区根，且只含工作区内改动） */
+  diffUnstaged: [...GIT_GLOBAL_ARGS, 'diff', '--relative', ...GIT_DIFF_OUTPUT_ARGS],
   /** 已暂存改动（提交候选，展示优先级高于未暂存） */
-  diffStaged: [...GIT_GLOBAL_ARGS, 'diff', '--cached', ...GIT_DIFF_OUTPUT_ARGS],
+  diffStaged: [...GIT_GLOBAL_ARGS, 'diff', '--cached', '--relative', ...GIT_DIFF_OUTPUT_ARGS],
+  /**
+   * 工作区前缀（cwd 相对仓库根；cwd = 仓库根时为空串）
+   *
+   * 只用于把 `status` 的仓库根相对路径裁成工作区相对路径。只读、无副作用。
+   */
+  workspacePrefix: [...GIT_GLOBAL_ARGS, 'rev-parse', '--show-prefix'],
 };
 
 /**
  * wrapper 守卫用：白名单扁平化
  *
- * 第 3 笔 spawn 实现必须：① spawn 前校验 args 命中本清单（逐项相等），不命中即拒绝；
- * ② env 带 `NO_COLOR: '1'`（**辅助**而非主力：实测挡不住显式 `color.diff=always`，
- * ANSI 主责由白名单里的 `--no-color` 承担——两者不是替代关系，别因前者「看起来没用」
- * 就删它，它对 `color.ui=auto` 形态仍有价值）；
+ * 生产 wrapper（`gitExec.ts`）已实现五契约：① spawn 前校验 args 命中本清单（逐项相等），
+ * 不命中即拒绝；② env 带 `NO_COLOR: '1'`（**辅助**而非主力：实测挡不住显式
+ * `color.diff=always`，ANSI 主责由白名单里的 `--no-color` 承担——两者不是替代关系，
+ * 别因前者「看起来没用」就删它，它对 `color.ui=auto` 形态仍有价值）；
  * ③ `windowsHide: true`（同 environmentProvider 的 `probeRuntime` 先例，禁弹控制台窗口）；
  * ④ 设超时并按超时失败处置（大仓库 status/diff 可能慢，勿照搬 --version 量级的 5s）；
  * ⑤ cwd = 首个工作区根（与 `read_file` 的 cwd 同根，模型按清单路径才读得到）。
@@ -140,9 +157,9 @@ export type GitExecResult = {
 };
 
 /**
- * 注入式命令执行器（生产 = 第 3 笔 node spawn wrapper；测试 = 假执行器）
+ * 注入式命令执行器（生产 = `gitExec.ts` spawn wrapper；测试 = 假执行器）
  *
- * @param args 只允许 `GIT_COMMANDS` 三组之一（wrapper 侧白名单守卫）
+ * @param args 只允许 `GIT_COMMANDS` 四组之一（wrapper 侧白名单守卫）
  * @param cwd git 运行目录（生产 = 首个工作区根；省略则 git 自行向上找 .git）
  */
 export type GitExec = (args: readonly string[], cwd?: string) => Promise<GitExecResult>;
@@ -214,6 +231,27 @@ function parseStatusEntries(raw: string): StatusEntry[] {
 function formatStatusEntry(entry: StatusEntry): string {
   const line = `${entry.xy} ${entry.path}`;
   return entry.from ? `${line}（重命名自 ${entry.from}；旧路径已不存在）` : line;
+}
+
+/** 去掉 git 单行输出末尾的记录换行（`git rev-parse --show-prefix` 用） */
+function stripRecordNewline(text: string): string {
+  return text.replace(/\r?\n$/, '');
+}
+
+/**
+ * 把仓库根相对路径裁成**工作区相对**路径
+ *
+ * `git status --porcelain` 的路径恒相对仓库根；工作区根是仓库子目录时（monorepo 常见），
+ * 原样给模型 = 一条 `read_file` 必然失败的路径。prefix 为空（工作区即仓库根）时原样返回。
+ * 重命名源落在 cwd 之外时裁不掉：它只作说明，目标路径才是模型要读的，保持原样即可。
+ */
+function toWorkspaceRelative(entry: StatusEntry, prefix: string): StatusEntry {
+  if (!prefix) return entry;
+  const strip = (path: string): string =>
+    path.startsWith(prefix) ? path.slice(prefix.length) : path;
+  const relative: StatusEntry = { xy: entry.xy, path: strip(entry.path) };
+  if (entry.from !== undefined) relative.from = strip(entry.from);
+  return relative;
 }
 
 /**
@@ -307,17 +345,27 @@ export async function collectGitChangesText(input: GitCollectInput): Promise<str
     return `git status ${statusFailure}，无法采集未提交改动。`;
   }
 
-  const entries = parseStatusEntries(statusRes.stdout);
-  if (entries.length === 0) {
+  const entriesRaw = parseStatusEntries(statusRes.stdout);
+  if (entriesRaw.length === 0) {
     // 零改动 = 诚实事实行（用户挂了标签就有权知道「确实干净」）
     return '当前没有未提交的改动（git status --porcelain -z 为空）。';
   }
+
+  // 坐标换算：porcelain 路径恒相对仓库根 ⇒ 裁成工作区相对路径（子目录工作区才读得到）。
+  // prefix 失败 = 无法保证路径可读 ⇒ 整体 fail-closed（不给模型一条必然失败的指令）。
+  const prefixRes = await exec(GIT_COMMANDS.workspacePrefix, cwd);
+  const prefixFailure = describeFailure(prefixRes);
+  if (prefixFailure) {
+    return `git rev-parse --show-prefix ${prefixFailure}，无法把改动路径换算为工作区相对路径（不给读不到的路径）。`;
+  }
+  const prefix = stripRecordNewline(prefixRes.stdout);
+  const entries = entriesRaw.map((entry) => toWorkspaceRelative(entry, prefix));
 
   const untracked = entries.filter((entry) => entry.xy.startsWith('??')).length;
   const listed = entries.slice(0, GIT_FILES_LIMIT).map(formatStatusEntry);
   const statusSection = [
     `共 ${entries.length} 个文件有未提交改动（含 ${untracked} 个未跟踪项，git diff 不含未跟踪内容）：`,
-    '（清单格式：两列状态位 + 路径；第一列 = 已暂存，第二列 = 未暂存，?? = 未跟踪；路径可直接用于 read_file）',
+    '（清单格式：两列状态位 + 路径；第一列 = 已暂存，第二列 = 未暂存，?? = 未跟踪；路径相对工作区根，可直接用于 read_file）',
     ...listed.map((line) => clipLine(line, GIT_STATUS_LINE_MAX_CHARS)),
     entries.length > GIT_FILES_LIMIT
       ? `（清单仅列前 ${GIT_FILES_LIMIT} 个，共 ${entries.length} 个）`

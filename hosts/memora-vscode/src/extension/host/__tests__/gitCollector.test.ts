@@ -5,11 +5,11 @@
  *   ① 有界 —— 文件数 / 单文件 diff 行数 / 正文总长三道闸，命中即**明示**（静默截断是
  *      本项目三次踩过的坑，故每道闸都配「省略数 / 截断标记」断言）；
  *   ③ 明示 —— 零改动 / 非 git 仓库 / git 缺失 / 段执行失败都必须在正文里说实话，不空串；
- *   信任类 —— 只跑白名单三口、fail-fast（status 失败不碰 diff）。
+ *   信任类 —— 只跑白名单四口（三口采集 + 一口前缀换算）、fail-fast（status 失败不碰 diff）。
  * 排序 / 分组契约：已暂存段在未暂存段前（提交候选优先）。
  *
  * 采集器零 `vscode` 依赖（exec 注入式），故本文件 **@vitest-environment node**，无需 mock：
- * 全部用假执行器应答，不真跑 git（宿主侧 spawn 真机属第 3 笔接线 + 真机四态）。
+ * 全部用假执行器应答，不真跑 git（宿主侧 spawn 真机属 `gitExec.ts` + 真机四态）。
  */
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
@@ -37,11 +37,11 @@ function fakeExec(script: Record<string, GitExecResult>): {
   const exec: GitExec = async (args, cwd) => {
     calls.push([...args]);
     cwds.push(cwd);
-    // 应答按**子命令**路由（剥掉两组固定开关，故脚本 key 仍写 `status --porcelain` 形态）；
-    // 真实 args（含开关）由各用例的 `calls` 断言与「固定开关前缀」用例另行锁定。
-    const route = args
-      .filter((a) => !GIT_GLOBAL_ARGS.includes(a) && !GIT_DIFF_OUTPUT_ARGS.includes(a))
-      .join(' ');
+    // 应答按**子命令**路由（剥掉两组固定开关与形态参数，故脚本 key 仍写
+    // `status --porcelain -z` / `diff` / `diff --cached` 形态）；真实 args（含开关 /
+    // `--relative` / pathspec）由各用例的 `calls` 断言与「固定开关前缀」用例另行锁定。
+    const SHAPE_ARGS = [...GIT_GLOBAL_ARGS, ...GIT_DIFF_OUTPUT_ARGS, '--relative', '--', '.'];
+    const route = args.filter((a) => !SHAPE_ARGS.includes(a)).join(' ');
     return script[route] ?? { code: 0, stdout: '', stderr: '' };
   };
   return { exec, calls, cwds };
@@ -72,9 +72,10 @@ function diffOf(files: number, linesPerFile: number): string {
 }
 
 describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
-  it('白名单三口拼装：status --porcelain → diff --cached → diff，且 cwd 转发', async () => {
+  it('白名单四口拼装：status → 前缀换算 → diff --cached → diff，且 cwd 转发', async () => {
     const { exec, calls, cwds } = fakeExec({
       'status --porcelain -z': ok(st(' M src/a.ts')),
+      'rev-parse --show-prefix': ok('\n'),
       'diff --cached': ok(diffOf(1, 1)),
       diff: ok(diffOf(1, 1)),
     });
@@ -82,9 +83,10 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
 
     // 真实 args = 固定开关 + 子命令（逐字形态由「固定开关前缀」用例锁定，此处派生免重复）
     expect(calls).toEqual([
-      [...GIT_GLOBAL_ARGS, 'status', '--porcelain', '-z'],
-      [...GIT_GLOBAL_ARGS, 'diff', '--cached', ...GIT_DIFF_OUTPUT_ARGS],
-      [...GIT_GLOBAL_ARGS, 'diff', ...GIT_DIFF_OUTPUT_ARGS],
+      [...GIT_GLOBAL_ARGS, 'status', '--porcelain', '-z', '--', '.'],
+      [...GIT_GLOBAL_ARGS, 'rev-parse', '--show-prefix'],
+      [...GIT_GLOBAL_ARGS, 'diff', '--cached', '--relative', ...GIT_DIFF_OUTPUT_ARGS],
+      [...GIT_GLOBAL_ARGS, 'diff', '--relative', ...GIT_DIFF_OUTPUT_ARGS],
     ]);
     // cwd 逐字转发（生产 = 首个工作区根；模型按清单路径 read_file 才读得到）
     expect(cwds.every((c) => c === '/repo')).toBe(true);
@@ -98,15 +100,16 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
       GIT_COMMANDS.status,
       GIT_COMMANDS.diffUnstaged,
       GIT_COMMANDS.diffStaged,
+      GIT_COMMANDS.workspacePrefix,
     ]);
   });
 
-  it('固定开关前缀：三组共享同一前缀（只写一处）+ diff 两口带输出形态开关，逐字锁定', () => {
+  it('固定开关前缀：四组共享同一前缀（只写一处）+ 采集三口带形态开关，逐字锁定', () => {
     // ① `core.quotePath=false` = 中文路径不转义（否则模型 read_file 必失败）；
     //    ② `core.fsmonitor=false` = status 不执行仓库 config 指定的外部程序。
     // 逐字断言：改一个字符即红，防「顺手换个配置名」把只读采集变成执行任意程序。
     expect(GIT_GLOBAL_ARGS).toEqual(['-c', 'core.quotePath=false', '-c', 'core.fsmonitor=false']);
-    expect(GIT_COMMAND_WHITELIST).toHaveLength(3);
+    expect(GIT_COMMAND_WHITELIST).toHaveLength(4);
     for (const args of GIT_COMMAND_WHITELIST) {
       expect(args.slice(0, GIT_GLOBAL_ARGS.length)).toEqual([...GIT_GLOBAL_ARGS]);
     }
@@ -115,18 +118,27 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
     expect(GIT_DIFF_OUTPUT_ARGS).toEqual(['--no-color', '--no-ext-diff', '--no-textconv']);
     expect(GIT_COMMANDS.diffUnstaged.slice(GIT_GLOBAL_ARGS.length)).toEqual([
       'diff',
+      '--relative',
       ...GIT_DIFF_OUTPUT_ARGS,
     ]);
     expect(GIT_COMMANDS.diffStaged.slice(GIT_GLOBAL_ARGS.length)).toEqual([
       'diff',
       '--cached',
+      '--relative',
       ...GIT_DIFF_OUTPUT_ARGS,
     ]);
-    // status 走 porcelain v1 -z（NUL 分隔、路径原样无引号；实测不受 color 影响）
+    // status 走 porcelain v1 -z（NUL 分隔、路径原样无引号）+ pathspec 收窄到工作区
     expect(GIT_COMMANDS.status.slice(GIT_GLOBAL_ARGS.length)).toEqual([
       'status',
       '--porcelain',
       '-z',
+      '--',
+      '.',
+    ]);
+    // 前缀换算：只读探针，取 cwd 相对仓库根的前缀（裁掉 porcelain 的仓库根相对路径）
+    expect(GIT_COMMANDS.workspacePrefix.slice(GIT_GLOBAL_ARGS.length)).toEqual([
+      'rev-parse',
+      '--show-prefix',
     ]);
   });
 
@@ -167,7 +179,38 @@ describe('@git-changes 有界采集（HOST-CTX-4 第二笔）', () => {
     expect(body).toContain('已暂存改动（git diff --cached）：执行失败');
     expect(body).toContain('ambiguous argument');
     expect(body).toContain('未暂存改动（git diff）');
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(4); // status + 前缀换算 + 两口 diff
+  });
+
+  it('子目录工作区：porcelain 的仓库根相对路径按 --show-prefix 裁成工作区相对', async () => {
+    // 实测：cwd = repo/packages/app 时 `git status --porcelain` 仍输出 `packages/app/src/a.ts`。
+    // 原样给模型 ⇒ read_file（cwd = 工作区根）必失败——「绝不给模型一条必然失败的指令」。
+    const { exec } = fakeExec({
+      'status --porcelain -z': ok(
+        st(' M packages/app/src/a.ts', 'R  packages/app/src/b.ts', 'packages/app/src/old.ts'),
+      ),
+      'rev-parse --show-prefix': ok('packages/app/\n'),
+      'diff --cached': ok(''),
+      diff: ok(''),
+    });
+    const body = await collectGitChangesText({ exec, cwd: '/repo/packages/app' });
+
+    expect(body).toContain(' M src/a.ts');
+    expect(body).toContain('R  src/b.ts（重命名自 src/old.ts；旧路径已不存在）');
+    expect(body).not.toContain('packages/app/');
+  });
+
+  it('fail-closed：前缀换算失败 → 不给读不到的路径（也不跑 diff）', async () => {
+    const { exec, calls } = fakeExec({
+      'status --porcelain -z': ok(st(' M packages/app/src/a.ts')),
+      'rev-parse --show-prefix': { code: 1, stdout: '', stderr: 'fatal: bad revision\n' },
+    });
+    const body = await collectGitChangesText({ exec, cwd: '/repo/packages/app' });
+
+    expect(body).toContain('rev-parse --show-prefix');
+    expect(body).toContain('无法把改动路径换算为工作区相对路径');
+    expect(body).not.toContain('src/a.ts');
+    expect(calls).toHaveLength(2);
   });
 
   it('零改动：porcelain 为空 → 干净事实行，不跑 diff', async () => {

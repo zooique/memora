@@ -77,6 +77,7 @@
 2. **采集器白名单含 `--cached`**：三口 `git status --porcelain` + `git diff` + `git diff --cached`；三边界（只读 / 用户触发 / 禁写操作）写进模块头。
    - **订正（2026-10-22 硬化笔实测后追加）**：「三口」的**真实 args** = 固定开关前缀 + 子命令 —— `['-c','core.quotePath=false','-c','core.fsmonitor=false']` + 子命令，diff 两口再加 `['--no-color','--no-ext-diff','--no-textconv']`。理由是三条实测：中文路径被八进制转义（模型读不到）、`NO_COLOR` 挡不住 `color.diff=always` 且 ANSI 让 diff 切分退化（3 段→1 段）、仓库 config 的外部 diff 驱动 / fsmonitor 会被执行（「只读」此前名不副实）。前缀**禁参数化**（开放任意 `-c` = 可把 quotePath 换成 fsmonitor）。白名单仍靠「整组逐项相等」守卫，故固定前缀不是开放的 `-c` 口子。
    - **订正 2（2026-10-22 第 5 笔）**：status 改 `status --porcelain -z`（NUL 分隔、路径原样无引号）⇒ 含空格中文名可直接 `read_file`；rename / copy 是两个字段（目标在前、源在后）需成对消费并显式标注旧路径。不写反转义器（`-z` 下不需要）。`-uall` 仍不落地（输出膨胀风险，见台账）。
+   - **订正 3（2026-10-22 审查笔）**：porcelain / diff 的路径**恒相对仓库根**（实测；`status.relativePaths` 对 porcelain 无效、status 无 `--relative`）⇒ 子目录工作区（monorepo 常见）下清单路径 `read_file` 必失败。修法：status 加 pathspec `-- .` 收窄到工作区，diff 加 `--relative` 同坐标系，再由只读探针 `git rev-parse --show-prefix`（白名单第 4 口）把 status 路径裁成工作区相对；探针失败即 fail-closed。
 3. **三道闸**：文件 ≤20 / 单文件 diff ≤200 行 / 合计 ≤12K token，截断明示。
 4. **建命名 SSOT 单点** `shared/injectionSourceMeta.ts`（§6 建议采纳），第 1 笔零行为变更落地。
 5. **跨源总量兜底 = 登记缺口**（§7 建议采纳），不引总量软顶机制；git diff 闸单独设。
