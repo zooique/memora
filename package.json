@@ -50,6 +50,7 @@
     "lint:fix": "eslint . --fix",
     "ci:local": "node scripts/local-ci.mjs",
     "verify:dist-contract": "node scripts/verify-dist-contract.mjs",
+    "verify:changelog": "node scripts/verify-changelog-version.mjs",
     "format": "prettier --write \"**/*.{ts,mjs,md,json}\"",
     "format:check": "prettier --check \"**/*.{ts,mjs,md,json}\"",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",

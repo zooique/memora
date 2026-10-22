@@ -8,6 +8,9 @@
 #
 # 门禁范围与本仓库质量门对齐（非本地 ci:local 全量）：
 #   typecheck / lint / 单元测试（串行，贴合本地真形态）/ 生产构建。
+#   另加两道**发布专属**前置护栏（本地门禁不跑，因其在开发期会稳定假红）：
+#     ① tag ↔ package.json version 一致（防宿主 tag 误触发内核发布）；
+#     ② CHANGELOG 目标版本标题不得再带「未发布」（`scripts/verify-changelog-version.mjs`）。
 #   dist 由 prepack(build:clean) 在 publish 前自动重建，幂等。
 #
 # ⚠️ 认证：npm **Trusted Publisher（OIDC）**，免长期令牌。
@@ -71,6 +74,13 @@ jobs:
             echo "::error::tag v$TAG 与 package.json version $PKG 不一致，疑似宿主 tag 误触发，终止发布。"
             exit 1
           fi
+
+      # 防「未发布」随包发出（2026-10-23 实证缺口 · 台账 RELEASE-CHLOG-DATE-1）：
+      # CHANGELOG.md 在 package.json `files` 白名单内 ⇒ 随包发出，而 npm tarball 不可变、
+      # 已发布版本不可重发 ⇒ 版本标题漏改日期是**永久**瑕疵（5.0.0 即带着 `· 未发布` 上架）。
+      # 该校验只挂本流程、**不进 local-ci**：开发期版本区合法地写着「未发布」，进 pre-push 会稳定假红。
+      - name: 校验 CHANGELOG 目标版本标题已带发布日期
+        run: node scripts/verify-changelog-version.mjs
 
       - name: TypeScript 类型检查
         run: npm run typecheck
