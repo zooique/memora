@@ -22,6 +22,15 @@
  *   （提交顺序问题）会短暂命中。**先以告警档跑，假阳性率实测可控后再升 fail 门**：
  *   改判据 = 造伤的高风险动作，须先分诊（[legacy-contract-audit-rules.md §7](../.trae/rules/generic/legacy-contract-audit-rules.md)）。
  *
+ * ⚠️ 空集语义（2026-10-23 修订，勿回退）：
+ *   本闸是 **pre-push 语义**，默认区间 `origin/main..HEAD` 在**推送后必然为空**。
+ *   原实现此时输出 `✅ …无提交，跳过` 且 EXIT=0 —— 对勾 + 跳过 ⇒ 「没校验」被读成「校验通过」
+ *   （实证：main 全量推送后跑本闸恒绿，报告据此写「（166 ID）实测全绿」，实为空转）。
+ *   现行语义：**空集 ≠ 通过**。
+ *     - 默认区间为空 ⇒ ⚠️ 明说「本次未做任何校验（≠ 通过）」，EXIT=0（无事可做，不该阻断）；
+ *     - 显式 `--since` 为空 ⇒ ❌ EXIT=1（你让我扫的区间扫不到东西，参数错或判据失明，fail-closed）。
+ *   ⇒ 想要**有效**的收据，请在**推送前**跑默认区间，或显式 `--since=HEAD~N` 复盘。
+ *
  * 用法：
  *   node scripts/verify-ledger-receipt.mjs                # 默认区间 origin/main..HEAD（pre-push 语义）
  *   node scripts/verify-ledger-receipt.mjs --since=HEAD~7 # 事后复盘：扫最近 N 笔
@@ -136,7 +145,25 @@ function main() {
     });
 
   if (commits.length === 0) {
-    console.log(`✅ [ledger-receipt] 区间 ${range} 无提交，跳过`);
+    // ⚠️ 空集 ≠ 通过（2026-10-23 修订，勿回退）：
+    //   原实现输出 `✅ …无提交，跳过` 且 EXIT=0 —— **对勾 + 跳过**会把「没校验」读成「校验通过」。
+    //   实证：main 全量推送后跑本闸，区间 origin/main..HEAD 恒为空 ⇒ 恒绿，
+    //   报告据此写「（166 ID）实测全绿」，实为空转（真实区间须 --since=HEAD~6 才扫得到）。
+    //   ⇒ 两种空集性质不同，必须分开处理：
+    //     ① 默认区间为空 = 没有待推提交 = 本闸**无事可做** ⇒ 不阻断，但必须明说「未校验」；
+    //     ② 显式 --since 为空 = 你让我扫的区间扫不到东西 ⇒ 参数错或判据失明，fail-closed 判红。
+    if (since) {
+      console.error(
+        `❌ [ledger-receipt] 显式区间 ${range} 解析为 0 个提交 —— --since 参数可能有误，` +
+          `或判据失明。静默放行等于假绿，故判红（若要扫已推送的提交，用 --since=HEAD~N）`,
+      );
+      process.exit(1);
+    }
+    console.log(
+      `⚠️  [ledger-receipt] 区间 ${range} 无提交 —— 本次**未做任何校验**（≠ 通过）。\n` +
+        `      默认区间为空通常意味着改动已全部推送，本闸无事可做。\n` +
+        `      若要复盘已推送的提交，显式指定区间：--since=HEAD~N`,
+    );
     process.exit(0);
   }
 

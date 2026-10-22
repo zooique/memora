@@ -6,11 +6,15 @@
 #   - tag 必须与根 package.json 的 version 一致（下方有护栏校验），
 #     否则视为宿主 tag 误触发，直接终止，避免误发内核包。
 #
-# 门禁范围与本仓库质量门对齐（非本地 ci:local 全量）：
-#   typecheck / lint / 单元测试（串行，贴合本地真形态）/ 生产构建。
-#   另加两道**发布专属**前置护栏（本地门禁不跑，因其在开发期会稳定假红）：
+# 门禁范围：typecheck / lint / 单元测试（串行，贴合本地真形态）/ 生产构建 / **format:check**。
+#   ⚠️ format:check 是 2026-10-23 补齐的：此前发布链不含该步，实证后果 = 提交 b6bb727a
+#   （发布那一刻工作区 format:check 是红的，发布链没拦住，只能事后补一笔纯格式提交）。
+#   补齐后「发布链 ≥ 本地门禁」，不再出现「本地红、发布链绿」。
+#   另加三道**发布专属**前置护栏（本地门禁不跑，因其在开发期会稳定假红）：
 #     ① tag ↔ package.json version 一致（防宿主 tag 误触发内核发布）；
-#     ② CHANGELOG 目标版本标题不得再带「未发布」（`scripts/verify-changelog-version.mjs`）。
+#     ② CHANGELOG 目标版本标题须带**合法发布日期且落在发布日窗口内**
+#        （`scripts/verify-changelog-version.mjs`）；
+#     ③ 随包文档不得陈述发布态（`scripts/verify-publish-docs.mjs`）。
 #   dist 由 prepack(build:clean) 在 publish 前自动重建，幂等。
 #
 # ⚠️ 认证：npm **Trusted Publisher（OIDC）**，免长期令牌。
@@ -81,6 +85,17 @@ jobs:
       # 该校验只挂本流程、**不进 local-ci**：开发期版本区合法地写着「未发布」，进 pre-push 会稳定假红。
       - name: 校验 CHANGELOG 目标版本标题已带发布日期
         run: node scripts/verify-changelog-version.mjs
+
+      # 防「随包文档陈述发布态」（2026-10-23 实证缺口 · 台账 RELEASE-DOCS-STATE-1）：
+      # 5.0.0 的 tarball 里，两份随包文档写着「v5.0.0 待发布」——而读者正是装了 5.0.0 的人。
+      # 根因：「最新已发是哪个版本」由 npm registry 决定，写进静态 md 必然腐化。
+      # 扫描面从 package.json `files` 白名单自动发现 ⇒ 将来加文档不会漏。CHANGELOG 走上一道专用闸。
+      - name: 校验随包文档无发布态陈述
+        run: node scripts/verify-publish-docs.mjs
+
+      # 补齐本地门禁（此前发布链缺此步，实证见头注 b6bb727a）。置于 typecheck 前：最快、最先失败。
+      - name: 格式检查
+        run: npm run format:check
 
       - name: TypeScript 类型检查
         run: npm run typecheck
