@@ -754,13 +754,13 @@ describe('AgentLoop · 配对守卫计数出闸（僵尸声明消缺）', () => 
 // ═══════════════════════════════════════════════════════════════
 
 describe('AgentLoop · 后台命令自然终局失败计数（METRICS-BGTASK-1）', () => {
-  // 跨平台命令均用无空格 node -e 表达式（避开 Windows 引号拆参，同 toolExecutor.test.ts 先例）
+  // 跨平台命令：node -e 表达式含 () 须用双引号包裹（POSIX sh 下 () 是元字符、报 Syntax error），同 toolExecutor.test.ts 先例
   /** 零退出命令（打印 node 版本，无元字符） */
   const OK_CMD = 'node -v';
   /** 非零退出命令 */
-  const FAIL_CMD = 'node -e process.exit(3)';
+  const FAIL_CMD = 'node -e "process.exit(3)"';
   /** 长驻命令（配合 1s 超时限触发 timedOut） */
-  const SLEEP_CMD = 'node -e setTimeout(function(){},20000)';
+  const SLEEP_CMD = 'node -e "setTimeout(function(){},20000)"';
 
   /** 本 describe 建过的注册表（afterEach 统一收割，防孤儿进程 + exit 钩子堆积） */
   const registries: BackgroundTaskRegistry[] = [];

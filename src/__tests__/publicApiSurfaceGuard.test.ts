@@ -34,7 +34,7 @@ const API_MANUAL = join(ROOT, 'docs', 'memora-api-reference.md');
 /** 消费面扫描根：宿主（含构建脚本与测试）+ 验证脚本目录（当前零消费，纳入防未来漏扫） */
 const CONSUMER_ROOTS = [join(ROOT, 'hosts'), join(ROOT, 'scripts')];
 /** 目录排除清单：产物与依赖不进扫描面 */
-const EXCLUDED_DIRS = new Set(['node_modules', 'dist', 'out', 'coverage', '.workbuddy', '.git']);
+const EXCLUDED_DIRS = new Set(['node_modules', 'dist', 'out', 'coverage', '.workbuddy', '.git', '__tests__']);
 
 /** 递归收集目录下全部 .ts/.mts/.mjs 文件（排除产物目录），扫描面自动发现、不硬编码文件清单 */
 function listSourceFiles(dir: string, out: string[] = []): string[] {
@@ -44,7 +44,12 @@ function listSourceFiles(dir: string, out: string[] = []): string[] {
     // 目录则深入，文件按扩展名收集
     if (statSync(full).isDirectory()) {
       listSourceFiles(full, out);
-    } else if (/\.(ts|mts|mjs)$/.test(name)) {
+    } else if (
+      /\.(ts|mts|mjs)$/.test(name) &&
+      // 排除测试文件：SRC_TEXT 是「生产源码存在性」参照系，测试文件既非承诺面，
+      // 其自身字符串/注释（如本文件第 346 行的锚点文案）还会污染 indexOf 定位。
+      !/\.(test|spec)\.(ts|mts|mjs)$/.test(name)
+    ) {
       out.push(full);
     }
   }
@@ -252,6 +257,16 @@ const SECTION_SIXTEEN_NON_EXPORT_TOKENS: ReadonlySet<string> = new Set([
   'NOT_AVAILABLE',
 ]);
 
+/**
+ * §十二 非 API 叙述词豁免（B-12 向对账用）。
+ *
+ * §十二「完整 API 一览」line 1048 有一处守卫名交叉引用：`PUBLIC-API-SURFACE-1`。
+ * `extractIdentifierTokens` 按 `-` 拆出 `PUBLIC` / `SURFACE` 片段，它们是守卫名碎片、
+ * 不是 API 方法名，不应被当成幻觉符号。与 §十六 `SECTION_SIXTEEN_NON_EXPORT_TOKENS` 同理：
+ * 叙事词不是承诺。`API` 因在 src 真实存在已自然通过，`1` 非标识符不被 token 化，故仅豁免此二者。
+ */
+const SECTION_TWELVE_NON_API_TOKENS: ReadonlySet<string> = new Set(['PUBLIC', 'SURFACE']);
+
 describe('公共 API 面登记门槛守卫（PUBLIC-API-SURFACE-1）', () => {
   it('扫描面自检：公开面 / 消费面 / 自消费面均非空（防守卫失明假绿）', () => {
     expect(publicSurface.size).toBeGreaterThan(50);
@@ -279,7 +294,9 @@ describe('公共 API 面登记门槛守卫（PUBLIC-API-SURFACE-1）', () => {
   });
 
   it('向 B：手册 §十六 承诺符号在 src 源码中真实存在（防幻觉文档）', () => {
-    const phantom = [...manualTokens].filter((t) => !existsInSrc(t));
+    const phantom = [...manualTokens].filter(
+      (t) => !existsInSrc(t) && !SECTION_SIXTEEN_NON_EXPORT_TOKENS.has(t),
+    );
     const hint =
       `docs/memora-api-reference.md §十六 引用了 src 中不存在的符号——\n` +
       `文档虚构 API 比漏文档更伤消费者（历史事故 5 处）。删除该引用，或核实符号正确拼写。`;
@@ -290,7 +307,9 @@ describe('公共 API 面登记门槛守卫（PUBLIC-API-SURFACE-1）', () => {
   });
 
   it('向 B-12：手册 §十二 完整 API 一览的承诺符号在 src 真实存在（堵原盲区）', () => {
-    const phantom = [...manualTwelveTokens].filter((t) => !existsInSrc(t));
+    const phantom = [...manualTwelveTokens].filter(
+      (t) => !existsInSrc(t) && !SECTION_TWELVE_NON_API_TOKENS.has(t),
+    );
     const hint =
       `docs/memora-api-reference.md §十二 引用了 src 中不存在的符号——\n` +
       `与 §十六 同型幻觉（实锤先例：processEvent(event) 行 2026-10-16 删除）。\n` +

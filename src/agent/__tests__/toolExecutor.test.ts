@@ -2815,8 +2815,10 @@ describe('工具执行器（6 个工具）', () => {
 /**
  * run_command / kill_command 工具层（方案文档 §13.2 裁决链 + §14 后台能力）
  *
- * 命令构造纪律（实测教训）：跨平台命令避开 shell 元字符——`=>` 里的 `>` 会被 cmd 当重定向符、
- * 嵌套引号被 cmd 吞掉。统一用无空格无元字符的 `node -e <code>` / `node -v` 形态。
+ * 命令构造纪律（实测教训 / CI 跨平台真红）：`node -e "<expr>"` 里的 `expr` 含 `()` 时，
+ * 必须在 POSIX `sh` 下用双引号包裹——否则 `(` 被当成子 shell 元字符报
+ * `Syntax error: "(" unexpected`、命令秒退（exit 2），连带退出码/超时断言全崩。
+ * `cmd` 同样需引号防拆参。故非零/长驻命令统一写成 `node -e "process.exit(3)"` 形态。
  */
 describe('run_command / kill_command（命令执行工具层）', () => {
   let tmpProject: string;
@@ -2831,9 +2833,9 @@ describe('run_command / kill_command（命令执行工具层）', () => {
   /** 工具层命令长度上限（对齐 run_code 的 RUN_CODE_CODE_MAX_LEN；测试按此构造超长命令） */
   const RUN_COMMAND_MAX_LEN_FOR_TEST = 50_000;
   /** 跨平台非零退出命令 */
-  const FAIL_CMD = 'node -e process.exit(3)';
+  const FAIL_CMD = 'node -e "process.exit(3)"';
   /** 跨平台长驻命令（供 kill_command 终止） */
-  const SLEEP_CMD = 'node -e setTimeout(function(){},20000)';
+  const SLEEP_CMD = 'node -e "setTimeout(function(){},20000)"';
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

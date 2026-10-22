@@ -343,16 +343,17 @@ describe('skillScriptRunner — runSkillScript', () => {
       expect(result.stdout).toContain('memora-shell-ok');
     });
 
-    // 命令构造纪律（跨平台）：避开 shell 元字符——`>` 会被 cmd 当重定向、
-    // 嵌套引号会被 cmd 吞掉。故用无空格、无元字符的 `node -e <code>` 形态。
+    // 命令构造纪律（跨平台）：`node -e` 的表达式必须用双引号包裹——`()` 在
+    // POSIX sh 里是元字符，裸写会 `Syntax error: "(" unexpected`（Node 22 / Ubuntu
+    // CI 实测）；cmd 与 sh 都会剥离这层双引号，两侧均可执行。
     it('runShellCommand：非零退出码如实回传（不把失败粉饰为成功）', async () => {
-      const result = await runShellCommand('node -e process.exit(3)');
+      const result = await runShellCommand('node -e "process.exit(3)"');
       expect(result.exitCode).toBe(3);
     });
 
     it('runShellCommand：超时走杀树原语并置 timedOut（与脚本路径同一治理）', async () => {
       const result = await runShellCommand(
-        'node -e setTimeout(function(){},30000)',
+        'node -e "setTimeout(function(){},30000)"',
         undefined,
         1_000,
       );

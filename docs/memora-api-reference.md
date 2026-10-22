@@ -1250,7 +1250,7 @@ export type { ICodeExecutionProvider, CodeExecutionResult, CodeExecutionOptions 
 export type { WorkProjectionEntry } from '@zooique/memora';
 
 // 记忆
-export { SOURCE_LABELS } from '@zooique/memora';
+export { SOURCE_LABELS, SUMMARY_TYPES } from '@zooique/memora';
 export type { Memory } from '@zooique/memora';
 export { validateSource } from '@zooique/memora';
 export type { SourceValidationSeverity } from '@zooique/memora';
