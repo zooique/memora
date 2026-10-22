@@ -1,0 +1,90 @@
+# Memora 内核 Release 流水线：GitHub 打标 → 内核门禁 → 发布 npm
+#
+# 触发：推送形如 vX.Y.Z 的 tag（如 v5.0.0）。
+#   - 仓库 origin 双推 gitee+github，GitHub 收到 tag 即触发本流程；
+#     gitee 端无对应 workflow，不会重复发布。
+#   - tag 必须与根 package.json 的 version 一致（下方有护栏校验），
+#     否则视为宿主 tag 误触发，直接终止，避免误发内核包。
+#
+# 门禁范围与本仓库质量门对齐（非本地 ci:local 全量）：
+#   typecheck / lint / 单元测试（串行，贴合本地真形态）/ 生产构建。
+#   dist 由 prepack(build:clean) 在 publish 前自动重建，幂等。
+#
+# ⚠️ 认证：npm **Trusted Publisher（OIDC）**，免长期令牌。
+#   背景：npm 2026-07-08 公告弃用 2FA-bypass（Automation）长期发布令牌，
+#   发布类能力将于 ~2027-01 失效，官方推荐 OIDC Trusted Publisher。
+#   故本流程不使用 NPM_TOKEN Secret，改用 GitHub OIDC 自动向 npm 证明身份。
+#   前置条件（闸门会跑的前提）：必须在 npm 网页把本 workflow 登记为可信发布者：
+#     包设置 → Access → Automation → Trusted Publishers → Add Trusted Publisher
+#     Publisher：GitHub Actions / Repository：zooique/memora /
+#     Workflow file name：release.yml（⚠️ 只填文件名，不要带 .github/workflows/ 前缀）/
+#     Environment name：（留空，与 workflow 未声明 environment 一致）
+#   （@zooique/memora 已发过 4.0.0，用 package-level 即可；若包尚未存在
+#    则需先手动发一版或用 organization-level 配置。）
+#
+# ⚠️ 「允许的行动」怎么勾：**不勾「允许 npm 发布」**（= 走分阶段发布 staged）。
+#   npm 页面会提示「不推荐」，那是指**给 CI 直接发布权的风险**，不是报错：
+#     勾 = CI 可直接 push 版本上架，仓库/CI 一旦被攻破即可投毒，无人拦截；
+#     不勾 = CI 只能 `npm stage publish` 进暂存区，须你本人 2FA 审批后才公开。
+#   代价仅「发版后去 npmjs.com 的 Staged Packages 点一次 Approve」。
+#   硬前提：npm 账号必须**已启用 2FA**（staged publishing 的前置条件）。
+#   若你更想一步到位（接受供应链风险），勾上「允许 npm 发布」并把下方
+#   发布步换回 `npm publish --provenance` 即可。
+
+name: Kernel Release → npm
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 只读源码即可；id-token: write 供 OIDC 向 npm 证明身份（Trusted Publisher 必需）。
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  release:
+    name: 内核门禁 + 发布 npm
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm（读取 packageManager 字段，避免版本冲突）
+        uses: pnpm/action-setup@v4
+
+      - name: 安装 Node.js 22 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 校验 tag 与 package.json version 一致
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          echo "tag=v$TAG  package.json.version=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG 与 package.json version $PKG 不一致，疑似宿主 tag 误触发，终止发布。"
+            exit 1
+          fi
+
+      - name: TypeScript 类型检查
+        run: npm run typecheck
+
+      - name: ESLint 代码规范
+        run: npm run lint
+
+      - name: 单元测试（串行，贴合本地真形态，避免 I/O 假红）
+        run: npm test -- --no-file-parallelism
+
+      - name: 生产构建验证
+        run: npm run build
+
+      # 不用 `npm install -g npm@latest`：setup-node 的 Node 装在只读缓存目录，
+      # 全局安装可能 EACCES；npx 在用户态临时取用 npm@latest（≥11.15 才支持 stage）。
+      - name: 暂存发布（OIDC 免令牌；进入 staging，待本人 2FA 审批后才公开）
+        run: npx -y npm@latest stage publish
