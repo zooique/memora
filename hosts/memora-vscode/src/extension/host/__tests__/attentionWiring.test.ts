@@ -95,6 +95,16 @@ describe('系统 toast 通道已退役（2026-10-22 实证：借 AUMID 被静默
     expect(ext).not.toContain('registerUriHandler');
   });
 
+  /**
+   * 复活死通道的**第一个动作**通常是往 package.json 里加 `onUri` 激活事件（先有入口再写
+   * handler）。只锚 `extension.ts` 不含 `registerUriHandler` 守不住这一步 —— handler 可以
+   * 晚一步写，激活事件却已经在那儿了。故对 package.json 做整文件断言（`onUri` 任何形态
+   * 都不许出现，含注释）。
+   */
+  it('package.json 不含 onUri 激活事件（复活死通道的第一入口）', () => {
+    expect(read('package.json')).not.toContain('onUri');
+  });
+
   it('workbench 通知与「去处理」按钮文案保持移除（更早的收敛不得回退）', () => {
     expect(notice).not.toContain('showInformationMessage');
     expect(notice).not.toContain('去处理');
