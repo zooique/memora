@@ -109,6 +109,11 @@
         "command": "memora.fileChange.restoreFile",
         "title": "Memora: 回退本文件改动",
         "icon": "$(discard)"
+      },
+      {
+        "command": "memora.copyDiagnostics",
+        "title": "Memora: 复制诊断摘要",
+        "icon": "$(copy)"
       }
     ],
     "configuration": {
@@ -134,6 +139,12 @@
           "type": "boolean",
           "default": false,
           "description": "显示活动指标（LLM 调用次数 / 工具失败与截断 / token / 安全审计 / 指纹 hash 等调试信息）。默认隐藏，对普通用户是噪音；需要调试可观测性时开启"
+        },
+        "memora.attentionSound": {
+          "type": "boolean",
+          "scope": "application",
+          "default": true,
+          "description": "交互提醒提示音：对话面板不在前台时，审批卡推出 / AI 提问等待 / 一轮完成会播放系统提示音。关闭后完全静音（面板内徽章与未读仍照常工作）。修改即时生效。"
         },
         "memora.allowedPaths": {
           "type": "array",

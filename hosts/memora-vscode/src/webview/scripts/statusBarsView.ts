@@ -32,15 +32,9 @@ export interface StatusBarsViewDeps {
   /** #inputBar（三条 bar 均插入其之前，与裁决器注册共享同一父节点） */
   inputBar: HTMLElement;
   /** StatusDock 上报：条激活/收纳（窄化为本域合法 id 三选一，禁触其他条） */
-  setDockActive: (
-    id: 'pendingQueue' | 'fileChanges' | 'background',
-    active: boolean,
-  ) => void;
+  setDockActive: (id: 'pendingQueue' | 'fileChanges' | 'background', active: boolean) => void;
   /** StatusDock 注册：懒创建时挂条目（显隐裁决归裁决器） */
-  registerDockEntry: (
-    id: 'pendingQueue' | 'fileChanges' | 'background',
-    el: HTMLElement,
-  ) => void;
+  registerDockEntry: (id: 'pendingQueue' | 'fileChanges' | 'background', el: HTMLElement) => void;
   /** 待发送区 diff「吸收时上屏」经此回写交互输入行（chatView 闭包局部函数，须注入） */
   appendInteractiveInput: (
     text: string,

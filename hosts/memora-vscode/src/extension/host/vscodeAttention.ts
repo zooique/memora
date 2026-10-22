@@ -15,10 +15,27 @@ import * as vscode from 'vscode';
 import { createAttentionNotifier, type AttentionNotifier } from './attentionNotice.js';
 import { createSystemSoundPlayer } from './systemSound.js';
 
+/**
+ * 读取「提示音开关」配置（唯一读取点）
+ *
+ * 语义：开关只管**声音出口**，不参与「要不要提醒」的判据——
+ * 判据（窗口失焦 / 去重）仍由 attentionNotice 纯逻辑层持有，面板内徽章与未读照常工作。
+ * 修改即时生效：每次响铃前现读，无需重载窗口（与配置描述一致）。
+ */
+function isAttentionSoundEnabled(): boolean {
+  return vscode.workspace.getConfiguration('memora').get<boolean>('attentionSound', true);
+}
+
 /** 构造带 VS Code 宿主的提醒器（无参：判据只需窗口聚焦态，不需要视图实例） */
 export function createVscodeAttention(): AttentionNotifier {
+  // 播放器创建一次（各平台命令解析等初始化成本不随每次响铃重复）
+  const play = createSystemSoundPlayer();
   return createAttentionNotifier({
     isWindowFocused: () => vscode.window.state.focused,
-    playSound: createSystemSoundPlayer(),
+    // 开关判定放在注入回调内：宿主层是唯一知道配置键的地方，纯逻辑层零配置依赖
+    playSound: () => {
+      if (!isAttentionSoundEnabled()) return;
+      play();
+    },
   });
 }

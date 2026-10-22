@@ -29,14 +29,14 @@ import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js
 import { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
 import {
   MemoraChatViewProvider,
-  MAX_THOUGHT_PAYLOAD_LENGTH,
-  foldThoughtEvents,
   docInjectReason,
   mustInjectDocBody,
   projectActiveFile,
   readDocBody,
   snapshotDocContext,
 } from '../panels/chatPanel.js';
+// thought 落盘折叠域已自 chatPanel 迁出（纯函数真源，max-lines 拆分）
+import { MAX_THOUGHT_PAYLOAD_LENGTH, foldThoughtEvents } from '../../extension/host/thoughtFold.js';
 
 // mock vscode：仅提供 chatPanel / ProviderStore 用到的最小 API
 vi.mock('vscode', async () => {

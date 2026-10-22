@@ -53,12 +53,12 @@ export default [
     rules: { 'max-lines': ['error', { max: 6716 }] },
   },
   {
-    files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法）
-    rules: { 'max-lines': ['error', { max: 4546 }] },
+    files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域已外置）
+    rules: { 'max-lines': ['error', { max: 4516 }] },
   },
   {
-    files: ['src/webview/panels/settingsPanel.ts'], // TARGET（一 class 扛 5 个 tab）
-    rules: { 'max-lines': ['error', { max: 2089 }] },
+    files: ['src/webview/panels/settingsPanel.ts'], // TARGET（一 class 扛 5 个 tab；安全页静态骨架已外置）
+    rules: { 'max-lines': ['error', { max: 2041 }] },
   },
   {
     files: ['src/extension/host/fileChangeView.ts'], // TARGET

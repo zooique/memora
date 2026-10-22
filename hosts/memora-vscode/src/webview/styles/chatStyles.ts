@@ -2584,6 +2584,21 @@ export const chatStyles = `
     white-space: pre-wrap; word-break: break-all;
     border-top: var(--line-solid);
   }
+  /* 指标空态指引：showMetrics 默认关时解释「为什么空」，点按钮走原生设置（唯一写入面）。
+     [hidden] 由 renderMetrics 置位；用 flex 布局让文字与按钮同行，窄宽度自动换行。 */
+  .activity-metrics-empty {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2, 6px);
+    padding: var(--sp-2, 6px) 0 0;
+    font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6);
+    border-top: var(--line-solid);
+  }
+  .activity-metrics-empty[hidden] { display: none; }
+  .activity-metrics-empty__open {
+    padding: 0; border: none; background: none; cursor: pointer;
+    color: var(--vscode-textLink-foreground, #4daafc); font-size: inherit;
+    text-decoration: underline;
+  }
+  .activity-metrics-empty__open:hover { color: var(--vscode-textLink-activeForeground, #79c0ff); }
 
   /* 主动提问条 */
   #clarifyBar {

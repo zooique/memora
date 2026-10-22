@@ -314,6 +314,15 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'open_config' }
   /**
+   * 打开 VS Code 原生设置中的指定配置项（设置面板「在设置中调整」按钮触发）
+   *
+   * 只负责导航：配置的读写真源仍是 VS Code settings（webview 不复制第二套读写 UI，
+   * 否则键名 / 默认值 / scope 各存一份，改一处漏一处）。key 必须是本扩展
+   * package.json 声明过的配置键（如 `memora.showMetrics`）；宿主用
+   * `workbench.action.openSettings` 带键名打开，输入框 / 校验 / scope 提示由 VS Code 提供。
+   */
+  | { type: 'open_setting'; key: string }
+  /**
    * 打开角色包管理视图（对话面板「当前角色」徽章点击触发）
    *
    * 由输入区下方状态行的当前角色徽章点击触发：host 打开设置视图并切到「角色」选项卡

@@ -26,6 +26,7 @@ import { ProviderStore } from './providers/providerStore.js';
 import { resetUserData } from './host/userDataReset.js';
 import { toNoticeText } from './host/noticeText.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
+import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js';
 import { MemoraSettingsViewProvider } from '../webview/panels/settingsPanel.js';
 import { openChatCommand } from './commands/openChat.js';
 import { runDemoCommand } from './commands/demo.js';
@@ -92,6 +93,47 @@ function readDisabledSkills(): string[] {
 }
 
 /**
+ * 读取「允许路径白名单」配置（唯一读取点）
+ *
+ * 两处消费共用：① 装配期注入；② 配置变更监听（settings.json 手改 / Settings Sync 落地）。
+ * 键名与默认值只在此处写一次，避免两处各存一份后改一处漏一处。
+ */
+function readAllowedPaths(): string[] {
+  return vscode.workspace.getConfiguration('memora').get<string[]>('allowedPaths', []);
+}
+
+/**
+ * 读取「会话归档模式」配置（唯一读取点）
+ *
+ * 两处消费共用：① 装配期注入；② 配置变更监听。默认值与 package.json 的
+ * `memora.archiveMode.default` 保持一致（'full'）——恢复默认时热更新也要切回 full。
+ */
+function readArchiveMode(): ArchiveMode {
+  return vscode.workspace.getConfiguration('memora').get<ArchiveMode>('archiveMode', 'full');
+}
+
+/**
+ * 对「已装配的 Agent」执行一次配置热更新动作
+ *
+ * 真源约束（与 syncDisabledSkills 的注释同源）：**不触发懒装配**——配置变更若发生在
+ * 面板未开 / Agent 未装配时，下次装配本就会按新配置注入，不该为「改一次设置」付
+ * 整个 Agent 装配成本。失败降级为日志：配置已落盘，下次装配仍会读到新值，
+ * 不能打断用户当前操作。
+ *
+ * @param action   热更新动作（入参 = 已装配的 Agent）
+ * @param failLabel 失败日志标签（区分是哪条配置的同步失败）
+ */
+function runOnAssembledAgent(action: (agent: Agent) => void, failLabel: string): void {
+  void (async () => {
+    const agent = agentPromise ? await agentPromise.catch(() => null) : null;
+    if (!agent) return;
+    action(agent);
+  })().catch((err) => {
+    console.warn(`Memora ${failLabel}失败`, err);
+  });
+}
+
+/**
  * 技能启停同步：把宿主配置的禁用集喂给内核 + 刷新**两条** UI 消费通道。
  *
  * 单一实现 —— 配置变更监听与「Memora: 重载技能与角色包」命令共用，防两处各写一份。
@@ -151,11 +193,8 @@ function getOrCreateAgent(
     const confirmWrites = globalState.get<boolean>(CONFIRM_WRITES_KEY) ?? false;
     // 读取脚本/代码执行确认开关（用户安全偏好；默认 false → owner 脚本执行自动批准）
     const confirmScripts = globalState.get<boolean>(CONFIRM_SCRIPTS_KEY) ?? false;
-    // 读取工作区白名单额外路径（项目级设置，落 .vscode/settings.json）；
-    // 项目目录基准根恒在，此处仅含用户额外路径
-    const allowedPaths = vscode.workspace
-      .getConfiguration('memora')
-      .get<string[]>('allowedPaths', []);
+    // 读取白名单额外路径（用户级设置，机器级目录信任；项目目录基准根恒在，此处仅含额外路径）
+    const allowedPaths = readAllowedPaths();
     // 内置网页搜索引擎（memora.searchEngine 设置；'auto' = Bing→DuckDuckGo 默认链，亦可为自定义引擎名）
     const searchEngine = vscode.workspace
       .getConfiguration('memora')
@@ -165,11 +204,9 @@ function getOrCreateAgent(
       .getConfiguration('memora')
       .get<CustomSearchEngineConfig[]>('customSearchEngines', []);
     // 会话归档模式（memora.archiveMode 设置；'full'=自动归档允许，'manual'=仅手动）。
-    // 装配期一次性注入内核 AgentOptions.archiveMode（undefined 时内核回落 'full'）；
-    // 运行时切换走设置面板「记忆」选项卡热更新（agent.setArchiveMode，繁忙顺延）。
-    const archiveMode = vscode.workspace
-      .getConfiguration('memora')
-      .get<ArchiveMode>('archiveMode', 'full');
+    // 装配期一次性注入内核 AgentOptions.archiveMode；运行时切换走配置变更监听
+    // （agent.setArchiveMode，繁忙顺延）——设置面板与直接改 settings.json 同一路径。
+    const archiveMode = readArchiveMode();
     // 禁用的技能名清单（配置形态启停）：命中技能对 LLM 全链不可用
     // （L1 清单 / list_skills / read_skill / L3 全不可达）。此处只是**装配期快照**；
     // 用户改设置由 activate 内的配置监听实时重设，无需重新装配。
@@ -540,15 +577,36 @@ export function activate(context: vscode.ExtensionContext): void {
           console.warn('Memora LLM 配置变更后装配重试失败', err);
         });
       }
-      if (!e.affectsConfiguration('memora.disabledSkills')) return;
-      void (async () => {
-        const agent = agentPromise ? await agentPromise.catch(() => null) : null;
-        if (!agent) return;
-        syncDisabledSkills(agent, chatProvider, settingsProvider);
-      })().catch((err) => {
-        // 降级优先：同步失败不打断用户当前操作——禁用集在下次装配时仍会按新配置注入
-        console.warn('Memora 技能启停配置同步失败', err);
-      });
+      // ─── 以下每个键独立判定，禁止用 return 短路 ───
+      // 旧实现是「disabledSkills 未变则 return」，新增键写在它之后会被整段吞掉；
+      // 三个键的语义也不同（技能启停是读期过滤 / 白名单与归档模式是运行时热更新），
+      // 任一键变更都不得影响其余键的同步。
+      if (e.affectsConfiguration('memora.disabledSkills')) {
+        runOnAssembledAgent(
+          (agent) => syncDisabledSkills(agent, chatProvider, settingsProvider),
+          '技能启停配置同步',
+        );
+      }
+      // 白名单：设置面板写入之外，用户手改 settings.json / Settings Sync 落地也必须收敛，
+      // 否则「已保存但运行时仍按旧白名单」，只能重载窗口（静默失效）。
+      if (e.affectsConfiguration('memora.allowedPaths')) {
+        runOnAssembledAgent(
+          (agent) => agent.security?.setAllowedPaths(readAllowedPaths()),
+          '允许路径配置同步',
+        );
+      }
+      // 归档模式：同上。setArchiveMode 在对话进行中会「暂存 + 抛错」（内核 A2 契约），
+      // 抛错 = 已排期到轮终补执行，不是失败——单独 catch 以免被公共壳误记为同步失败。
+      if (e.affectsConfiguration('memora.archiveMode')) {
+        runOnAssembledAgent((agent) => {
+          try {
+            agent.setArchiveMode(readArchiveMode());
+          } catch (err) {
+            // 预期路径（busy 暂存）：保留日志便于诊断「为什么还没切」
+            console.info('Memora 归档模式变更已暂存，将在当前对话结束后生效', err);
+          }
+        }, '归档模式配置同步');
+      }
     }),
   );
 
@@ -845,6 +903,22 @@ export function activate(context: vscode.ExtensionContext): void {
       // 先确保对话面板可见（未聚焦时 pushRefs 缓冲到 ready 后补发，与 prefillInput 同构）
       await vscode.commands.executeCommand('memora.chat.focus');
       chatProvider.pushRefs(refs);
+    }),
+  );
+
+  // 命令：复制诊断摘要（用户报障时一条命令带走版本 / 环境 / 配置 / 最近 webview 错误 / 指标）
+  // 取数与格式化分离：chatProvider 只交出原始数据（缓冲 + 指标），脱敏与排版归 hostDiagnostics
+  // 模块——宿主不另拼一份「差不多」的摘要，否则两处口径漂移，用户贴给我们的和界面看到的对不上。
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.copyDiagnostics', async () => {
+      const data = chatProvider.getDiagnosticData();
+      const snapshot = formatDiagnosticsSnapshot({
+        extensionVersion: String(context.extension.packageJSON.version ?? 'unknown'),
+        recentHostDiags: data.recentHostDiags,
+        agentMetrics: data.agentMetrics,
+      });
+      await vscode.env.clipboard.writeText(snapshot);
+      void vscode.window.showInformationMessage('Memora 诊断摘要已复制到剪贴板');
     }),
   );
   // 会话管理入口在 webview 标题条：

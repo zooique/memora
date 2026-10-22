@@ -528,6 +528,16 @@ function createSecurityView({
     });
   }
 
+  // ─── 「在设置中调整」导航按钮（统一绑定，禁逐个手写） ───
+  // 三个配置键（scriptNodePath / showMetrics / attentionSound）共用同一条 open_setting
+  // 通道：配置读写真源是 VS Code 原生设置，设置页不复制第二套输入框/开关
+  // （复制即键名、默认值、scope 三处各存一份）。新增同类按钮只需加 data-setting-key。
+  root.querySelectorAll<HTMLButtonElement>('.open-setting-btn').forEach((btn) => {
+    const key = btn.dataset.settingKey;
+    if (!key) return;
+    btn.addEventListener('click', () => vscode.postMessage({ type: 'open_setting', key }));
+  });
+
   // ─── 网页搜索引擎下拉（选项由 custom_search_engines_status 动态重建，单一真理源 PRESET_SEARCH_ENGINES）───
   const engineSelect = root.querySelector<HTMLSelectElement>('#searchEngineSelect');
   let currentCustomEngines: CustomSearchEngineConfig[] = [];

@@ -233,6 +233,8 @@ describe('chatPanel · agent 强制依赖面守卫（P1-2）', () => {
   const REGISTERED_STRICT = [
     'clearPendingInterjections',
     'getEffectiveMaxTokens',
+    // 复制诊断摘要：getDiagnosticData 读运行指标（严格依赖，替身已实现 getMetrics）
+    'getMetrics',
     'isPausePending',
     'removePendingInterject',
   ];

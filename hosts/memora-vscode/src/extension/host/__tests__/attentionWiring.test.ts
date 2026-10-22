@@ -29,15 +29,15 @@ const read = (...segments: string[]) => readFileSync(join(HOST_ROOT, ...segments
  * 知道为什么只剩一条通道）。不剥离注释 ⇒ 守卫把说明文字当违规，实测踩过。
  */
 const codeOf = (src: string) =>
-  src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^[ \t]*\/\/.*$/gm, '');
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('chatPanel.ts：三个触发点接线', () => {
   const src = read('src', 'webview', 'panels', 'chatPanel.ts');
 
   it('confirm：onConfirmShown 注入确认协调器（只取 requestId，label 留在协调器）', () => {
-    expect(src).toContain('onConfirmShown: (info) => this._attention.onConfirmShown({ requestId: info.requestId })');
+    expect(src).toContain(
+      'onConfirmShown: (info) => this._attention.onConfirmShown({ requestId: info.requestId })',
+    );
   });
 
   it('ask：两个写入源各一处提醒（事件驱动 + 流尾兜底）', () => {
@@ -68,7 +68,9 @@ describe('分层纪律：纯逻辑层不碰 vscode', () => {
     const src = read('src', 'extension', 'host', 'vscodeAttention.ts');
     // 判据的真源在 attentionNotice.ts；这里出现判据字样说明逻辑漏到了适配层
     expect(src).not.toContain('isWindowFocused() &&');
-    expect(src).toContain('playSound: createSystemSoundPlayer()');
+    // 声音出口仍走统一工厂；提示音开关只加在注入回调内（不改判据）
+    expect(src).toContain('createSystemSoundPlayer()');
+    expect(src).toContain("get<boolean>('attentionSound', true)");
   });
 });
 

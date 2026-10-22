@@ -2634,10 +2634,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     activityBar,
     activityList: document.getElementById('activityList') as HTMLElement,
     activityMetrics: document.getElementById('activityMetrics') as HTMLElement,
+    activityMetricsEmpty: document.getElementById('activityMetricsEmpty') as HTMLElement,
     setDockActive,
     setDockFixed,
     notifyDockChanged: resolveDock,
     isDockExpanded: () => _dockExpanded,
+  });
+
+  // 指标空态指引的「在设置中开启」：只发导航消息，配置读写真源仍是 VS Code 原生设置
+  // （对话面板不持有配置写入面，避免与设置面板形成第二套写入路径）
+  document.getElementById('activityMetricsEmptyOpen')?.addEventListener('click', () => {
+    vscode.postMessage({ type: 'open_setting', key: 'memora.showMetrics' });
   });
 
   // ─── 底部状态条收纳器（StatusDock，ADR-037 形态宪法；实现契约详见
@@ -2773,7 +2780,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const actives = [...dockEntries.values()].filter((e) => e.active);
     // composer 让位裁决（唯一写入点）：A 类阻断面板激活即替换掉输入框——用户此刻只能做
     // 「确认/拒绝」这一个决定。B 类信息条再多条也不抢输入框（它们不阻断）。
-    setComposerReplaced(actives.some((e) => e.priority === CONFIRM_PRIORITY));
+    const confirmActive = actives.some((e) => e.priority === CONFIRM_PRIORITY);
+    setComposerReplaced(confirmActive);
     // 🔴 结构纪律（探针实锤，2026-10-05）：**主位条与 anchor 之间必须恒定干净**——
     // 物理相邻，不允许隐藏节点夹在中间（点击穿透/点击区错位）。故非活跃条统一退到
     // #dockChip 之上（静态抽屉比任何条都更靠近 anchor），不退 anchor 前。
@@ -2809,9 +2817,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 单条 error 8s 撤后历史仍可从这里拉开——C1 闭合的最后残余缺口（台账 P15 病③）。
     // timelineReady/hasUnread 判据真源随活动抽屉域收口于 activityDrawerView.getDockState（第 4 刀）。
     const { timelineReady, hasUnread } = activityDrawerView.getDockState();
-    const chipVisible = rest.length > 0 || timelineReady;
-    // 空态（入口不可达）时展开态无意义，强制收起；其余时刻**不替用户合抽屉**
-    // （正在看历史时条全撤 = P10C open 轴血训的同一条纪律，折叠轴只剩这一个）。
+    // A 类阻断面板激活时入口一并让位（UI-CONFIRM-FIT-1 收尾，2026-10-22）：
+    // 卡已按「输入框同盒替身」占据 inputBar 原位，chip 若留在卡上方，同盒错觉立即破功；
+    // 且阻断态用户只能做「确认/拒绝」这一个决定，抽屉入口此刻没有承接面。
+    // 代价与边界：隐藏的是**入口**不是数据——未读位由 activityDrawerView 持有，
+    // 收卡后 resolveDock 重跑、chip 连同未读徽章原样恢复（不是清未读）。
+    const chipVisible = !confirmActive && (rest.length > 0 || timelineReady);
+    // 空态（入口不可达）时展开态无意义，强制收起——A 类阻断（confirm）同属入口不可达，
+    // 由 chipVisible 判据统一覆盖；其余时刻**不替用户合抽屉**
+    //（正在看历史时条全撤 = P10C open 轴血训的同一条纪律，折叠轴只剩这一个）。
     if (!chipVisible) _dockExpanded = false;
     dockChip.hidden = !chipVisible;
     dockChip.textContent = rest.length > 0 ? `+${rest.length}` : '活动';

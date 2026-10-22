@@ -172,6 +172,11 @@ import { ConfirmCoordinator } from '../../extension/host/confirmCoordinator.js';
 // HOST-SPLIT-1 第 4 刀：ask 提问域（自本文件迁出；注入 5 个依赖：getAgent / isAskWaiting /
 // getTurnState / post / runFlow——runFlow 是 18 行包装，**不是** consumeFlow 主循环）
 import { AskCoordinator } from '../../extension/host/askCoordinator.js';
+// 「复制诊断摘要」数据源（自本文件拆出）：chatPanel 只持有环形缓冲，
+// 容量上限与格式化同处 hostDiagnostics，避免线性增长域把 max-lines 顶爆（injectionBodies.ts 同例）
+import { recordHostDiag, type DiagnosticsData, type HostDiagEntry } from './hostDiagnostics.js';
+// thought 落盘折叠域（自本文件拆出；纯逻辑 + 长不变量说明，详见真源模块）
+import { foldThoughtEvents, MAX_THOUGHT_PAYLOAD_LENGTH } from '../../extension/host/thoughtFold.js';
 
 // 判据与快照的真源已迁至 activeFileTracker.ts；此处 re-export **仅为保住既有测试的导入路径**
 // （chatPanelHistory.test.ts 直驱这 5 个纯函数）——按规则 §6.2「sugar API 保留、内部委托」。
@@ -229,53 +234,6 @@ interface LiveFlowBuffer {
   currentRoundKey?: string;
   /** 开轮用户输入（仅 chat 开新轮路径有；resume 续跑轮由 mergeLiveRound 从落盘历史补） */
   seedUserMessage?: RoundView['userMessage'];
-}
-
-/**
- * thought 落盘截断上限（字符；Turn 意图理解与模型思考展示设计）：
- * 模型思考内容可能很长（deepseek 深度思考数千 token），落盘前截断防 Round 文件膨胀
- * （SSOT 常量：仅宿主落盘侧消费；展示侧流式全量，不受影响）。命名与既有 thinking 相位事件无关。
- */
-export const MAX_THOUGHT_PAYLOAD_LENGTH = 4000;
-
-/**
- * thought 增量按 step 聚合（落盘前折叠）：同 stepIndex 的**相邻** thought 碎片合并为
- * ≤MAX_THOUGHT_PAYLOAD_LENGTH 的批次事件。真机 1.37MB 级 round 文件的主因是 7000+
- * 碎片信封开销（seq/ts/type/payload 键）而非思考正文——折叠后信封数 ≈ 正文字符/上限。
- *
- * 三条不变量：
- * - **内容零损失**：批次满则开新批（单碎片超限已在 emit 侧截断，本函数不二次截断）；
- * - **seq 幂等兼容**：批次 seq/ts 取首碎片，同输入恒同结果——step 边界检查点与流尾终局
- *   两次折叠对 mergeProcessEvents 的 seq 去重天然幂等；
- * - **UI 流式不变**：仅落盘侧折叠（emitEvent 即时投影仍逐碎片）；重放渲染无差
- *   （webview 本就按 stepIndex 把连续碎片聚成一个折叠块，批次边界恰是其归桶边界）。
- *
- * ⚠️ **前提不变量（破坏即静默丢内容，见 tasks/待完成任务.md T4-FOLD-1）**：seq 幂等成立依赖
- * 「检查点只在 step 边界触发 + 同 step 碎片在其 step_boundary 前已完整」——此时两次折叠的
- * 批次构成恒相同。若未来检查点提前到 step 中途（心跳检查点 / 中途 flush），同一 run 的碎片
- * 会跨两次折叠变形（首批 seq 不变但内容更长），mergeProcessEvents 按 seq 去重会**静默丢弃**
- * 长版 = 内容丢失。届时须先改为流式有状态折叠（emit 时折、检查点只 flush）。
- */
-export function foldThoughtEvents(events: ProcessEvent[]): ProcessEvent[] {
-  const out: ProcessEvent[] = [];
-  for (const ev of events) {
-    const prev = out[out.length - 1];
-    if (
-      ev.type === 'thought' &&
-      prev?.type === 'thought' &&
-      prev.payload.stepIndex === ev.payload.stepIndex &&
-      prev.payload.content.length + ev.payload.content.length <= MAX_THOUGHT_PAYLOAD_LENGTH
-    ) {
-      // 拷贝后替换，不原地改 prev（prev 与 eventsByRound 缓冲可能共享引用）
-      out[out.length - 1] = {
-        ...prev,
-        payload: { ...prev.payload, content: prev.payload.content + ev.payload.content },
-      };
-      continue;
-    }
-    out.push(ev);
-  }
-  return out;
 }
 
 /** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（删除会话记录 + 会话标题元数据）。
@@ -396,18 +354,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private _backgroundSignature: string | null = null;
   /**
-   * 用户已手动收起的后台任务（webview 终态行 `×`）
-   *
-   * **只存用户偏好，不存任务数据**——任务与输出恒在内核注册表，本集合只影响「这条别显示」。
-   * 放宿主而非 webview：webview 折叠重建后记忆会丢，刚收起的行又冒出来。
-   * 生命周期 = 宿主实例（切会话 / 重开窗口即重置，与「换场景重新看待」一致）。
+   * 用户已手动收起的后台任务（webview 终态行 `×`）：只存用户偏好，不存任务数据。
+   * 放宿主（webview 折叠重建会丢）；生命周期 = 宿主实例（切会话 / 重开窗口即重置）。
    */
   private readonly _dismissedBackgroundTaskIds = new Set<string>();
+  /** 最近 webview 错误上报（复制诊断命令消费；容量/格式化归 hostDiagnostics 模块） */
+  private readonly _recentHostDiags: HostDiagEntry[] = [];
   /**
-   * 当前 turn 状态（单一路由判据的 SSOT）
-   *
-   * 由 `postTurnUpdate` 每次投影时写回（与推给 webview 的 `turn_update.state` 同一对象），
-   * `handleInput` 按它路由四条内核入口、判定错位输入。提问原文统一从
+   * 当前 turn 状态（单一路由判据的 SSOT）：由 `postTurnUpdate` 写回（与推给 webview 的
+   * `turn_update.state` 同一对象），`handleInput` 据此路由四条内核入口。提问原文从
    * `_turnState.waiting.questions` 读，无独立生命周期、不做消费式 splice 镜像。
    */
   private _turnState: TurnState = { phase: 'idle' };
@@ -1100,6 +1055,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /** 诊断数据（复制诊断命令消费；格式化与脱敏归 hostDiagnostics 模块） */
+  getDiagnosticData(): DiagnosticsData {
+    return { recentHostDiags: this._recentHostDiags, agentMetrics: this._agent?.getMetrics() };
+  }
+
   /**
    * webview → 扩展的消息分发（HOST-CTX-12：自 onDidReceiveMessage 匿名回调摘出）
    *
@@ -1115,15 +1075,23 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 正常 stop turn——保证升级轮随本次回放一次性投递，不与 _viewEpoch 折叠重建回放双发
       void this.handleWebviewReady();
     } else if (msg.type === 'host_diag') {
-      // webview 错误边界上报（T1）：落扩展宿主日志留痕，不驱动任何 UI 状态——
-      // 界面呈现（错误卡片）由 webview 就地渲染，此处只负责「用户报障时有日志可查」
-      console.warn(`Memora webview 未处理异常 [${msg.source}] ${msg.message}`, msg.stack ?? '');
+      // webview 错误边界上报（T1）：日志留痕 + 诊断缓冲同点写入（不驱动 UI 状态）
+      recordHostDiag(this._recentHostDiags, {
+        at: new Date().toISOString(),
+        source: msg.source,
+        message: msg.message,
+        stack: msg.stack,
+      });
     } else if (msg.type === 'input') {
       // 输入统一入口：宿主按当前 turn 相位单一路由，错位输入丢弃并落宿主日志留痕
       void this.handleInput(msg);
     } else if (msg.type === 'open_config') {
       // 空态引导按钮：跳转大模型配置（复用既有 configureModel 命令，单一入口）
       void vscode.commands.executeCommand('memora.configureModel');
+    } else if (msg.type === 'open_setting') {
+      // 指标空态指引「在设置中开启」：只做导航，配置读写真源 = VS Code 原生设置
+      // （对话面板不写配置；键名由 webview 传入，本分支不复制键名清单）
+      void vscode.commands.executeCommand('workbench.action.openSettings', msg.key);
     } else if (msg.type === 'open_roles') {
       // 角色徽章点击：跳转角色包管理视图（复用 configureModel 同款两行命令，单一导航入口；
       // 切换执行仍走角色视图 roles_set_active 单路径，本分支只导航）
@@ -4447,6 +4415,12 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <div id="dockControls" class="status-dock__controls" hidden></div>
     <div id="activityDetail" class="status-dock__timeline">
       <div id="activityList" class="activity-list"></div>
+      <!-- 指标空态指引（showMetrics 默认关时指标块永不到达）：只解释「为什么空」，
+           不参与时间线/未读判据（数据面真源仍是 activityMetrics 的渲染结果）。 -->
+      <div id="activityMetricsEmpty" class="activity-metrics-empty">
+        <span>指标默认隐藏（开发者调试信息）。</span>
+        <button id="activityMetricsEmptyOpen" class="activity-metrics-empty__open" type="button">在设置中开启</button>
+      </div>
       <div id="activityMetrics" class="activity-metrics" hidden></div>
     </div>
   </div>

@@ -74,11 +74,13 @@ export function buildWindowsScript(): string {
     "$ErrorActionPreference='Stop'",
     "$log = Join-Path $env:TEMP '" + SOUND_LOG_FILENAME + "'",
     "$p = Join-Path $env:WINDIR ('Media\\' + '" + PRIMARY_WAV + "')",
-    "if (-not (Test-Path -LiteralPath $p)) { $p = Join-Path $env:WINDIR ('Media\\' + '" + FALLBACK_WAV + "') }",
+    "if (-not (Test-Path -LiteralPath $p)) { $p = Join-Path $env:WINDIR ('Media\\' + '" +
+      FALLBACK_WAV +
+      "') }",
     'try { (New-Object Media.SoundPlayer $p).PlaySync() }',
     // 失败必须留线索（2026-10-22 排查教训：扩展侧 fire-and-forget，PowerShell 侧失败若不
     // 落日志则「没响」永远无法分诊——进程没起来的那一面由 Node 侧 error 回调兜住）。
-    "catch { \"$(Get-Date -Format o) wav=$p error=$($_.Exception.Message)\" | Out-File -Append -Encoding utf8 $log }",
+    'catch { "$(Get-Date -Format o) wav=$p error=$($_.Exception.Message)" | Out-File -Append -Encoding utf8 $log }',
   ].join('\n');
 }
 
@@ -137,7 +139,12 @@ export function resolveSoundCommand(platform: NodeJS.Platform): SoundCommand | u
     case 'win32':
       return {
         command: 'powershell.exe',
-        args: ['-NoProfile', '-NonInteractive', '-EncodedCommand', encodeCommand(buildWindowsScript())],
+        args: [
+          '-NoProfile',
+          '-NonInteractive',
+          '-EncodedCommand',
+          encodeCommand(buildWindowsScript()),
+        ],
       };
     case 'darwin':
       return { command: '/bin/sh', args: ['-c', buildDarwinScript()] };

@@ -84,6 +84,7 @@ const HTML = `
         <option value="baidu">百度</option>
         <option value="sogou">搜狗</option>
       </select>
+      <button class="btn btn-secondary open-setting-btn" type="button" data-setting-key="memora.showMetrics">在设置中调整</button>
     </div>
   </div>
 `;
@@ -134,6 +135,17 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
     expect(
       document.querySelector('.tab-btn[data-tab="memory"]')?.classList.contains('active'),
     ).toBe(false);
+  });
+
+  it('设置项导航按钮：点击发送 open_setting（配置读写真源在原生设置，设置页只导航）', () => {
+    const { postMessage } = mountSettingsView();
+    const btn = document.querySelector('.open-setting-btn') as HTMLButtonElement;
+    btn.click();
+    // 键名来自 data-setting-key，新增同类按钮零 JS 改动（统一绑定）
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'open_setting',
+      key: 'memora.showMetrics',
+    });
   });
 
   it('settings_switch_tab 消息切换选项卡（configureModel 命令路径）', () => {

@@ -17,6 +17,8 @@ import type { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createBackgroundProvider } from '../../extension/host/llmConfig.js';
 import { inspectRolePackTeams } from '../../extension/host/rolePackTeams.js';
 import { MemoraChatViewProvider } from './chatPanel.js';
+// 安全页静态 DOM 骨架（本文件贴 max-lines 上限，安全页每加一入口即长一段 → 外置，只存骨架零逻辑）
+import { SECURITY_ROOT_HTML } from './settingsSecurityHtml.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 import type {
   CustomSearchEngineConfig,
@@ -462,6 +464,13 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         ? { engineName: msg.engine?.name || '(空)', ok: false, count: 0, error: problem }
         : await probeSearchEngine(msg.engine);
       this.post({ type: 'custom_search_engine_test_result', result });
+      return;
+    }
+    // 「在设置中调整」：设置页只做导航，配置读写真源仍是 VS Code 原生设置
+    // （不在 webview 复制第二套输入框/开关，否则键名、默认值、scope 三处各存一份）。
+    if (msg.type === 'open_setting') {
+      // 第二参数 = 搜索词：VS Code 直接定位到该配置项
+      void vscode.commands.executeCommand('workbench.action.openSettings', msg.key);
       return;
     }
     // 「恢复初始状态」：按钮 → 注入的处理器（extension 侧 modal + 清理 + reload），
@@ -2024,64 +2033,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <p class="footer-hint">用户技能目录：<code>VS Code 全局存储 / skills /</code></p>
   </div>
 
-  <!-- 安全子视图（security 选项卡：写入审批） -->
-  <div id="security-root" role="tabpanel" aria-label="安全" hidden>
-    <div class="header">
-      <h2>安全</h2>
-    </div>
-    <div class="security-section">
-      <div class="security-item">
-        <div class="security-item-header">
-          <label for="confirmWritesToggle" class="security-label">写入二次确认</label>
-          <label class="toggle-switch">
-            <input id="confirmWritesToggle" type="checkbox" role="switch" aria-label="写入二次确认开关" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <p class="security-desc">开启后，AI 写文件前会弹出审批卡，需确认放行。默认关闭（owner 模式自动批准）。</p>
-      </div>
-      <div class="security-item">
-        <div class="security-item-header">
-          <label for="confirmScriptsToggle" class="security-label">执行二次确认</label>
-          <label class="toggle-switch">
-            <input id="confirmScriptsToggle" type="checkbox" role="switch" aria-label="脚本与命令执行二次确认开关" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <p class="security-desc">开启后，AI 运行脚本/代码（run_project_script / run_code）或执行普通 shell 命令（run_command）前会弹出审批卡，需确认放行。默认关闭（自动放行）。仅控制「是否询问」，不影响能力本身（这些能力始终开放）。<strong>注意：git 写操作（commit / push / reset / rebase / merge）与 npm publish 不受本开关影响，每次都会询问、且无法豁免</strong>——它们属于不可逆操作。</p>
-      </div>
-      <div id="securityStatus" class="security-status" hidden></div>
-      <div class="security-item">
-        <div class="security-item-header">
-          <label class="security-label">允许路径白名单</label>
-        </div>
-        <p class="security-desc">项目目录始终允许访问。可添加项目之外的可信目录（如个人笔记、文档），Agent 即可读写；增删即时生效，重启后仍保留。敏感文件（.env/.ssh 等）黑名单仍强制拦截。</p>
-        <ul id="allowedPathsList" class="allowed-paths-list"></ul>
-        <div class="allowed-paths-add">
-          <input id="allowedPathsInput" type="text" class="allowed-paths-input" placeholder="输入目录绝对路径，如 D:/我的笔记" aria-label="新增允许路径" />
-          <button id="allowedPathsAdd" class="btn btn-secondary" type="button">添加</button>
-        </div>
-      </div>
-      <div class="security-item">
-        <div class="security-item-header">
-          <label class="security-label" for="searchEngineSelect">网页搜索引擎</label>
-        </div>
-        <p class="security-desc">「联网搜索」工具使用的内部搜索后端。自动 = Bing 优先降级 DuckDuckGo；中文场景推荐切「百度/搜狗」提升命中质量。也可选用下方自定义引擎。修改后需重载窗口生效。</p>
-        <select id="searchEngineSelect" class="security-select" aria-label="网页搜索引擎"></select>
-        <p class="security-desc">自定义引擎需返回结构化结果：OpenSearch RSS / Atom，或 JSON（<code>{results:[{title,url,…}]}</code>）。普通网页（一堆 HTML）与需登录的平台不支持。点「编辑」填写后先「测试」再「保存」。</p>
-        <div id="customSearchEngines" class="custom-search-engines"></div>
-        <button id="addCustomEngineBtn" class="btn btn-secondary ce-add-btn" type="button">+ 添加自定义搜索引擎</button>
-      </div>
-      <div class="security-item">
-        <div class="security-item-header">
-          <label class="security-label">恢复初始状态</label>
-        </div>
-        <p class="security-desc">一键清空插件的<strong>全部用户级数据</strong>：用户技能、用户角色包、大模型配置（含 API Key）、激活角色包、角色包组、安全开关与用户级设置，恢复到第一次使用插件的状态。<strong>项目数据完整保留</strong>：当前项目的记忆、会话记录（.memora/）与项目设置不动——它们已经是项目的一部分。清理完成后将自动重载窗口，进行中的对话会中断。</p>
-        <button id="resetUserDataBtn" class="btn btn-danger security-reset-btn" type="button">清空用户级数据…</button>
-        <span id="resetUserDataHint" class="security-status security-reset-hint" hidden></span>
-      </div>
-    </div>
-  </div>
+  ${SECURITY_ROOT_HTML}
 
   <script src="${scriptUri}"></script>
 </body>

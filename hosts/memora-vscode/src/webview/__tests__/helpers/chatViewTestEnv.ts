@@ -93,6 +93,10 @@ const HTML = `
     <div id="dockControls" class="status-dock__controls" hidden></div>
     <div id="activityDetail" class="status-dock__timeline">
       <div id="activityList" class="activity-list"></div>
+      <div id="activityMetricsEmpty" class="activity-metrics-empty">
+        <span>指标默认隐藏（开发者调试信息）。</span>
+        <button id="activityMetricsEmptyOpen" class="activity-metrics-empty__open" type="button">在设置中开启</button>
+      </div>
       <div id="activityMetrics" class="activity-metrics" hidden></div>
     </div>
   </div>

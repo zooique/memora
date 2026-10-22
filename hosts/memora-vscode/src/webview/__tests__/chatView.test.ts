@@ -8827,6 +8827,36 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
         /body\.confirm-active\s+\.scroll-to-bottom\s*\{[^}]*display:\s*none/,
       );
     });
+
+    it('审批卡激活 ⇒ 抽屉入口一并让位；收卡后连同未读恢复（入口隐藏不等于清未读）', () => {
+      mountChatView();
+      const chip = document.getElementById('dockChip') as HTMLElement;
+      // 先推一条 metrics：时间线有内容 ⇒ 抽屉入口本来可见（chipVisible 的另一支判据）
+      dispatch({
+        type: 'metrics',
+        fingerprints: { systemPromptHash: 'abc123' },
+        metrics: { llmCallCount: 1, toolFailureCount: 0, truncationCount: 0 },
+      });
+      expect(chip.hidden).toBe(false);
+      dispatch({
+        type: 'write_confirm_request',
+        requestId: 'fit_chip',
+        targetPath: '/workspace/scripts/build.sh',
+        tool: 'run_script',
+        description: '执行脚本：build.sh',
+        permission: 'owner',
+        beforeContent: null,
+        afterContent: null,
+        hasDiff: false,
+        // 超时真源在宿主，经协议透传（缺省会走兜底异常路径，测试不该依赖兜底）
+        timeoutMs: 60000,
+      });
+      // 卡已占据 inputBar 原位（同盒替身），入口留在上方会破「同盒」视觉且阻断态无承接面
+      expect(chip.hidden).toBe(true);
+      // 收卡后 resolveDock 重跑：入口恢复（未读位由活动抽屉域持有，未被清除）
+      dispatch({ type: 'write_confirm_closed', requestId: 'fit_chip' });
+      expect(chip.hidden).toBe(false);
+    });
   });
 
   it('大纲导航条锚点守卫（HOST-NAV-1）：#roundNav 须与 #messages 同级，严禁挪回滚动容器内', () => {

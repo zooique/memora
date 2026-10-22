@@ -39,6 +39,13 @@ export interface ActivityDrawerViewDeps {
   activityList: HTMLElement;
   /** #activityMetrics 抽屉指标块 */
   activityMetrics: HTMLElement;
+  /**
+   * #activityMetricsEmpty 指标空态指引（showMetrics 默认关时指标块永不到达）
+   *
+   * 只负责解释「为什么空」；首次收到 metrics 即隐藏。不参与 timelineReady 判据
+   * （数据面真源仍是 activityMetrics.hidden）。
+   */
+  activityMetricsEmpty: HTMLElement;
   /** StatusDock 上报：活动条激活/收纳（窄化为本域唯一合法 id 'activity'，禁触其他条） */
   setDockActive: (id: 'activity', active: boolean) => void;
   /** StatusDock 上报：error 豁免恒主位（fail-visible） */
@@ -71,12 +78,12 @@ export interface ActivityDrawerView {
 /**
  * 创建活动抽屉域容器。
  *
- * @param deps DOM 节点 ×3（activityBar / activityList / activityMetrics）+
- *   StatusDock 上报面（setDockActive / setDockFixed）+ 裁决器只读面
- *   （notifyDockChanged / isDockExpanded）
+ * @param deps DOM 节点 ×4（activityBar / activityList / activityMetrics /
+ *   activityMetricsEmpty）+ StatusDock 上报面（setDockActive / setDockFixed）+
+ *   裁决器只读面（notifyDockChanged / isDockExpanded）
  */
 export function createActivityDrawerView(deps: ActivityDrawerViewDeps): ActivityDrawerView {
-  const { document, activityBar, activityList, activityMetrics } = deps;
+  const { document, activityBar, activityList, activityMetrics, activityMetricsEmpty } = deps;
 
   /** 详情历史最大条数（有界，防长期使用累积） */
   const MAX_ACTIVITY_HISTORY = 20;
@@ -314,6 +321,8 @@ export function createActivityDrawerView(deps: ActivityDrawerViewDeps): Activity
     const next = lines.join('\n');
     activityMetrics.textContent = next;
     activityMetrics.hidden = false;
+    // 指标已到达 ⇒ 空态指引让位（只解释「为什么空」，不占指标位）
+    activityMetricsEmpty.hidden = true;
     // 未读由**诊断信号变化**驱动（不是「推过」、不是渲染全文 diff——见 metricsSignalOf）。
     // 抽屉拉开中到达的新信号当场消费（更新已读快照），避免用户现场看过、收起后反被标未读。
     const signal = metricsSignalOf(msg);

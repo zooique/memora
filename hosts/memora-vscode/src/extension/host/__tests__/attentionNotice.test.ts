@@ -9,7 +9,11 @@
  */
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
-import { createAttentionNotifier, type AttentionDeps, type AttentionNotifier } from '../attentionNotice.js';
+import {
+  createAttentionNotifier,
+  type AttentionDeps,
+  type AttentionNotifier,
+} from '../attentionNotice.js';
 
 interface Harness {
   notifier: AttentionNotifier;

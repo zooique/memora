@@ -114,7 +114,12 @@ describe('resolveSoundCommand —— 平台分派单点', () => {
   it('win32 ⇒ powershell + -EncodedCommand', () => {
     const cmd = resolveSoundCommand('win32');
     expect(cmd?.command).toBe('powershell.exe');
-    expect(cmd?.args).toEqual(['-NoProfile', '-NonInteractive', '-EncodedCommand', expect.any(String)]);
+    expect(cmd?.args).toEqual([
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand',
+      expect.any(String),
+    ]);
   });
 
   it('darwin ⇒ /bin/sh -c <macOS 脚本>', () => {
@@ -148,7 +153,11 @@ describe('createSystemSoundPlayer —— 平台闸与失败收敛', () => {
   }
 
   function setup(
-    overrides: { platform?: NodeJS.Platform; throwSync?: boolean; appendLog?: (l: string) => void } = {},
+    overrides: {
+      platform?: NodeJS.Platform;
+      throwSync?: boolean;
+      appendLog?: (l: string) => void;
+    } = {},
   ): Harness {
     const fire: Harness['fire'] = {};
     const log: string[] = [];
@@ -175,7 +184,8 @@ describe('createSystemSoundPlayer —— 平台闸与失败收敛', () => {
     const { player, spawnFn } = setup();
     player();
     expect(spawnFn).toHaveBeenCalledTimes(1);
-    const [cmd, args] = (spawnFn as unknown as { mock: { calls: Array<[string, string[]]> } }).mock.calls[0];
+    const [cmd, args] = (spawnFn as unknown as { mock: { calls: Array<[string, string[]]> } }).mock
+      .calls[0];
     expect(cmd).toBe('powershell.exe');
     expect(args).toEqual(['-NoProfile', '-NonInteractive', '-EncodedCommand', expect.any(String)]);
   });
@@ -184,7 +194,8 @@ describe('createSystemSoundPlayer —— 平台闸与失败收敛', () => {
     for (const platform of ['darwin', 'linux'] as const) {
       const { player, spawnFn } = setup({ platform });
       player();
-      const [cmd] = (spawnFn as unknown as { mock: { calls: Array<[string, string[]]> } }).mock.calls[0];
+      const [cmd] = (spawnFn as unknown as { mock: { calls: Array<[string, string[]]> } }).mock
+        .calls[0];
       expect(cmd).toBe('/bin/sh');
     }
   });
@@ -208,7 +219,11 @@ describe('createSystemSoundPlayer —— 平台闸与失败收敛', () => {
   it('unref 被调用（不因播放子进程拖住宿主退出）', () => {
     const unref = vi.fn();
     const spawnFn: SpawnLike = () => ({ on: vi.fn(), unref });
-    const player = createSystemSoundPlayer({ spawnFn, platform: 'win32', appendLog: () => undefined });
+    const player = createSystemSoundPlayer({
+      spawnFn,
+      platform: 'win32',
+      appendLog: () => undefined,
+    });
     player();
     expect(unref).toHaveBeenCalledTimes(1);
   });
@@ -219,7 +234,9 @@ describe('createSystemSoundPlayer —— 平台闸与失败收敛', () => {
       player();
       fire.error?.(new Error('spawn /bin/sh ENOENT'));
       expect(log).toHaveLength(1);
-      expect(log[0]).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z spawn=\/bin\/sh error=spawn \/bin\/sh ENOENT$/);
+      expect(log[0]).toMatch(
+        /^\d{4}-\d{2}-\d{2}T[\d:.]+Z spawn=\/bin\/sh error=spawn \/bin\/sh ENOENT$/,
+      );
     });
 
     it('exit 非零 ⇒ 一行日志，含命令与退出码', () => {
