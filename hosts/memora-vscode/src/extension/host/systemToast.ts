@@ -10,7 +10,7 @@
  * `task.notifyWindowOnTaskCompletion` 仅限 Tasks 系统）。要闪只能引 native FFI 拿窗口句柄
  * 调 `FlashWindowEx`——为一个提醒引此依赖，成本倒挂（2026-10-22 排雷结论）。
  *
- * 🔴 三条实现纪律（缺一条就是造伤）：
+ * 🔴 四条实现纪律（缺一条就是造伤）：
  *   ① **数据进 XML 前必须转义**：文案含 `& < > " '` 会破 XML，PowerShell 侧静默失败
  *      （用户以为「没提醒」，实际是脚本崩了）——`info.description` 这类工具路径完全可能带引号；
  *   ② **数据永不拼命令位**：走 `-EncodedCommand`（UTF-16LE + Base64），既绕开中文编码坑，
@@ -19,6 +19,8 @@
  *      路径，不能被一次 spawn 拖慢或抛错），可「没反应」必须留得下线索——失败写
  *      `%TEMP%/memora-toast.log`。AUMID 不匹配属于**静默不显示**（官方文档原话 "your toast
  *      will not be displayed"），这条日志是唯一诊断面。
+ *   ④ **必须 `scenario="reminder"`**：普通 toast 横幅 ~5 秒自行消失，人不在屏幕前 = 白发一条。
+ *      「发出去了」不等于「被看到了」——本模块的全部价值在后者（2026-10-22 真机实证）。
  */
 import { spawn } from 'node:child_process';
 
@@ -73,6 +75,14 @@ export interface SystemToastPayload {
  * `activationType="protocol"`：点击 toast 走协议链接（唯一对扩展可行的激活方式——
  * `foreground` 需要应用注册 COM activator，扩展没有）。
  *
+ * 🔴 `scenario="reminder"` **不是装饰，是可用性前提**（2026-10-22 真机实证）：
+ * 普通 toast 的横幅**约 5 秒自动消失**，人不在屏幕前就等于没提醒——而本模块的整个存在
+ * 理由就是「人已离开 VS Code」。实证链：用户在 14:37:36 收场时已切到浏览器，抱怨「没有
+ * 提醒」；查 `%LOCALAPPDATA%\Microsoft\Windows\Notifications\wpndatabase.db` 发现通知
+ * **确实发出且已入库**（ArrivalTime 14:37:37、载荷 XML 完整），只是横幅早已自行消失。
+ * 加 `scenario="reminder"` 后 Windows 按「提醒」处理：横幅**常驻到用户手动关闭**，
+ * 不会自己溜走。⇒ 判据是「用户有没有机会看到」，不是「通知有没有发出去」。
+ *
  * 单引号定界：转义后正文里不可能出现裸 `'`（已被 `&apos;` 吃掉），故整个 XML 安全落在
  * PowerShell 单引号字符串内。
  *
@@ -89,7 +99,7 @@ export function buildToastScript(payload: SystemToastPayload, appId: string): st
   const launch = escapeXml(payload.launchUri);
   const bodyNode = body ? `<text>${body}</text>` : '';
   const xml =
-    `<toast activationType="protocol" launch="${launch}">` +
+    `<toast scenario="reminder" activationType="protocol" launch="${launch}">` +
     `<visual><binding template="ToastGeneric"><text>${title}</text>${bodyNode}</binding></visual>` +
     `</toast>`;
   return [

@@ -109,6 +109,21 @@ describe('buildToastScript —— 固定模板 + 转义数据', () => {
     expect(script).toContain('template="ToastGeneric"');
   });
 
+  /**
+   * `scenario="reminder"` = **可用性前提**，不是样式偏好
+   *
+   * 普通 toast 的横幅约 5 秒自行消失。2026-10-22 真机实证：用户切到浏览器后本轮收场，
+   * 通知**确实发了**（`wpndatabase.db` 里 ArrivalTime 14:37:37、载荷 XML 完整），但他
+   * 什么都没看到——横幅早没了。「发出去了」不等于「被看到了」，而本模块的全部价值在后半句。
+   * reminder 场景下横幅常驻到用户手动关闭。
+   */
+  it('必须是 scenario="reminder"（否则横幅 5 秒消失 = 白发一条）', () => {
+    const script = buildToastScript(PAYLOAD, DEFAULT_TOAST_APP_ID);
+    expect(script).toContain('scenario="reminder"');
+    // 反面锚：普通 toast 就是没有 scenario；写明 duration 也不能救（reminder 以外仍会溜走）
+    expect(script).not.toContain('scenario="alarm"'); // alarm 需要循环音频，会变成闹钟骚扰
+  });
+
   it('空 body ⇒ 不产出第二个 text 节点（空 text 会撑出一行空行）', () => {
     const script = buildToastScript({ title: 'T', body: '', launchUri: 'vscode://a' }, 'app');
     expect(script).toContain('<text>T</text>');
