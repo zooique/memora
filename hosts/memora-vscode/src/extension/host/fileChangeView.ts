@@ -99,9 +99,12 @@ export const PENDING_CONTEXT_KEY = 'memora.fileChangePending';
 /**
  * 「打开改动对比」的用户可见措辞（**单一真源**）
  *
- * 三处入口（改动通知的按钮 / 状态栏 QuickPick 的动作项 / 状态栏悬停提示）**必须同一措辞**——
- * 曾出现一处叫「打开对比」、另两处叫「查看对比」，同一动作两个名字 = 口径带伤（后来者会以为
- * 是两件事）。故抽成常量，禁各自写字面量。QuickPick 项的 `$(diff)` 图标前缀不在此列（装饰，非措辞）。
+ * 两处入口（状态栏 QuickPick 的动作项 / 状态栏悬停提示）**必须同一措辞**——曾出现一处叫
+ * 「打开对比」、另两处叫「查看对比」，同一动作两个名字 = 口径带伤（后来者会以为是两件事）。
+ * 故抽成常量，禁各自写字面量。QuickPick 项的 `$(diff)` 图标前缀不在此列（装饰，非措辞）。
+ *
+ * ⚠️ 原第三处入口「改动通知的按钮」已删除（2026-10-22，用户要求收敛到面板内按钮 +
+ * 状态栏；通知会被划走，状态栏不会，且 toast 上的确认/回退与实际落盘语义容易混淆）。
  */
 const COMPARE_LABEL = '查看对比';
 
@@ -439,7 +442,6 @@ export class FileChangeView implements FileChangeSink {
   }
 
   noteToolResult(chunk: ToolResultLike): void {
-    const before = this.tracker.size();
     const record = this.tracker.noteToolResult(chunk);
     if (!record) return;
     // 内容已变 → 缓存的改动块与 CodeLens 全部失效，必须重算（否则装饰停在旧范围）
@@ -452,13 +454,10 @@ export class FileChangeView implements FileChangeSink {
     // 写前审批开启时，审批卡已展示 diff；此处抑制自动打开，避免双呈现（§3.3）
     if (this.deps.isConfirmWrites()) return;
     void this._render.revealChange(record);
-    // 本轮首个改动（0 → >0）：弹带按钮的通知——解决「没有按钮」的可发现性缺口
-    if (before === 0) this.notifyChange(record);
   }
 
   noteExternalMutations(changes: ExternalFileChange[]): void {
     if (changes.length === 0) return;
-    const wasEmpty = this.tracker.size() === 0;
     const records = this.tracker.noteExternalMutations(changes);
     if (records.length === 0) return;
     // 内容已变 → 缓存的改动块与 CodeLens 全部失效，必须重算（与 noteToolResult 同源）
@@ -469,8 +468,6 @@ export class FileChangeView implements FileChangeSink {
     this.notifyChanged();
     if (this.deps.isConfirmWrites()) return;
     for (const rec of records) void this._render.revealChange(rec);
-    // 首个外部改动（0 → >0）：弹带按钮的通知——解决「没有按钮」的可发现性缺口
-    if (wasEmpty) this.notifyChange(records[records.length - 1]);
   }
 
   /**
@@ -885,25 +882,6 @@ export class FileChangeView implements FileChangeSink {
     }
     this._render.reapplyDecorations();
     settled();
-  }
-
-  /** 改动通知（带按钮）：确认改动 / 回退本文件改动 / `COMPARE_LABEL` / 全部确认 */
-  private notifyChange(rec: FileChangeRecord): void {
-    const count = this.tracker.size();
-    const message =
-      count > 1
-        ? `Memora：本次已改动 ${count} 个文件（最新：${rec.relPath}）`
-        : `Memora：已修改 ${rec.relPath}（改动处已在文件中高亮）`;
-    void vscode.window
-      .showInformationMessage(message, '确认改动', '回退本文件改动', COMPARE_LABEL, '全部确认')
-      .then((choice) => {
-        // 用最新记录执行（通知展示期间该文件可能又被改过）
-        const latest = this.tracker.get(rec.path) ?? rec;
-        if (choice === '确认改动') this.confirmChange(latest);
-        else if (choice === '回退本文件改动') void this.restoreChange(latest);
-        else if (choice === COMPARE_LABEL) void this.openCompare(latest);
-        else if (choice === '全部确认') this.confirmAll();
-      });
   }
 
   /** 状态栏入口：QuickPick 列出「全部确认」+ 全部未确认改动 → 选文件 → 选动作 */

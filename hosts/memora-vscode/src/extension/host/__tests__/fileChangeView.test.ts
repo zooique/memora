@@ -39,10 +39,12 @@ const h = vi.hoisted(() => {
     commands: new Map<string, (...args: unknown[]) => unknown>(),
     /** `atomicWriteFileSync` 捕获的写盘（断言「回退写了什么」而不真写文件系统） */
     writes: [] as { path: string; content: string }[],
-    /** `showInformationMessage` 留痕（对比预览的「跳过提示」经它发出） */
+    /** `showInformationMessage` 留痕（仅对比预览的「跳过提示」经它发出；「已修改」通知已删） */
     infoCalls: [] as string[],
-    /** 下一次 `showInformationMessage` 的返回值（模拟改动通知上的按钮选择） */
-    infoChoice: undefined as string | undefined,
+    /** `showQuickPick` 的返回值队列（按调用顺序消费；改动通知删除后，「查看对比」只能走这条真实路径） */
+    quickPickAnswers: [] as unknown[],
+    /** `showQuickPick` 收到的候选项留痕（断言入口列了什么） */
+    quickPickCalls: [] as unknown[],
     /** `executeCommand` 留痕（断言「是否真的开了 vscode.diff」） */
     executed: [] as string[],
     /** `executeCommand` 的**参数**留痕（断言 vscode.diff 的左右两栏分别是什么） */
@@ -185,9 +187,14 @@ vi.mock('vscode', () => ({
       name: '',
       command: '',
     }),
+    // 通知上的按钮选择已无消费方（「已修改」带按钮的通知 2026-10-22 删除）⇒ 恒返回 undefined
     showInformationMessage: async (message: string): Promise<string | undefined> => {
       h.state.infoCalls.push(message);
-      return h.state.infoChoice;
+      return undefined;
+    },
+    showQuickPick: async (items: unknown): Promise<unknown> => {
+      h.state.quickPickCalls.push(items);
+      return h.state.quickPickAnswers.shift();
     },
     showWarningMessage: async (
       message: string,
@@ -222,6 +229,7 @@ import {
   PENDING_CONTEXT_KEY,
   REJECT_HUNK_COMMAND,
   RESTORE_FILE_COMMAND,
+  REVIEW_FILE_CHANGES_COMMAND,
   REVERT_ALL_FILE_CHANGES_COMMAND,
   type FileChangeSecurityGuard,
   type FileChangeViewDeps,
@@ -334,7 +342,8 @@ beforeEach(() => {
   h.state.commands = new Map();
   h.state.writes = [];
   h.state.infoCalls = [];
-  h.state.infoChoice = undefined;
+  h.state.quickPickAnswers = [];
+  h.state.quickPickCalls = [];
   h.state.executed = [];
   h.state.commandArgs = [];
   h.state.guardCalls = [];
@@ -668,6 +677,25 @@ function diffArgs(): { toString(): string }[] {
   return (call?.args ?? []) as { toString(): string }[];
 }
 
+/**
+ * 走**真实用户路径**打开对比：状态栏命令 → QuickPick 选文件 → QuickPick 选「查看对比」
+ *
+ * 为什么必须这样驱动：2026-10-22 起「改动通知（带按钮）」已删除（用户要求收敛到面板内按钮
+ * + 状态栏），对比入口只剩状态栏 QuickPick。若测试还按「通知按钮」驱动，测的将是一条用户
+ * **点不到**的通路。
+ *
+ * 前置：调用时该文件必须已在 tracker 里（即 `noteToolResult` 之后）。
+ */
+function armCompareViaReview(record: ReturnType<FileChangeTracker['get']>): void {
+  // 前置：调用时该文件必须已在 tracker 里（否则 QuickPick 会走「全部确认」分支）
+  expect(record).toBeTruthy();
+  // 第一次 QuickPick = 选文件（条目本身由 showChangeList 生成，测试只负责「选中哪个记录」）
+  h.state.quickPickAnswers.push({ label: '$(file) picked', record });
+  // 第二次 QuickPick = 选动作
+  h.state.quickPickAnswers.push({ label: '$(diff) 查看对比', action: 'compare' });
+  h.state.commands.get(REVIEW_FILE_CHANGES_COMMAND)?.();
+}
+
 /** 取第 `index` 个指定按钮的调用参数 `[absPath, key]`（模拟用户点击所带的实参） */
 function hunkButtonArgs(
   doc: Record<string, unknown>,
@@ -896,9 +924,8 @@ describe('FileChangeView · 块级动作（命题 B）', () => {
  */
 describe('FileChangeView · 对比预览的体积闸（含删除场景）', () => {
   it('删除大文件 → 跳过对比、不开对照文档', async () => {
-    const { view, setDisk } = makeView();
+    const { view, tracker, setDisk } = makeView();
     view.register(makeContext());
-    h.state.infoChoice = '查看对比'; // 改动通知上的按钮
 
     setDisk('x'.repeat(MAX_DIFF_CONTENT_LENGTH + 1));
     view.noteToolStart({
@@ -908,6 +935,7 @@ describe('FileChangeView · 对比预览的体积闸（含删除场景）', () =
     });
     setDisk(null); // 文件已不存在 ⇒ afterContent = null
     view.noteToolResult({ toolCallId: 'd1', name: 'delete_file', ok: true });
+    armCompareViaReview(tracker.get(FILE));
 
     await vi.waitFor(() => {
       expect(h.state.infoCalls.some((m) => m.includes('改动过大'))).toBe(true);
@@ -918,9 +946,8 @@ describe('FileChangeView · 对比预览的体积闸（含删除场景）', () =
   });
 
   it('反向守卫：小文件删除 → 正常打开对照（闸不误伤）', async () => {
-    const { view, setDisk } = makeView();
+    const { view, tracker, setDisk } = makeView();
     view.register(makeContext());
-    h.state.infoChoice = '查看对比';
 
     setDisk('bye');
     view.noteToolStart({
@@ -930,6 +957,7 @@ describe('FileChangeView · 对比预览的体积闸（含删除场景）', () =
     });
     setDisk(null);
     view.noteToolResult({ toolCallId: 'd1', name: 'delete_file', ok: true });
+    armCompareViaReview(tracker.get(FILE));
 
     await waitForCompareOpened();
     expect(h.state.infoCalls.some((m) => m.includes('改动过大'))).toBe(false);
@@ -951,12 +979,11 @@ describe('FileChangeView · 对比预览的体积闸（含删除场景）', () =
  *      那是被否决的上下视图的格式）。
  */
 describe('FileChangeView · 对照视图为 vscode.diff 左右分栏', () => {
-  /** 造一条两处改动的记录并触发「查看对比」（走真实事件路径 + 通知按钮） */
+  /** 造一条两处改动的记录并触发「查看对比」（走真实事件路径 + 状态栏 QuickPick） */
   async function openCompareOnTwoHunk(): Promise<void> {
     const { view, tracker, setDisk } = makeView();
     setDisk('a\nb\nc\nd\ne');
     view.register(makeContext());
-    h.state.infoChoice = '查看对比';
     view.noteToolStart({
       toolCallId: 't1',
       name: 'write_file',
@@ -964,6 +991,7 @@ describe('FileChangeView · 对照视图为 vscode.diff 左右分栏', () => {
     });
     setDisk('a\nX\nc\nY\ne');
     view.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
+    armCompareViaReview(tracker.get(FILE));
     await waitForCompareOpened();
     expect(tracker.size()).toBe(1);
   }
@@ -1011,7 +1039,6 @@ describe('FileChangeView · 右栏指向真实文件（真实 FS）', () => {
         log: (): void => undefined,
       });
       view.register(makeContext());
-      h.state.infoChoice = '查看对比';
       view.noteToolStart({
         toolCallId: 'r1',
         name: 'write_file',
@@ -1019,6 +1046,7 @@ describe('FileChangeView · 右栏指向真实文件（真实 FS）', () => {
       });
       writeFileSync(file, 'a\nX\nc', 'utf-8');
       view.noteToolResult({ toolCallId: 'r1', name: 'write_file', ok: true });
+      armCompareViaReview(tracker.get(file));
 
       await waitForCompareOpened();
       const [left, right] = diffArgs();
@@ -1048,7 +1076,6 @@ describe('FileChangeView · 虚拟文档释放（左右两栏都不留旧内容�
     const { view, tracker, setDisk } = makeView();
     setDisk('v0');
     view.register(makeContext());
-    h.state.infoChoice = '查看对比';
     view.noteToolStart({
       toolCallId: 't1',
       name: 'write_file',
@@ -1056,6 +1083,7 @@ describe('FileChangeView · 虚拟文档释放（左右两栏都不留旧内容�
     });
     setDisk('v1');
     view.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
+    armCompareViaReview(tracker.get(FILE));
 
     await waitForCompareOpened();
     expect(compareText()).toBe('v0'); // 建起来了：左栏 = 改动前内容
@@ -1063,5 +1091,54 @@ describe('FileChangeView · 虚拟文档释放（左右两栏都不留旧内容�
     h.state.commands.get(CONFIRM_FILE_COMMAND)?.(FILE); // 走真实命令路径确认
     expect(tracker.size()).toBe(0);
     expect(compareText()).toBe(''); // 释放后读不到 ⇒ 旧内容不在内存里驻留
+  });
+});
+
+/**
+ * 改动通知已删除（2026-10-22，用户要求收敛到输入框上方的按钮条）
+ *
+ * 删的是 `notifyChange()`——`Memora：已修改 xxx.md（改动处已在文件中高亮）` 那条带四个按钮
+ * （确认改动 / 回退本文件改动 / 查看对比 / 全部确认）的 workbench 通知。删除是**去冗余**而非
+ * 减能力：四个动作各自都有更高优先级的等价入口——
+ *   确认改动 / 回退本文件改动 → 输入框上方按钮条 + 编辑器标题栏 + 状态栏 QuickPick；
+ *   查看对比                  → 状态栏 QuickPick（`memora.reviewFileChanges`）；
+ *   全部确认                  → 输入框上方按钮条。
+ * 通知会被划走、状态栏不会（这句原本就写在 `refreshStatusBar` 里，现在成了它独占入口的理由）。
+ *
+ * ⚠️ 两处调用点必须**分别**覆盖：`noteToolResult`（助手写盘）与 `noteExternalMutations`
+ * （脚本窗口快照）。只覆盖前者时，把通知挂回后者仍是绿的。
+ *
+ * ⚠️ 必须经 **view** 驱动，不能经 tracker：`recordOneWrite()` 直接喂 tracker，view 根本没执行
+ * ⇒ `infoCalls` 恒空 ⇒ 守卫是假绿（「因错误的原因通过」）。故本组自带 `recordOneWriteViaView()`。
+ */
+describe('FileChangeView · 改动不再弹通知（收敛到面板内按钮）', () => {
+  /** 经 view 的真实入口登记一次写入（写前 v0 → 写后 v1） */
+  function recordOneWriteViaView(view: FileChangeView, setDisk: (content: string) => void): void {
+    setDisk('v0');
+    view.noteToolStart({
+      toolCallId: 't1',
+      name: 'write_file',
+      args: JSON.stringify({ path: REL }),
+    });
+    setDisk('v1');
+    view.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
+  }
+
+  it('助手写盘 → 不弹任何通知（记录照常产生）', async () => {
+    const { view, tracker, setDisk } = makeView();
+    recordOneWriteViaView(view, setDisk);
+    // 让 revealChange 的异步尾巴跑完：同步重加的逃不掉，异步重加的也逃不掉
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // 先证明「事件真的走到了」——否则空断言会被「view 根本没被调用」这种别的缺陷假绿
+    expect(tracker.size()).toBe(1);
+    expect(h.state.infoCalls).toEqual([]);
+  });
+
+  it('外部改动（脚本窗口快照）→ 不弹任何通知（第二处调用点）', async () => {
+    const { view, tracker } = makeView();
+    view.noteExternalMutations([{ absPath: FILE, beforeContent: 'v0', afterContent: 'v1' }]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(tracker.size()).toBe(1);
+    expect(h.state.infoCalls).toEqual([]);
   });
 });
