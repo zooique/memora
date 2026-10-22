@@ -16,7 +16,7 @@
 | --- | --- | --- | --- | --- |
 | `completed-history.md` | （历史合集 · 非版本归档） | 双线 | 已退役（2026-10-10 整体迁入，不再更新） | 原 `tasks/已完成任务.md` 全文（3.0.0 / 3.0.1 及更早批次详表） |
 | `4.0.0-kernel.md` | 4.0.0 | 内核 npm | 已发布（2026-10-10 · npm latest） | `待完成任务.md`：SCRIPT-1 / SCRIPT-2 / MEM-1（部分）+ 观察区 5 条闭合收据（READ-DEDUP-REALDEVICE-1 / METRICS-XFLOW-1 / METRICS-BGTASK-1 / METRICS-PREFIX-1 / RESUME-FAIL-FEEDBACK-1）+ 4.0.0 区定案归档整节（2026-10-10 · 分流表 + 原文快照） |
-| `5.0.0-kernel.md` | 5.0.0 | 内核 npm | 待上架（2026-10-23 归档 · 门禁已绿、staged 待本人 2FA Approve） | `待完成任务.md` 5.0.0 区已关闭 19 条（CHLOG-TRIM-1 / CTX-OCC-1 / CHKPT-1 / CHKPT-2 / CHKPT-3 / CHKPT-4 / TERM-FDBK-1 / LEDGER-RECEIPT-1 / PROMPT-1 / DRIFT-PAUSE-1 / 脚本安全设计固化 / MEM-RECALL-3 / MEM-EVENT-1 / ARCH-GAP-1 / ARCH-GAP-2 / SKILL-CWD-1 / GUARD-SEARCH-1 / SEARCH-QUALITY-1 / ASK-TIMEOUT-1）；开放观察项留主台账 |
+| `5.0.0-kernel.md` | 5.0.0 | 内核 npm | 已发布（2026-10-23 · npm latest = 5.0.0，OIDC staged + 本人 2FA Approve 上架） | `待完成任务.md` 5.0.0 区已关闭 19 条（CHLOG-TRIM-1 / CTX-OCC-1 / CHKPT-1 / CHKPT-2 / CHKPT-3 / CHKPT-4 / TERM-FDBK-1 / LEDGER-RECEIPT-1 / PROMPT-1 / DRIFT-PAUSE-1 / 脚本安全设计固化 / MEM-RECALL-3 / MEM-EVENT-1 / ARCH-GAP-1 / ARCH-GAP-2 / SKILL-CWD-1 / GUARD-SEARCH-1 / SEARCH-QUALITY-1 / ASK-TIMEOUT-1）；开放观察项留主台账 |
 | `0.1.0-host.md` | 0.1.0 | 宿主 vsce | 已发布（2026-10-14 · Marketplace 上架） | `待完成任务.md`：首批复迁 10 条宿主 ✅ 项（UI-CONFIRM-P10/P10B/P10C/P14/P15、插话「吸收时上屏」、SCROLL-JUMP-1、RELEASE-HOST-0.1.0、LEDGER-SSOT-1、TEST-ENV-TIMEOUT-1）+ 2026-10-14 发布收口批再迁（发布硬闸 ROADMAP-PLUGIN-1·MKT / ·REL / HOST-BUG-2、复盘 ROLEPACK-BODY-1 / ROUND-ANALYTICS-1、打磨残项全部 ✅❌ 闭合项——完整迁入清单见归档文件「2026-10-14 发布收口批迁入」批次引言）+ 2026-10-14 收尾闭合批再迁 3 条（HOST-BUG-1 真机点验通过 / UI-SSOT-2 / UI-HOST-0 终态拍板关闭），UI-ICON-1 移主台账观察区，0.1.0 全线收口 |
 
 > 注：3.0.0 / 3.0.1 已真发（`registry latest = 3.0.1`），其关闭项已在 `completed-history.md`（原 `已完成任务.md`）按用户约定保留、不入版本归档。
@@ -27,7 +27,7 @@
 
 - **迁出原因**：2026-10-22 全量引用扫描确认，下列文档无任何文件反向引用（含自身标题外的外部链接），且内容已过时，属零引用历史审查/方案文档。
 - **不登记主台账指针**：主台账 `待完成任务.md` 本就未引用这些文件，故迁出后不在主台账留指针（纪律第 7 条「主台账留指针」仅针对版本归档的已关闭项，此处不适用）。
-- **非版本信号**：5.0.0 尚未发版（npm latest = 4.0.0），本区归档**不代表任何版本收口**，仅释放仓库噪音。
+- **非版本信号**：本区归档**不代表任何版本收口**，仅释放仓库噪音（原「5.0.0 尚未发版、npm latest = 4.0.0」为 2026-10-22 归档时点快照，已在 2026-10-23 上架后失效并删去；勿据历史快照推论当前版本轴）。
 - **不删除**：仅迁移，不删源文件；如需彻底清理须另行拍板。
 
 ### 已迁入清单（2026-10-22）
