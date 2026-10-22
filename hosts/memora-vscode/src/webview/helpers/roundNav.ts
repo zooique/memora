@@ -38,6 +38,16 @@ const JUMP_INSET = 12;
 /** 当前轮判定阈值：块顶滚入容器可视顶该像素内即视为「已读过」（ChatGPT 同款手感） */
 const ACTIVE_THRESHOLD = 96;
 
+/**
+ * 贴底几何容差（px）：只吸收 scrollTop 取整 / 页面缩放留下的亚像素残差，
+ * 恒远小于任一轮块高（否则会提前跳到最后一轮）。
+ *
+ * ⚠️ **不复用 scrollToBottom.ts 的 STICKY_THRESHOLD(48)**：那是「吸底**意图**」的宽容度
+ * （用户离底 48px 内仍算停留在底部，以免新内容把人拽走），拿它当高亮判据会让距底 48px
+ * 时就亮最后一轮——那时最后一轮块多半还没进入视口主区。高亮要的是**几何真值**。
+ */
+const ACTIVE_BOTTOM_EPS = 2;
+
 /** 浮层预览截断长度（字符）：浮层行宽有限，超长输入截断即可辨认 */
 const PREVIEW_MAX = 60;
 
@@ -61,8 +71,14 @@ const GAP_MIN = 1;
  * 区间，恒不与右下角「一键到底」按钮（贴底约 5% 内）重叠 —— 这正是「侧边栏位置紧张」
  * 的结构性解，而非再挪一个边距。**SSOT：条列高度上限的唯一真源在此**，经 applyMetrics
  * 下发条列内联 max-height；**条列** CSS 不设 max-height（避免第二套值静默漂移）。
- * 浮层 `.round-nav__panel` 另有 `max-height:50vh`（CSS，C 类）与本比例同判——该对镜像
- * 由 roundNav.test.ts 镜像守卫钉死（比例漂移即红）。
+ * 浮层视觉盒 `.round-nav__list` 另有 `max-height:50vh`（CSS，C 类）与本比例同判——该对
+ * 镜像由 roundNav.test.ts 镜像守卫钉死（比例漂移即红）。
+ *
+ * ⚠️ 浮层是**两层**：`.round-nav__panel`（命中盒，紧贴条列、无 overflow/margin）与
+ * `.round-nav__list`（视觉盒 + 滚动容器）。命中盒与条列之间**必须零间隙**——视觉上的
+ * 6px 留白由命中盒自身的 padding-right 提供（`background-clip` 不参与：命中盒不画视觉）。
+ * 之所以不靠「过桥伪元素」补缝：桥只能覆盖条列高度，指针斜向跨行去浮层顶部/底部时仍会
+ * 走出桥外断链，且恒存在的桥会给消息区右缘加一条 6px 的点击死区（HOST-NAV-1 四轮实测）。
  */
 export const NAV_HEIGHT_RATIO = 0.5;
 
@@ -81,16 +97,31 @@ export function extractPreview(raw: string): string {
 /**
  * 当前轮索引判定（纯函数，jsdom 可直接测）
  *
- * @param tops    各锚点块 getBoundingClientRect().top（按文档序升序）
- * @param viewTop 滚动容器自身的 rect.top（可视顶基准）
+ * 判据 = 「可视顶下方 threshold 那条线落在哪一轮」：tops 按文档序升序，扫到第一个没越过
+ * 该线的块即止。
+ *
+ * 🔴 **底部边界必须单独闭合（2026-10-22 真机缺陷，勿删）**：容器滚到底时 scrollTop 已达
+ * `scrollHeight - clientHeight` 上限，最后一轮块的顶部**不可能**对齐视口顶（下方没有内容
+ * 再把它顶上去）——于是阈值扫描永远够不到最后一轮，滚到底时高亮停在倒数第二轮（用户实测
+ * 「已经显示最底部了，亮的却是倒数第二个点」）。滚动位置本身是唯一能表达「最后一轮已读到」
+ * 的几何真值，故 `remaining ≤ eps` 时直接判最后一轮。
+ *
+ * @param tops      各锚点块 getBoundingClientRect().top（按文档序升序）
+ * @param viewTop   滚动容器自身的 rect.top（可视顶基准）
  * @param threshold 块顶滚入可视顶该像素内即视为「已读过」
+ * @param remaining 容器剩余可滚像素（`scrollHeight - scrollTop - clientHeight`）；
+ *                  **必传**——做成可选会让新调用点漏传后静默退化回旧缺陷形态，
+ *                  故由 TS 强制。无滚动容器的纯阈值场景传 `Infinity`。
  * @returns 当前轮索引；全部块仍在阈值之下（视口还在首块上方）返回 -1（无高亮）
  */
 export function computeActiveIndex(
   tops: number[],
   viewTop: number,
-  threshold = ACTIVE_THRESHOLD,
+  threshold: number,
+  remaining: number,
 ): number {
+  if (tops.length === 0) return -1;
+  if (remaining <= ACTIVE_BOTTOM_EPS) return tops.length - 1;
   let active = -1;
   for (let i = 0; i < tops.length; i++) {
     if (tops[i] - viewTop <= threshold) active = i;
@@ -165,7 +196,8 @@ function signatureOf(previews: string[]): string {
  * 创建大纲导航条控制器并完成事件接线
  *
  * @param messages 滚动容器（#messages）
- * @param nav      静态外壳（#roundNav，含 .round-nav__track 条列 + .round-nav__panel 浮层）
+ * @param nav      静态外壳（#roundNav，含 `.round-nav__track` 条列 +
+ *                 `.round-nav__panel` 命中盒 > `.round-nav__list` 视觉/滚动盒两层）
  * @returns 控制器句柄（chatView 把 sync 挂进 MutationObserver rAF 拍子与 resize，
  *          refresh 挂进 scroll）
  */
@@ -174,14 +206,17 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
   // 立即炸出清晰错误而非让 null 一路传到 querySelector 报模糊 TypeError。
   // 守卫后重赋值常量：闭包窄化不跨函数传播（本项目 TS 口径），re-assign 保住非空类型
   const track0 = nav.querySelector<HTMLElement>('.round-nav__track');
-  const panel0 = nav.querySelector<HTMLElement>('.round-nav__panel');
-  if (!track0 || !panel0) {
+  // 浮层两层：命中盒（.round-nav__panel）+ 视觉/滚动盒（.round-nav__list）。
+  // 条目只进 list —— panel 必须保持「无 overflow、无横向 margin」，否则指针从条滑向
+  // 浮层时会掉进一条没有元素接住的缝隙，hover 撤销、浮层当场闪退（见 chatStyles 注释）。
+  const list0 = nav.querySelector<HTMLElement>('.round-nav__panel > .round-nav__list');
+  if (!track0 || !list0) {
     throw new Error(
-      '[roundNav] 外壳缺 .round-nav__track/.round-nav__panel：生产模板或测试夹具未同步',
+      '[roundNav] 外壳缺 .round-nav__track 或 .round-nav__panel>.round-nav__list：生产模板或测试夹具未同步',
     );
   }
   const track: HTMLElement = track0;
-  const panel: HTMLElement = panel0;
+  const list: HTMLElement = list0;
   let lastSignature = '';
   /** 最近一次构建时的轮次气泡（点击定位按它寻址；与条列/浮层行同序） */
   let cachedWrappers: HTMLElement[] = [];
@@ -212,7 +247,7 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
   /** 全量重建条列与浮层行（仅签名变化时真重建） */
   function rebuild(previews: string[]): void {
     track.textContent = '';
-    panel.textContent = '';
+    list.textContent = '';
     previews.forEach((raw, i) => {
       const preview = raw || '（空输入）';
       // 条：视觉矩形由 CSS ::before 画（默认 2px 细线），触达区高于视觉条；条高由
@@ -230,7 +265,7 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
       item.className = 'round-nav__item';
       item.dataset.index = String(i);
       item.textContent = preview;
-      panel.appendChild(item);
+      list.appendChild(item);
     });
   }
 
@@ -286,9 +321,13 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
       const wrapper = cachedWrappers[Number(bar.dataset.index)];
       return wrapper?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY;
     });
-    const active = computeActiveIndex(tops, viewTop);
+    // 剩余可滚像素：**现算几何真值**，不读 trackScroll 的吸底标记——吸底是「用户意图」
+    // （内容高度变更后可能与实际位置脱节，见 scrollToBottom.ts 头部注释），高亮必须跟
+    // 实际滚动位置走。三个属性都是只读，与上面 rect 读取同处一次 layout 之后，不增 reflow。
+    const remaining = messages.scrollHeight - messages.scrollTop - messages.clientHeight;
+    const active = computeActiveIndex(tops, viewTop, ACTIVE_THRESHOLD, remaining);
     bars.forEach((bar, i) => bar.classList.toggle('is-active', i === active));
-    panel.querySelectorAll<HTMLElement>('.round-nav__item').forEach((item, i) => {
+    list.querySelectorAll<HTMLElement>('.round-nav__item').forEach((item, i) => {
       item.classList.toggle('is-active', i === active);
     });
   }

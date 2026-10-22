@@ -7,8 +7,12 @@
  *    点击定位、注入前缀剥离、fail-fast 守卫
  *
  * jsdom 无布局：scrollHeight / scrollTop / getBoundingClientRect 按需打桩
- * （对齐 chatView.test.ts stubScroll 既有纪律）；高亮在未打桩 rect（恒 0）下的
- * 自然行为（全命中 → 尾条 is-active）也可断言，真实几何表现由真机验收兜。
+ * （对齐 chatView.test.ts stubScroll 既有纪律）。
+ *
+ * 🔴 **未打桩时 `scrollHeight === clientHeight === 0` ⇒ remaining = 0 ⇒ 必走贴底分支**
+ * （computeActiveIndex 判末轮）。所以「不打桩也断言到尾条 is-active」的用例**证不了阈值
+ * 扫描**——它走的是贴底那条路。凡要验「块顶阈值判定」的用例，`remaining` 必须显式给大值
+ * （纯函数传 `NO_SCROLL` / 集成用例 stubScrollBox 给足剩余高度），否则得到的是假绿。
  */
 
 // @vitest-environment jsdom
@@ -76,7 +80,9 @@ function mountShell(parent: HTMLElement): HTMLElement {
   nav.id = 'roundNav';
   nav.className = 'round-nav';
   nav.hidden = true;
-  nav.innerHTML = '<div class="round-nav__track"></div><div class="round-nav__panel"></div>';
+  nav.innerHTML =
+    '<div class="round-nav__track"></div>' +
+    '<div class="round-nav__panel"><div class="round-nav__list"></div></div>';
   parent.appendChild(nav);
   return nav;
 }
@@ -143,21 +149,45 @@ describe('extractPreview（预览归一纯函数）', () => {
 });
 
 describe('computeActiveIndex（当前轮判定纯函数）', () => {
+  /** 无滚动余量（不贴底）：只走块顶阈值判定的形态 */
+  const NO_SCROLL = Number.POSITIVE_INFINITY;
+
   it('块顶滚入阈值内的最后一个为当前轮', () => {
     // tops 按文档序升序；10/50 已入阈值（96），120 未入 → 当前 = 1
-    expect(computeActiveIndex([10, 50, 120], 0)).toBe(1);
+    expect(computeActiveIndex([10, 50, 120], 0, 96, NO_SCROLL)).toBe(1);
   });
 
   it('全部块仍在视口顶下方阈值之外 → -1（无高亮）', () => {
-    expect(computeActiveIndex([200, 300], 0)).toBe(-1);
+    expect(computeActiveIndex([200, 300], 0, 96, NO_SCROLL)).toBe(-1);
   });
 
-  it('全部块都已滚过 → 最后一个为当前轮', () => {
-    expect(computeActiveIndex([10, 20, 30], 0)).toBe(2);
+  it('全部块顶部越过阈值 → 最后一个为当前轮（纯阈值形态；真机靠 remaining 才能到达）', () => {
+    expect(computeActiveIndex([10, 20, 30], 0, 96, NO_SCROLL)).toBe(2);
   });
 
-  it('阈值取自调用方（可覆写默认 96）', () => {
-    expect(computeActiveIndex([150], 0, 200)).toBe(0);
+  it('阈值由调用方给定（生产值 96，可覆写）', () => {
+    expect(computeActiveIndex([150], 0, 200, NO_SCROLL)).toBe(0);
+  });
+
+  /**
+   * 贴底闭合（2026-10-22 真机缺陷：滚到最底部，亮的却是倒数第二个点）
+   *
+   * 真机形态：clientHeight 400、块顶距视口顶 0 / 50 / **150**（末块高 250 撑到视口底）——
+   * 因为 scrollTop 已达上限，末块顶**不可能**再上移。缺了 remaining 这条，阈值(96)扫描
+   * 只能到倒数第二个，最后一根条永远不亮；其余轮次一一对应正常（用户原话）。
+   */
+  it('贴底（剩余可滚 ≤ eps）→ 最后一轮为当前轮，即使其块顶远未进入阈值', () => {
+    expect(computeActiveIndex([0, 50, 150], 0, 96, 250)).toBe(1); // 未贴底：阈值扫描原行为
+    expect(computeActiveIndex([0, 50, 150], 0, 96, 0)).toBe(2); // 贴底：末轮
+  });
+
+  it('贴底容差只吸收亚像素残差：eps 内算贴底，eps 外仍走阈值扫描（防提前跳末轮）', () => {
+    expect(computeActiveIndex([0, 50, 150], 0, 96, 2)).toBe(2);
+    expect(computeActiveIndex([0, 50, 150], 0, 96, 3)).toBe(1);
+  });
+
+  it('无块时即使贴底也返回 -1（不越界取尾）', () => {
+    expect(computeActiveIndex([], 0, 96, 0)).toBe(-1);
   });
 });
 
@@ -234,7 +264,7 @@ describe('createRoundNav（控制器集成）', () => {
   let messages: HTMLElement;
   let nav: HTMLElement;
   let track: HTMLElement;
-  let panel: HTMLElement;
+  let list: HTMLElement;
 
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -244,7 +274,7 @@ describe('createRoundNav（控制器集成）', () => {
     root.appendChild(messages);
     nav = mountShell(root);
     track = nav.querySelector('.round-nav__track') as HTMLElement;
-    panel = nav.querySelector('.round-nav__panel') as HTMLElement;
+    list = nav.querySelector('.round-nav__panel > .round-nav__list') as HTMLElement;
     // 一键到底按钮：点击定位后同步显隐（生产接线契约）
     const btn = document.createElement('button');
     btn.id = 'scrollToBottomBtn';
@@ -261,6 +291,15 @@ describe('createRoundNav（控制器集成）', () => {
     expect(() => createRoundNav(messages, broken)).toThrow(/round-nav__track/);
   });
 
+  it('fail-fast：浮层缺视觉盒 .round-nav__list 时抛清晰错误（两层结构不可退化为单层）', () => {
+    // 夹具若退回「panel 直接装条目」的旧单层形态，条目会落进一个无 overflow 的盒子：
+    // jsdom 看不出来、真机就是浮层不出滚动且边框/阴影丢失 ⇒ 显式炸在初始化
+    const single = document.createElement('div');
+    single.innerHTML = '<div class="round-nav__track"></div><div class="round-nav__panel"></div>';
+    root.appendChild(single);
+    expect(() => createRoundNav(messages, single)).toThrow(/round-nav__list/);
+  });
+
   it('可滚动且 ≥2 轮 → 显形并按轮构建条列与浮层行（aria-label/预览同源）', () => {
     mountUserBubble(messages, '第一轮输入');
     mountUserBubble(messages, '第二轮\n多行输入');
@@ -269,13 +308,59 @@ describe('createRoundNav（控制器集成）', () => {
     sync();
     expect(nav.hidden).toBe(false);
     const bars = track.querySelectorAll('.round-nav__bar');
-    const items = panel.querySelectorAll('.round-nav__item');
+    const items = list.querySelectorAll('.round-nav__item');
+    // 条目父节点必须是视觉盒本身（挂到命中盒上则滚动/边框全失效，真机才看得出来）
+    expect(items[0]!.parentElement).toBe(list);
     expect(bars.length).toBe(2);
     expect(items.length).toBe(2);
     // 预览 = 上屏文本单行化；aria-label 与 title 同源
     expect((bars[1] as HTMLElement).title).toBe('第二轮 多行输入');
     expect(bars[1].getAttribute('aria-label')).toBe('第 2 轮：第二轮 多行输入');
     expect(items[1].textContent).toBe('第二轮 多行输入');
+  });
+
+  /**
+   * 贴底高亮（2026-10-22 真机缺陷回归项：到底后亮的是倒数第二个点）
+   *
+   * 真机几何：clientHeight 400 / scrollHeight 1200 / scrollTop 已到上限 800 ⇒ remaining=0。
+   * 三块块顶相对视口 -800 / -100 / **150**：末块顶距视口顶 150 > 阈值 96，阈值扫描只能到
+   * 第 2 轮 ⇒ 用户看到「已显示最底部，亮的却是倒数第二个」。前两轮正常对应（同一扫描）。
+   */
+  it('滚到最底部 → 高亮最后一轮（不停在倒数第二轮）', () => {
+    const w1 = mountUserBubble(messages, '第一轮');
+    const w2 = mountUserBubble(messages, '第二轮');
+    const w3 = mountUserBubble(messages, '第三轮');
+    stubScrollBox(messages, { scrollHeight: 1200, clientHeight: 400, scrollTop: 800 });
+    stubRect(messages, 0);
+    stubRect(w1, -800);
+    stubRect(w2, -100);
+    stubRect(w3, 150);
+    const { sync } = createRoundNav(messages, nav);
+    sync();
+    const bars = track.querySelectorAll<HTMLElement>('.round-nav__bar');
+    const items = list.querySelectorAll<HTMLElement>('.round-nav__item');
+    expect(bars.length).toBe(3);
+    // 条与浮层行同判（两套高亮真源漂移 = 一条亮一条不亮）
+    expect(bars[2]!.classList.contains('is-active')).toBe(true);
+    expect(items[2]!.classList.contains('is-active')).toBe(true);
+    expect(bars[1]!.classList.contains('is-active')).toBe(false);
+  });
+
+  it('未贴底时仍按块顶阈值判定（不因「接近底部」提前跳到最后一轮）', () => {
+    const w1 = mountUserBubble(messages, '第一轮');
+    const w2 = mountUserBubble(messages, '第二轮');
+    const w3 = mountUserBubble(messages, '第三轮');
+    // scrollTop 400 ⇒ remaining = 1200 - 400 - 400 = 400 ≫ eps
+    stubScrollBox(messages, { scrollHeight: 1200, clientHeight: 400, scrollTop: 400 });
+    stubRect(messages, 0);
+    stubRect(w1, -400);
+    stubRect(w2, 0);
+    stubRect(w3, 300);
+    const { sync } = createRoundNav(messages, nav);
+    sync();
+    const bars = track.querySelectorAll<HTMLElement>('.round-nav__bar');
+    expect(bars[1]!.classList.contains('is-active')).toBe(true);
+    expect(bars[2]!.classList.contains('is-active')).toBe(false);
   });
 
   it('error 气泡（.msg-wrapper 但非 .msg.user）不计入轮次——不污染条列与预览', () => {
@@ -437,9 +522,47 @@ describe('压密常量镜像守卫（JS ↔ 令牌/浮层 max-height）', () => 
     expect(GAP_MAX).toBe(tokenPx('sp-2'));
   });
 
-  it('NAV_HEIGHT_RATIO 必须与浮层 .round-nav__panel 的 max-height(50vh) 同判', () => {
-    const m = /\.round-nav__panel\s*\{[\s\S]*?max-height:\s*(\d+)vh/.exec(chatStylesText);
-    expect(m, '.round-nav__panel 的 max-height 未找到').not.toBeNull();
+  it('NAV_HEIGHT_RATIO 必须与浮层视觉盒 .round-nav__list 的 max-height(50vh) 同判', () => {
+    // 四轮结构拆分后限高从 panel 挪到 list（panel 不滚动），镜像仍须与 JS 比例同判
+    const m = /\.round-nav__list\s*\{[\s\S]*?max-height:\s*(\d+)vh/.exec(chatStylesText);
+    expect(m, '.round-nav__list 的 max-height 未找到').not.toBeNull();
     expect(Math.round(NAV_HEIGHT_RATIO * 100)).toBe(Number(m![1]));
+  });
+
+  /**
+   * 浮层两层结构守卫（2026-10-22 真机反馈：鼠标从条移向浮层时穿缝 hover 断链、浮层闪退）
+   *
+   * 契约三条，任一破坏都会让「看起来有 6px 间隙、实际上零缝」失效：
+   *   ① 命中盒 `.round-nav__panel` **不得有横向 margin / overflow**——margin 会把指针必经
+   *      的那一段变成无主缝隙（hover 当场撤销），overflow 会裁掉视觉盒的阴影；
+   *   ② 视觉间隙唯一来源 = 命中盒自身的 `padding-right: var(--sp-2)`（盒内留白）；
+   *   ③ 视觉盒 `.round-nav__list` 承载限高 + 滚动（成对：只删限高 = 被裁内容永不可达）。
+   * jsdom 无 hit-test，只能读生产样式源码钉死（与上方镜像守卫同法）。
+   */
+  it('浮层两层结构：命中盒零 margin/overflow + 间隙走 padding + 视觉盒限高滚动成对', () => {
+    const ruleBody = (sel: string): string => {
+      const m = new RegExp(`${sel}\\s*\\{([\\s\\S]*?)\\}`).exec(chatStylesText);
+      expect(m, `${sel} 规则块未找到（提取失效→空串恒过）`).not.toBeNull();
+      return (m?.[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
+    };
+    const panelBody = ruleBody('\\.round-nav__panel');
+    // ① 命中盒必须紧贴条列
+    expect(panelBody, '命中盒出现横向 margin —— 缝隙回归，浮层会闪退').not.toMatch(
+      /margin(-left|-right)?\s*:\s*[^;]*[1-9]/,
+    );
+    expect(panelBody, '命中盒不得自带 overflow（会裁掉视觉盒阴影）').not.toMatch(/overflow/);
+    // ② 视觉间隙的唯一来源
+    expect(panelBody, '命中盒缺 padding-right: var(--sp-2)：视觉间隙会变成 0').toMatch(
+      /padding-right:\s*var\(--sp-2\b/,
+    );
+    // ③ 视觉盒承载视觉与滚动
+    const listBody = ruleBody('\\.round-nav__list');
+    expect(listBody, '视觉盒缺 max-height（限高缺失→浮层可无限长）').toMatch(/max-height:\s*\d+vh/);
+    expect(listBody, '视觉盒缺 overflow-y: auto（与限高成对，不能只留限高）').toMatch(
+      /overflow-y:\s*auto/,
+    );
+    expect(listBody, '视觉盒缺边框：浮层失去可辨识外观').toMatch(/border:\s*var\(--line-input\)/);
+    expect(listBody, '视觉盒缺背景').toMatch(/background:\s*var\(--surface-input/);
+    expect(listBody, '视觉盒缺阴影').toMatch(/box-shadow:\s*var\(--shadow-card/);
   });
 });

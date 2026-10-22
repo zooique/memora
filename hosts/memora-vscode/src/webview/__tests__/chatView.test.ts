@@ -8731,9 +8731,25 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     const messages = document.getElementById('messages') as HTMLElement;
     expect(messages.contains(nav)).toBe(false);
     expect(nav.parentElement).toBe(messages.parentElement);
-    // 外壳结构：条列 + 浮层两容器（roundNav.ts 控制器 querySelector 的契约面）
+    // 外壳结构：条列 + 命中盒 + 视觉盒（roundNav.ts 控制器 querySelector 的契约面；
+    // 命中盒/视觉盒两层由 HOST-NAV-1 四轮引入，合并即重建「穿缝浮层闪退」缺陷）
     expect(nav.querySelector('.round-nav__track')).toBeTruthy();
     expect(nav.querySelector('.round-nav__panel')).toBeTruthy();
+    expect(nav.querySelector('.round-nav__panel > .round-nav__list')).toBeTruthy();
+
+    // 🔴 上一段 DOM 断言只覆盖**夹具**（chatViewTestEnv.ts 的手工镜像）。生产 buildHtml
+    // 漏掉 list 时，真机 createRoundNav 会 fail-fast 抛错 ⇒ 整个 chatView 脚本中断、
+    // 界面白屏，而这里照样全绿 —— 夹具守卫对生产模板完全没有约束力。故双读同一契约串
+    // （沿用「审批卡位置源码守卫」的 readFileSync 范式）。
+    const shell = '<div class="round-nav__panel"><div class="round-nav__list"></div></div>';
+    for (const [label, file] of [
+      ['生产', join(__dirname, '..', 'panels', 'chatPanel.ts')],
+      ['夹具', join(__dirname, 'helpers', 'chatViewTestEnv.ts')],
+    ] as const) {
+      expect(readFileSync(file, 'utf8'), `${label}骨架缺「命中盒 > 视觉盒」两层外壳`).toContain(
+        shell,
+      );
+    }
   });
 
   it('载荷缺 timeoutMs 必显式报错（禁静默失效：倒计时无声消失且无痕可查）', () => {

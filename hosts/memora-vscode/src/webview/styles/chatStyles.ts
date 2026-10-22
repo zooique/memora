@@ -71,7 +71,21 @@ export const chatStyles = `
    * 子元素随内容滚走（planBar / scrollToBottomBtn 两次同款血训）。z-float 层：浮于
    * 消息区与一键到底按钮之上、低于输入区。浮层显形走 :hover/:focus-within（键盘焦点
    * 进入也显形）——🔴 panel 不可挂 hidden 属性：全局 [hidden]{display:none!important}
-   * 恒赢，hover 的 display 切不回来（显形只能走 CSS 默认态）。 */
+   * 恒赢，hover 的 display 切不回来（显形只能走 CSS 默认态）。
+   *
+   * 🔴 **浮层两层结构（2026-10-22 真机反馈后重做，勿合并）**：
+   *   ① .round-nav__panel = **命中盒**——紧贴条列（零横向 margin）、不画视觉、不滚动，
+   *      只负责一件事：指针从条走到浮层这一路上，始终有元素在 hover 链上；
+   *   ② .round-nav__list = **视觉盒 + 滚动容器**——边框/背景/阴影/限宽/限高/滚动都在这里，
+   *      它被命中盒的 padding-right 从右缘推开 --sp-2 ⇒ 视觉上仍有呼吸间隙，命中上零缝。
+   *   两种错解**别回改**：**(a) 给 panel 加横向 margin 画间隙**——间隙里没有任何元素接住
+   *   指针，hover 立即撤销、浮层闪退（本轮修的就是它）；**(b) 加透明过桥伪元素把缝填成
+   *   可命中**——桥只能覆盖条列高度，指针斜向跨行去浮层顶部/底部时仍走出桥外；且桥恒存在
+   *   ⇒ 消息区右缘多出一条 6px 点击死区。
+   *   **也不给 hover 加「延迟消失」定时器**：延迟治标（手慢仍丢、鼠标走后浮层还挡 0.3s
+   *   点击），并造出「JS 定时器 × :hover」第二套显隐状态。零缝命中才是根因解。
+   *   守卫：helpers/__tests__/roundNav.test.ts「浮层两层结构」（panel 出现横向 margin /
+   *   overflow 即红；list 的限高与滚动必须成对）。 */
   .round-nav {
     position: absolute; right: var(--sp-1, 4px); top: 50%; transform: translateY(-50%);
     z-index: var(--z-float);
@@ -110,21 +124,30 @@ export const chatStyles = `
   }
   .round-nav:hover .round-nav__bar::before { width: 130%; } /* C 类一次性维度（相对加长比例） */
   .round-nav__bar:hover::before { background: var(--text-primary, #cccccc); }
-  /* 预览浮层：常态不显形，hover/键盘焦点进入容器时向左展开；行点击定位 */
+  /* 预览浮层命中盒：常态不显形，hover/键盘焦点进入容器时向左展开；行点击定位。
+   * 🔴 禁加 margin / overflow / border / background：前三者任一会重建缝隙或裁掉阴影，
+   * 后者会让「视觉间隙」消失（padding-right 就白留了）。视觉全在 .round-nav__list。
+   * ⚠️ 块注释续行必须带 * 前缀——否则字符图标守卫把续行当代码扫（实测踩过）。 */
   .round-nav__panel {
     display: none;
     position: absolute; right: 100%; top: 50%; transform: translateY(-50%);
-    margin-right: var(--sp-2, 6px);
+    padding-right: var(--sp-2, 6px); /* 视觉间隙 = 命中盒内留白，视觉盒右缘据此缩进 */
+  }
+  .round-nav:hover .round-nav__panel,
+  .round-nav:focus-within .round-nav__panel { display: block; }
+  /* 浮层视觉盒 + 滚动容器（原全在 .round-nav__panel 上，四轮随命中盒拆出）：
+   * max-height 与 overflow-y 必须成对——只删限高 ⇒ 被裁内容永不可达（overflow 形同隐藏）。
+   * 50vh 为视口比例（无 vh 令牌档），与 JS 侧 NAV_HEIGHT_RATIO 同判 C 类一次性维度，
+   * 镜像由 roundNav.test.ts 守卫钉死。 */
+  .round-nav__list {
     min-width: var(--dim-lg, 160px); max-width: var(--dim-2xl, 320px); max-height: 50vh;
-    overflow-y: auto; /* max-height 50vh（视口比例，无 vh 档）：浮层自身滚动，与导航条同判 C 类一次性维度 */
+    overflow-y: auto;
     padding: var(--sp-2, 6px);
     border: var(--line-input);
     border-radius: var(--radius-sm, 2px);
     background: var(--surface-input, #3c3c3c);
     box-shadow: var(--shadow-card, 0 2px 8px rgba(0,0,0,.15));
   }
-  .round-nav:hover .round-nav__panel,
-  .round-nav:focus-within .round-nav__panel { display: block; }
   .round-nav__item {
     display: block; width: 100%; padding: var(--sp-1, 4px) var(--sp-2, 6px);
     border: none; border-radius: var(--radius-sm, 2px);
