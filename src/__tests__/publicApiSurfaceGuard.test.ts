@@ -34,7 +34,15 @@ const API_MANUAL = join(ROOT, 'docs', 'memora-api-reference.md');
 /** 消费面扫描根：宿主（含构建脚本与测试）+ 验证脚本目录（当前零消费，纳入防未来漏扫） */
 const CONSUMER_ROOTS = [join(ROOT, 'hosts'), join(ROOT, 'scripts')];
 /** 目录排除清单：产物与依赖不进扫描面 */
-const EXCLUDED_DIRS = new Set(['node_modules', 'dist', 'out', 'coverage', '.workbuddy', '.git', '__tests__']);
+const EXCLUDED_DIRS = new Set([
+  'node_modules',
+  'dist',
+  'out',
+  'coverage',
+  '.workbuddy',
+  '.git',
+  '__tests__',
+]);
 
 /** 递归收集目录下全部 .ts/.mts/.mjs 文件（排除产物目录），扫描面自动发现、不硬编码文件清单 */
 function listSourceFiles(dir: string, out: string[] = []): string[] {
