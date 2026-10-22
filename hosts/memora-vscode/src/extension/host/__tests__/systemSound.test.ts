@@ -30,6 +30,14 @@ describe('buildSoundScript —— 载荷生成', () => {
     expect(buildSoundScript()).toContain('PlaySync()');
     expect(buildSoundScript()).not.toMatch(/[^a-zA-Z]Play\(\)/);
   });
+
+  it('PlaySync 失败落 %TEMP%/memora-sound.log（「没响」的唯一分诊面）', () => {
+    const script = buildSoundScript();
+    expect(script).toContain('memora-sound.log');
+    expect(script).toContain('Out-File -Append');
+    // catch 在 PlaySync 之后：PlaySync 抛错不会逃出脚本（exit 仍 0，但线索留下了）
+    expect(script.indexOf('PlaySync()')).toBeLessThan(script.indexOf('catch'));
+  });
 });
 
 describe('encodeCommand —— 与 PowerShell 官方契约一致', () => {

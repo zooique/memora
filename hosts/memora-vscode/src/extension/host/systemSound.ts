@@ -10,7 +10,8 @@
  * 🔴 实现纪律（与原 systemToast 同源，缺一条就是造伤）：
  *   ① **fire-and-forget，但不许哑巴失败到不可诊断**：spawn 失败绝不反噬主链路（确认卡
  *      建立是安全关键路径，不能被一次 spawn 拖慢或抛错）；`error` 事件必须有人接
- *      （无人接的 'error' 会抛成进程级未捕获异常，Node 语义）。
+ *      （无人接的 'error' 会抛成进程级未捕获异常，Node 语义）；PowerShell 侧 PlaySync
+ *      抛错落 `%TEMP%/memora-sound.log`（2026-10-22 排查教训：没有它，「没响」无法分诊）。
  *   ② **`unref`**：不因这条子进程拖住宿主退出（VS Code 关窗时不等播放收尾）。
  *   ③ **非 Windows 直接 no-op**（macOS `afplay` / Linux 播放器路径各异，未接，登记为
  *      待触发项——与原 toast 的平台边界同口径）。
@@ -27,6 +28,9 @@ import { spawn } from 'node:child_process';
 const PRIMARY_WAV = 'Windows Notify System Generic.wav';
 const FALLBACK_WAV = 'Windows Notify.wav';
 
+/** 失败日志文件名（落在 `%TEMP%`）：PlaySync 抛错时的唯一诊断面 */
+export const SOUND_LOG_FILENAME = 'memora-sound.log';
+
 /**
  * 生成 PowerShell 脚本（固定模板，无动态数据）
  *
@@ -36,9 +40,13 @@ const FALLBACK_WAV = 'Windows Notify.wav';
 export function buildSoundScript(): string {
   return [
     "$ErrorActionPreference='Stop'",
+    "$log = Join-Path $env:TEMP '" + SOUND_LOG_FILENAME + "'",
     "$p = Join-Path $env:WINDIR ('Media\\' + '" + PRIMARY_WAV + "')",
     "if (-not (Test-Path -LiteralPath $p)) { $p = Join-Path $env:WINDIR ('Media\\' + '" + FALLBACK_WAV + "') }",
-    '(New-Object Media.SoundPlayer $p).PlaySync()',
+    'try { (New-Object Media.SoundPlayer $p).PlaySync() }',
+    // 失败必须留线索（2026-10-22 排查教训：扩展侧 fire-and-forget，PowerShell 侧失败若不
+    // 落日志则「没响」永远无法分诊——spawn 层失败除外，powershell 没起来时谁都写不了）。
+    "catch { \"$(Get-Date -Format o) wav=$p error=$($_.Exception.Message)\" | Out-File -Append -Encoding utf8 $log }",
   ].join('\n');
 }
 
