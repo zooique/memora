@@ -1,0 +1,153 @@
+# Memora 宿主（VS Code 插件）Release 流水线：打 `vscode@X.Y.Z` tag → 宿主门禁 → 出 vsix → 挂 GitHub Release
+#
+# 触发：推送形如 `vscode@X.Y.Z` 的 tag（如 `vscode@0.2.0`）。
+#   与内核 release.yml（挂 `v*`，发 npm）**互不干扰**——ADR-033 双版本线：
+#   内核 `v*` 一轴、宿主 `vscode@*` 一轴，两轴门禁不同、产物不同、节奏有先后。
+#
+# ⚠️ 为什么**不复用**内核 release.yml（本仓库另一个 workflow）：
+#   两者**门禁范围不同**——内核跑内核测试；宿主除了自身测试外，还依赖「内核 dist 先构建」
+#   （宿主 bundle 由 esbuild **内联**内核 dist）。塞进一个文件会长出一堆 `if:` 分支，
+#   且失败语义混乱（宿主红要不要挡住内核发版？）。
+#   更要紧的是：内核那条链已于 2026-10-23 跑通 5.0.0，**动它就有回归风险**——
+#   不为省一个文件去改一条刚验证过的发布链。
+#
+# 门禁范围（与内核 release.yml 对齐，另加一条宿主专属的前置护栏）：
+#   ① tag ↔ hosts/memora-vscode/package.json version 一致（防打错 tag：市场与 Release 均不可同版本覆盖）；
+#   ② **内核已先行发布到 npm**（宿主专属，见下方步骤注释）；
+#   ③ format:check / typecheck / lint / 单元测试（串行）/ 打包。
+#
+# 分发出口（按 2026-10-23 调研结论，逐步开，勿一次全上）：
+#   ① **GitHub Release asset**（本 workflow 已带）——零外部账号门槛，今天就能用；
+#   ② **Open VSX**——须先在 open-vsx.org 拿到 namespace ownership 并手动首发第一版，
+#      之后追加一步 `npx ovsx publish --trusted-publishing`（Trusted Publishing，OIDC 零密钥）；
+#   ③ **VS Code Marketplace**——当前仍为手动上传。⚠️ Azure DevOps global PAT 于 **2026-12-01
+#      退役**，故**不做 PAT 自动发布路线**（搭了也只剩几十天）；改用 Entra ID 前须先确认
+#      个人 MSA「默认目录」租户不被拒（已知未解 `microsoft/vscode-vsce#976`）。
+#
+# ⚠️ 改名红线：Open VSX 的 Trusted Publishers 按 **workflow 文件名**匹配（按名字，非数字 ID）
+#   ⇒ 本文件 `host-release.yml` 一旦在 Open VSX 注册，**不得改名**（改名必须删掉注册重来）。
+
+name: Host Release → GitHub Release
+
+on:
+  push:
+    tags:
+      - 'vscode@*'
+
+permissions:
+  # contents: write —— 创建 Release 并上传 vsix asset 需要
+  contents: write
+  # id-token: write —— 预留给 Open VSX Trusted Publishing（出口②开通后即生效，无需改权限）
+  id-token: write
+
+jobs:
+  release:
+    name: 宿主门禁 + 出 vsix + 挂 Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm（读取 packageManager 字段，避免版本冲突）
+        uses: pnpm/action-setup@v4
+
+      - name: 安装 Node.js 22 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 安装依赖（根）
+        run: pnpm install --frozen-lockfile
+
+      - name: 校验 tag 与宿主 package.json version 一致
+        run: |
+          TAG="${GITHUB_REF_NAME#vscode@}"
+          PKG=$(node -p "require('./hosts/memora-vscode/package.json').version")
+          echo "tag=vscode@$TAG  宿主 package.json.version=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag vscode@$TAG 与宿主 package.json version $PKG 不一致，终止发布（打错 tag 时请删 tag 重打，不要改 package.json 迁就）。"
+            exit 1
+          fi
+
+      # 「内核先行、宿主跟进」节奏机制化（ADR-033 双版本线）：
+      #   宿主 bundle 由 esbuild **内联**内核 dist ⇒ 产物里带的是本地构建的内核代次。
+      #   若内核未先发 npm，市场/Release 上就会出现「宿主依赖一个 npm 上不存在的内核版本」——
+      #   这类错误不会在宿主门禁里暴露（宿主测试跑的是本地 dist，天然同代），只能靠此闸拦。
+      #   判据 = 根 package.json 的 version 必须已是 npm 上的 latest。
+      - name: 校验内核已先行发布到 npm
+        run: |
+          LOCAL=$(node -p "require('./package.json').version")
+          NPM=$(npm view @zooique/memora version)
+          echo "本地内核版本=$LOCAL  npm latest=$NPM"
+          if [ "$LOCAL" != "$NPM" ]; then
+            echo "::error::内核未先行发布：本地 $LOCAL ≠ npm latest $NPM —— 宿主 bundle 会内联一个 npm 上不存在的内核代次，终止。请先发内核（打 v$LOCAL tag）。"
+            exit 1
+          fi
+
+      - name: 格式检查
+        run: npm run format:check
+
+      # 宿主 compile 由 esbuild 内联内核 dist ⇒ 内核必须先构建，且版本号须与 npm 一致（上一步已校验）
+      - name: 构建内核 dist
+        run: npm run build
+
+      # 内核 dist 变更后必须重链：宿主 vitest 会加载旧的硬链接副本，不刷新会测到上一代内核
+      - name: 宿主镜像刷新（pnpm install --offline）
+        run: pnpm install --offline
+        working-directory: hosts/memora-vscode
+
+      - name: 宿主 TypeScript 类型检查
+        run: npm run typecheck
+        working-directory: hosts/memora-vscode
+
+      - name: 宿主 ESLint
+        run: npm run lint
+        working-directory: hosts/memora-vscode
+
+      - name: 宿主单元测试（串行，贴合本地真形态，避免 I/O 假红）
+        run: npm run test
+        working-directory: hosts/memora-vscode
+
+      - name: 打包 vsix
+        run: npm run package
+        working-directory: hosts/memora-vscode
+
+      # 产物带版本号重命名：Release asset 若固定叫 memora-vscode.vsix，用户下载后分不清版本。
+      # 只改 CI 侧产物名，不动 npm run package 的 --out（本地流程与 .gitignore 的 *.vsix 保持不变）。
+      - name: 产物带版本号 + 完整性核对
+        id: artifact
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#vscode@}"
+          SRC=hosts/memora-vscode/memora-vscode.vsix
+          if [ ! -s "$SRC" ]; then
+            echo "::error::打包产物缺失或为空：$SRC"
+            exit 1
+          fi
+          DST="hosts/memora-vscode/memora-vscode-${VER}.vsix"
+          mv "$SRC" "$DST"
+          echo "file=$DST" >> "$GITHUB_OUTPUT"
+          echo "name=memora-vscode-${VER}.vsix" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(sha256sum "$DST" | cut -d' ' -f1)"
+          echo "size=$(wc -c < "$DST") bytes"
+
+      # 幂等：Release 已存在则改用 upload（--clobber 覆盖同名 asset）。
+      # ⇒ 同一 tag 重跑不会因「Release 已存在」而炸（CI 重跑安全）。
+      - name: 上传 vsix 到 GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          VER="${TAG#vscode@}"
+          FILE="${{ steps.artifact.outputs.file }}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在 → 覆盖上传同名 asset"
+            gh release upload "$TAG" "$FILE" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            echo "创建 Release $TAG"
+            gh release create "$TAG" "$FILE" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "VS Code 宿主插件 ${VER}" \
+              --generate-notes
+          fi

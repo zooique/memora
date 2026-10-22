@@ -5,6 +5,9 @@
 #     gitee 端无对应 workflow，不会重复发布。
 #   - tag 必须与根 package.json 的 version 一致（下方有护栏校验），
 #     否则视为宿主 tag 误触发，直接终止，避免误发内核包。
+#     该护栏是**第二道防线**：第一道是下方 `v[0-9]*` 的触发条件收紧——
+#     两道都要有（触发层切断噪音，护栏层保证即使触发了也不会误发）。
+#   - 宿主轴走另一个 workflow（`host-release.yml`，`vscode@*`），与本机轴触发集合互斥。
 #
 # 门禁范围：typecheck / lint / 单元测试（串行，贴合本地真形态）/ 生产构建 / **format:check**。
 #   ⚠️ format:check 是 2026-10-23 补齐的：此前发布链不含该步，实证后果 = 提交 b6bb727a
@@ -43,7 +46,15 @@ name: Kernel Release → npm
 on:
   push:
     tags:
-      - 'v*'
+      # ⚠️ 必须 `v[0-9]*`，**不能**写成 `v*`（2026-10-23 实测修正，勿改回）：
+      #   宿主的 tag 是 `vscode@0.1.0`——它以字母 **v** 开头，会被 `v*` 命中！
+      #   minimatch 实测：`v*` 对 `vscode@0.1.0` / `vscode@0.2.0` 均 ✅命中。
+      #   ⇒ 打宿主 tag 会**同时触发本内核发布链**，跑完全套门禁后红在下面第 5 步
+      #   （`TAG="${GITHUB_REF_NAME#v}"` = `scode@0.2.0` ≠ 5.0.0 ⇒ exit 1）。
+      #   不会误发 npm（护栏 fail-closed 生效），但会留一条噪音红 run，且消耗一次 CI。
+      #   `v[0-9]*` 要求 v 之后紧跟数字 ⇒ 与宿主的 `vscode@*` 触发集合**完全不相交**。
+      #   （宿主机的 workflow 见 `host-release.yml`。内核轴与宿主轴必须互斥。）
+      - 'v[0-9]*'
 
 # 只读源码即可；id-token: write 供 OIDC 向 npm 证明身份（Trusted Publisher 必需）。
 permissions:
