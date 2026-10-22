@@ -579,7 +579,8 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             HOST-NAV-1：大纲条浮层 border: var(--line-input)（chatStyles）再 +1（2026-10-20）；
     //             CTX-4 真机反馈：本轮注入回执行 .context-ring__injection 分隔线 +1（2026-10-21）
     'sq-': 47,
-    'dim-': 21, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）
+    'dim-': 22, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）；
+    //             UI-CONFIRM-FIT-1：审批卡 max-height 引 var(--dim-2xl)（替代裸值 420px）+1（2026-10-22）
   } as const;
 
   for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {

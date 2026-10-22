@@ -157,6 +157,12 @@ afterEach(() => {
 
 /** 挂载 createChatView 并返回 postMessage mock（ready 消息在此被捕获） */
 export function mountChatView(): { postMessage: ReturnType<typeof vi.fn> } {
+  // 🔴 `innerHTML` 只重置**子树**，body 自身的 class 会跨用例残留（2026-10-22
+  // UI-CONFIRM-FIT-1 实锤：上一用例留下的 `confirm-active` 让下一用例首个断言直接拿到
+  // true，表现为「新写的判据一开始就是 true」的假红，并且掩盖真正的污染源）。
+  // fresh page 语义 = body 无任何类（真实 webview 每次 getHtml 重建 body）。
+  // 与 _dockExpanded / 定时器等同类：凡「挂在全局宿主上的态」，mount 必须重置到初值。
+  document.body.className = '';
   document.body.innerHTML = HTML;
   const postMessage = vi.fn();
   const view = createChatView({

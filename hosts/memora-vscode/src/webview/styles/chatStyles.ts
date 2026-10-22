@@ -64,6 +64,13 @@ export const chatStyles = `
     cursor: pointer;
   }
   .scroll-to-bottom:hover { color: var(--text-primary, #cccccc); }
+  /* 🔴 A 类阻断面板激活时让位（UI-CONFIRM-FIT-1，2026-10-22 真机反馈「按钮和确认框交叠」）：
+   * 本按钮 bottom: calc(100% + sp-4) 锚 #inputBar 顶边，而审批卡恰好占据该区域；
+   * 且 #inputBar 有 z-index: 20（层令牌 --z-bar）创建层叠上下文、卡片无 z-index
+   * ⇒ 按钮不只视觉压住卡片的操作按钮，还**能抢走点击**（误触源）。
+   * 让位而非上移：审批时「回到底部」本就无意义，藏起来比钉在别处更诚实。
+   * class 写入点在 setComposerReplaced（与 composer 让位同一裁决、同一写入点，禁散写）。 */
+  body.confirm-active .scroll-to-bottom { display: none; }
 
   /* ============ 会话大纲导航条（HOST-NAV-1） ============ */
   /* 右缘按轮锚点：每轮用户输入一根细横条，hover 弹浮层列预览，点击定位（ChatGPT 同款）。
@@ -545,13 +552,35 @@ export const chatStyles = `
   /* 写入审批卡：confirmWrites=true 写文件时浮现于消息区底部。
    * 浅底卡片 + 头部（工具/路径）+ 描述 + 可折叠 diff + 确认/拒绝按钮；
    * 确认用语义令牌 --status-pass、拒绝用 --status-fail —— 与工具执行状态色同源，不造新色。 */
+  /* 🔴 同盒替身（UI-CONFIRM-FIT-1，2026-10-22 真机反馈）：本卡在 resolveDock 里**替换**
+   * #inputWrap（composer hidden、卡插 inputBar 前），所以它必须是「同一个盒子的另一副内容」，
+   * 不是「旁边冒出的小卡片」。四组值与 #inputWrap 对齐，缺任何一组都会让替换瞬间盒子换形状：
+   *   ① min-height   —— 高度差 ⇒ #messages(flex:1) 高度突变 ⇒ 内容整体跳动（用户描述
+   *                     「对话记录弹到下面」，实测差约 38px，无过渡所以像「弹」）；
+   *   ② radius-xl    —— 原 radius-lg(8) vs 输入框 radius-xl(14)，圆角突然变小；
+   *   ③ surface-input—— 原 surface-card vs 输入框 surface-input，底色跳一下；
+   *   ④ margin       —— 原 8px 0 使卡片比输入框窄一圈的错觉来源之一（左右 0 但上 8px
+   *                     改变了卡的起始线）。现顶部 0（由 #messages 的 padding-bottom 12px
+   *                     兜住），底部保 8px 与 #inputBar 的 padding-bottom 12px 合成原留白。
+   * ⚠️ 已知边界（明写，勿当缺陷重提）：输入框多行撑高（>128px）时替换仍有高度差。不做运行时
+   * 读 offsetHeight 动态补偿——那会引入 forced reflow + resize/字体变更重算的新故障面，
+   * 收益不抵（复杂度守恒）；单行输入（绝大多数场景）零突变。 */
   .write-confirm-card {
-    margin: var(--sp-3, 8px) 0;
+    margin: 0 0 var(--sp-3, 8px);
     padding: var(--sp-5, 12px);
-    background: var(--surface-card, #252526);
-    border: var(--line-solid);
-    border-radius: var(--radius-lg, 8px);
+    min-height: var(--input-wrap-min-h, 128px);
+    box-sizing: border-box;
+    background: var(--surface-input, #3c3c3c);
+    border: var(--line-input);
+    border-radius: var(--radius-xl, 14px);
     box-shadow: var(--shadow-card, 0 2px 8px rgba(0,0,0,.15));
+    /* 内容上限：diff 展开可高达数百 px，不设上限会把消息区压到近乎为零（用户还没看到
+     * 刚发生了什么，就得决定批准与否）。上限取「半屏」与 --dim-2xl（提示卡最大高）的较小
+     * 者：小窗按视口比例收缩，大屏不无限长。超限时卡片内滚；overscroll-contain 防滚到
+     * 边界后把滚轮泄漏给相邻滚动容器（与 #messages 的 overscroll-behavior:contain 同口径）。 */
+    max-height: min(50vh, var(--dim-2xl));
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .write-confirm-card__body { display: flex; flex-direction: column; gap: var(--sp-2, 6px); min-width: 0; }
   .write-confirm-card__head { display: flex; align-items: center; gap: var(--sp-2, 6px); min-width: 0; }

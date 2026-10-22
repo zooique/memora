@@ -2698,6 +2698,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   function setComposerReplaced(replaced: boolean): void {
     if (inputWrap) inputWrap.hidden = replaced;
+    // 同一裁决的第二表现（UI-CONFIRM-FIT-1，2026-10-22 真机反馈「到底部按钮和确认框交叠」）：
+    // 一键到底按钮 bottom: calc(100% + sp-4) 锚 #inputBar 顶边，而审批卡恰好占据该区域；
+    // 且 #inputBar 有 z-index: var(--z-bar)=20 建层叠上下文、卡片无 z-index ⇒ 按钮既压住
+    // 卡片的操作按钮、又能抢走点击。审批时导航本就无意义，故让它一并让位（CSS 见
+    // chatStyles.ts `body.confirm-active .scroll-to-bottom`）。
+    // 🔴 必须写在这里：判据与 composer 让位完全相同，分开两处写必然漂移（一处改了另一处忘）。
+    document.body.classList.toggle('confirm-active', replaced);
   }
 
   function setDockActive(id: DockId, active: boolean): void {

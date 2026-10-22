@@ -8722,6 +8722,113 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(card.compareDocumentPosition(inputBar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  /**
+   * UI-CONFIRM-FIT-1（2026-10-22 用户真机实测三条）：
+   * ① 尺寸比输入框小 ② 对话记录弹到下面 ③ 回到底部按钮和确认框交叠。
+   *
+   * ①② **同源**：卡片是**替换** `#inputWrap` 的（resolveDock 里 composer hidden、卡插
+   * inputBar 前），但盒模型没对齐 ⇒ 替换瞬间「盒子换了形状」：缺 min-height 矮约 38px、
+   * 圆角 8 vs 14、底色 surface-card vs surface-input；而 `#messages` 是 flex:1 ⇒ 高度突变
+   * 直接表现为「对话记录整体弹一下」。
+   * ③ **独立**：按钮 `bottom: calc(100% + sp-4)` 锚 `#inputBar` 顶边、而卡恰好占据该区域；
+   * `#inputBar` 有 `z-index: var(--z-bar)=20` 建层叠上下文、卡无 z-index ⇒ 按钮不只视觉压住
+   * 卡片的操作按钮，**还能抢走点击**（误触源）。
+   *
+   * 定案（**不换弹窗**）：全覆盖弹窗遮挡上下文（审批恰恰要看上下文），只盖输入区的浮层与
+   * 现有「替换」占同一块视觉空间却要多开 z-index 层级 + 焦点陷阱 ⇒ 净收益≈0。故打磨为
+   * 「同盒替身 + 导航让位」。jsdom 不算计算样式，与活动限高守卫同范式读样式源码断言。
+   */
+  describe('UI-CONFIRM-FIT-1：替换输入框必须同盒 + 导航让位', () => {
+    const styleSrc = () =>
+      readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf-8') as string;
+
+    /** 抽 `.write-confirm-card { … }` 首个声明块（不含 __body 等 BEM 子元素规则） */
+    function cardRuleBody(): string {
+      const m = styleSrc().match(/\.write-confirm-card\s*\{([^}]*)\}/);
+      expect(m).not.toBeNull();
+      return m?.[1] ?? '';
+    }
+
+    it('审批卡激活 ⇒ body 带 confirm-active（导航让位的判据面）', () => {
+      mountChatView();
+      expect(document.body.classList.contains('confirm-active')).toBe(false);
+      dispatch({
+        type: 'write_confirm_request',
+        requestId: 'fit_show',
+        targetPath: '/workspace/scripts/build.sh',
+        tool: 'run_script',
+        description: '执行脚本：build.sh',
+        permission: 'owner',
+        beforeContent: null,
+        afterContent: null,
+        hasDiff: false,
+      });
+      expect(document.body.classList.contains('confirm-active')).toBe(true);
+    });
+
+    it('收卡（宿主推 closed）⇒ 必须移除 confirm-active（残留 = 按钮永久消失，回不到最新消息）', () => {
+      mountChatView();
+      dispatch({
+        type: 'write_confirm_request',
+        requestId: 'fit_close',
+        targetPath: '/workspace/scripts/build.sh',
+        tool: 'run_script',
+        description: '执行脚本：build.sh',
+        permission: 'owner',
+        beforeContent: null,
+        afterContent: null,
+        hasDiff: false,
+      });
+      expect(document.body.classList.contains('confirm-active')).toBe(true);
+      dispatch({ type: 'write_confirm_closed', requestId: 'fit_close' });
+      expect(document.body.classList.contains('confirm-active')).toBe(false);
+    });
+
+    it('点确认后仍处等待态 ⇒ 不移除（卡还在，按钮就该继续让位）', () => {
+      mountChatView();
+      dispatch({
+        type: 'write_confirm_request',
+        requestId: 'fit_wait',
+        targetPath: '/workspace/scripts/build.sh',
+        tool: 'run_script',
+        description: '执行脚本：build.sh',
+        permission: 'owner',
+        beforeContent: null,
+        afterContent: null,
+        hasDiff: false,
+      });
+      (document.getElementById('writeConfirmOk') as HTMLButtonElement).click();
+      // 是否移除只由「卡还在不在」决定，与「用户点没点」无关——这是等待态设计的直接推论
+      expect(document.body.classList.contains('confirm-active')).toBe(true);
+    });
+
+    it('样式守卫：四条盒模型与 #inputWrap 对齐（缺任一条 = 替换瞬间盒子换形状）', () => {
+      const body = cardRuleBody();
+      expect(body).toMatch(/min-height:\s*var\(--input-wrap-min-h/);
+      expect(body).toMatch(/border-radius:\s*var\(--radius-xl/);
+      expect(body).toMatch(/background:\s*var\(--surface-input/);
+      expect(body).toMatch(/box-sizing:\s*border-box/);
+      // 顶边距必须归零：原本 margin: 8px 0 让替换后的起始线与输入框错开
+      expect(body).toMatch(/margin:\s*0\b/);
+    });
+
+    it('样式守卫：卡片限高 + 内部滚动（diff 展开不得把消息区压没）', () => {
+      const body = cardRuleBody();
+      // 语义对（限高→滚动→防滚轮泄漏），三者缺一即失效：只删 overflow 内容被裁不可达，
+      // 只删 overscroll 会滚穿到消息区。
+      // 上限必须是令牌而非裸值（tokensClosure 裸值债硬门会拦）：--dim-2xl 语义即「提示卡最大高」。
+      expect(body).toMatch(/max-height:\s*min\(50vh,\s*var\(--dim-2xl\)\)/);
+      expect(body).toMatch(/overflow-y:\s*auto/);
+      expect(body).toMatch(/overscroll-behavior:\s*contain/);
+    });
+
+    it('样式守卫：confirm-active 时一键到底按钮让位（display:none，不是上移）', () => {
+      expect(styleSrc()).toMatch(
+        /body\.confirm-active\s+\.scroll-to-bottom\s*\{[^}]*display:\s*none/,
+      );
+    });
+  });
+
   it('大纲导航条锚点守卫（HOST-NAV-1）：#roundNav 须与 #messages 同级，严禁挪回滚动容器内', () => {
     // 同款血训（planBar / scrollToBottomBtn / 审批卡三次实证）：#messages 是
     // overflow-y:auto 滚动容器，absolute 子元素随内容滚走/顶到消息流顶端——
