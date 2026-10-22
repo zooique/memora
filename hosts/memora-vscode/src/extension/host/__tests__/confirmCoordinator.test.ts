@@ -380,14 +380,13 @@ describe('ConfirmCoordinator · onConfirmShown 交互提醒钩子（HOST-ATTN-1�
 
   it('提醒层注入面同步抛错 ⇒ 确认链路照常（真形态：接的是真实 notifier）', () => {
     // 这条用例打的是**生产组合**，不是假想的坏钩子：chatPanel 注入的就是
-    // `createAttentionNotifier(...)`，其 `showInfoMessage` 是 vscode API（窗口销毁等
-    // 边角面会同步抛）。提醒是增值能力，确认卡是安全关键路径——前者不得把后者打掉。
+    // `createAttentionNotifier(...)`，其 `showSystemToast` 最终会 spawn PowerShell
+    // （系统策略拦截、powershell 被改名等边角面会同步抛）。提醒是增值能力，确认卡是安全
+    // 关键路径——前者不得把后者打掉。
     const notifier = createAttentionNotifier({
-      isViewVisible: () => true, // L1 通过（不可见）才好走到 L2 的抛错点
-      isWindowFocused: () => false,
-      showChatView: () => undefined,
-      showInfoMessage: () => {
-        throw new Error('workbench toast 炸了');
+      isWindowFocused: () => false, // 失焦 ⇒ 真的走到发通知那一步
+      showSystemToast: () => {
+        throw new Error('系统通知层炸了');
       },
       launchUri: ATTENTION_URI,
     });

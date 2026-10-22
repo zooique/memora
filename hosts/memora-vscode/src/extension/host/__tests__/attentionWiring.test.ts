@@ -23,6 +23,17 @@ import { ATTENTION_PATH, ATTENTION_URI, ATTENTION_URI_AUTHORITY } from '../atten
 const HOST_ROOT = join(__dirname, '..', '..', '..', '..');
 const read = (...segments: string[]) => readFileSync(join(HOST_ROOT, ...segments), 'utf8');
 
+/**
+ * 去注释后再断言
+ *
+ * 守卫要锁的是「**代码里**没有」，而注释里写「原 L2 `showInformationMessage` 已删」是必要
+ * 记录（不写就没人知道为什么只剩一条通道）。不剥离注释 ⇒ 守卫把说明文字当违规，实测踩过。
+ */
+const codeOf = (src: string) =>
+  src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '');
+
 const pkg = JSON.parse(read('package.json')) as {
   publisher: string;
   name: string;
@@ -95,8 +106,9 @@ describe('chatPanel.ts：三个触发点接线', () => {
     expect(src).toContain('this._attention.onRoundSettled({ roundId: latestRoundId })');
   });
 
-  it('实例惰性取视图（不可快照已销毁的 view）', () => {
-    expect(src).toContain('createVscodeAttention(() => this._view)');
+  it('实例无参构造（判据只看窗口聚焦态，不再依赖视图实例）', () => {
+    expect(src).toContain('createVscodeAttention()');
+    expect(src).not.toContain('createVscodeAttention(() => this._view)');
   });
 });
 
@@ -114,5 +126,23 @@ describe('分层纪律：纯逻辑层不碰 vscode', () => {
     expect(src).not.toContain('Memora 需要你确认');
     // 系统 toast 走工厂（平台闸/静默失败在工厂内）
     expect(src).toContain('showSystemToast: createSystemToastSender()');
+  });
+});
+
+describe('workbench 通知已整体移除（用户要求收敛到面板内按钮）', () => {
+  const notice = codeOf(read('src', 'extension', 'host', 'attentionNotice.ts'));
+  const adapter = codeOf(read('src', 'extension', 'host', 'vscodeAttention.ts'));
+
+  it('纯逻辑层不再注入 showInformationMessage', () => {
+    expect(notice).not.toContain('showInformationMessage');
+    expect(notice).not.toContain('showInfoMessage');
+  });
+
+  it('适配层不再注入 showInformationMessage（回归会立刻红）', () => {
+    expect(adapter).not.toContain('showInformationMessage');
+  });
+
+  it('不再有「去处理」按钮文案常量（连按钮都不存在，就不可能有审批位）', () => {
+    expect(notice).not.toContain('去处理');
   });
 });

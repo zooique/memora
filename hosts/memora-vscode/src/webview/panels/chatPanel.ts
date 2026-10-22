@@ -462,15 +462,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   });
 
   /**
-   * 交互提醒（HOST-ATTN-1）：需要用户交互而他看不见面板时叫回来（确认卡 / ask / 轮完成）。
-   * 判据与文案在 `attentionNotice.ts`（零 vscode 依赖），本处只持有实例；
-   * `() => this._view` 惰性读——视图会折叠/重建，快照会让可见性判据永远基于旧实例。
+   * 交互提醒（HOST-ATTN-1）：VS Code 失焦/最小化时发系统 toast，把用户叫回来
+   * （确认卡 / ask / 轮完成）。判据与文案在 `attentionNotice.ts`（零 vscode 依赖）。
+   *
+   * **无参构造**：判据只看窗口聚焦态——有焦点时承接面是面板内按钮（审批卡 / ask 卡 /
+   * 文件改动条），不再叠 workbench 通知（用户要求收敛，2026-10-22）。
    *
    * 🔴 **必须声明在 `_confirm` 之前**：类字段按声明顺序初始化，`_confirm` 的依赖闭包里引用了
    * `this._attention`；虽然该闭包要到「卡推出」时才执行（构造期不读），但把被依赖者放前面
    * 才能让「构造期不得调用」这条隐含前提变成结构事实，而不是时序巧合。
    */
-  private readonly _attention = createVscodeAttention(() => this._view);
+  private readonly _attention = createVscodeAttention();
 
   /**
    * 确认请求协调器（HOST-SPLIT-1 第 2 刀迁出域，真源见 `extension/host/confirmCoordinator.ts`）

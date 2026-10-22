@@ -13,6 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_TOAST_APP_ID,
+  TOAST_LOG_FILENAME,
   buildToastScript,
   createSystemToastSender,
   encodeCommand,
@@ -115,9 +116,10 @@ describe('buildToastScript —— 固定模板 + 转义数据', () => {
     expect(script.match(/<text>/g)).toHaveLength(1);
   });
 
-  it('appId 落在 CreateToastNotifier 调用上（决定 toast 显示哪个图标）', () => {
+  it('appId 先落到变量、再由变量传给 CreateToastNotifier（缺省值可被覆盖）', () => {
     const script = buildToastScript(PAYLOAD, 'Some.Custom.App');
-    expect(script).toContain("CreateToastNotifier('Some.Custom.App')");
+    expect(script).toContain("$appId='Some.Custom.App'");
+    expect(script).toContain('CreateToastNotifier($appId)');
   });
 
   it('输出全文不含裸单引号 ⇒ 整体安全嵌在 PowerShell 单引号串内', () => {
@@ -137,6 +139,49 @@ describe('buildToastScript —— 固定模板 + 转义数据', () => {
   it('三条纪律之「数据走 LoadXml」：脚本里必须出现 LoadXml 赋值', () => {
     const script = buildToastScript(PAYLOAD, DEFAULT_TOAST_APP_ID);
     expect(script).toContain('$xml.LoadXml(');
+  });
+});
+
+describe('AUMID 与失败可诊断 —— 真机「什么都不弹」的两个根因', () => {
+  it('默认 AUMID 是真值 Microsoft.VisualStudioCode（中间不带点）', () => {
+    expect(DEFAULT_TOAST_APP_ID).toBe('Microsoft.VisualStudioCode');
+    // 反面锚：按扩展 ID 拼法想当然写出的 Microsoft.VisualStudio.Code 是**静默不显示**的错值
+    expect(DEFAULT_TOAST_APP_ID).not.toBe('Microsoft.VisualStudio.Code');
+  });
+
+  it('AUMID 不匹配时按开始菜单发现 AppID 重试一次（便携版 / Insiders 的 AUMID 不同）', () => {
+    const script = buildToastScript(PAYLOAD, DEFAULT_TOAST_APP_ID);
+    expect(script).toContain('Get-StartApps');
+    expect(script).toContain('*Visual Studio Code*');
+    expect(script).toContain('$appId=$alt');
+    // 重试必须在「首次尝试」的 catch 分支里，否则等于没兜底
+    expect(script.indexOf('catch{')).toBeLessThan(script.indexOf('$appId=$alt'));
+  });
+
+  it('最终失败写日志到 %TEMP%（时间 / appId / 异常消息三要素齐全）', () => {
+    const script = buildToastScript(PAYLOAD, DEFAULT_TOAST_APP_ID);
+    expect(script).toContain(TOAST_LOG_FILENAME);
+    expect(script).toContain('Out-File -Append');
+    expect(script).toContain('appId=$appId');
+    expect(script).toContain('Get-Date -Format o');
+    expect(script).toContain('$($_.Exception.Message)');
+  });
+
+  it('顶层 try 覆盖「加载 WinRT → 建 XML → 显示」全程', () => {
+    const script = buildToastScript(PAYLOAD, DEFAULT_TOAST_APP_ID);
+    const tryAt = script.indexOf('try{');
+    expect(tryAt).toBeGreaterThan(-1);
+    for (const step of ['ContentType=WindowsRuntime', 'LoadXml(', 'Show($toast)']) {
+      expect(script.indexOf(step)).toBeGreaterThan(tryAt);
+    }
+  });
+
+  it('多行脚本（-EncodedCommand 收整段，不必压成一行）', () => {
+    expect(buildToastScript(PAYLOAD, DEFAULT_TOAST_APP_ID)).toContain('\n');
+  });
+
+  it("appId 含单引号 ⇒ 按 PowerShell 规则双写，不破串", () => {
+    expect(buildToastScript(PAYLOAD, "we'ird")).toContain("$appId='we''ird'");
   });
 });
 
@@ -225,7 +270,7 @@ describe('createSystemToastSender —— fire-and-forget，失败静默', () => 
     const spy = makeFakeSpawn();
     createSystemToastSender({ spawnFn: spy.spawnFn, platform: 'win32', appId: 'My.App' })(PAYLOAD);
     const decoded = Buffer.from(spy.calls[0].args[3], 'base64').toString('utf16le');
-    expect(decoded).toContain("CreateToastNotifier('My.App')");
+    expect(decoded).toContain("$appId='My.App'");
     expect(decoded).not.toContain(DEFAULT_TOAST_APP_ID);
   });
 

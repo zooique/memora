@@ -1,22 +1,26 @@
 /**
- * 交互提醒（attention）—— 需要用户交互而用户看不见面板时，把他叫回来（HOST-ATTN-1）
+ * 交互提醒（attention）—— VS Code 在后台/最小化时，把用户叫回来（HOST-ATTN-1）
  *
- * 分层（判据只有一处，三层动作都从这里出）：
- *   L1 看得见（面板可见 && 窗口聚焦）→ 什么都不做（别打扰正在看的人）
- *   L2 看不见 → workbench prompt toast（带「去处理」按钮；**失焦时持久保留**，
- *      见 microsoft/vscode#80285 / #80456 —— 与无按钮的 info toast 本质区别）
- *   L3 且窗口失焦 → 系统级 toast（VS Code 最小化也可见；同事件只发一次）
+ * **只有一条通道**：窗口失焦时发**系统 toast**（Windows 右下角，VS Code 最小化也可见）。
+ * 面板内已有承接面（审批卡 / ask 卡 / `file-changes-bar` 的「全部确认 · 全部回退」按钮），
+ * 故**不再叠 workbench 通知**——同一个动作给两处按钮是重复表达，用户明确要求收敛到面板内
+ * （2026-10-22 定案，原 L2 `showInformationMessage` 已删）。
+ *
+ * 判据只有一条：**窗口聚焦 ⇒ 什么都不发**。有焦点意味用户就在 VS Code 里，面板内按钮即
+ * 可见面；此时再弹系统通知是打扰，且与面板按钮重复。
  *
  * 🔴 三条红线：
- *   ① **通知里没有「确认/拒绝」按钮**——只有「去处理」。通知能直接批准，用户就没看 diff
- *      就把写入批了，绕过确认卡的内容展示 = fail-closed 安全模型反转（与 confirm 超时
- *      自动拒绝同一原则）。确认动作永远留在卡上。
- *   ② **不自动展开面板、不抢焦点**：`showChatView` 只在用户点「去处理」/ 点系统 toast 后调用。
- *   ③ **看见就不打扰**：判据是「面板可见 && 窗口聚焦」的与，而不是或——面板折叠但 VS Code
- *      有焦点（用户在看别的文件）同样需要提醒。
+ *   ① **通知里没有任何按钮**：系统 toast 只能被点开（回跳视图），**永不表达「批准/拒绝」**。
+ *      能从通知直接批准，用户就没看 diff 就把写入批了 = 绕过确认卡的内容展示 = fail-closed
+ *      安全模型反转（与 confirm 超时自动拒绝同一原则）。
+ *   ② **不自动展开、不抢焦点**：展开只发生在用户点 toast 之后（`extension.ts` 的 URI handler）。
+ *   ③ **同事件只发一次**：确认卡重复推出 / ask 两次进入等待 / done 重入，都不得连弹。
  *
- * 与 `status-dock` 未读徽记的分工：徽记表达「有东西没看」（面板内可见），本模块表达
- * 「有人在等你」（面板外不可见）。两者不互相替代，也不共用判据。
+ * 与 `status-dock` 未读徽记的分工：徽记表达「面板里有东西没看」（面板内可见），本模块表达
+ * 「VS Code 在外面，有人在等你」（面板外不可见）。两者不互相替代。
+ *
+ * ⚠️ 已知边界（明写，勿当缺陷重提）：面板折叠但**窗口有焦点**时本模块不发通知——承接面是
+ * 面板内按钮，用户需自己展开面板。这是「不打扰」的代价，不是漏判。
  *
  * 本模块**不 import vscode**（依赖全注入）——宿主 host 层纪律，单测无需 mock vscode；
  * vscode 适配见 `vscodeAttention.ts`。
@@ -24,9 +28,6 @@
 
 /** 通知种类：三类事件的文案与去重键各不同 */
 export type AttentionKind = 'confirm' | 'ask' | 'settled';
-
-/** 动作按钮文案（workbench toast 与系统 toast 共用一份，防两处说法漂移） */
-export const ATTENTION_ACTION = '去处理';
 
 /**
  * 系统 toast 点击回跳的 URI 三件套（唯一定义处；`vscodeAttention.ts` 与 `extension.ts` 都从这里取）
@@ -42,7 +43,7 @@ export const ATTENTION_URI_AUTHORITY = 'zooique.memora-vscode';
 export const ATTENTION_PATH = '/attention';
 export const ATTENTION_URI = `vscode://${ATTENTION_URI_AUTHORITY}${ATTENTION_PATH}`;
 
-/** 为什么用中文常量而不是分散字面量：文案即用户契约，改一处必须改全（含系统 toast 标题） */
+/** 为什么用中文常量而不是分散字面量：文案即用户契约，改一处必须改全 */
 const CONFIRM_TITLE = 'Memora 需要你确认';
 const ASK_TITLE = 'Memora 在等你回答';
 const SETTLED_TITLE = 'Memora 任务完成';
@@ -62,11 +63,9 @@ export interface AttentionDetail {
 }
 
 export interface AttentionMessage {
-  /** 通知标题（系统 toast 首行） */
+  /** toast 首行 */
   title: string;
-  /** workbench toast 正文（一行说完：谁 + 要你做什么） */
-  message: string;
-  /** 系统 toast 第二行（详情摘要） */
+  /** toast 第二行（详情摘要；空串 = 只有一行） */
   body: string;
 }
 
@@ -80,40 +79,32 @@ function clipText(text: string, max: number): string {
  * 「有内容就裁剪，没内容就兜底」
  *
  * 🔴 不能用 `detail.label ?? 兜底`：`??` 只挡 `null/undefined`，空串会原样通过 ⇒
- * body 为空、消息尾巴挂一个悬空冒号（「Memora 在等你回答：」）。空串与纯空白都算
- * 没内容——这才是兜底文案存在的意义（实测踩过）。
+ * toast 第二行空白。空串与纯空白都算没内容——这才是兜底文案存在的意义（实测踩过）。
  */
 function detailOr(text: string | undefined, fallback: string, max: number): string {
   return (text === undefined ? '' : clipText(text, max)) || fallback;
 }
 
-/** 文案单点（纯函数）：三类的标题 / 消息 / 详情全在这里，调用方不拼字符串 */
+/** 文案单点（纯函数）：三类的标题 / 详情全在这里，调用方不拼字符串 */
 export function composeAttention(kind: AttentionKind, detail: AttentionDetail = {}): AttentionMessage {
   if (kind === 'confirm') {
-    const label = detailOr(detail.label, CONFIRM_FALLBACK, LABEL_CLIP);
-    return { title: CONFIRM_TITLE, message: `${CONFIRM_TITLE}：${label}`, body: label };
+    return { title: CONFIRM_TITLE, body: detailOr(detail.label, CONFIRM_FALLBACK, LABEL_CLIP) };
   }
   if (kind === 'ask') {
-    const question = detailOr(detail.question, ASK_FALLBACK, ASK_CLIP);
-    return { title: ASK_TITLE, message: `${ASK_TITLE}：${question}`, body: question };
+    return { title: ASK_TITLE, body: detailOr(detail.question, ASK_FALLBACK, ASK_CLIP) };
   }
-  return { title: SETTLED_TITLE, message: SETTLED_TITLE, body: '' };
+  return { title: SETTLED_TITLE, body: '' };
 }
 
 export interface AttentionDeps {
-  /** 对话视图当前是否可见（注入 `view.visible`；无 view ⇒ false） */
-  isViewVisible: () => boolean;
-  /** 当前 VS Code 窗口是否聚焦（注入 `vscode.window.state.focused`） */
-  isWindowFocused: () => boolean;
-  /** 展开并聚焦对话视图（点「去处理」/ 点系统 toast 后调用） */
-  showChatView: () => void;
-  /** workbench 通知（注入 `vscode.window.showInformationMessage`） */
-  showInfoMessage: (message: string, action: string) => PromiseLike<string | undefined>;
   /**
-   * 系统 toast（注入 `createSystemToastSender()`；缺省 = 不发）
+   * 当前 VS Code 窗口是否聚焦（注入 `vscode.window.state.focused`）
    *
-   * 只在**窗口失焦**时调用——有焦点时 workbench toast 已经可见，叠一条系统通知是纯打扰。
+   * 聚焦 ⇒ 不发任何通知：承接面（审批卡 / ask 卡 / 文件改动条按钮）就在面板里，
+   * 再发系统通知属于重复表达 + 打扰。
    */
+  isWindowFocused: () => boolean;
+  /** 系统 toast（注入 `createSystemToastSender()`；缺省 = 不发，用于测试与其它宿主） */
   showSystemToast?: (payload: { title: string; body: string; launchUri: string }) => void;
   /** 系统 toast 点击回跳的协议地址（`vscode://...`，由 extension 的 URI handler 承接） */
   launchUri: string;
@@ -149,25 +140,15 @@ export function createAttentionNotifier(deps: AttentionDeps): AttentionNotifier 
   }
 
   function requestAttention(kind: AttentionKind, detail: AttentionDetail, key: string): void {
-    // 🔴 增值能力边界：注入面（`isViewVisible` / `showInfoMessage` / `showChatView` /
-    // `showSystemToast`）任何一个同步抛错都在这里收敛。调用方包含确认卡路径
+    // 🔴 增值能力边界：注入面任何一个同步抛错都在这里收敛。调用方包含确认卡路径
     // （`confirmCoordinator.onConfirmShown` 是同步直调）——通知失败绝不能把审批卡打掉。
     try {
-      // L1：看得见就不打扰（判据单点：可见 与 聚焦 都为真才叫「看得见」）
-      if (deps.isViewVisible() && deps.isWindowFocused()) return;
+      // 判据单点：聚焦 = 用户就在 VS Code 里，面板内按钮即承接面
+      if (deps.isWindowFocused()) return;
+      if (!deps.showSystemToast) return;
+      if (!firstTime(key)) return;
       const composed = composeAttention(kind, detail);
-      // L2：workbench prompt toast。失焦时它不自动消失（官方 prompt 语义），切回即见。
-      // 必须 `Promise.resolve` 包一层：注入面契约是 `PromiseLike`（vscode Thenable 无 `.catch`），
-      // 而这里需要挂 catch——注入替身 reject 时不得产生未处理拒绝。
-      void Promise.resolve(deps.showInfoMessage(composed.message, ATTENTION_ACTION))
-        .then((picked) => {
-          if (picked === ATTENTION_ACTION) deps.showChatView();
-        })
-        .catch(() => undefined);
-      // L3：系统 toast——仅失焦，且同一事件只发一次
-      if (!deps.isWindowFocused() && deps.showSystemToast && firstTime(key)) {
-        deps.showSystemToast({ title: composed.title, body: composed.body, launchUri: deps.launchUri });
-      }
+      deps.showSystemToast({ title: composed.title, body: composed.body, launchUri: deps.launchUri });
     } catch {
       // 静默：通知失败不产生任何用户可见面（也没有更合适的报告通道——报告本身就会再走通知）
     }
@@ -177,7 +158,7 @@ export function createAttentionNotifier(deps: AttentionDeps): AttentionNotifier 
     onConfirmShown: (info) =>
       requestAttention('confirm', { label: info.label }, `confirm:${info.requestId}`),
     // 去重键用提问原文：同一提问重复进入等待（覆写式 setPending + armAskTimeout 两次调用）
-    // 只弹一次系统 toast；不同轮撞同一提问则不弹（低频，且 L2 toast 仍会发）
+    // 只弹一次系统 toast；不同轮撞同一提问则不弹（低频，可接受）
     onAskWaiting: (info) => requestAttention('ask', { question: info.question }, `ask:${info.question}`),
     onRoundSettled: (info) => requestAttention('settled', {}, `settled:${info.roundId}`),
   };
