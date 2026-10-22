@@ -1,24 +1,23 @@
 /**
  * 交互提醒**接线守卫**（HOST-ATTN-1）
  *
- * 为什么需要本文件：提醒的判据与文案已由 `attentionNotice.test.ts` 全覆盖，但「判据正确」
- * 不等于「判据被接上线」。三处接线分别落在：
- *   - `extension.ts`   —— vscode URI handler（import vscode，node 环境不可加载，测不了行为）
- *   - `chatPanel.ts`   —— ask / done 两个触发点（同上，且受 max-lines 闸门约束不宜为测试改造）
- *   - `package.json`   —— `onUri` 激活事件（冷启动承接面）
- * 故用源码文本锚定这三处。红线：**这类守卫只锚「契约串」，不锚实现细节**——前者改了必须
- * 同步改测试（正是意图），后者重构时会误红。
+ * 为什么需要本文件：提醒的判据已由 `attentionNotice.test.ts` 全覆盖，但「判据正确」
+ * 不等于「判据被接上线」。接线落在 `chatPanel.ts` —— ask / done 两个触发点 + confirm
+ * 注入点（import vscode，node 环境不可加载，测不了行为，故用源码文本锚定）。
+ * 红线：**这类守卫只锚「契约串」，不锚实现细节**——前者改了必须同步改测试（正是意图），
+ * 后者重构时会误红。
  *
- * 🔴 本文件守的两个实测踩过的坑（2026-10-22）：
- *   ① URI authority 必须是**扩展 ID = `publisher.name`**（官方 registerUriHandler 契约）。
- *      写成短名 `zooique.memora` 会被路由到不存在的扩展 ⇒ 点 toast 静默空转、无任何报错。
- *   ② 缺 `onUri` 激活事件 ⇒ 冷启动（VS Code 未激活）时 URI 到达但 handler 未注册 ⇒ 同样空转。
+ * 🔴 本文件守的实测坑（2026-10-22）：系统 toast 通道整体退役（借 AUMID 被系统静默丢弃，
+ * 详见 `attentionNotice.ts` 头注释）。本守卫锁住两件事：
+ *   ① toast 通道**不得复活**——`systemToast` / WinRT toast 相关字面量在提醒链路上必须
+ *      保持为零，防止有人在没读实证结论的情况下把死通道接回来；
+ *   ② 三个触发点**不得丢失**——面板内的承接面（审批卡 / ask 卡 / 完成状态）是提醒的
+ *      判据前提，接线断了提醒就永远不响。
  */
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ATTENTION_PATH, ATTENTION_URI, ATTENTION_URI_AUTHORITY } from '../attentionNotice.js';
 
 const HOST_ROOT = join(__dirname, '..', '..', '..', '..');
 const read = (...segments: string[]) => readFileSync(join(HOST_ROOT, ...segments), 'utf8');
@@ -26,73 +25,19 @@ const read = (...segments: string[]) => readFileSync(join(HOST_ROOT, ...segments
 /**
  * 去注释后再断言
  *
- * 守卫要锁的是「**代码里**没有」，而注释里写「原 L2 `showInformationMessage` 已删」是必要
- * 记录（不写就没人知道为什么只剩一条通道）。不剥离注释 ⇒ 守卫把说明文字当违规，实测踩过。
+ * 守卫要锁的是「**代码里**没有」，而注释里写「原 toast 已删」是必要记录（不写就没人
+ * 知道为什么只剩一条通道）。不剥离注释 ⇒ 守卫把说明文字当违规，实测踩过。
  */
 const codeOf = (src: string) =>
   src
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^[ \t]*\/\/.*$/gm, '');
 
-const pkg = JSON.parse(read('package.json')) as {
-  publisher: string;
-  name: string;
-  activationEvents?: string[];
-  contributes: { views: Record<string, Array<{ id: string }>> };
-};
-
-describe('URI 契约：authority 必须是扩展 ID', () => {
-  it('ATTENTION_URI = vscode://<publisher>.<name><path>（与 package.json 同源）', () => {
-    const expected = `vscode://${pkg.publisher}.${pkg.name}${ATTENTION_PATH}`;
-    expect(ATTENTION_URI).toBe(expected);
-    // 反面锚：扩展 name 是 memora-vscode，短名 memora 不是合法 ID
-    expect(ATTENTION_URI_AUTHORITY).toBe(`${pkg.publisher}.${pkg.name}`);
-    expect(ATTENTION_URI_AUTHORITY).not.toBe(`${pkg.publisher}.memora`);
-  });
-
-  it('uri 能被标准 URL 解析，authority/path 各就各位', () => {
-    const parsed = new URL(ATTENTION_URI);
-    expect(parsed.protocol).toBe('vscode:');
-    expect(parsed.host).toBe(ATTENTION_URI_AUTHORITY);
-    expect(parsed.pathname).toBe(ATTENTION_PATH);
-  });
-});
-
-describe('冷启动承接面：onUri 激活事件', () => {
-  it('package.json 声明 onUri（否则扩展未激活时 handler 不存在）', () => {
-    expect(pkg.activationEvents ?? []).toContain('onUri');
-  });
-
-  it('views 里有 memora.chat（extension.ts 回跳用的 `<viewId>.focus` 命令来源）', () => {
-    const ids = (pkg.contributes.views.memora ?? []).map((v) => v.id);
-    expect(ids).toContain('memora.chat');
-  });
-});
-
-describe('extension.ts：URI handler 接线', () => {
-  const src = read('src', 'extension', 'extension.ts');
-
-  it('注册了 registerUriHandler', () => {
-    expect(src).toContain('vscode.window.registerUriHandler(');
-  });
-
-  it('比对 ATTENTION_PATH（单点），不抄字面量 /attention', () => {
-    expect(src).toContain('ATTENTION_PATH');
-    // 反面锚：路径字面量不得散落在 extension.ts（改路径只改一处）
-    expect(src).not.toMatch(/['"]\/attention['"]/);
-  });
-
-  it('回跳优先聚焦对话视图，命令失败退回展开容器（两级承接）', () => {
-    expect(src).toContain("executeCommand('memora.chat.focus')");
-    expect(src).toContain("executeCommand('workbench.view.extension.memora')");
-  });
-});
-
 describe('chatPanel.ts：三个触发点接线', () => {
   const src = read('src', 'webview', 'panels', 'chatPanel.ts');
 
-  it('confirm：onConfirmShown 注入确认协调器', () => {
-    expect(src).toContain('onConfirmShown: (info) => this._attention.onConfirmShown(info)');
+  it('confirm：onConfirmShown 注入确认协调器（只取 requestId，label 留在协调器）', () => {
+    expect(src).toContain('onConfirmShown: (info) => this._attention.onConfirmShown({ requestId: info.requestId })');
   });
 
   it('ask：两个写入源各一处提醒（事件驱动 + 流尾兜底）', () => {
@@ -106,7 +51,7 @@ describe('chatPanel.ts：三个触发点接线', () => {
     expect(src).toContain('this._attention.onRoundSettled({ roundId: latestRoundId })');
   });
 
-  it('实例无参构造（判据只看窗口聚焦态，不再依赖视图实例）', () => {
+  it('实例无参构造（判据只看窗口聚焦态，不依赖视图实例）', () => {
     expect(src).toContain('createVscodeAttention()');
     expect(src).not.toContain('createVscodeAttention(() => this._view)');
   });
@@ -119,30 +64,40 @@ describe('分层纪律：纯逻辑层不碰 vscode', () => {
     expect(src).not.toMatch(/require\(['"]vscode['"]\)/);
   });
 
-  it('vscodeAttention.ts 只做适配：不出现判据/文案字面量', () => {
+  it('vscodeAttention.ts 只做适配：不出现判据字面量，输出面走声音工厂', () => {
     const src = read('src', 'extension', 'host', 'vscodeAttention.ts');
-    // 判据与文案的真源在 attentionNotice.ts；这里出现这些字样说明逻辑漏到了适配层
+    // 判据的真源在 attentionNotice.ts；这里出现判据字样说明逻辑漏到了适配层
     expect(src).not.toContain('isWindowFocused() &&');
-    expect(src).not.toContain('Memora 需要你确认');
-    // 系统 toast 走工厂（平台闸/静默失败在工厂内）
-    expect(src).toContain('showSystemToast: createSystemToastSender()');
+    expect(src).toContain('playSound: createSystemSoundPlayer()');
   });
 });
 
-describe('workbench 通知已整体移除（用户要求收敛到面板内按钮）', () => {
+describe('系统 toast 通道已退役（2026-10-22 实证：借 AUMID 被静默丢弃）', () => {
   const notice = codeOf(read('src', 'extension', 'host', 'attentionNotice.ts'));
   const adapter = codeOf(read('src', 'extension', 'host', 'vscodeAttention.ts'));
 
-  it('纯逻辑层不再注入 showInformationMessage', () => {
+  it('提醒链路上不得残留 toast 工厂 / WinRT 字面量（复活即红）', () => {
+    expect(notice).not.toContain('systemToast');
+    expect(notice).not.toContain('ToastNotification');
+    expect(notice).not.toContain('showSystemToast');
+    expect(adapter).not.toContain('systemToast');
+    expect(adapter).not.toContain('ToastNotification');
+  });
+
+  it('systemToast.ts 文件本体已删除（重新引入必须先推翻实证结论）', () => {
+    expect(() => read('src', 'extension', 'host', 'systemToast.ts')).toThrow();
+  });
+
+  it('URI 回跳契约随 toast 一并退役（无 toast 即无 launch 源）', () => {
+    const ext = codeOf(read('src', 'extension', 'extension.ts'));
+    expect(notice).not.toContain('ATTENTION_URI');
+    expect(notice).not.toContain('launchUri');
+    expect(ext).not.toContain('registerUriHandler');
+  });
+
+  it('workbench 通知与「去处理」按钮文案保持移除（更早的收敛不得回退）', () => {
     expect(notice).not.toContain('showInformationMessage');
-    expect(notice).not.toContain('showInfoMessage');
-  });
-
-  it('适配层不再注入 showInformationMessage（回归会立刻红）', () => {
-    expect(adapter).not.toContain('showInformationMessage');
-  });
-
-  it('不再有「去处理」按钮文案常量（连按钮都不存在，就不可能有审批位）', () => {
     expect(notice).not.toContain('去处理');
+    expect(adapter).not.toContain('showInformationMessage');
   });
 });

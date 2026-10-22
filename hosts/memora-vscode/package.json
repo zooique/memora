@@ -31,9 +31,6 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onUri"
-  ],
   "main": "./dist/extension/extension.js",
   "contributes": {
     "commands": [

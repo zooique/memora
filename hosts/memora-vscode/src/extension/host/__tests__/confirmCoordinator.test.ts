@@ -21,7 +21,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Agent, WriteConfirmationRequest } from '@zooique/memora';
 import { ConfirmCoordinator } from '../confirmCoordinator.js';
-import { ATTENTION_URI, createAttentionNotifier } from '../attentionNotice.js';
+import { createAttentionNotifier } from '../attentionNotice.js';
 
 /** 载荷特征串：反向守卫用它确认 description（diff 全文）从未进决策记录 */
 const CARGO_MARKER = 'CARGO-FULLTEXT-9527';
@@ -380,15 +380,14 @@ describe('ConfirmCoordinator · onConfirmShown 交互提醒钩子（HOST-ATTN-1�
 
   it('提醒层注入面同步抛错 ⇒ 确认链路照常（真形态：接的是真实 notifier）', () => {
     // 这条用例打的是**生产组合**，不是假想的坏钩子：chatPanel 注入的就是
-    // `createAttentionNotifier(...)`，其 `showSystemToast` 最终会 spawn PowerShell
+    // `createAttentionNotifier(...)`，其 `playSound` 最终会 spawn PowerShell
     // （系统策略拦截、powershell 被改名等边角面会同步抛）。提醒是增值能力，确认卡是安全
     // 关键路径——前者不得把后者打掉。
     const notifier = createAttentionNotifier({
-      isWindowFocused: () => false, // 失焦 ⇒ 真的走到发通知那一步
-      showSystemToast: () => {
-        throw new Error('系统通知层炸了');
+      isWindowFocused: () => false, // 失焦 ⇒ 真的走到响提示音那一步
+      playSound: () => {
+        throw new Error('提示音层炸了');
       },
-      launchUri: ATTENTION_URI,
     });
     const holder = { agent: undefined as Agent | undefined };
     const posted: Posted[] = [];

@@ -487,7 +487,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private readonly _confirm = new ConfirmCoordinator({
     getAgent: () => this._agent,
     post: (msg) => this.post(msg),
-    onConfirmShown: (info) => this._attention.onConfirmShown(info),
+    onConfirmShown: (info) => this._attention.onConfirmShown({ requestId: info.requestId }),
   });
 
   /**
