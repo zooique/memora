@@ -138,6 +138,7 @@ import { toNoticeText } from '../../extension/host/noticeText.js';
 import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
+import { createVscodeAttention } from '../../extension/host/vscodeAttention.js';
 import { vscodeTracer } from '../../extension/host/tracer.js';
 import { buildDropdownHtml, dropdownStyles } from '../components/dropdown.js';
 import { chatStyles } from '../styles/chatStyles.js';
@@ -461,6 +462,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   });
 
   /**
+   * 交互提醒（HOST-ATTN-1）：需要用户交互而他看不见面板时叫回来（确认卡 / ask / 轮完成）。
+   * 判据与文案在 `attentionNotice.ts`（零 vscode 依赖），本处只持有实例；
+   * `() => this._view` 惰性读——视图会折叠/重建，快照会让可见性判据永远基于旧实例。
+   *
+   * 🔴 **必须声明在 `_confirm` 之前**：类字段按声明顺序初始化，`_confirm` 的依赖闭包里引用了
+   * `this._attention`；虽然该闭包要到「卡推出」时才执行（构造期不读），但把被依赖者放前面
+   * 才能让「构造期不得调用」这条隐含前提变成结构事实，而不是时序巧合。
+   */
+  private readonly _attention = createVscodeAttention(() => this._view);
+
+  /**
    * 确认请求协调器（HOST-SPLIT-1 第 2 刀迁出域，真源见 `extension/host/confirmCoordinator.ts`）
    *
    * **注入而非继承**：协调器要往 webview 推 write_confirm_request 审批卡，且需读**最新** agent
@@ -473,6 +485,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private readonly _confirm = new ConfirmCoordinator({
     getAgent: () => this._agent,
     post: (msg) => this.post(msg),
+    onConfirmShown: (info) => this._attention.onConfirmShown(info),
   });
 
   /**
@@ -3524,6 +3537,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 是「questions 非空即 ask」，故本投影即派生 waiting(ask)，即时渲染，不延迟。
       this.postTurnUpdate();
       this._ask.armAskTimeout(); // 超时保底：未答 → 自动续跑
+      this._attention.onAskWaiting({ question: questions[0]?.question ?? '' }); // 交互提醒（事件写入源）
     };
     this._agent.on('questionPending', onPendingQuestion);
     // 监听记忆沉淀事件（memoryAdded，非 chunk 通道）→ 与 chunk 同源进过程事件缓冲（单源，
@@ -3869,6 +3883,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         this._ask.setPending(clarifyChunkQueue);
         this.postTurnUpdate();
         this._ask.armAskTimeout(); // 兜底渲染同享超时保底
+        this._attention.onAskWaiting({ question: clarifyChunkQueue[0]?.question ?? '' }); // 交互提醒（兜底写入源）
       }
       // assistant 消息持久化由内核 appendAssistant 完成（写入当前会话 _currentSessionId），
       // 此处不再 persist，避免与内核双写同一条回复（SSOT 单一真理源）
@@ -3976,6 +3991,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } else {
       this.post({ type: 'done', roundId: latestRoundId, evidence: settledEvidence });
       this.postTurnUpdate(liveTurn);
+      // 交互提醒（完成）：只在正常收场分支——中断（aborted）与软暂停（paused）不叫，
+      // 前者是用户自己按的停、后者是等用户继续，两者都不是「任务完成」。
+      if (latestRoundId) this._attention.onRoundSettled({ roundId: latestRoundId });
       // status:done 延后到摘要完成（或 5s 兜底）——防 done 后立即删除导致孤儿 round-summary
       // 摘要 Promise 的 then/catch 都会 emit roundSummaryGenerated（成功或失败），正常事件很快到达；
       // 5秒兜底足够抗偶发网络抖动，避免 UI 长时间卡在 thinking 态让用户困惑

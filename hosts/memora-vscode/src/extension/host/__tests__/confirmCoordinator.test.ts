@@ -21,6 +21,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Agent, WriteConfirmationRequest } from '@zooique/memora';
 import { ConfirmCoordinator } from '../confirmCoordinator.js';
+import { ATTENTION_URI, createAttentionNotifier } from '../attentionNotice.js';
 
 /** 载荷特征串：反向守卫用它确认 description（diff 全文）从未进决策记录 */
 const CARGO_MARKER = 'CARGO-FULLTEXT-9527';
@@ -267,5 +268,143 @@ describe('ConfirmCoordinator（宿主确认队列域 · HOST-SPLIT-1 第 2 刀�
     // 未设 agent ⇒ getAgent() 返回 undefined ⇒ 静默返回（不得抛）
     expect(() => h.coordinator.bindWriteConfirmation()).not.toThrow();
     expect(h.posted).toHaveLength(0);
+  });
+});
+
+/**
+ * 交互提醒钩子（HOST-ATTN-1）：`onConfirmShown` 在**卡片推出之后**被调一次
+ *
+ * 为什么顺序也要断言：先提醒后发卡 ⇒ 用户点完「去处理」回来找不到卡（提醒与承接面脱节）。
+ * 这类缺陷单看「钩子被调过」是看不见的，故本组用事件序列表断言相对顺序。
+ */
+describe('ConfirmCoordinator · onConfirmShown 交互提醒钩子（HOST-ATTN-1）', () => {
+  /** 带 hook 的协调器：记录 post 与 hook 的**发生顺序** */
+  function makeWired() {
+    const order: string[] = [];
+    const shown: Array<{ requestId: string; label: string }> = [];
+    const requests: Array<{ requestId: string; targetPath: string }> = [];
+    const holder = { agent: undefined as Agent | undefined };
+    const coordinator = new ConfirmCoordinator({
+      getAgent: () => holder.agent,
+      post: (msg) => {
+        const m = msg as unknown as Record<string, unknown>;
+        if (m.type === 'write_confirm_request') {
+          order.push('post');
+          requests.push({ requestId: m.requestId as string, targetPath: m.targetPath as string });
+        }
+      },
+      onConfirmShown: (info) => {
+        order.push('shown');
+        shown.push(info);
+      },
+    });
+    return { order, shown, requests, holder, coordinator };
+  }
+
+  it('卡推出 ⇒ 钩子被调一次，requestId 与推送的卡一致', () => {
+    const h = makeWired();
+    const stub = agentStub();
+    h.holder.agent = stub.agent;
+    h.coordinator.bindWriteConfirmation();
+
+    stub.trigger(confirmInfo());
+
+    expect(h.shown).toHaveLength(1);
+    expect(h.requests).toHaveLength(1);
+    expect(h.shown[0].requestId).toBe(h.requests[0].requestId);
+  });
+
+  it('label 是「工具：basename」简写（不承载 diff 全文）', () => {
+    const h = makeWired();
+    const stub = agentStub();
+    h.holder.agent = stub.agent;
+    h.coordinator.bindWriteConfirmation();
+
+    stub.trigger(confirmInfo());
+
+    expect(h.shown[0].label).toContain('：');
+    expect(h.shown[0].label.endsWith('foo.md')).toBe(true);
+    // 反向守卫：diff 全文绝不进提醒文案（通知是最可能被截图外传的面）
+    expect(h.shown[0].label).not.toContain(CARGO_MARKER);
+  });
+
+  it('顺序契约：先 post 后 shown（提醒必须有承接面）', () => {
+    const h = makeWired();
+    const stub = agentStub();
+    h.holder.agent = stub.agent;
+    h.coordinator.bindWriteConfirmation();
+
+    stub.trigger(confirmInfo());
+
+    expect(h.order).toEqual(['post', 'shown']);
+  });
+
+  it('FIFO 排队：并发两条只提醒已推出的那张卡（排队的不提醒）', () => {
+    const h = makeWired();
+    const stub = agentStub();
+    h.holder.agent = stub.agent;
+    h.coordinator.bindWriteConfirmation();
+
+    stub.trigger(confirmInfo({ targetPath: '/mock/workspace/a.md' }));
+    stub.trigger(confirmInfo({ targetPath: '/mock/workspace/b.md' }));
+
+    expect(h.requests).toHaveLength(1);
+    expect(h.shown).toHaveLength(1);
+    expect(h.requests[0].targetPath.endsWith('a.md')).toBe(true);
+  });
+
+  it('裁决后推出第二张卡 ⇒ 再提醒一次（每张卡各自一次）', () => {
+    const h = makeWired();
+    const stub = agentStub();
+    h.holder.agent = stub.agent;
+    h.coordinator.bindWriteConfirmation();
+
+    stub.trigger(confirmInfo({ targetPath: '/mock/workspace/a.md' }));
+    stub.trigger(confirmInfo({ targetPath: '/mock/workspace/b.md' }));
+    h.coordinator.answer(h.requests[0].requestId, true);
+
+    expect(h.requests).toHaveLength(2);
+    expect(h.shown).toHaveLength(2);
+    expect(h.shown[1].requestId).toBe(h.requests[1].requestId);
+  });
+
+  it('未注入钩子 ⇒ 主链路零行为变化（向后兼容）', () => {
+    const h = makeCoordinator();
+    const stub = agentStub();
+    h.holder.agent = stub.agent;
+    h.coordinator.bindWriteConfirmation();
+
+    expect(() => stub.trigger(confirmInfo())).not.toThrow();
+    expect(h.requests()).toHaveLength(1);
+  });
+
+  it('提醒层注入面同步抛错 ⇒ 确认链路照常（真形态：接的是真实 notifier）', () => {
+    // 这条用例打的是**生产组合**，不是假想的坏钩子：chatPanel 注入的就是
+    // `createAttentionNotifier(...)`，其 `showInfoMessage` 是 vscode API（窗口销毁等
+    // 边角面会同步抛）。提醒是增值能力，确认卡是安全关键路径——前者不得把后者打掉。
+    const notifier = createAttentionNotifier({
+      isViewVisible: () => true, // L1 通过（不可见）才好走到 L2 的抛错点
+      isWindowFocused: () => false,
+      showChatView: () => undefined,
+      showInfoMessage: () => {
+        throw new Error('workbench toast 炸了');
+      },
+      launchUri: ATTENTION_URI,
+    });
+    const holder = { agent: undefined as Agent | undefined };
+    const posted: Posted[] = [];
+    const coordinator = new ConfirmCoordinator({
+      getAgent: () => holder.agent,
+      post: (msg) => {
+        posted.push(msg as unknown as Posted);
+      },
+      onConfirmShown: (info) => notifier.onConfirmShown(info),
+    });
+    const stub = agentStub();
+    holder.agent = stub.agent;
+    coordinator.bindWriteConfirmation();
+
+    expect(() => stub.trigger(confirmInfo())).not.toThrow();
+    expect(posted.filter((m) => m.type === 'write_confirm_request')).toHaveLength(1);
   });
 });

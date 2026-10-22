@@ -35,6 +35,14 @@ export interface ConfirmDeps {
   getAgent: () => Agent | undefined;
   /** 消息投递单点（chatPanel 既有 `this.post`） */
   post: (msg: ExtensionToWebviewMessage) => void;
+  /**
+   * 审批卡已推出 webview 之后的钩子（交互提醒，HOST-ATTN-1）
+   *
+   * **可选**：不注入 = 零行为（既有测试与其它装配点无需改动）。
+   * 载荷只给 `requestId` + `label`（`工具：文件名` 简写，与决策记录同一取法）：
+   * 通知里**不得**承载 diff 全文——`info.description` 是全文级内容，进 toast 即撑爆且泄露。
+   */
+  onConfirmShown?: (info: { requestId: string; label: string }) => void;
 }
 
 /**
@@ -154,6 +162,9 @@ export class ConfirmCoordinator {
       // 不自算，末段倒计时因此不可能与宿主计时漂移。
       timeoutMs: CONFIRM_TIMEOUT_MS,
     });
+    // 交互提醒钩子（可选）：卡已推出 ⇒ 通知不在面板前的用户。放在 post 之后：
+    // 只有卡真的发出去了，提醒才有承接面（先提醒后发卡 = 用户回来找不到卡）。
+    this._deps.onConfirmShown?.({ requestId, label: logLabel });
   }
 
   /**

@@ -25,6 +25,7 @@ import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { resetUserData } from './host/userDataReset.js';
 import { toNoticeText } from './host/noticeText.js';
+import { ATTENTION_PATH } from './host/attentionNotice.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { MemoraSettingsViewProvider } from '../webview/panels/settingsPanel.js';
 import { openChatCommand } from './commands/openChat.js';
@@ -360,6 +361,24 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
+  );
+
+  // 交互提醒的系统 toast 点击回跳（HOST-ATTN-1）：toast 的 launchUri = vscode://<扩展ID>/attention。
+  // 主承接面是失焦后持久保留的 workbench prompt toast（见 attentionNotice.ts），本 handler 只是
+  // L3 增强：优先精确聚焦对话视图（VS Code 为每个视图自动生成的 `<viewId>.focus` 命令，
+  // viewId = memora.chat，见 package.json），命令不存在时退回展开整个 memora 容器。
+  //
+  // 🔴 冷启动必须声明 `onUri` 激活事件（package.json 的 activationEvents）——URI 到达时扩展
+  // 若尚未激活，handler 根本没注册，点击等于空转（官方 registerUriHandler 文档明示）。
+  context.subscriptions.push(
+    vscode.window.registerUriHandler({
+      handleUri: (uri) => {
+        if (uri.path !== ATTENTION_PATH) return;
+        void vscode.commands.executeCommand('memora.chat.focus').then(undefined, () => {
+          void vscode.commands.executeCommand('workbench.view.extension.memora');
+        });
+      },
+    }),
   );
 
   // 侧边栏视图：设置面板（角色 / 大模型 / 记忆 选项卡合一）
