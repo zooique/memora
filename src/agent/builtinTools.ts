@@ -52,6 +52,16 @@ export interface ToolDefinition {
    * 自定义工具的声明暂不生效。
    */
   diskWrite?: 'path' | 'opaque';
+  /**
+   * 自定义工具审批策略（仅 ToolExecutor custom 分支消费，内置工具不设置）：
+   * - `'always'`：每次调用过 SecurityGuard 确认闸（requestToolCallConfirmation），用户确认才执行；
+   * - `'audit'`：过闸自动放行（needConfirm=false），仍落 write-auto 审计——免弹窗不免审计；
+   * - 缺省（字段不存在）：不过闸、不审计，行为与历史版本完全一致。
+   *
+   * 判据只回答「这个工具要不要问」，不参与命令/脚本裁决（两件事不折叠，勿塞 CONFIRM_ENTRY_BY_TOOL）。
+   * 宿主注册外部工具（如 MCP）时应显式设置，缺省 = 静默不审批不审计。
+   */
+  confirmPolicy?: 'always' | 'audit';
 }
 
 // ─── 工具幂等性映射（补偿机制） ────────────────────────

@@ -193,9 +193,13 @@ export type Permission = 'owner' | 'guest';
 export type WriteDecision = 'confirmed' | 'declined' | 'auto-approved' | 'auto-denied';
 
 export interface AuditEvent {
-  /** 事件类型：路径允许/拒绝、写入确认/拒绝/自动 */
+  /**
+   * 事件类型：路径允许/拒绝；确认决策（写入 / 命令 / 代码 / 脚本执行 / 自定义工具）。
+   * `write-*` 三值是历史命名：confirmGate 承载全部五类确认，非写入类请求同样落这三值
+   * （见 confirmGate）；改名 = 破坏性公共面变更，收益仅为命名纯度 ⇒ 保留旧名。
+   */
   type: 'path-allow' | 'path-deny' | 'write-confirm' | 'write-decline' | 'write-auto';
-  /** 涉及的绝对路径 */
+  /** 被裁决对象标识：写入类 = 目标文件绝对路径；命令/代码/脚本 = 命令字面量或目标标识；自定义工具 = 调用摘要 */
   path: string;
   /** 工具名（read_file / write_file / 自定义工具名） */
   tool?: string;
@@ -216,8 +220,8 @@ export type AuditListener = (event: AuditEvent) => void;
  * 确认请求：宿主在非交互式环境（WebUI/桌宠/无终端）注入自定义确认 UI，
  * 走此回调而非直接读 stdin。返回 true 确认 / false 拒绝；抛错视为拒绝（fail-closed）。
  *
- * ⚠️ 类型名 `WriteConfirmation*` 是**历史命名**：该回调承载全部四类确认
- * （写入 / 命令 / 代码 / 脚本执行），非写入类请求同样走它（见 `confirmGate`）。
+ * ⚠️ 类型名 `WriteConfirmation*` 是**历史命名**：该回调承载全部确认
+ * （写入 / 命令 / 代码 / 脚本执行 / 自定义工具），非写入类请求同样走它（见 `confirmGate`）。
  * 改名 = 破坏性公共面变更，收益仅为命名纯度 ⇒ 保留旧名 + 此注释说明。
  */
 export type WriteConfirmationRequest = (info: WriteConfirmationInfo) => Promise<boolean>;
@@ -511,12 +515,36 @@ export class SecurityGuard {
   }
 
   /**
-   * 确认闸公共核心（SSOT：**全部四类**确认——写入 / 命令 / 代码 / 脚本执行——的唯一执行路径）
+   * 自定义工具调用确认（自定义工具的执行闸；外部工具接入的唯一审批入口）
+   *
+   * 与 `confirmCommandRun` / `confirmScriptRun` 共用同一个 `confirmGate`（不新造第二套确认路径）。
+   * 单一入口、两种模式（由 ToolExecutor 按 `ToolDefinition.confirmPolicy` 映射）：
+   *   - `needConfirm=true`（'always'）：每次弹宿主确认 UI；
+   *   - `needConfirm=false`（'audit'）：过闸自动放行，仍落 write-auto 审计。
+   *
+   * @param toolName 工具名（如 mcp__server__tool）
+   * @param summary 调用摘要（被裁决对象标识，落审计 path 字段 + 确认卡文案，与 run_command 把命令塞 path 同构）
+   * @param needConfirm 是否需要用户逐次确认（false = 自动放行 + 审计）
+   * @returns true 放行（调用方才可执行 handler）/ false 拒绝（fail-closed 安全优先）
+   */
+  async requestToolCallConfirmation(
+    toolName: string,
+    summary: string,
+    needConfirm: boolean,
+  ): Promise<boolean> {
+    return this.confirmGate(summary, toolName, summary, needConfirm, undefined, 'custom');
+  }
+
+  /**
+   * 确认闸公共核心（SSOT：**全部确认**——写入 / 命令 / 代码 / 脚本执行 / 自定义工具——的唯一执行路径）
    *
    * needConfirm=false → 自动批准（审计 write-auto）；为 true 且未注入 confirmationHandler
    * → fail-closed 拒绝（审计 write-decline）；否则经 confirmViaHandler 走宿主确认 UI。
-   * diff 仅写入场景有（`requestWriteConfirmation` 唯一传 diff），其余三类不传（域留空），
+   * diff 仅写入场景有（`requestWriteConfirmation` 唯一传 diff），其余类别不传（域留空），
    * 宿主据此判「本卡无 diff 域」并跳过写入前后对比渲染。
+   *
+   * `source` 可选：标记本次确认的调用链来源，透传进全部审计出口；
+   * 既有四类调用方不传 = undefined，审计事件缺省不带该字段，行为零变化。
    */
   private async confirmGate(
     targetPath: string,
@@ -524,6 +552,7 @@ export class SecurityGuard {
     description: string | undefined,
     needConfirm: boolean,
     diff?: { beforeContent?: string | null; afterContent?: string },
+    source?: AuditEvent['source'],
   ): Promise<boolean> {
     // 无需确认：直接放行并记录审计
     if (!needConfirm) {
@@ -531,6 +560,7 @@ export class SecurityGuard {
         type: 'write-auto',
         path: targetPath,
         tool,
+        source,
         decision: 'auto-approved',
         timestamp: nowIso(),
       });
@@ -546,7 +576,7 @@ export class SecurityGuard {
       needsConfirm: needConfirm,
       beforeContent: diff?.beforeContent,
       afterContent: diff?.afterContent,
-      // diff 域语义判定单点：写入场景传了 diff 参数 → 有域；命令/代码/脚本三类不传 → 无域
+      // diff 域语义判定单点：写入场景传了 diff 参数 → 有域；命令/代码/脚本/自定义工具不传 → 无域
       hasDiff: diff !== undefined,
     };
 
@@ -560,6 +590,7 @@ export class SecurityGuard {
         type: 'write-decline',
         path: targetPath,
         tool,
+        source,
         decision: 'declined',
         reason: '未注入 confirmationHandler（fail-closed）',
         timestamp: nowIso(),
@@ -568,17 +599,18 @@ export class SecurityGuard {
     }
 
     // 走宿主注入的 confirmationHandler（此处 handler 必非空，上方已 fail-closed 拦截）
-    return this.confirmViaHandler(info, targetPath, tool);
+    return this.confirmViaHandler(info, targetPath, tool, source);
   }
 
   /**
-   * 通过宿主注入的 confirmationHandler 执行确认（**全部四类**确认的唯一执行路径：
-   * 写入 / 命令 / 代码 / 脚本执行）。抛错视为拒绝（fail-closed 安全优先）。
+   * 通过宿主注入的 confirmationHandler 执行确认（**全部确认**的唯一执行路径：
+   * 写入 / 命令 / 代码 / 脚本执行 / 自定义工具）。抛错视为拒绝（fail-closed 安全优先）。
    */
   private async confirmViaHandler(
     info: WriteConfirmationInfo,
     targetPath: string,
     tool: string,
+    source?: AuditEvent['source'],
   ): Promise<boolean> {
     try {
       const ok = await this.confirmationHandler!(info);
@@ -586,6 +618,7 @@ export class SecurityGuard {
         type: ok ? 'write-confirm' : 'write-decline',
         path: targetPath,
         tool,
+        source,
         decision: ok ? 'confirmed' : 'declined',
         timestamp: nowIso(),
       });
@@ -597,6 +630,7 @@ export class SecurityGuard {
         type: 'write-decline',
         path: targetPath,
         tool,
+        source,
         decision: 'declined',
         reason: `回调异常：${toError(err).message}`,
         timestamp: nowIso(),

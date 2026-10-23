@@ -393,7 +393,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   },
   ToolDefinition: {
     kind: 'interface',
-    members: ['description', 'diskWrite', 'name', 'parameters', 'readonly'],
+    members: ['confirmPolicy', 'description', 'diskWrite', 'name', 'parameters', 'readonly'],
   },
   ToolContext: { kind: 'interface', members: ['guardPath'] },
   WriteExtensions: { kind: 'interface', members: ['onBeforeWrite'] },

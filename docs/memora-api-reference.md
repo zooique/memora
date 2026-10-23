@@ -722,6 +722,7 @@ interface ToolDefinition {
   };
   readonly?: boolean;          // 只读工具标记：true = readonly 模式下保留；缺省 false = 写操作，readonly 模式被阻止
   diskWrite?: 'path' | 'opaque'; // 改盘声明（与 readonly 正交）：'path' 按 args.path 定位目标做写串行；'opaque' 与一切写互斥；缺省 = 不改盘
+  confirmPolicy?: 'always' | 'audit'; // 自定义工具审批策略：'always' 每次过确认闸；'audit' 过闸自动放行仍落审计；缺省 = 不过闸不审计（历史行为）
 }
 
 // 宿主注册领域工具示例

@@ -216,6 +216,8 @@ const TOOL_RESULT_TAGS: Readonly<Record<string, string>> = {
   ERR_PLAN_ITEM_NOT_FOUND: '任务项不存在（计划表寻址失败）',
   ERR_SCRIPT_DECLINE: '代码执行未获确认（fail-closed，未执行）',
   ERR_COMMAND_DECLINE: '命令未获许可（未获执行许可：黑名单 / 用户拒绝 / 未注入确认回调）',
+  ERR_TOOL_DECLINE:
+    '自定义工具未获许可（confirmPolicy 过闸：用户拒绝 / 未注入确认回调 fail-closed）',
   ERR_PATH_DENIED: '路径越界（脚本路径超出项目根，安全护栏拦截）',
   ERR_SKILL_NOT_FOUND: '技能不存在（角色包与全局池均无此名）',
   ERR_RESOURCE_NOT_FOUND: '技能资源不存在（L3 资源读取失败）',

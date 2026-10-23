@@ -6,6 +6,7 @@
  *   - write_file：成功（owner+confirmWrites=false 自动批准）/ 父目录自动创建 / 路径越界 / 黑名单
  *   - list_dir：默认项目根 / 递归 / 深度限制 / 忽略 node_modules / 黑名单
  *   - search_memories：match 模式 / near 模式 / 空查询 / 注入限制
+ *   - 自定义工具：注册/路由/审批闸（confirmPolicy：always 拒绝与确认 / audit 自动放行 / 缺省不过闸）+ removeTool 注销
  */
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
@@ -15,7 +16,11 @@ import { ToolExecutor, sanitizeExternalText, BUILTIN_TOOLS } from '@/agent/toolE
 import type { WebSearchExecInfo } from '@/agent/toolExecutor.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { estimateTokensText } from '@/agent/contextManager.js';
-import { SecurityGuard, type WriteConfirmationInfo } from '@/security/pathGuard.js';
+import {
+  SecurityGuard,
+  type AuditEvent,
+  type WriteConfirmationInfo,
+} from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -2608,6 +2613,145 @@ describe('工具执行器（6 个工具）', () => {
     it('execute 应路由到自定义工具 handler', async () => {
       const result = await executor.execute('echo_tool', JSON.stringify({ message: 'hello' }));
       expect(result).toBe('Echo: hello');
+    });
+
+    it('confirmPolicy 缺省时不过闸：无审计事件，handler 直接执行（历史行为零变化）', async () => {
+      const events: AuditEvent[] = [];
+      const off = security.onAudit((e) => events.push(e));
+      let called = false;
+      try {
+        executor.registerTool({ ...customDef, name: 'gate_default_tool' }, async () => {
+          called = true;
+          return 'ok';
+        });
+        const result = await executor.execute(
+          'gate_default_tool',
+          JSON.stringify({ message: 'hi' }),
+        );
+        expect(result).toBe('ok');
+        expect(called).toBe(true);
+        // 缺省 = 字段不存在 = 不过闸不审计：连一条确认类审计都不产生
+        expect(events).toHaveLength(0);
+      } finally {
+        off();
+        executor.removeTool('gate_default_tool');
+      }
+    });
+
+    it("confirmPolicy:'always' 未注入确认回调 → fail-closed 拒绝：handler 未被调用，审计落 write-decline 带 source:'custom'", async () => {
+      const events: AuditEvent[] = [];
+      const off = security.onAudit((e) => events.push(e));
+      const outcomes: ToolOutcome[] = [];
+      let called = false;
+      try {
+        executor.registerTool(
+          { ...customDef, name: 'gate_always_tool', confirmPolicy: 'always' },
+          async () => {
+            called = true;
+            return 'ok';
+          },
+        );
+        const result = await executor.execute(
+          'gate_always_tool',
+          JSON.stringify({ message: 'hi' }),
+          undefined,
+          (o) => outcomes.push(o),
+        );
+        expect(result).toContain('[ERR:TOOL_DECLINE]');
+        // 切片 0 核心验收：被拒后 handler 绝不执行
+        expect(called).toBe(false);
+        // 主动挡下 ⇒ blocked（与 run_command 拒绝先例同构）
+        expect(outcomes[0]?.status).toBe('blocked');
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+          type: 'write-decline',
+          source: 'custom',
+          tool: 'gate_always_tool',
+          decision: 'declined',
+        });
+      } finally {
+        off();
+        executor.removeTool('gate_always_tool');
+      }
+    });
+
+    it("confirmPolicy:'always' 用户确认 → handler 执行，审计落 write-confirm 带 source:'custom'", async () => {
+      const events: AuditEvent[] = [];
+      const off = security.onAudit((e) => events.push(e));
+      let seenInfo: WriteConfirmationInfo | null = null;
+      try {
+        executor.registerTool(
+          { ...customDef, name: 'gate_confirm_tool', confirmPolicy: 'always' },
+          async () => 'confirmed-ok',
+        );
+        security.onWriteConfirmation(async (info) => {
+          seenInfo = info;
+          return true;
+        });
+        const result = await executor.execute(
+          'gate_confirm_tool',
+          JSON.stringify({ message: 'hi' }),
+        );
+        expect(result).toBe('confirmed-ok');
+        // 确认卡载荷：工具名正确 + 自定义工具无 diff 域（与命令/代码/脚本同构）
+        expect(seenInfo).not.toBeNull();
+        expect(seenInfo!.tool).toBe('gate_confirm_tool');
+        expect(seenInfo!.hasDiff).toBe(false);
+        expect(events[0]).toMatchObject({
+          type: 'write-confirm',
+          source: 'custom',
+          tool: 'gate_confirm_tool',
+          decision: 'confirmed',
+        });
+      } finally {
+        off();
+        security.onWriteConfirmation(null);
+        executor.removeTool('gate_confirm_tool');
+      }
+    });
+
+    it("confirmPolicy:'audit' 过闸自动放行：不弹确认、handler 执行、审计落 write-auto 带 source:'custom'", async () => {
+      const events: AuditEvent[] = [];
+      const off = security.onAudit((e) => events.push(e));
+      let handlerAsked = false;
+      try {
+        executor.registerTool(
+          { ...customDef, name: 'gate_audit_tool', confirmPolicy: 'audit' },
+          async () => 'audit-ok',
+        );
+        // 即便注入了「拒绝一切」的确认回调，audit 档也不应询问（免弹窗不免审计）
+        security.onWriteConfirmation(async () => {
+          handlerAsked = true;
+          return false;
+        });
+        const result = await executor.execute('gate_audit_tool', JSON.stringify({ message: 'hi' }));
+        expect(result).toBe('audit-ok');
+        expect(handlerAsked).toBe(false);
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+          type: 'write-auto',
+          source: 'custom',
+          tool: 'gate_audit_tool',
+          decision: 'auto-approved',
+        });
+      } finally {
+        off();
+        security.onWriteConfirmation(null);
+        executor.removeTool('gate_audit_tool');
+      }
+    });
+
+    it('removeTool 注销后：onToolsChanged 触发且工具从快照消失', () => {
+      executor.registerTool({ ...customDef, name: 'gate_remove_tool' }, async () => 'ok');
+      expect(executor.list.some((t) => t.name === 'gate_remove_tool')).toBe(true);
+      let changed = 0;
+      executor.setOnToolsChanged(() => {
+        changed++;
+      });
+      executor.removeTool('gate_remove_tool');
+      expect(executor.list.some((t) => t.name === 'gate_remove_tool')).toBe(false);
+      expect(changed).toBe(1);
+      executor.setOnToolsChanged(undefined);
     });
 
     it('注册同名内置工具应抛错', () => {

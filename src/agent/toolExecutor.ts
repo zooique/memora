@@ -848,10 +848,13 @@ export class ToolExecutor {
   }
 
   /**
-   * 移除自定义工具
+   * 移除自定义工具（运行时可注销）
    *
-   * 供测试场景使用，可在测试后清理已注册的自定义工具。
-   * 仅能移除通过 registerTool 注册的自定义工具，无法移除内置工具。
+   * 供测试清理使用，也是宿主动态工具的生命周期出口：MCP server 停用 / 连接断开时
+   * 由宿主调用注销对应工具（方案-MCP工具接入 §6）。仅能移除通过 registerTool 注册的
+   * 自定义工具，无法移除内置工具。
+   * 注销后触发 onToolsChanged：AgentLoop 的 toolDefinitions 快照与 system prompt 自动刷新，
+   * 工具从模型可见列表消失（进行中 step 仍持旧快照的竞态已登记方案 §10）。
    *
    * @param name 工具名称
    */
@@ -1937,6 +1940,28 @@ export class ToolExecutor {
         // 自定义工具 fallback：查找 customTools Map
         const custom = this.customTools.get(name);
         if (custom) {
+          // 审批闸（K1 · 自定义工具统一走 confirmGate 单点）：confirmPolicy 是工具自身声明的
+          // 「要不要问」——'always' 每次弹确认；'audit' 过闸自动放行（仍落 write-auto 审计）；
+          // 缺省 = 字段不存在 = 不过闸不审计（历史行为零变化）。
+          // 判据不参与命令/脚本裁决，与 CONFIRM_ENTRY_BY_TOOL 静态表两回事，勿折叠。
+          const policy = custom.definition.confirmPolicy;
+          if (policy !== undefined) {
+            // 调用摘要 = 被裁决对象标识（与 run_command 把命令字面量塞审计 path 同构），截断防撑爆
+            const summary = truncate(JSON.stringify(args) ?? '', 200);
+            const confirmed = await this.security.requestToolCallConfirmation(
+              name,
+              summary,
+              policy === 'always',
+            );
+            if (!confirmed) {
+              // 被拒 → 不再调 handler；语义是「主动挡下」⇒ blocked（与 run_command 拒绝先例同构）
+              const declineText =
+                `[ERR:TOOL_DECLINE] 自定义工具 ${name} 未获执行许可（用户拒绝 / 未注入确认回调 fail-closed）。` +
+                '未执行该工具；如确需执行，请请用户调整审批设置。';
+              emitOutcome?.(blockedOutcome('permission_denied', declineText));
+              return declineText;
+            }
+          }
           // 传入 ToolContext，提供 guardPath 安全校验方法
           // 路径安全委托给 BuiltinToolHandlers
           const ctx: ToolContext = {
