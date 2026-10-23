@@ -11,6 +11,9 @@
   `ce1aadea` 之前不存在——用旧版安装验不到，且会误判成「缺陷仍在」。
   二选一：① 仓库根 `F5` 启动 Extension Development Host；② `npm run package` 打
   `memora-vscode.vsix` 后从 VSIX 安装。
+- 构建必须走 `npm run compile`（**F5 的默认构建任务就是它**，无需手跑）。其末尾已挂产物
+  加载冒烟 `scripts/verify-bundle-loadable.mjs`——产物若加载不了，构建直接失败，不会给你
+  一个装上就炸的 vsix（该冒烟为 2026-10-24 真机首曝缺陷所加，见 §4 判别表首行）。
 - 打开 **输出面板 → Memora**（server 的 stderr 与宿主接入告警都在这里，全程保持可见）。
 - 准备一个**干净工作区**（不复用已有 `.memora/` 的项目，避免旧状态混入判别）。
 
@@ -93,6 +96,7 @@ await server.connect(new StdioServerTransport());
 
 | 现象 | 先排除 | 才算缺陷 |
 |------|--------|----------|
+| **激活失败**：`Dynamic require of "X" is not supported` | 是否真的重跑过 compile（旧产物） | 重跑后仍现 ⇒ CJS/ESM 产物形态缺陷（2026-10-24 已修 cross-spawn 那条；新依赖可能重蹈，报缺陷并附 X） |
 | 工具没出现 | 输出面板是否有「握手失败 / 未声明 tools 能力 / 分页异常收口」；配置绝对路径是否正确；Agent 是否已装配（面板开过） | 面板无任何告警但工具仍不出现 |
 | `hang` 立刻报错 | 是否等满 60s | 未到 60s 就报错（超时未生效），或超时后 `echo` 也不可用 |
 | F 用例接入失败 | npx 冷启动慢（重试一次） | 重试仍失败且面板有明确错误 |
