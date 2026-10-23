@@ -62,17 +62,19 @@ agent_created: true
    - 开放态（⏳ / ⏸ / 🟡 / 👁 / 📝）= 留册 ✓
    - **已收口（✅ / ❌ / 🟢 / 证伪）无指针 = 欠账** ⇒ 当场补进 `--ids` 重跑，或登记欠账条目（如 `ARCH-DRAIN-1`）留给专项清账——**禁止沉默跳过**。
    - 注意版本区可能是**混合工作区**（0.2.0 区含 0.1.0 发版以来的 kernel 审计批 / 发布链缺陷批 / 旧纪法规遗留原文），条目「是否属于本版本」须逐条判，不能只扫功能段。
+   - 🔴 **自检计数以当场重扫实测为准，不采信此前任何清点快照**（2026-10-23 教训：`ARCH-DRAIN-1` 清点快照自身算术不闭合——「收口无指针 45」vs A 类 5 + B 类 38 = 43 差 2 条无着落；且快照落定后台账继续编辑即漂移，当日实测与快照已差 ~11 条）。欠账条目里的分诊数字只当**线索**，不当**判据**。
 
 ### Step 4：发版（打 tag 触发 host-release.yml）
 1. 确认 Step 0–3 全部已提交到当前 HEAD。
 2. `git tag vscode@x.y.z && git push origin vscode@x.y.z`。
    - ⚠️ 仓库 origin 双推 gitee+github，GitHub 收到 tag 触发 `host-release.yml`；gitee 端无对应 workflow，不重复发。
 3. 流水线（详见 `references/host-release-gates.md`）：① tag↔宿主 package.json version → ② 内核已发 npm → ③ format:check → build 内核 dist → build memora-mcp dist（跨宿主契约测试前置）→ 宿主依赖安装 `pnpm install --frozen-lockfile`（重链内核 dist——任何 pnpm install 都会重链 `file:../..`，否则测到上一代内核硬链接副本）→ typecheck → lint → 串行 test → package vsix → GitHub Release 自动挂 asset（`memora-vscode-x.y.z.vsix`，幂等 `--clobber`）。
+   - **tag 前可选预演**：`host-release.yml` 带 `workflow_dispatch`（dry-run——门禁全跑到打包为止，不挂 Release，tag 校验自动跳过）。本地全绿后若想提前暴露 CI 冷环境差异，从 main 手动空跑一次再打 tag。
    - 无 npm 2FA 审批（宿主不发 npm；内核那段已在发内核时批过）。
 4. 🔴 **CI 红后修 workflow / 测试 ⇒ 旧 tag 作废，删掉重打**：tag 触发的 CI 用 **tag 指向 commit 里的 workflow 文件版本**——改完 push 到 main 后重跑旧 run 用的还是旧 workflow，必须删远端+本地 tag → 在含修复的新 HEAD 重打 → 再推（0.2.0 实证两次：`pnpm install --offline` 冷 store 炸、平台相关用例 ubuntu 红）。
 
 ### Step 5：手动分发（宿主专属，CI 不做）
-1. **① GitHub Release**：`host-release.yml` 已自动创建/更新 Release 并挂 `.vsix` asset。核对 Release 存在 + asset 名正确。
+1. **① GitHub Release**：`host-release.yml` 已自动创建/更新 Release 并挂 `.vsix` asset。核对 Release 存在 + asset 名正确（`memora-vscode-<VER>.vsix`）+ **body 结构化齐全**——workflow 注入「随包内核代次 / sha256 / 字节数 / Marketplace 手动上传提示」四项（0.2.0 实证缺口：body 只剩 auto changelog 链接，「随包内核代次」这条对账信息在发布面丢失，只活在 CHANGELOG 里）。
 2. **② Open VSX**：首次须已在 open-vsx.org 拿到 **namespace ownership** 并手动首发第一版；之后追加 `npx ovsx publish --trusted-publishing`（OIDC 零密钥）。
    - 🔴 **Trusted Publisher 按 workflow 文件名匹配**（`host-release.yml`，非数字 ID）⇒ 本文件**不得改名**（改名须删掉 Open VSX 注册重来）。
 3. **③ VS Code Marketplace**：🔒 **定案保持手动上传**（全局 PAT 2026-12-01 退役；稳的 Entra ID 路线需 Azure 订阅 = 国外银行卡拦路石；干净路线 `vsce publish --oidc` 尚未进稳定版且 Marketplace 侧无策略注册 UI）。每版传一次 `.vsix`，成本可忽略 ⇒ 手动最优。
@@ -93,7 +95,7 @@ agent_created: true
 - 🔴 **CI 冷 store 勿用 `--offline`**（0.2.0 首跑实证，run 39889566947）：根与宿主是两个独立 pnpm 工程（无 workspace），CI 只装了根依赖；宿主 lockfile 239 包中 ~187 个根没有（vsce/@vscode 系）⇒ 冷 store offline 解析必炸。workflow 安装步已定 `--frozen-lockfile`，**勿改回 `--offline`**；本地 store 已暖，本地跑 `--offline` 仍可。
 - 🔴 **平台相关 API 的断言写 `runIf(平台)` 互斥孪生**（0.2.0 二跑实证，run 39890131524）：`path.relative` / findFiles `fsPath` 等语义随 OS 变，反斜杠形态只在 Windows 运行时出现，ubuntu 上喂 Windows 路径必错。win32 用例 `runIf(process.platform === 'win32')` + POSIX 孪生 `runIf(!win32)` 各跑真实形态——**不产生隐藏 skip**，任一平台都有在跑的用例。
 - 🔴 **跨宿主契约测试的前置是 memora-mcp dist**：`crossHostLayout.test.ts` 加载 `hosts/memora-mcp/dist` 产物（非源码）且有 mtime 守卫。workflow 已带构建步（mcp 无 lockfile ⇒ `--no-frozen-lockfile`，mcp 出包补 lockfile 后收紧为 frozen）；本地新 clone 同样先 build mcp。
-- 🔴 **归档白名单靠人肉编 ⇒ 必跑区级完整性自检**（Step 3 第 5 条）：版本区常是混合工作区，只扫功能段必漏（0.2.0 漏 45 条，欠账 `ARCH-DRAIN-1`）；旧纪法规 copy 式归档（4.0.0 前）在主台账留了无指针原文，自检时见「已有他档完整副本」的截指针即可。
+- 🔴 **归档白名单靠人肉编 ⇒ 必跑区级完整性自检**（Step 3 第 5 条）：版本区常是混合工作区，只扫功能段必漏（0.2.0 漏 45 条，欠账 `ARCH-DRAIN-1`）；旧纪法规 copy 式归档（4.0.0 前）在主台账留了无指针原文，自检时见「已有他档完整副本」的截指针即可。**自检计数以当场重扫实测为准，不采信清点快照**（快照会算术不闭合 + 随台账编辑漂移，详见内核技能 `references/archive-discipline.md`「区级完整性自检」节）。
 
 ## 验收门槛
-GitHub Release 存在 + Open VSX / VS Code Marketplace 上架状态正确 + 归档文件 `tasks/archive/<x.y.z>-host.md` 存在且 ✅ 项全迁、开放项留主台账 + 主台账指针齐全 + CHANGELOG 宿主区无「未发布」且引言注明随包内核代次 + README 内核行 = 本次内联内核版本 + 门禁全绿 = 完成。
+GitHub Release 存在 + body 含随包内核代次与 sha256 + Open VSX / VS Code Marketplace 上架状态正确 + 归档文件 `tasks/archive/<x.y.z>-host.md` 存在且 ✅ 项全迁、开放项留主台账 + 主台账指针齐全 + CHANGELOG 宿主区无「未发布」且引言注明随包内核代次 + README 内核行 = 本次内联内核版本 + 门禁全绿 = 完成。

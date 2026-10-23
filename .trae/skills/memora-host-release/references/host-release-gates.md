@@ -5,6 +5,7 @@
 ## 触发
 
 - 推送形如 `vscode@X.Y.Z` 的 tag（如 `vscode@0.2.0`）→ 触发 `host-release.yml`。
+- **workflow_dispatch 手动预演（dry-run）**：从 main 触发，门禁全跑到打包为止，**不挂 Release**（上传步 `if: github.event_name == 'push'` 闸）；tag 一致性校验跳过（无 tag 上下文），可选 input `expected_version` 做版本断言。tag 前空跑一次提前暴露 CI 冷环境差异（0.2.0 两次首跑缺陷本可这样提前暴露，省「删 tag 重打」往返）。
 - 与内核 `release.yml`（`v[0-9]*`，发 npm）**互不干扰**：ADR-033 双版本线，两轴门禁不同、产物不同、节奏有先后。
 
 ## 门禁链（按 workflow 顺序）
@@ -45,7 +46,7 @@ tag push 事件以 **tag 指向 commit 中的 workflow 文件**起跑；push 修
 
 | 出口 | 现状 | 备注 |
 |---|---|---|
-| ① GitHub Release asset | ✅ 本 workflow 已带（零外部账号门槛） | 幂等：`gh release upload --clobber`；asset 名 `memora-vscode-<VER>.vsix` |
+| ① GitHub Release asset | ✅ 本 workflow 已带（零外部账号门槛） | 幂等：`gh release upload --clobber`；asset 名 `memora-vscode-<VER>.vsix`；**body 结构化**（`--notes-file` 正文 + `--generate-notes` 追加）：随包内核代次 / sha256 / 字节数 / Marketplace 手动上传提示（0.2.0 实证缺口回补：纯 `--generate-notes` 只剩 auto changelog 链接，内核代次对账信息在发布面丢失） |
 | ② Open VSX | 🔒 须先拿 namespace ownership + 手动首发第一版，之后 `npx ovsx publish --trusted-publishing` | Trusted Publishing 按 **workflow 文件名** `host-release.yml` 匹配 ⇒ **不得改名**（改名须删注册重来） |
 | ③ VS Code Marketplace | 🔒 **定案保持手动上传，CI 路线放弃** | 全局 PAT 2026-12-01 退役；Entra ID 需 Azure 订阅（国外银行卡拦路石）；`vsce publish --oidc` 未进稳定版且无 Marketplace 策略注册 UI；手动每版传一次 `.vsix` 成本可忽略 |
 
