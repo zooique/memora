@@ -41,9 +41,11 @@ agent_created: true
   - 🔴 **是宿主 `package.json`（`hosts/memora-vscode/`），不是根 `package.json`**（根的是内核版本，宿主发版不动它）。
 - **本地预检**（host-release.yml 不替你跑 changelog 闸，须手动在 tag 前跑，避免 tag 推上去才红）：
   - `npm run format:check`（根，prettier）
+  - `cd hosts/memora-mcp && npm run build`（**测试前置**：`crossHostLayout.test.ts` 跨宿主契约测试加载 mcp 构建产物且有 mtime 守卫（dist 不旧于 src）——新 clone 或 mcp src 变更后必跑，缺它宿主测试必红）
   - `cd hosts/memora-vscode && npm run typecheck && npm run lint && npm test`
   - CHANGELOG 宿主区日期人工核对（合法日期 + 发布日窗口）
 - 任一项失败 ⇒ 修完重跑，勿带伤打 tag。
+- ⚠️ **本地全绿 ≠ CI 绿**：本地是 Windows 暖环境（pnpm store 已热、平台 API 走 win32 语义），CI 是 ubuntu 冷环境。平台相关断言只验本机形态的用例要写成 `runIf(平台)` 互斥孪生（见「已知坑」），CI 首跑仍可能红，红了解因再修、修完重打 tag（见 Step 4）。
 
 ### Step 3：归档台账（必须在 tag 前提交，状态标「待上架」）
 按 `tasks/archive/README.md` 七条纪律（内核技能 `references/archive-discipline.md` 已蒸馏；宿主线规则相同，仅线别 = host）：
@@ -57,8 +59,9 @@ agent_created: true
 1. 确认 Step 0–3 全部已提交到当前 HEAD。
 2. `git tag vscode@x.y.z && git push origin vscode@x.y.z`。
    - ⚠️ 仓库 origin 双推 gitee+github，GitHub 收到 tag 触发 `host-release.yml`；gitee 端无对应 workflow，不重复发。
-3. 流水线（详见 `references/host-release-gates.md`）：① tag↔宿主 package.json version → ② 内核已发 npm → ③ format:check → typecheck → lint → 串行 test → build 内核 dist → `pnpm install --offline`（刷宿主镜像，否则测到上一代内核硬链接副本）→ package vsix → GitHub Release 自动挂 asset（`memora-vscode-x.y.z.vsix`，幂等 `--clobber`）。
+3. 流水线（详见 `references/host-release-gates.md`）：① tag↔宿主 package.json version → ② 内核已发 npm → ③ format:check → build 内核 dist → build memora-mcp dist（跨宿主契约测试前置）→ 宿主依赖安装 `pnpm install --frozen-lockfile`（重链内核 dist——任何 pnpm install 都会重链 `file:../..`，否则测到上一代内核硬链接副本）→ typecheck → lint → 串行 test → package vsix → GitHub Release 自动挂 asset（`memora-vscode-x.y.z.vsix`，幂等 `--clobber`）。
    - 无 npm 2FA 审批（宿主不发 npm；内核那段已在发内核时批过）。
+4. 🔴 **CI 红后修 workflow / 测试 ⇒ 旧 tag 作废，删掉重打**：tag 触发的 CI 用 **tag 指向 commit 里的 workflow 文件版本**——改完 push 到 main 后重跑旧 run 用的还是旧 workflow，必须删远端+本地 tag → 在含修复的新 HEAD 重打 → 再推（0.2.0 实证两次：`pnpm install --offline` 冷 store 炸、平台相关用例 ubuntu 红）。
 
 ### Step 5：手动分发（宿主专属，CI 不做）
 1. **① GitHub Release**：`host-release.yml` 已自动创建/更新 Release 并挂 `.vsix` asset。核对 Release 存在 + asset 名正确。
@@ -78,7 +81,10 @@ agent_created: true
 - 🔴 **CHANGELOG 双区**：宿主发版只动 `## [Unreleased] · 宿主` 区，内核区（`## [5.0.0] …`）不动。
 - 🔴 **host-release.yml 不含 `verify:changelog` / `verify:publish-docs`** ⇒ 须人工跑/核对（内核有、宿主无，这是两链最易踩的差异）。
 - 🔴 **Open VSX Trusted Publisher 绑定 workflow 文件名** ⇒ `host-release.yml` 不得改名。
-- 🔴 **Windows 上 Bash 跑 git 写操作会污染索引**（曾致 `tasks/` 十余文件被误标删除）——归档/提交/打 tag 用 PowerShell 直接命令或 `node -e`，忌用 Bash 流。
+- 🔴 **Windows 上 Bash 跑 git 写操作会污染索引**（曾致 `tasks/` 十余文件被误标删除）——归档/提交/打 tag 用 PowerShell 直接命令或 `node -e`，忌用 Bash 流。push 走 Bash `env -u NODE_OPTIONS LEFTHOOK=0`（PowerShell 进程树拦 credential-manager ⇒ 网络 git 操作静默 EXIT=128）。
+- 🔴 **CI 冷 store 勿用 `--offline`**（0.2.0 首跑实证，run 39889566947）：根与宿主是两个独立 pnpm 工程（无 workspace），CI 只装了根依赖；宿主 lockfile 239 包中 ~187 个根没有（vsce/@vscode 系）⇒ 冷 store offline 解析必炸。workflow 安装步已定 `--frozen-lockfile`，**勿改回 `--offline`**；本地 store 已暖，本地跑 `--offline` 仍可。
+- 🔴 **平台相关 API 的断言写 `runIf(平台)` 互斥孪生**（0.2.0 二跑实证，run 39890131524）：`path.relative` / findFiles `fsPath` 等语义随 OS 变，反斜杠形态只在 Windows 运行时出现，ubuntu 上喂 Windows 路径必错。win32 用例 `runIf(process.platform === 'win32')` + POSIX 孪生 `runIf(!win32)` 各跑真实形态——**不产生隐藏 skip**，任一平台都有在跑的用例。
+- 🔴 **跨宿主契约测试的前置是 memora-mcp dist**：`crossHostLayout.test.ts` 加载 `hosts/memora-mcp/dist` 产物（非源码）且有 mtime 守卫。workflow 已带构建步（mcp 无 lockfile ⇒ `--no-frozen-lockfile`，mcp 出包补 lockfile 后收紧为 frozen）；本地新 clone 同样先 build mcp。
 
 ## 验收门槛
 GitHub Release 存在 + Open VSX / VS Code Marketplace 上架状态正确 + 归档文件 `tasks/archive/<x.y.z>-host.md` 存在且 ✅ 项全迁、开放项留主台账 + 主台账指针齐全 + CHANGELOG 宿主区无「未发布」+ 门禁全绿 = 完成。

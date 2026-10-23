@@ -13,15 +13,33 @@
 |---|---|---|---|
 | ① | tag ↔ 宿主 package.json 一致 | `TAG="${GITHUB_REF_NAME#vscode@}"` == `hosts/memora-vscode/package.json`.version | 打错 tag：市场与 Release 均不可同版本覆盖；请删 tag 重打，**不要改 package.json 迁就** |
 | ② | 内核已先行发布到 npm | 根 `package.json`.version == `npm view @zooique/memora version`（= npm latest） | 宿主 bundle 内联内核 dist，内核未发 ⇒ 市场上出现「依赖不存在的内核版本」；这是宿主专属前置护栏 |
-| ③ | 格式 / 类型 / lint / 测试 / 打包 | `format:check`（根 prettier）→ 构建内核 dist → `pnpm install --offline`（刷宿主镜像）→ `typecheck` → `lint` → 串行 `test` → `package` vsix | 任一红即终止 |
+| ③ | 格式 / 类型 / lint / 测试 / 打包 | `format:check`（根 prettier）→ 构建内核 dist → 构建 memora-mcp dist（跨宿主契约测试前置，`--no-frozen-lockfile` + `npm run build`）→ 宿主依赖安装 `pnpm install --frozen-lockfile`（含内核 dist 重链）→ `typecheck` → `lint` → 串行 `test` → `package` vsix | 任一红即终止 |
 
 > ⚠️ **gate ③ 不含 `verify:changelog` / `verify:publish-docs`**（那是内核 `release.yml` 的闸）。CHANGELOG 宿主区日期窗 + 文档发布态须由人在 tag 前人工确认（见技能 Step 1/Step 2）。
 
 ### 内核先行机制（gate ② 为什么必须在 CI 拦）
 宿主 bundle 由 esbuild **内联**内核 dist ⇒ 产物里带的是本地构建的内核代次。宿主测试跑的是本地 dist（天然同代），不会暴露「npm 上不存在该内核版本」的问题；只能靠此闸拦。判据 = 根 `package.json` version 必须已是 npm latest。
 
-### 镜像刷新为什么必须 `pnpm install --offline`
-内核 dist 变更后，宿主 vitest 会加载旧的硬链接副本（不刷新会测到上一代内核）。`host-release.yml` 在 build 内核 dist 后跑此步；本地发版亦须照做。
+### 宿主依赖安装（内核 dist 重链）——为什么 CI 必须 `--frozen-lockfile`、禁 `--offline`
+
+内核 dist 变更后，宿主 vitest 会加载旧的硬链接副本（不刷新会测到上一代内核）——重链靠任何一次 `pnpm install` 完成，这是这一步存在的目的。
+
+**但安装方式两环境不同（0.2.0 首跑实证，run 39889566947）**：
+- 根与宿主是**两个独立 pnpm 工程**（无 `pnpm-workspace.yaml`，各自 `pnpm-lock.yaml`）；CI 上游只把根 lockfile 的包灌进 store。
+- 宿主 lockfile 239 包中 **~187 个根没有**（vsce / @vscode / cheerio 系——打包链路依赖）⇒ CI 冷 store 上 `--offline` 解析**必炸**（1 秒即红，后续步骤全 skip）。
+- 故 CI 定 `--frozen-lockfile`（在线、锁文件确定性、照样重链）；本地 store 已暖，本地跑 `--offline` 仍可。**勿改回 `--offline`**（workflow 步骤注释已留痕）。
+
+### 跨宿主契约测试的前置：memora-mcp dist（0.2.0 二跑实证，run 39890131524）
+
+`crossHostLayout.test.ts` 加载 `hosts/memora-mcp/dist/readOnlyFileStore.js` **构建产物**（非源码，防跨包 import 的 TS6059）且有 mtime 守卫（dist 不旧于 src）。CI 从未构建过 mcp ⇒ 首跑「mcp 产物缺失」红。workflow 已在 build 内核 dist 后加构建步（mcp 依赖 `@zooique/memora: file:../..`，故排在内核 dist 之后）；mcp 尚未独立发版无 lockfile ⇒ 只能 `--no-frozen-lockfile`（SDK 版本浮动），**mcp 出包补 lockfile 后应收紧为 `--frozen-lockfile`**。本地新 clone 同样先 `cd hosts/memora-mcp && npm run build`。
+
+### 平台相关断言：`runIf(平台)` 互斥孪生（0.2.0 二跑实证）
+
+`path.relative` / findFiles `fsPath` 等语义随 OS 变：反斜杠形态只在 Windows 运行时出现，ubuntu 上喂 `'C:\\proj'` 得 `'../C:/...'`。平台相关断言写两条互斥用例——`runIf(process.platform === 'win32')` 原形态 + `runIf(!win32)` POSIX 孪生，各跑真实形态、断言同一结果——**不产生隐藏 skip**，任一平台都有在跑的用例。范式见 `projectSearchProvider.test.ts`。
+
+### tag 触发的 CI 用 tag commit 的 workflow 版本 ⇒ 修 workflow 后必须删 tag 重打
+
+tag push 事件以 **tag 指向 commit 中的 workflow 文件**起跑；push 修复到 main 后重跑旧 run 仍用旧 workflow。正确顺序：删远端+本地 tag → 在含修复的新 HEAD 重打 → 再推。0.2.0 因此重打 tag 两次。
 
 ## 分发出口（按 2026-10-23 调研结论定案）
 
