@@ -157,7 +157,7 @@ describe('真实 stdio 连接（fixtures/fakeMcpServer.mjs）', () => {
     }
   }, 30_000);
 
-  it('list_changed 通知触发 onToolsChanged，refreshTools 拿到新清单（P2 增量同步的地基）', async () => {
+  it('list_changed 通知触发 onToolsChanged，refreshTools 拿到新清单（P2 整换同步的地基）', async () => {
     const connection = new McpConnection({
       name: 'fake',
       command: process.execPath,

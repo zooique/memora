@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import type { Agent, ArchiveMode, IRoundStore } from '@zooique/memora';
 import { accumulateStream } from '@zooique/memora';
-import { assembleAgent } from './host/assemble.js';
+import { assembleAgent, createVscodeLogger } from './host/assemble.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
@@ -34,8 +34,8 @@ import { FileChangeTracker } from './host/fileChangeTracker.js';
 import { FileChangeView } from './host/fileChangeView.js';
 import { selectionToRefRange } from './host/selectionRange.js';
 import { relativeUnderPrimaryRoot } from './host/refPath.js';
-import { stopMcpServers } from './host/mcp/runtime.js';
-import type { McpServerConfig } from './host/mcp/connectionManager.js';
+import { stopMcpServers, applyMcpConfigChange } from './host/mcp/runtime.js';
+import { readMcpServers, readMcpToolAllowlist } from './mcpConfig.js';
 import {
   ACTIVE_ROLE_PACK_KEY,
   CONFIRM_WRITES_KEY,
@@ -123,23 +123,6 @@ function readArchiveMode(): ArchiveMode {
 }
 
 /**
- * 读取 MCP 服务器配置（**唯一读取点**）
- *
- * 只认**用户级**设置（package.json 里 `scope: "application"`）：工作区级 `.mcp.json`
- * 可被他人提交进仓库，等于让任意仓库自动拉起任意命令，信任来源未拍板前不开放
- * （方案-MCP工具接入 §10「server 配置来源与信任」登记项）。
- * 修改后需重建会话（装配期一次性读取；与 searchEngine 同档口径）。
- */
-function readMcpServers(): McpServerConfig[] {
-  return vscode.workspace.getConfiguration('memora').get<McpServerConfig[]>('mcpServers', []);
-}
-
-/** 读取 MCP 工具免确认 allowlist（**唯一读取点**；键格式 / 原名寻址 / fail-closed 见 host/mcp/policy.ts） */
-function readMcpToolAllowlist(): string[] {
-  return vscode.workspace.getConfiguration('memora').get<string[]>('mcpToolAllowlist', []);
-}
-
-/**
  * 对「已装配的 Agent」执行一次配置热更新动作
  *
  * 真源约束（与 syncDisabledSkills 的注释同源）：**不触发懒装配**——配置变更若发生在
@@ -147,14 +130,17 @@ function readMcpToolAllowlist(): string[] {
  * 整个 Agent 装配成本。失败降级为日志：配置已落盘，下次装配仍会读到新值，
  * 不能打断用户当前操作。
  *
- * @param action   热更新动作（入参 = 已装配的 Agent）
+ * @param action   热更新动作（可异步：返回 Promise 时本函数等待其完成，失败同样降级为日志）
  * @param failLabel 失败日志标签（区分是哪条配置的同步失败）
  */
-function runOnAssembledAgent(action: (agent: Agent) => void, failLabel: string): void {
+function runOnAssembledAgent(
+  action: (agent: Agent) => void | Promise<void>,
+  failLabel: string,
+): void {
   void (async () => {
     const agent = agentPromise ? await agentPromise.catch(() => null) : null;
     if (!agent) return;
-    action(agent);
+    await action(agent);
   })().catch((err) => {
     console.warn(`Memora ${failLabel}失败`, err);
   });
@@ -640,6 +626,22 @@ export function activate(context: vscode.ExtensionContext): void {
             console.info('Memora 归档模式变更已暂存，将在当前对话结束后生效', err);
           }
         }, '归档模式配置同步');
+      }
+      // MCP 配置（切片 4 起即时生效）：按 name 差分增量启停 + allowlist 只重算档位，
+      // 无需重载窗口；差分细节见 host/mcp/runtime.ts，读取与装配期同源（mcpConfig.ts）。
+      if (
+        e.affectsConfiguration('memora.mcpServers') ||
+        e.affectsConfiguration('memora.mcpToolAllowlist')
+      ) {
+        runOnAssembledAgent(
+          (agent) =>
+            applyMcpConfigChange(agent, readMcpServers(), {
+              allowlist: readMcpToolAllowlist(),
+              logger: createVscodeLogger(memoraOutput),
+              clientVersion: extensionVersion,
+            }),
+          'MCP 配置热更',
+        );
       }
     }),
   );

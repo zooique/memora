@@ -396,6 +396,11 @@ export function buildToolBindings(
  * `callTool` 由 runtime 注入（转发到该 server 的连接）；返回值即派生缓存，
  * 注销/断线时原样传回 unregisterServerTools。
  *
+ * **失败自清理**：循环中途撞名（跨 server 派生名冲突，内核 registerTool 抛
+ * 「工具已注册」）时，撤掉**本次调用自己注册成功的前几个**再抛错。不能把清理
+ * 推给调用方按 bindings 全量撤——撞名的那个名字 registered 在**别家 server**
+ * 名下，按名删会误删赢家的工具（本函数的清理边界 = 本次 registerTool 成功集）。
+ *
  * @param registrar 内核注册面（通常是 `agent.tools`）
  * @param bindings 绑定列表
  * @param callTool 调用转发函数（原始工具名 + 参数 → MCP 结果）
@@ -405,11 +410,22 @@ export function registerServerTools(
   bindings: readonly McpToolBinding[],
   callTool: (originalName: string, args: Record<string, unknown>) => Promise<unknown>,
 ): void {
-  for (const binding of bindings) {
-    registrar.registerTool(binding.definition, async (args) => {
-      const result = await callTool(binding.originalName, args);
-      return normalizeToolResult(result);
-    });
+  const done: McpToolBinding[] = [];
+  try {
+    for (const binding of bindings) {
+      registrar.registerTool(binding.definition, async (args) => {
+        const result = await callTool(binding.originalName, args);
+        return normalizeToolResult(result);
+      });
+      done.push(binding);
+    }
+  } catch (err) {
+    // 只撤本次成功的（done 里的名字都经 registerTool 落过，不可能属于别家——
+    // 别家占着的话 registerTool 早就抛了、根本进不到 done）
+    for (const binding of done) {
+      registrar.removeTool(binding.derivedName);
+    }
+    throw err;
   }
 }
 

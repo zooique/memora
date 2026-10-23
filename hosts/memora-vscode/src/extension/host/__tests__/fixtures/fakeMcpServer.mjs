@@ -7,7 +7,7 @@
  *   - 一个工具**必错**（isError）：验证宿主不当正常文本回填（假成功）；
  *   - 一个工具**永不响应**：验证宿主调用转发有超时兜底（server 卡死不得挂死 agent turn）；
  *   - `unlock-extra` 调用后**多发一条工具 + 推 list_changed 通知**：验证宿主订阅通知、
- *     重取清单（P2 增量同步的地基）。
+ *     重取清单（P2 **整换**同步的地基——注册集先全注销再全注册，见 runtime.resyncServerTools）；
  *
  * 能力门控：环境变量 `FAKE_MCP_NO_LIST_CHANGED=1` ⇒ 不声明 `listChanged` 能力
  * （验证宿主不空转订阅——协议上未声明的 server 不会发该通知）。
@@ -58,7 +58,7 @@ const TOOLS = [
   },
 ];
 
-/** unlock-extra 被调用后才出现的工具（验证 list_changed 增量同步） */
+/** unlock-extra 被调用后才出现的工具（验证 list_changed 整换同步） */
 const EXTRA_TOOL = {
   name: 'extra-tool',
   description: 'unlock-extra 调用后才出现',
