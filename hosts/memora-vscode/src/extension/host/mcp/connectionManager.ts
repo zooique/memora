@@ -28,8 +28,29 @@ const CONNECT_TIMEOUT_MS = 20_000;
 /** 单页 `tools/list` 超时（毫秒）：server 卡死时不得拖住宿主装配 */
 const LIST_TOOLS_TIMEOUT_MS = 20_000;
 
+/**
+ * 单次工具调用转发超时（毫秒）
+ *
+ * 工具可正当慢（构建 / 检索 / 浏览器自动化），故比握手宽松；但 server 卡死不得挂死
+ * agent turn——内核 custom 分支 `await custom.handler(args, ctx)` 无超时包裹
+ * （toolExecutor.ts），LLM 超时管不到工具执行面。超时 = 本次调用失败（执行器包成
+ * 工具错误），**不**断连接：在途请求 server 侧继续跑，中止传播归 §10 P5 登记项。
+ */
+const TOOL_CALL_TIMEOUT_MS = 60_000;
+
 /** 分页上限（页数）：server 若返回重复 cursor 或无限分页，到此为止（否则装配死循环） */
 const MAX_TOOL_PAGES = 50;
+
+/**
+ * 分页收口原因（重复 cursor / 撞页数上限——两者都不是正常取完，调用方须告警）
+ */
+export type PaginationStopReason = 'duplicate-cursor' | 'page-limit';
+
+/** `collectAllTools` 的返回：工具清单 + 收口原因（正常取完 = null，供调用方告警） */
+export interface ToolCollection {
+  tools: McpTool[];
+  stopped: { reason: PaginationStopReason; pages: number } | null;
+}
 
 /**
  * 单个 MCP server 的用户配置形态
@@ -88,26 +109,29 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
  *
  * 只取第一页 = 工具多的 server 静默漏工具，故必须循环 `nextCursor` 直到缺省。
  * cursor 用 Set 去重：server 若把同一 cursor 反复返回（实现有 bug），此处在
- * 上限页数处收口并告警，而不是无限循环。
+ * 上限页数处收口并**返回收口原因**（调用方负责告警——本函数无日志通道，
+ * 承诺与实现必须同源，勿只在注释里写「告警」）。
  *
  * @param fetchPage 取一页（cursor 缺省 = 第一页）
- * @returns 全部工具（按 server 返回顺序拼接）
+ * @returns 全部工具（按 server 返回顺序拼接）+ 收口原因
  */
 export async function collectAllTools(
   fetchPage: (cursor?: string) => Promise<McpToolPage>,
-): Promise<McpTool[]> {
+): Promise<ToolCollection> {
   const all: McpTool[] = [];
   const seen = new Set<string>();
   let cursor: string | undefined;
   for (let page = 0; page < MAX_TOOL_PAGES; page += 1) {
     const { tools, nextCursor } = await fetchPage(cursor);
     all.push(...tools);
-    if (!nextCursor) return all;
-    if (seen.has(nextCursor)) return all; // 重复 cursor = server 分页异常，按已取到的收口
+    if (!nextCursor) return { tools: all, stopped: null };
+    if (seen.has(nextCursor)) {
+      return { tools: all, stopped: { reason: 'duplicate-cursor', pages: page + 1 } };
+    }
     seen.add(nextCursor);
     cursor = nextCursor;
   }
-  return all;
+  return { tools: all, stopped: { reason: 'page-limit', pages: MAX_TOOL_PAGES } };
 }
 
 /** MCP 连接（一个 server 一条；连接失败时由调用方丢弃实例） */
@@ -195,7 +219,7 @@ export class McpConnection {
           `server 未声明 tools 能力（capabilities=${JSON.stringify(capabilities ?? {})}）`,
         );
       }
-      this.tools = await collectAllTools(async (cursor) => {
+      const collected = await collectAllTools(async (cursor) => {
         const page = await withTimeout(
           cursor ? client.listTools({ cursor }) : client.listTools(),
           LIST_TOOLS_TIMEOUT_MS,
@@ -203,6 +227,15 @@ export class McpConnection {
         );
         return { tools: page.tools, nextCursor: page.nextCursor };
       });
+      this.tools = collected.tools;
+      // 分页异常收口不得静默（事后审查发现 ③）：重复 cursor / 撞页数上限都记日志，
+      // 用户可在输出面板看到「工具可能没拉全」
+      if (collected.stopped) {
+        this.logger?.warn(
+          `[MCP:${this.name}] tools/list 分页异常收口（${collected.stopped.reason}，` +
+            `共 ${collected.stopped.pages} 页 / ${collected.tools.length} 个工具，可能未拉全）`,
+        );
+      }
     } catch (err) {
       // 失败即清理：握手失败/超时后子进程仍在跑，不关就是孤儿
       await this.close().catch(() => undefined);
@@ -229,17 +262,30 @@ export class McpConnection {
    *
    * 用 server 原始工具名（派生名只在宿主内部用于寻址与展示）。
    * 返回 `unknown`：SDK 的返回是「标准結果 / 兼容旧格式」的联合类型，形状收窄交给
-   * toolRegistry.renderToolResult（那里按内容逐项判别，不在这里断言）。
+   * resultNormalizer.normalizeToolResult（那里按内容逐项判别，不在这里断言）。
+   *
+   * 超时守护（切片 3a）：`withTimeout` 包住转发，超时抛错 = 本次调用失败（内核包成
+   * 工具错误），连接不断（server 卡死不应顺带杀掉它其余能力）。
    *
    * @param originalName server 侧的原始工具名
    * @param args 已由内核校验/修正过的参数
+   * @param timeoutMs 超时覆盖——**仅测试传小值**；生产一律走缺省 `TOOL_CALL_TIMEOUT_MS`，
+   *   调用方（runtime）不传第三参
    */
-  async callTool(originalName: string, args: Record<string, unknown>): Promise<unknown> {
+  async callTool(
+    originalName: string,
+    args: Record<string, unknown>,
+    timeoutMs: number = TOOL_CALL_TIMEOUT_MS,
+  ): Promise<unknown> {
     const client = this.client;
     if (!client || this.closing) {
       throw new Error(`MCP server「${this.name}」连接不可用`);
     }
-    return client.callTool({ name: originalName, arguments: args });
+    return withTimeout(
+      client.callTool({ name: originalName, arguments: args }),
+      timeoutMs,
+      `MCP server「${this.name}」调用 ${originalName}`,
+    );
   }
 
   /** 关闭连接并杀掉子进程（幂等；任何失败都吞掉——退出路径不因清理失败而卡住） */

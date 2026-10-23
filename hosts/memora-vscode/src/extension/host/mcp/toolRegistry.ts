@@ -16,6 +16,8 @@
  */
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolHandler } from '@zooique/memora';
+import { isPlainObject, type JsonSchema } from './json.js';
+import { normalizeToolResult } from './resultNormalizer.js';
 import { resolveConfirmPolicy, type McpToolAllowlist } from './policy.js';
 
 /**
@@ -58,20 +60,8 @@ export interface SkippedTool {
   reason: string;
 }
 
-/** 参数 schema 的松散形状（MCP `inputSchema` 是任意 JSON Schema 子集，只能按未知值收窄） */
-type JsonSchema = Record<string, unknown>;
-
 /** 一个参数的紧凑 JSON 文本（用于把无法表达的结构塞进 description，截断防撑爆提示词） */
 const MAX_INLINE_SCHEMA_LENGTH = 160;
-
-/**
- * 判断是否为普通对象（非 null、非数组）
- *
- * @param value 任意值
- */
-function isPlainObject(value: unknown): value is JsonSchema {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * 紧凑序列化 schema（超长截断）
@@ -418,7 +408,7 @@ export function registerServerTools(
   for (const binding of bindings) {
     registrar.registerTool(binding.definition, async (args) => {
       const result = await callTool(binding.originalName, args);
-      return renderToolResult(result);
+      return normalizeToolResult(result);
     });
   }
 }
@@ -438,38 +428,4 @@ export function unregisterServerTools(
   for (const binding of bindings) {
     registrar.removeTool(binding.derivedName);
   }
-}
-
-/**
- * MCP 调用结果 → 工具返回文本
- *
- * 内核 `ToolHandler` 只回字符串，故这里做**诚实降级**：文本逐条拼接，非文本内容
- * 明说「已丢弃」（不假装成功、不静默吞掉）；`isError` 抛错让执行器按工具失败处理
- * （假成功 = 让模型拿错误文本当正常结果，比失败更糟）。
- *
- * 完整的归一化（结构化输出 / 取消 / progress）归切片 3 的 resultNormalizer。
- *
- * @param result MCP `CallToolResult`（调用方已保证形状）
- */
-export function renderToolResult(result: unknown): string {
-  const payload = isPlainObject(result) ? result : { content: [], isError: false };
-  const content = Array.isArray(payload['content']) ? payload['content'] : [];
-
-  const parts: string[] = [];
-  for (const item of content) {
-    if (!isPlainObject(item)) continue;
-    if (item['type'] === 'text' && typeof item['text'] === 'string') {
-      parts.push(item['text']);
-      continue;
-    }
-    // 非文本（image / audio / resource）：本期内核 Message.content 只支持字符串，
-    // 丢弃但注明类型，避免「返回了空文本」被误读成工具无事可做
-    parts.push(`[已丢弃非文本结果：${String(item['type'])}]`);
-  }
-
-  const text = parts.join('\n');
-  if (payload['isError'] === true) {
-    throw new Error(text.length > 0 ? text : 'MCP 工具返回错误（无文本说明）');
-  }
-  return text.length > 0 ? text : '（MCP 工具返回空结果）';
 }

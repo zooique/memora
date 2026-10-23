@@ -1,7 +1,8 @@
 /**
- * MCP 连接管理器测试 — 分页拉全 + 真实 stdio 连接 + 调用转发 + 注销
+ * MCP 连接管理器测试 — 分页拉全 + 真实 stdio 连接 + 调用转发（含超时）+ 注销
  *
- * 判据来源：方案-MCP工具接入 §7 P1/P4、§9 切片 1（分页超一页要全注册 / 停用后工具消失）。
+ * 判据来源：方案-MCP工具接入 §7 P1/P4、§9 切片 1（分页超一页要全注册 / 停用后工具消失）、
+ * §9 切片 3a（调用转发超时 / 分页收口可观测）。
  * 纯分页逻辑用注入页函数测；端到端用 fixtures/fakeMcpServer.mjs 子进程测（真握手、真调用）。
  */
 import { describe, it, expect } from 'vitest';
@@ -34,23 +35,36 @@ describe('collectAllTools 分页', () => {
       c2: { tools: [stubTool('c')], nextCursor: 'c3' },
       c3: { tools: [stubTool('d')] },
     };
-    const all = await collectAllTools(async (cursor) => {
+    const collected = await collectAllTools(async (cursor) => {
       const page = pages[cursor ?? ''];
       if (!page) throw new Error(`未定义的 cursor：${String(cursor)}`);
       return page;
     });
-    expect(all.map((t) => t.name)).toEqual(['a', 'b', 'c', 'd']);
+    expect(collected.tools.map((t) => t.name)).toEqual(['a', 'b', 'c', 'd']);
+    expect(collected.stopped).toBeNull();
   });
 
-  it('server 返回重复 cursor 时收口，不死循环', async () => {
+  it('server 返回重复 cursor 时收口并报告原因，不死循环', async () => {
     let calls = 0;
-    const all = await collectAllTools(async () => {
+    const collected = await collectAllTools(async () => {
       calls += 1;
       return { tools: [stubTool(`p${calls}`)], nextCursor: 'same' };
     });
     // 第一页后 cursor='same'，第二页再次返回 'same' → 命中去重即停
     expect(calls).toBe(2);
-    expect(all).toHaveLength(2);
+    expect(collected.tools).toHaveLength(2);
+    expect(collected.stopped).toEqual({ reason: 'duplicate-cursor', pages: 2 });
+  });
+
+  it('撞页数上限时收口并报告原因（无限分页不得死循环）', async () => {
+    let calls = 0;
+    const collected = await collectAllTools(async () => {
+      calls += 1;
+      return { tools: [stubTool(`p${calls}`)], nextCursor: `c${calls}` };
+    });
+    expect(calls).toBe(50);
+    expect(collected.tools).toHaveLength(50);
+    expect(collected.stopped).toEqual({ reason: 'page-limit', pages: 50 });
   });
 });
 
@@ -64,16 +78,22 @@ describe('真实 stdio 连接（fixtures/fakeMcpServer.mjs）', () => {
 
     try {
       const tools = await connection.connect();
-      // 3 个工具分 2 页，全部拿到才说明分页循环正确
-      expect(tools.map((t) => t.name)).toEqual(['echo-text', 'with-enum', 'always-fails']);
+      // 4 个工具分 2 页，全部拿到才说明分页循环正确
+      expect(tools.map((t) => t.name)).toEqual([
+        'echo-text',
+        'with-enum',
+        'always-fails',
+        'never-responds',
+      ]);
 
-      // 三个都可映射（顶层任何不可映射形态由 toolRegistry 单测覆盖）；
+      // 四个都可映射（顶层任何不可映射形态由 toolRegistry 单测覆盖）；
       // allowlist 传空集 = 全部逐次确认（本测试不关心审批档位）
       const { bindings, skipped } = buildToolBindings('fake', tools, new Set<string>());
       expect(bindings.map((b) => b.derivedName)).toEqual([
         'mcp__fake__echo_text',
         'mcp__fake__with_enum',
         'mcp__fake__always_fails',
+        'mcp__fake__never_responds',
       ]);
       expect(skipped).toHaveLength(0);
 
@@ -93,7 +113,7 @@ describe('真实 stdio 连接（fixtures/fakeMcpServer.mjs）', () => {
       registerServerTools(registrar, bindings, (originalName, args) =>
         connection.callTool(originalName, args),
       );
-      expect(definitions.size).toBe(3);
+      expect(definitions.size).toBe(4);
 
       const echo = handlers.get('mcp__fake__echo_text');
       await expect(echo?.({ message: 'hi' }, { guardPath: () => {} })).resolves.toBe(
@@ -107,6 +127,23 @@ describe('真实 stdio 连接（fixtures/fakeMcpServer.mjs）', () => {
       // 停用语义：注销后工具从注册面消失（内核侧 removeTool 后快照不再含它）
       unregisterServerTools(registrar, bindings);
       expect(definitions.size).toBe(0);
+    } finally {
+      await connection.close();
+    }
+  }, 30_000);
+
+  it('调用转发有超时兜底：server 永不响应不得挂死 agent turn', async () => {
+    const connection = new McpConnection({
+      name: 'fake',
+      command: process.execPath,
+      args: [FIXTURE_SERVER],
+    });
+
+    try {
+      await connection.connect();
+      // 第三参仅测试传小值（生产走缺省 60s，见 connectionManager.TOOL_CALL_TIMEOUT_MS）；
+      // 内核 custom 分支无超时包裹，这一层是唯一兜底
+      await expect(connection.callTool('never-responds', {}, 80)).rejects.toThrow(/超时/);
     } finally {
       await connection.close();
     }
