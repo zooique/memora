@@ -209,9 +209,17 @@ CI 跑完门禁 → 自动出 vsix → 挂 GitHub Release → 发到 Open VSX。
 
 - ✅ VS Code Marketplace：已上架（手动上传），publisher `zooique`
 - ❌ Open VSX：**未上架**——等本文流程走完
-- ⏸ VS Marketplace 自动化：**暂不做**——PAT 2026-12-01 退役，且卡绑卡；
-  要自动化得走 Entra ID，但个人 MSA 的「默认目录」租户会被拒
-  （已知未解 `microsoft/vscode-vsce#976`），先不投入
+- 🔒 **VS Marketplace 自动化：定案不做，保持手动上传**（2026-10-23 复核）。理由：
+  ① 干净路线 `vsce publish --oidc`（GitHub OIDC 直连 Marketplace、零密钥、免订阅）
+    尚未进 @vscode/vsce 稳定版，且 Marketplace 侧**没有策略注册 UI**
+    （`microsoft/vscode-vsce#976` 类问题）→ 现在不可用；
+  ② 稳路线 `vsce publish --azure-credential`（Entra 托管标识）需要 **Azure 订阅**
+    ⇒ 重新触发已撞过的「国外银行卡」拦路石，个人开发者负 ROI；
+  ③ 旧路线 `vsce publish -p $VSCE_PAT` 现在能用，但全局 PAT **2026-12-01 退役**
+    （仅剩约 6 周），搭了即拆。
+  手动上传已验证可用（0.1.0 上架），每版 marketplace.visualstudio.com/manage 传一次
+  .vsix，成本可忽略 ⇒ 手动为最优解。未来唯一可升级路径是 `--oidc` 路线，
+  待 Marketplace 开放策略注册 UI 后再评估（约 2026-12-01 前后回看）。
 - ✅ GitHub Release 自动分发：已能用（打 `vscode@*` tag 即出包）
 
 > 相关：`.github/workflows/host-release.yml`（宿主发布链）、

@@ -16,13 +16,15 @@
 #   ② **内核已先行发布到 npm**（宿主专属，见下方步骤注释）；
 #   ③ format:check / typecheck / lint / 单元测试（串行）/ 打包。
 #
-# 分发出口（按 2026-10-23 调研结论，逐步开，勿一次全上）：
+# 分发出口（按 2026-10-23 调研结论定案，勿一次全上）：
 #   ① **GitHub Release asset**（本 workflow 已带）——零外部账号门槛，今天就能用；
 #   ② **Open VSX**——须先在 open-vsx.org 拿到 namespace ownership 并手动首发第一版，
 #      之后追加一步 `npx ovsx publish --trusted-publishing`（Trusted Publishing，OIDC 零密钥）；
-#   ③ **VS Code Marketplace**——当前仍为手动上传。⚠️ Azure DevOps global PAT 于 **2026-12-01
-#      退役**，故**不做 PAT 自动发布路线**（搭了也只剩几十天）；改用 Entra ID 前须先确认
-#      个人 MSA「默认目录」租户不被拒（已知未解 `microsoft/vscode-vsce#976`）。
+#   ③ **VS Code Marketplace**——🔒 **定案：保持手动上传，CI 路线放弃**。
+#      ⚠️ 全局 PAT 于 **2026-12-01 退役**（仅剩约 6 周），搭 PAT 自动发布即搭即拆；
+#      稳的 Entra ID 路线需要 Azure 订阅 ⇒ 重新触发已撞过的「国外银行卡」拦路石；
+#      干净路线 `vsce publish --oidc` 尚未进稳定版且 Marketplace 侧无策略注册 UI，
+#      现不可用。手动上传已验证（0.1.0 上架），每版传一次 .vsix，成本可忽略 ⇒ 手动最优。
 #
 # ⚠️ 改名红线：Open VSX 的 Trusted Publishers 按 **workflow 文件名**匹配（按名字，非数字 ID）
 #   ⇒ 本文件 `host-release.yml` 一旦在 Open VSX 注册，**不得改名**（改名必须删掉注册重来）。
