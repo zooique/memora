@@ -14,7 +14,7 @@
  * 只读脚本：不做任何写操作，处置（删 / 指针化 / 保留）仍由人按 S5 判据拍板。
  */
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, basename, extname, relative } from 'node:path';
+import { join, basename, extname, relative, sep } from 'node:path';
 
 const ROOT = process.cwd();
 
@@ -226,9 +226,11 @@ console.log(`\n##### 零引用 · ${buckets.none.length} → 删除档候选（g
 for (const r of buckets.none) console.log(`${r.core ? '[CORE!] ' : ''}${r.path}`);
 
 // --check：tasks 根目录的「证据附件」必须被 archive 收据钉住（README 声明的治理规则机检化）
+// 语料排除 reviews/：reviews 区本身是迁入的过程产物（报告互引裸名），其提及不是收据——
+// 否则「迁入 reviews 的报告裸名提及某 tasks 根报告」会把后者误消音（自证循环同族，2026-10-23 实证）。
 if (process.argv.includes('--check')) {
   const archiveText = walk(join(ROOT, 'tasks', 'archive'))
-    .filter((p) => p.endsWith('.md'))
+    .filter((p) => p.endsWith('.md') && !p.includes(`${sep}reviews${sep}`))
     .map((p) => readFileSync(p, 'utf8'))
     .join('\n');
   const orphans = [];
