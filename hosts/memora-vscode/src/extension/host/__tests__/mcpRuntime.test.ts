@@ -600,6 +600,27 @@ describe('applyMcpConfigChange（配置热更差分 · 切片 4）', () => {
     expect(warnings.some((w) => w.includes('接入失败'))).toBe(true);
   });
 
+  it('allowlist 热更后 list_changed 整换：档位按新 allowlist 重算（运行态 allowKeys 须同步）', async () => {
+    const { registrar, names, policyOf } = fakeRegistrar();
+    const log: string[] = [];
+    const { factory, connections } = fakeFactory(log, { s1: [stubTool('a'), stubTool('b')] });
+    const agent = fakeAgent(registrar);
+
+    await applyMcpConfigChange(agent, [cfg('s1')], { allowlist: [], connect: factory });
+    await applyMcpConfigChange(agent, [cfg('s1')], {
+      allowlist: ['mcp__s1__a'],
+      connect: factory,
+    });
+    expect(policyOf('mcp__s1__a')).toBe('audit'); // 前置：热更已生效
+
+    // server 推 list_changed（工具集未变）⇒ 整换按运行态 allowKeys 重派生
+    connections[0].onToolsChanged?.();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(names()).toEqual(['mcp__s1__a', 'mcp__s1__b']);
+    expect(policyOf('mcp__s1__a')).toBe('audit'); // 整换不得把档位退回 always
+  });
+
   it('整换期间断线：新集补注销（onClosed 只注销它当时看到的旧集）', async () => {
     const { registrar, names } = fakeRegistrar();
     const log: string[] = [];

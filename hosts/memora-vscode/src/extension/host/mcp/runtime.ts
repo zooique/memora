@@ -638,6 +638,9 @@ async function applyConfigChangeInner(
         );
         if (state.get(entry.name) === entry) {
           entry.bindings = fresh;
+          // 同步 allowKeys：onToolsChanged 的整换按运行态 allowKeys 重派生档位，
+          // 这里不更新 ⇒ 下一次 list_changed 会把档位退回热更前的旧值（免确认静默失效）
+          entry.allowKeys = newKeys;
         } else {
           unregisterServerTools(registrar, fresh);
         }
