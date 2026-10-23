@@ -44,8 +44,12 @@ describe('normalizeToolResult（结果归一化）', () => {
 
   it('空结果 → 明示文案（不被误读成工具无事可做）', () => {
     expect(normalizeToolResult({ content: [] })).toBe('（MCP 工具返回空结果）');
-    expect(normalizeToolResult(undefined)).toBe('（MCP 工具返回空结果）');
-    expect(normalizeToolResult('不是对象')).toBe('（MCP 工具返回空结果）');
+  });
+
+  it('载荷不是对象 → 明说「非标准结果」（协议违规 ≠ 真空结果：后者是工具跑完没输出，前者是 server 没按协议回）', () => {
+    expect(normalizeToolResult(undefined)).toBe('（MCP 工具返回非标准结果：载荷不是对象）');
+    expect(normalizeToolResult('不是对象')).toBe('（MCP 工具返回非标准结果：载荷不是对象）');
+    expect(normalizeToolResult(42)).toBe('（MCP 工具返回非标准结果：载荷不是对象）');
   });
 
   it('structuredContent 降级：无文本正文时转 JSON 并注明来源', () => {

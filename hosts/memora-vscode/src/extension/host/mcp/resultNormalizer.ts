@@ -9,8 +9,9 @@
  *      （toolExecutor custom 分支），宿主不重复造错误类型。
  *   2. **不静默吞内容**：非文本块（image / audio / resource）丢弃但注明类型；文本为
  *      空时 `structuredContent` 降级为 JSON 文本（P6），防「空结果」被误读成工具无
- *      事可做。有文本正文时 `structuredContent` 是平行冗余形态，丢弃不注（P6 登记
- *      项的观测面 = 降级标记出现次数）。
+ *      事可做；载荷根本不是对象时明说「非标准结果」（协议违规 ≠ 真空结果，混为一谈
+ *      会让模型以为工具正常跑完没输出）。有文本正文时 `structuredContent` 是平行冗余
+ *      形态，丢弃不注（P6 登记项的观测面 = 降级标记出现次数）。
  *   3. **per-result 预裁**（§10 退出项）：单条超 `MAX_TOOL_RESULT_CHARS` 截断并附
  *      原长说明。这是**内存与告知面**的软闸；上下文硬闸在内核 `appendToolMessage`
  *      （`SINGLE_TOOL_RESULT_MAX_TOKENS`），两者刻意不互 mirror——按字符猜 token
@@ -62,7 +63,11 @@ export function normalizeToolResult(result: unknown): string {
   }
 
   const isError = payload?.['isError'] === true;
-  if (text.length === 0) {
+  if (payload === null) {
+    // 协议违规（载荷不是对象）与真空结果是两件事：说成「空结果」会让模型以为
+    // 工具正常跑完没输出，实际是 server 没按 MCP 协议回（联调期最常见的一类故障）
+    text = '（MCP 工具返回非标准结果：载荷不是对象）';
+  } else if (text.length === 0) {
     text = isError ? 'MCP 工具返回错误（无文本说明）' : '（MCP 工具返回空结果）';
   }
 

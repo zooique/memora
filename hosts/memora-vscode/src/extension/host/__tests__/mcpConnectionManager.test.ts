@@ -132,7 +132,7 @@ describe('真实 stdio 连接（fixtures/fakeMcpServer.mjs）', () => {
     }
   }, 30_000);
 
-  it('调用转发有超时兜底：server 永不响应不得挂死 agent turn', async () => {
+  it('调用转发有超时兜底且不断连接：server 永不响应不得挂死 agent turn，超时后其余工具照常可调', async () => {
     const connection = new McpConnection({
       name: 'fake',
       command: process.execPath,
@@ -144,6 +144,14 @@ describe('真实 stdio 连接（fixtures/fakeMcpServer.mjs）', () => {
       // 第三参仅测试传小值（生产走缺省 60s，见 connectionManager.TOOL_CALL_TIMEOUT_MS）；
       // 内核 custom 分支无超时包裹，这一层是唯一兜底
       await expect(connection.callTool('never-responds', {}, 80)).rejects.toThrow(/超时/);
+      // 超时只失败本次调用：server 卡一个请求不应顺带杀掉连接（否则一次卡死 = 整台
+      // server 的工具全废）。JSON-RPC over stdio 按 id 匹配，挂起请求不阻塞后续请求。
+      // 注意断言口径：callTool 回的是**原始 MCP 结果对象**（归一化是 toolRegistry
+      // handler 的事，见 registerServerTools → normalizeToolResult）
+      const after = await connection.callTool('echo-text', { message: 'after-timeout' });
+      expect(after).toEqual({
+        content: [{ type: 'text', text: 'echo:echo-text:{"message":"after-timeout"}' }],
+      });
     } finally {
       await connection.close();
     }
