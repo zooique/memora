@@ -93,9 +93,12 @@ jobs:
       - name: 构建内核 dist
         run: npm run build
 
-      # 内核 dist 变更后必须重链：宿主 vitest 会加载旧的硬链接副本，不刷新会测到上一代内核
-      - name: 宿主镜像刷新（pnpm install --offline）
-        run: pnpm install --offline
+      # 内核 dist 变更后必须重链：宿主 vitest 会加载旧的硬链接副本，不刷新会测到上一代内核。
+      # ⚠️ 不能用 --offline：根与宿主是两个独立 pnpm 工程（无 workspace），上游步骤只装了根依赖，
+      #   冷 store 缺宿主 lockfile 独有的 ~187 个包（vsce/@vscode 系），offline 解析必炸
+      #   （2026-10-23 vscode@0.2.0 首跑实证）。本地能 --offline 是因为 store 已暖，CI 冷环境不行。
+      - name: 宿主依赖安装 + 内核 dist 重链
+        run: pnpm install --frozen-lockfile
         working-directory: hosts/memora-vscode
 
       - name: 宿主 TypeScript 类型检查
