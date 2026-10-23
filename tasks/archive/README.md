@@ -18,7 +18,7 @@
 | `4.0.0-kernel.md` | 4.0.0 | 内核 npm | 已发布（2026-10-10 · npm latest） | `待完成任务.md`：SCRIPT-1 / SCRIPT-2 / MEM-1（部分）+ 观察区 5 条闭合收据（READ-DEDUP-REALDEVICE-1 / METRICS-XFLOW-1 / METRICS-BGTASK-1 / METRICS-PREFIX-1 / RESUME-FAIL-FEEDBACK-1）+ 4.0.0 区定案归档整节（2026-10-10 · 分流表 + 原文快照） |
 | `5.0.0-kernel.md` | 5.0.0 | 内核 npm | 已发布（2026-10-23 · npm latest = 5.0.0，OIDC staged + 本人 2FA Approve 上架） | `待完成任务.md` 5.0.0 区已关闭 19 条（CHLOG-TRIM-1 / CTX-OCC-1 / CHKPT-1 / CHKPT-2 / CHKPT-3 / CHKPT-4 / TERM-FDBK-1 / LEDGER-RECEIPT-1 / PROMPT-1 / DRIFT-PAUSE-1 / 脚本安全设计固化 / MEM-RECALL-3 / MEM-EVENT-1 / ARCH-GAP-1 / ARCH-GAP-2 / SKILL-CWD-1 / GUARD-SEARCH-1 / SEARCH-QUALITY-1 / ASK-TIMEOUT-1）；开放观察项留主台账 |
 | `0.1.0-host.md` | 0.1.0 | 宿主 vsce | 已发布（2026-10-14 · Marketplace 上架） | `待完成任务.md`：首批复迁 10 条宿主 ✅ 项（UI-CONFIRM-P10/P10B/P10C/P14/P15、插话「吸收时上屏」、SCROLL-JUMP-1、RELEASE-HOST-0.1.0、LEDGER-SSOT-1、TEST-ENV-TIMEOUT-1）+ 2026-10-14 发布收口批再迁（发布硬闸 ROADMAP-PLUGIN-1·MKT / ·REL / HOST-BUG-2、复盘 ROLEPACK-BODY-1 / ROUND-ANALYTICS-1、打磨残项全部 ✅❌ 闭合项——完整迁入清单见归档文件「2026-10-14 发布收口批迁入」批次引言）+ 2026-10-14 收尾闭合批再迁 3 条（HOST-BUG-1 真机点验通过 / UI-SSOT-2 / UI-HOST-0 终态拍板关闭），UI-ICON-1 移主台账观察区，0.1.0 全线收口 |
-| `0.2.0-host.md` | 0.2.0 | 宿主 vsce | 已发布（2026-10-23 · GitHub Release 挂 asset memora-vscode-0.2.0.vsix；Marketplace 手动上传待执行） | `待完成任务.md` 0.2.0 区已关闭 31 条（HOST-S3-1~3 / MEM-UI-1 / HOST-HIST-PIN-1 / HOST-OBS-2 / HOST-REF-1 / HOST-MENU-1~2 / HOST-CTX-0,1,2,3,5~14,16~18 / DOC-CTX-1 / HOST-NAV-1 / HOST-ATTN-1 / HOST-SPLIT-1 / UI-CONFIRM-FIT-1）；挂起（HOST-ATT-1 / HOST-SEARCH-1 / HOST-PIN-1）、纪律条目（HOST-CTX-15）留主台账（原「待复验 HOST-CTX-4」已于 2026-10-23 整体复验通过，在主台账关账） |
+| `0.2.0-host.md` | 0.2.0 | 宿主 vsce | 已发布（2026-10-23 · GitHub Release 挂 asset memora-vscode-0.2.0.vsix；Marketplace 手动上传同日执行完毕） | `待完成任务.md` 0.2.0 区已关闭 31 条（HOST-S3-1~3 / MEM-UI-1 / HOST-HIST-PIN-1 / HOST-OBS-2 / HOST-REF-1 / HOST-MENU-1~2 / HOST-CTX-0,1,2,3,5~14,16~18 / DOC-CTX-1 / HOST-NAV-1 / HOST-ATTN-1 / HOST-SPLIT-1 / UI-CONFIRM-FIT-1）；挂起（HOST-ATT-1 / HOST-SEARCH-1 / HOST-PIN-1）、纪律条目（HOST-CTX-15）留主台账（原「待复验 HOST-CTX-4」已于 2026-10-23 整体复验通过，在主台账关账） |
 
 > 注：3.0.0 / 3.0.1 已真发（`registry latest = 3.0.1`），其关闭项已在 `completed-history.md`（原 `已完成任务.md`）按用户约定保留、不入版本归档。
 
@@ -29,9 +29,9 @@
 - **迁出原因（2026-10-22 批）**：2026-10-22 全量引用扫描确认，该批文档无任何文件反向引用（含自身标题外的外部链接），且内容已过时，属零引用历史审查/方案文档；2026-10-23 批判据不同（零真相链消费但有报告裸名互引），见下方各批次自己的迁出依据。
 - **不登记主台账指针**：主台账 `待完成任务.md` 本就未引用这些文件，故迁出后不在主台账留指针（纪律第 7 条「主台账留指针」仅针对版本归档的已关闭项，此处不适用）。
 - **非版本信号**：本区归档**不代表任何版本收口**，仅释放仓库噪音（原「5.0.0 尚未发版、npm latest = 4.0.0」为 2026-10-22 归档时点快照，已在 2026-10-23 上架后失效并删去；勿据历史快照推论当前版本轴）。
-- **不删除**：仅迁移，不删源文件；如需彻底清理须另行拍板。
+- **删除拍板（2026-10-23 · 用户）**：原纪律「仅迁移，不删源文件」经用户拍板**整体推翻**——区累计迁入的 **11 份**（10-22 批 6 + 10-23 批 5）已全部 `git rm`，git 历史即档案；区目录保留作后续过时零引用报告的迁入位，将来是否再删按次拍板。
 
-### 已迁入清单（2026-10-22）
+### 已迁入清单（2026-10-22 · 全部已删 2026-10-23）
 
 | 原路径 | 字节 |
 | --- | --- |
@@ -42,10 +42,10 @@
 | docs 下《方案-角色包编辑UI-键面查看与编辑》（2026-10-01） | 9.0K |
 | docs 下《审查-CMD1-CMD2落地质量》（2026-10-03） | 15.3K |
 
-### 已迁入清单（2026-10-23 · DOC-GOV 收口下轮候选拍板）
+### 已迁入清单（2026-10-23 · DOC-GOV 收口下轮候选拍板 · 全部已删 2026-10-23）
 
 - **迁出依据**：`npm run scan:docs:refs:check` 实测无 archive 收据的 9 份 tasks 根目录报告，逐份核入边后分档——本批 5 份**零真相链消费**（入边全为报告互引裸名，零台账 path、零 archive/rules/src 引用），仅报告互引 ⇒ 迁本区。
-- **留 tasks 根 4 份（有真相链 path 消费，不迁）**：`宿主UI质量回顾与优化路线`（台账 L287 真源指针）、`方案-HOST-CTX-4-二笔git-changes三路径拍板`（台账 L338/L355 拍板材料）、`10-15 会话报告核实`（台账 L746 评估真源）、`SSOT审计弧总账`（已降指针档，README 规矩 4）。
+- **留 tasks 根 4 份（有真相链 path 消费，不迁）**：`审查报告-2026-10-11-宿主UI质量回顾与优化路线.md`（台账 L287 真源指针）、`方案-HOST-CTX-4-二笔git-changes三路径拍板-20261021.md`（台账 L338/L355 拍板材料）、`审查报告-2026-10-15-会话报告核实与落地质量审查.md`（台账 L746 评估真源）、`审查报告-2026-10-11-SSOT审计弧总账.md`（已降指针档，README 规矩 4）。此行即 4 份的留根收据全名（`--check` 据此消音）。
 - **不登记主台账指针**：同上批，主台账未引用本批 5 份。
 
 | 原路径 | 字节 |

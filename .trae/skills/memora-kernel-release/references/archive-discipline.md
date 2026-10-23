@@ -19,7 +19,7 @@
 | `4.0.0-kernel.md` | 4.0.0 | 内核 npm | 已发布（2026-10-10 · npm latest） |
 | `5.0.0-kernel.md` | 5.0.0 | 内核 npm | 已发布（2026-10-23 · npm latest = 5.0.0，OIDC staged + 本人 2FA Approve 上架） |
 | `0.1.0-host.md` | 0.1.0 | 宿主 vsce | 已发布（2026-10-14 · Marketplace 上架） |
-| `0.2.0-host.md` | 0.2.0 | 宿主 vsce | 已发布（2026-10-23 · GitHub Release asset `memora-vscode-0.2.0.vsix`；Marketplace 手动上传待执行） |
+| `0.2.0-host.md` | 0.2.0 | 宿主 vsce | 已发布（2026-10-23 · GitHub Release asset `memora-vscode-0.2.0.vsix`；Marketplace 手动上传同日执行完毕） |
 
 > 3.0.0 / 3.0.1 已真发（`registry latest = 3.0.1`），其关闭项在 `tasks/archive/completed-history.md`（历史合集，不再更新）。
 

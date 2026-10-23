@@ -261,7 +261,7 @@ export const tokens = `
      * 亦系误判（设计意图建立在不存在的前提上）。教训：判「变量存在」要以 VS Code 官方
      * 主题色表为准，不能以「有人这么写过」为准。改引**真实存在**的 dropdown.* 与
      * list.hover* 族：亮色主题 dropdown-background = #ffffff ⇒ 亮色观感不变；
-     * 暗色主题浮层随主题转暗（本次视觉变化，真机已反馈白色问题，待复验）。 */
+     * 暗色主题浮层随主题转暗（2026-10-23 暗色浮层测试通过，复验闭环）。 */
     --menu-bg: var(--vscode-dropdown-background, #252526);
     --menu-fg: var(--vscode-dropdown-foreground, #cccccc);
     --menu-border: var(--vscode-dropdown-border, rgba(128, 128, 128, 0.4));
