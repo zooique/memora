@@ -90,14 +90,32 @@ describe('VscodeProjectSearchProvider', () => {
       );
     });
 
-    it('Windows 反斜杠统一为正斜杠（与 read_file 相对路径语义对齐）', async () => {
-      vi.mocked(vscode.workspace.findFiles).mockResolvedValueOnce([
-        { fsPath: 'C:\\proj\\src\\index.ts' },
-      ] as never);
-      const provider = createVscodeProjectSearchProvider('C:\\proj');
-      const result = await provider.searchFiles({});
-      expect(result.matches).toEqual([{ path: 'src/index.ts' }]);
-    });
+    // 反斜杠形态只在 Windows 运行时出现（findFiles 的 fsPath 由 OS 决定）；
+    // path.relative 是平台相关实现（2026-10-23 CI ubuntu 首跑实证：POSIX 上喂 Windows
+    // 路径得 '../C:/...'）。两条互斥用例按平台各跑其真实形态，任一平台都有在跑的用例。
+    it.runIf(process.platform === 'win32')(
+      'Windows 反斜杠统一为正斜杠（与 read_file 相对路径语义对齐）',
+      async () => {
+        vi.mocked(vscode.workspace.findFiles).mockResolvedValueOnce([
+          { fsPath: 'C:\\proj\\src\\index.ts' },
+        ] as never);
+        const provider = createVscodeProjectSearchProvider('C:\\proj');
+        const result = await provider.searchFiles({});
+        expect(result.matches).toEqual([{ path: 'src/index.ts' }]);
+      },
+    );
+
+    it.runIf(process.platform !== 'win32')(
+      'POSIX 绝对路径转相对 posix 路径（同契约的 unix 侧形态）',
+      async () => {
+        vi.mocked(vscode.workspace.findFiles).mockResolvedValueOnce([
+          { fsPath: '/home/u/proj/src/index.ts' },
+        ] as never);
+        const provider = createVscodeProjectSearchProvider('/home/u/proj');
+        const result = await provider.searchFiles({});
+        expect(result.matches).toEqual([{ path: 'src/index.ts' }]);
+      },
+    );
 
     it('用户 exclude 与默认忽略目录合并后传给 findFiles', async () => {
       vi.mocked(vscode.workspace.findFiles).mockResolvedValueOnce([] as never);

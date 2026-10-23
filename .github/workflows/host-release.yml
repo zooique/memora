@@ -93,6 +93,16 @@ jobs:
       - name: 构建内核 dist
         run: npm run build
 
+      # 跨宿主契约测试（crossHostLayout）前置：mcp 侧 dist 必须存在且新鲜（该测试加载的是
+      # 构建产物而非源码，见其文件头注释；mcp 依赖 file:../.. 内核，故排在内核 dist 之后）。
+      # memora-mcp 尚未独立发版 ⇒ 无 lockfile，只能 --no-frozen-lockfile（SDK 版本浮动；
+      # mcp 出包补 lockfile 后应收紧为 --frozen-lockfile）。
+      - name: 构建 memora-mcp dist（跨宿主契约测试前置）
+        run: |
+          pnpm install --no-frozen-lockfile
+          npm run build
+        working-directory: hosts/memora-mcp
+
       # 内核 dist 变更后必须重链：宿主 vitest 会加载旧的硬链接副本，不刷新会测到上一代内核。
       # ⚠️ 不能用 --offline：根与宿主是两个独立 pnpm 工程（无 workspace），上游步骤只装了根依赖，
       #   冷 store 缺宿主 lockfile 独有的 ~187 个包（vsce/@vscode 系），offline 解析必炸
