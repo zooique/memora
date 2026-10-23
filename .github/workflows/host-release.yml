@@ -1,6 +1,7 @@
 # Memora 宿主（VS Code 插件）Release 流水线：打 `vscode@X.Y.Z` tag → 宿主门禁 → 出 vsix → 挂 GitHub Release
 #
-# 触发：推送形如 `vscode@X.Y.Z` 的 tag（如 `vscode@0.2.0`）。
+# 触发：推送形如 `vscode@X.Y.Z` 的 tag（如 `vscode@0.2.0`）；或 workflow_dispatch 手动预演
+#   （dry-run——门禁全跑到打包为止，不挂 Release）。
 #   与内核 release.yml（挂 `v*`，发 npm）**互不干扰**——ADR-033 双版本线：
 #   内核 `v*` 一轴、宿主 `vscode@*` 一轴，两轴门禁不同、产物不同、节奏有先后。
 #
@@ -35,6 +36,16 @@ on:
   push:
     tags:
       - 'vscode@*'
+  # 手动预演（dry-run）：从 main 触发，跑全部门禁到打包为止，**不挂 Release**（上传步有
+  # `if: github.event_name == 'push'` 闸）。tag 前空跑一次，可提前暴露 CI 冷环境差异——
+  # 0.2.0 两次首跑缺陷（冷 store --offline 炸 / ubuntu 平台差异红）本可这样提前暴露，
+  # 省掉「删 tag 重打」两轮往返。可选 input 核对版本号，留空则只跑门禁。
+  workflow_dispatch:
+    inputs:
+      expected_version:
+        description: '可选：核对 hosts/memora-vscode/package.json 版本（留空 = 只跑门禁）'
+        required: false
+        default: ''
 
 permissions:
   # contents: write —— 创建 Release 并上传 vsix asset 需要
@@ -63,12 +74,23 @@ jobs:
 
       - name: 校验 tag 与宿主 package.json version 一致
         run: |
-          TAG="${GITHUB_REF_NAME#vscode@}"
           PKG=$(node -p "require('./hosts/memora-vscode/package.json').version")
-          echo "tag=vscode@$TAG  宿主 package.json.version=$PKG"
-          if [ "$TAG" != "$PKG" ]; then
-            echo "::error::tag vscode@$TAG 与宿主 package.json version $PKG 不一致，终止发布（打错 tag 时请删 tag 重打，不要改 package.json 迁就）。"
-            exit 1
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # 手动预演：无 tag 上下文（GITHUB_REF_NAME = 触发分支名），tag 一致性无意义；
+            # input 填了才做版本断言，留空只跑门禁。
+            EXPECT="${{ github.event.inputs.expected_version }}"
+            echo "手动预演：宿主 package.json.version=$PKG（无 tag 上下文，跳过 tag 一致性校验）"
+            if [ -n "$EXPECT" ] && [ "$EXPECT" != "$PKG" ]; then
+              echo "::error::expected_version=$EXPECT 与宿主 package.json version $PKG 不一致。"
+              exit 1
+            fi
+          else
+            TAG="${GITHUB_REF_NAME#vscode@}"
+            echo "tag=vscode@$TAG  宿主 package.json.version=$PKG"
+            if [ "$TAG" != "$PKG" ]; then
+              echo "::error::tag vscode@$TAG 与宿主 package.json version $PKG 不一致，终止发布（打错 tag 时请删 tag 重打，不要改 package.json 迁就）。"
+              exit 1
+            fi
           fi
 
       # 「内核先行、宿主跟进」节奏机制化（ADR-033 双版本线）：
@@ -143,12 +165,18 @@ jobs:
           mv "$SRC" "$DST"
           echo "file=$DST" >> "$GITHUB_OUTPUT"
           echo "name=memora-vscode-${VER}.vsix" >> "$GITHUB_OUTPUT"
-          echo "sha256=$(sha256sum "$DST" | cut -d' ' -f1)"
+          SHA=$(sha256sum "$DST" | cut -d' ' -f1)
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA"
           echo "size=$(wc -c < "$DST") bytes"
 
       # 幂等：Release 已存在则改用 upload（--clobber 覆盖同名 asset）。
       # ⇒ 同一 tag 重跑不会因「Release 已存在」而炸（CI 重跑安全）。
+      # 手动预演（workflow_dispatch）到此为止：门禁全跑、vsix 已打包，但不创建/更新任何 Release。
+      # body 结构化（0.2.0 实证缺口：--generate-notes 只剩 auto changelog 链接，
+      # 「随包内核代次」这条用户对账信息在发布面丢失）——--notes-file 正文 + --generate-notes 追加。
       - name: 上传 vsix 到 GitHub Release
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -156,6 +184,13 @@ jobs:
           TAG="$GITHUB_REF_NAME"
           VER="${TAG#vscode@}"
           FILE="${{ steps.artifact.outputs.file }}"
+          KERNEL=$(node -p "require('./package.json').version")
+          NOTES=$(mktemp)
+          {
+            echo "> **随包内核代次 = \`@zooique/memora@${KERNEL}\`**（esbuild 内联 dist；内核自身变更见内核 CHANGELOG 区）。"
+            echo "> 产物完整性：sha256 = \`${{ steps.artifact.outputs.sha256 }}\`（$(wc -c < "$FILE") 字节）。"
+            echo "> 安装：下载 .vsix 后 \`code --install-extension memora-vscode-${VER}.vsix\`；VS Code Marketplace 按定案保持手动上传，上架状态以市场为准。"
+          } > "$NOTES"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG 已存在 → 覆盖上传同名 asset"
             gh release upload "$TAG" "$FILE" --repo "$GITHUB_REPOSITORY" --clobber
@@ -164,5 +199,6 @@ jobs:
             gh release create "$TAG" "$FILE" \
               --repo "$GITHUB_REPOSITORY" \
               --title "VS Code 宿主插件 ${VER}" \
+              --notes-file "$NOTES" \
               --generate-notes
           fi
