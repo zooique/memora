@@ -63,6 +63,8 @@
     "docs:links": "tsx scripts/check-publish-links.ts",
     "docs:links:repo": "tsx scripts/check-publish-links.ts --repo",
     "rules:refs": "tsx scripts/check-rule-refs.ts",
+    "scan:docs:refs": "node scripts/doc-ref-scan.mjs",
+    "scan:docs:refs:check": "node scripts/doc-ref-scan.mjs --check",
     "scan:phrase": "tsx scripts/scan-phrase-class.ts",
     "scan:phrase:check": "tsx scripts/scan-phrase-class.ts --check",
     "prepare": "lefthook install || true",
