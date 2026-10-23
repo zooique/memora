@@ -2,7 +2,7 @@
   "name": "memora-vscode",
   "displayName": "Memora",
   "description": "侧边栏 AI 助手：跨会话记忆、关键节点主动提问、角色包定位（出厂自带文档打磨角色），云端 / 本地模型均可",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "zooique",
   "icon": "resources/icon.png",
   "license": "MIT",

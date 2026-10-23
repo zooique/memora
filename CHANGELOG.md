@@ -1,6 +1,6 @@
 # Changelog
 
-本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号：内核变更定档独立版本号（当前 **5.0.0** · 2026-10-23 已发布 npm），宿主变更在 `[Unreleased] · 宿主`（随做随用，攒批随 `vsce package` 定版，ADR-033）。
+本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号：内核变更定档独立版本号（当前 **5.0.0** · 2026-10-23 已发布 npm），宿主变更随 `vsce package` 定版独立成区（当前 **0.2.0** · 2026-10-23，ADR-033）。
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
@@ -72,9 +72,9 @@
 
 - **后台任务槽位按 Agent 实例隔离**（`MULTI-AGENT-1`，2026-10-18）：模块级槽位 → `class BackgroundTaskScheduler` 实例级，同进程多 Agent 不再交叉等待/挤占（形态定案后多实例是必然）。非公开 API 变更。
 
-## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
+## [0.2.0] · 2026-10-23 · 宿主
 
-> 仅**宿主**（`hosts/memora-vscode`）变更，攒批随下次 `vsce package` 定版。逐条拍板与变异验证收据见台账对应 ID。
+> 仅**宿主**（`hosts/memora-vscode`）变更，随 `vsce package` 定版。逐条拍板与变异验证收据见台账对应 ID。
 
 ### Added（宿主）
 
