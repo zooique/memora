@@ -39,7 +39,7 @@ description: Memora 关键决策年轮
 | [ADR-030](./ADR-030-context-occupancy-input-indicator.md) | 输入区上下文占用指示器（内核算、宿主传、webview 渲，输入区常驻比例条 + hover 明细） | ✅ 已接受 | 架构 |
 | [ADR-031](./ADR-031-tool-read-ledger-account-vs-occupancy.md) | 工具读取台账：账本与占用解耦（判据只记「发生过」，结构化台账 + 拦截三分支 + 压缩摘要替代 + 失败硬闸，CTX-1b 定案） | ✅ 已接受 | 架构 |
 | [ADR-032](./ADR-032-gate-ownership-loop.md) | 门禁所有权闭环（本地钩子接管闸门：分层 fast/full + 步骤单一定义 + 收据；补 `host:build` 与 `verify:dist-contract`，**不承诺强制**） | ✅ 已接受 | 工程 |
-| [ADR-033](./ADR-033-dual-version-line-and-tag-scheme.md) | 双包双版本线与发布 tag 规范（内核 npm / 扩展 marketplace 各自独立 semver；tag 带包名前缀 `memora@3.0.0` 防撞车，存量裸 v tag 冻结；宿主定位第一方参考宿主；不引发布管理工具） | ✅ 已接受 | 工程 |
+| [ADR-033](./ADR-033-dual-version-line-and-tag-scheme.md) | 双包双版本线与发布 tag 规范（内核 npm / 扩展 marketplace 各自独立 semver；tag 内核 `vX.Y.Z` / 宿主 `vscode@x.y.z` 两轴互斥防撞车（2026-10-23 订正，原 `memora@` 不触发发布链），存量裸 v tag 冻结；宿主定位第一方参考宿主；不引发布管理工具） | ✅ 已接受 | 工程 |
 | [ADR-034](./ADR-034-plan-item-boundary-emit-timing.md) | 任务项边界产出时机前移（plan_item_boundary 产于迭代开始、LLM 调用之前——边界语义「以下内容属于该任务项」决定先于所罩内容；顺序契约与装配时序分叉一并定案） | ✅ 已接受 | 架构 |
 | [ADR-035](./ADR-035-max-tokens-intersection-adjudication.md) | 输出上限裁决收口（maxTokens 生效值 = min(per-LLM, 角色包 outputLimit) 单点裁决；0-哨兵装配层过滤；取证面记生效值不记配置快照；内核不设上限校验） | ✅ 已接受 | 架构 |
 | [ADR-036](./ADR-036-background-task-lifecycle-boundary.md) | 后台命令任务双生命周期边界（turn 终态脱管不杀 + 回流跨 turn 留存；Agent 实例终态 killAllRunning 真杀；主动终止单点不回调 listener；诚实边界仅覆盖正常退出） | ✅ 已接受 | 架构 |

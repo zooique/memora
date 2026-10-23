@@ -47,6 +47,9 @@ description: "内核（src/）改动后的 npm 发布就绪度验证流程：三
 
 全绿 + 契约同代 + 测试零失败 + 变异验证通过 + 包清单核对无误 = 就绪。剩「发布动作」本身（publish / package / tag）由用户确认后执行。
 
-## 发布动作链（publish 后必打 tag）
+## 发布动作链（执行细节归 `memora-kernel-release` 技能）
 
-`npm publish` 成功后：`git tag memora@<版本> && git push origin memora@<版本>`（如 `memora@3.0.0`）。tag 格式 = `<包名>@<semver>`，**禁裸 `v` 前缀**（与扩展 tag 撞车，存量裸 v tag 冻结不改）——定案见 [ADR-033](../../decisions/ADR-033-dual-version-line-and-tag-scheme.md)。
+> 本技能只管「能不能发」；**「怎么发」归 [`memora-kernel-release`](../../../.trae/skills/memora-kernel-release/SKILL.md) 技能**。
+
+内核 tag = **`vX.Y.Z`**（如 `v5.0.0`），**不是** `memora@<版本>`——后者不会触发 `release.yml`（静默不发版，见 ADR-033 决策 2「偏离原案」注释）。
+推 tag 即触发 `release.yml`（OIDC 免令牌暂存发布），门禁过 + 本人 2FA 审批才上架；`memora@` 格式与「npm publish 后补 tag」均为旧流程，已弃用。

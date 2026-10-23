@@ -26,11 +26,17 @@ description: 双包双版本线与发布 tag 规范——内核 npm / 扩展 mar
 - CHANGELOG 现行双区结构（`[Unreleased]（宿主变更 · 不占内核版本号）` 区 + 内核版本区）即本决策的既有实例，规则就此固化；
 - 版本独立 ≠ 随意升版：兼容性由依赖声明表达。扩展发布前**锁定 bundle 的内核版本**（装确定版本 → build → `verify:dist-contract` 同代验证 → `vsce package`），dist 契约闸门已覆盖前半链。
 
-### 决策 2：tag 带包名前缀——`memora@3.0.0` / `vscode@x.y.z`
+### 决策 2：tag 格式——内核 `vX.Y.Z` / 宿主 `vscode@x.y.z`
 
-- **格式**：`<包名>@<semver>`（changesets 生态惯例）。tag 名全局唯一，双包各自裸 `v` 前缀必撞车，此格式从根上消除歧义；
-- **存量冻结**：现有裸 `v` 前缀 tag（v1.0.2–v2.0.3）属历史层**不改写**（引用不可断）；自内核 3.0.0 起切换新格式；
-- 打 tag 时机：`npm publish` 成功后 `git tag memora@x.y.z && git push origin memora@x.y.z`。
+> 🔴 **偏离原案（2026-10-23 订正）**：本 ADR 2026-09-30 初版定内核 tag = `memora@x.y.z`（`<包名>@<semver>`，changesets 惯例），
+> 理由是「双包各自裸 `v` 前缀必撞车」。但实现侧内核 `release.yml` 触发条件 = `v[0-9]*`、5.0.0 实测用 `v5.0.0` 触发成功，
+> `memora@` **不会触发发布链**（静默不发版）。内核实际采用 `vX.Y.Z`（`v` 后紧跟数字），与宿主 `vscode@x.y.z` 并列——
+> 二者触发集合借 `v[0-9]*` vs `vscode@*` 天然不相交（宿主 `vscode@` 在 `v` 之后是 `scode`，非数字），同样消除撞车，不必走 `memora@` 前缀。
+> 另：初版「`npm publish` 成功后打 tag」也已不适用——现 tag 是发布**触发器**（推 tag → 流水线跑门禁 + 暂存发布），不是发布结果。
+
+- **格式**：内核 `vX.Y.Z`（如 `v5.0.0`），宿主 `vscode@x.y.z`（如 `vscode@0.1.0`）。存量裸 `v` 前缀 tag（v1.0.2–v2.0.3）属历史层**不改写**（引用不可断）。
+- **tag 触发发布链（非发布后补 tag）**：内核 `git tag vX.Y.Z && git push origin vX.Y.Z` 即触发 `release.yml`（OIDC 免令牌暂存发布，门禁过 + 本人 2FA 审批才上架）；宿主推 `vscode@x.y.z` 触发 `host-release.yml`（出 vsix + GitHub Release；Marketplace / Open VSX 分发另走手动或后续 Trusted Publishing）。
+- **枚举单包历史**：内核 `git tag -l "v[0-9]*"`（⚠️ `v*` 会同时命中宿主 `vscode@*`，须用 `v[0-9]*`）；宿主 `git tag -l "vscode@*"`。
 
 ### 决策 3：宿主定位 = 第一方参考宿主，不降格为「示例项目」
 
@@ -54,16 +60,16 @@ description: 双包双版本线与发布 tag 规范——内核 npm / 扩展 mar
 ### 正面
 
 - 双包各自按真实变更节奏升版，semver 语义保真；
-- tag 无撞车面，`git tag -l "memora@*"` 即可枚举单包历史；
+- tag 无撞车面：内核 `git tag -l "v[0-9]*"`、宿主 `git tag -l "vscode@*"` 分别枚举单包历史（`v*` 会跨轴命中，须带数字锚）；
 - 零新增工具依赖，现有门禁链直接复用。
 
 ### 负面
 
-- 手工打 tag 有遗漏风险——缓解：tag 步骤纳入 [memora-kernel-release-readiness](../../.trae/skills/memora-kernel-release-readiness/SKILL.md) 技能发布动作清单；
+- 手工打 tag 有遗漏风险——缓解：tag 步骤纳入 [memora-kernel-release](../../.trae/skills/memora-kernel-release/SKILL.md) 技能发布动作清单；
 - 扩展上线 marketplace 后 CHANGELOG 若嫌双区拥挤需拆分（触发式，非现在做）。
 
 ## 引用方
 
-- [memora-kernel-release-readiness 技能](../../.trae/skills/memora-kernel-release-readiness/SKILL.md)（发布动作链含 tag 步骤）
+- [memora-kernel-release 技能](../../.trae/skills/memora-kernel-release/SKILL.md)（内核 tag = `vX.Y.Z`、触发 release.yml、2FA 审批——执行发版动作）
 - CHANGELOG.md 双区结构（本决策 1 的既有实例）
 - [ADR-VC-001](./ADR-VC-001-vscode-plugin-host.md) 决策 6（同仓库前置）
