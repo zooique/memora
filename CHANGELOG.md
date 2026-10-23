@@ -74,7 +74,7 @@
 
 ## [0.2.0] · 2026-10-23 · 宿主
 
-> 仅**宿主**（`hosts/memora-vscode`）变更，随 `vsce package` 定版。逐条拍板与变异验证收据见台账对应 ID。
+> 仅**宿主**（`hosts/memora-vscode`）变更，随 `vsce package` 定版。**随包内核代次 = `5.0.0`**（esbuild 内联 dist，内核自身变更见内核区）。逐条拍板与变异验证收据见台账对应 ID。
 
 ### Added（宿主）
 

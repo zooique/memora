@@ -32,8 +32,11 @@ agent_created: true
 
 ### Step 1：对齐发版文档（必须在 tag 前提交）
 1. **CHANGELOG.md 宿主区**（`## [Unreleased] · 宿主（随做随用 · 不占内核版本号）`，含 `### Added（宿主）` / `### Fixed（宿主）`）：目标版本标题改为 `## [x.y.z] · YYYY-MM-DD`（合法日历日期，发布日 ±1 天窗口），删开发期合法存在的「未发布 / Unreleased」字样（**仅该区**，内核区不动）。
-2. **宿主文档去发布态陈述**：`hosts/memora-vscode/` 下随包/上架文档若写了「最新已发布为 X」「Y 待发布」类发布态**值**，改为指向真源（如「以 VS Code Marketplace / Open VSX 上架版本为准」）。
-3. `git` 提交文档改动。
+2. **内核代次陈述核对**（与 Step 0 查得的 npm latest 对拍，两处）：
+   - `hosts/memora-vscode/README.md`「内核」行：`基于 npm 包 @zooique/memora X.Y.Z 开发（本版本内联的内核代次，随宿主版本发布核对）`——版本号必须等于本次内联的内核版本（0.2.0 曾滞后写 4.0.0，2026-10-23 DOC-CTX-1 批次订正）。
+   - CHANGELOG 宿主区引言补一句「**随包内核代次 = X.Y.Z**（esbuild 内联 dist）」——宿主 bundle 内联内核，用户对账「这版宿主内置什么内核」须有处可查；这是版本对账文档，不是 README 的重复（README 讲现状、CHANGELOG 讲该版事实）。
+3. **宿主文档去发布态陈述**：`hosts/memora-vscode/` 下随包/上架文档若写了「最新已发布为 X」「Y 待发布」类发布态**值**，改为指向真源（如「以 VS Code Marketplace / Open VSX 上架版本为准」）。
+4. `git` 提交文档改动。
 > ⚠️ 内核 `release.yml` 有 `verify:changelog` / `verify:publish-docs` 两道 CI 闸；**`host-release.yml` 没有**（gate ③ 只含 format:check / typecheck / lint / 测试 / package）。故 CHANGELOG 日期窗 + 文档发布态**须人工在 tag 前确认**，CI 不会替你拦。
 
 ### Step 2：核对版本号（宿主专属三方一致 + 本地预检）
@@ -87,4 +90,4 @@ agent_created: true
 - 🔴 **跨宿主契约测试的前置是 memora-mcp dist**：`crossHostLayout.test.ts` 加载 `hosts/memora-mcp/dist` 产物（非源码）且有 mtime 守卫。workflow 已带构建步（mcp 无 lockfile ⇒ `--no-frozen-lockfile`，mcp 出包补 lockfile 后收紧为 frozen）；本地新 clone 同样先 build mcp。
 
 ## 验收门槛
-GitHub Release 存在 + Open VSX / VS Code Marketplace 上架状态正确 + 归档文件 `tasks/archive/<x.y.z>-host.md` 存在且 ✅ 项全迁、开放项留主台账 + 主台账指针齐全 + CHANGELOG 宿主区无「未发布」+ 门禁全绿 = 完成。
+GitHub Release 存在 + Open VSX / VS Code Marketplace 上架状态正确 + 归档文件 `tasks/archive/<x.y.z>-host.md` 存在且 ✅ 项全迁、开放项留主台账 + 主台账指针齐全 + CHANGELOG 宿主区无「未发布」且引言注明随包内核代次 + README 内核行 = 本次内联内核版本 + 门禁全绿 = 完成。
