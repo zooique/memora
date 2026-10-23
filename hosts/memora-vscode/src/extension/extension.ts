@@ -34,6 +34,8 @@ import { FileChangeTracker } from './host/fileChangeTracker.js';
 import { FileChangeView } from './host/fileChangeView.js';
 import { selectionToRefRange } from './host/selectionRange.js';
 import { relativeUnderPrimaryRoot } from './host/refPath.js';
+import { stopMcpServers } from './host/mcp/runtime.js';
+import type { McpServerConfig } from './host/mcp/connectionManager.js';
 import {
   ACTIVE_ROLE_PACK_KEY,
   CONFIRM_WRITES_KEY,
@@ -80,6 +82,14 @@ let agentPromise: Promise<Agent> | null = null;
 let currentAgent: Agent | null = null;
 
 /**
+ * 扩展版本号（MCP 客户端握手时上报给 server，仅作遥测，不参与任何判据）
+ *
+ * activate 时从扩展清单取值——版本号唯一真源是 package.json，宿主不另存常量
+ * （另存一份必然与发版数字漂移）。activate 前为空串，此时 MCP 尚未装配，不影响使用。
+ */
+let extensionVersion = '';
+
+/**
  * 读取「禁用的技能名」配置（技能启停，**唯一读取点**）
  *
  * 三处消费共用本函数：① 装配期注入；② 配置变更监听；③ 手动重载命令。
@@ -110,6 +120,18 @@ function readAllowedPaths(): string[] {
  */
 function readArchiveMode(): ArchiveMode {
   return vscode.workspace.getConfiguration('memora').get<ArchiveMode>('archiveMode', 'full');
+}
+
+/**
+ * 读取 MCP 服务器配置（**唯一读取点**）
+ *
+ * 只认**用户级**设置（package.json 里 `scope: "application"`）：工作区级 `.mcp.json`
+ * 可被他人提交进仓库，等于让任意仓库自动拉起任意命令，信任来源未拍板前不开放
+ * （方案-MCP工具接入 §10「server 配置来源与信任」登记项）。
+ * 修改后需重建会话（装配期一次性读取；与 searchEngine 同档口径）。
+ */
+function readMcpServers(): McpServerConfig[] {
+  return vscode.workspace.getConfiguration('memora').get<McpServerConfig[]>('mcpServers', []);
 }
 
 /**
@@ -236,6 +258,9 @@ function getOrCreateAgent(
       allowedPaths,
       disabledSkills,
       scriptNodePath: scriptNodePath || undefined,
+      // MCP server（用户级设置；装配末尾接入并注册工具，失败只影响该 server）
+      mcpServers: readMcpServers(),
+      extensionVersion: extensionVersion || undefined,
       outputChannel,
     }).catch((err) => {
       // 装配失败则重置，下次命令重试
@@ -258,6 +283,8 @@ function getOrCreateAgent(
 
 /** 插件激活入口 */
 export function activate(context: vscode.ExtensionContext): void {
+  // 扩展版本（MCP clientInfo 遥测用）：取扩展清单，版本号唯一真源 = package.json
+  extensionVersion = context.extension.packageJSON.version;
   // 创建日志输出通道 —— 内核日志将导向此通道，用户可在 VS Code 输出面板查看
   const memoraOutput = vscode.window.createOutputChannel('Memora');
   context.subscriptions.push(memoraOutput);
@@ -949,6 +976,9 @@ export function activate(context: vscode.ExtensionContext): void {
 export async function deactivate(): Promise<void> {
   if (!agentPromise) return;
   try {
+    // MCP 子进程先停：注销工具 + 关闭 stdio（子进程随 transport 关闭退出）。
+    // 放在 agent.close() 之前——工具注销走 agent.tools，需要执行器还活着。
+    await stopMcpServers();
     const agent = await agentPromise;
     await agent.close();
   } catch {

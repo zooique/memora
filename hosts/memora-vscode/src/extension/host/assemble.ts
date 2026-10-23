@@ -41,6 +41,8 @@ import { createVscodeProjectSearchProvider } from './projectSearchProvider.js';
 import { createHostMemoryStorage } from './memoryStorage.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
 import { vscodeTracer } from './tracer.js';
+import { startMcpServers } from './mcp/runtime.js';
+import type { McpServerConfig } from './mcp/connectionManager.js';
 
 import type { ProviderStore } from '../providers/providerStore.js';
 
@@ -248,6 +250,19 @@ export interface AssembleOptions {
    * 未传入时内核日志默认输出到 stdout（生产环境建议始终注入）。
    */
   outputChannel?: OutputChannel;
+  /**
+   * MCP 服务器配置（用户级设置 memora.mcpServers）
+   *
+   * 装配末尾逐台拉起并注册工具（实现见 host/mcp/）；缺省/空数组 = 完全不碰内核工具集。
+   * 单个 server 连不上只记日志，不阻断装配。
+   */
+  mcpServers?: readonly McpServerConfig[];
+  /**
+   * 扩展版本号（写进 MCP clientInfo，供 server 侧遥测；不参与任何判据）
+   *
+   * 由 extension.ts 从 `context.extension.packageJSON.version` 读取注入，宿主不另存版本常量。
+   */
+  extensionVersion?: string;
   /** 环境变量（默认 process.env，便于测试注入） */
   env?: NodeJS.ProcessEnv;
 }
@@ -293,6 +308,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     disabledSkills,
     scriptNodePath,
     archiveMode,
+    mcpServers,
+    extensionVersion,
   } = options;
 
   // 日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核；
@@ -436,6 +453,13 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   if (userRolePacksDir) {
     await agent.rolePacks?.loadExtraDir(userRolePacksDir);
   }
+
+  // 7. 接入 MCP server（用户级设置 memora.mcpServers）
+  //
+  // 放在 init 之后：工具注册走 agent.tools.registerTool（需要已初始化的执行器），
+  // 注册即触发 onToolsChanged → 工具表与 system prompt 自动刷新（宿主不手动重建提示词）。
+  // 单个 server 失败只影响它自己；注销出口统一在 host/mcp/runtime.ts（deactivate 调用停机）。
+  await startMcpServers(agent, mcpServers ?? [], logger, extensionVersion);
 
   return agent;
 }
