@@ -157,6 +157,67 @@ describe('真实 stdio 连接（fixtures/fakeMcpServer.mjs）', () => {
     }
   }, 30_000);
 
+  it('list_changed 通知触发 onToolsChanged，refreshTools 拿到新清单（P2 增量同步的地基）', async () => {
+    const connection = new McpConnection({
+      name: 'fake',
+      command: process.execPath,
+      args: [FIXTURE_SERVER],
+    });
+
+    try {
+      await connection.connect();
+      let notified = 0;
+      connection.onToolsChanged = () => {
+        notified += 1;
+      };
+      // 调 unlock-extra：server 翻转工具集并推 notifications/tools/list_changed
+      await connection.callTool('unlock-extra', {});
+      // 通知经子进程 → stdio → 宿主是异步的，轮询等它到达（有界，防挂死）
+      const deadline = Date.now() + 5_000;
+      while (notified === 0 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(notified).toBeGreaterThan(0);
+
+      // 重取：新工具进清单（且分页从 2 页变 3 页，拉全链路重跑）
+      const fresh = await connection.refreshTools();
+      expect(fresh.map((t) => t.name)).toEqual([
+        'echo-text',
+        'with-enum',
+        'always-fails',
+        'never-responds',
+        'extra-tool',
+      ]);
+      // 缓存同步：listTools() 与重取结果一致（调用方不耦合内部字段）
+      expect(connection.listTools().map((t) => t.name)).toEqual(fresh.map((t) => t.name));
+    } finally {
+      await connection.close();
+    }
+  }, 30_000);
+
+  it('未声明 listChanged 能力的 server 不订阅（协议上不会发，订了空转）', async () => {
+    const connection = new McpConnection({
+      name: 'fake',
+      command: process.execPath,
+      args: [FIXTURE_SERVER],
+      env: { FAKE_MCP_NO_LIST_CHANGED: '1' },
+    });
+
+    try {
+      await connection.connect();
+      let notified = 0;
+      connection.onToolsChanged = () => {
+        notified += 1;
+      };
+      await connection.callTool('unlock-extra', {});
+      // 给通知留出到达时间（上面的用例已证明能到）；不到即证明确实没订阅
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(notified).toBe(0);
+    } finally {
+      await connection.close();
+    }
+  }, 30_000);
+
   it('关闭后调用抛错（不留可用外壳）且主动关闭不触发断线回调', async () => {
     const connection = new McpConnection({
       name: 'fake',

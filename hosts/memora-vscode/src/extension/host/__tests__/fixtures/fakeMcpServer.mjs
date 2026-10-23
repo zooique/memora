@@ -1,11 +1,16 @@
 /**
- * 测试用 MCP server（stdio）— 只为验证宿主客户端的四条行为
+ * 测试用 MCP server（stdio）— 只为验证宿主客户端的五条行为
  *
  * 刻意构造的边界：
- *   - 工具清单**分页**（每页 2 个，共 4 个）：验证宿主循环 nextCursor 拉全（否则只注册第一页 = 静默漏工具）；
+ *   - 工具清单**分页**（每页 2 个）：验证宿主循环 nextCursor 拉全（否则只注册第一页 = 静默漏工具）；
  *   - 一个工具带枚举/范围约束：验证约束降级为描述文字（宿主侧断言）；
  *   - 一个工具**必错**（isError）：验证宿主不当正常文本回填（假成功）；
- *   - 一个工具**永不响应**：验证宿主调用转发有超时兜底（server 卡死不得挂死 agent turn）。
+ *   - 一个工具**永不响应**：验证宿主调用转发有超时兜底（server 卡死不得挂死 agent turn）；
+ *   - `unlock-extra` 调用后**多发一条工具 + 推 list_changed 通知**：验证宿主订阅通知、
+ *     重取清单（P2 增量同步的地基）。
+ *
+ * 能力门控：环境变量 `FAKE_MCP_NO_LIST_CHANGED=1` ⇒ 不声明 `listChanged` 能力
+ * （验证宿主不空转订阅——协议上未声明的 server 不会发该通知）。
  *
  * ⚠️ 夹具不出顶层 `anyOf` 工具：SDK 自身按 `inputSchema.type === 'object'` 校验出站结果，
  * 造不出这种形态（真实场景来自非 SDK 实现的 server），该分支由 toolRegistry 单测覆盖。
@@ -19,7 +24,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 /** 每页工具数（小于总数即必然产生第二页） */
 const PAGE_SIZE = 2;
 
-/** 全部工具声明（3 个 = 2 页） */
+/** 全部工具声明（4 个 = 2 页；unlock-extra 调用后 +1 个 = 3 页） */
 const TOOLS = [
   {
     name: 'echo-text',
@@ -53,18 +58,37 @@ const TOOLS = [
   },
 ];
 
-const server = new Server({ name: 'fake-mcp', version: '1.0.0' }, { capabilities: { tools: {} } });
+/** unlock-extra 被调用后才出现的工具（验证 list_changed 增量同步） */
+const EXTRA_TOOL = {
+  name: 'extra-tool',
+  description: 'unlock-extra 调用后才出现',
+  inputSchema: { type: 'object', properties: {} },
+};
+
+/** 是否已解锁 extra-tool（调用侧翻转） */
+let extraUnlocked = false;
+
+const server = new Server(
+  { name: 'fake-mcp', version: '1.0.0' },
+  {
+    capabilities: process.env.FAKE_MCP_NO_LIST_CHANGED
+      ? { tools: {} }
+      : { tools: { listChanged: true } },
+  },
+);
 
 // 分页：cursor = 起始下标（空 cursor = 第一页）
 server.setRequestHandler(ListToolsRequestSchema, async (request) => {
   const rawCursor = request.params?.cursor;
   const start = rawCursor ? Number(rawCursor) : 0;
-  const page = TOOLS.slice(start, start + PAGE_SIZE);
-  const next = start + PAGE_SIZE < TOOLS.length ? String(start + PAGE_SIZE) : undefined;
+  const list = extraUnlocked ? [...TOOLS, EXTRA_TOOL] : TOOLS;
+  const page = list.slice(start, start + PAGE_SIZE);
+  const next = start + PAGE_SIZE < list.length ? String(start + PAGE_SIZE) : undefined;
   return next ? { tools: page, nextCursor: next } : { tools: page };
 });
 
-// 调用：回显原始工具名与参数；always-fails 走 isError 分支；never-responds 永不 resolve
+// 调用：回显原始工具名与参数；always-fails 走 isError 分支；never-responds 永不 resolve；
+// unlock-extra 翻转工具集并推 list_changed 通知（宿主应收到并重取清单）
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   if (name === 'always-fails') {
@@ -73,6 +97,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === 'never-responds') {
     // 永不 settle 的 Promise：宿主必须靠超时收口，不得无限等待
     return new Promise(() => {});
+  }
+  if (name === 'unlock-extra') {
+    extraUnlocked = true;
+    await server.sendToolListChanged();
+    return { content: [{ type: 'text', text: 'unlocked' }] };
   }
   return {
     content: [{ type: 'text', text: `echo:${name}:${JSON.stringify(args ?? {})}` }],

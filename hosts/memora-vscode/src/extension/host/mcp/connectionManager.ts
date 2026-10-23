@@ -2,9 +2,10 @@
  * MCP 连接管理器（**客户端侧**）— stdio 传输 + 协议协商 + 工具发现（含分页）
  *
  * 职责边界（方案-MCP工具接入 §6）：
- *   - 只做「拉起子进程 / 握手 / 拉工具清单 / 转发调用 / 关闭」四件事；
+ *   - 只做「拉起子进程 / 握手 / 拉工具清单 / 转发调用 / 订阅清单变更 / 关闭」几件事；
  *   - **不**决定审批档位（切片 2 的 policy）、**不**决定结果文案（切片 3 的 resultNormalizer）、
- *     **不**决定工具进不进模型列表（toolRegistry 的事）。
+ *     **不**决定工具进不进模型列表（toolRegistry 的事）、**不**决定清单变了怎么改注册集
+ *     （runtime 的 resync——本文件只把「通知到了」传出去）。
  *
  * 三条硬约束：
  *   1. SDK 只在宿主依赖里 —— 内核零第三方运行时依赖不被触碰（方案 §0 红线 1）；
@@ -19,7 +20,10 @@ import {
   StdioClientTransport,
   getDefaultEnvironment,
 } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
+import {
+  ToolListChangedNotificationSchema,
+  type Tool as McpTool,
+} from '@modelcontextprotocol/sdk/types.js';
 import type { ILogger } from '@zooique/memora';
 
 /** 连接握手超时（毫秒）：首次 `npx` 拉起常有数秒冷启动，给足余量；超时即判失败并杀子进程 */
@@ -162,6 +166,15 @@ export class McpConnection {
    */
   onClosed?: () => void;
 
+  /**
+   * 工具清单变更通知（`notifications/tools/list_changed`，P2）
+   *
+   * 由 runtime 注入：server 声明 `capabilities.tools.listChanged` 时订阅，收到通知即
+   * 回调（runtime 负责重取清单并整换注册集）。未声明该能力的 server 不订阅——协议上
+   * 它不会发这个通知，订阅了也是空转。
+   */
+  onToolsChanged?: () => void;
+
   /** 是否处于主动关闭流程（区分「我关的」与「它自己死的」） */
   private closing = false;
 
@@ -219,22 +232,14 @@ export class McpConnection {
           `server 未声明 tools 能力（capabilities=${JSON.stringify(capabilities ?? {})}）`,
         );
       }
-      const collected = await collectAllTools(async (cursor) => {
-        const page = await withTimeout(
-          cursor ? client.listTools({ cursor }) : client.listTools(),
-          LIST_TOOLS_TIMEOUT_MS,
-          `MCP server「${this.name}」tools/list`,
-        );
-        return { tools: page.tools, nextCursor: page.nextCursor };
-      });
-      this.tools = collected.tools;
-      // 分页异常收口不得静默（事后审查发现 ③）：重复 cursor / 撞页数上限都记日志，
-      // 用户可在输出面板看到「工具可能没拉全」
-      if (collected.stopped) {
-        this.logger?.warn(
-          `[MCP:${this.name}] tools/list 分页异常收口（${collected.stopped.reason}，` +
-            `共 ${collected.stopped.pages} 页 / ${collected.tools.length} 个工具，可能未拉全）`,
-        );
+      await this.fetchAllTools(client);
+
+      // P2 订阅工具清单变更：server 显式声明了才订（未声明 = 协议上不会发，订了空转）。
+      // 回调只负责「通知到了」，重取与注册集整换是 runtime 的事（本文件不碰注册面）。
+      if (capabilities.tools.listChanged === true) {
+        client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+          this.onToolsChanged?.();
+        });
       }
     } catch (err) {
       // 失败即清理：握手失败/超时后子进程仍在跑，不关就是孤儿
@@ -255,6 +260,49 @@ export class McpConnection {
   /** 当前工具清单（派生缓存，只读） */
   listTools(): readonly McpTool[] {
     return this.tools;
+  }
+
+  /**
+   * 重取工具清单并更新缓存（P2：`list_changed` 通知后由 runtime 调用）
+   *
+   * 与 connect 的首发现共用同一条拉取链路（分页 / 超时 / 收口告警），失败抛错——
+   * 调用方（runtime 的 resync）负责保留旧注册集，本方法不半吊子更新。
+   *
+   * @returns 新清单（同时写进 this.tools 缓存）
+   */
+  async refreshTools(): Promise<McpTool[]> {
+    const client = this.client;
+    if (!client || this.closing) {
+      throw new Error(`MCP server「${this.name}」连接不可用`);
+    }
+    return this.fetchAllTools(client);
+  }
+
+  /**
+   * 拉全分页工具清单 + 同步缓存（connect 首发现与 refreshTools 重取共用）
+   *
+   * 收口告警也在这里：重复 cursor / 撞页数上限都记日志（事后审查发现 ③：
+   * JSDoc 承诺「告警」必须有实现通道，勿只在注释里写）。
+   *
+   * @param client 已连接的 SDK 客户端
+   */
+  private async fetchAllTools(client: Client): Promise<McpTool[]> {
+    const collected = await collectAllTools(async (cursor) => {
+      const page = await withTimeout(
+        cursor ? client.listTools({ cursor }) : client.listTools(),
+        LIST_TOOLS_TIMEOUT_MS,
+        `MCP server「${this.name}」tools/list`,
+      );
+      return { tools: page.tools, nextCursor: page.nextCursor };
+    });
+    if (collected.stopped) {
+      this.logger?.warn(
+        `[MCP:${this.name}] tools/list 分页异常收口（${collected.stopped.reason}，` +
+          `共 ${collected.stopped.pages} 页 / ${collected.tools.length} 个工具，可能未拉全）`,
+      );
+    }
+    this.tools = collected.tools;
+    return collected.tools;
   }
 
   /**
