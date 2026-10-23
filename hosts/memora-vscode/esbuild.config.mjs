@@ -137,6 +137,20 @@ async function main() {
     keepNames: true,
     // vscode 由宿主运行时提供，不打包
     external: ['vscode'],
+    // ⚠️ 勿删：ESM 产物里补上 CJS 的 require 通道。
+    // 背景（2026-10-24 真机实测）：MCP SDK 的 ESM 产物 `client/stdio.js` 依赖
+    // cross-spawn@7，后者是**纯 CJS**、内部 `require("child_process")`；esbuild 输出
+    // ESM 时会把它包成 `__commonJS` + `__require(...)`，而 ESM 里没有 `require`
+    // ⇒ shim 抛 `Dynamic require of "child_process" is not supported`，**扩展激活即失败**。
+    // shim 是 `typeof require !== "undefined" ? require : ...` 且在顶层立即求值 ⇒
+    // banner 插在最前，让这里的 `require` 先于 shim 就位（用别名避开与产物内同名导入冲突）。
+    // 守护 = scripts/verify-bundle-loadable.mjs（构建后真实加载产物，已挂 compile 末尾）。
+    banner: {
+      js: [
+        "import { createRequire as __memoraCreateRequire } from 'node:module';",
+        'const require = __memoraCreateRequire(import.meta.url);',
+      ].join('\n'),
+    },
   });
   // 用打包产物替换原生编译产物
   renameSync(tmp, entry);
