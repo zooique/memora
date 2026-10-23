@@ -1947,7 +1947,8 @@ export class ToolExecutor {
           const policy = custom.definition.confirmPolicy;
           if (policy !== undefined) {
             // 调用摘要 = 被裁决对象标识（与 run_command 把命令字面量塞审计 path 同构），截断防撑爆
-            const summary = truncate(JSON.stringify(args) ?? '', 200);
+            // args 来自 JSON.parse（无循环引用）⇒ JSON.stringify 恒返回 string
+            const summary = truncate(JSON.stringify(args), 200);
             const confirmed = await this.security.requestToolCallConfirmation(
               name,
               summary,
@@ -1957,7 +1958,7 @@ export class ToolExecutor {
               // 被拒 → 不再调 handler；语义是「主动挡下」⇒ blocked（与 run_command 拒绝先例同构）
               const declineText =
                 `[ERR:TOOL_DECLINE] 自定义工具 ${name} 未获执行许可（用户拒绝 / 未注入确认回调 fail-closed）。` +
-                '未执行该工具；如确需执行，请请用户调整审批设置。';
+                '未执行该工具；如确需执行，请用户调整审批设置。';
               emitOutcome?.(blockedOutcome('permission_denied', declineText));
               return declineText;
             }
