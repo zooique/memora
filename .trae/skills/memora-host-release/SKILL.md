@@ -57,6 +57,11 @@ agent_created: true
 2. 脚本产出 `tasks/archive/<x.y.z>-host.md`，迁入主台账 **该宿主版已关闭（✅）项**（内核相关项不在此归档，内核发版单独归档）。
 3. 条目 **ID 沿用不改**；主台账原位置留指针行 `→ 见 tasks/archive/<x.y.z>-host.md`。
 4. 归档文件头 + 主台账对应区标 **「待上架」**（未真发不写「已发布」；发版跑完再订正）。
+5. 🔴 **区级完整性自检（apply 后、commit 前必做）**：归档脚本按 **ID 白名单**跑——白名单靠人肉编，遗漏 = 静默欠账（0.2.0 实证：功能面 31 条迁净，区内混合批次漏扫 45 条，欠账登记 `ARCH-DRAIN-1`）。自检 = 扫该版本区**全部**条目行逐条三态分诊：
+   - 有 `→ 见 tasks/archive/` 指针 = 已迁 ✓
+   - 开放态（⏳ / ⏸ / 🟡 / 👁 / 📝）= 留册 ✓
+   - **已收口（✅ / ❌ / 🟢 / 证伪）无指针 = 欠账** ⇒ 当场补进 `--ids` 重跑，或登记欠账条目（如 `ARCH-DRAIN-1`）留给专项清账——**禁止沉默跳过**。
+   - 注意版本区可能是**混合工作区**（0.2.0 区含 0.1.0 发版以来的 kernel 审计批 / 发布链缺陷批 / 旧纪法规遗留原文），条目「是否属于本版本」须逐条判，不能只扫功能段。
 
 ### Step 4：发版（打 tag 触发 host-release.yml）
 1. 确认 Step 0–3 全部已提交到当前 HEAD。
@@ -88,6 +93,7 @@ agent_created: true
 - 🔴 **CI 冷 store 勿用 `--offline`**（0.2.0 首跑实证，run 39889566947）：根与宿主是两个独立 pnpm 工程（无 workspace），CI 只装了根依赖；宿主 lockfile 239 包中 ~187 个根没有（vsce/@vscode 系）⇒ 冷 store offline 解析必炸。workflow 安装步已定 `--frozen-lockfile`，**勿改回 `--offline`**；本地 store 已暖，本地跑 `--offline` 仍可。
 - 🔴 **平台相关 API 的断言写 `runIf(平台)` 互斥孪生**（0.2.0 二跑实证，run 39890131524）：`path.relative` / findFiles `fsPath` 等语义随 OS 变，反斜杠形态只在 Windows 运行时出现，ubuntu 上喂 Windows 路径必错。win32 用例 `runIf(process.platform === 'win32')` + POSIX 孪生 `runIf(!win32)` 各跑真实形态——**不产生隐藏 skip**，任一平台都有在跑的用例。
 - 🔴 **跨宿主契约测试的前置是 memora-mcp dist**：`crossHostLayout.test.ts` 加载 `hosts/memora-mcp/dist` 产物（非源码）且有 mtime 守卫。workflow 已带构建步（mcp 无 lockfile ⇒ `--no-frozen-lockfile`，mcp 出包补 lockfile 后收紧为 frozen）；本地新 clone 同样先 build mcp。
+- 🔴 **归档白名单靠人肉编 ⇒ 必跑区级完整性自检**（Step 3 第 5 条）：版本区常是混合工作区，只扫功能段必漏（0.2.0 漏 45 条，欠账 `ARCH-DRAIN-1`）；旧纪法规 copy 式归档（4.0.0 前）在主台账留了无指针原文，自检时见「已有他档完整副本」的截指针即可。
 
 ## 验收门槛
 GitHub Release 存在 + Open VSX / VS Code Marketplace 上架状态正确 + 归档文件 `tasks/archive/<x.y.z>-host.md` 存在且 ✅ 项全迁、开放项留主台账 + 主台账指针齐全 + CHANGELOG 宿主区无「未发布」且引言注明随包内核代次 + README 内核行 = 本次内联内核版本 + 门禁全绿 = 完成。
