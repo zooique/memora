@@ -7,14 +7,16 @@
  *   2. **schema 映射**：MCP `inputSchema` 逐层映射进内核**窄类型**；映射不进去的结构约束
  *      （enum / 数值范围 / 正则 / 嵌套）**转述进该参数 description**；顶层 `anyOf`/`oneOf`
  *      ⇒ 剔除该工具并告警。全程零 `as`、零 `@ts-ignore`。
- *   3. **注册/注销**：注册时**显式**写 `confirmPolicy`（本期恒 `'always'`）——
- *      方案 §11 风险 2 明写「忘记设置就静默不审批不审计」，故这里没有缺省路径。
+ *   3. **注册/注销**：注册时按 allowlist 计算 `confirmPolicy`（切片 2 三档，
+ *      见 policy.ts）——方案 §11 风险 2 明写「忘记设置就静默不审批不审计」，
+ *      故这里没有缺省路径，每个工具显式落 'always' 或 'audit'。
  *
  * 红线（D3）：审批意图只经 `ToolDefinition.confirmPolicy` 表达；本文件**不**直接调用内核
  * 安全方法自行拼判据（那会造出第二套审批实现）。
  */
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolHandler } from '@zooique/memora';
+import { resolveConfirmPolicy, type McpToolAllowlist } from './policy.js';
 
 /**
  * 注册面结构契约
@@ -245,13 +247,15 @@ function mapProperty(raw: unknown): ToolDefinition['parameters']['properties'][s
 /**
  * MCP 工具 → 内核工具定义
  *
- * @param serverName server 名（进描述，让模型知道工具来自哪台 server）
+ * @param serverName server 名（进描述，让模型知道工具来自哪台 server；同时是 allowlist 寻址键的一半）
  * @param tool MCP 工具声明
+ * @param allowlist 免确认白名单（按 server/tool **原名**寻址；空集 = 全部逐次确认）
  * @returns 定义；该工具不可用（顶层组合子 / 顶层非 object）时返回剔除原因
  */
 export function toToolDefinition(
   serverName: string,
   tool: McpTool,
+  allowlist: McpToolAllowlist,
 ): { definition: ToolDefinition } | { skipped: SkippedTool } {
   const rawSchema: unknown = tool.inputSchema;
   const schema: JsonSchema = isPlainObject(rawSchema) ? rawSchema : {};
@@ -294,8 +298,9 @@ export function toToolDefinition(
       name: '', // 由 deriveToolName 填充（命名需要全 server 上下文查撞名）
       description: `[MCP 服务器 ${serverName}] ${toolDesc}`.trimEnd(),
       parameters: { type: 'object', properties, required },
-      // 审批意图显式声明：MCP 工具来源不可信，一律逐次确认（allowlist 档位在切片 2 接入此处）
-      confirmPolicy: 'always',
+      // 审批意图显式声明（切片 2 三档）：命中 allowlist = 'audit' 免弹窗仍落审计，
+      // 未命中 = 'always' 逐次确认。MCP 工具来源不可信，故无缺省路径（风险 2）。
+      confirmPolicy: resolveConfirmPolicy(serverName, tool.name, allowlist),
     },
   };
 }
@@ -366,18 +371,20 @@ function shortHash(text: string): string {
  *
  * @param serverName server 名
  * @param tools MCP 工具声明（已拉全分页）
+ * @param allowlist 免确认白名单（原名寻址；空集 = 全部逐次确认）
  * @returns 可注册的绑定 + 被剔除的工具（调用方据此告警）
  */
 export function buildToolBindings(
   serverName: string,
   tools: readonly McpTool[],
+  allowlist: McpToolAllowlist,
 ): { bindings: McpToolBinding[]; skipped: SkippedTool[] } {
   const bindings: McpToolBinding[] = [];
   const skipped: SkippedTool[] = [];
   const used = new Set<string>();
 
   for (const tool of tools) {
-    const mapped = toToolDefinition(serverName, tool);
+    const mapped = toToolDefinition(serverName, tool, allowlist);
     if ('skipped' in mapped) {
       skipped.push(mapped.skipped);
       continue;

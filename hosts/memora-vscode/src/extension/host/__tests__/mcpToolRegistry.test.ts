@@ -1,12 +1,15 @@
 /**
- * MCP 工具注册器测试 — 命名派生 / schema 映射 / 注册注销
+ * MCP 工具注册器测试 — 命名派生 / schema 映射 / 审批三档 / 注册注销
  *
- * 判据来源：方案-MCP工具接入 §3.3（映射形态）、§8 豁口 2（命名与撞名）、§9 切片 1。
+ * 判据来源：方案-MCP工具接入 §3.3（映射形态）、§8 豁口 2（命名与撞名）、
+ * §9 切片 1（注册链路）、§9 切片 2（三档：allowlist 命中 audit / 未命中 always /
+ * 按原名寻址不认清洗显示名 / 空集 fail-closed）。
  * 纯函数为主，不拉起子进程（真实连接见 mcpConnectionManager.test.ts）。
  */
 import { describe, it, expect } from 'vitest';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolHandler } from '@zooique/memora';
+import { allowlistKey } from '../mcp/policy.js';
 import {
   buildToolBindings,
   deriveToolName,
@@ -16,6 +19,14 @@ import {
   unregisterServerTools,
   type ToolRegistrar,
 } from '../mcp/toolRegistry.js';
+
+/** 空 allowlist（全部逐次确认）——大多数映射测试不关心审批档位，统一传它 */
+const NO_ALLOWLIST: ReadonlySet<string> = new Set<string>();
+
+/** 造 allowlist 集合（按键集合） */
+function allowlist(...keys: string[]): ReadonlySet<string> {
+  return new Set<string>(keys);
+}
 
 /**
  * 造一个最小 MCP 工具声明（只填本测试关心的字段）
@@ -93,7 +104,7 @@ describe('命名派生（mcp__<server>__<tool>）', () => {
 });
 
 describe('schema 映射（内核窄类型）', () => {
-  it('标量参数原样映射，工具描述带 server 名，confirmPolicy 显式 always', () => {
+  it('标量参数原样映射，工具描述带 server 名，空 allowlist 下 confirmPolicy 为 always', () => {
     const result = toToolDefinition(
       'srv',
       makeTool('t', {
@@ -105,6 +116,7 @@ describe('schema 映射（内核窄类型）', () => {
         },
         required: ['query'],
       }),
+      NO_ALLOWLIST,
     );
     if ('skipped' in result) throw new Error('不应被剔除');
     expect(result.definition.description).toContain('srv');
@@ -118,7 +130,7 @@ describe('schema 映射（内核窄类型）', () => {
   });
 
   it('required 缺失时兜底为空数组（否则内核校验抛 TypeError）', () => {
-    const result = toToolDefinition('srv', makeTool('t'));
+    const result = toToolDefinition('srv', makeTool('t'), NO_ALLOWLIST);
     if ('skipped' in result) throw new Error('不应被剔除');
     expect(result.definition.parameters.required).toEqual([]);
   });
@@ -131,6 +143,7 @@ describe('schema 映射（内核窄类型）', () => {
         properties: { a: { type: 'string' } },
         required: ['a', 'ghost'],
       }),
+      NO_ALLOWLIST,
     );
     if ('skipped' in result) throw new Error('不应被剔除');
     expect(result.definition.parameters.required).toEqual(['a']);
@@ -146,6 +159,7 @@ describe('schema 映射（内核窄类型）', () => {
           limit: { type: 'number', minimum: 1, maximum: 50 },
         },
       }),
+      NO_ALLOWLIST,
     );
     if ('skipped' in result) throw new Error('不应被剔除');
     expect(result.definition.parameters.properties['mode']?.description).toContain('fast');
@@ -160,6 +174,7 @@ describe('schema 映射（内核窄类型）', () => {
         type: 'object',
         properties: { tags: { type: 'array', items: { type: 'string' } } },
       }),
+      NO_ALLOWLIST,
     );
     if ('skipped' in result) throw new Error('不应被剔除');
     expect(result.definition.parameters.properties['tags']?.items).toEqual({
@@ -188,6 +203,7 @@ describe('schema 映射（内核窄类型）', () => {
           },
         },
       }),
+      NO_ALLOWLIST,
     );
     if ('skipped' in result) throw new Error('不应被剔除');
     const items = result.definition.parameters.properties['items']?.items;
@@ -198,25 +214,78 @@ describe('schema 映射（内核窄类型）', () => {
 
   it('顶层 anyOf / oneOf 剔除并给出原因', () => {
     for (const key of ['anyOf', 'oneOf'] as const) {
-      const result = toToolDefinition('srv', makeTool('t', { [key]: [{ type: 'object' }] }));
+      const result = toToolDefinition(
+        'srv',
+        makeTool('t', { [key]: [{ type: 'object' }] }),
+        NO_ALLOWLIST,
+      );
       expect('skipped' in result).toBe(true);
       if ('skipped' in result) expect(result.skipped.reason).toContain(key);
     }
   });
 
   it('顶层非 object 剔除', () => {
-    const result = toToolDefinition('srv', makeTool('t', { type: 'string' }));
+    const result = toToolDefinition('srv', makeTool('t', { type: 'string' }), NO_ALLOWLIST);
     expect('skipped' in result).toBe(true);
+  });
+});
+
+describe('审批三档（confirmPolicy · 方案 §9 切片 2）', () => {
+  it('allowlist 命中（原名寻址）→ audit：免弹窗但仍过闸落 write-auto 审计', () => {
+    // 原名含特殊字符：清洗后显示名是 mcp__my_server__a_b，但 allowlist 按原名寻址
+    const result = toToolDefinition(
+      'my-server',
+      makeTool('a.b'),
+      allowlist(allowlistKey('my-server', 'a.b')),
+    );
+    if ('skipped' in result) throw new Error('不应被剔除');
+    expect(result.definition.confirmPolicy).toBe('audit');
+  });
+
+  it('allowlist 未命中 → always（默认档：每次调用都弹确认）', () => {
+    const result = toToolDefinition(
+      'my-server',
+      makeTool('a.b'),
+      allowlist(allowlistKey('my-server', 'other')),
+    );
+    if ('skipped' in result) throw new Error('不应被剔除');
+    expect(result.definition.confirmPolicy).toBe('always');
+  });
+
+  it('空 allowlist → 全部 always（fail-closed：读不到合法值不静默放行）', () => {
+    const result = toToolDefinition('srv', makeTool('t'), NO_ALLOWLIST);
+    if ('skipped' in result) throw new Error('不应被剔除');
+    expect(result.definition.confirmPolicy).toBe('always');
+  });
+
+  it('防漂移：按清洗后的显示名写规则不命中（派生名会因撞名后缀漂移，故只认原名键）', () => {
+    // 显示名 = mcp__my_server__a_b；用户误按显示名书写 ⇒ 不得命中，回落 always
+    const result = toToolDefinition('my-server', makeTool('a.b'), allowlist('mcp__my_server__a_b'));
+    if ('skipped' in result) throw new Error('不应被剔除');
+    expect(result.definition.confirmPolicy).toBe('always');
+  });
+
+  it('buildToolBindings 逐工具定格档位（命中 audit / 未命中 always 混排）', () => {
+    const { bindings } = buildToolBindings(
+      'srv',
+      [makeTool('read'), makeTool('write'), makeTool('read-2')],
+      allowlist(allowlistKey('srv', 'read')),
+    );
+    expect(bindings.map((b) => [b.originalName, b.definition.confirmPolicy])).toEqual([
+      ['read', 'audit'],
+      ['write', 'always'],
+      ['read-2', 'always'],
+    ]);
   });
 });
 
 describe('注册与注销', () => {
   it('buildToolBindings 剔除不可映射工具，其余按序派生唯一名', () => {
-    const { bindings, skipped } = buildToolBindings('srv', [
-      makeTool('ok-1'),
-      makeTool('bad', { anyOf: [{ type: 'object' }] }),
-      makeTool('ok-2'),
-    ]);
+    const { bindings, skipped } = buildToolBindings(
+      'srv',
+      [makeTool('ok-1'), makeTool('bad', { anyOf: [{ type: 'object' }] }), makeTool('ok-2')],
+      NO_ALLOWLIST,
+    );
     expect(bindings.map((b) => b.derivedName)).toEqual(['mcp__srv__ok_1', 'mcp__srv__ok_2']);
     expect(bindings.map((b) => b.originalName)).toEqual(['ok-1', 'ok-2']);
     expect(skipped).toHaveLength(1);
@@ -225,7 +294,7 @@ describe('注册与注销', () => {
 
   it('registerServerTools 用原始工具名转发调用；unregisterServerTools 逐个注销', async () => {
     const { registrar, definitions, handlers } = createRegistrar();
-    const { bindings } = buildToolBindings('srv', [makeTool('echo')]);
+    const { bindings } = buildToolBindings('srv', [makeTool('echo')], NO_ALLOWLIST);
     const calls: { name: string; args: Record<string, unknown> }[] = [];
 
     registerServerTools(registrar, bindings, async (originalName, args) => {

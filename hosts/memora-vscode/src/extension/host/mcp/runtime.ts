@@ -11,6 +11,7 @@
  */
 import type { Agent, ILogger } from '@zooique/memora';
 import { McpConnection, type McpServerConfig } from './connectionManager.js';
+import { parseAllowlist } from './policy.js';
 import {
   buildToolBindings,
   registerServerTools,
@@ -31,6 +32,24 @@ interface RunningServer {
 
 /** 运行态集合（模块级单例，与宿主 agentPromise/currentAgent 的单例口径一致） */
 let running: Map<string, RunningServer> | null = null;
+
+/**
+ * `startMcpServers` 的装配期注入（allowlist 必填，日志与版本可选）
+ */
+export interface StartMcpOptions {
+  /**
+   * 免确认 allowlist 原值（`memora.mcpToolAllowlist`，用户设置）
+   *
+   * 原值传入、本函数内解析（parseAllowlist，fail-closed：读不到合法值 = 空集
+   * = 全部逐次确认）；解析一次后按原名寻址下穿给每个工具的档位计算。
+   * **必填**：没有「不传 = 某默认档」的路径——忘了传就是编译错，不靠运行时兜底。
+   */
+  allowlist: readonly string[];
+  /** 内核日志（缺省不记） */
+  logger?: ILogger;
+  /** 扩展版本（写进 MCP clientInfo，仅供 server 遥测） */
+  clientVersion?: string;
+}
 
 /**
  * 校验一条配置是否可启动
@@ -55,16 +74,18 @@ function configProblem(config: McpServerConfig): string | null {
  *
  * @param agent 已 init 的内核 Agent（工具注册面 = agent.tools）
  * @param configs 用户配置（`memora.mcpServers`）
- * @param logger 内核日志（缺省不记）
- * @param clientVersion 扩展版本（写进 MCP clientInfo，仅供 server 遥测）
+ * @param options allowlist + 日志 + 客户端版本（见 StartMcpOptions）
  */
 export async function startMcpServers(
   agent: Agent,
   configs: readonly McpServerConfig[],
-  logger?: ILogger,
-  clientVersion?: string,
+  options: StartMcpOptions,
 ): Promise<void> {
-  // 无配置 = 完全不碰内核工具集（零行为变化）
+  const { allowlist, logger, clientVersion } = options;
+
+  // 无配置 = 完全不碰内核工具集（零行为变化）。
+  // ⚠️ 此早退位于停旧连接之前：当前激活期只装配一次、无热更路径，故不漏停；
+  // 切片 4 做配置热更（含清空配置）必须改为「先停后起」，勿直接复用本早退。
   if (configs.length === 0) return;
 
   await stopMcpServers();
@@ -74,6 +95,9 @@ export async function startMcpServers(
     logger?.warn('[MCP] Agent 工具执行器不可用，跳过 MCP 服务器装配');
     return;
   }
+
+  // allowlist 在此解析一次（fail-closed 语义见 policy.ts），按原名寻址下穿
+  const allowKeys = parseAllowlist(allowlist);
 
   const state = new Map<string, RunningServer>();
   running = state;
@@ -96,7 +120,7 @@ export async function startMcpServers(
     const connection = new McpConnection(config, logger, clientVersion);
     try {
       const tools = await connection.connect();
-      const { bindings, skipped } = buildToolBindings(config.name, tools);
+      const { bindings, skipped } = buildToolBindings(config.name, tools, allowKeys);
       for (const item of skipped) {
         logger?.warn(`[MCP:${config.name}] 工具「${item.toolName}」已跳过：${item.reason}`);
       }

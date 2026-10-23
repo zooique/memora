@@ -134,6 +134,11 @@ function readMcpServers(): McpServerConfig[] {
   return vscode.workspace.getConfiguration('memora').get<McpServerConfig[]>('mcpServers', []);
 }
 
+/** 读取 MCP 工具免确认 allowlist（**唯一读取点**；键格式 / 原名寻址 / fail-closed 见 host/mcp/policy.ts） */
+function readMcpToolAllowlist(): string[] {
+  return vscode.workspace.getConfiguration('memora').get<string[]>('mcpToolAllowlist', []);
+}
+
 /**
  * 对「已装配的 Agent」执行一次配置热更新动作
  *
@@ -260,6 +265,8 @@ function getOrCreateAgent(
       scriptNodePath: scriptNodePath || undefined,
       // MCP server（用户级设置；装配末尾接入并注册工具，失败只影响该 server）
       mcpServers: readMcpServers(),
+      // MCP 工具免确认 allowlist（同名寻址键，按原名；空 = 全部逐次确认）
+      mcpToolAllowlist: readMcpToolAllowlist(),
       extensionVersion: extensionVersion || undefined,
       outputChannel,
     }).catch((err) => {

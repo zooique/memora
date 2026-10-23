@@ -258,6 +258,14 @@ export interface AssembleOptions {
    */
   mcpServers?: readonly McpServerConfig[];
   /**
+   * MCP 工具免确认 allowlist 原值（用户级设置 memora.mcpToolAllowlist）
+   *
+   * 键格式 `mcp__<服务器名>__<工具名>`，按**原名**寻址（非清洗后的显示名）；
+   * 命中 = 该工具免弹窗仍落审计，未命中 = 每次调用都需确认（fail-closed）。
+   * 缺省/空数组 = 全部逐次确认。解析在 host/mcp/runtime.ts（policy.ts）。
+   */
+  mcpToolAllowlist?: readonly string[];
+  /**
    * 扩展版本号（写进 MCP clientInfo，供 server 侧遥测；不参与任何判据）
    *
    * 由 extension.ts 从 `context.extension.packageJSON.version` 读取注入，宿主不另存版本常量。
@@ -309,6 +317,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     scriptNodePath,
     archiveMode,
     mcpServers,
+    mcpToolAllowlist,
     extensionVersion,
   } = options;
 
@@ -459,7 +468,12 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   // 放在 init 之后：工具注册走 agent.tools.registerTool（需要已初始化的执行器），
   // 注册即触发 onToolsChanged → 工具表与 system prompt 自动刷新（宿主不手动重建提示词）。
   // 单个 server 失败只影响它自己；注销出口统一在 host/mcp/runtime.ts（deactivate 调用停机）。
-  await startMcpServers(agent, mcpServers ?? [], logger, extensionVersion);
+  // allowlist 原值传入、runtime 内解析（fail-closed：读不到合法值 = 全部逐次确认）。
+  await startMcpServers(agent, mcpServers ?? [], {
+    allowlist: mcpToolAllowlist ?? [],
+    logger,
+    clientVersion: extensionVersion,
+  });
 
   return agent;
 }

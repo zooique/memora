@@ -67,8 +67,9 @@ describe('真实 stdio 连接（fixtures/fakeMcpServer.mjs）', () => {
       // 3 个工具分 2 页，全部拿到才说明分页循环正确
       expect(tools.map((t) => t.name)).toEqual(['echo-text', 'with-enum', 'always-fails']);
 
-      // 三个都可映射（顶层任何不可映射形态由 toolRegistry 单测覆盖）
-      const { bindings, skipped } = buildToolBindings('fake', tools);
+      // 三个都可映射（顶层任何不可映射形态由 toolRegistry 单测覆盖）；
+      // allowlist 传空集 = 全部逐次确认（本测试不关心审批档位）
+      const { bindings, skipped } = buildToolBindings('fake', tools, new Set<string>());
       expect(bindings.map((b) => b.derivedName)).toEqual([
         'mcp__fake__echo_text',
         'mcp__fake__with_enum',
