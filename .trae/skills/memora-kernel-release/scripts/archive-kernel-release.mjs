@@ -13,17 +13,33 @@
 //   node archive-kernel-release.mjs --version 5.1.0 --ids ID1,ID2,ID3
 //   node archive-kernel-release.mjs --version 5.1.0 --ids ID1 ID2 --apply
 //   node archive-kernel-release.mjs --kind host --version 0.2.0 --ids ID1,ID2 --apply
+//   node archive-kernel-release.mjs --kind host --version 0.2.0 --ids ID1,ID2 --append --batch-note "收尾闭合批（ARCH-DRAIN-1 · 2026-10-23）" --apply
+//
+// ⚠️ --append：归档文件**已存在**时**追加补批**（版本区是混合工作区，发版归档常漏扫混批条目，
+//   补批是常态）。语义 = 保留原文件全部内容，仅把新 ID 并入文件头「迁移 ID」行、在文末追加
+//   「批次引言 + 条目块」；**不碰原「状态」行**（已发布的不被改回「待上架」）。
+//   不加 --append 时对已存在文件**整体覆盖**（仅适用于首次生成，误用会毁掉既有归档）。
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 
 function parseArgs(argv) {
-  const args = { ids: [], apply: false, version: null, kind: 'kernel', repoRoot: process.cwd() };
+  const args = {
+    ids: [],
+    apply: false,
+    version: null,
+    kind: 'kernel',
+    repoRoot: process.cwd(),
+    append: false,
+    batchNote: '',
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--apply') args.apply = true;
     else if (a === '--version') args.version = argv[++i];
     else if (a === '--kind') args.kind = argv[++i];
+    else if (a === '--append') args.append = true;
+    else if (a === '--batch-note') args.batchNote = argv[++i] ?? '';
     else if (a === '--ids') {
       // 支持一次性逗号/空格分隔，也支持多次 --ids
       const v = argv[++i] ?? '';
@@ -112,19 +128,50 @@ for (let i = 0; i < lines.length; i++) {
 }
 
 // 构建归档文件内容（完整收据，按请求顺序）。
-const archiveLines = [
-  `# ${args.version} ${args.kind === 'host' ? '宿主' : '内核'}归档`,
-  '',
-  `> 状态：待上架（发版动作跑完后订正为「已发布」）`,
-  `> 本文件由 scripts/archive-kernel-release.mjs 生成（--kind ${args.kind}）；条目 ID 沿用主台账不改。`,
-  `> 迁移 ID：${toReplace.map((b) => b.id).join(' / ')}`,
-  '',
-  '---',
-  '',
-];
+const entryBlocks = [];
 for (const b of toReplace) {
-  for (let i = b.start; i <= b.end; i++) archiveLines.push(lines[i]);
-  archiveLines.push('');
+  const blk = [];
+  for (let i = b.start; i <= b.end; i++) blk.push(lines[i]);
+  entryBlocks.push(blk.join('\n'));
+}
+
+const useAppend = args.append && existsSync(archivePath);
+let archiveLines;
+if (useAppend) {
+  // 补批：保留原文件，仅更新「迁移 ID」行（并入新 ID），文末追加批次引言 + 条目块。
+  const existing = readFileSync(archivePath, 'utf8').split(/\r?\n/);
+  const sepIdx = existing.findIndex((l) => l.trim() === '---');
+  if (sepIdx === -1) fail(`--append 模式但归档文件无「---」分隔行：${archivePath}`);
+  let migratedLine = existing.findIndex((l) => l.startsWith('> 迁移 ID：'));
+  if (migratedLine === -1) {
+    // 手工头部（无迁移 ID 行）：在「---」前补插一行，并入新 ID。
+    existing.splice(sepIdx, 0, `> 迁移 ID：${toReplace.map((b) => b.id).join(' / ')}`);
+    migratedLine = sepIdx;
+  } else {
+    const prevIds = existing[migratedLine].replace(/^> 迁移 ID：/, '').trim();
+    const allIds = [prevIds, toReplace.map((b) => b.id).join(' / ')].filter(Boolean).join(' / ');
+    existing[migratedLine] = `> 迁移 ID：${allIds}`;
+  }
+  archiveLines = [
+    ...existing,
+    '',
+    '---',
+    '',
+    ...(args.batchNote ? [`## ${args.batchNote}`, ''] : []),
+    ...entryBlocks.map((e) => [e, '']).flat(),
+  ];
+} else {
+  archiveLines = [
+    `# ${args.version} ${args.kind === 'host' ? '宿主' : '内核'}归档`,
+    '',
+    `> 状态：待上架（发版动作跑完后订正为「已发布」）`,
+    `> 本文件由 scripts/archive-kernel-release.mjs 生成（--kind ${args.kind}）；条目 ID 沿用主台账不改。`,
+    `> 迁移 ID：${toReplace.map((b) => b.id).join(' / ')}`,
+    '',
+    '---',
+    '',
+    ...entryBlocks.map((e) => [e, '']).flat(),
+  ];
 }
 
 const archiveText = archiveLines.join('\n');
@@ -142,7 +189,7 @@ for (const b of toReplace) {
 
 if (!args.apply) {
   process.stdout.write(
-    `\n🔍 当前为 dry-run，未落盘。确认无误后加 --apply 执行（建议先 git diff 核对）。\n`,
+    `\n🔍 当前为 dry-run，未落盘${useAppend ? '（--append 补批模式：保留原归档文件，仅并入迁移 ID + 文末追加）' : ''}。确认无误后加 --apply 执行（建议先 git diff 核对）。\n`,
   );
   process.exit(0);
 }
