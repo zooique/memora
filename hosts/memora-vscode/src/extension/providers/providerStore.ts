@@ -16,6 +16,8 @@
  */
 import * as vscode from 'vscode';
 import { createProviderFromConfig } from '@zooique/memora';
+// 配置写入唯一通道（5s 超时兜底：只读/受管设置上 update 可能永不 settle）
+import { writeErrorText, writeSetting, type WriteResult } from '../settingsWrite.js';
 import type { LlmProviderConfig } from '../../shared/protocol.js';
 
 /** configuration 段名（memora.providers） */
@@ -95,13 +97,16 @@ export class ProviderStore {
   /**
    * 将 Provider 列表（不含 apiKey）写入 configuration
    *
+   * 经统一写入通道（带超时上限）：返回结果而不是抛错——
+   * 调用方 save / remove 要把失败转成 `{ok:false, message}` 回执（cfg_result），
+   * 迁移逻辑则据此中止后续步骤（不删源数据）。
+   *
    * @param providers 待持久化的 Provider 列表
+   * @returns 写入结果（失败含超时 / reject 原因）
    */
-  private async writeConfig(providers: LlmProviderConfig[]): Promise<void> {
+  private async writeConfig(providers: LlmProviderConfig[]): Promise<WriteResult> {
     const stripped = providers.map(({ apiKey: _apiKey, ...rest }) => rest);
-    await vscode.workspace
-      .getConfiguration(CFG_SECTION)
-      .update(CFG_PROVIDERS, stripped, vscode.ConfigurationTarget.Global);
+    return writeSetting(CFG_PROVIDERS, stripped);
   }
 
   /**
@@ -248,7 +253,10 @@ export class ProviderStore {
       next = [...providers, { ...trimmed, displayName: trimmed.displayName || trimmed.name }];
     }
 
-    await this.writeConfig(next);
+    // 写入失败（含只读/受管设置的「永不 settle」超时）⇒ 不写 apiKey、返回回执：
+    // 配置没落盘却把 key 存进 SecretStorage，会让「UI 有服务商、重启后消失」且留下孤儿密钥
+    const written = await this.writeConfig(next);
+    if (!written.ok) return { ok: false, message: writeErrorText('服务商配置', written) };
 
     // 写 apiKey：编辑且留空 → 保留原值（不覆盖）；否则写入新值
     if (!(isEditing && !trimmed.apiKey.trim())) {
@@ -268,11 +276,16 @@ export class ProviderStore {
       return { ok: false, message: '不能删除当前激活的服务商，请先切换到其他服务商' };
     }
     const providers = this.readConfig().filter((p) => p.name !== name);
-    await this.writeConfig(providers);
+    // 配置没删掉就不能删 apiKey：否则配置里还留着服务商、密钥却没了（下次激活必然失败）
+    const written = await this.writeConfig(providers);
+    if (!written.ok) return { ok: false, message: writeErrorText('服务商配置', written) };
     await this.secrets.delete(providerSecretKey(name));
     // 删除的若是后台模型 Provider，清除后台通道引用（避免悬空指向不存在的 name）
     if (name === this.getBackgroundName()) {
-      await this.setBackground('');
+      const cleared = await this.setBackground('');
+      // 删除本身已生效（配置 + 密钥都清了）⇒ 清引用失败不反向否决结果，但必须留痕：
+      // 后台通道会悬空指向不存在的 name（读取侧回落前台，功能不坏，但配置里是脏数据）
+      if (!cleared.ok) console.warn(`Memora 后台模型引用清理失败：${cleared.message}`);
     }
     return { ok: true };
   }
@@ -286,9 +299,9 @@ export class ProviderStore {
   async setActive(name: string): Promise<{ ok: boolean; message?: string }> {
     const exists = this.readConfig().some((p) => p.name === name);
     if (!exists) return { ok: false, message: `服务商 "${name}" 不存在` };
-    await vscode.workspace
-      .getConfiguration(CFG_SECTION)
-      .update(CFG_ACTIVE, name, vscode.ConfigurationTarget.Global);
+    // 激活态也是用户级配置：经统一写入通道（带 5s 上限），失败回执而不是挂死
+    const written = await writeSetting(CFG_ACTIVE, name);
+    if (!written.ok) return { ok: false, message: writeErrorText('服务商激活状态', written) };
     return { ok: true };
   }
 
@@ -298,11 +311,13 @@ export class ProviderStore {
    * 用于 handleSetProvider 热切换失败时，若原本无激活 Provider（靠 env 装配），
    * 需把持久化激活态一并清空，否则 UI 显示新 provider 已激活但 agent 仍用 env，
    * 造成功能↔UI 不一致。
+   *
+   * @returns 成功 {ok:true}；写失败 {ok:false, message}（回滚路径据此并入错误回执，不静默）
    */
-  async clearActive(): Promise<void> {
-    await vscode.workspace
-      .getConfiguration(CFG_SECTION)
-      .update(CFG_ACTIVE, undefined, vscode.ConfigurationTarget.Global);
+  async clearActive(): Promise<{ ok: boolean; message?: string }> {
+    const written = await writeSetting(CFG_ACTIVE, undefined);
+    if (!written.ok) return { ok: false, message: writeErrorText('服务商激活状态', written) };
+    return { ok: true };
   }
 
   /**
@@ -320,13 +335,15 @@ export class ProviderStore {
    * 设置后台模型 Provider 的 name（多 Provider 路由）
    *
    * name 为空字符串表示「清除后台独立配置」，后台任务回退到与实时对话相同 Provider。
+   * 经统一写入通道（带 5s 上限）：写失败回执，调用方据此**不**做热切换（避免切到未落盘的配置）。
    *
    * @param name 后台 Provider 别名（空串清除）
+   * @returns 成功 {ok:true}；写失败 {ok:false, message}
    */
-  async setBackground(name: string): Promise<void> {
-    await vscode.workspace
-      .getConfiguration(CFG_SECTION)
-      .update(CFG_BACKGROUND, name || undefined, vscode.ConfigurationTarget.Global);
+  async setBackground(name: string): Promise<{ ok: boolean; message?: string }> {
+    const written = await writeSetting(CFG_BACKGROUND, name || undefined);
+    if (!written.ok) return { ok: false, message: writeErrorText('后台模型设置', written) };
+    return { ok: true };
   }
 
   /**
@@ -403,15 +420,37 @@ export class ProviderStore {
     const globalProviders = provInspect?.globalValue ?? [];
     const names = new Set(globalProviders.map((p) => p.name));
     const merged = [...globalProviders, ...wsProviders.filter((p) => !names.has(p.name))];
+    // 写失败即中止：工作区残留必须先并入 Global 再清，否则清完就真丢了（用户配置无副本可恢复）
     if (merged.length !== globalProviders.length) {
-      await cfg.update(CFG_PROVIDERS, merged, vscode.ConfigurationTarget.Global);
+      const written = await writeSetting(CFG_PROVIDERS, merged);
+      if (!written.ok) {
+        console.warn(`Memora 旧 Provider 配置迁移中止：${writeErrorText('服务商配置', written)}`);
+        return;
+      }
     }
     if (wsActive !== undefined && activeInspect?.globalValue === undefined) {
-      await cfg.update(CFG_ACTIVE, wsActive, vscode.ConfigurationTarget.Global);
+      const written = await writeSetting(CFG_ACTIVE, wsActive);
+      if (!written.ok) {
+        console.warn(
+          `Memora 旧 Provider 激活态迁移中止：${writeErrorText('服务商激活状态', written)}`,
+        );
+        return;
+      }
     }
     // 清除工作区级残留（避免覆盖 Global 新配置）
-    await cfg.update(CFG_PROVIDERS, undefined, vscode.ConfigurationTarget.Workspace);
-    await cfg.update(CFG_ACTIVE, undefined, vscode.ConfigurationTarget.Workspace);
+    const clearedProviders = await writeSetting(
+      CFG_PROVIDERS,
+      undefined,
+      vscode.ConfigurationTarget.Workspace,
+    );
+    const clearedActive = await writeSetting(
+      CFG_ACTIVE,
+      undefined,
+      vscode.ConfigurationTarget.Workspace,
+    );
+    if (!clearedProviders.ok || !clearedActive.ok) {
+      console.warn('Memora 工作区级旧 Provider 配置清理未完成：设置文件可能只读或被占用');
+    }
   }
 
   /**
@@ -435,10 +474,20 @@ export class ProviderStore {
       const target = providers.find((p) => p.contextWindow === undefined);
       if (target) {
         target.contextWindow = old;
-        await this.writeConfig(providers);
+        const written = await this.writeConfig(providers);
+        // 新值没落盘就绝不能删旧键：否则用户已填的窗口配置凭空消失（无副本可恢复）
+        if (!written.ok) {
+          console.warn(
+            `Memora 旧 maxContextTokens 迁移中止：${writeErrorText('服务商配置', written)}`,
+          );
+          return;
+        }
       }
     }
     // 清除旧全局设置（不作真理源，避免与 per-LLM contextWindow 双源）
-    await cfg.update('maxContextTokens', undefined, vscode.ConfigurationTarget.Global);
+    const cleared = await writeSetting('maxContextTokens', undefined);
+    if (!cleared.ok) {
+      console.warn(`Memora 旧 maxContextTokens 清理未完成：${writeErrorText('旧设置', cleared)}`);
+    }
   }
 }

@@ -2657,20 +2657,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       }
       await this.pushProviders();
     } catch (err) {
-      // 切换未生效：回滚激活态 + 错误提示（不误导用户）
+      // 切换未生效：回滚激活态 + 错误提示（不误导用户）。
       // prev 存在 → 还原原激活 Provider；prev 为 undefined（原本无激活、靠 env 装配，
       // 见 llmConfig 回退路径）→ 清空激活态，否则 UI 显示新 provider 已激活但 agent
       // 仍用 env，造成功能↔UI 不一致。
-      if (prev) {
-        await this._providerStore.setActive(prev);
-      } else {
-        await this._providerStore.clearActive();
-      }
+      // 回滚写失败不掩盖原始错误：并入同一条回执，避免「界面停在错状态却无人知晓」。
+      const rollback = prev
+        ? await this._providerStore.setActive(prev)
+        : await this._providerStore.clearActive();
       await this.pushProviders();
       this.post({
         type: 'notice',
         level: 'error',
-        message: toNoticeText(err),
+        message: rollback.ok
+          ? toNoticeText(err)
+          : `${toNoticeText(err)}（激活态回滚也失败：${rollback.message ?? '原因未记录'}）`,
       });
     }
   }

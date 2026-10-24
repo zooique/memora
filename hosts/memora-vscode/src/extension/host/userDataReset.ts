@@ -36,6 +36,8 @@ import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { providerSecretKey, CFG_SECTION, CFG_PROVIDERS } from '../providers/providerStore.js';
+// 配置写入唯一通道（带 5s 超时兜底：只读/受管设置上 update 可能永不 settle ⇒ 初始化永久卡住）
+import { writeErrorText, writeSetting } from '../settingsWrite.js';
 import {
   USER_STATE_KEY_PREFIX,
   USER_SKILLS_DIR_NAME,
@@ -156,10 +158,12 @@ export async function resetUserData(scope: UserDataResetScope): Promise<ResetRep
   }
 
   // ② 用户级 settings：派生清单逐键清 Global 值（K4：第三参恒 Global，
-  //    工作区 .vscode/settings.json 一字节不碰）
-  const cfg = vscode.workspace.getConfiguration(CFG_SECTION);
+  //    工作区 .vscode/settings.json 一字节不碰）。
+  //    经统一写入通道（带 5s 上限）：只读/受管设置上 update 可能永不 settle，
+  //    否则初始化流程会永久卡住、用户看不到任何回执。失败按本函数契约抛出。
   for (const fullKey of listUserSettingKeys(scope.packageJson)) {
-    await cfg.update(toRelativeSettingKey(fullKey), undefined, vscode.ConfigurationTarget.Global);
+    const written = await writeSetting(toRelativeSettingKey(fullKey), undefined);
+    if (!written.ok) throw new Error(writeErrorText(`用户级设置「${fullKey}」`, written));
     report.settingsCleared.push(fullKey);
   }
 

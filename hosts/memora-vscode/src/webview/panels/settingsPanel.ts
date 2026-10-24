@@ -45,6 +45,8 @@ import {
 import { applyMcpWrite, type McpOpsDeps } from './mcpServerOps.js';
 // 配置原值 = 面板列表的「有哪些」，只经唯一读取点（禁就地 getConfiguration，判据散点）
 import { readMcpServers, readMcpToolAllowlist } from '../../extension/mcpConfig.js';
+// 配置写入唯一通道（5s 超时兜底：只读/受管设置上 update 可能永不 settle ⇒ 静默吞输入）
+import { writeErrorText, writeSetting } from '../../extension/settingsWrite.js';
 // tab 标识 / 顺序 / 可见名唯一真源：本文件此前手写的两处联合都漏了 'security'
 // （⇒ 安全页无法从任何命令跳转过去），不再手写，统一取这一份
 import type { SettingsTab } from '../../shared/settingsTabs.js';
@@ -908,8 +910,17 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    * 成功后刷新配置面板（后台模型下拉回显）。
    */
   private async setBackgroundProvider(name: string): Promise<void> {
+    // 先落盘再热切换：写失败即回执并中止（避免「运行时切了、下次装配又变回去」）
+    const written = await this.store.setBackground(name);
+    if (!written.ok) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: written.message ?? '切换后台模型失败（原因未记录）',
+      });
+      return;
+    }
     try {
-      await this.store.setBackground(name);
       const agent = await this.ensureAgent();
       if (agent) {
         // 读刚持久化的选择创建后台 Provider（空 → undefined → 传给内核 null 回退前台）
@@ -1352,23 +1363,22 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         ? base
         : [...base, name]
       : base.filter((n) => n !== name);
-    try {
-      // 唯一动作：整组写回用户级配置；生效与 UI 刷新交给既有配置监听接管
-      await vscode.workspace
-        .getConfiguration('memora')
-        .update('disabledSkills', next, vscode.ConfigurationTarget.Global);
-      this.post({
-        type: 'notice',
-        level: 'info',
-        message: `已${disabled ? '禁用' : '启用'}技能「${name}」`,
-      });
-    } catch (err) {
+    // 唯一动作：整组写回用户级配置；生效与 UI 刷新交给既有配置监听接管。
+    // 经统一写入通道（带 5s 上限）：只读/受管设置上 update 可能永不 settle，否则下方提示永不执行。
+    const written = await writeSetting('disabledSkills', next);
+    if (!written.ok) {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `设置技能禁用失败：${toNoticeText(err)}`,
+        message: writeErrorText('技能禁用设置', written),
       });
+      return;
     }
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `已${disabled ? '禁用' : '启用'}技能「${name}」`,
+    });
   }
 
   /**
@@ -1542,11 +1552,18 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    * paths = 完整用户额外数组（不含 projectPath 基准根）。
    */
   private async setAllowedPaths(paths: string[]): Promise<void> {
+    // 1. 持久化到用户级设置（机器级信任；projectPath 基准根恒在，不在此数组内）。
+    //    经统一写入通道（带 5s 上限）：写不进去就回执并中止，不热更一份没落盘的偏好。
+    const written = await writeSetting('allowedPaths', paths);
+    if (!written.ok) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: writeErrorText('允许路径设置', written),
+      });
+      return;
+    }
     try {
-      // 1. 持久化到用户级设置（机器级信任；projectPath 基准根恒在，不在此数组内）
-      await vscode.workspace
-        .getConfiguration('memora')
-        .update('allowedPaths', paths, vscode.ConfigurationTarget.Global);
       // 2. 热更新已装配的 Agent（SecurityGuard 运行时切换）
       const agent = await this.ensureAgent();
       if (agent?.security) {
@@ -1600,23 +1617,22 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'notice', level: 'error', message: `无效的搜索引擎：${engine}` });
       return;
     }
-    try {
-      await vscode.workspace
-        .getConfiguration('memora')
-        .update('searchEngine', engine, vscode.ConfigurationTarget.Global);
-      this.post({ type: 'search_engine_status', engine });
-      this.post({
-        type: 'notice',
-        level: 'info',
-        message: `已切换网页搜索引擎：${engine}（重载窗口后生效）`,
-      });
-    } catch (err) {
+    // 经统一写入通道（带 5s 上限）：失败（含不 settle 超时）即回执，不回显未落盘的选择
+    const written = await writeSetting('searchEngine', engine);
+    if (!written.ok) {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `设置搜索引擎失败：${toNoticeText(err)}`,
+        message: writeErrorText('搜索引擎设置', written),
       });
+      return;
     }
+    this.post({ type: 'search_engine_status', engine });
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `已切换网页搜索引擎：${engine}（重载窗口后生效）`,
+    });
   }
 
   /** 加载并推送当前搜索引擎选择（settings 视图 ready 时调用） */
@@ -1655,11 +1671,18 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.loadArchiveModePreference();
       return;
     }
-    // 先落盘再热更新：用户偏好是持久真相，运行时切换是 hot-path 优化
-    // （失败不回滚偏好——那会让「保存了但下次装配又变回去」，更怪）。
-    await vscode.workspace
-      .getConfiguration('memora')
-      .update('archiveMode', mode, vscode.ConfigurationTarget.Global);
+    // 先落盘再热更新：用户偏好是持久真相，运行时切换是 hot-path 优化。
+    // 落盘失败 ⇒ 偏好仍是旧值：回执 + 回推持久值复位下拉，且不做热更新（假成功回归锚点）。
+    const written = await writeSetting('archiveMode', mode);
+    if (!written.ok) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: writeErrorText('归档模式设置', written),
+      });
+      this.loadArchiveModePreference();
+      return;
+    }
     // ⚠ 初值必须 false：「已应用」只由「内核真的切了」这一个事实决定。旧实现初值 true
     // 且把 `if (agent)` 的空分支也算成功 ⇒ agent 未就绪时报「已切换」而运行时零动作。
     let applied = false;
@@ -1759,23 +1782,18 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         return;
       }
     }
-    try {
-      await vscode.workspace
-        .getConfiguration('memora')
-        .update('customSearchEngines', engines, vscode.ConfigurationTarget.Global);
-      this.post({ type: 'custom_search_engines_status', engines });
-      this.post({
-        type: 'notice',
-        level: 'info',
-        message: `已保存 ${engines.length} 个自定义搜索引擎（重载窗口后生效）`,
-      });
-    } catch (err) {
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: `保存自定义搜索引擎失败：${toNoticeText(err)}`,
-      });
+    // 经统一写入通道（带 5s 上限）：写不进去即回执 + 回推已持久化清单（复选回滚单点 = rejectCustomEngines）
+    const written = await writeSetting('customSearchEngines', engines);
+    if (!written.ok) {
+      this.rejectCustomEngines(writeErrorText('自定义搜索引擎设置', written));
+      return;
     }
+    this.post({ type: 'custom_search_engines_status', engines });
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `已保存 ${engines.length} 个自定义搜索引擎（重载窗口后生效）`,
+    });
   }
 
   /** 加载并推送自定义搜索引擎清单（settings 视图 ready 时先于 search_engine_status 调用） */
