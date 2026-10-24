@@ -3,7 +3,8 @@
  *
  * 不引入真实 VS Code 运行时：用 vi.mock 提供内存版 workspace.getConfiguration + SecretStorage。
  * 覆盖 per-LLM contextWindow 护栏、迁移逻辑、secrets 写面（SEC-WRITE-1）、读面
- * （SEC-READ-1）与「在册无 key」第三态（SEC-READ-2）收口。
+ * （SEC-READ-1）与「在册无 key」第三态（SEC-READ-2）收口，以及运行面触达面
+ * 收口（getActive/getBackground 只读目标条一个 key，不再经 list() 读全部）。
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -428,25 +429,41 @@ describe('ProviderStore 密钥读取通道（secretsAccess 收口）', () => {
     h.store['providers'] = [P_A, P_B];
     h.store['activeProvider'] = 'alpha';
     secretsStore['memora.provider.alpha.apiKey'] = 'sk-alpha-real';
-    // 读取顺序 alpha→beta：alpha 正常、beta 失败
-    secrets.get.mockImplementationOnce(async (k: string) => secretsStore[k] ?? null);
-    secrets.get.mockImplementationOnce(() => Promise.reject(new Error('凭证被占用')));
+    // 按 key 分流替身（非顺序队列）：beta 坏不影响 alpha——
+    // 直读目标条后本路径只触达 alpha 一次，坏 beta 压根不会被读
+    secrets.get.mockImplementation(async (k: string) => {
+      if (k === 'memora.provider.beta.apiKey') {
+        return Promise.reject(new Error('凭证被占用'));
+      }
+      return secretsStore[k] ?? null;
+    });
 
     const active = await store.getActive();
 
     // 此前任一坏 key 都会让整个 list throw ⇒ 活跃 key 完好也用不了；现在只认激活条
     expect(active?.apiKey).toBe('sk-alpha-real');
     expect(active?.keyError).toBeUndefined();
+    // 触达面钉子：只读激活条一个 key，非激活条的坏 key 不会被触碰
+    expect(secrets.get).toHaveBeenCalledTimes(1);
+    expect(secrets.get).toHaveBeenCalledWith('memora.provider.alpha.apiKey');
   });
 
   it('getBackground：后台条 get 拒绝 → 抛语义标签错误（不静默回落前台）', async () => {
     h.store['providers'] = [P_A, P_B];
     h.store['backgroundProvider'] = 'beta';
     secretsStore['memora.provider.alpha.apiKey'] = 'sk-alpha-real';
-    secrets.get.mockImplementationOnce(async (k: string) => secretsStore[k] ?? null);
-    secrets.get.mockImplementationOnce(() => Promise.reject(new Error('凭证被占用')));
+    // 按 key 分流替身：仅 beta 读失败（意图 = 后台条本身坏，与 alpha 无关）
+    secrets.get.mockImplementation(async (k: string) => {
+      if (k === 'memora.provider.beta.apiKey') {
+        return Promise.reject(new Error('凭证被占用'));
+      }
+      return secretsStore[k] ?? null;
+    });
 
     await expect(store.getBackground()).rejects.toThrow('API Key「beta」读取 失败：凭证被占用');
+    // 触达面钉子：只读后台条，前台 alpha 的 key 不被触碰
+    expect(secrets.get).toHaveBeenCalledTimes(1);
+    expect(secrets.get).toHaveBeenCalledWith('memora.provider.beta.apiKey');
   });
 
   it('getBackground：后台 key 正常 → 返回含真实 key 的完整 config', async () => {
@@ -465,6 +482,17 @@ describe('ProviderStore 密钥读取通道（secretsAccess 收口）', () => {
     secrets.get.mockRejectedValue(new Error('钥匙串整体坏'));
 
     // 没有激活条时压根不读 key——与「激活条读失败」是两条路径
+    expect(await store.getActive()).toBeUndefined();
+    expect(secrets.get).not.toHaveBeenCalled();
+  });
+
+  it('getActive：激活名悬空（配置里没有该条）→ undefined，零触达钥匙串', async () => {
+    h.store['providers'] = [P_A];
+    h.store['activeProvider'] = 'ghost'; // 配置在册里没有的 name（如 userDataReset 中间态残留）
+    secrets.get.mockRejectedValue(new Error('钥匙串整体坏'));
+
+    // 与「无激活」同为早退路径：find 不到目标条即返回，不在钥匙串里白读一遍
+    // （此前走 list() 会把全部 key 读一遍才得出 undefined——触达面纯浪费）
     expect(await store.getActive()).toBeUndefined();
     expect(secrets.get).not.toHaveBeenCalled();
   });

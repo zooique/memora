@@ -131,6 +131,32 @@ export class ProviderStore {
   }
 
   /**
+   * 单条 key 读取失败的文案（list / listMasked / 运行面共用的唯一派生点）
+   *
+   * 此前 list 与 listMasked 各写一份同款 `secretErrorText(...)` 调用——两处模板
+   * 漂移会让同一故障在面板与运行路径显示不同原因（判据散点）。收口成私有单点，
+   * 与 secretsAccess 的 secretErrorText / secretMissingText 组成三层派生链。
+   */
+  private keyReadError(name: string, r: { timedOut: boolean; reason: string }): string {
+    return secretErrorText(`API Key「${name}」读取`, r);
+  }
+
+  /**
+   * 读取单条 Provider（含真实 apiKey）——list 与运行面共用的 per-item 通道
+   *
+   * 读失败**逐条留 keyError**（不抛）：展示面（listMasked）要靠它把完整列表
+   * 渲染出来；运行面（readRuntimeEntry）再决定抛不抛。
+   *
+   * @param p 不含 apiKey 的 Provider 配置（readConfig 的产物）
+   * @returns 完整 config（apiKey 为真实值；keyError 非空 = 该条 key 读取失败）
+   */
+  private async readOne(p: Omit<LlmProviderConfig, 'apiKey'>): Promise<LlmProviderConfig> {
+    const r = await this.readApiKey(p.name);
+    if (r.ok) return { ...p, apiKey: r.value ?? '' };
+    return { ...p, apiKey: '', keyError: this.keyReadError(p.name, r) };
+  }
+
+  /**
    * 列出全部 Provider（含真实 apiKey）
    *
    * 逐个读取 key 并**逐条捕获失败**（禁 Promise.all 一 reject 全 throw）：
@@ -141,13 +167,7 @@ export class ProviderStore {
    */
   async list(): Promise<LlmProviderConfig[]> {
     const configs = this.readConfig();
-    return Promise.all(
-      configs.map(async (p) => {
-        const r = await this.readApiKey(p.name);
-        if (r.ok) return { ...p, apiKey: r.value ?? '' };
-        return { ...p, apiKey: '', keyError: secretErrorText(`API Key「${p.name}」读取`, r) };
-      }),
-    );
+    return Promise.all(configs.map((p) => this.readOne(p)));
   }
 
   /**
@@ -167,7 +187,7 @@ export class ProviderStore {
       configs.map(async (p) => {
         const r = await this.readApiKey(p.name);
         if (r.ok) return { ...p, apiKey: '', maskedKey: maskKey(r.value ?? '') };
-        return { ...p, apiKey: '', keyError: secretErrorText(`API Key「${p.name}」读取`, r) };
+        return { ...p, apiKey: '', keyError: this.keyReadError(p.name, r) };
       }),
     );
   }
@@ -182,32 +202,50 @@ export class ProviderStore {
   }
 
   /**
+   * 读取运行面目标条（getActive / getBackground 共用的唯一通道）
+   *
+   * 与 list 的关键差异：**只读目标条一个 key**。此前两方法走 `list()` 读全部
+   * Provider 的 key——激活/后台名已知，其余 N-1 个 key 的触达纯属浪费，且
+   * 扩大 SecretStorage 暴露面（不需要的秘密不读，与 SEC 族一贯立场一致）。
+   * 跨 Provider 污染（H3）由「只读目标条」结构性保证，不再依赖 list 的
+   * 逐条留痕事后过滤。
+   *
+   * 三条拒绝路径（顺序即优先级，测试逐条钉死）：
+   *   1. 目标 name 不在配置中 ⇒ undefined（无激活/悬空引用的既有语义，不抛）；
+   *   2. 该条 key 读取失败（keyError）⇒ 抛语义标签错误——状态未知比没有 key
+   *      更严重，先报「读取 失败」；
+   *   3. 读成功但从未存过（apiKey === ''）⇒ 抛「未存储」（SEC-READ-2 第三态）：
+   *      在册服务商本应有 key，空即异常来路（半完成态残留 / userDataReset
+   *      中间态 / 设置同步不含密钥 / 凭证被清理）。空 key 打到服务端只会报一个
+   *      与真实原因无关的 401——那是「用错原因解释失败」。
+   *
+   * @param name 目标 Provider 别名（调用方已确认非空）
+   * @returns 目标条完整 config；不存在时 undefined
+   */
+  private async readRuntimeEntry(name: string): Promise<LlmProviderConfig | undefined> {
+    const target = this.readConfig().find((p) => p.name === name);
+    if (!target) return undefined;
+    const entry = await this.readOne(target);
+    if (entry.keyError) throw new Error(entry.keyError);
+    if (!entry.apiKey) {
+      throw new Error(secretMissingText(`API Key「${name}」`));
+    }
+    return entry;
+  }
+
+  /**
    * 获取当前激活的 Provider（含真实 apiKey）
    *
-   * 激活 Provider 的 key 读取失败 ⇒ **抛出语义标签错误**（不返回空 key 的 config）：
-   * 空 key 会让 LLM 请求带着无效密钥打到服务端，报一个与真实原因无关的 401——
-   * 那是「用错原因解释失败」。抛出后由上层（chat runFlow / 命令）转成可见错误消息，
-   * 契约与本次改动前一致（此前是裸 throw），只是消息可读。
-   * 非激活 Provider 的 key 读取失败不影响本路径（list 已逐条留痕，此处只认激活条）。
-   *
-   * 第三态（SEC-READ-2）：读成功但**从未存过**（`apiKey === ''` 且无 keyError）。
-   * 展示面这是「正常空态」（新用户没配 key 不配报错，listMasked 钉子），但**配置
-   * 在册的服务商**本应有 key（保存契约：新增必填 / 编辑保留 / remove 先配置后密钥）——
-   * 还空着只剩异常来路：save 半完成态残留 / userDataReset 中间态 / 设置同步不含
-   * 密钥 / 凭证被清理。同样抛，文案区分「未存储」与「读取 失败」两种状态。
+   * 只读激活条一个 key（readRuntimeEntry）：非激活 Provider 的坏 key 影响不了
+   * 本路径。三条拒绝路径与文案见 {@link readRuntimeEntry}；无激活 Provider
+   * 时返回 undefined（环境变量装配场景，chatPanel 据此回落 env 分支）。
    *
    * @returns 激活的完整 Provider 配置（无激活或不存在时 undefined）
    */
   async getActive(): Promise<LlmProviderConfig | undefined> {
     const name = this.getActiveName();
     if (!name) return undefined;
-    const all = await this.list();
-    const active = all.find((p) => p.name === name);
-    if (active?.keyError) throw new Error(active.keyError);
-    if (active && !active.apiKey) {
-      throw new Error(secretMissingText(`API Key「${name}」`));
-    }
-    return active;
+    return this.readRuntimeEntry(name);
   }
 
   /**
@@ -415,23 +453,16 @@ export class ProviderStore {
    * 获取后台 Provider 的完整配置（含真实 apiKey）
    *
    * 未配置后台通道（getBackgroundName 为空）或该 name 不存在时返回 undefined。
-   * 后台 Provider 的 key 读取失败 ⇒ 抛出语义标签错误（与 getActive 同构）：
-   * 静默回落前台 = 后台任务悄悄用了另一个模型（用户不可见的降级），故必须抛。
-   * 第三态同 getActive（SEC-READ-2）：在册但从未存过 ⇒ 抛「未存储」，
-   * 空 key 的后台 Provider 一样会打出无关 401。
+   * 与 getActive 共用 {@link readRuntimeEntry}：只读后台条一个 key，
+   * 读失败抛语义标签错误（不静默回落前台——静默回落 = 后台任务悄悄用了
+   * 另一个模型，用户不可见的降级），第三态（SEC-READ-2）同样抛「未存储」。
    *
    * @returns 后台 Provider config；无独立后台配置返回 undefined
    */
   async getBackground(): Promise<LlmProviderConfig | undefined> {
     const name = this.getBackgroundName();
     if (!name) return undefined;
-    const all = await this.list();
-    const background = all.find((p) => p.name === name);
-    if (background?.keyError) throw new Error(background.keyError);
-    if (background && !background.apiKey) {
-      throw new Error(secretMissingText(`API Key「${name}」`));
-    }
-    return background;
+    return this.readRuntimeEntry(name);
   }
 
   /**
