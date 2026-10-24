@@ -50,6 +50,34 @@ export function allowlistKey(serverName: string, toolName: string): string {
 }
 
 /**
+ * server 级免确认的通配段（工具位）
+ *
+ * 与 Claude Code 的 MCP 规则同形（`mcp__<server>__*`），用户零学习成本。
+ * 刻意**只通配工具位、不通配 server 位**：`mcp__*` 这种"一次放行所有 server"
+ * 的写法不提供——新增一台 server 就自动免确认，等于把「外部能力可信」这件事
+ * 从逐台判断退化成一次性全局判断（本仓不做的正是这类"图省事的全局开关"）。
+ */
+const SERVER_WILDCARD = '*';
+
+/**
+ * 构造 server 级寻址键（`mcp__<server>__*`）：命中即该 server 全部工具免确认
+ *
+ * 为什么需要它：工具级键要逐条写，一台 server 十几个工具就是十几次点选——这是
+ * 「MCP 每次都弹」的真实摩擦来源。server 级把粒度抬到"这台 server 我信"，一次勾选。
+ *
+ * 与工具级键的关系：**同一张 allowlist、同一套寻址**，只是工具位换成通配段，
+ * 不新增第二份存储、不新增第二档策略（判据仍只在 {@link resolveConfirmPolicy}）。
+ *
+ * ⚠️ 已知边界：工具原名**恰好**是 `*` 时，本键与 `allowlistKey(server, '*')` 同形，
+ * 两者语义都是"免确认"，撞形无害（不产生"写了 A 却放行 B"的越权）。
+ *
+ * @param serverName server 原名（配置里的 name）
+ */
+export function serverAllowlistKey(serverName: string): string {
+  return `${ALLOWLIST_KEY_PREFIX}${serverName}__${SERVER_WILDCARD}`;
+}
+
+/**
  * 解析 allowlist 配置（fail-closed）
  *
  * 输入是用户设置原值（VS Code 配置可被 settings.json 绕过 schema），故按
@@ -75,7 +103,12 @@ export function parseAllowlist(raw: unknown): McpToolAllowlist {
  *
  * 命中 allowlist ⇒ `'audit'`（过闸自动放行，仍落 write-auto 审计——免弹窗
  * 不免审计）；未命中 ⇒ `'always'`（每次调用都弹确认）。无「全部放行」档：
- * allowlist 必须逐条显式书写（反「自动化默认」，方案 §4.3）。
+ * allowlist 必须显式书写（反「自动化默认」，方案 §4.3）。
+ *
+ * **命中判据 = 工具级 ∪ server 级**（2026-10-25 生长）：
+ *   - 工具级 `mcp__<server>__<tool>`：逐工具放行（细粒度）；
+ *   - server 级 `mcp__<server>__*`：整台放行（一次勾选，消掉逐条点选的摩擦）。
+ * 两级共用同一张 allowlist、同一个 `has` 判据，**不新增第二档策略、不新增存储**。
  *
  * @param serverName server 原名
  * @param toolName 工具原名
@@ -86,5 +119,8 @@ export function resolveConfirmPolicy(
   toolName: string,
   allowlist: McpToolAllowlist,
 ): McpConfirmPolicy {
-  return allowlist.has(allowlistKey(serverName, toolName)) ? 'audit' : 'always';
+  return allowlist.has(allowlistKey(serverName, toolName)) ||
+    allowlist.has(serverAllowlistKey(serverName))
+    ? 'audit'
+    : 'always';
 }

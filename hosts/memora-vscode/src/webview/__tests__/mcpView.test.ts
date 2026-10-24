@@ -76,6 +76,8 @@ describe('统计条口径（汇总不得与卡片分家）', () => {
       enabled: true,
       toolCount,
       tools: [],
+      serverAllowKey: `mcp__${state}__*`,
+      serverAllowlisted: false,
     }) as McpServerStatusDto;
 
   /** 无隐藏条目（绝大多数场景；隐藏场景单列用例） */

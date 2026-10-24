@@ -321,6 +321,9 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
   /** 渲染工具行（只在 running 态有内容） */
   function toolRows(server: McpServerStatusDto): string {
     if (server.tools.length === 0) return '';
+    // 整台开关打开 ⇒ 单工具勾显示**生效态**（已勾）且禁用：此时取消单勾没有意义
+    // （实际仍由整台键放行），给一个能点但没效果的勾选框就是「点了没反应」。
+    const covered = server.serverAllowlisted;
     return `<ul class="mcp-tool-list">${server.tools
       .map((tool) => {
         const renamed = tool.derivedName !== tool.originalName;
@@ -329,13 +332,30 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
             <code>${escapeHtml(tool.derivedName)}</code>
             ${renamed ? `<span class="mcp-tool-orig">（工具原名 ${escapeHtml(tool.originalName)}）</span>` : ''}
           </div>
-          <label class="mcp-allow-toggle" title="免确认：不再弹窗，但每次调用仍写审计">
-            <input type="checkbox" class="mcp-allow-check" data-allow-key="${escapeHtml(tool.allowKey)}" aria-label="${escapeHtml(tool.derivedName)} 免确认" ${tool.allowlisted ? 'checked' : ''} />
+          <label class="mcp-allow-toggle" title="${covered ? '已由「整台免确认」覆盖，取消请关掉整台开关' : '免确认：不再弹窗，但每次调用仍写审计'}">
+            <input type="checkbox" class="mcp-allow-check" data-allow-key="${escapeHtml(tool.allowKey)}" aria-label="${escapeHtml(tool.derivedName)} 免确认" ${tool.allowlisted ? 'checked' : ''}${covered ? ' disabled' : ''} />
             <span>免确认</span>
           </label>
         </li>`;
       })
       .join('')}</ul>`;
+  }
+
+  /**
+   * 整台免确认开关（只在有工具明细的卡片上出现）
+   *
+   * 为什么有条件：没有工具可放行的台（未接入 / 配置不全）给这个开关就是空转——
+   * 勾了也没有任何调用会被它放行。与工具列表同时出现，语义才是"这 N 个工具全部免确认"。
+   */
+  function serverAllowRow(server: McpServerStatusDto): string {
+    if (server.tools.length === 0) return '';
+    const label = `整台免确认（${server.tools.length} 个工具）`;
+    return `<div class="mcp-allow-server-row">
+      <label class="mcp-allow-toggle" title="整台免确认：此 server 的全部工具不再弹窗；每次调用仍写审计">
+        <input type="checkbox" class="mcp-allow-server-check" data-allow-key="${escapeHtml(server.serverAllowKey)}" aria-label="${escapeHtml(server.name)} ${label}" ${server.serverAllowlisted ? 'checked' : ''} />
+        <span>${label}</span>
+      </label>
+    </div>`;
   }
 
   /** 表单（新增或编辑共用；name 在编辑态只读——它是身份键） */
@@ -426,6 +446,7 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
       ${state === 'failed' ? `<p class="mcp-server-error">${escapeHtml(server.error ?? '')}</p>` : ''}
       ${state === 'invalid' ? `<p class="mcp-server-error">${escapeHtml(server.problem ?? '')}</p>` : ''}
       ${state === 'pending' ? '<p class="mcp-server-note">尚未接入：点「接入」按当前配置连接一次（未装配会先完成装配；打开对话面板也会自动触发）</p>' : ''}
+      ${serverAllowRow(server)}
       ${toolRows(server)}
       <div class="mcp-actions">${actions.join('')}</div>
       ${editing && draft ? formHtml(draft) : ''}
@@ -657,10 +678,19 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     listEl!.querySelector<HTMLInputElement>('#mcpFName')?.focus();
   });
 
-  /** 免确认勾选：只上报，不本地翻转（等 host 回推；否则 UI 又变成一份「我以为生效了」的状态） */
+  /**
+   * 免确认勾选：只上报，不本地翻转（等 host 回推；否则 UI 又变成一份「我以为生效了」的状态）
+   *
+   * 两级共用**同一条**上报路径（`mcp_write{op:'allow'}` + 宿主下发的寻址键）：
+   * 工具级 = `mcp__<server>__<tool>`，整台 = `mcp__<server>__*`。宿主侧不区分，
+   * 键格式真源仍在 `policy.ts` 一处，面板不拼字符串。
+   */
   listEl.addEventListener('change', (event) => {
     const target = event.target as HTMLInputElement | null;
-    if (!target || !target.classList.contains('mcp-allow-check')) return;
+    if (!target) return;
+    const isTool = target.classList.contains('mcp-allow-check');
+    const isServer = target.classList.contains('mcp-allow-server-check');
+    if (!isTool && !isServer) return;
     const key = target.dataset.allowKey;
     if (!key) return;
     vscode.postMessage({ type: 'mcp_write', op: 'allow', key, allowlisted: target.checked });

@@ -835,6 +835,9 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
     enabled: true,
     state: 'running',
     toolCount: 2,
+    // 整台免确认未开（server 级键不在 allowlist）：单工具勾各自独立可点
+    serverAllowKey: 'mcp__fs__*',
+    serverAllowlisted: false,
     tools: [
       {
         originalName: 'read-file',
@@ -909,6 +912,8 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
         state: 'failed',
         toolCount: 0,
         tools: [],
+        serverAllowKey: 'mcp__github__*',
+        serverAllowlisted: false,
         error: 'spawn github-mcp ENOENT',
       },
     ]);
@@ -925,7 +930,16 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
   it('停用 / 配置不完整：各自成态，不冒充「失败」', () => {
     mountSettingsView();
     pushStatus([
-      { name: 'off', command: 'x', enabled: false, state: 'disabled', toolCount: 0, tools: [] },
+      {
+        name: 'off',
+        command: 'x',
+        enabled: false,
+        state: 'disabled',
+        toolCount: 0,
+        tools: [],
+        serverAllowKey: 'mcp__off__*',
+        serverAllowlisted: false,
+      },
       {
         name: 'bad',
         command: '',
@@ -933,6 +947,8 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
         state: 'invalid',
         toolCount: 0,
         tools: [],
+        serverAllowKey: 'mcp__bad__*',
+        serverAllowlisted: false,
         problem: '缺少 command',
       },
     ]);
@@ -970,6 +986,49 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
     });
     // UI 不持有第二份状态真源：回推到达前先还原，避免显示一个尚未生效的档位
     expect(box.checked).toBe(false);
+  });
+
+  it('整台免确认：勾一次上报 server 级键（mcp__<server>__*），不逐条点选', () => {
+    const { postMessage } = mountSettingsView();
+    pushStatus([RUNNING]);
+    const box = mcpRoot().querySelector<HTMLInputElement>('.mcp-allow-server-check')!;
+    expect(box.dataset.allowKey).toBe('mcp__fs__*');
+    box.checked = true;
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'mcp_write',
+      op: 'allow',
+      key: 'mcp__fs__*',
+      allowlisted: true,
+    });
+    expect(box.checked).toBe(false);
+  });
+
+  it('整台开启 ⇒ 工具勾显示生效态（已勾且禁用），取消路径只有关掉整台', () => {
+    mountSettingsView();
+    // DTO 的 allowlisted 是**宿主派生后的生效态**（工具级 ∪ server 级，派生真源在
+    // statusView.deriveMcpServerStatus，由 mcpStatusView.test.ts 钉住）；面板不自行推断。
+    // 故此处 fixture 模拟"整台已开"= serverAllowlisted:true + 全部工具 allowlisted:true。
+    pushStatus([
+      {
+        ...RUNNING,
+        serverAllowlisted: true,
+        tools: RUNNING.tools.map((t) => ({ ...t, allowlisted: true })),
+      },
+    ]);
+    const serverBox = mcpRoot().querySelector<HTMLInputElement>('.mcp-allow-server-check')!;
+    expect(serverBox.checked).toBe(true);
+    const boxes = Array.from(mcpRoot().querySelectorAll<HTMLInputElement>('.mcp-allow-check'));
+    // 第二个工具没有单独勾选，但整台已覆盖 ⇒ 实际不弹窗 ⇒ 必须显示"已勾"（显示未勾 = UI 说谎）
+    expect(boxes.map((b) => b.checked)).toEqual([true, true]);
+    // 禁用 = 不给"能点但没效果"的勾选框（点了没反应的第三种成因）
+    expect(boxes.every((b) => b.disabled)).toBe(true);
+  });
+
+  it('无工具明细的台不给整台开关（没有可放行的调用 = 空转）', () => {
+    mountSettingsView();
+    pushStatus([{ ...RUNNING, tools: [], toolCount: 0 }]);
+    expect(mcpRoot().querySelector('.mcp-allow-server-check')).toBeNull();
   });
 
   it('添加服务器：表单 → 保存 → upsert（args 一行一个、env 按首个 = 切分）', () => {
@@ -1055,6 +1114,8 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
         state: 'running',
         toolCount: 0,
         tools: [],
+        serverAllowKey: 'mcp__weird__*',
+        serverAllowlisted: false,
       },
     ]);
     const edit = mcpRoot().querySelector<HTMLButtonElement>('[data-act="edit"]');
@@ -1072,6 +1133,9 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
         enabled: true,
         state: 'running',
         toolCount: 1,
+        // server 名含 HTML：整台键同样走 escapeHtml（键是外部可控文本，不得进 innerHTML）
+        serverAllowKey: 'mcp__<img src=x onerror=alert(1)>__*',
+        serverAllowlisted: false,
         tools: [
           {
             originalName: '<b>bad</b>',

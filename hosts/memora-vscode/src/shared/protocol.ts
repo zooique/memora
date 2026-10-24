@@ -1749,7 +1749,12 @@ export interface McpToolStatusDto {
   derivedName: string;
   /** 免确认寻址键（可直接写进 `memora.mcpToolAllowlist`） */
   allowKey: string;
-  /** 是否已免确认（真源 = 注册档位 'audit'，不是面板的本地勾选态） */
+  /**
+   * 是否已免确认（**生效态**；真源 = 宿主按「工具级键 ∪ server 级键」派生，不是面板的本地勾选态）
+   *
+   * 整台免确认打开时，未单独勾选的工具此项为 true（实际不弹窗）⇒ 面板据此把单工具勾
+   * 渲染成「已勾 + 禁用」，取消路径只有关掉整台勾一条，避免出现"点了没反应"。
+   */
   allowlisted: boolean;
 }
 
@@ -1803,6 +1808,14 @@ export interface McpServerStatusDto extends McpServerDraftDto {
   toolCount: number;
   /** 工具明细（只读：宿主侧来源是运行时快照，webview 不得就地改） */
   tools: readonly McpToolStatusDto[];
+  /**
+   * 整台免确认的寻址键（`mcp__<server>__*`；宿主由 `policy.serverAllowlistKey` 现算下发）
+   *
+   * 与工具级 `allowKey` 同纪律：**webview 不得自行拼这个字符串**，键格式真源只有一处。
+   */
+  serverAllowKey: string;
+  /** 整台是否已免确认（server 级键命中 ⇒ 该台全部工具生效态为免确认） */
+  serverAllowlisted: boolean;
   /** `state='failed'` 的失败原因（运行时最近一次尝试的错误文本，已截断） */
   error?: string;
   /** `state='invalid'` 缺什么（判据真源 = 宿主的 configProblem，不在面板重写一遍） */

@@ -10,7 +10,7 @@
  */
 import type { McpServerConfig } from './connectionManager.js';
 import { configProblem, normalizeServerName } from './mcpConfigGuard.js';
-import { allowlistKey, type McpToolAllowlist } from './policy.js';
+import { allowlistKey, serverAllowlistKey, type McpToolAllowlist } from './policy.js';
 import type { McpToolBinding } from './toolRegistry.js';
 // 五态词汇与隐藏计数的 DTO 真源在 shared/protocol（面板与宿主共用，禁各写一份字面量）
 import type { McpOmittedDto, McpServerState } from '../../../shared/protocol.js';
@@ -29,7 +29,14 @@ export interface McpToolStatus {
   readonly derivedName: string;
   /** 免确认寻址键（可直接写进 `memora.mcpToolAllowlist`） */
   readonly allowKey: string;
-  /** 当前是否已免确认（= 注册档位为 'audit'） */
+  /**
+   * 当前是否已免确认（**生效态**，= 工具级键 ∪ server 级键命中）
+   *
+   * ⚠️ 这是"实际会不会弹窗"的派生事实，不是"这条键有没有被勾上"的存储事实：
+   * 整台免确认（server 级键）打开时，未单独勾选的工具**实际已免确认**，此处必须
+   * 报 true——报 false 就是 UI 说谎（显示未勾、实则不弹）。面板据此把单工具勾
+   * 置为「已勾 + 禁用」，取消路径只有一个：关掉整台勾（避免"点了没反应"）。
+   */
   readonly allowlisted: boolean;
 }
 
@@ -51,6 +58,14 @@ export interface McpServerStatus {
   readonly enabled: boolean;
   /** 已注册工具数（非 running 态恒 0） */
   readonly toolCount: number;
+  /**
+   * 整台免确认的寻址键（`mcp__<server>__*`，由 `policy.serverAllowlistKey` 现算下发）
+   *
+   * 与工具级 `allowKey` 同理：**UI 不得自行拼这个字符串**（键格式真源只有一处）。
+   */
+  readonly serverAllowKey: string;
+  /** 整台是否已免确认（server 级键命中；true ⇒ 该台全部工具生效态为免确认） */
+  readonly serverAllowlisted: boolean;
   /** 工具明细（顺序 = 注册顺序） */
   readonly tools: readonly McpToolStatus[];
   /** state='failed' 的失败原因 */
@@ -169,6 +184,10 @@ export function deriveMcpServerStatus(
     // 配置在、该名还没进 applied（装配/热更都没跑到它）⇒ 待接入，不谎报失败
     else state = 'pending';
 
+    // server 级键现算一次（同循环内派生，与工具级共用同一份 allowKeys ⇒ 无第二判据）
+    const serverKey = serverAllowlistKey(name);
+    const serverAllowlisted = live ? live.allowKeys.has(serverKey) : false;
+
     list.push({
       name,
       command: typeof config.command === 'string' ? config.command : '',
@@ -180,6 +199,8 @@ export function deriveMcpServerStatus(
       state,
       enabled,
       toolCount: live ? live.bindings.length : 0,
+      serverAllowKey: serverKey,
+      serverAllowlisted,
       tools: live
         ? live.bindings.map((binding) => {
             const key = allowlistKey(name, binding.originalName);
@@ -187,7 +208,8 @@ export function deriveMcpServerStatus(
               originalName: binding.originalName,
               derivedName: binding.derivedName,
               allowKey: key,
-              allowlisted: live.allowKeys.has(key),
+              // 生效态：工具级命中 ∪ 整台命中（整台命中时未单独勾选的工具也是 true）
+              allowlisted: live.allowKeys.has(key) || serverAllowlisted,
             };
           })
         : [],

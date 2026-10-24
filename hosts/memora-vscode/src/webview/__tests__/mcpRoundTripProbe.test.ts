@@ -101,6 +101,8 @@ function statusOf(config: Record<string, unknown>): McpServerStatusDto {
     enabled: config['enabled'] !== false,
     toolCount: 0,
     tools: [],
+    serverAllowKey: `mcp__${String(config['name'])}__*`,
+    serverAllowlisted: false,
   };
 }
 
