@@ -496,7 +496,15 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     // 暂存草稿再发出：写失败时宿主随 ack 回传同一 reqId，视图据此复开表单还输入
     const reqId = `mcp-save-${(++saveSeq).toString(36)}`;
     pendingSave = { reqId, draft };
-    vscode.postMessage({ type: 'mcp_write', op: 'upsert', server: payload, reqId });
+    // originalName = 编辑前的原名（新增为空 ⇒ 不发）：宿主靠它区分「编辑保存自己」与
+    // 「新增撞已有名」，后者会被拒绝而不是静默覆盖（2026-10-24 ⑦）。
+    vscode.postMessage({
+      type: 'mcp_write',
+      op: 'upsert',
+      server: payload,
+      reqId,
+      ...(draft.originalName ? { originalName: draft.originalName } : {}),
+    });
     // 关表单、以回推为准（不乐观插入一条「我以为保存成功了」的卡片）
     draft = null;
     render();

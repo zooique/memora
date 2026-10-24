@@ -1869,6 +1869,13 @@ export type McpWritePayload =
        * 刚填的 args/env/cwd 就无处可取（2026-10-24 探针复现）。其余 op 失败只需一条 toast。
        */
       reqId?: string;
+      /**
+       * 编辑前的原名（新增不传）。宿主据此区分「编辑保存自己」与「撞已有名」：
+       * 归一化后等于 `server.name` ⇒ 放行（覆盖自己是保存的本义）；否则命中同名即拒绝——
+       * 否则新增填了已存在的名会被**静默覆盖**，回执还说「已更新」（2026-10-24 探针复现，
+       * 用户以为新建）。同名可选字段 = 0 协议计数成本。
+       */
+      originalName?: string;
     }
   | { op: 'remove'; name: string }
   | { op: 'setEnabled'; name: string; enabled: boolean }

@@ -156,7 +156,7 @@ export async function applyMcpWrite(deps: McpOpsDeps, payload: McpWritePayload):
       await setAllowlisted(deps, payload.key, payload.allowlisted);
       return;
     case 'upsert':
-      await upsertServer(deps, payload.server, payload.reqId);
+      await upsertServer(deps, payload.server, payload.reqId, payload.originalName);
       return;
     case 'remove':
       await removeServer(deps, payload.name);
@@ -223,11 +223,14 @@ async function setAllowlisted(deps: McpOpsDeps, key: string, allowlisted: boolea
  * @param draft 表单草稿
  * @param reqId webview 的保存关联 id（有则随收尾回推带回 ack——写失败时视图靠它复开表单，
  *   保住用户刚填的内容；缺省 = 旧客户端，行为不变）
+ * @param originalName 编辑前的原名（新增不传）。重名预检用：只有「保存自己」才放行命中，
+ *   见函数体内的预检注释。
  */
 async function upsertServer(
   deps: McpOpsDeps,
   draft: McpServerDraftDto,
   reqId?: string,
+  originalName?: string,
 ): Promise<void> {
   if (!draft || typeof draft.name !== 'string') {
     deps.notice('error', 'MCP 服务器保存失败：缺少名称');
@@ -239,6 +242,19 @@ async function upsertServer(
   // 按归一化名定位（配置里可能有 `"fs "`，面板下发的一定是 `fs`）——否则编辑会**追加**一条
   // 同名近似项，而运行侧按先到先得跳过它 ⇒ 用户「保存了但没生效」
   const index = configs.findIndex((item) => normalizeServerName(item.name) === patch.name);
+  // 重名预检（fail-closed，2026-10-24 ⑦）：命中已有条目且**不是在保存自己** ⇒ 拒绝。
+  // 否则新增填了已存在的名会被原地合并覆盖，回执还说「已更新」——用户以为新建，旧配置
+  // 的 command/args 已被冲掉（探针复现的真缺陷）。归一化后比较 = `"fs "` 与 `"fs"` 也拦得住。
+  // 出路写进错误信息：先删原条目再添加，或换名。
+  const selfName = normalizeServerName(originalName);
+  if (index >= 0 && selfName !== patch.name) {
+    const message =
+      `MCP 服务器「${patch.name}」已存在，保存会覆盖它的配置：` +
+      '若要替换，请先删除原条目再添加；或给新条目换个名称。';
+    deps.notice('error', message);
+    deps.pushStatus(ackOf(reqId, false, message));
+    return;
+  }
   // 展开合并：保留旧项里表单不认识的键（不带伤——编辑动作不销毁未知字段）；
   // 表单认识的三个可清空字段由 patch 全量覆盖 ⇒ 空值即删除（见 clearEmptyFields）
   const merged: McpServerConfig = index >= 0 ? { ...configs[index], ...patch } : { ...patch };
