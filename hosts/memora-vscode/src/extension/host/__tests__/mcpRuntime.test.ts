@@ -913,3 +913,71 @@ describe('MCP 状态面（五态合并 / 失败留痕 / 恢复路径）', () => 
     expect(getMcpServerStatus([serverConfig('fs')])[0]?.state).toBe('running');
   });
 });
+
+// ──────────────────────────────────────────────────────────────
+// name 归一化（2026-10-24 实测缺陷）：运行态表的键与状态面的键必须同源。
+// 原先写侧用原名、读侧 trim ⇒ `{name:"fs "}` 连接**真建成了**（connectCount=1），
+// 状态面却查不到键、判成 failed，还给出一句与事实无关的原因。用户会去排查一台好服务器。
+// ──────────────────────────────────────────────────────────────
+describe('MCP server 名归一化（键 = 状态面 = 面板寻址）', () => {
+  afterEach(async () => {
+    setMcpStatusListener(null);
+    await stopMcpServers();
+  });
+
+  it('name 带尾随空格 ⇒ 连接建立且状态是 running（不是 failed）', async () => {
+    const { registrar, names } = fakeRegistrar();
+    const configs = [serverConfig('fs ')];
+    const { factory, connections } = fakeFactory([''], { fs: [stubTool('read_file')] });
+
+    await startMcpServers(fakeAgent(registrar), configs, { allowlist: [], connect: factory });
+
+    expect(connections).toHaveLength(1);
+    expect(connections[0]!.connectCount).toBe(1);
+    const status = getMcpServerStatus(configs);
+    expect(status).toHaveLength(1);
+    // 展示名归一化（面板看到的是 fs，不是带空格的 fs ）
+    expect(status[0]!.name).toBe('fs');
+    expect(status[0]!.state).toBe('running');
+    // 工具确实注册进去了（键错位时这个断言会先红：注册用的也是同一个名）
+    expect(names()).toContain('mcp__fs__read_file');
+  });
+
+  it('`fs` 与 `fs ` 归一化后重名 ⇒ 只启动一台（不留看不见的幽灵子进程）', async () => {
+    const { registrar } = fakeRegistrar();
+    const { logger, warnings } = capturingLogger();
+    const configs = [serverConfig('fs'), serverConfig('fs ', { command: 'npx' })];
+    const started: string[] = [];
+    const connect: McpConnectionFactory = (config) => {
+      started.push(config.name);
+      return new FakeConnection(
+        config.name,
+        [stubTool('read_file')],
+        [],
+        undefined,
+      ) as unknown as McpConnection;
+    };
+
+    await startMcpServers(fakeAgent(registrar), configs, { allowlist: [], connect, logger });
+
+    expect(started).toEqual(['fs']);
+    expect(getMcpServerStatus(configs)).toHaveLength(1);
+    expect(warnings.join('\n')).toContain('server 名重复');
+  });
+
+  it('restart 收归一化名（面板下发的就是它）⇒ 找得到配置并重启成功，且旧连接被关掉', async () => {
+    const { registrar } = fakeRegistrar();
+    const configs = [serverConfig('fs ')];
+    const { factory, connections } = fakeFactory([''], { fs: [stubTool('read_file')] });
+    await startMcpServers(fakeAgent(registrar), configs, { allowlist: [], connect: factory });
+
+    // 重启必须注入连接工厂：不传会走真连接（spawn 真 node 等 20s 握手）
+    const result = await restartMcpServer(fakeAgent(registrar), 'fs', { connect: factory });
+    expect(result).toEqual({ ok: true });
+    expect(getMcpServerStatus(configs)[0]!.state).toBe('running');
+    // 旧连接必须被关：键错位时 `state.has('fs')` 为假 ⇒ 起新的、旧的还活着 = 僵尸子进程
+    // （只断言 ok/state 会漏掉这条——变异验证时实测过）
+    expect(connections).toHaveLength(2);
+    expect(connections[0]!.closeCount).toBe(1);
+  });
+});

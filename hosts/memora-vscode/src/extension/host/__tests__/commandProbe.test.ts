@@ -140,6 +140,43 @@ describe('commandProbe / args 第一项', () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.resolved.args).toEqual(['-y']);
   });
+
+  // 2026-10-24 实测的误杀面：「含 `/`」被当成「本地文件」。
+  // 官方最常见的写法就是不带 -y 的 `npx @scope/pkg`，args[0] 直接是包名。
+  // ⚠️ command 用 `node` 而不是 `npx`：判据在 args 位、与 command 是什么无关，
+  // 而 node 一定在 PATH（本进程就是它）⇒ 用例不依赖环境里有没有 npx。
+  it('args[0] 是 npm scope 包名（含 `/`，不带 -y）⇒ 通过，不按文件判', () => {
+    const r = probeCommand({
+      command: 'node',
+      args: ['@modelcontextprotocol/server-filesystem', '/tmp'],
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.resolved.args[0]).toBe('@modelcontextprotocol/server-filesystem');
+  });
+
+  it('args[0] 是 URL ⇒ 通过，不按文件判', () => {
+    const r = probeCommand({ command: 'node', args: ['https://example.com/x.tar.gz'] });
+    expect(r.ok).toBe(true);
+  });
+
+  it('args[0] 是带子路径的包名 ⇒ 通过（`pkg/sub` 不是相对路径）', () => {
+    const r = probeCommand({ command: 'node', args: ['ts-node/register'] });
+    expect(r.ok).toBe(true);
+  });
+
+  it('args[0] 是裸相对脚本名 ⇒ 不判（与包名形态无法静态区分，宁可漏判）', () => {
+    // 这条是**刻意的不判**：`node server.js` 与 `npx mcp-server-git` 的 args[0] 形态相同。
+    // 写成断言是为了防止将来有人「顺手补一条」把 npx 包名全判死（回归到 2026-10-24 的缺陷）。
+    const r = probeCommand({ command: 'node', args: ['no-such-server.js'], baseDir: dir });
+    expect(r.ok).toBe(true);
+  });
+
+  it('args[0] 是带引号的绝对路径 ⇒ 剥引号后判存在，并把剥掉的值交给 spawn', () => {
+    const target = join(dir, 'server.mjs');
+    const r = probeCommand({ command: 'node', args: [`"${target}"`] });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.resolved.args[0]).toBe(target);
+  });
 });
 
 // ──────────────────────────────────────────────────────────────

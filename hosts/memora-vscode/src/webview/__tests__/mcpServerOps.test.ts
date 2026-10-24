@@ -208,3 +208,44 @@ describe('mcp_write / restart', () => {
     expect(d.notices).toHaveLength(0);
   });
 });
+
+// ──────────────────────────────────────────────────────────────
+// name 归一化（2026-10-24 实测缺陷）：面板下发的名来自状态面（已 trim），
+// 而配置原值可能带首尾空白。三处按名匹配若用 `===`，用户会遇到
+// 「删不掉 / 停不了 / 编辑变成追加一条」——全部静默或回执「未找到」。
+// ──────────────────────────────────────────────────────────────
+describe('mcp_write / name 归一化匹配（写侧同样单点）', () => {
+  it('删除：配置里是 `fs `、面板下发 `fs` ⇒ 能删掉（不是「未找到」）', async () => {
+    h.data['mcpServers'] = [{ name: 'fs ', command: 'node' }];
+    const d = deps();
+    await applyMcpWrite(d, { op: 'remove', name: 'fs' });
+    expect(h.data['mcpServers']).toEqual([]);
+    expect(d.notices[0]?.message).toContain('已删除');
+  });
+
+  it('停用：配置里是 `fs `、面板下发 `fs` ⇒ 改到那一条的 enabled 位', async () => {
+    h.data['mcpServers'] = [{ name: 'fs ', command: 'node' }];
+    const d = deps();
+    await applyMcpWrite(d, { op: 'setEnabled', name: 'fs', enabled: false });
+    expect(h.data['mcpServers']).toEqual([{ name: 'fs ', command: 'node', enabled: false }]);
+    expect(d.notices[0]?.message).toContain('已停用');
+  });
+
+  it('编辑：配置里是 `fs `、表单回传 `fs` ⇒ 覆盖同一条，不追加近似项', async () => {
+    h.data['mcpServers'] = [{ name: 'fs ', command: 'node', args: ['-y'] }];
+    const d = deps();
+    await applyMcpWrite(d, {
+      op: 'upsert',
+      server: { name: 'fs', command: 'npx' },
+    });
+    // 只有一条（`"fs "` 与 `"fs"` 两条会让运行侧按先到先得跳过后者 = 保存了却不生效）
+    expect(h.data['mcpServers']).toEqual([{ name: 'fs', command: 'npx', enabled: true }]);
+    expect(d.notices[0]?.message).toContain('已更新');
+  });
+
+  it('新增：表单名带首尾空格 ⇒ 落盘值归一化（面板显示什么，配置里就是什么）', async () => {
+    const d = deps();
+    await applyMcpWrite(d, { op: 'upsert', server: { name: '  fs  ', command: 'node' } });
+    expect(h.data['mcpServers']).toEqual([{ name: 'fs', command: 'node', enabled: true }]);
+  });
+});
