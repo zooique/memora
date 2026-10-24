@@ -122,6 +122,7 @@ describe('mcp_write / upsert（增改）', () => {
     await applyMcpWrite(deps(), {
       op: 'upsert',
       server: { name: 'fs', command: 'node', args: ['server.js'] },
+      originalName: 'fs',
     });
     const written = h.data['mcpServers'] as Record<string, unknown>[];
     expect(written).toHaveLength(1);
@@ -134,7 +135,11 @@ describe('mcp_write / upsert（增改）', () => {
   it('清空 args/env：表单删除必须真的落盘（旧值不得复活）', async () => {
     h.data['mcpServers'] = [{ name: 'fs', command: 'npx', args: ['-y', 'pkg'], env: { A: '1' } }];
     // 表单在全空时不发这三个键 —— host 侧必须把「没发」当「删了」，而不是「保持旧值」
-    await applyMcpWrite(deps(), { op: 'upsert', server: { name: 'fs', command: 'npx' } });
+    await applyMcpWrite(deps(), {
+      op: 'upsert',
+      server: { name: 'fs', command: 'npx' },
+      originalName: 'fs',
+    });
     const saved = (h.data['mcpServers'] as Record<string, unknown>[])[0]!;
     expect(saved.args).toBeUndefined();
     expect(saved.env).toBeUndefined();
@@ -143,7 +148,11 @@ describe('mcp_write / upsert（增改）', () => {
 
   it('清空 cwd：同上（曾因 `空则不写` 而让旧工作目录复活）', async () => {
     h.data['mcpServers'] = [{ name: 'fs', command: 'npx', cwd: '/tmp/x' }];
-    await applyMcpWrite(deps(), { op: 'upsert', server: { name: 'fs', command: 'npx' } });
+    await applyMcpWrite(deps(), {
+      op: 'upsert',
+      server: { name: 'fs', command: 'npx' },
+      originalName: 'fs',
+    });
     const saved = (h.data['mcpServers'] as Record<string, unknown>[])[0]!;
     expect(saved.cwd).toBeUndefined();
   });
@@ -152,7 +161,11 @@ describe('mcp_write / upsert（增改）', () => {
     h.data['mcpServers'] = [
       { name: 'fs', command: 'npx', args: ['-y'], timeout: 30, headers: { a: 'b' } },
     ];
-    await applyMcpWrite(deps(), { op: 'upsert', server: { name: 'fs', command: 'node' } });
+    await applyMcpWrite(deps(), {
+      op: 'upsert',
+      server: { name: 'fs', command: 'node' },
+      originalName: 'fs',
+    });
     const saved = (h.data['mcpServers'] as Record<string, unknown>[])[0]!;
     expect(saved.args).toBeUndefined();
     expect(saved.timeout).toBe(30);
@@ -173,6 +186,56 @@ describe('mcp_write / upsert（增改）', () => {
     const d = deps();
     await applyMcpWrite(d, { op: 'upsert', server: { name: 'fs', command: 'npx' } });
     expect(d.notices.some((n) => n.level === 'error')).toBe(true);
+  });
+});
+
+/**
+ * 重名预检（fail-closed，2026-10-24 ⑦）
+ *
+ * 守的是「新增撞已有名 ⇒ 拒绝而不是静默覆盖」：upsert 按归一化名定位，命中且**不是保存
+ * 自己**（originalName 归一化后 ≠ 新名）就拒绝并给出路。放行的唯一形态 = 编辑保存自己
+ * （配置原值带空格也算——判据两侧都走归一化）。
+ */
+describe('mcp_write / upsert 重名预检', () => {
+  it('新增撞已有名 ⇒ 不写入 + ack{ok:false}（出路写进错误：先删或换名）', async () => {
+    h.data['mcpServers'] = [{ name: 'fs', command: 'node', args: ['-y', 'pkg'] }];
+    const d = deps();
+    await applyMcpWrite(d, {
+      op: 'upsert',
+      server: { name: 'fs', command: 'npx' },
+      reqId: 'r1',
+    });
+    // 落盘未变：旧配置的 command/args 没有被冲掉（原缺陷 = 原地合并覆盖 + 回执「已更新」）
+    expect(h.data['mcpServers']).toEqual([{ name: 'fs', command: 'node', args: ['-y', 'pkg'] }]);
+    expect(d.notices[0]?.level).toBe('error');
+    expect(d.notices[0]?.message).toContain('覆盖');
+    expect(d.acks).toEqual([{ reqId: 'r1', ok: false, error: expect.stringContaining('覆盖') }]);
+  });
+
+  it('归一化撞车：新增名带首尾空格也拦得住（判据两侧同走 normalizeServerName）', async () => {
+    h.data['mcpServers'] = [{ name: 'fs', command: 'node' }];
+    const d = deps();
+    await applyMcpWrite(d, { op: 'upsert', server: { name: '  fs  ', command: 'npx' } });
+    expect(h.data['mcpServers']).toEqual([{ name: 'fs', command: 'node' }]);
+    expect(d.notices[0]?.level).toBe('error');
+  });
+
+  it('改名撞别的（防御性：协议留了 originalName，未来表单放开只读也拦得住）', async () => {
+    h.data['mcpServers'] = [
+      { name: 'a', command: 'node' },
+      { name: 'b', command: 'node' },
+    ];
+    const d = deps();
+    await applyMcpWrite(d, {
+      op: 'upsert',
+      server: { name: 'b', command: 'npx' },
+      originalName: 'a',
+    });
+    expect(h.data['mcpServers']).toEqual([
+      { name: 'a', command: 'node' },
+      { name: 'b', command: 'node' },
+    ]);
+    expect(d.notices[0]?.level).toBe('error');
   });
 });
 
@@ -295,6 +358,7 @@ describe('mcp_write / name 归一化匹配（写侧同样单点）', () => {
     await applyMcpWrite(d, {
       op: 'upsert',
       server: { name: 'fs', command: 'npx' },
+      originalName: 'fs ',
     });
     // 只有一条（`"fs "` 与 `"fs"` 两条会让运行侧按先到先得跳过后者 = 保存了却不生效）
     expect(h.data['mcpServers']).toEqual([{ name: 'fs', command: 'npx', enabled: true }]);

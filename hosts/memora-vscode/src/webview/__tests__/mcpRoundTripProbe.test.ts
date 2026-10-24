@@ -110,6 +110,8 @@ interface SentWrite {
   readonly op?: string;
   readonly server?: Record<string, unknown>;
   readonly reqId?: string;
+  /** 编辑前的原名（新增不发）；宿主重名预检的判据输入 */
+  readonly originalName?: string;
 }
 
 /**
@@ -194,7 +196,11 @@ describe('往返探针 · 清空 args（P0-1 用户视角）', () => {
 
     const write = view.sent.find((m) => m.type === 'mcp_write');
     expect(write?.op).toBe('upsert');
-    await applyMcpWrite(deps(), { op: 'upsert', server: write!.server } as never);
+    await applyMcpWrite(deps(), {
+      op: 'upsert',
+      server: write!.server,
+      originalName: write!.originalName,
+    } as never);
 
     expect(savedServers()[0]).toEqual({ name: 'fs', command: 'node', enabled: true });
   });
@@ -209,7 +215,11 @@ describe('往返探针 · 尾随空格（P0-2 用户视角）', () => {
       view.click('edit');
       view.click('save');
       const write = view.sent.find((m) => m.type === 'mcp_write');
-      await applyMcpWrite(deps(), { op: 'upsert', server: write!.server } as never);
+      await applyMcpWrite(deps(), {
+        op: 'upsert',
+        server: write!.server,
+        originalName: write!.originalName,
+      } as never);
     }
 
     expect(savedServers()[0]!['args']).toEqual(['--path=/tmp/x ', 'a']);
@@ -225,7 +235,11 @@ describe('往返探针 · cwd（判据面 = 字段面）', () => {
       view.click('edit');
       view.click('save');
       const write = view.sent.find((m) => m.type === 'mcp_write');
-      await applyMcpWrite(deps(), { op: 'upsert', server: write!.server } as never);
+      await applyMcpWrite(deps(), {
+        op: 'upsert',
+        server: write!.server,
+        originalName: write!.originalName,
+      } as never);
     }
 
     // 原先 `save()` 里 `draft.cwd.trim()` 会把空格吃掉，而判据只查 args/env ⇒ 谎称无损
@@ -247,7 +261,7 @@ describe('往返探针 · cwd（判据面 = 字段面）', () => {
 });
 
 describe('往返探针 · 重名与失败回执', () => {
-  it('新增表单填了个已存在的名字 ⇒ 覆盖并回执「已更新」', async () => {
+  it('新增填了已存在的名字 ⇒ 宿主拒绝覆盖（ack 失败 ⇒ 表单复开 + 内联原因，落盘不变）', async () => {
     h.data['mcpServers'] = [{ name: 'fs', command: 'node' }];
     const view = mount([statusOf(savedServers()[0]!)]);
 
@@ -256,13 +270,29 @@ describe('往返探针 · 重名与失败回执', () => {
     view.field('command').value = 'npx';
     view.click('save');
 
+    // 新增不发 originalName（协议噪音最小化）；宿主见「无原名 + 撞已有名」即拒
     const write = view.sent.find((m) => m.type === 'mcp_write');
+    expect(write?.originalName).toBeUndefined();
     const d = deps();
-    await applyMcpWrite(d, { op: 'upsert', server: write!.server } as never);
+    await applyMcpWrite(d, {
+      op: 'upsert',
+      server: write!.server,
+      reqId: write!.reqId,
+    } as never);
+    expect(d.acks[0]!.ok).toBe(false);
+    expect(d.acks[0]!.error).toContain('覆盖');
 
-    expect(savedServers()).toHaveLength(1);
-    expect(savedServers()[0]!['command']).toBe('npx');
-    expect(d.notices.map((n) => n.message)).toContain('已更新「fs」');
+    // 宿主把拒绝随 mcp_status 带回 ⇒ 视图认领，表单带着刚填的内容复开
+    view.push({
+      type: 'mcp_status',
+      servers: [statusOf(savedServers()[0]!)],
+      omitted: { configured: 1, missingName: 0, duplicate: 0 },
+      ack: d.acks[0]!,
+    });
+    expect(view.root.querySelector('[data-field="command"]')).not.toBeNull();
+    expect(view.root.querySelector('.mcp-form-error')!.textContent).toContain('覆盖');
+    // 落盘未变：旧配置的 command 没有被新表单冲掉（原缺陷：回执说「已更新」，旧配置已遭殃）
+    expect(savedServers()[0]!['command']).toBe('node');
   });
 
   it('写失败 ⇒ 表单带着原输入复开 + 内联失败原因（reqId 认领后输入不再丢失）', async () => {
@@ -283,6 +313,7 @@ describe('往返探针 · 重名与失败回执', () => {
       op: 'upsert',
       server: write!.server,
       reqId: write!.reqId,
+      originalName: write!.originalName,
     } as never);
     expect(d.acks).toEqual([
       { reqId: write!.reqId, ok: false, error: expect.stringContaining('写入失败') },
@@ -312,11 +343,14 @@ describe('往返探针 · 重名与失败回执', () => {
     view.field('command').value = 'npx';
     view.click('save');
     const write = view.sent.find((m) => m.type === 'mcp_write');
+    // 编辑必须带 originalName：否则宿主把「保存自己」当「撞已有名」拒绝
+    expect(write?.originalName).toBe('fs');
     const d = deps();
     await applyMcpWrite(d, {
       op: 'upsert',
       server: write!.server,
       reqId: write!.reqId,
+      originalName: write!.originalName,
     } as never);
     expect(d.acks).toEqual([{ reqId: write!.reqId, ok: true }]);
 
@@ -372,6 +406,9 @@ describe('往返探针 · 重名与失败回执', () => {
     expect(writes[0]!.reqId).toBeTruthy();
     expect(writes[1]!.reqId).toBeTruthy();
     expect(writes[1]!.reqId).not.toBe(first);
+    // 编辑带原名（宿主放行「保存自己」）；新增不带（宿主见撞名即拒）
+    expect(writes[0]!.originalName).toBe('fs');
+    expect(writes[1]!.originalName).toBeUndefined();
   });
 
   it('用户已打开新表单时，迟到失败结论不顶掉正在输入的内容', async () => {
