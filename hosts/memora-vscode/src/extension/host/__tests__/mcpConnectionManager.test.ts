@@ -7,6 +7,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolHandler } from '@zooique/memora';
 import { McpConnection, collectAllTools } from '../mcp/connectionManager.js';
@@ -234,5 +237,48 @@ describe('真实 stdio 连接（fixtures/fakeMcpServer.mjs）', () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(closedNotified).toBe(0);
     await expect(connection.callTool('echo-text', {})).rejects.toThrow('连接不可用');
+  }, 30_000);
+});
+
+// ──────────────────────────────────────────────────────────────
+// 拉起前预检 + 失败原因可读（2026-10-24）
+//
+// 现场问题：命令/路径写错时 SDK 只抛 `MCP error -32000: Connection closed`，
+// 真原因只在子进程 stderr（中文 Windows 下还是 GBK）⇒ 面板上等于没有原因。
+// 这组用例钉住两件事：① 静态能判的不必等 SDK 压成 -32000；② 必须等运行时的失败，
+// 也要把 stderr 尾部带到用户面前。
+// ──────────────────────────────────────────────────────────────
+describe('拉起前预检与失败原因可读', () => {
+  it('命令路径不存在 ⇒ 抛人话（不 spawn、不落到 -32000）', async () => {
+    const connection = new McpConnection({
+      name: 'ghost',
+      command: join(tmpdir(), 'memora-no-such-binary-xyz'),
+    });
+    await expect(connection.connect()).rejects.toThrow('配置无法启动');
+    await expect(connection.connect()).rejects.toThrow('找不到可执行文件');
+  }, 30_000);
+
+  it('脚本文件被当成命令 ⇒ 提示改填 node（最高频的配错形态）', async () => {
+    const connection = new McpConnection({ name: 'as-command', command: FIXTURE_SERVER });
+    await expect(connection.connect()).rejects.toThrow('脚本文件');
+  }, 30_000);
+
+  it('server 启动即崩 ⇒ 失败原因里带上它的 stderr 原文（而不是只有 Connection closed）', async () => {
+    const boomDir = mkdtempSync(join(tmpdir(), 'memora-boom-'));
+    const boom = join(boomDir, 'boom.mjs');
+    writeFileSync(boom, "console.error('boom-from-server-stderr');\nprocess.exit(3);\n", 'utf8');
+    const connection = new McpConnection({
+      name: 'boom',
+      command: process.execPath,
+      args: [boom],
+    });
+    // then 双分支显式收窄：connect 成功时返回工具数组，失败时拿到 Error
+    const error = await connection.connect().then(
+      () => null,
+      (err: unknown) => err as Error,
+    );
+    expect(error, '应拒绝连接').not.toBeNull();
+    expect(error?.message).toContain('boom-from-server-stderr');
+    rmSync(boomDir, { recursive: true, force: true });
   }, 30_000);
 });

@@ -23,7 +23,7 @@ import {
   readMcpServers,
   readMcpToolAllowlist,
 } from '../../extension/mcpConfig.js';
-import { configProblem } from '../../extension/host/mcp/runtime.js';
+import { configProblem } from '../../extension/host/mcp/mcpConfigGuard.js';
 import type { McpServerConfig } from '../../extension/host/mcp/connectionManager.js';
 import type { McpServerDraftDto, McpWritePayload } from '../../shared/protocol.js';
 
@@ -73,21 +73,39 @@ async function writeServers(deps: McpOpsDeps, next: McpServerConfig[]): Promise<
 /**
  * 把表单草稿收敛成可落盘的配置项
  *
- * **只收敛「用户明确表达的字段」**：`args/env/cwd` 为空则不写（保持配置干净），
- * `enabled` 恒写（它承载「停用」这个显式意图，缺省碰运气不如写明）。
- * 未知字段由调用方 `{...old, ...patch}` 保留，本函数不碰。
+ * **三个可清空字段（args / env / cwd）恒写**，空值由 {@link clearEmptyFields} 在合并后删除。
+ *
+ * 为什么不能「空就不写」（2026-10-24 修的缺陷）：`upsert` 用 `{...old, ...patch}` 合并，
+ * 表单不发的字段等于「保持旧值」——于是用户在表单里**清空参数**再保存，旧参数会原样复活，
+ * 而 UI 回推又显示旧值，用户以为保存失败。保护未知字段（不带伤）与保护用户明确删除的数据
+ * 是两件事，必须分开：`args: []` 是「我删了」，`args` 缺省才是「我不知道这个字段」。
  *
  * @param draft 表单草稿
  */
 function draftToConfig(draft: McpServerDraftDto): McpServerConfig {
-  const config: McpServerConfig = {
+  return {
     name: draft.name,
     command: draft.command,
     enabled: draft.enabled !== false,
+    args: Array.isArray(draft.args) ? [...draft.args] : [],
+    env: draft.env && typeof draft.env === 'object' ? { ...draft.env } : {},
+    cwd: typeof draft.cwd === 'string' ? draft.cwd : '',
   };
-  if (Array.isArray(draft.args) && draft.args.length > 0) config.args = [...draft.args];
-  if (draft.env && Object.keys(draft.env).length > 0) config.env = { ...draft.env };
-  if (typeof draft.cwd === 'string' && draft.cwd.length > 0) config.cwd = draft.cwd;
+}
+
+/**
+ * 删掉空值字段（落盘前归一化）
+ *
+ * 目的：用户清空生效的同时，配置里不留 `args: []` / `cwd: ""` 这类噪音（它们与缺省等价，
+ * 却会让 `configsEqual` 的稳定序列化把「清空」判成「配置变了」而触发一次不必要的重启）。
+ *
+ * @param config 合并后的配置（原地删除，调用方保证是新建对象）
+ * @returns 同一对象（便于链式）
+ */
+function clearEmptyFields(config: McpServerConfig): McpServerConfig {
+  if (!config.args || config.args.length === 0) delete config.args;
+  if (!config.env || Object.keys(config.env).length === 0) delete config.env;
+  if (!config.cwd) delete config.cwd;
   return config;
 }
 
@@ -155,7 +173,8 @@ async function setAllowlisted(deps: McpOpsDeps, key: string, allowlisted: boolea
  *
  * **按 name 定位**：name 同时是工具名前缀与 allowlist 寻址键，所以它是身份而不是可编辑字段
  * （改名 = 删除后重建，见 `mcpView` 的表单只读锁）。`{...old, ...patch}` ⇒ 表单不认识的字段
- * （将来新增的 `timeout`/`headers` 等）原样保留，不会被编辑动作冲掉。
+ * （将来新增的 `timeout`/`headers` 等）原样保留，不会被编辑动作冲掉；而表单**认识**的三个
+ * 可清空字段（args / env / cwd）是全量覆盖——空值即删除，否则用户清空后旧值会复活。
  *
  * @param deps 依赖
  * @param draft 表单草稿
@@ -168,10 +187,12 @@ async function upsertServer(deps: McpOpsDeps, draft: McpServerDraftDto): Promise
   const configs = readServers();
   const patch = draftToConfig(draft);
   const index = configs.findIndex((item) => item.name === patch.name);
-  // 展开合并：保留旧项里表单不认识的键（不带伤——编辑动作不销毁未知字段）
-  const merged: McpServerConfig = index >= 0 ? { ...configs[index], ...patch } : patch;
+  // 展开合并：保留旧项里表单不认识的键（不带伤——编辑动作不销毁未知字段）；
+  // 表单认识的三个可清空字段由 patch 全量覆盖 ⇒ 空值即删除（见 clearEmptyFields）
+  const merged: McpServerConfig = index >= 0 ? { ...configs[index], ...patch } : { ...patch };
+  clearEmptyFields(merged);
 
-  // 判据与启动侧同源（runtime.configProblem）：面板能存进去的配置，启动侧不会因同一原因拒
+  // 判据与启动侧同源（mcpConfigGuard.configProblem）：面板能存进去的配置，启动侧不会因同一原因拒
   const problem = configProblem(merged);
   if (problem) {
     deps.notice('error', `MCP 服务器「${merged.name || '(未命名)'}」不可保存：${problem}`);

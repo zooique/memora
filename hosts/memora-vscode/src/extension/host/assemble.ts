@@ -473,6 +473,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     allowlist: mcpToolAllowlist ?? [],
     logger,
     clientVersion: extensionVersion,
+    // 相对路径基准 = 工作区根（用户填 `./server.js` 时的直觉就是"我打开的这个项目"）。
+    // 未打开工作区时退回 projectPath（memora 数据目录），至少是稳定的绝对路径而非宿主进程 cwd。
+    baseDir: projectSearchRoot ?? projectPath,
   });
 
   return agent;

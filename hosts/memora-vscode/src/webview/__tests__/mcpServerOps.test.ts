@@ -118,6 +118,34 @@ describe('mcp_write / upsert（增改）', () => {
     expect(written[0]?.headers).toEqual({ a: 'b' });
   });
 
+  it('清空 args/env：表单删除必须真的落盘（旧值不得复活）', async () => {
+    h.data['mcpServers'] = [{ name: 'fs', command: 'npx', args: ['-y', 'pkg'], env: { A: '1' } }];
+    // 表单在全空时不发这三个键 —— host 侧必须把「没发」当「删了」，而不是「保持旧值」
+    await applyMcpWrite(deps(), { op: 'upsert', server: { name: 'fs', command: 'npx' } });
+    const saved = (h.data['mcpServers'] as Record<string, unknown>[])[0]!;
+    expect(saved.args).toBeUndefined();
+    expect(saved.env).toBeUndefined();
+    expect(saved.command).toBe('npx');
+  });
+
+  it('清空 cwd：同上（曾因 `空则不写` 而让旧工作目录复活）', async () => {
+    h.data['mcpServers'] = [{ name: 'fs', command: 'npx', cwd: '/tmp/x' }];
+    await applyMcpWrite(deps(), { op: 'upsert', server: { name: 'fs', command: 'npx' } });
+    const saved = (h.data['mcpServers'] as Record<string, unknown>[])[0]!;
+    expect(saved.cwd).toBeUndefined();
+  });
+
+  it('清空只影响表单认识的三个字段：未知字段仍原样保留', async () => {
+    h.data['mcpServers'] = [
+      { name: 'fs', command: 'npx', args: ['-y'], timeout: 30, headers: { a: 'b' } },
+    ];
+    await applyMcpWrite(deps(), { op: 'upsert', server: { name: 'fs', command: 'node' } });
+    const saved = (h.data['mcpServers'] as Record<string, unknown>[])[0]!;
+    expect(saved.args).toBeUndefined();
+    expect(saved.timeout).toBe(30);
+    expect(saved.headers).toEqual({ a: 'b' });
+  });
+
   it('非法配置不写入：缺 command ⇒ notice(error) + 配置不变（判据与启动侧同源）', async () => {
     h.data['mcpServers'] = [{ name: 'fs', command: 'npx' }];
     const d = deps();

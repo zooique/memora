@@ -25,6 +25,7 @@ import {
   type Tool as McpTool,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { ILogger } from '@zooique/memora';
+import { probeCommand } from './commandProbe.js';
 // 配置形状真源在 shared（webview 要画编辑表单，不能 import 本模块——会把 MCP SDK 拖进
 // webview bundle）⇒ 本接口只 extends、不重复定义字段，加字段必两边同源。
 import type { McpServerDraftDto } from '../../../shared/protocol.js';
@@ -103,6 +104,50 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+/** 失败原因里附带的 stderr 尾部行数（面板单行展示；runtime 侧还会截到 300 字符） */
+const STDERR_TAIL_LINES = 3;
+/** stderr 单行保留上限（防止一行巨型堆栈把原因撑爆） */
+const STDERR_TAIL_LINE_MAX = 200;
+
+/**
+ * 把 stderr 尾部拼进失败原因
+ *
+ * 原地改 `err.message` 而不是包一层新 Error：SDK 的 `McpError` 带 `code = -32000`，
+ * 换壳会丢 code（将来要按码分流就没得用）。面板只读 message，拼接不影响其余语义。
+ *
+ * @param err 原始错误（SDK / spawn / 超时）
+ * @param tail stderr 尾部行
+ */
+function withStderrTail(err: unknown, tail: readonly string[]): Error {
+  if (tail.length === 0) return err instanceof Error ? err : new Error(String(err));
+  const suffix = `｜子进程输出：${tail.join(' │ ')}`;
+  if (err instanceof Error) {
+    err.message = `${err.message}${suffix}`;
+    return err;
+  }
+  return new Error(`${String(err)}${suffix}`);
+}
+
+/**
+ * 解码子进程 stderr
+ *
+ * 中文 Windows 的 cmd 报错是 **GBK**（`'xxx' 不是内部或外部命令`），按 utf8 解会得到满屏
+ * `U+FFFD` —— 用户看到的"错误原因"等于没有（2026-10-24 实测：路径写错时 stderr 全是乱码，
+ * 而面板上只有 `MCP error -32000: Connection closed`）。utf8 解出替换字符时改用 gbk 重解
+ * （Node 22 内置 ICU 支持，实测 `d6 d0 ce c4` → 「中文」）。
+ *
+ * @param chunk 子进程 stderr 原始字节
+ */
+function decodeStderr(chunk: Buffer): string {
+  const utf8 = chunk.toString('utf8');
+  if (!utf8.includes('\uFFFD')) return utf8;
+  try {
+    return new TextDecoder('gbk').decode(chunk);
+  } catch {
+    return utf8;
+  }
+}
+
 /**
  * 拉全分页工具清单（P1）
  *
@@ -173,7 +218,21 @@ export class McpConnection {
   /** 是否处于主动关闭流程（区分「我关的」与「它自己死的」） */
   private closing = false;
 
-  constructor(config: McpServerConfig, logger?: ILogger, clientVersion = '0.0.0') {
+  /** stderr 尾部环形缓冲（失败时附进原因；成功路径不读它） */
+  private readonly stderrTail: string[] = [];
+
+  constructor(
+    config: McpServerConfig,
+    logger?: ILogger,
+    clientVersion = '0.0.0',
+    /**
+     * 相对路径基准（工作区根）
+     *
+     * 只有本类（真连接）需要它：`connect` 开头用 {@link probeCommand} 把相对 `command` /
+     * 相对 `cwd` 解析成绝对路径，并把「必然失败」翻译成人话。测试注入的假连接忽略此参。
+     */
+    private readonly baseDir?: string,
+  ) {
     this.name = config.name;
     this.config = config;
     this.logger = logger;
@@ -190,12 +249,30 @@ export class McpConnection {
    * @throws 连接/握手/发现任一环节失败（含超时）；抛出前已关闭连接，不留孤儿进程
    */
   async connect(): Promise<McpTool[]> {
+    // 尾部缓冲每次连接从零开始（同一实例重复 connect 时不累积上一次的输出）
+    this.stderrTail.length = 0;
+
+    // 拉起前预检：命令/路径不对时**先别 spawn**。
+    // 不预检的后果（2026-10-24 实测）：命令不存在、把脚本当命令、脚本路径写错、漏写 node
+    // 前缀，SDK 一律抛 `MCP error -32000: Connection closed`，真原因只在 stderr。
+    // 预检同时产出**解析后的**可执行形态——判据与实现用同一份解析结果，不允许
+    // 「判的时候按工作区根解析、拉的时候按进程 cwd 解析」（那是「校验通过却起不来」的成因）。
+    const probe = probeCommand({
+      command: this.config.command,
+      args: this.config.args,
+      cwd: this.config.cwd,
+      ...(this.baseDir ? { baseDir: this.baseDir } : {}),
+    });
+    if (!probe.ok) {
+      throw new Error(`配置无法启动：${probe.problem}`);
+    }
+
     // env 合并默认安全环境：只给用户 env 会丢掉 PATH（子进程直接 ENOENT），
     // 故以 getDefaultEnvironment() 为底、用户键覆盖其上。
     const transport = new StdioClientTransport({
-      command: this.config.command,
-      args: this.config.args ?? [],
-      cwd: this.config.cwd,
+      command: probe.resolved.command,
+      args: [...probe.resolved.args],
+      cwd: probe.resolved.cwd,
       env: { ...getDefaultEnvironment(), ...(this.config.env ?? {}) },
       // stderr 接管为管道：server 的诊断输出进宿主日志（用户可在 Memora 输出面板看到），
       // 不污染扩展宿主的 stderr
@@ -209,9 +286,24 @@ export class McpConnection {
     this.client = client;
 
     // 子进程 stderr 逐行进日志（debug 级：server 正常也会打印启动信息）
+    //
+    // 同时留尾部几行：spawn 失败 / 脚本路径写错时，SDK 只抛 `MCP error -32000: Connection
+    // closed`，真原因（`Cannot find module ...` / `'xxx' 不是内部或外部命令`）**只出现在
+    // stderr**。不留尾部 ⇒ 面板上永远是一句「连接已关闭」，用户无从判断是路径问题。
     transport.stderr?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString('utf8').trimEnd();
-      if (text) this.logger?.debug(`[MCP:${this.name}] ${text}`);
+      const text = decodeStderr(chunk).trimEnd();
+      if (!text) return;
+      this.logger?.debug(`[MCP:${this.name}] ${text}`);
+      for (const line of text.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        this.stderrTail.push(
+          trimmed.length > STDERR_TAIL_LINE_MAX
+            ? `${trimmed.slice(0, STDERR_TAIL_LINE_MAX)}…`
+            : trimmed,
+        );
+        if (this.stderrTail.length > STDERR_TAIL_LINES) this.stderrTail.shift();
+      }
     });
 
     try {
@@ -239,7 +331,8 @@ export class McpConnection {
     } catch (err) {
       // 失败即清理：握手失败/超时后子进程仍在跑，不关就是孤儿
       await this.close().catch(() => undefined);
-      throw err;
+      // 把 stderr 尾部拼进原因：`-32000: Connection closed` 单独出现等于没说话
+      throw withStderrTail(err, this.stderrTail);
     }
 
     // 断线回调：主动 close 时由 closing 标记过滤，仅「它自己死的」才通知注销

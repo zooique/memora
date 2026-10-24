@@ -110,3 +110,37 @@ describe('五态可见名（与 CSS data-state 同源）', () => {
     expect(STATE_LABELS.pending).not.toBe(STATE_LABELS.failed);
   });
 });
+
+// ──────────────────────────────────────────────────────────────
+// 判据 ↔ 往返一致性（2026-10-24 修：parse 曾 trimEnd，判据却宣称「无损」）
+//
+// 这组用例守的是「判据说可编辑 ⇒ 往返必然无损」：一旦 parse 再引入任何形式的
+// 静默修剪（trimEnd / 丢空行 / 吞 \r），这里立刻红——而不是等用户保存后发现参数变了。
+// ──────────────────────────────────────────────────────────────
+describe('可编辑判据 vs 实际往返（有损就必须拒绝编辑）', () => {
+  it('args 尾随空格：往返无损（曾被 trimEnd 静默吃掉）', () => {
+    const args = ['--path=/tmp/x ', 'a'];
+    expect(isFormRepresentable({ name: 'a', command: 'x', args })).toBe(true);
+    expect(parseArgs(formatArgs(args))).toEqual(args);
+  });
+
+  it('env 值尾随空格：往返无损（曾被 trimEnd 静默吃掉）', () => {
+    const env = { TOKEN: 'abc ' };
+    expect(isFormRepresentable({ name: 'a', command: 'x', env })).toBe(true);
+    expect(parseEnv(formatEnv(env)).env).toEqual(env);
+  });
+
+  it('args 含 \\r（单行内回车）：判为不可编辑（文本格式只剥行尾，表达不出）', () => {
+    expect(isFormRepresentable({ name: 'a', command: 'x', args: ['a\rb'] })).toBe(false);
+    expect(isFormRepresentable({ name: 'a', command: 'x', args: ['a\r'] })).toBe(false);
+  });
+
+  it('args 含纯空白项：判为不可编辑（纯空白行会被当分隔符）', () => {
+    expect(isFormRepresentable({ name: 'a', command: 'x', args: ['  ', 'b'] })).toBe(false);
+  });
+
+  it('行尾 \\r\\n 的文本（从 settings.json 粘贴）：解析后不带 \\r', () => {
+    expect(parseArgs('-y\r\npkg\r\n')).toEqual(['-y', 'pkg']);
+    expect(parseEnv('A=1\r\nB=2\r\n').env).toEqual({ A: '1', B: '2' });
+  });
+});

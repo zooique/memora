@@ -1790,7 +1790,9 @@ export interface McpServerStatusDto extends McpServerDraftDto {
  * `mcp_write` 的载荷（按 op 判别；见 {@link WebviewToExtensionMessage} 该成员的注释）
  *
  * `upsert.server` 用 {@link McpServerDraftDto}：host 按 name 定位旧项后**展开合并**
- * （未知字段原样保留），因此表单只提交它认识的六个字段，不会把将来新增的键冲掉。
+ * （未知字段原样保留），因此表单只提交它认识的字段，不会把将来新增的键冲掉。
+ * 表单**认识**的三个可清空字段（`args` / `env` / `cwd`）是全量覆盖：空值即删除——
+ * 否则用户清空后旧值会复活（2026-10-24 修，见 `mcpServerOps.clearEmptyFields`）。
  */
 export type McpWritePayload =
   | {

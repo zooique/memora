@@ -15,6 +15,8 @@
 import type { Agent, ILogger } from '@zooique/memora';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { McpConnection, type McpServerConfig } from './connectionManager.js';
+import { clearAllFailures, clearFailure, failureOf, noteFailure } from './failureLedger.js';
+import { configProblem, indexValidConfigs } from './mcpConfigGuard.js';
 // 五态词汇的真源（面板与宿主共用同一枚举，禁两边各写一份字符串字面量）
 import type { McpServerState } from '../../../shared/protocol.js';
 import { isPlainObject } from './json.js';
@@ -56,12 +58,11 @@ let running: Map<string, RunningServer> | null = null;
 let appliedConfigs: readonly McpServerConfig[] = [];
 
 /**
- * 失败表（server 名 → 最近一次启动失败/断线的原因）
+ * 失败账本（server 名 → 最近一次失败）已拆到 `failureLedger.ts`
  *
- * 不变量：**与 `running` 互斥**——启动成功必删、停机必清、离场必清。违反该不变量会让
+ * 不变量不变：**与 `running` 互斥**——启动成功必删、停机必清、离场必清。违反该不变量会让
  * 面板同时出现「已连接」和「失败」两条互相打脸的记录。
  */
-const failed = new Map<string, { error: string; at: number }>();
 
 /**
  * 最近一次应用配置时注入的日志 / 版本（重启路径沿用）
@@ -72,6 +73,13 @@ const failed = new Map<string, { error: string; at: number }>();
  */
 let lastLogger: ILogger | undefined;
 let lastClientVersion: string | undefined;
+/**
+ * 最近一次装配/热更用的相对路径基准（工作区根）
+ *
+ * 与 lastLogger 同款理由：`restartMcpServer` 由面板触发，面板不该知道「当前工作区根」
+ * 这份知识（它是装配期上下文）。重启沿用最近一次注入值 = 单点。
+ */
+let lastBaseDir: string | undefined;
 
 /**
  * 运行态变化监听器（由宿主 extension 注入，用于把变化回推给设置面板）
@@ -102,22 +110,8 @@ function notifyStatus(): void {
   }
 }
 
-/** 记录一次失败（超长截断；`running` 中同名的记录先摘掉，保互斥不变量） */
-function noteFailure(name: string, reason: unknown): void {
-  const text = String(reason ?? '未知错误');
-  failed.set(name, {
-    error: text.length > MAX_ERROR_TEXT ? `${text.slice(0, MAX_ERROR_TEXT)}…` : text,
-    at: Date.now(),
-  });
-}
-
-/** 清除失败记录（启动成功 / 该 server 已从配置移除时调用） */
-function clearFailure(name: string): void {
-  failed.delete(name);
-}
-
-/** 当前生效的 allowlist（热更差分判「allowlist 变没变」的基线；停机时置空） */
-let activeAllowKeys: McpToolAllowlist | null = null;
+/** 当前生效的 allowlist（热更差分判「allowlist 变没变」的基线；停机时置空） */ let activeAllowKeys: McpToolAllowlist | null =
+  null;
 
 /** 配置热更串行链（两个配置键同时变 / 用户连改多次 ⇒ 差分不交错） */
 let hotReloadChain: Promise<void> = Promise.resolve();
@@ -204,9 +198,6 @@ export interface McpServerStatus {
   readonly problem?: string;
 }
 
-/** 失败原因文本上限（消息进 webview 单行展示；超长截断并注明，不静默丢） */
-const MAX_ERROR_TEXT = 300;
-
 /**
  * 读取 MCP 服务器状态（**列表基线 = 配置；状态 = 运行态 ∪ 失败表**）
  *
@@ -247,7 +238,7 @@ export function getMcpServerStatus(configured: readonly McpServerConfig[]): McpS
     const problem = configProblem(config);
     const enabled = config.enabled !== false;
     const live = running?.get(name);
-    const failure = failed.get(name);
+    const failure = failureOf(name);
 
     let state: McpServerState;
     if (problem) state = 'invalid';
@@ -309,58 +300,13 @@ export interface StartMcpOptions {
   clientVersion?: string;
   /** 连接工厂（测试注入假连接；生产缺省 `new McpConnection`。与 applyMcpConfigChange 同口径） */
   connect?: McpConnectionFactory;
-}
-
-/**
- * 校验一条配置是否可启动
- *
- * **导出理由（判据单点）**：设置面板的「保存」校验与启动侧的跳过判据必须是同一句
- * （`mcpServerOps` 直接复用本函数）。各写一份 = 面板能存进一条永远起不来的配置，
- * 或者反过来挡住一条合法配置——两种都是判据散点。
- *
- * @param config 用户配置项
- * @returns 不可用原因；可用时返回 null
- */
-export function configProblem(config: McpServerConfig): string | null {
-  if (typeof config.name !== 'string' || config.name.trim().length === 0) {
-    return '缺少 name';
-  }
-  if (typeof config.command !== 'string' || config.command.trim().length === 0) {
-    return '缺少 command';
-  }
-  return null;
-}
-
-/**
- * 把用户配置收敛为「可启动集」（首装与热更共用的单点）
- *
- * 三条规则与首装历史口径一致：非法配置（缺 name/command）跳过并告警；`enabled:
- * false` 不启动（静默——用户显式停用，不该每次激活都告警）；重名**先到先得**
- * （工具名前缀按 server 名派生，后到的会与先到的撞名 → 直接跳过更诚实）。
- *
- * @param configs 用户配置原值
- * @param logger 告警通道（缺省不记）
- * @returns name → 配置（保序：配置顺序即启动顺序）
- */
-function indexValidConfigs(
-  configs: readonly McpServerConfig[],
-  logger?: ILogger,
-): Map<string, McpServerConfig> {
-  const valid = new Map<string, McpServerConfig>();
-  for (const config of configs) {
-    const problem = configProblem(config);
-    if (problem) {
-      logger?.warn(`[MCP] 跳过非法配置（${problem}）：${JSON.stringify(config)}`);
-      continue;
-    }
-    if (config.enabled === false) continue;
-    if (valid.has(config.name)) {
-      logger?.warn(`[MCP] server 名重复，跳过后者：${config.name}`);
-      continue;
-    }
-    valid.set(config.name, config);
-  }
-  return valid;
+  /**
+   * 相对路径基准（工作区根）
+   *
+   * `command` / `args[0]` / `cwd` 里的相对路径按它解析成绝对路径后再 spawn（见 commandProbe）。
+   * 缺省 = `process.cwd()`（扩展宿主进程目录，用户不可预期）⇒ 调用方应显式传工作区根。
+   */
+  baseDir?: string;
 }
 
 /**
@@ -400,6 +346,13 @@ export type McpConnectionFactory = (
   config: McpServerConfig,
   logger?: ILogger,
   clientVersion?: string,
+  /**
+   * 相对路径基准（工作区根）
+   *
+   * 只有真连接（`McpConnection`）用它做命令预检；测试注入的假连接忽略即可——
+   * 假连接不 spawn 进程，「命令能否拉起」对它没有意义（强求会逼测试依赖真实 PATH）。
+   */
+  baseDir?: string,
 ) => McpConnection;
 
 /** `startOneServer` 的上下文（一台 server 启动所需的全部注入） */
@@ -412,6 +365,8 @@ interface StartOneServerContext {
   clientVersion?: string;
   /** 连接工厂（缺省真连接） */
   connect?: McpConnectionFactory;
+  /** 相对路径基准（工作区根；缺省 process.cwd()，见 commandProbe） */
+  baseDir?: string;
 }
 
 /** 注销 + 关闭一台运行中的 server（停机/停一台/热更抢占收尾共用的单点） */
@@ -441,10 +396,15 @@ async function disposeState(state: Map<string, RunningServer>): Promise<void> {
  * 都只记日志并关连接，该 server 零工具，不阻断装配、不影响其余 server。
  */
 async function startOneServer(config: McpServerConfig, ctx: StartOneServerContext): Promise<void> {
-  const { registrar, allowKeys, state, logger, clientVersion, connect } = ctx;
+  const { registrar, allowKeys, state, logger, clientVersion, connect, baseDir } = ctx;
+
+  // 命令预检在**真连接**里做（`McpConnection.connect` 开头）：注入假连接时不该被真实 PATH
+  // 约束，而真连接必须用同一份判据把「必然失败」提前说穿，别让 SDK 压成
+  // `MCP error -32000: Connection closed`（2026-10-24 实测：四种错法签名完全相同）。
+  // baseDir 只影响相对路径解析，不写回配置（appliedConfigs / 面板 DTO 保持用户原值）。
   const connection = connect
-    ? connect(config, logger, clientVersion)
-    : new McpConnection(config, logger, clientVersion);
+    ? connect(config, logger, clientVersion, baseDir)
+    : new McpConnection(config, logger, clientVersion, baseDir);
   try {
     const tools = await connection.connect();
     const { bindings, skipped } = buildToolBindings(config.name, tools, allowKeys);
@@ -529,9 +489,10 @@ export async function startMcpServers(
   configs: readonly McpServerConfig[],
   options: StartMcpOptions,
 ): Promise<void> {
-  const { allowlist, logger, clientVersion, connect } = options;
+  const { allowlist, logger, clientVersion, connect, baseDir } = options;
   lastLogger = logger;
   lastClientVersion = clientVersion;
+  lastBaseDir = baseDir;
 
   // 先停后起：见上方 JSDoc。无配置 = 停掉上一轮后完全不碰内核工具集（零行为变化）。
   await stopMcpServers();
@@ -555,7 +516,15 @@ export async function startMcpServers(
   const valid = indexValidConfigs(configs, logger);
   await Promise.all(
     [...valid.values()].map((config) =>
-      startOneServer(config, { registrar, allowKeys, state, logger, clientVersion, connect }),
+      startOneServer(config, {
+        registrar,
+        allowKeys,
+        state,
+        logger,
+        clientVersion,
+        connect,
+        ...(baseDir ? { baseDir } : {}),
+      }),
     ),
   );
 
@@ -730,7 +699,7 @@ export async function stopMcpServers(): Promise<void> {
   activeAllowKeys = null;
   // 停机 = 该有哪些也归零（否则面板会把「已停的旧配置」继续画成 failed）
   appliedConfigs = [];
-  failed.clear();
+  clearAllFailures();
   if (!state) {
     notifyStatus();
     return;
@@ -753,6 +722,8 @@ export interface RestartMcpOptions {
   clientVersion?: string;
   /** 连接工厂（测试注入假连接） */
   connect?: McpConnectionFactory;
+  /** 相对路径基准（缺省 = 最近一次装配注入的工作区根） */
+  baseDir?: string;
 }
 
 /**
@@ -788,7 +759,12 @@ async function restartInner(
   name: string,
   options: RestartMcpOptions,
 ): Promise<{ ok: boolean; error?: string }> {
-  const { logger = lastLogger, clientVersion = lastClientVersion, connect } = options;
+  const {
+    logger = lastLogger,
+    clientVersion = lastClientVersion,
+    connect,
+    baseDir = lastBaseDir,
+  } = options;
   try {
     const state = running;
     if (!state) return { ok: false, error: 'MCP 运行时未启动（Agent 尚未装配）' };
@@ -809,11 +785,13 @@ async function restartInner(
       logger,
       clientVersion,
       connect,
+      // 重启沿用最近一次装配的工作区根（面板不该知道这份上下文，见 lastBaseDir 说明）
+      ...(baseDir ? { baseDir } : {}),
     });
     noteToolCount(logger);
     notifyStatus();
     if (state.has(name)) return { ok: true };
-    return { ok: false, error: failed.get(name)?.error ?? '启动失败（原因未记录）' };
+    return { ok: false, error: failureOf(name)?.error ?? '启动失败（原因未记录）' };
   } catch (err) {
     logger?.warn(`[MCP] 重启「${name}」失败：${String(err)}`);
     return { ok: false, error: String(err) };
@@ -834,6 +812,8 @@ export interface McpConfigChangeOptions {
   clientVersion?: string;
   /** 连接工厂（测试注入假连接；生产缺省真连接） */
   connect?: McpConnectionFactory;
+  /** 相对路径基准（工作区根；缺省沿用上一次装配值） */
+  baseDir?: string;
 }
 
 /**
@@ -878,9 +858,11 @@ async function applyConfigChangeInner(
   configs: readonly McpServerConfig[],
   options: McpConfigChangeOptions,
 ): Promise<void> {
-  const { allowlist, logger, clientVersion, connect } = options;
+  const { allowlist, logger, clientVersion, connect, baseDir } = options;
   lastLogger = logger;
   lastClientVersion = clientVersion;
+  // 热更可能不带 baseDir（调用方只改配置时不必重复传）：沿用上一次装配值，不退回 process.cwd()
+  if (baseDir) lastBaseDir = baseDir;
   try {
     const registrar = agent.tools;
     if (!registrar) {
@@ -927,6 +909,7 @@ async function applyConfigChangeInner(
         logger,
         clientVersion,
         connect,
+        ...(lastBaseDir ? { baseDir: lastBaseDir } : {}),
       });
       if (running !== state) {
         await disposeState(state);

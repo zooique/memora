@@ -1,7 +1,7 @@
 /**
  * mcpView — 设置面板「MCP」选项卡的 webview 子视图（自 settingsView.ts 拆出）
  *
- * 为什么独立成文件：settingsView 是贴 eslint max-lines 上限的容器（现 974 / cap 1149），
+ * 为什么独立成文件：settingsView 是逼近 eslint max-lines 通用闸（1000）的容器，
  * 而 MCP 页要长表单、状态机与确认流程；按域拆文件是本仓既有范式（样式层同样按 root 分文件）。
  *
  * 职责：
@@ -59,17 +59,34 @@ export function formatArgs(args: readonly string[] | undefined): string {
 }
 
 /**
- * 文本 → 参数数组（一行一个；丢弃空白行）
+ * 剥掉行尾的单个 `\r`（Windows 换行残留）
+ *
+ * **只剥 `\r`，不剥空格**：`trimEnd()` 会把参数尾随空格一起吃掉，那是数据。
+ * 2026-10-24 实测：`parseArgs(formatArgs(['--path=/tmp/x ']))` 曾返回 `['--path=/tmp/x']`
+ * ——「打开表单→保存」静默改写参数，而 `isFormRepresentable` 还宣称「可无损呈现」。
+ *
+ * @param line 原始行
+ */
+function stripTrailingCR(line: string): string {
+  return line.endsWith('\r') ? line.slice(0, -1) : line;
+}
+
+/**
+ * 文本 → 参数数组（一行一个；纯空白行视为分隔符丢弃，其余原样保留）
  *
  * **不做 shell 解析**（不认引号、不认转义）：参数里本来就可以有空格，靠引号猜边界会
  * 制造「看起来对、传过去错」的静默偏差。要表达含换行的参数请走 settings.json（见
  * {@link isFormRepresentable}）。
+ *
+ * **不做 trimEnd**：尾随空格是参数内容的一部分（`--path=/x ` 与 `--path=/x` 不同）。
+ * 纯空白行仍按分隔符丢弃——「整行没有内容」与「内容里有空格」是两件事，前者由
+ * {@link isFormRepresentable} 保证不会出现在可编辑配置里。
  */
 export function parseArgs(text: string): string[] {
   return text
     .split('\n')
-    .map((line) => line.trimEnd())
-    .filter((line) => line.length > 0);
+    .map(stripTrailingCR)
+    .filter((line) => line.trim().length > 0);
 }
 
 /** 环境变量 → 文本（`KEY=VALUE` 一行一个，保序 = 对象键序） */
@@ -82,6 +99,8 @@ export function formatEnv(env: Readonly<Record<string, string>> | undefined): st
 /**
  * 文本 → 环境变量（按**第一个** `=` 切分，值里可以有 `=`）
  *
+ * 与 {@link parseArgs} 同一纪律：只剥行尾 `\r`，**不 trimEnd**（值里的尾随空格是数据）。
+ *
  * @returns 解析结果与非法行（无 `=` 或有空键的行）；非法行由调用方拦下，不静默丢弃
  */
 export function parseEnv(text: string): {
@@ -91,8 +110,8 @@ export function parseEnv(text: string): {
   const env: Record<string, string> = {};
   const invalidLines: string[] = [];
   for (const raw of text.split('\n')) {
-    const line = raw.trimEnd();
-    if (line.length === 0) continue;
+    const line = stripTrailingCR(raw);
+    if (line.trim().length === 0) continue;
     const eq = line.indexOf('=');
     if (eq <= 0) {
       invalidLines.push(line);
@@ -107,9 +126,13 @@ export function parseEnv(text: string): {
  * 该 server 能否用表单**无损**编辑
  *
  * 判据（双向：如果存进去的东西再打开一次会变，就是有损）：
- *   - `args` 里任何一项为空串 / 含换行 ⇒ 一行一个的文本格式表达不出来（空行会被丢弃、
- *     换行会被当成两项）；
- *   - `env` 的键为空 / 含 `=` / 含换行，或值含换行 ⇒ 同上。
+ *   - `args` 里任何一项「整项都是空白」或含换行/回车 ⇒ 一行一个的文本格式表达不出来
+ *     （纯空白行会被当分隔符丢弃、换行会被当成两项）；
+ *   - `env` 的键为空 / 含 `=` / 含换行回车，或值含换行回车 ⇒ 同上。
+ *
+ * **判据必须与 parse 的实际行为同源**（2026-10-24 修）：parse 曾经 `trimEnd()`，
+ * 而判据只查空串/换行 ⇒ 含尾随空格的参数被判「可编辑」，一保存就被静默改写。
+ * 现在 parse 只剥 `\r`，判据也只需拒「换行 / 回车 / 纯空白项」。
  *
  * 有损时**不禁用查看、只禁用编辑**并指路 settings.json：静默改写用户配置里的字符，
  * 比不能编辑严重得多（不带伤）。
@@ -118,10 +141,10 @@ export function parseEnv(text: string): {
  */
 export function isFormRepresentable(server: McpServerDraftDto): boolean {
   const args = server.args ?? [];
-  if (args.some((arg) => arg.length === 0 || arg.includes('\n'))) return false;
+  if (args.some((arg) => arg.trim().length === 0 || /[\r\n]/.test(arg))) return false;
   for (const [key, value] of Object.entries(server.env ?? {})) {
-    if (key.length === 0 || key.includes('=') || key.includes('\n')) return false;
-    if (value.includes('\n')) return false;
+    if (key.length === 0 || key.includes('=') || /[\r\n]/.test(key)) return false;
+    if (/[\r\n]/.test(value)) return false;
   }
   return true;
 }
