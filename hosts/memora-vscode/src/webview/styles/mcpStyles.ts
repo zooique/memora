@@ -85,8 +85,9 @@ export const mcpStyles = `
   }
   #mcp-root .mcp-allow-check { cursor: pointer; }
 
-  /* ── 页头：标题组（h2 + 计数）与「添加服务器」并排 ── */
+  /* ── 页头：标题组（h2 + 计数）与右侧动作组（导入 + 添加）并排 ── */
   #mcp-root .header-main { display: flex; align-items: baseline; gap: var(--sp-2, 6px); min-width: 0; }
+  #mcp-root .header-actions { display: flex; align-items: center; gap: var(--sp-2, 6px); flex-shrink: 0; }
 
   /* ── 状态点 / 状态徽标（五态语义色；data-state 与 STATE_LABELS 同源） ──
    * 形状区别而不只靠颜色：实心绿=连上、实心红=失败、实心灰=待接入、空心=停用、
@@ -161,6 +162,17 @@ export const mcpStyles = `
   #mcp-root .mcp-warn { margin: 0; font-size: var(--font-xs, 10px); color: var(--feedback-warn-fg, #d7ba7d); }
   #mcp-root .mcp-form-error { margin: 0; font-size: var(--font-sm, 11px); color: var(--feedback-error-fg, #f48771); }
   #mcp-root .mcp-form-actions { display: flex; gap: var(--sp-2, 6px); }
+
+  /* ── 导入卡片：与编辑表单同壳，纵向堆叠 ── */
+  #mcp-root .mcp-import-card { flex-direction: column; gap: var(--sp-2, 6px); }
+  /* 导入结果：逐条明细必须保留换行（一条一行），等宽弱底色与失败原因区分开
+   * ——部分成功不是错误，不该穿错误底色 */
+  #mcp-root .mcp-import-result {
+    margin: 0; padding: var(--sp-1, 4px) var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px); color: var(--text-primary);
+    background: var(--surface-hover, rgba(128, 128, 128, 0.2));
+    border-radius: var(--radius-sm, 2px); white-space: pre-wrap; word-break: break-word;
+  }
 
   /* ── 页脚：原生设置出口（降级为「高级」，不再是唯一门） ── */
   #mcp-root .mcp-footer { display: flex; justify-content: flex-end; padding-top: var(--sp-2, 6px); }

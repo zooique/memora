@@ -799,9 +799,12 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
       missingName: 0,
       duplicate: 0,
     },
+    ack?: unknown,
   ): void {
     window.dispatchEvent(
-      new MessageEvent('message', { data: { type: 'mcp_status', servers, omitted } }),
+      new MessageEvent('message', {
+        data: { type: 'mcp_status', servers, omitted, ...(ack ? { ack } : {}) },
+      }),
     );
   }
 
@@ -1065,6 +1068,59 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
     expect(mcpRoot().querySelector('.mcp-server-name')?.textContent).toBe(
       '<img src=x onerror=alert(1)>',
     );
+  });
+
+  it('从 JSON 导入：粘贴原文直接投递 import（不预解析，解析器只有宿主一份）', () => {
+    const { postMessage } = mountSettingsView();
+    pushStatus([]);
+    clickOne('#mcpImportBtn');
+    const box = mcpRoot().querySelector<HTMLTextAreaElement>('[data-import]');
+    expect(box).not.toBeNull();
+    // 面板互斥：导入打开时新增表单不出现（同屏两张输入卡会让人不知道往哪张填）
+    expect(mcpRoot().querySelector('.mcp-form')).toBeNull();
+    const raw = '{ "mcpServers": { "fs": { "command": "npx" } } }';
+    box!.value = raw;
+    box!.dispatchEvent(new Event('input', { bubbles: true }));
+    clickOne('[data-act="import-run"]');
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'mcp_write',
+      op: 'import',
+      raw,
+      reqId: expect.any(String),
+    });
+  });
+
+  it('导入回执：reqId 对得上才把逐条明细留在卡上（toast 消失后仍可回看）', () => {
+    const { postMessage } = mountSettingsView();
+    pushStatus([]);
+    clickOne('#mcpImportBtn');
+    const box = mcpRoot().querySelector<HTMLTextAreaElement>('[data-import]')!;
+    box.value = '{ "mcpServers": { "fs": { "command": "npx" } } }';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    clickOne('[data-act="import-run"]');
+    // 挂载时还有 cfg_load / ready 等初始消息，取那条 import 的回执 id
+    const importCall = postMessage.mock.calls
+      .map((call) => call[0] as { type?: string; op?: string; reqId?: string })
+      .find((msg) => msg?.type === 'mcp_write' && msg.op === 'import');
+    const reqId = importCall!.reqId!;
+
+    // 别人的回推（reqId 不同）不得顶掉本次结论
+    pushStatus([], undefined, { reqId: 'someone-else', ok: true, detail: '不该出现' });
+    expect(mcpRoot().querySelector('.mcp-import-result')).toBeNull();
+
+    pushStatus([], undefined, { reqId, ok: true, detail: '导入完成：新增 1 台。' });
+    expect(mcpRoot().querySelector('.mcp-import-result')?.textContent).toContain('新增 1 台');
+  });
+
+  it('导入空文本：不投递，就地提示（不发一次必然失败的消息）', () => {
+    const { postMessage } = mountSettingsView();
+    pushStatus([]);
+    clickOne('#mcpImportBtn');
+    clickOne('[data-act="import-run"]');
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'mcp_write', op: 'import' }),
+    );
+    expect(mcpRoot().querySelector('.mcp-import-result')?.textContent).toContain('请先粘贴');
   });
 
   it('「高级：在 settings.json 中编辑」→ post open_setting（页面级绑定，按钮已降级为后门）', () => {

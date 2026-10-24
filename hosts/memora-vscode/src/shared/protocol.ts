@@ -679,19 +679,21 @@ export type WebviewToExtensionMessage =
   /**
    * MCP 域写操作（**唯一**写通道，按 `op` 分流；2026-10-24 协议治理）
    *
-   * 为什么合一条而不是五条：协议类型计数已贴阈值（129/130），而五个动作同属一个域
-   * （MCP 配置写入）+ 同一落点（`memora.mcpServers` / `memora.mcpToolAllowlist` 两个
-   * 用户级键），分流由 `op` 承担 —— 与 `security_toggle { target }`、`open_settings_tab`
-   * 同款先例（**合不是省事，是同一个语义面本来就只有一条通道**）。
+   * 为什么合成一条而不是每个动作一条：协议类型计数是稀缺预算（见 protocolGuard 阈值），
+   * 而这些动作同属一个域（MCP 配置写入）+ 同一落点（`memora.mcpServers` /
+   * `memora.mcpToolAllowlist` 两个用户级键），分流由 `op` 承担 —— 与
+   * `security_toggle { target }`、`open_settings_tab` 同款先例
+   * （**合不是省事，是同一个语义面本来就只有一条通道**）。
    *
    * 落点分工（host 侧唯一写入路径，均为 ConfigurationTarget.Global）：
    *   - `allow`     → `memora.mcpToolAllowlist`（逐工具免确认，键由 host 下发的 allowKey 原样回传）
    *   - `upsert`    → `memora.mcpServers`（按 name 覆盖或追加；未知字段原样保留）
    *   - `remove`    → `memora.mcpServers`（按 name 删除）
    *   - `setEnabled`→ `memora.mcpServers`（`enabled` 置真/假；可撤销，等价于停用而非删除）
-   *   - `restart`   → 不写配置，只对**已装配**运行时做「停一台 + 起一台」（配置未变时的恢复路径）
+   *   - `import`    → `memora.mcpServers`（批量追加粘贴的 JSON 片段；**只追加不覆盖**，逐条回执）
+   *   - `restart` / `connect` → 不写配置（恢复/追平运行态，见各 op 自身说明）
    *
-   * 生效语义：写配置的四个 op 都走**既有** onDidChangeConfiguration 热更链（不新建第二条
+   * 生效语义：写配置的 op 都走**既有** onDidChangeConfiguration 热更链（不新建第二条
    * 生效路径）；写回后 host 立即回推一次 `mcp_status`，热更生效后再回推一次覆盖
    * （幂等渲染，非乐观翻转）。
    */
@@ -1823,10 +1825,10 @@ export interface McpOmittedDto {
 }
 
 /**
- * 一次 `mcp_write{op:'upsert'}` 的结论（随写后那一次 `mcp_status` 回推带回）
+ * 一次 `mcp_write` 的结论（随写后那一次 `mcp_status` 回推带回）
  *
- * **为什么不新开 `mcp_write_result` 通道**（2026-10-24）：① 协议去重计数已 129/130，
- * 为一条 ack 花掉最后一个余量不划算（治理规则要求「加类型前先合并/删通道」）；② ack 与
+ * **为什么不新开 `mcp_write_result` 通道**（2026-10-24）：① 协议去重计数是稀缺预算，
+ * 为一条 ack 花掉余量不划算（治理规则要求「加类型前先合并/删通道」）；② ack 与
  * 状态本就是同一次回推的产物（`upsertServer` 结尾既推状态、也知道写没写成），拆成两条消息
  * 反而要保证顺序。字段加在既有类型上 = 0 协议成本。
  *
@@ -1838,10 +1840,17 @@ export interface McpOmittedDto {
 export interface McpWriteAckDto {
   /** webview 在 `mcp_write` 里带的 `reqId`，原样回传（视图据此认领） */
   reqId: string;
-  /** true = 配置已落盘；false = 未落盘（表单内容必须保住，见 mcpView 的 pendingSave） */
+  /** true = 配置已落盘（或本 op 无需写盘）；false = 未落盘（表单内容必须保住，见 mcpView） */
   ok: boolean;
   /** 失败原因（`ok=false` 时必有；直接可显示，不再二次加工） */
   error?: string;
+  /**
+   * 操作明细（批量导入的「新增 N / 跳过 M + 每条原因」；其余 op 不传）
+   *
+   * 为什么不塞进 `error`：部分成功不是失败（`ok=true`），但用户必须看清哪几条被跳过、
+   * 为什么跳过——把这些理由压成一句 toast 会随消失而丢，视图需要能留在面板上的明细。
+   */
+  detail?: string;
 }
 
 /**
@@ -1879,6 +1888,19 @@ export type McpWritePayload =
     }
   | { op: 'remove'; name: string }
   | { op: 'setEnabled'; name: string; enabled: boolean }
+  /**
+   * 批量导入（粘贴标准 `mcpServers` JSON 片段）
+   *
+   * **只追加不覆盖**：同名条目不静默盖掉已有配置（与 `upsert` 的重名预检同一条纪律），
+   * 而是逐条跳过并在 ack 的 `detail` 里说明原因。解析与校验全在宿主侧完成（判据复用
+   * `configProblem`，与启动侧同源）；webview 只负责把原文搬过来，不做预解析——两份解析器
+   * 迟早给出两份结论。
+   *
+   * 被拒绝的形态（逐条跳过或整体报错，见 `parseMcpServersJson`）：远程传输（`url` /
+   * `type: sse|http`，本机运行时只有 stdio 子进程一条通道）、含 `inputs` 变量提示的
+   * 片段（`${input:…}` 无法解析，静默导入会得到跑不起来的配置）。
+   */
+  | { op: 'import'; raw: string; reqId?: string }
   | { op: 'restart'; name: string }
   /**
    * 接入一台「待接入」的 server（`pending` 态的**唯一出路**）

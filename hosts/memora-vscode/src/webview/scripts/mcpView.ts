@@ -306,6 +306,17 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
    * ack，凭「收到状态就算写完」会把别人的回推当成自己的结论，所以认领必须比对 reqId。
    */
   let pendingSave: { reqId: string; draft: McpFormDraft } | null = null;
+  /**
+   * 导入面板的粘贴内容（null = 面板关闭；空串 = 打开且尚未粘贴）
+   *
+   * 与 `draft` 分开存：导入不是「一台服务器的表单」，也不该被表单的重渲染逻辑改写。
+   * 两者互斥打开（打开一个收起另一个）——同屏两张输入卡会让人分不清哪张在生效。
+   */
+  let importText: string | null = null;
+  /** 在途导入的 reqId（与 pendingSave 分开：导入失败不涉及复开草稿，只需把结论留在面板上） */
+  let pendingImport: string | null = null;
+  /** 上一次导入的逐条结果（空串 = 不渲染；保留在面板上，toast 消失后仍可回看） */
+  let importResult = '';
 
   /** 渲染工具行（只在 running 态有内容） */
   function toolRows(server: McpServerStatusDto): string {
@@ -421,10 +432,26 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     </div>`;
   }
 
+  /** 导入卡片（粘贴标准 mcpServers 片段；结果逐条留在卡上，不随 toast 消失） */
+  function importCardHtml(): string {
+    return `<div class="mcp-server card mcp-import-card">
+      <div class="mcp-server-head">
+        <h3 class="mcp-server-name">从 JSON 导入</h3>
+      </div>
+      <p class="mcp-server-note">粘贴 mcpServers 片段（Claude Desktop / Cursor / VS Code mcp.json 均可）。只支持 stdio（command）形式；同名、http/sse 与字段不合法的条目会逐条跳过，不会覆盖已有配置。</p>
+      <textarea class="mcp-input mcp-textarea" data-import="1" rows="8" aria-label="粘贴 mcpServers JSON 片段" placeholder="{&#10;  &quot;mcpServers&quot;: {&#10;    &quot;filesystem&quot;: {&#10;      &quot;command&quot;: &quot;npx&quot;,&quot;args&quot;: [&quot;-y&quot;, &quot;@modelcontextprotocol/server-filesystem&quot;, &quot;/path&quot;]&#10;    }&#10;  }&#10;}">${escapeHtml(importText ?? '')}</textarea>
+      ${importResult ? `<p class="mcp-import-result">${escapeHtml(importResult)}</p>` : ''}
+      <div class="mcp-form-actions">
+        <button class="btn btn-primary" type="button" data-act="import-run">导入</button>
+        <button class="btn btn-secondary" type="button" data-act="import-cancel">取消</button>
+      </div>
+    </div>`;
+  }
+
   /** 整块重渲染（卡片是纯回推渲染；草稿在 state 里，重渲染不丢已填内容） */
   function render(): void {
-    if (!received && draft === null) return;
-    const has = servers.length > 0 || draft !== null;
+    if (!received && draft === null && importText === null) return;
+    const has = servers.length > 0 || draft !== null || importText !== null;
     emptyEl!.hidden = has;
     listEl!.hidden = !has;
     // 统计条与解释行都由纯函数决定「有没有东西可说」——render 不再自己判空，
@@ -436,14 +463,16 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     omittedEl!.hidden = notice === '';
     omittedEl!.textContent = notice;
     // 空态两套文案：有配置但一条都渲染不出来时，「还没有配置任何服务器」是谎报
-    const onlyHidden = servers.length === 0 && draft === null && omitted.configured > 0;
+    const onlyHidden =
+      servers.length === 0 && draft === null && importText === null && omitted.configured > 0;
     emptyDefaultEl!.hidden = onlyHidden;
     emptyHiddenEl!.hidden = !onlyHidden;
     const newForm =
       draft !== null && draft.originalName === ''
         ? `<div class="mcp-server card">${formHtml(draft)}</div>`
         : '';
-    listEl!.innerHTML = newForm + servers.map(cardHtml).join('');
+    const importCard = importText !== null ? importCardHtml() : '';
+    listEl!.innerHTML = importCard + newForm + servers.map(cardHtml).join('');
   }
 
   /** 读取表单当前值（受控：以 DOM 为准回填草稿，避免重渲染丢输入） */
@@ -521,6 +550,30 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     const server = servers.find((item) => item.name === name);
 
     if (act === 'save') return save();
+    if (act === 'import-run') {
+      if (pendingImport) return; // 在途导入未回：重复点击只会让同一份片段按「已存在」全部跳过
+      const text = listEl!.querySelector<HTMLTextAreaElement>('[data-import]')?.value ?? '';
+      if (text.trim().length === 0) {
+        importResult = '请先粘贴 JSON 内容';
+        render();
+        return;
+      }
+      importText = text;
+      const reqId = `mcp-import-${(++saveSeq).toString(36)}`;
+      pendingImport = reqId;
+      importResult = '';
+      vscode.postMessage({ type: 'mcp_write', op: 'import', raw: text, reqId });
+      render();
+      return;
+    }
+    if (act === 'import-cancel') {
+      importText = null;
+      // 用户显式放弃 ⇒ 在途结论不再落回这张已关闭的卡（toast 已告知结果）
+      pendingImport = null;
+      importResult = '';
+      render();
+      return;
+    }
     if (act === 'cancel') {
       draft = null;
       formError = '';
@@ -572,11 +625,31 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     }
   });
 
-  /** 新增：两处入口（页头按钮 + 空态 CTA）共用一个 class ⇒ 委托一次即可 */
+  /**
+   * 页头两个入口：新增表单与导入面板
+   *
+   * 两者互斥打开（同屏两张输入卡会让人不知道往哪张填）；打开任一个都清掉在途结论，
+   * 与「显式的新意图优先于旧的在途动作」同一口径（见 ack 认领处）。
+   */
   root.addEventListener('click', (event) => {
-    const add = (event.target as Element | null)?.closest<HTMLElement>('.mcp-add-btn');
-    if (!add) return;
+    const target = event.target as Element | null;
+    if (target?.closest('.mcp-import-btn')) {
+      importText = '';
+      importResult = '';
+      pendingImport = null;
+      draft = null;
+      confirmingDelete = null;
+      formError = '';
+      pendingSave = null;
+      render();
+      listEl!.querySelector<HTMLTextAreaElement>('[data-import]')?.focus();
+      return;
+    }
+    if (!target?.closest('.mcp-add-btn')) return;
     draft = emptyDraft();
+    importText = null;
+    importResult = '';
+    pendingImport = null;
     confirmingDelete = null;
     formError = '';
     pendingSave = null;
@@ -594,8 +667,13 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     target.checked = !target.checked;
   });
 
-  /** 表单输入实时回填草稿（重渲染时由草稿回显，输入不丢） */
-  listEl.addEventListener('input', () => {
+  /** 输入实时回填 state（重渲染时由 state 回显，输入不丢；导入文本与表单草稿各归各的） */
+  listEl.addEventListener('input', (event) => {
+    const el = event.target as HTMLTextAreaElement | null;
+    if (el?.dataset?.import === '1') {
+      importText = el.value;
+      return;
+    }
     if (draft) syncDraftFromDom();
   });
   listEl.addEventListener('change', (event) => {
@@ -622,6 +700,12 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
         formError = ack.error ?? '保存失败';
       }
       pendingSave = null;
+    }
+    // 导入结论：保留粘贴内容（失败时用户可直接改了重试；成功时面板也留着刚导入的片段供核对），
+    // 明细留在卡上而不是只弹一条会消失的 toast。
+    if (ack && pendingImport && ack.reqId === pendingImport) {
+      importResult = ack.ok ? (ack.detail ?? '导入完成') : (ack.error ?? '导入失败');
+      pendingImport = null;
     }
     // 被编辑/待删的那台如果已经不在配置里（他处改了配置），收起表单与确认态
     const editingName = draft?.originalName ?? '';

@@ -1,5 +1,5 @@
 /**
- * MCP 写操作（`mcp_write` 五个 op）— 设置面板唯一写入路径
+ * MCP 写操作（`mcp_write` 全部 op）— 设置面板唯一写入路径
  *
  * 覆盖被测不变量：
  *   ① 写入落点正确（`mcpServers` / `mcpToolAllowlist`，均为 Global）；
@@ -40,16 +40,17 @@ function deps(
   notices: { level: string; message: string }[];
   pushes: number;
   connects: number;
-  acks: { reqId: string; ok: boolean; error?: string }[];
+  /** 回执记录（含导入的 detail 明细，见 McpWriteAckDto） */
+  acks: { reqId: string; ok: boolean; error?: string; detail?: string }[];
 } {
   const notices: { level: string; message: string }[] = [];
-  const acks: { reqId: string; ok: boolean; error?: string }[] = [];
+  const acks: { reqId: string; ok: boolean; error?: string; detail?: string }[] = [];
   const bag = {
     notices,
     pushes: 0,
     connects: 0,
     acks,
-    pushStatus: (ack?: { reqId: string; ok: boolean; error?: string }) => {
+    pushStatus: (ack?: { reqId: string; ok: boolean; error?: string; detail?: string }) => {
       bag.pushes += 1;
       if (ack) acks.push(ack);
     },
@@ -422,6 +423,159 @@ describe('mcp_write / name 归一化匹配（写侧同样单点）', () => {
     const d = deps();
     await applyMcpWrite(d, { op: 'upsert', server: { name: '  fs  ', command: 'node' } });
     expect(h.data['mcpServers']).toEqual([{ name: 'fs', command: 'node', enabled: true }]);
+  });
+});
+
+/**
+ * `import`（粘贴标准 mcpServers 片段）
+ *
+ * 守的是「批量进入用户配置」这条新路径的四条纪律：
+ *   ① **只追加不覆盖**（同名不静默顶掉既有配置，与 upsert 的重名预检同一口径）；
+ *   ② 条目级问题**不拖垮整份片段**，但每条都要有原因（否则用户只看到「少了几台」）；
+ *   ③ **零新增绝不写盘**（`update` 是整键覆盖，把空结果写回会抹掉既有配置）；
+ *   ④ 本机没有的传输形态（url / sse / http）**显式拒绝**，而不是导入一张永远起不来的卡。
+ */
+describe('mcp_write / import（粘贴 JSON 片段）', () => {
+  /** 包成标准 mcpServers 外壳（片段原文来自第三方工具） */
+  const wrap = (servers: unknown): string => JSON.stringify({ mcpServers: servers });
+
+  it('新增：字段齐全时全部落盘（enabled 缺省 true，空字段不落盘）', async () => {
+    const d = deps();
+    await applyMcpWrite(d, {
+      op: 'import',
+      raw: wrap({
+        fs: { command: 'npx', args: ['-y', 'pkg'], env: { TOKEN: 'x' }, cwd: '/tmp' },
+        off: { command: 'node', enabled: false },
+      }),
+    });
+    expect(h.data['mcpServers']).toEqual([
+      {
+        name: 'fs',
+        command: 'npx',
+        enabled: true,
+        args: ['-y', 'pkg'],
+        env: { TOKEN: 'x' },
+        cwd: '/tmp',
+      },
+      { name: 'off', command: 'node', enabled: false },
+    ]);
+    expect(d.notices[0]?.level).toBe('info');
+  });
+
+  it('VS Code mcp.json 的 servers 外壳同样接受（同一件事的另一种叫法）', async () => {
+    await applyMcpWrite(deps(), {
+      op: 'import',
+      raw: JSON.stringify({ servers: { fs: { command: 'npx', type: 'stdio' } } }),
+    });
+    expect(h.data['mcpServers']).toEqual([{ name: 'fs', command: 'npx', enabled: true }]);
+  });
+
+  it('远程传输逐条跳过：url / type:sse（本机只有 stdio 一条通道）', async () => {
+    h.data['mcpServers'] = [{ name: 'keep', command: 'node' }];
+    const d = deps();
+    await applyMcpWrite(d, {
+      op: 'import',
+      reqId: 'ri',
+      raw: wrap({
+        remote: { url: 'https://x/mcp' },
+        sse: { type: 'sse', url: 'https://x/sse' },
+        cmd: { command: 'node' },
+      }),
+    });
+    // 只有 stdio 那条进了配置；既有配置原样保留
+    expect(h.data['mcpServers']).toEqual([
+      { name: 'keep', command: 'node' },
+      { name: 'cmd', command: 'node', enabled: true },
+    ]);
+    expect(d.acks[0]?.detail).toContain('新增 1 台');
+    expect(d.acks[0]?.detail).toContain('跳过 2 台');
+    expect(d.acks[0]?.detail).toContain('remote');
+    expect(d.acks[0]?.detail).toContain('sse');
+  });
+
+  it('重名不覆盖：已有同名 + 同批归一化重名都跳过，计数与原因进 detail', async () => {
+    h.data['mcpServers'] = [{ name: 'fs ', command: 'old' }];
+    const d = deps();
+    await applyMcpWrite(d, {
+      op: 'import',
+      reqId: 'r-dup',
+      raw: wrap({
+        fs: { command: 'npx' },
+        dup: { command: 'node' },
+        'dup ': { command: 'npx' },
+      }),
+    });
+    expect(h.data['mcpServers']).toEqual([
+      { name: 'fs ', command: 'old' },
+      { name: 'dup', command: 'node', enabled: true },
+    ]);
+    expect(d.acks).toEqual([
+      {
+        reqId: 'r-dup',
+        ok: true,
+        detail: expect.stringContaining('已存在同名服务器（不覆盖）'),
+      },
+    ]);
+    expect(d.acks[0]?.detail).toContain('与本次导入的前一条重名');
+  });
+
+  it('零新增绝不写盘：既有配置不被空结果覆盖', async () => {
+    h.data['mcpServers'] = [{ name: 'fs', command: 'node' }];
+    const d = deps();
+    await applyMcpWrite(d, { op: 'import', reqId: 'r0', raw: wrap({ fs: { command: 'npx' } }) });
+    expect(h.data['mcpServers']).toEqual([{ name: 'fs', command: 'node' }]);
+    // 什么也没发生必须说出来（info 档会被当成「悄悄成功」）
+    expect(d.notices[0]?.level).toBe('error');
+    expect(d.acks).toEqual([
+      { reqId: 'r0', ok: true, detail: expect.stringContaining('没有新增任何服务器') },
+    ]);
+  });
+
+  it('条目字段形态非法：逐条跳过并给原因（不静默转字符串）', async () => {
+    const d = deps();
+    await applyMcpWrite(d, {
+      op: 'import',
+      reqId: 'r-bad',
+      raw: wrap({
+        noCmd: { args: ['x'] },
+        badArgs: { command: 'node', args: ['ok', 42] },
+        ok: { command: 'node' },
+      }),
+    });
+    expect(h.data['mcpServers']).toEqual([{ name: 'ok', command: 'node', enabled: true }]);
+    expect(d.acks[0]?.detail).toContain('缺少 command');
+    expect(d.acks[0]?.detail).toContain('args 必须是字符串数组');
+  });
+
+  it('整体失败：非法 JSON / 缺外壳 / 空表 / inputs 占位符 ⇒ 不写配置且 ack ok:false', async () => {
+    const cases = [
+      '{ not json',
+      JSON.stringify({ unrelated: {} }),
+      wrap({}),
+      JSON.stringify({ mcpServers: { fs: { command: 'node' } }, inputs: [{ id: 'dir' }] }),
+    ];
+    for (const raw of cases) {
+      h.data['mcpServers'] = [{ name: 'keep', command: 'node' }];
+      const d = deps();
+      await applyMcpWrite(d, { op: 'import', raw, reqId: 'rx' });
+      expect(h.data['mcpServers']).toEqual([{ name: 'keep', command: 'node' }]);
+      expect(d.notices[0]?.level).toBe('error');
+      expect(d.acks[0]?.ok).toBe(false);
+      expect(d.acks[0]?.error).toContain('导入失败');
+    }
+  });
+
+  it('写失败 ⇒ notice(error) + ack{ok:false}（导入不是免死金牌）', async () => {
+    failWrites();
+    const d = deps();
+    await applyMcpWrite(d, {
+      op: 'import',
+      raw: wrap({ fs: { command: 'node' } }),
+      reqId: 'rw',
+    });
+    expect(d.notices.some((item) => item.level === 'error')).toBe(true);
+    expect(d.acks[0]?.ok).toBe(false);
+    expect(d.acks[0]?.error).toContain('写入失败');
   });
 });
 

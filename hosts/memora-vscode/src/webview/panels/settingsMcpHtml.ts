@@ -25,7 +25,10 @@ export const MCP_BODY_HTML = `
         <h2>MCP 工具服务器</h2>
         <span id="mcpCount" class="stat-bar" hidden></span>
       </div>
-      <button id="mcpAddBtn" class="btn btn-secondary mcp-add-btn" type="button">添加服务器</button>
+      <div class="header-actions">
+        <button id="mcpImportBtn" class="btn btn-secondary mcp-import-btn" type="button">从 JSON 导入</button>
+        <button id="mcpAddBtn" class="btn btn-secondary mcp-add-btn" type="button">添加服务器</button>
+      </div>
     </div>
     <p class="security-desc">MCP（Model Context Protocol）服务器给对话提供外部工具，工具名形如 <code>mcp__服务器名__工具名</code>。配置写在<strong>用户级</strong>设置里（随人、不随项目）——本页直接编辑它，不另存副本。</p>
     <div id="mcpList">

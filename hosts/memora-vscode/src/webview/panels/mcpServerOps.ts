@@ -1,13 +1,13 @@
 /**
- * MCP 写操作（`mcp_write` 六个 op 的**唯一实现**）
+ * MCP 写操作（`mcp_write` 全部 op 的**唯一实现**）
  *
  * 为什么独立成文件而不是塞进 settingsPanel：
  *   ① settingsPanel 是贴 eslint max-lines 上限的 TARGET 文件（只降不升），而本域还要随
  *      功能长（表单校验、竞态、回执都是线性增长域）；
- *   ② 这六个 op 是**同一个语义面**（MCP 配置写入），放一处才能保证「写入路径只有一条」。
+ *   ② 这些 op 是**同一个语义面**（MCP 配置写入），放一处才能保证「写入路径只有一条」。
  *      `connect` 是唯一的例外形态：它不改配置，只让运行态按当前配置**追平一次**
  *      （未装配时先懒装配；pending 的唯一出路，见 protocol 里该 op 的说明）——仍归此处，
- *      因为「卡片上的按钮按下去要有回执」这条约定与其余五个共用同一份 notice/pushStatus 收口。
+ *      因为「卡片上的按钮按下去要有回执」这条约定与其余 op 共用同一份 notice/pushStatus 收口。
  *
  * 三条纪律（SSOT / 不带伤）：
  *   1. **单一写入路径**：所有改配置的 op 都经 {@link writeServers}（`getConfiguration().update`
@@ -86,13 +86,23 @@ async function writeServers(
 /**
  * 写操作回执（`reqId` 对得上才发给视图认领；无 `reqId` = 无从认领，不给）
  *
- * @param reqId webview 在 `mcp_write{op:'upsert'}` 里带的关联 id（原样回传）
- * @param ok 配置是否已落盘
+ * @param reqId webview 在 `mcp_write` 里带的关联 id（原样回传）
+ * @param ok 配置是否已落盘（或本 op 无需写盘）
  * @param error 失败原因（`ok=false` 时必有）
+ * @param detail 操作明细（导入的逐条结果；其余 op 不传）
  */
-function ackOf(reqId: string | undefined, ok: boolean, error?: string): McpWriteAckDto | undefined {
+function ackOf(
+  reqId: string | undefined,
+  ok: boolean,
+  error?: string,
+  detail?: string,
+): McpWriteAckDto | undefined {
   if (!reqId) return undefined;
-  return ok ? { reqId, ok } : { reqId, ok, error: error ?? '写入失败（原因未记录）' };
+  const ack: McpWriteAckDto = ok
+    ? { reqId, ok }
+    : { reqId, ok, error: error ?? '写入失败（原因未记录）' };
+  if (detail) ack.detail = detail;
+  return ack;
 }
 
 /**
@@ -139,7 +149,234 @@ function clearEmptyFields(config: McpServerConfig): McpServerConfig {
 }
 
 /**
- * 执行一条 `mcp_write`（六个 op 的唯一入口）
+ * 导入解析出的单条结果
+ *
+ * `problem` 非空 = 该条**不导入**（不是整体失败）：一条坏条目不该拖垮整份片段，
+ * 用户需要的是「哪几条进去了、哪几条没有、为什么」。
+ */
+export interface McpImportEntry {
+  /** 面板可显示的名字（已归一化；缺 name 时为 `(未命名)`） */
+  readonly name: string;
+  /** 条目级问题（有则跳过，`config` 缺省） */
+  readonly problem?: string;
+  /** 可落盘配置（`problem` 为空时必有） */
+  readonly config?: McpServerConfig;
+}
+
+/** 导入解析结果（整体失败只会发生于「压根不是一份可用片段」） */
+export type McpImportParse =
+  | { readonly ok: true; readonly entries: McpImportEntry[] }
+  | { readonly ok: false; readonly error: string };
+
+/**
+ * 把单条 `name → 配置对象` 收敛成导入条目
+ *
+ * **只保留宿主认识的字段**（command/args/env/cwd/enabled）：外来工具片段里的
+ * `autoApprove` / `timeout` 等键本运行时并不消费，带进来只会让用户以为「导入了这些能力」。
+ * **`type: stdio` 例外地接受**（它就是本运行时的默认形态，显式写出来不代表额外能力）。
+ *
+ * @param rawName 片段里的键（未归一化，错误信息要显示原名）
+ * @param value 片段里的值（任意 JSON，逐字段收窄）
+ */
+function parseImportEntry(rawName: string, value: unknown): McpImportEntry {
+  const name = normalizeServerName(rawName) || '(未命名)';
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return { name, problem: '条目必须是一个对象' };
+  }
+  const item = value as Record<string, unknown>;
+  // 远程传输显式拒绝：本机运行时只有「拉起子进程走 stdio」一条通道，url/sse/http 的
+  // 配置导进来也永远起不来——静默收下等于给用户一张注定失败的卡。
+  if (typeof item.url === 'string' && item.url.trim().length > 0) {
+    return { name, problem: '是远程服务器（url），本机只支持 stdio（command）形式' };
+  }
+  const type = typeof item.type === 'string' ? item.type.trim().toLowerCase() : '';
+  if (type !== '' && type !== 'stdio') {
+    return { name, problem: `传输类型 type="${item.type}" 暂不支持（只有 stdio）` };
+  }
+  // 字段形态严格校验：数字/布尔值不静默转字符串——参数差一个字符就是另一种启动行为
+  let args: string[] | undefined;
+  if (item.args !== undefined) {
+    if (!Array.isArray(item.args) || item.args.some((arg) => typeof arg !== 'string')) {
+      return { name, problem: 'args 必须是字符串数组' };
+    }
+    if (item.args.length > 0) args = [...(item.args as string[])];
+  }
+  let env: Record<string, string> | undefined;
+  if (item.env !== undefined) {
+    if (typeof item.env !== 'object' || item.env === null || Array.isArray(item.env)) {
+      return { name, problem: 'env 必须是 KEY=VALUE 对象' };
+    }
+    const pairs = Object.entries(item.env as Record<string, unknown>);
+    const bad = pairs.find(([, v]) => typeof v !== 'string');
+    if (bad) return { name, problem: `env 的值必须是字符串（${bad[0]} 不是）` };
+    if (pairs.length > 0) env = Object.fromEntries(pairs) as Record<string, string>;
+  }
+  if (item.cwd !== undefined && typeof item.cwd !== 'string') {
+    return { name, problem: 'cwd 必须是字符串' };
+  }
+  if (item.enabled !== undefined && typeof item.enabled !== 'boolean') {
+    return { name, problem: 'enabled 必须是 true/false' };
+  }
+  const config: McpServerConfig = {
+    name: normalizeServerName(rawName),
+    command: typeof item.command === 'string' ? item.command : '',
+    enabled: item.enabled !== false,
+    ...(args ? { args } : {}),
+    ...(env ? { env } : {}),
+    ...(typeof item.cwd === 'string' && item.cwd.length > 0 ? { cwd: item.cwd } : {}),
+  };
+  // 判据与启动侧同源：导进来的配置能被启动，而不是存进去才发现永远起不来
+  const problem = configProblem(config);
+  return problem ? { name, problem } : { name, config };
+}
+
+/**
+ * 解析粘贴的 JSON 片段（**宿主侧唯一解析点**，webview 只搬运原文）
+ *
+ * 接受的外壳：`{"mcpServers": {...}}`（Claude Desktop / Cursor）与
+ * `{"servers": {...}}`（VS Code `mcp.json`）——两者是同一件事的两种叫法，都收。
+ *
+ * 整体拒绝（而不是逐条跳过）的两类：
+ *   - 不是对象 / 缺外壳键 / 空服务器表 —— 用户贴错了东西，没有一条能读；
+ *   - 含非空 `inputs` —— `${input:…}` 占位符无法在导入时求值，硬导进去会得到一条
+ *     参数是字面量 `${input:...}` 的坏配置，比拒绝更难排查。
+ *
+ * @param raw 粘贴的原始文本
+ * @returns 逐条解析结果（条目级问题随条目带走，不中断整份解析）
+ */
+export function parseMcpServersJson(raw: string): McpImportParse {
+  if (raw.trim().length === 0) return { ok: false, error: '粘贴内容为空' };
+  let doc: unknown;
+  try {
+    doc = JSON.parse(raw);
+  } catch (err) {
+    // JSON.parse 的报错自带位置信息（如 `Unexpected token } in JSON at position 42`），原样带上
+    return {
+      ok: false,
+      error: `JSON 解析失败：${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+  if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) {
+    return { ok: false, error: '顶层必须是一个 JSON 对象' };
+  }
+  const top = doc as Record<string, unknown>;
+  if (Array.isArray(top.inputs) && top.inputs.length > 0) {
+    return {
+      ok: false,
+      error: '片段含 inputs 变量提示（${input:…}），导入时无法求值；请手动填写该服务器的参数',
+    };
+  }
+  const block = top.mcpServers ?? top.servers;
+  if (typeof block !== 'object' || block === null || Array.isArray(block)) {
+    return {
+      ok: false,
+      error:
+        '顶层缺少 mcpServers（或 servers）对象；请粘贴形如 {"mcpServers": {"名称": {"command": "npx"}}} 的片段',
+    };
+  }
+  const map = block as Record<string, unknown>;
+  const names = Object.keys(map);
+  if (names.length === 0) return { ok: false, error: 'mcpServers 里没有任何服务器条目' };
+  return { ok: true, entries: names.map((name) => parseImportEntry(name, map[name])) };
+}
+
+/** 导入计划（纯函数产物：待写入的完整数组 + 逐条去向） */
+export interface McpImportPlan {
+  /** 合并后的完整配置数组（`update` 是整键覆盖，必须给全量） */
+  readonly configs: McpServerConfig[];
+  /** 实际新增的名字（顺序 = 片段里的顺序） */
+  readonly added: string[];
+  /** 被跳过的条目与原因（空 = 全部导入成功） */
+  readonly skipped: { readonly name: string; readonly reason: string }[];
+}
+
+/**
+ * 计算导入计划（**只追加不覆盖**）
+ *
+ * 三条顺序判据：条目自身不合法 → 已存在同名 → 与本批前一条重名。命中任一即跳过并记原因，
+ * 后到的同名片片段不会顶掉先到的（与 `upsert` 的重名预检、启动侧的先到先得同一口径）。
+ *
+ * @param existing 当前配置原值
+ * @param entries 解析出的条目
+ */
+export function planMcpImport(
+  existing: readonly McpServerConfig[],
+  entries: readonly McpImportEntry[],
+): McpImportPlan {
+  const configs = [...existing];
+  const existingNames = new Set(existing.map((item) => normalizeServerName(item.name)));
+  const batchNames = new Set<string>();
+  const added: string[] = [];
+  const skipped: { name: string; reason: string }[] = [];
+  for (const entry of entries) {
+    if (!entry.config) {
+      skipped.push({ name: entry.name, reason: entry.problem ?? '无法解析' });
+      continue;
+    }
+    const name = entry.config.name;
+    if (existingNames.has(name)) {
+      skipped.push({ name, reason: '已存在同名服务器（不覆盖）' });
+      continue;
+    }
+    if (batchNames.has(name)) {
+      skipped.push({ name, reason: '与本次导入的前一条重名' });
+      continue;
+    }
+    batchNames.add(name);
+    configs.push(entry.config);
+    added.push(name);
+  }
+  return { configs, added, skipped };
+}
+
+/**
+ * 导入结果文案（toast 与 ack.detail 共用同一句，不二次加工）
+ *
+ * @param plan 导入计划
+ */
+export function formatMcpImportSummary(plan: McpImportPlan): string {
+  const head =
+    plan.added.length > 0
+      ? `导入完成：新增 ${plan.added.length} 台${plan.skipped.length > 0 ? `，跳过 ${plan.skipped.length} 台` : ''}。`
+      : `没有新增任何服务器${plan.skipped.length > 0 ? `（跳过 ${plan.skipped.length} 条）` : ''}。`;
+  const lines = plan.skipped.map((item) => `跳过「${item.name}」：${item.reason}`);
+  return [head, ...lines].join('\n');
+}
+
+/**
+ * 执行批量导入（粘贴 JSON → 解析 → 去重 → 追加 → 单一写入路径）
+ *
+ * **零新增时绝不写盘**：`update` 是整键覆盖，拿一份「没变化」的数组去写除了制造一次
+ * onDidChangeConfiguration 热更外没有任何好处；更糟的是若把 `[]` 当导入结果写回，
+ * 会直接抹掉用户既有配置。
+ *
+ * @param deps 依赖
+ * @param raw 粘贴的原始文本
+ * @param reqId 导入关联 id（逐条明细随 ack 回传）
+ */
+async function importServers(deps: McpOpsDeps, raw: string, reqId?: string): Promise<void> {
+  const parsed = parseMcpServersJson(raw);
+  if (!parsed.ok) {
+    const message = `导入失败：${parsed.error}`;
+    deps.notice('error', message);
+    deps.pushStatus(ackOf(reqId, false, message));
+    return;
+  }
+  const plan = planMcpImport(readServers(), parsed.entries);
+  const summary = formatMcpImportSummary(plan);
+  if (plan.added.length === 0) {
+    // 解析成功但一条都没进来：用 error 档提示（用户需要知道这次点击什么也没发生）
+    deps.notice('error', summary);
+    deps.pushStatus(ackOf(reqId, true, undefined, summary));
+    return;
+  }
+  const written = await writeServers(deps, plan.configs);
+  if (written.ok) deps.notice('info', summary);
+  deps.pushStatus(ackOf(reqId, written.ok, written.error, written.ok ? summary : undefined));
+}
+
+/**
+ * 执行一条 `mcp_write`（全部 op 的唯一入口）
  *
  * 每个 op 结束都 `pushStatus()`：写配置的 op 写完立刻推一次（未装配时热更不跑，不推会停在
  * 旧值），热更生效后 extension 再推一次覆盖 —— 两次推送幂等，不构成第二份状态真源。
@@ -154,6 +391,9 @@ export async function applyMcpWrite(deps: McpOpsDeps, payload: McpWritePayload):
       return;
     case 'upsert':
       await upsertServer(deps, payload.server, payload.reqId, payload.originalName);
+      return;
+    case 'import':
+      await importServers(deps, payload.raw, payload.reqId);
       return;
     case 'remove':
       await removeServer(deps, payload.name);

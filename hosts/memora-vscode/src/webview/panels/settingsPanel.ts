@@ -41,7 +41,7 @@ import {
   restartMcpServer,
   setMcpStatusListener,
 } from '../../extension/host/mcp/runtime.js';
-// MCP 写操作实现（`mcp_write` 六个 op 的唯一落点；写配置/回执/重启/接入都在那边）
+// MCP 写操作实现（`mcp_write` 全部 op 的唯一落点；写配置/回执/重启/接入都在那边）
 import { applyMcpWrite, type McpOpsDeps } from './mcpServerOps.js';
 // 配置原值 = 面板列表的「有哪些」，只经唯一读取点（禁就地 getConfiguration，判据散点）
 import { readMcpServers, readMcpToolAllowlist } from '../../extension/mcpConfig.js';
@@ -475,7 +475,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     // ─── MCP 子视图消息（观察面 + 免确认点选 + 服务器增删改停启） ───
-    // 五类写操作共用一条通道（`op` 判别），实现单点在 mcpServerOps（唯一写入路径）
+    // 全部写操作共用一条通道（`op` 判别），实现单点在 mcpServerOps（唯一写入路径）
     if (msg.type === 'mcp_write') {
       await applyMcpWrite(this.mcpOpsDeps(), msg);
       return;
