@@ -654,6 +654,101 @@ describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁�
   });
 });
 
+describe('SecurityGuard · 脚本面内容裁决（CMD-1-BYPASS 补齐，2026-10-25）', () => {
+  let projectPath: string;
+  let dataDir: string;
+
+  beforeEach(() => {
+    projectPath = mkdtempSync(join(tmpdir(), 'memora-script-content-'));
+    dataDir = mkdtempSync(join(tmpdir(), 'memora-script-data-'));
+  });
+
+  /** 正文 = 脚本里真正会跑的东西；默认档位 owner + confirmScripts=false（原本自动批准） */
+  const guard = (): SecurityGuard => new SecurityGuard(projectPath, dataDir, [], false, 'owner');
+
+  it('正文命中 deny ⇒ 恒拦（自动批准档位也拒，且不进确认流程）', async () => {
+    const g = guard();
+    const audits = collectAudits(g);
+    const ok = await g.confirmScriptRun(
+      join(projectPath, 's.sh'),
+      'run_project_script',
+      undefined,
+      'rm -rf /',
+    );
+    expect(ok).toBe(false);
+    const last = audits[audits.length - 1]!;
+    expect(last.type).toBe('write-decline');
+    expect(last.decision).toBe('auto-denied');
+    expect(last.reason).toContain('黑名单');
+  });
+
+  it('正文命中 always-ask ⇒ 恒弹（自动批准档位也弹；用户拒绝 ⇒ false）', async () => {
+    const g = guard();
+    let asked = false;
+    g.onWriteConfirmation(async () => {
+      asked = true;
+      return false;
+    });
+    const ok = await g.confirmScriptRun(
+      join(projectPath, 's.sh'),
+      'run_project_script',
+      undefined,
+      '#!/bin/sh\ngit push origin main\n',
+    );
+    expect(asked).toBe(true); // 补前：这一步根本不会问（脚本面不看内容）
+    expect(ok).toBe(false);
+  });
+
+  it('正文命中 always-ask + 用户批准 ⇒ 放行', async () => {
+    const g = guard();
+    g.onWriteConfirmation(async () => true);
+    const ok = await g.confirmScriptRun(
+      join(projectPath, 's.sh'),
+      'run_project_script',
+      undefined,
+      'git commit -m "chore"',
+    );
+    expect(ok).toBe(true);
+  });
+
+  it('正文 normal ⇒ 回落到档位判据（owner 默认自动批准，零新增打扰）', async () => {
+    const g = guard();
+    const ok = await g.confirmScriptRun(
+      join(projectPath, 's.sh'),
+      'run_project_script',
+      undefined,
+      'npm test',
+    );
+    expect(ok).toBe(true);
+  });
+
+  it('不传正文 ⇒ 行为与补齐前完全一致（只看档位；拿不到正文的面不受影响）', async () => {
+    const g = guard();
+    expect(await g.confirmScriptRun(join(projectPath, 's.sh'), 'run_project_script')).toBe(true);
+    // guest 恒确认不因缺正文而放松
+    const guest = new SecurityGuard(projectPath, dataDir, [], false, 'guest');
+    expect(await guest.confirmScriptRun(join(projectPath, 's.sh'), 'run_skill_script')).toBe(false);
+  });
+
+  it('脚本里藏 git push 必须弹窗（补前是零护栏的绕过路径）', async () => {
+    const g = guard();
+    let asked = false;
+    g.onWriteConfirmation(async () => {
+      asked = true;
+      return true;
+    });
+    // 复合形态：注释与换行之间夹着写操作（锚定开头的判据会漏，全文匹配不会）
+    const ok = await g.confirmScriptRun(
+      join(projectPath, 'deploy.sh'),
+      'run_project_script',
+      undefined,
+      'echo start\nnpm run build\ngit push --force origin main\n',
+    );
+    expect(asked).toBe(true);
+    expect(ok).toBe(true);
+  });
+});
+
 describe('命令裁决（classifyCommand，run_command 安全边界 §13.2）', () => {
   /** 断言一批命令的裁决档位（表格驱动，避免逐条重复样板） */
   function expectVerdicts(list: Array<[string, CommandVerdict]>): void {
@@ -683,6 +778,9 @@ describe('命令裁决（classifyCommand，run_command 安全边界 §13.2）', 
       ['git rebase -i HEAD~3', 'always-ask'],
       ['git merge feature/x', 'always-ask'],
       ['git checkout -- src/a.ts', 'always-ask'],
+      ['git clean -fd', 'always-ask'], // 删未跟踪文件：不可逆，此前落 normal（真洞）
+      ['git clean -fxd', 'always-ask'],
+      ['git -C /repo clean -fd', 'always-ask'], // 两段式允许插全局选项
       ['npm publish', 'always-ask'],
       ['GIT COMMIT -M "X"', 'always-ask'], // 大小写不敏感
     ]);

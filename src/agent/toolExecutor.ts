@@ -967,6 +967,7 @@ export class ToolExecutor {
    * @param target 确认对象（命令原文 / 脚本路径 / 内联代码标识）
    * @param tool 工具名
    * @param description 面向用户的描述
+   * @param content 脚本面**将被执行的正文**（命令面不传；补齐 CMD-1-BYPASS 用）
    * @returns 是否获确认放行
    */
   private async confirmByEntry(
@@ -974,11 +975,12 @@ export class ToolExecutor {
     target: string,
     tool: string,
     description?: string,
+    content?: string,
   ): Promise<boolean> {
     if (entry === 'command') {
       return this.security.confirmCommandRun(target, tool, description);
     }
-    return this.security.confirmScriptRun(target, tool, description);
+    return this.security.confirmScriptRun(target, tool, description, content);
   }
 
   /**
@@ -1315,6 +1317,8 @@ export class ToolExecutor {
         }
         // 执行确认：guest 模式或 confirmScripts 时询问（run_code 由宿主沙箱执行，此处为权限层确认；
         // owner+confirmScripts=false 自动批准，走审计。code 无落盘路径，target 用描述型标识）
+        // ⚠️ 第五参 = **将被执行的正文**（CMD-1-BYPASS 补齐）：脚本面以前不看内容，
+        // 「git push」写进代码就绕过命令面的裁决链；此处把正文喂进同一个 classifyCommand。
         const execConfirmed = await this.confirmByEntry(
           requireConfirmingEntry('run_code'),
           scriptPath ? `run_code:script:${scriptPath}` : 'run_code:inline',
@@ -1322,11 +1326,14 @@ export class ToolExecutor {
           scriptPath
             ? `运行脚本 ${scriptPath}（宿主沙箱）`
             : `执行内联代码（${execLanguage}，${execCode.length} 字符，宿主沙箱）`,
+          execCode,
         );
         if (!execConfirmed) {
-          // 用户/系统拒绝执行 = 主动挡下（permission_denied），非执行失败
+          // 用户/系统拒绝执行 = 主动挡下（permission_denied），非执行失败。
+          // 措辞与 run_command 的 declineText 同款（命中恒拦 / 用户拒绝 / fail-closed 三因共用）：
+          // 裁决返回 false 时不区分成因，写"未获确认"会把命中黑名单说成用户拒绝（说谎）。
           const declineText =
-            '[ERR:SCRIPT_DECLINE] 代码执行未获确认（用户拒绝或未注入确认回调，fail-closed）';
+            '[ERR:SCRIPT_DECLINE] 代码执行未获执行许可（命中恒拦黑名单 / 用户拒绝 / 未注入确认回调，fail-closed）';
           emitOutcome?.(blockedOutcome('permission_denied', declineText));
           return declineText;
         }
@@ -1585,11 +1592,16 @@ export class ToolExecutor {
           `skill:${skillName}:${scriptPath ?? ''}`,
           'run_skill_script',
           `执行技能 ${skillName} 的脚本 ${scriptPath ?? ''}`,
+          // ⚠️ 本面**不传正文**：技能脚本由宿主注入的回调执行（`runSkillScript`），内核拿不到
+          // 脚本内容 ⇒ 不做内容裁决，行为与补齐前一致。缺口诚实登记（不假装四面都补了）：
+          // 出路在宿主侧执行器（沙箱/策略归宿主，ADR-040 第 5 条），不在内核强行读一次再执行
+          // ——那会引入「裁决读的」与「实际执行的」两份内容的漂移。
         );
         if (!execConfirmed) {
-          // 用户/系统拒绝执行 = 主动挡下（permission_denied），非执行失败
+          // 用户/系统拒绝执行 = 主动挡下（permission_denied），非执行失败。
+          // 措辞与 run_command 同款：裁决返回 false 时不区分成因（恒拦 / 拒答 / fail-closed）。
           const declineText =
-            '[ERR:SCRIPT_DECLINE] 技能脚本执行未获确认（用户拒绝或未注入确认回调，fail-closed）';
+            '[ERR:SCRIPT_DECLINE] 技能脚本执行未获执行许可（命中恒拦黑名单 / 用户拒绝 / 未注入确认回调，fail-closed）';
           emitOutcome?.(blockedOutcome('permission_denied', declineText));
           return declineText;
         }
@@ -1633,21 +1645,32 @@ export class ToolExecutor {
           emitOutcome?.(blockedOutcome('permission_denied', pathDeniedText));
           return pathDeniedText;
         }
-        // ② 执行确认：guest 模式或 confirmScripts 时询问（owner 默认自动批准，走审计）
+        // ② 读正文（供内容裁决；CMD-1-BYPASS 补齐）
+        //    与执行阶段读的是同一份文件。⚠️ TOCTOU 边界诚实登记：裁决与执行之间文件若被
+        //    改写，裁决看到的是旧内容——改写只能来自本 agent 或用户本人，且「不裁决」的
+        //    风险（脚本里藏 git push / rm -rf 恒不设防）远大于这个窗口。
+        const scriptContent = await this.builtinHandlers.readScriptFile(
+          scriptPath,
+          'run_project_script script_path',
+        );
+        // ③ 执行确认：guest 模式或 confirmScripts 时询问；内容命中 deny 恒拦、
+        //    always-ask 恒弹（与 run_command 面同一套 classifyCommand 判据）
         const confirmed = await this.confirmByEntry(
           requireConfirmingEntry('run_project_script'),
           fullPath,
           'run_project_script',
           `运行项目脚本 ${scriptPath}`,
+          scriptContent,
         );
         if (!confirmed) {
-          // 用户/系统拒绝执行 = 主动挡下（permission_denied），非执行失败
+          // 用户/系统拒绝执行 = 主动挡下（permission_denied），非执行失败。
+          // 措辞与 run_command 同款：裁决返回 false 时不区分成因（恒拦 / 拒答 / fail-closed）。
           const declineText =
-            '[ERR:SCRIPT_DECLINE] 脚本运行未获确认（用户拒绝或未注入确认回调，fail-closed）';
+            '[ERR:SCRIPT_DECLINE] 脚本运行未获执行许可（命中恒拦黑名单 / 用户拒绝 / 未注入确认回调，fail-closed）';
           emitOutcome?.(blockedOutcome('permission_denied', declineText));
           return declineText;
         }
-        // ③ 运行时白名单：扩展名推断并收敛到 node/python/shell 三档（推断即可信，不规则兜底 node）
+        // ④ 运行时白名单：扩展名推断并收敛到 node/python/shell 三档（推断即可信，不规则兜底 node）
         const ext = scriptPath.slice(scriptPath.lastIndexOf('.')).toLowerCase();
         const runtime = normalizeScriptRuntime(inferRuntimeFromExt(ext) ?? 'node');
         // timeout_ms（秒，可选）→ 毫秒透传内核执行器（默认 60s，上限 600s，见 skillScriptRunner 常量）；

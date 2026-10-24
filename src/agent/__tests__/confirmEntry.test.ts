@@ -5,8 +5,10 @@
  *   1. 登记表键集与 `diskWrite === 'opaque'` 派生集**双向相等** ⇒ 新增执行面漏登记即红；
  *   2. 每个执行面**真的走它登记的确认入口**且**不走其它入口** ⇒ 换线/隐式改判即红。
  *
- * 背景（实锤）：`classifyCommand`（deny / always-ask）唯一调用点 = `confirmCommandRun`，
+ * 背景（2026-10-25 已补洞，原委保留）：`classifyCommand` 曾只在 `confirmCommandRun` 被调用，
  * 唯一消费面 = `toolExecutor` 的 `run_command` 分支 ⇒ 命令内容裁决只锁一个执行面。
+ * **现状**：`confirmScriptRun` 亦接受正文并复用同一个 `classifyCommand`（run_code /
+ * run_project_script 已按正文裁决；run_skill_script 因宿主执行无正文，仍仅档位）。
  * 本文件把「三面走 confirmScriptRun / 单面走 confirmCommandRun」从口头结论变成机器判据。
  */
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';

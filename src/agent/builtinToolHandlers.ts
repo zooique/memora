@@ -471,12 +471,18 @@ export class BuiltinToolHandlers {
    * 仅做路径白名单校验 + 长度上限（SCRIPT_READ_MAX_LEN，防超大脚本滥用）。
    *
    * @param relativePath 相对项目根的文件路径
+   * @param label 调用面标识（默认 `run_code script_path`）。错误文案要说清"是哪个工具的
+   *   脚本"——裁决面（run_project_script 也复用本函数读正文做内容裁决）与执行面可能不同，
+   *   写死 run_code 会让项目脚本报出"run_code 脚本文件过长"（说谎）。
    * @returns 脚本文件原始内容
    */
-  async readScriptFile(relativePath: string): Promise<string> {
+  async readScriptFile(
+    relativePath: string,
+    label: string = 'run_code script_path',
+  ): Promise<string> {
     if (!relativePath) {
       throw toolError(
-        'run_code script_path 参数缺失',
+        `${label} 参数缺失`,
         'LLM 未传 script_path',
         ['script_path 不能为空'],
         undefined,
@@ -485,21 +491,20 @@ export class BuiltinToolHandlers {
     }
 
     const absolutePath = this.resolveSafePath(relativePath);
-    this.guardPathOrThrow(absolutePath, 'run_code');
+    // 审计的 tool 名 = 调用面：run_project_script 复用本函数读正文做裁决时，写死 'run_code'
+    // 会把项目脚本的路径审计记到 run_code 头上（归属说谎）⇒ 传 label。
+    this.guardPathOrThrow(absolutePath, label);
 
     // 读前预检：目标是目录时给出可执行指引（脚本语义是文件）
-    await this.assertFileNotDir(
-      absolutePath,
-      relativePath,
-      'run_code script_path',
-      '传入脚本文件路径',
-    );
+    // tool 名传 label（调用面）：路径审计要能看出这次读是谁发起的，写死 'run_code'
+    // 会让 run_project_script 的裁决读记到 run_code 头上（审计归属说谎）。
+    await this.assertFileNotDir(absolutePath, relativePath, label, '传入脚本文件路径');
 
     try {
       const content = await readFile(absolutePath, 'utf-8');
       if (content.length > SCRIPT_READ_MAX_LEN) {
         throw toolError(
-          'run_code 脚本文件过长',
+          `${label} 脚本文件过长`,
           `脚本超过 ${SCRIPT_READ_MAX_LEN} 字符上限`,
           ['精简脚本或拆分为多个文件'],
           undefined,
@@ -512,7 +517,7 @@ export class BuiltinToolHandlers {
       const e = toError(err);
       if (isNodeErrorCode(err, 'ENOENT')) {
         throw toolError(
-          'run_code 脚本文件不存在',
+          `${label} 脚本文件不存在`,
           `${absolutePath}：文件不存在`,
           ['确认 script_path 正确', '先 write_file 创建脚本再执行'],
           e,
@@ -520,7 +525,7 @@ export class BuiltinToolHandlers {
         );
       }
       throw toolError(
-        'run_code 读取脚本失败',
+        `${label} 读取脚本失败`,
         `${absolutePath}：${e.message}`,
         ['确认文件可读'],
         e,

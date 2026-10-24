@@ -129,6 +129,12 @@ const ALWAYS_ASK_COMMAND_PREFIXES: string[] = [
   'git rebase',
   'git merge',
   'git checkout --',
+  /**
+   * `git clean`（2026-10-25 补）：**删除未跟踪文件**——与 reset / checkout -- 同量级的
+   * 不可逆操作，此前**不在清单内** ⇒ 落 `normal` 档 = owner 默认直接执行（真洞，不是定案）。
+   * 补进来后 `-fd` / `-fxd` 各形态均恒弹（两段式条目允许插入全局选项）。
+   */
+  'git clean',
   'npm publish',
 ];
 
@@ -473,8 +479,43 @@ export class SecurityGuard {
    * 判据与写入确认同构：guest 模式或 confirmScripts 需确认；未注入 confirmationHandler 时
    * fail-closed 拒绝。owner + confirmScripts=false 自动批准（默认），审计仍记录。
    * target 为脚本绝对路径（run_project_script）或描述型标识（run_code 内联代码无落盘路径）。
+   *
+   * **内容裁决（2026-10-25 补齐，CMD-1-BYPASS）**：可选 `content` = 将被执行的脚本/代码正文。
+   * 此前本闸**只看权限档位、不看执行内容** ⇒ 「git push」「rm -rf /」写进脚本即可绕过
+   * `classifyCommand`（命令面的内容裁决）——恒弹清单成了纸墙。此处把正文喂给**同一个**
+   * `classifyCommand`（判据仍单点，不新造第二套）：
+   *   - `deny` ⇒ **恒拦**（不入确认流程，任何档位/权限都拦）；
+   *   - `always-ask` ⇒ **恒弹**（owner + confirmScripts=false 也弹，与命令面同判据）；
+   *   - `normal` ⇒ 回落到原判据（guest || confirmScripts）。
+   *
+   * 不传 `content`（拿不到正文的面，如宿主执行的技能脚本）⇒ 行为与补齐前完全一致。
+   *
+   * @param content 将被执行的正文（**整份裁决，不做截断**——截断即裁决盲区）
    */
-  async confirmScriptRun(targetPath: string, tool: string, description?: string): Promise<boolean> {
+  async confirmScriptRun(
+    targetPath: string,
+    tool: string,
+    description?: string,
+    content?: string,
+  ): Promise<boolean> {
+    if (content) {
+      const verdict = classifyCommand(content);
+      if (verdict === 'deny') {
+        this.emitAudit({
+          type: 'write-decline',
+          path: targetPath,
+          tool,
+          decision: 'auto-denied',
+          reason: '脚本/代码内容命中命令黑名单（恒拦，不进确认流程）',
+          timestamp: nowIso(),
+        });
+        return false;
+      }
+      if (verdict === 'always-ask') {
+        // 恒弹：与 confirmCommandRun 的 always-ask 分支同判据（不可被档位豁免）
+        return this.confirmGate(targetPath, tool, description, true);
+      }
+    }
     return this.confirmGate(
       targetPath,
       tool,
