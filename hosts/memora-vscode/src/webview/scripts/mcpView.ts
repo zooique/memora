@@ -176,6 +176,9 @@ function emptyDraft(): McpFormDraft {
   };
 }
 
+/** 保存请求计数（reqId 生成源；webview 会话内唯一即够，宿主只做原样回传） */
+let saveSeq = 0;
+
 /** 由配置生成草稿（编辑已有 server） */
 function draftOf(server: McpServerStatusDto): McpFormDraft {
   return {
@@ -293,6 +296,16 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
   let formError = '';
   /** 是否收到过首帧状态（未收到前保留骨架里的「加载中…」，不谎报空态） */
   let received = false;
+  /**
+   * 在途保存（reqId → 保存时的草稿快照）
+   *
+   * 为什么必须暂存：保存发出即收表单（「以回推为准」是对的——不乐观插入卡片），但写
+   * **失败**时表单已关、用户刚填的 args/env/cwd 无处可取（2026-10-24 探针复现的缺陷）。
+   * 宿主把结论随 `mcp_status.ack` 带回（`reqId` 原样回传）：失败 ⇒ 复开表单还输入；
+   * 成功 ⇒ 丢掉暂存。`mcp_status` 还会被 ready / 热更 / 运行态变化触发——那些推送不带
+   * ack，凭「收到状态就算写完」会把别人的回推当成自己的结论，所以认领必须比对 reqId。
+   */
+  let pendingSave: { reqId: string; draft: McpFormDraft } | null = null;
 
   /** 渲染工具行（只在 running 态有内容） */
   function toolRows(server: McpServerStatusDto): string {
@@ -480,7 +493,10 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     // 而 `isFormRepresentable` 只覆盖 args/env 两个字段，宣称「可无损编辑」（2026-10-24 实测）。
     // 整项都是空白视为「用户清空」——与「值里有空格」是两件事。
     if (draft.cwd.trim().length > 0) payload.cwd = draft.cwd;
-    vscode.postMessage({ type: 'mcp_write', op: 'upsert', server: payload });
+    // 暂存草稿再发出：写失败时宿主随 ack 回传同一 reqId，视图据此复开表单还输入
+    const reqId = `mcp-save-${(++saveSeq).toString(36)}`;
+    pendingSave = { reqId, draft };
+    vscode.postMessage({ type: 'mcp_write', op: 'upsert', server: payload, reqId });
     // 关表单、以回推为准（不乐观插入一条「我以为保存成功了」的卡片）
     draft = null;
     render();
@@ -499,6 +515,8 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     if (act === 'cancel') {
       draft = null;
       formError = '';
+      // 用户显式放弃 ⇒ 在途保存的失败结论不再复开表单（ toast 已告知失败）
+      pendingSave = null;
       render();
       return;
     }
@@ -506,6 +524,8 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
       draft = draftOf(server);
       confirmingDelete = null;
       formError = '';
+      // 打开了更新的输入 ⇒ 在途结论不再有权顶掉它（认领处的 reqId 比对同源）
+      pendingSave = null;
       render();
       return;
     }
@@ -550,6 +570,7 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     draft = emptyDraft();
     confirmingDelete = null;
     formError = '';
+    pendingSave = null;
     render();
     listEl!.querySelector<HTMLInputElement>('#mcpFName')?.focus();
   });
@@ -579,6 +600,20 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     servers = event.data.servers;
     // 与 servers 同一次消息、同一次宿主派生（见 McpOmittedDto）：分开取 = 两份判据
     omitted = event.data.omitted;
+    // 写操作回执认领（reqId 对得上才算这次保存的结论）：
+    //   失败 ⇒ 复开表单还输入，失败原因内联显示；成功 ⇒ 只丢掉暂存（表单本来就关着）。
+    //   用户在此期间打开/关闭过表单 ⇒ pendingSave 已被那些动作清掉（cancel / edit / 新增），
+    //   迟到的结论认领不到——显式的新意图优先于旧的在途保存。
+    // 放在下方「编辑中的 server 消失 ⇒ 收起表单」判据**之前**：若那台已被他处删除，
+    // 复开的表单会被同一判据再次收起——沿用既有语义，不另立规则。
+    const ack = event.data.ack;
+    if (ack && pendingSave && ack.reqId === pendingSave.reqId) {
+      if (!ack.ok) {
+        draft = pendingSave.draft;
+        formError = ack.error ?? '保存失败';
+      }
+      pendingSave = null;
+    }
     // 被编辑/待删的那台如果已经不在配置里（他处改了配置），收起表单与确认态
     const editingName = draft?.originalName ?? '';
     if (editingName !== '' && !servers.some((item) => item.name === editingName)) draft = null;

@@ -1300,8 +1300,16 @@ export type ExtensionToWebviewMessage =
    * 重名的两类**整条不在列表里**。少了这份计数，面板上「配置 2 条、显示 1 条」和
    * 「配置 1 条」渲染完全一致（2026-10-24 实测：两类都是静默消失，只留一行 logger.warn）。
    * 必填 = 每一个发送点都被迫面对这件事（漏传是编译错，不是悄悄少说一句）。
+   *
+   * `ack` 只有「写操作的收尾回推」才带（见 {@link McpWriteAckDto}）：ready 握手 / 热更 /
+   * 运行态变化触发的推送没有它。视图只认领 `reqId` 对得上的那一条。
    */
-  | { type: 'mcp_status'; servers: McpServerStatusDto[]; omitted: McpOmittedDto }
+  | {
+      type: 'mcp_status';
+      servers: McpServerStatusDto[];
+      omitted: McpOmittedDto;
+      ack?: McpWriteAckDto;
+    }
 
   // ─── 技能管理面板消息 ───
   /** 全局技能列表加载完成（对 skills_load 的应答） */
@@ -1815,6 +1823,28 @@ export interface McpOmittedDto {
 }
 
 /**
+ * 一次 `mcp_write{op:'upsert'}` 的结论（随写后那一次 `mcp_status` 回推带回）
+ *
+ * **为什么不新开 `mcp_write_result` 通道**（2026-10-24）：① 协议去重计数已 129/130，
+ * 为一条 ack 花掉最后一个余量不划算（治理规则要求「加类型前先合并/删通道」）；② ack 与
+ * 状态本就是同一次回推的产物（`upsertServer` 结尾既推状态、也知道写没写成），拆成两条消息
+ * 反而要保证顺序。字段加在既有类型上 = 0 协议成本。
+ *
+ * **为什么必须带 `reqId`**：`mcp_status` 还会被 ready 握手 / 配置热更 / 运行态变化触发，
+ * 那些推送不带 ack；凭「收到第一条状态就算写完了」会把别人的回推当成自己的结论。
+ *
+ * 语义边界：这是**写入是否落盘**的结论，不是「server 是否连上」（后者看 `state`）。
+ */
+export interface McpWriteAckDto {
+  /** webview 在 `mcp_write` 里带的 `reqId`，原样回传（视图据此认领） */
+  reqId: string;
+  /** true = 配置已落盘；false = 未落盘（表单内容必须保住，见 mcpView 的 pendingSave） */
+  ok: boolean;
+  /** 失败原因（`ok=false` 时必有；直接可显示，不再二次加工） */
+  error?: string;
+}
+
+/**
  * `mcp_write` 的载荷（按 op 判别；见 {@link WebviewToExtensionMessage} 该成员的注释）
  *
  * `upsert.server` 用 {@link McpServerDraftDto}：host 按 name 定位旧项后**展开合并**
@@ -1829,7 +1859,17 @@ export type McpWritePayload =
       key: string;
       allowlisted: boolean;
     }
-  | { op: 'upsert'; server: McpServerDraftDto }
+  | {
+      op: 'upsert';
+      server: McpServerDraftDto;
+      /**
+       * 保存请求的关联 id（webview 生成、宿主原样回传在 `mcp_status.ack` 里）
+       *
+       * 只 `upsert` 需要：它是唯一一条**带用户输入**的写操作——写失败时表单若已关闭，用户
+       * 刚填的 args/env/cwd 就无处可取（2026-10-24 探针复现）。其余 op 失败只需一条 toast。
+       */
+      reqId?: string;
+    }
   | { op: 'remove'; name: string }
   | { op: 'setEnabled'; name: string; enabled: boolean }
   | { op: 'restart'; name: string }

@@ -28,14 +28,14 @@ import {
 } from '../../extension/mcpConfig.js';
 import { configProblem, normalizeServerName } from '../../extension/host/mcp/mcpConfigGuard.js';
 import type { McpServerConfig } from '../../extension/host/mcp/connectionManager.js';
-import type { McpServerDraftDto, McpWritePayload } from '../../shared/protocol.js';
+import type { McpServerDraftDto, McpWriteAckDto, McpWritePayload } from '../../shared/protocol.js';
 
 /**
  * 写操作依赖（由 settingsPanel 注入：它持有视图、agent 与日志）
  */
 export interface McpOpsDeps {
-  /** 回推 MCP 状态（真源 = runtime.getMcpServerStatus） */
-  pushStatus(): void;
+  /** 回推 MCP 状态（真源 = runtime.getMcpServerStatus）；带 ack = 同时回执一次写操作 */
+  pushStatus(ack?: McpWriteAckDto): void;
   /** 操作回执（走既有 notice 通道，设置页顶部 toast） */
   notice(level: 'info' | 'error', message: string): void;
   /** 重启单台（由 panel 注入：需要已装配的 agent；未装配给失败回执，不懒装配） */
@@ -68,18 +68,34 @@ function readServers(): McpServerConfig[] {
  *
  * @param deps 依赖（失败要回执）
  * @param next 完整数组（**不是差量**：`update` 是整键覆盖）
- * @returns 是否写入成功
+ * @returns 写入结果（失败带原因文本——toast 与 ack 共用同一句，不二次加工）
  */
-async function writeServers(deps: McpOpsDeps, next: McpServerConfig[]): Promise<boolean> {
+async function writeServers(
+  deps: McpOpsDeps,
+  next: McpServerConfig[],
+): Promise<{ ok: boolean; error?: string }> {
   try {
     await vscode.workspace
       .getConfiguration('memora')
       .update(MCP_SERVERS_KEY, next, vscode.ConfigurationTarget.Global);
-    return true;
+    return { ok: true };
   } catch (err) {
-    deps.notice('error', `MCP 配置写入失败：${String(err)}`);
-    return false;
+    const error = `MCP 配置写入失败：${String(err)}`;
+    deps.notice('error', error);
+    return { ok: false, error };
   }
+}
+
+/**
+ * 写操作回执（`reqId` 对得上才发给视图认领；无 `reqId` = 无从认领，不给）
+ *
+ * @param reqId webview 在 `mcp_write{op:'upsert'}` 里带的关联 id（原样回传）
+ * @param ok 配置是否已落盘
+ * @param error 失败原因（`ok=false` 时必有）
+ */
+function ackOf(reqId: string | undefined, ok: boolean, error?: string): McpWriteAckDto | undefined {
+  if (!reqId) return undefined;
+  return ok ? { reqId, ok } : { reqId, ok, error: error ?? '写入失败（原因未记录）' };
 }
 
 /**
@@ -140,7 +156,7 @@ export async function applyMcpWrite(deps: McpOpsDeps, payload: McpWritePayload):
       await setAllowlisted(deps, payload.key, payload.allowlisted);
       return;
     case 'upsert':
-      await upsertServer(deps, payload.server);
+      await upsertServer(deps, payload.server, payload.reqId);
       return;
     case 'remove':
       await removeServer(deps, payload.name);
@@ -205,10 +221,17 @@ async function setAllowlisted(deps: McpOpsDeps, key: string, allowlisted: boolea
  *
  * @param deps 依赖
  * @param draft 表单草稿
+ * @param reqId webview 的保存关联 id（有则随收尾回推带回 ack——写失败时视图靠它复开表单，
+ *   保住用户刚填的内容；缺省 = 旧客户端，行为不变）
  */
-async function upsertServer(deps: McpOpsDeps, draft: McpServerDraftDto): Promise<void> {
+async function upsertServer(
+  deps: McpOpsDeps,
+  draft: McpServerDraftDto,
+  reqId?: string,
+): Promise<void> {
   if (!draft || typeof draft.name !== 'string') {
     deps.notice('error', 'MCP 服务器保存失败：缺少名称');
+    deps.pushStatus(ackOf(reqId, false, '缺少名称'));
     return;
   }
   const configs = readServers();
@@ -224,18 +247,22 @@ async function upsertServer(deps: McpOpsDeps, draft: McpServerDraftDto): Promise
   // 判据与启动侧同源（mcpConfigGuard.configProblem）：面板能存进去的配置，启动侧不会因同一原因拒
   const problem = configProblem(merged);
   if (problem) {
-    deps.notice('error', `MCP 服务器「${merged.name || '(未命名)'}」不可保存：${problem}`);
-    deps.pushStatus();
+    const message = `MCP 服务器「${merged.name || '(未命名)'}」不可保存：${problem}`;
+    deps.notice('error', message);
+    deps.pushStatus(ackOf(reqId, false, message));
     return;
   }
 
   if (index >= 0) configs[index] = merged;
   else configs.push(merged);
 
-  if (await writeServers(deps, configs)) {
+  const written = await writeServers(deps, configs);
+  if (written.ok) {
     deps.notice('info', index >= 0 ? `已更新「${merged.name}」` : `已添加「${merged.name}」`);
   }
-  deps.pushStatus();
+  // ack 无论成败都必须回：成功 ⇒ 视图丢掉暂存草稿；失败 ⇒ 视图复开表单还输入（见
+  // mcpView 的 pendingSave）。漏推成功 ack 会让草稿一直挂在状态里（无害但不干净）。
+  deps.pushStatus(ackOf(reqId, written.ok, written.error));
 }
 
 /**
@@ -256,8 +283,9 @@ async function removeServer(deps: McpOpsDeps, name: string): Promise<void> {
   const next = configs.filter((item) => normalizeServerName(item.name) !== target);
   if (next.length === configs.length) {
     deps.notice('error', `未找到 server「${name}」（配置可能已被其他窗口修改）`);
-  } else if (await writeServers(deps, next)) {
-    deps.notice('info', `已删除「${name}」`);
+  } else {
+    const written = await writeServers(deps, next);
+    if (written.ok) deps.notice('info', `已删除「${name}」`);
   }
   deps.pushStatus();
 }
@@ -279,7 +307,8 @@ async function setServerEnabled(deps: McpOpsDeps, name: string, enabled: boolean
     return;
   }
   configs[index] = { ...configs[index], enabled };
-  if (await writeServers(deps, configs)) {
+  const written = await writeServers(deps, configs);
+  if (written.ok) {
     deps.notice('info', enabled ? `已启用「${name}」` : `已停用「${name}」`);
   }
   deps.pushStatus();

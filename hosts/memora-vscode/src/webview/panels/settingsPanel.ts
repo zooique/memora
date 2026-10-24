@@ -26,6 +26,7 @@ import type {
   CustomSearchEngineConfig,
   ExtensionToWebviewMessage,
   GovernanceStatsDto,
+  McpWriteAckDto,
   MemoryItemDto,
   MemoryStatsDto,
   SearchEngineSetting,
@@ -1790,13 +1791,15 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    *   - **怎么样** ⇒ runtime 内的运行态 ∪ 失败表（`pending` = 装配前的诚实态，不是失败）。
    * 第三个字段 `omitted` **必须一起发**：列表只装得下「有寻址键」的条目，缺 name / 重名的
    * 两类整条不出现；不带计数，面板就会把「配置 2 条、显示 1 条」画成「配置 1 条」。
+   * `ack` 只有 `mcp_write{op:'upsert'}` 的收尾回推才带（webview 靠 `reqId` 认领，写失败时
+   * 复开表单还输入）；ready / 热更 / 运行态变化触发的推送不带。
    * 公开方法：配置热更生效后由 extension.ts 回推；运行态变化（启停失败 / 断线 / 重启）
    * 由 runtime 的状态监听器回调到这里（监听器在本文件构造器里注册，理由见该处注释）。
    */
-  public pushMcpStatus(): void {
+  public pushMcpStatus(ack?: McpWriteAckDto): void {
     const configured = readMcpServers();
     const { servers, omitted } = getMcpServerStatus(configured);
-    this.post({ type: 'mcp_status', servers, omitted });
+    this.post({ type: 'mcp_status', servers, omitted, ...(ack ? { ack } : {}) });
   }
 
   /**
@@ -1809,7 +1812,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    */
   private mcpOpsDeps(): McpOpsDeps {
     return {
-      pushStatus: () => this.pushMcpStatus(),
+      // ack 原样透传：写操作的收尾回执只在「带着 ack 的那一次」回推里有（视图按 reqId 认领）
+      pushStatus: (ack) => this.pushMcpStatus(ack),
       notice: (level, message) => this.post({ type: 'notice', level, message }),
       connect: async () => {
         // 已装配 ⇒ 按定义不该是 pending（pending 的判据 = 「没进过装配」），
