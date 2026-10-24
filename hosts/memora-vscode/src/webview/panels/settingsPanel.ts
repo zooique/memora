@@ -1789,7 +1789,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    *     但还没装配」的台：设置视图先于对话面板打开时 Agent 未装配，列表会谎报空态。
    *   - **怎么样** ⇒ runtime 内的运行态 ∪ 失败表（`pending` = 装配前的诚实态，不是失败）。
    * 公开方法：配置热更生效后由 extension.ts 回推；运行态变化（启停失败 / 断线 / 重启）
-   * 由 runtime 的状态监听器回调到这里（见 extension.ts 的 setMcpStatusListener）。
+   * 由 runtime 的状态监听器回调到这里（监听器在本文件构造器里注册，理由见该处注释）。
    */
   public pushMcpStatus(): void {
     this.post({ type: 'mcp_status', servers: getMcpServerStatus(readMcpServers()) });
