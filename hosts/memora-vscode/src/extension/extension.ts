@@ -17,23 +17,24 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import type { Agent, ArchiveMode, IRoundStore } from '@zooique/memora';
-import { accumulateStream } from '@zooique/memora';
 import { assembleAgent, createVscodeLogger } from './host/assemble.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
 import { ProviderStore } from './providers/providerStore.js';
-import { resetUserData } from './host/userDataReset.js';
-import { toNoticeText } from './host/noticeText.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js';
 import { MemoraSettingsViewProvider } from '../webview/panels/settingsPanel.js';
 import { openChatCommand } from './commands/openChat.js';
 import { runDemoCommand } from './commands/demo.js';
+import { reloadSkillsCommand } from './commands/reloadSkills.js';
+import { cleanupMemoriesCommand, memoryStatsCommand, runGcCommand } from './commands/memory.js';
+import { registerWorkCommand } from './commands/registerWork.js';
+import { addToChatCommand } from './commands/addToChat.js';
+import { createUserDataResetHandler } from './commands/userDataReset.js';
+import { readDisabledSkills, syncDisabledSkills } from './host/skillSync.js';
 import { FileChangeTracker } from './host/fileChangeTracker.js';
 import { FileChangeView } from './host/fileChangeView.js';
-import { selectionToRefRange } from './host/selectionRange.js';
-import { relativeUnderPrimaryRoot } from './host/refPath.js';
 import { stopMcpServers, applyMcpConfigChange } from './host/mcp/runtime.js';
 import { readMcpServers, readMcpToolAllowlist } from './mcpConfig.js';
 import {
@@ -41,11 +42,10 @@ import {
   CONFIRM_WRITES_KEY,
   CONFIRM_SCRIPTS_KEY,
   ROLE_PACK_TEAMS_KEY,
-  MEMORY_RECYCLE_RETENTION_DAYS,
   USER_SKILLS_DIR_NAME,
   USER_ROLE_PACKS_DIR_NAME,
 } from '../shared/constants.js';
-import type { ChatRef, CustomSearchEngineConfig } from '../shared/protocol.js';
+import type { CustomSearchEngineConfig } from '../shared/protocol.js';
 
 /**
  * 解析工作区持久化根路径（SSOT，extension 与 assemble 共用同一来源）
@@ -90,19 +90,6 @@ let currentAgent: Agent | null = null;
 let extensionVersion = '';
 
 /**
- * 读取「禁用的技能名」配置（技能启停，**唯一读取点**）
- *
- * 三处消费共用本函数：① 装配期注入；② 配置变更监听；③ 手动重载命令。
- * 各自内联 `getConfiguration` 会让**键名与默认值**在三个地方各存一份，改一处漏两处。
- *
- * ⚠️ 真源是内核 `disabledNames`（本函数只负责把配置取出来喂给它）；宿主不自存副本、
- * UI 不另读本配置 —— 否则 `reloadConfig` 重设后两源分叉，出现「UI 说已禁用、实际仍生效」。
- */
-function readDisabledSkills(): string[] {
-  return vscode.workspace.getConfiguration('memora').get<string[]>('disabledSkills', []);
-}
-
-/**
  * 读取「允许路径白名单」配置（唯一读取点）
  *
  * 两处消费共用：① 装配期注入；② 配置变更监听（settings.json 手改 / Settings Sync 落地）。
@@ -143,31 +130,6 @@ function runOnAssembledAgent(
     await action(agent);
   })().catch((err) => {
     console.warn(`Memora ${failLabel}失败`, err);
-  });
-}
-
-/**
- * 技能启停同步：把宿主配置的禁用集喂给内核 + 刷新**两条** UI 消费通道。
- *
- * 单一实现 —— 配置变更监听与「Memora: 重载技能与角色包」命令共用，防两处各写一份。
- *
- * 消费通道必须枚举完整（缺一即「只刷一半」，血的教训）：
- *   ① 对话区技能下拉 + chip 标注 → `chatProvider.refreshSkillList()`
- *   ② 设置页技能卡片（「已禁用」徽章 + health） → `settingsProvider.refreshSkillList()`
- *
- * 内核侧 `setDisabledSkills` 为纯内存 clear+add（幂等、无 IO），故本函数可安全重复调用。
- */
-function syncDisabledSkills(
-  agent: Agent,
-  chatProvider: MemoraChatViewProvider,
-  settingsProvider: MemoraSettingsViewProvider,
-): void {
-  agent.skills?.setDisabledSkills(readDisabledSkills());
-  chatProvider.refreshSkillList();
-  // 设置页刷新为异步（含逐项 health 校验）：显式接住 rejection —— 刷新失败只影响设置页
-  // 展示（下次打开设置页会重新加载），不得冒泡成未处理异常打断调用方
-  void settingsProvider.refreshSkillList().catch((err) => {
-    console.warn('Memora 技能清单刷新（设置页）失败', err);
   });
 }
 
@@ -321,6 +283,43 @@ export function activate(context: vscode.ExtensionContext): void {
   // 侧边栏视图：对话面板（sessionStore 与 assemble 同路径 .memora/sessions.json）
   const workspacePath = resolveWorkspacePath();
 
+  /**
+   * 统一装配入口（**唯一调用面**）
+   *
+   * 此前四处（chat 工厂 / settings 工厂 / open 命令 / 命令侧取 Agent）各抄一遍九个实参，
+   * 装配签名一改就要在四处同步——漏一处就是「某个入口装出来的 Agent 少读一项配置」，
+   * 而且没有测试会红。收成一个闭包后，装配参数只有这一处定义。
+   *
+   * @param projectPath 工作区路径（仅首次装配生效；后续调用复用同一 Agent 单例）
+   */
+  const getAgent = (projectPath: string): Promise<Agent> =>
+    getOrCreateAgent(
+      projectPath,
+      providerStore,
+      sessionStore,
+      roundStore,
+      context.globalState,
+      configDir,
+      userSkillsDir,
+      userRolePacksDir,
+      memoraOutput,
+    );
+
+  /**
+   * 命令侧取 Agent：装配失败返 null（**不抛错**）
+   *
+   * 与 `getAgent` 刻意分开：命令的目标是「给用户一条提示」，装配失败属预期路径，
+   * 不该让每个命令各写一遍 try/catch；而面板工厂需要异常冒泡以便如实回执。
+   * 工作区根的回退规则（无工作区 → home/.memora）由 workspacePath 单点持有。
+   */
+  const tryGetAgent = async (): Promise<Agent | null> => {
+    try {
+      return await getAgent(workspacePath);
+    } catch {
+      return null;
+    }
+  };
+
   // 启动清扫暂存的孤儿 Round ID（清扫 → 摘要软删的「对称的另一半」）：
   // 清扫发生在 activate（Agent 尚未装配），此处暂存被清扫 Round，待 Agent 首次就绪后
   // 延迟联动软删其 round-summary 摘要。单进程内一次性消费（splice 清空）；进程退出前
@@ -384,17 +383,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写；
   // 装配路径与 sessionStore 同源（resolveWorkspacePath），保证读写的文件一致
   chatProvider.setAgentFactory((projectPath) => {
-    const agentPromise = getOrCreateAgent(
-      projectPath,
-      providerStore,
-      sessionStore,
-      roundStore,
-      context.globalState,
-      configDir,
-      userSkillsDir,
-      userRolePacksDir,
-      memoraOutput,
-    );
+    const agentPromise = getAgent(projectPath);
     // 孤儿轮摘要延迟联动：启动清扫发生 Agent 尚未装配，
     // Agent 首次就绪后补做「对称的另一半」——软删被清扫轮的 round-summary
     // （与手动删会话同语义：脱钩溯源 + 进回收站，可恢复为无溯源独立记忆）。
@@ -425,19 +414,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 装配复用与 chat 面板同一 getOrCreateAgent 单例（SSOT），角色切换持久化用户级激活态；
   // providerStore 注入供大模型子视图读写（与 chat 面板共用一个 store 单例）。
   const settingsProvider = new MemoraSettingsViewProvider(context.extensionUri, providerStore);
-  settingsProvider.setAgentFactory((projectPath) =>
-    getOrCreateAgent(
-      projectPath,
-      providerStore,
-      sessionStore,
-      roundStore,
-      context.globalState,
-      configDir,
-      userSkillsDir,
-      userRolePacksDir,
-      memoraOutput,
-    ),
-  );
+  settingsProvider.setAgentFactory(getAgent);
   settingsProvider.setGlobalState(context.globalState);
   // 注入技能目录：用户目录（打开目录按钮）+ 内置配置目录（三源技能来源判定，SSOT 收紧）
   settingsProvider.setUserSkillsDir(userSkillsDir);
@@ -455,23 +432,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 命令：打开对话面板（聚焦侧边栏视图）
   context.subscriptions.push(
-    vscode.commands.registerCommand('memora.open', () =>
-      openChatCommand(
-        (projectPath) =>
-          getOrCreateAgent(
-            projectPath,
-            providerStore,
-            sessionStore,
-            roundStore,
-            context.globalState,
-            configDir,
-            userSkillsDir,
-            userRolePacksDir,
-            memoraOutput,
-          ),
-        chatProvider,
-      ),
-    ),
+    vscode.commands.registerCommand('memora.open', () => openChatCommand(getAgent, chatProvider)),
   );
 
   // 命令：配置大模型（聚焦设置视图并切换到「大模型」子选项卡）
@@ -504,69 +465,13 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // ─── 记忆治理命令（宿主补齐 agent.memory.* API 消费） ───
-  // ⚠ 术语消歧（2026-10-18）：本节的「记忆治理」是**宿主产品概念**（面板展示活跃/回收站/
-  // 来源分布/已被取代数），数据全部来自 `agent.memory.stats()` / `listDeleted()` / `list()`。
-  // 它与内核那个已于 5.0.0 整链退役的 `agent.governance` **门面无关**，别再据旧注释去内核找它。
+  // 命令实现见 `commands/memory.ts`（术语消歧说明随实现一并外置）。
 
-  /** 获取当前工作区的 Agent 实例（懒装配，已装配则直接返回缓存） */
-  const getAgentForCommand = async (): Promise<Agent | null> => {
-    try {
-      return await getOrCreateAgent(
-        workspacePath,
-        providerStore,
-        sessionStore,
-        roundStore,
-        context.globalState,
-        configDir,
-        userSkillsDir,
-        userRolePacksDir,
-        memoraOutput,
-      );
-    } catch {
-      return null;
-    }
-  };
-
-  // 命令：重载技能与角色包（技能系统热重载入口）
-  // 技能是角色包作者的高频手改对象，此入口免去改/加技能文件后 Reload Window 才生效。
-  //
-  // ⚠ 忙碌态必须「分两次带 source」调用 —— 判据同源：agent.isBusy 读的正是内核
-  // reloadConfig 守门用的同一个 chatLockManager.isBusy。
-  //   内核在对话中**只暂存带 source 的请求**（agent.ts：「undefined（全量）不暂存——无具体来源，
-  // 补执行语义不明」）⇒ 无参调用在对话中会把用户的重载请求**静默丢弃**
-  // （既没重载、也没排队），此时提示「重载失败」不实（内核在守门处即返回，未尝试重载）（坑）。
-  //   故空闲走一次全量；忙碌则分两次带 source 调用（两条都进 pendingConfigReload，
-  // 由 flushPendingConfigReload 在 turn 结束后补执行），并如实告知「已提交」。
+  // 命令：重载技能与角色包（实现见 `commands/reloadSkills.ts`，忙碌态语义随实现外置）
   context.subscriptions.push(
-    vscode.commands.registerCommand('memora.reloadSkills', async () => {
-      const agent = await getAgentForCommand();
-      if (!agent) {
-        vscode.window.showWarningMessage('Memora Agent 未就绪，无法重载技能');
-        return;
-      }
-      // 禁用集 + UI 同步（启停闭环）：配置变更本身已由 onDidChangeConfiguration 监听
-      // 自动完成；此处保留为**幂等兜底**——reloadConfig 会重扫技能池（增删技能后清单变化），
-      // 重设一次保证「手动重载后 UI 与内核一致」，且万一监听未触发仍有手动救济路径。
-      syncDisabledSkills(agent, chatProvider, settingsProvider);
-      if (agent.isBusy) {
-        // allSettled：忙碌态两次调用都会以 chatBusyError 结束（守门发生在任何 IO 之前），
-        // 属预期路径，不该冒泡成未处理异常。
-        await Promise.allSettled([agent.reloadConfig('skill'), agent.reloadConfig('rolePack')]);
-        // 措辞须对两种时序都成立：判据为真后锁可能瞬间释放（此时两次调用会真的立即生效）。
-        vscode.window.showInformationMessage(
-          '技能重载请求已提交；若对话仍在进行，将在对话空闲时自动生效',
-        );
-        return;
-      }
-      try {
-        const result = await agent.reloadConfig();
-        vscode.window.showInformationMessage(
-          `技能已重载：全局技能 ${result.skill} 个 / 角色包技能 ${result.rolePack} 个`,
-        );
-      } catch (err) {
-        vscode.window.showWarningMessage(`技能重载失败：${toNoticeText(err)}`);
-      }
-    }),
+    vscode.commands.registerCommand('memora.reloadSkills', () =>
+      reloadSkillsCommand(tryGetAgent, chatProvider, settingsProvider),
+    ),
   );
 
   // ─── 技能启停配置变更自动同步 ───
@@ -582,7 +487,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 技能文件本身未变，重扫磁盘无意义，还会引入「忙碌态需排队」的额外语义。
   //
   // 未装配则不动作：下次装配本就按新配置注入，不该为「改一次设置」付整个 Agent 装配成本
-  //（故**不用** getAgentForCommand —— 它会懒装配；此处只读已存在的 agentPromise）。
+  //（故**不用** tryGetAgent —— 它会懒装配；此处只读已存在的 agentPromise）。
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       // HOST-BUG-1：LLM 配置（Provider 列表 / 激活项）变更 → 对话面板重试装配。
@@ -647,131 +552,31 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  // 命令：查看记忆统计（agent.memory + agent.getMetrics()）
+  // 命令：查看记忆统计 / 清理过期软删除记忆 / 孤儿回收（实现见 `commands/memory.ts`）
   context.subscriptions.push(
-    vscode.commands.registerCommand('memora.memoryStats', async () => {
-      const agent = await getAgentForCommand();
-      if (!agent) {
-        vscode.window.showWarningMessage('Memora Agent 未就绪，无法查看记忆统计');
-        return;
-      }
-      const mem = agent.memory;
-      // 统计口径 SSOT = 内核 memory.stats()（total = 活跃数，bySource = 来源分布；走
-      // sourceCountCache / getAllSources 增量缓存，精确且免全量列举）。若用 list(1000)
-      // 自行聚合，superseded 与来源分布超 1000 条时双双低报（坑）。
-      const stats = mem?.stats();
-      const activeCount = stats?.total ?? 0;
-      const deletedCount = mem?.listDeleted().length ?? 0;
-      const sourceSummary =
-        Object.entries(stats?.bySource ?? {})
-          .map(([src, cnt]) => `${src}: ${cnt}`)
-          .join(', ') || '—';
-      vscode.window.showInformationMessage(
-        `记忆统计：活跃 ${activeCount} 条，回收站 ${deletedCount} 条 | 来源分布：${sourceSummary}`,
-      );
-    }),
-  );
-
-  // 命令：清理过期软删除记忆（agent.memory.writePurgeExpired()）
-  context.subscriptions.push(
-    vscode.commands.registerCommand('memora.cleanupMemories', async () => {
-      const agent = await getAgentForCommand();
-      if (!agent?.memory) {
-        vscode.window.showWarningMessage('Memora Agent 未就绪，无法清理记忆');
-        return;
-      }
-      // 确认对话框——防止误操作。不传显式「取消」：VS Code modal 自带系统级取消
-      // （取消钮 / Esc / 关闭 X），再传会出现双取消；confirmed !== '确认清理' 已兼容 undefined
-      const confirmed = await vscode.window.showWarningMessage(
-        `将永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆，此操作不可撤销。`,
-        { modal: true },
-        '确认清理',
-      );
-      if (confirmed !== '确认清理') return;
-      try {
-        // 保留期 SSOT = shared/constants（与设置面板「清理过期」同源，改一处即两侧同步）
-        const cutoff = new Date(Date.now() - MEMORY_RECYCLE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-        const purged = agent.memory.writePurgeExpired(cutoff);
-        vscode.window.showInformationMessage(`已清理 ${purged} 条过期记忆`);
-      } catch (err) {
-        vscode.window.showErrorMessage(`清理失败：${toNoticeText(err)}`);
-      }
-    }),
-  );
-
-  // 命令：立即执行孤儿 Round 垃圾回收（agent.gcNow() 手动触发入口）
-  context.subscriptions.push(
-    vscode.commands.registerCommand('memora.runGc', async () => {
-      const agent = await getAgentForCommand();
-      if (!agent) {
-        vscode.window.showWarningMessage('Memora Agent 未就绪，无法执行垃圾回收');
-        return;
-      }
-      try {
-        const stats = agent.gcNow();
-        vscode.window.showInformationMessage(
-          `孤儿回收完成：扫描 ${stats.scanned} 个问答闭环，清理 ${stats.deleted} 个孤立 Round + ${stats.memoryCleaned} 条摘要`,
-        );
-      } catch (err) {
-        vscode.window.showErrorMessage(`垃圾回收失败：${toNoticeText(err)}`);
-      }
-    }),
+    vscode.commands.registerCommand('memora.memoryStats', () => memoryStatsCommand(tryGetAgent)),
+    vscode.commands.registerCommand('memora.cleanupMemories', () =>
+      cleanupMemoriesCommand(tryGetAgent),
+    ),
+    vscode.commands.registerCommand('memora.runGc', () => runGcCommand(tryGetAgent)),
   );
 
   // ─── 恢复初始状态（清空用户级数据 · 与设置面板「安全」tab 按钮共用本函数） ───
   //
   // 单一路径：命令面板入口（memora.resetUserData）与 webview 按钮（reset_user_data 消息）
-  // 都调 performUserDataReset——确认形态、清理顺序、reload 时机只有一处定义，
-  // 杜绝两条路径漂移（按钮能清、命令漏 reload 之类）。
+  // 都调同一个 handler——确认形态、清理顺序、reload 时机只有一处定义（实现与说明见
+  // `commands/userDataReset.ts`），杜绝两条路径漂移（按钮能清、命令漏 reload 之类）。
   //
-  // 清空范围 = 全部用户级存储（明细判据见 userDataReset.ts 四条通道）；
-  // 项目级数据（.memora/ 记忆与会话、工作区 settings）一字节不碰——记忆与会话
-  // 已经是项目的一部分（用户拍板）。
-  //
-  // reload 是「回首装态」的组成部分而非可选项：activeRolePack / rolePackTeams /
-  // confirmWrites / confirmScripts 都是装配期读一次进内存，globalState 清了内存
-  // 不跟着变 ⇒ 清理成功后必须重载窗口。
-  const performUserDataReset = async (): Promise<{
-    ok: boolean;
-    cancelled?: boolean;
-    message?: string;
-  }> => {
-    // 不传显式「取消」：VS Code modal 自带系统级取消（取消钮 / Esc / 关闭 X），
-    // 再传会出现双取消（真机截图实锤）；confirmed !== '确认初始化并重载' 已兼容 undefined
-    const confirmed = await vscode.window.showWarningMessage(
-      '将清空插件的全部用户级数据：\n' +
-        '· 用户技能与用户角色包\n' +
-        '· 大模型配置与 API Key\n' +
-        '· 激活角色包、角色包组、安全开关与用户级设置\n\n' +
-        '保留：当前项目的记忆与会话记录（.memora/）、项目设置。\n' +
-        '清理完成后将自动重载窗口，进行中的对话会中断。此操作不可撤销。',
-      { modal: true },
-      '确认初始化并重载',
-    );
-    if (confirmed !== '确认初始化并重载') {
-      return { ok: false, cancelled: true, message: '已取消' };
-    }
-    try {
-      const report = await resetUserData({
-        globalState: context.globalState,
-        secrets: context.secrets,
-        globalStorageDir: context.globalStorageUri.fsPath,
-        packageJson: context.extension.packageJSON,
-      });
-      // 明细落输出通道（可追溯），提示语只给概要（不刷屏）
-      memoraOutput.appendLine(
-        `Memora 用户级数据初始化完成：globalState ${report.globalStateCleared.length} 键 / ` +
-          `SecretStorage ${report.secretsCleared.length} 条 / settings ${report.settingsCleared.length} 键 / ` +
-          `目录 ${report.dirsReset.length} 个`,
-      );
-      await vscode.commands.executeCommand('workbench.action.reloadWindow');
-      return { ok: true, message: '已清空用户级数据，窗口即将重载' };
-    } catch (err) {
-      const message = toNoticeText(err);
-      memoraOutput.appendLine(`Memora 用户级数据初始化失败：${message}`);
-      return { ok: false, message: `初始化失败：${message}` };
-    }
-  };
+  // 清空范围 = 全部用户级存储；项目级数据（.memora/ 记忆与会话、工作区 settings）一字节不碰。
+  const performUserDataReset = createUserDataResetHandler(
+    {
+      globalState: context.globalState,
+      secrets: context.secrets,
+      globalStorageDir: context.globalStorageUri.fsPath,
+      packageJson: context.extension.packageJSON,
+    },
+    memoraOutput,
+  );
 
   // 设置面板「安全」tab 的初始化按钮：委托同一处理器（单一路径）
   settingsProvider.setResetHandler(performUserDataReset);
@@ -788,159 +593,18 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  // 命令：登记作品投影（极简触发器——右键文件即登记，LLM 自动生成描述）
+  // 命令：登记作品投影（实现见 `commands/registerWork.ts`）
   context.subscriptions.push(
-    vscode.commands.registerCommand('memora.registerWork', async (uri) => {
-      // 仅支持从右键菜单触发（必须带 uri 参数）
-      const uris = Array.isArray(uri) ? uri : uri ? [uri] : [];
-      if (uris.length === 0) {
-        vscode.window.showWarningMessage('请在文件上右键，选择「Memora: 登记作品投影」');
-        return;
-      }
-
-      // 提取第一个文件路径
-      const targetUri = uris[0];
-      const relativePath = vscode.workspace.asRelativePath(targetUri);
-
-      // 显示进度
-      vscode.window.showInformationMessage('正在登记：' + relativePath + ' ...');
-
-      const agent = await getAgentForCommand();
-      if (!agent?.works) {
-        vscode.window.showWarningMessage('Memora Agent 未就绪，无法登记作品');
-        return;
-      }
-
-      // 文件内容裁切上限：超长文件只取头部
-      const DESCRIPTION_MAX_INPUT_CHARS = 8000;
-      // 输出 token 上限：推理模型（R1/QwQ）需预留 reasoning_content 预算，过小会导致 content 空
-      const DESCRIPTION_MAX_TOKENS = 4096;
-
-      try {
-        // 读取文件内容（按上限裁切，超长文件仅取头部并标注，保持上下文足够且成本可控）
-        const fileContent = await vscode.workspace.fs.readFile(targetUri);
-        const fullText = Buffer.from(fileContent).toString('utf-8');
-        const truncated = fullText.length > DESCRIPTION_MAX_INPUT_CHARS;
-        const text =
-          (truncated ? fullText.substring(0, DESCRIPTION_MAX_INPUT_CHARS) : fullText) +
-          (truncated
-            ? `\n\n（以下仅文件开头前 ${DESCRIPTION_MAX_INPUT_CHARS} 字符，内容可能不完整）`
-            : '');
-
-        // 调用 LLM 生成一句话描述
-        // prompt 显式传入文件名 + 禁止复述标题，迫使模型提炼要点而非回声文件名
-        const baseNameHint = relativePath.split(/[\\/]/).pop() ?? '';
-        const prompt =
-          `文件名：${baseNameHint}\n` +
-          `请用一句话（不超过 25 字）概括该文件的核心内容或用途，` +
-          `不要简单重复文件名，要提炼它具体讲了什么、解决什么问题或包含哪些要点：\n\n` +
-          text;
-        let description = '';
-        try {
-          const raw = await accumulateStream(
-            agent.provider,
-            [
-              { role: 'system', content: '你是文件描述生成器，只输出一句中文描述，不要解释。' },
-              { role: 'user', content: prompt },
-            ],
-            { maxTokens: DESCRIPTION_MAX_TOKENS },
-          );
-          // 诊断日志：区分"模型返回空"与"返回纯空白被 trim 掉"
-          memoraOutput.appendLine(
-            `[作品投影] LLM 原始返回 len=${raw.length} content=${JSON.stringify(raw)}`,
-          );
-          description = raw.trim();
-        } catch (llmErr) {
-          // LLM 调用异常（鉴权/网络/超时）→ 不静默吞：打到输出通道 + 告警，留文件名兜底
-          const msg = llmErr instanceof Error ? llmErr.message : String(llmErr);
-          memoraOutput.appendLine(`[作品投影] LLM 生成描述失败：${msg}`);
-          vscode.window.showWarningMessage(
-            'LLM 生成描述失败（详见 Memora 输出通道），已用文件名兜底：' + msg,
-          );
-        }
-
-        // 优雅降级：LLM 未返回有效描述时，用文件名（去扩展名）兜底，避免写空 description
-        if (!description) {
-          description =
-            relativePath
-              .split(/[\\/]/)
-              .pop()
-              ?.replace(/\.[^.]+$/, '') ?? 'unknown';
-          memoraOutput.appendLine(`[作品投影] LLM 未返回描述，已用文件名兜底：${description}`);
-          vscode.window.showWarningMessage('LLM 未返回描述，已用文件名「' + description + '」兜底');
-        } else {
-          memoraOutput.appendLine(`[作品投影] LLM 生成描述：${description}`);
-        }
-
-        // 登记投影
-        const result = await agent.works.registerWork(relativePath, description);
-        if (result) {
-          vscode.window.showInformationMessage(
-            '作品登记成功：' + result.name + ' | ' + description,
-          );
-        } else {
-          vscode.window.showErrorMessage('作品登记失败，路径可能越界或发生其他错误');
-        }
-      } catch (err) {
-        vscode.window.showErrorMessage('登记失败：' + toNoticeText(err));
-      }
-    }),
+    vscode.commands.registerCommand('memora.registerWork', (uri) =>
+      registerWorkCommand(uri, tryGetAgent, memoraOutput),
+    ),
   );
 
-  // 命令：添加到对话（右键文件/目录 → 把引用挂到对话输入盒上方气泡，发送时随消息带走；
-  // 仅挂路径与形态，不注入内容——内容由模型按需经 read_file 读取，贴合 token 预算哲学）
+  // 命令：添加到对话（实现见 `commands/addToChat.ts`）
   context.subscriptions.push(
-    vscode.commands.registerCommand('memora.addToChat', async (uri) => {
-      // 仅支持从右键菜单触发（必须带 uri 参数）；Explorer 多选返回 uri 数组
-      const uris = Array.isArray(uri) ? uri : uri ? [uri] : [];
-      if (uris.length === 0) {
-        vscode.window.showWarningMessage('请在文件或目录上右键，选择「Memora: 添加到对话」');
-        return;
-      }
-      // 根归属：引用路径必须以**首个工作区根**为基准（内核 read_file cwd / openRefInEditor 同源）。
-      // 不用 asRelativePath——它相对「所在根」，多根工作区下会产出「chip 正常、模型却按首根读到
-      // 同名路径（不存在即 FILE_NOT_FOUND）」的撒谎指针；不在首根下的目标 fail-closed（拒挂 + 提示），
-      // 挂一条注定读错的指针比不挂更坏。
-      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      // 逐个判定 file/folder（stat type），算相对路径；stat 失败（如已删除）按 file 兜底
-      const refs: ChatRef[] = [];
-      const skippedOutsideRoot: string[] = [];
-      // 编辑器选区（仅「右键目标 = 当前编辑器文件」且非折叠选区时才带行区间）
-      const editor = vscode.window.activeTextEditor;
-      const sel = editor?.selection;
-      for (const u of uris) {
-        const rel = root ? relativeUnderPrimaryRoot(root, u.fsPath) : undefined;
-        if (!rel) {
-          // 不在主根下（含未打开工作区 / 跨盘 / 第二个根）：整条拒绝
-          skippedOutsideRoot.push(vscode.workspace.asRelativePath(u));
-          continue;
-        }
-        let kind: 'file' | 'folder' = 'file';
-        try {
-          const stat = await vscode.workspace.fs.stat(u);
-          if (stat.type === vscode.FileType.Directory) kind = 'folder';
-        } catch {
-          // 保持 file 兜底（相对路径仍可用）
-        }
-        const ref: ChatRef = { path: rel, kind };
-        const isActiveFile = !!editor && editor.document.uri.fsPath === u.fsPath;
-        if (kind === 'file' && isActiveFile && sel) {
-          // 基准转换 + 空尾行边界都收在 selectionToRefRange 内（纯函数，可单测）
-          const range = selectionToRefRange(sel);
-          if (range) ref.range = range;
-        }
-        refs.push(ref);
-      }
-      if (skippedOutsideRoot.length > 0) {
-        vscode.window.showWarningMessage(
-          `以下项不在主工作区根下，未挂引用：${skippedOutsideRoot.join('、')}`,
-        );
-      }
-      if (refs.length === 0) return; // 全部被拒：不聚焦面板、不挂空引用
-      // 先确保对话面板可见（未聚焦时 pushRefs 缓冲到 ready 后补发，与 prefillInput 同构）
-      await vscode.commands.executeCommand('memora.chat.focus');
-      chatProvider.pushRefs(refs);
-    }),
+    vscode.commands.registerCommand('memora.addToChat', (uri) =>
+      addToChatCommand(uri, chatProvider),
+    ),
   );
 
   // 命令：复制诊断摘要（用户报障时一条命令带走版本 / 环境 / 配置 / 最近 webview 错误 / 指标）
