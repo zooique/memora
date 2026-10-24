@@ -40,14 +40,18 @@ function deps(
   notices: { level: string; message: string }[];
   pushes: number;
   connects: number;
+  acks: { reqId: string; ok: boolean; error?: string }[];
 } {
   const notices: { level: string; message: string }[] = [];
+  const acks: { reqId: string; ok: boolean; error?: string }[] = [];
   const bag = {
     notices,
     pushes: 0,
     connects: 0,
-    pushStatus: () => {
+    acks,
+    pushStatus: (ack?: { reqId: string; ok: boolean; error?: string }) => {
       bag.pushes += 1;
+      if (ack) acks.push(ack);
     },
     notice: (level: 'info' | 'error', message: string) => {
       notices.push({ level, message });
@@ -169,6 +173,51 @@ describe('mcp_write / upsert（增改）', () => {
     const d = deps();
     await applyMcpWrite(d, { op: 'upsert', server: { name: 'fs', command: 'npx' } });
     expect(d.notices.some((n) => n.level === 'error')).toBe(true);
+  });
+});
+
+/**
+ * 写操作回执（`mcp_status.ack` 随收尾回推带回）
+ *
+ * 守的是「视图靠 reqId 认领结论」这条链的宿主半边：成败都必须回（成功丢暂存、失败复开
+ * 表单），且 reqId 原样回传——回错 id 等于把别人的结论发给别人。
+ */
+describe('mcp_write / ack（upsert 的结论随状态回推带回）', () => {
+  it('成功 ⇒ ack{reqId, ok:true}（视图据此丢掉暂存草稿）', async () => {
+    const d = deps();
+    await applyMcpWrite(d, {
+      op: 'upsert',
+      server: { name: 'fs', command: 'npx' },
+      reqId: 'r1',
+    });
+    expect(d.acks).toEqual([{ reqId: 'r1', ok: true }]);
+  });
+
+  it('非法配置 ⇒ ack{ok:false, error}（error 与 toast 同一句，不二次加工）', async () => {
+    const d = deps();
+    await applyMcpWrite(d, {
+      op: 'upsert',
+      server: { name: 'bad', command: '   ' },
+      reqId: 'r2',
+    });
+    expect(d.acks).toHaveLength(1);
+    expect(d.acks[0]!.ok).toBe(false);
+    expect(d.acks[0]!.error).toContain('缺少 command');
+  });
+
+  it('写失败 ⇒ ack{ok:false, error}（视图据此复开表单还输入）', async () => {
+    failWrites();
+    const d = deps();
+    await applyMcpWrite(d, { op: 'upsert', server: { name: 'fs', command: 'npx' }, reqId: 'r3' });
+    expect(d.acks).toHaveLength(1);
+    expect(d.acks[0]!.ok).toBe(false);
+    expect(d.acks[0]!.error).toContain('写入失败');
+  });
+
+  it('无 reqId（旧客户端）⇒ 不带 ack（无从认领就不发，行为不变）', async () => {
+    const d = deps();
+    await applyMcpWrite(d, { op: 'upsert', server: { name: 'fs', command: 'npx' } });
+    expect(d.acks).toEqual([]);
   });
 });
 

@@ -19,7 +19,7 @@
  *   ① 清空 args 后保存 ⇒ 落盘项**没有 args 键**（不是 `args: []`）；
  *   ② `--path=/tmp/x ` 的尾随空格**原样保住**（打开→保存两轮往返）；
  *   ③ 新增表单填了个重名 ⇒ 走「已更新」（覆盖），不是「已添加」；
- *   ④ 写失败时表单已关 ⇒ 用户输入丢失（缺 reqId 的后果，可复现）；
+ *   ④ 写失败 ⇒ 表单带着原输入复开（reqId 随 mcp_status.ack 回传认领；输入不再丢失）；
  *   ⑤ `cwd` 的尾随空格同样原样保住（保存只判空、不改写；判据面 = 字段面）；
  *   ⑥ `cwd` 含换行 ⇒ 编辑按钮 disabled（input 会吞换行，指路 settings.json）。
  */
@@ -58,12 +58,20 @@ import type {
 } from '../../shared/protocol.js';
 
 /** 记录回执的依赖桩 */
-function deps(): McpOpsDeps & { notices: { level: string; message: string }[]; connects: number } {
+function deps(): McpOpsDeps & {
+  notices: { level: string; message: string }[];
+  connects: number;
+  acks: { reqId: string; ok: boolean; error?: string }[];
+} {
   const notices: { level: string; message: string }[] = [];
+  const acks: { reqId: string; ok: boolean; error?: string }[] = [];
   const bag = {
     notices,
     connects: 0,
-    pushStatus: () => undefined,
+    acks,
+    pushStatus: (ack?: { reqId: string; ok: boolean; error?: string }) => {
+      if (ack) acks.push(ack);
+    },
     notice: (level: 'info' | 'error', message: string) => {
       notices.push({ level, message });
     },
@@ -101,6 +109,7 @@ interface SentWrite {
   readonly type: string;
   readonly op?: string;
   readonly server?: Record<string, unknown>;
+  readonly reqId?: string;
 }
 
 /**
@@ -117,6 +126,8 @@ function mount(
   sent: SentWrite[];
   click(act: string): void;
   field(name: string): HTMLInputElement | HTMLTextAreaElement;
+  /** 追推一条宿主消息（测 ack 认领：写后那次 mcp_status 是另一帧，不是首帧） */
+  push(message: ExtensionToWebviewMessage): void;
 } {
   const dom = new JSDOM('<!doctype html><html><body></body></html>');
   const doc = dom.window.document;
@@ -149,6 +160,9 @@ function mount(
   return {
     root,
     sent,
+    push(message: ExtensionToWebviewMessage): void {
+      dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: message }));
+    },
     click(act: string): void {
       const button = root.querySelector<HTMLElement>(`[data-act="${act}"]`);
       if (!button) throw new Error(`按钮不存在：${act}`);
@@ -251,7 +265,7 @@ describe('往返探针 · 重名与失败回执', () => {
     expect(d.notices.map((n) => n.message)).toContain('已更新「fs」');
   });
 
-  it('写失败 ⇒ 表单已关且输入不留痕（缺 reqId 的后果）', async () => {
+  it('写失败 ⇒ 表单带着原输入复开 + 内联失败原因（reqId 认领后输入不再丢失）', async () => {
     h.data['mcpServers'] = [{ name: 'fs', command: 'node' }];
     const view = mount([statusOf(savedServers()[0]!)]);
 
@@ -260,16 +274,137 @@ describe('往返探针 · 重名与失败回执', () => {
     h.failing = true;
     view.click('save');
 
-    // webview 侧：点保存即收起表单，不保留草稿
+    // 点保存即收表单（以回推为准，不乐观保住旧形态）
     expect(view.root.querySelector('[data-field="command"]')).toBeNull();
     const write = view.sent.find((m) => m.type === 'mcp_write');
+    expect(write?.reqId).toBeTruthy();
     const d = deps();
-    await applyMcpWrite(d, { op: 'upsert', server: write!.server } as never);
+    await applyMcpWrite(d, {
+      op: 'upsert',
+      server: write!.server,
+      reqId: write!.reqId,
+    } as never);
+    expect(d.acks).toEqual([
+      { reqId: write!.reqId, ok: false, error: expect.stringContaining('写入失败') },
+    ]);
 
-    expect(d.notices).toEqual([{ level: 'error', message: expect.stringContaining('写入失败') }]);
-    // 落盘没变，界面也没有「刚才填的」痕迹 ⇒ 输入确实丢了
+    // 宿主把 ack 随写后那次 mcp_status 带回 ⇒ 视图认领，表单带着刚才填的内容复开
+    view.push({
+      type: 'mcp_status',
+      servers: [statusOf(savedServers()[0]!)],
+      omitted: { configured: 1, missingName: 0, duplicate: 0 },
+      ack: d.acks[0]!,
+    });
+
+    const command = view.root.querySelector<HTMLInputElement>('[data-field="command"]');
+    expect(command).not.toBeNull();
+    expect(command!.value).toBe('node --experimental');
+    expect(view.root.querySelector('.mcp-form-error')!.textContent).toContain('写入失败');
+    // 落盘确实没变（失败 = 未落盘）
     expect(savedServers()[0]!['command']).toBe('node');
-    expect(view.root.textContent).not.toContain('--experimental');
+  });
+
+  it('写成功 ⇒ ack 认领后表单保持关闭（不把旧输入又弹回来）', async () => {
+    h.data['mcpServers'] = [{ name: 'fs', command: 'node' }];
+    const view = mount([statusOf(savedServers()[0]!)]);
+
+    view.click('edit');
+    view.field('command').value = 'npx';
+    view.click('save');
+    const write = view.sent.find((m) => m.type === 'mcp_write');
+    const d = deps();
+    await applyMcpWrite(d, {
+      op: 'upsert',
+      server: write!.server,
+      reqId: write!.reqId,
+    } as never);
+    expect(d.acks).toEqual([{ reqId: write!.reqId, ok: true }]);
+
+    view.push({
+      type: 'mcp_status',
+      servers: [statusOf(savedServers()[0]!)],
+      omitted: { configured: 1, missingName: 0, duplicate: 0 },
+      ack: d.acks[0]!,
+    });
+
+    expect(view.root.querySelector('[data-field="command"]')).toBeNull();
+    expect(savedServers()[0]!['command']).toBe('npx');
+  });
+
+  it('reqId 不对上不认领：他人触发的状态回推不会把表单弹开', async () => {
+    h.data['mcpServers'] = [{ name: 'fs', command: 'node' }];
+    const view = mount([statusOf(savedServers()[0]!)]);
+
+    view.click('edit');
+    view.field('command').value = 'npx';
+    h.failing = true;
+    view.click('save');
+    h.failing = false;
+    const write = view.sent.find((m) => m.type === 'mcp_write');
+
+    // 别人的回推（reqId 对不上，典型：ready 握手 / 热更 / 运行态变化）
+    view.push({
+      type: 'mcp_status',
+      servers: [statusOf(savedServers()[0]!)],
+      omitted: { configured: 1, missingName: 0, duplicate: 0 },
+      ack: { reqId: `${write!.reqId}-别人的`, ok: false, error: '写入失败：配置只读' },
+    });
+
+    expect(view.root.querySelector('[data-field="command"]')).toBeNull();
+  });
+
+  it('两次保存的 reqId 互不相同（认领依据必须唯一）', () => {
+    h.data['mcpServers'] = [{ name: 'fs', command: 'node' }];
+    const view = mount([statusOf(savedServers()[0]!)]);
+
+    view.click('edit');
+    view.field('command').value = 'npx';
+    view.click('save');
+    const first = view.sent.find((m) => m.type === 'mcp_write')?.reqId;
+
+    view.root.querySelector<HTMLElement>('.mcp-add-btn')?.click();
+    view.field('name').value = 'fs';
+    view.field('command').value = 'node';
+    view.click('save');
+    const writes = view.sent.filter((m) => m.type === 'mcp_write');
+
+    expect(writes).toHaveLength(2);
+    expect(writes[0]!.reqId).toBeTruthy();
+    expect(writes[1]!.reqId).toBeTruthy();
+    expect(writes[1]!.reqId).not.toBe(first);
+  });
+
+  it('用户已打开新表单时，迟到失败结论不顶掉正在输入的内容', async () => {
+    h.data['mcpServers'] = [{ name: 'fs', command: 'node' }];
+    const view = mount([statusOf(savedServers()[0]!)]);
+
+    view.click('edit');
+    view.field('command').value = 'npx';
+    h.failing = true;
+    view.click('save');
+    h.failing = false;
+    const first = view.sent.find((m) => m.type === 'mcp_write');
+
+    // 失败结论在路上，用户先打开了一台新表单（此举应使旧结论不再有权复开表单）。
+    // ⚠ 模拟真实键入：直接改 .value 不触发 input 事件，重渲染会把值冲回草稿——
+    // 真人打字必走 syncDraftFromDom，测试必须同样走一遍才等价。
+    view.click('edit');
+    const command = view.field('command');
+    command.value = 'bun';
+    command.dispatchEvent(
+      new (command.ownerDocument.defaultView as Window & typeof globalThis).Event('input', {
+        bubbles: true,
+      }),
+    );
+
+    view.push({
+      type: 'mcp_status',
+      servers: [statusOf(savedServers()[0]!)],
+      omitted: { configured: 1, missingName: 0, duplicate: 0 },
+      ack: { reqId: first!.reqId!, ok: false, error: '写入失败：配置只读' },
+    });
+
+    expect(view.root.querySelector<HTMLInputElement>('[data-field="command"]')!.value).toBe('bun');
   });
 });
 

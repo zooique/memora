@@ -971,6 +971,8 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
         args: ['mcp-server-sqlite', '--db', 'app.db'],
         env: { TOKEN: 'a=b', LEVEL: 'debug' },
       },
+      // reqId：写失败时宿主随 mcp_status.ack 原样回传，视图据此复开表单还输入
+      reqId: expect.any(String),
     });
     // 保存后表单关闭，以 host 回推为准（不乐观插一条「我以为存上了」的卡片）
     expect(mcpRoot().querySelector('.mcp-form')).toBeNull();
