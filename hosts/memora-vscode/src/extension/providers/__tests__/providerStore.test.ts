@@ -1,8 +1,8 @@
 /**
- * ProviderStore — contextWindow 校验 + 旧全局 maxContextTokens 迁移
+ * ProviderStore — contextWindow 校验 + 旧全局 maxContextTokens 迁移 + 密钥读写通道收口
  *
  * 不引入真实 VS Code 运行时：用 vi.mock 提供内存版 workspace.getConfiguration + SecretStorage。
- * 仅覆盖 per-LLM contextWindow 护栏与迁移逻辑（其余路径由既有集成测试覆盖）。
+ * 覆盖 per-LLM contextWindow 护栏、迁移逻辑、secrets 写面（SEC-WRITE-1）与读面（SEC-READ-1）收口。
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -249,12 +249,12 @@ describe('ProviderStore · save/remove 语义', () => {
  * 密钥写入通道收口（2026-10-24 SEC-WRITE-1）
  *
  * 此前 save/remove 的 secrets 写入是裸调：钥匙串不可用时 reject 穿膜，半完成态
- * （配置落盘/密钥没落盘）无结构化回执。现经 secretsWrite 单通道后，回执必须：
+ * （配置落盘/密钥没落盘）无结构化回执。现经 secretsAccess 单通道后，回执必须：
  *   - 如实说明半完成事实（不谎报 ok:true，也不伪装全失败）；
  *   - 不自动回滚已落盘的配置（回滚自身也可能失败，用户字段是资产）；
  *   - 文案点出后果与出路（同名重添沿用旧密钥的安全面）。
  */
-describe('ProviderStore 密钥写入通道（secretsWrite 收口）', () => {
+describe('ProviderStore 密钥写入通道（secretsAccess 收口）', () => {
   const VALID = {
     name: 'deepseek',
     displayName: 'DeepSeek',
@@ -337,5 +337,134 @@ describe('ProviderStore 密钥写入通道（secretsWrite 收口）', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * 密钥读取通道收口（2026-10-24 SEC-READ-1）
+ *
+ * 此前 list/listMasked 的 get 是裸调（Promise.all 一 reject 全 throw）：
+ *   - H1 展示面：loadConfig 零兜底 ⇒ cfg_loaded 永不抵达 ⇒ 配置面板静默空列表
+ *     （用户以为没配过服务商 = 谎报）；
+ *   - H2 回执面：cfg_save 成功后的 reload 抛错被同一 catch 转成「保存失败」
+ *     （回执与磁盘事实相反 = 谎报）；
+ *   - H3 运行面：getActive 被非激活 Provider 的坏 key 拖垮（跨 Provider 污染），
+ *     且抛的是裸错（无可读语义）。
+ * 现经 secretsAccess 单通道后：读失败逐条留痕（keyError），运行路径只认目标条。
+ */
+describe('ProviderStore 密钥读取通道（secretsAccess 收口）', () => {
+  const P_A = { name: 'alpha', displayName: 'Alpha', model: 'm', baseUrl: 'http://a/v1' };
+  const P_B = { name: 'beta', displayName: 'Beta', model: 'm', baseUrl: 'http://b/v1' };
+
+  let store: ProviderStore;
+  beforeEach(() => {
+    h.store['providers'] = [];
+    delete h.store['activeProvider'];
+    delete h.store['backgroundProvider'];
+    for (const k of Object.keys(secretsStore)) delete secretsStore[k];
+    secrets.get.mockReset();
+    secrets.get.mockImplementation(async (k: string) => secretsStore[k] ?? null);
+    store = new ProviderStore(secrets as unknown as import('vscode').SecretStorage);
+  });
+
+  it('listMasked：某条 get 拒绝 → 该条 keyError 留痕、其余正常脱敏、绝不 throw（H1）', async () => {
+    h.store['providers'] = [P_A, P_B];
+    secretsStore['memora.provider.alpha.apiKey'] = 'sk-alpha-1234';
+    secretsStore['memora.provider.beta.apiKey'] = 'sk-beta-1234';
+    // 列表顺序即读取顺序：第一条失败、第二条正常
+    secrets.get.mockImplementationOnce(() =>
+      Promise.reject(new Error('Credential Manager 不可用')),
+    );
+    secrets.get.mockImplementationOnce(async (k: string) => secretsStore[k] ?? null);
+
+    const list = await store.listMasked();
+
+    // 列表完整（两条都在）——面板必须打得开，禁静默空列表
+    expect(list).toHaveLength(2);
+    // 失败条：留痕 + 不伪装脱敏值（ maskedKey 缺席 = 状态未知，不是「没有 key」）
+    expect(list[0].keyError).toContain('API Key「alpha」读取 失败：Credential Manager 不可用');
+    expect(list[0].maskedKey).toBeUndefined();
+    // 正常条：脱敏串照常生成，不受邻居失败影响
+    expect(list[1].maskedKey).toBe('sk-••••1234');
+    expect(list[1].keyError).toBeUndefined();
+  });
+
+  it('listMasked：全部 get 拒绝（钥匙串整体不可用）→ 每条留痕，列表仍完整', async () => {
+    h.store['providers'] = [P_A, P_B];
+    secrets.get.mockRejectedValue(new Error('凭证服务未运行'));
+
+    const list = await store.listMasked();
+
+    expect(list).toHaveLength(2);
+    expect(list[0].keyError).toContain('凭证服务未运行');
+    expect(list[1].keyError).toContain('凭证服务未运行');
+    // 两条都没有脱敏值（状态未知），也没有真实 key 泄漏
+    expect(list.every((p) => p.maskedKey === undefined && p.apiKey === '')).toBe(true);
+  });
+
+  it('listMasked：get 成功但从未存过 → maskedKey 空串、无 keyError（正常空态 ≠ 失败）', async () => {
+    h.store['providers'] = [P_A];
+    // 不往 secretsStore 放 key：get 返回 null（从未存过）
+
+    const list = await store.listMasked();
+
+    expect(list[0].maskedKey).toBe('');
+    expect(list[0].keyError).toBeUndefined();
+  });
+
+  it('getActive：激活条 get 拒绝 → 抛语义标签错误，不返回空 key 的 config（H3）', async () => {
+    h.store['providers'] = [P_A];
+    h.store['activeProvider'] = 'alpha';
+    secrets.get.mockRejectedValueOnce(new Error('Credential Manager 不可用'));
+
+    // 抛而不是返回空 key：空 key 会让请求带无效密钥打服务端，报一个无关的 401
+    await expect(store.getActive()).rejects.toThrow(
+      'API Key「alpha」读取 失败：Credential Manager 不可用',
+    );
+  });
+
+  it('getActive：非激活条 get 拒绝 → 激活条完好可用（跨 Provider 污染修复，H3）', async () => {
+    h.store['providers'] = [P_A, P_B];
+    h.store['activeProvider'] = 'alpha';
+    secretsStore['memora.provider.alpha.apiKey'] = 'sk-alpha-real';
+    // 读取顺序 alpha→beta：alpha 正常、beta 失败
+    secrets.get.mockImplementationOnce(async (k: string) => secretsStore[k] ?? null);
+    secrets.get.mockImplementationOnce(() => Promise.reject(new Error('凭证被占用')));
+
+    const active = await store.getActive();
+
+    // 此前任一坏 key 都会让整个 list throw ⇒ 活跃 key 完好也用不了；现在只认激活条
+    expect(active?.apiKey).toBe('sk-alpha-real');
+    expect(active?.keyError).toBeUndefined();
+  });
+
+  it('getBackground：后台条 get 拒绝 → 抛语义标签错误（不静默回落前台）', async () => {
+    h.store['providers'] = [P_A, P_B];
+    h.store['backgroundProvider'] = 'beta';
+    secretsStore['memora.provider.alpha.apiKey'] = 'sk-alpha-real';
+    secrets.get.mockImplementationOnce(async (k: string) => secretsStore[k] ?? null);
+    secrets.get.mockImplementationOnce(() => Promise.reject(new Error('凭证被占用')));
+
+    await expect(store.getBackground()).rejects.toThrow('API Key「beta」读取 失败：凭证被占用');
+  });
+
+  it('getBackground：后台 key 正常 → 返回含真实 key 的完整 config', async () => {
+    h.store['providers'] = [P_A, P_B];
+    h.store['backgroundProvider'] = 'beta';
+    secretsStore['memora.provider.beta.apiKey'] = 'sk-beta-real';
+
+    const bg = await store.getBackground();
+
+    expect(bg?.name).toBe('beta');
+    expect(bg?.apiKey).toBe('sk-beta-real');
+  });
+
+  it('getActive：无激活 Provider → undefined（不读任何 key）', async () => {
+    h.store['providers'] = [P_A];
+    secrets.get.mockRejectedValue(new Error('钥匙串整体坏'));
+
+    // 没有激活条时压根不读 key——与「激活条读失败」是两条路径
+    expect(await store.getActive()).toBeUndefined();
+    expect(secrets.get).not.toHaveBeenCalled();
   });
 });

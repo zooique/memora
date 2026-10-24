@@ -330,6 +330,20 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       (p.maxTokens ? ` · 输出上限 ${fmtTokens(p.maxTokens)}` : '');
     info.appendChild(nameRow);
     info.appendChild(detail);
+    // apiKey 读取失败痕迹（钥匙串不可用）：卡片上必须可见——
+    // 静默显示空列表/空脱敏位 = 让用户以为「没配服务商/没存 key」（谎报）；
+    // 这里只陈述「该条 key 状态未知 + 原因」，不替用户下结论（SEC-READ-1）。
+    if (p.keyError) {
+      const keyError = document.createElement('div');
+      keyError.className = 'card-key-error';
+      const warnIcon = document.createElement('span');
+      warnIcon.className = 'card-key-error__icon';
+      warnIcon.setAttribute('aria-hidden', 'true');
+      warnIcon.innerHTML = getIconSvg('warning', 13, 13);
+      keyError.appendChild(warnIcon);
+      keyError.appendChild(document.createTextNode(p.keyError));
+      info.appendChild(keyError);
+    }
 
     const actions = document.createElement('div');
     actions.className = 'card-actions';

@@ -49,6 +49,12 @@ export const configStyles = `
   #config-root .card-info { display: flex; flex-direction: column; gap: var(--sp-0, 2px); min-width: 0; flex: 1; }
   #config-root .card-name { font-weight: 600; }
   #config-root .card-detail { font-size: var(--font-md, 12px); color: var(--text-secondary, #9aa0a6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* apiKey 读取失败痕迹（钥匙串不可用）：warn 令牌 + 可折行（失败原因可能较长）。
+     图标不写 CSS 尺寸——SVG 自带 width/height 属性（同 test-result__icon 模式），
+     避免新增 icon 刻度引用漂移令牌守卫；顶部微齐走 --sp-0 刻度不用裸 2px */
+  #config-root .card-key-error { display: flex; align-items: flex-start; gap: var(--sp-1, 4px); font-size: var(--font-md, 12px); color: var(--feedback-warn-accent); word-break: break-all; }
+  #config-root .card-key-error__icon { display: inline-flex; align-items: center; flex-shrink: 0; padding-top: var(--sp-0); }
+  #config-root .card-key-error__icon svg { display: block; }
   #config-root .card-actions { display: flex; gap: var(--sp-1, 4px); flex-shrink: 0; }
 
   /* ============ Components：表单弹窗 ============ */

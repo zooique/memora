@@ -40,7 +40,7 @@ import { providerSecretKey, CFG_SECTION, CFG_PROVIDERS } from '../providers/prov
 import { writeErrorText, writeSetting } from '../settingsWrite.js';
 // 密钥删除唯一通道：钥匙串不可用时返回失败而不是裸抛（保留「任一步失败即抛出」
 // 的契约不变，但消息带语义标签——哪一步、哪个 key，不再裸抛 VS Code 原始错误）
-import { deleteSecret, secretErrorText } from './secretsWrite.js';
+import { deleteSecret, secretErrorText } from './secretsAccess.js';
 import {
   USER_STATE_KEY_PREFIX,
   USER_SKILLS_DIR_NAME,

@@ -46,6 +46,14 @@ export interface LlmProviderConfig {
   apiKey: string;
   /** 脱敏后的 API Key（仅 Host→Webview 传输时填充，如 `sk-••••1234`，供编辑回显） */
   maskedKey?: string;
+  /**
+   * 该 Provider 的 apiKey 读取失败痕迹（仅 Host→Webview 传输时填充，用户可见文案）
+   *
+   * 钥匙串不可用时逐条留痕：面板必须打开、列表必须完整，静默空列表/空 maskedKey
+   * 都是谎报（见 providerStore.listMasked）。webview 据此在卡片上展示警告，
+   * 不把「状态未知」渲染成「没有 key」。
+   */
+  keyError?: string;
   /** Provider 标识（'cloud' | 'local'） */
   provider?: string;
   /**

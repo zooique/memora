@@ -18,9 +18,15 @@ import * as vscode from 'vscode';
 import { createProviderFromConfig } from '@zooique/memora';
 // 配置写入唯一通道（5s 超时兜底：只读/受管设置上 update 可能永不 settle）
 import { writeErrorText, writeSetting, type WriteResult } from '../settingsWrite.js';
-// 密钥写入唯一通道（与配置通道对称：钥匙串不可用时 store/delete 会 reject，
-// 裸调会把半完成态当异常抛出，回执与磁盘事实脱节）
-import { deleteSecret, secretErrorText, writeSecret } from '../host/secretsWrite.js';
+// 密钥访问唯一通道（与配置通道对称：钥匙串不可用时 store/delete/get 会 reject，
+// 裸调会把半完成态当异常抛出、把读取失败升级成面板空列表，回执与磁盘事实脱节）
+import {
+  deleteSecret,
+  readSecret,
+  secretErrorText,
+  writeSecret,
+  type ReadResult,
+} from '../host/secretsAccess.js';
 import type { LlmProviderConfig } from '../../shared/protocol.js';
 
 /** configuration 段名（memora.providers） */
@@ -113,46 +119,56 @@ export class ProviderStore {
   }
 
   /**
-   * 读取单个 Provider 的真实 apiKey（SecretStorage）
+   * 读取单个 Provider 的真实 apiKey（SecretStorage，经唯一访问通道）
    *
    * @param name Provider 别名
-   * @returns 真实 apiKey（未配置时为空字符串）
+   * @returns 读取结果：ok=true 时 value 为真实 key（未存过 = undefined）；
+   *   ok=false = 钥匙串读取失败（永不 reject，调用方判 ok 留痕/抛出，禁降级空值）
    */
-  private async readApiKey(name: string): Promise<string> {
-    return (await this.secrets.get(providerSecretKey(name))) ?? '';
+  private async readApiKey(name: string): Promise<ReadResult> {
+    return readSecret(this.secrets, providerSecretKey(name));
   }
 
   /**
    * 列出全部 Provider（含真实 apiKey）
    *
-   * @returns 完整 Provider 列表（apiKey 为真实值，供运行/编辑使用）
+   * 逐个读取 key 并**逐条捕获失败**（禁 Promise.all 一 reject 全 throw）：
+   * 某个 Provider 的 key 读失败只在该条上留 `keyError` 痕迹，不影响其他条目——
+   * 否则一个坏 key 会拖垮整个运行路径（含活跃 Provider 完好的场景）。
+   *
+   * @returns 完整 Provider 列表（apiKey 为真实值；keyError 非空 = 该条 key 读取失败）
    */
   async list(): Promise<LlmProviderConfig[]> {
     const configs = this.readConfig();
-    const withKeys = await Promise.all(
-      configs.map(async (p) => ({ ...p, apiKey: await this.readApiKey(p.name) })),
+    return Promise.all(
+      configs.map(async (p) => {
+        const r = await this.readApiKey(p.name);
+        if (r.ok) return { ...p, apiKey: r.value ?? '' };
+        return { ...p, apiKey: '', keyError: secretErrorText(`API Key「${p.name}」读取`, r) };
+      }),
     );
-    return withKeys;
   }
 
   /**
    * 列出全部 Provider（apiKey 脱敏，供 webview 展示）
    *
    * 填充 maskedKey 供编辑表单回显（如 `sk-••••1234`），apiKey 字段恒为空。
+   * key 读取失败同样逐条留痕（`keyError`）：面板必须打开、列表必须完整——
+   * 静默显示空列表 = 让用户以为「没配过服务商」（谎报）；降级成空 maskedKey
+   * = 让用户以为「没存 key」（也是谎报）。两条都禁，只留「这条 key 状态未知」的痕迹。
    *
-   * @returns 脱敏 Provider 列表（apiKey 为空，maskedKey 为脱敏串）
+   * @returns 脱敏 Provider 列表（apiKey 为空，maskedKey 为脱敏串；keyError 非空 = 读取失败）
    */
   async listMasked(): Promise<LlmProviderConfig[]> {
     const configs = this.readConfig();
     // 逐个读取真实 key 生成脱敏串（不把真实值带出 store）
-    const withMasked = await Promise.all(
-      configs.map(async (p) => ({
-        ...p,
-        apiKey: '',
-        maskedKey: maskKey(await this.readApiKey(p.name)),
-      })),
+    return Promise.all(
+      configs.map(async (p) => {
+        const r = await this.readApiKey(p.name);
+        if (r.ok) return { ...p, apiKey: '', maskedKey: maskKey(r.value ?? '') };
+        return { ...p, apiKey: '', keyError: secretErrorText(`API Key「${p.name}」读取`, r) };
+      }),
     );
-    return withMasked;
   }
 
   /**
@@ -167,13 +183,21 @@ export class ProviderStore {
   /**
    * 获取当前激活的 Provider（含真实 apiKey）
    *
+   * 激活 Provider 的 key 读取失败 ⇒ **抛出语义标签错误**（不返回空 key 的 config）：
+   * 空 key 会让 LLM 请求带着无效密钥打到服务端，报一个与真实原因无关的 401——
+   * 那是「用错原因解释失败」。抛出后由上层（chat runFlow / 命令）转成可见错误消息，
+   * 契约与本次改动前一致（此前是裸 throw），只是消息可读。
+   * 非激活 Provider 的 key 读取失败不影响本路径（list 已逐条留痕，此处只认激活条）。
+   *
    * @returns 激活的完整 Provider 配置（无激活或不存在时 undefined）
    */
   async getActive(): Promise<LlmProviderConfig | undefined> {
     const name = this.getActiveName();
     if (!name) return undefined;
     const all = await this.list();
-    return all.find((p) => p.name === name);
+    const active = all.find((p) => p.name === name);
+    if (active?.keyError) throw new Error(active.keyError);
+    return active;
   }
 
   /**
@@ -381,6 +405,8 @@ export class ProviderStore {
    * 获取后台 Provider 的完整配置（含真实 apiKey）
    *
    * 未配置后台通道（getBackgroundName 为空）或该 name 不存在时返回 undefined。
+   * 后台 Provider 的 key 读取失败 ⇒ 抛出语义标签错误（与 getActive 同构）：
+   * 静默回落前台 = 后台任务悄悄用了另一个模型（用户不可见的降级），故必须抛。
    *
    * @returns 后台 Provider config；无独立后台配置返回 undefined
    */
@@ -388,7 +414,9 @@ export class ProviderStore {
     const name = this.getBackgroundName();
     if (!name) return undefined;
     const all = await this.list();
-    return all.find((p) => p.name === name);
+    const background = all.find((p) => p.name === name);
+    if (background?.keyError) throw new Error(background.keyError);
+    return background;
   }
 
   /**

@@ -453,6 +453,26 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(bg.value).toBe('local');
   });
 
+  it('cfg_loaded 某 Provider 带 keyError → 卡片渲染读取失败痕迹（SEC-READ-1 展示面）', () => {
+    mountConfigView();
+    dispatchLoaded(
+      [
+        { ...makeProvider('broken'), keyError: 'API Key「broken」读取 失败：凭证服务未运行' },
+        makeProvider('healthy'),
+      ],
+      'healthy',
+    );
+    // 失败条：卡片内有 card-key-error 痕迹，文案原样上屏（host 单点派生，webview 不加工）
+    // （渲染分区把激活 Provider 置顶 ⇒ cards[0]=healthy、cards[1]=broken）
+    const cards = document.querySelectorAll('#list .card');
+    expect(cards).toHaveLength(2);
+    const healthyCard = cards[0] as HTMLElement;
+    expect(healthyCard.querySelector('.card-key-error')).toBeNull();
+    const brokenCard = cards[1] as HTMLElement;
+    const marker = brokenCard.querySelector('.card-key-error');
+    expect(marker?.textContent).toContain('API Key「broken」读取 失败：凭证服务未运行');
+  });
+
   it('后台模型下拉切换（选 Provider）→ postMessage cfg_set_background', () => {
     const { postMessage } = mountConfigView();
     dispatchLoaded(
