@@ -356,8 +356,8 @@ deny 黑名单命中（`run_command` 命令字面量，内核 SSOT，优先级�
   | 层面 | 是否共用 | 落点 |
   | --- | --- | --- |
   | **确认通道**（谁来弹窗、fail-closed、审计） | ✅ 共用 | 两者都经 `confirmGate` → 宿主**同一张**审批卡（`onWriteConfirmation`） |
-  | **命令内容裁决**（deny / always-ask 判据） | ❌ **不共用** | `classifyCommand` 的唯一调用点是 `confirmCommandRun`；`confirmScriptRun(targetPath, …)` **只判权限档位，不看执行内容** |
-- ⚠️ **由此产生的已知边界（能力边界的如实声明，不是漏洞）**：`run_code` / `run_project_script` / `run_skill_script` 三个执行面**都不走 `classifyCommand`**——`run_code` 执行 LLM 现写的内联代码（无文件载体），另两者执行脚本文件内容 ⇒ 它们的**执行内容不经 deny/always-ask 裁决**。故「deny 恒拦」这一不变式只在 **`run_command` 的命令字面量**上成立，在**脚本文件内容 / 内联代码**上不成立。
+  | **命令内容裁决**（deny / always-ask 判据） | ⚠️ **曾不共用 → 2026-10-25 已补** | 旧状：`classifyCommand` 的唯一调用点是 `confirmCommandRun`，`confirmScriptRun(targetPath, …)` **只判权限档位，不看执行内容**。现状：`confirmScriptRun` 增加可选第 4 参 `content`，传入正文即复用**同一个** `classifyCommand`（deny 恒拦 / always-ask 恒弹 / normal 回落档位）⇒ `run_code`、`run_project_script` 两面已按正文裁决；**`run_skill_script` 仍不传正文**（宿主回调执行，内核拿不到内容，出路在宿主侧执行器，ADR-040 第 5 条） |
+- ⚠️ **由此产生的已知边界（能力边界的如实声明，不是漏洞）· 2026-10-25 更新**：`run_code` / `run_project_script` **已纳入 `classifyCommand` 裁决**（确认前把正文喂给同一判据）；**`run_skill_script` 仍不走**——它由宿主注入的回调执行，内核拿不到脚本内容。故「deny 恒拦」这一不变式现在在 **`run_command` 命令字面量 + run_code 内联代码 + 项目脚本正文**上成立，在**技能脚本内容**上不成立。
   - **实际可利用性（2026-10-03 复核，按成本排序，均为一次工具调用）**：① `run_code` 内联——`spawn(process.execPath,['-e',code])`，cwd=项目根、环境变量全继承，默认 `owner + confirmScripts=false` 自动批准（仅审计）；② `run_project_script` 执行**项目根内已有**文件（路径闸只判「是否在根内」，`node_modules/**/*.js`、`.git/hooks/*.sh`、任意 `.py`/`.bat` 皆可执行）——**零写文件**；③ `run_skill_script` 走宿主注入回调。⇒ **「绕 deny 需写脚本→执行→删脚本三步」的旧风险等级论证不实**，真实成本是一位数的**一次工具调用**。
   - **deny 的真实定位（降级为「命令字面量护栏」，不是「危险执行总闸」）**：它是**字符串形态判据**，只能拦「LLM 直写的危险命令字符串」——拦得住模型手滑 / 幻觉 / 被提示注入直接写出 `rm -rf /`；拦不住经间接载体（文件内容、内联代码、变量展开、编码混淆）表达的同一意图。语义防护由**用户审批卡 + 审计溯源**承担，不由 denylist 承担。
   - 三面实际受哪些约束：确认档位（`guest` 恒确认 fail-closed / `confirmScripts`）+ 路径白名单（仅 `run_project_script`）+ 运行时白名单三档（node/python/shell）。
