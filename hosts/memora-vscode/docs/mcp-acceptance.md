@@ -19,7 +19,12 @@
 
 ## 1. 验收用 server（本地脚本，零网络依赖）
 
-存为任意路径（下面以 `C:/tmp/mcp-acceptance-server.mjs` 为例）：
+🔴 **脚本必须放在能解析 `@modelcontextprotocol/sdk` 的目录里**，本文示例取
+`hosts/memora-vscode/mcp-acceptance-server.mjs`（该目录的 `node_modules` 里有 SDK）。
+不是洁癖：ESM 从**脚本所在目录**逐级向上找 `node_modules`，与进程 `cwd` 无关 ⇒ 放到
+`C:/tmp/` 或仓库根这类解析不到的位置，server 启动即崩，面板只显示
+`McpError: MCP error -32000: Connection closed`（真因 `ERR_MODULE_NOT_FOUND` 在输出
+面板的 `[DEBUG]` 行里）——2026-10-24 真机实踩。
 
 ```js
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -63,16 +68,17 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 await server.connect(new StdioServerTransport());
 ```
 
-> ⚠️ 该脚本依赖 `@modelcontextprotocol/sdk`，需放在**能解析到该包**的目录下运行
-> （最简做法：放进 `hosts/memora-vscode/` 目录内，用其 `node_modules`）。
+> 快速自查：`cd hosts/memora-vscode && node mcp-acceptance-server.mjs` 应「挂住不退出」
+> （等 stdio 输入）；直接抛 `ERR_MODULE_NOT_FOUND` 就是位置不对。
 
 ## 2. 配置（设置面板 MCP 页）
 
 打开 Memora 侧栏 → **设置** → **MCP** → 「添加服务器」，填：名称 `acc`、命令 `node`、
-参数一行一个 `C:/tmp/mcp-acceptance-server.mjs`，保存。
+参数一行一个该脚本的**绝对路径**（如 `F:/…/hosts/memora-vscode/mcp-acceptance-server.mjs`），
+保存。
 
 > 等价做法仍是手写
-> `"memora.mcpServers": [{ "name": "acc", "command": "node", "args": ["C:/tmp/mcp-acceptance-server.mjs"] }]`。
+> `"memora.mcpServers": [{ "name": "acc", "command": "node", "args": ["<仓库>/hosts/memora-vscode/mcp-acceptance-server.mjs"] }]`。
 > 本批新增的页内 CRUD 用例（G 组）**必须**走面板，否则验不到。
 
 派生名 = `mcp__acc__echo` / `mcp__acc__with-enum` / `mcp__acc__toggle-tool` /
@@ -105,6 +111,7 @@ await server.connect(new StdioServerTransport());
 | 现象 | 先排除 | 才算缺陷 |
 |------|--------|----------|
 | **激活失败**：`Dynamic require of "X" is not supported` | 是否真的重跑过 compile（旧产物） | 重跑后仍现 ⇒ CJS/ESM 产物形态缺陷（2026-10-24 已修 cross-spawn 那条；新依赖可能重蹈，报缺陷并附 X） |
+| 卡片「启动失败」，错误只有 `McpError … -32000: Connection closed` | 在脚本所在目录直跑一遍（`node <脚本>`）：是否 `ERR_MODULE_NOT_FOUND`（依赖解析不到）；`command` 是否在 PATH | 直跑能挂住、面板仍 closed ⇒ 宿主启动链路缺陷（不是脚本问题） |
 | 工具没出现 | 输出面板是否有「握手失败 / 未声明 tools 能力 / 分页异常收口」；配置绝对路径是否正确；Agent 是否已装配（面板开过） | 面板无任何告警但工具仍不出现 |
 | `hang` 立刻报错 | 是否等满 60s | 未到 60s 就报错（超时未生效），或超时后 `echo` 也不可用 |
 | F 用例接入失败 | npx 冷启动慢（重试一次） | 重试仍失败且面板有明确错误 |
