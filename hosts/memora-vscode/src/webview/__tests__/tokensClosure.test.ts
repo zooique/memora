@@ -574,10 +574,14 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   // lh- 49→50：MCP 页级说明段落（mcpStyles 的 #mcp-root .security-desc）改用
   // var(--lh-relaxed)——snug(1.5) 在 11px 中文长段落偏挤，真机截图反馈后机械实测同步
   // （2026-10-24，实数经 scripts/count-token-refs.mjs）。
+  // lh- 50→51：MCP 隐藏条目解释行（mcpStyles 的 #mcp-root .mcp-omitted）同样用
+  // var(--lh-relaxed)——它是最长的一句（配置条数 + 原因 + 指路输出面板），与页级说明同族；
+  // 实数经 scripts/count-token-refs.mjs 机械实测同步（2026-10-24）。
   const EXPECTED = {
     'z-': 15, // HOST-NAV-1：大纲条 var(--z-float)（chatStyles）+1（2026-10-20）
-    'lh-': 50, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
+    'lh-': 51, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
     //             MCP 页级说明段落改 var(--lh-relaxed) +1（2026-10-24）
+    //             MCP 隐藏条目解释行 var(--lh-relaxed) +1（2026-10-24）
     // 18：回到原值。中途曾 +2（🔒 未钉态 / ✕ 弱化态各用 opacity: var(--op-6)），后经真机
     // 实测废掉该做法——**弱化只用降色、不用降透明度**（半透明图标观感像没渲染好/被禁用），
     // 二态改由「形状 + 颜色」两个明确通道承载；实数经 scripts/count-token-refs.mjs 实锤。

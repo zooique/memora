@@ -39,7 +39,7 @@ import {
   restartMcpServer,
   setMcpStatusListener,
 } from '../../extension/host/mcp/runtime.js';
-// MCP 写操作实现（`mcp_write` 五个 op 的唯一落点；写配置/回执/重启都在那边）
+// MCP 写操作实现（`mcp_write` 六个 op 的唯一落点；写配置/回执/重启/接入都在那边）
 import { applyMcpWrite, type McpOpsDeps } from './mcpServerOps.js';
 // 配置原值 = 面板列表的「有哪些」，只经唯一读取点（禁就地 getConfiguration，判据散点）
 import { readMcpServers } from '../../extension/mcpConfig.js';
@@ -1788,23 +1788,38 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    *   - **有哪些** ⇒ 这里传 `readMcpServers()`（配置原值，唯一读取点）。不传会漏掉「配了
    *     但还没装配」的台：设置视图先于对话面板打开时 Agent 未装配，列表会谎报空态。
    *   - **怎么样** ⇒ runtime 内的运行态 ∪ 失败表（`pending` = 装配前的诚实态，不是失败）。
+   * 第三个字段 `omitted` **必须一起发**：列表只装得下「有寻址键」的条目，缺 name / 重名的
+   * 两类整条不出现；不带计数，面板就会把「配置 2 条、显示 1 条」画成「配置 1 条」。
    * 公开方法：配置热更生效后由 extension.ts 回推；运行态变化（启停失败 / 断线 / 重启）
    * 由 runtime 的状态监听器回调到这里（监听器在本文件构造器里注册，理由见该处注释）。
    */
   public pushMcpStatus(): void {
-    this.post({ type: 'mcp_status', servers: getMcpServerStatus(readMcpServers()) });
+    const configured = readMcpServers();
+    const { servers, omitted } = getMcpServerStatus(configured);
+    this.post({ type: 'mcp_status', servers, omitted });
   }
 
   /**
    * 构造 MCP 写操作依赖（注入给 mcpServerOps —— 写操作实现不持有 panel 实例）
    *
-   * 三件事都是回调注入：回推 / 回执 / 重启。`restart` 只走**已装配**的 agent
-   * （不懒装配：重启是「恢复现有运行时」，不该顺手把 Agent 拉起来）。
+   * 三件事都是回调注入：回推 / 回执 / 重启/接入。`restart` 只走**已装配**的 agent
+   * （不懒装配：重启是「恢复现有运行时」，不该顺手把 Agent 拉起来）；`connect` 正相反，
+   * 它就是「待接入」那张卡的唯一出路——走 `ensureAgent()`（与对话面板共享
+   * `getOrCreateAgent` 单例，不会出现第二个 MCP 运行时）。
    */
   private mcpOpsDeps(): McpOpsDeps {
     return {
       pushStatus: () => this.pushMcpStatus(),
       notice: (level, message) => this.post({ type: 'notice', level, message }),
+      connect: async () => {
+        // 已装配 ⇒ 按定义不该是 pending（pending 的判据 = 「没进过装配」），
+        // 这里不必再拉一次；重推状态让面板收敛到运行态真值即可。
+        if (this._agentPromise) return { ok: true };
+        const agent = await this.ensureAgent();
+        // ensureAgent 的失败已在窗口层提示过（无工作区 → warning / 装配异常 → error），
+        // 这里只补一条指向它的回执：让用户知道「点了接入、没成功」而不是按钮失灵。
+        return agent ? { ok: true } : { ok: false, error: '装配未完成（原因见窗口提示）' };
+      },
       restart: async (name) => {
         if (!this._agentPromise) {
           return { ok: false, error: 'Agent 未装配（下次装配会按当前配置启动，无需重启）' };

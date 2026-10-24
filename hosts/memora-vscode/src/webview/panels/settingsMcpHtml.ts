@@ -32,9 +32,11 @@ export const MCP_BODY_HTML = `
       <p class="loading-hint">加载中…</p>
     </div>
     <div id="mcpEmpty" hidden>
-      <p class="security-desc">还没有配置任何 MCP 服务器。添加一台后，它的工具会以 <code>mcp__服务器名__工具名</code> 出现在模型工具列表里；调用前默认每次都要你确认。</p>
+      <p class="security-desc" id="mcpEmptyDefault">还没有配置任何 MCP 服务器。添加一台后，它的工具会以 <code>mcp__服务器名__工具名</code> 出现在模型工具列表里；调用前默认每次都要你确认。</p>
+      <p class="security-desc" id="mcpEmptyHidden" hidden>配置里有条目，但没有一条能显示成卡片（缺名称，或与前一条重名）。改好后会自动出现在这里；也可以直接删掉重加。具体是哪几条见下面那行提示。</p>
       <button class="btn btn-secondary mcp-add-btn" type="button">添加第一台服务器</button>
     </div>
+    <p id="mcpOmitted" class="mcp-omitted" hidden></p>
     <p class="security-desc">免确认只是不弹窗，<strong>每次调用仍写审计</strong>；不提供「全部放行」。删除服务器不会连带清掉它的免确认记录（重新添加同名服务器时自动恢复）。</p>
     <div class="mcp-footer">
       <button class="btn btn-ghost open-setting-btn" type="button" data-setting-key="memora.mcpServers">高级：在 settings.json 中编辑</button>

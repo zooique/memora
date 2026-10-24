@@ -40,6 +40,7 @@ export const mcpStyles = `
    * 贴根边缘（.card 自带内边距，再缩进会让整页像被套了两层框）。 */
   #mcp-root > .security-desc,
   #mcp-root > #mcpEmpty,
+  #mcp-root > #mcpOmitted,
   #mcp-root > .mcp-footer { padding-left: var(--sp-5, 12px); padding-right: var(--sp-5, 12px); }
   /* 页级说明是长段落：用「宽松正文」行高（tokens 里 --lh-relaxed 的注释就写明用途 =
    * 空态/提示/长段落），snug(1.5) 在 11px 中文上偏挤 */
@@ -127,6 +128,14 @@ export const mcpStyles = `
   /* ── 待接入提示：中性色，与失败原因刻意不同色（没试过 ≠ 失败） ── */
   #mcp-root .mcp-server-note {
     margin: 0; font-size: var(--font-xs, 10px); color: var(--text-secondary);
+  }
+
+  /* ── 被隐藏条目（配置里有、列表里没有）：警示色但**不上错误底色** ──
+   * 语义与 failed 不同：不是「跑不起来」，是「面板画不出来」。
+   * 用文字色 + 小字号表达，避免与失败原因（红底等宽）混成同一类故障。 */
+  #mcp-root .mcp-omitted {
+    margin: 0; font-size: var(--font-xs, 10px);
+    color: var(--feedback-warn-fg, #d7ba7d); line-height: var(--lh-relaxed);
   }
 
   /* ── 动作行 ── */

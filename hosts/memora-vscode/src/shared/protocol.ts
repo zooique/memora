@@ -1295,8 +1295,13 @@ export type ExtensionToWebviewMessage =
    * 状态监听器回推。
    * 空数组 = **没有任何配置**（合法空态，面板按空态文案渲染）；「配置在但未装配」不是
    * 空数组——那是 `pending`（待接入）态。
+   *
+   * `omitted` **必填**（不给可选缺省）：`servers` 只包含「有寻址键」的条目，缺 name 与
+   * 重名的两类**整条不在列表里**。少了这份计数，面板上「配置 2 条、显示 1 条」和
+   * 「配置 1 条」渲染完全一致（2026-10-24 实测：两类都是静默消失，只留一行 logger.warn）。
+   * 必填 = 每一个发送点都被迫面对这件事（漏传是编译错，不是悄悄少说一句）。
    */
-  | { type: 'mcp_status'; servers: McpServerStatusDto[] }
+  | { type: 'mcp_status'; servers: McpServerStatusDto[]; omitted: McpOmittedDto }
 
   // ─── 技能管理面板消息 ───
   /** 全局技能列表加载完成（对 skills_load 的应答） */
@@ -1787,6 +1792,29 @@ export interface McpServerStatusDto extends McpServerDraftDto {
 }
 
 /**
+ * 被状态列表**隐藏**的配置条目（面板上看不见的那部分）
+ *
+ * 为什么需要（2026-10-24 实测）：`servers` 只能渲染「有寻址键」的条目——缺 name 的无键可寻址、
+ * 重名的按先到先得只留第一条。这两类**整条从列表消失**，只留一行 `logger.warn` ⇒
+ * 面板上「配置 2 条、显示 1 条」与「配置 1 条」长得一模一样，用户没有任何线索。
+ *
+ * 为什么不给它们加 `skipped` / `malformed` 两态：态是**卡片属性**，而这两类条目恰恰没有卡片
+ * （缺 name 的连标题都拼不出来）；加态还要动 `McpServerState` 与 `STATE_LABELS`（Record 穷尽）
+ * 花协议预算。计数 + 一句说明是「面板看不见的东西必须有一句可见解释」的最小满足。
+ *
+ * 派生点与 `servers` **同一处循环**（`runtime.getMcpServerStatus`）：分开算 = 第二份 skip 判据，
+ * 迟早出现「卡片 1 条 + 隐藏 1 条 ≠ 配置 2 条」的自相矛盾。
+ */
+export interface McpOmittedDto {
+  /** 配置原值条目数（不变量：`=== servers.length + missingName + duplicate`） */
+  configured: number;
+  /** 缺 name（无寻址键：既当不了工具名前缀，也没法被 restart/编辑定位） */
+  missingName: number;
+  /** 与前面条目重名（先到先得，启动侧按同一规则跳过后者） */
+  duplicate: number;
+}
+
+/**
  * `mcp_write` 的载荷（按 op 判别；见 {@link WebviewToExtensionMessage} 该成员的注释）
  *
  * `upsert.server` 用 {@link McpServerDraftDto}：host 按 name 定位旧项后**展开合并**
@@ -1804,7 +1832,17 @@ export type McpWritePayload =
   | { op: 'upsert'; server: McpServerDraftDto }
   | { op: 'remove'; name: string }
   | { op: 'setEnabled'; name: string; enabled: boolean }
-  | { op: 'restart'; name: string };
+  | { op: 'restart'; name: string }
+  /**
+   * 接入一台「待接入」的 server（`pending` 态的**唯一出路**）
+   *
+   * `pending` 的判据就是「Agent 还没装配过」，所以这个 op 的语义是**触发宿主装配**
+   * （宿主 `ensureAgent` = 对话面板同一个 `getOrCreateAgent` 单例，不新起运行时），
+   * 装配完成即按当前配置连接、注册工具，状态自然从 `pending` 走到 `running` / `failed`。
+   * 与 `restart` 刻意分开：`restart` 只恢复**已有**运行时、拒绝懒装配（重启不该顺手拉起
+   * Agent），两者前置条件相反，合成一个 op 就会有一半情形是假动作。
+   */
+  | { op: 'connect'; name: string };
 
 /** 角色包校验问题（健康徽章数据源，镜像 SkillIssueDto；映射内核 RolePackValidationIssue） */
 export interface RoleIssueDto {

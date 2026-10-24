@@ -5,8 +5,8 @@
  * 而 MCP 页要长表单、状态机与确认流程；按域拆文件是本仓既有范式（样式层同样按 root 分文件）。
  *
  * 职责：
- *   - 渲染 `mcp_status`（五态 + 工具清单 + 免确认点选）；
- *   - 服务器增删改停启（**只发 `mcp_write`，不本地乐观翻转**——持久化真源在 host 配置，
+ *   - 渲染 `mcp_status`（五态 + 工具清单 + 免确认点选 + **被隐藏条目的解释**）；
+ *   - 服务器增删改停启接入（**只发 `mcp_write`，不本地乐观翻转**——持久化真源在 host 配置，
  *     UI 只回显 host 回推的结果）；
  *   - 表单可无损呈现性判定（args/env/cwd 三个字段的文本化是有损的，见 {@link isFormRepresentable}）。
  *
@@ -19,6 +19,7 @@
  */
 import type {
   ExtensionToWebviewMessage,
+  McpOmittedDto,
   McpServerDraftDto,
   McpServerState,
   McpServerStatusDto,
@@ -195,22 +196,55 @@ function draftOf(server: McpServerStatusDto): McpFormDraft {
  * 「3 台 · 1 已连接 · 0 失败」而页面上明明还有「配置不完整」的卡。口径写死在这里：
  *   - `需处理` = failed + invalid（两者都要求用户动手）；
  *   - `待接入` = pending（装配前的正常态，不算故障但必须说出来）；
- *   - `已连接` = running；`disabled` 只进台数（用户主动停的，不需处理）。
+ *   - `已连接` = running；`disabled` 只进台数（用户主动停的，不需处理）；
+ *   - `N 条未显示` = `omitted` 里的两类（缺 name / 重名）。**台数取 `omitted.configured`**
+ *     而不是 `servers.length`：否则「配置 4 条、可见 3 条」会显示成「3 台」，与配置原值
+ *     对不上，用户在 settings.json 里数出 4 条只会更困惑。
  *
- * @param servers 状态快照
- * @returns 统计文案（空列表 = 空串，由调用方隐藏）
+ * @param servers 状态快照（可见卡片）
+ * @param omitted 被隐藏条目计数（必填：漏传就回到了「少几条也不说」的旧形态）
+ * @returns 统计文案（空列表且无隐藏 = 空串，由调用方隐藏统计条）
  */
-export function formatServerSummary(servers: readonly McpServerStatusDto[]): string {
-  if (servers.length === 0) return '';
+export function formatServerSummary(
+  servers: readonly McpServerStatusDto[],
+  omitted: McpOmittedDto,
+): string {
+  const hidden = omitted.missingName + omitted.duplicate;
+  if (servers.length === 0 && hidden === 0) return '';
   const countOf = (predicate: (item: McpServerStatusDto) => boolean): number =>
     servers.filter(predicate).length;
-  const parts = [`${servers.length} 台`, `${countOf((item) => item.state === 'running')} 已连接`];
+  const parts = [
+    `${omitted.configured} 台`,
+    `${countOf((item) => item.state === 'running')} 已连接`,
+  ];
   const bad = countOf((item) => item.state === 'failed' || item.state === 'invalid');
   if (bad > 0) parts.push(`${bad} 需处理`);
   const pending = countOf((item) => item.state === 'pending');
   if (pending > 0) parts.push(`${pending} 待接入`);
   parts.push(`${servers.reduce((sum, item) => sum + item.toolCount, 0)} 个工具`);
+  if (hidden > 0) parts.push(`${hidden} 条未显示`);
   return parts.join(' · ');
+}
+
+/**
+ * 被隐藏条目的解释（列表下方那行；无隐藏 = 空串 = 不渲染）
+ *
+ * 为什么必须说出来：`servers` 只装得下「有寻址键」的条目，缺 name 与重名的两类**整条消失**。
+ * 不解释的话，「配了 2 台、页面 1 张卡」和「就配了 1 台」长得一模一样——用户只能靠猜。
+ *
+ * 指路「Memora」输出面板：跳过发生在启动侧（`indexValidConfigs` 的 `logger.warn`），
+ * 那行告警带原始 JSON / 原名，是唯一能定位到具体条目的地方（面板连名字都给不出：
+ * 缺 name 的没有名字，重名的显示的是先到那条）。
+ *
+ * @param omitted 被隐藏条目计数
+ */
+export function formatOmittedNotice(omitted: McpOmittedDto): string {
+  const hidden = omitted.missingName + omitted.duplicate;
+  if (hidden === 0) return '';
+  const reasons: string[] = [];
+  if (omitted.missingName > 0) reasons.push(`缺名称的 ${omitted.missingName} 条`);
+  if (omitted.duplicate > 0) reasons.push(`与前一条重名的 ${omitted.duplicate} 条（只保留第一条）`);
+  return `配置里共 ${omitted.configured} 条，其中 ${hidden} 条没有显示在上面的列表里：${reasons.join('、')}。这些条目启动时会被跳过，细节见「Memora」输出面板。`;
 }
 
 /** createMcpView 依赖 */
@@ -235,10 +269,22 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
   const listEl = root.querySelector<HTMLElement>('#mcpList');
   const emptyEl = root.querySelector<HTMLElement>('#mcpEmpty');
   const countEl = root.querySelector<HTMLElement>('#mcpCount');
+  // 被隐藏条目的解释行 + 空态的两套文案（骨架缺失即不挂载：宁可不显示，也不要半张页面）
+  const omittedEl = root.querySelector<HTMLElement>('#mcpOmitted');
+  const emptyDefaultEl = root.querySelector<HTMLElement>('#mcpEmptyDefault');
+  const emptyHiddenEl = root.querySelector<HTMLElement>('#mcpEmptyHidden');
   if (!listEl || !emptyEl || !countEl) return;
+  if (!omittedEl || !emptyDefaultEl || !emptyHiddenEl) return;
 
   /** 状态真源（只由 mcp_status 覆盖） */
   let servers: readonly McpServerStatusDto[] = [];
+  /**
+   * 被隐藏条目计数（只由 mcp_status 覆盖；与 servers 同一次消息、同一次派生）
+   *
+   * 初值全 0 且首帧前不渲染（`received` 闸），所以「还没收到状态」不会画成
+   * 「0 条配置」——空态文案的触发条件恒为「真的收到了一个 configured 值」。
+   */
+  let omitted: McpOmittedDto = { configured: 0, missingName: 0, duplicate: 0 };
   /** 编辑态草稿（null = 没有表单打开） */
   let draft: McpFormDraft | null = null;
   /** 待确认删除的 server 名（二次确认：删除是改配置里不可撤销的动作） */
@@ -310,6 +356,14 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     const editable = isFormRepresentable(server);
     const actions: string[] = [];
 
+    // 「待接入」是唯一有**出路**的空转态：点接入即触发宿主装配（与对话面板同一个
+    // getOrCreateAgent 单例）。没有这个按钮，pending 卡片只能编辑/停用/删除——
+    // 而重启按钮不渲染（restart 只恢复已有运行时），用户点不出任何东西（2026-10-24 实测）。
+    if (state === 'pending') {
+      actions.push(
+        '<button class="btn btn-primary" type="button" data-act="connect">接入</button>',
+      );
+    }
     if (state === 'running' || state === 'failed') {
       actions.push(
         '<button class="btn btn-secondary" type="button" data-act="restart">重启</button>',
@@ -346,7 +400,7 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
       </div>
       ${state === 'failed' ? `<p class="mcp-server-error">${escapeHtml(server.error ?? '')}</p>` : ''}
       ${state === 'invalid' ? `<p class="mcp-server-error">${escapeHtml(server.problem ?? '')}</p>` : ''}
-      ${state === 'pending' ? '<p class="mcp-server-note">尚未接入：打开对话面板即按当前配置连接并注册工具</p>' : ''}
+      ${state === 'pending' ? '<p class="mcp-server-note">尚未接入：点「接入」立即装配并按当前配置连接（打开对话面板也会自动触发）</p>' : ''}
       ${toolRows(server)}
       <div class="mcp-actions">${actions.join('')}</div>
       ${editing && draft ? formHtml(draft) : ''}
@@ -359,13 +413,18 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     const has = servers.length > 0 || draft !== null;
     emptyEl!.hidden = has;
     listEl!.hidden = !has;
-    countEl!.hidden = servers.length === 0;
-    if (servers.length > 0) {
-      // 口径集中在 formatServerSummary（有单测守；内联再算一遍 = 两份判据）
-      countEl!.textContent = formatServerSummary(servers);
-    } else {
-      countEl!.textContent = '';
-    }
+    // 统计条与解释行都由纯函数决定「有没有东西可说」——render 不再自己判空，
+    // 否则「隐藏了几条」这个条件得在两处各写一半（一处写就会漏）
+    const summary = formatServerSummary(servers, omitted);
+    countEl!.hidden = summary === '';
+    countEl!.textContent = summary;
+    const notice = formatOmittedNotice(omitted);
+    omittedEl!.hidden = notice === '';
+    omittedEl!.textContent = notice;
+    // 空态两套文案：有配置但一条都渲染不出来时，「还没有配置任何服务器」是谎报
+    const onlyHidden = servers.length === 0 && draft === null && omitted.configured > 0;
+    emptyDefaultEl!.hidden = onlyHidden;
+    emptyHiddenEl!.hidden = !onlyHidden;
     const newForm =
       draft !== null && draft.originalName === ''
         ? `<div class="mcp-server card">${formHtml(draft)}</div>`
@@ -454,6 +513,10 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
       vscode.postMessage({ type: 'mcp_write', op: 'restart', name });
       return;
     }
+    if (act === 'connect') {
+      vscode.postMessage({ type: 'mcp_write', op: 'connect', name });
+      return;
+    }
     if (act === 'toggle' && server) {
       vscode.postMessage({
         type: 'mcp_write',
@@ -514,6 +577,8 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     if (event.data.type !== 'mcp_status') return;
     received = true;
     servers = event.data.servers;
+    // 与 servers 同一次消息、同一次宿主派生（见 McpOmittedDto）：分开取 = 两份判据
+    omitted = event.data.omitted;
     // 被编辑/待删的那台如果已经不在配置里（他处改了配置），收起表单与确认态
     const editingName = draft?.originalName ?? '';
     if (editingName !== '' && !servers.some((item) => item.name === editingName)) draft = null;

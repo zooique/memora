@@ -1,10 +1,13 @@
 /**
- * MCP 写操作（`mcp_write` 五个 op 的**唯一实现**）
+ * MCP 写操作（`mcp_write` 六个 op 的**唯一实现**）
  *
  * 为什么独立成文件而不是塞进 settingsPanel：
  *   ① settingsPanel 是贴 eslint max-lines 上限的 TARGET 文件（只降不升），而本域还要随
  *      功能长（表单校验、竞态、回执都是线性增长域）；
- *   ② 这五个 op 是**同一个语义面**（MCP 配置写入），放一处才能保证「写入路径只有一条」。
+ *   ② 这六个 op 是**同一个语义面**（MCP 配置写入），放一处才能保证「写入路径只有一条」。
+ *      `connect` 是唯一的例外形态：它不改配置，只触发宿主装配（pending 的唯一出路，
+ *      见 protocol 里该 op 的说明）——仍归此处，因为「卡片上的按钮按下去要有回执」这条
+ *      约定与其余五个共用同一份 notice/pushStatus 收口。
  *
  * 三条纪律（SSOT / 不带伤）：
  *   1. **单一写入路径**：所有改配置的 op 都经 {@link writeServers}（`getConfiguration().update`
@@ -37,6 +40,15 @@ export interface McpOpsDeps {
   notice(level: 'info' | 'error', message: string): void;
   /** 重启单台（由 panel 注入：需要已装配的 agent；未装配给失败回执，不懒装配） */
   restart(name: string): Promise<{ ok: boolean; error?: string }>;
+  /**
+   * 触发宿主装配（`pending` 态的唯一出路）
+   *
+   * 不带 name：装配是**全局**动作（一次装配按当前配置拉起所有台），拿 name 只会让本模块
+   * 误以为它是按台操作。回执文案由本模块拼（它知道用户点的是哪张卡）。
+   * 注入实现必须复用对话面板同一个 agent 单例（`getOrCreateAgent`），否则会出现第二个
+   * MCP 运行时 —— 两台同时注册同名工具。
+   */
+  connect(): Promise<{ ok: boolean; error?: string }>;
 }
 
 /**
@@ -114,7 +126,7 @@ function clearEmptyFields(config: McpServerConfig): McpServerConfig {
 }
 
 /**
- * 执行一条 `mcp_write`（五个 op 的唯一入口）
+ * 执行一条 `mcp_write`（六个 op 的唯一入口）
  *
  * 每个 op 结束都 `pushStatus()`：写配置的 op 写完立刻推一次（未装配时热更不跑，不推会停在
  * 旧值），热更生效后 extension 再推一次覆盖 —— 两次推送幂等，不构成第二份状态真源。
@@ -140,6 +152,17 @@ export async function applyMcpWrite(deps: McpOpsDeps, payload: McpWritePayload):
       const result = await deps.restart(payload.name);
       if (!result.ok)
         deps.notice('error', `重启「${payload.name}」失败：${result.error ?? '未知原因'}`);
+      deps.pushStatus();
+      return;
+    }
+    case 'connect': {
+      // 成功**刻意静默**（与 restart 同口径）：卡片状态自己会走到 running / failed，
+      // 失败原因由状态面逐字显示，再弹一条 toast 就是同一件事说两遍。
+      const result = await deps.connect();
+      if (!result.ok)
+        deps.notice('error', `接入「${payload.name}」失败：${result.error ?? '未知原因'}`);
+      // 装配完成 ⇒ 状态从 pending 变成 running/failed；装配失败 ⇒ 仍是 pending，
+      // 两种情况都必须回推，否则面板停在用户点按钮之前的那一帧。
       deps.pushStatus();
       return;
     }

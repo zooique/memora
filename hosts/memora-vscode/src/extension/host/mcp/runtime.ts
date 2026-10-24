@@ -17,10 +17,8 @@ import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { McpConnection, type McpServerConfig } from './connectionManager.js';
 import { clearAllFailures, clearFailure, failureOf, noteFailure } from './failureLedger.js';
 import { configProblem, indexValidConfigs, normalizeServerName } from './mcpConfigGuard.js';
-// 五态词汇的真源（面板与宿主共用同一枚举，禁两边各写一份字符串字面量）
-import type { McpServerState } from '../../../shared/protocol.js';
 import { isPlainObject } from './json.js';
-import { allowlistKey, parseAllowlist, type McpToolAllowlist } from './policy.js';
+import { parseAllowlist, type McpToolAllowlist } from './policy.js';
 import {
   buildToolBindings,
   registerServerTools,
@@ -28,6 +26,8 @@ import {
   type McpToolBinding,
   type ToolRegistrar,
 } from './toolRegistry.js';
+// 状态派生（含五态判定）在 statusView：本文件只把模块级单例喂进去（判据一份，见该文件）
+import { deriveMcpServerStatus, type McpStatusSnapshot } from './statusView.js';
 
 /** 单个 server 的运行态（停机/断线注销/热更差分所需的最小信息） */
 interface RunningServer {
@@ -154,136 +154,22 @@ function noteToolCount(logger?: ILogger): void {
   }
 }
 
-/**
- * 单个 MCP 工具的可观测状态（设置面板 MCP 选项卡的数据面）
- *
- * **`allowKey` 由调用 `policy.allowlistKey` 现算下发，UI 侧不得自行拼字符串**：键格式的
- * 真源只有一处（server 原名 + 工具原名），历史上「按模型列表里的显示名写 allowlist」是会
- * **静默失效**的坑——面板把它做成点选，就是为了让用户不再需要知道这个键长什么样。
- */
-export interface McpToolStatus {
-  /** server 侧原始工具名（调用时回传的名字，也是 allowlist 寻址的一半） */
-  readonly originalName: string;
-  /** 注册进内核的派生名（模型列表里那个；与原名对比展示，解释「为什么两处不一样」） */
-  readonly derivedName: string;
-  /** 免确认寻址键（可直接写进 `memora.mcpToolAllowlist`） */
-  readonly allowKey: string;
-  /** 当前是否已免确认（= 注册档位为 'audit'） */
-  readonly allowlisted: boolean;
-}
-
-/** 一台 server 的可观测状态 */
-export interface McpServerStatus {
-  /** server 名（配置里的 name） */
-  readonly name: string;
-  /** 配置里的可执行命令 */
-  readonly command: string;
-  /** 配置里的命令参数（表单回显用；缺失 = 无参数） */
-  readonly args?: string[];
-  /** 配置里的环境变量（表单回显用；**列表不展示**，只在编辑表单里出现） */
-  readonly env?: Record<string, string>;
-  /** 配置里的工作目录 */
-  readonly cwd?: string;
-  /** 连接状态（五态语义见 shared/protocol 的 McpServerState） */
-  readonly state: McpServerState;
-  /** 配置启用位（缺省 true）；与 state 正交 */
-  readonly enabled: boolean;
-  /** 已注册工具数（非 running 态恒 0） */
-  readonly toolCount: number;
-  /** 工具明细（顺序 = 注册顺序） */
-  readonly tools: readonly McpToolStatus[];
-  /** state='failed' 的失败原因 */
-  readonly error?: string;
-  /** state='invalid' 缺什么（判据 = 本文件的 configProblem） */
-  readonly problem?: string;
-}
+// 状态派生（列表 + 隐藏条目计数）已拆到 statusView.ts（max-lines 让位，判据仍一份）。
+// 对外类型从这里照旧可取：调用方不必知道派生在哪个文件。
+export type { McpServerStatus, McpStatusSnapshot, McpToolStatus } from './statusView.js';
 
 /**
  * 读取 MCP 服务器状态（**列表基线 = 配置；状态 = 运行态 ∪ 失败表**）
  *
- * 两个真源分工（混用必错，本页两版各错一次）：
- *   - **有哪些** ⇒ 调用方传入的**当前配置**（`readMcpServers()` 原值）。只按运行态出列表
- *     会漏掉「配了但还没装配」的台：设置视图先于对话面板打开时 Agent 尚未装配，面板会
- *     显示「还没有配置任何服务器」，用户添加一台、拿到「已添加」回执，卡片**仍不出现**
- *     ——点完没反应的第二种成因（第一种是死按钮）。
- *   - **怎么样** ⇒ 运行态（running）∪ 失败表（failed）。「已装配但不在运行」= failed；
- *     「配置在、没进过装配」= pending（不谎报失败，也不是「停用」——用户没这意图）。
- *
- * 只看 `running` 的另一个反例：失败的那台会整条消失，而那恰好是用户最需要看见的一条
- * （「为什么模型没有 MCP 工具」的答案就在那里）。
- *
- * 顺序 = 配置顺序（用户写的顺序就是列表顺序，不按 map 迭代序漂移）。重名按**先到先得**
- * 只保留第一条（与 indexValidConfigs 的启动语义一致）；**缺 name 的条目无寻址键，不入列表**
- * （启动侧会告警跳过，面板指路 settings.json）。
- *
- * ⚠️ 归一化后再比名（`"fs"` 与 `"fs "` 算重名）：重名后者的真实形态是**整条不出现**，
- * 不是「显示成某个态」——两者归一化后同名，被下面的 `seen` 去重掉，启动侧也按同一规则
- * 跳过。所以 `state === 'failed'` 的兜底文案不许再写「可能被重名规则跳过」：那是到不了的
- * 假设，把用户指向一个不存在的原因（2026-10-24 实测：该分支只在「进过装配但既无运行态
- * 也无失败记录」时触发，而 `startOneServer` 失败恒写失败表）。
+ * 派生在 {@link deriveMcpServerStatus}（纯函数）；本包装是**唯一**把模块级单例
+ * （运行态 / 已应用配置 / 失败表）绑给派生逻辑的地方。
  *
  * @param configured 当前用户配置原值（`readMcpServers()`；必填——漏传=编译错，不给缺省值，
  *   否则「忘了传」会静默退回只读运行态的旧缺陷）
- * @returns 每台配置 server 的状态快照（配置为空 = 空数组 = 合法空态）
+ * @returns 可见列表 + 被隐藏条目计数
  */
-export function getMcpServerStatus(configured: readonly McpServerConfig[]): McpServerStatus[] {
-  // 「进过装配」的判据：最近一次应用的配置（start / 热更 / restart 写入）
-  const applied = new Set<string>();
-  for (const config of appliedConfigs) {
-    const name = normalizeServerName(config?.name);
-    if (name) applied.add(name);
-  }
-
-  const seen = new Set<string>();
-  const list: McpServerStatus[] = [];
-  for (const config of configured) {
-    const name = normalizeServerName(config?.name);
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-
-    const problem = configProblem(config);
-    const enabled = config.enabled !== false;
-    const live = running?.get(name);
-    const failure = failureOf(name);
-
-    let state: McpServerState;
-    if (problem) state = 'invalid';
-    else if (!enabled) state = 'disabled';
-    else if (live) state = 'running';
-    else if (applied.has(name)) state = 'failed';
-    // 配置在、还没进过装配（设置视图先于对话面板打开）⇒ 待接入，不谎报失败
-    else state = 'pending';
-
-    list.push({
-      name,
-      command: typeof config.command === 'string' ? config.command : '',
-      ...(Array.isArray(config.args)
-        ? { args: config.args.filter((a) => typeof a === 'string') }
-        : {}),
-      ...(config.env && typeof config.env === 'object' ? { env: { ...config.env } } : {}),
-      ...(typeof config.cwd === 'string' && config.cwd ? { cwd: config.cwd } : {}),
-      state,
-      enabled,
-      toolCount: live ? live.bindings.length : 0,
-      tools: live
-        ? live.bindings.map((binding) => {
-            const key = allowlistKey(name, binding.originalName);
-            return {
-              originalName: binding.originalName,
-              derivedName: binding.derivedName,
-              allowKey: key,
-              allowlisted: live.allowKeys.has(key),
-            };
-          })
-        : [],
-      // 失败原因只在该状态出现；禁用/非法不冒充「失败」（三种原因要分得清）
-      ...(state === 'failed'
-        ? { error: failure?.error ?? '未连接（本次装配没有这台 server 的记录）' }
-        : {}),
-      ...(state === 'invalid' && problem ? { problem } : {}),
-    });
-  }
-  return list;
+export function getMcpServerStatus(configured: readonly McpServerConfig[]): McpStatusSnapshot {
+  return deriveMcpServerStatus(configured, { running, applied: appliedConfigs, failureOf });
 }
 
 /**
