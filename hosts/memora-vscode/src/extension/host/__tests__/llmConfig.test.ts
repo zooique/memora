@@ -76,6 +76,9 @@ describe('llmConfig · Provider 构建（能力位唯一通路）', () => {
   it('store 分支：能力位原样透传（显式 false/true 均不被内核默认值覆盖）', async () => {
     h.store['providers'] = [{ ...LOCAL_PROVIDER }];
     h.store['activeProvider'] = 'ollama';
+    // 在册服务商必须有 key（SEC-READ-2 第三态：激活条空 key 会抛「未存储」）——
+    // 本用例测能力位透传，key 数据只为满足在册契约，值与断言无关
+    secretsStore['memora.provider.ollama.apiKey'] = 'sk-ollama-test';
 
     const provider = await createProvider(store, {});
 
@@ -86,6 +89,7 @@ describe('llmConfig · Provider 构建（能力位唯一通路）', () => {
   it('store 分支：未声明能力位 → 按各自方向回落（toolCalling=true / structured=false）', async () => {
     h.store['providers'] = [{ ...CLOUD_PROVIDER }];
     h.store['activeProvider'] = 'cloud';
+    secretsStore['memora.provider.cloud.apiKey'] = 'sk-cloud-test';
 
     const provider = await createProvider(store, {});
 
@@ -97,6 +101,7 @@ describe('llmConfig · Provider 构建（能力位唯一通路）', () => {
   it('优先级：有激活 Provider 时不再落环境变量分支（env 残缺也不报错）', async () => {
     h.store['providers'] = [{ ...LOCAL_PROVIDER }];
     h.store['activeProvider'] = 'ollama';
+    secretsStore['memora.provider.ollama.apiKey'] = 'sk-ollama-test';
 
     // env 缺 MEMORA_BASE_URL / MEMORA_MODEL——若误落 env 分支会抛「缺少 LLM 配置」
     await expect(createProvider(store, {})).resolves.toBeDefined();
@@ -115,6 +120,8 @@ describe('llmConfig · Provider 构建（能力位唯一通路）', () => {
   it('createBackgroundProvider：配置了后台通道 → 能力位同样原样透传', async () => {
     h.store['providers'] = [{ ...LOCAL_PROVIDER }];
     h.store['backgroundProvider'] = 'ollama';
+    // 同 store 分支：在册必须有 key（SEC-READ-2 第三态），值与断言无关
+    secretsStore['memora.provider.ollama.apiKey'] = 'sk-ollama-test';
 
     const provider = await createBackgroundProvider(store);
 

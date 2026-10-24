@@ -15,6 +15,13 @@
  *   共性 = 密钥面的失败没有结构化回执，用户与上层都无法据回执判断磁盘事实——
  *   与 settingsWrite 防的「静默吞回执」是同一伤害类，故按同一方法论收口。
  *
+ * 第三态（2026-10-24 SEC-READ-2 补）：读成功但从未存过（`ok:true + value=undefined`）
+ * 对展示面是「正常空态」（面板钉子：空态 ≠ 失败），但对**配置在册的服务商**不是——
+ * 保存契约保证在册服务商本应有 key（新增必填 / 编辑保留 / remove 先配置后密钥），
+ * 空即异常（半完成态残留 / userDataReset 中间态 / 设置同步不含密钥 / 凭证被清理）。
+ * 运行面（getActive / getBackground）见此态抛 {@link secretMissingText}，
+ * 不让空 key 打到服务端报无关 401——那又是「用错原因解释失败」。
+ *
  * 单一真理源：
  *   - 超时上限复用 {@link WRITE_TIMEOUT_MS}（settingsWrite 定义）——两存储面共用
  *     一个上限值，不建第二份常量；
@@ -192,4 +199,23 @@ export function secretErrorText(
   return failure.timedOut
     ? `${label} 超时：系统钥匙串未在期限内响应，密钥可能未保存`
     : `${label} 失败：${failure.reason}`;
+}
+
+/**
+ * SecretStorage 第三态文案：读成功但**从未存过**（SEC-READ-2，运行面专用）
+ *
+ * 与 {@link secretErrorText} 的分界：后者 = 钥匙串**读失败**（状态未知，可能是好 key
+ * 读不到）；本函数 = 钥匙串读成功了，里头**没有这个 key**（状态已知 = 没有）。
+ * 展示面（listMasked）见此态是「正常空态」不留痕——新用户没配 key 不配报错；
+ * 但**配置在册的服务商**走到运行面还空着，只剩异常来路（半完成态残留 /
+ * userDataReset 中间态 / 设置同步不含密钥 / 凭证被清理），必须可读地拒绝——
+ * 空 key 打到服务端是一个与真实原因无关的 401。
+ *
+ * @param label 操作对象名（如 `API Key「deepseek」`，中文引号结尾故模板不加空格）
+ */
+export function secretMissingText(label: string): string {
+  return (
+    `${label}未存储：可能保存未成功、系统凭证被清理，或设置同步未包含密钥；` +
+    `请在配置面板编辑该服务商补填 API Key`
+  );
 }

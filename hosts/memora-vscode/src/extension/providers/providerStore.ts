@@ -24,6 +24,7 @@ import {
   deleteSecret,
   readSecret,
   secretErrorText,
+  secretMissingText,
   writeSecret,
   type ReadResult,
 } from '../host/secretsAccess.js';
@@ -189,6 +190,12 @@ export class ProviderStore {
    * 契约与本次改动前一致（此前是裸 throw），只是消息可读。
    * 非激活 Provider 的 key 读取失败不影响本路径（list 已逐条留痕，此处只认激活条）。
    *
+   * 第三态（SEC-READ-2）：读成功但**从未存过**（`apiKey === ''` 且无 keyError）。
+   * 展示面这是「正常空态」（新用户没配 key 不配报错，listMasked 钉子），但**配置
+   * 在册的服务商**本应有 key（保存契约：新增必填 / 编辑保留 / remove 先配置后密钥）——
+   * 还空着只剩异常来路：save 半完成态残留 / userDataReset 中间态 / 设置同步不含
+   * 密钥 / 凭证被清理。同样抛，文案区分「未存储」与「读取 失败」两种状态。
+   *
    * @returns 激活的完整 Provider 配置（无激活或不存在时 undefined）
    */
   async getActive(): Promise<LlmProviderConfig | undefined> {
@@ -197,6 +204,9 @@ export class ProviderStore {
     const all = await this.list();
     const active = all.find((p) => p.name === name);
     if (active?.keyError) throw new Error(active.keyError);
+    if (active && !active.apiKey) {
+      throw new Error(secretMissingText(`API Key「${name}」`));
+    }
     return active;
   }
 
@@ -407,6 +417,8 @@ export class ProviderStore {
    * 未配置后台通道（getBackgroundName 为空）或该 name 不存在时返回 undefined。
    * 后台 Provider 的 key 读取失败 ⇒ 抛出语义标签错误（与 getActive 同构）：
    * 静默回落前台 = 后台任务悄悄用了另一个模型（用户不可见的降级），故必须抛。
+   * 第三态同 getActive（SEC-READ-2）：在册但从未存过 ⇒ 抛「未存储」，
+   * 空 key 的后台 Provider 一样会打出无关 401。
    *
    * @returns 后台 Provider config；无独立后台配置返回 undefined
    */
@@ -416,6 +428,9 @@ export class ProviderStore {
     const all = await this.list();
     const background = all.find((p) => p.name === name);
     if (background?.keyError) throw new Error(background.keyError);
+    if (background && !background.apiKey) {
+      throw new Error(secretMissingText(`API Key「${name}」`));
+    }
     return background;
   }
 

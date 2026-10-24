@@ -2,7 +2,8 @@
  * ProviderStore — contextWindow 校验 + 旧全局 maxContextTokens 迁移 + 密钥读写通道收口
  *
  * 不引入真实 VS Code 运行时：用 vi.mock 提供内存版 workspace.getConfiguration + SecretStorage。
- * 覆盖 per-LLM contextWindow 护栏、迁移逻辑、secrets 写面（SEC-WRITE-1）与读面（SEC-READ-1）收口。
+ * 覆盖 per-LLM contextWindow 护栏、迁移逻辑、secrets 写面（SEC-WRITE-1）、读面
+ * （SEC-READ-1）与「在册无 key」第三态（SEC-READ-2）收口。
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -466,5 +467,40 @@ describe('ProviderStore 密钥读取通道（secretsAccess 收口）', () => {
     // 没有激活条时压根不读 key——与「激活条读失败」是两条路径
     expect(await store.getActive()).toBeUndefined();
     expect(secrets.get).not.toHaveBeenCalled();
+  });
+
+  it('getActive：激活条 get 成功但从未存过 → 抛「未存储」语义错误，不返回空 key config（SEC-READ-2 第三态）', async () => {
+    h.store['providers'] = [P_A];
+    h.store['activeProvider'] = 'alpha';
+    // 不往 secretsStore 放 key：get 返回 null（读成功 + 空值 ≠ 读失败，list 不留 keyError）
+
+    // 空 key config 打到服务端 = 与真实原因无关的 401 ⇒ 运行面必须拒绝。
+    // 触发来路：save 半完成态残留 / userDataReset 中间态 / 设置同步不含密钥 / 凭证被清理
+    await expect(store.getActive()).rejects.toThrow(
+      'API Key「alpha」未存储：可能保存未成功、系统凭证被清理，或设置同步未包含密钥；请在配置面板编辑该服务商补填 API Key',
+    );
+  });
+
+  it('getBackground：后台条 get 成功但从未存过 → 抛「未存储」语义错误（与 getActive 同构）', async () => {
+    h.store['providers'] = [P_A, P_B];
+    h.store['backgroundProvider'] = 'beta';
+    secretsStore['memora.provider.alpha.apiKey'] = 'sk-alpha-real';
+    // beta 不存 key：前台完好、后台空 ⇒ 后台单独抛，不静默回落前台
+
+    await expect(store.getBackground()).rejects.toThrow(
+      'API Key「beta」未存储：可能保存未成功、系统凭证被清理，或设置同步未包含密钥；请在配置面板编辑该服务商补填 API Key',
+    );
+  });
+
+  it('getActive：读失败优先于「未存储」（keyError 先报，状态未知比没有 key 更严重）', async () => {
+    h.store['providers'] = [P_A];
+    h.store['activeProvider'] = 'alpha';
+    // 同一条 get 同时满足「失败」与「空」两个候选解释时，先报读失败——
+    // 顺序钉子：防未来的重构把两个检查调换后静默改变用户看到的文案
+    secrets.get.mockRejectedValueOnce(new Error('Credential Manager 不可用'));
+
+    await expect(store.getActive()).rejects.toThrow(
+      'API Key「alpha」读取 失败：Credential Manager 不可用',
+    );
   });
 });
