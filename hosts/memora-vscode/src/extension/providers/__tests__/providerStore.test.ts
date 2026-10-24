@@ -244,3 +244,98 @@ describe('ProviderStore · save/remove 语义', () => {
     expect(res.message).toContain('激活');
   });
 });
+
+/**
+ * 密钥写入通道收口（2026-10-24 SEC-WRITE-1）
+ *
+ * 此前 save/remove 的 secrets 写入是裸调：钥匙串不可用时 reject 穿膜，半完成态
+ * （配置落盘/密钥没落盘）无结构化回执。现经 secretsWrite 单通道后，回执必须：
+ *   - 如实说明半完成事实（不谎报 ok:true，也不伪装全失败）；
+ *   - 不自动回滚已落盘的配置（回滚自身也可能失败，用户字段是资产）；
+ *   - 文案点出后果与出路（同名重添沿用旧密钥的安全面）。
+ */
+describe('ProviderStore 密钥写入通道（secretsWrite 收口）', () => {
+  const VALID = {
+    name: 'deepseek',
+    displayName: 'DeepSeek',
+    model: 'deepseek-chat',
+    baseUrl: 'https://api.example.com/v1',
+    apiKey: 'sk-real',
+  };
+
+  let store: ProviderStore;
+  beforeEach(() => {
+    h.store['providers'] = [];
+    delete h.store['activeProvider'];
+    delete h.store['backgroundProvider'];
+    for (const k of Object.keys(secretsStore)) delete secretsStore[k];
+    store = new ProviderStore(secrets as unknown as import('vscode').SecretStorage);
+  });
+
+  it('save：secrets.store 拒绝 → ok:false 且文案如实说明「配置已保存、密钥未保存」，配置不谎报', async () => {
+    secrets.store.mockRejectedValueOnce(new Error('Credential Manager 不可用'));
+
+    const res = await store.save({ ...VALID }, false);
+
+    expect(res.ok).toBe(false);
+    // 半完成态回执：先说配置已保存（事实），再说 API Key 失败（原因），最后给出路
+    expect(res.message).toContain('服务商配置已保存');
+    expect(res.message).toContain('API Key 失败：Credential Manager 不可用');
+    expect(res.message).toContain('暂时无法使用');
+    // 磁盘事实与回执一致：配置确已落盘（服务商会出现在列表）、密钥确未存上
+    expect(h.store['providers']).toHaveLength(1);
+    expect(secretsStore['memora.provider.deepseek.apiKey']).toBeUndefined();
+  });
+
+  it('save：secrets.store 永不 settle → 超时 ok:false（不永久挂起，文案指向钥匙串）', async () => {
+    vi.useFakeTimers();
+    try {
+      secrets.store.mockImplementationOnce(() => new Promise<void>(() => {}));
+      const pending = store.save({ ...VALID }, false);
+      await vi.advanceTimersByTimeAsync(5000);
+      const res = await pending;
+      expect(res.ok).toBe(false);
+      expect(res.message).toContain('服务商配置已保存');
+      expect(res.message).toContain('超时');
+      expect(res.message).toContain('系统钥匙串');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('remove：secrets.delete 拒绝 → ok:false 且文案点出孤儿密钥后果，配置确已删、密钥仍在', async () => {
+    // 先正常落一个 Provider（含密钥），再让 delete 失败
+    await store.save({ ...VALID }, false);
+    expect(secretsStore['memora.provider.deepseek.apiKey']).toBe('sk-real');
+    secrets.delete.mockRejectedValueOnce(new Error('凭证被占用'));
+
+    const res = await store.remove('deepseek');
+
+    expect(res.ok).toBe(false);
+    // 半完成态回执：配置已删是事实 + 孤儿密钥的安全后果（同名重添沿用旧 key）+ 出路
+    expect(res.message).toContain('已从配置中删除');
+    expect(res.message).toContain('API Key 清理 失败：凭证被占用');
+    expect(res.message).toContain('重新添加同名服务商可能沿用旧密钥');
+    // 磁盘事实与回执一致：配置确已删、密钥确成孤儿
+    expect(h.store['providers']).toHaveLength(0);
+    expect(secretsStore['memora.provider.deepseek.apiKey']).toBe('sk-real');
+  });
+
+  it('remove：secrets.delete 永不 settle → 超时 ok:false（不永久挂起）', async () => {
+    await store.save({ ...VALID }, false);
+    vi.useFakeTimers();
+    try {
+      secrets.delete.mockImplementationOnce(() => new Promise<void>(() => {}));
+      const pending = store.remove('deepseek');
+      await vi.advanceTimersByTimeAsync(5000);
+      const res = await pending;
+      expect(res.ok).toBe(false);
+      expect(res.message).toContain('已从配置中删除');
+      expect(res.message).toContain('超时');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

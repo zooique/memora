@@ -18,6 +18,9 @@ import * as vscode from 'vscode';
 import { createProviderFromConfig } from '@zooique/memora';
 // 配置写入唯一通道（5s 超时兜底：只读/受管设置上 update 可能永不 settle）
 import { writeErrorText, writeSetting, type WriteResult } from '../settingsWrite.js';
+// 密钥写入唯一通道（与配置通道对称：钥匙串不可用时 store/delete 会 reject，
+// 裸调会把半完成态当异常抛出，回执与磁盘事实脱节）
+import { deleteSecret, secretErrorText, writeSecret } from '../host/secretsWrite.js';
 import type { LlmProviderConfig } from '../../shared/protocol.js';
 
 /** configuration 段名（memora.providers） */
@@ -258,9 +261,25 @@ export class ProviderStore {
     const written = await this.writeConfig(next);
     if (!written.ok) return { ok: false, message: writeErrorText('服务商配置', written) };
 
-    // 写 apiKey：编辑且留空 → 保留原值（不覆盖）；否则写入新值
+    // 写 apiKey：编辑且留空 → 保留原值（不覆盖）；否则写入新值。
+    // 经密钥写入唯一通道：钥匙串不可用时返回失败而不是裸抛——
+    // 此刻配置已落盘（服务商会出现在列表里）而密钥没存上 = 半完成态，
+    // 回执必须如实说明「配置已保存、密钥未保存」，不自动回滚配置
+    // （回滚自身也可能失败，且用户填的字段是资产），用户保留表单内容可改可重试。
     if (!(isEditing && !trimmed.apiKey.trim())) {
-      await this.secrets.store(providerSecretKey(trimmed.name), trimmed.apiKey.trim());
+      const stored = await writeSecret(
+        this.secrets,
+        providerSecretKey(trimmed.name),
+        trimmed.apiKey.trim(),
+      );
+      if (!stored.ok) {
+        return {
+          ok: false,
+          message:
+            `服务商配置已保存，但 ${secretErrorText('API Key', stored)}。` +
+            `该服务商暂时无法使用；请关闭表单，在服务商列表中编辑它补填 API Key。`,
+        };
+      }
     }
     return { ok: true };
   }
@@ -279,7 +298,19 @@ export class ProviderStore {
     // 配置没删掉就不能删 apiKey：否则配置里还留着服务商、密钥却没了（下次激活必然失败）
     const written = await this.writeConfig(providers);
     if (!written.ok) return { ok: false, message: writeErrorText('服务商配置', written) };
-    await this.secrets.delete(providerSecretKey(name));
+    // 密钥删除同走唯一通道：此刻配置已删（服务商从列表消失）而密钥没删掉 = 孤儿密钥，
+    // 回执必须点出后果——同名服务商重新添加后「编辑留空」会读到旧密钥（静默用错 key），
+    // 并给出出路（重启重试 / 系统凭证管理器手动删）。不谎报 ok:true。
+    const deleted = await deleteSecret(this.secrets, providerSecretKey(name));
+    if (!deleted.ok) {
+      return {
+        ok: false,
+        message:
+          `服务商已从配置中删除，但 ${secretErrorText('API Key 清理', deleted)}。` +
+          `旧密钥仍留在系统钥匙串中，重新添加同名服务商可能沿用旧密钥；` +
+          `请重启 VS Code 后重试，或在系统凭证管理器中手动删除。`,
+      };
+    }
     // 删除的若是后台模型 Provider，清除后台通道引用（避免悬空指向不存在的 name）
     if (name === this.getBackgroundName()) {
       const cleared = await this.setBackground('');

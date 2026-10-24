@@ -38,6 +38,9 @@ import * as vscode from 'vscode';
 import { providerSecretKey, CFG_SECTION, CFG_PROVIDERS } from '../providers/providerStore.js';
 // 配置写入唯一通道（带 5s 超时兜底：只读/受管设置上 update 可能永不 settle ⇒ 初始化永久卡住）
 import { writeErrorText, writeSetting } from '../settingsWrite.js';
+// 密钥删除唯一通道：钥匙串不可用时返回失败而不是裸抛（保留「任一步失败即抛出」
+// 的契约不变，但消息带语义标签——哪一步、哪个 key，不再裸抛 VS Code 原始错误）
+import { deleteSecret, secretErrorText } from './secretsWrite.js';
 import {
   USER_STATE_KEY_PREFIX,
   USER_SKILLS_DIR_NAME,
@@ -153,7 +156,10 @@ export async function resetUserData(scope: UserDataResetScope): Promise<ResetRep
   // ① SecretStorage 先行（K1）：此时 configuration 里的 providers 名单还在，
   //    按名单逐条删 apiKey；下一步才清 configuration——反了 name 就没了。
   for (const name of readProviderNames()) {
-    await scope.secrets.delete(providerSecretKey(name));
+    const deleted = await deleteSecret(scope.secrets, providerSecretKey(name));
+    // 失败即抛出的契约不变（调用方 catch + 失败不 reload + 各步骤幂等可重试），
+    // 但消息带语义标签（哪个 Provider 的 key、失败原因），与 settings 通道同构
+    if (!deleted.ok) throw new Error(secretErrorText(`API Key「${name}」清理`, deleted));
     report.secretsCleared.push(name);
   }
 

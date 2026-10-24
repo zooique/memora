@@ -204,6 +204,43 @@ describe('userDataReset.resetUserData', () => {
       await rm(tmp, { recursive: true, force: true });
     }
   });
+
+  it('secrets.delete 拒绝 → 抛出带语义标签的错误，settings 通道零执行（K1 前置于清理）', async () => {
+    h.store['providers'] = [{ name: 'p1' }];
+    const failingSecrets = {
+      get: vi.fn(async () => null),
+      store: vi.fn(async () => {}),
+      delete: vi.fn().mockRejectedValue(new Error('Credential Manager 不可用')),
+    };
+
+    await expect(
+      resetUserData(makeScope({ secrets: failingSecrets as unknown as vscode.SecretStorage })),
+    ).rejects.toThrow('API Key「p1」清理 失败：Credential Manager 不可用');
+
+    // K1 顺序不变：密钥删除失败即中止，settings 一个键都没清（不清 name 先丢的残留之外，
+    // 也保证「半完成初始化」不会越过密钥通道继续往下走）
+    expect(h.updateCalls).toHaveLength(0);
+  });
+
+  it('secrets.delete 永不 settle → 超时抛出（不永久挂起）', async () => {
+    vi.useFakeTimers();
+    try {
+      h.store['providers'] = [{ name: 'p1' }];
+      const hangingSecrets = {
+        get: vi.fn(async () => null),
+        store: vi.fn(async () => {}),
+        delete: vi.fn(() => new Promise<void>(() => {})),
+      };
+      const pending = resetUserData(
+        makeScope({ secrets: hangingSecrets as unknown as vscode.SecretStorage }),
+      );
+      const assertion = expect(pending).rejects.toThrow('超时');
+      await vi.advanceTimersByTimeAsync(5000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('userDataReset.listUserSettingKeys', () => {
