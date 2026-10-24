@@ -84,10 +84,4 @@ export const configStyles = `
   #config-root .test-result__icon { display: inline-flex; align-items: center; vertical-align: -2px; margin-right: var(--sp-1, 4px); }
   #config-root .test-result__icon svg { display: block; }
   #config-root .modal-actions { display: flex; gap: var(--sp-3, 8px); justify-content: flex-end; margin-top: var(--sp-5, 12px); }
-
-  /* ============ Components：Toast ============ */
-  #config-root #toast { position: fixed; bottom: var(--sp-6, 16px); left: 50%; transform: translateX(-50%); padding: var(--sp-3, 8px) var(--sp-5, 12px); border-radius: var(--radius, 6px); font-size: var(--font-md, 12px); color: var(--accent-foreground, #ffffff); opacity: 0; transition: opacity var(--dur-open); z-index: var(--z-bar); max-width: 80%; }
-  #config-root #toast.ok { background: var(--toast-ok-bg); }
-  #config-root #toast.err { background: var(--btn-danger-bg); }
-  #config-root #toast.visible { opacity: 1; }
 `;

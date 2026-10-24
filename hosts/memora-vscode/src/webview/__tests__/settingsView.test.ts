@@ -11,6 +11,8 @@
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createSettingsView } from '../scripts/settingsView.js';
 import type { CustomSearchEngineConfig, MemoryItemDto } from '../../shared/protocol.js';
 // MCP 子视图骨架**直接取产线同一份常量**（不再手抄一份夹具镜像）：手抄镜像会随产线演进
@@ -67,7 +69,6 @@ const HTML = `
         </form>
       </div>
     </div>
-    <div id="toast"></div>
   </div>
   <div id="skills-root" hidden>
     <div class="header"><h2>全局技能</h2><span id="skillCount" class="stat-bar" hidden></span><div class="header-actions"><button id="btnOpenSkillsDir" class="btn btn-secondary btn-icon-solo" title="打开用户技能目录"><span class="btn-icon" data-icon="folder"></span></button><button id="btnRefreshSkills" class="btn btn-secondary btn-icon-solo" title="刷新技能列表"><span class="btn-icon" data-icon="refresh"></span></button></div></div>
@@ -516,6 +517,24 @@ describe('settingsView 全局通知 toast（settingsPanel→notice 断链补全�
     const toast = document.getElementById('settings-toast') as HTMLElement;
     expect(toast.querySelector('img')).toBeNull();
     expect(toast.textContent).toContain('<img');
+  });
+
+  it('CSS 源码守卫（UI-TOAST-1 三面收口）：z 层对齐 z-bar + error 变体令牌 + config 平行形态已删', () => {
+    // jsdom 无布局引擎证不了「盖不盖模态」——层序契约用源码守卫钉住（同 chatStyles 的
+    // toast 浮层守卫口径）：抓「规则被删 / 令牌被换 / 平行形态复活」三类回归。
+    const styles = readFileSync(join(__dirname, '..', 'styles', 'settingsStyles.ts'), 'utf8');
+    const configStyles = readFileSync(join(__dirname, '..', 'styles', 'configStyles.ts'), 'utf8');
+    const panelHtml = readFileSync(join(__dirname, '..', 'panels', 'settingsPanelHtml.ts'), 'utf8');
+    const tokens = readFileSync(join(__dirname, '..', 'styles', 'tokens.ts'), 'utf8');
+    // ① z 层：toast 站「输入区与 toast」档（低于全屏遮罩 --z-overlay ⇒ 模态在场不盖遮罩）
+    expect(styles).toMatch(/\.settings-toast \{[^}]*z-index: var\(--z-bar\)/);
+    expect(styles).not.toMatch(/\.settings-toast \{[^}]*z-index: var\(--z-overlay\)/);
+    // ② error 变体令牌在位（与 chat 活动条 error 态同族）
+    expect(styles).toMatch(/\.settings-toast\.error \{[^}]*var\(--feedback-error-toast-bg\)/);
+    // ③ config 平行形态（#toast + ok/err/visible + --toast-ok-bg）不得复活
+    expect(configStyles).not.toContain('#config-root #toast');
+    expect(panelHtml).not.toContain('id="toast"');
+    expect(tokens).not.toContain('--toast-ok-bg');
   });
 });
 

@@ -15,6 +15,8 @@ import type {
 } from '../../shared/protocol.js';
 import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
 import { fmtTokens, TOKENS_PER_K } from '../helpers/fmtTokens.js';
+// 操作反馈 toast 单一实现（UI-TOAST-1 三面收口：与 settings notice 同元素/同时长/同分级）
+import { showToast } from '../helpers/toast.js';
 
 import { getIconSvg } from './icons.js';
 
@@ -76,21 +78,12 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   const testResult = root.querySelector('#testResult') as HTMLElement;
   const btnTest = root.querySelector('#btnTest') as HTMLButtonElement;
   const btnCancel = root.querySelector('#btnCancel') as HTMLButtonElement;
-  const toast = root.querySelector('#toast') as HTMLElement;
   const cfgForm = root.querySelector('#cfgForm') as HTMLFormElement;
 
   let editName = ''; // 当前编辑的 name（空=新增）
   let activeName: string | undefined;
   // 最近一次 cfg_loaded 的 Provider 列表 —— 编辑回填的单一数据源（内存，而非 DOM dataset）
   let currentProviders: LlmProviderConfig[] = [];
-
-  function showToast(text: string, ok: boolean): void {
-    toast.textContent = text;
-    toast.className = ok ? 'ok visible' : 'err visible';
-    window.setTimeout(() => {
-      toast.className = ok ? 'ok' : 'err';
-    }, 2500);
-  }
 
   /**
    * 解析 token 数值输入串（contextWindow 与 maxTokens 双字段共用；纯数字 = K 值，可选 k 后缀）
@@ -407,11 +400,13 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
           ),
         );
       } else {
+        // 操作反馈走共享 toast（UI-TOAST-1：与 settings notice 同元素同时长同分级，
+        // ok/err 布尔改走 info/error 级别——勿在本文件再写一份 toast 逻辑）
         if (msg.ok) {
-          showToast(msg.message || '操作成功', true);
+          showToast(document, 'info', msg.message || '操作成功');
           if (msg.action === 'save') closeModal();
         } else {
-          showToast(msg.message || '操作失败', false);
+          showToast(document, 'error', msg.message || '操作失败');
         }
       }
     }

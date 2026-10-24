@@ -188,8 +188,7 @@ const TAB_BODY_HTML: Record<SettingsTab, string> = {
           </div>
         </form>
       </div>
-    </div>
-    <div id="toast"></div>`,
+    </div>`,
   skills: `  <!-- 技能子视图（skills 选项卡） -->
     <div class="header">
       <h2>全局技能</h2>

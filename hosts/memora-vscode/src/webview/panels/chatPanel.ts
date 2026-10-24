@@ -4340,6 +4340,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
          锁定本约束）。 -->
   </div>
 
+  <!-- UI-TOAST-1 浮层槽：零高度锚不占流高；activity 主位由 resolveDock 搬入本槽上浮 --><div id="activityToastSlot"></div>
   <!-- 会话大纲导航条（HOST-NAV-1）：右缘按轮锚点外壳，条列/浮层由 chatView 经
        helpers/roundNav.ts 动态构建；不足两轮或不可滚动时整条 hidden。
        🔴 挂 #messages 之外（同 scrollToBottomBtn 血训：滚动容器内 absolute 随内容滚走）；

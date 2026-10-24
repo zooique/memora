@@ -193,7 +193,11 @@ export function createActivityDrawerView(deps: ActivityDrawerViewDeps): Activity
     if (level === 'info' && activityBar.dataset.level === 'error') return;
 
     activityBar.dataset.level = level;
-    activityBar.className = 'activity-bar ' + level;
+    // 🔴 禁整体赋值 className（`className = 'activity-bar ' + level` 会抹掉 resolveDock
+    // 刚加的 is-toast 浮层类——2026-10-24 实踩：第二条同类活动到达时条留在槽内却丢浮层
+    // 形态、退化成流内条，由「免重排真行为锁」抓到）。只动 level 两个类，其余类原样保留。
+    activityBar.classList.remove('info', 'error');
+    activityBar.classList.add(level);
     // 文本 + 可选操作按钮：action 存在时用 span 包裹文本 + button，否则纯 textContent
     if (action) {
       activityBar.textContent = '';

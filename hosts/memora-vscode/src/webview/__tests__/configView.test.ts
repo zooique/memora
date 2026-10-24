@@ -55,7 +55,6 @@ const HTML = `
         </form>
       </div>
     </div>
-    <div id="toast"></div>
   </div>
 `;
 
@@ -571,5 +570,57 @@ describe('configView 本地 LLM 能力声明（provider 类型 + 工具能力位
     });
     expect(config.provider).toBe('local');
     expect(config.supportsToolCalling).toBe(false);
+  });
+});
+
+// ─── UI-TOAST-1：操作反馈 toast 走共享单一实现 ───
+
+describe('configView 操作反馈 toast（UI-TOAST-1 三面收口：与 settings notice 同单一实现）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** 分发一条 cfg_result（非 test 动作）驱动 toast 分支 */
+  function dispatchResult(ok: boolean, message?: string): void {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'cfg_result', action: 'save', ok, message },
+      }),
+    );
+  }
+
+  it('保存成功 ⇒ #settings-toast info 态（.show、无 .error），2.5s 自动隐藏', () => {
+    mountConfigView();
+    dispatchResult(true, '已保存');
+    const toast = document.getElementById('settings-toast') as HTMLElement;
+    expect(toast).not.toBeNull();
+    expect(toast.className).toBe('settings-toast show');
+    expect(toast.textContent).toBe('已保存');
+    vi.advanceTimersByTime(2500);
+    expect(toast.classList.contains('show')).toBe(false);
+  });
+
+  it('保存失败 ⇒ error 态（.error），文案缺省时兜底「操作失败」', () => {
+    mountConfigView();
+    dispatchResult(false);
+    const toast = document.getElementById('settings-toast') as HTMLElement;
+    expect(toast.className).toBe('settings-toast error show');
+    expect(toast.textContent).toBe('操作失败');
+  });
+
+  it('🔴 不再查询根内 #toast（平行形态已删：ok/err/visible 旧类名契约整体退役）', () => {
+    // 防回归：若共享 helper 被改回「根内预埋节点 + ok/err/visible」旧契约，本用例红。
+    // 旧契约的两个失效签名：① 根内查询不到节点（helper 懒建在 body）；② 旧类名不再出现。
+    mountConfigView();
+    dispatchResult(true, 'x');
+    expect(document.querySelector('#config-root #toast')).toBeNull();
+    expect(document.querySelector('#toast.visible')).toBeNull();
+    expect(document.querySelector('#toast.ok')).toBeNull();
+    expect(document.querySelector('#settings-toast')).not.toBeNull();
   });
 });

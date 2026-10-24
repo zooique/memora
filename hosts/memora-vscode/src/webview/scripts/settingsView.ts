@@ -36,6 +36,8 @@ import { populateIcons } from './icons.js';
 import { createPager, PagerController } from './pager.js';
 // escapeHtml：HTML 转义纯函数单一真理源（SSOT 收敛，见 helpers/escapeHtml.ts）
 import { escapeHtml } from '../helpers/escapeHtml.js';
+// 全局通知 toast 单一实现（UI-TOAST-1 三面收口：settings notice 与 config 操作反馈合一）
+import { showToast } from '../helpers/toast.js';
 import {
   SETTINGS_TABS,
   isSettingsTab,
@@ -115,39 +117,11 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
     if (msg.type === 'settings_switch_tab') switchTab(msg.tab);
-    else if (msg.type === 'notice') showSettingsNotice(msg.level, msg.message);
+    // notice 是 settings 侧操作反馈（角色/模型/引擎/审批等）的唯一入口——不消费则反馈被
+    // 静默丢弃（SSOT 跨侧断链）。toast 实现已收口到 helpers/toast.ts（UI-TOAST-1：与
+    // config 操作反馈、chat 活动条同元素/同时长/同分级/同令牌，勿在本文件再写一份）。
+    else if (msg.type === 'notice') showToast(document, msg.level, msg.message);
   });
-
-  /** 通知 toast 自动隐藏计时器（连续 notice 复用同元素，需 clearTimeout 重置） */
-  let toastTimer: number | null = null;
-
-  /**
-   * 展示设置面板全局通知 toast（settingsPanel 通过 notice 推送操作反馈）。
-   *
-   * settings 视图消费 notice（角色/模型/引擎/审批等操作反馈）的唯一入口——
-   * 不消费则操作反馈被静默丢弃（SSOT 跨侧断链）。实现为最小侵入——不复用 chatView 的 activity-history
-   * 复杂度，仅单条临时胶囊条，textContent 渲染防注入。
-   *
-   * @param level 级别（error 标红醒目，info 常规）
-   * @param message 文本正文
-   */
-  function showSettingsNotice(level: 'info' | 'error', message: string): void {
-    let toast = document.getElementById('settings-toast');
-    if (!toast) {
-      toast = document.createElement('div');
-      toast.id = 'settings-toast';
-      toast.className = 'settings-toast';
-      document.body.appendChild(toast);
-    }
-    // textContent 渲染（XXS 纪律：用户可控文本不进 innerHTML）
-    toast.className = 'settings-toast' + (level === 'error' ? ' error' : '');
-    toast.textContent = message;
-    // 强制重排以重启过渡动画（同元素连续展示时 opacity transition 不自动重触发）
-    void toast.offsetWidth;
-    toast.classList.add('show');
-    window.clearTimeout(toastTimer as number);
-    toastTimer = window.setTimeout(() => toast?.classList.remove('show'), 2500);
-  }
 
   // 挂载各子视图（config/memory/roles 先，skills/mcp/security 后；全部用共享 vscode 实例）。
   // 初始选项卡为「记忆」，与 HTML 默认态一致（用户请求）。

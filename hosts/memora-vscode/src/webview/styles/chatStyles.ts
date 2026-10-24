@@ -1999,6 +1999,43 @@ export const chatStyles = `
     background: var(--surface-hover, rgba(128,128,128,.2));
   }
 
+  /* ============ Components：瞬态提示浮层（UI-TOAST-1 · 活动条浮层化） ============ */
+  /* 真机反馈（2026-10-24）：活动条原是流内 flex 条，每次弹出把 #messages(flex:1) 压矮
+   * 约一行高、2.5s 后弹回 ⇒ 会话记录反复微跳（全轮 11 个发射点，正常一轮响 2-4 次），
+   * 用户原话「蓝条影响会话记录显示」。浮层化后：主位为 activity 时本条不再是流内条，
+   * 由 resolveDock 搬进 #activityToastSlot（零高度定位锚，夹在消息区与抽屉区之间），
+   * 以绝对定位向上浮出。
+   * 形态 = 全局通知 toast 同款（对齐 settings-toast：surface-card + 描边 + toast 阴影
+   * + 圆角；error 换反馈色）——层级 --z-bar（tokens.ts 该层注释：「输入区与 toast：
+   * 承载浮层、盖住消息区」）：盖住消息区，不盖抽屉入口/时间段/输入区。info 不再用
+   * inputValidation 蓝底——载体换「弹窗」后颜色语义随形式对齐（蓝底是流内条旧形态），
+   * error 保持 fail-visible；被收进抽屉（#dockControls）时仍是流内条原形态（is-toast
+   * 类只在浮层主位时存在，两形态不并存）。
+   * confirm 在场时浮层抑制不靠 CSS：activity 非 dock 主位 ⇒ 根本不进槽（见 resolveDock
+   * 的 activityToast 判据，由 confirm 恒主位涌现）。 */
+  #activityToastSlot {
+    position: relative; /* 浮层定位块（唯一职责；零高度不占流） */
+    height: 0;
+    flex: 0 0 auto;
+  }
+  /* 必须在 .activity-bar.info/.error 之后声明：同 specificity(0,2,0) 靠源序覆盖底色 */
+  .activity-bar.is-toast {
+    position: absolute;
+    left: var(--sp-5, 12px);
+    right: var(--sp-5, 12px);
+    bottom: calc(100% + var(--sp-2, 6px));
+    z-index: var(--z-bar);
+    border: var(--line-solid);
+    border-radius: var(--radius, 6px);
+    box-shadow: var(--shadow-toast);
+    background: var(--surface-card, #252526);
+    color: var(--text-primary, #cccccc);
+  }
+  .activity-bar.is-toast.error {
+    background: var(--feedback-error-toast-bg);
+    color: var(--text-error, #f14c4c);
+    border-color: var(--feedback-error-toast-border);
+  }
 
   /* ============ Components：任务进度常驻条（任务驱动多步闭环，单轨） ============ */
   /* LLM 调用 task_table_write/update 建表时显示的顶部常驻进度条（#planBar）：默认一行

@@ -51,6 +51,8 @@ const HTML = `
       <div id="emptySuggestions" class="empty-suggestions"></div>
     </div>
   </div>
+  <!-- 镜像生产 DOM：瞬态提示浮层槽（UI-TOAST-1，与 chatPanel.ts 骨架同位置同 id） -->
+  <div id="activityToastSlot"></div>
   <!-- 镜像生产 DOM：会话大纲导航条外壳（HOST-NAV-1），条列/浮层由脚本动态构建 -->
   <div id="roundNav" class="round-nav" hidden>
     <div class="round-nav__track"></div>

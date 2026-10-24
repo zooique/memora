@@ -29,7 +29,7 @@ export const settingsStyles = `
     background: var(--surface-page, #1e1e1e);
   }
 
-  /* ============ Components：全局通知 toast（settingsPanel→notice） ============ */
+  /* ============ Components：全局通知 toast（settingsPanel→notice · UI-TOAST-1 三面收口） ============ */
   .settings-toast {
     position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
     max-width: 88%; padding: var(--sp-2, 6px) var(--sp-4, 10px);
@@ -39,7 +39,10 @@ export const settingsStyles = `
     border: var(--line-solid);
     box-shadow: var(--shadow-toast);
     opacity: 0; pointer-events: none; transition: opacity var(--dur-med) ease;
-    z-index: var(--z-overlay);
+    /* z 层 = --z-bar（语义「输入区与 toast」档）：低于全屏遮罩 --z-overlay ⇒ 模态
+     * （config 弹窗等）在场时 toast 不盖遮罩。此前误用 z-overlay（2026-10-24 订正，
+     * UI-TOAST-1）：toast 是轻量浮层，不该站在模态层之上。 */
+    z-index: var(--z-bar);
   }
   .settings-toast.show { opacity: 1; }
   .settings-toast.error { background: var(--feedback-error-toast-bg); color: var(--text-error, #f14c4c); border-color: var(--feedback-error-toast-border); }

@@ -200,7 +200,6 @@ export const tokens = `
     --btn-secondary-bg: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.35)));
     --btn-secondary-fg: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground, #ffffff));
     --btn-danger-bg: var(--vscode-statusBarItem-errorBackground, #b3261e);
-    --toast-ok-bg: var(--vscode-statusBarItem-prominentBackground, #2e7d32);
     --surface-sidebar: var(--vscode-sideBar-background, #252526);
     --surface-code: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15));
     --surface-user-bubble: var(--vscode-editor-inactiveSelectionBackground, rgba(128, 128, 128, 0.2));

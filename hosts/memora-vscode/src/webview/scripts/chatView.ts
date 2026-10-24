@@ -72,6 +72,8 @@ import { createHistoryMenuView } from './historyMenuView.js';
 import { createContextOccupancyView } from './contextOccupancyView.js';
 // 活动抽屉（活动条/时间线/指标/未读位）：渲染与未读判定收口于 activityDrawerView（HOST-SPLIT-1 chatView 第 4 刀）
 import { createActivityDrawerView } from './activityDrawerView.js';
+// dock 浮层放置机制（UI-TOAST-1：活动条浮层化的搬移/类同步；判据与裁决仍在本文件）
+import { isToastHead, placeDockHead, toastLoopSkip } from '../helpers/dockToast.js';
 import { createStatusBarsView } from './statusBarsView.js';
 
 /** chatView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
@@ -229,6 +231,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const dockChip = document.getElementById('dockChip') as HTMLButtonElement | null;
   const dockPanel = document.getElementById('dockPanel') as HTMLElement | null;
   const dockControls = document.getElementById('dockControls') as HTMLElement | null;
+  const toastSlot = document.getElementById('activityToastSlot') as HTMLElement | null;
   const inputBar = document.getElementById('inputBar') as HTMLElement;
   const inputWrap = document.getElementById('inputWrap') as HTMLElement | null;
   const clarifyBar = document.getElementById('clarifyBar') as HTMLElement;
@@ -2771,13 +2774,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const anchor = inputBar;
     const parent = anchor.parentNode;
     if (!parent || !dockChip || !dockPanel || !dockControls) return;
+    const actives = [...dockEntries.values()].filter((e) => e.active);
+    const head = actives.length > 0 ? pickDockHead(actives) : undefined;
+    // UI-TOAST-1：主位恰是 activity 且槽在位 ⇒ 出流定位于浮层槽（confirm 恒主位 ⇒ 抑制涌现）
+    const activityToast = isToastHead(head, dockEntries.get('activity'), toastSlot);
     // 全量归位（必须先于重新收纳）：把上一轮搬进 #dockControls 的条先搬回 parent。
     // appendChild 是移动（幂等），随后的归位循环立刻给它们正确位置，中间态无渲染帧。
     // （2026-10-05 探针实锤教训：旧动态 panel 摘除时不先搬空，条会随 panel 一起消失一轮。）
     for (const e of dockEntries.values()) {
+      if (toastLoopSkip(e.el, e === head, activityToast, toastSlot)) continue;
       if (e.el.parentNode !== parent) parent.appendChild(e.el);
     }
-    const actives = [...dockEntries.values()].filter((e) => e.active);
     // composer 让位裁决（唯一写入点）：A 类阻断面板激活即替换掉输入框——用户此刻只能做
     // 「确认/拒绝」这一个决定。B 类信息条再多条也不抢输入框（它们不阻断）。
     const confirmActive = actives.some((e) => e.priority === CONFIRM_PRIORITY);
@@ -2792,18 +2799,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         parent.insertBefore(e.el, dockChip);
       }
     }
-    const head = actives.length > 0 ? pickDockHead(actives) : undefined;
     const rest = head ? actives.filter((e) => e !== head) : [];
-    // 主位归位：插 anchor 前 = 静态 #dockPanel 之后、inputBar 之前，恒紧贴输入框。
+    // 主位归位：浮层主位见 placeDockHead（UI-TOAST-1，出流不挤消息区）；其余条插 anchor
+    // 前 = 静态 #dockPanel 之后、inputBar 之前，恒紧贴输入框。
     // 抽屉开合只切 #dockPanel.hidden，chip/panel 从骨架起就不插拔 ⇒ P7/P8 时代
     // 「chip/panel 反复插拔把确认卡挤开、主位条瞬移闪烁」的结构根在此不复存在。
     if (head) {
-      // 免重排守卫（P8 主位条瞬移闪烁血训）：head 已物理紧邻 anchor 就不搬。
-      // 本函数会被重复触发（重复通知时 active/fixed 未变，见 activityDrawerView.showActivity 尾部说明），
-      // 其余节点同位置重放是同步无帧操作，唯 head 可见、重复 insertBefore 真机上=整条瞬移。
-      if (head.el.nextElementSibling !== anchor) {
-        parent.insertBefore(head.el, anchor);
-      }
+      placeDockHead(head.el, anchor, activityToast, toastSlot);
       head.el.hidden = false;
     }
     // 被收纳条：单实例移入控件段；收起态隐藏条本身（panel 也 hidden，双保险）

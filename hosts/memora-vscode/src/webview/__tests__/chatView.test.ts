@@ -1635,6 +1635,8 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
 describe('P4 状态抽屉：时间线静态固定 + 未读只亮入口徽章（C1 · UI-CONFIRM-P10）', () => {
   const detail = (): HTMLElement => document.getElementById('activityDetail') as HTMLElement;
   const actBar = (): HTMLElement => document.getElementById('activityBar') as HTMLElement;
+  /** 瞬态提示浮层槽（UI-TOAST-1）：activity 浮层主位的定位锚（零高度静态节点） */
+  const slot = (): HTMLElement => document.getElementById('activityToastSlot') as HTMLElement;
   const panel = (): HTMLElement => document.querySelector('.status-dock__panel') as HTMLElement;
   const chip = (): HTMLButtonElement =>
     document.querySelector('.status-dock__chip') as HTMLButtonElement;
@@ -1758,71 +1760,98 @@ describe('P4 状态抽屉：时间线静态固定 + 未读只亮入口徽章（C
     expect(chip().textContent).toBe('活动');
   });
 
-  it('静态链：主位条紧邻 inputBar，其上恒为静态抽屉体/入口（C1 链 = 非活跃条 → chip → panel → head → inputBar）', () => {
+  it('静态链：浮层主位定位于 toast 槽，其下恒为静态抽屉体/入口（UI-TOAST-1 · C1 链 = 非活跃条 → chip → panel → inputBar）', () => {
     mountChatView();
     pushActivity('正在思考');
     const inputBar = document.getElementById('inputBar') as HTMLElement;
-    // head 插 anchor 前 = 落在静态 #dockPanel 之后，恒紧贴输入框
-    expect(inputBar.previousElementSibling).toBe(actBar());
-    expect(actBar().previousElementSibling).toBe(panel());
+    // 浮层化（UI-TOAST-1）：activity 主位不再插 inputBar 前（不占流），而是搬进
+    // toast 槽 + 打浮层类（CSS 切绝对定位）——消息区不再被提示条生灭挤兑
+    expect(slot().contains(actBar())).toBe(true);
+    expect(actBar().classList.contains('is-toast')).toBe(true);
+    expect(actBar().hidden).toBe(false);
+    // 流内链保持干净：inputBar 前一位恒为静态抽屉体；时间线是抽屉体的静态子节点，
+    // 永不跑到主位链上（浮层化后「主位条紧贴输入区」的位置纪律由静态链继承）
+    expect(inputBar.previousElementSibling).toBe(panel());
     expect(panel().previousElementSibling).toBe(chip());
-    // 时间线是抽屉体的静态子节点，永不跑到主位链上
     expect(detail().parentElement).toBe(panel());
   });
 
-  it('🔴 免重排真行为锁：主位构成不变时主位条不被搬动（判据退化必红）', () => {
-    // 静态断言锁不住「有没有搬」：insertBefore 搬一个已在位的节点，终态 DOM 完全相同 ⇒
+  it('🔴 免重排真行为锁：主位构成不变时浮层主位不被搬动（判据退化必红）', () => {
+    // 静态断言锁不住「有没有搬」：搬一个已在位的节点，终态 DOM 完全相同 ⇒
     // 终态断言天生抓不到（探针实测：把判据退回错误写法时静态断言仍全绿，而真机上主位条
-    // 每轮瞬移= P8 修掉的闪烁复发）。本条改为**行为观测**：拦截父节点 insertBefore。
+    // 每轮瞬移= P8 修掉的闪烁复发）。本条改为**行为观测**：拦截父节点 insertBefore 与
+    // toast 槽 appendChild——浮层化后主位的两个可能搬移动作（UI-TOAST-1）。
     //
     // 🔴 场景选「主位**独占**」而非「加一条低优先级 B 类条」：后者会让 head 移入
     // #dockControls（主位换成另一条），属**必要**重排，不是免重排判据要管的事。
-    // 只让主位独占时，任何 insertBefore(head) 都是纯浪费 = 闪烁。
+    // 只让主位独占时，任何搬移都是纯浪费 = 闪烁。
     mountChatView();
     pushActivity('正在思考');
-    const inputBar = document.getElementById('inputBar') as HTMLElement;
     const act = actBar();
-    const parent = inputBar.parentNode as HTMLElement;
-    const orig = parent.insertBefore.bind(parent);
+    const parent = (document.getElementById('inputBar') as HTMLElement).parentNode as HTMLElement;
+    const toastSlot = slot();
     const moved: Node[] = [];
+    const origInsert = parent.insertBefore.bind(parent);
+    const origAppend = toastSlot.appendChild.bind(toastSlot);
     parent.insertBefore = function patched<T extends Node>(n: T, ref: Node | null): T {
       moved.push(n);
-      return orig(n, ref);
+      return origInsert(n, ref);
     } as typeof parent.insertBefore;
+    toastSlot.appendChild = function patchedAppend<T extends Node>(n: T): T {
+      moved.push(n);
+      return origAppend(n);
+    } as typeof toastSlot.appendChild;
     try {
       // 再来一条同类活动：activity 仍active、仍独占主位、fixed 仍 false ⇒ 链不变
       pushActivity('仍在思考');
     } finally {
-      parent.insertBefore = orig;
+      parent.insertBefore = origInsert;
+      toastSlot.appendChild = origAppend;
     }
-    // 主位条一次都不该被搬
+    // 浮层主位一次都不该被搬（搬已在槽内的节点 = 真机上整条瞬移）
     expect(moved).not.toContain(act);
-    expect(inputBar.previousElementSibling).toBe(act);
+    expect(slot().contains(act)).toBe(true);
+    expect(act.classList.contains('is-toast')).toBe(true);
   });
 
-  it('🔴 结构纪律：主位条必须物理紧邻 inputBar（非活跃条退到 chip 之上，变异必红）', () => {
-    // 非活跃条统一 insertBefore(#dockChip)——若错误地退到 anchor 前，隐藏节点会夹在
-    // 「主位条 ↔ inputBar」中间：免重排判据恒假（退化成每轮重排 = P8 修掉的闪烁复发），
-    // 且破坏「主位条紧贴输入区」的位置范式（点击穿透、点击区错位）。
+  it('🔴 结构纪律：非活跃条退到 chip 之上，浮层主位不占流（inputBar 前恒为静态抽屉体，变异必红）', () => {
+    // 浮层化后（UI-TOAST-1）activity 主位出流（定位于 toast 槽），「主位条 ↔ 输入区」
+    // 的位置纪律由静态链继承：inputBar 前一位恒为 #dockPanel。非活跃条仍统一
+    // insertBefore(#dockChip)——若错误地退到 anchor 前，隐藏节点会夹在「抽屉体 ↔ inputBar」
+    // 中间：破坏位置范式（点击穿透、点击区错位），本条即红。
     // 判据用**物理相邻**（不「跳过隐藏节点」）：隐藏节点夹在中间一样破坏位置范式。
     mountChatView();
+    // 先造一条「注册过但已停用」的 B 类条（fileChanges 走 建条→激活→停用 全链）
+    dispatch({ type: 'file_changes', files: ['a.md'] });
+    dispatch({ type: 'file_changes', files: [] });
     pushActivity('正在思考');
     const inputBar = document.getElementById('inputBar') as HTMLElement;
-    expect(inputBar.previousElementSibling).toBe(actBar());
+    expect(inputBar.previousElementSibling).toBe(panel());
+    expect(panel().previousElementSibling).toBe(chip());
+    // 浮层主位在槽内、带浮层类、可见（出流不占输入区前的流内位）
+    expect(slot().contains(actBar())).toBe(true);
+    expect(actBar().classList.contains('is-toast')).toBe(true);
+    expect(actBar().hidden).toBe(false);
   });
 
-  it('🔴 结构纪律：有第二个 dock 条同活时主位条仍物理紧邻 inputBar（收纳走控件段，不顶主位）', () => {
-    // 上一条只覆盖「主位独占」；本条覆盖有被收纳条时：rest 进 #dockControls（静态节点），
-    // 主位与输入框之间的物理相邻不受任何影响。
+  it('🔴 结构纪律：有第二个 dock 条同活时浮层主位仍在槽内（收纳走控件段，不顶主位）', () => {
+    // 上一条只覆盖「有停用条」；本条覆盖有被收纳条时：rest 进 #dockControls（静态节点），
+    // 浮层主位定位于 toast 槽不受任何影响，流内链也保持干净。
     mountChatView();
     pushActivity('正在思考');
-    // 加一条更低的 B 类条（background 垫底）⇒ chip 显 +1，但主位仍是 activity
+    // 加一条更低的 B 类条（background 垫底）⇒ chip 显 +1，但主位仍是 activity（浮层）
     dispatch({
       type: 'background_tasks',
       items: [{ id: 'bg1', command: 'ls', status: 'running' }],
     });
     const inputBar = document.getElementById('inputBar') as HTMLElement;
-    expect(inputBar.previousElementSibling).toBe(actBar());
+    const bgBar = document.querySelector('.background-tasks-bar') as HTMLElement;
+    // 浮层主位：在槽内、带浮层类；被收纳条在控件段（不顶主位、不进流内链）
+    expect(slot().contains(actBar())).toBe(true);
+    expect(actBar().classList.contains('is-toast')).toBe(true);
+    expect(controls().contains(bgBar)).toBe(true);
+    expect(inputBar.previousElementSibling).toBe(panel());
+    expect(chip().textContent).toBe('+1');
   });
 
   // ═══════════════════════════════════════════════════════════
@@ -2039,6 +2068,150 @@ describe('P4 状态抽屉：时间线静态固定 + 未读只亮入口徽章（C
       expect(panel().hidden).toBe(true);
       expect(actBar().hidden).toBe(true);
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// UI-TOAST-1 · 瞬态提示浮层化（2026-10-24 真机反馈：「蓝条影响会话记录显示」）
+// ═══════════════════════════════════════════════════════════
+// 形态演进：B 类瞬态提示（#activityBar 的 info/error）从「流内占位条」改为「浮层」——
+// resolveDock 主位为 activity 时把它搬进 #activityToastSlot（零高度定位锚）并打
+// is-toast 类（CSS 切绝对定位，--z-bar 层浮于消息区底部，盖住消息区不盖抽屉/输入区）。
+// 不变式（显隐/归位仍只由 resolveDock 单点裁决）：info 2500ms / error 8000ms；
+// error 压 info（P0）；历史与未读在抽屉（与条解耦）；confirm 在场自动抑制
+// （pickDockHead 首判 confirm ⇒ activity 非主位 ⇒ 不进槽，只进历史 + 未读）。
+// 持久条（fileChanges/pendingQueue/background）与 A 类确认卡**不浮**——用户要操作它们。
+// 覆盖边界：jsdom 无布局引擎，「浮层是否真的不挤消息区/不盖确认卡」必须真机验收
+// （本块只证 DOM 结构、类标记与源码契约）。
+describe('UI-TOAST-1 瞬态提示浮层化（活动条出流 · 不挤占消息区）', () => {
+  const actBar = (): HTMLElement => document.getElementById('activityBar') as HTMLElement;
+  const slot = (): HTMLElement => document.getElementById('activityToastSlot') as HTMLElement;
+  const panel = (): HTMLElement => document.querySelector('.status-dock__panel') as HTMLElement;
+  const chip = (): HTMLButtonElement =>
+    document.querySelector('.status-dock__chip') as HTMLButtonElement;
+  const controls = (): HTMLElement => document.getElementById('dockControls') as HTMLElement;
+  const inputBar = (): HTMLElement => document.getElementById('inputBar') as HTMLElement;
+
+  it('info 主位 ⇒ 浮层在槽内且出流（不占 flex 流 ⇒ 消息区不被挤兑）', () => {
+    mountChatView();
+    dispatch({ type: 'notice', level: 'info', message: '已停止生成' });
+    // 浮层三件套：在槽内 + 浮层类 + 可见；流内链让位给静态抽屉体
+    expect(slot().contains(actBar())).toBe(true);
+    expect(actBar().classList.contains('is-toast')).toBe(true);
+    expect(actBar().hidden).toBe(false);
+    expect(inputBar().previousElementSibling).toBe(panel());
+  });
+
+  it('error 主位同样浮层化（fail-visible 不因出流降级）', () => {
+    mountChatView();
+    dispatch({ type: 'notice', level: 'error', message: '润色失败：boom' });
+    expect(actBar().dataset.level).toBe('error');
+    expect(slot().contains(actBar())).toBe(true);
+    expect(actBar().classList.contains('is-toast')).toBe(true);
+    expect(actBar().classList.contains('error')).toBe(true);
+    expect(actBar().hidden).toBe(false);
+  });
+
+  it('🔴 confirm 在场 ⇒ 浮层抑制（只进收纳器/历史，不盖阻断卡）；收卡后恢复浮层', () => {
+    mountChatView();
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_toast1',
+      targetPath: '/workspace/p1.ts',
+      tool: 'run_command',
+      description: 'git push',
+      permission: 'owner',
+      beforeContent: null,
+      hasDiff: false,
+      timeoutMs: 30 * 60 * 1000,
+    });
+    // 阻断期来一条 info：activity 非 dock 主位（confirm 恒主位）⇒ 不进槽、不浮
+    dispatch({ type: 'notice', level: 'info', message: '记忆命中 3 条' });
+    expect(slot().contains(actBar())).toBe(false);
+    expect(actBar().classList.contains('is-toast')).toBe(false);
+    expect(controls().contains(actBar())).toBe(true);
+    expect(actBar().hidden).toBe(true); // 抽屉收起 ⇒ 收纳条不可见（只进历史 + 未读）
+    // 阻断卡恒紧贴输入框（浮层抑制的存在意义：不盖它）
+    expect(inputBar().previousElementSibling).toBe(
+      document.getElementById('writeConfirmCard') as HTMLElement,
+    );
+    // 收卡 ⇒ activity 仍在（2.5s 未到）⇒ 回浮层主位
+    dispatch({ type: 'write_confirm_closed', requestId: 'wc_toast1' });
+    expect(slot().contains(actBar())).toBe(true);
+    expect(actBar().classList.contains('is-toast')).toBe(true);
+    expect(actBar().hidden).toBe(false);
+  });
+
+  it('error 豁免仍胜过 priority：error + fileChanges 同活 ⇒ error 浮层、fileChanges 收纳', () => {
+    mountChatView();
+    dispatch({ type: 'file_changes', files: ['a.md'] }); // fileChanges 先占主位
+    dispatch({ type: 'notice', level: 'error', message: 'boom' }); // error 豁免抢回主位
+    expect(slot().contains(actBar())).toBe(true);
+    expect(actBar().classList.contains('is-toast')).toBe(true);
+    const fcBar = document.querySelector('.file-changes-bar') as HTMLElement;
+    expect(controls().contains(fcBar)).toBe(true);
+    expect(chip().textContent).toBe('+1');
+  });
+
+  it('浮层 → 收纳 → 再浮层：条在槽/控件段之间迁移且浮层类同步增删', () => {
+    mountChatView();
+    dispatch({ type: 'notice', level: 'info', message: '第一条' });
+    expect(slot().contains(actBar())).toBe(true);
+    // 高优先级条同活 ⇒ activity 降为收纳（出槽、去类、进控件段）
+    dispatch({ type: 'file_changes', files: ['a.md'] });
+    expect(slot().contains(actBar())).toBe(false);
+    expect(actBar().classList.contains('is-toast')).toBe(false);
+    expect(controls().contains(actBar())).toBe(true);
+    expect(actBar().hidden).toBe(true); // 抽屉收起态
+    // 高优先级条撤出 ⇒ activity 回浮层主位（进槽、加类、显形）
+    dispatch({ type: 'file_changes', files: [] });
+    expect(slot().contains(actBar())).toBe(true);
+    expect(actBar().classList.contains('is-toast')).toBe(true);
+    expect(actBar().hidden).toBe(false);
+    expect(controls().contains(actBar())).toBe(false);
+  });
+
+  it('自动撤除后出槽归位：隐藏 + 去浮层类 + 停放在 chip 之上（timer 收尾不留浮层残迹）', () => {
+    vi.useFakeTimers();
+    try {
+      mountChatView();
+      dispatch({ type: 'notice', level: 'info', message: '提示' });
+      expect(slot().contains(actBar())).toBe(true);
+      vi.advanceTimersByTime(2500); // info 档自动撤
+      expect(actBar().hidden).toBe(true);
+      expect(slot().contains(actBar())).toBe(false);
+      expect(actBar().classList.contains('is-toast')).toBe(false);
+      // 停放位置：退到 chip 之前的非活跃区（注册序决定与 chip 之间还夹着谁——
+      // confirm 卡同停该区，故不断言具体相邻者，只断言「在 chip 之前、不在流内链上」）
+      const siblings = Array.from(inputBar().parentElement?.children ?? []);
+      expect(siblings.indexOf(actBar())).toBeLessThan(siblings.indexOf(chip()));
+      expect(inputBar().previousElementSibling).toBe(panel());
+      // 历史与入口不陪葬（C1 不变式）
+      expect(chip().hidden).toBe(false);
+      expect(chip().textContent).toBe('活动');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('CSS 源码守卫：浮层形态令牌在位（零高度槽 + absolute + z-bar + toast 阴影 + error 变体）', () => {
+    // jsdom 无布局引擎证不了「浮不浮/盖不盖」——形态契约用源码守卫钉住（T4 防线边界内：
+    // 读生产样式文本，可抓「规则被删/令牌被换/源序被改」）。
+    const css = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf8');
+    const html = readFileSync(join(__dirname, '..', 'panels', 'chatPanel.ts'), 'utf8');
+    expect(css).toContain('#activityToastSlot {');
+    expect(css).toMatch(/#activityToastSlot \{[^}]*position: relative/);
+    expect(css).toMatch(/#activityToastSlot \{[^}]*height: 0/);
+    expect(css).toMatch(/\.activity-bar\.is-toast \{[^}]*position: absolute/);
+    expect(css).toMatch(/\.activity-bar\.is-toast \{[^}]*z-index: var\(--z-bar\)/);
+    expect(css).toMatch(/\.activity-bar\.is-toast \{[^}]*box-shadow: var\(--shadow-toast\)/);
+    expect(css).toMatch(/\.activity-bar\.is-toast\.error \{[^}]*var\(--feedback-error-toast-bg\)/);
+    // 源序纪律：is-toast 规则必须晚于 .activity-bar.info/.error（同 specificity 靠源序覆盖底色）
+    expect(css.indexOf('.activity-bar.is-toast {')).toBeGreaterThan(
+      css.indexOf('.activity-bar.info {'),
+    );
+    // 骨架槽在位（生产模板；夹具由骨架 id 三方一致性守卫钉）
+    expect(html).toContain('id="activityToastSlot"');
   });
 });
 
