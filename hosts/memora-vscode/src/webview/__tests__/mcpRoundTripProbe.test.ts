@@ -51,19 +51,29 @@ vi.mock('vscode', () => ({
 
 import { applyMcpWrite, type McpOpsDeps } from '../panels/mcpServerOps.js';
 import { createMcpView } from '../scripts/mcpView.js';
-import type { ExtensionToWebviewMessage, McpServerStatusDto } from '../../shared/protocol.js';
+import type {
+  ExtensionToWebviewMessage,
+  McpOmittedDto,
+  McpServerStatusDto,
+} from '../../shared/protocol.js';
 
 /** 记录回执的依赖桩 */
-function deps(): McpOpsDeps & { notices: { level: string; message: string }[] } {
+function deps(): McpOpsDeps & { notices: { level: string; message: string }[]; connects: number } {
   const notices: { level: string; message: string }[] = [];
-  return {
+  const bag = {
     notices,
+    connects: 0,
     pushStatus: () => undefined,
     notice: (level: 'info' | 'error', message: string) => {
       notices.push({ level, message });
     },
     restart: async () => ({ ok: true }),
+    connect: async () => {
+      bag.connects += 1;
+      return { ok: true };
+    },
   };
+  return bag;
 }
 
 /** 已落盘的配置项（读替身里的真值，等价于读回 settings.json） */
@@ -96,9 +106,13 @@ interface SentWrite {
 /**
  * 挂一个 MCP 子视图
  *
- * @param servers 首帧状态快照
+ * @param servers 首帧状态快照（可见卡片）
+ * @param omitted 被隐藏条目计数（缺省 = 全部可见，与真实派生一致）
  */
-function mount(servers: readonly McpServerStatusDto[]): {
+function mount(
+  servers: readonly McpServerStatusDto[],
+  omitted: McpOmittedDto = { configured: servers.length, missingName: 0, duplicate: 0 },
+): {
   root: HTMLElement;
   sent: SentWrite[];
   click(act: string): void;
@@ -108,9 +122,15 @@ function mount(servers: readonly McpServerStatusDto[]): {
   const doc = dom.window.document;
   const root = doc.createElement('div');
   root.id = 'mcp-root';
+  // 骨架必须与 settingsMcpHtml 一致：视图查不到容器就整体不挂载（返回静默），
+  // 少一个 id 的表现是「页面全空」而不是某条断言红——所以这里按真骨架逐项列全。
   root.innerHTML =
     '<button class="mcp-add-btn" type="button"></button>' +
-    '<span id="mcpCount"></span><div id="mcpEmpty" hidden></div><div id="mcpList"></div>';
+    '<span id="mcpCount"></span>' +
+    '<div id="mcpEmpty" hidden>' +
+    '<p id="mcpEmptyDefault"></p><p id="mcpEmptyHidden" hidden></p></div>' +
+    '<p id="mcpOmitted" hidden></p>' +
+    '<div id="mcpList"></div>';
   doc.body.appendChild(root);
 
   const sent: SentWrite[] = [];
@@ -123,7 +143,7 @@ function mount(servers: readonly McpServerStatusDto[]): {
     window: dom.window,
     root,
   });
-  const message: ExtensionToWebviewMessage = { type: 'mcp_status', servers: [...servers] };
+  const message: ExtensionToWebviewMessage = { type: 'mcp_status', servers: [...servers], omitted };
   dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: message }));
 
   return {
@@ -250,5 +270,80 @@ describe('往返探针 · 重名与失败回执', () => {
     // 落盘没变，界面也没有「刚才填的」痕迹 ⇒ 输入确实丢了
     expect(savedServers()[0]!['command']).toBe('node');
     expect(view.root.textContent).not.toContain('--experimental');
+  });
+});
+
+/** 由落盘配置造一份「待接入」状态（Agent 未装配时宿主派生的就是它） */
+function pendingOf(config: Record<string, unknown>): McpServerStatusDto {
+  return { ...statusOf(config), state: 'pending' };
+}
+
+describe('待接入卡片 · 接入入口（pending 的唯一出路）', () => {
+  it('pending 卡片有「接入」，点击发 mcp_write{op:connect} 并由宿主触发装配', async () => {
+    h.data['mcpServers'] = [{ name: 'fs', command: 'node' }];
+    const view = mount([pendingOf(savedServers()[0]!)]);
+    const button = view.root.querySelector<HTMLButtonElement>('[data-act="connect"]');
+    expect(button).not.toBeNull();
+
+    view.click('connect');
+    const write = view.sent.find((m) => m.type === 'mcp_write');
+    expect(write).toMatchObject({ type: 'mcp_write', op: 'connect', name: 'fs' });
+
+    const d = deps();
+    await applyMcpWrite(d, write as never);
+    expect(d.connects).toBe(1);
+    expect(d.notices).toHaveLength(0);
+  });
+
+  it('pending 卡片**不**渲染「重启」（restart 只恢复已有运行时，给了就是假动作）', () => {
+    h.data['mcpServers'] = [{ name: 'fs', command: 'node' }];
+    const view = mount([pendingOf(savedServers()[0]!)]);
+
+    expect(view.root.querySelector('[data-act="restart"]')).toBeNull();
+  });
+
+  it('running 卡片不渲染「接入」（已接入的台再给接入 = 重复装配）', () => {
+    h.data['mcpServers'] = [{ name: 'fs', command: 'node' }];
+    const view = mount([statusOf(savedServers()[0]!)]);
+
+    expect(view.root.querySelector('[data-act="connect"]')).toBeNull();
+  });
+});
+
+describe('隐藏条目可见性（配置里存在、列表画不出来的那部分）', () => {
+  it('配置 2 条只显示 1 条 ⇒ 统计条明说「1 条未显示」，解释行给出原因', () => {
+    h.data['mcpServers'] = [
+      { name: 'fs', command: 'node' },
+      { name: 'fs ', command: 'node' },
+    ];
+    const view = mount([statusOf(savedServers()[0]!)], {
+      configured: 2,
+      missingName: 0,
+      duplicate: 1,
+    });
+
+    const count = view.root.querySelector('#mcpCount')!;
+    expect(count.textContent).toContain('2 台');
+    expect(count.textContent).toContain('1 条未显示');
+    const omitted = view.root.querySelector<HTMLElement>('#mcpOmitted')!;
+    expect(omitted.hidden).toBe(false);
+    expect(omitted.textContent).toContain('重名的 1 条');
+  });
+
+  it('全部被隐藏 ⇒ 不说「还没有配置」，改说「有配置但显示不出来」', () => {
+    const view = mount([], { configured: 2, missingName: 2, duplicate: 0 });
+
+    expect(view.root.querySelector<HTMLElement>('#mcpEmpty')!.hidden).toBe(false);
+    expect(view.root.querySelector<HTMLElement>('#mcpEmptyDefault')!.hidden).toBe(true);
+    expect(view.root.querySelector<HTMLElement>('#mcpEmptyHidden')!.hidden).toBe(false);
+    expect(view.root.querySelector('#mcpOmitted')!.textContent).toContain('缺名称的 2 条');
+  });
+
+  it('无隐藏 ⇒ 解释行隐藏且用默认空态文案（不制造噪音）', () => {
+    const view = mount([], { configured: 0, missingName: 0, duplicate: 0 });
+
+    expect(view.root.querySelector<HTMLElement>('#mcpOmitted')!.hidden).toBe(true);
+    expect(view.root.querySelector<HTMLElement>('#mcpEmptyDefault')!.hidden).toBe(false);
+    expect(view.root.querySelector<HTMLElement>('#mcpEmptyHidden')!.hidden).toBe(true);
   });
 });

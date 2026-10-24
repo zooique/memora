@@ -791,9 +791,18 @@ describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-1
 });
 
 describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互重构）', () => {
-  /** 推一次 host 状态给 webview */
-  function pushStatus(servers: unknown[]): void {
-    window.dispatchEvent(new MessageEvent('message', { data: { type: 'mcp_status', servers } }));
+  /** 推一次 host 状态给 webview（omitted 缺省 = 全部可见，与真实派生在无隐藏时一致） */
+  function pushStatus(
+    servers: unknown[],
+    omitted: { configured: number; missingName: number; duplicate: number } = {
+      configured: servers.length,
+      missingName: 0,
+      duplicate: 0,
+    },
+  ): void {
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'mcp_status', servers, omitted } }),
+    );
   }
 
   /** 一台在跑的 server（含两个工具：一个已免确认、一个派生名与原名不同） */

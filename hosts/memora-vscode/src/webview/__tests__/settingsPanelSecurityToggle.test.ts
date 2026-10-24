@@ -55,6 +55,7 @@ function setup(agent: Agent): {
   provider: MemoraSettingsViewProvider;
   posted: { type: string; level?: string; message?: string }[];
   globalUpdate: ReturnType<typeof vi.fn>;
+  factory: ReturnType<typeof vi.fn>;
 } {
   const posted: { type: string; level?: string; message?: string }[] = [];
   const globalUpdate = vi.fn();
@@ -66,7 +67,9 @@ function setup(agent: Agent): {
     getBackgroundName: () => '',
   };
   const provider = new MemoraSettingsViewProvider({} as never, store as never);
-  provider.setAgentFactory(async () => agent);
+  // 工厂包一层 spy：MCP「接入」是否真的触发装配只能从这里看见（装配是宿主生命周期）
+  const factory = vi.fn(async () => agent);
+  provider.setAgentFactory(factory);
   provider.setGlobalState({ get: () => undefined, update: globalUpdate } as never);
   (provider as unknown as { _view: unknown })._view = {
     webview: {
@@ -76,7 +79,7 @@ function setup(agent: Agent): {
       },
     },
   };
-  return { provider, posted, globalUpdate };
+  return { provider, posted, globalUpdate, factory };
 }
 
 /** 经 handleMessage 路由发 security_toggle（测全链：消息分支 → target 分流 → 具体 toggle） */
@@ -146,7 +149,55 @@ describe('settingsPanel ready 握手 → MCP 状态首屏推送（无独立拉�
     });
 
     expect(spy).toHaveBeenCalled();
-    // 未装配 Agent ⇒ 运行时快照为空 ⇒ 合法空态（面板按空态文案渲染，不报错）
-    expect(posted).toContainEqual({ type: 'mcp_status', servers: [] });
+    // 未装配 Agent ⇒ 运行时快照为空 ⇒ 合法空态（面板按空态文案渲染，不报错）。
+    // omitted 必带：它是「配置里有、列表里没有」的那部分，缺了面板会少说一句话
+    expect(posted).toContainEqual({
+      type: 'mcp_status',
+      servers: [],
+      omitted: { configured: 0, missingName: 0, duplicate: 0 },
+    });
+  });
+});
+
+/**
+ * `mcp_write/connect` → 触发装配（pending 卡片的唯一出路，面板侧的接线）
+ *
+ * 为什么必须测：装配是宿主生命周期，`connect` 的语义全靠 `mcpOpsDeps().connect` 这一处
+ * 接线把它接到 `ensureAgent()`。接错了（比如接到 restart、或漏接让 op 落空）**没有任何
+ * 编译错**——用户点「接入」只会看到一个永远不动的「待接入」。
+ */
+describe('settingsPanel mcp_write/connect → 装配接线', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('未装配时点接入 ⇒ 触发一次 agent 工厂，并回推状态', async () => {
+    const { agent } = agentStub();
+    const { provider, posted, factory } = setup(agent);
+
+    await (provider as unknown as { handleMessage(msg: unknown): Promise<void> }).handleMessage({
+      type: 'mcp_write',
+      op: 'connect',
+      name: 'fs',
+    });
+
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(posted.some((msg) => msg.type === 'mcp_status')).toBe(true);
+  });
+
+  it('连点两次只装配一次（装配有记忆：重复点击不该起第二个运行时）', async () => {
+    const { agent } = agentStub();
+    const { provider, factory } = setup(agent);
+    const send = () =>
+      (provider as unknown as { handleMessage(msg: unknown): Promise<void> }).handleMessage({
+        type: 'mcp_write',
+        op: 'connect',
+        name: 'fs',
+      });
+
+    await send();
+    await send();
+
+    expect(factory).toHaveBeenCalledTimes(1);
   });
 });

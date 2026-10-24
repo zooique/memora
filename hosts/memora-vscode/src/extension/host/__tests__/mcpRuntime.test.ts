@@ -23,9 +23,22 @@ import {
   startMcpServers,
   stopMcpServers,
   type McpConnectionFactory,
+  type McpServerStatus,
 } from '../mcp/runtime.js';
 import type { McpServerConfig } from '../mcp/connectionManager.js';
 import type { ToolRegistrar } from '../mcp/toolRegistry.js';
+
+/**
+ * 列表投影（`getMcpServerStatus` 现返回 `{ servers, omitted }`）
+ *
+ * 多数断言只关心卡片内容，取投影能保持原表达式形状；**隐藏计数另有专门用例**
+ * （`omitted` 那组直接取快照）——两者分开断言，才不会让「卡片不对」和「隐藏数不对」
+ * 互相遮蔽（同一断言里两条不变量，红了分不清是哪条）。
+ *
+ * @param configured 配置原值
+ */
+const statusList = (configured: McpServerConfig[]): McpServerStatus[] =>
+  getMcpServerStatus(configured).servers;
 
 /**
  * 造一个假工具（只关心名字与可映射性）
@@ -654,7 +667,7 @@ describe('applyMcpConfigChange（配置热更差分 · 切片 4）', () => {
 
 describe('getMcpServerStatus（设置面板 MCP 选项卡的数据面）', () => {
   it('未启动 = 空数组（「没有 server 在跑」是合法空态，不是错误）', () => {
-    expect(getMcpServerStatus([])).toEqual([]);
+    expect(statusList([])).toEqual([]);
   });
 
   it('状态由运行态派生：服务器名、工具数、每工具的键与免确认态', async () => {
@@ -666,7 +679,7 @@ describe('getMcpServerStatus（设置面板 MCP 选项卡的数据面）', () =>
       connect: factory,
     });
 
-    const status = getMcpServerStatus([cfg('fs')]);
+    const status = statusList([cfg('fs')]);
     expect(status).toHaveLength(1);
     expect(status[0].name).toBe('fs');
     expect(status[0].toolCount).toBe(2);
@@ -688,14 +701,14 @@ describe('getMcpServerStatus（设置面板 MCP 选项卡的数据面）', () =>
     const agent = fakeAgent(registrar);
 
     await startMcpServers(agent, [cfg('fs')], { allowlist: [], connect: factory });
-    expect(getMcpServerStatus([cfg('fs')])[0].tools[0].allowlisted).toBe(false);
+    expect(statusList([cfg('fs')])[0].tools[0].allowlisted).toBe(false);
 
     await applyMcpConfigChange(agent, [cfg('fs')], {
       allowlist: ['mcp__fs__read-file'],
       connect: factory,
     });
     // 面板读到的必须是**生效后**的档位；若这里还是 false，说明状态面与注册面分家了
-    expect(getMcpServerStatus([cfg('fs')])[0].tools[0].allowlisted).toBe(true);
+    expect(statusList([cfg('fs')])[0].tools[0].allowlisted).toBe(true);
   });
 });
 
@@ -710,7 +723,7 @@ describe('getMcpServerStatus（设置面板 MCP 选项卡的数据面）', () =>
 // 「配置了但还没跑起来」这个最常见的首次使用路径上双双出错（列表空 + 状态假 failed）。
 describe('配置即基线的状态合并', () => {
   it('配置里有一台但从未装配 ⇒ 仍列出，state=pending（不是空列表，也不是 failed）', () => {
-    const status = getMcpServerStatus([serverConfig('fs')]);
+    const status = statusList([serverConfig('fs')]);
     expect(status).toHaveLength(1);
     expect(status[0]).toMatchObject({ name: 'fs', state: 'pending', enabled: true, toolCount: 0 });
   });
@@ -727,7 +740,7 @@ describe('配置即基线的状态合并', () => {
       connect,
     });
 
-    const status = getMcpServerStatus([serverConfig('bad'), serverConfig('other')]);
+    const status = statusList([serverConfig('bad'), serverConfig('other')]);
     expect(status.map((item) => [item.name, item.state])).toEqual([
       ['bad', 'failed'],
       ['other', 'pending'],
@@ -736,7 +749,7 @@ describe('配置即基线的状态合并', () => {
   });
 
   it('enabled:false 优先于 pending（停用是用户意图，不是「待接入」）', () => {
-    const status = getMcpServerStatus([serverConfig('off', { enabled: false })]);
+    const status = statusList([serverConfig('off', { enabled: false })]);
     expect(status[0].state).toBe('disabled');
   });
 });
@@ -784,7 +797,7 @@ describe('MCP 状态面（五态合并 / 失败留痕 / 恢复路径）', () => 
       connect: failingFactory('spawn github-mcp ENOENT'),
     });
 
-    const status = getMcpServerStatus([serverConfig('github')]);
+    const status = statusList([serverConfig('github')]);
     expect(status).toHaveLength(1);
     expect(status[0]?.name).toBe('github');
     expect(status[0]?.state).toBe('failed');
@@ -804,7 +817,7 @@ describe('MCP 状态面（五态合并 / 失败留痕 / 恢复路径）', () => 
       connect: failingFactory('不该被调用'),
     });
 
-    const status = getMcpServerStatus(configs);
+    const status = statusList(configs);
     expect(status.map((item) => item.state)).toEqual(['disabled', 'invalid']);
     expect(status[1]?.problem).toBe('缺少 command');
     // 非法/停用都不带 error（原因不同，不能混成一句「失败」）
@@ -819,12 +832,12 @@ describe('MCP 状态面（五态合并 / 失败留痕 / 恢复路径）', () => 
       allowlist: [],
       connect: factory,
     });
-    expect(getMcpServerStatus([serverConfig('fs')])[0]?.state).toBe('running');
+    expect(statusList([serverConfig('fs')])[0]?.state).toBe('running');
 
     // 模拟子进程退出 / 传输层关闭
     connections[0]!.onClosed?.();
 
-    const status = getMcpServerStatus([serverConfig('fs')]);
+    const status = statusList([serverConfig('fs')]);
     expect(status[0]?.state).toBe('failed');
     expect(status[0]?.error).toContain('连接已断开');
   });
@@ -835,7 +848,7 @@ describe('MCP 状态面（五态合并 / 失败留痕 / 恢复路径）', () => 
       allowlist: [],
       connect: failingFactory('第一次失败'),
     });
-    expect(getMcpServerStatus([serverConfig('fs')])[0]?.state).toBe('failed');
+    expect(statusList([serverConfig('fs')])[0]?.state).toBe('failed');
 
     // 换成能连上的工厂重新应用配置（等价于重启成功）
     await startMcpServers(fakeAgent(registrar), [serverConfig('fs')], {
@@ -843,7 +856,7 @@ describe('MCP 状态面（五态合并 / 失败留痕 / 恢复路径）', () => 
       connect: fakeFactory([''], { fs: [stubTool('read_file')] }).factory,
     });
 
-    const status = getMcpServerStatus([serverConfig('fs')])[0];
+    const status = statusList([serverConfig('fs')])[0];
     expect(status?.state).toBe('running');
     // 互斥不变量：running 态不得同时携带上一次的错误
     expect(status?.error).toBeUndefined();
@@ -856,7 +869,7 @@ describe('MCP 状态面（五态合并 / 失败留痕 / 恢复路径）', () => 
       allowlist: [],
       connect: failingFactory('冷启动失败'),
     });
-    expect(getMcpServerStatus([serverConfig('fs')])[0]?.state).toBe('failed');
+    expect(statusList([serverConfig('fs')])[0]?.state).toBe('failed');
 
     // 同一台 server 换连接实现后重启（生产里是 server 侧修好了 / 网络恢复）
     const { factory, connections } = fakeFactory([''], { fs: [stubTool('read_file')] });
@@ -864,8 +877,8 @@ describe('MCP 状态面（五态合并 / 失败留痕 / 恢复路径）', () => 
 
     expect(result.ok).toBe(true);
     expect(connections[0]?.connectCount).toBe(1);
-    expect(getMcpServerStatus([serverConfig('fs')])[0]?.state).toBe('running');
-    expect(getMcpServerStatus([serverConfig('fs')])[0]?.toolCount).toBe(1);
+    expect(statusList([serverConfig('fs')])[0]?.state).toBe('running');
+    expect(statusList([serverConfig('fs')])[0]?.toolCount).toBe(1);
   });
 
   it('restartMcpServer 对未配置的名字给失败回执（不抛异常，面板按回执提示）', async () => {
@@ -910,7 +923,7 @@ describe('MCP 状态面（五态合并 / 失败留痕 / 恢复路径）', () => 
         connect: fakeFactory([''], { fs: [stubTool('read_file')] }).factory,
       }),
     ).resolves.toBeUndefined();
-    expect(getMcpServerStatus([serverConfig('fs')])[0]?.state).toBe('running');
+    expect(statusList([serverConfig('fs')])[0]?.state).toBe('running');
   });
 });
 
@@ -934,7 +947,7 @@ describe('MCP server 名归一化（键 = 状态面 = 面板寻址）', () => {
 
     expect(connections).toHaveLength(1);
     expect(connections[0]!.connectCount).toBe(1);
-    const status = getMcpServerStatus(configs);
+    const status = statusList(configs);
     expect(status).toHaveLength(1);
     // 展示名归一化（面板看到的是 fs，不是带空格的 fs ）
     expect(status[0]!.name).toBe('fs');
@@ -961,7 +974,7 @@ describe('MCP server 名归一化（键 = 状态面 = 面板寻址）', () => {
     await startMcpServers(fakeAgent(registrar), configs, { allowlist: [], connect, logger });
 
     expect(started).toEqual(['fs']);
-    expect(getMcpServerStatus(configs)).toHaveLength(1);
+    expect(statusList(configs)).toHaveLength(1);
     expect(warnings.join('\n')).toContain('server 名重复');
   });
 
@@ -974,10 +987,49 @@ describe('MCP server 名归一化（键 = 状态面 = 面板寻址）', () => {
     // 重启必须注入连接工厂：不传会走真连接（spawn 真 node 等 20s 握手）
     const result = await restartMcpServer(fakeAgent(registrar), 'fs', { connect: factory });
     expect(result).toEqual({ ok: true });
-    expect(getMcpServerStatus(configs)[0]!.state).toBe('running');
+    expect(statusList(configs)[0]!.state).toBe('running');
     // 旧连接必须被关：键错位时 `state.has('fs')` 为假 ⇒ 起新的、旧的还活着 = 僵尸子进程
     // （只断言 ok/state 会漏掉这条——变异验证时实测过）
     expect(connections).toHaveLength(2);
     expect(connections[0]!.closeCount).toBe(1);
+  });
+});
+
+/**
+ * 隐藏条目计数（`omitted`）
+ *
+ * 守的是「面板看不见的东西必须有一句可见解释」：这些条目没有卡片可挂（缺 name 的连标题都
+ * 拼不出来、重名的只显示先到那条），若连计数都不给，「配置 2 条、页面 1 张卡」与「就配了
+ * 1 条」在界面上完全一致（2026-10-24 实测的静默消失）。
+ */
+describe('getMcpServerStatus.omitted（配置里存在、列表画不出来的那部分）', () => {
+  it('不变量：卡片数 + 缺 name 数 + 重名数 === 配置条目数', () => {
+    const configs = [cfg('ok'), cfg(''), cfg('ok'), cfg('   '), cfg('other')];
+    const { servers, omitted } = getMcpServerStatus(configs);
+
+    expect(servers.length + omitted.missingName + omitted.duplicate).toBe(configs.length);
+    expect(omitted).toEqual({ configured: 5, missingName: 2, duplicate: 1 });
+    expect(servers.map((item) => item.name)).toEqual(['ok', 'other']);
+  });
+
+  it('归一化后同名算重名（`fs` 与 `fs ` 只留一条，另一条进 duplicate）', () => {
+    const { servers, omitted } = getMcpServerStatus([cfg('fs'), cfg('fs ')]);
+
+    expect(servers).toHaveLength(1);
+    expect(omitted).toEqual({ configured: 2, missingName: 0, duplicate: 1 });
+  });
+
+  it('全被隐藏时 servers 为空但 configured 是真实条数（面板据此不说「还没配置」）', () => {
+    const { servers, omitted } = getMcpServerStatus([cfg(''), cfg('')]);
+
+    expect(servers).toEqual([]);
+    expect(omitted).toEqual({ configured: 2, missingName: 2, duplicate: 0 });
+  });
+
+  it('空配置 = 全 0（合法空态，面板按「还没有配置任何服务器」渲染）', () => {
+    expect(getMcpServerStatus([])).toEqual({
+      servers: [],
+      omitted: { configured: 0, missingName: 0, duplicate: 0 },
+    });
   });
 });

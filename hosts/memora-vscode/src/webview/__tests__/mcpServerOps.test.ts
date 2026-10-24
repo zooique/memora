@@ -33,14 +33,19 @@ vi.mock('vscode', () => ({
 import { applyMcpWrite, type McpOpsDeps } from '../panels/mcpServerOps.js';
 
 /** 记录回执 / 回推的依赖桩 */
-function deps(restart: McpOpsDeps['restart'] = async () => ({ ok: true })): McpOpsDeps & {
+function deps(
+  restart: McpOpsDeps['restart'] = async () => ({ ok: true }),
+  connect: McpOpsDeps['connect'] = async () => ({ ok: true }),
+): McpOpsDeps & {
   notices: { level: string; message: string }[];
   pushes: number;
+  connects: number;
 } {
   const notices: { level: string; message: string }[] = [];
   const bag = {
     notices,
     pushes: 0,
+    connects: 0,
     pushStatus: () => {
       bag.pushes += 1;
     },
@@ -48,6 +53,10 @@ function deps(restart: McpOpsDeps['restart'] = async () => ({ ok: true })): McpO
       notices.push({ level, message });
     },
     restart,
+    connect: () => {
+      bag.connects += 1;
+      return connect();
+    },
   };
   return bag;
 }
@@ -247,5 +256,33 @@ describe('mcp_write / name 归一化匹配（写侧同样单点）', () => {
     const d = deps();
     await applyMcpWrite(d, { op: 'upsert', server: { name: '  fs  ', command: 'node' } });
     expect(h.data['mcpServers']).toEqual([{ name: 'fs', command: 'node', enabled: true }]);
+  });
+});
+
+/**
+ * `connect`（pending 卡片的唯一出路）
+ *
+ * 与 `restart` 的关键差别：restart 拒绝懒装配（只恢复已有运行时），connect 就是**为了**
+ * 触发装配。两者都走同一份 notice/pushStatus 收口，所以这里守的是「回执口径一致」。
+ */
+describe('mcp_write / connect（待接入 → 触发装配）', () => {
+  it('成功 ⇒ 静默（无 error 回执），但必须回推一次状态', async () => {
+    const d = deps();
+    await applyMcpWrite(d, { op: 'connect', name: 'fs' });
+
+    expect(d.connects).toBe(1);
+    expect(d.notices).toHaveLength(0);
+    expect(d.pushes).toBe(1);
+  });
+
+  it('失败 ⇒ error 回执带卡片名与原因（点完没反应 = 缺陷），且仍回推（面板须收敛到真值）', async () => {
+    const d = deps(undefined, async () => ({ ok: false, error: '装配未完成（原因见窗口提示）' }));
+    await applyMcpWrite(d, { op: 'connect', name: 'fs' });
+
+    expect(d.notices).toHaveLength(1);
+    expect(d.notices[0]!.level).toBe('error');
+    expect(d.notices[0]!.message).toContain('fs');
+    expect(d.notices[0]!.message).toContain('装配未完成');
+    expect(d.pushes).toBe(1);
   });
 });
