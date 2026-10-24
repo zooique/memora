@@ -37,13 +37,14 @@ import type {
 // MCP 运行时状态（MCP 选项卡的观察面；真源 = 已应用配置 ∪ 运行态 ∪ 失败表）
 import {
   getMcpServerStatus,
+  reconcileMcpConfig,
   restartMcpServer,
   setMcpStatusListener,
 } from '../../extension/host/mcp/runtime.js';
 // MCP 写操作实现（`mcp_write` 六个 op 的唯一落点；写配置/回执/重启/接入都在那边）
 import { applyMcpWrite, type McpOpsDeps } from './mcpServerOps.js';
 // 配置原值 = 面板列表的「有哪些」，只经唯一读取点（禁就地 getConfiguration，判据散点）
-import { readMcpServers } from '../../extension/mcpConfig.js';
+import { readMcpServers, readMcpToolAllowlist } from '../../extension/mcpConfig.js';
 // tab 标识 / 顺序 / 可见名唯一真源：本文件此前手写的两处联合都漏了 'security'
 // （⇒ 安全页无法从任何命令跳转过去），不再手写，统一取这一份
 import type { SettingsTab } from '../../shared/settingsTabs.js';
@@ -1816,13 +1817,21 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       pushStatus: (ack) => this.pushMcpStatus(ack),
       notice: (level, message) => this.post({ type: 'notice', level, message }),
       connect: async () => {
-        // 已装配 ⇒ 按定义不该是 pending（pending 的判据 = 「没进过装配」），
-        // 这里不必再拉一次；重推状态让面板收敛到运行态真值即可。
-        if (this._agentPromise) return { ok: true };
+        // 「接入」= 按当前配置让运行态追平（pending 的判据 = 「该名没进 applied」，
+        // 本动作就是让它进 applied）。**不能**拿「Agent 是否装配过」当完成条件：
+        // 装配早于配置变更 / 热更被静默跳过时两者会同时成立，按钮就成了假动作。
+        // 未装配才懒装配（与 restart「只走已装配」相对，语义见 mcpServerOps 的 deps 注释）。
+        // 装配判据的检查只在 ensureAgent 内部一处（这里不再复制一份「有没有 promise」）。
         const agent = await this.ensureAgent();
         // ensureAgent 的失败已在窗口层提示过（无工作区 → warning / 装配异常 → error），
         // 这里只补一条指向它的回执：让用户知道「点了接入、没成功」而不是按钮失灵。
-        return agent ? { ok: true } : { ok: false, error: '装配未完成（原因见窗口提示）' };
+        if (!agent) return { ok: false, error: '装配未完成（原因见窗口提示）' };
+        const result = await reconcileMcpConfig(agent, readMcpServers(), {
+          allowlist: readMcpToolAllowlist(),
+        });
+        // 差分内部已 notifyStatus；这里兜底再推一次，覆盖「状态无变化时监听器不触发」的路径
+        this.pushMcpStatus();
+        return result;
       },
       restart: async (name) => {
         if (!this._agentPromise) {

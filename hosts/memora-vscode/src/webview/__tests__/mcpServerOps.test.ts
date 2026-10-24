@@ -375,10 +375,11 @@ describe('mcp_write / name 归一化匹配（写侧同样单点）', () => {
 /**
  * `connect`（pending 卡片的唯一出路）
  *
- * 与 `restart` 的关键差别：restart 拒绝懒装配（只恢复已有运行时），connect 就是**为了**
- * 触发装配。两者都走同一份 notice/pushStatus 收口，所以这里守的是「回执口径一致」。
+ * 与 `restart` 的关键差别：restart 拒绝懒装配（只恢复已有运行时），connect 则**按当前配置
+ * 让运行态追平**（未装配时先懒装配）。两者都走同一份 notice/pushStatus 收口，所以这里守的是
+ * 「回执口径一致」。
  */
-describe('mcp_write / connect（待接入 → 触发装配）', () => {
+describe('mcp_write / connect（待接入 → 按当前配置追平）', () => {
   it('成功 ⇒ 静默（无 error 回执），但必须回推一次状态', async () => {
     const d = deps();
     await applyMcpWrite(d, { op: 'connect', name: 'fs' });

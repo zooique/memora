@@ -5,7 +5,10 @@
  * `MCP error -32000: Connection closed`（2026-10-24 实测：命令不存在、相对路径当命令、
  * 脚本路径写错、漏写 node 前缀，四种错法签名完全相同），真原因只在子进程 stderr 里
  * 且中文 Windows 下还是 GBK。用户在面板上看到的是「连接已关闭」，无从判断是路径问题。
- * ⇒ 把**能在拉起前判定的**部分前移到保存与启动两处，用同一份判据给出人话原因。
+ * ⇒ 把**能在拉起前判定的**部分收在拉起前这一处（**唯一生产调用点 = `connectionManager.connect`**），
+ * 用静态判据给出人话原因。保存路径**刻意不预检**：探测要 spawnSync（最长 5s），放进保存会把
+ * 写配置阻塞成「点了保存卡住」，而保存侧只负责字段完整性与合法性（`configProblem`）；
+ * 必然失败留给拉起时由本文件说穿。
  *
  * **判据边界（只判「静态可判」，不判「能不能跑通」）**：
  *   - 判：命令为空 / 路径形态但文件不存在 / 指向脚本却当命令 / 裸名不在 PATH / cwd 不存在；
@@ -161,7 +164,7 @@ function fileStat(
  * `spawn('"C:\\tools\\s.exe"')` 必失败。剥掉再判、并且**把剥掉的值交给 spawn**
  * （判据与实现同源），否则会报「找不到可执行文件："C:\…"」——文件明明在那儿。
  *
- * @param value 原始字符串（已 trim）
+ * @param value 原始字符串（**不** trim：判空由调用方负责，值原样进判据与 spawn）
  */
 function stripWrappingQuotes(value: string): string {
   if (value.length < 2) return value;
@@ -216,19 +219,18 @@ export function scriptNeedsInterpreter(platform: NodeJS.Platform, executable: bo
  * @returns ok=true 时带解析后的可执行形态；ok=false 时带人话原因
  */
 export function probeCommand(input: CommandProbeInput): CommandProbeResult {
-  const rawCommand = stripWrappingQuotes(
-    typeof input.command === 'string' ? input.command.trim() : '',
-  );
-  if (rawCommand.length === 0)
+  // 判空用 trim（全空白 = 没填），但**值本身不改写**：判据面必须与字段面同源——
+  // 保存侧已保真（不 trim），这里再 trim 就成了「判定按 A、spawn 按 B」的假阴性
+  // （command 带尾随空格时预检说没事、拉起却失败）。
+  const rawCommand = stripWrappingQuotes(typeof input.command === 'string' ? input.command : '');
+  if (rawCommand.trim().length === 0)
     return { ok: false, problem: '缺少 command（要填可执行程序，如 node / npx / python）' };
 
   const baseDir = input.baseDir && input.baseDir.length > 0 ? input.baseDir : process.cwd();
 
-  // ① cwd：先解析再判存在（相对 cwd 的基准 = baseDir）
-  const cwd =
-    typeof input.cwd === 'string' && input.cwd.trim().length > 0
-      ? resolve(baseDir, stripWrappingQuotes(input.cwd.trim()))
-      : undefined;
+  // ① cwd：先解析再判存在（相对 cwd 的基准 = baseDir）。同样只判空、值原样解析。
+  const cwdValue = typeof input.cwd === 'string' ? stripWrappingQuotes(input.cwd) : '';
+  const cwd = cwdValue.trim().length > 0 ? resolve(baseDir, cwdValue) : undefined;
   if (cwd) {
     const stat = fileStat(cwd);
     if (!stat) return { ok: false, problem: `工作目录不存在：${cwd}（cwd 字段填错了）` };

@@ -67,7 +67,7 @@ function setup(agent: Agent): {
     getBackgroundName: () => '',
   };
   const provider = new MemoraSettingsViewProvider({} as never, store as never);
-  // 工厂包一层 spy：MCP「接入」是否真的触发装配只能从这里看见（装配是宿主生命周期）
+  // 工厂包一层 spy：未装配路径的「接入」是否真的触发装配只能从这里看见（装配是宿主生命周期）
   const factory = vi.fn(async () => agent);
   provider.setAgentFactory(factory);
   provider.setGlobalState({ get: () => undefined, update: globalUpdate } as never);
@@ -160,13 +160,14 @@ describe('settingsPanel ready 握手 → MCP 状态首屏推送（无独立拉�
 });
 
 /**
- * `mcp_write/connect` → 触发装配（pending 卡片的唯一出路，面板侧的接线）
+ * `mcp_write/connect` → 按当前配置让运行态追平（pending 卡片的唯一出路，面板侧的接线）
  *
- * 为什么必须测：装配是宿主生命周期，`connect` 的语义全靠 `mcpOpsDeps().connect` 这一处
- * 接线把它接到 `ensureAgent()`。接错了（比如接到 restart、或漏接让 op 落空）**没有任何
- * 编译错**——用户点「接入」只会看到一个永远不动的「待接入」。
+ * 为什么必须测：追平分两步（未装配 → `ensureAgent()` 懒装配；已装配 → `reconcileMcpConfig`
+ * 热更），`connect` 的语义全靠 `mcpOpsDeps().connect` 这一处接线把它接上。接错了（比如
+ * 只接到 ensureAgent、把「已装配」当完成）**没有任何编译错**——用户点「接入」只会看到一个
+ * 永远不动的「待接入」。
  */
-describe('settingsPanel mcp_write/connect → 装配接线', () => {
+describe('settingsPanel mcp_write/connect → 运行态追平接线', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -199,5 +200,50 @@ describe('settingsPanel mcp_write/connect → 装配接线', () => {
     await send();
 
     expect(factory).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * 判据同源：pending = 「该名没进 applied」，接入 = 「按当前配置让它进 applied」。
+   * 旧实现拿「Agent 是否装配过」当完成条件 ⇒ 已装配 + 工具执行器不可用时，按钮返回
+   * 成功却什么都没做（面板纹丝不动）。⚠ 变异靶标：把 connect 的已装配分支改回
+   * `if (_agentPromise) return { ok: true }` ⇒ 本用例转红（收不到 error 回执）。
+   */
+  it('已装配但工具执行器不可用 ⇒ 接入必须报真实失败（不能假动作）', async () => {
+    const { agent } = agentStub();
+    const { provider, posted, factory } = setup(agent);
+    const send = () =>
+      (provider as unknown as { handleMessage(msg: unknown): Promise<void> }).handleMessage({
+        type: 'mcp_write',
+        op: 'connect',
+        name: 'fs',
+      });
+
+    await send();
+    // 只看**第二次**（已装配之后）的回执：第一次未装配时的失败回执不能当作证据
+    posted.length = 0;
+    await send();
+
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(posted.some((msg) => msg.type === 'notice' && msg.level === 'error')).toBe(true);
+  });
+
+  it('已装配且工具执行器可用 ⇒ 接入走一次热更追平（不重复装配、不报错）', async () => {
+    const { tools } = {
+      tools: { registerTool: vi.fn(), removeTool: vi.fn(), listTools: () => [] },
+    };
+    const agent = { ...agentStub().agent, tools } as unknown as Agent;
+    const { provider, posted, factory } = setup(agent);
+    const send = () =>
+      (provider as unknown as { handleMessage(msg: unknown): Promise<void> }).handleMessage({
+        type: 'mcp_write',
+        op: 'connect',
+        name: 'fs',
+      });
+
+    await send();
+    await send();
+
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(posted.some((msg) => msg.type === 'notice' && msg.level === 'error')).toBe(false);
   });
 });

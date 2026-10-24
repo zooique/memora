@@ -5,9 +5,9 @@
  *   ① settingsPanel 是贴 eslint max-lines 上限的 TARGET 文件（只降不升），而本域还要随
  *      功能长（表单校验、竞态、回执都是线性增长域）；
  *   ② 这六个 op 是**同一个语义面**（MCP 配置写入），放一处才能保证「写入路径只有一条」。
- *      `connect` 是唯一的例外形态：它不改配置，只触发宿主装配（pending 的唯一出路，
- *      见 protocol 里该 op 的说明）——仍归此处，因为「卡片上的按钮按下去要有回执」这条
- *      约定与其余五个共用同一份 notice/pushStatus 收口。
+ *      `connect` 是唯一的例外形态：它不改配置，只让运行态按当前配置**追平一次**
+ *      （未装配时先懒装配；pending 的唯一出路，见 protocol 里该 op 的说明）——仍归此处，
+ *      因为「卡片上的按钮按下去要有回执」这条约定与其余五个共用同一份 notice/pushStatus 收口。
  *
  * 三条纪律（SSOT / 不带伤）：
  *   1. **单一写入路径**：所有改配置的 op 都经 {@link writeServers}（`getConfiguration().update`
@@ -41,9 +41,11 @@ export interface McpOpsDeps {
   /** 重启单台（由 panel 注入：需要已装配的 agent；未装配给失败回执，不懒装配） */
   restart(name: string): Promise<{ ok: boolean; error?: string }>;
   /**
-   * 触发宿主装配（`pending` 态的唯一出路）
+   * 按当前配置让运行态追平一次（`pending` 态的唯一出路）
    *
-   * 不带 name：装配是**全局**动作（一次装配按当前配置拉起所有台），拿 name 只会让本模块
+   * 未装配时先懒装配、已装配时直接走配置热更——**装配完成不等于追平**：pending 的判据是
+   * 「该名没进 applied」，本动作就是让它进 applied（判据与按钮动作同源，见 protocol 该 op 说明）。
+   * 不带 name：追平是**全局**动作（一次按当前配置处理所有台），拿 name 只会让本模块
    * 误以为它是按台操作。回执文案由本模块拼（它知道用户点的是哪张卡）。
    * 注入实现必须复用对话面板同一个 agent 单例（`getOrCreateAgent`），否则会出现第二个
    * MCP 运行时 —— 两台同时注册同名工具。

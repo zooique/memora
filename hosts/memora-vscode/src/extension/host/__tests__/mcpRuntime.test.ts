@@ -16,6 +16,7 @@ import {
   applyMcpConfigChange,
   createResyncGuard,
   getMcpServerStatus,
+  reconcileMcpConfig,
   resyncServerTools,
   restartMcpServer,
   setMcpStatusListener,
@@ -378,6 +379,61 @@ describe('createResyncGuard（并发通知合并）', () => {
     guard();
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(runs).toBe(2);
+  });
+});
+
+/**
+ * 「接入」的单一实现：让 applied 追上当前配置，并把静默分支变成可读失败
+ *
+ * 为什么必须测：pending 的判据是「该名没进 applied」，旧实现拿「Agent 是否装配过」
+ * 当完成条件 ⇒ 工具执行器不可用时按钮返回成功却什么都没做（面板纹丝不动），
+ * 而没有任何编译错。⚠ 变异靶标：把 `!agent.tools` 的失败回执改回 `return { ok: true }`
+ * ⇒ 用例 ① 转红。
+ */
+describe('reconcileMcpConfig（面板「接入」）', () => {
+  it('工具执行器不可用 ⇒ 返回可读失败（不能静默成功）', async () => {
+    const r = await reconcileMcpConfig({} as unknown as Agent, [cfg('s1')], { allowlist: [] });
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('工具执行器不可用');
+  });
+
+  it('已装配 ⇒ 按当前配置追平一次（新配置进 applied，工具注册成功）', async () => {
+    const { registrar, names } = fakeRegistrar();
+    const log: string[] = [];
+    const { factory, connections } = fakeFactory(log, { s1: [stubTool('a')] });
+
+    const r = await reconcileMcpConfig(fakeAgent(registrar), [cfg('s1')], {
+      allowlist: [],
+      connect: factory,
+    });
+
+    expect(r.ok).toBe(true);
+    expect(names()).toEqual(['mcp__s1__a']);
+    expect(connections).toHaveLength(1);
+  });
+
+  it('缺省沿用最近一次装配的 clientVersion（接入拉起的 server 不能零上下文）', async () => {
+    const { registrar } = fakeRegistrar();
+    const log: string[] = [];
+    const seen: string[] = [];
+    // 记录每次 create 时的 clientVersion：生产 McpConnection 用它写 clientInfo，
+    // 接线断了 ⇒ 该 server 的遥测无版本（静默，无测试会红）。
+    const factory: McpConnectionFactory = (config, _logger, clientVersion) => {
+      seen.push(`${config.name}:${clientVersion ?? 'none'}`);
+      return new FakeConnection(config.name, [stubTool('a')], log) as unknown as McpConnection;
+    };
+    const agent = fakeAgent(registrar);
+
+    // 首次装配带版本 → 面板「接入」只传 allowlist（它不持有版本知识）
+    await startMcpServers(agent, [cfg('s1')], {
+      allowlist: [],
+      logger: capturingLogger().logger,
+      clientVersion: '9.9.9',
+      connect: factory,
+    });
+    await reconcileMcpConfig(agent, [cfg('s1'), cfg('s2')], { allowlist: [], connect: factory });
+
+    expect(seen).toEqual(['s1:9.9.9', 's2:9.9.9']);
   });
 });
 

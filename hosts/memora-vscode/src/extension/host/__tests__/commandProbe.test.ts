@@ -118,6 +118,31 @@ describe('commandProbe / cwd 字段', () => {
   });
 });
 
+// ──────────────────────────────────────────────────────────────
+// 判据面 = 字段面：面板保存已保真（不 trim），预检不得悄悄改写值。
+// 早先预检对 command / cwd 先 trim 再解析 ⇒ 「判定按 A、spawn 按 B」：
+// 带尾随空格的 command 预检说没事、拉起必失败（假阴性）。
+// ──────────────────────────────────────────────────────────────
+describe('commandProbe / 值不改写（判据面 = 字段面）', () => {
+  it('cwd 带前导空格 ⇒ 按原值解析（trim 会把它误判成存在的 ./sub）', () => {
+    // `'  ./sub'` 若被 trim ⇒ 解析成 <dir>/sub（存在、判 ok）；原值 ⇒ <dir>/'  ./sub'（不存在）
+    const r = probeCommand({ command: 'node', cwd: '  ./sub', baseDir: dir });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.problem).toContain('工作目录不存在');
+  });
+
+  it('cwd 全空白 ⇒ 视作未配置（与面板保存「空白 = 清空」同口径）', () => {
+    const r = probeCommand({ command: process.execPath, cwd: '   ' });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.resolved.cwd).toBeUndefined();
+  });
+
+  it('command 带尾随空格 ⇒ 按原值判失败（不 trim 出假通过）', () => {
+    const r = probeCommand({ command: 'node   ' });
+    expect(r.ok).toBe(false);
+  });
+});
+
 describe('commandProbe / args 第一项', () => {
   it('args[0] 是绝对路径且不存在 ⇒ 提前报（最常见的「脚本路径写错」）', () => {
     const r = probeCommand({ command: 'node', args: [join(dir, 'ghost-server.js')] });

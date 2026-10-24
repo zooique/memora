@@ -369,8 +369,9 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     const editable = isFormRepresentable(server);
     const actions: string[] = [];
 
-    // 「待接入」是唯一有**出路**的空转态：点接入即触发宿主装配（与对话面板同一个
-    // getOrCreateAgent 单例）。没有这个按钮，pending 卡片只能编辑/停用/删除——
+    // 「待接入」是唯一有**出路**的空转态：点接入即让运行态按当前配置追平一次
+    // （未装配时先懒装配，与对话面板同一个 getOrCreateAgent 单例；判据 = 该名没进 applied）。
+    // 没有这个按钮，pending 卡片只能编辑/停用/删除——
     // 而重启按钮不渲染（restart 只恢复已有运行时），用户点不出任何东西（2026-10-24 实测）。
     if (state === 'pending') {
       actions.push(
@@ -413,7 +414,7 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
       </div>
       ${state === 'failed' ? `<p class="mcp-server-error">${escapeHtml(server.error ?? '')}</p>` : ''}
       ${state === 'invalid' ? `<p class="mcp-server-error">${escapeHtml(server.problem ?? '')}</p>` : ''}
-      ${state === 'pending' ? '<p class="mcp-server-note">尚未接入：点「接入」立即装配并按当前配置连接（打开对话面板也会自动触发）</p>' : ''}
+      ${state === 'pending' ? '<p class="mcp-server-note">尚未接入：点「接入」按当前配置连接一次（未装配会先完成装配；打开对话面板也会自动触发）</p>' : ''}
       ${toolRows(server)}
       <div class="mcp-actions">${actions.join('')}</div>
       ${editing && draft ? formHtml(draft) : ''}

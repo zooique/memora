@@ -750,17 +750,58 @@ export function applyMcpConfigChange(
   return run;
 }
 
+/**
+ * 「接入」动作的单一实现：让运行态按**当前配置**追平一次（pending 卡片的唯一出路）
+ *
+ * 与 {@link applyMcpConfigChange} 共用同一条 `hotReloadChain` 与同一份差分核心
+ * （`applyConfigChangeInner`），区别只在**回执**：配置事件不需要知道结果，而按钮必须知道
+ * 「按下去到底有没有做事」。
+ *
+ * ⚠️ 判据必须与 pending 同源：pending = 「该名没进 `appliedConfigs`」，本函数 = 「按当前
+ * 配置让 applied 追上」。**不能**用「Agent 是否装配过」当完成条件——装配早于配置变更、
+ * 或热更在 `agent.tools` 不可用时静默跳过（applied 不更新），两者会同时成立，按钮就成了
+ * 返回成功却毫无副作用的假动作（用户看到「待接入」纹丝不动）。
+ *
+ * @param agent 已装配的内核 Agent
+ * @param configs 当前 `memora.mcpServers` 原值
+ * @param options 与热更同口径（logger / clientVersion / baseDir 缺省沿用上次装配值）
+ */
+export async function reconcileMcpConfig(
+  agent: Agent,
+  configs: readonly McpServerConfig[],
+  options: McpConfigChangeOptions,
+): Promise<{ ok: boolean; error?: string }> {
+  const run = hotReloadChain.then(async () => {
+    // 热更里的这条分支是静默 return；按钮语境必须把它变成可读失败，否则「点了没用」
+    if (!agent.tools) return { ok: false, error: 'Agent 工具执行器不可用，接入未生效' };
+    await applyConfigChangeInner(agent, configs, options);
+    return { ok: true };
+  });
+  // 与 applyMcpConfigChange 同一写法：inner 自吞错误，链不被毒化
+  hotReloadChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 /** 热更差分主体（错误自吞：单条热更失败不该毒化串行链，也不该打断用户操作） */
 async function applyConfigChangeInner(
   agent: Agent,
   configs: readonly McpServerConfig[],
   options: McpConfigChangeOptions,
 ): Promise<void> {
-  const { allowlist, logger, clientVersion, connect, baseDir } = options;
-  lastLogger = logger;
-  lastClientVersion = clientVersion;
-  // 热更可能不带 baseDir（调用方只改配置时不必重复传）：沿用上一次装配值，不退回 process.cwd()
-  if (baseDir) lastBaseDir = baseDir;
+  const { allowlist, connect } = options;
+  // 缺省沿用最近一次装配的上下文（与 restartMcpServer 同口径）：面板「接入」不持有
+  // logger / clientVersion / baseDir 这份知识；不沿用 ⇒ 由它拉起的 server 零日志、
+  // clientInfo 无版本——恰好在用户点「接入」排查时丢掉唯一的观测面。
+  const logger = options.logger ?? lastLogger;
+  const clientVersion = options.clientVersion ?? lastClientVersion;
+  const baseDir = options.baseDir ?? lastBaseDir;
+  // 只**写入传了的**：缺省沿用旧值，不代表把旧值当本次入参回写（热更上下文是模块级单点）
+  if (options.logger) lastLogger = options.logger;
+  if (options.clientVersion) lastClientVersion = options.clientVersion;
+  if (options.baseDir) lastBaseDir = options.baseDir;
   try {
     const registrar = agent.tools;
     if (!registrar) {
@@ -807,7 +848,7 @@ async function applyConfigChangeInner(
         logger,
         clientVersion,
         connect,
-        ...(lastBaseDir ? { baseDir: lastBaseDir } : {}),
+        ...(baseDir ? { baseDir } : {}),
       });
       if (running !== state) {
         await disposeState(state);

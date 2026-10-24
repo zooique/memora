@@ -80,8 +80,8 @@ export interface McpStatusSnapshot {
  *     会漏掉「配了但还没装配」的台：设置视图先于对话面板打开时 Agent 尚未装配，面板会
  *     显示「还没有配置任何服务器」，用户添加一台、拿到「已添加」回执，卡片**仍不出现**
  *     ——点完没反应的第二种成因（第一种是死按钮）。
- *   - **怎么样** ⇒ 运行态（running）∪ 失败表（failed）。「已装配但不在运行」= failed；
- *     「配置在、没进过装配」= pending（不谎报失败，也不是「停用」——用户没这意图）。
+ *   - **怎么样** ⇒ 运行态（running）∪ 失败表（failed）。「已进 applied 但不在运行」= failed；
+ *     「配置在、该名还没进 applied（装配/热更都没跑到它）」= pending（不谎报失败，也不是「停用」——用户没这意图）。
  *
  * 只看 `running` 的另一个反例：失败的那台会整条消失，而那恰好是用户最需要看见的一条
  * （「为什么模型没有 MCP 工具」的答案就在那里）。
@@ -111,7 +111,7 @@ export interface McpStatusContext {
     string,
     { bindings: readonly McpToolBinding[]; allowKeys: McpToolAllowlist }
   > | null;
-  /** 最近一次**应用**的配置原值（判「进过装配」；空数组 = 还没装配过） */
+  /** 最近一次**应用**的配置原值（判「该名进过 applied」；空数组 = 一次都没应用过） */
   readonly applied: readonly McpServerConfig[];
   /** 失败表查询（server 名已归一化；无记录 = undefined） */
   readonly failureOf: (name: string) => { readonly error: string } | undefined;
@@ -166,7 +166,7 @@ export function deriveMcpServerStatus(
     else if (!enabled) state = 'disabled';
     else if (live) state = 'running';
     else if (applied.has(name)) state = 'failed';
-    // 配置在、还没进过装配（设置视图先于对话面板打开）⇒ 待接入，不谎报失败
+    // 配置在、该名还没进 applied（装配/热更都没跑到它）⇒ 待接入，不谎报失败
     else state = 'pending';
 
     list.push({

@@ -451,7 +451,7 @@ function pendingOf(config: Record<string, unknown>): McpServerStatusDto {
 }
 
 describe('待接入卡片 · 接入入口（pending 的唯一出路）', () => {
-  it('pending 卡片有「接入」，点击发 mcp_write{op:connect} 并由宿主触发装配', async () => {
+  it('pending 卡片有「接入」，点击发 mcp_write{op:connect} 并由宿主按当前配置追平', async () => {
     h.data['mcpServers'] = [{ name: 'fs', command: 'node' }];
     const view = mount([pendingOf(savedServers()[0]!)]);
     const button = view.root.querySelector<HTMLButtonElement>('[data-act="connect"]');
@@ -474,7 +474,7 @@ describe('待接入卡片 · 接入入口（pending 的唯一出路）', () => {
     expect(view.root.querySelector('[data-act="restart"]')).toBeNull();
   });
 
-  it('running 卡片不渲染「接入」（已接入的台再给接入 = 重复装配）', () => {
+  it('running 卡片不渲染「接入」（已接入的台归「重启」管，再给接入 = 两个按钮同一件事）', () => {
     h.data['mcpServers'] = [{ name: 'fs', command: 'node' }];
     const view = mount([statusOf(savedServers()[0]!)]);
 
