@@ -15,7 +15,10 @@ import {
   MAX_TOTAL_MCP_TOOLS,
   applyMcpConfigChange,
   createResyncGuard,
+  getMcpServerStatus,
   resyncServerTools,
+  restartMcpServer,
+  setMcpStatusListener,
   shouldWarnToolBudget,
   startMcpServers,
   stopMcpServers,
@@ -646,5 +649,267 @@ describe('applyMcpConfigChange（配置热更差分 · 切片 4）', () => {
     // 整换把新集（a+b）注册了进来，但运行态里已无该 server ⇒ 必须补注销，
     // 否则模型可见两个调用死连接的工具（僵尸工具）
     expect(names()).toEqual([]);
+  });
+});
+
+describe('getMcpServerStatus（设置面板 MCP 选项卡的数据面）', () => {
+  it('未启动 = 空数组（「没有 server 在跑」是合法空态，不是错误）', () => {
+    expect(getMcpServerStatus([])).toEqual([]);
+  });
+
+  it('状态由运行态派生：服务器名、工具数、每工具的键与免确认态', async () => {
+    const { registrar } = fakeRegistrar();
+    const { factory } = fakeFactory([], { fs: [stubTool('read-file'), stubTool('write_file')] });
+
+    await startMcpServers(fakeAgent(registrar), [cfg('fs')], {
+      allowlist: ['mcp__fs__read-file'],
+      connect: factory,
+    });
+
+    const status = getMcpServerStatus([cfg('fs')]);
+    expect(status).toHaveLength(1);
+    expect(status[0].name).toBe('fs');
+    expect(status[0].toolCount).toBe(2);
+    expect(status[0].tools.map((t) => t.derivedName)).toEqual([
+      'mcp__fs__read_file',
+      'mcp__fs__write_file',
+    ]);
+    // 键按**原名**寻址（与显示名不同源）——这正是面板要替用户挡掉的坑
+    expect(status[0].tools.map((t) => t.allowKey)).toEqual([
+      'mcp__fs__read-file',
+      'mcp__fs__write_file',
+    ]);
+    expect(status[0].tools.map((t) => t.allowlisted)).toEqual([true, false]);
+  });
+
+  it('热更 allowlist 后状态跟着变（档位真源是运行态，不是配置副本）', async () => {
+    const { registrar } = fakeRegistrar();
+    const { factory } = fakeFactory([], { fs: [stubTool('read-file')] });
+    const agent = fakeAgent(registrar);
+
+    await startMcpServers(agent, [cfg('fs')], { allowlist: [], connect: factory });
+    expect(getMcpServerStatus([cfg('fs')])[0].tools[0].allowlisted).toBe(false);
+
+    await applyMcpConfigChange(agent, [cfg('fs')], {
+      allowlist: ['mcp__fs__read-file'],
+      connect: factory,
+    });
+    // 面板读到的必须是**生效后**的档位；若这里还是 false，说明状态面与注册面分家了
+    expect(getMcpServerStatus([cfg('fs')])[0].tools[0].allowlisted).toBe(true);
+  });
+});
+
+// ─── 配置即基线（未装配时的「空态」是谎报）───────────────────────────────────
+//
+// 反例现场：设置视图先于对话面板打开时 Agent 尚未装配 ⇒ 运行态里什么都没有。若列表只按
+// 运行态派生，面板会显示「还没有配置任何服务器」；用户照着 CTA 添加一台、拿到「已添加」
+// 回执，卡片**仍然不出现**——与「死按钮」同一类伤害（点完没反应），只是成因在数据面：
+// 把「未装配」错报成「没配置」。
+//
+// 判据：**列表基线 = 配置（该有哪些），状态 = 运行态合并（现在怎么样）**。二者混用会在
+// 「配置了但还没跑起来」这个最常见的首次使用路径上双双出错（列表空 + 状态假 failed）。
+describe('配置即基线的状态合并', () => {
+  it('配置里有一台但从未装配 ⇒ 仍列出，state=pending（不是空列表，也不是 failed）', () => {
+    const status = getMcpServerStatus([serverConfig('fs')]);
+    expect(status).toHaveLength(1);
+    expect(status[0]).toMatchObject({ name: 'fs', state: 'pending', enabled: true, toolCount: 0 });
+  });
+
+  it('装配失败 ⇒ failed 带原因；同配置里没被拉起的另一台仍是 pending（不连坐）', async () => {
+    const { registrar } = fakeRegistrar();
+    const { factory: okFactory } = fakeFactory([], { ok: [stubTool('ping')] });
+    const bad = failingFactory('boom');
+    const connect: McpConnectionFactory = (config) =>
+      config.name === 'bad' ? bad(config) : okFactory(config);
+
+    await startMcpServers(fakeAgent(registrar), [serverConfig('bad')], {
+      allowlist: [],
+      connect,
+    });
+
+    const status = getMcpServerStatus([serverConfig('bad'), serverConfig('other')]);
+    expect(status.map((item) => [item.name, item.state])).toEqual([
+      ['bad', 'failed'],
+      ['other', 'pending'],
+    ]);
+    expect(status[0].error).toContain('boom');
+  });
+
+  it('enabled:false 优先于 pending（停用是用户意图，不是「待接入」）', () => {
+    const status = getMcpServerStatus([serverConfig('off', { enabled: false })]);
+    expect(status[0].state).toBe('disabled');
+  });
+});
+
+// ─── 状态面（五态合并 / 失败留痕 / 恢复路径 / 变化通知）─────────────────────────
+//
+// 判据来源：台账缺口 ⑥（观察面只能看见成功）/ ⑦（无恢复路径）/ ②（断线后面板停旧值）。
+// 这三条的共同根因是「运行态只有成功那一半」，所以本组用例全部从**失败面**切入。
+
+/**
+ * 造一个「连接必失败」的工厂（connect 抛错，close 正常）
+ *
+ * @param error 抛出文本（断言原样透出到面板）
+ */
+function failingFactory(error: string): McpConnectionFactory {
+  return () =>
+    ({
+      connect: async () => {
+        throw new Error(error);
+      },
+      close: async () => undefined,
+      listTools: () => [],
+      refreshTools: async () => [],
+      callTool: async () => ({}),
+    }) as unknown as McpConnection;
+}
+
+/** 一台最小可启动配置 */
+function serverConfig(name: string, extra: Partial<McpServerConfig> = {}): McpServerConfig {
+  return { name, command: 'node', ...extra };
+}
+
+describe('MCP 状态面（五态合并 / 失败留痕 / 恢复路径）', () => {
+  afterEach(async () => {
+    setMcpStatusListener(null);
+    await stopMcpServers();
+  });
+
+  it('失败的 server 仍在列表里（state=failed + 错误原文），而不是从列表里消失', async () => {
+    // 断链守护：首版 getMcpServerStatus 只读 running ⇒ 这台会被整条抹掉，
+    // 用户看到的「没有服务器在跑」其实是「有一台起不来」——最需要排查时页面是空的
+    const { registrar } = fakeRegistrar();
+    await startMcpServers(fakeAgent(registrar), [serverConfig('github')], {
+      allowlist: [],
+      connect: failingFactory('spawn github-mcp ENOENT'),
+    });
+
+    const status = getMcpServerStatus([serverConfig('github')]);
+    expect(status).toHaveLength(1);
+    expect(status[0]?.name).toBe('github');
+    expect(status[0]?.state).toBe('failed');
+    expect(status[0]?.error).toContain('spawn github-mcp ENOENT');
+    expect(status[0]?.toolCount).toBe(0);
+  });
+
+  it('停用 / 配置不完整各自成态（不再统一当成「没跑起来」）', async () => {
+    const { registrar } = fakeRegistrar();
+    const configs = [
+      serverConfig('off', { enabled: false }),
+      // 缺 command：非法配置，启动侧会跳过并告警；面板要能说清「缺什么」
+      { name: 'bad' } as unknown as McpServerConfig,
+    ];
+    await startMcpServers(fakeAgent(registrar), configs, {
+      allowlist: [],
+      connect: failingFactory('不该被调用'),
+    });
+
+    const status = getMcpServerStatus(configs);
+    expect(status.map((item) => item.state)).toEqual(['disabled', 'invalid']);
+    expect(status[1]?.problem).toBe('缺少 command');
+    // 非法/停用都不带 error（原因不同，不能混成一句「失败」）
+    expect(status[0]?.error).toBeUndefined();
+    expect(status[1]?.error).toBeUndefined();
+  });
+
+  it('断线 → failed（不静默消失：面板要能显示「连接已断开」）', async () => {
+    const { registrar } = fakeRegistrar();
+    const { factory, connections } = fakeFactory([''], { fs: [stubTool('read_file')] });
+    await startMcpServers(fakeAgent(registrar), [serverConfig('fs')], {
+      allowlist: [],
+      connect: factory,
+    });
+    expect(getMcpServerStatus([serverConfig('fs')])[0]?.state).toBe('running');
+
+    // 模拟子进程退出 / 传输层关闭
+    connections[0]!.onClosed?.();
+
+    const status = getMcpServerStatus([serverConfig('fs')]);
+    expect(status[0]?.state).toBe('failed');
+    expect(status[0]?.error).toContain('连接已断开');
+  });
+
+  it('成功启动会清掉失败记录（失败→重启成功不留红点）', async () => {
+    const { registrar } = fakeRegistrar();
+    await startMcpServers(fakeAgent(registrar), [serverConfig('fs')], {
+      allowlist: [],
+      connect: failingFactory('第一次失败'),
+    });
+    expect(getMcpServerStatus([serverConfig('fs')])[0]?.state).toBe('failed');
+
+    // 换成能连上的工厂重新应用配置（等价于重启成功）
+    await startMcpServers(fakeAgent(registrar), [serverConfig('fs')], {
+      allowlist: [],
+      connect: fakeFactory([''], { fs: [stubTool('read_file')] }).factory,
+    });
+
+    const status = getMcpServerStatus([serverConfig('fs')])[0];
+    expect(status?.state).toBe('running');
+    // 互斥不变量：running 态不得同时携带上一次的错误
+    expect(status?.error).toBeUndefined();
+  });
+
+  it('restartMcpServer：配置没变也能把失败的 server 拉起来（唯一恢复路径）', async () => {
+    const { registrar } = fakeRegistrar();
+    const agent = fakeAgent(registrar);
+    await startMcpServers(agent, [serverConfig('fs')], {
+      allowlist: [],
+      connect: failingFactory('冷启动失败'),
+    });
+    expect(getMcpServerStatus([serverConfig('fs')])[0]?.state).toBe('failed');
+
+    // 同一台 server 换连接实现后重启（生产里是 server 侧修好了 / 网络恢复）
+    const { factory, connections } = fakeFactory([''], { fs: [stubTool('read_file')] });
+    const result = await restartMcpServer(agent, 'fs', { connect: factory });
+
+    expect(result.ok).toBe(true);
+    expect(connections[0]?.connectCount).toBe(1);
+    expect(getMcpServerStatus([serverConfig('fs')])[0]?.state).toBe('running');
+    expect(getMcpServerStatus([serverConfig('fs')])[0]?.toolCount).toBe(1);
+  });
+
+  it('restartMcpServer 对未配置的名字给失败回执（不抛异常，面板按回执提示）', async () => {
+    const { registrar } = fakeRegistrar();
+    const agent = fakeAgent(registrar);
+    // 必须注入假连接：缺省工厂会真 spawn（本用例会挂到握手超时）
+    await startMcpServers(agent, [serverConfig('fs')], {
+      allowlist: [],
+      connect: fakeFactory([''], { fs: [stubTool('read_file')] }).factory,
+    });
+
+    const result = await restartMcpServer(agent, 'nope');
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('未找到');
+  });
+
+  it('运行态变化会通知监听器（断线/失败不是配置变更 ⇒ 只能靠这条回调驱动回推）', async () => {
+    const { registrar } = fakeRegistrar();
+    const calls: string[] = [];
+    setMcpStatusListener(() => calls.push('push'));
+
+    await startMcpServers(fakeAgent(registrar), [serverConfig('github')], {
+      allowlist: [],
+      connect: failingFactory('起不来'),
+    });
+    // 启动失败必须触发回推（否则面板停在「加载中」，用户永远看不到失败）
+    expect(calls.length).toBeGreaterThan(0);
+
+    const before = calls.length;
+    await stopMcpServers();
+    expect(calls.length).toBeGreaterThan(before);
+  });
+
+  it('监听器抛错不影响运行时（面板回推失败不该毒化状态机）', async () => {
+    const { registrar } = fakeRegistrar();
+    setMcpStatusListener(() => {
+      throw new Error('webview 已销毁');
+    });
+    await expect(
+      startMcpServers(fakeAgent(registrar), [serverConfig('fs')], {
+        allowlist: [],
+        connect: fakeFactory([''], { fs: [stubTool('read_file')] }).factory,
+      }),
+    ).resolves.toBeUndefined();
+    expect(getMcpServerStatus([serverConfig('fs')])[0]?.state).toBe('running');
   });
 });

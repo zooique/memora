@@ -1,11 +1,13 @@
 /**
- * 设置视图样式 — 聚合 角色 / 大模型 / 记忆 / 技能 四个子视图 + 选项卡栏
+ * 设置视图样式 — 聚合 角色 / 大模型 / 记忆 / 技能 / MCP 五个子视图 + 选项卡栏 + 安全页
  *
  * 设计（对齐 ITCSS + tokens.ts 单一真理源）：
- *   - 设计令牌由 tokens.ts 单一真理源提供，本文件内嵌一次，四个子视图样式不再各自内嵌；
- *   - 共享的 body 基础规则在本文件定义（四个子视图共用，勿在各子视图重复定义）；
- *   - 子视图样式（rolesStyles / configStyles / memoryStyles / skillsStyles）各自以 #roles-root / #config-root /
- *     #memory-root / #skills-root 前缀限定，与选项卡栏共享类名（.header 等）靠根容器前缀隔离，避免串扰；
+ *   - 设计令牌由 tokens.ts 单一真理源提供，本文件内嵌一次，五个子视图样式不再各自内嵌；
+ *   - 共享的 body 基础规则在本文件定义（五个子视图共用，勿在各子视图重复定义）；
+ *   - 子视图样式（rolesStyles / configStyles / memoryStyles / skillsStyles / mcpStyles）各自以
+ *     #roles-root / #config-root / #memory-root / #skills-root / #mcp-root 前缀限定，与选项卡栏
+ *     共享类名（.header 等）靠根容器前缀隔离，避免串扰；安全页样式无独立文件、直接内嵌于本文件
+ *     （历史形态，.security-* 为全局选择符，新增子视图勿再效仿之——按 root 分文件才是架构）；
  *   - 选项卡栏：等宽按钮 + 激活态 accent 高亮，低扰不抢内容层级。
  */
 import { tokens } from './tokens.js';
@@ -13,6 +15,7 @@ import { rolesStyles } from './rolesStyles.js';
 import { configStyles } from './configStyles.js';
 import { memoryStyles } from './memoryStyles.js';
 import { skillsStyles } from './skillsStyles.js';
+import { mcpStyles } from './mcpStyles.js';
 
 export const settingsStyles = `
   ${tokens}
@@ -69,7 +72,7 @@ export const settingsStyles = `
   /* ============ Components：通用按钮变体 ============
    * 设置面板按钮形态单一真理源：primary / secondary / danger / ghost 四种变体，不一致即 SSOT 违规。
    * ITCSS 分层：变体=class 层；布局性差异（如 memory 政区按钮 flex:1）由具体子视图覆盖，不混入基类。 */
-  #roles-root .btn, #config-root .btn, #memory-root .btn, #skills-root .btn, #security-root .btn {
+  .tab-panel .btn {
     padding: var(--sp-2, 6px) var(--sp-5, 12px);
     border-radius: var(--radius, 6px);
     border: none;
@@ -78,25 +81,25 @@ export const settingsStyles = `
     color: var(--accent-foreground, #ffffff);
     font-size: var(--font-md, 12px);
   }
-  #roles-root .btn-secondary, #config-root .btn-secondary, #memory-root .btn-secondary, #skills-root .btn-secondary, #security-root .btn-secondary {
+  .tab-panel .btn-secondary {
     background: var(--btn-secondary-bg);
     color: var(--btn-secondary-fg);
   }
-  #roles-root .btn-danger, #config-root .btn-danger, #memory-root .btn-danger, #skills-root .btn-danger, #security-root .btn-danger {
+  .tab-panel .btn-danger {
     background: var(--btn-danger-bg);
     color: var(--accent-foreground, #ffffff);
   }
-  #roles-root .btn:disabled, #config-root .btn:disabled, #memory-root .btn:disabled, #skills-root .btn:disabled, #security-root .btn:disabled {
+  .tab-panel .btn:disabled {
     opacity: var(--op-3);
     cursor: not-allowed;
   }
-  #roles-root .btn-ghost, #config-root .btn-ghost, #memory-root .btn-ghost, #skills-root .btn-ghost, #security-root .btn-ghost {
+  .tab-panel .btn-ghost {
     background: var(--btn-secondary-bg);
     color: var(--btn-secondary-fg);
     padding: var(--sp-2, 6px) var(--sp-5, 12px);
     font-size: var(--font-md, 12px);
   }
-  #roles-root .btn-ghost:hover, #config-root .btn-ghost:hover, #memory-root .btn-ghost:hover, #skills-root .btn-ghost:hover, #security-root .btn-ghost:hover {
+  .tab-panel .btn-ghost:hover {
     background: var(--accent-bg-hover);
     color: var(--text-primary, #cccccc);
   }
@@ -104,7 +107,7 @@ export const settingsStyles = `
   /* ============ Components：通用卡片/徽章/空态/chip ============
    * roles/config/memory/skills 共用的单一真理源（与按钮同理）。
    * 布局/对齐差异由各子视图 context 覆盖，不混入基类。 */
-  #roles-root .card, #config-root .card, #memory-root .card, #skills-root .card, #security-root .card {
+  .tab-panel .card {
     display: flex;
     gap: var(--sp-3, 8px);
     padding: var(--sp-4, 10px);
@@ -113,7 +116,7 @@ export const settingsStyles = `
     border-radius: var(--radius-lg, 8px);
     background: var(--surface-sidebar);
   }
-  #roles-root .card.active, #config-root .card.active, #memory-root .card.active, #skills-root .card.active, #security-root .card.active {
+  .tab-panel .card.active {
     border-color: var(--accent, #0e639c);
   }
   #roles-root .badge, #config-root .badge {
@@ -220,6 +223,7 @@ export const settingsStyles = `
   ${configStyles}
   ${memoryStyles}
   ${skillsStyles}
+  ${mcpStyles}
 
   /* ============ Security：安全子视图（写入审批） ============ */
   #security-root { padding: var(--sp-3, 8px); }

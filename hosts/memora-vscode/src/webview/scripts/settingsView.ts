@@ -1,18 +1,20 @@
 /**
  * settingsView — 设置面板 webview 运行时脚本（选项卡合并）
  *
- * 由 settingsPanel.ts 的 buildHtml 引用：以工厂函数 createSettingsView 接收依赖
+ * 由 settingsPanelHtml.ts 的 buildHtml 引用：以工厂函数 createSettingsView 接收依赖
  * （acquireVsCodeApi / window）并初始化全部交互。
  *
  * 职责：
- *   - 选项卡栏切换（角色 / 大模型 / 记忆）：点击按钮切换高亮 + 显示对应子视图；
- *   - 挂载三个子视图工厂（rolesView / configView / memoryView），共享同一 webview 文档，
- *     各自以 root 容器隔离 id 空间（#list/#statBar 等在各自根内不冲突）；
+ *   - 选项卡栏切换（全部 tab 的清单见 `shared/settingsTabs.ts`，本文件不写 tab 名单）：
+ *     点击按钮切换高亮 + 显示对应子视图；
+ *   - 挂载各子视图工厂，共享同一 webview 文档，各自以 root 容器隔离 id 空间
+ *     （#list/#statBar 等在各自根内不冲突，故它们是「根内唯一」而非全局唯一）；
  *   - 监听 host 的 settings_switch_tab 指令（configureModel 命令 → 大模型选项卡）。
  *
- * 挂载顺序（重要约定）：config → memory → roles。rolesView 在挂载末尾发送 ready 握手，
- * host 收到 ready 时全部监听器（含 settings_switch_tab 与本文件内已注册的）都已就绪，
- * 可安全补发待切选项卡 —— 对齐 chatPanel replaySession 的 ready 时序修复范式。
+ * 挂载顺序（重要约定）：config → memory → roles → skills → mcp → security。**ready 握手由
+ * 容器在本函数末尾统一发出**（不是某个子视图发的）：等全部子视图挂载完、消息监听器都注册
+ * 之后才请 host 推送，host 侧待切选项卡的补发才安全 —— 对齐 chatPanel replaySession 的
+ * ready 时序修复范式。
  *
  * 由 esbuild 以 browser/iife 打包为 dist/webview/scripts/settingsView.js，经
  * webview.asWebviewUri 在 HTML 中 <script src> 引用（CSP script-src cspSource）。
@@ -28,10 +30,18 @@ import { PRESET_SEARCH_ENGINES } from '../../shared/protocol.js';
 import { createConfigView } from './configView.js';
 import { createMemoryView } from './memoryView.js';
 import { createRolesView } from './rolesView.js';
+// MCP 子视图（观察面 + 增删改停启）已按域拆出：本文件是选项卡容器，不该长成第二个大文件
+import { createMcpView } from './mcpView.js';
 import { populateIcons } from './icons.js';
 import { createPager, PagerController } from './pager.js';
 // escapeHtml：HTML 转义纯函数单一真理源（SSOT 收敛，见 helpers/escapeHtml.ts）
 import { escapeHtml } from '../helpers/escapeHtml.js';
+import {
+  SETTINGS_TABS,
+  isSettingsTab,
+  settingsRootId,
+  type SettingsTab,
+} from '../../shared/settingsTabs.js';
 
 /** settingsView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface SettingsViewDeps {
@@ -40,9 +50,6 @@ export interface SettingsViewDeps {
   /** webview window 对象 */
   window: Window;
 }
-
-/** 子选项卡标识（与 HTML 中 data-tab / 根容器 id 对齐） */
-type SettingsTab = 'roles' | 'config' | 'memory' | 'skills' | 'security';
 
 /**
  * 初始化设置面板 webview 交互（选项卡切换 + 挂载三个子视图）
@@ -61,13 +68,12 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
   // 选项卡按钮 + 四个子视图根容器（HTML 骨架固定 id，查询走全局 getElementById——
   // 根容器本身是唯一 id，只有根容器【内部】的子元素才做 root 内查询隔离）
   const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.tab-btn'));
-  const roots: Record<SettingsTab, HTMLElement> = {
-    roles: document.getElementById('roles-root') as HTMLElement,
-    config: document.getElementById('config-root') as HTMLElement,
-    memory: document.getElementById('memory-root') as HTMLElement,
-    skills: document.getElementById('skills-root') as HTMLElement,
-    security: document.getElementById('security-root') as HTMLElement,
-  };
+  // 根容器集合按 tab 表派生（`settingsRootId` 保证 id 与 HTML 同源）——此前 5 个 id 手写在
+  // 本文件、产线 HTML、CSS 三处，加 tab 忘一处即「点了没反应」且无编译报错。
+  const roots = {} as Record<SettingsTab, HTMLElement>;
+  SETTINGS_TABS.forEach((tab) => {
+    roots[tab] = document.getElementById(settingsRootId(tab)) as HTMLElement;
+  });
 
   /** 切换子选项卡：高亮对应按钮 + 显示对应根容器（其余隐藏；保留子视图 DOM 不重建，无闪烁） */
   function switchTab(tab: SettingsTab): void {
@@ -76,24 +82,33 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
       btn.classList.toggle('active', isActive);
       btn.setAttribute('aria-selected', String(isActive));
     });
-    (Object.keys(roots) as SettingsTab[]).forEach((key) => {
+    SETTINGS_TABS.forEach((key) => {
       roots[key].hidden = key !== tab;
     });
   }
 
-  // 点击选项卡按钮切换
+  // 点击选项卡按钮切换（`data-tab` 值先由 isSettingsTab 收窄：原先是五路 `tab === 'x' || …`
+  // 手写比对，漏写一路的表现是「点了没反应」而不是报错）
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.tab;
-      if (
-        tab === 'roles' ||
-        tab === 'config' ||
-        tab === 'memory' ||
-        tab === 'skills' ||
-        tab === 'security'
-      )
-        switchTab(tab);
+      if (isSettingsTab(tab)) switchTab(tab);
     });
+  });
+
+  // ─── 「在设置中调整 / 编辑」导航按钮（页面级统一绑定，**勿下放到子视图**） ───
+  // `open_setting` 是页面级导航意图（跳到原生设置对应键），与任何子视图的状态无关 ⇒
+  // 绑在容器层、事件委托到 document：任一选项卡新增同类按钮只需写 data-setting-key，零 JS 改动；
+  // 子视图后续动态插入的同类按钮也自动生效（`querySelectorAll` 快照做不到）。
+  //
+  // 反面教材（2026-10-24 实测）：MCP 页首版复用了 `.open-setting-btn` + data-setting-key，但绑定
+  // 语句留在安全子视图内查 `#security-root` ⇒ MCP 页的「在设置中编辑」**有按钮、无监听器**，
+  // 点击零反应，且无编译错、无测试红（该类按钮当时只有一条用例，且查的是安全页那颗）。
+  document.addEventListener('click', (event) => {
+    const btn = (event.target as Element | null)?.closest<HTMLButtonElement>('.open-setting-btn');
+    const key = btn?.dataset.settingKey;
+    if (!key) return;
+    vscode.postMessage({ type: 'open_setting', key });
   });
 
   // host 指令切换（configureModel 命令 → 大模型选项卡）
@@ -134,7 +149,7 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
     toastTimer = window.setTimeout(() => toast?.classList.remove('show'), 2500);
   }
 
-  // 挂载三个子视图（config/memory 先，roles 后；全部用共享 vscode 实例）。
+  // 挂载各子视图（config/memory/roles 先，skills/mcp/security 后；全部用共享 vscode 实例）。
   // 初始选项卡为「记忆」，与 HTML 默认态一致（用户请求）。
   // 每个挂载独立 try/catch：任一子视图挂载异常不阻断其余子视图，错误输出到 webview console。
   try {
@@ -161,6 +176,13 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
     console.error('[memora-settings] skillsView 挂载失败:', err);
   }
 
+  // MCP 子视图初始化（外部工具服务器的观察面 + 免确认点选）
+  try {
+    createMcpView({ vscode, window, root: roots.mcp });
+  } catch (err) {
+    console.error('[memora-settings] mcpView 挂载失败:', err);
+  }
+
   // 安全子视图初始化（写入审批）
   try {
     createSecurityView({ vscode, window, root: roots.security });
@@ -168,8 +190,8 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
     console.error('[memora-settings] securityView 挂载失败:', err);
   }
 
-  // ready 握手：三个子视图全部挂载（消息监听器已注册）后，由容器统一通知 host 就绪；
-  // host 收到后统一推送三个子视图数据（对齐 chatPanel replaySession 的 ready 时序修复，
+  // ready 握手：全部子视图挂载（消息监听器已注册）后，由容器统一通知 host 就绪；
+  // host 收到后统一推送各子视图数据（对齐 chatPanel replaySession 的 ready 时序修复，
   // 避免首帧推送在监听器注册前到达而被丢弃）
   vscode.postMessage({ type: 'ready' });
 }
@@ -505,7 +527,11 @@ function createSecurityView({
   // 开关切换事件：通知 host（仅当 toggle 存在时）
   if (toggle) {
     toggle.addEventListener('change', () => {
-      vscode.postMessage({ type: 'security_toggle', enabled: toggle.checked });
+      vscode.postMessage({
+        type: 'security_toggle',
+        target: 'confirmWrites',
+        enabled: toggle.checked,
+      });
       if (statusEl) {
         statusEl.textContent = toggle.checked
           ? '已开启：写文件前将弹出审批卡'
@@ -515,10 +541,14 @@ function createSecurityView({
     });
   }
 
-  // 脚本执行二次确认开关：通知 host（security_scripts_toggle）
+  // 脚本执行二次确认开关：通知 host（security_toggle target=confirmScripts）
   if (scriptsToggle) {
     scriptsToggle.addEventListener('change', () => {
-      vscode.postMessage({ type: 'security_scripts_toggle', enabled: scriptsToggle.checked });
+      vscode.postMessage({
+        type: 'security_toggle',
+        target: 'confirmScripts',
+        enabled: scriptsToggle.checked,
+      });
       if (statusEl) {
         statusEl.textContent = scriptsToggle.checked
           ? '已开启：运行脚本/代码前将弹出审批卡'
@@ -528,15 +558,9 @@ function createSecurityView({
     });
   }
 
-  // ─── 「在设置中调整」导航按钮（统一绑定，禁逐个手写） ───
-  // 三个配置键（scriptNodePath / showMetrics / attentionSound）共用同一条 open_setting
-  // 通道：配置读写真源是 VS Code 原生设置，设置页不复制第二套输入框/开关
-  // （复制即键名、默认值、scope 三处各存一份）。新增同类按钮只需加 data-setting-key。
-  root.querySelectorAll<HTMLButtonElement>('.open-setting-btn').forEach((btn) => {
-    const key = btn.dataset.settingKey;
-    if (!key) return;
-    btn.addEventListener('click', () => vscode.postMessage({ type: 'open_setting', key }));
-  });
+  // ─── 「在设置中调整」导航按钮 ───
+  // 绑定已上移到 createSettingsView（页面级事件委托）：`open_setting` 与安全子视图无关，
+  // 绑在这里会让别的选项卡（MCP 页）复用同一 class 时静默失效。**勿在此处加回。**
 
   // ─── 网页搜索引擎下拉（选项由 custom_search_engines_status 动态重建，单一真理源 PRESET_SEARCH_ENGINES）───
   const engineSelect = root.querySelector<HTMLSelectElement>('#searchEngineSelect');

@@ -25,6 +25,9 @@ import {
   type Tool as McpTool,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { ILogger } from '@zooique/memora';
+// 配置形状真源在 shared（webview 要画编辑表单，不能 import 本模块——会把 MCP SDK 拖进
+// webview bundle）⇒ 本接口只 extends、不重复定义字段，加字段必两边同源。
+import type { McpServerDraftDto } from '../../../shared/protocol.js';
 
 /** 连接握手超时（毫秒）：首次 `npx` 拉起常有数秒冷启动，给足余量；超时即判失败并杀子进程 */
 const CONNECT_TIMEOUT_MS = 20_000;
@@ -63,19 +66,11 @@ export interface ToolCollection {
  * 刻意**不支持**工作区级 `.mcp.json`：他人提交的配置文件可自动拉起任意命令，
  * 信任来源未拍板前只认用户级设置（方案 §10「server 配置来源与信任」登记项）。
  */
-export interface McpServerConfig {
+export interface McpServerConfig extends McpServerDraftDto {
   /** server 名（进工具名前缀，须唯一；重复配置在启动时按先到先得并告警） */
   name: string;
   /** 可执行命令（如 `node` / `npx` / `python`） */
   command: string;
-  /** 命令参数 */
-  args?: string[];
-  /** 追加/覆盖的环境变量（与默认安全环境合并，见 connect） */
-  env?: Record<string, string>;
-  /** 子进程工作目录（缺省继承扩展宿主 cwd） */
-  cwd?: string;
-  /** 是否启用（缺省 true）；false = 不拉起、不注册任何工具 */
-  enabled?: boolean;
 }
 
 /** 一页 `tools/list` 的结果（分页循环的最小单元） */

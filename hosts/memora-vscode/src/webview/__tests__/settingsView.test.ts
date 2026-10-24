@@ -13,6 +13,13 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createSettingsView } from '../scripts/settingsView.js';
 import type { CustomSearchEngineConfig, MemoryItemDto } from '../../shared/protocol.js';
+// MCP 子视图骨架**直接取产线同一份常量**（不再手抄一份夹具镜像）：手抄镜像会随产线演进
+// 静默失同步，而失同步的表现是「测试全绿、真机少一块」——正是这类夹具要防的东西。
+import { MCP_BODY_HTML } from '../panels/settingsMcpHtml.js';
+import { settingsRootId } from '../../shared/settingsTabs.js';
+
+/** MCP 面板容器（root id 由 tab 表派生，不写死字符串） */
+const MCP_FIXTURE = `<div id="${settingsRootId('mcp')}" hidden>${MCP_BODY_HTML}</div>`;
 
 /** 覆盖 createSettingsView 全部查询引用 + 五个子视图骨架的最小 HTML（默认选项卡为「记忆」） */
 const HTML = `
@@ -87,6 +94,7 @@ const HTML = `
       <button class="btn btn-secondary open-setting-btn" type="button" data-setting-key="memora.showMetrics">在设置中调整</button>
     </div>
   </div>
+  ${MCP_FIXTURE}
 `;
 
 /** 挂载 createSettingsView 并返回 postMessage mock */
@@ -146,6 +154,10 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
       type: 'open_setting',
       key: 'memora.showMetrics',
     });
+    // 只投递一次：绑定若同时存在于容器层与子视图（双重绑定），这里会变 2（host 重复开设置）
+    expect(
+      postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'open_setting'),
+    ).toHaveLength(1);
   });
 
   it('settings_switch_tab 消息切换选项卡（configureModel 命令路径）', () => {
@@ -252,7 +264,7 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
   });
 });
 
-describe('脚本执行二次确认开关（security_scripts_toggle，2026-09-08）', () => {
+describe('脚本执行二次确认开关（security_toggle target=confirmScripts，2026-10-24 协议治理合并）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -278,12 +290,16 @@ describe('脚本执行二次确认开关（security_scripts_toggle，2026-09-08�
     expect(statusEl.textContent).toContain('脚本/命令执行前审批');
   });
 
-  it('切换脚本确认开关 → 发送 security_scripts_toggle + 更新状态文案', () => {
+  it('切换脚本确认开关 → 发送 security_toggle(target=confirmScripts) + 更新状态文案', () => {
     const { postMessage } = mountSettingsView();
     const scriptsToggle = document.getElementById('confirmScriptsToggle') as HTMLInputElement;
     scriptsToggle.checked = true;
     scriptsToggle.dispatchEvent(new Event('change'));
-    expect(postMessage).toHaveBeenCalledWith({ type: 'security_scripts_toggle', enabled: true });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'security_toggle',
+      target: 'confirmScripts',
+      enabled: true,
+    });
     expect((document.getElementById('securityStatus') as HTMLElement).textContent).toContain(
       '运行脚本/代码前将弹出审批卡',
     );
@@ -771,5 +787,287 @@ describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-1
     expect(postMessage).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'custom_search_engines_set' }),
     );
+  });
+});
+
+describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互重构）', () => {
+  /** 推一次 host 状态给 webview */
+  function pushStatus(servers: unknown[]): void {
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'mcp_status', servers } }));
+  }
+
+  /** 一台在跑的 server（含两个工具：一个已免确认、一个派生名与原名不同） */
+  const RUNNING = {
+    name: 'fs',
+    command: 'npx',
+    args: ['-y', 'server-filesystem'],
+    enabled: true,
+    state: 'running',
+    toolCount: 2,
+    tools: [
+      {
+        originalName: 'read-file',
+        derivedName: 'mcp__fs__read_file',
+        allowKey: 'mcp__fs__read-file',
+        allowlisted: true,
+      },
+      {
+        originalName: 'write_file',
+        derivedName: 'mcp__fs__write_file',
+        allowKey: 'mcp__fs__write_file',
+        allowlisted: false,
+      },
+    ],
+  };
+
+  /** 点击第一个匹配元素 */
+  function clickOne(selector: string): void {
+    const el = document.querySelector<HTMLElement>(selector);
+    expect(el).not.toBeNull();
+    el!.click();
+  }
+
+  /** 返回 MCP 根容器 */
+  function mcpRoot(): HTMLElement {
+    return document.getElementById('mcp-root') as HTMLElement;
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('挂载不发拉取消息（纯推送渲染：首屏数据走 host ready 握手统一推送）', () => {
+    const { postMessage } = mountSettingsView();
+    // 2026-10-24 协议治理：mcp_status_load 通道并入 ready 推送（协议计数触阈值）。
+    // 断链守护：若有人把「拉取」加回来，此断言红——拉取模式会让面板在 host 未就绪时
+    // 发出无人应答的消息，且白占一条协议通道。
+    const mcpPosts = postMessage.mock.calls.filter((c) =>
+      String((c[0] as { type?: string }).type).startsWith('mcp_'),
+    );
+    expect(mcpPosts).toEqual([]);
+  });
+
+  it('运行态：计数徽条 / 状态点 / 免确认勾选态 / 改名工具标出原名', () => {
+    mountSettingsView();
+    pushStatus([RUNNING]);
+    expect((document.getElementById('mcpCount') as HTMLElement).textContent).toBe(
+      '1 台 · 1 已连接 · 2 个工具',
+    );
+    expect(mcpRoot().querySelector('.mcp-dot')?.getAttribute('data-state')).toBe('running');
+    expect(mcpRoot().querySelectorAll('.mcp-tool-row')).toHaveLength(2);
+    // 免确认态由 host 下发，UI 不自行推断
+    const boxes = Array.from(mcpRoot().querySelectorAll<HTMLInputElement>('.mcp-allow-check'));
+    expect(boxes.map((b) => b.checked)).toEqual([true, false]);
+    expect(mcpRoot().querySelector('.mcp-tool-orig')?.textContent).toContain('read-file');
+    // 命令摘要 = command + args（不含 env）
+    expect(mcpRoot().querySelector('.mcp-server-cmd')?.textContent).toBe(
+      'npx -y server-filesystem',
+    );
+  });
+
+  it('失败态：错误原文可见、卡片不消失（首版只看运行态 ⇒ 坏的那台被整条抹掉）', () => {
+    mountSettingsView();
+    pushStatus([
+      {
+        name: 'github',
+        command: 'github-mcp',
+        enabled: true,
+        state: 'failed',
+        toolCount: 0,
+        tools: [],
+        error: 'spawn github-mcp ENOENT',
+      },
+    ]);
+    // 断链守护：卡片必须还在，且错误文本原样透出（这是排查「为什么工具没出现」的唯一入口）
+    expect(mcpRoot().querySelectorAll('.mcp-server')).toHaveLength(1);
+    expect(mcpRoot().querySelector('.mcp-server-error')?.textContent).toBe(
+      'spawn github-mcp ENOENT',
+    );
+    expect(mcpRoot().querySelector('.mcp-server-state')?.textContent).toBe('启动失败');
+    // 失败态也给了恢复路径（重启），否则「配置没变就永远起不来」
+    expect(mcpRoot().querySelector('[data-act="restart"]')).not.toBeNull();
+  });
+
+  it('停用 / 配置不完整：各自成态，不冒充「失败」', () => {
+    mountSettingsView();
+    pushStatus([
+      { name: 'off', command: 'x', enabled: false, state: 'disabled', toolCount: 0, tools: [] },
+      {
+        name: 'bad',
+        command: '',
+        enabled: true,
+        state: 'invalid',
+        toolCount: 0,
+        tools: [],
+        problem: '缺少 command',
+      },
+    ]);
+    const states = Array.from(mcpRoot().querySelectorAll('.mcp-server-state')).map(
+      (el) => el.textContent,
+    );
+    expect(states).toEqual(['已停用', '配置不完整']);
+    // 停用态给「启用」，非法态只给「编辑」（配置没救之前重启无意义）
+    const cards = mcpRoot().querySelectorAll<HTMLElement>('.mcp-server');
+    expect(cards[0]?.querySelector('[data-act="toggle"]')?.textContent).toBe('启用');
+    expect(cards[0]?.querySelector('[data-act="restart"]')).toBeNull();
+    expect(cards[1]?.querySelector('[data-act="toggle"]')).toBeNull();
+    expect(cards[1]?.querySelector('.mcp-server-error')?.textContent).toBe('缺少 command');
+  });
+
+  it('空数组 = 空态 + 添加入口（空态不再是一段「去别处改」的说明书）', () => {
+    mountSettingsView();
+    pushStatus([]);
+    expect((document.getElementById('mcpEmpty') as HTMLElement).hidden).toBe(false);
+    expect((document.getElementById('mcpList') as HTMLElement).hidden).toBe(true);
+    expect(document.querySelectorAll('.mcp-add-btn')).toHaveLength(2);
+  });
+
+  it('勾选只上报不做本地乐观翻转：发出 mcp_write/allow 且带回 allowKey', () => {
+    const { postMessage } = mountSettingsView();
+    pushStatus([RUNNING]);
+    const box = mcpRoot().querySelectorAll<HTMLInputElement>('.mcp-allow-check')[1]!;
+    box.checked = true;
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'mcp_write',
+      op: 'allow',
+      key: 'mcp__fs__write_file',
+      allowlisted: true,
+    });
+    // UI 不持有第二份状态真源：回推到达前先还原，避免显示一个尚未生效的档位
+    expect(box.checked).toBe(false);
+  });
+
+  it('添加服务器：表单 → 保存 → upsert（args 一行一个、env 按首个 = 切分）', () => {
+    const { postMessage } = mountSettingsView();
+    pushStatus([]);
+    clickOne('#mcpAddBtn');
+    const q = <T extends HTMLElement>(sel: string): T => mcpRoot().querySelector(sel) as T;
+    q<HTMLInputElement>('#mcpFName').value = 'sqlite';
+    q<HTMLInputElement>('#mcpFCommand').value = 'uvx';
+    q<HTMLTextAreaElement>('#mcpFArgs').value = 'mcp-server-sqlite\n--db\napp.db\n';
+    q<HTMLTextAreaElement>('#mcpFEnv').value = 'TOKEN=a=b\n\nLEVEL=debug';
+    q<HTMLInputElement>('#mcpFCwd').value = '   ';
+    clickOne('[data-act="save"]');
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'mcp_write',
+      op: 'upsert',
+      server: {
+        name: 'sqlite',
+        command: 'uvx',
+        enabled: true,
+        args: ['mcp-server-sqlite', '--db', 'app.db'],
+        env: { TOKEN: 'a=b', LEVEL: 'debug' },
+      },
+    });
+    // 保存后表单关闭，以 host 回推为准（不乐观插一条「我以为存上了」的卡片）
+    expect(mcpRoot().querySelector('.mcp-form')).toBeNull();
+  });
+
+  it('保存前拦下非法环境变量行：不投递，错误就地显示（不静默丢弃用户输入）', () => {
+    const { postMessage } = mountSettingsView();
+    pushStatus([]);
+    clickOne('#mcpAddBtn');
+    (mcpRoot().querySelector('#mcpFName') as HTMLInputElement).value = 'x';
+    (mcpRoot().querySelector('#mcpFCommand') as HTMLInputElement).value = 'node';
+    (mcpRoot().querySelector('#mcpFEnv') as HTMLTextAreaElement).value = 'NOEQUALS';
+    clickOne('[data-act="save"]');
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'mcp_write', op: 'upsert' }),
+    );
+    expect(mcpRoot().querySelector('.mcp-form-error')?.textContent).toContain('NOEQUALS');
+    // 表单仍在（内容没被清掉）
+    expect(mcpRoot().querySelector('.mcp-form')).not.toBeNull();
+  });
+
+  it('删除需二次确认：首次点击只进确认态，确认后才投递 remove', () => {
+    const { postMessage } = mountSettingsView();
+    pushStatus([RUNNING]);
+    clickOne('[data-act="delete"]');
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'mcp_write', op: 'remove' }),
+    );
+    clickOne('[data-act="delete-confirm"]');
+    expect(postMessage).toHaveBeenCalledWith({ type: 'mcp_write', op: 'remove', name: 'fs' });
+  });
+
+  it('停用 = 可撤销动作：投递 setEnabled(enabled:false)，不是 remove', () => {
+    const { postMessage } = mountSettingsView();
+    pushStatus([RUNNING]);
+    const toggle = mcpRoot().querySelector<HTMLElement>('[data-act="toggle"]');
+    expect(toggle?.textContent).toBe('停用');
+    toggle!.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'mcp_write',
+      op: 'setEnabled',
+      name: 'fs',
+      enabled: false,
+    });
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'mcp_write', op: 'remove' }),
+    );
+  });
+
+  it('参数含空项/换行的配置禁用编辑（表单无法无损呈现，指路 settings.json）', () => {
+    mountSettingsView();
+    pushStatus([
+      {
+        name: 'weird',
+        command: 'node',
+        args: ['', 'x'],
+        enabled: true,
+        state: 'running',
+        toolCount: 0,
+        tools: [],
+      },
+    ]);
+    const edit = mcpRoot().querySelector<HTMLButtonElement>('[data-act="edit"]');
+    expect(edit?.disabled).toBe(true);
+    // 有损数据宁可不让编辑，也不静默改写（打开→保存会把空参数吞掉）
+    expect(edit?.getAttribute('title')).toContain('settings.json');
+  });
+
+  it('外部可控文本转义（server/工具名来自外部 MCP server，不进 innerHTML）', () => {
+    mountSettingsView();
+    pushStatus([
+      {
+        name: '<img src=x onerror=alert(1)>',
+        command: 'x',
+        enabled: true,
+        state: 'running',
+        toolCount: 1,
+        tools: [
+          {
+            originalName: '<b>bad</b>',
+            derivedName: 'mcp__x__bad',
+            allowKey: 'k',
+            allowlisted: false,
+          },
+        ],
+      },
+    ]);
+    expect(mcpRoot().querySelector('img')).toBeNull();
+    expect(mcpRoot().querySelector('b')).toBeNull();
+    expect(mcpRoot().querySelector('.mcp-server-name')?.textContent).toBe(
+      '<img src=x onerror=alert(1)>',
+    );
+  });
+
+  it('「高级：在 settings.json 中编辑」→ post open_setting（页面级绑定，按钮已降级为后门）', () => {
+    const { postMessage } = mountSettingsView();
+    pushStatus([]);
+    const btn = mcpRoot().querySelector('.open-setting-btn') as HTMLButtonElement | null;
+    expect(btn).not.toBeNull();
+    btn!.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'open_setting',
+      key: 'memora.mcpServers',
+    });
+    expect(
+      postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'open_setting'),
+    ).toHaveLength(1);
   });
 });

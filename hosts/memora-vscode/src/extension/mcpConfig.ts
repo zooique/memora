@@ -17,9 +17,29 @@
 import * as vscode from 'vscode';
 import type { McpServerConfig } from './host/mcp/connectionManager.js';
 
-/** 读取 MCP 服务器配置（**唯一读取点**；装配与热更共用同一来源） */
+/**
+ * 配置键（与 `package.json` contributes 同名）
+ *
+ * 读（本文件）与写（`webview/panels/mcpServerOps.ts`）共用这两个常量：键名写错在写入侧
+ * 不会报错、只会静默写到不存在的键上——两处各抄一份字面量就是这种事的前置条件。
+ */
+export const MCP_SERVERS_KEY = 'mcpServers';
+/** 免确认白名单键 */
+export const MCP_ALLOWLIST_KEY = 'mcpToolAllowlist';
+
+/**
+ * 读取 MCP 服务器配置（**唯一读取点**；装配、热更与设置面板的状态推送共用同一来源）
+ *
+ * **形态收窄在读取点做一次**：用户把 `mcpServers` 手写成对象/字符串（JSON 合法、形状不对）
+ * 时，`get()` 会原样返回该值。收窄放这里而不是每个消费方各写一遍——散点判据的经典形态是
+ * 「装配侧拦住了、面板侧没拦住」，表现就是「一个坏配置把设置页卡在『加载中…』」。
+ * ⚠ 代价如实登记：非法形态被当作「没配置」（静默），面板暂无「配置格式不对」这一态。
+ *
+ * @returns 配置数组（非数组/缺省一律空数组，本函数不抛）
+ */
 export function readMcpServers(): McpServerConfig[] {
-  return vscode.workspace.getConfiguration('memora').get<McpServerConfig[]>('mcpServers', []);
+  const raw = vscode.workspace.getConfiguration('memora').get<unknown>(MCP_SERVERS_KEY, []);
+  return Array.isArray(raw) ? (raw as McpServerConfig[]) : [];
 }
 
 /**
@@ -29,5 +49,7 @@ export function readMcpServers(): McpServerConfig[] {
  * 不重连）见 `host/mcp/runtime.ts` 的 applyMcpConfigChange。
  */
 export function readMcpToolAllowlist(): string[] {
-  return vscode.workspace.getConfiguration('memora').get<string[]>('mcpToolAllowlist', []);
+  const raw = vscode.workspace.getConfiguration('memora').get<unknown>(MCP_ALLOWLIST_KEY, []);
+  // 同一收窄口径（非数组 = 空集 ⇒ 全部每次确认，fail-closed 方向不受影响）
+  return Array.isArray(raw) ? (raw as string[]) : [];
 }

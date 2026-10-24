@@ -8,6 +8,8 @@ import type {
   RoundStatus,
   StrategyKeyFace,
 } from '@zooique/memora';
+// 设置面板选项卡标识（type-only：运行时常量不进协议，与 injectionSourceMeta.ts 同取向）
+import type { SettingsTab } from './settingsTabs.js';
 
 /**
  * 消息协议 — extension host ↔ Webview 通信契约
@@ -233,6 +235,20 @@ export type InjectionSummary = {
 };
 
 /**
+ * `security_toggle` 的开关对象（写入确认 / 脚本执行确认）
+ *
+ * 两个开关同形（都是 boolean），按 target 寻址——对齐 `toggle_skill_disabled`
+ * 的「按名寻址」先例。2026-10-24 协议治理：原 `security_toggle` /
+ * `security_scripts_toggle` 两条独立通道合并为一条（协议类型总数触达治理阈值 130，
+ * 见 `shared/__tests__/protocolGuard.test.ts`），勿再按消息名分裂回去。
+ *
+ * ⚠️ target 是**传输层语义名**，不是存储键：持久化地址另有真源
+ * （`shared/constants.ts` 的 `CONFIRM_WRITES_KEY` / `CONFIRM_SCRIPTS_KEY`，形如
+ * `memora.confirmWrites`）。两者刻意不同层——改存储键不该动消息契约，反之亦然。
+ */
+export type SecurityToggleTarget = 'confirmWrites' | 'confirmScripts';
+
+/**
  * 引用的身份键与去重规则见 `shared/refKey.ts`（**独立小模块**，非本文件）。
  *
  * 不放本文件的理由：webview 需**值导入**这两个函数（不是 type），若放本协议文件
@@ -308,11 +324,18 @@ export type WebviewToExtensionMessage =
       injections?: Exclude<InjectionSource, 'active-file'>[];
     }
   /**
-   * 打开大模型配置视图（对话面板空态引导按钮触发）
+   * 导航到设置视图的指定选项卡（对话面板空态引导按钮 / 角色徽章点击触发）
    *
-   * 由对话面板空态「去配置模型」引导按钮触发：host 打开大模型配置面板并切到「大模型」选项卡。
+   * 由对话面板两处导航触发：空态「去配置模型」→ 大模型选项卡；输入区下方当前角色徽章 →
+   * 角色选项卡。host 按 tab 执行对应命令（先记待切选项卡再 focus，视图未就绪时 ready
+   * 握手后补发 {@link settings_switch_tab}）。
+   * ⚠️ 本消息**只负责导航**：切换执行仍走各视图既有单路径（如角色视图「设为当前」→
+   * roles_set_active → agent.switchRolePack），对话侧不新增切换逻辑（零并行推送路径）。
+   * tab 收窄为可导航的两个（config/roles）——其余选项卡无导航入口，放宽类型等于允许
+   * 发出无处可去的消息。2026-10-24 协议治理：原 open_config / open_roles 两条同构
+   * 通道合并为一条（协议类型总数触达治理阈值，见 protocolGuard）。
    */
-  | { type: 'open_config' }
+  | { type: 'open_settings_tab'; tab: Extract<SettingsTab, 'config' | 'roles'> }
   /**
    * 打开 VS Code 原生设置中的指定配置项（设置面板「在设置中调整」按钮触发）
    *
@@ -322,15 +345,6 @@ export type WebviewToExtensionMessage =
    * `workbench.action.openSettings` 带键名打开，输入框 / 校验 / scope 提示由 VS Code 提供。
    */
   | { type: 'open_setting'; key: string }
-  /**
-   * 打开角色包管理视图（对话面板「当前角色」徽章点击触发）
-   *
-   * 由输入区下方状态行的当前角色徽章点击触发：host 打开设置视图并切到「角色」选项卡
-   * （导航链路与 open_config → memora.configureModel 同构：先记待切选项卡再 focus）。
-   * ⚠️ 本消息**只负责导航**：切换动作仍由角色视图「设为当前」→ roles_set_active →
-   * agent.switchRolePack 单路径发起，对话侧不新增切换执行逻辑（零并行推送路径）。
-   */
-  | { type: 'open_roles' }
   /**
    * 新建会话（标题条「＋」按钮触发）
    *
@@ -616,23 +630,17 @@ export type WebviewToExtensionMessage =
   | { type: 'polish_input'; text: string }
   // ─── 安全/写入审批消息（W→E 方向） ───
   /**
-   * 切换写入二次确认开关（设置面板「安全」选项卡的 toggle 开关）
+   * 切换安全类二次确认开关（设置面板「安全」选项卡的 toggle 开关）
    *
-   * 由设置面板「写入二次确认」开关触发：host 持久化到 globalState + 热更新
-   * agent.security.setConfirmWrites()。无需重启 Agent。
+   * 由设置面板「安全」选项卡两个同形开关触发，按 {@link SecurityToggleTarget} 寻址：
+   * host 持久化到 globalState + 热更新 agent.security（setConfirmWrites /
+   * setConfirmScripts）。无需重启 Agent。
+   * 语义：confirmScripts 开 = run_code / run_project_script / run_command（普通命令）
+   * 执行前弹窗询问；关（默认）= 自动批准。⚠️ git 写操作与 npm publish 属 ALWAYS_ASK
+   * 档，**不受本开关影响**（恒询问不可豁免，内核 `pathGuard.classifyCommand` 裁决），
+   * 故开关关闭时它们仍会弹窗。
    */
-  | { type: 'security_toggle'; enabled: boolean }
-  /**
-   * 切换脚本/代码/命令执行确认开关（设置面板「安全」选项卡的 toggle 开关）
-   *
-   * 由设置面板「执行二次确认」开关触发：host 持久化到 globalState + 热更新
-   * agent.security.setConfirmScripts()。无需重启 Agent。
-   * 语义：开 = run_code / run_project_script / run_command（普通命令）执行前弹窗询问；
-   * 关（默认）= 自动批准。
-   * ⚠️ git 写操作与 npm publish 属 ALWAYS_ASK 档，**不受本开关影响**（恒询问不可豁免，
-   * 内核 `pathGuard.classifyCommand` 裁决），故开关关闭时它们仍会弹窗。
-   */
-  | { type: 'security_scripts_toggle'; enabled: boolean }
+  | { type: 'security_toggle'; target: SecurityToggleTarget; enabled: boolean }
   /**
    * 写入审批应答（对 write_confirm_request 的应答）
    *
@@ -668,6 +676,26 @@ export type WebviewToExtensionMessage =
    * 仍落盘、运行时顺延到对话结束——提示如实说明，不谎报「已生效」）。
    */
   | { type: 'archive_mode_set'; mode: ArchiveMode }
+  /**
+   * MCP 域写操作（**唯一**写通道，按 `op` 分流；2026-10-24 协议治理）
+   *
+   * 为什么合一条而不是五条：协议类型计数已贴阈值（129/130），而五个动作同属一个域
+   * （MCP 配置写入）+ 同一落点（`memora.mcpServers` / `memora.mcpToolAllowlist` 两个
+   * 用户级键），分流由 `op` 承担 —— 与 `security_toggle { target }`、`open_settings_tab`
+   * 同款先例（**合不是省事，是同一个语义面本来就只有一条通道**）。
+   *
+   * 落点分工（host 侧唯一写入路径，均为 ConfigurationTarget.Global）：
+   *   - `allow`     → `memora.mcpToolAllowlist`（逐工具免确认，键由 host 下发的 allowKey 原样回传）
+   *   - `upsert`    → `memora.mcpServers`（按 name 覆盖或追加；未知字段原样保留）
+   *   - `remove`    → `memora.mcpServers`（按 name 删除）
+   *   - `setEnabled`→ `memora.mcpServers`（`enabled` 置真/假；可撤销，等价于停用而非删除）
+   *   - `restart`   → 不写配置，只对**已装配**运行时做「停一台 + 起一台」（配置未变时的恢复路径）
+   *
+   * 生效语义：写配置的四个 op 都走**既有** onDidChangeConfiguration 热更链（不新建第二条
+   * 生效路径）；写回后 host 立即回推一次 `mcp_status`，热更生效后再回推一次覆盖
+   * （幂等渲染，非乐观翻转）。
+   */
+  | ({ type: 'mcp_write' } & McpWritePayload)
   /**
    * 设置用户自定义网页搜索引擎清单（custom_search_engines_set 消息处理）
    *
@@ -1251,8 +1279,24 @@ export type ExtensionToWebviewMessage =
   | { type: 'governance_result'; ok: boolean; message?: string; action: 'cleanup' }
 
   // ─── 设置视图消息 ───
-  /** 切换设置视图的子选项卡（host → webview 指令） */
-  | { type: 'settings_switch_tab'; tab: 'roles' | 'config' | 'memory' | 'skills' | 'security' }
+  /** 切换设置视图的子选项卡（host → webview 指令；tab 清单真源 = settingsTabs.ts） */
+  | { type: 'settings_switch_tab'; tab: SettingsTab }
+  /**
+   * MCP 服务器状态（host 主动推；**列表基线 = 配置原值，状态 = 运行态 ∪ 失败表**）
+   *
+   * 两个真源分工（混用必错，本页两版各错一次）：配置回答「该有哪些」，运行态回答
+   * 「实际到了哪」。只按运行态出列表会漏掉「配了但还没装配」的台（设置页先于对话面板
+   * 打开时列表谎报空态）；只看运行态又会把「配了但起不来」的整条抹掉。合并逻辑单点在
+   * 宿主 `runtime.getMcpServerStatus(configured)`，面板只渲染不判断。
+   *
+   * 推送时机（无独立「拉取」消息——2026-10-24 协议治理：原 mcp_status_load 通道并入
+   * ready 握手的统一推送，省一条通道）：设置面板 ready 握手 / Agent 装配完成 /
+   * MCP 配置热更生效 / `mcp_write` 写回后 / 运行态变化（启动失败、连接断开、重启）经
+   * 状态监听器回推。
+   * 空数组 = **没有任何配置**（合法空态，面板按空态文案渲染）；「配置在但未装配」不是
+   * 空数组——那是 `pending`（待接入）态。
+   */
+  | { type: 'mcp_status'; servers: McpServerStatusDto[] }
 
   // ─── 技能管理面板消息 ───
   /** 全局技能列表加载完成（对 skills_load 的应答） */
@@ -1667,6 +1711,98 @@ export interface SkillIssueDto {
   /** 问题描述（含影响说明，供 UI 错误定位） */
   message: string;
 }
+
+/**
+ * MCP 工具状态（设置面板 MCP 选项卡的数据面；映射宿主 `runtime.McpToolStatus`）
+ *
+ * `allowKey` 由宿主现算下发（真源 = `policy.allowlistKey`），**webview 不得自行拼字符串**——
+ * 键按「server 原名 + 工具原名」寻址，与模型列表里的派生显示名不同源，手拼必错且错法
+ * 是静默失效。面板做成点选，就是要让用户不必知道键长什么样。
+ */
+export interface McpToolStatusDto {
+  /** server 侧原始工具名（调用时回传；allowlist 寻址的一半） */
+  originalName: string;
+  /** 注册进内核的派生名（模型列表里看到的那个） */
+  derivedName: string;
+  /** 免确认寻址键（可直接写进 `memora.mcpToolAllowlist`） */
+  allowKey: string;
+  /** 是否已免确认（真源 = 注册档位 'audit'，不是面板的本地勾选态） */
+  allowlisted: boolean;
+}
+
+/**
+ * MCP server 的**配置形状**（`memora.mcpServers` 一项；宿主侧 `McpServerConfig`
+ * 直接 `extends` 本接口 ⇒ 字段只有这一份定义，加字段必两边同源）
+ *
+ * 为什么放 shared 而不是 host/mcp：webview 要画编辑表单，但不能 import 宿主 MCP 模块
+ * （那会把 MCP SDK 拖进 webview bundle）。
+ */
+export interface McpServerDraftDto {
+  /** server 名（工具名前缀，须唯一） */
+  name: string;
+  /** 拉起命令（如 node / npx / python） */
+  command: string;
+  /** 命令参数 */
+  args?: string[];
+  /** 追加/覆盖的环境变量 */
+  env?: Record<string, string>;
+  /** 子进程工作目录（缺省继承扩展宿主） */
+  cwd?: string;
+  /** 是否启用（缺省 true）；false = 不拉起、工具对模型不存在 */
+  enabled?: boolean;
+}
+
+/**
+ * MCP server 的**运行态**（面板状态点 / 失败原因的唯一判据）
+ *
+ * 五态的语义边界（勿混）：
+ *   - `running`  配置合法、已启用、连接与工具注册都成功；
+ *   - `failed`   配置合法且启用、**进过装配**，但最近一次启动失败或连接已断（error 有内容）；
+ *   - `pending`  配置合法且启用、**还没进过装配**（Agent 未装配时打开设置页）。既不是失败
+ *                （没试过），也不是停用（用户没这意图）——把它算成任一都是谎报；
+ *   - `disabled` 配置合法但 `enabled: false`（用户显式停用，非错误）；
+ *   - `invalid`  配置本身不完整（缺 command），永远起不来（problem 有内容）。
+ *
+ * 为什么要多态而不是一个 `running` 布尔：单态会把「配了 3 台、2 台起不来」渲染成「1 台」，
+ * 用户最需要排查时页面恰好是空的。`pending` 另有一条理由：列表若只按运行态派生，**配置存在
+ * 但尚未装配**时会显示「还没有配置任何服务器」，用户添加一台、拿到「已添加」回执，卡片仍
+ * 不出现——点完没反应的第二种成因（第一种是死按钮）。
+ */
+export type McpServerState = 'running' | 'failed' | 'pending' | 'disabled' | 'invalid';
+
+/** MCP 服务器状态（一台 server 一行；列表 = 配置原值，状态 = 运行时快照 ∪ 失败表；面板不记账） */
+export interface McpServerStatusDto extends McpServerDraftDto {
+  /** 连接状态（判据见 {@link McpServerState}） */
+  state: McpServerState;
+  /** 配置里的启用位（解析后的真值，非可选）；与 state 正交——`disabled` 就是 enabled:false */
+  enabled: boolean;
+  /** 已注册工具数（非 running 态恒 0） */
+  toolCount: number;
+  /** 工具明细（只读：宿主侧来源是运行时快照，webview 不得就地改） */
+  tools: readonly McpToolStatusDto[];
+  /** `state='failed'` 的失败原因（运行时最近一次尝试的错误文本，已截断） */
+  error?: string;
+  /** `state='invalid'` 缺什么（判据真源 = 宿主的 configProblem，不在面板重写一遍） */
+  problem?: string;
+}
+
+/**
+ * `mcp_write` 的载荷（按 op 判别；见 {@link WebviewToExtensionMessage} 该成员的注释）
+ *
+ * `upsert.server` 用 {@link McpServerDraftDto}：host 按 name 定位旧项后**展开合并**
+ * （未知字段原样保留），因此表单只提交它认识的六个字段，不会把将来新增的键冲掉。
+ */
+export type McpWritePayload =
+  | {
+      /** 切换单个工具的免确认档位（键 = host 下发的 allowKey，webview 不构造） */
+      op: 'allow';
+      key: string;
+      allowlisted: boolean;
+    }
+  | { op: 'upsert'; server: McpServerDraftDto }
+  | { op: 'remove'; name: string }
+  | { op: 'setEnabled'; name: string; enabled: boolean }
+  | { op: 'restart'; name: string };
 
 /** 角色包校验问题（健康徽章数据源，镜像 SkillIssueDto；映射内核 RolePackValidationIssue） */
 export interface RoleIssueDto {

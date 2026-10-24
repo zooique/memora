@@ -15,8 +15,10 @@
 import type { Agent, ILogger } from '@zooique/memora';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { McpConnection, type McpServerConfig } from './connectionManager.js';
+// 五态词汇的真源（面板与宿主共用同一枚举，禁两边各写一份字符串字面量）
+import type { McpServerState } from '../../../shared/protocol.js';
 import { isPlainObject } from './json.js';
-import { parseAllowlist, type McpToolAllowlist } from './policy.js';
+import { allowlistKey, parseAllowlist, type McpToolAllowlist } from './policy.js';
 import {
   buildToolBindings,
   registerServerTools,
@@ -43,6 +45,76 @@ interface RunningServer {
 
 /** 运行态集合（模块级单例，与宿主 agentPromise/currentAgent 的单例口径一致） */
 let running: Map<string, RunningServer> | null = null;
+
+/**
+ * 最近一次**应用**的配置原值（面板状态合并的「该有哪些」那一半）
+ *
+ * 由 startMcpServers / applyMcpConfigChange 唯一写入（它们是配置进运行时的唯一入口，
+ * 见 mcpConfig.ts 的分界注释），停机时清空。**不读 `memora.mcpServers` 当前值**——
+ * 那会把「刚写进配置、热更还没跑」的中间态画成既成事实，与本页「读真值」的立命点相反。
+ */
+let appliedConfigs: readonly McpServerConfig[] = [];
+
+/**
+ * 失败表（server 名 → 最近一次启动失败/断线的原因）
+ *
+ * 不变量：**与 `running` 互斥**——启动成功必删、停机必清、离场必清。违反该不变量会让
+ * 面板同时出现「已连接」和「失败」两条互相打脸的记录。
+ */
+const failed = new Map<string, { error: string; at: number }>();
+
+/**
+ * 最近一次应用配置时注入的日志 / 版本（重启路径沿用）
+ *
+ * 存在理由：重启是面板触发的单机操作，调用方（settingsPanel）没有日志通道；为它单开一个
+ * 注入字段 = 面板多一份「我知道怎么记日志」的知识。沿用启动时的注入值是单点，且语义一致
+ * （同一个 MCP 运行时，同一个输出面板）。
+ */
+let lastLogger: ILogger | undefined;
+let lastClientVersion: string | undefined;
+
+/**
+ * 运行态变化监听器（由宿主 extension 注入，用于把变化回推给设置面板）
+ *
+ * 注入的是**回调**而不是宿主实例——host/mcp 不认识 vscode（纯逻辑、可单测），
+ * 且「注入能力回调 ≠ 反向持有宿主」是本仓既有判据（真红线是持有宿主实例/状态）。
+ */
+let statusListener: (() => void) | null = null;
+
+/**
+ * 注册运行态变化监听器（单点；传 null 解除）
+ *
+ * 存在理由：断线 / 启动失败 / 重启都不是「配置变了」，原先没有任何推送时机 ⇒ 面板停在
+ * 旧值（台账缺口②）。这里不发新消息类型（`mcp_status` 已有），只补触发点。
+ *
+ * @param listener 变化回调（应保持轻量：只做 postMessage）
+ */
+export function setMcpStatusListener(listener: (() => void) | null): void {
+  statusListener = listener;
+}
+
+/** 通知监听器（异常自吞：面板回推失败不该影响运行时状态机） */
+function notifyStatus(): void {
+  try {
+    statusListener?.();
+  } catch {
+    // 面板不在 / webview 已销毁：忽略（状态真源在运行时，下次 ready 会重推）
+  }
+}
+
+/** 记录一次失败（超长截断；`running` 中同名的记录先摘掉，保互斥不变量） */
+function noteFailure(name: string, reason: unknown): void {
+  const text = String(reason ?? '未知错误');
+  failed.set(name, {
+    error: text.length > MAX_ERROR_TEXT ? `${text.slice(0, MAX_ERROR_TEXT)}…` : text,
+    at: Date.now(),
+  });
+}
+
+/** 清除失败记录（启动成功 / 该 server 已从配置移除时调用） */
+function clearFailure(name: string): void {
+  failed.delete(name);
+}
 
 /** 当前生效的 allowlist（热更差分判「allowlist 变没变」的基线；停机时置空） */
 let activeAllowKeys: McpToolAllowlist | null = null;
@@ -89,6 +161,137 @@ function noteToolCount(logger?: ILogger): void {
 }
 
 /**
+ * 单个 MCP 工具的可观测状态（设置面板 MCP 选项卡的数据面）
+ *
+ * **`allowKey` 由调用 `policy.allowlistKey` 现算下发，UI 侧不得自行拼字符串**：键格式的
+ * 真源只有一处（server 原名 + 工具原名），历史上「按模型列表里的显示名写 allowlist」是会
+ * **静默失效**的坑——面板把它做成点选，就是为了让用户不再需要知道这个键长什么样。
+ */
+export interface McpToolStatus {
+  /** server 侧原始工具名（调用时回传的名字，也是 allowlist 寻址的一半） */
+  readonly originalName: string;
+  /** 注册进内核的派生名（模型列表里那个；与原名对比展示，解释「为什么两处不一样」） */
+  readonly derivedName: string;
+  /** 免确认寻址键（可直接写进 `memora.mcpToolAllowlist`） */
+  readonly allowKey: string;
+  /** 当前是否已免确认（= 注册档位为 'audit'） */
+  readonly allowlisted: boolean;
+}
+
+/** 一台 server 的可观测状态 */
+export interface McpServerStatus {
+  /** server 名（配置里的 name） */
+  readonly name: string;
+  /** 配置里的可执行命令 */
+  readonly command: string;
+  /** 配置里的命令参数（表单回显用；缺失 = 无参数） */
+  readonly args?: string[];
+  /** 配置里的环境变量（表单回显用；**列表不展示**，只在编辑表单里出现） */
+  readonly env?: Record<string, string>;
+  /** 配置里的工作目录 */
+  readonly cwd?: string;
+  /** 连接状态（五态语义见 shared/protocol 的 McpServerState） */
+  readonly state: McpServerState;
+  /** 配置启用位（缺省 true）；与 state 正交 */
+  readonly enabled: boolean;
+  /** 已注册工具数（非 running 态恒 0） */
+  readonly toolCount: number;
+  /** 工具明细（顺序 = 注册顺序） */
+  readonly tools: readonly McpToolStatus[];
+  /** state='failed' 的失败原因 */
+  readonly error?: string;
+  /** state='invalid' 缺什么（判据 = 本文件的 configProblem） */
+  readonly problem?: string;
+}
+
+/** 失败原因文本上限（消息进 webview 单行展示；超长截断并注明，不静默丢） */
+const MAX_ERROR_TEXT = 300;
+
+/**
+ * 读取 MCP 服务器状态（**列表基线 = 配置；状态 = 运行态 ∪ 失败表**）
+ *
+ * 两个真源分工（混用必错，本页两版各错一次）：
+ *   - **有哪些** ⇒ 调用方传入的**当前配置**（`readMcpServers()` 原值）。只按运行态出列表
+ *     会漏掉「配了但还没装配」的台：设置视图先于对话面板打开时 Agent 尚未装配，面板会
+ *     显示「还没有配置任何服务器」，用户添加一台、拿到「已添加」回执，卡片**仍不出现**
+ *     ——点完没反应的第二种成因（第一种是死按钮）。
+ *   - **怎么样** ⇒ 运行态（running）∪ 失败表（failed）。「已装配但不在运行」= failed；
+ *     「配置在、没进过装配」= pending（不谎报失败，也不是「停用」——用户没这意图）。
+ *
+ * 只看 `running` 的另一个反例：失败的那台会整条消失，而那恰好是用户最需要看见的一条
+ * （「为什么模型没有 MCP 工具」的答案就在那里）。
+ *
+ * 顺序 = 配置顺序（用户写的顺序就是列表顺序，不按 map 迭代序漂移）。重名按**先到先得**
+ * 只保留第一条（与 indexValidConfigs 的启动语义一致）；**缺 name 的条目无寻址键，不入列表**
+ * （启动侧会告警跳过，面板指路 settings.json）。
+ *
+ * @param configured 当前用户配置原值（`readMcpServers()`；必填——漏传=编译错，不给缺省值，
+ *   否则「忘了传」会静默退回只读运行态的旧缺陷）
+ * @returns 每台配置 server 的状态快照（配置为空 = 空数组 = 合法空态）
+ */
+export function getMcpServerStatus(configured: readonly McpServerConfig[]): McpServerStatus[] {
+  // 「进过装配」的判据：最近一次应用的配置（start / 热更 / restart 写入）
+  const applied = new Set<string>();
+  for (const config of appliedConfigs) {
+    const name = typeof config?.name === 'string' ? config.name.trim() : '';
+    if (name) applied.add(name);
+  }
+
+  const seen = new Set<string>();
+  const list: McpServerStatus[] = [];
+  for (const config of configured) {
+    const name = typeof config?.name === 'string' ? config.name.trim() : '';
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+
+    const problem = configProblem(config);
+    const enabled = config.enabled !== false;
+    const live = running?.get(name);
+    const failure = failed.get(name);
+
+    let state: McpServerState;
+    if (problem) state = 'invalid';
+    else if (!enabled) state = 'disabled';
+    else if (live) state = 'running';
+    else if (applied.has(name)) state = 'failed';
+    // 配置在、还没进过装配（设置视图先于对话面板打开）⇒ 待接入，不谎报失败
+    else state = 'pending';
+
+    list.push({
+      name,
+      command: typeof config.command === 'string' ? config.command : '',
+      ...(Array.isArray(config.args)
+        ? { args: config.args.filter((a) => typeof a === 'string') }
+        : {}),
+      ...(config.env && typeof config.env === 'object' ? { env: { ...config.env } } : {}),
+      ...(typeof config.cwd === 'string' && config.cwd ? { cwd: config.cwd } : {}),
+      state,
+      enabled,
+      toolCount: live ? live.bindings.length : 0,
+      tools: live
+        ? live.bindings.map((binding) => {
+            const key = allowlistKey(name, binding.originalName);
+            return {
+              originalName: binding.originalName,
+              derivedName: binding.derivedName,
+              allowKey: key,
+              allowlisted: live.allowKeys.has(key),
+            };
+          })
+        : [],
+      // 失败原因只在该状态出现；禁用/非法不冒充「失败」（三种原因要分得清）
+      ...(state === 'failed'
+        ? {
+            error: failure?.error ?? '未连接（无启动记录：可能被重名规则跳过）',
+          }
+        : {}),
+      ...(state === 'invalid' && problem ? { problem } : {}),
+    });
+  }
+  return list;
+}
+
+/**
  * `startMcpServers` 的装配期注入（allowlist 必填，日志与版本可选）
  */
 export interface StartMcpOptions {
@@ -111,10 +314,14 @@ export interface StartMcpOptions {
 /**
  * 校验一条配置是否可启动
  *
+ * **导出理由（判据单点）**：设置面板的「保存」校验与启动侧的跳过判据必须是同一句
+ * （`mcpServerOps` 直接复用本函数）。各写一份 = 面板能存进一条永远起不来的配置，
+ * 或者反过来挡住一条合法配置——两种都是判据散点。
+ *
  * @param config 用户配置项
  * @returns 不可用原因；可用时返回 null
  */
-function configProblem(config: McpServerConfig): string | null {
+export function configProblem(config: McpServerConfig): string | null {
   if (typeof config.name !== 'string' || config.name.trim().length === 0) {
     return '缺少 name';
   }
@@ -265,7 +472,10 @@ async function startOneServer(config: McpServerConfig, ctx: StartOneServerContex
       const current = state.get(config.name);
       if (current) unregisterServerTools(current.registrar, current.bindings);
       state.delete(config.name);
+      // 断线也是一种「用户需要知道」的状态：不留记录 = 卡片静默消失（台账缺口②）
+      noteFailure(config.name, '连接已断开（子进程退出或传输层关闭）');
       noteToolCount(logger);
+      notifyStatus();
     };
     // list_changed → 守卫合并的重同步（整换 + 原地更新运行态 bindings）
     connection.onToolsChanged = createResyncGuard(async () => {
@@ -291,9 +501,15 @@ async function startOneServer(config: McpServerConfig, ctx: StartOneServerContex
       noteToolCount(logger);
     });
     logger?.info(`[MCP] server「${config.name}」已接入，注册工具 ${bindings.length} 个`);
+    // 成功即摘失败记录（互斥不变量），并通知面板把红点翻绿
+    clearFailure(config.name);
+    notifyStatus();
   } catch (err) {
     // 单点失败不影响其余 server，也不阻断 Agent 装配（宿主其余功能照常）
     logger?.warn(`[MCP] server「${config.name}」接入失败：${String(err)}`);
+    // 失败必须留痕：只写日志 = 面板看不见（本页首版缺陷），用户在设置里无从排查
+    noteFailure(config.name, err);
+    notifyStatus();
     await connection.close().catch(() => undefined);
   }
 }
@@ -314,6 +530,8 @@ export async function startMcpServers(
   options: StartMcpOptions,
 ): Promise<void> {
   const { allowlist, logger, clientVersion, connect } = options;
+  lastLogger = logger;
+  lastClientVersion = clientVersion;
 
   // 先停后起：见上方 JSDoc。无配置 = 停掉上一轮后完全不碰内核工具集（零行为变化）。
   await stopMcpServers();
@@ -331,6 +549,8 @@ export async function startMcpServers(
   const state = new Map<string, RunningServer>();
   running = state;
   activeAllowKeys = allowKeys;
+  // 「该有哪些」的基线：配置在这里进运行时（另一入口 = 热更），面板状态按它合并
+  appliedConfigs = configs;
 
   const valid = indexValidConfigs(configs, logger);
   await Promise.all(
@@ -508,12 +728,96 @@ export async function stopMcpServers(): Promise<void> {
   const state = running;
   running = null;
   activeAllowKeys = null;
-  if (!state) return;
+  // 停机 = 该有哪些也归零（否则面板会把「已停的旧配置」继续画成 failed）
+  appliedConfigs = [];
+  failed.clear();
+  if (!state) {
+    notifyStatus();
+    return;
+  }
 
   for (const entry of state.values()) {
     await disposeEntry(entry);
   }
   state.clear();
+  notifyStatus();
+}
+
+/**
+ * `restartMcpServer` 的注入（与热更同口径：日志 / 版本 / 连接工厂）
+ */
+export interface RestartMcpOptions {
+  /** 内核日志（缺省不记） */
+  logger?: ILogger;
+  /** 扩展版本 */
+  clientVersion?: string;
+  /** 连接工厂（测试注入假连接） */
+  connect?: McpConnectionFactory;
+}
+
+/**
+ * 重启单台 server（配置没变时的**唯一恢复路径**）
+ *
+ * 存在理由（台账缺口⑦）：配置热更是按 name 差分的——配置没变就不动。于是一台「启动失败」
+ * 或「中途断线」的 server，在用户不改配置的前提下**永远起不来**，而面板上它已经红了。
+ * 这个入口只做「停一台 + 起一台」，不写配置、不新建生效路径。
+ *
+ * 串行：排在 `hotReloadChain` 上（与配置热更互斥）。并发启停同一台 = 注册面半旧半新。
+ *
+ * @param agent 已装配的内核 Agent
+ * @param name server 名（配置里的 name）
+ * @param options 日志 / 版本 / 连接工厂
+ * @returns ok=false 时 error 为可直接展示的原因（不抛异常：面板按结果回执）
+ */
+export function restartMcpServer(
+  agent: Agent,
+  name: string,
+  options: RestartMcpOptions = {},
+): Promise<{ ok: boolean; error?: string }> {
+  const run = hotReloadChain.then(() => restartInner(agent, name, options));
+  hotReloadChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+/** 重启主体（错误自吞成回执：单台重启失败不该毒化串行链） */
+async function restartInner(
+  agent: Agent,
+  name: string,
+  options: RestartMcpOptions,
+): Promise<{ ok: boolean; error?: string }> {
+  const { logger = lastLogger, clientVersion = lastClientVersion, connect } = options;
+  try {
+    const state = running;
+    if (!state) return { ok: false, error: 'MCP 运行时未启动（Agent 尚未装配）' };
+    const config = appliedConfigs.find((item) => item?.name === name);
+    if (!config) return { ok: false, error: `未找到 server「${name}」（配置可能已变更）` };
+    const problem = configProblem(config);
+    if (problem) return { ok: false, error: `配置不合法：${problem}` };
+    if (config.enabled === false) return { ok: false, error: '该 server 已停用，先启用再重启' };
+    const registrar = agent.tools;
+    if (!registrar) return { ok: false, error: 'Agent 工具执行器不可用' };
+
+    if (state.has(name)) await stopServerIn(state, name);
+    clearFailure(name);
+    await startOneServer(config, {
+      registrar,
+      allowKeys: activeAllowKeys ?? parseAllowlist([]),
+      state,
+      logger,
+      clientVersion,
+      connect,
+    });
+    noteToolCount(logger);
+    notifyStatus();
+    if (state.has(name)) return { ok: true };
+    return { ok: false, error: failed.get(name)?.error ?? '启动失败（原因未记录）' };
+  } catch (err) {
+    logger?.warn(`[MCP] 重启「${name}」失败：${String(err)}`);
+    return { ok: false, error: String(err) };
+  }
 }
 
 /**
@@ -575,6 +879,8 @@ async function applyConfigChangeInner(
   options: McpConfigChangeOptions,
 ): Promise<void> {
   const { allowlist, logger, clientVersion, connect } = options;
+  lastLogger = logger;
+  lastClientVersion = clientVersion;
   try {
     const registrar = agent.tools;
     if (!registrar) {
@@ -585,6 +891,8 @@ async function applyConfigChangeInner(
     const newKeys = parseAllowlist(allowlist);
     const allowChanged = !allowSetsEqual(activeAllowKeys, newKeys);
     const validNew = indexValidConfigs(configs, logger);
+    // 「该有哪些」以本次配置为准（含 disabled / invalid 的条目——它们也要在面板里可见）
+    appliedConfigs = configs;
 
     const previous = running;
     const state = previous ?? new Map<string, RunningServer>();
@@ -596,6 +904,8 @@ async function applyConfigChangeInner(
     for (const name of previous ? [...previous.keys()] : []) {
       if (validNew.has(name)) continue;
       await stopServerIn(state, name);
+      // 已离场（删除/停用/变非法）⇒ 失败记录一并清掉，否则面板会把旧错误继续挂在它名下
+      clearFailure(name);
       if (running !== state) {
         await disposeState(state);
         return;
@@ -653,8 +963,10 @@ async function applyConfigChangeInner(
 
     activeAllowKeys = newKeys;
     noteToolCount(logger);
+    notifyStatus();
   } catch (err) {
     logger?.warn(`[MCP] 配置热更失败：${String(err)}`);
+    notifyStatus();
   }
 }
 

@@ -185,11 +185,11 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(badge.hidden).toBe(true);
   });
 
-  it('角色徽章点击 → post open_roles（导航到设置视图角色选项卡，切换逻辑不走本路径）', () => {
+  it('角色徽章点击 → post open_settings_tab(roles)（导航到设置视图角色选项卡，切换逻辑不走本路径）', () => {
     const { postMessage } = mountChatView();
     const badge = document.getElementById('currentRoleBadge') as HTMLButtonElement;
     badge.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'open_roles' });
+    expect(postMessage).toHaveBeenCalledWith({ type: 'open_settings_tab', tab: 'roles' });
   });
 
   it('小组会议图标单例幂等：chat_role_pack 重复到达不重复创建（身份即单例引用，非字符串复查找回）', () => {

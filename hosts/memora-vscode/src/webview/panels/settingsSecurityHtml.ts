@@ -1,5 +1,5 @@
 /**
- * 设置面板「安全」选项卡 HTML 片段
+ * 设置面板「安全」选项卡 HTML 主体片段
  *
  * 为什么独立成文件（自 settingsPanel.ts 拆出）：settingsPanel 是贴 eslint max-lines
  * 上限的 TARGET 文件（只降不升），而安全页每加一个配置项入口就多一段静态 HTML，
@@ -8,12 +8,16 @@
  * 职责边界：本模块只提供静态 DOM 骨架，零逻辑。交互（开关读写、路径增删、引擎测试、
  * open_setting 导航）全部由 settingsPanel.ts 的 handleMessage 与 webview 侧子视图承担。
  * 片段内不得出现插值变量——一旦需要动态数据，说明它该留在 settingsPanel 或走消息通道。
+ *
+ * **root 容器的归属变更（2026-10-24 tab 表收口）**：`<div id="security-root" role="tabpanel">`
+ * 不再由本片段自带，改由 `settingsPanelHtml.ts` 的 {@link buildHtml} 与其余选项卡统一生成
+ * （id 由 `settingsRootId('security')` 派生、`hidden` 由是否默认首页决定）。此前每个选项卡
+ * 各自手写 root 容器 ⇒ tab 的 id / role / aria 是判据散点。
  */
 
-/** 安全子视图（security 选项卡：写入审批 / 路径白名单 / 搜索引擎 / 调试与提示入口） */
-export const SECURITY_ROOT_HTML = `
+/** 安全子视图主体（security 选项卡：写入审批 / 路径白名单 / 搜索引擎 / 调试与提示入口） */
+export const SECURITY_BODY_HTML = `
   <!-- 安全子视图（security 选项卡：写入审批） -->
-  <div id="security-root" role="tabpanel" aria-label="安全" hidden>
     <div class="header">
       <h2>安全</h2>
     </div>
@@ -90,5 +94,4 @@ export const SECURITY_ROOT_HTML = `
         <span id="resetUserDataHint" class="security-status security-reset-hint" hidden></span>
       </div>
     </div>
-  </div>
 `;

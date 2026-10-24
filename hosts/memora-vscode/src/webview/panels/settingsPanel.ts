@@ -1,13 +1,14 @@
 /**
  * 设置面板 — 侧边栏 Webview 视图提供者（选项卡式单一视图）
  *
- * 角色 / 大模型 / 记忆 三个子视图共存于单一"设置"视图，内部通过选项卡切换子视图。
- * 三个子视图保留各自独立行为逻辑，通过共享同一 webview 文档 + root 容器 id 空间隔离共存。
+ * 各子视图（角色 / 大模型 / 记忆 / 技能 / MCP / 安全，清单 SSOT = `shared/settingsTabs.ts`）
+ * 共存于单一"设置"视图，内部通过选项卡切换。
+ * 子视图保留各自独立行为逻辑，通过共享同一 webview 文档 + root 容器 id 空间隔离共存。
  *
  * 设计（对齐单一真理源 + 自然生长）：
  *   - 渲染逻辑全部在 webview 内（postMessage 驱动），extension host 不做 DOM；
  *   - 子视图数据源（roles: RolePackManager / config: ProviderStore / memory: MemoryInspector）；
- *   - 三个子视图的 load 逻辑在 host 侧统一由 settingsPanel 分发（根据 activeTab 决定推送哪个子视图的数据）；
+ *   - 各子视图的 load 逻辑在 host 侧统一由 settingsPanel 分发（根据 activeTab 决定推送哪个子视图的数据）；
  *   - 选项卡切换时只切换 content 区域显示隐藏，不销毁/重建 DOM（保留子视图状态，减少闪烁）。
  */
 import * as vscode from 'vscode';
@@ -17,8 +18,9 @@ import type { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createBackgroundProvider } from '../../extension/host/llmConfig.js';
 import { inspectRolePackTeams } from '../../extension/host/rolePackTeams.js';
 import { MemoraChatViewProvider } from './chatPanel.js';
-// 安全页静态 DOM 骨架（本文件贴 max-lines 上限，安全页每加一入口即长一段 → 外置，只存骨架零逻辑）
-import { SECURITY_ROOT_HTML } from './settingsSecurityHtml.js';
+// 设置面板静态 DOM 骨架：本文件贴 eslint max-lines 上限、只降不升，
+// 而骨架每加一个选项卡就长一段（线性增长域）⇒ 外置为 panels/settingsPanelHtml.ts
+import { buildHtml } from './settingsPanelHtml.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 import type {
   CustomSearchEngineConfig,
@@ -31,6 +33,19 @@ import type {
   SkillDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
+// MCP 运行时状态（MCP 选项卡的观察面；真源 = 已应用配置 ∪ 运行态 ∪ 失败表）
+import {
+  getMcpServerStatus,
+  restartMcpServer,
+  setMcpStatusListener,
+} from '../../extension/host/mcp/runtime.js';
+// MCP 写操作实现（`mcp_write` 五个 op 的唯一落点；写配置/回执/重启都在那边）
+import { applyMcpWrite, type McpOpsDeps } from './mcpServerOps.js';
+// 配置原值 = 面板列表的「有哪些」，只经唯一读取点（禁就地 getConfiguration，判据散点）
+import { readMcpServers } from '../../extension/mcpConfig.js';
+// tab 标识 / 顺序 / 可见名唯一真源：本文件此前手写的两处联合都漏了 'security'
+// （⇒ 安全页无法从任何命令跳转过去），不再手写，统一取这一份
+import type { SettingsTab } from '../../shared/settingsTabs.js';
 import { PRESET_SEARCH_ENGINES } from '../../shared/protocol.js';
 // 判据单点复用：validateCustomEngines 定义在搜索引擎域（extension/host/searchEngines.ts），
 // 本面板的「测试 / 保存」两条路径与装配侧 resolveSearchEndpoints 共用同一函数；
@@ -42,8 +57,6 @@ import {
   listVisibleSkills,
   resolveSkill,
 } from '../../extension/host/skillAggregation.js';
-import { settingsStyles } from '../styles/settingsStyles.js';
-import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
 import {
   ACTIVE_ROLE_PACK_KEY,
   CONFIRM_WRITES_KEY,
@@ -87,7 +100,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   /** 全局状态存储（持久化激活角色包，用户级） */
   private _globalState: vscode.Memento | undefined;
   /** 待切换的子选项卡（configureModel 命令在视图未就绪时缓存，webview ready 后补发） */
-  private _pendingTab: 'roles' | 'config' | 'memory' | 'skills' | undefined;
+  private _pendingTab: SettingsTab | undefined;
   /** 对话面板提供者（角色 handoff 预填需跨 webview 投递，由 extension 注入） */
   private _chatProvider: MemoraChatViewProvider | undefined;
   /** 用户技能目录路径（由 extension 注入，用于打开目录功能） */
@@ -109,7 +122,12 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly store: ProviderStore,
-  ) {}
+  ) {
+    // MCP 运行态变化（断线 / 启动失败 / 重启）**不是配置变更**，onDidChangeConfiguration 不会
+    // 触发 ⇒ 由运行时回调驱动回推，否则面板停在旧值（台账缺口②）。注册在这里而不是
+    // extension.ts：那边是贴 max-lines 上限的文件，且「谁要这份状态」本就是视图自己的事。
+    setMcpStatusListener(() => this.pushMcpStatus());
+  }
 
   /** 注入 Agent 懒装配工厂（与 chat 面板共享同一单例装配，SSOT） */
   public setAgentFactory(getAgent: (projectPath: string) => Promise<Agent>): void {
@@ -213,6 +231,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.loadSearchEngineStatus();
       // 记忆子视图：推送会话归档模式当前值（归档模式下拉的回显真源）
       this.loadArchiveModePreference();
+      // MCP 子视图：推送服务器/工具运行态（无独立拉取消息，统一走 ready 推送——
+      // 未装配时是合法空态，装配完成后由 extension 的热更回推覆盖）
+      this.pushMcpStatus();
       return;
     }
 
@@ -429,12 +450,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     }
 
     // ─── 安全子视图消息（写入审批 + 路径白名单） ───
+    // 两个同形开关按 target 寻址（2026-10-24 协议治理：原两条独立通道合并）
     if (msg.type === 'security_toggle') {
-      await this.toggleConfirmWrites(msg.enabled);
-      return;
-    }
-    if (msg.type === 'security_scripts_toggle') {
-      await this.toggleConfirmScripts(msg.enabled);
+      if (msg.target === 'confirmWrites') await this.toggleConfirmWrites(msg.enabled);
+      else await this.toggleConfirmScripts(msg.enabled);
       return;
     }
     if (msg.type === 'allowed_paths_set') {
@@ -449,6 +468,12 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     // 会话归档模式：持久化用户级设置 + 热更新 agent.setArchiveMode（繁忙顺延）
     if (msg.type === 'archive_mode_set') {
       await this.setArchiveMode(msg.mode);
+      return;
+    }
+    // ─── MCP 子视图消息（观察面 + 免确认点选 + 服务器增删改停启） ───
+    // 五类写操作共用一条通道（`op` 判别），实现单点在 mcpServerOps（唯一写入路径）
+    if (msg.type === 'mcp_write') {
+      await applyMcpWrite(this.mcpOpsDeps(), msg);
       return;
     }
     // 自定义搜索引擎清单：持久化 + 回显编辑器
@@ -1420,7 +1445,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   // ─── 安全子视图方法（写入审批） ───
 
   /**
-   * 切换写入二次确认开关（security_toggle 消息处理）
+   * 切换写入二次确认开关（security_toggle target=confirmWrites 消息处理）
    *
    * 持久化到 globalState + 热更新 agent.security.setConfirmWrites()。
    * 无需重启 Agent——SecurityGuard 支持运行时切换。
@@ -1458,7 +1483,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 切换脚本/代码/命令执行确认开关（security_scripts_toggle 消息处理）
+   * 切换脚本/代码/命令执行确认开关（security_toggle target=confirmScripts 消息处理）
    *
    * 持久化到 globalState + 热更新 agent.security.setConfirmScripts()。
    * 无需重启 Agent——SecurityGuard 支持运行时切换。语义：开 = run_code / run_project_script /
@@ -1756,6 +1781,42 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'custom_search_engines_status', engines: this.readCustomSearchEngines() });
   }
 
+  /**
+   * 推送 MCP 服务器状态（MCP 选项卡的观察面）
+   *
+   * 两个来源各管一段（`getMcpServerStatus(configured)` 的契约）：
+   *   - **有哪些** ⇒ 这里传 `readMcpServers()`（配置原值，唯一读取点）。不传会漏掉「配了
+   *     但还没装配」的台：设置视图先于对话面板打开时 Agent 未装配，列表会谎报空态。
+   *   - **怎么样** ⇒ runtime 内的运行态 ∪ 失败表（`pending` = 装配前的诚实态，不是失败）。
+   * 公开方法：配置热更生效后由 extension.ts 回推；运行态变化（启停失败 / 断线 / 重启）
+   * 由 runtime 的状态监听器回调到这里（见 extension.ts 的 setMcpStatusListener）。
+   */
+  public pushMcpStatus(): void {
+    this.post({ type: 'mcp_status', servers: getMcpServerStatus(readMcpServers()) });
+  }
+
+  /**
+   * 构造 MCP 写操作依赖（注入给 mcpServerOps —— 写操作实现不持有 panel 实例）
+   *
+   * 三件事都是回调注入：回推 / 回执 / 重启。`restart` 只走**已装配**的 agent
+   * （不懒装配：重启是「恢复现有运行时」，不该顺手把 Agent 拉起来）。
+   */
+  private mcpOpsDeps(): McpOpsDeps {
+    return {
+      pushStatus: () => this.pushMcpStatus(),
+      notice: (level, message) => this.post({ type: 'notice', level, message }),
+      restart: async (name) => {
+        if (!this._agentPromise) {
+          return { ok: false, error: 'Agent 未装配（下次装配会按当前配置启动，无需重启）' };
+        }
+        const agent = await this._agentPromise;
+        if (!agent) return { ok: false, error: 'Agent 未就绪' };
+        // 日志/版本不在此传：runtime 沿用最近一次应用配置时的注入值（单点，不为此加面板字段）
+        return restartMcpServer(agent, name);
+      },
+    };
+  }
+
   /** 向 webview 发送消息 */
   private post(msg: ExtensionToWebviewMessage): void {
     void this._view?.webview.postMessage(msg);
@@ -1766,8 +1827,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    *
    * 向 webview 推送 settings_switch_tab 指令，webview 切换选项卡高亮 + 显示对应子视图；
    * 视图尚未就绪时缓存待切选项卡，等 ready 握手后补发（避免命令消息被丢弃）。
+   *
+   * @param tab 目标选项卡——**任意** tab 均可。此前形参是手写联合且漏了 `'security'`
+   *   （编译期就把安全页挡在路由之外），现统一取 {@link SettingsTab}：加 tab 无需回来补签名。
    */
-  public switchTab(tab: 'roles' | 'config' | 'memory' | 'skills'): void {
+  public switchTab(tab: SettingsTab): void {
     this._pendingTab = tab;
     if (this._view) {
       this.post({ type: 'settings_switch_tab', tab });
@@ -1829,213 +1893,4 @@ function toSearchDto(h: {
     createdAt: h.createdAt,
     accessedAt: h.accessedAt,
   };
-}
-
-/** 生成 Webview HTML（选项卡栏 + 三个子视图根容器）
- *  @param scriptUri 外部脚本 settingsView.js 的 asWebviewUri（CSP script-src cspSource 加载）
- *  @param cspSource webview 本地资源源（webview.cspSource，供 CSP 放行外部脚本） */
-function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
-  return `${buildHtmlHead({
-    lang: resolveHtmlLang(vscode.env?.language),
-    cspSource,
-    styles: settingsStyles,
-  })}
-<body>
-  <!-- 选项卡栏：记忆（默认首页）/ 角色 / 大模型 / 技能 / 安全 -->
-  <div class="tabs" role="tablist" aria-label="设置选项卡">
-    <button class="tab-btn active" data-tab="memory" role="tab" aria-selected="true">记忆</button>
-    <button class="tab-btn" data-tab="roles" role="tab" aria-selected="false">角色</button>
-    <button class="tab-btn" data-tab="config" role="tab" aria-selected="false">大模型</button>
-    <button class="tab-btn" data-tab="skills" role="tab" aria-selected="false">技能</button>
-    <button class="tab-btn" data-tab="security" role="tab" aria-selected="false">安全</button>
-  </div>
-
-  <!-- 记忆子视图（memory 选项卡，默认首页） -->
-  <div id="memory-root" role="tabpanel" aria-label="记忆">
-    <div class="header">
-      <h2>记忆</h2>
-      <span id="statBar" class="stat-bar" hidden></span>
-    </div>
-    <div class="search-wrap">
-      <input id="searchInput" class="search-input" type="text" placeholder="搜索记忆…" aria-label="搜索记忆" />
-    </div>
-    <div id="list">
-      <p class="loading-hint">加载中…</p>
-    </div>
-
-    <!-- 回收站：软删除记忆的可恢复暂存区 -->
-    <details id="recycle" class="recycle" role="region" aria-label="回收站">
-      <summary>回收站</summary>
-      <div id="recycleList"><p class="hint">回收站为空。</p></div>
-    </details>
-    <p id="memHint" class="mem-hint" hidden></p>
-
-    <!-- 记忆治理区：统计卡 + 加权/清理操作 -->
-    <div id="governance" class="governance" role="region" aria-label="记忆治理">
-      <div class="governance-stats">
-        <div class="governance-stat">
-          <span id="govActive" class="gov-num">0</span>
-          <span class="gov-label">活跃</span>
-        </div>
-        <div class="governance-stat">
-          <span id="govDeleted" class="gov-num">0</span>
-          <span class="gov-label">回收站</span>
-        </div>
-        <div class="governance-stat">
-          <span id="govSuperseded" class="gov-num">0</span>
-          <span class="gov-label">已被取代</span>
-        </div>
-      </div>
-      <div class="governance-actions">
-        <button id="btnCleanup" class="btn btn-danger" title="永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆（不可撤销）">清理过期</button>
-      </div>
-      <p id="govDetail" class="governance-detail" hidden></p>
-    </div>
-
-    <!-- 会话归档模式：内核 archiveMode 投影（full=自动归档 / manual=仅手动；设置即热更新，繁忙顺延） -->
-    <div id="archiveMode" class="archive-mode" role="region" aria-label="会话归档">
-      <div class="archive-mode-item">
-        <label class="security-label" for="archiveModeSelect">会话归档模式</label>
-        <select id="archiveModeSelect" class="security-select" aria-label="会话归档模式">
-          <option value="full">自动归档</option>
-          <option value="manual">仅手动归档</option>
-        </select>
-      </div>
-      <p class="security-desc">自动归档：切换 / 分叉离开会话时自动生成会话摘要与主题（历史列表的检索数据）；仅手动归档：只在手动触发时生成。<strong>轮次摘要不受影响</strong>（总是生成，对话记忆照常沉淀）。对话进行中切换时，内核拒绝热改——偏好保存后到当前对话结束生效。</p>
-    </div>
-
-    <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>
-  </div>
-
-  <!-- 角色子视图（roles 选项卡） -->
-  <div id="roles-root" role="tabpanel" aria-label="角色" hidden>
-    <div class="header">
-      <h2>角色</h2>
-      <span id="statBar" class="stat-bar" hidden></span>
-      <div class="header-actions">
-        <button id="btnOpenRolePacksDir" class="btn btn-secondary btn-icon-solo" title="打开用户角色包目录">
-          <span class="btn-icon" data-icon="folder"></span>
-        </button>
-        <button id="btnRefreshRolePacks" class="btn btn-secondary btn-icon-solo" title="刷新角色包列表（重扫用户角色包目录）">
-          <span class="btn-icon" data-icon="refresh"></span>
-        </button>
-      </div>
-    </div>
-    <div id="list">
-      <p class="loading-hint">加载中…</p>
-    </div>
-    <p class="footer-hint">「设为当前」仅切换默认角色；「带入对话」还会跳到对话并预填一句过渡语（不自动发送，可编辑后再发）。</p>
-  </div>
-
-  <!-- 大模型配置子视图（config 选项卡） -->
-  <div id="config-root" role="tabpanel" aria-label="大模型配置" hidden>
-    <div class="header">
-      <h2>大模型配置</h2>
-      <span id="statBar" class="stat-bar" hidden></span>
-      <button id="btnAdd" class="btn">添加 API</button>
-    </div>
-    <!-- 模型通道分区：后台 + 检索归入显式分区，与 Provider 列表的 group-title 语言一致 -->
-    <div class="group-title">模型通道</div>
-    <!-- 后台模型通道（多 Provider 路由）：后台任务（摘要/归档/润色）独立轻量模型 -->
-    <div class="cfg-bg">
-      <label for="bgModel" class="cfg-bg-label">后台模型（可选）</label>
-      <select id="bgModel" class="cfg-bg-select" aria-label="后台模型，用于后台任务（摘要/归档/润色）">
-        <option value="">同实时对话</option>
-      </select>
-      <p class="cfg-bg-hint">后台任务（轮次摘要 / 会话归档 / 文本润色 / 语义去重）走此模型，可选用轻量快模型节省成本。</p>
-    </div>
-    <div id="list">
-      <p class="loading-hint">加载中…</p>
-    </div>
-    <!-- 新增/编辑弹窗 -->
-    <div id="modal" class="modal-mask">
-      <div class="modal">
-        <h3 id="modalTitle">添加 API</h3>
-        <form id="cfgForm">
-          <div class="field">
-            <label for="f-name">别名（唯一，仅英文数字.-_）</label>
-            <input id="f-name" name="name" type="text" placeholder="如 deepseek" autocomplete="off" />
-          </div>
-          <div class="field">
-            <label for="f-display">显示名称</label>
-            <input id="f-display" name="displayName" type="text" placeholder="如 DeepSeek" autocomplete="off" />
-          </div>
-          <div class="field">
-            <label for="f-model">模型</label>
-            <input id="f-model" name="model" type="text" placeholder="如 deepseek-chat" autocomplete="off" />
-          </div>
-          <div class="field">
-            <label for="f-baseurl">API Base URL</label>
-            <input id="f-baseurl" name="baseUrl" type="url" placeholder="https://api.xiaomimimo.com/v1" autocomplete="url" />
-          </div>
-          <div class="field">
-            <label for="f-apikey">API Key（编辑时留空保持不变）</label>
-            <input id="f-apikey" name="apiKey" type="password" placeholder="sk-…" autocomplete="new-password" />
-            <div id="apikeyHint" class="key-hint" hidden></div>
-          </div>
-          <div class="field">
-            <label for="f-providertype">来源类型</label>
-            <select id="f-providertype" name="provider">
-              <option value="cloud">云端 API（DeepSeek / 豆包 / 通义等）</option>
-              <option value="local">本地运行时（Ollama / LM Studio）</option>
-            </select>
-            <div class="key-hint">云端服务商默认启用原生工具调用；本地运行时是否支持工具调用由下方显式声明（无法从地址推断）。</div>
-          </div>
-          <div id="toolcalling-field" class="field" hidden>
-            <label class="checkbox-label" for="f-toolcalling">
-              <input id="f-toolcalling" name="supportsToolCalling" type="checkbox" checked />
-              <span>支持原生工具调用（OpenAI Function Calling）</span>
-            </label>
-            <div class="key-hint">勾选：本地模型可调用工具（联网搜索 / 读写文件 / 建记忆等）；取消：仅文本对话，工具通道自动收起并告知模型不可用。</div>
-          </div>
-          <div class="field">
-            <label for="f-contextwindow">上下文窗口上限（K）</label>
-            <input id="f-contextwindow" name="contextWindow" type="text" inputmode="decimal" placeholder="如 128（留空用默认窗口）" autocomplete="off" />
-            <div class="key-hint">填千单位（K），如 128 表示 128K = 128,000 tokens；支持小数（如 1.5）；留空使用内核默认窗口（以内核常量为真源，此处不写死数字）。</div>
-            <div id="f-contextwindow-feedback" class="key-hint" hidden></div>
-          </div>
-          <div class="field">
-            <label for="f-maxtokens">输出上限（K）</label>
-            <input id="f-maxtokens" name="maxTokens" type="text" inputmode="decimal" placeholder="如 64（留空用服务端默认）" autocomplete="off" />
-            <div class="key-hint">模型单次回复的最大输出 token 数（含思考占用），如 64 = 64,000 tokens（K = ×1000，与上下文上限同口径）；留空 = 不传 max_tokens、由服务端默认。<span class="hint-warn-icon" data-icon="warning" role="img" aria-label="注意"></span>推理模型思考与正文共享输出预算，留空极易触发空响应，建议必填（mimo v2.6 建议 32–64K）；填后仍截断可再调大（超模型上限由服务端报错，不会静默生效）。</div>
-            <div id="f-maxtokens-feedback" class="key-hint" hidden></div>
-          </div>
-          <div id="testResult" class="test-result" hidden></div>
-          <div class="modal-actions">
-            <button id="btnTest" type="button" class="btn btn-secondary">测试连接</button>
-            <button id="btnCancel" type="button" class="btn btn-secondary">取消</button>
-            <button id="btnSave" type="submit" class="btn">保存</button>
-          </div>
-        </form>
-      </div>
-    </div>
-    <div id="toast"></div>
-  </div>
-
-  <!-- 技能子视图（skills 选项卡） -->
-  <div id="skills-root" role="tabpanel" aria-label="技能" hidden>
-    <div class="header">
-      <h2>全局技能</h2>
-      <span id="skillCount" class="stat-bar" hidden></span>
-      <div class="header-actions">
-        <button id="btnOpenSkillsDir" class="btn btn-secondary btn-icon-solo" title="打开用户技能目录">
-          <span class="btn-icon" data-icon="folder"></span>
-        </button>
-        <button id="btnRefreshSkills" class="btn btn-secondary btn-icon-solo" title="刷新技能列表">
-          <span class="btn-icon" data-icon="refresh"></span>
-        </button>
-      </div>
-    </div>
-    <div class="hint">全局技能是所有角色包共享的能力。支持单文件 <code>.md</code> 和文件夹 <code>SKILL.md</code> 两种格式。</div>
-    <div id="skillsList">
-      <p class="loading-hint">加载中…</p>
-    </div>
-    <p class="footer-hint">用户技能目录：<code>VS Code 全局存储 / skills /</code></p>
-  </div>
-
-  ${SECURITY_ROOT_HTML}
-
-  <script src="${scriptUri}"></script>
-</body>
-</html>`;
 }

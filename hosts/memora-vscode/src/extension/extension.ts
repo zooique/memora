@@ -419,8 +419,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
   );
 
-  // 侧边栏视图：设置面板（角色 / 大模型 / 记忆 选项卡合一）
-  // 三个子视图均为低频操作（角色切换、模型配置、记忆浏览），合并为单一「设置」视图、
+  // 侧边栏视图：设置面板（角色 / 大模型 / 记忆 / 技能 / MCP / 安全 选项卡合一）
+  // 各子视图均为低频操作，合并为单一「设置」视图、
   // 内部按钮切换，避免活动栏底部选项卡拥挤（用户反馈）。
   // 装配复用与 chat 面板同一 getOrCreateAgent 单例（SSOT），角色切换持久化用户级激活态；
   // providerStore 注入供大模型子视图读写（与 chat 面板共用一个 store 单例）。
@@ -485,7 +485,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // 命令：管理角色包（聚焦设置视图并切换到「角色」子选项卡）
-  // 对话区「当前角色」徽章点击 → open_roles → 本命令；与 configureModel 同款两行模式
+  // 对话区「当前角色」徽章点击 → open_settings_tab(roles) → 本命令；与 configureModel 同款两行模式
   // （先记待切选项卡再聚焦；视图未就绪时由 settingsPanel 在 ready 握手后补发 settings_switch_tab）。
   // 只导航、不切换：切换执行仍走角色视图「设为当前」→ roles_set_active → agent.switchRolePack。
   context.subscriptions.push(
@@ -633,15 +633,16 @@ export function activate(context: vscode.ExtensionContext): void {
         e.affectsConfiguration('memora.mcpServers') ||
         e.affectsConfiguration('memora.mcpToolAllowlist')
       ) {
-        runOnAssembledAgent(
-          (agent) =>
-            applyMcpConfigChange(agent, readMcpServers(), {
-              allowlist: readMcpToolAllowlist(),
-              logger: createVscodeLogger(memoraOutput),
-              clientVersion: extensionVersion,
-            }),
-          'MCP 配置热更',
-        );
+        // 热更**生效后**回推设置面板：面板观察面必须显示生效后的真值（档位是重注册后才变的，
+        // 早推 = 面板说谎）；未装配时本回调不跑，由面板自己推一次兜底。
+        runOnAssembledAgent(async (agent) => {
+          await applyMcpConfigChange(agent, readMcpServers(), {
+            allowlist: readMcpToolAllowlist(),
+            logger: createVscodeLogger(memoraOutput),
+            clientVersion: extensionVersion,
+          });
+          settingsProvider.pushMcpStatus();
+        }, 'MCP 配置热更');
       }
     }),
   );

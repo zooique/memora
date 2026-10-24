@@ -1540,7 +1540,7 @@ export const chatStyles = `
     min-width: 0;
   }
   /* Composer 当前角色徽章：胶囊 + accent 圆点，展示当前角色名让用户感知定位。
-   * 可点跳转（2026-10-13，UX 拍板 A 方案）：点击 → open_roles → host 打开设置视图「角色」选项卡；
+   * 可点跳转（2026-10-13，UX 拍板 A 方案）：点击 → open_settings_tab(roles) → host 打开设置视图「角色」选项卡；
    * 切换执行仍走角色视图「设为当前」→ roles_set_active → agent.switchRolePack 单路径，
    * 本徽章只导航、不承载切换（零并行切换路径）。
    * 形态纪律：外观与旧只读徽章完全一致——不加箭头、不加边框增量，零常驻视觉负担；
