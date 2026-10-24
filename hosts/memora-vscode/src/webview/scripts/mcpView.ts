@@ -8,7 +8,7 @@
  *   - 渲染 `mcp_status`（五态 + 工具清单 + 免确认点选）；
  *   - 服务器增删改停启（**只发 `mcp_write`，不本地乐观翻转**——持久化真源在 host 配置，
  *     UI 只回显 host 回推的结果）；
- *   - 表单可无损呈现性判定（args/env 的文本化是有损的，见 {@link isFormRepresentable}）。
+ *   - 表单可无损呈现性判定（args/env/cwd 三个字段的文本化是有损的，见 {@link isFormRepresentable}）。
  *
  * 三条纪律：
  *   1. **单一状态源**：`servers` 只由 `mcp_status` 覆盖；`draft` 是瞬时输入草稿，绝不与
@@ -128,11 +128,17 @@ export function parseEnv(text: string): {
  * 判据（双向：如果存进去的东西再打开一次会变，就是有损）：
  *   - `args` 里任何一项「整项都是空白」或含换行/回车 ⇒ 一行一个的文本格式表达不出来
  *     （纯空白行会被当分隔符丢弃、换行会被当成两项）；
- *   - `env` 的键为空 / 含 `=` / 含换行回车，或值含换行回车 ⇒ 同上。
+ *   - `env` 的键为空 / 含 `=` / 含换行回车，或值含换行回车 ⇒ 同上；
+ *   - `cwd` 含换行回车 ⇒ `<input type="text">` 的 value sanitization 会把它剥掉，
+ *     打开一次就丢。**首尾空白不在判据内**——`save()` 已改成不改写 cwd（只判空），
+ *     所以 `"/tmp/x "` 能原样往返。
  *
- * **判据必须与 parse 的实际行为同源**（2026-10-24 修）：parse 曾经 `trimEnd()`，
- * 而判据只查空串/换行 ⇒ 含尾随空格的参数被判「可编辑」，一保存就被静默改写。
- * 现在 parse 只剥 `\r`，判据也只需拒「换行 / 回车 / 纯空白项」。
+ * **判据面必须等于可编辑字段面**（2026-10-24 修）：可编辑字段是 args/env/cwd 三个，
+ * 判据曾经只查前两个，于是「判据说能无损」与「保存会吃掉 cwd 尾空格」同时成立——
+ * 任一字段被保存逻辑改写，就必须在判据里有对应的一条。
+ *
+ * **判据必须与 parse 的实际行为同源**：parse 曾经 `trimEnd()`，而判据只查空串/换行 ⇒
+ * 含尾随空格的参数被判「可编辑」，一保存就被静默改写。现在 parse 只剥 `\r`。
  *
  * 有损时**不禁用查看、只禁用编辑**并指路 settings.json：静默改写用户配置里的字符，
  * 比不能编辑严重得多（不带伤）。
@@ -146,6 +152,7 @@ export function isFormRepresentable(server: McpServerDraftDto): boolean {
     if (key.length === 0 || key.includes('=') || /[\r\n]/.test(key)) return false;
     if (/[\r\n]/.test(value)) return false;
   }
+  if (typeof server.cwd === 'string' && /[\r\n]/.test(server.cwd)) return false;
   return true;
 }
 
@@ -409,8 +416,11 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     const args = parseArgs(draft.argsText);
     if (args.length > 0) payload.args = args;
     if (Object.keys(env).length > 0) payload.env = env;
-    const cwd = draft.cwd.trim();
-    if (cwd.length > 0) payload.cwd = cwd;
+    // cwd **只判空、不改写**：与 parseArgs 同源（保存保真，解析层才容错）。
+    // 原先这里是 `draft.cwd.trim()` ⇒ 配置里 `cwd:"/tmp/x "` 打开→保存被静默吃成 `/tmp/x`，
+    // 而 `isFormRepresentable` 只覆盖 args/env 两个字段，宣称「可无损编辑」（2026-10-24 实测）。
+    // 整项都是空白视为「用户清空」——与「值里有空格」是两件事。
+    if (draft.cwd.trim().length > 0) payload.cwd = draft.cwd;
     vscode.postMessage({ type: 'mcp_write', op: 'upsert', server: payload });
     // 关表单、以回推为准（不乐观插入一条「我以为保存成功了」的卡片）
     draft = null;

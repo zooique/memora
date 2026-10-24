@@ -16,7 +16,7 @@ import type { Agent, ILogger } from '@zooique/memora';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { McpConnection, type McpServerConfig } from './connectionManager.js';
 import { clearAllFailures, clearFailure, failureOf, noteFailure } from './failureLedger.js';
-import { configProblem, indexValidConfigs } from './mcpConfigGuard.js';
+import { configProblem, indexValidConfigs, normalizeServerName } from './mcpConfigGuard.js';
 // 五态词汇的真源（面板与宿主共用同一枚举，禁两边各写一份字符串字面量）
 import type { McpServerState } from '../../../shared/protocol.js';
 import { isPlainObject } from './json.js';
@@ -216,6 +216,12 @@ export interface McpServerStatus {
  * 只保留第一条（与 indexValidConfigs 的启动语义一致）；**缺 name 的条目无寻址键，不入列表**
  * （启动侧会告警跳过，面板指路 settings.json）。
  *
+ * ⚠️ 归一化后再比名（`"fs"` 与 `"fs "` 算重名）：重名后者的真实形态是**整条不出现**，
+ * 不是「显示成某个态」——两者归一化后同名，被下面的 `seen` 去重掉，启动侧也按同一规则
+ * 跳过。所以 `state === 'failed'` 的兜底文案不许再写「可能被重名规则跳过」：那是到不了的
+ * 假设，把用户指向一个不存在的原因（2026-10-24 实测：该分支只在「进过装配但既无运行态
+ * 也无失败记录」时触发，而 `startOneServer` 失败恒写失败表）。
+ *
  * @param configured 当前用户配置原值（`readMcpServers()`；必填——漏传=编译错，不给缺省值，
  *   否则「忘了传」会静默退回只读运行态的旧缺陷）
  * @returns 每台配置 server 的状态快照（配置为空 = 空数组 = 合法空态）
@@ -224,14 +230,14 @@ export function getMcpServerStatus(configured: readonly McpServerConfig[]): McpS
   // 「进过装配」的判据：最近一次应用的配置（start / 热更 / restart 写入）
   const applied = new Set<string>();
   for (const config of appliedConfigs) {
-    const name = typeof config?.name === 'string' ? config.name.trim() : '';
+    const name = normalizeServerName(config?.name);
     if (name) applied.add(name);
   }
 
   const seen = new Set<string>();
   const list: McpServerStatus[] = [];
   for (const config of configured) {
-    const name = typeof config?.name === 'string' ? config.name.trim() : '';
+    const name = normalizeServerName(config?.name);
     if (!name || seen.has(name)) continue;
     seen.add(name);
 
@@ -272,9 +278,7 @@ export function getMcpServerStatus(configured: readonly McpServerConfig[]): McpS
         : [],
       // 失败原因只在该状态出现；禁用/非法不冒充「失败」（三种原因要分得清）
       ...(state === 'failed'
-        ? {
-            error: failure?.error ?? '未连接（无启动记录：可能被重名规则跳过）',
-          }
+        ? { error: failure?.error ?? '未连接（本次装配没有这台 server 的记录）' }
         : {}),
       ...(state === 'invalid' && problem ? { problem } : {}),
     });
@@ -768,7 +772,10 @@ async function restartInner(
   try {
     const state = running;
     if (!state) return { ok: false, error: 'MCP 运行时未启动（Agent 尚未装配）' };
-    const config = appliedConfigs.find((item) => item?.name === name);
+    // 按归一化名找（与运行态键、状态面同源）：配置里写 `"fs "` 时面板下发的是 `fs`，
+    // 精确比较会得到「未找到 server」——一条能跑起来的配置被报成不存在
+    const target = normalizeServerName(name);
+    const config = appliedConfigs.find((item) => normalizeServerName(item?.name) === target);
     if (!config) return { ok: false, error: `未找到 server「${name}」（配置可能已变更）` };
     const problem = configProblem(config);
     if (problem) return { ok: false, error: `配置不合法：${problem}` };
@@ -776,22 +783,27 @@ async function restartInner(
     const registrar = agent.tools;
     if (!registrar) return { ok: false, error: 'Agent 工具执行器不可用' };
 
-    if (state.has(name)) await stopServerIn(state, name);
-    clearFailure(name);
-    await startOneServer(config, {
-      registrar,
-      allowKeys: activeAllowKeys ?? parseAllowlist([]),
-      state,
-      logger,
-      clientVersion,
-      connect,
-      // 重启沿用最近一次装配的工作区根（面板不该知道这份上下文，见 lastBaseDir 说明）
-      ...(baseDir ? { baseDir } : {}),
-    });
+    if (state.has(target)) await stopServerIn(state, target);
+    clearFailure(target);
+    // 下传归一化副本：startOneServer 用 config.name 写运行态表与失败表，
+    // 原值带尾随空格时会与状态面的键错位（同 indexValidConfigs 的处理）
+    await startOneServer(
+      { ...config, name: target },
+      {
+        registrar,
+        allowKeys: activeAllowKeys ?? parseAllowlist([]),
+        state,
+        logger,
+        clientVersion,
+        connect,
+        // 重启沿用最近一次装配的工作区根（面板不该知道这份上下文，见 lastBaseDir 说明）
+        ...(baseDir ? { baseDir } : {}),
+      },
+    );
     noteToolCount(logger);
     notifyStatus();
-    if (state.has(name)) return { ok: true };
-    return { ok: false, error: failureOf(name)?.error ?? '启动失败（原因未记录）' };
+    if (state.has(target)) return { ok: true };
+    return { ok: false, error: failureOf(target)?.error ?? '启动失败（原因未记录）' };
   } catch (err) {
     logger?.warn(`[MCP] 重启「${name}」失败：${String(err)}`);
     return { ok: false, error: String(err) };

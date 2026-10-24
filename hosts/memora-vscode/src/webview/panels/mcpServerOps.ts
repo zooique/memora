@@ -23,7 +23,7 @@ import {
   readMcpServers,
   readMcpToolAllowlist,
 } from '../../extension/mcpConfig.js';
-import { configProblem } from '../../extension/host/mcp/mcpConfigGuard.js';
+import { configProblem, normalizeServerName } from '../../extension/host/mcp/mcpConfigGuard.js';
 import type { McpServerConfig } from '../../extension/host/mcp/connectionManager.js';
 import type { McpServerDraftDto, McpWritePayload } from '../../shared/protocol.js';
 
@@ -80,11 +80,15 @@ async function writeServers(deps: McpOpsDeps, next: McpServerConfig[]): Promise<
  * 而 UI 回推又显示旧值，用户以为保存失败。保护未知字段（不带伤）与保护用户明确删除的数据
  * 是两件事，必须分开：`args: []` 是「我删了」，`args` 缺省才是「我不知道这个字段」。
  *
+ * **name 走 `normalizeServerName` 归一化后再落盘**：这是唯一写入点，一次归一化就让
+ * 「落盘值 / 运行态键 / 面板显示」三处同名（否则 `"fs "` 会一路散点，见该函数的说明）。
+ * 用户看到的就是 `fs`，写回 `fs` 不构成静默改写。
+ *
  * @param draft 表单草稿
  */
 function draftToConfig(draft: McpServerDraftDto): McpServerConfig {
   return {
-    name: draft.name,
+    name: normalizeServerName(draft.name),
     command: draft.command,
     enabled: draft.enabled !== false,
     args: Array.isArray(draft.args) ? [...draft.args] : [],
@@ -186,7 +190,9 @@ async function upsertServer(deps: McpOpsDeps, draft: McpServerDraftDto): Promise
   }
   const configs = readServers();
   const patch = draftToConfig(draft);
-  const index = configs.findIndex((item) => item.name === patch.name);
+  // 按归一化名定位（配置里可能有 `"fs "`，面板下发的一定是 `fs`）——否则编辑会**追加**一条
+  // 同名近似项，而运行侧按先到先得跳过它 ⇒ 用户「保存了但没生效」
+  const index = configs.findIndex((item) => normalizeServerName(item.name) === patch.name);
   // 展开合并：保留旧项里表单不认识的键（不带伤——编辑动作不销毁未知字段）；
   // 表单认识的三个可清空字段由 patch 全量覆盖 ⇒ 空值即删除（见 clearEmptyFields）
   const merged: McpServerConfig = index >= 0 ? { ...configs[index], ...patch } : { ...patch };
@@ -221,7 +227,10 @@ async function upsertServer(deps: McpOpsDeps, draft: McpServerDraftDto): Promise
  */
 async function removeServer(deps: McpOpsDeps, name: string): Promise<void> {
   const configs = readServers();
-  const next = configs.filter((item) => item.name !== name);
+  // 归一化比较：面板下发的名来自状态面（已归一化），配置原值可能带首尾空白。
+  // 直接 `!==` 会「删不掉」并回执「未找到」（实测缺陷）。
+  const target = normalizeServerName(name);
+  const next = configs.filter((item) => normalizeServerName(item.name) !== target);
   if (next.length === configs.length) {
     deps.notice('error', `未找到 server「${name}」（配置可能已被其他窗口修改）`);
   } else if (await writeServers(deps, next)) {
@@ -239,7 +248,8 @@ async function removeServer(deps: McpOpsDeps, name: string): Promise<void> {
  */
 async function setServerEnabled(deps: McpOpsDeps, name: string, enabled: boolean): Promise<void> {
   const configs = readServers();
-  const index = configs.findIndex((item) => item.name === name);
+  const target = normalizeServerName(name);
+  const index = configs.findIndex((item) => normalizeServerName(item.name) === target);
   if (index < 0) {
     deps.notice('error', `未找到 server「${name}」（配置可能已被其他窗口修改）`);
     deps.pushStatus();

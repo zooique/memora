@@ -12,6 +12,10 @@
  *   - 不判：可执行位（Windows 无此语义）、依赖缺失、端口占用、握手能力——那些只能靠拉起。
  * 这条边界必须守住：预检说「没问题」不等于「一定能起来」，它只负责把**必然失败**提前说穿。
  *
+ * 参数位还有一条更窄的边界：`args[0]` **只**在明确是本地文件路径（绝对 / `./` / `../`）时
+ * 才判存在。包名（`@scope/pkg`）、URL、裸相对脚本名一律不判——「含分隔符」不等于「本地文件」，
+ * 按那条判会把 `npx @scope/pkg` 这类官方最常见写法判死（见 {@link looksLikeFileArg}）。
+ *
  * **相对路径基准（两段，勿并成一条）**：
  *   - 相对的 `cwd` 自身按 `baseDir`（调用方给工作区根）解析；
  *   - 相对的 `command` 与相对的 `args[0]` 按 **`cwd`（若配了）否则 `baseDir`** 解析。
@@ -75,14 +79,20 @@ export type CommandProbeResult =
   | { readonly ok: false; readonly problem: string };
 
 /**
- * 是否「路径形态」：绝对路径，或以 `./` `../` 开头，或含路径分隔符
+ * `command` 位置上的「路径形态」：绝对路径 / `./` `../` 开头 / 含路径分隔符
  *
  * 裸名（`node` / `npx`）不走这条——它们属于 PATH 查找，含义完全不同，
  * 混在一起判会把 `node` 当成「当前目录下叫 node 的文件」。
  *
+ * ⚠️ **不能拿这个谓词去判 `args[0]`**（2026-10-24 实测的误杀）：参数位置上的「含 `/`」
+ * 不蕴含「本地文件」——`@modelcontextprotocol/server-filesystem` 这种 npm scope 包名、
+ * `https://…`、`ts-node/register` 全含分隔符。同一个谓词套两种语义 ⇒ 官方最常见的
+ * `npx @scope/pkg`（不带 `-y`）被判「参数里的文件不存在」。判参数请用
+ * {@link looksLikeFileArg}。
+ *
  * @param value 待判字符串
  */
-function isPathLike(value: string): boolean {
+function looksLikeCommandPath(value: string): boolean {
   return (
     isAbsolute(value) ||
     value.startsWith('./') ||
@@ -91,6 +101,30 @@ function isPathLike(value: string): boolean {
     value.startsWith('..\\') ||
     value.includes('/') ||
     value.includes('\\')
+  );
+}
+
+/**
+ * `args[0]` 位置上的「本地文件路径形态」：只认绝对路径与显式相对路径
+ *
+ * **刻意不含「含路径分隔符」**：那是 `command` 的判据，搬到参数位就是误杀面（见
+ * {@link looksLikeCommandPath} 的说明）。用户写 `./server.js` / `/srv/index.js` /
+ * `C:\tools\x.js` 是明确指向本地文件；写 `mcp-server-git` / `@scope/pkg` 是包名。
+ *
+ * 已知**不判**（宁可漏判也不误杀，漏判由 stderr 尾部兜底）：裸相对脚本名
+ * `node server.js`——它与 `npx mcp-server-git` 形态完全相同，静态无法区分，
+ * 只能靠拉起后 node 的 `Cannot find module`。要判它就得引入「哪些命令是解释器」的
+ * 知识表，那是新的判据面，不在本文件职责内（见台账）。
+ *
+ * @param value 已剥成对引号的参数值
+ */
+function looksLikeFileArg(value: string): boolean {
+  return (
+    isAbsolute(value) ||
+    value.startsWith('./') ||
+    value.startsWith('../') ||
+    value.startsWith('.\\') ||
+    value.startsWith('..\\')
   );
 }
 
@@ -204,19 +238,23 @@ export function probeCommand(input: CommandProbeInput): CommandProbeResult {
   // ② 其余相对路径的基准：子进程先 chdir 再执行 ⇒ 配了 cwd 就是它，否则退回工作区根
   const pathBase = cwd ?? baseDir;
 
-  // ③ 参数里的第一个：只在它明确是路径形态时判存在（`-y` / `run` 这类不动）
+  // ③ 参数里的第一个：只在它**明确指向本地文件**时判存在（`-y` / 包名一律不动）
   const args = Array.isArray(input.args) ? input.args.map((arg) => String(arg)) : [];
-  if (args.length > 0 && typeof args[0] === 'string' && isPathLike(args[0])) {
-    const first = resolve(pathBase, stripWrappingQuotes(args[0]));
-    if (!fileStat(first)) {
-      return { ok: false, problem: `参数里的文件不存在：${first}（检查 args 第一项）` };
+  if (args.length > 0 && typeof args[0] === 'string') {
+    // 先剥引号再判（用户可能把带空格的路径连引号一起粘进来）；判为文件路径才替换成绝对
+    const first = stripWrappingQuotes(args[0]);
+    if (looksLikeFileArg(first)) {
+      const abs = resolve(pathBase, first);
+      if (!fileStat(abs)) {
+        return { ok: false, problem: `参数里的文件不存在：${abs}（检查 args 第一项）` };
+      }
+      args[0] = abs;
     }
-    args[0] = first;
   }
 
   // ④ command：路径形态 ⇒ 判文件；裸名 ⇒ 判 PATH
   let command = rawCommand;
-  if (isPathLike(rawCommand)) {
+  if (looksLikeCommandPath(rawCommand)) {
     const abs = resolve(pathBase, rawCommand);
     const stat = fileStat(abs);
     if (!stat) {
