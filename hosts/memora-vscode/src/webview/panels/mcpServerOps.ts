@@ -66,6 +66,68 @@ function readServers(): McpServerConfig[] {
 }
 
 /**
+ * 单次配置写入的超时上限（ms）
+ *
+ * 为什么必须有上限：`getConfiguration().update()` 在**只读用户设置**上会先改内存并触发
+ * `onDidChangeConfiguration`（热更据此拉起进程），随后落盘失败——而 promise **不 settle**
+ * （2026-10-24 G9 实测）。没有上限，await 之后的 notice / ack 永远不执行 ⇒ 表单关闭、
+ * 无 toast、无回执，用户输入被静默吞掉。超时后按失败上报，宁可多一条错误回执。
+ */
+const WRITE_TIMEOUT_MS = 5000;
+
+/**
+ * 写结果（失败区分「不 settle 超时」与「真 reject」——文案不同，但都按失败上报）
+ */
+type GlobalWriteResult = { ok: true } | { ok: false; timedOut: boolean; reason: string };
+
+/**
+ * 写一个用户级（Global）配置键（本域**唯一写入点**）
+ *
+ * 六个 op 的写入全部经此：单点决定「失败如何上报」，避免某个调用方漏了超时上限
+ * 又退回静默形态（allow 的免确认勾选与 servers 的增删改是同一类伤害）。
+ *
+ * @param key 配置键
+ * @param value 完整值（整键覆盖）
+ * @returns 写入结果（超时 / reject 都 ok=false，reason 为原始原因）
+ */
+async function writeGlobalSetting(key: string, value: unknown): Promise<GlobalWriteResult> {
+  /** 超时是否已触发（catch 里据此区分「不 settle」与「真拒绝」） */
+  let timedOut = false;
+  /** 超时兜底计时器（finally 必须清掉，否则 5s 后仍在事件循环里） */
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      vscode.workspace
+        .getConfiguration('memora')
+        .update(key, value, vscode.ConfigurationTarget.Global),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new Error('配置写入未在期限内完成'));
+        }, WRITE_TIMEOUT_MS);
+      }),
+    ]);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, timedOut, reason: String(err) };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * 失败文案（toast 与 ack 共用同一句，不二次加工）
+ *
+ * @param label 写入对象名（`MCP 配置` / `免确认设置`）
+ * @param failure 写结果里的失败分支
+ */
+function writeErrorText(label: string, failure: { timedOut: boolean; reason: string }): string {
+  return failure.timedOut
+    ? `${label}写入超时：文件可能只读或被占用（设置可能已临时生效，但未落盘）`
+    : `${label}写入失败：${failure.reason}`;
+}
+
+/**
  * 写配置（唯一写入路径 + 唯一失败收口）
  *
  * @param deps 依赖（失败要回执）
@@ -76,16 +138,11 @@ async function writeServers(
   deps: McpOpsDeps,
   next: McpServerConfig[],
 ): Promise<{ ok: boolean; error?: string }> {
-  try {
-    await vscode.workspace
-      .getConfiguration('memora')
-      .update(MCP_SERVERS_KEY, next, vscode.ConfigurationTarget.Global);
-    return { ok: true };
-  } catch (err) {
-    const error = `MCP 配置写入失败：${String(err)}`;
-    deps.notice('error', error);
-    return { ok: false, error };
-  }
+  const written = await writeGlobalSetting(MCP_SERVERS_KEY, next);
+  if (written.ok) return { ok: true };
+  const error = writeErrorText('MCP 配置', written);
+  deps.notice('error', error);
+  return { ok: false, error };
 }
 
 /**
@@ -202,14 +259,9 @@ async function setAllowlisted(deps: McpOpsDeps, key: string, allowlisted: boolea
   const next = new Set(kept);
   if (allowlisted) next.add(key);
   else next.delete(key);
-  try {
-    await vscode.workspace
-      .getConfiguration('memora')
-      .update(MCP_ALLOWLIST_KEY, [...next], vscode.ConfigurationTarget.Global);
-  } catch (err) {
-    // 写不进去必须说：webview 已把勾选还原，沉默会让用户以为「点了没反应」
-    deps.notice('error', `免确认设置写入失败：${String(err)}`);
-  }
+  const written = await writeGlobalSetting(MCP_ALLOWLIST_KEY, [...next]);
+  // 写不进去必须说：webview 已把勾选还原，沉默会让用户以为「点了没反应」
+  if (!written.ok) deps.notice('error', writeErrorText('免确认设置', written));
   deps.pushStatus();
 }
 

@@ -81,17 +81,30 @@ await server.connect(new StdioServerTransport());
 > `"memora.mcpServers": [{ "name": "acc", "command": "node", "args": ["<仓库>/hosts/memora-vscode/mcp-acceptance-server.mjs"] }]`。
 > 本批新增的页内 CRUD 用例（G 组）**必须**走面板，否则验不到。
 
-派生名 = `mcp__acc__echo` / `mcp__acc__with-enum` / `mcp__acc__toggle-tool` /
-`mcp__acc__fail` / `mcp__acc__hang`。
+**两层名字别混**（真机易错点）：
+
+| server 侧原始名 | 派生名（模型所见，`-`→`_`） | allowlist 寻址键（用原始名） |
+| --- | --- | --- |
+| `echo` | `mcp__acc__echo` | `mcp__acc__echo` |
+| `with-enum` | `mcp__acc__with_enum` | `mcp__acc__with-enum` |
+| `toggle-tool` | `mcp__acc__toggle_tool` | `mcp__acc__toggle-tool` |
+| `extra-tool` | `mcp__acc__extra_tool` | `mcp__acc__extra-tool` |
+| `fail` | `mcp__acc__fail` | `mcp__acc__fail` |
+| `hang` | `mcp__acc__hang` | `mcp__acc__hang` |
+
+> 派生名由 [toolRegistry.ts](../src/extension/host/mcp/toolRegistry.ts) 的 `sanitizeSegment`
+> 清洗（`-` / `.` / `/` → `_`）；allowlist 由 [policy.ts](../src/extension/host/mcp/policy.ts)
+> 的 `allowlistKey` 按**原名**寻址、刻意不认派生名。故含连字符的工具，把模型可见名
+> 直接抄进 allowlist 会**静默不命中**（例外：无连字符的 `echo` / `fail` / `hang` 两者同形）。
 
 ## 3. 用例与判据
 
 | # | 操作 | 预期（不符即记缺陷） |
 |---|------|----------------------|
-| A | 打开 Memora 面板，问「你有哪些工具」 | 5 个 `mcp__acc__*` **全部**出现（分页拉全；少一个 = 只取了第一页）。输出面板有「server「acc」已接入，注册工具 5 个」 |
+| A | 打开 Memora 面板，问「有 5 个 `mcp__acc__` 工具吗」 | 5 个派生名**全部**出现（分页拉全；少一个 = 只取了第一页）。输出面板有「server「acc」已接入，注册工具 5 个」。⚠️ 开放式提问「你有哪些工具」常被模型写成概括性介绍、漏列 MCP 工具（2026-10-24 实测），**不作为判据** |
 | B | 让模型调 `echo` | **弹确认框**（默认每次确认 = 设计行为，非故障）。放行后回显 `echo:echo:{...}` |
 | C1 | 设置加 `"memora.mcpToolAllowlist": ["mcp__acc__echo"]`，保存后再调 `echo` | **不再弹窗**，调用成功；审计里仍有该次记录（免弹窗≠免审计）。`with-enum` 仍弹（未命中） |
-| C2 | **④ 回归**：在 C1 生效状态下，让模型调 `toggle-tool`，再调 `echo` | `extra-tool` 出现在工具列表（整换生效），且 **`echo` 仍不弹窗**。若 `echo` 又开始弹确认 = ④ 回归（整换把档位退回 `always`） |
+| C2 | **④ 回归**：在 C1 生效状态下，让模型调 `toggle-tool`（模型侧 `mcp__acc__toggle_tool`），再调 `echo` | 新增工具 `mcp__acc__extra_tool` 出现在模型可见工具列表（整换生效），且 **`echo` 仍不弹窗**。若 `echo` 又开始弹确认 = ④ 回归（整换把档位退回 `always`） |
 | D1 | 改配置里的 `args`（指向改过的脚本或改 name） | 立即停旧连接、起新的，工具列表随之更新（无需重载窗口） |
 | D2 | 把 `memora.mcpServers` 改为 `[]` | 5 个工具**全部消失**；任务管理器里 `node` 子进程退出（漏退 = 僵尸进程） |
 | D3 | 恢复配置 | 工具重新出现（热更可逆） |

@@ -12,7 +12,7 @@
  * 都是静默的数据损失，且没有编译期护栏（配置是 array<object>）。
  */
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /** vscode 替身：内存配置表（get/update 的行为与真实 API 对齐到本测试所需的最小面） */
 const h = vi.hoisted(() => ({
@@ -281,6 +281,59 @@ describe('mcp_write / ack（upsert 的结论随状态回推带回）', () => {
     const d = deps();
     await applyMcpWrite(d, { op: 'upsert', server: { name: 'fs', command: 'npx' } });
     expect(d.acks).toEqual([]);
+  });
+});
+
+/**
+ * 写入不 settle（2026-10-24 G9 实测缺陷的钉子，台账 MCP-D1）
+ *
+ * 只读用户设置上 `update()` 会**先改内存并触发 onDidChangeConfiguration**（热更据此拉起
+ * 子进程），随后落盘失败且 promise **永不 settle** ⇒ 回执挂死、表单关闭，用户输入被静默
+ * 吞掉。这里用「永不 settle 的 update」复现同一形态，验证 5s 超时兜底必回 ack。
+ */
+describe('mcp_write / 写入超时兜底（update 永不 settle）', () => {
+  /** 让 update 返回一个永不 settle 的 promise（真机只读设置的形态） */
+  function hangWrites(): void {
+    h.update = () => new Promise<void>(() => {});
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('upsert：超时后 ack{ok:false} 必回（视图据此复开表单、保住输入）', async () => {
+    hangWrites();
+    const d = deps();
+    // 刻意不 await：断言点是「5s 后回执已到」；若超时兜底被去掉，这里立刻红而不是挂死
+    void applyMcpWrite(d, {
+      op: 'upsert',
+      server: { name: 'g9', command: 'node' },
+      reqId: 'r9',
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(d.acks).toEqual([{ reqId: 'r9', ok: false, error: expect.stringContaining('超时') }]);
+    expect(d.notices[0]?.level).toBe('error');
+    expect(d.notices[0]?.message).toContain('只读或被占用');
+  });
+
+  it('allow：同一上限（免确认勾选也是写用户设置，沉默 = 点了没反应）', async () => {
+    hangWrites();
+    const d = deps();
+    void applyMcpWrite(d, { op: 'allow', key: 'mcp__fs__x', allowlisted: true });
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(d.notices[0]?.level).toBe('error');
+    expect(d.notices[0]?.message).toContain('免确认设置写入超时');
+  });
+
+  it('成功写入后不残留计时器（finally 清掉，不拖住事件循环）', async () => {
+    await applyMcpWrite(deps(), { op: 'upsert', server: { name: 'fs', command: 'node' } });
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
