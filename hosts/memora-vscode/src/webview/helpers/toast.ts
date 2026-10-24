@@ -28,7 +28,15 @@
 /** toast 级别：与协议 notice.level 对齐（info | error，**无 warn**——不预支协议不存在的层级） */
 export type ToastLevel = 'info' | 'error';
 
-/** 自动隐藏时长（ms）：三面对齐同一时长（settings notice / config 反馈 / chat 活动条 2.5s） */
+/**
+ * 自动隐藏时长（ms）：settings notice 与 config 操作反馈统一 2.5s。
+ *
+ * ⚠ **边界（勿误统一，2026-10-24 复查登记）**：chat 活动条的停留时长**不并入本常量**——
+ * 它由 activityDrawerView 自有（`level === 'error' ? 8000 : 2500`），语义不同：本常量是
+ * 「操作反馈一闪而过」，活动条的 error 档 8s 是 **fail-visible 停留**（错误必须看得见、
+ * 看得久）。两者 info 档同为 2500 属巧合对齐，不是同一契约；把活动条并入本常量 = 用
+ * 统一常量掩盖两种语义 ⇒ 会顺手把 error 的 8s 削成 2.5s（安全可见性倒退）。
+ */
 export const TOAST_DURATION_MS = 2500;
 
 /** 单一元素 id（settings 与 config 同文档并存，共用一个 DOM 契约，不搞两套） */

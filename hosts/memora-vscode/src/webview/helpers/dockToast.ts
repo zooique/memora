@@ -73,12 +73,14 @@ export function toastLoopSkip(
  * 真机上 = 整条瞬移。
  *
  * @param headEl 主位条元素
+ * @param parent 流内归位的父节点（由 resolveDock 早退保证非空，此处不接 null—— *   主位条「搬不动」是失位故障，必须响（早退发生在调用方），不能在此静默跳过）
  * @param anchor 流内归位锚（inputBar；流内主位插其前）
  * @param asToast 是否浮层主位（isToastHead 判据）
  * @param toastSlot 浮层槽（asToast 时非空）
  */
 export function placeDockHead(
   headEl: HTMLElement,
+  parent: Node,
   anchor: Element,
   asToast: boolean,
   toastSlot: HTMLElement | null,
@@ -90,7 +92,5 @@ export function placeDockHead(
     return;
   }
   headEl.classList.remove(DOCK_TOAST_CLASS);
-  if (headEl.nextElementSibling !== anchor) {
-    anchor.parentNode?.insertBefore(headEl, anchor);
-  }
+  if (headEl.nextElementSibling !== anchor) parent.insertBefore(headEl, anchor);
 }

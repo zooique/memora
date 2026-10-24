@@ -2805,7 +2805,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 抽屉开合只切 #dockPanel.hidden，chip/panel 从骨架起就不插拔 ⇒ P7/P8 时代
     // 「chip/panel 反复插拔把确认卡挤开、主位条瞬移闪烁」的结构根在此不复存在。
     if (head) {
-      placeDockHead(head.el, anchor, activityToast, toastSlot);
+      placeDockHead(head.el, parent, anchor, activityToast, toastSlot);
       head.el.hidden = false;
     }
     // 被收纳条：单实例移入控件段；收起态隐藏条本身（panel 也 hidden，双保险）
