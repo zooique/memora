@@ -66,18 +66,19 @@ describe('readMcpToolAllowlist（同一收窄口径）', () => {
 });
 
 /**
- * `scope: "application"` ↔「工作区级配置不读」的**结构机制**（2026-10-25 定案 · 方案 §4.4 拍板 2）
+ * `scope: "machine"` ↔「只认用户级 + 不随设置同步」的**结构机制**（2026-10-25 定案 · 方案 §4.4 拍板 2 / §6 R7）
  *
  * 为什么必须守：本仓拒绝工作区级 `.mcp.json`（他人提交的配置 = 在用户机器上自动拉起
  * 任意命令），但实现手段**不在代码里**——没有一处 `if` 判断配置来自哪一级，靠的是
- * package.json 把两个键声明为 `scope: "application"`（VS Code 只允许用户设置写入，
+ * package.json 把两个键声明为 `scope: "machine"`（VS Code 只允许用户 / 远程设置写入，
  * 工作区 / 文件夹写入被忽略）。于是**删掉该字段（缺省为 window）或改成
  * `machine-overridable`**，零编译错、零测试红，工作区级配置就静默生效了——正是
  * 「闸门有实现 ≠ 会跑」。
  *
- * ⚠️ `machine` 不属危险项：它同样只读用户 / 远程设置，工作区写入照样被忽略；
- * 只是它**不参与 Settings Sync**，而 `application` 会（凭据 / 批准随账号跨机）。
- * 取值是否改 `machine` = 待拍板，见台账「宿主 0.3.0 · H0-2」与方案 §6 R7。
+ * 为什么是 `machine` 而非 `application`（2026-10-25 拍板）：两者都只写用户设置；差别在
+ * Settings Sync——`application` 会随账号把 `headers` 明文令牌与 allowlist 批准同步到其他
+ * 设备（= 替 B 机点同意，授权单源被打破），`machine` 不参与同步。代价 = 每台机器各配一次。
+ * 判据见方案 §6 R7、台账「宿主 0.3.0 · H0-2」。
  *
  * 反向自检：把任一键的 scope 改成 `machine-overridable` 或删掉 ⇒ 本例红。
  */
@@ -88,9 +89,9 @@ describe('package.json#contributes.configuration 的 scope ↔ 只认用户级',
   ) as { contributes: { configuration: { properties: Record<string, Prop> } } };
   const props = pkg.contributes.configuration.properties;
 
-  it('两个 MCP 配置键均声明 scope: application（工作区级写入被 VS Code 忽略）', () => {
-    expect(props['memora.mcpServers']?.scope).toBe('application');
-    expect(props['memora.mcpToolAllowlist']?.scope).toBe('application');
+  it('两个 MCP 配置键均声明 scope: machine（工作区级写入被忽略、不随 Settings Sync 同步）', () => {
+    expect(props['memora.mcpServers']?.scope).toBe('machine');
+    expect(props['memora.mcpToolAllowlist']?.scope).toBe('machine');
   });
 
   it('allowlist 默认空集（未配置 ⇒ 逐条确认，fail-closed 不靠运行时兜底）', () => {
