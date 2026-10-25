@@ -310,6 +310,23 @@ const ALL_STEPS = [
     required: false,
     presets: ['full'],
   },
+  // 台账结构卫生（告警档）：归档纪律的四态分诊从**人工闸**升级为机检。
+  // 缺口实证：归档脚本按人肉 `--ids` 白名单跑 ⇒ 0.2.0 区 140 个 ID 只归档了 40 个；
+  // 2026-10-26 观察区归位迁移又在没有门的情况下造出 22 处连续空行 + 已发布区整区滞留。
+  // 判据 = ①欠账（已收口无归档指针）②假指针（有指针但归档无副本）③开放态错置
+  // （观察/挂起态留在已发布区）④连续空行。**与 ledger:receipt 不重叠**：后者是
+  // git 区间语义（提交 vs 台账），本步是**工作树语义**（台账当前结构）。
+  // **required:false 是刻意的**（同 ledger:receipt、同 format:check 的「存量不清零前不建闸」）：
+  // 当前①10 处 + ②3 处 + ③11 处存量未清，建硬闸会让第一次 pre-push 就被拦 ⇒ 门必被绕过。
+  // **升档条件**：①②③④ 四类存量全部清零后，把本步 required 改 true。
+  {
+    id: 'ledger:hygiene',
+    name: '台账结构卫生检查（四态分诊 · 告警档）',
+    cmd: 'npm run verify:ledger-hygiene',
+    cwd: ROOT,
+    required: false,
+    presets: ['full'],
+  },
   // 排版格式检查（prettier）：FMT-PRETTIER-1 第③步——存量清零后才建闸（「存量不清零前不建闸」
   // 同族教训）。只进 full 不进 fast：全仓扫描 ~30s 且失败归因常是历史改动，不满足 fast 分层判据。
   {
