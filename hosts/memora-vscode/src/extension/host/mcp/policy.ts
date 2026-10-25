@@ -102,13 +102,16 @@ export function parseAllowlist(raw: unknown): McpToolAllowlist {
  * 计算某工具的确认档位（注册时定格）
  *
  * 命中 allowlist ⇒ `'audit'`（过闸自动放行，仍落 write-auto 审计——免弹窗
- * 不免审计）；未命中 ⇒ `'always'`（每次调用都弹确认）。无「全部放行」档：
- * allowlist 必须显式书写（反「自动化默认」，方案 §4.3）。
+ * 不免审计）；未命中 ⇒ `'always'`（每次调用都弹确认）。**没有任何「默认放行」
+ * 路径**：allowlist 必须显式书写（反「自动化默认」，方案 §4.3）。
  *
  * **命中判据 = 工具级 ∪ server 级**（2026-10-25 生长）：
  *   - 工具级 `mcp__<server>__<tool>`：逐工具放行（细粒度）；
  *   - server 级 `mcp__<server>__*`：整台放行（一次勾选，消掉逐条点选的摩擦）。
  * 两级共用同一张 allowlist、同一个 `has` 判据，**不新增第二档策略、不新增存储**。
+ * ⚠️ 边界：server 位**不通配**——`serverAllowlistKey('*')` 只等于「名为 `*` 的那台」，
+ * 故不存在「一次放行所有 server」的写法；放行几台就要显式写几条键。上句的「整台」
+ * 是**单台内**全覆盖，不是全局。
  *
  * @param serverName server 原名
  * @param toolName 工具原名

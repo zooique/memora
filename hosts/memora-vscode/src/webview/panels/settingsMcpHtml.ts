@@ -40,7 +40,7 @@ export const MCP_BODY_HTML = `
       <button class="btn btn-secondary mcp-add-btn" type="button">添加第一台服务器</button>
     </div>
     <p id="mcpOmitted" class="mcp-omitted" hidden></p>
-    <p class="security-desc">免确认只是不弹窗，<strong>每次调用仍写审计</strong>；不提供「全部放行」。删除服务器不会连带清掉它的免确认记录（重新添加同名服务器时自动恢复）。</p>
+    <p class="security-desc">免确认只是不弹窗，<strong>每次调用仍写审计</strong>。支持两级：单个工具勾选（只放行该工具），或整台服务器的「整台免确认」（放行这台的全部工具）。没有「一次放行所有服务器」的开关——每台都要单独授权。删除服务器不会连带清掉它的免确认记录（重新添加同名服务器时自动恢复）。</p>
     <div class="mcp-footer">
       <button class="btn btn-ghost open-setting-btn" type="button" data-setting-key="memora.mcpServers">高级：在 settings.json 中编辑</button>
     </div>
