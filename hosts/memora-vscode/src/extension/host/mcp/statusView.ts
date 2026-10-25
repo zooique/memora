@@ -9,11 +9,11 @@
  * 真正的筛选/归并逻辑全在本文件的 {@link deriveMcpServerStatus}。
  */
 import type { McpServerConfig } from './connectionManager.js';
-import { configProblem, normalizeServerName } from './mcpConfigGuard.js';
+import { configProblem, normalizeServerName, resolveTransportMode } from './mcpConfigGuard.js';
 import { allowlistKey, serverAllowlistKey, type McpToolAllowlist } from './policy.js';
 import type { McpToolBinding } from './toolRegistry.js';
 // 五态词汇与隐藏计数的 DTO 真源在 shared/protocol（面板与宿主共用，禁各写一份字面量）
-import type { McpOmittedDto, McpServerState } from '../../../shared/protocol.js';
+import type { McpOmittedDto, McpServerState, McpTransport } from '../../../shared/protocol.js';
 
 /**
  * 单个 MCP 工具的可观测状态（设置面板 MCP 选项卡的数据面）
@@ -44,8 +44,12 @@ export interface McpToolStatus {
 export interface McpServerStatus {
   /** server 名（配置里的 name） */
   readonly name: string;
-  /** 配置里的可执行命令 */
-  readonly command: string;
+  /** 配置里的可执行命令（远程配置没有命令 ⇒ 缺省） */
+  readonly command?: string;
+  /** 传输形态（只在远程时下发；缺省 stdio 不下发，面板据此判断是否显示「远程」标记） */
+  readonly transport?: McpTransport;
+  /** 远程服务器地址（只在 transport=http 时下发，用于卡片副标题） */
+  readonly url?: string;
   /** 配置里的命令参数（表单回显用；缺失 = 无参数） */
   readonly args?: string[];
   /** 配置里的环境变量（表单回显用；**列表不展示**，只在编辑表单里出现） */
@@ -190,7 +194,18 @@ export function deriveMcpServerStatus(
 
     list.push({
       name,
-      command: typeof config.command === 'string' ? config.command : '',
+      ...(typeof config.command === 'string' && config.command.length > 0
+        ? { command: config.command }
+        : {}),
+      // 远程标记只下发形态与 url；**headers 刻意不下发**——它是用户手填的凭据面，
+      // 推进 webview 等于把明文令牌塞进消息通道。显式挑字段（而非展开 config）就是为了
+      // 让「将来新增字段」默认不泄露；测试钉住了「DTO 里没有 headers」。
+      ...(resolveTransportMode(config.transport) === 'http'
+        ? {
+            transport: 'http' as const,
+            ...(typeof config.url === 'string' && config.url.length > 0 ? { url: config.url } : {}),
+          }
+        : {}),
       ...(Array.isArray(config.args)
         ? { args: config.args.filter((a) => typeof a === 'string') }
         : {}),

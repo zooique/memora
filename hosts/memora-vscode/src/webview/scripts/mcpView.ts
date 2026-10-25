@@ -157,9 +157,32 @@ export function isFormRepresentable(server: McpServerDraftDto): boolean {
   return true;
 }
 
-/** 列表一行的命令摘要（command + args；不含 env 值——env 常放密钥） */
-function summaryOf(server: McpServerDraftDto): string {
-  const text = [server.command, ...(server.args ?? [])].join(' ').trim();
+/**
+ * 是否远程形态（webview 侧的**唯一**判据）
+ *
+ * 形态真源在宿主 `resolveTransportMode`（缺省 = stdio），但 webview 不能 import 宿主 MCP
+ * 模块（会把 MCP SDK 拖进 webview bundle）⇒ 这里只认 DTO 下发的 `transport`。写成函数而非
+ * 在摘要与卡片头各写一次 `transport === 'http'`：两处必须同时改，分散写必漏一处。
+ *
+ * @param server 任一 MCP DTO（草稿 / 状态都有 transport）
+ */
+function isRemote(server: McpServerDraftDto): boolean {
+  return server.transport === 'http';
+}
+
+/**
+ * 列表一行的摘要（stdio = command + args；远程 = 形态 + 地址；不含 env 值——env 常放密钥）
+ *
+ * 远程没有 command，若直接拼会把副标题渲染成空串（看起来像渲染坏了）。这里按形态分派：
+ * 有 command 就照旧显示「怎么拉起」，没有就显示「连的是哪个远端 URL」——两种代价不同质，
+ * 摘要要说的是用户最需要确认的那件事。
+ */
+export function summaryOf(server: McpServerDraftDto): string {
+  const command = typeof server.command === 'string' ? server.command : '';
+  if (command.trim().length === 0) {
+    return isRemote(server) ? `http · ${server.url ?? '(未填写 url)'}` : '（未填写 command）';
+  }
+  const text = [command, ...(server.args ?? [])].join(' ').trim();
   return text.length > 120 ? `${text.slice(0, 120)}…` : text;
 }
 
@@ -179,11 +202,17 @@ function emptyDraft(): McpFormDraft {
 /** 保存请求计数（reqId 生成源；webview 会话内唯一即够，宿主只做原样回传） */
 let saveSeq = 0;
 
-/** 由配置生成草稿（编辑已有 server） */
-function draftOf(server: McpServerStatusDto): McpFormDraft {
+/**
+ * 由配置生成草稿（编辑已有 server）
+ *
+ * `command` 在远程配置里不存在 ⇒ 落成空串（表单字段是字符串）。S1–S2 的远程卡片
+ * 打开表单后保存会被「命令不能为空」拦住——这是**诚实拦截**：表单还没有远程字段，
+ * 放行等于把远程配置改写成一条没有 url 的 stdio。S3 补远程表单。
+ */
+export function draftOf(server: McpServerStatusDto): McpFormDraft {
   return {
     name: server.name,
-    command: server.command,
+    command: server.command ?? '',
     argsText: formatArgs(server.args),
     envText: formatEnv(server.env),
     cwd: server.cwd ?? '',
@@ -439,6 +468,7 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
       <div class="mcp-server-head">
         <span class="mcp-dot" data-state="${state}" aria-hidden="true"></span>
         <h3 class="mcp-server-name">${escapeHtml(server.name)}</h3>
+        ${isRemote(server) ? '<span class="mcp-server-tag">远程</span>' : ''}
         <code class="mcp-server-cmd" title="${escapeHtml(summaryOf(server))}">${escapeHtml(summaryOf(server))}</code>
         <span class="mcp-server-state" data-state="${state}">${STATE_LABELS[state]}</span>
         <span class="mcp-server-count">${server.toolCount} 个工具</span>
@@ -459,7 +489,7 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
       <div class="mcp-server-head">
         <h3 class="mcp-server-name">从 JSON 导入</h3>
       </div>
-      <p class="mcp-server-note">粘贴 mcpServers 片段（Claude Desktop / Cursor / VS Code mcp.json 均可）。只支持 stdio（command）形式；同名、http/sse 与字段不合法的条目会逐条跳过，不会覆盖已有配置。</p>
+      <p class="mcp-server-note">粘贴 mcpServers 片段（Claude Desktop / Cursor / VS Code mcp.json 均可）。支持 stdio（command）与 Streamable HTTP（url / type: "http"）两种形式，SSE 已定案不支持；同名与字段不合法的条目会逐条跳过，不会覆盖已有配置。</p>
       <textarea class="mcp-input mcp-textarea" data-import="1" rows="8" aria-label="粘贴 mcpServers JSON 片段" placeholder="{&#10;  &quot;mcpServers&quot;: {&#10;    &quot;filesystem&quot;: {&#10;      &quot;command&quot;: &quot;npx&quot;,&quot;args&quot;: [&quot;-y&quot;, &quot;@modelcontextprotocol/server-filesystem&quot;, &quot;/path&quot;]&#10;    }&#10;  }&#10;}">${escapeHtml(importText ?? '')}</textarea>
       ${importResult ? `<p class="mcp-import-result">${escapeHtml(importResult)}</p>` : ''}
       <div class="mcp-form-actions">

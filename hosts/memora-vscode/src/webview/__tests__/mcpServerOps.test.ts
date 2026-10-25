@@ -117,8 +117,10 @@ describe('mcp_write / upsert（增改）', () => {
   });
 
   it('更新：按 name 定位并展开合并 ⇒ 表单不认识的字段原样保留（不带伤）', async () => {
+    // 未知字段用 `timeout` / `notes`（**不能再用 headers**：S1 起它是本仓已知字段，
+    // 且在 stdio 形态下非法 —— 用它当「未知字段」夹具会被 configProblem 拒绝写入）
     h.data['mcpServers'] = [
-      { name: 'fs', command: 'npx', args: ['-y', 'x'], timeout: 30, headers: { a: 'b' } },
+      { name: 'fs', command: 'npx', args: ['-y', 'x'], timeout: 30, notes: { a: 'b' } },
     ];
     await applyMcpWrite(deps(), {
       op: 'upsert',
@@ -128,9 +130,9 @@ describe('mcp_write / upsert（增改）', () => {
     const written = h.data['mcpServers'] as Record<string, unknown>[];
     expect(written).toHaveLength(1);
     expect(written[0]).toMatchObject({ name: 'fs', command: 'node', args: ['server.js'] });
-    // 未知字段（将来新增的 timeout/headers）不能被编辑动作冲掉
+    // 未知字段（将来新增的 timeout/notes 等）不能被编辑动作冲掉
     expect(written[0]?.timeout).toBe(30);
-    expect(written[0]?.headers).toEqual({ a: 'b' });
+    expect(written[0]?.notes).toEqual({ a: 'b' });
   });
 
   it('清空 args/env：表单删除必须真的落盘（旧值不得复活）', async () => {
@@ -160,7 +162,7 @@ describe('mcp_write / upsert（增改）', () => {
 
   it('清空只影响表单认识的三个字段：未知字段仍原样保留', async () => {
     h.data['mcpServers'] = [
-      { name: 'fs', command: 'npx', args: ['-y'], timeout: 30, headers: { a: 'b' } },
+      { name: 'fs', command: 'npx', args: ['-y'], timeout: 30, notes: { a: 'b' } },
     ];
     await applyMcpWrite(deps(), {
       op: 'upsert',
@@ -170,7 +172,7 @@ describe('mcp_write / upsert（增改）', () => {
     const saved = (h.data['mcpServers'] as Record<string, unknown>[])[0]!;
     expect(saved.args).toBeUndefined();
     expect(saved.timeout).toBe(30);
-    expect(saved.headers).toEqual({ a: 'b' });
+    expect(saved.notes).toEqual({ a: 'b' });
   });
 
   it('非法配置不写入：缺 command ⇒ notice(error) + 配置不变（判据与启动侧同源）', async () => {
@@ -433,7 +435,8 @@ describe('mcp_write / name 归一化匹配（写侧同样单点）', () => {
  *   ① **只追加不覆盖**（同名不静默顶掉既有配置，与 upsert 的重名预检同一口径）；
  *   ② 条目级问题**不拖垮整份片段**，但每条都要有原因（否则用户只看到「少了几台」）；
  *   ③ **零新增绝不写盘**（`update` 是整键覆盖，把空结果写回会抹掉既有配置）；
- *   ④ 本机没有的传输形态（url / sse / http）**显式拒绝**，而不是导入一张永远起不来的卡。
+ *   ④ 传输形态走 `type → transport` 一次映射（S1）：`http` / 仅 url ⇒ 远程；`sse` 已定案
+ *      不做 ⇒ **点名**跳过；未知值报 type 原文，不退化成通用语法错误。
  */
 describe('mcp_write / import（粘贴 JSON 片段）', () => {
   /** 包成标准 mcpServers 外壳（片段原文来自第三方工具） */
@@ -470,7 +473,7 @@ describe('mcp_write / import（粘贴 JSON 片段）', () => {
     expect(h.data['mcpServers']).toEqual([{ name: 'fs', command: 'npx', enabled: true }]);
   });
 
-  it('远程传输逐条跳过：url / type:sse（本机只有 stdio 一条通道）', async () => {
+  it('远程形态：仅 url 推断为 http、type:http 直认，SSE 点名跳过（S1）', async () => {
     h.data['mcpServers'] = [{ name: 'keep', command: 'node' }];
     const d = deps();
     await applyMcpWrite(d, {
@@ -478,19 +481,44 @@ describe('mcp_write / import（粘贴 JSON 片段）', () => {
       reqId: 'ri',
       raw: wrap({
         remote: { url: 'https://x/mcp' },
+        typed: { type: 'http', url: 'https://y/mcp', headers: { Authorization: 'Bearer t' } },
         sse: { type: 'sse', url: 'https://x/sse' },
         cmd: { command: 'node' },
       }),
     });
-    // 只有 stdio 那条进了配置；既有配置原样保留
+    // 两条远程进入配置（stdio 条目零迁移：不写 transport）；SSE 已定案不做 ⇒ 跳过
     expect(h.data['mcpServers']).toEqual([
       { name: 'keep', command: 'node' },
+      { name: 'remote', enabled: true, transport: 'http', url: 'https://x/mcp' },
+      {
+        name: 'typed',
+        enabled: true,
+        transport: 'http',
+        url: 'https://y/mcp',
+        headers: { Authorization: 'Bearer t' },
+      },
       { name: 'cmd', command: 'node', enabled: true },
     ]);
-    expect(d.acks[0]?.detail).toContain('新增 1 台');
-    expect(d.acks[0]?.detail).toContain('跳过 2 台');
-    expect(d.acks[0]?.detail).toContain('remote');
+    expect(d.acks[0]?.detail).toContain('新增 3 台');
+    expect(d.acks[0]?.detail).toContain('跳过 1 台');
+    // 不支持的形态必须点名（不能只说「跳过 1 台」）
     expect(d.acks[0]?.detail).toContain('sse');
+    expect(d.acks[0]?.detail).toContain('SSE');
+  });
+
+  it('stdio 与远程字段同时出现 ⇒ 条目跳过并报互斥（不 import 一张自相矛盾的卡）', async () => {
+    h.data['mcpServers'] = [{ name: 'keep', command: 'node' }];
+    const d = deps();
+    await applyMcpWrite(d, {
+      op: 'import',
+      reqId: 'r-mix',
+      raw: wrap({ mix: { command: 'node', url: 'https://x/mcp' } }),
+    });
+    expect(h.data['mcpServers']).toEqual([{ name: 'keep', command: 'node' }]);
+    expect(d.acks[0]?.ok).toBe(true);
+    expect(d.acks[0]?.detail).toContain('没有新增任何服务器');
+    // 仅 url 会被推成 http，因此 command 成了「跨形态字段」——报互斥而不是静默丢掉 url
+    expect(d.acks[0]?.detail).toContain('不能填写 command');
   });
 
   it('重名不覆盖：已有同名 + 同批归一化重名都跳过，计数与原因进 detail', async () => {

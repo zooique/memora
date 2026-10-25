@@ -58,6 +58,11 @@ export const mcpStyles = `
   #mcp-root #mcpList > .card:last-child { margin-bottom: 0; }
   #mcp-root .mcp-server-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2, 6px); }
   #mcp-root .mcp-server-name { margin: 0; font-size: var(--font-md, 12px); font-weight: 600; color: var(--text-primary); }
+  /* 远程标记：只对 transport=http 的卡片出现（本地子进程与远端服务器的授权代价不同质，必须在列表上就能分辨） */
+  #mcp-root .mcp-server-tag {
+    font-size: var(--font-xs, 10px); padding: 0 var(--sp-1, 4px); border-radius: var(--radius-sm, 2px);
+    color: var(--text-secondary); border: var(--line-solid); flex-shrink: 0;
+  }
   #mcp-root .mcp-server-count { font-size: var(--font-xs, 10px); color: var(--text-secondary); flex-shrink: 0; }
 
   /* 工具行：派生名 + 免确认开关两端对齐；行间上边线分隔（首行不加——贴着卡片头） */

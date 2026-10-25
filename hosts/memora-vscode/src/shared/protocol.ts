@@ -1768,17 +1768,55 @@ export interface McpToolStatusDto {
 export interface McpServerDraftDto {
   /** server 名（工具名前缀，须唯一） */
   name: string;
-  /** 拉起命令（如 node / npx / python） */
-  command: string;
+  /**
+   * 传输形态（**缺省 = stdio**）；`stdio` 在本机拉起子进程，`http` 连接远程 Streamable HTTP 服务器
+   *
+   * 只认 `transport`，**不认外部格式的 `type`**：同一语义两个字段名 = 双真源。外部片段里的
+   * `type` 只由导入通道映射一次（见 `mcpServerOps.parseImportEntry`）；手写 `type` 由
+   * `configProblem` 报错指路。SSE 已定案不做（理由见方案 §5.5-1）。
+   */
+  transport?: McpTransport;
+  /**
+   * 拉起命令（如 node / npx / python）；`transport=stdio`（缺省）时必填
+   *
+   * 类型上可选是 S1 的类型面放开：远程配置在类型层必须能表达出来。运行/保存前的完整性
+   * 仍由 `configProblem` 裁决（判据单点），不要用「类型已可选」推断「可以不填」。
+   */
+  command?: string;
   /** 命令参数 */
   args?: string[];
   /** 追加/覆盖的环境变量 */
   env?: Record<string, string>;
   /** 子进程工作目录（缺省继承扩展宿主） */
   cwd?: string;
+  /** 远程服务器地址（`transport=http` 时必填；只认 http/https，非回环地址强制 https） */
+  url?: string;
+  /**
+   * 远程请求头（`transport=http` 时可选）
+   *
+   * 用户自填、愿意随设置落盘的值（J3）。**OAuth 令牌不走这里**（必须丢 SecretStorage）。
+   * 读取点不做字段裁剪 ⇒ 运行时形态可能是脏的，形状校验归 `configProblem`。
+   */
+  headers?: Record<string, string>;
   /** 是否启用（缺省 true）；false = 不拉起、工具对模型不存在 */
   enabled?: boolean;
 }
+
+/**
+ * MCP 传输形态的**取值集合（运行期真源）**
+ *
+ * SSE 不在集合内 = 已定案不做，不是遗漏：SDK 自己标 `@deprecated`、Claude Code 已停收。
+ * 重开条件 = 出现「只有 SSE 且无法升级」的具名 server（方案 §5.5-1）。
+ *
+ * 为什么落成运行期常量而不是只写类型：`package.json#contributes.configuration` 的
+ * `enum` 是**第二个真源**（VS Code 设置界面按它渲染下拉），而 JSON 引不到 TS 类型。
+ * 有了本常量，`resolveTransportMode` 的校验与设置 schema 的对拍测试都从这里取集合，
+ * 加形态时只有这一处要改（漂移由 `mcpConfig.test.ts` 的 enum 对拍钉住）。
+ */
+export const MCP_TRANSPORTS = ['stdio', 'http'] as const;
+
+/** MCP 传输形态（**只此两种**；由 {@link MCP_TRANSPORTS} 派生，不另写字面量） */
+export type McpTransport = (typeof MCP_TRANSPORTS)[number];
 
 /**
  * MCP server 的**运行态**（面板状态点 / 失败原因的唯一判据）
@@ -1917,9 +1955,13 @@ export type McpWritePayload =
    * `configProblem`，与启动侧同源）；webview 只负责把原文搬过来，不做预解析——两份解析器
    * 迟早给出两份结论。
    *
-   * 被拒绝的形态（逐条跳过或整体报错，见 `parseMcpServersJson`）：远程传输（`url` /
-   * `type: sse|http`，本机运行时只有 stdio 子进程一条通道）、含 `inputs` 变量提示的
-   * 片段（`${input:…}` 无法解析，静默导入会得到跑不起来的配置）。
+   * 被拒绝的形态（逐条跳过或整体报错，见 `parseMcpServersJson`）：`type: sse`（已定案不做）、
+   * 形态非法的条目（完整性问题由 `configProblem` 裁决）、含 `inputs` 变量提示的片段
+   * （`${input:…}` 无法解析，静默导入会得到跑不起来的配置）。
+   *
+   * 远程形态**接受**：`type: http`（或只给 `url` 不写 `type`）映射为 `transport: "http"`，
+   * `url` / `headers` 原样落盘。外部格式的 `type` 只在这一条通道映射一次，写盘只存
+   * `transport`（别名口径见方案 §5.1.1）。
    */
   | { op: 'import'; raw: string; reqId?: string }
   | { op: 'restart'; name: string }

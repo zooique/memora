@@ -10,6 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import type { McpOmittedDto, McpServerStatusDto } from '../../shared/protocol.js';
 import {
+  draftOf,
   formatArgs,
   formatEnv,
   formatOmittedNotice,
@@ -18,6 +19,7 @@ import {
   parseArgs,
   parseEnv,
   STATE_LABELS,
+  summaryOf,
 } from '../scripts/mcpView.js';
 import { MCP_BODY_HTML } from '../panels/settingsMcpHtml.js';
 
@@ -217,5 +219,57 @@ describe('骨架契约（MCP_BODY_HTML ⊇ 视图依赖的 id）', () => {
 
   it('空态第二套文案默认 hidden（未收到状态前不闪一段「配置显示不出来」）', () => {
     expect(MCP_BODY_HTML).toContain('id="mcpEmptyHidden" hidden');
+  });
+});
+
+/**
+ * 远程形态的卡片副标题（S1）
+ *
+ * 判据来源：`docs/方案-MCP远程HTTP接入-20261025.md` §5.1.1 / §6 R6。
+ * 守的是「一张没有 command 的远程卡片不许写成『（未填写 command）』」——
+ * 远程配置本来就没有命令，那不是配置错误；把正常形态画成错误形态会让用户去改对的配置。
+ */
+describe('卡片副标题 summaryOf（stdio 命令行 / http 地址行）', () => {
+  it('stdio：command + args 直接拼，超长截断', () => {
+    expect(summaryOf({ name: 'fs', command: 'npx', args: ['-y', 'pkg'] })).toBe('npx -y pkg');
+    expect(summaryOf({ name: 'fs', command: 'x'.repeat(200) })).toHaveLength(120 + 1);
+  });
+
+  it('http 且无 command ⇒ 「http · url」（不误报「未填写 command」）', () => {
+    expect(summaryOf({ name: 'r', transport: 'http', url: 'https://x/mcp' })).toBe(
+      'http · https://x/mcp',
+    );
+    // url 也缺 ⇒ 诚实说缺 url，而不是说「缺 command」
+    expect(summaryOf({ name: 'r', transport: 'http' })).toBe('http · (未填写 url)');
+  });
+
+  it('既无 command 又非 http ⇒ 「（未填写 command）」（老逻辑不变）', () => {
+    expect(summaryOf({ name: 'bad' })).toBe('（未填写 command）');
+  });
+});
+
+/**
+ * 表单回显 draftOf（S1：command 已可选）
+ *
+ * 远程卡片点「编辑」时 `command` 缺省，必须回显空串——`?? ''` 少了就会把 `undefined`
+ * 塞进受控输入框（React 侧警告 / 原生侧显示 "undefined" 字面量）。
+ */
+describe('表单回显 draftOf（远程无 command ⇒ 空串）', () => {
+  it('command 缺省 ⇒ 空串，其余字段照旧文本化', () => {
+    const draft = draftOf({
+      name: 'r',
+      transport: 'http',
+      url: 'https://x/mcp',
+      state: 'running',
+      enabled: true,
+      toolCount: 0,
+      tools: [],
+      serverAllowKey: 'mcp__r__*',
+      serverAllowlisted: false,
+    });
+    expect(draft.command).toBe('');
+    expect(draft.name).toBe('r');
+    expect(draft.enabled).toBe(true);
+    expect(draft.originalName).toBe('r');
   });
 });

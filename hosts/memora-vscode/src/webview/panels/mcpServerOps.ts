@@ -28,7 +28,12 @@ import {
 import { configProblem, normalizeServerName } from '../../extension/host/mcp/mcpConfigGuard.js';
 import type { McpServerConfig } from '../../extension/host/mcp/connectionManager.js';
 import { writeErrorText, writeSetting } from '../../extension/settingsWrite.js';
-import type { McpServerDraftDto, McpWriteAckDto, McpWritePayload } from '../../shared/protocol.js';
+import type {
+  McpServerDraftDto,
+  McpTransport,
+  McpWriteAckDto,
+  McpWritePayload,
+} from '../../shared/protocol.js';
 
 /**
  * 写操作依赖（由 settingsPanel 注入：它持有视图、agent 与日志）
@@ -122,14 +127,26 @@ function ackOf(
  * @param draft 表单草稿
  */
 function draftToConfig(draft: McpServerDraftDto): McpServerConfig {
-  return {
+  const config: McpServerConfig = {
     name: normalizeServerName(draft.name),
-    command: draft.command,
     enabled: draft.enabled !== false,
     args: Array.isArray(draft.args) ? [...draft.args] : [],
     env: draft.env && typeof draft.env === 'object' ? { ...draft.env } : {},
     cwd: typeof draft.cwd === 'string' ? draft.cwd : '',
   };
+  // command 现已可选（远程配置没有命令）：只在草稿带字符串时写入，避免把 undefined
+  // 塞进配置——JSON 序列化会静默丢掉该键，问题反而更难定位。空串照写，由 configProblem
+  // 报「缺少 command」（判据单点，不在表单再判一遍）。
+  if (typeof draft.command === 'string') config.command = draft.command;
+  // 远程字段（S3 的表单才会填）：表单不发时保持缺省，合并在 upsert 里做（不冲掉旧值）
+  // transport **原值带入**（含未知值），形态裁决只归 configProblem——在这里先筛一遍
+  // 就是第二处判据：筛掉的脏值会让用户拿到「缺少 command」这种与事实无关的原因。
+  if (draft.transport !== undefined) config.transport = draft.transport;
+  if (typeof draft.url === 'string' && draft.url.length > 0) config.url = draft.url;
+  if (draft.headers && typeof draft.headers === 'object' && !Array.isArray(draft.headers)) {
+    config.headers = { ...(draft.headers as Record<string, string>) };
+  }
+  return config;
 }
 
 /**
@@ -171,9 +188,12 @@ export type McpImportParse =
 /**
  * 把单条 `name → 配置对象` 收敛成导入条目
  *
- * **只保留宿主认识的字段**（command/args/env/cwd/enabled）：外来工具片段里的
+ * **只保留宿主认识的字段**（command/args/env/cwd/enabled/url/headers）：外来工具片段里的
  * `autoApprove` / `timeout` 等键本运行时并不消费，带进来只会让用户以为「导入了这些能力」。
- * **`type: stdio` 例外地接受**（它就是本运行时的默认形态，显式写出来不代表额外能力）。
+ *
+ * **别名只在这里映射一次**（方案 §5.1.1 定案）：外部格式写 `type`，本仓写 `transport`。
+ * 读取点认 `type` 会让同一语义有两个字段名（双真源），所以写盘只存 `transport`。
+ * `type: sse` 明说「已定案不做」；未知值报 `type` 原文，不退化成通用语法错误。
  *
  * @param rawName 片段里的键（未归一化，错误信息要显示原名）
  * @param value 片段里的值（任意 JSON，逐字段收窄）
@@ -184,15 +204,25 @@ function parseImportEntry(rawName: string, value: unknown): McpImportEntry {
     return { name, problem: '条目必须是一个对象' };
   }
   const item = value as Record<string, unknown>;
-  // 远程传输显式拒绝：本机运行时只有「拉起子进程走 stdio」一条通道，url/sse/http 的
-  // 配置导进来也永远起不来——静默收下等于给用户一张注定失败的卡。
-  if (typeof item.url === 'string' && item.url.trim().length > 0) {
-    return { name, problem: '是远程服务器（url），本机只支持 stdio（command）形式' };
+
+  // ── 传输形态：type → transport（唯一一次别名映射）──
+  const rawType = typeof item.type === 'string' ? item.type.trim().toLowerCase() : '';
+  const rawUrl = typeof item.url === 'string' ? item.url.trim() : '';
+  let transport: McpTransport;
+  if (rawType === 'http') transport = 'http';
+  else if (rawType === 'stdio') transport = 'stdio';
+  else if (rawType === 'sse') {
+    return {
+      name,
+      problem: '暂不支持 SSE 传输（已定案不做），请改用 Streamable HTTP（type: "http"）',
+    };
+  } else if (rawType !== '') {
+    return { name, problem: `未知的传输类型 type="${String(item.type)}"（只支持 stdio / http）` };
+  } else {
+    // 没写 type 时按 url 判断意图：只给 url 的片段（第三方工具常见形态）就是远程
+    transport = rawUrl.length > 0 ? 'http' : 'stdio';
   }
-  const type = typeof item.type === 'string' ? item.type.trim().toLowerCase() : '';
-  if (type !== '' && type !== 'stdio') {
-    return { name, problem: `传输类型 type="${item.type}" 暂不支持（只有 stdio）` };
-  }
+
   // 字段形态严格校验：数字/布尔值不静默转字符串——参数差一个字符就是另一种启动行为
   let args: string[] | undefined;
   if (item.args !== undefined) {
@@ -217,10 +247,20 @@ function parseImportEntry(rawName: string, value: unknown): McpImportEntry {
   if (item.enabled !== undefined && typeof item.enabled !== 'boolean') {
     return { name, problem: 'enabled 必须是 true/false' };
   }
+  // headers 的形状（对象 / 字符串值 / 禁 CR-LF）由 configProblem **单点**裁决，
+  // 这里只搬运原值——两处各校验一遍迟早给出两套结论（判据散点）。
+  const headers = item.headers === undefined ? undefined : (item.headers as Record<string, string>);
+
   const config: McpServerConfig = {
     name: normalizeServerName(rawName),
-    command: typeof item.command === 'string' ? item.command : '',
     enabled: item.enabled !== false,
+    // stdio 是缺省形态，不写 transport（老配置零迁移；写盘形状与既有条目一致）
+    ...(transport === 'http' ? { transport: 'http' as const } : {}),
+    ...(typeof item.command === 'string' ? { command: item.command } : {}),
+    // url 一律搬运（含「stdio 却填了 url」的矛盾形态）——交给 configProblem 报互斥，
+    // 在这里静默丢掉会让用户以为那条 url 生效了
+    ...(rawUrl.length > 0 ? { url: rawUrl } : {}),
+    ...(headers ? { headers } : {}),
     ...(args ? { args } : {}),
     ...(env ? { env } : {}),
     ...(typeof item.cwd === 'string' && item.cwd.length > 0 ? { cwd: item.cwd } : {}),

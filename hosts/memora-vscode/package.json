@@ -229,9 +229,29 @@
                 "type": "string",
                 "description": "服务器名（唯一）。作为工具名前缀 mcp__<name>__<tool>，也是停用与日志的寻址键"
               },
+              "transport": {
+                "type": "string",
+                "enum": [
+                  "stdio",
+                  "http"
+                ],
+                "default": "stdio",
+                "description": "传输形态（缺省 stdio）。stdio = 在本机拉起子进程（必填 command）；http = 连接远程 Streamable HTTP 服务器（必填 url，可填 headers）。两种形态的字段互斥，混填会报配置不完整。SSE 已定案不做"
+              },
               "command": {
                 "type": "string",
-                "description": "拉起 MCP 服务器的可执行命令（如 node、npx、python）"
+                "description": "拉起 MCP 服务器的可执行命令（如 node、npx、python）。transport 缺省或 stdio 时必填"
+              },
+              "url": {
+                "type": "string",
+                "description": "远程服务器地址（transport: http 时必填）。只支持 http/https；非本机地址必须用 https（本地回环允许 http）"
+              },
+              "headers": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "远程请求头（transport: http 时可选）。用户自填、随设置落盘；OAuth 令牌不要写在这里（后续版本由 SecretStorage 管理）"
               },
               "args": {
                 "type": "array",
@@ -258,11 +278,10 @@
               }
             },
             "required": [
-              "name",
-              "command"
+              "name"
             ]
           },
-          "description": "MCP 服务器列表（Model Context Protocol：接入外部工具服务器）。用户级设置：随用户而非随项目——工作区级配置可由他人提交并自动拉起任意命令，故不开放。本设置会拉起本地子进程，只填你信任的服务器。接入后其工具以 mcp__<服务器名>__<工具名> 出现在工具列表，调用前默认每次都需要用户确认（可在 memora.mcpToolAllowlist 中逐条免确认，仍会留下审计记录）；服务器自身声明的只读标记不作信任依据。修改后即时生效——按服务器名差分增量启停（新增/停用/改参数/清空均无需重载窗口），详见 docs/mcp-setup.md。作用域 machine：只写用户设置、不随 VS Code Settings Sync 同步（每台机器各配一次）。"
+          "description": "MCP 服务器列表（Model Context Protocol：接入外部工具服务器）。用户级设置：随用户而非随项目——工作区级配置可由他人提交并自动拉起任意命令，故不开放。stdio 形态会拉起本地子进程，只填你信任的服务器；http 形态会把工具参数与结果发往配置的域名（数据外流），同样只填你信任的服务。接入后其工具以 mcp__<服务器名>__<工具名> 出现在工具列表，调用前默认每次都需要用户确认（可在 memora.mcpToolAllowlist 中逐条免确认，仍会留下审计记录）；服务器自身声明的只读标记不作信任依据。修改后即时生效——按服务器名差分增量启停（新增/停用/改参数/清空均无需重载窗口），详见 docs/mcp-setup.md。作用域 machine：只写用户设置、不随 VS Code Settings Sync 同步（每台机器各配一次）。"
         },
         "memora.mcpToolAllowlist": {
           "type": "array",

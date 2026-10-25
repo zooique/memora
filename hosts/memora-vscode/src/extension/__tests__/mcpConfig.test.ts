@@ -26,6 +26,9 @@ vi.mock('vscode', () => ({
 }));
 
 const { readMcpServers, readMcpToolAllowlist } = await import('../mcpConfig.js');
+// 对拍用：形态集合真源（shared）+ 缺省解析（宿主判据）。两者都是纯函数 / 常量，无 vscode 依赖。
+import { MCP_TRANSPORTS } from '../../shared/protocol.js';
+import { resolveTransportMode } from '../host/mcp/mcpConfigGuard.js';
 
 describe('readMcpServers（配置数组的形态收窄）', () => {
   beforeEach(() => {
@@ -83,7 +86,12 @@ describe('readMcpToolAllowlist（同一收窄口径）', () => {
  * 反向自检：把任一键的 scope 改成 `machine-overridable` 或删掉 ⇒ 本例红。
  */
 describe('package.json#contributes.configuration 的 scope ↔ 只认用户级', () => {
-  type Prop = { scope?: string; default?: unknown };
+  type Prop = {
+    scope?: string;
+    default?: unknown;
+    /** mcpServers 是数组 ⇒ 条目 schema 在 items.properties 里 */
+    items?: { properties?: Record<string, { enum?: readonly string[]; default?: unknown }> };
+  };
   const pkg = JSON.parse(
     readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
   ) as { contributes: { configuration: { properties: Record<string, Prop> } } };
@@ -96,5 +104,20 @@ describe('package.json#contributes.configuration 的 scope ↔ 只认用户级',
 
   it('allowlist 默认空集（未配置 ⇒ 逐条确认，fail-closed 不靠运行时兜底）', () => {
     expect(props['memora.mcpToolAllowlist']?.default).toEqual([]);
+  });
+
+  /**
+   * `transport` 的 enum / default ↔ **代码真源**的对拍
+   *
+   * 为什么必须守：`enum` 是 VS Code 设置界面渲染下拉的源，代码侧的取值集合是
+   * `MCP_TRANSPORTS`——**同一语义两个真源**，而 JSON 引不到 TS，删/加一个形态时
+   * 零编译错、零测试红（用户能在下拉里选到一个跑不起来的形态，或反过来选不到）。
+   * `default` 同理：设置界面的默认值必须与「不写 transport」的解析结果一致
+   * （`resolveTransportMode(undefined)` = stdio），否则「同一份配置两处缺省不同」。
+   */
+  it('transport 的 enum ≡ MCP_TRANSPORTS，default ≡ 缺省解析结果', () => {
+    const spec = props['memora.mcpServers']?.items?.properties?.transport;
+    expect(spec?.enum).toEqual([...MCP_TRANSPORTS]);
+    expect(spec?.default).toBe(resolveTransportMode(undefined));
   });
 });

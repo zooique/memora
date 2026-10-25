@@ -102,3 +102,56 @@ describe('派生：非 running 态', () => {
     expect(server.serverAllowKey).toBe('mcp__fs__*');
   });
 });
+
+/**
+ * 远程形态的下发面（S1）
+ *
+ * 判据来源：`docs/方案-MCP远程HTTP接入-20261025.md` §5.1.1 / §6 R6。
+ * 两条不变量：① 远程卡片必须拿到 `transport` + `url` 才画得出「远程」标记与副标题；
+ * ② **headers 绝不进 DTO**——它是用户手填的凭据面，推进 webview 等于把明文令牌塞进消息通道。
+ * 显式挑字段（而不是展开 config）就是为了让新增字段默认不泄露，这里钉住该默认。
+ */
+describe('派生：远程形态下发面（transport / url 下发，headers 不下发）', () => {
+  it('http 配置 ⇒ 下发 transport + url，不下发 headers，也没有 command', () => {
+    const snap = deriveMcpServerStatus(
+      [
+        {
+          name: 'remote',
+          transport: 'http',
+          url: 'https://x/mcp',
+          headers: { Authorization: 'Bearer secret' },
+        },
+      ],
+      { running: null, applied: [], failureOf: () => undefined },
+    );
+    const server = snap.servers[0]!;
+    expect(server.transport).toBe('http');
+    expect(server.url).toBe('https://x/mcp');
+    expect(server.command).toBeUndefined();
+    // 凭据面不得进消息通道（明文令牌）
+    expect('headers' in server).toBe(false);
+  });
+
+  it('stdio 配置 ⇒ 不下发 transport / url（缺省形态不打扰既有渲染）', () => {
+    const snap = deriveMcpServerStatus([{ name: 'fs', command: 'node' }], {
+      running: null,
+      applied: [],
+      failureOf: () => undefined,
+    });
+    const server = snap.servers[0]!;
+    expect(server.transport).toBeUndefined();
+    expect(server.url).toBeUndefined();
+    expect(server.command).toBe('node');
+  });
+
+  it('易错形态（stdio 却填了 url）仍按 configProblem 判 invalid 并给原因', () => {
+    const snap = deriveMcpServerStatus([{ name: 'bad', command: 'node', url: 'https://x/mcp' }], {
+      running: null,
+      applied: [],
+      failureOf: () => undefined,
+    });
+    const server = snap.servers[0]!;
+    expect(server.state).toBe('invalid');
+    expect(server.problem).toContain('stdio 配置不能填写 url');
+  });
+});

@@ -11,7 +11,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { ToolDefinition, ToolHandler } from '@zooique/memora';
+import type { McpTransport } from '../../../shared/protocol.js';
 import { McpConnection, collectAllTools } from '../mcp/connectionManager.js';
 import {
   buildToolBindings,
@@ -281,4 +283,108 @@ describe('拉起前预检与失败原因可读', () => {
     expect(error?.message).toContain('boom-from-server-stderr');
     rmSync(boomDir, { recursive: true, force: true });
   }, 30_000);
+});
+
+// ──────────────────────────────────────────────────────────────
+// 传输分派（S1，假 transport 工厂）
+//
+// 判据来源：`docs/方案-MCP远程HTTP接入-20261025.md` §5.2 / §6 R6。
+// 为什么必须测分派而不是真连远端：① 单测里没有可用的远程服务器；② 真网络会把超时、
+// DNS、证书噪声带进断言。假工厂只回答一个问题——`transport` 字段最终选中的是哪条物理通道，
+// 握手之后的链路（能力断言 / 分页 / 订阅）两形态共用，故不重复测。
+// ──────────────────────────────────────────────────────────────
+describe('传输分派（假 transport 工厂）', () => {
+  /**
+   * 造一个「一开始就失败」的假传输
+   *
+   * `Protocol.connect` 只做一件事：`await transport.start()`，因此 start 拒绝即可模拟
+   * 连接失败，且不必伪造 JSON-RPC 帧。断言目标只有「分派到哪个形态」与「失败文案」。
+   *
+   * @param error start 时抛出的错误（401 场景传带 code 的对象）
+   */
+  function failingTransport(error: unknown): Transport {
+    return {
+      start: async () => {
+        throw error;
+      },
+      send: async () => {},
+      close: async () => {},
+    } as unknown as Transport;
+  }
+
+  /** 记录工厂收到的形态（用于断言判据走向） */
+  function modesRecorder(seen: McpTransport[]) {
+    return (mode: McpTransport): Transport => {
+      seen.push(mode);
+      return failingTransport(new Error(`假装 ${mode} 连接失败`));
+    };
+  }
+
+  it('transport: http ⇒ 工厂收到 http（不再走 stdio 分支）', async () => {
+    const seen: McpTransport[] = [];
+    const connection = new McpConnection(
+      { name: 'r', transport: 'http', url: 'https://x/mcp' },
+      undefined,
+      '0.0.0',
+      undefined,
+      modesRecorder(seen),
+    );
+    await expect(connection.connect()).rejects.toThrow('假装 http 连接失败');
+    expect(seen).toEqual(['http']);
+  });
+
+  it('缺省 transport ⇒ stdio（老配置零迁移）', async () => {
+    const seen: McpTransport[] = [];
+    const connection = new McpConnection(
+      { name: 's', command: process.execPath },
+      undefined,
+      '0.0.0',
+      undefined,
+      modesRecorder(seen),
+    );
+    await expect(connection.connect()).rejects.toThrow('假装 stdio 连接失败');
+    expect(seen).toEqual(['stdio']);
+  });
+
+  it('HTTP 401 ⇒ 文案归「服务器要求授权」，不退化成通用 HTTP 报错', async () => {
+    const connection = new McpConnection(
+      { name: 'auth', transport: 'http', url: 'https://x/mcp' },
+      undefined,
+      '0.0.0',
+      undefined,
+      () => failingTransport(Object.assign(new Error('POSTing to endpoint failed'), { code: 401 })),
+    );
+    await expect(connection.connect()).rejects.toThrow('服务器要求授权');
+    await expect(connection.connect()).rejects.toThrow('OAuth');
+  });
+
+  it('HTTP 其它失败 ⇒ 原因原样透出，且**不**拼子进程 stderr 后缀（远程没有子进程）', async () => {
+    const connection = new McpConnection(
+      { name: 'down', transport: 'http', url: 'https://x/mcp' },
+      undefined,
+      '0.0.0',
+      undefined,
+      () => failingTransport(new Error('ECONNREFUSED')),
+    );
+    const error = await connection.connect().then(
+      () => null,
+      (err: unknown) => err as Error,
+    );
+    expect(error?.message).toBe('ECONNREFUSED');
+    expect(error?.message).not.toContain('子进程输出');
+  });
+
+  it('未知 transport ⇒ 直接拒连并点名（不可达状态也要有话说）', async () => {
+    const seen: McpTransport[] = [];
+    const connection = new McpConnection(
+      { name: 'weird', command: 'node', transport: 'sse' as never },
+      undefined,
+      '0.0.0',
+      undefined,
+      modesRecorder(seen),
+    );
+    await expect(connection.connect()).rejects.toThrow('未知的 transport 值');
+    // 判据在创建传输之前，工厂不应被调用（否则会按缺省形态误连）
+    expect(seen).toEqual([]);
+  });
 });

@@ -16,7 +16,12 @@ import type { Agent, ILogger } from '@zooique/memora';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { McpConnection, type McpServerConfig } from './connectionManager.js';
 import { clearAllFailures, clearFailure, failureOf, noteFailure } from './failureLedger.js';
-import { configProblem, indexValidConfigs, normalizeServerName } from './mcpConfigGuard.js';
+import {
+  configProblem,
+  indexValidConfigs,
+  normalizeServerName,
+  resolveTransportMode,
+} from './mcpConfigGuard.js';
 import { isPlainObject } from './json.js';
 import { parseAllowlist, type McpToolAllowlist } from './policy.js';
 import {
@@ -322,8 +327,15 @@ async function startOneServer(config: McpServerConfig, ctx: StartOneServerContex
       const current = state.get(config.name);
       if (current) unregisterServerTools(current.registrar, current.bindings);
       state.delete(config.name);
-      // 断线也是一种「用户需要知道」的状态：不留记录 = 卡片静默消失（台账缺口②）
-      noteFailure(config.name, '连接已断开（子进程退出或传输层关闭）');
+      // 断线也是一种「用户需要知道」的状态：不留记录 = 卡片静默消失（台账缺口②）。
+      // 文案按形态分派：HTTP 没有子进程，「子进程退出」对远程是谎报；且 S1 不自动重连，
+      // 必须把恢复入口一并说清（改配置 / 重载窗口），否则用户只能干等它自己回来。
+      noteFailure(
+        config.name,
+        resolveTransportMode(config.transport) === 'http'
+          ? '与远程服务器的连接已断开（不会自动重连；改配置或重载窗口后重试）'
+          : '连接已断开（子进程退出或传输层关闭）',
+      );
       noteToolCount(logger);
       notifyStatus();
     };
