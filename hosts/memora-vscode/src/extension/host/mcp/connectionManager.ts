@@ -312,11 +312,27 @@ export class McpConnection {
         CONNECT_TIMEOUT_MS,
         `MCP server「${this.name}」握手`,
       );
-      // P4 能力断言：没有 tools 能力的 server 无工具可注册，按失败处理（不静默注册空清单）
+      // P4 能力断言：本宿主只接 tools 能力（resources / prompts 未接入 = 已登记边界，
+      // 见方案 §10）。没有 tools 的 server 无工具可注册，仍按失败处理（不静默注册空清单）；
+      // 但归因必须落在宿主——纯资源 server 是合法形态，说成「server 未声明能力」会让人
+      // 去查一台没坏的 server（2026-10-25 归因订正，谎报成因与谎报能力同族）。
       const capabilities = client.getServerCapabilities();
       if (!capabilities?.tools) {
+        const declared = Object.keys(capabilities ?? {});
+        const nonTool = declared.filter((key) => key !== 'tools');
         throw new Error(
-          `server 未声明 tools 能力（capabilities=${JSON.stringify(capabilities ?? {})}）`,
+          nonTool.length > 0
+            ? `本宿主当前只接 tools 能力；该 server 只提供 ${nonTool.join(' / ')}，暂不支持（不是 server 故障）`
+            : '该 server 未声明任何能力（本宿主当前只接 tools）',
+        );
+      }
+      // 未消费能力不静默：每台 server 连上时记一次，否则用户只会看到「资源/提示没出现」。
+      const unhandledCapabilities = (['resources', 'prompts'] as const).filter(
+        (key) => capabilities[key] !== undefined,
+      );
+      if (unhandledCapabilities.length > 0) {
+        this.logger?.info(
+          `[MCP:${this.name}] 本宿主未接入 ${unhandledCapabilities.join(' / ')} 能力（只接 tools），工具清单照常注册`,
         );
       }
       await this.fetchAllTools(client);

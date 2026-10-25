@@ -130,7 +130,7 @@ await server.connect(new StdioServerTransport());
 |------|--------|----------|
 | **激活失败**：`Dynamic require of "X" is not supported` | 是否真的重跑过 compile（旧产物） | 重跑后仍现 ⇒ CJS/ESM 产物形态缺陷（2026-10-24 已修 cross-spawn 那条；新依赖可能重蹈，报缺陷并附 X） |
 | 卡片「启动失败」，错误只有 `McpError … -32000: Connection closed` | 在脚本所在目录直跑一遍（`node <脚本>`）：是否 `ERR_MODULE_NOT_FOUND`（依赖解析不到）；`command` 是否在 PATH | 直跑能挂住、面板仍 closed ⇒ 宿主启动链路缺陷（不是脚本问题） |
-| 工具没出现 | 输出面板是否有「握手失败 / 未声明 tools 能力 / 分页异常收口」；配置绝对路径是否正确；Agent 是否已装配（面板开过） | 面板无任何告警但工具仍不出现 |
+| 工具没出现 | 输出面板是否有「握手失败 / 本宿主当前只接 tools 能力（纯资源 server）/ 分页异常收口」；配置绝对路径是否正确；Agent 是否已装配（面板开过） | 面板无任何告警但工具仍不出现 |
 | `hang` 立刻报错 | 是否等满 60s | 未到 60s 就报错（超时未生效），或超时后 `echo` 也不可用 |
 | F 用例接入失败 | npx 冷启动慢（重试一次） | 重试仍失败且面板有明确错误 |
 | C2 又弹窗 | 确认 C1 当时确实免弹过（否则是 allowlist 键没写对） | C1 已免弹、toggle 后回退 ⇒ **④ 回归** |

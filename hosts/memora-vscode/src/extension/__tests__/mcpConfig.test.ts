@@ -70,11 +70,16 @@ describe('readMcpToolAllowlist（同一收窄口径）', () => {
  *
  * 为什么必须守：本仓拒绝工作区级 `.mcp.json`（他人提交的配置 = 在用户机器上自动拉起
  * 任意命令），但实现手段**不在代码里**——没有一处 `if` 判断配置来自哪一级，靠的是
- * package.json 把两个键声明为 `scope: "application"`（VS Code 只允许 application 级键
- * 写在用户设置，工作区写入被忽略）。于是把 `application` 改成 `machine` 或删掉该字段，
- * **零编译错、零测试红**，工作区级配置就静默生效了——正是「闸门有实现 ≠ 会跑」。
+ * package.json 把两个键声明为 `scope: "application"`（VS Code 只允许用户设置写入，
+ * 工作区 / 文件夹写入被忽略）。于是**删掉该字段（缺省为 window）或改成
+ * `machine-overridable`**，零编译错、零测试红，工作区级配置就静默生效了——正是
+ * 「闸门有实现 ≠ 会跑」。
  *
- * 反向自检：把任一键的 scope 改掉 ⇒ 本例红（当前仓库里唯一能抓到的地方）。
+ * ⚠️ `machine` 不属危险项：它同样只读用户 / 远程设置，工作区写入照样被忽略；
+ * 只是它**不参与 Settings Sync**，而 `application` 会（凭据 / 批准随账号跨机）。
+ * 取值是否改 `machine` = 待拍板，见台账「宿主 0.3.0 · H0-2」与方案 §6 R7。
+ *
+ * 反向自检：把任一键的 scope 改成 `machine-overridable` 或删掉 ⇒ 本例红。
  */
 describe('package.json#contributes.configuration 的 scope ↔ 只认用户级', () => {
   type Prop = { scope?: string; default?: unknown };

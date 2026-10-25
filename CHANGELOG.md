@@ -1,6 +1,6 @@
 # Changelog
 
-本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号：内核变更定档独立版本号（最新已发布 **5.0.0** · 2026-10-23；在册未发 **5.1.0**，见下），宿主变更随 `vsce package` 定版独立成区（当前 **0.2.0** · 2026-10-23，ADR-033）。
+本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号：内核变更定档独立版本号（最新已发布 **5.0.0** · 2026-10-23；在册未发 **5.1.0**，见下），宿主变更随 `vsce package` 定版独立成区（最新已发布 **0.2.0** · 2026-10-23；在册未发 **0.3.0**，见下，ADR-033）。
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
@@ -106,6 +106,15 @@
 ### Changed（内核）
 
 - **后台任务槽位按 Agent 实例隔离**（`MULTI-AGENT-1`，2026-10-18）：模块级槽位 → `class BackgroundTaskScheduler` 实例级，同进程多 Agent 不再交叉等待/挤占（形态定案后多实例是必然）。非公开 API 变更。
+
+## [0.3.0] · 未发布（Unreleased · 宿主轴 · 2026-10-25 开区）
+
+> **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更，随 `vsce package` 定版，不进内核 npm 包（ADR-033）。**开区原因**：`vscode@0.2.0` tag 早于宿主 MCP 接入 ⇒ 已发布版没有任何 MCP 能力。**主体条目（本地 stdio MCP 接入）发布前按 `git log vscode@0.2.0..HEAD -- hosts/` 补齐**——本区先记今日订正，切片叙事不复述（真源 = 台账「宿主 0.3.0」区）。
+> **出包前必做**：与内核区同规——标题的「未发布」须改为**实际发布日期**（`scripts/verify-changelog-version.mjs` 校验）。
+
+### Fixed（宿主）
+
+- **MCP 连接失败归因订正**（`H0-1`，2026-10-25）：没有 `tools` 能力的 server 此前被判成「server 未声明 tools 能力」并置 `failed`——但纯 `resources` / `prompts` 的 server 是**合法形态**，这是本宿主只接 tools 的**覆盖面边界**，不是对方故障。现文案改为「本宿主当前只接 tools 能力；该 server 只提供 X / Y，暂不支持（不是 server 故障）」，并对连上后被忽略的非 tools 能力打一次 info 日志（不静默）。**为什么**：谎报成因与谎报能力同族——原文案会让用户去查一台没坏的 server。**对消费者**：仅失败原因文案变化；无 tools 的 server 仍不注册空工具清单（不静默成功）。**登记**：方案-MCP工具接入 §10 新增「`resources` / `prompts` 零接入（能力边界 · 非功能缺口）」行。
 
 ## [0.2.0] · 2026-10-23 · 宿主
 

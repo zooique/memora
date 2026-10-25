@@ -170,7 +170,7 @@ set MEMORA_API_KEY=你的key
 | 项目级 | 工作区 `.memora/` 目录 | 会话记录 `sessions.json` / 记忆 `memories.json` |
 | 用户级 | VS Code 用户设置 `settings.json` | 大模型 Provider 配置（别名 / 模型 / Base URL，**不含 API Key**） |
 | 用户级 | VS Code 用户设置 `settings.json` | 搜索引擎偏好：`memora.searchEngine`（预设或自定义引擎名）与 `memora.customSearchEngines`（自定义清单，`application` 作用域 = 跨项目共享） |
-| 用户级 | VS Code 用户设置 `settings.json` | MCP 配置：`memora.mcpServers`（外部工具服务器清单）与 `memora.mcpToolAllowlist`（免确认白名单，`application` 作用域 = 跨项目共享） |
+| 用户级 | VS Code 用户设置 `settings.json` | MCP 配置：`memora.mcpServers`（外部工具服务器清单）与 `memora.mcpToolAllowlist`（免确认白名单；用户级 = 跨项目共享，**不接受工作区级**——见 [mcp-setup.md](docs/mcp-setup.md)） |
 | 用户级 | VS Code 全局存储 `globalStorage` | 激活角色包（跨项目共享） |
 | 用户级 | VS Code 安全存储 `SecretStorage` | API Key（加密存储） |
 
