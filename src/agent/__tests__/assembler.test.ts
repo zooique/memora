@@ -338,10 +338,17 @@ describe('assembleComponents', () => {
   // 裁决面（resolveSkillScript，供 toolExecutor 读正文）与执行面（runSkillScript）
   // 必须解析到**同一个文件**——两面各写一遍解析顺序 = 裁决读 A、执行跑 B 的漂移
   // （最坏形态：裁决读的是无害脚本，执行的却是被替换的同名恶意脚本）。
-  // 本用例以真实技能目录 + 真实 spawn 钉死：resolver 返的路径 == 执行实际 spawn 的文件。
-  // 未覆盖面如实登记：仅锚住全局技能分支（角色包分支夹具需完整 pack manifest +
-  // layer3 扫描链，成本高）；但两面共用同一个 resolveSkillScriptTarget 函数，
-  // 角色包分支的解析顺序由该函数单点保证，不存在第二份实现可漂移。
+  // 本组用例以真实技能目录 + 真实 spawn 钉死：resolver 返的路径 == 执行实际 spawn 的文件。
+  //
+  // 覆盖 = 两个分支 + 一条优先级：
+  //   ① 全局池分支（<home>/skills/<name>/SKILL.md）
+  //   ② 角色包分支（<configDir>/role-packs/<pack>/skills/<name>/SKILL.md）
+  //   ③ 优先级：技能名两侧并存时，角色包必须压过全局池
+  //
+  // 为什么 ③ 必须单独锚：①② 共用同一个 resolveSkillScriptTarget 函数 ⇒「两面读不同文件」
+  // 结构性不可能（没有第二份实现可漂移），但**解析顺序不在同源守卫的射程内**——把两个 if
+  // 对调，两面依然一致（一致地取错分支），同源断言不会红。故用「两侧同名、脚本内容不同」
+  // 让顺序错误表现为执行到错分支的标记，而不是靠读代码推断顺序正确。
 
   describe('run_skill_script 路径解析同源（CMD-1-CONTENT）', () => {
     it('resolveSkillScript 返的路径 = 执行实际 spawn 的文件', async () => {
@@ -401,6 +408,144 @@ describe('assembleComponents', () => {
         expect(result).toContain('SCRIPT_NOT_FOUND');
       } finally {
         await rm(home, { recursive: true, force: true });
+      }
+    });
+
+    /**
+     * 造一个单技能角色包（文件夹形态，才拥有 layer3 归属权）
+     *
+     * 落盘形状：<configDir>/role-packs/<pack>/manifest.json + skills/<skill>/SKILL.md
+     * + skills/<skill>/scripts/<script>。manifest.skills.file 必须写成**包内相对路径**
+     * （正斜杠）——扫出来的条目按 file 精确匹配白名单，写错 = 技能被静默滤掉、
+     * 角色包分支退化成「解析不到」而让断言以错误的原因变绿/变红。
+     *
+     * @returns 脚本目录绝对路径（供断言 resolver 返值与之相等）
+     */
+    function writeRolePack(opts: {
+      configDir: string;
+      packName: string;
+      skillName: string;
+      scriptName: string;
+      scriptBody: string;
+    }): { scriptsDir: string } {
+      const packDir = join(opts.configDir, 'role-packs', opts.packName);
+      const skillDir = join(packDir, 'skills', opts.skillName);
+      const scriptsDir = join(skillDir, 'scripts');
+      mkdirSync(scriptsDir, { recursive: true });
+      writeFileSync(
+        join(skillDir, 'SKILL.md'),
+        `---\nname: ${opts.skillName}\ndescription: 角色包解析同源探针\n---\n正文`,
+        'utf-8',
+      );
+      writeFileSync(join(scriptsDir, opts.scriptName), opts.scriptBody, 'utf-8');
+      writeFileSync(
+        join(packDir, 'manifest.json'),
+        JSON.stringify(
+          {
+            name: opts.packName,
+            formatVersion: '1.0.0',
+            skills: [{ file: `skills/${opts.skillName}/SKILL.md`, name: opts.skillName }],
+          },
+          null,
+          2,
+        ),
+        'utf-8',
+      );
+      return { scriptsDir };
+    }
+
+    it('角色包分支：resolver 返角色包内脚本路径 = 执行实际 spawn 的文件', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'memora-assembler-pack-'));
+      const configDir = join(root, 'cfg');
+      const { scriptsDir } = writeRolePack({
+        configDir,
+        packName: 'pack-probe',
+        skillName: 'pack-probe-skill',
+        scriptName: 'probe.mjs',
+        scriptBody: "process.stdout.write('PACK-BRANCH-SAME-FILE');",
+      });
+      try {
+        const output = await assembleComponents(
+          createPctx(),
+          createInput({ configDir, activeRolePack: 'pack-probe' }),
+        );
+        // 前置守卫：角色包确已激活且技能已登记进 layer3 白名单（activeRolePack 与 manifest.name
+        // 不匹配时 load 会静默落兜底包 ⇒ 没有这条，后面的断言可能因「包根本没加载」
+        // 而以解析不到的结果通过/失败，测的就不是同源而是加载）
+        expect(output.rolePackManager.getSkillScriptPath('pack-probe-skill', 'probe.mjs')).toBe(
+          join(scriptsDir, 'probe.mjs'),
+        );
+        // ① 裁决面：返角色包内绝对路径
+        expect(output.toolExec.resolveSkillScript?.('pack-probe-skill', 'probe.mjs')).toBe(
+          join(scriptsDir, 'probe.mjs'),
+        );
+        // ② 执行面：spawn 的正是该文件（标记只存在于角色包那份 probe.mjs）
+        const result = await output.toolExec.execute(
+          'run_skill_script',
+          JSON.stringify({ skill_name: 'pack-probe-skill', script_path: 'probe.mjs' }),
+        );
+        expect(result).toContain('PACK-BRANCH-SAME-FILE');
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('优先级：同名技能两侧并存 ⇒ 角色包压过全局池（两面同判同一份）', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'memora-assembler-priority-'));
+      // 全局池同名技能（标记 GLOBAL-WINS）
+      const home = join(root, 'home');
+      const globalSkillDir = join(home, 'skills', 'dup-probe');
+      mkdirSync(join(globalSkillDir, 'scripts'), { recursive: true });
+      writeFileSync(
+        join(globalSkillDir, 'SKILL.md'),
+        '---\nname: dup-probe\ndescription: 全局同名探针\n---\n正文',
+        'utf-8',
+      );
+      writeFileSync(
+        join(globalSkillDir, 'scripts', 'probe.mjs'),
+        "process.stdout.write('GLOBAL-WINS');",
+        'utf-8',
+      );
+      // 角色包同名技能（标记 PACK-WINS）
+      const configDir = join(root, 'cfg');
+      const { scriptsDir } = writeRolePack({
+        configDir,
+        packName: 'pack-a',
+        skillName: 'dup-probe',
+        scriptName: 'probe.mjs',
+        scriptBody: "process.stdout.write('PACK-WINS');",
+      });
+      try {
+        const output = await assembleComponents(
+          createPctx(),
+          createInput({
+            configDir,
+            activeRolePack: 'pack-a',
+            existingSkillManager: new SkillManager(home),
+          }),
+        );
+        // 两侧都必须真的装载到**且脚本可解析**（缺一侧本用例就退化成单分支，测不到顺序）：
+        // 全局池一份 + 角色包一份，同一个技能名、两份不同内容的脚本
+        expect(output.skillManager.get('dup-probe')).toBeTruthy();
+        expect(output.skillManager.getScriptPath('dup-probe', 'probe.mjs')).toBe(
+          join(globalSkillDir, 'scripts', 'probe.mjs'),
+        );
+        expect(output.rolePackManager.getSkillScriptPath('dup-probe', 'probe.mjs')).toBe(
+          join(scriptsDir, 'probe.mjs'),
+        );
+        // ① 裁决面取角色包那份
+        expect(output.toolExec.resolveSkillScript?.('dup-probe', 'probe.mjs')).toBe(
+          join(scriptsDir, 'probe.mjs'),
+        );
+        // ② 执行面跑的就是角色包那份——两个 if 顺序若被对调，这里吐 GLOBAL-WINS
+        const result = await output.toolExec.execute(
+          'run_skill_script',
+          JSON.stringify({ skill_name: 'dup-probe', script_path: 'probe.mjs' }),
+        );
+        expect(result).toContain('PACK-WINS');
+        expect(result).not.toContain('GLOBAL-WINS');
+      } finally {
+        await rm(root, { recursive: true, force: true });
       }
     });
   });
