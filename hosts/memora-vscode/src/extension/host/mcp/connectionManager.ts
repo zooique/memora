@@ -65,7 +65,7 @@ export interface ToolCollection {
  *
  * 全部字段由 `memora.mcpServers`（用户级设置）读出，宿主不另存副本、不写回。
  * 刻意**不支持**工作区级 `.mcp.json`：他人提交的配置文件可自动拉起任意命令，
- * 信任来源未拍板前只认用户级设置（方案 §10「server 配置来源与信任」登记项）。
+ * 授权定案只认用户级设置（方案 §4.4，2026-10-25；重开须先改该章判据）。
  */
 export interface McpServerConfig extends McpServerDraftDto {
   /** server 名（进工具名前缀，须唯一；重复配置在启动时按先到先得并告警） */
