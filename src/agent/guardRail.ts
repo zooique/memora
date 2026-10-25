@@ -510,7 +510,10 @@ export function createDefaultGuards(): GuardRail {
         const w = parseWrite(c.argsJson);
         if (!w) return;
         if (c.outcome === 'failed') {
-          // 失败写 = 无进展：只累失败计数，不推进整文件连写链
+          // 失败写 = 无进展：只累失败计数，不推进整文件连写链。
+          // 若该次写已在派发时预登记（onAllow），须先撤销预留——否则「没写成功」被静默算作
+          // 一次覆盖进展，与本护栏「无进展才拦」的判据相反（blocked 分支同款处理）。
+          if (reservedWrites.delete(c.toolCallId)) revertReserved();
           writeFailByPath.set(w.path, writeFailCountOf(w.path) + 1);
           return;
         }

@@ -26,6 +26,7 @@ import {
   RUN_CODE_TOOL,
   buildRunCodeTool,
   SEARCH_PROJECT_TOOL,
+  DEFAULT_WRITE_FILE_MODE,
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
 import { sanitizeExternalText, stripControlChars } from '@/agent/textSanitize.js';
@@ -1070,7 +1071,9 @@ export class ToolExecutor {
           strArg('path'),
           strArg('content'),
           extensions,
-          strArg('mode', 'overwrite'),
+          // 缺省模式取单一真源（不写 'overwrite' 字面量）：此处是最上游的默认值，
+          // 漏接常量会让「改默认模式」只改到 handler / 护栏，派发层仍显式传旧值 ⇒ 静默漂移
+          strArg('mode', DEFAULT_WRITE_FILE_MODE),
           strArg('insert_line') || undefined,
           strArg('old_string') || undefined,
         );

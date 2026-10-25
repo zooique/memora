@@ -208,6 +208,52 @@ describe('GuardRail 判定复现现有护栏（S1 shadow 契约）', () => {
     expect(hit?.message).toContain('已连续 5 次整文件覆盖');
   });
 
+  it('write_loop：预登记后执行失败 → 撤销预留（失败不算进展），但仍累同路径失败计数', () => {
+    const g = freshGuards();
+    const args = (i: number) => `{"path":"a.md","mode":"overwrite","content":"v${i}"}`;
+    // 4 次「放行 + 成功回喂」→ 连写链 4
+    for (let i = 0; i < 4; i++) {
+      const c = makeCtx({ toolName: 'write_file', argsJson: args(i), toolCallId: `f${i}` });
+      g.notifyAllow(c);
+      g.notifyExec({
+        toolName: 'write_file',
+        argsJson: args(i),
+        toolCallId: `f${i}`,
+        outcome: 'ok',
+      });
+    }
+    // 第 5 条放行时预登记（链=5），但执行失败 ⇒ 必须撤销预留退回 4；
+    // 不撤销就会把「没写成功」静默算作一次覆盖进展，与本护栏「无进展才拦」的判据相反
+    const c5 = makeCtx({ toolName: 'write_file', argsJson: args(4), toolCallId: 'f4' });
+    g.notifyAllow(c5);
+    g.notifyExec({
+      toolName: 'write_file',
+      argsJson: args(4),
+      toolCallId: 'f4',
+      outcome: 'failed',
+    });
+    // 撤销后判定仍是「第 5 次」（4+1=阈值）；若失败被算进展会虚高成第 6 次
+    const hit = g.evaluateBlocked(
+      makeCtx({ toolName: 'write_file', argsJson: args(5), toolCallId: 'f5' }),
+    );
+    expect(hit?.guardId).toBe('write_loop');
+    expect(hit?.message).toContain('已连续 5 次整文件覆盖');
+    // 失败写仍计入同路径失败计数：再失败 2 次 → 达阈值 3，出口切换为「先读再写」
+    for (let i = 6; i < 8; i++) {
+      g.notifyExec({
+        toolName: 'write_file',
+        argsJson: args(i),
+        toolCallId: `f${i}`,
+        outcome: 'failed',
+      });
+    }
+    const after = g.evaluateBlocked(
+      makeCtx({ toolName: 'write_file', argsJson: args(8), toolCallId: 'f8' }),
+    );
+    expect(after?.guardId).toBe('write_loop');
+    expect(after?.message).toContain('[WRITE_FAIL_STOP]');
+  });
+
   it('write_loop：同路径连续失败写达阈值拦，读成功后复位放行（write_fail_stop 出口可执行）', () => {
     const g = freshGuards();
     for (let i = 0; i < 3; i++) {
