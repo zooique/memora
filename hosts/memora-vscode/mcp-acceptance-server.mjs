@@ -1,5 +1,5 @@
 /**
- * MCP 真机验收用本地 server（零网络依赖，见 docs/mcp-acceptance.md §1）
+ * MCP 真机验收用本地 server（零网络依赖，见 hosts/memora-vscode/docs/mcp-acceptance.md §1）
  *
  * 为什么放在这个目录：ESM 从**脚本所在目录**逐级向上找 node_modules，与进程 cwd 无关。
  * 本目录的 node_modules 里有 @modelcontextprotocol/sdk；放到解析不到的位置会在拉起时

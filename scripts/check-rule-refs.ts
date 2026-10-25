@@ -13,6 +13,21 @@
  *   `docs/方案-xxx.md` 裸路径，`docs:links` 只抓 `](...)` 链接语法 → 这类指针在本族规则
  *   出现前零门禁覆盖（文档处置后指针留在注释里即静默腐烂，见 comment-doc-citation-rules §3）。
  *
+ * 上述判据的三条限定（缺一条即产生系统性假阳/漏报，2026-10-25 补齐并各配自检样例）：
+ *   1. **对象是「完整 token」而非「子串」**：匹配点左边若仍是路径字符（`A-Za-z0-9_./-`），
+ *      说明它是更长路径的尾段（`hosts/x/docs/y.md`）⇒ 不在本门判据面，判 skip。
+ *      不加这条的左边界 ⇒ 截尾后按仓库根解析恒 missing（假阳）；反向同源——若仓库根下
+ *      恰有同名文件，**真断链会被尾段救活**（漏报，比假阳更险）。两病同根：判据对象错。
+ *   2. **右边界**：`.md` 后紧跟路径字符（`.mdx` / `.md5`）不算本族引用，避免抽出半截扩展名。
+ *   3. **链接目标不归本门**：`](…)` 的解析基是「源文件目录」（`docs:links` 的判据），
+ *      本门的基是「仓库根」；同一文本被两门用不同基各判一次，必然产出假阳（相对链接被
+ *      当根相对判死）或假 OK（链接失效但根下恰有同名）⇒ 按书写形态分工，一门只有一种基：
+ *        书写形态                     归属门          解析基
+ *        `](target)` 链接             docs:links      源文件目录
+ *        裸 docs/ 或 .trae/rules/     rules:refs      仓库根
+ *        `./x` `/x` `a/b.md` 简写     无门禁          明示边界（实测扩面会新增 141 处红）
+ *      ⇒ 同一行文本不可能被判两次；每种形态只有一个真理源。
+ *
  * 两条**刻意排除**（是判据边界，**不是**豁免清单）：
  *   1. 源文件位于 `.trae/skills/**` —— 技能手册是**可移植模板**，其中
  *      `.trae/rules/architecture-quickref.md` / `frontend_architecture_rules.md` 等指向的是
@@ -22,7 +37,9 @@
  *
  * 闸门自检（每次运行都跑，不可关闭）：
  *   「0 命中即成功」这类断言若判据本身失明（正则改坏 / 排除逻辑写反），会**静默 exit 0**。
- *   故先对 3 条内置样例跑**同一套判据**（`scanLine`，与主扫描同源，非另写一套），未全过即 exit 2。
+ *   故先对 12 条内置样例跑**同一套判据**（`scanLine`，与主扫描同源，非另写一套），未全过即 exit 2。
+ *   样例覆盖「判据的三条限定」各自的正反面（截尾 skip / 链接 skip / 右边界 skip / 裸路径真断链 missing），
+ *   缺任一面则那一条限定退化成无守：改坏判据仍会 0 命中假绿。
  *
  * 用法：npx tsx scripts/check-rule-refs.ts   # 有问题 exit 1
  *
@@ -50,11 +67,29 @@ const TEXT_EXTS = ['.md', '.ts', '.mjs', '.yml'];
 /** 技能手册前缀 —— 其引用指向目标项目文件，属判据边界外（见文件头「刻意排除」第 1 条） */
 const SKILLS_PREFIX = '.trae/skills/';
 
-/** 裸路径引用提取口径（两族同判据）：首字符排除 `/` `.`，防跨段吞并；docs 族字符类含 CJK（文档名多为中文） */
-const REF_RES: readonly RegExp[] = [
-  /\.trae\/rules\/[A-Za-z0-9_][A-Za-z0-9_./-]*\.md/g,
-  /docs\/[A-Za-z0-9_一-鿿][A-Za-z0-9_一-鿿./-]*\.md/g,
+/**
+ * 裸路径引用提取口径（两族同判据）：首字符排除 `/` `.`，防跨段吞并；docs 族字符类含 CJK（文档名多为中文）。
+ *
+ * 右边界 `(?![A-Za-z0-9_./-])`：`.mdx` / `.md5` 这类更长扩展名不得被抽出半截 `.md`（见头注释「三条限定」2）。
+ * 左边界不写在正则里——它需要**向左看**才知道是不是更长路径的尾段，由 `tokenStart()` 判（限定 1）。
+ */
+const REF_SOURCES: readonly string[] = [
+  String.raw`\.trae\/rules\/[A-Za-z0-9_][A-Za-z0-9_./-]*\.md`,
+  String.raw`docs\/[A-Za-z0-9_一-鿿][A-Za-z0-9_一-鿿./-]*\.md`,
 ];
+const RIGHT_BOUNDARY = String.raw`(?![A-Za-z0-9_./-])`;
+const REF_RES: readonly RegExp[] = REF_SOURCES.map((s) => new RegExp(s + RIGHT_BOUNDARY, 'g'));
+/** 非全局同源探针（判「某段文本里是否含本族引用」，用于统计被剥掉的链接目标规模） */
+const REF_PROBES: readonly RegExp[] = REF_SOURCES.map((s) => new RegExp(s + RIGHT_BOUNDARY));
+
+/** 路径字符（**只取 ASCII**）：用于把匹配向左扩张成完整 token —— 刻意不含 CJK，否则会吞掉紧邻的中文散文 */
+const PATH_CHAR = /[A-Za-z0-9_./-]/;
+
+/**
+ * markdown 链接目标（`](…)`）：归 `docs:links` 判（其基 = 源文件目录），本门剥掉不判。
+ * 非贪婪 + 不跨 `)`，与 check-publish-links 的 `LINK_RE` 同口径（两门对「链接」的边界必须一致）。
+ */
+const LINK_TARGET_RE = /\]\([^)]*\)/g;
 
 /** 代码围栏行（``` 或 ~~~ 开头）：围栏内是示例代码，md 中跳过 */
 const FENCE_RE = /^\s*(```|~~~)/;
@@ -83,6 +118,46 @@ function commentText(line: string, fromRel: string): string {
 type Verdict = 'skip' | 'missing' | 'ok';
 
 /**
+ * 判据面统计（可观测性：把「不覆盖」显式报数，避免静默缩水）
+ *
+ * - judged：真正参与存在性判定的引用条数
+ * - tailSkip：因是更长路径尾段而 skip 的条数（限定 1；即「嵌套路径不在本门判据面」的规模）
+ * - linkSkip：因位于 `](…)` 链接目标内而被剥掉的条数（限定 3；这部分由 docs:links 承担）
+ */
+const stats = { judged: 0, tailSkip: 0, linkSkip: 0 };
+
+/** 复位统计（自检会调用 scanLine，不能把样例计入正式扫描的账） */
+function resetStats(): void {
+  stats.judged = 0;
+  stats.tailSkip = 0;
+  stats.linkSkip = 0;
+}
+
+/**
+ * 剥离 markdown 链接目标（等长空格替换，保持列偏移）
+ *
+ * 为什么剥：链接的基是「源文件目录」（docs:links 判据），裸路径的基是「仓库根」（本门判据）。
+ * 同一文本被两门用不同基各判一次 ⇒ 假阳（相对链接被当根相对判死）或假 OK（链接失效但根下
+ * 恰有同名）。按书写形态分工后，一门只有一种基（见头注释「三条限定」3）。
+ */
+function stripLinkTargets(text: string): string {
+  return text.replace(LINK_TARGET_RE, (m) => ' '.repeat(m.length));
+}
+
+/**
+ * 完整 token 起点：自匹配位置向左扩张到第一个非路径字符
+ *
+ * 判据对象必须是「路径」而不是「子串」：`hosts/x/docs/y.md` 若只从 `docs/` 处匹配，
+ * 截出的 `docs/y.md` 按仓库根解析恒 missing（假阳）；反向更险——根下恰有同名文件时，
+ * 真正的断链会被尾段救活（漏报）。两病同根，故在提取环节一次性消除。
+ */
+function tokenStart(text: string, at: number): number {
+  let s = at;
+  while (s > 0 && PATH_CHAR.test(text[s - 1] ?? '')) s -= 1;
+  return s;
+}
+
+/**
  * 单条引用的判定
  * @param raw 匹配到的裸路径（仓库根相对，形如 `.trae/rules/generic/x.md`）
  * @param fromRel 引用所在源文件的仓库根相对路径（决定是否落在技能手册边界外）
@@ -100,12 +175,26 @@ function classify(raw: string, fromRel: string): Verdict {
 function scanLine(line: string, fromRel: string): Array<{ raw: string; verdict: Verdict }> {
   const out: Array<{ raw: string; verdict: Verdict }> = [];
   // 代码文件只扫注释片段（引用语义边界，见 commentText）；md 全篇
-  const text = commentText(line, fromRel);
+  const comment = commentText(line, fromRel);
+  if (!comment) return out;
+  // 链接目标先计数再剥离：剥离后它不再产生命中，但规模要报出来（判据面缩水必须可见）
+  for (const m of comment.matchAll(LINK_TARGET_RE)) {
+    const target = m[0];
+    if (REF_PROBES.some((probe) => probe.test(target))) stats.linkSkip += 1;
+  }
+  const text = stripLinkTargets(comment);
   for (const refRe of REF_RES) {
     refRe.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = refRe.exec(text)) !== null) {
       const raw = m[0] ?? '';
+      // 限定 1：匹配点是更长路径的尾段 ⇒ 不在本门判据面（否则截尾按根解析 = 假阳 + 漏报）
+      if (tokenStart(text, m.index) !== m.index) {
+        stats.tailSkip += 1;
+        out.push({ raw, verdict: 'skip' });
+        continue;
+      }
+      stats.judged += 1;
       out.push({ raw, verdict: classify(raw, fromRel) });
     }
   }
@@ -153,6 +242,21 @@ const SELF_TEST: ReadonlyArray<{
     line: '  const x = 1; // 见 docs/__self_test_no_such__.md。',
     missing: 1,
   },
+  // [I] 左边界：嵌套路径的尾段不是本门判据面 → skip 1 / missing 0
+  //     （修前：被截出 docs/mcp-setup.md 再按仓库根解析 ⇒ missing 1 = 假阳）
+  {
+    from: 'docs/__x__.md',
+    line: '见 hosts/memora-vscode/docs/mcp-setup.md 末。',
+    missing: 0,
+    skip: 1,
+  },
+  // [J] 链接目标归 docs:links（基 = 源文件目录）→ missing 0
+  //     （修前：按仓库根判死 = 假阳，且与 docs:links 重复判同一条文本）
+  { from: 'hosts/__x__/README.md', line: '详见 [MCP 接入](docs/__no_such__.md)。', missing: 0 },
+  // [K] 反向护栏：补边界 + 剥链接不得连「裸路径真断链」一起放过 → missing 1
+  { from: 'hosts/__x__/README.md', line: '详见 `docs/__self_test_no_such__.md`。', missing: 1 },
+  // [L] 右边界：`.mdx` 不属本族 → missing 0（修前抽出 __self_test_no_such__.md 判死 = 假阳）
+  { from: 'docs/__x__.md', line: '详见 `docs/__self_test_no_such__.mdx`。', missing: 0 },
 ];
 
 /** 跑自检；任一失败即报错。返回是否全过 */
@@ -177,6 +281,8 @@ if (!runSelfTest()) {
   console.error('\n闸门自检未通过：判据可能已失明，此时「0 命中」不可信。');
   process.exit(2);
 }
+// 自检也走 scanLine（同源），其计数不属于正式扫描的账
+resetStats();
 
 /** 收集待扫文本文件（递归；跳过 SKIP_DIRS 与本脚本自身） */
 function collect(dir: string, out: string[]): void {
@@ -229,9 +335,18 @@ console.log(
   `裸路径引用检查（.trae/rules + docs 两族） · 文本文件 ${files.length} 个（排除 .trae/skills 与本脚本）`,
 );
 
+/** 判据面统计行：把「哪些没被判、为什么」显式报出来（判据面缩水必须可见，不靠读代码猜） */
+function printScope(): void {
+  console.log(
+    `判据面：判定 ${stats.judged} 条｜尾段跳过 ${stats.tailSkip} 条（嵌套路径，非 docs//.trae/rules 前缀）` +
+      `｜链接目标跳过 ${stats.linkSkip} 条（归 docs:links，按源文件目录解析）`,
+  );
+}
+
 if (findings.length) {
   console.log(`\n[A] 引用目标不存在（参考腐烂）: ${findings.length}`);
   for (const f of findings) console.log(`  ${f.file}:${f.line}  ->  ${f.raw}`);
+  printScope();
   console.log(
     '\n修法纪律：默认**不开豁免**。\n' +
       '  · 目标确实该存在 → 改正引用路径（如补 `generic/`）；\n' +
@@ -239,4 +354,5 @@ if (findings.length) {
   );
   process.exit(1);
 }
+printScope();
 console.log('\nOK：规则裸路径引用全部可解析。');
