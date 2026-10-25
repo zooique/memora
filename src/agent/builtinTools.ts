@@ -67,7 +67,9 @@ export interface ToolDefinition {
 // ─── 工具幂等性映射（补偿机制） ────────────────────────
 //
 // 幂等性定义：
-//   - idempotent：写后状态确定、可安全重跑（如 task_table_update），跳过回喂缓存摘要
+//   - idempotent：写后状态确定、可安全重跑；**跳过回喂缓存摘要** ⇒ 只适用于「结果不会因他人操作
+//     或自身前置状态改变而失效」的工具。当前内置表**无此类**（`task_table_update` 已改判为
+//     non-idempotent，理由见映射条目注释）；级别本身保留，供宿主自定义工具声明。
 //   - idempotent-key：依赖业务唯一键实现幂等（写操作，如 write_file / register_work）
 //   - read-only：读/查询类，目标态可被外部改动（写工具/时间），永不跳过——跳过回喂
 //     陈旧结果会误导 LLM；重跑无害且无需去重持久化
@@ -117,7 +119,11 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   // 第二级压缩：由 loop 拦截执行（现场压临时摘要，loop 收尾即弃），永不跳过（read-only）
   compress_context: 'read-only',
   task_table_write: 'non-idempotent',
-  task_table_update: 'idempotent',
+  // task_table_update 归 non-idempotent 是「禁止跳过」而非「重跑有害」（与 delete_file 同判据）：
+  // 幂等键只有 name+args，而 args 的 plan_item_id 是**位置序号**——跨轮 task_table_write 重写任务表后，
+  // 同序号可能指向另一个任务项；此时同 args 重发会被「仅一次语义」跳过并回喂上一轮的任务表摘要
+  // = 向模型谎报「已更新」而实际未更新（真机观测 2026-10-25：回显旧任务项）。重跑本身无害（状态确定）。
+  task_table_update: 'non-idempotent',
   read_skill: 'read-only',
   read_resource: 'read-only',
   // list_resources / list_skills：读操作（列举技能 L3 清单 / 技能清单），永不跳过（read-only，同 read_skill）
@@ -520,8 +526,10 @@ export const WRITE_FILE_MODES = [
 export type WriteFileMode = (typeof WRITE_FILE_MODES)[number]['name'];
 
 /** write_file 缺省写入模式（唯一真源 = 上表首项「默认，全量覆盖」）。
- *  消费方：`builtinToolHandlers.writeFile` 的形参默认值 / `guardRail` 的「是否整文件覆盖」判据——
- *  两处都不许自写 'overwrite' 字面量（同一个事实两个字面量 = 改默认值时护栏静默漂移，无测试会红）。 */
+ *  消费方三处（穷举）：`toolExecutor` 派发时的 `strArg('mode', …)` 缺省值（最上游）/
+ *  `builtinToolHandlers.writeFile` 的形参默认值 / `guardRail` 的「是否整文件覆盖」判据——
+ *  三处都不许自写 'overwrite' 字面量（同一个事实多个字面量 = 改默认值时护栏静默漂移，无测试会红）。
+ *  ⚠️ 派发层漏接常量最隐蔽：它把旧值显式传下去，handler 默认值永不生效 ⇒ 只有护栏按新默认判。 */
 export const DEFAULT_WRITE_FILE_MODE: WriteFileMode = WRITE_FILE_MODES[0].name;
 
 /** mode 参数类型守卫（唯一判定点，判定与 WRITE_FILE_MODES 同源；窄化后可供 computeWriteContent 消费） */

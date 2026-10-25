@@ -525,8 +525,8 @@ describe('builtinTools · BUILTIN_TOOL_IDEMPOTENCY', () => {
     expect(BUILTIN_TOOL_IDEMPOTENCY.task_table_write).toBe('non-idempotent');
   });
 
-  it('task_table_update 标记 idempotent（步骤状态更新，目标态幂等；跳过风险见注释）', () => {
-    expect(BUILTIN_TOOL_IDEMPOTENCY.task_table_update).toBe('idempotent');
+  it('task_table_update 标记 non-idempotent（禁止跳过而非重跑有害：plan_item_id 是位置序号）', () => {
+    expect(BUILTIN_TOOL_IDEMPOTENCY.task_table_update).toBe('non-idempotent');
   });
 
   it('web_fetch 应标记为 read-only（读操作，永不跳过）', () => {
@@ -611,6 +611,18 @@ describe('builtinTools · shouldSkipForIdempotency（仅一次语义）', () => 
     const args = '{"path":"a.ts"}';
     const records = [rec('read_file', args, true, level, '旧内容（已过时）')];
     expect(shouldSkipForIdempotency(records, 'read_file', args, level)).toEqual({ skip: false });
+  });
+
+  it('task_table_update 跨轮同 args 不跳过——plan_item_id 是位置序号，任务表重写后同序号指向另一项', () => {
+    // 真机观测 2026-10-25：跨轮同 name+args 命中上一轮记录 → 回显旧任务项。
+    // 用真实映射值判定（禁用硬编码）：归类一旦回退为幂等，本例即红
+    const level = BUILTIN_TOOL_IDEMPOTENCY.task_table_update!;
+    const args = '{"plan_item_id":"3","status":"done"}';
+    // 上一轮摘要描述的是「旧表」的任务项 3；本轮任务表已被 task_table_write 重写
+    const records = [rec('task_table_update', args, true, level, '任务项 3 已标记 done（旧表）')];
+    expect(shouldSkipForIdempotency(records, 'task_table_update', args, level)).toEqual({
+      skip: false,
+    });
   });
 });
 
