@@ -86,7 +86,7 @@ await agent.close();
 
 Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 
-> **版本定位（v5.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**。**5.0.0（当前）**：公开面大收面（删 23 个导出符号 + 32 个公开成员 + 3 个事件）+ 多项目形态定案（一个 Agent = 一个项目）+ 三套空转机制退役（目标漂移检测 / 记忆治理门面 / 检查点假落盘）+ SQLite 存储实现（`createNodeSqliteStorage`）——破坏性变更逐条改法见 [升级指南](docs/memora-升级指南-4.x-到-5.0.0.md)。**4.0.0**：导出面收敛（移除 54 个公共导出，逐条清单见 [CHANGELOG](./CHANGELOG.md) 的 `[4.0.0]` 区）+ `agent.memory.search()` 退役（唯一入口 `searchByKeyword()`）。
+> **版本定位（v5.x 系列）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**。**已发布版本与各版变更以 npm registry 与 [CHANGELOG](./CHANGELOG.md) 为准，此处不复述发布态**（包内静态文本写「哪个版本是当前」必随时间腐化）。**5.0.0 起的形态**：公开面大收面（删 23 个导出符号 + 32 个公开成员 + 3 个事件）+ 多项目形态定案（一个 Agent = 一个项目）+ 三套空转机制退役（目标漂移检测 / 记忆治理门面 / 检查点假落盘）+ SQLite 存储实现（`createNodeSqliteStorage`）——破坏性变更逐条改法见 [升级指南](docs/memora-升级指南-4.x-到-5.0.0.md)。**4.0.0**：导出面收敛（移除 54 个公共导出，逐条清单见 [CHANGELOG](./CHANGELOG.md) 的 `[4.0.0]` 区）+ `agent.memory.search()` 退役（唯一入口 `searchByKeyword()`）。
 
 ---
 

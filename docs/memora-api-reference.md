@@ -263,6 +263,8 @@ Agent 通过一组 getter 暴露专职 Manager 与组件。详见后续章节。
 | `security` | `SecurityGuard \| null` | 安全守卫（未注入 `createSecurityGuard` 工厂时为 `null`） |
 | `bootstrapMemories` | `Memory[]` | 启动必召记忆——**恒为空数组**（设定记忆归角色包内容层，ADR-025） |
 
+> **`security` 的方法（经公开成员可达，不是包入口导出符号）**：`SecurityGuard` 类本身未从 `src/index.ts` 导出，但 `agent.security` 是公开成员（`publicMemberSurfaceGuard` 成员表在册），其方法对消费者**可达**。5.1.0 新增 `requestToolCallConfirmation(toolName, summary, needConfirm)`——动态工具源（如宿主接入的 MCP 工具）的**单一确认入口**，与写入 / 命令 / 脚本确认复用同一个私有 `confirmGate`；`needConfirm` 由工具声明的 `ToolDefinition.confirmPolicy` 派生（`'always'` 弹窗 / `'audit'` 自动放行但仍落审计 / 缺省不过闸），拒绝时工具不执行并回 `[ERR:TOOL_DECLINE]`。
+
 ### 2.7 事件订阅（`agent.on()` / `agent.off()` / `agent.once()`）
 
 Agent 继承 `TypedEventEmitter<AgentEventMap>`，向宿主项目广播对话外事件。
