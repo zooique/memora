@@ -19,8 +19,12 @@
 #
 # 分发出口（按 2026-10-23 调研结论定案，勿一次全上）：
 #   ① **GitHub Release asset**（本 workflow 已带）——零外部账号门槛，今天就能用；
-#   ② **Open VSX**——须先在 open-vsx.org 拿到 namespace ownership 并手动首发第一版，
-#      之后追加一步 `npx ovsx publish --trusted-publishing`（Trusted Publishing，OIDC 零密钥）；
+#   ② **Open VSX**——✅ 已开通（2026-10-26）：namespace ownership / 手动首发 0.2.0 /
+#      Trusted Publisher 登记均已完成，本 workflow 末尾两步即「发布 + 回查」（OIDC 零密钥）。
+#      ⚠️ 版本号在 Open VSX 上**永久保留**（删除后仍保留，同一版本永不能再发）
+#      ⇒ 每次发版**必须先升** hosts/memora-vscode/package.json 的 version。
+#      这是 tag↔version 闸之外的第二道硬约束：已发的 0.2.0 若再打一次 tag，
+#      门禁全绿、Release 也能挂，但 Open VSX 那步必红。
 #   ③ **VS Code Marketplace**——🔒 **定案：保持手动上传，CI 路线放弃**。
 #      ⚠️ 全局 PAT 于 **2026-12-01 退役**（仅剩约 6 周），搭 PAT 自动发布即搭即拆；
 #      稳的 Entra ID 路线需要 Azure 订阅 ⇒ 重新触发已撞过的「国外银行卡」拦路石；
@@ -202,3 +206,48 @@ jobs:
               --notes-file "$NOTES" \
               --generate-notes
           fi
+
+      # ── 出口②：Open VSX（Trusted Publishing，OIDC 零密钥）─────────────────────────
+      #
+      # 前置（2026-10-26 复核，均已在 open-vsx.org 完成，缺一即失败）：
+      #   ① Publisher Agreement 已签；② namespace `zooique` 已 verified（owner，非仅 contributor）；
+      #   ③ 扩展已有 active 版本（0.2.0 于 2026-10-23 手动首发；**首发不能用 OIDC**）；
+      #   ④ 已登记 Trusted Publisher（GitHub Actions / zooique / memora / host-release.yml）。
+      #
+      # ⚠️ 为什么**传产物路径**而不是裸跑 `npx ovsx publish --trusted-publishing`：
+      #   ① 裸跑 = ovsx 用 vsce 在**当前目录重新打包再发布** ⇒ 发出去的是源码现打的产物，
+      #      与上面过了门禁、算了 sha256、挂进 Release 的那个 vsix **不是同一个文件**；
+      #   ② ovsx README 明示：打包由 vsce 走依赖遍历，**只支持 npm / yarn v1，pnpm 不受支持**
+      #      （要绕开得 --no-dependencies / --follow-symlinks）——本仓库正是 pnpm，重打包必踩。
+      #   ⇒ 传 <file> = 直接上传已打包文件（README: "publishes an already packaged file"），两条都绕开。
+      #
+      # ⚠️ 为什么必须 `if: push`：Open VSX 的 Trusted Publisher 注册**不绑定分支或 tag**——
+      #   「任何跑这个 workflow 文件的 ref 都被信任」。workflow_dispatch 预演若无此闸，
+      #   手动点一次就真发到公开市场，而**版本号一旦占用不可回收**。
+      #
+      # ⚠️ 为什么锁 ovsx@1.3.0：发布链不该被上游 minor 变更偷袭（CLI 参数/默认行为漂移）。
+      #   用 npx 而非加 devDependency——后者要动 pnpm-lock，而 CI 用 --frozen-lockfile。
+      - name: 发布到 Open VSX（Trusted Publishing · OIDC 零密钥）
+        if: github.event_name == 'push'
+        env:
+          VSIX: ${{ steps.artifact.outputs.file }}
+        run: npx --yes ovsx@1.3.0 publish "$VSIX" --trusted-publishing
+
+      # 发布后回查：ovsx 退出码 0 只代表上传被接受，不代表市场已生效（入库延迟无法自证）。
+      # 故回读 registry API 断言 latest == 本次 tag 版本；最多等 100 秒。
+      - name: 核对 Open VSX 上版本已生效
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#vscode@}"
+          for i in $(seq 1 10); do
+            GOT=$(curl -fsS https://open-vsx.org/api/zooique/memora-vscode | node -p 'JSON.parse(require("fs").readFileSync(0,"utf8")).version' || echo '')
+            if [ "$GOT" = "$VER" ]; then
+              echo "Open VSX: zooique.memora-vscode = $VER"
+              exit 0
+            fi
+            echo "第 $i 次回查：市场仍为 '$GOT'（期望 $VER），10 秒后重试"
+            sleep 10
+          done
+          echo "::error::Open VSX 上未见到 $VER（发布步未报错但市场未更新）——人工核对 https://open-vsx.org/extension/zooique/memora-vscode"
+          exit 1

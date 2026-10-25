@@ -169,27 +169,49 @@ PAT 的优先级高于 OIDC，留着等于没切换。
 
 ## 六、以后每次发版（全自动）
 
-`host-release.yml` 里加一步（ownership 到手后我来加，或你自己加）：
+✅ **已落地（2026-10-26）**：`.github/workflows/host-release.yml` 末尾两步就是它，不用再手工加。
 
 ```yaml
-      - name: 发布到 Open VSX（Trusted Publishing，OIDC 零密钥）
-        run: npx ovsx publish --trusted-publishing
-        working-directory: hosts/memora-vscode
+      - name: 发布到 Open VSX（Trusted Publishing · OIDC 零密钥）
+        if: github.event_name == 'push'
+        env:
+          VSIX: ${{ steps.artifact.outputs.file }}
+        run: npx --yes ovsx@1.3.0 publish "$VSIX" --trusted-publishing
+
+      - name: 核对 Open VSX 上版本已生效
+        if: github.event_name == 'push'
+        run: |
+          # 回查 registry API，断言 latest == 本次 tag 版本；最多等 100 秒
 ```
 
-`permissions: id-token: write` 已经在 workflow 里声明好了，不用再改。
+`permissions: id-token: write` 已在 workflow **顶层**声明好（与 `contents: write` 并列），不用再改。
+
+⚠️ **三处与直觉相反、但必须这样写的地方**（本文初版的写法是错的，已订正）：
+
+1. **必须传 vsix 路径，不能裸跑**。裸跑 `npx ovsx publish --trusted-publishing`
+   = ovsx 用 vsce 在**当前目录重新打包再发布**（ovsx README 的 no-arg 变体）
+   ⇒ 发出去的不是上面过了门禁、算了 sha256、挂进 Release 的那个产物；
+   而且 vsce 的依赖遍历**只支持 npm / yarn v1，pnpm 不受支持**——本仓库正是 pnpm。
+   传 `<file>` 走的是「publishes an already packaged file」变体，两个坑都绕开。
+2. **必须有 `if: github.event_name == 'push'`**。Open VSX 的 Trusted Publisher 注册
+   **不绑定分支或 tag**——官方原话：「任何跑这个 workflow 文件的 ref 都被信任」。
+   本 workflow 支持 `workflow_dispatch` 手动预演，没这个闸的话，**手动点一次就真发到公开市场**。
+3. **版本号在 Open VSX 上永久保留**（删除后仍保留，同一版本永不能再发）
+   ⇒ 每次发版**必须先升** `hosts/memora-vscode/package.json` 的 version。
+   这是 tag↔version 闸之外的第二道硬约束。
 
 然后发版就是：
 
 ```bash
 # 1. 先把内核发了（如果内核有变动）—— 宿主 workflow 会校验内核已先行发布
-# 2. 改 hosts/memora-vscode/package.json 的 version
-# 3. 提交 + 打 tag
-git tag "vscode@0.2.0"
-git push origin "vscode@0.2.0"
+# 2. 升 hosts/memora-vscode/package.json 的 version
+#    ⚠️ 0.2.0 已于 2026-10-23 发布到 Open VSX，不可重发 ⇒ 下一个是 0.3.0
+# 3. 提交 + 打 tag（tag 必须等于 package.json 的 version，workflow 会校验）
+git tag "vscode@0.3.0"
+git push origin "vscode@0.3.0"
 ```
 
-CI 跑完门禁 → 自动出 vsix → 挂 GitHub Release → 发到 Open VSX。
+CI 跑完门禁 → 自动出 vsix → 挂 GitHub Release → 发到 Open VSX → 回查市场版本。
 
 ---
 
@@ -208,7 +230,12 @@ CI 跑完门禁 → 自动出 vsix → 挂 GitHub Release → 发到 Open VSX。
 ## 八、当前状态与下一步
 
 - ✅ VS Code Marketplace：已上架（手动上传），publisher `zooique`
-- ❌ Open VSX：**未上架**——等本文流程走完
+- ⏳ **Open VSX**：**0.2.0 已上架**（2026-10-23 手动首发，<https://open-vsx.org/extension/zooique/memora-vscode>）；
+  namespace `zooique` **已 verified**、Trusted Publisher **已登记**、`host-release.yml`
+  **已加发布步 + 回查步** ⇒ 打 `vscode@*` tag 即自动发布。
+  **尚待 0.3.0 首次实跑验证**（已发版本不可重发，无法拿 0.2.0 试）。
+  建议顺序：先用 `workflow_dispatch` 空跑一次（门禁全跑，**不会发布**——发布步有 `if: push` 闸），
+  确认 CI 冷环境无差异后再升 version 打 tag。
 - 🔒 **VS Marketplace 自动化：定案不做，保持手动上传**（2026-10-23 复核）。理由：
   ① 干净路线 `vsce publish --oidc`（GitHub OIDC 直连 Marketplace、零密钥、免订阅）
     尚未进 @vscode/vsce 稳定版，且 Marketplace 侧**没有策略注册 UI**

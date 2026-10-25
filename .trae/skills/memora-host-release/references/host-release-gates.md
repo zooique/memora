@@ -47,7 +47,7 @@ tag push 事件以 **tag 指向 commit 中的 workflow 文件**起跑；push 修
 | 出口 | 现状 | 备注 |
 |---|---|---|
 | ① GitHub Release asset | ✅ 本 workflow 已带（零外部账号门槛） | 幂等：`gh release upload --clobber`；asset 名 `memora-vscode-<VER>.vsix`；**body 结构化**（`--notes-file` 正文 + `--generate-notes` 追加）：随包内核代次 / sha256 / 字节数 / Marketplace 手动上传提示（0.2.0 实证缺口回补：纯 `--generate-notes` 只剩 auto changelog 链接，内核代次对账信息在发布面丢失） |
-| ② Open VSX | 🔒 须先拿 namespace ownership + 手动首发第一版，之后 `npx ovsx publish --trusted-publishing` | Trusted Publishing 按 **workflow 文件名** `host-release.yml` 匹配 ⇒ **不得改名**（改名须删注册重来） |
+| ② Open VSX | ✅ **已开通（2026-10-26）**：namespace ownership / 手动首发 0.2.0 / Trusted Publisher 登记均已完成，`host-release.yml` 末尾两步 = 发布 + 回查（OIDC 零密钥） | 🔴 实现三约束：① **必须传 vsix 路径**（裸跑 `npx ovsx publish --trusted-publishing` = ovsx 用 vsce 在 CWD **重新打包再发布**，发出去的不是过闸产物，且 vsce 依赖遍历**只支持 npm / yarn v1、不支持 pnpm**）；② **必须 `if: github.event_name == 'push'`**（Trusted Publisher **不绑定分支或 tag**，无闸则 `workflow_dispatch` 预演会真发到公开市场）；③ Open VSX 按 **workflow 文件名** `host-release.yml` 匹配 ⇒ **不得改名**（改名须删注册重来）。另：版本号**永久保留**，已发的 0.2.0 不可重发 |
 | ③ VS Code Marketplace | 🔒 **定案保持手动上传，CI 路线放弃** | 全局 PAT 2026-12-01 退役；Entra ID 需 Azure 订阅（国外银行卡拦路石）；`vsce publish --oidc` 未进稳定版且无 Marketplace 策略注册 UI；手动每版传一次 `.vsix` 成本可忽略 |
 
 ## 改名红线

@@ -76,7 +76,8 @@ agent_created: true
 
 ### Step 5：手动分发（宿主专属，CI 不做）
 1. **① GitHub Release**：`host-release.yml` 已自动创建/更新 Release 并挂 `.vsix` asset。核对 Release 存在 + asset 名正确（`memora-vscode-<VER>.vsix`）+ **body 结构化齐全**——workflow 注入「随包内核代次 / sha256 / 字节数 / Marketplace 手动上传提示」四项（0.2.0 实证缺口：body 只剩 auto changelog 链接，「随包内核代次」这条对账信息在发布面丢失，只活在 CHANGELOG 里）。
-2. **② Open VSX**：首次须已在 open-vsx.org 拿到 **namespace ownership** 并手动首发第一版；之后追加 `npx ovsx publish --trusted-publishing`（OIDC 零密钥）。
+2. **② Open VSX**：✅ **已自动化（2026-10-26）**——`host-release.yml` 末尾两步已带（发布 + 回查），打 `vscode@*` tag 即发；前置（namespace ownership / 手动首发 0.2.0 / Trusted Publisher 登记）均已完成。核对 = 回查步断言 <https://open-vsx.org/api/zooique/memora-vscode> 的 `version` == 本次 tag 版本。
+   - 🔴 **发版前必须升 `hosts/memora-vscode/package.json` 的 version**：Open VSX 版本号**永久保留**（删除后仍保留），同版本不可重发 ⇒ 已发的 0.2.0 若重打 tag，门禁与 GitHub Release 都能过、**只有 Open VSX 那步红**。
    - 🔴 **Trusted Publisher 按 workflow 文件名匹配**（`host-release.yml`，非数字 ID）⇒ 本文件**不得改名**（改名须删掉 Open VSX 注册重来）。
 3. **③ VS Code Marketplace**：🔒 **定案保持手动上传**（全局 PAT 2026-12-01 退役；稳的 Entra ID 路线需 Azure 订阅 = 国外银行卡拦路石；干净路线 `vsce publish --oidc` 尚未进稳定版且 Marketplace 侧无策略注册 UI）。每版传一次 `.vsix`，成本可忽略 ⇒ 手动最优。
 
