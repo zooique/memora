@@ -63,8 +63,19 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 |------|--------|
 | `manifest.json` | 按需增删 `capabilities`、调整 `strategy` 键（只保留要用改的键，键集见下表） |
 | `persona.md` | 角色身份/职责/风格/边界（并入 system prompt，第一优先级） |
-| `rules.md` | 工作方法/流程/禁忌（`- ` 无序列表逐条 + 段落合并） |
+| `rules.md` | 工作方法/流程/质量/禁忌/工具纪律（`- ` 无序列表逐条 + 段落合并） |
 | `skills/*.md` | 领域方法库（frontmatter 必须含 `name` + `description`，目录扫描零声明；description 按[四问规范](#四问规范软自查)写明 做什么/何时用/输入/返回） |
+
+#### rules.md 内容基线（建议必写一条工具纪律）
+
+除角色专属纪律外，每个包建议写一条**领域无关的编辑纪律**——它直接决定多轮编辑的成本：
+
+- 增量写入优先：write_file 的 replace（old_string 取原文唯一片段）/ insert（按行）/ append（追加）；同一文件的多处修订**在一次回复内连续发出**，内核按目标路径串行落地（`src/agent/loop.ts` 的同路径写链），不会互相覆盖。
+- 整文件覆盖只用于确需重建的文件，不反复覆盖同一文件：整文件连写与同路径连续失败写会命中内核写侧护栏（[WRITE_LOOP_STOP] / [WRITE_FAIL_STOP]，真源 `src/agent/guardRail.ts`）。
+- 复核只读改动片段（offset/limit），不整篇回读。
+
+> 判据（真机）：不写这条，模型会退化成「改一处停一轮 + 反复整篇重写」——实测单条会话 7 次被护栏拦、5 处修订拖到下轮、27 分钟 / 116 万输入 token。
+> ⚠️ 写进 rules.md 时，反引号只留给技能名（[§2.6 保留字规则](../../../../../../docs/architecture/role-pack-authoring-guide.md)）——工具名与标签一律写普通文本。
 
 #### capabilities（特权能力候选）
 
