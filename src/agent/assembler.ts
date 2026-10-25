@@ -851,7 +851,9 @@ export async function assembleComponents(
   //
   // 执行闭包（runSkillScript）与裁决面回调（resolveSkillScript）共用本函数 ⇒
   // 「哪个技能目录的哪个脚本」的解析顺序天然单点——两处各写一遍即是漂移回归
-  // （同序守卫：assembler.test.ts 断言 resolver 返的路径 = 执行实际 spawn 的文件）。
+  // （同序守卫：assembler.test.ts 断言 resolver 返的路径 = 执行实际 spawn 的文件，
+  // 两分支各一例；另有一例锚「同名技能角色包压过全局池」——顺序反了同源断言不会红，
+  // 只有优先级用例能抓到）。
   // 防逃逸由两侧解析器自身保证（角色包 layer3 白名单 + resolveSafePath 边界前缀；
   // 全局 resolveLayer3ScriptPath + existsSyncSafe），本函数不做第二套路径校验。
   const resolveSkillScriptTarget = (
