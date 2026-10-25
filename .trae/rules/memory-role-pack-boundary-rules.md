@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-description: 记忆系统 × 角色包边界——设定记忆（persona/rules/skills）唯一归角色包；记忆系统单轨 = round-summary 摘要记忆；会话摘要归 SessionMeta；技能两级渐进披露
+description: 记忆系统 × 角色包边界——设定记忆（persona/rules/skills）唯一归角色包；记忆系统单轨 = round-summary 摘要记忆；会话摘要归 SessionMeta；技能两级渐进披露；MCP server 不属角色包能力面（R10）
 ---
 # 记忆系统 × 角色包边界纪律
 
@@ -27,6 +27,7 @@ description: 记忆系统 × 角色包边界——设定记忆（persona/rules/s
 - **R7** persona.md/rules.md 约定俗成（manifest 不声明即回退），skills/ 目录动态扫描；禁「路径写错静默丢内容」的自命名字段。
 - **R8** 能力声明独立顶层 `capabilities`；禁在技能文件/skills 项塞 capability。
 - **R9** 两级技能渐进披露：通用技能（全局池）+ 角色包技能（`manifest.skills`），均 L1 元数据常驻 + L2 `read_skill` 按需读。禁把通用技能复制进每个角色包。
+- **R10** **MCP server 不属角色包能力面**（2026-10-25 拍板 · 真源 `docs/方案-MCP工具接入-20261023.md` §4.4）。`manifest` 与 `capabilities` 均不得出现 MCP server 引用（名字 / 路径 / 配置片段）；MCP 配置与免确认清单**恒为用户级**，宿主不读仓库内 MCP 配置文件（`.mcp.json` / `.vscode/mcp.json`）。**判据**：角色包管**内容面**（你是谁、怎么做事），MCP server = **在本机拉起的任意进程**（写一条配置 = 授权一条命令在你机器上执行 = **用户授权面**）。**结构守护已存在**（读码实证）：`capabilityMap.ts` 的 `CAPABILITY_TO_TOOLS` 是**闭表**、未知能力静默跳过，而 MCP 派生名是**运行时动态**的、静态表装不下 ⇒ 声明 MCP 能力在代码层面本就是无效的，真正的腐化入口是给该表加通配（审查点守此）。⇒ 同时关掉两种形态：「换角色包自动换 MCP 能力集」与「项目自带 MCP 能力」；重开须先改本条（二者绑死，单独放开任一侧无效）。
 
 ## 三、已知坑
 
@@ -46,4 +47,6 @@ description: 记忆系统 × 角色包边界——设定记忆（persona/rules/s
 - [ ] skills 项里放 capability？（违 R8）
 - [ ] 通用技能复制进每个角色包？（违 R9）
 - [ ] manifest.skills 逐项注册技能？（已改目录扫描）
+- [ ] `manifest` / `capabilities` 出现 MCP server 引用？（违 R10）
+- [ ] 宿主读仓库内 MCP 配置文件（`.mcp.json` / `.vscode/mcp.json`）？（违 R10）
 - [ ] `assembler.ts` 装配仍有 persona 兜底？（应唯一走 rolePackPrompt）
