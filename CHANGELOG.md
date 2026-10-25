@@ -1,12 +1,47 @@
 # Changelog
 
-本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号：内核变更定档独立版本号（当前 **5.0.0** · 2026-10-23 已发布 npm），宿主变更随 `vsce package` 定版独立成区（当前 **0.2.0** · 2026-10-23，ADR-033）。
+本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号：内核变更定档独立版本号（最新已发布 **5.0.0** · 2026-10-23；在册未发 **5.1.0**，见下），宿主变更随 `vsce package` 定版独立成区（当前 **0.2.0** · 2026-10-23，ADR-033）。
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **版本定位（v5.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。**4.0.0**：导出面收敛（−54）+ `agent.memory.search()` 退役（唯一入口 `searchByKeyword()`）。**5.0.0（当前）**：公开面大收面（删 23 导出 + 32 成员 + 3 事件）+ 多项目形态定案（一个 Agent = 一个项目）+ 三套空转机制退役 + SQLite 存储——逐项改法见[升级指南](docs/memora-升级指南-4.x-到-5.0.0.md)。**4.0.0 及更早版本全文**：`docs/CHANGELOG-归档.md`（仓库内归档，npm 包不含）。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与全量单测负责，不对"agent 整体行为稳定"作承诺。
+> **版本定位（v5.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。**4.0.0**：导出面收敛（−54）+ `agent.memory.search()` 退役（唯一入口 `searchByKeyword()`）。**5.0.0（当前）**：公开面大收面（删 23 导出 + 32 成员 + 3 事件）+ 多项目形态定案（一个 Agent = 一个项目）+ 三套空转机制退役 + SQLite 存储——逐项改法见[升级指南](docs/memora-升级指南-4.x-到-5.0.0.md)。**5.1.0（在册未发）**：MCP 工具接入的内核接口（`ToolDefinition.confirmPolicy` + `SecurityGuard` 单一确认入口）+ 脚本族执行面四面按正文裁决（`CMD-1-BYPASS` / `CMD-1-CONTENT`）——零删除、零既有签名变更。**4.0.0 及更早版本全文**：`docs/CHANGELOG-归档.md`（仓库内归档，npm 包不含）。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与全量单测负责，不对"agent 整体行为稳定"作承诺。
 >
 > 本文件 2026-10-19 起按 `CHLOG-TRIM-1` 精简：只记「改了什么 + 为什么 + 对消费者的影响」；逐批拍板过程、变异验证收据、台账叙事的 SSOT 在仓库台账 `tasks/待完成任务.md` 对应 ID 条目（npm 包不含），此处只留 ID 锚保交叉引用。
+
+## [5.1.0] · 未发布（Unreleased · 内核轴 · 2026-10-23 开区）
+
+> **本区归属**：仅**内核**变更；SemVer = **minor**（零删除 / 零既有签名变更 / 零既有行为变化——**例外且仅此**：脚本族执行面按正文裁决，命中黑名单/恒弹清单的执行行为按修复方向收紧，见 Fixed 区，不构成破坏性）。公开面增量 = `ToolDefinition` 加可选字段 + `SecurityGuard` 加一个入口方法 + `SCRIPT_READ_MAX_LEN` 改为导出。宿主侧 MCP 消费面（连接 / 设置页 / 审批卡）随宿主下一版独立成区、不占内核版本号（ADR-033）。逐条拍板与变异验证收据见台账 `tasks/待完成任务.md` 内核 5.1.0 区（`D1-MCP` / `CMD-1-BYPASS` / `CMD-1-CONTENT`）。
+> **出包前必做**：本标题的「未发布」须改为**实际发布日期**——`scripts/verify-changelog-version.mjs`（挂 `release.yml`，不进 pre-push）校验「合法日历日期 + 与发布日相差 ≤1 天」；已发布版本的 npm tarball 不可变、改不回来（`RELEASE-CHLOG-DATE-1` 血训）。
+
+### Added（内核）
+
+**MCP 工具接入的内核接口（`D1-MCP` 切片 0 · 2026-10-23）**——MCP SDK 与传输全在宿主依赖，内核仍不认识 MCP、零第三方运行时依赖不变
+
+- `ToolDefinition.confirmPolicy?: 'always' | 'audit'`：自定义/外部工具（如宿主接入的 MCP 工具）声明审批意图的**唯一字段**。**缺省 = 字段不存在 = 不过闸 = 现状**；刻意不设 `'never'`——宿主只需「关弹窗」，不需「关审计」。
+- `SecurityGuard.requestToolCallConfirmation(toolName, summary, needConfirm)`：复用私有 `confirmGate` 的**单一确认入口**（一次入口、两种模式），`ToolExecutor.execute()` 的 custom 分支按上述字段过闸——`'always'` 弹确认、`'audit'` 自动放行但仍落审计，拒绝则不调 handler（`[ERR:TOOL_DECLINE]` + blocked outcome）。**为什么重要**：此前 custom 分支完全不过闸 = 动态工具源（MCP）零审批；补后**全仓仍只有一条审批路径**，不存在第二条。
+- 审计**零新增类型**：确认统一走后恒落既有三值（`write-auto` / `write-confirm` / `write-decline`），工具调用补 `source: 'custom'` + `tool` + `path`（= 调用摘要，与 `run_command` 把命令塞 `path` 同构）；`confirmGate` 加可选 `source` 末参并透传**全部四个**审计出口（写入类不传 = `undefined`，零行为变化）⇒ 宿主既有「denied 计数」自动覆盖 MCP，宿主审计面零改动。
+- `ToolExecutor.removeTool()` 的 JSDoc 由「供测试场景使用」扩为「运行时可注销」（`K2`，零代码改动）——宿主据此实现 MCP server 停用与工具集整换。
+- **对消费者**：纯增量。不声明 `confirmPolicy` 的既有自定义工具行为完全不变；要接入动态工具源的宿主声明字段即得审批 + 审计。
+- ⚠️ **本期刻意不做**（`K3`，有判据的拒绝）：不放宽 `ToolDefinition.parameters` 的 schema 类型（不支持嵌套 object / enum / anyOf）——`loop.ts` 的 prompt 渲染器只读顶层 `type`/`description`，放宽须连带改模型可见文案并回归全部内置工具，收益不抵风险；宿主侧以「结构映射 + 约束搬 description」适配。
+
+### Fixed（内核）
+
+**脚本面内容裁决（`CMD-1-BYPASS` · 2026-10-25）**
+
+- `SecurityGuard.confirmScriptRun` 接受可选第 4 参 `content`（= 将被执行的脚本/代码正文），内部喂给**同一个** `classifyCommand`：`deny` 恒拦（任何档位/权限，不进确认流程）／`always-ask` 恒弹（`owner` + `confirmScripts=false` 也弹）／`normal` 回落原档位判据。**为什么**：此前 `classifyCommand` 的唯一调用点是 `confirmCommandRun`，脚本面只看档位不看内容 ⇒「把 `git push` / `rm -rf` 写进脚本」零护栏，恒弹清单成了纸墙（一次工具调用即可绕过）。
+- 已接入两面：`run_code`（内联代码传正文）、`run_project_script`（确认前读脚本文本）；正文 > `SCRIPT_READ_MAX_LEN`（20 万字符）**拒绝执行**（fail-closed，不给「读不动就放行」的口子）。
+- `ALWAYS_ASK` 清单补 `git clean`（此前落 normal 档 = 默认档直接执行，真洞）。
+- `BuiltinToolHandlers.readScriptFile` 加可选 `label`（默认 `run_code script_path`）：复用读正文时审计归属不再写死 `run_code`（原会把项目脚本的路径审计记到 `run_code` 头上 = 归属说谎）。
+- 三处 decline 文案改中性措辞（「未获执行许可（命中恒拦 / 用户拒绝 / fail-closed）」）——原写「未获确认（用户拒绝…）」会把命中黑名单说成用户拒绝。
+
+**技能脚本内容裁决（`CMD-1-CONTENT` · 2026-10-25）**
+
+- `run_skill_script` 是脚本族最后一面（此前只判档位）。现确认点经装配期新注入字段 `ToolExecutor.resolveSkillScript`（与执行回调**共用** assembler 的 `resolveSkillScriptTarget`：角色包 → 全局池，解析顺序天然单点）定位脚本文件读正文，喂同一个 `classifyCommand`。
+- 长度上限复用 `SCRIPT_READ_MAX_LEN`（本轮改为导出常量，三消费面共用，**不造第二上限**）；**不走项目根白名单**——技能目录 = 可信根（脚本经作者审阅），路径防逃逸由解析器自身保证（角色包 layer3 白名单 + `resolveSafePath` 边界 / 全局 `resolveLayer3ScriptPath` + 存在性校验）。
+- fail-closed 分级：解析不到 = 不传正文（维持 `[ERR:SCRIPT_NOT_FOUND]`，执行点同一解析必返 null）；读失败 / 超长 = `[ERR:SCRIPT_DECLINE]` 拒绝执行。
+- **对消费者**：`runSkillScript`（执行回调）契约与行为不变；不注入 `resolveSkillScript` 的装配（含既有单测）行为与补齐前完全一致。**至此四个执行面（`run_command` / `run_code` / `run_project_script` / `run_skill_script`）全部按正文裁决。**
+
+> **不声称的内容（防误读）**：`classifyCommand` 是**字符串判据**——拦「模型手滑 / 幻觉 / 提示注入直接写出危险命令」，不是「危险执行总闸」；正文之外的间接载体（变量展开、编码混淆、执行期才决定的路径）拦不住。语义防护由**用户审批 + 审计溯源**承担，不由 denylist 承担。
 
 ## [5.0.0] · 2026-10-23
 
