@@ -137,10 +137,51 @@ function arcHasEntry(arc, id) {
   );
 }
 
-/** 从标题行里取归档指针目标（`… → 见 [archive/x.md](…)` 或裸 `archive/x.md`） */
+/**
+ * 从「汇总指针」ID 里拆出子 ID。
+ * 形如 `宿主已闭环项（UI-CONFIRM-P10 / P10B / …）` 是把一揽子收口项压成一行的批量指针，
+ * 归档里落档的是**子项**而非这个汇总名，故按整串去归档找必假红。
+ * 触发条件：ID 含 CJK 开括号 `（`（普通单条 ID 绝不含）。
+ */
+function extractSubIds(id) {
+  if (!/（/.test(id)) return [];
+  const cleaned = id.replace(/（[^）]*）/g, ' ').replace(/\([^)]*\)/g, ' ');
+  const toks = cleaned.split(/[\/·|，,、；：、「」\s]+/).filter(Boolean);
+  return toks.filter((t) => /^[A-Za-z][A-Za-z0-9-]*(?:[-.]\d[\d.]*)?$/.test(t) && t.length >= 3);
+}
+
+/** 归档是否含某条目副本；汇总指针（含 CJK 括号的多子 ID）只要任一子 ID 有副本即有效。 */
+function arcHasEntryForId(arc, id) {
+  if (arcHasEntry(arc, id)) return true;
+  return extractSubIds(id).some((s) => arcHasEntry(arc, s));
+}
+
+/**
+ * 从标题行里取「归档指针」目标。
+ *
+ * 真实归档指针只有两种形态：
+ *   ① markdown 链接目标：`见 [文本](./archive/x.md)` / `见 [tasks/archive/x.md](./archive/x.md)`
+ *   ② 裸引用且紧跟「见」：`→ 见 tasks/archive/x.md`
+ *
+ * ⚠️ 行内散文引用（如 `(见 \`archive/completed-history.md\`「…」节)`）描述「该归档里的某一节」，
+ *    不是「本条目归档于此处」的指针，必须排除——否则会误把散文文件名当指针目标
+ *    （实测 TERM-FDBK-1 因此假红：散文 `archive/completed-history.md` 抢在真实指针前）。
+ *    散文引用的 archive 名被反引号包裹，故「见」与 `archive` 之间夹着反引号，bare 形态正则自然不匹配。
+ */
 function pointerFile(head) {
-  const m = /archive\/([A-Za-z0-9._-]+\.md)/.exec(head);
-  return m ? `archive/${m[1]}` : null;
+  // ① 链接目标优先（真实指针恒在此）：`（./archive/x.md）` 或 `（archive/x.md）`
+  const link = /\]\((\.?\/?archive\/[A-Za-z0-9._\/-]+\.md)\)/.exec(head);
+  if (link) return link[1].replace(/^\.\//, '').replace(/^tasks\//, '');
+  // ①b 链接文本含 archive 名（自检注入格式 `见 [archive/x.md](#x)`）
+  const linkText = /见\s+\[[^\]]*?(archive\/[A-Za-z0-9._\/-]+\.md)\]/.exec(head);
+  if (linkText) return linkText[1].replace(/^\.\//, '').replace(/^tasks\//, '');
+  // ② 裸引用：`见` 后紧跟（可选 tasks/）`archive/x.md`，且非反引号包裹
+  const bare = /见\s+(?:tasks\/)?archive\/[A-Za-z0-9._\/-]+\.md/.exec(head);
+  if (bare) {
+    const m = /archive\/[A-Za-z0-9._\/-]+\.md/.exec(bare[0]);
+    return m ? m[0] : null;
+  }
+  return null;
 }
 
 function hasBlankRuns(lines) {
@@ -190,7 +231,7 @@ function diagnose(text) {
         const arc = readArc(ptr);
         if (arc === null) {
           fake.push({ ...it, sec: sec.title, why: `指针目标不存在：${ptr}` });
-        } else if (!arcHasEntry(arc, it.id)) {
+        } else if (!arcHasEntryForId(arc, it.id)) {
           fake.push({ ...it, sec: sec.title, why: `归档 ${ptr} 无该条目副本` });
         }
       }
