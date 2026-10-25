@@ -9,6 +9,7 @@
  * 断言口径 = 返回值形态，不是实现细节：任何非法输入都必须收敛成空数组/空集，不抛。
  */
 // @vitest-environment node
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /** 可编程的配置读面（每例只改 `value`） */
@@ -61,5 +62,33 @@ describe('readMcpToolAllowlist（同一收窄口径）', () => {
   it('数组原样返回', () => {
     state.value = ['mcp__fs__read_file'];
     expect(readMcpToolAllowlist()).toEqual(['mcp__fs__read_file']);
+  });
+});
+
+/**
+ * `scope: "application"` ↔「工作区级配置不读」的**结构机制**（2026-10-25 定案 · 方案 §4.4 拍板 2）
+ *
+ * 为什么必须守：本仓拒绝工作区级 `.mcp.json`（他人提交的配置 = 在用户机器上自动拉起
+ * 任意命令），但实现手段**不在代码里**——没有一处 `if` 判断配置来自哪一级，靠的是
+ * package.json 把两个键声明为 `scope: "application"`（VS Code 只允许 application 级键
+ * 写在用户设置，工作区写入被忽略）。于是把 `application` 改成 `machine` 或删掉该字段，
+ * **零编译错、零测试红**，工作区级配置就静默生效了——正是「闸门有实现 ≠ 会跑」。
+ *
+ * 反向自检：把任一键的 scope 改掉 ⇒ 本例红（当前仓库里唯一能抓到的地方）。
+ */
+describe('package.json#contributes.configuration 的 scope ↔ 只认用户级', () => {
+  type Prop = { scope?: string; default?: unknown };
+  const pkg = JSON.parse(
+    readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
+  ) as { contributes: { configuration: { properties: Record<string, Prop> } } };
+  const props = pkg.contributes.configuration.properties;
+
+  it('两个 MCP 配置键均声明 scope: application（工作区级写入被 VS Code 忽略）', () => {
+    expect(props['memora.mcpServers']?.scope).toBe('application');
+    expect(props['memora.mcpToolAllowlist']?.scope).toBe('application');
+  });
+
+  it('allowlist 默认空集（未配置 ⇒ 逐条确认，fail-closed 不靠运行时兜底）', () => {
+    expect(props['memora.mcpToolAllowlist']?.default).toEqual([]);
   });
 });
