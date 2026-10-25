@@ -4367,7 +4367,38 @@ describe('AgentLoop · blockedFlags 平行数组错位回归（护栏命中工�
     expect(ws[0]!.ok).toBe(true);
   });
 
-  it('write_loop：第 5 次连续重写同一文件被拦且上报 blocked=true && ok=false', async () => {
+  it('write_loop 判据=无进展：同文件连续 replace 修订 6 次全放行（真机病根回归）', async () => {
+    // 真机 round-1792904123909：8 处精确替换被按「连续重写」硬拦 7 次、5 处修订拖到下轮。
+    // 现判据只看整文件覆盖与连续失败写，增量修订不计数 ⇒ 6 次 replace 必须全部真正执行。
+    const toolExecutor = vi.fn().mockResolvedValue('已写入');
+    const turns: ChunkItem[][] = [];
+    for (let i = 0; i < 6; i++) {
+      turns.push([
+        {
+          toolCalls: [
+            call(
+              `e${i}`,
+              'write_file',
+              `{"path":"docs/a.md","mode":"replace","old_string":"旧${i}","content":"新${i}"}`,
+            ),
+          ],
+        },
+      ]);
+    }
+    turns.push([{ content: '完成' }]);
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider(turns),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    for await (const chunk of loop.processUserInput('逐处修订')) {
+      void chunk;
+    }
+    expect(toolExecutor).toHaveBeenCalledTimes(6);
+    expect(loop.getMessages().some((m) => m.content.includes('[WRITE_LOOP_STOP]'))).toBe(false);
+  });
+
+  it('write_loop：第 5 次连续整文件覆盖同一文件被拦且上报 blocked=true && ok=false', async () => {
     const toolExecutor = vi.fn().mockResolvedValue('已写入');
     const turns: ChunkItem[][] = [];
     for (let i = 0; i < 5; i++) {
@@ -6007,10 +6038,10 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
   });
 
-  it('WRITE-LOOP · 连续重写同一路径达阈值 → 硬拦注入 [WRITE_LOOP_STOP]（不误伤合法改写）', async () => {
+  it('WRITE-LOOP · 连续整文件覆盖同一路径达阈值 → 硬拦注入 [WRITE_LOOP_STOP]（不误伤增量修订）', async () => {
     // 治实测病根（round-1789539624589）：write_file「写→读回→见重复→再写」自环 17 分钟不自停。
-    // 写侧止损与 read 去重同构：仅拦截连续重写**同一文件**且达阈值（WRITE_LOOP_THRESHOLD=5）者；
-    // 前 4 次放行执行（与重复拦截器"软警告"递进，不重叠），第 5 次硬拦。
+    // 只计**整文件覆盖**（缺省 mode=overwrite）连续重写同一文件达阈值（writeLoop=5）；
+    // 前 4 次放行执行（与重复拦截器"软警告"递进，不重叠），第 5 次硬拦。增量写不计数（见上一用例）。
     const toolExecutor = vi.fn().mockResolvedValue('已写入');
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([

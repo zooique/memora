@@ -2070,12 +2070,14 @@ export class AgentLoop {
     // 批内共享即完备（step 串行推进，无跨批并发）。判据真源 = 工具定义行 `diskWrite` 声明。
     let opaqueWriteTail: Promise<ToolOutcome> | undefined;
     // 运行时护栏阈值组装（真源分配见 guardRail.GuardThresholds）：
-    //  写环=GUARD_THRESHOLDS.writeLoop，读闸=GUARD_THRESHOLDS.readFailed（独立静态真源，
+    //  写环=GUARD_THRESHOLDS.writeLoop / 写失败=GUARD_THRESHOLDS.writeFail、
+    //  读闸=GUARD_THRESHOLDS.readFailed（独立静态真源，
     //  不再与 duplicateCallInterceptor 阈值复用——语义同宽，解开隐藏耦合）；
     //  提问=strategy.askLimit、搜索=strategy.webSearchLimit（动态真源=角色包策略，缺省值
     //  定义在 DEFAULT_BEHAVIOR_STRATEGY.global.webSearchLimit）。
     const guardThresholds: GuardThresholds = {
       writeLoop: GUARD_THRESHOLDS.writeLoop,
+      writeFail: GUARD_THRESHOLDS.writeFail,
       readFailed: GUARD_THRESHOLDS.readFailed,
       askLimit: this.strategy.askLimit,
       // webSearchLimit 缺省 6 由 resolveWebSearchLimit 恒给（GUARD-SEARCH-1：
@@ -2098,7 +2100,8 @@ export class AgentLoop {
       };
 
       // ===== 统一护栏判定（GuardRail SSOT）=====
-      // 判定逻辑 / 命中文案（衔接提示词）/ 阈值收敛到 guardRail.ts（createDefaultGuards，见收敛方案）。
+      // 判定逻辑 / 命中文案（衔接提示词）/ 阈值收敛到 guardRail.ts（createDefaultGuards；
+      // 护栏在链路中的位置与职责见 docs/architecture/loop-design.md 的「运行时护栏」一节）。
       // loop 仅保留最小职责：① 组 GuardContext（运行态计数 + 运行时阈值覆盖 + 防重依赖）；② 调 evaluateBlocked
       // 按注册序取首个硬拦命中；③ 处理 search_limit 专属副钩（停搜 + 重建 system prompt，需触达消息层所以留 loop）；
       // ④ 被拦则回填 guard 渲染的拒绝文案。
@@ -2365,8 +2368,9 @@ export class AgentLoop {
           }
         }
       }
-      // 写侧喂数（护栏内聚状态的下发点）：对每个 toolCall 调 notifyExec 分发 onExec，
-      // 按三态喂入（blocked=被拦未执行 / ok=成功 / failed=失败）。write_loop/read_failed 据此自持更新计数。
+      // 写侧喂数（护栏内聚状态的下发点）：对每个 toolCall 调 notifyExec **全量**分发 onExec
+      // （各护栏在钩子内按工具自过滤），按三态喂入（blocked=被拦未执行 / ok=成功 / failed=失败）。
+      // write_loop/read_failed 据此自持更新计数；write_loop 的「读成功复位失败计数」也走这条线。
       this.guardier.notifyExec({
         toolName: tc.function.name,
         argsJson: tc.function.arguments,

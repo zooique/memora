@@ -519,6 +519,11 @@ export const WRITE_FILE_MODES = [
 /** write_file 合法模式联合类型（从 WRITE_FILE_MODES 派生：新增模式只改上表，类型自动跟随） */
 export type WriteFileMode = (typeof WRITE_FILE_MODES)[number]['name'];
 
+/** write_file 缺省写入模式（唯一真源 = 上表首项「默认，全量覆盖」）。
+ *  消费方：`builtinToolHandlers.writeFile` 的形参默认值 / `guardRail` 的「是否整文件覆盖」判据——
+ *  两处都不许自写 'overwrite' 字面量（同一个事实两个字面量 = 改默认值时护栏静默漂移，无测试会红）。 */
+export const DEFAULT_WRITE_FILE_MODE: WriteFileMode = WRITE_FILE_MODES[0].name;
+
 /** mode 参数类型守卫（唯一判定点，判定与 WRITE_FILE_MODES 同源；窄化后可供 computeWriteContent 消费） */
 export function isWriteFileMode(mode: string): mode is WriteFileMode {
   return WRITE_FILE_MODES.some((m) => m.name === mode);

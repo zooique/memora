@@ -158,7 +158,9 @@
 
 > 收敛自 [loop运行时护栏SSOT收敛方案](../../.trae/documents/loop运行时护栏SSOT收敛方案.md)。带伤问题：loop 曾把「联网搜索上限 / 提问上限 / 同路径连写止损 / 读取失败硬闸 / 重复读取拦截」5 种前置拦截型护栏以「内联 if + 独立计数字段 + 各自文案 + 各自阈值」散布主循环，每加一种护栏都改主循环。
 
-**收敛设计（自然生长，非重写）**：判定逻辑、命中文案（衔接提示词 `GUARD_RAIL_PROMPTS`）、阈值（`GUARD_THRESHOLDS`）单一真理源收敛到 [`src/agent/guardRail.ts`](../../src/agent/guardRail.ts)（`createDefaultGuards` 注册 5 闸，判定序 read_failed 先于 read_dedup）。loop 在 `executeToolCalls` 处仅保留最小职责：组 GuardContext → 调 `evaluateBlocked` 取首个硬拦 → search_limit 专属副钩（停搜 + 重建 system prompt，需触达消息层故留 loop）→ 被拦回填文案。运行态计数（读失败 / 连写）合并进 `this.guardState`，由 loop 在结果处理 / 写侧持久化处喂数（loop 是执行结果权威）。
+**收敛设计（自然生长，非重写）**：判定逻辑、命中文案（衔接提示词 `GUARD_RAIL_PROMPTS`）、阈值（`GUARD_THRESHOLDS`）单一真理源收敛到 [`src/agent/guardRail.ts`](../../src/agent/guardRail.ts)（`createDefaultGuards` 注册 5 闸，判定序 read_failed 先于 read_dedup）。loop 在 `executeToolCalls` 处仅保留最小职责：组 GuardContext → 调 `evaluateBlocked` 取首个硬拦 → search_limit 专属副钩（停搜 + 重建 system prompt，需触达消息层故留 loop）→ 被拦回填文案。运行态计数（读失败 / 写侧连写与失败）**内聚在各 guard 实例闭包**（不在 loop 的计数字段里），经 `notifyExec` 喂数、`reset` 归零；`notifyExec` 为**全量分发**（各护栏在 onExec 内按工具自过滤），不借 `matches` 路由——一个字段两职责会挡掉「读成功复位写侧计数」这类跨工具观测。
+
+> **2026-10-25 判据订正（真机 round-1792904123909）**：`write_loop` 原判据是「同路径连续写 N 次」，把 `mode=replace` 的逐处修订与整文件覆盖混算，第 5 次即硬拦；且被拦后读文件不复位计数，本 turn 内该路径被永久封死（真机 7 次被拦、5 处修订拖到下轮）。现判据改为**无进展信号**：① 仅整文件覆盖（`mode=overwrite`）计入连写；② 增量写（replace / insert / append）不计数；③ 同路径连续**失败写**达 `writeFail` 阈值即拦，读成功 / 写成功即清。`failed` 也不再被当作一次写（原实现会推进 streak）。阈值仍只在 `GUARD_THRESHOLDS` 单点。
 
 **不收敛的异构护栏**（维持各自为政，见 guardRail.ts 收敛边界）：`duplicateToolCallInterceptor` 软警告、maxIterations/stepBudget 循环终止、self_review 后处理、interruptQueue/pause/ask 续跑、文件覆盖度台账替身回显（分支②/③）。
 

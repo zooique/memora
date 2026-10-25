@@ -20,7 +20,7 @@ function emptyCounters(): GuardCounters {
 }
 
 /** 组装一个 GuardContext（缺省填 GuardRail 默认阈值 + 恒真"仍在上下文"判定）。
- *  GUARD_THRESHOLDS 静态表只含 writeLoop/readFailed；askLimit/maxWebSearch 为测试默认值（非真源）。 */
+ *  GUARD_THRESHOLDS 静态表只含 writeLoop/writeFail/readFailed；askLimit/maxWebSearch 为测试默认值（非真源）。 */
 function makeCtx(overrides: Partial<GuardContext> & { counters?: GuardCounters }): GuardContext {
   const cache = new ToolResultCache();
   return {
@@ -46,9 +46,9 @@ function readSubject(path: string): DedupSubject {
 }
 
 describe('GuardRail 阈值真源', () => {
-  it('静态阈值真源只承载纯静态键（writeLoop/readFailed）；动态键不入表', () => {
-    // 静态真源：writeLoop / readFailed（同路径连写 / 读取失败硬闸）为唯一 SSOT
-    expect(GUARD_THRESHOLDS).toEqual({ writeLoop: 5, readFailed: 3 });
+  it('静态阈值真源只承载纯静态键（writeLoop/writeFail/readFailed）；动态键不入表', () => {
+    // 静态真源：writeLoop（整文件覆盖连写）/ writeFail（同路径连续失败写）/ readFailed 为唯一 SSOT
+    expect(GUARD_THRESHOLDS).toEqual({ writeLoop: 5, writeFail: 3, readFailed: 3 });
     // 动态键不设静态默认（askLimit 由 role-pack strategy 注入、maxWebSearch 由 LOOP_CONSTANTS 注入）
     expect(GUARD_THRESHOLDS).not.toHaveProperty('askLimit');
     expect(GUARD_THRESHOLDS).not.toHaveProperty('maxWebSearch');
@@ -102,23 +102,72 @@ describe('GuardRail 判定复现现有护栏（S1 shadow 契约）', () => {
     expect(blocked?.guardId).toBe('ask_limit');
   });
 
-  it('write_loop：同路径达阈值拦，换路径重置放行（计数经 onExec 喂数自持）', () => {
+  it('write_loop：整文件覆盖连写达阈值拦，换路径重置放行（计数经 onExec 喂数自持）', () => {
     // 计数内聚进 guard 闭包：需先 notifyExec 喂数，而非注入 counters.write
     const g = freshGuards();
-    // 同路径连续写入 4 次（repeatedly feed）→ 第 5 次判定达阈值拦
+    // 同路径整文件覆盖（缺省 mode=overwrite）连续 4 次 → 第 5 次判定达阈值拦
     for (let i = 0; i < 4; i++) {
-      feed(g, 'write_file', '{"path":"a.md"}', 'ok');
+      feed(g, 'write_file', `{"path":"a.md","content":"v${i}"}`, 'ok');
     }
     const blocked = g.evaluateBlocked(
-      makeCtx({ toolName: 'write_file', argsJson: '{"path":"a.md"}' }),
+      makeCtx({ toolName: 'write_file', argsJson: '{"path":"a.md","content":"v9"}' }),
     );
     expect(blocked?.guardId).toBe('write_loop');
     expect(blocked?.message).toContain('[WRITE_LOOP_STOP]');
     // 换路径 b：onExec 把 streak 复位为 1 → 放行
     const reset = g.evaluateBlocked(
-      makeCtx({ toolName: 'write_file', argsJson: '{"path":"b.md"}' }),
+      makeCtx({ toolName: 'write_file', argsJson: '{"path":"b.md","content":"x"}' }),
     );
     expect(reset).toBeUndefined();
+  });
+
+  it('write_loop：增量写（replace/insert/append）连写不计数——逐处修订永不被拦', () => {
+    const g = freshGuards();
+    // 真机病根回归（round-1792904123909）：8 处精确替换被按「连续重写」硬拦 7 次
+    for (let i = 0; i < 8; i++) {
+      feed(
+        g,
+        'write_file',
+        `{"path":"a.md","mode":"replace","old_string":"旧${i}","content":"新${i}"}`,
+        'ok',
+      );
+    }
+    const next = g.evaluateBlocked(
+      makeCtx({
+        toolName: 'write_file',
+        argsJson: '{"path":"a.md","mode":"replace","old_string":"旧8","content":"新8"}',
+      }),
+    );
+    expect(next).toBeUndefined();
+  });
+
+  it('write_loop：同路径连续失败写达阈值拦，读成功后复位放行（write_fail_stop 出口可执行）', () => {
+    const g = freshGuards();
+    for (let i = 0; i < 3; i++) {
+      feed(
+        g,
+        'write_file',
+        '{"path":"a.md","mode":"replace","old_string":"x","content":"y"}',
+        'failed',
+      );
+    }
+    const blocked = g.evaluateBlocked(
+      makeCtx({
+        toolName: 'write_file',
+        argsJson: '{"path":"a.md","mode":"replace","old_string":"x","content":"y"}',
+      }),
+    );
+    expect(blocked?.guardId).toBe('write_loop');
+    expect(blocked?.message).toContain('[WRITE_FAIL_STOP]');
+    // 文案承诺的出口必须真能解除：读成功经 notifyExec 全量分发到 write_loop
+    feed(g, 'read_file', '{"path":"a.md"}', 'ok');
+    const after = g.evaluateBlocked(
+      makeCtx({
+        toolName: 'write_file',
+        argsJson: '{"path":"a.md","mode":"replace","old_string":"x","content":"y"}',
+      }),
+    );
+    expect(after).toBeUndefined();
   });
 
   it('read_failed：同主体连续失败达阈值拦（计数经 onExec 喂数自持）', () => {
@@ -339,7 +388,7 @@ describe('buildPromptSection 通用行为护栏节', () => {
     expect(sec).toContain('## 行为护栏');
     // 描述性约束（不含运行时拒绝令牌：[TAG] 只在 renderPrompt 命中时产出，避免 system prompt 撞令牌定位）
     expect(sec).toContain('重复读取同一文件/搜索同一主体将被拦截并提示');
-    expect(sec).toContain('同一文件被反复重写会触发写作死循环保护');
+    expect(sec).toContain('同一文件被反复整文件覆盖会触发写作死循环保护');
     expect(sec).toContain('每个问答闭环仅允许有限次提问');
     expect(sec).toContain('联网搜索达上限后视为信息已足');
     expect(sec).not.toContain('已执行 8 次');

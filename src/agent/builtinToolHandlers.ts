@@ -32,7 +32,12 @@ import { splitSessionId } from '@/utils/time.js';
 // 越界提示前缀同源引入——loop 台账写侧据此识别「提示串非正文」不记账，防两侧前缀漂移
 import { formatSegmentationFooter, READ_FILE_NOTICE_PREFIX } from '@/agent/toolLedger.js';
 // write_file 写入模式单一真理源（schema 描述与 handler 校验共用，避免双源漂移）
-import { WRITE_FILE_MODES, isWriteFileMode, type WriteFileMode } from '@/agent/builtinTools.js';
+import {
+  DEFAULT_WRITE_FILE_MODE,
+  WRITE_FILE_MODES,
+  isWriteFileMode,
+  type WriteFileMode,
+} from '@/agent/builtinTools.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { sanitizeExternalText, stripControlChars } from '@/agent/toolExecutor.js';
@@ -642,7 +647,7 @@ export class BuiltinToolHandlers {
    * @param relativePath 相对项目根的文件路径
    * @param content 要写入的内容
    * @param extensions 写入扩展（可选，用于 diff 确认等）
-   * @param mode 写入模式（合法值集 = WriteFileMode 类型，派生自 WRITE_FILE_MODES），默认 "overwrite"
+   * @param mode 写入模式（合法值集 = WriteFileMode 类型，派生自 WRITE_FILE_MODES），默认取 DEFAULT_WRITE_FILE_MODE
    * @param insertLine insert 模式下的目标行号（从 1 开始），省略则插入到末尾
    * @param oldString replace 模式下的被替换文本（须在旧内容中唯一出现）
    */
@@ -650,7 +655,7 @@ export class BuiltinToolHandlers {
     relativePath: string,
     content: string,
     extensions?: WriteExtensions,
-    mode: string = 'overwrite',
+    mode: string = DEFAULT_WRITE_FILE_MODE,
     insertLine?: string,
     oldString?: string,
   ): Promise<string> {

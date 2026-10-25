@@ -10,7 +10,7 @@
 
 ## [5.1.0] · 未发布（Unreleased · 内核轴 · 2026-10-23 开区）
 
-> **本区归属**：仅**内核**变更；SemVer = **minor**（零删除 / 零既有签名变更 / 零既有行为变化——**例外且仅此**：脚本族执行面按正文裁决，命中黑名单/恒弹清单的执行行为按修复方向收紧，见 Fixed 区，不构成破坏性）。公开面增量 = `ToolDefinition` 加可选字段 + `SecurityGuard` 加一个入口方法 + `SCRIPT_READ_MAX_LEN` 改为导出。宿主侧 MCP 消费面（连接 / 设置页 / 审批卡）随宿主下一版独立成区、不占内核版本号（ADR-033）。逐条拍板与变异验证收据见台账 `tasks/待完成任务.md` 内核 5.1.0 区（`D1-MCP` / `CMD-1-BYPASS` / `CMD-1-CONTENT`）。
+> **本区归属**：仅**内核**变更；SemVer = **minor**（零删除 / 零既有签名变更 / 零既有行为变化——**例外仅两处**：① 脚本族执行面按正文裁决，命中黑名单/恒弹清单的执行行为按修复方向收紧，见 Fixed 区；② 写侧护栏判据改为「无进展」（`write_loop` 只计整文件覆盖与连续失败写，增量写不再计数），见 Fixed 区，不构成破坏性）。公开面增量 = `ToolDefinition` 加可选字段 + `SecurityGuard` 加一个入口方法 + `SCRIPT_READ_MAX_LEN` 改为导出。宿主侧 MCP 消费面（连接 / 设置页 / 审批卡）随宿主下一版独立成区、不占内核版本号（ADR-033）。逐条拍板与变异验证收据见台账 `tasks/待完成任务.md` 内核 5.1.0 区（`D1-MCP` / `CMD-1-BYPASS` / `CMD-1-CONTENT` / `GUARD-WRITE-PROGRESS-1`）。
 > **出包前必做**：本标题的「未发布」须改为**实际发布日期**——`scripts/verify-changelog-version.mjs`（挂 `release.yml`，不进 pre-push）校验「合法日历日期 + 与发布日相差 ≤1 天」；已发布版本的 npm tarball 不可变、改不回来（`RELEASE-CHLOG-DATE-1` 血训）。
 
 ### Added（内核）
@@ -42,6 +42,14 @@
 - **对消费者**：`runSkillScript`（执行回调）契约与行为不变；不注入 `resolveSkillScript` 的装配（含既有单测）行为与补齐前完全一致。**至此四个执行面（`run_command` / `run_code` / `run_project_script` / `run_skill_script`）全部按正文裁决。**
 
 > **不声称的内容（防误读）**：`classifyCommand` 是**字符串判据**——拦「模型手滑 / 幻觉 / 提示注入直接写出危险命令」，不是「危险执行总闸」；正文之外的间接载体（变量展开、编码混淆、执行期才决定的路径）拦不住。语义防护由**用户审批 + 审计溯源**承担，不由 denylist 承担。
+
+**写侧护栏判据改为「无进展」（`GUARD-WRITE-PROGRESS-1` · 2026-10-25）**
+
+- `write_loop` 原判据 = 「同路径连续写 N 次」，把 `mode=replace` 的逐处修订与整文件覆盖混算：第 5 次写入即硬拦，且被拦后 `read_file` **不复位**计数（`notifyExec` 原先只按 `matches` 分发，读事件根本喂不到该护栏）⇒ 该路径在**本 turn 内永久封死**。真机 `round-1792904123909` 实证：7 次被拦、5 处修订拖到下轮、27 分钟 / 116 万输入 token。
+- 现判据 = **无进展信号**：① 仅整文件覆盖（`mode=overwrite`，缺省）计入连写（阈值 `writeLoop` 不变 = 5）；② 增量写（`replace` / `insert` / `append`）每次改不同片段，**永不计数**；③ 同路径连续**失败写**达新增静态阈值 `writeFail`（= 3）即拦，读成功 / 写成功即清；④ `failed` 不再被当作一次写（原实现会推进 streak）。
+- `notifyExec` 改为**全量分发**（各护栏在 `onExec` 内按工具自过滤）——原「借 `matches` 路由」让一个字段担两份职责，护栏文案承诺的「先读再写」出口从未生效。
+- 文案：`[WRITE_LOOP_STOP]` 的出口改为**可执行**的「改用 replace/insert/append 增量写入」；新增 `[WRITE_FAIL_STOP]`（先读最新原文再写）。
+- **对消费者**：`BlockedReason` 未新增/未改名（仍是 `write_loop`）、零公开签名变更、零新增 metrics 字段（拦截事实已在 round 事件的 `tool_result.blocked` 中，另立计数即第二真理源）。行为向修复：同一 turn 内对同一文件的增量修订不再被封顶。
 
 ## [5.0.0] · 2026-10-23
 

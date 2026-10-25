@@ -129,6 +129,7 @@ const OUT_OF_SCOPE_TAGS: Readonly<Record<string, readonly string[]>> = {
     'ASK_LIMIT',
     'READ_FAILED_LIMIT',
     'SEARCH_LIMIT_REACHED',
+    'WRITE_FAIL_STOP',
     'WRITE_LOOP_STOP',
   ],
   'agent/loop.ts': [

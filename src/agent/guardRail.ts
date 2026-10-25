@@ -1,7 +1,7 @@
 /**
  * 守卫抽象（GuardRail）—— loop 运行时前置拦截型护栏的统一真理源
  *
- * 背景：联网搜索上限 / 提问上限 / 同路径连写止损 / 读取失败硬闸 / 重复读取拦截
+ * 背景：联网搜索上限 / 提问上限 / 写侧无进展止损 / 读取失败硬闸 / 重复读取拦截
  * 这 5 种前置拦截型护栏统一走注册式 guard，避免以「内联 if + 独立计数字段 + 各自文案 +
  * 各自阈值」散落在主循环里、每加一种护栏就改一遍主循环。
  *
@@ -23,25 +23,29 @@
  *
  * 收敛现状：本模块已按注册序对 5 闸做**真拦截判定**（evaluateBlocked 由 loop 调用，命中回填拒绝文案），
  * loop 只保留最小职责（组 GuardContext + 调 evaluateBlocked 判定 + 调 notifyExec 写侧喂数、
- * reset 归零内部计数状态）。「## 行为护栏」节由 buildPromptSection 收敛注入。
+ * reset 归零内部计数状态）。「## 行为护栏」节由 buildPromptSection 产出，内核默认装配**不注入**
+ * （见 loop.buildSystemPrompt 的注入边界注），宿主当前也访问不到——保留为可选能力，勿据本句推断已上屏。
  */
 import {
   DEDUP_SUBJECT_EXTRACTORS,
   formatDedupSubject,
   failureSubjectKey,
   normalizePathKey,
-  ToolResultCache,
   type CacheEntry,
   type DedupSubject,
+  type ToolResultCache,
 } from '@/agent/toolResultCache.js';
 // blocked 原因契约（与 GuardRailId 经下方 GUARD_BLOCKED_REASONS 穷尽映射；只引类型，无运行时环）
 import type { BlockedReason } from '@/agent/managers/toolCallHelpers.js';
+// write_file 缺省模式的唯一真源（写工具侧定义；本模块只读不复制——两处各写 'overwrite'
+// 字面量会让 handler 默认值改动后本判据静默漂移，且没有任何测试会红）
+import { DEFAULT_WRITE_FILE_MODE } from '@/agent/builtinTools.js';
 
 /** 护栏类型 id（收敛集合，新增护栏在此扩联合） */
 export type GuardRailId =
   | 'search_limit' //  联网搜索硬上限（命中后停搜，带 afterBlock 副钩）
   | 'ask_limit' //    单次用户输入内提问上限（life:'perInput'，跨续跑累计）
-  | 'write_loop' //   同一文件路径连续重写止损
+  | 'write_loop' //   写侧无进展止损：整文件覆盖连写 / 同路径连续失败写
   | 'read_failed' //  同一读取主体连续失败硬闸（幻觉文件重读风暴）
   | 'read_dedup'; //  闭环内同一读取主体去重拦截
 
@@ -50,12 +54,13 @@ export type GuardRailPromptId =
   | 'search_limit'
   | 'ask_limit'
   | 'write_loop_stop'
+  | 'write_fail_stop'
   | 'read_failed_limit'
   | 'already_read'
   | 'already_read_escalated';
 
-/** 护栏运行态计数（loop 注入，仅承载 search_limit / ask_limit 两枚；write_loop 连写 / read_failed 失败
- *  计数内聚进各自 guard 实例闭包，经 onExec 自持更新） */
+/** 护栏运行态计数（loop 注入，仅承载 search_limit / ask_limit 两枚；write_loop 的写侧计数 /
+ *  read_failed 失败计数内聚进各自 guard 实例闭包，经 onExec 自持更新） */
 export interface GuardCounters {
   /** 本闭环内 web_search 调用次数（含被拒绝的）—— search_limit 用 */
   searchCallCount: number;
@@ -75,8 +80,11 @@ export interface GuardExecContext {
 
 /** 护栏阈值（运行时由调用方注入 GuardContext；真源分配见下） */
 export interface GuardThresholds {
-  /** 同路径连写止损阈值（原 WRITE_LOOP_THRESHOLD = 5）：第 N 次触发硬拦 —— 静态真源 GUARD_THRESHOLDS */
+  /** 整文件覆盖连写止损阈值（原 WRITE_LOOP_THRESHOLD = 5）：第 N 次**整文件覆盖**硬拦。
+   *  增量写（replace / insert / append）不计入——每次改的是不同片段，属正常修订而非自环。 */
   writeLoop: number;
+  /** 同路径连续**失败写**止损阈值（无进展信号：原样重试不会成功）—— 静态真源 GUARD_THRESHOLDS */
+  writeFail: number;
   /** 同主体连续失败硬闸阈值（原默认 3）—— 静态真源 GUARD_THRESHOLDS */
   readFailed: number;
   /** 单次用户输入提问上限（life:'perInput'）—— 动态真源 role-pack strategy.askLimit（不塞静态默认） */
@@ -86,13 +94,14 @@ export interface GuardThresholds {
 }
 
 /** 静态阈值真源（SSOT）：只承载「纯静态、无动态覆盖」的阈值。
- *  writeLoop / readFailed 以此为唯一真源；askLimit / maxWebSearch 属动态注入
+ *  writeLoop / writeFail / readFailed 以此为唯一真源；askLimit / maxWebSearch 属动态注入
  *  （角色包 strategy / LOOP_CONSTANTS，历史曾把 20/8 塞进静态默认作死值、与运行时覆盖矛盾，经审查清除）。
  *  调用方构造 GuardContext.thresholds 时须以本表为基底补齐两枚动态键。 */
 export const GUARD_THRESHOLDS = {
   writeLoop: 5,
+  writeFail: 3,
   readFailed: 3,
-} as const satisfies Pick<GuardThresholds, 'writeLoop' | 'readFailed'>;
+} as const satisfies Pick<GuardThresholds, 'writeLoop' | 'writeFail' | 'readFailed'>;
 
 /** read_dedup 撞墙升级阈值：同主体累计被本护栏硬拦达此值后，后续命中升级为强禁令文案
  *  （值 2 = 第 3 次起升级；用户裁决 2026-09-28：第 2 次即升级太激进、第 3 次合适）。
@@ -197,15 +206,34 @@ export function extractSubject(toolName: string, argsJson: string): DedupSubject
   return extractor ? extractor(argsJson) : undefined;
 }
 
-/** 解析 write_file 参数里的路径并归一（非 JSON / 空路径 → null，即不参与连写判定） */
-function parseWritePath(argsJson: string): string | null {
+/** 解析参数里的目标路径并归一（非 JSON / 空路径 → null）—— read_file / write_file 共用同一口径 */
+function parsePathArg(argsJson: string): string | null {
   try {
     const a = JSON.parse(argsJson) as { path?: string };
     if (typeof a?.path === 'string' && a.path.trim()) return normalizePathKey(a.path);
   } catch {
-    /* 参数非 JSON → 不参与连写 */
+    /* 参数非 JSON → 不参与计数 */
   }
   return null;
+}
+
+/** 解析 write_file 的「目标路径 + 写入模式」（缺省模式取 handler 同源真源） */
+function parseWrite(argsJson: string): { path: string; mode: string } | null {
+  const path = parsePathArg(argsJson);
+  if (!path) return null;
+  let mode: string = DEFAULT_WRITE_FILE_MODE;
+  try {
+    const a = JSON.parse(argsJson) as { mode?: string };
+    if (typeof a?.mode === 'string' && a.mode.trim()) mode = a.mode.trim().toLowerCase();
+  } catch {
+    /* 模式取默认 */
+  }
+  return { path, mode };
+}
+
+/** 是否整文件覆盖写（只有它参与连写计数；replace/insert/append 属增量修订） */
+function isWholeFileWrite(mode: string): boolean {
+  return mode === DEFAULT_WRITE_FILE_MODE;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,11 +247,15 @@ export const GUARD_RAIL_PROMPTS: Readonly<Record<GuardRailPromptId, string>> = {
     `请停止调用 web_search，直接基于现有搜索结果作答。`,
   // 占位：{limit}=提问上限
   ask_limit: `[ASK_LIMIT] 本问答闭环已提问 {limit} 次（上限），请基于现有信息继续，不要再调用 ask_user。`,
-  // 占位：{n}=连续重写次数；{subject}=被反复重写的文件路径
+  // 占位：{n}=整文件覆盖连写次数；{subject}=被反复整文件覆盖的文件路径
   write_loop_stop:
-    `[WRITE_LOOP_STOP] 你已连续 {n} 次重写同一文件 {subject}，` +
-    `疑似在自环清理/重建内容。请先 list_dir/read_file 确认真实文件状态，或明确重写章法后再动手；` +
-    `不要对同一文件反复 write_file。`,
+    `[WRITE_LOOP_STOP] 你已连续 {n} 次整文件覆盖 {subject}（本轮整文件重写已封顶）。` +
+    `请改用增量写入继续：mode=replace（old_string 取原文唯一片段）、mode=insert（指定行）、mode=append；` +
+    `确需整文件重建时结束本轮再来，不要在本轮反复覆盖同一文件。`,
+  // 占位：{n}=连续失败次数；{limit}=失败阈值；{subject}=写入目标
+  write_fail_stop:
+    `[WRITE_FAIL_STOP] 同一文件 {subject} 已连续 {n} 次写入失败（阈值 {limit}），原样重试不会成功。` +
+    `请先 read_file 读取该文件最新内容（读成功后本计数即刻清零），再按原文精确改写。`,
   // 占位：{n}=连续失败次数；{limit}=失败阈值
   read_failed_limit:
     `[READ_FAILED_LIMIT] 该目标已连续失败 {n} 次（阈值 {limit}），` +
@@ -263,7 +295,7 @@ const GUIDELINES: Readonly<Record<GuardRailId, string | undefined>> = {
     '重复读取同一文件/搜索同一主体将被拦截并提示；如需文件其它部分请用 offset/limit 指定行区间。',
   read_failed: '同一目标连续读取失败达阈值会被硬拦；请先 list_dir 确认路径或改用其它目标。',
   write_loop:
-    '同一文件被反复重写会触发写作死循环保护；请先 read_file/list_dir 确认真实状态再落笔。',
+    '同一文件被反复整文件覆盖会触发写作死循环保护；多处修订请用 replace/insert/append 增量写入，不要反复整文件重写。',
   ask_limit: '每个问答闭环仅允许有限次提问；基于现有信息继续，不要反复追问。',
   search_limit: '联网搜索达上限后视为信息已足；直接基于已有结果作答。',
 };
@@ -318,21 +350,11 @@ export class GuardRail {
   }
 
   /** 写侧喂数钩子分发：结果处理阶段由 loop 对每个 toolCall 调此方法。
-   *  matches 校验复用 GuardContext 判定（构造最小临时 ctx）；命中即调 g.onExec 喂计数。 */
+   *  **全量分发**给所有 guard，各 guard 在 onExec 内按 toolName 自过滤——不借 `matches` 路由：
+   *  一个字段两职责会让「读成功复位写侧失败计数」这类跨工具观测被挡掉，护栏文案承诺的出口随之失效
+   *  （真机实证：write_loop 原先只收到 write_file，其「先 read_file 再写」出口从未生效）。 */
   notifyExec(c: GuardExecContext): void {
-    // 构造最小临时 GuardContext：matches 仅依赖 toolName，其余字段占位即可
-    const matchCtx: GuardContext = {
-      toolName: c.toolName,
-      argsJson: c.argsJson,
-      toolCallId: c.toolCallId,
-      toolResultCache: new ToolResultCache(),
-      isCachedResultStillInContext: () => false,
-      thresholds: GUARD_THRESHOLDS as GuardThresholds,
-      counters: { searchCallCount: 0, askCountThisTurn: 0 },
-    };
-    for (const g of this.registry) {
-      if (g.matches(matchCtx)) g.onExec?.(c);
-    }
+    for (const g of this.registry) g.onExec?.(c);
   }
 
   /** 归零指定生命周期 guard 的内部计数状态（life 轮边界由 loop 调 resetTurnState 统一触发） */
@@ -358,7 +380,10 @@ export class GuardRail {
 export function createDefaultGuards(): GuardRail {
   // write_loop / read_failed 的计数状态各归本函数闭包（createDefaultGuards 每实例一份，
   // loop 每个实例都 new 一个守卫容器 → 状态每实例独立，安全），经 onExec 喂数、reset 归零。
+  // write 只承载**整文件覆盖**连写链：增量写（replace/insert/append）不参与计数。
   let write = { lastWritePath: null as string | null, samePathWriteStreak: 0 };
+  // 同路径连续失败写计数（键 = 规范化路径）：无进展信号；成功写 / 成功读即清该键
+  const writeFailByPath = new Map<string, number>();
   const readFailBySubject = new Map<string, number>();
   // read_dedup 撞墙升级计数（键 = failureSubjectKey 口径：工具+主体，不含 read_file 区间——
   // 同文件换区间重试仍是同一条叙事级重读链）。喂数点 = onBlocked（拦截归属回喂），
@@ -369,9 +394,11 @@ export function createDefaultGuards(): GuardRail {
     if (!subject) return 0;
     return dedupBlockBySubject.get(failureSubjectKey(toolName, subject)) ?? 0;
   };
-  // 期望连写递增后值（读闭包 write，不做状态迁移；迁移交给 onExec）
+  // 期望整文件连写递增后值（读闭包 write，不做状态迁移；迁移交给 onExec）
   const nextWriteStreak = (p: string): number =>
     write.lastWritePath === p ? write.samePathWriteStreak + 1 : 1;
+  // 同路径失败写计数（无记录 = 0）
+  const writeFailCountOf = (p: string): number => writeFailByPath.get(p) ?? 0;
   // read_failed 的 subject-key 提取（无 subject → null）
   const readFailKey = (toolName: string, argsJson: string): string | null => {
     const subject = extractSubject(toolName, argsJson);
@@ -401,31 +428,73 @@ export function createDefaultGuards(): GuardRail {
     .register({
       id: 'write_loop',
       matches: (c) => c.toolName === 'write_file',
-      // 现有 loop 语义：同路径则 streak+1、换路径则复位为 1，达到阈值拦。
-      // 计数读闭包 write，只读推断期望递增后值、不改自身状态（迁移交给 onExec）。
+      // 判据 = **无进展**，不是「写了几次」：
+      // ① 同路径连续失败写达阈值（原样重试不会成功）→ 拦；
+      // ② 整文件覆盖连写达阈值 → 拦；增量写（replace/insert/append）每次改不同片段，永不计数。
+      // 计数读闭包、只读推断期望值；状态迁移交给 onExec。
       shouldBlock: (c) => {
-        const p = parseWritePath(c.argsJson);
-        if (!p) return false;
-        return nextWriteStreak(p) >= c.thresholds.writeLoop;
+        const w = parseWrite(c.argsJson);
+        if (!w) return false;
+        if (writeFailCountOf(w.path) >= c.thresholds.writeFail) return true;
+        if (!isWholeFileWrite(w.mode)) return false;
+        return nextWriteStreak(w.path) >= c.thresholds.writeLoop;
       },
       blocked: true,
-      promptId: 'write_loop_stop',
-      promptArgs: (c) => {
-        const p = parseWritePath(c.argsJson);
-        if (!p) return { n: c.thresholds.writeLoop, subject: '' };
-        return { n: Math.max(nextWriteStreak(p), c.thresholds.writeLoop), subject: p };
+      // 文案按运行态分支：失败连击 → 先读再写；整文件连写 → 改增量写
+      promptId: (c) => {
+        const w = parseWrite(c.argsJson);
+        return w && writeFailCountOf(w.path) >= c.thresholds.writeFail
+          ? 'write_fail_stop'
+          : 'write_loop_stop';
+      },
+      promptArgs: (c, chosen) => {
+        const w = parseWrite(c.argsJson);
+        const subject = w?.path ?? '';
+        if (chosen === 'write_fail_stop') {
+          return {
+            n: subject ? writeFailCountOf(subject) : 0,
+            limit: c.thresholds.writeFail,
+            subject,
+          };
+        }
+        return {
+          n: subject
+            ? Math.max(nextWriteStreak(subject), c.thresholds.writeLoop)
+            : c.thresholds.writeLoop,
+          subject,
+        };
       },
       onExec: (c) => {
-        // blocked = 未真正执行，不累计连写（否则被拒后的同路径重写会把 streak 虚抬，误伤后续合法写入）
-        if (c.outcome === 'blocked') return;
-        const p = parseWritePath(c.argsJson);
-        if (p) {
-          write.samePathWriteStreak = nextWriteStreak(p);
-          write.lastWritePath = p;
+        // 读成功 = 已确认真实文件状态 → 清该路径的连续失败计数（兑现 write_fail_stop 的出口承诺）
+        if (c.toolName === 'read_file') {
+          if (c.outcome === 'ok') {
+            const p = parsePathArg(c.argsJson);
+            if (p) writeFailByPath.delete(p);
+          }
+          return;
         }
+        if (c.toolName !== 'write_file') return;
+        // blocked = 未真正执行，既不累计失败也不推进连写（否则被拒后的重写会把计数虚抬）
+        if (c.outcome === 'blocked') return;
+        const w = parseWrite(c.argsJson);
+        if (!w) return;
+        if (c.outcome === 'failed') {
+          // 失败写 = 无进展：只累失败计数，不推进整文件连写链
+          writeFailByPath.set(w.path, writeFailCountOf(w.path) + 1);
+          return;
+        }
+        // 成功写：清失败计数；整文件覆盖推进连写链，增量写打断连写链（两类写不混算）
+        writeFailByPath.delete(w.path);
+        if (!isWholeFileWrite(w.mode)) {
+          write = { lastWritePath: null, samePathWriteStreak: 0 };
+          return;
+        }
+        write.samePathWriteStreak = nextWriteStreak(w.path);
+        write.lastWritePath = w.path;
       },
       reset: () => {
         write = { lastWritePath: null, samePathWriteStreak: 0 };
+        writeFailByPath.clear();
       },
       life: 'perTurn',
     })
