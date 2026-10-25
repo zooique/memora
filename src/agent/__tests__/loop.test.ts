@@ -4398,6 +4398,30 @@ describe('AgentLoop · blockedFlags 平行数组错位回归（护栏命中工�
     expect(loop.getMessages().some((m) => m.content.includes('[WRITE_LOOP_STOP]'))).toBe(false);
   });
 
+  it('write_loop 同批整文件覆盖：一条回复内连发 6 次，第 5 次起拦（判定全在本批执行之前）', async () => {
+    // 真机 round-1792919558093：一条回复内 6 次 overwrite 全部放行——同批调用先集中判定、
+    // 后统一执行，判定阶段看不到任何结果 ⇒ 只靠执行后回喂的计数必然整批绕过。
+    // 修法 = 放行钩子（notifyAllow）在派发时预登记整文件覆盖意图。
+    const toolExecutor = vi.fn().mockResolvedValue('已写入');
+    const calls = Array.from({ length: 6 }, (_, i) =>
+      call(`o${i}`, 'write_file', `{"path":"docs/a.md","mode":"overwrite","content":"v${i}"}`),
+    );
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([[{ toolCalls: calls }], [{ content: '完成' }]]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('整篇重写 6 次')) {
+      chunks.push(chunk);
+    }
+    // 只执行前 4 次；第 5、6 次判定即被拦（连写链在判定阶段已计入在途意图）
+    expect(toolExecutor).toHaveBeenCalledTimes(4);
+    const writes = toolResults(chunks, 'write_file');
+    expect(writes.filter((r) => r.blocked === true)).toHaveLength(2);
+    expect(writes.some((r) => (r.summary ?? '').includes('[WRITE_LOOP_STOP]'))).toBe(true);
+  });
+
   it('write_loop：第 5 次连续整文件覆盖同一文件被拦且上报 blocked=true && ok=false', async () => {
     const toolExecutor = vi.fn().mockResolvedValue('已写入');
     const turns: ChunkItem[][] = [];

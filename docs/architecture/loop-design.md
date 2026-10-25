@@ -162,6 +162,8 @@
 
 > **2026-10-25 判据订正（真机 round-1792904123909）**：`write_loop` 原判据是「同路径连续写 N 次」，把 `mode=replace` 的逐处修订与整文件覆盖混算，第 5 次即硬拦；且被拦后读文件不复位计数，本 turn 内该路径被永久封死（真机 7 次被拦、5 处修订拖到下轮）。现判据改为**无进展信号**：① 仅整文件覆盖（`mode=overwrite`）计入连写；② 增量写（replace / insert / append）不计数；③ 同路径连续**失败写**达 `writeFail` 阈值即拦，读成功 / 写成功即清。`failed` 也不再被当作一次写（原实现会推进 streak）。阈值仍只在 `GUARD_THRESHOLDS` 单点。
 
+> **2026-10-25 同批洞补丁（真机 round-1792919558093）**：同批工具调用**先集中判定、后统一执行**（`executeToolCalls` 内 `for` 里判定并派发、末尾 `Promise.all` 等结果），判定阶段看不到任何执行结果 ⇒ 只靠 `notifyExec`（执行后回喂）的连写计数会被「一条回复内连发 N 次同一文件整文件覆盖」**整批绕过**（实测 6 次 overwrite 全部放行）。补法 = 新增**放行钩子** `onAllow` / `notifyAllow`：loop 在「判定放行、确定派发」处调一次，`write_loop` 在钩子内**预登记整文件覆盖意图**（增量写不登记，批量逐处修订仍零计数）；执行结果回喂时**消费**该预登记（同一次写只计一次），被拦未执行则**撤销**预留。判据真源仍在 `guardRail.ts`，loop 只多一次钩子调用。**未纳入（刻意）**：`write_fail` 不预登记——批内模型看不到失败结果，按未发生的失败预拦会误伤同批中本可成功的写。
+
 **不收敛的异构护栏**（维持各自为政，见 guardRail.ts 收敛边界）：`duplicateToolCallInterceptor` 软警告、maxIterations/stepBudget 循环终止、self_review 后处理、interruptQueue/pause/ask 续跑、文件覆盖度台账替身回显（分支②/③）。
 
 > 收敛取舍记录：曾计划在 system prompt 追加「## 行为护栏」通用声明节，已去掉——常量注入改变每 turn 的 token 预算（撞破极小预算截断测试标定）且让 `[TAG]` 令牌在常驻 system prompt 出现而干扰运行时拒绝消息定位。衔接提示词以运行时即时渲染为准，`buildPromptSection` 保留为宿主可选能力。

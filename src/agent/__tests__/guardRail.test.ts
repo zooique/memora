@@ -141,6 +141,73 @@ describe('GuardRail 判定复现现有护栏（S1 shadow 契约）', () => {
     expect(next).toBeUndefined();
   });
 
+  it('write_loop：同批整文件覆盖按「放行即预登记」计数，第 5 次即拦（同批判定先于执行）', () => {
+    // 真机 round-1792919558093：一条回复内连发 6 次 overwrite 全部放行——判定全在本批执行之前，
+    // 只靠执行后回喂的计数必然整批绕过。放行钩子把在途意图前移到判定阶段。
+    const g = freshGuards();
+    const args = (i: number) => `{"path":"a.md","mode":"overwrite","content":"v${i}"}`;
+    for (let i = 0; i < 4; i++) {
+      const c = makeCtx({ toolName: 'write_file', argsJson: args(i), toolCallId: `o${i}` });
+      expect(g.evaluateBlocked(c)).toBeUndefined();
+      g.notifyAllow(c);
+    }
+    const fifth = g.evaluateBlocked(
+      makeCtx({ toolName: 'write_file', argsJson: args(4), toolCallId: 'o4' }),
+    );
+    expect(fifth?.guardId).toBe('write_loop');
+    expect(fifth?.message).toContain('[WRITE_LOOP_STOP]');
+  });
+
+  it('write_loop：同一次写只计一次——执行回喂消费预登记，不重复递增', () => {
+    const g = freshGuards();
+    const args = (i: number) => `{"path":"a.md","mode":"overwrite","content":"v${i}"}`;
+    // 3 次「放行 + 成功回喂」= 连写链 3（若放行与回喂各算一次会虚高到 6 → 第 4 次就被冤拦）
+    for (let i = 0; i < 3; i++) {
+      const c = makeCtx({ toolName: 'write_file', argsJson: args(i), toolCallId: `o${i}` });
+      g.notifyAllow(c);
+      g.notifyExec({
+        toolName: 'write_file',
+        argsJson: args(i),
+        toolCallId: `o${i}`,
+        outcome: 'ok',
+      });
+    }
+    expect(
+      g.evaluateBlocked(makeCtx({ toolName: 'write_file', argsJson: args(3), toolCallId: 'o3' })),
+    ).toBeUndefined();
+  });
+
+  it('write_loop：预登记后被拦下（未执行）→ 撤销预留，不把未跑的写算进连写链', () => {
+    const g = freshGuards();
+    const args = (i: number) => `{"path":"a.md","mode":"overwrite","content":"v${i}"}`;
+    // 4 次已执行 → 连写链 4（下一次判定即达阈值）
+    for (let i = 0; i < 4; i++) {
+      const c = makeCtx({ toolName: 'write_file', argsJson: args(i), toolCallId: `o${i}` });
+      g.notifyAllow(c);
+      g.notifyExec({
+        toolName: 'write_file',
+        argsJson: args(i),
+        toolCallId: `o${i}`,
+        outcome: 'ok',
+      });
+    }
+    // 第 5 条放行后被他因拦下（未执行）→ 撤销预留，连写链退回 4
+    const c5 = makeCtx({ toolName: 'write_file', argsJson: args(4), toolCallId: 'r5' });
+    g.notifyAllow(c5);
+    g.notifyExec({
+      toolName: 'write_file',
+      argsJson: args(4),
+      toolCallId: 'r5',
+      outcome: 'blocked',
+    });
+    // 撤销后的判定仍是「第 5 次」（4+1=阈值）而非虚高：仍应拦，且文案报 5 次
+    const hit = g.evaluateBlocked(
+      makeCtx({ toolName: 'write_file', argsJson: args(5), toolCallId: 'r6' }),
+    );
+    expect(hit?.guardId).toBe('write_loop');
+    expect(hit?.message).toContain('已连续 5 次整文件覆盖');
+  });
+
   it('write_loop：同路径连续失败写达阈值拦，读成功后复位放行（write_fail_stop 出口可执行）', () => {
     const g = freshGuards();
     for (let i = 0; i < 3; i++) {

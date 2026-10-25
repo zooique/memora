@@ -67,7 +67,12 @@ import {
   normalizePathKey,
   type CacheEntry,
 } from '@/agent/toolResultCache.js';
-import { createDefaultGuards, GUARD_THRESHOLDS, type GuardThresholds } from '@/agent/guardRail.js';
+import {
+  createDefaultGuards,
+  GUARD_THRESHOLDS,
+  type GuardContext,
+  type GuardThresholds,
+} from '@/agent/guardRail.js';
 import {
   FileExposureLedger,
   parseReadFileCoverage,
@@ -2106,7 +2111,7 @@ export class AgentLoop {
       // 按注册序取首个硬拦命中；③ 处理 search_limit 专属副钩（停搜 + 重建 system prompt，需触达消息层所以留 loop）；
       // ④ 被拦则回填 guard 渲染的拒绝文案。
       // 台账替身回显的两条分支（摘要顶替 / 保守放行）形态不同、**不收口进 guardRail**（见 guardRail.ts 边界），仍在下方内联。
-      const guardHit = this.guardier.evaluateBlocked({
+      const guardCtx: GuardContext = {
         toolName: tc.function.name,
         argsJson: tc.function.arguments,
         toolCallId: tc.id,
@@ -2117,7 +2122,8 @@ export class AgentLoop {
           searchCallCount: this.searchCallCount,
           askCountThisTurn: this.askCountThisTurn,
         },
-      });
+      };
+      const guardHit = this.guardier.evaluateBlocked(guardCtx);
       // search_limit 命中（双闸第二闸）：命中即停搜——置 searchDisabled，下一轮 LLM 调用的工具集剔除 web_search
       // （buildChatOptions 确定性过滤），并在本轮注入「视为未找到更多相关→继续下一步」提示，双管齐下终结
       // 「被拒→重搜→再被拒」拒绝风暴耗尽迭代/上下文导致问答闭环中断。首次置位重建 system prompt（幂等，
@@ -2229,6 +2235,11 @@ export class AgentLoop {
           continue;
         }
       }
+      // 放行钩子（派发前最后一处）：本调用确定要执行才到这里。
+      // 为什么必须有：本批全部调用**先集中判定、后统一执行**（下方 toolExecs 并发派发），
+      // 判定阶段看不到任何执行结果 ⇒ 只靠执行后 notifyExec 喂数的护栏（write_loop 连写链）
+      // 会被「一条回复内连发 N 次整文件覆盖」整批绕过（真机 round-1792919558093 实证 6 次全放行）。
+      this.guardier.notifyAllow(guardCtx);
       // 写排序三分（判据真源 = 工具定义行 `diskWrite` 声明，派生索引见 builtinTools）：
       //  'path' → 按目标路径串行（同路径链）；'opaque' → 屏障，与一切写互斥；
       //  声明 'path' 但目标提取失败（参数缺 path 等）→「不确定即保守」降级为屏障，不静默跳过。

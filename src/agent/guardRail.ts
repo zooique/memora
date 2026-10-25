@@ -132,6 +132,9 @@ export interface GuardRailDef {
   matches: (c: GuardContext) => boolean;
   /** 前置拦截判定：true = 需拦截 */
   shouldBlock: (c: GuardContext) => boolean;
+  /** 放行后钩子（可选）：由 loop 在「判定放行、确定要派发」处调 `notifyAllow`。
+   *  用途 = **在派发时预登记意图**，让同批并发调用的判定看得到「已在途」。 */
+  onAllow?: (c: GuardContext) => void;
   /** true = 真拦截（回填拒绝文案）/ false = 软提示 */
   blocked: boolean;
   /** 命中文案 key（引用 GUARD_RAIL_PROMPTS，勿内联文案）；函数形态 = 按 GuardContext 运行态选择
@@ -357,6 +360,14 @@ export class GuardRail {
     for (const g of this.registry) g.onExec?.(c);
   }
 
+  /** 放行后钩子分发：判定放行、确定派发时由 loop 调一次（与 notifyExec 同构全量分发）。
+   *  为什么需要：同批工具调用**先集中判定、再统一执行**，判定阶段看不到任何执行结果；
+   *  只靠执行后回喂的计数会让「一条回复内连发 N 次同一文件的整文件覆盖」整批绕过护栏
+   *  （真机 round-1792919558093 实证：6 次 overwrite 全部放行）。 */
+  notifyAllow(c: GuardContext): void {
+    for (const g of this.registry) g.onAllow?.(c);
+  }
+
   /** 归零指定生命周期 guard 的内部计数状态（life 轮边界由 loop 调 resetTurnState 统一触发） */
   reset(life: 'perInput' | 'perTurn'): void {
     for (const g of this.registry) {
@@ -382,6 +393,14 @@ export function createDefaultGuards(): GuardRail {
   // loop 每个实例都 new 一个守卫容器 → 状态每实例独立，安全），经 onExec 喂数、reset 归零。
   // write 只承载**整文件覆盖**连写链：增量写（replace/insert/append）不参与计数。
   let write = { lastWritePath: null as string | null, samePathWriteStreak: 0 };
+  // 放行时已预登记的 toolCallId：同批调用的判定全部先于执行，只靠执行后回喂计数会让
+  // 「一条回复内连发 N 次整文件覆盖」整批绕过（真机 round-1792919558093：6 次 overwrite 全放行）。
+  const reservedWrites = new Set<string>();
+  // 撤销一次预登记（该调用被拦下未执行）：把这条预留从连写链退回，避免虚抬
+  const revertReserved = (): void => {
+    write.samePathWriteStreak = Math.max(0, write.samePathWriteStreak - 1);
+    if (write.samePathWriteStreak === 0) write.lastWritePath = null;
+  };
   // 同路径连续失败写计数（键 = 规范化路径）：无进展信号；成功写 / 成功读即清该键
   const writeFailByPath = new Map<string, number>();
   const readFailBySubject = new Map<string, number>();
@@ -464,6 +483,15 @@ export function createDefaultGuards(): GuardRail {
           subject,
         };
       },
+      onAllow: (c) => {
+        // 只预登记**整文件覆盖**：增量写不参与连写链，且批量逐处修订正是要放行的形态
+        if (c.toolName !== 'write_file') return;
+        const w = parseWrite(c.argsJson);
+        if (!w || !isWholeFileWrite(w.mode)) return;
+        reservedWrites.add(c.toolCallId);
+        write.samePathWriteStreak = nextWriteStreak(w.path);
+        write.lastWritePath = w.path;
+      },
       onExec: (c) => {
         // 读成功 = 已确认真实文件状态 → 清该路径的连续失败计数（兑现 write_fail_stop 的出口承诺）
         if (c.toolName === 'read_file') {
@@ -474,8 +502,11 @@ export function createDefaultGuards(): GuardRail {
           return;
         }
         if (c.toolName !== 'write_file') return;
-        // blocked = 未真正执行，既不累计失败也不推进连写（否则被拒后的重写会把计数虚抬）
-        if (c.outcome === 'blocked') return;
+        // blocked = 未真正执行：撤销放行时的预登记（不撤销会冤杀后续正常写），且不累计失败
+        if (c.outcome === 'blocked') {
+          if (reservedWrites.delete(c.toolCallId)) revertReserved();
+          return;
+        }
         const w = parseWrite(c.argsJson);
         if (!w) return;
         if (c.outcome === 'failed') {
@@ -489,12 +520,15 @@ export function createDefaultGuards(): GuardRail {
           write = { lastWritePath: null, samePathWriteStreak: 0 };
           return;
         }
+        // 放行时已预登记过 ⇒ 本次连写已计入，勿重复递增（同一次写只算一次）
+        if (reservedWrites.delete(c.toolCallId)) return;
         write.samePathWriteStreak = nextWriteStreak(w.path);
         write.lastWritePath = w.path;
       },
       reset: () => {
         write = { lastWritePath: null, samePathWriteStreak: 0 };
         writeFailByPath.clear();
+        reservedWrites.clear();
       },
       life: 'perTurn',
     })
