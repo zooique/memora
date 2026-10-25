@@ -27,7 +27,8 @@
  * - `command`：走 `confirmCommandRun`（内容裁决 DENY/always-ask + 确认档位；target = 命令原文）
  * - `script` ：走 `confirmScriptRun`（确认档位 + **可选内容裁决**：传入正文时按
  *   `classifyCommand` 判 deny 恒拦 / always-ask 恒弹，判据与 command 面同一个函数；
- *   不传正文 = 仅档位。run_skill_script 属后者，见上）
+ *   不传正文 = 仅档位，唯一降级面 = resolver 未注入 / 解析不到（三个 script 面
+ *   现均传正文，见上））
  * - `none`  ：**内核不经任何确认闸**——非执行面（`register_work` 只往 `memoraDir` 写作品索引 JSON，
  *   既不执行也不碰项目文件，实锤：kernel 侧 `registerWork` 回调链零 `confirm*` 调用）。
  *   登记它是为了让「opaque 面一个都不漏」可机器核对；它**不是**确认入口，禁被路由进确认闸。
