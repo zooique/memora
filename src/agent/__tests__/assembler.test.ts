@@ -333,6 +333,78 @@ describe('assembleComponents', () => {
     });
   });
 
+  // ─── run_skill_script 路径解析同源（CMD-1-CONTENT 守卫）────
+  //
+  // 裁决面（resolveSkillScript，供 toolExecutor 读正文）与执行面（runSkillScript）
+  // 必须解析到**同一个文件**——两面各写一遍解析顺序 = 裁决读 A、执行跑 B 的漂移
+  // （最坏形态：裁决读的是无害脚本，执行的却是被替换的同名恶意脚本）。
+  // 本用例以真实技能目录 + 真实 spawn 钉死：resolver 返的路径 == 执行实际 spawn 的文件。
+  // 未覆盖面如实登记：仅锚住全局技能分支（角色包分支夹具需完整 pack manifest +
+  // layer3 扫描链，成本高）；但两面共用同一个 resolveSkillScriptTarget 函数，
+  // 角色包分支的解析顺序由该函数单点保证，不存在第二份实现可漂移。
+
+  describe('run_skill_script 路径解析同源（CMD-1-CONTENT）', () => {
+    it('resolveSkillScript 返的路径 = 执行实际 spawn 的文件', async () => {
+      const home = await mkdtemp(join(tmpdir(), 'memora-assembler-resolve-'));
+      const skillDir = join(home, 'skills', 'resolve-probe');
+      const scriptsDir = join(skillDir, 'scripts');
+      mkdirSync(scriptsDir, { recursive: true });
+      writeFileSync(
+        join(skillDir, 'SKILL.md'),
+        '---\nname: resolve-probe\ndescription: 解析同源探针\n---\n正文',
+        'utf-8',
+      );
+      writeFileSync(
+        join(scriptsDir, 'probe.mjs'),
+        "process.stdout.write('RESOLVER-SAME-FILE');",
+        'utf-8',
+      );
+      try {
+        const output = await assembleComponents(
+          createPctx(),
+          createInput({ existingSkillManager: new SkillManager(home) }),
+        );
+        // ① 裁决面：返绝对路径，落在技能 scripts/ 下（存在性由解析器自身保证）
+        const resolved = output.toolExec.resolveSkillScript?.('resolve-probe', 'probe.mjs');
+        expect(resolved).toBe(join(scriptsDir, 'probe.mjs'));
+        // ② 执行面：spawn 的正是该文件（标记只存在于 probe.mjs）
+        const result = await output.toolExec.execute(
+          'run_skill_script',
+          JSON.stringify({ skill_name: 'resolve-probe', script_path: 'probe.mjs' }),
+        );
+        expect(result).toContain('RESOLVER-SAME-FILE');
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
+    });
+
+    it('解析不到（未登记脚本）⇒ 两面同判 null（不造第二语义）', async () => {
+      const home = await mkdtemp(join(tmpdir(), 'memora-assembler-resolve-miss-'));
+      const skillDir = join(home, 'skills', 'resolve-probe');
+      mkdirSync(join(skillDir, 'scripts'), { recursive: true });
+      writeFileSync(
+        join(skillDir, 'SKILL.md'),
+        '---\nname: resolve-probe\ndescription: 解析同源探针\n---\n正文',
+        'utf-8',
+      );
+      try {
+        const output = await assembleComponents(
+          createPctx(),
+          createInput({ existingSkillManager: new SkillManager(home) }),
+        );
+        // 未登记的脚本：resolver 与执行面都返 null ⇒ 裁决不传正文 + 执行报 NOT_FOUND
+        expect(output.toolExec.resolveSkillScript?.('resolve-probe', 'missing.mjs')).toBeNull();
+        const result = await output.toolExec.execute(
+          'run_skill_script',
+          JSON.stringify({ skill_name: 'resolve-probe', script_path: 'missing.mjs' }),
+        );
+        expect(result).toContain('SCRIPT_NOT_FOUND');
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
+    });
+  });
+
   // ─── 配置透传 ──────────────────────────────────────────
 
   describe('配置透传', () => {

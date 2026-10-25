@@ -488,7 +488,8 @@ export class SecurityGuard {
    *   - `always-ask` ⇒ **恒弹**（owner + confirmScripts=false 也弹，与命令面同判据）；
    *   - `normal` ⇒ 回落到原判据（guest || confirmScripts）。
    *
-   * 不传 `content`（拿不到正文的面，如宿主执行的技能脚本）⇒ 行为与补齐前完全一致。
+   * 不传 `content`（拿不到正文的面 ⇒ 只判档位；如未注入解析回调的技能脚本执行）⇒
+   * 行为与补齐前完全一致。
    *
    * @param content 将被执行的正文（**整份裁决，不做截断**——截断即裁决盲区）
    */

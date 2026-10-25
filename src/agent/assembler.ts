@@ -54,6 +54,8 @@ import { RolePackManager } from '@/role-pack/rolePackManager.js';
 import { runTeamMeetingAssessment } from '@/agent/builtinToolHandlers.js';
 // L3 脚本执行器（静态导入，避免每次调用动态加载）
 import { runSkillScript } from '@/skill/skillScriptRunner.js';
+// 技能脚本 runtime 类型（resolveSkillScriptTarget 返回值标注；执行面判据同一形态）
+import type { ScriptRuntime } from '@/utils/scanner.js';
 import { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 import { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 
@@ -845,52 +847,64 @@ export async function assembleComponents(
     return skillManager.readResource(skillName, resourcePath);
   };
 
-  // 渐进披露 L3：注入 run_skill_script 脚本执行回调
-  toolExec.runSkillScript = async (skillName: string, scriptPath: string, args: string[]) => {
-    // cwd=项目根（SKILL-CWD-1，2026-10-14）：与 run_project_script 同款供给——修因不修果，
-    // 改喂给判据的事实：脚本内相对路径 / 省略 --dir 走默认，落点一律受 projectPath 约束。
-    // 修复前此处传 undefined → 子进程继承宿主进程 cwd（VS Code 安装目录）→ 写文件可逃出项目根。
-    // projectPath 恒存在（AgentOptions 必填），无「未打开项目」分支。
+  // 渐进披露 L3：技能脚本目标解析（角色包 → 全局池，唯一解析点 · CMD-1-CONTENT）
+  //
+  // 执行闭包（runSkillScript）与裁决面回调（resolveSkillScript）共用本函数 ⇒
+  // 「哪个技能目录的哪个脚本」的解析顺序天然单点——两处各写一遍即是漂移回归
+  // （同序守卫：assembler.test.ts 断言 resolver 返的路径 = 执行实际 spawn 的文件）。
+  // 防逃逸由两侧解析器自身保证（角色包 layer3 白名单 + resolveSafePath 边界前缀；
+  // 全局 resolveLayer3ScriptPath + existsSyncSafe），本函数不做第二套路径校验。
+  const resolveSkillScriptTarget = (
+    skillName: string,
+    scriptPath: string,
+  ): { absolutePath: string; runtime: ScriptRuntime } | null => {
     // 先查激活角色包内嵌技能的脚本路径
     const rolePackPath = rolePackManager.getSkillScriptPath(skillName, scriptPath);
     if (rolePackPath) {
       const scriptInfo = rolePackManager.getSkillScriptInfo(skillName, scriptPath);
-      if (scriptInfo) {
-        // 执行超时走内核默认（60s，上限 600s，见 skillScriptRunner 常量）——脚本级超时无配置通道
-        // nodePath 沿用宿主注入：角色包技能脚本 node runtime 分支可走真实 node 路径
-        const result = await runSkillScript(
-          rolePackPath,
-          scriptInfo.runtime,
-          args,
-          undefined,
-          projectPath,
-          input.scriptNodePath,
-        );
-        // B2-a：返回结构化事实，formatScriptResult 由 ToolExecutor 单点收口
-        return result;
-      }
+      if (scriptInfo) return { absolutePath: rolePackPath, runtime: scriptInfo.runtime };
     }
     // 再查全局通用技能
     const globalPath = skillManager.getScriptPath(skillName, scriptPath);
     if (globalPath) {
       const scripts = skillManager.listScripts(skillName);
       const scriptInfo = scripts.find((s) => s.path === scriptPath);
-      if (scriptInfo) {
-        // cwd=项目根 / nodePath 沿用宿主注入：与角色包分支同款供给（两分支分叉写法漂移即回归）
-        const result = await runSkillScript(
-          globalPath,
-          scriptInfo.runtime,
-          args,
-          undefined,
-          projectPath,
-          input.scriptNodePath,
-        );
-        // B2-a：返回结构化事实，formatScriptResult 由 ToolExecutor 单点收口
-        return result;
-      }
+      if (scriptInfo) return { absolutePath: globalPath, runtime: scriptInfo.runtime };
     }
     return null;
   };
+
+  // 渐进披露 L3：注入 run_skill_script 脚本执行回调
+  toolExec.runSkillScript = async (skillName: string, scriptPath: string, args: string[]) => {
+    // cwd=项目根（SKILL-CWD-1，2026-10-14）：与 run_project_script 同款供给——修因不修果，
+    // 改喂给判据的事实：脚本内相对路径 / 省略 --dir 走默认，落点一律受 projectPath 约束。
+    // 修复前此处传 undefined → 子进程继承宿主进程 cwd（VS Code 安装目录）→ 写文件可逃出项目根。
+    // projectPath 恒存在（AgentOptions 必填），无「未打开项目」分支。
+    const target = resolveSkillScriptTarget(skillName, scriptPath);
+    if (!target) return null;
+    // 执行超时走内核默认（60s，上限 600s，见 skillScriptRunner 常量）——脚本级超时无配置通道
+    // nodePath 沿用宿主注入：技能脚本 node runtime 分支可走真实 node 路径
+    // B2-a：返回结构化事实，formatScriptResult 由 ToolExecutor 单点收口
+    return runSkillScript(
+      target.absolutePath,
+      target.runtime,
+      args,
+      undefined,
+      projectPath,
+      input.scriptNodePath,
+    );
+  };
+
+  // 渐进披露 L3：注入 run_skill_script 路径解析回调（CMD-1-CONTENT 裁决面）
+  //
+  // 与执行回调是**同一个解析函数的两面**：只返绝对路径、不执行。toolExecutor 确认点
+  // 用它定位技能脚本文件读正文，经 confirmByEntry 的 content 参喂同一个
+  // classifyCommand（deny 恒拦 / always-ask 恒弹 / normal 回落档位）——技能脚本执行
+  // 面此前面向「来源可信」免检（CMD-1-BYPASS 最后一面），现与 run_code /
+  // run_project_script 对齐黑名单底线。未注入（纯 ToolExecutor 单测等场景）=
+  // 不传正文，执行面行为不变。
+  toolExec.resolveSkillScript = (skillName: string, scriptPath: string): string | null =>
+    resolveSkillScriptTarget(skillName, scriptPath)?.absolutePath ?? null;
 
   // 渐进披露 L3：注入 list_resources 资源清单回调
   toolExec.listResources = async (skillName: string) => {

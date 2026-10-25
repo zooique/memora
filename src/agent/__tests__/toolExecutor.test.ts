@@ -453,6 +453,172 @@ describe('工具执行器（6 个工具）', () => {
       );
       expect(declined).toContain('SCRIPT_DECLINE');
     });
+
+    // ─── CMD-1-CONTENT：技能脚本正文裁决（resolver 定位 → 读正文 → 同一个 classifyCommand）───
+    //
+    // 面板判据与 run_code / run_project_script 同源：正文进 confirmScriptRun(content)，
+    // deny 恒拦 / always-ask 恒弹 / normal 回落档位；拿不到正文（resolver 未注入或返 null）
+    // = 只判档位（与补齐前一致）；读失败 / 超长 = fail-closed decline。
+
+    /** 写一个技能脚本文件（resolver 的返回值指向它），返回绝对路径 */
+    const writeSkillScript = (name: string, content: string): string => {
+      const dir = join(tmpProject, '.skill-scripts');
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, name);
+      writeFileSync(file, content, 'utf-8');
+      return file;
+    };
+
+    /** 本组专用执行器（owner + confirmScripts=false = 默认自动放行档；独立 guard 防回调串扰） */
+    const makeOwnerExecutor = (): { exec: ToolExecutor; sec: SecurityGuard } => {
+      const sec = new SecurityGuard(tmpProject, tmpData, [], false, 'owner');
+      return { exec: new ToolExecutor(tmpProject, sec, index), sec };
+    };
+
+    it('CMD-1-CONTENT：正文命中 deny ⇒ 恒拦（默认放行档也拒，脚本未执行）', async () => {
+      const { exec } = makeOwnerExecutor();
+      exec.resolveSkillScript = () => writeSkillScript('cleanup.mjs', 'rm -rf /\n');
+      let executed = false;
+      exec.runSkillScript = async () => {
+        executed = true;
+        return { stdout: '不应执行', stderr: '', exitCode: 0, timedOut: false };
+      };
+      const result = await exec.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'cleanup.mjs' }),
+      );
+      expect(result).toContain('SCRIPT_DECLINE');
+      expect(executed).toBe(false);
+    });
+
+    it('CMD-1-CONTENT：正文命中 always-ask ⇒ 恒弹（默认放行档也弹）；拒绝 ⇒ decline 不执行', async () => {
+      const { exec, sec } = makeOwnerExecutor();
+      exec.resolveSkillScript = () =>
+        writeSkillScript('deploy.mjs', '#!/bin/sh\ngit push origin main\n');
+      let asked = false;
+      sec.onWriteConfirmation(async () => {
+        asked = true;
+        return false;
+      });
+      let executed = false;
+      exec.runSkillScript = async () => {
+        executed = true;
+        return { stdout: '', stderr: '', exitCode: 0, timedOut: false };
+      };
+      const result = await exec.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'deploy.mjs' }),
+      );
+      expect(asked).toBe(true);
+      expect(result).toContain('SCRIPT_DECLINE');
+      expect(executed).toBe(false);
+    });
+
+    it('CMD-1-CONTENT：正文命中 always-ask + 批准 ⇒ 放行执行', async () => {
+      const { exec, sec } = makeOwnerExecutor();
+      exec.resolveSkillScript = () => writeSkillScript('commit.mjs', 'git commit -m "chore"');
+      sec.onWriteConfirmation(async () => true);
+      exec.runSkillScript = async () => ({
+        stdout: 'committed',
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+      });
+      const result = await exec.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'commit.mjs' }),
+      );
+      expect(result).toBe('committed');
+    });
+
+    it('CMD-1-CONTENT：正文 normal ⇒ 回落档位（默认自动放行，不弹窗）', async () => {
+      const { exec, sec } = makeOwnerExecutor();
+      exec.resolveSkillScript = () => writeSkillScript('test.mjs', 'npm test');
+      let asked = false;
+      sec.onWriteConfirmation(async () => {
+        asked = true;
+        return true;
+      });
+      exec.runSkillScript = async () => ({
+        stdout: 'ok',
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+      });
+      const result = await exec.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'test.mjs' }),
+      );
+      expect(asked).toBe(false);
+      expect(result).toBe('ok');
+    });
+
+    it('CMD-1-CONTENT：resolver 返 null ⇒ 不传正文，维持既有 NOT_FOUND 语义', async () => {
+      const { exec } = makeOwnerExecutor();
+      exec.resolveSkillScript = () => null;
+      let executed = false;
+      exec.runSkillScript = async () => {
+        executed = true;
+        return null;
+      };
+      const result = await exec.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'ghost.mjs' }),
+      );
+      expect(result).toContain('SCRIPT_NOT_FOUND');
+      expect(executed).toBe(true);
+    });
+
+    it('CMD-1-CONTENT：未注入 resolver ⇒ 不读正文、只判档位（行为与补齐前一致）', async () => {
+      // 正文写着 deny 内容，但无 resolver = 拿不到正文 ⇒ 默认放行执行（旧行为钉子）
+      writeSkillScript('blacklisted.mjs', 'rm -rf /\n');
+      const { exec } = makeOwnerExecutor();
+      exec.runSkillScript = async () => ({
+        stdout: 'ran-without-content',
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+      });
+      const result = await exec.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'blacklisted.mjs' }),
+      );
+      expect(result).toBe('ran-without-content');
+    });
+
+    it('CMD-1-CONTENT：正文读取失败 ⇒ fail-closed decline（不执行）', async () => {
+      const { exec } = makeOwnerExecutor();
+      exec.resolveSkillScript = () => join(tmpProject, '.skill-scripts', 'gone.mjs');
+      let executed = false;
+      exec.runSkillScript = async () => {
+        executed = true;
+        return { stdout: '', stderr: '', exitCode: 0, timedOut: false };
+      };
+      const result = await exec.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'gone.mjs' }),
+      );
+      expect(result).toContain('SCRIPT_DECLINE');
+      expect(result).toContain('正文读取失败');
+      expect(executed).toBe(false);
+    });
+
+    it('CMD-1-CONTENT：正文超 SCRIPT_READ_MAX_LEN ⇒ fail-closed decline（不执行）', async () => {
+      const { exec } = makeOwnerExecutor();
+      exec.resolveSkillScript = () => writeSkillScript('huge.mjs', 'x'.repeat(200_001));
+      let executed = false;
+      exec.runSkillScript = async () => {
+        executed = true;
+        return { stdout: '', stderr: '', exitCode: 0, timedOut: false };
+      };
+      const result = await exec.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'huge.mjs' }),
+      );
+      expect(result).toContain('SCRIPT_DECLINE');
+      expect(result).toContain('字符上限');
+      expect(executed).toBe(false);
+    });
   });
 
   describe('★ 原生 outcome（SCRIPT-2 B2-a · 三脚本族 status 断言）', () => {

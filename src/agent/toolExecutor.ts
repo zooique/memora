@@ -7,6 +7,7 @@
  * 内置工具实现 + 路径安全已提取到 BuiltinToolHandlers，
  * ToolExecutor 聚焦工具注册 / 分发 / 参数校验。
  */
+import { readFile } from 'node:fs/promises';
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import { requireConfirmingEntry, type ConfirmingEntry } from '@/security/confirmEntries.js';
 import { toolError, configError, MemoraError, ToolErrorCode } from '@/utils/errors.js';
@@ -35,7 +36,7 @@ import {
   blockedOutcome,
   type ToolOutcome,
 } from '@/agent/managers/toolCallHelpers.js';
-import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
+import { BuiltinToolHandlers, SCRIPT_READ_MAX_LEN } from '@/agent/builtinToolHandlers.js';
 import type { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 import type { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 import type { AgentEventMap } from '@/utils/eventEmitter.js';
@@ -675,6 +676,18 @@ export class ToolExecutor {
     scriptPath: string,
     args: string[],
   ) => Promise<ScriptExecutionResult | null>;
+
+  /**
+   * run_skill_script 脚本路径解析回调（由 agent 装配时注入，CMD-1-CONTENT）
+   *
+   * 与 `runSkillScript`（执行回调）是**同一个解析函数的两面**（assembler 内共用
+   * `resolveSkillScriptTarget`）：本回调只返技能脚本的绝对路径、不执行。确认点用它
+   * 定位脚本文件读正文，经 `confirmByEntry` 的 `content` 参喂同一个 `classifyCommand`
+   * ——技能脚本执行面此前面向「来源可信」免检（CMD-1-BYPASS 最后一面），现与
+   * run_code / run_project_script 对齐黑名单底线（deny 恒拦 / always-ask 恒弹）。
+   * 未注入时 run_skill_script 不传正文（维持档位判据），执行面行为不变。
+   */
+  resolveSkillScript?: (skillName: string, scriptPath: string) => string | null;
 
   /**
    * list_resources 资源清单回调（由 agent 装配时注入）
@@ -1581,21 +1594,54 @@ export class ToolExecutor {
         const skillName = strArg('skill_name');
         const scriptPath = strArg('script_path');
         const scriptArgs = Array.isArray(args['args']) ? (args['args'] as string[]) : [];
+        // CMD-1-CONTENT：技能脚本正文裁决（与 run_code / run_project_script 同判据）
+        //
+        // 确认点经 resolveSkillScript（与执行回调同一个解析函数，见 assembler）定位脚本
+        // 文件读正文，喂下方 confirmByEntry 的 content 参 → 同一个 classifyCommand。
+        // 技能目录 = 可信根（ADR-040 决策 1「技能目录脚本经作者审阅」），不走项目根白名单；
+        // 防逃逸由解析侧保证（角色包 layer3 白名单 + resolveSafePath 边界 / 全局
+        // resolveLayer3ScriptPath + existsSyncSafe）。⚠️ TOCTOU 边界与 run_project_script
+        // 同款登记：裁决与执行之间文件若被改写，裁决看到旧内容——改写只能来自本 agent 或
+        // 用户本人，且「不裁决」的风险（脚本里藏 git push / rm -rf 恒不设防）远大于该窗口。
+        //
+        // fail-closed 分级（无「读不动就放行」的口子）：
+        //   解析不到（resolver 返 null）= 不传正文——执行点同一解析必返 null，
+        //     走既有 [ERR:SCRIPT_NOT_FOUND]，不造第二语义；
+        //   读失败 / 超 SCRIPT_READ_MAX_LEN = decline（blocked，不执行）。
+        let skillScriptContent: string | undefined;
+        if (this.resolveSkillScript) {
+          const scriptAbsolutePath = this.resolveSkillScript(skillName, scriptPath);
+          if (scriptAbsolutePath) {
+            let rawContent: string;
+            try {
+              rawContent = await readFile(scriptAbsolutePath, 'utf-8');
+            } catch {
+              const readFailText = `[ERR:SCRIPT_DECLINE] 技能脚本 "${scriptPath}" 正文读取失败，拒绝执行（fail-closed：无法完成内容裁决）`;
+              emitOutcome?.(blockedOutcome('permission_denied', readFailText));
+              return readFailText;
+            }
+            if (rawContent.length > SCRIPT_READ_MAX_LEN) {
+              const tooLongText = `[ERR:SCRIPT_DECLINE] 技能脚本 "${scriptPath}" 超过 ${SCRIPT_READ_MAX_LEN} 字符上限，拒绝执行（fail-closed：超出正文裁决预算）`;
+              emitOutcome?.(blockedOutcome('permission_denied', tooLongText));
+              return tooLongText;
+            }
+            skillScriptContent = rawContent;
+          }
+        }
         // 脚本执行确认（与 run_code/run_project_script 同判据）：
         // owner + confirmScripts=false 默认放行（技能脚本来源可信，判据 B，无人值守可跑）；
         // guest 恒确认（受限权限下禁止"来源可信豁免"自主执行，缝合三脚本工具语义裂缝）；
         // confirmScripts=true 时 owner 亦确认（开关语义 = "脚本执行二次确认"，对全部脚本生效）。
         // 无 OS 级沙箱（子进程直跑 + env 继承用户环境），故不能以 Codex workspace-write 的
         // "边界内自动"前提豁免 guest。target 用技能名:脚本路径标识（无落盘绝对路径）。
+        // 正文经 skillScriptContent 进同一个 classifyCommand：deny 恒拦 / always-ask 恒弹 /
+        // normal 回落档位；拿不到正文（未注入 resolver 或解析不到）时只判档位。
         const execConfirmed = await this.confirmByEntry(
           requireConfirmingEntry('run_skill_script'),
           `skill:${skillName}:${scriptPath ?? ''}`,
           'run_skill_script',
           `执行技能 ${skillName} 的脚本 ${scriptPath ?? ''}`,
-          // ⚠️ 本面**不传正文**：技能脚本由宿主注入的回调执行（`runSkillScript`），内核拿不到
-          // 脚本内容 ⇒ 不做内容裁决，行为与补齐前一致。缺口诚实登记（不假装四面都补了）：
-          // 出路在宿主侧执行器（沙箱/策略归宿主，ADR-040 第 5 条），不在内核强行读一次再执行
-          // ——那会引入「裁决读的」与「实际执行的」两份内容的漂移。
+          skillScriptContent,
         );
         if (!execConfirmed) {
           // 用户/系统拒绝执行 = 主动挡下（permission_denied），非执行失败。

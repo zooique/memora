@@ -6,11 +6,14 @@
  * 又是 `toolExecutor` 的 `run_command` 分支 ⇒ 命令内容裁决只锁**一个**执行面，其余执行面
  * 走 `confirmScriptRun` 只判权限档位、不看执行内容 ⇒ 「把 git push 写进脚本」零护栏。
  *
- * **现状（2026-10-25 补齐，CMD-1-BYPASS 关闭）**：`confirmScriptRun` 接受可选 `content`
- * 并把它喂给**同一个** `classifyCommand`（判据仍单点）⇒ run_code / run_project_script 两个
- * 面已按正文裁决（deny 恒拦 / always-ask 恒弹）。**剩余缺口**：`run_skill_script` 由宿主
- * 注入的回调执行，内核拿不到正文 ⇒ 该面仍只判档位（不假装四面都补了；出路在宿主侧执行器，
- * 见 ADR-040 第 5 条「沙箱/策略归宿主」）。
+ * **现状（2026-10-25 CMD-1-BYPASS + CMD-1-CONTENT 双双关闭，四个执行面齐）**：
+ * `confirmScriptRun` 接受可选 `content` 并把它喂给**同一个** `classifyCommand`
+ * （判据仍单点）⇒ run_code / run_project_script / run_skill_script 三个 script 面
+ * **全部**按正文裁决（deny 恒拦 / always-ask 恒弹 / normal 回落档位）。
+ * run_skill_script 的正文来源 = 内核 assembler 注入的 `resolveSkillScript` 回调
+ * （与执行回调同一个解析函数——路径解析与执行本就在内核，2026-10-25 探口实证推翻
+ * 「宿主回调执行、内核拿不到正文」的旧前提）；解析不到 = 不传正文（维持
+ * [ERR:SCRIPT_NOT_FOUND] 语义），读失败 / 超 SCRIPT_READ_MAX_LEN = fail-closed decline。
  *
  * 本表的价值不因补洞而消失：它仍然是「每个执行面走哪个确认入口」的唯一真源，且 script 面
  * 的语义现在是「档位判据 + 可选内容裁决」，与 command 面「内容裁决 + 档位判据」仍不同构。

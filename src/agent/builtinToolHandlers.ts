@@ -97,12 +97,16 @@ function clampCharsToTokenBudget(line: string, budget: number): string {
  * （LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS），不使用字符上限，
  * 故本常量与 read_file 不在同一量纲，无「谁更宽松」的可比关系。
  *
+ * 消费面两处（CMD-1-CONTENT 起）：`readScriptFile`（run_code / run_project_script
+ * 的读取与裁决读）+ toolExecutor 的 run_skill_script 确认点读（技能脚本正文裁决）。
+ * 三者共用本常量 = 脚本正文预算唯一上限，禁为技能脚本单造第二套。
+ *
  * 与 utils/fileSafe.DEFAULT_MAX_CONTENT_LEN 同为 200_000 属**异义同值**，勿误合并：
  *   - 本常量：脚本原样读取上限（超限报错，内容交执行器）；
  *   - DEFAULT_MAX_CONTENT_LEN：内容文件读取上限（超限截断，内容入上下文）。
  * 两者各自独立演进，改一侧不联动另一侧。
  */
-const SCRIPT_READ_MAX_LEN = 200_000;
+export const SCRIPT_READ_MAX_LEN = 200_000;
 
 /**
  * 内置文件工具忽略的目录/文件名（模块级单一真理源）
