@@ -165,7 +165,7 @@ if (useAppend) {
     `# ${args.version} ${args.kind === 'host' ? '宿主' : '内核'}归档`,
     '',
     `> 状态：待上架（发版动作跑完后订正为「已发布」）`,
-    `> 本文件由 scripts/archive-kernel-release.mjs 生成（--kind ${args.kind}）；条目 ID 沿用主台账不改。`,
+    `> 本文件由 .trae/skills/memora-kernel-release/scripts/archive-kernel-release.mjs 生成（--kind ${args.kind}）；条目 ID 沿用主台账不改。`,
     `> 迁移 ID：${toReplace.map((b) => b.id).join(' / ')}`,
     '',
     '---',

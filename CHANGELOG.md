@@ -1,17 +1,17 @@
 # Changelog
 
-本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号：内核变更定档独立版本号（最新已发布 **5.0.0** · 2026-10-23；在册未发 **5.1.0**，见下），宿主变更随 `vsce package` 定版独立成区（最新已发布 **0.2.0** · 2026-10-23；在册未发 **0.3.0**，见下，ADR-033）。
+本文件记录 **@zooique/memora（内核 npm 包）**的版本变更。**宿主**（`hosts/memora-vscode`）不在发布包 `files` 白名单内（见 `package.json`），不占内核版本号：内核与宿主各按自己的版本号成区（ADR-033），**已发布与否以 npm registry 为准**（内核 `npm view @zooique/memora dist-tags.latest`；宿主见 Marketplace / Open VSX）——本文件不复述该状态，只记各版本改了什么。
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **版本定位（v5.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。**4.0.0**：导出面收敛（−54）+ `agent.memory.search()` 退役（唯一入口 `searchByKeyword()`）。**5.0.0（当前）**：公开面大收面（删 23 导出 + 32 成员 + 3 事件）+ 多项目形态定案（一个 Agent = 一个项目）+ 三套空转机制退役 + SQLite 存储——逐项改法见[升级指南](docs/memora-升级指南-4.x-到-5.0.0.md)。**5.1.0（在册未发）**：MCP 工具接入的内核接口（`ToolDefinition.confirmPolicy` + `SecurityGuard` 单一确认入口）+ 脚本族执行面四面按正文裁决（`CMD-1-BYPASS` / `CMD-1-CONTENT`）——零删除、零既有签名变更。**4.0.0 及更早版本全文**：`docs/CHANGELOG-归档.md`（仓库内归档，npm 包不含）。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与全量单测负责，不对"agent 整体行为稳定"作承诺。
+> **版本定位（v5.0.0）**：**Node.js 专属 · 零第三方运行时依赖的 Agent 内核**（依赖 `node:*` 内置模块，不引第三方运行时依赖 / native / 宿主 API）。**4.0.0**：导出面收敛（−54）+ `agent.memory.search()` 退役（唯一入口 `searchByKeyword()`）。**5.0.0**：公开面大收面（删 23 导出 + 32 成员 + 3 事件）+ 多项目形态定案（一个 Agent = 一个项目）+ 三套空转机制退役 + SQLite 存储——逐项改法见[升级指南](docs/memora-升级指南-4.x-到-5.0.0.md)。**5.1.0**：MCP 工具接入的内核接口（`ToolDefinition.confirmPolicy` + `SecurityGuard` 单一确认入口）+ 脚本族执行面四面按正文裁决（`CMD-1-BYPASS` / `CMD-1-CONTENT`）——零删除、零既有签名变更。**4.0.0 及更早版本全文**：`docs/CHANGELOG-归档.md`（仓库内归档，npm 包不含）。内核不内置 agent 级行为评估（eval）/ 独立验证——由宿主基于内核可观测性（ITracer / 事件 / 指纹）自行承担；内核对接口契约与全量单测负责，不对"agent 整体行为稳定"作承诺。
 >
 > 本文件 2026-10-19 起按 `CHLOG-TRIM-1` 精简：只记「改了什么 + 为什么 + 对消费者的影响」；逐批拍板过程、变异验证收据、台账叙事的 SSOT 在仓库台账 `tasks/待完成任务.md` 对应 ID 条目（npm 包不含），此处只留 ID 锚保交叉引用。
 
-## [5.1.0] · 未发布（Unreleased · 内核轴 · 2026-10-23 开区）
+## [5.1.0] · 2026-10-25
 
-> **本区归属**：仅**内核**变更；SemVer = **minor**（零删除 / 零既有签名变更 / 零既有行为变化——**例外仅两处**：① 脚本族执行面按正文裁决，命中黑名单/恒弹清单的执行行为按修复方向收紧，见 Fixed 区；② 写侧护栏判据改为「无进展」（`write_loop` 只计整文件覆盖与连续失败写，增量写不再计数），见 Fixed 区，不构成破坏性）。公开面增量 = `ToolDefinition` 加可选字段 + `SecurityGuard` 加一个入口方法 + `SCRIPT_READ_MAX_LEN` 改为导出。宿主侧 MCP 消费面（连接 / 设置页 / 审批卡）随宿主下一版独立成区、不占内核版本号（ADR-033）。逐条拍板与变异验证收据见台账 `tasks/待完成任务.md` 内核 5.1.0 区（`D1-MCP` / `CMD-1-BYPASS` / `CMD-1-CONTENT` / `GUARD-WRITE-PROGRESS-1`）。
-> **出包前必做**：本标题的「未发布」须改为**实际发布日期**——`scripts/verify-changelog-version.mjs`（挂 `release.yml`，不进 pre-push）校验「合法日历日期 + 与发布日相差 ≤1 天」；已发布版本的 npm tarball 不可变、改不回来（`RELEASE-CHLOG-DATE-1` 血训）。
+> **本区归属**：仅**内核**变更；SemVer = **minor**（零删除 / 零既有签名变更；**行为变化共三处、均为修复方向、不构成破坏性**：① 脚本族执行面按正文裁决，命中黑名单/恒弹清单的执行行为收紧；② 写侧护栏判据改为「无进展」（`write_loop` 只计整文件覆盖与连续失败写，增量写不再计数）；③ `task_table_update` 不再被跨轮幂等跳过（防回喂旧任务表）。三者均见 Fixed 区）。公开面增量 = **仅** `ToolDefinition` 加可选字段 `confirmPolicy`（类型面）；`SecurityGuard.requestToolCallConfirmation` 与 `SCRIPT_READ_MAX_LEN` 均为**内核内部模块导出**（不在包入口 `src/index.ts`），经 `Agent` 装配路径消费，不计入公开面。宿主侧 MCP 消费面（连接 / 设置页 / 审批卡）随宿主下一版独立成区、不占内核版本号（ADR-033）。逐条拍板与变异验证收据见仓库台账（npm 包不含）：`D1-MCP` / `CMD-1-BYPASS` 在 `tasks/待完成任务.md` 内核 5.1.0 区；`CMD-1-CONTENT` / `GUARD-WRITE-PROGRESS-1` / `IDEM-TASK-TABLE-1` 在 `tasks/archive/5.1.0-kernel.md`。
+> **发版纪律**：本区标题日期即**实际发布日**——`scripts/verify-changelog-version.mjs`（挂 `release.yml`，不进 pre-push）校验「合法日历日期 + 与发布日相差 ≤1 天」；已发布版本的 npm tarball 不可变、改不回来（`RELEASE-CHLOG-DATE-1` 血训），故日期须在打 tag 前定稿。
 
 ### Added（内核）
 
@@ -23,6 +23,12 @@
 - `ToolExecutor.removeTool()` 的 JSDoc 由「供测试场景使用」扩为「运行时可注销」（`K2`，零代码改动）——宿主据此实现 MCP server 停用与工具集整换。
 - **对消费者**：纯增量。不声明 `confirmPolicy` 的既有自定义工具行为完全不变；要接入动态工具源的宿主声明字段即得审批 + 审计。
 - ⚠️ **本期刻意不做**（`K3`，有判据的拒绝）：不放宽 `ToolDefinition.parameters` 的 schema 类型（不支持嵌套 object / enum / anyOf）——`loop.ts` 的 prompt 渲染器只读顶层 `type`/`description`，放宽须连带改模型可见文案并回归全部内置工具，收益不抵风险；宿主侧以「结构映射 + 约束搬 description」适配。
+
+**内置角色包 L1 增「编辑纪律基线」（`GUARD-WRITE-PROGRESS-1` 配套 · 2026-10-25）**
+
+- 三个内置包（`memora助手` / `共鸣小说家` / `白话方案设计师`）的 `rules.md` 增一条**领域无关的编辑纪律**：增量写入优先（`replace` / `insert` / `append`）、同一文件多处修订在**同一回复内连续发出**、整文件覆盖仅用于确需重建且不反复覆盖、复核只读改动片段。`role-packs/` 在 `package.json#files` 内，**消费者可见**。
+- 作者指南 §2.4 同步该基线，并明示 **L1（`rules.md` / `persona.md`）不得写运行时拒绝令牌**（`[WRITE_LOOP_STOP]` / `[WRITE_FAIL_STOP]`）——L1 常驻 system prompt，令牌会干扰「按令牌定位运行时拒绝消息」的消费方（纪律真源 `src/agent/guardRail.ts` GUIDELINES）。
+- **为什么**：写侧护栏只拦「无进展」，**不拦「慢」**——真正决定模型行为的纪律必须写在 L1；真机 `round-1792904123909`（7 次被拦、5 处修订拖到下轮、27 分钟 / 116 万输入 token）即缺该条所致。
 
 ### Fixed（内核）
 
@@ -51,6 +57,12 @@
 - 新增**放行钩子** `onAllow` / `notifyAllow`（同批洞补丁，真机 `round-1792919558093`）：同批工具调用先集中判定、后统一执行，判定阶段看不到结果 ⇒ 只靠执行后回喂的连写计数会被「一条回复内连发 N 次整文件覆盖」整批绕过（实测 6 次全部放行）。现于派发时**预登记整文件覆盖意图**，第 5 次同批覆盖即拦；执行回喂消费预登记（一次写只计一次），被拦未执行则撤销。增量写不登记（批量逐处修订仍零计数）。`write_fail` 刻意不预登记——批内看不到失败结果，预拦会误伤同批中本可成功的写。
 - 文案：`[WRITE_LOOP_STOP]` 的出口改为**可执行**的「改用 replace/insert/append 增量写入」；新增 `[WRITE_FAIL_STOP]`（先读最新原文再写）。
 - **对消费者**：`BlockedReason` 未新增/未改名（仍是 `write_loop`）、零公开签名变更、零新增 metrics 字段（拦截事实已在 round 事件的 `tool_result.blocked` 中，另立计数即第二真理源）。行为向修复：同一 turn 内对同一文件的增量修订不再被封顶。
+
+**任务表更新不再被跨轮幂等跳过（`IDEM-TASK-TABLE-1` · 2026-10-25）**
+
+- `BUILTIN_TOOL_IDEMPOTENCY.task_table_update`：`idempotent` → `non-idempotent`。**为什么**：幂等键只有 `name + 完整 args`，而 `task_table_update` 的 `plan_item_id` 是**位置序号**——跨轮 `task_table_write` 重写任务表后，同序号可能指向另一个任务项；此时同 args 重发会被「仅一次语义」跳过并回喂上一轮的旧任务表摘要 = **向模型谎报「已更新」而实际未更新**（真机观测：回显旧任务项）。重跑本身无害（状态确定），故与 `delete_file` 同判据——归入「禁止跳过」而非「重跑有害」。
+- **对消费者**：`IdempotencyLevel` 枚举未变、零签名变更；仅该工具不再被跳过。内置映射现**无** `idempotent` 级工具（级别本身保留，供宿主自定义工具声明）。
+- 同族**未改**（登记观察，不随本版动）：`write_file`（`idempotent-key`）跨轮「同 path + 同 content」仍会跳过——若文件在两次调用间被外部删除/改动，同内容重写不会落盘。无真机实证，且该跳过是核心重试去重通道，改动面大。
 
 ## [5.0.0] · 2026-10-23
 

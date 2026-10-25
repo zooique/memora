@@ -1,8 +1,8 @@
-# Memora · 接入指南 v5.0.0
+# Memora · 接入指南 v5.1.0
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
-> **当前内核版本**：v5.0.0（对齐当前内核包版本 `package.json`）。各版完整变更见 [CHANGELOG](../CHANGELOG.md)。
+> **当前内核版本**：v5.1.0（对齐当前内核包版本 `package.json`）。各版完整变更见 [CHANGELOG](../CHANGELOG.md)。
 >
 > **最新已发布版本**：以 npm registry 为准（`npm view @zooique/memora dist-tags.latest`），不在包内复述。
 >
