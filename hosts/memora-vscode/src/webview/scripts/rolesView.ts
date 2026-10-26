@@ -196,6 +196,15 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
           hint: '请先打开一个工作区，或安装角色包后重新加载',
         }),
       );
+      // 空态必须同批收敛分页态：早退不清 pager ⇒ 分页条留着上一轮页码与条数，表现为
+      // 「声称有 N 条、双向可翻、永远对应空列表」的幽灵条（2026-10-26 实测：17 角色翻到
+      // 第 2 页后清空 ⇒ 仍显示「第 2 / 2 页（共 16 条）」。成因不是 othersAll 被清空——
+      // 早退反而不清——而是它**没被清**，fetchPage 切的是旧数组）。
+      // 两行各管一件事：`othersAll` 是 lastData.packs 的派生，必随源同步（空态下它没有
+      // 读取路径 ⇒ 无守门测试，MUT-6 删掉不红，保留依据是 SSOT 不是防御）；pager 收敛有
+      // 守门例（rolesView.test.ts「空列表 → 分页态同批收敛」）。
+      othersAll = [];
+      pager.showKeepingPage([]);
       return;
     }
     activeName = data.activeName;

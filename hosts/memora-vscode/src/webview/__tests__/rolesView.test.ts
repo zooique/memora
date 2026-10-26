@@ -616,4 +616,21 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
     // 末页有内容：激活角色 p0 + 末页唯一一条 p9
     expect(document.querySelectorAll('#list .card')).toHaveLength(2);
   });
+
+  it('roles_loaded 空列表 → 分页态同批收敛（不留「有 N 条却永远空」的幽灵分页条）', () => {
+    mountRolesView();
+    dispatchLoaded(makePacks(18), 'p0');
+    pagerBtn('下一页 ›').click();
+    expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 17 条）');
+
+    // 角色包被清空（用户删包 / 换工作区）：空态分支必须同时收掉分页条。
+    // 反例形态（本用例要防的）：分页条仍显示「第 2 / 2 页（共 16 条）」且双向可点，
+    // 而 list 里只有空态引导——用户看到的是一个永远翻不出内容的条。
+    dispatchLoaded([], '');
+    expect(document.querySelector('.empty-title')?.textContent).toBe('暂无角色包');
+    expect((document.querySelector('.pager-bar') as HTMLElement).hidden).toBe(true);
+    expect(pagerBtn('‹ 上一页').disabled).toBe(true);
+    expect(pagerBtn('下一页 ›').disabled).toBe(true);
+    expect(document.querySelectorAll('#list .card')).toHaveLength(0);
+  });
 });
