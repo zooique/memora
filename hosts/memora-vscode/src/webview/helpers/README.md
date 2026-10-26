@@ -13,6 +13,14 @@ Webview 渲染层纯函数 / 工具（时间格式化、工具名映射、上下
   注意：本文件被 **host 侧**设置面板（`panels/settingsPanel.ts`）使用（host 翻译后推 webview），
   归入 helpers 因其是「能力名 → 中文标签」的展示层纯映射，与 toolNameMap 同类；既可为 host
   侧面板服务，也可被 webview 脚本 import（无 DOM 副作用，esbuild 各端安全）。
+- `strategyKeyMeta.ts` — 角色策略键中文元数据（`STRATEGY_KEY_META`，键名 → label/tip/值映射）
+  + 详情值本地化（`formatDetailValue`）。与 `capabilityLabels.ts` 同类（领域无关的展示映射表），
+  从 `scripts/rolesView.ts` 抽出。键集由 `__tests__/rolesKeyface.test.ts` 与内核
+  `describeStrategyKeys()` **双向锁定**，漏翻译或拼错键名都会红。
+- `strategyForm.ts` — 角色策略键表单的收集语义（`collectStrategyFromForm` + `StrategyFormCell`）：
+  空格子 / 空多选 / 未勾开关一律不写入（保持「未声明」语义），键面未覆盖的原文键原样并入。
+  与 `strategyKeyMeta.ts` 分开是因为两者 `kind` 不同源（本文件是 5 值控件形态，元数据表只有
+  `control?: 'switch'` 一个覆盖标记）。
 - `docContext.ts` — 对话上下文信封的构造与剥离：导出 `buildDocContextBlock` +
   `buildInjectedContextEnvelope` + `stripInjectedContextPrefix`（技能块 / 文档块的
   写入与剥离**同文件对偶**，防两侧格式漂移）。

@@ -19,6 +19,10 @@ import type {
 import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
 import { createPager, PagerController } from './pager.js';
 import { getIconSvg } from './icons.js';
+import { STRATEGY_KEY_META, formatDetailValue } from '../helpers/strategyKeyMeta.js';
+import type { StrategyKeyMetaEntry } from '../helpers/strategyKeyMeta.js';
+import { collectStrategyFromForm } from '../helpers/strategyForm.js';
+import type { StrategyFormCell } from '../helpers/strategyForm.js';
 
 /** 「其他角色」每页条数（分页组件；激活角色恒显不参与分页） */
 const ROLE_PAGE_SIZE = 8;
@@ -95,113 +99,6 @@ interface KeyFaceItem {
   range?: { min: number; max: number };
 }
 
-/** 单键中文元数据（STRATEGY_KEY_META 值类型）：标签 + 悬停含义 + 可选值中文映射 */
-export interface StrategyKeyMetaEntry {
-  /** 中文名（格子标签） */
-  label: string;
-  /** 悬停含义（一句话：这个键管什么 + 留空行为） */
-  tip: string;
-  /** 枚举值中文映射（enum 键用；缺省显示原文） */
-  valueLabels?: Record<string, string>;
-  /** 多选选项中文映射（multi 键用；缺省显示原文） */
-  optionLabels?: Record<string, string>;
-  /** 控件形态覆盖（缺省按键面 kind 渲染）：selfReview 是布尔数字语义（0=关/正整数归一 1），用开关而非数字框呈现 */
-  control?: 'switch';
-}
-
-/**
- * 策略键中文标签映射（键名 → 中文标签 + 悬停含义）。
- *
- * 为什么在 webview 而非内核：内核领域无关，不背中文文案（四层分工，方案 §2）。
- * 降级保护：内核新键宿主未配标签 → 格子照常出现（数据来自键面），标签/提示兜底显示键名原文。
- * 守卫：键面一致性测试双向锁定本映射键集 ↔ 内核 describeStrategyKeys() 键集，
- * 内核加键漏翻译 / 本表拼错键名都会红（防「键名拼错静默失败」，内核对未知键只 warning）。
- */
-export const STRATEGY_KEY_META: Record<string, StrategyKeyMetaEntry> = {
-  summaryFocus: {
-    label: '提炼视角',
-    tip: '告诉记忆摘要往哪个方向提炼（如 code、creative），最长 500 字符；留空用通用摘要',
-  },
-  toolMode: {
-    label: '工具模式',
-    tip: 'allow = 允许使用工具；block = 纯对话不执行任何工具',
-    valueLabels: { allow: '允许工具', block: '禁止工具' },
-  },
-  temperature: {
-    label: '生成温度',
-    tip: '越高越有创意、越低越稳定（0.0~2.0）；留空用默认 0.7',
-  },
-  outputLimit: {
-    label: '输出上限',
-    tip: '单轮回答的最大 token 数；0 或留空 = 不干预（交给模型/服务商默认）',
-  },
-  toolStepLimit: {
-    label: '工具步数上限',
-    tip: '单轮最多执行多少步工具（0 = 不限制）；留空用默认',
-  },
-  providerRouting: {
-    label: '模型路由',
-    tip: 'auto = 按任务自动选模型；fixed = 固定当前模型',
-    valueLabels: { auto: '自动路由', fixed: '固定模型' },
-  },
-  multiStepReasoning: {
-    label: '多步推理',
-    tip: 'auto = 复杂任务自动深入思考；manual = 快速直接回答',
-    valueLabels: { auto: '自动推理', manual: '手动推理' },
-  },
-  toolReadonly: {
-    label: '工具权限',
-    tip: 'full = 完整读写；readonly = 仅只读操作（更安全）',
-    valueLabels: { full: '完整权限', readonly: '只读模式' },
-  },
-  summary: {
-    label: '记忆摘要',
-    tip: 'on = 每轮对话后生成记忆摘要；off = 不生成',
-    valueLabels: { on: '开启', off: '关闭' },
-  },
-  selfReview: {
-    label: '完成自审',
-    tip: '开启后回答完成前先自查一次再交付；关闭 = 不自查',
-    control: 'switch',
-  },
-  userFollowup: {
-    label: '追问策略',
-    tip: 'ask = 任务说不清时主动反问；silent = 只等用户输入',
-    valueLabels: { ask: '主动追问', silent: '静默等待' },
-  },
-  askOn: {
-    label: '主动提问时机',
-    tip: '允许角色向你提问的情形，可多选组合；全部不勾 = 不主动提问',
-    optionLabels: {
-      ambiguity: '任务有歧义时',
-      decision: '要做决定时',
-      missing_info: '信息不足时',
-      confirm: '执行前确认',
-    },
-  },
-  askLimit: {
-    label: '提问次数上限',
-    tip: '单轮回答最多主动提问几次（1~10）',
-  },
-  webSearchLimit: {
-    label: '联网搜索上限',
-    tip: '单轮回答最多联网搜索几次（1~20，超限自动停止搜索）；留空用默认 6',
-  },
-  errorHandling: {
-    label: '出错处理',
-    tip: '工具/模型出错时怎么办：retry=重试，degrade=降级继续，stop=终止本轮',
-    valueLabels: { retry: '重试', degrade: '降级继续', stop: '终止' },
-  },
-  contextLimit: {
-    label: '上下文上限',
-    tip: '角色自设的上下文规模（token），与模型窗口取小值；0 或留空 = 跟随模型窗口',
-  },
-  stepBudget: {
-    label: '步数预算',
-    tip: '这轮对话最多跑多少次「思考+用工具」（10~500）；0 或留空 = 用默认 50',
-  },
-};
-
 /** 策略阶段中文标题（键面分组的组头；顺序 = 键面出现序） */
 const STAGE_LABELS: Record<string, string> = {
   prepare: '回答前（Prepare）',
@@ -209,76 +106,6 @@ const STAGE_LABELS: Record<string, string> = {
   reflect: '回答后（Reflect）',
   global: '全局',
 };
-
-/** 详情值渲染：数组（askOn 多选）走选项中文映射，枚举走值中文映射，其余原样字符串化（对象 JSON 兜底） */
-function formatDetailValue(meta: StrategyKeyMetaEntry | undefined, value: unknown): string {
-  if (Array.isArray(value)) {
-    return value.map((v) => meta?.optionLabels?.[String(v)] ?? String(v)).join(' / ');
-  }
-  const s = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
-  return meta?.valueLabels?.[s] ?? s;
-}
-
-/** 表单快照单元（收集 strategy 前的中间形态）：DOM 读取薄封装后的纯数据 */
-export interface StrategyFormCell {
-  /** 所属策略阶段 */
-  stage: string;
-  /** 键名 */
-  key: string;
-  /** 控件形态（switch = 布尔数字键的开关覆盖形态） */
-  kind: 'enum' | 'number' | 'text' | 'multi' | 'switch';
-  /** 控件原始值：enum/number/text=字符串（''=空格子）/ multi=勾选值数组 / switch=布尔 */
-  raw: string | readonly string[] | boolean;
-}
-
-/**
- * 从表单快照收集 strategy 段（纯函数，保存链路可测）。
- *
- * 语义纪律（方案 §3）：
- *   - 空格子 = 不写入该键（保持「未声明」语义，不是写 0）；
- *   - 多选全不勾 = 不写入（空数组会被内核 isAskOn 判错，等价「未声明」）；
- *   - 开关未勾 = 不写入（selfReview 默认 0=关，未声明与 0 同语义，不固化 0）；
- *   - preserved：原文中键面未覆盖的键（内核新增键宿主未升级 / 未知键）原样并入，
- *     防止「整段替换 strategy」时静默丢数据（保真红线）。
- */
-export function collectStrategyFromForm(
-  cells: readonly StrategyFormCell[],
-  preserved?: Record<string, Record<string, unknown>>,
-): Record<string, Record<string, unknown>> {
-  const out: Record<string, Record<string, unknown>> = {};
-  for (const c of cells) {
-    let value: unknown;
-    if (c.kind === 'multi') {
-      const arr = [...(c.raw as readonly string[])];
-      if (arr.length === 0) continue;
-      value = arr;
-    } else if (c.kind === 'switch') {
-      if (c.raw !== true) continue;
-      value = 1;
-    } else {
-      const s = (c.raw as string).trim();
-      if (s === '') continue;
-      if (c.kind === 'number') {
-        // 输入框原文转数值；type=number 输入框坏值表现为 ''（上方已挡），此处再防 NaN
-        const n = Number(s);
-        if (!Number.isFinite(n)) continue;
-        value = n;
-      } else {
-        value = s;
-      }
-    }
-    (out[c.stage] ??= {})[c.key] = value;
-  }
-  // 键面未覆盖的原文键原样保留（透明保真，不静默丢弃）
-  if (preserved) {
-    for (const [stage, kv] of Object.entries(preserved)) {
-      for (const [key, v] of Object.entries(kv)) {
-        (out[stage] ??= {})[key] = v;
-      }
-    }
-  }
-  return out;
-}
 
 /**
  * 初始化角色管理面板 webview 交互

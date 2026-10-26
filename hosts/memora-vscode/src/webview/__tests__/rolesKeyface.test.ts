@@ -14,11 +14,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { describeStrategyKeys } from '@zooique/memora';
-import {
-  STRATEGY_KEY_META,
-  collectStrategyFromForm,
-  type StrategyFormCell,
-} from '../scripts/rolesView.js';
+import { STRATEGY_KEY_META } from '../helpers/strategyKeyMeta.js';
+import { collectStrategyFromForm, type StrategyFormCell } from '../helpers/strategyForm.js';
 
 describe('键面一致性守卫（RP-EDIT-1 核心护栏）', () => {
   /** 内核键面键集（stage.key 复合键；键名跨阶段唯一，plain key 亦不撞） */
@@ -33,7 +30,7 @@ describe('键面一致性守卫（RP-EDIT-1 核心护栏）', () => {
     const missingInMeta = [...kernelPlainKeys].filter((k) => !metaKeys.has(k));
     expect(
       missingInMeta,
-      `内核键面新增了键但 webview STRATEGY_KEY_META 缺少中文标签：[${missingInMeta.join(', ')}]。请在 rolesView.ts 的 STRATEGY_KEY_META 补 label/tip（缺失时 UI 兜底显示英文键名）。`,
+      `内核键面新增了键但 webview STRATEGY_KEY_META 缺少中文标签：[${missingInMeta.join(', ')}]。请在 helpers/strategyKeyMeta.ts 的 STRATEGY_KEY_META 补 label/tip（缺失时 UI 兜底显示英文键名）。`,
     ).toEqual([]);
     // 方向二：webview 写了、内核没有 → 键名拼错或已删除
     const extraInMeta = [...metaKeys].filter((k) => !kernelPlainKeys.has(k));

@@ -65,10 +65,6 @@ export default [
     rules: { 'max-lines': ['error', { max: 974 }] },
   },
   {
-    files: ['src/webview/scripts/rolesView.ts'], // 观察（超 1000，先冻结基线）
-    rules: { 'max-lines': ['error', { max: 1149 }] },
-  },
-  {
     files: ['src/shared/protocol.ts'], // DOC（契约注释型，物理行非判据 → off）
     rules: { 'max-lines': 'off' },
   },
