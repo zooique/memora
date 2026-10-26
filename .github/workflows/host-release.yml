@@ -234,20 +234,24 @@ jobs:
         run: npx --yes ovsx@1.3.0 publish "$VSIX" --trusted-publishing
 
       # 发布后回查：ovsx 退出码 0 只代表上传被接受，不代表市场已生效（入库延迟无法自证）。
-      # 故回读 registry API 断言 latest == 本次 tag 版本；最多等 100 秒。
+      # 故回读 registry API 断言 latest == 本次 tag 版本；最多等 10 分钟（30 次 × 20 秒）。
+      #
+      # ⚠️ 为什么不是 100 秒（2026-10-26 实测，0.3.0 那笔）：上传被接受后市场仍显示旧版本，
+      #   等满 100 秒窗口退出 1，而再过一会儿 registry 已是 0.3.0 ⇒ 门禁「假红」，
+      #   红的是判据窗过短，不是发布失败。入库延迟不可控，判据只能放宽到实测上限之外。
       - name: 核对 Open VSX 上版本已生效
         if: github.event_name == 'push'
         run: |
           set -euo pipefail
           VER="${GITHUB_REF_NAME#vscode@}"
-          for i in $(seq 1 10); do
+          for i in $(seq 1 30); do
             GOT=$(curl -fsS https://open-vsx.org/api/zooique/memora-vscode | node -p 'JSON.parse(require("fs").readFileSync(0,"utf8")).version' || echo '')
             if [ "$GOT" = "$VER" ]; then
               echo "Open VSX: zooique.memora-vscode = $VER"
               exit 0
             fi
-            echo "第 $i 次回查：市场仍为 '$GOT'（期望 $VER），10 秒后重试"
-            sleep 10
+            echo "第 $i 次回查：市场仍为 '$GOT'（期望 $VER），20 秒后重试"
+            sleep 20
           done
           echo "::error::Open VSX 上未见到 $VER（发布步未报错但市场未更新）——人工核对 https://open-vsx.org/extension/zooique/memora-vscode"
           exit 1
