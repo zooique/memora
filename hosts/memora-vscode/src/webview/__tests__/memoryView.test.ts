@@ -88,6 +88,13 @@ function dispatchSearchResult(query: string, hits: MemoryItemDto[]): void {
   );
 }
 
+/** 向 webview 分发一条 memory_page_result 消息（模拟宿主翻页应答） */
+function dispatchPageResult(page: number, items: MemoryItemDto[]): void {
+  window.dispatchEvent(
+    new MessageEvent('message', { data: { type: 'memory_page_result', page, items } }),
+  );
+}
+
 /** 向 webview 分发一条 governance_loaded 消息，驱动治理区渲染 */
 function dispatchGovernanceLoaded(stats: GovernanceStatsDto): void {
   window.dispatchEvent(
@@ -542,13 +549,6 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
   });
 
   describe('记忆分页（2026-09-08 通用分页组件）', () => {
-    /** 分发 memory_page_result（模拟宿主翻页应答） */
-    function dispatchPageResult(page: number, items: MemoryItemDto[]): void {
-      window.dispatchEvent(
-        new MessageEvent('message', { data: { type: 'memory_page_result', page, items } }),
-      );
-    }
-
     it('超过一页（total > 20）→ 分页条可见 + 计数「第 1 / N 页」+ 下一页可用', () => {
       mountMemoryView();
       // 45 条按 20/页 = 3 页；首屏带第 1 页 20 条
@@ -621,6 +621,64 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
         Array.from({ length: 15 }, (_, i) => makeMemory({ id: `m${i}`, name: `记忆${i}` })),
       );
       expect((document.querySelector('.pager-bar') as HTMLElement).hidden).toBe(true);
+    });
+
+    /**
+     * 被动重推 ≠ 重置（2026-10-26，refreshAll 转可见补刷的前置条件）
+     *
+     * 设置面板开了 retainContextWhenHidden ⇒ 每次由隐藏转可见都会重推 memory_loaded。
+     * 首屏载荷只含第 1 页数据：直接 show(1, …) 会把第 1 页数据贴上第 N 页的页码。
+     */
+    it('被动重推 memory_loaded（已在第 2 页）：走 memory_page 取该页，不拿第 1 页数据顶替', () => {
+      const { postMessage } = mountMemoryView();
+      dispatchLoaded(
+        { total: 45, bySource: { 'round-summary': 45 } },
+        Array.from({ length: 20 }, (_, i) => makeMemory({ id: `m${i}`, content: `首屏${i}` })),
+      );
+      document.querySelectorAll<HTMLButtonElement>('.pager-btn')[1]!.click(); // 翻到第 2 页
+      dispatchPageResult(
+        2,
+        Array.from({ length: 20 }, (_, i) => makeMemory({ id: `p2-${i}`, content: `页二${i}` })),
+      );
+      expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 45 条）');
+      postMessage.mockClear();
+
+      // 重推：总数变 46，载荷仍是「第 1 页 20 条」
+      dispatchLoaded(
+        { total: 46, bySource: { 'round-summary': 46 } },
+        Array.from({ length: 20 }, (_, i) => makeMemory({ id: `m${i}`, content: `首屏${i}` })),
+      );
+
+      // DOM 未被第 1 页数据覆盖（仍显示页二内容），并按既有增量通道重新取第 2 页
+      expect(document.querySelector('.mem-card-preview')?.textContent).toBe('页二0');
+      expect(postMessage).toHaveBeenCalledWith({ type: 'memory_page', page: 2, pageSize: 20 });
+
+      // 应答后页码与新总数一致
+      dispatchPageResult(
+        2,
+        Array.from({ length: 20 }, (_, i) => makeMemory({ id: `p2-${i}`, content: `页二${i}` })),
+      );
+      expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 46 条）');
+    });
+
+    it('被动重推 memory_loaded（搜索框有词）：按原词重放搜索，不把列表打回全量', () => {
+      const { postMessage } = mountMemoryView();
+      const input = document.getElementById('searchInput') as HTMLInputElement;
+      input.value = '设计';
+      dispatchSearchResult('设计', [makeMemory({ content: '搜索命中内容' })]);
+      expect(document.querySelector('.search-summary')?.textContent).toBe('「设计」命中 1 条');
+      postMessage.mockClear();
+
+      dispatchLoaded({ total: 2, bySource: { 'round-summary': 2 } }, [
+        makeMemory({ id: 'a', content: '全量A' }),
+        makeMemory({ id: 'b', content: '全量B' }),
+      ]);
+
+      // 重放搜索走同一检索入口（不在 webview 本地过滤数组）；输入框与列表保持同一上下文
+      expect(postMessage).toHaveBeenCalledWith({ type: 'memory_search', query: '设计' });
+      expect(input.value).toBe('设计');
+      expect(document.querySelector('.search-summary')?.textContent).toBe('「设计」命中 1 条');
+      expect(document.querySelector('.mem-card-preview')?.textContent).toBe('搜索命中内容');
     });
   });
 });

@@ -370,6 +370,64 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     );
   });
 
+  /**
+   * 被动重推 ≠ 重置（2026-10-26，refreshAll 转可见补刷的前置条件）
+   *
+   * 设置面板开了 retainContextWhenHidden ⇒ 每次由隐藏转可见都会重推一次 skills_loaded
+   * （见 settingsPanel.refreshAll）。旧实现对该消息一律「回第 1 页 + 整体清正文缓存」，
+   * 于是保上下文保住的是表单草稿、丢掉的却是用户正在看的页与正文。
+   */
+  it('被动重推 skills_loaded：留在当前页，不回第 1 页', () => {
+    mountSettingsView();
+    dispatchSkills(Array.from({ length: 15 }, (_, i) => makeSkill(i)));
+    document.querySelectorAll<HTMLButtonElement>('#skills-root .pager-btn')[1]!.click(); // 到第 2 页
+    expect(document.querySelector('#skills-root .pager-info')?.textContent).toBe(
+      '第 2 / 2 页（共 15 条）',
+    );
+
+    dispatchSkills(Array.from({ length: 15 }, (_, i) => makeSkill(i))); // 同一份数据重推
+
+    const items = document.querySelectorAll('.skill-item');
+    expect(items).toHaveLength(5);
+    expect(items[0]?.querySelector('.skill-name')?.textContent).toBe('skill-10');
+    expect(document.querySelector('#skills-root .pager-info')?.textContent).toBe(
+      '第 2 / 2 页（共 15 条）',
+    );
+  });
+
+  it('被动重推 skills_loaded：已展开正文保持展开（展开态是数据，不是 DOM 副作用）', () => {
+    mountSettingsView();
+    const skill = { name: 'skill-a', description: '技能 A', layer: 'builtin' as const };
+    dispatchSkills([skill]);
+
+    document.querySelector<HTMLButtonElement>('.skill-content-toggle')!.click(); // 请求正文
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'skill_content', skillName: 'skill-a', content: '正文内容' },
+      }),
+    );
+    expect(document.querySelector<HTMLElement>('.skill-content')!.hidden).toBe(false);
+
+    dispatchSkills([skill]); // 重推 → 卡片 DOM 重建
+
+    expect(document.querySelector<HTMLElement>('.skill-content')!.hidden).toBe(false);
+    expect(document.querySelector<HTMLElement>('.skill-content')!.textContent).toBe('正文内容');
+    expect(document.querySelector<HTMLButtonElement>('.skill-content-toggle')!.textContent).toBe(
+      '收起正文',
+    );
+  });
+
+  it('被动重推后数据变少（页数不够）：向前夹取到最后页，不落在空页', () => {
+    mountSettingsView();
+    dispatchSkills(Array.from({ length: 15 }, (_, i) => makeSkill(i)));
+    document.querySelectorAll<HTMLButtonElement>('#skills-root .pager-btn')[1]!.click(); // 第 2 页
+
+    dispatchSkills(Array.from({ length: 3 }, (_, i) => makeSkill(i))); // 只剩 3 个（单页）
+
+    expect(document.querySelectorAll('.skill-item')).toHaveLength(3);
+    expect((document.querySelector('#skills-root .pager-bar') as HTMLElement).hidden).toBe(true);
+  });
+
   it('已禁用徽章（S4 启停）：disabled=true 渲染「已禁用」且**条目保留**，未禁用不渲染', () => {
     mountSettingsView();
     dispatchSkills([

@@ -482,11 +482,31 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     if (msg.type === 'memory_loaded') {
       const payload = msg as MemoryLoadedPayload;
       renderStats(payload.stats);
-      activeQuery = '';
       showMemHint('', false);
-      // 首屏：memory_loaded 已带第 1 页数据，直接填充 pager（不重发 memory_page）
       listTotal = payload.stats.total;
+      // **被动重推 ≠ 重置**：面板由隐藏转可见时 refreshAll 会再推一次本消息
+      // （见 settingsPanel.refreshAll）。旧实现直接清 activeQuery + 回第 1 页 ⇒
+      // 搜索框里还有词、列表却已回到全量（两者对不上），且页码被打回第 1 页。
+      //   ① 搜索框仍有词 ⇒ 按原词重放搜索（检索只走 memory_search 一条路；
+      //      在此本地过滤数组 = 造第二套检索语义，禁止）；
+      //   ② 当前页 > 1 ⇒ 走既有 memory_page 增量通道取该页（本载荷只含第 1 页，
+      //      直接 show 会把第 1 页数据贴上第 N 页的页码）；
+      //   ③ 其余（首屏 / 已在第 1 页）照旧：直接填充，不重发请求。
+      const query = searchInput.value.trim();
+      if (query) {
+        activeQuery = query;
+        pager.setEnabled(false); // 搜索模式停用分页（与 memory_search_result 同一处置）
+        vscode.postMessage({ type: 'memory_search', query });
+        return;
+      }
+      activeQuery = '';
       pager.setEnabled(true);
+      const pageCount = Math.max(1, Math.ceil(listTotal / MEMORY_PAGE_SIZE));
+      const page = pager.getPage();
+      if (page > 1 && page <= pageCount) {
+        vscode.postMessage({ type: 'memory_page', page, pageSize: MEMORY_PAGE_SIZE });
+        return;
+      }
       pager.show(1, payload.memories, listTotal);
     } else if (msg.type === 'memory_search_result') {
       const payload = msg as SearchResultPayload;

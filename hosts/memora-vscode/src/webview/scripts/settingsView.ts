@@ -194,6 +194,15 @@ function createSkillsView({
 
   // L2 渐进披露：已加载的技能正文缓存（按技能名，跨分页保留——切页重建 DOM 后内容不丢）
   const contentMap = new Map<string, string>();
+  /**
+   * 已展开正文的技能名（**展开态唯一真源**，DOM 的 `hidden` 与按钮文案均由它派生）
+   *
+   * 为什么不能只存在 DOM 上：`renderSkillItems` 每次翻页 / 数据重推都会重建卡片 DOM。
+   * 设置面板开了 `retainContextWhenHidden`，每次切回都会重推一次 `skills_loaded`
+   * （见 settingsPanel.refreshAll）——展开态只挂在 DOM 上，用户正在读的正文每次切走
+   * 再回来都会被收起，等于把「保上下文」反向抵消掉。
+   */
+  const expanded = new Set<string>();
   /** 全量技能列表（skills_loaded 全量推送到前端，分页组件本地切片） */
   let allSkills: SkillDto[] = [];
 
@@ -206,6 +215,7 @@ function createSkillsView({
         const meta = LAYER_META[s.layer ?? 'builtin'];
         // L2 已缓存正文：预填 content（display 保持隐藏，点击「查看正文」才展开）
         const cached = contentMap.has(s.name) ? contentMap.get(s.name) || '（未找到技能正文）' : '';
+        const isOpen = expanded.has(s.name);
         return `
     <div class="skill-item ${meta.item}" data-skill-name="${escapeHtml(s.name)}">
       <div class="skill-header">
@@ -224,7 +234,7 @@ function createSkillsView({
                  <span class="skill-disable-slider"></span>
                </label>`
         }
-        <button class="skill-content-toggle btn btn-ghost" data-skill-name="${escapeHtml(s.name)}" title="查看技能正文">查看正文</button>
+        <button class="skill-content-toggle btn btn-ghost" data-skill-name="${escapeHtml(s.name)}" title="查看技能正文">${isOpen ? '收起正文' : '查看正文'}</button>
       </div>
       <p class="skill-desc">${escapeHtml(s.description)}</p>
       ${
@@ -232,7 +242,7 @@ function createSkillsView({
           ? `<ul class="skill-problems">${s.issues.map((i) => `<li class="prob-${i.level}">${escapeHtml(i.message)}</li>`).join('')}</ul>`
           : ''
       }
-      <div class="skill-content" hidden ${cached ? '' : 'data-pending="1"'}>${escapeHtml(cached)}</div>
+      <div class="skill-content" ${isOpen ? '' : 'hidden'} ${cached ? '' : 'data-pending="1"'}>${escapeHtml(cached)}</div>
     </div>
   `;
       })
@@ -255,11 +265,13 @@ function createSkillsView({
   });
   pagerCtrl = pager;
 
-  // 刷新按钮事件
+  // 刷新按钮事件：**用户显式要求重载** ⇒ 缓存与展开态一并丢弃（与「被动重推」相反，
+  // 见 skills_loaded 处理器——那条必须保状态，这条必须清状态，两者判据不同源）
   refreshBtn.addEventListener('click', () => {
     vscode.postMessage({ type: 'skills_load' });
     listEl.innerHTML = '<p class="loading-hint">加载中…</p>';
     contentMap.clear();
+    expanded.clear();
   });
 
   // 打开目录按钮事件
@@ -281,12 +293,15 @@ function createSkillsView({
       .closest('.skill-item')
       ?.querySelector('.skill-content') as HTMLElement | null;
     if (!contentEl) return;
-    // 已加载 → 用缓存内容切换展开/折叠（切页重建 DOM 后缓存仍在，正文不丢）
+    // 已加载 → 用缓存内容切换展开/折叠（切页重建 DOM 后缓存仍在，正文不丢）。
+    // 展开态写回 `expanded`：DOM 只是投影，重推 / 翻页重建后靠它恢复。
     if (contentMap.has(skillName)) {
-      const isHidden = contentEl.hidden;
+      const nextOpen = !expanded.has(skillName);
+      if (nextOpen) expanded.add(skillName);
+      else expanded.delete(skillName);
       contentEl.textContent = contentMap.get(skillName) || '（未找到技能正文）';
-      contentEl.hidden = !isHidden;
-      btn.textContent = isHidden ? '收起正文' : '查看正文';
+      contentEl.hidden = !nextOpen;
+      btn.textContent = nextOpen ? '收起正文' : '查看正文';
       return;
     }
     // 未加载 → 请求内容
@@ -311,16 +326,35 @@ function createSkillsView({
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
     if (msg.type === 'skills_loaded') {
-      // renderSkills 更新计数 + 处理空态，返回按三源排序的全量数组 → 分页组件回第 1 页
+      // renderSkills 更新计数 + 处理空态，返回按三源排序的全量数组
       allSkills = renderSkills(listEl, countEl, msg.skills);
       // 禁用集「未找到需要禁用的技能」提示（非阻断，只进 UI）。
       // 语义 = 如实报告匹配结果，不归咎用户写错；允许提前禁用尚未安装的技能。
       renderUnmatchedDisabledTip(countEl, msg.unmatchedDisabled);
-      contentMap.clear();
-      pager.show(1, allSkills.slice(0, SKILL_PAGE_SIZE), allSkills.length);
+      // **被动重推 ≠ 重置**：本消息有三个触发面（首帧 ready / 技能变更回推 / 面板由隐藏
+      // 转可见的 refreshAll）。旧实现一律回第 1 页 + 整体清空正文缓存 ⇒ 每次切走再回来
+      // 都从第 1 页重新开始，正在读的正文要重新向宿主取一次。
+      //   ① 页序未变就留在原页（页数变少时向前夹取到最后页）；
+      //   ② 正文缓存按名字逐出**已消失**的技能，不整体清空。
+      // 「整体清空」只属于用户显式点刷新（见 refreshBtn 处理器）——两个判据不同源，别合并。
+      for (const name of [...contentMap.keys()]) {
+        if (!allSkills.some((s) => s.name === name)) {
+          contentMap.delete(name);
+          expanded.delete(name);
+        }
+      }
+      const pageCount = Math.max(1, Math.ceil(allSkills.length / SKILL_PAGE_SIZE));
+      const page = Math.min(pager.getPage(), pageCount);
+      pager.show(
+        page,
+        allSkills.slice((page - 1) * SKILL_PAGE_SIZE, page * SKILL_PAGE_SIZE),
+        allSkills.length,
+      );
     } else if (msg.type === 'skill_content') {
       // L2 渐进披露：渲染技能正文（缓存内容供分页切页重建）
       const item = listEl.querySelector(`[data-skill-name="${CSS.escape(msg.skillName)}"]`);
+      // 应答即展开（下方两个分支都会把正文显示出来）⇒ 展开态同步落库，重推后才能复现
+      expanded.add(msg.skillName);
       if (msg.content) {
         contentMap.set(msg.skillName, msg.content);
       } else {
