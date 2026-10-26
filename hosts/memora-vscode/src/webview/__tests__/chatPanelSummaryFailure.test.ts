@@ -18,9 +18,8 @@
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+// 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync，见 helpers/tmpDir.ts）
+import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
 import type * as vscode from 'vscode';
 import type { Agent, AgentChunk } from '@zooique/memora';
 import { MemoraChatViewProvider } from '../panels/chatPanel.js';
@@ -121,7 +120,7 @@ function normalFlow(roundId: string): () => AsyncGenerator<AgentChunk, void, unk
 
 /** 构造 provider + 抓取 post 消息（复刻既有 harness） */
 function setup() {
-  const dir = mkdtempSync(join(tmpdir(), 'memora-summary-obs-'));
+  const dir = makeTempDir('memora-summary-obs-');
   const roundStore = new WorkspaceRoundStore(dir);
   roundStore.load();
   const store = new WorkspaceSessionStore(dir, roundStore);

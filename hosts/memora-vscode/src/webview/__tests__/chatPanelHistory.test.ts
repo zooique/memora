@@ -12,9 +12,8 @@
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+// 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync，见 helpers/tmpDir.ts）
+import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
 import type {
   Agent,
   AgentChunk,
@@ -107,7 +106,7 @@ function setup(): {
   posted: unknown[];
   resolveWebview: () => void;
 } {
-  const dir = mkdtempSync(join(tmpdir(), 'memora-chatpanel-'));
+  const dir = makeTempDir('memora-chatpanel-');
   const roundStore = new WorkspaceRoundStore(dir);
   roundStore.load();
   const store = new WorkspaceSessionStore(dir, roundStore);
@@ -1861,7 +1860,7 @@ describe('chatPanel · 崩溃残留轮打捞升级为正常 stop turn（T1，202
     appendInterrupted: ReturnType<typeof vi.fn>;
     sessionId: string;
   } {
-    const dir = mkdtempSync(join(tmpdir(), 'memora-salvage-'));
+    const dir = makeTempDir('memora-salvage-');
     const roundStore = new WorkspaceRoundStore(dir);
     roundStore.load();
     const store = new WorkspaceSessionStore(dir, roundStore);

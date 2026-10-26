@@ -5,10 +5,11 @@
  *   - search：分词 token 匹配（多关键词短语召回，而非整串子串）
  */
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Memory } from '@zooique/memora';
+// 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync，见 helpers/tmpDir.ts）
+import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
 import { WorkspaceStorage } from '../workspaceStorage.js';
 
 /** 构造一条最小 Memory（测试数据） */
@@ -30,7 +31,7 @@ describe('WorkspaceStorage.search', () => {
   let storage: WorkspaceStorage;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'memora-ws-test-'));
+    dir = makeTempDir('memora-ws-test-');
     storage = new WorkspaceStorage(dir);
     storage.load();
   });
@@ -107,7 +108,7 @@ describe('WorkspaceStorage.load 数据层清洗（阶段3 score 退役后）', (
   let memoryFile: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'memora-ws-load-'));
+    dir = makeTempDir('memora-ws-load-');
     mkdirSync(join(dir, '.memora'), { recursive: true });
     memoryFile = join(dir, '.memora', 'memories.json');
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -228,7 +229,7 @@ describe('WorkspaceStorage.migrateRetiredSettingSources（设定记忆存量清�
   let storage: WorkspaceStorage;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'memora-ws-migrate-'));
+    dir = makeTempDir('memora-ws-migrate-');
     mkdirSync(join(dir, '.memora'), { recursive: true });
     memoryFile = join(dir, '.memora', 'memories.json');
     storage = new WorkspaceStorage(dir);

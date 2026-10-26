@@ -12,6 +12,11 @@ import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+// 临时目录统一入口：套级根的本文件全部用例跑完由 afterAll 删除
+import { makeSuiteTempDir } from '../../../__tests__/helpers/tmpDir.js';
+
+/** 套级临时根（makeScope 默认 globalStorageDir 挂在其下；本文件跑完整体删除） */
+const suiteStoreRoot = makeSuiteTempDir('memora-reset-suite-');
 
 /** 内存版 configuration + 调用时序记录（hoisted 以便 vi.mock 工厂内引用） */
 const h = vi.hoisted(() => {
@@ -86,7 +91,10 @@ function makeScope(overrides?: Partial<UserDataResetScope>): UserDataResetScope 
   return {
     globalState: globalState as unknown as vscode.Memento,
     secrets: secrets as unknown as vscode.SecretStorage,
-    globalStorageDir: join(tmpdir(), 'memora-reset-nonexistent'),
+    // 套级临时根：resetUserData 会在这个路径下重建 skills/ 与 role-packs/，
+    // 故不能指向一个真实存在且共用的目录；根由统一入口 afterAll 整体删除（原固定名
+    // `%TEMP%\memora-reset-nonexistent` 每跑一次就在 %TEMP% 留一个，且跨运行同名碰撞）
+    globalStorageDir: join(suiteStoreRoot, 'memora-reset-nonexistent'),
     packageJson: SAMPLE_PACKAGE_JSON,
     ...overrides,
   };

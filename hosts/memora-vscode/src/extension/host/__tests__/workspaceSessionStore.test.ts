@@ -11,13 +11,14 @@
  *     - 空会话 / 全 tool 消息容错
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Round } from '@zooique/memora';
 import { getSessionDisplayName } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../sessionStore.js';
 import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
+// 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync，见 helpers/tmpDir.ts）
+import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
 
 /** 播种一轮问答闭环（round-based：user/assistant 成对写入 RoundStore 并登记 roundId）
  *
@@ -101,7 +102,7 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
   let roundStore: WorkspaceRoundStore;
 
   beforeEach(() => {
-    const dir = mkdtempSync(join(tmpdir(), 'memora-session-test-'));
+    const dir = makeTempDir('memora-session-test-');
     roundStore = new WorkspaceRoundStore(dir);
     roundStore.load();
     store = new WorkspaceSessionStore(dir, roundStore);
@@ -274,7 +275,7 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
   let roundStore: WorkspaceRoundStore;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'memora-session-contract-'));
+    dir = makeTempDir('memora-session-contract-');
     roundStore = new WorkspaceRoundStore(dir);
     roundStore.load();
     store = new WorkspaceSessionStore(dir, roundStore);
@@ -413,7 +414,7 @@ describe('WorkspaceSessionStore.updateSessionMeta（双层命名写点）', () =
   let roundStore: WorkspaceRoundStore;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'memora-session-updateMeta-'));
+    dir = makeTempDir('memora-session-updateMeta-');
     roundStore = new WorkspaceRoundStore(dir);
     roundStore.load();
     store = new WorkspaceSessionStore(dir, roundStore);
@@ -570,7 +571,7 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
   let roundStore: WorkspaceRoundStore;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'memora-roundstore-events-'));
+    dir = makeTempDir('memora-roundstore-events-');
     roundStore = new WorkspaceRoundStore(dir);
     roundStore.load();
   });
@@ -655,7 +656,7 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
   let roundStore: WorkspaceRoundStore;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'memora-round-sweep-'));
+    dir = makeTempDir('memora-round-sweep-');
     roundStore = new WorkspaceRoundStore(dir);
     roundStore.load();
   });
@@ -732,7 +733,7 @@ describe('WorkspaceSessionStore · 留存区分组标签', () => {
   let roundStore: WorkspaceRoundStore;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'memora-archive-test-'));
+    dir = makeTempDir('memora-archive-test-');
     roundStore = new WorkspaceRoundStore(dir);
     roundStore.load();
     store = new WorkspaceSessionStore(dir, roundStore);

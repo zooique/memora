@@ -21,9 +21,8 @@
  */
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+// 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync，见 helpers/tmpDir.ts）
+import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
 import type { Agent } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
@@ -79,7 +78,7 @@ interface AssemblyFixture {
  *  「面板是否打开」是被测判据之一，不能在 setup 里一刀切设死）
  */
 function setup(): AssemblyFixture {
-  const dir = mkdtempSync(join(tmpdir(), 'memora-assembly-'));
+  const dir = makeTempDir('memora-assembly-');
   const roundStore = new WorkspaceRoundStore(dir);
   roundStore.load();
   const store = new WorkspaceSessionStore(dir, roundStore);

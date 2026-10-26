@@ -15,9 +15,8 @@
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+// 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync，见 helpers/tmpDir.ts）
+import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
 import type { Agent, Round } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
@@ -70,7 +69,7 @@ function setup(): {
   provider: MemoraChatViewProvider;
   posted: unknown[];
 } {
-  const dir = mkdtempSync(join(tmpdir(), 'memora-manual-archive-'));
+  const dir = makeTempDir('memora-manual-archive-');
   const roundStore = new WorkspaceRoundStore(dir);
   roundStore.load();
   const store = new WorkspaceSessionStore(dir, roundStore);

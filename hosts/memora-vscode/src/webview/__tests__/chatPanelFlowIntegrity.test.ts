@@ -29,12 +29,12 @@
  *   把 runFlow 的 catch 去掉（让流错误直接抛）→ 「流截断可见性」用例转红。
  */
 // @vitest-environment node
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+// 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync，见 helpers/tmpDir.ts）
+import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
 import type { Agent } from '@zooique/memora';
 import type * as vscode from 'vscode';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
@@ -131,7 +131,7 @@ interface PanelHandle {
 }
 
 function setupPanel(agent: Agent): PanelHandle {
-  const dir = mkdtempSync(join(tmpdir(), 'memora-flow-integrity-'));
+  const dir = makeTempDir('memora-flow-integrity-');
   const roundStore = new WorkspaceRoundStore(dir);
   roundStore.load();
   const store = new WorkspaceSessionStore(dir, roundStore);

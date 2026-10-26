@@ -176,6 +176,8 @@
 
 ### Fixed（宿主）
 
+- **安装包夹带本地文件（出包前复核发现，2026-10-26）**：0.3.0 首版 `memora-vscode.vsix`（183 条目）里实际混进了 `mcp-acceptance-server.mjs`（手工验收脚本）、`.workbuddy/*.log` ×3（本地调试日志）、`.tmp-vsce.log`（vsce 自身临时日志）、`dist/.bundle-smoke/vscode-stub.mjs`（打包前门禁探针）。**成因**：`.gitignore` 与 `.vscodeignore` 是**两套判据**——前三个前缀都已在 `.gitignore` 里，`git status` 干净，但 `vsce` **不读 `.gitignore`** ⇒ 「仓库干净」被当成了「包内干净」。**修法**：`.vscodeignore` 补 `.workbuddy/**` / `*.log` / `.tmp-vsce.log` / `mcp-acceptance-server.mjs` / `dist/.bundle-smoke/**`，本地日志与临时产物同批删除。**对消费者**：安装包不再包含验收脚本与本地日志（183 → 177 条目，1,852,326 → 1,809,088 字节），运行时行为零变化。**守卫缺口如实登记**：无自动闸门——`vsce ls` 断言只查「该有的在」（`dist/extension/host/mcp/*.js`），不查「不该有的不在」，本次靠人工按条目清单逐条核对，登记于台账 F 段。
+
 - **MCP 连接失败归因订正**（`H0-1`，2026-10-25）：没有 `tools` 能力的 server 此前被判成「server 未声明 tools 能力」并置 `failed`——但纯 `resources` / `prompts` 的 server 是**合法形态**，这是本宿主只接 tools 的**覆盖面边界**，不是对方故障。现文案改为「本宿主当前只接 tools 能力；该 server 只提供 X / Y，暂不支持（不是 server 故障）」，并对连上后被忽略的非 tools 能力打一次 info 日志（不静默）。**为什么**：谎报成因与谎报能力同族——原文案会让用户去查一台没坏的 server。**对消费者**：仅失败原因文案变化；无 tools 的 server 仍不注册空工具清单（不静默成功）。**登记**：方案-MCP工具接入 §10 新增「`resources` / `prompts` 零接入（能力边界 · 非功能缺口）」行。
 
 - **角色页：角色包被清空后不再留着幽灵分页条**（2026-10-26，`L3-ROLES-SLIM-1`）：`roles_loaded` 收到空列表时，列表正确地换成了「暂无角色包」空态，但**分页条没被收掉**——它保留着上一轮的页码与条数（实测：17 个角色翻到第 2 页后角色包被清空 ⇒ 条上仍写「第 2 / 2 页（共 16 条）」且上下页都能点）。于是页面上同时存在「一个声称有 16 条内容、可双向翻页的条」和「一个永远空着的列表」，点翻页也翻不出任何东西。**成因**：空态分支渲染完空态引导就 `return`，跳过了分页态的收敛（`othersAll` 因早退没被清、`pager` 也没被重置 ⇒ 翻页切的是上一轮的旧数组）。现空态分支同批收敛两件事：`othersAll` 随 `lastData` 一并清空（派生数据必须随源更新），`pager.showKeepingPage([])` 让分页条隐藏、页码回到 1/1、上下页均禁用。**对消费者**：角色包全删光 / 切到没有角色包的工作区时，看到的是干净的空态，不会再有翻不出内容的条。**守卫**：`rolesView.test.ts` 新增一例（先翻到第 2 页，再投空载荷，断言分页条 `hidden`、双向 `disabled`、卡片数 0），变异实测：删掉收敛 ⇒ `expected false to be true`。

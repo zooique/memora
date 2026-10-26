@@ -11,11 +11,12 @@
  *     · 精确优先 + 零命中回退：整串命中不放宽，整串零命中才用内核下发的 terms 放宽
  *     · 🔴 Canary：自埋唯一 token 必被搜到（仪器自检——"你从没见它非零过的零不是证据"）
  */
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as vscode from 'vscode';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+// 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync / 调用方自写 rmSync）
+import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
 
 // 宿主模块可能间接依赖 vscode，mock 之（不引入真实 VS Code 运行时）
 vi.mock('vscode', () => ({
@@ -47,11 +48,6 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 });
 
 import { createVscodeProjectSearchProvider } from '../projectSearchProvider.js';
-
-/** 建一个独立临时项目目录（调用方负责 finally 里 rmSync） */
-function makeTmp(): string {
-  return mkdtempSync(join(tmpdir(), 'memora-search-'));
-}
 
 describe('VscodeProjectSearchProvider', () => {
   const root = 'C:/proj';
@@ -232,7 +228,8 @@ describe('VscodeProjectSearchProvider', () => {
     let tmp: string;
 
     beforeEach(() => {
-      tmp = makeTmp();
+      // 用例级临时目录：本用例结束由统一入口的 afterEach 删除（原 afterAll 只删最后一个 = 每跑泄 N-1）
+      tmp = makeTempDir('memora-search-');
       mkdirSync(join(tmp, 'src'), { recursive: true });
       mkdirSync(join(tmp, 'node_modules'), { recursive: true });
       writeFileSync(
@@ -247,10 +244,6 @@ describe('VscodeProjectSearchProvider', () => {
         'export const TODO = "should be ignored";\n',
         'utf-8',
       );
-    });
-
-    afterAll(() => {
-      if (tmp) rmSync(tmp, { recursive: true, force: true });
     });
 
     it('按关键词命中返回 路径:行号:预览', async () => {
@@ -382,67 +375,51 @@ describe('VscodeProjectSearchProvider', () => {
   describe('searchText · 诚实化上报与放宽', () => {
     it('🔴 Canary：自埋唯一 token 必被搜到（仪器自检）', async () => {
       // 依据："你从没见它非零过的零，不是证据"——先证仪器可用，再谈"没搜到"是否可信
-      const tmp = makeTmp();
-      try {
-        const token = 'CANARY_TOKEN_9f3a1c';
-        writeFileSync(join(tmp, 'canary.md'), `# 自埋标记\n${token}\n`, 'utf-8');
-        const provider = createVscodeProjectSearchProvider(tmp);
-        const result = await provider.searchText({ pattern: token });
-        expect(result.matches.map((m) => m.path)).toContain('canary.md');
-      } finally {
-        rmSync(tmp, { recursive: true, force: true });
-      }
+      const tmp = makeTempDir('memora-search-');
+      const token = 'CANARY_TOKEN_9f3a1c';
+      writeFileSync(join(tmp, 'canary.md'), `# 自埋标记\n${token}\n`, 'utf-8');
+      const provider = createVscodeProjectSearchProvider(tmp);
+      const result = await provider.searchText({ pattern: token });
+      expect(result.matches.map((m) => m.path)).toContain('canary.md');
     });
 
     it('大文件（>64KB）不再整文件跳过：前段 token 可命中 + 上报 partialReadFiles（F4-full）', async () => {
-      const tmp = makeTmp();
-      try {
-        // token 在**前 64KB 内**（文件总长 70KB）→ S2 可搜到；S1 时该文件被整文件跳过、必然搜不到
-        writeFileSync(join(tmp, 'big.md'), `needle_front\n${'x'.repeat(70 * 1024)}\n`, 'utf-8');
-        const provider = createVscodeProjectSearchProvider(tmp);
-        const result = await provider.searchText({ pattern: 'needle_front' });
-        expect(result.matches.map((m) => m.path)).toEqual(['big.md']);
-        expect(result.partialReadFiles).toBe(1); // 参与了检索，但只覆盖前一部分
-        expect(result.scannedFiles).toBe(1); // 计入已扫（确实被搜过，不是被跳过）
-      } finally {
-        rmSync(tmp, { recursive: true, force: true });
-      }
+      const tmp = makeTempDir('memora-search-');
+      // token 在**前 64KB 内**（文件总长 70KB）→ S2 可搜到；S1 时该文件被整文件跳过、必然搜不到
+      writeFileSync(join(tmp, 'big.md'), `needle_front\n${'x'.repeat(70 * 1024)}\n`, 'utf-8');
+      const provider = createVscodeProjectSearchProvider(tmp);
+      const result = await provider.searchText({ pattern: 'needle_front' });
+      expect(result.matches.map((m) => m.path)).toEqual(['big.md']);
+      expect(result.partialReadFiles).toBe(1); // 参与了检索，但只覆盖前一部分
+      expect(result.scannedFiles).toBe(1); // 计入已扫（确实被搜过，不是被跳过）
     });
 
     it('大文件后半段的词仍搜不到，但覆盖缺口必须上报（F4-full 的诚实边界：搜不到 ≠ 不存在）', async () => {
-      const tmp = makeTmp();
-      try {
-        // token 在 64KB **之后**（只搜前 64KB → 必然搜不到）
-        writeFileSync(join(tmp, 'big.md'), `${'x'.repeat(70 * 1024)}\nneedle_tail\n`, 'utf-8');
-        const provider = createVscodeProjectSearchProvider(tmp);
-        const result = await provider.searchText({ pattern: 'needle_tail' });
-        expect(result.matches).toEqual([]); // 搜不到是事实
-        expect(result.partialReadFiles).toBe(1); // 但必须说明"没看全"，否则又是静默假阴性
-      } finally {
-        rmSync(tmp, { recursive: true, force: true });
-      }
+      const tmp = makeTempDir('memora-search-');
+      // token 在 64KB **之后**（只搜前 64KB → 必然搜不到）
+      writeFileSync(join(tmp, 'big.md'), `${'x'.repeat(70 * 1024)}\nneedle_tail\n`, 'utf-8');
+      const provider = createVscodeProjectSearchProvider(tmp);
+      const result = await provider.searchText({ pattern: 'needle_tail' });
+      expect(result.matches).toEqual([]); // 搜不到是事实
+      expect(result.partialReadFiles).toBe(1); // 但必须说明"没看全"，否则又是静默假阴性
     });
 
     it('部分读按 UTF-8 边界收口：横跨读取上限的不完整残行被整行丢弃（不留 U+FFFD 污染）', async () => {
-      const tmp = makeTmp();
-      try {
-        // 对照组：同一个 token 也在小文件里 → 证明"big.md 没命中"是收口所致，而非压根没读它
-        writeFileSync(join(tmp, 'small.md'), 'needle_boundary\n', 'utf-8');
-        // big.md：65494 个 'a' + 换行 = 65495 字节；残行从边界**前**开始并**横跨** 64KB 上限，
-        // 且无结尾换行 —— 未收口时残行会被读到并命中（变异验证：去掉换行回退 → 本断言变红）
-        const head = `${'a'.repeat(65494)}\n`;
-        writeFileSync(join(tmp, 'big.md'), head + 'needle_boundary中文'.repeat(20), 'utf-8');
-        const provider = createVscodeProjectSearchProvider(tmp);
-        const result = await provider.searchText({ pattern: 'needle_boundary' });
-        expect(result.matches.map((m) => m.path)).toEqual(['small.md']); // 残行不产出命中
-        expect(result.partialReadFiles).toBe(1);
-      } finally {
-        rmSync(tmp, { recursive: true, force: true });
-      }
+      const tmp = makeTempDir('memora-search-');
+      // 对照组：同一个 token 也在小文件里 → 证明"big.md 没命中"是收口所致，而非压根没读它
+      writeFileSync(join(tmp, 'small.md'), 'needle_boundary\n', 'utf-8');
+      // big.md：65494 个 'a' + 换行 = 65495 字节；残行从边界**前**开始并**横跨** 64KB 上限，
+      // 且无结尾换行 —— 未收口时残行会被读到并命中（变异验证：去掉换行回退 → 本断言变红）
+      const head = `${'a'.repeat(65494)}\n`;
+      writeFileSync(join(tmp, 'big.md'), head + 'needle_boundary中文'.repeat(20), 'utf-8');
+      const provider = createVscodeProjectSearchProvider(tmp);
+      const result = await provider.searchText({ pattern: 'needle_boundary' });
+      expect(result.matches.map((m) => m.path)).toEqual(['small.md']); // 残行不产出命中
+      expect(result.partialReadFiles).toBe(1);
     });
 
     it('不可读文件（stat 抛 EACCES）计入 unreadableSkipped 而非静默跳过（修 P5）', async () => {
-      const tmp = makeTmp();
+      const tmp = makeTempDir('memora-search-');
       const locked = join(tmp, 'locked.md');
       try {
         writeFileSync(join(tmp, 'ok.md'), 'needle_ok\n', 'utf-8');
@@ -454,13 +431,13 @@ describe('VscodeProjectSearchProvider', () => {
         expect(result.unreadableSkipped).toBe(1);
         expect(result.scannedFiles).toBe(1); // 完全没读上的不计入已扫
       } finally {
+        // 只清打桩集合；临时目录由统一入口的 afterEach 删除
         failStat.delete(locked);
-        rmSync(tmp, { recursive: true, force: true });
       }
     });
 
     it('open 失败与「部分检索」分别上报（修 P5 / F4-full：两者补救动作不同，不可混为一谈）', async () => {
-      const tmp = makeTmp();
+      const tmp = makeTempDir('memora-search-');
       const broken = join(tmp, 'broken-read.md');
       try {
         writeFileSync(join(tmp, 'big.md'), `needle_front\n${'x'.repeat(70 * 1024)}\n`, 'utf-8');
@@ -472,67 +449,55 @@ describe('VscodeProjectSearchProvider', () => {
         expect(result.unreadableSkipped).toBe(1); // 读取失败：完全没参与检索
         expect(result.partialReadFiles).toBe(1); // 过大：参与了，但只覆盖前一部分
       } finally {
+        // 只清打桩集合；临时目录由统一入口的 afterEach 删除
         failOpen.delete(broken);
-        rmSync(tmp, { recursive: true, force: true });
       }
     });
 
     it('整串零命中 → 用内核下发的 terms 放宽，并回填 relaxed/termsUsed（修 F1）', async () => {
-      const tmp = makeTmp();
-      try {
-        writeFileSync(join(tmp, 'a.md'), '核心能力清单\n', 'utf-8');
-        writeFileSync(join(tmp, 'b.md'), '愿景与实现\n', 'utf-8');
-        const provider = createVscodeProjectSearchProvider(tmp);
+      const tmp = makeTempDir('memora-search-');
+      writeFileSync(join(tmp, 'a.md'), '核心能力清单\n', 'utf-8');
+      writeFileSync(join(tmp, 'b.md'), '愿景与实现\n', 'utf-8');
+      const provider = createVscodeProjectSearchProvider(tmp);
 
-        // ① 不给 terms：整串 `核心 愿景` 无此连续子串 → 零命中（现状行为）
-        const strict = await provider.searchText({ pattern: '核心 愿景' });
-        expect(strict.matches).toEqual([]);
-        expect(strict.relaxed).toBeUndefined();
+      // ① 不给 terms：整串 `核心 愿景` 无此连续子串 → 零命中（现状行为）
+      const strict = await provider.searchText({ pattern: '核心 愿景' });
+      expect(strict.matches).toEqual([]);
+      expect(strict.relaxed).toBeUndefined();
 
-        // ② 给了 terms：放宽为 OR → 两个文件都命中，且如实标注"非精确命中"
-        const relaxed = await provider.searchText({
-          pattern: '核心 愿景',
-          terms: ['核心', '愿景'],
-        });
-        expect(relaxed.matches.map((m) => m.path)).toEqual(['a.md', 'b.md']);
-        expect(relaxed.relaxed).toBe(true);
-        expect(relaxed.termsUsed).toEqual(['核心', '愿景']);
-      } finally {
-        rmSync(tmp, { recursive: true, force: true });
-      }
+      // ② 给了 terms：放宽为 OR → 两个文件都命中，且如实标注"非精确命中"
+      const relaxed = await provider.searchText({
+        pattern: '核心 愿景',
+        terms: ['核心', '愿景'],
+      });
+      expect(relaxed.matches.map((m) => m.path)).toEqual(['a.md', 'b.md']);
+      expect(relaxed.relaxed).toBe(true);
+      expect(relaxed.termsUsed).toEqual(['核心', '愿景']);
     });
 
     it('验收 §六.1：`核心|愿景` / `核心 愿景` / `核心/愿景` 三种写法放宽后命中条数相同且 > 0', async () => {
-      const tmp = makeTmp();
-      try {
-        writeFileSync(join(tmp, 'a.md'), '核心能力清单\n', 'utf-8');
-        writeFileSync(join(tmp, 'b.md'), '愿景与实现\n', 'utf-8');
-        const provider = createVscodeProjectSearchProvider(tmp);
-        const terms = ['核心', '愿景'];
-        const counts: number[] = [];
-        for (const pattern of ['核心|愿景', '核心 愿景', '核心/愿景']) {
-          const r = await provider.searchText({ pattern, terms });
-          counts.push(r.matches.length);
-        }
-        expect(counts).toEqual([2, 2, 2]);
-        expect(counts.every((c) => c > 0)).toBe(true);
-      } finally {
-        rmSync(tmp, { recursive: true, force: true });
+      const tmp = makeTempDir('memora-search-');
+      writeFileSync(join(tmp, 'a.md'), '核心能力清单\n', 'utf-8');
+      writeFileSync(join(tmp, 'b.md'), '愿景与实现\n', 'utf-8');
+      const provider = createVscodeProjectSearchProvider(tmp);
+      const terms = ['核心', '愿景'];
+      const counts: number[] = [];
+      for (const pattern of ['核心|愿景', '核心 愿景', '核心/愿景']) {
+        const r = await provider.searchText({ pattern, terms });
+        counts.push(r.matches.length);
       }
+      expect(counts).toEqual([2, 2, 2]);
+      expect(counts.every((c) => c > 0)).toBe(true);
     });
 
     it('整串命中时不再放宽（保持精度：不把精确命中变成"可能不是精确命中"）', async () => {
-      const tmp = makeTmp();
-      try {
-        writeFileSync(join(tmp, 'a.md'), '核心 愿景 都在这行\n', 'utf-8');
-        const provider = createVscodeProjectSearchProvider(tmp);
-        const result = await provider.searchText({ pattern: '核心 愿景', terms: ['核心', '愿景'] });
-        expect(result.matches.map((m) => m.path)).toEqual(['a.md']);
-        expect(result.relaxed).toBeUndefined();
-        expect(result.termsUsed).toBeUndefined();
-      } finally {
-        rmSync(tmp, { recursive: true, force: true });
-      }
+      const tmp = makeTempDir('memora-search-');
+      writeFileSync(join(tmp, 'a.md'), '核心 愿景 都在这行\n', 'utf-8');
+      const provider = createVscodeProjectSearchProvider(tmp);
+      const result = await provider.searchText({ pattern: '核心 愿景', terms: ['核心', '愿景'] });
+      expect(result.matches.map((m) => m.path)).toEqual(['a.md']);
+      expect(result.relaxed).toBeUndefined();
+      expect(result.termsUsed).toBeUndefined();
     });
 
     // 本用例建 501 个真实文件并走满 500 次扫描 —— I/O 密集。
@@ -544,26 +509,18 @@ describe('VscodeProjectSearchProvider', () => {
     //   的问题动判据（造伤）。本用例上限已显式放宽到 30s（默认 5s 必被拖爆），**够用**。
     // flake 判据见 docs/测试并发确定性与flake判定SOP.md；追踪条目 = `TEST-ENV-TIMEOUT-1`。
     it('扫描达文件上限（500）时上报 truncatedBy="files"（F2：没搜完 ≠ 没搜到）', async () => {
-      const tmp = makeTmp();
-      try {
-        const many = join(tmp, 'many');
-        mkdirSync(many, { recursive: true });
-        for (let i = 0; i < 501; i++) {
-          writeFileSync(
-            join(many, `f${String(i).padStart(4, '0')}.txt`),
-            'nothing here\n',
-            'utf-8',
-          );
-        }
-        const provider = createVscodeProjectSearchProvider(tmp);
-        const result = await provider.searchText({ pattern: '绝不出现的词', maxResults: 20 });
-        expect(result.matches).toEqual([]);
-        expect(result.truncated).toBe(true);
-        expect(result.truncatedBy).toBe('files');
-        expect(result.scannedFiles).toBe(500);
-      } finally {
-        rmSync(tmp, { recursive: true, force: true });
+      const tmp = makeTempDir('memora-search-');
+      const many = join(tmp, 'many');
+      mkdirSync(many, { recursive: true });
+      for (let i = 0; i < 501; i++) {
+        writeFileSync(join(many, `f${String(i).padStart(4, '0')}.txt`), 'nothing here\n', 'utf-8');
       }
+      const provider = createVscodeProjectSearchProvider(tmp);
+      const result = await provider.searchText({ pattern: '绝不出现的词', maxResults: 20 });
+      expect(result.matches).toEqual([]);
+      expect(result.truncated).toBe(true);
+      expect(result.truncatedBy).toBe('files');
+      expect(result.scannedFiles).toBe(500);
     }, 30_000);
   });
 });

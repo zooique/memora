@@ -13,7 +13,9 @@ import {
 } from '@/security/pathGuard.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { symlinkSync, writeFileSync } from 'node:fs';
+// 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync，见 helpers/tmpDir.ts）
+import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
 
 /**
  * 收集审计事件辅助：替代已删除的 getRecentAudits 缓冲查询——
@@ -31,8 +33,8 @@ describe('SecurityGuard · 路径白名单', () => {
   let guard: SecurityGuard;
 
   beforeEach(() => {
-    projectPath = mkdtempSync(join(tmpdir(), 'memora-test-'));
-    dataDir = mkdtempSync(join(tmpdir(), 'memora-data-'));
+    projectPath = makeTempDir('memora-test-');
+    dataDir = makeTempDir('memora-data-');
     guard = new SecurityGuard(projectPath, dataDir, []);
   });
 
@@ -133,7 +135,7 @@ describe('SecurityGuard · 路径白名单', () => {
   });
 
   it('应该拒绝额外允许路径的兄弟目录（前缀匹配绕过防护）', () => {
-    const extraPath = mkdtempSync(join(tmpdir(), 'memora-extra-'));
+    const extraPath = makeTempDir('memora-extra-');
     const guard2 = new SecurityGuard(projectPath, dataDir, [extraPath]);
     const evilPath = `${extraPath}-evil`;
     const filePath = join(evilPath, 'secret.txt');
@@ -141,7 +143,7 @@ describe('SecurityGuard · 路径白名单', () => {
   });
 
   it('应该支持用户显式声明的额外允许路径', () => {
-    const extraPath = mkdtempSync(join(tmpdir(), 'memora-extra-'));
+    const extraPath = makeTempDir('memora-extra-');
     const guard2 = new SecurityGuard(projectPath, dataDir, [extraPath]);
     const filePath = join(extraPath, 'docs.md');
     expect(() => guard2.assertPathAllowed(filePath)).not.toThrow();
@@ -248,7 +250,7 @@ describe('SecurityGuard · 路径白名单', () => {
 
   it.skipIf(process.platform === 'win32')('应该拒绝通过项目内符号链接逃逸到项目外目录', () => {
     // 攻击场景：项目内存在指向项目外的符号链接，read_file 通过该链接读取敏感文件
-    const evilDir = mkdtempSync(join(tmpdir(), 'memora-evil-'));
+    const evilDir = makeTempDir('memora-evil-');
     // 在 evilDir 中放置一个文件（确保 realpath 有解析目标）
     writeFileSync(join(evilDir, 'secret.txt'), 'stolen');
     const symlinkPath = join(projectPath, 'evil-link');
@@ -313,19 +315,19 @@ describe('SecurityGuard · 动态 allowedPaths', () => {
   let guard: SecurityGuard;
 
   beforeEach(() => {
-    projectPath = mkdtempSync(join(tmpdir(), 'memora-dyn-'));
-    dataDir = mkdtempSync(join(tmpdir(), 'memora-data-'));
+    projectPath = makeTempDir('memora-dyn-');
+    dataDir = makeTempDir('memora-data-');
     guard = new SecurityGuard(projectPath, dataDir, []);
   });
 
   it('setAllowedPaths 新增额外目录后应允许其内路径', () => {
-    const extra = mkdtempSync(join(tmpdir(), 'memora-extra-'));
+    const extra = makeTempDir('memora-extra-');
     guard.setAllowedPaths([extra]);
     expect(() => guard.assertPathAllowed(join(extra, 'docs.md'))).not.toThrow();
   });
 
   it('setAllowedPaths([]) 应清空额外项，原额外目录越界', () => {
-    const extra = mkdtempSync(join(tmpdir(), 'memora-extra-'));
+    const extra = makeTempDir('memora-extra-');
     guard.setAllowedPaths([extra]);
     expect(() => guard.assertPathAllowed(join(extra, 'docs.md'))).not.toThrow();
     guard.setAllowedPaths([]);
@@ -333,7 +335,7 @@ describe('SecurityGuard · 动态 allowedPaths', () => {
   });
 
   it('setAllowedPaths 不应移除基准根（基准目录仍放行）', () => {
-    const extra = mkdtempSync(join(tmpdir(), 'memora-extra-'));
+    const extra = makeTempDir('memora-extra-');
     guard.setAllowedPaths([extra]);
     // 基准根（projectPath）内路径仍应放行
     expect(() => guard.assertPathAllowed(join(projectPath, 'src', 'index.ts'))).not.toThrow();
@@ -342,7 +344,7 @@ describe('SecurityGuard · 动态 allowedPaths', () => {
   });
 
   it('黑名单对额外目录内敏感文件仍生效', () => {
-    const extra = mkdtempSync(join(tmpdir(), 'memora-extra-'));
+    const extra = makeTempDir('memora-extra-');
     guard.setAllowedPaths([extra]);
     // 额外目录内若含 .env，仍应被黑名单拦截（白名单非绕过黑名单的通行证）
     expect(() => guard.assertPathAllowed(join(extra, '.env'))).toThrow(/黑名单/);
@@ -358,8 +360,8 @@ describe('SecurityGuard · 审计日志', () => {
   let dataDir: string;
 
   beforeEach(() => {
-    projectPath = mkdtempSync(join(tmpdir(), 'memora-audit-'));
-    dataDir = mkdtempSync(join(tmpdir(), 'memora-data-'));
+    projectPath = makeTempDir('memora-audit-');
+    dataDir = makeTempDir('memora-data-');
   });
 
   it('应该为允许的路径生成 path-allow 审计事件', () => {
@@ -417,8 +419,8 @@ describe('SecurityGuard · 写入二次确认', () => {
   let dataDir: string;
 
   beforeEach(() => {
-    projectPath = mkdtempSync(join(tmpdir(), 'memora-confirm-'));
-    dataDir = mkdtempSync(join(tmpdir(), 'memora-data-'));
+    projectPath = makeTempDir('memora-confirm-');
+    dataDir = makeTempDir('memora-data-');
   });
 
   it('owner + confirmWrites=false 应该自动批准（不读取 stdin）', async () => {
@@ -571,8 +573,8 @@ describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁�
   let dataDir: string;
 
   beforeEach(() => {
-    projectPath = mkdtempSync(join(tmpdir(), 'memora-script-confirm-'));
-    dataDir = mkdtempSync(join(tmpdir(), 'memora-script-data-'));
+    projectPath = makeTempDir('memora-script-confirm-');
+    dataDir = makeTempDir('memora-script-data-');
   });
 
   it('owner + confirmScripts=false 应该自动批准（审计 write-auto）', async () => {
@@ -659,8 +661,8 @@ describe('SecurityGuard · 脚本面内容裁决（CMD-1-BYPASS 补齐，2026-10
   let dataDir: string;
 
   beforeEach(() => {
-    projectPath = mkdtempSync(join(tmpdir(), 'memora-script-content-'));
-    dataDir = mkdtempSync(join(tmpdir(), 'memora-script-data-'));
+    projectPath = makeTempDir('memora-script-content-');
+    dataDir = makeTempDir('memora-script-data-');
   });
 
   /** 正文 = 脚本里真正会跑的东西；默认档位 owner + confirmScripts=false（原本自动批准） */
@@ -868,8 +870,8 @@ describe('SecurityGuard · 命令执行确认（confirmCommandRun，§13.2）', 
   let dataDir: string;
 
   beforeEach(() => {
-    projectPath = mkdtempSync(join(tmpdir(), 'memora-cmd-confirm-'));
-    dataDir = mkdtempSync(join(tmpdir(), 'memora-cmd-data-'));
+    projectPath = makeTempDir('memora-cmd-confirm-');
+    dataDir = makeTempDir('memora-cmd-data-');
   });
 
   it('deny 命中：owner + confirmScripts=false + handler 恒同意 也拦（恒拒）', async () => {
