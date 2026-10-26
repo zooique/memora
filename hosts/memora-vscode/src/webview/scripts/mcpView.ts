@@ -426,7 +426,17 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
   function cardHtml(server: McpServerStatusDto): string {
     const state = server.state;
     const editing = draft !== null && draft.originalName === server.name;
-    const editable = isFormRepresentable(server);
+    // 远程（transport: http）**不给**表单编辑：表单只有 name/command/args/env/cwd/enabled，
+    // 没有 url / headers ⇒ 打开后唯一必填项是 command，而 http 配 command 被 configProblem
+    // 硬拒（"http 配置不能填写 command"）⇒ 这个按钮点了必然失败，是纯假动作。
+    // `isFormRepresentable` 只管「字符能不能无损往返」，不管「形态缺不缺字段」，两者不可替代。
+    // 与「配置不完整时不给启用」同口径：不给假动作，指路 JSON 入口。
+    const remote = isRemote(server);
+    const editable = !remote && isFormRepresentable(server);
+    // 两种禁用原因分开写：同一句 title 盖两件事 ⇒ 用户照着提示改完还是失败
+    const editBlockReason = remote
+      ? '远程服务器没有表单编辑：请用页脚「高级：在 settings.json 中编辑」或从 JSON 导入'
+      : '参数或环境变量含空项/换行，表单无法无损呈现；请用页脚的 settings.json 入口编辑';
     const actions: string[] = [];
 
     // 「待接入」是唯一有**出路**的空转态：点接入即让运行态按当前配置追平一次
@@ -444,8 +454,9 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
       );
     }
     // 编辑对**所有态**开放：invalid（缺 command）正需要补字段，藏了编辑等于逼用户手写 JSON
+    // （远程例外：形态本身没有表单字段，见上方 `remote` 判据）
     actions.push(
-      `<button class="btn btn-secondary" type="button" data-act="edit"${editable ? '' : ' disabled title="参数或环境变量含空项/换行，表单无法无损呈现；请用页脚的 settings.json 入口编辑"'}${editing ? ' hidden' : ''}>编辑</button>`,
+      `<button class="btn btn-secondary" type="button" data-act="edit"${editable ? '' : ` disabled title="${editBlockReason}"`}${editing ? ' hidden' : ''}>编辑</button>`,
     );
     // 启停只对「配置完整」的台有意义：invalid 永远起不来，给个「启用」是假动作
     if (state !== 'invalid') {

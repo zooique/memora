@@ -1182,6 +1182,31 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
     expect(edit?.getAttribute('title')).toContain('settings.json');
   });
 
+  it('远程（transport: http）禁用编辑：表单里没有 url / headers，填 command 又与 http 互斥', () => {
+    mountSettingsView();
+    pushStatus([
+      {
+        name: 'remote',
+        transport: 'http',
+        url: 'https://mcp.example.com/mcp',
+        enabled: true,
+        state: 'running',
+        toolCount: 0,
+        tools: [],
+        serverAllowKey: 'mcp__remote__*',
+        serverAllowlisted: false,
+      },
+    ]);
+    const edit = mcpRoot().querySelector<HTMLButtonElement>('[data-act="edit"]');
+    expect(edit?.disabled).toBe(true);
+    // 原因必须是「远程没有表单字段」，不能复用「字符有损」那句——照后者去改永远改不好
+    const title = edit?.getAttribute('title') ?? '';
+    expect(title).toContain('远程');
+    expect(title).not.toContain('含空项');
+    // 同台的启停仍可用（禁的只是编辑这一条死路，不是整张卡片）
+    expect(mcpRoot().querySelector<HTMLButtonElement>('[data-act="toggle"]')?.disabled).toBe(false);
+  });
+
   it('外部可控文本转义（server/工具名来自外部 MCP server，不进 innerHTML）', () => {
     mountSettingsView();
     pushStatus([
