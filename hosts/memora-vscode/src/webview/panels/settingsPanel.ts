@@ -15,8 +15,12 @@
  * 后者明载 `retainContextWhenHidden?: boolean`，且默认行为是「面板不可见即销毁 html context」。
  * 两处容器形态的**失焦频率差一个量级**（侧栏切走 vs 每个代码 tab 切换都算失焦）：不设该选项，
  * 用户「改一半配置去看代码、切回来」就丢掉六页全部表单草稿，且 webview 侧零 `setState` 兜底。
- * 代价 = 隐藏期间 postMessage 送不达（VS Code 契约），由 `onDidChangeViewState` 重新可见时
- * `refreshAll()` 补刷一次——与 ready 握手共用同一刷新单点，不造第二条数据清单。
+ * 隐藏期的投递语义**官方注释自相矛盾**（`retainContextWhenHidden` 注：「You cannot send messages
+ * to a hidden webview, even with retainContextWhenHidden enabled」；同文件 `Webview.postMessage`
+ * 注却把「hidden webviews that set retainContextWhenHidden」算作 live）⇒ **按不可靠设计，不赌**：
+ * 凡「投出就清状态」的判据一律要求 `isDeliverable()`（panel 在 ∧ 已 ready ∧ 可见），隐藏期只记
+ * `_pendingTab`，转可见时 `flushPendingTab()` 补发。数据面同一时机 `refreshAll()` 兜底——那是
+ * 「宿主侧有些变更没有推送路径」的收敛网，**不是**对消息丢失的补偿。
  *
  * 设计（对齐单一真理源 + 自然生长）：
  *   - 渲染逻辑全部在 webview 内（postMessage 驱动），extension host 不做 DOM；
@@ -119,6 +123,10 @@ export class MemoraSettingsPanel {
   private _globalState: vscode.Memento | undefined;
   /** 待切换的子选项卡（configureModel 命令在视图未就绪时缓存，webview ready 后补发） */
   private _pendingTab: SettingsTab | undefined;
+  /** webview 是否已发 `ready`（html context 已建立 + 全部子视图监听器已注册）。
+   *  **不是** `_panel` 的副本：`_panel` 有值 = tab 存在，与此事实正交；生命周期严格跟随当前
+   *  panel（创建即 false，dispose 归 false），写点仅此两处 + ready 分支一处。 */
+  private _webviewReady = false;
   /** 对话面板提供者（角色 handoff 预填需跨 webview 投递，由 extension 注入） */
   private _chatProvider: MemoraChatViewProvider | undefined;
   /** 用户技能目录路径（由 extension 注入，用于打开目录功能） */
@@ -215,17 +223,24 @@ export class MemoraSettingsPanel {
       },
     );
     this._panel = panel;
-    // 关 tab（或工作区关闭）时清理引用，避免向已销毁 webview postMessage。
+    // 新 panel 的 html context 尚未建立、脚本未注册监听器 ⇒ ready 之前不可投递。
+    // 与 onDidDispose 的清零成对：`_webviewReady` 只描述「当前这一个 panel」的脚本状态。
+    this._webviewReady = false;
+    // 关 tab（或工作区关闭）时清理两个状态，避免向已销毁 webview postMessage。
     // 不清则 switchTab 把 _pendingTab 写进死 panel 后清空，
     // ready 握手的补发兜底失效 → 点角色徽章/配置大模型落在默认「记忆」页。
     panel.onDidDispose(() => {
-      if (this._panel === panel) this._panel = undefined;
+      if (this._panel !== panel) return;
+      this._panel = undefined;
+      this._webviewReady = false;
     });
-    // 由隐藏转可见时补刷：retainContextWhenHidden 下 webview 隐藏期间收不到 postMessage，
-    // 而隐藏期 host 侧状态仍在变（MCP 装配完成回推 / 角色切换 / 归档模式改动）⇒ 不补则
-    // 切回来的页面是旧态。与 ready 握手共用 refreshAll 单点，不另写一份 load 清单。
+    // 由隐藏转可见：补发隐藏期攒下的导航 + 全量补刷一次数据。
+    // 数据面这条是**收敛网**（隐藏期宿主侧有些变更没有推送路径，如别处改归档模式 / 技能启停），
+    // 不是「隐藏期消息全丢」的补偿——后者官方注释两说，故不据此推理（见文件头）。
     panel.onDidChangeViewState((e) => {
-      if (e.webviewPanel.visible && this._panel === panel) this.refreshAll();
+      if (!e.webviewPanel.visible || this._panel !== panel) return;
+      this.flushPendingTab();
+      this.refreshAll();
     });
 
     const scriptUri = panel.webview.asWebviewUri(
@@ -249,12 +264,11 @@ export class MemoraSettingsPanel {
     }
     // ready 握手：webview 脚本已就绪（全部子视图监听器已注册）→ 补发待切选项卡 + 全量推一次数据
     if (msg.type === 'ready') {
+      // ready = 「脚本已加载、全部子视图监听器已注册」的唯一真源（webview 侧发出，host 侧仅此处）
+      this._webviewReady = true;
       // configureModel 命令可能在视图未就绪时触发：待切选项卡缓存在此，就绪后补发，
       // 保证命令落点与用户意图一致（对齐 chatPanel replaySession 的 ready 时序修复）
-      if (this._pendingTab) {
-        this.post({ type: 'settings_switch_tab', tab: this._pendingTab });
-        this._pendingTab = undefined;
-      }
+      this.flushPendingTab();
       this.refreshAll();
       return;
     }
@@ -1882,12 +1896,15 @@ export class MemoraSettingsPanel {
   }
 
   /**
-   * 向 webview 发送消息
+   * 向 webview 发送消息（**尽力投递，不判断可达性**）
    *
-   * 两种「送不达」都静默：① 面板没开（`_panel` 为空）；② `retainContextWhenHidden` 下
-   * webview 处于隐藏态——VS Code 契约明载「cannot send messages to a hidden webview」。
-   * ② 不靠逐条重试兜底，靠 `onDidChangeViewState` 在重新可见时 `refreshAll()` 一次补齐
-   * （补的是**当前态**，不是补发历史消息——历史消息补发会造第二套队列语义）。
+   * 静默失败的两类：① 面板没开（`_panel` 为空）；② html context 未就绪 / 已隐藏——官方注释
+   * 在此自相矛盾（见文件头），故一律按不可靠处理。
+   *
+   * 调用方纪律：只求「有新数据就送一份」的推送直接调本方法即可（丢了下一轮还会送）；
+   * **凡「投出后要清状态」的调用方必须先过 {@link isDeliverable}**（如 {@link switchTab}），
+   * 否则丢的不是一条消息，而是一次导航。历史消息不补发（补发要造第二套队列语义），
+   * 补的是**当前态**。
    */
   private post(msg: ExtensionToWebviewMessage): void {
     void this._panel?.webview.postMessage(msg);
@@ -1900,7 +1917,8 @@ export class MemoraSettingsPanel {
    *   ① webview `ready` 握手——上下文刚建立，监听器已全部注册，首帧推送必然可达。
    *      即使 webview 主动拉取（cfg_load / memory_load）因时序丢失，也不会让子视图停在「加载中…」
    *      （角色 / 记忆依赖 Agent 装配，拉取可能早于装配完成）。
-   *   ② panel 由隐藏转可见（`onDidChangeViewState`）——隐藏期 post 送不达，回来必须补当前态。
+   *   ② panel 由隐藏转可见（`onDidChangeViewState`）——**收敛网**：隐藏期宿主侧可能发生了
+   *      没有推送路径的状态变更（别处改归档模式 / 技能启停 / 装配完成），回来全量对齐一次。
    */
   private refreshAll(): void {
     void this.loadRoles();
@@ -1923,17 +1941,43 @@ export class MemoraSettingsPanel {
    * 切换子选项卡（由 host 命令触发，如 configureModel 命令切换到「大模型」）
    *
    * 向 webview 推送 settings_switch_tab 指令，webview 切换选项卡高亮 + 显示对应子视图；
-   * 面板尚未打开/尚未就绪时缓存待切选项卡，等 ready 握手后补发（避免命令消息被丢弃）。
+   * 面板未开 / 未 ready / 不可见时只记 `_pendingTab`，由 {@link flushPendingTab} 在下一个
+   * 可投时机补发（**判据是「可投递」，不是「panel 存在」**——后者会让指令投出即丢）。
    *
    * @param tab 目标选项卡——**任意** tab 均可。此前形参是手写联合且漏了 `'security'`
    *   （编译期就把安全页挡在路由之外），现统一取 {@link SettingsTab}：加 tab 无需回来补签名。
    */
   public switchTab(tab: SettingsTab): void {
-    this._pendingTab = tab;
-    if (this._panel) {
-      this.post({ type: 'settings_switch_tab', tab });
-      this._pendingTab = undefined;
-    }
+    this._pendingTab = tab; // 唯一缓冲：不具备投递条件时留在此，等下一个可投时机补发
+    this.flushPendingTab();
+  }
+
+  /**
+   * 补发待切选项卡（**唯一投递点 + 唯一清空点**）
+   *
+   * 三个时机共用：`switchTab`（此刻可投则立即发）、webview `ready`、panel 由隐藏转可见。
+   * 只在此处清 `_pendingTab` ⇒ 「清空」恒等于「这条导航指令已经投出」，不会有第二条路径
+   * 先清后丢（旧实现 `if (this._panel) { post; pending = undefined }` 正是这个漏洞：
+   * open→ready 之间与隐藏期投出即清，用户落在默认页却查无日志）。
+   */
+  private flushPendingTab(): void {
+    if (!this._pendingTab || !this.isDeliverable()) return;
+    this.post({ type: 'settings_switch_tab', tab: this._pendingTab });
+    this._pendingTab = undefined;
+  }
+
+  /**
+   * 此刻投出的消息是否会被 webview 处理
+   *
+   * 三个条件都不可省：
+   *   - `_panel` 存在：tab 都没开，无处可投；
+   *   - `_webviewReady`：`_panel` 有值 ≠ 脚本已注册监听器。``postMessage`` 契约原文
+   *     「A response of true does not mean that the message was actually received … no message
+   *     listeners may have been hooked up」⇒ open→ready 之间投出即丢；
+   *   - `visible`：隐藏态语义官方两说（见文件头）⇒ 按不可靠处理，宁可在转可见时补发一次。
+   */
+  private isDeliverable(): boolean {
+    return this._panel !== undefined && this._webviewReady && this._panel.visible;
   }
 }
 

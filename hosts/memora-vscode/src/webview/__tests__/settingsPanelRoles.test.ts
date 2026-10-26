@@ -689,26 +689,28 @@ describe('settingsPanel.loadRoles —— 读期队伍健康检测（只读标注
 // switchTab 导航兜底 —— 关 tab 后 pending 保留（openRoles/configureModel 落点）
 // ══════════════════════════════════════════════════════════════
 
-describe('settingsPanel.switchTab —— 关 tab 后的导航兜底', () => {
+describe('settingsPanel.switchTab —— 导航落点兜底（不可投递时只记 pending）', () => {
   /**
-   * 被测不变量（F1 回归锁）：
-   *   设置面板被销毁（关 tab / 工作区关闭触发 onDidDispose）后，switchTab 不得把
-   *   _pendingTab 写进已销毁的 webview 后清空——必须保留 pending，等重新 open 出的
-   *   新面板 ready 握手补发 settings_switch_tab。否则点角色徽章/配置大模型落在默认「记忆」页。
+   * 被测不变量：
+   *   导航指令（settings_switch_tab）只在**可投递**时投出并清 pending——`_panel` 存在不算可投递。
+   *   三种不可投递形态各有一例：① panel 已销毁（关 tab）② panel 已建但未 ready ③ 已 ready 但不可见。
+   *   任一形态下若「投出即清」，用户会落在默认「记忆」页且宿主侧无痕（旧实现漏的正是 ②③）。
    */
   type PostedMsg = { type: string; tab?: string };
   let posted: PostedMsg[];
   let provider: MemoraSettingsPanel;
   /** mock 面板的 dispose 触发器（捕获 open 内注册的 onDidDispose 回调） */
   let fireDispose: () => void;
-  /** mock 面板的可见性变化触发器（捕获 open 内注册的 onDidChangeViewState 回调） */
-  let fireViewState: ((e: { webviewPanel: { visible: boolean } }) => void) | undefined;
+  /** mock 面板的可见性变化触发器（**先改 `panel.visible` 再发事件**，对齐 VS Code 时序：
+   *  事件发出时 panel 状态已是新值——否则被测代码读 `_panel.visible` 会读到旧值，测的是 mock 的形状） */
+  let setPanelVisible: ((visible: boolean) => void) | undefined;
   /** mock 面板的 onDidReceiveMessage 回调（ready 握手入口） */
   let receiveMsg: ((msg: unknown) => void) | undefined;
 
   /** 构造 createWebviewPanel 返回的最小 WebviewPanel mock（捕获 dispose/message/可见性回调） */
   function makePanel(): {
     reveal: ReturnType<typeof vi.fn>;
+    visible: boolean;
     webview: unknown;
     onDidDispose: (cb: () => void) => { dispose(): void };
     onDidChangeViewState: (cb: (e: { webviewPanel: { visible: boolean } }) => void) => {
@@ -716,9 +718,12 @@ describe('settingsPanel.switchTab —— 关 tab 后的导航兜底', () => {
     };
   } {
     receiveMsg = undefined;
-    fireViewState = undefined;
-    return {
+    setPanelVisible = undefined;
+    const panel = {
       reveal: vi.fn(),
+      // 真实 panel 创建即可见（createWebviewPanel 传 ViewColumn.Active）⇒ mock 同形态，
+      // 否则「可见才投递」判据在默认值上与真机相反，测出来的是 mock 的形状
+      visible: true,
       webview: {
         options: undefined,
         html: '',
@@ -739,10 +744,14 @@ describe('settingsPanel.switchTab —— 关 tab 后的导航兜底', () => {
         return { dispose: vi.fn() };
       },
       onDidChangeViewState: (cb: (e: { webviewPanel: { visible: boolean } }) => void) => {
-        fireViewState = cb;
+        setPanelVisible = (visible) => {
+          panel.visible = visible;
+          cb({ webviewPanel: { visible } });
+        };
         return { dispose: vi.fn() };
       },
     };
+    return panel;
   }
 
   beforeEach(() => {
@@ -771,6 +780,18 @@ describe('settingsPanel.switchTab —— 关 tab 后的导航兜底', () => {
     });
   });
 
+  /** 走面板真实入口（handleMessage）发 ready 握手——不直改 `_webviewReady`，钉的是行为 */
+  async function sendReady(): Promise<void> {
+    await (provider as unknown as { handleMessage(m: unknown): Promise<void> }).handleMessage({
+      type: 'ready',
+    });
+  }
+
+  /** 读私有缓冲（pending 是「尚未投出」的唯一证据） */
+  function pendingTab(): string | undefined {
+    return (provider as unknown as { _pendingTab: string | undefined })._pendingTab;
+  }
+
   it('open → dispose → switchTab：不向死 panel 发消息，pending 保留并在 ready 后补发', async () => {
     provider.open();
 
@@ -781,32 +802,63 @@ describe('settingsPanel.switchTab —— 关 tab 后的导航兜底', () => {
     // 死 panel 下导航：不得 post（发了也是静默丢弃），pending 必须保留
     provider.switchTab('roles');
     expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([]);
-    expect((provider as unknown as { _pendingTab: string | undefined })._pendingTab).toBe('roles');
+    expect(pendingTab()).toBe('roles');
 
     // 重新打开（新面板），随后新面板 ready 握手 → 补发待切选项卡
     provider.open();
-    await (provider as unknown as { handleMessage(m: unknown): Promise<void> }).handleMessage({
-      type: 'ready',
-    });
+    await sendReady();
     expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([
       { type: 'settings_switch_tab', tab: 'roles' },
     ]);
-    expect(
-      (provider as unknown as { _pendingTab: string | undefined })._pendingTab,
-    ).toBeUndefined();
+    expect(pendingTab()).toBeUndefined();
   });
 
-  it('活 panel 下 switchTab：立即 post 且清 pending（既有行为不回归）', () => {
+  it('open 后未 ready → switchTab 只记 pending 不投递；ready 后补发一次', async () => {
     provider.open();
+
+    // open→ready 之间脚本还没挂监听器：postMessage 契约原文「true does not mean that the
+    // message was actually received … no message listeners may have been hooked up」
+    // ⇒ 判据若写「_panel 存在」就会投出即清：指令丢了、pending 也没了，用户落在默认「记忆」页，
+    // 宿主侧连日志都没有（2026-10-26 前的实现正是如此）。
+    provider.switchTab('mcp');
+    expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([]);
+    expect(pendingTab()).toBe('mcp');
+
+    await sendReady();
+    expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([
+      { type: 'settings_switch_tab', tab: 'mcp' },
+    ]);
+    expect(pendingTab()).toBeUndefined();
+  });
+
+  it('已 ready 但面板在后台 → switchTab 只记 pending；转可见时补发（隐藏态投递按不可靠处理）', async () => {
+    provider.open();
+    await sendReady();
+
+    // 官方两处注释对「隐藏 webview 能否收到消息」说法相反（见 settingsPanel 文件头）
+    // ⇒ 不信任何一侧，按不可靠设计：不可见时只记 pending，转可见时再投。
+    setPanelVisible?.(false);
+    provider.switchTab('security');
+    expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([]);
+    expect(pendingTab()).toBe('security');
+
+    setPanelVisible?.(true);
+    expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([
+      { type: 'settings_switch_tab', tab: 'security' },
+    ]);
+    expect(pendingTab()).toBeUndefined();
+  });
+
+  it('已 ready 且可见 → switchTab 立即 post 且清 pending（正常路径不延迟）', async () => {
+    provider.open();
+    await sendReady();
 
     provider.switchTab('config');
 
     expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([
       { type: 'settings_switch_tab', tab: 'config' },
     ]);
-    expect(
-      (provider as unknown as { _pendingTab: string | undefined })._pendingTab,
-    ).toBeUndefined();
+    expect(pendingTab()).toBeUndefined();
   });
 
   it('重复 open 复用同一 panel：只 reveal 不新建（单例判据）', () => {
@@ -834,15 +886,15 @@ describe('settingsPanel.switchTab —— 关 tab 后的导航兜底', () => {
     expect(options?.retainContextWhenHidden).toBe(true);
   });
 
-  it('由隐藏转可见 → 全量补刷一次；隐藏态不补刷（隐藏期 post 送不达）', () => {
+  it('由隐藏转可见 → 补发 pending + 全量补刷一次；隐藏态不补刷', () => {
     provider.open();
     const refreshSpy = vi.spyOn(provider as unknown as { refreshAll(): void }, 'refreshAll');
 
-    expect(fireViewState).toBeDefined();
-    fireViewState?.({ webviewPanel: { visible: false } });
+    expect(setPanelVisible).toBeDefined();
+    setPanelVisible?.(false);
     expect(refreshSpy).not.toHaveBeenCalled();
 
-    fireViewState?.({ webviewPanel: { visible: true } });
+    setPanelVisible?.(true);
     expect(refreshSpy).toHaveBeenCalledTimes(1);
   });
 });

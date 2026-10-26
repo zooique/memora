@@ -45,20 +45,20 @@ export default [
   // 数字三件套（描述性计数纪律）：
   // - **取数口径 = 本闸门自报**：把该条 max 临时改成 1 跑 `npm run lint`，报错消息
   //   「File has N lines」即该文件基线（与闸门判定同源，杜绝手数/ wc 第二口径）。
-  // - 时点：2026-10-21 实测。
+  // - 时点：2026-10-26 复测（L3-AUDIT-FIX-2 瘦身后下调；取数同上，闸门自报）。
   // - 重算指引：瘦身提交后按上法刷新该条 max 调低；**禁止只更新数字不改行数**（无判据作用的
   //   描述性行数已从注释清除，此处仅留闸门阈值）。
   {
     files: ['src/webview/scripts/chatView.ts'], // TARGET（单闭包；计划栏域、历史菜单域、占用域、活动抽屉域、状态条域已外置）
-    rules: { 'max-lines': ['error', { max: 6716 }] },
+    rules: { 'max-lines': ['error', { max: 6715 }] },
   },
   {
     files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域已外置）
-    rules: { 'max-lines': ['error', { max: 4516 }] },
+    rules: { 'max-lines': ['error', { max: 4515 }] },
   },
   {
-    files: ['src/webview/panels/settingsPanel.ts'], // TARGET（一 class 扛 5 个 tab；安全页静态骨架已外置）
-    rules: { 'max-lines': ['error', { max: 2041 }] },
+    files: ['src/webview/panels/settingsPanel.ts'], // TARGET（六页合一；安全页静态骨架已外置）
+    rules: { 'max-lines': ['error', { max: 2037 }] },
   },
   {
     files: ['src/extension/host/fileChangeView.ts'], // TARGET

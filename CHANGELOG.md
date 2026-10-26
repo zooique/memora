@@ -139,15 +139,26 @@
 
 ### Changed（宿主）
 
-- **设置六页从侧栏 view 迁到 editor tab（L3 设置分家）**（2026-10-26）：`MemoraSettingsViewProvider`（`registerWebviewViewProvider`）→ `MemoraSettingsPanel`（`createWebviewPanel`）；package.json 侧栏 `memora.settings` 视图贡献项删除，对话 view 独占侧栏。导航仍走既有 `switchTab` + `_pendingTab` + ready 握手单点（`memora.configureModel` / `memora.openRoles` 落点不变）；panel 单例 reveal-or-create，**设 `retainContextWhenHidden: true` 保上下文**（切走 tab 是 editor tab 的常态用法，不设则每次失焦销毁上下文 ⇒ 六页表单草稿全丢；隐藏期 post 送不达由 `onDidChangeViewState` 重新可见时补刷，见下方条目），关 tab 仍走 dispose 后重开 + ready 握手重建；协议**零新增消息**、内核 `src/` 零改动、设置样式 / HTML 零逻辑改动（九条判据全过，收据见台账「L3 设置分家方案」条）。**为什么**：真机 UI 评审实测设置六页挤占对话空间、对话→设置→返回三层级导航、危险按钮贴脸、回执离视线远。**对消费者**：活动栏不再有设置入口，改用 `memora.openSettings` 命令或侧栏标题栏齿轮（见 Added）。
+- **设置六页从侧栏 view 迁到 editor tab（L3 设置分家）**（2026-10-26）：`MemoraSettingsViewProvider`（`registerWebviewViewProvider`）→ `MemoraSettingsPanel`（`createWebviewPanel`）；package.json 侧栏 `memora.settings` 视图贡献项删除，对话 view 独占侧栏。导航仍走既有 `switchTab` + `_pendingTab` + ready 握手单点（`memora.configureModel` / `memora.openRoles` 落点不变）；panel 单例 reveal-or-create，**设 `retainContextWhenHidden: true` 保上下文**（切走 tab 是 editor tab 的常态用法，不设则每次失焦销毁上下文 ⇒ 六页表单草稿全丢；隐藏态投递语义官方注释两说，故导航在隐藏期只记 pending、转可见时补发，数据面同一时机补刷兜底，见下方条目），关 tab 仍走 dispose 后重开 + ready 握手重建；协议**零新增消息**、内核 `src/` 零改动、设置样式 / HTML 零逻辑改动（九条判据全过，收据见台账「L3 设置分家方案」条）。**为什么**：真机 UI 评审实测设置六页挤占对话空间、对话→设置→返回三层级导航、危险按钮贴脸、回执离视线远。**对消费者**：活动栏不再有设置入口，改用 `memora.openSettings` 命令或侧栏标题栏齿轮（见 Added）。
 
 - **设置面板：上下文保留 + 打开入口收 tab 参数 + 挂载链数据驱动**（2026-10-26，L3 落地后审查修复）：
-  **① 假前提订正（先认错再改）**：L3 落地时记「panel 无 `retainContextWhenHidden` 选项（API 本就不存在）」，据此判定「与侧栏隐藏销毁语义等价」——**该前提是假的**。`createWebviewPanel` 的 options 类型是 `WebviewPanelOptions & WebviewOptions`，后者明载 `retainContextWhenHidden?: boolean`，且默认行为是「面板不可见即销毁 html context」。后果真实存在：editor tab 切走是常态用法（改一半配置去看代码），而 webview 侧零 `setState` 兜底 ⇒ 六页表单草稿每次切换全丢。现设 `retainContextWhenHidden: true`；其代价（隐藏期 post 送不达）由 `onDidChangeViewState` 在重新可见时 `refreshAll()` 补齐。**对消费者**：切走再切回的设置页保状态；隐藏期间 host 侧状态变化（MCP 装配回推 / 角色切换）会在回来时补刷，不显示旧态。
+  **① 假前提订正（先认错再改）**：L3 落地时记「panel 无 `retainContextWhenHidden` 选项（API 本就不存在）」，据此判定「与侧栏隐藏销毁语义等价」——**该前提是假的**。`createWebviewPanel` 的 options 类型是 `WebviewPanelOptions & WebviewOptions`，后者明载 `retainContextWhenHidden?: boolean`，且默认行为是「面板不可见即销毁 html context」。后果真实存在：editor tab 切走是常态用法（改一半配置去看代码），而 webview 侧零 `setState` 兜底 ⇒ 六页表单草稿每次切换全丢。现设 `retainContextWhenHidden: true`。**代价不是「消息全丢」，而是官方文档在此自相矛盾**：`retainContextWhenHidden` 的注释写「You cannot send messages to a hidden webview, even with retainContextWhenHidden enabled」，同一份 `index.d.ts` 里 `Webview.postMessage` 的注释却把「hidden webviews that set retainContextWhenHidden」算作 live（可投递）——两句不可能同时为真。处理方式是不赌任何一侧：隐藏期导航只记 pending、转可见时补发（见下方条目），重新可见时另全量补刷一次作为**收敛网**（覆盖那些没有推送路径的宿主侧变更）。**对消费者**：切走再切回的设置页保状态，回来看到的是当前态。
   **② 打开入口收 `tab` 参数**：`memora.openSettings` 接受可选 `SettingsTab`，`memora.configureModel` / `memora.openRoles` 变为它的薄包装（命令名保留，既有 keybinding 不断）。`chatPanel` 的「tab → 命令名」映射表删除，`open_settings_tab` 的 tab 由 `Extract<…,'config'|'roles'>` 放宽回全集——收窄的前提（其余页无导航入口）已不成立。**对消费者**：无行为变化；**对后续加页**：不必新增命令或映射表，`executeCommand('memora.openSettings', '<tab>')` 直达。
   **③ 挂载链数据驱动**：`settingsView.ts` 六段手抄 try/catch → 一张 `mounts` 表，异常隔离语义不变（每项独立 try/catch，不截断末尾 ready 握手）。**为什么**：手抄版漏一段不会让任何测试红（该页有按钮无内容，只有真机能发现）；`settingsTabs.ts` 旧注释承诺「加 tab = 一行数组 + 两张 Record」与实际改动面差 5 处，已按实测订正为完整清单。
   **守卫**：`settingsPanelRoles.test.ts` 新增两例（创建参数含 `retainContextWhenHidden` / 仅由隐藏转可见才补刷），`settingsTabs.test.ts` 新增一例类型级（tab 收窄即 TS2322）。变异实测三条全红：`expected false to be true` / `expected "refreshAll" to not be called at all` / `TS2322: Type '"skills"' is not assignable to type '"config" | "roles"'`。
 
+- **设置面板：导航落点可靠性 + 遗留四项收口**（2026-10-26，`L3-AUDIT-FIX-2`）：
+  **① 导航判据从「panel 存在」改为「可投递」**：`_panel` 有值只说明 tab 存在，不说明脚本已注册监听器——`postMessage` 契约原文「A response of `true` does not mean that the message was actually received … no message listeners may have been hooked up」，而隐藏态又两说（见上条）。旧实现「投出即清 `_pendingTab`」在这两类时机（open→ready 之间 / 面板在后台）会把导航指令丢掉且宿主侧无痕，用户落在默认「记忆」页。现单点：`isDeliverable()`（`_panel` ∧ `_webviewReady` ∧ `visible`）+ `flushPendingTab()`（唯一投递点与唯一清空点，`switchTab` / `ready` / 由隐藏转可见三个时机共用）；不可投递时只记 pending。**对消费者**：设置已开但还在加载、或设置 tab 在后台时点角色徽章，仍会落在「角色」页。
+  **② `settingsPanelHostDiag` 补接线自证**：`expect(posted).toHaveLength(0)` 是负向断言，`post → postMessage` 通道断线时照样绿（只证明「没发」，证明不了「发得出」）。现每例先投一条已知消息断言被捕获，再清空验零下行。
+  **③ `memora.settings.focus` 消失记入 Removed**（见下）。
+  **④ 闸门数字与注释对齐**：eslint 的 `settingsPanel.ts` 注「一 class 扛 5 个 tab」改为六页；三条 `max-lines` 按「闸门自报」口径下调（chatView 6716→6715 / chatPanel 4516→4515 / settingsPanel 2041→2037，只降不升）。
+  **守卫**：`settingsPanelRoles.test.ts` 新增两例（未 ready 不投递且 pending 保留 / 已 ready 但后台不投递、转可见补发），`settingsPanelHostDiag.test.ts` 加接线自证。变异实测三条全红：判据退回 `_panel !== undefined` ⇒ 两例 `expected [ { …(2) } ] to deeply equal []`；去掉 `visible` ⇒ 后台例同上；`post()` 断线 ⇒ `接线自证失败：post → webview.postMessage 捕获链断了: expected [] to have a length of 1 but got +0`。
+
 - **MCP 两键作用域 `application` → `machine`**（`H0-2`，2026-10-25）：`memora.mcpServers` / `memora.mcpToolAllowlist` 不再随 VS Code Settings Sync 同步。**为什么**：`application` 会把 `headers` 里的明文令牌与免确认批准带到同账号的其他设备——批准的语义是「本机用户同意本机进程」，跨机继承等于替另一台机器点同意。**对消费者**：① 只写用户设置、工作区 / 文件夹写入仍被忽略（`.mcp.json` 不读的红线不变）；② **升级后每台机器需各配一次**，原先靠设置同步带过来的 MCP 配置不会再自动出现；③ 本机已有配置不受影响。断言钉在 `mcpConfig.test.ts`（结构机制不在代码里，改 scope 只有这条测试能拦住）。
+
+### Removed（宿主）
+
+- **`memora.settings.focus` 命令**（2026-10-26，L3 设置分家的连带影响）：该命令**不是本扩展显式贡献的**——VS Code 为每个 `contributes.views` 视图自动提供 `<viewId>.focus`（本仓全历史 grep 无一处置，键位设置里却能搜到），`memora.settings` 视图贡献项删除后它随之消失。**对消费者**：若曾绑过该命令的快捷键，绑定会**静默失效**（按 id 调用不抛错，只是不再发生）；聚焦设置请改用 `memora.openSettings`。
 
 ### Fixed（宿主）
 

@@ -4,6 +4,8 @@
  * 覆盖 settingsPanel.handleMessage 的 host_diag 分支：
  *   ① 收到上报 → console.warn 落扩展宿主日志（message + stack 留痕）；
  *   ② **不驱动任何 UI 状态**：零下行 post（卡片由 webview 就地渲染，宿主只管留痕）。
+ *      该负向断言必须配「接线自证」（见 setupDiag）：先投一条已知消息证明捕获链活着，
+ *      否则负向断言在通道断线时恒真——只证明「没发」，证明不了「发得出」。
  *
  * 为何必须单独钉：错误边界在 settingsViewMain 装配、上报发到**本面板**的路由——
  * 2026-10-11 落地审查实锤过「chatPanel 接了路由、settingsPanel 漏接」的半个补丁
@@ -38,6 +40,7 @@ function setupDiag() {
   const posted: unknown[] = [];
   const provider = new MemoraSettingsPanel({} as never, {} as never);
   (provider as unknown as { _panel: unknown })._panel = {
+    visible: true,
     webview: {
       postMessage: (msg: unknown) => {
         posted.push(msg);
@@ -45,6 +48,13 @@ function setupDiag() {
       },
     },
   };
+  // 接线自证（先于任何「零下行」断言）：走 post() 投一条已知消息，断言它被捕获。
+  // 为什么必须有这一步：`expect(posted).toHaveLength(0)` 是**负向**断言，post→postMessage
+  // 通道断线（改名 / 短路 / 换成别的字段）时它照样绿 ⇒ 本文件此前只能证明「没发」，
+  // 从未证明过「发得出」。顺序不可倒：自证失败即中止，避免零下行断言在断线下假装通过。
+  (provider as unknown as { post(m: unknown): void }).post({ type: 'wiring_selfcheck' });
+  expect(posted, '接线自证失败：post → webview.postMessage 捕获链断了').toHaveLength(1);
+  posted.length = 0;
   const handleMessage = (
     provider as unknown as {
       handleMessage(msg: unknown): Promise<void>;
