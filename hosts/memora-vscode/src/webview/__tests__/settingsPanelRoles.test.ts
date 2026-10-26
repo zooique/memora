@@ -22,13 +22,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as vscode from 'vscode';
 import { readFile, writeFile } from 'node:fs/promises';
 import type { Agent } from '@zooique/memora';
-import { MemoraSettingsViewProvider } from '../panels/settingsPanel.js';
+import { MemoraSettingsPanel } from '../panels/settingsPanel.js';
 
 // 可观测的 workspace 配置 mock（vi.hoisted：vi.mock 工厂被提升到文件顶部，闭包外变量
-// 必须先提升声明，否则工厂内引用报错）。get/update 供 toggleSkillDisabled 用例断言。
+// 必须先提升声明，否则工厂内引用报错）。get/update 供 toggleSkillDisabled 用例断言；
+// createWebviewPanel 供 switchTab 导航兜底块（open 单例路径）驱动 panel 装配。
 const vscodeConfigMock = vi.hoisted(() => ({
   cfgGet: vi.fn(() => undefined),
   cfgUpdate: vi.fn(),
+  createWebviewPanel: vi.fn(),
 }));
 
 // mock vscode：仅提供 settingsPanel 及其依赖在加载/构造期用到的最小 API
@@ -45,10 +47,12 @@ vi.mock('vscode', () => ({
     showWarningMessage: vi.fn(),
     showErrorMessage: vi.fn(),
     showInformationMessage: vi.fn(),
+    createWebviewPanel: vscodeConfigMock.createWebviewPanel,
   },
   commands: { executeCommand: vi.fn() },
   ConfigurationTarget: { Global: 1 },
-  // resolveWebviewView → buildHtml 读 env.language 定 HTML lang
+  ViewColumn: { Active: 1 },
+  // open → buildHtml 读 env.language 定 HTML lang
   env: { language: 'zh-cn' },
 }));
 
@@ -80,16 +84,16 @@ function agentStub(opts: { switchOk: boolean; locked: boolean; unlockAt?: number
 
 /** 构造 provider + 记录 postMessage 的 posted 数组 */
 function setup(agent: Agent): {
-  provider: MemoraSettingsViewProvider;
+  provider: MemoraSettingsPanel;
   posted: { type: string; level?: string; message?: string }[];
   globalUpdate: ReturnType<typeof vi.fn>;
 } {
   const posted: { type: string; level?: string; message?: string }[] = [];
   const globalUpdate = vi.fn();
-  const provider = new MemoraSettingsViewProvider({} as never, {} as never);
+  const provider = new MemoraSettingsPanel({} as never, {} as never);
   provider.setAgentFactory(async () => agent);
   provider.setGlobalState({ get: () => undefined, update: globalUpdate } as never);
-  (provider as unknown as { _view: unknown })._view = {
+  (provider as unknown as { _panel: unknown })._panel = {
     webview: {
       postMessage: (msg: never) => {
         posted.push(msg);
@@ -101,7 +105,7 @@ function setup(agent: Agent): {
 }
 
 /** 调私有 activateRole */
-function activateRole(provider: MemoraSettingsViewProvider, name: string): Promise<boolean> {
+function activateRole(provider: MemoraSettingsPanel, name: string): Promise<boolean> {
   return (provider as unknown as { activateRole(n: string): Promise<boolean> }).activateRole(name);
 }
 
@@ -200,7 +204,7 @@ describe('settingsPanel.toggleSkillDisabled —— 技能启停开关', () => {
 
   /** 调私有 toggleSkillDisabled */
   function handleToggle(
-    provider: MemoraSettingsViewProvider,
+    provider: MemoraSettingsPanel,
     name: string,
     disabled: boolean,
   ): Promise<void> {
@@ -271,7 +275,7 @@ describe('settingsPanel.refreshRolePacks —— 角色包刷新链路', () => {
   const USER_DIR = '/mock/user-packs';
 
   /** 调私有 refreshRolePacks */
-  function refresh(provider: MemoraSettingsViewProvider): Promise<void> {
+  function refresh(provider: MemoraSettingsPanel): Promise<void> {
     return (provider as unknown as { refreshRolePacks(): Promise<void> }).refreshRolePacks();
   }
 
@@ -287,7 +291,7 @@ describe('settingsPanel.refreshRolePacks —— 角色包刷新链路', () => {
     updated: string[];
     activeFallback: boolean;
   }): {
-    provider: MemoraSettingsViewProvider;
+    provider: MemoraSettingsPanel;
     posted: { type: string; level?: string; message?: string }[];
     resync: ReturnType<typeof vi.fn>;
   } {
@@ -303,11 +307,11 @@ describe('settingsPanel.refreshRolePacks —— 角色包刷新链路', () => {
         activeName: 'memora助手',
       },
     } as unknown as Agent;
-    const provider = new MemoraSettingsViewProvider({} as never, {} as never);
+    const provider = new MemoraSettingsPanel({} as never, {} as never);
     provider.setAgentFactory(async () => agent);
     provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
     provider.setUserRolePacksDir(USER_DIR);
-    (provider as unknown as { _view: unknown })._view = {
+    (provider as unknown as { _panel: unknown })._panel = {
       webview: {
         postMessage: (msg: never) => {
           posted.push(msg);
@@ -383,11 +387,11 @@ describe('settingsPanel.refreshRolePacks —— 角色包刷新链路', () => {
   it('Agent 未装配（无 rolePackManager）→ 错误提示，不调 resync、不下发列表', async () => {
     const posted: { type: string; level?: string; message?: string }[] = [];
     const agent = { on: vi.fn(), off: vi.fn() } as unknown as Agent;
-    const provider = new MemoraSettingsViewProvider({} as never, {} as never);
+    const provider = new MemoraSettingsPanel({} as never, {} as never);
     provider.setAgentFactory(async () => agent);
     provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
     provider.setUserRolePacksDir(USER_DIR);
-    (provider as unknown as { _view: unknown })._view = {
+    (provider as unknown as { _panel: unknown })._panel = {
       webview: {
         postMessage: (msg: never) => {
           posted.push(msg);
@@ -430,7 +434,7 @@ describe('settingsPanel.roles_save / roles_detail —— 角色策略保存链�
    * meta.handoffPrompt / validationIssues 等字段（缺 meta 会 TypeError）。
    */
   function setupSave(filePath: string): {
-    provider: MemoraSettingsViewProvider;
+    provider: MemoraSettingsPanel;
     posted: Posted[];
     reload: ReturnType<typeof vi.fn>;
   } {
@@ -449,11 +453,11 @@ describe('settingsPanel.roles_save / roles_detail —— 角色策略保存链�
       activeName: 'writer',
     };
     const agent = { rolePackManager: rpm, on: vi.fn(), off: vi.fn() } as unknown as Agent;
-    const provider = new MemoraSettingsViewProvider({} as never, {} as never);
+    const provider = new MemoraSettingsPanel({} as never, {} as never);
     provider.setAgentFactory(async () => agent);
     provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
     provider.setUserRolePacksDir(USER_DIR);
-    (provider as unknown as { _view: unknown })._view = {
+    (provider as unknown as { _panel: unknown })._panel = {
       webview: {
         postMessage: (msg: never) => {
           posted.push(msg);
@@ -466,7 +470,7 @@ describe('settingsPanel.roles_save / roles_detail —— 角色策略保存链�
 
   /** 调私有 handleRolesSave */
   function save(
-    provider: MemoraSettingsViewProvider,
+    provider: MemoraSettingsPanel,
     name: string,
     strategy: Record<string, Record<string, unknown>>,
   ): Promise<void> {
@@ -478,7 +482,7 @@ describe('settingsPanel.roles_save / roles_detail —— 角色策略保存链�
   }
 
   /** 调私有 handleRolesDetail */
-  function detail(provider: MemoraSettingsViewProvider, name: string): Promise<void> {
+  function detail(provider: MemoraSettingsPanel, name: string): Promise<void> {
     return (
       provider as unknown as { handleRolesDetail(n: string): Promise<void> }
     ).handleRolesDetail(name);
@@ -625,10 +629,10 @@ describe('settingsPanel.loadRoles —— 读期队伍健康检测（只读标注
     const store = [{ leader: '方案设计师', members: ['memora助手'] }];
     const globalUpdate = vi.fn();
     const posted: { type: string; teams?: unknown }[] = [];
-    const provider = new MemoraSettingsViewProvider({} as never, {} as never);
+    const provider = new MemoraSettingsPanel({} as never, {} as never);
     provider.setAgentFactory(async () => agent);
     provider.setGlobalState({ get: () => store, update: globalUpdate } as never);
-    (provider as unknown as { _view: unknown })._view = {
+    (provider as unknown as { _panel: unknown })._panel = {
       webview: {
         postMessage: (msg: never) => {
           posted.push(msg);
@@ -661,10 +665,10 @@ describe('settingsPanel.loadRoles —— 读期队伍健康检测（只读标注
     const store = [{ leader: 'A', members: ['B'] }];
     const globalUpdate = vi.fn();
     const posted: { type: string; teams?: unknown }[] = [];
-    const provider = new MemoraSettingsViewProvider({} as never, {} as never);
+    const provider = new MemoraSettingsPanel({} as never, {} as never);
     provider.setAgentFactory(async () => agent);
     provider.setGlobalState({ get: () => store, update: globalUpdate } as never);
-    (provider as unknown as { _view: unknown })._view = {
+    (provider as unknown as { _panel: unknown })._panel = {
       webview: {
         postMessage: (msg: never) => {
           posted.push(msg);
@@ -682,28 +686,33 @@ describe('settingsPanel.loadRoles —— 读期队伍健康检测（只读标注
 });
 
 // ══════════════════════════════════════════════════════════════
-// switchTab 导航兜底 —— 视图销毁后 pending 保留（openRoles/configureModel 落点）
+// switchTab 导航兜底 —— 关 tab 后 pending 保留（openRoles/configureModel 落点）
 // ══════════════════════════════════════════════════════════════
 
-describe('settingsPanel.switchTab —— 视图销毁后的导航兜底', () => {
+describe('settingsPanel.switchTab —— 关 tab 后的导航兜底', () => {
   /**
    * 被测不变量（F1 回归锁）：
-   *   设置视图被销毁（折叠/关闭/切走隐藏均触发 onDidDispose）后，switchTab 不得把
-   *   _pendingTab 写进已销毁的 webview 后清空——必须保留 pending，等新 webview 的
-   *   ready 握手补发 settings_switch_tab。否则点角色徽章/配置大模型落在默认「记忆」页。
+   *   设置面板被销毁（关 tab / 工作区关闭触发 onDidDispose）后，switchTab 不得把
+   *   _pendingTab 写进已销毁的 webview 后清空——必须保留 pending，等重新 open 出的
+   *   新面板 ready 握手补发 settings_switch_tab。否则点角色徽章/配置大模型落在默认「记忆」页。
    */
   type PostedMsg = { type: string; tab?: string };
   let posted: PostedMsg[];
-  let provider: MemoraSettingsViewProvider;
-  /** mock 视图的 dispose 触发器（捕获 resolveWebviewView 注册的 onDidDispose 回调） */
+  let provider: MemoraSettingsPanel;
+  /** mock 面板的 dispose 触发器（捕获 open 内注册的 onDidDispose 回调） */
   let fireDispose: () => void;
-  /** mock 视图的 onDidReceiveMessage 回调（ready 握手入口） */
+  /** mock 面板的 onDidReceiveMessage 回调（ready 握手入口） */
   let receiveMsg: ((msg: unknown) => void) | undefined;
 
-  /** 构造 resolveWebviewView 所需的最小 WebviewView mock（捕获 dispose/message 回调） */
-  function makeView(): { webview: unknown; onDidDispose: (cb: () => void) => { dispose(): void } } {
+  /** 构造 createWebviewPanel 返回的最小 WebviewPanel mock（捕获 dispose/message 回调） */
+  function makePanel(): {
+    reveal: ReturnType<typeof vi.fn>;
+    webview: unknown;
+    onDidDispose: (cb: () => void) => { dispose(): void };
+  } {
     receiveMsg = undefined;
     return {
+      reveal: vi.fn(),
       webview: {
         options: undefined,
         html: '',
@@ -729,8 +738,10 @@ describe('settingsPanel.switchTab —— 视图销毁后的导航兜底', () => 
   beforeEach(() => {
     vi.clearAllMocks();
     posted = [];
+    // open 单例路径：每次创建返回新 mock panel（dispose 后再 open 视为重建）
+    vscodeConfigMock.createWebviewPanel.mockImplementation(() => makePanel());
     // ready 分支的数据推送（loadRoles/loadConfig/…）与导航兜底无关，置空隔离
-    provider = new MemoraSettingsViewProvider({} as never, {} as never);
+    provider = new MemoraSettingsPanel({} as never, {} as never);
     provider.setAgentFactory(async () => ({ on: vi.fn(), off: vi.fn() }) as unknown as Agent);
     provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
     (
@@ -750,20 +761,20 @@ describe('settingsPanel.switchTab —— 视图销毁后的导航兜底', () => 
     });
   });
 
-  it('resolve → dispose → switchTab：不向死 view 发消息，pending 保留并在 ready 后补发', async () => {
-    provider.resolveWebviewView(makeView() as never, {} as never, {} as never);
+  it('open → dispose → switchTab：不向死 panel 发消息，pending 保留并在 ready 后补发', async () => {
+    provider.open();
 
-    // 视图销毁（折叠/切走）→ 引用清理，_view 不残留死对象
+    // 关 tab → 引用清理，_panel 不残留死对象
     fireDispose();
-    expect((provider as unknown as { _view: unknown })._view).toBeUndefined();
+    expect((provider as unknown as { _panel: unknown })._panel).toBeUndefined();
 
-    // 死 view 下导航：不得 post（发了也是静默丢弃），pending 必须保留
+    // 死 panel 下导航：不得 post（发了也是静默丢弃），pending 必须保留
     provider.switchTab('roles');
     expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([]);
     expect((provider as unknown as { _pendingTab: string | undefined })._pendingTab).toBe('roles');
 
-    // 聚焦触发 VS Code 重新 resolve（新 webview），随后新 webview ready 握手 → 补发待切选项卡
-    provider.resolveWebviewView(makeView() as never, {} as never, {} as never);
+    // 重新打开（新面板），随后新面板 ready 握手 → 补发待切选项卡
+    provider.open();
     await (provider as unknown as { handleMessage(m: unknown): Promise<void> }).handleMessage({
       type: 'ready',
     });
@@ -775,8 +786,8 @@ describe('settingsPanel.switchTab —— 视图销毁后的导航兜底', () => 
     ).toBeUndefined();
   });
 
-  it('活 view 下 switchTab：立即 post 且清 pending（既有行为不回归）', () => {
-    provider.resolveWebviewView(makeView() as never, {} as never, {} as never);
+  it('活 panel 下 switchTab：立即 post 且清 pending（既有行为不回归）', () => {
+    provider.open();
 
     provider.switchTab('config');
 
@@ -788,16 +799,16 @@ describe('settingsPanel.switchTab —— 视图销毁后的导航兜底', () => 
     ).toBeUndefined();
   });
 
-  it('重复 resolve 后旧 view dispose → 不误清新 view 的引用（守卫相等才清）', () => {
-    provider.resolveWebviewView(makeView() as never, {} as never, {} as never);
-    const oldDispose = fireDispose;
-    provider.resolveWebviewView(makeView() as never, {} as never, {} as never);
-    const currentView = (provider as unknown as { _view: unknown })._view;
+  it('重复 open 复用同一 panel：只 reveal 不新建（单例判据）', () => {
+    provider.open();
+    const panel = (provider as unknown as { _panel: { reveal: ReturnType<typeof vi.fn> } })._panel;
 
-    oldDispose();
+    provider.open();
 
-    expect((provider as unknown as { _view: unknown })._view).toBe(currentView);
-    // receiveMsg 断言占位避免 unused（新 view 已注册，旧 view 的 dispose 不影响新引用）
+    expect(vscodeConfigMock.createWebviewPanel).toHaveBeenCalledTimes(1);
+    expect((provider as unknown as { _panel: unknown })._panel).toBe(panel);
+    expect(panel.reveal).toHaveBeenCalledTimes(1);
+    // receiveMsg 断言占位避免 unused（面板已注册消息回调）
     expect(receiveMsg).toBeDefined();
   });
 });

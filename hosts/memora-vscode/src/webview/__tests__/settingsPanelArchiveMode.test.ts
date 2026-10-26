@@ -19,7 +19,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Agent } from '@zooique/memora';
-import { MemoraSettingsViewProvider } from '../panels/settingsPanel.js';
+import { MemoraSettingsPanel } from '../panels/settingsPanel.js';
 
 // 可观测的 workspace 配置 mock（vi.hoisted：vi.mock 工厂提升到顶部，闭包外变量须先提升）。
 // 基座实现忠实于 VS Code API：get(key, defaultValue) 未配置时回落默认值——
@@ -64,14 +64,14 @@ function agentStub(onSetArchiveMode?: () => void): {
 
 /** 构造 provider + 记录 postMessage 的 posted 数组（复刻 settingsPanelRoles 的 harness） */
 function setup(agent: Agent): {
-  provider: MemoraSettingsViewProvider;
+  provider: MemoraSettingsPanel;
   posted: { type: string; level?: string; message?: string }[];
 } {
   const posted: { type: string; level?: string; message?: string }[] = [];
-  const provider = new MemoraSettingsViewProvider({} as never, {} as never);
+  const provider = new MemoraSettingsPanel({} as never, {} as never);
   provider.setAgentFactory(async () => agent);
   provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
-  (provider as unknown as { _view: unknown })._view = {
+  (provider as unknown as { _panel: unknown })._panel = {
     webview: {
       postMessage: (msg: never) => {
         posted.push(msg);
@@ -83,7 +83,7 @@ function setup(agent: Agent): {
 }
 
 /** 经 handleMessage 路由发 archive_mode_set（测全链：消息分支 → setArchiveMode） */
-function sendArchiveModeSet(provider: MemoraSettingsViewProvider, mode: string): Promise<void> {
+function sendArchiveModeSet(provider: MemoraSettingsPanel, mode: string): Promise<void> {
   return (provider as unknown as { handleMessage(msg: unknown): Promise<void> }).handleMessage({
     type: 'archive_mode_set',
     mode,

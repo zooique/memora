@@ -47,7 +47,7 @@ export async function createProvider(
   // baseUrl/model 缺失时抛出可读错误（引导打开配置面板）
   if (!baseUrl || !model) {
     throw new Error(
-      '缺少 LLM 配置：请在侧边栏「大模型配置」中添加上下文，或设置环境变量 ' +
+      '缺少 LLM 配置：请在设置面板「大模型」页中添加配置，或设置环境变量 ' +
         'MEMORA_BASE_URL 和 MEMORA_MODEL（如 MEMORA_BASE_URL=https://api.xiaomimimo.com/v1 且 MEMORA_MODEL=deepseek-chat）',
     );
   }

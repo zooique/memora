@@ -1,9 +1,9 @@
 /**
- * 记忆子视图样式（设置视图选项卡内）— 对齐 rolesStyles.ts 的卡片列表 + 搜索 + source 徽章
+ * 记忆子视图样式（设置面板选项卡内）— 对齐 rolesStyles.ts 的卡片列表 + 搜索 + source 徽章
  *
  * 分层（对齐 ITCSS + tokens.ts 单一真理源）：
  *   - 设计令牌由 tokens.ts 单一真理源提供，经 settingsStyles.ts 统一内嵌，本文件不再内嵌；
- *   - 选择器统一以 `#memory-root` 前缀限定 —— 设置视图合并后三个子视图共存于同一文档，
+ *   - 选择器统一以 `#memory-root` 前缀限定 —— 设置面板合并后三个子视图共存于同一文档，
  *     共享类名（.header / .empty-state 等）靠根容器前缀隔离，避免跨子视图样式串扰；
  *   - 分区：Layout（header / search / list）→ Components（card / source-badge / detail）；
  *   - source 徽章颜色约定：round-summary=accent，work-projection=灰色，

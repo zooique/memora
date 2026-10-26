@@ -13,7 +13,7 @@
 import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
 import type { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
-import type { MemoraSettingsViewProvider } from '../../webview/panels/settingsPanel.js';
+import type { MemoraSettingsPanel } from '../../webview/panels/settingsPanel.js';
 
 /**
  * 读取「禁用的技能名」配置（技能启停，**唯一读取点**）
@@ -41,12 +41,12 @@ export function readDisabledSkills(): string[] {
  *
  * @param agent 已装配的 Agent（内核侧持有 skills 管理器）
  * @param chatProvider 对话视图提供者（技能下拉 / chip 的刷新入口）
- * @param settingsProvider 设置视图提供者（技能卡片的刷新入口）
+ * @param settingsProvider 设置面板提供者（技能卡片的刷新入口）
  */
 export function syncDisabledSkills(
   agent: Agent,
   chatProvider: MemoraChatViewProvider,
-  settingsProvider: MemoraSettingsViewProvider,
+  settingsProvider: MemoraSettingsPanel,
 ): void {
   // 禁用集每次重读配置：调用点既有「用户刚改配置」，也有「命令重载」，读缓存会让后者同步到旧值
   agent.skills?.setDisabledSkills(readDisabledSkills());

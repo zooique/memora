@@ -2,7 +2,7 @@
  * Memora — VS Code 插件入口（memora 通用落地宿主）
  *
  * 职责：
- *   - 注册侧边栏视图（对话 + 大模型配置）+ 两个通用命令（打开 / 配置大模型）
+ *   - 注册侧栏对话视图 + 设置面板（editor tab）+ 通用命令（打开对话 / 打开设置 / 配置大模型）
  *   - 懒加载装配 Agent（getOrCreateAgent）
  *
  * 结构（通用化设计，功能定位由内置角色包承载）：
@@ -24,7 +24,7 @@ import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js';
-import { MemoraSettingsViewProvider } from '../webview/panels/settingsPanel.js';
+import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
 import { openChatCommand } from './commands/openChat.js';
 import { runDemoCommand } from './commands/demo.js';
 import { reloadSkillsCommand } from './commands/reloadSkills.js';
@@ -408,12 +408,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
   );
 
-  // 侧边栏视图：设置面板（角色 / 大模型 / 记忆 / 技能 / MCP / 安全 选项卡合一）
-  // 各子视图均为低频操作，合并为单一「设置」视图、
-  // 内部按钮切换，避免活动栏底部选项卡拥挤（用户反馈）。
+  // 设置面板：editor tab 形态（角色 / 大模型 / 记忆 / 技能 / MCP / 安全 六页合一）。
+  // L3 分家（2026-10-26）：设置整体从侧栏 view 迁入 editor tab——**六页合一迁入，
+  // 非回退到分页前形态**；对话仍留侧栏。原「避免活动栏底部选项卡拥挤（用户反馈）」
+  // 的动机由「设置整体独立 tab」承接。
   // 装配复用与 chat 面板同一 getOrCreateAgent 单例（SSOT），角色切换持久化用户级激活态；
   // providerStore 注入供大模型子视图读写（与 chat 面板共用一个 store 单例）。
-  const settingsProvider = new MemoraSettingsViewProvider(context.extensionUri, providerStore);
+  const settingsProvider = new MemoraSettingsPanel(context.extensionUri, providerStore);
   settingsProvider.setAgentFactory(getAgent);
   settingsProvider.setGlobalState(context.globalState);
   // 注入技能目录：用户目录（打开目录按钮）+ 内置配置目录（三源技能来源判定，SSOT 收紧）
@@ -421,38 +422,39 @@ export function activate(context: vscode.ExtensionContext): void {
   settingsProvider.setConfigDir(configDir);
   // 注入用户角色包目录（打开目录按钮 + 角色来源判定，对齐技能系统）
   settingsProvider.setUserRolePacksDir(userRolePacksDir);
-  // 注入对话面板提供者：角色 handoff 预填需从设置视图跨 webview 投递到对话视图
+  // 注入对话面板提供者：角色 handoff 预填需从设置面板跨 webview 投递到对话视图
   settingsProvider.setChatProvider(chatProvider);
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(
-      MemoraSettingsViewProvider.viewType,
-      settingsProvider,
-    ),
-  );
 
   // 命令：打开对话面板（聚焦侧边栏视图）
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.open', () => openChatCommand(getAgent, chatProvider)),
   );
 
-  // 命令：配置大模型（聚焦设置视图并切换到「大模型」子选项卡）
-  // 先记录待切选项卡再聚焦；视图未就绪时由 settingsPanel
+  // 命令：打开设置面板（editor tab 单例 reveal-or-create）
+  // 原入口 = 点活动栏图标（侧栏 view 随 L3 分家移除），由本命令承接——
+  // 六页皆可达（打开后页内选项卡自由切换），MCP/技能/记忆/安全页的文档步骤靠它落地。
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.openSettings', () => settingsProvider.open()),
+  );
+
+  // 命令：配置大模型（打开设置面板并切换到「大模型」子选项卡）
+  // 先记录待切选项卡再打开；面板未就绪时由 settingsPanel
   // 在 ready 握手后补发 settings_switch_tab，保证命令落点与用户意图一致。
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.configureModel', () => {
       settingsProvider.switchTab('config');
-      void vscode.commands.executeCommand(`${MemoraSettingsViewProvider.viewType}.focus`);
+      settingsProvider.open();
     }),
   );
 
-  // 命令：管理角色包（聚焦设置视图并切换到「角色」子选项卡）
+  // 命令：管理角色包（打开设置面板并切换到「角色」子选项卡）
   // 对话区「当前角色」徽章点击 → open_settings_tab(roles) → 本命令；与 configureModel 同款两行模式
-  // （先记待切选项卡再聚焦；视图未就绪时由 settingsPanel 在 ready 握手后补发 settings_switch_tab）。
-  // 只导航、不切换：切换执行仍走角色视图「设为当前」→ roles_set_active → agent.switchRolePack。
+  // （先记待切选项卡再打开；面板未就绪时由 settingsPanel 在 ready 握手后补发 settings_switch_tab）。
+  // 只导航、不切换：切换执行仍走角色面板「设为当前」→ roles_set_active → agent.switchRolePack。
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.openRoles', () => {
       settingsProvider.switchTab('roles');
-      void vscode.commands.executeCommand(`${MemoraSettingsViewProvider.viewType}.focus`);
+      settingsProvider.open();
     }),
   );
 

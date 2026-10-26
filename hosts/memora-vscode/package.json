@@ -50,6 +50,10 @@
         "icon": "$(person)"
       },
       {
+        "command": "memora.openSettings",
+        "title": "Memora: 打开设置面板"
+      },
+      {
         "command": "memora.memoryStats",
         "title": "Memora: 查看记忆统计"
       },
@@ -309,11 +313,6 @@
           "type": "webview",
           "id": "memora.chat",
           "name": "对话"
-        },
-        {
-          "type": "webview",
-          "id": "memora.settings",
-          "name": "设置"
         }
       ]
     },

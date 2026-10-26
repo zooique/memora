@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createConfigView } from '../scripts/configView.js';
 
 /** 覆盖 createConfigView 全部查询引用的最小 HTML 骨架（子视图挂载在 #config-root 根容器内，
- *  与设置视图选项卡合并后的 id 空间隔离约定一致） */
+ *  与设置面板选项卡合并后的 id 空间隔离约定一致） */
 const HTML = `
   <div id="config-root">
     <div class="header">

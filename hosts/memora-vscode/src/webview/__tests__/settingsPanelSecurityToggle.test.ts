@@ -16,7 +16,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Agent } from '@zooique/memora';
-import { MemoraSettingsViewProvider } from '../panels/settingsPanel.js';
+import { MemoraSettingsPanel } from '../panels/settingsPanel.js';
 import { CONFIRM_SCRIPTS_KEY, CONFIRM_WRITES_KEY } from '../../shared/constants.js';
 
 vi.mock('vscode', () => ({
@@ -52,7 +52,7 @@ function agentStub(): {
 }
 
 function setup(agent: Agent): {
-  provider: MemoraSettingsViewProvider;
+  provider: MemoraSettingsPanel;
   posted: { type: string; level?: string; message?: string }[];
   globalUpdate: ReturnType<typeof vi.fn>;
   factory: ReturnType<typeof vi.fn>;
@@ -66,12 +66,12 @@ function setup(agent: Agent): {
     getActiveName: () => '',
     getBackgroundName: () => '',
   };
-  const provider = new MemoraSettingsViewProvider({} as never, store as never);
+  const provider = new MemoraSettingsPanel({} as never, store as never);
   // 工厂包一层 spy：未装配路径的「接入」是否真的触发装配只能从这里看见（装配是宿主生命周期）
   const factory = vi.fn(async () => agent);
   provider.setAgentFactory(factory);
   provider.setGlobalState({ get: () => undefined, update: globalUpdate } as never);
-  (provider as unknown as { _view: unknown })._view = {
+  (provider as unknown as { _panel: unknown })._panel = {
     webview: {
       postMessage: (msg: never) => {
         posted.push(msg);
@@ -84,7 +84,7 @@ function setup(agent: Agent): {
 
 /** 经 handleMessage 路由发 security_toggle（测全链：消息分支 → target 分流 → 具体 toggle） */
 function sendSecurityToggle(
-  provider: MemoraSettingsViewProvider,
+  provider: MemoraSettingsPanel,
   target: string,
   enabled: boolean,
 ): Promise<void> {

@@ -15,7 +15,7 @@
  */
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
-import { MemoraSettingsViewProvider } from '../panels/settingsPanel.js';
+import { MemoraSettingsPanel } from '../panels/settingsPanel.js';
 
 // mock vscode：仅提供 settingsPanel 构造与加载期用到的最小 API
 vi.mock('vscode', () => ({
@@ -36,8 +36,8 @@ vi.mock('vscode', () => ({
 /** 装配：provider + postMessage 捕获 + handleMessage 私有入口 */
 function setupDiag() {
   const posted: unknown[] = [];
-  const provider = new MemoraSettingsViewProvider({} as never, {} as never);
-  (provider as unknown as { _view: unknown })._view = {
+  const provider = new MemoraSettingsPanel({} as never, {} as never);
+  (provider as unknown as { _panel: unknown })._panel = {
     webview: {
       postMessage: (msg: unknown) => {
         posted.push(msg);

@@ -1,7 +1,7 @@
 /**
  * memoryView — 记忆子视图 webview 运行时脚本
  *
- * 由 settingsView.ts 挂载（设置视图选项卡合并后记忆子视图）：以工厂函数 createMemoryView
+ * 由 settingsView.ts 挂载（设置面板选项卡合并后记忆子视图）：以工厂函数 createMemoryView
  * 接收依赖（vscode / window / root）并初始化全部交互，替代「字符串注入脚本」。
  *
  * 职责：
@@ -31,7 +31,7 @@ export interface MemoryViewDeps {
   vscode: { postMessage(msg: WebviewToExtensionMessage): void };
   /** webview window 对象 */
   window: Window;
-  /** 子视图挂载根容器（设置视图选项卡合并后：查询限定在根内，多子视图 id 空间隔离） */
+  /** 子视图挂载根容器（设置面板选项卡合并后：查询限定在根内，多子视图 id 空间隔离） */
   root: HTMLElement;
 }
 
@@ -83,7 +83,7 @@ const MEMORY_PAGE_SIZE = 20;
  */
 export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void {
   const document = window.document;
-  // id 空间隔离：查询限定在 root 容器内（设置视图合并后与 roles/config 子视图共存，
+  // id 空间隔离：查询限定在 root 容器内（设置面板合并后与 roles/config 子视图共存，
   // 各自根内都有 #list/#statBar，不做根内查询会冲突）
   const list = root.querySelector('#list') as HTMLElement;
   const statBar = root.querySelector('#statBar') as HTMLElement;

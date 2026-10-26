@@ -73,7 +73,7 @@ await server.connect(new StdioServerTransport());
 
 ## 2. 配置（设置面板 MCP 页）
 
-打开 Memora 侧栏 → **设置** → **MCP** → 「添加服务器」，填：名称 `acc`、命令 `node`、
+打开设置面板（`Ctrl+Shift+P` → `Memora: 打开设置面板`）→ **MCP** → 「添加服务器」，填：名称 `acc`、命令 `node`、
 参数一行一个该脚本的**绝对路径**（如 `F:/…/hosts/memora-vscode/mcp-acceptance-server.mjs`），
 保存。
 

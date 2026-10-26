@@ -291,7 +291,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     : null;
 
   // 当前角色徽章（输入区状态行，展示角色名让用户感知当前定位）。
-  // 可点跳转：点击 → open_settings_tab(roles) → host 打开设置视图「角色」选项卡（导航单点；切换执行仍走角色视图
+  // 可点跳转：点击 → open_settings_tab(roles) → host 打开设置面板「角色」选项卡（导航单点；切换执行仍走角色视图
   // 「设为当前」→ roles_set_active → agent.switchRolePack 单路径，本徽章不承载切换逻辑）。
   const roleBadge = document.getElementById('currentRoleBadge') as HTMLButtonElement | null;
   // 工具权限徽章（输入区角色徽章旁，展示工具模式与能力列表）
@@ -3058,7 +3058,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 更新输入区状态行「当前角色」徽章（SSOT：角色名与 AI 消息头/空状态共用 currentRoleName）。
    *
-   * 徽章可点跳转：点击打开设置视图「角色」选项卡（open_settings_tab 消息，host 侧 memora.openRoles），
+   * 徽章可点跳转：点击打开设置面板「角色」选项卡（open_settings_tab 消息，host 侧 memora.openRoles），
    * 切换动作仍由角色视图「设为当前」发起——本处只做状态展示与导航，不承载切换执行。
    * 可附加展示性格特征（traits）简要（取最高分 trait 的中文标签），让角色气质一眼可见。
    * 无角色名时隐藏徽章（保持输入区干净）；textContent 赋值防注入。
@@ -5953,12 +5953,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     },
   });
 
-  // 角色徽章点击 → open_settings_tab(roles)（host 打开设置视图「角色」选项卡，导航单点）。
+  // 角色徽章点击 → open_settings_tab(roles)（host 打开设置面板「角色」选项卡，导航单点）。
   // 拍板 2（2026-10-13）：**运行时不禁用**——跳界面不改变任何状态，禁 = 挡无害操作；
   // 也不挂 updateSessionControlsLock 收口——该锁语义 = 「运行时禁用改变会话结构的操作」
   // （新建/切历史/删除），导航不属于此类，塞进去即语义污染。
   // 权限面如实声明：运行时切换能力**本就可及**（内核 switchRolePack 对话中允许，自动匹配依赖它，
-  // 设置视图「设为当前」无 busy 守门），本入口只是补上「发现性」，未放宽也未收紧任何切换权限。
+  // 设置面板「设为当前」无 busy 守门），本入口只是补上「发现性」，未放宽也未收紧任何切换权限。
   roleBadge?.addEventListener('click', () => {
     vscode.postMessage({ type: 'open_settings_tab', tab: 'roles' });
   });

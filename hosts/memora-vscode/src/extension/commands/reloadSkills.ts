@@ -10,7 +10,7 @@ import type { Agent } from '@zooique/memora';
 import { toNoticeText } from '../host/noticeText.js';
 import { syncDisabledSkills } from '../host/skillSync.js';
 import type { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
-import type { MemoraSettingsViewProvider } from '../../webview/panels/settingsPanel.js';
+import type { MemoraSettingsPanel } from '../../webview/panels/settingsPanel.js';
 
 /**
  * 重载技能与角色包
@@ -25,12 +25,12 @@ import type { MemoraSettingsViewProvider } from '../../webview/panels/settingsPa
  *
  * @param tryGetAgent 取当前工作区 Agent（失败返 null，不抛错——命令侧统一提示「未就绪」）
  * @param chatProvider 对话视图提供者（技能清单刷新通道之一）
- * @param settingsProvider 设置视图提供者（技能清单刷新通道之一）
+ * @param settingsProvider 设置面板提供者（技能清单刷新通道之一）
  */
 export async function reloadSkillsCommand(
   tryGetAgent: () => Promise<Agent | null>,
   chatProvider: MemoraChatViewProvider,
-  settingsProvider: MemoraSettingsViewProvider,
+  settingsProvider: MemoraSettingsPanel,
 ): Promise<void> {
   const agent = await tryGetAgent();
   if (!agent) {

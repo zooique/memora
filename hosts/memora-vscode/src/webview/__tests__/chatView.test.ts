@@ -185,7 +185,7 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(badge.hidden).toBe(true);
   });
 
-  it('角色徽章点击 → post open_settings_tab(roles)（导航到设置视图角色选项卡，切换逻辑不走本路径）', () => {
+  it('角色徽章点击 → post open_settings_tab(roles)（导航到设置面板角色选项卡，切换逻辑不走本路径）', () => {
     const { postMessage } = mountChatView();
     const badge = document.getElementById('currentRoleBadge') as HTMLButtonElement;
     badge.click();

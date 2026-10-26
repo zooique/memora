@@ -1,7 +1,7 @@
 /**
- * settingsView 测试 — 设置视图选项卡切换 + 子视图挂载（选项卡合并）
+ * settingsView 测试 — 设置面板选项卡切换 + 子视图挂载（选项卡合并）
  *
- * 覆盖设置视图（合并 角色 / 大模型 / 记忆 三个子视图）的新增行为：
+ * 覆盖设置面板（合并 角色 / 大模型 / 记忆 三个子视图）的新增行为：
  *   - 挂载即发送三个子视图的初始消息（cfg_load / memory_load / ready）
  *   - 初始选项卡为「角色」（roles-root 可见，config/memory 隐藏）
  *   - 点击选项卡按钮切换（config-root 显示 + 按钮高亮 + aria-selected）

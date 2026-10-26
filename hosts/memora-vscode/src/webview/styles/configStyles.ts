@@ -1,9 +1,9 @@
 /**
- * 大模型子视图样式（设置视图选项卡内）— 对齐 memora-sprite 的功能域分组思路 + 与对话面板统一的设计刻度
+ * 大模型子视图样式（设置面板选项卡内）— 对齐 memora-sprite 的功能域分组思路 + 与对话面板统一的设计刻度
  *
  * 分层（ITCSS）：
  *   - 设计令牌由 tokens.ts 单一真理源提供，经 settingsStyles.ts 统一内嵌，本文件不再内嵌；
- *   - 选择器统一以 `#config-root` 前缀限定 —— 设置视图合并后三个子视图共存于同一文档，
+ *   - 选择器统一以 `#config-root` 前缀限定 —— 设置面板合并后三个子视图共存于同一文档，
  *     共享类名（.card / .btn / .empty-state 等）靠根容器前缀隔离，避免跨子视图样式串扰；
  *   - 分区：Layout（header / list）→ Components（card / modal / toast）；
  *   - 含 Provider 卡片列表、表单弹窗、脱敏回显、测试连接内联结果、Toast。

@@ -903,7 +903,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 角色 handoff 预填：将提示文案填入对话输入框（不自动发送，用户可编辑后回车）
    *
-   * 对话视图已就绪 → 立即投递；未就绪（用户从设置视图首次带入对话）→ 缓冲到
+   * 对话视图已就绪 → 立即投递；未就绪（用户从设置面板首次带入对话）→ 缓冲到
    * _pendingPrefill，待 webview ready 后由 resolveWebviewView 补发，避免 postMessage
    * 在 webview 脚本监听器注册前丢失。
    */
@@ -1086,7 +1086,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 输入统一入口：宿主按当前 turn 相位单一路由，错位输入丢弃并落宿主日志留痕
       void this.handleInput(msg);
     } else if (msg.type === 'open_settings_tab') {
-      // 设置视图选项卡导航（空态引导 → 大模型配置 / 角色徽章 → 角色管理；只导航——切换
+      // 设置面板选项卡导航（空态引导 → 大模型配置 / 角色徽章 → 角色管理；只导航——切换
       // 执行仍走各视图单路径）。映射表形状即穷尽性守卫：protocol 侧放宽 tab 会在此编译红
       const commands = { config: 'memora.configureModel', roles: 'memora.openRoles' } as const;
       void vscode.commands.executeCommand(commands[msg.tab]);
@@ -1223,7 +1223,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 活动文件显示订阅随视图装配：面板折叠/展开会重建 webview，必须重注册并补推一次
     // （vscode.window 事件是全局的，不随 webview 自动释放，见 onDidDispose）
     this._activeFile.ensureActiveFileTracking();
-    // 折叠/展开（对话卡 ↔ 设置卡切换、侧边栏收起再展开）会触发 resolve 重建 HTML。
+    // 折叠/展开（侧边栏收起再展开；设置已迁 editor tab、无侧栏内设置卡切换）触发 resolve 重建 HTML。
     // 走「ready 回放」这一确定性机制：重建后 webview 脚本就绪发 ready，extension 再回放
     // 已落盘会话，保证数据不丢（正在运行的 turn 由 replaySession 的
     // resumeRunningTurn 补推恢复，见 replaySession()；不设 retainContextWhenHidden——
@@ -1515,7 +1515,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 不能只 post 给 webview（消息可能被已 dispose 的 webview 静默忽略）而不更新 _activeRolePack：
     // 否则用户从「角色」视图切换后聚焦对话（chat 视图重解析），ensureAgent 因 _agent 已存在
     // 提前返回、refreshAfterAssemble 不跑 → replaySession 读到陈旧 _activeRolePack
-    // → 徽章显示旧角色（与设置视图不一致；设置视图靠 activateRole 显式 loadRoles 更新，
+    // → 徽章显示旧角色（与设置面板不一致；设置面板靠 activateRole 显式 loadRoles 更新，
     // 两视图真相源分叉即 SSOT 违反）。由同一事件驱动状态，重解析即推正确角色。
     this._activeRolePack = info.to;
     // 仅转发切换后的角色显示名（to），触发角色选择器 + AI 消息标签同步（视图存活时）

@@ -1,9 +1,14 @@
 /**
- * 设置面板 — 侧边栏 Webview 视图提供者（选项卡式单一视图）
+ * 设置面板 — editor tab Webview 面板（选项卡式六页合一，单例管理）
  *
  * 各子视图（角色 / 大模型 / 记忆 / 技能 / MCP / 安全，清单 SSOT = `shared/settingsTabs.ts`）
- * 共存于单一"设置"视图，内部通过选项卡切换。
+ * 共存于单一「设置」面板，内部通过选项卡切换。
  * 子视图保留各自独立行为逻辑，通过共享同一 webview 文档 + root 容器 id 空间隔离共存。
+ *
+ * L3 分家（2026-10-26）：设置六页整体从侧栏 view 迁入 editor tab——**六页合一迁入，
+ * 非回退到分页前形态**；对话仍留侧栏。关 tab 即 dispose（panel 无 retainContextWhenHidden
+ * 选项，与原侧栏隐藏销毁语义等价），重开走 ready 握手重建 + _pendingTab 补发。
+ * 方案与九条验收判据见 `tasks/待完成任务.md`「L3 设置分家方案」条。
  *
  * 设计（对齐单一真理源 + 自然生长）：
  *   - 渲染逻辑全部在 webview 内（postMessage 驱动），extension host 不做 DOM；
@@ -87,12 +92,13 @@ const MEMORY_LIST_LIMIT = 20;
 /** 搜索结果条数 */
 const MEMORY_SEARCH_LIMIT = 20;
 
-/** 设置视图提供者（合并角色 / 大模型 / 记忆三个子视图） */
-export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
+/** 设置面板（editor tab 单例；六页合一：角色 / 大模型 / 记忆 / 技能 / MCP / 安全） */
+export class MemoraSettingsPanel {
+  /** 面板类型标识（createWebviewPanel 首参；沿用原侧栏 view id 作面板类型键，不另造） */
   public static readonly viewType = 'memora.settings';
 
-  /** 当前 webview（视图被关闭时 undefined） */
-  private _view: vscode.WebviewView | undefined;
+  /** 当前面板（关 tab 即 dispose → undefined；undefined = 未打开） */
+  private _panel: vscode.WebviewPanel | undefined;
   /** Agent 懒装配 promise（与 chat 面板共享同一单例，roles + memory 两个子视图共用一条装配路径）
    *  undefined = 尚未尝试装配；装配中/成功 = 同一 Promise，并发调用共享一次装配；
    *  失败时 catch 内清空为 undefined，允许下次重试（替代 boolean 标记的冗余空推+重复装配） */
@@ -175,30 +181,41 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     this._resetHandler = handler;
   }
 
-  /** 视图被解析（侧边栏展开）时初始化 */
-  public resolveWebviewView(
-    webviewView: vscode.WebviewView,
-    _context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken,
-  ): void {
-    this._view = webviewView;
-    // 视图被销毁（折叠/关闭/切走隐藏也会触发）时清理引用，避免向已销毁 webview postMessage；
-    // 与 chatPanel 同款。不清则 switchTab 把 _pendingTab 写进死 view 后清空，
+  /**
+   * 打开设置面板（单例：已开则 reveal，未开则创建——editor tab 形态）
+   *
+   * 原侧栏 view 的 resolveWebviewView 懒初始化逻辑随 L3 分家迁至此处：
+   * 装配 html / 注册消息回调 / dispose 清引用三段不变，仅容器从 WebviewView 换为 WebviewPanel。
+   */
+  public open(): void {
+    // 单例复用：重复打开只 reveal 同一 panel，不建第二个
+    if (this._panel) {
+      this._panel.reveal();
+      return;
+    }
+    const panel = vscode.window.createWebviewPanel(
+      MemoraSettingsPanel.viewType,
+      '设置',
+      vscode.ViewColumn.Active,
+      {
+        enableScripts: true,
+        localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
+      },
+    );
+    this._panel = panel;
+    // 关 tab（或工作区关闭）时清理引用，避免向已销毁 webview postMessage。
+    // 不清则 switchTab 把 _pendingTab 写进死 panel 后清空，
     // ready 握手的补发兜底失效 → 点角色徽章/配置大模型落在默认「记忆」页。
-    webviewView.onDidDispose(() => {
-      if (this._view === webviewView) this._view = undefined;
+    panel.onDidDispose(() => {
+      if (this._panel === panel) this._panel = undefined;
     });
-    webviewView.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
-    };
 
-    const scriptUri = webviewView.webview.asWebviewUri(
+    const scriptUri = panel.webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'scripts', 'settingsView.js'),
     );
-    webviewView.webview.html = buildHtml(scriptUri, webviewView.webview.cspSource);
+    panel.webview.html = buildHtml(scriptUri, panel.webview.cspSource);
 
-    webviewView.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
+    panel.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
       void this.handleMessage(msg);
     });
   }
@@ -506,7 +523,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     // 结果回推 webview 恢复按钮态。面板不自行实现清理逻辑（单一路径，与命令面板共用）。
     if (msg.type === 'reset_user_data') {
       const result = await this.runReset();
-      this._view?.webview.postMessage({
+      this._panel?.webview.postMessage({
         type: 'reset_user_data_result',
         ok: result.ok,
         cancelled: result.cancelled,
@@ -1806,7 +1823,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    *
    * 两个来源各管一段（`getMcpServerStatus(configured)` 的契约）：
    *   - **有哪些** ⇒ 这里传 `readMcpServers()`（配置原值，唯一读取点）。不传会漏掉「配了
-   *     但还没装配」的台：设置视图先于对话面板打开时 Agent 未装配，列表会谎报空态。
+   *     但还没装配」的台：设置面板先于对话面板打开时 Agent 未装配，列表会谎报空态。
    *   - **怎么样** ⇒ runtime 内的运行态 ∪ 失败表（`pending` = 装配前的诚实态，不是失败）。
    * 第三个字段 `omitted` **必须一起发**：列表只装得下「有寻址键」的条目，缺 name / 重名的
    * 两类整条不出现；不带计数，面板就会把「配置 2 条、显示 1 条」画成「配置 1 条」。
@@ -1865,21 +1882,21 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
 
   /** 向 webview 发送消息 */
   private post(msg: ExtensionToWebviewMessage): void {
-    void this._view?.webview.postMessage(msg);
+    void this._panel?.webview.postMessage(msg);
   }
 
   /**
    * 切换子选项卡（由 host 命令触发，如 configureModel 命令切换到「大模型」）
    *
    * 向 webview 推送 settings_switch_tab 指令，webview 切换选项卡高亮 + 显示对应子视图；
-   * 视图尚未就绪时缓存待切选项卡，等 ready 握手后补发（避免命令消息被丢弃）。
+   * 面板尚未打开/尚未就绪时缓存待切选项卡，等 ready 握手后补发（避免命令消息被丢弃）。
    *
    * @param tab 目标选项卡——**任意** tab 均可。此前形参是手写联合且漏了 `'security'`
    *   （编译期就把安全页挡在路由之外），现统一取 {@link SettingsTab}：加 tab 无需回来补签名。
    */
   public switchTab(tab: SettingsTab): void {
     this._pendingTab = tab;
-    if (this._view) {
+    if (this._panel) {
       this.post({ type: 'settings_switch_tab', tab });
       this._pendingTab = undefined;
     }

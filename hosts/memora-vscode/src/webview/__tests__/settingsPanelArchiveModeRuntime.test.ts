@@ -31,7 +31,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoraError } from '@zooique/memora';
 import type { Agent, ArchiveMode } from '@zooique/memora';
-import { MemoraSettingsViewProvider } from '../panels/settingsPanel.js';
+import { MemoraSettingsPanel } from '../panels/settingsPanel.js';
 
 const vscodeConfigMock = vi.hoisted(() => ({
   cfgGet: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
@@ -121,14 +121,14 @@ function truthfulAgentStub(initial: ArchiveMode = 'full'): TruthfulAgentStub {
 
 /** 构造 provider + 记录 postMessage 的 posted 数组 */
 function setup(agent: Agent): {
-  provider: MemoraSettingsViewProvider;
+  provider: MemoraSettingsPanel;
   posted: { type: string; level?: string; message?: string; mode?: string }[];
 } {
   const posted: { type: string; level?: string; message?: string; mode?: string }[] = [];
-  const provider = new MemoraSettingsViewProvider({} as never, {} as never);
+  const provider = new MemoraSettingsPanel({} as never, {} as never);
   provider.setAgentFactory(async () => agent);
   provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
-  (provider as unknown as { _view: unknown })._view = {
+  (provider as unknown as { _panel: unknown })._panel = {
     webview: {
       postMessage: (msg: never) => {
         posted.push(msg);
@@ -139,7 +139,7 @@ function setup(agent: Agent): {
   return { provider, posted };
 }
 
-function sendArchiveModeSet(provider: MemoraSettingsViewProvider, mode: string): Promise<void> {
+function sendArchiveModeSet(provider: MemoraSettingsPanel, mode: string): Promise<void> {
   return (provider as unknown as { handleMessage(msg: unknown): Promise<void> }).handleMessage({
     type: 'archive_mode_set',
     mode,

@@ -332,7 +332,7 @@ export type WebviewToExtensionMessage =
       injections?: Exclude<InjectionSource, 'active-file'>[];
     }
   /**
-   * 导航到设置视图的指定选项卡（对话面板空态引导按钮 / 角色徽章点击触发）
+   * 导航到设置面板的指定选项卡（对话面板空态引导按钮 / 角色徽章点击触发）
    *
    * 由对话面板两处导航触发：空态「去配置模型」→ 大模型选项卡；输入区下方当前角色徽章 →
    * 角色选项卡。host 按 tab 执行对应命令（先记待切选项卡再 focus，视图未就绪时 ready
@@ -1288,8 +1288,8 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'governance_result'; ok: boolean; message?: string; action: 'cleanup' }
 
-  // ─── 设置视图消息 ───
-  /** 切换设置视图的子选项卡（host → webview 指令；tab 清单真源 = settingsTabs.ts） */
+  // ─── 设置面板消息 ───
+  /** 切换设置面板的子选项卡（host → webview 指令；tab 清单真源 = settingsTabs.ts） */
   | { type: 'settings_switch_tab'; tab: SettingsTab }
   /**
    * MCP 服务器状态（host 主动推；**列表基线 = 配置原值，状态 = 运行态 ∪ 失败表**）
