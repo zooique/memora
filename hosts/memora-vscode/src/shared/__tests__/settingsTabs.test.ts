@@ -7,10 +7,11 @@
  *   ② `isSettingsTab` 的收窄边界（`data-tab` 是 DOM 字符串，假值必须一律为 false）；
  *   ③ 默认首页 = 下标 0（此前「谁是首页」的事实散落在产线 HTML 的 `hidden` 属性里）。
  *
- * 加一个新 tab 时：改 `SETTINGS_TABS` 一行 + 两张 label 表 + `settingsPanelHtml.ts` 的 body
- * 表（漏前者.id、漏后者 = 编译红），无需回头改本文件。
+ * 加一个新 tab 的完整改动面：见 `settingsTabs.ts` 文件头「加一页的真实改动面」清单
+ * （本文件只守「标识/顺序/文案」这一层；④-⑥ 缺失属静默半残，测试红不了，只能真机发现）。
  */
 import { describe, it, expect } from 'vitest';
+import type { WebviewToExtensionMessage } from '../protocol.js';
 import {
   DEFAULT_SETTINGS_TAB,
   SETTINGS_TABS,
@@ -58,5 +59,15 @@ describe('settingsTabs 选项卡单点定义（2026-10-24 收口）', () => {
     // 守卫 = 任取一个 tab 都能被 `SettingsTab` 收窄为合法值（漏一个 ⇒ 本例与 switchTab 编译同时红）。
     expect(SETTINGS_TABS).toContain('security');
     expect(isSettingsTab('security')).toBe(true);
+  });
+
+  it('协议导航 tab 取全集（2026-10-26 收口）：收窄回 config/roles 即编译红', () => {
+    // 类型级守卫（运行时零成本，只走一次赋值）：`open_settings_tab` 的 tab 一旦被收窄，
+    // 下面把 'skills' 赋给它即 TS2322。这是「加一页要改三处」里最难发现的一处——
+    // 收窄不会让任何运行时用例红，只会让新页永远跳不过去（且 host 侧映射表会静默返回
+    // undefined ⇒ executeCommand(undefined)）。
+    const probe: Extract<WebviewToExtensionMessage, { type: 'open_settings_tab' }>['tab'] =
+      'skills';
+    expect(probe).toBe('skills');
   });
 });

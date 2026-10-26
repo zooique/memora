@@ -25,6 +25,9 @@ import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js';
 import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
+// 设置面板 tab 标识的类型真源（`shared/settingsTabs.ts`）：命令参数与 protocol 共用同一联合，
+// 本文件不手写字面量清单（加一页不必回来补签名）
+import type { SettingsTab } from '../shared/settingsTabs.js';
 import { openChatCommand } from './commands/openChat.js';
 import { runDemoCommand } from './commands/demo.js';
 import { reloadSkillsCommand } from './commands/reloadSkills.js';
@@ -430,32 +433,39 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('memora.open', () => openChatCommand(getAgent, chatProvider)),
   );
 
+  // 设置面板打开入口的**唯一实现**（下面三个命令都是它的薄包装）。
+  // 为什么收成一个本地函数而不是各写一遍：
+  //   ① `switchTab` 必须在 `open` **之前**——先缓存待切页再打开，面板未就绪时由 ready 握手
+  //      补发；顺序写反即落点丢失（三处各写一遍迟早有一处写反）；
+  //   ② tab 参数化后，webview 侧 `open_settings_tab` 不必再维护「tab → 命令名」映射表
+  //      （那张表是第二真源：加一页要回来补一行，且 protocol 还得同步收窄类型）。
+  const openSettingsAt = (tab?: SettingsTab): void => {
+    if (tab) settingsProvider.switchTab(tab);
+    settingsProvider.open();
+  };
+
   // 命令：打开设置面板（editor tab 单例 reveal-or-create）
   // 原入口 = 点活动栏图标（侧栏 view 随 L3 分家移除），由本命令承接——
   // 六页皆可达（打开后页内选项卡自由切换），MCP/技能/记忆/安全页的文档步骤靠它落地。
+  // 命令参数 `tab` 可选：不传 = 默认首页（`DEFAULT_SETTINGS_TAB`）；代码内可直接
+  // `executeCommand('memora.openSettings', 'mcp')` 直达某页（命令面板调用恒无参）。
   context.subscriptions.push(
-    vscode.commands.registerCommand('memora.openSettings', () => settingsProvider.open()),
+    vscode.commands.registerCommand('memora.openSettings', (tab?: SettingsTab) =>
+      openSettingsAt(tab),
+    ),
   );
 
   // 命令：配置大模型（打开设置面板并切换到「大模型」子选项卡）
-  // 先记录待切选项卡再打开；面板未就绪时由 settingsPanel
-  // 在 ready 握手后补发 settings_switch_tab，保证命令落点与用户意图一致。
+  // 保留独立命令名：既有 keybinding / 文档 / 外部脚本的落点，不因参数化而删。
   context.subscriptions.push(
-    vscode.commands.registerCommand('memora.configureModel', () => {
-      settingsProvider.switchTab('config');
-      settingsProvider.open();
-    }),
+    vscode.commands.registerCommand('memora.configureModel', () => openSettingsAt('config')),
   );
 
   // 命令：管理角色包（打开设置面板并切换到「角色」子选项卡）
-  // 对话区「当前角色」徽章点击 → open_settings_tab(roles) → 本命令；与 configureModel 同款两行模式
-  // （先记待切选项卡再打开；面板未就绪时由 settingsPanel 在 ready 握手后补发 settings_switch_tab）。
+  // 对话区「当前角色」徽章点击 → open_settings_tab(roles) → 本命令。
   // 只导航、不切换：切换执行仍走角色面板「设为当前」→ roles_set_active → agent.switchRolePack。
   context.subscriptions.push(
-    vscode.commands.registerCommand('memora.openRoles', () => {
-      settingsProvider.switchTab('roles');
-      settingsProvider.open();
-    }),
+    vscode.commands.registerCommand('memora.openRoles', () => openSettingsAt('roles')),
   );
 
   // 命令：运行能力演示（隔离演示区 → Output Channel）

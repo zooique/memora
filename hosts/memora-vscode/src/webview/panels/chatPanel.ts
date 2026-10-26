@@ -1086,10 +1086,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 输入统一入口：宿主按当前 turn 相位单一路由，错位输入丢弃并落宿主日志留痕
       void this.handleInput(msg);
     } else if (msg.type === 'open_settings_tab') {
-      // 设置面板选项卡导航（空态引导 → 大模型配置 / 角色徽章 → 角色管理；只导航——切换
-      // 执行仍走各视图单路径）。映射表形状即穷尽性守卫：protocol 侧放宽 tab 会在此编译红
-      const commands = { config: 'memora.configureModel', roles: 'memora.openRoles' } as const;
-      void vscode.commands.executeCommand(commands[msg.tab]);
+      // 设置面板选项卡导航（空态引导 → 大模型 / 角色徽章 → 角色；只导航——切换执行仍走各视图单路径）。
+      // **不维护「tab → 命令名」映射表**：那是第二真源，加一页要补一行且 protocol 得同步放宽。tab 直投命令。
+      void vscode.commands.executeCommand('memora.openSettings', msg.tab);
     } else if (msg.type === 'open_setting') {
       // 指标空态指引「在设置中开启」：只做导航，配置读写真源 = VS Code 原生设置
       // （对话面板不写配置；键名由 webview 传入，本分支不复制键名清单）
@@ -4475,7 +4474,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
         <!-- Row 2 · 状态行：左角色/能力徽章 + 右上下文占用圆环（两端分布；占用属状态信息归本行，
              不干扰 Row 1 主操作；hover/聚焦**向上**弹卡片出「分层明细文字 + 占用构成条 +
              本轮注入回执行」，避免向下展开挤压面板底部）
-             角色徽章 = button（可点跳转角色管理视图，open_settings_tab(roles) → memora.openRoles）：
+             角色徽章 = button（可点跳转角色管理视图，open_settings_tab(roles) → memora.openSettings('roles')）：
              外观与旧 span 徽章完全一致（零常驻视觉增量，仅 hover 反馈 + title 提示可点），
              id 保持 currentRoleBadge 不变 ⇒ 现有 chat_role_pack 消费链路（含测试断言）零改动。 -->
         <div class="composer-row composer-row--status">

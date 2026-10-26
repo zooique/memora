@@ -335,15 +335,17 @@ export type WebviewToExtensionMessage =
    * 导航到设置面板的指定选项卡（对话面板空态引导按钮 / 角色徽章点击触发）
    *
    * 由对话面板两处导航触发：空态「去配置模型」→ 大模型选项卡；输入区下方当前角色徽章 →
-   * 角色选项卡。host 按 tab 执行对应命令（先记待切选项卡再 focus，视图未就绪时 ready
-   * 握手后补发 {@link settings_switch_tab}）。
+   * 角色选项卡。host 只做一次转发：`executeCommand('memora.openSettings', tab)`——
+   * 打开逻辑（先缓存待切页再打开 + ready 补发 {@link settings_switch_tab}）在命令实现里单点。
    * ⚠️ 本消息**只负责导航**：切换执行仍走各视图既有单路径（如角色视图「设为当前」→
    * roles_set_active → agent.switchRolePack），对话侧不新增切换逻辑（零并行推送路径）。
-   * tab 收窄为可导航的两个（config/roles）——其余选项卡无导航入口，放宽类型等于允许
-   * 发出无处可去的消息。2026-10-24 协议治理：原 open_config / open_roles 两条同构
-   * 通道合并为一条（协议类型总数触达治理阈值，见 protocolGuard）。
+   * **tab 取全集 `SettingsTab`**（2026-10-26 放宽，原为 `Extract<…,'config'|'roles'>`）：
+   * 收窄的前提是「其余选项卡无导航入口」，而 `memora.openSettings(tab)` 已使六页皆可达 ⇒
+   * 收窄反而把「加一页要改三处（本行 / chatPanel 映射表 / 新命令）」的债固化进协议。
+   * 放宽不新增消息类型（protocolGuard 计数不变），只放宽字面量取值面。
+   * 2026-10-24 协议治理：原 open_config / open_roles 两条同构通道合并为一条。
    */
-  | { type: 'open_settings_tab'; tab: Extract<SettingsTab, 'config' | 'roles'> }
+  | { type: 'open_settings_tab'; tab: SettingsTab }
   /**
    * 打开 VS Code 原生设置中的指定配置项（设置面板「在设置中调整」按钮触发）
    *

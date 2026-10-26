@@ -54,6 +54,20 @@ export interface SettingsViewDeps {
 }
 
 /**
+ * 子视图挂载工厂的公共签名
+ *
+ * 六个 `createXxxView` 各自的 Deps 接口（`ConfigViewDeps` / `MemoryViewDeps` / …）结构完全一致
+ * （vscode / window / root 三字段），TS 结构类型下可直接赋给本签名 ⇒ 数组驱动挂载表无需改动
+ * 那六个文件。任一视图**新增必填依赖**时本表会编译红——这正是想要的：新增依赖意味着
+ * 「谁提供它」需要重议，不该静默塞进容器。
+ */
+type MountFactory = (deps: {
+  vscode: { postMessage(msg: WebviewToExtensionMessage): void };
+  window: Window;
+  root: HTMLElement;
+}) => void;
+
+/**
  * 初始化设置面板 webview 交互（选项卡切换 + 挂载三个子视图）
  *
  * @param deps 运行时依赖（acquireVsCodeApi + window）
@@ -123,45 +137,30 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
     else if (msg.type === 'notice') showToast(document, msg.level, msg.message);
   });
 
-  // 挂载各子视图（config/memory/roles 先，skills/mcp/security 后；全部用共享 vscode 实例）。
-  // 初始选项卡为「记忆」，与 HTML 默认态一致（用户请求）。
-  // 每个挂载独立 try/catch：任一子视图挂载异常不阻断其余子视图，错误输出到 webview console。
-  try {
-    createConfigView({ vscode, window, root: roots.config });
-  } catch (err) {
-    console.error('[memora-settings] configView 挂载失败:', err);
-  }
-  try {
-    createMemoryView({ vscode, window, root: roots.memory });
-  } catch (err) {
-    console.error('[memora-settings] memoryView 挂载失败:', err);
-  }
-  try {
-    createRolesView({ vscode, window, root: roots.roles });
-  } catch (err) {
-    console.error('[memora-settings] rolesView 挂载失败:', err);
-  }
-
-  // 技能子视图初始化：独立 try/catch（对齐上方三挂载），
-  // 防单视图挂载异常截断后续 security 挂载与 ready 握手（ready 未发 → host 不推数据，全面板空白）
-  try {
-    createSkillsView({ vscode, window, root: roots.skills });
-  } catch (err) {
-    console.error('[memora-settings] skillsView 挂载失败:', err);
-  }
-
-  // MCP 子视图初始化（外部工具服务器的观察面 + 免确认点选）
-  try {
-    createMcpView({ vscode, window, root: roots.mcp });
-  } catch (err) {
-    console.error('[memora-settings] mcpView 挂载失败:', err);
-  }
-
-  // 安全子视图初始化（写入审批）
-  try {
-    createSecurityView({ vscode, window, root: roots.security });
-  } catch (err) {
-    console.error('[memora-settings] securityView 挂载失败:', err);
+  // 挂载各子视图（数据驱动；全部用共享 vscode 实例）。
+  // 为什么是一张表而不是六段 try/catch：手抄版每加一页要复制 7 行样板，而「漏复制一段」
+  // **不会让任何测试红**——该页有按钮无内容，只有真机能发现（2026-10-26 L3 审查实证：
+  // 原注释承诺「加 tab 只改一行数组」与实际改动面差 5 处，本表把其中一处压回一行）。
+  //
+  // 顺序 = **初始化时序**（与 `SETTINGS_TABS` 的 UI 展示顺序不同，后者 memory 在首位）：
+  // config / memory / roles 先（老三页），skills / mcp / security 后。改顺序前先确认无跨页依赖。
+  //
+  // 每个挂载独立 try/catch：任一子视图异常不阻断其余，尤其不能截断末尾的 ready 握手
+  // （ready 未发 ⇒ host 不推数据 ⇒ 全面板空白）。
+  const mounts: ReadonlyArray<{ name: SettingsTab; make: MountFactory }> = [
+    { name: 'config', make: createConfigView },
+    { name: 'memory', make: createMemoryView },
+    { name: 'roles', make: createRolesView },
+    { name: 'skills', make: createSkillsView },
+    { name: 'mcp', make: createMcpView },
+    { name: 'security', make: createSecurityView },
+  ];
+  for (const { name, make } of mounts) {
+    try {
+      make({ vscode, window, root: roots[name] });
+    } catch (err) {
+      console.error(`[memora-settings] ${name}View 挂载失败:`, err);
+    }
   }
 
   // ready 握手：全部子视图挂载（消息监听器已注册）后，由容器统一通知 host 就绪；

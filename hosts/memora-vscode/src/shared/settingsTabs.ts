@@ -14,8 +14,20 @@
  *   - `settingsPanel.ts` 的 `switchTab()` 形参类型（**漏 `security`**）
  *   - `settingsPanel.ts` buildHtml 的 tab 按钮列表（测试夹具 HTML 又抄了第 6 遍）
  * 漂移的实际后果：`switchTab('security')` 编译不过 ⇒ 安全页无法从任何命令 / 提示跳过去，
- * 也就是说「加 tab」这件事的成本在此之前是「找齐 6 个地方手抄」。收敛后加 tab = 改一行
- * 数组 + 补两张 `Record`（漏补即 tsc 红）。
+ * 也就是说「加 tab」这件事的成本在此之前是「找齐 6 个地方手抄」。
+ *
+ * ⚠️ **加一页的真实改动面（2026-10-26 L3 审查订正，勿按旧注释估算成本）**：
+ * 本文件收口的只是「标识 / 顺序 / 可见名」这一层，漏补两张 `Record` 确实 tsc 红，但
+ * **「加一页 = 只改这里」是错的**（旧注释如此声称，实际差 5 处）。完整清单：
+ *   ① 本文件：`SETTINGS_TABS` 一行 + `SETTINGS_TAB_LABELS` / `SETTINGS_TAB_ARIA_LABELS`；
+ *   ② `webview/panels/settingsPanelHtml.ts` 的 body 骨架表（缺该页 root ⇒ 整页空白）；
+ *   ③ `webview/scripts/<新页>View.ts`：新视图文件（`createXxxView`，签名须匹配 `MountFactory`）；
+ *   ④ `webview/scripts/settingsView.ts` 的 `mounts` 表一行（顺序 = 初始化时序）；
+ *   ⑤ `webview/styles/` 该页样式（按 root 前缀分文件，共享类只许复用不许追加）；
+ *   ⑥ `webview/panels/settingsPanel.ts`：`loadXxx` + `handleMessage` 分支 + `refreshAll` 补一行。
+ * ①-③ 缺即红（类型 / 运行时异常）；④-⑥ 缺则**静默半残**（有按钮无内容），只有真机能发现。
+ * 导航侧已无成本：`memora.openSettings(tab)` 收任意 `SettingsTab`，webview 发
+ * `open_settings_tab` 即可直达，不必新增命令或映射表（2026-10-26 收口）。
  *
  * **顺序 = UI 顺序**：数组下标决定按钮排列顺序，**下标 0 即默认首页**（右下不应另有一处
  * 写死是谁是首页）。

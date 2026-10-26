@@ -6,9 +6,17 @@
  * 子视图保留各自独立行为逻辑，通过共享同一 webview 文档 + root 容器 id 空间隔离共存。
  *
  * L3 分家（2026-10-26）：设置六页整体从侧栏 view 迁入 editor tab——**六页合一迁入，
- * 非回退到分页前形态**；对话仍留侧栏。关 tab 即 dispose（panel 无 retainContextWhenHidden
- * 选项，与原侧栏隐藏销毁语义等价），重开走 ready 握手重建 + _pendingTab 补发。
+ * 非回退到分页前形态**；对话仍留侧栏。关 tab 即 dispose，重开走 ready 握手重建 + _pendingTab 补发。
  * 方案与九条验收判据见 `tasks/待完成任务.md`「L3 设置分家方案」条。
+ *
+ * 上下文保留（2026-10-26 审查订正，**勿按旧事实决策**）：panel **设** `retainContextWhenHidden: true`。
+ * ⚠️ 落地初版曾记「panel 无 retainContextWhenHidden 选项（API 本就不存在）⇒ 与原侧栏销毁语义等价」——
+ * **该前提是假的**：`createWebviewPanel` 的 options 类型是 `WebviewPanelOptions & WebviewOptions`，
+ * 后者明载 `retainContextWhenHidden?: boolean`，且默认行为是「面板不可见即销毁 html context」。
+ * 两处容器形态的**失焦频率差一个量级**（侧栏切走 vs 每个代码 tab 切换都算失焦）：不设该选项，
+ * 用户「改一半配置去看代码、切回来」就丢掉六页全部表单草稿，且 webview 侧零 `setState` 兜底。
+ * 代价 = 隐藏期间 postMessage 送不达（VS Code 契约），由 `onDidChangeViewState` 重新可见时
+ * `refreshAll()` 补刷一次——与 ready 握手共用同一刷新单点，不造第二条数据清单。
  *
  * 设计（对齐单一真理源 + 自然生长）：
  *   - 渲染逻辑全部在 webview 内（postMessage 驱动），extension host 不做 DOM；
@@ -199,6 +207,10 @@ export class MemoraSettingsPanel {
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
+        // 上下文保留：editor tab 的失焦（切去别的代码 tab）是常态用法，默认的「不可见即销毁」
+        // 会让六页表单草稿每次切换全丢；webview 侧无 setState 兜底，只能靠本选项保上下文。
+        // 代价（隐藏期收不到 postMessage）由 onDidChangeViewState 补刷，见文件头说明。
+        retainContextWhenHidden: true,
         localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
       },
     );
@@ -208,6 +220,12 @@ export class MemoraSettingsPanel {
     // ready 握手的补发兜底失效 → 点角色徽章/配置大模型落在默认「记忆」页。
     panel.onDidDispose(() => {
       if (this._panel === panel) this._panel = undefined;
+    });
+    // 由隐藏转可见时补刷：retainContextWhenHidden 下 webview 隐藏期间收不到 postMessage，
+    // 而隐藏期 host 侧状态仍在变（MCP 装配完成回推 / 角色切换 / 归档模式改动）⇒ 不补则
+    // 切回来的页面是旧态。与 ready 握手共用 refreshAll 单点，不另写一份 load 清单。
+    panel.onDidChangeViewState((e) => {
+      if (e.webviewPanel.visible && this._panel === panel) this.refreshAll();
     });
 
     const scriptUri = panel.webview.asWebviewUri(
@@ -229,7 +247,7 @@ export class MemoraSettingsPanel {
       console.warn(`Memora webview 未处理异常 [${msg.source}] ${msg.message}`, msg.stack ?? '');
       return;
     }
-    // ready 握手：webview 脚本已就绪（全部子视图监听器已注册）→ 补发待切选项卡 + 统一推送三个子视图数据
+    // ready 握手：webview 脚本已就绪（全部子视图监听器已注册）→ 补发待切选项卡 + 全量推一次数据
     if (msg.type === 'ready') {
       // configureModel 命令可能在视图未就绪时触发：待切选项卡缓存在此，就绪后补发，
       // 保证命令落点与用户意图一致（对齐 chatPanel replaySession 的 ready 时序修复）
@@ -237,24 +255,7 @@ export class MemoraSettingsPanel {
         this.post({ type: 'settings_switch_tab', tab: this._pendingTab });
         this._pendingTab = undefined;
       }
-      // 恢复独立面板「宿主主动推送」兜底：ready 握手保证所有监听器已注册，此时推送
-      // 三个子视图数据必然可达。即使 webview 拉取消息（cfg_load/memory_load）因时序
-      // 丢失，也不会让子视图停留「加载中…」（角色/记忆依赖 Agent 装配，配置/记忆拉取
-      // 可能早于装配完成；统一在就绪后推送一次是稳妥的收敛点）。
-      void this.loadRoles();
-      void this.loadConfig();
-      void this.loadMemory();
-      void this.loadSkills();
-      // 安全子视图：推送写入二次确认开关状态 + 白名单额外路径 + 网页搜索引擎
-      this.loadSecurityStatus();
-      this.loadAllowedPathsStatus();
-      this.loadCustomSearchEnginesStatus();
-      this.loadSearchEngineStatus();
-      // 记忆子视图：推送会话归档模式当前值（归档模式下拉的回显真源）
-      this.loadArchiveModePreference();
-      // MCP 子视图：推送服务器/工具运行态（无独立拉取消息，统一走 ready 推送——
-      // 未装配时是合法空态，装配完成后由 extension 的热更回推覆盖）
-      this.pushMcpStatus();
+      this.refreshAll();
       return;
     }
 
@@ -1880,9 +1881,42 @@ export class MemoraSettingsPanel {
     };
   }
 
-  /** 向 webview 发送消息 */
+  /**
+   * 向 webview 发送消息
+   *
+   * 两种「送不达」都静默：① 面板没开（`_panel` 为空）；② `retainContextWhenHidden` 下
+   * webview 处于隐藏态——VS Code 契约明载「cannot send messages to a hidden webview」。
+   * ② 不靠逐条重试兜底，靠 `onDidChangeViewState` 在重新可见时 `refreshAll()` 一次补齐
+   * （补的是**当前态**，不是补发历史消息——历史消息补发会造第二套队列语义）。
+   */
   private post(msg: ExtensionToWebviewMessage): void {
     void this._panel?.webview.postMessage(msg);
+  }
+
+  /**
+   * 全量推一次各子视图数据（**单点**）
+   *
+   * 两个触发面共用，不各写一份 load 清单（否则加一个子视图要改两处、漏一处即某个入口的页面停在「加载中」）：
+   *   ① webview `ready` 握手——上下文刚建立，监听器已全部注册，首帧推送必然可达。
+   *      即使 webview 主动拉取（cfg_load / memory_load）因时序丢失，也不会让子视图停在「加载中…」
+   *      （角色 / 记忆依赖 Agent 装配，拉取可能早于装配完成）。
+   *   ② panel 由隐藏转可见（`onDidChangeViewState`）——隐藏期 post 送不达，回来必须补当前态。
+   */
+  private refreshAll(): void {
+    void this.loadRoles();
+    void this.loadConfig();
+    void this.loadMemory();
+    void this.loadSkills();
+    // 安全子视图：写入二次确认开关状态 + 白名单额外路径 + 网页搜索引擎
+    this.loadSecurityStatus();
+    this.loadAllowedPathsStatus();
+    this.loadCustomSearchEnginesStatus();
+    this.loadSearchEngineStatus();
+    // 记忆子视图：会话归档模式当前值（归档模式下拉的回显真源）
+    this.loadArchiveModePreference();
+    // MCP 子视图：服务器/工具运行态（无独立拉取消息，统一由本函数推送——
+    // 未装配时是合法空态，装配完成后由 extension 的热更回推覆盖）
+    this.pushMcpStatus();
   }
 
   /**

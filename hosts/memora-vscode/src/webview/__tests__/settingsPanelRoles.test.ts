@@ -701,16 +701,22 @@ describe('settingsPanel.switchTab —— 关 tab 后的导航兜底', () => {
   let provider: MemoraSettingsPanel;
   /** mock 面板的 dispose 触发器（捕获 open 内注册的 onDidDispose 回调） */
   let fireDispose: () => void;
+  /** mock 面板的可见性变化触发器（捕获 open 内注册的 onDidChangeViewState 回调） */
+  let fireViewState: ((e: { webviewPanel: { visible: boolean } }) => void) | undefined;
   /** mock 面板的 onDidReceiveMessage 回调（ready 握手入口） */
   let receiveMsg: ((msg: unknown) => void) | undefined;
 
-  /** 构造 createWebviewPanel 返回的最小 WebviewPanel mock（捕获 dispose/message 回调） */
+  /** 构造 createWebviewPanel 返回的最小 WebviewPanel mock（捕获 dispose/message/可见性回调） */
   function makePanel(): {
     reveal: ReturnType<typeof vi.fn>;
     webview: unknown;
     onDidDispose: (cb: () => void) => { dispose(): void };
+    onDidChangeViewState: (cb: (e: { webviewPanel: { visible: boolean } }) => void) => {
+      dispose(): void;
+    };
   } {
     receiveMsg = undefined;
+    fireViewState = undefined;
     return {
       reveal: vi.fn(),
       webview: {
@@ -730,6 +736,10 @@ describe('settingsPanel.switchTab —— 关 tab 后的导航兜底', () => {
       },
       onDidDispose: (cb: () => void) => {
         fireDispose = cb;
+        return { dispose: vi.fn() };
+      },
+      onDidChangeViewState: (cb: (e: { webviewPanel: { visible: boolean } }) => void) => {
+        fireViewState = cb;
         return { dispose: vi.fn() };
       },
     };
@@ -810,5 +820,29 @@ describe('settingsPanel.switchTab —— 关 tab 后的导航兜底', () => {
     expect(panel.reveal).toHaveBeenCalledTimes(1);
     // receiveMsg 断言占位避免 unused（面板已注册消息回调）
     expect(receiveMsg).toBeDefined();
+  });
+
+  it('open 建 panel 时设 retainContextWhenHidden（切 tab 不丢六页表单草稿）', () => {
+    provider.open();
+
+    // 钉在 createWebviewPanel 的第 4 参 options 上：该选项缺失时「改一半配置去看代码、
+    // 切回来」会丢全部草稿，而其余用例全绿（重建路径不经过任何现有断言）⇒ 只能由本用例守。
+    // 曾经的假前提「panel 无 retainContextWhenHidden 选项」即由此类无断言缺口放过。
+    const options = vscodeConfigMock.createWebviewPanel.mock.calls[0]?.[3] as
+      { enableScripts?: boolean; retainContextWhenHidden?: boolean } | undefined;
+    expect(options?.enableScripts).toBe(true);
+    expect(options?.retainContextWhenHidden).toBe(true);
+  });
+
+  it('由隐藏转可见 → 全量补刷一次；隐藏态不补刷（隐藏期 post 送不达）', () => {
+    provider.open();
+    const refreshSpy = vi.spyOn(provider as unknown as { refreshAll(): void }, 'refreshAll');
+
+    expect(fireViewState).toBeDefined();
+    fireViewState?.({ webviewPanel: { visible: false } });
+    expect(refreshSpy).not.toHaveBeenCalled();
+
+    fireViewState?.({ webviewPanel: { visible: true } });
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
   });
 });

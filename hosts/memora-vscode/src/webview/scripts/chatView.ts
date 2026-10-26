@@ -3058,7 +3058,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 更新输入区状态行「当前角色」徽章（SSOT：角色名与 AI 消息头/空状态共用 currentRoleName）。
    *
-   * 徽章可点跳转：点击打开设置面板「角色」选项卡（open_settings_tab 消息，host 侧 memora.openRoles），
+   * 徽章可点跳转：点击打开设置面板「角色」选项卡（open_settings_tab 消息，host 侧 memora.openSettings('roles')），
    * 切换动作仍由角色视图「设为当前」发起——本处只做状态展示与导航，不承载切换执行。
    * 可附加展示性格特征（traits）简要（取最高分 trait 的中文标签），让角色气质一眼可见。
    * 无角色名时隐藏徽章（保持输入区干净）；textContent 赋值防注入。
@@ -3225,7 +3225,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * LLM 未配置时的空态 onboarding
    *
    * 无 Provider 时切换空状态为「去配置模型」引导：提示用户先配置大模型（首次使用关键路径），
-   * 并提供一键跳转按钮（点击 post open_settings_tab(config) → host 执行 memora.configureModel）。
+   * 并提供一键跳转按钮（点击 post open_settings_tab(config) → host 执行 memora.openSettings('config')）。
    * 配置就绪后调用方应再次走 updateEmptyStateRole 恢复普通引导（幂等，按钮用 querySelector 复用）。
    * 文案一律 textContent 赋值防注入；按钮事件直接在创建处绑定（随空态 DOM 常驻，无需委托）。
    */
