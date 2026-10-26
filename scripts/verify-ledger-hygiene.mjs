@@ -322,18 +322,25 @@ function selfTest() {
   const baseR = diagnose(base);
   const idsOf = (list) => new Set(list.map((x) => x.id));
 
-  const anchor = base.includes('## 宿主 0.3.0') ? '## 宿主 0.3.0' : null;
+  // 注入锚点 = 观察区标题（2026-10-26 台账归元后，主台账不再常驻「已发布版本区」⇒
+  // 自检必须**自建**一个已发布区，否则 ①②③ 判据无投放面 ⇒ 自检会因「锚点不存在」失明）
+  const anchor = base.includes('## 观察 / 待拍板') ? '## 观察 / 待拍板' : null;
   if (!anchor) {
-    console.error('❌ 自检锚点 `## 宿主 0.3.0` 不存在，无法注入 —— 自检前提失效');
+    console.error('❌ 自检锚点 `## 观察 / 待拍板` 不存在，无法注入 —— 自检前提失效');
     return 1;
   }
+  // 自建已发布区标题（RELEASED_RE 命中「已发布」），供 ①②③ 探针落位
+  const probeSection = '## ZZ-RELEASED 自检注入（已发布）';
 
   const cases = [
     {
       label: '①欠账',
       probe: 'ZZ-DEBT-1',
       mutate: (t) =>
-        t.replace(anchor, `- **ZZ-DEBT-1** — 自检注入｜✅ 已落地（无指针）\n\n${anchor}`),
+        t.replace(
+          anchor,
+          `${probeSection}\n\n- **ZZ-DEBT-1** — 自检注入｜✅ 已落地（无指针）\n\n${anchor}`,
+        ),
       pick: (r) => idsOf(r.debt),
     },
     {
@@ -342,7 +349,7 @@ function selfTest() {
       mutate: (t) =>
         t.replace(
           anchor,
-          `- **ZZ-FAKE-1** — 自检注入 → 见 [archive/0.2.0-host.md](#x)\n\n${anchor}`,
+          `${probeSection}\n\n- **ZZ-FAKE-1** — 自检注入 → 见 [archive/0.2.0-host.md](#x)\n\n${anchor}`,
         ),
       pick: (r) => idsOf(r.fake),
     },
@@ -350,10 +357,7 @@ function selfTest() {
       label: '③开放态错置',
       probe: 'ZZ-OPEN-1',
       mutate: (t) =>
-        t.replace(
-          '## 内核 5.1.0',
-          '## 内核 5.1.0（已发布 2026-10-26 · 自检）\n\n- **ZZ-OPEN-1** — 自检注入｜⏳ 观察\n',
-        ),
+        t.replace(anchor, `${probeSection}\n\n- **ZZ-OPEN-1** — 自检注入｜⏳ 观察\n\n${anchor}`),
       pick: (r) => idsOf(r.misplaced),
     },
   ];
