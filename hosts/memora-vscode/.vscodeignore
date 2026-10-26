@@ -38,5 +38,17 @@ dist/.build-stamp.json
 # 编译产物中的测试文件（tsc 会把 src/__tests__ 一并编译进 dist，分发时排除）
 **/__tests__/**
 
+# 本地日志与工具临时产物（2026-10-26 实测曾混入 vsix：验收前打包残留）
+# `.workbuddy/**` = 本地调试日志（.gitignore 已忽略，但 vsce 不看 .gitignore）
+.workbuddy/**
+.tmp-vsce.log
+*.log
+
+# 手工验收脚本（仅本地按 docs/mcp-acceptance.md 手工跑，扩展运行时零读取）
+mcp-acceptance-server.mjs
+
+# 打包前门禁的 bundle 探针（仅 scripts/verify-bundle-loadable.mjs 消费，编译期生成）
+dist/.bundle-smoke/**
+
 # 设计源稿（仅存档用，成品已固化为 icon.png / icon-activitybar.svg，不入安装包）
 resources/*.jpeg
