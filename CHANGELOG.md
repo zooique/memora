@@ -133,7 +133,13 @@
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更，随 `vsce package` 定版，不进内核 npm 包（ADR-033）。**开区原因**：`vscode@0.2.0` tag 早于宿主 MCP 接入 ⇒ 已发布版没有任何 MCP 能力。**主体条目（本地 stdio MCP 接入）发布前按 `git log vscode@0.2.0..HEAD -- hosts/` 补齐**——本区先记今日订正，切片叙事不复述（真源 = 台账「宿主 0.3.0」区）。
 > **出包前必做**：与内核区同规——标题的「未发布」须改为**实际发布日期**（`scripts/verify-changelog-version.mjs` 校验）。
 
+### Added（宿主）
+
+- **设置面板入口：侧栏「对话」视图标题栏齿轮**（2026-10-26）：`menus.view/title` 挂 `memora.openSettings`（`when: view == memora.chat`，icon `$(settings-gear)`），点开即 editor tab 形态的设置面板（默认落「记忆」页，单例复用已开面板）。**为什么**：设置整体迁 editor tab 后侧栏不再有设置入口，只剩命令面板——真机反馈「输入框没有直接打开设置页的按钮」，可发现性不足。**取舍**：走 VS Code 原生 view 标题栏而非 webview 内自建按钮 ⇒ **零协议改动、零 webview 改动**；刻意不给「当前角色徽章」挂齿轮（图标承诺全局设置、行为却落角色页 = 视觉谎报），也未给徽章加常驻描边（齿轮方案落地后即取代该思路，两处都做 = 同一问题双补丁）。角色徽章维持原职（点开落角色页），与齿轮职责不同、不构成双入口。
+
 ### Changed（宿主）
+
+- **设置六页从侧栏 view 迁到 editor tab（L3 设置分家）**（2026-10-26）：`MemoraSettingsViewProvider`（`registerWebviewViewProvider`）→ `MemoraSettingsPanel`（`createWebviewPanel`）；package.json 侧栏 `memora.settings` 视图贡献项删除，对话 view 独占侧栏。导航仍走既有 `switchTab` + `_pendingTab` + ready 握手单点（`memora.configureModel` / `memora.openRoles` 落点不变）；panel 单例 reveal-or-create，关 tab 即 dispose 后重开走 ready 握手重建（与侧栏隐藏销毁语义等价，无 `retainContextWhenHidden`）；协议**零新增消息**、内核 `src/` 零改动、`settingsView.ts` / 设置样式 / HTML 零动（九条判据全过，收据见台账「L3 设置分家方案」条）。**为什么**：真机 UI 评审实测设置六页挤占对话空间、对话→设置→返回三层级导航、危险按钮贴脸、回执离视线远。**对消费者**：活动栏不再有设置入口，改用 `memora.openSettings` 命令或侧栏标题栏齿轮（见 Added）。
 
 - **MCP 两键作用域 `application` → `machine`**（`H0-2`，2026-10-25）：`memora.mcpServers` / `memora.mcpToolAllowlist` 不再随 VS Code Settings Sync 同步。**为什么**：`application` 会把 `headers` 里的明文令牌与免确认批准带到同账号的其他设备——批准的语义是「本机用户同意本机进程」，跨机继承等于替另一台机器点同意。**对消费者**：① 只写用户设置、工作区 / 文件夹写入仍被忽略（`.mcp.json` 不读的红线不变）；② **升级后每台机器需各配一次**，原先靠设置同步带过来的 MCP 配置不会再自动出现；③ 本机已有配置不受影响。断言钉在 `mcpConfig.test.ts`（结构机制不在代码里，改 scope 只有这条测试能拦住）。
 

@@ -51,7 +51,8 @@
       },
       {
         "command": "memora.openSettings",
-        "title": "Memora: 打开设置面板"
+        "title": "Memora: 打开设置面板",
+        "icon": "$(settings-gear)"
       },
       {
         "command": "memora.memoryStats",
@@ -317,6 +318,13 @@
       ]
     },
     "menus": {
+      "view/title": [
+        {
+          "command": "memora.openSettings",
+          "when": "view == memora.chat",
+          "group": "navigation"
+        }
+      ],
       "explorer/context": [
         {
           "command": "memora.addToChat",
