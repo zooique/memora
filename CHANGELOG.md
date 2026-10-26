@@ -128,10 +128,10 @@
 
 - **后台任务槽位按 Agent 实例隔离**（`MULTI-AGENT-1`，2026-10-18）：模块级槽位 → `class BackgroundTaskScheduler` 实例级，同进程多 Agent 不再交叉等待/挤占（形态定案后多实例是必然）。非公开 API 变更。
 
-## [0.3.0] · 未发布（Unreleased · 宿主轴 · 2026-10-25 开区）
+## [0.3.0] · 2026-10-26 · 宿主
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更，随 `vsce package` 定版，不进内核 npm 包（ADR-033）。**开区原因**：`vscode@0.2.0` tag 早于宿主 MCP 接入 ⇒ 已发布版没有任何 MCP 能力。**主体条目（MCP 接入）已于 2026-10-26 按 `git log vscode@0.2.0..HEAD -- hosts/` 补齐**（0.2.0 之后 55 笔宿主提交中 33 笔属 MCP）；切片叙事不复述，收据见台账「宿主 0.3.0」区。
-> **出包前必做**：与内核区同规——标题的「未发布」须改为**实际发布日期**（`scripts/verify-changelog-version.mjs` 校验）。
+> **随包内核代次 = `5.1.0`**（esbuild 内联 dist，内核自身变更见内核区）。
 
 ### Added（宿主）
 

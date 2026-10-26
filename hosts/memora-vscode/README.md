@@ -6,7 +6,7 @@ Memora 是内核驱动的 **VS Code AI 助手**：薄壳装配、复用内核全
 
 **开源仓库**：[github.com/zooique/memora](https://github.com/zooique/memora)
 
-**内核**：基于 npm 包 [@zooique/memora](https://www.npmjs.com/package/@zooique/memora) `5.0.0` 开发（本版本内联的内核代次，随宿主版本发布核对）
+**内核**：基于 npm 包 [@zooique/memora](https://www.npmjs.com/package/@zooique/memora) `5.1.0` 开发（本版本内联的内核代次，随宿主版本发布核对）
 
 ---
 

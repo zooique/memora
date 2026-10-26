@@ -1663,8 +1663,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * 合并口径：同一 toolCallId 的多条证据按到达序合并，**同 id 以首次为准**（与实时侧
    * `currentMemoryHitsByCall` 的 Map 去重口径一致，避免两套去重规则）。
-   * 无配对键的证据跳过：`hits` 与 `toolCallId` 同批引入、从未有发行版只发其一
-   * （4.1.0 已取消，5.0.0 未发布），不为不可达形态另造一套轮次级重放渲染。
+   * 无配对键的证据跳过：`hits` 与 `toolCallId` 是**同一批**引入的字段，任何发行版都不可能
+   * 只含其中之一 ⇒ 该形态不可达，不为它另造一套轮次级重放渲染。
    */
   function buildMemoryHitsEvidenceResolver(
     evidence: RoundView['evidence'],
