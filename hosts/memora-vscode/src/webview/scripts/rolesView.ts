@@ -386,9 +386,9 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     othersHost = document.createElement('div');
     othersHost.className = 'roles-others';
     list.appendChild(othersHost);
-    // 全量交给分页组件切片渲染（数量大时避免全量堆叠）
+    // 全量交分页组件切片（防堆叠）；保页判据 = pager.showKeepingPage（roles_loaded 三触发面）
     othersAll = data.packs.filter((p) => p.name !== activeName);
-    pager.show(1, othersAll.slice(0, ROLE_PAGE_SIZE), othersAll.length);
+    pager.showKeepingPage(othersAll);
   }
 
   /**

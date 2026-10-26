@@ -569,4 +569,51 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
     // 第二次应答的原文已回显（保存成功 → 弹窗切回查看态显示新配置）
     expect(document.querySelector('.role-detail-value')?.textContent).toBe('300');
   });
+
+  /** 造 N 个角色包（p0 = 激活角色，其余进「其他角色」分页；ROLE_PAGE_SIZE = 8） */
+  function makePacks(count: number): Array<Record<string, unknown>> {
+    return Array.from({ length: count }, (_, i) => ({
+      name: `p${i}`,
+      displayName: `角色${i}`,
+      capabilities: [],
+    }));
+  }
+
+  /** 分页条按钮（PagerController 自建 DOM：00=上一页 / 01=下一页） */
+  function pagerBtn(label: '‹ 上一页' | '下一页 ›'): HTMLButtonElement {
+    const btn = Array.from(document.querySelectorAll<HTMLButtonElement>('.pager-btn')).find((b) =>
+      b.textContent?.includes(label === '下一页 ›' ? '下一页' : '上一页'),
+    );
+    if (!btn) throw new Error(`pager 按钮不存在: ${label}`);
+    return btn;
+  }
+
+  it('roles_loaded 被动重推保持当前页（refreshAll 转可见不再把用户打回第 1 页）', () => {
+    mountRolesView();
+    const packs = makePacks(18); // 其他角色 17 条 / 每页 8 → 3 页
+    dispatchLoaded(packs, 'p0');
+    expect(document.querySelector('.pager-info')?.textContent).toBe('第 1 / 3 页（共 17 条）');
+
+    pagerBtn('下一页 ›').click();
+    expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 17 条）');
+    expect(document.getElementById('list')?.textContent).toContain('角色9');
+
+    // 模拟面板由隐藏转可见：宿主 refreshAll 重推同一份数据
+    dispatchLoaded(packs, 'p0');
+    expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 17 条）');
+    expect(document.getElementById('list')?.textContent).toContain('角色9');
+  });
+
+  it('roles_loaded 重推后页数变少 → 向前夹取到末页（不落空页）', () => {
+    mountRolesView();
+    dispatchLoaded(makePacks(18), 'p0');
+    pagerBtn('下一页 ›').click();
+    pagerBtn('下一页 ›').click();
+    expect(document.querySelector('.pager-info')?.textContent).toBe('第 3 / 3 页（共 17 条）');
+
+    dispatchLoaded(makePacks(10), 'p0'); // 其他角色 9 条 → 2 页，第 3 页已不存在
+    expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 2 页（共 9 条）');
+    // 末页有内容：激活角色 p0 + 末页唯一一条 p9
+    expect(document.querySelectorAll('#list .card')).toHaveLength(2);
+  });
 });

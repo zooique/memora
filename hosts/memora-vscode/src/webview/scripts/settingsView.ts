@@ -61,11 +61,31 @@ export interface SettingsViewDeps {
  * 那六个文件。任一视图**新增必填依赖**时本表会编译红——这正是想要的：新增依赖意味着
  * 「谁提供它」需要重议，不该静默塞进容器。
  */
-type MountFactory = (deps: {
+export type MountFactory = (deps: {
   vscode: { postMessage(msg: WebviewToExtensionMessage): void };
   window: Window;
   root: HTMLElement;
 }) => void;
+
+/**
+ * 子视图挂载表（**顺序 = 初始化时序**，≠ `SETTINGS_TABS` 的 UI 顺序；后者 memory 在首位）
+ *
+ * config / memory / roles 先（老三页），skills / mcp / security 后。改顺序前先确认无跨页依赖。
+ *
+ * **为什么在模块级导出**（2026-10-26）：这张表此前在 `createSettingsView` 函数作用域内 ⇒
+ * `settingsTabs.ts` 文件头承诺的「加一页 = ④ 本表一行」**无法被任何测试钉住**，而漏一行的
+ * 表现是「该页有按钮、无内容」，tsc 与其他测试全绿、只有真机能发现（该文件自注「④-⑥ 缺 =
+ * 静默半残，测试红不了」）。导出后由 `settingsView.test.ts` 断言「表内 name 集合 ==
+ * `SETTINGS_TABS`」把这条承诺变成可红的——**这是本表能被写成承诺的前提，勿再移回函数内**。
+ */
+export const SETTINGS_VIEW_MOUNTS: ReadonlyArray<{ name: SettingsTab; make: MountFactory }> = [
+  { name: 'config', make: createConfigView },
+  { name: 'memory', make: createMemoryView },
+  { name: 'roles', make: createRolesView },
+  { name: 'skills', make: createSkillsView },
+  { name: 'mcp', make: createMcpView },
+  { name: 'security', make: createSecurityView },
+];
 
 /**
  * 初始化设置面板 webview 交互（选项卡切换 + 挂载三个子视图）
@@ -138,24 +158,9 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
   });
 
   // 挂载各子视图（数据驱动；全部用共享 vscode 实例）。
-  // 为什么是一张表而不是六段 try/catch：手抄版每加一页要复制 7 行样板，而「漏复制一段」
-  // **不会让任何测试红**——该页有按钮无内容，只有真机能发现（2026-10-26 L3 审查实证：
-  // 原注释承诺「加 tab 只改一行数组」与实际改动面差 5 处，本表把其中一处压回一行）。
-  //
-  // 顺序 = **初始化时序**（与 `SETTINGS_TABS` 的 UI 展示顺序不同，后者 memory 在首位）：
-  // config / memory / roles 先（老三页），skills / mcp / security 后。改顺序前先确认无跨页依赖。
-  //
   // 每个挂载独立 try/catch：任一子视图异常不阻断其余，尤其不能截断末尾的 ready 握手
-  // （ready 未发 ⇒ host 不推数据 ⇒ 全面板空白）。
-  const mounts: ReadonlyArray<{ name: SettingsTab; make: MountFactory }> = [
-    { name: 'config', make: createConfigView },
-    { name: 'memory', make: createMemoryView },
-    { name: 'roles', make: createRolesView },
-    { name: 'skills', make: createSkillsView },
-    { name: 'mcp', make: createMcpView },
-    { name: 'security', make: createSecurityView },
-  ];
-  for (const { name, make } of mounts) {
+  // （ready 未发 ⇒ host 不推数据 ⇒ 全面板空白）。表内容与顺序见模块级 SETTINGS_VIEW_MOUNTS。
+  for (const { name, make } of SETTINGS_VIEW_MOUNTS) {
     try {
       make({ vscode, window, root: roots[name] });
     } catch (err) {
@@ -334,7 +339,7 @@ function createSkillsView({
       // **被动重推 ≠ 重置**：本消息有三个触发面（首帧 ready / 技能变更回推 / 面板由隐藏
       // 转可见的 refreshAll）。旧实现一律回第 1 页 + 整体清空正文缓存 ⇒ 每次切走再回来
       // 都从第 1 页重新开始，正在读的正文要重新向宿主取一次。
-      //   ① 页序未变就留在原页（页数变少时向前夹取到最后页）；
+      //   ① 页序保持（页数变少时向前夹取）——判据单点 = `pager.showKeepingPage`；
       //   ② 正文缓存按名字逐出**已消失**的技能，不整体清空。
       // 「整体清空」只属于用户显式点刷新（见 refreshBtn 处理器）——两个判据不同源，别合并。
       for (const name of [...contentMap.keys()]) {
@@ -343,13 +348,7 @@ function createSkillsView({
           expanded.delete(name);
         }
       }
-      const pageCount = Math.max(1, Math.ceil(allSkills.length / SKILL_PAGE_SIZE));
-      const page = Math.min(pager.getPage(), pageCount);
-      pager.show(
-        page,
-        allSkills.slice((page - 1) * SKILL_PAGE_SIZE, page * SKILL_PAGE_SIZE),
-        allSkills.length,
-      );
+      pager.showKeepingPage(allSkills);
     } else if (msg.type === 'skill_content') {
       // L2 渐进披露：渲染技能正文（缓存内容供分页切页重建）
       const item = listEl.querySelector(`[data-skill-name="${CSS.escape(msg.skillName)}"]`);

@@ -13,12 +13,12 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createSettingsView } from '../scripts/settingsView.js';
+import { createSettingsView, SETTINGS_VIEW_MOUNTS } from '../scripts/settingsView.js';
 import type { CustomSearchEngineConfig, MemoryItemDto } from '../../shared/protocol.js';
 // MCP 子视图骨架**直接取产线同一份常量**（不再手抄一份夹具镜像）：手抄镜像会随产线演进
 // 静默失同步，而失同步的表现是「测试全绿、真机少一块」——正是这类夹具要防的东西。
 import { MCP_BODY_HTML } from '../panels/settingsMcpHtml.js';
-import { settingsRootId } from '../../shared/settingsTabs.js';
+import { SETTINGS_TABS, settingsRootId } from '../../shared/settingsTabs.js';
 
 /** MCP 面板容器（root id 由 tab 表派生，不写死字符串） */
 const MCP_FIXTURE = `<div id="${settingsRootId('mcp')}" hidden>${MCP_BODY_HTML}</div>`;
@@ -1277,5 +1277,29 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
     expect(
       postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'open_setting'),
     ).toHaveLength(1);
+  });
+});
+
+/**
+ * 挂载表 SSOT 守卫（2026-10-26 · 把 `settingsTabs.ts` 的「④ 本表一行」承诺变成可红）
+ *
+ * 漏挂载的表现是「该页有按钮、无内容」：tsc 不报错、其余测试全绿，只有真机能发现。
+ * **断言集合相等而非顺序相等**——`SETTINGS_TABS` 是 UI 顺序、`SETTINGS_VIEW_MOUNTS` 是初始化
+ * 时序，两者刻意不同源（顺序由挂载依赖决定，UI 顺序由产品决定），顺序断言会把正确改动判红。
+ */
+describe('子视图挂载表与选项卡 SSOT 一致（加页漏挂载 = 测试红）', () => {
+  it('SETTINGS_VIEW_MOUNTS 的 name 集合与 SETTINGS_TABS 完全相等', () => {
+    expect(SETTINGS_VIEW_MOUNTS.map((m) => m.name).sort()).toEqual([...SETTINGS_TABS].sort());
+  });
+
+  it('无重复挂载项（同一页挂两次 = 监听器双绑、消息重复投递）', () => {
+    const names = SETTINGS_VIEW_MOUNTS.map((m) => m.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('每项 make 都是函数（漏 import / 占位会在这里红，而不是真机空白页）', () => {
+    SETTINGS_VIEW_MOUNTS.forEach(({ name, make }) => {
+      expect(typeof make, `挂载工厂缺失: ${name}`).toBe('function');
+    });
   });
 });

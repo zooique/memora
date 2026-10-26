@@ -32,6 +32,15 @@ export interface PagerDeps<T> {
 export interface PagerController<T> {
   /** 数据到达填充：page 必须与当前请求一致（外部据 getPage() 竞态校验），total 可选 */
   show(page: number, items: readonly T[], total?: number): void;
+  /**
+   * 全量数据集重推填充：**保持当前页**（页数变少时向前夹取到末页；空数据集 ⇒ 分页条隐藏）
+   *
+   * 为什么不叫 `reset`：被动重推（首帧 ready / 数据变更回推 / 面板由隐藏转可见的
+   * `refreshAll`）不是用户意图，回到第 1 页会把正在看第 N 页的用户拽回开头。
+   * **夹取判据只在实现内一处**——调用方禁止各自写 `Math.min(getPage(), pageCount)`，
+   * 否则同一不变量出现第二份（2026-10-26：角色页曾漏扫，`roles_loaded` 无条件回首页）。
+   */
+  showKeepingPage(all: readonly T[]): void;
   /** 重置分页态：回到第 1 页并触发 fetchPage(1)（新数据集首次填充） */
   reset(): void;
   /** 下一页（无更多时 no-op） */
@@ -117,13 +126,27 @@ export function createPager<T>(deps: PagerDeps<T>): PagerController<T> {
   prevBtn.addEventListener('click', () => go(curPage - 1));
   nextBtn.addEventListener('click', () => go(curPage + 1));
 
+  /**
+   * 填充某页（`show` 与 `showKeepingPage` 共用的唯一写入点）
+   *
+   * 页码合法性由调用方保证：`show` 用在「数据已按页取回」的通道（含竞态校验后的应答），
+   * `showKeepingPage` 在内部完成夹取，两处不得再各写一份边界判断。
+   */
+  function fill(page: number, items: readonly T[], nextTotal?: number): void {
+    curPage = page;
+    curItems = items;
+    if (nextTotal !== undefined) total = nextTotal;
+    syncBar();
+    renderPage(items);
+  }
+
   return {
-    show(page, items, nextTotal) {
-      curPage = page;
-      curItems = items;
-      if (nextTotal !== undefined) total = nextTotal;
-      syncBar();
-      renderPage(items);
+    show: fill,
+    showKeepingPage(all) {
+      // 页数按新数据集重算；当前页夹取到 [1, pageCount]（数据变少时退到末页，不留在空页）
+      const pages = Math.max(1, Math.ceil(all.length / pageSize));
+      const page = Math.min(Math.max(curPage, 1), pages);
+      fill(page, all.slice((page - 1) * pageSize, page * pageSize), all.length);
     },
     reset() {
       curPage = 1;

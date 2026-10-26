@@ -125,4 +125,37 @@ describe('pager 通用分页组件', () => {
     // reset 后无数据 → 分页条隐藏（等下次 fetch 回填）
     expect((document.querySelector('.pager-bar') as HTMLElement).hidden).toBe(true);
   });
+
+  it('showKeepingPage 保持当前页：第 2 页重推同规模数据集仍渲染第 2 页', () => {
+    const { controller, getLast } = mount();
+    controller.show(
+      2,
+      Array.from({ length: 10 }, (_, i) => `b${i}`),
+      25,
+    );
+    const all = Array.from({ length: 25 }, (_, i) => `a${i}`);
+    controller.showKeepingPage(all);
+    expect(controller.getPage()).toBe(2);
+    // 第 2 页 = 全量索引 10..19（切片由组件完成，调用方不再各自算）
+    expect(getLast()).toEqual(all.slice(10, 20));
+    expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 25 条）');
+  });
+
+  it('showKeepingPage 数据变少时向前夹取到末页（不留在空页）', () => {
+    const { controller, getLast } = mount();
+    controller.show(3, ['c0'], 25);
+    const fewer = Array.from({ length: 12 }, (_, i) => `a${i}`); // 12 条 → 2 页
+    controller.showKeepingPage(fewer);
+    expect(controller.getPage()).toBe(2);
+    expect(getLast()).toEqual(['a10', 'a11']);
+    expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 2 页（共 12 条）');
+  });
+
+  it('showKeepingPage 空数据集 → 回到第 1 页且分页条隐藏（不留上一轮页码）', () => {
+    const { controller } = mount();
+    controller.show(2, ['b0'], 25);
+    controller.showKeepingPage([]);
+    expect(controller.getPage()).toBe(1);
+    expect((document.querySelector('.pager-bar') as HTMLElement).hidden).toBe(true);
+  });
 });

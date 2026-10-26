@@ -160,6 +160,14 @@
   **④ 闸门数字与注释对齐**：eslint 的 `settingsPanel.ts` 注「一 class 扛 5 个 tab」改为六页；三条 `max-lines` 按「闸门自报」口径下调（chatView 6716→6715 / chatPanel 4516→4515 / settingsPanel 2041→2037，只降不升）。
   **守卫**：`settingsPanelRoles.test.ts` 新增两例（未 ready 不投递且 pending 保留 / 已 ready 但后台不投递、转可见补发），`settingsPanelHostDiag.test.ts` 加接线自证。变异实测三条全红：判据退回 `_panel !== undefined` ⇒ 两例 `expected [ { …(2) } ] to deeply equal []`；去掉 `visible` ⇒ 后台例同上；`post()` 断线 ⇒ `接线自证失败：post → webview.postMessage 捕获链断了: expected [] to have a length of 1 but got +0`。
 
+- **设置面板：切走再切回不再丢列表态（重推非破坏化）**（2026-10-26，`L3-CTX-KEEP-1` + `L3-CTX-KEEP-2`）：
+  **现象**：`retainContextWhenHidden` 只保住了「输入框里还没提交的草稿」，保不住「列表正在看哪一页」——面板由隐藏转可见时宿主会重推一次数据（`refreshAll` 收敛网，覆盖那些没有推送路径的宿主侧变更），而 webview 侧把每次重推都当「新数据」处理：技能页 `pager.show(1, …)` + `contentMap.clear()` ⇒ 翻到第 N 页被打回第 1 页、已展开的技能正文收起并需要重新向宿主取；记忆页回第 1 页，且**搜索框里的词没清、列表却回全量**（界面自相矛盾）。**即：草稿保住了，列表态被反向洗掉 = 只保一半。**
+  **修法（留触发、消代价）**：不删重推触发——「隐藏期消息是否可达」VS Code 自己的两份注释互相矛盾（`retainContextWhenHidden` 注说不可投递，`Webview.postMessage` 注把设了该选项的隐藏 webview 算作 live），两边各赌一半是最坏组合。改为让重推**非破坏**：① 技能页把展开态收进 `expanded` 集合（唯一真源，DOM 只做投影），`skills_loaded` 改为「留在原页（页数变少时向前夹取）+ 按名字逐出已消失技能」，不再整体清缓存；「整体清空」只保留给用户显式点刷新（显式意图与被动重推判据不同源，刻意不合并）。② 记忆页三条分支：搜索框有词 ⇒ 按原词重放 `memory_search`（检索只走一条路，不在 webview 本地过滤数组）；当前页 > 1 ⇒ 走既有 `memory_page` 增量通道取该页（首屏载荷只含第 1 页，直接铺会把第 1 页数据贴上第 N 页页码）；其余直接填充。③ 角色页同样漏扫（`roles_loaded` 无条件回第 1 页），本批一并收口，并把「保持当前页 + 越界夹取」的判据下沉到 `PagerController.showKeepingPage` 单点——调用方不得再各写一份 `Math.min(getPage(), pageCount)`。
+  **对消费者**：切去别的 tab 再切回设置页，页面停在你离开时的那一页，展开的技能正文仍展开，搜索词与结果仍在同一上下文。**代价**：重推数据变了（例如角色包被删除）时按新页数向前夹取，落到最后一个有内容的页而不是空页。
+  **守卫**：`settingsView.test.ts` 3 例（留在当前页 / 已展开正文保持展开 / 页数变少向前夹取）、`memoryView.test.ts` 2 例（第 2 页不被第 1 页数据顶替 / 搜索词重放且输入框与列表同上下文）、`pager.test.ts` 3 例（保持当前页 / 变少夹取 / 空数据集收敛）、`rolesView.test.ts` 2 例（重推保页 / 重推变少夹取），全部变异验证。
+
+- **设置面板：子视图挂载表可被测试钉住**（2026-10-26，`L3-CTX-KEEP-2`）：`settingsView.ts` 的六页挂载表原在 `createSettingsView` 函数作用域内 ⇒ `settingsTabs.ts` 承诺的「加一页 = 挂载表一行」**没有任何测试能守住**，而漏一行的表现是「该页有按钮、无内容」：tsc 不报错、其余测试全绿，只有真机能发现。现提到模块级导出 `SETTINGS_VIEW_MOUNTS`，由 `settingsView.test.ts` 断言「表内 name 集合 == `SETTINGS_TABS`」+ 无重复 + 每项工厂为函数（断言集合相等而非顺序相等：UI 顺序与初始化时序刻意不同源）。**对消费者**：无行为变化；**对后续加页**：漏挂载从「真机才发现」变成「测试红」。
+
 - **MCP 两键作用域 `application` → `machine`**（`H0-2`，2026-10-25）：`memora.mcpServers` / `memora.mcpToolAllowlist` 不再随 VS Code Settings Sync 同步。**为什么**：`application` 会把 `headers` 里的明文令牌与免确认批准带到同账号的其他设备——批准的语义是「本机用户同意本机进程」，跨机继承等于替另一台机器点同意。**对消费者**：① 只写用户设置、工作区 / 文件夹写入仍被忽略（`.mcp.json` 不读的红线不变）；② **升级后每台机器需各配一次**，原先靠设置同步带过来的 MCP 配置不会再自动出现；③ 本机已有配置不受影响。断言钉在 `mcpConfig.test.ts`（结构机制不在代码里，改 scope 只有这条测试能拦住）。
 
 ### Removed（宿主）

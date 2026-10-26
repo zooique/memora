@@ -22,10 +22,12 @@
  *   ① 本文件：`SETTINGS_TABS` 一行 + `SETTINGS_TAB_LABELS` / `SETTINGS_TAB_ARIA_LABELS`；
  *   ② `webview/panels/settingsPanelHtml.ts` 的 body 骨架表（缺该页 root ⇒ 整页空白）；
  *   ③ `webview/scripts/<新页>View.ts`：新视图文件（`createXxxView`，签名须匹配 `MountFactory`）；
- *   ④ `webview/scripts/settingsView.ts` 的 `mounts` 表一行（顺序 = 初始化时序）；
+ *   ④ `webview/scripts/settingsView.ts` 的 `SETTINGS_VIEW_MOUNTS` 表一行（顺序 = 初始化时序）；
  *   ⑤ `webview/styles/` 该页样式（按 root 前缀分文件，共享类只许复用不许追加）；
  *   ⑥ `webview/panels/settingsPanel.ts`：`loadXxx` + `handleMessage` 分支 + `refreshAll` 补一行。
- * ①-③ 缺即红（类型 / 运行时异常）；④-⑥ 缺则**静默半残**（有按钮无内容），只有真机能发现。
+ * ①-③ 缺即红（类型 / 运行时异常）；④ 缺亦红（`SETTINGS_VIEW_MOUNTS` 与 `SETTINGS_TABS` 集合
+ * 相等由 `settingsView.test.ts` 断言，2026-10-26 由「静默半残」转为可红）；⑤-⑥ 缺则
+ * **静默半残**（有按钮无内容），只有真机能发现。
  * 导航侧已无成本：`memora.openSettings(tab)` 收任意 `SettingsTab`，webview 发
  * `open_settings_tab` 即可直达，不必新增命令或映射表（2026-10-26 收口）。
  *
