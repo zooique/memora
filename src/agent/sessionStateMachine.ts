@@ -9,6 +9,9 @@
  *     入口会把用户钉死在 error 态），运行时失败也不翻状态机。ERROR 保留为公开 API
  *     triggerError() 可达的预留态，待与 `Round.error` 无真实产生路径合并评估。
  * 生产运行时异常走 `yield { type:'error' }` 事件流（agent.ts），不翻状态机。若要让运行时异常自动翻状态机，需在 yield error 处接线 triggerError（行为变更，需产品决策）。
+ * 2026-10-27 产品拍板（真源 = 台账 HOST-ERR-1）：上一行所述「产品决策」已决——**不接线**、
+ * 宿主**不建恢复入口**，error 对宿主即终态语义（展示层已持久渲染「异常中断」并落盘失败原因，
+ * 运行时失败不产生卡死面）。triggerError()/recover() 保留为库级公开 API + 测试覆盖，退役须走 deprecation 三件套。
  * 单实例事件队列串行处理，无并发写路径。
  */
 import type {

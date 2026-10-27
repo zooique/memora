@@ -639,7 +639,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   ): AsyncGenerator<AgentChunk, void, unknown> {
     const resumeStatus = this._sessionManager?.status;
     // 错误态续跑须明确失败而非静默吞没：error 态由检查点恢复回填进入，运行时异常走
-    // yield { type: 'error' } 不翻状态机，生产链路不会自然离开，必须显式提示重新开始
+    // yield { type: 'error' } 不翻状态机，生产链路不会自然离开，必须显式提示重新开始。
+    // 2026-10-27 拍板：维持不接线、宿主不建恢复入口（宿主策略 = error 视作终态；
+    // 内核 recover() 仍为库级公开 API）——详见状态机头注释与台账 HOST-ERR-1
     if (resumeStatus === 'error') {
       this.emit(AGENT_EVENTS.sessionResumeFailed, {
         sessionId: this._sessionManager?.getCheckpoint()?.sessionId,
