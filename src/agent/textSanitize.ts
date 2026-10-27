@@ -6,7 +6,7 @@
  * `skillScriptRunner`（命令结果格式化）。此前它住在 `toolExecutor.ts`，导致两个后果：
  *   ① `builtinToolHandlers` 反向 import `toolExecutor`（而 `toolExecutor` 也 import 它）——**模块循环**；
  *   ② 命令结果的**定长真源**（`RUN_SCRIPT_RESULT_MAX_LEN`）是 toolExecutor 的模块私有常量，
- *      第二个消费面（后台回��通知）看不到它 ⇒ 回流路径裸奔、无长度上限（2MB 输出可直灌上下文）。
+ *      第二个消费面（后台完成回流）看不到它 ⇒ 回流路径裸奔、无长度上限（2MB 输出可直灌上下文）。
  * 抽到零依赖的纯模块后，两个消费面共用同一份规则与同一个上限。
  *
  * 量纲纪律：本模块是**字符**层。上下文侧另有 token 入口关（`appendToolMessage` 落盘）、

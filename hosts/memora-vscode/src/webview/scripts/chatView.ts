@@ -596,7 +596,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       return script ? `执行技能脚本：${skill ? `${skill}/` : ''}${script}` : undefined;
     },
     // run_command：命令原文是唯一可叙述面。后台模式加「（后台）」标记——
-    // 用户看到「执行命令：npm test（后台）」才知道它不会立刻出结果、稍后才有回���，
+    // 用户看到「执行命令：npm test（后台）」才知道它不会立刻出结果、稍后才有回复，
     // 否则会以为界面卡住了（与本仓「静默空跑 = 比炸更坏」同源纪律：状态必须说出来）。
     run_command: (a) => {
       const cmd = argStr(a, 'command');
