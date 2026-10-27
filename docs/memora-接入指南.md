@@ -1,8 +1,8 @@
-# Memora · 接入指南 v5.1.0
+# Memora · 接入指南
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
-> **当前内核版本**：v5.1.0（对齐当前内核包版本 `package.json`）。各版完整变更见 [CHANGELOG](../CHANGELOG.md)。
+> **本文档对应的内核版本**：即你安装的包版本（以包内 `package.json` 的 `version` 为准）。**刻意不在此写死版本号**——本文件随包发布，写死即会与包版本脱钩（无闸门能保证二者同步，故不陈述值就无从腐化）。各版完整变更见 [CHANGELOG](../CHANGELOG.md)。
 >
 > **最新已发布版本**：以 npm registry 为准（`npm view @zooique/memora dist-tags.latest`），不在包内复述。
 >
@@ -40,7 +40,7 @@
 
 **内核零越界。** 核心库模块不直接调用 `console.*`（唯一日志出口为 `logging/` 单例，默认实现写 stderr）、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
 
-**Manager 委托模式。** Agent 面类只做编排，领域操作委托给专职 Manager：`agent.rolePack`（角色包）/ `agent.tools`（工具）/ `agent.skills`（技能）/ `agent.memory`（记忆查询+写入）/ `agent.works`（作品投影）/ `agent.polish`（文本润色）共 6 个业务 Manager（另有 `projects` / `security` / `sessionManager` 等）。
+**Manager 委托模式。** Agent 面类只做编排，领域操作委托给专职 Manager：`agent.rolePack`（角色包）/ `agent.tools`（工具）/ `agent.skills`（技能）/ `agent.memory`（记忆查询+写入）/ `agent.works`（作品投影）/ `agent.polish`（文本润色）共 6 个业务 Manager（另有 `security` / `sessionManager` / `agentHistory` / `rolePackManager` 等）。
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -89,6 +89,8 @@
 ```bash
 npm install @zooique/memora
 ```
+
+> **运行时要求**：Node.js ≥ 22.0.0（与 `package.json#engines` 同口径）。其中 SQLite 落盘工厂 `createNodeSqliteStorage`（`node:sqlite`）需 **Node ≥ 22.13**——22.13 起 `node:sqlite` 才免 `--experimental-sqlite` 标志。低于 22.13 时包可正常加载、内存存储照常可用，仅调用该工厂会抛出明确的「需 Node ≥22.13」专属错误（`ToolErrorCode.NOT_AVAILABLE`），不会静默失败。
 
 ### 2. 创建 Provider + Agent
 
@@ -329,20 +331,46 @@ Memora 通过 `ISessionStore` 接口支持会话消息的持久化。宿主实�
 > **检查点持久化已退役（2026-09-10 减法）**：`saveCheckpoint` / `loadCheckpoint` / `deleteCheckpoint` 已从接口删除；跨重启恢复链整体下线，中止/断电一律把未完成 turn 补全为完整 turn 身份并在下次会话按历史加载，运行时暂停是同 turn 内续跑（内存态）。
 
 ```typescript
-import type { ISessionStore, SessionMessage } from '@zooique/memora';
+import type { ISessionStore, SessionMessage, SessionMeta } from '@zooique/memora';
 
-// 宿主实现接口
+// 宿主实现接口：round-based 单一模式 —— 消息内容存 RoundStore，本接口只持「Round 指针 + 会话元数据」
+// 以下为接口全集（11 个必需方法，照抄可编译通过）；`setSessionTitle` 可选，未实现亦可
 class FileSessionStore implements ISessionStore {
-  appendMessage(date: string, session: string, message: SessionMessage): void {
-    // 写入文件或数据库
+  // ── 会话元数据 ──
+  getSessionMeta(sessionId: string): SessionMeta | undefined {
+    return undefined; // 读元数据；不存在返回 undefined
   }
-  loadMessages(date: string, session: string): SessionMessage[] {
-    // 从文件或数据库读取
-    return [];
+  updateSessionMeta(sessionId: string, meta: Partial<SessionMeta>): void {
+    // 按 partial 合并写（内核对 sessionId 只做透传，不改写 key）
+  }
+  listSessionMetas(): SessionMeta[] {
+    return []; // 全量元数据（宿主自用；内核当前不主动调用）
   }
   listSessions(): string[] {
-    // 返回所有会话列表
-    return [];
+    return []; // 会话 ID 列表
+  }
+  createSession(meta: SessionMeta): void {
+    // 建会话元数据（宿主自用；内核当前不主动调用）
+  }
+  deleteSession(sessionId: string): void {
+    // 删会话元数据（宿主自用；内核当前不主动调用）。契约：删除后 getSessionMeta 应为 undefined
+  }
+  // ── Round 指针（消息内容不在此，归 RoundStore）──
+  appendRoundId(sessionId: string, roundId: string): void {
+    // 追加单个 Round 指针
+  }
+  appendRoundIds(sessionId: string, roundIds: string[]): void {
+    // 批量追加（批量语义由宿主定义去重/顺序）
+  }
+  getRoundIds(sessionId: string): string[] {
+    return []; // 内核据此把 Round 展开成对话历史
+  }
+  setRoundIds(sessionId: string, roundIds: string[]): void {
+    // 整体覆盖（用于修剪/重排）
+  }
+  // ── 消息读取 ──
+  loadMessages(date: string, session: string): SessionMessage[] {
+    return []; // 按「日期 + 会话」读消息（兼容旧存储形态；round-based 下内容由 RoundStore 提供）
   }
 }
 
@@ -354,10 +382,10 @@ const agent = new Agent({
 ```
 
 **会话持久化特性：**
-- 日期使用 `todayDate()` 动态获取，确保跨日后消息写入当天目录
-- `appendUser()` / `appendAssistant()` 自动调用 `appendMessage()`
-- `loadSessionMessages()`（内部方法，非公开 API）自动调用 `loadMessages()`
-- `SessionMessage.role` 支持 `'user' | 'assistant' | 'system'`，宿主直接调用 `appendMessage()` 时可传入任意角色
+- **round-based 单一模式**：消息内容只存 `IRoundStore`，`ISessionStore` 只持 Round 指针 + 会话元数据；两者必须**同源单例**（见 十.6 存储单例约束），双实例会互相覆盖。
+- 日期使用 `todayDate()` 动态获取，确保跨日后消息写入当天目录。
+- 内核真实调用的方法 = `loadMessages` / `listSessions` / `getSessionMeta` / `updateSessionMeta` / `appendRoundId` / `getRoundIds` / `setRoundIds`；`createSession` / `deleteSession` / `listSessionMetas` 是**契约方法**（宿主自管理与实现完整性所需），**内核当前不主动调用**。
+- `SessionMessage.role` 支持 `'user' | 'assistant' | 'system'`。
 
 ---
 
@@ -642,7 +670,7 @@ for (const chapter of chapters) {
 
 **前提：存储方案由宿主自选，内核只定契约。** 内核只定义 `IMemoryStorage` / `ISessionStore` 接口，**不规定后端**——SQLite、JSON 文件、内存实现一视同仁，任何后端都不得被写进内核逻辑（5.0.0 起内核**提供**可选的 SQLite 实现 `createNodeSqliteStorage`，但那是「多一个可选实现」，**不是**把后端写进逻辑——选哪个仍归宿主，`Agent` 构造契约不变）。接口方法为**同步语义**（对齐 better-sqlite3），异步后端需另行扩展接口；JSON 落地实现在同步路径上做全量重写，记忆量增长时由宿主自行评估更优后端（阈值与权衡见 `storageInterface.ts` 头注释）。第一宿主 memora-vscode 当前用 JSON 文件，换成 SQLite **不需要改内核**。
 
-1. **`provider` 是必填项** — Agent 无法独立运行
+1. **必填三项：`projectPath` / `provider` / `dataDir`** — 三者均无缺省值，缺一即无法构造（`AgentOptions` 中这三个字段**不带 `?`**，其余全部可选）。`projectPath` 决定项目级配置与锁的锚点，`provider` 是前台 LLM 调用入口，`dataDir` 是 Agent 级资源目录。**`storage` 缺省为内置内存实现**（对话与记忆闭环照常，仅不持久化）⇒ 想落盘直接用 `createNodeSqliteStorage`，**无需自实现存储接口**。
 2. **configDir** 指向 Agent 级配置目录，所有项目共享
 3. **项目级 `.memora/`** 放项目级配置（`rules/`、`skills/`）与内核写入的项目锁 `.lock`；`dataDir` 若指向此处（第一宿主 memora-vscode 即如此），记忆库与会话也落在这里
 4. **角色包只能手动切换**（`agent.switchRolePack(name)` / `agent.rolePack.activate(name)`）——无输入自动匹配、无粘性锁存、无互斥触发；已激活的角色包在当前会话内保持固定（v0.13 已移除自动匹配全链）
