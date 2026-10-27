@@ -52,7 +52,7 @@ agent_created: true
 
 ### Step 3：归档台账（必须在 tag 前提交，状态标「待上架」）
 > **规则与执行细节见 `memora-ledger-governance` 技能**（坐标纪律 / 状态字典 / 三道台账门的跑法）；宿主线规则与内核相同，本技能**不复制第二份**，只列宿主特有的调用形式。
-> 规则真源 = `tasks/archive/README.md` 七条纪律。内核技能的 `references/archive-discipline.md` **已于 2026-10-27 停用**（其纪律 7 与真源字面相反），勿采信、勿再更新。
+> 规则真源 = `tasks/archive/README.md` 七条纪律。内核技能的 `references/archive-discipline.md` **已于 2026-10-27 删除**（其纪律 7 与真源字面相反，git 历史可查），勿从历史版本转抄。
 >
 > 以下只列**宿主线特有的约束**：
 
