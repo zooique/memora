@@ -1350,11 +1350,14 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
    * 经 `Agent.get security` 可达且**不在导出面**）；③ 可达层实际成员面非空。
    */
   it('可达层扫描面自检：可达类型非空且含 SecurityGuard（防守卫失明假绿）', () => {
+    // 显式放宽超时（2026-10-27 实测）：本用例要全仓解析 TS 类型图，覆盖率插桩下耗时约 5-12s
+    //   > 默认 5s ⇒ 覆盖率闸门恒红。断言本身是确定性的（集合非空 + 必含 SecurityGuard），
+    //   放宽的只是时限，不掩盖任何失败。
     const reachableNames = collectReachableTypeNames();
     expect(reachableNames.size).toBeGreaterThan(0);
     expect([...reachableNames], 'SecurityGuard 必在可达类型集合内').toContain('SecurityGuard');
     expect(Object.keys(actualReachable).length).toBeGreaterThan(0);
-  });
+  }, 30_000);
 
   it('可达成员面与冻结基线一致（增删即红；红须按 §3.2.1 定性后显式更新 REACHABLE_MEMBERS）', () => {
     const issues = diffReachableSurface();
