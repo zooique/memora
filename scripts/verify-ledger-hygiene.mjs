@@ -24,11 +24,18 @@
  *      ≠「留在版本区」；观察项永不随发版归档 ⇒ 留在已发布区会让该区**永远清不空**。
  *   ④ **格式态**：连续 ≥2 空行 —— 机械搬移条目后的空洞，无语义、纯膨胀。
  *
- * 为什么是告警档（required:false 挂 local-ci，见 scripts/local-ci.mjs）：
- *   「存量不清零前不建闸」同族教训（format:check 步的注释）——当前 0.2.0 区遗留 7 条欠账
- *   + 若干假指针，若直接建硬闸，第一次 pre-push 就会被拦 ⇒ 门必然被绕过。
- *   **升档条件（写明，勿凭感觉）**：①②③④ 四类存量**全部清零**后，把 local-ci 的
- *   `ledger:hygiene` 步 `required` 改 true。届时任一新命中 = 真回归，可安全 fail。
+ *   ⑤ **版本索引三方一致**（2026-10-27 补）：「版本索引」表每行必须同时满足——
+ *      归档文件存在 ∧ 该文件 H1 **声明了本行版本** ∧ **git tag 存在**。
+ *      为什么补：①②③ 的投放面是「区」，归元后主台账不再有版本区 ⇒ ①②③ 恒空恒绿。
+ *       TableRow↔归档文件↔git tag 三方是**不依赖区名**的稳定坐标，哪怕台账再重组也仍然可判。
+ *   ⑥ **待执行无完成判据**（2026-10-27 补）：📌 待执行条目正文**必须含一行 `完成判据：`**。
+ *      「待执行」= 已拍板待人/机落地，没有完成判据就无法判断做完没有，会变成永久占位条目。
+ *
+ * 档位（2026-10-27 由告警升硬闸，兑现上一版写明的升档条件）：
+ *   当初挂 required:false 是为 0.2.0 区的存量欠账/假指针让路，避免门一建就被绕。
+ *   该存量已于 2026-10-27 清零：①②③④⑥ 五类 0 命中，⑤ 三方一致全绿。
+ *   ⇒ local-ci 的 `ledger:hygiene` 步已改 `required: true`，此后任一命中 = 真回归。
+ *   ⚠️ 今后若再生存量：**先清零**，不要把 required 改回 false（改回即重演「门被绕过」）。
  *
  * 空集语义（fail-closed）：
  *   台账缺失 / 区解析为 0 / 条目解析为 0 ⇒ **判据失明比假绿更危险**，一律判红。
@@ -40,6 +47,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { arcHasEntryForId } from './lib/ledger-archive.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const LEDGER_REL = 'tasks/待完成任务.md';
@@ -116,45 +125,90 @@ function parseItems(lines, sec) {
     while (e > c.start && lines[e - 1].trim() === '') e--;
     c.end = e;
   });
-  return raw.map((c) => ({ id: c.id, head: c.head, start: c.start, lines: c.end - c.start }));
+  return raw.map((c) => ({
+    id: c.id,
+    head: c.head,
+    start: c.start,
+    end: c.end,
+    lines: c.end - c.start,
+  }));
+}
+
+/** 版本索引表的数据行：| 版本轴 | 版本 | 发布日期 | 归档（真理源） | */
+function parseVersionIndex(lines) {
+  const rows = [];
+  let inTable = false;
+  for (const line of lines) {
+    if (/^\|\s*版本轴/.test(line)) {
+      inTable = true;
+      continue;
+    }
+    if (!inTable) continue;
+    if (!/^\|/.test(line)) break;
+    if (/^\|[\s:|-]+\|$/.test(line)) continue; // 表头下的分隔行
+    const cells = line
+      .split('|')
+      .slice(1, -1)
+      .map((s) => s.trim());
+    if (cells.length >= 4) {
+      rows.push({ line, axis: cells[0], version: cells[1], date: cells[2], archiveCell: cells[3] });
+    }
+  }
+  return rows;
 }
 
 /**
- * 归档里是否存在该条目的副本。
+ * ⑤ 版本索引三方一致：行 ↔ 归档文件 ↔ git tag。
  *
- * 为什么不能只认 `- **ID**` 一行（2026-10-26 实测假红）：`VERIFY-REALDEVICE-1`
- * 在归档里是 `## 2026-10-10 · VERIFY-REALDEVICE-1 真机验收形态 SSOT 沉淀（规则文件落地）`
- * ——按**章节标题**归档，没有 `- **ID**` 条目行 ⇒ 被误报「无副本」。
- * 故副本形态认两类：① 条目行 `- **ID**`；② 章节标题 `## … ID …`。
- * 反过来，**正文里顺带提及不算**（`TERM-FDBK-1` 只在别的条目正文被提到）⇒ 仍报，
- * 交人工确认——宁可留 1 条真人肉，也不要放宽到「提过就算」而让门失明。
+ * 为什么用这三方（2026-10-27）：归元后主台账**不再有版本区**，而 ①②③ 的投放面就是「区」
+ * ⇒ ①②③ 恒空恒绿（那是「查无可查」，不是「查过都合规」）。版本索引表 / 归档文件 H1 / git tag
+ * 三者都不依赖区名，台账再怎么重组也仍然可判，是唯一稳定的坐标。
  */
-function arcHasEntry(arc, id) {
-  const esc = id.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-  return (
-    new RegExp(`^-\\s+\\*\\*${esc}\\*\\*`, 'm').test(arc) ||
-    new RegExp(`^#{1,4}\\s.*${esc}`, 'm').test(arc)
-  );
+function checkVersionIndex(lines, tags) {
+  const rows = parseVersionIndex(lines);
+  const issues = [];
+  if (rows.length === 0) return [{ row: null, why: '版本索引解析为 0 行（判据失明比假绿更危险）' }];
+
+  for (const r of rows) {
+    const target = /archive\/[A-Za-z0-9._/-]+\.md/.exec(r.archiveCell)?.[0] ?? null;
+    if (!target) {
+      issues.push({ row: r, why: '归档单元格无 archive/*.md 链接目标' });
+      continue;
+    }
+    const abs = join(ROOT, 'tasks', target);
+    if (!existsSync(abs)) {
+      issues.push({ row: r, why: `归档文件不存在：${target}` });
+      continue;
+    }
+    const arc = readFileSync(abs, 'utf8');
+    const h1 = /^#\s+(.*)$/m.exec(arc)?.[1] ?? '';
+    const primary = r.version.split('（')[0].trim();
+    if (!h1.includes(primary)) {
+      issues.push({ row: r, why: `文件 H1 未声明版本 ${primary}（实际「${h1.slice(0, 28)}」）` });
+    }
+    const versions = r.version.match(/\d+\.\d+\.\d+/g) ?? [];
+    if (versions.length === 0) {
+      issues.push({ row: r, why: `版本单元格解析不出版本号：${r.version}` });
+      continue;
+    }
+    for (const v of versions) {
+      // `memora@` 是**已废弃的 tag 命名**（见 memora-kernel-release 技能「`memora@` 漂移」：不会触发
+      // 发布链，禁止再打）。此处保留为候选是历史事实，不是放开口子——实测 tag 列表确有
+      // `memora@3.0.0 / memora@3.0.1 / memora@4.0.0`，去掉它 ⇒ 3.0.x 与 4.0.0 两行当场假红。
+      // ⚠️ 想清理它，必须先给这三行找到别的验收判据，而不是直接删候选。
+      const cands = /宿主/.test(r.axis) ? [`vscode@${v}`] : [`v${v}`, `memora@${v}`];
+      if (!cands.some((t) => tags.has(t))) {
+        issues.push({ row: r, why: `版本 ${v} 无 git tag（候选 ${cands.join(' / ')}）` });
+      }
+    }
+  }
+  return issues;
 }
 
-/**
- * 从「汇总指针」ID 里拆出子 ID。
- * 形如 `宿主已闭环项（UI-CONFIRM-P10 / P10B / …）` 是把一揽子收口项压成一行的批量指针，
- * 归档里落档的是**子项**而非这个汇总名，故按整串去归档找必假红。
- * 触发条件：ID 含 CJK 开括号 `（`（普通单条 ID 绝不含）。
- */
-function extractSubIds(id) {
-  if (!/（/.test(id)) return [];
-  const cleaned = id.replace(/（[^）]*）/g, ' ').replace(/\([^)]*\)/g, ' ');
-  const toks = cleaned.split(/[\/·|，,、；：、「」\s]+/).filter(Boolean);
-  return toks.filter((t) => /^[A-Za-z][A-Za-z0-9-]*(?:[-.]\d[\d.]*)?$/.test(t) && t.length >= 3);
-}
-
-/** 归档是否含某条目副本；汇总指针（含 CJK 括号的多子 ID）只要任一子 ID 有副本即有效。 */
-function arcHasEntryForId(arc, id) {
-  if (arcHasEntry(arc, id)) return true;
-  return extractSubIds(id).some((s) => arcHasEntry(arc, s));
-}
+/** ⑥ 待执行条目的完成判据：📌 段首即「已拍板待人/机落地」，无完成判据 = 永久占位。 */
+const PENDING_SEG_RE = /｜\s*📌/u;
+// 加粗位置不限（`**完成判据：**` 与 `**完成判据**：` 都算），但必须是显式写法而非顺口提及。
+const DONE_CRITERION_RE = /完成判据\**\s*：/;
 
 /**
  * 从标题行里取「归档指针」目标。
@@ -212,6 +266,7 @@ function diagnose(text) {
   const debt = [];
   const fake = [];
   const misplaced = [];
+  const pending = [];
   let itemTotal = 0;
   const releasedSections = [];
 
@@ -256,11 +311,36 @@ function diagnose(text) {
       if (released && !ptr && OPEN_SEG_RE.test(it.head)) {
         misplaced.push({ ...it, sec: sec.title });
       }
+      // ⑥ 待执行无完成判据
+      if (PENDING_SEG_RE.test(it.head)) {
+        const body = lines.slice(it.start + 1, it.end).join('\n');
+        if (!DONE_CRITERION_RE.test(body)) {
+          pending.push({ ...it, sec: sec.title, why: '📌 待执行条目缺「完成判据：」行' });
+        }
+      }
     }
   }
 
   const blanks = hasBlankRuns(lines);
-  return { sections, itemTotal, debt, fake, misplaced, releasedSections, blanks, lines };
+  const tags = new Set(
+    execFileSync('git', ['tag', '--list'], { cwd: ROOT, encoding: 'utf8' })
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  const indexIssues = checkVersionIndex(lines, tags);
+  return {
+    sections,
+    itemTotal,
+    debt,
+    fake,
+    misplaced,
+    pending,
+    indexIssues,
+    releasedSections,
+    blanks,
+    lines,
+  };
 }
 
 function report(r) {
@@ -269,6 +349,8 @@ function report(r) {
   if (r.fake.length) problems.push(['②假指针', r.fake]);
   if (r.misplaced.length) problems.push(['③开放态错置', r.misplaced]);
   if (r.blanks.length) problems.push(['④连续空行', r.blanks]);
+  if (r.indexIssues.length) problems.push(['⑤版本索引三方不一致', r.indexIssues]);
+  if (r.pending.length) problems.push(['⑥待执行无完成判据', r.pending]);
 
   console.log(
     `\n[ledger-hygiene] 台账结构分诊：${r.sections.length} 区 / ${r.itemTotal} 条目 / ${r.lines.length} 行`,
@@ -279,11 +361,13 @@ function report(r) {
         ? r.releasedSections
             .map((s) => `${s.title.slice(0, 18)} ${s.lines}行/${s.items}条`)
             .join(' · ')
-        : '(无)'),
+        : '(无 · 归元后主台账不再按版本分区 ⇒ ①②③ 无投放面，结构事实改由 ⑤⑥ 承担)'),
   );
 
   if (problems.length === 0) {
-    console.log('✅ [ledger-hygiene] 四态分诊全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0）');
+    console.log(
+      '✅ [ledger-hygiene] 六类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据）',
+    );
     return 0;
   }
 
@@ -292,18 +376,23 @@ function report(r) {
     for (const h of list.slice(0, MAX_PRINT)) {
       if (h.n !== undefined) {
         console.log(`   行${h.end - h.n + 1}..${h.end}  ${h.n} 个连续空行`);
-      } else {
+      } else if (h.start !== undefined) {
         console.log(
           `   行${h.start + 1}  [${h.id.slice(0, 30)}]  ${h.lines}行  ${h.why ?? h.sec.slice(0, 24)}`,
         );
+      } else {
+        console.log(`   ${h.why ?? ''}`);
+        if (h.row) console.log(`      ${h.row.line.replace(/\s+/g, ' ').slice(0, 120)}`);
       }
     }
     if (list.length > MAX_PRINT) console.log(`   … 另有 ${list.length - MAX_PRINT} 处`);
   }
   console.log(
-    '\n   处置：①②③ 见 `.trae/skills/memora-kernel-release/references/archive-discipline.md`；' +
-      '\n   ④ 连续空行压成 1 行（写盘前须断言非空行序列不变）。' +
-      '\n   本闸当前为告警档（local-ci required:false），四类存量清零后方可升硬闸。',
+    '\n   处置：①②③ 见 `tasks/archive/README.md` 七条纪律（原指向的 `archive-discipline.md` 副本已于 2026-10-27 停用，' +
+      '其纪律 7 与真源字面相反，勿再参照）；' +
+      '\n   ④ 连续空行压成 1 行（写盘前须断言非空行序列不变）；' +
+      '\n   ⑤ 校准「版本索引」表 ↔ 归档文件 H1 ↔ git tag 三方；⑥ 给 📌 待执行条目补「完成判据：」行。' +
+      '\n   本闸已是硬闸（local-ci required:true）——存量回涨时先把存量清零，不许把档位调回去。',
   );
   return 1;
 }
@@ -360,6 +449,34 @@ function selfTest() {
         t.replace(anchor, `${probeSection}\n\n- **ZZ-OPEN-1** — 自检注入｜⏳ 观察\n\n${anchor}`),
       pick: (r) => idsOf(r.misplaced),
     },
+    {
+      // ⑤ 的探针不是 ID 而是 version：注入一个三方全假的索引行，必须被「文件不存在」拦下。
+      label: '⑤版本索引三方不一致',
+      probe: '9.9.9',
+      mutate: (t) =>
+        t.replace(
+          /(\| 内核 npm \| 3\.0\.x[^\n]*\n)/,
+          '$1| 内核 npm | 9.9.9 | 2026-10-27 | [archive/9.9.9-kernel.md](./archive/9.9.9-kernel.md) |\n',
+        ),
+      pick: (r) => new Set(r.indexIssues.map((x) => x.why ?? '')),
+    },
+    // ⑤b：指向**存在**的归档文件但版本号对不上 ⇒ 同时探「H1 未声明版本」与「无 git tag」两个分支。
+    {
+      label: '⑤b版本索引 H1/tag 不符',
+      probe: '9.9.8',
+      mutate: (t) =>
+        t.replace(
+          /(\| 内核 npm \| 3\.0\.x[^\n]*\n)/,
+          '$1| 内核 npm | 9.9.8 | 2026-10-27 | [archive/5.1.0-kernel.md](./archive/5.1.0-kernel.md) |\n',
+        ),
+      pick: (r) => new Set(r.indexIssues.map((x) => x.why ?? '')),
+    },
+    {
+      label: '⑥待执行无完成判据',
+      probe: 'ZZ-PEND-1',
+      mutate: (t) => t.replace(anchor, `${anchor}\n\n- **ZZ-PEND-1** — 自检注入｜📌 待执行\n`),
+      pick: (r) => idsOf(r.pending),
+    },
   ];
 
   let allOk = true;
@@ -371,12 +488,15 @@ function selfTest() {
       continue;
     }
     const r = diagnose(after);
-    const hit = c.pick(r);
-    const baseHit = c.pick(baseR);
-    const ok = hit.has(c.probe) && !baseHit.has(c.probe);
+    // ⑤ 的投放面是「描述字符串」而非条目 ID ⇒ 命中判定用包含而非等值（见 pick 的返回形态）。
+    const contains = (set) =>
+      [...set].some((x) => String(x) === c.probe || String(x).includes(c.probe));
+    const hit = contains(c.pick(r));
+    const clean = !contains(c.pick(baseR));
+    const ok = hit && clean;
     if (!ok) allOk = false;
     console.log(
-      `  ${ok ? '✅' : '❌'} ${c.label} 探针 ${c.probe} ${ok ? '被捕获' : '未被捕获'}（基线含=${baseHit.has(c.probe)}）`,
+      `  ${ok ? '✅' : '❌'} ${c.label} 探针 ${c.probe} ${ok ? '被捕获' : '未被捕获'}（基线含=${!clean}）`,
     );
   }
 
@@ -388,7 +508,9 @@ function selfTest() {
     `  ${blankOk ? '✅' : '❌'} ④空行 注入后空块 ${baseR.blanks.length} → ${afterBlank.blanks.length}（期望 +1）`,
   );
 
-  console.log(allOk ? '\n✅ 自检通过：四类判据均可捕获新命中' : '\n❌ 自检失败：存在失明判据');
+  console.log(
+    allOk ? '\n✅ 自检通过：六类判据（①②③④⑤⑥）均可捕获新命中' : '\n❌ 自检失败：存在失明判据',
+  );
   return allOk ? 0 : 1;
 }
 

@@ -18,6 +18,9 @@
 | `agent.test.ts` > `memory.snapshot().working 应反映 AgentLoop 当前消息数` | 仅**并发**跑随机红；单独跑 / 加 `--no-file-parallelism` 全量均绿 | 跨文件共享态竞争（同工作区 `.memora` / 单例未隔离，时序敏感） | **否**（flake，非逻辑缺陷） |
 | `llmIntegration.test.ts` ×3 | **配好凭据后真跑**，偶发 `MemoraError: 对话繁忙`（实测两次并行：一次 3 红、一次全绿；单文件复跑绿） | **文件内共享态**：3 个 `it` 共享 `beforeAll` 创建的 agent，chat 结束后仍有后置后台任务（测试内 `await setTimeout(2000)` 即等它）→ 前一个 it 未收尾时下一个撞 `ChatLockManager.isBusy`；并行负载放大该时序窗口。**非跨文件共享锁**——`ChatLockManager` 是纯实例级字段（无模块级单例） | **否**（测试自身共享态，非生产缺陷——生产为单会话串行） |
 | `roundRefLifecycle.test.ts` ×2 | 基线偶发失败（与报告环境一致） | 基线脆弱，非本次改动引入 | **否**（基线，非回归） |
+| `toolExecutor.test.ts` > `background=true → 立即返回 taskId` | 仅**并行**跑失败：`EBUSY: resource busy or locked, rmdir '…/memora-cmd-proj-XXXX'` | 临时目录删除与其它 worker 争用；串行（隔离复跑或 `--no-file-parallelism` 全量）**必绿** | **否**（环境 I/O，非逻辑缺陷） |
+| `toolExecutor.test.ts` > `★ 已终态的**失败**任务 → kill 回传 status=ok` | 仅**并行**跑失败：`Test timed out in 5000ms`（**非** `AssertionError`） | 本容器文件系统删除慢（见 §3 根因归因，2026-09-26 三组对照实测）+ 并行负载；串行 357ms 通过 | **否**（超时型假红，判法见 §3） |
+| **（宿主侧）** `codeExecutor.test.ts` > `支持 javascript/js/nodejs/node，不支持其他语言返回明确提示` | full 档 `host:test` 步偶发 `Test timed out in 5000ms`（**非**断言失败）；按 §3 隔离复跑该文件 6/6 全绿，其中本用例 **1424ms** 通过 | 同属本容器环境慢 + 并行负载（该次 full 的 `environment` 项达 75.40s，加载被拖慢） | **否**（超时型假红）。判红前先看是 `Timeout` 还是 `AssertionError`，并按 §3 隔离复跑 |
 | `agent.test.ts` > `memory.snapshot()` ×2 | **`Hook timed out in 10000ms`**（`afterEach` 的 `agent.close()` + 3× 递归 `rmSync`）——单文件隔离重跑仍红，放宽 hookTimeout 后 **101/101 全绿** | 环境 I/O 慢（本环境全量耗时约为参考环境 7 倍），非逻辑缺陷 | **否**（环境性能型假红，判法见 §3「超时型假红」） |
 
 > **判定铁证**：`agent.test.ts` 在并发下失败数波动（子集 2 / 全量① 9 / 全量② 5，历史观测），通过数随运行浮动 → 为 flake 非回归。
@@ -89,6 +92,11 @@
 - ❌ **勿在并发红灯上直接归因代码缺陷** —— 先走 §3 判定。
 - ❌ **勿为让并发过而改测试/生产代码** —— 掩盖竞争而非修复，真 bug 会被藏。
 - ❌ **勿默认禁用文件并发**（`fileParallelism: false` 或把 `--no-file-parallelism` 写进 `package.json` test 脚本）—— 2x 慢，违反速度/复杂度守恒；(b) 仅作诊断手段，不进常驻脚本。
+  - **✅ 已批例外（2026-10-27 · 用户拍板）**：`scripts/local-ci.mjs` 的 `kernel:test` 步**常驻** `npm run test -- --no-file-parallelism`。
+    - 理由：full 档每跑必红上述 `toolExecutor` 2 条（假红，见 §2 表），**常驻红会让 full 的结论失去信号**；`local-ci` 是本地 pre-push 的最后一道统一口径，宁慢勿疑。
+    - 代价**实测**（本环境，3026 用例，2026-10-27）：并行 135.65s / 串行 166.58s ⇒ **仅 +22%**，远小于本 SOP 记的历史 2.4x（2026-09-14 在另一规模下测，勿据历史倍数推当前代价）。
+    - 边界：例外**只**覆盖这一步。`vitest.config.ts` 仍 `fileParallelism: true`、`package.json` 的 `test` 仍不带该参数 ⇒ 日常手工跑維持并行。
+    - 🔴 若将来这一步的串行也出现红 ⇒ **那是真回归信号**，不得再放宽口径，按 §3 转入排错。
 - ❌ **勿把「retry 绿」当「已修复」** —— retry 只证明 flake，仍须按 §3 核实是否真回归。
 - ❌ **勿为绕过容器慢 I/O 而改测试的清理实现** —— 例如把 `rmSync` 换成异步/并发删除。实测（2026-09-26）
   并发 32 路只从 93.7 降到 29.6 ms/文件，收益有限；且该慢是本容器特有、真实终端无此现象，
@@ -98,6 +106,7 @@
 
 - `vitest.config.ts`：`fileParallelism: true`（显式声明策略意图，= vitest 默认，行为零变更）＋ 注释指向本 SOP。
 - `package.json`：`"test": "vitest run"`（不带 `--no-file-parallelism`，保持并发加速）。
+- **`scripts/local-ci.mjs` 的 `kernel:test` 步：常驻 `npm run test -- --no-file-parallelism`** —— §5「勿进常驻」的**已批例外**（2026-10-27 用户拍板，实测代价 +22%，详见 §5 该项批注）。**本 SOP 与那处注释互为引用，改一处必须同步改另一处**。
 - CI（`.github/workflows/kernel-ci.yml` 的 `npm test`）：保持并发；偶然红按 §3 重跑判定，不盲目 revert。（上一版记「`build.yml` 三处 `npx vitest run`」——该 workflow 文件**已不存在**，2026-09-14 实测仅剩 `kernel-ci.yml`。）
 
 > 对抗式实锤（2026-09-14 复核实测）：grep 确认 `agent.test.ts` 的 `memory.snapshot().working` 用例为唯一内核**跨文件共享态** flake（`llmIntegration` 属**文件内**共享态，另一类）；全仓测试文件（2026-09-14 实测 **117** 个，时点早于 webview include 收敛，当前数以 `vitest.config.ts` 为准）无 `fileParallelism: false`/`pool`/`retry` 配置（仅 `vitest.config.ts` 一处 `fileParallelism: true` 显式声明策略意图）；CI（`kernel-ci.yml`）无 `--no-file-parallelism`。**另**：本 SOP 为并发策略与 flake 判定的**唯一权威**，不依赖 `tasks/` 编号（原记「对应 T5」——该编号已不在台账，勿据它回溯）。

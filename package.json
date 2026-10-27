@@ -53,6 +53,7 @@
     "verify:changelog": "node scripts/verify-changelog-version.mjs",
     "verify:publish-docs": "node scripts/verify-publish-docs.mjs",
     "verify:ledger-hygiene": "node scripts/verify-ledger-hygiene.mjs",
+    "verify:ledger-fold": "node scripts/verify-ledger-fold.mjs",
     "format": "prettier --write \"**/*.{ts,mjs,md,json}\"",
     "format:check": "prettier --check \"**/*.{ts,mjs,md,json}\"",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",

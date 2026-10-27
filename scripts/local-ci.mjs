@@ -163,10 +163,16 @@ const ALL_STEPS = [
     required: true,
     presets: ['full'],
   },
+  // ⚠️ 为什么这里带 `--no-file-parallelism`（2026-10-27 用户拍板，属对 SOP §5 的**显式例外**）：
+  //    full 档每跑必红 toolExecutor 2 条（后台执行 EBUSY + `kill_command` 终态失败任务 timeout），
+  //    隔离复跑同一文件 229/229 全绿 ⇒ 假红。常驻红会让「full 档红了」失去信号 ⇒ 结论被无视。
+  //    代价用实测说话（本环境 3026 用例）：并行 135.65s → 串行 166.58s，**只慢 22%**，
+  //    而非 SOP 文档记的历史 2.4x（那次是 2026-09-14 在另一规模下测的）⇒ 取舍成立。
+  //  ⚠️ 不改 `vitest.config.ts`、不改 package.json 的 test 脚本：日常手工跑仍是并发。
   {
     id: 'kernel:test',
-    name: '内核单元测试',
-    cmd: 'npm run test',
+    name: '内核单元测试（串行口径 · 免 toolExecutor 常态假红）',
+    cmd: 'npm run test -- --no-file-parallelism',
     cwd: ROOT,
     required: true,
     presets: ['full'],
@@ -310,21 +316,37 @@ const ALL_STEPS = [
     required: false,
     presets: ['full'],
   },
-  // 台账结构卫生（告警档）：归档纪律的四态分诊从**人工闸**升级为机检。
+  // 台账结构卫生（**硬闸**）：归档纪律的分诊从**人工闸**升级为机检。
   // 缺口实证：归档脚本按人肉 `--ids` 白名单跑 ⇒ 0.2.0 区 140 个 ID 只归档了 40 个；
   // 2026-10-26 观察区归位迁移又在没有门的情况下造出 22 处连续空行 + 已发布区整区滞留。
   // 判据 = ①欠账（已收口无归档指针）②假指针（有指针但归档无副本）③开放态错置
   // （观察/挂起态留在已发布区）④连续空行。**与 ledger:receipt 不重叠**：后者是
   // git 区间语义（提交 vs 台账），本步是**工作树语义**（台账当前结构）。
-  // **required:false 是刻意的**（同 ledger:receipt、同 format:check 的「存量不清零前不建闸」）：
-  // 当前①10 处 + ②3 处 + ③11 处存量未清，建硬闸会让第一次 pre-push 就被拦 ⇒ 门必被绕过。
-  // **升档条件**：①②③④ 四类存量全部清零后，把本步 required 改 true。
+  // **required:true（2026-10-27 由告警升硬闸）**：上一版写明的升档条件是「①②③④ 四类存量清零」，
+  // 该存量已于 2026-10-27 清零（同时补了 ⑤⑥ 两条不依赖区名的判据）⇒ 兑现承诺，**任一新命中 = 真回归**。
+  // ⚠️ 存量若再涨：**先清零**，不要把这里改回 false。required:false 只能是「针对一批已知存量的
+  // 临时免罚」，不能常驻——常驻即重演「门建了却明知道会被绕」的老剧本。
   {
     id: 'ledger:hygiene',
-    name: '台账结构卫生检查（四态分诊 · 告警档）',
+    name: '台账结构卫生检查（六类判据 · 硬闸）',
     cmd: 'npm run verify:ledger-hygiene',
     cwd: ROOT,
-    required: false,
+    required: true,
+    presets: ['full'],
+  },
+  // 台账折叠结清（硬闸）：防「整区折叠时条目凭空蒸发」。
+  // 缺口实证：2026-10-26 归元把 5.0.0 / 5.1.0 / 宿主 0.x 四个版本区折叠成索引表的一行，
+  // 那次靠**人工复读**才捞回 `rules-B2`（带「待迁」标记但差点被整条折走）；2026-10-27 用本步
+  // 复盘同一笔提交，又挖出一整条无人接盘的「0.3.0 发布前置阻塞项清零收据」——已补迁归档。
+  // **与另两步的分工**：receipt = 提交 vs 台账是否同步；hygiene = 台账当前结构是否合纪律；
+  // 本步 = 这次改动**移走了什么、有没有留后手**。三者互不覆盖。
+  // 口径：默认 `HEAD~1 → 工作树`（折叠后、提交前自查），复盘用 `--base=<ref> --head=<ref>`。
+  {
+    id: 'ledger:fold',
+    name: '台账折叠结清检查（移走条目必须有归档副本 · 硬闸）',
+    cmd: 'npm run verify:ledger-fold -- --since=origin/main',
+    cwd: ROOT,
+    required: true,
     presets: ['full'],
   },
   // 排版格式检查（prettier）：FMT-PRETTIER-1 第③步——存量清零后才建闸（「存量不清零前不建闸」
