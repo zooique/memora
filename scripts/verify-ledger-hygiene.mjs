@@ -30,6 +30,9 @@
  *       TableRow↔归档文件↔git tag 三方是**不依赖区名**的稳定坐标，哪怕台账再重组也仍然可判。
  *   ⑥ **待执行无完成判据**（2026-10-27 补）：📌 待执行条目正文**必须含一行 `完成判据：`**。
  *      「待执行」= 已拍板待人/机落地，没有完成判据就无法判断做完没有，会变成永久占位条目。
+ *   ⑦ **版本索引 ↔ README 归档表一致**（2026-10-27 补）：同一份「哪些归档文件在册」的事实，
+ *      主台账「版本索引」与 `tasks/archive/README.md` 各登记一份 ⇒ 两处文件名集合**必须双向相等**。
+ *      为什么补：两处登记无机器校验就是注定漂移的第二真源（治理技能曾把这条列为已知风险）。
  *
  * 档位（2026-10-27 由告警升硬闸，兑现上一版写明的升档条件）：
  *   当初挂 required:false 是为 0.2.0 区的存量欠账/假指针让路，避免门一建就被绕。
@@ -54,7 +57,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const LEDGER_REL = 'tasks/待完成任务.md';
 
 /**
- * 收口标记 —— 命中即视为「该归档」（与 archive-discipline.md 的「已关闭」口径同族）。
+ * 收口标记 —— 命中即视为「该归档」（与归档纪律的「已关闭」口径同族）。
  *
  * 🔴 **不含「已评估」**（2026-10-26 实测冲突）：`archive/5.0.0-kernel.md` 文件头明写
  *   「开放项（观察 / 进行中 / 未修 / **已评估**）一律留主台账」。首版判据把「已评估」
@@ -164,9 +167,11 @@ function parseVersionIndex(lines) {
  * ⇒ ①②③ 恒空恒绿（那是「查无可查」，不是「查过都合规」）。版本索引表 / 归档文件 H1 / git tag
  * 三者都不依赖区名，台账再怎么重组也仍然可判，是唯一稳定的坐标。
  */
-function checkVersionIndex(lines, tags) {
+function checkVersionIndex(lines, tags, readmeText) {
   const rows = parseVersionIndex(lines);
   const issues = [];
+  // 版本索引里出现过的归档文件名（basename），供 ⑦ 与 README 归档表对账
+  const indexFiles = new Set();
   if (rows.length === 0) return [{ row: null, why: '版本索引解析为 0 行（判据失明比假绿更危险）' }];
 
   for (const r of rows) {
@@ -175,6 +180,7 @@ function checkVersionIndex(lines, tags) {
       issues.push({ row: r, why: '归档单元格无 archive/*.md 链接目标' });
       continue;
     }
+    indexFiles.add(target.replace(/^archive\//, ''));
     const abs = join(ROOT, 'tasks', target);
     if (!existsSync(abs)) {
       issues.push({ row: r, why: `归档文件不存在：${target}` });
@@ -200,6 +206,29 @@ function checkVersionIndex(lines, tags) {
       if (!cands.some((t) => tags.has(t))) {
         issues.push({ row: r, why: `版本 ${v} 无 git tag（候选 ${cands.join(' / ')}）` });
       }
+    }
+  }
+
+  // ⑦ 版本索引 ↔ archive/README.md 归档表：两处登记同一份「在册归档文件」事实 ⇒ 集合必须双向相等。
+  //    只认表格首列被反引号包裹的 `*.md`，且**排除带路径的条目**（README 另有「审查报告」等
+  //    指向 tasks/*.md 的行，它们不是 tasks/archive 下的归档文件，掺进来即假红）。
+  const readme = readmeText ?? readFileSync(join(ROOT, 'tasks', 'archive', 'README.md'), 'utf8');
+  const readmeFiles = new Set();
+  for (const line of readme.split(/\r?\n/)) {
+    const m = /^\|\s*`([^`]+\.md)`/.exec(line);
+    if (m && !m[1].includes('/')) readmeFiles.add(m[1]);
+  }
+  if (readmeFiles.size === 0) {
+    issues.push({ row: null, why: 'archive/README.md 归档表解析为 0 行（判据失明比假绿更危险）' });
+  }
+  for (const f of indexFiles) {
+    if (!readmeFiles.has(f)) {
+      issues.push({ row: null, why: `版本索引引用了 ${f}，但 archive/README.md 归档表未登记` });
+    }
+  }
+  for (const f of readmeFiles) {
+    if (!indexFiles.has(f)) {
+      issues.push({ row: null, why: `archive/README.md 登记了 ${f}，但版本索引无对应行` });
     }
   }
   return issues;
@@ -251,7 +280,7 @@ function hasBlankRuns(lines) {
   return runs;
 }
 
-function diagnose(text) {
+function diagnose(text, opts = {}) {
   const lines = text.split(/\r?\n/);
   const sections = parseSections(lines);
   const arcCache = new Map();
@@ -328,7 +357,7 @@ function diagnose(text) {
       .map((s) => s.trim())
       .filter(Boolean),
   );
-  const indexIssues = checkVersionIndex(lines, tags);
+  const indexIssues = checkVersionIndex(lines, tags, opts.readmeText);
   return {
     sections,
     itemTotal,
@@ -349,7 +378,8 @@ function report(r) {
   if (r.fake.length) problems.push(['②假指针', r.fake]);
   if (r.misplaced.length) problems.push(['③开放态错置', r.misplaced]);
   if (r.blanks.length) problems.push(['④连续空行', r.blanks]);
-  if (r.indexIssues.length) problems.push(['⑤版本索引三方不一致', r.indexIssues]);
+  if (r.indexIssues.length)
+    problems.push(['⑤⑦版本索引不一致（三方 / README 归档表）', r.indexIssues]);
   if (r.pending.length) problems.push(['⑥待执行无完成判据', r.pending]);
 
   console.log(
@@ -361,12 +391,12 @@ function report(r) {
         ? r.releasedSections
             .map((s) => `${s.title.slice(0, 18)} ${s.lines}行/${s.items}条`)
             .join(' · ')
-        : '(无 · 归元后主台账不再按版本分区 ⇒ ①②③ 无投放面，结构事实改由 ⑤⑥ 承担)'),
+        : '(无 · 归元后主台账不再按版本分区 ⇒ ①②③ 无投放面，结构事实改由 ⑤⑥⑦ 承担)'),
   );
 
   if (problems.length === 0) {
     console.log(
-      '✅ [ledger-hygiene] 六类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据）',
+      '✅ [ledger-hygiene] 七类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致）',
     );
     return 0;
   }
@@ -388,10 +418,11 @@ function report(r) {
     if (list.length > MAX_PRINT) console.log(`   … 另有 ${list.length - MAX_PRINT} 处`);
   }
   console.log(
-    '\n   处置：①②③ 见 `tasks/archive/README.md` 七条纪律（原指向的 `archive-discipline.md` 副本已于 2026-10-27 停用，' +
-      '其纪律 7 与真源字面相反，勿再参照）；' +
+    '\n   处置：①②③ 见 `tasks/archive/README.md` 七条纪律（原 `archive-discipline.md` 副本已于 2026-10-27 删除，' +
+      '其纪律 7 与真源字面相反，勿从 git 历史转抄）；' +
       '\n   ④ 连续空行压成 1 行（写盘前须断言非空行序列不变）；' +
-      '\n   ⑤ 校准「版本索引」表 ↔ 归档文件 H1 ↔ git tag 三方；⑥ 给 📌 待执行条目补「完成判据：」行。' +
+      '\n   ⑤ 校准「版本索引」表 ↔ 归档文件 H1 ↔ git tag 三方；⑥ 给 📌 待执行条目补「完成判据：」行；' +
+      '\n   ⑦ 让「版本索引」与 `tasks/archive/README.md` 归档表的文件名集合双向相等（改一处必须同步另一处）。' +
       '\n   本闸已是硬闸（local-ci required:true）——存量回涨时先把存量清零，不许把档位调回去。',
   );
   return 1;
@@ -408,6 +439,7 @@ function report(r) {
  */
 function selfTest() {
   const base = readFileSync(join(ROOT, LEDGER_REL), 'utf8');
+  const baseReadme = readFileSync(join(ROOT, 'tasks', 'archive', 'README.md'), 'utf8');
   const baseR = diagnose(base);
   const idsOf = (list) => new Set(list.map((x) => x.id));
 
@@ -477,17 +509,38 @@ function selfTest() {
       mutate: (t) => t.replace(anchor, `${anchor}\n\n- **ZZ-PEND-1** — 自检注入｜📌 待执行\n`),
       pick: (r) => idsOf(r.pending),
     },
+    // ⑦a：README 归档表删掉 0.1.0 行 ⇒ 版本索引引用了但表未登记（只改 README，不改台账）
+    {
+      label: '⑦a归档表漏登记',
+      probe: '0.1.0-host.md',
+      mutate: (t) => t,
+      readmeMutate: (rm) => rm.replace(/^\|\s*`0\.1\.0-host\.md`[^\n]*\n/m, ''),
+      pick: (r) => new Set(r.indexIssues.map((x) => x.why ?? '')),
+    },
+    // ⑦b：README 归档表多出一行 ⇒ 表登记了但版本索引无对应行
+    {
+      label: '⑦b归档表多登记',
+      probe: 'zz-probe.md',
+      mutate: (t) => t,
+      readmeMutate: (rm) =>
+        rm.replace(
+          /(\| --- \| --- \| --- \| --- \| --- \|\n)/,
+          '$1| `zz-probe.md` | 9.9.9 | 内核 npm | 自检注入 | 无 |\n',
+        ),
+      pick: (r) => new Set(r.indexIssues.map((x) => x.why ?? '')),
+    },
   ];
 
   let allOk = true;
   for (const c of cases) {
     const after = c.mutate(base);
-    if (after === base) {
+    const afterReadme = c.readmeMutate ? c.readmeMutate(baseReadme) : baseReadme;
+    if (after === base && afterReadme === baseReadme) {
       console.log(`  ❌ ${c.label} 注入未生效（文本未变）`);
       allOk = false;
       continue;
     }
-    const r = diagnose(after);
+    const r = diagnose(after, { readmeText: afterReadme });
     // ⑤ 的投放面是「描述字符串」而非条目 ID ⇒ 命中判定用包含而非等值（见 pick 的返回形态）。
     const contains = (set) =>
       [...set].some((x) => String(x) === c.probe || String(x).includes(c.probe));
@@ -509,7 +562,7 @@ function selfTest() {
   );
 
   console.log(
-    allOk ? '\n✅ 自检通过：六类判据（①②③④⑤⑥）均可捕获新命中' : '\n❌ 自检失败：存在失明判据',
+    allOk ? '\n✅ 自检通过：七类判据（①②③④⑤⑥⑦）均可捕获新命中' : '\n❌ 自检失败：存在失明判据',
   );
   return allOk ? 0 : 1;
 }
