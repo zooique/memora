@@ -10,13 +10,14 @@
 
 ## [5.2.0] · 未发布
 
-> **本区归属**：仅**内核**变更；SemVer 定档**随本区收口复核**——当前批次为文档与测试守卫（**零运行时代码变更**），若收口时仍只含本批，按 SemVer 应降为 **patch（5.1.1）**，保 minor 须装入功能项。
-> **收据与拍板过程**：见仓库台账（npm 包不含）ID 锚 `RUNTIME-TIER-1`（运行时门槛）/ `PUB-SNAPSHOT-1`（公开面快照守卫）/ `ONBOARD-MIN-1`（最小接入面叙事）。
+> **本区归属**：仅**内核**变更；SemVer 定档**随本区收口复核**——本批为**文档 + 测试守卫**（**运行时代码零变更、公开面零变更**），但含**两件契约守卫增量**（公开面 diff 快照 / 可达成员面冻结表），封住了两处「消费者可感知的契约变更会静默通过」的真实漏洞。若收口时仍只含本批，按 SemVer 应降为 **patch（5.1.1）**；保 minor 须另装运行时功能项。
+> **收据与拍板过程**：见仓库台账（npm 包不含）ID 锚 `RUNTIME-TIER-1`（运行时门槛）/ `PUB-SNAPSHOT-1`（公开面快照守卫）/ `PUB-REACHABLE-1`（可达成员面守卫）/ `ONBOARD-MIN-1`（最小接入面叙事）。
 > **发版纪律**：本区标题日期须在打 tag 前改为实际发布日（`scripts/verify-changelog-version.mjs` 挂 `release.yml` 校验；已发布 tarball 不可变，见 `RELEASE-CHLOG-DATE-1`）。
 
 ### Added（内核）
 
-- **公开面 diff 守卫「向 E」**（`PUB-SNAPSHOT-1`）：`publicApiSurfaceGuard.test.ts` 新增公开面 ↔ **冻结快照**（2026-10-27 冻结，计数以快照数组自身为准）逐位对账——删除或改名任一 `src/index.ts` 导出即红。**为什么**：原向 A/B/C/D 全部从「现存集合」出发迭代，符号一旦被删就不再被任何闸门检查——README 承诺（非 API 手册 §十六）且无消费方的删除会**全库静默**；盲区变异实证：删 `isRoundSettled` ⇒ 仅向 E 变红、其余全绿。**对消费者**：零运行时行为变化；此后删除公开导出必走「清算 README / 手册承诺与全部消费方 → major」的显式流程。新增导出仍先过向 A，同批补进快照（快照注释写明二选一更新纪律，不存在「改断言让它绿」的第三选项）。
+- **公开面 diff 守卫「向 E」**（`PUB-SNAPSHOT-1`）：`publicApiSurfaceGuard.test.ts` 新增公开面 ↔ **冻结快照**（2026-10-27 冻结，计数以快照数组自身为准）逐位对账——删除或改名任一 `src/index.ts` 导出即红。**为什么**：原向 A/B/C/D 全部从「现存集合」出发迭代，符号一旦被删就不再被任何闸门检查——**任何被删除的导出都会全库静默**（实测：删 `isRoundSettled`，它**宿主真实消费**但不挂文档承诺面 ⇒ 仅向 E 变红、其余全绿）。**对消费者**：零运行时行为变化；此后删除公开导出必走「清算 README / 手册承诺与全部消费方 → major」的显式流程。新增导出仍先过向 A，同批补进快照（快照注释写明二选一更新纪律，不存在「改断言让它绿」的第三选项）。
+- **可达成员面守卫**（`PUB-REACHABLE-1`）：`publicMemberSurfaceGuard.test.ts` 新增「可达成员面」层——冻结**经已登记符号的公开 getter 返回、但未挂 `src/index.ts` 导出面**的类的公开成员清单（实测 **7 类型 / 133 成员** = `AgentLoop` / `ToolExecutor` / `MessageHistory` / `SkillManager` / `SecurityGuard` / `WorkProjectionManager` / `TextPolishManager`），增删即红。**为什么**：该守卫原只遍历**导出符号** ⇒ 不挂导出面的类完全不在射程——`SecurityGuard` 虽未从包入口导出，但 `Agent.get security` 返回它，消费者（宿主设置面板 / 装配层）**真实在调** `agent.security.setConfirmWrites(...)` 等方法，而 5.1.0 新增的 `requestToolCallConfirmation` 也在该面上 ⇒ **删改这些方法此前任何闸门都不红**（消费侧仅 TS 编译期拦截）。**对消费者**：零运行时行为变化；此后这类「经公开 getter 可达」的方法增删同样必走审查（新增 = 真能力还是谎报？删除 = 纠谎还是误删？），不再静默。冻结范围经三轮收紧（排除 TS 内置类型 / 内部协作对象 / 零消费类型），避免「为完整性而完整性」给内部实现上枷锁。
 
 ### Changed（内核 · 文档）
 
@@ -25,8 +26,9 @@
 
 ## [5.1.0] · 2026-10-25
 
-> **本区归属**：仅**内核**变更；SemVer = **minor**（零删除 / 零既有签名变更；**行为变化共三处、均为修复方向、不构成破坏性**：① 脚本族执行面按正文裁决，命中黑名单/恒弹清单的执行行为收紧；② 写侧护栏判据改为「无进展」（`write_loop` 只计整文件覆盖与连续失败写，增量写不再计数）；③ `task_table_update` 不再被跨轮幂等跳过（防回喂旧任务表）。三者均见 Fixed 区）。公开面**分两层**：① **包入口符号面**增量 = **仅** `ToolDefinition` 加可选字段 `confirmPolicy`（类型面）——`SecurityGuard` 类与 `SCRIPT_READ_MAX_LEN` 均**未**从包入口 `src/index.ts` 导出；② **公开成员面**零新增（`publicMemberSurfaceGuard` 成员表未增元素），但 `agent.security` 本就是公开成员，其新增方法 `requestToolCallConfirmation(toolName, summary, needConfirm)` 对消费者**可达**（文档见 `docs/memora-api-reference.md` §2.6）。宿主侧 MCP 消费面（连接 / 设置页 / 审批卡）随宿主下一版独立成区、不占内核版本号（ADR-033）。逐条拍板与变异验证收据见仓库台账（npm 包不含）：`D1-MCP` 在 `tasks/待完成任务.md` 内核 5.1.0 区；`CMD-1-BYPASS` 的实现收据见同文件 `㉔` 条、最后一面见 `tasks/archive/5.1.0-kernel.md` 的 `CMD-1-CONTENT` 条目；`CMD-1-CONTENT` / `GUARD-WRITE-PROGRESS-1` / `IDEM-TASK-TABLE-1` 均在 `tasks/archive/5.1.0-kernel.md`。
+> **本区归属**：仅**内核**变更；SemVer = **minor**（零删除 / 零既有签名变更；**行为变化共三处、均为修复方向、不构成破坏性**：① 脚本族执行面按正文裁决，命中黑名单/恒弹清单的执行行为收紧；② 写侧护栏判据改为「无进展」（`write_loop` 只计整文件覆盖与连续失败写，增量写不再计数）；③ `task_table_update` 不再被跨轮幂等跳过（防回喂旧任务表）。三者均见 Fixed 区）。公开面**分两层**：① **包入口符号面**增量 = **仅** `ToolDefinition` 加可选字段 `confirmPolicy`（类型面）——`SecurityGuard` 类与 `SCRIPT_READ_MAX_LEN` 均**未**从包入口 `src/index.ts` 导出；② **公开成员面**零新增（`publicMemberSurfaceGuard` 成员表未增元素），但 `agent.security` 本就是公开成员，其新增方法 `requestToolCallConfirmation(toolName, summary, needConfirm)` 对消费者**可达**（文档见 `docs/memora-api-reference.md` §2.6）。宿主侧 MCP 消费面（连接 / 设置页 / 审批卡）随宿主下一版独立成区、不占内核版本号（ADR-033）。逐条拍板与变异验证收据见仓库台账（npm 包不含），**按条目 ID 检索**（`tasks/待完成任务.md` 与 `tasks/archive/5.1.0-kernel.md`，不按区名——已发行版本区已于 2026-10-26 归元折叠）：`D1-MCP`（顶层条目仍留主台账 `tasks/待完成任务.md`）；`CMD-1-BYPASS` 的实现收据见主台账 `㉔` 条、最后一面见 `tasks/archive/5.1.0-kernel.md` 的 `CMD-1-CONTENT` 条目；`CMD-1-CONTENT` / `GUARD-WRITE-PROGRESS-1` / `IDEM-TASK-TABLE-1` 均在 `tasks/archive/5.1.0-kernel.md`。
 > **发版纪律**：本区标题日期即**实际发布日**——`scripts/verify-changelog-version.mjs`（挂 `release.yml`，不进 pre-push）校验「合法日历日期 + 与发布日相差 ≤1 天」；已发布版本的 npm tarball 不可变、改不回来（`RELEASE-CHLOG-DATE-1` 血训），故日期须在打 tag 前定稿。
+> **日期口径（2026-10-27 澄清）**：本区标题日期 = **打 tag 的那个日历日（本地时区）**；台账「版本索引」的发布日期列 = **npm 上架日（北京时间）**。二者可能差一天（5.1.0 = 本区 10-25 / 上架 10-26，跨午夜）⇒ **两者都正确，非笔误**。
 
 ### Added（内核）
 
