@@ -8,6 +8,21 @@
 >
 > 本文件 2026-10-19 起按 `CHLOG-TRIM-1` 精简：只记「改了什么 + 为什么 + 对消费者的影响」；逐批拍板过程、变异验证收据、台账叙事的 SSOT 在仓库台账 `tasks/待完成任务.md` 对应 ID 条目（npm 包不含），此处只留 ID 锚保交叉引用。
 
+## [5.2.0] · 未发布
+
+> **本区归属**：仅**内核**变更；SemVer 定档**随本区收口复核**——当前批次为文档与测试守卫（**零运行时代码变更**），若收口时仍只含本批，按 SemVer 应降为 **patch（5.1.1）**，保 minor 须装入功能项。
+> **收据与拍板过程**：见仓库台账（npm 包不含）ID 锚 `RUNTIME-TIER-1`（运行时门槛）/ `PUB-SNAPSHOT-1`（公开面快照守卫）/ `ONBOARD-MIN-1`（最小接入面叙事）。
+> **发版纪律**：本区标题日期须在打 tag 前改为实际发布日（`scripts/verify-changelog-version.mjs` 挂 `release.yml` 校验；已发布 tarball 不可变，见 `RELEASE-CHLOG-DATE-1`）。
+
+### Added（内核）
+
+- **公开面 diff 守卫「向 E」**（`PUB-SNAPSHOT-1`）：`publicApiSurfaceGuard.test.ts` 新增公开面 ↔ **冻结快照**（2026-10-27 冻结，计数以快照数组自身为准）逐位对账——删除或改名任一 `src/index.ts` 导出即红。**为什么**：原向 A/B/C/D 全部从「现存集合」出发迭代，符号一旦被删就不再被任何闸门检查——README 承诺（非 API 手册 §十六）且无消费方的删除会**全库静默**；盲区变异实证：删 `isRoundSettled` ⇒ 仅向 E 变红、其余全绿。**对消费者**：零运行时行为变化；此后删除公开导出必走「清算 README / 手册承诺与全部消费方 → major」的显式流程。新增导出仍先过向 A，同批补进快照（快照注释写明二选一更新纪律，不存在「改断言让它绿」的第三选项）。
+
+### Changed（内核 · 文档）
+
+- **运行时门槛双档口径**（`RUNTIME-TIER-1`）：README 中英各三处对齐（「运行时要求」声明块 / 技术栈表行 / IMemoryStorage 表行）——包门槛 Node.js ≥ 22.0.0（与 `package.json#engines` 同源，**engines 刻意不收紧**，2026-10-16 A1 拍板）；SQLite 落盘工厂 `createNodeSqliteStorage`（`node:sqlite`）需 **Node ≥ 22.13**（22.13 起免 `--experimental-sqlite` 标志）。低于 22.13 时包可正常加载、内存存储照常可用，仅调用该工厂抛「需 Node ≥22.13」的 `NOT_AVAILABLE` 明确错误，**不会静默失败**。**对消费者**：npm 安装面此前只见 22.0.0 门槛、不知第二档能力线，现补齐双档事实。
+- **最小接入面叙事**（`ONBOARD-MIN-1`）：README 中英边界声明后各增一段——构造 `Agent` 必填仅 **`projectPath` / `provider` / `dataDir` 三项**（`dataDir` 无缺省值，与 API 手册 §〇.5 同口径）；`storage` 缺省为内置内存实现（对话与记忆闭环照常，仅不持久化），`sessionStore` / `roundStore` / `tracer` 与五个外部工具 provider（`web_search` / `web_fetch` / `run_code` / `search_project` / 环境上报）均可选，不配只是不启用对应能力、不阻塞启动。**对消费者**：纠正「接入需自实现一整套存储/会话接口」的错觉——要落盘直接用内置 `createNodeSqliteStorage` 工厂，无需自实现存储接口。
+
 ## [5.1.0] · 2026-10-25
 
 > **本区归属**：仅**内核**变更；SemVer = **minor**（零删除 / 零既有签名变更；**行为变化共三处、均为修复方向、不构成破坏性**：① 脚本族执行面按正文裁决，命中黑名单/恒弹清单的执行行为收紧；② 写侧护栏判据改为「无进展」（`write_loop` 只计整文件覆盖与连续失败写，增量写不再计数）；③ `task_table_update` 不再被跨轮幂等跳过（防回喂旧任务表）。三者均见 Fixed 区）。公开面**分两层**：① **包入口符号面**增量 = **仅** `ToolDefinition` 加可选字段 `confirmPolicy`（类型面）——`SecurityGuard` 类与 `SCRIPT_READ_MAX_LEN` 均**未**从包入口 `src/index.ts` 导出；② **公开成员面**零新增（`publicMemberSurfaceGuard` 成员表未增元素），但 `agent.security` 本就是公开成员，其新增方法 `requestToolCallConfirmation(toolName, summary, needConfirm)` 对消费者**可达**（文档见 `docs/memora-api-reference.md` §2.6）。宿主侧 MCP 消费面（连接 / 设置页 / 审批卡）随宿主下一版独立成区、不占内核版本号（ADR-033）。逐条拍板与变异验证收据见仓库台账（npm 包不含）：`D1-MCP` 在 `tasks/待完成任务.md` 内核 5.1.0 区；`CMD-1-BYPASS` 的实现收据见同文件 `㉔` 条、最后一面见 `tasks/archive/5.1.0-kernel.md` 的 `CMD-1-CONTENT` 条目；`CMD-1-CONTENT` / `GUARD-WRITE-PROGRESS-1` / `IDEM-TASK-TABLE-1` 均在 `tasks/archive/5.1.0-kernel.md`。

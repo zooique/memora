@@ -54,6 +54,8 @@ await agent.close();
 ```
 
 > **边界声明**：memora 是**不可独立运行的纯逻辑内核**——持久化 / 沙箱 / 可观测 / CLI·UI 均由宿主注入。内核保证**接口契约 + 单测验证的逻辑正确性**，agent 级行为评估由宿主自行承担。
+>
+> **最小接入面**：构造 `Agent` 只需 `projectPath`、`provider`、`dataDir`。存储未注入时用内置内存实现（对话与记忆闭环照常，仅不持久化）；要落盘可直接用内置 `createNodeSqliteStorage` 工厂，**无需自实现存储接口**。`sessionStore` / `roundStore` / `tracer` 与外部工具 provider（`web_search` / `web_fetch` / `run_code` / `search_project` / 环境上报）均为可选——不配只是不启用对应能力，不阻塞启动。
 
 > **零依赖如何成立（2026-09-21 审计）**：「零依赖」特指**零第三方运行时依赖**。内核仅使用 Node 内置模块（`node:fs` / `node:path` / `node:crypto` / `node:os` / `node:child_process`），6 类共见于 18 个生产文件，全部必要、无冗余。文件落盘（记忆 / 角色包 / 原子写 / 技能脚本执行）走**接口 + 内存默认实现**（如 `ISessionStore` → `InMemorySessionStore`），持久化 sink 交由宿主注入 `WorkspaceSessionStore` 等实现替换——这既支撑「本地、私有、零依赖」卖点，也遵守「持久化由宿主注入」边界。
 
@@ -111,6 +113,8 @@ Memora 是一个**无法独立运行**的智能大脑内核——它只有接口
 ```bash
 npm install @zooique/memora
 ```
+
+> **运行时要求**：Node.js ≥ 22.0.0（与 `package.json#engines` 同口径）。其中 SQLite 落盘工厂 `createNodeSqliteStorage`（`node:sqlite`）需 **Node ≥ 22.13**——22.13 起 `node:sqlite` 才免 `--experimental-sqlite` 标志。低于 22.13 时包可正常加载、内存存储照常可用，仅调用该工厂会抛出明确的「需 Node ≥22.13」专属错误（`ToolErrorCode.NOT_AVAILABLE`），不会静默失败。
 
 ### 创建 Agent
 
@@ -200,7 +204,7 @@ await agent.close();
 
 | 接口 | 职责 | 内置实现 | 宿主注意 |
 |------|------|----------|----------|
-| `IMemoryStorage` | 记忆 CRUD + 搜索 + 按 source 查询 | 内置内存默认实现（**仅内存占位，不持久化**；内部类，不挂公共面——PUB-API-PRUNE-2 收面）+ **可选落盘实现** `createNodeSqliteStorage(dbPath)`（基于 `node:*` 内建模块，零第三方依赖） | 持久化后端由宿主选：经内核工厂建 SQLite，或自实现（JSON / 自有 SQLite）；重启后数据依赖所选实现 |
+| `IMemoryStorage` | 记忆 CRUD + 搜索 + 按 source 查询 | 内置内存默认实现（**仅内存占位，不持久化**；内部类，不挂公共面——PUB-API-PRUNE-2 收面）+ **可选落盘实现** `createNodeSqliteStorage(dbPath)`（基于 `node:*` 内建模块，零第三方依赖；需 Node ≥22.13） | 持久化后端由宿主选：经内核工厂建 SQLite，或自实现（JSON / 自有 SQLite）；重启后数据依赖所选实现 |
 | `ISessionStore` | 会话历史 + 标题元数据持久化 | 无（宿主实现） | **不含检查点持久化**（2026-09-10 减法：跨重启恢复链整体退役）——中止/断电一律把未完成 turn 补全为完整 turn 身份、下次会话按历史加载；运行时暂停是同 turn 内续跑（内存态），无需跨进程载体 |
 | `ILogger` | 日志输出 | console fallback | 无 |
 | `ITracer` | 可观测性 span | 内核内部 Noop 实现（不挂公共面；不传 `tracer` 即零开销） | 无 |
@@ -249,7 +253,7 @@ src/
 
 | 类别 | 选型 | 决策依据 |
 |------|------|----------|
-| 运行时 | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | ADR-001 |
+| 运行时 | Node.js ≥ 22.0.0（SQLite 落盘工厂需 ≥ 22.13，见「快速开始」）+ TypeScript 5 strict + ESM | ADR-001 |
 | 数据层 | IMemoryStorage 接口（宿主注入持久化实现） | ADR-002 |
 | LLM 协议 | OpenAI Chat Completions 兼容（流式 SSE + Tool Calling） | ADR-003 |
 | 记忆模型 | 摘要即记忆（round-summary 单轨，可溯源回原始对话）；source 开放字符串基元 | ADR-004 · memory-as-summary.md |

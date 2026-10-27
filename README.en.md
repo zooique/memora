@@ -54,6 +54,8 @@ await agent.close();
 ```
 
 > **Boundary**: Memora is a **non-standalone pure logic kernel** — persistence, sandbox, observability, CLI/UI are all injected by the host. The kernel guarantees **interface contracts + unit-tested logic correctness**; agent-level behavior evaluation is the host's responsibility.
+>
+> **Minimal integration surface**: constructing an `Agent` requires only `projectPath`, `provider`, `dataDir`. Without an injected store, the built-in in-memory implementation is used (chat and memory loop work as usual, just not persisted); for persistence, use the built-in `createNodeSqliteStorage` factory directly — **no need to implement a storage interface yourself**. `sessionStore` / `roundStore` / `tracer` and the external tool providers (`web_search` / `web_fetch` / `run_code` / `search_project` / environment reporting) are all optional: omitting them only disables the corresponding capability, it never blocks startup.
 
 ---
 
@@ -105,6 +107,8 @@ Memora is a **brain kernel that cannot run standalone** — it has interfaces bu
 ```bash
 npm install @zooique/memora
 ```
+
+> **Runtime requirement**: Node.js ≥ 22.0.0 (same wording as `package.json#engines`). The SQLite persistence factory `createNodeSqliteStorage` (`node:sqlite`) additionally requires **Node ≥ 22.13** — that's when `node:sqlite` stopped needing the `--experimental-sqlite` flag. Below 22.13 the package still loads and the in-memory store works; only calling that factory throws an explicit "Node ≥22.13 required" error (`ToolErrorCode.NOT_AVAILABLE`), never a silent failure.
 
 ### Create an Agent
 
@@ -198,7 +202,7 @@ The kernel interacts with the outside world through interfaces. Hosts inject imp
 
 | Interface | Responsibility | Built-in Implementation |
 |-----------|---------------|------------------------|
-| `IMemoryStorage` | Memory CRUD + search + query by source | Built-in in-memory default (placeholder, non-persistent; internal class, not on the public surface — PUB-API-PRUNE-2) + optional persistent impl `createNodeSqliteStorage(dbPath)` (built-in `node:sqlite`, zero third-party deps) | Host picks the backend: create SQLite via the kernel factory, or implement its own (JSON / own SQLite) |
+| `IMemoryStorage` | Memory CRUD + search + query by source | Built-in in-memory default (placeholder, non-persistent; internal class, not on the public surface — PUB-API-PRUNE-2) + optional persistent impl `createNodeSqliteStorage(dbPath)` (built-in `node:sqlite`, zero third-party deps; requires Node ≥22.13) | Host picks the backend: create SQLite via the kernel factory, or implement its own (JSON / own SQLite) |
 | `ISessionStore` | Session history persistence | None (host implements) |
 | `ILogger` | Logging output | console fallback |
 | `ITracer` | Observability spans | Internal noop (not on the public surface; omit `tracer` for zero overhead) |
@@ -247,7 +251,7 @@ src/
 
 | Category | Choice | Rationale |
 |----------|--------|-----------|
-| Runtime | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | ADR-001 |
+| Runtime | Node.js ≥ 22.0.0 (SQLite persistence factory needs ≥ 22.13, see Quick Start) + TypeScript 5 strict + ESM | ADR-001 |
 | Data Layer | IMemoryStorage interface (host injects persistence) | ADR-002 |
 | LLM Protocol | OpenAI Chat Completions compatible (streaming SSE + Tool Calling) | ADR-003 |
 | Memory Model | Memory-as-summary: round-summary single track, traceable to source; source open-string primitive | ADR-004 · memory-as-summary.md |
