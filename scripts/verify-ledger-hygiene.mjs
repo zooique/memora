@@ -45,6 +45,28 @@
  *      （「等用户说…再动」/「仅在用户实际体验后仍感…才需补齐」/「到期 2026-11-19」/「与 G35 同批评估」）。
  *      词面门判的是**写法不是内容**，只会催生「触发：无」这类合规空话，且逼真条目改写成套话
  *      ⇒ 比不设更差。判断「这条有没有升档出口」属人工审核，不机器代判；此处留痕防后人重提。
+ *      （编号 ⑨ 永久留给本否决记录，后续判据从 ⑩ 起编，不回收空号。）
+ *
+ *   ⑩ **跨条目逐字克隆**（2026-10-27 补，`LEDGER-DUP-GUARD-1`）：同一条目正文行（去空白指纹，
+ *      ≥16 字符）出现在 **>1 个顶层 ID** 下 ⇒ 红。**诚实定位：只抓逐字克隆，不治语义重复**
+ *      （语义层 = `PHRASE-SCAN-1` 余项④「事实位点同源检查器」，指纹门抓不住形态不同的复述）。
+ *      豁免：`**版本归属**：` 前缀行 —— 归属注是刻意同构的模板句（多条 ✅ 条目共用同一句式），
+ *      属格式而非登记事实；豁免名单**零累积**纪律：新增模板族必须先在这里写明理由再加前缀。
+ *      实证来源：`LEDGER-AXIS-1` 自证的 Edit 吞标题两连 + ㉘F 段与 `PUB-REACHABLE-1` 的
+ *      「冻结规模」225 字符逐字重复行（2026-10-27 实测存量，同批压缩为指针）。
+ *
+ *   ⑪ **结构锚点缺失**（2026-10-27 补，吸收 `LEDGER-AXIS-1`）：两起实吞事故（`### 宿主轴`
+ *      被吞、`## 注记类` 被吞）门禁全绿 ⇒ `parseSections()` 只按 `^## ` 切区、子标题不参与
+ *      任何判据。判据分两层，**真源都是台账头部明文，不是脚本私设**：
+ *      a. **六区齐备** —— 头部「排序原则」明列的四个待办/注记区（版本索引 / 观察·待拍板 /
+ *         注记类 / 明确不推进）+ 结构区（设计纪律 / 已关闭决策）必须全部存在；
+ *      b. **观察区两轴同存** —— 头部「双轨规则」（ADR-033）明列的 `### 内核轴` / `### 宿主轴`
+ *         必须在观察区内同时存在（缺一即红；将来真要合并轴，红 = 人工确认时刻）。
+ *      ⚠️ **刻意否决「对 HEAD 基线只增不减」层**（AXIS-1 曾提的「更彻底口径」，2026-10-27
+ *      实测推翻）：本闸挂在 local-ci full 档 = **pre-push 时机，改动已提交** ⇒ HEAD 基线
+ *      与工作树同步漂移 ⇒ 吞标题的提交在 push 时基线对比恒绿 = 假闸。标题计数对 HEAD 的
+ *      比对只在「改完未提交、人工跑」的窗口有效，那由 `LEDGER-AXIS-1` 保留的「临时自查法」
+ *      承担，不进本闸。锚点断言不依赖基线，提交后依然可判。
  *
  * 档位（2026-10-27 由告警升硬闸，兑现上一版写明的升档条件）：
  *   当初挂 required:false 是为 0.2.0 区的存量欠账/假指针让路，避免门一建就被绕。
@@ -298,6 +320,98 @@ function hasBlankRuns(lines) {
   return runs;
 }
 
+/**
+ * ⑩ 跨条目逐字克隆（判据与豁免面见文件头说明）。
+ *
+ * 实现口径：
+ *   - 顶层条目 = `^- **ID**` 行，其后非空、非标题（`^#`）的行归该条目（与 parseItems 的
+ *     归属规则同构，但这里必须跨区全文件扫——克隆往往跨区）。
+ *   - 指纹 = 行文本去掉**全部**空白（格式重排不改内容仍算克隆）。
+ *   - 只报「首个条目」一处命中，`why` 里列全部涉事 ID——输出噪音有上限，修复靠人读。
+ */
+const DUP_EXEMPT_PREFIX = /^\*\*版本归属\*\*：/;
+const DUP_MIN_LEN = 16;
+
+function checkClones(lines) {
+  const items = [];
+  let cur = null;
+  lines.forEach((l, i) => {
+    const m = /^- \*\*(.+?)\*\*/.exec(l);
+    if (m) {
+      cur = { id: m[1], start: i, rows: [] };
+      items.push(cur);
+    } else if (cur && l.trim() !== '' && !/^#{1,6}\s/.test(l)) {
+      cur.rows.push({ i, t: l.trim() });
+    }
+  });
+
+  const byFp = new Map(); // 指纹 → [{ id, start, text }]
+  for (const it of items) {
+    for (const r of it.rows) {
+      if (r.t.length < DUP_MIN_LEN || DUP_EXEMPT_PREFIX.test(r.t)) continue;
+      const fp = r.t.replace(/\s+/g, '');
+      if (!byFp.has(fp)) byFp.set(fp, []);
+      byFp.get(fp).push({ id: it.id, start: it.start, text: r.t });
+    }
+  }
+
+  const out = [];
+  for (const hits of byFp.values()) {
+    if (hits.length < 2) continue;
+    const ids = [...new Set(hits.map((h) => h.id))];
+    if (ids.length < 2) continue; // 同一条目内的重复行不属「跨条目克隆」
+    out.push({
+      id: ids[0],
+      start: hits[0].start,
+      why: `逐字克隆 ×${hits.length}（涉事 ID：${ids.join(' / ')}）——同一事实两处登记必漂移，真源留一处、其余改指针`,
+    });
+  }
+  return out;
+}
+
+/**
+ * ⑪ 结构锚点缺失（真源 = 台账头部「排序原则」与「双轨规则」明文，见文件头说明）。
+ */
+const REQUIRED_SECTIONS = [
+  '设计纪律',
+  '版本索引',
+  /观察\s*\/\s*待拍板/,
+  '注记类',
+  '已关闭决策',
+  '明确不推进',
+];
+
+function checkAnchors(lines, sections) {
+  const issues = [];
+  for (const a of REQUIRED_SECTIONS) {
+    const label = a instanceof RegExp ? a.source.replaceAll('\\s*', ' ').replaceAll('\\/', '/') : a;
+    const hit = sections.some((s) => (a instanceof RegExp ? a.test(s.title) : s.title.includes(a)));
+    if (!hit)
+      issues.push({
+        id: `⑪结构区:${label}`,
+        start: 0,
+        why: `结构区标题缺失：「${label}」——台账头部「排序原则」明列的区不可缺`,
+      });
+  }
+  const obs = sections.find((s) => /观察\s*\/\s*待拍板/.test(s.title));
+  if (obs) {
+    const seg = lines.slice(obs.start, obs.end);
+    for (const ax of ['内核轴', '宿主轴']) {
+      const re = new RegExp(`^###\\s+${ax}\\s*$`);
+      if (!seg.some((l) => re.test(l.trim()))) {
+        issues.push({
+          id: `⑪轴标题:${ax}`,
+          start: obs.start,
+          why: `观察区缺 \`### ${ax}\` 子标题——头部「双轨规则」（ADR-033）明列，缺即结构降级（实吞事故形态，见 LEDGER-AXIS-1）`,
+        });
+      }
+    }
+  } else {
+    issues.push({ id: '⑪轴标题:*', start: 0, why: '观察区不存在，两轴判据无投放面' });
+  }
+  return issues;
+}
+
 /** 收口态的单点判据（① 与 ⑧ 共用一份拼写；开放态优先——🔄/⏳/📌 一律不算收口）。 */
 const isClosedHead = (head) =>
   CLOSED_RE.test(head) && !NOT_CLOSED_RE.test(head) && !OPEN_SEG_RE.test(head);
@@ -486,6 +600,8 @@ function diagnose(text, opts = {}) {
   }
 
   const blanks = hasBlankRuns(lines);
+  const clones = checkClones(lines);
+  const anchors = checkAnchors(lines, sections);
   const tags = new Set(
     execFileSync('git', ['tag', '--list'], { cwd: ROOT, encoding: 'utf8' })
       .split(/\r?\n/)
@@ -504,6 +620,8 @@ function diagnose(text, opts = {}) {
     pending,
     indexIssues,
     timing,
+    clones,
+    anchors,
     releasedSections,
     blanks,
     lines,
@@ -520,6 +638,8 @@ function report(r) {
     problems.push(['⑤⑦版本索引不一致（三方 / README 归档表）', r.indexIssues]);
   if (r.pending.length) problems.push(['⑥待执行无完成判据', r.pending]);
   if (r.timing.length) problems.push(['⑧落态跨发版线但无归档副本', r.timing]);
+  if (r.clones.length) problems.push(['⑩跨条目逐字克隆', r.clones]);
+  if (r.anchors.length) problems.push(['⑪结构锚点缺失', r.anchors]);
 
   console.log(
     `\n[ledger-hygiene] 台账结构分诊：${r.sections.length} 区 / ${r.itemTotal} 条目 / ${r.lines.length} 行`,
@@ -535,7 +655,7 @@ function report(r) {
 
   if (problems.length === 0) {
     console.log(
-      '✅ [ledger-hygiene] 八类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致 / 无落态跨版未归档）',
+      '✅ [ledger-hygiene] 十类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致 / 无落态跨版未归档 / 无跨条目逐字克隆 / 结构锚点齐备）',
     );
     return 0;
   }
@@ -562,7 +682,9 @@ function report(r) {
       '\n   ④ 连续空行压成 1 行（写盘前须断言非空行序列不变）；' +
       '\n   ⑤ 校准「版本索引」表 ↔ 归档文件 H1 ↔ git tag 三方；⑥ 给 📌 待执行条目补「完成判据：」行；' +
       '\n   ⑦ 让「版本索引」与 `tasks/archive/README.md` 归档表的文件名集合双向相等（改一处必须同步另一处）；' +
-      '\n   ⑧ 把该条目搬进对应版本归档（发版时就该做），或在标题行注明归档去向。' +
+      '\n   ⑧ 把该条目搬进对应版本归档（发版时就该做），或在标题行注明归档去向；' +
+      '\n   ⑩ 同一事实只准在一处登记：真源留一处，其余改指针（形态参照 LEDGER-AXIS-1 → LEDGER-DUP-GUARD-1 的并入写法）；' +
+      '\n   ⑪ 补回缺失的结构区/轴标题——真源 = 台账头部「排序原则」与「双轨规则」，先读台账头部再动结构。' +
       '\n   本闸已是硬闸（local-ci required:true）——存量回涨时先把存量清零，不许把档位调回去。',
   );
   return 1;
@@ -720,6 +842,32 @@ function selfTest() {
         ),
       pick: (r) => new Set(r.indexIssues.map((x) => x.why ?? '')),
     },
+    // ⑩：把现有条目的一行正文复制进新 ID ⇒ 跨条目逐字克隆必须被抓。
+    //    克隆源从台账现状提取（该行被改写则提取失败 ⇒ 注入未生效 ⇒ 自检红——样例依赖显式化）。
+    {
+      label: '⑩跨条目逐字克隆',
+      probe: 'ZZ-CLONE-1',
+      mutate: (t) => {
+        const line = /^\s+(\*\*冻结规模（实测）\*\*：[^\n]+)$/m.exec(t)?.[1];
+        if (!line) return t; // 提取失败 = 注入未生效 = 自检红（样例依赖的锚行已不存在）
+        return t.replace(anchor, `${anchor}\n\n- **ZZ-CLONE-1** — 自检注入｜📝 注记\n  ${line}\n`);
+      },
+      pick: (r) => idsOf(r.clones),
+    },
+    // ⑪a：删掉一个结构区标题（实吞事故形态 #2：## 注记类 被吞）⇒ 必须红
+    {
+      label: '⑪a结构区被吞',
+      probe: '注记类',
+      mutate: (t) => t.replace('## 注记类（防误判，非待办）\n', ''),
+      pick: (r) => new Set(r.anchors.map((x) => x.why ?? '')),
+    },
+    // ⑪b：删掉观察区一个轴标题（实吞事故形态 #1：### 宿主轴 被吞）⇒ 必须红
+    {
+      label: '⑪b轴标题被吞',
+      probe: '宿主轴',
+      mutate: (t) => t.replace('### 宿主轴\n', ''),
+      pick: (r) => new Set(r.anchors.map((x) => x.why ?? '')),
+    },
   ];
 
   let allOk = true;
@@ -760,7 +908,9 @@ function selfTest() {
   );
 
   console.log(
-    allOk ? '\n✅ 自检通过：八类判据（①②③④⑤⑥⑦⑧）均可捕获新命中' : '\n❌ 自检失败：存在失明判据',
+    allOk
+      ? '\n✅ 自检通过：十类判据（①–⑧ + ⑩⑪；⑨ 为刻意否决记录、无判据体）均可捕获新命中'
+      : '\n❌ 自检失败：存在失明判据',
   );
   return allOk ? 0 : 1;
 }
