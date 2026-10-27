@@ -13,11 +13,23 @@
  *
  * 与 publicApiSurfaceGuard 分工：彼管「哪些符号可挂面」（导出名级），本管「挂面符号有哪些成员」（成员级）。
  *
+ * 🔴 **可达成员面（2026-10-27 补 · 闭合 5.1.0 遗留）**：本守卫原只遍历 `src/index.ts` 的**导出符号**
+ *   ⇒ **不挂导出面、但经公开成员对消费者可达的类完全不在射程**。实证：`SecurityGuard` 类**未**从
+ *   `src/index.ts` 导出（5.1.0 CHANGELOG 明写「未导出」），但 `Agent.get security` 返回它 ⇒
+ *   消费者拿得到 `agent.security.setConfirmWrites(...)` / `setConfirmScripts(...)` / `setAllowedPaths(...)`
+ *   （宿主 `settingsPanel.ts` / `assemble.ts` 真实在用），而 5.1.0 新增的
+ *   `requestToolCallConfirmation` 也在该面上——**删改这些方法，任何闸门都不会红**。
+ *   ⇒ 新增「可达成员类型」层（`REACHABLE_MEMBERS`）：从已登记符号的**成员返回类型**出发，
+ *   解析其公开成员并冻结；增删同样即红。
+ *
  * 已知边界（诚实登记，勿默认为已覆盖）：本守卫只管**清单**、不管**活性**——
  * 成员存在于清单但零消费（僵尸出口形态）不在射程内，活性由 legacy-contract-audit-rules §4
  * 人工审查 + 文档对账覆盖；本守卫的价值是把「成员增删」从静默动作变成必过审查的红灯。
+ * ⚠️ 可达层只覆盖**直接返回类型**（getter / 方法返回类型为 class/interface 且不在导出面）；
+ *   经数组/Map/联合/泛型间接可达的类型**不在射程**（如 `get memory(): MemoryInspector | null` 中的
+ *   `MemoryInspector` 本身**不在导出面**、亦不在本层冻结表内 —— 该缺口诚实登记，见下）。
  */
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -27,6 +39,8 @@ import { describe, expect, it } from 'vitest';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 /** 包入口真源：公开面的唯一定义处 */
 const INDEX_TS = join(ROOT, 'src', 'index.ts');
+/** 消费面扫描根：宿主 + 脚本（与姊妹守卫 publicApiSurfaceGuard 同值，口径一致） */
+const CONSUMER_ROOTS = [join(ROOT, 'hosts'), join(ROOT, 'scripts')];
 
 /** 用 TS 编译器 API 解析单文件 AST（正则解析在多行声明/重载上必埋坑，弃用） */
 function parseAst(full: string, text: string): ts.SourceFile {
@@ -169,6 +183,189 @@ function collectActualSurface(): Record<string, { kind: string; members: string[
     actual[name] = { kind: found.kind, members: collectMembers(found.kind, found.decl) };
   }
   return actual;
+}
+
+/**
+ * 可达成员类型（2026-10-27 补）：从**已登记符号**的**公开 getter** 返回类型出发，取出那些
+ * **不在 `src/index.ts` 导出面、但经公开 getter 对消费者可达**的 class / interface。
+ *
+ * 为什么需要：`collectActualSurface` 只遍历导出符号 ⇒ 不挂导出面的类（如 `SecurityGuard`）
+ * 完全不在射程，而它们的方法**消费者真的在调**（宿主 `agent.security.setConfirmWrites(...)`）。
+ *
+ * 🔴 **判据收窄（2026-10-27 三轮收紧 · 不带伤）**：口径迭代过三版，每版都被实测打回：
+ *  ① 首版「凡返回类型不在导出面即纳入」⇒ 一次挖出 **25 个类型**，含 `Array` / `Promise` /
+ *     `Map` / `Record` / `Date` 等 **TS 内置泛型**（噪音）＋ 零消费的内部实现类
+ *     ⇒ 为内部实现建基线 = 上枷锁 + 审查成本爆炸，**是「为完整性而完整性」的伤**。
+ *  ② 二版「宿主 import 了该类型名」⇒ **把 `SecurityGuard` 判出局**（宿主不 import 它，
+ *     只经 `agent.security.setConfirmWrites(...)` 调用方法）⇒ 可达层恒空 = 守卫失明。
+ *  ③ 三版「成员名在宿主侧以调用形态出现」⇒ 抓到了真实消费，但把 `AgentLoop`（59 成员，
+ *     经 `Agent.requireLoop` 内部取用）/ `ArchiveCoordinator`（经 `requireArchiveCoordinator`）
+ *     等**内部协作对象**也卷进来 —— 冻结它们 = 给内部实现上枷锁。
+ *
+ * 现行判据（两条同时满足）：
+ *  ① 该类型由**已登记符号的公开 getter** 返回（`get security` / `get tools` / `get skills` …）
+ *     ⇒ **内部方法**（`requireLoop` / `requireArchiveCoordinator`）返回的协作对象**不算**
+ *     （那是内核内部取用，不是消费者 API）；
+ *  ② 该类型的**至少一个公开成员**在宿主 / 脚本侧以 `.<成员名>(` 形态被调用（真实消费）。
+ *
+ * 附加排除：TS 内置类型（`Array` / `Promise` / `Map` / `Record` / `Date` …）与导出面符号
+ * （由 `collectActualSurface` 管）一律排除，两层不重叠。
+ *
+ * 判据 ② 用「调用」而非「文本出现」：`Date` 文本命中 45 处 / `Promise` 93 处，全是无关噪音。
+ */
+function collectReachableTypeNames(): Set<string> {
+  const out = new Set<string>();
+  const exported = new Set(parseIndexExports().map((e) => e.name));
+  const fileCache = new Map<string, ts.SourceFile>();
+  const getSf = (file: string): ts.SourceFile => {
+    if (!fileCache.has(file)) fileCache.set(file, parseAst(file, readFileSync(file, 'utf8')));
+    return fileCache.get(file)!;
+  };
+
+  for (const { name, module } of parseIndexExports()) {
+    const file = resolveAlias(module);
+    if (!file || !existsSync(file)) continue;
+    const found = findDecl(getSf(file), name);
+    if (!found || (found.kind !== 'class' && found.kind !== 'interface')) continue;
+
+    for (const m of (found.decl as ts.ClassDeclaration | ts.InterfaceDeclaration).members) {
+      // 🔴 只取**公开 getter**（`get x`）的返回类型 —— 两道排除：
+      //   ① **private/protected getter 排除**（`requireLoop` / `requireArchiveCoordinator` 是
+      //      private getter ⇒ 返回的是内核内部协作对象，不是消费者 API）；
+      //   ② **普通方法排除**（`requireLoop()` 这类取用方法同理）。
+      if (!ts.isGetAccessorDeclaration(m)) continue;
+      const mods = ts.canHaveModifiers(m) ? ts.getModifiers(m) || [] : [];
+      if (
+        mods.some(
+          (x) =>
+            x.kind === ts.SyntaxKind.PrivateKeyword || x.kind === ts.SyntaxKind.ProtectedKeyword,
+        )
+      ) {
+        continue;
+      }
+      const typeNode = m.type;
+      if (!typeNode) continue;
+      for (const t of flattenTypeNames(typeNode)) {
+        if (exported.has(t)) continue; // 导出面已由 collectActualSurface 覆盖
+        if (TS_BUILTIN_TYPE_NAMES.has(t)) continue; // TS 内置泛型 = 噪声
+        if (!/^[A-Z]/.test(t)) continue; // 小写 = 内置/字面量形态
+        if (!hostCallsTypeMember(t)) continue; // 宿主/脚本未真实调用其成员 = 内部实现
+        out.add(t);
+      }
+    }
+  }
+  return out;
+}
+
+/** TS 内置类型名白名单（排除用）：泛型容器 + 全局对象 */
+const TS_BUILTIN_TYPE_NAMES = new Set([
+  'Array',
+  'AsyncGenerator',
+  'AsyncIterable',
+  'AsyncIterableIterator',
+  'Date',
+  'Generator',
+  'Iterable',
+  'Iterator',
+  'Map',
+  'Partial',
+  'Promise',
+  'PromiseLike',
+  'ReadonlyArray',
+  'ReadonlyMap',
+  'ReadonlySet',
+  'Record',
+  'RegExp',
+  'Set',
+  'WeakMap',
+  'WeakSet',
+]);
+
+/**
+ * 可达类型的**真实消费**判定（2026-10-27 修正）：宿主 / 脚本侧是否真的**调用**了该类型的某个成员。
+ *
+ * 🔴 为什么不用「宿主 import 了该类型名」（首版口径，实测出错）：宿主**不 import** `SecurityGuard`
+ *   —— 它只经 `agent.security.setConfirmWrites(...)` 等**方法调用**使用它
+ *   （宿主 `settingsPanel.ts` 的 `agent.security.setConfirmWrites(enabled)` /
+ *   `assemble.ts` 的 `agent.security.setConfirmScripts(...)`）
+ *   ⇒ 首版判据把 `SecurityGuard` 判出局，可达层恒空 ⇒ 守卫失明（自检用例当场报红）。
+ *
+ * 为什么用「成员名 + 调用形态」而非「类型名出现」：实测 `Date` 在宿主侧文本命中 45 处、
+ *   `Promise` 93 处、`Map` 39 处 —— 全是无关噪音（通用词），按文本命中会把 TS 内置类型
+ *   与内部实现类一起卷进来（首版一次挖出 25 个类型即此因）。
+ *
+ * 判据 = 该类型的**至少一个公开成员名**在宿主 / 脚本源码中以 `.<成员名>(` 形态出现（调用）。
+ */
+function hostCallsTypeMember(typeName: string): boolean {
+  if (hostMemberCallCache === null) {
+    const names = new Set<string>();
+    for (const root of CONSUMER_ROOTS) {
+      if (!existsSync(root)) continue;
+      for (const full of listSourceFiles(root)) {
+        const txt = readFileSync(full, 'utf8');
+        for (const m of txt.matchAll(/\.([A-Za-z_]\w*)\s*\(/g)) {
+          if (m[1]) names.add(m[1]);
+        }
+      }
+    }
+    hostMemberCallCache = names;
+  }
+  // 取该类型的公开成员（按类型名在 src/ 内解析），任一成员被调用即算真实消费
+  const found = findClassOrInterfaceInSrc(typeName);
+  if (!found) return false;
+  for (const member of collectMembers(found.kind, found.decl)) {
+    const bare = member.replace(/^(get|set) /, '');
+    if (hostMemberCallCache.has(bare)) return true;
+  }
+  return false;
+}
+
+let hostMemberCallCache: Set<string> | null = null;
+
+/** 从类型标注中取出候选类型名：`X | null` ⇒ [X]；`X | Y` ⇒ [X, Y]；数组/泛型不解析 */
+function flattenTypeNames(typeNode: ts.TypeNode): string[] {
+  if (ts.isTypeReferenceNode(typeNode)) {
+    const n = typeNode.typeName;
+    return ts.isIdentifier(n) ? [n.text] : [];
+  }
+  if (ts.isUnionTypeNode(typeNode)) {
+    return typeNode.types.flatMap((t) => flattenTypeNames(t));
+  }
+  // 其余形态（数组 / 泛型 / 字面量 / 函数类型 / 类型查询）不在射程，诚实留空
+  return [];
+}
+
+/** 在 src/ 全量 .ts 文件中按名找 class / interface 声明（可达层用：类型可能来自任意模块） */
+function findClassOrInterfaceInSrc(
+  name: string,
+): { file: string; decl: ts.Node; kind: string } | null {
+  const files = listSourceFiles(join(ROOT, 'src'));
+  const fileCache = new Map<string, ts.SourceFile>();
+  for (const file of files) {
+    if (!fileCache.has(file)) fileCache.set(file, parseAst(file, readFileSync(file, 'utf8')));
+    const sf = fileCache.get(file)!;
+    for (const st of sf.statements) {
+      if (ts.isClassDeclaration(st) && st.name?.text === name) {
+        return { file, decl: st, kind: 'class' };
+      }
+      if (ts.isInterfaceDeclaration(st) && st.name?.text === name) {
+        return { file, decl: st, kind: 'interface' };
+      }
+    }
+  }
+  return null;
+}
+
+/** 递归收集 src/ 下全部 .ts 文件（排除测试与产物目录） */
+function listSourceFiles(dir: string, out: string[] = []): string[] {
+  const EXCLUDED = new Set(['node_modules', 'dist', 'out', 'coverage', '__tests__']);
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (EXCLUDED.has(name)) continue;
+    if (statSync(full).isDirectory()) listSourceFiles(full, out);
+    else if (/\.(ts|mts)$/.test(name) && !/\.(test|spec)\.(ts|mts)$/.test(name)) out.push(full);
+  }
+  return out;
 }
 
 /**
@@ -825,7 +1022,222 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   },
 };
 
+/**
+ * 🔴 **可达成员面冻结表（2026-10-27 补 · 闭合 5.1.0 遗留）**
+ *
+ * 收录**不挂 `src/index.ts` 导出面、但经已登记公开成员的返回类型对消费者可达**的 class /
+ * interface 的公开成员清单。增删即红。
+ *
+ * 为何单列一张表（不并入 EXPECTED）：`EXPECTED` 的键 = **导出符号名**，而本表键 = **类型名**；
+ * 两者同名空间会冲突（`diffSurface` 双向比对会误判「符号消失」）。故分层冻结、分别判据。
+ *
+ * 条目来源（§3.2.1 定性）：`SecurityGuard` 虽未从包入口导出，但 `Agent.get security` 返回它，
+ * 消费者（宿主设置面板 / 装配层）**真实在调**其方法 ⇒ 其成员增删属「消费者可感知的能力变更」，
+ * 必须走审查（新增 = 真能力？删除 = 纠谎还是误删？），不能静默。
+ */
+const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
+  AgentLoop: {
+    kind: 'class',
+    members: [
+      'allocRoundId',
+      'answerQuestion',
+      'appendRoundEvidence',
+      'cancelAsk',
+      'cleanTemporarySystemMessages',
+      'clearPauseRequest',
+      'clearPendingInterjections',
+      'continueAfterPause',
+      'enqueueCommandResult',
+      'estimateTokens',
+      'get isInAutonomousStep',
+      'getActivePlanItemMeta',
+      'getBackgroundTasks',
+      'getConversationMessages',
+      'getCurrentRoundId',
+      'getDynamicSystemTokens',
+      'getEffectiveContextWindow',
+      'getEffectiveMaxTokens',
+      'getExclusionRoundIds',
+      'getLastBudget',
+      'getMessages',
+      'getMetrics',
+      'getPendingInterjections',
+      'getRecentHistoryWithinBudget',
+      'getReplacedRoundIds',
+      'getRolePackBaseTokens',
+      'getTaskTable',
+      'getVisibleRoundIds',
+      'hasInflightPlan',
+      'injectAffect',
+      'injectSystemMessage',
+      'interject',
+      'killBackgroundTask',
+      'onContextWindowChanged',
+      'onPendingQuestion',
+      'onPlanItemBoundary',
+      'processUserInput',
+      'recordBudget',
+      'recordMemoryHitsEvidence',
+      'recordOccupancy',
+      'recordWebSearchEvidence',
+      'refreshBootstrapMemories',
+      'refreshRolePackPrefix',
+      'refreshToolDefinitions',
+      'removePendingInterject',
+      'requestPause',
+      'resetContextSummary',
+      'restoreHistory',
+      'setBackgroundTaskSettledEmitter',
+      'setBackgroundTasks',
+      'setChatOptions',
+      'setContextWindow',
+      'setCurrentRoundId',
+      'setDefaultMaxTokens',
+      'setProvider',
+      'setRolePackBaseTokens',
+      'setStrategy',
+      'shutdownBackgroundTasks',
+      'takeAnsweredAsk',
+    ],
+  }, // 来源 Agent.agentLoop / 宿主调用 14 个 / 文件 F:\zooique\memora\src\agent\loop.ts
+  MessageHistory: {
+    kind: 'class',
+    members: [
+      'appendAssistant',
+      'appendEvidence',
+      'appendInterrupted',
+      'appendUser',
+      'awaitPendingArchives',
+      'forkSession',
+      'get currentDateValue',
+      'get currentSessionName',
+      'get currentSessionValue',
+      'get session',
+      'getFirstRoundId',
+      'listAllSessions',
+      'loadRoundBasedMessages',
+      'loadSessionMessages',
+      'registerPendingArchive',
+      'switchSession',
+    ],
+  }, // 来源 Agent.agentHistory / 宿主调用 2 个 / 文件 F:\zooique\memora\src\agent\messageHistory.ts
+  SecurityGuard: {
+    kind: 'class',
+    members: [
+      'assertPathAllowed',
+      'confirmCommandRun',
+      'confirmScriptRun',
+      'confirmScripts',
+      'confirmWrites',
+      'onAudit',
+      'onWriteConfirmation',
+      'requestToolCallConfirmation',
+      'requestWriteConfirmation',
+      'setAllowedPaths',
+      'setConfirmScripts',
+      'setConfirmWrites',
+    ],
+  }, // 来源 Agent.security / 宿主调用 6 个 / 文件 F:\zooique\memora\src\security\pathGuard.ts
+  SkillManager: {
+    kind: 'class',
+    members: [
+      'buildSkillList',
+      'buildSystemPrompt',
+      'formatSkillForPrompt',
+      'get',
+      'get disabledSkillNames',
+      'getScriptPath',
+      'listAvailable',
+      'listResources',
+      'listScripts',
+      'load',
+      'loadExtraDir',
+      'readResource',
+      'register',
+      'setDisabledSkills',
+      'validateFile',
+    ],
+  }, // 来源 Agent.skills / 宿主调用 7 个 / 文件 F:\zooique\memora\src\skill\skillManager.ts
+  TextPolishManager: {
+    kind: 'class',
+    members: ['polish'],
+  }, // 来源 Agent.polish / 宿主调用 1 个 / 文件 F:\zooique\memora\src\agent\managers\textPolishManager.ts
+  ToolExecutor: {
+    kind: 'class',
+    members: [
+      'execute',
+      'get builtinDefinitions',
+      'get currentToolWhitelist',
+      'get list',
+      'listResources',
+      'listSkills',
+      'planManager',
+      'readResource',
+      'readSkill',
+      'registerTool',
+      'registerWork',
+      'removeTool',
+      'resolveSkillScript',
+      'runSkillScript',
+      'runTeamMeeting',
+      'setBackgroundTaskScheduler',
+      'setBackgroundTasks',
+      'setBudgetProvider',
+      'setExclusionRoundIdsProvider',
+      'setMemoryInspector',
+      'setOnMemoryRecalled',
+      'setOnToolsChanged',
+      'setSearchResultObserver',
+      'setToolWhitelist',
+    ],
+  }, // 来源 Agent.tools / 宿主调用 7 个 / 文件 F:\zooique\memora\src\agent\toolExecutor.ts
+  WorkProjectionManager: {
+    kind: 'class',
+    members: [
+      'contextBlock',
+      'get isFileMalformed',
+      'listWorks',
+      'loadAndGetContextBlock',
+      'refresh',
+      'registerWork',
+    ],
+  }, // 来源 Agent.works / 宿主调用 2 个 / 文件 F:\zooique\memora\src\agent\managers\workProjection.ts
+};
+
 const actual = collectActualSurface();
+
+/** 实际可达成员面：可达类型名 → { kind, members } */
+function collectActualReachableSurface(): Record<string, { kind: string; members: string[] }> {
+  const out: Record<string, { kind: string; members: string[] }> = {};
+  for (const name of collectReachableTypeNames()) {
+    const found = findClassOrInterfaceInSrc(name);
+    if (!found) continue;
+    out[name] = { kind: found.kind, members: collectMembers(found.kind, found.decl) };
+  }
+  return out;
+}
+
+const actualReachable = collectActualReachableSurface();
+
+/** 可达层差异清单：类型增删 + 成员增删（双向），供红时报出可读定位 */
+function diffReachableSurface(): string[] {
+  const issues: string[] = [];
+  const actualKeys = new Set(Object.keys(actualReachable));
+  const expectedKeys = new Set(Object.keys(REACHABLE_MEMBERS));
+  for (const k of actualKeys) if (!expectedKeys.has(k)) issues.push(`[新可达类型] ${k}`);
+  for (const k of expectedKeys) if (!actualKeys.has(k)) issues.push(`[可达类型消失] ${k}`);
+  for (const k of actualKeys) {
+    const a = actualReachable[k];
+    const e = REACHABLE_MEMBERS[k];
+    if (!e || !a) continue;
+    if (a.kind !== e.kind) issues.push(`[形态变更] ${k}: ${e.kind} → ${a.kind}`);
+    const expSet = new Set(e.members);
+    const actSet = new Set(a.members);
+    for (const m of a.members) if (!expSet.has(m)) issues.push(`[新成员] ${k}.${m}`);
+    for (const m of e.members) if (!actSet.has(m)) issues.push(`[成员消失] ${k}.${m}`);
+  }
+  return issues;
+}
 
 /** 成员级差异清单：kind 变更 + 成员增删（双向），供红时报出可读定位 */
 function diffSurface(): string[] {
@@ -928,6 +1340,39 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
+    ).toEqual([]);
+  });
+
+  /**
+   * 可达层扫描面自检（2026-10-27 补）：防止「可达层恒空 ⇒ 守卫失明假绿」。
+   *
+   * 判据三件：① 可达类型集合非空（真解析出类型名）；② `SecurityGuard` 必在其中（实证它
+   * 经 `Agent.get security` 可达且**不在导出面**）；③ 可达层实际成员面非空。
+   */
+  it('可达层扫描面自检：可达类型非空且含 SecurityGuard（防守卫失明假绿）', () => {
+    const reachableNames = collectReachableTypeNames();
+    expect(reachableNames.size).toBeGreaterThan(0);
+    expect([...reachableNames], 'SecurityGuard 必在可达类型集合内').toContain('SecurityGuard');
+    expect(Object.keys(actualReachable).length).toBeGreaterThan(0);
+  });
+
+  it('可达成员面与冻结基线一致（增删即红；红须按 §3.2.1 定性后显式更新 REACHABLE_MEMBERS）', () => {
+    const issues = diffReachableSurface();
+    const hint =
+      `可达成员面（不挂导出面、但经公开成员返回类型对消费者可达的类）发生增删/形态变更——\n` +
+      `先按 legacy-contract-audit-rules §3.2.1 人工定性：\n` +
+      `  · 新成员：是真能力（补消费/文档）还是 no-op 谎报（删）？\n` +
+      `  · 消失成员：是纠谎/收回（更新基线 + CHANGELOG 登记）还是误删（还原）？\n` +
+      `定性结论即审查落点：把差异显式写进 REACHABLE_MEMBERS（禁止无审查直接对齐）。\n` +
+      `已定性记录（2026-10-27 · 闭合 5.1.0 遗留）：\n` +
+      `  ① SecurityGuard 全表入册——该类虽未从 src/index.ts 导出（5.1.0 CHANGELOG 明写），\n` +
+      `    但 Agent.get security 返回它 ⇒ 消费者可达。宿主真实消费 setConfirmWrites /\n` +
+      `    setConfirmScripts / setAllowedPaths（设置面板热更新 + 装配层注入），5.1.0 新增的\n` +
+      `    requestToolCallConfirmation 亦在其上 ⇒ 删改这些方法此前**零闸门红**（真伤）。\n` +
+      `    本层闭合该缺口。`;
+    expect(
+      issues,
+      `\n可达成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
     ).toEqual([]);
   });
 });

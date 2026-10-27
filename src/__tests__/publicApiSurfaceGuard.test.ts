@@ -12,10 +12,11 @@
  *    仍在公开面 —— 堵「删公开导出后 src 内部（尤其 __tests__）import 悬空而守卫照绿」的盲区。
  *    结构成因：向 A 只迭代「现存公开面」符号，被删符号不再被其检查。实锤先例（2026-10-17 收面
  *    12 项）：`src/llm/__tests__/llmIntegration.test.ts` 曾 import 被删的 `createLlmProvider`（仅 tsc 兜住）。
- *  - 向 E（2026-10-27 · 5.2.0 公开面 diff 守卫）：公开面须与**冻结快照**逐位一致。
+ *  - 向 E（2026-10-27 · 公开面 diff 守卫）：公开面须与**冻结快照**逐位一致。
  *    结构成因：A/B/C/D 全部从「现存集合」出发做对账——符号一旦被删，就不再被任何现存集合迭代：
- *    README 承诺的符号只经向 A 扩大承诺面（向 C 只对账手册 §十六），既无宿主消费、又不在 §十六
- *    的删除会**全库静默**（无任何闸门变红）。唯一以「上次确认的全集」为参照系的判据就是快照。
+ *    **任何被删除的导出都不红**（实测 2026-10-27：删 `isRoundSettled`——宿主**真实消费**它、
+ *    但它不挂 README/手册承诺面 ⇒ 仅向 E 单红，A/B/C/D 全绿）。唯一以「上次确认的全集」
+ *    为参照系的判据就是快照。
  * 判据与参照系说明：手册 §十六 现为纯模块级类型/函数清单，与 index.ts 导出面同构——
  * B 向历史判据（只验「src 存在性」）保留，另以 C 向补「承诺 ⊆ 公开面」对账（防「src 有但
  * 未导出」——消费者按文档具名 import 会得到 undefined）。
@@ -235,7 +236,7 @@ const manualTokens = extractIdentifierTokens(manualSection);
 const manualTwelveTokens = extractIdentifierTokens(sliceManualSectionTwelve(manualText));
 
 /**
- * 公开面冻结快照（向 E 参照系 · 冻结于 2026-10-27，5.2.0 窗口）。
+ * 公开面冻结快照（向 E 参照系 · 冻结于 2026-10-27）。
  *
  * 与 `parsePublicSurface()` 同口径：`src/index.ts` 全部具名导出（值导出 + `export type` 类型导出，
  * as 别名取公开名）。**长度以数组自身为准，文案不复述计数**（计数是时点快照）。
