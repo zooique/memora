@@ -373,7 +373,7 @@
     "compile": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p ./ && node esbuild.config.mjs && node scripts/verify-bundle-loadable.mjs",
     "watch": "tsc -watch -p ./",
     "typecheck": "tsc --noEmit -p ./ && tsc --noEmit -p ./tsconfig.scripts.json",
-    "package": "npm run compile && vsce package --no-dependencies --baseContentUrl https://raw.githubusercontent.com/zooique/memora/main/hosts/memora-vscode/ --baseImagesUrl https://raw.githubusercontent.com/zooique/memora/main/hosts/memora-vscode/ --out memora-vscode.vsix",
+    "package": "npm run compile && node scripts/verify-package-manifest.mjs && vsce package --no-dependencies --baseContentUrl https://raw.githubusercontent.com/zooique/memora/main/hosts/memora-vscode/ --baseImagesUrl https://raw.githubusercontent.com/zooique/memora/main/hosts/memora-vscode/ --out memora-vscode.vsix",
     "test": "node ../../node_modules/vitest/vitest.mjs run --config vitest.config.ts --no-file-parallelism",
     "lint": "eslint . --max-warnings 0"
   },
