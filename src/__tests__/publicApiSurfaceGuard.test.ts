@@ -12,6 +12,10 @@
  *    仍在公开面 —— 堵「删公开导出后 src 内部（尤其 __tests__）import 悬空而守卫照绿」的盲区。
  *    结构成因：向 A 只迭代「现存公开面」符号，被删符号不再被其检查。实锤先例（2026-10-17 收面
  *    12 项）：`src/llm/__tests__/llmIntegration.test.ts` 曾 import 被删的 `createLlmProvider`（仅 tsc 兜住）。
+ *  - 向 E（2026-10-27 · 5.2.0 公开面 diff 守卫）：公开面须与**冻结快照**逐位一致。
+ *    结构成因：A/B/C/D 全部从「现存集合」出发做对账——符号一旦被删，就不再被任何现存集合迭代：
+ *    README 承诺的符号只经向 A 扩大承诺面（向 C 只对账手册 §十六），既无宿主消费、又不在 §十六
+ *    的删除会**全库静默**（无任何闸门变红）。唯一以「上次确认的全集」为参照系的判据就是快照。
  * 判据与参照系说明：手册 §十六 现为纯模块级类型/函数清单，与 index.ts 导出面同构——
  * B 向历史判据（只验「src 存在性」）保留，另以 C 向补「承诺 ⊆ 公开面」对账（防「src 有但
  * 未导出」——消费者按文档具名 import 会得到 undefined）。
@@ -231,6 +235,158 @@ const manualTokens = extractIdentifierTokens(manualSection);
 const manualTwelveTokens = extractIdentifierTokens(sliceManualSectionTwelve(manualText));
 
 /**
+ * 公开面冻结快照（向 E 参照系 · 冻结于 2026-10-27，5.2.0 窗口）。
+ *
+ * 与 `parsePublicSurface()` 同口径：`src/index.ts` 全部具名导出（值导出 + `export type` 类型导出，
+ * as 别名取公开名）。**长度以数组自身为准，文案不复述计数**（计数是时点快照）。
+ *
+ * 更新纪律（快照变红时二选一，不存在「改断言让它绿」的第三选项）：
+ *  - **新增**导出：向 A 已过（真实消费 ∪ 明文承诺）后，同批把符号补进本快照 —— 显式确认，
+ *    防「顺手 export」混入公开面；
+ *  - **删除**导出：破坏性变更，须走 major —— 先清算 README / 手册承诺与全部消费方（含自消费），
+ *    再更新本快照。直接改快照掩盖删除 = 把破坏性变更伪装成无事发生。
+ */
+const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
+  'AGENT_CONSTANTS',
+  'Agent',
+  'AgentChunk',
+  'AgentContext',
+  'AgentEventHandler',
+  'AgentEventMap',
+  'AgentEventName',
+  'AgentForkResult',
+  'AgentMetrics',
+  'AgentOptions',
+  'AgentSearchHit',
+  'AgentStats',
+  'ArchiveMode',
+  'ArchiveSnapshot',
+  'AuditEvent',
+  'AuditListener',
+  'BACKGROUND_TASK_STATUS_LABELS',
+  'BUILTIN_FALLBACK_PACK',
+  'BackgroundTask',
+  'BootstrapSnapshot',
+  'COMPRESS_TARGET_LABELS',
+  'ChatOptions',
+  'CodeExecutionOptions',
+  'CodeExecutionResult',
+  'CompressTarget',
+  'Config',
+  'FetchOptions',
+  'FetchWebFetchProvider',
+  'FetchWebSearchProvider',
+  'FetchedPage',
+  'ForkResult',
+  'HostEnvironmentInfo',
+  'ICodeExecutionProvider',
+  'IEnvironmentProvider',
+  'IFetchProvider',
+  'IGNORED_DIR_NAMES',
+  'ILogger',
+  'IMemoryStorage',
+  'IProjectSearchProvider',
+  'IRoundStore',
+  'ISessionStore',
+  'ISessionViewLoader',
+  'ISpan',
+  'ITracer',
+  'IWebSearchProvider',
+  'InMemorySessionViewLoader',
+  'InteractiveInputKind',
+  'LOOP_CONSTANTS',
+  'LlmChunk',
+  'LlmErrorCategory',
+  'LlmProvider',
+  'MAX_DIFF_CONTENT_LENGTH',
+  'MAX_TEAM_MEMBERS',
+  'MemoraError',
+  'Memory',
+  'MemoryInspector',
+  'MemorySnapshot',
+  'OPAQUE_WRITE_TOOL_NAMES',
+  'PROJECT_SEARCH_RESULT_MAX_LEN',
+  'Permission',
+  'PolishResult',
+  'ProcessEvent',
+  'ProcessMetaPayload',
+  'ProcessMetricsPayload',
+  'ProcessThinkingPhase',
+  'ProjectFileMatch',
+  'ProjectFileSearchOptions',
+  'ProjectFileSearchResult',
+  'ProjectTextMatch',
+  'ProjectTextSearchOptions',
+  'ProjectTextSearchResult',
+  'ProviderConfig',
+  'ProviderRouter',
+  'ReadOnlyMemoryStorage',
+  'RolePackManager',
+  'RolePackMeta',
+  'Round',
+  'RoundMessage',
+  'RoundStatus',
+  'SOURCE_LABELS',
+  'SUMMARY_TYPES',
+  'SearchEndpoint',
+  'SearchEngineName',
+  'SearchResult',
+  'SessionCheckpoint',
+  'SessionManager',
+  'SessionMessage',
+  'SessionMeta',
+  'SessionSummary',
+  'SessionView',
+  'SkillEntry',
+  'SourceValidationSeverity',
+  'StrategyKeyFace',
+  'TRACE_SPANS',
+  'ThinkingPhase',
+  'ToolContext',
+  'ToolDefinition',
+  'ToolErrorCode',
+  'ToolErrorCodeValue',
+  'ToolHandler',
+  'TypedEventEmitter',
+  'UIMessages',
+  'WRITE_PATH_EXTRACTORS',
+  'WebSearchOptions',
+  'WorkProjectionEntry',
+  'WorkingMemorySnapshot',
+  'WriteConfirmationInfo',
+  'WriteConfirmationRequest',
+  'WriteDecision',
+  'WriteExtensions',
+  'accumulateStream',
+  'buildSearchEndpoints',
+  'buildSessionId',
+  'createNodeSqliteStorage',
+  'createProviderFromConfig',
+  'defaultSessionTitle',
+  'describeStrategyKeys',
+  'estimateOccupancy',
+  'estimateTokensMessages',
+  'estimateTokensText',
+  'formatDateKey',
+  'getSessionDisplayName',
+  'hasActiveSuperseder',
+  'isRetryableErrorCode',
+  'isRoundSettled',
+  'loadConfig',
+  'logger',
+  'parseFrontmatter',
+  'parseMemory',
+  'resolveContextWindow',
+  'resolveShellCommand',
+  'segmentLower',
+  'setLogger',
+  'splitSessionId',
+  'todayDate',
+  'validateManifestText',
+  'validateSource',
+];
+
+/**
  * §十六 非「具名导出承诺」的 token 豁免名单（C 向对账用，冻结自 2026-10-08 差集实测）。
  *
  * 两类分账：
@@ -354,6 +510,26 @@ describe('公共 API 面登记门槛守卫（PUBLIC-API-SURFACE-1）', () => {
     expect(
       dangling,
       `\n自消费悬空 ${dangling.length} 项：\n${dangling.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
+    ).toEqual([]);
+  });
+
+  it('向 E：公开面与冻结快照逐位一致（公开面 diff 守卫：删/改导出即红）', () => {
+    const current = [...publicSurface].sort();
+    const snapshot = [...PUBLIC_SURFACE_SNAPSHOT].sort();
+    const removed = snapshot.filter((s) => !current.includes(s));
+    const added = current.filter((s) => !snapshot.includes(s));
+    const hint =
+      `公开面与冻结快照（2026-10-27 冻结）不一致 —— 这是公开面的 diff，不是让你直接改快照。\n` +
+      `· 删除 ${removed.length} 项：破坏性变更须走 major —— 先清算 README / 手册 §十六 承诺与全部\n` +
+      `  消费方（宿主 + 自消费），再更新快照；直接改快照掩盖删除 = 把破坏性变更伪装成无事发生。\n` +
+      `· 新增 ${added.length} 项：向 A 已过的前提下同批补进快照（显式确认，防顺手 export 混入）。`;
+    expect(
+      removed,
+      `\n快照有 · 公开面无（删除的导出）：\n${removed.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
+    ).toEqual([]);
+    expect(
+      added,
+      `\n公开面有 · 快照无（新增的导出）：\n${added.map((s) => `  + ${s}`).join('\n')}\n${hint}`,
     ).toEqual([]);
   });
 
