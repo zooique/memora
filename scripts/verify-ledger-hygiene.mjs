@@ -33,6 +33,18 @@
  *   ⑦ **版本索引 ↔ README 归档表一致**（2026-10-27 补）：同一份「哪些归档文件在册」的事实，
  *      主台账「版本索引」与 `tasks/archive/README.md` 各登记一份 ⇒ 两处文件名集合**必须双向相等**。
  *      为什么补：两处登记无机器校验就是注定漂移的第二真源（治理技能曾把这条列为已知风险）。
+ *   ⑧ **已落态跨过发版线却无归档副本**（2026-10-27 补）：观察区里已收口（✅/❌…）的条目，
+ *      若其标题行**在 HEAD 里的最后改动时间早于该轴最近 tag**（且整条 tag 后未被改过）、
+ *      又**没有任何归档副本** ⇒ 该版发版时就该收进归档，没没收 = 漏归档（L3 四例的实际形态）。
+ *      「跨过发版线」用 git 时间判定，不靠条目标记措辞——统计口径不依赖作者记得写什么。
+ *      ⚠️ 边界（fail-open，刻意）：① 标题行在工作树与 HEAD 不一致（正在改写）⇒ 跳过，
+ *      以提交后判据为准；② 新条目在 HEAD 中不存在 ⇒ 跳过；③ 该轴尚无 tag ⇒ 跳过。
+ *
+ *   ⑨ **刻意不设**：观察态条目「必须字面含『触发』」——**否决**（2026-10-27 实测）。
+ *      存量 95 条观察态里 19 条字面不含「触发」，逐条读正文后多数已用散文写明升档出口
+ *      （「等用户说…再动」/「仅在用户实际体验后仍感…才需补齐」/「到期 2026-11-19」/「与 G35 同批评估」）。
+ *      词面门判的是**写法不是内容**，只会催生「触发：无」这类合规空话，且逼真条目改写成套话
+ *      ⇒ 比不设更差。判断「这条有没有升档出口」属人工审核，不机器代判；此处留痕防后人重提。
  *
  * 档位（2026-10-27 由告警升硬闸，兑现上一版写明的升档条件）：
  *   当初挂 required:false 是为 0.2.0 区的存量欠账/假指针让路，避免门一建就被绕。
@@ -45,9 +57,9 @@
  *
  * 用法：
  *   node scripts/verify-ledger-hygiene.mjs            # 分诊并列出命中
- *   node scripts/verify-ledger-hygiene.mjs --self-test # 自检：注入变异确认四类判据都能红
+ *   node scripts/verify-ledger-hygiene.mjs --self-test # 自检：注入变异确认各判据都能红（⑧ 另含反例控制）
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -97,6 +109,12 @@ const OPEN_SEG_RE = /｜\s*(?:⏸|⏳|📌|🟡|👁|🔵|🔄)/u;
 
 /** 已发布区的标题判据 */
 const RELEASED_RE = /已发布|已发版|已定案归档/;
+
+/**
+ * 观察区标题判据 —— ⑧ 的投放面。
+ * 归元后主台账里**只有这个区长期承载条目**（注记类 / 明确不推进不属待办，不参与归档判定）。
+ */
+const OBSERVATION_RE = /观察\s*\/\s*待拍板/;
 
 const MAX_PRINT = 20;
 
@@ -280,6 +298,123 @@ function hasBlankRuns(lines) {
   return runs;
 }
 
+/** 收口态的单点判据（① 与 ⑧ 共用一份拼写；开放态优先——🔄/⏳/📌 一律不算收口）。 */
+const isClosedHead = (head) =>
+  CLOSED_RE.test(head) && !NOT_CLOSED_RE.test(head) && !OPEN_SEG_RE.test(head);
+
+/** 条目所属子区（最近的上层 `###` 标题），用于把条目映射到版本轴。 */
+function axisAt(lines, sec, idx) {
+  for (let i = idx; i >= sec.start; i--) {
+    const m = /^###\s+(.+)$/.exec(lines[i]);
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+
+/** 所有归档文件的副本查询（缓存文本，逐 ID 复用 `lib/ledger-archive.mjs` 的同一判据）。 */
+function archiveCopies() {
+  const dir = join(ROOT, 'tasks', 'archive');
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.md')) : [];
+  const texts = files.map((f) => readFileSync(join(dir, f), 'utf8'));
+  return { has: (id) => texts.some((t) => arcHasEntryForId(t, id)) };
+}
+
+/**
+ * ⑧ 的判据输入：发版线时间 + HEAD 版本台账的逐行改动时间。
+ *
+ * 为什么时间取自 HEAD、归档副本取自工作树：条目「何时落态」只能问已提交历史（未提交改动没有时间），
+ * 而「有没有归档副本」是当前结构事实（与 ①②③ 同源）。
+ * 为什么一次 blame 取全文件：逐条 `-L` 会产生 N 次子进程；行数对不齐即判据失明，宁可抛错。
+ */
+function ledgerTiming() {
+  const refs = execFileSync(
+    'git',
+    [
+      'for-each-ref',
+      '--sort=-creatordate',
+      '--format=%(refname:short) %(creatordate:unix)',
+      'refs/tags',
+    ],
+    { cwd: ROOT, encoding: 'utf8' },
+  )
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  // 两条版本轴各取最近一条：内核轴 = `v<semver>`（`memora@` 是已废弃命名，不计），宿主轴 = `vscode@`。
+  let kernelTagTime = null;
+  let hostTagTime = null;
+  for (const r of refs) {
+    const [name, ts] = r.split(/\s+/);
+    const t = Number(ts);
+    if (!Number.isFinite(t)) continue;
+    if (hostTagTime === null && name.startsWith('vscode@')) hostTagTime = t;
+    if (kernelTagTime === null && /^v\d+\.\d+\.\d+$/.test(name)) kernelTagTime = t;
+    if (kernelTagTime !== null && hostTagTime !== null) break;
+  }
+
+  const headText = execFileSync('git', ['show', `HEAD:${LEDGER_REL}`], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  const porcelain = execFileSync('git', ['blame', '--line-porcelain', 'HEAD', '--', LEDGER_REL], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  const times = [];
+  for (const line of porcelain.split(/\r?\n/)) {
+    const m = /^committer-time (\d+)$/.exec(line);
+    if (m) times.push(Number(m[1]));
+  }
+  const headLines = headText.replace(/\r?\n$/, '').split(/\r?\n/);
+  if (headLines.length !== times.length) {
+    throw new Error(
+      `blame 行数 ${times.length} ≠ HEAD 台账行数 ${headLines.length}（判据失明比假绿更危险）`,
+    );
+  }
+
+  const byId = new Map();
+  for (const sec of parseSections(headLines)) {
+    for (const it of parseItems(headLines, sec)) {
+      byId.set(it.id, {
+        headTime: times[it.start],
+        lastTime: Math.max(...times.slice(it.start, it.end)),
+        headLine: it.head,
+      });
+    }
+  }
+  return { kernelTagTime, hostTagTime, byId };
+}
+
+/** 秒级时间戳 → `YYYY-MM-DD HH:mm`（UTC，够判先后，不用来展示时区）。 */
+function stamp(sec) {
+  return new Date(sec * 1000).toISOString().slice(0, 16).replace('T', ' ');
+}
+
+/**
+ * ⑧ 已落态跨过发版线却无归档副本。
+ * 三个跳过分支都是**刻意 fail-open**（见文件头 ⑧ 的边界说明），不是遗漏。
+ */
+function checkArchiveTiming(cands, timing, archives) {
+  const out = [];
+  for (const c of cands) {
+    if (archives.has(c.id)) continue; // 任一归档文件有副本 ⇒ 已归档
+    const t = timing.byId.get(c.id);
+    if (!t) continue; // 新条目：HEAD 里不存在，无时间可判
+    if (t.headLine !== c.head) continue; // 标题行正在改写（工作树 ≠ HEAD），以提交后判据为准
+    const tagTime =
+      c.axis === '内核轴' ? timing.kernelTagTime : c.axis === '宿主轴' ? timing.hostTagTime : null;
+    if (tagTime === null) continue; // 该轴尚无发版线
+    // 双条件：标题行落态时间与整条最后改动都早于 tag ⇒ 该版发版时它已定型却没收进归档
+    if (t.headTime < tagTime && t.lastTime < tagTime) {
+      out.push({
+        ...c,
+        why: `落态 ${stamp(t.headTime)} 早于 ${c.axis} 发版线 ${stamp(tagTime)}，且无归档副本`,
+      });
+    }
+  }
+  return out;
+}
+
 function diagnose(text, opts = {}) {
   const lines = text.split(/\r?\n/);
   const sections = parseSections(lines);
@@ -296,6 +431,7 @@ function diagnose(text, opts = {}) {
   const fake = [];
   const misplaced = [];
   const pending = [];
+  const closedCands = []; // ⑧ 的候选：观察区内已收口、且标题行无归档指针
   let itemTotal = 0;
   const releasedSections = [];
 
@@ -325,13 +461,7 @@ function diagnose(text, opts = {}) {
       //    （实测：H0-1 / S1 / T4-FOLD-1 / 明确不推进区的 WRITE-APPROVAL-1 全被误判）。
       //    注意**开放态优先**：`LOOP-CONTRACT-1` 是 `🔄 进行中（①②③ 已落地，仅剩 ④ 缓办）`，
       //    既含「已落地」又是未闭合 ⇒ 只报错置、不报欠账（未闭合的先归位，不催归档）。
-      if (
-        released &&
-        !ptr &&
-        !OPEN_SEG_RE.test(it.head) &&
-        !NOT_CLOSED_RE.test(it.head) &&
-        CLOSED_RE.test(it.head)
-      ) {
+      if (released && !ptr && isClosedHead(it.head)) {
         debt.push({ ...it, sec: sec.title });
       }
 
@@ -347,6 +477,11 @@ function diagnose(text, opts = {}) {
           pending.push({ ...it, sec: sec.title, why: '📌 待执行条目缺「完成判据：」行' });
         }
       }
+      // ⑧ 候选：观察区（主台账里唯一长期承载条目的区）内已收口、标题行无归档指针。
+      //    判据本体（跨发版线 + 无副本）在 checkArchiveTiming 里，故此处只收集，不判定。
+      if (OBSERVATION_RE.test(sec.title) && !ptr && isClosedHead(it.head)) {
+        closedCands.push({ ...it, sec: sec.title, axis: axisAt(lines, sec, it.start) });
+      }
     }
   }
 
@@ -358,6 +493,8 @@ function diagnose(text, opts = {}) {
       .filter(Boolean),
   );
   const indexIssues = checkVersionIndex(lines, tags, opts.readmeText);
+  // ⑧ 的时间来源默认取自 git（真实运行时）；自检注入的探针不在 HEAD 中，靠 opts.timing 的桩数据驱动
+  const timing = checkArchiveTiming(closedCands, opts.timing ?? ledgerTiming(), archiveCopies());
   return {
     sections,
     itemTotal,
@@ -366,6 +503,7 @@ function diagnose(text, opts = {}) {
     misplaced,
     pending,
     indexIssues,
+    timing,
     releasedSections,
     blanks,
     lines,
@@ -381,6 +519,7 @@ function report(r) {
   if (r.indexIssues.length)
     problems.push(['⑤⑦版本索引不一致（三方 / README 归档表）', r.indexIssues]);
   if (r.pending.length) problems.push(['⑥待执行无完成判据', r.pending]);
+  if (r.timing.length) problems.push(['⑧落态跨发版线但无归档副本', r.timing]);
 
   console.log(
     `\n[ledger-hygiene] 台账结构分诊：${r.sections.length} 区 / ${r.itemTotal} 条目 / ${r.lines.length} 行`,
@@ -391,12 +530,12 @@ function report(r) {
         ? r.releasedSections
             .map((s) => `${s.title.slice(0, 18)} ${s.lines}行/${s.items}条`)
             .join(' · ')
-        : '(无 · 归元后主台账不再按版本分区 ⇒ ①②③ 无投放面，结构事实改由 ⑤⑥⑦ 承担)'),
+        : '(无 · 归元后主台账不再按版本分区 ⇒ ①②③ 无投放面，结构事实改由 ⑤⑥⑦⑧ 承担)'),
   );
 
   if (problems.length === 0) {
     console.log(
-      '✅ [ledger-hygiene] 七类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致）',
+      '✅ [ledger-hygiene] 八类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致 / 无落态跨版未归档）',
     );
     return 0;
   }
@@ -422,7 +561,8 @@ function report(r) {
       '其纪律 7 与真源字面相反，勿从 git 历史转抄）；' +
       '\n   ④ 连续空行压成 1 行（写盘前须断言非空行序列不变）；' +
       '\n   ⑤ 校准「版本索引」表 ↔ 归档文件 H1 ↔ git tag 三方；⑥ 给 📌 待执行条目补「完成判据：」行；' +
-      '\n   ⑦ 让「版本索引」与 `tasks/archive/README.md` 归档表的文件名集合双向相等（改一处必须同步另一处）。' +
+      '\n   ⑦ 让「版本索引」与 `tasks/archive/README.md` 归档表的文件名集合双向相等（改一处必须同步另一处）；' +
+      '\n   ⑧ 把该条目搬进对应版本归档（发版时就该做），或在标题行注明归档去向。' +
       '\n   本闸已是硬闸（local-ci required:true）——存量回涨时先把存量清零，不许把档位调回去。',
   );
   return 1;
@@ -440,7 +580,9 @@ function report(r) {
 function selfTest() {
   const base = readFileSync(join(ROOT, LEDGER_REL), 'utf8');
   const baseReadme = readFileSync(join(ROOT, 'tasks', 'archive', 'README.md'), 'utf8');
-  const baseR = diagnose(base);
+  // ⑧ 的真实时间输入只取一次；各用例用桩覆盖探针的时间，避免逐例重跑 blame
+  const baseTiming = ledgerTiming();
+  const baseR = diagnose(base, { timing: baseTiming });
   const idsOf = (list) => new Set(list.map((x) => x.id));
 
   // 注入锚点 = 观察区标题（2026-10-26 台账归元后，主台账不再常驻「已发布版本区」⇒
@@ -452,6 +594,14 @@ function selfTest() {
   }
   // 自建已发布区标题（RELEASED_RE 命中「已发布」），供 ①②③ 探针落位
   const probeSection = '## ZZ-RELEASED 自检注入（已发布）';
+  // ⑧ 的探针必须落在**版本轴**下（axisAt 向上找最近的 `###`），否则 axis=null ⇒ 被跳过 ⇒ 自检假绿
+  const axisAnchor = base.includes('### 内核轴') ? '### 内核轴' : null;
+  if (!axisAnchor) {
+    console.error('❌ 自检锚点 `### 内核轴` 不存在，⑧ 探针无法定位版本轴 —— 自检前提失效');
+    return 1;
+  }
+  /** ⑧ 探针的注入行（与桩数据里的 headLine 必须逐字一致，否则被「标题行正在改写」分支跳过） */
+  const probeTimeLine = (id) => `- **${id}** — 自检注入｜✅ 完成`;
 
   const cases = [
     {
@@ -509,6 +659,47 @@ function selfTest() {
       mutate: (t) => t.replace(anchor, `${anchor}\n\n- **ZZ-PEND-1** — 自检注入｜📌 待执行\n`),
       pick: (r) => idsOf(r.pending),
     },
+    // ⑧ 正向：探针落到内核轴下、无归档副本、落态时间早于发版线 ⇒ 必须命中。
+    //    时间由桩注入（探针不在 HEAD，真实 blame 里查不到它）。
+    {
+      label: '⑧落态跨发版线无归档',
+      probe: 'ZZ-TIME-1',
+      mutate: (t) => t.replace(axisAnchor, `${axisAnchor}\n\n${probeTimeLine('ZZ-TIME-1')}`),
+      timing: (b) => {
+        const tag = b.kernelTagTime ?? 1000; // 无 tag 时给个确定的假发版线，保证判据可判
+        return {
+          ...b,
+          kernelTagTime: tag,
+          // 桩：标题行与整条最后改动都早于 tag
+          byId: new Map(b.byId).set('ZZ-TIME-1', {
+            headTime: tag - 1,
+            lastTime: tag - 1,
+            headLine: probeTimeLine('ZZ-TIME-1'),
+          }),
+        };
+      },
+      pick: (r) => idsOf(r.timing),
+    },
+    // ⑧ 反例控制（invert）：落态时间在发版线**之后** ⇒ 不该报（防「凡已收口就报」的过度拦截）。
+    {
+      label: '⑧b落态在发版线后不误报',
+      probe: 'ZZ-TIME-2',
+      invert: true,
+      mutate: (t) => t.replace(axisAnchor, `${axisAnchor}\n\n${probeTimeLine('ZZ-TIME-2')}`),
+      timing: (b) => {
+        const tag = b.kernelTagTime ?? 1000;
+        return {
+          ...b,
+          kernelTagTime: tag,
+          byId: new Map(b.byId).set('ZZ-TIME-2', {
+            headTime: tag + 1,
+            lastTime: tag + 1,
+            headLine: probeTimeLine('ZZ-TIME-2'),
+          }),
+        };
+      },
+      pick: (r) => idsOf(r.timing),
+    },
     // ⑦a：README 归档表删掉 0.1.0 行 ⇒ 版本索引引用了但表未登记（只改 README，不改台账）
     {
       label: '⑦a归档表漏登记',
@@ -540,21 +731,28 @@ function selfTest() {
       allOk = false;
       continue;
     }
-    const r = diagnose(after, { readmeText: afterReadme });
+    const r = diagnose(after, {
+      readmeText: afterReadme,
+      // ⑧ 的时间输入：有桩用桩（探针不在 HEAD），无桩沿用基线（避免逐例重跑 blame）
+      timing: c.timing ? c.timing(baseTiming) : baseTiming,
+    });
     // ⑤ 的投放面是「描述字符串」而非条目 ID ⇒ 命中判定用包含而非等值（见 pick 的返回形态）。
     const contains = (set) =>
       [...set].some((x) => String(x) === c.probe || String(x).includes(c.probe));
     const hit = contains(c.pick(r));
     const clean = !contains(c.pick(baseR));
-    const ok = hit && clean;
+    // invert = 反例控制：判据**不该**命中（防过度拦截），故只要求 not hit
+    const ok = c.invert ? !hit : hit && clean;
     if (!ok) allOk = false;
     console.log(
-      `  ${ok ? '✅' : '❌'} ${c.label} 探针 ${c.probe} ${ok ? '被捕获' : '未被捕获'}（基线含=${!clean}）`,
+      c.invert
+        ? `  ${ok ? '✅' : '❌'} ${c.label} 探针 ${c.probe} ${ok ? '未被误报' : '被误报'}`
+        : `  ${ok ? '✅' : '❌'} ${c.label} 探针 ${c.probe} ${ok ? '被捕获' : '未被捕获'}（基线含=${!clean}）`,
     );
   }
 
   // ④ 连续空行：比较空块数增量
-  const afterBlank = diagnose(base.replace(anchor, `${anchor}\n\n\n\n`));
+  const afterBlank = diagnose(base.replace(anchor, `${anchor}\n\n\n\n`), { timing: baseTiming });
   const blankOk = afterBlank.blanks.length === baseR.blanks.length + 1;
   if (!blankOk) allOk = false;
   console.log(
@@ -562,7 +760,7 @@ function selfTest() {
   );
 
   console.log(
-    allOk ? '\n✅ 自检通过：七类判据（①②③④⑤⑥⑦）均可捕获新命中' : '\n❌ 自检失败：存在失明判据',
+    allOk ? '\n✅ 自检通过：八类判据（①②③④⑤⑥⑦⑧）均可捕获新命中' : '\n❌ 自检失败：存在失明判据',
   );
   return allOk ? 0 : 1;
 }
