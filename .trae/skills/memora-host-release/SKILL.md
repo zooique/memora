@@ -51,19 +51,17 @@ agent_created: true
 - ⚠️ **本地全绿 ≠ CI 绿**：本地是 Windows 暖环境（pnpm store 已热、平台 API 走 win32 语义），CI 是 ubuntu 冷环境。平台相关断言只验本机形态的用例要写成 `runIf(平台)` 互斥孪生（见「已知坑」），CI 首跑仍可能红，红了解因再修、修完重打 tag（见 Step 4）。
 
 ### Step 3：归档台账（必须在 tag 前提交，状态标「待上架」）
-按 `tasks/archive/README.md` 七条纪律（内核技能 `references/archive-discipline.md` 已蒸馏；宿主线规则相同，仅线别 = host）：
-1. 复用内核技能的归档脚本（已支持 `--kind`）：
-   `node ../memora-kernel-release/scripts/archive-kernel-release.mjs --kind host --version x.y.z --ids ID1,ID2,... --dry-run` 先预览切片，核对逐字节无损后加 `--apply` 落盘。**首次使用须 `git diff` 人工核对**再提交。
-2. 脚本产出 `tasks/archive/<x.y.z>-host.md`，迁入主台账 **该宿主版已关闭（✅）项**（内核相关项不在此归档，内核发版单独归档）。
-3. 条目 **ID 沿用不改**；主台账原位置留指针行 `→ 见 tasks/archive/<x.y.z>-host.md`。
-4. 归档文件头 + 主台账对应区标 **「待上架」**（未真发不写「已发布」；发版跑完再订正）。
-5. 🔴 **区级完整性自检（apply 后、commit 前必做）**：归档脚本按 **ID 白名单**跑——白名单靠人肉编，遗漏 = 静默欠账（0.2.0 实证：功能面 31 条迁净，区内混合批次漏扫 45 条，欠账登记 `ARCH-DRAIN-1`）。自检 = 扫该版本区**全部**条目行逐条三态分诊：
-   - 有 `→ 见 tasks/archive/` 指针 = 已迁 ✓（注意指针有两种格式：`→ 见` 与 `已迁出，见`）
-   - 开放态（⏳ / ⏸ / 🟡 / 👁 / 📝）= 留册 ✓；**明确不做（❌）项按纪律第 3 条留主台账，不算欠账**
-   - **已收口（✅ / 🟢 洞已修 / 证伪）无指针 = 欠账** ⇒ 当场补进 `--ids` 重跑，或登记欠账条目（如 `ARCH-DRAIN-1`）留给专项清账——**禁止沉默跳过**。
-   - 注意版本区可能是**混合工作区**（0.2.0 区含 0.1.0 发版以来的 kernel 审计批 / 发布链缺陷批 / 旧纪法规遗留原文），条目「是否属于本版本」须逐条判，不能只扫功能段。
-   - 发现漏扫 ⇒ 对**已存在**的归档文件用 `--append` 补批（保留原文件、并入迁移 ID 行、文末追加；**禁整体覆盖**），已实证：0.2.0 宿主区补 9 条 / 5.0.0 内核区补 23 条（ARCH-DRAIN-1 清账，2026-10-23）。
-   - 🔴 **自检计数以当场重扫实测为准，不采信此前任何清点快照**（2026-10-23 教训：`ARCH-DRAIN-1` 清点快照自身算术不闭合——「收口无指针 45」vs A 类 5 + B 类 38 = 43 差 2 条无着落；且快照落定后台账继续编辑即漂移，当日实测与快照已差 ~11 条）。欠账条目里的分诊数字只当**线索**，不当**判据**。
+> **规则与执行细节见 `memora-ledger-governance` 技能**（坐标纪律 / 状态字典 / 三道台账门的跑法）；宿主线规则与内核相同，本技能**不复制第二份**，只列宿主特有的调用形式。
+> 规则真源 = `tasks/archive/README.md` 七条纪律。内核技能的 `references/archive-discipline.md` **已于 2026-10-27 停用**（其纪律 7 与真源字面相反），勿采信、勿再更新。
+>
+> 以下只列**宿主线特有的约束**：
+
+1. 复用内核技能的归档脚本（带 `--kind host`）：
+   `node ../memora-kernel-release/scripts/archive-kernel-release.mjs --kind host --version x.y.z --ids ID1,ID2,... --dry-run` 预览 → 逐字节核对 → `--apply`。发现漏扫时，对**已存在**的归档文件必须加 `--append` 补批（禁整体覆盖）。
+2. 产出 `tasks/archive/<x.y.z>-host.md`，迁入**该宿主版已关闭（✅）项**（内核相关项不在此归档，由内核发版单独归档）；条目 **ID 沿用不改**。
+3. 归档文件头标 **「待上架」**（Step 6 再订正为「已发布」）。
+4. **提交前必跑两道台账硬闸**：`npm run verify:ledger-hygiene` + `npm run verify:ledger-fold`。
+5. 🔴 **ID 白名单靠人肉编 ⇒ 漏扫是常态**（0.2.0 漏 45 条，欠账 `ARCH-DRAIN-1`；后补 9 条）。兜底 = 上一条的机检门；任何计数以**当场重扫实测**为准，不采信清点快照（快照会算术不闭合 + 随台账编辑漂移）。
 
 ### Step 4：发版（打 tag 触发 host-release.yml）
 1. 确认 Step 0–3 全部已提交到当前 HEAD。
@@ -82,7 +80,7 @@ agent_created: true
 3. **③ VS Code Marketplace**：🔒 **定案保持手动上传**（全局 PAT 2026-12-01 退役；稳的 Entra ID 路线需 Azure 订阅 = 国外银行卡拦路石；干净路线 `vsce publish --oidc` 尚未进稳定版且 Marketplace 侧无策略注册 UI）。每版传一次 `.vsix`，成本可忽略 ⇒ 手动最优。
 
 ### Step 6：发版后订正
-1. 将 Step 3 的「待上架」订正为「已发布」：`tasks/archive/<x.y.z>-host.md` 文件头 + 主台账对应区（归档文件不在 `files` 白名单，订正在 tag 之后不影响已发 `.vsix`）。
+1. 将 Step 3 的「待上架」订正为「已发布」：`tasks/archive/<x.y.z>-host.md` 文件头 + 主台账**版本索引**里该版那一行的状态列（归档文件不在 `files` 白名单，订正在 tag 之后不影响已发 `.vsix`）。
 2. 核对三市场上架状态：GitHub Release（asset）/ Open VSX / VS Code Marketplace 均可见目标版本。
 3. `git show --stat` 核对本次提交文件归属 ↔ 标题（PowerShell 回显中文乱码是显示层，勿据此重提交；字节用 `git log -1 --format=%B | od -c` 校验）。
 
@@ -97,7 +95,7 @@ agent_created: true
 - 🔴 **CI 冷 store 勿用 `--offline`**（0.2.0 首跑实证，run 39889566947）：根与宿主是两个独立 pnpm 工程（无 workspace），CI 只装了根依赖；宿主 lockfile 239 包中 ~187 个根没有（vsce/@vscode 系）⇒ 冷 store offline 解析必炸。workflow 安装步已定 `--frozen-lockfile`，**勿改回 `--offline`**；本地 store 已暖，本地跑 `--offline` 仍可。
 - 🔴 **平台相关 API 的断言写 `runIf(平台)` 互斥孪生**（0.2.0 二跑实证，run 39890131524）：`path.relative` / findFiles `fsPath` 等语义随 OS 变，反斜杠形态只在 Windows 运行时出现，ubuntu 上喂 Windows 路径必错。win32 用例 `runIf(process.platform === 'win32')` + POSIX 孪生 `runIf(!win32)` 各跑真实形态——**不产生隐藏 skip**，任一平台都有在跑的用例。
 - 🔴 **跨宿主契约测试的前置是 memora-mcp dist**：`crossHostLayout.test.ts` 加载 `hosts/memora-mcp/dist` 产物（非源码）且有 mtime 守卫。workflow 已带构建步（mcp 无 lockfile ⇒ `--no-frozen-lockfile`，mcp 出包补 lockfile 后收紧为 frozen）；本地新 clone 同样先 build mcp。
-- 🔴 **归档白名单靠人肉编 ⇒ 必跑区级完整性自检**（Step 3 第 5 条）：版本区常是混合工作区，只扫功能段必漏（0.2.0 漏 45 条，欠账 `ARCH-DRAIN-1`）；旧纪法规 copy 式归档（4.0.0 前）在主台账留了无指针原文，自检时见「已有他档完整副本」的截指针即可。**自检计数以当场重扫实测为准，不采信清点快照**（快照会算术不闭合 + 随台账编辑漂移，详见内核技能 `references/archive-discipline.md`「区级完整性自检」节）。
+- 🔴 **归档白名单靠人肉编 ⇒ 漏扫是常态**（0.2.0 漏 45 条，欠账 `ARCH-DRAIN-1`；4.0.0 前的 copy 式归档在主台账留过无指针原文）。兜底 = Step 3 第 4 条的两道机检门，`local-ci` full 档会强制跑；任何计数以**当场重扫实测**为准，不采信清点快照（快照会算术不闭合 + 随台账编辑漂移）。
 
 ## 验收门槛
 GitHub Release 存在 + body 含随包内核代次与 sha256 + Open VSX / VS Code Marketplace 上架状态正确 + 归档文件 `tasks/archive/<x.y.z>-host.md` 存在且 ✅ 项全迁、开放项留主台账 + 主台账指针齐全 + CHANGELOG 宿主区无「未发布」且引言注明随包内核代次 + README 内核行 = 本次内联内核版本 + 门禁全绿 = 完成。

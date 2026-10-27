@@ -1,6 +1,6 @@
 ---
 name: memora-host-ui-consistency
-description: 在 memora 双包架构（内核 @zooique/memora + VS Code 宿主 hosts/memora-vscode）中改「宿主 UI 的可见性/呈现」时使用——例如技能启停徽章、下拉项禁用标记、状态后缀、任何「某对象当前处于受限状态」的 UI 呈现，以及**内联呈现**（decoration 高亮 / 行内幽灵文本 / CodeLens 行内按钮 / 文件内 diff 标记）；也用于「改了配置但界面/行为不生效」类问题、以及「抽出一个常量却引发一批无关套件整片加载失败」类问题。覆盖七条硬规则：改可见集必须枚举全部消费通道（含**生效时机**这个时间维度）、判定必须与内核真源同源且拦截逻辑只能落 host、webview 测试骨架须比对生产 HTML 结构否则该路径零覆盖、新增断言必须做变异验证（含「一次变异命中多条 = 覆盖充分而非过粗」的判据）、零测试覆盖区（extension.ts）用编译产物实读兜底、内联呈现五条硬约束（设了装饰≠看得见：须 revealRange / 字面色 / 不静默吞异常 / **装饰按编辑器补齐——切走再切回不会自动恢复，而 CodeLens 走 provider 模式会，故症状是「高亮没、按钮在」**；**坐标系错位——内核直写盘不经编辑器，须 revert 重载后再渲染**；**并发写同文件的渲染竞态——须 renderSeq 只让最新一次落地**；`CodeLens.command` 单命令 ⇒ 多按钮 = 同 range 多 CodeLens；空行 range 会抛错须 safeLineRange；**模块顶层禁求值 vscode 运行时枚举**，否则最小 mock 环境 import 即崩一批套件）、**跨语言真源（TS 常量 ↔ `package.json` 声明面）必须写守卫对拍**（JSON 无法 import TS ⇒ 只能靠守卫，且守卫内不得复制 id 字面量）。当用户提到「UI 看不出效果」「禁用/受限状态没提示」「改了设置没反应」「静默失败」「看不出改了哪里」「没有确认/回退按钮」时加载。
+description: 在 memora 双包架构（内核 @zooique/memora + VS Code 宿主 hosts/memora-vscode）中改「宿主 UI 的可见性/呈现」时使用——例如技能启停徽章、下拉项禁用标记、状态后缀、任何「某对象当前处于受限状态」的 UI 呈现、**底部状态条新增条目（StatusDock 第 N 条 / 浮层 / 状态条）**、**webview 新接内核数据通道**，以及**内联呈现**（decoration 高亮 / 行内幽灵文本 / CodeLens 行内按钮 / 文件内 diff 标记）；也用于「改了配置但界面/行为不生效」类问题、以及「抽出一个常量却引发一批无关套件整片加载失败」类问题。覆盖十一条硬规则：改可见集必须枚举全部消费通道（含**生效时机**这个时间维度）、判定必须与内核真源同源且拦截逻辑只能落 host、webview 测试骨架须比对生产 HTML 结构否则该路径零覆盖、新增断言必须做变异验证（含「一次变异命中多条 = 覆盖充分而非过粗」的判据）、零测试覆盖区（extension.ts）用编译产物实读兜底、内联呈现硬约束（断点清单见规则 6）、**跨语言真源（TS 常量 ↔ package.json 声明面）必须写守卫对拍**、**底部条/协议载荷/替身契约三坑（规则 8：新增条是注册不是造 chip · CSS 令牌连注释都不能写 · 协议禁带 UI 零消费字段 · 宿主新增agent 方法必须补替身且不加 `?.()` · 推送去重签名非条数 · onDidReceiveMessage 挂在 webview 上）**、**要用户立刻看见/操作的 UI 绝不可挂 `#messages` 滚动容器（规则 9，三次实证）**、**`el.hidden = true` 不等于用户看不见（规则 10：author 层 display 覆盖 hidden 属性 ⇒ jsdom 结构性假绿，须读生产 CSS 文本写源码级守卫 + 全局 `[hidden]` 兜底；附 commitlint把 `#选择器` 当 footer 的坑）**、**DOM 位置裁决器三坑（规则 11：终态断言抓不到 insertBefore 有没有搬，须写行为观测 + 容器 remove 会带走内部条目 + 隐藏条目夹在主位与锚点之间使位置范式与免重排判据同时失效；附 HTML 模板注释禁 `--`、相邻性断言方向不许靠推理）**。当用户提到「UI 看不出效果」「禁用/受限状态没提示」「改了设置没反应」「静默失败」「看不出改了哪里」「没有确认/回退按钮」「底部状态条」「加个状态条/浮层」「面板显示在上方/没替换输入框」「测试全绿但真机不对」时加载。
 agent_created: true
 ---
 
@@ -113,6 +113,21 @@ if (!skillBlock && isSkillDisabled(this._agent, skillName)) {
   只写 `treedd--capsule` 修饰符不会命中 → 事件全不绑定）。
 - 事件模拟：菜单选择走 `menu.addEventListener('click', …)` 委托 ⇒ `item.click()` 即可。
 
+### ⚠️ 回归护栏必须喂**真机事件序**（夹具 ts 空串 ⇒ 排序路径零覆盖）
+
+仓库里那种 `realRound-*.ts` 夹具**事件 `ts` 全是空串**（走 `seq` 回落分支）；而真机 round
+`<workspace>/.memora/rounds/*.json` 的事件带**真实 ISO ts**。两者走**不同的排序分支**——
+拿空串夹具写「顺序类」回归护栏，**真机那条路径零覆盖**，护栏全绿却锁不住 bug。
+
+实证（2026-09-27 任务表错位）：用 `ts: ''` 的夹具怎么摆都复现不出用户的错位；
+换成**真机 ts 序**（并让「任务项边界相对首个工具前/后」成为**独立变量**）才复现。
+
+⇒ 构造顺序类护栏时：
+1. **喂真机事件序**（从 `rounds/*.json` 抄 ts/seq），别用空串夹具；
+2. 把「首个 `plan_item_boundary` 在首个工具**之前 / 之后**」当**显式维度**各测一遍
+   （这是「根层内容 vs 任务项组」排序的关键分叉，不是可以默认的细节）；
+3. 判定写**因果断言**（如「建表批索引 < 首组索引」），而非「元素存在于某处」。
+
 ## 规则 4 —— 新增断言必须做**变异验证**（三态判定）
 
 | 变异结果 | 含义 |
@@ -136,14 +151,31 @@ if (!skillBlock && isSkillDisabled(this._agent, skillName)) {
 **反向守卫是必须的**：只测「禁用时报错」不够，还要测「启用时不报错」「不存在时不报错」
 「未带参数时不报错」——否则实现退化成「无条件报错」也能全绿。
 
-**变异必须红在「断言」上，不能红在「等待 / 前置条件」上**（守卫可达性）：若断言藏在
-`vi.waitFor(某形态出现)` 之后、而等待条件只认**一种**形态，把代码变异成**另一种**形态时，
-测试会红在 `waitFor` **超时**上——**断言根本没跑到**。红/绿分布看着正常（一条红、其余绿），
-实则是**假验证**：那条断言到底有没有效，完全未知（等价于被等待条件挡住了）。
-修法：等待条件只等「**任一**形态出现过」、不绑定具体形态，让并排的**形态断言**自己去区分；
-这样一个变异才打得到正确的那一条断言。
-实证（DIFF-1 第十二轮，2026-09-27）：对照视图守卫最初写「等虚拟文档已打开」⇒ 变异回
-`vscode.diff` 时红在 `waitFor`、不在守卫；改成「等对照以**任一形态**出现」+ 形态断言并列后精确命中。
+### ⚠️「单跑绿 + 全量红」先怀疑**自己的用例**，别先怪环境（2026-10-04 实踩两次）
+
+**形态**：新写的用例**单跑绿、全量并发稳定红**。直觉会判成「环境负载假红」，**但这次是真缺陷**——
+用例本身不可靠。两种真实成因：
+
+| 成因 | 症状 | 修法 |
+|---|---|---|
+| **`vi.waitFor` 默认超时不够** | 断言 `expected 'running' not to be 'running'` —— 等的真实进程还没退出，1s 先到 | 命令改快（`echo` 而非 `node -e`）+ 等待显式 `{ timeout: 5_000 }` |
+| **凭对称性推断错了实现的刻意设计** | 断言「A 与 B 同走某链」全红，收集器为空 | **先读实现注释**：注释里写「为什么不……」的地方就是定案（如「主动 kill 刻意不回调 listener，输出已由 `kill_command` 返回，再回流一次会让模型收到第二份副本」）|
+
+**判别流程**：单跑绿 + 全量红 ⇒ ① 先跑该文件 **2–3 次**看是否稳定红（稳定 = 真问题）；
+② 读失败断言的**实际值 vs 期望值**（`expected [] to deeply equal [...]` 收集器空 ⇒ 事件没到）；
+③ **读被测实现的注释**，找「刻意如此」的设计定案。
+
+**反模式**：为了「不依赖真实进程耗时」把触发源从 `settle` 换成 `kill` —— 两个入口**不一定同源**。
+**注释里写「为什么」的地方 = 设计定案，改判据前必须先读，别凭对称性推断。**
+
+**⚠️ 变异必须红在「断言」上，不能红在「等待 / 前置条件」上**（守卫可达性，2026-09-27 实锤）：
+若某个用例先 `await vi.waitFor(() => expect(形态A).toBe(true))` 再做断言，而变异恰好把实现改成**形态 B**，
+则 `waitFor` **先超时变红**、后面的形态断言**根本没跑到** —— 表现为「变异确实红了」，实则**守卫不可达**（谁把实现改回 B 都不会被那条断言抓到）。
+排查信号：**变异后红的是 timeout / 前置，而不是断言 ⇒ 先修测试可达性，别急着怀疑产品代码。**
+修法：等待条件只等「**出现了**」（不预设形态），形态交给并列的显式断言：
+`const seen = opened.length > 0 || executed.includes('vscode.diff'); expect(seen).toBe(true)`，再断言 `expect(executed).not.toContain('vscode.diff')`。
+实证：DIFF-1 对照视图改自渲染后，守卫写「等虚拟文档已打开」⇒ 变异回 `vscode.diff` 时 3 红全在 `waitFor`；
+改成「等任一形态出现」后，变异精确红在 2 条形态断言上（另 1 条红在正文内容断言）。
 
 ## 规则 5 —— 零测试覆盖区（`extension.ts`）用**编译产物实读**兜底，并如实标注
 
@@ -176,11 +208,31 @@ grep -c "onDidChangeConfiguration\|affectsConfiguration\|syncDisabledSkills" dis
 改搜 `affectsConfiguration` 后 ×1 命中，并实读到完整回调原文（含 `agentPromise` guard
 + `syncDisabledSkills` 调用 + `.catch` 出口）。
 
-## 规则 6 —— 宿主**内联呈现**（decoration / CodeLens）的五条硬约束（①表现 ②API 契约 ③文案粒度 ④副作用自查 ⑤顶层求值）
+### ⚠️ 判「dist 里有没有这个修复」必须**双向探针**（只搜新符号会假阳性）
+
+改完源码 **不等于** dist 生效：用户 F5（不 compile）或忘了重建时跑的是**旧 bundle**，
+症状与「修复根本没写」一模一样。判代次只搜「新符号在不在」不够——**旧符号给的是更硬的判据**。
+
+```bash
+# ✓ 双向：新符号应「有」、旧符号应「无」
+grep -c ":scope > .round-block__plan-item" dist/webview/scripts/chatView.js   # 新 → 期望 ≥1
+grep -c "\.process-flow__input')))" dist/webview/scripts/chatView.js           # 旧结尾 → 期望 0
+```
+
+实证（2026-09-27，任务表错位）：`dist/webview/scripts/chatView.js` 候选选择器结尾仍是
+`… :scope > .process-flow__input'`（**无** `plan-item`），且无 `grp.dataset.ts` ⇒ 断定
+**pre-Fix1 代次**，用户只是没重编 dist 就跑 —— 及时排除了「再改代码」的错误方向。
+**结论先行**：症状 = 某修复「没生效」时，**先验 dist 代次**（双向探针 + 文件时间戳），
+再怀疑源码。选择器等**纯 ASCII** 串不受 `charset=ascii` 转义影响，可直接搜。
+
+**并行检索的坑**：`dist/` 与 `src/` 同名文件同时 grep 时只看行号会串台 —— 用 `-n` + 显式
+`path` 逐文件查，别用一次跨目录的模糊匹配下「符号存在」的结论。
+
+## 规则 6 —— 宿主**内联呈现**（decoration / CodeLens）的三条硬约束
 
 > 起因（2026-09-26 真机两连击）：DIFF-1（文件改动内联 diff）首次落地后用户反馈
 > 「文件打开了，但**看不出改了哪里**，也没有确认/回退按钮」。当时逻辑层 13 项单测全绿
-> ——**渲染层一行没验**。下列约束逐条固化。
+> ——**渲染层一行没验**。三条教训按下面固化。
 
 ### ① 设了装饰 ≠ 用户看得见（六个真实断点，缺一即「看不出效果 / 看错位置」）
 
@@ -192,6 +244,7 @@ grep -c "onDidChangeConfiguration\|affectsConfiguration\|syncDisabledSkills" dis
 | **切走再切回**（2026-09-26 真机） | 「高亮全没、**只剩按钮**」 | 装饰是 **per-editor** 的、绑在编辑器实例上，VS Code **不会**在编辑器重新可见时替你恢复；CodeLens 走 **provider 模式**（VS Code 主动回调 `provideCodeLenses`）**自己活** ⇒ 症状恰好是「装饰丢、按钮留」。修法：渲染时对**所有** `window.visibleTextEditors` 里显示该文档的编辑器逐个 `setDecorations`（只设一个 ⇒ 分屏另一侧无高亮）；并挂 `window.onDidChangeVisibleTextEditors` → 按 `uri.fsPath` 去重后逐文件补齐（补齐时 `reveal=false`，别抢视口） |
 | **坐标系错位**（2026-09-26 真机截图） | 「插入行**没**高亮、相邻行**反被**高亮」 | 内核**直写盘、不经编辑器** ⇒ VS Code 文档缓存可能仍是旧内容，按旧 `lineCount` 算的 range 会画到**错误的行**。渲染前若 `!doc.isDirty && doc.getText() !== afterContent` → `workbench.action.files.revert` 重载后再渲染；末尾仍不符则**留痕**（`高亮范围可能错位`） |
 | **并发写同文件的渲染竞态**（2026-09-26 真机） | 「分批修改导致**部分**内容没高亮」 | 一个 step 内模型可能**并行多次写同一文件**（真机实测 `insert` + `append` 同 step 发出），`tool_result` 连着触发多次 `revealChange`；`openTextDocument` 是异步的 ⇒ **先发起的渲染可能后完成并覆盖最新装饰**。修法：每文件一个 `renderSeq`，只让序号最新的那次落地；`await` 之后**重取最新记录**再渲染；hunk 缓存值里带**写后内容指纹**（只按 path 命中会拿旧 hunk 渲染） |
+| **末块贴文件最后一行**（2026-09-27 真机） | 「按钮一开始在改动下方，点了一个按钮后**跑到上面去了**」 | **CodeLens 恒渲染在「所挂行」的上方**，而挂点取 `endLine + 1`（= 视觉在块**之后**）；当块末行 = 文件最后一行时 `endLine + 1` **越界**，`safeLineRange` clamp 回末行 ⇒ 按钮**必然落在该块上面**。**API 给不出「渲染在行下方」的 CodeLens ⇒ 位置不可解，不是行号算错**（同一次计算的坐标与装饰高亮仍一致）。「点一下才跑上去」的真因：点掉前一块后**场上只剩末块**，唯一的按钮就是那颗被 clamp 的 —— 位置没变，变的是**还有没有别的按钮作参照**。**修法 = 位置解不了就让归属不依赖位置**：按钮标题**恒带序号** `（N/M）`（单块也显 `（1/1）`，不搞时有时无），顺带补「看不出共几处」 |
 
 **衍生判据**：「按钮还在」**不能**证明「装饰也在」——两者存活机制不同（provider 模式 vs 编辑器实例绑定）。真机反馈出现「只剩按钮」时，直接按「装饰未按编辑器补齐」这条查。
 
@@ -204,15 +257,6 @@ grep -c "onDidChangeConfiguration\|affectsConfiguration\|syncDisabledSkills" dis
   `ThemableDecorationAttachmentRenderOptions` 提供 `contentText` / `textDecoration`（删除线）/
   `color` / `fontStyle` / `margin`。**实例级附件**是「同一装饰类型下、每处改动显示不同旧内容」的
   唯一做法（类型级的 `contentText` 是固定字符串，无法逐处不同）。
-- **附件只能「行内附着」，不能另起一行**：`before` / `after` 的 `contentText` 附在该行文本的
-  **同一行**上（`after` = 行右端、`before` = 行左端）⇒「旧内容显示在行右侧」是 **API 的必然结果**，
-  不是样式没调好。**扩展 API 没有「在某行上方 / 下方插入一行」的能力**：
-  想在「行上方」呈现，唯一载体是 **CodeLens**（VS Code 渲染在所挂行**上方**）——但它同时是
-  **命令载体**（未绑命令 = unresolved、不渲染 title）、**无删除线样式**、且可被用户
-  `editor.codeLens` 关掉（fail-silent）；**「行下方」则无任何扩展 API**（同类限制在案：
-  CodeLens 无「渲染在行下方」、编辑区内悬浮操作条属 fork 内核级 UI）。
-  ⇒ 文件内呈现旧内容 / 对照只有三条路：**行尾内联附件**、**悬停**、**另开单页（虚拟文档上下对照）**；
-  「文件内改成上下排版」不是可选项——**别据此再提**。
 - **多按钮 = 同 range 多 CodeLens**：`CodeLens.command` 只接受**单个** `Command`
   ⇒ Trae 那种「✓ 确认 | ↩ 回退」并排按钮，靠**在同一 range 上 push 多个 CodeLens** 实现
   （VS Code 自动并排渲染）。别去找「一个 lens 挂多命令」的写法——不存在。
@@ -221,8 +265,11 @@ grep -c "onDidChangeConfiguration\|affectsConfiguration\|syncDisabledSkills" dis
   （空行扩到「下一行行首」）。
 - **带参数的内部命令不进 `contributes.commands`**：CodeLens 命令要携带文件路径，暴露到命令面板
   会得到**无参调用而静默失败**；只 `registerCommand` 即可。
+- **`vscode.diff` 打不开「inline / 上下排列」**（2026-09-27 实证）：`TextDocumentShowOptions`（`vscode.diff` 第 4 参数）**不含布局字段**；布局只受用户全局 `diffEditor.renderSideBySide` 或**切换型**命令影响（盲调 = 改用户设置）。⇒ 用户嫌「左右两栏看不清原文」时，**唯一确定性路线是自己渲染单列 `- `/`+ ` 文本 + `showTextDocument` 只读虚拟文档**（零落盘、天然只读），别去试 `override: 'inline'`（那是 editor-resolver id，不是布局）。同批可**删掉**「删除场景右侧给空虚拟文档」这类为左右并排而生的分支。
+- **「一个改动块 = 一组按钮」是硬前提**（2026-09-27 实锤）：块级按钮的**分母 = `snapshot.hunks.length`**（`provideCodeLenses` 逐个出按钮）⇒ **数按钮标签的分母 = 数 diff 的块数**，这是最快的「渲染漏画 vs 逻辑只给这么多」判别器。⚠️ **替换（删一行+插一行）= 同一个块**（实测 `A\nB\nC → A\nX\nC` = **1 块**，removed=[B]）⇒ 被删内容**不会丢**，它以**行尾删除线预览**（`⟵ 原: …`）呈现、**没有独立按钮**。删/插之间**只要有一个共同行相隔**就分成两块。⇒ 用户说「改了三处只显示两块」时，先查是不是**相邻改动落在同一个连续改动区**。
 - **数据源 SSOT**：装饰与 CodeLens 必须消费**同一份缓存**（同一次 diff 计算结果）——
   两处各算一遍必然漂移（高亮位置与按钮位置对不上）。
+- **⚠️ 但「同一份缓存」≠「同一次渲染」**（2026-09-27 实锤，与上一条的边界）：装饰是**命令式、per-editor**设置的，CodeLens 是**provider 由 VS Code 主动拉取** ⇒ 两者可以在时间上错开。症状可以是**「旧装饰残留 + 新按钮」**（反向于此前的「高亮丢、按钮留」）：截图里同屏出现「一组删除线预览」+「按钮分母说没有删除块」= **互相矛盾 ⇒ 必有一次渲染的装饰没落地**。取证顺序：① 数按钮分母 vs 预览；② 查 Memora 输出通道有无 `[fileChange] 打开/渲染失败`；③ 让用户先「全部确认」清空记录再复现一次（清空后仍是 N-1 ⇒ 逻辑归并；变回 N ⇒ 残留装饰）。
 
 ### ③ 文案必须与**动作粒度**一致
 
@@ -306,30 +353,376 @@ const contributed = new Set(
 - **测试内不得硬编码 id 字符串**：那就成了第三处副本，守卫自身反成漂移源。
 - 待测模块若含 vscode import，空 `vi.mock('vscode', () => ({}))` 即可（前提：已满足规则 6 ⑤）。
 
+## 规则 8 —— 底部状态条（StatusDock）新增条目 + webview↔内核边界 + 替身契约
+
+> 起因（2026-10-04 CMD-1 刀 3 实证）：给底部加「后台任务」条时，连踩四类坑——
+> ①以为要自己造 chip（既有收纳器已完备）；②CSS 凭习惯写 `var(--token)` 而令牌不存在；
+> ③协议里带了 UI 零消费的字段；④新增 agent 方法没补测试替身，打断整条 `consumeFlow`。
+
+### ① 新增底部条 = 注册第 N 条，**不是**造新 chip
+
+`chatView.ts` 的 StatusDock 已是**底部条收纳器**：`DOCK_PRIORITY` 决定主位，
+非主位条自动进既有 `+N` chip / `status-dock__panel`。**再造第二个 chip = 两套 chip +
+两套展开态 + 两套显隐裁决，纯负收益。**
+
+```ts
+const DOCK_PRIORITY = {
+  confirm: 10, // A 类阻断面板：恒主位，优先于 error 豁免（见下）
+  fileChanges: 3,
+  pendingQueue: 2,
+  activity: 1,
+  background: 0,
+} as const;
+```
+
+- **A 类（阻断面板）与 B 类（信息条）共用这一个裁决器**——**别再造第二个裁决器**
+  （如 `resolvePromptSlot()`）。两个裁决器会争同一个插入锚点、`insertBefore` 顺序不定
+  ⇒ 那就是双源。A 类作为最高优先级 entry **注册进来**即可，复用既有 fixed/主位/收纳机制。
+- **A 类恒主位必须优先于 error 豁免**（2026-10-05 定案）：确认卡一旦被收进浮层就不可见，
+  超时后 fail-closed 自动拒绝（「命令确认不弹 UI」的同款病灶）；而 error 被收纳仍可从
+  图标条点开。两者代价不对称，故主位裁决顺序 = A 类 → fixed → priority 最大。
+
+- **显隐/归位只由 `resolveDock()` 裁决**——各条更新函数只上报 `setDockActive(id, bool)`，
+  **禁直写 `hidden` / `insertBefore`**（散写即回到堆叠现状）。
+- **空态必须在懒创建 _之前_ return**：dock 注册初值 `active=false`；若先创建再
+  `setDockActive(false)` 属状态未变 no-op ⇒ `resolveDock` 永不裁决该节点，**裸插入的
+  空条永久可见且任何后续空投影都关不掉**。
+- **`registerDockEntry` 必须在 `dockEntries`（const Map）初始化之后**——放声明区踩 TDZ。
+  `activityBar` 是静态节点可提前注册；懒创建的条在创建处注册。
+- **优先级取值要说得出理由**。「垫底 0」的判据：承载主状态的条不能被顶掉；而当其他条
+  归位、自己是唯一活跃条时自动升主位，**恰是最需要它的时刻直接可见**（原取舍：收纳时
+  先看到无语义的 `+1`，需点开才知是哪条——与既有条同一取舍，不为其破例）。
+- CSS 记得把新条加进 `.status-dock__panel X { margin: 0 }` 那条归位规则。
+
+### ② CSS 令牌：**先查 `tokens.ts`，连注释里都不能写令牌名**
+
+`tokensClosure` 守卫扫**样式层原文**里引用的每个 `var(--x)`，要求在 `tokens.ts` 有定义。
+
+- 无定义 ⇒ **恒走 fallback、不跟随主题**（看着能跑，主题一换就露馅）。
+- ⚠️ **注释里写出令牌名同样触发守卫**（扫原文，不解析注释）——想说「这么写会被判幽灵令牌」
+  得换个说法，不能把令牌名打出来。
+- 没有对应令牌时**用既有令牌或字面量**（等宽字体在 `tokens.ts` 里根本没有令牌 ⇒ 随 code
+  块写法用 `ui-monospace, Consolas, monospace` 字面量）。
+- 另：`chatStyles.ts` 是**模板字符串**，注释里写反引号会**截断字符串**导致 parse error。
+
+### ③ 协议只带 **UI 真消费**的字段（禁预支）
+
+- **`Pick<内核类型, ...>` 只挑 UI 三个消费点之外的零消费字段 = 僵尸载荷**：本轮 Pick 了
+  `startedAt` 而 UI 零消费 ⇒ 删（真需要时按触发驱动再加）。判据：写得出「哪个消费点用
+  它」才留。
+- **webview 侧对 `@zooique/memora` 只能 `import type`**——值导入会把整个内核包打进
+  bundle。需要在 webview 展示的**字面量**（如状态词表）由 **extension 侧读内核真源后
+  走协议下发**（`statusLabel`），真源仍是内核那张表，宿主零自建。
+- **终态不给无效按钮**：已结束的行再点「终止」宿主只会当「已终结」处理 ⇒ 留着就是
+  「点了没反应」的僵尸交互。
+
+### ④ 宿主新增 agent 方法 ⇒ **必须补测试替身，且不加 `?.()` 兜底**
+
+**症状**：宿主加了 `agent.foo()` 调用后，`chatPanelHistory` 的落盘用例红成
+「两次迭代只落一次盘」——`chatAgentStub` 缺 `foo` ⇒ 抛错**中断整条 `consumeFlow`**。
+
+**处置：补桩**（`foo: () => []`），**不要**写 `this._agent.foo?.() ?? []`。
+`?.()` 是给替身违约打掩护，会把真实契约缺口藏进 optional 链——本仓已有前科
+（`syncPendingQueue` 的 `getPendingInterjections?.()`）。判据：**真实 agent 的公共面
+方法恒存在，optional 调用等于宣称「它可能不存在」= 对契约说谎**。
+
+写完顺手在替身工厂上方留一句「同型第 N 次」，这个坑会复发。
+
+### ④' 宿主订阅内核事件 ⇒ 三条桩纪律（2026-10-04 实踩）
+
+新增 `AgentEventMap` 事件后，宿主侧测试替身必须满足：
+
+| 纪律 | 反例 | 为什么 |
+|---|---|---|
+| **`on` 必须真转发**（`Map<event, handlers[]>`） | `on: vi.fn()` | 空实现下「事件名错配 / 处理器没绑上」**测不出来**——测试全绿但零覆盖 |
+| **不暴露 `emit`** | 桩上挂 `emit` 供测试直调 | 真实 Agent 的 `emit` 是 `protected`；直调**绕过事件名检查**。改用桩捕获的处理器投递：`stub.handlers.get(evt)?.[0]?.(payload)` |
+| **造数据自洽** | 事件说 `completed`、注册表仍报 `running` | 自相矛盾假数据会让用例「绿得毫无意义」。先让桩改状态，再发事件 |
+
+订阅写 `off` + `on` 成对（宿主 `bindAgentNoticeEvents` 幂等模式）。
+⚠️ **重复 `on` 是真实风险**（本轮回滚变异时误插两行 ⇒ 一次终态推两遍相同快照，
+且**签名去重在处理器内部拦不住**——那是两条独立调用）。加一条「同一事件只 `on` 一次」
+的守卫用例。
+
+### ⑤ 推送去重：用**内容签名**，不用条数
+
+三个推送点（事件 A / 事件 B / 用户动作后回推）共用一个去重守卫时，判据取
+`taskId:status` 拼接串而**非 `items.length`**——「状态迁移但条数不变」（kill 后
+`running→killed`，条数恒 1）会被长度守卫判成 no-op，**关键刷新被吞**。同
+`syncPendingQueue` 长度守卫的反向教训。
+
+⚠️ **哨兵值不能取业务空间的合法值**（2026-10-04 实踩）：「强制重推」时把签名字段置
+空串是自然写法，但**当过滤后集合为空时，签名本身就是空串** ⇒ 去重判成 no-op ⇒
+**「强制」失效、UI 根本不更新**。哨兵必须用 `null`（或业务空间外的符号），
+字段类型相应改为 `string | null`。
+
+同型场景：任何「作废缓存/去重键 ⇒ 强制下一次必生效」的逻辑，哨兵值都要检查
+**是否会与该空间的合法值撞车**。
+
+### ⑥ 写路由 harness：`onDidReceiveMessage` 挂在 **webview** 上
+
+`webviewView.webview.onDidReceiveMessage(cb)`，**不是** `webviewView.onDidReceiveMessage`
+（挂错层 ⇒ `is not a function`）。要测「webview 消息真能走到某私有方法」这一跳，就在
+`resolveWebviewView` 的 mock view 里**捕获注册的回调再驱动它**，别直接调私有方法——
+后者把中间的消息类型判据测没了。桩掉与该消息无关的 `render` / `ensureEditorTracking` /
+`ensureAgent`（后者 async 且要真配置）。
+
+## 规则 9 —— 「要用户立刻看见/操作」的 UI **绝不可挂在 `#messages` 内**（滚动容器红线）
+
+> 起因（2026-10-05 实锤，**同型第三次**）：`confirmWrites` / 命令确认的审批卡挂
+> `#writeConfirmCard` 在 `#messages` 里，表现为「**确认 UI 根本没弹**」，30 秒后
+> fail-closed 自动拒绝 ⇒ 命令确认（CMD-1 阶段 1 新路径）**首跑即翻车**。
+
+### 为什么挂进去就等于「不存在」
+
+`#messages` 是 `overflow-y:auto` 滚动容器（chatStyles.ts:34），而消息全部走
+`messages.appendChild()` 追加。两个后果叠加：
+
+1. 静态插在 `#messages` 里的节点**位置固定在最前面**（它是第 2 个子节点，紧跟
+   `#emptyState`），后续所有消息都排在它**之后**；
+2. 流式渲染全程吸底（`helpers/scrollToBottom.ts`，13 处调用）⇒ **视口恒钉在底部**。
+
+⇒ 节点物理上在消息流**最顶端**，视口在**最底端** —— 只要会话有历史内容，它就在视口上方
+几千像素处，**永远看不见**。
+
+### 判据（一句话）
+
+**用户必须立刻看见或点击的东西，一律放 `#inputBar` 之前、与 `#messages` 同级。**
+判据只有一条：这个 UI 是不是「不看/不点就会出错」。是 ⇒ 不许进滚动容器。
+
+### 三次实证（同一个坑，别第四次）
+
+| # | 组件 | 症状 | 处置 |
+|---|---|---|---|
+| 1 | `#planBar` 任务进度条 | 被滚走 | 挪出，与 `#messages` 同级 |
+| 2 | `#scrollToBottomBtn` 一键到底 | 「和会话记录一起滚走」 | 挪进 `#inputBar`（已 `position:relative`）锚其顶边 |
+| 3 | `#writeConfirmCard` 审批卡 | 「确认 UI 根本没弹」+ 30s 自动拒绝 | 挪到 `#inputBar` 之前 |
+
+### 落地要求（缺一即复发）
+
+1. **守卫用例两条**：①DOM 层 `expect(messages.contains(el)).toBe(false)`；
+   ②**源码层**——`readFileSync` 生产 `chatPanel.ts` 断言节点缩进是 **2 空格**（骨架层），
+   不是 4 空格（嵌在 `#messages` 内）。
+   ⚠️ ② 不可省：测试夹具 `chatViewTestEnv.ts` 的 HTML 是生产 `buildHtml` 的**手工镜像**，
+   只写 ① 的话夹具一漂就失效（**守卫只锁夹具、不锁生产**）。
+   源码层守卫沿用 `iconLanguage.test.ts` / `tokensClosure.test.ts` 的 readFileSync 范式。
+2. **断言别只锁 `hidden`**：审批卡旧用例断言 `hasAttribute('hidden') === false`，真机也是
+   false（确实显示了，只是在视口外）⇒ **假绿**。必须补**结构断言**（不在滚动容器内）。
+3. `absolute` 定位的子元素同样随内容滚——别以为加了 `position:absolute` 就钉得住。
+
+### 相关：阻断类 UI 的「请求已终结」必须回传
+
+超时自动拒绝后，若宿主不通知 webview，**卡片残留、按钮点了没反应** = 终态仍可交互的
+僵尸交互。推送 `write_confirm_closed`（裁决 / 超时两个终点同源），requestId 不匹配不关
+（防旧终结通知关掉新卡）。
+
 ## 本环境命令（Windows / 缺 coreutils）
 
 ```bash
-NODE=C:/Users/SJ/.workbuddy/binaries/node/versions/22.22.2-3/node.exe
-cd /f/zooique/memora/hosts/memora-vscode
-$NODE ../../node_modules/typescript/bin/tsc --noEmit -p ./
-$NODE ../../node_modules/eslint/bin/eslint.js . --max-warnings 0
-$NODE ../../node_modules/vitest/vitest.mjs run --config vitest.config.ts --no-file-parallelism
+cd "$(git rev-parse --show-toplevel)/hosts/memora-vscode"
+node ../../node_modules/typescript/bin/tsc --noEmit -p ./
+node ../../node_modules/eslint/bin/eslint.js . --max-warnings 0
+node ../../node_modules/vitest/vitest.mjs run --config vitest.config.ts --no-file-parallelism
 # 单文件 + 用例名过滤
-$NODE ../../node_modules/vitest/vitest.mjs run --root <hostDir> --config vitest.config.ts \
+node ../../node_modules/vitest/vitest.mjs run --root <hostDir> --config vitest.config.ts \
   --no-file-parallelism src/webview/__tests__/chatView.test.ts -t "技能启停"
 
 # 重建宿主 dist + 产物实读（extension.ts 零覆盖区的兜底；rm 用 node —— Bash 无 coreutils）
-$NODE -e "require('node:fs').rmSync('dist',{recursive:true,force:true})"
-$NODE ../../node_modules/typescript/bin/tsc -p ./ && $NODE esbuild.config.mjs
-$NODE -e "const t=require('fs').readFileSync('dist/extension/extension.js','utf8');console.log(t.split('onDidChangeConfiguration').length-1)"
+node -e "require('node:fs').rmSync('dist',{recursive:true,force:true})"
+node ../../node_modules/typescript/bin/tsc -p ./ && node esbuild.config.mjs
+node -e "const t=require('fs').readFileSync('dist/extension/extension.js','utf8');console.log(t.split('onDidChangeConfiguration').length-1)"
 
 # 提交信息预验（node 直跑；本环境 npx 报 env: bash: No such file）
-cd /f/zooique/memora
-$NODE node_modules/@commitlint/cli/lib/cli.js --edit F:/zooique/memora/.workbuddy/tmp/<msgfile>.txt
+cd "$(git rev-parse --show-toplevel)"
+node node_modules/@commitlint/cli/lib/cli.js --edit .workbuddy/tmp/<msgfile>.txt
 ```
 
 - **不要用管道**（`| tail`/`| head`/`| grep` 不可用）——会被 shell 吞掉退出码造成**假绿**。
   需要过滤时用 `node -e "let d='';process.stdin.on('data',…)"` 承接 stdout。
+  ⚠️ 若确实用了 `| tail`，**切不可再用 `$?` 判退出码**（那是 tail 的码，恒 0）⇒ 必须另跑一次**不带管道**的 `cmd && echo OK` 作为凭据。
+
+### ⚠️ 源码里禁落**裸控制字节**（0x00 等）——否则 git / ripgrep 把整个文件判为二进制（2026-09-27 实锤）
+
+**症状**：`Grep` 某 `.ts` 返回的是 **`binary file matches (found "\0" byte around offset N)`** 而非命中行；
+`git diff --stat` 显示 **`Bin A -> B bytes`**、`--numstat` 显示 **`-  -`** ⇒ 该文件的改动
+**在提交里完全不可读**（与「surgical、可审阅 diff」直接冲突）。**而 tsc / vitest 全绿，单一门禁查不出**。
+
+**根因**：git 的二进制判据 = **头 8000 字节内出现 0x00**（`FIRST_FEW_BYTES`）；ripgrep 同理。
+实证（DIFF-6）：裸 NUL 落在 **offset 7751**，**恰好卡在 8000 窗口内**——差一点就躲过，纯属巧合。
+
+**修法**：控制字符一律写**转义**（`\u0000` / `\0`），绝不落裸字节。运行期仍是同一字符 ⇒
+**行为不变**（FNV 之类 hash 也不变，故单测仍全绿）。`fileChangeDiff.ts` 的 `hunkKey` 用 NUL 作
+`removed`/`added` 分隔符即此写法，并在 JSDoc 里写明「勿写裸 NUL」。
+
+**排查单行（全仓扫 NUL）**：
+
+```bash
+node -e "const fs=require('fs'),p=require('path');const hits=[];(function w(d){for(const e of fs.readdirSync(d,{withFileTypes:true})){const f=p.join(d,e.name);e.isDirectory()?w(f):(/\.(ts|tsx|js|mjs|cjs|json|md)$/.test(e.name)&&fs.readFileSync(f).includes(0))&&hits.push(f)}})('hosts/memora-vscode/src');console.log(hits.join('\n')||'NO-NUL')"
+```
+
+**⚠️ 修完必须重新 `git add` 该文件**：`git diff` 比**两侧**——索引里若仍是带 NUL 的旧 blob，
+git **依旧判二进制** ⇒ 不重新暂存 = 白修。
+
+## 规则 10 —— `el.hidden = true` **不等于**用户看不见（display 覆盖 hidden 属性）
+
+> 起因（2026-10-05 真机实锤）：A 类阻断面板激活时本应「替换 composer」（用户只能选
+> 确认/拒绝），真机却显示为「确认卡在输入框**上方**，输入框完好」⇒ 交互约束完全失效，
+> 用户仍可乱打字。tsc 0、eslint 0、**336 用例全绿** —— 结构性假绿。
+
+### 根因：CSS 规范行为，不是 bug
+
+`hidden` 属性的 `display: none` 来自 **UA 样式表**；**author 层任何 `display` 声明都赢它**。
+`chatStyles.ts` 里 `#inputWrap { display: flex }` ⇒ JS 写的 `inputWrap.hidden = true`
+**确实为 true**（断言恒真），但**视觉纹丝不动**。
+
+### 排他性推理（下次直接用，别逐层猜）
+
+同一裁决函数（`resolveDock`）**同时**决定「卡可见」与「composer 让位」。所以
+「A 生效了、B 没生效」只可能是「JS 属性写对了，但 CSS 把它盖了」——
+**直接锁定根因层**，不必再猜是不是逻辑没走到。
+
+### 为什么测试抓不到（三重巧合）
+
+1. **jsdom 不加载 `<style>`**；
+2. 测试夹具（`chatViewTestEnv.ts`）**不含样式表**；
+3. `hidden` 是**属性**不是**计算样式** —— 断言 `el.hidden === true` 与视觉零关联。
+
+⇒ **假绿是结构性的，不是疏漏**。同类坑本文件已逐个补过 **18 处** `.xxx[hidden]`
+兜底（`.activity-bar` 的注释里就写着同一句警告），**全是打补丁**。
+
+### 修法：一条全局规则治本
+
+```css
+/* Base 段首 */
+[hidden] { display: none !important; }
+```
+
+- 配`.xxx[hidden] { display: none; }` 双保险（对齐既有 18 处写法）。
+- **`!important` 的正当性**（别凭感觉删）：同specificity 下**后声明者胜**，而全局那条在
+  文件靠前 ⇒ 去掉 important 会输给下方显式兜底（那些恰好也是 `display:none`，故可接受）；
+  `!important` 只为兜住「**未来新增且忘了补**」的那些。误伤面已实查：零处
+  `setAttribute('hidden')` 旁路、零处依赖 hidden 做非显隐语义、`details` 用 `open`
+  不受影响。
+- **实测规模**：`chatStyles.ts` 74 处 `display` 声明中约 60+ 处自身无兜底
+  （该数是**上界** —— 粗扫正则会误抓嵌套子选择器，**别把它当精确值写进注释**）。
+
+### 唯一能在 jsdom 抓到此病 的测试形态
+
+**读生产 CSS 文本，不读计算样式**：
+
+```ts
+const src = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf-8') as string;
+expect(src).toMatch(/\[hidden\]\s*\{\s*display:\s*none\s*!important/);
+```
+
+既有 `el.hidden` 属性断言**保留**（验「JS 有没有写」），新守卫验「CSS 会不会盖掉」
+—— **两者互补，缺一不可**。变异验证：去掉 `!important` → 守卫必须变红。
+
+### 排查单行：哪些选择器缺兜底
+
+```bash
+cd "$(git rev-parse --show-toplevel)/hosts/memora-vscode" && node --input-type=module -e "
+import { chatStyles } from './src/webview/styles/chatStyles.ts';
+" 2>/dev/null || echo "用 vitest 跑一次性 .test.ts 取值（node 直读 .ts 不可行）"
+```
+
+（实操：写临时 `*.test.ts` 跑 vitest 取 `chatStyles` 字符串，跑完删。）
+
+###顺带：commitlint 会把「列表项里的 CSS 选择器」当footer
+
+提交信息里写 `- #inputWrap[hidden] xxx` ⇒ commitlint 判为 BREAKING CHANGE 风格
+footer ⇒报 `footer-leading-blank` warning，**与空行无关**。最小复现：
+
+```bash
+printf 'test: x\n\n- aaa\n- #foo[bar] baz\n- ccc\n' > f.txt && npx commitlint --edit f.txt
+```
+
+**修法**：提交信息里不写 `#选择器` 开头的列表项，改写成「id 为 inputWrap」这类措辞。
+**别用全角＃**（代码语境里是错字符）。定位此类问题用**二分砍段 + 最小复现**，别猜
+（我先猜花括号、猜 `!`、猜 `##`，全错，浪费 4 轮工具调用）。
+
+### 真机 diff/块数类问题的诊断法（2026-09-27 新增，`.workbuddy/tmp/` 放探针，不入库）
+
+**先记住一条硬边界：真机会话里拿不到 `beforeContent`。** `.memora/rounds/*.json` 只存工具**参数**与**截断到 100 字**的结果摘要，写前快照只活在宿主内存里 ⇒ **不能靠历史 round 反推「宿主当时比的是什么」**。可用的三条路：
+
+```bash
+TSX="$(git rev-parse --show-toplevel)/node_modules/tsx/dist/cli.mjs"   # 用顶层入口；别写 .pnpm 下带版本号的路径（版本一变即失效）
+cd "$(git rev-parse --show-toplevel)/hosts/memora-vscode" && node "$TSX" ../../.workbuddy/tmp/probe.mts
+```
+
+探针要点：文件名用 **`.mts`**；import 宿主源码用 `file://<仓库根>/hosts/memora-vscode/src/extension/host/fileChangeDiff.ts` 绝对 URL（`file://` 后接本机仓库根路径）；裸包名 `@zooique/memora` 按**导入文件所在目录**解析，故 cwd 设在宿主目录即可。**`computeFileDiff` 返回 `{hunks, degraded}`（不是数组）**，另有 `hunkAnchorLine` / `isRemovedOnly` 同源导出。
+
+1. **合成用例跑真算法**：钉住「替换=1 块 / 纯删除=1 块 / 中间隔一个共同行=2 块」这类基本行为（先证机制，再谈个案）。
+2. **取真数据**：从 rounds JSON 里取该文件**每一次** `write_file` 的 `args`（`overwrite` 的 content 就是完整快照）⇒ 可重建大部分历史版本，但**最早那份 / 用户手写的版本拿不到**。
+3. **穷举复现签名**：把「不确定的那几行」在**所有可能位置**上枚举，要求复现用户截图里的全部可观测量（块数、每块的 `removed` 是否为空、预览落在哪一行）⇒ **命中 0 = 截图里的两件事互相矛盾**（比空口推断强得多）。
+
+## 规则 11 —— DOM「位置裁决器」的三个必踩坑（2026-10-05 P4 血训）
+
+改`resolveDock` 这类**反复重排 DOM 的裁决器**（StatusDock / 列表头 / 折叠区）时必读。
+三个坑都表现为「测试全绿、真机错位」，静态断言天生抓不到。
+
+### 坑 1：终态断言抓不到「有没有搬」
+
+`insertBefore` 搬一个**已在位**的节点，**最终 DOM 完全相同** ⇒ 任何终态位置断言都绿。
+实测：把免重排判据退化成「无条件重排」，静态断言**全绿**。
+
+**必须另写行为观测**：
+
+```ts
+const parent = inputBar.parentNode as HTMLElement;
+const orig = parent.insertBefore.bind(parent);
+const moved: Node[] = [];
+parent.insertBefore = function patched<T extends Node>(n: T, ref: Node | null): T {
+  moved.push(n); return orig(n, ref);
+} as typeof parent.insertBefore;
+try { dispatch(/* 触发一次重排 */); } finally { parent.insertBefore = orig; }
+expect(moved).not.toContain(主位条);
+```
+
+⚠️ 选场景要挑「**主位构成不变**」的那条路径。加一条低优先级 B 类条会引出 chip/panel
+插到主位之上，那是**必要**重排，不归免重排判据管，用它当场景会得到假红。
+
+### 坑 2：`container.remove()` 会把容器里的条目一并带走
+
+浮层/面板被 `remove()` 时，**嵌在它内部的条目节点跟着从DOM 消失**——而条目自己
+不知道自己「住在」面板里。实测：一条 error 提示的整条状态条凭空消失（探针实证）。
+
+**修法**：摘容器**之前**先把所有条目搬回共同父节点。
+
+```ts
+for (const e of entries.values()) {
+  if (e.el.parentNode !== parent) parent.appendChild(e.el);
+  if (e.follower && e.follower.parentNode !== parent) parent.appendChild(e.follower);
+}
+container?.remove();
+```
+
+### 坑 3：隐藏条目夹在主位与锚点之间，位置范式与免重排判据**同时**失效
+
+非活跃条目若退到锚点（`inputBar`）**之前**，它们天然夹在「主位条↔inputBar」中间：
+
+- 「主位条紧贴输入区」的位置范式破（既有契约当场变红）；
+- 「`anchor.previousElementSibling === head`」的免重排判据恒假 ⇒ **退化成每轮重排**
+  = 修掉的闪烁复发。
+
+**修法**：非活跃条目退到**主位之上**（`insertBefore(el, headEl)`），且该退位目标必须
+与主位裁决**共用同一函数**（`pickDockHead`）——两处各判一次，改一处忘另一处就复现。
+
+**守卫写法**：断言**物理相邻**，不要写「跳过隐藏节点后相邻」——隐藏节点夹中间一样破坏
+位置范式（点击穿透、点击区错位）。
+
+### 附带：HTML 模板注释里禁写 `--`
+
+`chatPanel.ts` 的 `buildHtml` 是模板字符串，注释里出现 `--` 序列会让 `<!--` **提前闭合**，
+TS 报 `TS1005`。写模板内注释时避开双连字符；写完跑 `tsc` 才知。
+
+### 附带：相邻性断言的方向，**不许靠推理**
+
+探针若从锚点**往回**打印链（`n = anchor.previousElementSibling` 循环），则打印顺序
+`A <- B <- anchor` 表示**DOM 上 B 在 A 之上**。我据此连改 3 次断言方向全错。
+
+**探针必须双向打全**：`el.previousElementSibling?.id` 与 `el.nextElementSibling?.id` 一次
+输出，再写断言。规则 10 的「相邻性判据」是同一条纪律的下游。
+
 - `chatStyles.ts` / `dropdown.ts` 是**模板字符串**：注释里写反引号会**截断字符串**导致
   parse error。样式文件的注释里只用中文引号「」。
 - 改宿主 src 后必须重建 dist（见 `memora-kernel-release-readiness`，勿重复踩）。

@@ -45,18 +45,16 @@ agent_created: true
 - 任一项失败 ⇒ 修完重跑，勿带伤打 tag。
 
 ### Step 3：归档台账（必须在 tag 前提交，状态标「待上架」）
-按 `tasks/archive/README.md` 七条纪律（详见 `references/archive-discipline.md`）：
-1. 新建 `tasks/archive/<X.Y.Z>-kernel.md`，迁入主台账 `待完成任务.md` 中**该版已关闭（✅）项**（开放项/观察项/明确不做项留主台账）。
-2. 条目 **ID 沿用不改**（防跨文档引用断裂）。
-3. 主台账原位置留指针行：`→ 见 tasks/archive/<X.Y.Z>-kernel.md`。
-4. 归档文件头 + 主台账对应区标 **「待上架」**（未真发不写「已发布」；发版跑完再订正）。
-5. 🔴 **区级完整性自检（apply 后、commit 前必做）**：归档脚本按 **ID 白名单**跑——白名单靠人肉编，遗漏 = 静默欠账（0.2.0 宿主区实证：功能面 31 条迁净，区内混合批次漏扫 45 条；5.0.0 内核区同病，收口无指针 22 条——均登记欠账 `ARCH-DRAIN-1`）。自检 = 扫该版本区**全部**条目行逐条三态分诊：
-   - 有 `→ 见 tasks/archive/` 指针 = 已迁 ✓
-   - 开放态（⏳ / ⏸ / 🟡 / 👁 / 📝）= 留册 ✓
-   - **已收口（✅ / ❌ / 🟢 / 证伪）无指针 = 欠账** ⇒ 当场补进 `--ids` 重跑，或登记欠账条目留给专项清账——**禁止沉默跳过**。
-   - 注意版本区可能是**混合工作区**（kernel 审计批 / 发布链缺陷批 / 旧纪法规遗留原文常混入版本区），条目「是否属于本版本」须逐条判，不能只扫功能段。
-   - 🔴 **自检计数以当场重扫实测为准，不采信此前任何清点快照**（2026-10-23 教训：`ARCH-DRAIN-1` 清点快照自身算术不闭合——「收口无指针 45」vs A 类 5 + B 类 38 = 43 差 2 条无着落；且快照落定后台账继续编辑即漂移，当日实测与快照已差 ~11 条）。欠账条目里的分诊数字只当**线索**，不当**判据**。
-> 加速：用 `scripts/archive-kernel-release.mjs --version X.Y.Z --ids ID1,ID2,... --dry-run` 先预览切片，核对逐字节无损后去掉 `--dry-run`（即加 `--apply`）落盘。**首次使用须人工 diff 确认**再提交。
+> **规则与执行细节见 `memora-ledger-governance` 技能**（坐标纪律 / 状态字典 / 三道台账门的跑法）；本技能**不复制第二份**。
+> 规则真源 = `tasks/archive/README.md` 七条纪律。`references/archive-discipline.md` **已于 2026-10-27 停用**——它的纪律 7 与真源**字面相反**（真源：不再逐条留指针；停用件：原位置留一行指针），勿采信、勿再更新。
+>
+> 以下只列**本时点特有的约束**：
+
+1. 新建 `tasks/archive/<X.Y.Z>-kernel.md`，迁入主台账**该版已关闭（✅）项**（开放 / 观察 / 明确不做项留主台账）；条目 **ID 沿用不改**（防跨文档引用断裂）。
+2. 归档文件头标 **「待上架」**（Step 5 再订正为「已发布」）。
+3. **提交前必跑两道台账硬闸**：`npm run verify:ledger-hygiene` + `npm run verify:ledger-fold`（挂 `local-ci` full 档 `required:true`）。
+4. 机械搬运用 `.trae/skills/memora-kernel-release/scripts/archive-kernel-release.mjs --version X.Y.Z --ids ID1,ID2,... --dry-run` 预览、核对逐字节无损后再 `--apply`；对**已存在**的归档文件必须加 `--append`（整体覆盖会毁掉既有归档）。
+5. 🔴 **ID 白名单靠人肉编 ⇒ 漏扫是常态**（0.2.0 漏 45 条 / 5.0.0 收口无指针 22 条，均欠账 `ARCH-DRAIN-1`）。兜底已改为上面第 3 条的机检门；**计数以当场重扫实测为准，不采信任何清点快照**（快照自身算术不闭合，且随台账编辑漂移）。
 
 ### Step 4：发版（打 tag 触发流水线）
 1. 确认 Step 1–3 全部已提交到当前 HEAD。
@@ -69,7 +67,7 @@ agent_created: true
 
 ### Step 5：发版后订正（发版跑完才做）
 1. 确认 `npm view @zooique/memora version` = `X.Y.Z`、`dist-tags.latest` = `X.Y.Z`。
-2. 将 Step 3 的「待上架」订正为「已发布」：`tasks/archive/<X.Y.Z>-kernel.md` 文件头 + 主台账对应区（归档文件不在 `files` 白名单，订正在 tag 之后不影响已发 tarball）。
+2. 将 Step 3 的「待上架」订正为「已发布」：`tasks/archive/<X.Y.Z>-kernel.md` 文件头 + 主台账**版本索引**里该版那一行的状态列（归档文件不在 `files` 白名单，订正在 tag 之后不影响已发 tarball）。
 3. `git show --stat` 核对本次提交文件归属 ↔ 标题（PowerShell 回显中文乱码是显示层，勿据此重提交；字节用 `git log -1 --format=%B | od -c` 校验）。
 4. 若需重发同版本：已 staged 版本**不可再 stage**（npm 规则），须先在 npm 网页 Reject 排队中的版本，再重打同 tag 到修复 commit。
 
@@ -79,7 +77,7 @@ agent_created: true
 - 🔴 **已 staged 不可再 stage**：重发同版本前必须 npm 网页 Reject。
 - `npx` 子进程无 bash 环境 EXIT=127——发布脚本宁可 `node -e`。
 - 宿主更新要锁定 bundle 内核版本 + `verify:dist-contract` 同代（内核先行、宿主跟进；宿主发版走 `host-release.yml`）。
-- 🔴 **归档白名单靠人肉编 ⇒ 必跑区级完整性自检**（Step 3 第 5 条）：版本区常是混合工作区，只扫功能段必漏（0.2.0 宿主区漏 45 条 / 5.0.0 内核区收口无指针 22 条，均欠账 `ARCH-DRAIN-1`）；自检计数以**当场重扫实测**为准，不采信清点快照（快照会算术不闭合 + 随台账编辑漂移）。
+- 🔴 **归档白名单靠人肉编 ⇒ 漏扫是常态**（0.2.0 漏 45 条 / 5.0.0 收口无指针 22 条，欠账 `ARCH-DRAIN-1`）。兜底 = Step 3 第 3 条的两道机检门，`local-ci` full 档会强制跑；任何计数以**当场重扫实测**为准，不采信清点快照（快照会算术不闭合 + 随台账编辑漂移）。
 
 ## 验收门槛
 `npm latest = X.Y.Z` + 归档文件存在且 ✅ 项全迁、开放项留主台账 + 主台账指针齐全 + 文档无发布态陈述 + 门禁全绿 = 完成。
