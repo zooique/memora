@@ -60,6 +60,7 @@ import {
   type AgentChunk,
   type AgentEventMap,
   type IRoundStore,
+  type ImageRef,
   type ISessionStore,
   type ProcessEvent,
   type ProcessMetaPayload,
@@ -2897,7 +2898,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       case 'send': {
         const text = msg.text?.trim() ?? '';
         if (!text) return;
-        await this.sendInput(text, msg.skillName, msg.refs, msg.injections);
+        await this.sendInput(text, msg.skillName, msg.refs, msg.injections, msg.attachments);
         return;
       }
       case 'answer': {
@@ -2956,21 +2957,23 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     skillName?: string,
     refs?: ChatRef[],
     injections?: Exclude<InjectionSource, 'active-file'>[],
+    attachments?: ImageRef[],
   ): Promise<void> {
     // 防御守卫（单一路由下 handleInput 已前置检查 Agent 就绪；此处局部收窄供 TS 控制流使用，
     // 属性访问不受方法间守卫影响，需非空局部变量）
     const agent = this._agent;
     if (!agent) return;
-    // 无缝插话（flag 驱动 SSOT）：生成中 Enter 补充 → 不中断 loop，调 agent.interject() 将内容排队，
-    //  内核在下一 step 边界统一并入为 user 消息继续执行。不 abort 旧流、不发起新 chat——
-    //  正在进行的 runFlow 继续；UI 即时上屏，排序由 webview 在收到下一条 chunk 时开新助手块。
-    //  pausePending 窗口（flag=true 但 step 还没跑完）发补充 → interject + 自动 cancelPauseRequest（一行覆盖暂停操作）。
+    // 图片只随**新轮**发出（D13）：插话 / 提问回答 / 暂停补充三条续接通道内核都不收 attachments
+    // ⇒ 有图时整条拒发并说明。webview 同判据前置拦（保留输入框），此处兜底防竞态漏网。
+    if (attachments?.length && (this._streaming || this.isAskWaiting() || this.isPauseWaiting())) {
+      void vscode.window.showWarningMessage('Memora：图片只能随新消息发送，请等本轮结束后再发');
+      return;
+    }
+    // 无缝插话（SSOT）：生成中 Enter 补充 → agent.interject() 排队，内核下一 step 边界并入为
+    // user 消息续跑（不 abort 旧流、不新开 chat）；pausePending 窗口发补充 = interject + 取消暂停。
     if (this._streaming && this._abortController) {
-      // INPUT-LIMIT-1 插话条数上限：裁决单一真源在内核（LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS）——
-      // agent.interject() 达上限返回 false（整条拒收：零入队、零落盘），宿主只消费返回值做提示
-      // 与上屏裁决，不自持计数不自写判据。拒收必须提示（静默丢整条 = 背刺），走既有
-      // showWarningMessage 通道（handleInput 未就绪提示同款），零新增协议通道。
-      // 上屏在判定之后——待发送气泡 = 已入队的视觉镜像，拒收即不投影。
+      // INPUT-LIMIT-1 条数上限：裁决真源在内核（MAX_PENDING_INTERJECTIONS），interject 达上限返回
+      // false（零入队零落盘）；宿主只消费返回值做提示，不自持计数。拒收必须提示（静默丢整条 = 背刺）。
       const accepted = agent.interject(input);
       if (!accepted) {
         void vscode.window.showWarningMessage(
@@ -2978,41 +2981,27 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         );
         return;
       }
-      // 上屏时机 = 消费时刻（吸收时上屏）：入队成功**不再**即时 post type:'user'——
-      // 排队中 ≠ 已说出，呈现超前于事实（旧即时上屏设计）会让「取消排队」留下孤儿行。
-      // 退役设计（变异加回本行即 chatPanelInterject 用例「入队不 post」红）：
-      // this.post({ type: 'user', text: input, ts: new Date().toISOString(), kind: 'supplement' });
-      // 排队期间唯一呈现 = 待发送区（syncPendingQueue 投影）；内核 _consumeInterjects
-      // → appendUserMessage 落盘后，队列快照减少 → webview diff 上屏「你补充」行。
-      // pausePending 期间发补充 → 自动取消暂停（覆盖暂停操作）：
-      // UI 按钮态本地 toggle，cancelPauseRequest 即可；
-      // UI 状态会在下一次 status 切换（如后续新 runFlow thinking）时自动重置
+      // 上屏时机 = 消费时刻（吸收时上屏）：排队中 ≠ 已说出，入队成功**不再**即时 post type:'user'
+      // （退役设计：变异加回 `this.post({type:'user',…})` 即 chatPanelInterject「入队不 post」红）。
+      // 排队期唯一呈现 = 待发送区；内核消费落盘后队列快照减少 → webview diff 上屏「你补充」行。
       if (agent.isPausePending()) {
         agent.cancelPauseRequest();
         // 暂停覆盖取消由 turn_update 补推（骨架回 running）
         this.postTurnUpdate();
       }
-      // 竞态兜底（配合 consumeFlow paused 分支 break）：pause 申请已被 step
-      // 边界消费（内核已挂起 status='paused'、consumeFlow 的 _streaming 未复位的毫秒窗口）
-      // 时入队的 interject 会无 step 边界消费 → 立即 resumeExecution(undefined) 驱动，
-      // 补充内容由续跑首个 step 边界 _handleInterrupt 注入（不重复 appendUser）。
+      // 竞态兜底（配合 consumeFlow paused 分支 break）：pause 已被 step 边界消费、而 _streaming
+      // 未复位的毫秒窗口内入队的 interject 无 step 边界可消费 ⇒ 立即 resume 驱动它被注入。
       if (agent.sessionManager?.status === 'paused') {
         await this.runFlow((signal) => agent.resumeExecution(undefined, signal, 'supplement'));
         return;
       }
-      // 通知 webview 待发送区刷新（thinking + 有输入才显示）：
-      // 从内核 queue 读当前值（SSOT 源头，不维护镜像），
-      // 走 syncPendingQueue 统一长度变化检测（入队/消费/清空/删除/step 边界共用）
+      // 待发送区刷新：从内核 queue 读当前值（SSOT 源头，不维护镜像）
       this.syncPendingQueue();
       return;
     }
-    // 提问等待态（waiting/ask）**单独分流，不与暂停态合并**：
-    // 此刻底部输入框里敲的任何文本，语义上都是对当前在途提问的回答——含「你自己定」「跳过」
-    // 这类拒答（拒答也是回答，必须让 LLM 知道用户看到了问题并做了决定，而非"无人应答"）。
-    // 走 answer 意图通道（与内联提问块 / 澄清栏同源）⇒ answerQuestion 回填 + 落盘带走
-    // question/options。此前与 pause 合并路由为 supplement ⇒ 在途提问被 cancelAsk 兜底成
-    // 「用户未回答该提问」，答案退化为普通补充消息、提问原文不落盘——同一用户意图两种
-    // 落盘形态，SSOT 违约。answerInput 内含关超时保底（ask 域 clearAskTimeout），此处不重复调用。
+    // 提问等待态（waiting/ask）**单独分流，不与暂停态合并**：此刻敲的任何文本（含「你自己定」
+    // 「跳过」这类拒答）都是对在途提问的回答，必须走 answer 通道让 LLM 知道用户看到了并做了决定。
+    // 并入 supplement 会让提问原文不落盘、答案退化为普通补充（同一意图两种落盘形态 = SSOT 违约）。
     if (this.isAskWaiting()) {
       await this.answerInput([input]);
       return;
@@ -3158,8 +3147,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // seed：把开轮用户输入交给 live 轮投影。内容用 `chatInput`（与内核 `appendUser`
     // 落盘**同源**，含注入信封），与上屏用的原始 `input` 刻意不同——运行时投影必须与重放读到的
     // 落盘版本同形，否则对拍测试会因「同一轮两种 user 内容」失败。id/timestamp 复用上屏的 now。
-    await this.runFlow((signal) => this._agent!.chat(chatInput, signal), {
-      userMessage: { id: `live-user-${now}`, role: 'user', content: chatInput, timestamp: now },
+    await this.runFlow((signal) => this._agent!.chat(chatInput, signal, attachments), {
+      userMessage: {
+        id: `live-user-${now}`,
+        role: 'user',
+        content: chatInput,
+        timestamp: now,
+        // 图片随行（IMG-2）：live 投影必须与重放读到的落盘版本同形，否则同一轮两种 user 内容
+        ...(attachments ? { attachments } : {}),
+      },
     });
   }
 

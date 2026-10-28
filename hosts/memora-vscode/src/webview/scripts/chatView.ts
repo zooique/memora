@@ -5690,11 +5690,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function sendMessage(): void {
     const text = input.value.trim();
     if (!text) return;
-    // 插话满员预检（INPUT-LIMIT-1 审查补漏）：运行中（thinking，含 pausePending 窗口）
-    // send 会被宿主路由为插话——队列满员时宿主整条拒收，若此刻已先清框，用户文本随
-    // 警告一同消失（丢内容=背刺）。故在清框**之前**用队列投影预检：满员即拒发，文本
-    // 原地保留在输入框。paused 带补充走 resumeExecution、done 走 chat，均不入插话
-    // 队列，不预检。宿主闸门保留：投影经 turn_update 送达有延迟窗口，竞态漏网由宿主裁决兜底。
+    // 插话满员预检（INPUT-LIMIT-1）：运行中 send 被路由为插话，队列满员时宿主整条拒收——
+    // 若先清框，用户文本随警告一起消失（丢内容=背刺）⇒ **清框前**用队列投影预检，满员即拒发。
+    // paused 带补充 / done 走 chat 均不入插话队列，不预检；宿主闸门保留作竞态兜底。
     const isInterjectRoute = deriveSessionUiState(skeletonState) === 'thinking';
     if (isInterjectRoute && statusBars.getPendingCount() >= MAX_PENDING_INTERJECTIONS) {
       activityDrawerView.showActivity(
@@ -5703,14 +5701,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       );
       return;
     }
+    // 图片发送交付（IMG-2）：取图唯一出口 = 采集层（含插话不带图的 D13 判据）；
+    // 有图发不出去时整条拦下并保留输入框与 chip——绝不发「图没跟上」的消息。
+    const sendable = imageCapture.resolveSendable(isInterjectRoute);
+    if ('blocked' in sendable) {
+      activityDrawerView.showActivity('info', sendable.blocked);
+      return;
+    }
     input.value = '';
     input.style.height = 'auto';
     input.style.overflowY = 'hidden';
     // 清输入框后按钮语义也要重算（hasInput 变了）
     syncButtonSemantics();
     syncSendEnabled();
-    // 构建消息：选中技能传技能名（SSOT 收紧，host 按名走内核 buildSystemPrompt，取消前端硬编码提示）
-    // send 意图单消息（宿主按相位路由到 chat / interject / 带文本续跑；skillName 为 input 原生成员）
+    // 构建消息：send 意图单消息，宿主按相位路由到 chat / interject / 带文本续跑；技能按名注入
     const payload: WebviewToExtensionMessage = {
       type: 'input' as const,
       kind: 'send' as const,
@@ -5728,42 +5732,37 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 注入型上下文（HOST-CTX-4 ④）：**只声明通道**，不携带任何内容——数据此刻还没取，
       // 宿主收到后在发送时刻采集（保证模型看到的是最新一份）。
       ...(currentInjections.length ? { injections: [...currentInjections] } : {}),
+      // 图片附件（IMG-2）：只带已落盘的真值 `ref`（取图单点见上方 resolveSendable）
+      ...(sendable.refs.length ? { attachments: sendable.refs } : {}),
     };
     vscode.postMessage(payload);
-    // 注入 chip **发送后无条件清**（HOST-CTX-4 ③）：瞬态数据没有「钉住」的语义——留着等于
-    // 每轮都悄悄塞一份进信封，与硬约束④「不泛化」冲突。本轮回执同时作废（数字只属于刚发出
-    // 的这一轮，宿主会紧随回推新的一份；不先清就会有一帧显示上一轮的旧数）。
+    // 注入 chip 发送后无条件清（HOST-CTX-4 ③）：瞬态数据无「钉住」语义，留着等于每轮悄悄塞一份
     currentInjections = [];
     activeFileTokens = undefined;
     pendingActiveFileTokens = undefined;
     hideInjectionReceipt();
-    // 引用发送后处置（判据 = chip 的 pinned 属性，SSOT）：未钉住的即消费清除（避免静默
-    // 带入后续无关消息）；钉住的常驻——下一轮仍随消息作为上下文发出（用户显式 🔒 决定，
-    // 非隐式残留）。每轮发送照旧带全部当前引用（pinned + 未钉），模型每轮要完整上下文。
+    // 引用发送后处置（判据 = chip 的 pinned）：未钉住的即消费清除；钉住的常驻，下一轮仍随消息发出
     currentRefs = currentRefs.filter((r) => r.pinned);
     renderAttachmentRow();
-    // 技能同一 pinned 判据：默认钉住常驻（锁预开）⇒ 发送不清除；用户解锁后才随发送清除。
-    // updateSkillPickerLabel 尾部会 renderSkillChip，故不必再调一次。
+    // 图片 chip 发送后整批收场（IMG-2）：留着会变成下一轮的重复附件（图已在数据目录）
+    if (sendable.refs.length > 0) imageCapture.clear();
+    // 技能同一 pinned 判据：默认钉住常驻（锁预开）⇒ 发送不清除；updateSkillPickerLabel 内含重绘
     if (currentSkill && !currentSkill.pinned) {
       currentSkill = null;
       updateSkillPickerLabel();
     }
   }
-  // 发送按钮：空闲点击 = 发送；生成中点击 = 停止（按钮已切换为停止方块，
-  // mvp-scope 打断能力）；暂停中点击 = 继续（恢复 Agent 执行）。
+  // 发送按钮：空闲 = 发送；生成中 = 停止（按钮已切为停止方块）；暂停中 = 继续。
   // 生成中插话走 Enter（见下方 keydown，不经此分支）。
   send.addEventListener('click', () => {
     if (send.classList.contains('loading')) {
-      // thinking / paused 态：发送键恒为「停止生成（丢弃检查点）」——暂停态续跑走 pauseBtn（play 图标）。
       vscode.postMessage({ type: 'stop' });
     } else {
-      // done+有输入 / thinking+有输入：统一走 sendMessage 发 type='send'，
-      // 宿主层 handleInput 按 turn 相位路由到 chat() / interject() / resumeExecution()
+      // done / thinking + 有输入：统一走 sendMessage，宿主按 turn 相位路由
       sendMessage();
     }
   });
-  // pauseBtn 双态语义：thinking 态发 pause（暂停生成 / 或取消暂停）；
-  // paused 态发 resume（继续生成 / 或发送补充并继续）——click 行为由骨架状态派生路由。
+  // pauseBtn 双态语义：thinking 发 pause（暂停 / 取消暂停）；paused 发 resume（继续，或带补充续跑）。
   pauseBtn?.addEventListener('click', () => {
     if (deriveSessionUiState(skeletonState) === 'paused') {
       // paused 态：根据输入框内容决定是纯续跑还是带补充续跑

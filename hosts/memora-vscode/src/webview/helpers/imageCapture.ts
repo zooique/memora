@@ -9,8 +9,10 @@
  *     真机实测隐藏侧栏即销毁 webview 上下文（未发送图全丢，边界文档 §7 第 7 条）⇒ 定案
  *     **采集即写盘**——校验通过即发 `image_ingest`，宿主落盘后回 `image_ingest_result`
  *     换真（两条通道定义见 `shared/protocol.ts`）。写盘本身仍不在本文件（禁 fs 进 webview）。
- *   - **仍未接线的只剩「随消息发送」**：把 `ref` 并进 `input.attachments` 由 IMG-2 后续子块完成。
- *     在那之前 chip 上的「未接入」标记**必须留着**（见 `describe` 末尾注释）。
+ *   - **发送交付已接线**：发送时刻由 `resolveSendable()` 给出真值 `ref` 列表，chatView 并进
+ *     `input.attachments`；**取图的唯一出口就在本文件**（chatView 不许自己遍历 `accepted`）。
+ *   - **仍未接线的只剩 `drop-uri`（资源管理器拖入）的读盘**：本端只有 URI、读不到字节，
+ *     `resolveSendable()` 对此**恒拦并给原因**，绝不放行一条「图没跟上」的消息。
  *
  * 为什么走依赖注入而不是直接摸全局（对齐 `helpers/toast.ts` 的既有惯例）：
  *   chatView 的测试在 jsdom 里重建 DOM，模块级自执行会把监听器绑到上一轮的旧节点上。
@@ -94,6 +96,17 @@ export interface ImageCaptureHandle {
   readonly accepted: readonly CapturedImage[];
   readonly rejected: readonly RejectedImage[];
   /**
+   * 发送时刻取图（**唯一出口**，chatView 不许自己遍历 `accepted`）。
+   *
+   * 返回 `refs` 才是可随本轮发出的真值；返回 `blocked` 表示「有图发不出去」——此时
+   * 调用方必须**整条拦下**（保留输入框与 chip），不得只发文字。为什么必须拦而不是丢弃：
+   * 用户贴了图、看见 chip、按了发送，结果图没跟着走 = 「以为自己做到了」的静默错态。
+   *
+   * @param interjectRoute 本轮 send 会被宿主路由为**插话**（生成中）：该通道内核不收附件（D13）
+   *   ⇒ 有图即拦。判据随渲染骨架态由调用方传入，本层不反向读 UI 状态。
+   */
+  resolveSendable(interjectRoute: boolean): SendableImages;
+  /**
    * 落盘回执入口（chatView 把 `image_ingest_result` 原样转进来）。
    *
    * 归本层处理而非 chatView：chip 的状态只在这里维护，回调若散在视图层就会出现
@@ -103,6 +116,9 @@ export interface ImageCaptureHandle {
   clear(): void;
   dispose(): void;
 }
+
+/** 发送取图结果：要么给真值列表，要么给「为什么发不了」（二选一，禁同时为空语义） */
+export type SendableImages = { refs: ImageRef[] } | { blocked: string };
 
 /**
  * 解析 `text/uri-list`（RFC 2483）：按行切、去空白、跳过 `#` 注释行。
@@ -224,7 +240,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
   /** chip 外形与引用 chip 同构（D28：只显示文件名，不做缩略图） */
   function buildChip(item: CapturedImage): HTMLElement {
     const chip = doc.createElement('span');
-    chip.className = 'skill-chip image-chip image-chip--probe';
+    chip.className = 'skill-chip image-chip';
     chip.dataset.imageSource = item.source;
 
     const icon = doc.createElement('span');
@@ -295,16 +311,15 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       parts.push(`${Math.max(1, Math.round(item.byteLength / 1024))} KB`);
     }
     if (item.mime) parts.push(item.mime);
-    if (item.source === 'drop-uri') parts.push('来自资源管理器，发送时由宿主读取内容');
     /**
-     * 采集与「随消息发送」是两段路：本层只做到 chip。发送链路（把候选并进 `input` 消息、
-     * 宿主落盘、`supportsVision` 门禁）尚未接线。
-     *
-     * **这句提示不是装饰**：没有它，用户看到 chip 就会以为图已经跟着发出去了，
-     * 而模型实际没收到——那正是「静默丢」最坏的一种形态（用户以为自己做到了）。
-     * 接线完成前必须留着，且与台账 IMG-2 的未做项一一对应。
+     * 三种状态必须说清，因为**行为不同**（`resolveSendable` 逐一对应）：
+     *   - 有 `ref`：已落盘且会随下条消息发出（`本地已存`）；
+     *   - 无 `ref` 且有 `uri`（资源管理器拖入）：本端读不到字节，发送被拦，须告知；
+     *   - 无 `ref` 无 `uri`：落盘回执未到，发送会被拦下等它。
      */
-    parts.push(item.ref ? '已保存到本地，暂不随消息发送' : '暂不随消息发送');
+    if (item.ref) parts.push('已保存到本地，将随消息发送');
+    else if (item.uri) parts.push('来自资源管理器，暂不支持发送（请改用粘贴或拖入）');
+    else parts.push('正在保存到本地，完成后可发送');
     return parts.join(' · ') || item.name;
   }
 
@@ -409,6 +424,32 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     render();
   }
 
+  /**
+   * 发送取图：把 chip 状态翻译成「能发什么 / 为什么发不了」。
+   *
+   * 判据按 chip 的字段形态（与 `describe` 三态一一对应），不依赖异步时序：
+   *   - `ref` 就绪 → 可发（真相已由宿主复算，见 `applyIngestResult`）；
+   *   - 有 `uri` 无 `ref` → 资源管理器拖入，本端读不到字节、宿主读盘通道尚未接线
+   *     （台账 IMG-2 未做项）⇒ **恒拦**，如实告知而不是悄悄跳过；
+   *   - 无 `uri` 无 `ref` → 落盘回执在途 ⇒ 拦下等它（本地写盘是毫秒级，重试即可）。
+   * 空候选返回空数组（零图片照常发送）。
+   */
+  function resolveSendable(interjectRoute: boolean): SendableImages {
+    if (accepted.length === 0) return { refs: [] };
+    if (interjectRoute) {
+      return { blocked: '生成中不支持发送图片，请等本轮结束后再发' };
+    }
+    const uriOnly = accepted.filter((it) => !it.ref && it.uri);
+    if (uriOnly.length > 0) {
+      return { blocked: '资源管理器拖入的图片暂不支持发送，请移除后改用粘贴或拖入文件' };
+    }
+    const pending = accepted.filter((it) => !it.ref);
+    if (pending.length > 0) {
+      return { blocked: `有 ${pending.length} 张图片仍在保存到本地，请稍候再发送` };
+    }
+    return { refs: accepted.map((it) => it.ref!) };
+  }
+
   function onPaste(e: ClipboardEvent): void {
     const files = pickImageFiles(e.clipboardData);
     // 没有图片就**不拦截**：纯文本粘贴照常进 textarea（劫持它才是 bug）
@@ -477,6 +518,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       return rejected;
     },
     applyIngestResult,
+    resolveSendable,
     clear() {
       accepted.length = 0;
       rejected.length = 0;

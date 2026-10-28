@@ -381,6 +381,15 @@ export type WebviewToExtensionMessage =
        * `Exclude<…,'active-file'>`：活动文件是宿主自动附加（CTX-3），不是用户挂载项。
        */
       injections?: Exclude<InjectionSource, 'active-file'>[];
+      /**
+       * 本轮图片附件（IMG-2 发送交付面）：**只接受已落盘的真相** `ImageRef`，即
+       * `image_ingest_result.status='ok'` 换真后的 `ref`——禁止把上行提案值直接塞进来，
+       * 那等于让未复算的 mime / sha 进模型上下文（提案值只服务 chip 渲染与去重粗筛）。
+       *
+       * 与 `refs` 的分野：`refs` 是**指针**（路径 + 行号，模型按需 read_file）；图片是
+       * **内容**（随轮落盘进 `RoundMessage.attachments`、参与 token 计量）。故两者不可合并。
+       */
+      attachments?: ImageRef[];
     }
   /**
    * 导航到设置面板的指定选项卡（对话面板空态引导按钮 / 角色徽章点击触发）

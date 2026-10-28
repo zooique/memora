@@ -169,11 +169,11 @@ describe('createImageCapture — 粘贴', () => {
     expect(chips().length).toBe(1);
     expect(chips()[0]!.querySelector('.skill-chip__name')?.textContent).toBe('shot.png');
     expect(dom.row.hidden).toBe(false);
-    // 探针期必须**可见地**标注「未接入发送」：没有它用户会以为图已经发出去了。
-    // 这条断言是删除开关——发送链路接线时它会红，提醒同批删 CSS 里的 ::after 规则。
-    expect(chips()[0]!.classList.contains('image-chip--probe')).toBe(true);
+    // 探针期标记已随发送链路接线删除（文案改为如实描述「未落盘 / 待发送」三态）：
+    // 回执未到的此刻必须是「正在保存」，不能说成「将随消息发送」——否则就是另一种假话。
+    expect(chips()[0]!.classList.contains('image-chip--probe')).toBe(false);
     expect(chips()[0]!.querySelector('.skill-chip__name')?.getAttribute('title')).toContain(
-      '暂不随消息发送',
+      '正在保存到本地',
     );
     expect(handle.accepted.length).toBe(1);
     // 提案摘要与尺寸必须落进候选（发送时刻要用它们，且不是渲染期再算）
@@ -555,6 +555,63 @@ describe('createImageCapture — 上行与落盘回执（IMG-2）', () => {
     expect(notices).toContain('该图片已添加');
     // 去重走的是「已上行过一次」的候选，不再发第二条上行（省一次字节传输）
     expect(sent.length).toBe(1);
+  });
+
+  it('发送取图：回执 ok 后给出真值 ref；回执未到时拦下并给原因', async () => {
+    mountWithUplink(pngBytes(8, 8));
+    await pastePng();
+
+    // 回执未到（写盘在途）=> 不许发，且原因必须点明在等什么（空手发一条「图没跟上」的消息最坏）
+    const waiting = handle!.resolveSendable(false);
+    expect('blocked' in waiting && waiting.blocked).toContain('仍在保存');
+
+    const ref = {
+      sha256: SHA,
+      mime: 'image/png',
+      width: 8,
+      height: 8,
+      bytes: 33,
+      name: 'shot.png',
+    };
+    handle!.applyIngestResult({ type: 'image_ingest_result', status: 'ok', sha256: SHA, ref });
+
+    const ready = handle!.resolveSendable(false);
+    expect('refs' in ready && ready.refs).toEqual([ref]);
+  });
+
+  it('发送取图：生成中（插话路由）有图 => 拦下（插话通道不带图，D13）', async () => {
+    mountWithUplink(pngBytes(8, 8));
+    await pastePng();
+    handle!.applyIngestResult({
+      type: 'image_ingest_result',
+      status: 'ok',
+      sha256: SHA,
+      ref: { sha256: SHA, mime: 'image/png', width: 8, height: 8, bytes: 33, name: 'shot.png' },
+    });
+
+    const blocked = handle!.resolveSendable(true);
+    expect('blocked' in blocked && blocked.blocked).toContain('生成中');
+  });
+
+  it('发送取图：零候选 => 空 refs（纯文字消息照常发，插话路由也不受图影响）', () => {
+    handle = createImageCapture({ doc: document, ...dom });
+    expect(handle.resolveSendable(false)).toEqual({ refs: [] });
+    expect(handle.resolveSendable(true)).toEqual({ refs: [] });
+  });
+
+  it('发送取图：资源管理器拖入（无字节无 ref）=> 恒拦并说明，不悄悄跳过', () => {
+    handle = createImageCapture({
+      doc: document,
+      ...dom,
+      readBytes: async () => new Uint8Array(),
+      sha256: async () => SHA,
+    });
+    dom.dropZone.dispatchEvent(
+      eventWithData('drop', 'dataTransfer', transferOf({ uriList: 'file:///ws/pic.png' })),
+    );
+
+    const blocked = handle!.resolveSendable(false);
+    expect('blocked' in blocked && blocked.blocked).toContain('资源管理器');
   });
 });
 
