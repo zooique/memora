@@ -169,7 +169,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
   /** chip 外形与引用 chip 同构（D28：只显示文件名，不做缩略图） */
   function buildChip(item: CapturedImage): HTMLElement {
     const chip = doc.createElement('span');
-    chip.className = 'skill-chip image-chip';
+    chip.className = 'skill-chip image-chip image-chip--probe';
     chip.dataset.imageSource = item.source;
 
     const icon = doc.createElement('span');
@@ -241,6 +241,15 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     }
     if (item.mime) parts.push(item.mime);
     if (item.source === 'drop-uri') parts.push('来自资源管理器，发送时由宿主读取内容');
+    /**
+     * 采集与「随消息发送」是两段路：本层只做到 chip。发送链路（把候选并进 `input` 消息、
+     * 宿主落盘、`supportsVision` 门禁）尚未接线。
+     *
+     * **这句提示不是装饰**：没有它，用户看到 chip 就会以为图已经跟着发出去了，
+     * 而模型实际没收到——那正是「静默丢」最坏的一种形态（用户以为自己做到了）。
+     * 接线完成前必须留着，且与台账 IMG-2 的未做项一一对应。
+     */
+    parts.push('探针版：已采集，暂不随消息发送');
     return parts.join(' · ') || item.name;
   }
 

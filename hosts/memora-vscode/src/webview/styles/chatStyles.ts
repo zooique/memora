@@ -1868,6 +1868,17 @@ export const chatStyles = `
     outline: 1px dashed var(--accent);
     outline-offset: -1px;
   }
+  /* 探针期标记：采集链路已通、**发送链路尚未接**。没有这个可见标记，用户看到 chip 会
+   * 以为图已经跟着消息发出去，而模型实际没收到——那是「静默丢」最坏的形态。
+   * ⚠️ .image-chip--probe 与 imageCapture.ts 里加类的时机同生共死：
+   * 发送链路接线完成时必须**连同本规则与那处加类一起删**，否则变成永久免责声明。
+   * （本区块注释内禁用反引号——它会把外层 TS 模板字符串提前闭合，tsc 报「',' expected」。） */
+  #imageChips .image-chip--probe .skill-chip__name::after {
+    content: '未接入';
+    margin-left: var(--sp-1);
+    color: var(--feedback-warn-accent);
+    font-size: var(--font-sm, 11px);
+  }
 
   /* 动画：spin for loading state */
   @keyframes spin {

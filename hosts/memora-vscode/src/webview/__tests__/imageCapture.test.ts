@@ -163,6 +163,12 @@ describe('createImageCapture — 粘贴', () => {
     expect(chips().length).toBe(1);
     expect(chips()[0]!.querySelector('.skill-chip__name')?.textContent).toBe('shot.png');
     expect(dom.row.hidden).toBe(false);
+    // 探针期必须**可见地**标注「未接入发送」：没有它用户会以为图已经发出去了。
+    // 这条断言是删除开关——发送链路接线时它会红，提醒同批删 CSS 里的 ::after 规则。
+    expect(chips()[0]!.classList.contains('image-chip--probe')).toBe(true);
+    expect(chips()[0]!.querySelector('.skill-chip__name')?.getAttribute('title')).toContain(
+      '暂不随消息发送',
+    );
     expect(handle.accepted.length).toBe(1);
     // 提案摘要与尺寸必须落进候选（发送时刻要用它们，且不是渲染期再算）
     expect(handle.accepted[0]!.sha256).toBe(SHA);
