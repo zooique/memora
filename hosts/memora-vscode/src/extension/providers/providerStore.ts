@@ -486,6 +486,11 @@ export class ProviderStore {
         // supportsToolCalling → true；supportsStructuredOutput → false（勿读成「默认都开」）。
         supportsToolCalling: config.supportsToolCalling,
         supportsStructuredOutput: config.supportsStructuredOutput,
+        //
+        // ⚠️ 此处刻意不透传 supportsVision：test() 只做连通性探测（ping 一次「通不通」），
+        // 不解析 capabilities 响应，也拿不到任何「该模型是否真支持视觉」的证据。
+        // 透传一个永不被读取的字段 = 死接线，且会让「测试通过」被误读成「视觉也可用」。
+        // 能力位进入内核的**唯一真实通路**是 host/llmConfig.ts（前台 + 后台两处构造）。
       });
       // 发起一次最小对话，验证连通性
       let reply = '';

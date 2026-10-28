@@ -528,6 +528,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'MAX_PENDING_INTERJECTIONS',
       'MEMORY_SEARCH_TIMEOUT_MS',
       'REASONING_INPUT_CHARS',
+      'RETAIN_IMAGE_ROUNDS',
       'RETRY_BASE_DELAY_MS',
       'SEARCH_CONVERGENCE_HINT',
       'SEARCH_CONVERGENCE_THRESHOLD',
@@ -696,15 +697,21 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
     members: [
       'apiKey',
       'baseUrl',
+      'imageResolver',
       'model',
       'provider',
       'supportsStructuredOutput',
       'supportsToolCalling',
+      'supportsVision',
     ],
   },
   LlmProvider: {
     kind: 'class',
-    members: ['chat', 'name', 'supportsStructuredOutput', 'supportsToolCalling'],
+    members: ['chat', 'name', 'supportsStructuredOutput', 'supportsToolCalling', 'supportsVision'],
+  },
+  ImageRef: {
+    kind: 'interface',
+    members: ['bytes', 'height', 'mime', 'name', 'sha256', 'width'],
   },
   ChatOptions: {
     kind: 'interface',
@@ -874,7 +881,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'updateSessionMeta',
     ],
   },
-  SessionMessage: { kind: 'interface', members: ['content', 'role', 'roundId', 'timestamp'] },
+  SessionMessage: { kind: 'interface', members: ['attachments', 'content', 'role', 'roundId', 'timestamp'] },
   SessionMeta: {
     kind: 'interface',
     members: [
@@ -908,7 +915,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   },
   RoundMessage: {
     kind: 'interface',
-    members: ['content', 'id', 'name', 'role', 'timestamp', 'tokenUsage'],
+    members: ['attachments', 'content', 'id', 'name', 'role', 'timestamp', 'tokenUsage'],
   },
   IRoundStore: {
     kind: 'interface',
@@ -1279,7 +1286,7 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `\nEXPECTED 符号数 = ${count}，与本用例期望不符。\n` +
         `若本次确有增删符号：先在 EXPECTED 表反映差异 + 完成 §3.2.1 定性，再同步本数字；\n` +
         `若未增删：说明改动误触了基线表，撤销。`,
-    ).toBe(80);
+    ).toBe(81);
   });
 
   it('成员面与冻结基线一致（增删即红；红须按 §3.2.1 定性后显式更新 EXPECTED）', () => {

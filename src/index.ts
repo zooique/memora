@@ -87,6 +87,16 @@ export { loadConfig } from '@/config/loader.js';
 export { createProviderFromConfig } from '@/llm/factory.js';
 export type { ProviderConfig } from '@/llm/factory.js';
 export type { LlmProvider, ChatOptions } from '@/llm/provider.js';
+// 图片引用模型（多模态输入）：宿主采集侧构造 ImageRef 并经 ImageResolver 端口物化 base64。
+// ImageResolver 是 type 别名（函数签名），公开成员面守卫对其无成员可查，导出不触基线；
+// ImageRef 是 interface，须在 publicMemberSurfaceGuard EXPECTED 补登记（见该测试）。
+export type { ImageRef, ImageResolver } from '@/llm/provider.js';
+
+// 单图 token 折算（方案 §5.9）：宿主入口限额要用「图片 token ≤ contextWindow 25%」（§6.7 / G3）
+// 做准入判断。若宿主另写一份 ceil(w/28)×ceil(h/28) 与上界 clamp，就是同一公式的第二份实现——
+// 将来调上界时必漂移（现行 1568 已登记为 OpenAI high 低估的已知缺口）。故在此**单点导出**，
+// 宿主 import 复用，不在任何侧重算。函数公开不触成员面守卫，登记见 publicApiSurfaceGuard。
+export { imageTokens } from '@/agent/contextManager.js';
 export type { LlmChunk, ProviderRouter } from '@/llm/types.js';
 // OpenAICompatibleProvider 为内部实现类：构造函数不做 baseUrl/model 校验，须经 createProviderFromConfig
 // 工厂校验后创建。不对外暴露，外部宿主一律走 createProviderFromConfig。

@@ -65,6 +65,25 @@ export interface LlmProviderConfig {
   /** 是否支持结构化输出（response_format / JSON mode），与 supportsToolCalling 互斥（OpenAI 协议限制）；未填 → 回落 false */
   supportsStructuredOutput?: boolean;
   /**
+   * 是否支持图片输入（多模态 vision / content parts）；未填 → 回落 **false**（失败必闭）
+   *
+   * 与上面两个能力位的透传结构完全相同，但**取值来源不同**：
+   * - `supportsToolCalling` 可由 provider 标识（cloud/local）驱动缺省；
+   * - **视觉能力无法从 cloud/local 推断**——同一个 OpenAI 兼容 endpoint 下，gpt-4o 看得见图、
+   *   deepseek-chat 看不懂，宿主不预置模型对照表（同 contextWindow 的立场：不维护第二真理源）。
+   *   故本字段**恒由用户在配置面板显式勾选**，且缺省为假。
+   *
+   * 缺省取 false 而非 true 的理由：图片路径上「声称看得见却看不懂」的代价远高于「坦承不支持」——
+   * 前者表现为图片被静默丢弃、用户无法归因（最坏的失败形态）；后者由内核一级门禁明确拒收并给出
+   * 可执行建议。宁可要求用户勾一次，不可默认说谎。
+   *
+   * ⚠️ 建房链路约束（审查 IMG-3 的教训）：新增任何能力位，**必须同时**在
+   * `factory.ProviderConfig`（内核建房入参）与 `llmConfig`（前台 + 后台两处构造）落透传，
+   * 否则字段会卡在本 DTO 里「存得进、读得出、传不到」，且类型系统不会报任何错。
+   * 已由 `src/extension/host/__tests__/capabilityPassthroughGuard.test.ts` 机检。
+   */
+  supportsVision?: boolean;
+  /**
    * 上下文窗口上限（token）—— 该 LLM 唯一真理源
    *
    * 每个用户添加的 LLM 独立配置自己的上下文上限（如 deepseek-chat 64K、gpt-4o 128K、

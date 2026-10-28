@@ -7,6 +7,7 @@
  */
 
 import type { MessageRole } from '@/memory/types.js';
+import type { ImageRef } from '@/llm/provider.js';
 import type { AbortStopReason, LlmErrorCategory } from '@/agent/types.js';
 
 // ─── 问答闭环消息 ───────────────────────────────────────
@@ -33,6 +34,13 @@ export interface RoundMessage {
     input: number;
     output: number;
   };
+
+  /**
+   * 图片附件引用（可选，多模态输入）。仅 user 消息持有；
+   * 整对象 JSON 天然带走（零 IO 改造），但 `MessageHistory.appendUser` 的
+   * `userMessage` 白名单必须显式拷此字段（方案 §7 P0-12）。
+   */
+  attachments?: readonly ImageRef[];
 }
 
 /**

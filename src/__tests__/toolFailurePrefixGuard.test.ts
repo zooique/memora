@@ -152,7 +152,11 @@ const OUT_OF_SCOPE_TAGS: Readonly<Record<string, readonly string[]>> = {
     '预览（前 ${previewChars} 字符）',
     '预览（头 ${headChars} + 尾 ${tailChars} 字符）',
   ],
-  'llm/openaiCompatible.ts': ['DONE'],
+  // 新增成员（2026-10-28）：图片**降级占位文案**——它不是工具结果：resolver 取不到字节时，
+  // 该串以 `{type:'text'}` 文本块进 user content（§5.4 / D7），不进 tool_result 通道。
+  // 之所以必须登记而非沉默：本守卫的设计判据是「钉死而非留白」，新增标签被扫到即迫使
+  // 做出「纳入扫描面还是明确排除」的判断——此处排除的理由写在上面一句。
+  'llm/openaiCompatible.ts': ['DONE', '图片不可用 ${att.sha256.slice(0, 8)}'],
   'logging/logger.ts': ['${targetLevel.toUpperCase()}', 'REDACTED'],
 };
 

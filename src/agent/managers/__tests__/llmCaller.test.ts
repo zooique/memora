@@ -568,6 +568,111 @@ describe('LlmCaller.callWithRetry · 发送边界守卫', () => {
   });
 });
 
+/**
+ * 图片一级入口门禁（方案 §5.6 / R8-1）
+ *
+ * 失败必闭的核心是「**一个字节都没发出去**」——不是「发了之后报错」。
+ * 故每条断言都以 `chatSpy` 的调用次数为首要判据：
+ * 图片一旦落到不支持视觉的模型上，用户看到的是「熊 400 或答非所问」，且钱已经烧掉了。
+ */
+describe('LlmCaller.callWithRetry · 图片一级入口门禁（失败必闭）', () => {
+  const imgRef = {
+    sha256: 'a',
+    mime: 'image/png',
+    width: 10,
+    height: 10,
+    bytes: 1,
+    name: 'a.png',
+  };
+
+  function makeDepsWith(provider: LlmProvider): LlmCallerDeps {
+    return {
+      metrics: new LoopMetrics(),
+      getStrategy: () => ({
+        errorHandling: 'retry',
+        multiStepReasoning: 'auto',
+        providerRouting: 'fixed',
+      }),
+      getProvider: () => provider,
+      getProviderRouter: () => undefined,
+      getCachedProvider: () => undefined,
+      setCachedProvider: () => {},
+      contextManager: { estimateTokens: () => 0 },
+      tracer: NOOP_TRACER,
+      hasToolExecutedThisTurn: () => false,
+    };
+  }
+
+  /** 构造带（或不带）视觉能力位的 provider；supportsVision 未传 = 未声明 */
+  function makeVisionProvider(
+    supportsVision: boolean | undefined,
+    chatSpy: ReturnType<typeof vi.fn>,
+  ): LlmProvider {
+    const p: Record<string, unknown> = { name: 'routed-vision-model', chat: chatSpy };
+    if (supportsVision !== undefined) p.supportsVision = supportsVision;
+    return p as unknown as LlmProvider;
+  }
+
+  function imgMsg(): Message[] {
+    return [{ role: 'user', content: '看图', attachments: [imgRef] }];
+  }
+
+  it('含图片 + supportsVision=false → 拒发（chat 零调用，一个字节都没出去）', async () => {
+    const chatSpy = vi.fn(function* () {
+      yield { content: '不应到达' };
+    });
+    const caller = new LlmCaller(makeDepsWith(makeVisionProvider(false, chatSpy)));
+
+    await expect(
+      caller.callWithRetry(imgMsg(), {} as ChatOptions, undefined, 1).next(),
+    ).rejects.toThrow('当前模型不支持图片输入');
+    expect(chatSpy).not.toHaveBeenCalled();
+  });
+
+  it('含图片 + **未声明** supportsVision（undefined）→ 同样拒发（缺省=不支持，非缺省=支持）', async () => {
+    // 这条锁的是「失败必闭」的方向：缺省必须落在「拦住」这一侧。
+    const chatSpy = vi.fn(function* () {
+      yield { content: '不应到达' };
+    });
+    const caller = new LlmCaller(makeDepsWith(makeVisionProvider(undefined, chatSpy)));
+
+    await expect(
+      caller.callWithRetry(imgMsg(), {} as ChatOptions, undefined, 1).next(),
+    ).rejects.toThrow('当前模型不支持图片输入');
+    expect(chatSpy).not.toHaveBeenCalled();
+  });
+
+  it('含图片 + supportsVision=true → 放行并真实发出', async () => {
+    const chatSpy = vi.fn(function* () {
+      yield { content: '我看懂了' };
+    });
+    const caller = new LlmCaller(makeDepsWith(makeVisionProvider(true, chatSpy)));
+
+    const gen = caller.callWithRetry(imgMsg(), {} as ChatOptions, undefined, 1);
+    let step = await gen.next();
+    while (!step.done) step = await gen.next();
+    const result = step.value as LlmCallResult;
+
+    expect(chatSpy).toHaveBeenCalledTimes(1);
+    expect(result?.fullContent).toBe('我看懂了');
+  });
+
+  it('零回归：无图片时即使 supportsVision=false 也照常发送（门禁只管图片）', async () => {
+    const chatSpy = vi.fn(function* () {
+      yield { content: 'ok' };
+    });
+    const caller = new LlmCaller(makeDepsWith(makeVisionProvider(false, chatSpy)));
+
+    const gen = caller.callWithRetry([userMsg('纯文本')], {} as ChatOptions, undefined, 1);
+    let step = await gen.next();
+    while (!step.done) step = await gen.next();
+    const result = step.value as LlmCallResult;
+
+    expect(chatSpy).toHaveBeenCalledTimes(1);
+    expect(result?.fullContent).toBe('ok');
+  });
+});
+
 describe('LlmCaller 输入 token 估算偏差告警（P1-2：接通 actualInputTokens 消费者）', () => {
   /** 捕获 span 属性的最小 tracer（无 opentelemetry 依赖） */
   function makeCapturingTracer(): { tracer: ITracer; attrs: Map<string, unknown> } {

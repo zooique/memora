@@ -11,6 +11,7 @@
  *     避免把"哪个 provider 激活"这一宿主策略委托给内核。
  */
 import type { Config } from '@/config/loader.js';
+import type { ImageResolver } from '@/llm/provider.js';
 import { LlmProvider } from '@/llm/provider.js';
 import { OpenAICompatibleProvider } from '@/llm/openaiCompatible.js';
 import { logger } from '@/logging/logger.js';
@@ -37,6 +38,26 @@ export interface ProviderConfig {
   supportsToolCalling?: boolean;
   /** 是否支持结构化输出（response_format / JSON mode）；未填 → 回落 false */
   supportsStructuredOutput?: boolean;
+  /**
+   * 是否支持图片输入（多模态 vision / content parts）；未填 → 回落 **false**（失败必闭）
+   *
+   * 【持久化数据】与上面两个能力位同性质：宿主须经「DTO → 表单 → 存储 → 建房」全链路透传。
+   * 缺省方向选 false 而非 true，是因为「声称看得见图却看不懂」比「坦承不支持」危害更大——
+   * 前者让图片静默丢失且用户无法归因，后者由 llmCaller 一级门禁明确拒收并给出可执行建议。
+   */
+  supportsVision?: boolean;
+  /**
+   * 图片解析器（运行时回调，**不可持久化**）
+   *
+   * 【运行时注入】与上面三个能力位**性质不同**：这是宿主持有的函数句柄，不能进任何 JSON 配置。
+   * 内核只调用它把 ImageRef 换成「URL 或 占位文本」，自身不读文件、不发网络请求
+   * （零外部读写是内核边界，见 provider.ts 的 ImageResolver 定义）。
+   *
+   * 因此本字段只属于**建房入参**（ProviderConfig），**不属于宿主的持久化 DTO**——
+   * 宿主 DTO 里只有 supportsVision 这一「用户声明」，resolver 由宿主在调用本函数时直接传入。
+   * 未注入 → formatMessages 走降级：该图片的 URL 取不到即跳过（见 openaiCompatible）。
+   */
+  imageResolver?: ImageResolver;
 }
 
 /** 从单个 Provider 配置创建 LlmProvider 实例（多 Provider 管理场景：为 providers 映射表中每个条目调用） */
@@ -74,9 +95,12 @@ export function createProviderFromConfig(
     apiKey: apiKey ?? '',
     defaultModel: model,
     // 能力位透传：未填（undefined）由 OpenAICompatibleProvider 内按**各自方向**回落——
-    // supportsToolCalling → true，supportsStructuredOutput → false（见上方字段文档；勿读成「默认都开」）。
+    // supportsToolCalling → true，supportsStructuredOutput / supportsVision → false
+    // （见上方字段文档；勿读成「默认都开」）。
     supportsToolCalling: providerConfig.supportsToolCalling,
     supportsStructuredOutput: providerConfig.supportsStructuredOutput,
+    supportsVision: providerConfig.supportsVision,
+    imageResolver: providerConfig.imageResolver,
   });
 }
 

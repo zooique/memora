@@ -17,7 +17,7 @@
  * 所有方法接收 messages 作为参数，是无状态的纯计算 + 缓存。
  */
 
-import type { LlmProvider, Message } from '@/llm/provider.js';
+import type { LlmProvider, Message, ImageRef } from '@/llm/provider.js';
 import type { ProviderRouter } from '@/llm/types.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
@@ -134,6 +134,39 @@ function countCjkAndOther(str: string): { cjkChars: number; otherChars: number }
 export interface EstimableMessage {
   readonly content: string;
   readonly toolCalls?: unknown;
+  /** 图片附件（可选，多模态输入）；按尺寸折算等价 CJK 字符数，复用同一套 ceil 公式（方案 §5.9） */
+  readonly attachments?: readonly ImageRef[];
+}
+
+/**
+ * 单图 token 上界（方案 §5.9）：按 Claude 官方 patch 公式 `⌈w/28⌉×⌈h/28⌉` 推算后 clamp。
+ *
+ * ⚠️ **不存在「按后端调这个常量」的配置项**——当前实现里 1568 是写死的默认值，宿主也没有
+ * 与之对应的设置键。早前的注释写过「为 OpenAI high 时应上调配置」，那句话是**文档债**
+ * （描述了一个并不存在的配置面）。真相是：
+ *   - 1568 = Claude 标准档单图上界，覆盖 Claude 与常规 OpenAI（low/medium detail）；
+ *   - OpenAI high detail 单图可达 ≈2125 ⇒ 走 high 时本估算**会低估**（约 26%）；
+ *   - 低估的后果是装配期预算偏松 → 有超窗风险的窗口被当成安全放行。
+ *
+ * 因此「宁可高估不低估」这句方向性承诺**并未在 high 场景成立**。把上界抬到 2125 可以覆盖
+ * high，代价是对 Claude / 常规档系统性高估约 36%，同样有害（预算偏紧、过早截断）。
+ * 取舍结论：**暂维持 1568**（常见场景精确），high-detail 的低估作为**已知缺口**在此登记，
+ * 待 vision 单元可视化特性上线（IMG-2）拿到真实 usage 后再按实际占用收口。
+ * 收口方式必须是「换成从响应用 usage 校正」或直接提高本常量——**禁止**先加一个假配置项。
+ */
+export const IMAGE_TOKEN_UPPER_BOUND = 1568;
+
+/**
+ * 单图 token 数（按尺寸，零状态纯函数）。上界封顶防止超大图爆窗估算。
+ *
+ * 入参刻意只要 `Pick<ImageRef,'width'|'height'>` 而非整个 `ImageRef`：本函数的事实依赖只有
+ * 像素尺寸，把签名放宽到子集 ⇒ 宿主在**只持有尺寸**的阶段（采集限额 G3，尚未拼完整 ref）
+ * 也能直接复用同一公式，不必伪造其余字段；将来 `ImageRef` 加必填成员也不会级联到这里。
+ */
+export function imageTokens(ref: Pick<ImageRef, 'width' | 'height'>): number {
+  const wTiles = Math.max(1, Math.ceil(ref.width / 28));
+  const hTiles = Math.max(1, Math.ceil(ref.height / 28));
+  return Math.min(wTiles * hTiles, IMAGE_TOKEN_UPPER_BOUND);
 }
 
 /**
@@ -142,9 +175,10 @@ export interface EstimableMessage {
  * 单一真理源：先累计全部字符、最后一次向上取整——与逐条取整再求和**不等价**
  * （后者系统性高估）。运行时（`ContextManager.estimateTokens` / contextPreparer
  * 各层计量）与宿主历史会话占用重算共用本函数，两端口径不漂移。
+ * 图片附件按尺寸折算等价 CJK 字符数，**复用同一套 ceil 公式**（不引入第二套 token 数学）。
  *
- * @param messages 待估算的消息序列（content 计入，toolCalls 序列化后计入）
- * @returns token 数（按 CJK/其他字符分轨估算后向上取整）
+ * @param messages 待估算的消息序列（content 计入，toolCalls 序列化后计入，attachments 按尺寸计入）
+ * @returns token 数（按 CJK/其他字符分轨估算后向上取整 + 图片折算）
  */
 export function estimateTokensMessages(messages: readonly EstimableMessage[]): number {
   let cjkChars = 0;
@@ -157,6 +191,12 @@ export function estimateTokensMessages(messages: readonly EstimableMessage[]): n
       const toolCallsCounts = countCjkAndOther(JSON.stringify(m.toolCalls));
       cjkChars += toolCallsCounts.cjkChars;
       otherChars += toolCallsCounts.otherChars;
+    }
+    if (m.attachments?.length) {
+      let imgTokens = 0;
+      for (const a of m.attachments) imgTokens += imageTokens(a);
+      // 折回等价 CJK 字符数，复用同一套 ceil 公式（不引入第二套 token 数学）
+      cjkChars += imgTokens * LOOP_CONSTANTS.CJK_CHARS_PER_TOKEN;
     }
   }
   return Math.ceil(

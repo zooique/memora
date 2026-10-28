@@ -74,6 +74,10 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   const fProviderType = root.querySelector('#f-providertype') as HTMLSelectElement;
   // 本地运行时「是否支持原生工具调用」复选框（仅 provider=local 时显示；勾选 → supportsToolCalling=true）
   const fToolCalling = root.querySelector('#f-toolcalling') as HTMLInputElement;
+  // 「是否支持图片输入」复选框（**恒显示**，不随 provider 类型显隐；默认不勾选 → supportsVision=false）
+  // 与工具能力位的差别：工具能力可由 cloud/local 推断缺省，视觉能力在任何来源类型下都无法推断，
+  // 故只能是用户的显式声明，且缺省必须取 false（失败必闭）。
+  const fVision = root.querySelector('#f-vision') as HTMLInputElement;
   const apikeyHint = root.querySelector('#apikeyHint') as HTMLElement;
   const testResult = root.querySelector('#testResult') as HTMLElement;
   const btnTest = root.querySelector('#btnTest') as HTMLButtonElement;
@@ -148,6 +152,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     maxTokens: number | undefined;
     provider: 'cloud' | 'local';
     supportsToolCalling: boolean | undefined;
+    supportsVision: boolean | undefined;
   } {
     const parsed = parseTokenInput(fContextWindow.value);
     // 输出上限与 contextWindow 共用 ×1000 口径（T1 统一决策见 parseTokenInput 注释）
@@ -171,6 +176,9 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       maxTokens: Number.isNaN(parsedMaxTokens) ? undefined : parsedMaxTokens,
       provider,
       supportsToolCalling,
+      // 视觉能力位：**恒显式**（不像工具能力位在 cloud 下回落 undefined）——
+      // 无论云端还是本地，模型是否真能看图都无从推断，只能用户声明；未勾选即得 false。
+      supportsVision: fVision.checked,
     };
   }
 
@@ -209,6 +217,10 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       // 工具能力位回填：本地类型时按已存声明勾选（缺省勾选=本地默认支持原生 FC）；
       // 云类型该字段不显示、强制回落 undefined（不走 DOM，避免误改云行为）
       fToolCalling.checked = target?.supportsToolCalling !== false;
+      // 视觉能力位回填：必须 `=== true`（**不可写成 `!== false`**）。
+      // 存量 Provider 的 supportsVision 是 undefined；若按「非 false 即勾选」回填，
+      // 等于用户一打开编辑框就把视觉能力静默授予所有既有配置——这正是要防的「默认说谎」。
+      fVision.checked = target?.supportsVision === true;
       setToolCallingFieldVisible();
     } else {
       fName.value = '';
@@ -225,6 +237,8 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       // 新增默认云类型 + 工具能力默认勾选（local 时为支持原生 FC）
       fProviderType.value = 'cloud';
       fToolCalling.checked = true;
+      // 新增：视觉能力默认**不勾选**（失败必闭——须用户主动声明，不代其承诺）
+      fVision.checked = false;
       setToolCallingFieldVisible();
     }
     modal.classList.add('visible');

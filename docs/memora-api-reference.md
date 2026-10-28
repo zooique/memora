@@ -1297,6 +1297,11 @@ export { createProviderFromConfig } from '@zooique/memora';
 export type { ProviderConfig } from '@zooique/memora';
 export type { LlmProvider, ChatOptions } from '@zooique/memora';
 export type { LlmChunk } from '@zooique/memora';
+// 图片输入（宿主注入解析器 + 视觉能力位；内核不直连外部存储与网络）
+export type { ImageRef, ImageResolver } from '@zooique/memora';
+// 单图折算成多少个令牌（方案五点九节的公式，对外只此一份）；
+// 宿主在还没拼出完整文件信息、只拿到宽高时也能算，避免各侧重写该公式。
+export { imageTokens } from '@zooique/memora';
 
 // 配置
 export { loadConfig } from '@zooique/memora';

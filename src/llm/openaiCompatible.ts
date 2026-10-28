@@ -4,7 +4,7 @@
  * 适用于：DeepSeek / 豆包 / 通义 / Ollama / 任何兼容 OpenAI 协议的 API
  */
 import { LlmProvider } from '@/llm/provider.js';
-import type { Message, ChatOptions } from '@/llm/provider.js';
+import type { ImageResolver, Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk, ToolCall } from '@/llm/types.js';
 import {
   llmError,
@@ -26,6 +26,13 @@ export interface OpenAICompatibleConfig {
   supportsToolCalling?: boolean;
   /** 是否支持结构化输出（response_format / JSON mode），默认 false */
   supportsStructuredOutput?: boolean;
+  /** 是否支持视觉 / 多模态图片输入（默认 false，fail-closed；显式 true 才走图片通道） */
+  supportsVision?: boolean;
+  /**
+   * 图片解析器（宿主注入）：把 `ImageRef` 物化为可发送形式（URL 或 base64 文本）。
+   * 不注入 ⇒ 含附件的消息在 `formatMessages` 序列化期降级（跳过该图，不阻断，方案 §5.5 二级）。
+   */
+  imageResolver?: ImageResolver;
 }
 
 /** 错误响应体截断长度（字符数）：统一 4 处 errorText.slice(0,200) 的常量，避免魔法数字 */
@@ -92,6 +99,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
       config.supportsToolCalling ?? true;
     (this as { supportsStructuredOutput: boolean }).supportsStructuredOutput =
       config.supportsStructuredOutput ?? false;
+    (this as { supportsVision: boolean }).supportsVision = config.supportsVision ?? false;
   }
 
   /** 默认请求超时：120 秒 */
@@ -279,6 +287,34 @@ export class OpenAICompatibleProvider extends LlmProvider {
           content: m.content && m.content.length > 0 ? m.content : null,
           tool_calls: m.toolCalls,
         };
+      }
+      // 默认分支（user 文本）：仅当携带图片附件时展开为 content 块数组（OpenAI image_url 形态）；
+      // 无附件时形状与升级前**字节级一致**（快照测试 R8-4 守门）。base64 字节**只在此处**临时物化，
+      // 经宿主注入的 ImageResolver 端口，内核零外部 IO（方案 §5.3 / §5.4）。
+      if (m.role === 'user' && m.attachments?.length) {
+      const blocks: Array<
+        { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+      > = m.content ? [{ type: 'text', text: m.content }] : [];
+      for (const att of m.attachments) {
+        const resolved = this.config.imageResolver?.(att) ?? null;
+        if (resolved && 'url' in resolved) {
+          blocks.push({ type: 'image_url', image_url: { url: resolved.url } });
+          continue;
+        }
+        // 二级降级（D7 / §5.4 / §6.13）：**推可见占位文本块，绝不静默丢该图**。
+        // 静默丢 ⇒ 用户以为图发了、模型却从没见过 ⇒ 不可发现的错误（文档明文判据）。
+        // 占位文案的生产权归宿主（只有宿主知道路径），宿主未给时内核只给最短信息
+        //（`sha256` 前 8 位）——内核不知道也不该知道路径，不伪造档名/大小。
+        blocks.push({
+          type: 'text',
+          text:
+            resolved && 'text' in resolved
+              ? resolved.text
+              : `[图片不可用 ${att.sha256.slice(0, 8)}]`,
+        });
+      }
+      // 全部走降级且正文为空（极端情形）⇒ 兜底为纯文本，避免发出空 content 数组
+      return { role: 'user', content: blocks.length > 0 ? blocks : m.content };
       }
       return { role: m.role, content: m.content };
     });

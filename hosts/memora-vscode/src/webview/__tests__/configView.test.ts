@@ -11,6 +11,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createConfigView } from '../scripts/configView.js';
+import type { LlmProviderConfig } from '../../shared/protocol.js';
 
 /** 覆盖 createConfigView 全部查询引用的最小 HTML 骨架（子视图挂载在 #config-root 根容器内，
  *  与设置面板选项卡合并后的 id 空间隔离约定一致） */
@@ -43,6 +44,10 @@ const HTML = `
           <div id="toolcalling-field" class="field" hidden>
             <label class="checkbox-label" for="f-toolcalling"><input id="f-toolcalling" type="checkbox" /></label>
           </div>
+          <!-- 视觉能力位：与 toolcalling 不同，**恒显示**（不随 provider 类型隐显），默认不勾选 -->
+          <div id="vision-field" class="field">
+            <label class="checkbox-label" for="f-vision"><input id="f-vision" type="checkbox" /></label>
+          </div>
           <input id="f-contextwindow" type="text" />
           <div id="f-contextwindow-feedback" hidden></div>
           <input id="f-maxtokens" type="text" />
@@ -68,8 +73,13 @@ function mountConfigView(): { postMessage: ReturnType<typeof vi.fn> } {
     window: window as unknown as Window,
     root,
   });
+  // 记下最后一次挂载：供 lastSavedConfig 回读同一份 postMessage（避免每个用例重复传递返回值）
+  lastMount = { postMessage };
   return { postMessage };
 }
+
+/** 最近一次 mountConfigView 的挂载产物（同一 tick 内不变） */
+let lastMount: { postMessage: ReturnType<typeof vi.fn> };
 
 /** 向 webview 分发一条 cfg_loaded 消息，驱动 render（可选 backgroundName） */
 function dispatchLoaded(providers: unknown[], activeName?: string, backgroundName?: string): void {
@@ -80,29 +90,27 @@ function dispatchLoaded(providers: unknown[], activeName?: string, backgroundNam
   );
 }
 
-/** 构造一个 Provider 对象 */
-function makeProvider(
-  name: string,
-  opts: {
-    displayName?: string;
-    model?: string;
-    baseUrl?: string;
-    contextWindow?: number;
-    maxTokens?: number;
-    provider?: string;
-    supportsToolCalling?: boolean;
-  } = {},
-) {
+/**
+ * 构造一个 Provider 对象
+ *
+ * ⚠️ **不要把这个 helper 写成字段白名单**。它原先逐字列举每个字段，于是每次给
+ * `LlmProviderConfig` 加新字段（本次是 supportsVision），这里都会静默吞掉、
+ * 导致「新字段永远测不到」——宿主一轮踩的是 `makeRound` 缺 refCount 的同类坑。
+ * 改成「默认值对象 + 展开 opts」：以后加字段**只改 implements 的那一处**，
+ * 这里无需同步，测试替身不再成为第二份字段清单。
+ */
+function makeProvider(name: string, opts: Partial<LlmProviderConfig> = {}) {
   return {
     name,
-    displayName: opts.displayName || name,
-    model: opts.model || name + '-model',
-    baseUrl: opts.baseUrl || 'https://api.example.com/v1',
-    provider: opts.provider,
-    contextWindow: opts.contextWindow,
-    maxTokens: opts.maxTokens,
-    supportsToolCalling: opts.supportsToolCalling,
-  };
+    displayName: name,
+    model: name + '-model',
+    baseUrl: 'https://api.example.com/v1',
+    provider: undefined,
+    contextWindow: undefined,
+    maxTokens: undefined,
+    supportsToolCalling: undefined,
+    ...opts,
+  } as LlmProviderConfig;
 }
 
 describe('configView 渲染分支（ui-redesign §6.2）', () => {
@@ -512,6 +520,7 @@ describe('configView 本地 LLM 能力声明（provider 类型 + 工具能力位
   function submitConfig(extra: () => void = () => void 0): {
     provider?: string;
     supportsToolCalling?: boolean;
+    supportsVision?: boolean;
   } {
     const { postMessage } = mountConfigView();
     dispatchLoaded([]);
@@ -526,7 +535,9 @@ describe('configView 本地 LLM 能力声明（provider 类型 + 工具能力位
     const call = postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as
       unknown[] | undefined;
     return (
-      (call?.[0] as { config: { provider?: string; supportsToolCalling?: boolean } })?.config ?? {}
+      (call?.[0] as {
+        config: { provider?: string; supportsToolCalling?: boolean; supportsVision?: boolean };
+      })?.config ?? {}
     );
   }
 
@@ -570,6 +581,90 @@ describe('configView 本地 LLM 能力声明（provider 类型 + 工具能力位
     });
     expect(config.provider).toBe('local');
     expect(config.supportsToolCalling).toBe(false);
+  });
+});
+
+// ─── 视觉能力位（审查 IMG-3 · 失败必闭） ───
+
+describe('configView 视觉能力位 supportsVision（与工具能力位**取值策略不同**）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** 从 cfg_save 报文中取回本次保存的 config（未发则为 {}） */
+  function lastSavedConfig(): Record<string, unknown> {
+    const { postMessage } = lastMount;
+    const call = postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as
+      unknown[] | undefined;
+    return (call?.[0] as { config: Record<string, unknown> })?.config ?? {};
+  }
+
+  /** 打开「新增」弹窗 → 可改字段 → 提交，返回 cfg_save 的 config */
+  function addNew(extra: () => void = () => void 0): Record<string, unknown> {
+    mountConfigView();
+    dispatchLoaded([]);
+    (document.getElementById('btnAdd') as HTMLButtonElement).click();
+    extra();
+    (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
+    return lastSavedConfig();
+  }
+
+  /** 用既有 provider 打开「编辑」弹窗，返回表单 DOM 已回填的状态（不提交） */
+  function openEdit(opts: { supportsVision?: boolean } = {}): void {
+    mountConfigView();
+    dispatchLoaded([makeProvider('deepseek', opts as never)], 'deepseek');
+    // 激活卡仅有「编辑」按钮（.btn-secondary）
+    (document.querySelector('.card .btn-secondary') as HTMLButtonElement).click();
+  }
+
+  it('新增默认 → supportsVision=false（**不是 undefined**；视觉能力的缺省方向是「不支持」）', () => {
+    mountConfigView();
+    dispatchLoaded([]);
+    (document.getElementById('btnAdd') as HTMLButtonElement).click();
+    expect((document.getElementById('f-vision') as HTMLInputElement).checked).toBe(false);
+    (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
+    expect(lastSavedConfig().supportsVision).toBe(false);
+  });
+
+  it('云类型下也提交 false（视觉能力位**不随 provider 类型回落 undefined**，与工具能力位分野）', () => {
+    const config = addNew();
+    // 对照：工具能力位在 cloud 下是 undefined；视觉能力位恒显式 false
+    expect(config.provider).toBe('cloud');
+    expect(config.supportsVision).toBe(false);
+  });
+
+  it('勾选 → supportsVision=true（用户显式声明看得懂图）', () => {
+    const config = addNew(() => {
+      (document.getElementById('f-vision') as HTMLInputElement).checked = true;
+    });
+    expect(config.supportsVision).toBe(true);
+  });
+
+  it('编辑回填：存量（supportsVision 缺失）→ **不勾选**（防「一开编辑框就静默授予全量旧配置视觉能力」）', () => {
+    // 该断言是 `target?.supportsVision === true` 而非 `!== false` 的锁：
+    // 写成后者，存量 undefined 会被回填成勾选，等于替用户承诺了模型能力。
+    openEdit();
+    expect((document.getElementById('f-vision') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('编辑回填：已声明 supportsVision=true → 勾选（保存的声明能原样回显）', () => {
+    openEdit({ supportsVision: true });
+    expect((document.getElementById('f-vision') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('回填后未改动直接保存 → 原值保真（true 不被 false 覆盖）', () => {
+    openEdit({ supportsVision: true });
+    (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
+    expect(lastSavedConfig().supportsVision).toBe(true);
+  });
+
+  it('存量（未声明）保存后维持 false —— 不因编辑动作升级为真', () => {
+    openEdit();
+    (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
+    expect(lastSavedConfig().supportsVision).toBe(false);
   });
 });
 

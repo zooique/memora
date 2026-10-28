@@ -13,6 +13,7 @@
 
 import type { AgentChunk } from '@/agent/types.js';
 import type { InteractiveInputKind } from '@/memory/roundStore.js';
+import type { ImageRef } from '@/llm/provider.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
 import { isTimeoutAbortSignal } from '@/utils/errors.js';
@@ -69,9 +70,13 @@ export class SeedOrchestrator {
    * @param signal 中止信号
    * @yields AgentChunk 事件流（thinking / 透传 loop 执行流 chunk）
    */
-  async *runChat(input: string, signal: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
+  async *runChat(
+    input: string,
+    signal: AbortSignal,
+    attachments?: readonly ImageRef[],
+  ): AsyncGenerator<AgentChunk, void, unknown> {
     // 回答前：装配上下文 + 召回记忆
-    const prepared = yield* this.prepare.run(input, signal);
+    const prepared = yield* this.prepare.run(input, signal, attachments);
     if (prepared.aborted) {
       yield {
         type: 'aborted',
@@ -87,7 +92,12 @@ export class SeedOrchestrator {
     const produce = () =>
       this.deps
         .getParts()
-        .loop.processUserInput(input, signal, this.deps.getParts().loop.getCurrentRoundId());
+        .loop.processUserInput(
+          input,
+          signal,
+          this.deps.getParts().loop.getCurrentRoundId(),
+          attachments,
+        );
     const acted = yield* this.act(produce, signal);
     if (acted.failed || acted.aborted || acted.paused) return;
 

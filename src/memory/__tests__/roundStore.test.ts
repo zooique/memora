@@ -479,9 +479,11 @@ describe('isRoundSettled 判据单源守卫', () => {
    * 并有「僵尸豁免」闭环：豁免片段必须在目标文件中真实存在，判据删改后仍在 = 敞开的后门。
    *
    * - **渲染分流**判据「是否挂/取 assistant 正文」，回答的是「怎么画」而非「是否已收场」。
-   *   两处消费点同片段同理由：`chatPanel.collectHistoryMessages`（收集展示历史供占用重算）、
-   *   `chatView.renderReplayRound` 第 4 步（重放挂最终回答；M5b-3 重放渲染真源迁入 webview 后
-   *   自旧 `replaySession` 迁来）。中断轮**可能确有** assistantMessage（`appendInterrupted` 有恢复
+   *   消费点（2026-10-28 订正）：**只剩 `chatView.renderReplayRound` 第 4 步**一处。
+   *   另一个原消费点 `chatPanel.collectHistoryMessages` 已连同渲染逻辑外置到
+   *   `helpers/occupancyHistory.ts`，且在那里**改用内核 `isRoundSettled()`** ——
+   *   这正是「能调用单点判据时不自写同级比较」的正确方向：宿主持的唯一职责是调用，不是重写。
+   *   中断轮**可能确有** assistantMessage（`appendInterrupted` 有恢复
    *   文本即写，来源 = narrate 拼接 / 运行期 streamResult.content），不挂正文的真正理由 =
    *   **同源去双份**（该文本与 processEvents 平铺区内容相同）。替换为 isRoundSettled 会让中断轮
    *   也挂正文、反而制造双份，语义与收场判据不同，故保留。
@@ -489,9 +491,10 @@ describe('isRoundSettled 判据单源守卫', () => {
    *   提示「去确认这行是否仍是渲染分流」，不是提示「换更宽的片段」。
    */
   const ALLOWED_LINES: Record<string, string[]> = {
-    'hosts/memora-vscode/src/webview/panels/chatPanel.ts': [
-      "r.status === 'complete' && r.assistantMessage?.content",
-    ],
+    // ⚠️ `chatPanel.ts` 的原豁免于 2026-10-28 被本守卫的**闭环二（僵尸豁免）**判定删除：
+    // 那段渲染分流随「轮次 → 占用消息」逻辑被外置到 `helpers/occupancyHistory.ts`，
+    // 且外置后**改用内核 `isRoundSettled()`**（宿主不应重抄收场判据）⇒ 该豁免失去目标。
+    // 留在表里 = 一张空白通行证（该文件下次自写同类判据会被静默放行），故必须随之摘除。
     'hosts/memora-vscode/src/webview/scripts/chatView.ts': [
       "(r.status === 'complete' || r.live) && r.assistantMessage?.content",
       // 重放渲染的终态光标分流：complete 轮正文落「已完成」态（setCursorStatus），回答

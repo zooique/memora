@@ -9,7 +9,7 @@
  *     不再强制拆成多 turn 编排；
  *   - 上下文 = 用户输入 + Agent 记忆召回结果 + 运行帧追加。
  */
-import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
+import type { LlmProvider, Message, ChatOptions, ImageRef } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition, WebSearchExecInfo } from '@/agent/toolExecutor.js';
@@ -713,6 +713,7 @@ export class AgentLoop {
     userInput: string,
     signal?: AbortSignal,
     roundId?: string,
+    attachments?: readonly ImageRef[],
   ): AsyncGenerator<AgentChunk, void, unknown> {
     // 分配当前轮次 ID（优先采用调用方传入的 roundId，保证 appendUser/appendAssistant/摘要同源同值；未传自生成）
     this.currentRoundId = roundId ?? this.allocRoundId();
@@ -727,7 +728,7 @@ export class AgentLoop {
     this.cleanExecutionTemporary();
 
     // 用户消息 push（用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力，受控写入口统一包裹）
-    this.appendUserMessage(userInput);
+    this.appendUserMessage(userInput, attachments);
 
     // 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
     this.resetTurnState();
@@ -3436,14 +3437,15 @@ export class AgentLoop {
   // 收敛全部裸 push/replace 写点：每类消息的固定约束（如 <user_input> 包裹）
   // 内聚在对应写方法内，禁止外部散落裸写 this.messages，杜绝"漏包裹/乱设 role"风险面。
 
-  /** 追加一条 user 消息（统一 <user_input> 标签包裹，防注入攻击）；附当前轮次 roundId（替换式压缩单一真理源） */
-  private appendUserMessage(content: string): void {
+  /** 追加一条 user 消息（统一 <user_input> 标签包裹，防注入攻击）；附当前轮次 roundId（替换式压缩单一真理源）与可选图片附件 */
+  private appendUserMessage(content: string, attachments?: readonly ImageRef[]): void {
     this.messages.push({
       role: 'user',
       content: `<user_input>${content}</user_input>`,
       roundId: this.currentRoundId,
+      ...(attachments ? { attachments } : {}),
     });
-    // 用户输入即刷新占用（问答闭环 +1，实时反映到输入区圆环）
+    // 用户输入即刷新占用（问答闭环 +1，实时反映到输入区圆环）；带图时占用含图片 token（方案 §5.9）
     this.refreshOccupancyFromMessages();
   }
 

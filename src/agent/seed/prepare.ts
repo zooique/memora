@@ -10,6 +10,7 @@
  */
 
 import type { AgentChunk } from '@/agent/types.js';
+import type { ImageRef } from '@/llm/provider.js';
 import { resolveL2Strategy, resolveActiveStrategy } from '@/role-pack/strategyResolver.js';
 import { buildMeetingPlanSkeleton } from '@/role-pack/rolePackManager.js';
 import { type SeedDeps, type SeedParts, type SeedPrepareResult } from './types.js';
@@ -33,11 +34,13 @@ export class SeedPrepare {
    *
    * @param input 用户输入
    * @param signal 中止信号（回答前中断则在技能注入前返回 aborted）
+   * @param attachments 图片附件（可选，多模态输入）；透传到 `history.appendUser` 落盘（方案 §7 P0-12）
    * @returns 回答前结果（input + aborted；round 归属见 SeedPrepareResult）
    */
   async *run(
     input: string,
     signal: AbortSignal,
+    attachments?: readonly ImageRef[],
   ): AsyncGenerator<AgentChunk, SeedPrepareResult, unknown> {
     const { loop, history, sessionManager, rolePackManager, contextPreparer, sessionNamer } =
       this.deps.getParts() as SeedParts;
@@ -99,7 +102,13 @@ export class SeedPrepare {
 
     const roundId = loop.allocRoundId();
     loop.setCurrentRoundId(roundId);
-    await history.appendUser(input, roundId);
+    // 无附件时调用形状与升级前**完全一致**（不传第 3 参）：prepare / orchestrator 的
+    // `appendUser` 断言按双参验收，无条件多出一个 `{}` 属行为变更（务必带条件传参）。
+    if (attachments) {
+      await history.appendUser(input, roundId, { attachments });
+    } else {
+      await history.appendUser(input, roundId);
+    }
 
     // 会话标题自动命名（fire-and-forget）：仅新建会话首次问答触发（以"会话无标题"判定，不覆盖手动改名）
     if (sessionNamer) {

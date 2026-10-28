@@ -168,6 +168,16 @@ const TAB_BODY_HTML: Record<SettingsTab, string> = {
             </label>
             <div class="key-hint">勾选：本地模型可调用工具（联网搜索 / 读写文件 / 建记忆等）；取消：仅文本对话，工具通道自动收起并告知模型不可用。</div>
           </div>
+          <!-- 视觉能力位：与工具能力位不同，**不随来源类型显隐**——
+               同一个 OpenAI 兼容接口下 gpt-4o 看得见图、deepseek-chat 看不懂，云端/本地都无法推断，
+               故恒由用户显式声明，且默认不勾选（失败必闭：宁可被明确拒收，不可被静默丢图）。 -->
+          <div id="vision-field" class="field">
+            <label class="checkbox-label" for="f-vision">
+              <input id="f-vision" name="supportsVision" type="checkbox" />
+              <span>支持图片输入（多模态视觉理解）</span>
+            </label>
+            <div class="key-hint">勾选：该模型能看懂图片（如 GPT-4o / Claude 3.5 / Gemini 等视觉模型）。未勾选时发送图片会被明确拒收，不会被静默丢弃；<strong>请勿在不确定的情况下勾选</strong>——误标为「看得见」而实际看不懂，AI 会答非所问且你无法归因。</div>
+          </div>
           <div class="field">
             <label for="f-contextwindow">上下文窗口上限（K）</label>
             <input id="f-contextwindow" name="contextWindow" type="text" inputmode="decimal" placeholder="如 128（留空用默认窗口）" autocomplete="off" />

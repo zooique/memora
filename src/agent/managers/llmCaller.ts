@@ -24,7 +24,7 @@ import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import type { LoopMetrics } from '@/agent/managers/loopMetrics.js';
 import { filterCallableToolCalls, auditToolCallPairing } from '@/agent/managers/toolCallHelpers.js';
-import { isAbortError } from '@/utils/errors.js';
+import { isAbortError, configError } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { sha256Fingerprint } from '@/utils/hash.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
@@ -238,6 +238,24 @@ export class LlmCaller {
       iteration,
     });
     llmSpan.setAttribute('inputTokens', contextManager.estimateTokens(safeMessages));
+
+    // 一级入口门禁（方案 §5.6 / R8-1）：读**路由后** provider 的 supportsVision（不是 opts.provider 快照）。
+    // 含图片附件但路由到的模型未声明支持视觉 ⇒ fail-closed 阻断，避免图片静默发给不支持的模型导致裸 400 / 烧钱。
+    const hasAttachments = safeMessages.some((m) => m.attachments?.length);
+    if (hasAttachments && !effectiveProvider.supportsVision) {
+      const cause = `当前模型「${effectiveProvider.name}」未声明支持图片输入（supportsVision=false）`;
+      logger.warn({ provider: effectiveProvider.name }, `入口门禁拒绝：${cause}`);
+      llmSpan.recordException(new Error(`入口门禁拒绝：${cause}`));
+      llmSpan.end();
+      // 文案纪律（跨层）：这里是**内核**报错，宿主可能是 VS Code / MCP / CLI 中的任意一个，
+      // 内核不知道也不该知道「界面上有没有那个复选框」——写「请在设置面板勾选…」就是替宿主承诺。
+      // 故诉求只写到「需要一个已声明支持图片输入的模型」为止；具体在哪勾，由宿主各自承接。
+      throw configError(
+        '当前模型不支持图片输入',
+        `${cause}；请改用已声明支持图片输入的模型（supportsVision=true），或移除图片附件后重试。`,
+        ['改用已声明支持图片输入的模型', '移除图片附件后重试'],
+      );
+    }
 
     // 记录"模型看到了什么"的系统提示指纹（只记 hash 不记内容，可观测性职责；仅真实 Tracer 时计算避免热路径开销）
     if (tracer !== NOOP_TRACER) {

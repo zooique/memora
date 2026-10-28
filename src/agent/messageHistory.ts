@@ -6,6 +6,7 @@
  * 会话仅持有 roundIds，不再另存扁平消息列表。
  */
 import type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
+import type { ImageRef } from '@/llm/provider.js';
 import { isRoundSettled } from '@/memory/roundStore.js';
 import type {
   InteractiveInputKind,
@@ -239,6 +240,8 @@ export class MessageHistory {
       kind?: InteractiveInputKind;
       question?: string;
       options?: string[];
+      /** 图片附件（可选，多模态输入）；须显式透传到 `userMessage` 白名单与 SessionMessage，否则重启 / 切会话后图静默消失（方案 §7 P0-12） */
+      attachments?: readonly ImageRef[];
     },
   ): Promise<void> {
     const message: SessionMessage = {
@@ -246,6 +249,7 @@ export class MessageHistory {
       content,
       timestamp: nowIso(),
       ...(roundId ? { roundId } : {}),
+      ...(opts?.attachments ? { attachments: opts.attachments } : {}),
     };
     // 会话日期锚点不随输入漂移：currentDate 由显式加载/新建决定，跨天续聊沿用原会话日期
     // Round-based 路径：roundStore 注入且有 roundId 时写入
@@ -284,6 +288,7 @@ export class MessageHistory {
             role: 'user',
             content,
             timestamp: message.timestamp,
+            ...(opts?.attachments ? { attachments: opts.attachments } : {}),
           } as RoundMessage,
           status: 'pending',
           createdAt: message.timestamp,
@@ -568,18 +573,28 @@ export class MessageHistory {
     if (!this.roundStore || !roundIds.length) return [];
 
     const messages: SessionMessage[] = [];
+    const currentIdx = roundIds.length - 1;
     for (const roundId of roundIds) {
       const round = this.roundStore.getById(roundId);
       if (!round) {
         logger.warn({ roundId }, 'loadRoundBasedMessages: Round 不存在，跳过');
         continue;
       }
+      // 历史图片窗口衰减（方案 §5.12 / D22 / D23）：只有最近 RETAIN_IMAGE_ROUNDS 轮内的
+      // attachments 带上模型上下文；更早轮次不带（content 不变，仍是那句占位）。
+      // 窗口 = `当前索引 − 消息索引`，纯计算、零状态。
+      // 注意该常量当前**仅此一处消费**（§5.4.1 的宿主预读尚未落地），
+      // 拆分条件的完整论证见 LOOP_CONSTANTS.RETAIN_IMAGE_ROUNDS 的注释。
+      const idx = roundIds.indexOf(roundId);
+      const withImages = currentIdx - idx < LOOP_CONSTANTS.RETAIN_IMAGE_ROUNDS;
+      const userAttachments = withImages ? round.userMessage.attachments : undefined;
       // User message
       messages.push({
         role: round.userMessage.role,
         content: round.userMessage.content,
         roundId: round.id,
         timestamp: round.userMessage.timestamp,
+        ...(userAttachments ? { attachments: userAttachments } : {}),
       });
       // Assistant message（如果存在）
       if (round.assistantMessage) {

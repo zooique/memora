@@ -70,7 +70,7 @@ import {
   estimateTokensText,
   type CompressTarget,
   BACKGROUND_TASK_STATUS_LABELS,
-} from '@zooique/memora';
+ } from '@zooique/memora';
 
 /** 插话条数上限提示文案用值：直接消费内核真源（webview 侧无法 import 内核包，
  *  其 shared/constants.ts 同名常量是本值的镜像，由 chatPanelInput 守卫测试锁同值） */
@@ -139,6 +139,8 @@ import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
 import { createVscodeAttention } from '../../extension/host/vscodeAttention.js';
+import type { OccupancyMessage } from '../helpers/occupancyHistory.js';
+import { toOccupancyMessages } from '../helpers/occupancyHistory.js';
 import { vscodeTracer } from '../../extension/host/tracer.js';
 import { buildDropdownHtml, dropdownStyles } from '../components/dropdown.js';
 import { chatStyles } from '../styles/chatStyles.js';
@@ -2236,21 +2238,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 提取当前会话全部消息序列（统一 round-based / legacy 两路径，供占用重算）。
    *
    * 与 replayHistory 的展示路径同源：round-based 走 viewLoader 按轮取正文，
-   * legacy 走 sessionStore.loadMessages。两路径归一为 {role, content}[]。
+   * legacy 走 sessionStore.loadMessages。两路径归一为 `OccupancyMessage[]`
+   * （attachments 是可选字段——没有图片的会话不带它，形状与升级前一致）。
+   *
+   * 轮次 → 消息的映射已外置到 `helpers/occupancyHistory.ts`：`attachments` 必须透传的
+   * 论证与注释都在那里（占用环漏算图片即此面），此处只负责按会话形态选取数据源。
    */
-  private collectHistoryMessages(): Array<{ role: 'user' | 'assistant'; content: string }> {
-    const msgs: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  private collectHistoryMessages(): OccupancyMessage[] {
     if (this._viewLoader) {
       // 空会话（无轮次记录）经 loadRoundBasedHistory 单点守卫直接返回空
-      const rounds = this.loadRoundBasedHistory();
-      for (const r of rounds) {
-        if (r.userMessage?.content) msgs.push({ role: 'user', content: r.userMessage.content });
-        // 与 loadRoundBasedHistory 同判据：仅 complete 轮取正文（中断轮正文与平铺 narrate 同源，不重复计）
-        if (r.status === 'complete' && r.assistantMessage?.content) {
-          msgs.push({ role: 'assistant', content: r.assistantMessage.content });
-        }
-      }
-      return msgs;
+      return toOccupancyMessages(this.loadRoundBasedHistory());
     }
     const history = this.loadMessagesHistory();
     return history.map((m) => ({ role: m.role, content: m.content }));

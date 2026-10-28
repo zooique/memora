@@ -1,4 +1,5 @@
 import type { MessageRole } from '@/memory/types.js';
+import type { ImageRef } from '@/llm/provider.js';
 
 /**
  * 会话存储接口：宿主注入的会话消息持久化能力，内核不直接依赖文件 I/O。
@@ -138,4 +139,6 @@ export interface SessionMessage {
   timestamp: string;
   /** 所属轮次 ID（可选）：traceSummary 精确回溯用，空则退化为整会话摘要 */
   roundId?: string;
+  /** 图片附件引用（可选，多模态输入）；对话占用环与序列化共享同一数据 */
+  attachments?: readonly ImageRef[];
 }

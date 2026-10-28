@@ -64,7 +64,7 @@ import {
   AGENT_EVENTS,
   AGENT_EVENT_SET,
 } from '@/utils/eventEmitter.js';
-import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
+import type { LlmProvider, Message, ChatOptions, ImageRef } from '@/llm/provider.js';
 import type { ProviderRouter } from '@/llm/types.js';
 import { logger } from '@/logging/logger.js';
 import { isValidSessionId, splitSessionId } from '@/utils/time.js';
@@ -494,8 +494,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 流式对话（核心 API）
+   *
+   * @param attachments 图片附件（可选，多模态输入）；透传到种子编排器 → 装配两跳 → 持久化（方案 §7 P0）。
+   *   不传 = 纯文本输入，行为与历史完全一致（零兼容回归）。
    */
-  async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
+  async *chat(
+    input: string,
+    signal?: AbortSignal,
+    attachments?: readonly ImageRef[],
+  ): AsyncGenerator<AgentChunk, void, unknown> {
     this.assertInitialized('chat');
     this.validateChatInput(input);
 
@@ -517,7 +524,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this._lastInteractionAt = new Date();
 
       // 委托种子编排器：对话路径完整闭环（prepare → act → reflect）
-      yield* this.internals.seedOrchestrator!.runChat(input, combinedSignal);
+      yield* this.internals.seedOrchestrator!.runChat(input, combinedSignal, attachments);
     } finally {
       // 流已退出：清除活跃标志（与置位对称；无论正常/异常退出都复位）
       this._flowActive = false;

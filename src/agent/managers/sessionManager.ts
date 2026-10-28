@@ -10,7 +10,7 @@ import { chatBusyError, configError } from '@/utils/errors.js';
 import { isValidSessionId, splitSessionId } from '@/utils/time.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory, ForkResult } from '@/agent/messageHistory.js';
-import type { ISessionStore, SessionMeta } from '@/memory/sessionStore.js';
+import type { ISessionStore, SessionMeta, SessionMessage } from '@/memory/sessionStore.js';
 import type { Message } from '@/llm/provider.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { type AgentEventName } from '@/utils/eventEmitter.js';
@@ -309,11 +309,12 @@ export class SessionManager {
 
   /** 将会话消息恢复到 AgentLoop 工作记忆 */
   private applySessionToLoop(
-    sessionMessages: ReadonlyArray<{ role: string; content: string }>,
+    sessionMessages: ReadonlyArray<SessionMessage>,
   ): void {
     const messages: Message[] = sessionMessages.map((tm) => ({
       role: tm.role as Message['role'],
       content: tm.content,
+      ...(tm.attachments ? { attachments: tm.attachments } : {}),
     }));
     this.getLoop().restoreHistory(messages);
     // 消息集合整体替换：作废派生缓存（与 switchSession 共用同一 chokepoint）
