@@ -19,6 +19,7 @@ import type { AgentForkResult } from '@/agent/managers/sessionManager.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
+import type { ImageRef } from '@/llm/provider.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { MemoraError } from '@/utils/errors.js';
 
@@ -183,6 +184,36 @@ describe('SessionManager', () => {
       isChatBusy.mockReturnValue(true);
       await expect(manager.switchToSession('2026-06-27-main')).rejects.toThrow('对话繁忙');
       expect(emitEvent).not.toHaveBeenCalledWith('sessionSwitched', expect.anything());
+    });
+
+    it('会话消息的 attachments 经 applySessionToLoop 透传到 loop.restoreHistory（图片末跳生产路径）', async () => {
+      // 真机验收 IMG-2 第 13 子块断点B 的**末跳**：store 产出 SessionMessage.attachments 之后，
+      // 私有 applySessionToLoop 必须原样透传进 Message —— 漏了则历史图在最后一米消失，
+      // 而本文件此前零 attachments 覆盖（测试全绿也照不出这个洞）。
+      const ref: ImageRef = {
+        sha256: 'a'.repeat(64),
+        mime: 'image/png',
+        width: 8,
+        height: 8,
+        bytes: 64,
+        name: 'hist.png',
+      };
+      vi.mocked(history.loadSessionMessages).mockResolvedValue([
+        {
+          role: 'user',
+          content: '看图',
+          timestamp: '2026-06-27T10:00:00Z',
+          roundId: 'r0',
+          attachments: [ref],
+        },
+      ]);
+
+      await manager.switchToSession('2026-06-27-main');
+
+      // 投影只取 role / content / attachments（roundId / timestamp 属装配中间态，不入 Message）
+      expect(loop.restoreHistory).toHaveBeenCalledWith([
+        { role: 'user', content: '看图', attachments: [ref] },
+      ]);
     });
   });
 
