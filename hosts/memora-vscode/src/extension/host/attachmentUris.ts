@@ -54,7 +54,8 @@ export function attachmentUrisOf(
   if (!refs || refs.length === 0) return undefined;
   let table: Record<string, string> | undefined;
   for (const ref of refs) {
-    // 同一 sha 重复出现（用户连粘两次 / 历史多轮复用一张图）：一次解析足够
+    // 同一 sha 重复出现（用户连粘两次 / 历史多轮复用一张图）：**已解析成功**的不再重复解析
+    // （解析失败的 sha 不进表，下次出现会再试一次——判据挂「表里有没有」而非「见过没」）
     if (table && table[ref.sha256] !== undefined) continue;
     const file = resolveAttachmentFilePath(projectPath, ref.sha256, ref.mime);
     if (!file) continue;

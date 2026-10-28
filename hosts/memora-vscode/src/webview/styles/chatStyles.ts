@@ -464,13 +464,16 @@ export const chatStyles = `
   .msg-user-actions .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
   /* 聊天记录里的图片缩略图（D30）：正文之后、气泡之内的一条横带。
    * 与输入框附件 chip**刻意不同形态**——正文里图自证内容，文件名退到 alt/title；
-   * 上限走刻度令牌（--dim-xl 280 宽 / --dim-lg 160 高）：D30 原文写 240×160，但刻度里
-   * 160 与 280 之间没有档位，按「不造并列值」复用邻近档（视觉差 ≤40px），零裸值债务。
+   * 上限走刻度令牌（--dim-xl 280 宽 / --dim-lg 160 高）：D30 原拍板写 240×160，但刻度里
+   * 160 与 280 之间没有档位，按「不造并列值」复用邻近档（视觉差 ≤40px），零裸值债务；
+   * 2026-10-28 已把该偏差写进 D30 并同步方案/台账（上限口径统一为 280）。
+   * 宽度再叠 min(..., 100%)：.msg.user 限宽 85%，侧栏窄于约 330px 时超宽图
+   * （如 2000×100）会溢出气泡右缘——上限只该约束「最大」，不该突破「可用宽度」。
    * loading=lazy + decoding=async 由脚本设置，长会话（≤60 轮 × ≤5 张）不预解码。
    * 注：本文件是 TS 模板字符串，注释里禁写反引号（会终止字符串）。 */
   .msg-attachments { display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); margin-top: var(--sp-2, 6px); }
   .msg-attachment {
-    display: block; max-width: var(--dim-xl); max-height: var(--dim-lg); width: auto; height: auto;
+    display: block; max-width: min(var(--dim-xl), 100%); max-height: var(--dim-lg); width: auto; height: auto;
     border-radius: var(--radius-sm, 2px);
   }
   /* 缺陷态：留在原位的一句话——不断言文件是否存在，只说明这一张现在取不到 */
