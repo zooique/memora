@@ -535,9 +535,11 @@ describe('configView 本地 LLM 能力声明（provider 类型 + 工具能力位
     const call = postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as
       unknown[] | undefined;
     return (
-      (call?.[0] as {
-        config: { provider?: string; supportsToolCalling?: boolean; supportsVision?: boolean };
-      })?.config ?? {}
+      (
+        call?.[0] as {
+          config: { provider?: string; supportsToolCalling?: boolean; supportsVision?: boolean };
+        }
+      )?.config ?? {}
     );
   }
 

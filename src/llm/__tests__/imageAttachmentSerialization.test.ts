@@ -127,8 +127,7 @@ describe('OpenAICompatibleProvider · 图片附件展开（方案 §5.4）', () 
     }));
     const messages: Message[] = [{ role: 'user', content: '看这张图', attachments: [ref] }];
     await drain(provider, messages);
-    const content = (captured.messages?.[0] as { content: Array<Record<string, unknown>> })
-      .content;
+    const content = (captured.messages?.[0] as { content: Array<Record<string, unknown>> }).content;
     expect(content).toEqual([
       { type: 'text', text: '看这张图' },
       { type: 'text', text: '[图片 pic.png, image/png, 412 KB, 存于 .memora/attachments/abc.png]' },
@@ -140,15 +139,19 @@ describe('OpenAICompatibleProvider · 图片附件展开（方案 §5.4）', () 
   it('多图 → 多个 image_url 块（顺序 = 附件顺序）', async () => {
     const provider = makeProvider(() => ({ url: 'data:image/png;base64,B' }));
     const ref2: ImageRef = { ...ref, sha256: 'def', name: 'pic2.png' };
-    const messages: Message[] = [
-      { role: 'user', content: '对比这两张', attachments: [ref, ref2] },
-    ];
+    const messages: Message[] = [{ role: 'user', content: '对比这两张', attachments: [ref, ref2] }];
     await drain(provider, messages);
     const content = (captured.messages?.[0] as { content: unknown[] }).content;
     expect(content).toHaveLength(3);
     expect(content[0]).toEqual({ type: 'text', text: '对比这两张' });
-    expect(content[1]).toEqual({ type: 'image_url', image_url: { url: 'data:image/png;base64,B' } });
-    expect(content[2]).toEqual({ type: 'image_url', image_url: { url: 'data:image/png;base64,B' } });
+    expect(content[1]).toEqual({
+      type: 'image_url',
+      image_url: { url: 'data:image/png;base64,B' },
+    });
+    expect(content[2]).toEqual({
+      type: 'image_url',
+      image_url: { url: 'data:image/png;base64,B' },
+    });
   });
 });
 
@@ -189,9 +192,7 @@ describe('OpenAICompatibleProvider · resolver 二级降级（D7 / §5.4）', ()
       return calls === 1 ? { url: 'data:image/png;base64,B' } : null;
     });
     const ref2: ImageRef = { ...ref, sha256: 'def' };
-    const messages: Message[] = [
-      { role: 'user', content: '对比这两张', attachments: [ref, ref2] },
-    ];
+    const messages: Message[] = [{ role: 'user', content: '对比这两张', attachments: [ref, ref2] }];
     await drain(provider, messages);
     expect(captured.messages).toEqual([
       {
@@ -216,11 +217,7 @@ describe('OpenAICompatibleProvider · resolver 二级降级（D7 / §5.4）', ()
         if (mode === 'miss-all') return null;
         return n % 2 === 1 ? { url: 'data:image/png;base64,B' } : null;
       });
-      const refs: ImageRef[] = [
-        ref,
-        { ...ref, sha256: 'd1' },
-        { ...ref, sha256: 'd2' },
-      ];
+      const refs: ImageRef[] = [ref, { ...ref, sha256: 'd1' }, { ...ref, sha256: 'd2' }];
       const messages: Message[] = [{ role: 'user', content: 'x', attachments: refs }];
       await drain(provider, messages);
       const content = (captured.messages?.[0] as { content: unknown[] }).content;

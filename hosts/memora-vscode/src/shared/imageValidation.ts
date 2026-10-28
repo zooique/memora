@@ -12,8 +12,13 @@
  * 调用顺序（任一步失败即拒绝，给可见原因，**不静默丢弃**——见 §6.12 表头）：
  *   1 字节非空 → 2 字节 ≤ 5 MiB → 3 magic bytes 嗅探 mime → 4 与声明 mime 一致
  *   → 5 base64 往返长度一致 → 6 解析像素尺寸
+ *
+ * 🔒 **本文件处于 webview 采集链上 ⇒ 必须零运行时依赖**：不得值导入内核
+ * （`import type` 可以）——webview 打包是 `platform: 'browser'` 的 esbuild，
+ * 一旦拉到内核 barrel 就会把 `node:*` 整个拖进浏览器包、插件当场打不出来
+ * （2026-10-28 真实事故，守卫见 `esbuild.config.mjs` browser 构建的 onResolve）。
+ * 需要内核算式的部分（token 预算）已按消费侧切到 `imageTokenBudget.ts`（仅 node 侧可用）。
  */
-import { imageTokens } from '@zooique/memora';
 
 /** 四种受支持格式的 MIME（顺序即嗅探顺序，勿改——它与下面的 sniff 分支一一对应） */
 export const SUPPORTED_IMAGE_MIMES = [
@@ -28,19 +33,25 @@ export type ImageMime = (typeof SUPPORTED_IMAGE_MIMES)[number];
 /** 入口单图字节上限（§6.12 第 2 步 / §6.7） */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
-/** 单轮图片 token 上限 = 模型上下文窗口的比例（§6.7 第四维 / G3） */
-export const IMAGE_TOKEN_WINDOW_RATIO = 0.25;
-
 export interface ImageSize {
   width: number;
   height: number;
 }
 
-export type ImageRejectStep = 1 | 2 | 3 | 4 | 5 | 6;
+/**
+ * 六步校验链的**失败环号**（1–6，与文件头「调用顺序」一一对应）。
+ *
+ * 为什么叫 Stage 不叫 Step：`step` 在本仓是红义专属——= loop 内一次 LLM 迭代
+ * （见 `terminology-anchor-rules.md` §1），而这里是「校验链第几环」，属**第三种含义**。
+ * 若沿用 Step，其字段还会随拒收原因进入 UI 文案，与屏上 loop 的「步」同词同屏
+ * （术语锚点 §4.2 禁止的形态）。守卫 = `terminology:check`（本类型即为其登记项）。
+ */
+export type ImageRejectStage = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface ImageReject {
   ok: false;
-  step: ImageRejectStep;
+  /** 失败发生在第几环（调试/测试用；**不进 UI 文案**——用户不关心第几步，只关心为什么） */
+  stage: ImageRejectStage;
   /** 面向用户的可读原因（必须能直接进 UI，不含绝对路径） */
   message: string;
 }
@@ -158,7 +169,13 @@ export function parseImageSize(bytes: Uint8Array, mime: ImageMime): ImageSize | 
           continue;
         }
         // SOF0–SOF15（C0–CF），排除 DHT(C4) / JPG(C8) / DAC(CC) 这三个不带尺寸的 Cf 类标记
-        if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        if (
+          marker >= 0xc0 &&
+          marker <= 0xcf &&
+          marker !== 0xc4 &&
+          marker !== 0xc8 &&
+          marker !== 0xcc
+        ) {
           const height = (bytes[offset + 5]! << 8) | bytes[offset + 6]!;
           const width = (bytes[offset + 7]! << 8) | bytes[offset + 8]!;
           return width > 0 && height > 0 ? { width, height } : null;
@@ -234,13 +251,11 @@ export function verifyBase64RoundTrip(originalByteLength: number, base64: string
  */
 export function resolveImageName(declaredName: string | undefined, sha256: string): string {
   const trimmed = declaredName?.trim();
-  return trimmed && trimmed.length > 0
-    ? trimmed
-    : `粘贴图片-${sha256.slice(0, 6)}`;
+  return trimmed && trimmed.length > 0 ? trimmed : `粘贴图片-${sha256.slice(0, 6)}`;
 }
 
-function reject(step: ImageRejectStep, message: string): ImageReject {
-  return { ok: false, step, message };
+function reject(stage: ImageRejectStage, message: string): ImageReject {
+  return { ok: false, stage, message };
 }
 
 /**
@@ -262,10 +277,7 @@ export function validateImageCandidate(
 
   // 第 2 步：单图字节上限
   if (bytes.length > MAX_IMAGE_BYTES) {
-    return reject(
-      2,
-      `单张图片不能超过 ${Math.floor(MAX_IMAGE_BYTES / 1024 / 1024)} MiB`,
-    );
+    return reject(2, `单张图片不能超过 ${Math.floor(MAX_IMAGE_BYTES / 1024 / 1024)} MiB`);
   }
 
   // 第 3 步：嗅探真实格式
@@ -288,47 +300,4 @@ export function validateImageCandidate(
     height: size.height,
     name: resolveImageName(declaredName, sha256),
   };
-}
-
-export interface ImageTokenBudgetInput {
-  /** 已通过校验的候选图（含宽高） */
-  sizes: ReadonlyArray<ImageSize>;
-  /** 该模型配置的上下文窗口 token 数（0 / undefined = 不限，与内核预算口径一致） */
-  contextWindow: number | undefined;
-}
-
-export interface ImageTokenBudgetResult {
-  ok: boolean;
-  totalTokens: number;
-  limit: number;
-  message: string;
-}
-
-/**
- * G3 入口限额第四维：单轮图片 token 合计 ≤ 模型 `contextWindow` 的 25%。
- *
- * 为什么必须补这一维（§6.7 / G3）：张数 / 单图字节 / 总字节三个维度都**看不见** token ——
- * 一张 4K 图 ≈2125 token，5 张 ≈10.6k，而 `contextWindow` 可低到 8k ⇒ 这是唯一
- * 「真机上真会爆」的一条。换算必须走**内核单点** `imageTokens`，不得在此重写公式。
- *
- * `contextWindow` 为 0 / undefined（= 不限，与内核 tokenBudget 口径一致）时不做限制。
- */
-export function checkImageTokenBudget(input: ImageTokenBudgetInput): ImageTokenBudgetResult {
-  const tokens = input.sizes.map((s) => imageTokens(s));
-  const totalTokens = tokens.reduce((a, b) => a + b, 0);
-  const window = input.contextWindow ?? 0;
-  if (window <= 0) {
-    return { ok: true, totalTokens, limit: Number.POSITIVE_INFINITY, message: '' };
-  }
-  const limit = Math.floor(window * IMAGE_TOKEN_WINDOW_RATIO);
-  return totalTokens > limit
-    ? {
-        ok: false,
-        totalTokens,
-        limit,
-        message: `本轮图片约占 ${totalTokens} token，超过该模型上限 ${limit} token（${Math.round(
-          IMAGE_TOKEN_WINDOW_RATIO * 100,
-        )}% 窗口），请减少图片数量或换用更小的图`,
-      }
-    : { ok: true, totalTokens, limit, message: '' };
 }

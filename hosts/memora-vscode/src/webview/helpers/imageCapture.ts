@@ -259,7 +259,12 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     try {
       const bytes = await readBytes(file);
       const digest = await sha256(bytes);
-      const result: ImageCheckResult = validateImageCandidate(bytes, digest, file.type, declaredName);
+      const result: ImageCheckResult = validateImageCandidate(
+        bytes,
+        digest,
+        file.type,
+        declaredName,
+      );
       if (result.ok) {
         accepted.push({
           source,
@@ -274,7 +279,9 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
         rejected.push({
           source,
           name: declaredName || '图片',
-          reason: `第 ${result.step} 步校验未通过：${result.message}`,
+          // 文案刻意**不带环号**：屏上 loop 已占用「第 N 步」措辞（术语锚点 §4.2 禁同词同屏），
+          // 且用户只关心「为什么被拒」、不关心是第几环——环号保留在结构化字段供测试/日志定位
+          reason: `图片校验未通过：${result.message}`,
         });
       }
     } catch (err) {

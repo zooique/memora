@@ -178,6 +178,29 @@ async function main() {
       sourcemap: true,
       minify: false,
       keepNames: true,
+      // 守卫：webview 运行时**禁止值导入内核**（上方文件头「webview 只 import type」的机检）。
+      // 没有它时，同样的错误会炸成 32 条 `Could not resolve "node:*"`（2026-10-28 事故）——
+      // 报错指不到根因，下一个人得从 barrel 一路反推才知道是哪一行 import 引进来的。
+      // `import type` 会在 TS 转换阶段被剥离 ⇒ 不触发本 resolve，故不误伤纯类型导入。
+      plugins: [
+        {
+          name: 'webview-no-kernel-runtime-import',
+          setup(build) {
+            build.onResolve({ filter: /^@zooique\/memora$/ }, () => ({
+              errors: [
+                {
+                  text:
+                    'webview 运行时禁止值导入内核 @zooique/memora：webview 打包是 platform=browser，' +
+                    '内核 barrel 会把 node:fs/node:path 整个拖进浏览器包 ⇒ 插件打不出来。' +
+                    '解法：① 需要的若是纯函数/常量，按消费侧下沉到独立模块并让 node 侧持有（参照 ' +
+                    'src/shared/imageTokenBudget.ts）；② 需要内核算式的值，由宿主算好回传；' +
+                    '③ 纯类型可用 import type。详见本文件头部「webview 运行时对内核只有 import type」。',
+                },
+              ],
+            }));
+          },
+        },
+      ],
     });
   }
   console.log('✅ esbuild webview 打包完成：dist/webview/scripts/');

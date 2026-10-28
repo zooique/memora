@@ -308,9 +308,7 @@ export class SessionManager {
   // loadSessionMessages 内部方法保留（switchToSession 内部消费，非公开面）。
 
   /** 将会话消息恢复到 AgentLoop 工作记忆 */
-  private applySessionToLoop(
-    sessionMessages: ReadonlyArray<SessionMessage>,
-  ): void {
+  private applySessionToLoop(sessionMessages: ReadonlyArray<SessionMessage>): void {
     const messages: Message[] = sessionMessages.map((tm) => ({
       role: tm.role as Message['role'],
       content: tm.content,

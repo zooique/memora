@@ -155,7 +155,11 @@ describe('createImageCapture — 粘贴', () => {
     });
     const file = new File([bytes], 'shot.png', { type: 'image/png' });
     dom.input.dispatchEvent(
-      eventWithData('paste', 'clipboardData', transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] })),
+      eventWithData(
+        'paste',
+        'clipboardData',
+        transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] }),
+      ),
     );
     await Promise.resolve();
     await Promise.resolve();
@@ -186,7 +190,11 @@ describe('createImageCapture — 粘贴', () => {
     });
     const file = new File([bytes], '', { type: 'image/png' });
     dom.input.dispatchEvent(
-      eventWithData('paste', 'clipboardData', transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] })),
+      eventWithData(
+        'paste',
+        'clipboardData',
+        transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] }),
+      ),
     );
     await Promise.resolve();
     await Promise.resolve();
@@ -205,7 +213,11 @@ describe('createImageCapture — 粘贴', () => {
     });
     const file = new File([big], 'huge.png', { type: 'image/png' });
     dom.input.dispatchEvent(
-      eventWithData('paste', 'clipboardData', transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] })),
+      eventWithData(
+        'paste',
+        'clipboardData',
+        transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] }),
+      ),
     );
     await Promise.resolve();
     await Promise.resolve();
@@ -229,7 +241,11 @@ describe('createImageCapture — 粘贴', () => {
     });
     const file = new File(['x'], 'broken.png', { type: 'image/png' });
     dom.input.dispatchEvent(
-      eventWithData('paste', 'clipboardData', transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] })),
+      eventWithData(
+        'paste',
+        'clipboardData',
+        transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] }),
+      ),
     );
     await Promise.resolve();
     await Promise.resolve();
@@ -282,7 +298,11 @@ describe('createImageCapture — 粘贴', () => {
       sha256: async () => SHA,
     });
     const file = new File([bytes], 'a.png', { type: 'image/png' });
-    const e = eventWithData('paste', 'clipboardData', transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] }));
+    const e = eventWithData(
+      'paste',
+      'clipboardData',
+      transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] }),
+    );
     dom.input.dispatchEvent(e);
 
     expect(e.defaultPrevented).toBe(true);
@@ -334,7 +354,11 @@ describe('createImageCapture — 拖入', () => {
       sha256: async () => SHA,
     });
     dom.dropZone.dispatchEvent(
-      eventWithData('drop', 'dataTransfer', transferOf({ uriList: 'file:///a.png\nfile:///b.png' })),
+      eventWithData(
+        'drop',
+        'dataTransfer',
+        transferOf({ uriList: 'file:///a.png\nfile:///b.png' }),
+      ),
     );
 
     expect(handle.accepted.length).toBe(2);
@@ -348,11 +372,19 @@ describe('createImageCapture — 拖入', () => {
       readBytes: async () => new Uint8Array(),
       sha256: async () => SHA,
     });
-    const plain = eventWithData('dragover', 'dataTransfer', { items: [], files: [], types: ['text/plain'] } as unknown as DataTransfer);
+    const plain = eventWithData('dragover', 'dataTransfer', {
+      items: [],
+      files: [],
+      types: ['text/plain'],
+    } as unknown as DataTransfer);
     dom.dropZone.dispatchEvent(plain);
     expect(plain.defaultPrevented).toBe(false);
 
-    const withUri = eventWithData('dragover', 'dataTransfer', { items: [], files: [], types: ['text/uri-list'] } as unknown as DataTransfer);
+    const withUri = eventWithData('dragover', 'dataTransfer', {
+      items: [],
+      files: [],
+      types: ['text/uri-list'],
+    } as unknown as DataTransfer);
     dom.dropZone.dispatchEvent(withUri);
     expect(withUri.defaultPrevented).toBe(true);
     expect(dom.dropZone.classList.contains('is-image-drag')).toBe(true);
@@ -366,7 +398,11 @@ describe('createImageCapture — 拖入', () => {
       sha256: async () => SHA,
     });
     dom.dropZone.dispatchEvent(
-      eventWithData('dragover', 'dataTransfer', { items: [], files: [], types: ['text/uri-list'] } as unknown as DataTransfer),
+      eventWithData('dragover', 'dataTransfer', {
+        items: [],
+        files: [],
+        types: ['text/uri-list'],
+      } as unknown as DataTransfer),
     );
     expect(dom.dropZone.classList.contains('is-image-drag')).toBe(true);
     dom.dropZone.dispatchEvent(

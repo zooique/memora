@@ -25,7 +25,15 @@ import { nowIso } from '@/utils/time.js';
 import type { Round } from '@/memory/roundStore.js';
 
 function makeRef(over: Partial<ImageRef> = {}): ImageRef {
-  return { sha256: 'x', mime: 'image/png', width: 100, height: 100, bytes: 10, name: 'p.png', ...over };
+  return {
+    sha256: 'x',
+    mime: 'image/png',
+    width: 100,
+    height: 100,
+    bytes: 10,
+    name: 'p.png',
+    ...over,
+  };
 }
 
 function makeRound(id: string, attachments?: readonly ImageRef[]): Round {
@@ -79,9 +87,7 @@ describe('estimateTokensMessages · 图片折算进 CJK 轨道（方案 §5.9）
   });
 
   it('多图累加（两张 100×100 = 32 token）', () => {
-    const est = estimateTokensMessages([
-      { content: '', attachments: [makeRef(), makeRef()] },
-    ]);
+    const est = estimateTokensMessages([{ content: '', attachments: [makeRef(), makeRef()] }]);
     expect(est).toBe(32);
   });
 

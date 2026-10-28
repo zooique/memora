@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   MAX_IMAGE_BYTES,
   SUPPORTED_IMAGE_MIMES,
-  checkImageTokenBudget,
   parseImageSize,
   resolveImageName,
   sniffImageMime,
@@ -10,6 +9,9 @@ import {
   verifyBase64RoundTrip,
   type ImageMime,
 } from '../imageValidation.js';
+// G3 限额（需内核 imageTokens 换算）已按消费侧切到独立文件：本测试跑在 node 环境可引，
+// 但 webview 采集链不可引——拆分理由见 imageTokenBudget.ts 文件头
+import { checkImageTokenBudget } from '../imageTokenBudget.js';
 
 /**
  * 本文件刻意**全部使用真实格式头**（逐字节拼增长/-WEBP 分三种子型 / JPEG 带陷阱段），
@@ -51,7 +53,10 @@ function webp(kind: 'VP8 ' | 'VP8L' | 'VP8X', w: number, h: number): Uint8Array 
   const b = new Uint8Array(32);
   b.set([0x52, 0x49, 0x46, 0x46], 0); // 'RIFF'
   b.set([0x57, 0x45, 0x42, 0x50], 8); // 'WEBP'
-  b.set([...kind].map((c) => c.charCodeAt(0)), 12);
+  b.set(
+    [...kind].map((c) => c.charCodeAt(0)),
+    12,
+  );
   if (kind === 'VP8 ') {
     b[26] = w & 0xff;
     b[27] = (w >> 8) & 0xff;
@@ -98,9 +103,9 @@ describe('第 3 步 · magic bytes 嗅探（不信扩展名、不信 File.type�
 
   it('扩展名伪装：内文是 PNG 却叫 .jpg ⇒ 以实际为准（判出不叫冒充者的那个）', () => {
     // 反过来更重要：SVG 文本顶着 .png 后缀必须被拒，否则会把脚本/矢量一路放行
-    expect(sniffImageMime(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg">'))).toBe(
-      null,
-    );
+    expect(
+      sniffImageMime(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg">')),
+    ).toBe(null);
     expect(sniffImageMime(new TextEncoder().encode('这不是图片，只是一段中文文本'))).toBe(null);
   });
 
@@ -207,7 +212,7 @@ describe('六步链主入口 · 逐步失败针对下一步', () => {
   it('第 1 步：空字节 ⇒ step 1', () => {
     const r = validateImageCandidate(new Uint8Array(0), sha);
     expect(r.ok).toBe(false);
-    expect(r.ok === false && r.step).toBe(1);
+    expect(r.ok === false && r.stage).toBe(1);
   });
 
   it('第 2 步：超过 5 MiB ⇒ step 2（边界内放行、边界外拒）', () => {
@@ -219,7 +224,7 @@ describe('六步链主入口 · 逐步失败针对下一步', () => {
     overLimit.set(head, 0);
     const r = validateImageCandidate(overLimit, sha);
     expect(r.ok).toBe(false);
-    expect(r.ok === false && r.step).toBe(2);
+    expect(r.ok === false && r.stage).toBe(2);
   });
 
   it('第 3 步：非图片（SVG）⇒ step 3', () => {
@@ -228,7 +233,7 @@ describe('六步链主入口 · 逐步失败针对下一步', () => {
       sha,
     );
     expect(r.ok).toBe(false);
-    expect(r.ok === false && r.step).toBe(3);
+    expect(r.ok === false && r.stage).toBe(3);
   });
 
   it('第 4 步：声明与实际不符 ⇒ step 4；声明缺失或一致 ⇒ 放行', () => {
@@ -244,7 +249,7 @@ describe('六步链主入口 · 逐步失败针对下一步', () => {
     const truncatedPng = png(30, 30).slice(0, 20);
     const r = validateImageCandidate(truncatedPng, sha);
     expect(r.ok).toBe(false);
-    expect(r.ok === false && r.step).toBe(6);
+    expect(r.ok === false && r.stage).toBe(6);
   });
 
   it('全通过 ⇒ 产出四值与最终名（mime 来自嗅探，不信声明）', () => {
@@ -288,7 +293,10 @@ describe('D29 · ImageRef.name 唯一生产点', () => {
 
 describe('G3 · 入口限额第四维（图片 token ≤ 窗口 25%）', () => {
   it('未超限 ⇒ ok，并回报实际占用的合计 token', () => {
-    const r = checkImageTokenBudget({ sizes: [{ width: 1024, height: 1024 }], contextWindow: 128_000 });
+    const r = checkImageTokenBudget({
+      sizes: [{ width: 1024, height: 1024 }],
+      contextWindow: 128_000,
+    });
     expect(r.ok).toBe(true);
     expect(r.totalTokens).toBeGreaterThan(0);
     expect(r.limit).toBe(32_000);
@@ -316,11 +324,12 @@ describe('G3 · 入口限额第四维（图片 token ≤ 窗口 25%）', () => {
   });
 
   it('contextWindow 为 0 / undefined（= 不限，与内核 tokenBudget 口径一致）⇒ 不做限制', () => {
-    expect(checkImageTokenBudget({ sizes: [{ width: 3840, height: 2160 }], contextWindow: 0 }).ok).toBe(
-      true,
-    );
     expect(
-      checkImageTokenBudget({ sizes: [{ width: 3840, height: 2160 }], contextWindow: undefined }).ok,
+      checkImageTokenBudget({ sizes: [{ width: 3840, height: 2160 }], contextWindow: 0 }).ok,
+    ).toBe(true);
+    expect(
+      checkImageTokenBudget({ sizes: [{ width: 3840, height: 2160 }], contextWindow: undefined })
+        .ok,
     ).toBe(true);
   });
 

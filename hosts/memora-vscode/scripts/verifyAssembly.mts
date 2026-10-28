@@ -31,13 +31,15 @@ import type { ProviderStore } from '../src/extension/providers/providerStore.js'
 /**
  * 桩 LLM Provider：chat() 仅产出空文本（Agent 装配用，不发起真实调用语义测试）
  *
- * 双能力位均声明 false（implements 非 extends，不继承基类默认值、字段须逐一自声明）：
- * 桩零工具能力，不宣称原生 FC——宣称能力零消费即幻觉。
+ * 三能力位均声明 false（implements 非 extends，不继承基类默认值、字段须逐一自声明）：
+ * 桩零工具能力、零视觉能力，不宣称原生 FC / 多模态——宣称能力零消费即幻觉。
  */
 class StubLlmProvider implements LlmProvider {
   readonly name = 'stub';
   readonly supportsStructuredOutput = false;
   readonly supportsToolCalling = false;
+  /** 桩不支持视觉（IMG-1 起 LlmProvider 必填：桩漏声明则 typecheck 红——本轮实测） */
+  readonly supportsVision = false;
   async *chat(_messages: unknown[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
     yield { content: '', finishReason: 'stop' };
   }

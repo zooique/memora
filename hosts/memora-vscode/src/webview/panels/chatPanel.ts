@@ -70,7 +70,7 @@ import {
   estimateTokensText,
   type CompressTarget,
   BACKGROUND_TASK_STATUS_LABELS,
- } from '@zooique/memora';
+} from '@zooique/memora';
 
 /** 插话条数上限提示文案用值：直接消费内核真源（webview 侧无法 import 内核包，
  *  其 shared/constants.ts 同名常量是本值的镜像，由 chatPanelInput 守卫测试锁同值） */

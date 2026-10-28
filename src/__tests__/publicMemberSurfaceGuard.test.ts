@@ -881,7 +881,10 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'updateSessionMeta',
     ],
   },
-  SessionMessage: { kind: 'interface', members: ['attachments', 'content', 'role', 'roundId', 'timestamp'] },
+  SessionMessage: {
+    kind: 'interface',
+    members: ['attachments', 'content', 'role', 'roundId', 'timestamp'],
+  },
   SessionMeta: {
     kind: 'interface',
     members: [

@@ -292,29 +292,29 @@ export class OpenAICompatibleProvider extends LlmProvider {
       // 无附件时形状与升级前**字节级一致**（快照测试 R8-4 守门）。base64 字节**只在此处**临时物化，
       // 经宿主注入的 ImageResolver 端口，内核零外部 IO（方案 §5.3 / §5.4）。
       if (m.role === 'user' && m.attachments?.length) {
-      const blocks: Array<
-        { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
-      > = m.content ? [{ type: 'text', text: m.content }] : [];
-      for (const att of m.attachments) {
-        const resolved = this.config.imageResolver?.(att) ?? null;
-        if (resolved && 'url' in resolved) {
-          blocks.push({ type: 'image_url', image_url: { url: resolved.url } });
-          continue;
+        const blocks: Array<
+          { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+        > = m.content ? [{ type: 'text', text: m.content }] : [];
+        for (const att of m.attachments) {
+          const resolved = this.config.imageResolver?.(att) ?? null;
+          if (resolved && 'url' in resolved) {
+            blocks.push({ type: 'image_url', image_url: { url: resolved.url } });
+            continue;
+          }
+          // 二级降级（D7 / §5.4 / §6.13）：**推可见占位文本块，绝不静默丢该图**。
+          // 静默丢 ⇒ 用户以为图发了、模型却从没见过 ⇒ 不可发现的错误（文档明文判据）。
+          // 占位文案的生产权归宿主（只有宿主知道路径），宿主未给时内核只给最短信息
+          //（`sha256` 前 8 位）——内核不知道也不该知道路径，不伪造档名/大小。
+          blocks.push({
+            type: 'text',
+            text:
+              resolved && 'text' in resolved
+                ? resolved.text
+                : `[图片不可用 ${att.sha256.slice(0, 8)}]`,
+          });
         }
-        // 二级降级（D7 / §5.4 / §6.13）：**推可见占位文本块，绝不静默丢该图**。
-        // 静默丢 ⇒ 用户以为图发了、模型却从没见过 ⇒ 不可发现的错误（文档明文判据）。
-        // 占位文案的生产权归宿主（只有宿主知道路径），宿主未给时内核只给最短信息
-        //（`sha256` 前 8 位）——内核不知道也不该知道路径，不伪造档名/大小。
-        blocks.push({
-          type: 'text',
-          text:
-            resolved && 'text' in resolved
-              ? resolved.text
-              : `[图片不可用 ${att.sha256.slice(0, 8)}]`,
-        });
-      }
-      // 全部走降级且正文为空（极端情形）⇒ 兜底为纯文本，避免发出空 content 数组
-      return { role: 'user', content: blocks.length > 0 ? blocks : m.content };
+        // 全部走降级且正文为空（极端情形）⇒ 兜底为纯文本，避免发出空 content 数组
+        return { role: 'user', content: blocks.length > 0 ? blocks : m.content };
       }
       return { role: m.role, content: m.content };
     });
