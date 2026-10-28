@@ -101,7 +101,12 @@ function setupInput() {
   roundStore.load();
   const store = new WorkspaceSessionStore(dir, roundStore);
   store.load();
-  const provider = new MemoraChatViewProvider({ fsPath: '/mock/uri' } as never, store, {} as never);
+  const provider = new MemoraChatViewProvider(
+    { fsPath: '/mock/uri' } as never,
+    store,
+    {} as never,
+    '/mock/workspace',
+  );
   const posted: unknown[] = [];
   const webviewView = {
     webview: {

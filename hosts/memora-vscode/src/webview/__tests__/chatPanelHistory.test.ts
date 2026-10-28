@@ -41,6 +41,7 @@ import { MAX_THOUGHT_PAYLOAD_LENGTH, foldThoughtEvents } from '../../extension/h
 vi.mock('vscode', async () => {
   const uri = {
     joinPath: (base: unknown, ...p: string[]) => ({ base, segments: p }),
+    file: (p: string) => ({ fsPath: p, toString: () => 'mock://file' }),
     fsPath: '/mock/path',
   };
   return {
@@ -123,6 +124,7 @@ function setup(): {
     { fsPath: '/mock/uri' } as never,
     store,
     providerStore,
+    '/mock/workspace',
   );
   const posted: unknown[] = [];
 
@@ -1879,6 +1881,7 @@ describe('chatPanel · 崩溃残留轮打捞升级为正常 stop turn（T1，202
       { fsPath: '/mock/uri' } as never,
       store,
       providerStore,
+      '/mock/workspace',
     );
     provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
     provider.setRoundStore(roundStore);

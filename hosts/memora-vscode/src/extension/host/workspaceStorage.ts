@@ -23,6 +23,7 @@ import {
   type Memory,
 } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
+import { resolveProjectDataDir } from './projectDataDir.js';
 
 /**
  * 退役 source 集合：设定记忆标签（persona/rule/skill）。
@@ -43,8 +44,8 @@ export class WorkspaceStorage implements IMemoryStorage {
   private readonly filePath: string;
 
   constructor(workspacePath: string) {
-    // 存放到工作区 .memora/memories.json
-    this.filePath = join(workspacePath, '.memora', 'memories.json');
+    // 存放到工作区数据目录下的 memories.json（目录经单点推导 = projectDataDir.ts）
+    this.filePath = join(resolveProjectDataDir(workspacePath), 'memories.json');
   }
 
   /** 记忆文件绝对路径（诊断 / 一次性迁移定位用；勿据此另写第二真源） */

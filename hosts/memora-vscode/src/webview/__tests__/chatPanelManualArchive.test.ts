@@ -85,6 +85,7 @@ function setup(): {
     { fsPath: '/mock/uri' } as never,
     store,
     providerStore,
+    '/mock/workspace',
   );
   const posted: unknown[] = [];
   const webviewView = {

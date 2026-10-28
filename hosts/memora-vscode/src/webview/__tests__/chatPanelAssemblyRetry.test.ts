@@ -93,6 +93,7 @@ function setup(): AssemblyFixture {
     { fsPath: '/mock/uri' } as never,
     store,
     providerStore,
+    '/mock/workspace',
   );
   const cast = provider as unknown as AssemblyCast;
   return { provider, cast };

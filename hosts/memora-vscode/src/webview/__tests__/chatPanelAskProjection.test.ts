@@ -96,11 +96,16 @@ function setup() {
   roundStore.load();
   const store = new WorkspaceSessionStore(dir, roundStore);
   store.load();
-  const provider = new MemoraChatViewProvider({ fsPath: '/mock/uri' } as never, store, {
-    // ProviderStore 桩：流首 meta 取证包消费 getActive（流首 await 点）/ getActiveName（meta llm）
-    getActive: async () => undefined,
-    getActiveName: () => '',
-  } as never);
+  const provider = new MemoraChatViewProvider(
+    { fsPath: '/mock/uri' } as never,
+    store,
+    {
+      // ProviderStore 桩：流首 meta 取证包消费 getActive（流首 await 点）/ getActiveName（meta llm）
+      getActive: async () => undefined,
+      getActiveName: () => '',
+    } as never,
+    '/mock/workspace',
+  );
   const posted: unknown[] = [];
   (provider as unknown as { _view: unknown })._view = {
     webview: {

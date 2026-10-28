@@ -19,6 +19,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.js';
 import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
+import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
 // 引用路径 ↔ 首根的双向判据唯一真源 = refPath（生成侧 relativeUnderPrimaryRoot 归 addToChat /
 // mention QuickPick 用，消费侧 resolveUnderPrimaryRoot 归本文件 openRefInEditor 用）——两半分居必漂移，故同模块。
 import { relativeUnderPrimaryRoot, resolveUnderPrimaryRoot } from '../../extension/host/refPath.js';
@@ -481,14 +482,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     private readonly extensionUri: vscode.Uri,
     private readonly sessionStore: HostSessionStore,
     providerStore: ProviderStore,
+    /** 工作区根（extension.ts 单点传入，本类不自算——防回退规则出第二真源）；附件目录由此推导 */
+    private readonly workspacePath: string,
   ) {
     this._providerStore = providerStore;
-    // 初始会话：最近活跃会话（SSOT：listSessionMetas 按 updatedAt 降序，[0] 即最近）；
-    // 无任何历史会话时不自动创建——新建会话唯一入口为标题条「＋」。
+    // 初始会话 = 最近活跃会话（listSessionMetas 按 updatedAt 降序取 [0]）；无历史不自动创建（新建唯一入口为标题条「＋」）
     this._currentSessionId = this.sessionStore.listSessionMetas()[0]?.sessionId ?? '';
-    // 文档上下文**不在此处预取**：改为发送时实时读活动编辑器（见 snapshotDocContext）。
-    // 曾用 onDidChangeActiveTextEditor 维护一份缓存——它覆盖不到「同一文件被编辑」，
-    // 脏态判据会停在「打开时干净」，于是每轮都把磁盘旧版当真相（P0：注入判据撒谎源）。
+    // 文档上下文不在此处预取（发送时实时读活动编辑器，见 snapshotDocContext）。
+    // 曾用 onDidChangeActiveTextEditor 缓存——盖不住「同一文件被编辑」，脏态停在「打开时干净」⇒ 每轮拿磁盘旧版当真相（P0 撒谎源）。
   }
 
   /**
@@ -1224,17 +1225,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 活动文件显示订阅随视图装配：面板折叠/展开会重建 webview，必须重注册并补推一次
     // （vscode.window 事件是全局的，不随 webview 自动释放，见 onDidDispose）
     this._activeFile.ensureActiveFileTracking();
-    // 折叠/展开（侧边栏收起再展开；设置已迁 editor tab、无侧栏内设置卡切换）触发 resolve 重建 HTML。
-    // 走「ready 回放」这一确定性机制：重建后 webview 脚本就绪发 ready，extension 再回放
-    // 已落盘会话，保证数据不丢（正在运行的 turn 由 replaySession 的
-    // resumeRunningTurn 补推恢复，见 replaySession()；不设 retainContextWhenHidden——
-    // 官方语义：隐藏期间 webview 脚本挂起、无法接收消息，运行时现场本就不保真，
-    // 交由「设备重建 + 运行中兜底重放」统一恢复，避免两套机制漂移）。
-    // 外部脚本（chatView.js）：localResourceRoots 指向 dist/webview，
-    // 供 webview.asWebviewUri 解析（CSP script-src 'self'，不用 'unsafe-inline' 注入脚本）
+    // 折叠/展开触发 resolve 重建 HTML：走「ready 回放」——重建后脚本就绪发 ready，extension 回放已落盘
+    // 会话（运行中 turn 由 replaySession.resumeRunningTurn 补推）；不设 retainContextWhenHidden：官方语义
+    // 隐藏期脚本挂起、现场不保真，交「设备重建 + 运行中兜底重放」统一恢复，避免两套机制漂移。
+    // 外部脚本（chatView.js）：localResourceRoots 指向 dist/webview，供 asWebviewUri 解析（CSP script-src 'self'）
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
+      localResourceRoots: [
+        vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview'),
+        // IMG-2 K3：attachments 磁盘预览（与 CSP img-src 放行成对，理由真源见 htmlShell buildHtmlHead jsdoc）
+        vscode.Uri.file(resolveAttachmentsDir(this.workspacePath)),
+      ],
     };
 
     // 仅设置 HTML（不在就绪前回放，避免消息在脚本监听器注册前丢失）

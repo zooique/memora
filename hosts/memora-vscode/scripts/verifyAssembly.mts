@@ -25,6 +25,7 @@ import {
 } from '@zooique/memora';
 import { createHostMemoryStorage } from '../src/extension/host/memoryStorage.js';
 import { createBackgroundProvider } from '../src/extension/host/llmConfig.js';
+import { resolveProjectDataDir } from '../src/extension/host/projectDataDir.js';
 import { WorkspaceSessionStore } from '../src/extension/host/sessionStore.js';
 import type { ProviderStore } from '../src/extension/providers/providerStore.js';
 
@@ -74,7 +75,7 @@ async function makeAgent(workspace: string): Promise<Agent> {
   sessionStore.load();
   const agent = new Agent({
     projectPath: workspace,
-    dataDir: join(workspace, '.memora'),
+    dataDir: resolveProjectDataDir(workspace),
     configDir: join(process.cwd(), 'src', 'extension'),
     provider: new StubLlmProvider(),
     storage,
@@ -95,13 +96,28 @@ async function main(): Promise<void> {
   console.log('\n=== createBackgroundProvider 工厂 ===');
   const bgUnconfigured = { getBackground: async () => undefined } as unknown as ProviderStore;
   const noBg = await createBackgroundProvider(bgUnconfigured);
-  report('未配置后台通道 → 返回 undefined（回退前台）', noBg === undefined, `createBackgroundProvider=${noBg}`);
+  report(
+    '未配置后台通道 → 返回 undefined（回退前台）',
+    noBg === undefined,
+    `createBackgroundProvider=${noBg}`,
+  );
 
   const bgConfigured = {
-    getBackground: async () => ({ name: 'fast', displayName: '快', model: 'fast-model', baseUrl: 'https://api.example.com/v1', apiKey: 'sk', provider: 'cloud' }),
+    getBackground: async () => ({
+      name: 'fast',
+      displayName: '快',
+      model: 'fast-model',
+      baseUrl: 'https://api.example.com/v1',
+      apiKey: 'sk',
+      provider: 'cloud',
+    }),
   } as unknown as ProviderStore;
   const bg = await createBackgroundProvider(bgConfigured);
-  report('已配置后台通道 → 返回 LlmProvider 实例', bg !== undefined, `createBackgroundProvider=${bg ? bg.name : 'undefined'}`);
+  report(
+    '已配置后台通道 → 返回 LlmProvider 实例',
+    bg !== undefined,
+    `createBackgroundProvider=${bg ? bg.name : 'undefined'}`,
+  );
 
   // ─── 2. search_memories 纯关键词链路 ──────────────────────────
   // 无向量通道，searchByKeyword 纯关键词；命中=字面匹配。

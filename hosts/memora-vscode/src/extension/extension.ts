@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import type { Agent, ArchiveMode, IRoundStore } from '@zooique/memora';
 import { assembleAgent, createVscodeLogger } from './host/assemble.js';
+import { resolveProjectDataDir } from './host/projectDataDir.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
@@ -58,7 +59,8 @@ import type { CustomSearchEngineConfig } from '../shared/protocol.js';
  * （相对路径基于进程 cwd，VS Code 扩展宿主 cwd 不可控，会导致会话文件写丢）。
  */
 function resolveWorkspacePath(): string {
-  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? join(homedir(), '.memora');
+  // 兜底根同样经数据目录单点取（字面量只许在 projectDataDir.ts；此处行为与旧 join 逐字节相同）
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? resolveProjectDataDir(homedir());
 }
 
 /**
@@ -356,6 +358,8 @@ export function activate(context: vscode.ExtensionContext): void {
     context.extensionUri,
     sessionStore,
     providerStore,
+    // 工作区根单点传入（chatPanel 不自算；附件预览 roots 由此推导）
+    workspacePath,
   );
   // 注入 Round-based 视图加载器（用于加载 round-based 会话的历史消息）
   // 未注入时 chatPanel 仅支持 legacy 模式（向后兼容）

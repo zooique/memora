@@ -45,7 +45,12 @@ function setup(): MemoraChatViewProvider {
   roundStore.load();
   const store = new WorkspaceSessionStore(dir, roundStore);
   store.load();
-  return new MemoraChatViewProvider({ fsPath: '/mock/uri' } as never, store, {} as never);
+  return new MemoraChatViewProvider(
+    { fsPath: '/mock/uri' } as never,
+    store,
+    {} as never,
+    '/mock/workspace',
+  );
 }
 
 function resetWs(): void {

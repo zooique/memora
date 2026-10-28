@@ -33,12 +33,12 @@ import type { CustomSearchEngineConfig } from '../../shared/protocol.js';
 import { resolveSearchEndpoints } from './searchEngines.js';
 // vscode 命名空间类型引用（OutputChannel）：仅类型导入，无运行时依赖（宿主运行时由 VS Code 注入真实模块）
 import type { OutputChannel } from 'vscode';
-import { join } from 'node:path';
 import { createProvider, createBackgroundProvider } from './llmConfig.js';
 import { createLocalCodeExecutor } from './codeExecutor.js';
 import { createVscodeEnvironmentProvider } from './environmentProvider.js';
 import { createVscodeProjectSearchProvider } from './projectSearchProvider.js';
 import { createHostMemoryStorage } from './memoryStorage.js';
+import { resolveProjectDataDir } from './projectDataDir.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
 import { vscodeTracer } from './tracer.js';
 import { startMcpServers } from './mcp/runtime.js';
@@ -368,8 +368,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     maxContextTokens,
     // per-LLM 输出预算（token）：请求体 max_tokens 唯一注入口（AgentOptions 透传链）
     maxTokens,
-    // 记忆数据目录 = 工作区 .memora（注册表/锁文件落盘处，与存储同目录）
-    dataDir: join(projectPath, '.memora'),
+    // 记忆数据目录 = 工作区数据目录（注册表/锁文件落盘处，与存储同目录；
+    // 经单点推导 = projectDataDir.ts）
+    dataDir: resolveProjectDataDir(projectPath),
     // 配置目录 = 插件内置配置（dist/extension，含构建期从内核同步的 role-packs；
     // 内核 init 自动扫描 <configDir>/role-packs/ 并激活 activeRolePack 或首个角色包）
     configDir,

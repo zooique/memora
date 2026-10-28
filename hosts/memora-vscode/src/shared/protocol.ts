@@ -1,6 +1,7 @@
 import type {
   ArchiveMode,
   BackgroundTask,
+  ImageRef,
   InteractiveInputKind,
   ProcessEvent,
   Round,
@@ -321,6 +322,37 @@ export type WebviewToExtensionMessage =
    * 分支各消费自己 webview 的上报，均仅 console.warn）。
    */
   | { type: 'host_diag'; source: string; message: string; stack?: string }
+  /**
+   * 图片采集落盘（W→E · 采集即写盘，IMG-2 Q1 定案）
+   *
+   * 时机 = 采集完成即发（粘贴 / 文件选择框产出字节后立刻发），**不等发送**：面板
+   * `retainContextWhenHidden=false`（真机实测：隐藏侧栏再唤回 chip 全丢），字节不落盘
+   * 就会随 webview 上下文销毁蒸发——这是 Q1 反转「发送时才交付」的实测依据
+   * （论证见 `docs/边界-图片采集UI-VSCode能力边界-20261028.md` §7 第 7 条）。
+   *
+   * 通道走治理评估扩位 +2 而非嫁接（拍板 = 台账 IMG-2 第 6 子块：全量清单无现成图片载体，
+   * 硬塞既有通道 = 第二消费面语义扭曲）。
+   *
+   * 载荷 = 字节 + **提案值**（sha/mime/宽高由采集侧算出，供 chip 即时渲染与去重粗筛）；
+   * 真相在宿主落盘点复算（sha256 单一生产点 = extension），回执 `image_ingest_result`
+   * 带真相 `ImageRef` 换真。字节只能 base64 过通道——
+   * `File`/`Blob` 非 JSON 可序列化，官方明文不可投递（边界文档 §2 B1/B2）。
+   */
+  | {
+      type: 'image_ingest';
+      /** 图片字节的 base64 编码（JSON 可序列化的唯一字节形态） */
+      base64: string;
+      /** 展示名（D29 唯一生产点在采集侧：`file.name`，无名则 `粘贴图片-{sha256 前 6}`） */
+      name: string;
+      /** MIME 提案（magic bytes 嗅探产出，禁用 `file.type` 声明值——方案 D18） */
+      mime: string;
+      /** 像素宽提案（同上，嗅探产出） */
+      width: number;
+      /** 像素高提案 */
+      height: number;
+      /** sha256 提案（chip 去重粗筛；落盘真值由宿主复算，不一致以回执 `ref` 为准） */
+      sha256: string;
+    }
   /**
    * 输入统一入口
    *
@@ -787,6 +819,30 @@ export type WebviewToExtensionMessage =
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
+  /**
+   * 图片落盘回执（E→W，对 `image_ingest` 的应答 · 采集即写盘闭环的下行半条）
+   *
+   * 三态分工：
+   * - `ok`：已写入数据目录 `attachments/`（路径见 `host/projectDataDir.ts` 单点），
+   *   `ref` = 宿主单点复算的**真相** `ImageRef`（sha/mime/宽高），webview 据此把 chip
+   *   的提案值换真（提案与真值不一致时以本回执为准，不静默错图）；
+   * - `rejected`：字节层不可用（base64 解码失败 / 文件头嗅不出任何图片 magic）——
+   *   落盘点的必要最小自检（坏字节不写盘），**不是**六步校验的复跑（那在采集侧已跑过，
+   *   第二套公式必漂移）；`reason` 文案直接上屏，chip 转拒收态；
+   * - `failed`：IO 故障（磁盘满 / 权限），`reason` 提示可重试。
+   *
+   * 不设「已收到」中间确认：采集即写盘只值得 UI 等**落盘终态**一个事件，
+   * 加 ack 中间态 = 每张图两条回执、两处状态机（协议计数与状态面同步膨胀）。
+   */
+  | {
+      type: 'image_ingest_result';
+      /** 落盘终态（三态语义见上） */
+      status: 'ok' | 'rejected' | 'failed';
+      /** 真相图片引用（仅 `ok` 携带；字段语义 = 内核 `ImageRef` 契约） */
+      ref?: ImageRef;
+      /** 拒绝 / 失败的用户可见文案（`rejected`/`failed` 必带，直接上屏不改写） */
+      reason?: string;
+    }
   /**
    * 用户消息：kind 存在 = 问答闭环内交互输入（折叠块渲染，不分裂新轮）——
    * question-answer=对 LLM 主动提问的回答；supplement=补充（插话/暂停续跑输入）。

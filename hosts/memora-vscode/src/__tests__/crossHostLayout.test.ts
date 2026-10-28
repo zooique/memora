@@ -10,16 +10,21 @@
  * 宿主 `tsconfig.json` 的 `rootDir: "src"` 不允许跨包 import 源码（TS6059/TS6307）。
  * 产物级契约是 monorepo 的标准做法；为防「测的是陈旧 dist」，先断言产物不旧于源码。
  *
- * ## 两条断言的分工（缺一不可）
+ * ## 四条断言的分工（缺一不可）
  * ① **两侧一致**：`new ReadOnlyFileStore(ws).path === resolveHostMemoryDbPath(ws)`
  *    —— 抓「单侧漂移」；
  * ② **布局锚定**：路径必须以 `.memora/memories.db` 结尾
- *    —— 抓「两侧一起改错」（一致但不兼容存量库，①会误绿）。
+ *    —— 抓「两侧一起改错」（一致但不兼容存量库，①会误绿）；
+ * ③ **目录本尊一致**（HOST-DATA-DIR-1 扩面）：vscode 单点 `resolveProjectDataDir(ws)`
+ *    必须等于 mcp 库路径的父目录 —— `attachments/` 等新子目录直接挂在本尊下，先钉目录再谈子目录；
+ * ④ **目录锚定**：数据目录必须等于 `<ws>/.memora` —— 抓「两侧一起把目录改名」
+ *    （存量 sessions/rounds/memories 全家不随改名蒸发）。
  */
 import { existsSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { resolveProjectDataDir } from '../extension/host/projectDataDir.js';
 import { resolveHostMemoryDbPath } from '../extension/host/memoryStorage.js';
 
 /** 本文件位于 `hosts/memora-vscode/src/__tests__`，上跳三级即 `hosts/` */
@@ -68,5 +73,17 @@ describe('跨宿主数据布局契约（vscode 写 ↔ mcp 只读）', () => {
     expect(resolveHostMemoryDbPath(join('F:', 'ws'))).toBe(
       join('F:', 'ws', '.memora', 'memories.db'),
     );
+  });
+
+  it('目录本尊：vscode 单点 === mcp 库路径的父目录（两宿主同一数据目录）', () => {
+    // mcp 侧无 dataDir API，其库路径的 dirname 即它心中的数据目录——
+    // 这里把「目录一致」从库路径推导出来，attachments/ 等新子目录都挂在本尊下，先钉目录再谈子目录。
+    const ws = join('F:', 'tmp', 'work space', '项目乙');
+    expect(dirname(new McpStore(ws).path)).toBe(resolveProjectDataDir(ws));
+  });
+
+  it('目录锚定：数据目录必须等于 <工作区>/.memora（防两侧一起改名）', () => {
+    // 与库锚定同理：目录级契约显式化，存量数据（sessions/rounds/memories 全家）不随改名蒸发。
+    expect(resolveProjectDataDir(join('F:', 'ws'))).toBe(join('F:', 'ws', '.memora'));
   });
 });

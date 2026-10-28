@@ -32,12 +32,20 @@ export function resolveHtmlLang(envLanguage: string | undefined): string {
 /**
  * 生成 `<!DOCTYPE>` 到 `</head>` 的完整文档头（不含 `<body>`，由调用方续接）。
  *
- * CSP `img-src data:`（2026-10-13 补）：样式层 mask 图标（如 AI 回答完成的「已完成」淡勾，
- * chatStyles `.round-group__footer::after` 底栏标签用 `data:image/svg+xml` 画，同日自
- * `.msg-body[data-terminus='已完成']::after` 迁来）按 CSP 规范
- * 走 img-src；不显式声明则被 `default-src 'none'` 兜底拦截——实测被拦后 VS Code 报
- * "Note that 'img-src' was not explicitly set... The action has been blocked"，图标静默消失。
- * 只授 `data:`：webview 无真实 `<img>`（全库零 <img> 标签），不授任何外部源。
+ * CSP `img-src data: ${cspSource}`（2026-10-28 IMG-2 K3 放宽，改安全面 · 显式理由如下）：
+ * - `data:`（2026-10-13 补）：样式层 mask 图标（如 AI 回答完成的「已完成」淡勾，
+ *   chatStyles `.round-group__footer::after` 底栏标签用 `data:image/svg+xml` 画，同日自
+ *   `.msg-body[data-terminus='已完成']::after` 迁来）按 CSP 规范走 img-src；
+ *   不显式声明则被 `default-src 'none'` 兜底拦截——实测被拦后 VS Code 报
+ *   "Note that 'img-src' was not explicitly set... The action has been blocked"，图标静默消失。
+ * - `${cspSource}`（本次新增）：图片**磁盘预览**——附件缩略图/悬停大图用 `asWebviewUri`
+ *   指向数据目录 `attachments/`（走宿主 `localResourceRoots` 同源路径），webview 只留
+ *   URI 不留字节（数据唯一一份在磁盘，重启/销毁重建不产生「chip 在、预览空白」半死态）。
+ *   这是对 VS Code 官方默认（本就放行扩展目录与工作区）的**恢复性放宽**——本宿主曾把
+ *   `localResourceRoots` 主动收窄到 `dist/webview`，图片预览是收窄后第一个合法消费者；
+ *   论证见 `docs/边界-图片采集UI-VSCode能力边界-20261028.md` §2 B4/B8（P-b 方案）。
+ * ⚠️ 曾经那句「全库零 `<img>`，不授任何外部源」在图片输入落地后即成谎话，故本批同文订正
+ * （注释与现实背离 = K3 立刺的本体，勿回退成只改一半）。
  */
 export function buildHtmlHead({ lang, cspSource, styles }: HtmlHeadParams): string {
   return `<!DOCTYPE html>
@@ -45,7 +53,7 @@ export function buildHtmlHead({ lang, cspSource, styles }: HtmlHeadParams): stri
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src ${cspSource};" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: ${cspSource}; style-src 'unsafe-inline'; script-src ${cspSource};" />
 <style>
 ${styles}
 </style>

@@ -26,6 +26,7 @@ import {
   type SessionMeta,
 } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
+import { resolveProjectDataDir } from './projectDataDir.js';
 import { WorkspaceRoundStore } from './workspaceRoundStore.js';
 
 /**
@@ -75,7 +76,8 @@ export class WorkspaceSessionStore implements ISessionStore {
    * @param roundStore 问答闭环存储；缺省时在同工作区新建文件级 WorkspaceRoundStore 并 load()
    */
   constructor(workspacePath: string, roundStore?: IRoundStore) {
-    this.filePath = join(workspacePath, '.memora', 'sessions.json');
+    // 落盘目录经单点推导（唯一计算点 = projectDataDir.ts，禁就地拼字面量）
+    this.filePath = join(resolveProjectDataDir(workspacePath), 'sessions.json');
     if (roundStore) {
       this.roundStore = roundStore;
     } else {

@@ -150,6 +150,7 @@ function setupPanel(agent: Agent): PanelHandle {
     { fsPath: '/mock/uri' } as never,
     store,
     new ProviderStore(secrets) as never,
+    '/mock/workspace',
   );
   const posted: { type: string; message?: string; state?: unknown }[] = [];
   (provider as unknown as { _view: unknown })._view = {

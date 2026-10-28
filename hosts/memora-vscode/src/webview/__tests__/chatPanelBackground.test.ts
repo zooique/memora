@@ -23,6 +23,7 @@ import { MemoraChatViewProvider } from '../panels/chatPanel.js';
 vi.mock('vscode', async () => ({
   Uri: {
     joinPath: (base: unknown, ...p: string[]) => ({ base, segments: p }),
+    file: (p: string) => ({ fsPath: p, toString: () => 'mock://file' }),
     fsPath: '/mock/path',
   },
   window: {
@@ -107,7 +108,12 @@ function setupBackground() {
   roundStore.load();
   const store = new WorkspaceSessionStore(dir, roundStore);
   store.load();
-  const provider = new MemoraChatViewProvider({ fsPath: '/mock/uri' } as never, store, {} as never);
+  const provider = new MemoraChatViewProvider(
+    { fsPath: '/mock/uri' } as never,
+    store,
+    {} as never,
+    '/mock/workspace',
+  );
   const posted: unknown[] = [];
   const webviewView = {
     webview: {

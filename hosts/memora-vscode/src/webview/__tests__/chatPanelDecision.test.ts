@@ -23,6 +23,7 @@ import { MemoraChatViewProvider } from '../panels/chatPanel.js';
 vi.mock('vscode', async () => ({
   Uri: {
     joinPath: (base: unknown, ...p: string[]) => ({ base, segments: p }),
+    file: (p: string) => ({ fsPath: p, toString: () => 'mock://file' }),
     fsPath: '/mock/path',
   },
   window: {
@@ -90,7 +91,12 @@ function setupDecision() {
   roundStore.load();
   const store = new WorkspaceSessionStore(dir, roundStore);
   store.load();
-  const provider = new MemoraChatViewProvider({ fsPath: '/mock/uri' } as never, store, {} as never);
+  const provider = new MemoraChatViewProvider(
+    { fsPath: '/mock/uri' } as never,
+    store,
+    {} as never,
+    '/mock/workspace',
+  );
   // 与本用例无关的三件事桩掉：HTML 渲染 / 编辑器追踪 / Agent 装配（后者 async 且要真配置）
   const p = provider as unknown as {
     render(): void;

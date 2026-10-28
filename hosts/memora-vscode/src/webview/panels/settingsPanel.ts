@@ -215,10 +215,10 @@ export class MemoraSettingsPanel {
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
-        // 上下文保留：editor tab 的失焦（切去别的代码 tab）是常态用法，默认的「不可见即销毁」
-        // 会让六页表单草稿每次切换全丢；webview 侧无 setState 兜底，只能靠本选项保上下文。
+        // 上下文保留：editor tab 失焦是常态，默认「不可见即销毁」会丢六页表单草稿（webview 无 setState 兜底）
         // 代价（隐藏期收不到 postMessage）由 onDidChangeViewState 补刷，见文件头说明。
         retainContextWhenHidden: true,
+        // roots 刻意不放行 attachments/（零图片消费面，D6 无消费不放宽；与 chatPanel 分岔是刻意的，勿顺手对齐）
         localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
       },
     );

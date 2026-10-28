@@ -20,8 +20,16 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** IPC 消息类型治理阈值（对齐用户口径：达 130 启动治理评估；sprite 侧亦从 150 收紧至 130） */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 130;
+/**
+ * IPC 消息类型治理阈值 = 132（判据类计数：数字 + 时点 + 重算指引，缺一即裸快照）
+ *
+ * 沿革：原 130 = 用户口径治理评估触发线（sprite 侧亦从 150 收紧至 130）。
+ * 2026-10-28 IMG-2 走「治理评估扩位 +2」——新增 `image_ingest`（W→E）与
+ * `image_ingest_result`（E→W）两条图片落盘通道；拍板依据与被否路线见台账
+ * IMG-2 第 6 子块。⚠️ 本阈值每次协议治理重估即过期：引用前先跑本测试取当前
+ * 类型集计数，按「阈值 = 当前计数 + 1 余量」口径重算（2026-10-28 实测 131 ⇒ 132）。
+ */
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 132;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

@@ -81,7 +81,7 @@ export async function runDemoCommand(configDir: string): Promise<void> {
     // 独立装配（不传 sessionStore → 内部独立会话存储，不共享主面板单例；含搜索/抓取/存储/tracer）
     agent = await assembleAgent({
       projectPath: demoPath,
-      // dataDir 由 assembleAgent 内部 = join(projectPath, '.memora')，落演示区内
+      // dataDir 由 assembleAgent 内部 = resolveProjectDataDir(projectPath)，落演示区内
       configDir,
     });
     await agent.init();

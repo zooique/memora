@@ -21,6 +21,7 @@ import { Agent, SOURCE_LABELS } from '@zooique/memora';
 import { WorkspaceStorage } from '../src/extension/host/workspaceStorage.js';
 import { WorkspaceSessionStore } from '../src/extension/host/sessionStore.js';
 import { createProvider } from '../src/extension/host/llmConfig.js';
+import { resolveProjectDataDir } from '../src/extension/host/projectDataDir.js';
 
 /** 读取环境变量，优先进程级，回退系统级（Machine） */
 function readEnv(name: string): string | undefined {
@@ -41,7 +42,9 @@ function getMachineEnv(name: string): string | undefined {
 }
 
 /** 收集 Agent 流式输出为完整文本 */
-async function collectText(gen: AsyncIterable<{ type: string; content?: string }>): Promise<string> {
+async function collectText(
+  gen: AsyncIterable<{ type: string; content?: string }>,
+): Promise<string> {
   let out = '';
   for await (const chunk of gen) {
     if (chunk.type === 'text' && chunk.content) out += chunk.content;
@@ -62,10 +65,14 @@ async function createAgent(
   sessionStore.load();
   const agent = new Agent({
     projectPath: workspace,
-    dataDir: join(workspace, '.memora'),
+    dataDir: resolveProjectDataDir(workspace),
     // 单一真理源：宿主不自持角色包，configDir 指向内核 role-packs
     configDir: join(process.cwd(), '..', '..', 'role-packs'),
-    provider: await createProvider(undefined, { MEMORA_BASE_URL: baseUrl, MEMORA_MODEL: model, MEMORA_API_KEY: apiKey }),
+    provider: await createProvider(undefined, {
+      MEMORA_BASE_URL: baseUrl,
+      MEMORA_MODEL: model,
+      MEMORA_API_KEY: apiKey,
+    }),
     storage,
     sessionStore,
     permission: 'owner',
@@ -77,7 +84,8 @@ async function createAgent(
 
 /** 读取 memories.json 摘要条目 */
 function readRoundSummaries(workspace: string): unknown[] {
-  const file = join(workspace, '.memora', 'memories.json');
+  // 记忆 JSON 路径经数据目录单点推导（与 WorkspaceStorage 同源 = projectDataDir.ts）
+  const file = join(resolveProjectDataDir(workspace), 'memories.json');
   if (!existsSync(file)) return [];
   try {
     const list = JSON.parse(readFileSync(file, 'utf8')) as Array<{ source?: string }>;
@@ -108,7 +116,9 @@ async function main(): Promise<void> {
   const { agent: agentA } = await createAgent(workspace, baseUrl, model, apiKey);
 
   const decisionText = await collectText(
-    agentA.chat('我们决定：本插件的记忆功能采用 JSON 文件存储（memories.json），不引入 SQLite，以保持零依赖。请确认这个决策。'),
+    agentA.chat(
+      '我们决定：本插件的记忆功能采用 JSON 文件存储（memories.json），不引入 SQLite，以保持零依赖。请确认这个决策。',
+    ),
   );
   console.log('会话 A 回复：\n' + decisionText.slice(0, 500));
 
@@ -139,12 +149,16 @@ async function main(): Promise<void> {
   // 判定：B 是否明确复述了会话 A 的决策（用正面关键词，避免"不用SQLite"误报）
   const recallKeywords = ['memories.json', 'JSON 文件', '零依赖', '文件存储'];
   const hitKeywords = recallKeywords.filter((k) => recallText.includes(k));
-  console.log(`\n📊 会话 B 命中决策关键词：${hitKeywords.length > 0 ? hitKeywords.join('、') : '（无）'}`);
+  console.log(
+    `\n📊 会话 B 命中决策关键词：${hitKeywords.length > 0 ? hitKeywords.join('、') : '（无）'}`,
+  );
   // 需命中 ≥2 个正面关键词才算真正回忆起决策（单关键词可能是泛泛而谈）
   if (hitKeywords.length >= 2) {
     console.log('✅ 跨会话记忆闭环跑通：会话 B 召回了会话 A 的决策');
   } else {
-    console.log('⚠️ 会话 B 正面关键词命中不足，可能未命中召回，需人工判断以下回复是否已回忆起决策：');
+    console.log(
+      '⚠️ 会话 B 正面关键词命中不足，可能未命中召回，需人工判断以下回复是否已回忆起决策：',
+    );
   }
 
   // 清理临时工作区

@@ -17,6 +17,7 @@ import { Agent } from '@zooique/memora';
 import { WorkspaceStorage } from '../src/extension/host/workspaceStorage.js';
 import { WorkspaceSessionStore } from '../src/extension/host/sessionStore.js';
 import { createProvider } from '../src/extension/host/llmConfig.js';
+import { resolveProjectDataDir } from '../src/extension/host/projectDataDir.js';
 
 /** 读取环境变量，优先进程级，回退系统级（Machine） */
 function readEnv(name: string): string | undefined {
@@ -60,7 +61,8 @@ async function main(): Promise<void> {
 
   // 临时工作区
   const workspace = join(os.tmpdir(), `memora-clarify-${Date.now()}`);
-  mkdirSync(join(workspace, '.memora'), { recursive: true });
+  // 数据目录经单点建（与宿主存储同源 = projectDataDir.ts）
+  mkdirSync(resolveProjectDataDir(workspace), { recursive: true });
 
   // 装配 Agent（configDir 指向插件 skills 目录）
   const storage = new WorkspaceStorage(workspace);
@@ -69,9 +71,13 @@ async function main(): Promise<void> {
   sessionStore.load();
   const agent = new Agent({
     projectPath: workspace,
-    dataDir: join(workspace, '.memora'),
+    dataDir: resolveProjectDataDir(workspace),
     configDir: join(process.cwd(), 'src', 'extension'),
-    provider: await createProvider(undefined, { MEMORA_BASE_URL: baseUrl, MEMORA_MODEL: model, MEMORA_API_KEY: apiKey }),
+    provider: await createProvider(undefined, {
+      MEMORA_BASE_URL: baseUrl,
+      MEMORA_MODEL: model,
+      MEMORA_API_KEY: apiKey,
+    }),
     storage,
     sessionStore,
     permission: 'owner',
@@ -113,8 +119,8 @@ async function main(): Promise<void> {
     // 多轮追问上限（防未收敛时无限循环烧 token）
     const maxAskRounds = 3;
     let producedText = false; // 任一续跑轮有正文输出（回答真正驱动了继续执行）
-    let reachedDone = false;  // 收敛：LLM 停止追问并产出最终回答
-    let askAgainCount = 0;    // 续跑中再次提问次数（多轮追问证据）
+    let reachedDone = false; // 收敛：LLM 停止追问并产出最终回答
+    let askAgainCount = 0; // 续跑中再次提问次数（多轮追问证据）
     for (let i = 1; i <= maxAskRounds; i++) {
       // 首轮用具体回答；后续轮给收敛性答案，引导 LLM 停止追问
       const answer =

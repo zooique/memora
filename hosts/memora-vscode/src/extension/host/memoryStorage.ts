@@ -40,22 +40,22 @@ import {
   type ILogger,
   type IMemoryStorage,
 } from '@zooique/memora';
+import { resolveProjectDataDir } from './projectDataDir.js';
 import { WorkspaceStorage } from './workspaceStorage.js';
 
-/** 记忆数据目录名（与 assemble 的 dataDir / 各宿主存储同源） */
-const DATA_DIR_NAME = '.memora';
 /** SQLite 库文件名（宿主侧定义；内核不感知，见文件头「路径语义」） */
 const MEMORY_DB_FILENAME = 'memories.db';
 
 /**
- * 解析工作区记忆库绝对路径 —— **跨宿主路径契约的唯一计算点**。
+ * 解析工作区记忆库绝对路径 —— **库文件路径的唯一计算点**
+ * （目录部分经 `resolveProjectDataDir` 单点推导，见其文件头「守护」）。
  *
  * `hosts/memora-mcp` 用同一布局只读打开该文件（`readOnlyFileStore.ts` 自己 join 同两个常量）。
  * 两侧一致性由 `src/__tests__/crossHostLayout.test.ts` 守护：它加载 mcp 的构建产物，
- * 断言两侧对同一工作区算出**同一个绝对路径**。改这里的目录/文件名必须同时改 mcp，否则契约测试红。
+ * 断言两侧对同一工作区算出**同一个绝对路径**。改这里的文件名（或两侧任一改目录名）必须同步，否则契约测试红。
  */
 export function resolveHostMemoryDbPath(projectPath: string): string {
-  return join(projectPath, DATA_DIR_NAME, MEMORY_DB_FILENAME);
+  return join(resolveProjectDataDir(projectPath), MEMORY_DB_FILENAME);
 }
 
 /** 一次性迁移结果（内部结构，供日志上报用） */
@@ -94,8 +94,8 @@ export function createHostMemoryStorage(
 
   let sqlite: IMemoryStorage;
   try {
-    // 建库需要父目录已存在（内核工厂不建目录）——.memora/ 通常已由会话/轮次存储建立
-    mkdirSync(join(projectPath, DATA_DIR_NAME), { recursive: true });
+    // 建库需要父目录已存在（内核工厂不建目录）——数据目录通常已由会话/轮次存储建立
+    mkdirSync(resolveProjectDataDir(projectPath), { recursive: true });
     sqlite = deps.openSqlite(dbPath);
   } catch (err) {
     // 非「环境不支持」（真故障）：原样抛出——不伪装成降级（防「因错误的原因通过」）

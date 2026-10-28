@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import type { Round, RoundStatus, IRoundStore } from '@zooique/memora';
 import { logger } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
+import { resolveProjectDataDir } from './projectDataDir.js';
 
 /**
  * Round 索引条目：存储在 index.json 中
@@ -68,7 +69,8 @@ export class WorkspaceRoundStore implements IRoundStore {
   private readonly indexPath: string;
 
   constructor(workspacePath: string) {
-    this.roundsDir = join(workspacePath, '.memora', 'rounds');
+    // 轮次目录经单点推导（唯一计算点 = projectDataDir.ts，禁就地拼字面量）
+    this.roundsDir = join(resolveProjectDataDir(workspacePath), 'rounds');
     this.indexPath = join(this.roundsDir, 'index.json');
   }
 

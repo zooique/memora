@@ -138,6 +138,7 @@ function setup() {
     { fsPath: '/mock/uri' } as never,
     store,
     new ProviderStore(secrets) as never,
+    '/mock/workspace',
   );
   const posted: { type: string; level?: string; message?: string }[] = [];
   (provider as unknown as { _view: unknown })._view = {
