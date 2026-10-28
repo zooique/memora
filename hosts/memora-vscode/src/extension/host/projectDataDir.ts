@@ -31,10 +31,11 @@ const ATTACHMENTS_DIR_NAME = 'attachments';
  *
  * 扩展名**只由嗅探出的 mime 推导**，不看用户文件名——用户可能把 png 命名成 .jpg，
  * 信文件名就会产出「扩展名与内容不符」的文件。本表是**唯一**的 mime→ext 转换点：
- * 写盘（`imageIngest`）与读盘（`imageCache` 预读）共用，任一侧另写一份即漂移
+ * 写盘（`imageIngest`）、读盘（`imageCache` 预读）、以及「添加到对话」入口的图片预筛
+ * （`refImageGuard`，G2）三处共用，任一侧另写一份即漂移
  * （写出的文件名读不回来，且没有任何测试会红）。
  */
-const EXT_BY_MIME: Record<ImageMime, string> = {
+export const EXT_BY_MIME: Record<ImageMime, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
