@@ -927,6 +927,20 @@ export type ExtensionToWebviewMessage =
       kind?: InteractiveInputKind;
       question?: string;
       options?: string[];
+      /**
+       * 本条的图片附件（仅普通新闭环输入携带；插话 / 问答 / 暂停补充三类续接
+       * 通道内核不收图，故恒缺省）
+       *
+       * 与 `RoundView.userMessage.attachments` 是**同一份事实的两条通道**（运行时回声
+       * 走本条，重放走 rounds），不是两套数据：两者都由宿主投影层从同一个 `ImageRef[]`
+       * 派生，渲染共用 `helpers/attachmentStrip.ts` 一个函数。
+       */
+      attachments?: readonly ImageRef[];
+      /**
+       * 附件预览 URL 表（键 = `ImageRef.sha256`），语义与 `RoundView.attachmentUris`
+       * **逐字相同**（含「缺键 = 无预览、不编造地址」）——同一契约两处载体，勿各自加语义。
+       */
+      attachmentUris?: Record<string, string>;
     }
   /**
    * 流式 assistant 消息（流式输出经 chunk 拼接，仅承载主回答正文）
@@ -1776,6 +1790,20 @@ export type RoundView = Pick<
   assistantMessage?: RoundMessage;
   /** 过程事件（运行时逐条增长，收场后定型；与重放同一渲染函数） */
   processEvents?: ProcessEvent[];
+  /**
+   * 本轮附件在 webview 里**可直接加载**的 URL 表（键 = `ImageRef.sha256`）
+   *
+   * 为什么是派生字段、且只能宿主给：`asWebviewUri` 是扩展宿主独有的 API，URL 含
+   * origin 与路径编码规则（webview 手拼必错）；而 origin 随视图重建而变 ⇒ **不落盘、
+   * 不进任何缓存**，每次投影现算（纯字符串拼接，零 IO）。
+   *
+   * 键取 sha256 而非下标：附件数组的次序不是契约，sha 才是跨层通用的同一把钥匙
+   * （落盘文件名 / 字节缓存键 / 去重键同源）。
+   *
+   * 缺键（或整字段缺省）= 该附件无预览（视图已销毁 / mime 不在支持集内）。
+   * 消费方必须按「无预览」处理，**不得编造地址**——`ImageRef` 本身仍可渲染文字态。
+   */
+  attachmentUris?: Record<string, string>;
   /**
    * 运行时标记：true = 本轮仍在流式生长（UI 显示骨架 + 停止/暂停按钮）。
    * 收场后置 false，**不落盘**——它是运行时相位而非持久化数据。

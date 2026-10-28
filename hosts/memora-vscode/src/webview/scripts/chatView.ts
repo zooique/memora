@@ -41,6 +41,7 @@ import {
 } from '../../shared/constants.js';
 import { bindSingleTrackRow, syncRowEdges } from '../helpers/chipRow.js';
 import { createImageCapture } from '../helpers/imageCapture.js';
+import { renderAttachmentStrip, type UserAttachmentView } from '../helpers/attachmentStrip.js';
 import { fmtTime } from '../helpers/fmtTime.js';
 import { fmtTokens } from '../helpers/fmtTokens.js';
 import {
@@ -327,13 +328,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let streamingRaw = '';
 
   // 问答闭环可视化（纯展示层）：
-  //   lastAssistantRoundId — 上一个 assistant 块的 roundId（同轮结构归位唯一依据：chunk 到达时判
-  //                          骨架留原容器 / 新轮建新容器）。宿主透传 chunk.roundId，运行时与重放
-  //                          统一走「roundId 相等」判定，无独立时序标志。
-  //   resumePending        — 问答/补充续跑期待：交互输入（qa/supplement）或内联提问提交后置位，
-  //                          下一个 process_event meta 消费为「同闭环续跑的 meta」而非新轮——
-  //                          保留 currentEvents 与 round-block 锚点（折叠留在闭环首块），
-  //                          避免 resume 二次 runFlow 的 meta 被当新轮重置出第二个运行时折叠。
+  //   lastAssistantRoundId — 上一个 assistant 块的 roundId（同轮结构归位唯一依据：chunk 到达时判骨架留原容器 /
+  //                          新轮建新容器）。宿主透传 chunk.roundId，运行时与重放统一走「roundId 相等」判定，无独立时序标志。
+  //   resumePending        — 问答/补充续跑期待：交互输入（qa/supplement）或内联提问提交后置位，下一个 process_event
+  //                          meta 消费为「同闭环续跑的 meta」而非新轮——保留 currentEvents 与 round-block 锚点
+  //                          （折叠留在闭环首块），避免 resume 二次 runFlow 的 meta 被当新轮重置出第二个运行时折叠。
   let lastAssistantRoundId: string | undefined;
   let resumePending = false;
   /** 运行时/重放同环容器：同 roundId 的 AI 段收进 .round-group，
@@ -3360,6 +3359,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     text: string,
     ts?: string,
     roundId?: string,
+    att?: UserAttachmentView,
   ): HTMLElement {
     // 日期分隔线：仅日期交界插入，先于本条消息（textContent 构建防注入）
     renderDateDivider(ts);
@@ -3398,6 +3398,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       body.className = 'msg-body';
       body.textContent = text;
       div.appendChild(body);
+      if (att) renderAttachmentStrip(div, att);
       wrapper.appendChild(div);
       // 用户消息 hover 操作区：复制图标 + 时间戳
       const actions = document.createElement('div');
@@ -4705,7 +4706,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 1) 主用户输入：先落气泡，再复位新闭环锚点
     if (r.userMessage?.content) {
       try {
-        append('user', r.userMessage.content, r.userMessage.timestamp, r.id);
+        const att = { attachments: r.userMessage.attachments, attachmentUris: r.attachmentUris };
+        append('user', r.userMessage.content, r.userMessage.timestamp, r.id, att);
         if (r.userMessage.timestamp) lastUserTs = r.userMessage.timestamp;
       } catch (err) {
         ensureUserInputVisible(r.userMessage.content, err);
@@ -5026,7 +5028,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 异常不再静默——console.warn 暴露堆栈（复制发现场 Console 即可定位），且以最小文本块
         // 降级渲染保证用户输入恒可见（与带 kind 交互行共用 ensureUserInputVisible 单实现）。
         try {
-          append('user', msg.text, msg.ts);
+          append('user', msg.text, msg.ts, msg.roundId, msg);
           // 记录本轮用户输入 ts（删除按钮 ts 锚回填源，commitTurnTs 消费）
           if (msg.ts) lastUserTs = msg.ts;
         } catch (err) {
@@ -5816,17 +5818,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     syncButtonSemantics();
     syncSendEnabled();
     // HOST-CTX-13：@ 提及的**兜底触发路径**（中文输入法 / 粘贴）。
-    // 根因：上方 keydown 路径的判据是 `e.key === '@'`——那是**按键事实**，依赖键盘布局
-    // 与 IME 行为。中文输入法插入的 @ 不保证走这条路（IME 可能吞掉 keydown 或上报
-    // 'Process'/'Unidentified'），粘贴 @ 则根本不产生 keydown ⇒ 真机实测「需要英文 @ 才
-    // 有反应」。判据改为**文本事实**：光标前一个字符恰为 '@'。
-    // 为何两条路径并存（而非只留 input）：keydown 期 selectionStart 即 '@' 落点（字符
-    // 尚未插入），offset 语义直接；input 期字符已插入，要减 1。保留 keydown 作快路径，
-    // input 兜住它漏掉的场景。双触发由宿主 `_mentionQuickPickOpen` in-flight 守卫拦掉
-    // （HOST-CTX-11 的守卫在此成为复用地基——不新建第二套防抖机制）。
-    // 为何要 inputType 判据：删除文本同样触发 input，若光标恰好停在 '@' 前会把「删到 @
-    // 前面」误判成「插入 @」。只认 insert 家族（insertText / insertCompositionText /
-    // insertFromPaste / …）即可精确表达「刚刚有个字符被放进来」。
+    // 根因：上方 keydown 路径的判据是 `e.key === '@'`——那是**按键事实**，依赖键盘布局与 IME 行为。
+    // 中文输入法插入的 @ 不保证走这条路（IME 可能吞掉 keydown 或上报 'Process'/'Unidentified'），
+    // 粘贴 @ 则根本不产生 keydown ⇒ 真机实测「需要英文 @ 才有反应」。判据改为**文本事实**：光标前一个字符恰为 '@'。
+    // 为何两条路径并存（而非只留 input）：keydown 期 selectionStart 即 '@' 落点（字符尚未插入），offset 语义直接；
+    // input 期字符已插入，要减 1。保留 keydown 作快路径，input 兜住它漏掉的场景。双触发由宿主
+    // `_mentionQuickPickOpen` in-flight 守卫拦掉（HOST-CTX-11 的守卫在此成为复用地基——不新建第二套防抖机制）。
+    // 为何要 inputType 判据：删除文本同样触发 input，若光标恰好停在 '@' 前会把「删到 @ 前面」误判成「插入 @」。
+    // 只认 insert 家族（insertText / insertCompositionText / insertFromPaste / …）即可精确表达「刚刚有个字符被放进来」。
     const ie = e as InputEvent;
     if (typeof ie.inputType === 'string' && ie.inputType.startsWith('insert')) {
       const at = input.selectionStart - 1;

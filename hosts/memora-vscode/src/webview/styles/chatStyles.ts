@@ -462,6 +462,25 @@ export const chatStyles = `
     opacity: 1; transform: translateY(0);
   }
   .msg-user-actions .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
+  /* 聊天记录里的图片缩略图（D30）：正文之后、气泡之内的一条横带。
+   * 与输入框附件 chip**刻意不同形态**——正文里图自证内容，文件名退到 alt/title；
+   * 上限走刻度令牌（--dim-xl 280 宽 / --dim-lg 160 高）：D30 原文写 240×160，但刻度里
+   * 160 与 280 之间没有档位，按「不造并列值」复用邻近档（视觉差 ≤40px），零裸值债务。
+   * loading=lazy + decoding=async 由脚本设置，长会话（≤60 轮 × ≤5 张）不预解码。
+   * 注：本文件是 TS 模板字符串，注释里禁写反引号（会终止字符串）。 */
+  .msg-attachments { display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); margin-top: var(--sp-2, 6px); }
+  .msg-attachment {
+    display: block; max-width: var(--dim-xl); max-height: var(--dim-lg); width: auto; height: auto;
+    border-radius: var(--radius-sm, 2px);
+  }
+  /* 缺陷态：留在原位的一句话——不断言文件是否存在，只说明这一张现在取不到 */
+  .msg-attachment-failed {
+    display: inline-flex; align-items: center;
+    padding: var(--sp-1, 4px) var(--sp-3, 8px);
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+    border: 1px dashed var(--border-panel, rgba(128, 128, 128, 0.4));
+    border-radius: var(--radius-sm, 2px);
+  }
   /* 长输入截断：超出阈值折叠（阈值取既有 160px 档，与活动详情面板同值，不新增 token）。
    * 底部渐隐暗示「还有内容」；「展开全文」按钮由 chatView 仅在**真溢出**时插入——
    * 未溢出的短消息既不加 is-clamped 也不留按钮（判定在 JS，此处只负责折叠态外观）。 */

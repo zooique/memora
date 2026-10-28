@@ -611,11 +611,14 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             （2026-10-28，实数经 scripts/count-token-refs.mjs 实锤同步）
     'sq-': 49, // IMG-2 Q3：上传按钮 .image-attach-btn 尺寸 var(--sq-xl)/var(--sq-lg) +2
     //           （2026-10-28，实数经 scripts/count-token-refs.mjs 实锤同步）
-    'dim-': 25, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）；
+    'dim-': 27, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）；
     //             UI-CONFIRM-FIT-1：审批卡 max-height 引 var(--dim-2xl)（替代裸值 420px）+1（2026-10-22）；
     //             IMG-2：悬停预览 3 处（浮层 max-width + 预览图 max-width/max-height，均复用
     //             var(--dim-2xl) 的「提示卡最大宽高」既有语义）+3（2026-10-28，
     //             实数经 scripts/count-token-refs.mjs 实锤同步）
+    //             IMG-7：聊天记录缩略图 .msg-attachment 的 max-width/max-height 引
+    //             var(--dim-xl)/var(--dim-lg) +2（2026-10-28，同上实锤同步；D30 原文 240 宽在
+    //             刻度里无档，按「不造并列值」复用邻近档，故此处是刻度复用不是新增刻度）
   } as const;
 
   for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {

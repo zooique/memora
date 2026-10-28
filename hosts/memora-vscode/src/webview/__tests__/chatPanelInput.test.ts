@@ -22,7 +22,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
 import { join } from 'node:path';
-import type { Agent } from '@zooique/memora';
+import type { Agent, ImageRef } from '@zooique/memora';
 import { MAX_PENDING_INTERJECTIONS } from '../../shared/constants.js';
 import type { PendingQuestionDto, TurnState } from '../../shared/protocol.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
@@ -34,6 +34,8 @@ vi.mock('vscode', async () => ({
   Uri: {
     joinPath: (base: unknown, ...p: string[]) => ({ base, segments: p }),
     fsPath: '/mock/path',
+    // 附件预览 URL 走 asWebviewUri(Uri.file(...))：不提供 file 会在派生处直接抛
+    file: (p: string) => ({ fsPath: p }),
   },
   window: {
     showInputBox: vi.fn(),
@@ -143,6 +145,7 @@ interface InputCast {
     answers?: string[];
     skillName?: string;
     injections?: 'problems'[];
+    attachments?: readonly ImageRef[];
   }): Promise<void>;
 }
 
@@ -525,5 +528,45 @@ describe('HOST-CTX-4 注入型上下文（@problems）', () => {
     expect(sent).toContain('[工作区诊断]');
     expect(sent).toContain('采集失败');
     expect(sent).toContain('帮我修');
+  });
+
+  it('带图 send：回声消息带 attachments + attachmentUris（运行时这条路不经 rounds 投影）', async () => {
+    const h = setupInput();
+    const { chat } = mount(h);
+    const image: ImageRef = {
+      sha256: 'a1b2c3d4e5f6',
+      mime: 'image/png',
+      width: 8,
+      height: 8,
+      bytes: 64,
+      name: '截图.png',
+    };
+
+    await h.cast.handleInput({ kind: 'send', text: '看图', attachments: [image] });
+
+    // 内核侧拿到同一份真值（chat 第三参）；上屏回声必须带同一份，否则「刚发出的图」
+    // 要等重放才有缩略图——那是半修（渲染层无法自造 URL）
+    expect((chat.mock.calls[0] as unknown[])[2]).toEqual([image]);
+    const echo = h.posted.find((m) => (m as { type?: string }).type === 'user') as {
+      attachments?: readonly ImageRef[];
+      attachmentUris?: Record<string, string>;
+    };
+    expect(echo.attachments).toEqual([image]);
+    // 替身 asWebviewUri 恒定返回 mock://script ⇒ 键必须是 sha256（不是下标、不是文件名）
+    expect(echo.attachmentUris).toEqual({ a1b2c3d4e5f6: 'mock://script' });
+  });
+
+  it('无图 send：回声消息不多出任何附件字段（形状与升级前逐字一致）', async () => {
+    const h = setupInput();
+    mount(h);
+
+    await h.cast.handleInput({ kind: 'send', text: '纯文字' });
+
+    const echo = h.posted.find((m) => (m as { type?: string }).type === 'user') as Record<
+      string,
+      unknown
+    >;
+    expect('attachments' in echo).toBe(false);
+    expect('attachmentUris' in echo).toBe(false);
   });
 });

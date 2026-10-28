@@ -12397,3 +12397,88 @@ describe('web_search 裁决证据（evidence 随 RoundView / 收场消息透传�
     expect(ev!.textContent).toContain('结果条数：2');
   });
 });
+
+/**
+ * 图片缩略图（方案 §5.10 消费面② / D30）——两条通道必须同形
+ *
+ * 运行时回声（`user` 消息）与重放（`turn_update.replay`）各带同一份附件事实，但落在
+ * `append('user', …)` 的**两个调用点**上：漏接任一处即单边掉图（刚发的没缩略图 /
+ * 重启后的历史没缩略图），且两边都不会报错。本组用例逐个钉住。
+ */
+describe('图片缩略图：运行时回声 × 重放两路同形', () => {
+  const SHA = 'a1b2c3d4e5f6';
+  const IMAGE = {
+    sha256: SHA,
+    mime: 'image/png',
+    width: 800,
+    height: 600,
+    bytes: 1024,
+    name: '截图.png',
+  };
+  const URIS = { [SHA]: 'memora-resource://shot.png' };
+
+  it('运行时回声：user 消息带 attachments ⇒ 气泡内出缩略图', () => {
+    mountChatView();
+    dispatch({
+      type: 'user',
+      text: '看图',
+      ts: '2026-10-28T10:00:00.000Z',
+      attachments: [IMAGE],
+      attachmentUris: URIS,
+    });
+
+    const img = document.querySelector<HTMLImageElement>('.msg.user .msg-attachments img');
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute('src')).toBe('memora-resource://shot.png');
+    expect(img!.alt).toBe('截图.png');
+    expect(img!.loading).toBe('lazy');
+  });
+
+  it('重放：RoundView.attachmentUris 走同一渲染（不是第二套 DOM）', () => {
+    mountChatView();
+    const round: RoundView = {
+      id: 'round-img-1',
+      status: 'complete',
+      createdAt: 't',
+      userMessage: {
+        id: 'm1',
+        role: 'user',
+        content: '看图',
+        timestamp: 't',
+        attachments: [IMAGE],
+      },
+      attachmentUris: URIS,
+    };
+    dispatch({ type: 'turn_update', rounds: [round], state: { phase: 'idle' }, replay: true });
+
+    expect(document.querySelectorAll('.msg.user .msg-attachments img')).toHaveLength(1);
+  });
+
+  it('重放缺 attachmentUris（视图销毁 / 取不到地址）⇒ 文字态，不造空 src', () => {
+    mountChatView();
+    const round: RoundView = {
+      id: 'round-img-2',
+      status: 'complete',
+      createdAt: 't',
+      userMessage: {
+        id: 'm2',
+        role: 'user',
+        content: '看图',
+        timestamp: 't',
+        attachments: [IMAGE],
+      },
+    };
+    dispatch({ type: 'turn_update', rounds: [round], state: { phase: 'idle' }, replay: true });
+
+    expect(document.querySelector('img.msg-attachment')).toBeNull();
+    expect(document.querySelector('.msg-attachment-failed')?.textContent).toBe(
+      `预览加载失败（${SHA.slice(0, 8)}）`,
+    );
+  });
+
+  it('无附件：不出 .msg-attachments（纯文字消息零变化）', () => {
+    mountChatView();
+    dispatch({ type: 'user', text: '纯文字' });
+    expect(document.querySelector('.msg-attachments')).toBeNull();
+  });
+});

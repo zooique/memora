@@ -570,6 +570,8 @@ const BASELINE_TEXT: readonly string[] = [
   'meetingSteps',
   'multiStepReasoning',
   'nextStep',
+  // 台账 IMG-2 第 13 子块收据里的粘贴夹具默认名（text 层引用既有测试标识符，非误用），2026-10-28 补基线
+  'pastePng',
   'per-step',
   'perStep',
   'plan-step',

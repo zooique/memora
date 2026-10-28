@@ -21,6 +21,7 @@ import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.j
 import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
 import { ingestImage } from '../../extension/host/imageIngest.js';
+import { userEcho, stampRoundAttachmentUris } from '../../extension/host/attachmentUris.js';
 import { pickAndIngestImages } from '../../extension/host/imagePick.js';
 // 图片字节缓存（IMG-2 §5.4.1）：仅类型引用——实例由 extension 创建并注入，本类不构造
 import type { ImageCache } from '../../extension/host/imageCache.js';
@@ -2483,9 +2484,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /** 落盘文件 → webview 可加载 URL；视图未解析/已销毁返回 undefined（宁可无预览也不给假地址） */
-  private toWebviewUri(file: string): string | undefined {
-    return this._view?.webview.asWebviewUri(vscode.Uri.file(file)).toString();
-  }
+  private readonly toWebviewUri = (file: string): string | undefined =>
+    this._view?.webview.asWebviewUri(vscode.Uri.file(file)).toString();
 
   /** 图片拾取入口（Q3）：webview 按钮与命令 `memora.attachImage` 共用执行面；面板未解析不开框（G9 同族孤儿），编排见 host/imagePick.ts */
   public pickAndAttachImages(): void {
@@ -2808,7 +2808,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private postTurnUpdate(live?: PendingLiveRound, replay = false): void {
     if (!this._view) return;
     const history = this._viewLoader ? this.loadRoundBasedHistory() : [];
-    const rounds = mergeLiveRound(history, live);
+    const merged = mergeLiveRound(history, live);
+    // 附件预览 URL 盖在**合并之后**：live 轮的 userMessage 来自上行 seed（只有 ref，没有 URL）
+    const rounds = stampRoundAttachmentUris(merged, this.workspacePath, this.toWebviewUri);
     const last = rounds[rounds.length - 1];
     const questions = this._ask.pendingQuestions();
     // 派生结果写回宿主唯一状态——handleInput / askCoordinator.handleAskTimeout 的提问原文
@@ -3040,8 +3042,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       }
     }
     // 用户消息持久化由内核 chat() → appendUser 完成（写入当前会话 _currentSessionId），
-    // 此处不再 persist，避免与内核双写同一条消息（SSOT 单一真理源）
-    this.post({ type: 'user', text: input, ts: now });
+    // 此处不再 persist，避免与内核双写同一条消息（SSOT 单一真理源）。
+    this.post(userEcho(input, now, attachments, this.workspacePath, (f) => this.toWebviewUri(f)));
 
     // 注入选中技能提示（SSOT：技能名 → 内核技能正文，前端不硬编码 systemPrompt）
     let skillBlock = '';
@@ -3051,10 +3053,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } catch {
         skillBlock = '';
       }
-      // 响亮失败：技能被禁用时注入**静默落空**（`skillPromptFor` 按既有
-      // 契约返回空串 = 技能不存在，消息照常发出），用户零反馈。此处补上提示 —— 对照主流
-      // （Claude Code / WorkBuddy 的 `off` 态）按名调用明确报错。
-      // 三个边界不变：① 仍**照常发送**（拒绝发送 = 改发送语义，不属本护栏范围）；
+      // 响亮失败：技能被禁用时注入**静默落空**（`skillPromptFor` 按既有契约返回空串 = 技能不存在，
+      // 消息照常发出），用户零反馈。此处补上提示 —— 对照主流（Claude Code / WorkBuddy 的 `off` 态）
+      // 按名调用明确报错。三个边界不变：① 仍**照常发送**（拒绝发送 = 改发送语义，不属本护栏范围）；
       // ② 判定走 `isSkillDisabled`（收口到与 `resolveSkill` 同序的真源，非自读配置副本）；
       // ③ `notice` 只进 UI 不喂模型 ⇒ 不侵犯「禁用对 LLM 静默」语义。
       // 前置 `!skillBlock`：仅在**确实发生落空**时报，避免「判定说禁用、实际却注入成功」的假报。
@@ -3066,9 +3067,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         });
       }
     }
-    // 文档上下文：**发送时实时读**活动编辑器（不缓存，理由见 snapshotDocContext）。
-    // 取数单点 = `resolveActiveFile`（含开关闸门）：判据 `mustInjectDocBody`（引用模式
-    // HOST-CTX-0，磁盘是真相时只给指针）与 chip 投影**同源**，不允许各算一遍：
+    // 文档上下文：**发送时实时读**活动编辑器（不缓存，理由见 snapshotDocContext）。取数单点 = `resolveActiveFile`
+    // （含开关闸门）：判据 `mustInjectDocBody`（引用模式 HOST-CTX-0，磁盘是真相时只给指针）与 chip 投影**同源**，不允许各算一遍：
     //   脏 / 未命名 / 工作区外 → 注入正文（磁盘不是真相，指针会让模型读错）；
     //   干净态 → 不注入正文，活动文件作为**一行指针**并入下面引用块（模型按需 read_file）；
     //   开关关掉 → 连快照都不取（指针与正文一并消失）。
@@ -3548,13 +3548,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 截断救回累计基准：同上口径（换策略重试救回的观测面，验证 T2 真机效力靠它）
       truncRecover: this._agent.getMetrics().llm.truncationRecoveryCount,
     };
-    // 过程事件缓冲 + 单形态投影：流式期间攒内存、逐条 post process_event，
-    // 流结束按 turn roundId 分组附到各 Round.processEvents 落盘。
-    // 分段归属 SSOT：roundId 由内核 chunk 携带（AgentChunk.roundId），
-    // 不依赖「roundIds 末尾」推断当前轮——一次 chat()（多 turn 任务编排）多 turn 各自独立落盘。
-    // step 检查点按 seq 幂等合并增量落盘（seq 实例级单调，见 _processSeq）。
-    // 缓冲同时挂实例字段（_liveBuffer）：webview 重建后的 ready 握手重放据此读本流未落盘
-    // 内容（流式正文不落盘、过程事件仅 step 边界增量 checkpoint）；收场末尾清除（身份比对），防跨轮残留。
+    // 过程事件缓冲 + 单形态投影：流式期间攒内存、逐条 post process_event，流结束按 turn roundId
+    // 分组附到各 Round.processEvents 落盘。分段归属 SSOT：roundId 由内核 chunk 携带（AgentChunk.roundId），
+    // 不依赖「roundIds 末尾」推断当前轮——一次 chat()（多 turn 任务编排）多 turn 各自独立落盘；
+    // step 检查点按 seq 幂等合并增量（seq 实例级单调，见 _processSeq）。缓冲同时挂实例字段（_liveBuffer）：
+    // webview 重建后的 ready 握手重放据此读本流未落盘内容（流式正文不落盘、过程事件仅 step 边界
+    // 增量 checkpoint）；收场末尾清除（身份比对），防跨轮残留。
     const liveBuffer: LiveFlowBuffer = {
       sessionId: this._currentSessionId,
       eventsByRound: new Map<string, ProcessEvent[]>(),

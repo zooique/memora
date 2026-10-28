@@ -688,6 +688,51 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(r.status).toBe('complete');
   });
 
+  // ─── 重放投影的附件预览 URL（IMG-7） ───
+  it('重放投影给带图轮盖上 attachmentUris（键 = sha256，值 = 宿主 asWebviewUri 产物）', () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    provider.setRoundStore(roundStore);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '看图', ts: 't1' },
+      { role: 'assistant', content: '看到了', ts: 't2' },
+    ]);
+    // 附件挂在落盘轮上：模拟「发过图的会话重开」（数据来自 RoundMessage.attachments，
+    // 不是窗口衰减结果——本条同时守着「投影不查 RETAIN_IMAGE_ROUNDS」）
+    const round = roundStore.getById('round-1')!;
+    round.userMessage.attachments = [
+      { sha256: 'a1b2c3d4e5f6', mime: 'image/png', width: 8, height: 8, bytes: 64, name: '图.png' },
+    ];
+    roundStore.save(round);
+
+    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+
+    const view = lastTurnUpdate(posted).rounds[0]!;
+    // 键必须是 sha256（不是下标 / 文件名）：webview 渲染按 ref.sha256 查表
+    expect(view.attachmentUris).toEqual({ a1b2c3d4e5f6: 'mock://script' });
+    // 附件本身仍在内核投影里（URL 表是附加信息，不改写真源形状）
+    expect(view.userMessage.attachments?.[0]?.name).toBe('图.png');
+  });
+
+  it('无图轮不产生 attachmentUris 字段（形状与升级前逐字一致）', () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    provider.setRoundStore(roundStore);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '纯文字', ts: 't1' },
+      { role: 'assistant', content: '好', ts: 't2' },
+    ]);
+
+    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+
+    const view = lastTurnUpdate(posted).rounds[0]!;
+    expect('attachmentUris' in view).toBe(false);
+  });
+
   // ─── 会话加载期预读接线（IMG-2 §5.4.1） ───
   it('回放前预读窗口内附件字节：replayCurrentSession 后窗口内 resolver 命中、窗口外为 null', () => {
     const imageCache = new ImageCache();
