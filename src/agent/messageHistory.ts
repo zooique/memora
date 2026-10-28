@@ -583,7 +583,8 @@ export class MessageHistory {
       // 历史图片窗口衰减（方案 §5.12 / D22 / D23）：只有最近 RETAIN_IMAGE_ROUNDS 轮内的
       // attachments 带上模型上下文；更早轮次不带（content 不变，仍是那句占位）。
       // 窗口 = `当前索引 − 消息索引`，纯计算、零状态。
-      // 注意该常量当前**仅此一处消费**（§5.4.1 的宿主预读尚未落地），
+      // 注意该常量是**两消费面同值**：此处窗口衰减 + 宿主会话加载期预读
+      // （`hosts/memora-vscode/.../imageCache.ts` 的 `preloadSession`），
       // 拆分条件的完整论证见 LOOP_CONSTANTS.RETAIN_IMAGE_ROUNDS 的注释。
       const idx = roundIds.indexOf(roundId);
       const withImages = currentIdx - idx < LOOP_CONSTANTS.RETAIN_IMAGE_ROUNDS;

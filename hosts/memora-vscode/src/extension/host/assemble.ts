@@ -27,6 +27,7 @@ import type {
   ProviderRouter,
   LlmProvider,
   ArchiveMode,
+  ImageResolver,
 } from '@zooique/memora';
 import type { ILogger } from '@zooique/memora';
 import type { CustomSearchEngineConfig } from '../../shared/protocol.js';
@@ -271,6 +272,13 @@ export interface AssembleOptions {
    * 由 extension.ts 从 `context.extension.packageJSON.version` 读取注入，宿主不另存版本常量。
    */
   extensionVersion?: string;
+  /**
+   * 图片解析器（IMG-2 §5.4：宿主缓存 → `data:` URL）
+   *
+   * 运行时回调、不入 DTO（函数不可持久化）；由 extension.ts 用激活期单例 `ImageCache`
+   * 的 `resolver` 注入。未注入 = 图片序列化走 D7 二级降级占位（不阻断对话）。
+   */
+  imageResolver?: ImageResolver;
   /** 环境变量（默认 process.env，便于测试注入） */
   env?: NodeJS.ProcessEnv;
 }
@@ -319,6 +327,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     mcpServers,
     mcpToolAllowlist,
     extensionVersion,
+    imageResolver,
   } = options;
 
   // 日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核；
@@ -327,7 +336,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   if (logger) setLogger(logger);
 
   // 1. 创建 LLM Provider（宿主注入；优先配置面板的激活 Provider，回退环境变量）
-  const provider = await createProvider(providerStore, env ?? process.env);
+  //    图片解析器随 Provider 注入：内核 formatMessages 同步查表，宿主零 IO 暴露给内核
+  const provider = await createProvider(providerStore, env ?? process.env, imageResolver);
   // 1.0 创建后台模型 Provider（后台任务走独立轻量模型；未配置回退与实时对话相同）
   const backgroundProvider = await createBackgroundProvider(providerStore);
   // 1.1 创建 Provider 路由策略（激活 AgentLoop 路由缓存优化；单 Provider 时直接返回同一实例）

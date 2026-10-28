@@ -21,37 +21,18 @@
  */
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import type { ImageRef } from '@zooique/memora';
-import {
-  type ImageMime,
-  validateImageCandidate,
-  verifyBase64RoundTrip,
-} from '../../shared/imageValidation.js';
+import { validateImageCandidate, verifyBase64RoundTrip } from '../../shared/imageValidation.js';
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
-import { resolveAttachmentsDir } from './projectDataDir.js';
+import { resolveAttachmentsDir, resolveAttachmentFilePath } from './projectDataDir.js';
 
 /** 上行载荷类型（从协议联合取型，禁手写第二份字段表） */
 type ImageIngestMessage = Extract<WebviewToExtensionMessage, { type: 'image_ingest' }>;
 /** 下行回执类型（同上） */
 type ImageIngestResult = Extract<ExtensionToWebviewMessage, { type: 'image_ingest_result' }>;
-
-/**
- * MIME → 物理文件扩展名（D21：文件名 = `{sha256}.{ext}`）。
- *
- * 扩展名**只由嗅探出的 mime 推导**，不看用户文件名——用户可能把 png 命名成 .jpg，
- * 信文件名就会产出「扩展名与内容不符」的文件（宿主预览按 mime 判、外部工具按扩展名判，
- * 两套判据各说各话）。此处是**唯一**的 mime→ext 转换点。
- */
-const EXT_BY_MIME: Record<ImageMime, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/webp': 'webp',
-  'image/gif': 'gif',
-};
 
 /**
  * 同 sha256 的并发写序列化表（键 = 目标文件绝对路径）。
@@ -156,7 +137,8 @@ export async function ingestImage(
   };
 
   const dir = resolveAttachmentsDir(projectPath);
-  const file = join(dir, `${sha256}.${EXT_BY_MIME[checked.mime]}`);
+  // 文件名唯一推导点 = projectDataDir（写盘与预读共用同一映射，禁此处再拼扩展名）
+  const file = resolveAttachmentFilePath(projectPath, sha256, checked.mime);
   try {
     await writeOnce(dir, file, bytes);
   } catch (err) {

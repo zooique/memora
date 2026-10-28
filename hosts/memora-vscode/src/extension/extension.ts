@@ -22,6 +22,7 @@ import { resolveProjectDataDir } from './host/projectDataDir.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
+import { ImageCache } from './host/imageCache.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js';
@@ -148,6 +149,7 @@ function runOnAssembledAgent(
  *   用户级而非工作区级——角色选择是用户偏好，不随工作区漂移）
  * @param configDir 插件内置配置目录（SSOT：由 extension.extensionUri 显式定位——
  *   若在 assemble 内用 import.meta.url 相对推断，esbuild bundle 后路径漂移会导致角色包加载失败（坑））
+ * @param imageCache 图片字节缓存（激活期单例；预读填字节，resolver 供 Provider 同步查表）
  * @param userSkillsDir 用户技能目录（可选）
  * @param userRolePacksDir 用户角色包目录（可选，与内置包同池注入）
  * @param outputChannel VSCode 输出通道（日志对接）
@@ -159,6 +161,7 @@ function getOrCreateAgent(
   roundStore: IRoundStore,
   globalState: vscode.Memento,
   configDir: string,
+  imageCache: ImageCache,
   userSkillsDir?: string,
   userRolePacksDir?: string,
   outputChannel?: vscode.OutputChannel,
@@ -221,6 +224,8 @@ function getOrCreateAgent(
       // MCP 工具免确认 allowlist（同名寻址键，按原名；空 = 全部逐次确认）
       mcpToolAllowlist: readMcpToolAllowlist(),
       extensionVersion: extensionVersion || undefined,
+      // 图片解析器（IMG-2 §5.4）：运行时回调，与能力位 supportsVision 一起才构成可用视觉链
+      imageResolver: imageCache.resolver,
       outputChannel,
     }).catch((err) => {
       // 装配失败则重置，下次命令重试
@@ -257,6 +262,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // 一次性迁移：旧全局 memora.maxContextTokens → 首个 Provider 的 contextWindow
   // （窗口上限为 per-LLM 配置，全局键仅作迁移来源；见架构决策）
   void providerStore.migrateMaxContextTokens();
+
+  // 图片字节缓存（激活期单例，IMG-2 §5.4.1）：会话加载期预读填字节 → Provider 的
+  // imageResolver 同步查表出 data URL；与工作区无关（跨会话复用）。
+  const imageCache = new ImageCache();
 
   // 插件内置配置目录（SSOT）：从 extensionUri 显式定位，
   // 指向 dist/extension（role-packs 等资源所在）。若在 assemble 内用 import.meta.url
@@ -305,6 +314,7 @@ export function activate(context: vscode.ExtensionContext): void {
       roundStore,
       context.globalState,
       configDir,
+      imageCache,
       userSkillsDir,
       userRolePacksDir,
       memoraOutput,
@@ -360,6 +370,8 @@ export function activate(context: vscode.ExtensionContext): void {
     providerStore,
     // 工作区根单点传入（chatPanel 不自算；附件预览 roots 由此推导）
     workspacePath,
+    // 图片缓存（会话回放前预读窗口内附件字节；与 Agent 的 imageResolver 同一实例）
+    imageCache,
   );
   // 注入 Round-based 视图加载器（用于加载 round-based 会话的历史消息）
   // 未注入时 chatPanel 仅支持 legacy 模式（向后兼容）

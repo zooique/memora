@@ -19,11 +19,27 @@
  * 内核不参与：按 ADR-002 内核只收全长路径，不感知目录布局（见 memoryStorage 文件头「路径语义」）。
  */
 import { join } from 'node:path';
+import type { ImageMime } from '../../shared/imageValidation.js';
 
 /** 项目数据目录名（本契约的字面量只许出现在本文件，见文件头「守护」） */
 const DATA_DIR_NAME = '.memora';
 /** 图片附件子目录名（同上：字面量唯一容身处本文件；宿主写盘点与 webview 预览 roots 同源） */
 const ATTACHMENTS_DIR_NAME = 'attachments';
+
+/**
+ * MIME → 物理文件扩展名（D21：文件名 = `{sha256}.{ext}`）。
+ *
+ * 扩展名**只由嗅探出的 mime 推导**，不看用户文件名——用户可能把 png 命名成 .jpg，
+ * 信文件名就会产出「扩展名与内容不符」的文件。本表是**唯一**的 mime→ext 转换点：
+ * 写盘（`imageIngest`）与读盘（`imageCache` 预读）共用，任一侧另写一份即漂移
+ * （写出的文件名读不回来，且没有任何测试会红）。
+ */
+const EXT_BY_MIME: Record<ImageMime, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
 
 /**
  * 解析项目数据目录绝对路径 —— 宿主内 `.memora` 拼接的唯一入口。
@@ -50,4 +66,35 @@ export function resolveProjectDataDir(projectPath: string): string {
  */
 export function resolveAttachmentsDir(projectPath: string): string {
   return join(resolveProjectDataDir(projectPath), ATTACHMENTS_DIR_NAME);
+}
+
+/**
+ * 解析图片附件的物理文件绝对路径 —— `<附件目录>/{sha256}.{ext}`。
+ *
+ * 写盘侧（`imageIngest`）的 mime 来自校验链嗅探结果，**必在支持集内**，故有一个
+ * 返回 `string` 的重载；读盘侧（`imageCache` 预读）的 mime 来自持久化历史，
+ * 可能是旧数据/未知类型，返回 `string | undefined` 让调用方跳过该条。
+ *
+ * @param projectPath 项目/工作区根
+ * @param sha256 原图字节摘要（物理文件名，也是缓存键）
+ * @param mime 图片 MIME（决定扩展名）
+ * @returns 文件绝对路径；mime 不在支持集内时返回 undefined
+ */
+export function resolveAttachmentFilePath(
+  projectPath: string,
+  sha256: string,
+  mime: ImageMime,
+): string;
+export function resolveAttachmentFilePath(
+  projectPath: string,
+  sha256: string,
+  mime: string,
+): string | undefined;
+export function resolveAttachmentFilePath(
+  projectPath: string,
+  sha256: string,
+  mime: string,
+): string | undefined {
+  const ext = EXT_BY_MIME[mime as ImageMime];
+  return ext ? join(resolveAttachmentsDir(projectPath), `${sha256}.${ext}`) : undefined;
 }

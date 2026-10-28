@@ -21,6 +21,8 @@ import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.j
 import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
 import { ingestImage } from '../../extension/host/imageIngest.js';
+// 图片字节缓存（IMG-2 §5.4.1）：仅类型引用——实例由 extension 创建并注入，本类不构造
+import type { ImageCache } from '../../extension/host/imageCache.js';
 // 引用路径 ↔ 首根的双向判据唯一真源 = refPath（生成侧 relativeUnderPrimaryRoot 归 addToChat /
 // mention QuickPick 用，消费侧 resolveUnderPrimaryRoot 归本文件 openRefInEditor 用）——两半分居必漂移，故同模块。
 import { relativeUnderPrimaryRoot, resolveUnderPrimaryRoot } from '../../extension/host/refPath.js';
@@ -34,9 +36,8 @@ import { MOUNTABLE_INJECTION_META } from '../../shared/injectionSourceMeta.js';
 /**
  * HOST-CTX-1：@ 提及 QuickPick 的 findFiles 结果上限（防超大仓首开卡顿）
  *
- * 命中上限 = `findFiles` **静默截断**（超限返回上限条数、遍历序非确定、不报错）——
- * 「静默失败」族。故命中时必须在 placeholder 告知用户已截断、请输关键词缩小范围
- * （HOST-CTX-11 补：此前无任何提示，大仓里搜不到目标还以为没有该文件）。
+ * 命中上限 = `findFiles` **静默截断**（超限返回上限条数、遍历序非确定、不报错）——「静默失败」族。
+ * 故命中时必须在 placeholder 告知「已截断、请输关键词缩小范围」（HOST-CTX-11 补，此前无提示）；
  * 提为常量是为了测试断言同一个数，不各写一份字面量。
  */
 export const MENTION_FILE_LIMIT = 2000;
@@ -194,8 +195,7 @@ export {
   projectActiveFile,
 } from '../../extension/host/activeFileTracker.js';
 
-/** 历史回放单次最大条数：跨天合并视图聚焦近期对话，
- *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM。 */
+/** 历史回放单次最大条数：跨天合并视图聚焦近期对话，防长期使用后累积导致每次打开/切换全量回放 + 逐条建 DOM。 */
 const MAX_HISTORY_MESSAGES = 200;
 
 /** 历史回放最大轮数（round-based 模式）：按完整 round 截断，杜绝「正文有、过程无」的半轮不对称 */
@@ -331,31 +331,25 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     [];
   /** 安全审计订阅取消函数（幂等管理，防重复绑定） */
   private _securityAuditUnsub: (() => void) | undefined;
-  /**
-   * 当前进行中流的 AbortController（mvp-scope 打断能力）
-   *
-   * 停止按钮 / 生成中插话共用：abort() 中断 chat()/resumeExecution() 流，
-   * 内核在下一 await 点退出并 yield aborted chunk。无进行中流时为 undefined
-   * （stop 可安全 no-op）。
-   */
+  /** 当前进行中流的 AbortController（mvp-scope 打断能力）：停止按钮 / 生成中插话共用，
+   *  abort() 中断 chat()/resumeExecution() 流，内核下一 await 点退出并 yield aborted chunk；
+   *  无进行中流时为 undefined（stop 可安全 no-op）。 */
   private _abortController: AbortController | undefined;
   /** 当前进行中流的 promise：生成中插话需 await 旧流彻底结束再发新流，
    *  避免 chatLock 未释放导致「发起新对话」busy 冲突 */
   private _currentFlow: Promise<void> | undefined;
   /** 上次推送给 webview 的待发送区长度（长度变化才 post）；`undefined` = 从未投影过
    *  （agent 刚装配 / webview 重建）。与「已投影为空」是两种状态——折叠成 0 会让
-   *  「从未投影过 + 清空到空」（如 resume 恢复队列后直接清）被长度守卫误拦，
-   *  丢弃信号失去成对快照帧（契约见 postPendingDiscarded）。
-   *  背景：普通插话（thinking 态 interject）不触发 sessionResumed（那是 resume 专有事件），
-   *  队列消费后无「空通知」→ 待发送区弹窗残留。统一经 syncPendingQueue 长度变化检测，
-   *  让「队列变空」这个真理源变化总能被推送到 webview（消费后必有后续 chunk 触发同步）。 */
+   *  「从未投影过 + 清空到空」（如 resume 恢复后直接清）被长度守卫误拦，丢弃信号失去成对快照帧。
+   *  背景：普通插话（thinking 态 interject）不触发 sessionResumed（resume 专有事件），
+   *  队列消费后无「空通知」→ 待发送区弹窗残留；统一经 syncPendingQueue 长度变化检测，
+   *  让「队列变空」这一真理源变化总能被推送（消费后必有后续 chunk 触发同步）。 */
   private _lastPendingQueueLen: number | undefined = undefined;
   /**
    * 上次推送给 webview 的后台任务快照**内容签名**（`taskId:status` 拼接串）
    *
    * 纯推送去重守卫，**不是后台任务的真相源**（真相源恒为内核注册表，宿主零副本）。
-   * 与 `_lastPendingQueueLen` 同族但判据更强：签名能捕获「条数不变而状态变」（kill 后
-   * `running → killed`），长度判据会漏。详见 `postBackgroundTasks` 注释。
+   * 与 `_lastPendingQueueLen` 同族但更强：能捕获「条数不变而状态变」（kill 后 `running → killed`），长度判据会漏。
    */
   private _backgroundSignature: string | null = null;
   /**
@@ -486,6 +480,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     providerStore: ProviderStore,
     /** 工作区根（extension.ts 单点传入，本类不自算——防回退规则出第二真源）；附件目录由此推导 */
     private readonly workspacePath: string,
+    private readonly imageCache?: ImageCache, // 图片字节缓存（extension 单例；回放前预读窗口内附件）
   ) {
     this._providerStore = providerStore;
     // 初始会话 = 最近活跃会话（listSessionMetas 按 updatedAt 降序取 [0]）；无历史不自动创建（新建唯一入口为标题条「＋」）
@@ -2262,8 +2257,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * round-based 唯一路径：整轮 rounds 由 `postTurnUpdate(undefined, true)` **单条投递**，
    * webview 端 `renderReplayFromRounds` 整批重建，不发 user / replay_events / assistant
-   * 消息风暴（重放正文统一走 rounds）。webview 与运行时共用同一
-   * 渲染函数（正文与过程事件同源同轮）。
+   * 消息风暴（重放正文统一走 rounds，webview 与运行时共用同一渲染函数）。
+   * 回放前做**会话加载期预读**（IMG-2 §5.4.1）：窗口内附件字节读盘填缓存，失败不阻断。
    * 读取失败不阻塞面板展示（SSOT 不藏错，避免「历史空白」静默吞因）。
    */
   private replayHistory(): void {
@@ -2272,6 +2267,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'clear_ok' });
       return;
     }
+    // 会话加载期预读（IMG-2 §5.4.1）：窗口内附件字节同步读盘填缓存，供 formatMessages 同步命中
+    this.imageCache?.preloadSession(this._viewLoader, this.workspacePath, this._currentSessionId);
     try {
       if (this._viewLoader) {
         // round-based：单条 turn_update 承载全量 rounds。replay:true 标记「整批重放」——
@@ -2643,9 +2640,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const r = await this._providerStore.setActive(name);
     if (!r.ok) return;
     try {
-      // 热生效：Agent.setProvider 在对话进行中会抛 assertNotBusy，需捕获
+      // 热生效：Agent.setProvider 在对话进行中会抛 assertNotBusy，需捕获；
+      // 图片解析器必须同源注入（否则热切换后的 Provider 丢掉视觉链）
       if (this._agent) {
-        await this._agent.setProvider(await createProvider(this._providerStore));
+        await this._agent.setProvider(
+          await createProvider(this._providerStore, process.env, this.imageCache?.resolver),
+        );
         // 随模型热切换同步上下文窗口上限（per-LLM contextWindow 唯一真理源；
         // resolveContextWindow 回落内核默认窗口（AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS），与装配期口径一致），
         // 让内核预算/截断/占用快照与所选模型窗口对齐

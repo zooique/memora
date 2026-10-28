@@ -473,6 +473,9 @@ const BASELINE_CODE: readonly string[] = [
   'multiStepReasoning',
   'new-step',
   'old-step',
+  // IMG-2 第 3 子块的粘贴用例辅助函数名（判据层面是**假阳性**：`p-a-steP-ng` 只是
+  // 「paste」+「Png」跨词界拼出的 `step` 子串，语义与 loop 迭代无关），2026-10-28 补基线
+  'pastePng',
   'per-step',
   'posByStep',
   'resolveMultiStepReasoning',

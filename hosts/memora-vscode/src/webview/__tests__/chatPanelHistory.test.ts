@@ -12,20 +12,29 @@
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 // 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync，见 helpers/tmpDir.ts）
 import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
 import type {
   Agent,
   AgentChunk,
+  ImageRef,
   ProcessEvent,
   ProcessMetricsPayload,
   Round,
 } from '@zooique/memora';
 import type { RoundView, TurnState } from '../../shared/protocol.js';
-import { todayDate, resolveContextWindow, MemoraError } from '@zooique/memora';
+import { todayDate, resolveContextWindow, LOOP_CONSTANTS, MemoraError } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
+// 预读接线用例的真实现（真临时目录可机测，零 vscode 依赖）
+import { ImageCache } from '../../extension/host/imageCache.js';
+import {
+  resolveAttachmentFilePath,
+  resolveAttachmentsDir,
+} from '../../extension/host/projectDataDir.js';
 import {
   MemoraChatViewProvider,
   docInjectReason,
@@ -99,8 +108,14 @@ function agentStub(): {
   return { agent, switchToSession, renameSession, softDeleteRoundSummaries };
 }
 
-/** 构造一个 sessionStore + provider 的最小桩，返回可驱动的 provider 实例 */
-function setup(): {
+/** 构造一个 sessionStore + provider 的最小桩，返回可驱动的 provider 实例
+ *  @param imageCache 图片字节缓存（可选；IMG-2 §5.4.1 预读接线用例传真实例，其余用例省略）
+ *  @param workspacePath 面板工作区根（缺省 '/mock/workspace'；附件落盘用例须指向真临时目录，
+ *   否则预读会去假路径翻 `.memora/attachments` 而永远读不到） */
+function setup(
+  imageCache?: ImageCache,
+  workspacePath = '/mock/workspace',
+): {
   store: WorkspaceSessionStore;
   roundStore: WorkspaceRoundStore;
   provider: MemoraChatViewProvider;
@@ -124,7 +139,8 @@ function setup(): {
     { fsPath: '/mock/uri' } as never,
     store,
     providerStore,
-    '/mock/workspace',
+    workspacePath,
+    imageCache,
   );
   const posted: unknown[] = [];
 
@@ -670,6 +686,61 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     });
     expect(r.assistantMessage?.content).toBe('回答A');
     expect(r.status).toBe('complete');
+  });
+
+  // ─── 会话加载期预读接线（IMG-2 §5.4.1） ───
+  it('回放前预读窗口内附件字节：replayCurrentSession 后窗口内 resolver 命中、窗口外为 null', () => {
+    const imageCache = new ImageCache();
+    // 附件落盘根单开一个临时目录：预读读的是「面板工作区根」下的 attachments，
+    // 与 setup 内部给存储用的目录不必同一个（真路径经第二参显式交给 setup）
+    const attachmentsRoot = makeTempDir('memora-chatpanel-img-');
+    const { store, roundStore, provider } = setup(imageCache, attachmentsRoot);
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    provider.setRoundStore(roundStore);
+    // 造「窗口 + 1」轮、每轮一张图：最早那轮落在窗口外（判据 1 的反向可观测面）
+    const retain = LOOP_CONSTANTS.RETAIN_IMAGE_ROUNDS;
+    const refs: ImageRef[] = [];
+    for (let i = 0; i < retain + 1; i++) {
+      // 字节内容用轮次号打散：sha 互不相同，才谈得上「按 sha 分别命中」
+      const bytes = new Uint8Array([i, i + 1, i + 2, 0xfa]);
+      const ref: ImageRef = {
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+        mime: 'image/png',
+        width: 1,
+        height: 1,
+        bytes: bytes.length,
+        name: `图${i}.png`,
+      };
+      mkdirSync(resolveAttachmentsDir(attachmentsRoot), { recursive: true });
+      writeFileSync(resolveAttachmentFilePath(attachmentsRoot, ref.sha256, 'image/png'), bytes);
+      refs.push(ref);
+      // 落一轮带附件的问答（roundId 由 roundStore.size 递增，与 seedSession 同规则）
+      const roundId = `round-${roundStore.size() + 1}`;
+      roundStore.save({
+        id: roundId,
+        userMessage: {
+          id: `${roundId}-user`,
+          role: 'user',
+          content: '[图片]',
+          timestamp: `t${i}`,
+          attachments: [ref],
+        },
+        status: 'complete',
+        createdAt: `t${i}`,
+        refCount: 1,
+      });
+      store.appendRoundId('2026-10-28-s1', roundId);
+    }
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-10-28-s1';
+
+    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+
+    // 窗口内（最后一轮）：命中且是 data URL（模型可取形态，不是 webview 专用地址）
+    const hit = imageCache.resolver(refs[refs.length - 1]!);
+    expect(hit).not.toBeNull();
+    expect((hit as { url: string }).url.startsWith('data:image/png;base64,')).toBe(true);
+    // 窗口外（第 1 轮）：内核本就不会序列化它的图，预读它只会白占内存
+    expect(imageCache.resolver(refs[0]!)).toBeNull();
   });
 
   it('interactiveInputs 重放由 rounds 完整承载：qa/supplement 按 ts 升序、与提问段/final 时序数据齐备（UX-9 · M5b-3）', () => {
