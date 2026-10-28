@@ -143,6 +143,10 @@ import { toNoticeText } from '../../extension/host/noticeText.js';
 import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
+import {
+  refreshActiveProvider,
+  type ProviderRefreshOutcome,
+} from '../../extension/host/providerRefresh.js';
 import { createVscodeAttention } from '../../extension/host/vscodeAttention.js';
 import type { OccupancyMessage } from '../helpers/occupancyHistory.js';
 import { toOccupancyMessages } from '../helpers/occupancyHistory.js';
@@ -278,6 +282,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _mentionQuickPickOpen = false;
   /** 当前装配的 Agent（由 extension 装配后注入） */
   private _agent: Agent | undefined;
+  /** 配置热刷新未生效标记（IMG-5 顺延槽）：真源已变但换实例失败（唯一预期 = `assertNotBusy`）；消费点 = `handleInput` 的 `send` 前置补做。 */
+  private _providerStale = false;
   /** 系统内置配置目录 + 用户技能目录（extension 注入，composer 动态技能清单来源判定） */
   private _configDir: string | undefined;
   private _userSkillsDir: string | undefined;
@@ -493,25 +499,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 引用 chip 点击 → 在编辑器打开并定位（open_ref，W→E 分支）
    *
-   * 语义（协议 open_ref 注释为 SSOT）：引用是指针，**点指针就该跳过去看**——
-   *   - 文件（无论有无行区间）：打开文档 + reveal；有区间 = 选中高亮该区间，
-   *     用户由此**直接看到「我到底加了哪几行」**，无需自行数行；
-   *   - 目录：资源管理器露出（目录没有「打开成文档」的概念）。
+   * 语义（协议 open_ref 注释为 SSOT）：引用是指针，**点指针就该跳过去看**——文件（无论有无行
+   * 区间）打开文档 + reveal，有区间则选中高亮（用户由此直接看到「我到底加了哪几行」，无需数行）；
+   * 目录则在资源管理器露出（目录没有「打开成文档」的概念）。
    *
    * 路径解析：`ref.path` 是**首根下的相对路径**（生产点 = extension.ts addToChat，经
-   * `refPath.relativeUnderPrimaryRoot` 产出规范形）。项目根**恒取 `workspaceFolders[0]`**，
-   * 与内核同源——内核 `read_file` 的 cwd 只有一个根（`extension.ts` 的 resolveProjectPath
-   * 同样只取首根），逐根遍历会在多根工作区打开第二根的同名文件，而模型读的是首根那份
-   * ⇒ 用户核对的与模型读到的**不是同一个文件**（伪多根支持，已删）。
-   * 解析与越界守卫收口在 `refPath.resolveUnderPrimaryRoot`——与生成侧**同一模块同一判据**
-   * （绝对路径 / `..` 段 / 非规范形一律拒，解析结果须往返落回首根），webview 上行通道
-   * 不能各写一套字符串守卫。
+   * `refPath.relativeUnderPrimaryRoot` 产出规范形）。项目根**恒取 `workspaceFolders[0]`**，与内核
+   * 同源——内核 `read_file` 的 cwd 只有一个根，逐根遍历会在多根工作区打开第二根的同名文件，而
+   * 模型读的是首根那份 ⇒ 用户核对的与模型读到的**不是同一个文件**（伪多根支持，已删）。解析与
+   * 越界守卫收口在 `refPath.resolveUnderPrimaryRoot`——与生成侧**同一模块同一判据**（绝对路径 /
+   * `..` 段 / 非规范形一律拒，解析结果须往返落回首根），webview 上行通道不能各写一套字符串守卫。
+   * 行号是**指针不是快照**（协议 ChatRef 注释）：引用后文件可能已改短，区间越界——统一 clamp 到
+   * 文档末尾，不让 Position/lineAt 抛异常（仍定位到最接近的行）。
    *
-   * 行号是**指针不是快照**（协议 ChatRef 注释）：引用后文件可能已改短，区间越界——
-   * 统一 clamp 到文档末尾，不让 Position/lineAt 抛异常（仍定位到最接近的行）。
-   *
-   * 失败态（文件已删 / 不可读 / 无工作区 / 路径越界）：一律走面板 notice 单一出口
-   * （与其它用户可见反馈同 surface，不混用 showWarningMessage 弹toast）。
+   * 失败态（文件已删 / 不可读 / 无工作区 / 路径越界）：一律走面板 notice 单一出口（与其它用户
+   * 可见反馈同 surface，不混用 showWarningMessage 弹 toast）。
    */
   private async openRefInEditor(ref: ChatRef): Promise<void> {
     const root = vscode.workspace.workspaceFolders?.[0];
@@ -680,17 +682,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 根因（2026-10-13 实测「启动后立即分叉报『当前会话不存在』，切一次会话即恢复」）：
    * - 宿主 chatPanel 构造即把 `_currentSessionId` 指向最近活跃会话（UI 启动回放它）；
    * - 内核 MessageHistory 的惰性初值却是 `${todayDate()}-main`（meta 要首轮对话才建）；
-   * - 启动即分叉 ⇒ 内核查**自己** current 的 meta（不存在）→ 报错。
-   *   同根因的更深伤害：启动后第一条消息的 Round 会挂到内核的 `-main`，与 UI 显示的
-   *   会话错位——对齐修的是这一类，不只分叉一个症状。
+   * - 启动即分叉 ⇒ 内核查**自己** current 的 meta（不存在）→ 报错。同根因的更深伤害：启动后
+   *   第一条消息的 Round 会挂到内核的 `-main`，与 UI 显示的会话错位——对齐修的是这一类，
+   *   不只分叉一个症状。
    *
-   * 对齐点选 refreshAfterAssemble：它是 setAgent（open 命令）与 ensureAgent
-   * （活动栏图标/面板恢复的懒装配）两条装配路径的唯一共用收口点，装配完成即调，
-   * 早于任何用户交互。⚠️ 首版把对齐只挂 setAgent，实测（2026-10-13）懒装配路径
-   * 漏对齐——启动即分叉仍报「当前会话不存在」：装配后动作必须收口在共用点，
-   * 不得在单条路径各钉一份（损害类：两条路径漏一条即整类失效）。
-   * switchToSession 的「切身份」段（switchSession）在首个 await **之前**
-   * 同步完成——void 调用返回时 current 已切，无竞态窗口。
+   * 对齐点选 refreshAfterAssemble：它是 setAgent（open 命令）与 ensureAgent（活动栏图标/面板
+   * 恢复的懒装配）两条装配路径的唯一共用收口点，装配完成即调，早于任何用户交互
+   * （「不得各钉一份」的完整论证见该方法 JSDoc）。switchToSession 的「切身份」段
+   * （switchSession）在首个 await **之前** 同步完成——void 调用返回时 current 已切，无竞态窗口。
    *
    * 判据「不一致才切」：同会话重入（面板折叠重开的重复 setAgent）直接跳过——幂等无副作用，
    * 也避开对话繁忙时 switchToSession 的 busy 守卫误报。判据不可得（桩缺方法 / history
@@ -934,22 +933,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 语义红线（引用模式定案）：@ 只是「挂引用的快捷入口」——选中即走 addRef 推送挂 chip，
    * **零内容注入**，不照搬主流 @ 提及的「全文进上下文」语义。
    *
-   * 三个 SSOT 归属（本方法零自建）：
-   *   - 文件列表 = `vscode.workspace.findFiles`（VS Code SSOT：ripgrep 模糊检索，
-   *     webview 不养索引副本）——⚠️ 排除语义按 2026-10-20 源码一手实读订正
-   *     （extHostWorkspace.ts）：`findFiles` 只应用 `files.exclude`、**不应用**
-   *     `search.exclude`、`.gitignore` **默认不尊重**（VS Code 1.87 起硬编码，
-   *     PR #204845；opt-in 开关 `search.experimental.useIgnoreFilesInFindFiles`）⇒
-   *     忽略目录必须显式传 `IGNORED_DIR_GLOB`（HOST-CTX-14，真源 `ignoredDirs.ts`，
-   *     与 projectSearchProvider 同挂），传 `undefined` 时 node_modules 等会挤占上限；
-   *   - 首根归属判据 = `relativeUnderPrimaryRoot`（与 addToChat 生成侧同源，第二根 /
-   *     根外文件 fail-closed 不列出——挂一条注定读错的指针比不挂更坏）；
-   *   - 挂载链路 = `pushRefs` 的 addRef 推送（source='mention'，webview 据此撤触发 @）。
+   * 三个 SSOT 归属（本方法零自建）：① 文件列表 = `vscode.workspace.findFiles`（VS Code SSOT：
+   * ripgrep 模糊检索，webview 不养索引副本）——⚠️ 排除语义按 2026-10-20 源码一手实读订正
+   * （extHostWorkspace.ts）：只应用 `files.exclude`、**不应用** `search.exclude`、`.gitignore`
+   * **默认不尊重**（VS Code 1.87 起硬编码，PR #204845；opt-in 开关
+   * `search.experimental.useIgnoreFilesInFindFiles`）⇒ 忽略目录必须显式传 `IGNORED_DIR_GLOB`
+   * （HOST-CTX-14，真源 `ignoredDirs.ts`，与 projectSearchProvider 同挂），传 `undefined` 时
+   * node_modules 等会挤占上限；② 首根归属判据 = `relativeUnderPrimaryRoot`（与 addToChat 生成侧
+   * 同源，第二根 / 根外文件 fail-closed 不列出——挂一条注定读错的指针比不挂更坏）；③ 挂载链路
+   * = `pushRefs` 的 addRef 推送（source='mention'，webview 据此撤触发 @）。
    *
-   * 边界：findFiles 只列**文件**，目录 @ 不支持（目录引用沿用资源管理器右键入口，
-   * 那里有 explorer/context 菜单）。上限 `MENTION_FILE_LIMIT` 条防超大仓首开卡顿，
-   * 命中即静默截断（findFiles 语义）⇒ placeholder 必须明示，否则用户搜不到目标文件
-   * 还以为没有（HOST-CTX-11）。
+   * 边界：findFiles 只列**文件**，目录 @ 不支持（目录引用沿用资源管理器右键入口，那里有
+   * explorer/context 菜单）；上限 `MENTION_FILE_LIMIT` 条防超大仓首开卡顿，命中即静默截断
+   * （findFiles 语义）⇒ placeholder 必须明示，否则用户搜不到目标文件还以为没有（HOST-CTX-11）。
    */
   public async openMentionQuickPick(): Promise<void> {
     // in-flight 守卫（HOST-CTX-11）：连按两次 @ 会各来一条 mention_open。不拦的话后开的
@@ -1186,7 +1182,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } else if (msg.type === 'image_ingest') {
       // 采集即写盘（IMG-2 Q1）：落盘点在 host/imageIngest（禁塞进本类），失败三态一律回执；
       // warmCache = 落盘即入字节缓存（断点A：新会话首发 resolver 必命中，否则 D7 占位）
-      void ingestImage(this.workspacePath, msg, (m) => this.post(m), (f) => this.toWebviewUri(f), (ref) => this.imageCache?.preload(ref, this.workspacePath));
+      void ingestImage(
+        this.workspacePath,
+        msg,
+        (m) => this.post(m),
+        (f) => this.toWebviewUri(f),
+        (ref) => this.imageCache?.preload(ref, this.workspacePath),
+      );
     } else if (msg.type === 'image_pick_request') {
       // 图片拾取（Q3）：webview 按钮与命令面板两入口共用同一执行面（编排归 host/imagePick）
       void this.pickAndAttachImages();
@@ -1274,18 +1276,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 配置变更后的装配重试入口（HOST-BUG-1：LLM 配置补全即初始化，无需重启）
-   *
-   * 由 extension.ts 的 onDidChangeConfiguration 在 `memora.providers` /
-   * `memora.activeProvider` 变更时调用。三态安全跳过：
-   *   - 已装配（_agent 在）→ 无需重试（provider 热切换归 handleSetProvider，非本入口职责）；
-   *   - 装配在途（_agentResolving）→ 不制造并行装配；
-   *   - 面板未打开（_view 空）→ 留给 resolveWebviewView 的 ensureAgent，不为配置变更预装配。
-   * 失败态可重试由 performAgentAssembly 的 catch 重置 _agentReady 保证
-   * （失败后 _agentReady=null ⇒ ensureAgent 真正重启装配，而非 await 僵尸 Promise）。
+   * 配置变更后的入口（HOST-BUG-1 补全初始化 + IMG-5 已装配实例刷新）。由 extension.ts 的
+   * onDidChangeConfiguration 在 `memora.providers` / `memora.activeProvider` 变更时调用：
+   *   - **已装配** → **不重建 agent**（会打断会话），只失效派生副本：按钮态按真源重推 + 能力位
+   *     换新实例；有轮在跑时置 stale 顺延。**IMG-5 补的就是这一支**（旧实现此处直接 return，
+   *     于是「已勾选 supportsVision 但 agent 仍持旧能力位」只能靠 Reload 解除）；
+   *   - 装配在途 → 不制造并行装配；面板未打开 → 留给 resolveWebviewView 的 ensureAgent。
+   * 失败态可重试由 performAgentAssembly 的 catch 重置 _agentReady 保证（失败后 _agentReady=null ⇒ 真正重启装配，而非 await 僵尸 Promise）。
    */
   public async retryAgentAssembly(): Promise<void> {
-    if (this._agent || this._agentResolving || !this._view) return;
+    if (this._agent) {
+      await this.applyActiveProviderRefresh();
+      return;
+    }
+    if (this._agentResolving || !this._view) return;
     await this.ensureAgent();
   }
 
@@ -2523,29 +2527,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 装配完成后统一收口（收口点：会话对齐 + 时序竞态补推 + 占用补推统一收口）
+   * 装配完成后统一收口（会话对齐 + 时序竞态补推 + 占用补推，单一入口）
    *
-   * 懒装配路径（直接点活动栏面板图标）：ensureAgent 异步装配，webview ready 时
-   * _agent 往往尚未就绪，replaySession 会因 _agent 为空（pushRolePacks）或
-   * _activeRolePack 未设置（chat_role_pack，仅 open 命令路径的 setRolePack 会设置）
-   * 而跳过推送 → 输入区角色选择器永久缺失。装配完成即补推一次：
-   *   1. 启动会话对齐（宿主 _currentSessionId 与内核 current 一致性校正，
-   *      见 alignKernelSession——首版只挂 setAgent，懒装配路径漏对齐实测返修）
-   *   2. _activeRolePack 缺省时从 agent 实际激活角色补齐（懒装配路径没有 setRolePack）
-   *   3. 补推 chat_role_pack → 角色选择器 / AI 消息标签可见（即使无激活角色也推送，
-   *      让 webview 正确处理状态）
-   *   4. 补推 chat_role_packs → 角色切换入口数据
-   *   5. 补推历史会话占用 → 输入区圆环脱离空态 0%
+   * 懒装配路径（直接点活动栏面板图标）：ensureAgent 异步装配，webview ready 时 _agent 往往
+   * 尚未就绪，replaySession 会因 _agent 为空（pushRolePacks）或 _activeRolePack 未设置
+   * （chat_role_pack，仅 open 命令路径的 setRolePack 会设置）而跳过推送 → 输入区角色选择器
+   * 永久缺失。装配完成即补推：① 启动会话对齐（见 alignKernelSession）；② _activeRolePack 缺省
+   * 时从 agent 实际激活角色补齐；③ 补推 chat_role_pack（角色选择器 / AI 消息标签可见，即使
+   * 无激活角色也推送）；④ 补推 chat_role_packs（角色切换入口数据）；⑤ 补推历史会话占用
+   * （输入区圆环脱离空态 0%）。
    *
-   * 任何装配后动作都只挂在本方法，不得在 setAgent / ensureAgent 各钉一份——
-   * 占用补推若只挂 setAgent，懒装配路径（ensureAgent）重启/侧栏打开面板时圆环恒为 0%；
-   * 会话对齐若只挂 setAgent（首版实测 2026-10-13）：点活动栏图标/重启恢复面板走懒装配
-   * 路径，内核 current 停在惰性初值 today-main ⇒ 启动即分叉报「当前会话不存在」。
-   * 面板未就绪时 post 静默（_view 为空），由 replaySession 兜底；重复推送幂等。
-   *
-   * SSOT：本方法是「装配后动作」的唯一入口，setAgent 与 ensureAgent 两条装配路径
-   * 都必须经过它。任何新增的装配后动作都挂在本方法内，不在调用方各钉一份——
-   * 挂两处必然漏掉对称的另一条路径。
+   * **SSOT：本方法是「装配后动作」的唯一入口**——setAgent 与 ensureAgent 两条装配路径都必须
+   * 经过它；任何新增的装配后动作都挂在本方法内，不在调用方各钉一份（挂两处必然漏掉对称的
+   * 另一条路径）。历史伤害（2026-10-13 实测）：占用补推若只挂 setAgent，懒装配路径重启/侧栏
+   * 打开面板时圆环恒为 0%；会话对齐若只挂 setAgent，内核 current 停在惰性初值 today-main
+   * ⇒ 启动即分叉报「当前会话不存在」。面板未就绪时 post 静默（_view 为空），由 replaySession
+   * 兜底；重复推送幂等。
    */
   private refreshAfterAssemble(): void {
     if (!this._agent) return;
@@ -2627,12 +2624,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 处理用户切换激活 Provider（底部模型下拉框）
+   * 处理用户切换激活 Provider（底部模型下拉框）：持久化激活态 + 热生效，未生效则回滚并提示。
    *
-   * 除持久化激活态外，还做「热生效」：复用装配工厂 createProvider（SSOT，
-   * 不重复构造）构造新 Provider 并注入 Agent，让后续对话立即使用新模型。
-   * 切换未生效时（对话进行中不可切换 / 配置缺失）回滚激活态并提示，避免
-   * UI 显示已切换但实际未生效。
+   * 热生效走 `applyActiveProviderRefresh`（IMG-5 起的**单点**：配置变更监听共用同一实现）。
+   * ⚠️ 回滚只属于本路径（用户点在 UI 上，回滚后可重试）；配置保存路径**不回滚**——那边配置
+   * 已落盘，回滚等于丢用户输入，只置 stale 顺延。两者刻意不同，勿统一。
    *
    * @param name 用户选中的 Provider 别名
    */
@@ -2641,39 +2637,43 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const prev = this._providerStore.getActiveName();
     const r = await this._providerStore.setActive(name);
     if (!r.ok) return;
-    try {
-      // 热生效：Agent.setProvider 在对话进行中会抛 assertNotBusy，需捕获；
-      // 图片解析器必须同源注入（否则热切换后的 Provider 丢掉视觉链）
-      if (this._agent) {
-        await this._agent.setProvider(
-          await createProvider(this._providerStore, process.env, this.imageCache?.resolver),
-        );
-        // 随模型热切换同步上下文窗口上限（per-LLM contextWindow 唯一真理源；resolveContextWindow
-        // 回落内核默认窗口，与装配期口径一致），让内核预算/截断/占用快照与所选模型窗口对齐
-        const active = await this._providerStore.getActive();
-        this._agent.setContextWindow(resolveContextWindow(active?.contextWindow));
-        // per-LLM 输出预算热同步（与 contextWindow 同链路）：随模型热切换即刻生效，
-        // 新 Provider 的 maxTokens 下一轮请求即透传（T1 / EMPTY-RESP-1 根因修复）
-        this._agent.setMaxTokens(active?.maxTokens);
-      }
-      await this.pushProviders();
-    } catch (err) {
-      // 切换未生效：回滚激活态 + 错误提示（不误导用户）。prev 存在 → 还原原激活 Provider；
-      // prev 为 undefined（原本无激活、靠 env 装配，见 llmConfig 回退路径）→ 清空激活态，
-      // 否则 UI 显示新 provider 已激活但 agent 仍用 env，造成功能↔UI 不一致。
-      // 回滚写失败不掩盖原始错误：并入同一条回执，避免「界面停在错状态却无人知晓」。
-      const rollback = prev
-        ? await this._providerStore.setActive(prev)
-        : await this._providerStore.clearActive();
-      await this.pushProviders();
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: rollback.ok
-          ? toNoticeText(err)
-          : `${toNoticeText(err)}（激活态回滚也失败：${rollback.message ?? '原因未记录'}）`,
-      });
+    const outcome = await this.applyActiveProviderRefresh();
+    if (outcome.applied) return;
+    // 未生效 ⇒ 回滚激活态 + 错误提示（不误导用户）。prev 存在 → 还原原激活 Provider；
+    // prev 为 undefined（原本无激活、靠 env 装配，见 llmConfig 回退路径）→ 清空激活态，
+    // 否则 UI 显示新 provider 已激活但 agent 仍用 env，造成功能↔UI 不一致。
+    // 回滚写失败不掩盖原始错误：并入同一条回执，避免「界面停在错状态却无人知晓」。
+    const rollback = prev
+      ? await this._providerStore.setActive(prev)
+      : await this._providerStore.clearActive();
+    await this.pushProviders();
+    this.post({
+      type: 'notice',
+      level: 'error',
+      message: rollback.ok
+        ? toNoticeText(outcome.error)
+        : `${toNoticeText(outcome.error)}（激活态回滚也失败：${rollback.message ?? '原因未记录'}）`,
+    });
+  }
+
+  /** 真源配置变更 → 已装配实例与其投影跟上（IMG-5 热生效的唯一实现；编排与完整论证见
+   * `host/providerRefresh.ts`，此处只注入宿主能力并记顺延标记）。 */
+  private async applyActiveProviderRefresh(): Promise<ProviderRefreshOutcome> {
+    const outcome = await refreshActiveProvider({
+      getAgent: () => this._agent,
+      getActiveConfig: async () => {
+        const a = await this._providerStore.getActive();
+        return a ? { contextWindow: a.contextWindow, maxTokens: a.maxTokens } : undefined;
+      },
+      buildProvider: () =>
+        createProvider(this._providerStore, process.env, this.imageCache?.resolver),
+      pushProviders: () => this.pushProviders(),
+    });
+    this._providerStale = !outcome.applied;
+    if (!outcome.applied) {
+      console.warn(`Memora 配置热刷新未生效（${outcome.reason}），留待下次发送前补做`);
     }
+    return outcome;
   }
 
   /**
@@ -2900,6 +2900,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       case 'send': {
         const text = msg.text?.trim() ?? '';
         if (!text) return;
+        // IMG-5 顺延补做：上一轮已收场 ⇒ 新 turn 起点是唯一必然可用的安全点。补做仍失败**不拦
+        // 发送**：一级门禁会给可见文案（含「改用支持图片的模型」指引），比静默吞掉或卡输入更诚实。
+        if (this._providerStale) await this.applyActiveProviderRefresh();
         await this.sendInput(text, msg.skillName, msg.refs, msg.injections, msg.attachments);
         return;
       }
@@ -4056,27 +4059,24 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 推送后台任务快照（CMD-1 阶段 2 · 见 `docs/方案-后台任务可见性与kill入口-20261004.md`）
    *
-   * 真源 = 内核 `agent.listBackgroundTasks()`（只读投影，含进程句柄的字段已被内核剥离）。
-   * 宿主零副本、零裁决，只按快照转发。
+   * 真源 = 内核 `agent.listBackgroundTasks()`（只读投影，含进程句柄的字段已被内核剥离）；宿主
+   * 零副本、零裁决，只按快照转发。刻意**不下发 `result`**（命令输出）：体量可达 KB~MB 级，
+   * UI 不呈现输出——输出归模型消费（经 `kill_command` / 回流通道给 LLM），随包搬运纯属浪费。
    *
-   * 刻意**不下发 `result`**（命令输出）：体量可达 KB~MB 级，UI 不呈现输出——
-   * 输出归模型消费（经 `kill_command` / 回流通道给 LLM），随包搬运纯属浪费。
+   * agent 未就绪时不推（`_agent` 为空 = 未装配，与 `postPlanUpdate` 同守卫形态）——不静默推
+   * 空快照，否则「未就绪」会被 UI 读成「没有后台任务」。
    *
-   * agent 未就绪时不推（`_agent` 为空 = 未装配，与 `postPlanUpdate` 同守卫形态）——
-   * 不静默推空快照，否则「未就绪」会被 UI 读成「没有后台任务」。
+   * **内容签名去重**（见方案 §2.4）：`taskId:status` 拼接串未变则不推。推送点共五个：
+   * `step_boundary` / `background_report` / `background_kill` 后回推 / 内核
+   * `backgroundTaskSettled` 事件 / webview ready（force）。step 边界周期性到达 ⇒ 无任务时逐
+   * step 推空快照纯属 IPC 噪音，由签名去重拦掉。用**签名**而非「条数」判变化：`kill` 后
+   * `running → killed` 条数恒为 1 而内容已变，长度守卫会把这次关键刷新判成 no-op
+   * （同 `syncPendingQueue` 长度守卫的反向教训）。
    *
-   * **内容签名去重**（见方案 §2.4）：`taskId:status` 拼接串未变则不推。
-   * 推送点共五个：`step_boundary` / `background_report` / `background_kill` 后回推 /
-   * 内核 `backgroundTaskSettled` 事件 / webview ready（force）。其中 step 边界周期性
-   * 到达 ⇒ 无任务时逐 step 推空快照纯属 IPC 噪音，由签名去重拦掉。
-   * 用**签名**而非「条数」判变化：`kill` 后 `running → killed` 条数恒为 1 而内容已变，
-   * 长度守卫会把这次关键刷新判成 no-op（同 `syncPendingQueue` 长度守卫的反向教训）。
-   *
-   * @param mode `dedup`（默认）= 周期推送点，走签名去重降噪；
-   *   `force` = **webview ready 全量对齐**，绕过去重——签名存于 extension 实例、
-   *   跨 webview 重建（折叠/关闭再打开）残留，不绕则这次补推被自己的守卫吞掉，
-   *   表现为「面板重开后后台任务条凭空消失，而进程还在跑、用户也砍不掉」。
-   *   两者语义不同（降噪 vs 对齐），故不合并成一条判据。
+   * @param mode `dedup`（默认）= 周期推送点，走签名去重降噪；`force` = **webview ready 全量
+   *   对齐**，绕过去重——签名存于 extension 实例、跨 webview 重建（折叠/关闭再打开）残留，
+   *   不绕则这次补推被自己的守卫吞掉，表现为「面板重开后后台任务条凭空消失，而进程还在跑、
+   *   用户也砍不掉」。两者语义不同（降噪 vs 对齐），故不合并成一条判据。
    */
   private postBackgroundTasks(mode: 'dedup' | 'force' = 'dedup'): void {
     if (!this._agent) return;
