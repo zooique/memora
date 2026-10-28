@@ -723,15 +723,19 @@ describe('悬停预览（#imgPreviewTip · 磁盘预览）', () => {
     expect(tip.querySelector('img')).toBeNull();
   });
 
-  it('文件被移走 => 悬停显示「图片不可用（sha 前 8）」，chip 本身仍在', async () => {
+  it('加载失败 => 悬停显示「预览加载失败（sha 前 8）」，chip 本身仍在', async () => {
     await mountIngested(PREVIEW);
     chips()[0]!.dispatchEvent(new MouseEvent('mouseenter'));
     const tip = tipEl()!;
-    // jsdom 不会真加载资源 ⇒ 用测试直投 error 事件模拟「磁盘文件已不在」
+    // jsdom 不会真加载资源 ⇒ 用测试直投 error 事件模拟「某次加载失败」。
+    // ⚠️ 该事件**不证明文件不存在**（缓存命中时不会发请求 ⇒ error 不触发），
+    // 所以断言只钉「文案陈述这次失败」，不钉任何存在性字样（IMG-6 一级）。
     tip.querySelector('img')!.dispatchEvent(new Event('error'));
 
     expect(tip.hidden).toBe(false);
-    expect(tip.textContent).toContain(`图片不可用（${SHA.slice(0, 8)}）`);
+    expect(tip.textContent).toContain(`预览加载失败（${SHA.slice(0, 8)}）`);
+    // 反向断言：不得回到「存在性断言」的措辞（改文案很容易顺手写回去）
+    expect(tip.textContent).not.toContain('不可用');
     expect(chips().length).toBe(1);
   });
 

@@ -1906,7 +1906,10 @@ export const chatStyles = `
    * 单例浮层挂在 body（绝对定位，坐标由 JS 按 chip 位置算）：进入才设图源、离开即清，
    * 一枚 chip 不长期持有位图。显隐走 hidden 属性，display 兜底由全局规则统一负责
    * （规则 10 的同款判据：author 层 display 会盖掉属性，故此处不写逐元素兜底）。
-   * 缺陷态（文件被移走）由 JS 切成文本态「图片不可用」，chip 本身保持不动。 */
+   * 加载失败态由 JS 切成文本态「预览加载失败」，chip 本身保持不动。
+   * 注意文案只说加载失败、不说文件不存在：img.onerror 是**请求失败**信号而非存在性判据
+   * （缓存命中时压根不发请求），详见 helpers/imageCapture.ts 的 showPreview JSDoc。
+   * ⚠️ 本文件是 TS 模板字符串，注释里禁写反引号（会终止字符串，见 tsc 报的 ')' expected）。 */
   .image-chip-tip {
     position: absolute;
     display: flex;

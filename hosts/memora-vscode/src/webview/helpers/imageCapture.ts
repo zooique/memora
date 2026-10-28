@@ -447,9 +447,14 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
    * 悬停进入：有预览 URL 才挂 `<img>`，并在 load / error 两个终点各自重摆位。
    *
    * 三种态如实区分（与 `describe()` 的文案一一对应，禁留白装成功）：
-   *   - 有 URL → 出图；文件被移走时 `error` 切「图片不可用（sha 前 8）」；
+   *   - 有 URL → 出图；加载失败时 `error` 切「预览加载失败（sha 前 8）」；
    *   - 有 `ref` 无 URL → 宿主视图已销毁，说「暂无预览」；
    *   - 连 `ref` 都没有 → 回执在途，说「正在保存」。
+   *
+   * ⚠️ **`error` 不是存在性判据**（IMG-6）：它的语义是「这次请求失败」，可能是文件被删/移走，
+   * 也可能是资源服务拒绝。反过来更关键——**缓存命中时根本不发请求 ⇒ `error` 永不触发**，
+   * 因此「没报错」同样不证明文件还在。故文案只说「加载失败」（可观测事实），
+   * 不说「图片不可用/不存在」（推断）。要真判存在性，得由宿主 stat（IMG-6 二级，未做）。
    */
   function showPreview(chip: HTMLElement, item: CapturedImage): void {
     const tip = ensureTip();
@@ -465,9 +470,10 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     img.alt = item.name;
     img.addEventListener('load', () => placeTip(tip, chip));
     img.addEventListener('error', () => {
-      // 文件被删 / 被移走：切文本态如实报（方案 §5.10 缺陷态），chip 本身不受影响
+      // 加载失败：切文本态如实报（方案 §5.10 缺陷态），chip 本身不受影响。
+      // 文案只陈述「这次加载失败」，不推断文件是否存在——理由见本函数 JSDoc。
       resetTip(tip);
-      fillTipText(tip, `图片不可用（${(item.ref?.sha256 ?? item.sha256 ?? '').slice(0, 8)}）`);
+      fillTipText(tip, `预览加载失败（${(item.ref?.sha256 ?? item.sha256 ?? '').slice(0, 8)}）`);
       tip.hidden = false;
       placeTip(tip, chip);
     });
