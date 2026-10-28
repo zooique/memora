@@ -91,11 +91,17 @@ async function writeOnce(dir: string, file: string, bytes: Uint8Array): Promise<
  * @param projectPath 项目/工作区根（绝对路径；目录推导归 `projectDataDir.ts` 单点）
  * @param msg 上行载荷（字段语义见 `shared/protocol.ts`）
  * @param post 回执通道（注入以便单测直接断言，不触 vscode）
+ * @param toWebviewUri 落盘文件 → webview 可加载 URL（悬停预览用）。注入而非本模块直接调
+ *   `asWebviewUri`：那要 import `vscode`，而本模块的「零 vscode 依赖」是能拿真临时目录机测
+ *   的前提。缺省（不传）= 回执不带 `uri`，UI 如实显示「暂无预览」。
+ *   返回值允许 `undefined`：转换器由调用方闭包持有视图引用，写盘期间视图可能已被销毁，
+ *   此时拿不到真实地址——返回 `undefined` 让本处不带字段，绝不用空串伪装成可加载地址。
  */
 export async function ingestImage(
   projectPath: string,
   msg: ImageIngestMessage,
   post: (msg: ImageIngestResult) => void,
+  toWebviewUri?: (file: string) => string | undefined,
 ): Promise<void> {
   // 关联键 = 采集侧提案 sha256。三态回执都必须原样带回，否则 webview 无从知道
   // 这条回执属于哪一张 chip（多图并发时按文件名猜 = 张冠李戴）。
@@ -163,5 +169,6 @@ export async function ingestImage(
     return;
   }
 
-  post({ type: 'image_ingest_result', status: 'ok', sha256: key, ref });
+  // `uri` 只承载「现有视图能加载的地址」：视图已销毁时上游不给转换器，此处就不带字段
+  post({ type: 'image_ingest_result', status: 'ok', sha256: key, ref, uri: toWebviewUri?.(file) });
 }

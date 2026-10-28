@@ -1871,6 +1871,38 @@ export const chatStyles = `
   /* 探针期标记 .image-chip--probe（「未接入」）已随发送链路接线**连同规则与加类一起删除**
    * （IMG-2 第 9 子块）：它存在的唯一理由就是「采集已通、发送未接」，留着即永久免责声明。 */
 
+  /* ============ 图片悬停预览（IMG-2 · 磁盘预览） ============
+   * 单例浮层挂在 body（绝对定位，坐标由 JS 按 chip 位置算）：进入才设图源、离开即清，
+   * 一枚 chip 不长期持有位图。显隐走 hidden 属性，display 兜底由全局规则统一负责
+   * （规则 10 的同款判据：author 层 display 会盖掉属性，故此处不写逐元素兜底）。
+   * 缺陷态（文件被移走）由 JS 切成文本态「图片不可用」，chip 本身保持不动。 */
+  .image-chip-tip {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1, 4px);
+    padding: var(--sp-2, 6px);
+    max-width: var(--dim-2xl);
+    background: var(--surface-card, #252526);
+    border: var(--line-input);
+    border-radius: var(--radius-md, 8px);
+    box-shadow: var(--shadow-card, 0 2px 8px rgba(0, 0, 0, 0.15));
+    font-size: var(--font-sm, 11px);
+    color: var(--text-input, #cccccc);
+    z-index: var(--z-tip);
+  }
+  /* 预览图上限 = 提示卡最大宽高档（与浮层同源刻度）：只影响绘制尺寸、不减少解码体量
+   * （残余风险已在方案里如实登记，不靠转码解决）。 */
+  .image-chip-tip__img {
+    display: block;
+    max-width: var(--dim-2xl);
+    max-height: var(--dim-2xl);
+    object-fit: contain;
+  }
+  .image-chip-tip__text {
+    padding: var(--sp-1, 4px) var(--sp-2, 6px);
+  }
+
   /* 动画：spin for loading state */
   @keyframes spin {
     from { transform: rotate(0deg); }

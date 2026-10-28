@@ -1194,9 +1194,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 应答 memory_deleted 驱动 webview 摘除；取消确认不推送（settingsPanel 同款契约）
       void this.deleteMemory(msg.id);
     } else if (msg.type === 'image_ingest') {
-      // 图片采集即写盘（IMG-2 Q1）：落盘点在 host/imageIngest（禁止塞进本类），
-      // 它复算真值后经回执 post 回 webview 换真；失败三态一律回执、不静默丢
-      void ingestImage(this.workspacePath, msg, (m) => this.post(m));
+      // 图片采集即写盘（IMG-2 Q1）：落盘点在 host/imageIngest（禁塞进本类），失败三态一律回执；
+      // 第 4 参给 webview URL 工厂（悬停预览），回执时视图已销毁则不给——宁可无预览也不给假地址
+      const toUri = (file: string) =>
+        this._view?.webview.asWebviewUri(vscode.Uri.file(file)).toString();
+      void ingestImage(this.workspacePath, msg, (m) => this.post(m), toUri);
     } else {
       // 未知消息类型（HOST-CTX-12）：**不静默丢弃**。
       //

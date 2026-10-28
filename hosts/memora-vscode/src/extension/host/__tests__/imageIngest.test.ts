@@ -120,6 +120,39 @@ describe('ingestImage — 成功路径', () => {
 
     expect(results[0]!.ref?.name).toBe(`粘贴图片-${msg.sha256.slice(0, 6)}`);
   });
+
+  it('注入 URL 转换器 => 回执 ok 带上 webview 可加载地址（悬停预览的唯一来源）', async () => {
+    const dir = makeTempDir('memora-ingest-');
+    const msg = ingestMsg(pngBytes(8, 8));
+    const results: IngestResult[] = [];
+    /** 转换器收到的**落盘路径**（断言它指向 attachments 下的真文件，而不是别的地址） */
+    const seen: string[] = [];
+
+    await ingestImage(
+      dir,
+      msg,
+      (r) => results.push(r),
+      (file) => {
+        seen.push(file);
+        return `mock-webview://${file}`;
+      },
+    );
+
+    expect(results[0]!.status).toBe('ok');
+    expect(seen).toEqual([join(resolveAttachmentsDir(dir), `${msg.sha256}.png`)]);
+    expect(results[0]!.uri).toBe(`mock-webview://${seen[0]!}`);
+  });
+
+  it('未注入转换器（视图已销毁）=> 回执不带 uri，UI 侧如实降级为无预览', async () => {
+    const dir = makeTempDir('memora-ingest-');
+    const results: IngestResult[] = [];
+
+    await ingestImage(dir, ingestMsg(pngBytes(2, 2)), (r) => results.push(r));
+
+    expect(results[0]!.status).toBe('ok');
+    // 空值必须是「字段缺省」而不是空串（空串会被 UI 当成一个可加载地址去请求）
+    expect(results[0]!.uri).toBeUndefined();
+  });
 });
 
 describe('ingestImage — 拒收（坏字节不写盘）', () => {

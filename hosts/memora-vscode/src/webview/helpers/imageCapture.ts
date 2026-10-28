@@ -37,6 +37,14 @@ import { getIconSvg } from '../scripts/icons.js';
 /** `image_ingest_result` 载荷类型（从协议联合取型，禁手写第二份字段表） */
 type IngestResult = Extract<ExtensionToWebviewMessage, { type: 'image_ingest_result' }>;
 
+/**
+ * 悬停预览浮层的固定 id（**单例**，挂 body 的绝对定位层）。
+ *
+ * 为什么单例而不是「一枚 chip 一份」：一个 `<img>` 同一时刻只会解码一张图；单例 + 离开即清
+ * src，才能让内存峰值只等于「当前悬停的那一张」（方案 §5.10 的残余风险缓解边界，不做转码）。
+ */
+const PREVIEW_TIP_ID = 'imgPreviewTip';
+
 /** 采集成功的候选图。字段与内核 `ImageRef` 对齐，但 `sha256` 是**提案值**（见文件头）。 */
 export interface CapturedImage {
   source: 'paste' | 'drop-file' | 'drop-uri';
@@ -58,6 +66,14 @@ export interface CapturedImage {
    * （见 `applyIngestResult`）。发送链路只应读 `ref`，读提案值 = 拿未验证数据当真相。
    */
   ref?: ImageRef;
+  /**
+   * webview 可直接加载的预览 URL（回执 `ok` 的 `uri`，宿主 `asWebviewUri` 产物）。
+   *
+   * 与 `uri` 的分野（同族词不同源，勿混）：`uri` 是**资源管理器拖入的原始文件 URI**
+   * （本端读不到字节，仅登记待接线）；本字段是宿主翻好的 webview 地址，可直接塞 `<img src>`。
+   * 缺失 = 预览不可用（回执在途 / 宿主视图已销毁），UI 必须如实说「暂无预览」而非留白。
+   */
+  previewUri?: string;
 }
 
 /** 被拒绝的候选：**必须可见**，不许静默丢（方案 D7 的二级语义）。 */
@@ -220,6 +236,8 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
 
   function render(): void {
     if (!row) return;
+    // 重建前先收起：chip 节点即将被替换，浮层若还指向旧节点就是悬在空处的一张图
+    hidePreview();
     row.textContent = '';
     const total = accepted.length + rejected.length;
     if (total === 0) {
@@ -257,6 +275,9 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     chip.appendChild(name);
 
     chip.appendChild(buildRemove(() => removeAccepted(item)));
+    // 悬停预览只挂在**成功** chip 上：拒收项没有落盘文件，悬停出来只能是假象
+    chip.addEventListener('mouseenter', () => showPreview(chip, item));
+    chip.addEventListener('mouseleave', hidePreview);
     return chip;
   }
 
@@ -321,6 +342,111 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     else if (item.uri) parts.push('来自资源管理器，暂不支持发送（请改用粘贴或拖入）');
     else parts.push('正在保存到本地，完成后可发送');
     return parts.join(' · ') || item.name;
+  }
+
+  /** 悬停预览 tip 单例（懒建；跨 mount 复用同一节点，见 `PREVIEW_TIP_ID`） */
+  let previewTip: HTMLElement | null = null;
+
+  /** 取（懒建）预览 tip：先查文档里已有节点，避免重挂后出现第二份浮层 */
+  function ensureTip(): HTMLElement {
+    const existing = doc.getElementById(PREVIEW_TIP_ID);
+    if (existing) {
+      previewTip = existing;
+      return existing;
+    }
+    const tip = doc.createElement('div');
+    tip.id = PREVIEW_TIP_ID;
+    tip.className = 'image-chip-tip';
+    tip.setAttribute('role', 'tooltip');
+    tip.hidden = true;
+    // body 缺失（极早期 / 异常文档）时退到 documentElement：浮层不能因宿主容器缺失而不存在
+    (doc.body ?? doc.documentElement).appendChild(tip);
+    previewTip = tip;
+    return tip;
+  }
+
+  /**
+   * 清空 tip 内容并收起。
+   *
+   * 摘掉 `<img>` 元素本身就是「离开即清 src」的落地：元素被移除后解码位图可回收，
+   * 单例里绝不留着上一张图（方案 §5.10 的内存取舍）。
+   */
+  function resetTip(tip: HTMLElement): void {
+    tip.textContent = '';
+    tip.hidden = true;
+  }
+
+  /** 文本态（无预览 / 不可用）：与图片态互斥，同一单例里只留一种内容 */
+  function fillTipText(tip: HTMLElement, text: string): void {
+    const el = doc.createElement('div');
+    el.className = 'image-chip-tip__text';
+    el.textContent = text;
+    tip.appendChild(el);
+  }
+
+  /**
+   * 摆位：默认在 chip 上方；上方空间不足（贴近视口顶边）则翻到下方。
+   *
+   * 坐标 = `getBoundingClientRect()` + 页面滚动偏移。本仓滚动发生在消息区而非 body，
+   * 加偏移是零成本的正确写法——防将来 body 出现滚动时浮层静默错位。
+   */
+  function placeTip(tip: HTMLElement, chip: HTMLElement): void {
+    const rect = chip.getBoundingClientRect();
+    const view = doc.defaultView;
+    const scrollX = view?.scrollX ?? 0;
+    const scrollY = view?.scrollY ?? 0;
+    // chip 与浮层之间的视觉间隙
+    const gap = 6;
+    // 必须先显形再量尺寸（hidden 时 offsetHeight 恒 0，翻向判断会永远成立）
+    const height = tip.offsetHeight;
+    const above = rect.top - height - gap >= 0;
+    tip.style.top = `${(above ? rect.top - height - gap : rect.bottom + gap) + scrollY}px`;
+    // 水平：默认左贴 chip；右侧越界时左移，且不许压过左边界
+    const width = tip.offsetWidth;
+    const viewportWidth = view?.innerWidth ?? 0;
+    const minLeft = scrollX + 8;
+    const maxLeft = viewportWidth > 0 ? scrollX + viewportWidth - width - 8 : minLeft;
+    tip.style.left = `${Math.max(minLeft, Math.min(rect.left + scrollX, maxLeft))}px`;
+  }
+
+  /**
+   * 悬停进入：有预览 URL 才挂 `<img>`，并在 load / error 两个终点各自重摆位。
+   *
+   * 三种态如实区分（与 `describe()` 的文案一一对应，禁留白装成功）：
+   *   - 有 URL → 出图；文件被移走时 `error` 切「图片不可用（sha 前 8）」；
+   *   - 有 `ref` 无 URL → 宿主视图已销毁，说「暂无预览」；
+   *   - 连 `ref` 都没有 → 回执在途，说「正在保存」。
+   */
+  function showPreview(chip: HTMLElement, item: CapturedImage): void {
+    const tip = ensureTip();
+    resetTip(tip);
+    if (!item.previewUri) {
+      fillTipText(tip, item.ref ? '暂无预览（宿主未提供图片地址）' : '正在保存到本地，暂无预览');
+      tip.hidden = false;
+      placeTip(tip, chip);
+      return;
+    }
+    const img = doc.createElement('img');
+    img.className = 'image-chip-tip__img';
+    img.alt = item.name;
+    img.addEventListener('load', () => placeTip(tip, chip));
+    img.addEventListener('error', () => {
+      // 文件被删 / 被移走：切文本态如实报（方案 §5.10 缺陷态），chip 本身不受影响
+      resetTip(tip);
+      fillTipText(tip, `图片不可用（${(item.ref?.sha256 ?? item.sha256 ?? '').slice(0, 8)}）`);
+      tip.hidden = false;
+      placeTip(tip, chip);
+    });
+    tip.appendChild(img);
+    tip.hidden = false;
+    placeTip(tip, chip);
+    img.src = item.previewUri; // 悬停才设 src（不在 chip 上长期挂位图）
+  }
+
+  /** 悬停离开 / 重建 / 销毁：收起并清内容（唯一出口，防各调用点各清一半） */
+  function hidePreview(): void {
+    if (!previewTip) return;
+    resetTip(previewTip);
   }
 
   /** 单个 `File` → 校验 → 收入或拒收。任何异常都转成可见的拒绝项，不向上抛。 */
@@ -404,6 +530,8 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       if (!target) return;
       // 真值覆盖提案：同一份字节复算，正常必然相等；不相等只可能是传输损坏，一律信宿主
       target.ref = msg.ref;
+      // 预览 URL 只在宿主真的给了才覆盖（缺省 = 不可预览，不是「旧地址仍有效」）
+      if (msg.uri) target.previewUri = msg.uri;
       target.name = msg.ref.name;
       target.mime = msg.ref.mime;
       target.width = msg.ref.width;
@@ -533,6 +661,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       accepted.length = 0;
       rejected.length = 0;
       if (row) row.textContent = '';
+      hidePreview();
     },
   };
 }

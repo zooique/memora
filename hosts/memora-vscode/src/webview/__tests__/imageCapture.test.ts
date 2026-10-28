@@ -615,6 +615,137 @@ describe('createImageCapture — 上行与落盘回执（IMG-2）', () => {
   });
 });
 
+describe('悬停预览（#imgPreviewTip · 磁盘预览）', () => {
+  let handle: ImageCaptureHandle | null = null;
+  let dom: ReturnType<typeof mountDom>;
+
+  beforeEach(() => {
+    dom = mountDom();
+  });
+
+  afterEach(() => {
+    handle?.dispose();
+    handle = null;
+  });
+
+  /** 宿主回执里的真相引用（sha 与采集侧提案一致，预览缺陷态文案取它的前 8 位） */
+  const REF = {
+    sha256: SHA,
+    mime: 'image/png',
+    width: 1024,
+    height: 768,
+    bytes: 4096,
+    name: 'shot.png',
+  };
+  /** 宿主 asWebviewUri 产物的形状（只验证「照原样塞给 img」，不在这里复刻真 URL 规则） */
+  const PREVIEW = 'https://mock-resource/attachments/a1b2c3d4e5f6a7b8.png';
+
+  /**
+   * 造一条「已采集 → 已收 ok 回执」的 chip。
+   *
+   * @param uri 回执是否带预览地址；缺省 = 宿主视图已销毁那种真实情形（字段缺省）
+   */
+  async function mountIngested(uri?: string): Promise<void> {
+    handle = createImageCapture({
+      doc: document,
+      ...dom,
+      readBytes: async () => pngBytes(8, 8),
+      sha256: async () => SHA,
+    });
+    const file = new File([pngBytes(8, 8)], 'shot.png', { type: 'image/png' });
+    dom.input.dispatchEvent(
+      eventWithData(
+        'paste',
+        'clipboardData',
+        transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] }),
+      ),
+    );
+    // 采集链三跳（读字节 / 摘要 / 校验），多等几拍与既有用例同约定
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    handle!.applyIngestResult({
+      type: 'image_ingest_result',
+      status: 'ok',
+      sha256: SHA,
+      ref: { ...REF },
+      ...(uri ? { uri } : {}),
+    });
+  }
+
+  /** 悬停浮层（懒建单例） */
+  function tipEl(): HTMLElement | null {
+    return document.getElementById('imgPreviewTip');
+  }
+
+  it('悬停出图、离开即清：图源只在 hover 期存在（内存只等于当前一张）', async () => {
+    await mountIngested(PREVIEW);
+    // 懒建：没悬停过就连浮层节点都不存在（不给「有图但永不可见」的常驻 DOM 留位置）
+    expect(tipEl()).toBeNull();
+
+    chips()[0]!.dispatchEvent(new MouseEvent('mouseenter'));
+    const tip = tipEl()!;
+    expect(tip.hidden).toBe(false);
+    expect(tip.querySelector('img')!.getAttribute('src')).toBe(PREVIEW);
+
+    chips()[0]!.dispatchEvent(new MouseEvent('mouseleave'));
+    expect(tip.hidden).toBe(true);
+    // 离开即摘图：位图不随 chip 长期驻留，峰值只等于「当前悬停的那一张」
+    expect(tip.querySelector('img')).toBeNull();
+  });
+
+  it('文件被移走 => 悬停显示「图片不可用（sha 前 8）」，chip 本身仍在', async () => {
+    await mountIngested(PREVIEW);
+    chips()[0]!.dispatchEvent(new MouseEvent('mouseenter'));
+    const tip = tipEl()!;
+    // jsdom 不会真加载资源 ⇒ 用测试直投 error 事件模拟「磁盘文件已不在」
+    tip.querySelector('img')!.dispatchEvent(new Event('error'));
+
+    expect(tip.hidden).toBe(false);
+    expect(tip.textContent).toContain(`图片不可用（${SHA.slice(0, 8)}）`);
+    expect(chips().length).toBe(1);
+  });
+
+  it('回执未到 => 悬停如实说「正在保存」，不假装有图', async () => {
+    handle = createImageCapture({
+      doc: document,
+      ...dom,
+      readBytes: async () => pngBytes(8, 8),
+      sha256: async () => SHA,
+    });
+    const file = new File([pngBytes(8, 8)], 'shot.png', { type: 'image/png' });
+    dom.input.dispatchEvent(
+      eventWithData(
+        'paste',
+        'clipboardData',
+        transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] }),
+      ),
+    );
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+
+    chips()[0]!.dispatchEvent(new MouseEvent('mouseenter'));
+    const tip = tipEl()!;
+    expect(tip.textContent).toContain('正在保存到本地，暂无预览');
+    expect(tip.querySelector('img')).toBeNull();
+  });
+
+  it('宿主未提供地址（视图已销毁）=> 说「暂无预览」而不是空白浮层', async () => {
+    await mountIngested(undefined);
+    chips()[0]!.dispatchEvent(new MouseEvent('mouseenter'));
+    const tip = tipEl()!;
+    expect(tip.textContent).toContain('暂无预览');
+    expect(tip.querySelector('img')).toBeNull();
+  });
+
+  it('重建 chip 行（回执换真）会收起浮层：不给旧节点留一张悬空的图', async () => {
+    await mountIngested(PREVIEW);
+    chips()[0]!.dispatchEvent(new MouseEvent('mouseenter'));
+    expect(tipEl()!.hidden).toBe(false);
+    // 同轮再摘一次：applyIngestResult / 任意 render 都走同一收口
+    handle!.clear();
+    expect(tipEl()!.hidden).toBe(true);
+    expect(tipEl()!.querySelector('img')).toBeNull();
+  });
+});
+
 describe('bytesToBase64（上行编码）', () => {
   it('往返保真，且不因大字节数组触达 apply 实参上限', () => {
     // 5 MiB 量级（= 入口上限）是本函数必须扛住的真实尺寸：逐参展开写法在这里必 RangeError

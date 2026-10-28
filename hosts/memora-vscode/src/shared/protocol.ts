@@ -857,6 +857,17 @@ export type ExtensionToWebviewMessage =
       sha256: string;
       /** 真相图片引用（仅 `ok` 携带；字段语义 = 内核 `ImageRef` 契约） */
       ref?: ImageRef;
+      /**
+       * 该附件在 webview 里**可直接加载**的 URL（仅 `ok` 携带；悬停预览的唯一来源）
+       *
+       * 为什么由宿主给、webview 不自己拼：`asWebviewUri` 只有扩展宿主拿得到（webview 侧无此
+       * API，且 URL 含 origin 与路径编码规则，手拼必错）。载荷只传**结果**、不传磁盘路径——
+       * 路径是宿主私有布局，且落在 `localResourceRoots` 之外的地址 webview 根本读不到。
+       *
+       * 缺失的两种真实原因：① 宿主视图已销毁（生成时拿不到 asWebviewUri）；② 非 `ok` 终态。
+       * 两种都要在 UI 上如实表现为「暂无预览」，不得编造地址。
+       */
+      uri?: string;
       /** 拒绝 / 失败的用户可见文案（`rejected`/`failed` 必带，直接上屏不改写） */
       reason?: string;
     }

@@ -584,8 +584,10 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   // line- 78→79：UI-TOAST-1 活动条浮层形态（chatStyles 的 .activity-bar.is-toast
   // border: var(--line-solid)）新增 1 处，实数经 count-token-refs.mjs 实锤（2026-10-24）。
   const EXPECTED = {
-    'z-': 15, // HOST-NAV-1：大纲条 var(--z-float)（chatStyles）+1（2026-10-20）；
-    //          UI-TOAST-1：浮层 +1 / config 旧形态 -1 相抵（2026-10-24，净不变）
+    'z-': 16, // HOST-NAV-1：大纲条 var(--z-float)（chatStyles）+1（2026-10-20）；
+    //          UI-TOAST-1：浮层 +1 / config 旧形态 -1 相抵（2026-10-24，净不变）；
+    //          IMG-2：悬停预览浮层 .image-chip-tip 叠层 +1（2026-10-28，
+    //          实数经 scripts/count-token-refs.mjs 实锤同步）
     'lh-': 51, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
     //             MCP 页级说明段落改 var(--lh-relaxed) +1（2026-10-24）
     //             MCP 隐藏条目解释行 var(--lh-relaxed) +1（2026-10-24）
@@ -595,16 +597,21 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     'op-': 18,
     'icon-': 17,
     'dot-': 22,
-    'line-': 80, // MEM-EVENT-2：工具行内命中块 border-top: var(--line-solid)（chatStyles）+1；
+    'line-': 81, // MEM-EVENT-2：工具行内命中块 border-top: var(--line-solid)（chatStyles）+1；
     //             HOST-NAV-1：大纲条浮层 border: var(--line-input)（chatStyles）再 +1（2026-10-20）；
     //             CTX-4 真机反馈：本轮注入回执行 .context-ring__injection 分隔线 +1（2026-10-21）；
     //             指标空态指引 .activity-metrics-empty 分隔线 +1（2026-10-22）；
     //             MCP 选项卡 mcpStyles（页头 border-bottom + 工具行 border-top）+2（2026-10-24）；
     //             UI-TOAST-1：活动条浮层 .activity-bar.is-toast 描边 +1（2026-10-24）；
-    //             MCP-S1：远程标记 .mcp-server-tag 描边 +1（2026-10-25）
+    //             MCP-S1：远程标记 .mcp-server-tag 描边 +1（2026-10-25）；
+    //             IMG-2：悬停预览浮层 .image-chip-tip 描边（var(--line-input)）+1（2026-10-28，
+    //             实数经 scripts/count-token-refs.mjs 实锤同步）
     'sq-': 47,
-    'dim-': 22, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）；
-    //             UI-CONFIRM-FIT-1：审批卡 max-height 引 var(--dim-2xl)（替代裸值 420px）+1（2026-10-22）
+    'dim-': 25, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）；
+    //             UI-CONFIRM-FIT-1：审批卡 max-height 引 var(--dim-2xl)（替代裸值 420px）+1（2026-10-22）；
+    //             IMG-2：悬停预览 3 处（浮层 max-width + 预览图 max-width/max-height，均复用
+    //             var(--dim-2xl) 的「提示卡最大宽高」既有语义）+3（2026-10-28，
+    //             实数经 scripts/count-token-refs.mjs 实锤同步）
   } as const;
 
   for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {
