@@ -5415,9 +5415,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         renderMemoryHits();
       }
     } else if (msg.type === 'memory_deleted') {
-      // HOST-S3-3 反馈应答：成功 → 全局摘除该记忆（实时聚合 + 含已归档轮的 DOM 行——
-      // 反馈常发生在回看时，只摘当前轮会漏）；失败 → error 提示。
-      // 宿主侧模态确认「取消」不发本消息（settingsPanel 同款契约），达此分支即真删/真败。
+      // HOST-S3-3 反馈应答：成功 → 全局摘除该记忆（实时聚合 + 已归档轮 DOM——回看时反馈，
+      // 只摘当前轮会漏）；失败 → error 提示。宿主侧「取消」不发本消息（settingsPanel 同款契约）。
       if (msg.ok) {
         currentMemoryHits.delete(msg.id);
         // 按调用分组同步摘除：收场重建从 byCall 取数，模型不清则明细会被重新挂回来
@@ -5439,15 +5438,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       } else {
         activityDrawerView.showActivity('error', `反馈失败：${msg.message ?? '未知错误'}`);
       }
+    } else if (msg.type === 'image_ingest_result') {
+      imageCapture.applyIngestResult(msg); // 图片落盘回执（IMG-2）：chip 换真 / 转拒收态归采集层单点
     } else if (msg.type === 'write_confirm_request') {
-      // H0 写入审批卡：confirmWrites=true 时写文件触发 → 渲染审批卡等待用户确认/拒绝；
-      // 用户点击后回传 write_confirm_answer。多请求**不再同时并存**：宿主侧已改为 FIFO
-      // 串行送审（一次只推一条，裁决/超时后再推下一条）⇒ 旧请求不会「用户看不到就超时
-      // 静默拒绝」（修 S2）。此处收到新 request 时的覆盖渲染仅用于串行切换（卡保持可见）。
+      // H0 写入审批卡：confirmWrites 时写文件触发 → 渲染审批卡等用户裁决，回传 write_confirm_answer。
+      // 多请求**不再并存**（宿主侧 FIFO 串行送审）⇒ 旧请求不会「用户看不到就超时静默拒绝」（修 S2）。
       renderWriteConfirmCard(msg);
     } else if (msg.type === 'write_confirm_closed') {
-      // 请求已终结（用户裁决 / 超时自动拒绝）→ 收卡。requestId 不匹配即丢弃：
-      // 当前卡可能已切到更新的请求（多请求场景），旧终结通知不得关掉新卡。
+      // 请求已终结（裁决 / 超时自动拒绝）→ 收卡；requestId 不匹配即丢弃（当前卡可能已切到更新的请求）
       if (pendingWriteConfirmRequestId === msg.requestId) closeWriteConfirmCard();
     }
   }
@@ -6464,13 +6462,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   bindSingleTrackRow(skillChipRow);
   bindSingleTrackRow(refChipRow);
   bindSingleTrackRow(imageChipRow);
-  // 图片采集层（粘贴 / 拖入）：**探针版**——只做 chip 与校验可视化，不落盘、不上行。
-  // 何时落盘由真机结论定（边界文档 Q1），未定前不预支协议通道（K1）。
+  // 图片采集层（粘贴 / 拖入）：采集即写盘（Q1）——校验通过当场上行 `image_ingest`，
+  // 宿主回执经 handleMessage 转 `applyIngestResult` 把 chip 提案值换真
   const imageCapture = createImageCapture({
     doc: document,
     input,
     dropZone: inputWrap,
     row: imageChipRow,
+    post: (msg) => vscode.postMessage(msg),
+    notice: (text) => activityDrawerView.showActivity('info', text),
   });
   window.addEventListener(
     'resize',

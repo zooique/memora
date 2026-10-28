@@ -2,14 +2,15 @@
  * 图片采集层 — 粘贴 / 拖入 → 一条 chip
  *
  * 职责边界（刻意划死，勿扩张）：
- *   - **只做采集，不落盘、不碰内核**：落盘与 sha256 裁定归宿主（`ImageRef` 真源在会话
+ *   - **采集 + 上行触发，不落盘、不碰内核**：落盘与 sha256 裁定归宿主（`ImageRef` 真源在会话
  *     存储侧），本文件产出的 `sha256` 只是**提案值**（用于 D29 兜底命名与同轮去重的粗筛），
  *     最终以宿主重算为准。
- *   - **上行通道已立项、未接线**（2026-10-28 Q1 拍板反转原 K1 期「发送时随 `input`
- *     字段交付」口径）：真机实测隐藏侧栏即销毁 webview 上下文（未发送图全丢，边界文档
- *     §7 第 7 条）⇒ 定案**采集即写盘**，协议经治理评估扩位 +2 新增 `image_ingest` /
- *     `image_ingest_result` 两条通道（定义见 `shared/protocol.ts`）。本文件当前仍只做采集，
- *     上行接线在 IMG-2 落盘链子块完成（拍板记录 = 台账 IMG-2 第 6 子块）。
+ *   - **上行通道已接线**（2026-10-28 Q1 拍板反转原 K1 期「发送时随 `input` 字段交付」口径）：
+ *     真机实测隐藏侧栏即销毁 webview 上下文（未发送图全丢，边界文档 §7 第 7 条）⇒ 定案
+ *     **采集即写盘**——校验通过即发 `image_ingest`，宿主落盘后回 `image_ingest_result`
+ *     换真（两条通道定义见 `shared/protocol.ts`）。写盘本身仍不在本文件（禁 fs 进 webview）。
+ *   - **仍未接线的只剩「随消息发送」**：把 `ref` 并进 `input.attachments` 由 IMG-2 后续子块完成。
+ *     在那之前 chip 上的「未接入」标记**必须留着**（见 `describe` 末尾注释）。
  *
  * 为什么走依赖注入而不是直接摸全局（对齐 `helpers/toast.ts` 的既有惯例）：
  *   chatView 的测试在 jsdom 里重建 DOM，模块级自执行会把监听器绑到上一轮的旧节点上。
@@ -22,9 +23,17 @@
  *     文件（`localResourceRoots` 只放行 `dist/webview`）⇒ 只登记 URI，读盘与校验推迟到宿主 |
  */
 
+import type { ImageRef } from '@zooique/memora';
 import { type ImageCheckResult, validateImageCandidate } from '../../shared/imageValidation.js';
+import type {
+  ExtensionToWebviewMessage,
+  WebviewToExtensionMessage,
+} from '../../shared/protocol.js';
 import { syncRowEdges } from './chipRow.js';
 import { getIconSvg } from '../scripts/icons.js';
+
+/** `image_ingest_result` 载荷类型（从协议联合取型，禁手写第二份字段表） */
+type IngestResult = Extract<ExtensionToWebviewMessage, { type: 'image_ingest_result' }>;
 
 /** 采集成功的候选图。字段与内核 `ImageRef` 对齐，但 `sha256` 是**提案值**（见文件头）。 */
 export interface CapturedImage {
@@ -40,6 +49,13 @@ export interface CapturedImage {
   sha256?: string;
   /** 仅 `drop-uri`：宿主侧读盘用的文件 URI 原文 */
   uri?: string;
+  /**
+   * 落盘**真值**（`image_ingest_result.status='ok'` 后才存在）。
+   *
+   * 在此之前本结构里的一切字段都是提案：宿主会用同一份字节复算，不一致时以 `ref` 为准
+   * （见 `applyIngestResult`）。发送链路只应读 `ref`，读提案值 = 拿未验证数据当真相。
+   */
+  ref?: ImageRef;
 }
 
 /** 被拒绝的候选：**必须可见**，不许静默丢（方案 D7 的二级语义）。 */
@@ -61,12 +77,29 @@ export interface ImageCaptureDeps {
   sha256?: (bytes: Uint8Array) => Promise<string>;
   /** 读 `File` 字节（默认 `Blob.arrayBuffer()` → `FileReader` 兜底；注入以便测试） */
   readBytes?: (file: File) => Promise<Uint8Array>;
+  /**
+   * 上行通道（`image_ingest`）。
+   *
+   * 缺省 = 不落盘：单测可只验证「采集 + 校验」两段而不必搭宿主；生产由 chatView 注入
+   * `vscode.postMessage`。**采集即写盘**（IMG-2 Q1 定案）——粘贴当场发，不等发送：
+   * webview 隐藏即销毁，字节留在内存里就会随上下文蒸发。
+   */
+  post?: (msg: WebviewToExtensionMessage) => void;
+  /** 瞬态提示（同轮重复粘贴「已添加」等）；缺省 = 静默 */
+  notice?: (message: string) => void;
 }
 
 export interface ImageCaptureHandle {
   /** 当前候选（发送时刻的取值单点） */
   readonly accepted: readonly CapturedImage[];
   readonly rejected: readonly RejectedImage[];
+  /**
+   * 落盘回执入口（chatView 把 `image_ingest_result` 原样转进来）。
+   *
+   * 归本层处理而非 chatView：chip 的状态只在这里维护，回调若散在视图层就会出现
+   * 「数据改了、chip 没重绘」的两套状态。
+   */
+  applyIngestResult(msg: IngestResult): void;
   clear(): void;
   dispose(): void;
 }
@@ -141,10 +174,30 @@ export function pickImageFiles(transfer: DataTransfer | null): File[] {
   return out;
 }
 
+/**
+ * 字节 → 标准 base64（带 padding）。
+ *
+ * 为什么不用 `btoa(String.fromCharCode(...bytes))` 一行写完：`apply` 的实参个数有上限
+ * （V8 约 12 万），5 MiB 图片展开成 500 万个参数会直接 `RangeError`。故按 32 KiB 分块
+ * 转字符再拼接——分块边界取 3 的倍数，避免块尾产生半个 base64 分组。
+ */
+export function bytesToBase64(bytes: Uint8Array): string {
+  // 块大小 = 32768 字节（32768 % 3 === 2，故取 32766 保证每块都是完整分组）
+  const CHUNK = 32766;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
 export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
   const { doc, input, dropZone, row } = deps;
   const sha256 = deps.sha256 ?? defaultSha256;
   const readBytes = deps.readBytes ?? defaultReadBytes;
+  // 上行缺省为空实现：单测不搭宿主时采集仍完整可用（且不会误发消息）
+  const post = deps.post ?? (() => {});
+  const notice = deps.notice ?? (() => {});
 
   const accepted: CapturedImage[] = [];
   const rejected: RejectedImage[] = [];
@@ -251,7 +304,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
      * 而模型实际没收到——那正是「静默丢」最坏的一种形态（用户以为自己做到了）。
      * 接线完成前必须留着，且与台账 IMG-2 的未做项一一对应。
      */
-    parts.push('探针版：已采集，暂不随消息发送');
+    parts.push(item.ref ? '已保存到本地，暂不随消息发送' : '暂不随消息发送');
     return parts.join(' · ') || item.name;
   }
 
@@ -268,10 +321,29 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
         declaredName,
       );
       if (result.ok) {
+        // 同轮同 sha256 只留一条 chip（方案 G4）：sha256 只管物理文件去重，数组去重
+        // 必须显式做——同一张图发两遍 = 双倍 token + 无意义视觉重复。
+        if (accepted.some((it) => it.sha256 === digest)) {
+          notice('该图片已添加');
+          render();
+          return;
+        }
         accepted.push({
           source,
           name: result.name,
           byteLength: bytes.length,
+          mime: result.mime,
+          width: result.width,
+          height: result.height,
+          sha256: digest,
+        });
+        // 采集即写盘（Q1 定案）：字节当场上行，**不等发送**——隐藏侧栏即销毁 webview
+        // 上下文，留在内存里的图会随上下文蒸发。sha/mime/宽高随行只为 chip 即时可用
+        // 与回执关联；真相由宿主复算后经 `image_ingest_result` 换回（见 applyIngestResult）。
+        post({
+          type: 'image_ingest',
+          base64: bytesToBase64(bytes),
+          name: result.name,
           mime: result.mime,
           width: result.width,
           height: result.height,
@@ -299,6 +371,41 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
   function ingestUri(uri: string): void {
     const name = uri.split('/').pop() || uri;
     accepted.push({ source: 'drop-uri', name, uri });
+    render();
+  }
+
+  /**
+   * 落盘回执处理 —— chip 的「提案值 → 真值」换真 / 转拒收态。
+   *
+   * 三条硬约束（都是「静默错态」的防口）：
+   * ① 按回执回显的提案 sha256 定位原 chip，**不按名字/顺序猜**（多图并发必错配）；
+   * ② 用户已 × 掉的条目不再复活：迟到回执找不到目标就直接丢弃（幽灵 chip 比丢回执更坏）；
+   * ③ `rejected`/`failed` 一律转成**可见**拒收 chip，不许静默删除——用户必须知道图为什么没进。
+   */
+  function applyIngestResult(msg: IngestResult): void {
+    const idx = accepted.findIndex((it) => it.sha256 === msg.sha256);
+    const target = idx >= 0 ? accepted[idx] : undefined;
+    if (msg.status === 'ok' && msg.ref) {
+      if (!target) return;
+      // 真值覆盖提案：同一份字节复算，正常必然相等；不相等只可能是传输损坏，一律信宿主
+      target.ref = msg.ref;
+      target.name = msg.ref.name;
+      target.mime = msg.ref.mime;
+      target.width = msg.ref.width;
+      target.height = msg.ref.height;
+      target.byteLength = msg.ref.bytes;
+      target.sha256 = msg.ref.sha256;
+      render();
+      return;
+    }
+    if (!target) return;
+    accepted.splice(idx, 1);
+    rejected.push({
+      source: target.source,
+      name: target.name,
+      // 文案原样上屏（宿主产出、面向用户）；缺省只可能是契约破损，给中性兜底不许留空
+      reason: msg.reason ?? (msg.status === 'ok' ? '回执缺少图片引用' : '图片未被采用'),
+    });
     render();
   }
 
@@ -369,6 +476,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     get rejected() {
       return rejected;
     },
+    applyIngestResult,
     clear() {
       accepted.length = 0;
       rejected.length = 0;

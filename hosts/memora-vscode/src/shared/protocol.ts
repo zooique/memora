@@ -838,6 +838,14 @@ export type ExtensionToWebviewMessage =
       type: 'image_ingest_result';
       /** 落盘终态（三态语义见上） */
       status: 'ok' | 'rejected' | 'failed';
+      /**
+       * 关联键 = 上行 `image_ingest.sha256` 的**原样回显**（提案值，非真值）。
+       *
+       * 为什么必须回显而不能省：三态里的 `rejected`/`failed` 不携带 `ref`，多图并发时
+       * webview 只能靠这个键把回执对回**具体哪一张 chip**；若按文件名/顺序猜，就是
+       * 「A 的失败记到 B 头上」的静默错态。`ok` 时真值一律以 `ref.sha256` 为准。
+       */
+      sha256: string;
       /** 真相图片引用（仅 `ok` 携带；字段语义 = 内核 `ImageRef` 契约） */
       ref?: ImageRef;
       /** 拒绝 / 失败的用户可见文案（`rejected`/`failed` 必带，直接上屏不改写） */

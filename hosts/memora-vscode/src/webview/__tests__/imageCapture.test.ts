@@ -12,11 +12,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
+  bytesToBase64,
   createImageCapture,
   parseUriList,
   pickImageFiles,
   type ImageCaptureHandle,
 } from '../helpers/imageCapture.js';
+import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 
 /**
  * 构造最小合法 PNG（33 字节：8 字节签名 + IHDR 长度/类型 + 宽高 + 尾部占位）
@@ -409,6 +411,161 @@ describe('createImageCapture — 拖入', () => {
       eventWithData('drop', 'dataTransfer', transferOf({ uriList: 'file:///a.png' })),
     );
     expect(dom.dropZone.classList.contains('is-image-drag')).toBe(false);
+  });
+});
+
+describe('createImageCapture — 上行与落盘回执（IMG-2）', () => {
+  let handle: ImageCaptureHandle | null = null;
+  let dom: ReturnType<typeof mountDom>;
+  /** 上行消息收集（生产侧 = vscode.postMessage，此处只收不发） */
+  const sent: WebviewToExtensionMessage[] = [];
+  /** 瞬态提示收集（生产侧 = 活动抽屉） */
+  const notices: string[] = [];
+
+  beforeEach(() => {
+    dom = mountDom();
+    sent.length = 0;
+    notices.length = 0;
+  });
+
+  afterEach(() => {
+    handle?.dispose();
+    handle = null;
+  });
+
+  /** 造一个「采集即上行」的实例（注入 readBytes/sha256/post/notice，零真实 IO） */
+  function mountWithUplink(bytes: Uint8Array<ArrayBuffer>): void {
+    handle = createImageCapture({
+      doc: document,
+      ...dom,
+      readBytes: async () => bytes,
+      sha256: async () => SHA,
+      post: (msg) => sent.push(msg),
+      notice: (text) => notices.push(text),
+    });
+  }
+
+  /** 触发一次粘贴并等采集的异步链跑完（readBytes → sha256 → 校验 → post） */
+  async function pastePng(name = 'shot.png'): Promise<void> {
+    const file = new File([pngBytes(8, 8)], name, { type: 'image/png' });
+    dom.input.dispatchEvent(
+      eventWithData(
+        'paste',
+        'clipboardData',
+        transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] }),
+      ),
+    );
+    // 异步链共三跳（读字节 / 摘要 / 校验），多等几拍比猜跳数稳
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  }
+
+  it('校验通过 => 立刻上行 image_ingest（采集即写盘，不等发送）', async () => {
+    const bytes = pngBytes(8, 8);
+    mountWithUplink(bytes);
+    await pastePng();
+
+    expect(sent.length).toBe(1);
+    const msg = sent[0]!;
+    expect(msg.type).toBe('image_ingest');
+    if (msg.type !== 'image_ingest') return; // 类型收窄（测试里显式判一次，便于下方断言读字段）
+    expect(msg.sha256).toBe(SHA);
+    expect(msg.mime).toBe('image/png');
+    expect(msg.width).toBe(8);
+    expect(msg.height).toBe(8);
+    expect(msg.name).toBe('shot.png');
+    // base64 必须能原样解回字节（通道上唯一的字节形态，编解码任一错都会在图变半张时暴露）
+    expect(Buffer.from(msg.base64, 'base64').equals(Buffer.from(bytes))).toBe(true);
+  });
+
+  it('回执 ok => chip 提案值换成宿主真值（ref 落进候选，供发送链路消费）', async () => {
+    mountWithUplink(pngBytes(8, 8));
+    await pastePng();
+
+    // 宿主复算的真值：改名 + 改尺寸（模拟提案与真值不同，验证「以回执为准」）
+    handle!.applyIngestResult({
+      type: 'image_ingest_result',
+      status: 'ok',
+      sha256: SHA,
+      ref: {
+        sha256: SHA,
+        mime: 'image/png',
+        width: 1024,
+        height: 768,
+        bytes: 4096,
+        name: '真名.png',
+      },
+    });
+
+    expect(handle!.accepted[0]!.ref).toEqual({
+      sha256: SHA,
+      mime: 'image/png',
+      width: 1024,
+      height: 768,
+      bytes: 4096,
+      name: '真名.png',
+    });
+    expect(chips().length).toBe(1);
+    expect(chips()[0]!.querySelector('.skill-chip__name')?.textContent).toBe('真名.png');
+    // 落盘终态要能在 title 里看到（否则用户分不清「已保存」与「只在内存里」）
+    expect(chips()[0]!.querySelector('.skill-chip__name')?.getAttribute('title')).toContain(
+      '已保存',
+    );
+  });
+
+  it('回执 rejected => 转**可见**拒收 chip（含宿主理由），不静默删', async () => {
+    mountWithUplink(pngBytes(8, 8));
+    await pastePng();
+
+    handle!.applyIngestResult({
+      type: 'image_ingest_result',
+      status: 'rejected',
+      sha256: SHA,
+      reason: '图片数据传输不完整（base64 校验失败）',
+    });
+
+    expect(handle!.accepted.length).toBe(0);
+    expect(handle!.rejected.length).toBe(1);
+    expect(handle!.rejected[0]!.reason).toContain('base64');
+    expect(chips()[0]!.classList.contains('image-chip--rejected')).toBe(true);
+  });
+
+  it('用户已 × 掉的芯片收到迟到回执 => 不复活（幽灵 chip 比丢回执更坏）', async () => {
+    mountWithUplink(pngBytes(8, 8));
+    await pastePng();
+    (chips()[0]!.querySelector('.skill-chip__remove') as HTMLElement).click();
+
+    handle!.applyIngestResult({
+      type: 'image_ingest_result',
+      status: 'ok',
+      sha256: SHA,
+      ref: { sha256: SHA, mime: 'image/png', width: 8, height: 8, bytes: 33, name: 'shot.png' },
+    });
+
+    expect(handle!.accepted.length).toBe(0);
+    expect(chips().length).toBe(0);
+  });
+
+  it('同轮重复粘贴同一张图 => 只留一条 chip，并提示「已添加」（G4）', async () => {
+    mountWithUplink(pngBytes(8, 8));
+    await pastePng();
+    await pastePng('again.png');
+
+    expect(handle!.accepted.length).toBe(1);
+    expect(chips().length).toBe(1);
+    expect(notices).toContain('该图片已添加');
+    // 去重走的是「已上行过一次」的候选，不再发第二条上行（省一次字节传输）
+    expect(sent.length).toBe(1);
+  });
+});
+
+describe('bytesToBase64（上行编码）', () => {
+  it('往返保真，且不因大字节数组触达 apply 实参上限', () => {
+    // 5 MiB 量级（= 入口上限）是本函数必须扛住的真实尺寸：逐参展开写法在这里必 RangeError
+    const big = new Uint8Array(5 * 1024 * 1024);
+    for (let i = 0; i < big.length; i += 997) big[i] = i & 0xff;
+    const encoded = bytesToBase64(big);
+    expect(encoded.length).toBe(Math.ceil(big.length / 3) * 4);
+    expect(Buffer.from(encoded, 'base64').equals(Buffer.from(big))).toBe(true);
   });
 });
 

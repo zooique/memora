@@ -20,6 +20,7 @@ import { basename, join } from 'node:path';
 import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.js';
 import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
+import { ingestImage } from '../../extension/host/imageIngest.js';
 // 引用路径 ↔ 首根的双向判据唯一真源 = refPath（生成侧 relativeUnderPrimaryRoot 归 addToChat /
 // mention QuickPick 用，消费侧 resolveUnderPrimaryRoot 归本文件 openRefInEditor 用）——两半分居必漂移，故同模块。
 import { relativeUnderPrimaryRoot, resolveUnderPrimaryRoot } from '../../extension/host/refPath.js';
@@ -1073,9 +1074,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private handleWebviewMessage(msg: WebviewToExtensionMessage): void {
     if (msg.type === 'ready') {
-      // webview 脚本就绪后才回放会话（历史 + Provider 列表）。回放前置：
-      // ① 等 Agent 装配完成（在途即等待，见 ensureAgent 可等待化）② 打捞升级崩溃残留轮为
-      // 正常 stop turn——保证升级轮随本次回放一次性投递，不与 _viewEpoch 折叠重建回放双发
+      // webview 脚本就绪后才回放会话（历史 + Provider 列表）。前置 = 等 Agent 装配完成（在途即等）
+      // + 打捞升级崩溃残留轮为 stop turn（保证升级轮随本回放一次性投递、不与 _viewEpoch 重建回放双发）
       void this.handleWebviewReady();
     } else if (msg.type === 'host_diag') {
       // webview 错误边界上报（T1）：日志留痕 + 诊断缓冲同点写入（不驱动 UI 状态）
@@ -1101,12 +1101,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // （1-based → 0-based 逆转换等定位细节归 openRefInEditor 单点，webview 只上报意图）
       void this.openRefInEditor(msg.ref);
     } else if (msg.type === 'mention_open') {
-      // HOST-CTX-1：输入框键入 @ → 打开文件 QuickPick（多选），选中后走 addRef 推送
-      // （source='mention'，webview 据此撤掉触发用的 @ 字符）。文件列表真源 =
-      // vscode.workspace.findFiles（VS Code SSOT——显式排除 IGNORED_DIR_GLOB 派生自
-      // 内核 IGNORED_DIR_NAMES + files.exclude 由 VS Code 应用；不吃 search.exclude、
-      // 默认不尊重 gitignore，HOST-CTX-14 源码实读），webview 不养文件索引（第二真理源）。
-      // 取消（Esc / 关闭）→ 静默返回，@ 保留在正文。
+      // HOST-CTX-1：@ → 文件 QuickPick（多选）。列表真源 / 排除语义 / 首根 fail-closed /
+      // 焦点归还全部归 openMentionQuickPick 单点（见其 JSDoc），本处只转发意图。
       void this.openMentionQuickPick();
     } else if (msg.type === 'set_active_file_attach') {
       // 当前文件 chip 的 ✕ / 关闭态点击：改会话级开关，回推投影（webview 以回推为准）
@@ -1196,6 +1192,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 记忆反馈删除（HOST-S3-3）：命中行 ✕ → 模态确认后软删（回收站可恢复），
       // 应答 memory_deleted 驱动 webview 摘除；取消确认不推送（settingsPanel 同款契约）
       void this.deleteMemory(msg.id);
+    } else if (msg.type === 'image_ingest') {
+      // 图片采集即写盘（IMG-2 Q1）：落盘点在 host/imageIngest（禁止塞进本类），
+      // 它复算真值后经回执 post 回 webview 换真；失败三态一律回执、不静默丢
+      void ingestImage(this.workspacePath, msg, (m) => this.post(m));
     } else {
       // 未知消息类型（HOST-CTX-12）：**不静默丢弃**。
       //
