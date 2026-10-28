@@ -19,6 +19,11 @@ export interface ISessionStore {
    * 落盘 + 单条上限），历史回注（`restoreHistory` ← 本方法）不含 tool。两个实现（宿主
    * `hosts/memora-vscode/.../host/sessionStore.ts`、内核 `inMemorySessionStore.ts`）逐字同构。
    *
+   * **user 消息必须带 `attachments`，且经 `LOOP_CONSTANTS.RETAIN_IMAGE_ROUNDS` 窗口衰减**
+   * （判据与 `messageHistory.loadRoundBasedMessages` 同构：仅最近窗口内轮次带图，content 不变）。
+   * 本方法是 restoreHistory 生产路径唯一上游——漏带 = 重启后历史图全灭（真机验收 IMG-2
+   * 第 13 子块断点B实锤：模型只见纯文本连占位都没有）；漏衰减 = 窗口外图片灌爆上下文。
+   *
    * ⚠️ 改此契约（如让 tool 消息也入历史）须同步评估大文本统一通道 §6.2：
    * 压缩链的「超大 tool 结果卸载级」正是因本契约而删除（读者先亡 → 写者后死）；若历史重新携带
    * tool 消息，该级的存在前提会复活。

@@ -19,6 +19,7 @@ import {
   buildSessionId,
   defaultSessionTitle,
   isRoundSettled,
+  LOOP_CONSTANTS,
   type IRoundStore,
   type ISessionStore,
   type Round,
@@ -134,12 +135,22 @@ export class WorkspaceSessionStore implements ISessionStore {
     if (roundIds.length === 0) return [];
     const rounds = this.roundStore.getByIds(roundIds);
     const messages: SessionMessage[] = [];
+    // 历史图片窗口衰减（真机验收 IMG-2 第 13 子块断点B修复）：与内核
+    // `messageHistory.loadRoundBasedMessages` / `inMemorySessionStore.loadMessages`
+    // **三处同判据同构**（含 `indexOf` 取位方式）——本方法是 restoreHistory 生产路径
+    // 唯一上游，漏带 attachments = 重启后历史图全灭（模型只见纯文本，连占位都没有）；
+    // 不带衰减则窗口外图片灌爆上下文。索引以 roundIds 序为准（getByIds 会跳过缺失项）。
+    const currentIdx = roundIds.length - 1;
     for (const round of rounds) {
+      const idx = roundIds.indexOf(round.id);
+      const withImages = currentIdx - idx < LOOP_CONSTANTS.RETAIN_IMAGE_ROUNDS;
+      const userAttachments = withImages ? round.userMessage.attachments : undefined;
       messages.push({
         role: round.userMessage.role,
         content: round.userMessage.content,
         timestamp: round.userMessage.timestamp,
         roundId: round.id,
+        ...(userAttachments ? { attachments: userAttachments } : {}),
       });
       // 判据收口 isRoundSettled：中断轮（interrupted）同样计入——本方法是 LLM 历史注入
       // （restoreHistory）唯一上游，漏计会让中断轮回复从上下文消失（与内核

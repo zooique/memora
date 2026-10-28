@@ -14,6 +14,7 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
+import type { ImageRef } from '@zooique/memora';
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
@@ -314,5 +315,103 @@ describe('ingestDiskFile — 文件选择框拾取（Q3）', () => {
     expect(results[0]!.uri).toBe(
       `mock-webview://${join(resolveAttachmentsDir(root), `${results[0]!.ref!.sha256}.png`)}`,
     );
+  });
+});
+
+describe('warmCache — 落盘后字节缓存预热（真机验收断点A）', () => {
+  it('ingestImage ok：warmCache 收到与回执 ref 全等的真值，且先于 ok 回执（回执到达即缓存已热）', async () => {
+    const dir = makeTempDir('memora-ingest-');
+    const bytes = pngBytes(8, 8);
+    const msg = ingestMsg(bytes);
+    const results: IngestResult[] = [];
+    /** 预热收到的 ref（事后与回执 ref 比对，不在回调内断言——回调先于回执发生） */
+    const warmed: ImageRef[] = [];
+    /** 调用序记录：断言「预热先于回执」这一时序契约 */
+    const order: string[] = [];
+
+    await ingestImage(
+      dir,
+      msg,
+      (r) => {
+        order.push('post');
+        results.push(r);
+      },
+      undefined,
+      (ref) => {
+        order.push('warm');
+        warmed.push(ref);
+      },
+    );
+
+    expect(results[0]!.status).toBe('ok');
+    // 真值断言：预热者拿到的就是宿主复算的那份 ref（不是提案、不是残缺拷贝）
+    expect(warmed[0]).toEqual(results[0]!.ref);
+    expect(order).toEqual(['warm', 'post']);
+  });
+
+  it('ingestImage rejected/failed：不预热（坏字节没写盘、IO 失败没产物，无可缓存者）', async () => {
+    const dir = makeTempDir('memora-ingest-');
+    const warm: unknown[] = [];
+
+    // 坏字节（嗅不出 magic）→ rejected
+    await ingestImage(
+      dir,
+      {
+        type: 'image_ingest',
+        base64: Buffer.from('not an image').toString('base64'),
+        name: 'x.png',
+        mime: 'image/png',
+        width: 1,
+        height: 1,
+        sha256: 'cafebabe',
+      },
+      () => {},
+      undefined,
+      (ref) => warm.push(ref),
+    );
+    // IO 故障（工作区根本身是个文件：<root>/blocker/.memora/... 必 ENOTDIR）→ failed
+    const root = makeTempDir('memora-ingest-');
+    const blocker = join(root, 'blocker');
+    writeFileSync(blocker, 'x');
+    await ingestImage(blocker, ingestMsg(pngBytes(4, 4)), () => {}, undefined, (ref) =>
+      warm.push(ref),
+    );
+
+    expect(warm).toEqual([]);
+  });
+
+  it('ingestDiskFile ok：warmCache 收到真值 ref 且先于回执；rejected 不预热（与粘贴路径同一判据）', async () => {
+    const root = makeTempDir('memora-pick-');
+    const bytes = pngBytes(4, 4);
+    const staged = join(root, 'photo.png');
+    writeFileSync(staged, bytes);
+    const results: PickedResult[] = [];
+    const warmed: ImageRef[] = [];
+    const order: string[] = [];
+
+    await ingestDiskFile(
+      root,
+      staged,
+      (r) => {
+        order.push('post');
+        results.push(r);
+      },
+      undefined,
+      (ref) => {
+        order.push('warm');
+        warmed.push(ref);
+      },
+    );
+
+    expect(results[0]!.status).toBe('ok');
+    expect(warmed[0]).toEqual(results[0]!.ref);
+    expect(order).toEqual(['warm', 'post']);
+
+    // rejected：坏字节没写盘，不预热
+    const warm2: unknown[] = [];
+    const fake = join(root, 'fake.png');
+    writeFileSync(fake, Buffer.from('plain text'));
+    await ingestDiskFile(root, fake, () => {}, undefined, (ref) => warm2.push(ref));
+    expect(warm2).toEqual([]);
   });
 });

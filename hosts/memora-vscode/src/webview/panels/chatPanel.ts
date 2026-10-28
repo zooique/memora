@@ -1184,8 +1184,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 应答 memory_deleted 驱动 webview 摘除；取消确认不推送（settingsPanel 同款契约）
       void this.deleteMemory(msg.id);
     } else if (msg.type === 'image_ingest') {
-      // 图片采集即写盘（IMG-2 Q1）：落盘点在 host/imageIngest（禁塞进本类），失败三态一律回执
-      void ingestImage(this.workspacePath, msg, (m) => this.post(m), (f) => this.toWebviewUri(f));
+      // 采集即写盘（IMG-2 Q1）：落盘点在 host/imageIngest（禁塞进本类），失败三态一律回执；
+      // warmCache = 落盘即入字节缓存（断点A：新会话首发 resolver 必命中，否则 D7 占位）
+      void ingestImage(this.workspacePath, msg, (m) => this.post(m), (f) => this.toWebviewUri(f), (ref) => this.imageCache?.preload(ref, this.workspacePath));
     } else if (msg.type === 'image_pick_request') {
       // 图片拾取（Q3）：webview 按钮与命令面板两入口共用同一执行面（编排归 host/imagePick）
       void this.pickAndAttachImages();
@@ -2400,7 +2401,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // chunk/process_event 照常流式追加。不再补推无 live 数据的骨架投影（旧实现 rounds
     // 缺本流内容，正是「切界面回来只见运行中空转、内容全空白」的根因）。
     this.replayHistory();
-    // 推送历史加载完成信号 → webview 强制滚到底（不走吸底逻辑；解决 rAF 节流滚动错位）
+    // 推送历史加载完成信号 → webview 强制滚到底（不走吸底逻辑；解决多条历史 rAF 节流滚动错位）
     this.post({ type: 'history_loaded' });
     // 推送当前会话标题 → webview 顶部展示（主动可见，便于识别当前会话）。
     // 无当前会话（初始空态）→ 推送引导文案而非「新会话 HH:MM」占位，避免误认存在会话
@@ -2482,10 +2483,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     return this._view?.webview.asWebviewUri(vscode.Uri.file(file)).toString();
   }
 
-  /**
-   * 图片拾取入口（Q3）：webview 上传按钮与命令面板 `memora.attachImage` 的共用执行面。
-   * 面板未解析时**不开框**（开了框、落了盘、回执无处可去 = G9 同族孤儿），编排见 host/imagePick.ts。
-   */
+  /** 图片拾取入口（Q3）：webview 按钮与命令 `memora.attachImage` 共用执行面；面板未解析不开框（G9 同族孤儿），编排见 host/imagePick.ts */
   public pickAndAttachImages(): void {
     void pickAndIngestImages({
       hasPanel: this._view !== undefined,
@@ -2493,6 +2491,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       projectPath: this.workspacePath,
       post: (m) => this.post(m),
       toWebviewUri: (f) => this.toWebviewUri(f),
+      // 落盘后立即入字节缓存（断点A，与 image_ingest 分支同一判据同一入口）
+      warmCache: (ref) => this.imageCache?.preload(ref, this.workspacePath),
       notifyPanelUnavailable: () =>
         void vscode.window.showInformationMessage('请先打开 Memora 对话面板，再添加图片'),
     });

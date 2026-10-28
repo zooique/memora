@@ -19,6 +19,7 @@
  * 本路径的立身前提，把用户锁死在扩展名里等于自打嘴巴；选错内容会被 rejected
  * **可见**拒收，不静默。
  */
+import type { ImageRef } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { ingestDiskFile } from './imageIngest.js';
 
@@ -69,6 +70,11 @@ export interface ImagePickDeps {
   post: (msg: ImagePickedResult) => void;
   /** 落盘文件 → webview 可加载 URL（悬停预览；语义同 `ingestImage` 第 4 参） */
   toWebviewUri?: (file: string) => string | undefined;
+  /**
+   * 字节缓存预热钩子（断点A；语义同 `ingestImage` 第 5 参）。
+   * 缺省 = 不预热：单测可不关心缓存面；生产侧必须传（否则新会话首发 resolver miss）。
+   */
+  warmCache?: (ref: ImageRef) => void;
   /** 面板不可用时的用户提示（注入保持零 vscode；文案面归调用方） */
   notifyPanelUnavailable: () => void;
 }
@@ -90,6 +96,8 @@ export async function pickAndIngestImages(deps: ImagePickDeps): Promise<void> {
   const picked = await deps.picker(DIALOG_OPTIONS);
   if (!picked || picked.length === 0) return;
   await Promise.all(
-    picked.map((file) => ingestDiskFile(deps.projectPath, file, deps.post, deps.toWebviewUri)),
+    picked.map((file) =>
+      ingestDiskFile(deps.projectPath, file, deps.post, deps.toWebviewUri, deps.warmCache),
+    ),
   );
 }

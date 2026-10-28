@@ -7,7 +7,10 @@
  *  - (c) 装配三跳：
  *        ① `MessageHistory.appendUser(..., { attachments })` → Round.userMessage 白名单**显式透传**（缺口 #2 修复）；
  *        ② `loadRoundBasedMessages` 在 RETAIN_IMAGE_ROUNDS 窗口内带 attachments，更早轮次窗衰减掉（content 不变）；
- *        ③ 衰减是 load 期视图，存储层 attachments 不丢（重启/切会话图仍可从存储还原）。
+ *        ③ 衰减是 load 期视图，存储层 attachments 不丢（重启/切会话图仍可从存储还原）；
+ *        ④⑤ **生产路径**（真机验收 IMG-2 第 13 子块断点B）：`ISessionStore.loadMessages`（restoreHistory
+ *           唯一上游、switchToSession 生产链）同样窗口内带 attachments、窗口外衰减——②的 fork 路径
+ *           全绿而生产红（loadMessages 丢字段）曾错位，④钉住生产展开面本身，⑤钉 store→Message 末跳形态。
  *  - `applySessionToLoop` 仅作 `{...tm}` 展开透传（已由 publicMemberSurfaceGuard 守 Message.attachments 字段），
  *    故不在此重复构造完整 SessionManager。
  */
@@ -19,6 +22,7 @@ import {
 } from '@/agent/contextManager.js';
 import { MessageHistory } from '@/agent/messageHistory.js';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
+import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import type { ImageRef } from '@/llm/provider.js';
 import { nowIso } from '@/utils/time.js';
@@ -145,5 +149,52 @@ describe('装配三跳 · 持久化透传 + 窗口衰减（方案 §5.12 / §7 P
 
   it('RETAIN_IMAGE_ROUNDS 契约值 = 4（§5.12 窗衰减窗口，调此须同步方案文档）', () => {
     expect(LOOP_CONSTANTS.RETAIN_IMAGE_ROUNDS).toBe(4);
+  });
+
+  // ─── 生产路径（真机验收 IMG-2 第 13 子块断点B）──────────────
+  // 此前 ② 测的 loadRoundBasedMessages 只挂在 forkSession 一条路；switchToSession 的
+  // restoreHistory 生产链上游是 ISessionStore.loadMessages（两实现）——当时它丢
+  // attachments，单测全绿与生产行为错位。用例④钉住生产路径本身。
+
+  it('④ 生产路径：InMemorySessionStore.loadMessages 窗口内带 attachments，窗口外衰减（与②同判据）', () => {
+    const roundStore = new InMemoryRoundStore();
+    const store = new InMemorySessionStore(roundStore);
+    const ref = makeRef();
+    const ids = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5'];
+    for (const id of ids) roundStore.save(makeRound(id, [ref]));
+    store.setRoundIds('2026-06-01-main', ids);
+
+    const messages = store.loadMessages('2026-06-01', 'main');
+    expect(messages).toHaveLength(6);
+
+    // 判据与 loadRoundBasedMessages 同构：currentIdx=5，窗口 4 → idx∈{2,3,4,5} 带图
+    const [m0, m1, m2, , , m5] = messages;
+    expect(m0?.attachments).toBeUndefined(); // 窗口外衰减
+    expect(m1?.attachments).toBeUndefined(); // 窗口外衰减
+    expect(m2?.attachments).toEqual([ref]); // 窗口内
+    expect(m5?.attachments).toEqual([ref]); // 最近轮
+    // 衰减只剥图，content/timestamp/roundId 恒不变
+    expect(m0?.content).toBe('round r0');
+    expect(m0?.roundId).toBe('r0');
+  });
+
+  it('⑤ 生产路径透传闭环：loadMessages 产出的 attachments 可经 applySessionToLoop 形态直入 Message', () => {
+    // applySessionToLoop 的透传面 `...(tm.attachments ? { attachments: tm.attachments } : {})`
+    // 已由 publicMemberSurfaceGuard 守 Message.attachments 字段；此处钉「store 产出 → Message
+    // 形态」的最后一跳：字段名/形态在边界上不漂移（真机断点B曾断在 store 展开面）。
+    const roundStore = new InMemoryRoundStore();
+    const store = new InMemorySessionStore(roundStore);
+    const ref = makeRef();
+    roundStore.save(makeRound('r0', [ref]));
+    store.setRoundIds('2026-06-01-main', ['r0']);
+
+    const [user] = store.loadMessages('2026-06-01', 'main');
+    // 模拟 applySessionToLoop 的展开式（与 sessionManager.ts 同一形态）
+    const message = {
+      role: user!.role as 'user',
+      content: user!.content,
+      ...(user!.attachments ? { attachments: user!.attachments } : {}),
+    };
+    expect(message.attachments).toEqual([ref]);
   });
 });

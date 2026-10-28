@@ -324,6 +324,58 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     expect(store.getSessionMeta('2026-08-17-main')?.messageCount).toBe(2);
   });
 
+  it('loadMessages：窗口内轮次带 attachments，窗口外衰减（生产路径，真机断点B）', () => {
+    // restoreHistory 生产链唯一上游（switchToSession → loadSessionMessages → 本方法）。
+    // 真机验收 IMG-2 第 13 子块：本方法曾丢 attachments ⇒ 重启后历史图全灭（模型只见
+    // 纯文本连占位都没有）；判据与内核 messageHistory.loadRoundBasedMessages 同构。
+    const ref: import('@zooique/memora').ImageRef = {
+      sha256: 'a'.repeat(64),
+      mime: 'image/png',
+      width: 64,
+      height: 32,
+      bytes: 1234,
+      name: 'hist.png',
+    };
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const roundId = `round-img-${i}`;
+      ids.push(roundId);
+      roundStore.save({
+        id: roundId,
+        userMessage: {
+          id: `${roundId}-user`,
+          role: 'user',
+          content: `带图轮 ${i}`,
+          timestamp: `2026-08-17T00:0${i}:00.000Z`,
+          attachments: [ref],
+        },
+        assistantMessage: {
+          id: `${roundId}-assistant`,
+          role: 'assistant',
+          content: `答 ${i}`,
+          timestamp: `2026-08-17T00:0${i}:30.000Z`,
+        },
+        status: 'complete',
+        createdAt: `2026-08-17T00:0${i}:00.000Z`,
+        completedAt: `2026-08-17T00:0${i}:30.000Z`,
+        refCount: 1,
+      });
+    }
+    store.setRoundIds('2026-08-17-main', ids);
+
+    const list = store.loadMessages('2026-08-17', 'main');
+    expect(list).toHaveLength(12);
+    // currentIdx=5，窗口 RETAIN_IMAGE_ROUNDS=4 → 第 2..5 轮带图，第 0/1 轮衰减
+    const users = list.filter((m) => m.role === 'user');
+    expect(users[0]?.attachments).toBeUndefined();
+    expect(users[1]?.attachments).toBeUndefined();
+    expect(users[2]?.attachments).toEqual([ref]);
+    expect(users[5]?.attachments).toEqual([ref]);
+    // 衰减只剥图：content/roundId 恒不变（文本永不衰减）
+    expect(users[0]?.content).toBe('带图轮 0');
+    expect(users[0]?.roundId).toBe('round-img-0');
+  });
+
   it('持久化往返：新实例 load 可恢复消息/标题', () => {
     seedRound(store, roundStore, '2026-08-17', 'main', { content: '你好', ts: 't1' });
     store.setSessionTitle?.('2026-08-17-main', '会话一');

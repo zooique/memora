@@ -111,12 +111,18 @@ async function writeOnce(dir: string, file: string, bytes: Uint8Array): Promise<
  *   的前提。缺省（不传）= 回执不带 `uri`，UI 如实显示「暂无预览」。
  *   返回值允许 `undefined`：转换器由调用方闭包持有视图引用，写盘期间视图可能已被销毁，
  *   此时拿不到真实地址——返回 `undefined` 让本处不带字段，绝不用空串伪装成可加载地址。
+ * @param warmCache 写盘成功后的字节缓存预热钩子（真机验收 IMG-2 第 13 子块断点A）。
+ *   唯一生产实现 = `ImageCache.preload`（读盘 → D20 三值校验 → 入缓存）。**必须**在 ok
+ *   回执之前调用：回执到达 webview 后用户随时可能发送，此时同步 `ImageResolver` 查表——
+ *   若只靠「会话加载期预读」（`preloadSession`），新会话首发时图刚落盘、预读发生在它之前，
+ *   查表必 miss ⇒ 内核 D7 推 `[图片不可用]` 占位（真机实锤）。落盘与入缓存之间不许有缝。
  */
 export async function ingestImage(
   projectPath: string,
   msg: ImageIngestMessage,
   post: (msg: ImageIngestResult) => void,
   toWebviewUri?: (file: string) => string | undefined,
+  warmCache?: (ref: ImageRef) => void,
 ): Promise<void> {
   // 关联键 = 采集侧提案 sha256。三态回执都必须原样带回，否则 webview 无从知道
   // 这条回执属于哪一张 chip（多图并发时按文件名猜 = 张冠李戴）。
@@ -178,6 +184,10 @@ export async function ingestImage(
     return;
   }
 
+  // 预热字节缓存（断点A）：先于 ok 回执——回执到达 webview 后用户随时可能发送，
+  // 同步 resolver 查表必须命中（只靠会话加载期预读则新会话首发必 miss，见第 5 参注释）
+  warmCache?.(ref);
+
   // `uri` 只承载「现有视图能加载的地址」：视图已销毁时上游不给转换器，此处就不带字段
   post({ type: 'image_ingest_result', status: 'ok', sha256: key, ref, uri: toWebviewUri?.(file) });
 }
@@ -201,12 +211,14 @@ export async function ingestImage(
  * @param filePath 用户在原生对话框里选中的文件绝对路径（`Uri.fsPath`）
  * @param post 回执通道（注入以便单测直接断言，不触 vscode）
  * @param toWebviewUri 落盘文件 → webview 可加载 URL（语义同 `ingestImage` 第 4 参）
+ * @param warmCache 写盘成功后的字节缓存预热钩子（语义同 `ingestImage` 第 5 参，两入口同一判据）
  */
 export async function ingestDiskFile(
   projectPath: string,
   filePath: string,
   post: (msg: ImagePickedResult) => void,
   toWebviewUri?: (file: string) => string | undefined,
+  warmCache?: (ref: ImageRef) => void,
 ): Promise<void> {
   const name = basename(filePath);
 
@@ -253,11 +265,15 @@ export async function ingestDiskFile(
     return;
   }
 
+  // 预热字节缓存（断点A，先于 ok 回执；语义与粘贴路径同一判据）
+  const ref = buildImageRef(bytes, sha256, checked);
+  warmCache?.(ref);
+
   post({
     type: 'image_picked',
     status: 'ok',
     name,
-    ref: buildImageRef(bytes, sha256, checked),
+    ref,
     uri: toWebviewUri?.(file),
   });
 }
