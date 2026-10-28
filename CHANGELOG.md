@@ -10,7 +10,7 @@
 
 ## [5.2.0] · 未发布
 
-> **本区归属**：仅**内核**变更；SemVer 定档**随本区收口复核**——本批为**文档 + 测试守卫**（**运行时代码零变更、公开面零变更**），但含**三件契约守卫增量**（公开面 diff 快照 / 可达成员面冻结表 / 随包接入指南一致性，封住三处「消费者可感知的契约变更会静默通过」的真实漏洞）与**一件文本卫生守卫**（全仓 U+FFFD 乱码扫描）。若收口时仍只含本批，按 SemVer 应降为 **patch（5.1.1）**；保 minor 须另装运行时功能项。
+> **本区归属**：仅**内核**变更；SemVer 定档**随本区收口复核**——本区现有两批：①**文档 + 测试守卫**（**运行时代码零变更、公开面零变更**），含**三件契约守卫增量**（公开面 diff 快照 / 可达成员面冻结表 / 随包接入指南一致性，封住三处「消费者可感知的契约变更会静默通过」的真实漏洞）与**一件文本卫生守卫**（全仓 U+FFFD 乱码扫描）；②**一处运行时行为修复**（`ISessionStore.loadMessages` 的附件契约补齐，见 Fixed 小节，**公开面零变更、零签名变更**）。两批合计按 SemVer 为 **patch（5.1.1）**；保 minor 须另装运行时功能项。
 > **收据与拍板过程**：见仓库台账（npm 包不含）ID 锚 `RUNTIME-TIER-1`（运行时门槛）/ `PUB-SNAPSHOT-1`（公开面快照守卫）/ `PUB-REACHABLE-1`（可达成员面守卫）/ `GUIDE-AUDIT-1`（接入指南核查）/ `GUIDE-GUARD-1`（接入指南守卫）/ `ONBOARD-MIN-1`（最小接入面叙事）/ `FFFD-GUARD-1`（全仓乱码清零与扫描守卫）。
 > **发版纪律**：本区标题日期须在打 tag 前改为实际发布日（`scripts/verify-changelog-version.mjs` 挂 `release.yml` 校验；已发布 tarball 不可变，见 `RELEASE-CHLOG-DATE-1`）。
 
@@ -20,6 +20,10 @@
 - **可达成员面守卫**（`PUB-REACHABLE-1`）：`publicMemberSurfaceGuard.test.ts` 新增「可达成员面」层——冻结**经已登记符号的公开 getter 返回、但未挂 `src/index.ts` 导出面**的类的公开成员清单（实测 **7 类型 / 133 成员** = `AgentLoop` / `ToolExecutor` / `MessageHistory` / `SkillManager` / `SecurityGuard` / `WorkProjectionManager` / `TextPolishManager`），增删即红。**为什么**：该守卫原只遍历**导出符号** ⇒ 不挂导出面的类完全不在射程——`SecurityGuard` 虽未从包入口导出，但 `Agent.get security` 返回它，消费者（宿主设置面板 / 装配层）**真实在调** `agent.security.setConfirmWrites(...)` 等方法，而 5.1.0 新增的 `requestToolCallConfirmation` 也在该面上 ⇒ **删改这些方法此前任何闸门都不红**（消费侧仅 TS 编译期拦截）。**对消费者**：零运行时行为变化；此后这类「经公开 getter 可达」的方法增删同样必走审查（新增 = 真能力还是谎报？删除 = 纠谎还是误删？），不再静默。冻结范围经三轮收紧（排除 TS 内置类型 / 内部协作对象 / 零消费类型），避免「为完整性而完整性」给内部实现上枷锁。
 - **随包接入指南一致性守卫**（`GUIDE-GUARD-1`）：`integrationGuideGuard.test.ts` 把 `docs/memora-接入指南.md`（**随包发布**、22 个可照抄的 TS 代码块）纳入机检——① 代码块 `import` 的符号必须存在于 `src/index.ts` 导出面；② 代码块与行内 `agent.X` 必须是 `Agent` 公开成员（**解析 `extends` 链**，故 `agent.on` 不假红）；③ 文档**自称「接口全集」**时示例类必须实现接口全部必需成员；④ 扫描面归零即红（防路径漂移导致恒绿）。**为什么**：该文档此前**不在任何文档守卫射程**（既有守卫只对账 README 与 API 手册），两处真伤因此长期存活——示例里的 `appendMessage` **内核全仓不存在**（`ISessionStore` 有 11 个必需方法，示例只写 3 个 ⇒ 消费者照抄必编译失败）、`agent.projects` 僵尸引用（该 getter 已于 5.0.0 随项目层退役）。**对消费者**：零运行时行为变化；此后该指南的 API 引用与「照抄可编译」承诺随内核一起被机检。判据全部**实时读源码**（不建冻结表 ⇒ 无第二份真源）；**历史留痕**（明写「已移除 / 已退役」的表述）与**合法节选**示例均豁免，不误伤正确写法。
 - **全仓 U+FFFD 乱码清零 + 替换字符扫描守卫**（`FFFD-GUARD-1`）：新增 `src/__tests__/replacementCharGuard.test.ts`——对全仓十二种文本后缀（含 `.trae` / `.github` 等隐藏目录）扫 U+FFFD 替换字符，判据为「零违例 + 扫描面下限断言（防空集假绿）+ 判据探针自检 + 与 `scan:phrase` 排除集的逐元素同源契约（防双写漂移）」；同批清零 **4 处存量乱码**（内核 `textSanitize.ts` 生产注释、宿主 `chatView.ts` 注释、仓库台账与方案文档各 1 处——生产注释**随编译进 dist .js 出货**，见 `package.json` 构建无 `removeComments`）。**为什么**：乱码是「没有任何测试会红」的伤（读者肉眼可见、机器不报错，与措辞折叠同族），4 处经 git 溯源均 **born corrupt**（入仓即带、原文不可从 VCS 恢复，只能语义重构），此前无任何闸门扫描此类损坏。**对消费者**：dist 注释里一处乱码的文本修复（零运行时行为变化）；此后文本文件混入替换字符在测试闸门即红。
+
+### Fixed（内核）
+
+- **`ISessionStore.loadMessages` 的附件契约补齐：历史图片随轮恢复，并按窗口衰减**（`IMG-2` 断点B）：`ISessionStore.loadMessages` 的 JSDoc 新增契约句——user 消息**必须**带 `attachments`，且经 `LOOP_CONSTANTS.RETAIN_IMAGE_ROUNDS` 窗口衰减；内核 `InMemorySessionStore.loadMessages` 与宿主 `WorkspaceSessionStore.loadMessages` 同批落地，两实现与 `messageHistory.loadRoundBasedMessages` **同判据同构**（`当前索引 − 消息索引 < 4`，索引一律 `roundIds.indexOf(round.id)` 取位——`getByIds` 会跳过缺失轮，用返回数组下标必错位）。**为什么**：本方法是内核 `restoreHistory` 的**唯一上游**，此前只透传 `role / content / timestamp / roundId`，漏掉了 5.0.0 起就存在于 `RoundMessage` 的 `attachments` ⇒ **重启宿主后历史图片全灭**（模型只见纯文本，连 D7 占位都没有；真机验收实锤）。**对消费者**：`loadMessages` 返回的 user 消息此后**会带** `attachments`（仅窗口内轮次）——自行实现 `ISessionStore` 的消费者不补该字段不会有任何报错，但历史图对其模型不可见；不需要该行为者可忽略该字段。**零签名变更、零公开面变更**；`RETAIN_IMAGE_ROUNDS` 仍是单点常量（其注释已同步登记**四个消费点**：三处窗口衰减 + 一处预读量）。
 
 ### Changed（内核 · 文档）
 

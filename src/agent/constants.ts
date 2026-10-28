@@ -301,11 +301,18 @@ export const LOOP_CONSTANTS = {
    *
    * 窗口 = `当前索引 − 消息索引`，纯计算、零状态、无需持久计数器。
    *
-   * **两个消费面同值**（值必须一致，改一处即改两处语义）：
-   *   ① 内核 `loadRoundBasedMessages` 的窗口衰减（判据 `当前索引 − 消息索引 < 本值`）；
-   *   ② 宿主「会话加载期预读」`hosts/memora-vscode/src/extension/host/imageCache.ts`
-   *      的 `preloadSession`（取最近本值轮内的 `attachments` 读盘填缓存）——
+   * **四个消费点同值**（值必须一致，改一处即改四处语义）——三类窗口衰减 + 一处预读量：
+   *   ① 内核 `messageHistory.loadRoundBasedMessages`（live 会话装配投影；判据
+   *      `当前索引 − 消息索引 < 本值`）；
+   *   ② 内核 `inMemorySessionStore.loadMessages`（同一投影的 in-memory 存储实现）；
+   *   ③ 宿主 `hosts/memora-vscode/.../host/sessionStore.ts` 的 `loadMessages`
+   *      （同一投影的持久化实现，②③ 与 ① 逐字同判据，禁单侧改）；
+   *   ④ 宿主「会话加载期预读」`hosts/memora-vscode/.../host/imageCache.ts` 的
+   *      `preloadSession`（取最近本值轮内的 `attachments` 读盘填缓存）——
    *      预读取多了白占内存，取少了窗口内图片命中不了缓存、退回 D7 二级降级占位。
+   *
+   * ① 决定「模型看不看得见图」，②③ 决定「重启/切会话后模型还看不看得见图」，
+   * ④ 决定「那张图能不能命中缓存」。四者共用一值：单改任一处即三类行为彼此错位。
    *
    * 分裂触发条件（写死，免将来凭感觉拆）：当且仅当「窗口衰减」与「预读量」需要**不同数值**时，
    * 才拆成两个常量并同步 `publicMemberSurfaceGuard` 的成员清单与方案文档；
