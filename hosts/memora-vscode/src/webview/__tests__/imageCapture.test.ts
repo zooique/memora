@@ -147,7 +147,7 @@ describe('createImageCapture — 粘贴', () => {
     handle = null;
   });
 
-  it('粘贴合法 PNG => 生成 chip，显示文件名，行取消 hidden', async () => {
+  it('粘贴合法 PNG => 生成 chip、行取消 hidden；chip 名由 sha256 派生（不用平台占位名）', async () => {
     const bytes = pngBytes(640, 480);
     handle = createImageCapture({
       doc: document,
@@ -155,7 +155,8 @@ describe('createImageCapture — 粘贴', () => {
       readBytes: async () => bytes,
       sha256: async () => SHA,
     });
-    const file = new File([bytes], 'shot.png', { type: 'image/png' });
+    // 真实平台值：Chromium 给剪贴板位图合成的 `name` 就是 `image.png`（**非空**）
+    const file = new File([bytes], 'image.png', { type: 'image/png' });
     dom.input.dispatchEvent(
       eventWithData(
         'paste',
@@ -167,7 +168,10 @@ describe('createImageCapture — 粘贴', () => {
     await Promise.resolve();
 
     expect(chips().length).toBe(1);
-    expect(chips()[0]!.querySelector('.skill-chip__name')?.textContent).toBe('shot.png');
+    // 粘贴路径不吃 `file.name`：平台占位名两张截图完全一样，sha 前 6 才可辨（IMG-4）
+    expect(chips()[0]!.querySelector('.skill-chip__name')?.textContent).toBe(
+      `粘贴图片-${SHA.slice(0, 6)}`,
+    );
     expect(dom.row.hidden).toBe(false);
     // 探针期标记已随发送链路接线删除（文案改为如实描述「未落盘 / 待发送」三态）：
     // 回执未到的此刻必须是「正在保存」，不能说成「将随消息发送」——否则就是另一种假话。
@@ -182,26 +186,32 @@ describe('createImageCapture — 粘贴', () => {
     expect(handle.accepted[0]!.height).toBe(480);
   });
 
-  it('无文件名 => 走 D29 兜底命名「粘贴图片-<sha 前 6>」', async () => {
-    const bytes = pngBytes(10, 10);
-    handle = createImageCapture({
-      doc: document,
-      ...dom,
-      readBytes: async () => bytes,
-      sha256: async () => SHA,
-    });
-    const file = new File([bytes], '', { type: 'image/png' });
-    dom.input.dispatchEvent(
-      eventWithData(
-        'paste',
-        'clipboardData',
-        transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] }),
-      ),
-    );
-    await Promise.resolve();
-    await Promise.resolve();
+  it('粘贴路径恒走 D29 兜底：空名 / 平台虚拟名 / 貌似真名 ⇒ 一律按 sha 前 6 派生', async () => {
+    // 三代入参钉死「入口只认自己判断的名字，不认 File.name」这条分流——
+    // 真实平台给的是中间那个（`image.png`），后一个是「有人误以为粘贴能带真名」的反例。
+    for (const name of ['', 'image.png', 'shot.png']) {
+      handle?.dispose();
+      dom = mountDom();
+      const bytes = pngBytes(10, 10);
+      handle = createImageCapture({
+        doc: document,
+        ...dom,
+        readBytes: async () => bytes,
+        sha256: async () => SHA,
+      });
+      const file = new File([bytes], name, { type: 'image/png' });
+      dom.input.dispatchEvent(
+        eventWithData(
+          'paste',
+          'clipboardData',
+          transferOf({ items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] }),
+        ),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
 
-    expect(handle.accepted[0]!.name).toBe(`粘贴图片-${SHA.slice(0, 6)}`);
+      expect(handle.accepted[0]!.name).toBe(`粘贴图片-${SHA.slice(0, 6)}`);
+    }
   });
 
   it('超限图片 => **可见的拒收 chip**（不静默丢）', async () => {
@@ -348,6 +358,25 @@ describe('createImageCapture — 拖入', () => {
     expect(handle.accepted[0]!.name).toBe('pic.png');
   });
 
+  it('拖入带 `Files` 的真实文件 => 保留真名（与粘贴路径的派生名分流，别一起改）', async () => {
+    handle = createImageCapture({
+      doc: document,
+      ...dom,
+      readBytes: async () => pngBytes(4, 4),
+      sha256: async () => SHA,
+    });
+    const file = new File([pngBytes(4, 4)], '截图 2026-10-28.png', { type: 'image/png' });
+    dom.dropZone.dispatchEvent(
+      eventWithData('drop', 'dataTransfer', transferOf({ items: [], files: [file] })),
+    );
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+
+    expect(handle.accepted.length).toBe(1);
+    expect(handle.accepted[0]!.source).toBe('drop-file');
+    // 拖入的文件是真实文件系统条目，名字是**用户认得的那个** ⇒ 不得被 sha 派生名顶掉
+    expect(handle.accepted[0]!.name).toBe('截图 2026-10-28.png');
+  });
+
   it('多条 uri-list => 每条一个 chip', () => {
     handle = createImageCapture({
       doc: document,
@@ -446,7 +475,7 @@ describe('createImageCapture — 上行与落盘回执（IMG-2）', () => {
   }
 
   /** 触发一次粘贴并等采集的异步链跑完（readBytes → sha256 → 校验 → post） */
-  async function pastePng(name = 'shot.png'): Promise<void> {
+  async function pastePng(name = 'image.png'): Promise<void> {
     const file = new File([pngBytes(8, 8)], name, { type: 'image/png' });
     dom.input.dispatchEvent(
       eventWithData(
@@ -472,7 +501,9 @@ describe('createImageCapture — 上行与落盘回执（IMG-2）', () => {
     expect(msg.mime).toBe('image/png');
     expect(msg.width).toBe(8);
     expect(msg.height).toBe(8);
-    expect(msg.name).toBe('shot.png');
+    // 上行名与 chip 名同源（都是 `resolveImageName` 的产物）：宿主 `ref.name` 与本侧
+    // 提案名一致，回执换真时不会出现「上行一个名、回执另一个名」的抖动
+    expect(msg.name).toBe(`粘贴图片-${SHA.slice(0, 6)}`);
     // base64 必须能原样解回字节（通道上唯一的字节形态，编解码任一错都会在图变半张时暴露）
     expect(Buffer.from(msg.base64, 'base64').equals(Buffer.from(bytes))).toBe(true);
   });
@@ -836,7 +867,9 @@ describe('createImageCapture — 文件选择框回执（Q3 applyPicked）', () 
   }
 
   /** ok 回执载荷（ref 即真相——本路径没有提案阶段） */
-  function pickedOk(overrides: Record<string, unknown> = {}): Extract<
+  function pickedOk(
+    overrides: Record<string, unknown> = {},
+  ): Extract<
     import('../../shared/protocol.js').ExtensionToWebviewMessage,
     { type: 'image_picked' }
   > {
@@ -867,7 +900,9 @@ describe('createImageCapture — 文件选择框回执（Q3 applyPicked）', () 
     expect(handle.accepted[0]!.previewUri).toBe('mock-webview://x');
     const chip = chips()[0]!;
     expect(chip.dataset.imageSource).toBe('pick');
-    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('已保存到本地');
+    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain(
+      '已保存到本地',
+    );
   });
 
   it('同一张图（同 sha）选两次 → 去重只留一条 chip，给「已添加」提示（G4）', () => {
@@ -882,14 +917,23 @@ describe('createImageCapture — 文件选择框回执（Q3 applyPicked）', () 
 
   it('rejected/failed → 转**可见**拒收 chip（本路径无既有 chip 可转态，绝不静默丢）', () => {
     handle = mountWithPosts([]);
-    handle.applyPicked(pickedOk({ status: 'rejected', ref: undefined, uri: undefined, reason: '图片校验未通过：不支持的图片格式' }));
+    handle.applyPicked(
+      pickedOk({
+        status: 'rejected',
+        ref: undefined,
+        uri: undefined,
+        reason: '图片校验未通过：不支持的图片格式',
+      }),
+    );
 
     expect(handle.accepted.length).toBe(0);
     expect(handle.rejected.length).toBe(1);
     const chip = chips()[0]!;
     expect(chip.classList.contains('image-chip--rejected')).toBe(true);
     expect(chip.querySelector('.skill-chip__name')?.textContent).toContain('（未采用）');
-    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('不支持的图片格式');
+    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain(
+      '不支持的图片格式',
+    );
   });
 
   it('ok 但缺 ref（契约破损）→ 中性兜底拒收项，不假成功也不留空', () => {

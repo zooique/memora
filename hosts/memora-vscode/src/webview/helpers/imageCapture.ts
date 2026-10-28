@@ -483,9 +483,16 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     resetTip(previewTip);
   }
 
-  /** 单个 `File` → 校验 → 收入或拒收。任何异常都转成可见的拒绝项，不向上抛。 */
+  /**
+   * 单个 `File` → 校验 → 收入或拒收。任何异常都转成可见的拒绝项，不向上抛。
+   *
+   * 名字来源按入口分（IMG-4）：**粘贴一律不用 `file.name`**——剪贴板位图没有真实文件名，
+   * Chromium 会合成一个 `image.png` 塞进来（**非空** ⇒ `resolveImageName` 走「原样用」
+   * ⇒ D29 兜底成死码，多张截图同名不可辨）。粘贴本无名字，语义上就不该拿平台占位当锚，
+   * 统一按 sha256 派生；拖入的 `File` 来自真实文件（拖入路径有真名，保留）。
+   */
   async function ingestFile(file: File, source: 'paste' | 'drop-file'): Promise<void> {
-    const declaredName = file.name || '';
+    const declaredName = source === 'paste' ? '' : file.name || '';
     try {
       const bytes = await readBytes(file);
       const digest = await sha256(bytes);

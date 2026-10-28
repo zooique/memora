@@ -289,6 +289,15 @@ describe('D29 · ImageRef.name 唯一生产点', () => {
     expect(resolveImageName('', 'abcdef1234567890')).toBe('粘贴图片-abcdef');
     expect(resolveImageName('   ', 'abcdef1234567890')).toBe('粘贴图片-abcdef');
   });
+
+  it('真实平台值 `image.png` 不做特判 ⇒ 原样返回（虚拟名剔除是**入口**职责）', () => {
+    // 为什么要钉这条：Chromium 给剪贴板位图合成的 name 就是 `image.png`，而它是**非空**的
+    // ⇒ 本函数按「非空即原样用」走，兜底分支在粘贴路径恒不执行（IMG-4 实证：兜底曾是死码）。
+    // 判据分层：#1 本函数只回答「声明值能否当名字用」；#2 「这个声明值可不可信」由入口判
+    // （`imageCapture` 的粘贴路径不予采信）。若在此处加黑名单，会连带误伤真有名为
+    // `image.png` 的拖入文件，并把「哪些名字算虚拟名」变成一份永远不全的清单。
+    expect(resolveImageName('image.png', 'abcdef1234567890')).toBe('image.png');
+  });
 });
 
 describe('G3 · 入口限额第四维（图片 token ≤ 窗口 25%）', () => {
