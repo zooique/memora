@@ -1852,6 +1852,23 @@ export const chatStyles = `
     color: var(--status-fail);
   }
 
+  /* ============ 图片附件行（粘贴 / 拖入采集） ============
+   * 采集态与引用行同构（复用 .skill-chip-row / .skill-chip），此处只加两条差异：
+   *   ① **校验未通过的候选必须看得见**（方案 D7 二级语义：不静默丢弃）。用虚线轮廓 + 失败色
+   *      而不是删除线或隐藏：它仍是一枚「可 × 掉的 chip」，结构预期与成功项一致，只是颜色说明
+   *      状态——降噪一律走颜色，不走隐藏（与 .skill-chip__remove 的取舍同源）。
+   *   ② 拖入经过时的落点提示：拖拽全程鼠标在动、静态界面没有任何线索，
+   *      不标出落点用户到松手那一刻都在猜。 */
+  #imageChips .image-chip--rejected {
+    outline: 1px dashed var(--status-fail);
+    outline-offset: -1px;
+    color: var(--status-fail);
+  }
+  #inputWrap.is-image-drag {
+    outline: 1px dashed var(--accent);
+    outline-offset: -1px;
+  }
+
   /* 动画：spin for loading state */
   @keyframes spin {
     from { transform: rotate(0deg); }

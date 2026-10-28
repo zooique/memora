@@ -39,6 +39,8 @@ import {
   MAX_INPUT_CHARS,
   MAX_PENDING_INTERJECTIONS,
 } from '../../shared/constants.js';
+import { bindSingleTrackRow, syncRowEdges } from '../helpers/chipRow.js';
+import { createImageCapture } from '../helpers/imageCapture.js';
 import { fmtTime } from '../helpers/fmtTime.js';
 import { fmtTokens } from '../helpers/fmtTokens.js';
 import {
@@ -176,6 +178,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let currentSkill: { name: string; disabled?: boolean; pinned: boolean } | null = null;
   // 引用行（右键「添加到对话」挂的文件/目录，与 skillChipRow 同构复用样式；file/folder 二态）
   const refChipRow = document.getElementById('refChips') as HTMLElement | null;
+  // 图片附件行（粘贴 / 拖入采集的 chip；D28：与引用 chip 同构、只显示文件名不做缩略图）
+  const imageChipRow = document.getElementById('imageChips') as HTMLElement | null;
   let currentRefs: {
     path: string;
     kind: 'file' | 'folder';
@@ -6454,52 +6458,26 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     syncRowEdges(refChipRow);
   }
 
-  /**
-   * 单轨附件行的边缘状态同步（**唯一写入点**，技能行与引用行共用）
-   *
-   * 只做一件事：按当前滚动位置给容器切 `is-overflow-start/end` 类，CSS 据此渐隐。
-   * 渐隐是单轨方案下「这一侧还有 chip」的唯一可见线索——滚动条已隐藏，不渐隐等于让人猜。
-   * `+1` 容差：Windows 125% 缩放下 `scrollLeft` 常带 0.5~1px 亚像素误差，严格比较会让
-   * 渐隐在贴边时闪一下。
-   */
-  function syncRowEdges(row: HTMLElement | null): void {
-    if (!row) return;
-    const max = row.scrollWidth - row.clientWidth;
-    row.classList.toggle('is-overflow-start', row.scrollLeft > 1);
-    row.classList.toggle('is-overflow-end', max > 1 && row.scrollLeft < max - 1);
-  }
-
-  /**
-   * 给附件行绑定单轨滚动行为（HOST-CTX-10）
-   *
-   * 纵向滚轮 → 横向滚动：滚动条已隐藏，鼠标用户没有别的横向手势可用（触控板用户仍走原生
-   * 横向手势，`deltaX` 不拦）。**只在真的溢出时才拦截**——常态（一两个 chip 装得下）绝不
-   * `preventDefault`，否则用户把光标停在附件行上就滚不动对话，属于无理由劫持。
-   */
-  function bindSingleTrackRow(row: HTMLElement | null): void {
-    if (!row) return;
-    row.addEventListener('scroll', () => syncRowEdges(row), { passive: true });
-    row.addEventListener(
-      'wheel',
-      (e) => {
-        if (e.deltaY === 0 || row.scrollWidth <= row.clientWidth) return; // 无溢出 / 横向手势：交还原生
-        e.preventDefault();
-        row.scrollLeft += e.deltaY;
-      },
-      { passive: false }, // 要 preventDefault，不能是 passive
-    );
-  }
-
   // 两行的绑定在此一次完成（行元素在脚本加载时已存在）；窗口尺寸变化只影响是否溢出，
   // 重算一次边缘类即可——不为「侧栏拖宽」引入 ResizeObserver（Chat 面板拖宽不触发
   // window resize，但此时行内也不滚动，渐隐最多残留到下次滚动/重渲染，代价可接受）。
   bindSingleTrackRow(skillChipRow);
   bindSingleTrackRow(refChipRow);
+  bindSingleTrackRow(imageChipRow);
+  // 图片采集层（粘贴 / 拖入）：**探针版**——只做 chip 与校验可视化，不落盘、不上行。
+  // 何时落盘由真机结论定（边界文档 Q1），未定前不预支协议通道（K1）。
+  const imageCapture = createImageCapture({
+    doc: document,
+    input,
+    dropZone: inputWrap,
+    row: imageChipRow,
+  });
   window.addEventListener(
     'resize',
     () => {
       syncRowEdges(skillChipRow);
       syncRowEdges(refChipRow);
+      syncRowEdges(imageChipRow);
       // 大纲条（HOST-NAV-1）：视口高变 ⇒ 压密预算重算。sync 内 applyMetrics 总会跑，
       // 故即便轮数/签名未变，也会按新预算重排条列（与上面两行同一 resize 拍子）。
       roundNavController.sync();
@@ -6708,6 +6686,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (toolElapsedTimer !== undefined) clearInterval(toolElapsedTimer);
     activityDrawerView.dispose(); // 瞬态条撤出计时器随活动抽屉域收口（第 4 刀）
     statusBars.dispose(); // 三挂载条 DOM 随状态条域收口（第 6 刀）
+    imageCapture.dispose(); // 采集层监听器（paste / dragover / drop）必须随 view 收干净
     stopConfirmCountdown();
   }
 

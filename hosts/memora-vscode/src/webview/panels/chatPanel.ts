@@ -4437,6 +4437,8 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
            空态 hidden 零高度，盒子不预留空行 -->
       <div id="skillChips" class="skill-chip-row" hidden></div>
       <div id="refChips" class="skill-chip-row" hidden></div>
+      <!-- 图片附件行：粘贴 / 拖入采集的 chip（与上面两行同构单轨，D28 只显示文件名不做缩略图） -->
+      <div id="imageChips" class="skill-chip-row" hidden></div>
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
         <!-- Row 1 · 一级直面：左侧功能群 + 右侧唯一发送按钮（发送突出化） -->
