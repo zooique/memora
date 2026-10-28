@@ -470,9 +470,13 @@ function ledgerTiming() {
     cwd: ROOT,
     encoding: 'utf8',
   });
+  // maxBuffer 必须显式放大：porcelain 每行约 10 行元信息，台账 1272 行时输出已破 Node 默认的
+  // 1 MiB ⇒ `spawnSync git ENOBUFS` **硬崩**（不是判据红，且崩前不打印任何分诊结果），
+  // 表现为「闸门恒红但看不出哪一条红」。不设上限 ⇒ 台账每增几行就可能崩一次。
   const porcelain = execFileSync('git', ['blame', '--line-porcelain', 'HEAD', '--', LEDGER_REL], {
     cwd: ROOT,
     encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
   });
   const times = [];
   for (const line of porcelain.split(/\r?\n/)) {
