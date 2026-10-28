@@ -512,6 +512,9 @@ const BASELINE_CODE: readonly string[] = [
 const BASELINE_TEXT: readonly string[] = [
   'ALL_STEPS',
   'DEFAULT_MAX_ITERATIONS',
+  // 台账 IMG-2 第 4 子块④ 点名引用的改名前旧词（「ImageRejectStep 撞车 → ImageRejectStage」的历史
+  // 事实陈述），属 text 层「引用历史」非误用，2026-10-28 补基线
+  'ImageRejectStep',
   'MAX_STEP_BUDGET',
   'MIN_STEP_BUDGET',
   // 现行 TS 类型名（src/role-pack/strategyResolver.ts）：text 层命中的是文档对现行类型的合法引用，
