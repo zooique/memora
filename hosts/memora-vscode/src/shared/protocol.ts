@@ -354,6 +354,20 @@ export type WebviewToExtensionMessage =
       sha256: string;
     }
   /**
+   * 请求打开原生文件选择框（W→E · Q3 文件选择框，IMG-2 第 6 子块拍板路径④）
+   *
+   * 为什么必须由宿主开框：`showOpenDialog` 只有扩展宿主拿得到（webview 无此 API），
+   * 这是资源管理器拖入被平台边界判死（外部拖入事件止于 workbench 层，webview iframe
+   * 零事件）之后**唯一不依赖平台 Drag&Drop 的图片入口**。
+   *
+   * 两条触发入口汇于同一执行面：webview 上传按钮（当前 Provider 已声明视觉能力时）与
+   * `memora.attachImage` 命令。按钮在**未声明**视觉能力时不发本消息（点击跳设置开启）。
+   *
+   * 载荷为空：拾取的文件由宿主读盘 → 校验 → 落盘，逐张经 `image_picked` 回执
+   * （一次可多选，回执多条；取消选择不回执——「没有发生任何事」不需要事件）。
+   */
+  | { type: 'image_pick_request' }
+  /**
    * 输入统一入口
    *
    * 宿主与 webview 同仓发布、同步切换，无过渡兼容窗：不保留已收口的旧消息类型
@@ -872,6 +886,32 @@ export type ExtensionToWebviewMessage =
       reason?: string;
     }
   /**
+   * 文件选择框拾取回执（E→W · 对 `image_pick_request` 的应答，Q3 拾取路径）
+   *
+   * 与 `image_ingest_result` 的**时序分野**（同族不同道，禁合并）：粘贴路径是
+   * 「先有提案 chip → 回执换真」，本路径**没有提案阶段**——文件由宿主直接读盘校验
+   * 落盘，webview 收到 `ok` 才第一次建 chip，`ref` 即真相（webview 从未见过字节，
+   * 提案值概念在此不存在）。三态语义与 `image_ingest_result` 同源：
+   * - `ok`：已落盘，`ref` = 宿主复算真相，`uri` = 悬停预览地址（缺省 = 无预览，同上）；
+   * - `rejected`：字节层不可用（扩展名不可信 ⇒ **不传声明 mime**，嗅探说了算）；
+   * - `failed`：读盘 / 写盘 IO 故障，可重试。
+   * `rejected`/`failed` 转**可见**拒收 chip（与粘贴路径同构），绝不静默丢——
+   * 用户选了文件却什么都没发生，是和「以为图已发出」同级的静默错态。
+   */
+  | {
+      type: 'image_picked';
+      /** 落盘终态（三态语义见上，与 `image_ingest_result` 同源） */
+      status: 'ok' | 'rejected' | 'failed';
+      /** 展示名（拾取文件 basename；`rejected`/`failed` 时是拒收 chip 的唯一可读标识） */
+      name: string;
+      /** 真相图片引用（仅 `ok` 携带；字段语义 = 内核 `ImageRef` 契约） */
+      ref?: ImageRef;
+      /** 该附件在 webview 里可直接加载的 URL（仅 `ok` 携带；语义同 `image_ingest_result.uri`） */
+      uri?: string;
+      /** 拒绝 / 失败的用户可见文案（`rejected`/`failed` 必带，直接上屏不改写） */
+      reason?: string;
+    }
+  /**
    * 用户消息：kind 存在 = 问答闭环内交互输入（折叠块渲染，不分裂新轮）——
    * question-answer=对 LLM 主动提问的回答；supplement=补充（插话/暂停续跑输入）。
    * 普通新闭环输入不携带 kind。
@@ -1167,6 +1207,13 @@ export type ExtensionToWebviewMessage =
         displayName: string;
         contextWindow?: number;
         limitTokens: number;
+        /**
+         * 该 Provider 是否声明视觉能力（IMG-2 Q3：上传按钮置灰判据的唯一来源）。
+         * SSOT = 宿主 DTO `LlmProviderConfig.supportsVision`，本字段只是**投影**——
+         * webview 不维护第二份能力位（按钮置灰态与设置面板复选框同源同值）。
+         * 缺省 = 未声明（按钮走置灰态，点击跳设置）。
+         */
+        vision?: boolean;
       }[];
       activeName?: string;
     }

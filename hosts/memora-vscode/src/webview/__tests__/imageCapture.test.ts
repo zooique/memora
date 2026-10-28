@@ -810,3 +810,163 @@ describe('createImageCapture — 移除与销毁', () => {
     expect(chips().length).toBe(0);
   });
 });
+
+describe('createImageCapture — 文件选择框回执（Q3 applyPicked）', () => {
+  let handle: ImageCaptureHandle | null = null;
+  let dom: ReturnType<typeof mountDom>;
+  let notices: string[];
+
+  beforeEach(() => {
+    dom = mountDom();
+    notices = [];
+  });
+
+  afterEach(() => {
+    handle?.dispose();
+    handle = null;
+  });
+
+  function mountWithPosts(posts: WebviewToExtensionMessage[]): ImageCaptureHandle {
+    return createImageCapture({
+      doc: document,
+      ...dom,
+      post: (m) => posts.push(m),
+      notice: (t) => notices.push(t),
+    });
+  }
+
+  /** ok 回执载荷（ref 即真相——本路径没有提案阶段） */
+  function pickedOk(overrides: Record<string, unknown> = {}): Extract<
+    import('../../shared/protocol.js').ExtensionToWebviewMessage,
+    { type: 'image_picked' }
+  > {
+    return {
+      type: 'image_picked',
+      status: 'ok',
+      name: 'photo.png',
+      ref: {
+        sha256: SHA,
+        mime: 'image/png',
+        width: 64,
+        height: 32,
+        bytes: 1234,
+        name: 'photo.png',
+      },
+      uri: 'mock-webview://x',
+      ...overrides,
+    };
+  }
+
+  it('ok 回执 → chip 直接以真相建卡（无需换真），title 说「已保存到本地」', () => {
+    handle = mountWithPosts([]);
+    handle.applyPicked(pickedOk());
+
+    expect(handle.accepted.length).toBe(1);
+    expect(handle.accepted[0]!.source).toBe('pick');
+    expect(handle.accepted[0]!.ref!.sha256).toBe(SHA);
+    expect(handle.accepted[0]!.previewUri).toBe('mock-webview://x');
+    const chip = chips()[0]!;
+    expect(chip.dataset.imageSource).toBe('pick');
+    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('已保存到本地');
+  });
+
+  it('同一张图（同 sha）选两次 → 去重只留一条 chip，给「已添加」提示（G4）', () => {
+    handle = mountWithPosts([]);
+    handle.applyPicked(pickedOk());
+    handle.applyPicked(pickedOk());
+
+    expect(handle.accepted.length).toBe(1);
+    expect(chips().length).toBe(1);
+    expect(notices).toEqual(['该图片已添加']);
+  });
+
+  it('rejected/failed → 转**可见**拒收 chip（本路径无既有 chip 可转态，绝不静默丢）', () => {
+    handle = mountWithPosts([]);
+    handle.applyPicked(pickedOk({ status: 'rejected', ref: undefined, uri: undefined, reason: '图片校验未通过：不支持的图片格式' }));
+
+    expect(handle.accepted.length).toBe(0);
+    expect(handle.rejected.length).toBe(1);
+    const chip = chips()[0]!;
+    expect(chip.classList.contains('image-chip--rejected')).toBe(true);
+    expect(chip.querySelector('.skill-chip__name')?.textContent).toContain('（未采用）');
+    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('不支持的图片格式');
+  });
+
+  it('ok 但缺 ref（契约破损）→ 中性兜底拒收项，不假成功也不留空', () => {
+    handle = mountWithPosts([]);
+    handle.applyPicked(pickedOk({ ref: undefined, uri: undefined }));
+
+    expect(handle.accepted.length).toBe(0);
+    expect(handle.rejected.length).toBe(1);
+    expect(handle.rejected[0]!.reason).toContain('回执缺少图片引用');
+  });
+});
+
+describe('createImageCapture — 上传按钮（常驻，D27）', () => {
+  let handle: ImageCaptureHandle | null = null;
+  let dom: ReturnType<typeof mountDom>;
+  let posts: WebviewToExtensionMessage[];
+
+  beforeEach(() => {
+    dom = mountDom();
+    posts = [];
+  });
+
+  afterEach(() => {
+    handle?.dispose();
+    handle = null;
+  });
+
+  function mountWithBtn(): { btn: HTMLButtonElement; handle: ImageCaptureHandle } {
+    document.body.innerHTML += '<button id="attachBtn"></button>';
+    const btn = document.getElementById('attachBtn') as HTMLButtonElement;
+    const h = createImageCapture({
+      doc: document,
+      ...dom,
+      post: (m) => posts.push(m),
+      attachBtn: btn,
+    });
+    return { btn, handle: h };
+  }
+
+  it('初始态 = 未声明视觉能力：置灰（aria-disabled + class），title 说清为什么与点了会怎样', () => {
+    const { btn, handle: h } = mountWithBtn();
+    handle = h;
+
+    expect(btn.getAttribute('aria-disabled')).toBe('true');
+    expect(btn.classList.contains('is-vision-off')).toBe(true);
+    expect(btn.title).toContain('未开启图片输入');
+  });
+
+  it('置灰态点击 → 跳设置（open_settings_tab config），不发拾取请求（D27：置灰但可点）', () => {
+    const { btn, handle: h } = mountWithBtn();
+    handle = h;
+
+    btn.click();
+
+    expect(posts).toEqual([{ type: 'open_settings_tab', tab: 'config' }]);
+  });
+
+  it('声明视觉能力后点击 → 发 image_pick_request（宿主开原生对话框）', () => {
+    const { btn, handle: h } = mountWithBtn();
+    handle = h;
+    h.setAttachEnabled(true);
+
+    expect(btn.getAttribute('aria-disabled')).toBe('false');
+    expect(btn.classList.contains('is-vision-off')).toBe(false);
+    btn.click();
+
+    expect(posts).toEqual([{ type: 'image_pick_request' }]);
+  });
+
+  it('dispose 摘掉按钮监听：销毁后点击零消息（不向已销毁面板发件）', () => {
+    const { btn, handle: h } = mountWithBtn();
+    h.setAttachEnabled(true);
+    h.dispose();
+    handle = null;
+
+    btn.click();
+
+    expect(posts).toEqual([]);
+  });
+});

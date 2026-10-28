@@ -1,5 +1,5 @@
 /**
- * 图片采集层 — 粘贴 / 拖入 → 一条 chip
+ * 图片采集层 — 粘贴 / 拖入 / 文件选择框 → 一条 chip
  *
  * 职责边界（刻意划死，勿扩张）：
  *   - **采集 + 上行触发，不落盘、不碰内核**：落盘与 sha256 裁定归宿主（`ImageRef` 真源在会话
@@ -11,8 +11,16 @@
  *     换真（两条通道定义见 `shared/protocol.ts`）。写盘本身仍不在本文件（禁 fs 进 webview）。
  *   - **发送交付已接线**：发送时刻由 `resolveSendable()` 给出真值 `ref` 列表，chatView 并进
  *     `input.attachments`；**取图的唯一出口就在本文件**（chatView 不许自己遍历 `accepted`）。
+ *   - **文件选择框路径（Q3）已接线**：上传按钮点击 → `image_pick_request`（宿主开原生
+ *     对话框、读盘落盘）→ 回执经 `applyPicked()` 建 chip——该路径**没有提案阶段**，
+ *     `ref` 到手即真相（webview 从未见过字节）；`rejected`/`failed` 转**可见**拒收 chip，
+ *     绝不静默丢（用户选了文件却什么都没发生 = 最坏静默错态）。
  *   - **仍未接线的只剩 `drop-uri`（资源管理器拖入）的读盘**：本端只有 URI、读不到字节，
  *     `resolveSendable()` 对此**恒拦并给原因**，绝不放行一条「图没跟上」的消息。
+ *   - **上传按钮（常驻，D27）**：当前 Provider 声明了视觉能力 → 点击发拾取请求；未声明 →
+ *     置灰态（`aria-disabled` + class，**不用** `disabled` 属性——置灰但可点，点击跳设置
+ *     开启，D27 拍板「隐藏 = 不可发现的错误」）。置灰判据唯一来源 = `chat_providers`
+ *     的 `vision` 投影字段，经 `setAttachEnabled()` 单点进_state_。
  *
  * 为什么走依赖注入而不是直接摸全局（对齐 `helpers/toast.ts` 的既有惯例）：
  *   chatView 的测试在 jsdom 里重建 DOM，模块级自执行会把监听器绑到上一轮的旧节点上。
@@ -21,6 +29,7 @@
  * 三条路径的能力差（真机结论见边界文档 §4）：
  *   | 来源 | 拿到什么 | 能否当场校验 |
  *   | 粘贴 / 从系统文件管理器拖入 | `File`（可读字节） | 能（六步校验全跑） |
+ *   | 上传按钮（宿主开框读盘） | 只有回执（字节全程在宿主） | 宿主校验，本端收真相建 chip |
  *   | 从 VS Code 资源管理器拖入 | 只有 `text/uri-list` 字符串 | **不能**——webview 读不到工作区
  *     文件（`localResourceRoots` 只放行 `dist/webview`）⇒ 只登记 URI，读盘与校验推迟到宿主 |
  */
@@ -36,6 +45,8 @@ import { getIconSvg } from '../scripts/icons.js';
 
 /** `image_ingest_result` 载荷类型（从协议联合取型，禁手写第二份字段表） */
 type IngestResult = Extract<ExtensionToWebviewMessage, { type: 'image_ingest_result' }>;
+/** `image_picked` 载荷类型（Q3 文件选择框回执，同上） */
+type PickedResult = Extract<ExtensionToWebviewMessage, { type: 'image_picked' }>;
 
 /**
  * 悬停预览浮层的固定 id（**单例**，挂 body 的绝对定位层）。
@@ -47,7 +58,7 @@ const PREVIEW_TIP_ID = 'imgPreviewTip';
 
 /** 采集成功的候选图。字段与内核 `ImageRef` 对齐，但 `sha256` 是**提案值**（见文件头）。 */
 export interface CapturedImage {
-  source: 'paste' | 'drop-file' | 'drop-uri';
+  source: 'paste' | 'drop-file' | 'drop-uri' | 'pick';
   /** 用户可见文件名（D29：唯一生产点就是这里，无名时由 `resolveImageName` 兜底） */
   name: string;
   /** 原始字节数；`drop-uri` 来源为 `undefined`（尚未读盘） */
@@ -105,6 +116,14 @@ export interface ImageCaptureDeps {
   post?: (msg: WebviewToExtensionMessage) => void;
   /** 瞬态提示（同轮重复粘贴「已添加」等）；缺省 = 静默 */
   notice?: (message: string) => void;
+  /**
+   * 上传按钮（`#imageAttachBtn`，常驻，D27）。缺省 = 无按钮（测试可不搭骨架）。
+   *
+   * 点击行为随 `setAttachEnabled()` 的能力态二分：有视觉能力 → `image_pick_request`；
+   * 无 → `open_settings_tab('config')` 跳设置。绑定与状态全收在本层（chatView 只递
+   * 元素与投影值），按钮的 class / title / aria 语义不散在视图里。
+   */
+  attachBtn?: HTMLButtonElement | null;
 }
 
 export interface ImageCaptureHandle {
@@ -129,6 +148,21 @@ export interface ImageCaptureHandle {
    * 「数据改了、chip 没重绘」的两套状态。
    */
   applyIngestResult(msg: IngestResult): void;
+  /**
+   * 文件选择框回执入口（chatView 把 `image_picked` 原样转进来）。
+   *
+   * 与 `applyIngestResult` 分立而非合并：两通道时序不同构（那边「提案 chip → 换真」，
+   * 这边「无提案，ref 即真相」），合并就要在函数里猜消息属于哪个时序 = 分支即暗排序。
+   * 归本层处理的原因相同：chip 状态只在这里维护，视图层不碰候选数组。
+   */
+  applyPicked(msg: PickedResult): void;
+  /**
+   * 上传按钮能力态（chat_providers 投影值单点入口）。
+   *
+   * @param vision 当前激活 Provider 是否声明视觉能力；初始（chat_providers 未到）按
+   *   `false` 处理——宁可先灰后亮，不可先亮后灰（后者诱导用户点了才发现发不出）。
+   */
+  setAttachEnabled(vision: boolean): void;
   clear(): void;
   dispose(): void;
 }
@@ -553,6 +587,46 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
   }
 
   /**
+   * 文件选择框回执（Q3）：无提案阶段，`ref` 到手即真相。
+   *
+   * 三条硬约束（与 `applyIngestResult` 同族同源，都是「静默错态」的防口）：
+   * ① `ok` 先过 G4 同轮去重（同一张图选两次/先粘贴后选择只留一条 chip，提示「已添加」）；
+   * ② `rejected`/`failed` 转**可见**拒收 chip（本路径没有既有 chip 可转态——拒绝也要
+   *    让用户看见为什么，绝不静默丢）；
+   * ③ `uri` 缺省 = 预览不可用（如实降级），不伪造地址。
+   */
+  function applyPicked(msg: PickedResult): void {
+    if (msg.status === 'ok' && msg.ref) {
+      const ref = msg.ref;
+      // G4 去重：与粘贴路径同一判据（物理 sha256），键此刻已是宿主复算的真值
+      if (accepted.some((it) => it.sha256 === ref.sha256)) {
+        notice('该图片已添加');
+        return;
+      }
+      accepted.push({
+        source: 'pick',
+        name: ref.name,
+        byteLength: ref.bytes,
+        mime: ref.mime,
+        width: ref.width,
+        height: ref.height,
+        sha256: ref.sha256,
+        ref,
+        previewUri: msg.uri,
+      });
+      render();
+      return;
+    }
+    rejected.push({
+      source: 'pick',
+      name: msg.name,
+      // 文案原样上屏（宿主产出）；缺省只可能是契约破损，给中性兜底不许留空
+      reason: msg.reason ?? (msg.status === 'ok' ? '回执缺少图片引用' : '图片未被采用'),
+    });
+    render();
+  }
+
+  /**
    * 发送取图：把 chip 状态翻译成「能发什么 / 为什么发不了」。
    *
    * 判据按 chip 的字段形态（与 `describe` 三态一一对应），不依赖异步时序：
@@ -638,6 +712,30 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
   dropZone?.addEventListener('dragleave', onDragLeave);
   dropZone?.addEventListener('drop', onDrop);
 
+  // ─── 上传按钮（常驻，D27）：绑定与能力态收口在本层 ───
+  const attachBtn = deps.attachBtn ?? null;
+  /** 初始按「未声明视觉能力」处理：chat_providers 未到前宁可先灰后亮（见接口注释） */
+  let attachVisionEnabled = false;
+  function onAttachClick(): void {
+    // 置灰 ≠ 点不动：点击跳设置开启（D27「隐藏 = 不可发现的错误」的姊妹语义）
+    if (attachVisionEnabled) post({ type: 'image_pick_request' });
+    else post({ type: 'open_settings_tab', tab: 'config' });
+  }
+  /** 按钮能力态的唯一改写点（chat_providers 投影值经此进 UI；挂载期也调它落初始态） */
+  function setAttachEnabled(vision: boolean): void {
+    attachVisionEnabled = vision;
+    if (!attachBtn) return;
+    // 置灰态用 class + aria-disabled 表达，不用 disabled 属性——按钮必须保持可点（跳设置）
+    attachBtn.classList.toggle('is-vision-off', !vision);
+    attachBtn.setAttribute('aria-disabled', String(!vision));
+    attachBtn.title = vision
+      ? '添加图片（也可直接粘贴）'
+      : '当前模型未开启图片输入——点击前往设置开启';
+  }
+  attachBtn?.addEventListener('click', onAttachClick);
+  // 挂载即落初始态：不依赖骨架预置 class（chat_providers 未到前按未声明处理）
+  setAttachEnabled(false);
+
   return {
     get accepted() {
       return accepted;
@@ -646,6 +744,8 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       return rejected;
     },
     applyIngestResult,
+    applyPicked,
+    setAttachEnabled,
     resolveSendable,
     clear() {
       accepted.length = 0;
@@ -658,6 +758,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       dropZone?.removeEventListener('dragleave', onDragLeave);
       dropZone?.removeEventListener('drop', onDrop);
       dropZone?.classList.remove('is-image-drag');
+      attachBtn?.removeEventListener('click', onAttachClick);
       accepted.length = 0;
       rejected.length = 0;
       if (row) row.textContent = '';

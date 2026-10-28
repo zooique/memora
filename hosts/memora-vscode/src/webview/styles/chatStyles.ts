@@ -1636,6 +1636,37 @@ export const chatStyles = `
   }
   .polish-btn-icon.loading svg { animation: spin var(--dur-spin) linear infinite; }
 
+  /* 上传图片按钮（IMG-2 Q3，常驻 D27）：与润色按钮同一图标化弱化范式；
+   * 置灰态 = is-vision-off（class + aria-disabled，不用 disabled——按钮保持可点跳设置）。
+   * 置灰语义走透明度而非换色：色值即契约，透明度只表达「可点但弱」。 */
+  .image-attach-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--sq-xl, 28px);
+    height: var(--sq-lg, 24px);
+    padding: 0;
+    background: transparent;
+    border: var(--line-solid);
+    border-radius: var(--radius-sm, 2px);
+    color: var(--text-secondary, #9aa0a6);
+    cursor: pointer;
+    transition: color var(--dur-base), background var(--dur-base), border-color var(--dur-base);
+  }
+  .image-attach-btn:hover {
+    color: var(--accent, #0e639c);
+    background: var(--accent-bg-hover);
+    border-color: var(--accent, #0e639c);
+  }
+  .image-attach-btn:active { transform: scale(0.95); }
+  .image-attach-btn.is-vision-off { opacity: var(--op-3); }
+  .image-attach-btn.is-vision-off:hover {
+    color: var(--text-secondary, #9aa0a6);
+    background: transparent;
+    border-color: var(--line-solid);
+    cursor: pointer;
+  }
+
   /* Skill 选择器胶囊差异（共用 .treedd--capsule 外壳，见 dropdown.ts）：
    * 单图标（⚡）触发器。胶囊底色/箭头/尺寸全复用 capsule；此处仅：
    * 1) 选中态 accent 边框回显（.active 由 chatView toggle）；2) 菜单左对齐

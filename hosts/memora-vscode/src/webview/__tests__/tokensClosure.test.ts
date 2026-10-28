@@ -594,19 +594,23 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // 18：回到原值。中途曾 +2（🔒 未钉态 / ✕ 弱化态各用 opacity: var(--op-6)），后经真机
     // 实测废掉该做法——**弱化只用降色、不用降透明度**（半透明图标观感像没渲染好/被禁用），
     // 二态改由「形状 + 颜色」两个明确通道承载；实数经 scripts/count-token-refs.mjs 实锤。
-    'op-': 18,
+    // 19：IMG-2 Q3 上传按钮置灰态 .image-attach-btn.is-vision-off opacity: var(--op-3)
+    // +1（2026-10-28）——置灰 = 禁用态语义（op-3 的既有语义位），非「弱化装饰」。
+    'op-': 19,
     'icon-': 17,
     'dot-': 22,
-    'line-': 81, // MEM-EVENT-2：工具行内命中块 border-top: var(--line-solid)（chatStyles）+1；
+    'line-': 83, // MEM-EVENT-2：工具行内命中块 border-top: var(--line-solid)（chatStyles）+1；
     //             HOST-NAV-1：大纲条浮层 border: var(--line-input)（chatStyles）再 +1（2026-10-20）；
     //             CTX-4 真机反馈：本轮注入回执行 .context-ring__injection 分隔线 +1（2026-10-21）；
     //             指标空态指引 .activity-metrics-empty 分隔线 +1（2026-10-22）；
     //             MCP 选项卡 mcpStyles（页头 border-bottom + 工具行 border-top）+2（2026-10-24）；
     //             UI-TOAST-1：活动条浮层 .activity-bar.is-toast 描边 +1（2026-10-24）；
     //             MCP-S1：远程标记 .mcp-server-tag 描边 +1（2026-10-25）；
-    //             IMG-2：悬停预览浮层 .image-chip-tip 描边（var(--line-input)）+1（2026-10-28，
-    //             实数经 scripts/count-token-refs.mjs 实锤同步）
-    'sq-': 47,
+    //             IMG-2：悬停预览浮层 .image-chip-tip 描边（var(--line-input)）+1（2026-10-28）；
+    //             IMG-2 Q3：上传按钮 .image-attach-btn 描边 + hover 描边（var(--line-solid)）+2
+    //             （2026-10-28，实数经 scripts/count-token-refs.mjs 实锤同步）
+    'sq-': 49, // IMG-2 Q3：上传按钮 .image-attach-btn 尺寸 var(--sq-xl)/var(--sq-lg) +2
+    //           （2026-10-28，实数经 scripts/count-token-refs.mjs 实锤同步）
     'dim-': 25, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）；
     //             UI-CONFIRM-FIT-1：审批卡 max-height 引 var(--dim-2xl)（替代裸值 420px）+1（2026-10-22）；
     //             IMG-2：悬停预览 3 处（浮层 max-width + 预览图 max-width/max-height，均复用

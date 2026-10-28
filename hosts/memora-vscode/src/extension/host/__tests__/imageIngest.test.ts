@@ -19,29 +19,21 @@ import type {
   WebviewToExtensionMessage,
 } from '../../../shared/protocol.js';
 import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
-import { ingestImage } from '../imageIngest.js';
+import { pngBytes } from '../../../__tests__/helpers/imageTestBytes.js';
+import { ingestDiskFile, ingestImage } from '../imageIngest.js';
 import { resolveAttachmentsDir } from '../projectDataDir.js';
 
 /** 回执载荷类型（从协议联合取型，与生产同源） */
 type IngestResult = Extract<ExtensionToWebviewMessage, { type: 'image_ingest_result' }>;
+/** 拾取回执类型（Q3 文件选择框路径，与生产同源） */
+type PickedResult = Extract<ExtensionToWebviewMessage, { type: 'image_picked' }>;
 /** 上行载荷类型（同上） */
 type ImageIngestMessage = Extract<WebviewToExtensionMessage, { type: 'image_ingest' }>;
 
 /**
- * 构造最小合法 PNG（33 字节）。
- *
- * 返回类型写 `Uint8Array<ArrayBuffer>`：裸 `Uint8Array` 在 TS 5.7+ 会退化成
- * `ArrayBufferLike`，喂给 `Buffer.from` 之外的地方常被收窄报错（与 imageCapture 测试同约定）。
+ * 构造最小合法 PNG → 已抽至 `__tests__/helpers/imageTestBytes.ts`（宿主侧测试共用，
+ * 禁各测试文件自造第二份格式头夹具）。
  */
-function pngBytes(width: number, height: number): Uint8Array<ArrayBuffer> {
-  const b = new Uint8Array(33);
-  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0); // PNG 签名
-  b.set([0, 0, 0, 13], 8); // IHDR 数据长度 = 13（大端）
-  b.set([0x49, 0x48, 0x44, 0x52], 12); // 'IHDR'
-  b.set([(width >>> 24) & 255, (width >>> 16) & 255, (width >>> 8) & 255, width & 255], 16);
-  b.set([(height >>> 24) & 255, (height >>> 16) & 255, (height >>> 8) & 255, height & 255], 20);
-  return b;
-}
 
 /** 单条 `image_ingest` 载荷（sha256 一律先用真值，便于断言「宿主复算与提案一致」） */
 function ingestMsg(
@@ -231,5 +223,96 @@ describe('ingestImage — IO 故障', () => {
 
     expect(results[0]!.status).toBe('failed');
     expect(results[0]!.reason).toContain('保存失败');
+  });
+});
+
+describe('ingestDiskFile — 文件选择框拾取（Q3）', () => {
+  /** 把字节写成真实磁盘文件，返回其绝对路径（拾取路径的输入形态 = Uri.fsPath） */
+  function stageFile(dir: string, name: string, bytes: Uint8Array): string {
+    const file = join(dir, name);
+    writeFileSync(file, bytes);
+    return file;
+  }
+
+  it('合法 PNG → 读盘嗅探复算真值，写盘 {sha256}.png，回执 ok（无提案阶段，ref 即真相）', async () => {
+    const root = makeTempDir('memora-pick-');
+    const bytes = pngBytes(64, 32);
+    const staged = stageFile(root, 'photo.png', bytes);
+    const results: PickedResult[] = [];
+
+    await ingestDiskFile(root, staged, (r) => results.push(r));
+
+    expect(results.length).toBe(1);
+    const r = results[0]!;
+    expect(r.status).toBe('ok');
+    // name = 拾取文件 basename（D29 在本路径的生产点）
+    expect(r.name).toBe('photo.png');
+    expect(r.ref).toEqual({
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      mime: 'image/png',
+      width: 64,
+      height: 32,
+      bytes: bytes.length,
+      name: 'photo.png',
+    });
+    const written = join(resolveAttachmentsDir(root), `${r.ref!.sha256}.png`);
+    expect(readFileSync(written).equals(Buffer.from(bytes))).toBe(true);
+  });
+
+  it('扩展名不可信：PNG 内容命名成 .jpg → 嗅探说了算，落盘 {sha256}.png（不落 .jpg）', async () => {
+    const root = makeTempDir('memora-pick-');
+    const bytes = pngBytes(4, 4);
+    const staged = stageFile(root, 'looks-like-jpg.jpg', bytes);
+    const results: PickedResult[] = [];
+
+    await ingestDiskFile(root, staged, (r) => results.push(r));
+
+    // 本路径不传声明 mime ⇒ 「与声明一致」环整环跳过（信扩展名就会在说话）
+    expect(results[0]!.status).toBe('ok');
+    expect(results[0]!.ref!.mime).toBe('image/png');
+    expect(readdirSync(resolveAttachmentsDir(root))).toEqual([`${results[0]!.ref!.sha256}.png`]);
+  });
+
+  it('不是图片（嗅不出 magic）→ rejected 转**可见**拒收项，坏字节不写盘', async () => {
+    const root = makeTempDir('memora-pick-');
+    const staged = stageFile(root, 'fake.png', Buffer.from('plain text, not an image'));
+    const results: PickedResult[] = [];
+
+    await ingestDiskFile(root, staged, (r) => results.push(r));
+
+    expect(results[0]!.status).toBe('rejected');
+    expect(results[0]!.name).toBe('fake.png');
+    expect(results[0]!.reason).toContain('不支持的图片格式');
+    expect(() => readdirSync(resolveAttachmentsDir(root))).toThrow();
+  });
+
+  it('读盘失败（文件不存在）→ failed（IO 可重试），理由带「读取失败」', async () => {
+    const root = makeTempDir('memora-pick-');
+    const results: PickedResult[] = [];
+
+    await ingestDiskFile(root, join(root, 'gone.png'), (r) => results.push(r));
+
+    expect(results[0]!.status).toBe('failed');
+    expect(results[0]!.name).toBe('gone.png');
+    expect(results[0]!.reason).toContain('读取失败');
+  });
+
+  it('注入 URL 转换器 → ok 回执带 webview 地址；转换器收到的是落盘路径', async () => {
+    const root = makeTempDir('memora-pick-');
+    const bytes = pngBytes(2, 2);
+    const staged = stageFile(root, 'tiny.png', bytes);
+    const results: PickedResult[] = [];
+
+    await ingestDiskFile(
+      root,
+      staged,
+      (r) => results.push(r),
+      (file) => `mock-webview://${file}`,
+    );
+
+    expect(results[0]!.status).toBe('ok');
+    expect(results[0]!.uri).toBe(
+      `mock-webview://${join(resolveAttachmentsDir(root), `${results[0]!.ref!.sha256}.png`)}`,
+    );
   });
 });

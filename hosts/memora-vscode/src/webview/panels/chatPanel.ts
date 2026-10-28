@@ -21,6 +21,7 @@ import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.j
 import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
 import { ingestImage } from '../../extension/host/imageIngest.js';
+import { pickAndIngestImages } from '../../extension/host/imagePick.js';
 // 图片字节缓存（IMG-2 §5.4.1）：仅类型引用——实例由 extension 创建并注入，本类不构造
 import type { ImageCache } from '../../extension/host/imageCache.js';
 // 引用路径 ↔ 首根的双向判据唯一真源 = refPath（生成侧 relativeUnderPrimaryRoot 归 addToChat /
@@ -666,12 +667,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.bindSecurityAudit();
     // 绑定确认回调（写入 confirmWrites / 脚本与命令 confirmScripts / guest 恒确认，默认 fail-closed）
     this.bindWriteConfirmation();
-    // 装配注入后统一补推（时序竞态）：
-    // webview ready 时 agent 可能尚未装配，replaySession 的 chat_role_pack / pushRolePacks
-    // 会因 _agent 为空而跳过推送 → 状态行角色徽章与角色列表永久缺失。此处装配完成即补推一次，
-    // 面板未就绪时 post 静默忽略（_view 为空），由 replaySession 兜底再推。
-    // 「装配后补推」（含历史会话占用补推）统一收口在 refreshAfterAssemble 内，
-    // 本方法不另推一份（否则懒装配路径漏推）。
+    // 装配注入后统一补推（时序竞态）：webview ready 时 agent 可能尚未装配，replaySession 的
+    // chat_role_pack / pushRolePacks 会因 _agent 为空跳过 → 角色徽章与列表永久缺失。此处装配
+    // 完成即补推（面板未就绪时 post 静默忽略，由 replaySession 兜底再推）；统一收口在
+    // refreshAfterAssemble，本方法不另推一份（否则懒装配路径漏推）。
     this.refreshAfterAssemble();
   }
 
@@ -768,13 +767,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * meta 取证包（关键调用参数快照）：role/llm 身份 + 本轮调用参数面（窗口 / 输出上限 /
    * 推理深度 / 适配器形态）——真机异常轮自带取参数面，免截图、口问即可离线破案。
-   *
    * ⚠️ 参数面记的是**生效值**而非用户配置值：输出上限由内核 `buildChatOptions` 在 per-LLM
    * 配置与角色包策略 `act.outputLimit` 间取更小值（宿主不重算），只记配置面会把「我配了 64K」当成
    * 「真的发了 64K」——真机排雷已因此得出过错误结论（详见 tasks/审查-空响应根因排雷与优化方案-20260929.md）。
-   *
    * @param providerConfig 流首取的激活 Provider 配置快照（仅作为 agent 未装配时的回落来源）
-   * @returns meta 事件载荷（身份 + 参数包）
    */
   private buildRoundMeta(providerConfig: LlmProviderConfig | undefined): ProcessMetaPayload {
     const role = this._activeRolePack ? this.roleDisplayName(this._activeRolePack) : 'AI';
@@ -1043,11 +1039,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         this.post({ type: 'addRef', refs, source: 'mention' });
       } else {
         // 退化路径（HOST-CTX-11 订正）：**不是**「webview 未就绪」——mention_open 只能从
-        // webview 发出，收到时 _view 必然在。唯一可达场景 = QuickPick 打开期间视图被销毁
-        // （侧栏折叠 / 切走别的视图）：用户选中后 _view 已 undefined。走 _pendingRefs 缓冲、
-        // 下次 ready 补发（不带 source ⇒ @ 不撤）。取舍：选中是用户显式意图，缓冲保留它；
-        // 代价是 chip 可能在用户已切换上下文后才出现（早期注释低估为「仅多留一个字符」，
-        // 订正于此——代价是「多出一个延迟注入的引用」，仍判定为可接受：不挂则用户白选）。
+        // webview 发出，收到时 _view 必然在；唯一可达场景 = QuickPick 打开期间视图被销毁
+        // （侧栏折叠/切走）。走 _pendingRefs 缓冲、下次 ready 补发（不带 source ⇒ @ 不撤）。
+        // 取舍：选中是用户显式意图，缓冲保留它；代价是 chip 可能在用户已切换上下文后才
+        // 出现（早期注释低估，订正于此——不挂则用户白选）。
         this.pushRefs(refs);
       }
     } finally {
@@ -1189,22 +1184,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 应答 memory_deleted 驱动 webview 摘除；取消确认不推送（settingsPanel 同款契约）
       void this.deleteMemory(msg.id);
     } else if (msg.type === 'image_ingest') {
-      // 图片采集即写盘（IMG-2 Q1）：落盘点在 host/imageIngest（禁塞进本类），失败三态一律回执；
-      // 第 4 参给 webview URL 工厂（悬停预览），回执时视图已销毁则不给——宁可无预览也不给假地址
-      const toUri = (file: string) =>
-        this._view?.webview.asWebviewUri(vscode.Uri.file(file)).toString();
-      void ingestImage(this.workspacePath, msg, (m) => this.post(m), toUri);
+      // 图片采集即写盘（IMG-2 Q1）：落盘点在 host/imageIngest（禁塞进本类），失败三态一律回执
+      void ingestImage(this.workspacePath, msg, (m) => this.post(m), (f) => this.toWebviewUri(f));
+    } else if (msg.type === 'image_pick_request') {
+      // 图片拾取（Q3）：webview 按钮与命令面板两入口共用同一执行面（编排归 host/imagePick）
+      void this.pickAndAttachImages();
     } else {
-      // 未知消息类型（HOST-CTX-12）：**不静默丢弃**。
-      //
-      // 正常不可能到达——webview 与宿主编译自同一份 protocol.ts，类型面在编译期共享。
-      // 一旦出现 = webview 脚本与扩展宿主**不是同一版本**。最常见根因：改了 src 后
-      // 重编译了 dist、却没重启扩展宿主——webview 脚本是**外部文件**（dist/webview/
-      // scripts/chatView.js，从磁盘读 ⇒ 是新的），而这条 switch 活在扩展宿主进程内存
-      // 里（旧的）⇒ 表现为「某功能凭空消失、零任何反馈」（用户实测：输入 @ 无反应）。
-      //
-      // 落宿主日志（VS Code 输出面板 → Memora）供排查，**不驱动 UI、不弹提示**——
-      // 也可能是无害的旧版本残留消息，用户无感知能力，不该被打断。
+      // 未知消息类型（HOST-CTX-12）：**不静默丢弃**。正常不可能到达——两侧编译自同一份
+      // protocol.ts；一旦出现 = webview 脚本与宿主**不是同一版本**（最常见：改 src 后重编译
+      // 了 dist 却没重启扩展宿主——webview 脚本从磁盘读是新的，本 switch 活在宿主进程内存
+      // 是旧的 ⇒ 表现为「某功能凭空消失、零反馈」）。落宿主日志供排查，**不驱动 UI、不弹
+      // 提示**——也可能是无害的旧版本残留消息，用户无感知能力，不该被打断。
       console.warn(
         `[memora] 未知 webview 消息类型：${(msg as { type: string }).type}（最可能原因：扩展宿主未重启，webview 脚本与宿主不同版本）`,
       );
@@ -1223,10 +1213,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 活动文件显示订阅随视图装配：面板折叠/展开会重建 webview，必须重注册并补推一次
     // （vscode.window 事件是全局的，不随 webview 自动释放，见 onDidDispose）
     this._activeFile.ensureActiveFileTracking();
-    // 折叠/展开触发 resolve 重建 HTML：走「ready 回放」——重建后脚本就绪发 ready，extension 回放已落盘
-    // 会话（运行中 turn 由 replaySession.resumeRunningTurn 补推）；不设 retainContextWhenHidden：官方语义
-    // 隐藏期脚本挂起、现场不保真，交「设备重建 + 运行中兜底重放」统一恢复，避免两套机制漂移。
-    // 外部脚本（chatView.js）：localResourceRoots 指向 dist/webview，供 asWebviewUri 解析（CSP script-src 'self'）
+    // 折叠/展开触发 resolve 重建 HTML：走「ready 回放」——重建后脚本就绪发 ready，extension
+    // 回放已落盘会话（运行中 turn 由 replaySession.resumeRunningTurn 补推）；不设
+    // retainContextWhenHidden：官方语义隐藏期脚本挂起、现场不保真，交「设备重建 + 运行中
+    // 兜底重放」统一恢复，避免两套机制漂移。外部脚本：localResourceRoots 指向 dist/webview
+    // 供 asWebviewUri 解析（CSP script-src 'self'）
     webviewView.webview.options = {
       enableScripts: true,
       localResourceRoots: [
@@ -1250,10 +1241,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._activeFile.disposeActiveFileTracking();
     });
 
-    // 处理来自 webview 的用户输入
-    // 消息分发入口（HOST-CTX-12）：整条 if-else 链已摘为 private handleWebviewMessage，
-    // 此处只转调。链上 120+ 分支原先挤在匿名回调里、零可测入口（「判据对、接线没接上」
-    // 同族：新消息类型与兜底分支都无从单测）——摘出后与 handleInput 等同构、可单测。
+    // 消息分发入口（HOST-CTX-12）：整条 if-else 链已摘为 private handleWebviewMessage，此处只
+    // 转调。链上 120+ 分支原先挤在匿名回调里、零可测入口（「判据对、接线没接上」同族：新消息
+    // 类型与兜底分支都无从单测）——摘出后与 handleInput 等同构、可单测。
     webviewView.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
       this.handleWebviewMessage(msg);
     });
@@ -1510,13 +1500,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 同步推送 capability_badge —— 工具权限徽章，展示当前角色的工具模式与能力列表。
    */
   private readonly onRolePackSwitched = (info: { from: string | null; to: string }): void => {
-    // SSOT：从同一 rolePackSwitched 事件维护内部激活角色状态，
-    // 使其与内核 rolePackManager.activeName 一致，成为 replaySession 的单一真相源。
-    // 不能只 post 给 webview（消息可能被已 dispose 的 webview 静默忽略）而不更新 _activeRolePack：
-    // 否则用户从「角色」视图切换后聚焦对话（chat 视图重解析），ensureAgent 因 _agent 已存在
-    // 提前返回、refreshAfterAssemble 不跑 → replaySession 读到陈旧 _activeRolePack
-    // → 徽章显示旧角色（与设置面板不一致；设置面板靠 activateRole 显式 loadRoles 更新，
-    // 两视图真相源分叉即 SSOT 违反）。由同一事件驱动状态，重解析即推正确角色。
+    // SSOT：从同一 rolePackSwitched 事件维护内部激活角色状态（= 内核 rolePackManager.activeName），
+    // 是 replaySession 的单一真相源。不能只 post 不更新 _activeRolePack：webview 已 dispose 时
+    // 消息静默忽略；且 chat 视图重解析时 ensureAgent 因 _agent 已存在提前返回、refreshAfterAssemble
+    // 不跑 → replaySession 读到陈旧值 → 徽章显示旧角色（与设置面板分叉 = SSOT 违反）。
+    // 由同一事件驱动状态，重解析即推正确角色。
     this._activeRolePack = info.to;
     // 仅转发切换后的角色显示名（to），触发角色选择器 + AI 消息标签同步（视图存活时）
     this.post({
@@ -1710,9 +1698,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 中价值事件：分叉完成 + 去重完成 + 槽位澄清
     a.off('sessionForked', this.onSessionForked);
     a.on('sessionForked', this.onSessionForked);
-    // 删后注记（2026-10-18 · 5.0.0）：此处曾订阅内核 `dedupCompleted`（记忆去重完成）
-    // 并弹 notice。该事件随内核治理链整链退役（GOVERNANCE-SRC-1），订阅一并拆除——
-    // 留着就是「僵尸订阅」（监听一个永不发射的事件，永不触发的 handler 静态通过类型检查）。
+    // 删后注记（2026-10-18 · 5.0.0）：曾订阅内核 `dedupCompleted` 弹 notice，该事件随内核
+    // 治理链退役（GOVERNANCE-SRC-1）一并拆除——留着就是僵尸订阅（永不发射 ⇒ 静态检查恒过）。
     // 勿加回；内核 `AgentEventMap` 已无此键。
     // 低价值事件：会话状态冗余确认
     a.off('sessionPaused', this.onSessionPaused);
@@ -2409,13 +2396,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!this._view) return;
     // 恢复当前会话历史消息（只回放 _currentSessionId；round-based 按轮交织重放）。
     // 运行中/暂停中的本流轮由 replayHistory 内 buildLiveTurnFromBuffer 并入同一条
-    // turn_update（replay:true）——状态（running/waiting）随消息 state 字段同步投递，
-    // webview 收到即整批重建 + 骨架状态一步到位；后续 chunk/process_event 照常流式追加
-    //（ready 后监听器已就绪）。不再补推无 live 数据的骨架投影（旧实现 rounds 缺本流
-    // 内容，正是「切界面回来只见运行中空转、内容全空白」的根因）。
+    // turn_update（replay:true），webview 收到即整批重建 + 骨架状态一步到位；后续
+    // chunk/process_event 照常流式追加。不再补推无 live 数据的骨架投影（旧实现 rounds
+    // 缺本流内容，正是「切界面回来只见运行中空转、内容全空白」的根因）。
     this.replayHistory();
-    // 推送历史加载完成信号 → webview 收到后强制滚到底部（不走吸底逻辑）
-    // 解决多条历史消息 rAF 节流导致滚动位置不正确的问题
+    // 推送历史加载完成信号 → webview 强制滚到底（不走吸底逻辑；解决 rAF 节流滚动错位）
     this.post({ type: 'history_loaded' });
     // 推送当前会话标题 → webview 顶部展示（主动可见，便于识别当前会话）。
     // 无当前会话（初始空态）→ 推送引导文案而非「新会话 HH:MM」占位，避免误认存在会话
@@ -2449,10 +2434,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // _agent 未装配完成时本调用静默跳过，由装配后收口点 refreshAfterAssemble 兜底再推
     // （两条装配入口——memora.open 命令与懒装配——都经该收口点，不漏路径）。
     this.postHistoryOccupancy();
-    // 重放补推任务表看板——replaySession 只认实时 plan_update 消息，
-    // 重开面板时若 turn 进行中（generator 未 close）则 checkpoint.plan 仍在，缺的只是 UI 重放
-    // 投递——补推一次让任务表看板恢复（turn 结束后内核 clearPlanOnTurnEnd 清 plan，见下方收口）。
-    // _agent 未装配时 postPlanUpdate 静默跳过。
+    // 重放补推任务表看板——replaySession 只认实时 plan_update 消息，重开面板时若 turn 进行中
+    //（generator 未 close）则 checkpoint.plan 仍在，缺的只是 UI 重放投递——补推一次让任务表
+    // 看板恢复（turn 结束后内核 clearPlanOnTurnEnd 清 plan）。_agent 未装配时 postPlanUpdate 静默跳过。
     this.postPlanUpdate();
   }
 
@@ -2493,11 +2477,28 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /** 落盘文件 → webview 可加载 URL；视图未解析/已销毁返回 undefined（宁可无预览也不给假地址） */
+  private toWebviewUri(file: string): string | undefined {
+    return this._view?.webview.asWebviewUri(vscode.Uri.file(file)).toString();
+  }
+
   /**
-   * 推送 Provider 列表到 webview（异步读取配置）
-   *
-   * 在 render 时调用，也可在切换 Provider 后再次调用以刷新下拉框。
+   * 图片拾取入口（Q3）：webview 上传按钮与命令面板 `memora.attachImage` 的共用执行面。
+   * 面板未解析时**不开框**（开了框、落了盘、回执无处可去 = G9 同族孤儿），编排见 host/imagePick.ts。
    */
+  public pickAndAttachImages(): void {
+    void pickAndIngestImages({
+      hasPanel: this._view !== undefined,
+      picker: async (opts) => (await vscode.window.showOpenDialog(opts))?.map((u) => u.fsPath),
+      projectPath: this.workspacePath,
+      post: (m) => this.post(m),
+      toWebviewUri: (f) => this.toWebviewUri(f),
+      notifyPanelUnavailable: () =>
+        void vscode.window.showInformationMessage('请先打开 Memora 对话面板，再添加图片'),
+    });
+  }
+
+  /** 推送 Provider 列表到 webview（render / 切换 Provider 后调用，异步读取配置） */
   private async pushProviders(): Promise<void> {
     try {
       const providers = await this._providerStore.listMasked();
@@ -2509,6 +2510,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         displayName: p.displayName || p.name,
         contextWindow: p.contextWindow,
         limitTokens: resolveContextWindow(p.contextWindow),
+        // 视觉能力投影（Q3 按钮置灰判据 SSOT = DTO supportsVision，webview 不存第二份能力位）
+        vision: p.supportsVision === true,
       }));
       // meta 事件 llm 字段同源：活跃 Provider 显示名（SSOT 与模型下拉同一来源）
       this._activeProviderDisplayName =
@@ -2575,9 +2578,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 角色信息与技能清单同一"装配后刷新"逻辑，杜绝某条路径漏推 → composer 下拉为空）
     this.pushSkillList();
     // 历史会话占用（轻量版）：装配完成即补推——replaySession 时 agent 未装配会静默跳过，
-    // 装配后 agent.getMetrics 的 rolePackBaseTokens 方为真实值。
-    // 本收口点是 setAgent 与 ensureAgent 懒装配两条入口的共用点：占用补推只在此一处，
-    // 不得再在 setAgent / ensureAgent 各推一份（否则必漏懒装配路径）。
+    // 装配后 agent.getMetrics 的 rolePackBaseTokens 方为真实值。本收口点是 setAgent 与
+    // ensureAgent 懒装配两条入口的共用点，占用补推只在此一处（不得各推一份，否则必漏懒装配路径）。
     void this.postHistoryOccupancy();
   }
 
@@ -2646,9 +2648,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         await this._agent.setProvider(
           await createProvider(this._providerStore, process.env, this.imageCache?.resolver),
         );
-        // 随模型热切换同步上下文窗口上限（per-LLM contextWindow 唯一真理源；
-        // resolveContextWindow 回落内核默认窗口（AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS），与装配期口径一致），
-        // 让内核预算/截断/占用快照与所选模型窗口对齐
+        // 随模型热切换同步上下文窗口上限（per-LLM contextWindow 唯一真理源；resolveContextWindow
+        // 回落内核默认窗口，与装配期口径一致），让内核预算/截断/占用快照与所选模型窗口对齐
         const active = await this._providerStore.getActive();
         this._agent.setContextWindow(resolveContextWindow(active?.contextWindow));
         // per-LLM 输出预算热同步（与 contextWindow 同链路）：随模型热切换即刻生效，
@@ -2657,10 +2658,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       }
       await this.pushProviders();
     } catch (err) {
-      // 切换未生效：回滚激活态 + 错误提示（不误导用户）。
-      // prev 存在 → 还原原激活 Provider；prev 为 undefined（原本无激活、靠 env 装配，
-      // 见 llmConfig 回退路径）→ 清空激活态，否则 UI 显示新 provider 已激活但 agent
-      // 仍用 env，造成功能↔UI 不一致。
+      // 切换未生效：回滚激活态 + 错误提示（不误导用户）。prev 存在 → 还原原激活 Provider；
+      // prev 为 undefined（原本无激活、靠 env 装配，见 llmConfig 回退路径）→ 清空激活态，
+      // 否则 UI 显示新 provider 已激活但 agent 仍用 env，造成功能↔UI 不一致。
       // 回滚写失败不掩盖原始错误：并入同一条回执，避免「界面停在错状态却无人知晓」。
       const rollback = prev
         ? await this._providerStore.setActive(prev)
@@ -3550,9 +3550,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 分段归属 SSOT：roundId 由内核 chunk 携带（AgentChunk.roundId），
     // 不依赖「roundIds 末尾」推断当前轮——一次 chat()（多 turn 任务编排）多 turn 各自独立落盘。
     // step 检查点按 seq 幂等合并增量落盘（seq 实例级单调，见 _processSeq）。
-    // 缓冲同时挂实例字段（_liveBuffer）：webview 重建后的 ready 握手重放据此读
-    // 本流未落盘内容（流式正文不落盘、过程事件仅 step 边界增量 checkpoint）；
-    // 收场末尾清除（身份比对），防跨轮残留。
+    // 缓冲同时挂实例字段（_liveBuffer）：webview 重建后的 ready 握手重放据此读本流未落盘
+    // 内容（流式正文不落盘、过程事件仅 step 边界增量 checkpoint）；收场末尾清除（身份比对），防跨轮残留。
     const liveBuffer: LiveFlowBuffer = {
       sessionId: this._currentSessionId,
       eventsByRound: new Map<string, ProcessEvent[]>(),
@@ -3861,9 +3860,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // live 缓冲退场（实例字段；流尾收场逻辑全用局部 liveBuffer，不受影响）。
       // ⚠ 软暂停不清：内核 paused = 保留现场待续跑、**不 appendAssistant**——半截正文只在
       // 缓冲（textByRound），清了则暂停中切界面重建 = 半截回答丢失；保留到 resume 新流覆盖
-      // （resume 必经 consumeFlow 重建 buffer）或最终收场。已知边界：resume 续跑流的缓冲只含
-      // 续跑段（暂停前正文随旧缓冲覆盖丢失，历史亦无——内核续跑收场 appendAssistant 落盘全量
-      // 自愈），渲染面由 buildLiveTurnFromBuffer 并入落盘事件兜底。
+      // 或最终收场（续跑流缓冲只含续跑段，暂停前正文随旧缓冲覆盖丢失，历史亦无——内核续跑
+      // 收场 appendAssistant 落盘全量自愈，渲染面由 buildLiveTurnFromBuffer 并入落盘事件兜底）。
       // 放 finally（非收场流水末）：收场任一步抛错不再跳过清除（异常路径泄漏防线）。
       if (!pausedOnPurpose && this._liveBuffer === liveBuffer) this._liveBuffer = undefined;
       // 清理本轮 AbortController：仅当仍是本轮的 controller（防止下一轮已创建新 controller）
@@ -4452,6 +4450,10 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             <!-- 文本润色按钮：图标化，降低视觉权重 -->
             <button id="polishBtn" class="polish-btn-icon" title="润色输入内容" aria-label="润色">
               <span class="btn-icon" data-icon="edit"></span>
+            </button>
+            <!-- 上传图片按钮（常驻，D27）：有视觉能力→发 image_pick_request；未声明→置灰可点跳设置。绑定/状态归 imageCapture，此处只出骨架 -->
+            <button id="imageAttachBtn" class="image-attach-btn is-vision-off" aria-disabled="true" title="当前模型未开启图片输入——点击前往设置开启" aria-label="添加图片">
+              <span class="btn-icon" data-icon="paperclip"></span>
             </button>
           </div>
           <!-- 右侧：主发送按钮（单图标三态：发送↑ / 停止■ / 继续▶，均无文字省空间）

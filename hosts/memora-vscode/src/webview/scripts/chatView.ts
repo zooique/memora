@@ -162,6 +162,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement | null;
   // 润色按钮（输入框旁，对当前输入内容进行润色）
   const polishBtn = document.getElementById('polishBtn') as HTMLButtonElement | null;
+  // 上传图片按钮（常驻，D27）：绑定/置灰态归 imageCapture（Q3），这里只递元素
+  const imageAttachBtn = document.getElementById('imageAttachBtn') as HTMLButtonElement | null;
   // Skill 选择器（输入框旁，选择后作为提示词传给 LLM）
   const skillPicker = document.querySelector<HTMLElement>('.skill-picker');
   const skillPickerMenu = skillPicker
@@ -346,6 +348,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     displayName: string;
     contextWindow?: number;
     limitTokens: number;
+    /** 该 Provider 是否声明视觉能力（宿主 DTO supportsVision 的投影，Q3 上传按钮置灰判据） */
+    vision?: boolean;
   }
   let currentProviders: ChatProviderItem[] = [];
   let currentActive: string | undefined;
@@ -2075,11 +2079,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         listEl.appendChild(row);
       });
     }
-    // 后台任务收尾（后台任务跨轮存活方案·定案修订）：内核 turn 终态**脱管**（存活任务转后台常驻、进程不被杀）
-    // 后产（无存活后台任务则无此事件、小节不出现——纯问答常态零块）。与 plan_snapshot 同型：
-    // 实时仅入缓冲，finalize/重放在此单点消费（实时/重放同源，规避「实时建行 → finalize 重建删行」
-    // 的双形态维护）。⚠️ 小节标题**不得**写「收割」——脱管定案下进程并未被杀，
-    // 沿用旧标题会当着用户的面说反话（真机 2026-10-04 用户截图即此症状）。
+    // 后台任务收尾（后台任务跨轮存活方案·定案修订）：内核 turn 终态**脱管**（存活任务转后台常驻、
+    // 进程不被杀）后产（无存活后台任务则无此事件、小节不出现——纯问答常态零块）。与 plan_snapshot
+    // 同型：实时仅入缓冲，finalize/重放在此单点消费（实时/重放同源，规避「实时建行 → finalize
+    // 重建删行」的双形态维护）。⚠️ 小节标题**不得**写「收割」——脱管定案下进程并未被杀，沿用旧标题会当着用户的面说反话（真机 2026-10-04 用户截图即此症状）。
     const bgReports = events.filter(
       (e): e is Extract<ProcessEvent, { type: 'background_report' }> =>
         e.type === 'background_report',
@@ -2661,15 +2664,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 🔴 SSOT：三条的 hidden 与 DOM 归位**只由 resolveDock 裁决**——各条更新函数只上报
   // setDockActive / setDockFixed，禁直写 hidden / insertBefore（散写即回到堆叠现状）。
   // error 豁免（fail-visible）：fixed 恒主位，裁决优先于 priority 排序。
-  // background 取最低（0）：activity 承载「正在思考/执行」主状态，不可被后台条顶掉；
-  // 而轮次收尾后 activity 归位、后台任务仍在跑 ⇒ 它自动成为唯一活跃条升主位，
-  // 「终止」按钮恰在最需要它的时刻直接可见（方案 §2.3）。
+  // background 取最低（0）：activity 承载「正在思考/执行」主状态，不可被后台条顶掉；轮次
+  // 收尾后 activity 归位、后台任务仍在跑 ⇒ 它自动成为唯一活跃条升主位，「终止」按钮恰在
+  // 最需要它的时刻直接可见（方案 §2.3）。
   // ─── 提示 UI 两分收敛（A 类阻断 / B 类信息，方案-提示UI两分收敛-20261005.md §四/§五）───
   // 🔴 SSOT：A、B 两类**共用一个裁决器** resolveDock()——不另造 promptSlot 裁决器
-  // （两个裁决器会争同一个插入锚点、顺序不定，即双源）。A 类作为最高优先级 entry 注册进来，
-  // 复用既有 fixed/主位/收纳机制。
-  // 数值含义：confirm(10) 恒主位，优先于 error 豁免——确认卡被收纳 = 不可见 = 超时自动拒绝，
-  // 而 error 被收纳仍可从图标条点开，代价不对称（方案 §九 A2）。
+  // （两个裁决器会争同一个插入锚点、顺序不定，即双源）。A 类作为最高优先级 entry 注册
+  // 进来，复用既有 fixed/主位/收纳机制。数值含义：confirm(10) 恒主位，优先于 error 豁免
+  // ——确认卡被收纳 = 不可见 = 超时自动拒绝，而 error 被收纳仍可从图标条点开，代价不对称
+  // （方案 §九 A2）。
   const DOCK_PRIORITY = {
     confirm: 10,
     fileChanges: 3,
@@ -2884,11 +2887,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
     }
     // 2b-2b 换真源：骨架容器由 setStatus 的 legacy 三态写入改为 turn_update.state 直接赋值——
-    // status 消息的职责收窄为「呼吸点 / 会话控件锁 / 焦点恢复」，不再参与按钮语义
-    // （发送按钮恢复时机 = turn_update(settled) 流尾即时，R-2b-1 裁决；控件锁仍跟随
-    // status:'done' 延后解锁，护 round-summary 写入窗口——两个概念各回各的真源）
-    // 会话导航类控件运行时锁：**语义 = 「宿主有在途后台写」窗口，不是 turn 状态**
-    // （宿主延迟发 status:'done' 是为了护住摘要写入期，避免用户在该窗口删除轮次产生孤儿摘要）
+    // status 消息职责收窄为「呼吸点 / 会话控件锁 / 焦点恢复」，不再参与按钮语义（发送按钮恢复
+    // 时机 = turn_update(settled) 流尾即时，R-2b-1 裁决；控件锁仍跟随 status:'done' 延后解锁，
+    // 护 round-summary 写入窗口——两个概念各回各的真源）。会话导航类控件运行时锁：**语义 =
+    // 「宿主有在途后台写」窗口，不是 turn 状态**（宿主延迟发 status:'done' 是为护住摘要写入期，
+    // 避免用户在该窗口删除轮次产生孤儿摘要）
     updateSessionControlsLock(state !== 'done');
     // done 态才需要恢复输入焦点（避免强制 focus 打断用户其他操作）
     if (state === 'done' && document.activeElement === document.body) input.focus();
@@ -3270,10 +3273,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     });
   }
 
-  // 滚动到底部（rAF 节流，helpers/scrollToBottom 单一实现）：流式渲染时每 chunk
-  // 都可能触发滚动，用 requestAnimationFrame 合并为每帧一次，避免强制 reflow。
-  // 此处统一以 messages 为滚动容器；scrollToBottom + scrollRafPending
-  // 只存在于 helpers，本地不持副本。
+  // 滚动到底部（rAF 节流，helpers/scrollToBottom 单一实现）：流式渲染时每 chunk 都可能
+  // 触发滚动，用 requestAnimationFrame 合并为每帧一次，避免强制 reflow。此处统一以 messages
+  // 为滚动容器；scrollToBottom + scrollRafPending 只存在于 helpers，本地不持副本。
 
   // ─── 下拉选择器渲染工厂（SSOT） ───
   // 模型选择器等下拉共用单一渲染器（「清空菜单 → 遍历建项 → 更新触发器」）；角色选择器
@@ -4050,10 +4052,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   // ─── 光标状态机（UI-BLOCK-ICON 批次二，方案-过程块视觉辨识-20261001.md §三定案 B）───
   // 双属性两条通道（2026-10-19 SSOT 收敛）：运行/挂起态写 data-status、终态写 data-terminus
-  //（异常中断附 data-terminus-detail=原因摘要），各自单一语义、互不覆盖。文案与样式全由 CSS
-  // 承载——挂容器上不受增量 markdown 重渲染影响（🔴 禁真实 span，会被增量渲染吃掉）。
-  // 载体契约：运行态挂 .msg-body；终态有正文轮挂 .msg-body、中断轮（半截正文已删）挂宿主块
-  //（运行时 .msg.assistant / 重放 .is-interrupted-host）。消费方泛匹配属性，不得只查 .msg-body。
+  //（异常中断附 data-terminus-detail=原因摘要），单一语义互不覆盖。文案与样式全由 CSS 承载——
+  // 挂容器上不受增量 markdown 重渲染影响（🔴 禁真实 span，会被增量渲染吃掉）。载体契约：
+  // 运行态挂 .msg-body；终态有正文轮挂 .msg-body、中断轮（半截正文已删）挂宿主块（运行时
+  // .msg.assistant / 重放 .is-interrupted-host）；消费方泛匹配属性，不得只查 .msg-body。
 
   /**
    * 运行/挂起态（单一合成函数的输出域）：运行三态呼吸 / 挂起两态静态。**不含终态**——
@@ -4253,12 +4255,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 中断轮正文块整块移除无需态）+ 代码块增强；复制按钮的原始文本源同步更新为完整流式文本。
    */
   function finalizeStreaming(): void {
-    // ① UI 收尾（与流式状态无关，done/interrupted/打断均需执行）：
-    // 段级 footer 的 is-pending 移除 = 内容已定稿的信号，打断也是定稿（半截内容到此为止）。
-    // 放在 guard 之外——打断路径已把 streamingActive 清为 false，guard 会挡住旧逻辑。
-    // 容器 footer 显形归 settleRoundFooter 单点（终态消息真源 + roundId 锚），不在此处
-    // 经 activeAssistantEl.closest 间接命中——早相位中断时骨架未入容器，closest 命中
-    // null，显形信号静默丢失（中断轮无底部栏的根因）。
+    // ① UI 收尾（与流式状态无关，done/interrupted/打断均需执行）：段级 footer 的 is-pending
+    // 移除 = 内容已定稿的信号，打断也是定稿（半截内容到此为止）。放 guard 之外——打断路径已把
+    // streamingActive 清为 false，guard 会挡住旧逻辑。容器 footer 显形归 settleRoundFooter
+    // 单点（终态消息真源 + roundId 锚），不在此经 activeAssistantEl.closest 间接命中——
+    // 早相位中断时骨架未入容器，closest 命中 null，显形信号静默丢失（中断轮无底部栏的根因）。
     const el = activeAssistantEl;
     if (el?.isConnected) {
       el.querySelector<HTMLElement>('.msg-footer')?.classList.remove('is-pending');
@@ -4830,11 +4831,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (msg.type === 'status') {
       setStatus(msg.state);
     } else if (msg.type === 'turn_update') {
-      // 2b-2b 换真源：骨架容器改由**完整 TurnState 快照**直接赋值（skeletonFromTurnState 投影剥离
-      // roundId/RoundStatus/questions——容器不消费）。`turn_update.state` 即全量状态，无增量结合
-      // 前值推演；宿主在流起始（running 投影）、流尾（settled/waiting）、申请在途（waiting pausePending）、
-      // 重放（idle/settled）等一切 turn 状态变化点推送。legacy pause_pending 消息已删除
-      //（宿主/ webview 双端同步删，申请在途统一由 turn_update.state 承载）。
+      // 2b-2b 换真源：骨架容器改由**完整 TurnState 快照**直接赋值（skeletonFromTurnState 投影
+      // 剥离 roundId/RoundStatus/questions——容器不消费）。turn_update.state 即全量状态，无增量
+      // 结合前值推演；宿主在流起始（running 投影）、流尾（settled/waiting）、申请在途（waiting
+      // pausePending）、重放（idle/settled）等一切 turn 状态变化点推送。legacy pause_pending
+      // 消息已删（宿主/webview 双端同步，申请在途统一由 turn_update.state 承载）。
       // 暂停按钮显隐只看相位（running 恒显示）——不再消费 canContinue：该判据在流启动前
       // 采样恒 false，曾导致整轮无暂停按钮（ARCH-GAP-F1，判据已从协议/投影/矩阵单点撤除）。
       applySkeletonState(skeletonFromTurnState(msg.state));
@@ -4844,12 +4845,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         statusBars.updatePendingQueue(msg.pendingQueue);
       }
       // 会话重放快照（replay:true）→ 整批渲染 rounds。
-      // ⚠ 顺序契约（必须排在提问渲染之前）：renderReplayFromRounds 首行 resetChatView
-      // 会清掉 .ask-inline；而宿主 postTurnUpdate(undefined, true) 这一条消息同时携带
-      // replay:true 与 state（waiting/ask + questions）——视图重建后的 ready 握手重放、
-      // 以及流尾「流期间视图重建过」补重放，都发生在提问仍挂起时。若先渲染提问卡，会被紧随的
-      // 重放抹掉 → 用户看不见提问，只面对一个无反应的「继续」按钮（ask 相位点 resume 被静默丢弃），
-      // 提问超时后自动续跑、记录里留下「未回答」——即实测现象。故重放先、提问卡后。
+      // ⚠ 顺序契约（必须排在提问渲染之前）：renderReplayFromRounds 首行 resetChatView 会清掉
+      // .ask-inline；而宿主 postTurnUpdate(undefined, true) 一条消息同时携带 replay:true 与
+      // state（waiting/ask + questions）——视图重建后的 ready 握手重放、流尾补重放，都在提问
+      // 挂起时到达。先渲染提问卡会被紧随的重放抹掉 → 用户看不见提问，只面对无反应的「继续」
+      // 按钮（resume 被静默丢弃），提问超时后自动续跑、记录留下「未回答」——故重放先、提问卡后。
       if (msg.replay === true) {
         renderReplayFromRounds(msg.rounds);
       }
@@ -4880,12 +4880,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // meta 为本轮首条 → 开新轮（清缓冲 + 挂载就绪）；瞬时「已召回/已沉淀」提示由事件本地派生
       const ev = msg.event;
       if (ev.type === 'meta') {
-        // 新轮/续跑判定（三态收敛）：暂停续跑（pausedAssistantEl 有效）
-        // > 交互续跑（resumePending）> 真新轮。
+        // 新轮/续跑判定（三态收敛）：暂停续跑（pausedAssistantEl 有效）> 交互续跑
+        //（resumePending）> 真新轮。
         //   pausedResume：pause→resume 的新 runFlow meta——原位续写暂停块（不建新骨架、
         //     不重置 round-block 锚点），后续 text chunk 走 pausedAssistantEl 分支续写同一
         //     assistant 块。宿主每个 runFlow 都会重发 meta，若不处理，骨架 B 会劫持 chunk
-        //     走 flowShellEl 分支，导致「暂停后继续 = 视觉两个独立 LLM 回答」。
+        //     走 flowShellEl 分支 ⇒「暂停后继续 = 视觉两个独立 LLM 回答」。
         //   resumePending：交互续跑 meta 兜底（无 paused 锚点）→ 建流式骨架（qa 第 2 段块
         //     既定形态；supplement 主路径不过此——interject 无新 meta，chunk 层单块续写）。
         //   真新轮：清空当前轮缓冲与 round-block 引用，随即建流式骨架（TTFT 前即时反馈）。
@@ -5158,14 +5158,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         '异常中断',
         msg.message.length > 80 ? `${msg.message.slice(0, 80)}…` : msg.message,
       );
-      // 错误收尾清理语义：
-      // error 属「可恢复流中断」，不清交互行标志——与既有收窄语义一致：
+      // 错误收尾清理语义：error 属「可恢复流中断」，不清交互行标志——与既有收窄语义一致：
       // 交互行（qa/supp）一旦上屏，后续正文恒分块续接（interactiveRowInserted 门控
       // pausedResume），error 后继续/重试也不例外；清标志会让「交互行已插 → error →
-      // resume」退回原位续写、QA 行被顶到续写正文之后（bug 复发）。
-      // 标志清理归口：done / interrupted / 新闭环 user / meta 消费（均已就位）——
-      // 主路径 error 后宿主流收尾必发 done 紧随清理；error 为末条（宿主异常未发 done）
-      // 时残留被下一 send 的 user 分支兜底，且 UI 无 paused 态则无 resume 入口，无触发面。
+      // resume」退回原位续写、QA 行被顶到续写正文之后（bug 复发）。标志清理归口：done /
+      // interrupted / 新闭环 user / meta 消费（均已就位）——主路径 error 后宿主流收尾必发
+      // done 紧随清理；error 为末条（宿主异常未发 done）时残留被下一 send 的 user 分支兜底，
+      // 且 UI 无 paused 态则无 resume 入口，无触发面。
       append('error', msg.message);
     } else if (msg.type === 'done') {
       // 本轮流式结束：清除归档停滞兜底定时器 + 骨架引用（已定型为正文/异常块）
@@ -5322,6 +5321,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       renderModelPicker();
       // ④ 预算可视化：按当前选中 LLM 的上下文上限实时渲染占用条容量（首轮对话前即有真实上限）
       occupancyView.renderLimit(currentProviders, currentActive);
+      // ⑤ 上传按钮置灰态（Q3）：唯一来源 = chat_providers 的 vision 投影，本处只转发不判
+      imageCapture.setAttachEnabled(
+        currentProviders.find((p) => p.name === currentActive)?.vision === true,
+      );
       // 无 Provider 时空态切换为「去配置模型」引导（首次使用关键路径，
       // 避免用户不知道去哪配置而卡在空态）；配置就绪后恢复角色化空态（幂等）
       if (currentProviders.length === 0) {
@@ -5391,10 +5394,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         currentMemoryHitsByCall.set(callId, bucket);
         if (!attachMemoryHitsToToolRow(callId)) {
           // 目标行尚未进 DOM（时序竞态）→ 数据转入兜底聚合行：信息不丢，位置退回旧行为。
-          // 必须把该 callId 在 byCall 里**置空**（而不是删键）：删键会让收场重建的
-          // `live ?? evidence` 落到证据副本上，同一批命中在工具块与轮次行双写；
-          // 置空 = 「这次调用的明细已认领，但不在行内渲染」的唯一表达，且空表下
-          // attach 会把块/徽章一并摘除（幂等重建的空态分支）。
+          // 必须把该 callId 在 byCall 里**置空**（不是删键）：删键会让收场重建的
+          // `live ?? evidence` 落到证据副本上，同一批命中在工具块与轮次行双写；置空 =
+          // 「这次调用的明细已认领，但不在行内渲染」的唯一表达，且空表下 attach 会把
+          // 块/徽章一并摘除（幂等重建的空态分支）。
           currentMemoryHitsByCall.set(callId, new Map());
           for (const h of msg.hits)
             currentMemoryHits.set(h.id, {
@@ -5440,6 +5443,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
     } else if (msg.type === 'image_ingest_result') {
       imageCapture.applyIngestResult(msg); // 图片落盘回执（IMG-2）：chip 换真 / 转拒收态归采集层单点
+    } else if (msg.type === 'image_picked') {
+      imageCapture.applyPicked(msg); // 文件选择框回执（Q3）：ref 即真相建卡 / 转可见拒收 chip，同归采集层单点
     } else if (msg.type === 'write_confirm_request') {
       // H0 写入审批卡：confirmWrites 时写文件触发 → 渲染审批卡等用户裁决，回传 write_confirm_answer。
       // 多请求**不再并存**（宿主侧 FIFO 串行送审）⇒ 旧请求不会「用户看不到就超时静默拒绝」（修 S2）。
@@ -5811,17 +5816,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     syncButtonSemantics();
     syncSendEnabled();
     // HOST-CTX-13：@ 提及的**兜底触发路径**（中文输入法 / 粘贴）。
-    //
     // 根因：上方 keydown 路径的判据是 `e.key === '@'`——那是**按键事实**，依赖键盘布局
     // 与 IME 行为。中文输入法插入的 @ 不保证走这条路（IME 可能吞掉 keydown 或上报
     // 'Process'/'Unidentified'），粘贴 @ 则根本不产生 keydown ⇒ 真机实测「需要英文 @ 才
     // 有反应」。判据改为**文本事实**：光标前一个字符恰为 '@'。
-    //
     // 为何两条路径并存（而非只留 input）：keydown 期 selectionStart 即 '@' 落点（字符
     // 尚未插入），offset 语义直接；input 期字符已插入，要减 1。保留 keydown 作快路径，
     // input 兜住它漏掉的场景。双触发由宿主 `_mentionQuickPickOpen` in-flight 守卫拦掉
     // （HOST-CTX-11 的守卫在此成为复用地基——不新建第二套防抖机制）。
-    //
     // 为何要 inputType 判据：删除文本同样触发 input，若光标恰好停在 '@' 前会把「删到 @
     // 前面」误判成「插入 @」。只认 insert 家族（insertText / insertCompositionText /
     // insertFromPaste / …）即可精确表达「刚刚有个字符被放进来」。
@@ -5862,11 +5864,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     syncButtonSemantics();
   }
 
-  // 历史菜单（会话记录 / 留存区）：渲染、分组与搜索状态收口于 historyMenuView
-  // （HOST-SPLIT-1 chatView 第 2 刀，域外置工厂；开合/外部收起/Escape/条目委托由
-  // initDropdowns treedd 组件管理，本域只管数据——协作与分组形态论证见该模块头）。
-  // tab/search 监听随元素归属入容器（方案 §2.2 判据）；historyBtn 监听留本文件：
-  // 同元素双监听器（treedd 开合）顺序敏感，原位置零变化。
+  // 历史菜单（会话记录 / 留存区）：渲染、分组与搜索状态收口于 historyMenuView（HOST-SPLIT-1
+  // chatView 第 2 刀，域外置工厂；开合/外部收起/Escape/条目委托由 initDropdowns treedd 组件
+  // 管理，本域只管数据——协作与分组形态论证见该模块头）。tab/search 监听随元素归属入容器
+  //（方案 §2.2 判据）；historyBtn 监听留本文件：同元素双监听器（treedd 开合）顺序敏感，原位置零变化。
   const historyMenuApi = createHistoryMenuView({
     document,
     menuEl: historyMenu,
@@ -5955,11 +5956,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   });
 
   // 角色徽章点击 → open_settings_tab(roles)（host 打开设置面板「角色」选项卡，导航单点）。
-  // 拍板 2（2026-10-13）：**运行时不禁用**——跳界面不改变任何状态，禁 = 挡无害操作；
-  // 也不挂 updateSessionControlsLock 收口——该锁语义 = 「运行时禁用改变会话结构的操作」
-  // （新建/切历史/删除），导航不属于此类，塞进去即语义污染。
-  // 权限面如实声明：运行时切换能力**本就可及**（内核 switchRolePack 对话中允许，自动匹配依赖它，
-  // 设置面板「设为当前」无 busy 守门），本入口只是补上「发现性」，未放宽也未收紧任何切换权限。
+  // 拍板 2（2026-10-13）：**运行时不禁用**——跳界面不改变任何状态，禁 = 挡无害操作；也不挂
+  // updateSessionControlsLock 收口——该锁语义 = 「运行时禁用改变会话结构的操作」（新建/切历史/
+  // 删除），导航不属于此类，塞进去即语义污染。权限面如实声明：运行时切换能力**本就可及**（内核
+  // switchRolePack 对话中允许，自动匹配依赖它，设置面板「设为当前」无 busy 守门），本入口只是
+  // 补上「发现性」，未放宽也未收紧任何切换权限。
   roleBadge?.addEventListener('click', () => {
     vscode.postMessage({ type: 'open_settings_tab', tab: 'roles' });
   });
@@ -6340,10 +6341,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // aria-label 用**全路径**+行号（屏幕阅读器要全量信息）；可见文本用文件名——两个受众
       // 两种形态，见 refDisplayName（HOST-CTX-17 降噪）。
       const label = `${ref.path}${formatRefRange(markedRange)}`;
-      // 点击跳转（open_ref，W→E）：**路径与行号两个 span 都可点**——行号 span 不参与
-      // 截断（flex-shrink: 0），窄路径被 ellipsis 截掉尾部时行号依然点得中。
-      // 载荷只带协议字段（path/kind/range）：webview 私有的 pinned 不随上行（协议契约，
-      // 见 open_ref 注释）；行号保持 1-based 原样上行，逆转换归宿主单点。
+      // 点击跳转（open_ref，W→E）：**路径与行号两个 span 都可点**——行号 span 不参与截断
+      //（flex-shrink: 0），窄路径被 ellipsis 截掉尾部时行号依然点得中。载荷只带协议字段（path/kind/range）：
+      // webview 私有的 pinned 不随上行（协议契约，见 open_ref 注释）；行号保持 1-based 原样上行，逆转换归宿主单点。
       const openRef = (): void => {
         vscode.postMessage({
           type: 'open_ref',
@@ -6359,9 +6359,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const rangeHint = markedRange
         ? `并定位到第 ${markedRange.start}${markedRange.start === markedRange.end ? '' : `-${markedRange.end}`} 行`
         : '';
-      // CTX-6①：指针语义提示放最前（用户 hover 的第一问是「这挂的是啥、占不占」）——
-      // 引用只挂指针不注入内容，目录更是只给模型一张目录地图（内容按需 list_dir）。
-      // 与信封侧 buildRefContextBlock 的「按需读取」标注同义：信封说给模型听，这里说给用户听。
+      // CTX-6①：指针语义提示放最前（用户 hover 的第一问是「这挂的是啥、占不占」）——引用只挂
+      // 指针不注入内容，目录更是只给模型一张目录地图（内容按需 list_dir）。与信封侧
+      // buildRefContextBlock 的「按需读取」标注同义：信封说给模型听，这里说给用户听。
       // HOST-CTX-17：全路径附在末尾括号——可见文本降噪后，同名文件的区分靠 hover 这一眼。
       name.title = `仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开${rangeHint}（${ref.path}）`;
       // 键盘可达：span 非原生按钮，补 role/tabindex/Enter-Space 与鼠标同构
@@ -6432,12 +6432,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // CTX-7：批量出口「清空全部引用」——同一 chip 行缺同类批量出口（挂 6 条要逐个点 ✕ 六次）。
     // 范式照抄 pending-queue-bar__clear（图标同 close、title/aria 同款），但**不走上行消息**：
     // 待发送队列的 SSOT 在宿主（须 post clear_pending_queue 由宿主清），而引用 SSOT =
-    // 本文件 currentRefs，单删 ✕ 同为纯本地过滤——批量移除只是同一过滤的全量版，
-    // 上行反而让宿主镜像一份引用状态（第二真理源）。显隐与范式一致：有引用即在（单条也无害）。
-    // 范围只清引用：活动文件 chip 是另一语义（CTX-3 本会话开关，宿主投影），不受牵连；
-    // 注入 chip 同理不牵连（它们各有自己的 ✕，且批量出口的标题/aria 明写「引用」——
-    // 不把「清空全部」扩成「清空全部附件」：标题说引用却连注入一起清 = 语义越界）。
-    // pinned 一并清——与 ✕ 语义一致（✕ 也能删 pinned），🔒 只管「发送后是否保留」。
+    // 本文件 currentRefs，单删 ✕ 同为纯本地过滤——批量移除只是同一过滤的全量版，上行反而让
+    // 宿主镜像一份引用状态（第二真理源）。显隐与范式一致：有引用即在（单条也无害）。
+    // 范围只清引用：活动文件 chip 是另一语义（CTX-3 本会话开关，宿主投影），不受牵连；注入
+    // chip 同理不牵连（各有自己的 ✕，且批量出口标题/aria 明写「引用」——不把「清空全部」
+    // 扩成「清空全部附件」：标题说引用却连注入一起清 = 语义越界）。pinned 一并清——与 ✕
+    // 语义一致（✕ 也能删 pinned），🔒 只管「发送后是否保留」。
     if (currentRefs.length > 0) {
       const clearAll = document.createElement('button');
       clearAll.type = 'button';
@@ -6470,6 +6470,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     row: imageChipRow,
     post: (msg) => vscode.postMessage(msg),
     notice: (text) => activityDrawerView.showActivity('info', text),
+    attachBtn: imageAttachBtn,
   });
   window.addEventListener(
     'resize',

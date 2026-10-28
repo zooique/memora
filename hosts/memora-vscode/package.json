@@ -55,6 +55,10 @@
         "icon": "$(settings-gear)"
       },
       {
+        "command": "memora.attachImage",
+        "title": "Memora: 添加图片到对话"
+      },
+      {
         "command": "memora.memoryStats",
         "title": "Memora: 查看记忆统计"
       },

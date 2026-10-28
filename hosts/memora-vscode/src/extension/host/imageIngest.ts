@@ -1,5 +1,5 @@
 /**
- * 图片落盘 —— `image_ingest` 的宿主侧单点（采集即写盘的下行半条闭环）
+ * 图片落盘 —— 图片进盘的宿主侧单点（采集即写盘，两条入口共用本模块）
  *
  * ## 为什么单独成模块（不塞进 chatPanel）
  * chatPanel 已顶 `max-lines` 红线（eslint 集中豁免清单里是只降不升的基线），而落盘
@@ -7,22 +7,37 @@
  * 两条线。本模块**零 vscode 依赖**（只用 `node:*` + 纯函数），因此可在 vitest 里
  * 以真实临时目录完整机测，无需 mock 宿主 API。
  *
+ * ## 两条入口（同一套真相纪律，禁各自为政）
+ * - `ingestImage`：粘贴/拖入（webview base64 上行，`image_ingest` → `image_ingest_result`）。
+ *   字节过通道 ⇒ 先过 base64 往返校验再谈别的。
+ * - `ingestDiskFile`：原生文件选择框（Q3，宿主直接读盘，`image_picked` 回执）。
+ *   **不传声明 mime**——扩展名不可信（把 png 命名成 .jpg 与把文本命名成 .png 同价），
+   格式只认字节嗅探（第 4 步「与声明一致」整环跳过）。
+ * 共享面：sha256 复算（宿主是唯一真相生产点，webview 侧只有提案）、校验链函数、
+ * 写盘原语（`writeOnce` 并发幂等）与 ref 组装（`buildImageRef`）——两个入口**都不得**
+ * 另写嗅探 / 目录映射 / 扩展名推导（第二份公式必漂移）。
+ *
  * ## 职责边界（刻意划死）
- * - **只负责**：base64 解码 → 字节层最小自检 → 复算 sha256（真值）→ 写
+ * - **只负责**：拿字节（解码或读盘）→ 字节层校验 → 复算 sha256（真值）→ 写
  *   `<数据目录>/attachments/{sha256}.{ext}` → 回执三态。
  * - **不负责**：六步校验链的「业务判据」（在 `shared/imageValidation.ts` 单点，
  *   本模块**复用同一函数**，绝不另写一套嗅探公式——第二套公式必漂移）；也不负责
  *   chip 渲染 / 消息发送 / 孤儿清理。
  *
- * ## 三态语义（与协议 `image_ingest_result` 的注释同源）
- * - `ok`：已写盘，`ref` = 本模块复算的**真值** `ImageRef`（webview 据此换真）；
+ * ## 三态语义（与协议两条回执的注释同源）
+ * - `ok`：已写盘，`ref` = 本模块复算的**真值** `ImageRef`（webview 据此建/换 chip）；
  * - `rejected`：字节层不可用（base64 非法 / 嗅不出图片 magic），**坏字节不写盘**；
- * - `failed`：IO 故障（磁盘满 / 权限），可重试。
+ * - `failed`：IO 故障（读盘失败 / 磁盘满 / 权限），可重试。
  */
 import { createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 import type { ImageRef } from '@zooique/memora';
-import { validateImageCandidate, verifyBase64RoundTrip } from '../../shared/imageValidation.js';
+import {
+  type ImageAccept,
+  validateImageCandidate,
+  verifyBase64RoundTrip,
+} from '../../shared/imageValidation.js';
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
@@ -33,6 +48,25 @@ import { resolveAttachmentsDir, resolveAttachmentFilePath } from './projectDataD
 type ImageIngestMessage = Extract<WebviewToExtensionMessage, { type: 'image_ingest' }>;
 /** 下行回执类型（同上） */
 type ImageIngestResult = Extract<ExtensionToWebviewMessage, { type: 'image_ingest_result' }>;
+/** 拾取回执类型（Q3 文件选择框路径） */
+type ImagePickedResult = Extract<ExtensionToWebviewMessage, { type: 'image_picked' }>;
+
+/**
+ * 真值 `ImageRef` 组装（两条入口共用的唯一字段表）。
+ *
+ * name 取校验链产物（无名时已按 D29 兜底），宽高来自嗅探出的文件头，bytes = 实际字节
+ * 长度。任何一侧入口另写一份字段映射，都会在将来 ImageRef 加字段时静默漏一侧。
+ */
+function buildImageRef(bytes: Uint8Array, sha256: string, checked: ImageAccept): ImageRef {
+  return {
+    sha256,
+    mime: checked.mime,
+    width: checked.width,
+    height: checked.height,
+    bytes: bytes.length,
+    name: checked.name,
+  };
+}
 
 /**
  * 同 sha256 的并发写序列化表（键 = 目标文件绝对路径）。
@@ -127,14 +161,7 @@ export async function ingestImage(
   }
 
   // 真值 ImageRef：name 取校验链产物（无名时已按 D29 兜底），宽高来自嗅探出的文件头
-  const ref: ImageRef = {
-    sha256,
-    mime: checked.mime,
-    width: checked.width,
-    height: checked.height,
-    bytes: bytes.length,
-    name: checked.name,
-  };
+  const ref = buildImageRef(bytes, sha256, checked);
 
   const dir = resolveAttachmentsDir(projectPath);
   // 文件名唯一推导点 = projectDataDir（写盘与预读共用同一映射，禁此处再拼扩展名）
@@ -153,4 +180,84 @@ export async function ingestImage(
 
   // `uri` 只承载「现有视图能加载的地址」：视图已销毁时上游不给转换器，此处就不带字段
   post({ type: 'image_ingest_result', status: 'ok', sha256: key, ref, uri: toWebviewUri?.(file) });
+}
+
+/**
+ * 处理一个磁盘拾取文件（Q3 文件选择框）：读盘 → 复算真值 → 校验 → 写盘 → 回执。
+ *
+ * 与 `ingestImage` 的三处刻意差异：
+ * - **无 base64 环节**：字节由本模块直接 `readFile`，从未经过 webview 通道，
+ *   第 5 步往返校验无从谈起（也没有 base64 可谈）；
+ * - **不传声明 mime**：扩展名不可信，格式只认嗅探（`validateImageCandidate` 第 4 参
+ *   缺省 = 第 4 步整环跳过）；
+ * - **回执走 `image_picked`**：本路径没有「先有提案 chip」的时序，webview 收到 ok
+ *   才第一次建 chip（ref 即真相）；rejected/failed 转可见拒收 chip（name = basename）。
+ *
+ * 关联键说明：`image_picked` 不带 sha 关联键——本路径的回执没有可配对的既有 chip，
+ * 一次多选逐张回执，webview 按 ok 的 `ref` 直接追加、按失败项的 `name` 上拒收 chip；
+ * 去重（G4）由 webview 按 `ref.sha256` 兜底（同一张图选两次只留一条）。
+ *
+ * @param projectPath 项目/工作区根（绝对路径；目录推导归 `projectDataDir.ts` 单点）
+ * @param filePath 用户在原生对话框里选中的文件绝对路径（`Uri.fsPath`）
+ * @param post 回执通道（注入以便单测直接断言，不触 vscode）
+ * @param toWebviewUri 落盘文件 → webview 可加载 URL（语义同 `ingestImage` 第 4 参）
+ */
+export async function ingestDiskFile(
+  projectPath: string,
+  filePath: string,
+  post: (msg: ImagePickedResult) => void,
+  toWebviewUri?: (file: string) => string | undefined,
+): Promise<void> {
+  const name = basename(filePath);
+
+  let bytes: Uint8Array;
+  try {
+    bytes = await readFile(filePath);
+  } catch (err) {
+    // 读盘失败是 IO 故障（文件刚被删 / 无权限 / 被占用）⇒ failed 可重试，不伪装 rejected
+    post({
+      type: 'image_picked',
+      status: 'failed',
+      name,
+      reason: `图片读取失败：${err instanceof Error ? err.message : String(err)}`,
+    });
+    return;
+  }
+
+  // sha256 的宿主侧真相生产点（与 ingestImage 同一纪律：webview/文件名都只是提案）
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  // 第 4 参刻意缺省：扩展名不可信 ⇒ 「与声明一致」环整环跳过，嗅探说了算
+  const checked = validateImageCandidate(bytes, sha256, undefined, name);
+  if (!checked.ok) {
+    post({
+      type: 'image_picked',
+      status: 'rejected',
+      name,
+      reason: `图片校验未通过：${checked.message}`,
+    });
+    return;
+  }
+
+  const dir = resolveAttachmentsDir(projectPath);
+  // 文件名唯一推导点 = projectDataDir（与写盘/预读共用同一映射，禁此处再拼扩展名）
+  const file = resolveAttachmentFilePath(projectPath, sha256, checked.mime);
+  try {
+    await writeOnce(dir, file, bytes);
+  } catch (err) {
+    post({
+      type: 'image_picked',
+      status: 'failed',
+      name,
+      reason: `图片保存失败：${err instanceof Error ? err.message : String(err)}`,
+    });
+    return;
+  }
+
+  post({
+    type: 'image_picked',
+    status: 'ok',
+    name,
+    ref: buildImageRef(bytes, sha256, checked),
+    uri: toWebviewUri?.(file),
+  });
 }

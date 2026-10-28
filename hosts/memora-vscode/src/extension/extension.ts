@@ -449,6 +449,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('memora.open', () => openChatCommand(getAgent, chatProvider)),
   );
 
+  // 命令：添加图片到对话（IMG-2 Q3）：命令面板入口。拾取编排（开框/读盘/落盘/回执）
+  // 全归 chatPanel.pickAndAttachImages 单点——面板未打开时不开框（防「落了盘没 chip」孤儿）。
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.attachImage', () => chatProvider.pickAndAttachImages()),
+  );
+
   // 设置面板打开入口的**唯一实现**（下面三个命令都是它的薄包装）。
   // 为什么收成一个本地函数而不是各写一遍：
   //   ① `switchTab` 必须在 `open` **之前**——先缓存待切页再打开，面板未就绪时由 ready 握手
