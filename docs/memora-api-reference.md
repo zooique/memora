@@ -323,13 +323,17 @@ agent.on('memoryAdded', (e) => console.log(`新记忆: ${e.source}:${e.name}`));
 
 ## 三、对话 API
 
-### 3.1 `chat(input, signal?)` — 流式对话（唯一入口）
+### 3.1 `chat(input, signal?, attachments?)` — 流式对话（唯一入口）
 
 ```typescript
-async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown>
+async *chat(
+  input: string,
+  signal?: AbortSignal,
+  attachments?: readonly ImageRef[],
+): AsyncGenerator<AgentChunk, void, unknown>
 ```
 
-流式返回 `AgentChunk` 事件，可选传入 `signal` 支持取消。
+流式返回 `AgentChunk` 事件，可选传入 `signal` 支持取消。可选 `attachments`（图片附件，5.2.0 起）为多模态输入入口：仅流式 `chat()` 承载（`chatSync` 不收图）；要求当前模型声明 `supportsVision`，未声明时明确拒绝（不静默）；不传时行为与签名升级前完全一致。见 §十六 `ImageRef` / `ImageResolver` / `imageTokens`。
 
 ```typescript
 type AgentChunk =
