@@ -33,11 +33,24 @@ function event<T extends ProcessEvent['type']>(
   return { type, seq, ts, payload } as Extract<ProcessEvent, { type: T }>;
 }
 
-const toolStart = (seq: number, id: string, name = 'read_file'): Extract<ProcessEvent, { type: 'tool_start' }> =>
+const toolStart = (
+  seq: number,
+  id: string,
+  name = 'read_file',
+): Extract<ProcessEvent, { type: 'tool_start' }> =>
   event('tool_start', seq, { toolCallId: id, name, args: '{}' });
-const toolResult = (seq: number, id: string, ok: boolean, blocked?: boolean): Extract<ProcessEvent, { type: 'tool_result' }> =>
+const toolResult = (
+  seq: number,
+  id: string,
+  ok: boolean,
+  blocked?: boolean,
+): Extract<ProcessEvent, { type: 'tool_result' }> =>
   event('tool_result', seq, { toolCallId: id, name: 'read_file', ok, summary: 'r', blocked });
-const boundary = (seq: number, planItemId?: string, ts = TS): Extract<ProcessEvent, { type: 'plan_item_boundary' }> =>
+const boundary = (
+  seq: number,
+  planItemId?: string,
+  ts = TS,
+): Extract<ProcessEvent, { type: 'plan_item_boundary' }> =>
   event('plan_item_boundary', seq, { planItemId, title: 'T' }, ts);
 
 describe('toolRowStatus（工具行状态四档）', () => {
@@ -53,7 +66,12 @@ describe('toolRowStatus（工具行状态四档）', () => {
   });
 
   it('blocked 优先于 ok（被拦不算成功也不算失败）', () => {
-    const blocked = event('tool_result', 4, { toolCallId: 'a', name: 'x', ok: false, blocked: true });
+    const blocked = event('tool_result', 4, {
+      toolCallId: 'a',
+      name: 'x',
+      ok: false,
+      blocked: true,
+    });
     expect(toolRowStatus(blocked)).toEqual({ label: '已拦截', open: true, running: false });
   });
 });
@@ -61,7 +79,9 @@ describe('toolRowStatus（工具行状态四档）', () => {
 describe('stopReasonLabel / decideTerminus', () => {
   it('stopReason 命中映射，未命中回落 reason 原文', () => {
     expect(stopReasonLabel({ reason: 'r', stopReason: 'user' })).toBe('用户停止了对话');
-    expect(stopReasonLabel({ reason: 'r', stopReason: 'timeout' })).toBe('对话处理超时，请稍后重试');
+    expect(stopReasonLabel({ reason: 'r', stopReason: 'timeout' })).toBe(
+      '对话处理超时，请稍后重试',
+    );
     expect(stopReasonLabel({ reason: '原始原因' })).toBe('原始原因');
   });
 
@@ -72,8 +92,12 @@ describe('stopReasonLabel / decideTerminus', () => {
   });
 
   it('aborted + stopReason=user = 用户中断；其余 stopReason = 异常中断', () => {
-    expect(decideTerminus([event('aborted', 1, { reason: 'x', stopReason: 'user' })]).kind).toBe('用户中断');
-    expect(decideTerminus([event('aborted', 2, { reason: 'x', stopReason: 'timeout' })]).kind).toBe('异常中断');
+    expect(decideTerminus([event('aborted', 1, { reason: 'x', stopReason: 'user' })]).kind).toBe(
+      '用户中断',
+    );
+    expect(decideTerminus([event('aborted', 2, { reason: 'x', stopReason: 'timeout' })]).kind).toBe(
+      '异常中断',
+    );
   });
 
   it('无 error / aborted = kind null（诚实投影，不猜终态）', () => {
@@ -87,7 +111,10 @@ describe('stopReasonLabel / decideTerminus', () => {
 
 describe('findRunningTool（未配对的最后一个 tool_start）', () => {
   it('返回最新一个无 result 的 start；全部配对则 null', () => {
-    expect(findRunningTool([toolStart(1, 'a'), toolResult(2, 'a', true), toolStart(3, 'b')])?.payload.toolCallId).toBe('b');
+    expect(
+      findRunningTool([toolStart(1, 'a'), toolResult(2, 'a', true), toolStart(3, 'b')])?.payload
+        .toolCallId,
+    ).toBe('b');
     expect(findRunningTool([toolStart(1, 'a'), toolResult(2, 'a', true)])).toBeNull();
   });
 });
@@ -127,14 +154,29 @@ describe('planItemStatesFromEvents（计划项状态推导）', () => {
 
 describe('narrateChainText', () => {
   it('只拼 narrate，按序换行', () => {
-    expect(narrateChainText([event('narrate', 1, { content: 'A' }), toolStart(2, 'a'), event('narrate', 3, { content: 'B' })])).toBe('A\nB');
+    expect(
+      narrateChainText([
+        event('narrate', 1, { content: 'A' }),
+        toolStart(2, 'a'),
+        event('narrate', 3, { content: 'B' }),
+      ]),
+    ).toBe('A\nB');
   });
 });
 
 describe('buildMemoryHitsEvidenceResolver（按 toolCallId 归组）', () => {
   it('同调用内按记忆 id 去重；无 toolCallId 的证据丢弃', () => {
     const evidence = [
-      { type: 'memory_hits', payload: { toolCallId: 'c1', hits: [{ id: 'm1', name: 'n', source: 's' }, { id: 'm1', name: 'n', source: 's' }] } },
+      {
+        type: 'memory_hits',
+        payload: {
+          toolCallId: 'c1',
+          hits: [
+            { id: 'm1', name: 'n', source: 's' },
+            { id: 'm1', name: 'n', source: 's' },
+          ],
+        },
+      },
       { type: 'memory_hits', payload: { hits: [{ id: 'm2', name: 'n', source: 's' }] } },
     ] as unknown as RoundView['evidence'];
     const map = buildMemoryHitsEvidenceResolver(evidence);
@@ -145,7 +187,10 @@ describe('buildMemoryHitsEvidenceResolver（按 toolCallId 归组）', () => {
 
 describe('buildSearchEvidenceResolver（主配 ID / 回退 query 游标）', () => {
   const hit = (query: string, toolCallId?: string) =>
-    ({ type: 'web_search_result', payload: { query, count: 1, titles: ['t'], toolCallId } }) as unknown as NonNullable<RoundView['evidence']>[number];
+    ({
+      type: 'web_search_result',
+      payload: { query, count: 1, titles: ['t'], toolCallId },
+    }) as unknown as NonNullable<RoundView['evidence']>[number];
 
   it('无 toolCallId 的旧证据按 query + 行序消费', () => {
     const resolve = buildSearchEvidenceResolver([hit('q1'), hit('q1')]);
@@ -158,7 +203,8 @@ describe('buildSearchEvidenceResolver（主配 ID / 回退 query 游标）', () 
 
   it('带 ID 的证据优先直取，不受消费顺序影响；非 web_search 不返回', () => {
     const resolve = buildSearchEvidenceResolver([hit('q1', 'c1')]);
-    const start = (name: string, id: string) => event('tool_start', 1, { toolCallId: id, name, args: '{"query":"q1"}' });
+    const start = (name: string, id: string) =>
+      event('tool_start', 1, { toolCallId: id, name, args: '{"query":"q1"}' });
     expect(resolve(start('web_search', 'c1'))).toBeDefined();
     expect(resolve(start('web_search', 'c2'))).toBeUndefined();
     expect(resolve(start('read_file', 'c1'))).toBeUndefined();
@@ -168,7 +214,12 @@ describe('buildSearchEvidenceResolver（主配 ID / 回退 query 游标）', () 
 describe('groupToolBatches（工具批切段判据真源）', () => {
   const TS2 = '2026-10-29T10:00:10.000Z';
   const TS3 = '2026-10-29T10:00:05.000Z';
-  const start = (seq: number, id: string, stepIndex?: number, ts = TS): Extract<ProcessEvent, { type: 'tool_start' }> =>
+  const start = (
+    seq: number,
+    id: string,
+    stepIndex?: number,
+    ts = TS,
+  ): Extract<ProcessEvent, { type: 'tool_start' }> =>
     event('tool_start', seq, { toolCallId: id, name: 'read_file', args: '{}', stepIndex }, ts);
   const thought = (seq: number, stepIndex?: number): Extract<ProcessEvent, { type: 'thought' }> =>
     event('thought', seq, { content: '想', stepIndex });
@@ -207,7 +258,10 @@ describe('groupToolBatches（工具批切段判据真源）', () => {
   });
 
   it('tool_result 按 toolCallId 配对归属其 start（结果晚于打断物到达仍归位）', () => {
-    const batches = groupToolBatches([start(1, 'a'), narrate(2), toolResult(3, 'a', true), start(4, 'b')], []);
+    const batches = groupToolBatches(
+      [start(1, 'a'), narrate(2), toolResult(3, 'a', true), start(4, 'b')],
+      [],
+    );
     expect(batches).toHaveLength(2);
     expect(batches[0].entries[0].result?.payload.ok).toBe(true);
     expect(batches[1].entries[0].result).toBeUndefined();

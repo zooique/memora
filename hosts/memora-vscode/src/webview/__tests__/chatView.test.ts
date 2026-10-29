@@ -12575,7 +12575,9 @@ describe('IMG-8 · 发送前整轮预检（张数 / 总字节 / token 三维聚�
   }
 
   function sentInputs(postMessage: { mock: { calls: unknown[][] } }): unknown[] {
-    return postMessage.mock.calls.map((c) => c[0]).filter((m) => (m as { type?: string })?.type === 'input');
+    return postMessage.mock.calls
+      .map((c) => c[0])
+      .filter((m) => (m as { type?: string })?.type === 'input');
   }
 
   function activityText(): string {

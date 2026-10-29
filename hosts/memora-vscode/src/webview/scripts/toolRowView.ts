@@ -51,64 +51,64 @@ export function createToolRowView(deps: ToolRowViewDeps): ToolRowView {
   const currentMemoryHitsByCall = deps.memoryHitsByCall;
   const memoryHitsBlock = deps.memoryHits;
 
-    /**
-     * 按 toolCallId 定位工具行（属性扫描，不拼选择器）。
-     *
-     * 不用 `[data-tool-call-id="${id}"]`：toolCallId 源自 LLM 供应商，理论可含引号/反斜杠，
-     * 拼进选择器会抛 SyntaxError 或被误解析。扫描成本 O(工具行数)，一次成轮几十行的量级可忽略，
-     * 换掉一整类逃逸风险。（既有 updateToolRowState 的拼接式选择器不在本次改动范围，未联动。）
-     */
-    function findToolRow(toolCallId: string): HTMLDetailsElement | null {
-      for (const row of messages.querySelectorAll<HTMLDetailsElement>('.round-block__tool')) {
-        if (row.dataset.toolCallId === toolCallId) return row;
-      }
-      return null;
+  /**
+   * 按 toolCallId 定位工具行（属性扫描，不拼选择器）。
+   *
+   * 不用 `[data-tool-call-id="${id}"]`：toolCallId 源自 LLM 供应商，理论可含引号/反斜杠，
+   * 拼进选择器会抛 SyntaxError 或被误解析。扫描成本 O(工具行数)，一次成轮几十行的量级可忽略，
+   * 换掉一整类逃逸风险。（既有 updateToolRowState 的拼接式选择器不在本次改动范围，未联动。）
+   */
+  function findToolRow(toolCallId: string): HTMLDetailsElement | null {
+    for (const row of messages.querySelectorAll<HTMLDetailsElement>('.round-block__tool')) {
+      if (row.dataset.toolCallId === toolCallId) return row;
     }
+    return null;
+  }
 
-    /**
-     * 把某次 search_memories 调用的命中明细挂进对应工具折叠块（幂等重建）。
-     *
-     * 幂等策略 = 「先摘后建」而非增量对账：同一 toolCallId 可能多次更新（一轮多次检索同一调用
-     * 的追加、memory_deleted 后的重算），每次都从 currentMemoryHitsByCall 重建，
-     * 保证「模型是什么样，DOM 就是什么样」，不会留下孤儿节点或错位计数。
-     *
-     * @returns 目标工具行是否存在（false ⇒ 调用方须把数据转入兜底聚合——行未就绪或老内核无
-     *   配对键时，宁可退回旧落位也不丢信息）
-     */
-    function attachMemoryHits(toolCallId: string): boolean {
-      const row = findToolRow(toolCallId);
-      if (!row) return false;
-      row.querySelector('.round-block__memory-badge')?.remove();
-      row.querySelector('.round-block__memory-hits')?.remove();
-      const hits = currentMemoryHitsByCall.get(toolCallId);
-      if (!hits || hits.size === 0) return true;
-      // 命中块出现 ⇒ 撤掉 100 字截断摘要（同源不双渲染；先到摘要、后到命中的时序在此收口）
-      row.querySelector('.round-block__tool-summary')?.remove();
-      const summary = row.querySelector('.round-block__tool-name');
-      if (summary) {
-        const badge = document.createElement('span');
-        badge.className = 'round-block__memory-badge';
-        badge.textContent = `记忆 ${hits.size}`;
-        badge.title = `本次调用命中 ${hits.size} 条记忆（展开查看明细）`;
-        summary.appendChild(badge);
-      }
-      row.appendChild(memoryHitsBlock.buildBlock(hits));
-      return true;
+  /**
+   * 把某次 search_memories 调用的命中明细挂进对应工具折叠块（幂等重建）。
+   *
+   * 幂等策略 = 「先摘后建」而非增量对账：同一 toolCallId 可能多次更新（一轮多次检索同一调用
+   * 的追加、memory_deleted 后的重算），每次都从 currentMemoryHitsByCall 重建，
+   * 保证「模型是什么样，DOM 就是什么样」，不会留下孤儿节点或错位计数。
+   *
+   * @returns 目标工具行是否存在（false ⇒ 调用方须把数据转入兜底聚合——行未就绪或老内核无
+   *   配对键时，宁可退回旧落位也不丢信息）
+   */
+  function attachMemoryHits(toolCallId: string): boolean {
+    const row = findToolRow(toolCallId);
+    if (!row) return false;
+    row.querySelector('.round-block__memory-badge')?.remove();
+    row.querySelector('.round-block__memory-hits')?.remove();
+    const hits = currentMemoryHitsByCall.get(toolCallId);
+    if (!hits || hits.size === 0) return true;
+    // 命中块出现 ⇒ 撤掉 100 字截断摘要（同源不双渲染；先到摘要、后到命中的时序在此收口）
+    row.querySelector('.round-block__tool-summary')?.remove();
+    const summary = row.querySelector('.round-block__tool-name');
+    if (summary) {
+      const badge = document.createElement('span');
+      badge.className = 'round-block__memory-badge';
+      badge.textContent = `记忆 ${hits.size}`;
+      badge.title = `本次调用命中 ${hits.size} 条记忆（展开查看明细）`;
+      summary.appendChild(badge);
     }
+    row.appendChild(memoryHitsBlock.buildBlock(hits));
+    return true;
+  }
 
-    /**
-     * 「（准备中）」预告行注销（生命周期契约：每条预告行**要么升级、要么注销**，不许常驻）。
-     *
-     * 预告行（tool_pending，瞬态轨）的宿命只有两个出口：① tool_start 到达 → 升级执行态
-     * （upgradePendingToolRow）；② 所属批的 tool_start **永不到达** → 此处注销。触发集 =
-     * 批宿命已定的全部落点：`step_boundary`（截断批/重试孤儿在此注销——continue 型迭代落盘点）；
-     * 提问定型（ask 挂起批不发 step_boundary，其宿命在提问 UI 渲染时已定）；用户输入
-     * （插话/新轮打断在途批，[TOOL_ABORTED] 同源）。轮收尾/中断由整树重建天然注销（finalizeRound
-     * 拆过程容器），不重复挂钩。不注销的后果 = 运行时残留无内容的幽灵折叠块、散在任务项折叠块外。
-     */
-    function dropStalePendingToolRows(): void {
-      messages.querySelectorAll('.round-block__tool.is-tool-pending').forEach((row) => row.remove());
-    }
+  /**
+   * 「（准备中）」预告行注销（生命周期契约：每条预告行**要么升级、要么注销**，不许常驻）。
+   *
+   * 预告行（tool_pending，瞬态轨）的宿命只有两个出口：① tool_start 到达 → 升级执行态
+   * （upgradePendingToolRow）；② 所属批的 tool_start **永不到达** → 此处注销。触发集 =
+   * 批宿命已定的全部落点：`step_boundary`（截断批/重试孤儿在此注销——continue 型迭代落盘点）；
+   * 提问定型（ask 挂起批不发 step_boundary，其宿命在提问 UI 渲染时已定）；用户输入
+   * （插话/新轮打断在途批，[TOOL_ABORTED] 同源）。轮收尾/中断由整树重建天然注销（finalizeRound
+   * 拆过程容器），不重复挂钩。不注销的后果 = 运行时残留无内容的幽灵折叠块、散在任务项折叠块外。
+   */
+  function dropStalePendingToolRows(): void {
+    messages.querySelectorAll('.round-block__tool.is-tool-pending').forEach((row) => row.remove());
+  }
 
   return { findToolRow, dropStalePendingToolRows, attachMemoryHits };
 }

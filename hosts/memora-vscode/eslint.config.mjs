@@ -50,7 +50,7 @@ export default [
   //   描述性行数已从注释清除，此处仅留闸门阈值）。
   {
     files: ['src/webview/scripts/chatView.ts'], // TARGET（单闭包；计划栏域、历史菜单域、占用域、活动抽屉域、状态条域、过程流单元格域、下拉选择器域、问答回顾行域、工具行动作面域、角色徽章行域已外置）
-    rules: { 'max-lines': ['error', { max: 5143 }] },
+    rules: { 'max-lines': ['error', { max: 5098 }] },
   },
   {
     files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域已外置）

@@ -16,7 +16,11 @@
  * @module processFlowCells
  */
 import type { ProcessEvent } from '@zooique/memora';
-import { isPlanItemBoundaryEvent, toolActionLabel, toolSummaryText } from '../helpers/processEventText.js';
+import {
+  isPlanItemBoundaryEvent,
+  toolActionLabel,
+  toolSummaryText,
+} from '../helpers/processEventText.js';
 import type { MemoryHitEntry, ToolBatch, WebSearchEvidence } from '../helpers/processFlowModel.js';
 import { decideTerminus, toolRowStatus } from '../helpers/processFlowModel.js';
 import { setTerminus } from '../helpers/statusAttrs.js';
@@ -53,9 +57,18 @@ export interface ProcessFlowCells {
   /** 叙述行 */
   createNarrateRow(ev: Extract<ProcessEvent, { type: 'narrate' }>): HTMLElement;
   /** 聚合思考块 */
-  createAggregatedThought(contents: readonly string[], openByDefault?: boolean, ts?: string, seq?: number, label?: string): HTMLDetailsElement;
+  createAggregatedThought(
+    contents: readonly string[],
+    openByDefault?: boolean,
+    ts?: string,
+    seq?: number,
+    label?: string,
+  ): HTMLDetailsElement;
   /** 待定工具行升级为运行中 */
-  upgradePendingToolRow(row: HTMLDetailsElement, start: Extract<ProcessEvent, { type: 'tool_start' }>): void;
+  upgradePendingToolRow(
+    row: HTMLDetailsElement,
+    start: Extract<ProcessEvent, { type: 'tool_start' }>,
+  ): void;
   /** 计划项状态施加 */
   applyPlanItemStates(root: HTMLElement, states: Map<string, string>): void;
   /** 工具批标题 / 失败统计刷新 */
@@ -68,7 +81,9 @@ export interface ProcessFlowCells {
   renderToolRow(
     start: Extract<ProcessEvent, { type: 'tool_start' }>,
     events: ProcessEvent[],
-    resolveSearchEvidence?: (start: Extract<ProcessEvent, { type: 'tool_start' }>) => WebSearchEvidence | undefined,
+    resolveSearchEvidence?: (
+      start: Extract<ProcessEvent, { type: 'tool_start' }>,
+    ) => WebSearchEvidence | undefined,
     resolveMemoryHits?: (toolCallId: string) => Map<string, MemoryHitEntry> | undefined,
   ): HTMLDetailsElement;
 }
@@ -326,7 +341,7 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
    * 进行中增量调用（每次事件到达），避免整体重排导致闪烁/展开态丢失；finalize 全量重建亦
    * 走此通道保持同一排序逻辑。相位行固定在最前，其余按 seq 升序。
    */
-  
+
   /**
    * 定位条目应插入的任务项容器（ts 为该条目的时间键；processEvents 行与 interactiveInputs
    * 条目共用，形态甲统一时间序）。无边界回退 details（整轮一组）。

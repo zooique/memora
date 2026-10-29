@@ -568,6 +568,100 @@ deps = `{ document, roleBadge, capabilityBadge }`：**回调 0 项**，三个字
 
 ---
 
+## 十二、落地质量审查（SSOT / 不带伤）与修复收据（2026-10-29 推送前）
+
+> 触发：推送前按「SSOT + 不带伤」复审本会话 4 笔提交（SLIM-2 一笔 + SLIM-3 三刀）。审查先于推送，发现两处真伤、一处 SSOT 隐患，修复后复验通过再推。
+
+### 12.1 审查项与判据
+
+| 项 | 判据 | 实现 |
+|---|---|---|
+| 唯一声明处 | 40 个被迁移函数的全仓 `function` 定义数必须 == 1 | AST 遍历全 `src` |
+| 无僵尸导出 | 9 个新模块的 45 个导出符号，必须有 `__tests__` 之外的外部消费者 | 导出集 × 引用扫描 |
+| 注释定位 | 禁「文件名:行号」定位（`commentHygiene` 口径） | 新增/改动文件扫查 |
+| 文档一致 | 台账 / 方案 / 实现的行数与余量三处同源 | 逐数字比对 |
+| 格式门禁 | `prettier --check`（pre-commit 的 `prettier-fix` 口径，本轮因 `LEFTHOOK=0` 未自动跑） | 全量 + 基线归因 |
+| 结构完整 | `##` / `###` / 条目数只增不减 | 与 `HEAD` 对比 |
+
+### 12.2 通过的项（实测）
+
+- **唯一声明处**：重复定义 **0**、旧名残留 **0**（`attachMemoryHitsToToolRow` → `attachMemoryHits` 为已声明改名，旧名 0 处定义）。
+- **僵尸导出**：0（9 个模块 45 个符号全部有外部消费者）。
+- **台账结构**：`##` 6 / `###` 8 / 条目 149（对照 `HEAD` 6 / 8 / 148，+1 = 本轮新增 CAPB-1，**无标题被吞**）。
+- **规则引用**：`check-rule-refs` 绿（870 个文本文件，规则裸路径全部可解析）。
+- **台账门禁**：`ledger-hygiene` 十类全绿、`ledger-fold` 净丢失 0。
+
+### 12.3 发现一（真伤）：43 行「含空白字符的空行」——所有门禁都没抓到
+
+实测：`HEAD` 的 `chatView.ts` 有 **43 行只有空格的行**，而 `origin/main` 是 **0 行**。
+
+成因：搬迁脚本用「按字符区间 slice 删除」把函数从 chatView 摘走，删除起点回退到了 JSDoc 的行首缩进，**内容删了、缩进留下**，形成 `"  "` 空行。四刀累计 43 行。
+
+为什么全绿：`eslint`、`tsc`、`vitest`、台账三门全部通过——**空白行不违反任何一条已配置的判据**。这正是「门禁绿 ≠ 无伤」的实例：门禁只判它被配置去判的东西，格式类伤只有 `prettier` 会抓，而本轮提交因 `LEFTHOOK=0` 绕过了 `pre-commit` 里唯一的 `prettier-fix`。
+
+### 12.4 发现二（真伤）：4 个新模块 prettier 不合规，含缩进错误
+
+| 文件 | 不合规根因 |
+|---|---|
+| `toolRowView.ts` | **工厂体内函数被多缩进 2 格**（搬迁脚本的 `indent2` 在「原缩进已是 2 格」之上再加 2） |
+| `processFlowCells.ts` | 长行未折行、`import` 未折行（搬迁继承原 `chatView` 的写法） |
+| `processFlowModel.ts` | 函数签名折行与 prettier 口径不一致 |
+| `processFlowModel.test.ts` | 新增用例的长行未折行 |
+
+**为什么之前的「逐字保真比对」没发现**：它把每行 `trim()` 后比较——去缩进比对**恰好抹掉了缩进差异**。判据选错会掩盖伤：`trim()` 比对照样能证明「token 没变」，却同时放弃了「版式是否合规」这个维度。**两个维度必须用两个判据**：语义用去缩进比对，版式用 `prettier --check`。
+
+### 12.5 发现三（SSOT 隐患，登记不修）：徽章规格两处实现
+
+`round-block__memory-badge` 的规格（类名 + 文案 `记忆 N` + `title` 全文）在**两个模块各写一份**：
+
+- `scripts/processFlowCells.ts` 的 `renderToolRow`（重建路径）；
+- `scripts/toolRowView.ts` 的 `attachMemoryHits`（实时挂载路径）。
+
+搬迁前两处同在 `chatView` 里（近邻可见），搬迁后分居两文件 ⇒ **漂移面扩大**（改一处忘另一处即文案分裂）。SLIM-3 第二刀的变异验证正好实证了这一点：把 `toolRowView` 侧文案改成 `记忆 N条`，`processFlowCells` 侧不受影响，只红 2 例。
+
+性质：**既有重复**（非本刀引入），但本刀让它跨了文件。按「禁夹带」登记为 **MEMO-BADGE-1**，不在搬迁批顺手合并；修法 = 抽 `createMemoryBadge(document, hits)` 单点（`memoryHitsBlock` 模块正是该域的天然落点）。
+
+### 12.6 修复与复核
+
+修复动作：对 6 个文件执行 `prettier --write`（4 个新模块 + 被空白残留污染的 `chatView.ts` / `chatView.test.ts`）。
+
+**语义等价证明（不用逐字比对，因版式已变）**：取 `HEAD` 版本与工作树版本，各自建 AST 后生成结构指纹（节点 kind + 标识符/字面量值，排除位置、注释、尾逗号），逐个比较：
+
+| 文件 | 结构指纹节点数 | 结果 |
+|---|---|---|
+| `chatView.ts` | 29,025 | 完全一致 |
+| `chatView.test.ts` | 96,862 | 完全一致 |
+| `processFlowModel.ts` | 2,304 | 完全一致 |
+| `processFlowModel.test.ts` | 2,521 | 完全一致 |
+| `processFlowCells.ts` | 4,749 | 完全一致 |
+| `toolRowView.ts` | 419 | 完全一致 |
+
+**顺带纠正判据口径**：中间试过两个错误判据——① token 流（prettier 会加尾逗号、模板串 token 边界处理有坑 ⇒ 假红）；② `ts.createPrinter().printFile`（printer 沿用原节点的换行位置 ⇒ 假红）。**只有结构指纹是可用判据**。
+
+实测结果：
+
+| 项 | 修复前 | 修复后 |
+|---|---|---|
+| 含空白字符的空行（chatView.ts） | 43 | **0** |
+| `prettier --check`（本轮涉及 6 文件） | 6 红 | **全绿** |
+| chatView 行数（闸门自报） | 5143 | **5098** |
+| `max-lines` | 5143 | **5098**（只降不升） |
+| 根 / 宿主 `tsc --noEmit` | 0 错 | 0 错 |
+| 宿主 `eslint --max-warnings 0` | 0 警 | 0 警 |
+| 宿主全量 | 123 文件 / 2210 passed / 4 skipped | **同左**（版式变动零影响） |
+
+### 12.7 既有欠账（登记不修）
+
+**FORMAT-1**：全量 `prettier --check` 仍有 8 个**本次未触及**的文件不合规（合计约 166 行 diff）：`processEventText.ts`(4) · `chatPanel.ts`(30) · `imageCapture.ts`(4) · `imageCapture.test.ts`(36) · `chatPanelHistory.test.ts`(4) · `chatPanelInput.test.ts`(23) · `imageTurnLimits.test.ts`(49) · `imageIngest.test.ts`(16)。
+
+性质：长期 `LEFTHOOK=0` 提交累积的格式欠账（`lefthook.yml` 头注释已如实记载过同类：某轮「格式欠账只在跑 full 时才爆，实锤 9 文件」）。本轮不清（会引入 166 行与本线无关的 diff，污染减排可审查性），登记待台账治理统一清。
+
+### 12.8 结论
+
+四条审查线（唯一声明 / 僵尸导出 / 结构完整 / 规则引用）本就通过；两条真伤（空白残留、格式不合规）已在推送前修复并用 AST 结构指纹证明语义零变化；一处 SSOT 隐患与一处既有欠账如实登记、未夹带。**可以推送。**
+
+---
+
 ## 附 · 台账登记说明
 
 - 新条目 **CHATVIEW-SLIM-2** 登记于 `### 宿主轴`（本项属宿主）。

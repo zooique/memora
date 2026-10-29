@@ -369,7 +369,10 @@ export const BATCH_SPLITTER_TYPES: ReadonlySet<ProcessEvent['type']> = new Set([
  *   条目即无断面」，而那正是缺陷 BATCH-SPLIT-1 的形态——设默认值等于让漏传者静默回落缺陷行为
  * @returns 批数组（按段内首个 tool_start 的 seq 升序；空流返回空数组）
  */
-export function groupToolBatches(events: ProcessEvent[], boundaryTs: readonly string[]): ToolBatch[] {
+export function groupToolBatches(
+  events: ProcessEvent[],
+  boundaryTs: readonly string[],
+): ToolBatch[] {
   // 全序按 seq 稳定排序（宿主可见 ProcessEvent 全序，方案 §二约束：判据只读 seq/类型/toolCallId）
   const ordered = [...events].sort((a, b) => a.seq - b.seq);
   // 桶号 = 小于该 ts 的边界条目数：相邻工具桶号不同 ⇒ 二者之间夹着问答卡 ⇒ 断段
@@ -415,4 +418,3 @@ export function groupToolBatches(events: ProcessEvent[], boundaryTs: readonly st
   }
   return batches;
 }
-

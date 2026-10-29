@@ -416,7 +416,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     postMessage: (msg) => vscode.postMessage(msg as WebviewToExtensionMessage),
   });
 
-  
   // 当前角色包列表（由 chat_role_packs 消息填充；description 供空状态提示副文案）。
   // 角色切换在独立「角色」视图，本面板仅消费角色名用于展示，不承载切换。
   let currentRolePacks: { name: string; displayName: string; description?: string }[] = [];
@@ -444,7 +443,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let roundBlockEl: HTMLDetailsElement | null = null;
   /** round-block 已挂载的 assistant 块（重放去重判定：roundId 首次出现才挂） */
   let roundBlockHostEl: HTMLElement | null = null;
-  
+
   /**
    * 本轮记忆命中·**按调用分组**（MEM-EVENT-2 落位收口）：toolCallId → (记忆 id → 命中项)。
    *
@@ -641,10 +640,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return rb;
   }
 
-  
-  
-  
-  
   /**
    * 工具意图预告行：LLM 流式生成 tool_call 参数期间提前渲染的「准备中」行。
    *
@@ -688,33 +683,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     flow.appendChild(row);
   }
 
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-
-  
-  
-
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
   /**
    * 渲染当前轮 round-block（任务过程折叠区）——过程事件唯一投影，运行时与重放共用。
    *
@@ -1275,9 +1243,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (streamingActive) syncRunningCursor();
   }
 
-  
-  
-  
   /**
    * 重放中断轮孤儿宿主渲染（形态定案：与 done 轮同构——过程折叠 + 停止行平铺）
    *
@@ -2687,19 +2652,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 运行态挂 .msg-body；终态有正文轮挂 .msg-body、中断轮（半截正文已删）挂宿主块（运行时
   // .msg.assistant / 重放 .is-interrupted-host）；消费方泛匹配属性，不得只查 .msg-body。
 
-  
- // 挂起：软暂停/用户暂停（半截正文静态展示）
+  // 挂起：软暂停/用户暂停（半截正文静态展示）
 
-  
- // 终态：异常（载体双位——正文红字+detail / 中断轮宿主→底栏红字标签）
+  // 终态：异常（载体双位——正文红字+detail / 中断轮宿主→底栏红字标签）
 
-  
   /** 活动正文块运行态写入（实时流路径统一入口：activeAssistantEl 为正文块 SSOT） */
   function setActiveSheetStatus(status: CursorStatus | null): void {
     setCursorStatus(activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'), status);
   }
 
-  
   /**
    * 运行态推导（单一入口）：优先级固定 = 工具在途 > 思考相位 > 默认回答。
    * 判定源与过程渲染同源（DOM 单查询，无第二套状态轨道）：
@@ -3010,12 +2971,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const line = text.split('\n', 1)[0].trim();
     return line.length > max ? line.slice(0, max - 1) + '…' : line;
   }
-
-  
-  
-  
-
-  
 
   /**
    * 记忆命中兜底行（HOST-S3-1 落位的**降级路径**）：当前轮「本轮参考了 N 条记忆」。
@@ -4181,9 +4136,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const turnCheck = imageCapture.checkTurnLimits(findActiveProvider()?.limitTokens);
     if (!turnCheck.ok) return activityDrawerView.showActivity('info', turnCheck.message);
     input.value = '';
-    input.style.height = 'auto'; input.style.overflowY = 'hidden';
+    input.style.height = 'auto';
+    input.style.overflowY = 'hidden';
     // 清输入框后按钮语义也要重算（hasInput 变了）
-    syncButtonSemantics(); syncSendEnabled();
+    syncButtonSemantics();
+    syncSendEnabled();
     // 构建消息：send 意图单消息，宿主按相位路由到 chat / interject / 带文本续跑；技能按名注入
     const payload: WebviewToExtensionMessage = {
       type: 'input' as const,
@@ -5049,8 +5006,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   // 初始装配：空清单（搜索框 + 清除项 + 分隔线），具体清单由 skills_loaded 动态填充
   renderSkillPickerMenu();
-
-  
 
   // 提问卡渲染（真源 = turn_update.state 的 waiting/ask）
   // 职责与原 need_clarify 分支等价：优先内联块（renderAskInline 挂问答交互行下），
