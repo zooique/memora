@@ -254,9 +254,7 @@ export function toolSummaryText(names: readonly string[]): string {
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
   const parts = [...counts.entries()].map(([label, n]) => `${label} ${n}`);
-  return parts.length > 0
-    ? `工具×${names.length}（${parts.join(' · ')}）`
-    : `工具×${names.length}`;
+  return parts.length > 0 ? `工具×${names.length}（${parts.join(' · ')}）` : `工具×${names.length}`;
 }
 
 /**

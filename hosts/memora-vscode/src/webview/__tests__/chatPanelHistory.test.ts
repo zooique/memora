@@ -1392,8 +1392,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     provider.setAgent(agent);
     // 装配收口点（refreshAfterAssemble）先推一次 occupancy——等它落定后清空 posted，
     // 之后只观察热刷新路径自己的补推（不清空则装配补推会掩护断言，修复前也假绿）
-    await vi.waitFor(
-      () => expect(ofType(posted, 'context_occupancy').length).toBeGreaterThanOrEqual(1),
+    await vi.waitFor(() =>
+      expect(ofType(posted, 'context_occupancy').length).toBeGreaterThanOrEqual(1),
     );
     posted.length = 0;
     // 配置变更入口（extension.ts onDidChangeConfiguration 转发）：agent 已装配 → 热刷新

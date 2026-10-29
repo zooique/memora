@@ -169,9 +169,7 @@ export interface ImageCaptureHandle {
    * @param limitTokens 当前激活 Provider 的窗口上限（`chat_providers.limitTokens` 投影；
    *   未配置 / 未到货传 `undefined` = token 维不做限制）
    */
-  checkTurnLimits(
-    limitTokens: number | undefined,
-  ): { ok: true } | { ok: false; message: string };
+  checkTurnLimits(limitTokens: number | undefined): { ok: true } | { ok: false; message: string };
   /**
    * 落盘回执入口（chatView 把 `image_ingest_result` 原样转进来）。
    *

@@ -379,8 +379,12 @@ describe('warmCache — 落盘后字节缓存预热（真机验收断点A）', (
     const root = makeTempDir('memora-ingest-');
     const blocker = join(root, 'blocker');
     writeFileSync(blocker, 'x');
-    await ingestImage(blocker, ingestMsg(pngBytes(4, 4)), () => {}, undefined, (ref) =>
-      warm.push(ref),
+    await ingestImage(
+      blocker,
+      ingestMsg(pngBytes(4, 4)),
+      () => {},
+      undefined,
+      (ref) => warm.push(ref),
     );
 
     expect(warm).toEqual([]);
@@ -417,7 +421,13 @@ describe('warmCache — 落盘后字节缓存预热（真机验收断点A）', (
     const warm2: unknown[] = [];
     const fake = join(root, 'fake.png');
     writeFileSync(fake, Buffer.from('plain text'));
-    await ingestDiskFile(root, fake, () => {}, undefined, (ref) => warm2.push(ref));
+    await ingestDiskFile(
+      root,
+      fake,
+      () => {},
+      undefined,
+      (ref) => warm2.push(ref),
+    );
     expect(warm2).toEqual([]);
   });
 });

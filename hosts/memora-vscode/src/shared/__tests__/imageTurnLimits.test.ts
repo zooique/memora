@@ -34,7 +34,12 @@ describe('checkImageTurnLimits · 三维聚合限额（IMG-8）', () => {
 
   it('总字节超限 ⇒ 拒发，文案带 MiB 已用与超出', () => {
     const bytes = MAX_TURN_BYTES + 1024 * 1024;
-    const r = checkImageTurnLimits({ count: 1, totalBytes: bytes, totalTokens: 0, limitTokens: 8000 });
+    const r = checkImageTurnLimits({
+      count: 1,
+      totalBytes: bytes,
+      totalTokens: 0,
+      limitTokens: 8000,
+    });
     expect(r.ok).toBe(false);
     expect(r.message).toContain('21.0');
     expect(r.message).toContain('1.0');
@@ -42,7 +47,12 @@ describe('checkImageTurnLimits · 三维聚合限额（IMG-8）', () => {
 
   it('token 超限 ⇒ 拒发，文案带合计、上限（窗口×25% 取整）与超出', () => {
     // 8000 × 0.25 = 2000；合计 2001 ⇒ 超出 1
-    const r = checkImageTurnLimits({ count: 1, totalBytes: 0, totalTokens: 2001, limitTokens: 8000 });
+    const r = checkImageTurnLimits({
+      count: 1,
+      totalBytes: 0,
+      totalTokens: 2001,
+      limitTokens: 8000,
+    });
     expect(r.ok).toBe(false);
     expect(r.message).toContain('2001');
     expect(r.message).toContain('2000');
@@ -50,7 +60,12 @@ describe('checkImageTurnLimits · 三维聚合限额（IMG-8）', () => {
 
   it('优先级：张数 → 总字节 → token，首个越界即返回（不合并文案）', () => {
     // 张数与 token 同时越界 ⇒ 只报张数
-    const r1 = checkImageTurnLimits({ count: 7, totalBytes: 0, totalTokens: 99999, limitTokens: 8000 });
+    const r1 = checkImageTurnLimits({
+      count: 7,
+      totalBytes: 0,
+      totalTokens: 99999,
+      limitTokens: 8000,
+    });
     expect(r1.message).toContain('张');
     expect(r1.message).not.toContain('token');
     // 张数合规、总字节与 token 同时越界 ⇒ 只报字节
@@ -66,19 +81,39 @@ describe('checkImageTurnLimits · 三维聚合限额（IMG-8）', () => {
 
   it('token 维跳过两态：totalTokens undefined（旧回执缺字段）或 limitTokens 0/undefined（未配置）', () => {
     // 合计未知 ⇒ 不拿部分求和假算，即使窗口很小也放行（token 维整体跳过）
-    const r1 = checkImageTurnLimits({ count: 1, totalBytes: 0, totalTokens: undefined, limitTokens: 100 });
+    const r1 = checkImageTurnLimits({
+      count: 1,
+      totalBytes: 0,
+      totalTokens: undefined,
+      limitTokens: 100,
+    });
     expect(r1.ok).toBe(true);
     // 窗口 0 = 不限（与内核 tokenBudget 口径一致）
-    const r2 = checkImageTurnLimits({ count: 1, totalBytes: 0, totalTokens: 999999, limitTokens: 0 });
+    const r2 = checkImageTurnLimits({
+      count: 1,
+      totalBytes: 0,
+      totalTokens: 999999,
+      limitTokens: 0,
+    });
     expect(r2.ok).toBe(true);
-    const r3 = checkImageTurnLimits({ count: 1, totalBytes: 0, totalTokens: 999999, limitTokens: undefined });
+    const r3 = checkImageTurnLimits({
+      count: 1,
+      totalBytes: 0,
+      totalTokens: 999999,
+      limitTokens: undefined,
+    });
     expect(r3.ok).toBe(true);
   });
 
   it('比例常量 = 0.25 且上限为窗口 × 比例向下取整（与内核 checkImageTokenBudget 同式）', () => {
     expect(IMAGE_TOKEN_WINDOW_RATIO).toBe(0.25);
     // 8001 × 0.25 = 2000.25 ⇒ floor 2000；合计 2000 恰好不越界（> 判据，非 ≥）
-    const r = checkImageTurnLimits({ count: 1, totalBytes: 0, totalTokens: 2000, limitTokens: 8001 });
+    const r = checkImageTurnLimits({
+      count: 1,
+      totalBytes: 0,
+      totalTokens: 2000,
+      limitTokens: 8001,
+    });
     expect(r.ok).toBe(true);
   });
 });

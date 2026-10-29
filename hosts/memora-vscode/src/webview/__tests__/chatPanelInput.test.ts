@@ -594,8 +594,9 @@ describe('IMG-8 · 宿主兜底：三维聚合限额（与 webview 预检同判�
   it('张数超限（6 张）⇒ showWarningMessage 拒收 + 不进内核 chat（窗口真源 = providerStore）', async () => {
     const h = setupInput();
     const { chat } = mount(h);
-    (h.cast as unknown as { _providerStore: { getActive: () => Promise<unknown> } })
-      ._providerStore.getActive = async () => ({ contextWindow: 8000 });
+    (
+      h.cast as unknown as { _providerStore: { getActive: () => Promise<unknown> } }
+    )._providerStore.getActive = async () => ({ contextWindow: 8000 });
     const { window } = await import('vscode');
 
     await h.cast.handleInput({
@@ -605,9 +606,7 @@ describe('IMG-8 · 宿主兜底：三维聚合限额（与 webview 预检同判�
     });
 
     expect(chat).not.toHaveBeenCalled();
-    expect(window.showWarningMessage).toHaveBeenCalledWith(
-      expect.stringContaining('上限'),
-    );
+    expect(window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('上限'));
     // 拒收也**不回声**：图没发出去，屏上不能出现「已发送」假象
     expect(h.posted.find((m) => (m as { type?: string }).type === 'user')).toBeUndefined();
   });
@@ -615,8 +614,9 @@ describe('IMG-8 · 宿主兜底：三维聚合限额（与 webview 预检同判�
   it('token 维超限（单张图 vs 极小窗口）⇒ 同判据拦下（宿主按内核 imageTokens 累计）', async () => {
     const h = setupInput();
     const { chat } = mount(h);
-    (h.cast as unknown as { _providerStore: { getActive: () => Promise<unknown> } })
-      ._providerStore.getActive = async () => ({ contextWindow: 2000 });
+    (
+      h.cast as unknown as { _providerStore: { getActive: () => Promise<unknown> } }
+    )._providerStore.getActive = async () => ({ contextWindow: 2000 });
     const { window } = await import('vscode');
 
     await h.cast.handleInput({
@@ -627,16 +627,15 @@ describe('IMG-8 · 宿主兜底：三维聚合限额（与 webview 预检同判�
     });
 
     expect(chat).not.toHaveBeenCalled();
-    expect(window.showWarningMessage).toHaveBeenCalledWith(
-      expect.stringContaining('token'),
-    );
+    expect(window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('token'));
   });
 
   it('反例：窗口未配置（getActive 返回 undefined）⇒ token 维跳过，小图照常发送', async () => {
     const h = setupInput();
     const { chat } = mount(h);
-    (h.cast as unknown as { _providerStore: { getActive: () => Promise<unknown> } })
-      ._providerStore.getActive = async () => undefined;
+    (
+      h.cast as unknown as { _providerStore: { getActive: () => Promise<unknown> } }
+    )._providerStore.getActive = async () => undefined;
 
     await h.cast.handleInput({ kind: 'send', text: '看图', attachments: [makeImage(0)] });
 

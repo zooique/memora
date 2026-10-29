@@ -2999,7 +2999,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // false（零入队零落盘）；宿主只消费返回值做提示，不自持计数。拒收必须提示（静默丢整条 = 背刺）。
       const accepted = agent.interject(input);
       if (!accepted) {
-        void vscode.window.showWarningMessage(`Memora：待并入的插话已达 ${INTERJECT_LIMIT} 条上限，本条未送出——可在待发送区删减后再试`);
+        void vscode.window.showWarningMessage(
+          `Memora：待并入的插话已达 ${INTERJECT_LIMIT} 条上限，本条未送出——可在待发送区删减后再试`,
+        );
         return;
       }
       // 上屏时机 = 消费时刻（吸收时上屏）：排队中 ≠ 已说出，入队成功**不再**即时 post type:'user'
@@ -3075,7 +3077,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 前置 `!skillBlock`：仅在**确实发生落空**时报，避免「判定说禁用、实际却注入成功」的假报。
       if (!skillBlock && isSkillDisabled(agent, skillName)) {
         this.post({
-          type: 'notice', level: 'error',
+          type: 'notice',
+          level: 'error',
           message: `技能「${skillName}」已禁用，本次未注入（消息已照常发送）。可在设置 → 技能中启用后重试。`,
         });
       }
@@ -3099,7 +3102,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // `openRefInEditor` / 内核 read_file cwd **同源**（恒取首根）；解析器复用 refPath（无第二真理源）。
     // 目录引用与「当前打开文件」指针行不核实（见 refProbe 边界说明）。
     const missingFileRefPaths = await collectMissingFileRefPaths(
-      refs ?? [], vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      refs ?? [],
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
       async (absPath) => vscode.workspace.fs.stat(vscode.Uri.file(absPath)),
     );
     const refsBlock = buildRefContextBlock(
@@ -3112,10 +3116,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 采集器返回「事实行」而非空串（用户挂了标签就有权知道「确实没有」——静默空块 =
     // 静默失败族）。
     const problemsMounted = injections?.includes('problems') ?? false;
-    const problemsBlock = problemsMounted ? buildProblemsContextBlock(await collectProblemsBody()) : '';
+    const problemsBlock = problemsMounted
+      ? buildProblemsContextBlock(await collectProblemsBody())
+      : '';
     const gitMounted = injections?.includes('git-changes') ?? false;
     const gitBlock = gitMounted
-      ? buildGitChangesContextBlock(await collectGitChangesBody(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath))
+      ? buildGitChangesContextBlock(
+          await collectGitChangesBody(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath),
+        )
       : '';
     // 块序：技能 / 文档 / 诊断 / git 改动（注入内容在前）→ 引用（指针在后）。剥离侧以
     // 「最后一个成对块闭标签」为锚点，顺序不影响正确性，但注入块与指针块分组便于人读。
@@ -3134,10 +3142,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         : { source: 'active-file', injected: false },
     ];
     if (problemsMounted) {
-      segments.push({ source: 'problems', injected: true, tokens: estimateTokensText(problemsBlock) });
+      segments.push({
+        source: 'problems',
+        injected: true,
+        tokens: estimateTokensText(problemsBlock),
+      });
     }
     if (gitMounted) {
-      segments.push({ source: 'git-changes', injected: true, tokens: estimateTokensText(gitBlock) });
+      segments.push({
+        source: 'git-changes',
+        injected: true,
+        tokens: estimateTokensText(gitBlock),
+      });
     }
     const total = segments.reduce((sum, s) => sum + (s.tokens ?? 0), 0);
     // 先发汇总、再回推活动文件投影：chip 徽记读的是汇总里 active-file 分项，两条跨帧到达时

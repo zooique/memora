@@ -1084,7 +1084,14 @@ describe('checkTurnLimits（IMG-8 整轮预检：张数 / 总字节 / token 发�
       type: 'image_picked',
       status: 'ok',
       name: `img-${i}.png`,
-      ref: { sha256: `${SHA}-${i}`, mime: 'image/png', width: 8, height: 8, bytes, name: `img-${i}.png` },
+      ref: {
+        sha256: `${SHA}-${i}`,
+        mime: 'image/png',
+        width: 8,
+        height: 8,
+        bytes,
+        name: `img-${i}.png`,
+      },
       tokens,
     });
   }
@@ -1099,7 +1106,14 @@ describe('checkTurnLimits（IMG-8 整轮预检：张数 / 总字节 / token 发�
       type: 'image_ingest_result',
       status: 'ok',
       sha256: `${SHA}-1`,
-      ref: { sha256: `${SHA}-1`, mime: 'image/png', width: 8, height: 8, bytes: 33, name: 'shot.png' },
+      ref: {
+        sha256: `${SHA}-1`,
+        mime: 'image/png',
+        width: 8,
+        height: 8,
+        bytes: 33,
+        name: 'shot.png',
+      },
       tokens: 222,
     });
     expect(h.accepted[0]!.tokens).toBe(222);
@@ -1108,7 +1122,14 @@ describe('checkTurnLimits（IMG-8 整轮预检：张数 / 总字节 / token 发�
       type: 'image_picked',
       status: 'ok',
       name: 'old.png',
-      ref: { sha256: `${SHA}-old`, mime: 'image/png', width: 8, height: 8, bytes: 1024, name: 'old.png' },
+      ref: {
+        sha256: `${SHA}-old`,
+        mime: 'image/png',
+        width: 8,
+        height: 8,
+        bytes: 1024,
+        name: 'old.png',
+      },
     });
     expect(h.accepted[1]!.tokens).toBeUndefined();
   });
@@ -1153,7 +1174,14 @@ describe('checkTurnLimits（IMG-8 整轮预检：张数 / 总字节 / token 发�
       type: 'image_picked',
       status: 'ok',
       name: 'old.png',
-      ref: { sha256: `${SHA}-old`, mime: 'image/png', width: 8, height: 8, bytes: 1024, name: 'old.png' },
+      ref: {
+        sha256: `${SHA}-old`,
+        mime: 'image/png',
+        width: 8,
+        height: 8,
+        bytes: 1024,
+        name: 'old.png',
+      },
     });
     // 极小窗口本必拦，但 token 未知 ⇒ 跳过该维（宁跳过不假算）
     const r = h.checkTurnLimits(100);
