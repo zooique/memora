@@ -59,6 +59,11 @@ agent_created: true
 6. 🔴 **同批新增的批注 / 收据小标题须带语义后缀**：多条注记若逐字相同，`ledger:hygiene` ⑩（跨条目逐字克隆）当场红（5.2.0 实证：三条归位注记同文 ×3 被打红）。
 7. 🔴 **ID 白名单靠人肉编 ⇒ 漏扫是常态**（0.2.0 漏 45 条 / 5.0.0 收口无指针 22 条，均欠账 `ARCH-DRAIN-1`）。兜底已改为上面第 3 条的机检门；**计数以当场重扫实测为准，不采信任何清点快照**（快照自身算术不闭合，且随台账编辑漂移）。
 
+8. 🔴 **发版区间 commit ↔ archive 条目完整性人工核对（专防「从未登记」漏账盲区）**：`ledger:fold` 只核「已登记 ID 的消失 ⇒ archive 须有副本」、`ledger:hygiene` 只查「已登记得对不对」，**两者都不验证「commit 是否都登记了 ID」的完整性**——对「从未在主台账登记过」的 commit，归档脚本（只迁既有 ID）必然漏迁，且任何现闸门都抓不到，这是双门守卫的结构性盲区。**执行时机**：第 4 条归档脚本 `--dry-run` 预览、确认逐字节无损之后，`--apply` 提交之前。
+   - **做法**：`git log <prev-tag>..HEAD --oneline`（prev-tag = 上一个已发内核版，如 `v5.1.0`）列出发版期全部 commit，逐笔确认每笔都对应主台账顶层 ID 或 archive 条目。
+   - **重点防区**：仓库级工程基建 commit（`scripts/` / `package.json` 非版本号改动 / CI 配置 / `.trae/` 技能脚本）最易漏登——它们不对应业务功能条目、常被忽视；此类改动须确认已有 `GATE-*` / `CI-*` / 技能类 ID 覆盖，否则补登后再归档。
+   - **实证**：5.2.0 发版后暴露 `b05aa124`（双门升硬闸）、`16ac90d4`（决策指针落注释）两笔随版发布却从未登记、归档漏载，发版后才以 `LEDGER-GATE-1` / `DEC-PTR-1` 补登 truth-source。
+
 ### Step 4：发版（打 tag 触发流水线）
 1. 确认 Step 1–3 全部已提交到当前 HEAD。
 2. `git tag -a vX.Y.Z -F <msgfile> && git push origin main vX.Y.Z`（中文 tag 信息经 Write 工具写 UTF-8 msgfile 避开 shell 引号坑；**单次命令同时推 main + tag**，origin 双 URL 一次同步两远端）。
