@@ -147,7 +147,12 @@ export const chatStyles = `
    * 50vh 为视口比例（无 vh 令牌档），与 JS 侧 NAV_HEIGHT_RATIO 同判 C 类一次性维度，
    * 镜像由 roundNav.test.ts 守卫钉死。 */
   .round-nav__list {
-    min-width: var(--dim-lg, 160px); max-width: var(--dim-2xl, 320px); max-height: 50vh;
+    /* 窄宽度兜底：上下限都必须锚视口，否则窄侧栏下 320 上限必溢出。
+       不能用百分比——包含块是绝对定位的 __panel（宽度由内容决定），百分比会构成
+       循环依赖被浏览器按 auto 处理，等于没写。 */
+    min-width: min(var(--dim-lg, 160px), calc(100vw - var(--sp-6)));
+    max-width: min(var(--dim-2xl, 320px), calc(100vw - var(--sp-6)));
+    max-height: 50vh;
     overflow-y: auto;
     padding: var(--sp-2, 6px);
     border: var(--line-input);
@@ -308,7 +313,10 @@ export const chatStyles = `
   }
   .session-history .treedd__trigger .btn-icon svg { display: block; }
   .session-history .treedd__menu {
-    min-width: 240px; max-width: min(var(--dim-xl), calc(100vw - 24px));
+    /* 窄宽度兜底：min 与 max 必须共用同一安全边距。边距不同会出现 min > max，
+       而层叠规范里 min 胜出 ⇒ 溢出照旧（面板 264 以下即触发，2026-10-29 实测算得）。 */
+    min-width: min(240px, calc(100vw - var(--sp-6)));
+    max-width: min(var(--dim-xl), calc(100vw - var(--sp-6)));
     max-height: var(--dim-xl);
     /* 🔴 禁在此写 display：treedd 显隐 = 基础态 display:none（dropdown.ts）×
        .is-open 态 display:flex。此处 (0,2,0) 特异性会压过基础态 none ⇒ 浮层常驻
@@ -1388,7 +1396,8 @@ export const chatStyles = `
     bottom: calc(100% + 6px);
     right: 0;
     width: max-content;
-    max-width: var(--dim-2xl);
+    /* 窄宽度兜底：max-content 会撑到内容宽，上限不随视口收缩 ⇒ 窄面板必溢出。 */
+    max-width: min(var(--dim-2xl), calc(100vw - var(--sp-6)));
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
     background: var(--surface-card, #252526);
     border: var(--line-input);

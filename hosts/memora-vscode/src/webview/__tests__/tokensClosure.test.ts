@@ -198,10 +198,13 @@ const EXEMPT_PROPS = new Set([
  *         浮层 160/320px→--dim-lg/--dim-2xl、条列横向 padding 2px→--sp-0、50vh/130%/0.12s 非 px 口径不入户。
  * 为何要跟着降：若基线停在初始值，消化出的 94+ 处会变成「可新增而不报错」的余额，
  * 等于给未来的裸值开了口子。门必须随债务一起往下走。
- * 现状（2026-10-20）：清单已至 26 ⇒ 硬门 toEqual(26)（见守卫断言）。
- * 残余 26 = C 类 26（一次性维度，显式硬门例外）；A 类 4 已于 2026-10-12 闭包（见上 20 行）。
+ *   24 → 窄宽度兜底治理（IMG-12，2026-10-29）：两处 `calc(100vw - Npx)` 的裸边距
+ *        （24px / 32px）统一改为 `var(--sp-6)`，与浮层安全边距同源 ⇒ 裸值 26→24（机械真值）。
+ *        同批消除「min 与 max 边距不一致 ⇒ min 压 max」的残余溢出，判据见 narrowWidthGuard。
+ * 现状（2026-10-29）：清单已至 24 ⇒ 硬门 toEqual(24)（见守卫断言）。
+ * 残余 24 = C 类 24（一次性维度，显式硬门例外）；A 类 4 已于 2026-10-12 闭包（见上 20 行）。
  */
-const FROZEN_VALUE_BASELINE = 26;
+const FROZEN_VALUE_BASELINE = 24;
 
 /** 剥离 var() 整体（含其 fallback），残留者才是真裸值 */
 const stripVar = (v: string): string => v.replace(/var\(\s*--[\w-]+(\s*,[^)]*)?\)/g, '');
@@ -241,7 +244,8 @@ describe('设计令牌值守卫（裸值冻结 + 防新增）', () => {
     expect(scanned, '扫描到的 CSS 声明为 0——提取正则或路径已失效').toBeGreaterThan(500);
   });
 
-  it('裸值债务硬门：必须等于 26（A 类 4 已闭包；残余 = C 类 26 一次性维度，偏离即红）', () => {
+  // 数字引用常量而非手写：基线下调时测试名必须跟着走，否则「名字说 26、断言比 24」两层话
+  it(`裸值债务硬门：必须等于 ${FROZEN_VALUE_BASELINE}（A 类已闭包；残余 = C 类一次性维度，偏离即红）`, () => {
     const { violations } = collectValueViolations();
     if (violations.length > 0) {
       const byProp = new Map<string, number>();

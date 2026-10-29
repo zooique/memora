@@ -27,7 +27,10 @@ export const dropdownStyles = `
   .treedd__trigger svg { display: block; }
   .treedd__menu {
     position: absolute; right: 0; top: calc(100% + var(--sp-1, 4px));
-    min-width: 168px; z-index: var(--z-menu); /* 浮层高 z-index，确保覆盖而非挤压布局 */
+    /* 窄宽度兜底：原先只有下限、没有上限 ⇒ 窄面板下必然溢出。上下限同锚视口。 */
+    min-width: min(168px, calc(100vw - var(--sp-6)));
+    max-width: calc(100vw - var(--sp-6));
+    z-index: var(--z-menu); /* 浮层高 z-index，确保覆盖而非挤压布局 */
     padding: var(--sp-1, 4px); box-sizing: border-box;
     border: 1px solid var(--menu-border, rgba(128, 128, 128, 0.4));
     border-radius: var(--radius-lg, 8px);
@@ -142,8 +145,9 @@ export const dropdownStyles = `
   .treedd--capsule .treedd__menu {
     right: 0; left: auto; top: auto;
     bottom: calc(100% + var(--sp-2, 6px));
-    min-width: var(--dd-menu-min-w, 160px);
-    max-width: min(var(--dd-menu-max-w, 240px), calc(100vw - 32px));
+    /* 窄宽度兜底：min 与 max 必须共用同一安全边距（边距不同 ⇒ min 压 max ⇒ 溢出）。 */
+    min-width: min(var(--dd-menu-min-w, 160px), calc(100vw - var(--sp-6)));
+    max-width: min(var(--dd-menu-max-w, 240px), calc(100vw - var(--sp-6)));
     max-height: 260px; overflow-y: auto;
     z-index: var(--z-menu-top); /* 模型选择器菜单最高层级，浮于所有内容之上（含消息区+输入卡片） */
     transform: translateZ(0); /* 独立合成层：避免 webview 渲染引擎重排导致「挤压对话区」 */
