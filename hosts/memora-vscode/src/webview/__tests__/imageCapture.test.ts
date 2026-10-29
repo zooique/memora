@@ -1018,3 +1018,47 @@ describe('createImageCapture — 上传按钮（常驻，D27）', () => {
     expect(posts).toEqual([]);
   });
 });
+
+describe('explainEmptySend（IMG-10：纯图不激活发送，但必须说明原因）', () => {
+  let own: ImageCaptureHandle | null = null;
+
+  afterEach(() => {
+    own?.dispose();
+    own = null;
+  });
+
+  function captureWithNotices(): { notices: string[]; h: ImageCaptureHandle } {
+    const notices: string[] = [];
+    const h = createImageCapture({
+      doc: document,
+      ...mountDom(),
+      notice: (m) => notices.push(m),
+    });
+    own = h;
+    return { notices, h };
+  }
+
+  it('无候选图 ⇒ 不提示（空输入按 Enter 是没意图，不该冒提示打扰）', () => {
+    const { notices, h } = captureWithNotices();
+    h.explainEmptySend();
+    expect(notices).toEqual([]);
+  });
+
+  it('有候选图 ⇒ 解释「纯图片消息暂不支持发送」并说明图片已保留', () => {
+    const { notices, h } = captureWithNotices();
+    h.applyPicked({
+      type: 'image_picked',
+      status: 'ok',
+      name: 'a.png',
+      ref: { sha256: SHA, mime: 'image/png', width: 4, height: 4, bytes: 33, name: 'a.png' },
+      uri: 'mock://a.png',
+    });
+    expect(h.accepted).toHaveLength(1);
+
+    h.explainEmptySend();
+
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toContain('纯图片消息暂不支持发送');
+    expect(notices[0]).toContain('已保留');
+  });
+});

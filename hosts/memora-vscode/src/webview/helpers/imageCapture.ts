@@ -142,6 +142,16 @@ export interface ImageCaptureHandle {
    */
   resolveSendable(interjectRoute: boolean): SendableImages;
   /**
+   * 空文本发送被拦时的**解释出口**（IMG-10 · 2026-10-29 拍板：纯图不激活发送，必须有文字）。
+   *
+   * 为什么归本层：`accepted` 只有这里知道，视图层若自己判「有没有图」就得再读一遍候选数组
+   * （= 第二份判据）；而调用方 `sendMessage` 此刻只拿到 `text === ''` 这一个事实。
+   * 为什么必须解释：拦截本身是既定行为，但按钮灰着 + Enter 什么都不发生会被读成
+   * **「按键失灵」**——静默失败与 IMG-8 同族。文案只说「现在不发纯图」，不承诺「以后支持」。
+   * 无候选图时**不提示**（空输入按 Enter 是用户没意图，不该冒提示打扰）。
+   */
+  explainEmptySend(): void;
+  /**
    * 落盘回执入口（chatView 把 `image_ingest_result` 原样转进来）。
    *
    * 归本层处理而非 chatView：chip 的状态只在这里维护，回调若散在视图层就会出现
@@ -665,6 +675,12 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     return { refs: accepted.map((it) => it.ref!) };
   }
 
+  /** 见 handle 上的同名声明：无候选图时保持静默，有候选才解释「为什么这条发不出去」 */
+  function explainEmptySend(): void {
+    if (accepted.length === 0) return;
+    notice('纯图片消息暂不支持发送，请在输入框补一句说明（图片已保留）');
+  }
+
   function onPaste(e: ClipboardEvent): void {
     const files = pickImageFiles(e.clipboardData);
     // 没有图片就**不拦截**：纯文本粘贴照常进 textarea（劫持它才是 bug）
@@ -760,6 +776,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     applyPicked,
     setAttachEnabled,
     resolveSendable,
+    explainEmptySend,
     clear() {
       accepted.length = 0;
       rejected.length = 0;

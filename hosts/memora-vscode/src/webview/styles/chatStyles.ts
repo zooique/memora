@@ -1938,7 +1938,10 @@ export const chatStyles = `
     flex-direction: column;
     gap: var(--sp-1, 4px);
     padding: var(--sp-2, 6px);
-    max-width: var(--dim-2xl);
+    /* IMG-11：固定 320 上限在窄面板（实测 278px）下没有「可用宽度」兜底 ⇒ 浮层比视口还宽。
+     * placeTip 的水平夹取此时无解（maxLeft < minLeft 会被 Math.max 兜底回左边距）⇒ 溢出并出横向滚动条。
+     * 减 var(--sp-6) = 16px，等于 placeTip 的左右安全边距各 8，两处同源；改动时须同步该函数。 */
+    max-width: min(var(--dim-2xl), calc(100vw - var(--sp-6)));
     background: var(--surface-card, #252526);
     border: var(--line-input);
     border-radius: var(--radius-md, 8px);
@@ -1951,7 +1954,8 @@ export const chatStyles = `
    * （残余风险已在方案里如实登记，不靠转码解决）。 */
   .image-chip-tip__img {
     display: block;
-    max-width: var(--dim-2xl);
+    /* 相对浮层内容区收缩：固定 320 会让替换元素的内在宽度撑破已收窄的容器（IMG-11） */
+    max-width: 100%;
     max-height: var(--dim-2xl);
     object-fit: contain;
   }

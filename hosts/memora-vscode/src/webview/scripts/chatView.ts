@@ -5696,10 +5696,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
   function sendMessage(): void {
     const text = input.value.trim();
-    if (!text) return;
-    // 插话满员预检（INPUT-LIMIT-1）：运行中 send 被路由为插话，队列满员时宿主整条拒收——
-    // 若先清框，用户文本随警告一起消失（丢内容=背刺）⇒ **清框前**用队列投影预检，满员即拒发。
-    // paused 带补充 / done 走 chat 均不入插话队列，不预检；宿主闸门保留作竞态兜底。
+    // IMG-10（2026-10-29 拍板：纯图不激活发送）：拦下是既定行为，但**必须说明原因**——
+    // 按钮灰着 + Enter 无反应会被读成「按键失灵」；有无候选图只有采集层知道，故判据外置。
+    if (!text) return imageCapture.explainEmptySend();
+    // 插话满员预检（INPUT-LIMIT-1）：满员时宿主整条拒收，若先清框用户文本随警告消失（丢内容=背刺）
+    // ⇒ **清框前**用队列投影预检，满员即拒发。paused 带补充 / done 走 chat 不入队，不预检（宿主闸门兜底）。
     const isInterjectRoute = deriveSessionUiState(skeletonState) === 'thinking';
     if (isInterjectRoute && statusBars.getPendingCount() >= MAX_PENDING_INTERJECTIONS) {
       activityDrawerView.showActivity(
@@ -5708,8 +5709,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       );
       return;
     }
-    // 图片发送交付（IMG-2）：取图唯一出口 = 采集层（含插话不带图的 D13 判据）；
-    // 有图发不出去时整条拦下并保留输入框与 chip——绝不发「图没跟上」的消息。
+    // 图片发送交付（IMG-2）：取图唯一出口 = 采集层（含 D13 判据）；有图发不出去整条拦下并保留输入框与 chip。
     const sendable = imageCapture.resolveSendable(isInterjectRoute);
     if ('blocked' in sendable) {
       activityDrawerView.showActivity('info', sendable.blocked);

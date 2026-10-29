@@ -611,7 +611,10 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             （2026-10-28，实数经 scripts/count-token-refs.mjs 实锤同步）
     'sq-': 49, // IMG-2 Q3：上传按钮 .image-attach-btn 尺寸 var(--sq-xl)/var(--sq-lg) +2
     //           （2026-10-28，实数经 scripts/count-token-refs.mjs 实锤同步）
-    'dim-': 27, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）；
+    // 27→26：IMG-11 把 `.image-chip-tip__img` 的 max-width 由 var(--dim-2xl) 改为 100%
+    //        （固定 320 会撑破已收窄的浮层容器，改「相对内容区收缩」）⇒ -1（2026-10-29，实数经
+    //        scripts/count-token-refs.mjs 实锤同步）。容器侧仍保留 min(var(--dim-2xl), …) 未减。
+    'dim-': 26, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）；
     //             UI-CONFIRM-FIT-1：审批卡 max-height 引 var(--dim-2xl)（替代裸值 420px）+1（2026-10-22）；
     //             IMG-2：悬停预览 3 处（浮层 max-width + 预览图 max-width/max-height，均复用
     //             var(--dim-2xl) 的「提示卡最大宽高」既有语义）+3（2026-10-28，
@@ -640,4 +643,39 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
       );
     });
   }
+});
+
+/**
+ * 浮层宽度回归锁（IMG-11 · 2026-10-29）
+ *
+ * 为什么这条需要机器判据：jsdom 不做布局 ⇒ 「窄面板下不出横向滚动条」永远测不到；
+ * 而这类伤已复发两次（IMG-7 的 `.msg-attachment`、IMG-11 的 `.image-chip-tip`），
+ * 两次都是「固定上限没给可用宽度兜底」。人眼验收挡不住第三次，故在此钉住形态。
+ *
+ * 判据不是「某个具体像素值」，而是**结构**：绝对定位 + 挂 body 的浮层，宽度上限必须是
+ * `min(固定刻度, 视口扣除)` 的形状——固定刻度单独出现即视为回退。
+ */
+describe('浮层宽度必须带视口兜底（IMG-11 回归锁）', () => {
+  const chatStyles = (): string => readFileSync(join(STYLES_DIR, 'chatStyles.ts'), 'utf8');
+
+  /** 取某个类名从 `{` 到下一个规则结尾的原文（够用于本文件的扁平块） */
+  function blockOf(css: string, selector: string): string {
+    const start = css.indexOf(`${selector} {`);
+    expect(start, `样式块 ${selector} 未找到（选择器改名？同步本守卫）`).toBeGreaterThan(-1);
+    const end = css.indexOf('}', start);
+    return css.slice(start, end);
+  }
+
+  it('.image-chip-tip 的 max-width 必须是 min(刻度, 100vw - 间距)，不得退回固定上限', () => {
+    const block = blockOf(chatStyles(), '.image-chip-tip');
+    expect(block).toContain('max-width: min(var(--dim-2xl), calc(100vw - var(--sp-6)))');
+    // 反向断言：裸的固定上限（本处历史写法）会让浮层比视口还宽 ⇒ placeTip 的水平夹取无解
+    expect(block).not.toMatch(/max-width:\s*var\(--dim-2xl\);/);
+  });
+
+  it('预览图的 max-width 必须相对容器收缩（固定 320 会撑破已收窄的浮层）', () => {
+    const block = blockOf(chatStyles(), '.image-chip-tip__img');
+    expect(block).toContain('max-width: 100%');
+    expect(block).not.toMatch(/max-width:\s*var\(--dim-2xl\);/);
+  });
 });

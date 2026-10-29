@@ -12482,3 +12482,58 @@ describe('图片缩略图：运行时回声 × 重放两路同形', () => {
     expect(document.querySelector('.msg-attachments')).toBeNull();
   });
 });
+
+describe('IMG-10 · 纯图片消息的发送拦截与解释（2026-10-29 拍板：必须有文字）', () => {
+  const REF = {
+    sha256: 'ffffffffffff',
+    mime: 'image/png' as const,
+    width: 120,
+    height: 80,
+    bytes: 879,
+    name: '粘贴图片-ffffff',
+  };
+
+  function pickImage(): void {
+    dispatch({ type: 'image_picked', status: 'ok', name: REF.name, ref: REF, uri: 'mock://x.png' });
+  }
+
+  function pressEnter(): HTMLTextAreaElement {
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return input;
+  }
+
+  /** 解释文案的载体是活动条（不是消息气泡）：`collectAllBodyText` 只收 `.msg-body`，会永远拿不到 */
+  function activityText(): string {
+    return document.getElementById('activityBar')?.textContent ?? '';
+  }
+
+  it('有图无文字按 Enter ⇒ 不发消息，且给出可见解释（不是静默）', () => {
+    const { postMessage } = mountChatView();
+    pickImage();
+    const input = pressEnter();
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'input' }));
+    expect(activityText()).toContain('纯图片消息暂不支持发送');
+    // 输入行不清空：拦下不等于丢弃
+    expect(input.value).toBe('');
+  });
+
+  it('反例：无图无文字按 Enter ⇒ 保持静默（空输入是没意图，不该冒提示）', () => {
+    const { postMessage } = mountChatView();
+    pressEnter();
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'input' }));
+    expect(activityText()).not.toContain('纯图片消息暂不支持发送');
+  });
+
+  it('有图 + 有文字 ⇒ 正常发送（拦截只针对纯图，不许误伤）', () => {
+    const { postMessage } = mountChatView();
+    pickImage();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '这是什么';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const sent = postMessage.mock.calls.map((c) => c[0]).filter((m) => m?.type === 'input');
+    expect(sent).toHaveLength(1);
+    expect(sent[0].attachments).toHaveLength(1);
+  });
+});
