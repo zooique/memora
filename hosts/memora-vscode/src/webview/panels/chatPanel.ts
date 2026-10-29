@@ -2627,8 +2627,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /**
    * 处理用户切换激活 Provider（底部模型下拉框）：持久化激活态 + 热生效，未生效则回滚并提示。
-   *
-   * 热生效走 `applyActiveProviderRefresh`（IMG-5 起的**单点**：配置变更监听共用同一实现）。
    * ⚠️ 回滚只属于本路径（用户点在 UI 上，回滚后可重试）；配置保存路径**不回滚**——那边配置
    * 已落盘，回滚等于丢用户输入，只置 stale 顺延。两者刻意不同，勿统一。
    *
@@ -2649,6 +2647,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       ? await this._providerStore.setActive(prev)
       : await this._providerStore.clearActive();
     await this.pushProviders();
+    // 回滚后真源=prev：补推恢复 prev 口径占用（applyActiveProviderRefresh 里补推的是新口径，
+    // 此处旧容量 chat_providers 会再触空态渲染，不补推则空态滞留）
+    void this.postHistoryOccupancy();
     this.post({
       type: 'notice',
       level: 'error',
@@ -2675,6 +2676,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!outcome.applied) {
       console.warn(`Memora 配置热刷新未生效（${outcome.reason}），留待下次发送前补做`);
     }
+    // 热刷新所有出口都重推 chat_providers，上限变化 ⇒ webview 圆环渲染空态（全 0 滞留）；
+    // 补推历史占用恢复真实态（幂等，与切会话/装配收口同一单点 postHistoryOccupancy）
+    void this.postHistoryOccupancy();
     return outcome;
   }
 

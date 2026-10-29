@@ -1371,6 +1371,43 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(occs[occs.length - 1]!.occupancy.rolePackBaseTokens).toBe(7000);
   });
 
+  // ─── 配置热刷新补推占用：热刷新重推 chat_providers，上限变化 ⇒ webview 圆环渲染空态
+  // （contextLimitShown 防误清零判据放行）⇒ 须补推历史占用恢复真实态（热刷新面的第二个消费点）
+  it('配置热刷新（retryAgentAssembly）→ 补推 context_occupancy 纠正空态', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    provider.setRoundStore(roundStore);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '问题A', ts: 't1' },
+      { role: 'assistant', content: '回答A', ts: 't2' },
+    ]);
+    const agent = {
+      on: vi.fn(),
+      off: vi.fn(),
+      getMetrics: () => ({
+        context: { occupancy: { rolePackBaseTokens: 15000 } },
+      }),
+    } as unknown as Agent;
+    provider.setAgent(agent);
+    // 装配收口点（refreshAfterAssemble）先推一次 occupancy——等它落定后清空 posted，
+    // 之后只观察热刷新路径自己的补推（不清空则装配补推会掩护断言，修复前也假绿）
+    await vi.waitFor(
+      () => expect(ofType(posted, 'context_occupancy').length).toBeGreaterThanOrEqual(1),
+    );
+    posted.length = 0;
+    // 配置变更入口（extension.ts onDidChangeConfiguration 转发）：agent 已装配 → 热刷新
+    await provider.retryAgentAssembly();
+    await vi.waitFor(() => {
+      const occs = ofType<{ type: string; occupancy: { dialogueCount: number } }>(
+        posted,
+        'context_occupancy',
+      );
+      expect(occs.length).toBeGreaterThanOrEqual(1);
+      expect(occs[occs.length - 1]!.occupancy.dialogueCount).toBe(1);
+    });
+  });
+
   // ─── 软暂停入口：生成中暂停走 step 边界挂起 requestPause（与内核 step 边界软暂停语义一致）
   // handlePause = 先读 isPausePending toggle 再调 requestPause/cancelPauseRequest
   // （chatPanel.ts L2026），mock 必须同步新增 isPausePending + cancelPauseRequest，否则 TypeError。
