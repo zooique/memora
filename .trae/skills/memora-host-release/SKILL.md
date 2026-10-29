@@ -73,16 +73,28 @@ agent_created: true
 4. 🔴 **CI 红后修 workflow / 测试 ⇒ 旧 tag 作废，删掉重打**：tag 触发的 CI 用 **tag 指向 commit 里的 workflow 文件版本**——改完 push 到 main 后重跑旧 run 用的还是旧 workflow，必须删远端+本地 tag → 在含修复的新 HEAD 重打 → 再推（0.2.0 实证两次：`pnpm install --offline` 冷 store 炸、平台相关用例 ubuntu 红）。
 
 ### Step 5：手动分发（宿主专属，CI 不做）
+
+> 🔴 **判据纪律：上架成败只认市场 live 态，不认 run 状态 API、不认页面快照**（2026-10-29 / 10-30 双实证）。
+> - **Actions run 状态 API 有快照延迟**：`api.github.com/.../runs/<id>` 的 `status` 长期停在 `in_progress`、`conclusion` 恒 `null`、`updated_at` 冻结在某一刻、不随 step 完成刷新（0.4.0 实证：冻结 14:00:50Z，而末步实际 14:05:21Z 才退出）。据它判「失败」⇒ 会去删 tag 重打，而 Open VSX 同版本不可重发（见 ②）⇒ 灾难。
+> - **判成功的两个真信号**：GitHub Release 已建且挂上正确 asset + Open VSX 公开 API `version` 翻到目标版本。二者为真即发布已成功，run 页面随后自会翻绿。
+> - **Marketplace 页面有传播延迟**：手动上传后抓扩展页，正文可能仍是上一版 README（0.4.0 实证：页面仍写随包内核 `5.1.0`，而仓库 README 已是 `5.2.0`）⇒ **不可据此判上传失败**。沿用惯例：**版本号以扩展页 Version History 为准，台账不写死版本快照**。
+
 1. **① GitHub Release**：`host-release.yml` 已自动创建/更新 Release 并挂 `.vsix` asset。核对 Release 存在 + asset 名正确（`memora-vscode-<VER>.vsix`）+ **body 结构化齐全**——workflow 注入「随包内核代次 / sha256 / 字节数 / Marketplace 手动上传提示」四项（0.2.0 实证缺口：body 只剩 auto changelog 链接，「随包内核代次」这条对账信息在发布面丢失，只活在 CHANGELOG 里）。
 2. **② Open VSX**：✅ **已自动化（2026-10-26）**——`host-release.yml` 末尾两步已带（发布 + 回查），打 `vscode@*` tag 即发；前置（namespace ownership / 手动首发 0.2.0 / Trusted Publisher 登记）均已完成。核对 = 回查步断言 <https://open-vsx.org/api/zooique/memora-vscode> 的 `version` == 本次 tag 版本。
    - 🔴 **发版前必须升 `hosts/memora-vscode/package.json` 的 version**：Open VSX 版本号**永久保留**（删除后仍保留），同版本不可重发 ⇒ 已发的 0.2.0 若重打 tag，门禁与 GitHub Release 都能过、**只有 Open VSX 那步红**。
    - 🔴 **Trusted Publisher 按 workflow 文件名匹配**（`host-release.yml`，非数字 ID）⇒ 本文件**不得改名**（改名须删掉 Open VSX 注册重来）。
 3. **③ VS Code Marketplace**：🔒 **定案保持手动上传**（全局 PAT 2026-12-01 退役；稳的 Entra ID 路线需 Azure 订阅 = 国外银行卡拦路石；干净路线 `vsce publish --oidc` 尚未进稳定版且 Marketplace 侧无策略注册 UI）。每版传一次 `.vsix`，成本可忽略 ⇒ 手动最优。
+   - 上传物 = **① 的同一个 GitHub Release asset**（下载后直接传），**不本地重出包**——重出包会与上架物 sha256 不一致，直接破坏「Release asset ↔ 市场产物」的对账链。
 
 ### Step 6：发版后订正
 1. 将 Step 3 的「待上架」订正为「已发布」：`tasks/archive/<x.y.z>-host.md` 文件头 + 主台账**版本索引**里该版那一行的状态列（归档文件不在 `files` 白名单，订正在 tag 之后不影响已发 `.vsix`）。
 2. 核对三市场上架状态：GitHub Release（asset）/ Open VSX / VS Code Marketplace 均可见目标版本。
 3. `git show --stat` 核对本次提交文件归属 ↔ 标题（PowerShell 回显中文乱码是显示层，勿据此重提交；字节用 `git log -1 --format=%B | od -c` 校验）。
+4. 🔴 **Marketplace 手动上传完成后，回头订正归档里的「未执行」标记**（0.4.0 实证缺口，且**大概率跨会话**——用户上传往往在发版次日）：
+   - Step 6 第 1 条订正为「已发布」时，若 Marketplace 尚未上传，头标会留下一句「**未执行** = VS Code Marketplace 手动上传」。这是**一次性快照，不会自动跟进后续收口**；用户上传完成后须订正 `tasks/archive/<x.y.z>-host.md` 头标 + `tasks/archive/README.md` 归档表该行**两处**，补执行日期与「上传物 = 同一 asset、未本地重出包」。
+   - **连带回扫上一版**：该标记从写下到被订正跨越整个发版周期，0.3.0 的同类标记自 2026-10-27 遗留到 2026-10-30 才暴露，且长期与本文件 H6 正文收据**自相矛盾**。订正本版时顺手 grep 前一版归档头 + 归档表，一并清掉同类遗留。
+   - ⚠️ grep `未执行` 会命中大量无关语义（「尚未执行」「断言中断未执行」等）⇒ **逐条判语义，严禁批量替换**。
+   - 订正提交同样必跑两道台账硬闸（`verify:ledger-hygiene` + `verify:ledger-fold`）。
 
 ## 已知坑（对抗式核查清单）
 - 🔴 **内核未先行**：宿主 bundle 内联内核 dist，内核未发 npm 会在市场出现「依赖不存在的内核版本」（host-release.yml gate ② 拦，但 tag 前人工跑更省一次 CI 往返）。
@@ -96,6 +108,7 @@ agent_created: true
 - 🔴 **平台相关 API 的断言写 `runIf(平台)` 互斥孪生**（0.2.0 二跑实证，run 39890131524）：`path.relative` / findFiles `fsPath` 等语义随 OS 变，反斜杠形态只在 Windows 运行时出现，ubuntu 上喂 Windows 路径必错。win32 用例 `runIf(process.platform === 'win32')` + POSIX 孪生 `runIf(!win32)` 各跑真实形态——**不产生隐藏 skip**，任一平台都有在跑的用例。
 - 🔴 **跨宿主契约测试的前置是 memora-mcp dist**：`crossHostLayout.test.ts` 加载 `hosts/memora-mcp/dist` 产物（非源码）且有 mtime 守卫。workflow 已带构建步（mcp 无 lockfile ⇒ `--no-frozen-lockfile`，mcp 出包补 lockfile 后收紧为 frozen）；本地新 clone 同样先 build mcp。
 - 🔴 **归档白名单靠人肉编 ⇒ 漏扫是常态**（0.2.0 漏 45 条，欠账 `ARCH-DRAIN-1`；4.0.0 前的 copy 式归档在主台账留过无指针原文）。兜底 = Step 3 第 4 条的两道机检门，`local-ci` full 档会强制跑；任何计数以**当场重扫实测**为准，不采信清点快照（快照会算术不闭合 + 随台账编辑漂移）。
+- 🔴 **判 CI 成败别信 run 状态 API**（快照延迟：`status` 恒 `in_progress` / `conclusion` 恒 `null`）⇒ 误判会诱导「删 tag 重打」，而 Open VSX 同版本不可重发 ⇒ 只能 bump 版本号。判据与传播延迟容忍见 **Step 5 判据纪律**。
 
 ## 验收门槛
 GitHub Release 存在 + body 含随包内核代次与 sha256 + Open VSX / VS Code Marketplace 上架状态正确 + 归档文件 `tasks/archive/<x.y.z>-host.md` 存在且 ✅ 项全迁、开放项留主台账 + 主台账指针齐全 + CHANGELOG 宿主区无「未发布」且引言注明随包内核代次 + README 内核行 = 本次内联内核版本 + 门禁全绿 = 完成。
