@@ -42,6 +42,7 @@ import { bindSingleTrackRow, syncRowEdges } from '../helpers/chipRow.js';
 import { createImageCapture } from '../helpers/imageCapture.js';
 import { renderAttachmentStrip, type UserAttachmentView } from '../helpers/attachmentStrip.js';
 import { fmtTime } from '../helpers/fmtTime.js';
+import { copyText, installSelectionCopyGuard } from '../helpers/selectionClipboard.js';
 import { fmtTokens } from '../helpers/fmtTokens.js';
 import {
   forceScrollToBottom,
@@ -1808,18 +1809,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     });
     // 无任何进行中工具 → 兜底停止（防漏挂清理的残留定时器空转）
     if (!anyRunning) clearToolElapsed();
-  }
-
-  // 复制消息文本到剪贴板
-  function copyText(text: string): void {
-    window.navigator.clipboard.writeText(text).catch(() => {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-    });
   }
 
   // 空状态开关：消息区无 .msg 时显示空状态提示，有消息则隐藏
@@ -4097,6 +4086,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   window.addEventListener('message', onMessage);
+
+  // 选区复制兜底（Layer A）：挂一次即可，幂等。修复「选中对话记录后 Ctrl+C /
+  // 右键 Copy 复制不出」——原生复制在 WebviewView 不可靠，本 guard 在 copy 事件
+  // 同步写盘；输入区 <textarea> 选区不计入 getSelection ⇒ 自动放行原生复制。
+  installSelectionCopyGuard();
 
   // textarea 自适应高度（Enter 发送 / Shift+Enter 换行）
   // SSOT：高度上限单一真理源 — 从 CSS 令牌(--input-max-h)的计算值读取，
