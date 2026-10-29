@@ -30,7 +30,7 @@ export interface OpenAICompatibleConfig {
   supportsVision?: boolean;
   /**
    * 图片解析器（宿主注入）：把 `ImageRef` 物化为可发送形式（URL 或 base64 文本）。
-   * 不注入 ⇒ 含附件的消息在 `formatMessages` 序列化期降级（跳过该图，不阻断，方案 §5.5 二级）。
+   * 不注入 ⇒ 含附件的消息在 `formatMessages` 序列化期降级（推可见占位文本块，**绝不静默丢该图**，方案 §5.5 二级）。
    */
   imageResolver?: ImageResolver;
 }
@@ -313,8 +313,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
                 : `[图片不可用 ${att.sha256.slice(0, 8)}]`,
           });
         }
-        // 全部走降级且正文为空（极端情形）⇒ 兜底为纯文本，避免发出空 content 数组
-        return { role: 'user', content: blocks.length > 0 ? blocks : m.content };
+        // blocks 恒非空：进入本分支前提是 attachments 非空，循环每图必推一块（图块或占位块）
+        return { role: 'user', content: blocks };
       }
       return { role: m.role, content: m.content };
     });

@@ -7,7 +7,7 @@
  *  - 单图片附件 → 展开为 `[{type:'text'},{type:'image_url'}]` content 块数组；
  *    base64 字节**只在此处**临时物化（data:{mime};base64,{text}）。
  *  - 宿主返回 url（已落盘）路径 → `image_url.url` 直连，内核零外部 IO。
- *  - resolver 二级降级：单图未命中 → 跳过该图；全未命中 → 退化为纯文本（形状不变）。
+ *  - resolver 二级降级：单图未命中 → 推可见占位文本块（**绝不静默丢该图**）；全未命中 → 退化为纯文本块数组（形状不变）。
  */
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
@@ -225,9 +225,9 @@ describe('OpenAICompatibleProvider · resolver 二级降级（D7 / §5.4）', ()
     }
   });
 
-  it('正文为空且全部降级 → 兜底不发出空 content 数组', async () => {
-    // 极端组合：m.content 为空串 ⇒ 不推正文块；resolver 全命中时只有图块，
-    // 全未命中时只剩占位块 ⇒ 合法。这里是「既不推正文也没有任何块」的唯一兜底路径。
+  it('正文为空且全部降级 → content 为单占位块数组，无空数组形态', async () => {
+    // attachments 非空是进入本分支的前提 ⇒ 循环每图必推一块，blocks 恒非空；
+    // m.content 为空串 ⇒ 不推正文块，全未命中时 content 只剩占位块（不留空 content 形态）。
     const provider = makeProvider(() => null);
     const messages: Message[] = [{ role: 'user', content: '', attachments: [ref] }];
     await drain(provider, messages);

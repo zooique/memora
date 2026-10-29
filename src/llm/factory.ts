@@ -55,7 +55,7 @@ export interface ProviderConfig {
    *
    * 因此本字段只属于**建房入参**（ProviderConfig），**不属于宿主的持久化 DTO**——
    * 宿主 DTO 里只有 supportsVision 这一「用户声明」，resolver 由宿主在调用本函数时直接传入。
-   * 未注入 → formatMessages 走降级：该图片的 URL 取不到即跳过（见 openaiCompatible）。
+   * 未注入 → formatMessages 走降级：推可见占位文本块，**绝不静默丢该图**（见 openaiCompatible）。
    */
   imageResolver?: ImageResolver;
 }
