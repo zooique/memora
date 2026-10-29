@@ -7,11 +7,13 @@
  * `imageIngest.ts` 同一范式：**vscode 交互由调用方注入**，本模块只用 `node:*` 与
  * 纯函数，vitest 直接断言注入参数与编排结果。
  *
- * ## 两条入口汇于一个执行面
+ * ## 三条入口汇于一个执行面
  * - webview 上传按钮 → `image_pick_request` → chatPanel 分支；
- * - 命令面板 `memora.attachImage` → chatPanel 公共方法。
- * 两路都调 {@link pickAndIngestImages}：编排只有这一份，取消语义 /
- * 过滤器口径 / 逐张落盘的循环禁在任一入口复写。
+ * - 命令面板 `memora.attachImage` → chatPanel 公共方法；
+ * - 资源管理器右键「添加到对话」命中真图（IMG-12）→ chatPanel 公共方法（无对话框，路径已知）。
+ * 前两路都调 {@link pickAndIngestImages}（对话框编排），第三路直入
+ * {@link ingestImageFiles}（共享落盘循环）：取消语义 / 过滤器口径 / 逐张落盘的
+ * 循环禁在任一入口复写。
  *
  * ## 扩展名只是预筛，不是判据
  * 过滤器给图片扩展名是**交互友好**（少翻无关节点）；真伪由校验链的字节嗅探说了算
@@ -96,8 +98,28 @@ export async function pickAndIngestImages(deps: ImagePickDeps): Promise<void> {
   }
   const picked = await deps.picker(DIALOG_OPTIONS);
   if (!picked || picked.length === 0) return;
+  await ingestImageFiles(deps, picked);
+}
+
+/**
+ * 已知文件路径 → 逐张读盘校验落盘 → 逐张回执（IMG-12 第三入口的共享执行面）。
+ *
+ * 两条入口汇于此：对话框取消后的选中列表（`pickAndIngestImages`）与右键「添加到对话」
+ * 命中的真图（`addToChat` → chatPanel，无对话框）。逐张落盘的循环**只有这一份**——
+ * 第二份循环就是「对话框路径改了校验口径、右键路径悄悄不一致」的漂移温床。
+ * 面板闸在此重复检查是刻意的：本函数是**落盘动作的最后一道闸**（不因无面板落盘
+ * 造 G9 孤儿），而 `pickAndIngestImages` 的同款检查守的是「不开框」——各守各的动作。
+ */
+export async function ingestImageFiles(
+  deps: Omit<ImagePickDeps, 'picker'>,
+  paths: readonly string[],
+): Promise<void> {
+  if (!deps.hasPanel) {
+    deps.notifyPanelUnavailable();
+    return;
+  }
   await Promise.all(
-    picked.map((file) =>
+    paths.map((file) =>
       ingestDiskFile(deps.projectPath, file, deps.post, deps.toWebviewUri, deps.warmCache),
     ),
   );

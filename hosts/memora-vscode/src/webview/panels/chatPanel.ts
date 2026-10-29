@@ -15,8 +15,7 @@
  *     角色名在 AI 消息头部标签 + 空状态标题展示（角色切换入口在独立的「角色」视图）。
  */
 import * as vscode from 'vscode';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename } from 'node:path';
 import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.js';
 import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
@@ -24,7 +23,8 @@ import { ingestImage } from '../../extension/host/imageIngest.js';
 // IMG-8 宿主兜底：三维聚合限额裁决（判据单点 shared/imageTurnLimits，token 走内核 imageTokens）
 import { imageTurnRejection } from '../../extension/host/imageTurnGuard.js';
 import { userEcho, stampRoundAttachmentUris } from '../../extension/host/attachmentUris.js';
-import { pickAndIngestImages } from '../../extension/host/imagePick.js';
+import { ingestImageFiles, pickAndIngestImages } from '../../extension/host/imagePick.js';
+import { scanWorkspaceTextFiles } from '../../extension/host/workspaceTextScan.js';
 // 图片字节缓存（IMG-2 §5.4.1）：仅类型引用——实例由 extension 创建并注入，本类不构造
 import type { ImageCache } from '../../extension/host/imageCache.js';
 // 引用路径 ↔ 首根的双向判据唯一真源 = refPath（生成侧 relativeUnderPrimaryRoot 归 addToChat /
@@ -73,7 +73,6 @@ import {
   type SessionMeta,
   type SessionView,
   OPAQUE_WRITE_TOOL_NAMES,
-  IGNORED_DIR_NAMES,
   COMPRESS_TARGET_LABELS,
   estimateTokensText,
   type CompressTarget,
@@ -89,24 +88,9 @@ const INTERJECT_LIMIT = LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS;
 const SCRIPT_WRITE_TOOLS: readonly string[] = OPAQUE_WRITE_TOOL_NAMES;
 
 /**
- * 目录快照遍历时跳过的目录（缩小扫描范围、避开 memora 自身数据噪音）
- *
- * 基线**派生自内核 `IGNORED_DIR_NAMES`**（构建产物 / memora 内部数据，非用户可见源码）——
- * 与 `list_dir` / `search_project` 共用同一套忽略规则，禁并列维护第二份基线（两份必漂移：
- * 内核新增忽略目录时宿主快照仍扫它 ⇒ 内部数据混进改动可见性）。
- * 追加项是本快照**独有**的宿主工具链产物目录（内核工具面不需要，故不并入内核基线）。
+ * 目录快照遍历时跳过的目录 → 已随扫描实现整批外置到 `extension/host/workspaceTextScan.ts`
+ * （IMG-12 同批腾行）；本处只留降级提示常量——调用方（scriptSnapshots 快照面）仍在本类。
  */
-const IGNORED_DIRS: ReadonlySet<string> = new Set<string>([
-  ...IGNORED_DIR_NAMES,
-  'out',
-  'build',
-  '.vscode',
-  '.workbuddy',
-  'target',
-  '.nuxt',
-  '.svelte-kit',
-  '.cache',
-]);
 
 /**
  * 快照超阈值（文件过多 / 总量过大）时的降级提示
@@ -114,14 +98,6 @@ const IGNORED_DIRS: ReadonlySet<string> = new Set<string>([
  * 写前快照与写后扫描两条路径都会降级到同一句提示——并列字面量必漂移，故抽为单点常量。
  */
 const SNAPSHOT_OVERSIZE_NOTICE = '工作区文本文件过多，脚本改动未自动追踪——请用 git 核对改动';
-
-/** 单文件扫描上限（2MB）：超大文件跳过，避免快照 IO 失控 */
-const SNAPSHOT_MAX_FILE_BYTES = 2 * 1024 * 1024;
-/** 全量快照总字节上限（64MB）：超过则放弃内容快照、降级为「提示用户 git 核对」，
- *  避免大仓库同步扫描卡死 extension host（opaque 写工具低频触发，正常仓库远在阈值下） */
-const SNAPSHOT_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
-/** 全量快照文件数上限（8000）：海量小文件场景同样降级 */
-const SNAPSHOT_MAX_FILES = 8000;
 import type {
   ChatRef,
   InjectionSegment,
@@ -578,63 +554,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 注入文件改动接入面（由 extension 装配；tool_start/tool_result 唯一入口） */
   public setFileChangeSink(sink: FileChangeSink): void {
     this._fileChangeSink = sink;
-  }
-
-  /**
-   * 扫描 workspace 下所有用户可见文本文件内容（opaque 写工具执行前后快照用）
-   *
-   * 排除 `IGNORED_DIRS`（构建产物 / memora 内部数据），跳过 >2MB 文件与二进制（含 NUL）文件；
-   * 返回 `路径→内容` 快照。耗时与 workspace 文本文件数成正比——脚本类工具（run_code 等）低频触发，
-   * 且 run_code 跑测试通常不改文件 ⇒ 多数情况快照 diff 为空、零噪音。
-   */
-  private scanWorkspaceTextFiles(): Map<string, string> | null {
-    const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!ws) return new Map();
-    const result = new Map<string, string>();
-    let totalBytes = 0;
-    let fileCount = 0;
-    let aborted = false;
-    const walk = (dir: string): void => {
-      if (aborted) return;
-      let entries;
-      try {
-        entries = readdirSync(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const entry of entries) {
-        if (aborted) return;
-        const abs = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (IGNORED_DIRS.has(entry.name)) continue;
-          walk(abs);
-        } else if (entry.isFile()) {
-          try {
-            const size = statSync(abs).size;
-            if (size > SNAPSHOT_MAX_FILE_BYTES) continue;
-            // 上限守卫（止血）：总字节 / 文件数任一超阈值 → 放弃内容快照，
-            // 调用方降级为「提示用户 git 核对」，避免大仓库同步扫描卡死 extension host
-            if (
-              totalBytes + size > SNAPSHOT_MAX_TOTAL_BYTES ||
-              fileCount + 1 > SNAPSHOT_MAX_FILES
-            ) {
-              aborted = true;
-              result.clear();
-              return;
-            }
-            const content = readFileSync(abs, 'utf-8');
-            if (content.includes('\u0000')) continue; // 二进制
-            totalBytes += size;
-            fileCount += 1;
-            result.set(abs, content);
-          } catch {
-            // 不可读 / 权限失败：跳过（不影响其余文件）
-          }
-        }
-      }
-    };
-    walk(ws);
-    return aborted ? null : result;
   }
 
   /**
@@ -1183,15 +1102,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 应答 memory_deleted 驱动 webview 摘除；取消确认不推送（settingsPanel 同款契约）
       void this.deleteMemory(msg.id);
     } else if (msg.type === 'image_ingest') {
-      // 采集即写盘（IMG-2 Q1）：落盘点在 host/imageIngest（禁塞进本类），失败三态一律回执；
-      // warmCache = 落盘即入字节缓存（断点A：新会话首发 resolver 必命中，否则 D7 占位）
-      void ingestImage(
-        this.workspacePath,
-        msg,
-        (m) => this.post(m),
-        (f) => this.toWebviewUri(f),
-        (ref) => this.imageCache?.preload(ref, this.workspacePath),
-      );
+      // 采集即写盘（IMG-2 Q1）+ 落盘即入字节缓存（断点A）：落盘点在 host/imageIngest，失败三态一律回执
+      const img = this.imagePanelDeps();
+      void ingestImage(this.workspacePath, msg, img.post, img.toWebviewUri, img.warmCache);
     } else if (msg.type === 'image_pick_request') {
       // 图片拾取（Q3）：webview 按钮与命令面板两入口共用同一执行面（编排归 host/imagePick）
       void this.pickAndAttachImages();
@@ -2489,19 +2402,31 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private readonly toWebviewUri = (file: string): string | undefined =>
     this._view?.webview.asWebviewUri(vscode.Uri.file(file)).toString();
 
-  /** 图片拾取入口（Q3）：webview 按钮与命令 `memora.attachImage` 共用执行面；面板未解析不开框（G9 同族孤儿），编排见 host/imagePick.ts */
-  public pickAndAttachImages(): void {
-    void pickAndIngestImages({
+  /**
+   * 图片管线共用面板依赖（回执 post / 预览 URL / 字节缓存预热 + 面板闸与引导文案）。
+   * 粘贴（image_ingest）/ 拾取对话框（Q3）/ 右键真图（IMG-12）三入口共用——
+   * 三闭包各写一份 = 断点A 预热或预览口径改一处漏两处的漂移温床。
+   */
+  private imagePanelDeps() {
+    return {
       hasPanel: this._view !== undefined,
-      picker: async (opts) => (await vscode.window.showOpenDialog(opts))?.map((u) => u.fsPath),
       projectPath: this.workspacePath,
-      post: (m) => this.post(m),
-      toWebviewUri: (f) => this.toWebviewUri(f),
-      // 落盘后立即入字节缓存（断点A，与 image_ingest 分支同一判据同一入口）
-      warmCache: (ref) => this.imageCache?.preload(ref, this.workspacePath),
+      post: (m: ExtensionToWebviewMessage) => this.post(m),
+      toWebviewUri: (f: string) => this.toWebviewUri(f),
+      warmCache: (ref: ImageRef) => this.imageCache?.preload(ref, this.workspacePath),
       notifyPanelUnavailable: () =>
         void vscode.window.showInformationMessage('请先打开 Memora 对话面板，再添加图片'),
-    });
+    };
+  }
+
+  /** 图片添加入口：无参 = 开拾取对话框（Q3 按钮与命令面板）；有参 = 右键真图直入共享摄取面（IMG-12）。面板未解析不开框不落盘（G9 同族孤儿），编排归 host/imagePick.ts */
+  public pickAndAttachImages(paths?: readonly string[]): void {
+    void (paths
+      ? ingestImageFiles(this.imagePanelDeps(), paths)
+      : pickAndIngestImages({
+          ...this.imagePanelDeps(),
+          picker: async (opts) => (await vscode.window.showOpenDialog(opts))?.map((u) => u.fsPath),
+        }));
   }
 
   /** 推送 Provider 列表到 webview（render / 切换 Provider 后调用，异步读取配置） */
@@ -3699,7 +3624,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           });
           // 脚本类（opaque 写）工具：写前扫一次 workspace 快照，供执行后 diff（路径运行时才可知）
           if (SCRIPT_WRITE_TOOLS.includes(chunk.name)) {
-            this.scriptSnapshots.set(chunk.toolCallId, this.scanWorkspaceTextFiles());
+            this.scriptSnapshots.set(chunk.toolCallId, scanWorkspaceTextFiles());
           }
           // 任务驱动多步闭环：LLM 调用任务表工具时 → 推送当前计划快照给 webview 渲染任务看板
           // （薄壳装配：仅从 agent.getCheckpoint().plan 提取只读快照，不参与 LLM 执行。
@@ -3731,7 +3656,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             if (before === undefined) {
               // 异常：无写前快照（不应发生），静默跳过
             } else if (before !== null && chunk.ok && !chunk.blocked) {
-              const after = this.scanWorkspaceTextFiles();
+              const after = scanWorkspaceTextFiles();
               if (after === null) {
                 // 写后扫描超阈值：与写前降级同一条提示，不做内容 diff
                 this.post({ type: 'notice', level: 'info', message: SNAPSHOT_OVERSIZE_NOTICE });

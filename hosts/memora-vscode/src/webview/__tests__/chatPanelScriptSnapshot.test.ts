@@ -11,9 +11,7 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } 
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
-import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
-import { MemoraChatViewProvider } from '../panels/chatPanel.js';
+import { scanWorkspaceTextFiles } from '../../extension/host/workspaceTextScan.js';
 
 const h = vi.hoisted(() => ({ WS: '' }));
 
@@ -39,20 +37,6 @@ vi.mock('vscode', async () => ({
 
 const MB = 1024 * 1024;
 
-function setup(): MemoraChatViewProvider {
-  const dir = __dirname;
-  const roundStore = new WorkspaceRoundStore(dir);
-  roundStore.load();
-  const store = new WorkspaceSessionStore(dir, roundStore);
-  store.load();
-  return new MemoraChatViewProvider(
-    { fsPath: '/mock/uri' } as never,
-    store,
-    {} as never,
-    '/mock/workspace',
-  );
-}
-
 function resetWs(): void {
   rmSync(h.WS, { recursive: true, force: true });
   mkdirSync(h.WS, { recursive: true });
@@ -66,7 +50,6 @@ function writeFiles(count: number, sizeBytes: number, opts?: { nulAt?: number })
 }
 
 describe('scanWorkspaceTextFiles · 上限守卫降级', () => {
-  let provider: MemoraChatViewProvider;
   beforeAll(() => {
     h.WS = mkdtempSync(join(tmpdir(), 'memora-ss-'));
   });
@@ -80,7 +63,6 @@ describe('scanWorkspaceTextFiles · 上限守卫降级', () => {
    * 放宽的是**等待时间**，不是判据（断言一律不变）。
    */
   beforeEach(() => {
-    provider = setup();
     resetWs();
   }, 60_000);
   afterEach(() => {
@@ -89,14 +71,14 @@ describe('scanWorkspaceTextFiles · 上限守卫降级', () => {
 
   it('正常目录 → 返回 Map（不降级）', () => {
     writeFiles(2, 100);
-    const r = (provider as any).scanWorkspaceTextFiles();
+    const r = scanWorkspaceTextFiles();
     expect(r).toBeInstanceOf(Map);
     expect((r as Map<string, string>).size).toBe(2);
   });
 
   it('总字节超 64MB 阈值 → 返回 null（降级，避免卡死 extension host）', () => {
     writeFiles(33, 2 * MB); // 66MB（单文件 ≤2MB 计入）
-    const r = (provider as any).scanWorkspaceTextFiles();
+    const r = scanWorkspaceTextFiles();
     expect(r).toBeNull();
   });
 
@@ -110,20 +92,20 @@ describe('scanWorkspaceTextFiles · 上限守卫降级', () => {
    */
   it('判据边界精确：总量恰好等于 64MB 上限 → 不降级（判据是 > 不是 >=）', () => {
     writeFiles(32, 2 * MB); // 恰好 64MB
-    expect((provider as any).scanWorkspaceTextFiles()).toBeInstanceOf(Map);
+    expect(scanWorkspaceTextFiles()).toBeInstanceOf(Map);
   }, 30_000);
 
   it('IGNORED_DIRS（node_modules）不被扫描、不误触发降级', () => {
     mkdirSync(join(h.WS, 'node_modules'), { recursive: true });
     writeFileSync(join(h.WS, 'a.ts'), 'hello');
-    const r = (provider as any).scanWorkspaceTextFiles();
+    const r = scanWorkspaceTextFiles();
     expect(r).toBeInstanceOf(Map);
     expect((r as Map<string, string>).size).toBe(1);
   });
 
   it('含 NUL 的二进制文件被跳过、不计入总字节（旧逻辑未破坏）', () => {
     writeFiles(31, MB, { nulAt: 0 }); // 1 个 NUL + 30 正常 = 30MB
-    const r = (provider as any).scanWorkspaceTextFiles();
+    const r = scanWorkspaceTextFiles();
     expect(r).toBeInstanceOf(Map);
     expect((r as Map<string, string>).size).toBe(30);
   });

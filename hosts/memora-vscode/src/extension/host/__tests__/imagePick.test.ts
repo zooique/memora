@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import type { ExtensionToWebviewMessage } from '../../../shared/protocol.js';
 import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
 import { pngBytes } from '../../../__tests__/helpers/imageTestBytes.js';
-import { pickAndIngestImages, type ImageFilePicker } from '../imagePick.js';
+import { pickAndIngestImages, ingestImageFiles, type ImageFilePicker } from '../imagePick.js';
 import { INBOUND_IMAGE_EXTS } from '../imageExts.js';
 
 /** 拾取回执类型（与生产同源） */
@@ -105,5 +105,31 @@ describe('pickAndIngestImages — 多选编排', () => {
     expect(byName.get('a.png')).toBe('ok');
     expect(byName.get('bad.png')).toBe('rejected');
     expect(byName.get('b.png')).toBe('ok');
+  });
+});
+
+describe('ingestImageFiles — IMG-12 右键「添加到对话」共享执行面', () => {
+  it('面板未解析 → 不落盘、只给引导（落盘动作的最后一道闸，禁造 G9 孤儿）', async () => {
+    const { deps, notify, post } = makeDeps({ hasPanel: false });
+
+    await ingestImageFiles(deps, ['C:\\does-not-matter\\a.png']);
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('已知路径直入摄取（无对话框）：多路径各得一条回执，坏图可见 rejected 不静默', async () => {
+    const root = makeTempDir('memora-ingestfiles-');
+    const a = join(root, 'x.png');
+    writeFileSync(a, pngBytes(4, 4));
+    writeFileSync(join(root, 'fake.png'), Buffer.from('not an image'));
+    const { deps, post } = makeDeps({ projectPath: root });
+
+    await ingestImageFiles(deps, [a, join(root, 'fake.png')]);
+
+    expect(post).toHaveBeenCalledTimes(2);
+    const byName = new Map(post.mock.calls.map((c) => [c[0].name, c[0].status]));
+    expect(byName.get('x.png')).toBe('ok');
+    expect(byName.get('fake.png')).toBe('rejected');
   });
 });

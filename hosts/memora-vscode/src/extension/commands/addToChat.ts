@@ -5,10 +5,15 @@
  *
  * 从 extension.ts 外置而来（零行为变更）：路径归属判据、选区行区间与提示文案逐字保留。
  *
- * ## G2：图片一律拒挂（方案 §4.1）
- * 本命令的契约是「挂路径，模型自己 `read_file`」，而内核 `read_file` 只按 `utf-8` 读
- * （方案 F18）⇒ 图片必然被解码损坏**且不报错**。故识别为真图就拒挂并给出路，
- * 判据与实现见 `host/refImageGuard.ts`。
+ * ## IMG-12（G2 拒挂分支的升级）：真图不挂引用，改走图片摄取执行面
+ * 本命令对文本的契约是「挂路径，模型自己 `read_file`」，而内核 `read_file` 只按 `utf-8` 读
+ * （方案 F18）⇒ 图片挂引用必然被解码损坏**且不报错**。G2 曾在此「拒挂 + 指路」；
+ * 现升级为**接管**：识别为真图（判据见 `host/refImageGuard.ts`，扩展名预筛 + 字节嗅探双段）
+ * 即不挂引用，改为调 `chatProvider.pickAndAttachImages(paths)` 直入图片摄取管线（读盘 → 校验 →
+ * 落盘 → `image_picked` 回执建 chip，与粘贴 / 上传按钮 / 命令面板共用同一执行面——
+ * 逐张落盘循环只有 `host/imagePick.ts` 一份，此处禁复写）。
+ * 图片摄取是自足副本（sha256 落盘），不需要主根归属——故嗅探在根归属检查**之前**，
+ * 主根外的真图照常导入（口径对齐粘贴 / 上传按钮，均不限工作区）。
  */
 import { open, type FileHandle } from 'node:fs/promises';
 import * as vscode from 'vscode';
@@ -41,17 +46,26 @@ export async function addToChatCommand(
   // 根归属：引用路径必须以**首个工作区根**为基准（内核 read_file cwd / openRefInEditor 同源）。
   // 不用 asRelativePath——它相对「所在根」，多根工作区下会产出「chip 正常、模型却按首根读到
   // 同名路径（不存在即 FILE_NOT_FOUND）」的撒谎指针；不在首根下的目标 fail-closed（拒挂 + 提示），
-  // 挂一条注定读错的指针比不挂更坏。
+  // 挂一条注定读错的指针比不挂更坏。（真图不受此约束：摄取是自足副本，见文件头 IMG-12 节。）
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   // 逐个判定 file/folder（stat type），算相对路径；stat 失败（如已删除）按 file 兜底
   const refs: ChatRef[] = [];
   const skippedOutsideRoot: string[] = [];
-  // G2：真图不挂引用（模型读不到），收集后统一给出路
-  const skippedImages: string[] = [];
+  // IMG-12：真图不挂引用，收 fsPath 后统一投递图片摄取执行面
+  const imagePaths: string[] = [];
   // 编辑器选区（仅「右键目标 = 当前编辑器文件」且非折叠选区时才带行区间）
   const editor = vscode.window.activeTextEditor;
   const sel = editor?.selection;
   for (const u of uris) {
+    // IMG-12：疑似图片先读文件头（预筛的唯一目的是省读盘开销），真伪由字节嗅探定。
+    // 目录误带图片扩展名时读头必失败 → 按非图放行，回落正常 stat / 挂引用路径。
+    if (hasInboundImageExtension(u.fsPath)) {
+      const head = await readHeadBytes(u.fsPath);
+      if (isRefTargetImage(u.fsPath, head)) {
+        imagePaths.push(u.fsPath);
+        continue;
+      }
+    }
     const rel = root ? relativeUnderPrimaryRoot(root, u.fsPath) : undefined;
     if (!rel) {
       // 不在主根下（含未打开工作区 / 跨盘 / 第二个根）：整条拒绝
@@ -64,14 +78,6 @@ export async function addToChatCommand(
       if (stat.type === vscode.FileType.Directory) kind = 'folder';
     } catch {
       // 保持 file 兜底（相对路径仍可用）
-    }
-    // G2：只对疑似图片读文件头（预筛的唯一目的是省读盘开销），真伪由字节嗅探定。
-    if (kind === 'file' && hasInboundImageExtension(u.fsPath)) {
-      const head = await readHeadBytes(u.fsPath);
-      if (isRefTargetImage(u.fsPath, head)) {
-        skippedImages.push(vscode.workspace.asRelativePath(u));
-        continue;
-      }
     }
     const ref: ChatRef = { path: rel, kind };
     const isActiveFile = !!editor && editor.document.uri.fsPath === u.fsPath;
@@ -87,15 +93,12 @@ export async function addToChatCommand(
       `以下项不在主工作区根下，未挂引用：${skippedOutsideRoot.join('、')}`,
     );
   }
-  if (skippedImages.length > 0) {
-    vscode.window.showWarningMessage(
-      `图片不能这样添加（模型读不到图片内容）：${skippedImages.join('、')}。请改用命令「Memora: 添加图片」，或粘贴 / 上传按钮。`,
-    );
-  }
-  if (refs.length === 0) return; // 全部被拒：不聚焦面板、不挂空引用
-  // 先确保对话面板可见（未聚焦时 pushRefs 缓冲到 ready 后补发，与 prefillInput 同构）
+  if (refs.length === 0 && imagePaths.length === 0) return; // 全部被拒：不聚焦面板、不产空操作
+  // 先确保对话面板可见：引用侧未聚焦时 pushRefs 缓冲到 ready 补发（与 prefillInput 同构）；
+  // 图片侧的面板闸归 chatPanel / imagePick（聚焦后仍未解析 → 引导文案，不落盘造 G9 孤儿）
   await vscode.commands.executeCommand('memora.chat.focus');
-  chatProvider.pushRefs(refs);
+  if (imagePaths.length > 0) chatProvider.pickAndAttachImages(imagePaths);
+  if (refs.length > 0) chatProvider.pushRefs(refs);
 }
 
 /**
@@ -105,7 +108,7 @@ export async function addToChatCommand(
  * 而引用目标的体积**不受采集链限制**（一张 2 GB 的图也会走到这里）——整份读进内存
  * 不可接受。资源管理器右键的目标恒为本地文件（`file` scheme），故两套读法不冲突。
  *
- * @returns 头部字节；读不到（权限 / 已删 / 非本地 scheme）返回 `undefined`，
+ * @returns 头部字节；读不到（权限 / 已删 / 非本地 scheme / 目录）返回 `undefined`，
  *   由调用方按「非图片」放行——不因一次读盘失败新增一条拒挂路径。
  */
 async function readHeadBytes(fsPath: string): Promise<Uint8Array | undefined> {
