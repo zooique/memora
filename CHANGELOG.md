@@ -152,7 +152,7 @@
 
 - **后台任务槽位按 Agent 实例隔离**（`MULTI-AGENT-1`，2026-10-18）：模块级槽位 → `class BackgroundTaskScheduler` 实例级，同进程多 Agent 不再交叉等待/挤占（形态定案后多实例是必然）。非公开 API 变更。
 
-## [Unreleased] · 宿主（随做随用 · 不占内核版本号）
+## [0.4.0] · 2026-10-29 · 宿主
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更，随 `vsce package` 定版，不进内核 npm 包（ADR-033）。**开区原因**：`vscode@0.3.0` tag 早于图片输入全链（`IMG-1`~`IMG-13` 宿主面 + `IMG-3` 视觉能力位宿主面），已发布版无图片输入能力。**主体条目随 `git log vscode@0.3.0..HEAD -- hosts/` 补齐**；切片叙事不复述，逐笔变更以该 tag 区间为准。**对外文档不引用内部台账坐标**（区名会随台账重组失效，tag 区间不会）。
 > **随包内核代次 = `5.2.0`**（esbuild 内联 dist，内核自身变更见内核区）。
@@ -160,6 +160,16 @@
 ### Added（宿主）
 
 - **图片输入全链（多模态用户输入）**：对话里现在能直接发图片——四种入口汇流到**同一执行面**（落盘 / 校验 / 真 chip 建连），无第二份循环 / 第二份扩展名表 / 第二份能力判据：**① 粘贴**图片到输入框；**② 上传按钮**选本地图片（模型未声明支持视觉时按钮置灰并跳设置——这是可发现性，不是裁决）；**③ 资源管理器 / 编辑器右键「Memora: 添加到对话」**命中真图时直入摄取面（不再是「拒挂 + 指路」）；**④ 从文件系统拖入**（外部 OS 文件须按住 `Shift`，VS Code 1.140+ 资源管理器内拖入受上游回归阻塞、等 1.142）。**为什么**：此前模型看不到图，图文混聊要绕文件引用。**对消费者**：发图即建可发送的图片 chip；模型未声明 `supportsVision` 时一级门禁 fail-closed 明确拒绝并给理由（不静默丢）；字节只走 base64（不过 `postMessage` 传 `File`/`Blob`），host→webview 单向高效传输；未命中推可见占位而非静默丢。回执复用既有 `image_picked` 消息（协议零新 op）；历史图片随对话轮次恢复（窗口衰减）。视觉能力位在设置面板 Provider 配置新增「支持图片输入（多模态视觉理解）」复选框（五跳透传，内核面见 `IMG-3`），由 `IMG-2` / `IMG-5` 承载宿主侧落地与热刷新。
+
+### Fixed（宿主）
+
+- **对话记录选区复制兜底（修复 WebviewView 原生复制失效）**（`COPY-1`）：选中消息正文后 Ctrl+C / 右键「复制」都不落盘。根因：VS Code WebviewView 里非输入区原生剪贴板不可靠，且原 `copyText` 只服务 hover 动作按钮（整条 / 原始文本 / 代码块），**自由选区（选一句 / 一段）无入口**——「选中对话记录复制不出」与「右键菜单能弹但复制无效」是同一根因（都走原生复制）。现 webview 侧复制逻辑抽单点 `webview/helpers/selectionClipboard.ts`——`installSelectionCopyGuard` 在 document `copy` 事件**同步**写 `clipboardData`（`if (!sel) return` 仅接管文档选区、放行输入框原生复制，不与图片粘贴 / 原生剪贴板打架）；`copyText` 从 `chatView` 外置到此（4 处调用方不变）。**为什么**：13 处 `user-select:none` 全挂标签 / 日期分隔、document 唯一 keydown 只处理 Esc、全仓无清选择逻辑、CSP 无 `clipboard` 限制——均逐符号排除假凶手。行数闸：`chatView.ts` 5097→5091（抽 `copyText` 定义 −11 + 导入 / 调用 +2，守 5098 闸门）；新文件 `selectionClipboard.ts` 58 行不计入四闸门文件。**对消费者**：选中消息正文 Ctrl+C / 右键复制 → 字节落盘；输入框内选中仍走原生（不被吞）；无选区时平台菜单复制行为不变。测试 `selectionClipboard.test.ts` 5 条（有选区写盘 + preventDefault / 无选区放行 / textarea 选区放行 / 幂等 / copyText 优先 `navigator.clipboard`）。
+
+- **占用圆环「空态」滞留修复**（`OCC-STALE-1`）：配置热刷新（改窗口 / 切 Provider）重推 `chat_providers` 触发空态渲染后，圆环显示「0 条对话 · 100% 可用」且与真实占用矛盾，切会话才恢复。根因（两缺口叠加，均既有代码）：① `renderOccupancyLimit` 空态语义假设「首轮对话前」、配置变更也走同一分支 = 假事实（`contextLimitShown` 防误清零只比对数值，「变过去再变回来」即放行空态）；② 真实快照到达时机族漏了「配置热刷新」面，拦截类不发消息则空态无限滞留（非 IMG-8 引入，occupancy 链路零触碰）。现 `chatPanel.applyActiveProviderRefresh`（IMG-5 热刷新唯一入口，覆盖配置监听 / 切 Provider / 发送前 stale 补做 3 调用方）在 `refreshActiveProvider` 返回后补推 `postHistoryOccupancy()`；`handleSetProvider` 回滚分支 `pushProviders` 后同样补推。**对消费者**：改窗口配置保存后、无需发生 round，圆环即恢复真实占用；切 Provider 失败回滚后回到 prev 口径真实占用；切会话 / 流尾既有路径不回归（守内核 / 宿主边界，webview 侧零改动）。协议零新增（复用 `context_occupancy`，计数不变）。守卫 `chatPanelHistory.test.ts` 新增「配置热刷新（retryAgentAssembly）→ 补推 context_occupancy 纠正空态」——修复前红（`expected 0 ≥ 1`，红在判据上）、修复后绿。
+
+- **中断兜底行直出裸英文 `interrupted`**（`TERM-REASON-1`）：`decideTerminus` 兜底分支构造对象写 `reason: 'interrupted'`（语义键）却当展示文案用，`stopReasonLabel` 无 `stopReason` 时回落原文 ⇒ 中断行出现裸英文。`decideTerminus` 兜底改传 `stopReason: 'interrupted'`（`reason` 仍填同键保可追溯），下游 `appendInterruptedRow` 对 `verdict.reason` 仅 `textContent` 纯展示、无字符串匹配（grep 实证零破坏面）。**为什么**：文案回落判据与调用点意图不同源（语义键 ≠ 展示文案）；取「构造点改字段」单点修正，不破坏 `stopReasonLabel` 的自由文本原文回落契约（调试可追溯）。**对消费者**：中断行显示「对话已中断」（中文），不再出裸英文。测试判据随事实更新（`'interrupted'` → `'对话已中断'`），prettier / tsc / eslint / processFlowModel 23 例 / 宿主全量 vitest 绿。
+
+- **能力徽章链路补断言覆盖**（`CAPB-1`）：`#currentCapabilityBadge` 在生产骨架与测试夹具都存在、骨架 id 三方一致性守卫也覆盖其存在性，但全仓**无任何用例** dispatch `capability_badge`、也没断言过 `textContent` / `title` / `hidden` ⇒ 三分支（block 纯 LLM / allow + 无能力「全部工具」/ allow + 能力列表）全无守护。属静默失测形态（节点在、链路可跑、断言缺失），非代码缺陷。现补 4 例（block / allow + 空 / allow + 能力列表含重复 label 验去重 / 骨架初始 hidden）断言文案与 title；顺带修正 `roleBadgeView` 注释撒谎（实为骨架初始 hidden、无隐藏分支）。**为什么**：CHATVIEW-SLIM-3 第三刀搬迁前扫覆盖发现，行为等价不受影响，但缺口不补下次改动该链路无网可守。**对消费者**：无行为变化；能力徽章（模型支持的工具 / 视觉等能力）的展示逻辑此后有测试钉住。
 
 ## [0.3.0] · 2026-10-26 · 宿主
 
