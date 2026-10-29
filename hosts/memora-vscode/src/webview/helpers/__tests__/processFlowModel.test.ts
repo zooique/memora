@@ -14,6 +14,7 @@ import {
   decideTerminus,
   findRunningTool,
   groupThoughtBuckets,
+  groupToolBatches,
   narrateChainText,
   planItemStatesFromEvents,
   stopReasonLabel,
@@ -161,5 +162,58 @@ describe('buildSearchEvidenceResolver（主配 ID / 回退 query 游标）', () 
     expect(resolve(start('web_search', 'c1'))).toBeDefined();
     expect(resolve(start('web_search', 'c2'))).toBeUndefined();
     expect(resolve(start('read_file', 'c1'))).toBeUndefined();
+  });
+});
+
+describe('groupToolBatches（工具批切段判据真源）', () => {
+  const TS2 = '2026-10-29T10:00:10.000Z';
+  const TS3 = '2026-10-29T10:00:05.000Z';
+  const start = (seq: number, id: string, stepIndex?: number, ts = TS): Extract<ProcessEvent, { type: 'tool_start' }> =>
+    event('tool_start', seq, { toolCallId: id, name: 'read_file', args: '{}', stepIndex }, ts);
+  const thought = (seq: number, stepIndex?: number): Extract<ProcessEvent, { type: 'thought' }> =>
+    event('thought', seq, { content: '想', stepIndex });
+  const narrate = (seq: number): Extract<ProcessEvent, { type: 'narrate' }> =>
+    event('narrate', seq, { content: '叙述' });
+
+  it('相邻工具（同 step、无打断物）并一批，segId = 首个 tool_start 的 seq', () => {
+    const batches = groupToolBatches([start(1, 'a', 0), start(2, 'b', 0)], []);
+    expect(batches).toHaveLength(1);
+    expect(batches[0].segId).toBe(1);
+    expect(batches[0].entries.map((e) => e.start.payload.toolCallId)).toEqual(['a', 'b']);
+  });
+
+  it('打断物（narrate）断段：两侧工具各自成批', () => {
+    const batches = groupToolBatches([start(1, 'a'), narrate(2), start(3, 'b')], []);
+    expect(batches.map((b) => b.entries.length)).toEqual([1, 1]);
+  });
+
+  it('思考换 step 断段；同 step 的思考碎片不断段', () => {
+    const same = groupToolBatches([start(1, 'a', 0), thought(2, 0), start(3, 'b', 0)], []);
+    expect(same).toHaveLength(1);
+    const changed = groupToolBatches([start(1, 'a', 0), thought(2, 1), start(3, 'b', 1)], []);
+    expect(changed).toHaveLength(2);
+  });
+
+  it('两侧 stepIndex 缺省（旧数据）→ 回落相邻性，不断段', () => {
+    expect(groupToolBatches([start(1, 'a'), thought(2, 1), start(3, 'b')], [])).toHaveLength(1);
+  });
+
+  it('跨问答卡断段：边界桶号随 ts 变化即断', () => {
+    // 边界 ts 落在两条工具之间（判据 = b < ts 的边界数）：第一条桶 0、第二条桶 1 ⇒ 断段
+    const batches = groupToolBatches([start(1, 'a', 0, TS), start(2, 'b', 0, TS2)], [TS3]);
+    expect(batches).toHaveLength(2);
+    const noBoundary = groupToolBatches([start(1, 'a', 0, TS), start(2, 'b', 0, TS2)], []);
+    expect(noBoundary).toHaveLength(1);
+  });
+
+  it('tool_result 按 toolCallId 配对归属其 start（结果晚于打断物到达仍归位）', () => {
+    const batches = groupToolBatches([start(1, 'a'), narrate(2), toolResult(3, 'a', true), start(4, 'b')], []);
+    expect(batches).toHaveLength(2);
+    expect(batches[0].entries[0].result?.payload.ok).toBe(true);
+    expect(batches[1].entries[0].result).toBeUndefined();
+  });
+
+  it('空流返回空数组', () => {
+    expect(groupToolBatches([], [])).toEqual([]);
   });
 });

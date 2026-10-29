@@ -91,7 +91,7 @@ export function createMemoryHitsBlock(deps: MemoryHitsBlockDeps): MemoryHitsBloc
    * 形态 = `标题行（本次命中 N 条记忆）+ 命中项平铺`，**刻意不再套一层 <details>**：
    * 父级工具行本身已是折叠体，双层折叠是同义重复（用户要点两次才见到明细）。
    * 代价与补偿：明细随工具行默认收起（成功行 open=false），故行摘要另挂「记忆 N」徽章
-   * （见 attachMemoryHitsToToolRow），保证收起态仍保留「这次调用看过记忆」这一事实——
+   * （见 toolRowView.attachMemoryHits），保证收起态仍保留「这次调用看过记忆」这一事实——
    * 落位迁移不得吃掉原本可见的信息。
    *
    * @param hits 该 toolCallId 下的命中（块内已按记忆 id 去重）

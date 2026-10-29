@@ -10500,7 +10500,7 @@ describe('技能菜单搜索（名称/描述过滤 · 重建保词）', () => {
 // ═══════════════════════════════════════════════════════════
 // 工具批折叠合并（toolBatch · groupToolBatches 三渲染上下文同源）
 // ═══════════════════════════════════════════════════════════
-// 判据（唯一声明 = chatView.ts `BATCH_SPLITTER_TYPES` + thought 步切换；此处只指路、不重述集合）：
+// 判据（唯一声明 = helpers/processFlowModel.ts `BATCH_SPLITTER_TYPES` + thought 步切换；此处只指路、不重述集合）：
 // 打断物 = narrate / text_self_review（自审查**输出**，非正文）/ plan_item_boundary；
 // thought 同 step 不断段（换 step 才断）；段 id = 段内首个 tool_start 的 seq。
 // 批结构对拍从 DOM 提取（[data-tool-batch] 容器 = 一批；单工具批行即批，容器即行自身）。

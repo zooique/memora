@@ -406,6 +406,93 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
 
 ---
 
+## 十、SLIM-3 第二刀实施收据（2026-10-29 同日）
+
+> 设计依据 = §8.5「工具批 / 工具行」组，但**范围经 TS 符号级重盘后修订**（§10.4 记偏差）。实施前先重盘，未沿用 §8.5 的旧数字——首刀已把 chatView 从 5434 降到 5333，行号与集合均已漂移。
+
+### 10.1 实施范围（重盘后）
+
+| 函数 | 代码行 | 落点 | deps |
+|---|---|---|---|
+| `groupToolBatches` | 46 | `helpers/processFlowModel.ts` | 无（纯函数；消费随迁常量） |
+| 随迁常量 `BATCH_SPLITTER_TYPES` | 7 | 同上（导出，`processFlowModel` 内唯一声明） | — |
+| `findToolRow` | 6 | `scripts/toolRowView.ts` · `createToolRowView(deps)` | `messages` |
+| `attachMemoryHitsToToolRow` → 方法名 `attachMemoryHits` | 20 | 同上 | `document` · `memoryHits` · `memoryHitsByCall` |
+| `dropStalePendingToolRows` | 3 | 同上 | `messages` |
+
+`toolRowView` 无定时器、无监听 ⇒ **无 `dispose`**，与 `processFlowCells` / `pickerView` 同一形态宪法。
+
+### 10.2 唯一的架构判断：`currentMemoryHitsByCall` 怎么给
+
+重盘发现本组**并非全零状态**：`attachMemoryHitsToToolRow` 的传递闭包触达 `currentMemoryHitsByCall`（可变 Map）。裁决依据是**读写方向**而非「是否可变」：
+
+| 面 | 实测 |
+|---|---|
+| 写点（`clear` / `set`） | **6 处，全在 chatView**（新轮复位 ×2、中断 ×1、记忆事件 ×3） |
+| 读点（`get` / 迭代） | **2 处**，其中 1 处即本刀目标 |
+| 方向 | 域外写、域内读 = **单向** ⇒ 注入引用即可，**不需要回调** |
+| 回调计数 | **0 项**，远低于本仓判据「回调注入 ≥5 = 大杂烩（转移复杂度）」 |
+
+为保函数体**逐字零改写**，模块内不重命名该变量，改用别名并注明所有权：
+
+```
+const currentMemoryHitsByCall = deps.memoryHitsByCall;  // 所有权仍在 chatView，本模块只读消费
+const memoryHitsBlock = deps.memoryHits;
+```
+
+> 取舍说明：改名会带来 2 处函数体改写（`memoryHits.buildBlock` / `memoryHitsByCall.get`），换来的是「命名即真相」。本刀选**零改写**，把「所有权」交给注释与 deps 接口声明承载——因为搬迁批的第一承诺是行为等价，命名优化属后续可独立评估的项。
+
+### 10.3 验证结果（实测）
+
+| 门 | 结果 |
+|---|---|
+| 宿主 `tsc --noEmit` | 0 错误 |
+| 根 `tsc --noEmit` | 0 错误（真实退出码 0） |
+| 宿主 `eslint . --max-warnings 0` | 0 错 0 警（真实退出码 0，未接管道） |
+| 宿主全量 vitest | **123 文件 / 2210 passed / 4 skipped**（基线 2203 + 本刀新增 7 例 model 单测） |
+| `chatView.test` | **482 passed** |
+| 行数（闸门自报口径） | chatView **5333 → 5207**；`max-lines` 同步 5333 → **5207**（只降不升） |
+| 新文件行数 | `toolRowView.ts` 114 · `processFlowModel.ts` 331 → 418，均 < 1000 通用闸 ⇒ 无例外登记 |
+| 逐字比对 | **5/5 完全一致**（`groupToolBatches` / `findToolRow` / `attachMemoryHitsToToolRow`→`attachMemoryHits` / `dropStalePendingToolRows` / `BATCH_SPLITTER_TYPES`；AST 切片 + 去缩进 + 去 `export` + 声明行改名归一 vs HEAD）；chatView 内零残留定义 |
+| 变异 ①（实时挂载链） | 靶点 = `toolRowView` 徽章文案 `记忆 ${hits.size}` → `记忆 ${hits.size}条`；**2 处 `AssertionError`**，签名原文 `expected '记忆 2条' to be '记忆 2'`，落在实时命中消费链；还原复绿 |
+| 变异 ②（判据白名单） | 靶点 = `BATCH_SPLITTER_TYPES` 移除 `'narrate'`；model 单测 **2 红**（`expected [ 2 ] to deeply equal [ 1, 1 ]`）+ 渲染链 **3 类红**（`expected [ '2', '5' ] to deeply equal [ '2', '3', '5', '6' ]` 等）；还原复绿 |
+
+变异 ① 的**分层信息**值得记：`renderToolRow`（`processFlowCells`）另有一处同形徽章文案，故 2 例红而非全红——这不是覆盖不足，而是「实时挂载」与「finalize 重建」两条链各有断言，正好证明变异命中的是**新外置的实时链**而非旧的同形代码。
+
+### 10.4 与 §8.5 的偏差（如实登记）
+
+| 项 | §8.5 预估 | 实测 | 处置 |
+|---|---|---|---|
+| 组规模 | 工具批 88 行 | 本刀搬走 **75 行**，`roundChainText`（13 行）**未搬** | 见下 |
+| `roundChainText` 落点 | 归工具批组 | 它是「轮容器整链文本」（读 `previousElementSibling` + `.msg.assistant`），与「工具行」域不同；与 `copyText`（同属复制按钮链路）同域 | **移入「轮容器 / 复制」组**，与 `copyText` 一并处置 |
+| 成员状态性 | deps 面 = 常量 + `messages` + `memoryHitsBlock` | 另需 `currentMemoryHitsByCall`（§8.5 未列出，重盘发现） | 按 §10.2 单向注入，不构成判据突破 |
+
+**为什么未搬 `roundChainText`**：本刀划界的判据是「一次搬迁只搬一个语义域」。把它塞进 `toolRowView` 会让该模块同时承担「工具行动作」与「轮容器读取」两职；它又无 `dispose`/无状态，单独为 13 行开文件不值。归入 `copyText` 那组是唯一的干净解。
+
+### 10.5 新增单测（非夹带，落点完整性要求）
+
+`groupToolBatches` 是本刀唯一进入 `helpers/` 的**判据真源**，而 `processFlowModel.test.ts` 对同模块其余 10 个导出函数**均有直接单测**，唯它此前只在 `chatView.test` 里被间接覆盖。搬迁后不补 = 该模块「每个导出函数都有直接守护」的惯例被打破。新增 **7 例**：批量合并与 `segId` / 打断物断段 / 步切换断段与同 step 不断 / `stepIndex` 缺省回落 / 边界桶断段 / 结果晚到仍按 `toolCallId` 归位 / 空流。
+
+> 施工中一次**测试自身**的错误必须记录：首版「跨问答卡断段」用例把边界 ts 设成与第二条工具同值，而判据是 `b < ts`（严格小于）⇒ 该用例期望 2 批实得 1 批。**这是用例数据构造错，不是代码错**——已改测试不改判据。若当时反向「修代码」，就是把正确判据改坏。
+
+### 10.6 实际修改文件清单
+
+| 文件 | 类型 |
+|---|---|
+| `src/webview/scripts/chatView.ts` | 修改（−168 / +17：导入 2 + 装配 7 + 注释 2 + 调用点前缀 5 + 删未用类型 1） |
+| `src/webview/scripts/toolRowView.ts` | **新增**（114 行） |
+| `src/webview/helpers/processFlowModel.ts` | 修改（+87：常量 28 + 函数 59） |
+| `src/webview/helpers/__tests__/processFlowModel.test.ts` | 修改（+54，7 例） |
+| `src/webview/__tests__/chatView.test.ts` | 修改（1 行注释：`BATCH_SPLITTER_TYPES` 唯一声明位置指路） |
+| `src/webview/scripts/memoryHitsBlock.ts` | 修改（1 行注释：消费者名 `attachMemoryHitsToToolRow` → `toolRowView.attachMemoryHits`） |
+| `eslint.config.mjs` | 修改（chatView max-lines 5333 → 5207，注释补一域） |
+
+### 10.7 余量
+
+零状态收尾批余下 **279 行 / 5 组**：活动区 79 · 输入框 54 · 代码块 39 · 空态 33 · 其他 74（原 61 + 转入的 `roundChainText` 13）。全量做完 chatView ≈ **4928**。
+
+---
+
 ## 附 · 台账登记说明
 
 - 新条目 **CHATVIEW-SLIM-2** 登记于 `### 宿主轴`（本项属宿主）。

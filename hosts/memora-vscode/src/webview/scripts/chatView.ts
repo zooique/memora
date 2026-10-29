@@ -85,12 +85,12 @@ import {
   buildSearchEvidenceResolver,
   findRunningTool,
   groupThoughtBuckets,
+  groupToolBatches,
   narrateChainText,
   planItemStatesFromEvents,
   stopReasonLabel,
   thoughtLabel,
   type MemoryHitEntry,
-  type ToolBatch,
 } from '../helpers/processFlowModel.js';
 import { createMemoryHitsBlock } from './memoryHitsBlock.js';
 import {
@@ -102,6 +102,7 @@ import {
 } from './processFlowCells.js';
 import { createPickerView } from './pickerView.js';
 import { createQaRowView } from './qaRowView.js';
+import { createToolRowView } from './toolRowView.js';
 // 历史菜单（会话记录/留存区）：渲染与分组状态收口于 historyMenuView（HOST-SPLIT-1 chatView 第 2 刀）
 import { createHistoryMenuView } from './historyMenuView.js';
 // 上下文占用（圆环/构成条/明细）：渲染与防误清零状态收口于 contextOccupancyView（HOST-SPLIT-1 chatView 第 3 刀）
@@ -447,7 +448,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 归属判据单一真源 = 内核 memoryRecalled.toolCallId（源自 tool_call 唯一 ID），宿主不猜、
    * 不按 query 文本或行序配对。一块 = 一次 search_memories 调用，块内按 id 去重（同一次
    * 调用里重复命中同一记忆只列一次）；跨调用不去重（各调用各自的事实，不互相吞并）。
-   * 消费面两处共用同一模型：① 实时 `attachMemoryHitsToToolRow` 增量挂载；
+   * 消费面两处共用同一模型：① 实时 `toolRowView.attachMemoryHits` 增量挂载；
    * ② finalize/中断重建时 `renderToolRow` 经 resolver 回填（DOM 全量重建后明细不丢）。
    * 实时专属：重放轨（processEvents）无此事件 ⇒ 重放历史轮不渲染（诚实降级，本次迁移不变）。
    * 新轮 meta / 复位清空（与 currentEvents 同点）；已成轮的明细随该轮 DOM 固定。
@@ -483,6 +484,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     messages,
     document.getElementById('roundNav') as HTMLElement,
   );
+  // 工具行动作面（定位 / 注销预告行 / 记忆命中挂载）：只读消费 currentMemoryHitsByCall
+  const toolRow = createToolRowView({
+    document,
+    messages,
+    memoryHits: memoryHitsBlock,
+    memoryHitsByCall: currentMemoryHitsByCall,
+  });
   // 消息区滚动监听：更新吸底状态 + 一键到底按钮显隐 + 大纲条当前轮高亮
   messages.addEventListener('scroll', () => {
     const atBottom = trackScroll(messages);
@@ -687,91 +695,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   
   
   
-  /**
-   * 批间打断物白名单（**唯一声明处**；他处引用本名，不重述集合）。
-   *
-   * 资格 = 「自身在过程条目流中渲染成一条可见内容」——只有这样才能充当两个相邻工具之间的视觉断面。
-   * - `narrate`：工具轮叙述行（宿主渲染「AI 说什么：」后接工具块）；
-   * - `text_self_review`：自审查**输出**（**非**正文——主回答正文走内容轨 `chunk`，落盘没有对应过程事件，
-   *   结构上不可能出现在工具之间）。自审查只在工具循环后做一次终审，故它**常态**居工具之后；
-   *   仅「审查轮交付后排队插话续跑、续跑再调工具」这一路径可让它落在两条工具之间 → **可达，保留**。
-   * - `plan_item_boundary`：任务项折叠分组边界（分组容器本身即断面）。
-   * 其余类型（thinking / memory_added / self_review / tool_start / tool_result / metrics / aborted / meta）
-   * 都不渲染成可断面 → 不断段。
-   */
-  const BATCH_SPLITTER_TYPES: ReadonlySet<ProcessEvent['type']> = new Set([
-    'narrate',
-    'text_self_review',
-    'plan_item_boundary',
-  ]);
+  
 
   
-  /**
-   * 工具批切段（SSOT；三渲染上下文共用：运行时流式 / finalize 全量重建 / pending 行升级）
-   *
-   * 判据（docs/architecture/tool-batch-splitting.md §4.1；扩展 方案-工具批折叠合并-20260925.md §3.1）：
-   *   · 打断物（一切断段）：`BATCH_SPLITTER_TYPES` 三成员（narrate / text_self_review / plan_item_boundary）。
-   *   · **步切换（新增）**：`thought` 归属新 step（其 `stepIndex` ≠ 当前批所属 step）→ 断段。
-   *     语义 = 「可见分隔物」——思考块换步即视觉断面，工具随之按步分块。**同 step 的思考碎片**
-   *     （同 `stepIndex`）**不断段**（step 内伴随物）；两侧任一 `stepIndex` 缺省（旧数据）→ 回落相邻性。
-   *     无思考分隔的跨 step 工具序列（模型不产 reasoning）→ 维持相邻合并（无可见断面即不切）。
-   *   · `tool_start` / `tool_result` 为段内容（结果按 toolCallId 配对归属其 tool_start）。
-   *   · **外部可见条目（新增）**：`boundaryTs` 非空时，相邻两条工具的 ts 之间若夹着外部可见条目
-   *     （问答卡，见 `visibleInputTs`）→ 断段。判据 = 「桶号」（小于该工具 ts 的边界数）变化，
-   *     与落位同用 ts 键——呈现在哪、断面就在哪。
-   * 其余条目（thinking / memory_added 等）不在打断物清单内 → 不断段。
-   *
-   * @param events     当前轮全部过程事件（流式与重放同源输入）
-   * @param boundaryTs 外部可见条目（问答卡）的 ts 集。**必传、不设默认值**：空数组的语义 = 「无外部
-   *   条目即无断面」，而那正是缺陷 BATCH-SPLIT-1 的形态——设默认值等于让漏传者静默回落缺陷行为
-   * @returns 批数组（按段内首个 tool_start 的 seq 升序；空流返回空数组）
-   */
-  function groupToolBatches(events: ProcessEvent[], boundaryTs: readonly string[]): ToolBatch[] {
-    // 全序按 seq 稳定排序（宿主可见 ProcessEvent 全序，方案 §二约束：判据只读 seq/类型/toolCallId）
-    const ordered = [...events].sort((a, b) => a.seq - b.seq);
-    // 桶号 = 小于该 ts 的边界条目数：相邻工具桶号不同 ⇒ 二者之间夹着问答卡 ⇒ 断段
-    const bucketOf = (ts: string): number => {
-      let n = 0;
-      for (const b of boundaryTs) if (b < ts) n += 1;
-      return n;
-    };
-    // toolCallId → 结果（段内容配对表；先建表后分组，结果可晚于打断物到达仍归属其 start）
-    const results = new Map<string, Extract<ProcessEvent, { type: 'tool_result' }>>();
-    for (const e of ordered) {
-      if (e.type === 'tool_result') results.set(e.payload.toolCallId, e);
-    }
-    const batches: ToolBatch[] = [];
-    // 当前开放中的段（null = 下一个 tool_start 开新段）
-    let current: ToolBatch | null = null;
-    // 当前批所属 step（= 开批那条 tool_start 的 stepIndex；undefined = 旧数据无归属 → 不参与步切换判据）
-    let currentStep: number | undefined;
-    // 当前批的边界桶号（开批时定；与新工具比对，变化即断段）
-    let currentBucket = 0;
-    for (const e of ordered) {
-      if (e.type === 'tool_start') {
-        const bucket = bucketOf(e.ts);
-        // 外部可见条目断面：跨过问答卡 → 关批（由下方开新批）
-        if (current && bucket !== currentBucket) current = null;
-        if (!current) {
-          current = { segId: e.seq, anchorTs: e.ts, entries: [] };
-          currentStep = e.payload.stepIndex;
-          currentBucket = bucket;
-          batches.push(current);
-        }
-        current.entries.push({ start: e, result: results.get(e.payload.toolCallId) });
-      } else if (BATCH_SPLITTER_TYPES.has(e.type)) {
-        // 打断物（白名单 = BATCH_SPLITTER_TYPES 唯一声明）：断段；其余条目穿插不断段
-        current = null;
-      } else if (e.type === 'thought') {
-        // 步切换断段：思考归属新 step（两侧 stepIndex 均已知且不同）→ 可见分隔物出现，断段
-        const s = e.payload.stepIndex;
-        if (current && currentStep !== undefined && s !== undefined && s !== currentStep) {
-          current = null;
-        }
-      }
-    }
-    return batches;
-  }
+  
 
   
   
@@ -3150,56 +3077,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   
   
-  /**
-   * 按 toolCallId 定位工具行（属性扫描，不拼选择器）。
-   *
-   * 不用 `[data-tool-call-id="${id}"]`：toolCallId 源自 LLM 供应商，理论可含引号/反斜杠，
-   * 拼进选择器会抛 SyntaxError 或被误解析。扫描成本 O(工具行数)，一次成轮几十行的量级可忽略，
-   * 换掉一整类逃逸风险。（既有 updateToolRowState 的拼接式选择器不在本次改动范围，未联动。）
-   */
-  function findToolRow(toolCallId: string): HTMLDetailsElement | null {
-    for (const row of messages.querySelectorAll<HTMLDetailsElement>('.round-block__tool')) {
-      if (row.dataset.toolCallId === toolCallId) return row;
-    }
-    return null;
-  }
+  
 
-  /**
-   * 把某次 search_memories 调用的命中明细挂进对应工具折叠块（幂等重建）。
-   *
-   * 幂等策略 = 「先摘后建」而非增量对账：同一 toolCallId 可能多次更新（一轮多次检索同一调用
-   * 的追加、memory_deleted 后的重算），每次都从 currentMemoryHitsByCall 重建，
-   * 保证「模型是什么样，DOM 就是什么样」，不会留下孤儿节点或错位计数。
-   *
-   * @returns 目标工具行是否存在（false ⇒ 调用方须把数据转入兜底聚合——行未就绪或老内核无
-   *   配对键时，宁可退回旧落位也不丢信息）
-   */
-  function attachMemoryHitsToToolRow(toolCallId: string): boolean {
-    const row = findToolRow(toolCallId);
-    if (!row) return false;
-    row.querySelector('.round-block__memory-badge')?.remove();
-    row.querySelector('.round-block__memory-hits')?.remove();
-    const hits = currentMemoryHitsByCall.get(toolCallId);
-    if (!hits || hits.size === 0) return true;
-    // 命中块出现 ⇒ 撤掉 100 字截断摘要（同源不双渲染；先到摘要、后到命中的时序在此收口）
-    row.querySelector('.round-block__tool-summary')?.remove();
-    const summary = row.querySelector('.round-block__tool-name');
-    if (summary) {
-      const badge = document.createElement('span');
-      badge.className = 'round-block__memory-badge';
-      badge.textContent = `记忆 ${hits.size}`;
-      badge.title = `本次调用命中 ${hits.size} 条记忆（展开查看明细）`;
-      summary.appendChild(badge);
-    }
-    row.appendChild(memoryHitsBlock.buildBlock(hits));
-    return true;
-  }
+  
 
   /**
    * 记忆命中兜底行（HOST-S3-1 落位的**降级路径**）：当前轮「本轮参考了 N 条记忆」。
    *
    * 出场条件仅两种：`memory_hits` 缺 toolCallId（老内核 / 测试直调），或配对目标工具行
-   * 尚未进 DOM（时序竞态）。有配对键且行就绪的命中走 attachMemoryHitsToToolRow——
+   * 尚未进 DOM（时序竞态）。有配对键且行就绪的命中走 toolRowView.attachMemoryHits——
    * 两者数据源分离（byCall Map / 本函数读的兜底 Map），同一批命中不会两处同现。
    * 落位 = 当前 assistant 块内正文（.msg-body）之前；聚合更新复用同一元素
    * （isConnected 守卫防翻列表重建后孤儿引用重复插入）。
@@ -3519,7 +3405,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'step_boundary') {
       // 迭代落盘点（瞬态信号，与 tool_pending 同族）：本步工具宿命已定（started 已升级；
       // 截断批/重试孤儿的 tool_start 永不到达）→ 预告行注销（生命周期契约见 dropStalePendingToolRows）
-      dropStalePendingToolRows();
+      toolRow.dropStalePendingToolRows();
     } else if (msg.type === 'process_event') {
       // 运行时单形态渲染投影（v1.5）：一律汇入当前轮 events[] 由 renderRoundBlock 渲染。
       // meta 为本轮首条 → 开新轮（清缓冲 + 挂载就绪）；瞬时「已召回/已沉淀」提示由事件本地派生
@@ -3657,7 +3543,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       clearPendingWait();
       // 在途批宿命已定（用户输入 = 插话打断/新轮起步，[TOOL_ABORTED] 同源）：
       // 未升级预告行注销（生命周期契约见 dropStalePendingToolRows）
-      dropStalePendingToolRows();
+      toolRow.dropStalePendingToolRows();
       // 带 kind 的交互输入 → 行内打断分条（supplement）/ 消息流内联子行（qa）。
       // 单轨：后续 assistant 段是否续接由 chunk 携带的 roundId 与 lastAssistantRoundId
       // 相等判定（运行时与重放同一判定源）；resumePending 供下一次 process_event meta
@@ -4034,7 +3920,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         for (const h of msg.hits)
           bucket.set(h.id, { name: h.name, source: h.source, contentPreview: h.contentPreview });
         currentMemoryHitsByCall.set(callId, bucket);
-        if (!attachMemoryHitsToToolRow(callId)) {
+        if (!toolRow.attachMemoryHits(callId)) {
           // 目标行尚未进 DOM（时序竞态）→ 数据转入兜底聚合行：信息不丢，位置退回旧行为。
           // 必须把该 callId 在 byCall 里**置空**（不是删键）：删键会让收场重建的
           // `live ?? evidence` 落到证据副本上，同一批命中在工具块与轮次行双写；置空 =
@@ -4069,7 +3955,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         for (const [callId, bucket] of currentMemoryHitsByCall) {
           if (!bucket.delete(msg.id)) continue;
           // 该调用仍有明细 → 重建块与徽章计数；已清空 → 块与徽章一并摘除（重建器内部处理空态）
-          attachMemoryHitsToToolRow(callId);
+          toolRow.attachMemoryHits(callId);
         }
         // 已归档轮的命中行只存在于 DOM（数据随轮固定，不在任何 Map 里）→ 按 id 全局摘除
         document.querySelectorAll<HTMLElement>('[data-memory-id]').forEach((el) => {
@@ -5228,19 +5114,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 初始装配：空清单（搜索框 + 清除项 + 分隔线），具体清单由 skills_loaded 动态填充
   renderSkillPickerMenu();
 
-  /**
-   * 「（准备中）」预告行注销（生命周期契约：每条预告行**要么升级、要么注销**，不许常驻）。
-   *
-   * 预告行（tool_pending，瞬态轨）的宿命只有两个出口：① tool_start 到达 → 升级执行态
-   * （upgradePendingToolRow）；② 所属批的 tool_start **永不到达** → 此处注销。触发集 =
-   * 批宿命已定的全部落点：`step_boundary`（截断批/重试孤儿在此注销——continue 型迭代落盘点）；
-   * 提问定型（ask 挂起批不发 step_boundary，其宿命在提问 UI 渲染时已定）；用户输入
-   * （插话/新轮打断在途批，[TOOL_ABORTED] 同源）。轮收尾/中断由整树重建天然注销（finalizeRound
-   * 拆过程容器），不重复挂钩。不注销的后果 = 运行时残留无内容的幽灵折叠块、散在任务项折叠块外。
-   */
-  function dropStalePendingToolRows(): void {
-    messages.querySelectorAll('.round-block__tool.is-tool-pending').forEach((row) => row.remove());
-  }
+  
 
   // 提问卡渲染（真源 = turn_update.state 的 waiting/ask）
   // 职责与原 need_clarify 分支等价：优先内联块（renderAskInline 挂问答交互行下），
@@ -5248,7 +5122,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   //（宿主 postTurnUpdate 投影派生，非独立消息载荷）。
   function renderAskPhase(questions: PendingQuestionDto[]): void {
     // 挂起批次收口：提问定型 = 本批工具不再执行，未升级预告行退场（幽灵块防残留）
-    dropStalePendingToolRows();
+    toolRow.dropStalePendingToolRows();
     // 提问形态内联化：选择题 + 补充输入渲染到消息流提问块下方
     //（对齐 TraeWork/主流对话流交互），不再用底部 clarifyBar 替换输入栏。
     // 底部 clarifyBar 保留为异常兜底（无 assistant 块锚点时退化使用）
