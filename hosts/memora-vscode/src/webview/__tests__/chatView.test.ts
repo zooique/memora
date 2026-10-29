@@ -11485,6 +11485,63 @@ describe('INPUT-LIMIT-1 输入长度上限（输入框阶段原生截断，2026-
 });
 
 // ═══════════════════════════════════════════════════════════
+// 工具权限徽章三分支 + 无数据不亮（CAPB-1 补测）
+// ═══════════════════════════════════════════════════════════
+// 缺口（CAPB-1）：#currentCapabilityBadge 节点在生产骨架与夹具都在、三方一致性守卫
+// 只锁「节点存在」，但全仓此前没有任何用例 dispatch capability_badge——三分支
+// （block「纯 LLM」/ allow+空「全部工具」/ allow+能力列表）的文案与悬停解释全无守护，
+// 属「节点在、链路可跑、断言缺失」的静默失测形态。文案是用户可读面，title 是悬停解释，
+// 两者都断言；显隐判据 = 骨架初始 hidden、收到消息才亮（updateCapabilityBadge 本身
+// 无隐藏分支，「无数据」态即初始态，实现与注释措辞已对齐）。
+describe('工具权限徽章三分支 + 无数据不亮（CAPB-1）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('未收到 capability_badge 时徽章不亮（骨架初始 hidden）', () => {
+    mountChatView();
+    const badge = document.getElementById('currentCapabilityBadge') as HTMLElement;
+    expect(badge.hidden).toBe(true);
+    expect(badge.textContent).toBe('');
+  });
+
+  it('block → 「纯 LLM」+ 悬停解释，徽章点亮', () => {
+    mountChatView();
+    dispatch({ type: 'capability_badge', toolMode: 'block', capabilities: [] });
+    const badge = document.getElementById('currentCapabilityBadge') as HTMLElement;
+    expect(badge.hidden).toBe(false);
+    expect(badge.textContent).toBe('纯 LLM');
+    expect(badge.title).toBe('纯 LLM 模式（无工具暴露）');
+  });
+
+  it('allow + 空能力 → 「全部工具」+ 悬停解释，徽章点亮', () => {
+    mountChatView();
+    dispatch({ type: 'capability_badge', toolMode: 'allow', capabilities: [] });
+    const badge = document.getElementById('currentCapabilityBadge') as HTMLElement;
+    expect(badge.hidden).toBe(false);
+    expect(badge.textContent).toBe('全部工具');
+    expect(badge.title).toBe('允许所有工具');
+  });
+
+  it('allow + 能力列表 → label 去重后「 · 」连接 + 「允许：」悬停解释', () => {
+    mountChatView();
+    dispatch({
+      type: 'capability_badge',
+      toolMode: 'allow',
+      capabilities: [
+        { capability: 'read_file', label: '文件' },
+        { capability: 'write_file', label: '文件' }, // 重复 label：不同工具同标签须去重
+        { capability: 'web_search', label: '联网' },
+      ],
+    });
+    const badge = document.getElementById('currentCapabilityBadge') as HTMLElement;
+    expect(badge.hidden).toBe(false);
+    expect(badge.textContent).toBe('文件 · 联网');
+    expect(badge.title).toBe('允许：文件、联网');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
 //骨架 id 三方一致性（UI-CONFIRM-P6 轻量版）
 // ═══════════════════════════════════════════════════════════
 // 缺陷：测试夹具 chatViewTestEnv.ts 的 HTML 是生产 buildHtml 的**手工镜像**（双源）。

@@ -79,7 +79,8 @@ export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
    * - block 模式 → 显示「纯 LLM」标签
    * - allow + 有能力 → 显示能力列表（如「文件」「联网」「记忆」）
    * - allow + 无能力 → 显示「全部工具」
-   * 无数据时隐藏徽章。
+   * 无隐藏分支：「无数据」态即骨架初始 hidden（未收到 capability_badge 前不亮），
+   * 本函数只负责点亮与更新，不回置隐藏。
    */
   function updateCapabilityBadge(
     toolMode: 'allow' | 'block',
