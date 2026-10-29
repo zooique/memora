@@ -81,20 +81,28 @@ const lines = ledgerText.split(/\r?\n/);
 
 // 解析台账条目块：列 0 以 `- **<ID>**` 起，到下一个同形条目或文件末止。
 const ENTRY_RE = /^-\s+\*\*([^*]+?)\*\*/;
+const HEADER_RE = /^#{1,6}\s/;
 const blocks = []; // { id, start, end }  end 含
 let cur = null;
+let lastHeader = -1;
 for (let i = 0; i < lines.length; i++) {
+  if (HEADER_RE.test(lines[i])) {
+    lastHeader = i;
+    continue;
+  }
   const m = ENTRY_RE.exec(lines[i]);
   if (m) {
     if (cur) {
-      cur.end = i - 1;
+      // 块尾不跨章节标题：cur 与本条之间存在标题时，块尾止于标题前一行
+      // （否则区块会一路延伸到下一个条目，把中间的 ## / ### 标题整段吞掉 —— 2026-10-29 实证）
+      cur.end = lastHeader > cur.start ? Math.min(i - 1, lastHeader - 1) : i - 1;
       blocks.push(cur);
     }
     cur = { id: m[1].trim(), start: i, end: i };
   }
 }
 if (cur) {
-  cur.end = lines.length - 1;
+  cur.end = lastHeader > cur.start ? Math.min(lines.length - 1, lastHeader - 1) : lines.length - 1;
   blocks.push(cur);
 }
 
@@ -121,7 +129,8 @@ for (let i = 0; i < lines.length; i++) {
   if (b) {
     i = b.end; // 跳过块内其余行（for 循环 ++ 落在块后首行）
     // ④ 连续空行压成 1 行：块前已有空行时，吞掉块后的空行，避免叠出双空
-    const tailIsBlank = newLedgerLines.length > 0 && newLedgerLines[newLedgerLines.length - 1].trim() === '';
+    const tailIsBlank =
+      newLedgerLines.length > 0 && newLedgerLines[newLedgerLines.length - 1].trim() === '';
     if (tailIsBlank) {
       while (i + 1 < lines.length && lines[i + 1].trim() === '') i++;
     }
