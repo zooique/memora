@@ -2,8 +2,10 @@
  * 工具名中文映射 — 纯函数（工具中文名的**单一真源**）
  *
  * 消费方：
- *   · chatView（webview）—— 工具行叙述兜底 toolActionLabel / 准备中态 renderPendingToolRow /
- *     写入审批卡 renderWriteConfirmCard；
+ *   · chatView（webview）—— 准备中态 renderPendingToolRow / 写入审批卡 renderWriteConfirmCard
+ *     及过程流取名（直接 import getToolDisplayName）；
+ *   · helpers/processEventText（webview）—— 工具行叙述兜底 toolActionLabel 与轮收尾
+ *     叙述句 toolSummaryText（2026-10-29 自 chatView.ts 迁出）；
  *   · chatPanel（extension）—— 写入确认描述 bindWriteConfirmation。
  *
  * **键集合对齐约束**：本映射的键须与内核内置工具清单（完整面 = ToolExecutor.builtinDefinitions：
