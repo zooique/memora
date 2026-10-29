@@ -941,7 +941,10 @@ function selfTest() {
       label: '⑬新登记观察项无到期复查',
       probe: 'ZZ-EXPIRE-1',
       mutate: (t) =>
-        t.replace(anchor, `${anchor}\n\n- **ZZ-EXPIRE-1** — 自检注入｜⏳ 观察\n  本条刻意不写复查日期。`),
+        t.replace(
+          anchor,
+          `${anchor}\n\n- **ZZ-EXPIRE-1** — 自检注入｜⏳ 观察\n  本条刻意不写复查日期。`,
+        ),
       pick: (r) => idsOf(r.noExpiry),
     },
     // ⑬b 反例控制：带了「到期复查 YYYY-MM-DD」的新条目不该报（防「凡新增就报」的过度拦截）。
@@ -950,7 +953,10 @@ function selfTest() {
       probe: 'ZZ-EXPIRE-2',
       invert: true,
       mutate: (t) =>
-        t.replace(anchor, `${anchor}\n\n- **ZZ-EXPIRE-2** — 自检注入｜⏳ 观察\n  到期复查 2026-12-31`),
+        t.replace(
+          anchor,
+          `${anchor}\n\n- **ZZ-EXPIRE-2** — 自检注入｜⏳ 观察\n  到期复查 2026-12-31`,
+        ),
       pick: (r) => idsOf(r.noExpiry),
     },
     // ⑪a：删掉一个结构区标题（实吞事故形态 #2：## 注记类 被吞）⇒ 必须红
