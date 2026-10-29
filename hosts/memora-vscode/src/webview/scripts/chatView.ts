@@ -32,7 +32,6 @@ import {
 // ProcessEvent 纯类型导入（ProcessThinkingPhase 随 phaseLabel 迁 helpers/processEventText）：仅编译期用，esbuild 剥离，不引入运行时依赖
 import type { ProcessEvent } from '@zooique/memora';
 // 错误文案映射单一真理源（与 Node 侧 chatPanel 实时提示条共用，防文案双源漂移）
-import { friendlyErrorMessage } from '../../shared/errorText.js';
 // 输入长度上限（INPUT-LIMIT-1）：值真源 = shared/constants.ts，两侧输入口同源消费
 import {
   MAX_ASK_ANSWER_CHARS,
@@ -54,11 +53,9 @@ import {
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
 import {
-  argStr,
   countReviews,
   fmtDuration,
   isPlanItemBoundaryEvent,
-  parseToolArgs,
   phaseLabel,
   toDateKey,
   toolActionLabel,
@@ -81,6 +78,28 @@ import { applyIcon, createIcon, getIconSvg, populateIcons } from './icons.js';
 import { createSanitizer } from '../helpers/sanitizer.js';
 // 计划常驻条（任务看板）：渲染与状态收口于 planBarView（HOST-SPLIT-1 chatView 首刀）
 import { createPlanBarView } from './planBarView.js';
+import { insertBeforeBody } from '../helpers/insertBeforeBody.js';
+import { setCursorStatus, setTerminus, type CursorStatus } from '../helpers/statusAttrs.js';
+import {
+  buildMemoryHitsEvidenceResolver,
+  buildSearchEvidenceResolver,
+  findRunningTool,
+  groupThoughtBuckets,
+  narrateChainText,
+  planItemStatesFromEvents,
+  stopReasonLabel,
+  thoughtLabel,
+  type MemoryHitEntry,
+  type ToolBatch,
+} from '../helpers/processFlowModel.js';
+import { createMemoryHitsBlock } from './memoryHitsBlock.js';
+import {
+  appendInterruptedRow,
+  createProcessFlowCells,
+  insertPlanItemInOrder,
+  updateToolRowState,
+  visibleInputTs,
+} from './processFlowCells.js';
 // 历史菜单（会话记录/留存区）：渲染与分组状态收口于 historyMenuView（HOST-SPLIT-1 chatView 第 2 刀）
 import { createHistoryMenuView } from './historyMenuView.js';
 // 上下文占用（圆环/构成条/明细）：渲染与防误清零状态收口于 contextOccupancyView（HOST-SPLIT-1 chatView 第 3 刀）
@@ -374,6 +393,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // ⚠️ `#planBar` 是 `#messages` 的**同级**节点，不得插进滚动容器内部（一滚即滚出视野）。
   // 数据源仍为 plan_update 协议消息（webview 只消费不写，零新增协议字段）。
   const planBar = createPlanBarView({ document });
+  // 过程流单元格与记忆命中块（CHATVIEW-SLIM-2 第 5 刀）：零状态 DOM 构造，deps 注入
+  const memoryHitsBlock = createMemoryHitsBlock({ document, vscode });
+  const cells = createProcessFlowCells({ document, memoryHits: memoryHitsBlock });
 
   // StatusDock 挂载条域容器（待发送 / 文件改动 / 后台任务三条件，第 6 刀外置，见 statusBarsView.ts）
   const statusBars = createStatusBarsView({
@@ -385,36 +407,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     postMessage: (msg) => vscode.postMessage(msg as WebviewToExtensionMessage),
   });
 
-  /**
-   * 「过程在上 · 报告在下」挂载锚点（SSOT）：把过程类元素插到 assistant 块报告正文之前。
-   *
-   * 两处挂载点共用同一实现，杜绝措辞/语义漂移：
-   *   ① ensureProcessFlow（运行时平铺容器 .process-flow）
-   *   ② ensureRoundBlock（finalize 折叠区 .round-block）
-   *
-   * 三段式降级：`.msg-body` 存在 → 插到它之前；否则紧随 `.msg-ai-label`；再否则 prepend。
-   *
-   * 运行时**无 round-block**，锚点不得依赖它——以它为锚时 querySelector 恒返回 null，
-   * 而 insertBefore(el, null) 按 DOM 规范退化为 appendChild，元素落到 assistant 块最末
-   * （正文 .msg-body 与 .msg-footer 之后）= 会话内容底部（坑）。
-   *
-   * @param host assistant 容器（.msg.assistant）
-   * @param el 待挂载的过程类元素
-   */
-  function insertBeforeBody(host: HTMLElement, el: HTMLElement): void {
-    const msgBody = host.querySelector(':scope > .msg-body');
-    if (msgBody) {
-      host.insertBefore(el, msgBody);
-      return;
-    }
-    const label = host.querySelector(':scope > .msg-ai-label');
-    if (label) {
-      label.after(el);
-      return;
-    }
-    host.prepend(el);
-  }
-
+  
   // 当前角色包列表（由 chat_role_packs 消息填充；description 供空状态提示副文案）。
   // 角色切换在独立「角色」视图，本面板仅消费角色名用于展示，不承载切换。
   let currentRolePacks: { name: string; displayName: string; description?: string }[] = [];
@@ -442,8 +435,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let roundBlockEl: HTMLDetailsElement | null = null;
   /** round-block 已挂载的 assistant 块（重放去重判定：roundId 首次出现才挂） */
   let roundBlockHostEl: HTMLElement | null = null;
-  /** 单条命中项（记忆 id → 展示面）：id 为 Map 键（同调用内去重）兼反馈寻址键（data-memory-id） */
-  type MemoryHitEntry = { name: string; source: string; contentPreview?: string };
+  
   /**
    * 本轮记忆命中·**按调用分组**（MEM-EVENT-2 落位收口）：toolCallId → (记忆 id → 命中项)。
    *
@@ -633,109 +625,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return rb;
   }
 
-  /** 获取或创建小节容器（进行中增量专用：不清理已有内容，防误删已追加的工具行） */
-  function getOrCreateSection(details: HTMLElement, title: string): HTMLElement {
-    let section = details.querySelector<HTMLElement>(`[data-section="${title}"]`);
-    if (!section) {
-      section = document.createElement('div');
-      section.className = 'round-block__section';
-      section.dataset.section = title;
-      const titleEl = document.createElement('div');
-      titleEl.className = 'round-block__section-title';
-      titleEl.textContent = title;
-      section.appendChild(titleEl);
-      const listEl = document.createElement('div');
-      listEl.className = 'round-block__section-list';
-      section.appendChild(listEl);
-      details.appendChild(section);
-    }
-    return section;
-  }
-
-  /** 在 details 中创建/复用小节容器（标题 + 内容行容器，textContent 构建防注入） */
-  function sectionOf(
-    details: HTMLElement,
-    title: string,
-  ): { titleEl: HTMLElement; listEl: HTMLElement } {
-    // 全量重建：清空已有列表重排（简单确定性——事件量小），再更新标题计数
-    const section = getOrCreateSection(details, title);
-    const listEl = section.querySelector('.round-block__section-list') as HTMLElement;
-    listEl
-      .querySelectorAll('.round-block__row, .round-block__tool, .round-block__pre')
-      .forEach((el) => el.remove());
-    const titleEl = section.querySelector('.round-block__section-title') as HTMLElement;
-    const count = listEl.children.length;
-    titleEl.textContent = `${title}${count > 0 ? ` (${count})` : ''}`;
-    return { titleEl, listEl };
-  }
-
-  /**
-   * 过程叙述行（扁平化）：LLM 一段行动叙述 = 一行纯文本直显（对流式 process-flow__narrate 同构）。
-   * 工具调用不嵌套进叙述行——narrate 与 tool 平级、按 seq 顺序平铺在 details 顶层
-   * （Trae Work 式扁平 step 流）。返回行 el。
-   */
-  function createNarrateRow(ev: Extract<ProcessEvent, { type: 'narrate' }>): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'round-block__narrate';
-    // seq 锚点：进行中增量追加去重 + 顶层按序插入（insertPlanItemInOrder）；ts 时间键：统一排序
-    row.dataset.seq = String(ev.seq);
-    row.dataset.ts = ev.ts;
-    // 纯文本直显（对齐流式 process-flow__narrate 同构）：narrate 语义 = 一句话行动叙述，
-    // 无折叠价值——旧 details 形态（summary 全文 + body 全文）对 ≤80 字叙述双份消费同一内容，
-    // 且与流式纯文本形态分裂（轮结束瞬间直显突变折叠+双份，2026-10-05 真机实锤）。
-    // 叙述冒号：结尾无标点时补「：」（流式同款定案「AI 说什么：」后接工具块）——文本防注入
-    const text = ev.payload.content.trim();
-    row.textContent = /[:：。!！?？；;]$/.test(text) ? text : `${text}：`;
-    return row;
-  }
-
-  /**
-   * 思考折叠块（聚合版）：把同一 step 的 thought 碎片聚合成**一个**折叠块，
-   * 正文为各碎片累积拼接（碎片不逐条成块，防 LLM 流式 reasoning 切成几十个片段满屏小折叠）。
-   * summary = 标题（label，缺省「思考」）+ 首行预览；textContent 构建防注入。
-   * streaming 时默认展开（openByDefault=true 由调用方按运行期传），finalize 默认收起。
-   */
-  function createAggregatedThought(
-    contents: readonly string[],
-    openByDefault = false,
-    ts?: string,
-    seq?: number,
-    label = '思考',
-  ): HTMLDetailsElement {
-    // 思考事件存的是**增量 delta 片段**（如 "Now let me also read" / "the" / "gap analysis."），
-    // 按序**原样连续拼接**（无分隔符、不逐条 trim，保留片段的天然间隔）→ 还原真正的连续思考流，
-    // 而非「每段一行」的碎片化（P3 之二：确保任务项间连贯）。仅外层做 trim 去首尾空白。
-    const text = contents.join('').trim();
-    const preview = text.slice(0, 80);
-    const cnt = contents.filter((c) => c.trim() !== '').length;
-    const row = document.createElement('details');
-    row.className = 'round-block__thought';
-    row.open = openByDefault;
-    // ts 时间键（统一排序）：锚点事件 ts，供 insertPlanItemInOrder 时间序归位；
-    // seq 兜底比较（同 ts/空串时回落 seq 序，与 narrate/tool 平铺同构）
-    if (ts) row.dataset.ts = ts;
-    if (seq !== undefined) row.dataset.seq = String(seq);
-    const summary = document.createElement('summary');
-    // 思考类型标（独立稳定节点）：thought icon 前置——后续 preview 拼接只写文本 span，icon 不丢
-    const icon = document.createElement('span');
-    icon.className = 'round-block__type-icon';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.innerHTML = getIconSvg('thought', 12, 12); // 静态 SVG，无外部输入
-    const labelSpan = document.createElement('span');
-    labelSpan.textContent =
-      cnt > 1
-        ? `${label} · ${preview}${text.length > preview.length ? '…' : ''}`
-        : preview
-          ? `${label} · ${preview}`
-          : label;
-    summary.append(icon, labelSpan);
-    const body = document.createElement('div');
-    body.className = 'round-block__thought-body';
-    body.textContent = text;
-    row.append(summary, body);
-    return row;
-  }
-
+  
+  
+  
+  
   /**
    * 工具意图预告行：LLM 流式生成 tool_call 参数期间提前渲染的「准备中」行。
    *
@@ -779,273 +672,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     flow.appendChild(row);
   }
 
-  /**
-   * 工具行升级：pending「准备中」行在 tool_start 到达时转执行态，不重建 DOM——
-   * 与 renderToolRow 新建的执行态行同构（叙述/状态/进行中高亮），后续 tool_result 更新
-   * （updateToolRowState 按 data-tool-call-id）天然复用，无需特判。
-   * 排序键补挂（data-seq / data-ts）：升级后并入所在批（口径③）需要与正式行同构的
-   * 时间序锚（insertPlanItemInOrder 归位 / 批内平铺排序）。
-   */
-  function upgradePendingToolRow(
-    row: HTMLDetailsElement,
-    start: Extract<ProcessEvent, { type: 'tool_start' }>,
-  ): void {
-    row.classList.remove('is-tool-pending');
-    row.classList.add('is-tool-running');
-    // 排序键补挂（与 renderToolRow 同构）：seq = tool_start seq（段 id 取材同源）、ts = 时间键
-    row.dataset.seq = String(start.seq);
-    row.dataset.ts = start.ts;
-    const labelEl = row.querySelector<HTMLElement>('.round-block__tool-label');
-    // 参数此刻已完整，按既有多参数叙述生成器复原（renderToolRow 同路）
-    if (labelEl) labelEl.textContent = toolActionLabel(start.payload.name, start.payload.args);
-    const statusEl = row.querySelector<HTMLElement>('.round-block__tool-status');
-    if (statusEl) statusEl.textContent = ' (进行中)';
-    // 参数补挂（与 renderToolRow 的 args pre 同构）：展开可看本次调用入参
-    if (start.payload.args && !row.querySelector(':scope > .round-block__pre')) {
-      const pre = document.createElement('pre');
-      pre.className = 'round-block__pre';
-      pre.textContent = start.payload.args;
-      row.appendChild(pre);
-    }
-  }
-
-  /**
-   * 任务项内过程行按 seq 顺序插入 details 顶层（narrate 与 tool 共用，扁平化平铺）。
-   * 进行中增量调用（每次事件到达），避免整体重排导致闪烁/展开态丢失；finalize 全量重建亦
-   * 走此通道保持同一排序逻辑。相位行固定在最前，其余按 seq 升序。
-   */
-
-  /**
-   * 定位条目应插入的任务项容器（ts 为该条目的时间键；processEvents 行与 interactiveInputs
-   * 条目共用，形态甲统一时间序）。无边界回退 details（整轮一组）。
-   *
-   * 同 ts（含全空串的历史/测试数据）回落 seq 兜底：boundary 在条目之前（boundary.seq <= 条目 seq）
-   * 才归该任务项；QA 条目无 seq（undefined）时同 ts 归最近 boundary，靠写入序稳定。
-   */
-  function planItemContainerFor(
-    root: HTMLElement,
-    events: ProcessEvent[],
-    ts: string,
-    seq?: number,
-  ): {
-    host: HTMLElement;
-    bounds: Extract<ProcessEvent, { type: 'plan_item_boundary' }>[];
-  } {
-    const bounds = events
-      .filter(isPlanItemBoundaryEvent)
-      .sort((a, b) => a.ts.localeCompare(b.ts) || a.seq - b.seq);
-    if (bounds.length === 0) return { host: root, bounds };
-    // 找到 ts 前最近的边界（含本条边界自身）——本条边界之前（ts < 首边界）条目归 details 顶层；
-    // 同 ts 时边界须已发生（boundary.seq <= 条目 seq），否则跨到后续 step
-    const active = [...bounds]
-      .reverse()
-      .find((b) => b.ts < ts || (b.ts === ts && (seq === undefined || b.seq <= seq)));
-    if (!active) return { host: root, bounds };
-    return { host: getOrCreatePlanItemGroup(root, active, bounds), bounds };
-  }
-
-  /** 获取或创建任务项折叠块（summary 显示任务项名；存在则复用，不解体既有已插入的任务项内元素） */
-  function getOrCreatePlanItemGroup(
-    root: HTMLElement,
-    bound: Extract<ProcessEvent, { type: 'plan_item_boundary' }>,
-    bounds: Extract<ProcessEvent, { type: 'plan_item_boundary' }>[],
-  ): HTMLElement {
-    const existing = root.querySelector<HTMLElement>(
-      `.round-block__plan-item[data-plan-item="${bound.payload.planItemId ?? ''}"]`,
-    );
-    if (existing && existing.isConnected) return existing;
-    const grp = document.createElement('details');
-    grp.className = 'round-block__plan-item';
-    if (bound.payload.planItemId) grp.dataset.planItem = bound.payload.planItemId;
-    // ts/seq = 边界事件自身的排序键：任务项组**参与** insertPlanItemInOrder 的统一 (ts, seq) 序
-    // （组与行是同一坐标系里的两种条目）。不挂 → 行无处可比 → 根层无同层行时 appendChild
-    // 把「组外内容」甩到所有组之下（组内工具已全部进组时必然发生）。
-    grp.dataset.ts = bound.ts;
-    // 任务项序号 = 该边界在所有边界中的排名 + 1（从 1 起）
-    const order = bounds.indexOf(bound) + 1;
-    const title = bound.payload.title?.trim() ?? '';
-    const summary = document.createElement('summary');
-    summary.className = 'round-block__plan-item-summary';
-    summary.textContent = `任务项 ${order} · ${title.length > 36 ? `${title.slice(0, 36)}…` : title}`;
-    grp.appendChild(summary);
-    // 任务项内叙述/工具父容器：按序插入 details 顶层，容器内平铺该任务项过程事件
-    insertPlanItemGroupInOrder(root, grp, bound.ts, bound.seq);
-    return grp;
-  }
-
-  /** 任务项级容器按边界的 (ts, seq) 插入 details 顶层（与任务项/时间轴插入域的排序键同源，防乱序） */
-  function insertPlanItemGroupInOrder(
-    root: HTMLElement,
-    grp: HTMLElement,
-    boundTs: string,
-    boundSeq: number,
-  ): void {
-    // 候选限定为 root 的**直接子节点**：与 insertPlanItemInOrder 同构隐患，
-    // 对称补齐——不然任意深度后代会让 insertBefore(grp, next) 的 next 不是 root 的直接子节点，
-    // 按 DOM 规范抛 NotFoundError（同类失败模式的另一半）。当前任务项分组恒为容器直接子节点
-    // （静态上 root 只会是 flow / details，绝不会是任务项分组自身），故属防御性、零行为变更。
-    const existingGrps = Array.from(
-      root.querySelectorAll<HTMLElement>(':scope > .round-block__plan-item'),
-    );
-    const next = existingGrps.find((g) => {
-      // 排序键与 bounds 排序 / 任务项编号 / insertPlanItemInOrder 同源：ts 优先、同 ts 回落 seq。
-      // 组的视觉位置与「任务项 N」编号出自同一把键，否则 ts 与 seq 逆序的样本（时钟回拨 /
-      // 历史补写）会让两者分家——屏幕上「任务项 2」排到「任务项 1」之前。
-      const t = g.dataset.ts ?? '';
-      if (t !== boundTs) return t > boundTs;
-      return Number(g.dataset.seq ?? Infinity) > boundSeq;
-    });
-    if (next) {
-      root.insertBefore(grp, next);
-    } else {
-      root.appendChild(grp);
-    }
-    grp.dataset.seq = String(boundSeq);
-  }
-
-  /**
-   * 任务项状态单一写入点（SSOT，方案-过程块视觉辨识-20261001.md §四）：按组上已有的
-   * data-plan-item 匹配切换状态图标/类——done = circle-check（完成绿）、active = target
-   * （正在执行）、pending/blocked 无图标（收起态 summary 干净）。
-   *
-   * 消费点恰好三个（全部经本函数喂数据，禁第四处内联 DOM 更新）：plan_update 分支
-   * （实时显式重建 livePlanStates）、renderProcessFlow 尾部（实时投影 livePlanStates，
-   * 兜住组延迟创建）、renderRoundBlock 尾部（finalize/重放，planItemStatesFromEvents
-   * 事件序推导）。🔴 禁从标题/时序/工具文本推断状态——只消费内核结构化信号
-   * （plan_item_boundary / plan_snapshot / task_table_update）。
-   * 幂等：同图标已就位不重复注入（plan_update 高频重推零成本）。
-   */
-  function applyPlanItemStates(root: HTMLElement, states: Map<string, string>): void {
-    root.querySelectorAll<HTMLElement>('.round-block__plan-item[data-plan-item]').forEach((grp) => {
-      const status = states.get(grp.dataset.planItem ?? '');
-      const summary = grp.querySelector<HTMLElement>('.round-block__plan-item-summary');
-      if (!summary) return;
-      grp.classList.toggle('is-plan-done', status === 'done');
-      grp.classList.toggle('is-plan-active', status === 'active');
-      const existing = summary.querySelector<HTMLElement>('.round-block__plan-item-status');
-      // 图标由状态唯一决定；无状态/未知状态 = 不显示（数据缺失的自然投影）
-      const iconName = status === 'done' ? 'circle-check' : status === 'active' ? 'target' : null;
-      if (!iconName) {
-        existing?.remove();
-        return;
-      }
-      if (existing?.dataset.statusIcon === iconName) return;
-      const el = existing ?? document.createElement('span');
-      el.className = 'round-block__plan-item-status';
-      el.dataset.statusIcon = iconName;
-      el.setAttribute('aria-hidden', 'true');
-      el.innerHTML = getIconSvg(iconName, 12, 12); // 静态 SVG，无外部输入
-      if (!existing) summary.prepend(el);
-    });
-  }
-
-  /**
-   * 从 processEvents 提取任务项状态 map（取**最后一条** plan_snapshot——turn 内多次
-   * 挂起/恢复场景以收尾终态为准）。双保险（真机反馈 2026-10-01）：
-   * ① 最后快照**之后**发生的 boundary（数组序 = 事件发生序）覆盖为 active——覆盖
-   *    「快照缺项/快照滞后于边界」的窗口（结构化信号，非文本推断）；
-   * ② 无任何快照：最后一条 boundary 对应项置 active，其余项无图标——boundary 语义 =
-   *    内核宣告「任务项开始执行」，最后宣告开始且未见完成宣告的项亮「进行中」是数据
-   *    支持的诚实表达（中断轮保留现场；存量轮不再全程裸奔），其余项完成与否未知，
-   *    维持无图标（不伪造 done）。
-   */
-  function planItemStatesFromEvents(events: ProcessEvent[]): Map<string, string> {
-    const snaps = events.filter(
-      (e): e is Extract<ProcessEvent, { type: 'plan_snapshot' }> => e.type === 'plan_snapshot',
-    );
-    const last = snaps[snaps.length - 1];
-    const states = new Map(last ? last.payload.items.map((i) => [i.planItemId, i.status]) : []);
-    const bounds = events.filter(isPlanItemBoundaryEvent);
-    if (last) {
-      const lastIdx = events.lastIndexOf(last);
-      for (const b of bounds) {
-        if (events.indexOf(b) > lastIdx && b.payload.planItemId) {
-          states.set(b.payload.planItemId, 'active');
-        }
-      }
-    } else {
-      const lastBound = bounds[bounds.length - 1];
-      if (lastBound?.payload.planItemId) states.set(lastBound.payload.planItemId, 'active');
-    }
-    return states;
-  }
-
-  /** 思考折叠块标题：stepIndex 已知 = 标注第几步（一个 step 一个折叠块）；无归属 = 裸「思考」 */
-  function thoughtLabel(stepIndex?: number): string {
-    return stepIndex !== undefined ? `思考 · 第 ${stepIndex} 步` : '思考';
-  }
-
-  /**
-   * 思考碎片按「所属 step」分桶（SSOT；finalize 与流式两类上下文共用）。
-   *
-   * 语义：**一个 step 一个思考折叠块**（step = 一次 LLM 调用 + 可选工具执行）。分桶键 =
-   * 该碎片自带的 stepIndex（内核 loop 打标、随事件落盘，运行时与重放同源）。同一桶内碎片
-   * 保序**原样连续**拼接（连贯）；不同 step 各自独立折叠（不跨步混批）。含 anchorSeq
-   * （桶内最早碎片的 seq，做插入锚点）。stepIndex 缺省（旧数据 / 非迭代路径产出）回落
-   * 'root' 整轮单桶——不猜测推断归属。有任务表时桶仍按 anchor 归入任务项分组（planItemContainerFor）。
-   */
-  function groupThoughtBuckets(events: ProcessEvent[]): {
-    key: string;
-    stepIndex?: number;
-    anchorSeq: number;
-    anchorTs: string;
-    items: { seq: number; ts: string; content: string }[];
-  }[] {
-    const thoughts = events
-      .filter((e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought')
-      .sort((a, b) => a.seq - b.seq);
-    const buckets = new Map<
-      string,
-      {
-        key: string;
-        stepIndex?: number;
-        anchorSeq: number;
-        anchorTs: string;
-        items: { seq: number; ts: string; content: string }[];
-      }
-    >();
-    for (const t of thoughts) {
-      const stepIndex = t.payload.stepIndex;
-      const key = stepIndex !== undefined ? String(stepIndex) : 'root';
-      const bucket = buckets.get(key) ?? {
-        key,
-        stepIndex,
-        anchorSeq: t.seq,
-        anchorTs: t.ts,
-        items: [],
-      };
-      bucket.items.push({ seq: t.seq, ts: t.ts, content: t.payload.content });
-      buckets.set(key, bucket);
-    }
-    return [...buckets.values()].sort((a, b) => a.anchorSeq - b.anchorSeq);
-  }
-
-  /**
-   * 工具批（toolBatch）批内条目：一次工具调用 = tool_start + 按 toolCallId 配对的 tool_result
-   * （结果未回 = 进行中条目，批内占位不拆段）。
-   */
-  interface ToolBatchEntry {
-    /** 工具开始事件（段内容主体；行渲染的锚） */
-    start: Extract<ProcessEvent, { type: 'tool_start' }>;
-    /** 已回的结果（缺省 = 进行中；失败/被拒同样留段内，口径②） */
-    result?: Extract<ProcessEvent, { type: 'tool_result' }>;
-  }
-
-  /**
-   * 工具批（toolBatch）：过程条目流中前后相邻、中间无打断物的最大工具序列。
-   *
-   * segId = 段内首个 tool_start 的 seq——批容器唯一 DOM key（`data-tool-batch`），
-   * 稳定可复现、不新造标识（口径③：批 key 用段 id，不用 toolCallId）。
-   */
-  interface ToolBatch {
-    /** 段 id（= 段内首个 tool_start 的 seq） */
-    segId: number;
-    /** 段内首个 tool_start 的 ts（批块插入定位时间键，与逐条工具行同锚） */
-    anchorTs: string;
-    /** 段内工具按 tool_start seq 序 */
-    entries: ToolBatchEntry[];
-  }
-
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   /**
    * 批间打断物白名单（**唯一声明处**；他处引用本名，不重述集合）。
    *
@@ -1064,34 +700,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     'plan_item_boundary',
   ]);
 
-  /**
-   * 外部可见条目的边界时间集（工具批断面的**取数处**）。
-   *
-   * 为什么需要：`groupToolBatches` 只吃 `events`，而问答卡（`.round-block__input`）来自
-   * `interactiveInputs` / 运行时缓存——**无 seq、不在 events 里** ⇒ 对切段判据天然不可见，
-   * 于是「工具 → 问答卡 → 工具」被并成一批、卡片被推到批块之后（登记缺陷 BATCH-SPLIT-1）。
-   * 本函数抽出「同容器里实际可见的问答卡 ts」，作**虚拟断面**喂给切段判据（不碰内核）。
-   *
-   * 只取 ts：问答卡无 seq，唯一可用的时空键就是 ts；而落位（`insertPlanItemInOrder`）同样按 ts，
-   * 故断面判据与呈现同键——避免「判据一套键、呈现另一套键」的双键病复发。
-   *
-   * @param root  过程容器（`.round-block__details` 或 `.process-flow`），取其后代问答卡
-   * @param extra 尚未落 DOM 的条目（finalize 的 `interactiveInputs` 入参）
-   * @returns    去重后的 ts 列表（空串剔除——历史/测试数据无时间键，不构成断面；无需排序，仅用于计数）
-   */
-  function visibleInputTs(
-    root: HTMLElement,
-    extra: readonly (string | undefined)[] = [],
-  ): string[] {
-    const ts = new Set<string>();
-    root.querySelectorAll<HTMLElement>('.round-block__input').forEach((el) => {
-      const t = el.dataset.ts;
-      if (t) ts.add(t);
-    });
-    for (const t of extra) if (t) ts.add(t);
-    return [...ts];
-  }
-
+  
   /**
    * 工具批切段（SSOT；三渲染上下文共用：运行时流式 / finalize 全量重建 / pending 行升级）
    *
@@ -1159,433 +768,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return batches;
   }
 
-  /**
-   * 刷新批块标题（工具叙述句 + 失败/被拒块级标红提示）
-   *
-   * 标题 = `toolSummaryText` 的输出（轮收尾摘要同款，同一处形成）——批不再按工具名另起一份计数，
-   * 也不挂序号：批号与「思考 · 第 N 步」互不对齐，属屏上第二套编号（STEP-ID-1 防复发精神）。
-   *
-   * 口径②：失败/被拒工具留段内不拆块，仅在块级打红色提示——拆块会让视觉随错误率抖动。
-   * 流式每次增量渲染与 finalize 全量重建都全量重算（结果后到时提示随之更新，幂等）。
-   *
-   * @param block 批块元素（.round-block__tool-batch）
-   * @param batch 工具批（小计/失败统计的唯一数据源）
-   */
-  function refreshToolBatchSummary(block: HTMLDetailsElement, batch: ToolBatch): void {
-    const summary = block.querySelector(':scope > .round-block__tool-batch-summary');
-    if (!summary) return;
-    // 标题 span 为稳定节点（get-or-create）+ 变化才写文本：summary 子节点重建会销毁点击目标，
-    // 事件密集期点击被吞
-    let icon = summary.querySelector<HTMLElement>(':scope > .round-block__type-icon');
-    if (!icon) {
-      // 工具类型标：tool icon 前置（行批共用；稳定节点模式与 title 同构，重刷不重建）
-      icon = document.createElement('span');
-      icon.className = 'round-block__type-icon';
-      icon.setAttribute('aria-hidden', 'true');
-      icon.innerHTML = getIconSvg('tool', 12, 12); // 静态 SVG，无外部输入
-      summary.prepend(icon);
-    }
-    let title = summary.querySelector<HTMLElement>(':scope > .round-block__tool-batch-title');
-    if (!title) {
-      title = document.createElement('span');
-      title.className = 'round-block__tool-batch-title';
-      summary.appendChild(title);
-    }
-    const titleText = toolSummaryText(batch.entries.map((e) => e.start.payload.name));
-    if (title.textContent !== titleText) title.textContent = titleText;
-    // 失败/被拒统计（留段内，块级标红）：ok=false 且非 blocked = 失败；blocked = 被拒/拦截
-    let failed = 0;
-    let blocked = 0;
-    for (const e of batch.entries) {
-      const r = e.result;
-      if (!r) continue;
-      if (r.payload.blocked === true) blocked += 1;
-      else if (!r.payload.ok) failed += 1;
-    }
-    block.classList.toggle('is-tool-batch-failed', failed + blocked > 0);
-    const parts: string[] = [];
-    if (failed > 0) parts.push(`含失败 ${failed}`);
-    if (blocked > 0) parts.push(`含拦截 ${blocked}`);
-    // 提示 span 同为稳定节点：无提示即移除（生命周期随统计结果，title 节点不受影响）
-    let warn = summary.querySelector<HTMLElement>(':scope > .round-block__tool-batch-warn');
-    if (parts.length === 0) {
-      warn?.remove();
-      return;
-    }
-    if (!warn) {
-      warn = document.createElement('span');
-      warn.className = 'round-block__tool-batch-warn';
-      summary.appendChild(warn);
-    }
-    const warnText = `（${parts.join(' · ')}）`;
-    if (warn.textContent !== warnText) warn.textContent = warnText;
-  }
-
-  /**
-   * 创建批块容器（多工具批专用；单工具批不包裹 = 行即批，视觉等价现状零回归）
-   *
-   * DOM key 契约（口径③）：批容器键 = 段 id（`data-tool-batch`），不用 toolCallId；
-   * 行自身的 `data-tool-call-id` 只作 tool_result 配对键（updateToolRowState 消费），二者不混用。
-   *
-   * @param batch 工具批
-   * @param open  是否默认展开（流式过程实时可见 = true；finalize 收起 = false）
-   */
-  function createToolBatchBlock(batch: ToolBatch, open: boolean): HTMLDetailsElement {
-    const block = document.createElement('details');
-    block.className = 'round-block__tool-batch';
-    // 段 id = 段内首个 tool_start 的 seq：批容器唯一 DOM key（data-tool-batch）+ seq 兜底排序键
-    block.dataset.toolBatch = String(batch.segId);
-    block.dataset.seq = String(batch.segId);
-    block.dataset.ts = batch.anchorTs;
-    block.open = open;
-    const summary = document.createElement('summary');
-    summary.className = 'round-block__tool-batch-summary';
-    const body = document.createElement('div');
-    body.className = 'round-block__tool-batch-body';
-    block.append(summary, body);
-    refreshToolBatchSummary(block, batch);
-    return block;
-  }
-
-  /**
-   * 过程条目按统一时间键（data-ts）插入容器顶层。
-   *
-   * 形态甲：排序键统一为 **ts（时间键）**——processEvents 行（narrate/tool/thought）
-   * 与 interactiveInputs 条目（QA，无 seq）共用同一时间序，用户输入自然归位到对应任务项间隙。
-   * 行创建点统一挂 `data-ts`（ISO 字符串，localeCompare 同值比较即时间序）；无 data-ts 的
-   * 异常节点（如 pending 工具行）视为最大键（恒末尾，与 appendChild 流尾语义一致）。
-   *
-   * 候选限定为 details 的**直接子节点**：存在 plan_item_boundary 时同款元素
-   * 嵌套在 .round-block__plan-item 分组内部，任意深度后代会让 insertBefore(el, next) 的 next 不是
-   * details 的直接子节点 → 按 DOM 规范抛 NotFoundError（曾静默打断 finalizeRound 收口）。
-   * 候选类型 = narrate/tool/thought/工具批块 + 任务项组 + 运行时输入条目（input，形态甲）。
-   *
-   * **任务项组必须入候选（勿删）**：组与行同处一条 (ts, seq) 序——组挂边界事件的 ts/seq，
-   * 行挂自身事件键。若把组排除在外，则「组 vs 行」永不比较，行只与行比、组只与组比；
-   * 一旦根层没有同层行可锚（该轮工具已全被任务项边界收进组内），行会走 appendChild 落到
-   * **所有组之后**，表现为「组外的思考块沉底」。
-   */
-  function insertPlanItemInOrder(details: HTMLElement, el: HTMLElement, ts: string): void {
-    const existing = Array.from(
-      details.querySelectorAll<HTMLElement>(
-        ':scope > .process-flow__narrate, :scope > .round-block__narrate, :scope > .round-block__tool, :scope > .process-flow__tool, :scope > .round-block__tool-batch, :scope > .round-block__thought, :scope > .process-flow__thought, :scope > .round-block__input, :scope > .process-flow__input, :scope > .round-block__plan-item',
-      ),
-    ).filter((e) => e !== el);
-    const next = existing.find((e) => {
-      const t = e.dataset.ts ?? '';
-      // 排序键 = ts（统一时间序）；同 ts（含全空串的历史/测试数据）回落 seq 兜底：
-      // processEvents 行挂 data-seq，seq 大者排后；QA 条目无 seq 视为 0，靠写入序保持稳定
-      if (t !== ts) return t > ts;
-      const s = Number(e.dataset.seq ?? 0);
-      const myS = Number(el.dataset.seq ?? 0);
-      return s > myS;
-    });
-    if (next) {
-      details.insertBefore(el, next);
-    } else {
-      // 无更高 ts → append 到末尾。注意：不用 phase.after(el)（phase 在 prepend 后居首，
-      // phase.after 会把元素插到第二位置，破坏与低 ts 平铺元素——如 narrate——的时间序）
-      details.appendChild(el);
-    }
-  }
-
-  /**
-   * 工具调用行（tool_start 配对 tool_result）——折叠行：summary = 名称(状态) 常显，
-   * args + result 摘要折叠进 body，避免工具详情抢占报告主体。失败/进行中默认展开（错误直显）。
-   * 宿主容器（扁平化）：直接平铺在 round-block__details 顶层（insertPlanItemInOrder 按 seq 插入）。
-   */
-  /**
-   * TS-12b：aborted 中断语义 → 展示文案（单一映射，与 error category 词典同构）。
-   * 'user' → 用户停止；'interrupted' → 中断；
-   * 无 stopReason（旧数据/直接构造） → 回退 reason 原文（调试可追溯，不丢原始细节）。
-   * 注：'connection' 不在此映射——连接中断统一由 error chunk category 承载（TS-10b chatPanel 映射），
-   * aborted 永不带此语义，假分支删除防文案双源漂移。
-   */
-  function stopReasonLabel(payload: { reason: string; stopReason?: string }): string {
-    const map: Record<string, string> = {
-      user: '用户停止了对话',
-      timeout: '对话处理超时，请稍后重试',
-      interrupted: '对话已中断',
-    };
-    return (payload.stopReason && map[payload.stopReason]) || payload.reason;
-  }
-
-  /**
-   * TS-11a：定位「进行中工具」——tool_start 已到、tool_result 未达的最新一个（工具并行执行时以
-   * 最新未完成者作为「当前正在做什么」的展示主体）。无进行中工具返回 null（相位行回退 thinking）。
-   */
-  function findRunningTool(
-    events: ProcessEvent[],
-  ): Extract<ProcessEvent, { type: 'tool_start' }> | null {
-    const starts = events.filter(
-      (e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start',
-    );
-    // 从最新往前找第一个没有配对的 tool_result 的 tool_start
-    for (let i = starts.length - 1; i >= 0; i--) {
-      const start = starts[i]!;
-      const matched = events.some(
-        (e) => e.type === 'tool_result' && e.payload.toolCallId === start.payload.toolCallId,
-      );
-      if (!matched) return start;
-    }
-    return null;
-  }
-
-  /**
-   * 工具行状态（单一推导，renderToolRow/updateToolRowState 共用）：
-   * 无结果=进行中（TS-11b 默认展开 + running 标记，让正在执行的工具可见）；
-   * 策略拦截（blocked）=已拦截且默认展开（拒绝文案应直接可见）；
-   * 其余按 ok 成功/失败，失败默认展开（错误可见优先于整洁）。
-   */
-  function toolRowStatus(result: Extract<ProcessEvent, { type: 'tool_result' }> | undefined): {
-    label: string;
-    open: boolean;
-    running: boolean;
-  } {
-    if (!result) return { label: '进行中', open: true, running: true };
-    if (result.payload.blocked === true) return { label: '已拦截', open: true, running: false };
-    return result.payload.ok
-      ? { label: '成功', open: false, running: false }
-      : { label: '失败', open: true, running: false };
-  }
-
-  /**
-   * web_search 裁决证据（内核 Round.evidence 的 web_search_result 变体）——证据轨的 UI 消费面。
-   *
-   * 定位：过程轨（processEvents）只到「工具×N（网络搜索 1）」粒度，展开后是 args(query)
-   * + 结果摘要；本证据补的是**归因三件套**——实际服务端点（降级分型）、结果条数、
-   * 命中标题（「搜到了什么」的最小面）。结果摘要已含搜索来源与标题文本时的重叠属**有意冗余**
-   * （结构化字段比正文摘要更可靠，摘要被截断也不丢条数）。
-   */
-  type WebSearchEvidence = Extract<
-    NonNullable<RoundView['evidence']>[number],
-    { type: 'web_search_result' }
-  >;
-
-  /**
-   * 构造「web_search 工具行 → 裁决证据」解析器（每轮重放渲染建一次）。
-   *
-   * 配对策略（两级，SSOT = 工具调用唯一身份优先）：
-   * - **主配（toolCallId）**：新证据 payload 带 `toolCallId`（= tool_start.payload.toolCallId），
-   *   按唯一 ID 直配——同 query 多次搜索、被护栏硬拦的搜索（不产证据）都不再张冠李戴。
-   * - **回退（query 游标）**：旧持久化轮次的证据无 `toolCallId`，退回旧的「按 query 分组 + 行序消费」
-   *   启发式（保不带伤——历史轮证据照常渲染）。两级互不串味：某轮要么全带 ID 走主配、
-   *   要么全无 ID 走回退，不存在同轮混用的迁移缝。
-   * 证据面只留净化标题（无 URL 锚点），故误配不进一步放大——这也正是主配要消灭的不确定性。
-   *
-   * @param evidence 本轮 RoundView.evidence（可为空 → 解析器恒返回 undefined）
-   * @returns 解析器：传入 tool_start，命中则回该 search 证据，否则 undefined
-   */
-  function buildSearchEvidenceResolver(
-    evidence: RoundView['evidence'],
-  ): (start: Extract<ProcessEvent, { type: 'tool_start' }>) => WebSearchEvidence | undefined {
-    // 主配：toolCallId → 证据（唯一身份，一对一；仅收带 ID 的新证据）
-    const byToolCallId = new Map<string, WebSearchEvidence>();
-    // 回退：按 query 分组（仅收无 ID 的旧证据，其余证据变体与搜索行无关）
-    const byQuery = new Map<string, WebSearchEvidence[]>();
-    for (const ev of evidence ?? []) {
-      if (ev.type !== 'web_search_result') continue;
-      if (ev.payload.toolCallId) {
-        byToolCallId.set(ev.payload.toolCallId, ev);
-        continue;
-      }
-      const bucket = byQuery.get(ev.payload.query);
-      if (bucket) bucket.push(ev);
-      else byQuery.set(ev.payload.query, [ev]);
-    }
-    // 每 query 独立的消费游标（行序 = 证据追加序，二者同为轮内时间序）——仅回退路径用
-    const cursor = new Map<string, number>();
-    return (start) => {
-      if (start.payload.name !== 'web_search') return undefined;
-      // 主配：按工具调用唯一 ID 直取（新证据路径，命中即返回，无顺序敏感）
-      const byId = byToolCallId.get(start.payload.toolCallId);
-      if (byId) return byId;
-      // 回退：旧证据按 query 文本 + 行序消费（被硬拦行无证据时可能顺延，属历史数据的已知边界）
-      const query = argStr(parseToolArgs(start.payload.args), 'query');
-      if (!query) return undefined;
-      const bucket = byQuery.get(query);
-      if (!bucket) return undefined;
-      const idx = cursor.get(query) ?? 0;
-      cursor.set(query, idx + 1);
-      return bucket[idx];
-    };
-  }
-
-  /**
-   * 记忆命中证据解析器（MEM-EVENT-3）：`Round.evidence` 的 `memory_hits` 变体 → toolCallId → 命中表。
-   *
-   * 为什么需要它：`memoryRecalled` 是**实时专属**事件（不进 processEvents），重放历史轮时
-   * 宿主手上只有 `tool_result.summary` 里那 100 字截断副本——真机「重新渲染后无法完成查看」
-   * 就是这个现场（截到 `(a` 半截）。证据轨给重放补上可重建的结构化明细。
-   *
-   * 合并口径：同一 toolCallId 的多条证据按到达序合并，**同 id 以首次为准**（与实时侧
-   * `currentMemoryHitsByCall` 的 Map 去重口径一致，避免两套去重规则）。
-   * 无配对键的证据跳过：`hits` 与 `toolCallId` 是**同一批**引入的字段，任何发行版都不可能
-   * 只含其中之一 ⇒ 该形态不可达，不为它另造一套轮次级重放渲染。
-   */
-  function buildMemoryHitsEvidenceResolver(
-    evidence: RoundView['evidence'],
-  ): Map<string, Map<string, MemoryHitEntry>> {
-    const byCall = new Map<string, Map<string, MemoryHitEntry>>();
-    for (const ev of evidence ?? []) {
-      if (ev.type !== 'memory_hits') continue;
-      const callId = ev.payload.toolCallId;
-      if (!callId) continue;
-      const bucket = byCall.get(callId) ?? new Map<string, MemoryHitEntry>();
-      for (const h of ev.payload.hits) {
-        if (!bucket.has(h.id))
-          bucket.set(h.id, { name: h.name, source: h.source, contentPreview: h.contentPreview });
-      }
-      byCall.set(callId, bucket);
-    }
-    return byCall;
-  }
-
-  /**
-   * 渲染 web_search 裁决证据块（单次搜索的归因三件套）。
-   *
-   * 纯文本构建（textContent，防注入）：端点 / 条数 / 命中标题各占一行，标题行前导圆点。
-   * 标题**不做可点链接**——内核证据面只留净化后的标题文本，无 URL 可锚。
-   * 零结果（count=0）照渲染——「没搜到」与「搜到了但不对」同为归因现场。
-   */
-  function renderSearchEvidenceBlock(ev: WebSearchEvidence): HTMLElement {
-    const box = document.createElement('div');
-    box.className = 'round-block__search-evidence';
-    const addLine = (text: string): void => {
-      const d = document.createElement('div');
-      d.textContent = text;
-      box.appendChild(d);
-    };
-    if (ev.payload.endpoint) addLine(`搜索来源：${ev.payload.endpoint}`);
-    addLine(`结果条数：${ev.payload.count}`);
-    for (const title of ev.payload.titles) addLine(`· ${title}`);
-    return box;
-  }
-
-  function renderToolRow(
-    start: Extract<ProcessEvent, { type: 'tool_start' }>,
-    events: ProcessEvent[],
-    resolveSearchEvidence?: (
-      start: Extract<ProcessEvent, { type: 'tool_start' }>,
-    ) => WebSearchEvidence | undefined,
-    resolveMemoryHits?: (toolCallId: string) => Map<string, MemoryHitEntry> | undefined,
-  ): HTMLDetailsElement {
-    const result = events.find(
-      (e): e is Extract<ProcessEvent, { type: 'tool_result' }> =>
-        e.type === 'tool_result' && e.payload.toolCallId === start.payload.toolCallId,
-    );
-    const { label: status, open, running } = toolRowStatus(result);
-    const row = document.createElement('details');
-    row.className = 'round-block__tool';
-    // 增量追加去重锚点：toolCallId（唯一标识）+ seq（顶层按序平铺，insertPlanItemInOrder）；ts 时间键
-    row.dataset.toolCallId = start.payload.toolCallId;
-    row.dataset.seq = String(start.seq);
-    row.dataset.ts = start.ts;
-    row.open = open;
-    // TS-11b：进行中态 class（未出结果时高亮；result 到达由 updateToolRowState 移除）
-    row.classList.toggle('is-tool-running', running);
-    const summary = document.createElement('summary');
-    summary.className = 'round-block__tool-name';
-    // 工具类型标（独立稳定节点）：tool icon 前置（行批共用；运行/待命态由 CSS 切环、隐藏 icon）
-    const iconSpan = document.createElement('span');
-    iconSpan.className = 'round-block__type-icon';
-    iconSpan.setAttribute('aria-hidden', 'true');
-    iconSpan.innerHTML = getIconSvg('tool', 12, 12); // 静态 SVG，无外部输入
-    // TS-11 结构化管理：叙述与状态标签分孤儿 span——状态标签独占定位供 updateToolRowState 精确更新，
-    // 与 TS-11c elapsed 等待标签（append 到 summary 尾部）共存不冲突（若仍用整体 textContent 替换，
-    // 尾部 Ns 会使状态正则 `\)$` 失配，状态标签停更）
-    const labelSpan = document.createElement('span');
-    labelSpan.className = 'round-block__tool-label';
-    labelSpan.textContent = toolActionLabel(start.payload.name, start.payload.args);
-    const statusSpan = document.createElement('span');
-    statusSpan.className = 'round-block__tool-status';
-    statusSpan.textContent = ` (${status})`; // 前导空格：span 间空白不折叠，显式补「叙述 (状态)」间距
-    summary.append(iconSpan, labelSpan, statusSpan);
-    row.appendChild(summary);
-    if (start.payload.args) {
-      const pre = document.createElement('pre');
-      pre.className = 'round-block__pre';
-      pre.textContent = start.payload.args;
-      row.appendChild(pre);
-    }
-    // 结构化命中明细（本行可用时先取，供下方摘要取舍复用同一份判据）
-    const memHits = resolveMemoryHits?.(start.payload.toolCallId);
-    // 结果摘要：`search_memories` 的 summary 是同一份内容的 **100 字硬截断副本**
-    // （loop.ts `result.slice(0, 100)`，真机截图截到 `(a` 半句）——有结构化命中块时不再渲染，
-    // 同源信息不双渲染（与 HOST-S3-2「同源信号不双渲染」同一纪律）。
-    // 无命中块时保持原样（零命中 / 被拦 / 非记忆工具都靠它传达结果）。
-    if (result?.payload.summary && !(memHits && memHits.size > 0)) {
-      const sum = document.createElement('div');
-      sum.className = 'round-block__tool-summary';
-      sum.textContent = result.payload.summary;
-      row.appendChild(sum);
-    }
-    // web_search 裁决证据块（仅重放路径解析器在场时追加）：展开行体补归因三件套
-    if (resolveSearchEvidence) {
-      const ev = resolveSearchEvidence(start);
-      if (ev) row.appendChild(renderSearchEvidenceBlock(ev));
-    }
-    // 记忆命中明细（MEM-EVENT-2 / MEM-EVENT-3）：两条源在 renderRoundBlock 已裁决完毕
-    // （实时模型 > 证据副本），这里只负责「DOM 全量重建后明细不丢」——收场重建与重放历史轮
-    // 都走本函数，重放靠 evidence 的 memory_hits 变体供数（无则自然为空，不伪造）。
-    if (memHits && memHits.size > 0) {
-      const badge = document.createElement('span');
-      badge.className = 'round-block__memory-badge';
-      badge.textContent = `记忆 ${memHits.size}`;
-      badge.title = `本次调用命中 ${memHits.size} 条记忆（展开查看明细）`;
-      summary.appendChild(badge);
-      row.appendChild(buildMemoryHitsBlock(memHits));
-    }
-    // 返回行元素：由调用方按 seq 插入 details 顶层（扁平化，不再自挂容器）
-    return row;
-  }
-
-  /**
-   * 工具行状态局部更新：tool_result 到达时，定位已渲染的工具行更新 状态/展开/结果摘要。
-   * （进行中工具行已由增量追加创建，result 后到只需原地更新，不重建 DOM）
-   *
-   * @param container 工具行所在的小节容器（.round-block__section-list）
-   * @param result    tool_result 事件
-   */
-  function updateToolRowState(
-    container: HTMLElement,
-    result: Extract<ProcessEvent, { type: 'tool_result' }>,
-  ): void {
-    container
-      .querySelectorAll<HTMLDetailsElement>(
-        `.round-block__tool[data-tool-call-id="${result.payload.toolCallId}"]`,
-      )
-      .forEach((row) => {
-        const { label: status, open, running } = toolRowStatus(result);
-        // 结构化管理：仅更新状态标签 span 文本（不动整体 summary，保留 label / elapsed 子节点）。
-        // 幂等写：文本未变不重写（重写销毁文本节点，点击目标抖动）
-        const statusEl = row.querySelector('.round-block__tool-status');
-        const statusText = ` (${status})`;
-        if (statusEl && statusEl.textContent !== statusText) statusEl.textContent = statusText;
-        // 用户意图闩（data-user-toggled，写入点 = summary 点击委托）：用户动过开合的行，
-        // 默认值（成功收起/失败展开）不再覆盖——每次事件都回写会把用户的展开态打回。
-        // 唯一例外通道 = openForUserVisibility（用户输入恒可见强制展开，只作用任务项分组）
-        if (row.dataset.userToggled !== 'true') row.open = open;
-        // result 已到达 → 移除进行中态（恢复普通行样式）
-        row.classList.toggle('is-tool-running', running);
-        // 工具已出结果 → 移除该行等待时长标签（瞬态退场，不再刷新）
-        row.querySelector(':scope .round-block__elapsed')?.remove();
-        // 结果摘要：首次到达补 DOM（后续到达不重复）；已有命中块则不出——
-        // 与 renderToolRow 同一取舍（那里按解析结果判、这里按已渲染 DOM 判，
-        // 两条路径互斥：实时增量走本函数，收场/重放走 renderToolRow）
-        if (
-          result.payload.summary &&
-          !row.querySelector('.round-block__tool-summary') &&
-          !row.querySelector('.round-block__memory-hits')
-        ) {
-          const s = document.createElement('div');
-          s.className = 'round-block__tool-summary';
-          s.textContent = result.payload.summary;
-          row.appendChild(s);
-        }
-      });
-  }
-
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   /**
    * 渲染当前轮 round-block（任务过程折叠区）——过程事件唯一投影，运行时与重放共用。
    *
@@ -1714,8 +908,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
       .sort((a, b) => a.seq - b.seq);
     for (const n of narrates) {
-      const { host } = planItemContainerFor(details, events, n.ts, n.seq);
-      insertPlanItemInOrder(host, createNarrateRow(n), n.ts);
+      const { host } = cells.planItemContainerFor(details, events, n.ts, n.seq);
+      insertPlanItemInOrder(host, cells.createNarrateRow(n), n.ts);
     }
     // § 工具批（toolBatch）：相邻连续工具合并为批块——分组判据单一真源 groupToolBatches
     // （三渲染上下文共用：此处 finalize 重建 / renderProcessFlow 流式 / pending 行升级，禁内联三份）。
@@ -1732,9 +926,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const batch of batches) {
       const multi = batch.entries.length > 1;
       // 归组定位与逐条插入同锚（段内首个 tool_start 的 ts/seq）——批块不越任务项边界
-      const { host } = planItemContainerFor(details, events, batch.anchorTs, batch.segId);
+      const { host } = cells.planItemContainerFor(details, events, batch.anchorTs, batch.segId);
       if (!multi) {
-        const row = renderToolRow(
+        const row = cells.renderToolRow(
           batch.entries[0]!.start,
           events,
           resolveSearchEvidence,
@@ -1745,11 +939,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         insertPlanItemInOrder(host, row, batch.anchorTs);
         continue;
       }
-      const block = createToolBatchBlock(batch, false);
+      const block = cells.createToolBatchBlock(batch, false);
       const body = block.querySelector('.round-block__tool-batch-body') as HTMLElement;
       for (const entry of batch.entries)
         body.appendChild(
-          renderToolRow(entry.start, events, resolveSearchEvidence, resolveMemoryHits),
+          cells.renderToolRow(entry.start, events, resolveSearchEvidence, resolveMemoryHits),
         );
       insertPlanItemInOrder(host, block, batch.anchorTs);
     }
@@ -1758,10 +952,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 有任务表时随 anchor 归入任务项分组（边界切组语义不变）。
     const thoughtBuckets = groupThoughtBuckets(events);
     for (const b of thoughtBuckets) {
-      const { host } = planItemContainerFor(details, events, b.anchorTs, b.anchorSeq);
+      const { host } = cells.planItemContainerFor(details, events, b.anchorTs, b.anchorSeq);
       insertPlanItemInOrder(
         host,
-        createAggregatedThought(
+        cells.createAggregatedThought(
           b.items.map((i) => i.content),
           false,
           b.anchorTs,
@@ -1778,7 +972,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const tsKey = el.dataset.ts ?? '';
       if (!tsKey || renderedInputTs.has(tsKey)) continue;
       renderedInputTs.add(tsKey);
-      const { host } = planItemContainerFor(details, events, tsKey);
+      const { host } = cells.planItemContainerFor(details, events, tsKey);
       insertPlanItemInOrder(host, el, tsKey);
     }
     for (const qa of interactiveInputs ?? []) {
@@ -1787,7 +981,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       renderedInputTs.add(tsKey);
       const item = renderQaItem(qa.text, qa.kind, qa.question, qa.options);
       item.dataset.ts = tsKey;
-      const { host } = planItemContainerFor(details, events, tsKey);
+      const { host } = cells.planItemContainerFor(details, events, tsKey);
       insertPlanItemInOrder(host, item, tsKey);
     }
     // § 过程轨迹（thinking 阶段：聚合计数，去噪——同一相位 N 条 thinking 事件
@@ -1796,7 +990,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       (e): e is Extract<ProcessEvent, { type: 'thinking' }> => e.type === 'thinking',
     );
     if (thinking.length > 0) {
-      const { listEl } = sectionOf(details, '过程轨迹');
+      const { listEl } = cells.sectionOf(details, '过程轨迹');
       const labelCount = new Map<string, number>();
       const order: string[] = [];
       for (const e of thinking) {
@@ -1820,7 +1014,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       (e): e is Extract<ProcessEvent, { type: 'memory_added' }> => e.type === 'memory_added',
     );
     if (added.length > 0) {
-      const { listEl } = sectionOf(details, '已沉淀');
+      const { listEl } = cells.sectionOf(details, '已沉淀');
       added.forEach((e) => {
         const row = document.createElement('div');
         row.className = 'round-block__row';
@@ -1837,7 +1031,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         e.type === 'background_report',
     );
     if (bgReports.length > 0) {
-      const { listEl } = sectionOf(details, '后台任务收尾');
+      const { listEl } = cells.sectionOf(details, '后台任务收尾');
       for (const rep of bgReports) {
         // 多行报告按 \n 拆行渲染（textContent 防注入；格式化单点在内核，宿主零猜测）
         for (const line of rep.payload.content.split('\n')) {
@@ -1857,7 +1051,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         e.type === 'text_self_review',
     );
     if (reviews.length > 0 || reviewTexts.length > 0) {
-      const { listEl } = sectionOf(details, '自审查输出');
+      const { listEl } = cells.sectionOf(details, '自审查输出');
       reviews.forEach((_e) => {
         const row = document.createElement('div');
         row.className = 'round-block__row';
@@ -1876,7 +1070,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       (e): e is Extract<ProcessEvent, { type: 'aborted' }> => e.type === 'aborted',
     );
     if (aborted) {
-      const { listEl } = sectionOf(details, '已停止');
+      const { listEl } = cells.sectionOf(details, '已停止');
       const row = document.createElement('div');
       row.className = 'round-block__row';
       // TS-12b：stopReason 语义映射（与 error.category→友好文案同构）——不把「如何结束」写死成
@@ -1889,7 +1083,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       (e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics',
     );
     if (metrics) {
-      const { listEl } = sectionOf(details, '执行指标');
+      const { listEl } = cells.sectionOf(details, '执行指标');
       // 未解析文本工具意图：>0 表示「想调用工具却未走原生协议」，
       // 不得显示为成功收尾——与 success 判据（流程跑完）正交，这是新增的诚实信号。
       const unparsed = metrics.payload.unparsedToolIntentCount ?? 0;
@@ -1967,10 +1161,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 无内容事件跟随的尾部任务项（真机实证：中断轮最后 boundary / 快照后新 boundary）
     // 组不存在，状态图标无处安放。与 renderProcessFlow 尾部建组循环同构（幂等，复用既有组）。
     const planBounds = events.filter(isPlanItemBoundaryEvent);
-    for (const b of planBounds) getOrCreatePlanItemGroup(details, b, planBounds);
+    for (const b of planBounds) cells.getOrCreatePlanItemGroup(details, b, planBounds);
     // 存量历史轮无快照 → planItemStatesFromEvents 无快照分支（最后 boundary 项 active，
     // 其余无图标——诚实降级，不伪造绿勾）。
-    applyPlanItemStates(details, planItemStatesFromEvents(events));
+    cells.applyPlanItemStates(details, planItemStatesFromEvents(events));
   }
 
   /**
@@ -2027,7 +1221,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const text = n.payload.content.trim();
       row.textContent = /[:：。!！?？；;]$/.test(text) ? text : `${text}：`;
       // 任务表例外：有 plan_item_boundary 归入任务项折叠块（复用 getOrCreatePlanItemGroup 容器）
-      const { host } = planItemContainerFor(flow, events, n.ts, n.seq);
+      const { host } = cells.planItemContainerFor(flow, events, n.ts, n.seq);
       insertPlanItemInOrder(host, row, n.ts);
     }
     // 2.5) thought 思考折叠（per-step 聚合）：**一个 step 一个折叠块**（同步内碎片原样连续
@@ -2035,7 +1229,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const thoughtBuckets = groupThoughtBuckets(events);
     for (const b of thoughtBuckets) {
       // 复用任务项容器定位 → 与最终分桶位置一致，流式与 finalize 不偏移
-      const { host } = planItemContainerFor(flow, events, b.anchorTs, b.anchorSeq);
+      const { host } = cells.planItemContainerFor(flow, events, b.anchorTs, b.anchorSeq);
       // 查找或创建本 step 的折叠块（key = stepIndex 字符串，无归属为 'root'）
       const selector = `.process-flow__thought[data-step-bucket="${b.key}"]`;
       let row = host.querySelector<HTMLDetailsElement>(selector);
@@ -2080,7 +1274,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const batch of batches) {
       const multi = batch.entries.length > 1;
       // 归组定位与逐条插入同锚（段内首个 tool_start 的 ts/seq）——批块不越任务项边界
-      const { host } = planItemContainerFor(flow, events, batch.anchorTs, batch.segId);
+      const { host } = cells.planItemContainerFor(flow, events, batch.anchorTs, batch.segId);
       // 行的目标容器：多工具批 = 批块 body；单工具批 = 任务项容器（行即批，视觉等价现状）
       let body: HTMLElement = host;
       if (multi) {
@@ -2088,11 +1282,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           `:scope > .round-block__tool-batch[data-tool-batch="${batch.segId}"]`,
         );
         if (!block) {
-          block = createToolBatchBlock(batch, true);
+          block = cells.createToolBatchBlock(batch, true);
           insertPlanItemInOrder(host, block, batch.anchorTs);
         } else {
           // 已有批块（增量期间结果/新工具到达）→ 叙述句与失败提示随批内容重算
-          refreshToolBatchSummary(block, batch);
+          cells.refreshToolBatchSummary(block, batch);
         }
         body = block.querySelector('.round-block__tool-batch-body') as HTMLElement;
       }
@@ -2108,11 +1302,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           // pending 行（renderPendingToolRow 已建）→ 转执行态，不重建 DOM（参数此刻完整，
           // 叙述/状态/高亮同步复位）；正式行（非 pending）保持跳过
           if (existing.classList.contains('is-tool-pending')) {
-            upgradePendingToolRow(existing, entry.start);
+            cells.upgradePendingToolRow(existing, entry.start);
           }
           row = existing;
         } else {
-          row = renderToolRow(entry.start, events);
+          row = cells.renderToolRow(entry.start, events);
         }
         if (multi) {
           // 并入所在批：批 key（段 id）唯一归属批块，行不再持有（防一键双主的死 key）
@@ -2139,93 +1333,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     //   状态投影走 livePlanStates（实时累加真源，含 plan_update 的 done——防被事件序推导
     //   抹掉）；空 map = 无状态信号，不投影（诚实降级，不伪造图标）。
     const planBounds = events.filter(isPlanItemBoundaryEvent);
-    for (const b of planBounds) getOrCreatePlanItemGroup(flow, b, planBounds);
-    if (livePlanStates.size > 0) applyPlanItemStates(flow, livePlanStates);
+    for (const b of planBounds) cells.getOrCreatePlanItemGroup(flow, b, planBounds);
+    if (livePlanStates.size > 0) cells.applyPlanItemStates(flow, livePlanStates);
     // 4) 光标运行态同步：工具/思考 DOM 刚被本函数更新 → 推导一次（批次二推导单一入口；
     //    仅流式中生效——重放/骨架期调用无活动流式块，guard 内 no-op）
     if (streamingActive) syncRunningCursor();
   }
 
-  /**
-   * 中断轮终态单点分类（2026-10-13）：kind 写宿主 data-terminus、reason 给停止行文案——
-   * 一次计算两处消费，杜绝「标签与停止行各判一遍、不一致且无测试会红」的双写伤。
-   *
-   * 语义映射同旧的 §已停止：error（失败：超时/连接中断）优先，其次 aborted（中断：
-   * 用户停止/锁超时），皆无则 generic 兜底（旧数据）。error 优先是保守排序——二者本应
-   * 互斥（failed 路径 signal 未 abort），此序仅防异常组合。
-   *
-   * @returns kind='用户中断' → 用户主动停止（停止行退役，底栏标签承载）；
-   *          kind='异常中断' → error/锁超时等意外（原因句留折叠块外当现场）；
-   *          kind=null      → 事件不足不猜态（诚实投影：无载体不撒状态，停止行照旧兜底）
-   */
-  function decideTerminus(events: ProcessEvent[]): {
-    kind: '用户中断' | '异常中断' | null;
-    reason: string;
-  } {
-    const errorEv = events.find(
-      (e): e is Extract<ProcessEvent, { type: 'error' }> => e.type === 'error',
-    );
-    if (errorEv) {
-      return {
-        kind: '异常中断',
-        reason: friendlyErrorMessage(errorEv.payload.category, errorEv.payload.message),
-      };
-    }
-    const aborted = events.find(
-      (e): e is Extract<ProcessEvent, { type: 'aborted' }> => e.type === 'aborted',
-    );
-    if (aborted) {
-      // 判据字段 = stopReason（reason 是自由文本描述，如 'User cancelled the conversation'）
-      return aborted.payload.stopReason === 'user'
-        ? { kind: '用户中断', reason: stopReasonLabel(aborted.payload) }
-        : { kind: '异常中断', reason: stopReasonLabel(aborted.payload) };
-    }
-    return { kind: null, reason: stopReasonLabel({ reason: 'interrupted' }) };
-  }
-
-  /**
-   * 中断轮平铺收尾行（形态定案：RT/RP 同构——过程收进折叠块、停止行平铺折叠块外）
-   *
-   * 2026-10-13 终态标签收口底栏：先按 decideTerminus 单点分类把终态写宿主 data-terminus
-   * （载体契约见 TerminusKind 注释：中断轮无正文块，挂宿主由 round-group 底栏 :has 消费）；
-   * 用户主动停止（kind='用户中断'）停止行退役——footer 标签 + 时间同区即可说清，不再铺行；
-   * 异常/兜底案保留停止行，只承担「这轮为何停」的原因句，不重复指标。执行指标留在折叠块
-   * §执行指标/摘要。去重按 data-terminus 幂等（user 案无停止行，不能按行去重）。
-   *
-   * @param host  折叠块宿主（RT = 当前 assistant 块；RP = 孤儿折叠宿主 .is-interrupted-host）
-   * @param events 本轮 processEvents（含 error/aborted/metrics）
-   */
-  function appendInterruptedRow(host: HTMLElement, events: ProcessEvent[]): void {
-    // 已定格去重（重放重复投递防重入）：有态（用户/异常案）或有行（generic 兜底案，不写态）任一即返
-    if (host.dataset.terminus || host.querySelector('[data-interrupted-row]')) return;
-    const verdict = decideTerminus(events);
-    // 终态走独立通道（宿主块 data-terminus）；kind=null 案不写态（诚实投影）
-    if (verdict.kind) setTerminus(host, verdict.kind);
-    if (verdict.kind === '用户中断') return; // 用户中断：停止行退役，底栏标签承载
-    const row = document.createElement('div');
-    row.className = 'round-block__interrupted';
-    row.dataset.interruptedRow = 'true';
-    row.textContent = verdict.reason;
-    // 挂载点：折叠块（round-block）之后——「过程折叠 · 停止行平铺在外」
-    const rb = host.querySelector(':scope > .round-block');
-    if (rb) rb.after(row);
-    else host.appendChild(row);
-  }
-
-  /**
-   * 中断轮整链复制源：过程叙述（narrate）事件文本按序拼接（单点实现，重放/运行时共用）
-   *
-   * 中断 = 半截正文作废（运行时删 body / 重放不渲染 body），复制语义与「定稿正文」轮不同：
-   * 能拿到的实质内容只剩过程叙述。返回空串（无 narrate 事件）时调用方不设 rawText
-   * （复制按钮复制空串无害，但 dataset 缺失让「源为空」事实保持可见）。
-   */
-  function narrateChainText(events: ProcessEvent[]): string {
-    return events
-      .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
-      .map((e) => e.payload.content)
-      .join('\n');
-  }
-
+  
+  
+  
   /**
    * 重放中断轮孤儿宿主渲染（形态定案：与 done 轮同构——过程折叠 + 停止行平铺）
    *
@@ -3331,7 +2448,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         : null;
       const root = (flow ?? rbDetails) as HTMLElement | null;
       if (root) {
-        const { host } = planItemContainerFor(root, currentEvents, tsKey);
+        const { host } = cells.planItemContainerFor(root, currentEvents, tsKey);
         insertPlanItemInOrder(host, item, tsKey);
         // 归位宿主为任务项分组（details）时展开该分组：任务项分组默认收起，
         // 交互条目（补充/回答）被归位进收起分组内用户看不到——「任务表运行中输入补充内容不可见、
@@ -3384,7 +2501,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const item of skeletonPendingItems) {
       if (!item.isConnected) continue; // 防御：条目已被其他路径（如折叠清空）移除
       const tsKey = item.dataset.ts ?? new Date().toISOString();
-      const { host } = planItemContainerFor(root, currentEvents, tsKey);
+      const { host } = cells.planItemContainerFor(root, currentEvents, tsKey);
       insertPlanItemInOrder(host, item, tsKey);
       // 归位进任务项分组（details）时展开该分组，保证用户输入恒可见（裁决点 = openForUserVisibility）
       openForUserVisibility(host);
@@ -3808,71 +2925,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 运行态挂 .msg-body；终态有正文轮挂 .msg-body、中断轮（半截正文已删）挂宿主块（运行时
   // .msg.assistant / 重放 .is-interrupted-host）；消费方泛匹配属性，不得只查 .msg-body。
 
-  /**
-   * 运行/挂起态（单一合成函数的输出域）：运行三态呼吸 / 挂起两态静态。**不含终态**——
-   * 终态三档已分离到 TerminusKind（data-terminus），运行结束由调用方显式清除本通道。
-   */
-  type CursorStatus =
-    | '思考中' // 运行：思考相位（process-flow 相位行非工具形态在途）
-    | '运行工具中' // 运行：工具在途（is-tool-running 存在）
-    | '正在回答中' // 运行：正文流式生成（默认态）
-    | '等待输入' // 挂起：ask 预检停顿（提问框在途）
-    | '已暂停'; // 挂起：软暂停/用户暂停（半截正文静态展示）
+  
+ // 挂起：软暂停/用户暂停（半截正文静态展示）
 
-  /**
-   * 终态三档（data-terminus 输出域，与运行态 data-status 通道严格分离，2026-10-19）。
-   * 渲染位点（2026-10-13 收敛 / 2026-10-19 属性分离）：已完成/用户中断 → round-group 底栏
-   *（:has 消费）；异常中断 → 正文尾红字（存活窗口与底栏显形时序互斥，见 settleRoundWithFooter
-   * 收口名单）；中断轮的异常中断档由 appendInterruptedRow 写宿主载体后同样由底栏承接；
-   * 无容器轮（ensureRoundGroup 不建容器）由载体尾自足兜底（见 chatStyles 载体尾规则）。
-   */
-  type TerminusKind =
-    | '已完成' // 终态：底栏 time 之后淡勾（正文尾不再显示）
-    | '用户中断' // 终态：用户主动停止（载体 = 中断轮宿主块，底栏文字标签）
-    | '异常中断'; // 终态：异常（载体双位——正文红字+detail / 中断轮宿主→底栏红字标签）
+  
+ // 终态：异常（载体双位——正文红字+detail / 中断轮宿主→底栏红字标签）
 
-  /**
-   * 对指定正文块写入运行/挂起态（唯一实现；null = 清除，幂等）
-   *
-   * @param body    正文块（.msg-body）；null/未连接时 no-op（诚实投影：无载体不撒状态）
-   * @param status  运行/挂起态之一；null 清除
-   */
-  function setCursorStatus(
-    body: HTMLElement | null | undefined,
-    status: CursorStatus | null,
-  ): void {
-    if (!body || !body.isConnected) return;
-    if (status) body.dataset.status = status;
-    else delete body.dataset.status;
-  }
-
+  
   /** 活动正文块运行态写入（实时流路径统一入口：activeAssistantEl 为正文块 SSOT） */
   function setActiveSheetStatus(status: CursorStatus | null): void {
     setCursorStatus(activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'), status);
   }
 
-  /**
-   * 终态写入（结束后状态的唯一实现；与 setCursorStatus 的运行态通道严格分离）
-   *
-   * SSOT 收敛（2026-10-19）：一个属性背两种语义 = 双真相源，且终态覆盖运行态令「运行结束」
-   * 表现为「被覆盖」而非「自然消失」。分属性后：运行态由调用方显式清除（finalizeStreaming
-   * 清 / error 分支清），终态独立定格，互不污染。
-   *
-   * @param el      终态载体（有正文轮 = .msg-body；中断轮 = 宿主块 .msg.assistant）
-   * @param kind    终态三档之一
-   * @param detail  异常中断的原因摘要（仅 error 态消费，JS 侧负责截断）
-   */
-  function setTerminus(
-    el: HTMLElement | null | undefined,
-    kind: TerminusKind,
-    detail?: string,
-  ): void {
-    if (!el || !el.isConnected) return;
-    el.dataset.terminus = kind;
-    if (detail) el.dataset.terminusDetail = detail;
-    else delete el.dataset.terminusDetail;
-  }
-
+  
   /**
    * 运行态推导（单一入口）：优先级固定 = 工具在途 > 思考相位 > 默认回答。
    * 判定源与过程渲染同源（DOM 单查询，无第二套状态轨道）：
@@ -4184,79 +3249,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return line.length > max ? line.slice(0, max - 1) + '…' : line;
   }
 
-  /**
-   * 记忆命中项构建器（单一真理源）：source 徽章 + 正文主行 + ✕ 反馈按钮。
-   *
-   * 两个消费面共用本函数——① 工具折叠块体内明细（MEM-EVENT-2 主落位，见
-   * buildMemoryHitsBlock）；② 无配对对象的兜底轮次行（见 renderMemoryHits）。
-   * 共用理由不是省代码：S3-3 反馈通道靠 `data-memory-id` 寻址，两处各写一份必然腐化
-   * （漏挂一处 = 该处 ✕ 静默失效，而失效表现为「点了没反应」，是最难被发现的带伤形态）。
-   * 列表项 textContent 构建防注入。
-   *
-   * @param hits [记忆 id, 命中项] 序列（Map 迭代序 = 到达序）
-   */
-  function buildMemoryHitItems(hits: Iterable<[string, MemoryHitEntry]>): HTMLElement[] {
-    const items: HTMLElement[] = [];
-    for (const [id, hit] of hits) {
-      const item = document.createElement('div');
-      item.className = 'memory-hits__item';
-      // id 锚进 DOM：反馈通道按此寻址（memory_deleted 应答按 id 全局摘除，含已归档轮）
-      item.dataset.memoryId = id;
-      const source = document.createElement('span');
-      source.className = 'memory-hits__source';
-      source.textContent = hit.source;
-      // 主行 = 命中正文（用户心智：这条记忆记住了什么）；contentPreview 缺失
-      //（老内核/老证据）回退 name，name 也缺回退 id（不静默空行）。
-      const name = document.createElement('span');
-      name.className = 'memory-hits__name';
-      name.textContent = hit.contentPreview || hit.name || id;
-      name.title = hit.contentPreview ? hit.name : '';
-      item.appendChild(source);
-      item.appendChild(name);
-      // 反馈入口（HOST-S3-3）：「没用/已过时」→ 发 memory_delete 软删该记忆
-      //（宿主模态二次确认，回收站可恢复）；stopPropagation 防触发外层 <details> 折叠
-      //（与 memoryView 卡片 ✕ 同范式，图标用 icons.ts close——字符图标被 iconLanguage 守卫拦）。
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'memory-hits__remove';
-      removeBtn.type = 'button';
-      removeBtn.title = '没用/已过时？移入回收站（可恢复）';
-      removeBtn.setAttribute('aria-label', `反馈无用：${hit.contentPreview || hit.name || id}`);
-      removeBtn.innerHTML = getIconSvg('close', 10, 10); // 静态 SVG，无外部输入
-      removeBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        vscode.postMessage({ type: 'memory_delete', id });
-      });
-      item.appendChild(removeBtn);
-      items.push(item);
-    }
-    return items;
-  }
-
-  /**
-   * 单次记忆召回工具行内的命中明细块（MEM-EVENT-2 主落位）。
-   *
-   * 形态 = `标题行（本次命中 N 条记忆）+ 命中项平铺`，**刻意不再套一层 <details>**：
-   * 父级工具行本身已是折叠体，双层折叠是同义重复（用户要点两次才见到明细）。
-   * 代价与补偿：明细随工具行默认收起（成功行 open=false），故行摘要另挂「记忆 N」徽章
-   * （见 attachMemoryHitsToToolRow），保证收起态仍保留「这次调用看过记忆」这一事实——
-   * 落位迁移不得吃掉原本可见的信息。
-   *
-   * @param hits 该 toolCallId 下的命中（块内已按记忆 id 去重）
-   */
-  function buildMemoryHitsBlock(hits: Map<string, MemoryHitEntry>): HTMLElement {
-    const box = document.createElement('div');
-    box.className = 'round-block__memory-hits';
-    const label = document.createElement('div');
-    label.className = 'memory-hits__label';
-    label.textContent = `本次命中 ${hits.size} 条记忆`;
-    box.appendChild(label);
-    const list = document.createElement('div');
-    list.className = 'memory-hits__list';
-    for (const item of buildMemoryHitItems(hits)) list.appendChild(item);
-    box.appendChild(list);
-    return box;
-  }
-
+  
+  
   /**
    * 按 toolCallId 定位工具行（属性扫描，不拼选择器）。
    *
@@ -4298,7 +3292,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       badge.title = `本次调用命中 ${hits.size} 条记忆（展开查看明细）`;
       summary.appendChild(badge);
     }
-    row.appendChild(buildMemoryHitsBlock(hits));
+    row.appendChild(memoryHitsBlock.buildBlock(hits));
     return true;
   }
 
@@ -4348,7 +3342,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const list = el.querySelector<HTMLElement>('.memory-hits__list');
     if (!list) return;
     list.textContent = '';
-    for (const item of buildMemoryHitItems(currentMemoryHits)) list.appendChild(item);
+    for (const item of memoryHitsBlock.buildItems(currentMemoryHits)) list.appendChild(item);
   }
 
   // 指标信号（metricsSignalOf）与指标渲染（renderMetrics）随活动抽屉域外置
@@ -5025,7 +4019,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           ? roundBlockEl.querySelector<HTMLElement>('.round-block__details')
           : null;
       if (stateRoot) {
-        applyPlanItemStates(stateRoot, livePlanStates);
+        cells.applyPlanItemStates(stateRoot, livePlanStates);
       }
     } else if (msg.type === 'polish_input_result') {
       // 输入框润色结果：ok=true 替换输入框内容；ok=false 提示失败
