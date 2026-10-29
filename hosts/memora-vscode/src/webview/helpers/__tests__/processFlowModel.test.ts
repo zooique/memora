@@ -103,9 +103,9 @@ describe('stopReasonLabel / decideTerminus', () => {
   it('无 error / aborted = kind null（诚实投影，不猜终态）', () => {
     const v = decideTerminus([toolStart(1, 'a')]);
     expect(v.kind).toBeNull();
-    // 现状锁定：generic 兜底走 stopReasonLabel({reason:'interrupted'})，无 stopReason ⇒
-    // 回落 reason 原文，即裸英文 'interrupted'（既有行为，非搬迁引入；已登记观察项）。
-    expect(v.reason).toBe('interrupted');
+    // TERM-REASON-1 收口（2026-10-29）：兜底案语义键已放法定口袋 stopReason ⇒ 查得中文；
+    // 旧行为（语义键塞 reason ⇒ 回落原文裸英文 'interrupted'）已修，判据随事实更新。
+    expect(v.reason).toBe('对话已中断');
   });
 });
 

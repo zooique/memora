@@ -313,7 +313,13 @@ export function decideTerminus(events: ProcessEvent[]): {
       ? { kind: '用户中断', reason: stopReasonLabel(aborted.payload) }
       : { kind: '异常中断', reason: stopReasonLabel(aborted.payload) };
   }
-  return { kind: null, reason: stopReasonLabel({ reason: 'interrupted' }) };
+  // 兜底案语义键放法定口袋（stopReason），字典查得中文「对话已中断」——TERM-REASON-1 收口：
+  // 此前语义键塞 reason（自由文本口袋）⇒ 查表落空回落原文，用户可读面直出裸英文 'interrupted'。
+  // reason 仍填同键：字典若删该条，回落的是可追溯键而非编造文案。
+  return {
+    kind: null,
+    reason: stopReasonLabel({ stopReason: 'interrupted', reason: 'interrupted' }),
+  };
 }
 
 /**
