@@ -5,7 +5,7 @@
  * 全 ASCII 假数据会让「真实形态」零覆盖——变异验证的前提是真形态被真断言咬住。
  */
 import { describe, expect, it } from 'vitest';
-import { hasImageExtension, isRefTargetImage } from '../refImageGuard.js';
+import { isRefTargetImage } from '../refImageGuard.js';
 
 /** PNG：89 50 4E 47 0D 0A 1A 0A（IHDR 之前） */
 function pngHead(): Uint8Array {
@@ -26,22 +26,6 @@ function webpHead(): Uint8Array {
 function gifHead(): Uint8Array {
   return new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 1, 0, 1, 0, 0, 0]);
 }
-
-describe('refImageGuard · 预筛 hasImageExtension', () => {
-  it('四种受支持扩展名命中，大小写不敏感', () => {
-    expect(hasImageExtension('a.png')).toBe(true);
-    expect(hasImageExtension('a.jpg')).toBe(true);
-    expect(hasImageExtension('a.JPEG')).toBe(true);
-    expect(hasImageExtension('a.webp')).toBe(true);
-    expect(hasImageExtension('a.gif')).toBe(true);
-  });
-
-  it('非图片扩展名 / 无扩展名 / 目录名带点均不命中', () => {
-    expect(hasImageExtension('a.txt')).toBe(false);
-    expect(hasImageExtension('Makefile')).toBe(false);
-    expect(hasImageExtension('src')).toBe(false);
-  });
-});
 
 describe('refImageGuard · 判定 isRefTargetImage', () => {
   it('四种真图各自的真实头 ⇒ 拦（true）', () => {

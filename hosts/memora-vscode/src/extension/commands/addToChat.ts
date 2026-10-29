@@ -15,7 +15,8 @@ import * as vscode from 'vscode';
 import type { ChatRef } from '../../shared/protocol.js';
 import type { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
 import { relativeUnderPrimaryRoot } from '../host/refPath.js';
-import { hasImageExtension, isRefTargetImage } from '../host/refImageGuard.js';
+import { hasInboundImageExtension } from '../host/imageExts.js';
+import { isRefTargetImage } from '../host/refImageGuard.js';
 import { selectionToRefRange } from '../host/selectionRange.js';
 
 /** 图片嗅探所需的头部字节数（最短合法格式 12 字节，此处留余量） */
@@ -65,7 +66,7 @@ export async function addToChatCommand(
       // 保持 file 兜底（相对路径仍可用）
     }
     // G2：只对疑似图片读文件头（预筛的唯一目的是省读盘开销），真伪由字节嗅探定。
-    if (kind === 'file' && hasImageExtension(u.fsPath)) {
+    if (kind === 'file' && hasInboundImageExtension(u.fsPath)) {
       const head = await readHeadBytes(u.fsPath);
       if (isRefTargetImage(u.fsPath, head)) {
         skippedImages.push(vscode.workspace.asRelativePath(u));

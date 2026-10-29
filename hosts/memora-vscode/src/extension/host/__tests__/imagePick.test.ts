@@ -12,6 +12,7 @@ import type { ExtensionToWebviewMessage } from '../../../shared/protocol.js';
 import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
 import { pngBytes } from '../../../__tests__/helpers/imageTestBytes.js';
 import { pickAndIngestImages, type ImageFilePicker } from '../imagePick.js';
+import { INBOUND_IMAGE_EXTS } from '../imageExts.js';
 
 /** 拾取回执类型（与生产同源） */
 type PickedResult = Extract<ExtensionToWebviewMessage, { type: 'image_picked' }>;
@@ -58,6 +59,8 @@ describe('pickAndIngestImages — 选项与取消语义', () => {
     expect(opts.canSelectMany).toBe(true);
     expect(opts.title).toContain('图片');
     expect(opts.filters['图片']).toContain('png');
+    // 扩展名清单单点（IMG-9）：过滤器必须逐项等于入站集合，写死第二份即红
+    expect(opts.filters['图片']).toEqual([...INBOUND_IMAGE_EXTS]);
     // 兜底必须存在：锁死扩展名 = 自打「扩展名不可信」的嘴
     expect(opts.filters['所有文件']).toEqual(['*']);
   });

@@ -21,6 +21,7 @@
  */
 import type { ImageRef } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
+import { INBOUND_IMAGE_EXTS } from './imageExts.js';
 import { ingestDiskFile } from './imageIngest.js';
 
 /** 拾取回执类型（从协议联合取型，禁手写第二份字段表） */
@@ -38,20 +39,20 @@ export interface ImagePickDialogOptions {
  * 取消 = `undefined`（与 vscode 原语义一致，禁把它改造成空数组——两种「没选」
  * 在原生侧本来就是一个语义）。
  */
-export type ImageFilePicker = (
-  options: ImagePickDialogOptions,
-) => Promise<string[] | undefined>;
+export type ImageFilePicker = (options: ImagePickDialogOptions) => Promise<string[] | undefined>;
 
 /**
  * 对话框文案与过滤器（单点）。
  *
  * filters 键用中文「图片」：键名直接显示在原生对话框的下拉里，与面板全中文 UI 同语。
+ * 扩展名列表**不在此写死**：唯一真源 = `imageExts.INBOUND_IMAGE_EXTS`（IMG-9），
+ * 与右键「添加到对话」的预筛共用；此处写第二份就是选择框能选、右键却不拦。
  */
 const DIALOG_OPTIONS: ImagePickDialogOptions = {
   title: '选择要添加到对话的图片',
   canSelectMany: true,
   filters: {
-    图片: ['png', 'jpg', 'jpeg', 'webp', 'gif'],
+    图片: [...INBOUND_IMAGE_EXTS],
     所有文件: ['*'],
   },
 };

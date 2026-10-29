@@ -21,17 +21,7 @@
  * 那会把「读盘抖动」变成「用户加不了文件」，比漏拦更坏。
  */
 import { sniffImageMime } from '../../shared/imageValidation.js';
-import { EXT_BY_MIME } from './projectDataDir.js';
-
-/**
- * 预筛集合（入站口径）
- *
- * ⚠️ **已知差异，不在本条处置、已登记台账**：`EXT_BY_MIME` 是**出站写出**表
- * （一个 mime 只对应一个写出扩展名，故 jpeg 写作 `jpg`）；而**入站**可接受面比它宽一格
- * ——`jpeg` 同样是常见写法，`imagePick` 的选择框过滤器也认它。此处按入站口径补 `jpeg`，
- * 使「用户右键 .jpeg 真图」不被漏拦（漏拦 = 静默失败，比误拦坏）。
- */
-const IMAGE_EXTS = new Set<string>([...Object.values(EXT_BY_MIME), 'jpeg']);
+import { hasInboundImageExtension } from './imageExts.js';
 
 /**
  * 「添加到对话」的目标是不是图片（真图才拦）
@@ -42,17 +32,6 @@ const IMAGE_EXTS = new Set<string>([...Object.values(EXT_BY_MIME), 'jpeg']);
  * @returns true ⇒ 应走图片通道，**不应**挂为文件引用
  */
 export function isRefTargetImage(fileName: string, head: Uint8Array | undefined): boolean {
-  if (!hasImageExtension(fileName)) return false;
+  if (!hasInboundImageExtension(fileName)) return false;
   return head ? sniffImageMime(head) !== null : false;
-}
-
-/**
- * 扩展名预筛（**不是判据**）：大小写不敏感，只看最后一个点之后的部分
- *
- * 单独导出的唯一用途：让调用方**只对疑似图片读文件头**，避免对每个右键目标都读盘。
- */
-export function hasImageExtension(fileName: string): boolean {
-  const dot = fileName.lastIndexOf('.');
-  if (dot < 0) return false;
-  return IMAGE_EXTS.has(fileName.slice(dot + 1).toLowerCase());
 }
