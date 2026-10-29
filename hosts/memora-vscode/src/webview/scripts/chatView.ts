@@ -102,6 +102,7 @@ import {
 } from './processFlowCells.js';
 import { createPickerView } from './pickerView.js';
 import { createQaRowView } from './qaRowView.js';
+import { createRoleBadgeView } from './roleBadgeView.js';
 import { createToolRowView } from './toolRowView.js';
 // 历史菜单（会话记录/留存区）：渲染与分组状态收口于 historyMenuView（HOST-SPLIT-1 chatView 第 2 刀）
 import { createHistoryMenuView } from './historyMenuView.js';
@@ -402,6 +403,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 下拉选择器与问答回顾行（CHATVIEW-SLIM-3 首刀）：零状态 DOM 构造，deps 注入
   const pickerView = createPickerView({ document });
   const qaRowView = createQaRowView({ document });
+  // 角色徽章行（CHATVIEW-SLIM-3 第三刀）：零状态 DOM 构造，deps 注入两个徽章节点
+  const roleBadgeView = createRoleBadgeView({ document, roleBadge, capabilityBadge });
 
   // StatusDock 挂载条域容器（待发送 / 文件改动 / 后台任务三条件，第 6 刀外置，见 statusBarsView.ts）
   const statusBars = createStatusBarsView({
@@ -1935,78 +1938,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     // 首次显示才创建（lazy create，避免无队伍时白占 DOM）
     if (!teamMeetingIcon) {
-      teamMeetingIcon = createTeamMeetingIcon();
+      teamMeetingIcon = roleBadgeView.createTeamMeetingIcon();
     }
     // 更新队员 tooltip（角色切换时队员名单可能变）
     teamMeetingIcon.title = `小组会议 · 组长：${team.leader} · 组员：${team.members.join('、')}（点击启动）`;
     teamMeetingIcon.hidden = false;
-  }
-
-  /**
-   * 创建 team-meeting 图标按钮（roleBadge 右侧，Trae 风格图标）。
-   * 单例：仅由 updateTeamMeetingIcon 首次显示时调用一次；返回值存入 teamMeetingIcon。
-   * 复用 icons.ts 统一图标管理，创建后挂到 roleBadge 同行容器。
-   */
-  function createTeamMeetingIcon(): HTMLElement {
-    // 用 createIcon 创建按钮（Trae 统一图标管理，team 图标双人轮廓）
-    const btn = createIcon('team', '小组会议（点击启动）', 'team-meeting-icon');
-    // 插入 roleBadge 同行容器（roleBadge.parentNode 是底部徽章行）
-    const container = roleBadge!.parentNode as HTMLElement;
-    if (container) {
-      // roleBadge 之后插入，跟在角色名右侧
-      const refNode = roleBadge!.nextSibling;
-      if (refNode) container.insertBefore(btn, refNode);
-      else container.appendChild(btn);
-    }
-    // 点击：填充「小组会议：」前缀 + 聚焦 + 光标停在冒号后
-    btn.addEventListener('click', () => {
-      const input = document.getElementById('input') as HTMLTextAreaElement | null;
-      if (!input) return;
-      const PREFIX = '小组会议：';
-      input.value = PREFIX + input.value;
-      input.focus();
-      input.setSelectionRange(PREFIX.length, PREFIX.length);
-    });
-    // 键盘可达（Enter / Space 触发）
-    btn.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        btn.click();
-      }
-    });
-    return btn;
-  }
-
-  /**
-   * 更新工具权限徽章（角色能力面可见性）
-   *
-   * 根据 capability_badge 消息更新：
-   * - block 模式 → 显示「纯 LLM」标签
-   * - allow + 有能力 → 显示能力列表（如「文件」「联网」「记忆」）
-   * - allow + 无能力 → 显示「全部工具」
-   * 无数据时隐藏徽章。
-   */
-  function updateCapabilityBadge(
-    toolMode: 'allow' | 'block',
-    capabilities: { capability: string; label: string }[],
-  ): void {
-    if (!capabilityBadge) return;
-    if (toolMode === 'block') {
-      capabilityBadge.hidden = false;
-      capabilityBadge.textContent = '纯 LLM';
-      capabilityBadge.title = '纯 LLM 模式（无工具暴露）';
-      return;
-    }
-    if (capabilities.length === 0) {
-      capabilityBadge.hidden = false;
-      capabilityBadge.textContent = '全部工具';
-      capabilityBadge.title = '允许所有工具';
-      return;
-    }
-    const labels = [...new Set(capabilities.map((c) => c.label))];
-    capabilityBadge.hidden = false;
-    capabilityBadge.textContent = labels.join(' · ');
-    capabilityBadge.title = `允许：${labels.join('、')}`;
   }
 
   /**
@@ -3670,7 +3606,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
     } else if (msg.type === 'capability_badge') {
       // 角色能力徽章 → 更新工具权限展示
-      updateCapabilityBadge(msg.toolMode, msg.capabilities);
+      roleBadgeView.updateCapabilityBadge(msg.toolMode, msg.capabilities);
     } else if (msg.type === 'metrics') {
       // 活动指标（透明面板 + 指纹可见）：每轮结束后刷新详情折叠区
       activityDrawerView.renderMetrics(msg);

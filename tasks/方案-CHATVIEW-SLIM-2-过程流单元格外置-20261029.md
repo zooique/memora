@@ -361,6 +361,20 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
 - §五 原表**不删**（留作流程教训的可追溯证据），仅标作废。
 - 三个「单向可转让」状态（`roundBlockHostEl` / `lastShownDate` / `skeletonPendingItems`）**未动**：它们单独转让必须连带搬走 `ensureRoundBlock` / `renderDateDivider` / `flushSkeletonPendingItems`，而 `ensureRoundBlock` 被 364 行的 `renderRoundBlock` 依赖、`renderInterruptedRound` 又依赖 `renderRoundBlock` ⇒ 首刀会把 660 行链条重新卷进来。此路属「正收益但成本高于收尾批」，待 SLIM-3 完成后行数余量充足再评估。
 
+### 8.7 订正：§8.5 的分组不是「域」，是「行数分箱」（2026-10-29 第三刀开工前实测）
+
+第三刀开工前按「单轮一域」（规则 §5.1）复核 §8.5 那张表的**分组依据**，结论是它按行数凑出一组、按名字凑了一组，与功能域无关。三处实证：
+
+| §8.5 分组 | 成员实际归属 | 判据 |
+|---|---|---|
+| 活动区 / 徽章（79 行） | **三个域** | ① `createTeamMeetingIcon` + `updateCapabilityBadge` = 真徽章行域（同写 `#currentRoleBadge` 所在行）；② `applyButtonSemantics` 是「按钮语义 derive/apply 对」的 apply 半边（derive 在 `helpers/turnUiState.ts`），其域是 composer 状态呈现；③ `registerDockEntry` + `pickDockHead` 是 dock 裁决域，而裁决主体 `resolveDock` 留在 chatView ⇒ 单拆这两个 = **同一域摊到两个文件**，比不拆更差 |
+| 代码块 / 文本（39 行） | **四个域** | `enhanceCodeBlocks`（代码块增强）与 `firstLine`（叙述行截断，消费者在 `narrate` 分支）、`refDisplayName`（引用芯片名）、`formatTokensShort`（占用徽章 token 数）不同域，只是都是「文本处理」 |
+| 其他（61 行） | 混合 | `ensureRoundGroupFooter` 属轮容器、`renderInjectionReceipt`/`hideInjectionReceipt` 属注入回执、`openForUserVisibility` 属可达性 ⇒ 无共同域 |
+
+**因此本轮只执行其中真正内聚的一域（徽章行 51 行），不按 79 行整组搬。** 反过来说，若照 §8.5 原表把五个函数装进 `activityAreaView.ts` 一个模块，就造出一个以「都在活动区附近」为理由的杂物抽屉——这正是 `方案-HOST-SPLIT-1` 撤回时判死的那种形态（转移复杂度，不减少耦合）。
+
+**结论（对后续刀的影响）**：§8.5 那张表的剩余组**不可按组施工**，须先按域重分。真实剩余域见 §11.6。
+
 ---
 
 ## 九、SLIM-3 首刀实施收据（2026-10-29 同日）
@@ -490,6 +504,67 @@ const memoryHitsBlock = deps.memoryHits;
 ### 10.7 余量
 
 零状态收尾批余下 **279 行 / 5 组**：活动区 79 · 输入框 54 · 代码块 39 · 空态 33 · 其他 74（原 61 + 转入的 `roundChainText` 13）。全量做完 chatView ≈ **4928**。
+
+## 十一、SLIM-3 第三刀实施收据（2026-10-29 同日）
+
+> 设计依据 = §8.5（经 §8.7 订正后只取其内聚子域）。本节只补实施数据。
+
+### 11.1 实施范围（51 行 · 1 个模块）
+
+| 函数 | 行 | 落点 |
+|---|---|---|
+| `createTeamMeetingIcon` | 29 | `scripts/roleBadgeView.ts`（**新增** 108 行） |
+| `updateCapabilityBadge` | 22 | 同上 |
+| `RoleBadgeViewDeps` / `RoleBadgeView` | — | 同上（窄接口，2 字段 + 2 方法） |
+
+deps = `{ document, roleBadge, capabilityBadge }`：**回调 0 项**，三个字段全是只读引用（两个 DOM 节点身份由 chatView 持有）。无定时器、无全局监听（唯一监听挂在 `createTeamMeetingIcon` 新建的按钮自身上，随元素回收）⇒ **无 `dispose`**。
+
+**为什么只搬「造」不搬「管」**：单例管理器 `updateTeamMeetingIcon` 读 `let teamMeetingIcon` 与 `let currentActiveTeam`（域外写 50 次），是状态主人，留在 chatView；本模块只负责造元素与更新文案。这与 SLIM-2「状态留原处、构造外移」同一分工。
+
+### 11.2 唯一的架构判断：同组另外 28 行为何不搬
+
+见 §8.7。`applyButtonSemantics`（18）与 `registerDockEntry`(3)+`pickDockHead`(7) 各自属于别处的域；硬凑进 `roleBadgeView` 会造杂物抽屉，硬凑成 `activityAreaView` 同理。**宁可少搬 28 行，不造一个需要下次再拆的模块。**
+
+### 11.3 验证结果（实测）
+
+| 项 | 结果 |
+|---|---|
+| chatView 行数 | 5207 → **5143**（闸门自报口径，−64 = 51 代码 + 13 JSDoc − 3 接线增量 + 空行合并） |
+| `max-lines` | 5207 → **5143**（只降不升） |
+| 逐字保真 | `createTeamMeetingIcon` **29/29**、`updateCapabilityBadge` **22/22** 逐行一致（零改写） |
+| 根 `tsc --noEmit` | 0 错（真实退出码 0） |
+| 宿主 `tsc --noEmit` | 0 错 |
+| 宿主 `eslint . --max-warnings 0` | 0 警（真实退出码 0，未接管道） |
+| `chatView.test` | **482 passed** |
+| 宿主全量 | **123 文件 / 2210 passed / 4 skipped** |
+| 变异 | `PREFIX '小组会议：'` → `'小组会议MUT：'` ⇒ 红在新模块消费链，签名 `expected '小组会议MUT：讨论选题' to be '小组会议：讨论选题'`；还原复绿（482 passed） |
+
+### 11.4 观察项（登记不修）
+
+- **CAPB-1（新发现，非本轮引入）**：`updateCapabilityBadge` **零断言覆盖**。夹具 `chatViewTestEnv.ts` 与生产 `chatPanel.ts` 都有 `#currentCapabilityBadge` 节点（骨架三方一致性守卫覆盖了 id 存在性），但**没有任何用例 dispatch `capability_badge` 或断言其文案 / title / hidden**。这属 UI-CONFIRM-P6 注释里点名的那类静默失测（节点存在、链路可执行、断言缺失）。本轮搬迁为纯 DOM 赋值 + 空值守卫，行为等价不受影响；补测另立条目，不在搬迁夹带。
+- `createTeamMeetingIcon` 的 `roleBadge!` 非空断言保留原样：调用链保证有队伍时才有徽章，改断言属行为变更，不动。
+
+### 11.5 实际修改文件清单
+
+| 文件 | 类型 |
+|---|---|
+| `src/webview/scripts/chatView.ts` | 修改（−64 / +3：导入 1 + 装配注释 1 + 装配 1） |
+| `src/webview/scripts/roleBadgeView.ts` | **新增**（108 行） |
+| `eslint.config.mjs` | 修改（chatView max-lines 5207 → 5143，注释补一域） |
+
+### 11.6 余量（按「真实域」重分，不再按 §8.5 行数分箱）
+
+零状态散点余下 **228 行**，但**能独立成域的只有三块**：
+
+| 真实域 | 成员 | 行 | 可行性 |
+|---|---|---|---|
+| composer 状态呈现 | `applyButtonSemantics` 18 · `setComposerReplaced` 10 · `ensureUserInputVisible` 7 · `autoResize` 7 · `clampUserBubble` 20 | 62 | 需重盘：`setComposerReplaced` 写 `inputWrap`，且注释锁「只由 resolveDock 调用」⇒ 与 dock 域有单向耦合，须先验 |
+| 代码块增强 | `enhanceCodeBlocks` 27（+ 可能的 `firstLine` 若仅它用——实测否，`firstLine` 服务于 narrate 行） | 27 | 单函数成域，收益低于开模块成本 |
+| 空态呈现 | `updateEmptyStateOnboarding` 17 · `renderEmptySuggestions` 13 · `updateEmptyState` 3 | 33 | 需 4 个空态节点注入 |
+
+**不可成域（禁拆）**：`registerDockEntry` / `pickDockHead`（dock 域主体留守）、`ensureRoundGroupFooter`（轮容器）、`renderInjectionReceipt` / `hideInjectionReceipt`（注入回执，与 `currentInjections` 状态绑定）、`firstLine` / `refDisplayName` / `formatTokensShort`（各只有一个消费者，纯文本工具，拆出即「为一个调用点开文件」）。
+
+**判断**：chatView 减重已进入收益递减区。剩下的每一刀都在 30–60 行量级，而每刀固定成本（重盘 + 全量 2210 例 + 变异 + 收据）不变。建议：**除非触到具体改动需要腾行，不再为「减行数」单开刀**；按规则 §5.1「后续轮次按自然生长触发」，把余量留给真正要改那块代码时顺手带走。
 
 ---
 
