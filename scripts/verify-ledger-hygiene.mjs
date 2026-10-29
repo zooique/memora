@@ -78,14 +78,27 @@
  *      为什么只判观察区：注记类 / 明确不推进不属待办、不参与每会话决策循环，
  *      且其长文是「防重复论证」，删即失去防重提价值 ⇒ 不设限。
  *
- *   ⑬ **新登记观察项无到期复查日期**（2026-10-30 补）：观察区里**本次新登记**的顶层条目
- *      （ID 在 HEAD 台账中不存在）正文必须含 `到期复查 YYYY-MM-DD` ⇒ 否则红。
+ *   ⑬ **新登记观察项无到期复查日期**（2026-10-30 补，同日改为双时相判据）：观察区里
+ *      **本次新登记**的顶层条目，正文必须含 `到期复查 YYYY-MM-DD` ⇒ 否则红。
  *      为什么补：纪律 3（观察项永不归档）+ D6（无触发不行动）合起来 = **观察区没有出口**。
- *      实测 2026-10-30：91 条观察项里**只有 2 条**写了复查日期（`ARCH-4` / `HOST-S15`）。
- *      一个无限期不触发的观察项价值≈0，却永久占用每个会话的阅读成本。
- *      ⚠️ **只对新增条目判是刻意的**：存量 89 条无日期，全量硬闸 ⇒ 门一建就被存量淹没 ⇒
+ *      实测 2026-10-30：观察区 91 条顶层条目里**只有 1 条**写了合规复查日（`ARCH-4`；
+ *      `HOST-S15` 的「到期 …」形态同批订正为「到期复查 …」）。一个无限期不触发的观察项
+ *      价值≈0，却永久占用每个会话的阅读成本。
+ *      ⚠️ **只对新增条目判是刻意的**：存量均无日期，全量硬闸 ⇒ 门一建就被存量淹没 ⇒
  *      必然走「改 required:false」的老路（本闸 2026-10-27 已明确「不许把档位调回去」）。
- *      故用「ID 不在 HEAD」界定新增：存量自动豁免，只卡新流入。
+ *      ⚠️ **「新登记」必须双时相界定**（2026-10-30 实测推翻单时相）：
+ *        ① 未提交窗口 —— ID 不在 HEAD；② 已提交 —— 条目首行 blame 时间 ≥ 建门时点。
+ *        单靠 ① ⇒ 本闸在 pre-push（改动已提交）恒绿 = 假闸（隔离仓库双相实测：未提交红、
+ *        提交后命中 0）；单靠 ② ⇒ 未提交窗口失明（新行无 blame 时间）。
+ *        这与 ⑪ 刻意否决「对 HEAD 基线只增不减」是**同一类错**：判据依赖 HEAD 基线，
+ *        而挂载点在提交之后 ⇒ 基线与工作树同步漂移 ⇒ 恒绿。
+ *
+ *   ⑭ **复查日已过期未处置**（2026-10-30 补）：观察区条目写了 `到期复查 YYYY-MM-DD`、
+ *      但日期早于今天 ⇒ 红。为什么补：⑬ 只校验格式存在、**不比较日期** ⇒ 「保质期」只有
+ *      登记闸、没有到期闸，写个 2020 年的日期也永不过期，头部「到期无信号 ⇒ 转封存 / 归档」
+ *      因此没有执行面。存量：补门当天两条复查日（`ARCH-4` 2026-11-26 / `HOST-S15`
+ *      2026-11-19）都在未来 ⇒ 0 命中，符合「存量清零才建闸」。
+ *      ⚠️ 到期后**改期**是允许的，但必须写新证据；无理由顺延 = 把保质期改成无限期。
  *
  * 档位（2026-10-27 由告警升硬闸，兑现上一版写明的升档条件）：
  *   当初挂 required:false 是为 0.2.0 区的存量欠账/假指针让路，避免门一建就被绕。
@@ -158,8 +171,38 @@ const RELEASED_RE = /已发布|已发版|已定案归档/;
  */
 const MAX_ITEM_LINES = 40;
 
-/** ⑬ 到期复查日期：`到期复查` 后跟 `YYYY-MM-DD`（存量 `ARCH-4` / `HOST-S15` 即此形态）。 */
-const EXPIRY_RE = /到期复查\s*\d{4}-\d{2}-\d{2}/;
+/** ⑬ 到期复查日期：`到期复查` 后跟 `YYYY-MM-DD`（捕获组供 ⑭ 取日期，形态真源 = 台账头部「登记规范」）。 */
+const EXPIRY_RE = /到期复查\s*(\d{4}-\d{2}-\d{2})/;
+
+/**
+ * ⑬ 建门时点 = 补 ⑬ 那笔提交的 committer-time（秒，UTC，2026-10-30）。
+ * 条目首行 blame 时间 ≥ 此值 ⇒ 建门后新登记，必须自带复查日。
+ * ⚠️ **不能用「ID 是否在 HEAD」当唯一判据**：本闸挂 pre-push，改动已提交 ⇒ 新条目 ID
+ * 必然已在 HEAD ⇒ 判据恒豁免 = 假闸（2026-10-30 隔离仓库双相实测：未提交红、提交后命中 0）。
+ * 故用 blame 时间兜住「提交后」这一相，与 ID 差集兜住的「未提交」一相合成双时相。
+ * ⚠️ 已知边界（刻意接受）：条目被整段搬家 / 剪枝改写后，blame 时间会刷新到搬家那笔 ⇒
+ * 老条目可能被判为新登记而要求补复查日。这是**有益误报**——动过的条目顺手确认一次出口，
+ * 比让它在搬家后永久豁免更接近「保质期」的本意。不要为消除它而回退到单时相判据。
+ */
+const GATE13_BORN_AT = 1793315659;
+
+/** ⑭ 到期判定基准：今天（`YYYY-MM-DD`，UTC）。日期串可直接字典序比较，故不转 Date。 */
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * 自检用：取台账观察区**第一个**顶层条目 ID —— ⑬c 的存量豁免探针必须复用**真实存量 ID**，
+ * 才能验证「ID 在 HEAD 且 blame 早于建门时点 ⇒ 不报」。写死一个 ID 会随台账改名而漂移，
+ * 故动态取；取不到 = 判据失明，直接抛错（自检宁可红，不要静默变绿）。
+ */
+function stockObservationId(text) {
+  const i = text.search(/^##\s*观察/m);
+  if (i < 0) throw new Error('自检失明：台账无观察区，取不到存量条目 ID');
+  const m = /^-\s+\*\*(.+?)\*\*/m.exec(text.slice(i));
+  if (!m) throw new Error('自检失明：观察区无顶层条目，取不到存量条目 ID');
+  return m[1];
+}
 
 /**
  * 观察区标题判据 —— ⑧ 的投放面。
@@ -583,6 +626,7 @@ function diagnose(text, opts = {}) {
   const pending = [];
   const oversize = []; // ⑫ 观察区条目体量超限
   const noExpiry = []; // ⑬ 新登记观察项无到期复查日期
+  const overdue = []; // ⑭ 观察项复查日已过期仍未处置
   const closedCands = []; // ⑧ 的候选：观察区内已收口、且标题行无归档指针
   let itemTotal = 0;
   const releasedSections = [];
@@ -645,14 +689,28 @@ function diagnose(text, opts = {}) {
           why: `观察区条目 ${it.lines} 行 > 上限 ${MAX_ITEM_LINES} 行`,
         });
       }
-      // ⑬ 新登记观察项（ID 在 HEAD 台账中不存在）必须自带到期复查日期。
-      if (OBSERVATION_RE.test(sec.title) && !headIds.has(it.id)) {
+      // ⑬ 新登记观察项必须自带到期复查日期。**双时相**界定「新登记」：
+      //   ① 未提交窗口 —— ID 不在 HEAD（工作树刚加的条目，blame 无时间可判）；
+      //   ② 已提交 —— 条目首行 blame 时间 ≥ GATE13_BORN_AT。
+      //   缺 ② 时本闸在 pre-push（改动已提交）恒绿 = 假闸；缺 ① 时未提交窗口失明。
+      // ⑭ 复查日已过期：只校验格式不校验时间 ⇒ 过期条目永不红，保质期没有执行面。
+      if (OBSERVATION_RE.test(sec.title)) {
         const body = lines.slice(it.start + 1, it.end).join('\n');
-        if (!EXPIRY_RE.test(body)) {
+        const born = timing.byId.get(it.id)?.headTime ?? null;
+        const isNew = !headIds.has(it.id) || (born !== null && born >= GATE13_BORN_AT);
+        if (isNew && !EXPIRY_RE.test(body)) {
           noExpiry.push({
             ...it,
             sec: sec.title,
             why: `新登记观察项缺「到期复查 YYYY-MM-DD」——观察区是单向阀，无复查日即无出口`,
+          });
+        }
+        const m = EXPIRY_RE.exec(body);
+        if (m && m[1] < todayISO()) {
+          overdue.push({
+            ...it,
+            sec: sec.title,
+            why: `复查日 ${m[1]} 已过期（今天 ${todayISO()}）——按台账头部「登记规范」应转封存 / 归档，不得继续挂 ⏳`,
           });
         }
       }
@@ -680,6 +738,7 @@ function diagnose(text, opts = {}) {
     timing: checkArchiveTiming(closedCands, timing, archiveCopies()),
     oversize,
     noExpiry,
+    overdue,
     clones,
     anchors,
     releasedSections,
@@ -700,6 +759,7 @@ function report(r) {
   if (r.timing.length) problems.push(['⑧落态跨发版线但无归档副本', r.timing]);
   if (r.oversize.length) problems.push(['⑫观察区条目体量超限', r.oversize]);
   if (r.noExpiry.length) problems.push(['⑬新登记观察项无到期复查', r.noExpiry]);
+  if (r.overdue.length) problems.push(['⑭复查日已过期未处置', r.overdue]);
   if (r.clones.length) problems.push(['⑩跨条目逐字克隆', r.clones]);
   if (r.anchors.length) problems.push(['⑪结构锚点缺失', r.anchors]);
 
@@ -717,7 +777,7 @@ function report(r) {
 
   if (problems.length === 0) {
     console.log(
-      '✅ [ledger-hygiene] 十二类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致 / 无落态跨版未归档 / 观察区条目体量未超限 / 新登记观察项均有到期复查 / 无跨条目逐字克隆 / 结构锚点齐备）',
+      '✅ [ledger-hygiene] 十三类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致 / 无落态跨版未归档 / 观察区条目体量未超限 / 新登记观察项均有到期复查 / 无过期未处置复查日 / 无跨条目逐字克隆 / 结构锚点齐备）',
     );
     return 0;
   }
@@ -746,7 +806,8 @@ function report(r) {
       '\n   ⑦ 让「版本索引」与 `tasks/archive/README.md` 归档表的文件名集合双向相等（改一处必须同步另一处）；' +
       '\n   ⑧ 把该条目搬进对应版本归档（发版时就该做），或在标题行注明归档去向；' +
       '\n   ⑫ 把过程叙述 / 实施流水整段迁归档、原位只留判据行 + 指针（`D1-MCP` 的精简做法）——**改阈值即门失明**；' +
-      '\n   ⑬ 给新登记观察项补一行「到期复查 YYYY-MM-DD」（存量豁免：只卡新流入，不回填 89 条存量）；' +
+      '\n   ⑬ 给新登记观察项补一行「到期复查 YYYY-MM-DD」（建门前的存量豁免，不回填；建门后新登记一律要写）；' +
+      '\n   ⑭ 复查日过期即处置：转封存 / 归档，或**有信号就改期**（改期须写新证据，禁止无理由顺延）；' +
       '\n   ⑩ 同一事实只准在一处登记：真源留一处，其余改指针（形态参照 LEDGER-AXIS-1 → LEDGER-DUP-GUARD-1 的并入写法）；' +
       '\n   ⑪ 补回缺失的结构区/轴标题——真源 = 台账头部「排序原则」与「双轨规则」，先读台账头部再动结构。' +
       '\n   本闸已是硬闸（local-ci required:true）——存量回涨时先把存量清零，不许把档位调回去。',
@@ -770,6 +831,7 @@ function selfTest() {
   const baseTiming = ledgerTiming();
   const baseR = diagnose(base, { timing: baseTiming });
   const idsOf = (list) => new Set(list.map((x) => x.id));
+  const stockId = stockObservationId(base);
 
   // 注入锚点 = 观察区标题（2026-10-26 台账归元后，主台账不再常驻「已发布版本区」⇒
   // 自检必须**自建**一个已发布区，否则 ①②③ 判据无投放面 ⇒ 自检会因「锚点不存在」失明）
@@ -948,6 +1010,8 @@ function selfTest() {
       pick: (r) => idsOf(r.noExpiry),
     },
     // ⑬b 反例控制：带了「到期复查 YYYY-MM-DD」的新条目不该报（防「凡新增就报」的过度拦截）。
+    //    日期取 2099 而非近年：它同时是 ⑭ 的反例（不过期），避免将来某天这个探针自己过期
+    //    而让本条反例悄悄变成 ⑭ 的命中（判据互污染 = 自检自己漂移）。
     {
       label: '⑬b新登记观察项有复查日不误报',
       probe: 'ZZ-EXPIRE-2',
@@ -955,9 +1019,51 @@ function selfTest() {
       mutate: (t) =>
         t.replace(
           anchor,
-          `${anchor}\n\n- **ZZ-EXPIRE-2** — 自检注入｜⏳ 观察\n  到期复查 2026-12-31`,
+          `${anchor}\n\n- **ZZ-EXPIRE-2** — 自检注入｜⏳ 观察\n  到期复查 2099-12-31`,
         ),
       pick: (r) => idsOf(r.noExpiry),
+    },
+    // ⑬c 反例控制：**存量**条目（ID 在 HEAD 且首行 blame 早于建门时点）不带复查日也不该报，
+    //    防「把存量误判成新登记」——那会让门一建就被 90 条存量淹没，进而被改成 required:false。
+    //    ⚠️ ②「提交后仍红」那一相**无法在脚本内自检**（伪造不出 blame 时间），
+    //    只能用隔离仓库做双相实测：复制 scripts/ + tasks/ 到临时目录 git init →
+    //    注入缺复查日条目 → 未提交跑（应红）→ git commit 后跑（应仍红）。
+    //    改 ⑬ 判据时必须重做这个双相实验，只跑 --self-test 不足以证明门没瞎。
+    {
+      label: '⑬c存量观察项不带复查日不误报',
+      // probe 必须是**真实存量 ID**（不是 ZZ- 前缀）：invert 断言的是「这个 ID 没被误判」，
+      // 若探针 ID 与实际注入的 ID 不一致，反例会恒绿 —— 自检自己变成假闸。
+      probe: stockId,
+      invert: true,
+      mutate: (t) =>
+        t.replace(
+          anchor,
+          `${anchor}\n\n- **${stockId}** — 自检注入（存量豁免探针，复用 HEAD 已有 ID）｜⏳ 观察\n  本条刻意不写复查日期。`,
+        ),
+      pick: (r) => idsOf(r.noExpiry),
+    },
+    // ⑭：复查日已过期（2020）⇒ 必须红。带日期 ⇒ 不触发 ⑬（互不污染，便于定位）。
+    {
+      label: '⑭复查日已过期',
+      probe: 'ZZ-OVERDUE-1',
+      mutate: (t) =>
+        t.replace(
+          anchor,
+          `${anchor}\n\n- **ZZ-OVERDUE-1** — 自检注入｜⏳ 观察\n  到期复查 2020-01-01`,
+        ),
+      pick: (r) => idsOf(r.overdue),
+    },
+    // ⑭b 反例控制：未来的复查日不该报（防「凡带日期就报」的过度拦截）。
+    {
+      label: '⑭b未来复查日不误报',
+      probe: 'ZZ-OVERDUE-2',
+      invert: true,
+      mutate: (t) =>
+        t.replace(
+          anchor,
+          `${anchor}\n\n- **ZZ-OVERDUE-2** — 自检注入｜⏳ 观察\n  到期复查 2099-12-31`,
+        ),
+      pick: (r) => idsOf(r.overdue),
     },
     // ⑪a：删掉一个结构区标题（实吞事故形态 #2：## 注记类 被吞）⇒ 必须红
     {
@@ -1014,7 +1120,7 @@ function selfTest() {
 
   console.log(
     allOk
-      ? '\n✅ 自检通过：十二类判据（①–⑧ + ⑩⑪⑫⑬；⑨ 为刻意否决记录、无判据体）均可捕获新命中'
+      ? '\n✅ 自检通过：十三类判据（①–⑧ + ⑩⑪⑫⑬⑭；⑨ 为刻意否决记录、无判据体）均可捕获新命中\n   ⚠️ ⑬ 的「提交后」一相不在此覆盖内（伪造不出 blame 时间）⇒ 改 ⑬ 后必须做隔离仓库双相实测'
       : '\n❌ 自检失败：存在失明判据',
   );
   return allOk ? 0 : 1;
