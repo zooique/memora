@@ -30,11 +30,12 @@
  * - `failed`：IO 故障（读盘失败 / 磁盘满 / 权限），可重试。
  */
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 // 值导入内核（node 侧合法；webview 打包不经过本模块）：token 公式单点，回执 tokens 字段（IMG-8）
 import { imageTokens, type ImageRef } from '@zooique/memora';
 import {
+  MAX_IMAGE_BYTES,
   type ImageAccept,
   validateImageCandidate,
   verifyBase64RoundTrip,
@@ -67,6 +68,20 @@ function buildImageRef(bytes: Uint8Array, sha256: string, checked: ImageAccept):
     bytes: bytes.length,
     name: checked.name,
   };
+}
+
+/**
+ * ok 回执共享字段集（两条入口共用，禁各自为政）。
+ *
+ * `ref` / `tokens`（内核单点公式）/ `uri` 是 ok 回执里除关联键外的全部字段；抽成单点
+ * ⇒ 将来给 ok 回执加顶层字段只改一处，绝不再出现「粘贴路径加了、拾取路径漏了」的漂移。
+ */
+function buildOkPayload(
+  ref: ImageRef,
+  file: string,
+  toWebviewUri?: (file: string) => string | undefined,
+): { ref: ImageRef; tokens: number; uri?: string } {
+  return { ref, tokens: imageTokens(ref), uri: toWebviewUri?.(file) };
 }
 
 /**
@@ -195,9 +210,7 @@ export async function ingestImage(
     type: 'image_ingest_result',
     status: 'ok',
     sha256: key,
-    ref,
-    tokens: imageTokens(ref),
-    uri: toWebviewUri?.(file),
+    ...buildOkPayload(ref, file, toWebviewUri),
   });
 }
 
@@ -211,6 +224,10 @@ export async function ingestImage(
  *   缺省 = 第 4 步整环跳过）；
  * - **回执走 `image_picked`**：本路径没有「先有提案 chip」的时序，webview 收到 ok
  *   才第一次建 chip（ref 即真相）；rejected/failed 转可见拒收 chip（name = basename）。
+ * - **读前 `stat` 尺寸预筛**：本路径字节由 `readFile` 全量入内存，超大文件会打满
+ *   Extension Host 内存——故进 `readFile` 前先 `stat` 一次，超限直接 `rejected`（可见
+ *   拒收），不读字节；粘贴 / 拖入路径字节走 webview base64 上行，尺寸由
+ *   `validateImageCandidate` 第 2 步兜底，本模块不加第二道闸。
  *
  * 关联键说明：`image_picked` 不带 sha 关联键——本路径的回执没有可配对的既有 chip，
  * 一次多选逐张回执，webview 按 ok 的 `ref` 直接追加、按失败项的 `name` 上拒收 chip；
@@ -230,6 +247,25 @@ export async function ingestDiskFile(
   warmCache?: (ref: ImageRef) => void,
 ): Promise<void> {
   const name = basename(filePath);
+
+  // 读前尺寸预筛（fail-closed 第一道闸）：超大文件不进 readFile，避免把 Extension Host
+  // 内存一次性打满（右键 / 拖入任意大文件都会走这里）。stat 失败（文件刚消失 / 无权限）
+  // 则跳过预筛，交给下方 readFile 统一判 failed（不伪装成 rejected）。
+  let sizeHint: number | undefined;
+  try {
+    sizeHint = (await stat(filePath)).size;
+  } catch {
+    sizeHint = undefined;
+  }
+  if (sizeHint !== undefined && sizeHint > MAX_IMAGE_BYTES) {
+    post({
+      type: 'image_picked',
+      status: 'rejected',
+      name,
+      reason: `单张图片不能超过 ${MAX_IMAGE_BYTES / 1024 / 1024} MiB（文件过大，已跳过读取）`,
+    });
+    return;
+  }
 
   let bytes: Uint8Array;
   try {
@@ -282,8 +318,6 @@ export async function ingestDiskFile(
     type: 'image_picked',
     status: 'ok',
     name,
-    ref,
-    tokens: imageTokens(ref),
-    uri: toWebviewUri?.(file),
+    ...buildOkPayload(ref, file, toWebviewUri),
   });
 }

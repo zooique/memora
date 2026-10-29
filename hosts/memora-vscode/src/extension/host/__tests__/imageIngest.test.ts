@@ -304,6 +304,25 @@ describe('ingestDiskFile — 文件选择框拾取（Q3）', () => {
     expect(results[0]!.reason).toContain('读取失败');
   });
 
+  it('超大文件（>5 MiB）→ 读前 stat 预筛直接 rejected（可见拒收，不读字节、不写盘）', async () => {
+    const root = makeTempDir('memora-pick-');
+    // 6 MiB 零字节文件：stat 即判超限，根本不该进 readFile
+    const staged = join(root, 'huge.bin');
+    writeFileSync(staged, Buffer.alloc(6 * 1024 * 1024));
+    const results: PickedResult[] = [];
+
+    await ingestDiskFile(root, staged, (r) => results.push(r));
+
+    expect(results.length).toBe(1);
+    expect(results[0]!.status).toBe('rejected');
+    expect(results[0]!.name).toBe('huge.bin');
+    // 理由带「跳过读取」= 证明确实走了 stat 预筛（而非 validateImageCandidate 第 2 步兜底）
+    expect(results[0]!.reason).toContain('跳过读取');
+    expect(results[0]!.reason).toContain('MiB');
+    // 坏字节不写盘（目录不该被创建出附件文件）
+    expect(() => readdirSync(resolveAttachmentsDir(root))).toThrow();
+  });
+
   it('注入 URL 转换器 → ok 回执带 webview 地址；转换器收到的是落盘路径', async () => {
     const root = makeTempDir('memora-pick-');
     const bytes = pngBytes(2, 2);
