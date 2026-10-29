@@ -1106,8 +1106,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const img = this.imagePanelDeps();
       void ingestImage(this.workspacePath, msg, img.post, img.toWebviewUri, img.warmCache);
     } else if (msg.type === 'image_pick_request') {
-      // 图片拾取（Q3）：webview 按钮与命令面板两入口共用同一执行面（编排归 host/imagePick）
-      void this.pickAndAttachImages();
+      // 图片拾取（Q3）：无 paths = 开框拾取（按钮 / 命令面板）；有 paths = 拖入 URI 报送（IMG-13）
+      // 或右键真图（IMG-12）直入同一摄取面。URI→fsPath 换算收在宿主（webview 零 vscode API）
+      this.pickAndAttachImages(msg.paths?.map((u) => vscode.Uri.parse(u).fsPath));
     } else {
       // 未知消息类型（HOST-CTX-12）：**不静默丢弃**。正常不可能到达——两侧编译自同一份
       // protocol.ts；一旦出现 = webview 脚本与宿主**不是同一版本**（最常见：改 src 后重编译

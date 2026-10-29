@@ -336,8 +336,9 @@ describe('createImageCapture — 拖入', () => {
     handle = null;
   });
 
-  it('资源管理器拖入（只有 uri-list）=> 只登记 URI，不读字节', () => {
+  it('资源管理器拖入（只有 uri-list）=> 路径报宿主摄取，不建 chip 不读字节（IMG-13）', () => {
     let readCalled = false;
+    const posted: WebviewToExtensionMessage[] = [];
     handle = createImageCapture({
       doc: document,
       ...dom,
@@ -346,16 +347,50 @@ describe('createImageCapture — 拖入', () => {
         return new Uint8Array();
       },
       sha256: async () => SHA,
+      post: (m) => posted.push(m),
     });
     dom.dropZone.dispatchEvent(
       eventWithData('drop', 'dataTransfer', transferOf({ uriList: 'file:///c%3A/ws/pic.png' })),
     );
 
     expect(readCalled).toBe(false);
-    expect(handle.accepted.length).toBe(1);
-    expect(handle.accepted[0]!.source).toBe('drop-uri');
-    expect(handle.accepted[0]!.uri).toBe('file:///c%3A/ws/pic.png');
-    expect(handle.accepted[0]!.name).toBe('pic.png');
+    expect(handle.accepted.length).toBe(0);
+    expect(posted).toEqual([{ type: 'image_pick_request', paths: ['file:///c%3A/ws/pic.png'] }]);
+  });
+
+  it('多条 uri-list => 一条消息携带全部路径（宿主逐张回执，webview 不逐条建 chip）', () => {
+    const posted: WebviewToExtensionMessage[] = [];
+    handle = createImageCapture({ doc: document, ...dom, post: (m) => posted.push(m) });
+    dom.dropZone.dispatchEvent(
+      eventWithData(
+        'drop',
+        'dataTransfer',
+        transferOf({ uriList: 'file:///a.png\nfile:///b.png' }),
+      ),
+    );
+
+    expect(posted).toEqual([
+      { type: 'image_pick_request', paths: ['file:///a.png', 'file:///b.png'] },
+    ]);
+    expect(handle.accepted.length).toBe(0);
+    expect(chips().length).toBe(0);
+  });
+
+  it('非 file: 方案的 URI => 拦下事件但不报宿主，给可见提示（浏览器拖图等）', () => {
+    const posted: WebviewToExtensionMessage[] = [];
+    const notices: string[] = [];
+    handle = createImageCapture({
+      doc: document,
+      ...dom,
+      post: (m) => posted.push(m),
+      notice: (t) => notices.push(t),
+    });
+    const e = eventWithData('drop', 'dataTransfer', transferOf({ uriList: 'https://x/a.png' }));
+    dom.dropZone.dispatchEvent(e);
+
+    expect(e.defaultPrevented).toBe(true);
+    expect(posted).toEqual([]);
+    expect(notices).toEqual(['仅支持拖入本地图片文件']);
   });
 
   it('拖入带 `Files` 的真实文件 => 保留真名（与粘贴路径的派生名分流，别一起改）', async () => {
@@ -375,25 +410,6 @@ describe('createImageCapture — 拖入', () => {
     expect(handle.accepted[0]!.source).toBe('drop-file');
     // 拖入的文件是真实文件系统条目，名字是**用户认得的那个** ⇒ 不得被 sha 派生名顶掉
     expect(handle.accepted[0]!.name).toBe('截图 2026-10-28.png');
-  });
-
-  it('多条 uri-list => 每条一个 chip', () => {
-    handle = createImageCapture({
-      doc: document,
-      ...dom,
-      readBytes: async () => new Uint8Array(),
-      sha256: async () => SHA,
-    });
-    dom.dropZone.dispatchEvent(
-      eventWithData(
-        'drop',
-        'dataTransfer',
-        transferOf({ uriList: 'file:///a.png\nfile:///b.png' }),
-      ),
-    );
-
-    expect(handle.accepted.length).toBe(2);
-    expect(chips().length).toBe(2);
   });
 
   it('dragover 只在带 Files / uri-list 时抢占（拖别的不许 preventDefault）', () => {
@@ -630,19 +646,24 @@ describe('createImageCapture — 上行与落盘回执（IMG-2）', () => {
     expect(handle.resolveSendable(true)).toEqual({ refs: [] });
   });
 
-  it('发送取图：资源管理器拖入（无字节无 ref）=> 恒拦并说明，不悄悄跳过', () => {
+  it('发送取图：回执未到（无 ref）=> 拦下说明，不悄悄跳过（IMG-13 后拖入不再产生无字节 chip，状态唯一）', async () => {
     handle = createImageCapture({
       doc: document,
       ...dom,
-      readBytes: async () => new Uint8Array(),
+      readBytes: async () => pngBytes(2, 2),
       sha256: async () => SHA,
     });
-    dom.dropZone.dispatchEvent(
-      eventWithData('drop', 'dataTransfer', transferOf({ uriList: 'file:///ws/pic.png' })),
+    dom.input.dispatchEvent(
+      eventWithData(
+        'paste',
+        'clipboardData',
+        transferOf({ files: [new File([pngBytes(2, 2)], 'a.png', { type: 'image/png' })] }),
+      ),
     );
+    for (let i = 0; i < 5; i++) await Promise.resolve();
 
     const blocked = handle!.resolveSendable(false);
-    expect('blocked' in blocked && blocked.blocked).toContain('资源管理器');
+    expect('blocked' in blocked && blocked.blocked).toContain('保存');
   });
 });
 
@@ -805,16 +826,21 @@ describe('createImageCapture — 移除与销毁', () => {
     handle = null;
   });
 
-  it('点 × 移除 => chip 消失、行重新 hidden', () => {
+  it('点 × 移除 => chip 消失、行重新 hidden', async () => {
     handle = createImageCapture({
       doc: document,
       ...dom,
-      readBytes: async () => new Uint8Array(),
+      readBytes: async () => pngBytes(2, 2),
       sha256: async () => SHA,
     });
-    dom.dropZone.dispatchEvent(
-      eventWithData('drop', 'dataTransfer', transferOf({ uriList: 'file:///a.png' })),
+    dom.input.dispatchEvent(
+      eventWithData(
+        'paste',
+        'clipboardData',
+        transferOf({ files: [new File([pngBytes(2, 2)], 'a.png', { type: 'image/png' })] }),
+      ),
     );
+    for (let i = 0; i < 5; i++) await Promise.resolve();
     expect(dom.row.hidden).toBe(false);
 
     (chips()[0]!.querySelector('.skill-chip__remove') as HTMLElement).click();

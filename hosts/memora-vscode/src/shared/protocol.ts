@@ -354,19 +354,24 @@ export type WebviewToExtensionMessage =
       sha256: string;
     }
   /**
-   * 请求打开原生文件选择框（W→E · Q3 文件选择框，IMG-2 第 6 子块拍板路径④）
+   * 请求宿主摄取图片（W→E · Q3 文件选择框，IMG-2 第 6 子块拍板路径④）
    *
-   * 为什么必须由宿主开框：`showOpenDialog` 只有扩展宿主拿得到（webview 无此 API），
-   * 这是资源管理器拖入被平台边界判死（外部拖入事件止于 workbench 层，webview iframe
-   * 零事件）之后**唯一不依赖平台 Drag&Drop 的图片入口**。
+   * 为什么必须由宿主读盘：`showOpenDialog` 与工作区文件字节都只有扩展宿主拿得到
+   * （webview 无此 API、`localResourceRoots` 只放行自身脚本），这是资源管理器拖入
+   * 被平台边界判死（外部拖入事件止于 workbench 层，webview iframe 零事件）之后
+   * **不依赖平台 Drag&Drop 的图片入口**。
    *
-   * 两条触发入口汇于同一执行面：webview 上传按钮（当前 Provider 已声明视觉能力时）与
-   * `memora.attachImage` 命令。按钮在**未声明**视觉能力时不发本消息（点击跳设置开启）。
+   * 触发入口汇于同一执行面：webview 上传按钮（当前 Provider 已声明视觉能力时）、
+   * `memora.attachImage` 命令、资源管理器拖入的 URI 报送（IMG-13）与右键「添加到对话」
+   * 命中的真图（IMG-12）。按钮在**未声明**视觉能力时不发本消息（点击跳设置开启）；
+   * 拖入 / 右键路径刻意**不预判能力位**（第二份判据违反单点，交内核一级门禁 fail-closed）。
    *
-   * 载荷为空：拾取的文件由宿主读盘 → 校验 → 落盘，逐张经 `image_picked` 回执
-   * （一次可多选，回执多条；取消选择不回执——「没有发生任何事」不需要事件）。
+   * `paths` 缺省 = 开原生文件选择框拾取；携带 = 已知绝对路径直入摄取（拖入 URI 由宿主
+   * `Uri.parse` 换算 fsPath，非 `file:` 方案已在 webview 过滤）。拾取的文件由宿主
+   * 读盘 → 校验 → 落盘，逐张经 `image_picked` 回执（一次可多选，回执多条；取消选择
+   * 不回执——「没有发生任何事」不需要事件）。
    */
-  | { type: 'image_pick_request' }
+  | { type: 'image_pick_request'; paths?: string[] }
   /**
    * 输入统一入口
    *

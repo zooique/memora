@@ -15,8 +15,9 @@
  *     对话框、读盘落盘）→ 回执经 `applyPicked()` 建 chip——该路径**没有提案阶段**，
  *     `ref` 到手即真相（webview 从未见过字节）；`rejected`/`failed` 转**可见**拒收 chip，
  *     绝不静默丢（用户选了文件却什么都没发生 = 最坏静默错态）。
- *   - **仍未接线的只剩 `drop-uri`（资源管理器拖入）的读盘**：本端只有 URI、读不到字节，
- *     `resolveSendable()` 对此**恒拦并给原因**，绝不放行一条「图没跟上」的消息。
+ *   - **资源管理器拖入（IMG-13 接管）**：本端只有 `text/uri-list`、读不到工作区文件字节
+ *     ⇒ 只把 `file:` 方案 URI 经 `image_pick_request.paths` 报给宿主，读盘校验落盘全程
+ *     在宿主，回执走 `applyPicked()` 建 chip（与按钮拾取同构，无提案阶段）。
  *   - **上传按钮（常驻，D27）**：当前 Provider 声明了视觉能力 → 点击发拾取请求；未声明 →
  *     置灰态（`aria-disabled` + class，**不用** `disabled` 属性——置灰但可点，点击跳设置
  *     开启，D27 拍板「隐藏 = 不可发现的错误」）。置灰判据唯一来源 = `chat_providers`
@@ -31,7 +32,7 @@
  *   | 粘贴 / 从系统文件管理器拖入 | `File`（可读字节） | 能（六步校验全跑） |
  *   | 上传按钮（宿主开框读盘） | 只有回执（字节全程在宿主） | 宿主校验，本端收真相建 chip |
  *   | 从 VS Code 资源管理器拖入 | 只有 `text/uri-list` 字符串 | **不能**——webview 读不到工作区
- *     文件（`localResourceRoots` 只放行 `dist/webview`）⇒ 只登记 URI，读盘与校验推迟到宿主 |
+ *     文件（`localResourceRoots` 只放行 `dist/webview`）⇒ URI 报宿主摄取（IMG-13），本端不建 chip |
  */
 
 import type { ImageRef } from '@zooique/memora';
@@ -57,20 +58,22 @@ type PickedResult = Extract<ExtensionToWebviewMessage, { type: 'image_picked' }>
  */
 const PREVIEW_TIP_ID = 'imgPreviewTip';
 
-/** 采集成功的候选图。字段与内核 `ImageRef` 对齐，但 `sha256` 是**提案值**（见文件头）。 */
+/** 采集成功的候选图。字段与内核 `ImageRef` 对齐，但 `sha256` 在提案阶段是**提案值**（见文件头）。 */
 export interface CapturedImage {
-  source: 'paste' | 'drop-file' | 'drop-uri' | 'pick';
+  /**
+   * `paste` / `drop-file` = 本端字节路径（有提案阶段）；`pick` = 宿主读盘路径（按钮开框 /
+   * 右键真图 / 资源管理器拖入经 `image_picked` 回执，IMG-12/13 后同构，无提案阶段）。
+   */
+  source: 'paste' | 'drop-file' | 'pick';
   /** 用户可见文件名（D29：唯一生产点就是这里，无名时由 `resolveImageName` 兜底） */
   name: string;
-  /** 原始字节数；`drop-uri` 来源为 `undefined`（尚未读盘） */
+  /** 原始字节数（`paste`/`drop-file` 提案自算；`pick` 取回执真值） */
   byteLength?: number;
   mime?: string;
   width?: number;
   height?: number;
-  /** 提案摘要（`drop-uri` 来源没有，宿主读盘后自算） */
+  /** 摘要（`paste`/`drop-file` 是提案值；`pick` 即宿主复算真值） */
   sha256?: string;
-  /** 仅 `drop-uri`：宿主侧读盘用的文件 URI 原文 */
-  uri?: string;
   /**
    * 落盘**真值**（`image_ingest_result.status='ok'` 后才存在）。
    *
@@ -86,10 +89,7 @@ export interface CapturedImage {
    */
   tokens?: number;
   /**
-   * webview 可直接加载的预览 URL（回执 `ok` 的 `uri`，宿主 `asWebviewUri` 产物）。
-   *
-   * 与 `uri` 的分野（同族词不同源，勿混）：`uri` 是**资源管理器拖入的原始文件 URI**
-   * （本端读不到字节，仅登记待接线）；本字段是宿主翻好的 webview 地址，可直接塞 `<img src>`。
+   * webview 可直接加载的预览 URL（回执 `ok` 的 `uri`，宿主 `asWebviewUri` 产物，可直接塞 `<img src>`）。
    * 缺失 = 预览不可用（回执在途 / 宿主视图已销毁），UI 必须如实说「暂无预览」而非留白。
    */
   previewUri?: string;
@@ -396,13 +396,11 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     }
     if (item.mime) parts.push(item.mime);
     /**
-     * 三种状态必须说清，因为**行为不同**（`resolveSendable` 逐一对应）：
+     * 两种状态必须说清，因为**行为不同**（`resolveSendable` 逐一对应）：
      *   - 有 `ref`：已落盘且会随下条消息发出（`本地已存`）；
-     *   - 无 `ref` 且有 `uri`（资源管理器拖入）：本端读不到字节，发送被拦，须告知；
-     *   - 无 `ref` 无 `uri`：落盘回执未到，发送会被拦下等它。
+     *   - 无 `ref`：落盘回执未到，发送会被拦下等它。
      */
     if (item.ref) parts.push('已保存到本地，将随消息发送');
-    else if (item.uri) parts.push('来自资源管理器，暂不支持发送（请改用粘贴或拖入）');
     else parts.push('正在保存到本地，完成后可发送');
     return parts.join(' · ') || item.name;
   }
@@ -585,12 +583,6 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     render();
   }
 
-  function ingestUri(uri: string): void {
-    const name = uri.split('/').pop() || uri;
-    accepted.push({ source: 'drop-uri', name, uri });
-    render();
-  }
-
   /**
    * 落盘回执处理 —— chip 的「提案值 → 真值」换真 / 转拒收态。
    *
@@ -675,20 +667,14 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
    * 发送取图：把 chip 状态翻译成「能发什么 / 为什么发不了」。
    *
    * 判据按 chip 的字段形态（与 `describe` 三态一一对应），不依赖异步时序：
-   *   - `ref` 就绪 → 可发（真相已由宿主复算，见 `applyIngestResult`）；
-   *   - 有 `uri` 无 `ref` → 资源管理器拖入，本端读不到字节、宿主读盘通道尚未接线
-   *     （台账 IMG-2 未做项）⇒ **恒拦**，如实告知而不是悄悄跳过；
-   *   - 无 `uri` 无 `ref` → 落盘回执在途 ⇒ 拦下等它（本地写盘是毫秒级，重试即可）。
+   *   - `ref` 就绪 → 可发（真相已由宿主复算，见 `applyIngestResult` / `applyPicked`）；
+   *   - 无 `ref` → 落盘回执在途 ⇒ 拦下等它（本地写盘是毫秒级，重试即可）。
    * 空候选返回空数组（零图片照常发送）。
    */
   function resolveSendable(interjectRoute: boolean): SendableImages {
     if (accepted.length === 0) return { refs: [] };
     if (interjectRoute) {
       return { blocked: '生成中不支持发送图片，请等本轮结束后再发' };
-    }
-    const uriOnly = accepted.filter((it) => !it.ref && it.uri);
-    if (uriOnly.length > 0) {
-      return { blocked: '资源管理器拖入的图片暂不支持发送，请移除后改用粘贴或拖入文件' };
     }
     const pending = accepted.filter((it) => !it.ref);
     if (pending.length > 0) {
@@ -781,11 +767,18 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       for (const file of files) void ingestFile(file, 'drop-file');
       return;
     }
-    // 资源管理器拖入：`files` 为空，URI 在 uri-list（边界文档 B3）
+    // 资源管理器拖入：`files` 为空，URI 在 uri-list（边界文档 B3）。IMG-13：不建 chip，
+    // 把 `file:` URI 报宿主摄取（webview 读不到工作区文件字节）；非 `file:` 方案（浏览器拖图等）
+    // 本端就拒——拦下事件是防 webview 被拖拽导航，提示是不静默丢用户动作
     const uris = parseUriList(transfer.getData('text/uri-list'));
     if (uris.length === 0) return;
     e.preventDefault();
-    for (const uri of uris) ingestUri(uri);
+    const fileUris = uris.filter((u) => u.startsWith('file:'));
+    if (fileUris.length === 0) {
+      notice('仅支持拖入本地图片文件');
+      return;
+    }
+    post({ type: 'image_pick_request', paths: fileUris });
   }
 
   input?.addEventListener('paste', onPaste);
@@ -810,7 +803,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     attachBtn.classList.toggle('is-vision-off', !vision);
     attachBtn.setAttribute('aria-disabled', String(!vision));
     attachBtn.title = vision
-      ? '添加图片（也可直接粘贴）'
+      ? '添加图片（也可直接粘贴或按住 Shift 拖入文件）'
       : '当前模型未开启图片输入——点击前往设置开启';
   }
   attachBtn?.addEventListener('click', onAttachClick);
