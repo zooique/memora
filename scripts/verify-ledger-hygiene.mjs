@@ -68,6 +68,25 @@
  *      比对只在「改完未提交、人工跑」的窗口有效，那由 `LEDGER-AXIS-1` 保留的「临时自查法」
  *      承担，不进本闸。锚点断言不依赖基线，提交后依然可判。
  *
+ *   ⑫ **观察区条目体量超限**（2026-10-30 补）：观察区单个顶层条目 >40 行 ⇒ 红。
+ *      为什么补：观察区是**每个会话都要读**的区，而它是单向阀（纪律 3 观察项永不归档 +
+ *      D6 触发驱动 ⇒ 只进不出）。实测 2026-10-30：观察区 91 条里 63 条只占 2-3 行，
+ *      而单条 `D1-MCP` 曾占 99 行（14%）——**行数不是条目数撑起来的，是极少数超长条目撑的**。
+ *      ⚠️ 阈值 40 是**存量归零后的硬闸**（补门当天实测最大条目 35 行 ⇒ 存量 0 命中）；
+ *      今后若再超：首选**把过程叙述 / 实施流水整段迁归档、原位只留判据行**（`D1-MCP` 的
+ *      做法），**不是**改阈值。改阈值 = 门失明。
+ *      为什么只判观察区：注记类 / 明确不推进不属待办、不参与每会话决策循环，
+ *      且其长文是「防重复论证」，删即失去防重提价值 ⇒ 不设限。
+ *
+ *   ⑬ **新登记观察项无到期复查日期**（2026-10-30 补）：观察区里**本次新登记**的顶层条目
+ *      （ID 在 HEAD 台账中不存在）正文必须含 `到期复查 YYYY-MM-DD` ⇒ 否则红。
+ *      为什么补：纪律 3（观察项永不归档）+ D6（无触发不行动）合起来 = **观察区没有出口**。
+ *      实测 2026-10-30：91 条观察项里**只有 2 条**写了复查日期（`ARCH-4` / `HOST-S15`）。
+ *      一个无限期不触发的观察项价值≈0，却永久占用每个会话的阅读成本。
+ *      ⚠️ **只对新增条目判是刻意的**：存量 89 条无日期，全量硬闸 ⇒ 门一建就被存量淹没 ⇒
+ *      必然走「改 required:false」的老路（本闸 2026-10-27 已明确「不许把档位调回去」）。
+ *      故用「ID 不在 HEAD」界定新增：存量自动豁免，只卡新流入。
+ *
  * 档位（2026-10-27 由告警升硬闸，兑现上一版写明的升档条件）：
  *   当初挂 required:false 是为 0.2.0 区的存量欠账/假指针让路，避免门一建就被绕。
  *   该存量已于 2026-10-27 清零：①②③④⑥ 五类 0 命中，⑤ 三方一致全绿。
@@ -131,6 +150,16 @@ const OPEN_SEG_RE = /｜\s*(?:⏸|⏳|📌|🟡|👁|🔵|🔄)/u;
 
 /** 已发布区的标题判据 */
 const RELEASED_RE = /已发布|已发版|已定案归档/;
+
+/**
+ * ⑫ 观察区条目体量硬上限（行）。
+ * 40 不是拍脑袋：补门当天实测观察区最大条目 35 行 ⇒ 存量 0 命中，门可即时为硬闸；
+ * 同时它离「一条该有的信息量」足够远——正常条目 2-3 行，超 40 行必然混入了过程叙述。
+ */
+const MAX_ITEM_LINES = 40;
+
+/** ⑬ 到期复查日期：`到期复查` 后跟 `YYYY-MM-DD`（存量 `ARCH-4` / `HOST-S15` 即此形态）。 */
+const EXPIRY_RE = /到期复查\s*\d{4}-\d{2}-\d{2}/;
 
 /**
  * 观察区标题判据 —— ⑧ 的投放面。
@@ -491,8 +520,10 @@ function ledgerTiming() {
   }
 
   const byId = new Map();
+  const headIds = new Set();
   for (const sec of parseSections(headLines)) {
     for (const it of parseItems(headLines, sec)) {
+      headIds.add(it.id);
       byId.set(it.id, {
         headTime: times[it.start],
         lastTime: Math.max(...times.slice(it.start, it.end)),
@@ -500,7 +531,8 @@ function ledgerTiming() {
       });
     }
   }
-  return { kernelTagTime, hostTagTime, byId };
+  // headIds = HEAD 台账里的顶层条目 ID 全集，供 ⑬ 界定「本次新登记」（存量豁免）。
+  return { kernelTagTime, hostTagTime, byId, headIds };
 }
 
 /** 秒级时间戳 → `YYYY-MM-DD HH:mm`（UTC，够判先后，不用来展示时区）。 */
@@ -549,9 +581,14 @@ function diagnose(text, opts = {}) {
   const fake = [];
   const misplaced = [];
   const pending = [];
+  const oversize = []; // ⑫ 观察区条目体量超限
+  const noExpiry = []; // ⑬ 新登记观察项无到期复查日期
   const closedCands = []; // ⑧ 的候选：观察区内已收口、且标题行无归档指针
   let itemTotal = 0;
   const releasedSections = [];
+  // ⑬ 需要「HEAD 里有没有这个 ID」来界定新增 ⇒ timing 必须提到条目循环之前取。
+  const timing = opts.timing ?? ledgerTiming();
+  const headIds = timing.headIds ?? new Set();
 
   for (const sec of sections) {
     const items = parseItems(lines, sec);
@@ -600,6 +637,25 @@ function diagnose(text, opts = {}) {
       if (OBSERVATION_RE.test(sec.title) && !ptr && isClosedHead(it.head)) {
         closedCands.push({ ...it, sec: sec.title, axis: axisAt(lines, sec, it.start) });
       }
+      // ⑫ 观察区条目体量：超过上限必是混入了过程叙述（判据与阈值理由见文件头 ⑫）。
+      if (OBSERVATION_RE.test(sec.title) && it.lines > MAX_ITEM_LINES) {
+        oversize.push({
+          ...it,
+          sec: sec.title,
+          why: `观察区条目 ${it.lines} 行 > 上限 ${MAX_ITEM_LINES} 行`,
+        });
+      }
+      // ⑬ 新登记观察项（ID 在 HEAD 台账中不存在）必须自带到期复查日期。
+      if (OBSERVATION_RE.test(sec.title) && !headIds.has(it.id)) {
+        const body = lines.slice(it.start + 1, it.end).join('\n');
+        if (!EXPIRY_RE.test(body)) {
+          noExpiry.push({
+            ...it,
+            sec: sec.title,
+            why: `新登记观察项缺「到期复查 YYYY-MM-DD」——观察区是单向阀，无复查日即无出口`,
+          });
+        }
+      }
     }
   }
 
@@ -613,8 +669,6 @@ function diagnose(text, opts = {}) {
       .filter(Boolean),
   );
   const indexIssues = checkVersionIndex(lines, tags, opts.readmeText);
-  // ⑧ 的时间来源默认取自 git（真实运行时）；自检注入的探针不在 HEAD 中，靠 opts.timing 的桩数据驱动
-  const timing = checkArchiveTiming(closedCands, opts.timing ?? ledgerTiming(), archiveCopies());
   return {
     sections,
     itemTotal,
@@ -623,7 +677,9 @@ function diagnose(text, opts = {}) {
     misplaced,
     pending,
     indexIssues,
-    timing,
+    timing: checkArchiveTiming(closedCands, timing, archiveCopies()),
+    oversize,
+    noExpiry,
     clones,
     anchors,
     releasedSections,
@@ -642,6 +698,8 @@ function report(r) {
     problems.push(['⑤⑦版本索引不一致（三方 / README 归档表）', r.indexIssues]);
   if (r.pending.length) problems.push(['⑥待执行无完成判据', r.pending]);
   if (r.timing.length) problems.push(['⑧落态跨发版线但无归档副本', r.timing]);
+  if (r.oversize.length) problems.push(['⑫观察区条目体量超限', r.oversize]);
+  if (r.noExpiry.length) problems.push(['⑬新登记观察项无到期复查', r.noExpiry]);
   if (r.clones.length) problems.push(['⑩跨条目逐字克隆', r.clones]);
   if (r.anchors.length) problems.push(['⑪结构锚点缺失', r.anchors]);
 
@@ -659,7 +717,7 @@ function report(r) {
 
   if (problems.length === 0) {
     console.log(
-      '✅ [ledger-hygiene] 十类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致 / 无落态跨版未归档 / 无跨条目逐字克隆 / 结构锚点齐备）',
+      '✅ [ledger-hygiene] 十二类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致 / 无落态跨版未归档 / 观察区条目体量未超限 / 新登记观察项均有到期复查 / 无跨条目逐字克隆 / 结构锚点齐备）',
     );
     return 0;
   }
@@ -687,6 +745,8 @@ function report(r) {
       '\n   ⑤ 校准「版本索引」表 ↔ 归档文件 H1 ↔ git tag 三方；⑥ 给 📌 待执行条目补「完成判据：」行；' +
       '\n   ⑦ 让「版本索引」与 `tasks/archive/README.md` 归档表的文件名集合双向相等（改一处必须同步另一处）；' +
       '\n   ⑧ 把该条目搬进对应版本归档（发版时就该做），或在标题行注明归档去向；' +
+      '\n   ⑫ 把过程叙述 / 实施流水整段迁归档、原位只留判据行 + 指针（`D1-MCP` 的精简做法）——**改阈值即门失明**；' +
+      '\n   ⑬ 给新登记观察项补一行「到期复查 YYYY-MM-DD」（存量豁免：只卡新流入，不回填 89 条存量）；' +
       '\n   ⑩ 同一事实只准在一处登记：真源留一处，其余改指针（形态参照 LEDGER-AXIS-1 → LEDGER-DUP-GUARD-1 的并入写法）；' +
       '\n   ⑪ 补回缺失的结构区/轴标题——真源 = 台账头部「排序原则」与「双轨规则」，先读台账头部再动结构。' +
       '\n   本闸已是硬闸（local-ci required:true）——存量回涨时先把存量清零，不许把档位调回去。',
@@ -846,17 +906,52 @@ function selfTest() {
         ),
       pick: (r) => new Set(r.indexIssues.map((x) => x.why ?? '')),
     },
-    // ⑩：把现有条目的一行正文复制进新 ID ⇒ 跨条目逐字克隆必须被抓。
-    //    克隆源从台账现状提取（该行被改写则提取失败 ⇒ 注入未生效 ⇒ 自检红——样例依赖显式化）。
+    // ⑩：同一行正文落进两个不同顶层 ID ⇒ 跨条目逐字克隆必须被抓。
+    //
+    // 🔴 **克隆源必须自给自足，不许从台账存量里抽锚行**（2026-10-30 实测血训）：
+    //    原实现是 `/^\s+(\*\*冻结规模（实测）\*\*：[^\n]+)$/m` 从台账正文抽一行当克隆源，
+    //    该行属 `D1-MCP` / ㉘ 正文，两次剪枝把它整段迁进归档后 ⇒ **注入未生效 ⇒ 自检红**，
+    //    而判据本身完好 —— 这是「自检有实现 ≠ 自检不依赖易变存量」：门没坏，样例锚点没了。
+    //    台账每剪一次枝，任何「从存量抽锚行」的自检都可能静默失明 ⇒ 一律改成注入自带的
+    //    确定性文本，探针与台账内容正交。
     {
       label: '⑩跨条目逐字克隆',
       probe: 'ZZ-CLONE-1',
-      mutate: (t) => {
-        const line = /^\s+(\*\*冻结规模（实测）\*\*：[^\n]+)$/m.exec(t)?.[1];
-        if (!line) return t; // 提取失败 = 注入未生效 = 自检红（样例依赖的锚行已不存在）
-        return t.replace(anchor, `${anchor}\n\n- **ZZ-CLONE-1** — 自检注入｜📝 注记\n  ${line}\n`);
-      },
+      mutate: (t) =>
+        t.replace(
+          anchor,
+          `${anchor}\n\n- **ZZ-CLONE-1** — 自检注入｜📝 注记\n  自检克隆锚行：同一事实两处登记必漂移（探针自带，不依赖台账存量）。\n\n- **ZZ-CLONE-2** — 自检注入｜📝 注记\n  自检克隆锚行：同一事实两处登记必漂移（探针自带，不依赖台账存量）。`,
+        ),
       pick: (r) => idsOf(r.clones),
+    },
+    // ⑫：观察区注入一条 41 行正文的条目 ⇒ 体量超限必须被抓（存量最大 35 行 ⇒ 基线不含）。
+    //    填充行逐字相同但落在**同一条目内** ⇒ ⑩ 克隆门不报（跨条目才报），互不干扰。
+    {
+      label: '⑫观察区条目体量超限',
+      probe: 'ZZ-SIZE-1',
+      mutate: (t) =>
+        t.replace(
+          anchor,
+          `${anchor}\n\n- **ZZ-SIZE-1** — 自检注入｜⏳ 观察\n${Array(41).fill('  体量探针填充行（无语义，仅占行）').join('\n')}`,
+        ),
+      pick: (r) => idsOf(r.oversize),
+    },
+    // ⑬：新登记观察项（ID 不在 HEAD）不带到期复查日期 ⇒ 必须红。
+    {
+      label: '⑬新登记观察项无到期复查',
+      probe: 'ZZ-EXPIRE-1',
+      mutate: (t) =>
+        t.replace(anchor, `${anchor}\n\n- **ZZ-EXPIRE-1** — 自检注入｜⏳ 观察\n  本条刻意不写复查日期。`),
+      pick: (r) => idsOf(r.noExpiry),
+    },
+    // ⑬b 反例控制：带了「到期复查 YYYY-MM-DD」的新条目不该报（防「凡新增就报」的过度拦截）。
+    {
+      label: '⑬b新登记观察项有复查日不误报',
+      probe: 'ZZ-EXPIRE-2',
+      invert: true,
+      mutate: (t) =>
+        t.replace(anchor, `${anchor}\n\n- **ZZ-EXPIRE-2** — 自检注入｜⏳ 观察\n  到期复查 2026-12-31`),
+      pick: (r) => idsOf(r.noExpiry),
     },
     // ⑪a：删掉一个结构区标题（实吞事故形态 #2：## 注记类 被吞）⇒ 必须红
     {
@@ -913,7 +1008,7 @@ function selfTest() {
 
   console.log(
     allOk
-      ? '\n✅ 自检通过：十类判据（①–⑧ + ⑩⑪；⑨ 为刻意否决记录、无判据体）均可捕获新命中'
+      ? '\n✅ 自检通过：十二类判据（①–⑧ + ⑩⑪⑫⑬；⑨ 为刻意否决记录、无判据体）均可捕获新命中'
       : '\n❌ 自检失败：存在失明判据',
   );
   return allOk ? 0 : 1;
