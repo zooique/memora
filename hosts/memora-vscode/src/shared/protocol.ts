@@ -872,6 +872,15 @@ export type ExtensionToWebviewMessage =
       /** 真相图片引用（仅 `ok` 携带；字段语义 = 内核 `ImageRef` 契约） */
       ref?: ImageRef;
       /**
+       * 该图的单图 token 折算（仅 `ok` 携带；IMG-8：宿主按内核 `imageTokens` 单点换算）。
+       *
+       * 为什么宿主算而不是 webview 算：token 公式在内核 `imageTokens`，webview 引内核会把
+       * Node 内核拖进浏览器包（2026-10-28 真实事故）⇒ 宿主算好随回执回传，webview 只求和。
+       * 缺省（旧版本回执未带）= 该候选 token 未知 ⇒ webview 整轮预检的 token 维**整体跳过**
+       * （宁跳过不拿部分求和假算，见 `checkImageTurnLimits.totalTokens`）。
+       */
+      tokens?: number;
+      /**
        * 该附件在 webview 里**可直接加载**的 URL（仅 `ok` 携带；悬停预览的唯一来源）
        *
        * 为什么由宿主给、webview 不自己拼：`asWebviewUri` 只有扩展宿主拿得到（webview 侧无此
@@ -906,6 +915,8 @@ export type ExtensionToWebviewMessage =
       name: string;
       /** 真相图片引用（仅 `ok` 携带；字段语义 = 内核 `ImageRef` 契约） */
       ref?: ImageRef;
+      /** 该图的单图 token 折算（仅 `ok` 携带；语义同 `image_ingest_result.tokens`，IMG-8） */
+      tokens?: number;
       /** 该附件在 webview 里可直接加载的 URL（仅 `ok` 携带；语义同 `image_ingest_result.uri`） */
       uri?: string;
       /** 拒绝 / 失败的用户可见文案（`rejected`/`failed` 必带，直接上屏不改写） */

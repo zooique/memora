@@ -339,9 +339,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *  操作上移容器级 footer（复制整链/分叉/删除）；user 主输入在容器外，与 AI 作答单元分离 */
   let roundGroupEl: HTMLElement | null = null;
 
-  // 当前 Provider 列表（由 chat_providers 消息填充）
-  // limitTokens = 宿主经内核 resolveContextWindow 解析的上下文窗口上限
-  // （用户 per-LLM 配置的 contextWindow，未配置回落内核默认窗口）
+  // 当前 Provider 列表（由 chat_providers 消息填充）；limitTokens = 宿主经内核
+  // resolveContextWindow 解析的上下文窗口上限（用户 per-LLM 配置值，未配置回落内核默认）
   interface ChatProviderItem {
     name: string;
     displayName: string;
@@ -352,6 +351,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
   let currentProviders: ChatProviderItem[] = [];
   let currentActive: string | undefined;
+  /** 激活 Provider 查找单点（find 模式第 4 处收口：模型名 / 置灰态 / IMG-8 预检共用） */
+  function findActiveProvider(): ChatProviderItem | undefined {
+    return currentProviders.find((p) => p.name === currentActive);
+  }
 
   // 计划常驻条（任务看板，单轨呈现）：渲染、缓存与开合态收口于 planBarView
   // （HOST-SPLIT-1 chatView 首刀）。三条设计约束（≥3 常驻门槛与内核判定无关 / 缓存保持
@@ -5317,16 +5320,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       currentActive = msg.activeName;
       // 更新当前模型名（用于 AI 消息头部标签展示）
       if (currentActive) {
-        const activeProvider = currentProviders.find((p) => p.name === currentActive);
-        currentModelName = activeProvider?.displayName || currentActive;
+        currentModelName = findActiveProvider()?.displayName || currentActive;
       }
       renderModelPicker();
       // ④ 预算可视化：按当前选中 LLM 的上下文上限实时渲染占用条容量（首轮对话前即有真实上限）
       occupancyView.renderLimit(currentProviders, currentActive);
       // ⑤ 上传按钮置灰态（Q3）：唯一来源 = chat_providers 的 vision 投影，本处只转发不判
-      imageCapture.setAttachEnabled(
-        currentProviders.find((p) => p.name === currentActive)?.vision === true,
-      );
+      imageCapture.setAttachEnabled(findActiveProvider()?.vision === true);
       // 无 Provider 时空态切换为「去配置模型」引导（首次使用关键路径，
       // 避免用户不知道去哪配置而卡在空态）；配置就绪后恢复角色化空态（幂等）
       if (currentProviders.length === 0) {
@@ -5715,12 +5715,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       activityDrawerView.showActivity('info', sendable.blocked);
       return;
     }
+    // IMG-8 整轮预检（清框前）：三维聚合限额（张数/总字节/token），越界 ⇒ 拒发给数字并保留输入框与 chip
+    const turnCheck = imageCapture.checkTurnLimits(findActiveProvider()?.limitTokens);
+    if (!turnCheck.ok) return activityDrawerView.showActivity('info', turnCheck.message);
     input.value = '';
-    input.style.height = 'auto';
-    input.style.overflowY = 'hidden';
+    input.style.height = 'auto'; input.style.overflowY = 'hidden';
     // 清输入框后按钮语义也要重算（hasInput 变了）
-    syncButtonSemantics();
-    syncSendEnabled();
+    syncButtonSemantics(); syncSendEnabled();
     // 构建消息：send 意图单消息，宿主按相位路由到 chat / interject / 带文本续跑；技能按名注入
     const payload: WebviewToExtensionMessage = {
       type: 'input' as const,
@@ -5745,8 +5746,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     vscode.postMessage(payload);
     // 注入 chip 发送后无条件清（HOST-CTX-4 ③）：瞬态数据无「钉住」语义，留着等于每轮悄悄塞一份
     currentInjections = [];
-    activeFileTokens = undefined;
-    pendingActiveFileTokens = undefined;
+    activeFileTokens = pendingActiveFileTokens = undefined;
     hideInjectionReceipt();
     // 引用发送后处置（判据 = chip 的 pinned）：未钉住的即消费清除；钉住的常驻，下一轮仍随消息发出
     currentRefs = currentRefs.filter((r) => r.pinned);

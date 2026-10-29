@@ -21,6 +21,8 @@ import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.j
 import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
 import { ingestImage } from '../../extension/host/imageIngest.js';
+// IMG-8 宿主兜底：三维聚合限额裁决（判据单点 shared/imageTurnLimits，token 走内核 imageTokens）
+import { imageTurnRejection } from '../../extension/host/imageTurnGuard.js';
 import { userEcho, stampRoundAttachmentUris } from '../../extension/host/attachmentUris.js';
 import { pickAndIngestImages } from '../../extension/host/imagePick.js';
 // 图片字节缓存（IMG-2 §5.4.1）：仅类型引用——实例由 extension 创建并注入，本类不构造
@@ -2970,11 +2972,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 属性访问不受方法间守卫影响，需非空局部变量）
     const agent = this._agent;
     if (!agent) return;
-    // 图片只随**新轮**发出（D13）：插话 / 提问回答 / 暂停补充三条续接通道内核都不收 attachments
-    // ⇒ 有图时整条拒发并说明。webview 同判据前置拦（保留输入框），此处兜底防竞态漏网。
-    if (attachments?.length && (this._streaming || this.isAskWaiting() || this.isPauseWaiting())) {
-      void vscode.window.showWarningMessage('Memora：图片只能随新消息发送，请等本轮结束后再发');
-      return;
+    // 图片只随**新轮**发出（D13）+ IMG-8 三维限额兜底（同判据 shared/imageTurnLimits）：
+    // 续接通道（插话/回答/暂停补充）内核不收 attachments ⇒ 整条拒发；新轮查张数/总字节/token。
+    // webview 已前置拦（保留输入框），此处防竞态漏网；拒收必须可见（webview 清框后才 post，
+    // 静默丢整条 = 背刺）。窗口从 providerStore 真源取（不信 webview 传值）。
+    if (attachments?.length) {
+      if (this._streaming || this.isAskWaiting() || this.isPauseWaiting()) {
+        void vscode.window.showWarningMessage('Memora：图片只能随新消息发送，请等本轮结束后再发');
+        return;
+      }
+      const cfg = await this._providerStore.getActive();
+      const reason = imageTurnRejection(
+        attachments,
+        cfg ? resolveContextWindow(cfg.contextWindow) : undefined,
+      );
+      if (reason) return void vscode.window.showWarningMessage(`Memora：${reason}`);
     }
     // 无缝插话（SSOT）：生成中 Enter 补充 → agent.interject() 排队，内核下一 step 边界并入为
     // user 消息续跑（不 abort 旧流、不新开 chat）；pausePending 窗口发补充 = interject + 取消暂停。
@@ -2983,9 +2995,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // false（零入队零落盘）；宿主只消费返回值做提示，不自持计数。拒收必须提示（静默丢整条 = 背刺）。
       const accepted = agent.interject(input);
       if (!accepted) {
-        void vscode.window.showWarningMessage(
-          `Memora：待并入的插话已达 ${INTERJECT_LIMIT} 条上限，本条未送出——可在待发送区删减后再试`,
-        );
+        void vscode.window.showWarningMessage(`Memora：待并入的插话已达 ${INTERJECT_LIMIT} 条上限，本条未送出——可在待发送区删减后再试`);
         return;
       }
       // 上屏时机 = 消费时刻（吸收时上屏）：排队中 ≠ 已说出，入队成功**不再**即时 post type:'user'
@@ -3061,8 +3071,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 前置 `!skillBlock`：仅在**确实发生落空**时报，避免「判定说禁用、实际却注入成功」的假报。
       if (!skillBlock && isSkillDisabled(agent, skillName)) {
         this.post({
-          type: 'notice',
-          level: 'error',
+          type: 'notice', level: 'error',
           message: `技能「${skillName}」已禁用，本次未注入（消息已照常发送）。可在设置 → 技能中启用后重试。`,
         });
       }
@@ -3077,7 +3086,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // withBody=true：只有本轮真要注入时，正文才由 resolveActiveFile 惰性读取（见其 JSDoc）
     const activeFile = this._activeFile.resolveActiveFile(true);
     const injectDoc = activeFile.inject;
-    const docSnap = activeFile.snap;
     const docBlock = injectDoc ? buildDocContextBlock(activeFile.body) : '';
     // 引用块（右键「添加到对话」）：仅挂路径与形态，不注入内容（内容由模型按需 read_file）；
     // 干净态活动文件在此并成指针行（同 path 已有引用则不重复）
@@ -3087,13 +3095,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // `openRefInEditor` / 内核 read_file cwd **同源**（恒取首根）；解析器复用 refPath（无第二真理源）。
     // 目录引用与「当前打开文件」指针行不核实（见 refProbe 边界说明）。
     const missingFileRefPaths = await collectMissingFileRefPaths(
-      refs ?? [],
-      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      refs ?? [], vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
       async (absPath) => vscode.workspace.fs.stat(vscode.Uri.file(absPath)),
     );
     const refsBlock = buildRefContextBlock(
       refs ?? [],
-      injectDoc ? undefined : docSnap?.relativePath,
+      injectDoc ? undefined : activeFile.snap?.relativePath,
       missingFileRefPaths,
     );
     // 注入型上下文（HOST-CTX-4 ④）：**发送时刻**采集。挂载只记通道标记（webview 组合态），
@@ -3101,14 +3108,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 采集器返回「事实行」而非空串（用户挂了标签就有权知道「确实没有」——静默空块 =
     // 静默失败族）。
     const problemsMounted = injections?.includes('problems') ?? false;
-    const problemsBlock = problemsMounted
-      ? buildProblemsContextBlock(await collectProblemsBody())
-      : '';
+    const problemsBlock = problemsMounted ? buildProblemsContextBlock(await collectProblemsBody()) : '';
     const gitMounted = injections?.includes('git-changes') ?? false;
     const gitBlock = gitMounted
-      ? buildGitChangesContextBlock(
-          await collectGitChangesBody(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath),
-        )
+      ? buildGitChangesContextBlock(await collectGitChangesBody(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath))
       : '';
     // 块序：技能 / 文档 / 诊断 / git 改动（注入内容在前）→ 引用（指针在后）。剥离侧以
     // 「最后一个成对块闭标签」为锚点，顺序不影响正确性，但注入块与指针块分组便于人读。
@@ -3127,18 +3130,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         : { source: 'active-file', injected: false },
     ];
     if (problemsMounted) {
-      segments.push({
-        source: 'problems',
-        injected: true,
-        tokens: estimateTokensText(problemsBlock),
-      });
+      segments.push({ source: 'problems', injected: true, tokens: estimateTokensText(problemsBlock) });
     }
     if (gitMounted) {
-      segments.push({
-        source: 'git-changes',
-        injected: true,
-        tokens: estimateTokensText(gitBlock),
-      });
+      segments.push({ source: 'git-changes', injected: true, tokens: estimateTokensText(gitBlock) });
     }
     const total = segments.reduce((sum, s) => sum + (s.tokens ?? 0), 0);
     // 先发汇总、再回推活动文件投影：chip 徽记读的是汇总里 active-file 分项，两条跨帧到达时

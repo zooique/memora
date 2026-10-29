@@ -32,7 +32,8 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename } from 'node:path';
-import type { ImageRef } from '@zooique/memora';
+// 值导入内核（node 侧合法；webview 打包不经过本模块）：token 公式单点，回执 tokens 字段（IMG-8）
+import { imageTokens, type ImageRef } from '@zooique/memora';
 import {
   type ImageAccept,
   validateImageCandidate,
@@ -189,7 +190,15 @@ export async function ingestImage(
   warmCache?.(ref);
 
   // `uri` 只承载「现有视图能加载的地址」：视图已销毁时上游不给转换器，此处就不带字段
-  post({ type: 'image_ingest_result', status: 'ok', sha256: key, ref, uri: toWebviewUri?.(file) });
+  // tokens（IMG-8）：宿主按内核单点换算随回执回传，webview 只求和不重写公式
+  post({
+    type: 'image_ingest_result',
+    status: 'ok',
+    sha256: key,
+    ref,
+    tokens: imageTokens(ref),
+    uri: toWebviewUri?.(file),
+  });
 }
 
 /**
@@ -274,6 +283,7 @@ export async function ingestDiskFile(
     status: 'ok',
     name,
     ref,
+    tokens: imageTokens(ref),
     uri: toWebviewUri?.(file),
   });
 }

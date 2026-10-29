@@ -36,6 +36,7 @@
 
 import type { ImageRef } from '@zooique/memora';
 import { type ImageCheckResult, validateImageCandidate } from '../../shared/imageValidation.js';
+import { checkImageTurnLimits } from '../../shared/imageTurnLimits.js';
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
@@ -77,6 +78,13 @@ export interface CapturedImage {
    * （见 `applyIngestResult`）。发送链路只应读 `ref`，读提案值 = 拿未验证数据当真相。
    */
   ref?: ImageRef;
+  /**
+   * 单图 token 折算（宿主按内核 `imageTokens` 算好、随 ok 回执回传；IMG-8）。
+   *
+   * 缺省（旧版本回执未带字段）= 未知 ⇒ 整轮预检的 token 维**整体跳过**（宁跳过不拿
+   * 部分求和假算——低估 = 静默放行超限，恰是 IMG-8 病根本身）。webview 禁重写公式。
+   */
+  tokens?: number;
   /**
    * webview 可直接加载的预览 URL（回执 `ok` 的 `uri`，宿主 `asWebviewUri` 产物）。
    *
@@ -151,6 +159,19 @@ export interface ImageCaptureHandle {
    * 无候选图时**不提示**（空输入按 Enter 是用户没意图，不该冒提示打扰）。
    */
   explainEmptySend(): void;
+  /**
+   * IMG-8 整轮预检（张数 / 总字节 / token 三维聚合，发送前整轮判）。
+   *
+   * 归本层与 `explainEmptySend` 同理：候选数组的字节数与 token 只有这里知道，视图层自判
+   * = 第二份判据。调用时序契约 = `resolveSendable` 通过之后（全部 `ref` 就绪才谈聚合）；
+   * 越界 ⇒ 调用方拒发 + 活动条提示 + 输入框与 chip 全保留（清框前拦截）。
+   *
+   * @param limitTokens 当前激活 Provider 的窗口上限（`chat_providers.limitTokens` 投影；
+   *   未配置 / 未到货传 `undefined` = token 维不做限制）
+   */
+  checkTurnLimits(
+    limitTokens: number | undefined,
+  ): { ok: true } | { ok: false; message: string };
   /**
    * 落盘回执入口（chatView 把 `image_ingest_result` 原样转进来）。
    *
@@ -595,6 +616,8 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       target.height = msg.ref.height;
       target.byteLength = msg.ref.bytes;
       target.sha256 = msg.ref.sha256;
+      // tokens 只在回执真带了才记：缺省保持 undefined（= 未知），不做「0 假算」
+      if (msg.tokens !== undefined) target.tokens = msg.tokens;
       render();
       return;
     }
@@ -635,6 +658,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
         height: ref.height,
         sha256: ref.sha256,
         ref,
+        tokens: msg.tokens,
         previewUri: msg.uri,
       });
       render();
@@ -673,6 +697,36 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       return { blocked: `有 ${pending.length} 张图片仍在保存到本地，请稍候再发送` };
     }
     return { refs: accepted.map((it) => it.ref!) };
+  }
+
+  /**
+   * IMG-8 整轮预检（张数 / 总字节 / token 三维聚合限额，发送前整轮判）。
+   *
+   * **调用时序契约**：必须在 `resolveSendable` 通过之后调用——彼时全部候选 `ref` 就绪，
+   * 字节读真值 `ref.bytes`、token 读回执回传值，不碰提案值（拿未验证数据当真相 = 背刺）。
+   *
+   * token 维跨版本兼容：任一候选缺 `tokens`（旧回执未带字段）⇒ 该维**整体跳过**，
+   * 宁跳过不拿部分求和假算（低估 = 静默放行超限）。窗口取 `chat_providers.limitTokens`
+   * 投影（SSOT：与占用条同一来源），`0 / undefined` = 不限，与内核 tokenBudget 口径一致。
+   *
+   * @param limitTokens 当前激活 Provider 的上下文窗口上限（未配置 / 未到货传 undefined）
+   * @returns 放行与否；超限时 message 带该维具体数字（已用 / 上限 / 超出），调用方
+   *   **拒发 + 提示 + 保留输入框与 chip**（清框前拦截，丢正文 = 背刺）。
+   */
+  function checkTurnLimits(
+    limitTokens: number | undefined,
+  ): { ok: true } | { ok: false; message: string } {
+    // token 维：任一候选未知即整维跳过（不部分求和假算）
+    const totalTokens = accepted.some((it) => it.tokens === undefined)
+      ? undefined
+      : accepted.reduce((a, it) => a + (it.tokens ?? 0), 0);
+    const verdict = checkImageTurnLimits({
+      count: accepted.length,
+      totalBytes: accepted.reduce((a, it) => a + (it.ref?.bytes ?? it.byteLength ?? 0), 0),
+      totalTokens,
+      limitTokens,
+    });
+    return verdict.ok ? { ok: true } : { ok: false, message: verdict.message };
   }
 
   /** 见 handle 上的同名声明：无候选图时保持静默，有候选才解释「为什么这条发不出去」 */
@@ -777,6 +831,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     setAttachEnabled,
     resolveSendable,
     explainEmptySend,
+    checkTurnLimits,
     clear() {
       accepted.length = 0;
       rejected.length = 0;

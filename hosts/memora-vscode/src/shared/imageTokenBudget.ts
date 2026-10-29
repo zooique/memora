@@ -20,9 +20,8 @@
  */
 import { imageTokens } from '@zooique/memora';
 import type { ImageSize } from './imageValidation.js';
-
-/** 单轮图片 token 上限 = 模型上下文窗口的比例（方案 §6.7 第四维 / G3） */
-export const IMAGE_TOKEN_WINDOW_RATIO = 0.25;
+// 比例常量唯一真源 = imageTurnLimits（IMG-8 落地后与 webview 预检/宿主兜底共用一份，禁写第二份 0.25）
+import { IMAGE_TOKEN_WINDOW_RATIO } from './imageTurnLimits.js';
 
 /** `checkImageTokenBudget` 入参 */
 export interface ImageTokenBudgetInput {

@@ -106,7 +106,12 @@ function setupInput() {
   const provider = new MemoraChatViewProvider(
     { fsPath: '/mock/uri' } as never,
     store,
-    {} as never,
+    // IMG-8 兜底会经 providerStore 取窗口真源：给最小 stub（未配置 ⇒ getActive 返回 undefined）
+    {
+      getActive: vi.fn(async () => undefined),
+      getActiveName: () => undefined,
+      listMasked: vi.fn(async () => []),
+    } as never,
     '/mock/workspace',
   );
   const posted: unknown[] = [];
@@ -139,6 +144,8 @@ interface InputCast {
   };
   _currentSessionId: string;
   _agent: Agent;
+  /** IMG-8 兜底取窗口用；个别用例覆写 getActive 返回值（默认 undefined = 未配置） */
+  _providerStore: { getActive(): Promise<{ contextWindow?: number } | undefined> };
   handleInput(msg: {
     kind: 'send' | 'answer' | 'resume';
     text?: string;
@@ -568,5 +575,71 @@ describe('HOST-CTX-4 注入型上下文（@problems）', () => {
     >;
     expect('attachments' in echo).toBe(false);
     expect('attachmentUris' in echo).toBe(false);
+  });
+});
+
+describe('IMG-8 · 宿主兜底：三维聚合限额（与 webview 预检同判据，拒收走可见通知）', () => {
+  function makeImage(i: number, over: Partial<ImageRef> = {}): ImageRef {
+    return {
+      sha256: `img-${i}`,
+      mime: 'image/png',
+      width: 8,
+      height: 8,
+      bytes: 64,
+      name: `img-${i}.png`,
+      ...over,
+    };
+  }
+
+  it('张数超限（6 张）⇒ showWarningMessage 拒收 + 不进内核 chat（窗口真源 = providerStore）', async () => {
+    const h = setupInput();
+    const { chat } = mount(h);
+    (h.cast as unknown as { _providerStore: { getActive: () => Promise<unknown> } })
+      ._providerStore.getActive = async () => ({ contextWindow: 8000 });
+    const { window } = await import('vscode');
+
+    await h.cast.handleInput({
+      kind: 'send',
+      text: '看图',
+      attachments: Array.from({ length: 6 }, (_, i) => makeImage(i)),
+    });
+
+    expect(chat).not.toHaveBeenCalled();
+    expect(window.showWarningMessage).toHaveBeenCalledWith(
+      expect.stringContaining('上限'),
+    );
+    // 拒收也**不回声**：图没发出去，屏上不能出现「已发送」假象
+    expect(h.posted.find((m) => (m as { type?: string }).type === 'user')).toBeUndefined();
+  });
+
+  it('token 维超限（单张图 vs 极小窗口）⇒ 同判据拦下（宿主按内核 imageTokens 累计）', async () => {
+    const h = setupInput();
+    const { chat } = mount(h);
+    (h.cast as unknown as { _providerStore: { getActive: () => Promise<unknown> } })
+      ._providerStore.getActive = async () => ({ contextWindow: 2000 });
+    const { window } = await import('vscode');
+
+    await h.cast.handleInput({
+      kind: 'send',
+      text: '看大图',
+      // 单张封顶 1568 token（内核 IMAGE_TOKEN_UPPER_BOUND）⇒ 单张触发须窗口 × 25% < 1568
+      attachments: [makeImage(0, { width: 10000, height: 10000 })],
+    });
+
+    expect(chat).not.toHaveBeenCalled();
+    expect(window.showWarningMessage).toHaveBeenCalledWith(
+      expect.stringContaining('token'),
+    );
+  });
+
+  it('反例：窗口未配置（getActive 返回 undefined）⇒ token 维跳过，小图照常发送', async () => {
+    const h = setupInput();
+    const { chat } = mount(h);
+    (h.cast as unknown as { _providerStore: { getActive: () => Promise<unknown> } })
+      ._providerStore.getActive = async () => undefined;
+
+    await h.cast.handleInput({ kind: 'send', text: '看图', attachments: [makeImage(0)] });
+
+    expect(chat).toHaveBeenCalledTimes(1);
   });
 });

@@ -1062,3 +1062,108 @@ describe('explainEmptySend（IMG-10：纯图不激活发送，但必须说明原
     expect(notices[0]).toContain('已保留');
   });
 });
+
+describe('checkTurnLimits（IMG-8 整轮预检：张数 / 总字节 / token 发送前聚合判）', () => {
+  let own: ImageCaptureHandle | null = null;
+
+  afterEach(() => {
+    own?.dispose();
+    own = null;
+  });
+
+  /** 建无 DOM 副作用的采集句柄（判据用例只走 applyPicked + checkTurnLimits，不碰粘贴） */
+  function mount(): ImageCaptureHandle {
+    const h = createImageCapture({ doc: document, ...mountDom() });
+    own = h;
+    return h;
+  }
+
+  /** 逐张投喂拾取回执（ref 即真相路径，tokens 直达候选） */
+  function feed(h: ImageCaptureHandle, i: number, tokens: number, bytes = 1024): void {
+    h.applyPicked({
+      type: 'image_picked',
+      status: 'ok',
+      name: `img-${i}.png`,
+      ref: { sha256: `${SHA}-${i}`, mime: 'image/png', width: 8, height: 8, bytes, name: `img-${i}.png` },
+      tokens,
+    });
+  }
+
+  it('回执带 tokens ⇒ 逐项记进候选（webview 只存数不重写公式）；缺省不覆盖（不做 0 假算）', () => {
+    const h = mount();
+    // 拾取路径：回执带 tokens 直达候选
+    feed(h, 1, 111);
+    expect(h.accepted[0]!.tokens).toBe(111);
+    // 粘贴路径（applyIngestResult = 换真既有 chip，不新增）：回执带 tokens ⇒ 覆盖记录
+    h.applyIngestResult({
+      type: 'image_ingest_result',
+      status: 'ok',
+      sha256: `${SHA}-1`,
+      ref: { sha256: `${SHA}-1`, mime: 'image/png', width: 8, height: 8, bytes: 33, name: 'shot.png' },
+      tokens: 222,
+    });
+    expect(h.accepted[0]!.tokens).toBe(222);
+    // 旧宿主回执（无 tokens 字段）建的候选 ⇒ tokens 保持 undefined（= 未知），不做 0 假算
+    h.applyPicked({
+      type: 'image_picked',
+      status: 'ok',
+      name: 'old.png',
+      ref: { sha256: `${SHA}-old`, mime: 'image/png', width: 8, height: 8, bytes: 1024, name: 'old.png' },
+    });
+    expect(h.accepted[1]!.tokens).toBeUndefined();
+  });
+
+  it('三维均不越界 ⇒ 放行（5 张满额 + 20 MiB 贴线 + token 贴线）', () => {
+    const h = mount();
+    for (let i = 0; i < 5; i++) feed(h, i, 100);
+    const r = h.checkTurnLimits(8000);
+    expect(r.ok).toBe(true);
+  });
+
+  it('第 6 张 ⇒ 拒发，message 带实际张数与上限（张数维优先）', () => {
+    const h = mount();
+    for (let i = 0; i < 6; i++) feed(h, i, 1);
+    const r = h.checkTurnLimits(8000);
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.message).toContain('6');
+  });
+
+  it('总字节超 20 MiB ⇒ 拒发，message 带 MiB 数字', () => {
+    const h = mount();
+    feed(h, 1, 1, 21 * 1024 * 1024);
+    const r = h.checkTurnLimits(8000);
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.message).toContain('MiB');
+  });
+
+  it('token 合计超窗口 25% ⇒ 拒发（webview 只求和，窗口取 limitTokens 入参）', () => {
+    const h = mount();
+    feed(h, 1, 1500);
+    feed(h, 2, 1500); // 合计 3000 > 8000 × 0.25 = 2000
+    const r = h.checkTurnLimits(8000);
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.message).toContain('token');
+  });
+
+  it('任一候选缺 tokens（旧版本回执）⇒ token 维整体跳过，不拿部分求和假算', () => {
+    const h = mount();
+    feed(h, 1, 100);
+    // 第 2 张走无 tokens 的回执（模拟旧宿主）
+    h.applyPicked({
+      type: 'image_picked',
+      status: 'ok',
+      name: 'old.png',
+      ref: { sha256: `${SHA}-old`, mime: 'image/png', width: 8, height: 8, bytes: 1024, name: 'old.png' },
+    });
+    // 极小窗口本必拦，但 token 未知 ⇒ 跳过该维（宁跳过不假算）
+    const r = h.checkTurnLimits(100);
+    expect(r.ok).toBe(true);
+  });
+
+  it('limitTokens undefined（chat_providers 未到 / 未配置）⇒ token 维不做限制', () => {
+    const h = mount();
+    feed(h, 1, 999999);
+    const r = h.checkTurnLimits(undefined);
+    expect(r.ok).toBe(true);
+  });
+});

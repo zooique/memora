@@ -15,6 +15,8 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { ImageRef } from '@zooique/memora';
+// tokens 断言对拍内核单点公式（IMG-8：宿主回执的 tokens 就该等于它）
+import { imageTokens } from '@zooique/memora';
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
@@ -77,6 +79,8 @@ describe('ingestImage — 成功路径', () => {
       bytes: bytes.length,
       name: 'shot.png',
     });
+    // tokens（IMG-8）：宿主按内核 imageTokens 单点换算随回执回传（对拍同源公式，webview 只求和）
+    expect(r.tokens).toBe(imageTokens(r.ref!));
 
     const file = join(resolveAttachmentsDir(dir), `${msg.sha256}.png`);
     // 落盘内容必须与上行字节逐字节一致（换真不能换错文件）
@@ -256,6 +260,8 @@ describe('ingestDiskFile — 文件选择框拾取（Q3）', () => {
       bytes: bytes.length,
       name: 'photo.png',
     });
+    // tokens（IMG-8）：语义同 image_ingest_result.tokens（对拍内核单点公式）
+    expect(r.tokens).toBe(imageTokens(r.ref!));
     const written = join(resolveAttachmentsDir(root), `${r.ref!.sha256}.png`);
     expect(readFileSync(written).equals(Buffer.from(bytes))).toBe(true);
   });

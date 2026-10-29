@@ -12537,3 +12537,89 @@ describe('IMG-10 · 纯图片消息的发送拦截与解释（2026-10-29 拍板�
     expect(sent[0].attachments).toHaveLength(1);
   });
 });
+
+describe('IMG-8 · 发送前整轮预检（张数 / 总字节 / token 三维聚合限额）', () => {
+  const REF = {
+    sha256: 'eeeeeeeeeeee',
+    mime: 'image/png' as const,
+    width: 120,
+    height: 80,
+    bytes: 879,
+    name: '粘贴图片-eeeeee',
+  };
+
+  /** 窗口经 chat_providers 投影下发（SSOT：与占用条同源，webview 不自解析） */
+  function setWindow(limitTokens: number): void {
+    dispatch({
+      type: 'chat_providers',
+      providers: [{ name: 'm', displayName: 'M', limitTokens }],
+      activeName: 'm',
+    });
+  }
+
+  function pickWithTokens(tokens: number | undefined, i = 0): void {
+    dispatch({
+      type: 'image_picked',
+      status: 'ok',
+      name: `img-${i}.png`,
+      ref: { ...REF, sha256: `${REF.sha256}-${i}`, name: `img-${i}.png` },
+      ...(tokens !== undefined ? { tokens } : {}),
+    });
+  }
+
+  function typeAndEnter(): HTMLTextAreaElement {
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '看这些图';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return input;
+  }
+
+  function sentInputs(postMessage: { mock: { calls: unknown[][] } }): unknown[] {
+    return postMessage.mock.calls.map((c) => c[0]).filter((m) => (m as { type?: string })?.type === 'input');
+  }
+
+  function activityText(): string {
+    return document.getElementById('activityBar')?.textContent ?? '';
+  }
+
+  it('第 6 张 ⇒ 不发消息，活动条给出张数与上限；输入框与 chip 全保留', () => {
+    const { postMessage } = mountChatView();
+    setWindow(8000);
+    for (let i = 0; i < 6; i++) pickWithTokens(1, i);
+    const input = typeAndEnter();
+    expect(sentInputs(postMessage)).toHaveLength(0);
+    expect(activityText()).toContain('6');
+    expect(activityText()).toContain('5');
+    // 拒发不背刺：正文与 chip 原样保留（清框发生在预检之后）
+    expect(input.value).toBe('看这些图');
+    expect(document.querySelectorAll('.image-chip:not(.image-chip--rejected)')).toHaveLength(6);
+  });
+
+  it('token 合计超窗口 25% ⇒ 拦下并给数字（窗口来自 chat_providers 投影）', () => {
+    const { postMessage } = mountChatView();
+    setWindow(8000); // 上限 2000
+    pickWithTokens(1500);
+    pickWithTokens(1500, 1); // 合计 3000
+    typeAndEnter();
+    expect(sentInputs(postMessage)).toHaveLength(0);
+    expect(activityText()).toContain('token');
+  });
+
+  it('三维均不越界 ⇒ 正常发送（限额不许误伤正常用量）', () => {
+    const { postMessage } = mountChatView();
+    setWindow(8000);
+    for (let i = 0; i < 5; i++) pickWithTokens(100, i);
+    typeAndEnter();
+    const sent = sentInputs(postMessage);
+    expect(sent).toHaveLength(1);
+    expect((sent[0] as { attachments?: unknown[] }).attachments).toHaveLength(5);
+  });
+
+  it('跨版本兼容：候选缺 tokens（旧宿主回执）⇒ token 维整体跳过，小窗口也不误拦', () => {
+    const { postMessage } = mountChatView();
+    setWindow(100); // 若按「缺省当 0 求和」或假算，此窗口必拦
+    pickWithTokens(undefined);
+    typeAndEnter();
+    expect(sentInputs(postMessage)).toHaveLength(1);
+  });
+});
