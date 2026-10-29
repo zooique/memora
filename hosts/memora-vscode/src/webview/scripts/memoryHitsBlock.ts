@@ -134,5 +134,9 @@ export function createMemoryHitsBlock(deps: MemoryHitsBlockDeps): MemoryHitsBloc
     return badge;
   }
 
-  return { buildItems: buildMemoryHitItems, buildBlock: buildMemoryHitsBlock, createBadge: createMemoryBadge };
+  return {
+    buildItems: buildMemoryHitItems,
+    buildBlock: buildMemoryHitsBlock,
+    createBadge: createMemoryBadge,
+  };
 }
