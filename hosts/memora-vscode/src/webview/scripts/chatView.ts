@@ -100,6 +100,8 @@ import {
   updateToolRowState,
   visibleInputTs,
 } from './processFlowCells.js';
+import { createPickerView } from './pickerView.js';
+import { createQaRowView } from './qaRowView.js';
 // 历史菜单（会话记录/留存区）：渲染与分组状态收口于 historyMenuView（HOST-SPLIT-1 chatView 第 2 刀）
 import { createHistoryMenuView } from './historyMenuView.js';
 // 上下文占用（圆环/构成条/明细）：渲染与防误清零状态收口于 contextOccupancyView（HOST-SPLIT-1 chatView 第 3 刀）
@@ -396,6 +398,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 过程流单元格与记忆命中块（CHATVIEW-SLIM-2 第 5 刀）：零状态 DOM 构造，deps 注入
   const memoryHitsBlock = createMemoryHitsBlock({ document, vscode });
   const cells = createProcessFlowCells({ document, memoryHits: memoryHitsBlock });
+  // 下拉选择器与问答回顾行（CHATVIEW-SLIM-3 首刀）：零状态 DOM 构造，deps 注入
+  const pickerView = createPickerView({ document });
+  const qaRowView = createQaRowView({ document });
 
   // StatusDock 挂载条域容器（待发送 / 文件改动 / 后台任务三条件，第 6 刀外置，见 statusBarsView.ts）
   const statusBars = createStatusBarsView({
@@ -979,7 +984,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const tsKey = qa.ts ?? '';
       if (!tsKey || renderedInputTs.has(tsKey)) continue;
       renderedInputTs.add(tsKey);
-      const item = renderQaItem(qa.text, qa.kind, qa.question, qa.options);
+      const item = qaRowView.renderQaItem(qa.text, qa.kind, qa.question, qa.options);
       item.dataset.ts = tsKey;
       const { host } = cells.planItemContainerFor(details, events, tsKey);
       insertPlanItemInOrder(host, item, tsKey);
@@ -2143,74 +2148,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 触发滚动，用 requestAnimationFrame 合并为每帧一次，避免强制 reflow。此处统一以 messages
   // 为滚动容器；scrollToBottom + scrollRafPending 只存在于 helpers，本地不持副本。
 
-  // ─── 下拉选择器渲染工厂（SSOT） ───
-  // 模型选择器等下拉共用单一渲染器（「清空菜单 → 遍历建项 → 更新触发器」）；角色选择器
-  // 独立在「角色」视图。picker 通过 { menu, trigger, items, activeName, 文案 } 配置声明
-  // 差异（对齐 §四.2 声明式工厂）。
-
-  /** 下拉项数据（name 为事件 id，displayName 为展示名，description 可选副标题） */
-  interface PickerItem {
-    name: string;
-    displayName: string;
-    description?: string;
-  }
-
-  /** 渲染下拉选择器：构建菜单项 + 更新触发器文本 + 可访问性标签（textContent 防注入） */
-  function renderPicker(
-    menu: HTMLElement | null,
-    trigger: HTMLElement | null,
-    items: PickerItem[],
-    activeName: string | undefined,
-    opts: { emptyText?: string; labelFallback: string; ariaLabel: string },
-  ): void {
-    if (!menu) return;
-    // 防注入：名称来自用户配置/角色包，禁止 innerHTML 拼接，一律 createElement + textContent
-    menu.textContent = '';
-    if (items.length > 0) {
-      items.forEach((p) => {
-        const isActive = p.name === activeName;
-        const btn = document.createElement('button');
-        btn.className = 'treedd__item' + (isActive ? ' is-active' : '');
-        btn.setAttribute('role', 'menuitem');
-        btn.setAttribute('data-treedd-id', p.name);
-        const nameEl = document.createElement('span');
-        nameEl.className = 'dd-item-name';
-        nameEl.textContent = p.displayName || p.name;
-        btn.appendChild(nameEl);
-        // 可选描述副标题（角色包定位，供下拉展示；无描述时仅显示名称）
-        if (p.description) {
-          const descEl = document.createElement('span');
-          descEl.className = 'dd-item-desc';
-          descEl.textContent = p.description;
-          btn.appendChild(descEl);
-        }
-        menu.appendChild(btn);
-      });
-    } else if (opts.emptyText) {
-      const empty = document.createElement('div');
-      empty.className = 'treedd__empty';
-      empty.textContent = opts.emptyText;
-      menu.appendChild(empty);
-    }
-    // 更新触发器显示当前项（textContent 防注入）。
-    // SSOT：用 <span class="dd-trigger-name"> 包裹名称，CSS 只对此 span 做 ellipsis 截断，
-    // 而 ::after 下拉箭头 flex-shrink:0 永远外露（dd-trigger-name 为通用语义类，模型/角色共用）
-    if (trigger) {
-      const active = items.find((p) => p.name === activeName);
-      const label = active ? active.displayName : opts.labelFallback;
-      trigger.textContent = '';
-      const span = document.createElement('span');
-      span.className = 'dd-trigger-name';
-      span.textContent = label;
-      trigger.appendChild(span);
-      // 触发器可访问性：为读屏提供名称（aria-haspopup 已在组件 HTML 中声明）
-      trigger.setAttribute('aria-label', opts.ariaLabel + '：' + label);
-    }
-  }
-
   // 渲染模型下拉框选项
   function renderModelPicker(): void {
-    renderPicker(modelPickerMenu, modelPickerTrigger, currentProviders, currentActive, {
+    pickerView.renderPicker(modelPickerMenu, modelPickerTrigger, currentProviders, currentActive, {
       emptyText: '未配置模型',
       labelFallback: '选择模型',
       ariaLabel: '选择模型',
@@ -2438,7 +2378,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 缓存（finalize 合并流重建 QA 的数据源；重放路径同源累积，最终态一致）
     runtimeInteractiveInputs.push({ text, ts, kind, roundId, question, options });
     try {
-      const item = renderQaItem(text, kind, question, options);
+      const item = qaRowView.renderQaItem(text, kind, question, options);
       const tsKey = ts ?? new Date().toISOString();
       item.dataset.ts = tsKey;
       // 目标容器：运行时 process-flow > 完成态/重放 round-block > 降级消息流（纯问答轮无过程容器）
@@ -2519,47 +2459,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param question 提问原文（qa/timeout 携带时渲染「问」回顾行）
    * @param options 候选选项（随回顾行展示）
    */
-  function renderQaItem(
-    text: string,
-    kind: 'question-answer' | 'supplement' | 'timeout',
-    question?: string,
-    options?: string[],
-  ): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'round-block__input';
-    // 提问回顾行：question-answer/timeout 携带 question 时先渲染只读「问」行（还原提问上下文）
-    if ((kind === 'question-answer' || kind === 'timeout') && question) {
-      const q = document.createElement('div');
-      q.className = 'round-block__input-q';
-      const qTag = document.createElement('span');
-      qTag.className = 'round-block__input-tag';
-      qTag.textContent = '问';
-      const qTxt = document.createElement('span');
-      qTxt.className = 'round-block__input-text';
-      qTxt.textContent = question;
-      q.append(qTag, qTxt);
-      if (options && options.length > 0) {
-        const opts = document.createElement('span');
-        opts.className = 'round-block__input-opts';
-        opts.textContent = `候选：${options.join(' ｜ ')}`;
-        q.appendChild(opts);
-      }
-      row.appendChild(q);
-    }
-    // 内容行：tag 语义映射（回答 →「你答」；补充 →「你补充」；超时未答 →「未回答」）
-    const main = document.createElement('div');
-    main.className = 'round-block__input-row';
-    const tag = document.createElement('span');
-    tag.className = 'round-block__input-tag';
-    tag.textContent = kind === 'supplement' ? '你补充' : kind === 'timeout' ? '未回答' : '你答';
-    const txt = document.createElement('span');
-    txt.className = 'round-block__input-text';
-    txt.textContent = text;
-    main.append(tag, txt);
-    row.appendChild(main);
-    return row;
-  }
-
   /**
    * 同轮判定：是否有 roundId 且与上一 assistant 段同轮（同一问答闭环归位判定）
    *

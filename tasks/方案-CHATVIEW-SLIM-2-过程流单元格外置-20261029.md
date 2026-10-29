@@ -175,6 +175,8 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
 
 ## 五、后续演进路径
 
+> ⚠️ **本节已作废（2026-10-29 批 2 开工前排雷）**：下列步骤表与批 2/批 3 划分均被实测推翻，**禁止据本节施工**。实测数据与订正路线见 **§八**。原文保留仅供追溯。
+
 ```
 批 1（本方案）  28 函数 / 638 行 Zero-State 外置     → chatView ≈5814
 批 2            状态所有权收口（8 函数 / 10 let）
@@ -271,6 +273,136 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
 ### 7.5 后续
 
 批 2 = 状态所有权收口（8 函数 / 10 个 let，按写点升序），见 §五。**本轮未动任何状态**，故批 2 可独立开工、独立回滚。
+
+---
+
+## 八、批 2 排雷与路线订正（2026-10-29 开工前）
+
+> 性质：**§五 的步骤表作废**，本节为实测替代。原文保留不删（可追溯），但不得再据 §五 施工。
+
+### 8.1 排雷方法与一处工具 bug 订正
+
+口径同 §1.3（TypeScript 编译器 API，`checker` 级符号解析）。**首轮脚本有判定 bug**：把 `currentRoundMeta?.role || x` 这类「可选链 + 逻辑或」误判为成员赋值，导致 `currentRoundMeta` / `livePlanStates` / `currentEvents` 的写点被虚增、读点被吞。修正判据 = 成员赋值必须校验 `operatorToken` 属赋值运算符族；修正后数据见 8.2。
+
+> 教训（与 §7.2 变异口径同类）：**盘账工具本身也要验**。首轮「4 写 0 读」的僵尸状态假象，来源是脚本 bug 而非代码事实——若据此下结论即造伤。
+
+### 8.2 实测：10 个目标状态的真实读写面
+
+`in` = §1.5 的 8 个状态绑定函数；`out` = 其余全部闭包函数。计数单位 = 标识符出现次数。
+
+| 状态 | 读in | 读out | 写in | 写out | 触达函数 | 判定 |
+|---|---|---|---|---|---|---|
+| `flowEl` | 6 | 6 | 2 | 7 | 8 | 双向耦合 |
+| `flowShellEl` | 0 | 3 | 2 | 7 | 4 | 双向耦合 |
+| `roundBlockEl` | 4 | 15 | 4 | 5 | 10 | 双向耦合 |
+| `roundBlockHostEl` | 1 | **0** | 2 | 3 | 5 | **单向可转让** |
+| `currentEvents` | 7 | 9 | 1 | 5 | 11 | 双向耦合 |
+| `livePlanStates` | 2 | 1 | **0** | 4 | 2 | 双向（域内只读） |
+| `streamingActive` | 1 | 5 | 0 | 9 | 6 | **非本域** |
+| `activeAssistantEl` | 3 | 21 | 3 | 15 | 19 | 双向耦合 |
+| `lastShownDate` | 1 | **0** | 1 | 1 | 2 | **单向可转让** |
+| `archivingFallbackTimer` | **0** | 4 | **0** | 3 | 3 | **非本域（域内零触达）** |
+| `skeletonPendingItems` | 2 | **0** | 1 | 3 | 4 | **单向可转让** |
+| `currentRoundMeta` | 0 | 2 | 0 | 2 | 3 | 非本域 |
+| `streamBodyRendered` | 0 | 1 | 1 | 5 | 6 | 双向耦合 |
+
+合计：域内写 **18** 次，域外写 **50** 次。**状态的支配方在域外**。
+
+### 8.3 四条推翻结论
+
+**① §五 步骤表的数字全部与实测不符**（不是小偏差，是系统性估算混入）：
+
+| 状态 | §五 记 | 实测 | 偏差 |
+|---|---|---|---|
+| `flowEl` | 6 写 | **9** 写（域外 7） | 少记 3 |
+| `flowShellEl` | 4 写 | **9** 写（域外 7） | 少记 5 |
+| `roundBlockEl` | 5 写 | **9** 写（域外 5） | 少记 4 |
+| `roundBlockHostEl` | 5 写 | **5** 写（域外 3） | 数字巧合、分布错 |
+| `livePlanStates` | 1 写（`handleMessage`） | **4** 写（域内 0） | 少记 3，且方向错 |
+| `activeAssistantEl` | 7 写 | **18** 写（域外 15） | 少记 11 |
+| `archivingFallbackTimer` | 2 写（「域内闭环」） | **3** 写，**域内 0 触达** | 判定错 |
+| `lastShownDate` | 2 写 | 2 写 | ✅ 唯一吻合 |
+
+§1.3 自订「所有数字均为实测值，不取估算」——§五 违反了自己的纪律。**这是本轮最重要的流程教训：方案的「后续章节」最容易退化成拍脑袋估算，因为写的时候注意力在已完成部分。**
+
+**② 两个状态不属于本域，§五 判错。** `archivingFallbackTimer` 在 8 个函数内**零读零写**，全部生命周期在 `clearArchivingFallback` / `scheduleArchivingFallback` / `dispose`；`streamingActive` 域内仅 1 处只读、域外 9 写。二者是「被渲染函数顺手读了一眼的邻居状态」，不是过程流私有状态。
+
+**③ 「收口」中间态不产生任何所有权变化。** 把 `let x` 改成 `state.x` 后，`state` 仍是同一个闭包里的变量，读写方一个没变——只是换了访问路径，且每处 `state.` 前缀净增字符、不减行。付出 7 笔提交 + 7 次全量门禁（每轮 2203 用例）换零结构收益。
+
+**④ 真正的所有权转让必须「状态 + 读写它的函数」同批搬走，而这条路被现有判据挡住。** 搬走 8 函数需注入：`document` · `messages` · `cells` · `planBar` + 7 个回调（`buildAssistantShell` / `groupToolBatches` / `updateEmptyState` / `renderQaItem` / `syncRunningCursor` / `ensureRoundGroup` / `openForUserVisibility`）+ 4 个跨界状态通道（`activeAssistantEl` / `streamingActive` / `streamBodyRendered` / `livePlanStates`）= **15 项 deps**。本仓既定判据（`方案-HOST-SPLIT-1-fileChangeView渲染域提取` §不提取归档）：「至少 5 个回调注入 = 大杂烩（转移复杂度而非消解）」；`方案-HOST-SPLIT-1-活动文件域提取` 记录 `handleMessage` 拆注册表撤回的先例同理（178 成员 context）。**15 > 5，判死。**
+
+### 8.4 路线订正
+
+```
+批 2  状态所有权收口（8 函数 / 10 let）        → ❌ 终止（中间态零收益 + 5/7 状态双向）
+批 3  过程流渲染域整体外置（台账原意）        → ❌ 终止（deps 15 项 > 本仓大杂烩判据 5 项）
+```
+
+台账 CHATVIEW-SLIM-1 的原始表述「渲染+状态函数区整体外置」，**在盘账两轮后正式判死**——它不是被推迟，是被证伪。渲染区是 chatView 的核心而非外围，其状态所有权天然在 `handleMessage` / `resetChatView` / `renderReplayRound` 手里。
+
+### 8.5 实测替代路径：零状态收尾批（SLIM-3 候选）
+
+以「传递闭包后不触达任何 `let`」为判据重盘，剩余 **28 个函数 / 445 行**（SLIM-2 已消耗 32 个）。按功能域分组与 deps 面宽度：
+
+| 组 | 函数 | 行 | deps 面 |
+|---|---|---|---|
+| 选择器 / 问答 | `renderPicker` 51 · `renderQaItem` 40 | 91 | 仅 `document` |
+| 工具批 / 工具行 | `groupToolBatches` 46 · `attachMemoryHitsToToolRow` 20 · `roundChainText` 13 · `findToolRow` 6 · `dropStalePendingToolRows` 3 | 88 | 常量 + `messages` + `memoryHitsBlock` |
+| 活动区 / 徽章 | `createTeamMeetingIcon` 29 · `updateCapabilityBadge` 22 · `applyButtonSemantics` 18 · `pickDockHead` 7 · `registerDockEntry` 3 | 79 | DOM 节点引用 + 常量 |
+| 其他 | `ensureRoundGroupFooter` 34 · `renderInjectionReceipt` 17 · `hideInjectionReceipt` 5 · `openForUserVisibility` 5 | 61 | `document` / `vscode` / 节点 |
+| 输入框 / 编辑器 | `clampUserBubble` 20 · `setComposerReplaced` 10 · `copyText` 10 · `ensureUserInputVisible` 7 · `autoResize` 7 | 54 | `document` / `messages` / 节点 |
+| 代码块 / 文本 | `enhanceCodeBlocks` 27 · `firstLine` 5 · `refDisplayName` 4 · `formatTokensShort` 3 | 39 | `document` |
+| 空态 | `updateEmptyStateOnboarding` 17 · `renderEmptySuggestions` 13 · `updateEmptyState` 3 | 33 | 空态节点 ×4 + `document` / `vscode` |
+
+**推荐首刀 = 选择器 / 问答组（91 行，仅 `document` 依赖）**：与 SLIM-2 完全同型（零状态 + deps 单字段注入），零新增判据，可复用已验证的搬迁与验证流程。全量做完 chatView 5434 → ≈4989，闸门可再降。
+
+### 8.6 本轮未做（登记不改）
+
+- §五 原表**不删**（留作流程教训的可追溯证据），仅标作废。
+- 三个「单向可转让」状态（`roundBlockHostEl` / `lastShownDate` / `skeletonPendingItems`）**未动**：它们单独转让必须连带搬走 `ensureRoundBlock` / `renderDateDivider` / `flushSkeletonPendingItems`，而 `ensureRoundBlock` 被 364 行的 `renderRoundBlock` 依赖、`renderInterruptedRound` 又依赖 `renderRoundBlock` ⇒ 首刀会把 660 行链条重新卷进来。此路属「正收益但成本高于收尾批」，待 SLIM-3 完成后行数余量充足再评估。
+
+---
+
+## 九、SLIM-3 首刀实施收据（2026-10-29 同日）
+
+> 设计依据 = §8.5（已先行给出判据、分组与推荐首刀）；本节只补实施数据。**时序如实记录**：条款随实施同日补写，非事后编造范围。
+
+### 9.1 实施范围（与 §8.5 预估零偏差）
+
+| 函数 | 行 | 落点 | deps |
+|---|---|---|---|
+| `renderPicker` | 51 | `scripts/pickerView.ts` · `createPickerView({ document })` | `document` |
+| `renderQaItem` | 40 | `scripts/qaRowView.ts` · `createQaRowView({ document })` | `document` |
+| 随迁类型 `PickerItem` | 5 | `pickerView.ts` 导出（chatView 零残留引用） | — |
+
+两模块均无定时器、无监听 ⇒ **无 `dispose`**，与 `processFlowCells` 同一形态宪法。
+
+### 9.2 验证结果（实测）
+
+| 门 | 结果 |
+|---|---|
+| 宿主 `tsc --noEmit` | 0 错误 |
+| 根 `tsc --noEmit` | 0 错误 |
+| 宿主 `eslint . --max-warnings 0` | 0 错 0 警（真实退出码 0，未接管道） |
+| 宿主全量 vitest | **123 文件 / 2203 passed / 4 skipped**（与 SLIM-2 基线一致） |
+| `chatView.test` | **482 passed** |
+| 行数（闸门自报口径） | chatView **5434 → 5333**；`max-lines` 同步 5434 → **5333**（只降不升） |
+| 新文件行数 | 97 / 75，均 < 1000 通用闸 ⇒ 无例外登记 |
+| 逐字比对 | `renderPicker` 51/51、`renderQaItem` 40/40 **完全一致**（AST 切片 + 去缩进归一 vs HEAD）；chatView 内零残留定义 |
+| 变异验证 | 靶点 = `renderQaItem` 标签文案 `'你答'` → `'你答MUT'`；**6 处 `AssertionError` 当场红**，签名原文 `expected '你答MUT' to be '你答'` 与 `expected '耗时 3s · 你答MUT×1' to contain '你答×1'`，全部落在 `qaRowView` 新消费链；还原复绿（482 passed） |
+
+### 9.3 实际修改文件清单
+
+| 文件 | 类型 |
+|---|---|
+| `src/webview/scripts/chatView.ts` | 修改（−107 行 / +5 行：2 导入 + 1 注释 + 2 装配；3 处调用点改 `pickerView.` / `qaRowView.`） |
+| `src/webview/scripts/pickerView.ts` | 新增（97 行） |
+| `src/webview/scripts/qaRowView.ts` | 新增（75 行） |
+| `eslint.config.mjs` | 修改（chatView max-lines 5434 → 5333，注释补两域） |
+
+### 9.4 后续
+
+零状态收尾批余下 6 组 / **354 行**（工具批 88 · 活动区 79 · 其他 61 · 输入框 54 · 代码块 39 · 空态 33），全量做完 chatView ≈ **4979**。按 §5.1 单轮一域，逐组独立开工。
 
 ---
 
