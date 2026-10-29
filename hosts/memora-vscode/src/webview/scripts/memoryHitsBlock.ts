@@ -27,6 +27,15 @@ export interface MemoryHitsBlock {
   buildItems(hits: Iterable<[string, MemoryHitEntry]>): HTMLElement[];
   /** 命中明细块（标题行 + 明细列表；挂在工具行体内，刻意不再套 details） */
   buildBlock(hits: Map<string, MemoryHitEntry>): HTMLElement;
+  /**
+   * 「记忆 N」收起态徽章（规格单一副本，MEMO-BADGE-1 收口）：重建路径
+   * （`processFlowCells.renderToolRow`）与实时挂载路径（`toolRowView.attachMemoryHits`）
+   * 都从本函数取徽章，禁再各自手搓类名/文案/title——两链可独立变化是第二刀变异实证过的
+   * 漂移面，这里收口为一份。
+   *
+   * @param hitCount 命中条数（徽章只关心数量，不持有 hits 明细）
+   */
+  createBadge(hitCount: number): HTMLSpanElement;
 }
 
 /**
@@ -110,5 +119,20 @@ export function createMemoryHitsBlock(deps: MemoryHitsBlockDeps): MemoryHitsBloc
     return box;
   }
 
-  return { buildItems: buildMemoryHitItems, buildBlock: buildMemoryHitsBlock };
+  /**
+   * 「记忆 N」徽章（规格唯一副本，MEMO-BADGE-1 收口）。文案与 title 是用户可读面：
+   * 收起态下它是「这次调用看过记忆」的唯一可见证据（见 buildMemoryHitsBlock 注释的
+   * 「落位迁移不得吃掉原本可见的信息」），故全文锁在这里，改动即两路径同时生效。
+   *
+   * @param hitCount 命中条数
+   */
+  function createMemoryBadge(hitCount: number): HTMLSpanElement {
+    const badge = document.createElement('span');
+    badge.className = 'round-block__memory-badge';
+    badge.textContent = `记忆 ${hitCount}`;
+    badge.title = `本次调用命中 ${hitCount} 条记忆（展开查看明细）`;
+    return badge;
+  }
+
+  return { buildItems: buildMemoryHitItems, buildBlock: buildMemoryHitsBlock, createBadge: createMemoryBadge };
 }

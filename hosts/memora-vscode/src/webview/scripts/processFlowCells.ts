@@ -680,11 +680,8 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     // （实时模型 > 证据副本），这里只负责「DOM 全量重建后明细不丢」——收场重建与重放历史轮
     // 都走本函数，重放靠 evidence 的 memory_hits 变体供数（无则自然为空，不伪造）。
     if (memHits && memHits.size > 0) {
-      const badge = document.createElement('span');
-      badge.className = 'round-block__memory-badge';
-      badge.textContent = `记忆 ${memHits.size}`;
-      badge.title = `本次调用命中 ${memHits.size} 条记忆（展开查看明细）`;
-      summary.appendChild(badge);
+      // 徽章规格唯一副本在 memoryHitsBlock.createBadge（MEMO-BADGE-1 收口），此处只取用
+      summary.appendChild(memoryHits.createBadge(memHits.size));
       row.appendChild(memoryHits.buildBlock(memHits));
     }
     // 返回行元素：由调用方按 seq 插入 details 顶层（扁平化，不再自挂容器）

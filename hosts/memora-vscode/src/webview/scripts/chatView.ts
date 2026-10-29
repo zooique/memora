@@ -488,7 +488,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   );
   // 工具行动作面（定位 / 注销预告行 / 记忆命中挂载）：只读消费 currentMemoryHitsByCall
   const toolRow = createToolRowView({
-    document,
     messages,
     memoryHits: memoryHitsBlock,
     memoryHitsByCall: currentMemoryHitsByCall,

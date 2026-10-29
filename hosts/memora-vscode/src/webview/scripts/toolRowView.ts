@@ -5,10 +5,11 @@
  * 注销未升级的预告行、把记忆命中明细挂进对应行。
  *
  * **边界**：无定时器、无监听、无 DOM 自建；只消费外部注入的 DOM 入口与记忆命中模型：
- * - `messages` / `document`：宿主节点（禁在模块内读全局 document）；
+ * - `messages`：宿主节点（禁在模块内读全局 document）；
  * - `memoryHitsByCall`：**只读消费**——所有权在 chatView（新轮/复位/重建处写入与清空），
  *   本模块只 `get`/`迭代`，不写不删（域外写、域内读 = 单向，故注入引用而非回调）；
- * - `memoryHits`：记忆命中明细块实例（与 `processFlowCells` 同一实例，单一定义两处消费）。
+ * - `memoryHits`：记忆命中明细块实例（与 `processFlowCells` 同一实例，单一定义两处消费；
+ *   徽章规格也在其上，MEMO-BADGE-1 收口后本模块不再自建 document）。
  *
  * 纯搬迁，零行为变化：函数体与注释自 `chatView.ts` 原样迁出（2026-10-29，
  * 方案见 `tasks/方案-CHATVIEW-SLIM-2-过程流单元格外置-20261029.md` §10）。
@@ -20,8 +21,6 @@ import type { MemoryHitsBlock } from './memoryHitsBlock.js';
 
 /** 工具行动作面依赖 */
 export interface ToolRowViewDeps {
-  /** webview 文档对象（命中徽章构造；禁在模块内读全局 document） */
-  document: Document;
   /** 消息区容器（工具行所在 DOM 根，供定位与扫描） */
   messages: HTMLElement;
   /** 记忆命中明细块实例（单一定义、两处消费） */
@@ -46,7 +45,7 @@ export interface ToolRowView {
  * @param deps 依赖（DOM 入口 + 只读记忆命中模型）
  */
 export function createToolRowView(deps: ToolRowViewDeps): ToolRowView {
-  const { document, messages } = deps;
+  const { messages } = deps;
   // 以下两个别名保持状态原名：函数体逐字零改写（所有权仍在 chatView，本模块只读消费）
   const currentMemoryHitsByCall = deps.memoryHitsByCall;
   const memoryHitsBlock = deps.memoryHits;
@@ -86,11 +85,8 @@ export function createToolRowView(deps: ToolRowViewDeps): ToolRowView {
     row.querySelector('.round-block__tool-summary')?.remove();
     const summary = row.querySelector('.round-block__tool-name');
     if (summary) {
-      const badge = document.createElement('span');
-      badge.className = 'round-block__memory-badge';
-      badge.textContent = `记忆 ${hits.size}`;
-      badge.title = `本次调用命中 ${hits.size} 条记忆（展开查看明细）`;
-      summary.appendChild(badge);
+      // 徽章规格唯一副本在 memoryHitsBlock.createBadge（MEMO-BADGE-1 收口），此处只取用
+      summary.appendChild(memoryHitsBlock.createBadge(hits.size));
     }
     row.appendChild(memoryHitsBlock.buildBlock(hits));
     return true;
