@@ -2,7 +2,8 @@
 // 内核/宿主发版归档加速脚本（memora-kernel-release / memora-host-release 技能共用）。
 //
 // 作用：按 `^- **<ID>**` 锚点，从主台账 `tasks/待完成任务.md` 把指定已关闭项整块
-//       搬到 `tasks/archive/<version>-<kind>.md`（kind = kernel | host），并在主台账原位留指针行。
+//       搬到 `tasks/archive/<version>-<kind>.md`（kind = kernel | host）；主台账原位**整块移出、不逐条留指针**
+//       （归元纪律 7：迁出后不再逐条留指针；块边界处连续空行压成 1 行。5.2.0 实证：脚本旧版留的 11 条指针行与纪律 7 冲突，发版会话手工二次清理）。
 //
 // 安全模型：
 //   - 默认 --dry-run：只打印「将写入的归档文件」与「主台账替换预览」，不落盘。
@@ -99,7 +100,7 @@ if (cur) {
 
 const byId = new Map(blocks.map((b) => [b.id, b]));
 
-// 计算替换：要归档的块 → 主台账留指针行。
+// 计算替换：要归档的块。
 const toReplace = [];
 const missing = [];
 for (const id of args.ids) {
@@ -112,15 +113,18 @@ if (missing.length) {
 }
 if (toReplace.length === 0) fail('没有任何可归档的 ID，退出。');
 
-// 构建新主台账（替换命中块为指针行）。
+// 构建新主台账（命中块整块移出，不留指针——归元纪律 7）。
 const replaceSet = new Set(toReplace.map((b) => b.start));
 const newLedgerLines = [];
-const pointerSuffix = ` → 见 tasks/archive/${args.version}-${args.kind}.md`;
 for (let i = 0; i < lines.length; i++) {
   const b = toReplace.find((x) => x.start === i);
   if (b) {
-    newLedgerLines.push(lines[b.start] + pointerSuffix);
-    i = b.end; // 跳过块内其余行
+    i = b.end; // 跳过块内其余行（for 循环 ++ 落在块后首行）
+    // ④ 连续空行压成 1 行：块前已有空行时，吞掉块后的空行，避免叠出双空
+    const tailIsBlank = newLedgerLines.length > 0 && newLedgerLines[newLedgerLines.length - 1].trim() === '';
+    if (tailIsBlank) {
+      while (i + 1 < lines.length && lines[i + 1].trim() === '') i++;
+    }
     continue;
   }
   if (replaceSet.has(i)) continue; // 保险（理论不触发）
@@ -181,10 +185,10 @@ const newLedgerText = newLedgerLines.join('\n');
 process.stdout.write('\n========== 将写入归档文件 ==========\n');
 process.stdout.write(`${archivePath}\n`);
 process.stdout.write(archiveText + '\n');
-process.stdout.write('========== 主台账替换预览（原块 → 指针行）==========\n');
+process.stdout.write('========== 主台账替换预览（原块 → 整块移出，不留指针）==========\n');
 for (const b of toReplace) {
-  process.stdout.write(`\n[${b.id}] 原块（${b.end - b.start + 1} 行）→ 指针行：\n`);
-  process.stdout.write(`  ${lines[b.start] + pointerSuffix}\n`);
+  process.stdout.write(`\n[${b.id}] 原块（${b.end - b.start + 1} 行）→ 移出：\n`);
+  process.stdout.write(`  ${lines[b.start]}\n`);
 }
 
 if (!args.apply) {
@@ -199,5 +203,5 @@ writeFileSync(archivePath, archiveText, 'utf8');
 writeFileSync(ledgerPath, newLedgerText, 'utf8');
 process.stdout.write(
   `\n✅ 已写入 ${archivePath}\n✅ 已更新 ${ledgerPath}\n` +
-    `   下一步：git 提交（归档文件 + 主台账指针），状态标「待上架」，发版后订正为「已发布」。\n`,
+    `   下一步：git 提交（归档文件 + 主台账移出后残体），状态标「待上架」，发版后订正为「已发布」。\n`,
 );
