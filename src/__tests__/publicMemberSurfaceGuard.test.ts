@@ -1123,6 +1123,8 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       'appendInterrupted',
       'appendUser',
       'awaitPendingArchives',
+      // ASK-PENDINGASK-CLEAR-1：在途提问消费后清盘（内核内部能力，宿主零调用）
+      'clearPendingAsk',
       'forkSession',
       'get currentDateValue',
       'get currentSessionName',

@@ -267,6 +267,25 @@ describe('SeedOrchestrator 最小 turn', () => {
     expect(mocks.history.clearPendingAsk).toHaveBeenCalledWith('round-1');
   });
 
+  it('runResume 清盘判据落在事实上：提问类 kind 但未取到快照 ⇒ 不清盘（防误清新批次）', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    stubContinue(mocks, '续跑回复');
+    consumeControl.result = { content: '续跑回复', aborted: false, paused: false, failed: false };
+    // 快照已被前次取空（同轮二次 runResume）：harness 默认 takeAnsweredAsk 返回 undefined，
+    // 而盘上此刻可能已落下新一轮提问（markPendingAsk）——按 kind 清盘会把它不可逆地清掉。
+
+    await collectGen(
+      new SeedOrchestrator(deps).runResume('补充', new AbortController().signal, 'question-answer'),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 变异锚：判据回退成「kind 属于提问类」⇒ 本用例红在 clearPendingAsk 被调用上；
+    // 真实后果 = 新一轮在途提问被误清，问题文本彻底丢失（appendInterrupted 也打捞不到）
+    expect(mocks.history.clearPendingAsk).not.toHaveBeenCalled();
+    // 不清盘 ≠ 不落档：本轮输入仍归档，盘上清理交给 appendUser 的 askConsumed 同次 save 兜底
+    expect(mocks.history.appendUser).toHaveBeenCalledTimes(1);
+  });
+
   // ── 形态② 兜底收尾 ─────────────────────────
   it('runChat 正常完成：act 触发「LLM 未显式 update 即收尾」兜底（摘要前 200 字作 planItemLog 摘要）', async () => {
     const { mocks, deps, consumeControl } = createHarness();

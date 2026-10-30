@@ -154,7 +154,12 @@ export class SeedOrchestrator {
       // ASK-PENDINGASK-CLEAR-1：取走快照即清盘上 pendingAsk，收口「取走→落盘」崩溃窗口
       // （见 messageHistory.clearPendingAsk 注释）。答案已随 answerQuestion 的 appendToolMessage
       // 进消息史持久，此处提前清盘不致丢失；迟清则窗口内崩溃会被 appendInterrupted 转 unanswered。
-      if (kind === 'question-answer' || isTimedOutAsk) {
+      // 判据 = **取到快照**（事实）而非 kind（意图）：kind 只声明「本轮与提问有关」，
+      // 快照非空才证明「盘上这批在途提问确实已被消费」。按 kind 清会在同轮二次 runResume
+      // （快照已被前次取空、盘上却已落下新一轮提问）时误清新批次，问题文本彻底丢失——
+      // 清盘是不可逆操作，判据必须落在事实上。未取到快照时不清，由 appendUser 的
+      // askConsumed 同次 save 兜底（该处判据作用在逐条 entry 层，含 unanswered）。
+      if (answeredAsk?.length) {
         await parts.history.clearPendingAsk(closureRoundId);
       }
       const askGroup = answeredAsk?.length
