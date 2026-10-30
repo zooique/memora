@@ -1798,6 +1798,15 @@ export type BackgroundTaskView = Pick<BackgroundTask, 'taskId' | 'command' | 'st
 export interface PendingQuestionDto {
   /** 提问槽位标识（内核 AskQuestion.slot 同源） */
   slot: string;
+  /**
+   * 题身份（ADR-043 真源 = `ask_user` 工具调用 id，内核 `AskQuestion.askCallId` 同源）
+   *
+   * 运行时行与盘面行**共用本值** ⇒ 跨面去重可配对（此前运行时自造 `live-input-*`
+   * 与内核 `msg-<roundId>-input-<n>` 两个产地永不相遇，不重复渲染只靠时序巧合）。
+   * 可选 = 跨 dist 契约（旧内核 dist 无此字段）：缺失时宿主回退批内序号，
+   * 仅保「同批不互相吃掉」，无跨面配对语义（真身份恒由内核产出，宿主不自造）。
+   */
+  askCallId?: string;
   /** 提问原文 */
   question: string;
   /** 候选选项（LLM 提供时） */

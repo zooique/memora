@@ -113,6 +113,7 @@ import type {
   WebviewToExtensionMessage,
   RoundView,
   TurnState,
+  PendingQuestionDto,
   LlmProviderConfig,
 } from '../../shared/protocol.js';
 // 错误文案映射单一真理源（与 webview 重放渲染共用，防文案双源漂移）
@@ -3192,8 +3193,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         text: answers[i],
         ts: now, // 批内同刻（一次提交）——归位键；身份由 inputId 承载，去重不看 ts
         kind: 'question-answer',
-        // 批内逐条唯一身份（去重键真源）：同批共享 ms 级 ts，去重按 ts 会丢第 2..N 条
-        inputId: `live-input-${now}-${i}`,
+        // ADR-043：批内身份真源 = 内核题身份（askCallId = ask_user 工具调用 id，随 assistant
+        // 消息落盘 ⇒ 跨重启恒定 ⇒ 运行时行与盘面/重放行可配对）。同批共享 ms 级 ts，
+        // 去重按 ts 会丢第 2..N 条，故身份必须显式承载。
+        // 回退分支仅用于「内核未给身份」（旧 dist / 答案数多于提问数）⇒ 退为批内序号，
+        // 只保同批不互相吃掉、无跨面配对语义；保留 `live-input-` 前缀 = 真机排查时一眼可见走了回退。
+        inputId: pendingQ?.askCallId ?? `live-input-${now}-${i}`,
         ...(pendingQ?.question ? { question: pendingQ.question, options: pendingQ.options } : {}),
       });
     }
@@ -3483,16 +3488,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 内核保证事件先于 chunk 到达（loop 先 onPendingQuestion 回调、后 yield chunk）：事件驱动时清空 chunk 缓存，
     // chunk 仅作「事件监听未就绪/异常」时的兜底渲染源（消除单点事件依赖，问题不丢失）。
     let clarifyEventDriven = false;
-    const clarifyChunkQueue: {
-      slot: string;
-      question: string;
-      options?: string[];
-      allowCustom?: boolean;
-    }[] = [];
+    // ADR-043：两处提问形状一律引用协议 `PendingQuestionDto`（不再手写并列字段清单）——
+    // 手写形状会静默吞掉内核新增字段（askCallId 即因此丢失），是批次身份双轨的根因。
+    const clarifyChunkQueue: PendingQuestionDto[] = [];
     // 监听主动提问事件 → 渲染提问框（含 LLM 声明的候选选项，webview 渲染为可点击按钮）
-    const onPendingQuestion = (
-      questions: { slot: string; question: string; options?: string[]; allowCustom?: boolean }[],
-    ) => {
+    const onPendingQuestion = (questions: PendingQuestionDto[]) => {
       clarifyEventDriven = true;
       clarifyChunkQueue.length = 0; // 事件为准，丢弃可能残留的 chunk 缓存
       this._ask.setPending(questions); // 事件写入源头（overwrite 全量写；派生见 postTurnUpdate，消费见 answerInput）

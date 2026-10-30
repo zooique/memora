@@ -146,14 +146,16 @@ export class AskCoordinator {
     this._pending = []; // 提问已超时消费（整体清空，非 splice 逐条弹出）
     const now = new Date().toISOString();
     // 整批逐条透出（与盘面 runResume timeout 整组落盘同构）；inputId = 批内唯一身份
-    //（去重键真源，同批共享 ms 级 ts——按 ts 去重会丢第 2..N 条）
+    //（去重键真源，同批共享 ms 级 ts——按 ts 去重会丢第 2..N 条）。
+    // ADR-043：身份真源 = 内核题身份 askCallId（与盘面落盘 id 同源 ⇒ 跨面可配对）；
+    // 缺失（旧 dist）时回退批内序号，只保同批不互相吃掉、无跨面配对语义（保留前缀便于真机排查）。
     pendingQs.forEach((q, i) => {
       this._deps.post({
         type: 'user',
         text: ASK_TIMEOUT_NOTICE, // 镜像内核 orchestrator ASK_TIMEOUT_NOTICE（运行时 = 重放同构）
         ts: now,
         kind: 'timeout',
-        inputId: `live-input-${now}-${i}`,
+        inputId: q.askCallId ?? `live-input-${now}-${i}`,
         ...(q.question ? { question: q.question, options: q.options } : {}),
       });
     });

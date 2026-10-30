@@ -28,8 +28,13 @@ import { AskCoordinator } from '../askCoordinator.js';
 const NOTICE_MARKER = '用户未在时限内回答，已自动继续';
 
 /** 提问载荷（内核 PendingQuestionDto 形态） */
-function q(text: string, options?: string[]): PendingQuestionDto {
-  return { slot: 'q1', question: text, ...(options ? { options } : {}) };
+function q(text: string, options?: string[], askCallId?: string): PendingQuestionDto {
+  return {
+    slot: 'q1',
+    question: text,
+    ...(options ? { options } : {}),
+    ...(askCallId ? { askCallId } : {}),
+  };
 }
 
 /** 推送消息（宽松类型：断言按 type/kind 过滤） */
@@ -214,14 +219,18 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
       state: {
         phase: 'waiting',
         reason: 'ask',
+        // ADR-043：题身份随行（内核 ask_user 工具调用 id）——超时行与盘面 timeout 行同 id
         questions: [
-          q('Q1：编程语言？', ['TS', 'Python']),
-          q('Q2：时区？', ['Asia/Shanghai', 'UTC']),
+          q('Q1：编程语言？', ['TS', 'Python'], 'call-lang'),
+          q('Q2：时区？', ['Asia/Shanghai', 'UTC'], 'call-tz'),
         ],
       },
       agent: stub.agent,
     });
-    h.coordinator.setPending([q('Q1：编程语言？'), q('Q2：时区？')]);
+    h.coordinator.setPending([
+      q('Q1：编程语言？', undefined, 'call-lang'),
+      q('Q2：时区？', undefined, 'call-tz'),
+    ]);
 
     await h.coordinator.handleAskTimeout();
 
@@ -237,6 +246,9 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
     expect(h.posted[0]!.inputId).toBeTruthy();
     expect(h.posted[1]!.inputId).toBeTruthy();
     expect(h.posted[0]!.inputId).not.toBe(h.posted[1]!.inputId);
+    // ADR-043：身份取内核题身份（非宿主自造键）⇒ 与盘面落盘 id 同源、跨面可配对
+    expect(h.posted[0]!.inputId).toBe('call-lang');
+    expect(h.posted[1]!.inputId).toBe('call-tz');
     // 各题问/选项随行透出（不折叠到首问）
     expect(h.posted[0]).toMatchObject({ question: 'Q1：编程语言？', options: ['TS', 'Python'] });
     expect(h.posted[1]).toMatchObject({

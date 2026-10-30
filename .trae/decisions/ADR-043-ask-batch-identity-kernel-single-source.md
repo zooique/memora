@@ -77,6 +77,25 @@ ask 多题批次（ASK-MULTI-Q-1）落盘后，同一条「用户作答」事实
 3. **第三刀（收口）**：物理删除宿主自造键与内核回退分支（回退分支删除前须确认
    supplement 路径确无身份来源）。
 
+## 第二刀落地记录（2026-10-31）与两处定性修正
+
+**已落地**：协议 `PendingQuestionDto` 加可选 `askCallId`（可选 = 跨 dist 契约）；
+`chatPanel.answerInput` 与 `askCoordinator.handleAskTimeout` 的 `inputId` 改取
+`pendingQ.askCallId`；`chatPanel` 两处手写内联形状改引用 `PendingQuestionDto`。
+
+**修正一（推翻本 ADR 前文「内联形状吞掉字段」的措辞）**：宿主手写内联形状
+**不会丢运行时值**——消费面读的是 `TurnState.waiting.questions`（本就是
+`PendingQuestionDto[]`），内核 emit 的整个 `AskQuestion` 对象原样透传，字段一直在。
+内联形状的真危害是**类型层并列形状**（内核加/改字段时编译器无从报警，漂移只靠人眼），
+不是运行时丢字段。故改引用类型的收益是防漂移，不是修缺陷——不夸大为修复。
+
+**修正二（第三刀「物理删除回退分支」收窄）**：`live-input-*` 回退能力**不得删除**。
+实测推演：删掉后「内核未给身份（旧 dist）」或「答案数多于提问数」时 `inputId` 变
+undefined ⇒ 去重键退化成 ts ⇒ 同批共享毫秒级 ts ⇒ 只活第 1 条 ⇒ **回归** ASK-MULTI-Q-1
+真机缺陷（2026-10-30 实锤）。故回退分支保留，且刻意保留 `live-input-` 前缀：真机
+排查时一眼可见该行走的是回退、无跨面配对语义。第三刀范围因此收窄为「确认 supplement
+路径确无身份来源后，评估回退命名是否收敛」，**不删除回退能力本身**。
+
 ## 何时回顾
 
 - 出现第二条 ask 消费面（如 MCP 宿主渲染提问）时，须复核题身份是否仍单源。

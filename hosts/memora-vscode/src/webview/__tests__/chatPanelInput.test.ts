@@ -264,8 +264,9 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     const h = setupInput();
     const { answerQuestion, resumeExecution } = mount(h);
     const qs: PendingQuestionDto[] = [
-      { slot: 'q1', question: '语言？' },
-      { slot: 'q2', question: '篇幅？' },
+      // ADR-043：题身份随行（内核 ask_user 工具调用 id）——运行时行与盘面/重放行同 id ⇒ 跨面可配对
+      { slot: 'q1', askCallId: 'call-lang', question: '语言？' },
+      { slot: 'q2', askCallId: 'call-len', question: '篇幅？' },
     ];
     h.cast._streaming = false;
     h.cast._abortController = undefined;
@@ -278,12 +279,39 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     const qaRows = h.posted.filter((m) => (m as { kind?: string }).kind === 'question-answer') as {
       text: string;
       question?: string;
+      inputId?: string;
     }[];
     expect(qaRows).toHaveLength(2);
-    expect(qaRows[0]).toMatchObject({ text: '中文', question: '语言？' });
-    expect(qaRows[1]).toMatchObject({ text: '长篇', question: '篇幅？' });
+    expect(qaRows[0]).toMatchObject({ text: '中文', question: '语言？', inputId: 'call-lang' });
+    expect(qaRows[1]).toMatchObject({ text: '长篇', question: '篇幅？', inputId: 'call-len' });
     expect(answerQuestion).toHaveBeenCalledWith(['中文', '长篇']);
     expect(resumeExecution.mock.calls[0][0]).toBe('中文\n长篇');
+  });
+
+  it('ADR-043 回退面：内核未给题身份 ⇒ 批内仍逐条唯一（不退回「同批共享 ts 互相吃掉」）', async () => {
+    const h = setupInput();
+    mount(h);
+    // 旧 dist / 身份缺失形态：askCallId 缺省，回退批内序号。
+    // 判据不是「值等于什么」（回退值本就无跨面配对语义），而是「同批 N 条互不相同且非空」——
+    // 否则去重键退化成 ts，同批共享 ms 级 ts ⇒ 只活第 1 条（ASK-MULTI-Q-1 真机实锤的返场伤）。
+    const qs: PendingQuestionDto[] = [
+      { slot: 'q1', question: '语言？' },
+      { slot: 'q2', question: '篇幅？' },
+    ];
+    h.cast._streaming = false;
+    h.cast._abortController = undefined;
+    h.cast._ask.setPending(qs);
+    h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: qs };
+
+    await h.cast.handleInput({ kind: 'answer', answers: ['中文', '长篇'] });
+
+    const qaRows = h.posted.filter((m) => (m as { kind?: string }).kind === 'question-answer') as {
+      inputId?: string;
+    }[];
+    expect(qaRows).toHaveLength(2);
+    expect(qaRows[0]!.inputId).toBeTruthy();
+    expect(qaRows[1]!.inputId).toBeTruthy();
+    expect(qaRows[0]!.inputId).not.toBe(qaRows[1]!.inputId);
   });
 
   it('错位 answer（waiting(pause) 相位收回答）→ 丢弃 + console.warn 留痕', async () => {

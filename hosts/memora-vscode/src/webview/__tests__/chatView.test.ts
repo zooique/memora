@@ -8025,6 +8025,35 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     expect(rb.querySelector('.round-block__stats')?.textContent).toContain('你答×2');
   });
 
+  it('ADR-043 配对前提：两条轨身份同值 ⇒ finalize 合并流配对为一条（去重键吃得到内核身份）', () => {
+    mountChatView();
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({ type: 'chunk', content: '需要确认语言', roundId: 'r1' });
+    // 同一条问答的两个副本（上屏副本 + 收场重建副本）携带**同一内核题身份** ⇒ 应配对为一条。
+    // 判据意义：ADR-043 前两产地 id 永不相遇，配对只能靠时序巧合；此例钉住「同值即配对」成立。
+    const row = {
+      type: 'user' as const,
+      text: 'TypeScript',
+      ts: 't',
+      kind: 'question-answer' as const,
+      inputId: 'call-lang',
+      question: 'Q1：编程语言？',
+    };
+    dispatch(row);
+    dispatch(row);
+    dispatch({ type: 'done', roundId: 'r1' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb).not.toBeNull();
+    const inputs = rb.querySelectorAll('.round-block__details .round-block__input');
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]!.textContent).toContain('TypeScript');
+    // 统计同源：配对后只数 1（未配对则「你答×2」）
+    expect(rb.querySelector('.round-block__stats')?.textContent).toContain('你答×1');
+  });
+
   it('G31 方案1 修复（2026-09-08）：重放带 question 的 qa 成对完整折入——折叠内含「问回顾行 + 你答块」、assistant 相邻、摘要你答×1', () => {
     mountChatView();
     // 重放由单条 turn_update(replay:true) 承载——前序段 + 带 question 的 qa + 末段全量折入同一轮
