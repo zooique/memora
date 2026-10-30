@@ -2301,10 +2301,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 崩溃残留轮打捞 → 升级为正常 stop turn 并入当前会话。
    *
    * 语义定案（见 step-atomic-persistence.md）：中断轮 = 正常 turn（等同用户点「停止」）——
-   * 可删、入会话 roundIds、作后续上下文，**不是**半成品草稿/孤儿。打捞口
-   * `IRoundStore.listInterruptedRecent` 只负责「找到」，本方法完成「升级登记」：
-   *   文本派生：seq 升序拼接叙事件（narrate）内容作为恢复的助手文本；无叙述（工具阶段崩溃）
-   *   则不写 assistantMessage，仍按 stop 语义收场——内核 `agentHistory.appendInterrupted` 支撑。
+   * 可删、入会话 roundIds、作后续上下文，**不是**半成品草稿/孤儿。
+   * 分工：打捞→派生→收场在 `extension/host/interruptedSalvage`（跨重启 e2e 消费同一份），
+   * 本方法只管视图生命周期（once-guard / 会话日期取值 / 失败降级）——不在视图层重述业务口径。
    * 幂等/时序：
    *   once-guard（_salvageUpgraded）+ 内核 appendInterrupted 防重 → 升级轮不二次登记、不被
    *   _viewEpoch 折叠重建回放与崩溃恢复重复投递；升级后轮 complete + refCount>0，

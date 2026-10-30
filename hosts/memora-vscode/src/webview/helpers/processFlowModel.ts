@@ -322,19 +322,9 @@ export function decideTerminus(events: ProcessEvent[]): {
   };
 }
 
-/**
- * 中断轮整链复制源：过程叙述（narrate）事件文本按序拼接（单点实现，重放/运行时共用）
- *
- * 中断 = 半截正文作废（运行时删 body / 重放不渲染 body），复制语义与「定稿正文」轮不同：
- * 能拿到的实质内容只剩过程叙述。返回空串（无 narrate 事件）时调用方不设 rawText
- * （复制按钮复制空串无害，但 dataset 缺失让「源为空」事实保持可见）。
- */
-export function narrateChainText(events: ProcessEvent[]): string {
-  return events
-    .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
-    .map((e) => e.payload.content)
-    .join('\n');
-}
+// 中断轮整链复制源（过程叙述按序拼接）的实现已上移到 `shared/narrateText`——它与宿主侧
+// 崩溃打捞的派生逻辑是**同一个事实**（「这一轮的叙述拼起来是什么」），分两处写必然让
+// 「复制出来的文本」与「重启后恢复出来的文本」悄悄不一致。此名不再保留别名，消费方直取单点。
 
 // SLIM-3 第 2 刀追加（2026-10-29）：工具批切段判据（三渲染上下文共用，自 chatView 外置）
 /**

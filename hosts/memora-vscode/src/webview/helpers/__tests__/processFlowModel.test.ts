@@ -15,7 +15,6 @@ import {
   findRunningTool,
   groupThoughtBuckets,
   groupToolBatches,
-  narrateChainText,
   planItemStatesFromEvents,
   stopReasonLabel,
   thoughtLabel,
@@ -152,17 +151,8 @@ describe('planItemStatesFromEvents（计划项状态推导）', () => {
   });
 });
 
-describe('narrateChainText', () => {
-  it('只拼 narrate，按序换行', () => {
-    expect(
-      narrateChainText([
-        event('narrate', 1, { content: 'A' }),
-        toolStart(2, 'a'),
-        event('narrate', 3, { content: 'B' }),
-      ]),
-    ).toBe('A\nB');
-  });
-});
+// narrateChainText 的用例已随实现迁移到 `shared/__tests__/narrateText.test.ts`
+// （该投影与宿主崩溃打捞共用一份实现，单点在哪就测在哪，不在这里留替身）
 
 describe('buildMemoryHitsEvidenceResolver（按 toolCallId 归组）', () => {
   it('同调用内按记忆 id 去重；无 toolCallId 的证据丢弃', () => {

@@ -42,7 +42,8 @@ import { Agent, splitSessionId, type LlmChunk, type LlmProvider } from '@zooique
 import { WorkspaceSessionStore } from '../sessionStore.js';
 import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
 import { WorkspaceStorage } from '../workspaceStorage.js';
-import { salvageInterruptedRounds, deriveInterruptedContent } from '../interruptedSalvage.js';
+import { salvageInterruptedRounds } from '../interruptedSalvage.js';
+import { deriveNarrateText } from '../../../shared/narrateText.js';
 
 /** 宿主根（本文件在 src/extension/host/__tests__ 下） */
 const HOST_ROOT = join(import.meta.dirname, '..', '..', '..', '..');
@@ -153,17 +154,20 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
     }
   });
 
-  it('重启后按会话日期打捞到该轮，且文本可从 narrate 过程事件派生', () => {
+  it('重启后按会话日期打捞到该轮，且叙述派生走 shared 单点', () => {
     const roundStore = new WorkspaceRoundStore(ws);
     roundStore.load();
-    // 打捞面按 createdAt 的日期前缀匹配（与宿主传入的 sessionDate 同一口径）
+    // ⚠️ 这里喂的是**轮自己的 createdAt 日期前缀（UTC）**，不是生产宿主传的本地日期——
+    // 即本用例刻意绕开了「本地日 vs UTC 日」的口径缺口（缺口由本文件最后一个 describe 锁定）。
+    // 读这条用例时不要以为它证明了生产路径在任意时区都对。
     const date = roundStore.getById(crashedRoundId)!.createdAt.slice(0, 10);
     const interrupted = roundStore.listInterruptedRecent?.(date) ?? [];
     expect(interrupted.map((r) => r.id)).toContain(crashedRoundId);
 
-    // 文本派生：无叙述（纯工具阶段崩溃）返回空串；有叙述则按 seq 升序拼接
+    // 本崩溃形态 = 首个**正文**分片即被杀，尚无工具迭代 ⇒ 没有 narrate 段 ⇒ 派生为空串
+    //（非空派生 + 换行口径由 `shared/__tests__/narrateText.test.ts` 用真实形态覆盖）
     const round = interrupted.find((r) => r.id === crashedRoundId)!;
-    expect(typeof deriveInterruptedContent(round)).toBe('string');
+    expect(deriveNarrateText(round.processEvents)).toBe('');
   });
 
   it('升级后成为正常 stop turn：interrupted + refCount 1 + 可被会话加载 + 退出打捞队列', async () => {
@@ -263,9 +267,10 @@ describe('已知缺口：提问窗口崩溃 ⇒ 问题文本不可恢复', () =>
   });
 
   it('盘面只有 userMessage：问题文本与过程事件都没落盘（这就是「不可恢复」）', () => {
-    const index = JSON.parse(
-      readFileSync(join(dataDir, 'rounds', 'index.json'), 'utf8'),
-    ) as { id: string; status: string }[];
+    const index = JSON.parse(readFileSync(join(dataDir, 'rounds', 'index.json'), 'utf8')) as {
+      id: string;
+      status: string;
+    }[];
     expect(index).toHaveLength(1);
     roundId = index[0]!.id;
 

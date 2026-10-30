@@ -3,40 +3,31 @@
  *
  * 为什么外置：同一段逻辑有两个消费者——① 视图生命周期（`chatPanel` 的 once-guard +
  * 会话日期取值 + 失败降级）；② 跨重启端到端验证（真杀进程后从磁盘恢复）。
- * 若 e2e 自己再写一遍「过滤 narrate / 按 seq 拼接 / 逐轮 appendInterrupted」，
- * 验的就是复制品而非生产路径——**测过了不等于线上对**。故纯业务收敛到本模块，
- * 两条消费面共用一份实现（视图层只保留生命周期与降级）。
+ * 若 e2e 自己再写一遍「找残留 / 派生文本 / 逐轮 appendInterrupted」，验的就是复制品而非
+ * 生产路径——**测过了不等于线上对**。故纯业务收敛到本模块，两条消费面共用一份实现
+ * （视图层只保留生命周期与降级）。
  *
  * 语义定案（见 step-atomic-persistence.md）：中断轮 = 正常 turn（等同用户点「停止」）——
  * 可删、入会话 roundIds、作后续上下文，**不是**半成品草稿/孤儿。
  */
 
-import type { IRoundStore, ProcessEvent, Round } from '@zooique/memora';
+import type { Agent, IRoundStore } from '@zooique/memora';
+import { deriveNarrateText } from '../../shared/narrateText.js';
 
 /**
- * 从轮的过程事件里派生「已产出的助手文本」。
+ * 内核收场面：从 `Agent['agentHistory']` 派生，**不手抄方法签名**。
  *
- * 口径：只取 `narrate` 事件、按 seq 升序、原样拼接（顺带保留段间原有空白）。
- * 纯工具阶段崩溃（无叙述）⇒ 返回空串，调用方据此不写 assistantMessage，
- * 仍按 stop 语义收场（内核 `appendInterrupted` 支撑该形态）。
+ * 为什么要派生而不是自己写一份 `appendInterrupted(roundId, opts?: {content?: string})`：
+ * 手抄的签名在内核加参数后仍会「看起来兼容」（多出来的必填参数才会报错，改成可选/换语义
+ * 则静默通过），而派生式在签名任何变动时立刻失配。内核未单独导出 `MessageHistory` 类型，
+ * `Agent` 是公开面，故从它取。
  */
-export function deriveInterruptedContent(round: Round): string {
-  return (round.processEvents ?? [])
-    .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
-    .sort((a, b) => a.seq - b.seq)
-    .map((e) => e.payload.content)
-    .join('');
-}
-
-/** 内核收场面（只声明用到的成员，便于测试注入桩；真源仍是 `Agent.agentHistory`） */
-export interface InterruptedHistory {
-  appendInterrupted(roundId: string, opts?: { content?: string }): Promise<void>;
-}
+type AgentHistory = NonNullable<Agent['agentHistory']>;
 
 /** 打捞所依赖的存储面（只读一个口；`IRoundStore` 上该成员是可选实现） */
 export interface InterruptedSalvageDeps {
   store: Pick<IRoundStore, 'listInterruptedRecent'>;
-  history: InterruptedHistory;
+  history: Pick<AgentHistory, 'appendInterrupted'>;
   /** YYYY-MM-DD；宿主只持当前会话日期，故打捞面按它过滤 */
   sessionDate: string;
 }
@@ -53,7 +44,9 @@ export async function salvageInterruptedRounds(deps: InterruptedSalvageDeps): Pr
   // 按 createdAt 升序登记（保序入 roundIds，恢复后对话时序正确）
   const ordered = [...interrupted].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   for (const round of ordered) {
-    await history.appendInterrupted(round.id, { content: deriveInterruptedContent(round) });
+    // 文本派生走 shared 单点（webview 的中断轮「复制」用同一函数）：两处若各写一遍，
+    // 「复制出来的文本」与「重启后恢复出来的文本」会分叉，且分叉时无任何报错
+    await history.appendInterrupted(round.id, { content: deriveNarrateText(round.processEvents) });
   }
   return ordered.length;
 }

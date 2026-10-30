@@ -22,6 +22,8 @@ import type {
 // 引用身份键与去重判据：**必须**与宿主缓冲共用同一实现——同文件不同选区是两条引用，
 // 若各自按 path 判等，chip 的锁 / 移除会误伤同 path 的另一条（见 shared/refKey.ts）。
 import { dedupeRefs, formatRefRange, normalizeRefRange, refKeyOf } from '../../shared/refKey.js';
+// 中断轮复制源 = 过程叙述按序拼接：单点在 shared（宿主崩溃打捞派生消费同一份，禁各写一遍）
+import { deriveNarrateText } from '../../shared/narrateText.js';
 // 注入源命名 / 信封标记单一真源（HOST-CTX-4 第 1 笔 SSOT 化）：chip 可见名、回执分项名、
 // @ 下拉 label、信封块头同读一处——曾四处并列写字面量，「短名双写」已付过一次代价。
 import {
@@ -78,6 +80,8 @@ import {
 } from '../helpers/turnUiState.js';
 import { initDropdowns } from '../components/dropdown.js';
 import { initContextMenu } from '../components/contextMenu.js';
+// 右键菜单项表（数据面外置：8 条 when/run 长在视图函数体里会与 prettier / max-lines 顶牛）
+import { createContextMenuItems } from '../components/contextMenuItems.js';
 import { createCodeBlockEnhancer } from './codeBlockView.js';
 import { applyIcon, createIcon, getIconSvg, populateIcons } from './icons.js';
 import { createSanitizer } from '../helpers/sanitizer.js';
@@ -91,7 +95,6 @@ import {
   findRunningTool,
   groupThoughtBuckets,
   groupToolBatches,
-  narrateChainText,
   planItemStatesFromEvents,
   stopReasonLabel,
   thoughtLabel,
@@ -1272,7 +1275,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * .round-group 容器建 footer（复制整链/分叉/删除 + 时间戳），支持用户手动删除。ts 用本轮首个
    * 过程事件时间（meta 恒为首条，真实闭环起点，对齐运行时中断块首 chunk ts），替代 new Date()
    * 伪值——伪值会使容器 footer 的 delete_turn 锚点错位。复制整链的原始文本 = 过程叙述
-   * （narrate）拼接（半截正文已随中断丢弃；拼接逻辑在 narrateChainText 单点，重放与运行时共用）。
+   * （narrate）拼接（半截正文已随中断丢弃；拼接逻辑在 `shared/narrateText` 单点，重放、运行时
+   * 与宿主崩溃打捞共用一份）。
    *
    * @param roundId 本轮 ID（孤儿宿主归属标记）
    * @param evidence 本轮裁决证据（重放透传）：中断轮同样可能有记忆命中/搜索证据，
@@ -1286,8 +1290,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     buildAssistantShell(host, startTs, roundId, { pending: false });
     host.querySelector('.msg-body')?.remove();
     if (roundId) host.dataset.roundId = roundId;
-    // 复制源（与运行时中断轮共用 narrateChainText 同源）：正文已随中断丢弃，整链复制 = 过程叙述拼接
-    const narrateText = narrateChainText(currentEvents);
+    // 复制源（与运行时中断轮共用 deriveNarrateText 同源）：正文已随中断丢弃，整链复制 = 过程叙述拼接
+    const narrateText = deriveNarrateText(currentEvents);
     if (narrateText) host.dataset.rawText = narrateText;
     messages.appendChild(host);
     const prevAssistant = activeAssistantEl;
@@ -3572,9 +3576,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (interruptedHost?.isConnected) {
         // 丢弃半截正文（运行中 step 的内容因中断作废，与重放中断轮不显示正文同源同形）
         interruptedHost.querySelector<HTMLElement>(':scope > .msg-body')?.remove();
-        // 复制源同源化（narrateChainText 单点，与重放 renderInterruptedRound 共用）：
+        // 复制源同源化（deriveNarrateText 单点，与重放 renderInterruptedRound 共用）：
         // 半截正文已删，整链复制 = 过程叙述拼接（覆盖 finalizeStreaming 刚写的半截正文 rawText）
-        const narrateText = narrateChainText(currentEvents);
+        const narrateText = deriveNarrateText(currentEvents);
         if (narrateText) interruptedHost.dataset.rawText = narrateText;
         appendInterruptedRow(interruptedHost, currentEvents);
       }
@@ -4331,34 +4335,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   });
 
   // ─── 右键语义菜单（COPY-2 · Layer B）───
-  // 场合命中判据在组件 resolveContextMenuCtx 单点（selection > code > message），
-  // 此处只声明各菜单项的显隐（when）与动作（run）——加项 = 表里加一行，不动命中逻辑。
-  // 锁态（sessionControlsLocked）在弹出时快照判定；动作复用既有单路径：
-  // 复制走 copyText 单点，regenerate / fork_session / delete_turn 各走既有消息（零新 type）。
-  // 「在编辑器打开」未落：对话内代码块非工作区文件指针，open_ref 语义不容（硬塞 = 造假章），
-  // 登记缺口等真机反馈（台账 COPY-2 收口时注明偏差）。
-  const contextMenuController = initContextMenu(document, [
-    { id: 'copy-selection', label: '复制选中', when: (c) => c.kind === 'selection', run: (c) => copyText(c.selectionText) },
-    {
-      id: 'quote-reply',
-      label: '引用回复',
-      when: (c) => c.kind === 'selection',
-      // 胶囊暂存（quoteDraft），发送时展开为规范引用块——不再直塞输入框文本
-      run: (c) => { quoteDraft.set(c.selectionText); renderAttachmentRow(); input.focus(); },
-    },
-    { id: 'copy-message', label: '复制本条', when: (c) => c.kind === 'message' && !!c.visibleText, run: (c) => copyText(c.visibleText) },
-    { id: 'copy-message-md', label: '复制为 Markdown', when: (c) => c.kind === 'message' && !!c.rawText, run: (c) => copyText(c.rawText) },
-    { id: 'copy-code', label: '复制代码', when: (c) => c.kind === 'code' && !!c.codeText, run: (c) => copyText(c.codeText) },
-    {
-      id: 'regenerate',
-      label: '重新生成',
-      // 仅 assistant（与既有按钮归属一致）；锁态弹出时快照
-      when: (c) => c.kind === 'message' && !!c.messageEl?.classList.contains('assistant') && !!c.turnTs && !sessionControlsLocked,
-      run: (c) => vscode.postMessage({ type: 'input', kind: 'regenerate', turnTs: c.turnTs }),
-    },
-    { id: 'fork', label: '分叉', when: (c) => c.kind === 'message' && !!c.roundId && !sessionControlsLocked, run: (c) => vscode.postMessage({ type: 'fork_session', roundId: c.roundId }) },
-    { id: 'delete-turn', label: '删除', danger: true, when: (c) => c.kind === 'message' && !!c.turnTs && !sessionControlsLocked, run: (c) => vscode.postMessage({ type: 'delete_turn', ts: c.turnTs }) },
-  ]);
+  // 项表外置 `components/contextMenuItems`：表是数据（8 条 when/run），长在视图函数体里会与
+  // prettier / max-lines 互相顶牛。此处只注入依赖；场合命中判据仍在 resolveContextMenuCtx 单点。
+  // 锁态用**取值函数**而非布尔快照——菜单在弹出时判定，快照会按打开前的旧态显示。
+  const contextMenuController = initContextMenu(
+    document,
+    createContextMenuItems({
+      copy: copyText,
+      quoteReply: (t) => {
+        quoteDraft.set(t);
+        renderAttachmentRow();
+        input.focus();
+      },
+      post: (m) => vscode.postMessage(m),
+      isLocked: () => sessionControlsLocked,
+    }),
+  );
 
   // 角色徽章点击 → open_settings_tab(roles)（host 打开设置面板「角色」选项卡，导航单点）。
   // 拍板 2（2026-10-13）：**运行时不禁用**——跳界面不改变任何状态，禁 = 挡无害操作；也不挂
@@ -4717,7 +4709,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (!refChipRow) return;
     refChipRow.textContent = '';
     const quoteChip = quoteDraft.chip();
-    if (activeFile.kind === 'none' && currentRefs.length === 0 && currentInjections.length === 0 && !quoteChip) {
+    if (
+      activeFile.kind === 'none' &&
+      currentRefs.length === 0 &&
+      currentInjections.length === 0 &&
+      !quoteChip
+    ) {
       refChipRow.hidden = true;
       return;
     }

@@ -2083,10 +2083,12 @@ describe('chatPanel · 崩溃残留轮打捞升级为正常 stop turn（T1，202
 
     await upgrade(provider);
 
-    // createdAt 升序登记（round-a 先于 round-b），content = narrate 按 seq 拼接
+    // createdAt 升序登记（round-a 先于 round-b），content = narrate 按 seq 拼接。
+    // ⚠️ 换行分隔而非空串：旧断言写的是 `'第一段第二段'`（空串拼接），它把**缺陷锁成了期望**——
+    // 那样恢复出来的助手正文是两段被粘成一句的文本，且与 webview「复制整链」的 `\n` 口径分叉。
     expect(appendInterrupted).toHaveBeenCalledTimes(2);
     expect(appendInterrupted.mock.calls[0]?.[0]).toBe('round-a');
-    expect(appendInterrupted.mock.calls[0]?.[1]).toEqual({ content: '第一段第二段' });
+    expect(appendInterrupted.mock.calls[0]?.[1]).toEqual({ content: '第一段\n第二段' });
     expect(appendInterrupted.mock.calls[1]?.[0]).toBe('round-b');
     expect(appendInterrupted.mock.calls[1]?.[1]).toEqual({ content: 'B段' });
   });

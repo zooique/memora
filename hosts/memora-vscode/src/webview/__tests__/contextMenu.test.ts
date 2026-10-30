@@ -57,12 +57,18 @@ function mountMenu(): { runs: Record<string, Mock<RunFn>>; dispose(): void } {
     delete: vi.fn((_c: ContextMenuCtx) => {}),
   };
   const items: ContextMenuItem[] = [
-    { id: 'copy-message', label: '复制本条', when: (c) => c.kind === 'message', run: runs['copy-message'] },
+    {
+      id: 'copy-message',
+      label: '复制本条',
+      when: (c) => c.kind === 'message',
+      run: runs['copy-message'],
+    },
     { id: 'copy-code', label: '复制代码', when: (c) => c.kind === 'code', run: runs['copy-code'] },
     {
       id: 'regenerate',
       label: '重新生成',
-      when: (c) => c.kind === 'message' && !!c.messageEl?.classList.contains('assistant') && !!c.turnTs,
+      when: (c) =>
+        c.kind === 'message' && !!c.messageEl?.classList.contains('assistant') && !!c.turnTs,
       run: runs.regenerate,
     },
     {
@@ -191,7 +197,12 @@ describe('initContextMenu 交互语义', () => {
     try {
       const seen: string[] = [];
       ({ dispose: disposeMenu } = initContextMenu(document, [
-        { id: 'a-msg', label: '消息项', when: (c) => (seen.push(c.kind), c.kind === 'message'), run: () => {} },
+        {
+          id: 'a-msg',
+          label: '消息项',
+          when: (c) => (seen.push(c.kind), c.kind === 'message'),
+          run: () => {},
+        },
         { id: 'a-sel', label: '选区项', when: (c) => c.kind === 'selection', run: () => {} },
       ]));
       ctxClick(document.querySelector('.msg.assistant p') as Element);

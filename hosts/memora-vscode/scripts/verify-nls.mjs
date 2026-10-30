@@ -16,8 +16,9 @@
  *   ④ **默认文件是英文**：`package.nls.json` 是**默认语言**文件，任何含 CJK 的值 ⇒ 红
  *      （中文只属于 `zh-cn` 文件；默认文件混中文 = 英文用户看到中文，且这类混入
  *      极易因「顺手把中文抄进默认文件」而长期潜伏）。
- *   ⑤ **本地化面无中文残留**：命令标题 / 配置描述 / 视图名这三面若出现 CJK 字面量，
- *      说明新增字段忘了走 `%key%`（`package.json` 只该留标识符与品牌名）。
+ *   ⑤ **中文残留（manifest 全文）**：`package.json` 任一处出现 CJK 字面量即红。判定依据 =
+ *      「manifest 里出现中文」必有用户看得见的中文没走 `%key%`；**不按 contributes 面白名单
+ *      扫描**——白名单每漏一个面（`viewsWelcome` / `walkthroughs` / 未来新面）就开一个静默洞。
  *   ⑥ **空值**：nls 值不得为空串（空串等于界面上什么都不显示，比 `%key%` 更难排查）。
  *   ⑦ **射程下限**：命令数与配置项数不得低于基线——防遍历因结构漂移失明
  *      （`contributes.commands` 改名成别的形状时，①⑤ 会一起变空集而「全绿」）。
@@ -43,14 +44,27 @@ const MIN_CONFIG_PROPS = 10;
 /** CJK 判定：汉字 + CJK 标点 + 全角字符（中文文案里必然出现其中之一） */
 const CJK = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u3000-\u303F\uFF00-\uFFEF]/;
 
-/** 收集配置项（含嵌套 items.properties）里所有 description 字段，用于判据⑤ 的残留扫描 */
-function collectConfigDescriptions(node, trail, out) {
-  if (!node || typeof node !== 'object') return out;
-  if (typeof node.description === 'string') out.push([trail.join('.'), node.description]);
-  for (const group of [node.properties, node.items?.properties]) {
-    if (!group || typeof group !== 'object') continue;
-    for (const [key, child] of Object.entries(group)) {
-      collectConfigDescriptions(child, [...trail, key], out);
+/**
+ * 收集 manifest 里**所有**字符串叶子（路径 + 值）。
+ *
+ * 为什么不是「只扫命令标题 / 配置描述 / 视图名三面」：判据⑤ 的职责是「新增可见字段忘了走
+ * `%key%`」，而 manifest 的可见字段是会长的——`viewsWelcome`（视图欢迎语，markdown）、
+ * `walkthroughs`（引导步骤）、`configuration.title`、未来的新 contributes 面，任一都不在
+ * 那三面里。按面白名单扫描的结果是：新增一个面就悄悄开一个洞，而**洞不会红**。
+ * 故改为全文扫描——判定依据变成「manifest 里出现中文 = 一定有用户看得见的中文没走占位」。
+ */
+function collectStrings(node, trail, out) {
+  if (typeof node === 'string') {
+    out.push([trail.join('.'), node]);
+    return out;
+  }
+  if (Array.isArray(node)) {
+    node.forEach((child, i) => collectStrings(child, [...trail, `[${i}]`], out));
+    return out;
+  }
+  if (node && typeof node === 'object') {
+    for (const [key, child] of Object.entries(node)) {
+      collectStrings(child, [...trail, key], out);
     }
   }
   return out;
@@ -80,32 +94,18 @@ export function auditNls({ pkg, en, zh }) {
     issues.push(`顶层配置项 ${Object.keys(configProps).length} < 基线 ${MIN_CONFIG_PROPS}（同上）`);
   }
 
-  // 判据⑤ 本地化面中文残留（命令 / 配置 / 视图三面）
-  const zhFaces = [
-    ...commands.map((c) => [`command ${c.command}.title`, c.title]),
-    ...collectConfigDescriptions(contributes.configuration ?? {}, [], []).map(([p, v]) => [
-      `config ${p}.description`,
-      v,
-    ]),
-    ...Object.values(contributes.views ?? {})
-      .flat()
-      .map((v) => [`view ${v.id}.name`, v.name]),
-  ];
-  for (const [where, value] of zhFaces) {
-    if (typeof value === 'string' && CJK.test(value)) {
+  // 判据⑤ 中文残留（**manifest 全文**，不是某三面白名单——见 collectStrings 说明）
+  const allStrings = collectStrings(pkg, [], []);
+  for (const [where, value] of allStrings) {
+    if (CJK.test(value)) {
       issues.push(`中文硬编码残留：${where}（应走 %key% 占位）`);
     }
   }
 
-  // 判据① 引用闭合：package.json 内所有 %key%
+  // 判据① 引用闭合：manifest 内所有整值 `%key%` 占位（含未来新增面的占位）
   const referenced = new Set();
-  for (const [, value] of zhFaces) {
-    if (typeof value !== 'string') continue;
+  for (const [, value] of allStrings) {
     const m = /^%(?<key>[^%]+)%$/.exec(value);
-    if (m) referenced.add(m.groups.key);
-  }
-  if (typeof pkg?.description === 'string') {
-    const m = /^%(?<key>[^%]+)%$/.exec(pkg.description);
     if (m) referenced.add(m.groups.key);
   }
   for (const key of referenced) {
@@ -203,6 +203,16 @@ function selfTest() {
       expect: '中文硬编码残留',
     },
     {
+      // 射程回归锚：旧实现只扫「命令 / 配置 / 视图」三面，新增面里的中文一路绿灯
+      label: '⑤ 中文残留（三面白名单之外的新面：viewsWelcome）',
+      mutate: (d) => {
+        d.pkg.contributes.viewsWelcome = [
+          { view: 'memora.chat', contents: '还没有对话，点这里开始' },
+        ];
+      },
+      expect: '中文硬编码残留',
+    },
+    {
       label: '⑥ 空值',
       mutate: (d) => {
         d.zh['command.open.title'] = '';
@@ -245,7 +255,7 @@ function main() {
   const issues = auditNls(loadReal());
   if (issues.length === 0) {
     console.log(
-      '✅ [nls] package 面本地化判据全绿（键面相等 / 引用闭合 / 无孤儿 / 默认英文 / 无中文残留）',
+      '✅ [nls] package 面本地化判据全绿（键面相等 / 引用闭合 / 无孤儿 / 默认英文 / 全文无中文残留）',
     );
     return 0;
   }

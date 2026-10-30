@@ -21,8 +21,9 @@
  * 恒禁用），其效果由删按钮可用态承载，本组不重复断言。
  *
  * 复制源断言两用例共用：中断 = 半截正文作废，rawText 覆盖为 narrate 拼接
- * （narrateChainText 单点，与重放同源——旧注释「运行时同源同形」只对「不显示正文」成立，
- * rawText 拼接运行时缺失属注释谎报位点，本组断言将其锁定为事实契约）。
+ * （`deriveNarrateText` 单点 = `shared/narrateText`，与重放及宿主崩溃打捞同源——旧注释
+ * 「运行时同源同形」只对「不显示正文」成立，rawText 拼接运行时缺失属注释谎报位点，
+ * 本组断言将其锁定为事实契约）。
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
