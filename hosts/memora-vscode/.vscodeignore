@@ -23,6 +23,9 @@ package-lock.json
 docs/**
 *.md
 !README.md
+# 扩展详情页的「Changelog」标签读的就是包内这个文件（生成物，真源 = 仓库根 CHANGELOG 的宿主区）。
+# 2026-10-30 实测：0.4.0 的 vsix 只含 readme.md ⇒ 市场页 Changelog 标签是空的。
+!CHANGELOG.md
 
 # 依赖全部排除（esbuild 已内联内核到 dist/extension/extension.js）
 node_modules/**

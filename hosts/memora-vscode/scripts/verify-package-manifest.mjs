@@ -39,13 +39,24 @@ const HOST_ROOT = join(HERE, '..');
 const VSCE_BIN = join(HOST_ROOT, 'node_modules', '@vscode', 'vsce', 'vsce');
 
 /** 白名单契约（判据①）：新增合法顶层目录/文件 = 显式改这里，改动必须过 review */
-const ALLOWED_EXACT = new Set(['README.md', 'package.json', 'LICENSE']);
+const ALLOWED_EXACT = new Set(['README.md', 'CHANGELOG.md', 'package.json', 'LICENSE']);
 const ALLOWED_PREFIXES = ['resources/', 'dist/'];
 
 /** 判据③ 的射程下限：0.3.0 实测 175 个文件；下限只防「清单大面积消失」，不追精确相等 */
 const MIN_FILES = 100;
-/** `main` 指向的入口——缺它 = 包必坏 */
-const REQUIRED_ENTRIES = ['README.md', 'package.json', 'dist/extension/extension.js'];
+/**
+ * 必须出现在包内的文件。缺任一 = 包有缺陷：
+ *   - `README.md` = 市场页正文；`package.json` = manifest；`dist/extension/extension.js` = `main` 入口。
+ *   - `CHANGELOG.md` = 扩展详情页「Changelog」标签的**唯一**来源（生成物，见 `gen-changelog.mjs`）。
+ *     2026-10-30 实测 0.4.0 的 vsix 只含 readme.md ⇒ 市场页 Changelog 标签为空；本断言把
+ *     「生成器没跑 / 又被 .vscodeignore 排掉」变成打包前的红，而不是发布后才发现。
+ */
+const REQUIRED_ENTRIES = [
+  'README.md',
+  'CHANGELOG.md',
+  'package.json',
+  'dist/extension/extension.js',
+];
 
 /** 判据② 的负向模式（与白名单正交的双保险；每条只报第一命中，理由精确到类） */
 const FORBIDDEN_PATTERNS = [
@@ -110,6 +121,7 @@ function selfTest() {
   // 正确打红——自检抓到的设计缺陷，修正为足量样例，反例不经任何参数豁免、走生产判据）
   const legal = [
     'README.md',
+    'CHANGELOG.md',
     'package.json',
     'LICENSE',
     'resources/icon.png',
@@ -151,6 +163,11 @@ function selfTest() {
     `  ${noEntryOk ? '✅' : '❌'} 缺入口 dist/extension/extension.js${noEntryOk ? '被捕获' : '未被捕获'}`,
   );
   if (!noEntryOk) allOk = false;
+  // 缺 CHANGELOG：市场页「Changelog」标签的唯一来源，缺了页面就是空的（2026-10-30 实测缺口）
+  const noLog = auditManifest(legal.filter((x) => x !== 'CHANGELOG.md'));
+  const noLogOk = noLog.some((s) => s.includes('CHANGELOG.md'));
+  console.log(`  ${noLogOk ? '✅' : '❌'} 缺 CHANGELOG.md${noLogOk ? '被捕获' : '未被捕获'}`);
+  if (!noLogOk) allOk = false;
   console.log(allOk ? '\n✅ 自检通过：负向断言各判据均可捕获变异' : '\n❌ 自检失败：存在失明判据');
   return allOk ? 0 : 1;
 }

@@ -8,3 +8,7 @@ package-lock.json
 
 # 会话/记忆本地数据（Memora 工作区存储）
 .memora/
+
+# 生成物：扩展包内的 CHANGELOG（真源 = 仓库根 CHANGELOG.md 的宿主区，见 scripts/gen-changelog.mjs）
+# 不入库 ⇒ 不存在「两份手写 changelog 各自漂移」；打包前由 prepublish 重建
+CHANGELOG.md
