@@ -25,6 +25,10 @@
  *      内核 `build` 后宿主 `node_modules` 里的镜像副本**不会自动更新**；缺此步则宿主
  *      test / build / dist 契约可因加载旧内核「同根红」（2026-10-16 实锤：漏刷一次 5 红，
  *      `pnpm install --offline` 重链后三处全绿）。
+ *   8. 前置**工具链钉版**（`toolchain:pnpm`）—— 宿主用的 `pnpm` 版本由**宿主 cwd** 的
+ *      package.json#packageManager 决定（pnpm 10 只读当前目录、不向上继承）；失配时 pnpm 会
+ *      先删 node_modules 再失败，把「环境不对」放大成宿主四步连锁红（2026-10-30 实锤）。
+ *      断言排在一切步骤之前，代价 0.4s。
  *
  * 用法：
  *   node scripts/local-ci.mjs                 # ≡ --preset=full（全量；步数由运行时打印，注释不写死）
@@ -147,6 +151,19 @@ const STEP_TIMEOUT_MS = 15 * 60 * 1000; // 单步 15 分钟上限，防挂死
  * @type {{id:string,name:string,cmd:string,cwd:string,required:boolean,presets:string[],optionalFlag?:string,env?:Record<string,string>}[]}
  */
 const ALL_STEPS = [
+  // 工具链前置（ENV-PNPM-1）：`host:sync` 的 `pnpm` 解析哪个版本，取决于**宿主 cwd** 的
+  // package.json#packageManager（pnpm 10 的 manage-package-manager-versions 只读当前目录、
+  // 不向上继承——2026-10-30 实测同一时刻：根 10.29.2 / 宿主 12.16.1）。失配的代价不是一句
+  // 版本报错，而是 pnpm **先删 node_modules 再失败** ⇒ 宿主 typecheck/test/build/dist 四步
+  // 连锁红，现场只看到 host:sync 一条。0.4s 换掉一次全量重装，故排在一切步骤之前。
+  {
+    id: 'toolchain:pnpm',
+    name: '工具链钉版（pnpm 声明 = 宿主 cwd 实跑）',
+    cmd: 'node scripts/verify-toolchain-pin.mjs',
+    cwd: ROOT,
+    required: true,
+    presets: ['full'],
+  },
   {
     id: 'kernel:typecheck',
     name: '内核 TypeScript 类型检查',
@@ -216,6 +233,12 @@ const ALL_STEPS = [
     required: true,
     presets: ['full'],
     optionalFlag: 'skip-build',
+    // CI=true（ENV-PNPM-1）：非 TTY 下 pnpm 遇到「由别的 pnpm 版本建的 node_modules」会直接
+    // 拒删拒建（ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY，2026-10-30 实锤），门禁就此死在
+    // 版本切换这种与代码无关的场合。CI 模式 = 明确授权删除重建 + 锁文件必须与 package.json
+    // 同代（frozen-lockfile），顺带关掉「门禁跑完顺手改写 pnpm-lock.yaml 留下脏树」这条路径
+    //（实测该模式下锁文件零变化、2.2s 幂等）。
+    env: { CI: 'true' },
   },
   {
     id: 'host:typecheck',
