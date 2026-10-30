@@ -54,8 +54,6 @@ export interface SeedMocks {
     // 非正常收场统一收口：orchestrator.act 对 aborted/failed 共用本原语
     appendInterrupted: ReturnType<typeof vi.fn>;
     registerPendingArchive: ReturnType<typeof vi.fn>;
-    // 取走快照即清盘上 pendingAsk（ASK-PENDINGASK-CLEAR-1 窗口收口）；runResume question-answer/timeout 路径消费
-    clearPendingAsk: ReturnType<typeof vi.fn>;
   };
   sessionManager: {
     getCheckpoint: ReturnType<typeof vi.fn>;
@@ -189,7 +187,6 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       appendAssistant: vi.fn(async () => {}),
       appendInterrupted: vi.fn(async () => {}),
       registerPendingArchive: vi.fn(),
-      clearPendingAsk: vi.fn(async () => {}),
     },
     sessionManager: {
       getCheckpoint: vi.fn(() => null),

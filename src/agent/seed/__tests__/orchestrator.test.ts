@@ -244,10 +244,6 @@ describe('SeedOrchestrator 最小 turn', () => {
         },
       ],
     });
-    // ASK-PENDINGASK-CLEAR-1：takeAnsweredAsk 取走快照后即清盘上 pendingAsk（窗口收口）；
-    // 变异锚：回退本调用 ⇒ 取走→落盘间崩溃仍会把残留 pendingAsk 转 unanswered（与本用例同判据冲突）
-    expect(mocks.history.clearPendingAsk).toHaveBeenCalledTimes(1);
-    expect(mocks.history.clearPendingAsk).toHaveBeenCalledWith('round-1');
   });
 
   it('runResume timeout：快照逐题落 timeout 记录（每题带各自 question/options）', async () => {
@@ -280,28 +276,28 @@ describe('SeedOrchestrator 最小 turn', () => {
         { content: ASK_TIMEOUT_NOTICE, kind: 'timeout', id: 'tc-2', question: 'Q2？' },
       ],
     });
-    // ASK-PENDINGASK-CLEAR-1：timeout 路径同样取走即清盘（与 question-answer 同窗口收口）
-    expect(mocks.history.clearPendingAsk).toHaveBeenCalledTimes(1);
-    expect(mocks.history.clearPendingAsk).toHaveBeenCalledWith('round-1');
+    // 盘上清理不在此处：清盘是 MessageHistory.appendUser 在同一次 save 内的事（见其 askConsumed）
   });
 
-  it('runResume 清盘判据落在事实上：提问类 kind 但未取到快照 ⇒ 不清盘（防误清新批次）', async () => {
+  it('runResume 提问类 kind 但未取到快照 ⇒ 输入仍按原样归档（不因缺快照而丢用户输入）', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubContinue(mocks, '续跑回复');
     consumeControl.result = { content: '续跑回复', aborted: false, paused: false, failed: false };
-    // 快照已被前次取空（同轮二次 runResume）：harness 默认 takeAnsweredAsk 返回 undefined，
-    // 而盘上此刻可能已落下新一轮提问（markPendingAsk）——按 kind 清盘会把它不可逆地清掉。
+    // 快照已被前次取空（同轮二次 runResume）：kind 仍标 question-answer，但无 group 可展开。
+    // 判据 = 用户输入不因此丢失（降级为单条归档），且**不伪造**一个空的 group。
 
     await collectGen(
       new SeedOrchestrator(deps).runResume('补充', new AbortController().signal, 'question-answer'),
     );
     await new Promise((r) => setTimeout(r, 0));
 
-    // 变异锚：判据回退成「kind 属于提问类」⇒ 本用例红在 clearPendingAsk 被调用上；
-    // 真实后果 = 新一轮在途提问被误清，问题文本彻底丢失（appendInterrupted 也打捞不到）
-    expect(mocks.history.clearPendingAsk).not.toHaveBeenCalled();
-    // 不清盘 ≠ 不落档：本轮输入仍归档，盘上清理交给 appendUser 的 askConsumed 同次 save 兜底
+    // 变异锚：无快照时改成 return（不落档）⇒ 本例红在 appendUser 调用次数上；
+    // 或改成 always group: [] ⇒ 红在 group 为 undefined 上
     expect(mocks.history.appendUser).toHaveBeenCalledTimes(1);
+    const call = mocks.history.appendUser.mock.calls[0]!;
+    expect(call[0]).toBe('补充');
+    expect(call[2]).toMatchObject({ interactive: true, kind: 'question-answer' });
+    expect(call[2]?.group).toBeUndefined();
   });
 
   // ── 形态② 兜底收尾 ─────────────────────────

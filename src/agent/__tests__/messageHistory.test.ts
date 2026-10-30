@@ -213,27 +213,6 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
     expect(roundStore.getById(roundId)?.pendingAsk).toBeUndefined();
   });
 
-  it('clearPendingAsk 清盘上 pendingAsk（ASK-PENDINGASK-CLEAR-1 窗口收口）：与 appendUser 解耦、幂等', async () => {
-    const { history, roundStore } = createRoundBackedHistory();
-    const roundId = generateRoundId();
-    await history.appendUser('输入', roundId);
-    await history.markPendingAsk(roundId, [
-      { question: 'Q1', options: ['a', 'b'] },
-      { question: 'Q2' },
-    ]);
-    expect(roundStore.getById(roundId)?.pendingAsk).toHaveLength(2);
-    // 取走快照后立即清盘（模拟 runResume 在 takeAnsweredAsk 后调用）：盘上无 pendingAsk
-    // ⇒ 崩溃后不会被 appendInterrupted 转成 unanswered。
-    // ⚠️ 代价（2026-10-31 复审）：此刻答案**尚未落盘**（首次落盘在 appendUser 的
-    // interactiveInputs），故本处换取的不是「答案保住了」，而是「该题在盘面不留痕迹」
-    // ——用重启后的可观测性换盘面干净，语义见 MessageHistory.clearPendingAsk 注释。
-    await history.clearPendingAsk(roundId);
-    expect(roundStore.getById(roundId)?.pendingAsk).toBeUndefined();
-    // 幂等：再清一次不抛、无副作用
-    await history.clearPendingAsk(roundId);
-    expect(roundStore.getById(roundId)?.pendingAsk).toBeUndefined();
-  });
-
   it('appendUser 题身份单源（ADR-043）：草稿带 id 即用题身份落盘，缺省回退轮内序号', async () => {
     const { history, roundStore } = createRoundBackedHistory();
     const roundId = generateRoundId();

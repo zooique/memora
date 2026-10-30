@@ -151,20 +151,10 @@ export class SeedOrchestrator {
       // 超时整批 ↔ timeout + ASK_TIMEOUT_NOTICE。supplement（无快照来源）不取。
       const answeredAsk =
         kind === 'question-answer' || isTimedOutAsk ? parts.loop.takeAnsweredAsk() : undefined;
-      // ASK-PENDINGASK-CLEAR-1：取走快照即清盘上 pendingAsk（语义与代价见
-      // `MessageHistory.clearPendingAsk` 注释）。
-      // ⚠️ 2026-10-31 复审订正：初版注释称「答案已随 answerQuestion 的 appendToolMessage
-      // 进消息史持久，此处提前清盘不致丢失」——**该前提不成立**：tool 消息只活在进程内
-      // `loop.messages`，答案首次落盘在下方 `appendUser` 的 interactiveInputs。
-      // 故本处提前清盘换取的是「盘面不残留」，代价是崩溃后该题不再有 unanswered 痕迹。
-      // 判据 = **取到快照**（事实）而非 kind（意图）：kind 只声明「本轮与提问有关」，
-      // 快照非空才证明「盘上这批在途提问确实已被消费」。按 kind 清会在同轮二次 runResume
-      // （快照已被前次取空、盘上却已落下新一轮提问）时误清新批次，问题文本彻底丢失——
-      // 清盘是不可逆操作，判据必须落在事实上。未取到快照时不清，由 appendUser 的
-      // askConsumed 同次 save 兜底（该处判据作用在逐条 entry 层，含 unanswered）。
-      if (answeredAsk?.length) {
-        await parts.history.clearPendingAsk(closureRoundId);
-      }
+      // 盘上 pendingAsk 的清除不在此处、也不需在此处：`MessageHistory.appendUser` 会把答案组与
+      // 清除写在**同一次 save** 内（见其 askConsumed 判据），二者之间无中间态；收场侧另有
+      // appendAssistant / appendInterrupted 兜底。**勿在此加提前清盘层**——此刻答案尚未落盘
+      // （tool 消息只在进程内 loop.messages），提前清只会抹掉崩溃后那条诚实的 unanswered 记录。
       const askGroup = answeredAsk?.length
         ? answeredAsk.map((entry) => {
             // ADR-043：题身份单点装配（三形态共用，不自造、不三写）。

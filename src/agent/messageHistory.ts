@@ -324,6 +324,10 @@ export class MessageHistory {
             // pendingAsk 再转化成重复的 unanswered 条目）。supplement 与提问无关，不动该字段。
             // 判据含 unanswered（ASK-MULTI-Q-1）：批次内全跳过（逐题均 unanswered）同样代表
             // 快照已被 takeAnsweredAsk 消费——不清则收场转化二次记账。
+            // ⚠️ 勿在此点之前另加「提前清盘」层：答案此刻**尚未落盘**（`AgentLoop.appendToolMessage`
+            // 只 push 进程内 `loop.messages`，`Round` 结构不承载 tool 消息），二者之间不存在
+            // 「答案已持久而 pendingAsk 未清」的中间态 ⇒ 提前清的唯一净效应是把崩溃后一条
+            // 诚实的 unanswered 记录换成「该题在盘面彻底消失」（2026-10-31 实测，据此回滚）。
             const askConsumed = drafts.some(
               (d) =>
                 d.kind === 'question-answer' || d.kind === 'timeout' || d.kind === 'unanswered',
@@ -433,44 +437,6 @@ export class MessageHistory {
       logger.debug({ roundId, count: snapshot.length }, 'markPendingAsk: 在途提问已落盘');
     } catch (err) {
       logger.warn({ err, roundId }, 'markPendingAsk: 写入失败');
-    }
-  }
-
-  /**
-   * 消费在途提问后清盘上 pendingAsk（ASK-PENDINGASK-CLEAR-1）：
-   * 与 markPendingAsk 同生命周期、同 store-first 取法，唯独把 pendingAsk 置 undefined。
-   *
-   * ⚠️ 语义（2026-10-31 复审订正，取代本方法初版的论证）：
-   * 初版称「答案已随 answerQuestion 的 appendToolMessage 进消息史持久，故提前清盘不丢数据」——
-   * **该前提不成立**：`AgentLoop.appendToolMessage` 只 push 进程内 `loop.messages`，而 Round
-   * 持久化结构（`Round` / `RoundMessage`）不承载 tool 消息 ⇒ 答案首次落盘发生在 `appendUser`
-   * 的 interactiveInputs（答案组由 `SeedOrchestrator.runResume` 装配注入）。
-   * 故本方法的真实语义是：把「崩溃后由 appendInterrupted 转成 unanswered 记录」换成
-   * 「崩溃后该题在盘面不留痕迹」——**以重启后的可观测性换取盘面不残留**，
-   * 而非「保住了答案」（答案此刻本就没落盘，留着 pendingAsk 也不会多出答案）。
-   *
-   * 三处清除点分工（勿越位扩张）：
-   * - `appendUser` 的 askConsumed = **原子权威点**（答案组与清盘在同一次 save 内完成）；
-   * - `appendAssistant` = 正常收场侧的防御清（终态轮不携带 pendingAsk）；
-   * - 本方法 = 早于二者的**提前清**，唯一净效应是缩短盘面残留窗口。
-   * 清盘不可逆，判据由调用方 `SeedOrchestrator.runResume` 落在「确有快照被取走」这一事实上；
-   * 本方法内只判断「有没有东西可清」，不再自判意图。
-   */
-  async clearPendingAsk(roundId: string): Promise<void> {
-    if (!this.roundStore || !roundId) return;
-    try {
-      const existing = this.roundStore.getById(roundId) ?? this.pendingRounds.get(roundId);
-      if (!existing) {
-        logger.warn({ roundId }, 'clearPendingAsk: 对应轮缺失，跳过');
-        return;
-      }
-      if (!existing.pendingAsk || existing.pendingAsk.length === 0) return;
-      const updated: Round = { ...existing, pendingAsk: undefined };
-      this.roundStore.save(updated);
-      this.pendingRounds.set(roundId, updated);
-      logger.debug({ roundId }, 'clearPendingAsk: 在途提问已消费清盘');
-    } catch (err) {
-      logger.warn({ err, roundId }, 'clearPendingAsk: 写入失败');
     }
   }
 
