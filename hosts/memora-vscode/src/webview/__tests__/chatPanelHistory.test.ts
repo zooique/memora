@@ -2852,3 +2852,52 @@ describe('启动会话对齐（启动即分叉根因修复）', () => {
     expect(switchToSession).toHaveBeenCalledWith('2026-10-07-smuxokj29');
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// COPY-2-OK-CONTRACT-1：截断核返回值必须如实（此前恒 true）
+// ═══════════════════════════════════════════════════════════
+// regenerate 按 `ok` 决定是否重发，但实现里「锚未命中」与「截断异常」都落进
+// `return { ok: true }` ⇒ 与注释契约相反：没删也当删了续做，失败文案还会误导成
+// 「没取到原文」。此处直接钉返回值三态——busy 已自带提示、cancel 应静默、
+// miss / error 由调用方给可见反馈。
+describe('truncateTurnCore 返回值契约（COPY-2-OK-CONTRACT-1）', () => {
+  interface TruncateCast {
+    _currentSessionId: string;
+    _streaming: boolean;
+    truncateTurnCore(
+      ts: string,
+      confirmMessage: string,
+      confirmButton: string,
+    ): Promise<{ ok: boolean; reason?: string; userText?: string }>;
+  }
+
+  it('锚未命中 → ok=false / reason=miss（不得伪装成功）', async () => {
+    const { provider } = setup();
+    const cast = provider as unknown as TruncateCast;
+    // 空会话：store 内无该 session 的 roundIds ⇒ truncateFrom 返回 ok=false
+    cast._currentSessionId = '2026-08-16-empty';
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
+    const outcome = await cast.truncateTurnCore('2026-08-16T01:00:05.000Z', '确认？', '删除');
+    expect(outcome).toEqual({ ok: false, reason: 'miss' });
+  });
+
+  it('用户取消 → ok=false / reason=cancel（调用方应静默）', async () => {
+    const { provider } = setup();
+    const cast = provider as unknown as TruncateCast;
+    cast._currentSessionId = '2026-08-16-empty';
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never);
+    const outcome = await cast.truncateTurnCore('2026-08-16T01:00:05.000Z', '确认？', '删除');
+    expect(outcome).toEqual({ ok: false, reason: 'cancel' });
+  });
+
+  it('生成中 → ok=false / reason=busy，且不弹确认框（核内已自带可见提示）', async () => {
+    const { provider } = setup();
+    const cast = provider as unknown as TruncateCast;
+    cast._currentSessionId = '2026-08-16-empty';
+    cast._streaming = true;
+    vi.mocked(vscode.window.showWarningMessage).mockClear();
+    const outcome = await cast.truncateTurnCore('2026-08-16T01:00:05.000Z', '确认？', '删除');
+    expect(outcome).toEqual({ ok: false, reason: 'busy' });
+    expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
+  });
+});

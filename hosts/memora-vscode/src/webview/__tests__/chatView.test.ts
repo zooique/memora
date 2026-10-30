@@ -12682,3 +12682,88 @@ describe('IMG-8 · 发送前整轮预检（张数 / 总字节 / token 三维聚�
     expect(sentInputs(postMessage)).toHaveLength(1);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// COPY-2 复审登记伤回归（锚点契约 + 引用快照事务）
+// ═══════════════════════════════════════════════════════════
+// 两条伤都是「真机验收测不出、原用例形态也测不出」的形态：
+//   ① ANCHOR-1：`append` 的 user 分支不写 dataset.ts ⇒ 用户条右键无「删除」；
+//   ② QUOTE-TXN-1：引用快照在 sendMessage 首行就被消费 ⇒ 三条早退路径静默丢引用。
+// 原 contextMenu.test 用手搓 DOM（user 条手填 data-ts）掩盖了 ①——此处一律走真实渲染链。
+describe('COPY-2 锚点契约与引用快照事务（复审回归）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** 在真实渲染的 DOM 上派发右键（菜单由 document 级委托创建） */
+  function rightClick(target: Element): void {
+    target.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }),
+    );
+  }
+
+  it('用户消息条自带 data-ts：右键出「删除」，分叉仍归 assistant（ANCHOR-1）', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'r-anchor',
+        user: { content: '用户提问', ts: '2026-10-30T01:00:00.000Z' },
+        assistantMessage: { content: 'AI 回答', ts: '2026-10-30T01:00:05.000Z' },
+      }),
+    );
+    const userMsg = document.querySelector<HTMLElement>('.msg.user');
+    expect(userMsg).not.toBeNull();
+    // 锚点契约：user 条必须自带 ts（删除锚 = truncateFrom 的下界匹配输入）
+    expect(userMsg?.dataset.ts).toBe('2026-10-30T01:00:00.000Z');
+
+    rightClick(userMsg as HTMLElement);
+    expect(document.querySelector('[data-ctxmenu-id="delete-turn"]')).not.toBeNull();
+    // 分叉仍只由 assistant 承担（不在 user 条开第二入口，与 hover 分叉按钮同源）
+    expect(document.querySelector('[data-ctxmenu-id="fork"]')).toBeNull();
+  });
+
+  it('引用快照不被拒发路径消费：chip 仍在，恢复后发送携带引用块（QUOTE-TXN-1）', () => {
+    const { postMessage } = mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'r-quote',
+        user: { content: '问', ts: '2026-10-30T01:00:00.000Z' },
+        assistantMessage: { content: '答', ts: '2026-10-30T01:00:05.000Z' },
+      }),
+    );
+    // 有选区才出「引用回复」项（jsdom 默认空选区）
+    vi.spyOn(window, 'getSelection').mockReturnValue({
+      toString: () => '原文一句',
+    } as unknown as Selection);
+    rightClick(document.querySelector('.msg.assistant') as HTMLElement);
+    (document.querySelector('[data-ctxmenu-id="quote-reply"]') as HTMLElement).click();
+    const chipRow = document.getElementById('refChips') as HTMLElement;
+    expect(chipRow.textContent).toContain('引用：原文一句');
+
+    // 早退之一：插话满员拒发 —— 引用不得被吞（快照已清而 chip 还在 = 静默丢内容）
+    dispatch({
+      type: 'turn_update',
+      rounds: [],
+      state: { phase: 'running' },
+      pendingQueue: Array.from({ length: MAX_PENDING_INTERJECTIONS }, (_, i) => `插话${i}`),
+    });
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '正文';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'input', kind: 'send' }),
+    );
+    expect(chipRow.textContent).toContain('引用：原文一句');
+
+    // 恢复可发送相位：引用块置顶；快照消费后 chip 清空
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'idle' } });
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'input', kind: 'send', text: '> 原文一句\n\n正文' }),
+    );
+    expect(chipRow.textContent).not.toContain('引用：');
+  });
+});

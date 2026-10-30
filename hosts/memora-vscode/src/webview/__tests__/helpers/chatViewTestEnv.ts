@@ -157,13 +157,20 @@ const HTML = `
 /**
  * 跨用例累积泄漏的 createChatView 销毁句柄（flake 根因：全局监听器未移除）
  * 本模块顶层注册 afterEach 统一销毁——任何 import 本模块的测试文件都获得该守护。
+ *
+ * 🔴 **必须是列表、不能是单槽**（2026-10-30 实证）：单槽 `let dispose` 下，同一用例
+ * 内 mount 两次只会记住最后一次，前一个 view 的 document 级监听（右键菜单委托、
+ * 选区复制 guard、采集层 paste）**永不卸载**。这些陈旧 view 会继续响应后续用例的
+ * contextmenu / keydown，把 chip / 菜单画进已脱离文档的旧节点 —— 表现为「单跑绿、
+ * 整文件跑红」的顺序依赖假红（COPY-2 引用事务用例首踩）。当前文件内有 6 处同 it
+ * 双 mount。
  */
-let chatViewDispose: (() => void) | undefined;
+let chatViewDisposers: Array<() => void> = [];
 
 // 每个用例结束后显式销毁，防止 window/document 全局监听器跨用例累积泄漏（flake 根因）
 afterEach(() => {
-  chatViewDispose?.();
-  chatViewDispose = undefined;
+  for (const dispose of chatViewDisposers) dispose();
+  chatViewDisposers = [];
 });
 
 /** 挂载 createChatView 并返回 postMessage mock（ready 消息在此被捕获） */
@@ -180,7 +187,7 @@ export function mountChatView(): { postMessage: ReturnType<typeof vi.fn> } {
     acquireVsCodeApi: () => ({ postMessage }),
     window: window as unknown as Window,
   });
-  chatViewDispose = view.dispose;
+  chatViewDisposers.push(view.dispose);
   return { postMessage };
 }
 

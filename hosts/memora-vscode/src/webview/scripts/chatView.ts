@@ -2033,6 +2033,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       wrapper.className = 'msg-wrapper';
       const div = document.createElement('div');
       div.className = 'msg ' + role;
+      // 删除锚点：user 条必须自带 ts——右键菜单「删除」与 truncateFrom 下界匹配均以它为锚。
+      // assistant 走 buildAssistantShell 写入，user 分支此前漏写 ⇒ 用户条右键无「删除」。
+      // roundId 仍只由 assistant 承担（分叉点语义与 hover 分叉按钮同源，不在 user 条开第二入口）。
+      div.dataset.ts = ts ?? '';
       const body = document.createElement('div');
       body.className = 'msg-body';
       body.textContent = text;
@@ -4059,11 +4063,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     input.style.overflowY = input.scrollHeight > inputMaxHeight ? 'auto' : 'hidden';
   }
   function sendMessage(): void {
-    // 引用回复快照展开（COPY-2 形态优化）：有草稿 = 规范引用块置顶（consume 即清，快照即焚）
-    const text = quoteDraft.consumeFor(input.value.trim());
+    // 引用回复快照（COPY-2 形态优化）：此处**只读**，真正消费必须在三条早退之后——
+    // 提前 consume 会让「插话满员 / 图片 blocked / 整轮限额」拒发时静默吞掉引用
+    //（快照已清、胶囊仍挂屏 = DOM 与状态分叉，用户重发得重新右键选中）。
+    const raw = input.value.trim();
     // IMG-10（2026-10-29 拍板：纯图不激活发送）：拦下是既定行为，但**必须说明原因**——
     // 按钮灰着 + Enter 无反应会被读成「按键失灵」；有无候选图只有采集层知道，故判据外置。
-    if (!text) return imageCapture.explainEmptySend();
+    // 空判据含引用快照：正文为空但挂着引用也算有载荷（引用块本身即内容）。
+    if (!raw && !quoteDraft.get()) return imageCapture.explainEmptySend();
     // 插话满员预检（INPUT-LIMIT-1）：满员时宿主整条拒收，若先清框用户文本随警告消失（丢内容=背刺）
     // ⇒ **清框前**用队列投影预检，满员即拒发。paused 带补充 / done 走 chat 不入队，不预检（宿主闸门兜底）。
     const isInterjectRoute = deriveSessionUiState(skeletonState) === 'thinking';
@@ -4083,6 +4090,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // IMG-8 整轮预检（清框前）：三维聚合限额（张数/总字节/token），越界 ⇒ 拒发给数字并保留输入框与 chip
     const turnCheck = imageCapture.checkTurnLimits(findActiveProvider()?.limitTokens);
     if (!turnCheck.ok) return activityDrawerView.showActivity('info', turnCheck.message);
+    // 提交点（三条早退已全过）：此刻才展开引用块并**消费**快照（consumeFor = 拼接 + 清状态单点）
+    const text = quoteDraft.consumeFor(raw);
     input.value = '';
     input.style.height = 'auto';
     input.style.overflowY = 'hidden';

@@ -98,6 +98,12 @@ const SCRIPT_WRITE_TOOLS: readonly string[] = OPAQUE_WRITE_TOOL_NAMES;
  * 写前快照与写后扫描两条路径都会降级到同一句提示——并列字面量必漂移，故抽为单点常量。
  */
 const SNAPSHOT_OVERSIZE_NOTICE = '工作区文本文件过多，脚本改动未自动追踪——请用 git 核对改动';
+
+/**
+ * 截断锚未命中 / 截断异常的统一用户提示（删除与重新生成共用；两个入口同核，文案各写一份
+ * 必漂移，且「点了没反应」是最难排障的形态——失败必须可见）
+ */
+const TRUNCATE_FAIL_NOTICE = '未能定位该问答（会话可能已变更），请刷新会话后重试';
 import type {
   ChatRef,
   InjectionSegment,
@@ -1685,32 +1691,28 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 删除单个问答闭环（AI 消息「删除」按钮）
+   * 截断核：从锚点 ts 截断该问答及之后所有（对齐主流 truncate-from-turn——删该问答及其后
+   * 全部消息，保证剩余上下文自洽）。锚 = 目标轮 assistant ts，调宿主 `sessionStore.truncateFrom`
+   * （宿主 ISessionStore 扩展，内核接口保持最小化），成功后重放当前会话刷新 UI。
+   * `delete_turn` 与 `input.kind=regenerate` 共用——同锚同截断面，唯一差异 = 确认文案与
+   * 按钮词（调用方传入，防两处确认漂移成第二真理源）。
    *
-   * 语义（truncate-from-turn，对齐市面主流）：删除【该问答及其之后所有】消息，保证剩余
-   * 上下文自洽。以目标 assistant 消息的 timestamp 作锚点，调宿主 sessionStore.truncateFrom
-   * 截断后重放当前会话刷新 UI。
-   *
-   * 依赖宿主扩展方法 truncateFrom（宿主 ISessionStore 实现，内核接口保持最小化）。
-   */
-  /**
-   * 截断核：从锚点 ts 截断该问答及之后所有（运行时守卫 + 同强度 modal 确认 + 截断 +
-   * 轮次摘要联动软删 + 重放当前会话）。`delete_turn`（删除）与 `input.kind=regenerate`
-   * （重新生成，COPY-2）共用——同锚同截断面，唯一差异 = 确认文案与按钮词（调用方传入，
-   * 防两处确认漂移成第二真理源）。
-   *
-   * @returns ok = 是否实际截断（用户取消 / 守卫拒绝 / 截断异常 = false，调用方据此决定是否续做）；
-   *          userText = 截断起点 Round 的 user 原文（sessionStore 带出，regenerate 重发真源）
+   * @returns ok = 是否**实际完成截断**（取消 / 守卫 / 锚未命中 / 异常一律 false——此前恒 true，
+   *          与契约相反，调用方会把「没删」当「删了」续做）；reason = 失败归类（busy 已自带
+   *          提示 / cancel 应静默 / miss·error 必须由调用方给可见反馈，否则就是神秘失灵）；
+   *          userText = 截断起点 Round 的 user 原文（regenerate 重发真源）
    */
   private async truncateTurnCore(
     ts: string,
     confirmMessage: string,
     confirmButton: string,
-  ): Promise<{ ok: boolean; userText?: string }> {
+  ): Promise<
+    { ok: true; userText?: string } | { ok: false; reason: 'busy' | 'cancel' | 'miss' | 'error' }
+  > {
     // 运行时守卫（SSOT：与 newSession/switchToSession 同源 _streaming，禁止运行中改会话结构）
     if (this._streaming) {
       this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再操作会话结构' });
-      return { ok: false };
+      return { ok: false, reason: 'busy' };
     }
     // 破坏性操作：确认不可恢复（与「清空对话」同强度确认）
     const choice = await vscode.window.showWarningMessage(
@@ -1718,33 +1720,36 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       { modal: true },
       confirmButton,
     );
-    if (choice !== confirmButton) return { ok: false };
-    let userText: string | undefined;
+    if (choice !== confirmButton) return { ok: false, reason: 'cancel' };
     try {
       // sessionId 格式契约 SSOT：内核 splitSessionId 拆解（session 名可含连字符）
       const { date, session } = splitSessionId(this._currentSessionId);
       const result = this.sessionStore.truncateFrom(date, session, ts);
+      // 锚未命中（会话已被改动 / 旧 DOM 残留锚）= 什么都没删：既不伪装成功，也不重放
+      //（存储未变，重放只是白闪一屏）
+      if (!result.ok) return { ok: false, reason: 'miss' };
       // 联动：被回收问答闭环（引用归零）的轮次摘要软删进回收站；
       // 会话级摘要（SessionMeta.summary/keyTopics）不联动——会话本身仍在
-      if (result.ok) {
-        this.softDeleteSessionMemories(result.removedIds);
-        userText = result.removedUserText;
-      }
+      this.softDeleteSessionMemories(result.removedIds);
+      // 截断后重放当前会话（消息已减少），保证 UI 与存储一致
+      this.replayCurrentSession();
+      return { ok: true, userText: result.removedUserText };
     } catch (err) {
       // 截断失败不阻塞展示（仅清理 UI），但需记录（SSOT 不藏错）
       console.warn('Memora 截断问答闭环失败', err);
+      return { ok: false, reason: 'error' };
     }
-    // 截断后重放当前会话（消息已减少），保证 UI 与存储一致
-    this.replayCurrentSession();
-    return { ok: true, userText };
   }
 
   private async deleteTurnFrom(ts: string): Promise<void> {
-    await this.truncateTurnCore(
+    const outcome = await this.truncateTurnCore(
       ts,
       '确定删除该问答及之后的所有对话？此操作不可恢复。',
       '删除',
     );
+    if (!outcome.ok && (outcome.reason === 'miss' || outcome.reason === 'error')) {
+      this.post({ type: 'notice', level: 'info', message: TRUNCATE_FAIL_NOTICE });
+    }
   }
 
   /**
@@ -2903,13 +2908,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 附件不重发：图片随轮落盘、截断即随轮回收（语义如实：重新生成 = 文本重开）。
         const anchor = msg.turnTs?.trim() ?? '';
         if (!anchor) return;
-        const { ok: truncated, userText } = await this.truncateTurnCore(
+        const outcome = await this.truncateTurnCore(
           anchor,
           '重新生成将删除该问答及之后的所有对话，并以原文重新发送。此操作不可恢复。',
           '重新生成',
         );
-        if (!truncated) return;
-        const text = userText?.trim() ?? '';
+        if (!outcome.ok) {
+          // busy 已在核内提示、cancel 是用户主动 → 均静默；miss / error 必须可见否则等于失灵
+          if (outcome.reason === 'miss' || outcome.reason === 'error') {
+            this.post({ type: 'notice', level: 'info', message: TRUNCATE_FAIL_NOTICE });
+          }
+          return;
+        }
+        const text = outcome.userText?.trim() ?? '';
         if (!text) {
           // 锚点轮无 user 原文（异常态）→ 如实提示，不静默吞
           this.post({ type: 'notice', level: 'info', message: '未能取得原提问文本，未重新生成' });
