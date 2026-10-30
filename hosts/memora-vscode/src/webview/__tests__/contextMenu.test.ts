@@ -9,8 +9,16 @@
  *   - selection 优先级（mock getSelection）
  */
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { initContextMenu, resolveContextMenuCtx, type ContextMenuItem } from '../components/contextMenu.js';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
+import {
+  initContextMenu,
+  resolveContextMenuCtx,
+  type ContextMenuCtx,
+  type ContextMenuItem,
+} from '../components/contextMenu.js';
+
+/** run 回调签名（菜单项执行闭包；测试 mock 按此签名建，保证可赋给 ContextMenuItem.run） */
+type RunFn = (ctx: ContextMenuCtx) => void;
 
 /** 测试挂载宏：构造含 assistant/user 消息、代码块、输入框的最小聊天 DOM */
 function mountChat(): void {
@@ -40,13 +48,13 @@ function key(el: HTMLElement, k: string): void {
   el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
 }
 
-/** 测试菜单项全集（run 全部 vi.fn，由本宏返回供断言；dispose 供 afterEach 卸载 document 级监听） */
-function mountMenu(): { runs: Record<string, ReturnType<typeof vi.fn>>; dispose(): void } {
-  const runs: Record<string, ReturnType<typeof vi.fn>> = {
-    'copy-message': vi.fn(),
-    'copy-code': vi.fn(),
-    regenerate: vi.fn(),
-    delete: vi.fn(),
+/** 测试菜单项全集（run 全部带签名 mock，由本宏返回供断言；dispose 供 afterEach 卸载 document 级监听） */
+function mountMenu(): { runs: Record<string, Mock<RunFn>>; dispose(): void } {
+  const runs: Record<string, Mock<RunFn>> = {
+    'copy-message': vi.fn((_c: ContextMenuCtx) => {}),
+    'copy-code': vi.fn((_c: ContextMenuCtx) => {}),
+    regenerate: vi.fn((_c: ContextMenuCtx) => {}),
+    delete: vi.fn((_c: ContextMenuCtx) => {}),
   };
   const items: ContextMenuItem[] = [
     { id: 'copy-message', label: '复制本条', when: (c) => c.kind === 'message', run: runs['copy-message'] },
