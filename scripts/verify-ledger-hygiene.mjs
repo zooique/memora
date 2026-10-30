@@ -191,6 +191,9 @@ const EXPIRY_RE = /到期复查\s*(\d{4}-\d{2}-\d{2})/;
  * ⚠️ 已知边界（刻意接受）：条目被整段搬家 / 剪枝改写后，blame 时间会刷新到搬家那笔 ⇒
  * 老条目可能被判为新登记而要求补复查日。这是**有益误报**——动过的条目顺手确认一次出口，
  * 比让它在搬家后永久豁免更接近「保质期」的本意。不要为消除它而回退到单时相判据。
+ * ⚠️ 换「ID 首次引入时间」的方案**已实测否决**（2026-10-30）：`git log -S` 单条 **3.46s**，
+ *    91 条约 5 分钟，而现方案 blame 一次全量 ~3s。为消掉剪枝时才出现的几条误报，把门禁
+ *    从秒级拖到分钟级 = 逼人绕过它。误报的处置文案已分两路（见 ⑬ 的 `rewritten` 分支）。
  */
 const GATE13_BORN_AT = 1793315659;
 
@@ -715,10 +718,16 @@ function diagnose(text, opts = {}) {
         const born = timing.byId.get(it.id)?.headTime ?? null;
         const isNew = !headIds.has(it.id) || (born !== null && born >= GATE13_BORN_AT);
         if (isNew && !EXPIRY_RE.test(body)) {
+          // 文案分两路（两种红、处置动作不同）：ID 已在 HEAD ⇒ 老条目被改写（多为剪枝 / 搬家
+          // 刷新 blame），该做的是「确认它还有没有出口」；ID 不在 HEAD ⇒ 真新登记，该做的是
+          // 「补一条出口」。混成一句话会让人以为门认错了条目。
+          const rewritten = headIds.has(it.id) && born !== null;
           noExpiry.push({
             ...it,
             sec: sec.title,
-            why: `新登记观察项缺「到期复查 YYYY-MM-DD」——观察区是单向阀，无复查日即无出口`,
+            why: rewritten
+              ? `条目最后改动 ${stamp(born)} 晚于建门时点（多为剪枝 / 搬家改写 blame，非新登记）——请确认它是否还有出口，补「到期复查 YYYY-MM-DD」或转封存`
+              : `新登记观察项缺「到期复查 YYYY-MM-DD」——观察区是单向阀，无复查日即无出口`,
           });
         }
         const m = EXPIRY_RE.exec(body);
@@ -791,7 +800,8 @@ function report(r) {
   if (r.pending.length) problems.push(['⑥待执行无完成判据', r.pending]);
   if (r.timing.length) problems.push(['⑧落态跨发版线但无归档副本', r.timing]);
   if (r.oversize.length) problems.push(['⑫观察区条目体量超限', r.oversize]);
-  if (r.noExpiry.length) problems.push(['⑬新登记观察项无到期复查', r.noExpiry]);
+  // 标题必须与两路文案自洽：判据同时命中「真新登记」与「老条目被改写」，写死「新登记」会说谎。
+  if (r.noExpiry.length) problems.push(['⑬观察项缺到期复查（新登记 / 被改写）', r.noExpiry]);
   if (r.overdue.length) problems.push(['⑭复查日已过期未处置', r.overdue]);
   if (r.dupIds.length) problems.push(['⑮顶层条目 ID 撞名', r.dupIds]);
   if (r.clones.length) problems.push(['⑩跨条目逐字克隆', r.clones]);
