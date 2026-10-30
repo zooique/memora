@@ -211,8 +211,8 @@ describe('SeedOrchestrator 最小 turn', () => {
     consumeControl.result = { content: '续跑回复', aborted: false, paused: false, failed: false };
     // 模拟 answerQuestion 转存的多题快照：Q1 已答 + Q2 跳过（无 answer 字段 = 未答归一）
     mocks.loop.takeAnsweredAsk.mockReturnValue([
-      { slot: 'ask', question: 'Q1？', options: ['a', 'b'], answer: '选 a' },
-      { slot: 'ask', question: 'Q2？' },
+      { slot: 'ask', askCallId: 'call-1', question: 'Q1？', options: ['a', 'b'], answer: '选 a' },
+      { slot: 'ask', askCallId: 'call-2', question: 'Q2？' },
     ]);
 
     await collectGen(
@@ -228,8 +228,20 @@ describe('SeedOrchestrator 最小 turn', () => {
     expect(call[2]).toMatchObject({
       interactive: true,
       group: [
-        { content: '选 a', kind: 'question-answer', question: 'Q1？', options: ['a', 'b'] },
-        { content: LOOP_CONSTANTS.ASK_ABORTED_RESULT, kind: 'unanswered', question: 'Q2？' },
+        // ADR-043：题身份随行（内核工具调用 id），运行时行与盘面行同一 id ⇒ 去重可配对
+        {
+          content: '选 a',
+          kind: 'question-answer',
+          id: 'call-1',
+          question: 'Q1？',
+          options: ['a', 'b'],
+        },
+        {
+          content: LOOP_CONSTANTS.ASK_ABORTED_RESULT,
+          kind: 'unanswered',
+          id: 'call-2',
+          question: 'Q2？',
+        },
       ],
     });
     // ASK-PENDINGASK-CLEAR-1：takeAnsweredAsk 取走快照后即清盘上 pendingAsk（窗口收口）；
@@ -244,8 +256,8 @@ describe('SeedOrchestrator 最小 turn', () => {
     consumeControl.result = { content: '续跑回复', aborted: false, paused: false, failed: false };
     // 模拟 cancelAsk 转存的多题快照：整批未答（无 answer 字段）
     mocks.loop.takeAnsweredAsk.mockReturnValue([
-      { slot: 'ask', question: 'Q1？', options: ['a', 'b'] },
-      { slot: 'ask', question: 'Q2？' },
+      { slot: 'ask', askCallId: 'tc-1', question: 'Q1？', options: ['a', 'b'] },
+      { slot: 'ask', askCallId: 'tc-2', question: 'Q2？' },
     ]);
 
     await collectGen(
@@ -258,8 +270,14 @@ describe('SeedOrchestrator 最小 turn', () => {
     expect(call[2]).toMatchObject({
       interactive: true,
       group: [
-        { content: ASK_TIMEOUT_NOTICE, kind: 'timeout', question: 'Q1？', options: ['a', 'b'] },
-        { content: ASK_TIMEOUT_NOTICE, kind: 'timeout', question: 'Q2？' },
+        {
+          content: ASK_TIMEOUT_NOTICE,
+          kind: 'timeout',
+          id: 'tc-1',
+          question: 'Q1？',
+          options: ['a', 'b'],
+        },
+        { content: ASK_TIMEOUT_NOTICE, kind: 'timeout', id: 'tc-2', question: 'Q2？' },
       ],
     });
     // ASK-PENDINGASK-CLEAR-1：timeout 路径同样取走即清盘（与 question-answer 同窗口收口）

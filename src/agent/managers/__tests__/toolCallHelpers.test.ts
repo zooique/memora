@@ -43,6 +43,7 @@ describe('parseAskCalls', () => {
     expect(result).toEqual([
       {
         slot: 'ask',
+        askCallId: 'call-1',
         question: '故事发生在哪个城市？',
         options: ['上海', '北京'],
         allowCustom: true,
@@ -52,19 +53,19 @@ describe('parseAskCalls', () => {
 
   it('非法 JSON → 降级为空 question（不抛错、不阻断）', () => {
     const result = parseAskCalls([{ id: 'call-1', function: { arguments: '{not json' } }]);
-    expect(result).toEqual([{ slot: 'ask', question: '' }]);
+    expect(result).toEqual([{ slot: 'ask', askCallId: 'call-1', question: '' }]);
   });
 
   it('arguments 为空串 → 降级为空 question', () => {
     const result = parseAskCalls([{ id: 'call-1', function: { arguments: '' } }]);
-    expect(result).toEqual([{ slot: 'ask', question: '' }]);
+    expect(result).toEqual([{ slot: 'ask', askCallId: 'call-1', question: '' }]);
   });
 
   it('question 非字符串 → 降级为空 question', () => {
     const result = parseAskCalls([
       { id: 'call-1', function: { arguments: JSON.stringify({ question: 123 }) } },
     ]);
-    expect(result).toEqual([{ slot: 'ask', question: '' }]);
+    expect(result).toEqual([{ slot: 'ask', askCallId: 'call-1', question: '' }]);
   });
 
   it('options 非数组 → 不含 options 字段', () => {
@@ -74,14 +75,14 @@ describe('parseAskCalls', () => {
         function: { arguments: JSON.stringify({ question: 'q', options: 'not-array' }) },
       },
     ]);
-    expect(result).toEqual([{ slot: 'ask', question: 'q' }]);
+    expect(result).toEqual([{ slot: 'ask', askCallId: 'call-1', question: 'q' }]);
   });
 
   it('options 为空数组 → 不含 options 字段（避免空选项菜单）', () => {
     const result = parseAskCalls([
       { id: 'call-1', function: { arguments: JSON.stringify({ question: 'q', options: [] }) } },
     ]);
-    expect(result).toEqual([{ slot: 'ask', question: 'q' }]);
+    expect(result).toEqual([{ slot: 'ask', askCallId: 'call-1', question: 'q' }]);
   });
 
   it('options 数组内非字符串项被过滤', () => {
@@ -91,19 +92,23 @@ describe('parseAskCalls', () => {
         function: { arguments: JSON.stringify({ question: 'q', options: ['a', 1, null, 'b'] }) },
       },
     ]);
-    expect(result).toEqual([{ slot: 'ask', question: 'q', options: ['a', 'b'] }]);
+    expect(result).toEqual([
+      { slot: 'ask', askCallId: 'call-1', question: 'q', options: ['a', 'b'] },
+    ]);
   });
 
   it('allowCustom 缺失 → 不含该字段；allowCustom=false → 保留（显式 false 有意义）', () => {
     const missing = parseAskCalls([
       { id: 'c1', function: { arguments: JSON.stringify({ question: 'q' }) } },
     ]);
-    expect(missing).toEqual([{ slot: 'ask', question: 'q' }]);
+    expect(missing).toEqual([{ slot: 'ask', askCallId: 'c1', question: 'q' }]);
 
     const explicitFalse = parseAskCalls([
       { id: 'c1', function: { arguments: JSON.stringify({ question: 'q', allowCustom: false }) } },
     ]);
-    expect(explicitFalse).toEqual([{ slot: 'ask', question: 'q', allowCustom: false }]);
+    expect(explicitFalse).toEqual([
+      { slot: 'ask', askCallId: 'c1', question: 'q', allowCustom: false },
+    ]);
   });
 
   it('多个 ask_user 调用 → 分别解析为多个提问（保序）', () => {
@@ -112,6 +117,19 @@ describe('parseAskCalls', () => {
       { id: 'c2', function: { arguments: JSON.stringify({ question: '第二个' }) } },
     ]);
     expect(result.map((q) => q.question)).toEqual(['第一个', '第二个']);
+  });
+
+  it('ADR-043：题身份 = 工具调用 id，与 pendingAsk.toolCallIds 同序同源（宿主不自造）', () => {
+    const askCalls = [
+      { id: 'c1', function: { arguments: JSON.stringify({ question: 'Q1' }) } },
+      { id: 'c2', function: { arguments: JSON.stringify({ question: 'Q2' }) } },
+    ];
+    const result = parseAskCalls(askCalls);
+    // 变异锚：parseAskCalls 不填 askCallId ⇒ 本例红在身份断言上（宿主将被迫自造键）
+    expect(result.map((q) => q.askCallId)).toEqual(['c1', 'c2']);
+    // 同序同源：题身份与 AgentLoop.pendingAsk.toolCallIds 由同一 askCalls 派生，
+    // 第 i 题恒对应第 i 个工具调用 id（批次内逐题唯一，跨重启恒定 ⇒ 运行时/重放可配对）
+    expect(result.map((q) => q.askCallId)).toEqual(askCalls.map((tc) => tc.id));
   });
 
   it('空数组 → 空结果', () => {

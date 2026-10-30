@@ -36,8 +36,11 @@ export function parseAskCalls(askCalls: AskCallLike): AskQuestion[] {
     } catch {
       // 参数非法：降级为空问题（宿主渲染兜底，不阻断）
     }
+    // ADR-043：题身份在此**单点填入**（工具调用 id 即题身份），下游一律透传不自造。
+    // 批内第 i 题 ↔ askCalls[i].id，与 AgentLoop.pendingAsk.toolCallIds 同序同源。
     return {
       slot: 'ask',
+      askCallId: tc.id,
       question,
       ...(options && options.length > 0 ? { options } : {}),
       ...(allowCustom !== undefined ? { allowCustom } : {}),

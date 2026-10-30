@@ -37,6 +37,12 @@ export interface ForkResult {
 interface InteractiveInputDraft {
   content: string;
   kind: InteractiveInputKind;
+  /**
+   * 题身份（ADR-043 单源）：来自内核 `AskQuestion.askCallId`（发起提问的工具调用 id）。
+   * 有则**直接作为落盘 id**（运行时行与盘面行同一身份，去重可靠配对）；
+   * 无（supplement / 历史数据 / 未带身份的收场转化）则回退轮内序号公式。
+   */
+  id?: string;
   question?: string;
   options?: string[];
 }
@@ -54,7 +60,9 @@ function buildInteractiveInputs(
   timestamp: string,
 ): RoundInteractiveInput[] {
   return drafts.map((d, i) => ({
-    id: `msg-${roundId}-input-${existingCount + i + 1}`,
+    // ADR-043：题身份优先（内核 toolCallId，跨重启恒定 ⇒ 运行时与重放可配对）；
+    // 缺省回退轮内序号（supplement 等无题身份来源的路径，行为与历史一致）。
+    id: d.id ?? `msg-${roundId}-input-${existingCount + i + 1}`,
     role: 'user',
     content: d.content,
     timestamp,

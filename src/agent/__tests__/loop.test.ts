@@ -3836,7 +3836,13 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     // 触发 onPendingQuestion 回调，携带解析出的结构化问题
     expect(onPendingQuestion).toHaveBeenCalledTimes(1);
     expect(onPendingQuestion).toHaveBeenCalledWith([
-      { slot: 'ask', question: '结尾想要什么基调？', options: ['欢快', '深沉'], allowCustom: true },
+      {
+        slot: 'ask',
+        askCallId: 'call_ask_1',
+        question: '结尾想要什么基调？',
+        options: ['欢快', '深沉'],
+        allowCustom: true,
+      },
     ]);
     // yield 结构化 question_pending chunk
     const qp = chunks.filter((c) => c.type === 'question_pending');
@@ -3892,9 +3898,15 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     }
 
     expect(onPendingQuestion).toHaveBeenCalledTimes(1);
+    // ADR-043：题身份随提问下发（工具调用 id 即题身份），宿主渲染与内核落盘同一值
     expect(onPendingQuestion).toHaveBeenCalledWith([
-      { slot: 'ask', question: '主角职业是？' },
-      { slot: 'ask', question: '故事发生在哪个城市？', options: ['上海', '北京'] },
+      { slot: 'ask', askCallId: 'q1', question: '主角职业是？' },
+      {
+        slot: 'ask',
+        askCallId: 'q2',
+        question: '故事发生在哪个城市？',
+        options: ['上海', '北京'],
+      },
     ]);
     const qp = chunks.filter((c) => c.type === 'question_pending');
     expect(qp).toHaveLength(2);
@@ -4169,7 +4181,10 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     // answerQuestion 转存快照：runResume 落盘交互输入时随回答持久化「问了什么+答了什么」
     //（ASK-MULTI-Q-1：答案按序随题转存，回放逐题还原问答对）
     const snapshot = loop.takeAnsweredAsk();
-    expect(snapshot).toMatchObject([{ slot: 'ask', question: '基调选择？', answer: '欢快' }]);
+    // ADR-043：题身份贯通到已作答快照（工具调用 id 即题身份 ⇒ 落盘 id 与运行时 id 同源）
+    expect(snapshot).toMatchObject([
+      { slot: 'ask', askCallId: 'q1', question: '基调选择？', answer: '欢快' },
+    ]);
     // 取走即清：二次取空，防同一快照重复落盘
     expect(loop.takeAnsweredAsk()).toBeUndefined();
   });

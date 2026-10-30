@@ -392,6 +392,15 @@ export interface StatusTransition {
 export interface AskQuestion {
   /** 溯源槽位（当前恒为 'ask'，为未来扩展保留） */
   slot: string;
+  /**
+   * 题身份（ADR-043 唯一真源）：发起本题的 `ask_user` 工具调用 id。
+   *
+   * 由 `parseAskCalls` 在解析调用时按序填入（批内第 i 题 ↔ 第 i 个 toolCallId，
+   * 与 `AgentLoop.pendingAsk.toolCallIds` 同序同源）。**宿主不得自造题身份键**——
+   * 运行时渲染与内核落盘必须拿到同一个值，去重才能从「时序巧合」升级为「身份保证」。
+   * 可选：历史数据与手工构造的提问对象无此字段，消费侧按缺省回退（不因此阻断）。
+   */
+  askCallId?: string;
   /** 问题文本 */
   question: string;
   /** 候选选项（ask_user 工具 options 参数，宿主渲染可点击选项） */

@@ -49,6 +49,7 @@ description: Memora 关键决策年轮
 | [ADR-040](./ADR-040-script-run-security-three-forms.md) | 脚本运行三形态与安全防线（技能/临时/项目三形态统一执行单元 + 暴露/边界/执行三层防线 + confirmScriptRun 统一确认闸：owner 默认放行审计、guest 恒确认、confirmScripts 单开关约束全脚本；沙箱与 classifier 不进内核） | ✅ 已接受 | 安全 |
 | [ADR-041](./ADR-041-host-data-layout-contract.md) | 宿主数据布局契约（写宿主定义 `.memora/memories.db`、只读宿主跟随且不建库/不回退 JSON；一致性判据 = 跨宿主契约测试而非文档；库缺失 `FILE_NOT_FOUND` 三态诊断；门禁宿主集合按目录发现） | ✅ 已接受 | 数据层 |
 | [ADR-042](./ADR-042-package-surface-localization.md) | package 面本地化（原生 `package.nls*` 两文件：默认英文 + `zh-cn`；语言真源 = VS Code 显示语言，不设 `memora.language`；键命名契约 + 七条机检判据含射程下限；本切片只做元数据面，运行时 UI 不在范围 = 半本地化边界如实登记） | ✅ 已接受 | 前端 |
+| [ADR-043](./ADR-043-ask-batch-identity-kernel-single-source.md) | ask 批次题身份内核单源（题身份真源 = `ask_user` 工具调用 id，内核挂起即下发、宿主纯消费不自造；去重从「时序巧合」升级为「身份保证」；分三刀落地，第一刀内核产出保持回退兼容） | ✅ 已接受 | 架构 |
 
 ### 插件宿主（VC 系列）
 
@@ -79,7 +80,7 @@ description: Memora 关键决策年轮
 | 运行时 | 1    | ADR-001 |
 | 数据层 | 3    | ADR-002, ADR-016, ADR-041 |
 | 集成层 | 2    | ADR-003, ADR-017-web-search |
-| 架构   | 18   | ADR-004, ADR-010~011, ADR-015, ADR-021~025, ADR-027~031, ADR-034~036, ADR-038 |
+| 架构   | 19   | ADR-004, ADR-010~011, ADR-015, ADR-021~025, ADR-027~031, ADR-034~036, ADR-038, ADR-043 |
 | 安全   | 2    | ADR-006, ADR-040 |
 | 质量   | 1    | ADR-007 |
 | 工程   | 5    | ADR-008, ADR-017, ADR-032, ADR-033, ADR-039 |

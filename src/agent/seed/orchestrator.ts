@@ -168,6 +168,8 @@ export class SeedOrchestrator {
               return {
                 content,
                 kind: 'timeout' as const,
+                // ADR-043：题身份随行（宿主运行时行与盘面行同一 id ⇒ 去重可配对）
+                ...(entry.askCallId ? { id: entry.askCallId } : {}),
                 question: entry.question,
                 options: entry.options,
               };
@@ -177,6 +179,7 @@ export class SeedOrchestrator {
               return {
                 content: LOOP_CONSTANTS.ASK_ABORTED_RESULT,
                 kind: 'unanswered' as const,
+                ...(entry.askCallId ? { id: entry.askCallId } : {}),
                 question: entry.question,
                 options: entry.options,
               };
@@ -184,6 +187,7 @@ export class SeedOrchestrator {
             return {
               content: entry.answer,
               kind: 'question-answer' as const,
+              ...(entry.askCallId ? { id: entry.askCallId } : {}),
               question: entry.question,
               options: entry.options,
             };

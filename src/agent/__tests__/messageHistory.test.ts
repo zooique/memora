@@ -217,7 +217,10 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
     const { history, roundStore } = createRoundBackedHistory();
     const roundId = generateRoundId();
     await history.appendUser('输入', roundId);
-    await history.markPendingAsk(roundId, [{ question: 'Q1', options: ['a', 'b'] }, { question: 'Q2' }]);
+    await history.markPendingAsk(roundId, [
+      { question: 'Q1', options: ['a', 'b'] },
+      { question: 'Q2' },
+    ]);
     expect(roundStore.getById(roundId)?.pendingAsk).toHaveLength(2);
     // 取走快照后立即清盘（模拟 runResume 在 takeAnsweredAsk 后调用）：即便 appendUser 尚未落盘，
     // 盘上已无 pendingAsk ⇒ 窗口内崩溃也不会被 appendInterrupted 转成 unanswered（假「未答」）。
@@ -226,6 +229,25 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
     // 幂等：再清一次不抛、无副作用
     await history.clearPendingAsk(roundId);
     expect(roundStore.getById(roundId)?.pendingAsk).toBeUndefined();
+  });
+
+  it('appendUser 题身份单源（ADR-043）：草稿带 id 即用题身份落盘，缺省回退轮内序号', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+    const roundId = generateRoundId();
+    await history.appendUser('输入', roundId);
+    await history.appendUser('答一', roundId, {
+      interactive: true,
+      group: [
+        // 题身份由内核产出（工具调用 id），落盘直用 ⇒ 运行时行与盘面行同一身份
+        { content: '答一', kind: 'question-answer', id: 'call-1', question: 'Q1' },
+        // 无题身份来源（supplement / 历史数据）⇒ 回退轮内序号，行为与历史一致
+        { content: '补充', kind: 'supplement' },
+      ],
+    });
+    const inputs = roundStore.getById(roundId)?.interactiveInputs ?? [];
+    // 变异锚：buildInteractiveInputs 忽略 draft.id ⇒ 首条 id 退回序号公式 ⇒ 本例红在判据上
+    expect(inputs[0]?.id).toBe('call-1');
+    expect(inputs[1]?.id).toBe(`msg-${roundId}-input-2`);
   });
 
   it('appendUser 整组形态（ASK-MULTI-Q-1）：多题批次逐题落档、id 递增、原子清 pendingAsk', async () => {
