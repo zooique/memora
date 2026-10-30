@@ -232,6 +232,10 @@ describe('SeedOrchestrator 最小 turn', () => {
         { content: LOOP_CONSTANTS.ASK_ABORTED_RESULT, kind: 'unanswered', question: 'Q2？' },
       ],
     });
+    // ASK-PENDINGASK-CLEAR-1：takeAnsweredAsk 取走快照后即清盘上 pendingAsk（窗口收口）；
+    // 变异锚：回退本调用 ⇒ 取走→落盘间崩溃仍会把残留 pendingAsk 转 unanswered（与本用例同判据冲突）
+    expect(mocks.history.clearPendingAsk).toHaveBeenCalledTimes(1);
+    expect(mocks.history.clearPendingAsk).toHaveBeenCalledWith('round-1');
   });
 
   it('runResume timeout：快照逐题落 timeout 记录（每题带各自 question/options）', async () => {
@@ -258,6 +262,9 @@ describe('SeedOrchestrator 最小 turn', () => {
         { content: ASK_TIMEOUT_NOTICE, kind: 'timeout', question: 'Q2？' },
       ],
     });
+    // ASK-PENDINGASK-CLEAR-1：timeout 路径同样取走即清盘（与 question-answer 同窗口收口）
+    expect(mocks.history.clearPendingAsk).toHaveBeenCalledTimes(1);
+    expect(mocks.history.clearPendingAsk).toHaveBeenCalledWith('round-1');
   });
 
   // ── 形态② 兜底收尾 ─────────────────────────

@@ -213,6 +213,21 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
     expect(roundStore.getById(roundId)?.pendingAsk).toBeUndefined();
   });
 
+  it('clearPendingAsk 清盘上 pendingAsk（ASK-PENDINGASK-CLEAR-1 窗口收口）：与 appendUser 解耦、幂等', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+    const roundId = generateRoundId();
+    await history.appendUser('输入', roundId);
+    await history.markPendingAsk(roundId, [{ question: 'Q1', options: ['a', 'b'] }, { question: 'Q2' }]);
+    expect(roundStore.getById(roundId)?.pendingAsk).toHaveLength(2);
+    // 取走快照后立即清盘（模拟 runResume 在 takeAnsweredAsk 后调用）：即便 appendUser 尚未落盘，
+    // 盘上已无 pendingAsk ⇒ 窗口内崩溃也不会被 appendInterrupted 转成 unanswered（假「未答」）。
+    await history.clearPendingAsk(roundId);
+    expect(roundStore.getById(roundId)?.pendingAsk).toBeUndefined();
+    // 幂等：再清一次不抛、无副作用
+    await history.clearPendingAsk(roundId);
+    expect(roundStore.getById(roundId)?.pendingAsk).toBeUndefined();
+  });
+
   it('appendUser 整组形态（ASK-MULTI-Q-1）：多题批次逐题落档、id 递增、原子清 pendingAsk', async () => {
     const { history, roundStore } = createRoundBackedHistory();
     const roundId = generateRoundId();

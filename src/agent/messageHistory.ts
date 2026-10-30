@@ -429,6 +429,40 @@ export class MessageHistory {
   }
 
   /**
+   * 消费在途提问后清盘上 pendingAsk（ASK-PENDINGASK-CLEAR-1 收口崩溃窗口）：
+   * 与 markPendingAsk 同生命周期、同 store-first 取法，唯独把 pendingAsk 置 undefined。
+   *
+   * 为什么必须在此刻（而非等 appendUser 落盘）：
+   * answerQuestion/cancelAsk 把提问转存进进程内 `lastAnsweredAsk` 并清进程内 `pendingAsk`，
+   * 但盘上 `RoundPendingAsk` 由更早的 markPendingAsk 落盘、answerQuestion 不动盘。若只在
+   * appendUser 同次 save 清盘上 pendingAsk，则「takeAnsweredAsk 取走快照 → appendUser 落盘」
+   * 之间存在窗口：此间崩溃 ⇒ 盘上 pendingAsk 仍在、而答案已随 answerQuestion 的 appendToolMessage
+   * 进消息史持久 ⇒ 重启被 appendInterrupted 把残留 pendingAsk 转成 `unanswered` ⇒ 与消息史里
+   * 的 `[ASK_ANSWER]` 不一致（假「未答」、已答变未答）。
+   * 答案已在消息史持久，故取走快照即清盘上 pendingAsk：窗口内崩溃 ⇒ 盘上无 pendingAsk
+   * ⇒ 不触发 unanswered 二次转化 ⇒ 与消息史一致；interactiveInputs（结构化问答行）即便因
+   * appendUser 未落盘而缺，也只是视觉缺一行、可重派，不构成不一致。
+   * appendUser 的 askConsumed 清盘（同判据）作为幂等兜底保留，本方法是窗口收口的权威清除点。
+   */
+  async clearPendingAsk(roundId: string): Promise<void> {
+    if (!this.roundStore || !roundId) return;
+    try {
+      const existing = this.roundStore.getById(roundId) ?? this.pendingRounds.get(roundId);
+      if (!existing) {
+        logger.warn({ roundId }, 'clearPendingAsk: 对应轮缺失，跳过');
+        return;
+      }
+      if (!existing.pendingAsk || existing.pendingAsk.length === 0) return;
+      const updated: Round = { ...existing, pendingAsk: undefined };
+      this.roundStore.save(updated);
+      this.pendingRounds.set(roundId, updated);
+      logger.debug({ roundId }, 'clearPendingAsk: 在途提问已消费清盘');
+    } catch (err) {
+      logger.warn({ err, roundId }, 'clearPendingAsk: 写入失败');
+    }
+  }
+
+  /**
    * 追加 assistant 消息到当前会话（持久化失败不抛出）。
    *
    * Round-based 路径：完成 pending Round 时**才登记会话引用**——

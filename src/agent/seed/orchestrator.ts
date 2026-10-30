@@ -151,6 +151,12 @@ export class SeedOrchestrator {
       // 超时整批 ↔ timeout + ASK_TIMEOUT_NOTICE。supplement（无快照来源）不取。
       const answeredAsk =
         kind === 'question-answer' || isTimedOutAsk ? parts.loop.takeAnsweredAsk() : undefined;
+      // ASK-PENDINGASK-CLEAR-1：取走快照即清盘上 pendingAsk，收口「取走→落盘」崩溃窗口
+      // （见 messageHistory.clearPendingAsk 注释）。答案已随 answerQuestion 的 appendToolMessage
+      // 进消息史持久，此处提前清盘不致丢失；迟清则窗口内崩溃会被 appendInterrupted 转 unanswered。
+      if (kind === 'question-answer' || isTimedOutAsk) {
+        await parts.history.clearPendingAsk(closureRoundId);
+      }
       const askGroup = answeredAsk?.length
         ? answeredAsk.map((entry) => {
             if (isTimedOutAsk) {
