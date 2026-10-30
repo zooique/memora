@@ -39,6 +39,8 @@ import {
   MAX_PENDING_INTERJECTIONS,
 } from '../../shared/constants.js';
 import { bindSingleTrackRow, syncRowEdges } from '../helpers/chipRow.js';
+import { createQuoteDraft } from '../helpers/quoteDraft.js';
+import { createClampUserBubble } from '../helpers/userBubble.js';
 import { createImageCapture } from '../helpers/imageCapture.js';
 import { renderAttachmentStrip, type UserAttachmentView } from '../helpers/attachmentStrip.js';
 import { fmtTime } from '../helpers/fmtTime.js';
@@ -223,6 +225,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let currentSkill: { name: string; disabled?: boolean; pinned: boolean } | null = null;
   // 引用行（右键「添加到对话」挂的文件/目录，与 skillChipRow 同构复用样式；file/folder 二态）
   const refChipRow = document.getElementById('refChips') as HTMLElement | null;
+  // 引用回复快照草稿（COPY-2 形态优化）：文本快照 ≠ 文件指针，消费链独立（发送时展开引用块），
+  // 状态单点在工厂；chip 渲染编排归 renderAttachmentRow（refChipRow 全清重绘单点）
+  const quoteDraft = createQuoteDraft({ document, onRemove: () => renderAttachmentRow() });
+  // 长输入气泡折叠（外置 helpers/userBubble.ts，COPY-2 行数账同批腾行）；吸底滚动绑定消息容器
+  const clampUserBubble = createClampUserBubble({
+    document,
+    scrollToBottom: () => scrollToBottom(messages),
+  }).clamp;
   // 图片附件行（粘贴 / 拖入采集的 chip；D28：与引用 chip 同构、只显示文件名不做缩略图）
   const imageChipRow = document.getElementById('imageChips') as HTMLElement | null;
   let currentRefs: {
@@ -2052,35 +2062,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 长输入气泡折叠（SSOT：user 气泡限高唯一实现点）
-   *
-   * 先加 is-clamped 再比对 scrollHeight / clientHeight——借 CSS 阈值判溢出，JS 不持有
-   * 阈值副本（阈值改一处即可）。未溢出的短消息撤掉截断且不留按钮；真溢出才在气泡内
-   * 底部插「展开全文」，点击在折叠/展开间切换（文案随之切换）。
-   * 必须在 append 之后调用：测量需要元素已在文档流中。
-   */
-  function clampUserBubble(body: HTMLElement, bubble: HTMLElement): void {
-    body.classList.add('is-clamped');
-    if (body.scrollHeight <= body.clientHeight) {
-      body.classList.remove('is-clamped');
-      return;
-    }
-    const more = document.createElement('button');
-    more.type = 'button';
-    more.className = 'msg-user-more';
-    more.textContent = '展开全文';
-    more.setAttribute('aria-expanded', 'false');
-    more.addEventListener('click', () => {
-      const collapsed = body.classList.toggle('is-clamped');
-      more.textContent = collapsed ? '展开全文' : '收起';
-      more.setAttribute('aria-expanded', String(!collapsed));
-      // 展开/收起改变高度：吸底时跟随到底部（用户在翻历史时由吸底标记自动静默）
-      scrollToBottom(messages);
-    });
-    bubble.appendChild(more);
-  }
-
-  /**
    * 用户输入恒可见兜底（SSOT 单实现）：
    * 普通 user 气泡与 qa/supp 交互行渲染失败时共用——异常不静默（console.warn 取证，复现时
    * 浏览器 Console 即定位堆栈），且以最小文本块降级渲染保证用户输入不丢。
@@ -3028,6 +3009,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       .forEach((el) => el.remove());
     // H4：清空/切换会话时移除任务看板（global + inline 双轨 + 缓存，避免旧计划残留污染新会话）
     planBar.removeAll();
+    // 引用回复快照（COPY-2 形态优化）随会话语境清：引用挂在对话上，不跨清空/切换残留
+    //（同 planBar.removeAll 的跨会话残留清理范式）；重绘 chip 行同步显隐
+    quoteDraft.clear();
+    renderAttachmentRow();
     // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）
     activeAssistantEl = null;
     pausedAssistantEl = null;
@@ -4074,7 +4059,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     input.style.overflowY = input.scrollHeight > inputMaxHeight ? 'auto' : 'hidden';
   }
   function sendMessage(): void {
-    const text = input.value.trim();
+    // 引用回复快照展开（COPY-2 形态优化）：有草稿 = 规范引用块置顶（consume 即清，快照即焚）
+    const text = quoteDraft.consumeFor(input.value.trim());
     // IMG-10（2026-10-29 拍板：纯图不激活发送）：拦下是既定行为，但**必须说明原因**——
     // 按钮灰着 + Enter 无反应会被读成「按键失灵」；有无候选图只有采集层知道，故判据外置。
     if (!text) return imageCapture.explainEmptySend();
@@ -4348,11 +4334,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       id: 'quote-reply',
       label: '引用回复',
       when: (c) => c.kind === 'selection',
-      run: (c) => {
-        // 引用块置顶 + 保留已输入内容（与既有 input.value 直赋形态一致）
-        input.value = `> ${c.selectionText}\n${input.value}`;
-        input.focus();
-      },
+      // 胶囊暂存（quoteDraft），发送时展开为规范引用块——不再直塞输入框文本
+      run: (c) => { quoteDraft.set(c.selectionText); renderAttachmentRow(); input.focus(); },
     },
     { id: 'copy-message', label: '复制本条', when: (c) => c.kind === 'message' && !!c.visibleText, run: (c) => copyText(c.visibleText) },
     { id: 'copy-message-md', label: '复制为 Markdown', when: (c) => c.kind === 'message' && !!c.rawText, run: (c) => copyText(c.rawText) },
@@ -4724,7 +4707,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function renderAttachmentRow(): void {
     if (!refChipRow) return;
     refChipRow.textContent = '';
-    if (activeFile.kind === 'none' && currentRefs.length === 0 && currentInjections.length === 0) {
+    const quoteChip = quoteDraft.chip();
+    if (activeFile.kind === 'none' && currentRefs.length === 0 && currentInjections.length === 0 && !quoteChip) {
       refChipRow.hidden = true;
       return;
     }
@@ -4733,6 +4717,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const activeChip = buildActiveFileChip(activeFile);
     if (activeChip) refChipRow.appendChild(activeChip);
     for (const source of currentInjections) refChipRow.appendChild(buildInjectionChip(source));
+    // 引用回复快照胶囊（COPY-2 形态优化）：快照语义 ≠ 文件指针，但同属「本轮挂载的引用」混排
+    if (quoteChip) refChipRow.appendChild(quoteChip);
     // 钉住的排最前（「锁定在顶部」）：稳定排序保同组内插入序；只影响渲染顺序，
     // 不改 currentRefs 本体——pinned 判据仍以 currentRefs 为唯一真源（SSOT）。
     const ordered = [...currentRefs].sort((a, b) => Number(b.pinned) - Number(a.pinned));
