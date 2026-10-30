@@ -206,7 +206,47 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
     expect(h.coordinator.pendingQuestions()).toEqual([]);
   });
 
-  it('提问原文缺失时不带 question/options 字段（条件展开不为空串）', async () => {
+  it('T4-batch 超时整批逐条 post：同刻 ts + 批内唯一 inputId + 各题问/选项随行透出（ASK-MULTI-Q-1 漏网面，与内核整组落盘同构）', async () => {
+    const stub = agentStub();
+    const h = makeCoordinator({
+      isAskWaiting: true,
+      // 多问批次（内核 AskQuestion[] 整组快照同源）
+      state: {
+        phase: 'waiting',
+        reason: 'ask',
+        questions: [
+          q('Q1：编程语言？', ['TS', 'Python']),
+          q('Q2：时区？', ['Asia/Shanghai', 'UTC']),
+        ],
+      },
+      agent: stub.agent,
+    });
+    h.coordinator.setPending([q('Q1：编程语言？'), q('Q2：时区？')]);
+
+    await h.coordinator.handleAskTimeout();
+
+    const rows = h.userRows();
+    // 整批逐条 post：屏上与盘面同为 N 条（与内核整组落盘同构）
+    expect(rows).toHaveLength(2);
+    expect(rows[0].kind).toBe('timeout');
+    expect(rows[1].kind).toBe('timeout');
+    expect(rows[0].text).toContain(NOTICE_MARKER);
+    expect(rows[1].text).toContain(NOTICE_MARKER);
+    // 批内同刻 ts（一次超时提交）+ 批内唯一身份（去重键真源，按 ts 去重会丢第 2 条）
+    expect(h.posted[0]!.ts).toBe(h.posted[1]!.ts);
+    expect(h.posted[0]!.inputId).toBeTruthy();
+    expect(h.posted[1]!.inputId).toBeTruthy();
+    expect(h.posted[0]!.inputId).not.toBe(h.posted[1]!.inputId);
+    // 各题问/选项随行透出（不折叠到首问）
+    expect(h.posted[0]).toMatchObject({ question: 'Q1：编程语言？', options: ['TS', 'Python'] });
+    expect(h.posted[1]).toMatchObject({
+      question: 'Q2：时区？',
+      options: ['Asia/Shanghai', 'UTC'],
+    });
+    expect(stub.calls).toEqual(['cancel', 'resume']);
+  });
+
+  it('提问原文缺失 ⇒ 整批为空 0 条 post（与内核 runResume 同构：盘面 0 条 ⇒ 屏上 0 条）', async () => {
     const stub = agentStub();
     const h = makeCoordinator({
       isAskWaiting: true,
@@ -215,6 +255,23 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
       agent: stub.agent,
     });
     h.coordinator.setPending([q('继续吗？')]);
+
+    await h.coordinator.handleAskTimeout();
+
+    // 提问原文缺失 ⇒ runResume timeout 分支落盘 0 条 ⇒ 屏上同为 0 条
+    //（不产生重放时无源消失的行）
+    expect(h.userRows()).toHaveLength(0);
+    expect(stub.calls).toEqual(['cancel', 'resume']);
+  });
+
+  it('问句为空串 ⇒ 不带 question/options 字段（条件展开不为空串）', async () => {
+    const stub = agentStub();
+    const h = makeCoordinator({
+      isAskWaiting: true,
+      state: { phase: 'waiting', reason: 'ask', questions: [q('')] },
+      agent: stub.agent,
+    });
+    h.coordinator.setPending([q('')]);
 
     await h.coordinator.handleAskTimeout();
 

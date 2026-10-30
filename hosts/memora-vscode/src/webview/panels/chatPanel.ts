@@ -3190,8 +3190,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'user',
         text: answers[i],
-        ts: now,
+        ts: now, // 批内同刻（一次提交）——归位键；身份由 inputId 承载，去重不看 ts
         kind: 'question-answer',
+        // 批内逐条唯一身份（去重键真源）：同批共享 ms 级 ts，去重按 ts 会丢第 2..N 条
+        inputId: `live-input-${now}-${i}`,
         ...(pendingQ?.question ? { question: pendingQ.question, options: pendingQ.options } : {}),
       });
     }

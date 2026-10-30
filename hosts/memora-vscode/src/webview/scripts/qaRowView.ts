@@ -39,7 +39,7 @@ export function createQaRowView(deps: QaRowViewDeps): QaRowView {
     const row = document.createElement('div');
     row.className = 'round-block__input';
     // 提问回顾行：question-answer/timeout/unanswered 携带 question 时先渲染只读「问」行
-    //（还原提问上下文；unanswered = 崩溃收场转化的「问了没答」，问行同样可考）
+    //（还原提问上下文；unanswered = 崩溃收场转化 / 作答批次内跳过题的「问了没答」，问行同样可考）
     if ((kind === 'question-answer' || kind === 'timeout' || kind === 'unanswered') && question) {
       const q = document.createElement('div');
       q.className = 'round-block__input-q';

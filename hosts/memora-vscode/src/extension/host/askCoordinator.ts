@@ -119,13 +119,16 @@ export class AskCoordinator {
 
   /**
    * ask 提问等待超时（保底，非打扰通道）：用户未在时限内回答 →
-   * ① 渲染「问 + 未回答」交互行（与 qa 同构，question/options 随行透出）；
+   * ① 整批逐条渲染「问 + 未回答」交互行（与 qa 同构，question/options 随行透出）；
    * ② cancelAsk 注入 [ASK_ABORTED] 占位 tool result（转存提问快照供落盘）；
    * ③ resumeExecution('timeout') 自动续跑——LLM 看到「用户未回答该提问」自决最优方案。
    * 选项/自由输入仍是唯一主动通道，超时只是保底（用户明确不要「跳过」按钮）。
    *
+   * 多问批次整批逐条 post（与内核 runResume timeout 分支整组落盘同构）——
+   * 屏上 / 盘面 / 重放三面同为 N 条（ASK-MULTI-Q-1）。
+   *
    * ⚠️ **八步顺序不可调换**（详见方案 §2.2 T3/T4）：timer 置空 → pending 空守卫 →
-   * 相位守卫 → 读提问原文 → 清 pending → post 超时记录 → cancelAsk → resume。
+   * 相位守卫 → 读提问快照 → 清 pending → 逐条 post 超时记录 → cancelAsk → resume。
    * 其中 ⑦ 在 ⑧ 之前：cancelAsk 先注入占位 + 转存快照，`runResume` timeout 分支取走落盘 question。
    */
   async handleAskTimeout(): Promise<void> {
@@ -139,15 +142,20 @@ export class AskCoordinator {
     // 不另写 `reason === 'ask'`——ask 语义由上方 isAskWaiting() 守卫 + 投影真源双保证
     //（deriveTurnState 恒派生：pause/pausePending 分支不带 questions，questions 非空即 ask）
     const state = this._deps.getTurnState();
-    const pendingQ = state.phase === 'waiting' ? state.questions?.[0] : undefined;
+    const pendingQs = state.phase === 'waiting' ? (state.questions ?? []) : [];
     this._pending = []; // 提问已超时消费（整体清空，非 splice 逐条弹出）
     const now = new Date().toISOString();
-    this._deps.post({
-      type: 'user',
-      text: ASK_TIMEOUT_NOTICE, // 镜像内核 orchestrator ASK_TIMEOUT_NOTICE（运行时 = 重放同构）
-      ts: now,
-      kind: 'timeout',
-      ...(pendingQ?.question ? { question: pendingQ.question, options: pendingQ.options } : {}),
+    // 整批逐条透出（与盘面 runResume timeout 整组落盘同构）；inputId = 批内唯一身份
+    //（去重键真源，同批共享 ms 级 ts——按 ts 去重会丢第 2..N 条）
+    pendingQs.forEach((q, i) => {
+      this._deps.post({
+        type: 'user',
+        text: ASK_TIMEOUT_NOTICE, // 镜像内核 orchestrator ASK_TIMEOUT_NOTICE（运行时 = 重放同构）
+        ts: now,
+        kind: 'timeout',
+        inputId: `live-input-${now}-${i}`,
+        ...(q.question ? { question: q.question, options: q.options } : {}),
+      });
     });
     // cancelAsk 先于 resume：注入 [ASK_ABORTED] 占位 + 转存提问快照（runResume timeout 分支取走落盘 question）
     agent.cancelAsk();

@@ -7142,6 +7142,41 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(roundBlock.querySelector('.round-block__stats')?.textContent).toContain('你答×3');
   });
 
+  it('ASK-MULTI-Q-1 漏网面：重放同批 N 条共享 ms 级 ts 仍逐条渲染（去重键=身份非时间，2026-10-30 真机实锤）', () => {
+    mountChatView();
+    // 内核 runResume 整组原子落 N 条 ⇒ 同批共享同一 ts（真机 round 同刻 2026-10-30T10:22:03.705Z 形态）
+    dispatchReplay(
+      makeRound({
+        id: 'round-batch',
+        user: { content: '把上述问题使用ask工具提问我', ts: 't1' },
+        processEvents: [
+          { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
+          { type: 'narrate', seq: 2, ts: 't1.1', payload: { content: '提问中…' } },
+        ],
+        interactiveInputs: [
+          {
+            content: 'TypeScript',
+            ts: 't2',
+            kind: 'question-answer',
+            question: 'Q1：编程语言？',
+          },
+          { content: 'Asia/Shanghai', ts: 't2', kind: 'question-answer', question: 'Q2：时区？' },
+        ],
+        assistantMessage: { content: '已记录', ts: 't3' },
+        status: 'complete',
+      }),
+    );
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb).not.toBeNull();
+    // 同 ts 双条不得被当「双轨重复」吃掉（按 ts 去重此处只得 1 条 = 真机丢条形态）
+    const inputs = rb.querySelectorAll('.round-block__details .round-block__input');
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0]!.textContent).toContain('TypeScript');
+    expect(inputs[1]!.textContent).toContain('Asia/Shanghai');
+    // 统计循环同源换键：你答×2（按 ts 去重会只数 1）
+    expect(rb.querySelector('.round-block__stats')?.textContent).toContain('你答×2');
+  });
+
   it('重放跨轮 supplement 不合并：各 roundId 补充独立成行（2026-09-07 跨轮合并 bug 修复）', () => {
     mountChatView();
     // 两轮问答，各带一条 supplement（重放时序：user → 中间段supp → 最终回答）
@@ -7947,6 +7982,47 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     expect(rb.querySelector('.round-block__stats')?.textContent).toContain('你答×1');
     // done 后 round-block 收起（finalize）
     expect(rb?.hasAttribute('open')).toBe(false);
+  });
+
+  it('ASK-MULTI-Q-1 漏网面：运行时同批逐条 post 共享 ts，收场仍逐条保留（inputId 承载身份，2026-10-30 真机实锤）', () => {
+    mountChatView();
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({ type: 'chunk', content: '需要确认两个问题', roundId: 'r1' });
+    // chatPanel answerInput 逐条 post 真实形态：一次提交 ⇒ 批内同刻 ts + 批内唯一 inputId
+    dispatch({
+      type: 'user',
+      text: 'TypeScript',
+      ts: 't',
+      kind: 'question-answer',
+      inputId: 'live-input-t-0',
+      question: 'Q1：编程语言？',
+    });
+    dispatch({
+      type: 'user',
+      text: 'Asia/Shanghai',
+      ts: 't',
+      kind: 'question-answer',
+      inputId: 'live-input-t-1',
+      question: 'Q2：时区？',
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({ type: 'chunk', content: '已记录', roundId: 'r1' });
+    dispatch({ type: 'done', roundId: 'r1' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb).not.toBeNull();
+    // 收场折入后同 ts 双条不被当「双轨重复」吃掉（按 ts 去重 = 真机实时+重放同丢形态）
+    const inputs = rb.querySelectorAll('.round-block__details .round-block__input');
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0]!.textContent).toContain('TypeScript');
+    expect(inputs[1]!.textContent).toContain('Asia/Shanghai');
+    // 统计同源：你答×2（finalize 数组轨按 ts 去重只数 1）
+    expect(rb.querySelector('.round-block__stats')?.textContent).toContain('你答×2');
   });
 
   it('G31 方案1 修复（2026-09-08）：重放带 question 的 qa 成对完整折入——折叠内含「问回顾行 + 你答块」、assistant 相邻、摘要你答×1', () => {

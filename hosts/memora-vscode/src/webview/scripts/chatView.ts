@@ -110,6 +110,7 @@ import {
 } from './processFlowCells.js';
 import { createPickerView } from './pickerView.js';
 import { createQaRowView } from './qaRowView.js';
+import { createEmptyStateView } from './emptyStateView.js';
 import { createRoleBadgeView } from './roleBadgeView.js';
 import { createToolRowView } from './toolRowView.js';
 // 历史菜单（会话记录/留存区）：渲染与分组状态收口于 historyMenuView（HOST-SPLIT-1 chatView 第 2 刀）
@@ -129,36 +130,6 @@ export interface ChatViewDeps {
   /** webview window 对象（脚本在浏览器环境运行） */
   window: Window;
 }
-
-/** 空状态示例提问项（点击填入输入框） */
-interface Suggestion {
-  /** 填入输入框的完整提问 */
-  prompt: string;
-  /** chip 展示文案 */
-  label: string;
-}
-
-/**
- * 空状态示例提问集（SSOT）
- *
- * ROLE_SUGGESTION_SETS 按角色显示名特化示例提问：命中展示专属示例，未命中回退通用。
- * showcase 角色（白话方案设计师）展示"种子收敛"引导——让用户一键体验 memora 最吸引人的
- * 「给模糊想法 → 引导收敛最小单元」设计魅力；其余角色保持通用打磨引导，
- * 避免为每条角色特化造成维护成本（新增 showcase 角色时在此追加映射即可）。
- */
-const DEFAULT_SUGGESTIONS: Suggestion[] = [
-  { prompt: '帮我审阅当前文档的架构合理性', label: '审阅架构' },
-  { prompt: '帮我精简文档中的冗余表达', label: '精简表达' },
-  { prompt: '检查文档与代码实现是否一致', label: '对齐实现' },
-];
-
-const ROLE_SUGGESTION_SETS: Record<string, Suggestion[]> = {
-  白话方案设计师: [
-    { prompt: '我想做一个个人知识库，帮我设计一个方案', label: '设计知识库' },
-    { prompt: '我想做一个记忆系统，帮我找出最小单元', label: '设计记忆系统' },
-    { prompt: '我想做一个待办工具，帮我找出最小功能', label: '找最小单元' },
-  ],
-};
 
 /**
  * 初始化对话面板 webview 交互
@@ -425,6 +396,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const qaRowView = createQaRowView({ document });
   // 角色徽章行（CHATVIEW-SLIM-3 第三刀）：零状态 DOM 构造，deps 注入两个徽章节点
   const roleBadgeView = createRoleBadgeView({ document, roleBadge, capabilityBadge });
+  // 空状态呈现域（空态外置）：开关 / 角色化文案 / 示例 chips / 未配置模型引导
+  const emptyStateView = createEmptyStateView({
+    document,
+    emptyState,
+    emptyTitle,
+    emptyHint,
+    emptySuggestions,
+    messages,
+    postMessage: (msg) => vscode.postMessage(msg as WebviewToExtensionMessage),
+  });
 
   // StatusDock 挂载条域容器（待发送 / 文件改动 / 后台任务三条件，第 6 刀外置，见 statusBarsView.ts）
   const statusBars = createStatusBarsView({
@@ -581,7 +562,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 的 fallback 条目从消息流尾归位进过程容器（按 ts 重排序），消除「补充选项卡贴输入框下方」错位
     flushSkeletonPendingItems();
     scrollToBottom(messages);
-    updateEmptyState();
+    emptyStateView.update();
   }
 
   /**
@@ -887,22 +868,25 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         b.anchorTs,
       );
     }
-    // § 运行时输入（形态甲）：跨重建快照条目 + finalize 合并流条目统一按统一时间键（ts）
-    //   归位到对应任务项分组（补充挂刚结束的任务项间隙），不搬家、不追加末尾。data-ts 去重防双轨重复。
+    // § 运行时输入（形态甲）：跨重建快照条目 + finalize 合并流条目统一按时间键归位任务项分组
+    //   （不搬家不追尾）；去重按身份键（qaDedupKey）——按 ts 单键会丢同批第 2..N 条。
     const renderedInputTs = new Set<string>();
     for (const el of existingInputs) {
       const tsKey = el.dataset.ts ?? '';
-      if (!tsKey || renderedInputTs.has(tsKey)) continue;
-      renderedInputTs.add(tsKey);
+      const key = qaDedupKey(el.dataset.inputId, tsKey);
+      if (!tsKey || renderedInputTs.has(key)) continue;
+      renderedInputTs.add(key);
       const { host } = cells.planItemContainerFor(details, events, tsKey);
       insertPlanItemInOrder(host, el, tsKey);
     }
     for (const qa of interactiveInputs ?? []) {
       const tsKey = qa.ts ?? '';
-      if (!tsKey || renderedInputTs.has(tsKey)) continue;
-      renderedInputTs.add(tsKey);
+      const key = qaDedupKey(qa.id, tsKey);
+      if (!tsKey || renderedInputTs.has(key)) continue;
+      renderedInputTs.add(key);
       const item = qaRowView.renderQaItem(qa.text, qa.kind, qa.question, qa.options);
       item.dataset.ts = tsKey;
+      if (qa.id) item.dataset.inputId = qa.id;
       const { host } = cells.planItemContainerFor(details, events, tsKey);
       insertPlanItemInOrder(host, item, tsKey);
     }
@@ -1061,15 +1045,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
               ?.textContent ?? '';
           if (!tag) continue;
           const elTs = el.dataset.ts ?? '';
-          if (elTs && countedTs.has(elTs)) continue;
-          if (elTs) countedTs.add(elTs);
+          const key = qaDedupKey(el.dataset.inputId, elTs);
+          if (elTs && countedTs.has(key)) continue;
+          if (elTs) countedTs.add(key);
           qaCount.set(tag, (qaCount.get(tag) ?? 0) + 1);
         }
-        // 合并流条目：按 kind 映射 tag（data-ts 去重同渲染循环）
+        // 合并流条目：按 kind 映射 tag（身份键去重，与渲染循环同源）
         for (const qa of interactiveInputs ?? []) {
           const tag = kindTag(qa.kind);
-          if (!tag || !qa.ts || countedTs.has(qa.ts)) continue;
-          countedTs.add(qa.ts);
+          const key = qaDedupKey(qa.id, qa.ts);
+          if (!tag || !qa.ts || countedTs.has(key)) continue;
+          countedTs.add(key);
           qaCount.set(tag, (qaCount.get(tag) ?? 0) + 1);
         }
         const qaParts: string[] = [];
@@ -1833,11 +1819,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (!anyRunning) clearToolElapsed();
   }
 
-  // 空状态开关：消息区无 .msg 时显示空状态提示，有消息则隐藏
-  function updateEmptyState(): void {
-    emptyState.hidden = messages.querySelector('.msg') !== null;
-  }
-
   /**
    * 更新输入区状态行「当前角色」徽章（SSOT：角色名与 AI 消息头/空状态共用 currentRoleName）。
    *
@@ -1920,68 +1901,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     teamMeetingIcon.hidden = false;
   }
 
-  /**
-   * P3（空状态角色化）：空状态标题/提示随激活角色包动态生成
-   *
-   * 原空状态文案硬编码「开始打磨你的设计文档」（doc-review 定位），切换角色包后错位。
-   * 改为标题用角色显示名、提示用角色定位描述（manifest.description，可选），随角色生长。
-   * 示例提问 chips 由 renderEmptySuggestions 随 showcase 角色动态渲染。
-   */
-  function updateEmptyStateRole(): void {
-    const name = currentRoleName || 'AI';
-    emptyTitle.textContent = '开始与 ' + name + ' 对话';
-    // 角色定位描述优先；无描述时回退默认引导文案（textContent 赋值防注入）
-    const activePack = currentRolePacks.find((p) => p.displayName === currentRoleName);
-    emptyHint.textContent = activePack?.description || '在下方输入你的想法，或点击示例提问快速开始';
-    // 示例提问随 showcase 角色特化（白话方案设计师展示"种子收敛"引导，其余回退通用）
-    renderEmptySuggestions(name);
-  }
-
-  /**
-   * LLM 未配置时的空态 onboarding
-   *
-   * 无 Provider 时切换空状态为「去配置模型」引导：提示用户先配置大模型（首次使用关键路径），
-   * 并提供一键跳转按钮（点击 post open_settings_tab(config) → host 执行 memora.openSettings('config')）。
-   * 配置就绪后调用方应再次走 updateEmptyStateRole 恢复普通引导（幂等，按钮用 querySelector 复用）。
-   * 文案一律 textContent 赋值防注入；按钮事件直接在创建处绑定（随空态 DOM 常驻，无需委托）。
-   */
-  function updateEmptyStateOnboarding(): void {
-    emptyTitle.textContent = '还没有配置大模型';
-    emptyHint.textContent = '配置一个大模型后即可开始对话（支持 OpenAI 兼容接口）';
-    emptySuggestions.textContent = '';
-    // 防重复追加（配置后回普通空态再触发时幂等）
-    let btn = emptyState.querySelector<HTMLButtonElement>('.empty-onboard-btn');
-    if (!btn) {
-      btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'empty-onboard-btn';
-      btn.textContent = '去配置模型';
-      btn.addEventListener('click', () => {
-        vscode.postMessage({ type: 'open_settings_tab', tab: 'config' });
-      });
-      emptyState.appendChild(btn);
-    }
-  }
-
-  /** 空状态示例提问 Chips：随激活角色动态渲染（SSOT，事件委托兼容动态元素）。
-   *
-   * 命中 ROLE_SUGGESTION_SETS 的角色展示专属示例（showcase，如白话方案设计师的"种子收敛"引导，
-   * 让 memora 设计魅力一键可体验）；未命中回退 DEFAULT_SUGGESTIONS 通用打磨引导
-   * （避免为每条角色特化造成维护成本）。textContent 赋值防注入。 */
-  function renderEmptySuggestions(name: string): void {
-    if (!emptySuggestions) return;
-    const set = ROLE_SUGGESTION_SETS[name] ?? DEFAULT_SUGGESTIONS;
-    emptySuggestions.textContent = '';
-    set.forEach((s) => {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'suggestion-chip';
-      chip.dataset.prompt = s.prompt;
-      chip.textContent = s.label;
-      emptySuggestions.appendChild(chip);
-    });
-  }
-
   // 滚动到底部（rAF 节流，helpers/scrollToBottom 单一实现）：流式渲染时每 chunk 都可能
   // 触发滚动，用 requestAnimationFrame 合并为每帧一次，避免强制 reflow。此处统一以 messages
   // 为滚动容器；scrollToBottom + scrollRafPending 只存在于 helpers，本地不持副本。
@@ -2031,7 +1950,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 容器化：归位到所属 .round-group（同 roundId 段收进容器；无 roundId 留消息流）
       ensureRoundGroup(roundId, div);
       scrollToBottom(messages);
-      updateEmptyState();
+      emptyStateView.update();
       return div;
     } else {
       // 用户消息：外层包裹（气泡 + hover 操作按钮）
@@ -2066,7 +1985,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       messages.appendChild(wrapper);
       clampUserBubble(body, div);
       scrollToBottom(messages);
-      updateEmptyState();
+      emptyStateView.update();
       return wrapper;
     }
   }
@@ -2132,9 +2051,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     roundId?: string;
     question?: string;
     options?: string[];
+    /** 条目身份（去重键真源；ts 只作归位键）：运行时=协议 inputId，重放=内核
+     *  RoundInteractiveInput.id；缺省退化按 ts 去重（单条无碍，同批共享 ts 会丢第 2..N 条） */
+    id?: string;
   }
   /** 本轮运行时输入累积（新闭环重置）；finalize 由 renderRoundBlock 从合并流重建归位 */
   let runtimeInteractiveInputs: RuntimeInteractiveInput[] = [];
+  /** 交互输入去重键（单点判据，渲染与统计全部消费点共用）：身份优先、缺省退化时间键。
+   *  禁按 ts 单键——同批 N 条共享 ms 级 ts，第 2..N 条会被当双轨重复吃掉（ASK-MULTI-Q-1 真机实锤） */
+  const qaDedupKey = (id: string | undefined, ts: string | undefined): string => id ?? ts ?? '';
   /** 骨架期交互行暂存：过程容器（flowEl/round-block）尚未建立时
    *  fallback 渲染的补充/回答行 —— 先落消息流尾保「用户输入恒可见」，待骨架建立后
    *  由 flushSkeletonPendingItems 迁移进过程容器，修复「补充选项卡贴输入框下方」
@@ -2167,10 +2092,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param text 输入全文（timeout 时为超时通知文案，与内核落盘 content 同值）
    * @param ts 时间戳（排序键；缺失时兜底当前时刻）
    * @param kind 交互类型（question-answer=提问回答 / supplement=补充 / timeout=提问超时未答 /
-   *        unanswered=崩溃收场转化的「问了没答」，内核 appendInterrupted 转化产物）
+   *        unanswered=「问了没答」：appendInterrupted 收场转化或 runResume 批次内跳过题）
    * @param roundId 所属轮（随 user(kind) 消息透传）
    * @param question 提问原文（qa/timeout/unanswered 携带时，条目上方渲染只读「问」回顾行）
    * @param options 候选选项（静态文本随回顾行展示）
+   * @param inputId 条目身份（批内唯一去重键；缺省退化按 ts 去重，单条形态无碍）
    */
   function appendInteractiveInput(
     text: string,
@@ -2179,6 +2105,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     roundId?: string,
     question?: string,
     options?: string[],
+    inputId?: string,
   ): void {
     // 显示逻辑统一：supplement / question-answer / timeout 同为
     // 「闭环内用户交互」（数据同构 interactiveInputs.kind），共用过程条目行形态，
@@ -2191,11 +2118,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       inputBar.hidden = false;
     }
     // 缓存（finalize 合并流重建 QA 的数据源；重放路径同源累积，最终态一致）
-    runtimeInteractiveInputs.push({ text, ts, kind, roundId, question, options });
+    runtimeInteractiveInputs.push({ text, ts, kind, roundId, question, options, id: inputId });
     try {
       const item = qaRowView.renderQaItem(text, kind, question, options);
       const tsKey = ts ?? new Date().toISOString();
       item.dataset.ts = tsKey;
+      if (inputId) item.dataset.inputId = inputId;
       // 目标容器：运行时 process-flow > 完成态/重放 round-block > 降级消息流（纯问答轮无过程容器）
       const flow = flowEl?.isConnected ? flowEl : null;
       const rbDetails = roundBlockEl?.isConnected
@@ -2229,7 +2157,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       ensureUserInputVisible(text, err);
     }
     scrollToBottom(messages);
-    updateEmptyState();
+    emptyStateView.update();
   }
 
   /**
@@ -2699,7 +2627,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 挂载运行时过程平铺容器（meta 已先到）：过程按任务项时序平铺（无大折叠壳）
     renderProcessFlow(currentEvents);
     scrollToBottom(messages);
-    updateEmptyState();
+    emptyStateView.update();
   }
 
   // ─── 流式增量 Markdown 渲染（吸收养分：对齐 TraeWork 对话流实时格式化） ───
@@ -3008,7 +2936,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 清空消息区与全部渲染状态（clear_ok + 重放渲染 renderReplayFromRounds 复用）
    *
-   * 不替换 messages 全部子节点（保留 #emptyState 占位）；空态/占位刷新由调用方 updateEmptyState 负责。
+   * 不替换 messages 全部子节点（保留 #emptyState 占位）；空态/占位刷新由调用方 emptyStateView.update 负责。
    */
   function resetChatView(): void {
     // 清空消息区须同时清 .msg、.msg-wrapper（用户消息外层壳）、.round-block、.date-divider、
@@ -3118,6 +3046,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       ts?: string;
       question?: string;
       options?: string[];
+      id?: string;
     }[] = [
       ...(r.assistantLog ?? []).map((m) => ({
         kind: 'seg' as const,
@@ -3130,6 +3059,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         ts: i.timestamp,
         question: i.question,
         options: i.options,
+        id: i.id,
       })),
     ].sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
     for (const item of middle) {
@@ -3144,13 +3074,29 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
             .forEach((el) => el.remove());
         }
       } else if (item.kind === 'unanswered') {
-        // 崩溃/中断收场的「问了没答」行（内核 appendInterrupted 把残留 pendingAsk 转化而来）：
-        // 只落回顾行——不置 resumePending（轮已收场，后续 meta 无「同闭环续跑」可言）、
-        // 不收拾打断骨架（那是给续跑输入用的，此处无续跑场景）
-        appendInteractiveInput(item.content, item.ts, item.kind, r.id, item.question, item.options);
+        // 「问了没答」行——两个生产者：appendInterrupted 收场转化 / runResume 作答批次跳过题
+        //（ASK-MULTI-Q-1，正文=ASK_ABORTED_RESULT 占位，可与 question-answer 行同批交错）。
+        // 只落回顾行——不置 resumePending（轮已收场，无「同闭环续跑」可言）、不收拾打断骨架（无续跑场景）
+        appendInteractiveInput(
+          item.content,
+          item.ts,
+          item.kind,
+          r.id,
+          item.question,
+          item.options,
+          item.id,
+        );
       } else if (item.kind === 'question-answer' || item.kind === 'timeout') {
         resumePending = true;
-        appendInteractiveInput(item.content, item.ts, item.kind, r.id, item.question, item.options);
+        appendInteractiveInput(
+          item.content,
+          item.ts,
+          item.kind,
+          r.id,
+          item.question,
+          item.options,
+          item.id,
+        );
       } else {
         // supplement：删除打断骨架后照常落交互行
         flowShellEl?.remove();
@@ -3158,7 +3104,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         if (pausedAssistantEl && !pausedAssistantEl.isConnected) pausedAssistantEl = null;
         clearPendingWait();
         resumePending = true;
-        appendInteractiveInput(item.content, item.ts, item.kind, r.id, item.question, item.options);
+        appendInteractiveInput(
+          item.content,
+          item.ts,
+          item.kind,
+          r.id,
+          item.question,
+          item.options,
+          item.id,
+        );
       }
     }
     // 4) 最终回答（complete 轮挂正文——中断轮正文与平铺 narrate 同源，避免双份；
@@ -3202,7 +3156,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const r of rounds) {
       renderReplayRound(r);
     }
-    updateEmptyState();
+    emptyStateView.update();
     scrollToBottom(messages);
   }
 
@@ -3401,7 +3355,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 普通新闭环输入重置同环判定 + 清续跑期待 + round-block 锚点（供新轮首块挂载）
       if (msg.kind) {
         resumePending = true;
-        appendInteractiveInput(msg.text, msg.ts, msg.kind, msg.roundId, msg.question, msg.options);
+        appendInteractiveInput(
+          msg.text,
+          msg.ts,
+          msg.kind,
+          msg.roundId,
+          msg.question,
+          msg.options,
+          msg.inputId,
+        );
       } else {
         // 用户消息渲染兜底（防「重启后首输气泡偶发缺失」）：
         // 异常不再静默——console.warn 暴露堆栈（复制发现场 Console 即可定位），且以最小文本块
@@ -3675,7 +3637,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 清空消息区与全部渲染状态（resetChatView，重放渲染 renderReplayFromRounds 复用
       // ——跨会话/重建前同样需要复位，避免旧渲染残留污染新会话）。
       resetChatView();
-      updateEmptyState();
+      emptyStateView.update();
     } else if (msg.type === 'history_loaded') {
       // 历史消息加载完成 → 强制滚到底部（不走吸底逻辑）
       // 解决多条历史消息 rAF 节流导致滚动位置不正确的问题
@@ -3706,10 +3668,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 无 Provider 时空态切换为「去配置模型」引导（首次使用关键路径，
       // 避免用户不知道去哪配置而卡在空态）；配置就绪后恢复角色化空态（幂等）
       if (currentProviders.length === 0) {
-        updateEmptyStateOnboarding();
+        emptyStateView.onboarding();
       } else {
-        updateEmptyStateRole();
-        emptyState.querySelector('.empty-onboard-btn')?.remove();
+        emptyStateView.updateRole(currentRoleName, currentRolePacks);
+        emptyStateView.clearOnboardBtn();
       }
       // SSOT 收敛：身份条已删，模型名由输入区 model-picker 触发器单一展示（renderModelPicker 内更新）
     } else if (msg.type === 'chat_role_pack') {
@@ -3724,7 +3686,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 小组会议启动图标：activeTeam 存在 → 显示，否则隐藏
       updateTeamMeetingIcon();
       // P3（空状态角色化）：角色切换 → 空状态标题/提示随角色生长（避免定位错位）
-      updateEmptyStateRole();
+      emptyStateView.updateRole(currentRoleName, currentRolePacks);
     } else if (msg.type === 'chat_role_packs') {
       // 角色包列表（description 供空状态提示副文案）；切换入口已独立到「角色」视图
       currentRolePacks = msg.packs || [];
@@ -4297,7 +4259,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   });
 
   // 空状态示例提问 chips：点击填入输入框并聚焦。
-  // 事件委托于 document，兼容 renderEmptySuggestions 动态渲染的 chips（角色切换后新增元素）。
+  // 事件委托于 document，兼容 emptyStateView 动态渲染的 chips（角色切换后新增元素）。
   function onDocumentClick(e: Event): void {
     const chip = (e.target as HTMLElement).closest<HTMLElement>('.suggestion-chip');
     if (!chip) return;
@@ -5063,9 +5025,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   });
 
   // 首屏刷新
-  updateEmptyState();
+  emptyStateView.update();
   updateRoleBadge(); // 输入区角色徽章（首屏可能有历史推送的角色名）
-  updateEmptyStateRole(); // P3：空状态文案随当前角色生长（首屏可能已有角色推送）
+  emptyStateView.updateRole(currentRoleName, currentRolePacks); // P3：空状态文案随当前角色生长（首屏可能已有角色推送）
   renderModelPicker();
   syncSendEnabled(); // 初始输入为空 → 发送按钮禁用（输入后经 input 事件恢复）
 

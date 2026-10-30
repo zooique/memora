@@ -955,6 +955,15 @@ export type ExtensionToWebviewMessage =
       question?: string;
       options?: string[];
       /**
+       * 交互输入条目身份（批内唯一；去重键真源——ts 只作归位键）。
+       *
+       * 多问批次逐条 post 共享同一 ms 级 ts，重建去重若按 ts 会把第 2..N 条当
+       * 「双轨重复」吃掉（ASK-MULTI-Q-1 真机回放实锤）。缺省（supplement 单条 /
+       * 旧宿主）退化按 ts 去重，与现状一致。重放路径的身份 = 内核
+       * RoundInteractiveInput.id（msg-{roundId}-input-{序号}），两轨各自同源自洽。
+       */
+      inputId?: string;
+      /**
        * 本条的图片附件（仅普通新闭环输入携带；插话 / 问答 / 暂停补充三类续接
        * 通道内核不收图，故恒缺省）
        *
