@@ -297,12 +297,6 @@ const INTEL_INTRO =
   '当你从大文本/工具结果获取到新的关键信息时，可用一句简短状态反馈用户进展（如：原来是这样… / 掌握了关键信息 / ' +
   '有一个问题… / 基本收集完毕），但不要在反馈中复述笔记/原文细节。';
 
-/** 「用户未回答该提问」占位 tool 结果（单一载体）：
- *  消费点二——`cancelAsk`（整批跳过/超时未答）与 `answerQuestion`（**部分**题缺答案）。
- *  两处共一常量而非各写字面量：改一处漏一处会让「未回答」这一事实在一条路径上失真，
- *  而该事实直接进 LLM 决策上下文（静默失效、无报错）。 */
-const ASK_ABORTED_RESULT = '[ASK_ABORTED] 用户未回答该提问';
-
 export class AgentLoop {
   private messages: Message[] = [];
   private readonly maxIterations: number;
@@ -497,12 +491,14 @@ export class AgentLoop {
   private pendingAsk: { toolCallIds: string[]; questions: AskQuestion[] } | undefined = undefined;
   /**
    * 已作答/已取消提问快照（answerQuestion 与 cancelAsk 消费提问后对称转存）：
-   * 提问消费后把 pendingAsk.questions 转存于此，供 orchestrator.runResume
-   * 落盘交互输入时随回答/超时记录一并持久化（回放还原「问了什么+选项」）。
+   * 提问消费后把 pendingAsk.questions **逐题连答案**转存于此——元素 = AskQuestion &
+   * `{ answer?: string }`，answer 缺省 = 该题未答（空串在转存时归一为缺省，与
+   * `[ASK_ABORTED]` 占位同判据），供 orchestrator.runResume 整组逐题落盘交互输入
+   * （ASK-MULTI-Q-1：回放还原「问了什么 + 每题答了什么」）。
    * pendingAsk 即清（runIterationLoop 兜底 cancelAsk 依赖其为「未消费」判据）；
    * 快照由 runResume takeAnsweredAsk 取走，或下次消费覆盖（残留仅进程内、单 turn，无害）。
    */
-  private lastAnsweredAsk: AskQuestion[] | undefined = undefined;
+  private lastAnsweredAsk: Array<AskQuestion & { answer?: string }> | undefined = undefined;
   /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
   private readonly ui: Required<UIMessages>;
   /** 上下文超限时是否自动生成摘要 */
@@ -1899,12 +1895,20 @@ export class AgentLoop {
       // 显式告知模型；配对不变量不变——每条 toolCallId 恒有 tool 消息，不撞兼容端 400。
       const result =
         answer === undefined || answer.trim() === ''
-          ? ASK_ABORTED_RESULT
+          ? LOOP_CONSTANTS.ASK_ABORTED_RESULT
           : `[ASK_ANSWER] 用户回答：${answer}`;
       this.appendToolMessage(wrapToolResult(ASK_USER_TOOL.name, result), id);
     });
-    // 已作答提问转存快照（runResume 落盘交互输入时随回答持久化），pendingAsk 即清空
-    this.lastAnsweredAsk = this.pendingAsk.questions;
+    // 已作答提问转存快照（runResume 落盘交互输入时随回答持久化），pendingAsk 即清空。
+    // 答案**按序随题**转存（ASK-MULTI-Q-1）：答案与 questions 按序一对一，缺答案/空答案
+    // 归一为「无 answer 字段」= 该题未答——与上方 [ASK_ABORTED] 占位同判据同源，
+    // runResume 据此逐题落 question-answer / unanswered 两种形态（回放与 tool result 同构）。
+    this.lastAnsweredAsk = this.pendingAsk.questions.map((q, i) => {
+      const itemAnswer = answers[i];
+      return itemAnswer !== undefined && itemAnswer.trim() !== ''
+        ? { ...q, answer: itemAnswer }
+        : { ...q };
+    });
     this.pendingAsk = undefined;
     this.inAutonomousStep = false;
     logger.info({ answers }, 'ask_user 已回填用户答案');
@@ -1914,9 +1918,10 @@ export class AgentLoop {
   /**
    * 取走最近一次已作答提问快照：runResume 落盘回答交互输入前调用，取走即清。
    * 返回 undefined = 本次续跑非提问回答路径（补充输入 / 无快照残留）。快照为
-   * AskQuestion[]（多 ask_user 轮整组），调用方按需取用（当前落盘语义取 questions[0]）。
+   * 整组逐题元素（AskQuestion & `{ answer?: string }`，answer 缺省 = 该题未答），
+   * runResume 据此**整组展开**落盘（ASK-MULTI-Q-1：Q1..N 每题一条，与崩溃收场转化同宽）。
    */
-  takeAnsweredAsk(): AskQuestion[] | undefined {
+  takeAnsweredAsk(): Array<AskQuestion & { answer?: string }> | undefined {
     const snapshot = this.lastAnsweredAsk;
     this.lastAnsweredAsk = undefined;
     return snapshot;
@@ -1935,9 +1940,14 @@ export class AgentLoop {
     if (!this.pendingAsk) return;
     const { toolCallIds } = this.pendingAsk;
     for (const id of toolCallIds) {
-      this.appendToolMessage(wrapToolResult(ASK_USER_TOOL.name, ASK_ABORTED_RESULT), id);
+      this.appendToolMessage(
+        wrapToolResult(ASK_USER_TOOL.name, LOOP_CONSTANTS.ASK_ABORTED_RESULT),
+        id,
+      );
     }
-    this.lastAnsweredAsk = this.pendingAsk.questions;
+    // 整批未答：快照逐题转存但**不带 answer 字段**（与 answerQuestion 的未答归一同构），
+    // 超时路径 runResume 逐题落 kind:'timeout' 记录
+    this.lastAnsweredAsk = this.pendingAsk.questions.map((q) => ({ ...q }));
     this.pendingAsk = undefined;
     this.inAutonomousStep = false;
     logger.info({ toolCallIds }, 'ask_user 提问已取消（占位结果回填）');

@@ -55,9 +55,11 @@ export interface RoundMessage {
  * - timeout：ask_user 提问超时未答（宿主计时超时 → cancelAsk 注入
  *   [ASK_ABORTED] 占位 + resumeExecution('timeout') 自动续跑，LLM 自决；记录带
  *   question/options 供重放渲染「问 + 未回答」行）
- * - unanswered：提问挂起后崩溃/中断，重启打捞（或运行期非正常收场）时把轮上残留的
- *   `pendingAsk` 转化而成（appendInterrupted 单点转化）——与 timeout 同为「问了没答」，
- *   但成因是进程死亡而非 30 分钟超时，诚实分型防「数据迁就渲染」撒谎
+ * - unanswered：「问了没答」的兜底形态，两个生产者——① 提问挂起后崩溃/中断，重启打捞
+ *   （或运行期非正常收场）时把轮上残留的 `pendingAsk` 整组转化（appendInterrupted）；
+ *   ② 作答批次内被跳过的题（orchestrator.runResume，ASK-MULTI-Q-1，正文=ASK_ABORTED_RESULT
+ *   占位、可与同批 question-answer 条目交错）——与 timeout 同为「问了没答」，成因各自诚实
+ *   分型，防「数据迁就渲染」撒谎
  */
 export type InteractiveInputKind = 'question-answer' | 'supplement' | 'timeout' | 'unanswered';
 
@@ -72,8 +74,8 @@ export type InteractiveInputKind = 'question-answer' | 'supplement' | 'timeout' 
  * 生命周期不变量：**非空 ⇔ 该轮存在「问了但未答且作答记录未落盘」的窗口**。
  * 三个对称消费点保证其成立——
  * - 写入：`MessageHistory.markPendingAsk`（挂起前，装配层经 onPendingQuestion 调用）；
- * - 原子清除：`MessageHistory.appendUser` 交互分支（question-answer/timeout 落盘作答记录的
- *   同一次 save 内清，无双记录窗口）；
+ * - 原子清除：`MessageHistory.appendUser` 交互分支（ask 消费记录落盘——question-answer/
+ *   timeout/unanswered 任一形态，含批次内全跳过——的同一次 save 内清，无双记录窗口）；
  * - 收场转化：`MessageHistory.appendInterrupted` 把非空的 pendingAsk 转成
  *   `kind:'unanswered'` 的 interactiveInputs 条目并清字段（打捞/运行期失败统一受益）。
  * 正常完成收场（appendAssistant）防御性清空（此时作答记录已落，残留即脏数据）。

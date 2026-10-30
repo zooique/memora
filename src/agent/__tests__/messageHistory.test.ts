@@ -213,6 +213,39 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
     expect(roundStore.getById(roundId)?.pendingAsk).toBeUndefined();
   });
 
+  it('appendUser 整组形态（ASK-MULTI-Q-1）：多题批次逐题落档、id 递增、原子清 pendingAsk', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+    const roundId = generateRoundId();
+    await history.appendUser('输入', roundId);
+    await history.markPendingAsk(roundId, [{ question: 'Q1' }, { question: 'Q2' }]);
+    // 与 runResume 同构的批次草稿：Q1 已答 + Q2 跳过（unanswered）
+    await history.appendUser('答一', roundId, {
+      interactive: true,
+      group: [
+        { content: '答一', kind: 'question-answer', question: 'Q1', options: ['x', 'y'] },
+        { content: LOOP_CONSTANTS.ASK_ABORTED_RESULT, kind: 'unanswered', question: 'Q2' },
+      ],
+    });
+    const settled = roundStore.getById(roundId);
+    // unanswered 批次同样代表快照已被消费 → 原子清（不清则收场转化二次记账）
+    expect(settled?.pendingAsk).toBeUndefined();
+    const inputs = settled?.interactiveInputs ?? [];
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0]).toMatchObject({
+      kind: 'question-answer',
+      content: '答一',
+      question: 'Q1',
+      options: ['x', 'y'],
+    });
+    expect(inputs[1]).toMatchObject({
+      kind: 'unanswered',
+      content: LOOP_CONSTANTS.ASK_ABORTED_RESULT,
+      question: 'Q2',
+    });
+    expect(inputs[1]?.options).toBeUndefined(); // 无选项题零冗余
+    expect(inputs[0]!.id).not.toBe(inputs[1]!.id); // id 递增唯一（渲染按 id 寻址）
+  });
+
   it('appendInterrupted 收场转化：残留 pendingAsk 逐题整组转 unanswered（Q2..N 不丢）+ 字段清空', async () => {
     const { history, roundStore } = createRoundBackedHistory();
     const roundId = generateRoundId();

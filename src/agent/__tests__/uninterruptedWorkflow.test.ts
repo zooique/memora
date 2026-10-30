@@ -41,6 +41,7 @@ import type { AgentLoop } from '@/agent/loop.js';
 import type { MockedFunction } from 'vitest';
 import type { Round } from '@/memory/roundStore.js';
 import { ASK_TIMEOUT_NOTICE } from '@/agent/seed/orchestrator.js';
+import { LOOP_CONSTANTS } from '@/agent/constants.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Mock LLM Provider（模拟 LLM 响应，不依赖真实 API）
@@ -1513,6 +1514,10 @@ class AskThenResumeProvider extends LlmProvider {
   private asked = false;
   /** 续跑轮（第二轮主对话）收到的完整消息列表，供断言上下文含问题 + 回答 */
   resumeMessages: Message[] | null = null;
+  /** ask_user 调用批（默认单问；多题批次用例覆写为多条，验 ASK-MULTI-Q-1 整组落盘） */
+  askCalls: Array<{ id: string; question: string; options?: string[] }> = [
+    { id: 'ask-1', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] },
+  ];
 
   async *chat(messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
     const sysContent = messages.find((m) => m.role === 'system')?.content;
@@ -1534,22 +1539,21 @@ class AskThenResumeProvider extends LlmProvider {
     }
     if (!this.asked) {
       this.asked = true;
-      // 首轮：ask_user 主动提问（工具调用结构完整落地，挂起等用户回答；答后经 answerQuestion 回填）
+      // 首轮：ask_user 主动提问（工具调用结构完整落地，挂起等用户回答；答后经 answerQuestion 回填）。
+      // 多题批次 = 单响应多条 ask_user 调用（handleAskUser 聚合为整组 pendingAsk）
       yield {
         content: '在读取文件前需要确认：',
-        toolCalls: [
-          {
-            id: 'ask-1',
-            type: 'function',
-            function: {
-              name: 'ask_user',
-              arguments: JSON.stringify({
-                question: '你想读哪个文件？',
-                options: ['probe.txt', 'config.json'],
-              }),
-            },
+        toolCalls: this.askCalls.map((c) => ({
+          id: c.id,
+          type: 'function' as const,
+          function: {
+            name: 'ask_user',
+            arguments: JSON.stringify({
+              question: c.question,
+              ...(c.options ? { options: c.options } : {}),
+            }),
           },
-        ],
+        })),
       };
       yield { finishReason: 'stop' };
       return;
@@ -2623,6 +2627,63 @@ describe('问答闭环内交互输入归属（同一闭环节点不分裂）', (
       expect(String(askResult!.content)).toContain('用户未回答该提问');
       // 绝无「用户选择了某选项」的伪造注入
       expect(String(askResult!.content)).not.toContain('[ASK_ANSWER]');
+    },
+  );
+
+  it(
+    '多题批次部分作答：整组逐题落盘 Q1=question-answer / Q2=unanswered，与崩溃路径同宽（ASK-MULTI-Q-1）',
+    { timeout: 30000 },
+    async () => {
+      // 单响应两条 ask_user 调用 = 多题批次（handleAskUser 聚合为整组 pendingAsk）
+      askProvider.askCalls = [
+        {
+          id: 'ask-1',
+          question: '第一个问题：读哪个文件？',
+          options: ['probe.txt', 'config.json'],
+        },
+        { id: 'ask-2', question: '第二个问题：什么格式输出？' },
+      ];
+      agent = makeTs9Agent();
+      await agent.init();
+
+      // ── (1) 首轮：LLM 批量提问 → 暂停 ──
+      for await (const _chunk of agent.chat('帮我读取一个文件')) {
+        void _chunk;
+      }
+      expect(agent.sessionManager!.status).toBe('paused');
+      const anchorRoundId = currentClosure().id;
+
+      // ── (2) 部分作答：Q1 答、Q2 缺答案（answerQuestion 原生落 [ASK_ABORTED] 占位）──
+      expect(agent.answerQuestion(['我想读 probe.txt'])).toBe(true);
+      for await (const _chunk of agent.resumeExecution(
+        '我想读 probe.txt',
+        undefined,
+        'question-answer',
+      )) {
+        void _chunk;
+      }
+      expect(agent.sessionManager!.status).toBe('running');
+
+      // ── (3) 落盘断言：整组逐题、round 不分裂。
+      // 变异锚（台账判据②）：回退「取首问单条落盘」⇒ 长度回 1、Q2 question 丢失 ⇒ 红 ──
+      const closure = currentClosure();
+      expect(closure.id).toBe(anchorRoundId);
+      expect(closure.interactiveInputs).toHaveLength(2);
+      expect(closure.interactiveInputs![0]!.kind).toBe('question-answer');
+      expect(closure.interactiveInputs![0]!.content).toBe('我想读 probe.txt');
+      expect(closure.interactiveInputs![0]!.question).toBe('第一个问题：读哪个文件？');
+      expect(closure.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
+      expect(closure.interactiveInputs![1]!.kind).toBe('unanswered');
+      expect(closure.interactiveInputs![1]!.content).toBe(LOOP_CONSTANTS.ASK_ABORTED_RESULT);
+      expect(closure.interactiveInputs![1]!.question).toBe('第二个问题：什么格式输出？');
+      expect(closure.interactiveInputs![1]!.options).toBeUndefined();
+      // 原子清：unanswered 批次同样代表快照已被消费，轮上不残留 pendingAsk（防收场二次记账）
+      expect(closure.pendingAsk).toBeUndefined();
+
+      // ── (4) LLM 侧同构：Q1 [ASK_ANSWER]、Q2 [ASK_ABORTED]（回放面与 tool result 同构的依据）──
+      const toolResults = (askProvider.resumeMessages ?? []).filter((m) => m.role === 'tool');
+      expect(toolResults.some((m) => String(m.content).includes('[ASK_ANSWER]'))).toBe(true);
+      expect(toolResults.some((m) => String(m.content).includes('[ASK_ABORTED]'))).toBe(true);
     },
   );
 });

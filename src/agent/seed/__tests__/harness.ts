@@ -42,6 +42,8 @@ export interface SeedMocks {
     setCurrentRoundId: ReturnType<typeof vi.fn>;
     allocRoundId: ReturnType<typeof vi.fn>;
     getCurrentRoundId: ReturnType<typeof vi.fn>;
+    // 提问快照取走口（runResume question-answer/timeout 路径消费；默认无快照）
+    takeAnsweredAsk: ReturnType<typeof vi.fn>;
     processUserInput: ReturnType<typeof vi.fn>;
     continueAfterPause: ReturnType<typeof vi.fn>;
     injectSystemMessage: ReturnType<typeof vi.fn>;
@@ -174,6 +176,8 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       }),
       allocRoundId: vi.fn(() => `round-alloc-${++allocCounter}`),
       getCurrentRoundId: vi.fn(() => currentRoundId),
+      // 快照取走口：默认无快照（supplement 路径）；question-answer/timeout 用例覆写注入
+      takeAnsweredAsk: vi.fn(() => undefined),
       processUserInput: vi.fn(),
       continueAfterPause: vi.fn(),
       injectSystemMessage: vi.fn(),

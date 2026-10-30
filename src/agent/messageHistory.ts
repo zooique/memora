@@ -33,6 +33,37 @@ export interface ForkResult {
   roundIds: string[];
 }
 
+/** 交互输入落档草稿（appendUser opts.group 元素）：逐题展开的最小描述，id/timestamp/role 由 buildInteractiveInputs 统一装配 */
+interface InteractiveInputDraft {
+  content: string;
+  kind: InteractiveInputKind;
+  question?: string;
+  options?: string[];
+}
+
+/**
+ * 整组交互输入 → 逐题 RoundInteractiveInput（ASK-MULTI-Q-1 单点装配）：
+ * id 公式 / role / timestamp / question-options 摊开条件**只在此一处**。
+ * appendUser 交互分支（作答/超时整组）与 appendInterrupted 收场转化（unanswered 整组）
+ * 共用同一装配，两条消费路径从源头同宽。
+ */
+function buildInteractiveInputs(
+  roundId: string,
+  existingCount: number,
+  drafts: ReadonlyArray<InteractiveInputDraft>,
+  timestamp: string,
+): RoundInteractiveInput[] {
+  return drafts.map((d, i) => ({
+    id: `msg-${roundId}-input-${existingCount + i + 1}`,
+    role: 'user',
+    content: d.content,
+    timestamp,
+    kind: d.kind,
+    ...(d.question ? { question: d.question } : {}),
+    ...(d.options && d.options.length > 0 ? { options: d.options } : {}),
+  }));
+}
+
 /** 消息历史类 */
 export class MessageHistory {
   /** 当前日期 YYYY-MM-DD */
@@ -230,8 +261,10 @@ export class MessageHistory {
    *
    * @param content 用户输入内容
    * @param roundId 闭环节点轮次 ID（可选，交互输入必须携带 = appendUser 的 head roundId）
-   * @param opts 交互输入选项（interactive=是否交互归属；kind=折叠块类型文案；
-   *        question/options=该回答所对的 ask_user 提问原文与候选选项，随回答一并持久化）
+   * @param opts 交互输入选项（interactive=是否交互归属；kind/question/options=单条形态的
+   *        折叠块类型与所对 ask_user 提问原文/候选选项；group=整组形态，ASK-MULTI-Q-1：
+   *        作答/超时多题批次逐题落档，与崩溃收场转化同宽——提供时按序展开为 N 条，
+   *        单条形态等价于 1 元素组，同时提供以 group 为准）
    */
   async appendUser(
     content: string,
@@ -241,6 +274,8 @@ export class MessageHistory {
       kind?: InteractiveInputKind;
       question?: string;
       options?: string[];
+      /** 整组交互输入（多题批次逐题落档）；元素结构见 InteractiveInputDraft */
+      group?: ReadonlyArray<InteractiveInputDraft>;
       /** 图片附件（可选，多模态输入）；须显式透传到 `userMessage` 白名单与 SessionMessage，否则重启 / 切会话后图静默消失（方案 §7 P0-12） */
       attachments?: readonly ImageRef[];
     },
@@ -260,29 +295,42 @@ export class MessageHistory {
         if (opts?.interactive) {
           const existing = this.roundStore.getById(roundId) ?? this.pendingRounds.get(roundId);
           if (existing) {
-            const input: RoundInteractiveInput = {
-              id: `msg-${roundId}-input-${(existing.interactiveInputs?.length ?? 0) + 1}`,
-              role: 'user',
-              content,
-              timestamp: message.timestamp,
-              kind: opts.kind ?? 'supplement',
-              // 提问原文/选项随回答落盘（question-answer 携带；supplement/缺省不落，旧数据向后兼容）
-              ...(opts.question ? { question: opts.question } : {}),
-              ...(opts.options && opts.options.length > 0 ? { options: opts.options } : {}),
-            };
+            // 单条形态 = 退化 1 元素组：一条装配路径承载两种入参（无分叉实现）
+            const drafts: ReadonlyArray<InteractiveInputDraft> = opts.group ?? [
+              {
+                content,
+                kind: opts.kind ?? 'supplement',
+                ...(opts.question ? { question: opts.question } : {}),
+                ...(opts.options && opts.options.length > 0 ? { options: opts.options } : {}),
+              },
+            ];
+            const inputs = buildInteractiveInputs(
+              roundId,
+              existing.interactiveInputs?.length ?? 0,
+              drafts,
+              message.timestamp,
+            );
             // 作答/超时记录落盘的**同一次 save 内**原子清 pendingAsk（生命周期不变量的清除点，
             // 见 RoundPendingAsk 注释）：提问已被消费（回答回填或超时收场），残留即脏数据——
             // 若留到收场才清，「已答 + 未答」双记录窗口会打开（appendInterrupted 会把残留
-            // pendingAsk 再转成一条 unanswered）。supplement 与提问无关，不动该字段。
-            const askConsumed = opts.kind === 'question-answer' || opts.kind === 'timeout';
+            // pendingAsk 再转化成重复的 unanswered 条目）。supplement 与提问无关，不动该字段。
+            // 判据含 unanswered（ASK-MULTI-Q-1）：批次内全跳过（逐题均 unanswered）同样代表
+            // 快照已被 takeAnsweredAsk 消费——不清则收场转化二次记账。
+            const askConsumed = drafts.some(
+              (d) =>
+                d.kind === 'question-answer' || d.kind === 'timeout' || d.kind === 'unanswered',
+            );
             const updated: Round = {
               ...existing,
-              interactiveInputs: [...(existing.interactiveInputs ?? []), input],
+              interactiveInputs: [...(existing.interactiveInputs ?? []), ...inputs],
               ...(askConsumed ? { pendingAsk: undefined } : {}),
             };
             this.roundStore.save(updated);
             this.pendingRounds.set(roundId, updated);
-            logger.debug({ roundId, kind: input.kind }, 'appendUser: 交互输入归属问答闭环');
+            logger.debug(
+              { roundId, count: inputs.length, firstKind: inputs[0]?.kind },
+              'appendUser: 交互输入归属问答闭环',
+            );
             return;
           }
           // 轮不存在（异常兜底）：降级为普通 pending Round（内容不丢失，GC 兜底）
@@ -557,16 +605,19 @@ export class MessageHistory {
       const pendingAsk = existing.pendingAsk;
       // 多题整组转化（每题一条 unanswered）：pendingAsk 是整组快照，逐题保留 question/options——
       // 崩溃轮的问题文本只在收场这一刻归档进 interactiveInputs，取首问即丢 Q2..N。
+      // 装配走 buildInteractiveInputs 单点（与 appendUser 作答/超时整组同宽，ASK-MULTI-Q-1）。
       const unansweredInputs: RoundInteractiveInput[] = pendingAsk?.length
-        ? pendingAsk.map((q, i) => ({
-            id: `msg-${roundId}-input-${(existing.interactiveInputs?.length ?? 0) + i + 1}`,
-            role: 'user',
-            content: LOOP_CONSTANTS.ASK_UNANSWERED_NOTICE,
-            timestamp: nowIso(),
-            kind: 'unanswered',
-            question: q.question,
-            ...(q.options && q.options.length > 0 ? { options: q.options } : {}),
-          }))
+        ? buildInteractiveInputs(
+            roundId,
+            existing.interactiveInputs?.length ?? 0,
+            pendingAsk.map((q) => ({
+              content: LOOP_CONSTANTS.ASK_UNANSWERED_NOTICE,
+              kind: 'unanswered' as const,
+              question: q.question,
+              options: q.options,
+            })),
+            nowIso(),
+          )
         : [];
       const completed: Round = {
         // 展开保留 userMessage / interactiveInputs / processEvents 等原字段

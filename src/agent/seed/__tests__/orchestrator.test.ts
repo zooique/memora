@@ -11,6 +11,8 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
+import { ASK_TIMEOUT_NOTICE } from '@/agent/seed/orchestrator.js';
+import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import {
   createHarness,
   collectGen,
@@ -201,6 +203,61 @@ describe('SeedOrchestrator 最小 turn', () => {
     expect(mocks.history.appendAssistant).toHaveBeenCalledWith('续跑回复', expect.any(String));
     // reflect 走摘要
     expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('runResume question-answer：快照整组逐题落盘（作答+跳过两形态，Q2..N 不丢）', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    stubContinue(mocks, '续跑回复');
+    consumeControl.result = { content: '续跑回复', aborted: false, paused: false, failed: false };
+    // 模拟 answerQuestion 转存的多题快照：Q1 已答 + Q2 跳过（无 answer 字段 = 未答归一）
+    mocks.loop.takeAnsweredAsk.mockReturnValue([
+      { slot: 'ask', question: 'Q1？', options: ['a', 'b'], answer: '选 a' },
+      { slot: 'ask', question: 'Q2？' },
+    ]);
+
+    await collectGen(
+      new SeedOrchestrator(deps).runResume('选 a', new AbortController().signal, 'question-answer'),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 一次 appendUser 携整组草稿（单次 save 原子落 N 条，无双记录窗口）；
+    // 变异锚：回退「取首问单条落盘」⇒ group 消失/长度回 1 ⇒ 本用例红在判据上
+    expect(mocks.history.appendUser).toHaveBeenCalledTimes(1);
+    const call = mocks.history.appendUser.mock.calls[0]!;
+    expect(call[0]).toBe('选 a');
+    expect(call[2]).toMatchObject({
+      interactive: true,
+      group: [
+        { content: '选 a', kind: 'question-answer', question: 'Q1？', options: ['a', 'b'] },
+        { content: LOOP_CONSTANTS.ASK_ABORTED_RESULT, kind: 'unanswered', question: 'Q2？' },
+      ],
+    });
+  });
+
+  it('runResume timeout：快照逐题落 timeout 记录（每题带各自 question/options）', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    stubContinue(mocks, '续跑回复');
+    consumeControl.result = { content: '续跑回复', aborted: false, paused: false, failed: false };
+    // 模拟 cancelAsk 转存的多题快照：整批未答（无 answer 字段）
+    mocks.loop.takeAnsweredAsk.mockReturnValue([
+      { slot: 'ask', question: 'Q1？', options: ['a', 'b'] },
+      { slot: 'ask', question: 'Q2？' },
+    ]);
+
+    await collectGen(
+      new SeedOrchestrator(deps).runResume(undefined, new AbortController().signal, 'timeout'),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+
+    const call = mocks.history.appendUser.mock.calls[0]!;
+    expect(call[0]).toBe(ASK_TIMEOUT_NOTICE);
+    expect(call[2]).toMatchObject({
+      interactive: true,
+      group: [
+        { content: ASK_TIMEOUT_NOTICE, kind: 'timeout', question: 'Q1？', options: ['a', 'b'] },
+        { content: ASK_TIMEOUT_NOTICE, kind: 'timeout', question: 'Q2？' },
+      ],
+    });
   });
 
   // ── 形态② 兜底收尾 ─────────────────────────

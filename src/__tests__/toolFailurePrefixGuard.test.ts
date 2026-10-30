@@ -121,7 +121,8 @@ const PRODUCER_FILES = [
 const OUT_OF_SCOPE_TAGS: Readonly<Record<string, readonly string[]>> = {
   // ASK_UNANSWERED_NOTICE（E2E-ASK-LOSS-1）：appendInterrupted 把残留 pendingAsk 转化成
   // kind:'unanswered' 交互输入时的正文占位——写进 Round.interactiveInputs（用户侧交互行，
-  // 非 tool 通道），与 loop.ts 的 ASK_ABORTED（cancelAsk 的 tool result 占位）同族同前缀。
+  // 非 tool 通道），与 ASK_ABORTED_RESULT（loop tool result 占位 + runResume 批次跳过题
+  // 落盘正文，ASK-MULTI-Q-1 自 loop.ts 上移至此）同族同前缀。
   'agent/constants.ts': ['ASK_ABORTED'],
   'agent/builtinToolHandlers.ts': ['${m.role}'],
   'agent/compaction.ts': [
@@ -138,7 +139,6 @@ const OUT_OF_SCOPE_TAGS: Readonly<Record<string, readonly string[]>> = {
   ],
   'agent/loop.ts': [
     '${SOFT_LIMIT_SUMMARY_MARKER_COMPRESS} · 临时压缩摘要（loop 收尾即弃，细节可能丢失）',
-    'ASK_ABORTED',
     'ASK_ANSWER',
     'ASK_SUSPENDED',
     'DUPLICATE_TOOL_CALL_BLOCKED',

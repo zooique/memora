@@ -137,30 +137,51 @@ export class SeedOrchestrator {
     // 交互输入归属当前 turn 节点（SSOT：roundId 唯一锚点=prepare appendUser 的 head roundId，
     // 不重新 alloc——turn 不在交互输入处分裂）。空 roundId 时 fallback alloc。
     // timeout：ask 超时未答无用户文本——仍落「未回答」交互记录（content =
-    // ASK_TIMEOUT_NOTICE），宿主在 resume 前已 cancelAsk 转存提问快照，此处取走落盘 question。
+    // ASK_TIMEOUT_NOTICE），宿主在 resume 前已 cancelAsk 转存提问快照，此处取走逐题落盘。
     const isTimedOutAsk = kind === 'timeout';
     const content = isTimedOutAsk ? ASK_TIMEOUT_NOTICE : input?.trim();
     if (content) {
       const closureRoundId = parts.loop.getCurrentRoundId() || parts.loop.allocRoundId();
       parts.loop.setCurrentRoundId(closureRoundId);
-      // 取走已作答提问快照（answerQuestion/cancelAsk 转存），随回答/超时记录一并落盘——
-      // 回放还原「问了什么+选项」。多 ask_user 轮整组快照取首问（UI 单文本提交，与 questions[0]
-      // 配对最稳；次态边界已标注）。supplement（无快照来源）不取。
+      // 取走已作答提问快照（answerQuestion/cancelAsk 转存），随作答/超时记录整组落盘。
+      // ASK-MULTI-Q-1：整组**逐题展开**（Q1..N 每题一条，与崩溃收场转化 appendInterrupted
+      // 同宽，question/options 逐题随行）。形态与 LLM
+      // 实际收到的 tool result 同构：[ASK_ANSWER] ↔ question-answer + 各自答案；
+      // [ASK_ABORTED]（批次内跳过题）↔ unanswered + ASK_ABORTED_RESULT 占位；
+      // 超时整批 ↔ timeout + ASK_TIMEOUT_NOTICE。supplement（无快照来源）不取。
       const answeredAsk =
         kind === 'question-answer' || isTimedOutAsk ? parts.loop.takeAnsweredAsk() : undefined;
-      const answeredQ = answeredAsk?.[0];
+      const askGroup = answeredAsk?.length
+        ? answeredAsk.map((entry) => {
+            if (isTimedOutAsk) {
+              return {
+                content,
+                kind: 'timeout' as const,
+                question: entry.question,
+                options: entry.options,
+              };
+            }
+            // answerQuestion 出生时已归一：无 answer 字段 = 该题未答（空串同义）
+            if (entry.answer === undefined) {
+              return {
+                content: LOOP_CONSTANTS.ASK_ABORTED_RESULT,
+                kind: 'unanswered' as const,
+                question: entry.question,
+                options: entry.options,
+              };
+            }
+            return {
+              content: entry.answer,
+              kind: 'question-answer' as const,
+              question: entry.question,
+              options: entry.options,
+            };
+          })
+        : undefined;
       try {
         await parts.history.appendUser(content, closureRoundId, {
           interactive: true,
-          kind,
-          ...(answeredQ
-            ? {
-                question: answeredQ.question,
-                ...(answeredQ.options && answeredQ.options.length > 0
-                  ? { options: answeredQ.options }
-                  : {}),
-              }
-            : {}),
+          ...(askGroup ? { group: askGroup } : { kind }),
         });
       } catch (err) {
         logger.warn({ err }, '续跑用户回答历史写入失败');

@@ -4166,9 +4166,10 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     // 回答前无已作答快照（runResume 补充输入路径取到 undefined 的判据）
     expect(loop.takeAnsweredAsk()).toBeUndefined();
     expect(loop.answerQuestion(['欢快'])).toBe(true);
-    // answerQuestion 转存快照：runResume 落盘交互输入时随回答持久化「问了什么」
+    // answerQuestion 转存快照：runResume 落盘交互输入时随回答持久化「问了什么+答了什么」
+    //（ASK-MULTI-Q-1：答案按序随题转存，回放逐题还原问答对）
     const snapshot = loop.takeAnsweredAsk();
-    expect(snapshot).toMatchObject([{ slot: 'ask', question: '基调选择？' }]);
+    expect(snapshot).toMatchObject([{ slot: 'ask', question: '基调选择？', answer: '欢快' }]);
     // 取走即清：二次取空，防同一快照重复落盘
     expect(loop.takeAnsweredAsk()).toBeUndefined();
   });
@@ -4203,6 +4204,8 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     expect(snapshot).toMatchObject([
       { slot: 'ask', question: '确认继续？', options: ['是', '否'] },
     ]);
+    // 整批未答：无 answer 字段（未答归一），runResume 逐题落 timeout 形态
+    expect(snapshot?.[0]?.answer).toBeUndefined();
     expect(loop.takeAnsweredAsk()).toBeUndefined();
   });
 

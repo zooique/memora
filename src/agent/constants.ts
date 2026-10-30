@@ -211,6 +211,15 @@ export const LOOP_CONSTANTS = {
    *  不暗示原因（崩溃 / 用户停止 / 运行期失败皆走此文案），成因可从轮状态与上下文还原。 */
   ASK_UNANSWERED_NOTICE: '[ASK_ABORTED] 该提问未被回答（会话在此处中断）',
 
+  /** 「用户未回答该提问」占位（SSOT，ASK-MULTI-Q-1 扩面）：一个字符串服务三个消费点——
+   *  ① loop.cancelAsk：整批跳过/超时未答的 tool result 占位；
+   *  ② loop.answerQuestion：作答批次内**部分**题缺答案的 tool result 占位；
+   *  ③ orchestrator.runResume：批次内跳过题落盘 kind:'unanswered' 交互输入的正文，
+   *     与 LLM 实际收到的 tool result 同构——回放面如实呈现「模型被告知的事实」。
+   *  共一常量而非各写字面量：改一处漏一处会让「未回答」这一事实在一条路径上失真，
+   *  而该事实直接进 LLM 决策上下文与持久历史（静默失效、无报错）。 */
+  ASK_ABORTED_RESULT: '[ASK_ABORTED] 用户未回答该提问',
+
   /**
    * 上下文预算预警提示：容量逼近警戒线但摘要层未饱和时注入的温和提示，
    * 引导 LLM 主动压缩 / 收敛——软上限（收尾信号）的前一级。低压通用文案不走 UIMessages 覆盖层，

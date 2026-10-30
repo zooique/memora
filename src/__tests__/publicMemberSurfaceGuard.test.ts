@@ -515,6 +515,9 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   LOOP_CONSTANTS: {
     kind: 'object',
     members: [
+      // ASK_ABORTED_RESULT：ASK-MULTI-Q-1 扩面登记——loop tool result 占位常量上移 LOOP_CONSTANTS
+      // （新增第三消费方 orchestrator.runResume 批次跳过题落盘，跨模块共用须入 SSOT 常量表）
+      'ASK_ABORTED_RESULT',
       'ASK_UNANSWERED_NOTICE',
       'CHARS_PER_TOKEN',
       'CJK_CHARS_PER_TOKEN',
