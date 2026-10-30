@@ -119,6 +119,10 @@ const PRODUCER_FILES = [
  * 文件集」相等 —— 新文件漏登记即红（`扫描面完整性` 用例）。
  */
 const OUT_OF_SCOPE_TAGS: Readonly<Record<string, readonly string[]>> = {
+  // ASK_UNANSWERED_NOTICE（E2E-ASK-LOSS-1）：appendInterrupted 把残留 pendingAsk 转化成
+  // kind:'unanswered' 交互输入时的正文占位——写进 Round.interactiveInputs（用户侧交互行，
+  // 非 tool 通道），与 loop.ts 的 ASK_ABORTED（cancelAsk 的 tool result 占位）同族同前缀。
+  'agent/constants.ts': ['ASK_ABORTED'],
   'agent/builtinToolHandlers.ts': ['${m.role}'],
   'agent/compaction.ts': [
     '${SOFT_LIMIT_SUMMARY_MARKER_ROUND} ${roundId}',

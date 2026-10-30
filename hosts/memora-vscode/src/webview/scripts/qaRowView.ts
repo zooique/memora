@@ -21,7 +21,7 @@ export interface QaRowView {
   /** 构造问答回顾行（tag 语义按 kind 映射，文本经 textContent 上屏） */
   renderQaItem(
     text: string,
-    kind: 'question-answer' | 'supplement' | 'timeout',
+    kind: 'question-answer' | 'supplement' | 'timeout' | 'unanswered',
     question?: string,
     options?: string[],
   ): HTMLElement;
@@ -32,14 +32,15 @@ export function createQaRowView(deps: QaRowViewDeps): QaRowView {
 
   function renderQaItem(
     text: string,
-    kind: 'question-answer' | 'supplement' | 'timeout',
+    kind: 'question-answer' | 'supplement' | 'timeout' | 'unanswered',
     question?: string,
     options?: string[],
   ): HTMLElement {
     const row = document.createElement('div');
     row.className = 'round-block__input';
-    // 提问回顾行：question-answer/timeout 携带 question 时先渲染只读「问」行（还原提问上下文）
-    if ((kind === 'question-answer' || kind === 'timeout') && question) {
+    // 提问回顾行：question-answer/timeout/unanswered 携带 question 时先渲染只读「问」行
+    //（还原提问上下文；unanswered = 崩溃收场转化的「问了没答」，问行同样可考）
+    if ((kind === 'question-answer' || kind === 'timeout' || kind === 'unanswered') && question) {
       const q = document.createElement('div');
       q.className = 'round-block__input-q';
       const qTag = document.createElement('span');
@@ -57,12 +58,13 @@ export function createQaRowView(deps: QaRowViewDeps): QaRowView {
       }
       row.appendChild(q);
     }
-    // 内容行：tag 语义映射（回答 →「你答」；补充 →「你补充」；超时未答 →「未回答」）
+    // 内容行：tag 语义映射（回答 →「你答」；补充 →「你补充」；超时/崩溃未答 →「未回答」）
     const main = document.createElement('div');
     main.className = 'round-block__input-row';
     const tag = document.createElement('span');
     tag.className = 'round-block__input-tag';
-    tag.textContent = kind === 'supplement' ? '你补充' : kind === 'timeout' ? '未回答' : '你答';
+    tag.textContent =
+      kind === 'supplement' ? '你补充' : kind === 'question-answer' ? '你答' : '未回答';
     const txt = document.createElement('span');
     txt.className = 'round-block__input-text';
     txt.textContent = text;

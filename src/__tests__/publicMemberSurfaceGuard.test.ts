@@ -515,6 +515,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   LOOP_CONSTANTS: {
     kind: 'object',
     members: [
+      'ASK_UNANSWERED_NOTICE',
       'CHARS_PER_TOKEN',
       'CJK_CHARS_PER_TOKEN',
       'CONTEXT_PRESSURE_HINT',
@@ -910,6 +911,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'evidence',
       'id',
       'interactiveInputs',
+      'pendingAsk', // E2E-ASK-LOSS-1：在途提问快照（挂起前落盘；收场转化 unanswered 并清）
       'processEvents',
       'refCount',
       'status',
@@ -1127,6 +1129,7 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       'listAllSessions',
       'loadRoundBasedMessages',
       'loadSessionMessages',
+      'markPendingAsk',
       'registerPendingArchive',
       'switchSession',
     ],

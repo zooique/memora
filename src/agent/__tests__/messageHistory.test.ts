@@ -156,6 +156,97 @@ describe('MessageHistory · appendEvidence（裁决证据挂载）', () => {
   });
 });
 
+describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1）', () => {
+  /** 构造带 InMemory 双存储的 history（同 appendEvidence 先例） */
+  function createRoundBackedHistory(): { history: MessageHistory; roundStore: InMemoryRoundStore } {
+    const roundStore = new InMemoryRoundStore();
+    const sessionStore = new InMemorySessionStore();
+    const history = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
+    sessionStore.createSession({
+      sessionId: history.currentSessionName,
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    return { history, roundStore };
+  }
+
+  it('markPendingAsk 挂起前落盘：多题快照、无选项时省略 options（形状 = RoundPendingAsk）', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+    const roundId = generateRoundId();
+    await history.appendUser('帮我看看怎么配', roundId);
+    await history.markPendingAsk(roundId, [{ question: '用哪种方案？', options: ['A', 'B'] }]);
+    await history.markPendingAsk(roundId, [{ question: '再来一题' }]); // 同轮二批覆盖（前批已消费即清，此处验证覆盖语义）
+    const round = roundStore.getById(roundId);
+    expect(round?.pendingAsk).toEqual([{ question: '再来一题' }]);
+    expect(JSON.stringify(round?.pendingAsk)).not.toContain('options'); // 无选项时零冗余
+  });
+
+  it('轮缺失时 warn 丢弃、不新建轮（同 appendEvidence 降级语义）', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+    await history.markPendingAsk('round-not-exist', [{ question: '孤儿题' }]);
+    expect(roundStore.size()).toBe(0);
+  });
+
+  it('作答记录落盘同一次 save 内原子清 pendingAsk（question-answer / timeout 二值；supplement 不动）', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+    const roundId = generateRoundId();
+    await history.appendUser('输入', roundId);
+    await history.markPendingAsk(roundId, [{ question: '选哪个？', options: ['x', 'y'] }]);
+    // supplement（暂停后补充）：提问仍在途
+    await history.appendUser('补充一点', roundId, { interactive: true, kind: 'supplement' });
+    expect(roundStore.getById(roundId)?.pendingAsk).toHaveLength(1);
+    // question-answer：作答记录与清除同一次 save，无双记录窗口
+    await history.appendUser('方案 x', roundId, {
+      interactive: true,
+      kind: 'question-answer',
+      question: '选哪个？',
+      options: ['x', 'y'],
+    });
+    const settled = roundStore.getById(roundId);
+    expect(settled?.pendingAsk).toBeUndefined();
+    expect(settled?.interactiveInputs).toHaveLength(2);
+    expect(settled?.interactiveInputs?.[1]?.kind).toBe('question-answer');
+    // timeout 同样清
+    await history.markPendingAsk(roundId, [{ question: '再来一题' }]);
+    await history.appendUser('[超时]', roundId, { interactive: true, kind: 'timeout' });
+    expect(roundStore.getById(roundId)?.pendingAsk).toBeUndefined();
+  });
+
+  it('appendInterrupted 收场转化：残留 pendingAsk → unanswered 交互输入 + 字段清空（打捞面零改动受益）', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+    const roundId = generateRoundId();
+    await history.appendUser('输入', roundId);
+    await history.markPendingAsk(roundId, [
+      { question: '崩溃前的问题', options: ['甲', '乙'] },
+      { question: '第二题' },
+    ]);
+    await history.appendInterrupted(roundId, { content: '半截正文' });
+    const round = roundStore.getById(roundId);
+    expect(round?.status).toBe('interrupted');
+    expect(round?.pendingAsk).toBeUndefined();
+    const input = round?.interactiveInputs?.[round.interactiveInputs.length - 1];
+    expect(input?.kind).toBe('unanswered');
+    expect(input?.question).toBe('崩溃前的问题'); // 多题整组取首问（与 runResume 落盘口径同源）
+    expect(input?.options).toEqual(['甲', '乙']);
+    expect(input?.content).toBe(LOOP_CONSTANTS.ASK_UNANSWERED_NOTICE);
+  });
+
+  it('无在途提问的中断轮不产 unanswered 条目（零冗余）；appendAssistant 防御清异常残留', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+    const roundId = generateRoundId();
+    await history.appendUser('输入', roundId);
+    await history.appendInterrupted(roundId);
+    expect(roundStore.getById(roundId)?.interactiveInputs).toBeUndefined();
+
+    const roundId2 = generateRoundId();
+    await history.appendUser('输入2', roundId2);
+    await history.markPendingAsk(roundId2, [{ question: '残留题' }]);
+    await history.appendAssistant('回答', roundId2);
+    expect(roundStore.getById(roundId2)?.pendingAsk).toBeUndefined();
+  });
+});
+
 describe('MessageHistory · forkSession', () => {
   it('分叉后切换身份不能卡在旧日期：currentDate 锚定今天（与建键一致）', () => {
     // forkSession 走 getSessionMeta / getRoundIds / setRoundIds / updateSessionMeta

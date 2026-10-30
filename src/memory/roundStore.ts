@@ -55,8 +55,35 @@ export interface RoundMessage {
  * - timeout：ask_user 提问超时未答（宿主计时超时 → cancelAsk 注入
  *   [ASK_ABORTED] 占位 + resumeExecution('timeout') 自动续跑，LLM 自决；记录带
  *   question/options 供重放渲染「问 + 未回答」行）
+ * - unanswered：提问挂起后崩溃/中断，重启打捞（或运行期非正常收场）时把轮上残留的
+ *   `pendingAsk` 转化而成（appendInterrupted 单点转化）——与 timeout 同为「问了没答」，
+ *   但成因是进程死亡而非 30 分钟超时，诚实分型防「数据迁就渲染」撒谎
  */
-export type InteractiveInputKind = 'question-answer' | 'supplement' | 'timeout';
+export type InteractiveInputKind = 'question-answer' | 'supplement' | 'timeout' | 'unanswered';
+
+/**
+ * 在途提问快照（Round.pendingAsk 元素）
+ *
+ * 提问挂起（yield paused）**之前**由内核写入当前轮并随 Round 落盘——「AI 已提问、用户未答」
+ * 时崩溃，问题文本不再只活在进程内存（E2E-ASK-LOSS-1 修复）。形状刻意窄于内核
+ * `AskQuestion`（slot/allowCustom 是交互期参数，历史重放不消费）：落盘只留
+ * 「问了什么 + 候选选项」两个重放必需面。
+ *
+ * 生命周期不变量：**非空 ⇔ 该轮存在「问了但未答且作答记录未落盘」的窗口**。
+ * 三个对称消费点保证其成立——
+ * - 写入：`MessageHistory.markPendingAsk`（挂起前，装配层经 onPendingQuestion 调用）；
+ * - 原子清除：`MessageHistory.appendUser` 交互分支（question-answer/timeout 落盘作答记录的
+ *   同一次 save 内清，无双记录窗口）；
+ * - 收场转化：`MessageHistory.appendInterrupted` 把非空的 pendingAsk 转成
+ *   `kind:'unanswered'` 的 interactiveInputs 条目并清字段（打捞/运行期失败统一受益）。
+ * 正常完成收场（appendAssistant）防御性清空（此时作答记录已落，残留即脏数据）。
+ */
+export interface RoundPendingAsk {
+  /** 提问原文 */
+  question: string;
+  /** 候选选项（ask_user options 参数；LLM 未提供时缺省） */
+  options?: string[];
+}
 
 /**
  * 问答闭环内交互输入（Round.interactiveInputs 元素）
@@ -510,6 +537,15 @@ export interface Round {
    * 此数组仅承载用户侧交互输入，供重放渲染折叠的「用户提问 / 用户补充」块。
    */
   interactiveInputs?: RoundInteractiveInput[];
+
+  /**
+   * 在途提问快照（挂起前落盘，E2E-ASK-LOSS-1）
+   *
+   * 「AI 已提问、用户未答」窗口内崩溃，问题文本与候选选项仍可从盘上恢复。
+   * 生命周期不变量与三个对称消费点见 `RoundPendingAsk` 注释；收场时由
+   * appendInterrupted 转成 `kind:'unanswered'` 交互输入，终态轮不残留本字段。
+   */
+  pendingAsk?: RoundPendingAsk[];
 
   /**
    * 裁决证据（悬案取证轨）

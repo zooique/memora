@@ -378,6 +378,16 @@ function wireRuntimeCallbacks(
   //     旧注释所称「供重启恢复展示」已随跨重启恢复退役而失效，勿据此理解其用途。
   loop.onPendingQuestion = (questions) => {
     if (questions.length === 0) return;
+    // 在途提问先落盘（E2E-ASK-LOSS-1）：本回调在 loop.handleAskUser yield paused 之前触发，
+    // markPendingAsk 方法体无 await（同步 save），调用返回即盘面已写——「挂起进入 paused 之前
+    // 持久化」的时序判据在此闭合。消费点 = appendInterrupted 收场转化（unanswered 交互输入）。
+    void history.markPendingAsk(
+      loop.getCurrentRoundId(),
+      questions.map((q) => ({
+        question: q.question,
+        ...(q.options ? { options: q.options } : {}),
+      })),
+    );
     hooks?.emit(AGENT_EVENTS.questionPending, questions);
     // 触发软暂停：handleAskUser 检出 ask_user 返回 'paused' 后由 consumeExecutionStream 翻 PAUSED
     const reason = `需要澄清：${questions.map((q) => q.question).join('; ')}`;

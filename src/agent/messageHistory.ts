@@ -15,6 +15,7 @@ import type {
   RoundEvidenceEvent,
   RoundInteractiveInput,
   RoundMessage,
+  RoundPendingAsk,
 } from '@/memory/roundStore.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
@@ -269,9 +270,15 @@ export class MessageHistory {
               ...(opts.question ? { question: opts.question } : {}),
               ...(opts.options && opts.options.length > 0 ? { options: opts.options } : {}),
             };
+            // 作答/超时记录落盘的**同一次 save 内**原子清 pendingAsk（生命周期不变量的清除点，
+            // 见 RoundPendingAsk 注释）：提问已被消费（回答回填或超时收场），残留即脏数据——
+            // 若留到收场才清，「已答 + 未答」双记录窗口会打开（appendInterrupted 会把残留
+            // pendingAsk 再转成一条 unanswered）。supplement 与提问无关，不动该字段。
+            const askConsumed = opts.kind === 'question-answer' || opts.kind === 'timeout';
             const updated: Round = {
               ...existing,
               interactiveInputs: [...(existing.interactiveInputs ?? []), input],
+              ...(askConsumed ? { pendingAsk: undefined } : {}),
             };
             this.roundStore.save(updated);
             this.pendingRounds.set(roundId, updated);
@@ -335,6 +342,45 @@ export class MessageHistory {
   }
 
   /**
+   * 登记在途提问到当前轮（E2E-ASK-LOSS-1 写点；持久化失败不抛出）。
+   *
+   * 调用时机 = 提问挂起（yield paused）**之前**（装配层经 loop.onPendingQuestion 接线），
+   * 保证「AI 已提问」这一事实先于挂起落盘——挂起后崩溃，问题文本仍可从盘上恢复，
+   * 不再只活在进程内存（loop.pendingAsk）。
+   *
+   * 形状收窄：入参直取内核 `AskQuestion`，落盘只留 `question/options` 两个重放必需面
+   * （见 `RoundPendingAsk`——slot/allowCustom 是交互期参数，历史重放不消费）。
+   * 轮缺失（异常兜底）：warn 后丢弃——挂起轮由 appendUser 建出，缺失即更上游已异常，
+   * 此处不伪造第二轨道补写（与 appendEvidence 同款降级语义）。
+   *
+   * @param roundId 闭环节点轮次 ID（loop.getCurrentRoundId()，与 appendUser 同源同值）
+   * @param questions 本批挂起提问（ask_user 解析产物，可多题）
+   */
+  async markPendingAsk(
+    roundId: string,
+    questions: readonly { question: string; options?: string[] }[],
+  ): Promise<void> {
+    if (!this.roundStore || !roundId || questions.length === 0) return;
+    try {
+      const existing = this.roundStore.getById(roundId) ?? this.pendingRounds.get(roundId);
+      if (!existing) {
+        logger.warn({ roundId }, 'markPendingAsk: 对应轮缺失，在途提问不落盘');
+        return;
+      }
+      const snapshot: RoundPendingAsk[] = questions.map((q) => ({
+        question: q.question,
+        ...(q.options && q.options.length > 0 ? { options: [...q.options] } : {}),
+      }));
+      const updated: Round = { ...existing, pendingAsk: snapshot };
+      this.roundStore.save(updated);
+      this.pendingRounds.set(roundId, updated);
+      logger.debug({ roundId, count: snapshot.length }, 'markPendingAsk: 在途提问已落盘');
+    } catch (err) {
+      logger.warn({ err, roundId }, 'markPendingAsk: 写入失败');
+    }
+  }
+
+  /**
    * 追加 assistant 消息到当前会话（持久化失败不抛出）。
    *
    * Round-based 路径：完成 pending Round 时**才登记会话引用**——
@@ -383,6 +429,9 @@ export class MessageHistory {
           assistantLog: assistantLog && assistantLog.length > 0 ? assistantLog : undefined,
           status: 'complete',
           completedAt: message.timestamp,
+          // 防御清残留（正常完成轮不该有在途提问）：作答记录落盘时已原子清（appendUser
+          // 交互分支），此处清异常窗口残留；终态轮不携带 pendingAsk（RoundPendingAsk 生命周期不变量）
+          pendingAsk: undefined,
         };
         this.pendingRounds.delete(roundId);
       } else {
@@ -501,6 +550,26 @@ export class MessageHistory {
       }
       // 有恢复文本才写 assistantMessage（§一·五：无 assistantMessage 总结也按 stop 语义收场）
       const content = opts?.content?.trim() ?? '';
+      // 在途提问收场转化（E2E-ASK-LOSS-1）：轮上残留 pendingAsk = 「问了但未答且作答记录
+      // 未落盘」的窗口仍开着——收场即窗口关闭，转化成 kind:'unanswered' 交互输入并清字段，
+      // 问题文本与候选选项从「进程内存」归位到「盘上重放面」（重放渲染复用 timeout 同型「未回答」行）。
+      // 消费点统一在本方法（打捞收场 / 运行期失败收场共用），宿主打捞链零改动。
+      const pendingAsk = existing.pendingAsk;
+      const unansweredInput: RoundInteractiveInput | undefined = pendingAsk?.length
+        ? {
+            id: `msg-${roundId}-input-${(existing.interactiveInputs?.length ?? 0) + 1}`,
+            role: 'user',
+            content: LOOP_CONSTANTS.ASK_UNANSWERED_NOTICE,
+            timestamp: nowIso(),
+            kind: 'unanswered',
+            // 多题快照整组取首问（与 runResume 落盘作答记录的取首问口径同源——UI 单行回顾，
+            // 整组问题文本不丢：其余题随 assistantLog 的 ask_user 工具轮可考）
+            question: pendingAsk[0]!.question,
+            ...(pendingAsk[0]!.options && pendingAsk[0]!.options.length > 0
+              ? { options: pendingAsk[0]!.options }
+              : {}),
+          }
+        : undefined;
       const completed: Round = {
         // 展开保留 userMessage / interactiveInputs / processEvents 等原字段
         //（existing 取自 RoundStore 时含宿主检查点已落盘的 processEvents——store-first 优先保证）
@@ -516,8 +585,15 @@ export class MessageHistory {
               } as RoundMessage,
             }
           : {}),
+        ...(unansweredInput
+          ? {
+              interactiveInputs: [...(existing.interactiveInputs ?? []), unansweredInput],
+            }
+          : {}),
         status: 'interrupted',
         completedAt: nowIso(),
+        // 生命周期不变量收口：转化后清字段（终态轮不残留 pendingAsk）
+        pendingAsk: undefined,
       };
       this.pendingRounds.delete(roundId);
       this.roundStore.save(completed);

@@ -226,22 +226,23 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
 });
 
 /**
- * ⚠️ 已知缺口锁定：「AI 已提问、用户未答」窗口崩溃 ⇒ **问题文本丢失（不可恢复）**
+ * 「AI 已提问、用户未答」窗口崩溃 ⇒ 问题文本可恢复（E2E-ASK-LOSS-1 修复后的行为锁定）
  *
- * 这是台账「交互轮落盘时机」存疑项的**实测定论**（2026-10-30）：**不可恢复**。
+ * 修复前实测定论（2026-10-30，缺口已修，留此作对照）：问题文本只活在内存 `pendingAsk`，
+ * 崩溃后盘面搜不到提问内容，用户重启只能看到「没有问题的中断」。
  *
- * 事实链：`handleAskUser` 把问题塞进内存 `pendingAsk` 后 yield `paused` 并结束本轮生成器
- * （进程空闲、等用户输入）。此刻 `appendAssistantToolCall` 虽已调用，但**没有把轮写回
- * RoundStore** ⇒ 磁盘上该轮只有 `userMessage`，`assistantMessage` 与 `processEvents` 双双缺失。
- * 崩溃重启后：轮能被打捞、能升级成 interrupted、用户能看到「我问过这句」，
- * **但 AI 问的那个问题（含候选项）彻底没了** —— 用户看到的是一个「没有问题的中断」。
+ * 修复后事实链（本 describe 锁定）：
+ *   `handleAskUser` 在 yield paused 之前经装配层 `markPendingAsk` 把提问快照写进当前轮
+ *   （`Round.pendingAsk`，随轮落盘）⇒ SIGKILL 后盘面就有 question/options；
+ *   重启打捞 `appendInterrupted` 收场时把残留 pendingAsk 转化成 `kind:'unanswered'`
+ *   交互输入并清字段 ⇒ 恢复后的历史轮带「问 + 未回答」行（渲染复用 timeout 同型形态）。
  *
- * 修法方向（涉及内核落盘时机 + UI 恢复渲染，须单独立项，不在本条 e2e 里顺手改）：
- *   在 `handleAskUser` 进入挂起态之前，把「在途提问」持久化到该轮（processEvents 加
- *   question 事件，或 Round 加 pendingQuestion 字段），使重启后可重新渲染提问卡；
- *   同时要定「重启后提问卡是否可再次作答」的语义（答 = 续跑，不答 = 收场为中断）。
+ * 作答语义定案（E2E-ASK-LOSS-1 判据③）：**重启后不可再作答**——内核续跑链依赖进程内
+ * 现场（pendingAsk + toolCallIds + 生成器现场），重启后 `agent.answerQuestion` 无在途内存
+ * 提问恒 false；恢复面只做诚实记录（unanswered 行），不伪造「可作答提问卡」。
+ * 「不答 = 收场为 interrupted」由本组 + 主链组覆盖；「答 = 续跑」不提供（见上）。
  */
-describe('已知缺口：提问窗口崩溃 ⇒ 问题文本不可恢复', () => {
+describe('提问窗口崩溃 ⇒ 问题文本可恢复（E2E-ASK-LOSS-1）', () => {
   let ws: string;
   let configDir: string;
   let dataDir: string;
@@ -266,7 +267,7 @@ describe('已知缺口：提问窗口崩溃 ⇒ 问题文本不可恢复', () =>
     expect(crash.status).not.toBe(4);
   });
 
-  it('盘面只有 userMessage：问题文本与过程事件都没落盘（这就是「不可恢复」）', () => {
+  it('挂起前提问已落盘：盘面 pendingAsk 含 question 与 options（修复前这里搜不到任何提问内容）', () => {
     const index = JSON.parse(readFileSync(join(dataDir, 'rounds', 'index.json'), 'utf8')) as {
       id: string;
       status: string;
@@ -276,21 +277,44 @@ describe('已知缺口：提问窗口崩溃 ⇒ 问题文本不可恢复', () =>
 
     const round = JSON.parse(readFileSync(join(dataDir, 'rounds', `${roundId}.json`), 'utf8')) as {
       userMessage?: { content?: string };
-      assistantMessage?: { content?: string; toolCalls?: unknown[] };
+      pendingAsk?: { question?: string; options?: string[] }[];
+      assistantMessage?: { content?: string };
       processEvents?: unknown[];
     };
     // 用户那一句在（appendUser 即时落盘）
     expect(round.userMessage?.content).toBe('崩溃窗口测试提问');
-    // 问题不在：assistantMessage 与 processEvents 都缺 ⇒ 恢复后无法重建提问卡
+    // 修复点本体：挂起（yield paused）之前提问快照已随轮落盘
+    expect(round.pendingAsk).toEqual([{ question: '选哪个方案？', options: ['A', 'B'] }]);
+    // assistantMessage / processEvents 仍缺（提问轮无产出叙述——这是诚实形态，非缺陷）
     expect(round.assistantMessage).toBeUndefined();
     expect(round.processEvents ?? []).toHaveLength(0);
-    // 明确一点：整份 round 文本里搜不到提问内容（防「其实藏在某个字段里」的自我安慰）
-    expect(readFileSync(join(dataDir, 'rounds', `${roundId}.json`), 'utf8')).not.toContain(
-      '选哪个方案',
-    );
   });
 
-  it('但轮本身不丢：重启后仍可打捞并升级为 interrupted（用户至少看到「问过、被中断」）', async () => {
+  it('重启后不可再作答（语义定案）：answerQuestion 无在途内存提问恒 false', async () => {
+    const roundStore = new WorkspaceRoundStore(ws);
+    roundStore.load();
+    const sessionStore = new WorkspaceSessionStore(ws, roundStore);
+    sessionStore.load();
+    const agent = new Agent({
+      projectPath: ws,
+      dataDir,
+      configDir,
+      provider: new StubProvider() as unknown as LlmProvider,
+      sessionStore,
+      roundStore,
+      permission: 'owner',
+      allowedPaths: [dataDir],
+      archiveMode: 'manual',
+    });
+    await agent.init();
+
+    // 进程死亡后 pendingAsk 内存现场不可重建 ⇒ 不提供「答 = 续跑」；答案无处回填
+    expect(agent.answerQuestion(['A'])).toBe(false);
+
+    await agent.close();
+  }, 120_000);
+
+  it('打捞收场把提问转化成 unanswered 交互输入并清字段（恢复面 = 诚实记录，非活提问卡）', async () => {
     const roundStore = new WorkspaceRoundStore(ws);
     roundStore.load();
     const sessionStore = new WorkspaceSessionStore(ws, roundStore);
@@ -315,9 +339,17 @@ describe('已知缺口：提问窗口崩溃 ⇒ 问题文本不可恢复', () =>
       sessionDate: date,
     });
     expect(upgraded).toBeGreaterThanOrEqual(1);
-    expect(roundStore.getById(roundId)!.status).toBe('interrupted');
-    // 不写空 assistantMessage（内核既有语义：无产出也按 stop 收场）
-    expect(roundStore.getById(roundId)!.assistantMessage).toBeUndefined();
+    const round = roundStore.getById(roundId)!;
+    expect(round.status).toBe('interrupted');
+    // 无产出也按 stop 收场（内核既有语义不变）
+    expect(round.assistantMessage).toBeUndefined();
+    // 转化产物：「问 + 未回答」行数据齐备，渲染复用 timeout 同型形态
+    const input = round.interactiveInputs?.[0];
+    expect(input?.kind).toBe('unanswered');
+    expect(input?.question).toBe('选哪个方案？');
+    expect(input?.options).toEqual(['A', 'B']);
+    // 生命周期不变量收口：终态轮不残留 pendingAsk
+    expect(round.pendingAsk).toBeUndefined();
 
     await agent.close();
   }, 120_000);

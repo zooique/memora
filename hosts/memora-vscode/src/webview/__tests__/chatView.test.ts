@@ -8107,6 +8107,42 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     expect(rb.querySelector('.round-block__stats')?.textContent).toContain('未回答×1');
   });
 
+  it('unanswered 重放（E2E-ASK-LOSS-1）：崩溃收场转化的「问 + 未回答」行照常渲染，不置续跑期待', () => {
+    mountChatView();
+    // unanswered 只出现在中断轮（appendInterrupted 收场转化），经重放 middle 段透传
+    dispatchReplay(
+      makeRound({
+        id: 'round-1',
+        user: { content: '帮我做方案', ts: 't1' },
+        processEvents: [
+          { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
+        ],
+        assistantLog: [{ content: '在读取前需要确认：', ts: 't2' }],
+        interactiveInputs: [
+          {
+            content: '[ASK_ABORTED] 该提问未被回答（会话在此处中断）',
+            ts: 't3',
+            kind: 'unanswered',
+            question: '你想读哪个文件？',
+            options: ['probe.txt', 'config.json'],
+          },
+        ],
+        status: 'interrupted',
+      }),
+    );
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const rbQa = rb.querySelectorAll<HTMLElement>('.round-block__details .round-block__input');
+    // 问回顾行 + 未回答行同渲染（与 timeout 同型形态，tag 文案共用「未回答」）
+    expect(rbQa.length).toBe(1);
+    expect(rbQa[0]!.querySelector('.round-block__input-q')?.textContent).toContain(
+      '你想读哪个文件？',
+    );
+    expect(rbQa[0]!.textContent).toContain('候选：probe.txt ｜ config.json');
+    expect(
+      rbQa[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent,
+    ).toBe('未回答');
+  });
+
   it('形态甲：QA 条目按 ts 归位对应 step 分组（补充挂刚结束的 step 间隙，2026-09-17 位置确定性防回归）', () => {
     mountChatView();
     // 重放由单条 turn_update(replay:true) 承载——两条任务项边界过程事件 + 前序段 + supplement 折入同一轮

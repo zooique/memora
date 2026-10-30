@@ -1048,7 +1048,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (finalize) {
       const statsSpan = rb.querySelector('.round-block__stats');
       if (statsSpan) {
-        const kindTag = (kind: 'question-answer' | 'supplement' | 'timeout'): string | null =>
+        const kindTag = (
+          kind: 'question-answer' | 'supplement' | 'timeout' | 'unanswered',
+        ): string | null =>
           kind === 'question-answer' ? '你答' : kind === 'supplement' ? '你补充' : '未回答';
         const qaCount = new Map<string, number>();
         const countedTs = new Set<string>();
@@ -2125,7 +2127,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   interface RuntimeInteractiveInput {
     text: string;
     ts?: string;
-    kind: 'question-answer' | 'supplement' | 'timeout';
+    // 与内核 InteractiveInputKind 同值面（'unanswered' = 崩溃收场转化的「问了没答」行）
+    kind: 'question-answer' | 'supplement' | 'timeout' | 'unanswered';
     roundId?: string;
     question?: string;
     options?: string[];
@@ -2163,15 +2166,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * @param text 输入全文（timeout 时为超时通知文案，与内核落盘 content 同值）
    * @param ts 时间戳（排序键；缺失时兜底当前时刻）
-   * @param kind 交互类型（question-answer=提问回答 / supplement=补充 / timeout=提问超时未答）
+   * @param kind 交互类型（question-answer=提问回答 / supplement=补充 / timeout=提问超时未答 /
+   *        unanswered=崩溃收场转化的「问了没答」，内核 appendInterrupted 转化产物）
    * @param roundId 所属轮（随 user(kind) 消息透传）
-   * @param question 提问原文（qa/timeout 携带时，条目上方渲染只读「问」回顾行）
+   * @param question 提问原文（qa/timeout/unanswered 携带时，条目上方渲染只读「问」回顾行）
    * @param options 候选选项（静态文本随回顾行展示）
    */
   function appendInteractiveInput(
     text: string,
     ts: string | undefined,
-    kind: 'question-answer' | 'supplement' | 'timeout',
+    kind: 'question-answer' | 'supplement' | 'timeout' | 'unanswered',
     roundId?: string,
     question?: string,
     options?: string[],
@@ -3109,7 +3113,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     // 3) 中间段：前序 assistant 段 + 交互输入按时间升序交织（还原打断点 / 提问点时序）
     const middle: {
-      kind: 'seg' | 'question-answer' | 'supplement' | 'timeout';
+      kind: 'seg' | 'question-answer' | 'supplement' | 'timeout' | 'unanswered';
       content: string;
       ts?: string;
       question?: string;
@@ -3139,6 +3143,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
             .querySelectorAll<HTMLElement>(`.round-block__input[data-round-id="${r.id}"]`)
             .forEach((el) => el.remove());
         }
+      } else if (item.kind === 'unanswered') {
+        // 崩溃/中断收场的「问了没答」行（内核 appendInterrupted 把残留 pendingAsk 转化而来）：
+        // 只落回顾行——不置 resumePending（轮已收场，后续 meta 无「同闭环续跑」可言）、
+        // 不收拾打断骨架（那是给续跑输入用的，此处无续跑场景）
+        appendInteractiveInput(item.content, item.ts, item.kind, r.id, item.question, item.options);
       } else if (item.kind === 'question-answer' || item.kind === 'timeout') {
         resumePending = true;
         appendInteractiveInput(item.content, item.ts, item.kind, r.id, item.question, item.options);

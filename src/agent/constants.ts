@@ -206,6 +206,11 @@ export const LOOP_CONSTANTS = {
    *  宿主可经 messages.maxIterationsReached 覆盖（与 DEFAULT_INTERRUPTED_MARK 同族文案）。 */
   DEFAULT_MAX_ITERATIONS_REACHED_MARK: '\n\n[Max iterations reached]',
 
+  /** 在途提问收场转化文案（SSOT，E2E-ASK-LOSS-1）：轮上残留 pendingAsk 在 appendInterrupted
+   *  收场时转化成 kind:'unanswered' 交互输入的正文。语义只声明「问了没答」这一事实，
+   *  不暗示原因（崩溃 / 用户停止 / 运行期失败皆走此文案），成因可从轮状态与上下文还原。 */
+  ASK_UNANSWERED_NOTICE: '[ASK_ABORTED] 该提问未被回答（会话在此处中断）',
+
   /**
    * 上下文预算预警提示：容量逼近警戒线但摘要层未饱和时注入的温和提示，
    * 引导 LLM 主动压缩 / 收敛——软上限（收尾信号）的前一级。低压通用文案不走 UIMessages 覆盖层，
