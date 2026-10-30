@@ -46,6 +46,8 @@
  *   ① 输入可被 staged 集合限定 ② 单步 ≤30s ③ 失败可归因本次改动。
  *   测试（内核 98s / 宿主 119s）与覆盖率（40s+）**不进 fast** —— 根 `vitest.config.ts`
  *   的 `fileParallelism` 处自记已知跨文件 flake，假红会直接诱发 `--no-verify`（长默认路径本身就是绕过诱因）。
+ *   **唯一例外**（2026-10-31 起）：`kernel:surface-guard` —— 单文件 5s、无跨文件 flake 的冻结
+ *   基线守卫。加它不是放宽分层，是因为「守卫有实现却没人跑」已经实际造成过一次带伤入库。
  *
  * 退出码：任一 required 步骤失败 → 1；全绿 → 0。
  * 完整输出落盘 `.workbuddy/tmp/local-ci-<时间戳>.log`，**头部含收据行**（when/preset/head/tree/dirty/steps）
@@ -146,8 +148,9 @@ const STEP_TIMEOUT_MS = 15 * 60 * 1000; // 单步 15 分钟上限，防挂死
 
 /**
  * 步骤定义 —— **全库唯一定义处**（钩子只传 `--preset`，不得在别处复制这份清单）
- * `presets`：该步骤属于哪些档。fast 档只跑两侧 `tsc`——lint 由 pre-commit 的 lint-staged
- * 承担（staged 集合限定），测试/覆盖率/构建因超时与 flake 成本**不进 fast**（见文件头分层说明）。
+ * `presets`：该步骤属于哪些档。fast 档 = 两侧 `tsc` + 一条 5s 单文件守卫——lint 由 pre-commit
+ * 的 lint-staged 承担（staged 集合限定），测试/覆盖率/构建因超时与 flake 成本**不进 fast**
+ * （唯一例外见文件头分层说明）。
  * @type {{id:string,name:string,cmd:string,cwd:string,required:boolean,presets:string[],optionalFlag?:string,env?:Record<string,string>}[]}
  */
 const ALL_STEPS = [
@@ -168,6 +171,20 @@ const ALL_STEPS = [
     id: 'kernel:typecheck',
     name: '内核 TypeScript 类型检查',
     cmd: 'npm run typecheck',
+    cwd: ROOT,
+    required: true,
+    presets: ['fast', 'full'],
+  },
+  // 公开成员面冻结基线守卫（ASK-PENDINGASK-CLEAR-1 教训入库）：新增/删除内核公开成员必须同步
+  // 登记 `REACHABLE_MEMBERS`，否则本步必红。**只跑这一个文件**——单文件实测 5.0s、无跨文件
+  // flake，满足本文件头部给 fast 档定的分层判据（单步 ≤30s / 失败可归因本次改动），
+  // 故不违反「测试与覆盖率不进 fast」那条。
+  // 根因是一条本项目自己写过的判据：**守卫有实现 ≠ 守卫会跑**。2026-10-31 实测——该守卫当时
+  // 是红的，但只跑了定向用例，于是「门禁绿」被写进台账并推上双远端，带伤入库。
+  {
+    id: 'kernel:surface-guard',
+    name: '公开成员面冻结基线守卫（新增公开成员必登记）',
+    cmd: 'node node_modules/vitest/vitest.mjs run src/__tests__/publicMemberSurfaceGuard.test.ts --silent --reporter=dot',
     cwd: ROOT,
     required: true,
     presets: ['fast', 'full'],
