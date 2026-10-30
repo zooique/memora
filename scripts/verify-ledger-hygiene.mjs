@@ -100,6 +100,14 @@
  *      2026-11-19）都在未来 ⇒ 0 命中，符合「存量清零才建闸」。
  *      ⚠️ 到期后**改期**是允许的，但必须写新证据；无理由顺延 = 把保质期改成无限期。
  *
+ *   ⑮ **顶层条目 ID 撞名**（2026-10-30 补）：全台账任一顶层 ID 出现两次及以上 ⇒ 红
+ *      （只报第二条及以后，第一条是原名）。为什么补：按 ID 索引的判据（⑧ 的 byId、
+ *      ⑬ 的 headIds、`verify-ledger-fold.mjs` 的 Set）都是**后者覆盖前者** ⇒ 取到的是
+ *      后一条的行号与时间，判据**静默失明**——不报错、不判红，只是悄悄用错数据。
+ *      实证：`D1-MCP` 在观察区有本体、在注记类区有指针且同 ID ⇒ 118 个条目首行、
+ *      去重仅 117，且 ⑬ 取到的是指针行的时间而非常被剪枝的本体行时间。
+ *      存量：`D1-MCP` 指针已改 `D1-MCP-PTR` ⇒ 0 命中后才建的本闸。
+ *
  * 档位（2026-10-27 由告警升硬闸，兑现上一版写明的升档条件）：
  *   当初挂 required:false 是为 0.2.0 区的存量欠账/假指针让路，避免门一建就被绕。
  *   该存量已于 2026-10-27 清零：①②③④⑥ 五类 0 命中，⑤ 三方一致全绿。
@@ -609,7 +617,9 @@ function checkArchiveTiming(cands, timing, archives) {
 }
 
 function diagnose(text, opts = {}) {
-  const lines = text.split(/\r?\n/);
+  // 去**尾部换行**再切分：文件以 \n 结尾时 `split` 会多出一个空串 ⇒ 自报行数比 `wc -l`
+  // 多 1（实测 713 vs 712）。同一事实两处数字必漂移，故此处统一到「文件的真实行数」。
+  const lines = text.replace(/\r?\n$/, '').split(/\r?\n/);
   const sections = parseSections(lines);
   const arcCache = new Map();
   const readArc = (rel) => {
@@ -627,6 +637,8 @@ function diagnose(text, opts = {}) {
   const oversize = []; // ⑫ 观察区条目体量超限
   const noExpiry = []; // ⑬ 新登记观察项无到期复查日期
   const overdue = []; // ⑭ 观察项复查日已过期仍未处置
+  const dupIds = []; // ⑮ 顶层条目 ID 撞名
+  const allIds = []; // ⑮ 的全量条目（跨区）
   const closedCands = []; // ⑧ 的候选：观察区内已收口、且标题行无归档指针
   let itemTotal = 0;
   const releasedSections = [];
@@ -637,6 +649,7 @@ function diagnose(text, opts = {}) {
   for (const sec of sections) {
     const items = parseItems(lines, sec);
     itemTotal += items.length;
+    for (const it of items) allIds.push({ ...it, sec: sec.title });
     const released = RELEASED_RE.test(sec.title);
     if (released) {
       releasedSections.push({ title: sec.title, items: items.length, lines: sec.end - sec.start });
@@ -720,6 +733,22 @@ function diagnose(text, opts = {}) {
     }
   }
 
+  // ⑮ 顶层条目 ID 撞名：按 ID 索引的判据（⑧ 的 byId / ⑬ 的 headIds / fold 的 Set）
+  //    都会「后者覆盖前者」⇒ 取到错误行的时间，判据**静默失明**（2026-10-30 实证：
+  //    `D1-MCP` 在观察区有本体、在注记类区有指针，两处同 ID ⇒ 118 个条目首行、去重 117）。
+  //    只报第二条及以后：第一条是原名，改哪一条由人决定（通常改指针 / 衍生条目，保本体 ID）。
+  const seenId = new Map();
+  for (const it of allIds) {
+    if (seenId.has(it.id)) {
+      dupIds.push({
+        ...it,
+        why: `ID 与行${seenId.get(it.id) + 1} 的条目撞名——按 ID 索引的判据会被后者覆盖，判据静默失明`,
+      });
+    } else {
+      seenId.set(it.id, it.start);
+    }
+  }
+
   const blanks = hasBlankRuns(lines);
   const clones = checkClones(lines);
   const anchors = checkAnchors(lines, sections);
@@ -742,6 +771,7 @@ function diagnose(text, opts = {}) {
     oversize,
     noExpiry,
     overdue,
+    dupIds,
     clones,
     anchors,
     releasedSections,
@@ -763,6 +793,7 @@ function report(r) {
   if (r.oversize.length) problems.push(['⑫观察区条目体量超限', r.oversize]);
   if (r.noExpiry.length) problems.push(['⑬新登记观察项无到期复查', r.noExpiry]);
   if (r.overdue.length) problems.push(['⑭复查日已过期未处置', r.overdue]);
+  if (r.dupIds.length) problems.push(['⑮顶层条目 ID 撞名', r.dupIds]);
   if (r.clones.length) problems.push(['⑩跨条目逐字克隆', r.clones]);
   if (r.anchors.length) problems.push(['⑪结构锚点缺失', r.anchors]);
 
@@ -780,7 +811,7 @@ function report(r) {
 
   if (problems.length === 0) {
     console.log(
-      '✅ [ledger-hygiene] 十三类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致 / 无落态跨版未归档 / 观察区条目体量未超限 / 新登记观察项均有到期复查 / 无过期未处置复查日 / 无跨条目逐字克隆 / 结构锚点齐备）',
+      '✅ [ledger-hygiene] 十四类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致 / 无落态跨版未归档 / 观察区条目体量未超限 / 新登记观察项均有到期复查 / 无过期未处置复查日 / 无 ID 撞名 / 无跨条目逐字克隆 / 结构锚点齐备）',
     );
     return 0;
   }
@@ -811,6 +842,7 @@ function report(r) {
       '\n   ⑫ 把过程叙述 / 实施流水整段迁归档、原位只留判据行 + 指针（`D1-MCP` 的精简做法）——**改阈值即门失明**；' +
       '\n   ⑬ 给新登记观察项补一行「到期复查 YYYY-MM-DD」（建门前的存量豁免，不回填；建门后新登记一律要写）；' +
       '\n   ⑭ 复查日过期即处置：转封存 / 归档，或**有信号就改期**（改期须写新证据，禁止无理由顺延）；' +
+      '\n   ⑮ 撞名的**后一条**改 ID（通常改指针 / 衍生条目，保本体 ID 不变 ⇒ 外部引用不断）；' +
       '\n   ⑩ 同一事实只准在一处登记：真源留一处，其余改指针（形态参照 LEDGER-AXIS-1 → LEDGER-DUP-GUARD-1 的并入写法）；' +
       '\n   ⑪ 补回缺失的结构区/轴标题——真源 = 台账头部「排序原则」与「双轨规则」，先读台账头部再动结构。' +
       '\n   本闸已是硬闸（local-ci required:true）——存量回涨时先把存量清零，不许把档位调回去。',
@@ -1068,6 +1100,18 @@ function selfTest() {
         ),
       pick: (r) => idsOf(r.overdue),
     },
+    // ⑮：注入两条**同 ID** 的顶层条目 ⇒ 撞名必须被抓。
+    //    注入在观察区，两条都带复查日 ⇒ 不触发 ⑬/⑭，避免用例互相污染。
+    {
+      label: '⑮顶层条目 ID 撞名',
+      probe: 'ZZ-DUP-1',
+      mutate: (t) =>
+        t.replace(
+          anchor,
+          `${anchor}\n\n- **ZZ-DUP-1** — 自检注入（撞名第一条）｜⏳ 观察\n  到期复查 2099-12-31\n\n- **ZZ-DUP-1** — 自检注入（撞名第二条）｜⏳ 观察\n  到期复查 2099-12-31`,
+        ),
+      pick: (r) => idsOf(r.dupIds),
+    },
     // ⑪a：删掉一个结构区标题（实吞事故形态 #2：## 注记类 被吞）⇒ 必须红
     {
       label: '⑪a结构区被吞',
@@ -1123,7 +1167,7 @@ function selfTest() {
 
   console.log(
     allOk
-      ? '\n✅ 自检通过：十三类判据（①–⑧ + ⑩⑪⑫⑬⑭；⑨ 为刻意否决记录、无判据体）均可捕获新命中\n   ⚠️ ⑬ 的「提交后」一相不在此覆盖内（伪造不出 blame 时间）⇒ 改 ⑬ 后必须做隔离仓库双相实测'
+      ? '\n✅ 自检通过：十四类判据（①–⑧ + ⑩⑪⑫⑬⑭⑮；⑨ 为刻意否决记录、无判据体）均可捕获新命中\n   ⚠️ ⑬ 的「提交后」一相不在此覆盖内（伪造不出 blame 时间）⇒ 改 ⑬ 后必须做隔离仓库双相实测'
       : '\n❌ 自检失败：存在失明判据',
   );
   return allOk ? 0 : 1;
