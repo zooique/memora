@@ -26,13 +26,15 @@ ask 多题批次（ASK-MULTI-Q-1）落盘后，同一条「用户作答」事实
 内核在提问挂起时即产出并下发，宿主**纯消费、不自造**。
 
 1. `AskQuestion` 增加可选字段 `askCallId`，由 `parseAskCalls` 在解析 `askCalls` 时填入
-   （批内第 i 题的 `askCallId` = 第 i 个 `askCallId`，与 `pendingAsk.toolCallIds` 同序同源）。
+   （批内第 i 题的 `askCallId` = 第 i 个 `toolCallId`，与 `pendingAsk.toolCallIds` 同序同源）。
 2. 该字段随 `onPendingQuestion` 回调、`questionPending` 事件、`question_pending` chunk
    **自然透传**（不改事件负载类型、不改签名字面）。
 3. 落盘时 `buildInteractiveInputs` 的草稿可携带 `id`：**有则直接用**（题身份），
    无则回退现有轮内序号公式（supplement / 历史数据 / 未带身份的收场转化）。
-4. 宿主运行时 `inputId` 一律取内核下发的 `askCallId`；自造键
-   （`live-input-*`）在宿主消费刀完成后物理删除。
+4. 宿主运行时 `inputId` 一律取内核下发的 `askCallId`；自造键（`live-input-*`）降级为
+   内核未给身份时的**回退分支并保留，不删除**。⚠️ 本条初版措辞为「在宿主消费刀完成后
+   物理删除」，已由 §第二刀落地记录 **修正二** 推翻——删回退会回归 ASK-MULTI-Q-1 真机缺陷。
+   后续条款与本决策冲突时，以**修订段**（落地记录）为准。
 
 ## 理由
 
@@ -76,6 +78,9 @@ ask 多题批次（ASK-MULTI-Q-1）落盘后，同一条「用户作答」事实
    （宿主载的是内核 dist），改 `PendingQuestionDto` 与两处 `inputId` 取值。
 3. **第三刀（收口）**：物理删除宿主自造键与内核回退分支（回退分支删除前须确认
    supplement 路径确无身份来源）。
+   ⚠️ **已收窄（2026-10-31）**：本刀范围不再含「物理删除」——订正见 §第二刀落地记录
+   **修正二**（删除回退会回归 ASK-MULTI-Q-1 真机缺陷）。现范围 = 「确认 supplement
+   路径确无身份来源后，评估回退命名是否收敛」。
 
 ## 第二刀落地记录（2026-10-31）与两处定性修正
 
