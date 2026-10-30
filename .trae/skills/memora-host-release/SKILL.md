@@ -46,8 +46,8 @@ agent_created: true
   - `npm run format:check`（根，prettier）
   - `cd hosts/memora-mcp && npm run build`（**测试前置**：`crossHostLayout.test.ts` 跨宿主契约测试加载 mcp 构建产物且有 mtime 守卫（dist 不旧于 src）——新 clone 或 mcp src 变更后必跑，缺它宿主测试必红）
   - `cd hosts/memora-vscode && npm run typecheck && npm run lint && npm test`
-  - `cd hosts/memora-vscode && node scripts/gen-changelog.mjs --check && node scripts/verify-package-manifest.mjs`
-    （**包内容物闸**：前者验根 CHANGELOG 能抽到 `· 宿主` 区，抽不到即 fail-closed 红；后者真跑 `vsce ls`，断言白名单 + **必含 `CHANGELOG.md`**。生成器没跑 / 被 `.vscodeignore` 排掉都会在这一步红，不必等发布后看市场页才发现标签是空的）
+  - `cd hosts/memora-vscode && node scripts/gen-changelog.mjs && node scripts/verify-package-manifest.mjs`
+    （**包内容物闸**：前者从根 CHANGELOG 的 `· 宿主` 区**重建**包内 `CHANGELOG.md`（生成物、幂等、不入库；抽不到区即 fail-closed 红），后者真跑 `vsce ls`，断言白名单 + **必含 `CHANGELOG.md`**。⚠️ **不要用 `--check` 替代第一条**——它不写盘，干净 clone 里紧随其后的包清单闸会因「缺 `CHANGELOG.md`」必红（2026-10-30 实测：`--check` EXIT=0、包清单闸 EXIT=1）；`--check` 只用于确认「根文件还能抽出宿主区」这一件事）
   - CHANGELOG 宿主区日期人工核对（合法日期 + 发布日窗口）
 - 任一项失败 ⇒ 修完重跑，勿带伤打 tag。
 - ⚠️ **本地全绿 ≠ CI 绿**：本地是 Windows 暖环境（pnpm store 已热、平台 API 走 win32 语义），CI 是 ubuntu 冷环境。平台相关断言只验本机形态的用例要写成 `runIf(平台)` 互斥孪生（见「已知坑」），CI 首跑仍可能红，红了解因再修、修完重打 tag（见 Step 4）。
@@ -98,6 +98,7 @@ agent_created: true
 
    - **Changelog 生成链真源**：`scripts/gen-changelog.mjs` 从根 `CHANGELOG.md` 抽标题带 `· 宿主` 的区 → 扩展根 `CHANGELOG.md`（**生成物，不入库**，真源永远只有根文件一份）→ `.vscodeignore` 的 `!CHANGELOG.md` 放行 → `vscode:prepublish` 与 `package` 两条路都会重建。
    - ⚠️ **vsce 会把 `CHANGELOG.md` / `README.md` 重命名成小写**（`changelog.md` / `readme.md`）写进 vsix，而 `vsce ls` 清单里仍是大写 —— **两处形态不同是正常的**，别据此判「没打进去」；包清单闸的白名单按大写写才对。
+   - ⚠️ **vsce 还会对 markdown 做后处理**：把 `#204845` 这类 issue 引用自动转成指向仓库 issues 的链接（2026-10-30 实测：包内 60,415 字节 / 生成物 60,364 字节，行数同为 166，唯一差异是这一处自动链接）⇒ **包内文件与生成物字节不等是正常的**，别用 sha256 比对判「内容是否最新」，改看行数 / 首行 / 抽样段落。
    - **Changelog 标签只能随「含该文件的版本」出现**：已发布版本不可覆盖 ⇒ 空白标签无法补，只有后续版本才有（本条即 0.4.0 的既成事实）。
    - `categories` 官方词表：`Programming Languages` / `Snippets` / `Linters` / `Themes` / `Debuggers` / `Formatters` / `Keymaps` / `SCM Providers` / `Other` / `Extension Packs` / `Language Packs` / `Data Science` / `Machine Learning` / `Visualization` / `Notebooks` / `Education` / `Testing`。填词表外的值 = 市场侧报错或降级，别凭「AI 插件应该选 AI」想当然（本条 2026-10-30 查官方 manifest 文档确认）。
 
