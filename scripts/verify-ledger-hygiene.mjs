@@ -695,7 +695,10 @@ function diagnose(text, opts = {}) {
       //   缺 ② 时本闸在 pre-push（改动已提交）恒绿 = 假闸；缺 ① 时未提交窗口失明。
       // ⑭ 复查日已过期：只校验格式不校验时间 ⇒ 过期条目永不红，保质期没有执行面。
       if (OBSERVATION_RE.test(sec.title)) {
-        const body = lines.slice(it.start + 1, it.end).join('\n');
+        // ⚠️ body 必须**含标题行**：存量 `ARCH-4` 把复查日写在标题行（`…｜⏳ 观察｜到期复查 …`），
+        //    `HOST-S15` 写在正文条款里。两种写法都是「同一事实」，判据不该挑位置——
+        //    只扫正文会让 ARCH-4 这类被判为「无复查日」（2026-10-30 实测：只认到 1 条）。
+        const body = lines.slice(it.start, it.end).join('\n');
         const born = timing.byId.get(it.id)?.headTime ?? null;
         const isNew = !headIds.has(it.id) || (born !== null && born >= GATE13_BORN_AT);
         if (isNew && !EXPIRY_RE.test(body)) {
