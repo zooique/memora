@@ -19,6 +19,7 @@ import { basename } from 'node:path';
 import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.js';
 import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
+import { salvageInterruptedRounds } from '../../extension/host/interruptedSalvage.js';
 import { ingestImage } from '../../extension/host/imageIngest.js';
 // IMG-8 宿主兜底：三维聚合限额裁决（判据单点 shared/imageTurnLimits，token 走内核 imageTokens）
 import { imageTurnRejection } from '../../extension/host/imageTurnGuard.js';
@@ -2320,21 +2321,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     try {
       // date 过滤沿用当前会话日期（崩溃窗口宿主只持当前会话日期）
       const sessionDate = this._currentSessionId.slice(0, 10);
-      // 可选接口（IRoundStore.listInterruptedRecent?）：未实现时跳过打捞（防御性降级）
-      const interrupted = store.listInterruptedRecent?.(sessionDate) ?? [];
-      if (interrupted.length === 0) return;
-      // 按 createdAt 升序登记（保序入 roundIds，恢复后对话时序正确）
-      const ordered = [...interrupted].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-      for (const round of ordered) {
-        // 文本派生：seq 升序拼接 narrate 内容（运行期过程叙述 = 部分助手文本）
-        const content = (round.processEvents ?? [])
-          .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
-          .sort((a, b) => a.seq - b.seq)
-          .map((e) => e.payload.content)
-          .join('');
-        await agent.agentHistory.appendInterrupted(round.id, { content });
-      }
-      console.info(`Memora 已恢复 ${ordered.length} 个中断轮为普通会话回合`);
+      // 打捞→派生→收场的业务实现外置（interruptedSalvage）：跨重启 e2e 与本处消费同一份，
+      // 避免 e2e 验的是复制品而非生产路径。视图层只管 once-guard 与失败降级。
+      const upgraded = await salvageInterruptedRounds({
+        store,
+        history: agent.agentHistory,
+        sessionDate,
+      });
+      if (upgraded > 0) console.info(`Memora 已恢复 ${upgraded} 个中断轮为普通会话回合`);
     } catch (err) {
       console.warn('Memora 中断轮升级恢复失败（不影响历史回放；未恢复轮由 GC 兜底）', err);
     }
