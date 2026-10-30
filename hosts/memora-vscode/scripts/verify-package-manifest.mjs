@@ -83,7 +83,11 @@ export function auditManifest(entries) {
     );
   }
   for (const need of REQUIRED_ENTRIES) {
-    if (!entries.includes(need)) issues.push(`清单缺必需文件：${need}`);
+    if (entries.includes(need)) continue;
+    // 缺 CHANGELOG 是「生成器没跑」而不是「忘了建文件」——干净 clone 里它本就不存在，
+    // 报错必须给出下一步，否则看到红的人会去手工建一个空的、把真源又拆成两份。
+    const hint = need === 'CHANGELOG.md' ? '（先跑 `node scripts/gen-changelog.mjs` 生成）' : '';
+    issues.push(`清单缺必需文件：${need}${hint}`);
   }
   for (const raw of entries) {
     const e = raw.replaceAll('\\', '/');
