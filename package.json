@@ -44,7 +44,7 @@
     "build:clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:cov": "vitest run --coverage",
+    "test:cov": "node scripts/verify-node-pin.mjs && vitest run --coverage",
     "test:all": "npm run test && npm run test --prefix hosts/memora-vscode",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
