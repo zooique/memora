@@ -100,6 +100,7 @@ agent_created: true
    - ⚠️ **vsce 会把 `CHANGELOG.md` / `README.md` 重命名成小写**（`changelog.md` / `readme.md`）写进 vsix，而 `vsce ls` 清单里仍是大写 —— **两处形态不同是正常的**，别据此判「没打进去」；包清单闸的白名单按大写写才对。
    - ⚠️ **vsce 还会对 markdown 做后处理**：把 `#204845` 这类 issue 引用自动转成指向仓库 issues 的链接（2026-10-30 实测：包内 60,415 字节 / 生成物 60,364 字节，行数同为 166，唯一差异是这一处自动链接）⇒ **包内文件与生成物字节不等是正常的**，别用 sha256 比对判「内容是否最新」，改看行数 / 首行 / 抽样段落。
    - **Changelog 标签只能随「含该文件的版本」出现**：已发布版本不可覆盖 ⇒ 空白标签无法补，只有后续版本才有（本条即 0.4.0 的既成事实）。
+   - **宿主区最低到 0.2.0 为止是既定事实，不是漏抽**：0.1.0 宿主发版早于「`· 宿主` 区」格式，根 CHANGELOG 里没有该版宿主区；2026-10-30 拍板**不回填**（回填等于重造历史版本内容）。核对时别把「缺 0.1.0」当缺陷；此后每版各增一区，**数量会变，别拿数字核对**。
    - `categories` 官方词表：`Programming Languages` / `Snippets` / `Linters` / `Themes` / `Debuggers` / `Formatters` / `Keymaps` / `SCM Providers` / `Other` / `Extension Packs` / `Language Packs` / `Data Science` / `Machine Learning` / `Visualization` / `Notebooks` / `Education` / `Testing`。填词表外的值 = 市场侧报错或降级，别凭「AI 插件应该选 AI」想当然（本条 2026-10-30 查官方 manifest 文档确认）。
 
 ### Step 6：发版后订正
