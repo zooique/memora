@@ -1,6 +1,6 @@
 ---
 name: memora-host-release
-description: "VS Code 宿主插件（hosts/memora-vscode）的发版执行流程：内核先行门禁 → 文档对齐（宿主文档 + CHANGELOG 宿主区）→ 版本号核对（tag vscode@X.Y.Z ↔ 宿主 package.json）→ 台账归档（宿主项）→ 打 tag 触发 host-release.yml（build 内核 dist + 出 vsix + GitHub Release 自动）→ Open VSX / VS Code Marketplace 手动分发。触发场景：用户说『发宿主版 / 宿主发版 / vscode@ 发版 / 插件上架 / 扩展发布』时。"
+description: "VS Code 宿主插件（hosts/memora-vscode）的发版执行流程：内核先行门禁 → 文档对齐（宿主文档 + CHANGELOG 宿主区）→ 版本号核对（tag vscode@X.Y.Z ↔ 宿主 package.json）→ 台账归档（宿主项）→ 打 tag 触发 host-release.yml（build 内核 dist + 出 vsix + GitHub Release 自动）→ Open VSX / VS Code Marketplace 手动分发 → 市场展示面核对（Changelog 标签 / Resources 链接 / 分类词表 … 版本号可见 ≠ 页面完整）。触发场景：用户说『发宿主版 / 宿主发版 / vscode@ 发版 / 插件上架 / 扩展发布』时。"
 agent_created: true
 ---
 
@@ -46,6 +46,8 @@ agent_created: true
   - `npm run format:check`（根，prettier）
   - `cd hosts/memora-mcp && npm run build`（**测试前置**：`crossHostLayout.test.ts` 跨宿主契约测试加载 mcp 构建产物且有 mtime 守卫（dist 不旧于 src）——新 clone 或 mcp src 变更后必跑，缺它宿主测试必红）
   - `cd hosts/memora-vscode && npm run typecheck && npm run lint && npm test`
+  - `cd hosts/memora-vscode && node scripts/gen-changelog.mjs --check && node scripts/verify-package-manifest.mjs`
+    （**包内容物闸**：前者验根 CHANGELOG 能抽到 `· 宿主` 区，抽不到即 fail-closed 红；后者真跑 `vsce ls`，断言白名单 + **必含 `CHANGELOG.md`**。生成器没跑 / 被 `.vscodeignore` 排掉都会在这一步红，不必等发布后看市场页才发现标签是空的）
   - CHANGELOG 宿主区日期人工核对（合法日期 + 发布日窗口）
 - 任一项失败 ⇒ 修完重跑，勿带伤打 tag。
 - ⚠️ **本地全绿 ≠ CI 绿**：本地是 Windows 暖环境（pnpm store 已热、平台 API 走 win32 语义），CI 是 ubuntu 冷环境。平台相关断言只验本机形态的用例要写成 `runIf(平台)` 互斥孪生（见「已知坑」），CI 首跑仍可能红，红了解因再修、修完重打 tag（见 Step 4）。
@@ -85,6 +87,19 @@ agent_created: true
    - 🔴 **Trusted Publisher 按 workflow 文件名匹配**（`host-release.yml`，非数字 ID）⇒ 本文件**不得改名**（改名须删掉 Open VSX 注册重来）。
 3. **③ VS Code Marketplace**：🔒 **定案保持手动上传**（全局 PAT 2026-12-01 退役；稳的 Entra ID 路线需 Azure 订阅 = 国外银行卡拦路石；干净路线 `vsce publish --oidc` 尚未进稳定版且 Marketplace 侧无策略注册 UI）。每版传一次 `.vsix`，成本可忽略 ⇒ 手动最优。
    - 上传物 = **① 的同一个 GitHub Release asset**（下载后直接传），**不本地重出包**——重出包会与上架物 sha256 不一致，直接破坏「Release asset ↔ 市场产物」的对账链。
+4. **④ 市场展示面核对（不是只对版本号）** —— 0.4.0 实证缺口：版本号对，但扩展详情页的 **Changelog 标签是空的**，Resources 区**没有报问题入口**。版本号由 Marketplace 的 Version History 自己记，**必然可见**；展示面则全靠包内容物与 `package.json`，不会自愈。逐条扫：
+
+   | 展示面 | 来源 | 核对法 |
+   | --- | --- | --- |
+   | Changelog 标签 | **包内 `changelog.md`**（不是仓库根 CHANGELOG） | `unzip -l <vsix> \| grep -i changelog` |
+   | 详情页正文 | 包内 `readme.md` | `unzip -p <vsix> extension/readme.md \| head` |
+   | Resources 四项 | `package.json` 的 `bugs` / `repository` / `homepage` / `license` | 人工一眼：**缺 `bugs` = 用户没有报问题入口** |
+   | 分类 / 图标 | `package.json` 的 `categories` / `icon` | `categories` 只能用官方词表内的值（**词表内没有 `AI` / `Chat`**，见下） |
+
+   - **Changelog 生成链真源**：`scripts/gen-changelog.mjs` 从根 `CHANGELOG.md` 抽标题带 `· 宿主` 的区 → 扩展根 `CHANGELOG.md`（**生成物，不入库**，真源永远只有根文件一份）→ `.vscodeignore` 的 `!CHANGELOG.md` 放行 → `vscode:prepublish` 与 `package` 两条路都会重建。
+   - ⚠️ **vsce 会把 `CHANGELOG.md` / `README.md` 重命名成小写**（`changelog.md` / `readme.md`）写进 vsix，而 `vsce ls` 清单里仍是大写 —— **两处形态不同是正常的**，别据此判「没打进去」；包清单闸的白名单按大写写才对。
+   - **Changelog 标签只能随「含该文件的版本」出现**：已发布版本不可覆盖 ⇒ 空白标签无法补，只有后续版本才有（本条即 0.4.0 的既成事实）。
+   - `categories` 官方词表：`Programming Languages` / `Snippets` / `Linters` / `Themes` / `Debuggers` / `Formatters` / `Keymaps` / `SCM Providers` / `Other` / `Extension Packs` / `Language Packs` / `Data Science` / `Machine Learning` / `Visualization` / `Notebooks` / `Education` / `Testing`。填词表外的值 = 市场侧报错或降级，别凭「AI 插件应该选 AI」想当然（本条 2026-10-30 查官方 manifest 文档确认）。
 
 ### Step 6：发版后订正
 1. 将 Step 3 的「待上架」订正为「已发布」：`tasks/archive/<x.y.z>-host.md` 文件头 + 主台账**版本索引**里该版那一行的状态列（归档文件不在 `files` 白名单，订正在 tag 之后不影响已发 `.vsix`）。
@@ -109,6 +124,10 @@ agent_created: true
 - 🔴 **跨宿主契约测试的前置是 memora-mcp dist**：`crossHostLayout.test.ts` 加载 `hosts/memora-mcp/dist` 产物（非源码）且有 mtime 守卫。workflow 已带构建步（mcp 无 lockfile ⇒ `--no-frozen-lockfile`，mcp 出包补 lockfile 后收紧为 frozen）；本地新 clone 同样先 build mcp。
 - 🔴 **归档白名单靠人肉编 ⇒ 漏扫是常态**（0.2.0 漏 45 条，欠账 `ARCH-DRAIN-1`；4.0.0 前的 copy 式归档在主台账留过无指针原文）。兜底 = Step 3 第 4 条的两道机检门，`local-ci` full 档会强制跑；任何计数以**当场重扫实测**为准，不采信清点快照（快照会算术不闭合 + 随台账编辑漂移）。
 - 🔴 **判 CI 成败别信 run 状态 API**（快照延迟：`status` 恒 `in_progress` / `conclusion` 恒 `null`）⇒ 误判会诱导「删 tag 重打」，而 Open VSX 同版本不可重发 ⇒ 只能 bump 版本号。判据与传播延迟容忍见 **Step 5 判据纪律**。
+- 🔴 **`.vscodeignore` 的 `*.md` 会静默吃掉市场展示文件**：CHANGELOG / SUPPORT 都落在 `*.md` 覆盖范围内，只放行 README 就会让 Changelog 标签空白。0.4.0 实测：vsix 根目录只有 `readme.md`；社区同族实证写着「Restored Changelog tab by re-including CHANGELOG.md in packaged VSIX」。**放行清单与 `verify-package-manifest.mjs` 的必需文件清单必须同源改**——改一处漏一处 = 静默缺失，且不报错。
+- 🔴 **市场核对只对版本号 = 漏掉整个展示面**：版本号进 Version History 是 Marketplace 自己记的，必然绿；而 Changelog / Resources 链接来自包内容物与 `package.json`，**不会自愈**。Step 5 ④ 四项逐条过，别用「版本能搜到」代替「页面完整」。
 
 ## 验收门槛
 GitHub Release 存在 + body 含随包内核代次与 sha256 + Open VSX / VS Code Marketplace 上架状态正确 + 归档文件 `tasks/archive/<x.y.z>-host.md` 存在且 ✅ 项全迁、开放项留主台账 + 主台账指针齐全 + CHANGELOG 宿主区无「未发布」且引言注明随包内核代次 + README 内核行 = 本次内联内核版本 + 门禁全绿 = 完成。
+
+**外加市场展示面**（0.4.0 缺口的补丁，缺一不算完成）：`.vsix` 内含 `readme.md` **与 `changelog.md`**（`unzip -l` 实证）+ 市场页 Changelog 标签有正文、Resources 区有 Issues 链接（`bugs`）+ 分类在官方词表内。
