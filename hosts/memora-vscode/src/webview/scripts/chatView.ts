@@ -75,6 +75,8 @@ import {
   type SkeletonState,
 } from '../helpers/turnUiState.js';
 import { initDropdowns } from '../components/dropdown.js';
+import { initContextMenu } from '../components/contextMenu.js';
+import { createCodeBlockEnhancer } from './codeBlockView.js';
 import { applyIcon, createIcon, getIconSvg, populateIcons } from './icons.js';
 import { createSanitizer } from '../helpers/sanitizer.js';
 // 计划常驻条（任务看板）：渲染与状态收口于 planBarView（HOST-SPLIT-1 chatView 首刀）
@@ -167,6 +169,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // ReferenceError，故只能在 createChatView（webview 唯一初始化入口）内绑定一次。
   // 渲染函数 renderMarkdown 通过注入 sanitize 回调使用，职责分离：渲染逻辑纯函数化。
   const sanitize = createSanitizer(window);
+
+  // 代码块增强工厂（CHATVIEW-SLIM-3 后续腾行批：域外置 scripts/codeBlockView.ts，
+  // COPY-2 行数账同批腾行）。const 须在首个调用点（流式渲染链）之前实例化。
+  const codeBlockEnhancer = createCodeBlockEnhancer({ document, copyText });
 
   // 统一图标填充：将 HTML 中 data-icon 属性的元素替换为 Trae 风格 SVG 图标
   populateIcons(document.body);
@@ -2002,7 +2008,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       div.dataset.rawText = text;
       body.innerHTML = renderMarkdown(text, sanitize);
       // 历史回放同样做代码块增强（语言标签 + 复制按钮）
-      enhanceCodeBlocks(body);
+      codeBlockEnhancer.enhance(body);
       // 流式锚点跟随最新 assistant 消息（SSOT：单一锚点，append/chunk 共用）
       activeAssistantEl = div;
       messages.appendChild(div);
@@ -2738,43 +2744,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 代码块增强（吸收养分：对齐 TraeWork 代码块「语言标签 + 一键复制」）
-   *
-   * renderMarkdown 后调用：把每个 <pre> 包装为 .code-block（header[语言名 + 复制按钮] + pre）。
-   * 语言名取自 marked 渲染的 class="language-xxx"；无语言回退显示 code。复制按钮读取
-   * <pre> 内文本。仅最终渲染时增强一次（流式期间不包装，避免节流重绘反复重建 DOM）。
-   *
-   * @param container 已渲染 markdown 的消息正文容器
-   */
-  function enhanceCodeBlocks(container: HTMLElement): void {
-    container.querySelectorAll('pre').forEach((pre) => {
-      // 已增强（history 回放多次渲染防重复包装）
-      if (pre.parentElement?.classList.contains('code-block')) return;
-      const code = pre.querySelector('code');
-      const lang = (code?.className.match(/language-([\w-]+)/) ?? [])[1] ?? 'code';
-      const block = document.createElement('div');
-      block.className = 'code-block';
-      const header = document.createElement('div');
-      header.className = 'code-block__header';
-      const langEl = document.createElement('span');
-      langEl.className = 'code-block__lang';
-      langEl.textContent = lang;
-      const copyBtn = document.createElement('button');
-      copyBtn.type = 'button';
-      copyBtn.className = 'code-block__copy';
-      copyBtn.textContent = '复制';
-      copyBtn.title = '复制代码';
-      copyBtn.addEventListener('click', () => copyText(code?.textContent ?? ''));
-      header.appendChild(langEl);
-      header.appendChild(copyBtn);
-      // 用 .code-block 包裹原 <pre>（replaceWith 把 pre 移入 block）
-      pre.replaceWith(block);
-      block.appendChild(header);
-      block.appendChild(pre);
-    });
-  }
-
-  /**
    * 流式结束：收敛渲染 Markdown + 清光标态 + 代码块增强 + 更新复制源
    *
    * done / interrupted 消息统一调用（幂等：无流式时 no-op）。流式期间已按节流增量渲染，
@@ -2802,7 +2771,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (body) {
       setCursorStatus(body, null);
       body.innerHTML = renderMarkdown(streamingRaw, sanitize);
-      enhanceCodeBlocks(body);
+      codeBlockEnhancer.enhance(body);
     }
     // 复制源更新为完整原始文本（.msg.dataset.rawText 供复制按钮读取）
     el.dataset.rawText = streamingRaw;
@@ -4366,6 +4335,39 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     },
   });
 
+  // ─── 右键语义菜单（COPY-2 · Layer B）───
+  // 场合命中判据在组件 resolveContextMenuCtx 单点（selection > code > message），
+  // 此处只声明各菜单项的显隐（when）与动作（run）——加项 = 表里加一行，不动命中逻辑。
+  // 锁态（sessionControlsLocked）在弹出时快照判定；动作复用既有单路径：
+  // 复制走 copyText 单点，regenerate / fork_session / delete_turn 各走既有消息（零新 type）。
+  // 「在编辑器打开」未落：对话内代码块非工作区文件指针，open_ref 语义不容（硬塞 = 造假章），
+  // 登记缺口等真机反馈（台账 COPY-2 收口时注明偏差）。
+  const contextMenuController = initContextMenu(document, [
+    { id: 'copy-selection', label: '复制选中', when: (c) => c.kind === 'selection', run: (c) => copyText(c.selectionText) },
+    {
+      id: 'quote-reply',
+      label: '引用回复',
+      when: (c) => c.kind === 'selection',
+      run: (c) => {
+        // 引用块置顶 + 保留已输入内容（与既有 input.value 直赋形态一致）
+        input.value = `> ${c.selectionText}\n${input.value}`;
+        input.focus();
+      },
+    },
+    { id: 'copy-message', label: '复制本条', when: (c) => c.kind === 'message' && !!c.visibleText, run: (c) => copyText(c.visibleText) },
+    { id: 'copy-message-md', label: '复制为 Markdown', when: (c) => c.kind === 'message' && !!c.rawText, run: (c) => copyText(c.rawText) },
+    { id: 'copy-code', label: '复制代码', when: (c) => c.kind === 'code' && !!c.codeText, run: (c) => copyText(c.codeText) },
+    {
+      id: 'regenerate',
+      label: '重新生成',
+      // 仅 assistant（与既有按钮归属一致）；锁态弹出时快照
+      when: (c) => c.kind === 'message' && !!c.messageEl?.classList.contains('assistant') && !!c.turnTs && !sessionControlsLocked,
+      run: (c) => vscode.postMessage({ type: 'input', kind: 'regenerate', turnTs: c.turnTs }),
+    },
+    { id: 'fork', label: '分叉', when: (c) => c.kind === 'message' && !!c.roundId && !sessionControlsLocked, run: (c) => vscode.postMessage({ type: 'fork_session', roundId: c.roundId }) },
+    { id: 'delete-turn', label: '删除', danger: true, when: (c) => c.kind === 'message' && !!c.turnTs && !sessionControlsLocked, run: (c) => vscode.postMessage({ type: 'delete_turn', ts: c.turnTs }) },
+  ]);
+
   // 角色徽章点击 → open_settings_tab(roles)（host 打开设置面板「角色」选项卡，导航单点）。
   // 拍板 2（2026-10-13）：**运行时不禁用**——跳界面不改变任何状态，禁 = 挡无害操作；也不挂
   // updateSessionControlsLock 收口——该锁语义 = 「运行时禁用改变会话结构的操作」（新建/切历史/
@@ -5084,6 +5086,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     activityDrawerView.dispose(); // 瞬态条撤出计时器随活动抽屉域收口（第 4 刀）
     statusBars.dispose(); // 三挂载条 DOM 随状态条域收口（第 6 刀）
     imageCapture.dispose(); // 采集层监听器（paste / dragover / drop）必须随 view 收干净
+    contextMenuController.dispose(); // 右键菜单 document 级监听随 view 收干净（COPY-2）
     stopConfirmCountdown();
   }
 

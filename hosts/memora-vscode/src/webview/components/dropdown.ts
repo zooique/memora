@@ -116,6 +116,60 @@ function menuItems(el: HTMLElement): HTMLElement[] {
   return menu ? Array.from(menu.querySelectorAll<HTMLElement>('.treedd__item')) : [];
 }
 
+/**
+ * 菜单键盘导航（共享单点）：方向键在项间移动、Home/End 跳首/末、Escape 关闭并回调
+ * 焦点归还、Tab 收起。dropdown（触发器 click 开合）与 contextMenu（右键定位开合）
+ * 两个**开合模型**不同，但键盘导航语义同构——复制一段导航逻辑 = 双份实现漂移，
+ * 故提取为共享函数，两侧各自传入关闭方式与焦点归还目标。
+ *
+ * 输入框打字守卫保留在本函数内（dropdown 菜单含技能搜索框场景）：菜单内
+ * 输入框/文本域中方向键、Home/End 归文本光标，仅 Escape / Tab 仍走菜单语义。
+ */
+export function bindMenuKeyboardNav(
+  root: Document,
+  menu: HTMLElement,
+  opts: {
+    /** 实时取可聚焦菜单项（事件委托下项可能动态渲染） */
+    getItems(): HTMLElement[];
+    /** 关闭菜单 */
+    close(): void;
+    /** Escape 关闭后的焦点归还目标（dropdown = 触发器；contextMenu = 触发锚元素，可缺省） */
+    onEscape?(): void;
+  },
+): void {
+  menu.addEventListener('keydown', (e: KeyboardEvent) => {
+    // 菜单内输入框（如技能搜索）打字时不劫持导航键：方向键/首末键归文本光标；
+    // Escape / Tab 仍走菜单语义（关闭）。缺此守卫，搜索时按 ←→ 会跳焦到菜单项。
+    const evtTarget = e.target as HTMLElement | null;
+    if (evtTarget instanceof HTMLInputElement || evtTarget instanceof HTMLTextAreaElement) {
+      if (e.key !== 'Escape' && e.key !== 'Tab') return;
+    }
+    const items = opts.getItems();
+    if (items.length === 0) return;
+    const idx = items.indexOf(root.activeElement as HTMLElement);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      items[Math.min(idx + 1, items.length - 1)].focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[Math.max(idx - 1, 0)].focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      items[0].focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      items[items.length - 1].focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      opts.close();
+      opts.onEscape?.();
+    } else if (e.key === 'Tab') {
+      // Tab 离开菜单：收起菜单，让焦点自然落入下一个可聚焦元素
+      opts.close();
+    }
+  });
+}
+
 /** 下拉初始化：绑定展开/收起 + 事件委托转发选择项 + 键盘可访问性。
  *  显式函数（不用「window.__xxx 全局回调名」模式）——
  *  chatView 直接调用并传入回调映射，消除全局污染。data-on-select 属性值作为回调
@@ -170,37 +224,12 @@ export function initDropdowns(
       }
     });
 
-    // 菜单内键盘导航：方向键在项间移动、Home/End 跳首/末、Escape 关闭并回触发器
-    menu.addEventListener('keydown', (e: KeyboardEvent) => {
-      // 菜单内输入框（如技能搜索）打字时不劫持导航键：方向键/首末键归文本光标；
-      // Escape / Tab 仍走菜单语义（关闭）。缺此守卫，搜索时按 ←→ 会跳焦到菜单项。
-      const evtTarget = e.target as HTMLElement | null;
-      if (evtTarget instanceof HTMLInputElement || evtTarget instanceof HTMLTextAreaElement) {
-        if (e.key !== 'Escape' && e.key !== 'Tab') return;
-      }
-      const items = menuItems(el);
-      if (items.length === 0) return;
-      const idx = items.indexOf(root.activeElement as HTMLElement);
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        items[Math.min(idx + 1, items.length - 1)].focus();
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        items[Math.max(idx - 1, 0)].focus();
-      } else if (e.key === 'Home') {
-        e.preventDefault();
-        items[0].focus();
-      } else if (e.key === 'End') {
-        e.preventDefault();
-        items[items.length - 1].focus();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        close();
-        trigger.focus();
-      } else if (e.key === 'Tab') {
-        // Tab 离开菜单：收起菜单，让焦点自然落入下一个可聚焦元素
-        close();
-      }
+    // 菜单内键盘导航：共享单点 bindMenuKeyboardNav（方向键/首末键/Escape/Tab），
+    // 本组件的关闭方式 = 收起自身，焦点归还 = 触发器
+    bindMenuKeyboardNav(root, menu, {
+      getItems: () => menuItems(el),
+      close,
+      onEscape: () => trigger.focus(),
     });
 
     // 选择项用「事件委托」：菜单项可能动态渲染（模型列表），closest 命中即可转发

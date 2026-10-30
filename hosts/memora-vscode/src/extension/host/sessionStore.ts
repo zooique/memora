@@ -32,11 +32,14 @@ import { WorkspaceRoundStore } from './workspaceRoundStore.js';
 
 /**
  * 截断结果（truncateFrom 返回值）：ok = 锚点命中并完成截断；
- * removedIds = 被物理删除（引用归零的孤儿）的 Round 列表，供调用方联动软删其记忆摘要（⑥）
+ * removedIds = 被物理删除（引用归零的孤儿）的 Round 列表，供调用方联动软删其记忆摘要（⑥）；
+ * removedUserText = 截断起点 Round 的 user 原文（regenerate 重新生成重发用——真源 = 随轮
+ * 落盘的 store，webview 的 DOM dataset 只是投影不作为重发文本；删除场景忽略此字段）
  */
 export interface RoundTruncateResult {
   ok: boolean;
   removedIds: string[];
+  removedUserText?: string;
 }
 
 /**
@@ -307,6 +310,8 @@ export class WorkspaceSessionStore implements ISessionStore {
       }
     }
     if (idx === -1) return { ok: false, removedIds: [] };
+    // 截断起点 Round 的 user 原文（regenerate 重发真源；在删除循环前取，防对象状态歧义）
+    const removedUserText = rounds[idx].userMessage?.content;
     // 删除 [idx, 末尾) 的全部 Round（含目标问答）
     const removed = roundIds.slice(idx);
     const removedIds: string[] = [];
@@ -322,7 +327,7 @@ export class WorkspaceSessionStore implements ISessionStore {
       this.metas.set(sessionId, { ...existing, messageCount: this.deriveMessageCount(sessionId) });
     }
     this.save();
-    return { ok: true, removedIds };
+    return { ok: true, removedIds, removedUserText };
   }
 
   listSessions(): string[] {

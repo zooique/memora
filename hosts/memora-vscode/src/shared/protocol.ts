@@ -165,8 +165,13 @@ export type SearchEngineSetting = string;
  *     waiting(pause)→带文本续跑、waiting(ask)→补充续跑（ask 卡专用入口实际不可达））
  *   - `answer`：回答在途主动提问（恒带 answers 数组，单问=单元素；宿主 answerQuestion + 续跑）
  *   - `resume`：纯续跑（不携带文本；仅 waiting(pause) 相位有效）
+ *   - `regenerate`：重新生成（COPY-2 右键菜单）——仅携带 `turnTs` 锚点，宿主先截断该
+ *     问答及之后所有（与 delete_turn 同一截断原语 + 同强度 modal 确认），再以截断起点
+ *     Round 的 user 原文（store 真源）重开闭环。仅对已落盘轮次可发（生成中由 webview
+ *     入口禁用 + 宿主 _streaming 守卫双保险）。协议扩张走枚举成员 + 字段（PROTO-CAP-1
+ *     纪律：0.5.0 禁开新 type）。
  */
-export type WebviewInputKind = 'send' | 'answer' | 'resume';
+export type WebviewInputKind = 'send' | 'answer' | 'resume' | 'regenerate';
 
 /**
  * 对话引用（右键「添加到对话」挂到下一轮上下文）：文件或目录
@@ -409,6 +414,12 @@ export type WebviewToExtensionMessage =
        * **内容**（随轮落盘进 `RoundMessage.attachments`、参与 token 计量）。故两者不可合并。
        */
       attachments?: ImageRef[];
+      /**
+       * 重新生成锚点（仅 `kind: 'regenerate'` 携带）：目标问答内 AI 回复消息的 ts
+       * （与 delete_turn 锚同源——同锚同截断面）。重发文本由宿主从截断起点 Round 取
+       * user 原文（store 真源），webview 不传文本。其他 kind 恒缺省（缺省即无第二含义）。
+       */
+      turnTs?: string;
     }
   /**
    * 导航到设置面板的指定选项卡（对话面板空态引导按钮 / 角色徽章点击触发）

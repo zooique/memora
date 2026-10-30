@@ -135,6 +135,19 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
     expect(store.loadMessages('2026-08-16', 'main')).toHaveLength(6);
   });
 
+  it('截断结果带出起点 Round 的 user 原文（COPY-2 regenerate 重发真源）', () => {
+    seedThreeTurns(store, roundStore);
+    // 从 a3 锚定 round-3：removedUserText = 该轮 user 原文（问题三），重发文本以 store 为准
+    const res = store.truncateFrom('2026-08-16', 'main', 'a3');
+    expect(res.ok).toBe(true);
+    expect(res.removedUserText).toBe('问题三');
+    // 中间轮截断同理：从 a2 锚定 round-2 → 问题二
+    seedThreeTurns(store, roundStore);
+    const res2 = store.truncateFrom('2026-08-16', 'main', 'a2');
+    expect(res2.ok).toBe(true);
+    expect(res2.removedUserText).toBe('问题二');
+  });
+
   it('流式锚点（fromTs 早于存储时间戳）也能命中——下界匹配根治源不一致：删除失效', () => {
     // 真实时序：a1 结束于 09:00:00，流式开始 09:00:05（chatPanel firstChunkTs），a2 存于 09:00:10
     seedRound(

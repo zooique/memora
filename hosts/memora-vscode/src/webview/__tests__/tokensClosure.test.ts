@@ -588,11 +588,14 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   // line- 78→79：UI-TOAST-1 活动条浮层形态（chatStyles 的 .activity-bar.is-toast
   // border: var(--line-solid)）新增 1 处，实数经 count-token-refs.mjs 实锤（2026-10-24）。
   const EXPECTED = {
-    'z-': 16, // HOST-NAV-1：大纲条 var(--z-float)（chatStyles）+1（2026-10-20）；
+    // 17：COPY-2 右键菜单 .ctxmenu 浮层 z-index: var(--z-menu)（contextMenuStyles）+1（2026-10-30）
+    'z-': 17, // HOST-NAV-1：大纲条 var(--z-float)（chatStyles）+1（2026-10-20）；
     //          UI-TOAST-1：浮层 +1 / config 旧形态 -1 相抵（2026-10-24，净不变）；
     //          IMG-2：悬停预览浮层 .image-chip-tip 叠层 +1（2026-10-28，
     //          实数经 scripts/count-token-refs.mjs 实锤同步）
-    'lh-': 51, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
+    // 52：COPY-2 右键菜单 .ctxmenu__item line-height: var(--lh-snug)（contextMenuStyles）+1
+    // （2026-10-30，与 .treedd__item 同语义同令牌）
+    'lh-': 52, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
     //             MCP 页级说明段落改 var(--lh-relaxed) +1（2026-10-24）
     //             MCP 隐藏条目解释行 var(--lh-relaxed) +1（2026-10-24）
     // 18：回到原值。中途曾 +2（🔒 未钉态 / ✕ 弱化态各用 opacity: var(--op-6)），后经真机
@@ -618,7 +621,7 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // 27→26：IMG-11 把 `.image-chip-tip__img` 的 max-width 由 var(--dim-2xl) 改为 100%
     //        （固定 320 会撑破已收窄的浮层容器，改「相对内容区收缩」）⇒ -1（2026-10-29，实数经
     //        scripts/count-token-refs.mjs 实锤同步）。容器侧仍保留 min(var(--dim-2xl), …) 未减。
-    'dim-': 26, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）；
+    'dim-': 27, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）；
     //             UI-CONFIRM-FIT-1：审批卡 max-height 引 var(--dim-2xl)（替代裸值 420px）+1（2026-10-22）；
     //             IMG-2：悬停预览 3 处（浮层 max-width + 预览图 max-width/max-height，均复用
     //             var(--dim-2xl) 的「提示卡最大宽高」既有语义）+3（2026-10-28，
@@ -626,6 +629,8 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             IMG-7：聊天记录缩略图 .msg-attachment 的 max-width/max-height 引
     //             var(--dim-xl)/var(--dim-lg) +2（2026-10-28，同上实锤同步；D30 原文 240 宽在
     //             刻度里无档，按「不造并列值」复用邻近档，故此处是刻度复用不是新增刻度）
+    //             27：COPY-2 右键菜单 .ctxmenu min-width 引 var(--dim-lg)（contextMenuStyles，
+    //             原稿裸值 148px 在刻度里无档，按「不造并列值」复用邻近档）+1（2026-10-30）
   } as const;
 
   for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {

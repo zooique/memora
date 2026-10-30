@@ -131,6 +131,7 @@ import type { OccupancyMessage } from '../helpers/occupancyHistory.js';
 import { toOccupancyMessages } from '../helpers/occupancyHistory.js';
 import { vscodeTracer } from '../../extension/host/tracer.js';
 import { buildDropdownHtml, dropdownStyles } from '../components/dropdown.js';
+import { contextMenuStyles } from '../styles/contextMenu.js';
 import { chatStyles } from '../styles/chatStyles.js';
 import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
 import {
@@ -1692,32 +1693,58 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * 依赖宿主扩展方法 truncateFrom（宿主 ISessionStore 实现，内核接口保持最小化）。
    */
-  private async deleteTurnFrom(ts: string): Promise<void> {
+  /**
+   * 截断核：从锚点 ts 截断该问答及之后所有（运行时守卫 + 同强度 modal 确认 + 截断 +
+   * 轮次摘要联动软删 + 重放当前会话）。`delete_turn`（删除）与 `input.kind=regenerate`
+   * （重新生成，COPY-2）共用——同锚同截断面，唯一差异 = 确认文案与按钮词（调用方传入，
+   * 防两处确认漂移成第二真理源）。
+   *
+   * @returns ok = 是否实际截断（用户取消 / 守卫拒绝 / 截断异常 = false，调用方据此决定是否续做）；
+   *          userText = 截断起点 Round 的 user 原文（sessionStore 带出，regenerate 重发真源）
+   */
+  private async truncateTurnCore(
+    ts: string,
+    confirmMessage: string,
+    confirmButton: string,
+  ): Promise<{ ok: boolean; userText?: string }> {
     // 运行时守卫（SSOT：与 newSession/switchToSession 同源 _streaming，禁止运行中改会话结构）
     if (this._streaming) {
-      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再删除问答' });
-      return;
+      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再操作会话结构' });
+      return { ok: false };
     }
     // 破坏性操作：确认不可恢复（与「清空对话」同强度确认）
     const choice = await vscode.window.showWarningMessage(
-      `确定删除该问答及之后的所有对话？此操作不可恢复。`,
+      confirmMessage,
       { modal: true },
-      '删除',
+      confirmButton,
     );
-    if (choice !== '删除') return;
+    if (choice !== confirmButton) return { ok: false };
+    let userText: string | undefined;
     try {
       // sessionId 格式契约 SSOT：内核 splitSessionId 拆解（session 名可含连字符）
       const { date, session } = splitSessionId(this._currentSessionId);
       const result = this.sessionStore.truncateFrom(date, session, ts);
       // 联动：被回收问答闭环（引用归零）的轮次摘要软删进回收站；
       // 会话级摘要（SessionMeta.summary/keyTopics）不联动——会话本身仍在
-      if (result.ok) this.softDeleteSessionMemories(result.removedIds);
+      if (result.ok) {
+        this.softDeleteSessionMemories(result.removedIds);
+        userText = result.removedUserText;
+      }
     } catch (err) {
-      // 删除失败不阻塞展示（仅清理 UI），但需记录（SSOT 不藏错）
-      console.warn('Memora 删除问答闭环失败', err);
+      // 截断失败不阻塞展示（仅清理 UI），但需记录（SSOT 不藏错）
+      console.warn('Memora 截断问答闭环失败', err);
     }
     // 截断后重放当前会话（消息已减少），保证 UI 与存储一致
     this.replayCurrentSession();
+    return { ok: true, userText };
+  }
+
+  private async deleteTurnFrom(ts: string): Promise<void> {
+    await this.truncateTurnCore(
+      ts,
+      '确定删除该问答及之后的所有对话？此操作不可恢复。',
+      '删除',
+    );
   }
 
   /**
@@ -2868,6 +2895,29 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         }
         await this.resumeInput();
         return;
+      case 'regenerate': {
+        // COPY-2 右键「重新生成」：缺锚 = 不完整意图丢弃（webview 入口禁用已是第一道
+        // 守卫，此处双保险）。截断与 delete_turn 同核（truncateTurnCore）+ 同强度 modal
+        // 确认——重新生成的破坏性等同删除（截断不可逆），确认不豁免。重发文本 = 截断
+        // 起点 Round 的 user 原文（store 随轮落盘真源，webview 只传锚不传文本）；
+        // 附件不重发：图片随轮落盘、截断即随轮回收（语义如实：重新生成 = 文本重开）。
+        const anchor = msg.turnTs?.trim() ?? '';
+        if (!anchor) return;
+        const { ok: truncated, userText } = await this.truncateTurnCore(
+          anchor,
+          '重新生成将删除该问答及之后的所有对话，并以原文重新发送。此操作不可恢复。',
+          '重新生成',
+        );
+        if (!truncated) return;
+        const text = userText?.trim() ?? '';
+        if (!text) {
+          // 锚点轮无 user 原文（异常态）→ 如实提示，不静默吞
+          this.post({ type: 'notice', level: 'info', message: '未能取得原提问文本，未重新生成' });
+          return;
+        }
+        await this.sendInput(text, undefined, undefined, undefined, undefined);
+        return;
+      }
     }
   }
 
@@ -4192,7 +4242,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
   return `${buildHtmlHead({
     lang: resolveHtmlLang(vscode.env?.language),
     cspSource,
-    styles: `${chatStyles}\n${dropdownStyles}`,
+    styles: `${chatStyles}\n${dropdownStyles}\n${contextMenuStyles}`,
   })}
 <body>
   <!-- SSOT：面板无顶部身份条，角色切换在「角色」视图。
