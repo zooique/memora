@@ -3488,8 +3488,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 内核保证事件先于 chunk 到达（loop 先 onPendingQuestion 回调、后 yield chunk）：事件驱动时清空 chunk 缓存，
     // chunk 仅作「事件监听未就绪/异常」时的兜底渲染源（消除单点事件依赖，问题不丢失）。
     let clarifyEventDriven = false;
-    // ADR-043：两处提问形状一律引用协议 `PendingQuestionDto`（不再手写并列字段清单）——
-    // 手写形状会静默吞掉内核新增字段（askCallId 即因此丢失），是批次身份双轨的根因。
+    // ADR-043：两处提问形状一律引用协议 `PendingQuestionDto`（不再手写并列字段清单）。
+    // 真收益 = 消除**类型层并列形状**：消费面读的 `TurnState.waiting.questions` 本就是
+    // PendingQuestionDto[]，内核 emit 的对象原样透传 ⇒ 手写形状**不会丢运行时值**（字段一直在），
+    // 但内核加/改字段时编译器无从报警，漂移只靠人眼。故改引用类型是防漂移，不是修缺陷
+    // （口径见 ADR-043 §修正一，勿沿用「吞掉字段」的旧措辞）。
     const clarifyChunkQueue: PendingQuestionDto[] = [];
     // 监听主动提问事件 → 渲染提问框（含 LLM 声明的候选选项，webview 渲染为可点击按钮）
     const onPendingQuestion = (questions: PendingQuestionDto[]) => {

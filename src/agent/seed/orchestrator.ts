@@ -151,9 +151,12 @@ export class SeedOrchestrator {
       // 超时整批 ↔ timeout + ASK_TIMEOUT_NOTICE。supplement（无快照来源）不取。
       const answeredAsk =
         kind === 'question-answer' || isTimedOutAsk ? parts.loop.takeAnsweredAsk() : undefined;
-      // ASK-PENDINGASK-CLEAR-1：取走快照即清盘上 pendingAsk，收口「取走→落盘」崩溃窗口
-      // （见 messageHistory.clearPendingAsk 注释）。答案已随 answerQuestion 的 appendToolMessage
-      // 进消息史持久，此处提前清盘不致丢失；迟清则窗口内崩溃会被 appendInterrupted 转 unanswered。
+      // ASK-PENDINGASK-CLEAR-1：取走快照即清盘上 pendingAsk（语义与代价见
+      // `MessageHistory.clearPendingAsk` 注释）。
+      // ⚠️ 2026-10-31 复审订正：初版注释称「答案已随 answerQuestion 的 appendToolMessage
+      // 进消息史持久，此处提前清盘不致丢失」——**该前提不成立**：tool 消息只活在进程内
+      // `loop.messages`，答案首次落盘在下方 `appendUser` 的 interactiveInputs。
+      // 故本处提前清盘换取的是「盘面不残留」，代价是崩溃后该题不再有 unanswered 痕迹。
       // 判据 = **取到快照**（事实）而非 kind（意图）：kind 只声明「本轮与提问有关」，
       // 快照非空才证明「盘上这批在途提问确实已被消费」。按 kind 清会在同轮二次 runResume
       // （快照已被前次取空、盘上却已落下新一轮提问）时误清新批次，问题文本彻底丢失——
@@ -164,12 +167,14 @@ export class SeedOrchestrator {
       }
       const askGroup = answeredAsk?.length
         ? answeredAsk.map((entry) => {
+            // ADR-043：题身份单点装配（三形态共用，不自造、不三写）。
+            // 宿主运行时行与盘面行取同一 id ⇒ 去重可配对；并列写法改一处漏两处且编译器不报警。
+            const identity = entry.askCallId ? { id: entry.askCallId } : {};
             if (isTimedOutAsk) {
               return {
                 content,
                 kind: 'timeout' as const,
-                // ADR-043：题身份随行（宿主运行时行与盘面行同一 id ⇒ 去重可配对）
-                ...(entry.askCallId ? { id: entry.askCallId } : {}),
+                ...identity,
                 question: entry.question,
                 options: entry.options,
               };
@@ -179,7 +184,7 @@ export class SeedOrchestrator {
               return {
                 content: LOOP_CONSTANTS.ASK_ABORTED_RESULT,
                 kind: 'unanswered' as const,
-                ...(entry.askCallId ? { id: entry.askCallId } : {}),
+                ...identity,
                 question: entry.question,
                 options: entry.options,
               };
@@ -187,7 +192,7 @@ export class SeedOrchestrator {
             return {
               content: entry.answer,
               kind: 'question-answer' as const,
-              ...(entry.askCallId ? { id: entry.askCallId } : {}),
+              ...identity,
               question: entry.question,
               options: entry.options,
             };

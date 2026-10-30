@@ -437,20 +437,24 @@ export class MessageHistory {
   }
 
   /**
-   * 消费在途提问后清盘上 pendingAsk（ASK-PENDINGASK-CLEAR-1 收口崩溃窗口）：
+   * 消费在途提问后清盘上 pendingAsk（ASK-PENDINGASK-CLEAR-1）：
    * 与 markPendingAsk 同生命周期、同 store-first 取法，唯独把 pendingAsk 置 undefined。
    *
-   * 为什么必须在此刻（而非等 appendUser 落盘）：
-   * answerQuestion/cancelAsk 把提问转存进进程内 `lastAnsweredAsk` 并清进程内 `pendingAsk`，
-   * 但盘上 `RoundPendingAsk` 由更早的 markPendingAsk 落盘、answerQuestion 不动盘。若只在
-   * appendUser 同次 save 清盘上 pendingAsk，则「takeAnsweredAsk 取走快照 → appendUser 落盘」
-   * 之间存在窗口：此间崩溃 ⇒ 盘上 pendingAsk 仍在、而答案已随 answerQuestion 的 appendToolMessage
-   * 进消息史持久 ⇒ 重启被 appendInterrupted 把残留 pendingAsk 转成 `unanswered` ⇒ 与消息史里
-   * 的 `[ASK_ANSWER]` 不一致（假「未答」、已答变未答）。
-   * 答案已在消息史持久，故取走快照即清盘上 pendingAsk：窗口内崩溃 ⇒ 盘上无 pendingAsk
-   * ⇒ 不触发 unanswered 二次转化 ⇒ 与消息史一致；interactiveInputs（结构化问答行）即便因
-   * appendUser 未落盘而缺，也只是视觉缺一行、可重派，不构成不一致。
-   * appendUser 的 askConsumed 清盘（同判据）作为幂等兜底保留，本方法是窗口收口的权威清除点。
+   * ⚠️ 语义（2026-10-31 复审订正，取代本方法初版的论证）：
+   * 初版称「答案已随 answerQuestion 的 appendToolMessage 进消息史持久，故提前清盘不丢数据」——
+   * **该前提不成立**：`AgentLoop.appendToolMessage` 只 push 进程内 `loop.messages`，而 Round
+   * 持久化结构（`Round` / `RoundMessage`）不承载 tool 消息 ⇒ 答案首次落盘发生在 `appendUser`
+   * 的 interactiveInputs（答案组由 `SeedOrchestrator.runResume` 装配注入）。
+   * 故本方法的真实语义是：把「崩溃后由 appendInterrupted 转成 unanswered 记录」换成
+   * 「崩溃后该题在盘面不留痕迹」——**以重启后的可观测性换取盘面不残留**，
+   * 而非「保住了答案」（答案此刻本就没落盘，留着 pendingAsk 也不会多出答案）。
+   *
+   * 三处清除点分工（勿越位扩张）：
+   * - `appendUser` 的 askConsumed = **原子权威点**（答案组与清盘在同一次 save 内完成）；
+   * - `appendAssistant` = 正常收场侧的防御清（终态轮不携带 pendingAsk）；
+   * - 本方法 = 早于二者的**提前清**，唯一净效应是缩短盘面残留窗口。
+   * 清盘不可逆，判据由调用方 `SeedOrchestrator.runResume` 落在「确有快照被取走」这一事实上；
+   * 本方法内只判断「有没有东西可清」，不再自判意图。
    */
   async clearPendingAsk(roundId: string): Promise<void> {
     if (!this.roundStore || !roundId) return;

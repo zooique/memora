@@ -222,8 +222,11 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
       { question: 'Q2' },
     ]);
     expect(roundStore.getById(roundId)?.pendingAsk).toHaveLength(2);
-    // 取走快照后立即清盘（模拟 runResume 在 takeAnsweredAsk 后调用）：即便 appendUser 尚未落盘，
-    // 盘上已无 pendingAsk ⇒ 窗口内崩溃也不会被 appendInterrupted 转成 unanswered（假「未答」）。
+    // 取走快照后立即清盘（模拟 runResume 在 takeAnsweredAsk 后调用）：盘上无 pendingAsk
+    // ⇒ 崩溃后不会被 appendInterrupted 转成 unanswered。
+    // ⚠️ 代价（2026-10-31 复审）：此刻答案**尚未落盘**（首次落盘在 appendUser 的
+    // interactiveInputs），故本处换取的不是「答案保住了」，而是「该题在盘面不留痕迹」
+    // ——用重启后的可观测性换盘面干净，语义见 MessageHistory.clearPendingAsk 注释。
     await history.clearPendingAsk(roundId);
     expect(roundStore.getById(roundId)?.pendingAsk).toBeUndefined();
     // 幂等：再清一次不抛、无副作用
