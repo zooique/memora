@@ -233,6 +233,16 @@ const ALL_STEPS = [
     required: true,
     presets: ['full'],
   },
+  // package 面本地化（HOST-I18N-1 切片 1）：`%key%` 拼错 / 两侧键面不等 / 默认文件混中文，
+  // VS Code 都不报错而是把 `%key%` 原样显示给用户——纯静态判据，秒级，故挂硬闸。
+  {
+    id: 'host:manifest',
+    name: '宿主清单本地化（nls 键面与 %key% 闭合）',
+    cmd: 'node scripts/verify-nls.mjs',
+    cwd: HOST,
+    required: true,
+    presets: ['full'],
+  },
   {
     id: 'host:test',
     name: '宿主单元测试',

@@ -38,8 +38,20 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const HOST_ROOT = join(HERE, '..');
 const VSCE_BIN = join(HOST_ROOT, 'node_modules', '@vscode', 'vsce', 'vsce');
 
-/** 白名单契约（判据①）：新增合法顶层目录/文件 = 显式改这里，改动必须过 review */
-const ALLOWED_EXACT = new Set(['README.md', 'CHANGELOG.md', 'package.json', 'LICENSE']);
+/**
+ * 白名单契约（判据①）：新增合法顶层目录/文件 = 显式改这里，改动必须过 review。
+ *
+ * `package.nls*.json`（2026-10-30 `HOST-I18N-1` 起）：VS Code 的本地化翻译文件，
+ * 缺失时 manifest 里的 `%key%` 会**原样显示**在命令面板与设置页上。
+ */
+const ALLOWED_EXACT = new Set([
+  'README.md',
+  'CHANGELOG.md',
+  'package.json',
+  'LICENSE',
+  'package.nls.json',
+  'package.nls.zh-cn.json',
+]);
 const ALLOWED_PREFIXES = ['resources/', 'dist/'];
 
 /** 判据③ 的射程下限：0.3.0 实测 175 个文件；下限只防「清单大面积消失」，不追精确相等 */
@@ -55,6 +67,10 @@ const REQUIRED_ENTRIES = [
   'README.md',
   'CHANGELOG.md',
   'package.json',
+  // 翻译文件：默认语言文件缺失 ⇒ 全员看到 `%key%`；中文文件缺失 ⇒ 中文用户界面退化英文。
+  // 新增语言时同步本清单（与 ALLOWED_EXACT 同为契约，不是闸的误报）。
+  'package.nls.json',
+  'package.nls.zh-cn.json',
   'dist/extension/extension.js',
 ];
 
@@ -128,6 +144,8 @@ function selfTest() {
     'CHANGELOG.md',
     'package.json',
     'LICENSE',
+    'package.nls.json',
+    'package.nls.zh-cn.json',
     'resources/icon.png',
     ...Array.from({ length: 99 }, (_, i) => `dist/mod${i}.js`),
     'dist/extension/extension.js',
