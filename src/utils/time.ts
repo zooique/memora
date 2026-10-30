@@ -1,11 +1,12 @@
 /**
  * 时间工具函数
  *
- * 从 messageHistory.ts 提取的公共时间格式化函数，作用域 = **内核 `src/` 内部**。
+ * 从 messageHistory.ts 提取的公共时间格式化函数。大部分仍为内核 `src/` 内部入口；
+ * `formatDateKey` / `todayDate` / `isWithinLocalDay` 经 `src/index.ts` 挂公开面供宿主复用
+ * （宿主消费前先过 publicApiSurfaceGuard 登记）。
  *
- * ⚠️ 「消除跨模块内联重复」不成立 —— `nowIso` **未**进 `src/index.ts` 公开导出面，
- * 宿主拿不到它（实测宿主 `nowIso` 引用 = 0），宿主侧取当前时间仍是各自内联。
- * 本文件只是内核内部的推荐入口，不是跨包单一真源。
+ * ⚠️ `nowIso` **未**进 `src/index.ts` 公开导出面，宿主拿不到它
+ * （实测宿主 `nowIso` 引用 = 0），宿主侧取当前时间仍是各自内联。
  *
  * API 对齐（历史）：formatDateKey(date) 曾与精灵宿主 shared/dateUtils.ts 语义一致（该宿主已移除），
  * 用于格式化任意 Date 为 YYYY-MM-DD（本地时区）。
@@ -52,6 +53,34 @@ export function formatDateKey(date: Date): string {
  */
 export function todayDate(): string {
   return formatDateKey(new Date());
+}
+
+/**
+ * 判定 UTC ISO 时间戳是否落在指定**本地日期**的一天内（本地日区间 `[D 00:00, D+1 00:00)` → UTC 比较）。
+ *
+ * 为什么不能按日期头前缀匹配（E2E-TZ-SALVAGE-1 血训）：会话 ID / 日期键是**本地日期**
+ * （todayDate / formatDateKey），而 `createdAt` 是 **UTC ISO**——UTC+8 凌晨 00:00–08:00 创建的轮，
+ * 其 UTC 日期头仍是**前一天**，`createdAt.startsWith(本地日期)` 恒 false ⇒ 打捞不到，
+ * 该轮 24h 后被 GC 静默回收（用户视角：凌晨崩溃的那一轮无声消失）。
+ * 本函数是「本地日期 ↔ UTC 时间戳」换算判据的**单一真理源**：内核 `InMemoryRoundStore` 与
+ * 宿主 `WorkspaceRoundStore` 的打捞过滤共用它——两侧各自换算即造第二份判据，必漂移。
+ *
+ * 时区正确性：起止边界都从本地墙上时钟构造；end 用 `setDate(+1)` 日历进位而非 `+24h`
+ * （后者在 DST 切换日会偏移 1 小时）。任一参数不可解析时返回 false（NaN 比较恒 false，
+ * 与旧前缀匹配「非法输入即不中」的降级一致）。
+ *
+ * @param timestampIso UTC ISO 时间戳（如 `Round.createdAt`）
+ * @param localDate 本地日期键 YYYY-MM-DD（如会话 ID 的日期前缀）
+ * @returns 是否落在该本地日内（半开区间 `[start, end)`）
+ */
+export function isWithinLocalDay(timestampIso: string, localDate: string): boolean {
+  // 本地日起点：date-time 形态（带 T 与秒）按 ES 规范解析为**本地**时区
+  const start = new Date(`${localDate}T00:00:00`);
+  // 日终点：日历进位 +1 天（跨 DST 亦准；非法输入时 start/end 为 Invalid Date → NaN 比较恒 false）
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  const t = Date.parse(timestampIso);
+  return t >= start.getTime() && t < end.getTime();
 }
 
 // ── 会话标识格式契约（SSOT 单一真理源）────────────────────

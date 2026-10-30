@@ -48,7 +48,10 @@ describe('问答闭环存储', () => {
           ...base,
           status,
           refCount: 0,
-          createdAt: `${date}T${min}:00.00.000Z`,
+          // 本地墙上时钟构造（date 无时区标记 = 本地时间 → toISOString 转 UTC）——
+          // 打捞按本地日区间判定（E2E-TZ-SALVAGE-1），旧的 `${date}T${min}:00.00.000Z`
+          // 手拼 UTC 串是前缀匹配时代的产物（且格式非法，Date.parse 为 NaN）
+          createdAt: new Date(`${date}T${min}:00:00`).toISOString(),
         };
         store.save(round);
       };
@@ -74,6 +77,23 @@ describe('问答闭环存储', () => {
       expect(limited).toHaveLength(2);
       expect(limited[0]?.userMessage.content).toBe('q-02');
       expect(limited[1]?.userMessage.content).toBe('q-01');
+    });
+
+    it('listInterruptedRecent 按本地日区间判定：本地凌晨的轮按本地日期捞得到、邻日不中（E2E-TZ-SALVAGE-1）', () => {
+      // 本地 01:30 创建（UTC+8 下其 UTC 日期头 = 前一天）——旧前缀匹配按日期头在本地日漏捞
+      const round: Round = {
+        ...createPendingRound('凌晨的提问'),
+        status: 'pending',
+        refCount: 0,
+        createdAt: new Date('2026-09-09T01:30:00').toISOString(),
+      };
+      store.save(round);
+
+      // 本地日期命中（修复点本体：日期口径 = 会话 ID 同款本地日期，非 UTC 日期头）
+      expect(store.listInterruptedRecent('2026-09-09').map((r) => r.id)).toContain(round.id);
+      // 半开区间边界：相邻两日本地日均不中
+      expect(store.listInterruptedRecent('2026-09-08')).toHaveLength(0);
+      expect(store.listInterruptedRecent('2026-09-10')).toHaveLength(0);
     });
 
     it('应该完成问答闭环', () => {

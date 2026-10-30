@@ -284,6 +284,7 @@ export type { ToolErrorCodeValue } from '@/utils/errors.js';
 
 // ─── 通用工具导出 ────────────────────────────────────────
 // formatDateKey / todayDate 供宿主复用：主进程可直接 import 本入口（渲染进程因浏览器环境保留 shared 副本）；
+// isWithinLocalDay = 本地日期 ↔ UTC 时间戳换算判据单点（宿主 WorkspaceRoundStore 打捞过滤同源消费）；
 // truncate（字符串截断）为内核内部通用工具，宿主零消费，不挂公共面（收回误暴露）；
 // isValidConfigName / parseConfigId / MAX_CONFIG_NAME_LENGTH 为配置名内部校验，不挂公共面
-export { formatDateKey, todayDate } from '@/utils/time.js';
+export { formatDateKey, todayDate, isWithinLocalDay } from '@/utils/time.js';

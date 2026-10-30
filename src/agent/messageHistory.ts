@@ -555,21 +555,19 @@ export class MessageHistory {
       // 问题文本与候选选项从「进程内存」归位到「盘上重放面」（重放渲染复用 timeout 同型「未回答」行）。
       // 消费点统一在本方法（打捞收场 / 运行期失败收场共用），宿主打捞链零改动。
       const pendingAsk = existing.pendingAsk;
-      const unansweredInput: RoundInteractiveInput | undefined = pendingAsk?.length
-        ? {
-            id: `msg-${roundId}-input-${(existing.interactiveInputs?.length ?? 0) + 1}`,
+      // 多题整组转化（每题一条 unanswered）：pendingAsk 是整组快照，逐题保留 question/options——
+      // 崩溃轮的问题文本只在收场这一刻归档进 interactiveInputs，取首问即丢 Q2..N。
+      const unansweredInputs: RoundInteractiveInput[] = pendingAsk?.length
+        ? pendingAsk.map((q, i) => ({
+            id: `msg-${roundId}-input-${(existing.interactiveInputs?.length ?? 0) + i + 1}`,
             role: 'user',
             content: LOOP_CONSTANTS.ASK_UNANSWERED_NOTICE,
             timestamp: nowIso(),
             kind: 'unanswered',
-            // 多题快照整组取首问（与 runResume 落盘作答记录的取首问口径同源——UI 单行回顾，
-            // 整组问题文本不丢：其余题随 assistantLog 的 ask_user 工具轮可考）
-            question: pendingAsk[0]!.question,
-            ...(pendingAsk[0]!.options && pendingAsk[0]!.options.length > 0
-              ? { options: pendingAsk[0]!.options }
-              : {}),
-          }
-        : undefined;
+            question: q.question,
+            ...(q.options && q.options.length > 0 ? { options: q.options } : {}),
+          }))
+        : [];
       const completed: Round = {
         // 展开保留 userMessage / interactiveInputs / processEvents 等原字段
         //（existing 取自 RoundStore 时含宿主检查点已落盘的 processEvents——store-first 优先保证）
@@ -585,9 +583,9 @@ export class MessageHistory {
               } as RoundMessage,
             }
           : {}),
-        ...(unansweredInput
+        ...(unansweredInputs.length
           ? {
-              interactiveInputs: [...(existing.interactiveInputs ?? []), unansweredInput],
+              interactiveInputs: [...(existing.interactiveInputs ?? []), ...unansweredInputs],
             }
           : {}),
         status: 'interrupted',

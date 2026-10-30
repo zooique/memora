@@ -687,7 +687,9 @@ export interface IRoundStore {
    * ② **不污染正式会话 roundIds**（升级登记完成前中断轮仍是无引用中间态）；
    * ③ 不改变生命周期——超龄仍由 GC sweepOrphans 按 refCount=0 孤儿回收，打捞窗口早于存活保护。
    *
-   * @param date - YYYY-MM-DD，按 createdAt 的前缀匹配（ISO 日期头 10 位）
+   * @param date - YYYY-MM-DD **本地日期**（与会话 ID 日期同口径）：按本地日区间
+   *   `[D 00:00, D+1 00:00)` 换算 UTC 后比较 createdAt，判据单点 = `isWithinLocalDay`
+   *   （两道实现同源；前缀匹配在 UTC+8 凌晨窗口漏捞，E2E-TZ-SALVAGE-1）
    * @param limit - 最多返回条数，按 createdAt 降序（最新在前）；缺省不截断
    * @returns 中断残留 Round 数组（按 createdAt 倒序）
    */

@@ -28,7 +28,7 @@ type AgentHistory = NonNullable<Agent['agentHistory']>;
 export interface InterruptedSalvageDeps {
   store: Pick<IRoundStore, 'listInterruptedRecent'>;
   history: Pick<AgentHistory, 'appendInterrupted'>;
-  /** YYYY-MM-DD；宿主只持当前会话日期，故打捞面按它过滤 */
+  /** YYYY-MM-DD **本地日期**（会话 ID 日期前缀即本地日期）；打捞按本地日区间过滤，口径见 IRoundStore */
   sessionDate: string;
 }
 

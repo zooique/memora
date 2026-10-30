@@ -38,7 +38,13 @@ vi.mock('vscode', () => ({
   EventEmitter: vi.fn(),
 }));
 
-import { Agent, splitSessionId, type LlmChunk, type LlmProvider } from '@zooique/memora';
+import {
+  Agent,
+  splitSessionId,
+  formatDateKey,
+  type LlmChunk,
+  type LlmProvider,
+} from '@zooique/memora';
 import { WorkspaceSessionStore } from '../sessionStore.js';
 import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
 import { WorkspaceStorage } from '../workspaceStorage.js';
@@ -157,10 +163,9 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
   it('重启后按会话日期打捞到该轮，且叙述派生走 shared 单点', () => {
     const roundStore = new WorkspaceRoundStore(ws);
     roundStore.load();
-    // ⚠️ 这里喂的是**轮自己的 createdAt 日期前缀（UTC）**，不是生产宿主传的本地日期——
-    // 即本用例刻意绕开了「本地日 vs UTC 日」的口径缺口（缺口由本文件最后一个 describe 锁定）。
-    // 读这条用例时不要以为它证明了生产路径在任意时区都对。
-    const date = roundStore.getById(crashedRoundId)!.createdAt.slice(0, 10);
+    // 喂轮自己 createdAt 的**本地日期**（formatDateKey）——与生产宿主传的 sessionDate
+    //（会话 ID 本地日期前缀）同口径（E2E-TZ-SALVAGE-1 修复后两侧同判据，不再绕缺口）。
+    const date = formatDateKey(new Date(roundStore.getById(crashedRoundId)!.createdAt));
     const interrupted = roundStore.listInterruptedRecent?.(date) ?? [];
     expect(interrupted.map((r) => r.id)).toContain(crashedRoundId);
 
@@ -192,7 +197,7 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
     });
     await agent.init();
 
-    const date = roundStore.getById(crashedRoundId)!.createdAt.slice(0, 10);
+    const date = formatDateKey(new Date(roundStore.getById(crashedRoundId)!.createdAt));
     // 走**生产同一份实现**（chatPanel 也调它），不是测试里另写一遍
     const history = agent.agentHistory;
     expect(history).not.toBeNull();
@@ -332,7 +337,7 @@ describe('提问窗口崩溃 ⇒ 问题文本可恢复（E2E-ASK-LOSS-1）', () 
     });
     await agent.init();
 
-    const date = roundStore.getById(roundId)!.createdAt.slice(0, 10);
+    const date = formatDateKey(new Date(roundStore.getById(roundId)!.createdAt));
     const upgraded = await salvageInterruptedRounds({
       store: roundStore,
       history: agent.agentHistory!,
@@ -356,26 +361,23 @@ describe('提问窗口崩溃 ⇒ 问题文本可恢复（E2E-ASK-LOSS-1）', () 
 });
 
 /**
- * ⚠️ 已知口径缺口（不是本文件的期望行为，是**待修缺陷的锁定**，登记 `E2E-TZ-SALVAGE-1`）
+ * 本地日期口径锁定（E2E-TZ-SALVAGE-1 · 2026-10-30 修复后断言——修复前本 describe 锁的是缺口：
+ * 「按本地日期漏捞 / 按 UTC 日期命中」，修好后按台账判据②翻转）。
  *
- * 两个日期口径在同一条链上各用各的：
+ * 同一条链上的两个日期口径：
  *   - 会话 ID 的日期 = **本地日期**（`_currentSessionId.slice(0, 10)`，用户看到的「今天」）；
  *   - 轮的 `createdAt` = **UTC ISO**（`toISOString()`）。
  *
- * 打捞口用 `createdAt.startsWith(date)` 前缀匹配 ⇒ 在 UTC+8 的**本地 00:00–08:00**
- * 创建的中断轮，其 `createdAt` 是 UTC 的**前一天**，按本地日期永远捞不到；该轮要等到
- * 24h 存活保护到点后被 GC 当孤儿回收 ⇒ **静默丢失**（用户视角：凌晨崩溃的那一轮答案没了，
- * 且没有任何提示）。
+ * 修复前打捞用 `createdAt.startsWith(date)` 前缀匹配 ⇒ UTC+8 本地 00:00–08:00 创建的中断轮
+ * 其 UTC 日期头是前一天，按本地日期永远捞不到，24h 后被 GC 当孤儿回收 = **静默丢失**。
+ * 修复后按本地日区间 `[D 00:00, D+1 00:00)` 换算 UTC 比较——判据单点 = 内核
+ * `isWithinLocalDay`，宿主 `WorkspaceRoundStore` 与内核 `InMemoryRoundStore` 同源消费。
  *
- * 为什么单独用构造盘来测：真杀进程造不出「凌晨」这个时间条件（除非改系统时钟，那会污染
- * 其它用例）。`listInterruptedRecent` 是纯读接口，喂构造好的磁盘状态是合法输入。
- *
- * 修法待拍板（不在这条任务里顺手改，避免「修根因」与「补覆盖」混成一刀）：
- *   ① 打捞改**本地日区间**（`[D 00:00, D+1 00:00) 本地 → UTC` 后比较）——语义最正，
- *      但要给 `IRoundStore.listInterruptedRecent` 定新的入参契约；
- *   ② 或统一轮的时间戳口径（改动面最大，波及所有 createdAt 消费点，不建议）。
+ * 为什么用构造盘测：真杀进程造不出「凌晨」这个时间条件（除非改系统时钟，那会污染其它用例）。
+ * 构造按**本地墙上时钟**（`new Date('2026-10-30T01:30:00')`）：在 UTC+8 下其 UTC 时间戳的
+ * 日期头正是 2026-10-29（修复前漏捞的形态）；在 UTC 环境下断言仍同契约成立（时区无关）。
  */
-describe('已知口径缺口：本地日期 vs UTC 时间戳，凌晨窗口的中断轮捞不到', () => {
+describe('本地日期口径：凌晨窗口的中断轮按本地日期也能捞到（E2E-TZ-SALVAGE-1 修复锁定）', () => {
   let ws: string;
   const roundId = 'round-tz-gap';
 
@@ -383,8 +385,8 @@ describe('已知口径缺口：本地日期 vs UTC 时间戳，凌晨窗口的�
     ws = mkdtempSync(join(tmpdir(), 'memora-tz-gap-'));
     const roundsDir = join(ws, '.memora', 'rounds');
     mkdirSync(roundsDir, { recursive: true });
-    // 北京时间 2026-10-30 01:30 ⇒ createdAt 落在 UTC 2026-10-29T17:30Z
-    const createdAt = '2026-10-29T17:30:00.000Z';
+    // 本地 2026-10-30 01:30（UTC+8 下 ⇒ createdAt = 2026-10-29T17:30Z，日期头为前一天）
+    const createdAt = new Date('2026-10-30T01:30:00').toISOString();
     writeFileSync(
       join(roundsDir, 'index.json'),
       JSON.stringify([
@@ -410,15 +412,17 @@ describe('已知口径缺口：本地日期 vs UTC 时间戳，凌晨窗口的�
     rmSync(ws, { recursive: true, force: true });
   });
 
-  it('按本地日期（宿主传入的 sessionDate）打捞 ⇒ 漏捞；按 UTC 日期 ⇒ 命中', () => {
+  it('按本地日期（宿主传入的 sessionDate）打捞 ⇒ 凌晨窗口命中；相邻本地日不中', () => {
     const roundStore = new WorkspaceRoundStore(ws);
     roundStore.load();
 
-    // 宿主传的是当前会话 ID 的本地日期前缀
-    expect(roundStore.listInterruptedRecent?.('2026-10-30') ?? []).toHaveLength(0);
-    // 轮自己的时间戳口径（UTC）才能命中 —— 两条口径不重合，就是缺口本身
-    expect((roundStore.listInterruptedRecent?.('2026-10-29') ?? []).map((r) => r.id)).toContain(
+    // 宿主传的是当前会话 ID 的本地日期前缀——修复后凌晨窗口必须命中（缺口断言已翻转）
+    expect((roundStore.listInterruptedRecent?.('2026-10-30') ?? []).map((r) => r.id)).toContain(
       roundId,
     );
+    // 半开区间边界：相邻两日本地日均不中（UTC+8 下 '2026-10-29' 正是该轮 UTC 日期头——
+    // 修复前它才是唯一命中项，现在必须落空，否则说明又退回了前缀匹配）
+    expect(roundStore.listInterruptedRecent?.('2026-10-29') ?? []).toHaveLength(0);
+    expect(roundStore.listInterruptedRecent?.('2026-10-31') ?? []).toHaveLength(0);
   });
 });

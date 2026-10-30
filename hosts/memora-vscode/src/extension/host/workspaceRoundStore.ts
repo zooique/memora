@@ -20,7 +20,7 @@
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Round, RoundStatus, IRoundStore } from '@zooique/memora';
-import { logger } from '@zooique/memora';
+import { logger, isWithinLocalDay } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
 import { resolveProjectDataDir } from './projectDataDir.js';
 
@@ -392,12 +392,14 @@ export class WorkspaceRoundStore implements IRoundStore {
    * 只读、不登记会话、不改写；升级完成（complete + refCount>0）前为打捞窗口内中间态，
    * 超龄未升级的中断轮仍由 sweepOrphans 回收（默认 24h 存活保护覆盖打捞窗口，不误回收）。
    *
-   * @param date - YYYY-MM-DD，按 createdAt 前缀匹配（ISO 头 10 位）
+   * @param date - YYYY-MM-DD **本地日期**（与会话 ID 日期同口径）：按本地日区间
+   *   `[D 00:00, D+1 00:00)` 换算 UTC 后比较 createdAt——判据单点 = 内核 `isWithinLocalDay`
+   *   （与内核 `InMemoryRoundStore` 同源，前缀匹配在凌晨窗口漏捞，E2E-TZ-SALVAGE-1）
    * @param limit - 最多条数，按 createdAt 降序（最新在前）；缺省不截断
    * @returns 中断残留 Round 数组（倒序）
    */
   listInterruptedRecent(date: string, limit?: number): Round[] {
-    // 崩溃残留轮 = refCount 0 + 未完成（pending/error），按创建日期精确过滤；先索引判型避免全量读盘
+    // 崩溃残留轮 = refCount 0 + 未完成（pending/error），按本地日区间过滤；先索引判型避免全量读盘
     //
     // ⚠️ `'error'` 是**预留态**（明示收起，与内核
     // `inMemoryRoundStore.listInterruptedRecent` 同款语义）——全仓零写点，仅与 'pending'
@@ -406,7 +408,7 @@ export class WorkspaceRoundStore implements IRoundStore {
     // 停 turn"。**勿因 grep 到零写点而删**（它是打捞条件的组成部分，非死代码）。
     const candidates = Array.from(this.index.values())
       .filter((e) => e.refCount === 0 && (e.status === 'pending' || e.status === 'error'))
-      .filter((e) => e.createdAt.startsWith(date))
+      .filter((e) => isWithinLocalDay(e.createdAt, date))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const slice = limit !== undefined ? candidates.slice(0, limit) : candidates;
     // 命中后才读完整 Round（多步查询只对命中的走盘，避免一次枚举全量物理读写）

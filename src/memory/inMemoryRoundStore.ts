@@ -9,6 +9,7 @@
 
 import type { Round, RoundStatus, IRoundStore } from '@/memory/roundStore.js';
 import { logger } from '@/logging/logger.js';
+import { isWithinLocalDay } from '@/utils/time.js';
 
 /**
  * 内存问答闭环存储
@@ -186,12 +187,14 @@ export class InMemoryRoundStore implements IRoundStore {
    * 只读、不改写、不登记会话；升级完成（complete + refCount>0）前为打捞窗口内中间态，
    * 超龄仍未升级的中断轮由 GC 回收（默认 24h 存活保护覆盖打捞窗口，不误回收）。
    *
-   * @param date - YYYY-MM-DD，按 createdAt 前缀匹配（ISO 头 10 位）
+   * @param date - YYYY-MM-DD **本地日期**（与会话 ID 日期同口径）：按本地日区间
+   *   `[D 00:00, D+1 00:00)` 换算 UTC 后比较 createdAt——判据单点 = `isWithinLocalDay`，
+   *   与宿主 `WorkspaceRoundStore` 同源（前缀匹配在 UTC+8 凌晨窗口漏捞，E2E-TZ-SALVAGE-1）
    * @param limit - 最多条数，按 createdAt 降序（最新在前）；缺省不截断
    * @returns 中断残留 Round 数组（倒序）
    */
   listInterruptedRecent(date: string, limit?: number): Round[] {
-    // 崩溃残留轮 = refCount 0 + 未完成（pending/error），按创建日期精确过滤后倒序取最新
+    // 崩溃残留轮 = refCount 0 + 未完成（pending/error），按本地日区间过滤后倒序取最新
     //
     // ⚠️ `'error'` 是**预留态**（明示收起）：
     // 全仓**无任何写点**把 Round.status 置为 'error'（写点仅 pending → complete /
@@ -204,7 +207,7 @@ export class InMemoryRoundStore implements IRoundStore {
     // 纪律：勿因「grep 到零写点」而删该字段（它是打捞条件的组成部分，非死代码）。
     const interrupted = Array.from(this.rounds.values())
       .filter((r) => r.refCount === 0 && (r.status === 'pending' || r.status === 'error'))
-      .filter((r) => r.createdAt.startsWith(date))
+      .filter((r) => isWithinLocalDay(r.createdAt, date))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return (limit !== undefined ? interrupted.slice(0, limit) : interrupted).map((r) => ({ ...r }));
   }

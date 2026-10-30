@@ -213,7 +213,7 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
     expect(roundStore.getById(roundId)?.pendingAsk).toBeUndefined();
   });
 
-  it('appendInterrupted 收场转化：残留 pendingAsk → unanswered 交互输入 + 字段清空（打捞面零改动受益）', async () => {
+  it('appendInterrupted 收场转化：残留 pendingAsk 逐题整组转 unanswered（Q2..N 不丢）+ 字段清空', async () => {
     const { history, roundStore } = createRoundBackedHistory();
     const roundId = generateRoundId();
     await history.appendUser('输入', roundId);
@@ -225,11 +225,16 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
     const round = roundStore.getById(roundId);
     expect(round?.status).toBe('interrupted');
     expect(round?.pendingAsk).toBeUndefined();
-    const input = round?.interactiveInputs?.[round.interactiveInputs.length - 1];
-    expect(input?.kind).toBe('unanswered');
-    expect(input?.question).toBe('崩溃前的问题'); // 多题整组取首问（与 runResume 落盘口径同源）
-    expect(input?.options).toEqual(['甲', '乙']);
-    expect(input?.content).toBe(LOOP_CONSTANTS.ASK_UNANSWERED_NOTICE);
+    // 多题逐条落档：Q1/Q2 各一条 unanswered，question/options 全量保留（取首问即丢 Q2）
+    const unanswered = round?.interactiveInputs?.filter((i) => i.kind === 'unanswered');
+    expect(unanswered).toHaveLength(2);
+    expect(unanswered?.[0]?.question).toBe('崩溃前的问题');
+    expect(unanswered?.[0]?.options).toEqual(['甲', '乙']);
+    expect(unanswered?.[0]?.content).toBe(LOOP_CONSTANTS.ASK_UNANSWERED_NOTICE);
+    expect(unanswered?.[1]?.question).toBe('第二题');
+    expect(unanswered?.[1]?.options).toBeUndefined(); // 无选项题零冗余
+    // id 递增唯一（渲染按 id 寻址，撞 id 即两行坍塌成一行）
+    expect(unanswered?.[0]?.id).not.toBe(unanswered?.[1]?.id);
   });
 
   it('无在途提问的中断轮不产 unanswered 条目（零冗余）；appendAssistant 防御清异常残留', async () => {

@@ -376,6 +376,7 @@ const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
   'hasActiveSuperseder',
   'isRetryableErrorCode',
   'isRoundSettled',
+  'isWithinLocalDay',
   'loadConfig',
   'logger',
   'parseFrontmatter',
