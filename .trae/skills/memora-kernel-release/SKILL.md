@@ -51,7 +51,7 @@ agent_created: true
 >
 > 以下只列**本时点特有的约束**：
 
-1. 新建 `tasks/archive/<X.Y.Z>-kernel.md`，迁入主台账**该版已关闭（✅）项**（开放 / 观察 / 明确不做项留主台账）；条目 **ID 沿用不改**（防跨文档引用断裂）。
+1. 新建 `tasks/archive/<X.Y.Z>-kernel.md`，迁入主台账**该版已关闭项**——口径对齐 `tasks/archive/README.md` 纪律 3 真源：**✅ 销项 / ❌ 证伪关闭 / 全案闭合**三类都迁（开放 / 观察 / 明确不做项留主台账）；条目 **ID 沿用不改**（防跨文档引用断裂）。⚠️ 清点只盯 ✅ 必漏：`ledger:hygiene` ⑧ 会抓「落态早于发版线且无归档副本」的**任何**落态条目，含 ❌ 证伪关闭（5.3.0 实证：`ASK-PENDINGASK-CLEAR-1` 证伪回滚条目 Step 5 时被 ⑧ 当场打红，靠 `--append` 补批迁入）。
 2. 归档文件头标 **「待上架」**（Step 5 再订正为「已发布」）。
 3. **提交前必跑两道台账硬闸**：`npm run verify:ledger-hygiene` + `npm run verify:ledger-fold`（挂 `local-ci` full 档 `required:true`）。
 4. 机械搬运用 `.trae/skills/memora-kernel-release/scripts/archive-kernel-release.mjs --version X.Y.Z --ids ID1,ID2,... --dry-run` 预览、核对逐字节无损后再 `--apply`；对**已存在**的归档文件必须加 `--append`（整体覆盖会毁掉既有归档）。脚本**整块移出、不逐条留指针**（归元纪律 7；块边界连续空行压 1 行）。
@@ -76,7 +76,7 @@ agent_created: true
 ### Step 5：发版后订正（2FA Approve 上架后做）
 1. 确认 `npm view @zooique/memora version` = `X.Y.Z`、`dist-tags.latest` = `X.Y.Z`。
 2. 三处「待上架→已发布」订正 + 两表补行（**只能在 tag 后做**——`ledger:hygiene` ⑤「版本索引行 ⇔ git tag 存在」与 ⑦「版本索引 ↔ archive/README.md 归档表文件名集合双向相等」两闸在 tag 前预加**当场红**，5.2.0 实证）：
-   - `tasks/archive/<X.Y.Z>-kernel.md` 文件头：待上架 → 已发布（附 tag 指向 commit 短哈希 + 上架时刻）；
+   - `tasks/archive/<X.Y.Z>-kernel.md` 文件头：待上架 → 已发布（附 tag 指向 commit 短哈希 + 上架时刻；**收据值一律取第 1 条 `npm view` 实查结果**——version / `dist-tags.latest` / `time` 的上架时刻，勿凭口头「已上架」转写）；
    - 主台账**版本索引**表**补该版一行**（日期 = npm 实际上架日，非 tag 日）；
    - `tasks/archive/README.md` 归档表**补该版一行**（迁移 ID 清单 + 留守项）。
 3. `git show --stat` 核对本次提交文件归属 ↔ 标题（PowerShell 回显中文乱码是显示层，勿据此重提交；字节用 `git log -1 --format=%B | od -c` 校验）。
