@@ -2861,6 +2861,69 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     });
   });
 
+  it('中断轮重放：两个相邻中断轮各留一套容器（INTERRUPT-MULTI-1 跨轮清理退役）', () => {
+    // 契约：重放批内每轮自洽——renderReplayRound 只重建「本轮」，不得删任何别的轮。
+    // 事故形态：interrupted 分支曾 `querySelector('.msg.is-interrupted-host')` 抓上一轮宿主
+    // 连 `.round-group` 一起 remove ⇒ 多中断轮会话里除最后一个外，过程块 / 问答行 / 底栏全灭
+    //（只剩用户气泡；真机 E:/ceshi 13:29 与 15:00 两轮实证）。
+    // ⚠ 必须**单批**驱动：dispatchReplay 每次都 resetChatView，拆成两次调用永远测不出本缺陷。
+    mountChatView();
+    const interruptedRound = (id: string, hour: string) =>
+      makeRound({
+        id,
+        user: { content: `提问-${id}`, ts: `2026-10-31T${hour}:00:00.000Z` },
+        status: 'interrupted',
+        processEvents: [
+          {
+            type: 'meta',
+            seq: 1,
+            ts: `2026-10-31T${hour}:00:01.000Z`,
+            payload: { role: 'AI', llm: 'm' },
+          },
+          {
+            type: 'thought',
+            seq: 2,
+            ts: `2026-10-31T${hour}:00:02.000Z`,
+            payload: { content: '想一想' },
+          },
+          {
+            type: 'metrics',
+            seq: 3,
+            ts: '',
+            payload: {
+              durationMs: 100,
+              tokenIn: 10,
+              tokenOut: 0,
+              toolFailureCount: 0,
+              unparsedToolIntentCount: 0,
+              success: false,
+            },
+          },
+        ],
+        interactiveInputs: [
+          {
+            content: '[ASK_ABORTED] 该提问未被回答（会话在此处中断）',
+            ts: `2026-10-31T${hour}:00:03.000Z`,
+            kind: 'unanswered',
+            question: `问-${id}`,
+            options: ['甲', '乙'],
+          },
+        ],
+      });
+    dispatchReplayMany([interruptedRound('r1', '05'), interruptedRound('r2', '06')]);
+
+    // 两轮各一套：容器 / 中断宿主 / 底栏 / 未回答行，一个都不许少
+    expect(document.querySelectorAll('.round-group')).toHaveLength(2);
+    expect(document.querySelectorAll('.msg.is-interrupted-host')).toHaveLength(2);
+    expect(document.querySelectorAll('.round-group__footer')).toHaveLength(2);
+    expect(document.querySelectorAll('.round-block__input')).toHaveLength(2);
+    // 归属正确：r1 的容器里仍是 r1 的过程与问答（不是被 r2 顶掉的空壳）
+    const g1 = document.querySelector<HTMLElement>('.round-group[data-round-id="r1"]');
+    expect(g1).not.toBeNull();
+    expect(g1?.querySelector('.round-block__thought')?.textContent).toContain('想一想');
+    expect(g1?.querySelector('.round-block__input')?.textContent).toContain('问-r1');
+  });
+
   it('运行时中断（RT 形态定案 2026-09-19 · 收口修订 2026-10-13）：掐半截正文 + 过程折叠 + 底栏「用户中断」标签（停止行退役）', () => {
     mountChatView();
     dispatch({ type: 'user', text: '读文件', ts: 't0', roundId: 'r1' });

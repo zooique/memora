@@ -2925,11 +2925,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         currentRoundMeta = { role: metaEv.payload.role, llm: metaEv.payload.llm };
       }
       if (r.status === 'interrupted') {
-        // 孤儿宿主容器化进 round-group：先清理上一轮孤儿宿主（防跨轮堆积残留）
-        const prevInterrupted = messages.querySelector<HTMLElement>('.msg.is-interrupted-host');
-        if (prevInterrupted) (prevInterrupted.closest('.round-group') ?? prevInterrupted).remove();
-        flowEl?.remove();
-        flowEl = null;
+        // 单轮自洽：重放由 renderReplayFromRounds 先 resetChatView 再逐轮重建，批内不存在
+        // 「上一轮残留」——此处**不得**做跨轮清理（历史事故 INTERRUPT-MULTI-1：删上一轮
+        // 中断轮的 .round-group 连其过程块 / 问答行 / 底栏一并抹除，多中断轮会话只剩最后一个）
         renderInterruptedRound(r.id, r.evidence);
       } else {
         // 普通轮：任务过程折叠区一次性渲染（finalize=true，收起态）；证据随轮透传（web_search 行补归因）
