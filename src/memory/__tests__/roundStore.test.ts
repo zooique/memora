@@ -543,6 +543,10 @@ describe('isRoundSettled 判据单源守卫', () => {
     const hits: string[] = [];
     /** isRoundSettled 定义体出现次数：判据必须**恰好定义一处**（与上方豁免互为闭环，防豁免被滥用） */
     let settledDefCount = 0;
+    /** isRoundSuccessful 定义体出现次数：成功判据同样必须恰好定义一处 */
+    let successDefCount = 0;
+    /** 两个判据的定义体都在豁免区内（判据自身当然要写那个比较） */
+    const DEF_STARTS = ['export function isRoundSettled', 'export function isRoundSuccessful'];
     /** 实际用到的豁免条目（用于末尾「僵尸豁免」闭环：登记了却没命中 = 判据已变质而豁免仍在） */
     const usedAllowed = new Set<string>();
 
@@ -559,17 +563,19 @@ describe('isRoundSettled 判据单源守卫', () => {
         const rel = full.split(sep).join('/');
         const allowedHere = ALLOWED_LINES[rel] ?? [];
         // 定义体豁免按「行区间」而非「整文件」给出——否则该文件内其余位置再自写判据就能蒙混过关
-        let insideSettledDef = false;
+        let insideDef = false;
         readFileSync(full, 'utf8')
           .split(/\r?\n/)
           .forEach((line, i) => {
-            if (line.startsWith('export function isRoundSettled')) {
-              settledDefCount += 1;
-              insideSettledDef = true;
+            const defStart = DEF_STARTS.find((start) => line.startsWith(start));
+            if (defStart) {
+              if (defStart.endsWith('isRoundSettled')) settledDefCount += 1;
+              else successDefCount += 1;
+              insideDef = true;
               return;
             }
-            if (insideSettledDef) {
-              if (line === '}') insideSettledDef = false;
+            if (insideDef) {
+              if (line === '}') insideDef = false;
               return;
             }
             const code = line.trim();
@@ -595,6 +601,7 @@ describe('isRoundSettled 判据单源守卫', () => {
     expect(hits).toEqual([]);
     // 闭环一：判据定义必须唯一（0 = 判据被删/改名，>1 = 又长出并列判据）
     expect(settledDefCount).toBe(1);
+    expect(successDefCount).toBe(1);
     // 闭环二：豁免表不得留僵尸——登记片段必须在目标文件中真实存在。判据被改写/删除而豁免仍在，
     // 等于敞开的后门：该位置下次自写同类判据会被静默放行，而豁免理由已与事实脱节。
     const zombieAllowed: string[] = [];

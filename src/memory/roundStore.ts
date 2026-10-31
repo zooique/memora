@@ -165,6 +165,25 @@ export function isRoundSettled(status: RoundStatus): boolean {
   return status === 'complete' || status === 'interrupted';
 }
 
+/**
+ * 轮是否「成功收场」——**成功判据单一收口点（SSOT）**。
+ *
+ * 与 `isRoundSettled` 的分野（勿混用）：`isRoundSettled` 回答「这轮还能不能当上下文用」，
+ * 本函数回答「这轮算不算跑成功」。`interrupted` 是**定案**的正常收场（等同用户点停止，
+ * 见 `isRoundSettled` 的语义定案），但**不等于成功**——它的正文可能是失败兜底 / 被打断。
+ *
+ * **为什么必须收口**：当前唯一消费面是宿主 `metrics.success`（执行指标「流程跑完了没有」，
+ * 盘面缺失时降级为进程内口径）；凡将来新增「这轮算不算成功」的读取方，**一律调用本函数**，
+ * 不得自写 `status === 'complete'`（第二真相源）。宿主侧自写比较已被 `roundStore.test.ts`
+ * 的判据单源守卫拦过——`occupancyHistory.ts` 因此把收场判据改用 `isRoundSettled`。
+ *
+ * @param status - 轮状态
+ * @returns 该轮是否成功收场（仅 `complete`）
+ */
+export function isRoundSuccessful(status: RoundStatus): boolean {
+  return status === 'complete';
+}
+
 // ─── 过程事件（ProcessEvent）────────────────────────────
 // 每轮「过程事件」= UI 状态重建的最小信息（运行时与重放共用同一份数据）。
 // 落位决策：ProcessEvent 是 Round 的组成部分（存储面），故定义于 memory/；

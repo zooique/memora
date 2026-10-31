@@ -213,10 +213,11 @@ export type {
   ProcessMetaPayload,
   ProcessMetricsPayload,
 } from '@/memory/roundStore.js';
-// Round 辅助函数：仅 isRoundSettled 挂公共面（「轮是否已收场」判据单一收口点：宿主与内核共用，
-// 禁止各端自写 status === 'complete'，否则中断轮会被静默排除出会话视图与 LLM 历史）；
+// Round 辅助函数：仅两个判据挂公共面——「轮是否已收场」（isRoundSettled：宿主与内核共用，
+// 禁止各端自写 status === 'complete'，否则中断轮会被静默排除出会话视图与 LLM 历史）与
+// 「轮是否成功收场」（isRoundSuccessful：宿主 metrics.success 的唯一判据）；
 // ID 生成/轮创建/收场流转为内核内部实现
-export { isRoundSettled } from '@/memory/roundStore.js';
+export { isRoundSettled, isRoundSuccessful } from '@/memory/roundStore.js';
 
 // ─── 会话视图加载器导出 ─────────────────────────────────────
 // SessionViewLoader：将 Round ID 列表展开为完整对话视图

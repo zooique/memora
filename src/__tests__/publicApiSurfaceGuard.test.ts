@@ -376,6 +376,10 @@ const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
   'hasActiveSuperseder',
   'isRetryableErrorCode',
   'isRoundSettled',
+  // isRoundSuccessful（2026-10-31 新增）：宿主 metrics.success 的唯一判据——「complete=成功」
+  // 收口在内核状态真源，禁止宿主自写 `status === 'complete'`（判据单源守卫会拦）。
+  // 定性 = 真能力（有真实消费者：hosts chatPanel 执行指标），非 no-op 谎报。
+  'isRoundSuccessful',
   'isWithinLocalDay',
   'loadConfig',
   'logger',
