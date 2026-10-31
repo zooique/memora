@@ -70,7 +70,6 @@ import {
   type ISessionStore,
   type ProcessEvent,
   type ProcessMetaPayload,
-  type ProcessMetricsPayload,
   type SessionMeta,
   type SessionView,
   OPAQUE_WRITE_TOOL_NAMES,
@@ -78,6 +77,9 @@ import {
   estimateTokensText,
   type CompressTarget,
   BACKGROUND_TASK_STATUS_LABELS,
+  // 「这轮算不算跑成功」判据取内核单点（isRoundSuccessful）：宿主不得自写
+  // `status === 'complete'`（内核 roundStore.test 的判据单源守卫会拦，见 helpers/occupancyHistory.ts 先例）
+  isRoundSuccessful,
 } from '@zooique/memora';
 
 /** 插话条数上限提示文案用值：直接消费内核真源（webview 侧无法 import 内核包，
@@ -125,6 +127,8 @@ import {
 import { friendlyErrorMessage } from '../../shared/errorText.js';
 // 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
 import { dedupeRefs } from '../../shared/refKey.js';
+// 过程事件 / 指标段级合并（纯函数，HOST-SPLIT-1 切片自本类外置；三条调用面共用同一语义）
+import { mergeProcessEvents } from '../helpers/processEventMerge.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 // 引用发送前存在性核实（HOST-CTX-9 发送侧）：解析器复用 refPath（首根 SSOT），不由本文件另写
 import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
@@ -2817,7 +2821,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 落盘历史（step 边界 checkpoint 的部分事件）∪ 缓冲增量（seq 幂等去重保序）
     const prior = this._eventLogRoundStore?.getById(roundId)?.processEvents ?? [];
     const buffered = buf.eventsByRound.get(roundId) ?? [];
-    const merged = prior.length > 0 ? this.mergeProcessEvents(prior, buffered) : buffered;
+    const merged = prior.length > 0 ? mergeProcessEvents(prior, buffered) : buffered;
     return {
       roundId,
       userMessage: buf.seedUserMessage,
@@ -3366,96 +3370,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /**
-   * metrics 同轮段级合并（多流续跑防丢失）：
-   *
-   * 一次 turn 可能分多段流完成（软暂停续跑 / ask 回答后续跑等）——每段流尾各自 emit 一条
-   * metrics（段级增量：本段耗时 / token diff / 本段工具失败数）。旧实现把 prior 的 metrics
-   * 恒剔除 → 前段全部指标丢失，回合终态只剩末段（如前段 7 次工具失败被静默清零）。
-   * 本助手把前段与末段求和成一条（零 schema 变更）；`success` 取末段值——其语义是
-   * 「这段流程跑完了没有」，终局收尾状态以最后一段为准（中间段 false = 曾中断，非终局）。
-   *
-   * 可选字段（unparsedToolIntentCount / emptyResponseCount / truncationRecoveryCount）：
-   * 任一段携带即求和（缺段按 0），两段都缺则保持缺省——不伪造旧数据没有的信号面。
-   */
-  private mergeMetricsPayload(
-    prior: ProcessMetricsPayload,
-    fresh: ProcessMetricsPayload,
-  ): ProcessMetricsPayload {
-    return {
-      durationMs: prior.durationMs + fresh.durationMs,
-      tokenIn: prior.tokenIn + fresh.tokenIn,
-      tokenOut: prior.tokenOut + fresh.tokenOut,
-      toolFailureCount: prior.toolFailureCount + fresh.toolFailureCount,
-      success: fresh.success,
-      ...(prior.unparsedToolIntentCount !== undefined || fresh.unparsedToolIntentCount !== undefined
-        ? {
-            unparsedToolIntentCount:
-              (prior.unparsedToolIntentCount ?? 0) + (fresh.unparsedToolIntentCount ?? 0),
-          }
-        : {}),
-      ...(prior.emptyResponseCount !== undefined || fresh.emptyResponseCount !== undefined
-        ? {
-            emptyResponseCount: (prior.emptyResponseCount ?? 0) + (fresh.emptyResponseCount ?? 0),
-          }
-        : {}),
-      ...(prior.truncationRecoveryCount !== undefined || fresh.truncationRecoveryCount !== undefined
-        ? {
-            truncationRecoveryCount:
-              (prior.truncationRecoveryCount ?? 0) + (fresh.truncationRecoveryCount ?? 0),
-          }
-        : {}),
-    };
-  }
-
-  /**
-   * 按 seq 幂等合并过程事件（SSOT 单一合并语义）。
-   *
-   * step 检查点与流尾完成共用本函数，避免两份合并逻辑漂移；靠 seq 全局唯一
-   * （_processSeq 单调）天然幂等——step 检查点已写入的增量，流尾重合并不会重复追加，保序。
-   *
-   * 合并规则：
-   * - 终态净化：prior 中旧流 aborted 恒剔除——终局终态恒为末流。
-   * - metrics 同轮合并：prior 与 incoming 同轮各有 metrics（多流续跑）时求和成单条
-   *   （mergeMetricsPayload：计数求和、success 取末段），前段指标不再被静默丢弃；
-   *   incoming 无 metrics（step 检查点常态）时 prior metrics 原样保留，待流尾合并。
-   * - 身份去重：多流续跑（prior 非空）时剔除 incoming 的 meta——身份保留首流，
-   *   续跑不重复身份；单流轮（prior 空）保留 meta（else 分支）。
-   * - 幂等去重：incoming 中 seq 已写入的丢弃（跨流不重叠，seq 全局唯一）。
-   *
-   * @param prior Round 既有 processEvents（前流/上次检查点产物，可为空）
-   * @param incoming 本流当前已累积事件（含刚 emit 的 plan_item_boundary / 末轮 metrics）
-   * @returns 合并后数组（不改写存储，落盘由调用方决定）
-   */
-  private mergeProcessEvents(prior: ProcessEvent[], incoming: ProcessEvent[]): ProcessEvent[] {
-    // metrics 同轮合并：incoming 带末段 metrics 且 prior 也有前段 metrics → 并入 incoming 单条
-    const incomingMetrics = incoming.find(
-      (e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics',
-    );
-    const priorMetrics = prior.find(
-      (e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics',
-    );
-    const effectiveIncoming =
-      incomingMetrics && priorMetrics
-        ? incoming.map((e) =>
-            e === incomingMetrics
-              ? { ...e, payload: this.mergeMetricsPayload(priorMetrics.payload, e.payload) }
-              : e,
-          )
-        : incoming;
-    // 终态净化：旧流 aborted 剔除（终态恒为末流）；前段 metrics 已并入 incoming 时同样剔除
-    // （防双计）；incoming 无 metrics 的检查点路径保留 prior metrics（不丢前段指标）
-    const base = prior.filter(
-      (e) => e.type !== 'aborted' && !(e.type === 'metrics' && incomingMetrics !== undefined),
-    );
-    // 身份去重：仅多流续跑（prior 非空）剔 incoming 的 meta，避免重复身份
-    const freshIncoming =
-      prior.length > 0 ? effectiveIncoming.filter((e) => e.type !== 'meta') : effectiveIncoming;
-    // 幂等去重：seq 全局唯一，incoming 中已写入的丢弃；fresh 恒在 base 之后（seq 单调保序）
-    const have = new Set(base.map((e) => e.seq));
-    const fresh = freshIncoming.filter((e) => !have.has(e.seq));
-    return [...base, ...fresh];
-  }
+  /** 过程事件 / 指标段级合并已外置为纯函数模块（HOST-SPLIT-1 切片）：见 helpers/processEventMerge.ts */
 
   /**
    * step 原子检查点：把当前轮已累积过程落盘到 pending Round。
@@ -3477,7 +3392,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const round = store.getById(roundId);
       if (!round) return;
       // thought 碎片落盘前按 step 聚合（信封开销收敛；UI 流式不受影响，见 foldThoughtEvents）
-      round.processEvents = this.mergeProcessEvents(
+      round.processEvents = mergeProcessEvents(
         round.processEvents ?? [],
         foldThoughtEvents(events),
       );
@@ -3910,6 +3825,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       ? this._eventLogRoundStore?.getById(latestRoundId)
       : undefined;
     if (this._eventLogRoundStore && eventsByRound.size > 0) {
+      // success 兜底口径（进程内旧口径 = 未 abort 且非软暂停）：只在盘面缺失时使用，且只在本块内
+      // 计较——metrics 不发射时它压根不是判据。盘面缺失（存储缺轮 / GC 竞态）若不兜底就静默判失败
+      // = 把好轮标成失败（与 TERMINUS-SSOT-1 消灭的「误标」同族，反方向）；故留痕、不隐瞒。
+      const fallbackSuccess = !controller.signal.aborted && !pausedOnPurpose;
+      if (!settledRound && latestRoundId) {
+        console.warn('Memora metrics.success 盘面缺失回合，退回进程内口径', latestRoundId);
+      }
       const metricsNow = this._agent.getMetrics();
       emitEvent('metrics', {
         durationMs: Date.now() - flowStartMs,
@@ -3935,8 +3857,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           0,
           this._agent.getMetrics().llm.truncationRecoveryCount - metricsBefore.truncRecover,
         ),
-        // success 口径改盘面投影（TERMINUS-SSOT-1）：盘面 complete 才算成功，旧口径误标 failed 收场；门内 settledRound 必有值。
-        success: settledRound?.status === 'complete',
+        // success 口径改盘面投影（TERMINUS-SSOT-1）：盘面成功才算出成功（判据 = 内核
+        // isRoundSuccessful 单点，宿主不自写比较）；盘面缺失时退回进程内口径
+        // （见 fallbackSuccess 声明处），不让「无值」静默等价于「失败」。
+        success: settledRound ? isRoundSuccessful(settledRound.status) : fallbackSuccess,
       });
       // 流尾最终落盘复用同一合并语义（SSOT）——
       // 与 step_boundary 时的增量检查点共用 mergeProcessEvents，靠 seq 幂等不重复、保序；

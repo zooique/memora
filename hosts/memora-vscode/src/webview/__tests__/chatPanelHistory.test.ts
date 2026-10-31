@@ -29,6 +29,8 @@ import { todayDate, resolveContextWindow, LOOP_CONSTANTS, MemoraError } from '@z
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
+// 过程事件 / 指标段级合并已外置为纯函数（HOST-SPLIT-1 切片）：直测合并语义，不绕流驱动
+import { mergeProcessEvents } from '../helpers/processEventMerge.js';
 // 预读接线用例的真实现（真临时目录可机测，零 vscode 依赖）
 import { ImageCache } from '../../extension/host/imageCache.js';
 import {
@@ -2521,13 +2523,9 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
     };
   }
 
-  /** mergeProcessEvents 括号访问（私有方法直测：单测锁合并语义，不绕流驱动） */
-  function mergeFn(provider: MemoraChatViewProvider) {
-    return (
-      provider as unknown as {
-        mergeProcessEvents: (prior: ProcessEvent[], incoming: ProcessEvent[]) => ProcessEvent[];
-      }
-    ).mergeProcessEvents.bind(provider);
+  /** mergeProcessEvents 直测（HOST-SPLIT-1 切片：已外置为纯函数，调用方签名保留以最小化用例改动） */
+  function mergeFn(_provider: MemoraChatViewProvider) {
+    return mergeProcessEvents;
   }
 
   it('metrics 同轮合并：前段 7 次工具失败不被末段清零（计数求和 + success 取末段）', () => {

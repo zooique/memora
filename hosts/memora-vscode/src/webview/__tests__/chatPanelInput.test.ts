@@ -336,9 +336,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
 
     expect(answerQuestion).not.toHaveBeenCalled();
     expect(resumeExecution).not.toHaveBeenCalled();
-    expect(h.posted).toContainEqual(
-      expect.objectContaining({ type: 'notice', level: 'error' }),
-    );
+    expect(h.posted).toContainEqual(expect.objectContaining({ type: 'notice', level: 'error' }));
     // 拒收不得消费在途提问（用户还能重答）
     expect(h.cast._ask.pendingQuestions()).toHaveLength(2);
   });

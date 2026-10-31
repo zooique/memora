@@ -25,6 +25,11 @@ export type CursorStatus =
  * （已完成=淡勾 / 用户中断=中性文字 / 异常中断=红字）；无容器兜底轮由载体尾自足承接
  * （见 chatStyles 载体尾规则）。终态写入点 = 收场消息（done/interrupted），流内 error
  * 事件不定格终态。
+ *
+ * 语义极限（如实登记，非缺陷）：盘面 `RoundStatus.interrupted` 合并了「用户停」与「内核失败」
+ * 两种事实，二者靠过程事件（aborted / error）区分；崩溃打捞轮两者皆无（进程没来得及写），
+ * 按定案「等同用户点停止」显「用户中断」。若将来要区分「崩溃 / 失败 / 用户停」，必须先在
+ * 内核拆分 RoundStatus 档位（新增写点），**不得**在展示层再补一条判据（那会造第二个真相源）。
  */
 export type TerminusKind =
   | '已完成' // 终态：底栏 time 之后淡勾（正文尾不再显示）
@@ -60,10 +65,7 @@ export function setCursorStatus(
  * @param el      终态载体（有正文轮 = .msg-body；中断轮 = 宿主块 .msg.assistant）
  * @param kind    终态三档之一
  */
-export function setTerminus(
-  el: HTMLElement | null | undefined,
-  kind: TerminusKind,
-): void {
+export function setTerminus(el: HTMLElement | null | undefined, kind: TerminusKind): void {
   if (!el || !el.isConnected) return;
   el.dataset.terminus = kind;
 }

@@ -57,8 +57,14 @@ export default [
     // FORMAT-1 清零（2026-10-29）：prettier --write 还原折行欠账，物理行 4515→4529（+14 全为
     // 折行展开，AST 结构指纹证明语义零变化）。「只降不升」约束的是代码增长，非格式还原；
     // 基线取闸门自报数如实上调，涨回即红。
-    files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域已外置）
-    rules: { 'max-lines': ['error', { max: 4529 }] },
+    // HOST-SPLIT-1 切片（2026-10-31）：过程事件 / 指标段级合并（mergeMetricsPayload +
+    // mergeProcessEvents，两函数原为类内私有、无 this 依赖）整体外置为纯函数模块
+    // `helpers/processEventMerge.ts`，三条调用面（step 检查点 / 流尾落盘 / live 重放）共用同一实现。
+    // 净减 80 行（语义零变化），基线按闸门自报（max 临时置 1 读数）同步下调。
+    // 随后同一批 P4 把 metrics.success 判据切到内核 `isRoundSuccessful`（+4 行 import 注释与
+    // 兜底注释），基线再按闸门自报刷新为 4453——相对原 4529 仍净减 76 行。
+    files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域 + 过程事件合并域已外置）
+    rules: { 'max-lines': ['error', { max: 4453 }] },
   },
   {
     files: ['src/webview/panels/settingsPanel.ts'], // TARGET（六页合一；安全页静态骨架已外置）
