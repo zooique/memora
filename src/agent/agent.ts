@@ -1044,6 +1044,24 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 当前在途轮次 id（`''` = 无在途轮）
+   *
+   * 为什么必须由内核给：宿主投影 `TurnState` 的 **waiting 相位不携带 roundId**
+   * （ask 挂起时轮身份从快照里消失），而 ask 期停止恰恰需要轮身份来做收场归属
+   * （折叠区归属 / 容器底栏时间与复制按钮 / 分叉锚点）。宿主侧任何「上次见过的
+   * roundId」缓存都是投影记忆，会与内核真源脱钩。
+   *
+   * 与 `loop.getCurrentRoundId` 同源同值，不缓存副本（单点直接读）。
+   * 保留裁决（对照 PUB-API-PRUNE-2「纯转发门面不留」）：该方法**有真实宿主消费**
+   * （`AskCoordinator.abandonOnStop` 取轮身份随中断收场下发），非零调用门面；
+   * 真身在 loop、而 loop 不对外暴露，故此处转发即最短可达路径。
+   */
+  currentRoundId(): string {
+    this.assertInitialized('currentRoundId');
+    return this.requireLoop.getCurrentRoundId();
+  }
+
+  /**
    * 放弃当前轮（宿主 stop 语义的**收场**出口 · ADR-044 决策 3）
    *
    * 与 `discardCurrentCheckpoint` 的分野：后者只丢暂停上下文（检查点 + 排队插话），

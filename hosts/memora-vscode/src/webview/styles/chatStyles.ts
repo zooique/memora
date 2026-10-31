@@ -665,10 +665,6 @@ export const chatStyles = `
   .write-confirm-card__hint {
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
-  /* 中断轮交互行外置槽（2026-10-31 用户拍板）：中断轮无正文块，过程整块收进折叠条后
-   * 该轮在屏上只剩折叠条——用户交互（问 / 你答 / 未回答）必须留在块外恒可见。
-   * 过程可以收起，交互不可藏。 */
-  .round-block__qa-outside { margin: var(--sp-1, 4px) 0; }
   /* 运行时输入条目行：question-answer / supplement / timeout 统一形态，
    * 对齐 thought/tool 过程行视觉（左缘 + 圆角 + 弱化字色）；非折叠块——内容恒可见，来源以 tag
    * 区分（「你答 / 你补充 / 未回答」）。 */

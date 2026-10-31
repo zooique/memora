@@ -66,6 +66,7 @@ function projectionAgentStub(): {
     isPausePending: () => false,
     getPendingInterjections: () => [],
     // ADR-044 决策 3：停止 = 收场——内核 abandonTurn 收场后状态机 resetToRunning
+    currentRoundId: () => 'r-ask', // 在途轮身份：随 interrupted 收场透出（宿主底栏归属用）
     abandonTurn: async () => {
       sessionState.status = 'running';
       return true;

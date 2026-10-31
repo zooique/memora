@@ -394,6 +394,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'clearPlan',
       'close',
       'createCheckpoint',
+      'currentRoundId',
       'discardCurrentCheckpoint',
       'forkSession',
       'gcNow',

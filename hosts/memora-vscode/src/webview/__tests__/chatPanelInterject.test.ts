@@ -61,6 +61,7 @@ function interjectAgentStub(items: string[]): Agent {
     isPausePending: () => false,
     discardCurrentCheckpoint: () => true,
     // 停止 = 收场（ADR-044 决策 3）：pending 态 handleStop 经内核 abandonTurn 收场 + 弃检查点
+    currentRoundId: () => 'r-interject', // 在途轮身份：随 interrupted 收场透出（底栏归属用）
     abandonTurn: async () => true,
     security: { onWriteConfirmation: () => () => {}, onAudit: () => () => {} },
   } as unknown as Agent;

@@ -158,6 +158,12 @@ export class AskCoordinator {
   async abandonOnStop(): Promise<boolean> {
     const agent = this._deps.getAgent();
     if (!agent) return false;
+    // 轮身份**先取后弃**：`TurnState.waiting` 投影不含 roundId（ask 挂起时轮身份从快照里消失），
+    // 而中断收场必须带它做归属——缺 roundId 时 webview `settleRoundFooter` 首行
+    // `if (!roundId) return` 直接早退 ⇒ 中断轮没有容器底栏（时间 + 复制/分叉/删除），
+    // 实时形态与重放（replay 从盘面取 id）分叉。真机 2026-10-31 实证。
+    // 取在 abandonTurn 之前 = 不依赖「弃轮不清 in-flight id」这一实现细节。
+    const roundId = agent.currentRoundId();
     const pendingQs = this._pending;
     this._pending = [];
     this.clearAskTimeout();
@@ -170,7 +176,7 @@ export class AskCoordinator {
     // 收场消息：ask 期没有流可 abort，`runFlow` 的 aborted 收尾分支永不触发 ⇒ 必须在此补发，
     // 否则实时态不折叠过程、不写终态、不收敛底栏，与重载后的重放形态分叉
     //（真机 2026-10-31：停止后屏上保留三个问题块、无「用户中断」标签，重载后才对）。
-    this._deps.post({ type: 'interrupted' });
+    this._deps.post({ type: 'interrupted', ...(roundId ? { roundId } : {}) });
     if (pendingQs.length > 0) {
       this._deps.post({
         type: 'notice',

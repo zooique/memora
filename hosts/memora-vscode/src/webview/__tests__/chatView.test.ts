@@ -2677,7 +2677,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(rb.querySelector('.round-block__stats')?.textContent).toContain('耗时');
   });
 
-  it('中断轮重放：交互行落折叠块外置槽（无正文轮只剩折叠条，收进去即整体不可见 · 2026-10-31）', () => {
+  it('中断轮重放：交互行在折叠块内且折叠块默认展开（无正文轮收起即零可见 · 2026-10-31）', () => {
     mountChatView();
     dispatchReplay(
       makeRound({
@@ -2711,17 +2711,16 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     );
     const host = document.querySelector('.msg.is-interrupted-host') as HTMLElement;
     expect(host).not.toBeNull();
-    // 过程照常收起（2026-09-17 折叠块定案不变）
+    // 中断轮展开：正文随中断丢弃 ⇒ 收起后该轮零可见，故展开态判据补「有无正文兜底」
     const rb = host.querySelector('.round-block') as HTMLDetailsElement;
-    expect(rb.open).toBe(false);
-    // 交互行在折叠块外：外置槽承载、明细区一条都没有
-    const slot = host.querySelector(':scope > .round-block__qa-outside') as HTMLElement;
-    expect(slot).not.toBeNull();
-    expect(slot.querySelectorAll('.round-block__input')).toHaveLength(2);
-    expect(slot.textContent).toContain('① 主角职业？');
-    expect(rb.querySelector('.round-block__details .round-block__input')).toBeNull();
+    expect(rb.open).toBe(true);
+    // 交互行在折叠块**内**（单一容器，与完成轮同构）：不另造外置槽
+    const inputs = rb.querySelectorAll('.round-block__details .round-block__input');
+    expect(inputs).toHaveLength(2);
+    expect(rb.textContent).toContain('① 主角职业？');
+    expect(host.querySelector('.round-block__qa-outside')).toBeNull();
     // 哨兵不上屏：tag「未回答」已承载语义，正文不再重复机器标记
-    expect(slot.textContent).not.toContain('[ASK_ABORTED]');
+    expect(rb.textContent).not.toContain('[ASK_ABORTED]');
     // 终态仍定格（底栏标签消费）
     expect(host.dataset.terminus).toBe('用户中断');
   });
@@ -2918,7 +2917,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(document.querySelector('.process-flow')).toBeNull();
   });
 
-  it('运行时中断：未回答行同样落折叠块外置槽（实时与重放同构 · 2026-10-31）', () => {
+  it('运行时中断：未回答行与重放同形——在折叠块内，且中断轮折叠块展开（2026-10-31）', () => {
     mountChatView();
     dispatch({ type: 'user', text: '问我三个问题', ts: 't0', roundId: 'r2' });
     dispatch({
@@ -2948,12 +2947,22 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     dispatch({ type: 'interrupted', roundId: 'r2' });
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
     expect(assistant.dataset.terminus).toBe('用户中断');
+    // 实时与重放同形：交互行在同一详情区（不换容器），展开态由同一 interrupted 判据裁决
     const rb = assistant.querySelector('.round-block') as HTMLDetailsElement;
-    expect(rb.open).toBe(false);
-    const slot = assistant.querySelector(':scope > .round-block__qa-outside') as HTMLElement;
-    expect(slot).not.toBeNull();
-    expect(slot.querySelector('.round-block__input')?.textContent).toContain('① 主角职业？');
-    expect(rb.querySelector('.round-block__details .round-block__input')).toBeNull();
+    expect(rb.open).toBe(true);
+    const inputs = rb.querySelectorAll('.round-block__details .round-block__input');
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]?.textContent).toContain('① 主角职业？');
+    expect(assistant.querySelector('.round-block__qa-outside')).toBeNull();
+    // 底栏随收场显形（时间 + 复制/分叉/删除三键）：缺 roundId 时 settleRoundFooter 首行
+    // `if (!roundId) return` 会整块早退——真机 2026-10-31 报「复制按钮和时间底栏没有出现」
+    const group = assistant.closest('.round-group') as HTMLElement;
+    expect(group).not.toBeNull();
+    const footer = group.querySelector('.round-group__footer') as HTMLElement;
+    expect(footer).not.toBeNull();
+    expect(footer.classList.contains('is-pending')).toBe(false);
+    expect(footer.querySelector('.msg-copy-icon')).not.toBeNull();
+    expect(footer.querySelector('.msg-time')?.textContent).toBeTruthy();
   });
 
   it('阶段二任务项级折叠：重放 processEvents 含 plan_item_boundary 时 narrate/tool 按任务项归组（有任务表边切组、无边界退回扁平）', () => {

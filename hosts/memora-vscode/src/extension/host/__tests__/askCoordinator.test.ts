@@ -48,7 +48,9 @@ type Posted = Record<string, unknown>;
  * @param opts.status 内核会话状态（`resumeExecution` 的可续跑判据同源）
  * @param opts.checkpointDiscarded `abandonTurn` 的返回值（是否清掉了暂停检查点）
  */
-function agentStub(opts: { status?: string; checkpointDiscarded?: boolean } = {}) {
+function agentStub(
+  opts: { status?: string; checkpointDiscarded?: boolean; roundId?: string } = {},
+) {
   const calls: string[] = [];
   const resumeExecution = vi.fn((..._args: unknown[]) => {
     calls.push('resume');
@@ -61,13 +63,16 @@ function agentStub(opts: { status?: string; checkpointDiscarded?: boolean } = {}
     calls.push('abandon');
     return opts.checkpointDiscarded ?? true;
   });
+  /** 在途轮 id（内核 `Agent.currentRoundId` 同款）；缺省空串 = 无在途轮，不造假占位 */
+  const currentRoundId = vi.fn(() => opts.roundId ?? '');
   const agent = {
     cancelAsk,
+    currentRoundId,
     resumeExecution,
     abandonTurn,
     sessionManager: { status: opts.status ?? 'paused' },
   } as unknown as Agent;
-  return { agent, calls, resumeExecution, cancelAsk, abandonTurn };
+  return { agent, calls, resumeExecution, cancelAsk, abandonTurn, currentRoundId };
 }
 
 /** 协调器装配（agent 缺省为暂停态桩——超时正常续跑的那条路） */
@@ -245,7 +250,7 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
   });
 
   it('T8 停止（提问等待态）⇒ 清快照 + 逐条 post 未回答行（题面/候选/身份同盘面）+ 收场', async () => {
-    const stub = agentStub({ checkpointDiscarded: true });
+    const stub = agentStub({ checkpointDiscarded: true, roundId: 'round-42' });
     const h = makeCoordinator(stub);
     h.coordinator.setPending([
       q('Q1：职业？', ['主播', '护士'], 'call-a'),
@@ -273,7 +278,15 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
     expect(String(notices[0]!.message)).toContain('2 个提问未回答');
     // ⑤ 收场消息：ask 期没有流可 abort，`runFlow` 的 aborted 收尾分支永不触发 ⇒ 必须在此补发，
     // 否则实时态不折叠过程、不写终态，与重载后的重放形态分叉（真机 2026-10-31 实证）
-    expect(h.posted.filter((m) => m.type === 'interrupted')).toHaveLength(1);
+    const interrupted = h.posted.filter((m) => m.type === 'interrupted');
+    expect(interrupted).toHaveLength(1);
+    // ⑥ 轮身份随收场下发：缺它则 webview `settleRoundFooter` 首行早退 ⇒ 中断轮无底栏
+    //（时间 + 复制/分叉/删除），实时形态与重放分叉（真机 2026-10-31 实证：底栏整块不出现）
+    expect(interrupted[0]).toMatchObject({ roundId: 'round-42' });
+    // 取轮身份的时机：必须在 abandonTurn 之前——不依赖「弃轮不清在途 id」这一实现细节
+    expect(stub.currentRoundId.mock.invocationCallOrder[0]).toBeLessThan(
+      stub.abandonTurn.mock.invocationCallOrder[0]!,
+    );
   });
 
   it('T8 停止（纯暂停态，无在途提问）⇒ 只收场，不 post 未回答行', async () => {
@@ -285,7 +298,10 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
     expect(h.userRows()).toHaveLength(0);
     expect(h.posted.filter((m) => m.type === 'notice')).toHaveLength(0);
     // 纯暂停态同样收场：折叠/终态与重放同构，不因「没有提问」而漏发
-    expect(h.posted.filter((m) => m.type === 'interrupted')).toHaveLength(1);
+    const interrupted = h.posted.filter((m) => m.type === 'interrupted');
+    expect(interrupted).toHaveLength(1);
+    // 无在途轮（currentRoundId 空串）⇒ 不造假 roundId，字段整块不下发（协议字段可选）
+    expect(interrupted[0]).not.toHaveProperty('roundId');
     expect(stub.abandonTurn).toHaveBeenCalledTimes(1);
     expect(checkpointDiscarded).toBe(true);
   });

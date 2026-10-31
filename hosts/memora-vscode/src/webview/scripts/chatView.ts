@@ -109,7 +109,6 @@ import {
   visibleInputTs,
 } from './processFlowCells.js';
 import { createPickerView } from './pickerView.js';
-import { ensureInterruptedQaSlot } from './interruptedQaSlot.js';
 import { createQaRowView } from './qaRowView.js';
 import { createEmptyStateView } from './emptyStateView.js';
 import { createRoleBadgeView } from './roleBadgeView.js';
@@ -705,8 +704,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param liveMemoryHits 实时命中模型（仅 `finalizeRound` 传 currentMemoryHitsByCall）：
    *                  比证据**更新**（含本轮删除反馈），故优先于证据；重放/中断重建不传，
    *                  由 evidence 的 memory_hits 变体独立供数（MEM-EVENT-3）。
-   * @param qaOutside 交互行外置：中断轮置真——该轮无正文块，过程整块收起后屏上只剩折叠条，
-   *                  用户交互（问 / 你答 / 未回答）必须留在折叠块外才可见（用户拍板 2026-10-31）
+   * @param interrupted 中断轮置真——该轮正文随中断丢弃，过程收起后屏上只剩折叠条、内容零可见。
+   *                    展开态因此从「是否收场」补一条「有无正文兜底」（见下方 rb.open 单点）。
+   *                    交互行容器**不**随之分叉：恒在详情区，与完成轮同构（单一容器）。
    */
   function renderRoundBlock(
     events: ProcessEvent[],
@@ -714,7 +714,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     interactiveInputs?: RuntimeInteractiveInput[],
     evidence?: RoundView['evidence'],
     liveMemoryHits?: Map<string, Map<string, MemoryHitEntry>>,
-    qaOutside = false,
+    interrupted = false,
   ): void {
     // 每次重建都现建解析器（闭包持消费游标）：同一轮多次重放各自从头消费，结果确定不累积
     const resolveSearchEvidence = buildSearchEvidenceResolver(evidence);
@@ -792,12 +792,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 计划缓存为空 → 移除旧标签
       existingTag.remove();
     }
-    // 展开态：进行中自动展开（任务过程实时可见），完成自动收起（只留摘要，报告干净）
-    rb.open = !finalize;
+    // 展开态三态判据（本处为唯一裁决点）：
+    //   进行中 → 展开（任务过程实时可见）
+    //   完成   → 收起（只留摘要，报告干净）
+    //   中断   → 展开（正文随中断丢弃，收起后该轮内容零可见；交互行也在详情区内）
+    rb.open = !finalize || interrupted;
     const details = rb.querySelector('.round-block__details') as HTMLElement;
     if (!details) return;
-    // 中断轮：交互行落折叠块外的外置槽（过程照常收起，交互恒可见）
-    const qaHost = qaOutside ? ensureInterruptedQaSlot(rb, document) : details;
     // renderRoundBlock 仅 finalize（done/interrupted/重放）调用，
     // 运行时交由 renderProcessFlow（process-flow 平铺）承载。
     // ── 完成（finalize=true）：全量渲染所有小节（展开供查阅） ──
@@ -806,7 +807,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 全量重建前清理增量产物：section（轨迹/召回等）、narrate、tool、thought、任务项容器等增量元素，避免重复渲染。
     // 形态甲：运行时输入条目**快照保留**（重放 seg 消息触发的重建跨轮保留已插入 QA，
     // 重建后按 ts 重插归位——否则任务项分组清理会连根拔起 QA 致重放丢失）。
-    const existingInputs = Array.from(qaHost.querySelectorAll<HTMLElement>('.round-block__input'));
+    const existingInputs = Array.from(details.querySelectorAll<HTMLElement>('.round-block__input'));
     details
       .querySelectorAll(
         '.round-block__section, .round-block__narrate, .round-block__tool, .round-block__tool-batch, .round-block__thought, .round-block__plan-item',
@@ -882,7 +883,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const key = qaDedupKey(el.dataset.inputId, tsKey);
       if (!tsKey || renderedInputTs.has(key)) continue;
       renderedInputTs.add(key);
-      const host = qaOutside ? qaHost : cells.planItemContainerFor(details, events, tsKey).host;
+      const { host } = cells.planItemContainerFor(details, events, tsKey);
       insertPlanItemInOrder(host, el, tsKey);
     }
     for (const qa of interactiveInputs ?? []) {
@@ -893,7 +894,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const item = qaRowView.renderQaItem(qa.text, qa.kind, qa.question, qa.options);
       item.dataset.ts = tsKey;
       if (qa.id) item.dataset.inputId = qa.id;
-      const host = qaOutside ? qaHost : cells.planItemContainerFor(details, events, tsKey).host;
+      const { host } = cells.planItemContainerFor(details, events, tsKey);
       insertPlanItemInOrder(host, item, tsKey);
     }
     // § 过程轨迹（thinking 阶段：聚合计数，去噪——同一相位 N 条 thinking 事件
@@ -2134,19 +2135,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const tsKey = ts ?? new Date().toISOString();
       item.dataset.ts = tsKey;
       if (inputId) item.dataset.inputId = inputId;
-      // 目标容器：中断轮的交互行落折叠块外（判据 = 宿主已定格终态——中断轮无正文，
-      // 过程收起后只剩折叠条，交互内容收进去即整体不可见）。宿主取折叠块的父级：
-      // 重放时 `activeAssistantEl` 已在中断宿主渲染后还原，只有折叠块仍指向该轮。
-      // 运行时 process-flow > 完成态/重放 round-block > 降级消息流（纯问答轮无过程容器）
-      const qaRoot = roundBlockEl?.isConnected ? roundBlockEl.parentElement : activeAssistantEl;
-      const outside = qaRoot?.dataset.terminus
-        ? qaRoot.querySelector<HTMLElement>(':scope > .round-block__qa-outside')
-        : null;
+      // 目标容器：运行时 process-flow > 完成态/重放 round-block 详情区 > 降级消息流（纯问答轮无过程容器）。
+      // 中断轮不走特例——它的可见性由折叠块展开态保证（renderRoundBlock 的 interrupted 判据），
+      // 不靠换容器：容器一旦分叉，「这条数据属于哪」就变成对 DOM 连接态的运行时嗅探。
       const flow = flowEl?.isConnected ? flowEl : null;
       const rbDetails = roundBlockEl?.isConnected
         ? roundBlockEl.querySelector('.round-block__details')
         : null;
-      const root = (outside ?? flow ?? rbDetails) as HTMLElement | null;
+      const root = (flow ?? rbDetails) as HTMLElement | null;
       if (root) {
         const { host } = cells.planItemContainerFor(root, currentEvents, tsKey);
         insertPlanItemInOrder(host, item, tsKey);
