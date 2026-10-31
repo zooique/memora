@@ -2677,6 +2677,55 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(rb.querySelector('.round-block__stats')?.textContent).toContain('耗时');
   });
 
+  it('中断轮重放：交互行落折叠块外置槽（无正文轮只剩折叠条，收进去即整体不可见 · 2026-10-31）', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'r-stop',
+        status: 'interrupted',
+        processEvents: [
+          { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+          {
+            type: 'aborted',
+            seq: 2,
+            ts: '',
+            payload: { reason: 'User cancelled the conversation', stopReason: 'user' },
+          },
+        ],
+        interactiveInputs: [
+          {
+            content: '[ASK_ABORTED] 该提问未被回答（会话在此处中断）',
+            ts: 't1',
+            kind: 'unanswered',
+            question: '① 主角职业？',
+            options: ['电台主持人', '遗物整理师'],
+          },
+          {
+            content: '[ASK_ABORTED] 该提问未被回答（会话在此处中断）',
+            ts: 't2',
+            kind: 'unanswered',
+            question: '② 故事发生的城市？',
+          },
+        ],
+      }),
+    );
+    const host = document.querySelector('.msg.is-interrupted-host') as HTMLElement;
+    expect(host).not.toBeNull();
+    // 过程照常收起（2026-09-17 折叠块定案不变）
+    const rb = host.querySelector('.round-block') as HTMLDetailsElement;
+    expect(rb.open).toBe(false);
+    // 交互行在折叠块外：外置槽承载、明细区一条都没有
+    const slot = host.querySelector(':scope > .round-block__qa-outside') as HTMLElement;
+    expect(slot).not.toBeNull();
+    expect(slot.querySelectorAll('.round-block__input')).toHaveLength(2);
+    expect(slot.textContent).toContain('① 主角职业？');
+    expect(rb.querySelector('.round-block__details .round-block__input')).toBeNull();
+    // 哨兵不上屏：tag「未回答」已承载语义，正文不再重复机器标记
+    expect(slot.textContent).not.toContain('[ASK_ABORTED]');
+    // 终态仍定格（底栏标签消费）
+    expect(host.dataset.terminus).toBe('用户中断');
+  });
+
   it('中断轮重放：error 事件 → §已停止行显示失败原因（LEG-1 缺口②：失败原因重放可见）', () => {
     mountChatView();
     // 真机形态：SSE 停摆看门狗抛 TimeoutError → agent.ts catch → yield error(category:'timeout')
@@ -2867,6 +2916,44 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(assistant.querySelector('.msg-ai-label__role')?.textContent).toBe('白话方案设计师');
     // 运行时平铺容器已收走（不残留 process-flow 呼吸相位行）
     expect(document.querySelector('.process-flow')).toBeNull();
+  });
+
+  it('运行时中断：未回答行同样落折叠块外置槽（实时与重放同构 · 2026-10-31）', () => {
+    mountChatView();
+    dispatch({ type: 'user', text: '问我三个问题', ts: 't0', roundId: 'r2' });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
+    });
+    // 停止时 ask 域逐条透出未回答行（与 postAnswerRows 同源构造）
+    dispatch({
+      type: 'user',
+      text: '[ASK_ABORTED] 该提问未被回答（会话在此处中断）',
+      ts: 't2',
+      roundId: 'r2',
+      kind: 'unanswered',
+      inputId: 'call_q1',
+      question: '① 主角职业？',
+      options: ['A', 'B'],
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'aborted',
+        seq: 2,
+        ts: 't3',
+        payload: { reason: 'User cancelled the conversation', stopReason: 'user' },
+      },
+    });
+    dispatch({ type: 'interrupted', roundId: 'r2' });
+    const assistant = document.querySelector('.msg.assistant') as HTMLElement;
+    expect(assistant.dataset.terminus).toBe('用户中断');
+    const rb = assistant.querySelector('.round-block') as HTMLDetailsElement;
+    expect(rb.open).toBe(false);
+    const slot = assistant.querySelector(':scope > .round-block__qa-outside') as HTMLElement;
+    expect(slot).not.toBeNull();
+    expect(slot.querySelector('.round-block__input')?.textContent).toContain('① 主角职业？');
+    expect(rb.querySelector('.round-block__details .round-block__input')).toBeNull();
   });
 
   it('阶段二任务项级折叠：重放 processEvents 含 plan_item_boundary 时 narrate/tool 按任务项归组（有任务表边切组、无边界退回扁平）', () => {

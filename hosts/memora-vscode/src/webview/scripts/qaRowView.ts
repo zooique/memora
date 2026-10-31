@@ -67,7 +67,10 @@ export function createQaRowView(deps: QaRowViewDeps): QaRowView {
       kind === 'supplement' ? '你补充' : kind === 'question-answer' ? '你答' : '未回答';
     const txt = document.createElement('span');
     txt.className = 'round-block__input-text';
-    txt.textContent = text;
+    // 哨兵不上屏：`[ASK_ABORTED]` 是内核 tool 结果的机器标记，语义已由 tag「未回答」承载；
+    // 正文再带一次 = 工程泄漏 + 与 tag 重复（真机 2026-10-31 截图实证）。
+    // 只剥显示层——落盘 content 与内核常量不动，盘面仍是可机读原文。
+    txt.textContent = kind === 'unanswered' ? text.replace(/^\[ASK_ABORTED\]\s*/, '') : text;
     main.append(tag, txt);
     row.appendChild(main);
     return row;

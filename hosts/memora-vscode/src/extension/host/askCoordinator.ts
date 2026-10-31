@@ -167,6 +167,10 @@ export class AskCoordinator {
       this.postQaRows(pendingQs, 'unanswered', LOOP_CONSTANTS.ASK_UNANSWERED_NOTICE);
     }
     const checkpointDiscarded = await agent.abandonTurn();
+    // 收场消息：ask 期没有流可 abort，`runFlow` 的 aborted 收尾分支永不触发 ⇒ 必须在此补发，
+    // 否则实时态不折叠过程、不写终态、不收敛底栏，与重载后的重放形态分叉
+    //（真机 2026-10-31：停止后屏上保留三个问题块、无「用户中断」标签，重载后才对）。
+    this._deps.post({ type: 'interrupted' });
     if (pendingQs.length > 0) {
       this._deps.post({
         type: 'notice',

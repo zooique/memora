@@ -271,6 +271,9 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
     const notices = h.posted.filter((m) => m.type === 'notice');
     expect(notices).toHaveLength(1);
     expect(String(notices[0]!.message)).toContain('2 个提问未回答');
+    // ⑤ 收场消息：ask 期没有流可 abort，`runFlow` 的 aborted 收尾分支永不触发 ⇒ 必须在此补发，
+    // 否则实时态不折叠过程、不写终态，与重载后的重放形态分叉（真机 2026-10-31 实证）
+    expect(h.posted.filter((m) => m.type === 'interrupted')).toHaveLength(1);
   });
 
   it('T8 停止（纯暂停态，无在途提问）⇒ 只收场，不 post 未回答行', async () => {
@@ -281,6 +284,8 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
 
     expect(h.userRows()).toHaveLength(0);
     expect(h.posted.filter((m) => m.type === 'notice')).toHaveLength(0);
+    // 纯暂停态同样收场：折叠/终态与重放同构，不因「没有提问」而漏发
+    expect(h.posted.filter((m) => m.type === 'interrupted')).toHaveLength(1);
     expect(stub.abandonTurn).toHaveBeenCalledTimes(1);
     expect(checkpointDiscarded).toBe(true);
   });
