@@ -85,14 +85,63 @@
 
 ## 分层刀法（禁止混刀）
 
-1. **第一刀（内核契约）**：`appendUser` 建轮即登记归属 + 收场侧降级为幂等校验。
-   判据 = 新建轮在 `sessionStore.getRoundIds(sessionId)` 里立即可见，且 `refCount === 1`；
-   收场后 `refCount` **不再增加**。变异：把登记移回收场侧 ⇒ 新用例必红。
+1. **第一刀（内核契约 + 打捞判据）**：`appendUser` 建轮即登记归属 + 收场侧降级为幂等校验；
+   **同时**把 `listInterruptedRecent`（内核 `inMemoryRoundStore` 与宿主 `workspaceRoundStore`
+   两处同款实现）的筛选条件从 `refCount === 0 && (pending|error)` 改为 `(pending|error)`。
+   判据 = 新建轮在 `sessionStore.getRoundIds(sessionId)` 内立即可见、`refCount === 1`；
+   收场后 `refCount` 不再增加；**真杀进程后重启仍能打捞到该轮**。
+   变异：登记移回收场侧 ⇒ 可见性用例红；打捞判据改回 `refCount === 0` ⇒ 跨重启 e2e 红。
+
+   ⚠️ **为什么打捞判据必须并入本刀（本 ADR 初稿的分层错误，实测订正）**：初稿把「判据换轴」
+   整体归入第四刀，只点了 GC。实测（2026-10-31）把登记提前后，宿主 `crossRestartRecovery`
+   e2e 立刻 4 红——`listInterruptedRecent` 筛的正是 `refCount === 0`，新轮 refCount 1 就
+   **永远捞不到** ⇒ 跨重启恢复直接失效。**`refCount` 有两个消费者：GC 与打捞**，初稿只数了
+   一个。教训：改一个字段的语义前，先枚举它的全部读取点（`grep refCount` 而非凭记忆）。
 2. **第二刀（中断路径统一）**：停止 / 异常 / 崩溃重启三路统一走 `appendInterrupted`。
    前置依赖第一刀（否则中断轮仍不可见）。
 3. **第三刀（超时保底去相位化）**：`handleAskTimeout` 判据改为「提问是否仍未被消费」。
-4. **第四刀（GC 判据换轴 + 注释同步）**：孤儿判据只服务「无归属残留」，同步
-   `Round.refCount` / `DEFAULT_SWEEP_MIN_AGE_MS` / `listOrphaned` 三处注释口径。
+4. **第四刀（GC 判据确认 + 注释同步）**：`sweepOrphans` / `listOrphaned` 的孤儿判据仍为
+   `refCount === 0`——本刀确认它在 ADR-044 后**依然成立且语义正确**（新轮 refCount 1 不再落入
+   该判据，即「已入会话的 pending 轮不会被超龄静默回收」，与决策 5 一致），并同步
+   `DEFAULT_SWEEP_MIN_AGE_MS` / `listOrphaned` 两处注释口径（「存活保护」的理由从「防删未答轮」
+   变为「防删连归属都没写成的残留」）。
+   ⚠️ **打捞判据已在第一刀处理，勿在此重复**——两者虽都曾读 `refCount`，但一个判「可回收」、
+   一个判「待收场」，职责正交。
+
+## 第一刀落地记录（2026-10-31）
+
+**改动面 6 文件**：`messageHistory`（建轮即 `refCount: 1` + 归属登记；收场两处降级为
+`attachUnownedRound` 兼容面；新增 `registerRoundInSession` 单点）/ `roundStore`（`refCount` 与
+打捞关系注释订正）/ `inMemoryRoundStore` + 宿主 `workspaceRoundStore`（打捞判据去掉
+`refCount === 0`）/ 三份测试（契约翻转 + 两条新用例）。
+
+**关键设计点：`save()` 已是计数的单点，不要再调 `incrementRef`**
+宿主 `workspaceRoundStore.save(round)` 用 `round.refCount` 重建索引条目 ⇒ 构造时写
+`refCount: 1` 一次落盘即可。若沿用「save 后再 incrementRef」，会二次落盘，且让「建轮」与
+「收场」两处并改写同一个计数——那是两个真相源。
+
+**兼容面（不带伤的关键）**：**不能直接删掉收场侧的归属登记**。`refCount === 0` 的存量轮
+（ADR-044 之前落盘、或建轮时登记失败的异常残留）若被删登记，会**永久不可见**——比「被 GC
+回收」更糟（用户连删都删不到）。故收场统一走 `attachUnownedRound`：`refCount 0` 才补登记 +
+补到 1，新数据 no-op。
+
+**判据与变异（全部实测）**：
+
+| 项 | 结果 |
+|---|---|
+| 新建轮在会话 `roundIds` 内 + `refCount 1` + 收场后仍为 1 | 新用例 2 条（含断开「收场不再 +1」与「不重复登记」） |
+| 变异 A：不登记归属（`if (false)`） | 红 4 例，`expected [] to include 'round-…'` |
+| 变异 B：`refCount` 改回 0 | 红 2 例，`expected +0 to be 1` + 重复登记（`length 1 → 2`） |
+| 真杀进程 → 重启 → 打捞 → 收场 | 宿主 `crossRestartRecovery` **9/9 绿** |
+| 内核全量 | 3081 passed / 120 文件 / EXIT=0（+2 = 新用例） |
+| 宿主全量 | 2275 passed / 129 文件 / EXIT=0 |
+
+**契约测试翻转**（旧断言 = 本条要消灭的形态，逐条改成新契约）：`sessionStoreContract`
+三条（「仅写 pending 不登记」「收场登记 refCount 0→1」「缓存丢失补登记」）、`degradation`
+两条（「不登记」）、`crossRestartRecovery` 一条（「崩溃瞬间会话不认它」⇒ 改为「已认它」）。
+
+**ADR 分层订正**：初稿把打捞判据归第四刀，实测证明它必须与建轮登记同批——详见「分层刀法」
+第一刀的 ⚠️ 段。
 
 ## 不并入本 ADR 的独立缺陷
 

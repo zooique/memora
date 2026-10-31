@@ -135,7 +135,7 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
     expect(crash.status).not.toBe(4);
   });
 
-  it('崩溃瞬间的磁盘形态：轮文件在（pending/refCount 0），会话不认它', () => {
+  it('崩溃瞬间的磁盘形态：轮文件在（pending/refCount 1）且会话已认它（ADR-044）', () => {
     const indexPath = join(dataDir, 'rounds', 'index.json');
     expect(existsSync(indexPath)).toBe(true);
     const index = JSON.parse(readFileSync(indexPath, 'utf8')) as {
@@ -145,19 +145,18 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
     }[];
     expect(index).toHaveLength(1);
     expect(index[0]!.status).toBe('pending');
-    expect(index[0]!.refCount).toBe(0);
+    // ADR-044：建轮即入会话 ⇒ 崩溃瞬间 refCount 已是 1（旧契约此处为 0）
+    expect(index[0]!.refCount).toBe(1);
     crashedRoundId = index[0]!.id;
     // 轮文件本体必须在（只有索引没有文件 = 打捞时会拿到 null，属另一种坏）
     expect(existsSync(join(dataDir, 'rounds', `${crashedRoundId}.json`))).toBe(true);
 
-    // 核心事实：崩溃时会话侧还没有这一轮的登记 ⇒「按会话列历史」完全看不见它，
-    // 这正是 listInterruptedRecent 存在的唯一理由（也解释了为什么用户重启后
-    // 会发现「那一轮没了」）
+    // ADR-044：建轮即登记会话 ⇒ 崩溃瞬间会话侧**已经**认它（可见、可删、可续跑）。
+    // 打捞的意义随之从「让它可见」变为「把 pending 收场为 interrupted」。
+    // 旧契约下这里断言的是「会话不认它」——那是本条要消灭的形态，不再作为判据。
     const sessionsPath = join(dataDir, 'sessions.json');
-    if (existsSync(sessionsPath)) {
-      const raw = readFileSync(sessionsPath, 'utf8');
-      expect(raw).not.toContain(crashedRoundId);
-    }
+    expect(existsSync(sessionsPath)).toBe(true);
+    expect(readFileSync(sessionsPath, 'utf8')).toContain(crashedRoundId);
   });
 
   it('重启后按会话日期打捞到该轮，且叙述派生走 shared 单点', () => {

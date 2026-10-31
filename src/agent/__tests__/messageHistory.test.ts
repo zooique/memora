@@ -13,6 +13,7 @@ import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import { generateRoundId } from '@/memory/roundStore.js';
+import type { RoundMessage } from '@/memory/roundStore.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
 import { todayDate } from '@/utils/time.js';
 
@@ -158,7 +159,11 @@ describe('MessageHistory · appendEvidence（裁决证据挂载）', () => {
 
 describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1）', () => {
   /** 构造带 InMemory 双存储的 history（同 appendEvidence 先例） */
-  function createRoundBackedHistory(): { history: MessageHistory; roundStore: InMemoryRoundStore } {
+  function createRoundBackedHistory(): {
+    history: MessageHistory;
+    roundStore: InMemoryRoundStore;
+    sessionStore: InMemorySessionStore;
+  } {
     const roundStore = new InMemoryRoundStore();
     const sessionStore = new InMemorySessionStore();
     const history = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
@@ -168,7 +173,7 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    return { history, roundStore };
+    return { history, roundStore, sessionStore };
   }
 
   it('markPendingAsk 挂起前落盘：多题快照、无选项时省略 options（形状 = RoundPendingAsk）', async () => {
@@ -211,6 +216,52 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
     await history.markPendingAsk(roundId, [{ question: '再来一题' }]);
     await history.appendUser('[超时]', roundId, { interactive: true, kind: 'timeout' });
     expect(roundStore.getById(roundId)?.pendingAsk).toBeUndefined();
+  });
+
+  // ─── ADR-044：存在性由「创建」决定，不由「收场」决定 ───────────────
+  // 变异锚：把 refCount 改回 0、把 appendRoundId 移回收场侧 ⇒ 本用例前三条断言红。
+  it('ADR-044 建轮即入会话：新建 pending 轮立即归属会话且 refCount 1，收场不再加计数', async () => {
+    const { history, roundStore, sessionStore } = createRoundBackedHistory();
+    const roundId = generateRoundId();
+    await history.appendUser('输入', roundId);
+    const sessionId = history.currentSessionName;
+    // 存在性由「创建」决定：建轮那一刻就在会话 roundIds 里，无需等收场
+    expect(sessionStore.getRoundIds(sessionId)).toContain(roundId);
+    const created = roundStore.getById(roundId);
+    expect(created?.status).toBe('pending');
+    expect(created?.refCount).toBe(1);
+    // 收场只改状态：refCount 不再 +1，roundIds 不重复登记
+    await history.appendAssistant('回答完毕', roundId);
+    const settled = roundStore.getById(roundId);
+    expect(settled?.status).toBe('complete');
+    expect(settled?.refCount).toBe(1);
+    expect(sessionStore.getRoundIds(sessionId).filter((id) => id === roundId)).toHaveLength(1);
+  });
+
+  it('ADR-044 兼容面：存量无归属轮（refCount 0）在中断收场时补到 1 并登记进会话', async () => {
+    const { history, roundStore, sessionStore } = createRoundBackedHistory();
+    const roundId = generateRoundId();
+    const ts = new Date().toISOString();
+    // 直接落一个「存量」轮：refCount 0 且不在会话（模拟 ADR-044 之前落盘，或建轮时登记失败）
+    roundStore.save({
+      id: roundId,
+      userMessage: {
+        id: `msg-${roundId}-user`,
+        role: 'user',
+        content: '旧输入',
+        timestamp: ts,
+      } as RoundMessage,
+      status: 'pending',
+      createdAt: ts,
+      refCount: 0,
+    });
+    const sessionId = history.currentSessionName;
+    expect(sessionStore.getRoundIds(sessionId)).not.toContain(roundId);
+    await history.appendInterrupted(roundId);
+    const settled = roundStore.getById(roundId);
+    expect(settled?.status).toBe('interrupted');
+    expect(settled?.refCount).toBe(1);
+    expect(sessionStore.getRoundIds(sessionId)).toContain(roundId);
   });
 
   it('appendUser 题身份单源（ADR-043）：草稿带 id 即用题身份落盘，缺省回退轮内序号', async () => {

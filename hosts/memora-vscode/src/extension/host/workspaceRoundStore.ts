@@ -399,15 +399,19 @@ export class WorkspaceRoundStore implements IRoundStore {
    * @returns 中断残留 Round 数组（倒序）
    */
   listInterruptedRecent(date: string, limit?: number): Round[] {
-    // 崩溃残留轮 = refCount 0 + 未完成（pending/error），按本地日区间过滤；先索引判型避免全量读盘
+    // 崩溃残留轮 = **未收场**（pending/error），按本地日区间过滤；先索引判型避免全量读盘
     //
     // ⚠️ `'error'` 是**预留态**（明示收起，与内核
     // `inMemoryRoundStore.listInterruptedRecent` 同款语义）——全仓零写点，仅与 'pending'
-    // 共用本打捞条件。⚠️ `interrupted` **不入本打捞口**：运行期收场已
-    // 即时标 interrupted 且 refCount 0→1，不再符合 `refCount===0` 的崩溃孤儿条件，属"已收场的
-    // 停 turn"。**勿因 grep 到零写点而删**（它是打捞条件的组成部分，非死代码）。
+    // 共用本打捞条件。⚠️ `interrupted` **不入本打捞口**：它已是「已收场的停 turn」。
+    // **勿因 grep 到零写点而删**（它是打捞条件的组成部分，非死代码）。
+    //
+    // 🔴 ADR-044：判据**不再含 `refCount === 0`**。新建轮建轮即 refCount 1（已入会话），
+    // 若沿用 `refCount === 0` 筛选，崩溃残留轮将**永远捞不到**——跨重启恢复直接失效
+    // （2026-10-31 宿主 e2e 实锤）。打捞筛的是「收场与否」，与「有无会话引用」正交。
+    // 重启后内存中没有进行中的轮，此刻所有 pending 都是上一进程的残留，全量捞安全。
     const candidates = Array.from(this.index.values())
-      .filter((e) => e.refCount === 0 && (e.status === 'pending' || e.status === 'error'))
+      .filter((e) => e.status === 'pending' || e.status === 'error')
       .filter((e) => isWithinLocalDay(e.createdAt, date))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const slice = limit !== undefined ? candidates.slice(0, limit) : candidates;

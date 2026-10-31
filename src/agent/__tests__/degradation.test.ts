@@ -77,9 +77,10 @@ describe('降级策略 · P1 消息持久化', () => {
 
     // 应正常返回，不抛出
     await expect(history.appendUser('测试消息', 'round-1')).resolves.toBeUndefined();
-    // appendUser 只写 pending Round，不登记会话（complete 才 appendRoundId）
+    // ADR-044：建轮**会**尝试登记归属；此处 appendRoundId 抛错，被归属登记单点吞掉，
+    // 故本题真正验证的是「登记失败也不抛出」（原来的「不登记」断言已随契约变更失效）。
     expect(mockRoundStore.save).toHaveBeenCalledOnce();
-    expect(failingStore.appendRoundId).not.toHaveBeenCalled();
+    expect(failingStore.appendRoundId).toHaveBeenCalledOnce();
   });
 
   it('appendAssistant 存储失败时不抛出异常', async () => {
@@ -169,8 +170,8 @@ describe('降级策略 · 日志格式一致性', () => {
     // 触发降级（roundStore 注入使 round-based 路径生效）
     await history.appendUser('触发降级的消息', 'round-1');
 
-    // 验证 round-based 路径生效且不登记会话（complete 才 appendRoundId）
+    // 验证 round-based 路径生效且归属登记尝试被降级吞掉（ADR-044：建轮即登记）
     expect(mockRoundStore.save).toHaveBeenCalledOnce();
-    expect(failingStore.appendRoundId).not.toHaveBeenCalled();
+    expect(failingStore.appendRoundId).toHaveBeenCalledOnce();
   });
 });

@@ -260,9 +260,10 @@ export class MessageHistory {
   /**
    * 追加 user 消息到当前会话（持久化失败不抛出，不阻塞对话）。
    *
-   * Round-based 路径：roundStore 注入且 roundId 存在时，创建 pending Round
-   * 写入 RoundStore（refCount=0，未完成不登记会话）。**仅 complete 才 appendRoundId**——
-   * 崩溃残留的 pending 轮是孤儿（refCount=0），可由 GC 清理，不污染会话视图。
+   * Round-based 路径：roundStore 注入且 roundId 存在时，创建 pending Round 并**立即**归属当前会话
+   * （refCount 1 + appendRoundId，ADR-044「建轮即入会话」）。存在性由**创建**决定、不由**收场**决定——
+   * 未收场的轮同样可见、可删、可续跑；崩溃残留的 pending 轮不再是「GC 可清孤儿」，而是用户可见的
+   * 未完成轮（GC 只回收「连归属都没写成功」的残留，判据仍是 `refCount === 0`）。
    *
    * 交互输入：opts.interactive 为真且 roundId 对应轮已存在（prepare 建 pending 或
    * 暂停已完成轮）时，不再创建/覆盖新轮——按序追加到该轮 interactiveInputs，保问答闭环不分裂。
@@ -348,6 +349,8 @@ export class MessageHistory {
           // 轮不存在（异常兜底）：降级为普通 pending Round（内容不丢失，GC 兜底）
           logger.warn({ roundId }, 'appendUser: 交互输入对应轮缺失，降级为新建 pending Round');
         }
+        // 重复 appendUser 到同一 roundId（异常路径）不重复登记，防 roundIds 堆叠
+        const preexisting = this.roundStore.getById(roundId) ?? this.pendingRounds.get(roundId);
         const pendingRound: Round = {
           id: roundId,
           userMessage: {
@@ -359,18 +362,59 @@ export class MessageHistory {
           } as RoundMessage,
           status: 'pending',
           createdAt: message.timestamp,
-          // 未完成轮不被任何会话引用（complete 时 incrementRef + appendRoundId）
-          refCount: 0,
+          // 🔴 ADR-044 建轮即入会话：存在性由「创建」决定，不由「收场」决定。
+          // 创建它的会话立即持有引用（refCount 1）⇒ 会话视图立即可见、可删、可续跑。
+          // `save()` 会用 round.refCount 重建索引条目（workspaceRoundStore.save），故此处**不再**调
+          // incrementRef——那既二次落盘，又让「建轮」与「收场」两处并改写同一个计数（两个真相源）。
+          refCount: 1,
         };
         this.roundStore.save(pendingRound);
         this.pendingRounds.set(roundId, pendingRound);
-        logger.debug({ roundId }, 'appendUser: Round-based pending Round created');
+        if (!preexisting) this.registerRoundInSession(roundId);
+        logger.debug({ roundId }, 'appendUser: pending Round created（已归属当前会话）');
       } catch (err) {
         logger.warn({ err, roundId }, 'appendUser: Round-based 写入失败');
       }
     }
 
     logger.debug({ role: message.role, session: this.currentSessionName }, 'appendUser');
+  }
+
+  /**
+   * 把轮登记进当前会话的 `roundIds`（**ADR-044 归属登记单点**）。
+   *
+   * 语义：**建轮即登记**，收场不再登记。失败只记日志、不抛出——轮本身已落盘，
+   * 缺归属的后果是会话视图看不见它（退回 ADR-044 之前的行为），不阻塞对话。
+   *
+   * 调用面只有三处，判据各不相同（勿扩张）：
+   * - `appendUser` 建轮后（新轮必登记）；
+   * - `appendAssistant` 兜底分支（轮原本不存在，新建即归属）；
+   * - `attachUnownedRound`（存量 `refCount 0` 轮补登记，见其注释）。
+   */
+  private registerRoundInSession(roundId: string): void {
+    const sessionId = this.currentSessionName;
+    try {
+      this.sessionStore?.appendRoundId(sessionId, roundId);
+      logger.debug({ roundId, sessionId }, 'appendRoundId: 轮已归属当前会话');
+    } catch (err) {
+      logger.warn({ err, roundId, sessionId }, 'appendRoundId: 归属登记失败（轮不可见，不阻断）');
+    }
+  }
+
+  /**
+   * 归属兜底（ADR-044 兼容面）：`refCount === 0` 的轮 = **ADR-044 之前**落盘的存量
+   * （当时建轮写 0、收场才 +1），收场时补到 1 并登记进会话。
+   *
+   * 为什么不能直接删掉收场侧登记：存量半截轮（pending + refCount 0）在升级后仍必须可见，
+   * 删掉登记会让它们**永久不可见**——比「被 GC 回收」更糟（用户连删都删不到）。
+   * 新数据建轮即 refCount 1，本方法是 no-op。
+   *
+   * @returns 需要落盘的 Round（refCount 可能被补到 1）；调用方负责 save。
+   */
+  private attachUnownedRound(round: Round): Round {
+    if (round.refCount > 0) return round;
+    this.registerRoundInSession(round.id);
+    return { ...round, refCount: 1 };
   }
 
   /**
@@ -443,10 +487,10 @@ export class MessageHistory {
   /**
    * 追加 assistant 消息到当前会话（持久化失败不抛出）。
    *
-   * Round-based 路径：完成 pending Round 时**才登记会话引用**——
-   * incrementRef（refCount 0→1）+ appendRoundId。pending 缓存丢失（跨重启）时从
-   * RoundStore 取回补全；Round 不存在（异常兜底）时创建独立 complete Round 并登记，
-   * 保证用户消息不丢失。
+   * Round-based 路径：完成 pending Round 时**只改状态**——归属已在建轮时登记（ADR-044），
+   * 此处不再 incrementRef / appendRoundId；`refCount === 0` 的存量轮由 attachUnownedRound 补登记。
+   * pending 缓存丢失（跨重启）时从 RoundStore 取回补全；Round 不存在（异常兜底）时创建独立
+   * complete Round 并登记，保证用户消息不丢失。
    *
    * 闭环节点续写：同一 roundId 已存在 assistantMessage（跨暂停-续跑：
    * 暂停轮已把 ask_user 提问/中断半截落为 assistantMessage）时，旧段入 assistantLog，
@@ -499,27 +543,12 @@ export class MessageHistory {
       }
 
       if (completed) {
-        this.roundStore.save(completed);
-        // 首次收场才登记会话引用（refCount 0→1 + 列表登记），崩溃残留 pending 保持孤儿可由 GC 清理。
-        // 续写同一闭环节点（assistantLog：跨暂停-续跑多次 appendAssistant 到同一 roundId）不重复登记——
-        // 否则 roundIds 同 id 重复堆叠、refCount 虚增，会话视图出现「一个问答闭环多次登记」
-        // 判据 = isRoundSettled（非自写 'complete'）：已是终态（含 interrupted）就不得再登记一次
-        const isReappend =
-          existing !== null && existing !== undefined && isRoundSettled(existing.status);
-        if (!isReappend) {
-          this.roundStore.incrementRef(roundId);
-          const sessionId = this.currentSessionName;
-          try {
-            this.sessionStore?.appendRoundId(sessionId, roundId);
-          } catch (err) {
-            logger.warn({ err, sessionId, roundId }, 'appendAssistant: appendRoundId 失败');
-          }
-        } else {
-          logger.debug(
-            { roundId, status: existing?.status },
-            'appendAssistant: 闭环节点续写段但不重复登记会话引用',
-          );
-        }
+        // 🔴 ADR-044：归属已在**建轮**时登记（appendUser），收场只改状态——不再登记、不再加计数。
+        // 仅当轮是「存量无归属」（refCount 0，ADR-044 之前落盘）时由 attachUnownedRound 补登记；
+        // 直接删掉收场侧登记会让存量半截轮永久不可见，比「不可回收」更糟。
+        // 由此 `isRoundSettled` 不再承担「防重复登记」职责（收场已不登记），但保留给
+        // appendInterrupted 的「已收场即跳过」幂等判据——两处语义不同，勿合并。
+        this.roundStore.save(this.attachUnownedRound(completed));
         logger.debug({ roundId }, 'appendAssistant: Round-based Round completed');
       } else {
         // Round 不存在（异常兜底）：独立 complete Round，不让用户消息丢失
@@ -543,11 +572,8 @@ export class MessageHistory {
           refCount: 1,
         };
         this.roundStore.save(fallback);
-        try {
-          this.sessionStore!.appendRoundId(this.currentSessionName, roundId);
-        } catch (err) {
-          logger.warn({ err, roundId }, 'appendAssistant: 兜底 appendRoundId 失败');
-        }
+        // 兜底轮是「新建即归属」：走 ADR-044 单点（不再手写 try/catch 与 sessionStore 断言）。
+        this.registerRoundInSession(roundId);
       }
     }
 
@@ -557,10 +583,12 @@ export class MessageHistory {
   /**
    * 中断轮收场：把「未正常完成」的轮升级为正常 stop turn 并入会话。
    *
-   * 语义定案（step-atomic-persistence.md §一·五）：崩溃残留轮（pending/error + refCount=0 + 有已
-   * 落盘 processEvents）= 等同于用户点「停止」的正常 turn——可删、入会话 roundIds、作后续上下文，
-   * **不是**半成品草稿/孤儿。宿主经 `IRoundStore.listInterruptedRecent` 打捞后再调本方法完成
-   * 「升级登记」，恢复为普通 turn 渲染无需特殊草稿卡。
+   * 语义定案（step-atomic-persistence.md §一·五）：崩溃残留轮 = 等同于用户点「停止」的正常 turn
+   * ——可删、入会话 roundIds、作后续上下文，**不是**半成品草稿/孤儿。
+   * ⚠️ ADR-044 起：新建轮**建轮即入会话**，故本方法的「入会话」动作只对**存量无归属轮**
+   * （`refCount === 0`，ADR-044 之前落盘或建轮时登记失败）生效，见 attachUnownedRound。
+   * 宿主经 `IRoundStore.listInterruptedRecent` 打捞后再调本方法完成收场，恢复为普通 turn
+   * 渲染无需特殊草稿卡。
    *
    * **两个调用时机**：
    * 1. 崩溃/断电后重启——宿主 `chatPanel.upgradeInterruptedRounds` 打捞后调用；
@@ -569,9 +597,8 @@ export class MessageHistory {
    *    留下 pending 孤儿轮、须等下次重启才打捞（LLM 4xx 中断的长任务轮即此类）。
    *    依据 = `memory/roundStore.ts` RoundStatus 文档「运行时失败不翻状态机，一律按中断处理」。
    *
-   * 收场约定与 appendAssistant 同一真理源（refCount 0→1 + appendRoundId + status interrupted +
-   * completedAt + isReappend 防重复登记，两处终态判据同为 `isRoundSettled`），Round schema /
-   * 存储格式不变；
+   * 收场约定与 appendAssistant 同一真理源（status interrupted + completedAt + 存量无归属轮补登记
+   * 同走 attachUnownedRound；「已收场即跳过」仍用 `isRoundSettled`），Round schema / 存储格式不变；
    * **有意不直接复用 appendAssistant**，两处差异：
    * - appendAssistant 顶层跳过空内容 → 无文本中断轮无法收场；本方法允许多段「即使无
    *   assistantMessage 总结也按 stop 语义收场」（§一·五验收口径）。
@@ -657,15 +684,10 @@ export class MessageHistory {
         pendingAsk: undefined,
       };
       this.pendingRounds.delete(roundId);
-      this.roundStore.save(completed);
-      // 收场登记：与 appendAssistant 同一约定——refCount 0→1 + 会话 roundIds 追加
-      this.roundStore.incrementRef(roundId);
+      // 🔴 ADR-044：归属已在建轮时登记，收场只改状态。**但存量无归属轮（refCount 0）必须补登记**——
+      // 跨重启打捞的残留轮正是这一类，省掉它会让打捞出来的轮在会话视图里看不见。
+      this.roundStore.save(this.attachUnownedRound(completed));
       const sessionId = this.currentSessionName;
-      try {
-        this.sessionStore?.appendRoundId(sessionId, roundId);
-      } catch (err) {
-        logger.warn({ err, sessionId, roundId }, 'appendInterrupted: appendRoundId 失败');
-      }
       logger.info(
         { roundId, sessionId, hasAssistant: content.length > 0 },
         'appendInterrupted: 崩溃残留轮升级为正常 stop turn',

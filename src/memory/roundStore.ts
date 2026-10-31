@@ -128,8 +128,9 @@ export interface RoundInteractiveInput extends RoundMessage {
  * - **实现落点**：`seed/orchestrator.act()`（中断 aborted / 失败 failed 收口到同一尾处理）
  *   → `history.appendInterrupted` 写 `status:'interrupted'`。
  * - **打捞关系**：`listInterruptedRecent`（内核 + 宿主两端）打捞条件仍为 `pending || error`，
- *   **不含 interrupted**——因为运行期收场已即时标 interrupted 且 refCount 0→1，不再符合
- *   `refCount===0 && pending` 的崩溃孤儿条件；interrupted 轮是"已收场的停 turn"，不属崩溃残留。
+ *   **不含 interrupted**——interrupted 是「已收场的停 turn」，本就不属崩溃残留。
+ *   ⚠️ ADR-044 起新建轮**建轮即 refCount 1 并登记会话**，故「`refCount===0` 才需要打捞」这一
+ *   理由只对存量轮成立；新数据的打捞意义从「让它可见」变为「把 pending 收场为 interrupted」。
  *
  * ⚠️ 关于 `error`（防未来误判）：
  * - **不存在** `pending → error` 的流转——全仓 grep 零写点（生产代码）；运行时失败走
@@ -577,6 +578,10 @@ export interface Round {
 
   /**
    * 引用计数（被多少个会话引用）：分叉 +1、删除会话 −1、**归零即可被 GC 清理**。
+   *
+   * ⚠️ ADR-044 起：**建轮即 1**（创建它的会话立刻引用它），收场不再 +1。
+   * 因此「refCount 0」不再表示「尚未完成」，只表示「没有任何会话持有它」——
+   * 后者仅出现在存量轮（ADR-044 之前落盘）或建轮时登记失败的异常残留上。
    */
   refCount: number;
 
@@ -681,13 +686,15 @@ export interface IRoundStore {
   /**
    * 列出指定日期最近未完成（pending/error）的崩溃残留轮（step 原子落盘）。
    *
-   * 用途：崩溃残留轮升级前的**只读中转**——崩溃发生在 appendAssistant 完成前时，该轮
-   * refCount=0、未登记进会话 roundIds（宿主无法从会话列表发现），但过程已由 step 检查点
-   * 落盘；宿主重启后经此口查回，再调 `MessageHistory.appendInterrupted` 升级为正常 stop turn。
+   * 用途：崩溃残留轮升级前的**只读中转**——崩溃发生在 appendAssistant 完成前时，宿主要靠它
+   * 找回这些轮，再调 `MessageHistory.appendInterrupted` 收场为正常 stop turn。
    *
    * 语义约束（SSOT）：① **只读**——不登记会话、不改写 Round、不改变 appendAssistant 完成语义；
-   * ② **不污染正式会话 roundIds**（升级登记完成前中断轮仍是无引用中间态）；
-   * ③ 不改变生命周期——超龄仍由 GC sweepOrphans 按 refCount=0 孤儿回收，打捞窗口早于存活保护。
+   * ② **不改变可见性判定**——轮是否已入会话由 `refCount` 表达（ADR-044 起建轮即 1），
+   *    本方法不负责「让它可见」；
+   * ③ 不改变生命周期——⚠️ ADR-044 后新建的 pending 轮 `refCount === 1`，**不再落进
+   *    `sweepOrphans` 的 `refCount===0` 判据**，故不会被超龄回收（可见即可由用户删除）。
+   *    该口径与 GC 判据的完整收口见 ADR-044 第四刀，本刀不改判据。
    *
    * @param date - YYYY-MM-DD **本地日期**（与会话 ID 日期同口径）：按本地日区间
    *   `[D 00:00, D+1 00:00)` 换算 UTC 后比较 createdAt，判据单点 = `isWithinLocalDay`
