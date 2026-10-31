@@ -2582,15 +2582,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   // ─── 光标状态机（UI-BLOCK-ICON 批次二，方案-过程块视觉辨识-20261001.md §三定案 B）───
-  // 双属性两条通道（2026-10-19 SSOT 收敛）：运行/挂起态写 data-status、终态写 data-terminus
-  //（异常中断附 data-terminus-detail=原因摘要），单一语义互不覆盖。文案与样式全由 CSS 承载——
+  // 双属性两条通道（2026-10-19 SSOT 收敛）：运行/挂起态写 data-status、终态写 data-terminus，
+  // 单一语义互不覆盖。文案与样式全由 CSS 承载——
   // 挂容器上不受增量 markdown 重渲染影响（🔴 禁真实 span，会被增量渲染吃掉）。载体契约：
   // 运行态挂 .msg-body；终态有正文轮挂 .msg-body、中断轮（半截正文已删）挂宿主块（运行时
   // .msg.assistant / 重放 .is-interrupted-host）；消费方泛匹配属性，不得只查 .msg-body。
 
   // 挂起：软暂停/用户暂停（半截正文静态展示）
 
-  // 终态：异常（载体双位——正文红字+detail / 中断轮宿主→底栏红字标签）
+  // 终态三档均收口底栏（TERMINUS-SSOT-1，2026-10-31：error 分支退役终态写入，
+  // done 携 roundStatus 投影盘面收场；detail 通道零写入退役）
 
   /** 活动正文块运行态写入（实时流路径统一入口：activeAssistantEl 为正文块 SSOT） */
   function setActiveSheetStatus(status: CursorStatus | null): void {
@@ -3513,16 +3514,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       occupancyView.updateOccupancy(msg.occupancy);
     } else if (msg.type === 'error') {
       clearPendingWait(); // 失败即收尾，等待指示器退场
-      // 光标终态「异常中断」：红色 + 原因摘要（::after 的 data-terminus-detail 承载，JS 侧截断）。
-      // 先清运行态（data-status）——终态与运行态分属两条通道，不得并存（2026-10-19 SSOT 收敛）。
-      // 若主路径随后发 done 收尾 → finalize 清态后落「已完成」（诚实：流确实收尾）；
-      // done 不来（宿主异常）→ error 态定格，不留呼吸运行态撒谎。
+      // 先清运行态——终态与运行态两通道不得并存（2026-10-19 SSOT 收敛）。
+      // 终态写入退役（TERMINUS-SSOT-1）：error 是流内事件非终态，终态归属收场消息（done 携
+      // roundStatus 投影盘面）；原因显示面 = 平铺错误行；done 必达（收尾段 catch 无 return）。
       setActiveSheetStatus(null);
-      setTerminus(
-        activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
-        '异常中断',
-        msg.message.length > 80 ? `${msg.message.slice(0, 80)}…` : msg.message,
-      );
       // 错误收尾清理语义：error 属「可恢复流中断」，不清交互行标志——与既有收窄语义一致：
       // 交互行（qa/supp）一旦上屏，后续正文恒分块续接（interactiveRowInserted 门控
       // pausedResume），error 后继续/重试也不例外；清标志会让「交互行已插 → error →
@@ -3543,9 +3538,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // （QA 不留在折叠块与报告之间）
       commitRoundId(msg.roundId);
       finalizeRound(msg.evidence);
-      // 终态定格：静默「已完成」淡勾（finalize 清运行态后落终态，正常完成必须安静）
-      // 终态走独立通道 data-terminus（与运行态 data-status 严格分离，2026-10-19 SSOT 收敛）
-      setTerminus(activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'), '已完成');
+      // 终态定格（TERMINUS-SSOT-1）：标签 = 盘面轮收场投影（roundStatus）——complete=淡勾；
+      // 其余（failed 收场 interrupted / 未收场 pending / 打捞保留 error）=「异常中断」红字。
+      // 缺省（无 store/旧消息回放）按已完成兼容。通道分离纪律见 statusAttrs。
+      setTerminus(
+        activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
+        msg.roundStatus && msg.roundStatus !== 'complete' ? '异常中断' : '已完成',
+      );
       // 回填删除按钮 ts 锚 + 容器 footer 显形收口（commitTurnTs 前置契约已内嵌于
       // settleRoundWithFooter，无需调用方记顺序——时间戳补建读首段 ts）
       settleRoundWithFooter(msg.roundId, activeAssistantEl);

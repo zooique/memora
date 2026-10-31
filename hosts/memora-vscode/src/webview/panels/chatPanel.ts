@@ -3902,9 +3902,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           streamingText: textByRound.get(latestRoundId),
         }
       : undefined;
-    // 过程事件落盘：metrics 末条归入最后 turn + 按 turn roundId 分组
-    // 写入各自 Round（SSOT：归属来自内核 chunk.roundId，一次 chat() 多 turn 各自独立落盘）。
-    // fire-and-forget：失败仅记日志，不阻塞展示（消息持久化降级语义，SSOT 不藏错）
+    // 过程事件落盘：metrics 末条归入最后 turn + 按 turn roundId 分组写入各自 Round
+    //（SSOT：归属来自内核 chunk.roundId）。fire-and-forget：失败仅记日志不阻塞展示（SSOT 不藏错）
+    // 本轮收场信息读盘面（SSOT：与内核共享同一 WorkspaceRoundStore；内核收场写盘在 chat()
+    // 返回前 await 无时序窗口）：evidence 补渲归因；status=roundStatus 投影兼供 metrics 判据。
+    const settledRound = latestRoundId
+      ? this._eventLogRoundStore?.getById(latestRoundId)
+      : undefined;
     if (this._eventLogRoundStore && eventsByRound.size > 0) {
       const metricsNow = this._agent.getMetrics();
       emitEvent('metrics', {
@@ -3924,14 +3928,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 空响应兜底增量：正文是兜底文案而非模型产出——同族诚实信号，展示层合成「不算成功收尾」
         emptyResponseCount: Math.max(
           0,
-          this._agent.getMetrics().llm.emptyResponseCount - metricsBefore.emptyResp,
+          metricsNow.llm.emptyResponseCount - metricsBefore.emptyResp,
         ),
         // 截断救回增量：曾截断但换策略重试救回——正文是真实产出（不影响成功收尾），仅观测留痕
         truncationRecoveryCount: Math.max(
           0,
           this._agent.getMetrics().llm.truncationRecoveryCount - metricsBefore.truncRecover,
         ),
-        success: !controller.signal.aborted && !pausedOnPurpose,
+        // success 口径改盘面投影（TERMINUS-SSOT-1）：盘面 complete 才算成功，旧口径误标 failed 收场；门内 settledRound 必有值。
+        success: settledRound?.status === 'complete',
       });
       // 流尾最终落盘复用同一合并语义（SSOT）——
       // 与 step_boundary 时的增量检查点共用 mergeProcessEvents，靠 seq 幂等不重复、保序；
@@ -3940,9 +3945,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         this.checkpointRound(roundId, roundEvents);
       }
     }
-    // 流期间 view 被折叠/展开重建过 → 新 webview 未投影本流（隐藏期 chunk/process_event
-    // 消息被丢弃），此刻数据已完整落盘，补一次 replaySession 全量回放恢复完整回合——
-    // 否则用户切回时只见历史不见本轮运行结果
+    // 流期间 view 重建过 → 新 webview 未投影本流（隐藏期消息被丢弃），数据已完整落盘 →
+    // 补一次 replaySession 全量回放恢复完整回合
     if (this._viewEpoch !== flowViewEpoch) {
       this.replaySession();
     }
@@ -3950,16 +3954,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 此处推一次快照让 webview 同步——正常/中断 → 空 items（顶部条收起）；
     // 暂停 → 保留当前 plan（paused 分支前面，plan 还没被清，继续供 resume 消费）
     this.postPlanUpdate();
-    // 本轮裁决证据（web_search 归因等）：证据轨不进 processEvents（消费面是裁决），
-    // 运行时投影不带——故在收场时从 Round 读出，随 done/interrupted 下发，webview 在
-    // finalizeRound 重建里补渲。SSOT：chatProvider 与内核共享同一 WorkspaceRoundStore 实例
-    // （extension.ts 单例接线），此处读到的即内核 appendEvidence/appendAssistant 刚落盘的真源。
-    // 无证据轮 / 无 store（未接线）→ undefined，按可选字段缺省，零冗余。
-    const settledEvidence = latestRoundId
-      ? this._eventLogRoundStore?.getById(latestRoundId)?.evidence
-      : undefined;
     if (controller.signal.aborted) {
-      this.post({ type: 'interrupted', roundId: latestRoundId, evidence: settledEvidence });
+      this.post({ type: 'interrupted', roundId: latestRoundId, evidence: settledRound?.evidence });
       this.post({ type: 'status', state: 'done' });
       this.postTurnUpdate(liveTurn);
     } else if (pausedOnPurpose) {
@@ -3967,10 +3963,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'status', state: 'paused' });
       this.postTurnUpdate(liveTurn);
     } else {
-      this.post({ type: 'done', roundId: latestRoundId, evidence: settledEvidence });
+      this.post({
+        type: 'done',
+        roundId: latestRoundId,
+        evidence: settledRound?.evidence,
+        roundStatus: settledRound?.status,
+      });
       this.postTurnUpdate(liveTurn);
-      // 交互提醒（完成）：只在正常收场分支——中断（aborted）与软暂停（paused）不叫，
-      // 前者是用户自己按的停、后者是等用户继续，两者都不是「任务完成」。
+      // 交互提醒（完成）：仅正常收场分支——用户停/软暂停都不是「任务完成」。
       if (latestRoundId) this._attention.onRoundSettled({ roundId: latestRoundId });
       // status:done 延后到摘要完成（或 5s 兜底）——防 done 后立即删除导致孤儿 round-summary
       // 摘要 Promise 的 then/catch 都会 emit roundSummaryGenerated（成功或失败），正常事件很快到达；

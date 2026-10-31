@@ -1012,6 +1012,15 @@ export type ExtensionToWebviewMessage =
        * 在 finalizeRound 全量重建里补渲 web_search 归因三件套。无证据轮（未触发可取证工具）缺省。
        */
       evidence?: RoundView['evidence'];
+      /**
+       * 本轮盘面收场状态投影（TERMINUS-SSOT-1，2026-10-31）：内核 RoundStatus 原样透传
+       * （roundStore 单点定义）——内核收场写盘（appendAssistant/appendInterrupted）在 chat()
+       * 返回前 await，宿主收尾段读到已收场值，无时序窗口。webview 据此落底栏终态标签：
+       * complete=已完成（打勾）；interrupted=内核 failed/中断收场（LLM 流错误与中断并轨，
+       * 见 RoundStatus 注释）；pending/error=未收场/打捞保留档——非 complete 均落「异常中断」。
+       * 缺省（无 store / 无 roundId / 旧消息）按已完成处理（兼容回放不破）。
+       */
+      roundStatus?: 'pending' | 'complete' | 'error' | 'interrupted';
     }
   | { type: 'error'; message: string; category?: 'connection' | 'timeout' | 'unknown' }
   /**

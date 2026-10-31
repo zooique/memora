@@ -99,11 +99,10 @@ describe('stopReasonLabel / decideTerminus', () => {
     );
   });
 
-  it('无 error / aborted = kind null（诚实投影，不猜终态）', () => {
+  it('无 error / aborted = 用户中断（TERMINUS-SSOT-1 改判：interrupted 收场唯一来源 = handleStop 用户停 + 打捞轮「等同用户停」定案；旧 null 不猜终态令底栏无标签，已退役）', () => {
     const v = decideTerminus([toolStart(1, 'a')]);
-    expect(v.kind).toBeNull();
-    // TERM-REASON-1 收口（2026-10-29）：兜底案语义键已放法定口袋 stopReason ⇒ 查得中文；
-    // 旧行为（语义键塞 reason ⇒ 回落原文裸英文 'interrupted'）已修，判据随事实更新。
+    expect(v.kind).toBe('用户中断');
+    // TERM-REASON-1 收口（2026-10-29）沿革保持：兜底案语义键放法定口袋 stopReason ⇒ 查得中文。
     expect(v.reason).toBe('对话已中断');
   });
 });

@@ -9571,7 +9571,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(tokenSrc).toMatch(/--dim-lg:\s*160px/);
   });
 
-  it('🔴 源码级守卫：终态标签收口底栏（三档 :has 规则 + 正文尾已完成压制 + 异常态正文尾自足）', () => {
+  it('🔴 源码级守卫：终态标签收口底栏（三档 :has 规则 + 正文尾已完成/异常中断容器内压制 + 宿主尾兜底）', () => {
     // 形态定案（2026-10-13 终态标签收口底栏，布局返修同日）：已完成/用户中断/异常中断
     // 三态标签挂 round-group 底栏 ::after（time 之后），正文尾回归光标纯度。
     // jsdom 不算计算样式，读生产样式表源码断言（与活动限高守卫同范式）——删任一档规则即红。
@@ -9603,9 +9603,17 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(styleSrc).not.toMatch(
       /(?<!\.round-group )\.msg-body\[data-terminus='已完成'\]::after\s*\{/,
     );
-    // 异常态正文尾自足：状态词前缀 + 原因（流错误案 footer 处 is-pending 隐藏期，正文尾是唯一展示位）
+    // 异常态正文尾兜底：纯状态词（TERMINUS-SSOT-1 改判：detail 摘要通道随 error 分支退役
+    // setTerminus 一并退役——异常原因显示面 = 平铺错误行/停止行 reason；旧「异常中断 · 」attr
+    // 拼接零写入后留空尾巴，content 收纯状态词）
     const errBody = styleSrc.match(/\.msg-body\[data-terminus='异常中断'\]::after\s*\{([^}]*)\}/);
-    expect(errBody?.[1] ?? '').toMatch(/'异常中断 · '/);
+    expect(errBody?.[1] ?? '').toMatch(/content:\s*'异常中断'/);
+    // 异常中断正文尾压制限定容器内（与已完成档同构）：done 恒携 roundStatus 定格终态并
+    // settle footer，容器内由底栏红字标签承接（正文尾双显退役）
+    const errSuppress = styleSrc.match(
+      /\.round-group \.msg-body\[data-terminus='异常中断'\]::after\s*\{([^}]*)\}/,
+    );
+    expect(errSuppress?.[1] ?? '').toMatch(/content:\s*none/);
     // 中断终态「容器外」兜底（宿主块尾）：用户中断/异常中断各一条内容规则 + 容器内压制规则
     // ——无 roundId 的中断轮容器缺席，宿主体尾是唯一展示位（与上文 body 兜底同一相位机制）
     for (const term of ['用户中断', '异常中断']) {
@@ -11517,20 +11525,37 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
     expect(bodyOf().dataset.status).toBe('等待输入');
   });
 
-  it('error 终态：异常中断 + detail 透传（JS 截断 80 字符）；随后 done 收尾覆盖为「已完成」', () => {
+  it('error 流内事件不定格终态（TERMINUS-SSOT-1：终态归属收场消息）；done 缺省按已完成', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '流式中' });
     dispatch({ type: 'error', message: 'HTTP 500: internal error' });
     const body = bodyOf();
-    expect(body.dataset.terminus).toBe('异常中断');
-    // 运行态与终态分属两通道：error 先清 data-status（不并存），终态落 data-terminus
+    // error 是流内事件：正文尾不再写终态（旧「异常中断定格 + detail 摘要」两相位双显已退役），
+    // 运行态仍清（两通道不并存纪律不变）
+    expect(body.dataset.terminus).toBeUndefined();
     expect(body.dataset.status).toBeUndefined();
-    // detail 落独立属性（CSS 取 attr(data-terminus-detail) 红字展示），不污染终态值本身
-    expect(body.dataset.terminusDetail).toBe('HTTP 500: internal error');
-    // done 兜底收尾：finalize 清态后落「已完成」（诚实收尾，不留异常态定格撒谎）
+    // done 兜底收尾：roundStatus 缺省（无 store/旧消息）按已完成——兼容回放不破
     dispatch({ type: 'done' });
     expect(body.dataset.terminus).toBe('已完成');
-    expect(body.dataset.terminusDetail).toBeUndefined();
+  });
+
+  it('done + roundStatus 投影盘面收场（TERMINUS-SSOT-1）：interrupted/pending → 异常中断；complete → 已完成', () => {
+    // 内核 failed 收场案（orchestrator appendInterrupted → 盘面 interrupted）：宿主收尾仍发
+    // done，旧「无脑已完成」抹掉异常事实——现按盘面投影落「异常中断」红字（底栏承接）
+    mountChatView();
+    dispatch({ type: 'chunk', content: '半截回答', roundId: 'r-fail' });
+    dispatch({ type: 'done', roundId: 'r-fail', roundStatus: 'interrupted' });
+    expect(bodyOf().dataset.terminus).toBe('异常中断');
+    // 未收场案（空正文守卫跳过 → 盘面 pending）：同落异常中断
+    mountChatView();
+    dispatch({ type: 'chunk', content: '答', roundId: 'r-pending' });
+    dispatch({ type: 'done', roundId: 'r-pending', roundStatus: 'pending' });
+    expect(bodyOf().dataset.terminus).toBe('异常中断');
+    // 显式 complete（对照）：已完成
+    mountChatView();
+    dispatch({ type: 'chunk', content: '完整回答', roundId: 'r-ok' });
+    dispatch({ type: 'done', roundId: 'r-ok', roundStatus: 'complete' });
+    expect(bodyOf().dataset.terminus).toBe('已完成');
   });
 
   it('重放 live 轮接手运行态（无工具/相位 → 默认「正在回答中」）；重放 interrupted 轮无正文块、无状态撒谎', () => {

@@ -798,7 +798,7 @@ export const chatStyles = `
    * 表格 display:block + 横向滚动防撑爆气泡（pure CSS 降维，不写复杂正表格补全）。 */
   .msg.assistant .msg-body { white-space: normal; }
   /* 光标双通道（UI-BLOCK-ICON 批次二，方案-过程块视觉辨识-20261001.md §三定案 B；2026-10-19 SSOT 收敛）：
-   * 运行/挂起态写 .msg-body[data-status]，终态写 [data-terminus]（异常中断附 data-terminus-detail=原因摘要）
+   * 运行/挂起态写 .msg-body[data-status]，终态写 [data-terminus]
    * ——一属性背两语义 = 双真相源，且终态覆盖运行态令「运行结束」表现为被覆盖而非自然消失；
    * 分属性后各通道单一语义、互不覆盖。文案与样式全部由本 ::after 承载——挂在容器上不受增量
    * markdown 重渲染影响（禁真实 span）。
@@ -834,11 +834,17 @@ export const chatStyles = `
   .round-group .msg-body[data-terminus='已完成']::after {
     content: none;
   }
-  /* 终态「异常中断」：红字状态词 + 原因摘要（detail 由 JS 截断写入）。状态词必须在场——
-   * 流错误案 footer 处于 is-pending 不可见，正文尾是该态唯一展示位，须自足说清「什么结局 + 为什么」 */
+  /* 终态「异常中断」：红字状态词。**容器内**由底栏红字标签承接（TERMINUS-SSOT-1，2026-10-31：
+   * done 恒携 roundStatus 投影盘面收场并 settle footer，正文尾双显退役——旧「流错误案 footer
+   * 隐藏期正文尾自足」两相位设计随 error 分支退役 setTerminus 一并废除）；detail 摘要通道
+   * 零写入随之退役，异常原因显示面 = 平铺错误行/停止行 reason。压制限定容器内：无 roundId
+   * 兑底轮容器缺席，正文尾自足承接（与「已完成」档同机制）。 */
   .msg-body[data-terminus='异常中断']::after {
-    content: '异常中断 · ' attr(data-terminus-detail);
+    content: '异常中断';
     color: var(--danger, #f14c4c);
+  }
+  .round-group .msg-body[data-terminus='异常中断']::after {
+    content: none;
   }
   /* AI 正文段落间距（增加阅读舒适度） */
   .msg.assistant .msg-body p { margin: 0 0 var(--sp-4, 10px); line-height: var(--lh-relaxed); }

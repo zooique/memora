@@ -79,8 +79,9 @@ describe('异常终态轮容器 footer 显形（chatView · settleRoundFooter �
     // 复制源 = narrate 拼接（半截正文已删；变异：删 rawText 覆盖 → dataset 缺失断言红）
     const seg = group!.querySelector<HTMLElement>('.msg.assistant');
     expect(seg?.dataset.rawText).toBe('过程叙述甲');
-    // 停止行仍在（显形收口不丢异常原因呈现）
-    expect(group!.querySelector('[data-interrupted-row]')).not.toBeNull();
+    // 停止行退役（TERMINUS-SSOT-1：events 无 error/aborted 的中断收场归「用户中断」，
+    // 中断信息由底栏标签承载——变异：decideTerminus 兜底案回退 null → 本断言红）
+    expect(group!.querySelector('[data-interrupted-row]')).toBeNull();
   });
 
   it('早相位中断（无 chunk，骨架未入容器）→ settle 建容器建 footer（与重放同构）', () => {
@@ -98,7 +99,8 @@ describe('异常终态轮容器 footer 显形（chatView · settleRoundFooter �
     expect(footer!.querySelector('.msg-time')).not.toBeNull();
     const seg = group!.querySelector<HTMLElement>('.msg.assistant');
     expect(seg?.dataset.rawText).toBe('叙述乙');
-    expect(group!.querySelector('[data-interrupted-row]')).not.toBeNull();
+    // 停止行退役（同上：兜底案归用户中断，底栏标签承载）
+    expect(group!.querySelector('[data-interrupted-row]')).toBeNull();
   });
 
   it('done 正常结束 → footer 照常显形（回归：收口点不破坏正常轮）', () => {
@@ -116,6 +118,34 @@ describe('异常终态轮容器 footer 显形（chatView · settleRoundFooter �
     expect(footer!.querySelector('.msg-time')).not.toBeNull();
     // done 无停止行（正文保留）
     expect(group!.querySelector('[data-interrupted-row]')).toBeNull();
+  });
+
+  it('中断+流内 error → 异常中断标签 + 停止行保留（异常案不退役，与用户案分叉判据）', () => {
+    dispatch({ type: 'user', text: '问', ts: '2026-10-05T15:00:00.000Z' });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'error',
+        seq: 2,
+        ts: '2026-10-05T15:00:01.000Z',
+        payload: { message: 'connection refused', category: 'connection' },
+      },
+    });
+    dispatch({ type: 'interrupted', roundId: 'round-err' });
+    const group = document.querySelector<HTMLElement>('.round-group[data-round-id="round-err"]');
+    expect(group).not.toBeNull();
+    // decideTerminus error 事件 → 宿主块「异常中断」→ 底栏红字标签（:has 消费）
+    const host = group!.querySelector<HTMLElement>('.msg.assistant[data-terminus="异常中断"]');
+    expect(host).not.toBeNull();
+    // 异常案停止行保留（原因句承载；与用户案退役分叉——appendInterruptedRow 判据）
+    expect(group!.querySelector('[data-interrupted-row]')).not.toBeNull();
+    const footer = group!.querySelector<HTMLElement>('.round-group__footer');
+    expect(footer).not.toBeNull();
+    expect(footer!.classList.contains('is-pending')).toBe(false);
   });
 
   it('回归（2026-10-19）：无 roundId 的终态轮载体落在容器外——兜底位点生效前提', () => {

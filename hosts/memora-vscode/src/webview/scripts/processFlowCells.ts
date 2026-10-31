@@ -239,9 +239,9 @@ export function updateToolRowState(
  *
  * 2026-10-13 终态标签收口底栏：先按 decideTerminus 单点分类把终态写宿主 data-terminus
  * （载体契约见 TerminusKind 注释：中断轮无正文块，挂宿主由 round-group 底栏 :has 消费）；
- * 用户主动停止（kind='用户中断'）停止行退役——footer 标签 + 时间同区即可说清，不再铺行；
- * 异常/兜底案保留停止行，只承担「这轮为何停」的原因句，不重复指标。执行指标留在折叠块
- * §执行指标/摘要。去重按 data-terminus 幂等（user 案无停止行，不能按行去重）。
+ * 用户主动停止（kind='用户中断'，含旧兜底案——TERMINUS-SSOT-1 归档）停止行退役——
+ * footer 标签 + 时间同区即可说清，不再铺行；异常案保留停止行，只承担「这轮为何停」的原因句，
+ * 不重复指标。执行指标留在折叠块 §执行指标/摘要。去重按 data-terminus 幂等。
  *
  * @param host  折叠块宿主（RT = 当前 assistant 块；RP = 孤儿折叠宿主 .is-interrupted-host）
  * @param events 本轮 processEvents（含 error/aborted/metrics）
@@ -250,8 +250,8 @@ export function appendInterruptedRow(host: HTMLElement, events: ProcessEvent[]):
   // 已定格去重（重放重复投递防重入）：有态（用户/异常案）或有行（generic 兜底案，不写态）任一即返
   if (host.dataset.terminus || host.querySelector('[data-interrupted-row]')) return;
   const verdict = decideTerminus(events);
-  // 终态走独立通道（宿主块 data-terminus）；kind=null 案不写态（诚实投影）
-  if (verdict.kind) setTerminus(host, verdict.kind);
+  // 终态走独立通道（宿主块 data-terminus）；两档恒写（TERMINUS-SSOT-1：null 案已归用户中断）
+  setTerminus(host, verdict.kind);
   if (verdict.kind === '用户中断') return; // 用户中断：停止行退役，底栏标签承载
   const row = document.createElement('div');
   row.className = 'round-block__interrupted';

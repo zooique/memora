@@ -292,7 +292,7 @@ export function buildMemoryHitsEvidenceResolver(
  *          kind=null      → 事件不足不猜态（诚实投影：无载体不撒状态，停止行照旧兜底）
  */
 export function decideTerminus(events: ProcessEvent[]): {
-  kind: '用户中断' | '异常中断' | null;
+  kind: '用户中断' | '异常中断';
   reason: string;
 } {
   const errorEv = events.find(
@@ -313,11 +313,14 @@ export function decideTerminus(events: ProcessEvent[]): {
       ? { kind: '用户中断', reason: stopReasonLabel(aborted.payload) }
       : { kind: '异常中断', reason: stopReasonLabel(aborted.payload) };
   }
-  // 兜底案语义键放法定口袋（stopReason），字典查得中文「对话已中断」——TERM-REASON-1 收口：
-  // 此前语义键塞 reason（自由文本口袋）⇒ 查表落空回落原文，用户可读面直出裸英文 'interrupted'。
-  // reason 仍填同键：字典若删该条，回落的是可追溯键而非编造文案。
+  // 兜底案归「用户中断」（TERMINUS-SSOT-1，2026-10-31）：interrupted 收场的唯一运行时来源 =
+  // handleStop（chatPanel 唯一 abort() 调用方；paused 案 abandonOnStop 同属用户停）+ 崩溃打捞轮
+  // （messageHistory 定案「崩溃残留轮 = 等同于用户点停止的正常 turn」）——两来源数据面同构，
+  // 展示面跟随同一事实；旧 null 案「不猜终态」令底栏无标签、停止行「对话已中断」孤悬上方
+  // （真机主诉）。旧 null 返回域退役，签名随之收窄。语义键仍放法定口袋 stopReason
+  //（TERM-REASON-1 沿革）：查得中文「对话已中断」，reason 供停止行/复制源兜底。
   return {
-    kind: null,
+    kind: '用户中断',
     reason: stopReasonLabel({ stopReason: 'interrupted', reason: 'interrupted' }),
   };
 }

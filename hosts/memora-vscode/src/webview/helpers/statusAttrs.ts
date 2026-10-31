@@ -2,7 +2,7 @@
  * 正文块运行态 / 终态属性写入（CHATVIEW-SLIM-2 第 5 刀·零状态批，自 chatView.ts 外置）
  *
  * 两条通道严格分离（2026-10-19 SSOT 收敛）：运行/挂起态写 `data-status`、终态写
- * `data-terminus`（异常中断附 `data-terminus-detail`）。文案与样式全由 CSS 承载，
+ * `data-terminus`。文案与样式全由 CSS 承载，
  * 本模块只负责把状态**写到载体属性**上——不持有状态、不查全局 DOM。
  *
  * @module statusAttrs
@@ -21,10 +21,10 @@ export type CursorStatus =
 
 /**
  * 终态三档（data-terminus 输出域，与运行态 data-status 通道严格分离，2026-10-19）。
- * 渲染位点（2026-10-13 收敛 / 2026-10-19 属性分离）：已完成/用户中断 → round-group 底栏
- *（:has 消费）；异常中断 → 正文尾红字（存活窗口与底栏显形时序互斥，见 settleRoundWithFooter
- * 收口名单）；中断轮的异常中断档由 appendInterruptedRow 写宿主载体后同样由底栏承接；
- * 无容器轮（ensureRoundGroup 不建容器）由载体尾自足兜底（见 chatStyles 载体尾规则）。
+ * 渲染位点（TERMINUS-SSOT-1，2026-10-31 收口）：三档终态均由 round-group 底栏 :has 消费
+ * （已完成=淡勾 / 用户中断=中性文字 / 异常中断=红字）；无容器兜底轮由载体尾自足承接
+ * （见 chatStyles 载体尾规则）。终态写入点 = 收场消息（done/interrupted），流内 error
+ * 事件不定格终态。
  */
 export type TerminusKind =
   | '已完成' // 终态：底栏 time 之后淡勾（正文尾不再显示）
@@ -53,17 +53,17 @@ export function setCursorStatus(
  * 表现为「被覆盖」而非「自然消失」。分属性后：运行态由调用方显式清除（finalizeStreaming
  * 清 / error 分支清），终态独立定格，互不污染。
  *
+ * detail 参数已退役（TERMINUS-SSOT-1，2026-10-31）：唯一写入方 error 分支不再定格终态
+ * （终态归属收场消息），异常原因显示面 = 平铺错误行（运行时）+ 停止行 reason（中断轮），
+ * 独立属性通道零消费随之删除。
+ *
  * @param el      终态载体（有正文轮 = .msg-body；中断轮 = 宿主块 .msg.assistant）
  * @param kind    终态三档之一
- * @param detail  异常中断的原因摘要（仅 error 态消费，JS 侧负责截断）
  */
 export function setTerminus(
   el: HTMLElement | null | undefined,
   kind: TerminusKind,
-  detail?: string,
 ): void {
   if (!el || !el.isConnected) return;
   el.dataset.terminus = kind;
-  if (detail) el.dataset.terminusDetail = detail;
-  else delete el.dataset.terminusDetail;
 }
