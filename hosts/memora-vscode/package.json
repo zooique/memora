@@ -2,7 +2,7 @@
   "name": "memora-vscode",
   "displayName": "Memora",
   "description": "%description%",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "zooique",
   "icon": "resources/icon.png",
   "license": "MIT",
