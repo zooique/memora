@@ -509,7 +509,6 @@ describe('Agent · 生命周期 E2E', () => {
 
     // 未 init 直接 chat（遍历 generator 触发错误）
     await expect(async () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       for await (const _chunk of agent!.chat('你好')) {
         // 消费 generator
       }

@@ -271,7 +271,6 @@ async function main(): Promise<void> {
 
   const prevActualInputTokens = afterFirstChat.llm.actualInputTokens;
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   for await (const _chunk of loop.processUserInput('继续测试')) {
     // 消费所有 chunk
   }

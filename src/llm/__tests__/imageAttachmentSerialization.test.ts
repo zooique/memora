@@ -60,7 +60,6 @@ function makeProvider(imageResolver?: ImageResolver): OpenAICompatibleProvider {
 // 形参取**抽象基类**：工厂建房返回的是 LlmProvider，本用例既测直连构造也测经工厂建房两条路径
 async function drain(provider: LlmProvider, messages: Message[]): Promise<void> {
   // 消费完整流，确保请求体已被发出并被 MSW 捕获
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   for await (const _ of provider.chat(messages)) {
     /* noop */
   }

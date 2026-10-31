@@ -62,7 +62,13 @@ export default [
     },
     rules: {
       // TypeScript 严格规则
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      // varsIgnorePattern 与 argsIgnorePattern 配对：underscore 前缀 = 「有意丢弃」的既有约定
+      // （测试里 `for await (const _chunk of ...)` 只消费流不读值即属此类）。只放宽前缀，
+      // 不关规则——未前缀的未使用变量仍报错。
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
       // 防回归：相邻两个 JSDoc 块（后者劫持前者文档）
