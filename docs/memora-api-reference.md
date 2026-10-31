@@ -606,6 +606,7 @@ interface ISessionStore {
 | 方法 | 用途 |
 |------|------|
 | `forkSession(targetSession?)` → `AgentForkResult` | 分叉当前会话（同步，复制完整消息历史到新分支） |
+| `currentRoundId()` → `string` | 当前在途轮次 id（`''` = 无在途轮）。用途：ask 挂起时 `TurnState.waiting` 投影**不含** roundId，宿主停止收场需据此给中断轮做归属（折叠区 / 容器底栏时间与复制 / 分叉锚点）。与内核 loop 层的当前轮 id 同源同值（单点委托，不缓存副本） |
 
 ### 6.2 多项目怎么办（形态定案）
 
