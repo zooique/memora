@@ -282,6 +282,67 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     expect(resumeExecution.mock.calls[0][0]).toBe('中文\n长篇');
   });
 
+  it('ASK-PARTIAL-ANSWER-1：漏答第 1 题只答第 2 题 ⇒ 答案按位落第 2 题，未答位出 unanswered 行', async () => {
+    const h = setupInput();
+    const { answerQuestion, resumeExecution } = mount(h);
+    const qs: PendingQuestionDto[] = [
+      { slot: 'q1', askCallId: 'call-lang', question: '语言？' },
+      { slot: 'q2', askCallId: 'call-len', question: '篇幅？' },
+    ];
+    h.cast._streaming = false;
+    h.cast._abortController = undefined;
+    h.cast._ask.setPending(qs);
+    h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: qs };
+
+    // 等长同序：第 1 题空串（未答）、第 2 题有答案。压缩位次会让「长篇」前移贴到「语言？」头上。
+    await h.cast.handleInput({ kind: 'answer', answers: ['', '长篇'] });
+
+    // 判据①（位次）：内核收到的是**等长**数组，空位不删——压缩即错位
+    expect(answerQuestion).toHaveBeenCalledWith(['', '长篇']);
+    // 判据②（屏面同构）：未答位出「未回答」行而不是「你答：」空行；有答案位仍是 question-answer
+    const rows = h.posted.filter((m) => (m as { type?: string }).type === 'user') as {
+      kind?: string;
+      text?: string;
+      question?: string;
+      inputId?: string;
+    }[];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ kind: 'unanswered', question: '语言？', inputId: 'call-lang' });
+    expect(rows[0].text).toContain('[ASK_ABORTED]');
+    expect(rows[1]).toMatchObject({
+      kind: 'question-answer',
+      text: '长篇',
+      question: '篇幅？',
+      inputId: 'call-len',
+    });
+    // 持续输入注入不含空答案（空行不进 prompt）
+    expect(resumeExecution.mock.calls[0][0]).toBe('长篇');
+  });
+
+  it('ASK-PARTIAL-ANSWER-1：答案数与提问数不匹配 ⇒ 拒收留痕，不回填不续跑', async () => {
+    const h = setupInput();
+    const { answerQuestion, resumeExecution } = mount(h);
+    const qs: PendingQuestionDto[] = [
+      { slot: 'q1', askCallId: 'call-lang', question: '语言？' },
+      { slot: 'q2', askCallId: 'call-len', question: '篇幅？' },
+    ];
+    h.cast._streaming = false;
+    h.cast._abortController = undefined;
+    h.cast._ask.setPending(qs);
+    h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: qs };
+
+    // 2 道题只给 1 条答案：位次已无从推断 ⇒ 宁可拒收，不按位瞎配
+    await h.cast.handleInput({ kind: 'answer', answers: ['中文'] });
+
+    expect(answerQuestion).not.toHaveBeenCalled();
+    expect(resumeExecution).not.toHaveBeenCalled();
+    expect(h.posted).toContainEqual(
+      expect.objectContaining({ type: 'notice', level: 'error' }),
+    );
+    // 拒收不得消费在途提问（用户还能重答）
+    expect(h.cast._ask.pendingQuestions()).toHaveLength(2);
+  });
+
   it('ADR-043 回退面：内核未给题身份 ⇒ 批内仍逐条唯一（不退回「同批共享 ts 互相吃掉」）', async () => {
     const h = setupInput();
     mount(h);

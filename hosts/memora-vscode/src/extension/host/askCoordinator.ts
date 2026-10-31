@@ -190,15 +190,80 @@ export class AskCoordinator {
     text: string,
   ): void {
     const now = new Date().toISOString();
-    questions.forEach((q, i) => {
-      this._deps.post({
-        type: 'user',
-        text,
-        ts: now,
-        kind,
-        inputId: q.askCallId ?? `live-input-${now}-${i}`,
-        ...(q.question ? { question: q.question, options: q.options } : {}),
-      });
+    questions.forEach((q, i) => this.postRow(q, i, now, kind, text));
+  }
+
+  /**
+   * 作答载荷的**题数校验**（ASK-PARTIAL-ANSWER-1 边界判据）。
+   *
+   * 为什么保留这道校验：webview 与宿主虽同源派生提问（`postTurnUpdate` 从本域 `_pending`
+   * 投影 `waiting.questions`），但投影与提交之间存在时间差——边界上再验一次「本批几题」，
+   * 不等长即说明两侧对批次的认知已分叉。此时若继续按位回填，答案必然贴错题；
+   * **宁可拒收留痕**（用户可重答），也不写坏盘面（盘上一错就是终态）。
+   *
+   * 归本域（ask 在途快照的持有者）而非 chatPanel：判据的真相源就是 `_pending` 的长度，
+   * 放到视图层会把「本批几题」变成第二处推导。
+   *
+   * @returns `ok: false` 时带实际数与期望数，供调用方出可读提示（文案不在此拼）
+   */
+  checkAnswerCount(
+    answers: readonly string[],
+  ): { ok: true } | { ok: false; expected: number; got: number } {
+    const expected = this._pending.length;
+    if (expected === 0 || answers.length === expected) return { ok: true };
+    return { ok: false, expected, got: answers.length };
+  }
+
+  /**
+   * 作答上屏（部分作答合法化 · ASK-PARTIAL-ANSWER-1 判据②）：逐题按**有无答案**分派 kind。
+   *
+   * 有答案 → `question-answer`（「你答」行）；空/缺省 → `unanswered`（「未回答」行，与超时/停止
+   * 同文案同判据）。屏上 N 条行与内核 `runResume` 落盘的 N 条逐题同构 —— 少了这条分派，
+   * 「只答第 1 题」会在屏上少一行、盘上多一行，两面漂移。
+   *
+   * 与 `postQaRows` 共用 `postRow` 构造（ts / inputId / question-options 规则不各写一份）——
+   * 本条只决定「每题该是什么 kind + 什么文案」，不碰落盘身份。
+   *
+   * @param answers 与在途提问**等长同序**的答案数组；空串 = 该题未答
+   *   （位次不变量由调用方保证：内核 `answerQuestion` 与 `runResume` 均按位取，压缩位次即错位）
+   */
+  postAnswerRows(answers: readonly (string | undefined)[]): void {
+    const now = new Date().toISOString();
+    // 题目取自本域在途快照（`_pending` 是 `turnState.questions` 的上游真源）：调用方不必
+    // 转递题目，也就不存在「两份题目」的漂移面
+    this._pending.forEach((q, i) => {
+      const answer = answers[i]?.trim() ?? '';
+      this.postRow(
+        q,
+        i,
+        now,
+        answer ? 'question-answer' : 'unanswered',
+        answer || LOOP_CONSTANTS.ASK_UNANSWERED_NOTICE,
+      );
+    });
+  }
+
+  /**
+   * 交互行单条构造（**唯一构造器**）：三个入口（超时 `postQaRows` / 停止 `postQaRows` /
+   * 作答 `postAnswerRows`）共用，字段规则只在此一处。
+   *
+   * inputId = 批内唯一身份：内核题身份 `askCallId` 优先；缺失（旧 dist / 内核未给身份）回退
+   * 批内序号，保留 `live-input-` 前缀便于真机排查看出走了回退（语义见 ADR-043）。
+   */
+  private postRow(
+    q: PendingQuestionDto,
+    i: number,
+    now: string,
+    kind: 'question-answer' | 'timeout' | 'unanswered',
+    text: string,
+  ): void {
+    this._deps.post({
+      type: 'user',
+      text,
+      ts: now,
+      kind,
+      inputId: q.askCallId ?? `live-input-${now}-${i}`,
+      ...(q.question ? { question: q.question, options: q.options } : {}),
     });
   }
 }

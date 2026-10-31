@@ -6116,7 +6116,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
 
-  it('多 ask 聚合（P2）：逐题点选高亮 is-selected，全部答完才可提交 input(kind=answer) 数组', () => {
+  it('多 ask 聚合（P2）：逐题点选高亮 is-selected，部分作答可提交（未答位空串）', () => {
     const { postMessage } = mountChatView();
     dispatch({
       type: 'process_event',
@@ -6134,22 +6134,21 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(box).not.toBeNull();
     // 多问：每题渲染一个 item（两题各自选项组 + 每题输入框），统一形态（单/多问同构）
     expect(box.querySelectorAll('.ask-inline__item')).toHaveLength(2);
-    // 提交按钮初始 disabled（全部答完才可提交）
+    // 提交按钮初始 disabled（0 答不可提交）
     const submit = box.querySelector('.ask-inline__submit') as HTMLButtonElement;
     expect(submit).not.toBeNull();
     expect(submit.disabled).toBe(true);
-    // 只答第 1 题：不提交任何回答、按钮仍 disabled（坑：点一个即提交会跳过其余问题）
+    // 只答第 1 题：**不自动提交**（点选项 ≠ 提交，坑：点一个即提交会跳过其余问题）；
+    // 但已可提交（ASK-PARTIAL-ANSWER-1 判据②：部分作答合法），按钮明示还差几题
     const btns = box.querySelectorAll<HTMLButtonElement>('.ask-inline__opt');
     expect(btns).toHaveLength(4);
     (btns[0] as HTMLButtonElement).click(); // 第一题「中文」
-    // 未全部答完：不提交任何回答（postMessage 在此仅 mount ready 调用）
+    // 点选不触发提交（postMessage 在此仅 mount ready 调用）
     expect(postMessage).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'input', kind: 'answer' }),
     );
-    expect(postMessage).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'input', kind: 'answer' }),
-    );
-    expect(submit.disabled).toBe(true);
+    expect(submit.disabled).toBe(false);
+    expect(submit.textContent).toContain('还有 1 题未答');
     // 已答题按钮高亮 is-selected（可再点改选）
     expect((btns[0] as HTMLElement).classList.contains('is-selected')).toBe(true);
     expect((btns[1] as HTMLElement).classList.contains('is-selected')).toBe(false);
@@ -6202,6 +6201,39 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     const assistants = document.querySelectorAll('.msg.assistant');
     expect(assistants).toHaveLength(1);
     expect(collectAllBodyText(assistants[0])).toBe('提问前的正文已按方案 A 继续');
+  });
+
+  it('ASK-PARTIAL-ANSWER-1：多题只答第 2 题可提交——按位回传、未答位空串（不再拦提交）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
+      questions: [
+        { slot: 'q1', askCallId: 'call-lang', question: '语言？' },
+        { slot: 'q2', askCallId: 'call-len', question: '篇幅？' },
+      ],
+    });
+    const submit = document.querySelector('.ask-inline__submit') as HTMLButtonElement;
+    // 0 答仍不可提交（空提交无意义）
+    expect(submit.disabled).toBe(true);
+    // 只填第 2 题，第 1 题留空
+    const inputs = document.querySelectorAll<HTMLInputElement>('.ask-inline__input');
+    inputs[1].value = '长篇';
+    inputs[1].dispatchEvent(new Event('input'));
+    // 判据②：部分作答合法——至少答一题即可提交，按钮文案明示未答数（不静默丢题）
+    expect(submit.disabled).toBe(false);
+    expect(submit.textContent).toContain('还有 1 题未答');
+    submit.click();
+    // 判据①：按位回传（长度 2、第 1 位空串）。压缩位次会让「长篇」成为唯一元素 ⇒ 贴到第 1 题
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'answer',
+      answers: ['', '长篇'],
+    });
   });
 
   it('骨架期 ask：LLM 未输出正文即提问——点选项后回发 user(kind) 不删骨架，resume 原位续写单块（2026-09-21 回归）', () => {

@@ -2868,8 +2868,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         return;
       }
       case 'answer': {
-        const answers = (msg.answers ?? []).map((a) => a.trim()).filter(Boolean);
-        if (answers.length === 0) return;
+        // 🔴 位次不变量（ASK-PARTIAL-ANSWER-1）：`answers` 与提问**等长同序**，空串 = 该题未答。
+        // 旧写法 `.filter(Boolean)` 把未答位压掉 ⇒ 其后答案整体前移 ⇒ 内核按位回填时
+        // 「答第 2 题的文本」落到第 1 题头上。压缩位次即错位，故此处只 trim、不过滤。
+        const answers = (msg.answers ?? []).map((a) => a.trim());
+        if (answers.length === 0 || answers.every((a) => a === '')) return;
         // 错位（迟到回答：提问已超时自动续跑 / 流异常结束）→ 丢弃，不污染进行中的轮。
         // 留痕（T2 观测）：对用户仍静默，但「答了没反应」的排障线索必须在日志可查
         if (!this.isAskWaiting()) {
@@ -2878,6 +2881,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           console.warn(
             `Memora：错位回答已丢弃（当前相位=${this._turnState.phase}/${reason}，答案数=${answers.length}）`,
           );
+          return;
+        }
+        // 边界校验（判据与真相源均在 ask 域）：题数不等 ⇒ 两侧对批次认知已分叉，
+        // 继续按位回填必错位；拒收留痕，不写坏盘面。
+        const count = this._ask.checkAnswerCount(answers);
+        if (!count.ok) {
+          console.warn(`Memora：答案数与提问数不匹配（${count.got} ≠ ${count.expected}），已拒收`);
+          this.post({
+            type: 'notice',
+            level: 'error',
+            message: `答题数据与当前提问不一致（${count.got} 条答案 / ${count.expected} 道题），请重新作答`,
+          });
           return;
         }
         await this.answerInput(answers);
@@ -3178,37 +3193,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private async answerInput(answers: string[]): Promise<void> {
     this._ask.clearAskTimeout(); // 提问被回答：关闭超时保底
-    // 迟到回答（提问已超时自动续跑/流异常结束 → 相位脱离 waiting）已在 handleInput 路由层丢弃，
-    // 此处相位必为 waiting/ask；提问快照从 state 读、ask 域在途提问整体清空（overwrite 语义）
-    const now = new Date().toISOString();
-    // 回答上屏（折叠块标记；与重放 qa 行同构——question/options 透出，webview 渲染「问→你答」回顾行）；
-    // 持久化由内核 resumeExecution → runResume 按交互归属写入同闭环节点，宿主不双写。
-    // 多问按序逐条透出，question/options 与答案同序配对
-    const state = this._turnState;
-    const pendingQs =
-      state.phase === 'waiting' && state.reason === 'ask' ? (state.questions ?? []) : [];
+    // 作答上屏外置到 ask 域单点（`postAnswerRows`）：逐题按有无答案分派 question-answer /
+    // unanswered，屏上 N 条与内核 `runResume` 逐题落盘同构（题目该域自取；迟到回答已在路由层丢弃）。
+    this._ask.postAnswerRows(answers);
+    // ⚠️ 顺序不可调换：上屏要读 `_pending`（题目来自该域），清空必须在**其后**——
+    // 先清后 post 会让每题都拿不到 question/options，屏上只剩一行干瘪的「你答」。
     this._ask.clearPending();
-    for (let i = 0; i < answers.length; i++) {
-      const pendingQ = pendingQs[i];
-      this.post({
-        type: 'user',
-        text: answers[i],
-        ts: now, // 批内同刻（一次提交）——归位键；身份由 inputId 承载，去重不看 ts
-        kind: 'question-answer',
-        // ADR-043：批内身份真源 = 内核题身份（askCallId = ask_user 工具调用 id，随 assistant
-        // 消息落盘 ⇒ 跨重启恒定 ⇒ 运行时行与盘面/重放行可配对）。同批共享 ms 级 ts，
-        // 去重按 ts 会丢第 2..N 条，故身份必须显式承载。
-        // 回退分支仅用于「内核未给身份」（旧 dist / 答案数多于提问数）⇒ 退为批内序号，
-        // 只保同批不互相吃掉、无跨面配对语义；保留 `live-input-` 前缀 = 真机排查时一眼可见走了回退。
-        inputId: pendingQ?.askCallId ?? `live-input-${now}-${i}`,
-        ...(pendingQ?.question ? { question: pendingQ.question, options: pendingQ.options } : {}),
-      });
-    }
     await this.runFlow((signal) => {
-      // ask_user 工具：答案先行回填为 tool 结果（幂等：无在途提问时 no-op 返回 false）。
-      // 数组按序一对一回填；join 全文作为持续输入注入（多答合并为一条会话语义）
+      // 按位一对一：空串位由内核归一为「该题未答」（`[ASK_ABORTED]` 占位 + 盘上 unanswered 行），
+      // 故不得压缩位次；join 全文作持续输入注入（空答案不参与，避免空行噪声）。
+      // 持久化由 `resumeExecution → runResume` 按交互归属写入同闭环节点，宿主不双写。
       this._agent!.answerQuestion(answers);
-      return this._agent!.resumeExecution(answers.join('\n'), signal, 'question-answer');
+      return this._agent!.resumeExecution(
+        answers.filter((a) => a.trim()).join('\n'),
+        signal,
+        'question-answer',
+      );
     });
   }
 

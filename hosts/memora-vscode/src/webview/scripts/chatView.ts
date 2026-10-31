@@ -2359,14 +2359,25 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     document.querySelector('.ask-inline')?.remove();
     const box = document.createElement('div');
     box.className = 'ask-inline';
-    // 单一形态：单问 = 只有一个问题的多问，统一「逐题点选/输入 → 全部答完才提交」。
-    // 选项点击/输入/提交逻辑单一同源（SSOT），不为单/多问分写两套。answers[i] 逐题累计，
-    // submitBtn 全部答完才 enabled；single 时按钮文案
-    // 用「提交回答」，multi 用「提交全部回答」（仅文案差异，逻辑单一同源）。
+    // 单一形态：单问 = 只有一个问题的多问，统一「逐题点选/输入 → 一次性提交」。
+    // 选项点击/输入/提交逻辑单一同源（SSOT），不为单/多问分写两套。answers[i] 逐题累计。
+    // **部分作答合法（ASK-PARTIAL-ANSWER-1 判据②）**：至少答一题即可提交，未答项不拦提交、
+    // 在按钮上明示「将记为未回答」；提交时按提问顺序**原样**回传（未答位空串），宿主与内核
+    // 均按位消费 ⇒ 位次即配对真源，压缩位次即错位。
     const answers: (string | undefined)[] = questions.map(() => undefined);
     let submitBtn: HTMLButtonElement | null = null;
     const syncSubmit = (): void => {
-      if (submitBtn) submitBtn.disabled = !answers.every((a) => a && a.trim().length > 0);
+      if (!submitBtn) return;
+      const answered = answers.filter((a) => a && a.trim().length > 0).length;
+      const missing = questions.length - answered;
+      submitBtn.disabled = answered === 0;
+      // 只在「已答一部分」时改文案：0 答时按钮 disabled，此时喊「还有 N 题未答」是空指针式提示
+      submitBtn.textContent =
+        questions.length > 1 && answered > 0 && missing > 0
+          ? `提交（还有 ${missing} 题未答，将记为未回答）`
+          : questions.length > 1
+            ? '提交全部回答'
+            : '提交回答';
     };
     // 强制单选：任一题带 options 且 allowCustom=false → 全部隐藏输入框（仅限点选，语义对齐内核 ask_user）
     const forceChoose = questions.some(
@@ -2422,19 +2433,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       item.appendChild(input);
       box.appendChild(item);
     }
-    // 底部一次性提交按钮（single「提交回答」/ multi「提交全部回答」，全部答完才 enabled）
+    // 底部一次性提交按钮（initial 文案由 syncSubmit 统一决定，此处只建节点）
     submitBtn = document.createElement('button');
     submitBtn.className = 'ask-inline__submit';
     submitBtn.textContent = questions.length > 1 ? '提交全部回答' : '提交回答';
     submitBtn.disabled = true;
     submitBtn.addEventListener('click', () => {
-      // 全部题目答案按序一对一回填（filter 保序：跳过未答题，与按序对话保持对应）
-      const filled = answers.reduce<string[]>((acc, a) => {
-        const t = (a ?? '').trim();
-        if (t) acc.push(t);
-        return acc;
-      }, []);
-      commitAskAnswers(filled);
+      // 🔴 位次不变量：按提问顺序原样提交，未答位传空串。旧实现 `reduce` 压掉空位 ⇒
+      // 其后答案整体前移 ⇒ 宿主按位回填时「答第 2 题的文本」落到第 1 题头上（错位根因）。
+      // 「未答」不是错误态：内核把空串归一为 `[ASK_ABORTED]` 占位，并在盘上落 unanswered 行。
+      commitAskAnswers(answers.map((a) => (a ?? '').trim()));
       box.remove();
       scrollToBottom(messages);
     });
