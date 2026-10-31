@@ -21,6 +21,8 @@ import {
   dispatchTurn,
   mountChatView,
 } from './helpers/chatViewTestEnv.js';
+// 时间格式化断言与渲染同源（底栏时间 = fmtTime(本轮起点 ts)）
+import { fmtTime } from '../helpers/fmtTime.js';
 // 断言与真源同源：上限值消费 shared/constants.ts（非字面量复制）
 import {
   MAX_ASK_ANSWER_CHARS,
@@ -2922,6 +2924,79 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(g1).not.toBeNull();
     expect(g1?.querySelector('.round-block__thought')?.textContent).toContain('想一想');
     expect(g1?.querySelector('.round-block__input')?.textContent).toContain('问-r1');
+  });
+
+  it('空过程事件的中断轮：仍建容器与底栏，时间取本轮 createdAt（REPLAY-EMPTY-INTERRUPT-1）', () => {
+    // 场景：发完消息立刻点停止——内核 aborted chunk 不带 roundId，宿主收不到任何带轮身份的
+    // 过程事件，落盘 Round 的 processEvents 为空（崩溃打捞轮同形：pending→interrupted 无过程数据）。
+    // 中断轮判据因此只能是 status，不能是事件条数：旧 `if (events.length > 0)` 把这类轮闸在
+    // 渲染分支外 ⇒ 无容器 / 无底栏 / 无宿主块，未回答行落到消息流尾（容器外、底栏之下），
+    // 整轮不可删 / 不可复制 / 不可分叉，且该行读起来像下一轮的内容。
+    mountChatView();
+    const createdAt = '2026-03-05T02:00:00.000Z';
+    dispatchReplay(
+      makeRound({
+        id: 'r-empty',
+        user: { content: '发完就停', ts: createdAt },
+        status: 'interrupted',
+        processEvents: [],
+        interactiveInputs: [
+          {
+            content: '[ASK_ABORTED] 该提问未被回答（会话在此处中断）',
+            ts: '2026-03-05T02:00:02.000Z',
+            kind: 'unanswered',
+            question: '问-empty',
+            options: ['甲', '乙'],
+          },
+        ],
+      }),
+    );
+    const group = document.querySelector<HTMLElement>('.round-group');
+    expect(group).not.toBeNull();
+    expect(document.querySelectorAll('.round-group__footer')).toHaveLength(1);
+    const host = group?.querySelector<HTMLElement>('.msg.is-interrupted-host');
+    expect(host).not.toBeNull();
+    // 时间锚 = 本轮 createdAt：旧实现取 new Date() ⇒ 底栏显示「现在」，把这一轮真实发生时刻抹掉
+    expect(host?.dataset.ts).toBe(createdAt);
+    expect(group?.querySelector('.msg-time')?.textContent).toBe(fmtTime(createdAt));
+    // 未回答行归位本轮容器且在 footer 之前（容器是本轮内容的边界，footer 恒居底部）
+    const row = group?.querySelector<HTMLElement>('.round-block__input');
+    expect(row?.textContent).toContain('问-empty');
+    expect(row?.parentElement).toBe(group);
+    expect(group?.lastElementChild?.classList.contains('round-group__footer')).toBe(true);
+    // 底栏动作可用（锚 = roundId）——这正是「不留无底栏、不可删的轮」的收益
+    expect(group?.querySelector<HTMLButtonElement>('.msg-delete-icon')?.disabled).toBe(false);
+  });
+
+  it('空过程事件的中断轮不继承上一轮身份（currentEvents / currentRoundMeta 按轮复位）', () => {
+    // 同一批里前一轮有 meta（角色 + 模型），后一轮无任何事件：后一轮身份标签必须是缺省「AI」，
+    // 不得沿用上一轮的角色名 / 模型名（跨轮共享变量未复位 = 张冠李戴）。
+    mountChatView();
+    dispatchReplayMany([
+      makeRound({
+        id: 'r-with-meta',
+        user: { content: '提问一', ts: '2026-03-05T01:00:00.000Z' },
+        assistantMessage: { content: '回答一', ts: '2026-03-05T01:00:09.000Z' },
+        processEvents: [
+          {
+            type: 'meta',
+            seq: 1,
+            ts: '2026-03-05T01:00:01.000Z',
+            payload: { role: '研究员', llm: 'gpt-5' },
+          },
+        ],
+      }),
+      makeRound({
+        id: 'r-empty-2',
+        user: { content: '发完就停', ts: '2026-03-05T02:00:00.000Z' },
+        status: 'interrupted',
+        processEvents: [],
+      }),
+    ]);
+    const g2 = document.querySelector<HTMLElement>('.round-group[data-round-id="r-empty-2"]');
+    expect(g2).not.toBeNull();
+    expect(g2?.querySelector('.msg-ai-label__role')?.textContent).toBe('AI');
+    expect(g2?.querySelector('.msg-ai-label__model')).toBeNull();
   });
 
   it('运行时中断（RT 形态定案 2026-09-19 · 收口修订 2026-10-13）：掐半截正文 + 过程折叠 + 底栏「用户中断」标签（停止行退役）', () => {

@@ -69,6 +69,8 @@ import {
 } from '../helpers/processEventText.js';
 // 会话大纲导航条（HOST-NAV-1）：逻辑收口于 helpers/roundNav.ts（SSOT），本文件只接线
 import { createRoundNav } from '../helpers/roundNav.js';
+// 重放时间线交织（正文段 × 交互行按时间升序）：纯函数外置，本文件只消费
+import { buildReplayTimeline } from '../helpers/replayTimeline.js';
 // 骨架（会话控件）语义派生纯函数层：矩阵与状态容器在 turnUiState.ts，
 // 本文件只做「取数 → 派生 → 施加」；容器写入只走 skeletonFromTurnState（真源 = turn_update.state）
 import {
@@ -1282,11 +1284,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param evidence 本轮裁决证据（重放透传）：中断轮同样可能有记忆命中/搜索证据，
    *   不传则该轮重放时明细与归因一并丢失（与 done 轮同一缺口，一并补齐）
    */
-  function renderInterruptedRound(roundId?: string, evidence?: RoundView['evidence']): void {
+  function renderInterruptedRound(
+    roundId?: string,
+    evidence?: RoundView['evidence'],
+    fallbackTs?: string,
+  ): void {
     const host = document.createElement('div');
     host.className = 'msg assistant is-interrupted-host';
-    // 真实闭环起点（首条带 ts 的过程事件）；空事件/空 ts 兜底当前时间（旧行为，删除仍禁用）
-    const startTs = currentEvents.find((e) => e.ts)?.ts ?? new Date().toISOString();
+    // 真实闭环起点 = 首条带 ts 的过程事件；空事件轮（发完即停 / 崩溃打捞）取本轮 createdAt——
+    // 底栏那个时间是用户对该轮唯一的时序线索，退到「现在」等于把真实发生时刻抹掉
+    const startTs = currentEvents.find((e) => e.ts)?.ts ?? fallbackTs ?? new Date().toISOString();
     buildAssistantShell(host, startTs, roundId);
     host.querySelector('.msg-body')?.remove();
     if (roundId) host.dataset.roundId = roundId;
@@ -2148,12 +2155,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 不跨重建存活，避免孤儿标记挂消息流）；否则条目散落「用户提问 ↔ 最终回答」之间且无搬运时机
         if (roundId) item.dataset.roundId = roundId;
         messages.appendChild(item);
-        // 骨架期暂存：此刻 round-block/flowEl 尚未建立（meta 首 token 未到），
-        // 条目只会落消息流尾——「补充选项卡贴输入框下方」的视觉错位即由此来。暂存引用，
-        // 待 meta 骨架建立时由 flushSkeletonPendingItems 迁移进过程容器（重放路径容器已建，
-        // 序号入 flow 不暂存，故重启重放正常）。DOM 已落消息流保「用户输入恒可见」，
-        // 暂存仅作迁移引用，不重复持有 DOM。
-        if (!flowEl?.isConnected && !roundBlockEl?.isConnected) {
+        // 本轮容器已在（空事件中断轮：无过程折叠块，但有容器与底栏）⇒ 归位容器内、footer 之前。
+        // 容器是本轮内容的边界：行落在容器外、底栏之下会被读成下一轮的内容。只在「同 roundId
+        // 容器已在」时归位——绝不在此新建容器（ensureRoundGroup 的新建分支会连带长出空底栏）。
+        // 归位即终位，不再进骨架期迁移队列（否则后续轮的容器会把它当「暂存条目」搬走）。
+        if (roundId && roundGroupEl?.isConnected && roundGroupEl.dataset.roundId === roundId) {
+          ensureRoundGroup(roundId, item);
+        } else if (!flowEl?.isConnected && !roundBlockEl?.isConnected) {
+          // 骨架期暂存：此刻 round-block/flowEl 尚未建立（meta 首 token 未到），
+          // 条目只会落消息流尾——「补充选项卡贴输入框下方」的视觉错位即由此来。暂存引用，
+          // 待 meta 骨架建立时由 flushSkeletonPendingItems 迁移进过程容器（重放路径容器已建，
+          // 序号入 flow 不暂存，故重启重放正常）。DOM 已落消息流保「用户输入恒可见」，
+          // 暂存仅作迁移引用，不重复持有 DOM。
           skeletonPendingItems.push(item);
         }
       }
@@ -2911,50 +2924,33 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
       resetForNewClosedLoop();
     }
-    // 2) 过程事件整批：meta 提取 + 中断/普通分流
+    // 2) 过程事件整批：按轮复位本轮状态 + 中断/普通分流
+    //    中断判据 = status，**不是事件条数**：发完即停的轮，内核 aborted chunk 不带 roundId，
+    //    宿主收不到任何带轮身份的过程事件（崩溃打捞轮同形：pending→interrupted 无过程数据），
+    //    落盘 processEvents 为空。若以事件数为门槛，这类轮建不出容器与底栏（不可删 / 不可复制 /
+    //    不可分叉），未回答行还会落到消息流尾、读起来像下一轮的内容。
     const events = r.processEvents ?? [];
-    if (events.length > 0) {
+    // 每轮状态在轮边界复位：currentEvents / currentRoundMeta 是跨轮共享的渲染状态，空轮若沿用
+    // 上一轮的值，就会拿上一轮的过程事件与角色/模型身份渲染本轮（张冠李戴）。
+    currentEvents = [...events];
+    const metaEv = events.find(
+      (e): e is Extract<ProcessEvent, { type: 'meta' }> => e.type === 'meta',
+    );
+    currentRoundMeta = metaEv ? { role: metaEv.payload.role, llm: metaEv.payload.llm } : undefined;
+    if (events.length > 0 || r.status === 'interrupted') {
       clearPendingWait(); // 重放为历史渲染，等待指示器不适用
-      currentEvents = [...events];
-      const metaEv = events.find(
-        (e): e is Extract<ProcessEvent, { type: 'meta' }> => e.type === 'meta',
-      );
-      if (metaEv) {
-        currentRoundMeta = { role: metaEv.payload.role, llm: metaEv.payload.llm };
-      }
       if (r.status === 'interrupted') {
         // 单轮自洽：重放由 renderReplayFromRounds 先 resetChatView 再逐轮重建，批内不存在
         // 「上一轮残留」——此处**不得**做跨轮清理（历史事故 INTERRUPT-MULTI-1：删上一轮
         // 中断轮的 .round-group 连其过程块 / 问答行 / 底栏一并抹除，多中断轮会话只剩最后一个）
-        renderInterruptedRound(r.id, r.evidence);
+        renderInterruptedRound(r.id, r.evidence, r.createdAt);
       } else {
         // 普通轮：任务过程折叠区一次性渲染（finalize=true，收起态）；证据随轮透传（web_search 行补归因）
         renderRoundBlock(currentEvents, true, undefined, r.evidence);
       }
     }
     // 3) 中间段：前序 assistant 段 + 交互输入按时间升序交织（还原打断点 / 提问点时序）
-    const middle: {
-      kind: 'seg' | 'question-answer' | 'supplement' | 'timeout' | 'unanswered';
-      content: string;
-      ts?: string;
-      question?: string;
-      options?: string[];
-      id?: string;
-    }[] = [
-      ...(r.assistantLog ?? []).map((m) => ({
-        kind: 'seg' as const,
-        content: m.content,
-        ts: m.timestamp,
-      })),
-      ...(r.interactiveInputs ?? []).map((i) => ({
-        kind: i.kind,
-        content: i.content,
-        ts: i.timestamp,
-        question: i.question,
-        options: i.options,
-        id: i.id,
-      })),
-    ].sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
+    const middle = buildReplayTimeline(r);
     for (const item of middle) {
       if (!item.content) continue;
       if (item.kind === 'seg') {
