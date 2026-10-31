@@ -1,6 +1,6 @@
 # ADR-044 · 轮的存在性与收场解耦（建轮即入会话）
 
-> **状态**：📝 提案（未实施）**日期**：2026-10-31
+> **状态**：🚧 实施中（第一~三刀已落地，第四刀待做）**日期**：2026-10-31
 > **播种批次**：ask 批次链路真机验收（0.5.0 轮）**来源**：真机停滞轮 + 三条同源缺陷复盘
 
 ## 背景
@@ -44,8 +44,8 @@
 3. **中断 = 主动收场**：用户停止、流异常、崩溃重启三条路径**统一走 `appendInterrupted`**。
    停止不是「不处理」，是「明确地以中断收场」。
 4. **超时保底去相位化**：`handleAskTimeout` 的判据从「相位是否仍 waiting(ask)」
-   改为「该提问是否仍未被消费」（以 `pendingAsk` 快照是否存在为事实判据），
-   使「停止后超时」也能收场。
+   改为「该提问是否仍未被消费」（落点 = 宿主在途快照 `_pending`，相位本就由它派生）；
+   「还能不能续跑」另判内核是否仍持暂停检查点——不可续跑时以中断收场，不「假续跑」。
 5. **GC 孤儿判据换轴**：已入会话的 pending 轮**不再视为孤儿**（它可见、可删、可续跑）；
    孤儿只保留给「建轮时连归属都没写成功」的极端残留，判据仍是
    `refCount === 0`（此时确实无人引用）。24h 存活保护保留不变。
@@ -97,9 +97,12 @@
    e2e 立刻 4 红——`listInterruptedRecent` 筛的正是 `refCount === 0`，新轮 refCount 1 就
    **永远捞不到** ⇒ 跨重启恢复直接失效。**`refCount` 有两个消费者：GC 与打捞**，初稿只数了
    一个。教训：改一个字段的语义前，先枚举它的全部读取点（`grep refCount` 而非凭记忆）。
-2. **第二刀（中断路径统一）**：停止 / 异常 / 崩溃重启三路统一走 `appendInterrupted`。
-   前置依赖第一刀（否则中断轮仍不可见）。
-3. **第三刀（超时保底去相位化）**：`handleAskTimeout` 判据改为「提问是否仍未被消费」。
+2. **第二刀（中断路径统一）✅ 已落地**：停止 / 异常 / 崩溃重启三路统一走 `appendInterrupted`。
+   前置依赖第一刀（否则中断轮仍不可见）。落地载体 = 内核公开 `Agent.abandonTurn()`：
+   `cancelAsk` + `appendInterrupted(当前轮)` + `discardCurrentCheckpoint`，宿主停止路径消费。
+3. **第三刀（超时保底去相位化）✅ 已落地**：`handleAskTimeout` 判据改为「提问是否仍未被消费」，
+   并删掉 `isAskWaiting` / `getTurnState` 两个反向依赖；不可续跑 ⇒ 走同一 `abandonTurn` 收场。
+   ⚠️ **原始归因（「被 isAskWaiting() 守卫早退」）已被实测证伪**，详见下文落地记录的「先说被推翻的归因」。
 4. **第四刀（GC 判据确认 + 注释同步）**：`sweepOrphans` / `listOrphaned` 的孤儿判据仍为
    `refCount === 0`——本刀确认它在 ADR-044 后**依然成立且语义正确**（新轮 refCount 1 不再落入
    该判据，即「已入会话的 pending 轮不会被超龄静默回收」，与决策 5 一致），并同步
@@ -142,6 +145,77 @@
 
 **ADR 分层订正**：初稿把打捞判据归第四刀，实测证明它必须与建轮登记同批——详见「分层刀法」
 第一刀的 ⚠️ 段。
+
+## 第二 + 三刀落地记录（2026-10-31 · 一次落地，共用一条收场原语）
+
+### 先说被实测推翻的归因（原始报告 → 事实）
+
+真机复盘报告把「停止后超时兜不住」归因为 **`handleAskTimeout` 首行 `isAskWaiting()` 守卫静默早退**。
+**该归因不成立**（代码 + 盘面双向取证）：
+
+- `deriveTurnState` 的判据①是「`questions` 非空即 ask」，**压过 paused / streaming** ⇒
+  只要宿主在途快照 `_pending` 非空，相位恒为 `waiting/ask`，`isAskWaiting()` 恒为真。
+  停止只弃检查点、并不清 `_pending`，故**那个守卫从未触发**。
+- 盘面佐证（真机 `E:\ceshi\.memora\rounds`）：停滞轮 `status: pending`、`pendingAsk` 三条俱在、
+  **无 `assistantMessage`**——与「守卫早退」无关，是轮根本没进收场。
+
+### 真实机制（三重，逐条回源）
+
+1. **ask 挂起轮没有收场调用点**：`handleAskUser` 只 yield `paused`，没有正文 ⇒ 回到
+   `SeedOrchestrator.act()` 时 `appendAssistant(content)` 命中空正文守卫
+   `if (!content.trim()) return` ⇒ 轮不落 assistant、不转状态，**停在 pending 等 `resume`**。
+2. **停止只弃暂停上下文**：`handleStop` 的 paused 分支原为 `discardCurrentCheckpoint()`
+   （清 checkpoint + 排队插话 + 状态机 resetToRunning），**不动轮、不动宿主 `_pending`、不清 timer**。
+3. **超时保底的唯一收场通道会静默空转**：`Agent.resumeExecution` 首部
+   `if (resumeStatus !== 'paused') return;` —— 检查点已弃时它既不续跑也不报错，
+   于是超时打出的「未回答」行**只上屏、不落盘**，轮仍 pending。
+
+### 比原报告更重的一条（本刀实测新发现）
+
+停止后 `_pending` 未清 ⇒ `_turnState` 恒 `waiting/ask` ⇒ `handleInput` 把用户**下一句话**
+路由进 `answerInput` ⇒ `answerQuestion` 在进程内消费掉提问 + `resumeExecution` 静默 return
+⇒ **用户输入凭空蒸发（既不进消息史、也不落盘、模型更没看到）**。
+这解释了「停止之后这个面板像哑了一样」的体感，比「轮挂在 pending」严重。
+
+### 决策落地（两条互补，共用 `Agent.abandonTurn()`）
+
+| 面 | 改动 | 判据 |
+|---|---|---|
+| 内核 | 新增公开 `Agent.abandonTurn()`：`cancelAsk`（保 `assistant.tool_calls` 配对）+ `appendInterrupted(当前轮)`（盘上 `pendingAsk` **整组**转 `unanswered` 交互输入）+ `discardCurrentCheckpoint`；返回「检查点是否被清」 | 盘面 `status: interrupted`、`pendingAsk` 消失、N 条 `unanswered` 带题面；幂等重跑不二次写 |
+| 宿主停止 | `handleStop` paused 分支改走 `AskCoordinator.abandonOnStop()`（清 `_pending` + 清 timer + 逐条 post `unanswered` 行 + `abandonTurn`），随后 `syncPendingQueue(true)` **无条件**重投影相位 | 相位不再停在 `waiting/ask`；未答行与盘面同文案同身份 |
+| 宿主超时 | `handleAskTimeout` 判据收窄为「提问是否仍未被消费」（本域 `_pending` 非空），**删掉相位判据与 `getTurnState` 依赖**；可续跑（`status === 'paused'`）走原续跑，否则走 `abandonTurn` 收场 | 无可续跑点时不再「假续跑」；轮不残留 pending |
+
+**决策 4 原文的订正**：原文写「以 `pendingAsk` 快照是否存在为事实判据」——落地后判据落在
+**宿主在途快照 `_pending`**（内核 `pendingAsk` 的宿主侧唯一 intake，相位由它派生），
+「可续跑性」另判内核是否仍持暂停检查点（与 `resumeExecution` 内部判据同源）。
+两件事分开判，才不会有第二条真相。
+
+**依赖收敛**：`AskDeps` 从 5 个降到 3 个（删 `isAskWaiting` / `getTurnState`）——域不再反向
+依赖相位投影，而相位本就由域内快照派生（反向依赖 = 第二真相）。
+
+**变异（全部实测，红→绿闭环）**：
+
+| 变异 | 结果 |
+|---|---|
+| 去掉 `abandonTurn` 内的 `appendInterrupted` 调用 | 内核新用例 2 例红：`expected 'pending' to be 'interrupted'` |
+| `abandonOnStop` 不清 `_pending` | 协调器 + chatPanel 2 例红（`expected [...] to deeply equal []`） |
+| `handleStop` 不重投影相位 | `expected 'waiting' not to be 'waiting'`（红在该判据上） |
+
+⚠️ **首轮变异假绿教训**：新写的 stop 用例最初从 `setup()` 起手，起始相位本就是 `idle`，
+「停止后不再是 waiting」恒真 ⇒ 删掉重投影仍绿。改成先走**真实事件链**（`driveSuspendedFlow`
+坐实 `waiting/ask`）再停止，变异才红。**断言必须锚在状态迁移上，不能锚在迁移后的静态值上。**
+
+**收据**：内核全量 **3083 passed / 120 文件 EXIT=0**（+2 新用例）；宿主全量
+**2277 passed / 129 文件 EXIT=0**；`chatPanel` 4526 行 ≤ 4529 闸门。
+
+### 仍未覆盖（如实登记）
+
+- **abort-during-ask 微窗口**：`_streaming` 为真时按停止走 `abort()`，轮经 `act()` 的
+  `aborted` 分支收场（已有路径），但宿主 `_pending` 若此刻非空不会被同帧清掉；
+  超时保底现在会以 `abandonTurn` 收场（不再空转），故只影响「下一次投影前的相位」。
+- **`unanswered` 行的题身份仍退化**：`RoundPendingAsk` 未承载 `askCallId` ⇒
+  `appendInterrupted` 走 `buildInteractiveInputs` 的序号回退，与运行时行（`askCallId`）
+  不同 id。功能无影响（重放重建时只读盘面），但 ADR-043「题身份跨面恒定」在该分支未闭合。
 
 ## 不并入本 ADR 的独立缺陷
 
