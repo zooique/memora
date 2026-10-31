@@ -16,6 +16,7 @@ import type { ProcessEvent } from '@zooique/memora';
 import type { RoundView } from '../../shared/protocol.js';
 import { friendlyErrorMessage } from '../../shared/errorText.js';
 import { argStr, isPlanItemBoundaryEvent, parseToolArgs } from './processEventText.js';
+import type { TerminusInterruptKind } from './statusAttrs.js';
 
 /**
  * 工具批（toolBatch）批内条目：一次工具调用 = tool_start + 按 toolCallId 配对的 tool_result
@@ -292,7 +293,7 @@ export function buildMemoryHitsEvidenceResolver(
  *          kind=null      → 事件不足不猜态（诚实投影：无载体不撒状态，停止行照旧兜底）
  */
 export function decideTerminus(events: ProcessEvent[]): {
-  kind: '用户中断' | '异常中断';
+  kind: TerminusInterruptKind;
   reason: string;
 } {
   const errorEv = events.find(

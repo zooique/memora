@@ -38,10 +38,13 @@ export type CursorStatus =
  * 且**拆 `RoundStatus` 档位本身是破坏式变更**：`isRoundSettled` 把 `interrupted` 当「定案正常收场」
  * 的落脚点会随之消失，历史轮也无法回溯重标 ⇒ 不可作为「想显示得更准」的手段。
  */
-export type TerminusKind =
-  | '已完成' // 终态：底栏 time 之后淡勾（正文尾不再显示）
+export type TerminusInterruptKind =
   | '用户中断' // 终态：用户主动停止（载体 = 中断轮宿主块，底栏文字标签）
   | '异常中断';
+
+export type TerminusKind =
+  | '已完成' // 终态：底栏 time 之后淡勾（正文尾不再显示）
+  | TerminusInterruptKind;
 
 /**
  * 对指定正文块写入运行/挂起态（唯一实现；null = 清除，幂等）
