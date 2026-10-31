@@ -60,6 +60,8 @@ function interjectAgentStub(items: string[]): Agent {
     },
     isPausePending: () => false,
     discardCurrentCheckpoint: () => true,
+    // 停止 = 收场（ADR-044 决策 3）：pending 态 handleStop 经内核 abandonTurn 收场 + 弃检查点
+    abandonTurn: async () => true,
     security: { onWriteConfirmation: () => () => {}, onAudit: () => () => {} },
   } as unknown as Agent;
 }
@@ -168,14 +170,16 @@ describe('插话吸收时上屏 · 宿主出口（chatPanel）', () => {
     expect(snapshotIdx).toBeGreaterThan(signalIdx);
   });
 
-  it('停止（paused 态放弃检查点）→ 协同清理的排队插话同样发丢弃信号，且先于新快照 turn_update（FIFO 时序契约）', () => {
+  it('停止（paused 态放弃检查点）→ 协同清理的排队插话同样发丢弃信号，且先于新快照 turn_update（FIFO 时序契约）', async () => {
     const items = ['暂停前的补充'];
     const h = setup(items);
-    // 造 paused 相位：sessionManager.status = 'paused'（handleStop 走 discard 分支的判据）
+    // 造 paused 相位：sessionManager.status = 'paused'（handleStop 走收场分支的判据）
     (h.cast._agent as unknown as { sessionManager: unknown }).sessionManager = {
       status: 'paused',
     };
     h.receive({ type: 'stop' });
+    // handleStop 自 ADR-044 起为 async（收场要等内核 appendInterrupted 落盘）⇒ 必须等微任务排空
+    await new Promise((r) => setTimeout(r, 0));
     const d = takeDiscarded(h.posted);
     expect(d).not.toBeNull();
     expect(d!.items).toEqual(['暂停前的补充']);

@@ -1044,6 +1044,42 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 放弃当前轮（宿主 stop 语义的**收场**出口 · ADR-044 决策 3）
+   *
+   * 与 `discardCurrentCheckpoint` 的分野：后者只丢暂停上下文（检查点 + 排队插话），
+   * 调用后轮仍是 pending。**提问挂起轮尤其如此**——ask 轮通常无正文，而
+   * `appendAssistant` 有空正文守卫（`if (!content.trim()) return`）⇒ 该轮压根没有收场调用点。
+   * 停止若只丢检查点，盘上就留下「pending + 残留 pendingAsk」的僵尸轮：视图里永挂，
+   * 超时保底又因无可续跑检查点而无从接续。
+   *
+   * 故 stop = **明确地以中断收场**（不是「不处理」），三步同源：
+   * ① `cancelAsk` 补 `[ASK_ABORTED]` 占位 tool 结果——`assistant.tool_calls` 恒有配对，
+   *    否则 OpenAI 兼容端 400；无在途提问时天然 no-op；
+   * ② `appendInterrupted` 收场当前轮——把盘上残留 `pendingAsk` **整组**转成
+   *    `kind:'unanswered'` 交互输入（题面与候选不丢），状态标 interrupted；已收场轮
+   *    由该方法自身幂等跳过（complete / interrupted 均终态）；
+   * ③ `discardCurrentCheckpoint` 丢暂停上下文（用户不再续跑）。
+   *
+   * ① 与 ② 的先后不影响题面：`cancelAsk` 只动进程内 `pendingAsk`（保 tool 配对），
+   * 盘上快照不受影响，而 ② 读的正是盘上那份；先做 ① 只为缩短「调用无配对」窗口。
+   *
+   * @returns 是否清掉了暂停检查点（宿主据此给「检查点已清理」类提示；无则 false）
+   */
+  async abandonTurn(): Promise<boolean> {
+    this.assertInitialized('abandonTurn');
+    this.cancelAsk();
+    const roundId = this.requireLoop.getCurrentRoundId();
+    if (roundId && this.history) {
+      try {
+        await this.history.appendInterrupted(roundId);
+      } catch (err) {
+        logger.warn({ err, roundId }, 'abandonTurn: 中断收场写入失败');
+      }
+    }
+    return this.discardCurrentCheckpoint();
+  }
+
+  /**
    * 回答在途主动提问（ask_user 工具）：
    * 答案以 ask_user 的 tool result 回填（与 assistant.tool_calls 配对，结构合法）。
    * 调用后宿主以 resumeExecution(回答文本, undefined, 'question-answer') 续跑——

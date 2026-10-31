@@ -3121,3 +3121,137 @@ describe('Agent · 归档暂存清槽时机（锁超时场景）', () => {
     expect(agent.getArchiveMode()).toBe('full');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：abandonTurn() · stop 语义的收场出口（ADR-044 决策 3）
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 一次只发提问、不发正文的 provider（ask 挂起轮的真实形态：
+ * 无 assistant 正文 ⇒ `appendAssistant` 空正文守卫直接返回 ⇒ 该轮没有任何收场调用点）
+ */
+class AskOnlyProvider extends LlmProvider {
+  readonly name = 'mock-ask';
+
+  async *chat(): AsyncIterable<LlmChunk> {
+    yield {
+      toolCalls: [
+        {
+          id: 'call_ask_a',
+          type: 'function' as const,
+          function: {
+            name: 'ask_user',
+            arguments: JSON.stringify({ question: '主角职业？', options: ['主播', '护士'] }),
+          },
+        },
+        {
+          id: 'call_ask_b',
+          type: 'function' as const,
+          function: { name: 'ask_user', arguments: JSON.stringify({ question: '结尾基调？' }) },
+        },
+      ],
+    };
+  }
+}
+
+describe('Agent · abandonTurn() · 停止即收场', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+  /** 注入式内核存储（agent.test.ts 默认无持久化 ⇒ 用 InMemory 实例断言盘面事实） */
+  let roundStore: InMemoryRoundStore;
+
+  beforeEach(() => {
+    roundStore = new InMemoryRoundStore();
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-abandon-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-abandon-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-abandon-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  /** 读注入存储中的轮（真源 = RoundStore，不经视图缓存——验的就是收场落盘事实） */
+  function readRound(roundId: string): Round {
+    const round = roundStore.getById(roundId);
+    expect(round).not.toBeNull();
+    return round!;
+  }
+
+  it('提问挂起轮（pending + pendingAsk）⇒ 停止后收场为 interrupted，题面整组转为 unanswered', async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new AskOnlyProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      roundStore,
+      sessionStore: new InMemorySessionStore(),
+    });
+    await agent.init();
+
+    // ① 跑一轮真 ask：LLM 只发两个 ask_user，无正文
+    for await (const _chunk of agent.chat('问我两个问题')) {
+      // 消费至 paused
+    }
+    expect(agent.sessionManager?.status).toBe('paused');
+    const roundId = agent.agentLoop!.getCurrentRoundId();
+    // ask 挂起轮的真形态：pending + 两个在途提问（无 assistantMessage —— 没有收场调用点）
+    const paused = readRound(roundId);
+    expect(paused.status).toBe('pending');
+    expect(paused.pendingAsk).toHaveLength(2);
+    expect(paused.assistantMessage).toBeUndefined();
+
+    // ② 停止（收场）
+    const checkpointDiscarded = await agent.abandonTurn();
+
+    // ③ 盘面事实：轮已收场 + 题面整组落到交互输入（逐题一条，题/候选都不丢）
+    const settled = readRound(roundId);
+    expect(settled.status).toBe('interrupted');
+    expect(settled.pendingAsk).toBeUndefined();
+    expect(settled.interactiveInputs?.map((i) => i.kind)).toEqual(['unanswered', 'unanswered']);
+    expect(settled.interactiveInputs?.map((i) => i.question)).toEqual(['主角职业？', '结尾基调？']);
+    expect(settled.interactiveInputs?.[0]?.options).toEqual(['主播', '护士']);
+    expect(settled.interactiveInputs?.[0]?.content).toBe(LOOP_CONSTANTS.ASK_UNANSWERED_NOTICE);
+    // 暂停上下文同时被丢弃（用户不再续跑）；返回值即「检查点是否被清」
+    expect(checkpointDiscarded).toBe(true);
+    expect(agent.sessionManager?.status).not.toBe('paused');
+  });
+
+  it('幂等：已收场轮再 stop 不二次写（不重复堆叠 unanswered、不翻状态）', async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new AskOnlyProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      roundStore,
+      sessionStore: new InMemorySessionStore(),
+    });
+    await agent.init();
+    for await (const _chunk of agent.chat('问我两个问题')) {
+      // 消费至 paused
+    }
+    const roundId = agent.agentLoop!.getCurrentRoundId();
+
+    await agent.abandonTurn();
+    const first = readRound(roundId);
+    await agent.abandonTurn();
+    const second = readRound(roundId);
+
+    expect(second.status).toBe('interrupted');
+    expect(second.interactiveInputs).toHaveLength(first.interactiveInputs?.length ?? 0);
+    expect(second.interactiveInputs).toHaveLength(2);
+  });
+});

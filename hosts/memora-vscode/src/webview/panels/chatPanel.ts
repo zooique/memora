@@ -442,24 +442,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * ask 提问域协调器（HOST-SPLIT-1 第 4 刀迁出域，真源见 `extension/host/askCoordinator.ts`）
    *
-   * **五个依赖逐一说明（比前两刀多，须逐个设计）**：
+   * **依赖逐一说明**：
    *   ① `getAgent` getter 委托（禁快照：`setAgent` 会替换 `_agent`）；
-   *   ② `isAskWaiting` **判据单点注入**——🔴 禁在域内另立「是否 ask 等待」的守卫/分流判断，
-   *      那会造成相位判据第二处 = SSOT 违例（判据真源在 chatPanel，另有 2 个调用点）。
-   *      例外仅为 TS 类型收窄的 `state.phase === 'waiting'` 字面（`questions` 仅 waiting 变体
-   *      存在，`boolean` 返回值不收窄），详见 `AskDeps.isAskWaiting` 注释；`reason` 半句不重写；
-   *   ③ `getTurnState` getter 委托（`_turnState` 每次投影被整体替换，必须读最新）；
-   *   ④ `post` 同前两刀；
-   *   ⑤ `runFlow` = 本类既有的 **18 行包装**（建 controller + 挂 `_currentFlow` + 同步错兜底），
+   *   ② `post` 同前两刀；
+   *   ③ `runFlow` = 本类既有的 **18 行包装**（建 controller + 挂 `_currentFlow` + 同步错兜底），
    *      **不是** 529 行的 `consumeFlow` 主循环 ⇒ 注入它不等于把主循环交给域。
+   *
+   * 🔴 **不注入相位判据**（2026-10-31 去相位化，ADR-044 决策 4）：超时的判据只有一条——
+   * 「提问是否仍未被消费」（域内 `_pending` 快照非空），相位本就是由该快照派生
+   * （`deriveTurnState` 以 questions 优先）。再注入一份相位判据，只会在「停止后相位离开
+   * waiting(ask)、而提问其实还没被消费」这一刻分叉，把最该保底收场的回调挡在门外。
    *
    * **订阅不搬**：agent 事件订阅/退订的生命周期归宿主（`bindAgentEvents` 另订 6 个事件），
    * 域只接收写入（`setPending`）——避免事件注册散落两处。
    */
   private readonly _ask = new AskCoordinator({
     getAgent: () => this._agent,
-    isAskWaiting: () => this.isAskWaiting(),
-    getTurnState: () => this._turnState,
     post: (msg) => this.post(msg),
     runFlow: (factory) => this.runFlow(factory),
   });
@@ -1056,7 +1054,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       void this.handleSetProvider(msg.name);
     } else if (msg.type === 'stop') {
       // 停止生成：中断当前流式输出（mvp-scope 打断能力）
-      this.handleStop();
+      // 异步：paused 态需内核收场（appendInterrupted 落盘）后再回状态，失败不阻塞面板
+      void this.handleStop();
     } else if (msg.type === 'pause') {
       // 暂停生成：调 agent.requestPause()（step 边界软暂停）暂停当前流
       this.handlePause();
@@ -2771,8 +2770,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const rounds = stampRoundAttachmentUris(merged, this.workspacePath, this.toWebviewUri);
     const last = rounds[rounds.length - 1];
     const questions = this._ask.pendingQuestions();
-    // 派生结果写回宿主唯一状态——handleInput / askCoordinator.handleAskTimeout 的提问原文
-    // 统一从 _turnState.waiting.questions 读，不维护独立生命周期 + 消费式 splice 的镜像。
+    // 派生结果写回宿主唯一状态——handleInput 的 ask 相位路由读它；
+    // ask 域超时的提问原文**不读这里**（去相位化，ADR-044 决策 4：域内 `_pending` 才是真源，
+    // 本投影由它派生）。
     this._turnState = deriveTurnState({
       streaming: this._streaming,
       paused: this._agent?.sessionManager?.status === 'paused',
@@ -3246,32 +3246,44 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * 三种运行态行为：
    *   - thinking（_streaming=true）→ abort() 当前流，内核在下一 await 点退出 yield aborted
-   *   - paused（status=paused, _streaming=false）→ 调 agent.discardCurrentCheckpoint 清检查点
-   *     （对称语义：pause=想继续；stop=彻底放弃，检查点不应残留）
-   * done 态无停止按钮（UI 隐藏）。 */
-  private handleStop(): void {
+   *   - paused（status=paused, _streaming=false）→ **以中断收场**：`abandonTurn`
+   *     （对称语义：pause=想继续；stop=彻底放弃——用户说过的话必须留下痕迹，见下）
+   * done 态无停止按钮（UI 隐藏）。
+   *
+   * ⚠️ paused 分支不能只 `discardCurrentCheckpoint`（ADR-044 决策 3）：ask 挂起轮无正文
+   * ⇒ 内核 `appendAssistant` 空正文守卫直接返回 ⇒ 该轮**没有任何收场调用点**。只弃检查点会
+   * 留下 pending 僵尸轮（真机实测：轮永久 pending），且宿主 `_pending` 未清 ⇒ 相位恒
+   * waiting/ask ⇒ 用户下一条输入被路由成「回答一个已死的提问」（内核内存消费、不落盘）。
+   */
+  private async handleStop(): Promise<void> {
     // thinking 态：已有路径
     if (this._streaming && this._abortController) {
       this._abortController.abort();
       return;
     }
-    // paused 态：彻底放弃暂停检查点（对称 pause 语义）
+    // paused 态：收场 + 彻底放弃暂停检查点（对称 pause 语义）
     if (this._agent?.sessionManager?.status === 'paused') {
-      // 先读后弃：discardCurrentCheckpoint 协同清理排队插话（内核 agent.ts 单点），
+      // 先读后弃：abandonTurn 协同清理排队插话（内核 agent.ts 单点），
       // 被弃条目 = 丢弃（蒸发不落盘）→ 必须发丢弃信号，否则 webview diff 误判「消费」误上屏
       const before = this._agent.getPendingInterjections?.() ?? [];
-      // 内核显式暴露 discardCurrentCheckpoint，不靠"下一次 chat() 会重建"隐式清理
-      const cleaned = this._agent.discardCurrentCheckpoint();
+      const hadAsk = this._ask.pendingQuestions().length > 0;
+      // ask 域先清宿主镜像 + 逐条透出「未回答」行（与盘面同文案、同题身份），再走内核收场
+      const checkpointDiscarded = await this._ask.abandonOnStop();
       this.post({ type: 'status', state: 'done' });
-      if (cleaned) {
-        this.post({ type: 'notice', level: 'info', message: '已停止，暂停检查点已清理' });
+      if (checkpointDiscarded) {
+        // 有提问时已由 ask 域给出「N 个提问未回答」，此处只补纯暂停态的旧提示
+        if (!hadAsk) {
+          this.post({ type: 'notice', level: 'info', message: '已停止，暂停检查点已清理' });
+        }
         if (before.length > 0) {
           this.postPendingDiscarded([...before]);
         }
-        // 信号后必跟快照帧（契约见 postPendingDiscarded）：队列已清空、长度必变 →
-        // 长度守卫必放行，推空快照让 webview 丢弃缓冲在本帧内消耗干净，不留跨轮残留
-        this.syncPendingQueue();
       }
+      // 相位无条件重投影（force 绕长度守卫）：① 排在丢弃信号**之后**——FIFO 契约要求
+      // 「信号先于新快照」；② 无条件——队列本就为空或未弃检查点时长度不变，守卫会吞掉这一帧，
+      // 而 `_turnState` 是快照、不重算就停在 waiting/ask ⇒ 下一条输入被当成「回答死提问」
+      // 由内核内存消费、不落盘（用户输入凭空蒸发）。
+      this.syncPendingQueue(true);
     }
   }
 
@@ -4149,15 +4161,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *  清空时机不能只绑 sessionResumed（那是 resume 专有事件，普通插话不触发 →
    *  队列消费后无「空通知」→ 待发送区弹窗残留）；本守卫由调用方（入队/清空/删除/step 边界后 chunk）
    *  统一调用，队列变空必然触发长度变化 → post 空 pendingQueue → webview 隐藏。 */
-  private syncPendingQueue(): void {
+  private syncPendingQueue(force = false): void {
     if (!this._agent) return;
     // optional 调用：consumeFlow 主循环每 chunk 同步，测试桩可能缺该方法
     // （chatPanelHistory 的 mock agent 不实现 getPendingInterjections）——缺则跳过不阻断流
     const items = this._agent.getPendingInterjections?.() ?? [];
     // 长度未变不重复投影（同一队列状态不刷屏）；入队/消费/清空/删除均改变长度 → 必触发一次。
     // `undefined`（从未投影过）恒不等于任何长度 → 首次 sync 恒推，覆盖「resume 恢复队列后
-    // 直接清空」等从未投影场景——丢弃信号的成对快照帧不因长度恰好归零而丢失
-    if (items.length === this._lastPendingQueueLen) return;
+    // 直接清空」等从未投影场景——丢弃信号的成对快照帧不因长度恰好归零而丢失。
+    // `force`：停止路径必须**无条件**重投影相位（队列长度未变时也要推），见 handleStop 尾注。
+    if (!force && items.length === this._lastPendingQueueLen) return;
     this._lastPendingQueueLen = items.length;
     // 不单发 pending_queue_update，由 turn_update.pendingQueue 统一承载
     // （此处不必传 live——待发送区是 turn 级展示，历史轮足够定位渲染输入）。

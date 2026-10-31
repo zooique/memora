@@ -9,7 +9,8 @@
  *   ③ → `postTurnUpdate` 读 `pendingQuestions()` → `deriveTurnState` 派生 →
  *        写回宿主 `_turnState`（提问原文真源，非镜像）+ post `turn_update`
  *   ④ → webview 收 `turn_update.state = waiting/ask + questions`（问答卡渲染真源）
- *   ⑤ 写回的 `_turnState` = `handleAskTimeout` 超时消费的提问原文唯一读取源
+ *   ⑤ 写回的 `_turnState` = `handleInput` 的 ask 相位路由判据；**不是** ask 域超时的读取源
+ *      （2026-10-31 去相位化，ADR-044 决策 4：域内 `_pending` 自己就是真源，反向依赖即第二真相）
  *
  * 🔴 **必须用挂起流（gate），否则变异假绿**（首轮实测教训）：空流立即走到流尾，
  * 流尾收尾投影（读同一 pendingQuestions）会替事件投影兜底 ⇒ 删掉事件 `postTurnUpdate()`
@@ -59,10 +60,16 @@ function projectionAgentStub(): {
   listeners: Record<string, (...args: unknown[]) => void>;
 } {
   const listeners: Record<string, (...args: unknown[]) => void> = {};
+  const sessionState = { status: 'running' };
   const agent = {
-    sessionManager: { status: 'running' }, // 提问那一刻 ≈ running（判据①不依赖 paused）
+    sessionManager: sessionState, // 提问那一刻 ≈ running（判据①不依赖 paused）
     isPausePending: () => false,
     getPendingInterjections: () => [],
+    // ADR-044 决策 3：停止 = 收场——内核 abandonTurn 收场后状态机 resetToRunning
+    abandonTurn: async () => {
+      sessionState.status = 'running';
+      return true;
+    },
     on: (event: string, fn: (...args: unknown[]) => void) => {
       listeners[event] = fn;
     },
@@ -86,7 +93,12 @@ interface AskProjectionCast {
   _streaming: boolean;
   _agent: Agent;
   _turnState: { phase: string; reason?: string; questions?: unknown[] };
-  _ask: { clearAskTimeout(): void };
+  _ask: {
+    clearAskTimeout(): void;
+    setPending(qs: unknown[]): void;
+    pendingQuestions(): unknown[];
+  };
+  handleStop(): Promise<void>;
 }
 
 /** 构造 provider + 抓取 post 消息（复刻 chatPanelPauseProjection.test 的 harness） */
@@ -182,10 +194,41 @@ describe('ask 端到端：questionPending 事件 → setPending → postTurnUpda
     }
   });
 
-  it('写回真源：_turnState.waiting.questions 与事件入参同值（handleAskTimeout 的唯一读取源）', async () => {
+  it('停止（提问在途）⇒ 相位离开 waiting/ask + 逐条「未回答」上屏（ADR-044 决策 3）', async () => {
+    // 起点必须是**真实的 waiting/ask 投影**（先走事件链），否则「停止后不再是 waiting」
+    // 在起始相位本就是 idle 时恒真 = 空断言（首轮变异实测：删掉重投影仍绿）
+    const { cast, posted, finish } = driveSuspendedFlow([QUESTION]);
+    try {
+      expect(cast._turnState.phase).toBe('waiting'); // 前置：确实停在 ask 等待
+      // 提问挂起后流已结束（_streaming=false）、会话处 paused：
+      // 旧实现正是在这一格只弃检查点 ⇒ 轮永久 pending + 宿主镜像不清 ⇒ 下一条输入被吞
+      cast._streaming = false;
+      (cast._agent.sessionManager as unknown as { status: string }).status = 'paused';
+
+      await cast.handleStop();
+
+      // ① 宿主镜像已清 + 相位重投影（不重算 ⇒ `_turnState` 停在 waiting/ask，
+      //    handleInput 会把用户的下一句话路由成「回答一个已死的提问」，内核内存消费、不落盘）
+      expect(cast._ask.pendingQuestions()).toEqual([]);
+      expect(cast._turnState.phase).not.toBe('waiting');
+      // ② 未答提问带题面上屏（文案与内核 appendInterrupted 落盘的 unanswered 行同源）
+      const rows = posted.filter((m) => (m as { type?: string }).type === 'user') as Array<{
+        kind?: string;
+        question?: string;
+      }>;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.kind).toBe('unanswered');
+      expect(rows[0]!.question).toBe(QUESTION.question);
+    } finally {
+      await finish();
+    }
+  });
+
+  it('写回真源：_turnState.waiting.questions 与事件入参同值（webview 问答卡 + handleInput 相位路由的读取源）', async () => {
     const { cast, finish } = driveSuspendedFlow([QUESTION]);
     try {
-      // 链路⑤：超时八步的「读提问原文」走 _turnState，不维护镜像——写回断了它就读空。
+      // 链路⑤：写回是 handleInput 的 ask 相位路由判据（webview 问答卡同源）——写回断了，
+      // 用户的回答会被当成普通输入另起一轮。
       // 断言必须在流中：流尾收尾投影同样会写回，放行后断言会掩盖事件写回的缺失。
       expect(cast._turnState.phase).toBe('waiting');
       expect(cast._turnState.reason).toBe('ask');

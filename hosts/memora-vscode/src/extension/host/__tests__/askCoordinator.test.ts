@@ -1,17 +1,18 @@
 /**
  * ask 提问域协调器单测（HOST-SPLIT-1 第 4 刀）
  *
- * 覆盖 `AskCoordinator` 的核心不变式（方案 §2.2 T1–T7 + §6.2）：
+ * 覆盖 `AskCoordinator` 的核心不变式：
  *   T1 覆写式 arm：连 arm 两次只有**一个** timer 生效（先清后起，不叠加）
  *   T2 禁用判据：`ASK_TIMEOUT_MS <= 0` ⇒ 不 arm
- *   T3 八步顺序：pending 空 / 相位不符 ⇒ 无 post 无 runFlow
+ *   T3 判据 = 「提问是否仍未被消费」：无在途提问才早退；**相位不参与判定**（ADR-044 决策 4）
  *   T4 `cancelAsk` 先于 `resumeExecution`（占位注入 + 快照转存的时序）
  *   T5 生命周期不随流清（域内无流清理入口）
- *   T6/T7 提问原文读点 = 注入的 `getTurnState().waiting.questions[0]`，
- *        **不取** `_pending` 写入值（防第二真相）
+ *   T6 提问原文读点 = 本域在途快照 `_pending`（相位投影由它派生，不设第二真相）
+ *   T7 不可续跑（无暂停检查点）⇒ `abandonTurn()` 收场，不「假续跑」
+ *   T8 停止 ⇒ `abandonOnStop()` 清快照 + 逐条 post 未回答行 + 收场
  *   ＋ notice 文案镜像内核 `ASK_TIMEOUT_NOTICE`（防运行时/重放文案分叉）
  *
- * 驱动方式：直接驱动协调器公开面——协调器**零 vscode 依赖**（5 个依赖全注入），
+ * 驱动方式：直接驱动协调器公开面——协调器**零 vscode 依赖**（依赖全注入），
  * 故本文件不需要 mock vscode，node 环境即可跑。
  *
  * ⚠️ 未覆盖面（如实登记）：宿主接线（`setPending` / `armAskTimeout` 与 agent 事件、
@@ -21,7 +22,8 @@
 // @vitest-environment node
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Agent, AgentChunk } from '@zooique/memora';
-import type { PendingQuestionDto, TurnState } from '../../../shared/protocol.js';
+import { LOOP_CONSTANTS } from '@zooique/memora';
+import type { PendingQuestionDto } from '../../../shared/protocol.js';
 import { AskCoordinator } from '../askCoordinator.js';
 
 /** 内核 orchestrator 的镜像文案（与 askCoordinator 内常量同值，防镜像漂移） */
@@ -40,55 +42,52 @@ function q(text: string, options?: string[], askCallId?: string): PendingQuestio
 /** 推送消息（宽松类型：断言按 type/kind 过滤） */
 type Posted = Record<string, unknown>;
 
-/** agent 桩：记录 cancelAsk / resumeExecution 的调用序列 */
-function agentStub() {
+/**
+ * agent 桩：记录 cancelAsk / resumeExecution / abandonTurn 的调用序列
+ *
+ * @param opts.status 内核会话状态（`resumeExecution` 的可续跑判据同源）
+ * @param opts.checkpointDiscarded `abandonTurn` 的返回值（是否清掉了暂停检查点）
+ */
+function agentStub(opts: { status?: string; checkpointDiscarded?: boolean } = {}) {
   const calls: string[] = [];
   const resumeExecution = vi.fn((..._args: unknown[]) => {
     calls.push('resume');
     return Promise.resolve();
   });
+  const cancelAsk = vi.fn(() => {
+    calls.push('cancel');
+  });
+  const abandonTurn = vi.fn(async () => {
+    calls.push('abandon');
+    return opts.checkpointDiscarded ?? true;
+  });
   const agent = {
-    cancelAsk: vi.fn(() => {
-      calls.push('cancel');
-    }),
+    cancelAsk,
     resumeExecution,
+    abandonTurn,
+    sessionManager: { status: opts.status ?? 'paused' },
   } as unknown as Agent;
-  return { agent, calls, resumeExecution };
+  return { agent, calls, resumeExecution, cancelAsk, abandonTurn };
 }
 
-/**
- * 协调器装配
- *
- * @param opts.state 注入的 turnState（提问原文真源）
- * @param opts.isAskWaiting 相位判据返回值
- */
-function makeCoordinator(opts: { state?: TurnState; isAskWaiting?: boolean; agent?: Agent } = {}) {
+/** 协调器装配（agent 缺省为暂停态桩——超时正常续跑的那条路） */
+function makeCoordinator(stub = agentStub()) {
   const posted: Posted[] = [];
-  const stub = agentStub();
-  // 外部传入 agent 时（无 agent 场景）调用序列由外部桩自行记录，此处给空数组保持返回形态一致
-  const agent = opts.agent ?? stub.agent;
-  const calls: string[] = opts.agent ? [] : stub.calls;
-  const state: TurnState = opts.state ?? { phase: 'idle' };
   const coordinator = new AskCoordinator({
-    getAgent: () => agent,
-    isAskWaiting: () => opts.isAskWaiting ?? false,
-    getTurnState: () => state,
+    getAgent: () => stub.agent,
     post: (msg) => {
       posted.push(msg as unknown as Posted);
     },
     runFlow: (factory) => {
-      // 域内传入的 factory 在此**只调用其副作用面**即可（测试不消费流内容），
+      // 域内传入的 factory 在此**只构造不消费**（测试不消费流内容），
       // 但必须真的调用一次以验证 factory 构造无误
-      return factory(new AbortController().signal) instanceof Promise
-        ? Promise.resolve()
-        : Promise.resolve();
+      void factory(new AbortController().signal);
+      return Promise.resolve();
     },
   });
   return {
     posted,
-    agent,
-    calls,
-    state,
+    stub,
     coordinator,
     /** 取全部 user 交互行 */
     userRows: () =>
@@ -148,40 +147,18 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
     setSpy.mockRestore();
   });
 
-  it('T3 守卫一：无在途提问 ⇒ 不 post、不起流', async () => {
-    const stub = agentStub();
-    const h = makeCoordinator({ isAskWaiting: true, agent: stub.agent });
+  it('T3 守卫：无在途提问 ⇒ 不 post、不调内核（判据只有这一条）', async () => {
+    const h = makeCoordinator();
 
     await h.coordinator.handleAskTimeout();
 
     expect(h.userRows()).toHaveLength(0);
-    expect(stub.calls).toEqual([]);
+    expect(h.stub.calls).toEqual([]);
   });
 
-  it('T3 守卫二：相位已离开 waiting(ask) ⇒ 不 post、不起流', async () => {
-    const stub = agentStub();
-    const h = makeCoordinator({
-      isAskWaiting: false,
-      state: { phase: 'waiting', reason: 'ask', questions: [q('继续吗？')] },
-      agent: stub.agent,
-    });
-    h.coordinator.setPending([q('继续吗？')]);
-
-    await h.coordinator.handleAskTimeout();
-
-    expect(h.userRows()).toHaveLength(0);
-    expect(stub.calls).toEqual([]);
-  });
-
-  it('T4 + T6/T7：超时 ⇒ post 超时记录（提问原文取自 getTurnState）+ cancelAsk 先于 resume', async () => {
-    const stub = agentStub();
-    const h = makeCoordinator({
-      isAskWaiting: true,
-      // 注入态的提问原文与 _pending 写入值**不同**：断言读的是前者（T7 防第二真相）
-      state: { phase: 'waiting', reason: 'ask', questions: [q('真源问题', ['A', 'B'])] },
-      agent: stub.agent,
-    });
-    h.coordinator.setPending([q('写入值（不应被读）')]);
+  it('T4 + T6 超时可续跑 ⇒ 整批 post 超时记录（题面取 _pending）+ cancelAsk 先于 resume', async () => {
+    const h = makeCoordinator();
+    h.coordinator.setPending([q('真源问题', ['A', 'B'])]);
 
     await h.coordinator.handleAskTimeout();
 
@@ -189,21 +166,15 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
     expect(rows).toHaveLength(1);
     expect(rows[0].kind).toBe('timeout');
     expect(rows[0].text).toContain(NOTICE_MARKER);
-    expect(rows[0].text).not.toContain('写入值');
     expect(h.posted[0]).toMatchObject({ question: '真源问题', options: ['A', 'B'] });
 
     // T4：cancelAsk 严格先于 resumeExecution
-    expect(stub.calls).toEqual(['cancel', 'resume']);
-    expect(stub.resumeExecution).toHaveBeenCalledWith(undefined, expect.anything(), 'timeout');
+    expect(h.stub.calls).toEqual(['cancel', 'resume']);
+    expect(h.stub.resumeExecution).toHaveBeenCalledWith(undefined, expect.anything(), 'timeout');
   });
 
   it('T6：超时消费后在途提问整体清空（overwrite 语义，非 splice）', async () => {
-    const stub = agentStub();
-    const h = makeCoordinator({
-      isAskWaiting: true,
-      state: { phase: 'waiting', reason: 'ask', questions: [q('继续吗？')] },
-      agent: stub.agent,
-    });
+    const h = makeCoordinator();
     h.coordinator.setPending([q('继续吗？'), q('再问一个？')]);
 
     await h.coordinator.handleAskTimeout();
@@ -212,24 +183,10 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
   });
 
   it('T4-batch 超时整批逐条 post：同刻 ts + 批内唯一 inputId + 各题问/选项随行透出（ASK-MULTI-Q-1 漏网面，与内核整组落盘同构）', async () => {
-    const stub = agentStub();
-    const h = makeCoordinator({
-      isAskWaiting: true,
-      // 多问批次（内核 AskQuestion[] 整组快照同源）
-      state: {
-        phase: 'waiting',
-        reason: 'ask',
-        // ADR-043：题身份随行（内核 ask_user 工具调用 id）——超时行与盘面 timeout 行同 id
-        questions: [
-          q('Q1：编程语言？', ['TS', 'Python'], 'call-lang'),
-          q('Q2：时区？', ['Asia/Shanghai', 'UTC'], 'call-tz'),
-        ],
-      },
-      agent: stub.agent,
-    });
+    const h = makeCoordinator();
     h.coordinator.setPending([
-      q('Q1：编程语言？', undefined, 'call-lang'),
-      q('Q2：时区？', undefined, 'call-tz'),
+      q('Q1：编程语言？', ['TS', 'Python'], 'call-lang'),
+      q('Q2：时区？', ['Asia/Shanghai', 'UTC'], 'call-tz'),
     ]);
 
     await h.coordinator.handleAskTimeout();
@@ -243,8 +200,6 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
     expect(rows[1].text).toContain(NOTICE_MARKER);
     // 批内同刻 ts（一次超时提交）+ 批内唯一身份（去重键真源，按 ts 去重会丢第 2 条）
     expect(h.posted[0]!.ts).toBe(h.posted[1]!.ts);
-    expect(h.posted[0]!.inputId).toBeTruthy();
-    expect(h.posted[1]!.inputId).toBeTruthy();
     expect(h.posted[0]!.inputId).not.toBe(h.posted[1]!.inputId);
     // ADR-043：身份取内核题身份（非宿主自造键）⇒ 与盘面落盘 id 同源、跨面可配对
     expect(h.posted[0]!.inputId).toBe('call-lang');
@@ -255,34 +210,11 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
       question: 'Q2：时区？',
       options: ['Asia/Shanghai', 'UTC'],
     });
-    expect(stub.calls).toEqual(['cancel', 'resume']);
-  });
-
-  it('提问原文缺失 ⇒ 整批为空 0 条 post（与内核 runResume 同构：盘面 0 条 ⇒ 屏上 0 条）', async () => {
-    const stub = agentStub();
-    const h = makeCoordinator({
-      isAskWaiting: true,
-      // 相位判据为 true 但 questions 未给（问句已在别处消费）
-      state: { phase: 'waiting', reason: 'ask' },
-      agent: stub.agent,
-    });
-    h.coordinator.setPending([q('继续吗？')]);
-
-    await h.coordinator.handleAskTimeout();
-
-    // 提问原文缺失 ⇒ runResume timeout 分支落盘 0 条 ⇒ 屏上同为 0 条
-    //（不产生重放时无源消失的行）
-    expect(h.userRows()).toHaveLength(0);
-    expect(stub.calls).toEqual(['cancel', 'resume']);
+    expect(h.stub.calls).toEqual(['cancel', 'resume']);
   });
 
   it('问句为空串 ⇒ 不带 question/options 字段（条件展开不为空串）', async () => {
-    const stub = agentStub();
-    const h = makeCoordinator({
-      isAskWaiting: true,
-      state: { phase: 'waiting', reason: 'ask', questions: [q('')] },
-      agent: stub.agent,
-    });
+    const h = makeCoordinator();
     h.coordinator.setPending([q('')]);
 
     await h.coordinator.handleAskTimeout();
@@ -290,16 +222,72 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
     expect(h.userRows()).toHaveLength(1);
     expect(h.posted[0]).not.toHaveProperty('question');
     expect(h.posted[0]).not.toHaveProperty('options');
-    expect(stub.calls).toEqual(['cancel', 'resume']);
+    expect(h.stub.calls).toEqual(['cancel', 'resume']);
+  });
+
+  it('T7 去相位化：提问未消费但已无可续跑点（用户已停止）⇒ abandonTurn 收场，不假续跑', async () => {
+    // 旧实现首行 `if (!isAskWaiting()) return` 会在此早退：停止后相位离开 waiting(ask)，
+    // 于是「最需要保底收场」的时刻反而什么都不做 ⇒ 轮永久 pending（真机 09:24 实证）。
+    const stub = agentStub({ status: 'running' });
+    const h = makeCoordinator(stub);
+    h.coordinator.setPending([q('Q1：语言？', ['TS'])]);
+
+    await h.coordinator.handleAskTimeout();
+
+    // 未答提问仍要留痕（屏上不丢这批题）
+    expect(h.userRows()).toHaveLength(1);
+    expect(h.userRows()[0]!.kind).toBe('timeout');
+    // 不续跑：无暂停检查点时 resumeExecution 会静默 return，等于白打一条流
+    expect(stub.resumeExecution).not.toHaveBeenCalled();
+    // 以中断收场（内核内部：cancelAsk 占位 + appendInterrupted 转 unanswered + 弃检查点）
+    expect(stub.abandonTurn).toHaveBeenCalledTimes(1);
+    expect(h.coordinator.pendingQuestions()).toEqual([]);
+  });
+
+  it('T8 停止（提问等待态）⇒ 清快照 + 逐条 post 未回答行（题面/候选/身份同盘面）+ 收场', async () => {
+    const stub = agentStub({ checkpointDiscarded: true });
+    const h = makeCoordinator(stub);
+    h.coordinator.setPending([
+      q('Q1：职业？', ['主播', '护士'], 'call-a'),
+      q('Q2：城市？', ['重庆'], 'call-b'),
+    ]);
+
+    const checkpointDiscarded = await h.coordinator.abandonOnStop();
+
+    // ① 宿主镜像必须清：否则相位恒 waiting/ask，下一条输入被当成「回答死提问」吞掉
+    expect(h.coordinator.pendingQuestions()).toEqual([]);
+    // ② 逐条留痕：与内核 appendInterrupted 落盘的 unanswered 行同文案、同题身份
+    const rows = h.userRows();
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.kind)).toEqual(['unanswered', 'unanswered']);
+    expect(rows[0]!.text).toBe(LOOP_CONSTANTS.ASK_UNANSWERED_NOTICE);
+    expect(h.posted[0]).toMatchObject({ inputId: 'call-a', question: 'Q1：职业？' });
+    expect(h.posted[1]).toMatchObject({ inputId: 'call-b', question: 'Q2：城市？' });
+    expect(h.posted[0]!.ts).toBe(h.posted[1]!.ts);
+    // ③ 收场 + 检查点结论透出
+    expect(stub.abandonTurn).toHaveBeenCalledTimes(1);
+    expect(checkpointDiscarded).toBe(true);
+    // ④ 用户可见结论（不静默）
+    const notices = h.posted.filter((m) => m.type === 'notice');
+    expect(notices).toHaveLength(1);
+    expect(String(notices[0]!.message)).toContain('2 个提问未回答');
+  });
+
+  it('T8 停止（纯暂停态，无在途提问）⇒ 只收场，不 post 未回答行', async () => {
+    const stub = agentStub({ checkpointDiscarded: true });
+    const h = makeCoordinator(stub);
+
+    const checkpointDiscarded = await h.coordinator.abandonOnStop();
+
+    expect(h.userRows()).toHaveLength(0);
+    expect(h.posted.filter((m) => m.type === 'notice')).toHaveLength(0);
+    expect(stub.abandonTurn).toHaveBeenCalledTimes(1);
+    expect(checkpointDiscarded).toBe(true);
   });
 
   it('无 agent 时超时处理静默返回（不 post、不起流）', async () => {
-    const h = makeCoordinator({ isAskWaiting: true, agent: undefined as unknown as Agent });
-    // getAgent 返回 undefined（构造时已传入 agent，此处直接验证 deps 消费路径）
     const noAgent = new AskCoordinator({
       getAgent: () => undefined,
-      isAskWaiting: () => true,
-      getTurnState: () => ({ phase: 'waiting', reason: 'ask' }),
       post: () => {
         throw new Error('不应 post');
       },
@@ -308,7 +296,7 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
     noAgent.setPending([q('继续吗？')]);
 
     await expect(noAgent.handleAskTimeout()).resolves.toBeUndefined();
-    expect(h.coordinator).toBeDefined();
+    await expect(noAgent.abandonOnStop()).resolves.toBe(false);
   });
 
   it('T5 生命周期：域内无「随流清」入口——提问写入后不会被自动清空（仅显式 clearPending）', () => {
@@ -336,8 +324,6 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
       ((s: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>) | undefined;
     const coordinator = new AskCoordinator({
       getAgent: () => stub.agent,
-      isAskWaiting: () => true,
-      getTurnState: () => ({ phase: 'waiting', reason: 'ask', questions: [q('继续吗？')] }),
       post: () => {},
       runFlow: (factory) => {
         receivedFactory = factory;

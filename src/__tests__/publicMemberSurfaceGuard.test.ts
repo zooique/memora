@@ -383,6 +383,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   Agent: {
     kind: 'class',
     members: [
+      'abandonTurn',
       'answerQuestion',
       'archiveSession',
       'cancelAsk',
