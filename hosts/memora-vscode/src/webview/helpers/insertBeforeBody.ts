@@ -17,7 +17,7 @@
  *
  * 运行时**无 round-block**，锚点不得依赖它——以它为锚时 querySelector 恒返回 null，
  * 而 insertBefore(el, null) 按 DOM 规范退化为 appendChild，元素落到 assistant 块最末
- * （正文 .msg-body 与 .msg-footer 之后）= 会话内容底部（坑）。
+ * （正文 .msg-body 之后）= 消息块最末（坑；操作行属容器底栏，不在消息块内）。
  *
  * @param host assistant 容器（.msg.assistant）
  * @param el 待挂载的过程类元素

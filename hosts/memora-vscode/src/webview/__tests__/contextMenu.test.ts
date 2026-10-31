@@ -7,6 +7,8 @@
  *   - initContextMenu：场合过滤渲染、文本落点放行（输入框原生右键）、
  *     无可显项放行、点击项 run + 关闭、点外关闭、Escape 关闭（共享导航）
  *   - selection 优先级（mock getSelection）
+ *   - 锁态（运行中）右键静默：消息条 / 代码块全项过滤为空 → 不 preventDefault、不弹菜单；
+ *     唯一例外是选中文字后的选区菜单（用户 2026-10-31 定案，不得当 bug 修）
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
@@ -16,6 +18,7 @@ import {
   type ContextMenuCtx,
   type ContextMenuItem,
 } from '../components/contextMenu.js';
+import { createContextMenuItems } from '../components/contextMenuItems.js';
 
 /** run 回调签名（菜单项执行闭包；测试 mock 按此签名建，保证可赋给 ContextMenuItem.run） */
 type RunFn = (ctx: ContextMenuCtx) => void;
@@ -107,6 +110,17 @@ describe('resolveContextMenuCtx 场合命中判据（单点）', () => {
 
   it('无 .msg 宿主 → null（不弹菜单不拦截）', () => {
     expect(resolveContextMenuCtx(document.getElementById('outside'))).toBeNull();
+  });
+
+  it('完成轮：visibleText 只取正文，不混入过程折叠区（复制本条的文本源契约）', () => {
+    document.body.innerHTML = `
+      <div class="msg assistant" data-ts="t1" data-raw-text="**回答**">
+        <div class="msg-ai-label"><span>AI</span></div>
+        <details class="round-block"><summary>过程</summary><div>工具流水</div></details>
+        <div class="msg-body"><p>回答正文</p></div>
+      </div>`;
+    const ctx = resolveContextMenuCtx(document.querySelector('.msg-body p'));
+    expect(ctx?.visibleText).toBe('回答正文');
   });
 });
 
@@ -211,6 +225,51 @@ describe('initContextMenu 交互语义', () => {
       );
       expect(ids).toEqual(['a-sel']);
       expect(seen.every((k) => k === 'selection')).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('锁态（运行中）：消息条/代码块右键无任何菜单项（放行原生 = 用户看到「没有反应」）', () => {
+    const noop = (): void => {};
+    // 真实项表 + 锁生效：正文非空、锚点齐全 ⇒ 若判据缺失，菜单会照旧弹出
+    ({ dispose: disposeMenu } = initContextMenu(
+      document,
+      createContextMenuItems({ copy: noop, quoteReply: noop, post: noop, isLocked: () => true }),
+    ));
+    const msg = document.querySelector('.msg.assistant') as HTMLElement;
+    const e = ctxClick(msg.querySelector('p') as Element);
+    expect(e.defaultPrevented).toBe(false);
+    expect(document.querySelector('.ctxmenu')).toBeNull();
+    // 代码块：正文三项共用同一个锁守卫，同样静默
+    const e2 = ctxClick(document.querySelector('pre code') as Element);
+    expect(e2.defaultPrevented).toBe(false);
+    expect(document.querySelector('.ctxmenu')).toBeNull();
+  });
+
+  it('锁态（运行中）：选中文字仍弹选区菜单（唯一例外，「复制选中」可用）', () => {
+    const copied: string[] = [];
+    const spy = vi
+      .spyOn(window, 'getSelection')
+      .mockReturnValue({ toString: () => '选中的文字' } as Selection);
+    try {
+      ({ dispose: disposeMenu } = initContextMenu(
+        document,
+        createContextMenuItems({
+          copy: (t) => copied.push(t),
+          quoteReply: () => {},
+          post: () => {},
+          isLocked: () => true,
+        }),
+      ));
+      const e = ctxClick(document.querySelector('.msg.assistant p') as Element);
+      expect(e.defaultPrevented).toBe(true);
+      const ids = Array.from(document.querySelectorAll('.ctxmenu__item')).map((b) =>
+        b.getAttribute('data-ctxmenu-id'),
+      );
+      expect(ids).toEqual(['copy-selection', 'quote-reply']);
+      (document.querySelector('[data-ctxmenu-id="copy-selection"]') as HTMLElement).click();
+      expect(copied).toEqual(['选中的文字']);
     } finally {
       spy.mockRestore();
     }

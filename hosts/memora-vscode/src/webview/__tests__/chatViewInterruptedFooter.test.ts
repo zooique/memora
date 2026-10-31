@@ -9,12 +9,12 @@
  *
  * 覆盖三相位：
  *   ① 正文流中中断（容器已建）→ settle 走「已建」分支：移除 is-pending + 时间戳存在
- *      （footer 由流式期 ensureRoundGroupFooter 按首段 dataset.ts 直接生成时间戳元素）
+ *      （footer 由流式期 `roundFooterView.buildRoundGroupFooter` 按首段 dataset.ts 直接生成时间戳元素）
  *   ② 早相位中断（骨架未入容器）→ settle 走「建容器」分支（与重放 renderInterruptedRound 同构）
  *   ③ done 正常回归 → footer 照常显形（收口点不破坏正常轮）
  *
  * ⚠ 真相对齐（2026-10-05 复核）：`settleRoundFooter` 的时间戳元素由流式期
- * `ensureRoundGroupFooter` 按首段 dataset.ts 直接生成，并不依赖 `commitTurnTs` 前置——
+ * `roundFooterView.buildRoundGroupFooter` 按首段 dataset.ts 直接生成，并不依赖 `commitTurnTs` 前置——
  * 故下方 `.msg-time` 断言锁定的是「footer 显形 + 时间戳元素存在」（收口点不丢栏），
  * 而非「commitTurnTs→settleRoundFooter 顺序契约」。`settleRoundWithFooter` 将 commitTurnTs
  * （删除按钮 ts 锚）与 footer 显形捆绑，属防御性收口（防未来某终态路径未回填 ds 致删除按钮

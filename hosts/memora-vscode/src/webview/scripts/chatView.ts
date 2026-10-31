@@ -82,6 +82,13 @@ import { initDropdowns } from '../components/dropdown.js';
 import { initContextMenu } from '../components/contextMenu.js';
 // 右键菜单项表（数据面外置：8 条 when/run 长在视图函数体里会与 prettier / max-lines 顶牛）
 import { createContextMenuItems } from '../components/contextMenuItems.js';
+// 轮级动作底栏（ACTIONS-SSOT-1）：底栏呈现 + 锚点读取收口于 roundFooterView，
+// 动作文案/判据/执行收口于 components/roundActions；chatView 只接线与锁态刷新
+import {
+  buildRoundGroupFooter,
+  refreshRoundActionButtons,
+  settleRoundGroupFooter,
+} from './roundFooterView.js';
 import { createCodeBlockEnhancer } from './codeBlockView.js';
 import { applyIcon, createIcon, getIconSvg, populateIcons } from './icons.js';
 import { createSanitizer } from '../helpers/sanitizer.js';
@@ -547,9 +554,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     div.className = 'msg assistant';
     // 身份标签直连角色名——运行时补充/问答有独立交互条目行分隔，不存在同轮多段，
     // 骨架空转至 done 时即为普通轮（无续接视觉残留，运行时形态与重放一致）。
-    // 流式未完成：footer 初始隐藏（is-pending 由 buildAssistantShell 加类），finalize 时展示。
-    // 骨架此刻无 roundId（meta 不带），roundId 由首个 chunk 到达时回填（dataset + 归位判定）
-    buildAssistantShell(div, new Date().toISOString(), undefined, { pending: true });
+    // 流式未完成：容器底栏以 is-pending 隐藏（建栏时传 pending=true），定稿后由
+    // settleRoundFooter 显形。骨架此刻无 roundId（meta 不带），roundId 由首个 chunk
+    // 到达时回填（dataset + 归位判定）
+    buildAssistantShell(div, new Date().toISOString());
     activeAssistantEl = div;
     streamBodyRendered = false;
     // 挂载点：交互续跑插到交互行之后（保持 [块A]→[问/答]→[块B] 顺序）；新轮骨架落消息流尾
@@ -1282,7 +1290,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     host.className = 'msg assistant is-interrupted-host';
     // 真实闭环起点（首条带 ts 的过程事件）；空事件/空 ts 兜底当前时间（旧行为，删除仍禁用）
     const startTs = currentEvents.find((e) => e.ts)?.ts ?? new Date().toISOString();
-    buildAssistantShell(host, startTs, roundId, { pending: false });
+    buildAssistantShell(host, startTs, roundId);
     host.querySelector('.msg-body')?.remove();
     if (roundId) host.dataset.roundId = roundId;
     // 复制源（与运行时中断轮共用 deriveNarrateText 同源）：正文已随中断丢弃，整链复制 = 过程叙述拼接
@@ -1707,23 +1715,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     sessionControlsLocked = locked;
     newSessionBtn.disabled = locked;
     historyBtn.disabled = locked;
-    // 删除按钮：锚点归一化——段级（.msg 内 button）取自身 dataset.ts；容器级（round-group footer）
-    // button 无自身 dataset，取容器内首段 .msg.assistant 的 dataset.ts（与构建时 firstSeg 语义一致；
-    // 首段 ts 空会致删除恒禁用——commitTurnTs 回填后此处即生效）
-    document.querySelectorAll<HTMLButtonElement>('.msg-delete-icon').forEach((b) => {
-      const ts =
-        b.dataset.ts ||
-        b.closest<HTMLElement>('.round-group')?.querySelector<HTMLElement>('.msg.assistant')
-          ?.dataset.ts ||
-        '';
-      b.disabled = locked || !ts;
-    });
-    // 分叉按钮：锚点从父块继承（.msg.assistant 段级 / .round-group 容器级），
-    // 与点击 handler 读父块 dataset.roundId 保持 SSOT 一致；forkBtn 自身不存 roundId
-    document.querySelectorAll<HTMLButtonElement>('.msg-fork-icon').forEach((b) => {
-      const anchor = b.closest<HTMLElement>('.msg.assistant, .round-group');
-      b.disabled = locked || !anchor?.dataset.roundId;
-    });
+    // 轮级动作（重新生成 / 分叉 / 删除）统一交给真源刷新：判据只在 roundActions.available
+    // 一处（取代旧的「删除扫一遍 + 分叉扫一遍 + 各写一份锚点提取」双实现）
+    refreshRoundActionButtons(document, locked);
   }
 
   // ─── 回答等待指示器（③ 等待反馈）─────────────────
@@ -1943,9 +1937,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 同轮归位语义（同 roundId 段进同一 .round-group 容器）仍由 isSameRoundContinue 判——保留
       // roundId 记录为本轮标识（无 roundId 的块不覆盖，重放每轮都有）
       if (roundId) lastAssistantRoundId = roundId;
-      // AI 消息：复用骨架构建（label + content + body + footer），
+      // AI 消息：复用骨架构建（label + body），
       // 一次性消息（历史回放）直接渲染 Markdown（代码块/列表/表格可读）
-      const { body } = buildAssistantShell(div, ts, roundId);
+      const body = buildAssistantShell(div, ts, roundId);
       // 原始文本存于 .msg 的 dataset（流式/历史共用，复制按钮据此复制完整原始 Markdown 源）
       div.dataset.rawText = text;
       body.innerHTML = renderMarkdown(text, sanitize);
@@ -2263,74 +2257,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     g.dataset.roundId = roundId;
     el.before(g);
     g.appendChild(el);
-    ensureRoundGroupFooter(g, pending);
+    buildRoundGroupFooter({
+      group: g,
+      pending,
+      locked: sessionControlsLocked,
+      post: (m) => vscode.postMessage(m),
+    });
     roundGroupEl = g;
     return g;
-  }
-
-  /**
-   * 容器级 footer（容器化）：复制整链 / 分叉 / 删除 + 时间戳
-   *
-   * 整链复制 = 该 round 的「用户提问（容器前一兄弟）+ 全部 assistant 段」，单一入口
-   * 覆盖闭环全量（R1 修复）。段级 footer 由 CSS 隐藏，操作整体上移到容器读取。
-   * is-pending：与段级 footer 同一「内容未定稿」语义（SSOT 复用）——流式创建时隐藏，
-   * 回答定稿（finalizeStreaming）后移除；历史回放/一次性消息直接传 false（已定稿）。
-   *
-   * @param g       容器元素（幂等：已有 footer 不重复建）
-   * @param pending 是否内容未定稿（流式创建传 true，回放/一次性传 false）
-   */
-  function ensureRoundGroupFooter(g: HTMLElement, pending: boolean): void {
-    if (g.querySelector('.round-group__footer')) return;
-    const footer = document.createElement('div');
-    footer.className = 'round-group__footer';
-    if (pending) footer.classList.add('is-pending'); // 流式/提问等待中：未定稿隐藏；回放/已定稿直接显示
-    const copyBtn = createIcon('copy', '复制整条问答（含你的提问与全部回答）', 'msg-copy-icon');
-    copyBtn.addEventListener('click', () => copyText(roundChainText(g)));
-    const forkBtn = createIcon('fork', '从此问答闭环分叉新会话', 'msg-fork-icon');
-    forkBtn.disabled = !g.dataset.roundId;
-    forkBtn.addEventListener('click', () =>
-      vscode.postMessage({ type: 'fork_session', roundId: g.dataset.roundId }),
-    );
-    const deleteBtn = createIcon('delete', '删除该问答及之后所有对话', 'msg-delete-icon');
-    const firstSeg = g.querySelector<HTMLElement>('.msg.assistant');
-    deleteBtn.disabled = !firstSeg?.dataset.ts;
-    deleteBtn.addEventListener('click', () => {
-      if (firstSeg?.dataset.ts)
-        vscode.postMessage({ type: 'delete_turn', ts: firstSeg.dataset.ts });
-    });
-    // 按钮组靠左、时间戳靠右（flex space-between 分散）
-    const actions = document.createElement('div');
-    actions.className = 'round-group__actions';
-    actions.append(copyBtn, forkBtn, deleteBtn);
-    footer.append(actions);
-    // 时间戳：取首段时间（闭环起点）
-    const t = firstSeg ? fmtTime(firstSeg.dataset.ts) : '';
-    if (t) {
-      const timeEl = document.createElement('span');
-      timeEl.className = 'msg-time';
-      timeEl.textContent = t;
-      footer.appendChild(timeEl);
-    }
-    g.appendChild(footer);
-  }
-
-  /**
-   * 容器整链文本：用户提问（前一兄弟，若为 user 气泡）+ 容器内全部 assistant 段正文
-   *
-   * 复制拿「最终汇报」实质内容，不掺交互噪声；rawText 原文完整保留（溯源不受影响）。
-   */
-  function roundChainText(g: HTMLElement): string {
-    const parts: string[] = [];
-    const user = g.previousElementSibling;
-    if (user instanceof HTMLElement && user.classList.contains('msg-wrapper')) {
-      const t = user.textContent?.trim();
-      if (t) parts.push(t);
-    }
-    g.querySelectorAll<HTMLElement>('.msg.assistant').forEach((a) => {
-      const t = (a.dataset.rawText ?? '').trim();
-      if (t) parts.push(t);
-    });
-    return parts.join('\n\n');
   }
 
   /**
@@ -2495,24 +2429,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 构建 AI 消息骨架（label + content + body + footer[复制 + 时间戳]）
+   * 构建 AI 消息骨架（label + body）
    *
    * assistant 一次性消息与流式消息共用骨架，差异仅在 body 内容（markdown 渲染 vs
-   * 纯文本 + 光标）。复制按钮读取 .msg 的 dataset.rawText（流式结束后更新为完整文本），
-   * 修复「流式复制只复制第一 chunk」的缺陷。
+   * 纯文本 + 光标）。操作行已收口容器底栏（ACTIONS-SSOT-1：段级 footer 退役）——
+   * 复制 / 重新生成 / 分叉 / 删除只存在于 `.round-group__footer`，本函数不再建段级操作行。
    *
    * @param div 已创建的空 .msg.assistant 元素
    * @param ts 消息时间戳
-   * @param roundId 本轮问答闭环 ID（流式结束回填启用分叉）
-   * @param opts.pending 流式回答未完成 → footer 初始隐藏（is-pending），finalizeStreaming 展示
-   * @returns body 元素 + footer 元素
+   * @param roundId 本轮问答闭环 ID（容器归位 / 分叉锚回填用）
+   * @returns body 元素
    */
-  function buildAssistantShell(
-    div: HTMLElement,
-    ts?: string,
-    roundId?: string,
-    opts?: { pending?: boolean },
-  ): { body: HTMLElement; footer: HTMLElement } {
+  function buildAssistantShell(div: HTMLElement, ts?: string, roundId?: string): HTMLElement {
     // 顶部身份标签（极简风格）：[小圆点]角色名[·]模型名
     const label = document.createElement('div');
     label.className = 'msg-ai-label';
@@ -2532,53 +2460,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       label.appendChild(modelEl);
     }
     div.appendChild(label);
-    // 报告正文：label 之后、footer 之前（任务过程折叠区由 ensureRoundBlock 挂在 label 与 body 之间，
+    // 报告正文：label 之后、容器底栏之前（任务过程折叠区由 ensureRoundBlock 挂在 label 与 body 之间，
     // 形成「任务过程在上 · 报告在下」；body 单一连续，不被工具切碎）
     const body = document.createElement('div');
     body.className = 'msg-body';
     div.appendChild(body);
-    // footer 独立（msg 直接子元素，永远排在 round-block / body 之后）
-    const footer = document.createElement('div');
-    footer.className = 'msg-footer';
-    const copyBtn = createIcon('copy', '复制消息', 'msg-copy-icon');
-    // 复制按钮读取 .msg.dataset.rawText（原始 Markdown 源）；流式结束更新后即复制完整文本
-    copyBtn.addEventListener('click', () => copyText(div.dataset.rawText ?? ''));
-    footer.appendChild(copyBtn);
-    // 分叉按钮（round-based 模式）：从当前问答闭环位置创建新会话。
-    // 流式期间 roundId 未知 → 初始禁用；轮结束（done/interrupted）由 commitRoundId 回填并启用。
-    // SSOT：点击始终读 dataset.roundId（单一读取点），回填即生效，无需重建事件。
-    const forkBtn = createIcon('fork', '从此处分叉创建新会话', 'msg-fork-icon');
-    forkBtn.disabled = !roundId;
-    forkBtn.addEventListener('click', () => {
-      vscode.postMessage({ type: 'fork_session', roundId: div.dataset.roundId || undefined });
-    });
-    footer.appendChild(forkBtn);
-    // 删除按钮：AI 消息承载「删除问答闭环」入口——删了答也删问。
-    // 携带该条 AI 消息的 timestamp 作锚点，host 端确认后 truncate-from-turn（删该问答及之后所有）。
-    // 无 ts（如流式未完成即被清空）时禁用，避免删除锚点失效。
-    const deleteBtn = createIcon('delete', '删除该问答及之后所有对话', 'msg-delete-icon');
-    // 存锚点供运行时锁批量读取；disabled 继承全局锁态（运行时强制禁用）或「无锚点则禁用」
-    deleteBtn.dataset.ts = ts ?? '';
-    deleteBtn.disabled = sessionControlsLocked || !ts;
-    deleteBtn.addEventListener('click', () => {
-      if (div.dataset.ts) vscode.postMessage({ type: 'delete_turn', ts: div.dataset.ts });
-    });
-    footer.appendChild(deleteBtn);
-    const t = fmtTime(ts);
-    if (t) {
-      const timeEl = document.createElement('span');
-      timeEl.className = 'msg-time';
-      timeEl.textContent = t;
-      footer.appendChild(timeEl);
-    }
-    div.appendChild(footer);
-    // 流式回答未完成时隐藏底部操作行（复制/分叉/删除 + 时间戳）——操作在内容定稿前无意义；
-    // 回答完毕（finalizeStreaming）移除 is-pending 再展示。历史回放的一次性消息不传 pending。
-    if (opts?.pending) footer.classList.add('is-pending');
-    // 记录消息 timestamp 供删除锚点；roundId 供分叉按钮读取
+    // 记录消息 timestamp / roundId：容器底栏经 roundFooterView.roundActionCtx 单点读取
+    // （删除 / 重新生成锚 = 首段 ts，分叉锚 = 容器 roundId，缺省回退本段 roundId）
     div.dataset.ts = ts ?? '';
     div.dataset.roundId = roundId ?? '';
-    return { body, footer };
+    return body;
   }
 
   // ─── 光标状态机（UI-BLOCK-ICON 批次二，方案-过程块视觉辨识-20261001.md §三定案 B）───
@@ -2636,7 +2527,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     div.className = 'msg assistant';
     // 同轮续接视觉已整体退役（见 append 注释），此处不标记 is-continued
     if (roundId) lastAssistantRoundId = roundId;
-    const { body } = buildAssistantShell(div, ts, roundId, { pending: true });
+    const body = buildAssistantShell(div, ts, roundId);
     activeAssistantEl = div;
     streamBodyRendered = false;
     messages.appendChild(div);
@@ -2694,15 +2585,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 中断轮正文块整块移除无需态）+ 代码块增强；复制按钮的原始文本源同步更新为完整流式文本。
    */
   function finalizeStreaming(): void {
-    // ① UI 收尾（与流式状态无关，done/interrupted/打断均需执行）：段级 footer 的 is-pending
-    // 移除 = 内容已定稿的信号，打断也是定稿（半截内容到此为止）。放 guard 之外——打断路径已把
-    // streamingActive 清为 false，guard 会挡住旧逻辑。容器 footer 显形归 settleRoundFooter
-    // 单点（终态消息真源 + roundId 锚），不在此经 activeAssistantEl.closest 间接命中——
-    // 早相位中断时骨架未入容器，closest 命中 null，显形信号静默丢失（中断轮无底部栏的根因）。
+    // ① 段级 footer 已退役（ACTIONS-SSOT-1）：定稿显形由 settleRoundFooter 单点承载
+    // （容器底栏 + roundId 锚），此处不再触碰任何操作行
     const el = activeAssistantEl;
-    if (el?.isConnected) {
-      el.querySelector<HTMLElement>('.msg-footer')?.classList.remove('is-pending');
-    }
     // ② 流式专属清理（guard 保护：非流式状态下这些动作不该执行）
     if (!streamingActive || !el || !el.isConnected) return;
     if (streamRenderTimer) {
@@ -2803,8 +2688,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 已入容器：中断发生在首 chunk 前（骨架未归位）时 closest('.round-group') 命中 null，
    * 显形信号丢失 → 中断轮只剩停止行、无「复制整链/分叉/删除 + 时间戳」底部栏。
    *
-   * - 容器已建（正文流中的 done/中断）：移除 footer is-pending；时间戳元素缺失时按首段
-   *   ts 补建（运行时建 footer 时首段 dataset.ts 恒空 → 时间戳从未创建，重放路径无此问题）。
+   * - 容器已建（正文流中的 done/中断）：显形与时间戳补建一次交给
+   *   `roundFooterView.settleRoundGroupFooter`（同一 `roundActionCtx` 读锚；运行时建栏时
+   *   首段 dataset.ts 恒空 → 时间戳从未创建，重放路径无此问题）。
    * - 容器未建（早相位中断）：hostEl 作首段建容器（pending=false 直接显形，与重放
    *   renderInterruptedRound 同构）；hostEl 回填 roundId（骨架期无 roundId，由终态消息补）。
    * - roundId 缺失 / 无载体可挂：诚实降级不建栏——无身份锚的删除/分叉按钮是死的，
@@ -2819,16 +2705,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       (g) => g.dataset.roundId === roundId,
     );
     if (existing) {
-      const footer = existing.querySelector<HTMLElement>('.round-group__footer');
-      footer?.classList.remove('is-pending');
-      const firstSeg = existing.querySelector<HTMLElement>('.msg.assistant');
-      const t = firstSeg ? fmtTime(firstSeg.dataset.ts) : '';
-      if (footer && t && !footer.querySelector('.msg-time')) {
-        const timeEl = document.createElement('span');
-        timeEl.className = 'msg-time';
-        timeEl.textContent = t;
-        footer.appendChild(timeEl);
-      }
+      // 显形 + 时间戳补建 = roundFooterView.settleRoundGroupFooter 单点（同一 roundActionCtx 读锚）
+      settleRoundGroupFooter(existing);
       return;
     }
     if (hostEl?.isConnected) {
@@ -2840,16 +2718,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 终态 footer 显形 + 其前置 commitTurnTs 收口为单操作
    *
-   * 防御性收口：commitTurnTs 回填首段 dataset.ts（删除按钮 ts 锚，决定 footer 删除按钮
-   * 可用性——`ensureRoundGroupFooter` 内 `deleteBtn.disabled = !firstSeg?.dataset.ts`）。
-   * 主流水路径已在渲染期写入首段 dataset.ts（footer 时间戳同期由 `ensureRoundGroupFooter`
-   * 按首段 ds 直接生成），故当前「顺序契约」对时间戳并不构成已复现的阻断；本组合的价值在
+   * 防御性收口：commitTurnTs 回填首段 dataset.ts（删除 / 重新生成共用的 ts 锚，决定轮级
+   * 动作可用性——`roundActions.available` 单点判据，底栏于 `roundFooterView.roundActionCtx`
+   * 读取首段 ts）。主流水路径已在渲染期写入首段 dataset.ts（底栏时间戳同期由
+   * `buildRoundGroupFooter` 按首段 ds 直接生成），故当前「顺序契约」对时间戳并不构成已复现的阻断；本组合的价值在
    * 于：对任意「终态」路径保证 commitTurnTs 随 footer 显形恒执行，消除调用方需记的隐式顺序，
    * 防未来某路径（如早相位中断/暂停续跑）未在建栏前回填 ds 导致删除按钮恒禁用或时间戳缺失。
    * 属防御性收口，非修复当前已复现 bug（与「单一操作自持其前置不变量」同源）。
    *
    * @see settleRoundFooter 具体显形逻辑
-   * @see ensureRoundGroupFooter 删除按钮可用性与时间戳均依赖首段 dataset.ts
+   * @see roundFooterView.roundActionCtx 轮级动作锚点（首段 ts / 容器 roundId）的单一读取点
    */
   function settleRoundWithFooter(roundId: string | undefined, hostEl: HTMLElement | null): void {
     commitTurnTs();

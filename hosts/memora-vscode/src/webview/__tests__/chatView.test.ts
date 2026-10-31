@@ -954,8 +954,13 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
         status: 'complete',
       }),
     );
-    const del = document.querySelector('.msg.assistant .msg-delete-icon') as HTMLButtonElement;
+    const del = document.querySelector(
+      '.round-group__footer .msg-delete-icon',
+    ) as HTMLButtonElement;
     expect(del.disabled).toBe(true);
+    // 重新生成与删除同强度（截断会话结构）：锁态下同样禁用（判据出自同一 available()）
+    const regen = document.querySelector('.msg-regenerate-icon') as HTMLButtonElement;
+    expect(regen.disabled).toBe(true);
   });
 
   it('非运行时（done）恢复会话导航类控件：新建/历史/删除按钮全 enabled', () => {
@@ -971,7 +976,9 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     dispatch({ type: 'status', state: 'done' });
     expect((document.getElementById('newSessionBtn') as HTMLButtonElement).disabled).toBe(false);
     expect((document.getElementById('historyBtn') as HTMLButtonElement).disabled).toBe(false);
-    const del = document.querySelector('.msg.assistant .msg-delete-icon') as HTMLButtonElement;
+    const del = document.querySelector(
+      '.round-group__footer .msg-delete-icon',
+    ) as HTMLButtonElement;
     expect(del.disabled).toBe(false);
   });
 
@@ -5248,12 +5255,13 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     mountChatView();
     dispatch({ type: 'chunk', content: '第一段 ' });
     dispatch({ type: 'chunk', content: '第二段' });
-    dispatch({ type: 'done' });
+    // done 携带 roundId → 建容器 + 底栏（复制按钮的唯一落点）
+    dispatch({ type: 'done', roundId: 'r-copy' });
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
-    // 完整原始文本存在消息 dataset（复制按钮据此复制完整 Markdown 源）
+    // 完整原始文本存在消息 dataset（容器「复制整链」据此读完整 Markdown 源）
     expect(assistant.dataset.rawText).toBe('第一段 第二段');
-    // 复制按钮存在（主动可见）
-    expect(assistant.querySelector('.msg-copy-icon')).not.toBeNull();
+    // 复制按钮存在（容器底栏，主动可见）
+    expect(document.querySelector('.round-group__footer .msg-copy-icon')).not.toBeNull();
   });
 
   it('interrupted 同样 finalize：渲染 Markdown + 清光标态 + 代码块增强', () => {
@@ -5318,28 +5326,28 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
         status: 'complete',
       }),
     );
-    const msg = document.querySelector('.msg.assistant') as HTMLElement;
-    expect(msg.querySelector('.msg-copy-icon')).not.toBeNull();
-    const del = msg.querySelector('.msg-delete-icon') as HTMLButtonElement;
+    // 操作行已收口容器底栏（ACTIONS-SSOT-1：段级 .msg-footer 退役）
+    const footer = document.querySelector('.round-group__footer') as HTMLElement;
+    expect(footer.querySelector('.msg-copy-icon')).not.toBeNull();
+    const del = footer.querySelector('.msg-delete-icon') as HTMLButtonElement;
     expect(del).not.toBeNull();
     // 有 timestamp 锚点时删除按钮可用
     expect(del.disabled).toBe(false);
   });
 
-  it('流式回答 done 携带 roundId → 分叉按钮启用（任意 LLM 回答可分叉）', () => {
+  it('流式回答 done 携带 roundId → 容器底栏分叉按钮启用（任意 LLM 回答可分叉）', () => {
     const { postMessage } = mountChatView();
-    // 流式期间：roundId 未知 → 分叉按钮初始禁用（灰色）
+    // 流式期间：chunk 未带 roundId → 骨架未入容器，操作行不存在（唯一操作面 = 容器底栏）
     dispatch({ type: 'chunk', content: '第一段' });
-    const msg = document.querySelector('.msg.assistant') as HTMLElement;
-    const forkBtn = msg.querySelector('.msg-fork-icon') as HTMLButtonElement;
-    expect(forkBtn).not.toBeNull();
-    expect(forkBtn.disabled).toBe(true);
-    // 本轮闭环结束：host done 携带 roundId → 回填 dataset 并启用按钮
+    expect(document.querySelector('.round-group__footer')).toBeNull();
+    // 本轮闭环结束：host done 携带 roundId → 建容器底栏并回填锚点
     dispatch({ type: 'done', roundId: 'round-42' });
     // done 消息后宿主紧跟 status:done 释放 sessionControlsLocked，
-    // forkBtn.disabled 判定 = locked || !roundId，锁未释放时恒为 true
+    // 分叉可用 = !locked && roundId 非空，锁未释放时恒为 true
     dispatch({ type: 'status', state: 'done' });
-    expect(msg.dataset.roundId).toBe('round-42');
+    const group = document.querySelector('.round-group') as HTMLElement;
+    expect(group.dataset.roundId).toBe('round-42');
+    const forkBtn = group.querySelector('.msg-fork-icon') as HTMLButtonElement;
     expect(forkBtn.disabled).toBe(false);
     // 点击 → 携带该 roundId 发 fork_session（从本轮位置分叉新会话）
     forkBtn.click();
@@ -5349,13 +5357,12 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
   it('interrupted 携带 roundId → 打断产生的部分回答也可分叉', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '半截回答' });
-    const msg = document.querySelector('.msg.assistant') as HTMLElement;
-    const forkBtn = msg.querySelector('.msg-fork-icon') as HTMLButtonElement;
-    expect(forkBtn.disabled).toBe(true);
     dispatch({ type: 'interrupted', roundId: 'round-7' });
     // interrupted 后宿主同样发 status:done 释放锁
     dispatch({ type: 'status', state: 'done' });
-    expect(msg.dataset.roundId).toBe('round-7');
+    const group = document.querySelector('.round-group') as HTMLElement;
+    expect(group.dataset.roundId).toBe('round-7');
+    const forkBtn = group.querySelector('.msg-fork-icon') as HTMLButtonElement;
     expect(forkBtn.disabled).toBe(false);
   });
 
@@ -5368,7 +5375,9 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
         status: 'complete',
       }),
     );
-    const del = document.querySelector('.msg.assistant .msg-delete-icon') as HTMLButtonElement;
+    const del = document.querySelector(
+      '.round-group__footer .msg-delete-icon',
+    ) as HTMLButtonElement;
     del.click();
     // 点删除 → 发 delete_turn（携带渲染时存的 dataset.ts 锚点）
     expect(postMessage).toHaveBeenCalledWith({
@@ -5379,47 +5388,66 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
 
   it('AI 消息无 timestamp 时删除按钮禁用（避免锚点失效）', () => {
     mountChatView();
-    // 流式未完成即被清空：assistant 无 ts
-    dispatch({ type: 'chunk', content: '半截' });
-    const del = document.querySelector('.msg.assistant .msg-delete-icon') as HTMLButtonElement;
+    // 流式未完成即被清空：chunk 带 roundId（建容器）但无 ts → 删除锚点缺失
+    dispatch({ type: 'chunk', content: '半截', roundId: 'round-no-ts' });
+    const del = document.querySelector(
+      '.round-group__footer .msg-delete-icon',
+    ) as HTMLButtonElement;
     expect(del.disabled).toBe(true);
   });
 
-  it('流式回答期间底部操作行隐藏，done 后才展示（按钮 + 时间戳）', () => {
+  it('容器底栏重新生成：点击发 input regenerate（锚 = 本轮起点 ts）', () => {
+    const { postMessage } = mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'round-regen',
+        user: { content: '原始提问', ts: '2026-08-14T09:00:00.000Z' },
+        assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' },
+        status: 'complete',
+      }),
+    );
+    const btn = document.querySelector('.msg-regenerate-icon') as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    expect(btn.disabled).toBe(false);
+    btn.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'regenerate',
+      turnTs: '2026-08-14T09:00:30.000Z',
+    });
+  });
+
+  it('流式回答期间容器底栏隐藏，done 后才展示（按钮 + 时间戳）', () => {
     mountChatView();
-    // 首个 chunk：footer 处于 pending（隐藏）态
-    dispatch({ type: 'chunk', content: '第一段' });
-    const msg = document.querySelector('.msg.assistant') as HTMLElement;
-    const footer = msg.querySelector('.msg-footer') as HTMLElement;
+    // 首个 chunk 带 roundId → 建容器底栏，pending（隐藏）态
+    dispatch({ type: 'chunk', content: '第一段', roundId: 'r1' });
+    const footer = document.querySelector('.round-group__footer') as HTMLElement;
     expect(footer).not.toBeNull();
     expect(footer.classList.contains('is-pending')).toBe(true);
     // 流式持续：仍隐藏
-    dispatch({ type: 'chunk', content: '第二段' });
+    dispatch({ type: 'chunk', content: '第二段', roundId: 'r1' });
     expect(footer.classList.contains('is-pending')).toBe(true);
-    // 回答完毕：展示 footer
+    // 回答完毕：展示底栏
     dispatch({ type: 'done', roundId: 'r1' });
     expect(footer.classList.contains('is-pending')).toBe(false);
   });
 
-  it('meta 骨架（prepareFlowShell）期间 footer 隐藏，interrupted 打断后展示', () => {
+  it('meta 骨架期间无操作行（骨架未入容器），interrupted 建栏后展示', () => {
     mountChatView();
-    // meta 到达 → 骨架建立（footer pending）
+    // meta 到达 → 骨架建立；此时尚未归位容器 ⇒ 无容器底栏（段级操作行已退役）
     dispatch({
       type: 'process_event',
       event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
     });
-    const msg = document.querySelector('.msg.assistant') as HTMLElement;
-    const footer = msg.querySelector('.msg-footer') as HTMLElement;
-    expect(footer.classList.contains('is-pending')).toBe(true);
-    // 正文流入骨架
-    dispatch({ type: 'chunk', content: '回答' });
-    expect(footer.classList.contains('is-pending')).toBe(true);
-    // 打断（interrupted 同样 finalize）：展示 footer
+    expect(document.querySelector('.round-group')).toBeNull();
+    // 打断：settleRoundFooter 建容器 + 底栏并直接展示
     dispatch({ type: 'interrupted', roundId: 'r2' });
+    const footer = document.querySelector('.round-group__footer') as HTMLElement;
+    expect(footer).not.toBeNull();
     expect(footer.classList.contains('is-pending')).toBe(false);
   });
 
-  it('历史回放的一次性 assistant 消息 footer 直接展示（已完成消息）', () => {
+  it('历史回放的一次性 assistant 消息容器底栏直接展示（已完成消息）', () => {
     mountChatView();
     dispatchReplay(
       makeRound({
@@ -5428,7 +5456,7 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
         status: 'complete',
       }),
     );
-    const footer = document.querySelector('.msg.assistant .msg-footer') as HTMLElement;
+    const footer = document.querySelector('.round-group__footer') as HTMLElement;
     expect(footer).not.toBeNull();
     expect(footer.classList.contains('is-pending')).toBe(false);
   });

@@ -742,13 +742,13 @@ export const chatStyles = `
     color: var(--status-fail, #f14c4c);
   }
   .msg-icon-btn:disabled { color: var(--text-secondary, #9aa0a6); cursor: default; opacity: var(--op-3); }
-  /* AI 回答：顶部身份标签 + 任务过程折叠区 + 报告正文 + footer（对齐主流大厂 AI 对话设计）。
+  /* AI 回答：顶部身份标签 + 任务过程折叠区 + 报告正文（对齐主流大厂 AI 对话设计）。
    * 结构（任务过程在上 · 报告在下，SSOT 单一折叠区）：
    *   .msg.assistant → 纵向
    *     [.msg-ai-label            角色/模型名]
    *     [.round-block             任务过程折叠区（进行中展开·实时相位+工具追加；完成收起只留摘要）]
    *     [.msg-body                报告正文（单一连续 markdown，不被工具切碎）]
-   *     [.msg-footer              复制/分叉/删除 + 时间戳]
+   *   操作行不在消息级：复制/重新生成/分叉/删除由容器级 .round-group__footer 承载。
    * 顶部弱标签标「谁在说」而非侧边头像（后者每条回复都挤占一行），
    * 正文直接铺满宽度，信息密度更高。 */
   .msg.assistant {
@@ -923,14 +923,8 @@ export const chatStyles = `
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-radius: var(--radius-lg, 8px);
   }
-  /* 消息底部操作行：图标按钮 + 时间戳 */
-  .msg-footer {
-    display: flex; align-items: center; justify-content: flex-end;
-    gap: var(--sp-1, 4px); margin-top: var(--sp-2, 6px);
-  }
-  /* 流式回答未完成时隐藏底部操作行（复制/分叉/删除 + 时间戳），回答完毕后才展示。
-   * 状态类 is-pending 由 buildAssistantShell（pending 选项）加类、finalizeStreaming 移除。 */
-  .msg-footer.is-pending { display: none; }
+  /* 段级 .msg-footer 已退役（ACTIONS-SSOT-1）：AI 段不再建独立操作行，
+   * 复制 / 重新生成 / 分叉 / 删除统一由容器级 .round-group__footer 承载（唯一可见操作面）。 */
   /* 同 roundId 的 AI 段归组进同一 DOM 容器（问答闭环）。
    * 容器只做「同环归组 + 容器级操作」的结构职责，不做「卡片」视觉：
    * 无边框/无圆角/无背景/无 overflow:hidden，AI 正文全宽平铺铺满消息区
@@ -958,14 +952,11 @@ export const chatStyles = `
     border-top: var(--line-dashed);
     font-size: var(--font-sm, 11px);
   }
-  /* 容器级 footer 的「内容未定稿」隐藏：与段级 .msg-footer.is-pending 同一语义。
-   * 提问（turn_update 的 waiting/ask）等待回答期间容器 footer 不显示——底部只留 ask-inline 交互块；
-   * 回答 resume 完成（done）后由 finalizeStreaming 移除该状态，与不提问场景底部栏统一。 */
+  /* 容器级 footer 的「内容未定稿」隐藏：is-pending 由 buildRoundGroupFooter（pending 选项）
+   * 加类、settleRoundFooter 移除。提问（turn_update 的 waiting/ask）等待回答期间容器 footer
+   * 不显示——底部只留 ask-inline 交互块；回答 resume 完成（done）后与不提问场景底部栏统一。 */
   .round-group__footer.is-pending { display: none; }
   .round-group__actions { display: inline-flex; align-items: center; gap: var(--sp-1, 4px); }
-  /* 段级 footer 隐藏：复制/分叉/删除/时间戳统一由容器级承载，段级不设
-   * （避免「续接正文底部又有操作按钮」的重复入口） */
-  .msg.assistant .msg-footer { display: none; }
   /* 终态标签收口底栏（2026-10-13，布局返修同日）：状态词/淡勾挂底栏 time 之后的
    * ::after，正文尾回归光标纯度。载体泛匹配（契约见 chatView TerminusKind）：有正文轮
    * 挂 .msg-body、中断轮挂宿主块，round-group 内任一带终态 [data-terminus] 即点亮——
