@@ -4,10 +4,11 @@
  * 覆盖两类：
  *   - ISessionStore 契约：round 写入/loadMessages 往返、
  *     metas 三件套、落盘持久化往返、损坏降级
- *   - truncate-from-turn 语义（对话闭环管理）：
- *     - 删除目标问答闭环（anchor assistant 向前最近的 user 消息起）到会话末尾
- *     - 目标为最后一条时只删该问答
- *     - 锚点 ts 不存在 → no-op 返回 false
+ *   - truncate-from-turn 语义（对话闭环管理，锚 = Round.id）：
+ *     - 删除目标轮及其之后所有轮（身份精确定位，不做时间窗猜测）
+ *     - 目标为最后一轮时只删该轮
+ *     - 锚点 roundId 不存在 → no-op 返回 false
+ *     - 相邻两个中断轮（DELETE-ANCHOR-1 形态）不得删错目标
  *     - 空会话 / 全 tool 消息容错
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -95,6 +96,32 @@ function seedThreeTurns(store: WorkspaceSessionStore, roundStore: WorkspaceRound
   );
 }
 
+/**
+ * 铺 [中断, 中断, 完成]：DELETE-ANCHOR-1 的复现形态。
+ *
+ * 旧 ts 锚在此形态必然出错——两个中断轮都没有 assistant ts 可命中，下界匹配落到第三轮的
+ * assistant，而「上折回」只能退一层（退到第二轮），于是点第一轮的删除会删掉第三轮、
+ * 第一轮原地不动（静默删错目标）。按 roundId 定位则与形态无关。
+ */
+function seedTwoInterruptedThenDone(
+  store: WorkspaceSessionStore,
+  roundStore: WorkspaceRoundStore,
+): void {
+  const seed = (
+    content: string,
+    ts: string,
+    assistant?: { content: string; ts: string },
+    status?: 'interrupted',
+  ): string =>
+    seedRound(store, roundStore, '2026-08-16', 'main', { content, ts }, assistant, status);
+  seed('问题一', '2026-08-16T09:00:00.000Z', undefined, 'interrupted');
+  seed('问题二', '2026-08-16T09:00:04.000Z', undefined, 'interrupted');
+  seed('问题三', '2026-08-16T09:00:10.000Z', {
+    content: '回答三',
+    ts: '2026-08-16T09:00:11.000Z',
+  });
+}
+
 describe('WorkspaceSessionStore.truncateFrom', () => {
   /** 临时工作区路径（每用例独立，避免落盘文件互相污染） */
   let store: WorkspaceSessionStore;
@@ -109,10 +136,10 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
     store.load();
   });
 
-  it('删除中间问答闭环：截断该问答（anchor 向前最近 user）到会话末尾', () => {
+  it('删除中间轮：从该轮截断到会话末尾（按身份定位，不做时间窗猜测）', () => {
     seedThreeTurns(store, roundStore);
-    // 删「回答二 a2」→ 起点为最近 user（u2），截断 u2 及之后 → 剩 [u1,a1]
-    const res = store.truncateFrom('2026-08-16', 'main', 'a2');
+    // 删 round-2 → 截断 round-2 及之后 → 剩 [问题一, 回答一]
+    const res = store.truncateFrom('2026-08-16', 'main', 'round-2');
     expect(res.ok).toBe(true);
     const left = store.loadMessages('2026-08-16', 'main');
     expect(left.map((m) => m.content)).toEqual(['问题一', '回答一']);
@@ -120,70 +147,41 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
     expect(res.removedIds).toEqual(['round-2', 'round-3']);
   });
 
-  it('删除最后一条问答闭环：只删该问答（u3,a3），保留前两轮', () => {
+  it('删除最后一条问答闭环：只删该轮，保留前两轮', () => {
     seedThreeTurns(store, roundStore);
-    const res = store.truncateFrom('2026-08-16', 'main', 'a3');
+    const res = store.truncateFrom('2026-08-16', 'main', 'round-3');
     expect(res.ok).toBe(true);
     expect(res.removedIds).toEqual(['round-3']);
     const left = store.loadMessages('2026-08-16', 'main');
     expect(left.map((m) => m.content)).toEqual(['问题一', '回答一', '问题二', '回答二']);
   });
 
-  it('锚点 ts 不存在 → no-op 返回 false，会话不变', () => {
+  it('锚点 roundId 不存在 → no-op 返回 false，会话不变（陈旧 DOM 不许误删）', () => {
     seedThreeTurns(store, roundStore);
-    expect(store.truncateFrom('2026-08-16', 'main', 'not-exist').ok).toBe(false);
+    expect(store.truncateFrom('2026-08-16', 'main', 'round-404').ok).toBe(false);
     expect(store.loadMessages('2026-08-16', 'main')).toHaveLength(6);
   });
 
-  it('截断结果带出起点 Round 的 user 原文（COPY-2 regenerate 重发真源）', () => {
+  it('截断结果带出起点轮的 user 原文（COPY-2 regenerate 重发真源）', () => {
     seedThreeTurns(store, roundStore);
-    // 从 a3 锚定 round-3：removedUserText = 该轮 user 原文（问题三），重发文本以 store 为准
-    const res = store.truncateFrom('2026-08-16', 'main', 'a3');
+    // 锚 round-3 → removedUserText = 该轮 user 原文（问题三），重发文本以 store 为准
+    const res = store.truncateFrom('2026-08-16', 'main', 'round-3');
     expect(res.ok).toBe(true);
     expect(res.removedUserText).toBe('问题三');
-    // 中间轮截断同理：从 a2 锚定 round-2 → 问题二
-    seedThreeTurns(store, roundStore);
-    const res2 = store.truncateFrom('2026-08-16', 'main', 'a2');
-    expect(res2.ok).toBe(true);
-    expect(res2.removedUserText).toBe('问题二');
-  });
-
-  it('流式锚点（fromTs 早于存储时间戳）也能命中——下界匹配根治源不一致：删除失效', () => {
-    // 真实时序：a1 结束于 09:00:00，流式开始 09:00:05（chatPanel firstChunkTs），a2 存于 09:00:10
-    seedRound(
-      store,
-      roundStore,
-      '2026-08-16',
-      'main',
-      { content: '问一', ts: '2026-08-16T09:00:00.000Z' },
-      { content: '答一', ts: '2026-08-16T09:00:01.000Z' },
-    );
-    seedRound(
-      store,
-      roundStore,
-      '2026-08-16',
-      'main',
-      { content: '问二', ts: '2026-08-16T09:00:04.000Z' },
-      { content: '答二', ts: '2026-08-16T09:00:10.000Z' },
-    );
-    // 删除按钮携带的锚点是流开始时刻（09:00:05，早于答二存储时间 09:00:10）
-    expect(store.truncateFrom('2026-08-16', 'main', '2026-08-16T09:00:05.000Z').ok).toBe(true);
-    const left = store.loadMessages('2026-08-16', 'main');
-    expect(left.map((m) => m.content)).toEqual(['问一', '答一']);
   });
 
   it('空会话 → false 不抛错', () => {
-    expect(store.truncateFrom('2026-08-16', 'main', 'x').ok).toBe(false);
+    expect(store.truncateFrom('2026-08-16', 'main', 'round-1').ok).toBe(false);
   });
 
   it('截断后同步会话标题 messageCount（元数据一致）', () => {
     seedThreeTurns(store, roundStore);
-    store.truncateFrom('2026-08-16', 'main', 'a2');
+    store.truncateFrom('2026-08-16', 'main', 'round-2');
     const meta = store.getSessionMeta('2026-08-16-main');
     expect(meta?.messageCount).toBe(2);
   });
 
-  it('删除末尾中断轮（无 assistant 收场）→ 锚定末轮删除（无产出中断轮跳锚 no-op）', () => {
+  it('末尾中断轮（无 assistant 收场）可按身份删除——不再依赖「锚 >= 末轮 user ts」兜底', () => {
     seedRound(
       store,
       roundStore,
@@ -201,15 +199,14 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
       undefined,
       'interrupted',
     );
-    // 删除按钮锚点 = 中断轮 meta ts（落在问题二之后、无 assistant 不匹配 assistant 下界）
-    const res = store.truncateFrom('2026-08-16', 'main', '2026-08-16T09:00:05.000Z');
+    const res = store.truncateFrom('2026-08-16', 'main', 'round-2');
     expect(res.ok).toBe(true);
     expect(res.removedIds).toEqual(['round-2']);
     const left = store.loadMessages('2026-08-16', 'main');
     expect(left.map((m) => m.content)).toEqual(['问题一', '回答一']);
   });
 
-  it('删除中间中断轮（无 assistant 收场）→ 上折回该轮截断，防误删下一轮', () => {
+  it('删除中间中断轮（无 assistant 收场）：按身份截断，连其后完成轮一并删', () => {
     seedRound(
       store,
       roundStore,
@@ -235,16 +232,15 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
       { content: '问题三', ts: '2026-08-16T09:00:10.000Z' },
       { content: '回答三', ts: '2026-08-16T09:00:11.000Z' },
     );
-    // 锚点 = 问题二轮的 meta ts（早于问题三 user 起点，assistant 下界会命中下一轮）
-    // → 应折回删除 [中断轮, 回答三]，而非误删「下一轮之后」
-    const res = store.truncateFrom('2026-08-16', 'main', '2026-08-16T09:00:05.000Z');
+    // 锚 = 中断轮自身 roundId：截断面与 done 轮完全一致，不再需要「上折回」这种时间窗猜测
+    const res = store.truncateFrom('2026-08-16', 'main', 'round-2');
     expect(res.ok).toBe(true);
     expect(res.removedIds).toEqual(['round-2', 'round-3']);
     const left = store.loadMessages('2026-08-16', 'main');
     expect(left.map((m) => m.content)).toEqual(['问题一', '回答一']);
   });
 
-  it('done 轮删除不误折：前一轮即使无 assistant（中断轮）也以自身 assistant ts 为锚（防伪折叠）', () => {
+  it('done 轮删除：前一轮是中断轮也不误折（锚是身份，不存在「折回」这一步）', () => {
     seedRound(
       store,
       roundStore,
@@ -270,12 +266,28 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
       { content: '问题三', ts: '2026-08-16T09:00:10.000Z' },
       { content: '回答三', ts: '2026-08-16T09:00:11.000Z' },
     );
-    // done 轮删除锚点 = 自身 assistant ts（恒 >= 自己 user ts）→ 命中第 3 轮自身，不折回中断轮
-    const res = store.truncateFrom('2026-08-16', 'main', '2026-08-16T09:00:11.000Z');
+    const res = store.truncateFrom('2026-08-16', 'main', 'round-3');
     expect(res.ok).toBe(true);
     expect(res.removedIds).toEqual(['round-3']);
     const left = store.loadMessages('2026-08-16', 'main');
     expect(left.map((m) => m.content)).toEqual(['问题一', '回答一', '问题二']);
+  });
+
+  it('DELETE-ANCHOR-1 相邻两个中断轮：删第二个只删它与其后完成轮，首轮保留', () => {
+    seedTwoInterruptedThenDone(store, roundStore);
+    const res = store.truncateFrom('2026-08-16', 'main', 'round-2');
+    expect(res.ok).toBe(true);
+    expect(res.removedIds).toEqual(['round-2', 'round-3']);
+    const left = store.loadMessages('2026-08-16', 'main');
+    expect(left.map((m) => m.content)).toEqual(['问题一']);
+  });
+
+  it('DELETE-ANCHOR-1 相邻两个中断轮：删第一个清空会话（旧 ts 锚会删第三轮、留下首轮）', () => {
+    seedTwoInterruptedThenDone(store, roundStore);
+    const res = store.truncateFrom('2026-08-16', 'main', 'round-1');
+    expect(res.ok).toBe(true);
+    expect(res.removedIds).toEqual(['round-1', 'round-2', 'round-3']);
+    expect(store.loadMessages('2026-08-16', 'main')).toEqual([]);
   });
 });
 

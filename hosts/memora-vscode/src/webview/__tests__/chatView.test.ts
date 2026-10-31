@@ -2848,16 +2848,16 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const forkBtn = footer.querySelector('.msg-fork-icon') as HTMLButtonElement;
     const deleteBtn = footer.querySelector('.msg-delete-icon') as HTMLButtonElement;
     expect(copyBtn).not.toBeNull();
-    // 分叉（roundId 可用）与删除（真实起始 ts 锚）均可用；时间戳 = 闭环起点（meta ts）
+    // 分叉与删除同锚（roundId 可用即均可用）；时间戳 = 闭环起点（meta ts）
     expect(forkBtn.disabled).toBe(false);
     expect(deleteBtn.disabled).toBe(false);
     expect(host.dataset.ts).toBe('2026-09-22T03:00:05.000Z');
     expect(footer.querySelector('.msg-time')?.textContent?.trim().length).toBeGreaterThan(0);
-    // 删除点击 → delete_turn 携带真实 meta ts（truncateFrom 可锚定该轮，非 new Date 伪值）
+    // 删除点击 → delete_turn 携带轮身份（宿主按 roundIds 序 indexOf 精确定位，不做时间窗猜测）
     deleteBtn.click();
     expect(postMessage).toHaveBeenCalledWith({
       type: 'delete_turn',
-      ts: '2026-09-22T03:00:05.000Z',
+      roundId: 'r6',
     });
   });
 
@@ -5430,7 +5430,7 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
     expect(forkBtn.disabled).toBe(false);
   });
 
-  it('AI 消息删除按钮：携带该消息 ts 发送 delete_turn（host 确认后截断）', () => {
+  it('AI 消息删除按钮：携带该轮 roundId 发送 delete_turn（host 确认后截断）', () => {
     const { postMessage } = mountChatView();
     dispatchReplay(
       makeRound({
@@ -5443,24 +5443,28 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
       '.round-group__footer .msg-delete-icon',
     ) as HTMLButtonElement;
     del.click();
-    // 点删除 → 发 delete_turn（携带渲染时存的 dataset.ts 锚点）
+    // 点删除 → 发 delete_turn（锚 = 容器 dataset.roundId，不是时间戳）
     expect(postMessage).toHaveBeenCalledWith({
       type: 'delete_turn',
-      ts: '2026-08-14T09:00:30.000Z',
+      roundId: 'round-del-ts',
     });
   });
 
-  it('AI 消息无 timestamp 时删除按钮禁用（避免锚点失效）', () => {
-    mountChatView();
-    // 流式未完成即被清空：chunk 带 roundId（建容器）但无 ts → 删除锚点缺失
+  it('有 roundId 无起点 ts 时删除仍可用（时间只喂显示，不是锚）', () => {
+    const { postMessage } = mountChatView();
+    // 流式 chunk 带 roundId 但全程无 ts：容器先建成 pending 态
     dispatch({ type: 'chunk', content: '半截', roundId: 'round-no-ts' });
+    dispatch({ type: 'done', roundId: 'round-no-ts' });
+    dispatch({ type: 'status', state: 'done' }); // 释放会话结构锁
     const del = document.querySelector(
       '.round-group__footer .msg-delete-icon',
     ) as HTMLButtonElement;
-    expect(del.disabled).toBe(true);
+    expect(del.disabled).toBe(false);
+    del.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'delete_turn', roundId: 'round-no-ts' });
   });
 
-  it('容器底栏重新生成：点击发 input regenerate（锚 = 本轮起点 ts）', () => {
+  it('容器底栏重新生成：点击发 input regenerate（锚 = 轮身份 roundId）', () => {
     const { postMessage } = mountChatView();
     dispatchReplay(
       makeRound({
@@ -5477,7 +5481,7 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
     expect(postMessage).toHaveBeenCalledWith({
       type: 'input',
       kind: 'regenerate',
-      turnTs: '2026-08-14T09:00:30.000Z',
+      roundId: 'round-regen',
     });
   });
 
@@ -8162,19 +8166,18 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     expect(rb.textContent).not.toContain('用户停止');
   });
 
-  it('运行时流式轮 done 后回填 ts 锚：容器级删除按钮可用（修复「回答结束删除恒禁用」）', () => {
+  it('运行时流式轮：底栏 pending 隐藏，done 后显形且删除/分叉可用（锚 = roundId）', () => {
     mountChatView();
-    // 用户输入（带 ts）→ 流式正文（建 round-group 容器 + footer）→ done（回填 roundId + ts 锚）
+    // 用户输入（带 ts）→ 流式正文（建 round-group 容器 + footer）→ done（回填 roundId）
     dispatch({ type: 'user', text: '请总结', ts: '2026-09-08T10:00:00.000Z' });
     dispatch({ type: 'chunk', content: '第一段', roundId: 'r1' });
     dispatch({ type: 'chunk', content: '第二段' });
-    // done 前：容器 footer 的删除按钮 anchor ts 未回填 → 禁用
-    const delBefore = document.querySelector(
-      '.round-group__footer .msg-delete-icon',
-    ) as HTMLButtonElement | null;
-    expect(delBefore?.disabled).toBe(true);
+    // 流式中：底栏整条 is-pending 隐藏（用户点不到），不是「按钮 disabled 兜住」
+    const footer = document.querySelector('.round-group__footer') as HTMLElement;
+    expect(footer.classList.contains('is-pending')).toBe(true);
     dispatch({ type: 'done', roundId: 'r1' });
-    // done 后：commitTurnTs 用本轮用户输入 ts 回填 → 删除按钮可用（锁定已解除）
+    // done 后：底栏显形；删除锚 = roundId（流式期间已知）⇒ 不再等 ts 回填
+    expect(footer.classList.contains('is-pending')).toBe(false);
     const delAfter = document.querySelector(
       '.round-group__footer .msg-delete-icon',
     ) as HTMLButtonElement;
@@ -13136,7 +13139,7 @@ describe('COPY-2 锚点契约与引用快照事务（复审回归）', () => {
     );
   }
 
-  it('用户消息条自带 data-ts：右键出「删除」，分叉仍归 assistant（ANCHOR-1）', () => {
+  it('用户消息条带轮身份：右键出「删除」，分叉仍归 assistant（ANCHOR-1）', () => {
     mountChatView();
     dispatchReplay(
       makeRound({
@@ -13147,7 +13150,9 @@ describe('COPY-2 锚点契约与引用快照事务（复审回归）', () => {
     );
     const userMsg = document.querySelector<HTMLElement>('.msg.user');
     expect(userMsg).not.toBeNull();
-    // 锚点契约：user 条必须自带 ts（删除锚 = truncateFrom 的下界匹配输入）
+    // 锚点契约：user 条与 assistant 段同锚 roundId（删除 = 轮级动作，锚是身份不是 ts）；
+    // ts 仍在（时间显示），但不再决定「能不能删」
+    expect(userMsg?.dataset.roundId).toBe('r-anchor');
     expect(userMsg?.dataset.ts).toBe('2026-10-30T01:00:00.000Z');
 
     rightClick(userMsg as HTMLElement);

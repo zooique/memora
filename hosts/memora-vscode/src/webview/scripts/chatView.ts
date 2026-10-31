@@ -1273,8 +1273,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * 容器化：「被停止的会话也是正常对话记录」——中断轮与 done 轮同构也收进
    * .round-group 容器建 footer（复制整链/分叉/删除 + 时间戳），支持用户手动删除。ts 用本轮首个
-   * 过程事件时间（meta 恒为首条，真实闭环起点，对齐运行时中断块首 chunk ts），替代 new Date()
-   * 伪值——伪值会使容器 footer 的 delete_turn 锚点错位。复制整链的原始文本 = 过程叙述
+   * 过程事件时间（meta 恒为首条，真实闭环起点，对齐运行时中断块首 chunk ts），**仅喂底栏时间
+   * 显示**——轮级动作锚是 roundId，与这个值无关。复制整链的原始文本 = 过程叙述
    * （narrate）拼接（半截正文已随中断丢弃；拼接逻辑在 `shared/narrateText` 单点，重放、运行时
    * 与宿主崩溃打捞共用一份）。
    *
@@ -1700,7 +1700,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * 单一真相源 = 宿主 `status` 事件（经 setStatus 驱动），webview 不另维护 isRunning 标志。
    * 删除按钮按消息实例存在（每条 AI 消息一个），故批量 querySelectorAll 统一置态；
-   * locked 态优先（运行时强制禁用），unlock 时还原为「无锚点 ts 则禁用」的原始语义。
+   * locked 态优先（运行时强制禁用），unlock 时还原为「无 roundId 则禁用」的原始语义。
    */
   let sessionControlsLocked = false;
   /**
@@ -1956,10 +1956,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       wrapper.className = 'msg-wrapper';
       const div = document.createElement('div');
       div.className = 'msg ' + role;
-      // 删除锚点：user 条必须自带 ts——右键菜单「删除」与 truncateFrom 下界匹配均以它为锚。
-      // assistant 走 buildAssistantShell 写入，user 分支此前漏写 ⇒ 用户条右键无「删除」。
-      // roundId 仍只由 assistant 承担（分叉点语义与 hover 分叉按钮同源，不在 user 条开第二入口）。
+      // 轮身份：user 条与 assistant 段同锚 roundId（删除 = 轮级动作，锚是身份不是时间）。
+      // ts 只保留给时间显示；分叉仍只由 assistant 段提供（MENU_SCOPE 限 assistant，
+      // 不在 user 条开第二入口——用户 2026-10-31 定案）。
       div.dataset.ts = ts ?? '';
+      if (roundId) div.dataset.roundId = roundId;
       const body = document.createElement('div');
       body.className = 'msg-body';
       body.textContent = text;
@@ -2463,7 +2464,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     body.className = 'msg-body';
     div.appendChild(body);
     // 记录消息 timestamp / roundId：容器底栏经 roundFooterView.roundActionCtx 单点读取
-    // （删除 / 重新生成锚 = 首段 ts，分叉锚 = 容器 roundId，缺省回退本段 roundId）
+    // （轮级动作锚 = roundId；首段 ts 只喂时间戳显示）
     div.dataset.ts = ts ?? '';
     div.dataset.roundId = roundId ?? '';
     return body;
@@ -2654,16 +2655,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
   }
 
-  /** 最近一次新闭环用户输入时间戳（删除按钮 ts 锚回填源；'user' 无 kind 分支记录，追问/回放同源） */
+  /** 最近一次新闭环用户输入时间戳（**仅**底栏时间显示回填源；'user' 无 kind 分支记录，追问/回放同源） */
   let lastUserTs: string | undefined;
 
   /**
-   * 回填删除按钮的 ts 锚（done/interrupted 后调用，与 commitRoundId 同族对齐）。
+   * 回填容器首段的 dataset.ts（done/interrupted 后调用，与 commitRoundId 同族对齐）。
    *
-   * 运行时流式轮的容器首段（骨架转正块）dataset.ts 恒空 → 容器 footer 删除按钮
-   * 「锚点 = firstSeg.dataset.ts」判定恒禁用（deleteBtn.disabled = !ts），只有切面板
-   * 重建（append 带 ts）才可用——「回答结束后删除按钮不可用、重渲染后可用」根因。
-   * 回填锚 = 本轮用户输入 ts（delete_turn 语义同源：删除该问答及之后所有对话）。
+   * 运行时流式轮的容器首段（骨架转正块）dataset.ts 恒空 → 底栏时间戳缺失。回填值 = 本轮
+   * 用户输入 ts。**本值只喂 `roundFooterView` 的 fmtTime 显示**：轮级动作（删除 / 重发 /
+   * 分叉）锚是 roundId，回填与否都不改可用性（DELETE-ANCHOR-1 后 ts 已退出锚点域）。
    * 只回填数据不改 disabled，统一走 updateSessionControlsLock 的既有判定（SSOT）。
    */
   function commitTurnTs(): void {
@@ -2714,12 +2714,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 终态 footer 显形 + 其前置 commitTurnTs 收口为单操作
    *
-   * 防御性收口：commitTurnTs 回填首段 dataset.ts（删除 / 重新生成共用的 ts 锚，决定轮级
-   * 动作可用性——`roundActions.available` 单点判据，底栏于 `roundFooterView.roundActionCtx`
-   * 读取首段 ts）。主流水路径已在渲染期写入首段 dataset.ts（底栏时间戳同期由
-   * `buildRoundGroupFooter` 按首段 ds 直接生成），故当前「顺序契约」对时间戳并不构成已复现的阻断；本组合的价值在
-   * 于：对任意「终态」路径保证 commitTurnTs 随 footer 显形恒执行，消除调用方需记的隐式顺序，
-   * 防未来某路径（如早相位中断/暂停续跑）未在建栏前回填 ds 导致删除按钮恒禁用或时间戳缺失。
+   * commitTurnTs 回填首段 dataset.ts，**仅供底栏时间戳显示**（`roundFooterView` 经
+   * `roundActionCtx().startedAt` 读取）；轮级动作可用性只看 roundId，与本值无关。
+   * 收口价值在于：对任意「终态」路径保证时间戳随 footer 显形恒有值，消除调用方需记的隐式
+   * 顺序，防未来某路径（如早相位中断/暂停续跑）未在建栏前回填 ds 导致时间戳缺失。
    * 属防御性收口，非修复当前已复现 bug（与「单一操作自持其前置不变量」同源）。
    *
    * @see settleRoundFooter 具体显形逻辑
@@ -3265,7 +3263,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 降级渲染保证用户输入恒可见（与带 kind 交互行共用 ensureUserInputVisible 单实现）。
         try {
           append('user', msg.text, msg.ts, msg.roundId, msg);
-          // 记录本轮用户输入 ts（删除按钮 ts 锚回填源，commitTurnTs 消费）
+          // 记录本轮用户输入 ts（底栏时间戳显示回填源，commitTurnTs 消费）
           if (msg.ts) lastUserTs = msg.ts;
         } catch (err) {
           ensureUserInputVisible(msg.text, err);
@@ -3417,7 +3415,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
         msg.roundStatus && msg.roundStatus !== 'complete' ? '异常中断' : '已完成',
       );
-      // 回填删除按钮 ts 锚 + 容器 footer 显形收口（commitTurnTs 前置契约已内嵌于
+      // 回填底栏时间戳 + 容器 footer 显形收口（commitTurnTs 前置契约已内嵌于
       // settleRoundWithFooter，无需调用方记顺序——时间戳补建读首段 ts）
       settleRoundWithFooter(msg.roundId, activeAssistantEl);
     } else if (msg.type === 'interrupted') {

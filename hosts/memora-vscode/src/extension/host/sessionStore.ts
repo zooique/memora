@@ -22,7 +22,6 @@ import {
   LOOP_CONSTANTS,
   type IRoundStore,
   type ISessionStore,
-  type Round,
   type SessionMessage,
   type SessionMeta,
 } from '@zooique/memora';
@@ -252,66 +251,32 @@ export class WorkspaceSessionStore implements ISessionStore {
   }
 
   /**
-   * 截断指定会话（truncate-from-turn，宿主扩展方法）
+   * 截断会话：删除指定轮及其之后的所有轮（`delete_turn` / `regenerate` 共用唯一截断面）。
    *
-   * 删除【目标问答闭环及其之后所有 Round】，保证剩余上下文自洽。
+   * 锚 = `roundId`（**轮身份**）：`roundIds` 本就是有序真源，`indexOf` 即定位；未命中 ⇒
+   * `ok:false` 且一轮不删（陈旧 DOM / 该轮已被别处删除），调用方如实回「删除失败」。
    *
-   * 锚点（下界匹配）：定位第一条 `assistant timestamp >= fromTs` 的 Round。
-   * Round 边界即问答的 user 起点，删除该 Round 及之后。中断收场轮（appendInterrupted
-   * 零产出时不写 assistantMessage，status 即 'interrupted'）不满足
-   * assistant 下界匹配，故有两条折回（见实现注释）：
-   * ① 锚点落在末轮 user 之后 → 锚定末轮（中断轮收尾可删）；② 命中轮的前一轮为无
-   * assistant 的中断轮且锚点落其时间窗 → 上折回该中断轮（防误删下一轮）。
+   * 为什么不按 ts：旧实现用「首条 assistant ts >= 锚」作下界匹配，再对无 assistant 的
+   * 中断轮做**单层**折回——两支都是在时间窗上猜身份。相邻两个中断轮时折回只退一层，仍落在
+   * 更靠后的完成轮上（DELETE-ANCHOR-1 实测：点第一轮的删除，第三轮被删、第一轮原地不动）。
+   * ts 是 Round 的投影（一次落盘时刻），不能反过来当身份用。
    *
    * @param date 会话日期 YYYY-MM-DD
    * @param session 会话标识
-   * @param fromTs 删除按钮携带的 timestamp
+   * @param roundId 目标轮 `Round.id`（底栏 / 菜单从容器 dataset.roundId 取，非时间戳）
    * @returns 截断结果（ok = 锚点命中并完成；removedIds = 引用归零被物理删除的 Round，供联动软删记忆摘要）
    */
-  truncateFrom(date: string, session: string, fromTs: string): RoundTruncateResult {
+  truncateFrom(date: string, session: string, roundId: string): RoundTruncateResult {
     // 组装 sessionId（SSOT 契约 buildSessionId）
     const sessionId = buildSessionId(date, session);
     const roundIds = this.roundIdsStore.get(sessionId);
     if (!roundIds || roundIds.length === 0) return { ok: false, removedIds: [] };
-    const rounds = this.roundStore.getByIds(roundIds);
-    // 下界匹配：第一条 assistant 时间戳 >= fromTs 的 Round 作为截断起点（兼容流式锚点
-    // 早于落盘 assistant 时间戳的既有语义）。中断轮无 assistantMessage 会被跳锚，折回见下。
-    let idx = rounds.findIndex(
-      (r: Round) =>
-        r.assistantMessage?.timestamp !== undefined && r.assistantMessage.timestamp >= fromTs,
-    );
-    if (idx === -1) {
-      // ① 中断轮收尾：锚点 >= 末轮 user 起点（删除按钮带 meta ts / 回填 user ts）→ 锚定末轮
-      const last = rounds[rounds.length - 1];
-      if (
-        last &&
-        last.userMessage?.timestamp !== undefined &&
-        last.userMessage.timestamp <= fromTs
-      ) {
-        idx = rounds.length - 1;
-      }
-    } else if (
-      idx > 0 &&
-      rounds[idx].userMessage?.timestamp !== undefined &&
-      fromTs < rounds[idx].userMessage.timestamp
-    ) {
-      // ② 中断轮居中：assistant 下界命中「下一轮」，但锚点早于命中轮 user 起点（meta 属前一轮
-      // 时间窗）且前一轮恰为无 assistant 的中断轮 → 上折回该中断轮。判别条件兼防伪折叠：
-      // done 轮删除锚点 = 其自身 assistant ts（恒 >= 自己 user ts）→ 不满足 fromTs < user Ts，
-      // 即使前一轮也是中断轮也不误折。
-      const prev = rounds[idx - 1];
-      if (
-        prev &&
-        prev.assistantMessage === undefined &&
-        prev.userMessage?.timestamp !== undefined &&
-        prev.userMessage.timestamp <= fromTs
-      ) {
-        idx -= 1;
-      }
-    }
+    const idx = roundIds.indexOf(roundId);
     if (idx === -1) return { ok: false, removedIds: [] };
-    // 截断起点 Round 的 user 原文（regenerate 重发真源；在删除循环前取，防对象状态歧义）
-    const removedUserText = rounds[idx].userMessage?.content;
+    // 截断起点 Round 的 user 原文（regenerate 重发真源；在删除循环前取，防对象状态歧义）。
+    // 只取该轮而非整批 `getByIds(roundIds)`：后者会跳过缺失项（见 loadMessages 注释），
+    // 整批下标与 roundIds 不同源，按下标取位会错轮。
+    const removedUserText = this.roundStore.getByIds([roundId])[0]?.userMessage?.content;
     // 删除 [idx, 末尾) 的全部 Round（含目标问答）
     const removed = roundIds.slice(idx);
     const removedIds: string[] = [];

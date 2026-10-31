@@ -246,7 +246,7 @@ interface LiveFlowBuffer {
  *  Omit<ISessionStore,'deleteSession'>：避免内核契约 void 签名与宿主扩展 string[] 签名做方法交集导致返回类型坍缩。 */
 type HostSessionStore = Omit<ISessionStore, 'deleteSession'> & {
   deleteSession: (sessionId: string) => string[];
-  truncateFrom: (date: string, session: string, fromTs: string) => RoundTruncateResult;
+  truncateFrom: (date: string, session: string, roundId: string) => RoundTruncateResult;
   listSessionMetas: () => SessionMeta[];
   getSessionMeta: (sessionId: string) => SessionMeta | undefined;
   /** 留存区分组标签（宿主扩展，非 ISessionStore 契约）：纯展示态，不参与任何数据判据 */
@@ -1052,8 +1052,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 标题条改名笔 → 弹 InputBox 输入新标题写入元数据
       void this.renameCurrentSession();
     } else if (msg.type === 'delete_turn') {
-      // 删除单个问答闭环（AI 消息「删除」按钮触发）：确认不可恢复后截断该问答及之后所有
-      void this.deleteTurnFrom(msg.ts);
+      // 删除单个问答闭环（轮容器底栏 / 右键菜单触发）：确认不可恢复后截断该轮及之后所有
+      void this.deleteTurnFrom(msg.roundId);
     } else if (msg.type === 'chat_set_provider') {
       void this.handleSetProvider(msg.name);
     } else if (msg.type === 'stop') {
@@ -1696,11 +1696,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 截断核：从锚点 ts 截断该问答及之后所有（对齐主流 truncate-from-turn——删该问答及其后
-   * 全部消息，保证剩余上下文自洽）。锚 = 目标轮 assistant ts，调宿主 `sessionStore.truncateFrom`
+   * 截断核：从锚点轮截断该问答及之后所有（对齐主流 truncate-from-turn——删该问答及其后
+   * 全部轮，保证剩余上下文自洽）。锚 = 目标轮 `Round.id`，调宿主 `sessionStore.truncateFrom`
    * （宿主 ISessionStore 扩展，内核接口保持最小化），成功后重放当前会话刷新 UI。
    * `delete_turn` 与 `input.kind=regenerate` 共用——同锚同截断面，唯一差异 = 确认文案与
-   * 按钮词（调用方传入，防两处确认漂移成第二真理源）。
+   * 按钮词（调用方传入，防两处确认漂移成第二真理源）。锚 = roundId 而非 ts（DELETE-ANCHOR-1）。
    *
    * @returns ok = 是否**实际完成截断**（取消 / 守卫 / 锚未命中 / 异常一律 false——此前恒 true，
    *          与契约相反，调用方会把「没删」当「删了」续做）；reason = 失败归类（busy 已自带
@@ -1708,7 +1708,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *          userText = 截断起点 Round 的 user 原文（regenerate 重发真源）
    */
   private async truncateTurnCore(
-    ts: string,
+    roundId: string,
     confirmMessage: string,
     confirmButton: string,
   ): Promise<
@@ -1729,7 +1729,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     try {
       // sessionId 格式契约 SSOT：内核 splitSessionId 拆解（session 名可含连字符）
       const { date, session } = splitSessionId(this._currentSessionId);
-      const result = this.sessionStore.truncateFrom(date, session, ts);
+      const result = this.sessionStore.truncateFrom(date, session, roundId);
       // 锚未命中（会话已改动 / 旧 DOM 残留锚）= 什么都没删：既不伪装成功也不重放（存储未变）
       if (!result.ok) return { ok: false, reason: 'miss' };
       // 盘面已删 ⇒ 现场必须立刻作废（先于任何后续步骤，异常路径也不得复活已删内容）：
@@ -1747,9 +1747,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async deleteTurnFrom(ts: string): Promise<void> {
+  private async deleteTurnFrom(roundId: string): Promise<void> {
     const outcome = await this.truncateTurnCore(
-      ts,
+      roundId,
       '确定删除该问答及之后的所有对话？此操作不可恢复。',
       '删除',
     );
@@ -2920,7 +2920,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 确认——重新生成的破坏性等同删除（截断不可逆），确认不豁免。重发文本 = 截断
         // 起点 Round 的 user 原文（store 随轮落盘真源，webview 只传锚不传文本）；
         // 附件不重发：图片随轮落盘、截断即随轮回收（语义如实：重新生成 = 文本重开）。
-        const anchor = msg.turnTs?.trim() ?? '';
+        const anchor = msg.roundId?.trim() ?? '';
         if (!anchor) return;
         const outcome = await this.truncateTurnCore(
           anchor,

@@ -733,7 +733,7 @@ describe('会话结构操作 · 删除问答后 live 现场必须作废（防已
       _liveBuffer: unknown;
       sessionStore: unknown;
       _viewLoader: unknown;
-      deleteTurnFrom(ts: string): Promise<void>;
+      deleteTurnFrom(roundId: string): Promise<void>;
     };
     c._streaming = false;
     c._viewLoader = () => [];
@@ -753,7 +753,7 @@ describe('会话结构操作 · 删除问答后 live 现场必须作废（防已
     const { window } = await import('vscode');
     vi.mocked(window.showWarningMessage).mockResolvedValue('删除' as never);
 
-    await c.deleteTurnFrom('2026-10-31T03:00:05.000Z');
+    await c.deleteTurnFrom('round-a');
 
     // 变异锚：删掉 `_liveBuffer = undefined` ⇒ 本例红在 toBeUndefined
     //（真机实证：删除中断轮后残留提问气泡，重启才消失；重启即现场为空）
@@ -767,7 +767,7 @@ describe('会话结构操作 · 删除问答后 live 现场必须作废（防已
       _streaming: boolean;
       _liveBuffer: unknown;
       sessionStore: unknown;
-      deleteTurnFrom(ts: string): Promise<void>;
+      deleteTurnFrom(roundId: string): Promise<void>;
     };
     c._streaming = false;
     c.sessionStore = { truncateFrom: () => ({ ok: false, removedIds: [] }) };
@@ -780,7 +780,7 @@ describe('会话结构操作 · 删除问答后 live 现场必须作废（防已
     const { window } = await import('vscode');
     vi.mocked(window.showWarningMessage).mockResolvedValue('删除' as never);
 
-    await c.deleteTurnFrom('2026-10-31T03:00:05.000Z');
+    await c.deleteTurnFrom('round-miss');
 
     // 什么都没删 ⇒ 不得清现场（否则暂停中的半截正文丢失，见 consumeFlow finally 注释）
     expect(c._liveBuffer).toBe(buffer);

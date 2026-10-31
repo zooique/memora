@@ -13,7 +13,7 @@
  */
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { ROUND_ACTIONS, findRoundAction } from '../components/roundActions.js';
+import { ROUND_ACTIONS } from '../components/roundActions.js';
 import { createContextMenuItems } from '../components/contextMenuItems.js';
 import type { ContextMenuCtx } from '../components/contextMenu.js';
 
@@ -29,7 +29,7 @@ function messageCtx(assistant: boolean): ContextMenuCtx {
     rawText: '原文',
     visibleText: '可见文本',
     roundId: 'r1',
-    turnTs: 't1',
+    startedAt: 't1',
   };
 }
 
@@ -45,24 +45,22 @@ function selectionCtx(): ContextMenuCtx {
     rawText: '原文',
     visibleText: '可见文本',
     roundId: 'r1',
-    turnTs: 't1',
+    startedAt: 't1',
   };
 }
 
 describe('roundActions 轮级动作真源', () => {
-  it('可用判据矩阵：锁态优先，锚点按动作分字段（删除/重新生成看 turnTs，分叉看 roundId）', () => {
-    const full = { turnTs: 't1', roundId: 'r1' };
+  it('可用判据矩阵：锁态优先；三个动作同锚 roundId，缺时间戳不影响动作可用', () => {
+    const full = { roundId: 'r1', startedAt: 't1' };
     for (const action of ROUND_ACTIONS) {
       expect(action.available(full, false)).toBe(true);
       // 锁态恒禁用，不论锚点是否齐全
       expect(action.available(full, true)).toBe(false);
+      // 身份在、显示时间缺 → 动作照常可用（时间只喂底栏显示，不是锚）
+      expect(action.available({ roundId: 'r1', startedAt: '' }, false)).toBe(true);
+      // 身份缺、时间在 → 一律不可用：ts 不再是任何动作的锚（DELETE-ANCHOR-1 的判据收口）
+      expect(action.available({ roundId: '', startedAt: 't1' }, false)).toBe(false);
     }
-    const regenerate = findRoundAction('regenerate');
-    const fork = findRoundAction('fork');
-    const del = findRoundAction('delete-turn');
-    expect(regenerate?.available({ turnTs: '', roundId: 'r1' }, false)).toBe(false);
-    expect(fork?.available({ turnTs: 't1', roundId: '' }, false)).toBe(false);
-    expect(del?.available({ turnTs: '', roundId: 'r1' }, false)).toBe(false);
   });
 
   it('执行载荷 = 既有三通道（input regenerate / fork_session / delete_turn），不新增 type', () => {
@@ -72,11 +70,11 @@ describe('roundActions 轮级动作真源', () => {
         posted.push(m);
       },
     };
-    for (const action of ROUND_ACTIONS) action.run({ turnTs: 't1', roundId: 'r1' }, deps);
+    for (const action of ROUND_ACTIONS) action.run({ roundId: 'r1', startedAt: 't1' }, deps);
     expect(posted).toEqual([
-      { type: 'input', kind: 'regenerate', turnTs: 't1' },
+      { type: 'input', kind: 'regenerate', roundId: 'r1' },
       { type: 'fork_session', roundId: 'r1' },
-      { type: 'delete_turn', ts: 't1' },
+      { type: 'delete_turn', roundId: 'r1' },
     ]);
   });
 

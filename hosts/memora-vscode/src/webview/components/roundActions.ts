@@ -11,18 +11,21 @@
  * 底栏没有」——2026-10-31 实锤。
  *
  * 锚点口径（由 roundFooterView.roundActionCtx 单点从 DOM 读取，不在此处推导）：
- *   - turnTs = 本轮起点 ts（容器内首个 assistant 段的 dataset.ts），删除 / 重新生成共用同一截断面；
- *   - roundId = 容器 dataset.roundId（运行中 commitRoundId 只回填到 .msg ⇒ 回退首段 dataset.roundId）。
+ *   - roundId = 轮身份 = **全部轮级动作的唯一锚点**（容器 dataset.roundId，运行中容器可能
+ *     仍是空串 ⇒ 回退首段 dataset.roundId）；
+ *   - startedAt = 本轮起点 ts，**仅供底栏时间戳显示**，禁止作为删除 / 重发锚点：ts 是 Round
+ *     的投影而非身份，中断轮无 assistant ts 可锚，用它反推轮次只能靠时间窗猜测
+ *     （历史事故 DELETE-ANCHOR-1：相邻两中断轮点了删除却删掉后面那轮）。
  */
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 import type { IconName } from '../scripts/icons.js';
 
 /** 动作锚点：只装轮级事实；会话锁是全局状态，单独以参数传入（不是轮的属性） */
 export interface RoundActionCtx {
-  /** 本轮起点 ts：删除 / 重新生成的截断锚 */
-  turnTs: string;
-  /** 本轮 roundId：分叉锚 */
+  /** 轮身份：删除 / 重新生成 / 分叉共用的唯一锚点（空 = 该动作在此轮不可用） */
   roundId: string;
+  /** 本轮起点 ts：**仅显示**（底栏时间戳），不得作锚点传入任何动作载荷 */
+  startedAt: string;
 }
 
 /** 动作执行依赖：两个消费面各自注入（轮级动作只需要「发消息」这一项能力） */
@@ -66,8 +69,8 @@ export const ROUND_ACTIONS: readonly RoundAction[] = [
     title: '重新生成该问答（删除本轮及之后对话，并以原文重发）',
     icon: 'refresh',
     // 与删除同强度：截断会话结构，锁态下不可用
-    available: (ctx, locked) => !locked && !!ctx.turnTs,
-    run: (ctx, deps) => deps.post({ type: 'input', kind: 'regenerate', turnTs: ctx.turnTs }),
+    available: (ctx, locked) => !locked && !!ctx.roundId,
+    run: (ctx, deps) => deps.post({ type: 'input', kind: 'regenerate', roundId: ctx.roundId }),
   },
   {
     id: 'fork',
@@ -83,8 +86,8 @@ export const ROUND_ACTIONS: readonly RoundAction[] = [
     danger: true,
     title: '删除该问答及之后所有对话',
     icon: 'delete',
-    available: (ctx, locked) => !locked && !!ctx.turnTs,
-    run: (ctx, deps) => deps.post({ type: 'delete_turn', ts: ctx.turnTs }),
+    available: (ctx, locked) => !locked && !!ctx.roundId,
+    run: (ctx, deps) => deps.post({ type: 'delete_turn', roundId: ctx.roundId }),
   },
 ];
 

@@ -2865,7 +2865,7 @@ describe('truncateTurnCore 返回值契约（COPY-2-OK-CONTRACT-1）', () => {
     _currentSessionId: string;
     _streaming: boolean;
     truncateTurnCore(
-      ts: string,
+      roundId: string,
       confirmMessage: string,
       confirmButton: string,
     ): Promise<{ ok: boolean; reason?: string; userText?: string }>;

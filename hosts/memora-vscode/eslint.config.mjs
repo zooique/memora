@@ -53,7 +53,7 @@ export default [
     files: ['src/webview/scripts/chatView.ts'], // TARGET（单闭包；计划栏域、历史菜单域、占用域、活动抽屉域、状态条域、过程流单元格域、下拉选择器域、问答回顾行域、工具行动作面域、角色徽章行域、轮级动作底栏域已外置）
     // INTERRUPT-MULTI-1（2026-11-01）：删重放里的跨轮清理 5 行 + 补契约注释 3 行，净减 2 行
     //（4964→4962）。基线按闸门自报下调 4968→4962——原阈值比实际多留 4 行虚空，一并收平。
-    rules: { 'max-lines': ['error', { max: 4962 }] },
+    rules: { 'max-lines': ['error', { max: 4960 }] },
   },
   {
     // FORMAT-1 清零（2026-10-29）：prettier --write 还原折行欠账，物理行 4515→4529（+14 全为

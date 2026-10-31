@@ -71,14 +71,14 @@ function mountMenu(): { runs: Record<string, Mock<RunFn>>; dispose(): void } {
       id: 'regenerate',
       label: '重新生成',
       when: (c) =>
-        c.kind === 'message' && !!c.messageEl?.classList.contains('assistant') && !!c.turnTs,
+        c.kind === 'message' && !!c.messageEl?.classList.contains('assistant') && !!c.startedAt,
       run: runs.regenerate,
     },
     {
       id: 'delete',
       label: '删除',
       danger: true,
-      when: (c) => c.kind === 'message' && !!c.turnTs,
+      when: (c) => c.kind === 'message' && !!c.startedAt,
       run: runs.delete,
     },
   ];
@@ -97,9 +97,21 @@ describe('resolveContextMenuCtx 场合命中判据（单点）', () => {
     const ctx = resolveContextMenuCtx(msg.querySelector('p') as Element);
     expect(ctx?.kind).toBe('message');
     expect(ctx?.roundId).toBe('r1');
-    expect(ctx?.turnTs).toBe('t1');
+    expect(ctx?.startedAt).toBe('t1');
     expect(ctx?.rawText).toBe('**AI 回复** md');
     expect(ctx?.visibleText).toContain('AI 回复文本');
+  });
+
+  it('roundId 以容器为权威：段级 dataset 为空时回退所属 .round-group', () => {
+    // 运行中早段的 dataset.roundId 可能仍是空串（commitRoundId 只回填到当前活动段），
+    // 容器才是轮身份的权威位置——不回退会让右键删除/重新生成在该段上静默变灰。
+    document.body.innerHTML = `
+      <div class="round-group" data-round-id="r9">
+        <div class="msg assistant" data-ts="t9"><div class="msg-body"><p>段正文</p></div></div>
+      </div>
+    `;
+    const ctx = resolveContextMenuCtx(document.querySelector('.msg.assistant p') as Element);
+    expect(ctx?.roundId).toBe('r9');
   });
 
   it('code 场合：命中 pre code 带出代码文本（优先于 message）', () => {
@@ -182,7 +194,7 @@ describe('initContextMenu 交互语义', () => {
     item.click();
     expect(runs['copy-message']).toHaveBeenCalledTimes(1);
     const arg = runs['copy-message'].mock.calls[0][0];
-    expect(arg.turnTs).toBe('t1');
+    expect(arg.startedAt).toBe('t1');
     expect(document.querySelector('.ctxmenu')).toBeNull();
   });
 

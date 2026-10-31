@@ -35,13 +35,13 @@ const BTN_CLASS: Record<(typeof ROUND_ACTIONS)[number]['id'], string> = {
  * @returns 空锚（不可用）或本轮真实锚点
  */
 function roundActionCtx(group: HTMLElement | null): RoundActionCtx {
-  if (!group) return { turnTs: '', roundId: '' };
+  if (!group) return { roundId: '', startedAt: '' };
   const firstSeg = group.querySelector<HTMLElement>('.msg.assistant');
   return {
-    // 截断锚 = 本轮首个 assistant 段 ts（user 起点 / 重放 assistant ts 均可命中同一 Round）
-    turnTs: firstSeg?.dataset.ts ?? '',
-    // 分叉锚优先容器自身；运行中容器可能仍是空串 ⇒ 回退首段（commitRoundId 的回填位置）
+    // 轮身份优先容器自身；运行中容器可能仍是空串 ⇒ 回退首段（commitRoundId 的回填位置）
     roundId: group.dataset.roundId || firstSeg?.dataset.roundId || '',
+    // 起点 ts 仅喂时间戳显示（fmtTime）：不用作任何动作锚点（锚 = roundId）
+    startedAt: firstSeg?.dataset.ts ?? '',
   };
 }
 
@@ -112,7 +112,7 @@ export function buildRoundGroupFooter(opts: RoundFooterOptions): void {
   });
   footer.appendChild(actions);
   // 时间戳：锚 = 本轮起点（首段 ts）；流式建栏时为空，由 settleRoundFooter 补写
-  const time = fmtTime(ctx.turnTs);
+  const time = fmtTime(ctx.startedAt);
   if (time) {
     const timeEl = document.createElement('span');
     timeEl.className = 'msg-time';
@@ -135,7 +135,7 @@ export function settleRoundGroupFooter(group: HTMLElement): void {
   const footer = group.querySelector<HTMLElement>('.round-group__footer');
   if (!footer) return;
   footer.classList.remove('is-pending');
-  const time = fmtTime(roundActionCtx(group).turnTs);
+  const time = fmtTime(roundActionCtx(group).startedAt);
   if (time && !footer.querySelector('.msg-time')) {
     const timeEl = document.createElement('span');
     timeEl.className = 'msg-time';

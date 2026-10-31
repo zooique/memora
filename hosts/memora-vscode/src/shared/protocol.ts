@@ -165,7 +165,7 @@ export type SearchEngineSetting = string;
  *     waiting(pause)→带文本续跑、waiting(ask)→补充续跑（ask 卡专用入口实际不可达））
  *   - `answer`：回答在途主动提问（恒带 answers 数组，单问=单元素；宿主 answerQuestion + 续跑）
  *   - `resume`：纯续跑（不携带文本；仅 waiting(pause) 相位有效）
- *   - `regenerate`：重新生成（COPY-2 右键菜单）——仅携带 `turnTs` 锚点，宿主先截断该
+ *   - `regenerate`：重新生成（COPY-2 右键菜单）——仅携带 `roundId` 锚点，宿主先截断该
  *     问答及之后所有（与 delete_turn 同一截断原语 + 同强度 modal 确认），再以截断起点
  *     Round 的 user 原文（store 真源）重开闭环。仅对已落盘轮次可发（生成中由 webview
  *     入口禁用 + 宿主 _streaming 守卫双保险）。协议扩张走枚举成员 + 字段（PROTO-CAP-1
@@ -415,11 +415,14 @@ export type WebviewToExtensionMessage =
        */
       attachments?: ImageRef[];
       /**
-       * 重新生成锚点（仅 `kind: 'regenerate'` 携带）：目标问答内 AI 回复消息的 ts
-       * （与 delete_turn 锚同源——同锚同截断面）。重发文本由宿主从截断起点 Round 取
-       * user 原文（store 真源），webview 不传文本。其他 kind 恒缺省（缺省即无第二含义）。
+       * 重新生成锚点（仅 `kind: 'regenerate'` 携带）：目标轮 `Round.id`。
+       *
+       * 与 `delete_turn.roundId` 同锚同截断面——**轮身份只认 roundId，不认时间戳**：
+       * ts 是 Round 的投影（一次落盘时刻），同一毫秒可撞、中断轮更无 assistant ts 可锚，
+       * 以 ts 反推轮次只能靠时间窗猜测（历史事故 DELETE-ANCHOR-1：相邻两个中断轮删错轮）。
+       * 重发文本由宿主从截断起点 Round 取 user 原文（store 真源），webview 不传文本。
        */
-      turnTs?: string;
+      roundId?: string;
     }
   /**
    * 导航到设置面板的指定选项卡（对话面板空态引导按钮 / 角色徽章点击触发）
@@ -502,11 +505,13 @@ export type WebviewToExtensionMessage =
   /**
    * 删除单个问答闭环（truncate-from-turn）
    *
-   * 由 AI 消息的「删除」按钮触发，携带该条 AI 消息的 timestamp 作锚点。host 调宿主
-   * sessionStore.truncateFrom 删除【该问答及其之后所有】消息，随后 replayCurrentSession
+   * 由轮容器底栏 / 右键菜单的「删除」触发，携带该轮 `Round.id` 作锚点（**身份而非时间**：
+   * 宿主以 `roundIds` 序 `indexOf` 精确定位，不做时间窗猜测）。host 调
+   * sessionStore.truncateFrom 删除【该问答及其之后所有】轮，随后 replayCurrentSession
    * 重放会话（保证剩余上下文自洽）。需 host 侧确认不可恢复后执行。
+   * 锚未命中（轮已被别处删除 / 陈旧 DOM）⇒ 什么都不删，如实回「删除失败」。
    */
-  | { type: 'delete_turn'; ts: string }
+  | { type: 'delete_turn'; roundId: string }
   /** Chat Panel 切换激活 Provider（底部模型下拉框） */
   | { type: 'chat_set_provider'; name: string }
   /**

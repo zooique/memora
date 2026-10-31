@@ -30,10 +30,10 @@ export interface ContextMenuCtx {
   rawText: string;
   /** 消息条锚点：渲染后纯文本（body.textContent） */
   visibleText: string;
-  /** 轮锚点（dataset.roundId，分叉用；取不到 = 空串，调用方按空禁用） */
+  /** 轮身份锚点（dataset / 所属容器 roundId，动作锚；取不到 = 空串，调用方按空禁用） */
   roundId: string;
-  /** 轮锚点（dataset.ts，删除/重新生成用；取不到 = 空串，调用方按空禁用） */
-  turnTs: string;
+  /** 消息起点 ts（dataset.ts，**仅显示语义**，不作动作锚点；取不到 = 空串） */
+  startedAt: string;
 }
 
 export interface ContextMenuItem {
@@ -77,8 +77,11 @@ export function resolveContextMenuCtx(target: EventTarget | null): ContextMenuCt
     selectionText: selectionText ?? '',
     rawText: messageEl.dataset.rawText ?? '',
     visibleText: body?.textContent ?? '',
-    roundId: messageEl.dataset.roundId ?? '',
-    turnTs: messageEl.dataset.ts ?? '',
+    roundId:
+      messageEl.closest<HTMLElement>('.round-group')?.dataset.roundId ||
+      messageEl.dataset.roundId ||
+      '',
+    startedAt: messageEl.dataset.ts ?? '',
   };
 }
 

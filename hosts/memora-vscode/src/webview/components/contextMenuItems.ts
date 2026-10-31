@@ -42,13 +42,16 @@ export interface ContextMenuActions {
  */
 const MENU_SCOPE: Record<RoundAction['id'], (c: ContextMenuCtx) => boolean> = {
   regenerate: (c) => !!c.messageEl?.classList.contains('assistant'),
-  fork: () => true,
+  // 分叉 = 轮级动作，但入口只在 AI 段（用户 2026-10-31 定案：不在 user 条开第二入口）。
+  // user 条现在也带 roundId（删除要用同一个身份锚），故这里必须显式限 assistant——
+  // 否则分叉会随身份锚一起「泄漏」到提问气泡上。
+  fork: (c) => !!c.messageEl?.classList.contains('assistant'),
   'delete-turn': () => true,
 };
 
 /** 右键 ctx → 轮级动作锚点（与底栏同一形状，字段来源单一） */
 function toActionCtx(c: ContextMenuCtx): RoundActionCtx {
-  return { turnTs: c.turnTs, roundId: c.roundId };
+  return { roundId: c.roundId, startedAt: c.startedAt };
 }
 
 /**
