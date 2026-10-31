@@ -697,7 +697,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * SSOT 单一容器：思考相位 + 工具调用 + 召回/已沉淀/自审查/执行指标全部收敛于此，
    * 报告正文（.msg-body）保持干净连续不被工具切碎。
    * - 进行中（finalize=false）：折叠区自动展开，实时相位行 + 工具行增量追加（任务过程实时可见）
-   * - 完成（finalize=true）：折叠区自动收起，只留摘要（工具×N · 耗时），全量小节供展开查阅
+   * - 收场（finalize=true，done/interrupted/异常同族）：折叠区自动收起，只留摘要（工具×N · 耗时），
+   *   全量小节供展开查阅（§九二订：中断轮与完成轮同构收起，可见=有记录可查）
    *
    * 形态甲：finalize 全量重建从**合并流**渲染——processEvents 行 + 运行时输入
    * 条目（interactiveInputs）按统一时间键（ts）归位到对应任务项分组；运行时输入不搬家、
@@ -712,9 +713,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param liveMemoryHits 实时命中模型（仅 `finalizeRound` 传 currentMemoryHitsByCall）：
    *                  比证据**更新**（含本轮删除反馈），故优先于证据；重放/中断重建不传，
    *                  由 evidence 的 memory_hits 变体独立供数（MEM-EVENT-3）。
-   * @param interrupted 中断轮置真——该轮正文随中断丢弃，过程收起后屏上只剩折叠条、内容零可见。
-   *                    展开态因此从「是否收场」补一条「有无正文兜底」（见下方 rb.open 单点）。
-   *                    交互行容器**不**随之分叉：恒在详情区，与完成轮同构（单一容器）。
    */
   function renderRoundBlock(
     events: ProcessEvent[],
@@ -722,7 +720,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     interactiveInputs?: RuntimeInteractiveInput[],
     evidence?: RoundView['evidence'],
     liveMemoryHits?: Map<string, Map<string, MemoryHitEntry>>,
-    interrupted = false,
   ): void {
     // 每次重建都现建解析器（闭包持消费游标）：同一轮多次重放各自从头消费，结果确定不累积
     const resolveSearchEvidence = buildSearchEvidenceResolver(evidence);
@@ -800,11 +797,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 计划缓存为空 → 移除旧标签
       existingTag.remove();
     }
-    // 展开态三态判据（本处为唯一裁决点）：
-    //   进行中 → 展开（任务过程实时可见）
-    //   完成   → 收起（只留摘要，报告干净）
-    //   中断   → 展开（正文随中断丢弃，收起后该轮内容零可见；交互行也在详情区内）
-    rb.open = !finalize || interrupted;
+    // 展开态判据（本处为唯一裁决点；§九二订：收场轮统一收起——「可见」= 有记录可查，
+    // 记录随折叠块展开回查；终态身份由底栏终态标签承载，折叠条不重复信号）：
+    //   进行中（finalize=false） → 展开（任务过程实时可见）
+    //   收场（done/interrupted/异常，finalize=true） → 收起（只留摘要，报告干净）
+    rb.open = !finalize;
     const details = rb.querySelector('.round-block__details') as HTMLElement;
     if (!details) return;
     // renderRoundBlock 仅 finalize（done/interrupted/重放）调用，
@@ -1304,7 +1301,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     try {
       // 容器化：中断轮与 done 轮同构进 .round-group（建容器 footer），已定稿传 pending=false
       ensureRoundGroup(roundId, host, false);
-      renderRoundBlock(currentEvents, true, undefined, evidence, undefined, true);
+      renderRoundBlock(currentEvents, true, undefined, evidence);
       appendInterruptedRow(host, currentEvents);
     } finally {
       activeAssistantEl = prevAssistant;
@@ -2130,7 +2127,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       item.dataset.ts = tsKey;
       if (inputId) item.dataset.inputId = inputId;
       // 目标容器：运行时 process-flow > 完成态/重放 round-block 详情区 > 降级消息流（纯问答轮无过程容器）。
-      // 中断轮不走特例——它的可见性由折叠块展开态保证（renderRoundBlock 的 interrupted 判据），
+      // 中断轮不走特例——收场轮统一收起（rb.open 单点判据），交互行随详情区留档、展开可回查，
       // 不靠换容器：容器一旦分叉，「这条数据属于哪」就变成对 DOM 连接态的运行时嗅探。
       const flow = flowEl?.isConnected ? flowEl : null;
       const rbDetails = roundBlockEl?.isConnected
@@ -2635,7 +2632,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *  QA 已由 renderRoundBlock 从合并流归位到对应任务项分组，无需再搬运（foldPending 已删）。
    *  evidence 随收场消息透传（done/interrupted 各带一轮证据）：重建时补渲 web_search 归因
    *  三件套——运行时证据轨不进 processEvents，故必须由收场消息补入（缺口补齐）。 */
-  function finalizeRound(evidence?: RoundView['evidence'], interrupted = false): void {
+  function finalizeRound(evidence?: RoundView['evidence']): void {
     // renderRoundBlock 曾在 plan_item_boundary 嵌套场景抛 NotFoundError，导致后续
     // 「移除 flowEl / 收敛 QA / 关流式光标」全部不执行（过程不折叠 + 光标不消失，且异常在事件
     // 监听器内被静默吞掉）。收口三步放 finally：即便渲染失败，流式态也必收敛（不再带伤共存）。
@@ -2649,7 +2646,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         runtimeInteractiveInputs,
         evidence,
         currentMemoryHitsByCall,
-        interrupted,
       );
     } finally {
       flowEl?.remove();
@@ -3441,7 +3437,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 过程收进折叠块（保留已完成 step）→ 收尾分化（2026-10-13 终态标签收口底栏）：
       // 用户主动停止不铺行，宿主态 + 底栏「用户中断」标签承接收口；异常/兜底原因句照旧平铺。
       commitRoundId(msg.roundId);
-      finalizeRound(msg.evidence, true);
+      finalizeRound(msg.evidence);
       const interruptedHost = activeAssistantEl;
       if (interruptedHost?.isConnected) {
         // 丢弃半截正文（运行中 step 的内容因中断作废，与重放中断轮不显示正文同源同形）

@@ -2684,7 +2684,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(rb.querySelector('.round-block__stats')?.textContent).toContain('耗时');
   });
 
-  it('中断轮重放：交互行在折叠块内且折叠块默认展开（无正文轮收起即零可见 · 2026-10-31）', () => {
+  it('中断轮重放：交互行在折叠块内且折叠块默认收起（§九二订：收场轮统一收起，展开可回查）', () => {
     mountChatView();
     dispatchReplay(
       makeRound({
@@ -2718,9 +2718,10 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     );
     const host = document.querySelector('.msg.is-interrupted-host') as HTMLElement;
     expect(host).not.toBeNull();
-    // 中断轮展开：正文随中断丢弃 ⇒ 收起后该轮零可见，故展开态判据补「有无正文兜底」
+    // 中断轮收起（§九二订）：与完成轮同构收起，「可见」= 有记录可查——记录随折叠块展开回查，
+    // 终态身份由底栏「用户中断」标签承载，折叠条不重复信号
     const rb = host.querySelector('.round-block') as HTMLDetailsElement;
-    expect(rb.open).toBe(true);
+    expect(rb.open).toBe(false);
     // 交互行在折叠块**内**（单一容器，与完成轮同构）：不另造外置槽
     const inputs = rb.querySelectorAll('.round-block__details .round-block__input');
     expect(inputs).toHaveLength(2);
@@ -2924,7 +2925,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(document.querySelector('.process-flow')).toBeNull();
   });
 
-  it('运行时中断：未回答行与重放同形——在折叠块内，且中断轮折叠块展开（2026-10-31）', () => {
+  it('运行时中断：未回答行与重放同形——在折叠块内，且中断轮折叠块默认收起（§九二订）', () => {
     mountChatView();
     dispatch({ type: 'user', text: '问我三个问题', ts: 't0', roundId: 'r2' });
     dispatch({
@@ -2954,9 +2955,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     dispatch({ type: 'interrupted', roundId: 'r2' });
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
     expect(assistant.dataset.terminus).toBe('用户中断');
-    // 实时与重放同形：交互行在同一详情区（不换容器），展开态由同一 interrupted 判据裁决
+    // 实时与重放同形：交互行在同一详情区（不换容器），收起态由同一 rb.open 判据裁决
     const rb = assistant.querySelector('.round-block') as HTMLDetailsElement;
-    expect(rb.open).toBe(true);
+    expect(rb.open).toBe(false);
     const inputs = rb.querySelectorAll('.round-block__details .round-block__input');
     expect(inputs).toHaveLength(1);
     expect(inputs[0]?.textContent).toContain('① 主角职业？');
