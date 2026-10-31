@@ -220,6 +220,20 @@ export const LOOP_CONSTANTS = {
    *  而该事实直接进 LLM 决策上下文与持久历史（静默失效、无报错）。 */
   ASK_ABORTED_RESULT: '[ASK_ABORTED] 用户未回答该提问',
 
+  /** 「ask_user 参数非法」的 tool result（ASK-QGUARD-1，2026-10-31）：提问参数解析降级后可能
+   *  整组 `question` 为空（parseAskCalls 不抛错、不阻断），旧行为=照常挂起 → 用户面对空卡
+   *  直到 ask 超时才自动续跑。现改为**不挂起 + 错误回喂**：参数非法是工具失败事实，让模型在
+   *  同一 turn 内修正后重试。与 ASK_ABORTED_RESULT 同族：配对不变量不变（assistant.tool_calls
+   *  每条恒有配对 tool 消息）。 */
+  ASK_INVALID_RESULT:
+    '[ASK_INVALID] 提问参数非法：question 为空或缺失，本轮不发问。请补充清晰具体的问题后重新调用 ask_user。',
+
+  /** 同批非 ask 调用在「ask 参数非法」时的未执行占位（ASK-QGUARD-1）：与
+   *  `[ASK_SUSPENDED]` 同构——只声明「未执行」，不暗示任何执行结果；把「整批本轮作废」这一
+   *  事实显式告诉模型，避免它以为工具已跑过而产生幻觉。 */
+  ASK_INVALID_SIBLING_RESULT:
+    '[ASK_INVALID] 同批调用未执行：ask_user 参数非法（question 为空），整批在本轮作废；请修正后重新发起。',
+
   /**
    * 上下文预算预警提示：容量逼近警戒线但摘要层未饱和时注入的温和提示，
    * 引导 LLM 主动压缩 / 收敛——软上限（收尾信号）的前一级。低压通用文案不走 UIMessages 覆盖层，

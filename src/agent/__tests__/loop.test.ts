@@ -3918,6 +3918,57 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     }
   });
 
+  it('整组 question 为空（参数非法）→ 不挂起、错误回喂、continue 让模型重试（ASK-QGUARD-1）', async () => {
+    const onPendingQuestion = vi.fn();
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          content: '准备提问',
+          toolCalls: [
+            // 参数非法：question 缺失（parseAskCalls 降级为空问题，不抛错）
+            { id: 'bad_ask', type: 'function', function: { name: 'ask_user', arguments: '{}' } },
+            // 同批非 ask 调用：整批作废时同样不得有无配对 tool 消息
+            {
+              id: 'sibling_read',
+              type: 'function',
+              function: { name: 'read_file', arguments: JSON.stringify({ path: 'a.txt' }) },
+            },
+          ],
+        },
+      ],
+      [{ content: '修正后直接作答' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      onPendingQuestion,
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('写个故事')) {
+      chunks.push(chunk);
+    }
+
+    // 不挂起：空问题不可答，旧行为会弹出空卡死等到 ask 超时
+    expect(onPendingQuestion).not.toHaveBeenCalled();
+    expect(chunks.filter((c) => c.type === 'question_pending')).toHaveLength(0);
+    expect(chunks.some((c) => c.type === 'paused')).toBe(false);
+    // 无在途提问（answerQuestion 返回 false）：旧行为此处为 true + 空问题在途
+    expect(loop.answerQuestion(['随便'])).toBe(false);
+    // 错误回喂：ask 调用收到 ASK_INVALID；同批非 ask 收到「未执行」占位
+    const messages = loop.getMessages();
+    const askResult = messages.find((m) => m.role === 'tool' && m.toolCallId === 'bad_ask');
+    expect(askResult?.content).toContain('[ASK_INVALID]');
+    expect(askResult?.content).toContain('question 为空');
+    const sibling = messages.find((m) => m.role === 'tool' && m.toolCallId === 'sibling_read');
+    expect(sibling?.content).toContain('同批调用未执行');
+    // 配对不变量：assistant.tool_calls 每条恒有配对 tool 消息（不撞兼容端 400）
+    expectWellFormedToolPairing(messages);
+    // 模型收到错误后修正重试 → 本 turn 正常收场（不再是死等超时的空卡）
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+  });
+
   it('普通工具轮（无 ask_user）不误触发提问', async () => {
     const onPendingQuestion = vi.fn();
     const toolExecutor = vi.fn().mockResolvedValue('文件内容');

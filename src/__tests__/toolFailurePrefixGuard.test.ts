@@ -123,7 +123,7 @@ const OUT_OF_SCOPE_TAGS: Readonly<Record<string, readonly string[]>> = {
   // kind:'unanswered' 交互输入时的正文占位——写进 Round.interactiveInputs（用户侧交互行，
   // 非 tool 通道），与 ASK_ABORTED_RESULT（loop tool result 占位 + runResume 批次跳过题
   // 落盘正文，ASK-MULTI-Q-1 自 loop.ts 上移至此）同族同前缀。
-  'agent/constants.ts': ['ASK_ABORTED'],
+  'agent/constants.ts': ['ASK_ABORTED', 'ASK_INVALID'],
   'agent/builtinToolHandlers.ts': ['${m.role}'],
   'agent/compaction.ts': [
     '${SOFT_LIMIT_SUMMARY_MARKER_ROUND} ${roundId}',

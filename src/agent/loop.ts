@@ -1830,17 +1830,42 @@ export class AgentLoop {
    *   assistant.tool_calls **逐条**有配对 tool 消息：ask 的结果由用户答案回填，同批的**非 ask**
    *   调用补「未执行」占位（见方法内注释），整批闭合；
    * - 解析各 ask_user 参数为结构化 AskQuestion，yield question_pending 供宿主渲染提问 UI；
+   * - **整组 question 为空（参数非法）→ 不挂起**：逐条回填 `[ASK_INVALID]` 错误结果后返回
+   *   'continue'，让模型在同一 turn 内修正重试（ASK-QGUARD-1：空问题不可答，挂起=空卡死等超时）；
    * - yield paused 挂起（consumeExecutionStream 统一翻 PAUSED + 写 pauseMeta），
    *   用户作答后宿主调 answerQuestion() 回填 tool 结果，再 continueAfterPause() 续跑。
    */
   private async *handleAskUser(
     llmResult: LlmCallResult,
     toolCalls: NonNullable<Message['toolCalls']>,
-  ): AsyncGenerator<AgentChunk, 'paused', unknown> {
+  ): AsyncGenerator<AgentChunk, 'paused' | 'continue', unknown> {
     // 工具调用结构完整落地（提问就是工具轮，不撕毁任何调用）
     this.appendAssistantToolCall(llmResult.fullContent, toolCalls);
     const askCalls = toolCalls.filter((tc) => tc.function.name === ASK_USER_TOOL.name);
     const questions = parseAskCalls(askCalls);
+    // ASK-QGUARD-1（2026-10-31）：参数降级容忍的代价 = 可能整组空问题。空问题无法作答，
+    // 旧行为照常挂起 = 用户面对空卡死等到 ask 超时（30 分钟）才自动续跑。
+    // 现改为**不挂起 + 错误回喂**：参数非法按工具失败事实回填给模型，让它在本 turn 内修正重试。
+    // 配对不变量不变——下面逐条回填 tool 消息（ask 用 ASK_INVALID、同批非 ask 用未执行占位）。
+    // ⚠️ 不计 askCountThisTurn：未向用户发出任何提问，不构成一次打扰（askLimit 的语义是防打扰）。
+    if (questions.every((q) => q.question.trim() === '')) {
+      for (const tc of toolCalls) {
+        this.appendToolMessage(
+          wrapToolResult(
+            tc.function.name,
+            tc.function.name === ASK_USER_TOOL.name
+              ? LOOP_CONSTANTS.ASK_INVALID_RESULT
+              : LOOP_CONSTANTS.ASK_INVALID_SIBLING_RESULT,
+          ),
+          tc.id,
+        );
+      }
+      logger.warn(
+        { toolCallIds: askCalls.map((tc) => tc.id) },
+        'ask_user 参数非法（整组 question 为空）→ 不挂起，错误回喂待模型修正',
+      );
+      return 'continue';
+    }
     // turn 粒度计数：提问落地即累计（askLimit 硬护栏，防 LLM 反复提问刷打扰次数）
     this.askCountThisTurn += questions.length;
     this.pendingAsk = { toolCallIds: askCalls.map((tc) => tc.id), questions };

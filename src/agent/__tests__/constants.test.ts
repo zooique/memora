@@ -161,7 +161,9 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
     // 转成 kind:'unanswered' 交互输入时的正文，E2E-ASK-LOSS-1）/
     // ASK_ABORTED_RESULT（「用户未回答该提问」占位——loop tool result 与 runResume 批次
     // 跳过题落盘共用，ASK-MULTI-Q-1 扩面自 loop.ts 上移）
-    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(29);
+    // ASK_INVALID_RESULT / ASK_INVALID_SIBLING_RESULT（ASK-QGUARD-1：ask_user 参数非法
+    // （整组 question 为空）时的错误回喂文案，loop 内两处消费——ask 自身 / 同批非 ask 调用）
+    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(31);
   });
 
   it('TOOL_NARRATION_DISCIPLINE 为工具导语纪律（抑制工具步前长文规划，与 narrate 分区配套）', () => {
