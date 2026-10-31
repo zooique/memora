@@ -1,6 +1,6 @@
 # ADR-044 · 轮的存在性与收场解耦（建轮即入会话）
 
-> **状态**：🚧 实施中（第一~三刀已落地，第四刀待做）**日期**：2026-10-31
+> **状态**：✅ 已落地（四刀全部完成；各刀「仍未覆盖」段如实登记残留）**日期**：2026-10-31
 > **播种批次**：ask 批次链路真机验收（0.5.0 轮）**来源**：真机停滞轮 + 三条同源缺陷复盘
 
 ## 背景
@@ -47,8 +47,12 @@
    改为「该提问是否仍未被消费」（落点 = 宿主在途快照 `_pending`，相位本就由它派生）；
    「还能不能续跑」另判内核是否仍持暂停检查点——不可续跑时以中断收场，不「假续跑」。
 5. **GC 孤儿判据换轴**：已入会话的 pending 轮**不再视为孤儿**（它可见、可删、可续跑）；
-   孤儿只保留给「建轮时连归属都没写成功」的极端残留，判据仍是
-   `refCount === 0`（此时确实无人引用）。24h 存活保护保留不变。
+   判据仍是 `refCount === 0`，但语义收窄为**「真正无人引用」**——新轮建轮即 1，故
+   「进行中」本身不再构成孤儿；能落到 0 的只有存量轮、删会话/截断后归零的轮。
+   ⚠️ **「归属登记失败」这一面不落入该判据**（refCount 已写 1、只是 `roundIds` 没写上）⇒
+   该轮**不可见且不会被 GC 回收**，属**有意取舍**（宁可留一个看不见的文件，不静默删用户
+   刚输入的内容）。勿据此宣称「判据完备」——它不覆盖登记失败面，已在代码注释与本 ADR 写明。
+   24h 存活保护保留，作用改为「给刚归零的轮留后悔窗口」。
 
 ## 理由
 
@@ -103,11 +107,11 @@
 3. **第三刀（超时保底去相位化）✅ 已落地**：`handleAskTimeout` 判据改为「提问是否仍未被消费」，
    并删掉 `isAskWaiting` / `getTurnState` 两个反向依赖；不可续跑 ⇒ 走同一 `abandonTurn` 收场。
    ⚠️ **原始归因（「被 isAskWaiting() 守卫早退」）已被实测证伪**，详见下文落地记录的「先说被推翻的归因」。
-4. **第四刀（GC 判据确认 + 注释同步）**：`sweepOrphans` / `listOrphaned` 的孤儿判据仍为
+4. **第四刀（GC 判据确认 + 注释同步）✅ 已落地**：`sweepOrphans` / `listOrphaned` 的孤儿判据仍为
    `refCount === 0`——本刀确认它在 ADR-044 后**依然成立且语义正确**（新轮 refCount 1 不再落入
    该判据，即「已入会话的 pending 轮不会被超龄静默回收」，与决策 5 一致），并同步
-   `DEFAULT_SWEEP_MIN_AGE_MS` / `listOrphaned` 两处注释口径（「存活保护」的理由从「防删未答轮」
-   变为「防删连归属都没写成的残留」）。
+   `DEFAULT_SWEEP_MIN_AGE_MS` / `listOrphaned` / `sweepOrphans` / `gcService` 四处注释口径
+   （「存活保护」的理由从「防删未答轮」改为「给刚归零的轮留后悔窗口」）。
    ⚠️ **打捞判据已在第一刀处理，勿在此重复**——两者虽都曾读 `refCount`，但一个判「可回收」、
    一个判「待收场」，职责正交。
 
@@ -216,6 +220,35 @@
 - **`unanswered` 行的题身份仍退化**：`RoundPendingAsk` 未承载 `askCallId` ⇒
   `appendInterrupted` 走 `buildInteractiveInputs` 的序号回退，与运行时行（`askCallId`）
   不同 id。功能无影响（重放重建时只读盘面），但 ADR-043「题身份跨面恒定」在该分支未闭合。
+
+## 第四刀落地记录（2026-10-31 · 只改判据口径与注释，**判据代码不变**）
+
+**本刀结论**：`sweepOrphans` / `listOrphaned` 的孤儿判据 `refCount === 0` 在 ADR-044 后
+**依然成立**，且语义变干净了——`refCount` 现在只表达引用关系，不再兼职「孤儿标记」：
+新轮建轮即 1 ⇒ 在途轮根本不进候选集；能落到 0 的就是「删会话/截断归零」与「升级前存量」。
+
+**判据不变，但四处注释在撒谎（全部订正）**——它们都写着「进行中轮（pending）的 refCount
+**恒为 0**」，这是 ADR-044 之前的旧口径，被第一刀直接推翻：
+
+| 位置 | 旧口径（假） | 新口径 |
+|---|---|---|
+| 宿主 `DEFAULT_SWEEP_MIN_AGE_MS` | 「进行中轮 refCount 恒为 0，故必须带存活保护，否则删掉未答轮」 | 新轮 refCount 1 不进判据；保护改为「给刚归零的轮留后悔窗口」，并列出仍会落到 0 的三类 |
+| 宿主 `listOrphaned` @param | 「传 0 会连带删除进行中轮（refCount 恒 0）」 | 传 0 只影响刚归零的轮；**旧口径已不成立** |
+| 宿主 `sweepOrphans` @param | 「进行中轮 refCount 恒为 0…若默认为 0 会删未答轮」 | 同上，并指向常量注释 |
+| 内核 `inMemoryRoundStore.listOrphaned` 行内 + `roundStore.listOrphaned` 接口 + `gcService` `minAgeMs`/`shouldSkip` | 「进行中轮由 minAgeMs 兜底保护」 | 一阶防线是 `refCount === 0`；`minAgeMs` / `shouldSkip` 退为二阶（后悔窗口 / 活跃写入避让） |
+
+**新增判据锚点**（`workspaceSessionStore.test`）：`pending + refCount 1` 的轮即便
+`sweepOrphans(0)` 也不被回收——变异（`listOrphaned` 忽略 refCount）⇒ 该例与另外两例共
+**3 例红**，还原复绿。
+
+**顺带写清的一处取舍（不是 bug，但必须留痕）**：`registerRoundInSession` 失败时轮已按
+`refCount: 1` 落盘、`roundIds` 里却没有它 ⇒ 不可见、也不会被 GC 回收。**不改成「失败即降级
+为 0」**的理由：那要在错误路径上再写一次盘，且会把「用户刚输入的内容」交给 24h 后的保洁；
+当前取舍是保留。已写进 `registerRoundInSession` 注释（原文写「退回 ADR-044 之前的行为」，
+那句已不成立——之前 refCount 0 会被回收，现在是永久保留）。
+
+**收据**：内核 / 宿主 tsc 0 错；`workspaceSessionStore` 45 passed（+1）；内核
+`gcService` + `roundStore` 47 passed；变异红→绿如上。
 
 ## 不并入本 ADR 的独立缺陷
 
