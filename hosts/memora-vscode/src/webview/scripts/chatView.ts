@@ -2107,12 +2107,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     options?: string[],
     inputId?: string,
   ): void {
-    // 显示逻辑统一：supplement / question-answer / timeout 同为
+    // 显示逻辑统一：supplement / question-answer / timeout / unanswered 同为
     // 「闭环内用户交互」（数据同构 interactiveInputs.kind），共用过程条目行形态，
-    // 仅 tag 文案区分语义：补充 →「你补充」；回答 →「你答」；超时未答 →「未回答」。
-    // timeout 到达即提问等待结束（宿主已自动续跑）——先销毁提问交互 UI（ask-inline /
-    // 兜底 clarifyBar），避免「提问框 + 未回答行」同屏残留。
-    if (kind === 'timeout') {
+    // 仅 tag 文案区分语义：补充 →「你补充」；回答 →「你答」；超时/中断未答 →「未回答」。
+    //
+    // 提问等待结束 ⇒ 先销毁提问交互 UI（ask-inline / 兜底 clarifyBar），避免「提问框 +
+    // 交互行」同屏残留。判据 = **该交互行是否终结了一次提问**：question-answer（已答）/
+    // timeout（超时未答）/ unanswered（中断未答）都终结；supplement 是暂停态补充，不终结。
+    // ⚠ 此前只判 `timeout`：`unanswered` 原只由崩溃恢复重放产生（那时屏上无卡），
+    // ADR-044 后停止路径也在运行时产生它 ⇒ 强制中断后「提问框 + 三条未回答」同屏（真机实证）。
+    if (kind !== 'supplement') {
       document.querySelector('.ask-inline')?.remove();
       clarifyBar.classList.remove('visible');
       inputBar.hidden = false;

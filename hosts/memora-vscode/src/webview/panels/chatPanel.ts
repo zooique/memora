@@ -1726,11 +1726,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // sessionId 格式契约 SSOT：内核 splitSessionId 拆解（session 名可含连字符）
       const { date, session } = splitSessionId(this._currentSessionId);
       const result = this.sessionStore.truncateFrom(date, session, ts);
-      // 锚未命中（会话已被改动 / 旧 DOM 残留锚）= 什么都没删：既不伪装成功，也不重放
-      //（存储未变，重放只是白闪一屏）
+      // 锚未命中（会话已改动 / 旧 DOM 残留锚）= 什么都没删：既不伪装成功也不重放（存储未变）
       if (!result.ok) return { ok: false, reason: 'miss' };
-      // 联动：被回收问答闭环（引用归零）的轮次摘要软删进回收站；
-      // 会话级摘要（SessionMeta.summary/keyTopics）不联动——会话本身仍在
+      // 盘面已删 ⇒ 现场必须立刻作废（先于任何后续步骤，异常路径也不得复活已删内容）：
+      // 被删轮可能还在软暂停刻意保留的 live 现场（pausedOnPurpose）里，重放会并回其 seedUserMessage
+      this._liveBuffer = undefined;
+      // 联动软删回收站（轮次摘要；会话级不联动——会话仍在）
       this.softDeleteSessionMemories(result.removedIds);
       // 截断后重放当前会话（消息已减少），保证 UI 与存储一致
       this.replayCurrentSession();

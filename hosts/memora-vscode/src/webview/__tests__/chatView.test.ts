@@ -1288,6 +1288,29 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(input.value).toBe('不回答，先补充背景');
   });
 
+  it('unanswered 行上屏即销毁提问卡（强制中断后不得留可提交的答题面）', () => {
+    mountChatView();
+    // 提问卡的真机挂载由 renderAskPhase 负责（渲染另有测试覆盖）；本判据只验「销毁」，
+    // 故直接把卡片构造在屏上以隔离渲染前提（销毁走 document.querySelector，与挂载位置无关）。
+    const card = document.createElement('div');
+    card.className = 'ask-inline';
+    document.body.appendChild(card);
+    expect(document.querySelector('.ask-inline')).not.toBeNull();
+    // 真机实证：停止后宿主逐条 post kind:'unanswered'，而销毁判据旧实现只认 'timeout'
+    // ⇒ 三条「未回答」与仍可提交的答题卡同屏（提问已中断，却还能点「提交回答」）。
+    // 变异锚：判据回退成 `kind === 'timeout'` ⇒ 本例红在 toBeNull。
+    dispatch({
+      type: 'user',
+      text: '[ASK_ABORTED] 该提问未被回答（会话在此处中断）',
+      ts: 't3',
+      roundId: 'round-1',
+      kind: 'unanswered',
+      inputId: 'call_q1',
+      question: '主角职业？',
+    });
+    expect(document.querySelector('.ask-inline')).toBeNull();
+  });
+
   // ─── done × 输入内容 ───
 
   it('done + 空输入 → 发送禁用', () => {

@@ -664,3 +664,66 @@ describe('IMG-8 · 宿主兜底：三维聚合限额（与 webview 预检同判�
     expect(chat).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('会话结构操作 · 删除问答后 live 现场必须作废（防已删内容被重放复活）', () => {
+  it('truncateTurnCore 删除成功 ⇒ 清 _liveBuffer：已删轮的 user 气泡不得由软暂停现场并回', async () => {
+    const h = setupInput();
+    mount(h);
+    const c = h.cast as unknown as {
+      _streaming: boolean;
+      _liveBuffer: unknown;
+      sessionStore: unknown;
+      _viewLoader: unknown;
+      deleteTurnFrom(ts: string): Promise<void>;
+    };
+    c._streaming = false;
+    c._viewLoader = () => [];
+    // 数据层不参与本判据：只验「删成功后现场作废」这个副作用（truncateFrom 本身有独立单测）
+    c.sessionStore = {
+      truncateFrom: () => ({ ok: true, removedIds: [], removedUserText: '已删轮的提问' }),
+    };
+    // 软暂停刻意保留的 live 现场（consumeFlow finally 的 pausedOnPurpose）：
+    // 轮已删而现场还在 ⇒ 重放经 buildLiveTurnFromBuffer 把 seedUserMessage 并回投影 ⇒ 气泡复活
+    c._liveBuffer = {
+      sessionId: '2026-09-23-test',
+      eventsByRound: new Map(),
+      textByRound: new Map(),
+      currentRoundKey: 'round-a',
+      seedUserMessage: { content: '已删轮的用户提问' },
+    };
+    const { window } = await import('vscode');
+    vi.mocked(window.showWarningMessage).mockResolvedValue('删除' as never);
+
+    await c.deleteTurnFrom('2026-10-31T03:00:05.000Z');
+
+    // 变异锚：删掉 `_liveBuffer = undefined` ⇒ 本例红在 toBeUndefined
+    //（真机实证：删除中断轮后残留提问气泡，重启才消失；重启即现场为空）
+    expect(c._liveBuffer).toBeUndefined();
+  });
+
+  it('反例：锚未命中（truncateFrom 未删任何轮）⇒ 现场保留，不白丢软暂停内容', async () => {
+    const h = setupInput();
+    mount(h);
+    const c = h.cast as unknown as {
+      _streaming: boolean;
+      _liveBuffer: unknown;
+      sessionStore: unknown;
+      deleteTurnFrom(ts: string): Promise<void>;
+    };
+    c._streaming = false;
+    c.sessionStore = { truncateFrom: () => ({ ok: false, removedIds: [] }) };
+    const buffer = {
+      sessionId: '2026-09-23-test',
+      eventsByRound: new Map(),
+      textByRound: new Map(),
+    };
+    c._liveBuffer = buffer;
+    const { window } = await import('vscode');
+    vi.mocked(window.showWarningMessage).mockResolvedValue('删除' as never);
+
+    await c.deleteTurnFrom('2026-10-31T03:00:05.000Z');
+
+    // 什么都没删 ⇒ 不得清现场（否则暂停中的半截正文丢失，见 consumeFlow finally 注释）
+    expect(c._liveBuffer).toBe(buffer);
+  });
+});
