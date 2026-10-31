@@ -127,7 +127,7 @@ UI 控件全部由它派生（**禁止布尔碎片**）：
 | `idle` | 发送 | 隐藏 | 可用 | 隐藏 | 隐藏 |
 | `running` | 禁用 | 显示 | 可用（输入即 interject） | 显示（队列） | 隐藏 |
 | `waiting(pause)` | 停止生成（丢弃检查点） | 显示（续跑 ▶：继续生成 / 带补充继续） | 可用 | 隐藏 | 隐藏 |
-| `waiting(ask)` | 提交回答 | 显示（续跑 ▶ 仅「发送补充并继续」；空输入隐藏） | 专用卡 | 隐藏 | 显示 |
+| `waiting(ask)` | 停止生成（丢弃检查点） | 隐藏 | 可输入但提交拒收（答题 = 内联卡） | 隐藏 | 显示 |
 | `settled` | 发送 | 隐藏 | 可用 | 隐藏 | 隐藏 |
 
 > `pausePending`（在途申请未到 step 边界）沿用既有「站台等车」语义：申请在了就是"在暂停"，
@@ -138,8 +138,11 @@ UI 控件全部由它派生（**禁止布尔碎片**）：
 > 错填进「发送键」列，已更正。`deriveSessionUiState` 将 `waiting(ask)` 与 `waiting(pause)` 同映射 `'paused'`
 > （`turnUiState.ts` 的 `deriveSessionUiState`），故两等待态裸发送键均显示「停止生成（丢弃检查点）」；`waiting(ask)` 的「提交回答」
 > 由内联提问卡（renderAskPhase）承载，非裸发送键。续跑键按 `waiting.reason` 分叉（`turnUiState.ts` 的
-> `deriveButtonSemantics`）：`waiting(ask)` 空输入**不渲染**续跑键——「纯续跑」是死键（`resume` 路由只收
-> pause），且产品定案无「跳过提问」按钮（不回答 = ask 超时自动续跑）；带输入的「发送补充并继续」走 send 路由，是真能力。
+> `deriveButtonSemantics`）：`waiting(ask)` 的续跑键**恒不渲染**——空输入的「纯续跑」是死键（`resume`
+> 路由只收 pause），有输入的「发送补充并继续」则是**假能力（2026-10-31 实测证伪）**：ask 期 send 路由
+> 落到 `AgentLoop.answerQuestion`，单条文本按序只配第 1 题、其余题落 `[ASK_ABORTED]`（一条文本无法定位
+> 到 N 题；单题时又与内联卡完全重复）⇒ 该提交由 webview `sendMessage` 与宿主 `sendInput` 双层拒收，
+> 答题唯一入口 = 内联提问卡。产品定案无「跳过提问」按钮（不回答 = ask 超时自动续跑，或点停止收场）。
 
 ### 3.4 通道：一条 `turn_update`（patch 语义）
 
