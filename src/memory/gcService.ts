@@ -25,8 +25,11 @@ export interface GCConfig {
   /**
    * 最小存活时间（毫秒）
    *
-   * 避免清理正在使用的 Round：
-   * - Round 创建后短时间内可能还在被引用
+   * 给「引用刚归零」的轮留后悔窗口：删会话/截断把 refCount 降到 0 后，用户可能在
+   * 短时间内又想恢复；窗口内不动物理文件。
+   *
+   * ⚠️ 它**不再**承担「防误清进行中轮」：ADR-044 起建轮即 `refCount: 1`，
+   * 在途轮根本进不了 `listOrphaned` 的 `refCount === 0` 判据。
    * - 默认 5 分钟
    */
   minAgeMs: number;
@@ -58,8 +61,9 @@ export interface GCConfig {
   /**
    * 忙碌检查回调（可选）
    *
-   * 定时 GC 在对话进行中（chatLock busy / 长任务执行中）延迟执行，
-   * 避免进行中 pending Round 被误清（minAgeMs 判龄对长任务不可靠）。
+   * 定时 GC 在对话进行中（chatLock busy / 长任务执行中）延迟执行。
+   * 一阶防线是 `listOrphaned` 的 `refCount === 0`（ADR-044 起在途轮 refCount 1，天然排除）；
+   * 本回调是**二阶**保护：对话框运行期间不碰存储，避免与活跃写入/删会话动作交错。
    * 返回 true = 当前忙，跳过本次 GC。
    */
   shouldSkip?: () => boolean;

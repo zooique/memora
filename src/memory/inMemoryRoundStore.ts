@@ -151,9 +151,12 @@ export class InMemoryRoundStore implements IRoundStore {
   /**
    * 获取孤立的问答闭环列表（refCount === 0）
    *
-   * 用于 GC 服务批量清理
+   * 用于 GC 服务批量清理。ADR-044 第四刀确认：`refCount === 0` = **真正无人引用**
+   * （新轮建轮即 1，故「进行中」本身不再是孤儿判据），能落到 0 的只有存量轮、
+   * 删会话/截断后的轮、归属登记失败的残留。
    *
-   * @param minAgeMs - 最小存活时间（毫秒），避免清理正在使用的 Round
+   * @param minAgeMs - 最小存活时间（毫秒）：给「刚归零」的轮留后悔窗口，
+   *   **不再**承担「防误清进行中轮」职责（那条已由 `refCount 1` 保证）
    * @returns 孤立 Round 数组
    */
   listOrphaned(minAgeMs: number = 0): Round[] {
@@ -171,8 +174,9 @@ export class InMemoryRoundStore implements IRoundStore {
         if (ageSec < minAgeMsSec) return false;
 
         // 孤儿 = 无引用且超龄：
-        // complete 轮在删会话归零后回收；pending/error 轮（崩溃残留 refCount=0）同样回收，
-        // 进行中轮由 minAgeMs 兜底保护，不被误清
+        // complete 轮在删会话归零后回收；存量 pending/error 轮（ADR-044 之前落盘、refCount 0）
+        // 同样回收。⚠️ ADR-044 起新轮建轮即 refCount 1 ⇒ **进行中轮不进本判据**，
+        // 「防误删在途提问」不再靠 minAgeMs 承担（该保护现在只给「刚归零」的轮留窗口）。
         return true;
       })
       .map((r) => ({ ...r }));

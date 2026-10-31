@@ -728,8 +728,10 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
 
   /**
    * 直接落一个自定义 refCount 的 Round（绕过 SessionStore 登记，模拟历史残留孤儿）。
-   * status 可指定为 'pending' 以复现「用户已提问、LLM 未回答」的进行中轮
-   * ——该状态 refCount 恒为 0（MessageHistory.appendUser 写入时即 0）。
+   * status 可指定为 'pending' 以复现「CRASH 残留」形态。
+   *
+   * ⚠️ ADR-044 起 `appendUser` **建轮即 refCount 1**，故「pending 且 refCount 0」只代表
+   * **存量**轮（升级前落盘）；新轮的进行中形态是「pending + refCount 1」。
    */
   function seedRawRound(
     roundId: string,
@@ -770,12 +772,20 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
     expect(roundStore.sweepOrphans()).toEqual([]);
   });
 
-  it('默认调用（不传参）不删进行中轮——启动清扫路径的安全默认', () => {
+  it('默认调用（不传参）不删进行中轮——存量形态（pending + refCount 0）的安全默认', () => {
     // 复现生产路径：extension 启动装配点调 sweepOrphans() 不传参。
-    // 进行中轮（pending）refCount 恒为 0，若默认值无存活保护即被误删 → 用户提问丢失。
+    // 存量轮（ADR-044 之前落盘）建轮写 0，若默认值无存活保护即被误删 → 用户提问丢失。
     seedRawRound('round-inflight', 0, new Date().toISOString(), 'pending');
     expect(roundStore.sweepOrphans()).toEqual([]);
     expect(roundStore.getById('round-inflight')).not.toBeNull();
+  });
+
+  it('ADR-044：新轮（pending + refCount 1）即便 minAgeMs=0 也不被回收——在途提问不会被保洁吃掉', () => {
+    // 新形态的进行中轮：建轮即 refCount 1（appendUser），落不进 refCount===0 的孤儿判据。
+    // 变异锚：listOrphaned 若忽略 refCount（只按 status/年龄筛）⇒ 本例红在 getById 为 null。
+    seedRawRound('round-inflight-adr044', 1, new Date().toISOString(), 'pending');
+    expect(roundStore.sweepOrphans(0)).toEqual([]);
+    expect(roundStore.getById('round-inflight-adr044')).not.toBeNull();
   });
 });
 

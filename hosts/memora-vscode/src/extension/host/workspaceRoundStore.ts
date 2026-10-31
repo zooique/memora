@@ -45,13 +45,16 @@ interface RoundIndexEntry {
 /**
  * 孤儿清扫的默认存活保护（24h）。
  *
- * 进行中轮（pending）的 refCount 恒为 0——MessageHistory.appendUser 写入时即 0，
- * complete 时才 incrementRef。因此清扫必须带存活保护，否则会删掉「用户已提问、
- * LLM 尚未作答」的轮（窗口重载 / 崩溃重启时静默丢失）。
+ * ⚠️ **ADR-044 起判据语义已收窄**（勿按旧口径理解）：`appendUser` **建轮即 `refCount: 1`**
+ * （存在性由创建决定，不由收场决定）⇒ 进行中轮（pending）**不再落进孤儿判据**，
+ * 「用户已提问、LLM 尚未作答」的轮不会被超龄回收。
+ * 现在仍会被判为孤儿的只有：① **存量**轮（ADR-044 之前落盘，建轮写 0、收场才 +1）；
+ * ② 删会话 / 截断后**刚归零**的轮；③ 归属登记失败的残留（见 `registerRoundInSession`：
+ * 该面为**已知取舍**——refCount 已写 1、登记抛错时不回撤，轮不可见但保留，不静默删用户输入）。
  *
- * 24h 是保守取值：孤儿回收属后台维护，延迟一天无副作用；远大于任何正常对话的等待时长。
- * 本常量是 listOrphaned / sweepOrphans 的默认参数——危险 API 必须有安全默认值，
- * 调用方想关闭保护须显式传 0。
+ * 存活保护的作用随之变为「给②留后悔窗口」：刚归零的轮可能正被用户准备恢复（切换会话竞态），
+ * 24h 内不动物理文件。本常量是 listOrphaned / sweepOrphans 的默认参数——危险 API 必须有
+ * 安全默认值，调用方想关闭保护须显式传 0。
  */
 export const DEFAULT_SWEEP_MIN_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -350,10 +353,14 @@ export class WorkspaceRoundStore implements IRoundStore {
   }
 
   /**
-   * 获取孤立的问答闭环
+   * 获取孤立的问答闭环（`refCount === 0` 且超龄）
+   *
+   * `refCount === 0` 的语义（ADR-044 第四刀确认）：**真正无人引用**——新轮建轮即 1，
+   * 故「进行中」本身不再构成孤儿；能落到 0 的只有存量轮、删会话/截断后的轮、登记失败残留。
    *
    * @param minAgeMs 仅回收存活超过该时长的孤儿，**默认 24h**（见 DEFAULT_SWEEP_MIN_AGE_MS）。
-   *   传 0 = 关闭存活保护，会连带删除**进行中**轮（pending 的 refCount 恒为 0），属数据丢失风险。
+   *   传 0 = 关闭存活保护：刚归零的轮会被立即回收（含用户刚删的会话）；新轮 `refCount 1`
+   *   不受影响——**「传 0 会删进行中轮」是 ADR-044 之前的旧口径，已不成立**。
    */
   listOrphaned(minAgeMs: number = DEFAULT_SWEEP_MIN_AGE_MS): Round[] {
     const now = Date.now();
@@ -425,10 +432,11 @@ export class WorkspaceRoundStore implements IRoundStore {
    * SSOT：Round 物理生命周期归 RoundStore（引用归 SessionStore）——deleteSession/truncate
    * 只负责减引用，物理回收统一收敛到本方法与 deleteSession 内联删除，不做第二套清理逻辑。
    *
-   * @param minAgeMs 存活保护（毫秒）：仅清理创建超过该时长的孤儿，防误删进行中/刚崩溃的轮。
-   *   **默认 24h**（见 DEFAULT_SWEEP_MIN_AGE_MS）——默认值必须是安全值：进行中轮（pending）的
-   *   refCount 恒为 0（MessageHistory.appendUser 写入时即 0，complete 才 incrementRef），
-   *   若默认为 0 则启动清扫会删掉用户已提问、LLM 尚未作答的轮，属静默数据丢失。
+   * @param minAgeMs 存活保护（毫秒）：仅清理创建超过该时长的孤儿，给「刚归零」的轮留后悔窗口。
+   *   **默认 24h**（见 DEFAULT_SWEEP_MIN_AGE_MS）——默认值必须是安全值：调用方若默认传 0，
+   *   用户刚删掉的会话/Round 会被立刻物理删除，无恢复余地。
+   *   ⚠️ ADR-044 起「防误删进行中轮」不再由本参数承担：新轮建轮即 `refCount 1`，
+   *   本就进不了 `listOrphaned` 的 `refCount === 0` 判据（详见该常量注释）。
    * @returns 本次清扫（物理删除）的 Round ID 列表——清扫产物交给调用方，
    *   供延迟联动（如 Agent 装配后软删其 round-summary 摘要）；空数组 = 无孤儿
    */

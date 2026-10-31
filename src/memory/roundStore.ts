@@ -676,9 +676,14 @@ export interface IRoundStore {
   /**
    * 获取孤立的问答闭环列表（refCount === 0）
    *
-   * 用于 GC 服务批量清理
+   * 用于 GC 服务批量清理。
    *
-   * @param minAgeMs - 最小存活时间（毫秒），避免清理正在使用的 Round
+   * ⚠️ 判据语义（ADR-044 第四刀确认）：`refCount === 0` = **真正无人引用**。
+   * ADR-044 起建轮即 `refCount: 1`，故「进行中（pending）」本身**不再**构成孤儿判据——
+   * 已入会话的轮不会被超龄静默回收；能落到 0 的只有：存量轮（ADR-044 之前落盘）、
+   * 删会话/截断后归零的轮、归属登记失败的残留（后者为已知取舍，不可见但保留、不自动回收）。
+   *
+   * @param minAgeMs - 最小存活时间（毫秒）：给刚归零的轮留后悔窗口，**不是**「防误清在途轮」
    * @returns 孤立 Round 数组
    */
   listOrphaned?(minAgeMs?: number): Round[];
@@ -694,7 +699,7 @@ export interface IRoundStore {
    *    本方法不负责「让它可见」；
    * ③ 不改变生命周期——⚠️ ADR-044 后新建的 pending 轮 `refCount === 1`，**不再落进
    *    `sweepOrphans` 的 `refCount===0` 判据**，故不会被超龄回收（可见即可由用户删除）。
-   *    该口径与 GC 判据的完整收口见 ADR-044 第四刀，本刀不改判据。
+   *    该口径已在 ADR-044 第四刀确认（判据保持不变，语义收窄为「真正无人引用」）。
    *
    * @param date - YYYY-MM-DD **本地日期**（与会话 ID 日期同口径）：按本地日区间
    *   `[D 00:00, D+1 00:00)` 换算 UTC 后比较 createdAt，判据单点 = `isWithinLocalDay`
