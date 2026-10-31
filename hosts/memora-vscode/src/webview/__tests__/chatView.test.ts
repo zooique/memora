@@ -1254,16 +1254,38 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(send.classList.contains('loading')).toBe(true);
   });
 
-  it('ask + 有输入 → pauseBtn 显示 play ▶「发送补充并继续」（带补充续跑走 send 路由，真能力）', () => {
+  it('ask + 有输入 → pauseBtn 恒隐藏（「发送补充并继续」是假能力：send 路由落 answerQuestion）', () => {
     mountChatView();
     const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
     const input = document.getElementById('input') as HTMLTextAreaElement;
     dispatchTurn({ phase: 'waiting', reason: 'ask' });
     input.value = '不回答，先补充背景';
     input.dispatchEvent(new Event('input'));
-    expect(pauseBtn.hidden).toBe(false);
-    expect(pauseBtn.querySelector('.btn-icon')?.getAttribute('data-icon')).toBe('play');
-    expect(pauseBtn.title).toContain('补充');
+    // ask 期 send 路由 = AgentLoop.answerQuestion（单条只配第 1 题、其余落 [ASK_ABORTED]）
+    // ⇒ 不存在「带补充续跑」，宣告 play + 「发送补充并继续」就是标签撒谎。
+    // 变异锚：deriveButtonSemantics 去掉 askWaiting 判据 ⇒ 本例红在 hidden/play/title 三点。
+    expect(pauseBtn.hidden).toBe(true);
+  });
+
+  it('ask 等待期 Enter 拒收：不 post input（防单条文本被当作第 1 题答案），文本保留', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
+      questions: [{ slot: 'q1', askCallId: 'call_q1', question: '主角职业？' }],
+    });
+    input.value = '不回答，先补充背景';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    // 旧实现：post {kind:'send'} ⇒ 宿主 answerInput([text]) ⇒ 内核只配第 1 题、
+    // 其余题 [ASK_ABORTED]（多题批次静默丢答）。新实现整条拒收并指引内联卡。
+    // 变异锚：删掉 sendMessage 的 ask 守卫 ⇒ 本例如上断言红（出现 kind:'send' 消息）。
+    expect(
+      postMessage.mock.calls.filter(([m]) => (m as { type?: string }).type === 'input'),
+    ).toHaveLength(0);
+    // 拒收不得吞内容：清框发生在 postMessage 之后，本条同时锁定「守卫在清框之前」
+    expect(input.value).toBe('不回答，先补充背景');
   });
 
   // ─── done × 输入内容 ───

@@ -279,16 +279,17 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     expect(spec.send.title).toBe('停止生成（丢弃检查点）');
   });
 
-  it('waiting(ask) + 有输入：续跑键保留 play「发送补充并继续」（走 send 路由，真能力）', () => {
+  it('waiting(ask) + 有输入：续跑键仍隐藏（「补充并继续」是假能力，send 落 answerQuestion）', () => {
     const spec = deriveButtonSemantics({
       state: { phase: 'waiting', reason: 'ask' },
       hasInput: true,
     });
-    expect(spec.pause).toEqual({
-      icon: 'play',
-      title: '发送补充并继续',
-      ariaLabel: '发送补充并继续',
-    });
+    // ask 期 send 路由 = answerQuestion：单条文本只配第 1 题、其余题落 [ASK_ABORTED]
+    // ⇒ 「带补充续跑」不存在（单题时又与内联卡重复），宣告 play 即标签撒谎。
+    // 变异锚：去掉 askWaiting 判据 ⇒ 本例红在 toBeNull。
+    expect(spec.pause).toBeNull();
+    // 发送按钮职责不变（挂起态恒硬停止），停止能力不受本次收敛影响
+    expect(spec.send.title).toBe('停止生成（丢弃检查点）');
   });
 
   it('done + 空输入：暂停按钮隐藏（null）、发送按钮禁用', () => {

@@ -5,9 +5,11 @@
  *   - running 态 send → agent.interject 排队（无缝插话，不发起新 chat）
  *   - waiting(ask) 态 answer → answerQuestion 回填 + resumeExecution('question-answer') 续跑
  *     （提问原文从 `_turnState.waiting.questions` 读，ask 域在途提问整体清空）
- *   - waiting(ask) 态 send（底部输入框回车）→ **同走 answer 通道**，不退化成 supplement：
- *     提问等待态下任何输入都是对该提问的回应（含拒答），若走 supplement 会让在途提问被
- *     cancelAsk 兜底成「用户未回答」、提问原文不落盘（同一意图两种记录 = SSOT 违约）
+ *   - waiting(ask) 态 send（底部输入框回车）→ **整条拒收**：既不走 answer、也不退化成
+ *     supplement。走 answer 会让内核按序一对一配对，单条文本只能配第 1 题、其余题落
+ *     `[ASK_ABORTED]`——多题批次下用户「随便打一句回车」就静默把第 2..N 题判成「未回答」；
+ *     走 supplement 则让在途提问被兜底成「用户未回答」且原文不落盘。
+ *     答题唯一入口 = 内联提问卡（逐题承载 `askCallId`，走 kind:'answer'）
  *   - 错位输入（相位不符）→ 丢弃并落 console.warn 留痕（T2 观测：对用户仍静默、
  *     不改变路由裁决，但「答了没反应」的排障线索必须在扩展宿主日志可查）
  *
@@ -184,7 +186,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     expect(h.posted.filter((m) => (m as { type?: string }).type === 'status')).toHaveLength(0);
   });
 
-  it('waiting(ask) 态 send → 走 answer 通道回填（question-answer，不退化成 supplement）', async () => {
+  it('waiting(ask) 态 send（composer）→ 整条拒收：不 answerQuestion、不上屏、不续跑', async () => {
     const h = setupInput();
     const { answerQuestion, resumeExecution, chat } = mount(h);
     const question: PendingQuestionDto = {
@@ -194,7 +196,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     };
     // 相位：waiting/ask（提问挂起中，用户在**底部输入框**打字回车）
     // 真实语义：内核 yield paused chunk 后 consumeFlow break → finally 复位 _streaming=false。
-    // sendInput 第一分支（流式插话）因此不可命中，落到暂停态续跑分支。
+    // sendInput 第一分支（流式插话）因此不可命中。
     h.cast._streaming = false;
     h.cast._abortController = undefined;
     h.cast._ask.setPending([question]);
@@ -202,26 +204,18 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
 
     await h.cast.handleInput({ kind: 'send', text: '继续' });
 
-    // R1：提问等待态下底部输入框的输入 = 对该提问的回答（含「你自己定」这类拒答），
-    //   故必须与 answer 意图同通道：answerQuestion 回填 + question-answer 落盘。
-    //   旧行为（合并进 supplement）会让在途提问被 runIterationLoop 兜底 cancelAsk 成
-    //   「用户未回答该提问」——用户明明答了，LLM 却被告知无人应答，且提问原文不落盘。
-    expect(answerQuestion).toHaveBeenCalledTimes(1);
-    expect(answerQuestion).toHaveBeenCalledWith(['继续']);
-    expect(resumeExecution).toHaveBeenCalledTimes(1);
-    expect(resumeExecution.mock.calls[0][0]).toBe('继续');
-    expect(resumeExecution.mock.calls[0][2]).toBe('question-answer');
-    // 提问原文随回答透出（重放可还原「问 → 你答」回顾行）
-    expect(h.posted).toContainEqual(
-      expect.objectContaining({
-        type: 'user',
-        kind: 'question-answer',
-        text: '继续',
-        question: '继续吗？',
-        options: ['继续', '停止'],
-      }),
-    );
+    // ask 期 send 不是合法答题载荷：内核 answerQuestion 按序一对一回填，单条文本只能覆盖
+    // 第 1 题、其余题落 [ASK_ABORTED]（用户「随便打一句回车」⇒ 第 2..N 题被静默判未答）；
+    // 单题时又与内联卡完全重复。故拒收——答题唯一入口 = 内联提问卡（kind:'answer'）。
+    // 变异锚：删掉 sendInput 的 ask 守卫（回退成 answerInput([input])）⇒ 本例四个断言全红。
+    expect(answerQuestion).not.toHaveBeenCalled();
+    expect(resumeExecution).not.toHaveBeenCalled();
     expect(chat).not.toHaveBeenCalled();
+    // 不上屏 user 行：拒收不得伪造「已答」痕迹（旧实现会 post question-answer 行）
+    expect(h.posted.filter((m) => (m as { type?: string }).type === 'user')).toHaveLength(0);
+    // 拒收必须可见（静默拒收 = 背刺，用户不知道该怎么办）
+    const { window } = await import('vscode');
+    expect(window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('提问卡'));
   });
 
   it('waiting(ask) 态 answer → answerQuestion 回填 + resumeExecution("question-answer")', async () => {

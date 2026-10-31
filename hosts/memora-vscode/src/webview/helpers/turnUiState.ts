@@ -125,11 +125,15 @@ export interface ButtonSemantics {
  * 按钮矩阵用例锁定。
  *
  * 续跑键宣告纪律：**按钮只宣告路由真实收下的意图**——`resume` 路由只收 pause，故
- * `waiting(ask)` 空输入的「纯续跑」不渲染（不回答的兜底 = ask 超时自动续跑，产品定案
- * 无「跳过提问」按钮）；ask + 有输入的「发送补充并继续」是真能力（走 send 路由）。
+ * `waiting(ask)` 的续跑键**恒不渲染**：空输入无纯续跑能力（不回答的兜底 = ask 超时自动
+ * 续跑，产品定案无「跳过提问」按钮）；有输入也无「发送补充并继续」能力——ask 期的 send
+ * 路由实际落到 `AgentLoop.answerQuestion`，单条文本按序只配第 1 题、其余题落
+ * `[ASK_ABORTED]` 占位（一条文本无法定位到 N 题，且单题时与内联卡完全重复）。
+ * 该提交由 webview `sendMessage` 与宿主 `sendInput` 双层拒收，答题唯一入口 = 内联提问卡。
  *
  * `disabled` 判据：**只有 `done` + 空输入**才禁用——运行中（thinking/paused）无论有无输入
- * 都可用（有输入 = interject 排队 / 带补充续跑，空输入 = 停止 / 继续）。
+ * 都可用（有输入 = interject 排队 / 带补充续跑；ask 期有输入虽 enabled，但提交被上述
+ * 双侧守卫拒收并指引内联卡，不会落地为答题）。
  */
 export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemantics {
   const { state, hasInput } = input;
@@ -163,18 +167,21 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
 
   if (sessionUiState === 'paused') {
     // 纯续跑（空输入点续跑）仅 waiting(pause) 为真能力——waiting(ask) 的 resume 会被
-    // handleInput 静默丢弃 → ask + 空输入时续跑键整体隐藏（null，applyButtonSemantics 不写 title/aria）
+    // handleInput 静默丢弃 → ask 期续跑键整体隐藏（null，applyButtonSemantics 不写 title/aria）
     const plainResume = state.phase === 'waiting' && state.reason === 'pause';
+    // ask 期「有输入」同样不宣告：那会显示「发送补充并继续」，而实际提交走 answerQuestion
+    // （只配第 1 题、其余 [ASK_ABORTED]）——标签与行为分裂，见函数头「续跑键宣告纪律」
+    const askWaiting = state.phase === 'waiting' && state.reason === 'ask';
+    const showPause = !askWaiting && (hasInput || plainResume);
     return {
       // 已挂起：pause 按钮承担「继续」（有输入 = 带补充续跑；空输入 = 纯续跑，仅 pause 相位）
-      pause:
-        hasInput || plainResume
-          ? {
-              icon: 'play',
-              title: hasInput ? '发送补充并继续' : '继续生成',
-              ariaLabel: hasInput ? '发送补充并继续' : '继续生成',
-            }
-          : null,
+      pause: showPause
+        ? {
+            icon: 'play',
+            title: hasInput ? '发送补充并继续' : '继续生成',
+            ariaLabel: hasInput ? '发送补充并继续' : '继续生成',
+          }
+        : null,
       // 发送按钮在挂起态始终承担「硬停止」（丢弃检查点）
       send: {
         loading: true,

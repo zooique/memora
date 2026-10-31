@@ -3003,11 +3003,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.syncPendingQueue();
       return;
     }
-    // 提问等待态（waiting/ask）**单独分流，不与暂停态合并**：此刻敲的任何文本（含「你自己定」
-    // 「跳过」这类拒答）都是对在途提问的回答，必须走 answer 通道让 LLM 知道用户看到了并做了决定。
-    // 并入 supplement 会让提问原文不落盘、答案退化为普通补充（同一意图两种落盘形态 = SSOT 违约）。
+    // ask 等待期：composer 的单条文本不是合法答题载荷——内核 answerQuestion 按序一对一，
+    // 单条只能配第 1 题、其余题落 [ASK_ABORTED]；一条文本也无法定位到具体哪一题。
+    // 故拒收（不改写成 answer、不发起新轮）：答题唯一入口 = 内联提问卡（逐题承载 askCallId）。
+    // webview sendMessage 已同判据前置拦截，此处为宿主兜底（旧 bundle / 竞态漏网）。
     if (this.isAskWaiting()) {
-      await this.answerInput([input]);
+      void vscode.window.showWarningMessage('Memora：请在上方提问卡作答（不答可点停止）');
       return;
     }
     // 暂停态补充输入（waiting/pause，相位判据）→ 不发起新 chat()
