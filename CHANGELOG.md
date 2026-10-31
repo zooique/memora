@@ -12,7 +12,20 @@
 
 ### Added（内核）
 
-- **`Agent.currentRoundId()`**（`INTERRUPT-SETTLE-1`）：读当前在途轮次 id（`''` = 无在途轮），与 loop 层同源同值、不缓存副本。**为什么**：`TurnState.waiting` 投影**不含** roundId（ask 挂起时轮身份从快照里消失），而 ask 期停止收场需要轮身份做归属（折叠区归属 / 容器底栏时间与复制/分叉/删除 / 分叉锚点）；缺它时宿主 `settleRoundFooter` 首行 `if (!roundId) return` 直接早退，中断轮底栏整块不出现（真机 2026-10-31 实证）。**对消费者**：纯新增成员，零既有签名变更、零行为变化；`abandonTurn()` 的 `boolean` 契约保持不动（放弃动作的结果与轮身份分两个读口，避免既有调用方面临破坏性变更）。
+- **`Agent.currentRoundId()`**（`INTERRUPT-SETTLE-1`）：读当前在途轮次 id（`''` = 无在途轮），与 loop 层同源同值、不缓存副本。**为什么**：`TurnState.waiting` 投影**不含** roundId（ask 挂起时轮身份从快照里消失），而 ask 期停止收场需要轮身份做归属（折叠区归属 / 容器底栏时间与复制/分叉/删除 / 分叉锚点）；缺它时宿主 `settleRoundFooter` 首行 `if (!roundId) return` 直接早退，中断轮底栏整块不出现（真机 2026-10-31 实证）。**对消费者**：纯新增成员，零既有签名变更、零行为变化；放弃动作走独立的 `abandonTurn()` 读口（见下），轮身份与放弃结果互不耦合、两个读口各管一件事。
+
+- **`Agent.abandonTurn()`**（`TURN-EXISTENCE-1` · ADR-044 二/三刀）：主动放弃当前在途轮的单点原语——① `cancelAsk()` 取消在途提问（只动进程内 `pendingAsk`，保 tool 配对不变量）；② `appendInterrupted` 中断收场落盘（盘面得一条诚实的中断记录，失败降级告警不抛）；③ 清当前暂停检查点并以结果作 `boolean` 返回（宿主据此提示「检查点已清理」；无检查点返回 `false`）。**为什么**：停止一个停在 ask / 长循环的轮此前没有内核原语，「放弃」语义散在宿主各处。**对消费者**：纯新增成员，零既有签名变更、零删除。
+- **导出 `isRoundSuccessful`**（`METRICS-OWNER-1` 缓冲 · `INTERRUPT-SETTLE-1` 顺手修）：「轮是否成功收场」判据单点（盘面 `status === 'complete'` 投影），与既有 `isRoundSettled` 同文件同族挂出。**为什么**：宿主 `metrics.success` 原为宿主私有口径（`!aborted && !paused`），会把内核 failed 收场（盘面 `interrupted`）误标成功；判据收口内核后宿主不再自写状态比较。**对消费者**：需要「成功/失败」口径的面直接消费该函数，勿再自写 `status` 比较（与 `isRoundSettled` 同一条禁令）。
+- **导出 `isWithinLocalDay`**（`E2E-TZ-SALVAGE-1`）：本地日期 ↔ UTC 时间戳换算判据单点（本地日区间 `[D 00:00, D+1 00:00)` → UTC 比较）。**为什么**：会话 ID 用本地日期、轮 `createdAt` 用 UTC 的双口径换算此前内核与宿主各写一份（宿主那份写错即漏打捞，见 Fixed）。**对消费者**：任何「按本地日过滤 UTC 时间戳」的面复用同一函数，不另立换算。
+- **`AskQuestion` 增可选 `askCallId`**（`ASK-BATCH-IDENTITY-1` · ADR-043）：多问批次每题的身份 = 对应 `ask_user` 工具调用 id，由 `parseAskCalls` 按序单点填入（第 i 题 ↔ 第 i 个 toolCallId，与 `pendingAsk.toolCallIds` 同序同源，零新增状态），并随 `onPendingQuestion` / `question_pending` chunk / `takeAnsweredAsk` 快照贯通到落盘链路。**为什么**：运行时行 id（宿主自造）与盘面行 id（内核装配）两个产地、永不相遇，「实时行-重放行」配对只靠时序巧合。**对消费者**：纯新增可选字段，零既有签名变更；不做身份配对者可忽略。
+
+### Fixed（内核）
+
+- **ask_user 整批空问题不再挂起**（`ASK-QGUARD-1`）：`question` 空 / 纯空白的整批调用此前照常挂起等用户作答，只能干等 ask 超时（默认 30 分钟）。现整批空当场拒收：以明确错误回喂 tool result，让模型同轮重问。不变量保持：整批逐条回填 tool 消息（配对不变量不破）；`askCountThisTurn` 不计未发出的提问（askLimit 语义是防打扰，空问题不构成打扰）。**对消费者**：行为变更——全空批次立即收到错误而非静默等待；含至少一个非空问题的混合批仍正常挂起（混合批里的空问题单列 `ASK-MIXED-BATCH-1` 观察中）。
+- **在途提问崩溃前落盘**（`E2E-ASK-LOSS-1`）：AI 已提问、用户未答时进程死亡 ⇒ 问题文本此前**完全丢失**（盘上轮只有 user 消息，重启只剩「没有问题的中断」，真杀进程实测）。现提问在挂起前随轮落盘，重启后收场转化出逐题 `unanswered` 记录——「问了什么、给了什么候选项」重启可回看。**对消费者**：自实现 `IRoundStore` 者无需改接口（落盘走既有 `pendingAsk` 字段）；崩溃重启后提问不再丢。
+- **多问批次逐题落盘**（`ASK-MULTI-Q-1`）：作答 / 超时 / 批次内跳过三形态每题各落一条持久记录——作答题 `question-answer` + 各自答案、跳过题 `unanswered` + `[ASK_ABORTED]` 占位（与 LLM 收到的 tool result 同构）、超时整批 `timeout` + 超时通知。此前落盘只取首问，Q2..N 的问题与候选项只存活在内存。**对消费者**：重启回放多题批次可见完整 N 条问答对；`takeAnsweredAsk` 返回元素结构扩宽（成员名不动，旧读者结构兼容）。
+- **凌晨崩溃轮打捞的时区口径**（`E2E-TZ-SALVAGE-1`）：会话 ID 用本地日期、轮 `createdAt` 用 UTC ⇒ 本地 00:00–08:00 创建的中断轮打捞不到（UTC+8 下每天 8 小时窗口静默丢轮）。换算判据收敛为单点 `isWithinLocalDay`（见 Added），内核 `inMemoryRoundStore` 与宿主 `WorkspaceRoundStore` 同一函数同判据（单侧改 = 分叉，已被测试钉死）。**对消费者**：打捞过滤如自行实现，复用该单点，勿再手写换算。
+- **未收场轮不再「凭空消失」**（`TURN-EXISTENCE-1` · ADR-044 一/四刀）：轮的存在性不再绑死「收场」——建轮即入会话视图（此前一轮要等收场才可见；ask 超时等停滞轮在会话视图不可见、重启后也不被当「需打捞的中断轮」，用户体感「说过的话凭空消失」而盘上仍在，真机 2026-10-31 实证）；ask 超时兜底去相位化（停滞轮有确定性收场兜底）；孤儿判据口径随之收窄。**对消费者**：自实现会话视图 / 回收判定者将看到轮在创建期即出现；`Round.refCount` 语义以 `roundStore.ts` 注释为准。
 
 ## [5.2.0] · 2026-10-29
 
