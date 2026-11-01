@@ -273,9 +273,11 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
    * 判据是**文本事实**而非按键事实（同 HOST-CTX-13 的 @ 结论）：中文输入法或粘贴进来的 `/`
    * 未必产生 keydown，故只在 input 事件里判定；keydown 只负责 Escape 退出。
    *
-   * **焦点刻意留在输入框**：若打开菜单后 `searchInput.focus()`，用户刚打的字就进不了正文，
-   * 而斜杠态的语义是「边写正文边挑技能」。代价是搜索框只作镜像：它显示 token 的实时过滤词，
-   * 键盘焦点仍在正文。选中路径因此保持点击（Enter 归发送，不抢）。
+   * **斜杠弹窗是被动提示，不劫持输入**：`/` 打开菜单后焦点刻意留在正文（绝不
+   * `searchInput.focus()`，否则刚打的字进不了正文）；菜单**不**把后续正文当搜索词——
+   * 用户继续键入任意字符即视为「放弃挑选、继续写正文」，菜单收起（真机反馈：继续输入不应
+   * 变成 skill 搜索）。挑技能靠点击（Enter 归发送，不抢）。形态上它和 @ 提及弹窗一致：
+   * 浮在输入框上方、非模态。
    */
   let slashTriggerOffset: number | null = null;
 
@@ -287,8 +289,9 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
   }
 
   /** 撤掉斜杠 token（选中技能后调用）：只删「`/` 到当前光标」这一段。
-   * 斜杠态下该区间必然是连续非空白字符（输入分支遇空白即退出），故不会吃掉后面的正文。
-   * 落点已变（用户删过 `/`）时原样不动——与 `removeMentionAt` 同一条纪律：只认落点。 */
+   * 斜杠态下选中发生时，token 区间（`/` 到光标）必然未含空白——继续输入即退出（不会走到选中），
+   * 故不会吃掉后面的正文。落点已变（用户删过 `/`）时原样不动——与 `removeMentionAt`
+   * 同一条纪律：只认落点。 */
   function consumeSlashToken(): void {
     const at = slashTriggerOffset;
     slashTriggerOffset = null; // 一次性：撤完即清，防后续选择误删同一位置
@@ -320,43 +323,48 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
 
     input.addEventListener('input', (e) => {
       const ie = e as InputEvent;
-      // 只认 insert 家族：删除同样触发 input，若光标恰停在 `/` 后会把「删到 / 前面」误判成
-      // 「插入 /」（同 HOST-CTX-13 的 inputType 判据）。
-      if (typeof ie.inputType !== 'string' || !ie.inputType.startsWith('insert')) return;
+      // 组合输入进行中（中文 IME 打字中途）暂不判定：待 compositionend 的提交事件再统一处理，
+      // 否则组合中途反复开关菜单（真机中文输入抖动根因）。
+      if (ie.isComposing) return;
       const caret = input.selectionStart;
-      if (
-        caret > 0 &&
-        input.value[caret - 1] === '/' &&
-        isSlashTokenStart(input.value, caret - 1)
-      ) {
-        slashTriggerOffset = caret - 1;
-        skillSearchQuery = '';
-        renderMenu();
-        // 互斥规则与触发器点击共用同一函数（不在这里再写一遍 .treedd.is-open 选择器）
-        if (root) {
-          closeOtherDropdowns(document, root);
-          setDropdownOpen(root, true);
+
+      // 1) 新插入的 `/`（行首或空白后）→ 进入斜杠态：弹窗作为**被动提示**打开，焦点刻意留在
+      //    正文（绝不 searchInput.focus()，否则刚打的字进不了正文）。
+      if (typeof ie.inputType === 'string' && ie.inputType.startsWith('insert')) {
+        if (
+          caret > 0 &&
+          input.value[caret - 1] === '/' &&
+          isSlashTokenStart(input.value, caret - 1)
+        ) {
+          slashTriggerOffset = caret - 1;
+          skillSearchQuery = '';
+          renderMenu();
+          // 互斥规则与触发器点击共用同一函数（不在这里再写一遍 .treedd.is-open 选择器）
+          if (root) {
+            closeOtherDropdowns(document, root);
+            setDropdownOpen(root, true);
+          }
+          return;
         }
-        return;
       }
-      if (slashTriggerOffset === null) return;
-      const start = slashTriggerOffset;
-      const token = input.value.slice(start + 1, caret);
-      // 三个退出条件：`/` 已不在原位 / 光标退回 token 之前 / token 内出现空白（用户开始写正文）
-      if (input.value[start] !== '/' || caret <= start || /\s/.test(token)) {
-        slashTriggerOffset = null;
-        // 退出斜杠态 = 放弃过滤：不清词的话菜单会停在上一次 token 的结果上（用户以为列表缺项）
-        skillSearchQuery = '';
-        renderMenu();
-        // 退出即收起菜单（与 Escape 同纪律）：否则菜单赖在输入框上方，用户继续打字时仍浮着
-        // 全部技能项，体感「输入被打断」。选中路径不走这里——点击项由 dropdown 的 click 委托收起。
-        if (root) setDropdownOpen(root, false);
-      } else if (root?.classList.contains('is-open')) {
-        skillSearchQuery = token;
-        renderMenu();
-      } else {
-        // 菜单被外部点击收起 ⇒ 斜杠态一并结束（否则后续输入会继续喂给已关闭的菜单）
-        slashTriggerOffset = null;
+
+      // 2) 斜杠态维护：**任意继续输入（字母/数字/中文/标点）即视为「放弃挑选、继续写正文」**
+      //    —— 弹窗是被动提示，绝不能把正文劫持成搜索框（真机反馈：继续输入不应变成 skill 搜索）。
+      //    落点不在 `/` 上（被删/移走）或光标退回 token 前，亦属失效，一并退出。
+      if (slashTriggerOffset !== null) {
+        const start = slashTriggerOffset;
+        const token = input.value.slice(start + 1, caret);
+        // 退出条件（任一即收起）：`/` 已被删/移走、光标退回 token 前、token 含空白（开始写正文）、
+        // **或 token 非空（用户已继续键入）**。
+        if (input.value[start] !== '/' || caret <= start || /\s/.test(token) || token.length > 0) {
+          slashTriggerOffset = null;
+          // 斜杠 token 不算「用户主动搜索」：退出即清词，否则下次点开菜单会带着上次的过滤结果
+          skillSearchQuery = '';
+          renderMenu();
+          // 退出即收起菜单（与 Escape 同纪律）：否则菜单赖在输入框上方，用户继续打字时仍浮着
+          // 全部技能项，体感「输入被打断」。选中路径不走这里——点击项由 dropdown 的 click 委托收起。
+          if (root) setDropdownOpen(root, false);
+        }
       }
     });
   }

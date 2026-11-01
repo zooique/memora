@@ -176,40 +176,52 @@ describe('skillPickerView 斜杠触发（/ 打开选择器）', () => {
     }
   });
 
-  it('`/su` 把 token 镜像成搜索词，列表只剩匹配项', () => {
-    const { view, menu, input } = mount();
+  it('斜杠态继续键入即收起菜单（被动提示，不把正文劫持成搜索）', () => {
+    const { view, menu, root, input } = mount();
     view.setSkills(SKILLS);
     type(input, '/su');
-    expect(skillItems(menu).map((el) => el.dataset.treeddId)).toEqual(['summarize']);
-    expect(searchBox(menu).value).toBe('su');
+    expect(isOpen(root)).toBe(false); // 第二个字符即收起（不再过滤）
+    expect(skillItems(menu)).toHaveLength(2); // 列表不过滤，恢复全量
+    expect(searchBox(menu).value).toBe(''); // 搜索框未镜像 token
+    expect(input.value).toBe('/su'); // 正文原样保留，未被吃成搜索词
   });
 
-  it('选中技能后 token 从正文撤除（`/su` 不得变成伪造的用户输入）', () => {
+  it('选中技能后 token 从正文撤除（`/` 不得变成伪造的用户输入）', () => {
     const { view, chipRow, input } = mount();
     view.setSkills(SKILLS);
-    type(input, '/su');
+    type(input, '/');
     view.select('summarize');
     expect(input.value).toBe('');
     expect(chipRow.querySelector('.skill-chip__name')?.textContent).toBe('摘要提炼');
   });
 
-  it('token 内出现空白即退出斜杠态（用户开始写正文，菜单收起、不再过滤列表）', () => {
+  it('斜杠态继续输入任意字符即收起（非模态：不把正文当搜索、不赖屏）', () => {
     const { view, menu, root, input } = mount();
     view.setSkills(SKILLS);
-    type(input, '/su');
-    expect(skillItems(menu)).toHaveLength(1); // 斜杠态：过滤生效
-    expect(isOpen(root)).toBe(true); // 斜杠态：菜单展开
+    type(input, '/');
+    expect(isOpen(root)).toBe(true);
+    expect(skillItems(menu)).toHaveLength(2); // 提示态展示全量，不预先过滤
+    type(input, 'x'); // 任意字符（非导航键）即视为放弃挑选
+    expect(isOpen(root)).toBe(false); // 菜单收起——否则浮层赖着不走，体感打断输入
+    expect(input.value).toBe('/x'); // 正文原样保留，未被劫持成搜索词
+    expect(searchBox(menu).value).toBe('');
+  });
+
+  it('斜杠态 token 含空白也收起（用户开始写正文）', () => {
+    const { view, menu, root, input } = mount();
+    view.setSkills(SKILLS);
+    type(input, '/');
     type(input, ' 然后');
-    expect(skillItems(menu)).toHaveLength(2); // 退出斜杠态：恢复全量
-    expect(isOpen(root)).toBe(false); // 退出斜杠态：菜单收起——否则继续打字时浮层赖着不走，体感打断输入
+    expect(isOpen(root)).toBe(false);
+    expect(skillItems(menu)).toHaveLength(2); // 恢复全量（不再过滤）
   });
 
   it('斜杠态 Esc 收起菜单，`/` 与已打的字留在正文（取消无扰动）', () => {
     const { root, input } = mount();
-    type(input, '/su');
+    type(input, '/');
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(isOpen(root)).toBe(false);
-    expect(input.value).toBe('/su');
+    expect(input.value).toBe('/');
   });
 });
 
