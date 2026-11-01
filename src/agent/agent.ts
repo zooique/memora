@@ -1391,6 +1391,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this.loop) {
       this.loop.setProvider(provider);
     }
+    // 前台也是后台通道的解析原料（未配置后台模型时结果就是前台实例，配置了则是升级目标）⇒
+    // 前台一换必须重算并重注入，否则三个后台消费者仍停在装配期旧前台实例上（见 applyBackgroundChannel）
+    this.applyBackgroundChannel();
     logger.info({ provider: this.#provider.name }, 'Provider 已切换');
   }
 
@@ -1449,11 +1452,30 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertNotBusy('切换后台 Provider');
     // 对外快照保留宿主原值（不含装饰器）：`getBackgroundProvider()` 上报的是「用户选的后台 Provider」
     this.#backgroundProvider = provider;
-    // 后台组件消费「后台 + 前台失败升级」解析结果 —— 与装配期同一真理源（backgroundProvider.ts），
-    // 不在本方法里重写一份升级判据；null 仍表示「回退到装配期默认 Provider」
-    const effective = provider ? resolveBackgroundProvider(provider, this.#provider) : null;
-    // 逐个注入三个后台消费者（归档 / 摘要 / 润色）：新增第四个消费者时必须在此登记，
-    // 漏登记 = 它只能拿到装配期实例、热切换对它不生效（勿写「所有」，全称句会随新增静默失真）
+    // 解析与注入归 applyBackgroundChannel（与 setProvider 共用，判据不在这里重写一份）
+    this.applyBackgroundChannel();
+    logger.info({ hasBackground: !!provider }, '后台 Provider 已切换');
+  }
+
+  /**
+   * 重新解析「后台通道 Provider」并注入三个后台消费者（归档 / 摘要 / 润色）。
+   *
+   * 唯一解析点 = `resolveBackgroundProvider`（装配期 `assembler` 同源），本方法只做分发，
+   * 不重写「后台失败怎么办」的判据。
+   *
+   * **两个调用点（缺一即假生效）**：
+   * - `setBackgroundProvider`：用户改**后台**模型；
+   * - `setProvider`：用户改**前台**模型——未配置后台模型时解析结果就是**当前前台实例**，
+   *   前台一换必须重注入，否则三个消费者永久停在装配期那个旧前台实例上
+   *   （表现为「换了模型，摘要 / 归档 / 润色仍走旧模型」，且没有任何测试会红）。
+   *
+   * 必须传**解析后的实例**而非 `null`：消费者内部的 `defaultProvider` 是装配期快照，
+   * 传 null 只会回退到旧实例 —— 热切换对它无效（这正是此前前台热切换的缺口所在）。
+   * 新增第四个后台消费者时在本方法登记（两个调用点自动覆盖）。
+   */
+  private applyBackgroundChannel(): void {
+    const effective = resolveBackgroundProvider(this.#backgroundProvider, this.#provider);
+    // 逐个注入：勿改写成「所有后台组件」——全称句会随新增消费者静默失真
     if (this.internals.roundSummaryGenerator) {
       this.internals.roundSummaryGenerator.setBackgroundProvider(effective);
     }
@@ -1463,7 +1485,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this.textPolisher) {
       this.textPolisher.setBackgroundProvider(effective);
     }
-    logger.info({ hasBackground: !!provider }, '后台 Provider 已切换');
   }
 
   // ─── 归档模式管理 ───────────────────────────

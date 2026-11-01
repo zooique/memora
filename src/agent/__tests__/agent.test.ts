@@ -1133,7 +1133,7 @@ describe('Agent · setProvider() / setBackgroundProvider() · 切换 Provider', 
     expect(result.polished).toBe('后台润色结果');
   });
 
-  it('setBackgroundProvider(null) 后润色回退装配期 Provider（后台实例不再被调用）', async () => {
+  it('setBackgroundProvider(null) 后润色回退当前前台 Provider（后台实例不再被调用）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
@@ -1142,10 +1142,48 @@ describe('Agent · setProvider() / setBackgroundProvider() · 切换 Provider', 
     await agent!.polish!.polish('第一段');
     expect(bg.calls).toBe(1);
 
-    // 用户清空后台模型 → 润色应回退装配期实例，而不是继续用旧的后台实例
+    // 用户清空后台模型 → 润色应回退当前前台实例，而不是继续用旧的后台实例
     agent.setBackgroundProvider(null);
     await agent!.polish!.polish('第二段');
     expect(bg.calls).toBe(1); // 未再递增
+  });
+
+  it('setProvider 后未配置后台模型时，润色跟随新前台（前台热切换也重解析后台通道）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 未调用 setBackgroundProvider：后台通道解析结果应当就是前台实例
+    const fg = new CountingProvider('fg-new');
+    agent.setProvider(fg);
+
+    // 走公开面 agent.polish.polish()：验证「换了前台模型后润色真的用新实例」
+    //（此前解析结果停在装配期旧前台，润色仍走旧模型，fg.calls 恒为 0）
+    const result = await agent!.polish!.polish('你好');
+    expect(fg.calls).toBe(1);
+    expect(result.polished).toBe('后台润色结果');
+  });
+
+  it('setProvider 后已配置后台模型时，升级兜底目标是新前台（而非装配期旧实例）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    /** 后台通道恒在产出前失败（用于逼出「升级到前台」路径） */
+    class FailingProvider extends LlmProvider {
+      readonly name = 'bg-fail';
+      async *chat(): AsyncIterable<LlmChunk> {
+        throw new Error('后台通道不可用');
+      }
+    }
+
+    const fg = new CountingProvider('fg-new');
+    // 旧前台（装配期实例）→ 换新前台；再把后台换成一个必然失败的实例
+    agent.setProvider(fg);
+    agent.setBackgroundProvider(new FailingProvider());
+
+    // 升级目标必须是 setProvider 注入的新前台（旧实现会升级到装配期旧实例，fg.calls 恒为 0）
+    const result = await agent!.polish!.polish('你好');
+    expect(fg.calls).toBe(1);
+    expect(result.polished).toBe('后台润色结果');
   });
 });
 
