@@ -11,6 +11,8 @@
  *   - 将 memora 对话 Round ID 列表持久化到工作区 `.memora/sessions.json`
  *   - 实现 ISessionStore 接口，注入 Agent，让跨会话对话记录可回溯（traceSummary 依赖）
  *   - 承载「留存区」分组标签（`archivedIdsSet`）——纯展示态，会话记录可分两组显示
+ *   - 承载「上次停留的会话」导航指针（`lastActiveSessionId`）——**启动判据输入**，
+ *     与 updatedAt（写入最近）是两个不同事实，见字段声明处语义边界
  *   - 原子写入：save() 使用 atomicWriteFileSync 防崩溃损坏
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -75,6 +77,22 @@ export class WorkspaceSessionStore implements ISessionStore {
   private archivedIdsSet = new Set<string>();
 
   /**
+   * 「上次停留的会话」导航指针（宿主扩展字段，**是判据输入，不是纯展示态**）
+   *
+   * 与 `archivedIdsSet` 的语义分界（别照抄上面那句「不参与任何数据判据」）：本字段被
+   * `getInitialSessionId` 消费，直接决定插件启动时打开哪个会话 ⇒ 它是判据本身。
+   *
+   * 为什么不能复用 `SessionMeta.updatedAt`：那个字段的真源是 `updateRoundBasedMessageCount`，
+   * 只在「有一轮落盘」时刷新。「切到某会话翻历史但没发消息」在磁盘上零痕迹 ⇒ 启动时按
+   * updatedAt 取 [0] 必然回到「最近写过消息的会话」，而不是「你最后看的会话」。
+   * 两个事实（写入最近 / 停留最近）必须两个字段，合并即语义腐化。
+   *
+   * 可丢弃性（退役路径）：删掉本字段 + 三个读点（load / getInitialSessionId / setLastActiveSession）
+   * 即回到旧行为（启动取 updatedAt [0]），不丢任何会话数据。
+   */
+  private lastActiveSessionId = '';
+
+  /**
    * @param workspacePath 工作区路径（落盘目录 `.memora`）
    * @param roundStore 问答闭环存储；缺省时在同工作区新建文件级 WorkspaceRoundStore 并 load()
    */
@@ -104,18 +122,22 @@ export class WorkspaceSessionStore implements ISessionStore {
         metas: Record<string, SessionMeta>;
         roundIdsStore: Record<string, string[]>;
         archivedIds?: string[];
+        lastActiveSessionId?: string;
       };
       for (const [k, v] of Object.entries(data.metas ?? {})) this.metas.set(k, v);
       // 加载 round-based 模式的 Round ID 列表（唯一内容来源）
       for (const [k, v] of Object.entries(data.roundIdsStore ?? {})) this.roundIdsStore.set(k, v);
       // 留存区标记：旧档无该字段 → 缺省空集（向后兼容，不做迁移分发）
       this.archivedIdsSet = new Set(data.archivedIds ?? []);
+      // 导航指针：旧档无该字段 → 空串 ⇒ 启动走「最近写入」兜底（与加字段前行为一致，无迁移）
+      this.lastActiveSessionId = data.lastActiveSessionId ?? '';
     } catch (err) {
       // 会话文件损坏时降级为空（不阻塞插件启动）
       console.warn('Memora 会话文件读取失败，降级为空', err);
       this.metas.clear();
       this.roundIdsStore.clear();
       this.archivedIdsSet.clear();
+      this.lastActiveSessionId = '';
     }
   }
 
@@ -125,6 +147,7 @@ export class WorkspaceSessionStore implements ISessionStore {
       metas: Object.fromEntries(this.metas),
       roundIdsStore: Object.fromEntries(this.roundIdsStore),
       archivedIds: [...this.archivedIdsSet],
+      lastActiveSessionId: this.lastActiveSessionId,
     };
     atomicWriteFileSync(this.filePath, JSON.stringify(data, null, 2));
   }
@@ -193,6 +216,11 @@ export class WorkspaceSessionStore implements ISessionStore {
     // 无标题的幽灵条目（标记是挂载在 sessionId 上的视图标签，随会话删除一并失效）。
     // 由此本方法对「近期列表条目」与「留存区条目」是同一条删除链路，不需要第二个删除 API。
     this.archivedIdsSet.delete(sessionId);
+    // 导航指针同步失效（**防御性清理**）：指针指向的会话已不存在时若留着它，下次启动
+    // 会静默切到一个空会话（内核 switchToSession 对不存在会话不报错，见 getInitialSessionId）。
+    // 宿主 UI 有「当前会话不可删」守卫，故正常路径走不到这里——本行兜的是手工删数据 /
+    // 换机同步 / 旧档残留等外部入口。
+    if (this.lastActiveSessionId === sessionId) this.lastActiveSessionId = '';
     this.save();
     return removedIds;
   }
@@ -326,7 +354,13 @@ export class WorkspaceSessionStore implements ISessionStore {
       return {
         sessionId,
         displayName: defaultSessionTitle(),
-        updatedAt: new Date().toISOString(),
+        // updatedAt **不得取 now()**：占位 meta 每次查询都重新生成，用 now() 等于把该会话
+        // 永久标成「刚刚活跃」⇒ 在 listSessionMetas 的 updatedAt 降序里恒排第一，启动时
+        // 抢走「最近写入」位把用户带进无关会话。而「新会话首轮刚落盘、SessionNamer 尚未
+        // 回写 autoName」正是缺 meta 的常态窗口。
+        // 取会话 id 前缀日期（buildSessionId 契约编码的真实数据，非编造）的当日零点：
+        // 同日排最后（零点是最早时刻），跨日仍落在自己那一天，语义 = 「具体时刻未知」。
+        updatedAt: `${sessionId.slice(0, 10)}T00:00:00.000Z`,
         messageCount: this.deriveMessageCount(sessionId),
       };
     }
@@ -515,4 +549,67 @@ export class WorkspaceSessionStore implements ISessionStore {
     const roundIds = this.roundIdsStore.get(sessionId) ?? [];
     return roundIds.length * 2;
   }
+
+  // ─── 导航指针（宿主扩展能力，非 ISessionStore 契约） ───
+
+  /**
+   * 启动初始会话 = **唯一判据点**（chatPanel 构造时消费）
+   *
+   * 优先级：上次停留的会话 → 不可用则退回「最近写入」的会话（updatedAt 降序 [0]）→ 再无则空串
+   * （空串的语义 = 从未有过会话，由宿主 `ensureInitialSession` 建首个会话）。
+   *
+   * 为何必须做存在性校验：内核 `switchToSession` 对**不存在的会话不报错**（加载消息返空、
+   * 循环工作记忆清空）⇒ 陈旧指针的后果是「静默切到一个空会话」，用户看到空屏却零报错，
+   * 比抛错更难排查。故指针必须能在本地解析出实体（有 meta 或有 roundIds）才采信。
+   *
+   * 为何不记住空会话：新建后未发消息的会话在 sessions.json 里既无 meta 也无 roundIds
+   * ⇒ 重启后无法与「已被删除的会话」区分。不赌，统一退回最近写入的会话；
+   * 用户丢的只是一个还没写东西的空壳，而赌输的代价是空屏（不带伤优先）。
+   */
+  getInitialSessionId(): string {
+    const persisted = this.lastActiveSessionId;
+    if (persisted && (this.metas.has(persisted) || this.roundIdsStore.has(persisted))) {
+      return persisted;
+    }
+    return this.listSessionMetas()[0]?.sessionId ?? '';
+  }
+
+  /**
+   * 记录「用户正停在这个会话」——宿主在切会话 / 新建 / 分叉三条路径上调用
+   *
+   * 幂等：同值不落盘。切会话在 UI 上可能被重复触发（含 `switchToSession` 的提前返回路径），
+   * 每次整文件重写毫无收益，且会放大写入失败面。
+   *
+   * 同步落盘（非异步排队）：这是「关掉插件前排最后发生的事」，异步写会在进程退出瞬间丢。
+   */
+  setLastActiveSession(sessionId: string): void {
+    if (!sessionId || this.lastActiveSessionId === sessionId) return;
+    this.lastActiveSessionId = sessionId;
+    this.save();
+  }
 }
+
+/**
+ * 聊天面板消费的会话存储契约（**宿主扩展面的单一真源**）
+ *
+ * 迁自 chatPanel 内联定义：该文件已贴 `max-lines` 闸门（新增必先腾等量行），而本类型描述的
+ * 正是本文件实现的类，放这里语义更近、面板也不必为契约变更反复腾行。
+ *
+ * 组成 = 内核 `ISessionStore` + 宿主扩展能力（删会话返回被回收轮 / 截断 / 标题元数据 /
+ * 留存分组 / 导航指针）。`Omit<ISessionStore,'deleteSession'>` 的理由：避免内核契约
+ * `void` 签名与宿主扩展 `string[]` 签名做方法交集导致返回类型坍缩。
+ */
+export type HostSessionStore = Omit<ISessionStore, 'deleteSession'> & {
+  deleteSession: (sessionId: string) => string[];
+  truncateFrom: (date: string, session: string, roundId: string) => RoundTruncateResult;
+  listSessionMetas: () => SessionMeta[];
+  getSessionMeta: (sessionId: string) => SessionMeta | undefined;
+  archiveSession: (sessionId: string) => boolean;
+  unarchiveSession: (sessionId: string) => boolean;
+  isArchived: (sessionId: string) => boolean;
+  listArchivedIds: () => string[];
+  /** 启动初始会话（导航指针优先，见 `getInitialSessionId`）：SESSION-RESUME-1 */
+  getInitialSessionId: () => string;
+  /** 记录上次停留会话：切会话 / 新建 / 分叉三条路径的单一写点 */
+  setLastActiveSession: (sessionId: string) => void;
+};

@@ -17,7 +17,7 @@
 import * as vscode from 'vscode';
 import { basename } from 'node:path';
 import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.js';
-import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
+import type { HostSessionStore } from '../../extension/host/sessionStore.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
 import { salvageInterruptedRounds } from '../../extension/host/interruptedSalvage.js';
 import { ingestImage } from '../../extension/host/imageIngest.js';
@@ -67,10 +67,8 @@ import {
   type AgentEventMap,
   type IRoundStore,
   type ImageRef,
-  type ISessionStore,
   type ProcessEvent,
   type ProcessMetaPayload,
-  type SessionMeta,
   type SessionView,
   OPAQUE_WRITE_TOOL_NAMES,
   COMPRESS_TARGET_LABELS,
@@ -238,23 +236,7 @@ interface LiveFlowBuffer {
   seedUserMessage?: RoundView['userMessage'];
 }
 
-/** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（删除会话记录 + 会话标题元数据）。
- *  用交集类型收窄，避免 as unknown as 双重断言。
- *  listSessionMetas/getSessionMeta 承载会话标题元数据（会话列表导航依赖）。
- *  deleteSession 删除历史浮层选中的会话记录。
- *  返回被物理回收的 Round 列表（记忆联动），truncateFrom 返回 RoundTruncateResult。
- *  Omit<ISessionStore,'deleteSession'>：避免内核契约 void 签名与宿主扩展 string[] 签名做方法交集导致返回类型坍缩。 */
-type HostSessionStore = Omit<ISessionStore, 'deleteSession'> & {
-  deleteSession: (sessionId: string) => string[];
-  truncateFrom: (date: string, session: string, roundId: string) => RoundTruncateResult;
-  listSessionMetas: () => SessionMeta[];
-  getSessionMeta: (sessionId: string) => SessionMeta | undefined;
-  /** 留存区分组标签（宿主扩展，非 ISessionStore 契约）：纯展示态，不参与任何数据判据 */
-  archiveSession: (sessionId: string) => boolean;
-  unarchiveSession: (sessionId: string) => boolean;
-  isArchived: (sessionId: string) => boolean;
-  listArchivedIds: () => string[];
-};
+// 宿主会话存储契约（HostSessionStore）随其实现类定义在 extension/host/sessionStore.ts（本面板贴行数闸门）。
 
 /** 侧边栏视图提供者 */
 export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
@@ -480,8 +462,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     private readonly imageCache?: ImageCache, // 图片字节缓存（extension 单例；回放前预读窗口内附件）
   ) {
     this._providerStore = providerStore;
-    // 初始会话 = 最近活跃会话（listSessionMetas 按 updatedAt 降序取 [0]）；无历史不自动创建（新建唯一入口为标题条「＋」）
-    this._currentSessionId = this.sessionStore.listSessionMetas()[0]?.sessionId ?? '';
+    // 初始会话 = **上次停留的会话**（导航指针），不可用时退回最近写入的会话；
+    // 无历史不自动创建（新建唯一入口为标题条「＋」）。
+    // 存在性校验与回退序全在 store.getInitialSessionId（SESSION-RESUME-1 判据单点），本处只消费结果。
+    this._currentSessionId = this.sessionStore.getInitialSessionId();
     // 文档上下文不在此处预取（发送时实时读活动编辑器，见 snapshotDocContext）。
     // 曾用 onDidChangeActiveTextEditor 缓存——盖不住「同一文件被编辑」，脏态停在「打开时干净」⇒ 每轮拿磁盘旧版当真相（P0 撒谎源）。
   }
@@ -1999,6 +1983,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     try {
       await agent.sessionManager.switchToSession(sessionId);
       this._currentSessionId = sessionId;
+      this.sessionStore.setLastActiveSession(sessionId);
       this.replayCurrentSession();
       return true;
     } catch (err) {
@@ -2047,7 +2032,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
       // round-based 分叉：从指定 Round 位置创建新会话
       const { newSession, roundCount } = agent.forkSession(forkRoundId);
-      this._currentSessionId = `${formatDateKey(new Date())}-${newSession}`;
+      const forkedId = `${formatDateKey(new Date())}-${newSession}`;
+      this._currentSessionId = forkedId;
+      this.sessionStore.setLastActiveSession(forkedId);
       this.replayCurrentSession();
       this.post({
         type: 'notice',
@@ -2106,6 +2093,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       }
       await agent.sessionManager.switchToSession(sessionId);
       this._currentSessionId = sessionId;
+      this.sessionStore.setLastActiveSession(sessionId);
       this.replayCurrentSession();
     } catch (err) {
       this.post({

@@ -11,8 +11,8 @@
  *     - 相邻两个中断轮（DELETE-ANCHOR-1 形态）不得删错目标
  *     - 空会话 / 全 tool 消息容错
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Round } from '@zooique/memora';
 import { getSessionDisplayName } from '@zooique/memora';
@@ -935,5 +935,123 @@ describe('WorkspaceSessionStore · 留存区分组标签', () => {
       expect(roundStore.getById(id)).toBeNull();
       expect(existsSync(roundFileOf(id))).toBe(false);
     }
+  });
+});
+
+/**
+ * 导航指针（SESSION-RESUME-1）：启动初始会话 = **上次停留的会话**，不是「最近写入」的会话
+ *
+ * 立项目的（真机症状）：改本字段前 chatPanel 构造器取 `listSessionMetas()[0]`，而该排序的
+ * 时间是 `updateRoundBasedMessageCount` 写的——只在「有一轮落盘」时刷新。「切到旧会话翻
+ * 历史但没发消息」在磁盘上零痕迹 ⇒ 重启永远回到最近写过消息的会话，用户以为「打开的是最新
+ * 会话」。
+ *
+ * 守三条不变式：
+ *   ① 指针可解析 ⇒ 恒优先（哪怕它 updatedAt 不是最新）——这就是本条要治的症状本身
+ *   ② 指针不可解析（会话已不存在 / 旧档无字段 / 空串）⇒ 退回最近写入，**绝不返回悬空 id**
+ *      （内核 switchToSession 对不存在会话不报错 ⇒ 悬空 id 的后果是静默空屏，比报错更难排查）
+ *   ③ 删除会话必须清指针，否则下次启动把用户带回一个已被删除的会话
+ */
+describe('WorkspaceSessionStore · 导航指针（SESSION-RESUME-1）', () => {
+  let dir: string;
+  let store: WorkspaceSessionStore;
+  let roundStore: WorkspaceRoundStore;
+
+  beforeEach(() => {
+    dir = makeTempDir('memora-resume-test-');
+    roundStore = new WorkspaceRoundStore(dir);
+    roundStore.load();
+    store = new WorkspaceSessionStore(dir, roundStore);
+    store.load();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 重开实例 = 模拟插件重启：只走磁盘，不共享任何内存状态 */
+  function reopen(): WorkspaceSessionStore {
+    const rs = new WorkspaceRoundStore(dir);
+    rs.load();
+    const next = new WorkspaceSessionStore(dir, rs);
+    next.load();
+    return next;
+  }
+
+  /** 播两个 updatedAt 严格递增的会话（fake timers 保证排序确定性，避免毫秒级同刻竞态） */
+  function seedTwoSessions(): void {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-01T10:00:00.000Z'));
+    seedRound(store, roundStore, '2026-08-01', 'old', {
+      content: '旧会话',
+      ts: '2026-08-01T10:00:00.000Z',
+    });
+    vi.setSystemTime(new Date('2026-08-05T10:00:00.000Z'));
+    seedRound(store, roundStore, '2026-08-05', 'new', {
+      content: '新会话',
+      ts: '2026-08-05T10:00:00.000Z',
+    });
+    vi.useRealTimers();
+  }
+
+  it('① 指针优先于 updatedAt：停在旧会话，重启仍回到旧会话', () => {
+    seedTwoSessions();
+    // 前置事实：「最近写入」确实是新会话（旧实现据此选初始会话）
+    expect(store.listSessionMetas()[0]?.sessionId).toBe('2026-08-05-new');
+    // 用户切到旧会话（只看不发）后关闭
+    store.setLastActiveSession('2026-08-01-old');
+    expect(reopen().getInitialSessionId()).toBe('2026-08-01-old');
+  });
+
+  it('② 指针落盘往返：新实例（重启）读得回，不需要额外迁移', () => {
+    seedTwoSessions();
+    store.setLastActiveSession('2026-08-01-old');
+    // 直接读磁盘形态，证明是持久化而非内存巧合
+    const raw = JSON.parse(readFileSync(join(dir, '.memora', 'sessions.json'), 'utf8')) as {
+      lastActiveSessionId?: string;
+    };
+    expect(raw.lastActiveSessionId).toBe('2026-08-01-old');
+  });
+
+  it('③ 指针不可解析 ⇒ 退回最近写入，绝不返回悬空 id', () => {
+    seedTwoSessions();
+    // 手工删数据 / 换机同步留下的陈旧指针
+    store.setLastActiveSession('2026-07-01-ghost');
+    expect(store.getInitialSessionId()).toBe('2026-08-05-new');
+  });
+
+  it('④ 旧档无该字段 ⇒ 空指针走「最近写入」兜底（向后兼容，无迁移）', () => {
+    seedTwoSessions();
+    // 模拟加字段前的旧档：把字段删掉再重开
+    const file = join(dir, '.memora', 'sessions.json');
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    delete raw.lastActiveSessionId;
+    writeFileSync(file, JSON.stringify(raw, null, 2));
+    expect(reopen().getInitialSessionId()).toBe('2026-08-05-new');
+  });
+
+  it('⑤ 删除会话同步清指针（否则重启复活已删会话）', () => {
+    seedTwoSessions();
+    store.setLastActiveSession('2026-08-01-old');
+    store.deleteSession('2026-08-01-old');
+    // 指针失效 ⇒ 退回剩下那个会话，而不是把用户带回已删除的 2026-08-01-old
+    expect(reopen().getInitialSessionId()).toBe('2026-08-05-new');
+  });
+
+  it('⑥ 占位 meta 的 updatedAt 取会话 id 日期，不取 now()', () => {
+    // 只写 roundIds 不写 meta（内核 forkSession 的「先 setRoundIds 后 updateSessionMeta」时序，
+    // 以及命名未回写窗口），走 getSessionMeta 的占位分支
+    store.setRoundIds('2026-07-20-placeholder', ['round-p1']);
+    const first = store.getSessionMeta('2026-07-20-placeholder');
+    expect(first?.updatedAt).toBe('2026-07-20T00:00:00.000Z');
+    // 稳定性 = 本条的关键判据：旧实现每次查询都返回 now()，该会话因此恒排 listSessionMetas 第一
+    expect(store.getSessionMeta('2026-07-20-placeholder')?.updatedAt).toBe(first?.updatedAt);
+    // 行为判据：占位会话不再抢「最近写入」位（有真实写入的两个会话排在它前面）
+    seedTwoSessions();
+    expect(store.listSessionMetas().map((m) => m.sessionId)).toEqual([
+      '2026-08-05-new',
+      '2026-08-01-old',
+      '2026-07-20-placeholder',
+    ]);
   });
 });
