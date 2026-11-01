@@ -65,6 +65,7 @@ import {
   AGENT_EVENT_SET,
 } from '@/utils/eventEmitter.js';
 import type { LlmProvider, Message, ChatOptions, ImageRef } from '@/llm/provider.js';
+import { resolveBackgroundProvider } from '@/llm/backgroundProvider.js';
 import type { ProviderRouter } from '@/llm/types.js';
 import { logger } from '@/logging/logger.js';
 import { isValidSessionId, splitSessionId } from '@/utils/time.js';
@@ -1446,13 +1447,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   setBackgroundProvider(provider: LlmProvider | null): void {
     // 与 setProvider 一致，对话进行中禁止切换后台 Provider
     this.assertNotBusy('切换后台 Provider');
+    // 对外快照保留宿主原值（不含装饰器）：`getBackgroundProvider()` 上报的是「用户选的后台 Provider」
     this.#backgroundProvider = provider;
+    // 后台组件消费「后台 + 前台失败升级」解析结果 —— 与装配期同一真理源（backgroundProvider.ts），
+    // 不在本方法里重写一份升级判据；null 仍表示「回退到装配期默认 Provider」
+    const effective = provider ? resolveBackgroundProvider(provider, this.#provider) : null;
     // 同步更新所有后台组件（统一消费 backgroundProvider）
     if (this.internals.roundSummaryGenerator) {
-      this.internals.roundSummaryGenerator.setBackgroundProvider(provider);
+      this.internals.roundSummaryGenerator.setBackgroundProvider(effective);
     }
     if (this.internals.sessionArchiver) {
-      this.internals.sessionArchiver.setBackgroundProvider(provider);
+      this.internals.sessionArchiver.setBackgroundProvider(effective);
     }
     logger.info({ hasBackground: !!provider }, '后台 Provider 已切换');
   }

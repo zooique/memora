@@ -51,7 +51,7 @@ export class TextPolishManager {
   /** LLM Provider（构造函数注入） */
   private readonly provider: LlmProvider;
 
-  /** @param provider LLM Provider（assembler 注入，优先后台降级前台） */
+  /** @param provider LLM Provider（assembler 注入；= 后台优先 + 未产出增量即失败时升级前台一次） */
   constructor(provider: LlmProvider) {
     this.provider = provider;
   }

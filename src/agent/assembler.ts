@@ -36,6 +36,7 @@ import { logger } from '@/logging/logger.js';
 /** 截断优先复用 round-summary 的最大条数 */
 const ROUND_SUMMARY_LOADER_MAX = 5;
 import type { LlmProvider } from '@/llm/provider.js';
+import { resolveBackgroundProvider } from '@/llm/backgroundProvider.js';
 import type { ProviderRouter } from '@/llm/types.js';
 import type {
   AgentConfig,
@@ -556,13 +557,13 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   // 冷启动 / 重启首屏即可显示真实占比。与运行时 prepare 用同一 estimateTokensMessages 估算器（口径一致）。
   const rolePackBaseTokens = estimateTokensMessages([{ content: systemPromptPrefix }]);
 
-  // 后台组件统一使用 backgroundProvider，降级到前台 provider（SSOT：与 textPolisher 同模式）
-  const sessionArchiver = new SessionArchiver(backgroundProvider ?? provider, sessionStore);
-  const textPolisher = new TextPolishManager(backgroundProvider ?? provider);
-  const roundSummaryGenerator = new RoundSummaryGenerator(
-    backgroundProvider ?? provider,
-    pctx.index,
-  );
+  // 后台通道 Provider = 「显式后台 Provider + 前台失败升级」唯一解析点（SSOT：见 backgroundProvider.ts）。
+  // 装配期三个后台消费者（归档 / 润色 / 摘要）共用同一份解析结果，不在各自内部复制升级判据；
+  // ⚠️ 热切换面只覆盖归档 + 摘要（TextPolishManager 无 setter，润色沿用装配期实例，见台账 BG-ESCALATE-1）。
+  const backgroundChannelProvider = resolveBackgroundProvider(backgroundProvider, provider);
+  const sessionArchiver = new SessionArchiver(backgroundChannelProvider, sessionStore);
+  const textPolisher = new TextPolishManager(backgroundChannelProvider);
+  const roundSummaryGenerator = new RoundSummaryGenerator(backgroundChannelProvider, pctx.index);
 
   // 截断时优先复用已存 round-summary，避免现调 LLM 生成上下文摘要
   // 仅取当前会话 roundIds 对应的摘要（round-based：会话由 roundIds 列表定义，摘要以 roundId 溯源）——
