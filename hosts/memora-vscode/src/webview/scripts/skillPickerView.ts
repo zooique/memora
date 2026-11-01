@@ -188,11 +188,16 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     syncRowEdges(chipRow);
   }
 
-  /** 菜单匹配（空词恒真、大小写不敏感）：显示名（缺失回退 name）/ 描述任一命中即匹配
+  /** 菜单匹配（空词恒真、大小写不敏感）：**name（id）/ 显示名 / 描述**任一命中即匹配。
+   *
+   * id 必须留在匹配面：展示层已全面改显 `displayName`，只记得英文 id（技能文件 frontmatter、
+   * `memora.disabledSkills`、read_skill 日志里都只有 id）的用户否则搜不到自己那条技能；更根本的是
+   * 「有 H1 按中文匹、无 H1 按 id 匹」= 同一列表两套判据，随数据形态漂移。
    * （形状同历史菜单的元数据匹配，见 historyMenuView；列表仅数十条，同步过滤不引入防抖） */
   function matchesSearch(s: SkillDto, q: string): boolean {
     if (!q) return true;
-    return `${s.displayName ?? s.name} ${s.description ?? ''}`.toLowerCase().includes(q);
+    const haystack = `${s.name} ${s.displayName ?? ''} ${s.description ?? ''}`;
+    return haystack.toLowerCase().includes(q);
   }
 
   /** 重建 Skill 菜单（初始装配 + skills_loaded 刷新 + 搜索过滤共用单点）：
@@ -209,8 +214,10 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     }
     list.innerHTML = '';
     searchInput.value = skillSearchQuery;
-    const clearItem = document.createElement('div');
+    const clearItem = document.createElement('button');
+    clearItem.type = 'button';
     clearItem.className = 'treedd__item';
+    clearItem.setAttribute('role', 'menuitem');
     // 顶部项语义 = 「普通对话、不挂载技能」——用中性「未选择技能」替代原「不使用 Skill」：
     // 原文字易被误读为「禁用技能」（禁用另属设置页禁用清单），且暗示「提及技能名即自动
     // 命中」（当前机制是显式选择，见 title 提示）。
@@ -227,9 +234,14 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     for (const s of skillOptions) {
       if (!matchesSearch(s, q)) continue;
       visible++;
-      // 菜单项标签沿用 div（历史形态，键盘可达性另批处理）
-      const item = document.createElement('div');
+      // 菜单项必须是 `button`：`.treedd__item` 的键盘导航（`bindMenuKeyboardNav`）靠
+      // `items[i].focus()` 移焦；`div` 不可聚焦（tabIndex=-1，focus() 后 activeElement 仍是
+      // body）⇒ 方向键与 Enter 全失效。声明式渲染器（`buildDropdownHtml`）本就产出 button，
+      // 两条渲染路径在此对齐，不再「一套对一套错」。
+      const item = document.createElement('button');
+      item.type = 'button';
       item.className = 'treedd__item';
+      item.setAttribute('role', 'menuitem');
       item.textContent = s.displayName ?? s.name;
       item.dataset.treeddId = s.name; // id 恒为 name：显示名只作展示，选中回传 / 高亮比对都用 name
       if (s.disabled) {

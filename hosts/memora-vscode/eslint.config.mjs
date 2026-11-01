@@ -56,7 +56,7 @@ export default [
     // 基线按闸门自报下调，不留虚空余量。
     // SKILL-PICKER-SPLIT-1（2026-11-01）：技能选择器域（选中态 / 菜单渲染 / 搜索 / chip 构建）
     // 整体外置到 scripts/skillPickerView.ts（净减 215），基线按闸门自报同步下调。
-    rules: { 'max-lines': ['error', { max: 4741 }] },
+    rules: { 'max-lines': ['error', { max: 4739 }] },
   },
   {
     // FORMAT-1 清零（2026-10-29）：prettier --write 还原折行欠账，物理行 4515→4529（+14 全为
