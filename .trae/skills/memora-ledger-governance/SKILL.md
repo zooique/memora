@@ -43,7 +43,7 @@ agent_created: false
 | --- | --- | --- | --- |
 | `ledger:hygiene` | `npm run verify:ledger-hygiene` | 工作树语义：台账**当前结构**合不合纪律（判据集合见脚本头部注释，**此处不写死数量**——数量会随判据增删而漂移） | 硬闸 full |
 | `ledger:fold` | `npm run verify:ledger-fold` | git 区间语义：本次改动**移走了什么**，每条须在归档有副本 | 硬闸 full |
-| `ledger:receipt` | `npm run verify:ledger-receipt` | 提交 vs 台账是否同步 | 告警 |
+| `ledger:receipt` | `node scripts/verify-ledger-receipt.mjs --since=HEAD~1`（**非 npm script**，直接跑脚本） | 提交 vs 台账是否同步 | 告警 |
 
 - hygiene 支持 `--self-test`（变异探针逐个验证判据不失明，探针随判据增删）；fold 支持 `--base` / `--head` / `--since`。
 - ⚠️ **自检本身也会失明**，且与「跑没跑自检」是两件事 —— 见核查清单「自检不许从台账存量抽锚行」。
