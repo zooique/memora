@@ -740,7 +740,9 @@ function diagnose(text, opts = {}) {
         const body = lines.slice(it.start, it.end).join('\n');
         const born = timing.byId.get(it.id)?.headTime ?? null;
         const isNew = !headIds.has(it.id) || (born !== null && born >= GATE13_BORN_AT);
-        if (isNew && !EXPIRY_RE.test(body)) {
+        // 已收口条目免时钟：纪律真源 = 台账头部「到期处置」例外条款（✅ 已销项 / 🗄 封存），此处只做同源映射不重复枚举。
+        //    否则「销项当轮」即被催补日期（2026-11-01 P13 实证：✅ 完成被 ⑬ 判红）。
+        if (isNew && !isClosedHead(it.head) && !EXPIRY_RE.test(body)) {
           // 文案分两路（两种红、处置动作不同）：ID 已在 HEAD ⇒ 老条目被改写（多为剪枝 / 搬家
           // 刷新 blame），该做的是「确认它还有没有出口」；ID 不在 HEAD ⇒ 真新登记，该做的是
           // 「补一条出口」。混成一句话会让人以为门认错了条目。
