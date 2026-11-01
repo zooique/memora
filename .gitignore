@@ -1,11 +1,16 @@
 # 依赖
 node_modules/
 
+# 包管理器：pnpm 是唯一真源（root 与 hosts/memora-vscode 均声明 packageManager=pnpm）
+# npm lock 是 npm run / vsce 的过程副产物，不入库——双 lock 并存会让「干净环境可复现」判据失真
+package-lock.json
+
 # 构建产物
 dist/
 build/
 coverage/
 *.tgz
+*.vsix
 
 # 日志
 *.log
@@ -84,6 +89,11 @@ hosts/memora-sprite/release/
 # 生成的图标文件（icon.svg 是真理源，PNG 由 generate-icons 脚本生成）
 hosts/memora-sprite/assets/favicon.png
 # build/ 已由根级规则全局忽略，无需额外添加 build/icons/
+
+# ─── VS Code 宿主项目（hosts/memora-vscode/） ───
+# 扩展包内 CHANGELOG 是生成物（真源 = 根 CHANGELOG.md 的宿主区，见宿主 scripts/gen-changelog.mjs），
+# 打包前由 prepublish 重建 ⇒ 不入库。必须带目录前缀：裸文件名会连带屏蔽根 CHANGELOG.md 这个入库真源。
+hosts/memora-vscode/CHANGELOG.md
 
 # 大赛文档截图（临时文件，不入库）
 docs/trae创意大赛/初赛文档/screenshots/

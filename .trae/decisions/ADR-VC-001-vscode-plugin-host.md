@@ -69,6 +69,8 @@ hosts/memora-vscode/
 - **git 拆分**：物理同仓库但插件目录保持**可独立拆分**——包名、构建、.gitignore 边界清晰，后续需要独立分发/开源时，在 `hosts/memora-vscode/` 单独初始化 git 仓库即可，避免拆仓手术；
 - **发布期**：依赖切换为 `"@zooique/memora": "^x.y.z"`，插件独立发布到 VS Code Marketplace。
 
+> **年轮修订（2026-11-01 · `.gitignore` 一项作废）**：上面的「包名、构建、`.gitignore` 边界清晰」中，**`.gitignore` 已不成立**——宿主独立 `.gitignore` 已删除，忽略规则统一到仓库根（[project-rules §2.5](../rules/project-rules.md)：子目录不得存在独立 `.gitignore`；宿主专属三条：`*.vsix`、`package-lock.json`、路径限定的 `hosts/memora-vscode/CHANGELOG.md`）。可拆性结论不变，但拆仓时需**新建**一份宿主 `.gitignore`，而非挪走现成的。包名与构建仍各自独立。
+
 ## 考虑的替代方案
 
 | 方案 | 放弃原因 |
