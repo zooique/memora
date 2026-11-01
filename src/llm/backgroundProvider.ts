@@ -1,19 +1,19 @@
 /**
  * 后台 Provider 解析 + 失败升级（P2 窄版，2026-11-01）。
  *
- * **背景**：后台通道（轮次摘要 / 会话归档 / 文本润色 / 去重投影）走 `backgroundProvider`
+ * **背景**：后台通道（轮次摘要 / 会话归档 / 文本润色）走 `backgroundProvider`
  * （成本优先：更便宜的模型 / 更低配额 / 独立端点）。原实现是 `backgroundProvider ?? provider`
  * 裸回退——一旦后台通道这次失败，本次后台任务就整体失败（摘要丢失、归档跳过），
  * 而前台 Provider 明明可用。
  *
- * **本模块的职责**：把「后台失败 → 降级到前台重试一次」收敛为**唯一判定点**。
- * 后台消费者共用同一份解析结果，不在各自内部复制升级逻辑（自然生长：真理源 + 零差异段）。
+ * **本模块的职责**：把「后台失败 → 降级到前台重试一次」收敛为**唯一判定点**，消费者内部零升级逻辑
+ * （自然生长：真理源 + 零差异段）。
  *
- * **覆盖面分两层（勿折叠为一个「共用」）**：
- * - **装配期**：三个消费者（`SessionArchiver` / `TextPolishManager` / `RoundSummaryGenerator`）全量接入；
- * - **热切换期**：只有归档 + 摘要跟随 `agent.setBackgroundProvider` 换新解析结果；
- *   `TextPolishManager` 无 `setBackgroundProvider` ⇒ 润色沿用**装配期实例**（既有缺口，
- *   见台账 `BG-ESCALATE-1` 未覆盖面）。
+ * **两个接入点（都调本模块的同一函数，不各自复制判据）**：
+ * - **装配期**（`assembler`）：产出一份解析结果，三个消费者（`SessionArchiver` / `TextPolishManager` /
+ *   `RoundSummaryGenerator`）共用这份；
+ * - **热切换期**（`agent.setBackgroundProvider`）：重新产出一份，注入同一组三个消费者。
+ *   新增后台消费者时**两处都要登记**——只登装配期 ⇒ 该消费者永远用装配期实例（热切换对它是死的）。
  *
  * **两条硬边界（刻意窄，防扩张成「动态分档」）**：
  * 1. **只作用于后台通道**：主对话 `AgentLoop` 的 Provider 完全不经过本模块
@@ -36,6 +36,9 @@ import type { LlmChunk } from '@/llm/types.js';
  * @param background 宿主显式注入的后台 Provider（可为 null）
  * @param foreground 前台 Provider（升级重试的目标）
  * @returns 后台消费者应使用的 Provider 实例
+ *
+ * 调用点只有两处：装配期（`assembler`）与热切换（`agent.setBackgroundProvider`）——
+ * 两处产出的实例各自供三个后台消费者共用，消费者内部不要再写一次「后台失败怎么办」。
  */
 export function resolveBackgroundProvider(
   background: LlmProvider | null,

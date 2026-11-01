@@ -937,8 +937,8 @@ export class MemoraSettingsPanel {
   /**
    * 设置后台模型 Provider（cfg_set_background，多 Provider 路由）
    *
-   * 持久化后台 Provider 选择后热更新 agent.setBackgroundProvider：后台任务（摘要/归档/
-   * 润色/去重等）后续走独立轻量模型；name 为空 → setBackgroundProvider(null) 回退与实时对话相同。
+   * 持久化后台 Provider 选择后热更新 agent.setBackgroundProvider：后台任务（摘要 / 归档 /
+   * 润色）后续走独立轻量模型；name 为空 → setBackgroundProvider(null) 回退与实时对话相同。
    * 成功后刷新配置面板（后台模型下拉回显）。
    */
   private async setBackgroundProvider(name: string): Promise<void> {

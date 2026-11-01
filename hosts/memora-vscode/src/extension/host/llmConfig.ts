@@ -80,7 +80,7 @@ export async function createProvider(
 /**
  * 创建后台模型 Provider（多 Provider 路由）
  *
- * 后台任务（轮次摘要 / 会话归档 / 文本润色 / 去重判定）走独立 Provider，可选用轻量快模型
+ * 后台任务（轮次摘要 / 会话归档 / 文本润色）走独立 Provider，可选用轻量快模型
  * 节省成本。store 未配置后台通道（getBackgroundName 为空 / name 不存在）返回 undefined——
  * 内核 backgroundProvider 缺省回退到与实时对话相同 Provider，零破坏性。
  *
@@ -104,7 +104,7 @@ export async function createBackgroundProvider(
     supportsStructuredOutput: background.supportsStructuredOutput,
     //
     // ⚠️ 此处**刻意不传 supportsVision**（与上面两位处理不同，勿误补）：
-    // 后台通道（轮次摘要 / 会话归档 / 文本润色 / 去重判定）的消息由各处自行拼装，
+    // 后台通道（轮次摘要 / 会话归档 / 文本润色）的消息由各处自行拼装，
     // 已核实全部 `.map()` 成纯文本字符串，从不携带 attachments ⇒ 无图片来源。
     // 在「没有图片来源」的通道上声明视觉能力，后果比不声明更坏：
     //   声明 true 但无 imageResolver ⇒ 图被静默跳过（用户看到 AI 像没看见图，无法归因）；

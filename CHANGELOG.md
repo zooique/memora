@@ -17,6 +17,11 @@
 ### Changed（内核）
 
 - **内置角色包技能内容对齐显示名契约**（`role-packs/` 30 个技能）：正文 H1 去掉 `# <id>：` 前缀，收敛为纯中文显示名（如 `# 单一真理源（SSOT）自检`）——此前 H1 重复了 `name` 里的英文 id，界面会显示成「id：中文」。作者规范同步：`docs/architecture/role-pack-spec.md` 的 frontmatter 示例与 skills 条目写明「正文首个 H1 = UI 显示名、不进 L1 清单」；新增守卫用例（`builtinPackCoverage.test.ts`）钉死「每个内置技能有 H1 且不与 name 重复」，防新增技能静默退化为英文 id 展示。
+- **后台通道失败升级前台一次**（`BG-ESCALATE-1`）：新增 `src/llm/backgroundProvider.ts` 的 `resolveBackgroundProvider(background, foreground)`，把「后台 Provider 选谁 + 后台失败怎么办」收敛为唯一判定点（装配期与热切换两处接入点各产出一份结果，均注入同一组三个后台消费者）。后台通道（轮次摘要 / 会话归档 / 文本润色）在**未产出任何增量**时调用失败 → 自动用前台 Provider 重试一次；已流出内容、或用户已取消 → 不重试（重发会产生重复正文）。**为什么**：原实现是 `backgroundProvider ?? provider` 裸回退，后台模型一次抖动 = 该次摘要丢失 / 归档跳过，而前台 Provider 明明可用。**对消费者**：零签名变更；未配置后台 Provider 时**原样返回前台实例**（不包装、零开销）；已配置时行为变化仅限「后台失败多一次前台请求」。**边界**：主对话 `AgentLoop` 完全不经过本模块（主对话换档属动态分档，已拒枝）。**同日收口**：`TextPolishManager` 补 `setBackgroundProvider`（形态与 `SessionArchiver` / `RoundSummaryGenerator` 同构），热切换从「归档 + 摘要跟随」补成三个消费者全覆盖——此前用户改后台模型后点「润色」仍走装配期实例；该方法经 `Agent.polish` 对消费者可达，已登记进公开成员面基线。
+
+### Fixed（内核）
+
+- **`diskWrite` 声明覆盖自定义工具**（`DISKWRITE-CUSTOM-1`）：写序判据从「内置工具静态名集」改为「工具定义行 `diskWrite` 声明」（查找序 = 当前定义快照（含自定义工具）→ 内置全量兜底），三处消费面同步收口——① 同路径写串行闸 + opaque 屏障；② 写后 `read_file` 缓存与覆盖度台账失效；③ `tool_start` 事件新增可选 `diskWrite` 字段供宿主改盘追踪，宿主 opaque 分支的 `tool_result` 侧一并改为消费写前登记（写前扫快照 / 写后按登记 diff，一次判定双向对称）。**为什么**：宿主经 `registerTool` 注册的写工具此前绕过串行闸（同一 step 内并行 `insert` + `append` 会静默丢内容）且不触发宿主改盘追踪（扩展安全契约不完整）。**对消费者**：`ToolDefinition.diskWrite` 自本版起对**所有**工具生效（含自定义）；`PATH_WRITE_TOOL_NAMES` / `OPAQUE_WRITE_TOOL_NAMES` / `WRITE_PATH_EXTRACTORS` 保留作内置契约钉与旧事件兜底，不再是唯一判据来源。
 
 ## [5.3.0] · 2026-10-31
 

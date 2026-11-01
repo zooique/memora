@@ -558,8 +558,9 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   const rolePackBaseTokens = estimateTokensMessages([{ content: systemPromptPrefix }]);
 
   // 后台通道 Provider = 「显式后台 Provider + 前台失败升级」唯一解析点（SSOT：见 backgroundProvider.ts）。
-  // 装配期三个后台消费者（归档 / 润色 / 摘要）共用同一份解析结果，不在各自内部复制升级判据；
-  // ⚠️ 热切换面只覆盖归档 + 摘要（TextPolishManager 无 setter，润色沿用装配期实例，见台账 BG-ESCALATE-1）。
+  // 装配期三个后台消费者（归档 / 润色 / 摘要）共用本次解析结果，不在各自内部复制升级判据。
+  // 热切换（agent.setBackgroundProvider）会重新解析一份并注入同一组三个消费者——
+  // 新增第四个消费者时两处都要登记，只登装配期 = 热切换对它不生效。
   const backgroundChannelProvider = resolveBackgroundProvider(backgroundProvider, provider);
   const sessionArchiver = new SessionArchiver(backgroundChannelProvider, sessionStore);
   const textPolisher = new TextPolishManager(backgroundChannelProvider);

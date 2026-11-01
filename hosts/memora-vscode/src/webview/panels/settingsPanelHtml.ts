@@ -122,7 +122,7 @@ const TAB_BODY_HTML: Record<SettingsTab, string> = {
       <select id="bgModel" class="cfg-bg-select" aria-label="后台模型，用于后台任务（摘要/归档/润色）">
         <option value="">同实时对话</option>
       </select>
-      <p class="cfg-bg-hint">后台任务（轮次摘要 / 会话归档 / 文本润色 / 语义去重）走此模型，可选用轻量快模型节省成本。</p>
+      <p class="cfg-bg-hint">后台任务（轮次摘要 / 会话归档 / 文本润色）走此模型，可选用轻量快模型节省成本。</p>
     </div>
     <div id="list">
       <p class="loading-hint">加载中…</p>

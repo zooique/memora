@@ -29,7 +29,7 @@
 | `ICodeExecutionProvider` | 可选 | `src/code-exec/types.ts` | 通用代码执行（沙箱由宿主提供），不注入则不启用 |
 | `IProjectSearchProvider` | 可选 | `src/project-search/types.ts` | 项目内搜索（等价 IDE 全局搜索），不注入则不暴露 `search_project`（见 §8.6） |
 | `ILogger` | 可选 | `src/logging/loggerInterface.ts` | 日志，默认内置 |
-| `backgroundProvider` (`LlmProvider`) | 可选 | AgentOptions | 后台通道（成本优先：摘要/归档/润色/去重；不配则回退前台；未产出内容即失败时升级前台重试一次，契约见 [接入指南](./memora-接入指南.md) §三 2） |
+| `backgroundProvider` (`LlmProvider`) | 可选 | AgentOptions | 后台通道（成本优先：摘要/归档/润色；不配则回退前台；未产出内容即失败时升级前台重试一次，契约见 [接入指南](./memora-接入指南.md) §三 2） |
 
 \* 不传则内核自动用内置内存实现 / 内存会话（仅内存不落盘；内存实现类为内部机制，不挂公共面——PUB-API-PRUNE-2 收面）；做产品必须实现。
 
