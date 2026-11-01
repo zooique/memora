@@ -348,6 +348,9 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
         // 退出斜杠态 = 放弃过滤：不清词的话菜单会停在上一次 token 的结果上（用户以为列表缺项）
         skillSearchQuery = '';
         renderMenu();
+        // 退出即收起菜单（与 Escape 同纪律）：否则菜单赖在输入框上方，用户继续打字时仍浮着
+        // 全部技能项，体感「输入被打断」。选中路径不走这里——点击项由 dropdown 的 click 委托收起。
+        if (root) setDropdownOpen(root, false);
       } else if (root?.classList.contains('is-open')) {
         skillSearchQuery = token;
         renderMenu();

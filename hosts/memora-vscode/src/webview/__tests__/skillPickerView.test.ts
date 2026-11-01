@@ -193,13 +193,15 @@ describe('skillPickerView 斜杠触发（/ 打开选择器）', () => {
     expect(chipRow.querySelector('.skill-chip__name')?.textContent).toBe('摘要提炼');
   });
 
-  it('token 内出现空白即退出斜杠态（用户开始写正文，不再过滤列表）', () => {
-    const { view, menu, input } = mount();
+  it('token 内出现空白即退出斜杠态（用户开始写正文，菜单收起、不再过滤列表）', () => {
+    const { view, menu, root, input } = mount();
     view.setSkills(SKILLS);
     type(input, '/su');
     expect(skillItems(menu)).toHaveLength(1); // 斜杠态：过滤生效
+    expect(isOpen(root)).toBe(true); // 斜杠态：菜单展开
     type(input, ' 然后');
     expect(skillItems(menu)).toHaveLength(2); // 退出斜杠态：恢复全量
+    expect(isOpen(root)).toBe(false); // 退出斜杠态：菜单收起——否则继续打字时浮层赖着不走，体感打断输入
   });
 
   it('斜杠态 Esc 收起菜单，`/` 与已打的字留在正文（取消无扰动）', () => {
