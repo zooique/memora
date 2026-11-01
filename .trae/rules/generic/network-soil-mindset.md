@@ -18,10 +18,20 @@ description: 网络为土壤思维模型——搜索即吸收养分，turn（问
 - **搜索是养分筛选，不是方案照搬**：外部方案经"种子合理性"过滤——与最小单元冲突则弃用/改造；已验证最佳实践则吸收为依据；仅作参考则记来源不做硬依赖。
 - **记录来源（土壤可追溯）**：设计文档引用外部信息时标注来源，避免"看似合理实则无据"。
 
+## 土壤验毒（源头可信度）
+
+> 「网络是养分」的前提是**土壤没被换过**。不验毒就吸收 = 把中间商的回声当成世界的回答。
+
+- **响应 ≠ 真值**：本机加速代理 / 企业网关 / DNS 改写会让请求根本到不了目标服务（实证：`marketplace.visualstudio.com` 被改写为 `127.0.0.1`，响应头带 `Server: FastGithub`，`--noproxy '*'` 也绕不过）。「拿到了 200 / 拿到了数据」只证明**这条链路有人回答**，不证明目标服务如此回答。
+- **反证法：拿一个必然不成立的输入做对照**（查版本就请求一个必然不存在的版本，查文件就请求一个必然不存在的路径，期望 404 / 空）。**对照也「成功」⇒ 之前所有「成功」作废**。这是唯一不依赖链路可信的验证方式。
+- **区分「还没生效」与「没有生效」**：CDN / 索引 / 页面快照都有传播窗口（实测 2–5 分钟）。窗口内的旧值不是结论；要么等两个以上独立面一致，要么写成「观测时刻 + 待复核」。
+- **留痕先于结论**：拿不准时先记 `remote_ip` / 响应头 / 请求时刻，再下判断——证据可回查，结论才不会变成传说。
+
 ## 反模式（常见偏离）
 
 - ❌ **闭门造车**：凭经验直接设计、不搜索 → 设计过时、与生态脱节。
 - ❌ **照搬外部方案**：不经过种子合理性过滤 → 长出的不是自己的形态（土壤淹没种子）。
 - ❌ **搜索与设计脱节**：搜了很多但结论没进设计 → 土壤白吸收（吸收但不生长）。
+- ❌ **把「请求成功」当「事实成立」**：不看中间层、不做对照，直接把回声写进台账或设计文档 → 依据来自代理/缓存而非真源。
 
-> 关联：[single-truth-source-mindset.md](./single-truth-source-mindset.md)（种子定义，本文件是其"养分来源"维度）、[architecture_philosophy_rules.md](../architecture_philosophy_rules.md)（自然生长）、[programmer-mindset-rules.md](./programmer-mindset-rules.md)（心智总纲）
+> 关联：[single-truth-source-mindset.md](./single-truth-source-mindset.md)（种子定义，本文件是其"养分来源"维度）、[architecture_philosophy_rules.md](../architecture_philosophy_rules.md)（自然生长）、[programmer-mindset-rules.md](./programmer-mindset-rules.md)（心智总纲）、[testing_rules.md](./testing_rules.md) §7.3（判据与不变量同源）

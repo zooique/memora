@@ -86,7 +86,8 @@ agent_created: true
    - 🔴 **发版前必须升 `hosts/memora-vscode/package.json` 的 version**：Open VSX 版本号**永久保留**（删除后仍保留），同版本不可重发 ⇒ 已发的 0.2.0 若重打 tag，门禁与 GitHub Release 都能过、**只有 Open VSX 那步红**。
    - 🔴 **Trusted Publisher 按 workflow 文件名匹配**（`host-release.yml`，非数字 ID）⇒ 本文件**不得改名**（改名须删掉 Open VSX 注册重来）。
 3. **③ VS Code Marketplace**：🔒 **定案保持手动上传**（全局 PAT 2026-12-01 退役；稳的 Entra ID 路线需 Azure 订阅 = 国外银行卡拦路石；干净路线 `vsce publish --oidc` 尚未进稳定版且 Marketplace 侧无策略注册 UI）。每版传一次 `.vsix`，成本可忽略 ⇒ 手动最优。
-   - 上传物 = **① 的同一个 GitHub Release asset**（下载后直接传），**不本地重出包**——重出包会与上架物 sha256 不一致，直接破坏「Release asset ↔ 市场产物」的对账链。
+   - 上传物 = **① 的同一个 GitHub Release asset**（下载后直接传），**不本地重出包**。
+   - 🔴 **「上传物 = 同一 asset」禁按字节 sha256 判**（2026-11-01 实测证伪）：Marketplace 对上传包做**服务端重打包 + gzip 传输**，字节必然变（0.5.0：2,020,850 → 1,994,559；同源 0.4.0 同比例）⇒ sha256 比对**永远不等**，只会把判断带向「传错包」，而市场同版本不可覆盖（见 ② 的「同版本重发」坑）= 死路。**对账真源改为内容级**：两包各自解包后 `diff -r` 零差异 + 包内 `extension/package.json` 的 `name`/`version`/`publisher` 匹配；sha256 只用于 GitHub Release asset 自身完整性（workflow body 那项）。
 4. **④ 市场展示面核对（不是只对版本号）** —— 0.4.0 实证缺口：版本号对，但扩展详情页的 **Changelog 标签是空的**，Resources 区**没有报问题入口**。版本号由 Marketplace 的 Version History 自己记，**必然可见**；展示面则全靠包内容物与 `package.json`，不会自愈。逐条扫：
 
    | 展示面 | 来源 | 核对法 |
@@ -106,6 +107,9 @@ agent_created: true
 ### Step 6：发版后订正
 1. 将 Step 3 的「待上架」订正为「已发布」：`tasks/archive/<x.y.z>-host.md` 文件头 + 主台账**版本索引**里该版那一行的状态列（归档文件不在 `files` 白名单，订正在 tag 之后不影响已发 `.vsix`）。
 2. 核对三市场上架状态：GitHub Release（asset）/ Open VSX / VS Code Marketplace 均可见目标版本。
+   - **Marketplace 侧按「可用时间」排序，别拿最慢的那个判失败**：① **vspackage 端点最早可用**——`/_apis/public/gallery/publishers/<publisher>/vsextensions/<name>/<ver>/vspackage`（VS Code 装扩展走的就是它）→ ② `extensionquery` 索引滞后约 2–5 分钟（0.5.0 实测：01:56–01:58 三度探测仍回 0.4.0，01:59:05Z 翻到 0.5.0）→ ③ 扩展列表页最慢（0.4.0 实证正文仍是上一版 README）。
+   - 🔴 **先做中间层反证，再信那个 `200`**：本机加速代理会把该域名 DNS 改写到 `127.0.0.1`（响应头 `Server: FastGithub`，`--noproxy '*'` 也绕不过）⇒ 必须用**必然不存在的版本**（如 `0.9.9`）请求同一端点，只有它返回 `404` 才能证明端点是按版本真实应答、目标版本的 `200` 不是兜底缓存。
+   - **台账写法**：外部服务状态是**时点快照**，不是终态——要么等稳定再写，要么写「观测时刻 + 待刷新后订正」。2026-11-01 反例：把「索引仍回 0.4.0」写进归档，3 分钟后就过期，白跑一次纯订正提交（本条是上文「判据纪律」块末条「台账不写死版本快照」的同族实证）。
 3. `git show --stat` 核对本次提交文件归属 ↔ 标题（PowerShell 回显中文乱码是显示层，勿据此重提交；字节用 `git log -1 --format=%B | od -c` 校验）。
 4. 🔴 **Marketplace 手动上传完成后，回头订正归档里的「未执行」标记**（0.4.0 实证缺口，且**大概率跨会话**——用户上传往往在发版次日）：
    - Step 6 第 1 条订正为「已发布」时，若 Marketplace 尚未上传，头标会留下一句「**未执行** = VS Code Marketplace 手动上传」。这是**一次性快照，不会自动跟进后续收口**；用户上传完成后须订正 `tasks/archive/<x.y.z>-host.md` 头标 + `tasks/archive/README.md` 归档表该行**两处**，补执行日期与「上传物 = 同一 asset、未本地重出包」。
