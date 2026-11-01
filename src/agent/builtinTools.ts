@@ -951,7 +951,13 @@ export const PATH_WRITE_TOOL_NAMES: readonly string[] = ALL_BUILTIN_TOOL_DEFS.fi
   (t) => t.diskWrite === 'path',
 ).map((t) => t.name);
 
-/** 目标不可静态定位的写工具名集（派生；执行 = 屏障，与一切写互斥） */
+/**
+ * 目标不可静态定位的写工具名集（派生；执行 = 屏障，与一切写互斥）。
+ *
+ * @deprecated 6.0.0 移除——移除清单真源 = `tasks/待完成任务.md` · `DEPRECATE-1`。
+ * 现行判据 = 工具定义行 `diskWrite` 声明；本表仅为内置工具契约钉与废弃期公开面承诺，
+ * 宿主已零消费，请改用 `ToolDefinition.diskWrite` 自行筛选。
+ */
 export const OPAQUE_WRITE_TOOL_NAMES: readonly string[] = ALL_BUILTIN_TOOL_DEFS.filter(
   (t) => t.diskWrite === 'opaque',
 ).map((t) => t.name);

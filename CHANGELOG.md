@@ -10,6 +10,10 @@
 
 ## [Unreleased]
 
+### Deprecated（内核）
+
+- **`OPAQUE_WRITE_TOOL_NAMES` 转废弃登记（本版不移除，6.0.0 移除）**（`DISKWRITE-CUSTOM-1` 尾刀）：该派生集（内置 `diskWrite:'opaque'` 写工具名集）此前挂公共面只为**宿主 `chatPanel` 的旧事件兜底**；判据收敛为 `tool_start` 上报的 `diskWrite` 声明后，宿主已零真实消费、文档亦无承诺。按「公开面只留真实消费或明文承诺」政策，本版**保留导出**并标 `@deprecated`（声明 JSDoc + 手册 §十六 承诺面同批登记），**6.0.0 移除**——移除清单真源 = `tasks/待完成任务.md` · `DEPRECATE-1`。**为什么**：无消费者的公共导出是「顺手 export」的遗留形态，但直接删除会让外部接入者失去预警期；走完一个 major 周期的废弃登记更稳。**对消费者**：本版零行为变化、零编译影响；请改用 `ToolDefinition.diskWrite` 声明自行筛选。
+
 ### Added（内核）
 
 - **技能显示名 `SkillEntry.displayName`**（`SKILL-DISPLAYNAME-1`）：`SkillEntry` 增可选 `displayName`，值 = 技能正文首个 H1（解析单点 `utils/scanner.extractDisplayName`，`SkillManager` / `RolePackManager` 共用；围栏内的 `# 注释` 不算标题）。**只供 UI 展示、不进模型面**——L1 清单真源 `SkillManager.formatSkillForPrompt` 仍只读 `name` + `description`（把显示名写进清单，模型会拿中文名去 `read_skill`，而内核按 `name` 寻址，每次必落空）。**为什么**：Agent Skills 规范的 `name` 限定小写英文 / 数字 / 连字符，中文技能只能挂英文 id，宿主的选择器 / 输入盒 chip / 设置页卡片上全是英文。**对消费者**：纯新增可选字段，零既有签名变更、零行为变化；缺失（正文无 H1 / 角色包技能正文未缓存）时由展示面回退 `name`，内核不做兜底拼装。
@@ -18,10 +22,12 @@
 
 - **内置角色包技能内容对齐显示名契约**（`role-packs/` 30 个技能）：正文 H1 去掉 `# <id>：` 前缀，收敛为纯中文显示名（如 `# 单一真理源（SSOT）自检`）——此前 H1 重复了 `name` 里的英文 id，界面会显示成「id：中文」。作者规范同步：`docs/architecture/role-pack-spec.md` 的 frontmatter 示例与 skills 条目写明「正文首个 H1 = UI 显示名、不进 L1 清单」；新增守卫用例（`builtinPackCoverage.test.ts`）钉死「每个内置技能有 H1 且不与 name 重复」，防新增技能静默退化为英文 id 展示。
 - **后台通道失败升级前台一次**（`BG-ESCALATE-1`）：新增 `src/llm/backgroundProvider.ts` 的 `resolveBackgroundProvider(background, foreground)`，把「后台 Provider 选谁 + 后台失败怎么办」收敛为唯一判定点（装配期与热切换两处接入点各产出一份结果，均注入同一组三个后台消费者）。后台通道（轮次摘要 / 会话归档 / 文本润色）在**未产出任何增量**时调用失败 → 自动用前台 Provider 重试一次；已流出内容、或用户已取消 → 不重试（重发会产生重复正文）。**为什么**：原实现是 `backgroundProvider ?? provider` 裸回退，后台模型一次抖动 = 该次摘要丢失 / 归档跳过，而前台 Provider 明明可用。**对消费者**：零签名变更；未配置后台 Provider 时**原样返回前台实例**（不包装、零开销）；已配置时行为变化仅限「后台失败多一次前台请求」。**边界**：主对话 `AgentLoop` 完全不经过本模块（主对话换档属动态分档，已拒枝）。**同日收口**：`TextPolishManager` 补 `setBackgroundProvider`（形态与 `SessionArchiver` / `RoundSummaryGenerator` 同构），热切换从「归档 + 摘要跟随」补成三个消费者全覆盖——此前用户改后台模型后点「润色」仍走装配期实例；该方法经 `Agent.polish` 对消费者可达，已登记进公开成员面基线。
+- **前台换档重解析后台通道**（`BG-ESCALATE-1` 第三刀）：`Agent.setProvider` 此前只替换前台 Provider，后台消费者（轮次摘要 / 会话归档 / 文本润色）仍持有上一次解析结果 ⇒ 未配置后台模型的会话在前台换档后，后台任务继续发往**旧前台实例**。现 `setProvider` 与 `setBackgroundProvider` 两入口统一走私有 `applyBackgroundChannel()`，每次按当前「后台配置 + 前台实例」重新求值，且不再向消费者传 `null`（消费者的 `null` 语义是「回退装配期只读快照」，对热切换无效）。**为什么**：`resolveBackgroundProvider` 的判定点只在这两个入口被调用，腐化形态 = 后加的入口忘了重解析。**对消费者**：零签名变更；未配置后台 Provider 时，换前台后的后台任务改用新前台；已配置后台时升级兜底同样指向新前台。
 
 ### Fixed（内核）
 
 - **`diskWrite` 声明覆盖自定义工具**（`DISKWRITE-CUSTOM-1`）：写序判据从「内置工具静态名集」改为「工具定义行 `diskWrite` 声明」（查找序 = 当前定义快照（含自定义工具）→ 内置全量兜底），三处消费面同步收口——① 同路径写串行闸 + opaque 屏障；② 写后 `read_file` 缓存与覆盖度台账失效；③ `tool_start` 事件新增可选 `diskWrite` 字段供宿主改盘追踪，宿主 opaque 分支的 `tool_result` 侧一并改为消费写前登记（写前扫快照 / 写后按登记 diff，一次判定双向对称）。**为什么**：宿主经 `registerTool` 注册的写工具此前绕过串行闸（同一 step 内并行 `insert` + `append` 会静默丢内容）且不触发宿主改盘追踪（扩展安全契约不完整）。**对消费者**：`ToolDefinition.diskWrite` 自本版起对**所有**工具生效（含自定义）；`PATH_WRITE_TOOL_NAMES` / `OPAQUE_WRITE_TOOL_NAMES` / `WRITE_PATH_EXTRACTORS` 保留作内置契约钉与旧事件兜底，不再是唯一判据来源。
+- **写侧止损覆盖声明型自定义写工具**（`DISKWRITE-CUSTOM-1` 补面）：`write_loop` 原只 `matches('write_file')` ⇒ 自定义写工具的「同路径连续失败」不进止损。现按工具声明 `diskWrite:'path'` 接入失败连击判据（只依赖目标路径 + 执行失败，与写入模式无关）；**整文件覆盖连写仍只认内置 `write_file`**（自定义工具无 `mode` 约定，缺省不得当成 overwrite，否则会冤拦正常增量写）。自定义写成功只清本路径失败计数、不推进内置连写链（防污染）。**对消费者**：注册 `diskWrite:'path'` 的自定义写工具连续失败达阈值会被 `[WRITE_FAIL_STOP]` 拦截；`diskWrite:'opaque'` 不接入（路径不可静态定位，无计数主体）。
 
 ## [5.3.0] · 2026-10-31
 
@@ -193,6 +199,11 @@
 - **技能显示名贯穿三处 UI**（`SKILL-DISPLAYNAME-1`）：技能选择器菜单项 / 输入盒已选技能 chip / 设置页技能卡标题统一显示 `displayName ?? name`；搜索同时匹配显示名与描述，**选中回传与禁用集仍恒用 `name`**（id 与展示分离）。`skills_loaded` 改为整条 `SkillDto` 透传，不再逐字段拷贝（新协议字段在第二个消费面静默丢失的腐化点一并消掉）。**为什么**：中文技能只能以英文 id 命名，界面上满屏英文 id。**对消费者**：中文命名的技能在界面上显示中文标题；内部寻址、禁用、回传载荷不变。
 
 - **内置技能资源对齐显示名契约**：`code-review` / `summarize` / `web-search` 补中文正文 H1（`# 代码审查` / `# 摘要提炼` / `# 联网搜索`）并统一声明 `layer: agent`（此前三者缺 `layer`，内核按缺失回退 `project`，与「内置来源」自相矛盾）；`role-pack-creator` 的模板说明与校验清单补「正文首个 H1 = 纯中文显示名」一条，新造角色包不再漏写。
+- **opaque 快照判据单点化**（`DISKWRITE-CUSTOM-1` 收口）：`chatPanel` 的 opaque 工具判断原带静态名集兜底（`SCRIPT_WRITE_TOOLS`），与同文件「写后按写前登记、不重判工具名」的注释自相矛盾。现统一为事件字段 `chunk.diskWrite === 'opaque'` 单点，常量与内核 `OPAQUE_WRITE_TOOL_NAMES` 的 import 一并退役。**为什么**：`tool_start` 由内核唯一产地恒定携带声明，兜底分支不可达（宿主与内核 dist 同代由 `verify:dist-contract` 保证）。**对消费者**：零行为变化。
+
+### Fixed（宿主）
+
+- **MCP 写工具补上改盘声明**（`DISKWRITE-CUSTOM-1`）：`toolRegistry.toToolDefinition` 映射 MCP 工具时此前从不带 `diskWrite` ⇒ MCP 写工具在内核按「未声明 = 不改盘」处理，绕过同路径写串行闸与宿主改盘追踪。现 fail-closed 映射：server 未声明只读（`annotations.readOnlyHint === true` 且 `destructiveHint !== true`）⇒ 一律 `diskWrite:'opaque'`（与一切写互斥的屏障）；声明只读 ⇒ 无字段（读工具维持完全并发）。**为什么**：MCP 是宿主唯一的动态工具源，声明源头空洞会同时绕过串行闸与「执行前后快照 diff」两条安全面。**对消费者**：MCP 写工具与内置写工具同受串行保护、改动可在改动清单中看到；**残余风险**——`readOnlyHint` 是 server 自报（MCP SDK 明言 ToolAnnotations 不可作工具使用决策依据），谎报只读仍可绕过串行闸。
 
 ## [0.5.0] · 2026-11-01 · 宿主
 

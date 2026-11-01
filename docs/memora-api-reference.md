@@ -1250,6 +1250,9 @@ export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@zooique/memora';
 
 // 工具
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@zooique/memora';
+// 工具（废弃登记）：⚠️ 已废弃，6.0.0 移除——本版仅保留导出作预警；
+// 现行判据 = 工具定义行改盘声明；移除清单真源见仓库台账废弃登记条目
+export { OPAQUE_WRITE_TOOL_NAMES } from '@zooique/memora';
 // 网页抓取（搜索→抓取闭环第二段）
 export type { IFetchProvider, FetchedPage, FetchOptions } from '@zooique/memora';
 export { FetchWebFetchProvider } from '@zooique/memora';
