@@ -73,10 +73,8 @@ export default [
     files: ['src/webview/panels/settingsPanel.ts'], // TARGET（六页合一；安全页静态骨架已外置）
     rules: { 'max-lines': ['error', { max: 2037 }] },
   },
-  {
-    files: ['src/extension/host/fileChangeView.ts'], // TARGET
-    rules: { 'max-lines': ['error', { max: 974 }] },
-  },
+  // fileChangeView 的专属 override 已于 2026-11-01 退役：实测 948 行 ≤ 1000 ⇒ 已达「瘦身达标」
+  // 退出条件（见本块头部规则 TARGET 条：达标后删该条、回到下方通用 1000 闸）。
   {
     files: ['src/shared/protocol.ts'], // DOC（契约注释型，物理行非判据 → off）
     rules: { 'max-lines': 'off' },
