@@ -29,7 +29,7 @@
 | `ICodeExecutionProvider` | 可选 | `src/code-exec/types.ts` | 通用代码执行（沙箱由宿主提供），不注入则不启用 |
 | `IProjectSearchProvider` | 可选 | `src/project-search/types.ts` | 项目内搜索（等价 IDE 全局搜索），不注入则不暴露 `search_project`（见 §8.6） |
 | `ILogger` | 可选 | `src/logging/loggerInterface.ts` | 日志，默认内置 |
-| `backgroundProvider` (`LlmProvider`) | 可选 | AgentOptions | 后台通道（归档/投影），不配复用前台 |
+| `backgroundProvider` (`LlmProvider`) | 可选 | AgentOptions | 后台通道（成本优先：摘要/归档/润色/去重；不配则回退前台，契约见 [接入指南](./memora-接入指南.md) §三 2） |
 
 \* 不传则内核自动用内置内存实现 / 内存会话（仅内存不落盘；内存实现类为内部机制，不挂公共面——PUB-API-PRUNE-2 收面）；做产品必须实现。
 
@@ -174,7 +174,7 @@ new Agent({
 |------|------|------|------|
 | `projectPath` | `string` | ✅ | 项目路径（必须） |
 | `provider` | `LlmProvider` | ✅ | 前台 LLM Provider（必须） |
-| `backgroundProvider` | `LlmProvider` | ❌ | 后台 Provider（投影等后台操作） |
+| `backgroundProvider` | `LlmProvider` | ❌ | 后台 Provider（成本优先：投影类操作；不配则回退 `provider`） |
 | `providerRouter` | `ProviderRouter` | ❌ | 按任务类型返回 Provider 的路由器（不配时全部使用同一 Provider，向后兼容） |
 | `configDir` | `string` | ❌ | 配置目录（role-packs / skills，设定记忆唯一归角色包） |
 | `dataDir` | `string` | ✅ | 记忆数据目录（必填，内核不提供默认值；传项目级还是用户级目录由宿主决定） |

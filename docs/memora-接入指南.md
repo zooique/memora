@@ -107,7 +107,7 @@ const provider = createProviderFromConfig('primary', {
   model: 'deepseek-chat',
 });
 
-// 可选：后台 Provider（投影等后台操作）
+// 可选：后台 Provider（成本优先；不传则后台操作回退前台——见下方「前后台双模契约」）
 const backgroundProvider = createProviderFromConfig('background', {
   provider: 'openaiCompatible',
   apiKey: process.env.LLM_API_KEY!,
@@ -141,6 +141,9 @@ const agent = new Agent({
 
 await agent.init();
 ```
+
+> **前后台双模契约（2026-11-01 显式化）**：`provider` = **前台**，用于主对话，目标是**关系深度优先**（质量 / 连续性 / 人格一致）；`backgroundProvider` = **后台**，用于摘要、归档、润色、去重等投影类操作，目标是**成本优先**（可用更便宜的模型 / 更低配额）。
+> **缺省语义是契约的一部分**：不传 `backgroundProvider` 时，后台操作**回退使用 `provider`**（不会自动变便宜）——想省成本必须显式注入；一旦注入，后台**不会**再回落到前台。两侧可用不同模型 / 端点，互不影响。
 
 ### 3. 对话
 
@@ -227,6 +230,24 @@ const agent = new Agent({
 ```
 
 > **注意**：`run_code` 是通用执行能力（源码不进上下文，仅结果返回），执行隔离等级完全由宿主 provider 决定；接入前务必评估沙箱安全边界（参见参考手册 §8.5）。
+
+#### 两条接缝的命名与选择（2026-11-01 补）
+
+上两节各是一种「宿主把能力接进内核」的接缝。名字与选择标准在此收敛，避免接入时混用：
+
+| 接缝 | 名字 | 谁提供实体 | 形态 | 何时用 |
+| --- | --- | --- | --- | --- |
+| 甲 | **领域工具注册**（`agent.tools.registerTool`） | 宿主提供工具定义 + 执行体 | 静态接线，注册即进模型工具面 | 宿主自己的业务能力（读写你的项目数据） |
+| 乙 | **条件工具 Provider 注入**（`webSearchProvider` / `fetchProvider` / `codeExecutionProvider`） | 内核已定义工具，宿主提供底层能力 | 条件暴露，注入才进模型工具面 | 内核已有工具、只缺外部执行能力 |
+
+**判别口诀：工具本体是谁的？** 宿主自己的 → 甲；内核已定义、缺外部能力 → 乙。
+
+⚠️ **写工具的额外契约（`diskWrite`）**：凡经甲注册的**会改盘的工具**，必须在工具定义里声明 `diskWrite`——
+
+- `diskWrite: 'path'`：目标由 `args.path` 静态定位 ⇒ 同路径写自动串行（防「insert + append 同 step 并行 → 静默丢内容」），宿主据此追踪改动；
+- `diskWrite: 'opaque'`：目标运行时才可知 ⇒ 与一切写互斥（屏障），宿主按「执行前后目录快照 diff」追踪。
+
+**缺省 = 视为不改盘**：未声明的自定义工具**不受写串行保护，宿主也不追踪其改动**。
 
 ### 5. 记忆关键词与写入扩展（已移除）
 
