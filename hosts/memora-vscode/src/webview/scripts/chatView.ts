@@ -17,6 +17,7 @@ import type {
   InjectionSummary,
   PendingQuestionDto,
   RoundView,
+  SkillDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 // 引用身份键与去重判据：**必须**与宿主缓冲共用同一实现——同文件不同选区是两条引用，
@@ -205,7 +206,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // pinned = 常驻锁（发送后是否保留）：skill 默认 true = 锁预开常驻，保持既有「发送不消失」行为；
   // ref 默认 false = 发送即清（现状）。两类 chip 共用这一个属性，不另建 pinned 数组（SSOT：
   // 钉住集与上下文集同源，杜绝两处漂移）。pinned 纯 UI 状态，不进协议/内核。
-  let currentSkill: { name: string; disabled?: boolean; pinned: boolean } | null = null;
+  // 当前选中技能 = 整条 DTO 快照 + pinned（禁逐字段拷贝：displayName 随行带到 chip 与标题）。
+  let currentSkill: (SkillDto & { pinned: boolean }) | null = null;
   // 引用行（右键「添加到对话」挂的文件/目录，与 skillChipRow 同构复用样式；file/folder 二态）
   const refChipRow = document.getElementById('refChips') as HTMLElement | null;
   // 引用回复快照草稿（COPY-2 形态优化）：文本快照 ≠ 文件指针，消费链独立（发送时展开引用块），
@@ -3585,16 +3587,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 回退补齐后同步徽章（chat_role_packs 可能先于 chat_role_pack 到达）
       updateRoleBadge();
     } else if (msg.type === 'skills_loaded') {
-      // 动态技能清单（SSOT 收紧）：与设置面板同一来源，重建下拉列表
-      // `disabled` 必须随行带出——丢弃该字段会让用户通道看不出技能已禁用
-      // （选它就等于静默落空）。标记仅供显示，**不做拦截**：
-      // 真源判定在 host（`isSkillDisabled`），webview 若自行拒绝会在 reload 后假拒绝。
-      // `description` 随行带出：菜单搜索按「名称 + 描述」匹配（载荷本有，此前消费时被丢弃）。
-      skillOptions = msg.skills.map((s) => ({
-        name: s.name,
-        description: s.description,
-        disabled: s.disabled,
-      }));
+      // 动态技能清单（SSOT 收紧）：与设置面板同一来源，重建下拉列表；整条 DTO 快照透传
+      // （含 displayName / disabled / health）——逐字段拷贝会让新字段在第二个消费面静默丢失。
+      // 标记只用于显示、**不做拦截**：真源判定在 host（`isSkillDisabled`），webview 拒绝会变假拒绝。
+      skillOptions = msg.skills;
       renderSkillPickerMenu();
     } else if (msg.type === 'file_changes') {
       // 未确认文件改动快照：宿主在**改动集变化**时推 + **webview ready 时补推一次**
@@ -4195,7 +4191,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 随行带出 disabled（选择时刻的快照）——仅供 chip 显示提示，
         // 发送时的**判定**仍由 host 真源（`isSkillDisabled`）负责，webview 不拦截。
         // 新挂载 = 锁预开常驻（pinned 默认 true，与「skill 发送后不消失」的既有行为一致）
-        currentSkill = { name: id, disabled: !!found.disabled, pinned: true };
+        currentSkill = { ...found, pinned: true };
         updateSkillPickerLabel();
       } else if (id === '__clear_skill') {
         currentSkill = null;
@@ -4238,8 +4234,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function updateSkillPickerLabel(): void {
     if (skillPickerTrigger) {
       if (currentSkill) {
-        skillPickerTrigger.setAttribute('title', '当前 Skill：' + currentSkill.name);
-        skillPickerTrigger.setAttribute('aria-label', '当前 Skill：' + currentSkill.name);
+        const label = currentSkill.displayName ?? currentSkill.name; // 显示名回退（无 H1 时露出英文 id）
+        skillPickerTrigger.setAttribute('title', '当前 Skill：' + label);
+        skillPickerTrigger.setAttribute('aria-label', '当前 Skill：' + label);
       } else {
         skillPickerTrigger.setAttribute('title', '选择 Skill');
         skillPickerTrigger.setAttribute('aria-label', '选择 Skill');
@@ -4271,6 +4268,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     skillChipRow.hidden = false;
     // 闭包内 let 的 narrowing 失效 → 取局部副本供 🔒 处理器读取当前挂载态
     const skill = currentSkill;
+    const label = skill.displayName ?? skill.name; // 显示名回退：chip 文本 / 锁与移除按钮 aria 共用
     const chip = document.createElement('span');
     chip.className = 'skill-chip';
     // 钉住（常驻锁）= 发送后保留不消失。chip 级 .is-pinned **无视觉职责**，仅作状态标记
@@ -4292,7 +4290,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     chip.appendChild(icon);
     const name = document.createElement('span');
     name.className = 'skill-chip__name';
-    name.textContent = currentSkill.name;
+    name.textContent = label;
     chip.appendChild(name);
     if (currentSkill.disabled) {
       const note = document.createElement('span');
@@ -4314,7 +4312,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     pin.innerHTML = getIconSvg(skill.pinned ? 'lock' : 'lock-open', 11, 11);
     pin.setAttribute('aria-pressed', String(skill.pinned));
     pin.setAttribute('title', skill.pinned ? '取消常驻（发送后清除）' : '常驻（发送后保留）');
-    pin.setAttribute('aria-label', (skill.pinned ? '取消常驻：' : '常驻：') + skill.name);
+    pin.setAttribute('aria-label', (skill.pinned ? '取消常驻：' : '常驻：') + label);
     pin.addEventListener('click', () => {
       currentSkill = { ...skill, pinned: !skill.pinned };
       renderSkillChip();
@@ -4325,7 +4323,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     remove.className = 'skill-chip__remove';
     remove.innerHTML = getIconSvg('close', 11, 11);
     remove.setAttribute('title', '移除 Skill');
-    remove.setAttribute('aria-label', '移除 Skill：' + currentSkill.name);
+    remove.setAttribute('aria-label', '移除 Skill：' + label);
     remove.addEventListener('click', () => {
       currentSkill = null;
       updateSkillPickerLabel();
@@ -4771,9 +4769,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /** 动态技能清单（SSOT 收紧）：不硬编码预设，由 host 推 skills_loaded 填充，与设置面板同一来源。
-   * `disabled` 随行带出：下拉项据此弱化 + 标注「已禁用」，chip 据此提示 —— 纯显示，不拦截。
-   * `description` 随行带出：供菜单顶部搜索按「名称 + 描述」匹配。 */
-  let skillOptions: { name: string; description?: string; disabled?: boolean }[] = [];
+   * 整条协议 DTO 直通（不另建投影）：`disabled` 供下拉弱化 + 「已禁用」标注（纯显示、不拦截），
+   * `displayName` 供人类可读名，`description` 供菜单顶部搜索按「名称 + 描述」匹配。 */
+  let skillOptions: SkillDto[] = [];
   /** 菜单搜索词：跨 skills_loaded 全量重建保留——数据下发不清词（用户常在搜索结果上
    * 连续操作，同会话搜索 FD-3-A 纪律） */
   let skillSearchQuery = '';
@@ -4798,11 +4796,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const skillPickerList = document.createElement('div');
   skillPickerList.className = 'treedd__list';
 
-  /** 菜单匹配（空词恒真、大小写不敏感）：名称 / 描述任一命中即匹配
+  /** 菜单匹配（空词恒真、大小写不敏感）：显示名（缺失回退 name）/ 描述任一命中即匹配
    * （形状同历史菜单的元数据匹配，见 historyMenuView；列表仅数十条，同步过滤不引入防抖） */
-  function matchesSkillSearch(s: (typeof skillOptions)[number], q: string): boolean {
+  function matchesSkillSearch(s: SkillDto, q: string): boolean {
     if (!q) return true;
-    return `${s.name} ${s.description ?? ''}`.toLowerCase().includes(q);
+    return `${s.displayName ?? s.name} ${s.description ?? ''}`.toLowerCase().includes(q);
   }
 
   /** 重建 Skill 菜单（初始装配 + skills_loaded 刷新 + 搜索过滤共用单点）：
@@ -4839,8 +4837,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       visible++;
       const item = document.createElement('div');
       item.className = 'treedd__item';
-      item.textContent = s.name;
-      item.dataset.treeddId = s.name;
+      item.textContent = s.displayName ?? s.name;
+      item.dataset.treeddId = s.name; // id 恒为 name：显示名只作展示，选中回传 / 高亮比对都用 name
       if (s.disabled) {
         // 已禁用：弱化 + 后缀徽记（复用设置面板同一语义词汇，非隐蔽、不隐藏条目）
         item.classList.add('is-disabled');

@@ -224,9 +224,11 @@ name: write
 description: 把成稿写入本地文件
 ---
 
-# write：成稿写入
+# 成稿写入
 （技能正文…）
 ```
+
+* **技能正文首个 H1 = UI 显示名（结构契约）**：技能正文的**第一个 H1** 是宿主人读标题（选择器菜单项 / 输入盒 chip / 设置页卡片，展示面统一 `displayName ?? name`）⇒ 写**纯中文名、不重复 frontmatter 里的 id**（id 已由 `name` 承载）。该字段**不进 L1 模型清单**（清单真源 `formatSkillForPrompt` 只读 `name` + `description`）：若把显示名喂给模型，模型会拿中文名调 `read_skill`，而内核按 `name` 寻址，每次必落空。解析单点 = `src/utils/scanner.extractDisplayName`（代码围栏内的 `#` 注释不算标题）；无 H1 时展示面回退英文 `name`（不报错、不兜底拼装）。
 
 * **`capabilities`（顶层，能力面）**：每项 `{ capability: '域:动作', description? }`。声明角色可调用的中立能力，经 capabilityMap 映射为工具白名单（agent.ts applyRolePackToolExposure，「换装 = 换 Agent」）；
 

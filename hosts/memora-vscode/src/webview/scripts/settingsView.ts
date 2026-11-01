@@ -224,7 +224,7 @@ function createSkillsView({
         return `
     <div class="skill-item ${meta.item}" data-skill-name="${escapeHtml(s.name)}">
       <div class="skill-header">
-        <h3 class="skill-name">${escapeHtml(s.name)}</h3>
+        <h3 class="skill-name">${escapeHtml(s.displayName ?? s.name)}</h3>
         <span class="skill-badge ${meta.badge}">${meta.label}</span>
         ${s.health && s.health !== 'ok' ? `<span class="health-badge health-${s.health}">${s.health === 'error' ? '未生效' : '可优化'}</span>` : ''}
         ${s.disabled ? '<span class="disabled-badge" title="已在 memora.disabledSkills 中禁用：对模型不存在（不进清单 / 不可读取 / L3 不可达）">已禁用</span>' : ''}

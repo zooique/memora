@@ -3,7 +3,7 @@ name: world-builder
 description: 世界观构建：麦基四维设定（时代/期限/地点/冲突层面），设定服务于内核
 ---
 
-# world-builder：世界观构建
+# 世界观构建
 
 ## 用途
 

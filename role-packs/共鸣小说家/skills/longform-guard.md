@@ -3,7 +3,7 @@ name: longform-guard
 description: 长篇防崩：卷/部规划、大纲预留、设定漂移防护、连载体力管理
 ---
 
-# longform-guard：长篇防崩
+# 长篇防崩
 
 ## 用途
 

@@ -3,7 +3,7 @@ name: pacing-hook
 description: 节奏与钩子设计：开篇钩子、章末悬念、张弛节奏、平台分发适配
 ---
 
-# pacing-hook：节奏与钩子设计
+# 节奏与钩子设计
 
 ## 用途
 

@@ -114,6 +114,8 @@ name: 其它技能
       expect(skillManager.list).toHaveLength(2);
       const skill = skillManager.get('读文件');
       expect(skill?.name).toBe('读文件');
+      // 显示名 = 正文首个 H1（UI 专用，不进 L1 模型清单）：该文件 H1 为「读文件技能」
+      expect(skill?.displayName).toBe('读文件技能');
       expect(skill?.content).toContain('read_file');
       expect(skill?.content).not.toContain('write_file');
     });
@@ -766,6 +768,13 @@ describe('SkillManager · 补充分支路径', () => {
       const longDesc = '这是一个超过二十个字符很长的描述文本用于验证不压缩';
       const out = SkillManager.formatSkillForPrompt({ name: 'full', description: longDesc });
       expect(out).toContain(longDesc);
+    });
+
+    it('displayName 不进 L1 清单（UI 专用字段的模型面隔离守卫）', () => {
+      // 显示名来自正文 H1（中文）。若误注入 L1：与 name 双写、白占 token，
+      // 且模型会拿「中文显示名」去调 read_skill（内核按 name 寻址 ⇒ 每次都落空）。
+      const withDisplay = { name: 'run', description: '执行脚本', displayName: '运行脚本' };
+      expect(SkillManager.formatSkillForPrompt(withDisplay)).toBe('- run：执行脚本');
     });
   });
 

@@ -26,7 +26,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isFolderFormSkill, scanMarkdownDir } from '@/utils/scanner.js';
+import { extractDisplayName, isFolderFormSkill, scanMarkdownDir } from '@/utils/scanner.js';
 import { validateManifestText } from '@/role-pack/validator.js';
 import { RolePackManager } from '@/role-pack/rolePackManager.js';
 
@@ -90,6 +90,8 @@ interface PackScan {
   skillNames: string[];
   /** 技能文件 frontmatter 声明的 name（未声明则为空串） */
   declaredNames: Record<string, string>;
+  /** 技能正文（H1 显示名来源；键 = 技能名） */
+  bodies: Record<string, string>;
   /** persona.md + rules.md 全文（设定文本，使用时机引导载体） */
   settingText: string;
 }
@@ -110,17 +112,19 @@ async function scanBuiltinPacks(): Promise<PackScan[]> {
 
     const skillNames: string[] = [];
     const declaredNames: Record<string, string> = {};
+    const bodies: Record<string, string> = {};
     for (const skill of scanned) {
       const skillName = skillNameOf(skill.filePath);
       skillNames.push(skillName);
       declaredNames[skillName] = skill.frontmatter['name'] ?? '';
+      bodies[skillName] = skill.body;
     }
 
     const settingText = ['persona.md', 'rules.md']
       .map((f) => (existsSync(join(packDir, f)) ? readFileSync(join(packDir, f), 'utf8') : ''))
       .join('\n');
 
-    packs.push({ name: entry, skillNames, declaredNames, settingText });
+    packs.push({ name: entry, skillNames, declaredNames, bodies, settingText });
   }
   return packs;
 }
@@ -201,6 +205,26 @@ describe('内置角色包技能可发现性守卫', () => {
       }
     }
     expect(mismatched).toEqual([]);
+  });
+
+  it('每个内置技能正文须有中文 H1 显示名，且不与 name 重复（UI 展示面不露英文 id）', async () => {
+    // 判据 SSOT = 内核 utils/scanner.extractDisplayName（与 UI 展示同源），不在此重写解析规则。
+    const offenders: string[] = [];
+    for (const pack of await scanBuiltinPacks()) {
+      for (const skill of pack.skillNames) {
+        const displayName = extractDisplayName(pack.bodies[skill] ?? '');
+        // 缺失 H1 ⇒ 宿主展示面静默回退英文 id（无报错、无其它测试会红，故在此钉死）
+        if (displayName === undefined) {
+          offenders.push(`${pack.name}/${skill}：无 H1`);
+          continue;
+        }
+        // 纯中文名约定：H1 不得以「name」本身或「name：」前缀开头（否则界面重复显示英文 id）
+        if (displayName === skill || displayName.startsWith(`${skill}：`)) {
+          offenders.push(`${pack.name}/${skill}：H1 重复 id「${displayName}」`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it('每个内置包 manifest 须通过格式校验（error 级会被拒绝装载）', () => {

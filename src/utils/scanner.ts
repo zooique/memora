@@ -48,6 +48,47 @@ export function isFolderFormSkill(filePath: string): boolean {
 }
 
 /**
+ * 提取正文显示名（首个 H1 标题）——技能人类可读名的**单一真理源**
+ *
+ * 为何用正文 H1 而非 frontmatter 自定义键：Agent Skills 规范只定义 `name` / `description`，
+ * 新增 `displayName` 键会让技能文件脱离生态（别的工具不认）；而 H1 是 markdown 固有结构，
+ * 本仓技能均以 `# 中文标题` 开头，**零新增契约**即可拿到中文名（SSOT：能在最小单元解决，
+ * 就不引入新机制）。
+ *
+ * 跳过代码围栏（``` / ~~~）内的行：技能正文常贴 shell/python 片段，其中的 `# 注释` 不是标题。
+ *
+ * @param body frontmatter 之后的正文
+ * @returns 首个围栏外 H1 文本（trim 后）；无 H1 返回 undefined，调用方回退 `name`
+ */
+export function extractDisplayName(body: string): string | undefined {
+  /** 当前是否处于代码围栏内（围栏内的行整体跳过） */
+  let inFence = false;
+  /** 开栏标记字符（`` ` `` 或 `~`）：只认同字符闭合，避免异字符误判为闭合 */
+  let fenceChar = '';
+  for (const line of body.split('\n')) {
+    const trimmed = line.trim();
+    // 围栏行（三个及以上 ` 或 ~ 开头）：切换围栏态后本行不做标题判定
+    const fenceMark = /^(`{3,}|~{3,})/.exec(trimmed)?.[1] ?? '';
+    if (fenceMark) {
+      const char = fenceMark.charAt(0);
+      if (!inFence) {
+        inFence = true;
+        fenceChar = char;
+      } else if (char === fenceChar) {
+        inFence = false;
+      }
+      continue;
+    }
+    // 围栏内的内容不是标题（脚本里的 `# 注释` 会被误取，故先跳过）
+    if (inFence) continue;
+    // 行首 H1：`#` 后必须紧跟空白才算标题（`#tag` / `##` 不匹配）；兼容 `# 标题 #` 关闭式写法
+    const h1 = /^#\s+(.+?)\s*#*$/.exec(trimmed);
+    if (h1) return h1[1] ?? undefined;
+  }
+  return undefined;
+}
+
+/**
  * 扫描目录下的 Markdown 文件，解析 frontmatter
  *
  * 支持两种形式：

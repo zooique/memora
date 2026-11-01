@@ -3,7 +3,7 @@ name: empathy-craft
 description: 共情技法：AI 写不出的"打动"用方法写出来——情绪逻辑、陈述→展示、情感轨迹、潜台词、可互换性测试
 ---
 
-# empathy-craft：共情技法
+# 共情技法
 
 ## 用途
 

@@ -3,7 +3,7 @@ name: scene-craft
 description: 场景写作方法论：每场景价值转变、进入/退出时机、无转变场景即删
 ---
 
-# scene-craft：场景写作
+# 场景写作
 
 ## 用途
 

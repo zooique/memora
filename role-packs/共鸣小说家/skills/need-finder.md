@@ -3,7 +3,7 @@ name: need-finder
 description: 需求层洞察：社会热点搜索 → 痛点提炼 → 精神需求缺口反推（读者画像+验证）
 ---
 
-# need-finder：需求层洞察
+# 需求层洞察
 
 ## 用途
 

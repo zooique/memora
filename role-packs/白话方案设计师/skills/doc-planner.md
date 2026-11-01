@@ -3,7 +3,7 @@ name: doc-planner
 description: 从需求推导文档骨架：受众分析、章节规划、信息层级
 ---
 
-# doc-planner：从需求推导文档骨架
+# 从需求推导文档骨架
 
 ## 用途
 

@@ -101,7 +101,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 1. `manifest.json` 为合法 JSON；`formatVersion` 建议声明（semver x.y.z；缺省按 1.0.0，绑定固定 schema URL）。
 2. 所有数值/枚举在上述区内；`summaryFocus` ≤500 字符。
 3. `name` 有效（1~64 位，中文/字母/数字/下划线/连字符，不以 `.` 开头）。
-4. `skills/*.md` 均含 frontmatter 且带 `description`（缺则技能不可用）。
+4. `skills/*.md` 均含 frontmatter 且带 `description`（缺则技能不可用）；正文首个 H1 须写**纯中文显示名**（不重复 frontmatter 的英文 id）——它是宿主选择器 / chip / 卡片的展示名，缺失则界面回退英文 id。
 5. （软自查）`skills/*.md` 的 description 按[四问规范](#四问规范软自查)对照，含糊措辞（如"处理数据"）须重写。
 6. **禁止**命名 `memora助手`（memora 内置兜底契约角色，避免冲突）。
 

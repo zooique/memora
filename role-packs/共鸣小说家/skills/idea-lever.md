@@ -3,7 +3,7 @@ name: idea-lever
 description: 创意杠杆：作者决策一次，AI 展开成 N 个候选（logline/开头/情节分支穷举）
 ---
 
-# idea-lever：创意杠杆
+# 创意杠杆
 
 ## 用途
 

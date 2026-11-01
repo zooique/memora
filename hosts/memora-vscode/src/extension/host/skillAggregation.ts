@@ -69,12 +69,13 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
     name: string,
     description: string | undefined,
     filePath?: string,
+    displayName?: string,
   ): void => {
     if (!name) return;
     const prev = byName.get(name);
     // 新来源优先级不高于已有 → 保留已有（去重方向必须对齐注入面，故不可用「先到先得」）
     if (prev && DEDUP_PRIORITY[prev.layer ?? 'builtin'] <= DEDUP_PRIORITY[layer]) return;
-    byName.set(name, { name, description: description ?? '', filePath, layer });
+    byName.set(name, { name, description: description ?? '', displayName, filePath, layer });
   };
 
   // 源 1 + 3：SkillManager.list（内置 configDir/skills + 用户 loadExtraDir 注入）
@@ -86,6 +87,7 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
         s.name,
         s.description,
         s.filePath,
+        s.displayName,
       );
     }
   }
@@ -94,7 +96,7 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
   const rpm = agent.rolePackManager;
   if (rpm) {
     for (const s of rpm.listSkills ? rpm.listSkills() : []) {
-      push('rolepack', s.name, s.description);
+      push('rolepack', s.name, s.description, undefined, s.displayName);
     }
   }
 

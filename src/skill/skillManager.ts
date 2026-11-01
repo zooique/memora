@@ -7,7 +7,7 @@ import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
 import type { SkillEntry, SkillLayer3, SkillIssue, SkillValidation } from '@/skill/types.js';
-import { scanMarkdownDir } from '@/utils/scanner.js';
+import { extractDisplayName, scanMarkdownDir } from '@/utils/scanner.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
 import {
@@ -406,6 +406,8 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     return {
       name: entry.name,
       description: entry.frontmatter['description'],
+      // 人类可读显示名（正文首个 H1）；UI 专用、不进 L1 模型清单。无 H1 则省略（展示面回退 name）。
+      displayName: extractDisplayName(entry.body),
       content: entry.body.trim(),
       filePath: entry.filePath,
       // 来源层（agent / project）：解析 frontmatter.layer，非法/缺失回退 project（与现状默认一致）。

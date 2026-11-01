@@ -3,7 +3,7 @@ name: logline-craft
 description: 高概念/一句话卖点（logline）：把三层结构翻译成一句话，决定开篇方向与市场吸引力
 ---
 
-# logline-craft：高概念（一句话卖点）
+# 高概念（一句话卖点）
 
 ## 用途
 

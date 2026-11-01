@@ -23,6 +23,7 @@ import {
   resolveSafePath,
   isFolderFormSkill,
   inferRuntimeFromExt,
+  extractDisplayName,
 } from '@/utils/scanner.js';
 import { setLogger } from '@/utils/loggerHolder.js';
 
@@ -338,6 +339,26 @@ description: 变体技能
       // （实测 .ps1 静默空跑、stdout/stderr 全空）——补进 shell 档是「看起来修好了」的假修复。
       expect(inferRuntimeFromExt('.ps1')).toBeUndefined();
       expect(inferRuntimeFromExt('')).toBeUndefined();
+    });
+  });
+
+  describe('extractDisplayName（正文首个 H1 · UI 显示名真源）', () => {
+    it('取首个 H1；兼容 `# 标题 #` 关闭式写法', () => {
+      expect(extractDisplayName('# 大树模型项目生长器（匠码）\n\n正文')).toBe(
+        '大树模型项目生长器（匠码）',
+      );
+      expect(extractDisplayName('# 标题 #\n正文')).toBe('标题');
+    });
+
+    it('跳过代码围栏内的 `# 注释`（脚本片段不得被误当标题）', () => {
+      // 围栏里的 shell/python 注释若被取成标题，UI 会把「注释」显示成技能名
+      expect(extractDisplayName('```bash\n# 不是标题\n```\n# 真标题\n')).toBe('真标题');
+      expect(extractDisplayName('~~~\n# 也不是\n~~~\n# 真标题\n')).toBe('真标题');
+    });
+
+    it('无 H1（仅 H2 / 空正文）返回 undefined，展示面自行回退 name', () => {
+      expect(extractDisplayName('## 二级标题\n正文')).toBeUndefined();
+      expect(extractDisplayName('')).toBeUndefined();
     });
   });
 });

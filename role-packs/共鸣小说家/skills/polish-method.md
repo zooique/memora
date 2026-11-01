@@ -3,7 +3,7 @@ name: polish-method
 description: 修改打磨方法论：删冗余、节奏收紧、文风润色、读者视角重读、三轮打磨
 ---
 
-# polish-method：修改打磨方法论
+# 修改打磨方法论
 
 ## 用途
 

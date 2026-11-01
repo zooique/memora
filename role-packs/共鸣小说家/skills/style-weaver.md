@@ -3,7 +3,7 @@ name: style-weaver
 description: 文风系统：文风卡库、按情节切换文风、文风×叙事节奏、文风×情节设定
 ---
 
-# style-weaver：文风系统
+# 文风系统
 
 ## 用途
 

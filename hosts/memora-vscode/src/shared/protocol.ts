@@ -2225,10 +2225,17 @@ export interface RoleIssueDto {
   message: string;
 }
 export interface SkillDto {
-  /** 技能名称 */
+  /** 技能名称（唯一 id：选择回传 / 禁用集 / 正文读取一律用它） */
   name: string;
   /** 技能描述 */
   description: string;
+  /**
+   * 人类可读显示名（内核 `SkillEntry.displayName` 直通，来源 = 技能正文首个 H1）。
+   *
+   * **仅作展示**（选择器菜单项 / 输入盒 chip / 设置页卡片标题）；为缺失时若不回退会
+   * 露出英文 id，故展示面统一 `displayName ?? name`。禁止用它做 id / 禁用集 / 回传载荷。
+   */
+  displayName?: string;
   /** 技能文件路径（用于定位来源） */
   filePath?: string;
   /** 技能来源三分类（SSOT）：'builtin'（系统内置）/ 'rolepack'（启用角色包内置）/ 'user'（用户本地目录自定义） */

@@ -3,7 +3,7 @@ name: core-extractor
 description: 内核层提取：从经典提炼人性内核 + 母题库适配需求缺口
 ---
 
-# core-extractor：内核提取与适配
+# 内核提取与适配
 
 ## 用途
 

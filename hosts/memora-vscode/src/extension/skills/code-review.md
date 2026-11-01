@@ -1,7 +1,10 @@
 ---
 name: code-review
 description: 对代码进行系统性审查，检查潜在的 Bug、安全漏洞、性能问题和代码规范
+layer: agent
 ---
+
+# 代码审查
 
 ## 什么时候使用
 

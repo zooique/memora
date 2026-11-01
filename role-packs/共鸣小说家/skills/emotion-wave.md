@@ -3,7 +3,7 @@ name: emotion-wave
 description: 情绪波浪线：把需求层情绪价值落成正文张弛节奏（爽/泪/治愈排布）
 ---
 
-# emotion-wave：情绪波浪线
+# 情绪波浪线
 
 ## 用途
 

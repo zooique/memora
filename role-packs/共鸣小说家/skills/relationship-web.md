@@ -3,7 +3,7 @@ name: relationship-web
 description: 人物关系网与对手设计：关系=冲突容器，每条关系有连接/张力/弧线，对手是主角的价值观镜像
 ---
 
-# relationship-web：人物关系网与对手
+# 人物关系网与对手
 
 ## 用途
 

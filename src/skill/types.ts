@@ -56,6 +56,14 @@ export interface SkillEntry {
   name: string;
   /** 技能描述（可选） */
   description?: string;
+  /**
+   * 人类可读显示名（可选）：正文首个 H1 标题（解析 SSOT = `utils/scanner.extractDisplayName`）。
+   *
+   * **只供 UI 展示**（宿主技能选择器 / 设置页卡片），**不得进模型面**——
+   * L1 清单 SSOT = `SkillManager.formatSkillForPrompt`，只读 name + description。
+   * 缺失时由展示面回退 `name`（内核不兜底拼装）。
+   */
+  displayName?: string;
   /** 技能 prompt 正文（L2 内容） */
   content: string;
   /** 来源路径 */

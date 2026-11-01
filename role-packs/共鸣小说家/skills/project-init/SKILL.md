@@ -3,7 +3,7 @@ name: project-init
 description: 小说工程目录初始化：按七阶段流水线生成编号目录骨架 + 带字段模板（含设定圣经四卷），由内部 scripts/init-novel-project.mjs 执行
 ---
 
-# project-init：小说工程目录初始化
+# 小说工程目录初始化
 
 ## 用途
 

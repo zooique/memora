@@ -3,7 +3,7 @@ name: story-bible
 description: 设定圣经：长篇一致性档案——人物/世界观/时间线/伏笔统一存档，AI 协作刚需
 ---
 
-# story-bible：设定圣经
+# 设定圣经
 
 ## 用途
 

@@ -1484,6 +1484,8 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       const listed = manager.listSkills();
       expect(listed).toHaveLength(1);
       expect(listed[0]!.name).toBe('资源工具');
+      // 显示名 = 装载时缓存的正文 H1（UI 专用；正文未缓存时省略 → 展示面回退 name）
+      expect(listed[0]!.displayName).toBe('资源工具');
     });
   });
 });

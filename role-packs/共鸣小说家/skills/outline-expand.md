@@ -3,7 +3,7 @@ name: outline-expand
 description: 大纲→成文展开：骨架到章节/场景正文的分步生成，每步可确认
 ---
 
-# outline-expand：大纲→成文展开
+# 大纲→成文展开
 
 ## 用途
 

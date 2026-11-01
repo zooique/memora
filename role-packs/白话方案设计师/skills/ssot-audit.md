@@ -3,7 +3,7 @@ name: ssot-audit
 description: 单一真理源自检：识别补丁思维信号，检查设计是否在最小单元之外引入冗余机制
 ---
 
-# ssot-audit：单一真理源（SSOT）自检
+# 单一真理源（SSOT）自检
 
 ## 用途
 

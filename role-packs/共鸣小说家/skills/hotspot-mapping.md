@@ -3,7 +3,7 @@ name: hotspot-mapping
 description: 事件→故事映射：搜当下社会热点 → 提取情绪内核 → 映射进小说世界（换事件留情绪，保留人的属性内核）
 ---
 
-# hotspot-mapping：事件→故事映射
+# 事件→故事映射
 
 ## 用途
 

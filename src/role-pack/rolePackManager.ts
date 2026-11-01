@@ -9,6 +9,7 @@ import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
 import {
+  extractDisplayName,
   resolveSubdir,
   scanMarkdownDir,
   resolveSafePath,
@@ -1006,7 +1007,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * name 缺省时按文件名去扩展名推导；无装配角色返回空数组。SSOT：技能清单只由
    * 角色包自身持有，宿主不重复扫描目录。
    */
-  listSkills(): Array<{ name: string; description?: string }> {
+  listSkills(): Array<{ name: string; description?: string; displayName?: string }> {
     const target = this.resolveSkillTarget();
     if (!target) return [];
     const pack = this.items.find((p) => p.meta.name === target);
@@ -1015,6 +1016,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       .map((s) => ({
         name: s.name ?? this.deriveSkillNameFromFile(s.file ?? ''),
         description: s.description,
+        // 显示名取自装载时缓存的正文 H1（SSOT = extractDisplayName）；正文未缓存时省略 → UI 回退 name
+        displayName: extractDisplayName(s.content ?? ''),
       }))
       .filter((s) => s.name.length > 0);
   }

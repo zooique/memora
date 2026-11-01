@@ -25,8 +25,15 @@ const userSkillsDir = 'C:/Users/t/.vscode/globalStorage/skills';
 
 /** 构造最小 Agent 桩：skills（全局）+ rolePackManager（角色包技能）两级来源 */
 function makeAgent(opts: {
-  global: Array<{ name: string; filePath: string; description?: string; layer?: string }>;
-  roleSkills?: Array<{ name: string; description?: string }>;
+  global: Array<{
+    name: string;
+    filePath: string;
+    description?: string;
+    /** 内核 SkillEntry.displayName（正文 H1 派生）；缺省 = 无 H1，展示面回退 name */
+    displayName?: string;
+    layer?: string;
+  }>;
+  roleSkills?: Array<{ name: string; description?: string; displayName?: string }>;
   roleContent?: { [name: string]: string };
   /** 全局技能正文（真实 SkillEntry 恒有 content；缺省给非空值，防「假空」掩盖解析分支） */
   globalContent?: { [name: string]: string };
@@ -38,6 +45,7 @@ function makeAgent(opts: {
       list: opts.global.map((g) => ({
         name: g.name,
         description: g.description,
+        displayName: g.displayName,
         filePath: g.filePath,
         layer: (g.layer ?? 'project') as 'agent' | 'project',
       })),
@@ -75,6 +83,20 @@ describe('listVisibleSkills · 三源技能聚合', () => {
       'rolepack:角色C',
       'user:用户B',
     ]);
+  });
+
+  it('displayName 直通：内核 displayName 随聚合结果到 UI，缺失保持 undefined（展示面回退 name）', () => {
+    const agent = makeAgent({
+      global: [
+        { name: 'run', filePath: join(configDir, 'skills', 'run.md'), displayName: '运行脚本' },
+        { name: 'plain', filePath: join(configDir, 'skills', 'plain.md') },
+      ],
+      roleSkills: [{ name: 'summarize', displayName: '要点提炼' }],
+    });
+    const out = listVisibleSkills({ agent, configDir, userSkillsDir });
+    expect(out.find((s) => s.name === 'run')?.displayName).toBe('运行脚本');
+    expect(out.find((s) => s.name === 'plain')?.displayName).toBeUndefined();
+    expect(out.find((s) => s.name === 'summarize')?.displayName).toBe('要点提炼');
   });
 
   it('同名去重：用户优先于内置（S5 反转，2026-09-22，对齐内核装载层「用户覆盖内置」）', () => {

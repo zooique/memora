@@ -3,7 +3,7 @@ name: nutrient-search
 description: 土壤吸收：搜索最新行业资料与最佳实践作为设计养分，外部方案经种子过滤后吸收
 ---
 
-# nutrient-search：土壤吸收（搜索养分）
+# 土壤吸收（搜索养分）
 
 ## 用途
 

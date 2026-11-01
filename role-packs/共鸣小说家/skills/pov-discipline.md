@@ -3,7 +3,7 @@ name: pov-discipline
 description: 叙事视角纪律：人称与 POV 选择、一场景一视角、禁止视角乱跳（head-hopping）、切换边界与标记、POV 与信息不对称
 ---
 
-# pov-discipline：叙事视角纪律
+# 叙事视角纪律
 
 ## 用途
 

@@ -8,6 +8,16 @@
 >
 > 本文件 2026-10-19 起按 `CHLOG-TRIM-1` 精简：只记「改了什么 + 为什么 + 对消费者的影响」；逐批拍板过程、变异验证收据、台账叙事的 SSOT 在仓库台账 `tasks/待完成任务.md` 对应 ID 条目（npm 包不含），此处只留 ID 锚保交叉引用。
 
+## [Unreleased]
+
+### Added（内核）
+
+- **技能显示名 `SkillEntry.displayName`**（`SKILL-DISPLAYNAME-1`）：`SkillEntry` 增可选 `displayName`，值 = 技能正文首个 H1（解析单点 `utils/scanner.extractDisplayName`，`SkillManager` / `RolePackManager` 共用；围栏内的 `# 注释` 不算标题）。**只供 UI 展示、不进模型面**——L1 清单真源 `SkillManager.formatSkillForPrompt` 仍只读 `name` + `description`（把显示名写进清单，模型会拿中文名去 `read_skill`，而内核按 `name` 寻址，每次必落空）。**为什么**：Agent Skills 规范的 `name` 限定小写英文 / 数字 / 连字符，中文技能只能挂英文 id，宿主的选择器 / 输入盒 chip / 设置页卡片上全是英文。**对消费者**：纯新增可选字段，零既有签名变更、零行为变化；缺失（正文无 H1 / 角色包技能正文未缓存）时由展示面回退 `name`，内核不做兜底拼装。
+
+### Changed（内核）
+
+- **内置角色包技能内容对齐显示名契约**（`role-packs/` 30 个技能）：正文 H1 去掉 `# <id>：` 前缀，收敛为纯中文显示名（如 `# 单一真理源（SSOT）自检`）——此前 H1 重复了 `name` 里的英文 id，界面会显示成「id：中文」。作者规范同步：`docs/architecture/role-pack-spec.md` 的 frontmatter 示例与 skills 条目写明「正文首个 H1 = UI 显示名、不进 L1 清单」；新增守卫用例（`builtinPackCoverage.test.ts`）钉死「每个内置技能有 H1 且不与 name 重复」，防新增技能静默退化为英文 id 展示。
+
 ## [5.3.0] · 2026-10-31
 
 ### Added（内核）
@@ -170,6 +180,14 @@
 ### Changed（内核）
 
 - **后台任务槽位按 Agent 实例隔离**（`MULTI-AGENT-1`，2026-10-18）：模块级槽位 → `class BackgroundTaskScheduler` 实例级，同进程多 Agent 不再交叉等待/挤占（形态定案后多实例是必然）。非公开 API 变更。
+
+## [Unreleased] · 宿主
+
+### Changed（宿主）
+
+- **技能显示名贯穿三处 UI**（`SKILL-DISPLAYNAME-1`）：技能选择器菜单项 / 输入盒已选技能 chip / 设置页技能卡标题统一显示 `displayName ?? name`；搜索同时匹配显示名与描述，**选中回传与禁用集仍恒用 `name`**（id 与展示分离）。`skills_loaded` 改为整条 `SkillDto` 透传，不再逐字段拷贝（新协议字段在第二个消费面静默丢失的腐化点一并消掉）。**为什么**：中文技能只能以英文 id 命名，界面上满屏英文 id。**对消费者**：中文命名的技能在界面上显示中文标题；内部寻址、禁用、回传载荷不变。
+
+- **内置技能资源对齐显示名契约**：`code-review` / `summarize` / `web-search` 补中文正文 H1（`# 代码审查` / `# 摘要提炼` / `# 联网搜索`）并统一声明 `layer: agent`（此前三者缺 `layer`，内核按缺失回退 `project`，与「内置来源」自相矛盾）；`role-pack-creator` 的模板说明与校验清单补「正文首个 H1 = 纯中文显示名」一条，新造角色包不再漏写。
 
 ## [0.5.0] · 2026-11-01 · 宿主
 

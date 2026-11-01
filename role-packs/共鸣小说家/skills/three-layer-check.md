@@ -3,7 +3,7 @@ name: three-layer-check
 description: 三层一致性总检：内核-题材-读者-情绪价值自洽校验，动笔前一次闸门
 ---
 
-# three-layer-check：三层一致性总检
+# 三层一致性总检
 
 ## 用途
 

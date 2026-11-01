@@ -1004,7 +1004,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   logger: { kind: 'object', members: ['debug', 'error', 'info', 'warn'] },
   SkillEntry: {
     kind: 'interface',
-    members: ['content', 'description', 'filePath', 'layer', 'layer3', 'name'],
+    members: ['content', 'description', 'displayName', 'filePath', 'layer', 'layer3', 'name'],
   },
   AuditEvent: {
     kind: 'interface',
