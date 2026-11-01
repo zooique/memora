@@ -1,5 +1,5 @@
 /**
- * 重放时间线交织 — 纯函数（CHATVIEW-SLIM-2 同族零状态批，自 chatView.ts 外置）
+ * 重放时间线交织 — 纯函数（REPLAY-EMPTY-INTERRUPT-1 为腾 `max-lines` 自 chatView.ts 外置）
  *
  * 域职责：把单轮投影（`RoundView`）的「前序 assistant 段」与「交互输入行」合成一条按时间
  * 升序的时间线，供重放顺序落到消息流——还原打断点 / 提问点的真实时序。
@@ -7,7 +7,7 @@
  * **边界**：纯函数，不触达 DOM、不读写 chatView 状态。需要 `document` 或外部状态的一律
  * 不属于这里（→ `scripts/chatView` 或 `scripts/processFlowCells`）。
  *
- * 纯搬迁，零行为变化（函数体与排序判据自 `chatView.renderReplayRound` 原样迁出）。
+ * 纯搬迁，零行为变化（函数体与排序判据自 `chatView.renderReplayRound` 原样迁出，仅类型命名）。
  *
  * @module replayTimeline
  */

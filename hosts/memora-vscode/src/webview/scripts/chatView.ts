@@ -1283,6 +1283,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param roundId 本轮 ID（孤儿宿主归属标记）
    * @param evidence 本轮裁决证据（重放透传）：中断轮同样可能有记忆命中/搜索证据，
    *   不传则该轮重放时明细与归因一并丢失（与 done 轮同一缺口，一并补齐）
+   * @param fallbackTs 首条带 ts 的过程事件缺失时的起点兜底（重放传本轮 `createdAt`）：
+   *   空事件轮只有这一个真实时刻，退到「现在」等于把该轮发生时刻抹掉
    */
   function renderInterruptedRound(
     roundId?: string,
@@ -1291,8 +1293,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   ): void {
     const host = document.createElement('div');
     host.className = 'msg assistant is-interrupted-host';
-    // 真实闭环起点 = 首条带 ts 的过程事件；空事件轮（发完即停 / 崩溃打捞）取本轮 createdAt——
-    // 底栏那个时间是用户对该轮唯一的时序线索，退到「现在」等于把真实发生时刻抹掉
     const startTs = currentEvents.find((e) => e.ts)?.ts ?? fallbackTs ?? new Date().toISOString();
     buildAssistantShell(host, startTs, roundId);
     host.querySelector('.msg-body')?.remove();

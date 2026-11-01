@@ -2874,10 +2874,10 @@ describe('truncateTurnCore 返回值契约（COPY-2-OK-CONTRACT-1）', () => {
   it('锚未命中 → ok=false / reason=miss（不得伪装成功）', async () => {
     const { provider } = setup();
     const cast = provider as unknown as TruncateCast;
-    // 空会话：store 内无该 session 的 roundIds ⇒ truncateFrom 返回 ok=false
+    // 锚形态 = roundId（轮身份），不是 ts；空会话内无该 session 的 roundIds ⇒ truncateFrom 返回 ok=false
     cast._currentSessionId = '2026-08-16-empty';
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
-    const outcome = await cast.truncateTurnCore('2026-08-16T01:00:05.000Z', '确认？', '删除');
+    const outcome = await cast.truncateTurnCore('round-missing', '确认？', '删除');
     expect(outcome).toEqual({ ok: false, reason: 'miss' });
   });
 
@@ -2886,7 +2886,7 @@ describe('truncateTurnCore 返回值契约（COPY-2-OK-CONTRACT-1）', () => {
     const cast = provider as unknown as TruncateCast;
     cast._currentSessionId = '2026-08-16-empty';
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never);
-    const outcome = await cast.truncateTurnCore('2026-08-16T01:00:05.000Z', '确认？', '删除');
+    const outcome = await cast.truncateTurnCore('round-missing', '确认？', '删除');
     expect(outcome).toEqual({ ok: false, reason: 'cancel' });
   });
 
@@ -2896,7 +2896,7 @@ describe('truncateTurnCore 返回值契约（COPY-2-OK-CONTRACT-1）', () => {
     cast._currentSessionId = '2026-08-16-empty';
     cast._streaming = true;
     vi.mocked(vscode.window.showWarningMessage).mockClear();
-    const outcome = await cast.truncateTurnCore('2026-08-16T01:00:05.000Z', '确认？', '删除');
+    const outcome = await cast.truncateTurnCore('round-missing', '确认？', '删除');
     expect(outcome).toEqual({ ok: false, reason: 'busy' });
     expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
   });
