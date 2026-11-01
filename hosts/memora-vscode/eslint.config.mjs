@@ -50,11 +50,13 @@ export default [
   // - 重算指引：瘦身提交后按上法刷新该条 max 调低；**禁止只更新数字不改行数**（无判据作用的
   //   描述性行数已从注释清除，此处仅留闸门阈值）。
   {
-    files: ['src/webview/scripts/chatView.ts'], // TARGET（单闭包；计划栏域、历史菜单域、占用域、活动抽屉域、状态条域、过程流单元格域、下拉选择器域、问答回顾行域、工具行动作面域、角色徽章行域、轮级动作底栏域、重放时间线域已外置）
+    files: ['src/webview/scripts/chatView.ts'], // TARGET（单闭包；计划栏域、历史菜单域、占用域、活动抽屉域、状态条域、过程流单元格域、下拉选择器域、问答回顾行域、工具行动作面域、角色徽章行域、轮级动作底栏域、重放时间线域、技能选择器域已外置）
     // REPLAY-EMPTY-INTERRUPT-1（2026-11-01）：空过程事件中断轮渲染（判据/复位/时间兜底/问答行
     // 归位）+ 同轮外置重放时间线交织到 helpers/replayTimeline.ts ⇒ 净减 4（4960→4956）。
     // 基线按闸门自报下调，不留虚空余量。
-    rules: { 'max-lines': ['error', { max: 4956 }] },
+    // SKILL-PICKER-SPLIT-1（2026-11-01）：技能选择器域（选中态 / 菜单渲染 / 搜索 / chip 构建）
+    // 整体外置到 scripts/skillPickerView.ts（净减 215），基线按闸门自报同步下调。
+    rules: { 'max-lines': ['error', { max: 4741 }] },
   },
   {
     // FORMAT-1 清零（2026-10-29）：prettier --write 还原折行欠账，物理行 4515→4529（+14 全为
