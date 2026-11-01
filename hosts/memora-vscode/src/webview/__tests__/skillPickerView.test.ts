@@ -9,6 +9,7 @@
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
+import { buildDropdownHtml, initDropdowns } from '../components/dropdown.js';
 import { createSkillPickerView, type SkillPickerView } from '../scripts/skillPickerView.js';
 import type { SkillDto } from '../../shared/protocol.js';
 
@@ -21,12 +22,17 @@ interface Mounted {
   input: HTMLTextAreaElement;
 }
 
+/** 复刻**真机 DOM 形状**：buildDropdownHtml 产物（treedd + capsule 变体 + data-treedd 契约）
+ * + initDropdowns 装配（开合/委托/键盘/全局 click 关闭）——手写简化 DOM 测不到装配差异。 */
 function mount(): Mounted {
   document.body.innerHTML = `
-    <div class="skill-picker treedd">
-      <button class="treedd__trigger"></button>
-      <div class="treedd__menu"></div>
-    </div>
+    ${buildDropdownHtml([], {
+      extraClass: 'skill-picker treedd--capsule',
+      onSelect: '__skillPickerOnSelect',
+      triggerLabel: '<span class="btn-icon" data-icon="bolt"></span>',
+      triggerTitle: '选择 Skill',
+      triggerAriaLabel: '选择 Skill',
+    })}
     <div id="skillChips"></div>
     <textarea id="input"></textarea>
   `;
@@ -35,6 +41,7 @@ function mount(): Mounted {
   const trigger = document.querySelector<HTMLElement>('.treedd__trigger') as HTMLElement;
   const chipRow = document.getElementById('skillChips') as HTMLElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
+  initDropdowns(document, { __skillPickerOnSelect: () => {} });
   const view = createSkillPickerView({ document, root, menu, trigger, chipRow, input });
   return { view, root, menu, trigger, chipRow, input };
 }
@@ -156,6 +163,23 @@ describe('skillPickerView 斜杠触发（/ 打开选择器）', () => {
 
   const isOpen = (root: HTMLElement): boolean => root.classList.contains('is-open');
 
+  /** 派发一次指定形态的 input 事件（inputType / 组合态可控）。
+   * 探针实证：普通 insertText、IME 组合 insertCompositionText、全角 ／ 在触发判据上
+   * 行为各不相同——只测 insertText 等于只测英文态，中文主路径裸奔。 */
+  function fire(
+    input: HTMLTextAreaElement,
+    opts: { ch: string; inputType: string; isComposing: boolean },
+  ): void {
+    input.value += opts.ch;
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(
+      new InputEvent('input', {
+        inputType: opts.inputType,
+        isComposing: opts.isComposing,
+      } as InputEventInit),
+    );
+  }
+
   it('行首 `/` 打开菜单', () => {
     const { root, input } = mount();
     type(input, '/');
@@ -222,6 +246,46 @@ describe('skillPickerView 斜杠触发（/ 打开选择器）', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(isOpen(root)).toBe(false);
     expect(input.value).toBe('/');
+  });
+
+  it('IME 组合中的 `/` 也触发（中文输入法主路径——真机「按 / 不弹」回归判据）', () => {
+    const { root, input } = mount();
+    fire(input, { ch: '/', inputType: 'insertCompositionText', isComposing: true });
+    expect(isOpen(root)).toBe(true);
+  });
+
+  it('组合中途的拼音字母不收起菜单（防逐字母闪烁）', () => {
+    const { root, input } = mount();
+    fire(input, { ch: '/', inputType: 'insertCompositionText', isComposing: true });
+    expect(isOpen(root)).toBe(true);
+    fire(input, { ch: 'n', inputType: 'insertCompositionText', isComposing: true });
+    expect(isOpen(root)).toBe(true); // 组合中只开不关
+  });
+
+  it('组合收尾：上屏非 `/` 内容即收起；只上屏 `/` 则提示保持', () => {
+    const { root, input } = mount();
+    fire(input, { ch: '/', inputType: 'insertCompositionText', isComposing: true });
+    // 组合结束后上屏「摘要」（Chromium 在 compositionend 前派发最后一次 input）
+    fire(input, { ch: '摘要', inputType: 'insertCompositionText', isComposing: false });
+    input.dispatchEvent(new Event('compositionend'));
+    expect(isOpen(root)).toBe(false);
+    // 只上屏 `/` 本身：重置现场（value='/摘要/' 时 `/` 前是「要」，硬边界本就该拒绝）
+    input.value = '/';
+    input.setSelectionRange(1, 1);
+    input.dispatchEvent(
+      new InputEvent('input', {
+        inputType: 'insertCompositionText',
+        isComposing: true,
+      } as InputEventInit),
+    );
+    input.dispatchEvent(new Event('compositionend'));
+    expect(isOpen(root)).toBe(true);
+  });
+
+  it('全角斜杠 ／ 不触发（硬边界外：判据按字符字面匹配半角 `/`）', () => {
+    const { root, input } = mount();
+    type(input, '／');
+    expect(isOpen(root)).toBe(false);
   });
 });
 
