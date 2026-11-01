@@ -1183,7 +1183,7 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
   }, // 来源 Agent.skills / 宿主调用 7 个 / 文件 F:\zooique\memora\src\skill\skillManager.ts
   TextPolishManager: {
     kind: 'class',
-    members: ['polish'],
+    members: ['polish', 'setBackgroundProvider'],
   }, // 来源 Agent.polish / 宿主调用 1 个 / 文件 F:\zooique\memora\src\agent\managers\textPolishManager.ts
   ToolExecutor: {
     kind: 'class',
@@ -1359,7 +1359,13 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    透传落盘无损（JSON.parse 亦无损）。要它就是为了跨进程存活：否则宿主重启后对「内容\n` +
       `    未变、早归档过」的会话会重复烧一次 LLM。\n` +
       `    ⚠️ 与既有 messageCount（**当前**消息总数，列表展示用）语义不同、不可复用，故另立字段。\n` +
-      `    代价 = 零（可选字段：老数据读不到即「不跳过」，自然降级，无 deprecation 需求）。`;
+      `    代价 = 零（可选字段：老数据读不到即「不跳过」，自然降级，无 deprecation 需求）。\n` +
+      `  ⑧ TextPolishManager.setBackgroundProvider 新增（2026-11-01 · BG-ESCALATE-1 收口，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：该类经 Agent.polish 对消费者可达，宿主点「润色」即走到它；\n` +
+      `    缺此方法时用户改后台模型后润色仍走装配期实例（归档/摘要跟随、润色不跟随的可见不一致）。\n` +
+      `    真消费者 = Agent.setBackgroundProvider（内核内调用，与 SessionArchiver / RoundSummaryGenerator 同构），\n` +
+      `    行为由公开面 agent.polish.polish() 的 2 例测试 + 变异验证守护（移除注入即转红）。\n` +
+      `    代价 = 零（新增方法，既有 polish 签名与语义不变）。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

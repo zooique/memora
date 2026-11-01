@@ -48,12 +48,27 @@ function buildPolishMessages(text: string): Message[] {
 
 /** 文本润色管理器：构造注入 LlmProvider（assembler 创建），调用 polish() 润色 */
 export class TextPolishManager {
-  /** LLM Provider（构造函数注入） */
-  private readonly provider: LlmProvider;
+  /** 当前使用的 Provider（可变：setBackgroundProvider 热切换时替换） */
+  private provider: LlmProvider;
+  /** 装配期默认 Provider（setBackgroundProvider(null) 时回退使用，形态与 RoundSummaryGenerator 同构） */
+  private readonly defaultProvider: LlmProvider;
 
   /** @param provider LLM Provider（assembler 注入；= 后台优先 + 未产出增量即失败时升级前台一次） */
   constructor(provider: LlmProvider) {
     this.provider = provider;
+    // 记下装配期实例：热切换传 null（用户清空后台模型）时回退到这里
+    this.defaultProvider = provider;
+  }
+
+  /**
+   * 注入后台 Provider（`Agent.setBackgroundProvider` 热切换时调用）；null 表示回退到装配期默认 Provider。
+   *
+   * 与 SessionArchiver / RoundSummaryGenerator 同构——三个后台消费者共用**同一次解析的结果**
+   * （解析真源见 `llm/backgroundProvider.ts`）。缺本方法时，用户改后台模型后点「润色」
+   * 仍走旧模型，形成「另外两个跟随、润色不跟随」的可见不一致。
+   */
+  setBackgroundProvider(provider: LlmProvider | null): void {
+    this.provider = provider ?? this.defaultProvider;
   }
 
   /**

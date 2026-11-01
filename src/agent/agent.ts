@@ -1452,12 +1452,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 后台组件消费「后台 + 前台失败升级」解析结果 —— 与装配期同一真理源（backgroundProvider.ts），
     // 不在本方法里重写一份升级判据；null 仍表示「回退到装配期默认 Provider」
     const effective = provider ? resolveBackgroundProvider(provider, this.#provider) : null;
-    // 同步更新所有后台组件（统一消费 backgroundProvider）
+    // 逐个注入三个后台消费者（归档 / 摘要 / 润色）：新增第四个消费者时必须在此登记，
+    // 漏登记 = 它只能拿到装配期实例、热切换对它不生效（勿写「所有」，全称句会随新增静默失真）
     if (this.internals.roundSummaryGenerator) {
       this.internals.roundSummaryGenerator.setBackgroundProvider(effective);
     }
     if (this.internals.sessionArchiver) {
       this.internals.sessionArchiver.setBackgroundProvider(effective);
+    }
+    if (this.textPolisher) {
+      this.textPolisher.setBackgroundProvider(effective);
     }
     logger.info({ hasBackground: !!provider }, '后台 Provider 已切换');
   }

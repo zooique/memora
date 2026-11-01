@@ -47,6 +47,29 @@ class MockProvider extends LlmProvider {
   }
 }
 
+/**
+ * 记录调用次数的 Provider：用于验证「热切换后某消费者是否真的切换了执行实例」。
+ *
+ * 判据是 `calls > 0`（实例被真实消费），而不是「setter 不抛错」——后者属弱验证，
+ * 接线漏了也照样绿。
+ */
+class CountingProvider extends LlmProvider {
+  readonly name: string;
+  /** chat 被调用次数（测试判据） */
+  calls = 0;
+
+  constructor(name: string) {
+    super();
+    this.name = name;
+  }
+
+  async *chat(_messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+    this.calls += 1;
+    yield { content: '后台润色结果' };
+    yield { finishReason: 'stop' };
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // 辅助函数
 // ═══════════════════════════════════════════════════════════════
@@ -1095,6 +1118,34 @@ describe('Agent · setProvider() / setBackgroundProvider() · 切换 Provider', 
     agent.setBackgroundProvider(new MockProvider());
     // 清除不抛错
     expect(() => agent!.setBackgroundProvider(null)).not.toThrow();
+  });
+
+  it('setBackgroundProvider 后润色真走后台 Provider（第三消费者热切换生效）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const bg = new CountingProvider('bg-polish');
+    agent.setBackgroundProvider(bg);
+
+    // 走公开面 agent.polish.polish()：验证「接线真的生效」，而非「setter 不抛错」
+    const result = await agent!.polish!.polish('你好');
+    expect(bg.calls).toBe(1);
+    expect(result.polished).toBe('后台润色结果');
+  });
+
+  it('setBackgroundProvider(null) 后润色回退装配期 Provider（后台实例不再被调用）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const bg = new CountingProvider('bg-polish');
+    agent.setBackgroundProvider(bg);
+    await agent!.polish!.polish('第一段');
+    expect(bg.calls).toBe(1);
+
+    // 用户清空后台模型 → 润色应回退装配期实例，而不是继续用旧的后台实例
+    agent.setBackgroundProvider(null);
+    await agent!.polish!.polish('第二段');
+    expect(bg.calls).toBe(1); // 未再递增
   });
 });
 
