@@ -76,6 +76,10 @@ export interface GuardExecContext {
   toolCallId: string;
   /** 本次执行结果：ok=真实成功 / failed=执行失败 / blocked=被护栏或台账拦截（未真正执行） */
   outcome: 'ok' | 'failed' | 'blocked';
+  /** 工具定义行的改盘写声明（与写串行闸同一判据，loop 上报）；缺省 = 不改盘。
+   *  write_loop 的「同路径连续失败写」据此扩到声明 `diskWrite:'path'` 的自定义写工具
+   *（失败连击只依赖 目标路径 + 执行失败，与写入模式无关）。 */
+  diskWrite?: 'path' | 'opaque';
 }
 
 /** 护栏阈值（运行时由调用方注入 GuardContext；真源分配见下） */
@@ -122,6 +126,10 @@ export interface GuardContext {
   thresholds: GuardThresholds;
   /** 运行态计数（loop 注入，供 search_limit/ask_limit 用；write_loop/read_failed 的计数已在 guard 闭包内） */
   counters: GuardCounters;
+  /** 工具定义行的改盘写声明（与写串行闸同一判据，loop 注入）；缺省 = 不改盘。
+   *  write_loop 的失败连击据此覆盖**声明 `diskWrite:'path'` 的自定义写工具**（整文件覆盖连写仍只认内置
+   *  write_file——自定义工具没有 `mode` 约定，缺省不得当成 overwrite，否则会冤拦正常增量写）。 */
+  diskWrite?: 'path' | 'opaque';
 }
 
 /** 护栏定义（注册一条，主循环零改动） */
@@ -255,10 +263,10 @@ export const GUARD_RAIL_PROMPTS: Readonly<Record<GuardRailPromptId, string>> = {
     `[WRITE_LOOP_STOP] 你已连续 {n} 次整文件覆盖 {subject}（本轮整文件重写已封顶）。` +
     `请改用增量写入继续：mode=replace（old_string 取原文唯一片段）、mode=insert（指定行）、mode=append；` +
     `确需整文件重建时结束本轮再来，不要在本轮反复覆盖同一文件。`,
-  // 占位：{n}=连续失败次数；{limit}=失败阈值；{subject}=写入目标
+  // 占位：{n}=连续失败次数；{limit}=失败阈值；{subject}=写入目标（写工具与 delete_file）
   write_fail_stop:
     `[WRITE_FAIL_STOP] 同一文件 {subject} 已连续 {n} 次写入失败（阈值 {limit}），原样重试不会成功。` +
-    `请先 read_file 读取该文件最新内容（读成功后本计数即刻清零），再按原文精确改写。`,
+    `请先 read_file 读取该文件最新内容（读成功后本计数即刻清零），再决定是改写还是删除。`,
   // 占位：{n}=连续失败次数；{limit}=失败阈值
   read_failed_limit:
     `[READ_FAILED_LIMIT] 该目标已连续失败 {n} 次（阈值 {limit}），` +
@@ -446,29 +454,34 @@ export function createDefaultGuards(): GuardRail {
     })
     .register({
       id: 'write_loop',
-      matches: (c) => c.toolName === 'write_file',
-      // 判据 = **无进展**，不是「写了几次」：
-      // ① 同路径连续失败写达阈值（原样重试不会成功）→ 拦；
-      // ② 整文件覆盖连写达阈值 → 拦；增量写（replace/insert/append）每次改不同片段，永不计数。
+      // 覆盖两类写工具（判据真源 = 工具定义行 `diskWrite` 声明，与写串行闸同一份）：
+      // 内置 `write_file`，以及**声明 `diskWrite:'path'` 的自定义写工具**。声明为 'opaque' 的不接入——
+      // 目标不可静态定位，连失败计数都没有键（不硬猜）。
+      matches: (c) => c.toolName === 'write_file' || c.diskWrite === 'path',
+      // 判据 = **无进展**，不是「写了几次」，且两条判据的覆盖面**不同宽**（勿折叠成一句）：
+      // ① 同路径连续失败写达阈值 → 拦。只依赖「目标路径 + 执行失败」，与写入模式无关
+      //    ⇒ **内置与自定义 'path' 写工具共用**（原样重试不会成功）；
+      // ② 整文件覆盖连写达阈值 → 拦。**只认内置 `write_file`**：自定义工具没有 `mode` 约定，
+      //    把「无 mode」当 overwrite 会冤拦正常的增量写（宁可少拦，不可错拦）。
       // 计数读闭包、只读推断期望值；状态迁移交给 onExec。
       shouldBlock: (c) => {
+        const path = parsePathArg(c.argsJson);
+        if (path && writeFailCountOf(path) >= c.thresholds.writeFail) return true;
+        if (c.toolName !== 'write_file') return false;
         const w = parseWrite(c.argsJson);
-        if (!w) return false;
-        if (writeFailCountOf(w.path) >= c.thresholds.writeFail) return true;
-        if (!isWholeFileWrite(w.mode)) return false;
+        if (!w || !isWholeFileWrite(w.mode)) return false;
         return nextWriteStreak(w.path) >= c.thresholds.writeLoop;
       },
       blocked: true,
       // 文案按运行态分支：失败连击 → 先读再写；整文件连写 → 改增量写
       promptId: (c) => {
-        const w = parseWrite(c.argsJson);
-        return w && writeFailCountOf(w.path) >= c.thresholds.writeFail
+        const path = parsePathArg(c.argsJson);
+        return path && writeFailCountOf(path) >= c.thresholds.writeFail
           ? 'write_fail_stop'
           : 'write_loop_stop';
       },
       promptArgs: (c, chosen) => {
-        const w = parseWrite(c.argsJson);
-        const subject = w?.path ?? '';
+        const subject = parsePathArg(c.argsJson) ?? '';
         if (chosen === 'write_fail_stop') {
           return {
             n: subject ? writeFailCountOf(subject) : 0,
@@ -494,6 +507,8 @@ export function createDefaultGuards(): GuardRail {
       },
       onExec: (c) => {
         // 读成功 = 已确认真实文件状态 → 清该路径的连续失败计数（兑现 write_fail_stop 的出口承诺）
+        // ⚠️ 仅内置 `read_file` 成功会清零；声明型 / 自定义读工具（含 MCP）不解除——
+        // 本轮内只能结束本轮再试（自定义读工具没有「已读真实文件」的契约保证）。
         if (c.toolName === 'read_file') {
           if (c.outcome === 'ok') {
             const p = parsePathArg(c.argsJson);
@@ -501,7 +516,9 @@ export function createDefaultGuards(): GuardRail {
           }
           return;
         }
-        if (c.toolName !== 'write_file') return;
+        const isBuiltinWrite = c.toolName === 'write_file';
+        // 非写工具（既不是内置写、也没声明 diskWrite:'path'）不参与计数
+        if (!isBuiltinWrite && c.diskWrite !== 'path') return;
         // blocked = 未真正执行：撤销放行时的预登记（不撤销会冤杀后续正常写），且不累计失败
         if (c.outcome === 'blocked') {
           if (reservedWrites.delete(c.toolCallId)) revertReserved();
@@ -519,6 +536,9 @@ export function createDefaultGuards(): GuardRail {
         }
         // 成功写：清失败计数；整文件覆盖推进连写链，增量写打断连写链（两类写不混算）
         writeFailByPath.delete(w.path);
+        // 连写链只由内置 write_file 维护：自定义 'path' 写工具的写入模式未知，
+        // 既不得推进连写链（会把同路径内置写冤枉成「连写」），也不得打断它（那不是增量写证据）
+        if (!isBuiltinWrite) return;
         if (!isWholeFileWrite(w.mode)) {
           write = { lastWritePath: null, samePathWriteStreak: 0 };
           return;

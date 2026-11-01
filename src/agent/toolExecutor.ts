@@ -391,8 +391,8 @@ export interface ToolContext {
 /**
  * 自定义工具的处理器类型
  *
- * 宿主项目通过 agent.registerTool() 注册领域工具时，
- * 需提供此签名的 handler 函数。
+ * 宿主项目通过 `agent.tools.registerTool()` 注册领域工具时，
+ * 需提供此签名的 handler 函数（Agent 门面本身没有 registerTool 方法，注册面在 `agent.tools`）。
  * handler 接收解析后的参数对象和工具上下文，返回字符串结果。
  *
  * 自定义工具如需访问文件系统，应调用 ctx.guardPath(path) 校验路径。

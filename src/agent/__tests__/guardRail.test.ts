@@ -283,6 +283,146 @@ describe('GuardRail 判定复现现有护栏（S1 shadow 契约）', () => {
     expect(after).toBeUndefined();
   });
 
+  it("write_loop：声明 diskWrite:'path' 的自定义写工具共用「同路径连续失败写」判据", () => {
+    const g = freshGuards();
+    const args = '{"path":"a.md","content":"x"}';
+    // 连续失败 3 次（阈值 writeFail=3）→ 第 4 次判定拦（文案 = 先读再写，与内置同一出口）
+    for (let i = 0; i < 3; i++) {
+      g.notifyExec({
+        toolName: 'custom_write',
+        argsJson: args,
+        toolCallId: `c${i}`,
+        outcome: 'failed',
+        diskWrite: 'path',
+      });
+    }
+    const blocked = g.evaluateBlocked(
+      makeCtx({ toolName: 'custom_write', argsJson: args, diskWrite: 'path' }),
+    );
+    expect(blocked?.guardId).toBe('write_loop');
+    expect(blocked?.message).toContain('[WRITE_FAIL_STOP]');
+    // 内置 read_file 成功解除（自定义 / MCP 读工具不解除，见下一例边界）
+    g.notifyExec({
+      toolName: 'read_file',
+      argsJson: '{"path":"a.md"}',
+      toolCallId: 'r1',
+      outcome: 'ok',
+    });
+    expect(
+      g.evaluateBlocked(makeCtx({ toolName: 'custom_write', argsJson: args, diskWrite: 'path' })),
+    ).toBeUndefined();
+  });
+
+  it('write_loop：自定义写工具成功连写不推进「整文件覆盖连写」，也不污染内置写的连写链', () => {
+    const g = freshGuards();
+    const args = '{"path":"a.md","content":"x"}';
+    // 4 次成功（若按缺省 mode=overwrite 计数，同路径内置写第 5 次就会被冤拦）
+    for (let i = 0; i < 4; i++) {
+      g.notifyExec({
+        toolName: 'custom_write',
+        argsJson: args,
+        toolCallId: `c${i}`,
+        outcome: 'ok',
+        diskWrite: 'path',
+      });
+    }
+    // 自定义工具自身永不被「连写」判据拦（它没有 mode 约定，无法判定是不是整文件覆盖）
+    expect(
+      g.evaluateBlocked(makeCtx({ toolName: 'custom_write', argsJson: args, diskWrite: 'path' })),
+    ).toBeUndefined();
+    // 同路径内置 write_file 的连写链仍是空的（未被自定义写污染）
+    expect(
+      g.evaluateBlocked(
+        makeCtx({ toolName: 'write_file', argsJson: '{"path":"a.md","content":"y"}' }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("write_loop：声明 'opaque' 的自定义工具不接入（目标不可静态定位，连失败计数都没有键）", () => {
+    const g = freshGuards();
+    const args = '{"path":"a.md","content":"x"}';
+    for (let i = 0; i < 3; i++) {
+      g.notifyExec({
+        toolName: 'custom_opaque',
+        argsJson: args,
+        toolCallId: `o${i}`,
+        outcome: 'failed',
+        diskWrite: 'opaque',
+      });
+    }
+    expect(
+      g.evaluateBlocked(
+        makeCtx({ toolName: 'custom_opaque', argsJson: args, diskWrite: 'opaque' }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it('write_loop：自定义 / MCP 读工具成功读到同路径**不**清零失败计数（边界钉死）', () => {
+    const g = freshGuards();
+    const writeArgs = '{"path":"a.md","content":"x"}';
+    // 同路径连续失败 3 次（阈值 writeFail=3）→ 已达阈值
+    for (let i = 0; i < 3; i++) {
+      feed(g, 'write_file', '{"path":"a.md"}', 'failed');
+    }
+    // 自定义读工具（MCP 命名形态）成功读到同一路径；diskWrite 缺省 = 不改盘
+    // 判据边界：只有内置 read_file 兑现「真实文件状态已确认」，自定义读工具无该契约保证
+    g.notifyExec({
+      toolName: 'mcp__fs__read_file',
+      argsJson: '{"path":"a.md"}',
+      toolCallId: 'm1',
+      outcome: 'ok',
+    });
+    // 计数未被清零 ⇒ 仍被 write_fail_stop 拦（本轮只能结束本轮再试）
+    const blocked = g.evaluateBlocked(makeCtx({ toolName: 'write_file', argsJson: writeArgs }));
+    expect(blocked?.guardId).toBe('write_loop');
+    expect(blocked?.message).toContain('[WRITE_FAIL_STOP]');
+  });
+
+  it("write_loop：delete_file（diskWrite:'path'）连续失败 3 次 → 第 4 次被拦", () => {
+    const g = freshGuards();
+    const args = '{"path":"a.md"}';
+    // 删除失败同样是「无进展」：失败连击只依赖「目标路径 + 执行失败」，与写入模式无关
+    for (let i = 0; i < 3; i++) {
+      g.notifyExec({
+        toolName: 'delete_file',
+        argsJson: args,
+        toolCallId: `d${i}`,
+        outcome: 'failed',
+        diskWrite: 'path',
+      });
+    }
+    const blocked = g.evaluateBlocked(
+      makeCtx({ toolName: 'delete_file', argsJson: args, diskWrite: 'path' }),
+    );
+    expect(blocked?.guardId).toBe('write_loop');
+    expect(blocked?.message).toContain('[WRITE_FAIL_STOP]');
+  });
+
+  it('write_loop：delete_file 成功**不推进**同路径 write_file 的整文件连写链', () => {
+    const g = freshGuards();
+    const delArgs = '{"path":"a.md"}';
+    // 4 次成功删除（若误进连写链，同路径内置写第 5 次就会被冤拦）
+    for (let i = 0; i < 4; i++) {
+      g.notifyExec({
+        toolName: 'delete_file',
+        argsJson: delArgs,
+        toolCallId: `d${i}`,
+        outcome: 'ok',
+        diskWrite: 'path',
+      });
+    }
+    // delete_file 自身没有 mode 约定 ⇒ 永不被「整文件覆盖连写」拦
+    expect(
+      g.evaluateBlocked(makeCtx({ toolName: 'delete_file', argsJson: delArgs, diskWrite: 'path' })),
+    ).toBeUndefined();
+    // 同路径 write_file 的连写链仍为空（删除不算整文件覆盖进展）
+    expect(
+      g.evaluateBlocked(
+        makeCtx({ toolName: 'write_file', argsJson: '{"path":"a.md","content":"y"}' }),
+      ),
+    ).toBeUndefined();
+  });
+
   it('read_failed：同主体连续失败达阈值拦（计数经 onExec 喂数自持）', () => {
     const g = freshGuards();
     // 同一主体连续失败 3 次喂数（阈值 readFailed=3）→ 第 4 次判定达阈值拦

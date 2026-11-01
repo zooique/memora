@@ -7669,4 +7669,43 @@ describe('AgentLoop · 自定义工具写盘声明（DISKWRITE-CUSTOM-1）', () 
     // 读工具无声明 ⇒ 字段缺省（宿主据此判定“不改盘”，不靠名字猜）
     expect(readStart && 'diskWrite' in readStart).toBe(false);
   });
+
+  it("声明 'path' 的自定义写工具连续失败达阈值 → 第 4 次被 write_loop 拦（连线：diskWrite 进护栏上下文）", async () => {
+    const call = (id: string): ChunkItem => ({
+      content: '',
+      toolCalls: [
+        {
+          id,
+          type: 'function',
+          function: { name: 'custom_write_fail', arguments: '{"path":"a.md"}' },
+        },
+      ],
+    });
+    const toolExecutor = vi.fn(async () => {
+      throw new Error('写失败');
+    });
+    const provider = mockMultiTurnProvider([
+      [call('c1')],
+      [call('c2')],
+      [call('c3')],
+      [call('c4')],
+      [{ content: '完成' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor,
+      toolDefinitions: [makeCustomWriteTool('custom_write_fail', 'path')],
+    });
+
+    const chunks = await drainTurn(loop, '连续写失败');
+    // 前 3 次真实执行（失败计数喂满 writeFail=3），第 4 次在派发前被拦 ⇒ 执行器只被调用 3 次
+    expect(toolExecutor).toHaveBeenCalledTimes(3);
+    const blockedResults = chunks.filter((c) => c.type === 'tool_result' && c.blocked);
+    expect(blockedResults).toHaveLength(1);
+    expect(blockedResults[0]).toMatchObject({
+      name: 'custom_write_fail',
+      summary: expect.stringContaining('[WRITE_FAIL_STOP]'),
+    });
+  });
 });

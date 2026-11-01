@@ -2195,6 +2195,9 @@ export class AgentLoop {
           searchCallCount: this.searchCallCount,
           askCountThisTurn: this.askCountThisTurn,
         },
+        // 写盘声明随判定上下文下发（与 tool_start 上报、写串行闸同一判据）：
+        // write_loop 的「同路径连续失败写」据此覆盖声明 diskWrite:'path' 的自定义写工具
+        ...(diskWrite ? { diskWrite } : {}),
       };
       const guardHit = this.guardier.evaluateBlocked(guardCtx);
       // search_limit 命中（双闸第二闸）：命中即停搜——置 searchDisabled，下一轮 LLM 调用的工具集剔除 web_search
@@ -2368,6 +2371,8 @@ export class AgentLoop {
       // metrics 失败数不把拦截算作失败（B4 口径：执行层闸门也归 blocked，见方案 §六决策二）
       const blocked = outcome.status === 'blocked';
       const ok = outcome.status === 'ok';
+      // 写盘声明（与判定阶段同一查找函数，不另存快照）：供护栏的写侧喂数区分「路径型写工具」
+      const execDiskWrite = this.resolveDiskWrite(tc.function.name);
       // 搜索收敛护栏：累计本闭环成功 web_search 次数（LLM 反复搜索不收敛时据此注入收敛提示）
       if (tc.function.name === 'web_search' && ok) {
         this.successfulWebSearchCount++;
@@ -2457,6 +2462,8 @@ export class AgentLoop {
         toolName: tc.function.name,
         argsJson: tc.function.arguments,
         toolCallId: tc.id,
+        // 与判定阶段同一份写盘声明（同一 resolveDiskWrite，不另存快照）
+        ...(execDiskWrite ? { diskWrite: execDiskWrite } : {}),
         // B4 判据切换：执行层拒绝（宿主审批）从 'failed' 变 'blocked'——write_loop
         // 自持状态因此不再把「用户拒绝」当失败升级文案，语义对齐「主动挡下」
         outcome: outcome.status,
