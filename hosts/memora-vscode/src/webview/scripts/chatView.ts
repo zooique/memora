@@ -193,8 +193,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const polishBtn = document.getElementById('polishBtn') as HTMLButtonElement | null;
   // 上传图片按钮（常驻，D27）：绑定/置灰态归 imageCapture（Q3），这里只递元素
   const imageAttachBtn = document.getElementById('imageAttachBtn') as HTMLButtonElement | null;
-  // Skill 选择器（输入框旁，选择后作为提示词传给 LLM）：域已外置 `skillPickerView`，
-  // 此处只查元素作 deps 注入——选中态、菜单渲染、chip 构建全在该工厂闭包内。
+  // Skill 选择器：域已外置 `skillPickerView`，此处只查元素作 deps 注入（选中态 / 菜单 / chip 全在工厂内）
   const skillPicker = document.querySelector<HTMLElement>('.skill-picker');
   const skillPickerView = createSkillPickerView({
     document,
@@ -203,6 +202,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     trigger: skillPicker ? skillPicker.querySelector<HTMLElement>('.treedd__trigger') : null,
     // 附件行（选择态行）：输入盒内、文字上方展示当前已选 Skill（名称 + × 可移除）
     chipRow: document.getElementById('skillChips') as HTMLElement | null,
+    input, // 斜杠触发观测主输入框（`/` 在行首或空白后打开选择器）
   });
   // 引用行（右键「添加到对话」挂的文件/目录，与 #skillChips 同构复用样式；file/folder 二态）
   // pinned = 常驻锁（发送后是否保留）：ref 默认 false = 发送即清（现状）；skill 默认 true =
@@ -4181,7 +4181,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 历史下拉：条目（.treedd__item）点击 → 加载该会话（host 切入并回放，SSOT 剪枝 v2）
     __historyOnSelect: (id) => vscode.postMessage({ type: 'switch_session', sessionId: id }),
     // Skill 下拉：选择真实技能名后设为当前 skill（SSOT 收紧，与设置面板同一清单；发送时传技能名走内核）
-    // 选中/清除的判别与 pinned 预开（常驻）语义收口在域内 `select`，此处只转发 id。
+    // 选中/清除判别、pinned 预开、斜杠 token 撤除全部收口在域内 `select`，此处只转发 id。
     __skillPickerOnSelect: (id) => skillPickerView.select(id),
   });
 

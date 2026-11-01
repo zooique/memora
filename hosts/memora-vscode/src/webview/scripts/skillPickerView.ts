@@ -19,6 +19,7 @@
  */
 
 import type { SkillDto } from '../../shared/protocol.js';
+import { closeOtherDropdowns, setDropdownOpen } from '../components/dropdown.js';
 import { bindSingleTrackRow, syncRowEdges } from '../helpers/chipRow.js';
 import { getIconSvg } from './icons.js';
 
@@ -31,7 +32,7 @@ const CLEAR_ID = '__clear_skill';
 export interface SkillPickerViewDeps {
   /** webview 文档对象（构造唯一 DOM 入口；禁在模块内读全局 document） */
   document: Document;
-  /** 选择器根（`.skill-picker`，承载 active 态） */
+  /** 选择器根（`.skill-picker`，同时是 `.treedd` 开合容器） */
   root: HTMLElement | null;
   /** 菜单容器（`.treedd__menu`） */
   menu: HTMLElement | null;
@@ -39,6 +40,8 @@ export interface SkillPickerViewDeps {
   trigger: HTMLElement | null;
   /** 输入盒内 chip 行容器（`#skillChips`） */
   chipRow: HTMLElement | null;
+  /** 正文输入框（斜杠触发的宿主：本域只观测它，不改它的其它语义） */
+  input: HTMLTextAreaElement | null;
 }
 
 /** 技能选择器窄接口：chatView 仅经此驱动 */
@@ -56,7 +59,7 @@ export interface SkillPickerView {
 }
 
 export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerView {
-  const { document, root, menu, trigger, chipRow } = deps;
+  const { document, root, menu, trigger, chipRow, input } = deps;
 
   let currentSkill: SelectedSkill | null = null;
   /** 动态技能清单（SSOT 收紧）：不硬编码预设，由 host 推 `skills_loaded` 填充，与设置面板同一来源。
@@ -264,6 +267,97 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     syncLabel();
   }
 
+  /**
+   * SKILL-SLASH-1：斜杠触发点（输入框里 `/` 的落点；`null` = 当前不在斜杠态）
+   *
+   * 判据是**文本事实**而非按键事实（同 HOST-CTX-13 的 @ 结论）：中文输入法或粘贴进来的 `/`
+   * 未必产生 keydown，故只在 input 事件里判定；keydown 只负责 Escape 退出。
+   *
+   * **焦点刻意留在输入框**：若打开菜单后 `searchInput.focus()`，用户刚打的字就进不了正文，
+   * 而斜杠态的语义是「边写正文边挑技能」。代价是搜索框只作镜像：它显示 token 的实时过滤词，
+   * 键盘焦点仍在正文。选中路径因此保持点击（Enter 归发送，不抢）。
+   */
+  let slashTriggerOffset: number | null = null;
+
+  /** 斜杠 token 的合法起点：行首 或 前一字符是空白。
+   * `A/B`、`1/2`、`2026/11/01`、URL 里的 `/` 一律不触发——这是本特性的硬边界。 */
+  function isSlashTokenStart(value: string, at: number): boolean {
+    if (at === 0) return true;
+    return /\s/.test(value[at - 1] ?? '');
+  }
+
+  /** 撤掉斜杠 token（选中技能后调用）：只删「`/` 到当前光标」这一段。
+   * 斜杠态下该区间必然是连续非空白字符（输入分支遇空白即退出），故不会吃掉后面的正文。
+   * 落点已变（用户删过 `/`）时原样不动——与 `removeMentionAt` 同一条纪律：只认落点。 */
+  function consumeSlashToken(): void {
+    const at = slashTriggerOffset;
+    slashTriggerOffset = null; // 一次性：撤完即清，防后续选择误删同一位置
+    if (!input || at === null || at < 0 || at >= input.value.length) return;
+    if (input.value[at] !== '/') return; // 落点已变（用户编辑过）：不猜
+    const caret = input.selectionStart;
+    const end = Math.max(at + 1, caret); // 至少吃掉 `/` 本身
+    input.value = input.value.slice(0, at) + input.value.slice(end);
+    input.focus();
+    input.setSelectionRange(at, at);
+    // 复用**既有** input 监听重算高度 / 按钮语义 / 发送可用态——不在这里复制那三连调用
+    //（复制即漂移）。程序化 Event 没有 inputType，故 @ 与斜杠两条 inputType 分支都不会误触发。
+    input.dispatchEvent(new Event('input'));
+  }
+
+  if (input) {
+    input.addEventListener('keydown', (e) => {
+      // 斜杠态 Esc 收起菜单并退出——`/` 与已打的字**留在正文**
+      //（与 @ 的「取消无扰动」同一条纪律：取消不该擦掉用户已输入的内容）。
+      if (e.isComposing) return;
+      if (e.key === 'Escape' && slashTriggerOffset !== null) {
+        slashTriggerOffset = null;
+        // 斜杠 token 不算「用户主动搜索」：退出即清词，否则下次点开菜单会带着上次的过滤结果
+        skillSearchQuery = '';
+        renderMenu();
+        if (root) setDropdownOpen(root, false);
+      }
+    });
+
+    input.addEventListener('input', (e) => {
+      const ie = e as InputEvent;
+      // 只认 insert 家族：删除同样触发 input，若光标恰停在 `/` 后会把「删到 / 前面」误判成
+      // 「插入 /」（同 HOST-CTX-13 的 inputType 判据）。
+      if (typeof ie.inputType !== 'string' || !ie.inputType.startsWith('insert')) return;
+      const caret = input.selectionStart;
+      if (
+        caret > 0 &&
+        input.value[caret - 1] === '/' &&
+        isSlashTokenStart(input.value, caret - 1)
+      ) {
+        slashTriggerOffset = caret - 1;
+        skillSearchQuery = '';
+        renderMenu();
+        // 互斥规则与触发器点击共用同一函数（不在这里再写一遍 .treedd.is-open 选择器）
+        if (root) {
+          closeOtherDropdowns(document, root);
+          setDropdownOpen(root, true);
+        }
+        return;
+      }
+      if (slashTriggerOffset === null) return;
+      const start = slashTriggerOffset;
+      const token = input.value.slice(start + 1, caret);
+      // 三个退出条件：`/` 已不在原位 / 光标退回 token 之前 / token 内出现空白（用户开始写正文）
+      if (input.value[start] !== '/' || caret <= start || /\s/.test(token)) {
+        slashTriggerOffset = null;
+        // 退出斜杠态 = 放弃过滤：不清词的话菜单会停在上一次 token 的结果上（用户以为列表缺项）
+        skillSearchQuery = '';
+        renderMenu();
+      } else if (root?.classList.contains('is-open')) {
+        skillSearchQuery = token;
+        renderMenu();
+      } else {
+        // 菜单被外部点击收起 ⇒ 斜杠态一并结束（否则后续输入会继续喂给已关闭的菜单）
+        slashTriggerOffset = null;
+      }
+    });
+  }
+
   // 行元素在脚本加载时已存在：单轨滚动绑定归本域（chip 行随本域重建）
   bindSingleTrackRow(chipRow);
   // 初始装配：空清单（搜索框 + 清除项 + 分隔线），具体清单由 skills_loaded 动态填充
@@ -284,6 +378,8 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
         return;
       }
       syncLabel();
+      // 选中后用 token 换 chip：`/su` 留在正文里就是一条伪造的用户输入
+      consumeSlashToken();
     },
     setSkills(skills: SkillDto[]): void {
       skillOptions = skills;
@@ -293,6 +389,9 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
       return currentSkill;
     },
     afterSend(): void {
+      // 发送即收场：斜杠 token 已成正文的一部分，斜杠态不得越过本条消息
+      //（否则下次输入会按旧落点删字）
+      slashTriggerOffset = null;
       // 技能同一 pinned 判据：默认钉住常驻（锁预开）⇒ 发送不清除；syncLabel 内含重绘
       if (currentSkill && !currentSkill.pinned) {
         currentSkill = null;

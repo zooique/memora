@@ -14,25 +14,29 @@ import type { SkillDto } from '../../shared/protocol.js';
 
 interface Mounted {
   view: SkillPickerView;
+  root: HTMLElement;
   menu: HTMLElement;
   trigger: HTMLElement;
   chipRow: HTMLElement;
+  input: HTMLTextAreaElement;
 }
 
 function mount(): Mounted {
   document.body.innerHTML = `
-    <div class="skill-picker">
+    <div class="skill-picker treedd">
       <button class="treedd__trigger"></button>
       <div class="treedd__menu"></div>
     </div>
     <div id="skillChips"></div>
+    <textarea id="input"></textarea>
   `;
   const root = document.querySelector<HTMLElement>('.skill-picker') as HTMLElement;
   const menu = document.querySelector<HTMLElement>('.treedd__menu') as HTMLElement;
   const trigger = document.querySelector<HTMLElement>('.treedd__trigger') as HTMLElement;
   const chipRow = document.getElementById('skillChips') as HTMLElement;
-  const view = createSkillPickerView({ document, root, menu, trigger, chipRow });
-  return { view, menu, trigger, chipRow };
+  const input = document.getElementById('input') as HTMLTextAreaElement;
+  const view = createSkillPickerView({ document, root, menu, trigger, chipRow, input });
+  return { view, root, menu, trigger, chipRow, input };
 }
 
 /** 两条技能：一条有中文显示名、一条无（回退 name） */
@@ -131,6 +135,79 @@ describe('skillPickerView 搜索判据', () => {
     view.setSkills(SKILLS);
     expect(search(menu, 'zzz')).toEqual([]);
     expect(menu.querySelector('.treedd__empty')?.textContent).toBe('无匹配技能');
+  });
+});
+
+describe('skillPickerView 斜杠触发（/ 打开选择器）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /** 模拟真实键入：**逐字符**插入并派发带 inputType 的 input 事件。
+   * 一次性设整串 value 不等于真实形态——斜杠触发判据是「刚落进来的字符是 `/`」，
+   * 整串写入时只有最后一个字符会被看到，测到的是一条用户走不到的路径。 */
+  function type(input: HTMLTextAreaElement, text: string): void {
+    for (const ch of text) {
+      input.value += ch;
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.dispatchEvent(new InputEvent('input', { inputType: 'insertText' }));
+    }
+  }
+
+  const isOpen = (root: HTMLElement): boolean => root.classList.contains('is-open');
+
+  it('行首 `/` 打开菜单', () => {
+    const { root, input } = mount();
+    type(input, '/');
+    expect(isOpen(root)).toBe(true);
+  });
+
+  it('空白后的 `/` 也触发（句中换词的自然用法）', () => {
+    const { root, input } = mount();
+    type(input, '帮我 /');
+    expect(isOpen(root)).toBe(true);
+  });
+
+  it('`A/B`、`1/2`、日期里的 `/` 一律不触发（硬边界，靠前一位是否空白判定）', () => {
+    for (const text of ['A/', '1/', '2026/']) {
+      const { root, input } = mount();
+      type(input, text);
+      expect(isOpen(root)).toBe(false);
+    }
+  });
+
+  it('`/su` 把 token 镜像成搜索词，列表只剩匹配项', () => {
+    const { view, menu, input } = mount();
+    view.setSkills(SKILLS);
+    type(input, '/su');
+    expect(skillItems(menu).map((el) => el.dataset.treeddId)).toEqual(['summarize']);
+    expect(searchBox(menu).value).toBe('su');
+  });
+
+  it('选中技能后 token 从正文撤除（`/su` 不得变成伪造的用户输入）', () => {
+    const { view, chipRow, input } = mount();
+    view.setSkills(SKILLS);
+    type(input, '/su');
+    view.select('summarize');
+    expect(input.value).toBe('');
+    expect(chipRow.querySelector('.skill-chip__name')?.textContent).toBe('摘要提炼');
+  });
+
+  it('token 内出现空白即退出斜杠态（用户开始写正文，不再过滤列表）', () => {
+    const { view, menu, input } = mount();
+    view.setSkills(SKILLS);
+    type(input, '/su');
+    expect(skillItems(menu)).toHaveLength(1); // 斜杠态：过滤生效
+    type(input, ' 然后');
+    expect(skillItems(menu)).toHaveLength(2); // 退出斜杠态：恢复全量
+  });
+
+  it('斜杠态 Esc 收起菜单，`/` 与已打的字留在正文（取消无扰动）', () => {
+    const { root, input } = mount();
+    type(input, '/su');
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(isOpen(root)).toBe(false);
+    expect(input.value).toBe('/su');
   });
 });
 

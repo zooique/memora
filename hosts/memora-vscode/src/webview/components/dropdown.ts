@@ -83,10 +83,25 @@ export function buildDropdownHtml(
  * @param el    下拉容器（.treedd）
  * @param open  是否展开
  */
-function setDropdownOpen(el: HTMLElement, open: boolean): void {
+export function setDropdownOpen(el: HTMLElement, open: boolean): void {
   el.classList.toggle('is-open', open);
   el.querySelector('.treedd__trigger')?.setAttribute('aria-expanded', String(open));
   if (open) applyDropDirection(el);
+}
+
+/**
+ * 同视图内下拉互斥：同一时刻只允许一个 `.treedd` 展开。
+ *
+ * 触发器点击与**程序化展开**（斜杠触发技能选择器）共用本函数——互斥规则只有这一份，
+ * 两处各写一遍就会在「其中一个改了规则、另一个没改」时出现双浮层叠加。
+ *
+ * @param doc webview 文档对象
+ * @param el  本次要展开的下拉容器（其余展开者会被收起）
+ */
+export function closeOtherDropdowns(doc: Document, el: HTMLElement): void {
+  doc.querySelectorAll('.treedd.is-open').forEach((o) => {
+    if (o !== el) setDropdownOpen(o as HTMLElement, false);
+  });
 }
 
 /**
@@ -198,9 +213,7 @@ export function initDropdowns(
     trigger.addEventListener('click', (e) => {
       e.stopPropagation();
       // 先关闭其他已展开的下拉（同一视图内互斥，避免多菜单同时展开）
-      root.querySelectorAll('.treedd.is-open').forEach((o) => {
-        if (o !== el) setDropdownOpen(o as HTMLElement, false);
-      });
+      closeOtherDropdowns(root, el);
       const willOpen = !el.classList.contains('is-open');
       setDropdownOpen(el, willOpen);
       if (willOpen) menuItems(el)[0]?.focus();
