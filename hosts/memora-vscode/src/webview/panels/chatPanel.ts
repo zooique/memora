@@ -1967,6 +1967,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     await this.createSession(`${formatDateKey(new Date())}-s${Date.now().toString(36)}`);
   }
 
+  /** 会话导航唯一写点：内存字段 + 「上次停留」指针必须成对更新
+   * （只赋值不落盘 = 复现 SESSION-RESUME-1：切过去看历史、重启跳回别处，且症状静默）。 */
+  private setCurrentSessionId(sessionId: string): void {
+    this._currentSessionId = sessionId;
+    this.sessionStore.setLastActiveSession(sessionId);
+  }
+
   /**
    * 切入指定会话（新建/首次自动创建共用）：调内核 switchToSession + 更新当前会话 + 回放
    *
@@ -1982,8 +1989,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     try {
       await agent.sessionManager.switchToSession(sessionId);
-      this._currentSessionId = sessionId;
-      this.sessionStore.setLastActiveSession(sessionId);
+      this.setCurrentSessionId(sessionId);
       this.replayCurrentSession();
       return true;
     } catch (err) {
@@ -2033,8 +2039,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // round-based 分叉：从指定 Round 位置创建新会话
       const { newSession, roundCount } = agent.forkSession(forkRoundId);
       const forkedId = `${formatDateKey(new Date())}-${newSession}`;
-      this._currentSessionId = forkedId;
-      this.sessionStore.setLastActiveSession(forkedId);
+      this.setCurrentSessionId(forkedId);
       this.replayCurrentSession();
       this.post({
         type: 'notice',
@@ -2092,8 +2097,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         return;
       }
       await agent.sessionManager.switchToSession(sessionId);
-      this._currentSessionId = sessionId;
-      this.sessionStore.setLastActiveSession(sessionId);
+      this.setCurrentSessionId(sessionId);
       this.replayCurrentSession();
     } catch (err) {
       this.post({

@@ -473,10 +473,14 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     store.setSessionTitle('2026-08-15-s1', '会话A');
     // 当前会话切到另一个，验证切换动作触发
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-14-other';
+    // 判据只能盯写点本身：命名也会刷 updatedAt，用 getInitialSessionId 取证会「摘掉落盘照样绿」
+    const persistPointer = vi.spyOn(store, 'setLastActiveSession');
 
     await provider.switchToSession('2026-08-15-s1');
 
     expect(switchToSession).toHaveBeenCalledWith('2026-08-15-s1');
+    // 导航指针同批落盘：只赋值不落盘 = 重启跳回别处（SESSION-RESUME-1 的复发形态）
+    expect(persistPointer).toHaveBeenCalledWith('2026-08-15-s1');
     // 重放：clear_ok + 该会话消息 + session_title
     const types = posted.map((m) => (m as { type: string }).type);
     expect(types).toContain('clear_ok');
