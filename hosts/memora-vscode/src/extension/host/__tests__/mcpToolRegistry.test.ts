@@ -37,15 +37,18 @@ function allowlist(...keys: string[]): ReadonlySet<string> {
  *
  * @param name 原始工具名
  * @param inputSchema inputSchema（缺省 = 无参数工具）
+ * @param annotations server 自报的工具注解（缺省 = 什么都没声明）
  */
 function makeTool(
   name: string,
   inputSchema: Record<string, unknown> = { type: 'object', properties: {} },
+  annotations?: McpTool['annotations'],
 ): McpTool {
   return {
     name,
     description: `${name} 的说明`,
     inputSchema: inputSchema as unknown as McpTool['inputSchema'],
+    ...(annotations ? { annotations } : {}),
   };
 }
 
@@ -227,6 +230,49 @@ describe('schema 映射（内核窄类型）', () => {
   it('顶层非 object 剔除', () => {
     const result = toToolDefinition('srv', makeTool('t', { type: 'string' }), NO_ALLOWLIST);
     expect('skipped' in result).toBe(true);
+  });
+});
+
+describe('改盘写声明（diskWrite · DISKWRITE-CUSTOM-1 源头接线）', () => {
+  it("未声明 annotations → 'opaque'（未知即按会写盘，fail-closed 进写串行闸）", () => {
+    const result = toToolDefinition('srv', makeTool('t'), NO_ALLOWLIST);
+    if ('skipped' in result) throw new Error('不应被剔除');
+    expect(result.definition.diskWrite).toBe('opaque');
+  });
+
+  it("显式 readOnlyHint:false → 仍 'opaque'（只有明确的「只读」才豁免）", () => {
+    const result = toToolDefinition(
+      'srv',
+      makeTool('t', undefined, { readOnlyHint: false }),
+      NO_ALLOWLIST,
+    );
+    if ('skipped' in result) throw new Error('不应被剔除');
+    expect(result.definition.diskWrite).toBe('opaque');
+  });
+
+  it('readOnlyHint:true → 不声明（只读工具不参与写排序，读类调用保持全并发）', () => {
+    const result = toToolDefinition(
+      'srv',
+      makeTool('t', undefined, { readOnlyHint: true }),
+      NO_ALLOWLIST,
+    );
+    if ('skipped' in result) throw new Error('不应被剔除');
+    expect(result.definition).not.toHaveProperty('diskWrite');
+  });
+
+  it("readOnlyHint:true 与 destructiveHint:true 自相矛盾 → 按 'opaque'（不替 server 圆谎）", () => {
+    const result = toToolDefinition(
+      'srv',
+      makeTool('t', undefined, { readOnlyHint: true, destructiveHint: true }),
+      NO_ALLOWLIST,
+    );
+    if ('skipped' in result) throw new Error('不应被剔除');
+    expect(result.definition.diskWrite).toBe('opaque');
+  });
+
+  it('buildToolBindings 走真实映射链路时声明一并带进注册面', () => {
+    const { bindings } = buildToolBindings('srv', [makeTool('a'), makeTool('b')], NO_ALLOWLIST);
+    expect(bindings.map((b) => b.definition.diskWrite)).toEqual(['opaque', 'opaque']);
   });
 });
 

@@ -70,7 +70,6 @@ import {
   type ProcessEvent,
   type ProcessMetaPayload,
   type SessionView,
-  OPAQUE_WRITE_TOOL_NAMES,
   COMPRESS_TARGET_LABELS,
   estimateTokensText,
   type CompressTarget,
@@ -83,10 +82,6 @@ import {
 /** 插话条数上限提示文案用值：直接消费内核真源（webview 侧无法 import 内核包，
  *  其 shared/constants.ts 同名常量是本值的镜像，由 chatPanelInput 守卫测试锁同值） */
 const INTERJECT_LIMIT = LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS;
-
-/** 脚本类写工具（opaque 写，目标运行时才可知）——真源 = 内核 `OPAQUE_WRITE_TOOL_NAMES`（diskWrite:'opaque' 派生）。
- * 宿主据此在工具执行前后各扫一次 workspace 快照、diff 收口，让脚本类文件改动可见（见 tracker.noteExternalMutations）。 */
-const SCRIPT_WRITE_TOOLS: readonly string[] = OPAQUE_WRITE_TOOL_NAMES;
 
 /**
  * 目录快照遍历时跳过的目录 → 已随扫描实现整批外置到 `extension/host/workspaceTextScan.ts`
@@ -3606,9 +3601,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             ...(chunk.diskWrite ? { diskWrite: chunk.diskWrite } : {}),
           });
           // 脚本类（opaque 写）工具：写前扫一次 workspace 快照，供执行后 diff（路径运行时才可知）
-          if (
-            chunk.diskWrite ? chunk.diskWrite === 'opaque' : SCRIPT_WRITE_TOOLS.includes(chunk.name)
-          ) {
+          // 唯一判据 = tool_start 上报的 diskWrite 声明（内核写序闸同一真源）；无该字段 = 不改盘
+          if (chunk.diskWrite === 'opaque') {
             this.scriptSnapshots.set(chunk.toolCallId, scanWorkspaceTextFiles());
           }
           // 任务驱动多步闭环：LLM 调用任务表工具时 → 推送当前计划快照给 webview 渲染任务看板
@@ -3636,7 +3630,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           });
           // 脚本类（opaque 写）工具：写后扫快照 → diff → 喂改动追踪（blocked/失败不追踪）
           // 判据 = 写前登记（tool_start 已按 diskWrite 声明判定并落 scriptSnapshots），此处**不重判工具名**
-          // ——写前/写后共用同一份判据：自定义 opaque 工具自动对称覆盖；静态名集只留 tool_start 的旧事件兜底
+          // ——写前/写后共用同一份判据，自定义 opaque 工具自动对称覆盖；
+          // 无 diskWrite 字段的事件不兜底静态名集：宿主与内核 dist 同代由 verify:dist-contract 保证
           if (this.scriptSnapshots.has(chunk.toolCallId)) {
             // ?? null：has 为真时 get 必有值，此处只为收窄类型（消除 undefined，null = 写前扫描已降级）
             const before = this.scriptSnapshots.get(chunk.toolCallId) ?? null;
