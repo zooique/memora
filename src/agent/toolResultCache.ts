@@ -18,6 +18,8 @@
  *
  * 补充导出 `WRITE_PATH_EXTRACTORS`（非防重）：写工具**不防重**，但同一 step 内打在同一路径上的
  * 两次写**必须串行**（并行会因读旧快照而互相覆盖）。二者是同一批「副作用型工具」的两面。
+ * ⚠️ 本表 = 内置契约钉 + 宿主派生面；loop 的**写序判据**已改读工具定义行 `diskWrite` 声明
+ * （路径提取语义仍复用本模块的 `extractArgsPathTarget`，判据不再按工具名查表）。
  */
 import path from 'node:path';
 // PATH_WRITE_TOOL_NAMES：写工具名集真源（builtinTools 各定义行 `diskWrite:'path'` 声明派生）——
@@ -179,8 +181,13 @@ export const WRITE_PATH_EXTRACTORS: Readonly<
   Record<string, (argsJson: string) => string | undefined>
 > = Object.fromEntries(PATH_WRITE_TOOL_NAMES.map((name) => [name, extractArgsPathTarget]));
 
-/** `'path'` 模式写工具的目标提取：`args.path` → 规范化路径（提取失败返回 undefined，调用方降级屏障） */
-function extractArgsPathTarget(argsJson: string): string | undefined {
+/**
+ * `'path'` 模式写工具的目标提取：`args.path` → 规范化路径（提取失败返回 undefined，调用方降级屏障）
+ *
+ * 导出供 loop 的**声明判定**复用：自定义工具（宿主 registerTool 注册）与内置工具同走这一份
+ * `args.path` 提取语义，不另造第二份解析（路径归一仍只有 `normalizePathKey` 一处）。
+ */
+export function extractArgsPathTarget(argsJson: string): string | undefined {
   const raw = rawPathOf(argsJson);
   return raw ? normalizePathKey(raw) : undefined;
 }

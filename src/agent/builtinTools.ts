@@ -43,13 +43,14 @@ export interface ToolDefinition {
   readonly?: boolean;
   /**
    * 改盘写声明（写串行闸 / 宿主改动追踪的判据真源）：
-   * - `'path'`：按 `args.path` 定位目标的落盘写（write_file / delete_file）→ 同目标写串行；
+   * - `'path'`：按 `args.path` 定位目标的落盘写（write_file / delete_file，以及自定义工具）→ 同目标写串行；
    * - `'opaque'`：会改盘但目标不可静态定位（脚本执行类、内部索引落盘类）→ 与一切写互斥（屏障）；
    * - 缺省：不改盘（读工具、内核数据工具如 task_table_*）。
    *
    * 与 `readonly` 正交：`readonly` 管「只读模式放不放行」，本声明管「写与写怎么排序」。
-   * 覆盖边界：写串行闸与宿主改动追踪仅消费**内置工具**声明（派生索引见本文件尾）；
-   * 自定义工具的声明暂不生效。
+   * 覆盖边界：**所有工具生效（内置 + 宿主 `registerTool` 注册的自定义工具）**——loop 运行时按本声明
+   * 判定，声明同时随 `tool_start` 事件上报给宿主改动追踪。派生索引（本文件尾）仅为内置工具契约钉
+   * 与公共导出面，不再是唯一判据来源。
    */
   diskWrite?: 'path' | 'opaque';
   /**

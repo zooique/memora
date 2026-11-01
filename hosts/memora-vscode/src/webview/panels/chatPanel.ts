@@ -3598,13 +3598,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             stepIndex: chunk.stepIndex,
           });
           // 文件改动追踪：写前快照（此刻磁盘仍是旧内容）
+          // diskWrite 声明随事件透传——tracker 据此判定（自定义写工具与内置工具同源，不再靠静态名集）
           this._fileChangeSink?.noteToolStart({
             toolCallId: chunk.toolCallId,
             name: chunk.name,
             args: chunk.args,
+            ...(chunk.diskWrite ? { diskWrite: chunk.diskWrite } : {}),
           });
           // 脚本类（opaque 写）工具：写前扫一次 workspace 快照，供执行后 diff（路径运行时才可知）
-          if (SCRIPT_WRITE_TOOLS.includes(chunk.name)) {
+          if (
+            chunk.diskWrite ? chunk.diskWrite === 'opaque' : SCRIPT_WRITE_TOOLS.includes(chunk.name)
+          ) {
             this.scriptSnapshots.set(chunk.toolCallId, scanWorkspaceTextFiles());
           }
           // 任务驱动多步闭环：LLM 调用任务表工具时 → 推送当前计划快照给 webview 渲染任务看板
@@ -3631,12 +3635,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             blocked: chunk.blocked,
           });
           // 脚本类（opaque 写）工具：写后扫快照 → diff → 喂改动追踪（blocked/失败不追踪）
-          if (SCRIPT_WRITE_TOOLS.includes(chunk.name)) {
-            const before = this.scriptSnapshots.get(chunk.toolCallId);
+          // 判据 = 写前登记（tool_start 已按 diskWrite 声明判定并落 scriptSnapshots），此处**不重判工具名**
+          // ——写前/写后共用同一份判据：自定义 opaque 工具自动对称覆盖；静态名集只留 tool_start 的旧事件兜底
+          if (this.scriptSnapshots.has(chunk.toolCallId)) {
+            // ?? null：has 为真时 get 必有值，此处只为收窄类型（消除 undefined，null = 写前扫描已降级）
+            const before = this.scriptSnapshots.get(chunk.toolCallId) ?? null;
             this.scriptSnapshots.delete(chunk.toolCallId);
-            if (before === undefined) {
-              // 异常：无写前快照（不应发生），静默跳过
-            } else if (before !== null && chunk.ok && !chunk.blocked) {
+            if (before !== null && chunk.ok && !chunk.blocked) {
               const after = scanWorkspaceTextFiles();
               if (after === null) {
                 // 写后扫描超阈值：与写前降级同一条提示，不做内容 diff

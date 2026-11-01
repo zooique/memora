@@ -19,25 +19,23 @@
 
 import { readFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-// WRITE_PATH_EXTRACTORS：内核「按 args.path 改盘的工具」清单（loop 同路径写串行闸的判据）——
-// 本模块的触发集合**派生自它的键**，禁并列维护第二份清单（两份必漂移 = 跨包静默少报）。
+// WRITE_PATH_EXTRACTORS：内核「按 args.path 改盘的内置工具」清单（本模块的**旧事件兜底**派生面）——
+// 现行判据是 tool_start 上报的 `diskWrite` 声明（含自定义工具）；无该字段的旧事件才回退本表。
 import { WRITE_PATH_EXTRACTORS } from '@zooique/memora';
 
 /**
- * 触发追踪的内核落盘文件工具（派生集合，唯一真源 = 内核 `WRITE_PATH_EXTRACTORS` 的键）
+ * 触发追踪的**内置**落盘文件工具（旧事件兜底集合，派生自内核 `WRITE_PATH_EXTRACTORS` 的键）
  *
- * 实证：内核落盘工具仅 `write_file` / `delete_file`（内核 `src/agent/builtinTools.ts` 内置工具表中
- * `name: 'write_file'` 与 `name: 'delete_file'` 两项）；
- * 新建文件走 write_file 的 overwrite，无独立 create_file/edit_file。
+ * 现行判据：`tool_start` 事件携带的 `diskWrite` 声明（内置 + 自定义工具同源）——
+ * 事件有该字段时只认它，本表仅在**无字段的旧事件**上兜底（见 `noteToolStart`）。
+ *
+ * 实证：内核**内置**落盘工具仅 `write_file` / `delete_file`；新建文件走 write_file 的 overwrite。
  * `task_table_*` 是内核数据不落盘，排除。
  *
- * 派生而非并列的意义：内核新增「按 path 改盘」的工具时，宿主**自动跟随**进追踪，
- * 不会再出现「内核进了串行闸、宿主不知情」的改动可视化静默少报。
- *
- * ⚠️ 覆盖边界（已闭环）：清单只认 `args.path` 定位的写工具 ⇒ `run_code` / `run_skill_script`
- * / `run_project_script`（能改盘但无 `path`）**不进本清单的按路径追踪**——但它们在内核 `loop.ts`
- * 走 `diskWrite:'opaque'` 屏障（与一切写互斥，防并行丢内容已覆盖），且宿主对这类工具做「执行前后
- * 目录快照 diff」收口（见 `noteExternalMutations`），脚本类改动可见性盲区已闭环（台账 DIFF-4 可视化半已解除）。
+ * ⚠️ 覆盖边界：本表只认 `args.path` 定位的内置写工具 ⇒ `run_code` / `run_skill_script`
+ * / `run_project_script`（能改盘但无 `path`）不进按路径追踪——它们走 `diskWrite:'opaque'` 屏障，
+ * 宿主对这类工具做「执行前后目录快照 diff」收口（见 `noteExternalMutations`）。
+ * **自定义 opaque 写工具**同样由声明驱动（不再依赖本表）。
  */
 export const DISK_WRITE_TOOLS: readonly string[] = Object.keys(WRITE_PATH_EXTRACTORS);
 
@@ -129,6 +127,13 @@ export interface ToolStartLike {
   name: string;
   /** 工具参数 JSON 字符串（内核原样透传，可能是 undefined） */
   args?: string;
+  /**
+   * 内核上报的改盘写声明（`ToolDefinition.diskWrite` 原样）
+   *
+   * 判定优先依据：有该字段时**只认它**（内置与自定义工具同一判据，与内核写序闸同源）；
+   * 缺省（旧版本事件 / 历史回放）才回退到派生名集兜底。
+   */
+  diskWrite?: 'path' | 'opaque';
 }
 
 /** tool_result 宿主侧最小输入形状（对位内核 AgentChunk.tool_result） */
@@ -237,7 +242,11 @@ export class FileChangeTracker {
    * 非落盘工具 / 参数不可解析 → 静默跳过。
    */
   noteToolStart(chunk: ToolStartLike): void {
-    if (!DISK_WRITE_TOOLS.includes(chunk.name)) return;
+    // 判据优先读内核上报的声明（内置/自定义工具同源）；仅有旧事件（无该字段）才回退派生名集
+    const isPathWrite = chunk.diskWrite
+      ? chunk.diskWrite === 'path'
+      : DISK_WRITE_TOOLS.includes(chunk.name);
+    if (!isPathWrite) return;
     const parsed = parseWriteArgs(chunk.args);
     if (!parsed) return;
     const absPath = isAbsolute(parsed.path) ? parsed.path : resolve(this.projectRoot, parsed.path);

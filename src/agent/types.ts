@@ -34,7 +34,21 @@ export type AgentChunk = (
    * 工具调用开始（Runtime 确定执行、参数已完成）。stepIndex = 所属 step 的轮内序号（与 thought
    * 同构，loop 单点打标）；tool_result **不重复盖章**——经 toolCallId 归属本条（事实单点，防双写）。
    */
-  | { type: 'tool_start'; toolCallId: string; name: string; args?: string; stepIndex?: number }
+  | {
+      type: 'tool_start';
+      toolCallId: string;
+      name: string;
+      args?: string;
+      stepIndex?: number;
+      /**
+       * 该工具的改盘写声明（内核 `ToolDefinition.diskWrite` 原样上报，与写序闸同一判据）
+       *
+       * 宿主消费（文件改动追踪据此决定是否采写前快照 / 是否走脚本类快照 diff），
+       * 同时供「批次语义」之外的观测面判读。缺省 = 该工具不改盘（读工具 / 内核数据工具）。
+       * 自定义工具（宿主 `registerTool` 注册）的声明同样上报——宿主不再维护静态名集副本。
+       */
+      diskWrite?: 'path' | 'opaque';
+    }
   | {
       type: 'tool_result';
       toolCallId: string;

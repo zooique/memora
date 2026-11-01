@@ -57,6 +57,41 @@ describe('FileChangeTracker', () => {
     expect([...DISK_WRITE_TOOLS]).toEqual(['write_file', 'delete_file']);
   });
 
+  // 判据升级（DISKWRITE-CUSTOM-1）：内核 tool_start 上报 diskWrite 声明后，判定只认声明——
+  // 自定义写工具与内置工具同源进追踪，不再受静态名集限制（名集仅作旧事件兜底）。
+  it("上报 diskWrite:'path' 的自定义工具 → 同样采集写前快照（名字不在静态名集也生效）", () => {
+    const io = makeIO({ [abs('a.md')]: 'old' });
+    const tracker = makeTracker(io);
+
+    tracker.noteToolStart({
+      toolCallId: 't-custom',
+      name: 'custom_write',
+      args: JSON.stringify({ path: 'a.md' }),
+      diskWrite: 'path',
+    });
+    io.set(abs('a.md'), 'new'); // 模拟内核写盘
+    const rec = tracker.noteToolResult({ toolCallId: 't-custom', name: 'custom_write', ok: true });
+
+    expect(rec?.beforeContent).toBe('old');
+    expect(rec?.afterContent).toBe('new');
+  });
+
+  it('上报了声明时只认声明：声明 opaque 的内置同名工具不采按路径快照（交给快照 diff 收口）', () => {
+    const io = makeIO({ [abs('a.md')]: 'old' });
+    const tracker = makeTracker(io);
+
+    tracker.noteToolStart({
+      toolCallId: 't-opaque',
+      name: 'write_file',
+      args: JSON.stringify({ path: 'a.md' }),
+      diskWrite: 'opaque',
+    });
+    const rec = tracker.noteToolResult({ toolCallId: 't-opaque', name: 'write_file', ok: true });
+
+    expect(rec).toBeNull();
+    expect(tracker.size()).toBe(0);
+  });
+
   it('write_file 覆盖已有文件 → 记录 before≠after、writeCount=1', () => {
     const io = makeIO({ [abs('a.md')]: 'old' });
     const tracker = makeTracker(io);

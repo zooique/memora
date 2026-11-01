@@ -290,7 +290,14 @@ export type ProcessEvent =
       type: 'tool_start';
       seq: number;
       ts: string;
-      payload: { toolCallId: string; name: string; args?: string; stepIndex?: number };
+      payload: {
+        toolCallId: string;
+        name: string;
+        args?: string;
+        stepIndex?: number;
+        /** 改盘写声明（内核 `ToolDefinition.diskWrite` 原样上报，宿主改动追踪据此判定）；缺省 = 不改盘 */
+        diskWrite?: 'path' | 'opaque';
+      };
     }
   | {
       type: 'tool_result';

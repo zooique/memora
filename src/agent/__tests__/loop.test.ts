@@ -7559,3 +7559,114 @@ describe('后台任务宿主出口（list / kill · 方案 §2.1）', () => {
     },
   );
 });
+
+describe('AgentLoop · 自定义工具写盘声明（DISKWRITE-CUSTOM-1）', () => {
+  /** 构造一个声明写盘意图的自定义工具（宿主 registerTool 注册形态的最小投影） */
+  const makeCustomWriteTool = (name: string, diskWrite: 'path' | 'opaque'): ToolDefinition => ({
+    name,
+    description: `自定义写工具 ${name}`,
+    parameters: {
+      type: 'object',
+      properties: { path: { type: 'string', description: '相对项目根的目标路径' } },
+      required: ['path'],
+    },
+    diskWrite,
+  });
+
+  /** 跑完一轮并收集全部 chunk */
+  async function drainTurn(loop: AgentLoop, input: string): Promise<AgentChunk[]> {
+    const out: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput(input)) out.push(chunk);
+    return out;
+  }
+
+  it("声明 'path'：同 step 同路径两写串行（自定义工具此前绕过写串行闸）", async () => {
+    /** 执行时序（并发时第二个写会在第一个完成前开跑） */
+    const events: string[] = [];
+    /** 第一个写是否已落地（串行则第二个开始时恒为 true） */
+    let slowDone = false;
+    const toolExecutor = vi.fn(async (name: string) => {
+      if (name === 'custom_write_slow') {
+        events.push('slow:start');
+        await new Promise((r) => setTimeout(r, 50));
+        slowDone = true;
+        events.push('slow:end');
+        return 'slow ok';
+      }
+      events.push(slowDone ? 'fast:start(serial)' : 'fast:start(parallel)');
+      return 'fast ok';
+    });
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          content: '',
+          toolCalls: [
+            {
+              id: 'c1',
+              type: 'function',
+              function: { name: 'custom_write_slow', arguments: '{"path":"a.md"}' },
+            },
+            {
+              id: 'c2',
+              type: 'function',
+              function: { name: 'custom_write_fast', arguments: '{"path":"a.md"}' },
+            },
+          ],
+        },
+      ],
+      [{ content: '完成' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor,
+      toolDefinitions: [
+        makeCustomWriteTool('custom_write_slow', 'path'),
+        makeCustomWriteTool('custom_write_fast', 'path'),
+      ],
+    });
+
+    await drainTurn(loop, '同文件写两次');
+    // 判据：第二个写必须等第一个写落地后才开始（并发出现在 events 里即为 fail）
+    expect(events).toEqual(['slow:start', 'slow:end', 'fast:start(serial)']);
+  });
+
+  it('tool_start 事件上报 diskWrite 声明（宿主改动追踪同源消费）；未声明的工具不带该字段', async () => {
+    const toolExecutor = vi.fn(async () => 'ok');
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          content: '',
+          toolCalls: [
+            {
+              id: 'c1',
+              type: 'function',
+              function: { name: 'custom_write_path', arguments: '{"path":"a.md"}' },
+            },
+            {
+              id: 'c2',
+              type: 'function',
+              function: { name: 'read_file', arguments: '{"path":"a.md"}' },
+            },
+          ],
+        },
+      ],
+      [{ content: '完成' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor,
+      toolDefinitions: [makeCustomWriteTool('custom_write_path', 'path')],
+    });
+
+    const chunks = await drainTurn(loop, '写一次再读一次');
+    const writeStart = chunks.find(
+      (c) => c.type === 'tool_start' && c.name === 'custom_write_path',
+    );
+    const readStart = chunks.find((c) => c.type === 'tool_start' && c.name === 'read_file');
+    expect(writeStart).toMatchObject({ type: 'tool_start', diskWrite: 'path' });
+    // 读工具无声明 ⇒ 字段缺省（宿主据此判定“不改盘”，不靠名字猜）
+    expect(readStart && 'diskWrite' in readStart).toBe(false);
+  });
+});

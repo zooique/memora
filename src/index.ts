@@ -42,13 +42,13 @@ export type {
   ToolContext,
   WriteExtensions,
 } from '@/agent/toolExecutor.js';
-// WRITE_PATH_EXTRACTORS：「按 args.path 改盘的工具」清单的**单一真理源**（loop 同路径写串行闸的判据）。
-// 宿主改动追踪（fileChangeTracker）据其 keys 派生触发集合，禁并列维护第二份清单——
-// 内核新增按 path 的写工具时宿主自动跟随，防「内核进串行闸、宿主不知情」的静默少报。
+// WRITE_PATH_EXTRACTORS：「按 args.path 改盘的内置工具」清单（契约钉 + 宿主派生面）。
+// loop 的写序判据已改读**工具定义行 `diskWrite` 声明**（含自定义工具），本表不再是串行闸判据；
+// 宿主改动追踪（fileChangeTracker）仍据其 keys 派生**旧事件兜底**集合（现行事件已带 diskWrite 声明）。
 export { WRITE_PATH_EXTRACTORS } from '@/agent/toolResultCache.js';
-// OPAQUE_WRITE_TOOL_NAMES：目标不可静态定位的写工具（脚本/内部索引类，diskWrite:'opaque'）。
-// 宿主改动可视化对其做「执行前后目录快照 diff」收口（见 fileChangeTracker.noteExternalMutations），
-// 禁并列维护第二份清单（两份必漂移 = 脚本类改动静默不追踪）。
+// OPAQUE_WRITE_TOOL_NAMES：目标不可静态定位的**内置**写工具（脚本/内部索引类，diskWrite:'opaque'）。
+// 宿主改动可视化对这类工具做「执行前后目录快照 diff」收口（见 fileChangeTracker.noteExternalMutations）；
+// 现行判据是 tool_start 上报的 `diskWrite` 声明，本表仅在无字段的旧事件上兜底。
 export { OPAQUE_WRITE_TOOL_NAMES } from '@/agent/builtinTools.js';
 // 角色包（Role Pack）：文件夹形态（manifest.json 核心控制 + 独立内容文件）。
 // 只挂宿主/文档消费的装配元类型；装配结果/策略/团队/能力等子类型随签名推断可用，为内部实现

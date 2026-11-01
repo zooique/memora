@@ -17,7 +17,7 @@ import {
   ASK_USER_TOOL,
   COMPRESS_CONTEXT_TOOL,
   REMEMBER_INTEL_TOOL,
-  OPAQUE_WRITE_TOOL_NAMES,
+  ALL_BUILTIN_TOOL_DEFS,
 } from '@/agent/builtinTools.js';
 import type {
   AgentChunk,
@@ -63,7 +63,7 @@ import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js
 import {
   ToolResultCache,
   DEDUP_SUBJECT_EXTRACTORS,
-  WRITE_PATH_EXTRACTORS,
+  extractArgsPathTarget,
   normalizePathKey,
   type CacheEntry,
 } from '@/agent/toolResultCache.js';
@@ -2055,7 +2055,39 @@ export class AgentLoop {
   }
 
   /**
-   * 执行工具调用列表（并发执行，异常捕获后转为结构化错误串回传给 LLM，而非中断对话）。
+   * 解析工具的写盘声明（写序判定的唯一判据）
+   *
+   * 真源 = 工具定义行的 `diskWrite` 字段。查找顺序：当前工具定义快照（`opts.toolDefinitions`，
+   * **含宿主 `registerTool` 注册的自定义工具**）→ 内置全量定义兜底（被白名单收窄的内置工具
+   * 模型调不到，兜底只为不改变既有行为，仍读同一份声明真源而非第二判据）。
+   */
+  private resolveDiskWrite(name: string): 'path' | 'opaque' | undefined {
+    const declared = this.opts.toolDefinitions?.find((t) => t.name === name)?.diskWrite;
+    if (declared) return declared;
+    return ALL_BUILTIN_TOOL_DEFS.find((t) => t.name === name)?.diskWrite;
+  }
+
+  /**
+   * 解析一次工具调用的写序意图（串行闸与「写后缓存失效」**共用同一判据**）
+   *
+   * - `none`：不改盘 → 完全并发
+   * - `path`：按 `args.path` 定位 → 同目标串行
+   * - `barrier`：`opaque` 声明，或声明 `path` 但目标提取失败（参数缺 path）→「不确定即保守」
+   *   与一切写互斥（不静默跳过）
+   */
+  private resolveWriteIntent(
+    name: string,
+    argsJson: string,
+  ): { kind: 'none' } | { kind: 'path'; key: string } | { kind: 'barrier' } {
+    const declared = this.resolveDiskWrite(name);
+    if (declared === 'opaque') return { kind: 'barrier' };
+    if (declared !== 'path') return { kind: 'none' };
+    const key = extractArgsPathTarget(argsJson);
+    return key === undefined ? { kind: 'barrier' } : { kind: 'path', key };
+  }
+
+  /**
+   * 执行工具调用列表（并发执行，异常捕获后转为结构化错误串传给 LLM，而非中断对话）。
    * stepIndex = 本迭代序号（调用链逐级传入），tool_start 发射时盖章（与 thought 同构，事实单点）。
    */
   private async *executeToolCalls(
@@ -2101,7 +2133,8 @@ export class AgentLoop {
     // B4 判据切换：promise 直接产出 ToolOutcome——护栏/替身在推送点构造 blockedOutcome，
     // 经 ToolRunner 的由 runOne 返回，loop 内自执行（compress/remember）返回结构化结果。
     const toolExecs: Array<{ promise: Promise<ToolOutcome> }> = [];
-    // 同路径写串行闸：键 = 写工具的规范化目标路径（`WRITE_PATH_EXTRACTORS`），值 = 该路径的写链尾。
+    // 同路径写串行闸：键 = 写工具的规范化目标路径（`diskWrite:'path'` 声明 + `args.path` 提取），
+    // 值 = 该路径的写链尾。
     // 为何需要——`write_file` 是「读盘 → 改 → 写盘」，同 step 内并行发起时两次都基于同一份旧快照，
     // 后落地者覆盖先落地者 ⇒ **静默丢内容**（真机实证：insert + append 同 step 并行，插入行被覆盖）。
     // 只对**同路径**串行：不同文件之间维持完全并发（总耗时仍≈最慢的那条路径）。
@@ -2132,12 +2165,16 @@ export class AgentLoop {
       if (tc.function.name === 'task_table_write') this.metrics.planTaskTableWriteCount++;
       const isSearch = tc.function.name === 'web_search';
       if (isSearch) this.searchCallCount++;
+      // 写盘声明随事件上报：宿主文件改动追踪据此判定（与内核写序闸同一判据，
+      // 宿主不再维护「哪些工具会落盘」的静态名集副本——自定义工具声明由此自动流入追踪）
+      const diskWrite = this.resolveDiskWrite(tc.function.name);
       yield {
         type: 'tool_start',
         toolCallId: tc.id,
         name: tc.function.name,
         args: tc.function.arguments,
         stepIndex, // 所属 step 归属（单点打标，与 thought 同构）
+        ...(diskWrite ? { diskWrite } : {}),
       };
 
       // ===== 统一护栏判定（GuardRail SSOT）=====
@@ -2276,14 +2313,12 @@ export class AgentLoop {
       // 判定阶段看不到任何执行结果 ⇒ 只靠执行后 notifyExec 喂数的护栏（write_loop 连写链）
       // 会被「一条回复内连发 N 次整文件覆盖」整批绕过（真机 round-1792919558093 实证 6 次全放行）。
       this.guardier.notifyAllow(guardCtx);
-      // 写排序三分（判据真源 = 工具定义行 `diskWrite` 声明，派生索引见 builtinTools）：
+      // 写排序三分（判据真源 = 工具定义行 `diskWrite` 声明；声明即判据，自定义工具同生效）：
       //  'path' → 按目标路径串行（同路径链）；'opaque' → 屏障，与一切写互斥；
       //  声明 'path' 但目标提取失败（参数缺 path 等）→「不确定即保守」降级为屏障，不静默跳过。
-      const pathExtractor = WRITE_PATH_EXTRACTORS[tc.function.name];
-      const writeKey = pathExtractor?.(tc.function.arguments);
-      const useWriteBarrier =
-        OPAQUE_WRITE_TOOL_NAMES.includes(tc.function.name) ||
-        (pathExtractor !== undefined && writeKey === undefined);
+      const writeIntent = this.resolveWriteIntent(tc.function.name, tc.function.arguments);
+      const useWriteBarrier = writeIntent.kind === 'barrier';
+      const writeKey = writeIntent.kind === 'path' ? writeIntent.key : undefined;
       // 第二级压缩/情报区工具由 loop 拦截执行（决策四：直接返回 ToolOutcome，不经 ToolExecutor）
       let promise: Promise<ToolOutcome>;
       if (tc.function.name === COMPRESS_CONTEXT_TOOL.name) {
@@ -2427,11 +2462,12 @@ export class AgentLoop {
         outcome: outcome.status,
       });
       // 副作用型工具成功 → 主动失效关联的 read_file 缓存（放行后续合法重读）
-      // 覆盖面派生自 `diskWrite:'path'` 声明（与串行闸同一真源），目标提取复用同一提取器——
-      // 必须用**归一后**路径才对得上缓存/台账的键（raw 写法如 './a.md' 会失效不中）。
+      // 覆盖面派生自 `diskWrite:'path'` 声明（与串行闸**同一判据**，自定义工具同生效），
+      // 目标提取复用同一提取器——必须用**归一后**路径才对得上缓存/台账的键（raw 写法如 './a.md' 会失效不中）。
       // opaque 写（脚本类）目标不可知、无法按 path 失效：但宿主已通过执行前后 workspace 目录快照 diff 收口
       //（见 fileChangeTracker.noteExternalMutations），改动可视化盲区已闭环（台账 DIFF-4 可视化半已解除）。
-      const invalidatedPath = WRITE_PATH_EXTRACTORS[tc.function.name]?.(tc.function.arguments);
+      const invalidatedIntent = this.resolveWriteIntent(tc.function.name, tc.function.arguments);
+      const invalidatedPath = invalidatedIntent.kind === 'path' ? invalidatedIntent.key : undefined;
       if (ok && invalidatedPath) {
         this.toolResultCache.invalidateFile(invalidatedPath);
         // 台账同步失效：文件内容变了，旧覆盖度替身作废（防替身回显陈旧摘要 → 放行合法重读）
