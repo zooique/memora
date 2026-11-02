@@ -16,13 +16,17 @@
  * 4. 格式校验：技能走 `validateSkillAsset`，角色包走内核 `validateManifestText`
  *    （`formatVersion` 缺省补 `1.0.0` 后再校验与落盘）；
  * 5. 同名处置：目标已存在 ⇒ 由调用方明确询问「覆盖 / 取消」，取消则什么都不写；
- * 6. 写入完成后由调用方重扫（`resyncUserSkills` / `resyncUserPacks`）并刷新 UI。
+ * 6. **暂存 + 换名提交**：全部内容先写进目标同父目录的隐藏暂存区（同卷 ⇒ `rename` 原子），
+ *    确认写入完成后再换名；目标已存在时先换名成备份、提交成功才删备份，任一步失败即回滚
+ *    （旧内容按字节原样恢复）。**不再「先删旧目标再逐条写」**——中途失败会留半包且旧包不可恢复。
+ * 7. 写入完成后由调用方重扫（`resyncUserSkills` / `resyncUserPacks`）并刷新 UI。
  *
  * **不执行包内任何脚本**：只把条目当普通文件落盘（`.js` / `.py` 只写不跑）。
  */
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { parseFrontmatter, validateManifestText } from '@zooique/memora';
+import { logger, parseFrontmatter, validateManifestText } from '@zooique/memora';
 import * as yauzl from 'yauzl';
 import { pathExists, resolveInsideDir, sanitizeAssetName } from './path.js';
 import { validateSkillAsset } from './write.js';
@@ -36,6 +40,101 @@ export const ZIP_IMPORT_LIMITS = {
   /** 全部条目解压后总大小上限（20 MB） */
   maxTotalBytes: 20 * 1024 * 1024,
 } as const;
+
+/** 暂存区名字前缀（只由本模块创建；清理按「前缀正则 + 过期时间」双判据，不碰其他文件） */
+export const IMPORT_TMP_PREFIX = '.import-tmp-';
+/** 覆盖前备份名标记：`<目标名>.bak-<12 位 hex>`；**不带 `.md` 后缀**，避免被技能扫描器当成新技能 */
+const IMPORT_BAK_MARK = '.bak-';
+/** 残留清理的过期阈值（1 小时）：只删过期残留，避免删掉并发进行中的导入暂存 */
+const STALE_ARTIFACT_MS = 60 * 60 * 1000;
+/** 暂存目录 / 暂存文件名的严格形态（12 位 hex，可选 `.md`） */
+const TMP_ARTIFACT_RE = /^\.import-tmp-[0-9a-f]{12}(\.md)?$/;
+/** 备份名的严格形态（`.bak-` + 12 位 hex 结尾） */
+const BAK_ARTIFACT_RE = /\.bak-[0-9a-f]{12}$/;
+
+/** 生成 12 位随机十六进制后缀（暂存 / 备份名唯一化，防同名并发互踩） */
+function makeSuffix(): string {
+  return randomBytes(6).toString('hex');
+}
+
+/**
+ * 清理同目录下的导入残留（过期 `.import-tmp-*` 与 `*.bak-*`）
+ *
+ * 只匹配本模块自己的命名形态 + 只删超过阈值的项：刚创建的暂存可能属于**正在进行的另一次导入**，
+ * 无条件删除会制造「导入进行中目标突然消失」的假失败。清理失败只记日志，**不升级为导入失败**。
+ *
+ * @param dir 目标父目录（暂存与备份都落在这里，与目标同卷）
+ */
+async function cleanupStaleArtifacts(dir: string): Promise<void> {
+  const names = await readdir(dir).catch(() => [] as string[]);
+  const now = Date.now();
+  for (const name of names) {
+    if (!TMP_ARTIFACT_RE.test(name) && !BAK_ARTIFACT_RE.test(name)) continue;
+    const full = join(dir, name);
+    try {
+      const info = await stat(full);
+      if (now - info.mtimeMs < STALE_ARTIFACT_MS) continue;
+      await rm(full, { recursive: true, force: true });
+    } catch (err) {
+      logger.warn({ err, full }, '压缩包导入残留清理失败（不影响本次导入）');
+    }
+  }
+}
+
+/**
+ * 换名提交暂存区（覆盖路径的唯一提交点）
+ *
+ * 顺序：备份已存在目标 → `rename(暂存 → 目标)` → 删备份。
+ * 任一步失败：反向 `rename(备份 → 目标)` 恢复旧内容并删除暂存，保证**回滚后目标与导入前逐字节一致**
+ * （备份是 `rename` 出来的，不是复制，字节零损耗）。
+ *
+ * @param stagedPath 暂存区绝对路径（目录形态为目录，单文件形态为 `<parent>/.import-tmp-xxxx.md`）
+ * @param targetPath 目标绝对路径（首个命中的同名候选）
+ * @param extraTargets 其余同名候选（单文件技能的「同名目录」占位；无新内容，仅备份后删除）
+ * @param suffix 本次导入的随机后缀（备份名与之配对，便于清理）
+ */
+async function commitStaged(
+  stagedPath: string,
+  targetPath: string,
+  extraTargets: string[],
+  suffix: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  /** 已完成的备份（回滚时反向换名；`from` = 备份路径，`to` = 原目标路径） */
+  const backups: { from: string; to: string }[] = [];
+  try {
+    for (const target of [targetPath, ...extraTargets]) {
+      if (!(await pathExists(target))) continue;
+      const backup = `${target}${IMPORT_BAK_MARK}${suffix}`;
+      await rename(target, backup);
+      backups.push({ from: backup, to: target });
+    }
+    await rename(stagedPath, targetPath);
+  } catch (err) {
+    // 回滚：先清掉可能已落到目标位置的新内容（正常路径下目标应不存在），再反向换名恢复旧内容
+    for (const { from, to } of backups.reverse()) {
+      try {
+        if (await pathExists(to)) await rm(to, { recursive: true, force: true });
+        await rename(from, to);
+      } catch (rollbackErr) {
+        logger.error({ rollbackErr, from, to }, '压缩包导入回滚失败（备份保留在磁盘，请手工恢复）');
+      }
+    }
+    await rm(stagedPath, { recursive: true, force: true }).catch((cleanupErr: unknown) => {
+      logger.warn({ cleanupErr, stagedPath }, '压缩包导入失败后清理暂存失败（不影响回滚结果）');
+    });
+    return {
+      ok: false,
+      reason: `换名提交失败，已回滚（目标保持导入前内容）：${(err as Error).message}`,
+    };
+  }
+  // 提交成功后才删备份；删失败只记日志——此时目标已是新内容，把清理失败当导入失败属误报
+  for (const { from } of backups) {
+    await rm(from, { recursive: true, force: true }).catch((cleanupErr: unknown) => {
+      logger.warn({ cleanupErr, from }, '压缩包导入备份清理失败（残留将被下次导入清理）');
+    });
+  }
+  return { ok: true };
+}
 
 /** 资产类型（由压缩包内容识别，不由入口预设） */
 export type AssetKind = 'skill' | 'rolePack';
@@ -519,44 +618,55 @@ export async function importAssetZip(
         asset: { kind: plan.kind, name: plan.name },
       };
     }
-    for (const target of existing) {
-      await rm(target, { recursive: true, force: true });
-    }
+    // 确认覆盖后**不在这里删旧目标**：删除动作归 `commitStaged`（先换名成备份，提交失败可回滚）
   }
 
+  // ── 暂存写入：全部内容写进目标同父目录的隐藏暂存区，此阶段目标一字未动 ──
+  const parentDir = dirname(targetPath);
+  await mkdir(parentDir, { recursive: true }).catch(() => undefined);
+  await cleanupStaleArtifacts(parentDir);
+  const suffix = makeSuffix();
+  const stagedPath = plan.singleFile
+    ? join(parentDir, `${IMPORT_TMP_PREFIX}${suffix}.md`)
+    : join(parentDir, `${IMPORT_TMP_PREFIX}${suffix}`);
+
   try {
-    // 单文件形态：targetPath 本身即文件；目录形态：targetPath 是目录
-    const targetDir = plan.singleFile ? targetRoot : targetPath;
-    let fileCount = 0;
-    for (const entry of plan.entries) {
-      if (!plan.singleFile) {
+    if (plan.singleFile) {
+      await writeFile(stagedPath, plan.entries[0]!.data);
+    } else {
+      for (const entry of plan.entries) {
         // 逐条目二次逃逸断言（路径校验已在读包时做过，此处防「蓝图拼接」引入新逃逸）
-        const destination = resolveInsideDir(targetDir, entry.relPath);
-        if (!destination.ok) {
-          return {
-            ok: false,
-            reason: `条目写入路径越出目标目录：${entry.relPath}`,
-            asset: { kind: plan.kind, name: plan.name },
-          };
-        }
+        const destination = resolveInsideDir(stagedPath, entry.relPath);
+        if (!destination.ok) throw new Error(`条目写入路径越出目标目录：${entry.relPath}`);
         await mkdir(dirname(destination.path), { recursive: true });
         await writeFile(destination.path, entry.data);
-        fileCount += 1;
-        continue;
       }
-      await mkdir(dirname(targetPath), { recursive: true });
-      await writeFile(targetPath, entry.data);
-      fileCount += 1;
     }
-    return {
-      ok: true,
-      asset: { kind: plan.kind, name: plan.name, targetPath, fileCount },
-    };
   } catch (err) {
+    // 写入阶段失败：目标从未被改动，只需清掉暂存（清理失败只记日志，不掩盖原始错误）
+    await rm(stagedPath, { recursive: true, force: true }).catch((cleanupErr: unknown) => {
+      logger.warn({ cleanupErr, stagedPath }, '压缩包导入写入失败后清理暂存失败');
+    });
     return {
       ok: false,
-      reason: `写入失败：${(err as Error).message}`,
+      reason: `写入失败（目标未改动）：${(err as Error).message}`,
       asset: { kind: plan.kind, name: plan.name },
     };
   }
+
+  // ── 换名提交：备份 → rename → 删备份；任一步失败回滚到导入前内容 ──
+  const committed = await commitStaged(stagedPath, targetPath, targets.slice(1), suffix);
+  if (!committed.ok) {
+    return { ok: false, reason: committed.reason, asset: { kind: plan.kind, name: plan.name } };
+  }
+
+  return {
+    ok: true,
+    asset: {
+      kind: plan.kind,
+      name: plan.name,
+      targetPath,
+      fileCount: plan.entries.length,
+    },
+  };
 }

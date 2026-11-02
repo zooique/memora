@@ -1,0 +1,263 @@
+// @vitest-environment node
+/**
+ * 压缩包导入 · 暂存换名提交与失败回滚（覆盖写入的原子性回归测试）
+ *
+ * 立此用例的血训：旧实现「先 `rm(recursive)` 旧目标 → 再逐条写」，中途失败（磁盘满 / 进程被杀）
+ * 会留下**半包**且旧包已不可恢复；而既有用例只覆盖「取消不动」与「成功替换」，失败中断完全没有射程。
+ *
+ * 被测不变量：
+ *   1. 写入阶段失败 ⇒ 目标一个字节都没被改动（旧内容逐字节一致），暂存被清理；
+ *   2. 换名提交失败 ⇒ 备份反向换名回滚，目标仍是旧版，备份与暂存均被清理；
+ *   3. 成功覆盖 ⇒ 旧内容消失、新内容完整（补充断言：不残留 `.bak-`）；
+ *   4. 目标不存在 ⇒ 直接换名提交，不产生任何 `.bak-`；
+ *   5. 导入前清理过期残留（`.import-tmp-*` / `*.bak-*`），但**不删刚创建的**（可能属并发导入）。
+ *
+ * 失败注入方式：`vi.mock('node:fs/promises')` 默认透传真实实现，仅按调用序号抛错——
+ * 生产代码不留测试专用开关（不为可测性引入第二套写盘路径）。
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createWriteStream,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ZipFile } from 'yazl';
+
+/** 写盘 / 换名的失败注入控制（序号 = 0 基调用计数；-1 表示不注入） */
+const fsControl = vi.hoisted(() => ({
+  /** 第 N 次 writeFile 抛错 */
+  failWriteAt: -1,
+  /** writeFile 调用计数 */
+  writeCalls: 0,
+  /** 第 N 次 rename 抛错 */
+  failRenameAt: -1,
+  /** rename 调用计数 */
+  renameCalls: 0,
+}));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    writeFile: vi.fn(async (path: unknown, data: unknown, opts?: unknown) => {
+      const index = fsControl.writeCalls++;
+      if (index === fsControl.failWriteAt) throw new Error('注入失败：模拟磁盘写入失败');
+      return (
+        actual.writeFile as unknown as (p: unknown, d: unknown, o?: unknown) => Promise<void>
+      )(path, data, opts);
+    }),
+    rename: vi.fn(async (from: string, to: string) => {
+      const index = fsControl.renameCalls++;
+      if (index === fsControl.failRenameAt) throw new Error('注入失败：模拟换名失败');
+      return actual.rename(from, to);
+    }),
+  };
+});
+
+import { importAssetZip } from '../userAssets/zipImport.js';
+
+/** 本文件创建的临时目录（afterEach 统一清理） */
+const tempDirs: string[] = [];
+
+/**
+ * 建一个临时目录并登记清理
+ *
+ * @param prefix 目录名前缀（便于定位失败用例）
+ */
+function makeTempDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+/**
+ * 用 yazl 生成压缩包（测试夹具写入器）
+ *
+ * @param zipPath 目标 zip 路径
+ * @param entries 条目清单（路径 → 内容）
+ */
+async function makeZip(zipPath: string, entries: { name: string; data: string }[]): Promise<void> {
+  const zip = new ZipFile();
+  for (const entry of entries) zip.addBuffer(Buffer.from(entry.data), entry.name);
+  await new Promise<void>((resolve, reject) => {
+    const out = createWriteStream(zipPath);
+    zip.outputStream.on('error', reject);
+    out.on('error', reject);
+    out.on('close', () => resolve());
+    zip.outputStream.pipe(out);
+    zip.end();
+  });
+}
+
+/** 目录里是否还有导入残留（暂存 / 备份） */
+function hasLeftovers(dir: string): boolean {
+  return readdirSync(dir).some(
+    (name) => name.startsWith('.import-tmp-') || /\.bak-[0-9a-f]{12}$/.test(name),
+  );
+}
+
+beforeEach(() => {
+  fsControl.failWriteAt = -1;
+  fsControl.writeCalls = 0;
+  fsControl.failRenameAt = -1;
+  fsControl.renameCalls = 0;
+});
+
+afterEach(() => {
+  while (tempDirs.length > 0) {
+    rmSync(tempDirs.pop()!, { recursive: true, force: true });
+  }
+});
+
+/** 旧角色包内容（逐字节比对的基准） */
+const OLD_MANIFEST = '{\n  "name": "demo-role",\n  "displayName": "旧版"\n}\n';
+/** 旧角色包附带的旧资源文件 */
+const OLD_EXTRA = '旧版资源内容：不得被半包污染';
+
+/**
+ * 准备「已存在同名角色包」的覆盖场景（旧目录含 manifest 与旧资源）
+ *
+ * @param fail 失败注入（组件在用例内设置 fsControl 后调用）
+ */
+function setupExistingRolePack(): { zipPath: string; root: string; targetDir: string } {
+  const dir = makeTempDir('memora-zip-commit-');
+  const root = join(dir, 'role-packs');
+  const targetDir = join(root, 'demo-role');
+  mkdirSync(targetDir, { recursive: true });
+  writeFileSync(join(targetDir, 'manifest.json'), OLD_MANIFEST, 'utf-8');
+  writeFileSync(join(targetDir, 'old.md'), OLD_EXTRA, 'utf-8');
+  const zipPath = join(dir, 'demo-role.zip');
+  return { zipPath, root, targetDir };
+}
+
+describe('importAssetZip · 暂存换名（失败中断不得损坏旧目标）', () => {
+  it('写到一半失败 ⇒ 旧目标逐字节完好且暂存被清理', async () => {
+    const { zipPath, root, targetDir } = setupExistingRolePack();
+    await makeZip(zipPath, [
+      { name: 'rp/manifest.json', data: JSON.stringify({ name: 'demo-role' }) },
+      { name: 'rp/persona.md', data: '新版人格设定' },
+      { name: 'rp/extra.md', data: '新版资源' },
+    ]);
+    // 第 2 次写盘失败（manifest 已写进暂存，persona 失败）⇒ 目标应完全未动
+    fsControl.failWriteAt = 1;
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => root,
+      confirmOverwrite: async () => true,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain('写入失败');
+    // 旧内容逐字节一致（不是「看起来还在」，而是字节相等）
+    expect(readFileSync(join(targetDir, 'manifest.json'), 'utf-8')).toBe(OLD_MANIFEST);
+    expect(readFileSync(join(targetDir, 'old.md'), 'utf-8')).toBe(OLD_EXTRA);
+    expect(readdirSync(targetDir).sort()).toEqual(['manifest.json', 'old.md']);
+    // 暂存必须被清理（否则会污染下一次扫描 / 被当成技能）
+    expect(hasLeftovers(root)).toBe(false);
+  });
+
+  it('换名提交失败 ⇒ 回滚到旧版，备份与暂存均被清理', async () => {
+    const { zipPath, root, targetDir } = setupExistingRolePack();
+    await makeZip(zipPath, [
+      { name: 'rp/manifest.json', data: JSON.stringify({ name: 'demo-role' }) },
+      { name: 'rp/persona.md', data: '新版人格设定' },
+    ]);
+    // rename 序：① 目标→备份（成功）② 暂存→目标（注入失败）③ 备份→目标（回滚，成功）
+    fsControl.failRenameAt = 1;
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => root,
+      confirmOverwrite: async () => true,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain('已回滚');
+    // 回滚后目标仍是旧版（逐字节一致），且没有新版文件混入
+    expect(readFileSync(join(targetDir, 'manifest.json'), 'utf-8')).toBe(OLD_MANIFEST);
+    expect(readFileSync(join(targetDir, 'old.md'), 'utf-8')).toBe(OLD_EXTRA);
+    expect(readdirSync(targetDir).sort()).toEqual(['manifest.json', 'old.md']);
+    expect(hasLeftovers(root)).toBe(false);
+  });
+
+  it('成功覆盖 ⇒ 旧内容消失、新内容完整、不残留备份', async () => {
+    const { zipPath, root, targetDir } = setupExistingRolePack();
+    await makeZip(zipPath, [
+      { name: 'rp/manifest.json', data: JSON.stringify({ name: 'demo-role' }) },
+      { name: 'rp/persona.md', data: '新版人格设定' },
+    ]);
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => root,
+      confirmOverwrite: async () => true,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.asset.fileCount).toBe(2);
+    expect(readFileSync(join(targetDir, 'persona.md'), 'utf-8')).toBe('新版人格设定');
+    // 旧目录里的旧文件随旧版整体被替换，不残留
+    expect(readdirSync(targetDir).sort()).toEqual(['manifest.json', 'persona.md']);
+    expect(hasLeftovers(root)).toBe(false);
+  });
+
+  it('目标不存在 ⇒ 直接换名提交，不产生任何 .bak', async () => {
+    const dir = makeTempDir('memora-zip-fresh-');
+    const root = join(dir, 'skills');
+    const zipPath = join(dir, 'fresh.zip');
+    await makeZip(zipPath, [
+      {
+        name: 'fresh-skill.md',
+        data: '---\nname: fresh-skill\ndescription: 新技能\n---\n正文',
+      },
+    ]);
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => root,
+      confirmOverwrite: async () => false,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.asset.targetPath).toBe(join(root, 'fresh-skill.md'));
+    expect(readdirSync(root)).toEqual(['fresh-skill.md']);
+    expect(hasLeftovers(root)).toBe(false);
+  });
+
+  it('导入前清理过期残留，但不删刚创建的暂存', async () => {
+    const dir = makeTempDir('memora-zip-stale-');
+    const root = join(dir, 'skills');
+    mkdirSync(root, { recursive: true });
+    // 过期残留：一个暂存目录 + 一个备份文件（mtime 回拨 2 小时）
+    const staleTmp = join(root, '.import-tmp-0123456789ab');
+    const staleBak = join(root, 'old-skill.md.bak-0123456789ab');
+    mkdirSync(staleTmp, { recursive: true });
+    writeFileSync(staleBak, '备份内容', 'utf-8');
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    utimesSync(staleTmp, twoHoursAgo, twoHoursAgo);
+    utimesSync(staleBak, twoHoursAgo, twoHoursAgo);
+    // 新鲜残留：可能是并发导入的暂存，必须保留
+    const freshTmp = join(root, '.import-tmp-fedcba987654');
+    mkdirSync(freshTmp);
+
+    const zipPath = join(dir, 'new.zip');
+    await makeZip(zipPath, [
+      {
+        name: 'new-skill.md',
+        data: '---\nname: new-skill\ndescription: 新技能\n---\n正文',
+      },
+    ]);
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => root,
+      confirmOverwrite: async () => false,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(readdirSync(root).sort()).toEqual(['.import-tmp-fedcba987654', 'new-skill.md']);
+  });
+});
