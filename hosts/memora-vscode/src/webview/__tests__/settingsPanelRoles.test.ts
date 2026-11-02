@@ -339,7 +339,7 @@ describe('settingsPanel.refreshRolePacks —— 角色包刷新链路', () => {
     expect(posted.some((m) => m.type === 'roles_loaded')).toBe(true);
   });
 
-  it('同名重注入 → notice 报「更新」不报新增/移除（净差语义，不谎报）', async () => {
+  it('同名留存（updated）不渲染成「更新」：只在新增/移除/回退有变化时措辞变化（不谎报）', async () => {
     const { provider, posted } = setup({
       added: 0,
       removed: [],
@@ -350,7 +350,7 @@ describe('settingsPanel.refreshRolePacks —— 角色包刷新链路', () => {
     await refresh(provider);
 
     expect(notices(posted)).toEqual([
-      { type: 'notice', level: 'info', message: '角色包已刷新：更新 1 个（用户打磨）' },
+      { type: 'notice', level: 'info', message: '角色包已刷新：无变化' },
     ]);
   });
 

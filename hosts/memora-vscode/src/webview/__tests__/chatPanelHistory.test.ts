@@ -2905,3 +2905,105 @@ describe('truncateTurnCore 返回值契约（COPY-2-OK-CONTRACT-1）', () => {
     expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
   });
 });
+
+// ─── 角色包激活回调接线（B：删激活包 → 对话头部同步兜底包）───
+
+describe('角色包激活回调接线（B：删激活包 → 对话头部同步兜底包，2026-11-03）', () => {
+  /**
+   * 构造能同时捕获两条通道处理器的 agent 桩。
+   *
+   * 两条通道：① `agent.on('rolePackSwitched')`（手动切换 / 恢复激活）；
+   * ② `agent.rolePacks.onRolePackActivated`（激活态变更，含删除激活包后的兜底回退）。
+   *
+   * @param displays 角色包内部名 → 显示名（供 roleDisplayName 解析）
+   */
+  function roleStub(displays: Record<string, string>): {
+    agent: Agent;
+    onRolePackActivated: ReturnType<typeof vi.fn>;
+    getSwitched: () => ((info: { from: string | null; to: string }) => void) | undefined;
+    getActivated: () => ((from: string | null, to: string | null) => void) | undefined;
+  } {
+    let switchedHandler: ((info: { from: string | null; to: string }) => void) | undefined;
+    let activatedHandler: ((from: string | null, to: string | null) => void) | undefined;
+    const onRolePackActivated = vi.fn((cb: (from: string | null, to: string | null) => void) => {
+      activatedHandler = cb;
+    });
+    const agent = {
+      on: vi.fn((event: string, cb: (info: { from: string | null; to: string }) => void) => {
+        if (event === 'rolePackSwitched') switchedHandler = cb;
+      }),
+      off: vi.fn(),
+      // 激活态回调的唯一注册面（生产侧唯一注册点 = chatPanel.bindAgentNoticeEvents）
+      rolePacks: { onRolePackActivated },
+      rolePackManager: {
+        listMeta: () =>
+          Object.entries(displays).map(([name, displayName]) => ({ name, displayName })),
+        getActive: () => undefined,
+        getActiveTeam: () => undefined,
+      },
+      getMetrics: () => ({ context: { occupancy: { rolePackBaseTokens: 9000 } } }),
+    } as unknown as Agent;
+    return {
+      agent,
+      onRolePackActivated,
+      getSwitched: () => switchedHandler,
+      getActivated: () => activatedHandler,
+    };
+  }
+
+  it('删激活包 ⇒ 回调注册一次、面板收到新（兜底）包名', () => {
+    const { provider, posted } = setup();
+    const { agent, onRolePackActivated, getActivated } = roleStub({
+      'deleted-pack': '已删包',
+      'fallback-pack': '兜底角色包',
+    });
+    provider.setAgent(agent);
+    // 生产侧唯一注册点：面板绑定 agent 事件时注册一次（onRolePackActivated 是单槽回调）
+    expect(onRolePackActivated).toHaveBeenCalledTimes(1);
+
+    provider.setRolePack('deleted-pack');
+    posted.length = 0; // 基线：注入时的角色推送不计入本次断言
+    // 模拟内核「删除激活包 → 兜底回退」（resyncUserPacks → setActivePackName → onActiveChanged）
+    getActivated()!('deleted-pack', 'fallback-pack');
+
+    const msgs = ofType<{ type: 'chat_role_pack'; rolePack: string }>(posted, 'chat_role_pack');
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]!.rolePack).toBe('兜底角色包');
+    expect((provider as unknown as { _activeRolePack: string })._activeRolePack).toBe(
+      'fallback-pack',
+    );
+  });
+
+  it('同一轮回调与事件都到（兜底回退后又补发事件）⇒ 只推一次（防双发）', () => {
+    const { provider, posted } = setup();
+    const { agent, getSwitched, getActivated } = roleStub({
+      'deleted-pack': '已删包',
+      'fallback-pack': '兜底角色包',
+    });
+    provider.setAgent(agent);
+    provider.setRolePack('deleted-pack');
+    posted.length = 0;
+
+    getActivated()!('deleted-pack', 'fallback-pack');
+    // 同一目标再走事件通道：面板当前值已等于 to ⇒ 不得二次推送
+    getSwitched()!({ from: 'deleted-pack', to: 'fallback-pack' });
+
+    expect(ofType(posted, 'chat_role_pack')).toHaveLength(1);
+  });
+
+  it('手动切换（activate 回调先、角色事件后）⇒ 只推一次、不误触发双份', () => {
+    const { provider, posted } = setup();
+    const { agent, getSwitched, getActivated } = roleStub({ packA: '包A', packB: '包B' });
+    provider.setAgent(agent);
+    provider.setRolePack('packA');
+    posted.length = 0;
+
+    // 内核真实顺序：switchRolePack → rpm.activate（触发 onActiveChanged）→ emit rolePackSwitched
+    getActivated()!('packA', 'packB');
+    getSwitched()!({ from: 'packA', to: 'packB' });
+
+    const msgs = ofType<{ type: 'chat_role_pack'; rolePack: string }>(posted, 'chat_role_pack');
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]!.rolePack).toBe('包B');
+  });
+});

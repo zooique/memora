@@ -171,6 +171,8 @@ import { AskCoordinator } from '../../extension/host/askCoordinator.js';
 // 「复制诊断摘要」数据源（自本文件拆出）：chatPanel 只持有环形缓冲，
 // 容量上限与格式化同处 hostDiagnostics，避免线性增长域把 max-lines 顶爆（injectionBodies.ts 同例）
 import { recordHostDiag, type DiagnosticsData, type HostDiagEntry } from './hostDiagnostics.js';
+// 角色包激活态 → 面板的桥（自本文件拆出，守住 max-lines 只降不升）
+import { bridgeRolePackActivation } from './rolePackActivationBridge.js';
 // thought 落盘折叠域（自本文件拆出；纯逻辑 + 长不变量说明，详见真源模块）
 import { foldThoughtEvents, MAX_THOUGHT_PAYLOAD_LENGTH } from '../../extension/host/thoughtFold.js';
 
@@ -1416,11 +1418,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 同步推送 capability_badge —— 工具权限徽章，展示当前角色的工具模式与能力列表。
    */
   private readonly onRolePackSwitched = (info: { from: string | null; to: string }): void => {
-    // SSOT：从同一 rolePackSwitched 事件维护内部激活角色状态（= 内核 rolePackManager.activeName），
-    // 是 replaySession 的单一真相源。不能只 post 不更新 _activeRolePack：webview 已 dispose 时
-    // 消息静默忽略；且 chat 视图重解析时 ensureAgent 因 _agent 已存在提前返回、refreshAfterAssemble
-    // 不跑 → replaySession 读到陈旧值 → 徽章显示旧角色（与设置面板分叉 = SSOT 违反）。
-    // 由同一事件驱动状态，重解析即推正确角色。
+    // 防双发：手动切换经「activate 回调 + rolePackSwitched 事件」两次到达；与当前值相同即已处理
+    if (info.to === this._activeRolePack) return;
+    // SSOT：同一事件维护内部激活角色（= 内核 activeName），是 replaySession 的真相源；
+    // 只 post 不更新会让视图重解析时读到陈旧值 → 徽章与设置面板分叉。
     this._activeRolePack = info.to;
     // 仅转发切换后的角色显示名（to），触发角色选择器 + AI 消息标签同步（视图存活时）
     this.post({
@@ -1586,6 +1587,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 角色包切换 → UI 角色选择器实时对齐（内核粘性切换/显式激活）
     a.off('rolePackSwitched', this.onRolePackSwitched);
     a.on('rolePackSwitched', this.onRolePackSwitched);
+    // 角色包**激活态**变更（含删激活包后的兜底回退）→ 复用同一条 UI 更新路径；防双发在处理器内
+    bridgeRolePackActivation(a.rolePacks, this.onRolePackSwitched);
     // 后台任务自然终态 → 推 UI 快照（脱管后 turn 已结束：周期性推送点（step_boundary /
     // background_report）都已过、也没有 kill 动作，覆盖不到「任务自然跑完」⇒ 条会一直
     // 显示假活跃的「运行中」。主动 kill 不发本事件。见方案文档 §5.2.2）

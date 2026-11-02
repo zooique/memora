@@ -28,16 +28,17 @@ export interface RolePackResyncDiff extends SkillResyncDiff {
 }
 
 /**
- * 净差 → 用户可读文案（技能与角色包共用，保证同一件事只有一种表述）
+ * 对账结果 → 用户可读文案（技能与角色包共用，保证同一件事只有一种表述）
+ *
+ * 只报「新增 / 移除」与角色包回退：内核的 `updated` 仅表示**重扫后仍存在的同名项**，
+ * 不代表内容变化，故**不渲染、不计数**（渲染成「更新 N 个」会把未变化项谎报成更新）。
  *
  * @param label 资产名（「技能」/「角色包」）
- * @param diff 内核返回的净差
+ * @param diff 内核返回的对账结果
  */
 export function formatResyncNotice(label: string, diff: RolePackResyncDiff): string {
   const parts: string[] = [];
   if (diff.added > 0) parts.push(`新增 ${diff.added} 个`);
-  if (diff.updated.length > 0)
-    parts.push(`更新 ${diff.updated.length} 个（${diff.updated.join('、')}）`);
   if (diff.removed.length > 0)
     parts.push(`移除 ${diff.removed.length} 个（${diff.removed.join('、')}）`);
   // 角色包独有：原激活包被删/改名后内核已回退兜底包，必须告知用户
