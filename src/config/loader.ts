@@ -42,8 +42,13 @@ const MAX_MAX_CONTEXT_TOKENS = 2_000_000;
  * 导出仅供跨模块护栏测试断言同值（constants.test.ts），非 API 承诺。
  */
 export const MAX_CONTEXT_WINDOW = 2_000_000;
-/** allowedPaths 最大条数：路径白名单防膨胀 */
-const MAX_ALLOWED_PATHS = 50;
+/**
+ * allowedPaths 最大条数：路径白名单防膨胀。
+ *
+ * 真源只在此一处：`security/pathGuard.ts` 的 `setAllowedPaths` 直接 import 本常量，
+ * 不另存同值副本（两处常量手抄必漂移，且漂移后无测试会红）。
+ */
+export const MAX_ALLOWED_PATHS = 50;
 
 /**
  * LLM 配置接口。providers + active 是唯一格式；内核仅内置 'mock'（无 API Key 的测试/降级），
@@ -258,7 +263,7 @@ function validatePermission(value: unknown): 'owner' | 'guest' {
  * 验证 allowedPaths 数组，元素非字符串抛错；超过最大条数**抛错**（防白名单膨胀）
  *
  * 不静默截断：截断会让用户以为目录已放行、实际写入被拒，属静默失效；
- * 与 SecurityGuard 的上限判据同值（两处常量须同步）。
+ * 上限值来自 `MAX_ALLOWED_PATHS`（与 SecurityGuard 共用同一常量，非两处同值副本）。
  */
 function validateAllowedPaths(value: unknown): string[] {
   if (!Array.isArray(value)) {

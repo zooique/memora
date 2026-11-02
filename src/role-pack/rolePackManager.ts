@@ -1321,9 +1321,10 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * - runtimeNames 记账即额外目录注入名单（本类 registerRuntimeItem 唯一调用点在 loadExtraDir）；
    * - 重扫全部目录而非仅入参目录：信任门授予后会把项目目录新登记进来，若只重扫单个目录，
    *   另一个目录的注入项会被摘掉后不再恢复；
+   * - **内置包也必须重扫**：额外目录覆盖内置时内置版已从池中摘除，若这里不重扫内置，
+   *   用户删掉覆盖包后内置版会永久消失（「覆盖可逆」是对用户的隐含承诺）；
    * - 对账结果取**净差**（对用户诚实）：同名重注入 = 磁盘版替换（updated），不算新增/移除；
    *   只有真消失（目录已删 / 改名旧名）才进 removed，全新名字才计入 added；
-   * - 内置包不参与对账（磁盘真理源 = dist，构建期同步，运行中恒定）；
    * - 原激活包被摘除（目录删除 / 改名）时走 §4.1 单链兜底（activateFallback，与 reload
    *   激活包被删同源同判据，不自造第二套回退规则），经 setActivePackName 触发
    *   onActiveChanged（宿主同步 UI，属真实激活变更）。
@@ -1353,12 +1354,19 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     }
     this.extraPackDirs.clear();
     this.extraOverrides.clear();
-    this.lastConflicts = [];
-    // 摘除后的池 = 净差基线（重扫不触碰内置包）
+    // 重扫内置：被额外目录覆盖过的内置同名包在覆盖时已被摘除，这里必须从磁盘复活
+    // （否则删掉项目/用户覆盖包后，内置版永久消失——覆盖不可逆）
+    this.items = this.retainRuntimeItems(await this.scanRolePacksForReload());
+    this.validateTeams();
+    // 重扫后的池 = 净差基线（内置版复活不计入 added）
     const baseline = new Set(this.items.map((p) => p.meta.name));
+    // 冲突聚合：resync 会依次扫多个目录，若只留最后一次，用户级覆盖记录会被项目级覆盖掉
+    const allConflicts: ExtraPackConflict[] = [];
     for (const [extraDir, extraTier] of this.extraDirs) {
-      await this.loadExtraDir(extraDir, extraTier);
+      const loaded = await this.loadExtraDir(extraDir, extraTier);
+      allConflicts.push(...loaded.conflicts);
     }
+    this.lastConflicts = allConflicts;
     const finalNames = new Set(this.items.map((p) => p.meta.name));
     // 净差：摘除名单中未随重扫回来的 = 真消失；重扫回来的同名项 = 内容更新生效；
     // added = 全新名字（既不在摘除名单也不在基线，改名新名 / 全新包）

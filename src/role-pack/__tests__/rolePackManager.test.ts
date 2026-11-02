@@ -782,6 +782,70 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(manager.activeName).toBe('memora助手');
     });
 
+    it('覆盖包被删后重扫：被覆盖的内置版复活（覆盖可逆，不留永久空洞）', async () => {
+      const { userPacksDir } = await setupDirs();
+      // 内置「翻译助手」（setupDirs 已写入，persona=你是翻译。）
+      // 项目目录放同名覆盖包（project > user > builtin）
+      const projectPacksDir = join(dir, '.memora', 'role-packs');
+      await writePack(
+        projectPacksDir,
+        '翻译助手',
+        { name: '翻译助手', formatVersion: '1.0.0' },
+        { persona: '项目版本翻译。' },
+      );
+
+      const manager = new RolePackManager(dir);
+      await manager.load('翻译助手');
+      await manager.loadExtraDir(userPacksDir);
+      await manager.loadExtraDir(projectPacksDir, 'project');
+      expect(manager.getActive()!.personaPrompt).toContain('项目版本翻译');
+
+      // 用户删除项目覆盖包后点刷新：内置版必须从磁盘复活，不得永久消失
+      await rm(join(projectPacksDir, '翻译助手'), { recursive: true, force: true });
+      const r = await manager.resyncUserPacks(projectPacksDir, 'project');
+
+      expect(r.activeFallback).toBe(false);
+      expect(manager.activeName).toBe('翻译助手');
+      expect(manager.getActive()!.personaPrompt).toContain('你是翻译');
+      expect(manager.listMeta().filter((m) => m.name === '翻译助手')).toHaveLength(1);
+    });
+
+    it('resync 聚合多个目录的冲突记录（用户级覆盖不被项目级扫描盖掉）', async () => {
+      const { userPacksDir } = await setupDirs();
+      // 第二个内置包「内置甲」，供项目级覆盖
+      await writePack(join(dir, 'role-packs'), '内置甲', {
+        name: '内置甲',
+        formatVersion: '1.0.0',
+      });
+      // 用户级覆盖「翻译助手」，项目级覆盖「内置甲」——两个目录各有一条 override
+      await writePack(
+        userPacksDir,
+        '翻译助手',
+        { name: '翻译助手', formatVersion: '1.0.0' },
+        { persona: '用户版本翻译。' },
+      );
+      const projectPacksDir = join(dir, '.memora', 'role-packs');
+      await writePack(
+        projectPacksDir,
+        '内置甲',
+        { name: '内置甲', formatVersion: '1.0.0' },
+        { persona: '项目版本甲。' },
+      );
+
+      const manager = new RolePackManager(dir);
+      await manager.load('翻译助手');
+      await manager.loadExtraDir(userPacksDir, 'user');
+      await manager.loadExtraDir(projectPacksDir, 'project');
+      // 直接调用 loadExtraDir 时快照只留最后一次（项目级）；resync 必须聚合两份
+      await manager.resyncUserPacks();
+      expect(manager.lastExtraConflicts).toEqual(
+        expect.arrayContaining([
+          { name: '翻译助手', winner: 'user', loser: 'builtin', action: 'override' },
+          { name: '内置甲', winner: 'project', loser: 'builtin', action: 'override' },
+        ]),
+      );
+    });
+
     it('激活的用户包仍存活 + 磁盘内容已改 → 净差记 updated（不算新增/移除）、激活保持、新内容生效', async () => {
       const { userPacksDir } = await setupDirs();
       await writePack(

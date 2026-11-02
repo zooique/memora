@@ -11,6 +11,8 @@ import { securityError } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { expandHome } from '@/utils/path.js';
 import { nowIso } from '@/utils/time.js';
+// 白名单上限与配置校验共用同一常量（config 是基础层，security 可依赖；禁止同值手抄两份）
+import { MAX_ALLOWED_PATHS } from '@/config/loader.js';
 
 /**
  * 解析符号链接后的真实绝对路径。
@@ -76,12 +78,11 @@ const BLOCKED_PATTERNS = [
 ];
 
 /**
- * 额外白名单最大条数，与 config/loader.ts 同值，防白名单膨胀。
+ * 额外白名单最大条数 = `config/loader.ts` 的 `MAX_ALLOWED_PATHS`（同一常量，非同值副本）。
  *
  * ⚠️ 超限**如实报错**（不静默截断）：截断会让用户以为目录已放行、实际写入被拒，
- * 与 A 类承诺（技能/角色包可写两处）正好相反。上限真源仍只在此常量与 loader 同值。
+ * 与 A 类承诺（技能/角色包可写两处）正好相反。
  */
-const MAX_EXTRA_ALLOWED_PATHS = 50;
 
 // ─── 命令裁决（run_command 安全边界，§13.2）───
 
@@ -371,12 +372,12 @@ export class SecurityGuard {
       seen.add(real);
       normalized.push(real);
     }
-    if (normalized.length > MAX_EXTRA_ALLOWED_PATHS) {
+    if (normalized.length > MAX_ALLOWED_PATHS) {
       throw securityError(
-        `${label} 超过上限（${MAX_EXTRA_ALLOWED_PATHS} 条）`,
-        `收到 ${normalized.length} 条去重后路径，超出内核上限 ${MAX_EXTRA_ALLOWED_PATHS}`,
+        `${label} 超过上限（${MAX_ALLOWED_PATHS} 条）`,
+        `收到 ${normalized.length} 条去重后路径，超出内核上限 ${MAX_ALLOWED_PATHS} 条`,
         [
-          `删除 ${normalized.length - MAX_EXTRA_ALLOWED_PATHS} 条不再需要的允许路径`,
+          `删除 ${normalized.length - MAX_ALLOWED_PATHS} 条不再需要的允许路径`,
           '白名单上限防膨胀：内核不静默截断，超限立即报错',
         ],
       );

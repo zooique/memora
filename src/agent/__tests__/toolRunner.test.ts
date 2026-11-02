@@ -67,7 +67,7 @@ describe('ToolRunner 单工具执行', () => {
       readonly: boolean;
     }>;
     const deps = makeDeps({
-      allTools: validTools as never,
+      allTools: () => validTools as never,
       getStrategy: () => strategy({ toolReadonly: 'readonly' }),
     });
     const runner = new ToolRunner(deps);
@@ -87,7 +87,7 @@ describe('ToolRunner 单工具执行', () => {
     const execute = vi.fn(async () => 'OK');
     const deps = makeDeps({
       execute,
-      allTools,
+      allTools: () => allTools,
       getStrategy: () => strategy({ toolReadonly: 'readonly' }),
     });
     const runner = new ToolRunner(deps);
@@ -126,7 +126,7 @@ describe('ToolRunner 单工具执行', () => {
     const runner = new ToolRunner(
       makeDeps({
         execute,
-        allTools: allTools as never,
+        allTools: () => allTools as never,
         getStrategy: () => strategy({ toolReadonly: 'readonly' }),
       }),
     );
@@ -141,12 +141,40 @@ describe('ToolRunner 单工具执行', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it('只读闸：构造后注册的自定义写工具也受拦（提供者惰性取数，非构造期快照）', async () => {
+    // READONLY-LATE-REG-1：宿主可在 AgentLoop 构造后 registerTool（MCP 工具注册路径）。
+    // 若闸持有数组快照，新工具查不到 ⇒ 未声明 readonly 的写工具在只读模式被放行（安全洞）。
+    const registry: Array<{ name: string; description: string; readonly?: boolean }> = [];
+    const execute = vi.fn(async () => 'OK');
+    const runner = new ToolRunner(
+      makeDeps({
+        execute,
+        // 只查询 name/readonly 两字段，registry 不含 parameters（用 never 旁路完整定义约束）
+        allTools: () => registry as never,
+        getStrategy: () => strategy({ toolReadonly: 'readonly' }),
+      }),
+    );
+
+    // 模拟 registerTool：构造之后才登记一个未声明 readonly 的写工具
+    registry.push({ name: 'late_write', description: '后注册写工具' });
+    const denied = await runner.runOne(tc('late_write', '{}'));
+    expect(denied.status).toBe('blocked');
+    expect(denied.blockedReason).toBe('readonly_denied');
+    expect(execute).not.toHaveBeenCalled();
+
+    // 同批随后登记只读工具：同一 runner 实时放行（证明取数发生在判定时，而非构造时）
+    registry.push({ name: 'late_read', description: '后注册读工具', readonly: true });
+    const allowed = await runner.runOne(tc('late_read', '{}'));
+    expect(allowed.status).toBe('ok');
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   it('只读闸：渐进披露四个读工具在只读模式放行（READONLY-BUILTIN-1 防回归）', async () => {
     const execute = vi.fn(async () => 'OK');
     const runner = new ToolRunner(
       makeDeps({
         execute,
-        allTools: ALL_BUILTIN_TOOL_DEFS,
+        allTools: () => ALL_BUILTIN_TOOL_DEFS,
         getStrategy: () => strategy({ toolReadonly: 'readonly' }),
       }),
     );
@@ -281,7 +309,7 @@ describe('SCRIPT-2 B4：runOne 返回 ToolOutcome（结构化事实，文本降�
     const readonlyTools = [{ name: 'write_file', readonly: false }] as never;
     const r1 = await new ToolRunner(
       makeDeps({
-        allTools: readonlyTools,
+        allTools: () => readonlyTools,
         getStrategy: () => strategy({ toolReadonly: 'readonly' }),
       }),
     ).runOne(tc('write_file'));

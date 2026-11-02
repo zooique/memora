@@ -128,9 +128,11 @@ export interface AgentLoopOptions {
   needsPlanningOverride?: (text: string) => boolean;
   /** 工具定义列表（内置 + 自定义），用于 system prompt 追加工具描述 */
   toolDefinitions?: ToolDefinition[];
-  /** 全部工具定义列表（内置 + 自定义），供只读模式（toolReadonly）查询 readonly 标记；
-   *  与 `toolDefinitions`（暴露面，受白名单过滤）刻意分离——闸查全量，不查可见面 */
-  allTools?: ToolDefinition[];
+  /** 全部工具定义**提供者**（内置 + 自定义），供只读模式（toolReadonly）查询 readonly 标记；
+   *  与 `toolDefinitions`（暴露面，受白名单过滤）刻意分离——闸查全量，不查可见面。
+   *  🔴 惰性取数（非数组快照）：registerTool 可在 loop 构造后注册自定义工具，
+   *  快照会让新工具逃出只读闸（详见 `ToolRunnerDeps.allTools` 注释）。 */
+  allTools?: () => readonly ToolDefinition[];
   /** 上下文窗口 token 上限（缺省 = `AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS`，经 resolveContextWindow 兜底，
    *  数字不在此落账——真源改值时注释不跟随会变撒谎）。估算 token 超此阈值时裁剪中间段，
    *  仅保留 system prompt + 最近 N 条消息，防上下文溢出。 */

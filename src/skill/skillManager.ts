@@ -138,12 +138,8 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * @returns 重载后的技能总数
    */
   override async reload(): Promise<number> {
-    for (const name of this.extraSkillNames) this.deleteItem(name);
-    this.clearExtraBookkeeping();
-    await super.reload();
-    for (const [dir, tier] of this.extraDirs) {
-      await this.loadExtraDir(dir, tier);
-    }
+    this.removeExtraItems();
+    await this.rescanAllSources();
     return this.items.length;
   }
 
@@ -158,15 +154,10 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    */
   async resyncUserSkills(): Promise<{ added: number; removed: string[]; updated: string[] }> {
     // 摘除前名单 = 对账基线之一（deleteItem 同时注销运行时记账）
-    const beforeNames = [...this.extraSkillNames];
-    for (const name of beforeNames) this.deleteItem(name);
-    this.clearExtraBookkeeping();
+    const beforeNames = this.removeExtraItems();
     // 摘除后的池 = 净差基线（register() 注入项仍在，重扫不触碰它们）
     const baseline = new Set(this.items.map((s) => s.name));
-    await super.reload();
-    for (const [dir, tier] of this.extraDirs) {
-      await this.loadExtraDir(dir, tier);
-    }
+    await this.rescanAllSources();
     const finalNames = new Set(this.items.map((s) => s.name));
     const removed = beforeNames.filter((name) => !finalNames.has(name));
     const updated = beforeNames.filter((name) => finalNames.has(name));
@@ -175,6 +166,33 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     ).length;
     logger.info({ added, removed, updated }, '额外技能目录已重扫对账');
     return { added, removed, updated };
+  }
+
+  /**
+   * 摘除全部额外目录注入项并清账（reload / resync 的共同前置步骤）。
+   *
+   * `register()` 注入项不在 `extraSkillNames` 内，故不受影响（仍由基类记账保留）。
+   *
+   * @returns 摘除前的额外目录技能名快照（resync 对账用）
+   */
+  private removeExtraItems(): string[] {
+    const names = [...this.extraSkillNames];
+    for (const name of names) this.deleteItem(name);
+    this.clearExtraBookkeeping();
+    return names;
+  }
+
+  /**
+   * 统一重扫全部来源（重扫逻辑单点）：先基类扫 configDir（内置），再按登记序扫额外目录。
+   *
+   * reload 与 resyncUserSkills 共用本方法——两处各写一遍重扫序会产生第二份「扫什么」清单，
+   * 改一处即静默漂移（SSOT 纪律）。
+   */
+  private async rescanAllSources(): Promise<void> {
+    await super.reload();
+    for (const [dir, tier] of this.extraDirs) {
+      await this.loadExtraDir(dir, tier);
+    }
   }
 
   /** 清空额外目录的全部记账（覆盖分账 + 注入名单 + 来源映射；目录登记本身保留） */
