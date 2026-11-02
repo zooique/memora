@@ -10,7 +10,8 @@
  *   2. 换名提交失败 ⇒ 备份反向换名回滚，目标仍是旧版，备份与暂存均被清理；
  *   3. 成功覆盖 ⇒ 旧内容消失、新内容完整（补充断言：不残留 `.bak-`）；
  *   4. 目标不存在 ⇒ 直接换名提交，不产生任何 `.bak-`；
- *   5. 导入前清理过期残留（`.import-tmp-*` / `*.bak-*`），但**不删刚创建的**（可能属并发导入）。
+ *   5. 导入前清理过期残留（`.import-tmp-*` / `*.bak-*`），但**不删刚创建的**（可能属并发导入）；
+ *   6. 回滚本身失败 ⇒ 备份转成 `.recovery-` 形态留盘（旧内容的唯一副本），且后续清理永不删它。
  *
  * 失败注入方式：`vi.mock('node:fs/promises')` 默认透传真实实现，仅按调用序号抛错——
  * 生产代码不留测试专用开关（不为可测性引入第二套写盘路径）。
@@ -18,6 +19,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createWriteStream,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -27,17 +29,17 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { ZipFile } from 'yazl';
 
-/** 写盘 / 换名的失败注入控制（序号 = 0 基调用计数；-1 表示不注入） */
+/** 写盘 / 换名的失败注入控制（序号 = 0 基调用计数；空数组表示不注入） */
 const fsControl = vi.hoisted(() => ({
-  /** 第 N 次 writeFile 抛错 */
-  failWriteAt: -1,
+  /** 需抛错的 writeFile 调用序号（可多点注入，如「提交失败 + 回滚失败」） */
+  failWriteAt: [] as number[],
   /** writeFile 调用计数 */
   writeCalls: 0,
-  /** 第 N 次 rename 抛错 */
-  failRenameAt: -1,
+  /** 需抛错的 rename 调用序号（可多点注入，如「提交失败 + 回滚失败」） */
+  failRenameAt: [] as number[],
   /** rename 调用计数 */
   renameCalls: 0,
 }));
@@ -48,14 +50,14 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     ...actual,
     writeFile: vi.fn(async (path: unknown, data: unknown, opts?: unknown) => {
       const index = fsControl.writeCalls++;
-      if (index === fsControl.failWriteAt) throw new Error('注入失败：模拟磁盘写入失败');
+      if (fsControl.failWriteAt.includes(index)) throw new Error('注入失败：模拟磁盘写入失败');
       return (
         actual.writeFile as unknown as (p: unknown, d: unknown, o?: unknown) => Promise<void>
       )(path, data, opts);
     }),
     rename: vi.fn(async (from: string, to: string) => {
       const index = fsControl.renameCalls++;
-      if (index === fsControl.failRenameAt) throw new Error('注入失败：模拟换名失败');
+      if (fsControl.failRenameAt.includes(index)) throw new Error('注入失败：模拟换名失败');
       return actual.rename(from, to);
     }),
   };
@@ -96,17 +98,27 @@ async function makeZip(zipPath: string, entries: { name: string; data: string }[
   });
 }
 
-/** 目录里是否还有导入残留（暂存 / 备份） */
+/** 目录里是否还有导入残留（暂存 / 备份）——`.recovery-` 是**主动保留**的恢复备份，不算残留 */
 function hasLeftovers(dir: string): boolean {
   return readdirSync(dir).some(
     (name) => name.startsWith('.import-tmp-') || /\.bak-[0-9a-f]{12}$/.test(name),
   );
 }
 
+/**
+ * 找出目录里的恢复备份（形如 `.<目标名>.recovery-<12 位 hex>`）
+ *
+ * @param dir 目标父目录
+ * @returns 命中的目录项名；未命中返回 undefined
+ */
+function findRecovery(dir: string): string | undefined {
+  return readdirSync(dir).find((name) => /\.recovery-[0-9a-f]{12}$/.test(name));
+}
+
 beforeEach(() => {
-  fsControl.failWriteAt = -1;
+  fsControl.failWriteAt = [];
   fsControl.writeCalls = 0;
-  fsControl.failRenameAt = -1;
+  fsControl.failRenameAt = [];
   fsControl.renameCalls = 0;
 });
 
@@ -146,7 +158,7 @@ describe('importAssetZip · 暂存换名（失败中断不得损坏旧目标）'
       { name: 'rp/extra.md', data: '新版资源' },
     ]);
     // 第 2 次写盘失败（manifest 已写进暂存，persona 失败）⇒ 目标应完全未动
-    fsControl.failWriteAt = 1;
+    fsControl.failWriteAt = [1];
 
     const result = await importAssetZip(zipPath, {
       targetRootFor: () => root,
@@ -170,7 +182,7 @@ describe('importAssetZip · 暂存换名（失败中断不得损坏旧目标）'
       { name: 'rp/persona.md', data: '新版人格设定' },
     ]);
     // rename 序：① 目标→备份（成功）② 暂存→目标（注入失败）③ 备份→目标（回滚，成功）
-    fsControl.failRenameAt = 1;
+    fsControl.failRenameAt = [1];
 
     const result = await importAssetZip(zipPath, {
       targetRootFor: () => root,
@@ -184,6 +196,55 @@ describe('importAssetZip · 暂存换名（失败中断不得损坏旧目标）'
     expect(readFileSync(join(targetDir, 'old.md'), 'utf-8')).toBe(OLD_EXTRA);
     expect(readdirSync(targetDir).sort()).toEqual(['manifest.json', 'old.md']);
     expect(hasLeftovers(root)).toBe(false);
+  });
+
+  it('回滚失败 ⇒ 旧内容转成 .recovery- 留盘，后续导入的清理也不删它', async () => {
+    const { zipPath, root, targetDir } = setupExistingRolePack();
+    await makeZip(zipPath, [
+      { name: 'rp/manifest.json', data: JSON.stringify({ name: 'demo-role' }) },
+      { name: 'rp/persona.md', data: '新版人格设定' },
+    ]);
+    // rename 序：① 目标→备份（成功）② 暂存→目标（失败）③ 备份→目标（回滚也失败）
+    //          ④ 备份→`.recovery-`（标记成功，旧内容得以留盘）
+    fsControl.failRenameAt = [1, 2];
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => root,
+      confirmOverwrite: async () => true,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain('回滚未完成');
+    // 目标位置已无旧内容（旧内容的唯一副本迁到了恢复备份）
+    expect(existsSync(targetDir)).toBe(false);
+    // 恢复备份存在且旧内容逐字节完好
+    const recoveryName = findRecovery(root);
+    expect(recoveryName).toBeDefined();
+    const recoveryDir = join(root, recoveryName!);
+    expect(readFileSync(join(recoveryDir, 'manifest.json'), 'utf-8')).toBe(OLD_MANIFEST);
+    expect(readFileSync(join(recoveryDir, 'old.md'), 'utf-8')).toBe(OLD_EXTRA);
+    // 暂存与 `.bak-` 均已清理（`.recovery-` 不算残留）
+    expect(hasLeftovers(root)).toBe(false);
+
+    // 把恢复备份的 mtime 回拨 2 小时（超过清理阈值），再用一次成功导入触发 cleanupStaleArtifacts
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    utimesSync(recoveryDir, twoHoursAgo, twoHoursAgo);
+    const secondZip = join(dirname(zipPath), 'fresh-skill.zip');
+    await makeZip(secondZip, [
+      {
+        name: 'fresh-skill.md',
+        data: '---\nname: fresh-skill\ndescription: 新技能\n---\n正文',
+      },
+    ]);
+    const second = await importAssetZip(secondZip, {
+      targetRootFor: () => root,
+      confirmOverwrite: async () => false,
+    });
+    expect(second.ok).toBe(true);
+    // 清理跑过一轮，恢复备份仍在（清理逻辑无条件跳过 `.recovery-`），旧内容未被销毁
+    expect(findRecovery(root)).toBe(recoveryName);
+    expect(readFileSync(join(recoveryDir, 'manifest.json'), 'utf-8')).toBe(OLD_MANIFEST);
+    expect(readFileSync(join(recoveryDir, 'old.md'), 'utf-8')).toBe(OLD_EXTRA);
   });
 
   it('成功覆盖 ⇒ 旧内容消失、新内容完整、不残留备份', async () => {

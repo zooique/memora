@@ -13,12 +13,15 @@
  *    最终写入路径必须落在目标目录内（`resolveInsideDir` 二次断言）；
  * 3. 类型识别：含 `manifest.json` ⇒ 角色包；否则含带 `description` 的 `.md`（或 `SKILL.md`
  *    文件夹形态）⇒ 技能；两者都不满足 ⇒ 拒绝并说明原因；
- * 4. 格式校验：技能走 `validateSkillAsset`，角色包走内核 `validateManifestText`
- *    （`formatVersion` 缺省补 `1.0.0` 后再校验与落盘）；
- * 5. 同名处置：目标已存在 ⇒ 由调用方明确询问「覆盖 / 取消」，取消则什么都不写；
+ * 4. 格式校验：技能走 `validateSkillAsset`（`./validateSkill.ts`，只校验不落盘），
+ *    角色包走内核 `validateManifestText`（`formatVersion` 缺省补 `1.0.0` 后再校验与落盘）；
+ * 5. 同名处置：**内置角色包**同名 ⇒ 由调用方经 `isNameTaken` 直接拒绝（内置属产品组成，
+ *    被同名用户包顶掉会让人以为功能消失）；其余目标已存在 ⇒ 明确询问「覆盖 / 取消」，取消则零写入；
  * 6. **暂存 + 换名提交**：全部内容先写进目标同父目录的隐藏暂存区（同卷 ⇒ `rename` 原子），
  *    确认写入完成后再换名；目标已存在时先换名成备份、提交成功才删备份，任一步失败即回滚
  *    （旧内容按字节原样恢复）。**不再「先删旧目标再逐条写」**——中途失败会留半包且旧包不可恢复。
+ *    回滚本身失败时，备份改名为 `.<目标名>.recovery-<hex>`（前导点让扫描器跳过）——
+ *    这是旧内容的**唯一副本**，残留清理永不删除它，日志写绝对路径供人工恢复。
  * 7. 写入完成后由调用方重扫（`resyncUserSkills` / `resyncUserPacks`）并刷新 UI。
  *
  * **不执行包内任何脚本**：只把条目当普通文件落盘（`.js` / `.py` 只写不跑）。
@@ -29,7 +32,7 @@ import { basename, dirname, join } from 'node:path';
 import { logger, parseFrontmatter, validateManifestText } from '@zooique/memora';
 import * as yauzl from 'yauzl';
 import { pathExists, resolveInsideDir, sanitizeAssetName } from './path.js';
-import { validateSkillAsset } from './write.js';
+import { validateSkillAsset } from './validateSkill.js';
 
 /** 解压上限（防 zip bomb；按「解压后」口径，不是压缩包大小） */
 export const ZIP_IMPORT_LIMITS = {
@@ -51,10 +54,24 @@ const STALE_ARTIFACT_MS = 60 * 60 * 1000;
 const TMP_ARTIFACT_RE = /^\.import-tmp-[0-9a-f]{12}(\.md)?$/;
 /** 备份名的严格形态（`.bak-` + 12 位 hex 结尾） */
 const BAK_ARTIFACT_RE = /\.bak-[0-9a-f]{12}$/;
+/** 回滚失败的恢复备份标记：`.<目标名>.recovery-<12 位 hex>` */
+const IMPORT_RECOVERY_MARK = '.recovery-';
+/** 恢复备份名的严格形态（匹配即**永不清理**——它是用户旧内容的唯一副本） */
+const RECOVERY_ARTIFACT_RE = /\.recovery-[0-9a-f]{12}$/;
 
 /** 生成 12 位随机十六进制后缀（暂存 / 备份名唯一化，防同名并发互踩） */
 function makeSuffix(): string {
   return randomBytes(6).toString('hex');
+}
+
+/**
+ * 恢复备份路径：`<父目录>/.<目标名>.recovery-<hex>`
+ *
+ * 前导点不是装饰——技能 / 角色包扫描器都跳过 `.` 开头的条目，否则恢复出来的旧目录
+ * 会被当成同名资产再次装载（用旧内容顶掉刚提交的新内容）。
+ */
+function recoveryPathFor(target: string, suffix: string): string {
+  return join(dirname(target), `.${basename(target)}${IMPORT_RECOVERY_MARK}${suffix}`);
 }
 
 /**
@@ -69,6 +86,8 @@ async function cleanupStaleArtifacts(dir: string): Promise<void> {
   const names = await readdir(dir).catch(() => [] as string[]);
   const now = Date.now();
   for (const name of names) {
+    // 恢复备份是回滚失败时旧内容的唯一副本 ⇒ 无条件跳过，永不按过期时间清理
+    if (RECOVERY_ARTIFACT_RE.test(name)) continue;
     if (!TMP_ARTIFACT_RE.test(name) && !BAK_ARTIFACT_RE.test(name)) continue;
     const full = join(dir, name);
     try {
@@ -88,6 +107,9 @@ async function cleanupStaleArtifacts(dir: string): Promise<void> {
  * 任一步失败：反向 `rename(备份 → 目标)` 恢复旧内容并删除暂存，保证**回滚后目标与导入前逐字节一致**
  * （备份是 `rename` 出来的，不是复制，字节零损耗）。
  *
+ * 回滚本身失败（如目标位置满 / 权限突变）：备份改名为 `.recovery-` 形态并**留在磁盘**，
+ * 残留清理永不删除它——旧内容此时只有这一份，删掉等于替用户销毁数据。
+ *
  * @param stagedPath 暂存区绝对路径（目录形态为目录，单文件形态为 `<parent>/.import-tmp-xxxx.md`）
  * @param targetPath 目标绝对路径（首个命中的同名候选）
  * @param extraTargets 其余同名候选（单文件技能的「同名目录」占位；无新内容，仅备份后删除）
@@ -101,6 +123,8 @@ async function commitStaged(
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   /** 已完成的备份（回滚时反向换名；`from` = 备份路径，`to` = 原目标路径） */
   const backups: { from: string; to: string }[] = [];
+  /** 回滚失败后保留的恢复备份绝对路径（供回执与日志告知用户手工恢复） */
+  const recoveries: string[] = [];
   try {
     for (const target of [targetPath, ...extraTargets]) {
       if (!(await pathExists(target))) continue;
@@ -116,16 +140,34 @@ async function commitStaged(
         if (await pathExists(to)) await rm(to, { recursive: true, force: true });
         await rename(from, to);
       } catch (rollbackErr) {
-        logger.error({ rollbackErr, from, to }, '压缩包导入回滚失败（备份保留在磁盘，请手工恢复）');
+        // 回滚失败：旧内容此刻只在这份备份里 ⇒ 改成清理永不碰的恢复形态并记录绝对路径
+        const recovery = recoveryPathFor(to, suffix);
+        try {
+          await rename(from, recovery);
+          recoveries.push(recovery);
+          logger.error({ rollbackErr, recovery }, '压缩包导入回滚失败（旧内容已保留为恢复备份）');
+        } catch (markErr) {
+          // 连改名都失败：备份仍是 `.bak-` 形态，必须在回执里点名，避免用户误以为已恢复
+          recoveries.push(from);
+          logger.error(
+            { rollbackErr, markErr, backup: from },
+            '压缩包导入回滚失败且无法标记恢复形态（旧内容仍在原备份路径）',
+          );
+        }
       }
     }
     await rm(stagedPath, { recursive: true, force: true }).catch((cleanupErr: unknown) => {
       logger.warn({ cleanupErr, stagedPath }, '压缩包导入失败后清理暂存失败（不影响回滚结果）');
     });
-    return {
-      ok: false,
-      reason: `换名提交失败，已回滚（目标保持导入前内容）：${(err as Error).message}`,
-    };
+    return recoveries.length > 0
+      ? {
+          ok: false,
+          reason: `换名提交失败且回滚未完成，旧内容保留为恢复备份：${recoveries.join('、')}（请手工恢复）：${(err as Error).message}`,
+        }
+      : {
+          ok: false,
+          reason: `换名提交失败，已回滚（目标保持导入前内容）：${(err as Error).message}`,
+        };
   }
   // 提交成功后才删备份；删失败只记日志——此时目标已是新内容，把清理失败当导入失败属误报
   for (const { from } of backups) {
@@ -180,6 +222,13 @@ export interface ImportZipOptions {
    * 不允许本模块自行决定覆盖——静默覆盖用户资产是最不可接受的失败形态。
    */
   confirmOverwrite: (prompt: OverwritePrompt) => Promise<boolean>;
+  /**
+   * 名字是否已被**内置角色包**占用（仅角色包调用；技能不走本判据）。
+   *
+   * 命中即拒绝且零写入：内置包属产品组成，被同名用户 / 项目包顶掉会让人以为功能消失。
+   * 判定归调用方（内置目录清单是宿主知识），本模块只消费布尔结果。
+   */
+  isNameTaken?: (name: string) => boolean | Promise<boolean>;
 }
 
 /** 压缩包内一个已通过路径校验的文件条目（路径统一为 `/` 分隔的相对路径） */
@@ -239,6 +288,11 @@ function isSymlinkEntry(entry: yauzl.Entry): boolean {
  * 上限在两级校验：① 读数据前看中央目录声明；② 流式读取时按实际字节累计——
  * 只信声明会被伪造的 uncompressedSize 绕过（zip bomb 的常见变体）。
  *
+ * `validateEntrySizes: false` 是刻意关掉的：yauzl 的尺寸断言会在业务层之前直接报错
+ * （deflated 走 `AssertByteCountStream`、stored 在中央目录解析阶段比对 compressed/uncompressed），
+ * 结果是「实际字节二次校验」成死代码。关掉后**上限判据全部归本模块**：声明照看（快速拒），
+ * 实际字节照算（防伪造），两级都在这里。
+ *
  * @param zipPath zip 绝对路径
  * @returns 通过校验的文件条目（目录条目已跳过）
  */
@@ -246,7 +300,14 @@ async function readZipFileEntries(zipPath: string): Promise<ZipFileEntry[]> {
   return new Promise((resolve, reject) => {
     yauzl.open(
       zipPath,
-      { lazyEntries: true, autoClose: true, decodeStrings: true, strictFileNames: false },
+      {
+        lazyEntries: true,
+        autoClose: true,
+        decodeStrings: true,
+        strictFileNames: false,
+        // 见上方说明：尺寸断言交给本模块的两级上限，否则「按实际字节」永远不可达
+        validateEntrySizes: false,
+      },
       (openErr, zipFile) => {
         if (openErr || !zipFile) {
           reject(new Error(`不是有效的 zip 文件：${openErr?.message ?? '无法打开'}`));
@@ -564,10 +625,15 @@ function resolveTargets(
   targetRoot: string,
   plan: AssetPlan,
 ): { ok: true; targets: string[] } | { ok: false; reason: string } {
-  const resolved = resolveInsideDir(targetRoot, plan.targetName);
-  if (!resolved.ok) return resolved;
   // 单文件技能：同名目录也算冲突（内核按技能名去重，文件与目录同名会导致装载歧义）
-  const targets = plan.singleFile ? [resolved.path, join(targetRoot, plan.name)] : [resolved.path];
+  const candidates = plan.singleFile ? [plan.targetName, plan.name] : [plan.targetName];
+  const targets: string[] = [];
+  // 路径推导只经 `resolveInsideDir`（单点纪律）：裸 `join` 会绕开逃逸断言
+  for (const candidate of candidates) {
+    const resolved = resolveInsideDir(targetRoot, candidate);
+    if (!resolved.ok) return resolved;
+    targets.push(resolved.path);
+  }
   return { ok: true, targets };
 }
 
@@ -592,6 +658,15 @@ export async function importAssetZip(
   const planned = planAsset(entries);
   if (!planned.ok) return { ok: false, reason: planned.reason };
   const { plan } = planned;
+
+  // 内置同名判定：只对角色包生效，且在解析目标 / 建目录之前 ⇒ 命中即零写入
+  if (plan.kind === 'rolePack' && options.isNameTaken && (await options.isNameTaken(plan.name))) {
+    return {
+      ok: false,
+      reason: `已存在同名角色包（内置）「${plan.name}」，请改名后再导入`,
+      asset: { kind: plan.kind, name: plan.name },
+    };
+  }
 
   const targetRoot = options.targetRootFor(plan.kind);
   const resolved = resolveTargets(targetRoot, plan);

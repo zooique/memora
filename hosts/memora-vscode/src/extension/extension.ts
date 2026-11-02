@@ -616,6 +616,8 @@ export function activate(context: vscode.ExtensionContext): void {
       importAssetCommand({
         userSkillsDir,
         userRolePacksDir,
+        // 内置角色包根目录：导入时同名即拒绝（与设置页来源判定的 `configDir/role-packs` 同源）
+        builtinRolePacksDir: join(configDir, USER_ROLE_PACKS_DIR_NAME),
         readProjectDirs: readProjectAssetDirs,
         tryGetAgent,
         chatProvider,

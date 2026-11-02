@@ -21,6 +21,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -60,8 +61,8 @@ interface FixtureEntry {
   name: string;
   /** 条目内容（文本或原始字节） */
   data: string | Buffer;
-  /** yazl 选项（mode 可造符号链接条目） */
-  options?: { mode?: number };
+  /** yazl 选项（mode 可造符号链接条目；compress=false 造 stored 条目以便伪造声明） */
+  options?: { mode?: number; compress?: boolean };
 }
 
 /**
@@ -111,6 +112,27 @@ function renameEntryBytes(zipPath: string, from: string, to: string): void {
 
 /** 默认覆盖确认（多数用例不需要覆盖） */
 const neverOverwrite = vi.fn(async () => false);
+
+/**
+ * 伪造 stored 条目的「声明解压大小」（不改实际数据）
+ *
+ * 构造真实世界的 zip bomb 变体：中央目录写「很小」，实际字节很大。
+ * 只在 `compressedSize` 不变的前提下改 `uncompressedSize`，所以解压器读出的仍是全部字节
+ * （yauzl 的尺寸断言须关掉，见 `readZipFileEntries` 的 `validateEntrySizes: false`）。
+ *
+ * @param zipPath 目标 zip
+ * @param declaredSize 写入的伪造声明值
+ */
+function patchStoredUncompressedSize(zipPath: string, declaredSize: number): void {
+  const raw = readFileSync(zipPath);
+  const localHeader = raw.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+  // 中央目录头（`PK\x01\x02`）：uncompressedSize 位于 +24
+  const centralHeader = raw.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+  if (localHeader < 0 || centralHeader < 0) throw new Error('夹具未找到 zip 头签名');
+  raw.writeUInt32LE(declaredSize, localHeader + 22);
+  raw.writeUInt32LE(declaredSize, centralHeader + 24);
+  writeFileSync(zipPath, raw);
+}
 
 describe('validateArchiveEntryPath · zip-slip 判据（单一真理源）', () => {
   /** 断言拒绝且原因含关键词 */
@@ -376,5 +398,177 @@ describe('importAssetZip · 同名处置（不许静默覆盖）', () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.asset.fileCount).toBe(1);
     expect(readFileSync(existingPath, 'utf-8')).toContain('新正文');
+  });
+});
+
+describe('importAssetZip · 内置角色包同名（isNameTaken 命中即零写入）', () => {
+  it('isNameTaken 命中 ⇒ 拒绝且目标根未被创建、确认回调未被调用', async () => {
+    const dir = makeTempDir('memora-zip-builtin-taken-');
+    const zipPath = join(dir, 'pack.zip');
+    const root = join(dir, 'role-packs');
+    await makeZip(zipPath, [
+      { name: 'rp/manifest.json', data: JSON.stringify({ name: '内置角色' }) },
+      { name: 'rp/persona.md', data: '你是内置角色。' },
+    ]);
+    const confirmOverwrite = vi.fn(async () => true);
+    const isNameTaken = vi.fn(async () => true);
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => root,
+      confirmOverwrite,
+      isNameTaken,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain('同名角色包（内置）');
+    // 零写入：判定发生在 mkdir / 暂存之前
+    expect(existsSync(root)).toBe(false);
+    expect(confirmOverwrite).not.toHaveBeenCalled();
+  });
+
+  it('isNameTaken 未命中（同名用户包）⇒ 仍走既有覆盖确认流，取消则原内容不变', async () => {
+    const dir = makeTempDir('memora-zip-user-same-');
+    const root = join(dir, 'role-packs');
+    const targetDir = join(root, 'user-role');
+    mkdirSync(targetDir, { recursive: true });
+    writeFileSync(join(targetDir, 'manifest.json'), JSON.stringify({ name: 'user-role' }), 'utf-8');
+    const zipPath = join(dir, 'pack.zip');
+    await makeZip(zipPath, [
+      { name: 'rp/manifest.json', data: JSON.stringify({ name: 'user-role' }) },
+    ]);
+    const confirmOverwrite = vi.fn(async () => false);
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => root,
+      confirmOverwrite,
+      isNameTaken: async () => false,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain('已取消导入');
+    expect(confirmOverwrite).toHaveBeenCalledTimes(1);
+    expect(readFileSync(join(targetDir, 'manifest.json'), 'utf-8')).toContain('user-role');
+  });
+});
+
+describe('importAssetZip · 防线用例（既有实现，零覆盖补测）', () => {
+  it('条目数超过上限（501 条）⇒ 拒绝', async () => {
+    const dir = makeTempDir('memora-zip-count-');
+    const zipPath = join(dir, 'many.zip');
+    const entries: FixtureEntry[] = Array.from(
+      { length: ZIP_IMPORT_LIMITS.maxEntries + 1 },
+      (_, i) => ({
+        name: `f${i}.txt`,
+        data: 'x',
+      }),
+    );
+    await makeZip(zipPath, entries);
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => join(dir, 'out'),
+      confirmOverwrite: neverOverwrite,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain('条目数超过上限');
+  });
+
+  it('单条解压后超过上限（5 MB + 1 字节）⇒ 拒绝', async () => {
+    const dir = makeTempDir('memora-zip-single-');
+    const zipPath = join(dir, 'big.zip');
+    await makeZip(zipPath, [
+      { name: 'big.txt', data: Buffer.alloc(ZIP_IMPORT_LIMITS.maxEntryBytes + 1, 97) },
+    ]);
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => join(dir, 'out'),
+      confirmOverwrite: neverOverwrite,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain('单条上限');
+  });
+
+  it('伪造中央目录声明（声明 1 字节、实际 5 MB+）⇒ 被「实际字节」二次校验拦下', async () => {
+    const dir = makeTempDir('memora-zip-forged-size-');
+    const zipPath = join(dir, 'forged.zip');
+    // stored（compress: false）条目：central header 的 compressedSize 仍是真实大小
+    await makeZip(zipPath, [
+      {
+        name: 'big.txt',
+        data: Buffer.alloc(ZIP_IMPORT_LIMITS.maxEntryBytes + 1, 97),
+        options: { compress: false },
+      },
+    ]);
+    patchStoredUncompressedSize(zipPath, 1);
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => join(dir, 'out'),
+      confirmOverwrite: neverOverwrite,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain('实际解压大小超过单条上限');
+  });
+
+  it('同深度多份候选技能 ⇒ 明确拒绝（不任选一个）', async () => {
+    const dir = makeTempDir('memora-zip-ambiguous-');
+    const zipPath = join(dir, 'ambiguous.zip');
+    await makeZip(zipPath, [
+      { name: 'a.md', data: '---\nname: a\ndescription: 甲\n---\n正文' },
+      { name: 'b.md', data: '---\nname: b\ndescription: 乙\n---\n正文' },
+    ]);
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => join(dir, 'out'),
+      confirmOverwrite: neverOverwrite,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain('多个技能文件');
+  });
+
+  it('跳过 `__MACOSX/` 与 `.DS_Store` ⇒ 只导入真实技能文件', async () => {
+    const dir = makeTempDir('memora-zip-macosx-');
+    const root = join(dir, 'skills');
+    const zipPath = join(dir, 'macos.zip');
+    await makeZip(zipPath, [
+      { name: '__MACOSX/._demo.md', data: '元数据' },
+      { name: '.DS_Store', data: '垃圾' },
+      { name: 'demo.md', data: '---\nname: demo\ndescription: 演示\n---\n正文' },
+    ]);
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => root,
+      confirmOverwrite: neverOverwrite,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.asset.fileCount).toBe(1);
+    expect(readdirSync(root).sort()).toEqual(['demo.md']);
+  });
+
+  it('文件夹名与 frontmatter `name` 不一致 ⇒ 以 frontmatter 为准落盘', async () => {
+    const dir = makeTempDir('memora-zip-folder-name-');
+    const root = join(dir, 'skills');
+    const zipPath = join(dir, 'folder-name.zip');
+    await makeZip(zipPath, [
+      {
+        name: 'weird-dir/SKILL.md',
+        data: '---\nname: real-name\ndescription: 演示\n---\n正文',
+      },
+    ]);
+
+    const result = await importAssetZip(zipPath, {
+      targetRootFor: () => root,
+      confirmOverwrite: neverOverwrite,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.asset.name).toBe('real-name');
+      expect(result.asset.targetPath).toBe(join(root, 'real-name'));
+    }
+    expect(readdirSync(root)).toEqual(['real-name']);
   });
 });

@@ -6,7 +6,18 @@
  * 两份判据从落笔那一刻起就会漂移（其中一个漏掉 `..` 或绝对路径），且没有任何测试会红。
  *
  * 硬约束：本模块只做**判据**与**路径推导**，不碰 SecurityGuard / allowedPaths，
- * 也不做任何写入——写入的唯一落点在 `./write.ts`。
+ * 也不做任何写入。
+ *
+ * ## 模块边界（`userAssets/`）
+ *   - 本文件 = 名字净化 / 路径推导 / 逃逸断言 / 路径归属判定，**零写入**；
+ *   - `zipImport.ts` = **唯一的资产建仓执行面**（读包 → 校验 → 暂存 → 换名提交）；
+ *   - `validateSkill.ts` = 技能格式校验，**只校验、不落盘**（被 `zipImport` 复用）；
+ *   - `projectScope.ts` = 项目级目录推导与信任门单点；
+ *   - `allowedPaths.ts` = 白名单合并。
+ *
+ * **不要再往本目录加写盘函数**：对话路径写资产走内核 `write_file`（白名单 + `noOverwriteRoots`），
+ * 宿主若再留第二套写盘器，就是两条覆盖语义（且 `pathExists` → `writeFile` 还有 TOCTOU），
+ * 从落笔那一刻起必然分叉。
  */
 
 import { resolve, sep } from 'node:path';
@@ -67,6 +78,22 @@ export function resolveInsideDir(
     return { ok: false, reason: `写入路径越出用户目录：${target}` };
   }
   return { ok: true, path: target };
+}
+
+/**
+ * 判定目标路径是否落在根目录**之内**（来源归属 / 内置包判定的唯一判据）
+ *
+ * 与 `resolveInsideDir` 同源：`resolve` 规范化后再比对 `root + sep` 前缀。
+ * 只用字符串 `startsWith` 不带 `sep` 会把兄弟目录误判成子目录
+ * （`role-packs-x` 被当成 `role-packs` 内），且 Windows 的 `\` 与 `/` 混用会漏判。
+ *
+ * @param root 归属根目录（如内置角色包目录）；undefined 视为「无根」⇒ 恒不在其中
+ * @param target 待判定路径（如角色包装配得到的 filePath）；undefined 视为不在根内
+ */
+export function isPathWithin(root: string | undefined, target: string | undefined): boolean {
+  if (!root || !target) return false;
+  const safeRoot = resolve(root);
+  return resolve(target).startsWith(safeRoot + sep);
 }
 
 /** 路径是否已存在（用于「同名已存在 ⇒ 拒绝覆盖」与「目标目录已存在 ⇒ 拒绝创建」） */

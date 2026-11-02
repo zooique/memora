@@ -12,7 +12,12 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { resolve, sep, join } from 'node:path';
-import { USER_ASSET_NAME_RE, resolveInsideDir, sanitizeAssetName } from '../userAssets/path.js';
+import {
+  isPathWithin,
+  USER_ASSET_NAME_RE,
+  resolveInsideDir,
+  sanitizeAssetName,
+} from '../userAssets/path.js';
 
 /** 测试用用户目录根（绝对路径；与真实 globalStorage 无关） */
 const ROOT = resolve(process.cwd(), 'user-assets-root');
@@ -44,6 +49,34 @@ describe('sanitizeAssetName（名字净化）', () => {
   it('正则不含点号 —— 这是 `..` 与盘符被拒的结构性原因（非额外分支）', () => {
     expect(USER_ASSET_NAME_RE.test('..')).toBe(false);
     expect(USER_ASSET_NAME_RE.test('a.b')).toBe(false);
+  });
+});
+
+describe('isPathWithin（来源归属判定：规范化 + 分隔符边界）', () => {
+  /** 归属根（绝对路径；与真实 globalStorage 无关） */
+  const ROLE_PACKS = resolve(process.cwd(), 'role-packs');
+
+  it('根内的子路径 ⇒ true', () => {
+    expect(isPathWithin(ROLE_PACKS, join(ROLE_PACKS, 'demo', 'manifest.json'))).toBe(true);
+  });
+
+  it('兄弟目录前缀相同 ⇒ false（`role-packs-x` 不得被判成 `role-packs` 内）', () => {
+    expect(isPathWithin(ROLE_PACKS, resolve(process.cwd(), 'role-packs-x', 'manifest.json'))).toBe(
+      false,
+    );
+  });
+
+  it('根自身 ⇒ false（严格「之内」，不含根）', () => {
+    expect(isPathWithin(ROLE_PACKS, ROLE_PACKS)).toBe(false);
+  });
+
+  it('undefined ⇒ false（未给路径不得默认归入任何来源）', () => {
+    expect(isPathWithin(ROLE_PACKS, undefined)).toBe(false);
+  });
+
+  it('混用 / 与 \\ 的分隔符 ⇒ 仍判为根内（resolve 先规范化）', () => {
+    const mixed = `${ROLE_PACKS.replace(/\\/g, '/')}/demo/manifest.json`;
+    expect(isPathWithin(ROLE_PACKS, mixed)).toBe(true);
   });
 });
 

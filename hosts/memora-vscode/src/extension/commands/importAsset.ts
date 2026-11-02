@@ -15,9 +15,12 @@
  * ⇒ 本文件不读 `vscode.workspace.isTrusted`，避免出现第二个信任判定点。
  */
 import * as vscode from 'vscode';
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Agent } from '@zooique/memora';
 import { importAssetZip, type AssetKind } from '../host/userAssets/zipImport.js';
 import type { ProjectAssetDirs } from '../host/userAssets/projectScope.js';
+import { isPathWithin } from '../host/userAssets/path.js';
 import type { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
 import type { MemoraSettingsPanel } from '../../webview/panels/settingsPanel.js';
 
@@ -36,6 +39,8 @@ export interface ImportAssetDeps {
   userSkillsDir: string;
   /** 用户角色包根目录（`<globalStorage>/role-packs`） */
   userRolePacksDir: string;
+  /** 内置角色包根目录（`<configDir>/role-packs`）：同名判定用，命中即拒绝导入 */
+  builtinRolePacksDir: string;
   /** 项目级目录的唯一读口（信任门判据同源于 `projectAssetDirsFor`；未信任时返回空对象） */
   readProjectDirs: () => ProjectAssetDirs;
   /** 取当前 Agent（未就绪返回 null——导入仍可落盘，但需如实告知未刷新） */
@@ -49,6 +54,55 @@ export interface ImportAssetDeps {
 /** 资产类型的中文标签（toast / 错误文案共用） */
 function kindLabel(kind: AssetKind): string {
   return kind === 'skill' ? '技能' : '角色包';
+}
+
+/**
+ * 内置角色包同名判定（导入前零写入拒绝的判据）
+ *
+ * 优先用内核池：`rolePackManager.get(name)` 的 `filePath` 落在内置目录 ⇒ 命中。
+ * 但池内同名可能已被用户 / 项目包接管（后加载者胜），所以 `get` 只作快速命中；
+ * 无论是否命中都再扫一遍内置目录清单（目录名或 manifest `name` 相同即算占用），
+ * 保证「内置名字恒不可被导入包顶掉」不依赖当前激活态。
+ *
+ * Agent 未就绪时只用目录清单——判据不因装配状态而改变。
+ *
+ * @param name 待导入的角色包名（已净化）
+ * @param builtinDir 内置角色包根目录
+ * @param agent 已取到的 Agent（可能为 null）
+ */
+async function isBuiltinRolePackName(
+  name: string,
+  builtinDir: string,
+  agent: Agent | null,
+): Promise<boolean> {
+  const pack = agent?.rolePackManager?.get(name);
+  if (pack?.filePath && isPathWithin(builtinDir, pack.filePath)) return true;
+  return builtinDirHasName(builtinDir, name);
+}
+
+/**
+ * 内置角色包目录里是否已有同名包（目录名或 manifest `name` 相同）
+ *
+ * 目录不存在 / 读盘失败按「没有同名」处理：内置目录是随扩展分发的静态资源，
+ * 缺失属安装异常，不应因此阻断用户导入。
+ *
+ * @param builtinDir 内置角色包根目录
+ * @param name 待判定名字
+ */
+async function builtinDirHasName(builtinDir: string, name: string): Promise<boolean> {
+  const dirs = await readdir(builtinDir, { withFileTypes: true }).catch(() => []);
+  for (const dir of dirs) {
+    // 扫描器同样跳过 `.` / `_` 开头目录，它们不构成可装载包
+    if (!dir.isDirectory() || dir.name.startsWith('.') || dir.name.startsWith('_')) continue;
+    if (dir.name === name) return true;
+    try {
+      const raw = await readFile(join(builtinDir, dir.name, 'manifest.json'), 'utf-8');
+      if ((JSON.parse(raw) as { name?: unknown }).name === name) return true;
+    } catch {
+      // 无 manifest / 非法 JSON ⇒ 不是可装载包，跳过
+    }
+  }
+  return false;
 }
 
 /**
@@ -112,18 +166,22 @@ export async function importAssetCommand(deps: ImportAssetDeps): Promise<void> {
     return kind === 'skill' ? deps.userSkillsDir : deps.userRolePacksDir;
   };
 
-  // ③ 执行校验与落盘（包内容识别类型 → 目标根 → 同名确认 → 逐条写入）
+  // Agent 只取一次：内置同名判定与写入后重扫共用同一实例（取两次会重复装配）
+  const agent = await deps.tryGetAgent();
+
+  // ③ 执行校验与落盘（包内容识别类型 → 内置同名判定 → 目标根 → 同名确认 → 暂存换名）
   const result = await importAssetZip(zipPath, {
     targetRootFor,
     confirmOverwrite: async (prompt) => {
       const choice = await vscode.window.showWarningMessage(
-        `目标已存在：${prompt.targetPath}\n覆盖会先删除原内容，确定继续？`,
+        `目标已存在：${prompt.targetPath}\n覆盖会备份并替换原内容，失败自动回滚，确定继续？`,
         { modal: true },
         '覆盖',
         '取消',
       );
       return choice === '覆盖';
     },
+    isNameTaken: (name) => isBuiltinRolePackName(name, deps.builtinRolePacksDir, agent),
   });
 
   if (!result.ok) {
@@ -136,7 +194,6 @@ export async function importAssetCommand(deps: ImportAssetDeps): Promise<void> {
   const root = targetRootFor(asset.kind);
 
   // ④ 重扫与 UI 刷新（写入是磁盘事实，重扫让内核池同步；Agent 未就绪时如实告知）
-  const agent = await deps.tryGetAgent();
   if (!agent) {
     void vscode.window.showWarningMessage(
       `已导入${kindLabel(asset.kind)}「${asset.name}」到 ${asset.targetPath}，但 Memora Agent 未就绪，未能立即刷新；打开对话面板后会自动装载。`,

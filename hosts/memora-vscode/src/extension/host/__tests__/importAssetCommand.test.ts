@@ -9,13 +9,16 @@
  *   3. 用户级成功 ⇒ 写入 + `resyncUserSkills` + 两面板刷新 + toast 含类型/名称/落点/文件数；
  *   4. 项目级成功 ⇒ 先 `loadExtraDir(..., 'project')` 再重扫（顺序即覆盖方向）；
  *   5. 同名覆盖取消 ⇒ 原文件不变 + 失败提示给出具体原因（不是「导入失败」四个字）；
- *   6. 角色包走 `resyncUserPacks`（档位与目标级一致）+ 角色列表刷新。
+ *   6. 角色包走 `resyncUserPacks`（档位与目标级一致）+ 角色列表刷新；
+ *   7. 角色包与**内置包同名** ⇒ 拒绝且零写入（不询问覆盖、不创建目录）；
+ *   8. 同名**用户级**角色包 ⇒ 仍走既有覆盖确认流（内置判定不误伤）。
  *
  * vscode 全量 mock（命令层是唯一交互面；执行面 `zipImport.ts` 用真实实现 + 真实 zip 夹具）。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createWriteStream,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -122,6 +125,8 @@ function makeAgentStub(): { agent: Agent; calls: string[] } {
       }),
     },
     rolePackManager: {
+      // 内置同名判定的快速命中通道：桩返回 null（未命中）⇒ 走内置目录清单判定
+      get: vi.fn((_name: string) => null),
       resyncUserPacks: vi.fn(async (_dir: string, tier?: string) => {
         calls.push(`rolePacks.resync:${tier}`);
         return { added: 0, removed: [], updated: [], activeFallback: false };
@@ -186,6 +191,7 @@ describe('importAssetCommand · 信任门与目标级', () => {
     await importAssetCommand({
       userSkillsDir,
       userRolePacksDir,
+      builtinRolePacksDir: join(dir, 'builtin-role-packs'),
       readProjectDirs: () => ({}),
       tryGetAgent: async () => agent,
       chatProvider: panels.chatProvider,
@@ -214,6 +220,7 @@ describe('importAssetCommand · 用户级导入成功', () => {
     await importAssetCommand({
       userSkillsDir,
       userRolePacksDir,
+      builtinRolePacksDir: join(dir, 'builtin-role-packs'),
       readProjectDirs: () => ({}),
       tryGetAgent: async () => agent,
       chatProvider: panels.chatProvider,
@@ -247,6 +254,7 @@ describe('importAssetCommand · 用户级导入成功', () => {
     await importAssetCommand({
       userSkillsDir,
       userRolePacksDir,
+      builtinRolePacksDir: join(dir, 'builtin-role-packs'),
       readProjectDirs: () => ({}),
       tryGetAgent: async () => agent,
       chatProvider: panels.chatProvider,
@@ -275,6 +283,7 @@ describe('importAssetCommand · 项目级导入成功（已信任）', () => {
     await importAssetCommand({
       userSkillsDir: join(dir, 'user-skills'),
       userRolePacksDir: join(dir, 'user-role-packs'),
+      builtinRolePacksDir: join(dir, 'builtin-role-packs'),
       readProjectDirs: () => ({ skills: projectSkills, rolePacks: projectRolePacks }),
       tryGetAgent: async () => agent,
       chatProvider: panels.chatProvider,
@@ -307,6 +316,7 @@ describe('importAssetCommand · 同名覆盖确认', () => {
     await importAssetCommand({
       userSkillsDir,
       userRolePacksDir: join(dir, 'user-role-packs'),
+      builtinRolePacksDir: join(dir, 'builtin-role-packs'),
       readProjectDirs: () => ({}),
       tryGetAgent: async () => agent,
       chatProvider: panels.chatProvider,
@@ -318,5 +328,81 @@ describe('importAssetCommand · 同名覆盖确认', () => {
     const err = vscodeMock.showErrorMessage.mock.calls[0]?.[0] as string;
     expect(err).toContain('导入失败');
     expect(err).toContain('已取消导入');
+  });
+});
+
+describe('importAssetCommand · 角色包同名判定（内置 vs 用户级）', () => {
+  it('同名内置角色包 ⇒ 拒绝且零写入（不询问覆盖、不创建目录）', async () => {
+    const dir = makeTempDir('memora-import-builtin-dup-');
+    const zipPath = join(dir, 'pack.zip');
+    await makeRolePackZip(zipPath, 'demo-role');
+    const userRolePacksDir = join(dir, 'user-role-packs');
+    // 内置目录里放一份同名包（目录名 + manifest name 双重命中）
+    const builtinRolePacksDir = join(dir, 'builtin-role-packs');
+    mkdirSync(join(builtinRolePacksDir, 'demo-role'), { recursive: true });
+    writeFileSync(
+      join(builtinRolePacksDir, 'demo-role', 'manifest.json'),
+      JSON.stringify({ name: 'demo-role' }),
+      'utf-8',
+    );
+    const { agent, calls } = makeAgentStub();
+    const panels = makePanels();
+
+    vscodeMock.showOpenDialog.mockResolvedValue([{ fsPath: zipPath }]);
+    vscodeMock.showQuickPick.mockResolvedValue({ label: '用户级（默认）', level: 'user' });
+
+    await importAssetCommand({
+      userSkillsDir: join(dir, 'user-skills'),
+      userRolePacksDir,
+      builtinRolePacksDir,
+      readProjectDirs: () => ({}),
+      tryGetAgent: async () => agent,
+      chatProvider: panels.chatProvider,
+      settingsProvider: panels.settingsProvider,
+    });
+
+    const err = vscodeMock.showErrorMessage.mock.calls[0]?.[0] as string;
+    expect(err).toContain('已存在同名角色包（内置）');
+    // 零写入：连用户角色包根目录都没被创建（判定在 mkdir 之前）
+    expect(existsSync(userRolePacksDir)).toBe(false);
+    expect(vscodeMock.showWarningMessage).not.toHaveBeenCalled();
+    expect(vscodeMock.showInformationMessage).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
+  it('同名用户级角色包 ⇒ 仍走既有覆盖确认流（内置判定不误伤）', async () => {
+    const dir = makeTempDir('memora-import-user-dup-pack-');
+    const zipPath = join(dir, 'pack.zip');
+    await makeRolePackZip(zipPath, 'dup-role');
+    const userRolePacksDir = join(dir, 'user-role-packs');
+    mkdirSync(join(userRolePacksDir, 'dup-role'), { recursive: true });
+    writeFileSync(
+      join(userRolePacksDir, 'dup-role', 'manifest.json'),
+      JSON.stringify({ name: 'dup-role' }),
+      'utf-8',
+    );
+    const { agent, calls } = makeAgentStub();
+    const panels = makePanels();
+
+    vscodeMock.showOpenDialog.mockResolvedValue([{ fsPath: zipPath }]);
+    vscodeMock.showQuickPick.mockResolvedValue({ label: '用户级（默认）', level: 'user' });
+    // 覆盖确认弹窗返回「取消」
+    vscodeMock.showWarningMessage.mockResolvedValue('取消');
+
+    await importAssetCommand({
+      userSkillsDir: join(dir, 'user-skills'),
+      userRolePacksDir,
+      builtinRolePacksDir: join(dir, 'builtin-role-packs'),
+      readProjectDirs: () => ({}),
+      tryGetAgent: async () => agent,
+      chatProvider: panels.chatProvider,
+      settingsProvider: panels.settingsProvider,
+    });
+
+    // 确认弹窗文案须与事务化实现一致（备份并替换，而非「先删除」）
+    const confirmText = vscodeMock.showWarningMessage.mock.calls[0]?.[0] as string;
+    expect(confirmText).toContain('会备份并替换原内容，失败自动回滚');
+    expect(calls).toEqual([]);
+    expect(vscodeMock.showErrorMessage.mock.calls[0]?.[0]).toContain('已取消导入');
   });
 });

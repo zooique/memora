@@ -43,10 +43,13 @@ declare module 'yauzl' {
     lazyEntries?: boolean;
     /** 读完自动关闭句柄 */
     autoClose?: boolean;
-    /** 路径校验开关：默认 true，校验条目名不含 `..` 与绝对路径 */
+    /** 条目名按字符串解码（默认 true；关掉会得到 Buffer） */
     decodeStrings?: boolean;
     /** 拒绝不合法条目名（如含 `\`） */
     strictFileNames?: boolean;
+    /** 尺寸断言（默认 true）：会在业务层之前报「声明尺寸与实际字节不符」，
+     *  关掉后尺寸上限判据全部归本仓（本仓需按实际字节二次校验，见 zipImport 说明） */
+    validateEntrySizes?: boolean;
   }
 
   /**
