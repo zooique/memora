@@ -13,7 +13,7 @@ import {
 } from '@/security/pathGuard.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, symlinkSync, writeFileSync } from 'node:fs';
 // 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync，见 helpers/tmpDir.ts）
 import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
 
@@ -993,6 +993,16 @@ describe('SecurityGuard · 禁止覆盖根（noOverwriteRoots，用户资产目�
     const guard = makeGuard();
     const target = join(siblingRoot, 'existing.md');
     writeFileSync(target, 'x', 'utf-8');
+    expect(() => guard.assertNotOverwrite(target, 'write_file')).not.toThrow();
+  });
+
+  // 未挂载盘符路径：根的 dirname 自指（'Z:\' → 'Z:\'）且 realpath 必失败。
+  // 无终止判等时 resolveRealpath 会无限递归直至栈溢出；挑本机确实不存在的盘符做断言。
+  const freeDrive = ['Z:', 'Y:', 'X:', 'W:', 'V:'].find((d) => !existsSync(`${d}\\`));
+
+  it.skipIf(!freeDrive)('realpath 解析失败：未挂载盘符路径在根上终止，不递归到栈溢出', () => {
+    const guard = makeGuard();
+    const target = `${freeDrive}\\memora-nope-assets\\skill.md`;
     expect(() => guard.assertNotOverwrite(target, 'write_file')).not.toThrow();
   });
 

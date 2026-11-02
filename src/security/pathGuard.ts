@@ -26,6 +26,10 @@ function resolveRealpath(p: string): string {
   } catch {
     // 路径不存在：递归解析已存在的父目录
     const parent = dirname(resolved);
+    // 终止条件：已到根且根也不存在（未挂载盘符 `Z:\` / 不可达 UNC 共享）。
+    // Windows 根的 dirname 自指（`dirname('Z:\\') === 'Z:\\'`），不判等会无限递归直至栈溢出
+    // ——配置里写一个不存在的盘符即可触发，判据是「dir 不再变短」而非「存在性」。
+    if (parent === resolved) return resolved;
     const base = basename(resolved);
     try {
       const realParent = realpathSync(parent);
