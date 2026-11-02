@@ -96,6 +96,9 @@ const TAB_BODY_HTML: Record<SettingsTab, string> = {
       <h2>角色</h2>
       <span id="statBar" class="stat-bar" hidden></span>
       <div class="header-actions">
+        <button id="btnImportRolePackZip" class="btn btn-secondary btn-icon-solo" title="导入 .zip 角色包（可导入到用户级或项目级）">
+          <span class="btn-icon" data-icon="import"></span>
+        </button>
         <button id="btnOpenRolePacksDir" class="btn btn-secondary btn-icon-solo" title="打开用户角色包目录">
           <span class="btn-icon" data-icon="folder"></span>
         </button>
@@ -204,6 +207,9 @@ const TAB_BODY_HTML: Record<SettingsTab, string> = {
       <h2>全局技能</h2>
       <span id="skillCount" class="stat-bar" hidden></span>
       <div class="header-actions">
+        <button id="btnImportSkillZip" class="btn btn-secondary btn-icon-solo" title="导入 .zip 技能（可导入到用户级或项目级）">
+          <span class="btn-icon" data-icon="import"></span>
+        </button>
         <button id="btnOpenSkillsDir" class="btn btn-secondary btn-icon-solo" title="打开用户技能目录">
           <span class="btn-icon" data-icon="folder"></span>
         </button>

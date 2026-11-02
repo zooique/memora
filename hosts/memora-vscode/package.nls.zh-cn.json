@@ -11,6 +11,7 @@
   "command.resetUserData.title": "Memora: 恢复初始状态（清空用户级数据）",
   "command.demo.title": "Memora: 运行能力演示（隔离演示区）",
   "command.reloadSkills.title": "Memora: 重载技能与角色包",
+  "command.importAsset.title": "Memora: 导入技能或角色包（.zip）",
   "command.registerWork.title": "Memora: 登记作品投影",
   "command.addToChat.title": "Memora: 添加到对话",
   "command.reviewFileChanges.title": "Memora: 查看文件改动",

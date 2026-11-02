@@ -555,6 +555,15 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'roles_refresh' }
   /**
+   * 导入 .zip 资产（技能区 / 角色包区「导入」按钮触发）
+   *
+   * host 统一执行 `memora.importAsset` 命令（与命令面板共用同一处理器）：
+   * 开文件框 → 选用户级/项目级 → 校验流水线 → 落盘 → 重扫 → 回推列表。
+   * 本消息不带参数：技能 / 角色包由压缩包内容识别 ⇒ 两个按钮共用**同一条通道**
+   * （不为「哪个区点的」新增通道：入口差异只是 UI 位置，不含语义差异）。
+   */
+  | { type: 'import_asset_zip' }
+  /**
    * 请求角色包键面配置详情（角色卡「查看配置」弹窗打开时触发）
    *
    * host 读 manifest 原文 strategy 段回发 roles_detail_data。初值真源 = **原文**：

@@ -236,17 +236,15 @@ export class MemoraSettingsPanel {
     // 新 panel 的 html context 尚未建立、脚本未注册监听器 ⇒ ready 之前不可投递。
     // 与 onDidDispose 的清零成对：`_webviewReady` 只描述「当前这一个 panel」的脚本状态。
     this._webviewReady = false;
-    // 关 tab（或工作区关闭）时清理两个状态，避免向已销毁 webview postMessage。
-    // 不清则 switchTab 把 _pendingTab 写进死 panel 后清空，
-    // ready 握手的补发兜底失效 → 点角色徽章/配置大模型落在默认「记忆」页。
+    // 关 tab（或工作区关闭）时清理两个状态，避免向已销毁 webview postMessage；
+    // 不清则 switchTab 把 _pendingTab 写进死 panel 后清空，ready 补发兜底失效 → 落回默认「记忆」页。
     panel.onDidDispose(() => {
       if (this._panel !== panel) return;
       this._panel = undefined;
       this._webviewReady = false;
     });
-    // 由隐藏转可见：补发隐藏期攒下的导航 + 全量补刷一次数据。
-    // 数据面这条是**收敛网**（隐藏期宿主侧有些变更没有推送路径，如别处改归档模式 / 技能启停），
-    // 不是「隐藏期消息全丢」的补偿——后者官方注释两说，故不据此推理（见文件头）。
+    // 由隐藏转可见：补发隐藏期攒下的导航 + 全量补刷一次数据。数据面这条是**收敛网**
+    // （隐藏期有些变更没有推送路径，如别处改归档模式 / 技能启停），非「消息全丢」补偿（见文件头）。
     panel.onDidChangeViewState((e) => {
       if (!e.webviewPanel.visible || this._panel !== panel) return;
       this.flushPendingTab();
@@ -265,9 +263,8 @@ export class MemoraSettingsPanel {
 
   /** 处理 webview 发来的消息（ready 握手 + 三个子视图各自的消息路由） */
   private async handleMessage(msg: WebviewToExtensionMessage): Promise<void> {
-    // webview 错误边界上报（T1）：落扩展宿主日志留痕，不驱动任何 UI 状态——与 chatPanel
-    // 同款（各面板消费自己 webview 的上报）。必须独立成分支：边界装在工厂之前，
-    // 上报可先于 ready 握手到达
+    // webview 错误边界上报（T1）：落扩展宿主日志留痕，不驱动 UI 状态；必须独立成分支
+    // ——边界装在工厂之前，上报可先于 ready 握手到达
     if (msg.type === 'host_diag') {
       console.warn(`Memora webview 未处理异常 [${msg.source}] ${msg.message}`, msg.stack ?? '');
       return;
@@ -282,7 +279,11 @@ export class MemoraSettingsPanel {
       this.refreshAll();
       return;
     }
-
+    // .zip 导入：三入口共用同一命令处理器（面板只做路由）
+    if (msg.type === 'import_asset_zip') {
+      void vscode.commands.executeCommand('memora.importAsset');
+      return;
+    }
     // ─── 角色子视图消息 ───
     if (msg.type === 'roles_set_active') {
       await this.activateRole(msg.name);

@@ -127,6 +127,14 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     });
   }
 
+  // 「导入 .zip 角色包」入口：交 host 统一命令（与命令面板 / 技能区共用同一处理器）
+  const importBtn = root.querySelector<HTMLButtonElement>('#btnImportRolePackZip');
+  if (importBtn) {
+    importBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'import_asset_zip' });
+    });
+  }
+
   // 「刷新角色包列表」入口（对齐技能刷新按钮）：请求 host 重扫用户角色包目录对账内存池，
   // host 完成后回发 notice（对账结果）+ roles_loaded（最新列表）
   const refreshBtn = root.querySelector<HTMLButtonElement>('#btnRefreshRolePacks');

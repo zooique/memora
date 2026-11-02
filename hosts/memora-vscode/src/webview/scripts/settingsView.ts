@@ -288,6 +288,14 @@ function createSkillsView({
     });
   }
 
+  // 导入 .zip 按钮：交 host 统一命令（与命令面板 / 角色包区共用同一处理器，开框与校验都在 host 侧）
+  const importBtn = root.querySelector<HTMLButtonElement>('#btnImportSkillZip');
+  if (importBtn) {
+    importBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'import_asset_zip' });
+    });
+  }
+
   // L2：事件委托——点击「查看正文」按钮时请求内容或展开/折叠缓存内容
   listEl.addEventListener('click', (ev) => {
     const btn = (ev.target as HTMLElement).closest(

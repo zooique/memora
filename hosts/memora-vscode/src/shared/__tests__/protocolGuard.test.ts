@@ -34,12 +34,15 @@ import { join } from 'node:path';
  * 后者两入口（设置页按钮 / 命令面板）各只发一条消息、写盘统一走命令处理器。
  * 2026-11-02 同日剪枝 −2（`UI-CREATE-PRUNE-1`）：表单新建入口属错位设计，两条 create
  * 消息随按钮 / 命令一起删除（`skills_refresh` 保留）⇒ 类型数回退，阈值同步回退。
+ * 2026-11-02 压缩包导入 +1（`ASSET-ZIP-IMPORT-1`）：初版按「哪个区点的」加了两条
+ * （`roles_import_zip` / `skills_import_zip`），**当日按治理口径自剪为单条 `import_asset_zip`**
+ * ——技能 / 角色包由压缩包内容识别，入口差异只是 UI 位置，不含语义差异 ⇒ 两按钮共用一条通道。
  * ⚠️ 本阈值每次协议治理重估即过期：引用前先跑本测试取当前类型集计数，
  * 按「阈值 = 当前计数 + 1 余量」口径重算
  * （2026-10-28 实测 131 ⇒ 132，Q3 后 133 ⇒ 134；2026-11-02 增三条后 136 ⇒ 137，
- *  同日剪枝后实测 134 ⇒ 135）。
+ *  同日剪枝后实测 134 ⇒ 135；同日压缩包导入合并为单条后实测 135 ⇒ 136）。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 135;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 136;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

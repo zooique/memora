@@ -57,7 +57,10 @@ export type IconName =
   // 语义提示：只改显示分组，不删数据，故不用任何「删除/叉号」类语言。
   | 'archive'
   // 「移回会话记录」（逆时针回退箭头）——archive 的逆动作，同样不含删除语义。
-  | 'restore';
+  | 'restore'
+  // 「导入压缩包」（托盘 + 下沉箭头）：技能 / 角色包区的「导入 .zip」按钮。
+  // 语义提示：箭头向托盘内落，表达「把外部内容收进来」，与「导出」相反。
+  | 'import';
 
 /** SVG 路径集合（viewBox 0 0 16 16）— Trae 柔和线条风格 */
 const ICON_PATHS: Record<IconName, string> = {
@@ -120,6 +123,9 @@ const ICON_PATHS: Record<IconName, string> = {
     '<rect x="2.5" y="2.5" width="11" height="3" rx="1"/><path d="M4 5.5v7a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-7"/><path d="M6.5 9h3"/>',
   // 移回会话记录：逆时针回退箭头（与 archive 同粗细，成对出现）
   restore: '<path d="M3 8a5 5 0 1 0 5-5H5.2"/><path d="M3.2 4.2V8h3.6"/>',
+  // 导入：托盘（下半开口矩形）+ 下沉箭头（箭头指向托盘内，表达「收进来」）
+  import:
+    '<path d="M8 2.5v6"/><path d="M5.5 6l2.5 2.5L10.5 6"/><path d="M3 9.5v2A1.5 1.5 0 0 0 4.5 13h7a1.5 1.5 0 0 0 1.5-1.5v-2"/>',
   // 回到底部：向下箭头到横线
   'scroll-bottom': '<path d="M8 3v7"/><path d="M5 7l3 3 3-3"/><path d="M3 12h10"/>',
   // 附件/添加图片：回形针（斜置环 + 双腿，柔和圆角）——输入区上传按钮（IMG-2 Q3）

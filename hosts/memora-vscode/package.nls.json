@@ -11,6 +11,7 @@
   "command.resetUserData.title": "Memora: Reset to Initial State (Clear User-Level Data)",
   "command.demo.title": "Memora: Run Capability Demo (Isolated Demo Area)",
   "command.reloadSkills.title": "Memora: Reload Skills and Role Packs",
+  "command.importAsset.title": "Memora: Import Skill or Role Pack (.zip)",
   "command.registerWork.title": "Memora: Register Work Projection",
   "command.addToChat.title": "Memora: Add to Chat",
   "command.reviewFileChanges.title": "Memora: Review File Changes",

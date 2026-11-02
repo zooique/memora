@@ -89,6 +89,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "memora.importAsset",
+        "title": "%command.importAsset.title%",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "memora.registerWork",
         "title": "%command.registerWork.title%",
         "icon": "$(file-text)"
@@ -391,11 +396,13 @@
     "@vscode/vsce": "^3.9.2",
     "@zooique/memora": "file:../..",
     "esbuild": "^0.28.2",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "yazl": "2.5.1"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "dompurify": "^3.4.13",
-    "marked": "^18.0.9"
+    "marked": "^18.0.9",
+    "yauzl": "3.4.0"
   }
 }
