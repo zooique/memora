@@ -40,6 +40,7 @@ import { createVscodeEnvironmentProvider } from './environmentProvider.js';
 import { createVscodeProjectSearchProvider } from './projectSearchProvider.js';
 import { createHostMemoryStorage } from './memoryStorage.js';
 import { resolveProjectDataDir } from './projectDataDir.js';
+import { mergeAllowedPathsWithUserAssets } from './userAssets/allowedPaths.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
 import { vscodeTracer } from './tracer.js';
 import { startMcpServers } from './mcp/runtime.js';
@@ -452,8 +453,19 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 可观测性 Tracer（P2：§5.2.1 指纹由 ITracer 承载，宿主采集不落盘）
     tracer: vscodeTracer,
     permission: 'owner',
-    // 白名单 = 基准根 projectPath + 用户额外允许目录（运行时可热更新，基准根不可移除）
-    allowedPaths: [projectPath, ...(allowedPaths ?? [])],
+    // 白名单 = 基准根 projectPath + 用户额外允许目录 + **用户资产目录**（运行时可热更新，基准根不可移除）。
+    // 用户资产目录必须并入：系统提示承诺「用户级可写」，而 `<globalStorage>/skills`、
+    // `/role-packs` 不在基准根内，不并入则写入被路径守卫拒绝（承诺与实现不一致）。
+    // 去重交给 mergeAllowedPathsWithUserAssets；条数上限由内核如实报错，宿主不截断。
+    allowedPaths: mergeAllowedPathsWithUserAssets(
+      [projectPath, ...(allowedPaths ?? [])],
+      [userSkillsDir, userRolePacksDir],
+    ),
+    // 禁止覆盖根 = 用户资产目录（与白名单并列的第二条判据）：write_file 默认不弹窗，
+    // 没有本判据就会静默覆盖用户已有技能/角色包文件。
+    noOverwriteRoots: [userSkillsDir, userRolePacksDir].filter(
+      (dir): dir is string => typeof dir === 'string' && dir.length > 0,
+    ),
     // 写入二次确认（用户级安全偏好；开启后 owner 写文件前触发审批确认）
     confirmWrites: confirmWrites ?? false,
     // 脚本/代码执行确认（与写入确认同模式，开则 run_code/run_project_script 执行前询问）

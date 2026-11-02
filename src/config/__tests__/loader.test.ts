@@ -612,11 +612,10 @@ describe('config/loader · 配置边界校验', () => {
     expect(config.memory.maxContextTokens).toBe(100_000);
   });
 
-  it('allowedPaths 超过 50 条应截断（防白名单膨胀）', async () => {
+  it('allowedPaths 超过 50 条应抛错（防白名单膨胀；不静默截断）', async () => {
     const paths = Array.from({ length: 60 }, (_, i) => `/path/${i}`);
     const configPath = writeConfig(withProviders({ allowedPaths: paths }));
-    const config = await loadConfig(configPath);
-    expect(config.allowedPaths).toHaveLength(50);
+    await expect(loadConfig(configPath)).rejects.toThrow('allowedPaths 超过上限');
   });
 
   it('contextWindow 只做自身防御（非正数→undefined），正数原样生效（内核不做区间裁决）', async () => {

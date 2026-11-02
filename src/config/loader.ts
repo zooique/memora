@@ -255,7 +255,10 @@ function validatePermission(value: unknown): 'owner' | 'guest' {
 }
 
 /**
- * 验证 allowedPaths 数组，元素非字符串抛错；超过最大条数截断（防白名单膨胀）
+ * 验证 allowedPaths 数组，元素非字符串抛错；超过最大条数**抛错**（防白名单膨胀）
+ *
+ * 不静默截断：截断会让用户以为目录已放行、实际写入被拒，属静默失效；
+ * 与 SecurityGuard 的上限判据同值（两处常量须同步）。
  */
 function validateAllowedPaths(value: unknown): string[] {
   if (!Array.isArray(value)) {
@@ -266,10 +269,14 @@ function validateAllowedPaths(value: unknown): string[] {
     assertString(value[i], `allowedPaths[${i}]`);
   }
 
-  // 数量上限：路径白名单防膨胀（超过则截断保留前 MAX_ALLOWED_PATHS 条）
-  return value.length > MAX_ALLOWED_PATHS
-    ? (value.slice(0, MAX_ALLOWED_PATHS) as string[])
-    : (value as string[]);
+  if (value.length > MAX_ALLOWED_PATHS) {
+    throw configError(
+      'allowedPaths 超过上限',
+      `收到 ${value.length} 条，内核上限为 ${MAX_ALLOWED_PATHS} 条`,
+      [`删除 ${value.length - MAX_ALLOWED_PATHS} 条不再需要的允许路径`],
+    );
+  }
+  return value as string[];
 }
 
 /**

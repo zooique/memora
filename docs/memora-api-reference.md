@@ -187,6 +187,7 @@ new Agent({
 | `strategyOverride` | `Partial<BehaviorStrategy>` | ❌ | 宿主装配级策略覆盖：经 `resolveActiveStrategy` 压过角色包声明（只影响 override 声明过的键），表达宿主产品能力边界 |
 | `permission` | `'owner' \| 'guest'` | ❌ | 安全权限（默认 'owner'） |
 | `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
+| `noOverwriteRoots` | `string[]` | ❌ | 禁止覆盖根（默认 [] = 不启用）：目标文件落在这些目录内且已存在 ⇒ `write_file` 拒绝覆盖。与 `allowedPaths` 并列但方向相反（白名单放宽可写面，本键收紧覆盖面）；宿主用它保护用户资产目录（`write_file` 确认档是 `idempotent-key`，不弹窗就会静默覆盖） |
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入（默认内置内存实现，不挂公共面） |
 | ~~`vectorStore`~~ | ~~`IVectorStore`~~ | — | **已删除（2026-09-18 B0 收编）**：向量语义召回通道此前**写端缺失、从未在生产生效**（`upsert` 零调用 → 库恒空 → 语义分支永不触发 = 僵尸能力）。经主流 agent 调研（Anthropic Memory/Claude Code/Librarian Pattern 实证「LLM 消费者 + 小语料」纯关键词足用）拍板收编：`IVectorStore` 接口、`JsonVectorStore`、`EmbeddingProvider` 及 `config.embedding` 段全链删除；`search_memories` 走纯关键词，未命中提示 LLM 换词重试 |

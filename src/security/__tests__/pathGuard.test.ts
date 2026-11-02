@@ -936,3 +936,80 @@ describe('SecurityGuard · 命令执行确认（confirmCommandRun，§13.2）', 
     expect(ok).toBe(false);
   });
 });
+
+describe('SecurityGuard · 禁止覆盖根（noOverwriteRoots，用户资产目录保护）', () => {
+  let projectPath: string;
+  let dataDir: string;
+  let assetRoot: string;
+  let siblingRoot: string;
+
+  beforeEach(() => {
+    projectPath = makeTempDir('memora-nowrite-project-');
+    dataDir = makeTempDir('memora-nowrite-data-');
+    assetRoot = makeTempDir('memora-nowrite-assets-');
+    siblingRoot = makeTempDir('memora-nowrite-assets-sibling-');
+  });
+
+  /** 构造带禁止覆盖根的守卫（第 9 个参数；前 8 个保持默认档位） */
+  function makeGuard(noOverwriteRoots: string[] = [assetRoot]): SecurityGuard {
+    return new SecurityGuard(
+      projectPath,
+      dataDir,
+      [],
+      false,
+      'owner',
+      false,
+      undefined,
+      undefined,
+      noOverwriteRoots,
+    );
+  }
+
+  it('禁止覆盖根内已存在文件 ⇒ 拒绝（结构化错误 + 审计 path-deny）', () => {
+    const guard = makeGuard();
+    const target = join(assetRoot, 'existing-skill.md');
+    writeFileSync(target, 'old content', 'utf-8');
+    const audits = collectAudits(guard);
+    expect(() => guard.assertNotOverwrite(target, 'write_file')).toThrow(/禁止覆盖/);
+    const last = audits[audits.length - 1]!;
+    expect(last.type).toBe('path-deny');
+    expect(last.reason).toMatch(/禁止覆盖目录/);
+  });
+
+  it('禁止覆盖根内新建（文件不存在）⇒ 放行', () => {
+    const guard = makeGuard();
+    const target = join(assetRoot, 'fresh-skill.md');
+    expect(() => guard.assertNotOverwrite(target, 'write_file')).not.toThrow();
+  });
+
+  it('禁止覆盖根外已存在文件 ⇒ 放行（判据只作用于资产目录）', () => {
+    const guard = makeGuard();
+    const target = join(projectPath, 'notes.md');
+    writeFileSync(target, 'mine', 'utf-8');
+    expect(() => guard.assertNotOverwrite(target, 'write_file')).not.toThrow();
+  });
+
+  it('兄弟目录前缀不误命中（root 后必须接分隔符才属本根）', () => {
+    const guard = makeGuard();
+    const target = join(siblingRoot, 'existing.md');
+    writeFileSync(target, 'x', 'utf-8');
+    expect(() => guard.assertNotOverwrite(target, 'write_file')).not.toThrow();
+  });
+
+  it('setNoOverwriteRoots 运行期热更新：清空后不再拦截', () => {
+    const guard = makeGuard();
+    const target = join(assetRoot, 'existing-skill.md');
+    writeFileSync(target, 'old', 'utf-8');
+    expect(() => guard.assertNotOverwrite(target, 'write_file')).toThrow(/禁止覆盖/);
+    guard.setNoOverwriteRoots([]);
+    expect(() => guard.assertNotOverwrite(target, 'write_file')).not.toThrow();
+  });
+
+  it('allowedPaths 去重后超过上限 50 ⇒ 抛错（不静默截断）', () => {
+    // 51 个互不相同的未建路径（resolveRealpath 会递归解析已存在父目录，仍互不相同）
+    const overflow = Array.from({ length: 51 }, (_, i) => join(projectPath, `extra-${i}`));
+    expect(() => makeGuard([]).setAllowedPaths(overflow)).toThrow(/超过上限（50 条）/);
+    // 50 条恰好可用（边界不误伤）
+    expect(() => makeGuard([]).setAllowedPaths(overflow.slice(0, 50))).not.toThrow();
+  });
+});

@@ -195,6 +195,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       maxTokens: opts.maxTokens,
       permission: opts.permission ?? 'owner',
       allowedPaths: opts.allowedPaths ?? [],
+      // 禁止覆盖根：宿主注入用户资产目录；缺省空 = 不启用覆盖保护
+      noOverwriteRoots: opts.noOverwriteRoots ?? [],
       confirmWrites: opts.confirmWrites ?? false,
       confirmScripts: opts.confirmScripts ?? false,
       storage: opts.storage,
@@ -378,6 +380,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           this.#config.confirmScripts,
           configDir ?? this.#config.configDir,
           agentDataDir ?? this.#config.dataDir,
+          this.#config.noOverwriteRoots,
         ),
     });
 

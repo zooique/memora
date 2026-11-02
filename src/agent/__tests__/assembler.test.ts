@@ -1096,7 +1096,9 @@ describe('buildSystemPromptPrefix · 技能落点提示', () => {
     expect(prefix).toContain('用户级 skills 目录');
     expect(prefix).toContain('默认写项目级');
     expect(prefix).toContain('仅当用户明确要求');
-    expect(prefix).toContain('已存在同名技能不得覆盖');
+    expect(prefix).toContain('已存在同名不得覆盖');
+    // 措辞必须与实现同宽：用户级写入是被内核拒绝（不是「建议确认」），模型据此避坑
+    expect(prefix).toContain('用户级写入会直接被拒绝');
   });
 
   it('段落不超过 5 行（不许长篇占用上下文）', () => {

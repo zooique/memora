@@ -5,7 +5,7 @@
  * 内核纯逻辑库不依赖交互式终端 I/O，宿主应通过 onWriteConfirmation() 注入自己的确认 UI。
  */
 import { resolve, sep, dirname, basename, join } from 'node:path';
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { logger } from '@/logging/logger.js';
 import { securityError } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
@@ -75,7 +75,12 @@ const BLOCKED_PATTERNS = [
   /^\/(proc|sys|boot)([\\/]|$)/i,
 ];
 
-/** 运行时动态白名单（setAllowedPaths）最大条数，与 config/loader.ts 同值，防白名单膨胀 */
+/**
+ * 额外白名单最大条数，与 config/loader.ts 同值，防白名单膨胀。
+ *
+ * ⚠️ 超限**如实报错**（不静默截断）：截断会让用户以为目录已放行、实际写入被拒，
+ * 与 A 类承诺（技能/角色包可写两处）正好相反。上限真源仍只在此常量与 loader 同值。
+ */
 const MAX_EXTRA_ALLOWED_PATHS = 50;
 
 // ─── 命令裁决（run_command 安全边界，§13.2）───
@@ -283,6 +288,14 @@ export class SecurityGuard {
   private extraRoots: string[];
   /** 允许访问的根目录列表（白名单）= baseRoots + extraRoots（派生，断言时遍历） */
   private allowedRoots: string[];
+  /**
+   * 禁止覆盖根（用户资产目录，运行时经 setNoOverwriteRoots 热更新）。
+   *
+   * 与 allowedPaths 并列的第二条判据：白名单回答「能不能写」，本字段回答
+   * 「能不能**覆盖已存在的文件**」。两者必须分开——`write_file` 的确认档是
+   * `idempotent-key`（owner 默认不弹窗），没有本判据就会被静默覆盖。
+   */
+  private noOverwriteRoots: string[];
 
   /** owner 是否启用写入二次确认；guest 强制开启（可运行时切换） */
   public confirmWrites: boolean;
@@ -303,6 +316,11 @@ export class SecurityGuard {
     configDir?: string,
     /** Agent 级数据目录（宿主传入；内核不假设其下的文件形态） */
     agentDataDir?: string,
+    /**
+     * 禁止覆盖根（可选）：目标文件落在这些目录内且已存在 ⇒ 写入工具拒绝覆盖。
+     * 由宿主注入「用户资产目录」（skills / role-packs），内核不在工具里硬编码路径字面量。
+     */
+    noOverwriteRoots: string[] = [],
   ) {
     // 基准信任根用真实路径（resolveRealpath），与 assertPathAllowed 对齐，避免前缀匹配错位
     this.baseRoots = [
@@ -319,8 +337,76 @@ export class SecurityGuard {
     // 脚本执行确认开关（独立于写入确认）
     this.confirmScripts = confirmScripts;
     // 用户额外白名单（构造器注入），基准根与额外项分离以便 setAllowedPaths 仅改额外项
-    this.extraRoots = extraAllowedPaths.map((p) => resolveRealpath(expandHome(p)));
+    this.extraRoots = this.normalizeExtraRoots(extraAllowedPaths, 'allowedPaths');
     this.allowedRoots = [...this.baseRoots, ...this.extraRoots];
+    // 禁止覆盖根（与白名单并列的第二条判据，见字段注释）
+    this.noOverwriteRoots = this.normalizeNoOverwriteRoots(noOverwriteRoots);
+  }
+
+  /**
+   * 归一化额外白名单（唯一判据）：元素校验 → realpath → 与基准根/已收项去重 → 上限校验。
+   *
+   * 去重口径与 `assertPathAllowed` 的前缀匹配同源（realpath 后比较），重复项不占额度；
+   * 超限**抛错**而非截断（截断 = 用户以为已放行、实际被拒的静默失效）。
+   *
+   * @param paths 待归一化的额外白名单
+   * @param label 错误文案用键名（allowedPaths / noOverwriteRoots）
+   */
+  private normalizeExtraRoots(paths: string[], label: string): string[] {
+    if (!Array.isArray(paths)) {
+      throw securityError(`${label} 必须为数组`, `${label} 入参不是数组`, ['请传入字符串数组']);
+    }
+    // 基准根先入集合：与基准根重复的额外项不占额度（allowedRoots 是并集，语义等价）
+    const seen = new Set<string>(this.baseRoots);
+    const normalized: string[] = [];
+    for (let i = 0; i < paths.length; i++) {
+      const p = paths[i];
+      if (typeof p !== 'string') {
+        throw securityError(`${label} 每项必须为字符串`, `${label}[${i}] 不是字符串`, [
+          `${label} 每项必须为字符串路径`,
+        ]);
+      }
+      const real = resolveRealpath(expandHome(p));
+      if (seen.has(real)) continue;
+      seen.add(real);
+      normalized.push(real);
+    }
+    if (normalized.length > MAX_EXTRA_ALLOWED_PATHS) {
+      throw securityError(
+        `${label} 超过上限（${MAX_EXTRA_ALLOWED_PATHS} 条）`,
+        `收到 ${normalized.length} 条去重后路径，超出内核上限 ${MAX_EXTRA_ALLOWED_PATHS}`,
+        [
+          `删除 ${normalized.length - MAX_EXTRA_ALLOWED_PATHS} 条不再需要的允许路径`,
+          '白名单上限防膨胀：内核不静默截断，超限立即报错',
+        ],
+      );
+    }
+    return normalized;
+  }
+
+  /**
+   * 归一化禁止覆盖根：元素校验 + realpath + 去重（不设上限——它是收紧型判据，
+   * 多一条只会多拦，不构成可用面膨胀）。
+   */
+  private normalizeNoOverwriteRoots(paths: string[]): string[] {
+    if (!Array.isArray(paths)) return [];
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+    for (let i = 0; i < paths.length; i++) {
+      const p = paths[i];
+      if (typeof p !== 'string') {
+        throw securityError(
+          'noOverwriteRoots 每项必须为字符串',
+          `noOverwriteRoots[${i}] 不是字符串`,
+          ['noOverwriteRoots 每项必须为字符串路径'],
+        );
+      }
+      const real = resolveRealpath(expandHome(p));
+      if (seen.has(real)) continue;
+      seen.add(real);
+      normalized.push(real);
+    }
+    return normalized;
   }
 
   /** 注册自定义写入确认回调（宿主接入）；取消注册传入 null。WebUI/桌宠等无终端场景走此回调而非读 stdin */
@@ -359,23 +445,57 @@ export class SecurityGuard {
    * 黑名单（BLOCKED_PATTERNS）对新增路径仍强制生效——白名单是允许列表，非绕过黑名单的通行证。
    */
   setAllowedPaths(extraPaths: string[]): void {
-    if (!Array.isArray(extraPaths)) {
-      throw securityError('allowedPaths 必须为数组', 'setAllowedPaths 入参不是数组', [
-        '请传入字符串数组',
-      ]);
-    }
-    const normalized: string[] = [];
-    for (let i = 0; i < extraPaths.length && normalized.length < MAX_EXTRA_ALLOWED_PATHS; i++) {
-      const p = extraPaths[i];
-      if (typeof p !== 'string') {
-        throw securityError('allowedPaths 每项必须为字符串', `allowedPaths[${i}] 不是字符串`, [
-          'allowedPaths 每项必须为字符串路径',
-        ]);
-      }
-      normalized.push(resolveRealpath(expandHome(p)));
-    }
-    this.extraRoots = normalized;
+    this.extraRoots = this.normalizeExtraRoots(extraPaths, 'allowedPaths');
     this.allowedRoots = [...this.baseRoots, ...this.extraRoots];
+  }
+
+  /**
+   * 运行时设置「禁止覆盖根」（宿主资产目录变更时热更新）
+   *
+   * 与 setAllowedPaths 并列但方向相反：白名单**放宽**可写面，本判据**收紧**覆盖面。
+   * 传空数组 = 取消覆盖保护（仅用于宿主明确不需要该保护的场景）。
+   */
+  setNoOverwriteRoots(paths: string[]): void {
+    this.noOverwriteRoots = this.normalizeNoOverwriteRoots(paths);
+  }
+
+  /**
+   * 断言目标不得覆盖（禁止覆盖根内的已存在文件一律拒绝）
+   *
+   * 判据顺序：不在任何禁止覆盖根 ⇒ 放行；文件不存在 ⇒ 放行（新建）；已存在 ⇒ 拒绝。
+   * 与 `assertPathAllowed` 同源（realpath 前缀匹配、追加 sep 防兄弟目录绕过），
+   * 但**不替代**白名单校验——调用方须先过白名单再问覆盖。
+   *
+   * @param absolutePath 目标绝对路径
+   * @param tool 工具名（审计用）
+   * @param source 调用链来源（审计用）
+   */
+  assertNotOverwrite(
+    absolutePath: string,
+    tool?: string,
+    source?: 'builtin' | 'custom' | 'system',
+  ): void {
+    if (this.noOverwriteRoots.length === 0) return;
+    const resolved = resolveRealpath(absolutePath.normalize('NFKC'));
+    // 新建文件不在本判据范围（本判据只回答「能不能覆盖」）
+    if (!existsSync(resolved)) return;
+    const hitRoot = this.noOverwriteRoots.find(
+      (root) => resolved === root || resolved.startsWith(root + sep),
+    );
+    if (!hitRoot) return;
+    this.emitAudit({
+      type: 'path-deny',
+      path: resolved,
+      tool,
+      source,
+      reason: `目标已存在且位于禁止覆盖目录 (${hitRoot})`,
+      timestamp: nowIso(),
+    });
+    throw securityError(
+      '目标已存在，禁止覆盖',
+      `路径 ${resolved} 已存在且位于禁止覆盖目录 ${hitRoot}`,
+      ['请与用户确认后换名写入', '如需覆盖，由用户在界面上明确确认'],
+    );
   }
 
   /** 订阅审计事件；@returns 取消订阅函数 */

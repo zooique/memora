@@ -714,6 +714,20 @@ export class BuiltinToolHandlers {
 
     const absolutePath = this.resolveSafePath(relativePath);
     this.guardPathOrThrow(absolutePath, 'write_file');
+    // 禁止覆盖根（用户资产目录）：write_file 的确认档是 idempotent-key，owner 默认不弹窗，
+    // 不过本判据就会静默覆盖用户已有技能/角色包文件。判据真源在 SecurityGuard，工具不硬编码路径。
+    try {
+      this.security.assertNotOverwrite(absolutePath, 'write_file');
+    } catch (err) {
+      const e = toError(err);
+      throw toolError(
+        '目标已存在，禁止覆盖',
+        e.message,
+        ['请与用户确认或换名写入', '不要静默覆盖用户已有文件'],
+        e,
+        ToolErrorCode.PERMISSION_DENIED,
+      );
+    }
 
     // 保留名守卫：任务表是内核工具数据（task_table_write/update 管理），不落盘为 markdown 文件。
     // 若放行，LLM 会在同一会话内反复 write_file 写 .memora/task-table.md（成功先例 few-shot 强化 →

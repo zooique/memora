@@ -484,6 +484,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'maxContextTokens',
       'maxTokens',
       'messages',
+      'noOverwriteRoots',
       'permission',
       'preExecutionCheck',
       'projectPath',
@@ -1150,6 +1151,8 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
   SecurityGuard: {
     kind: 'class',
     members: [
+      // 2026-11-02 ASSET-WRITE-SCOPE-1：禁止覆盖根（用户资产目录保护）
+      'assertNotOverwrite',
       'assertPathAllowed',
       'confirmCommandRun',
       'confirmScriptRun',
@@ -1162,6 +1165,7 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       'setAllowedPaths',
       'setConfirmScripts',
       'setConfirmWrites',
+      'setNoOverwriteRoots',
     ],
   }, // 来源 Agent.security / 宿主调用 6 个 / 文件 F:\zooique\memora\src\security\pathGuard.ts
   SkillManager: {
@@ -1380,7 +1384,13 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    缺此方法时用户改后台模型后润色仍走装配期实例（归档/摘要跟随、润色不跟随的可见不一致）。\n` +
       `    真消费者 = Agent.setBackgroundProvider（内核内调用，与 SessionArchiver / RoundSummaryGenerator 同构），\n` +
       `    行为由公开面 agent.polish.polish() 的 2 例测试 + 变异验证守护（移除注入即转红）。\n` +
-      `    代价 = 零（新增方法，既有 polish 签名与语义不变）。`;
+      `    代价 = 零（新增方法，既有 polish 签名与语义不变）。\n` +
+      `  ⑨ AgentOptions.noOverwriteRoots 新增（2026-11-02 · ASSET-WRITE-SCOPE-1，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：与 allowedPaths 并列但方向相反——白名单放宽可写面，\n` +
+      `    本键收紧覆盖面（目标已存在 ⇒ write_file 拒绝）。真消费者 = 宿主 assemble.ts 用用户资产\n` +
+      `    目录构造它；缺它时 write_file 的 idempotent-key 确认档不弹窗，模型会静默覆盖用户技能 / 角色包。\n` +
+      `    行为由 pathGuard.test.ts 的 6 例 + builtinToolHandlers 写入分支守护。\n` +
+      `    代价 = 零（可选字段：缺省 [] = 不启用，既有调用零变化）。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

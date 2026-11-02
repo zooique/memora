@@ -14,12 +14,14 @@
  *   - StubProvider 免 API Key，CI 离线可跑。
  *   - 直接构造 Agent（SessionManager 仅 type 导出），复用双实例脚手架。
  *   - 宿主测试跑 **built kernel**（@zooique/memora → dist），落地前须先 `npm run build`。
+ *   - 末尾追加 `mergeAllowedPathsWithUserAssets` 的合并判据（ASSET-WRITE-SCOPE-1）：
+ *     用户资产目录必须进入白名单，且与用户配置去重、宿主不裁剪条数。
  */
 // @vitest-environment node
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 // 宿主模块可能间接依赖 vscode，mock 之（不引入真实 VS Code 运行时）
 vi.mock('vscode', () => ({
@@ -41,6 +43,7 @@ vi.mock('vscode', () => ({
 import { Agent, type LlmProvider, type LlmChunk } from '@zooique/memora';
 import { WorkspaceStorage } from '../workspaceStorage.js';
 import { WorkspaceSessionStore } from '../sessionStore.js';
+import { mergeAllowedPathsWithUserAssets } from '../userAssets/allowedPaths.js';
 
 /** 免 API Key 的桩 LLM：仅满足 LlmProvider 契约，不触发任何 chat 调用 */
 class StubProvider {
@@ -157,5 +160,36 @@ describe('G8 allowedPaths 动态管理（运行时热更新 + 基准根不丢 + 
     expect(() => guard!.assertPathAllowed(join(extraDir, '.env'))).toThrow(/黑名单/);
 
     await agent.close();
+  });
+});
+
+describe('mergeAllowedPathsWithUserAssets · 用户资产目录并入白名单（ASSET-WRITE-SCOPE-1）', () => {
+  /** 用户技能目录样例（绝对路径） */
+  const USER_SKILLS = resolve('/tmp/user-assets/skills');
+  /** 用户角色包目录样例（绝对路径） */
+  const USER_PACKS = resolve('/tmp/user-assets/role-packs');
+
+  it('用户配置在前、注入目录在后，且注入目录必定存在', () => {
+    const merged = mergeAllowedPathsWithUserAssets(['/tmp/project'], [USER_SKILLS, USER_PACKS]);
+    expect(merged).toEqual(['/tmp/project', USER_SKILLS, USER_PACKS]);
+  });
+
+  it('重复路径只保留首次出现（Windows 下大小写不同也算重复）', () => {
+    const duplicated = USER_SKILLS.toUpperCase();
+    const merged = mergeAllowedPathsWithUserAssets([duplicated], [USER_SKILLS, USER_SKILLS]);
+    const expectedLength = process.platform === 'win32' ? 1 : 3;
+    expect(merged).toHaveLength(expectedLength);
+  });
+
+  it('未配置的目录（undefined）被跳过，不产生空串', () => {
+    const merged = mergeAllowedPathsWithUserAssets([], [USER_SKILLS, undefined, USER_PACKS]);
+    expect(merged).toEqual([USER_SKILLS, USER_PACKS]);
+    expect(merged.every((p) => p.length > 0)).toBe(true);
+  });
+
+  it('宿主不裁剪条数（超限由内核如实报错）', () => {
+    const many = Array.from({ length: 60 }, (_, i) => resolve(`/tmp/extra-${i}`));
+    const merged = mergeAllowedPathsWithUserAssets(many, [USER_SKILLS]);
+    expect(merged).toHaveLength(61);
   });
 });
