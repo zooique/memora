@@ -1323,7 +1323,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    *   另一个目录的注入项会被摘掉后不再恢复；
    * - **内置包也必须重扫**：额外目录覆盖内置时内置版已从池中摘除，若这里不重扫内置，
    *   用户删掉覆盖包后内置版会永久消失（「覆盖可逆」是对用户的隐含承诺）；
-   * - 对账结果取**净差**（对用户诚实）：同名重注入 = 磁盘版替换（updated），不算新增/移除；
+   * - 对账只保证 added / removed 是真净差：同名留存项进 updated，但它**不代表内容变化**
+   *   （不比对内容，避免「什么算变化」的第二套定义）；宿主文案不得把 updated 渲染成「更新」；
    *   只有真消失（目录已删 / 改名旧名）才进 removed，全新名字才计入 added；
    * - 原激活包被摘除（目录删除 / 改名）时走 §4.1 单链兜底（activateFallback，与 reload
    *   激活包被删同源同判据，不自造第二套回退规则），经 setActivePackName 触发
@@ -1331,8 +1332,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    *
    * @param dir 本次要确保登记并重扫的目录（可选；已登记目录恒参与重扫）
    * @param tier dir 尚未登记时的档位（默认 'user'；信任门授予项目目录时传 'project'）
-   * @returns added 净新增数；removed 真消失的包名；updated 同名重注入（内容生效）的包名；
-   *          activeFallback 激活是否发生悬空兜底
+   * @returns added 净新增数；removed 真消失的包名；updated 重扫后仍存在的同名项
+   *   （**不代表内容变化**；字段保留以维持公开窄口形状）；activeFallback 激活是否发生悬空兜底
    */
   async resyncUserPacks(
     dir?: string,

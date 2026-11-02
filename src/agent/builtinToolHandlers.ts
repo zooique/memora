@@ -568,6 +568,23 @@ export class BuiltinToolHandlers {
 
     const absolutePath = this.resolveSafePath(relativePath);
     this.guardPathOrThrow(absolutePath, 'delete_file');
+    // 禁止改写根（用户资产目录）的第二落点：与 write_file 共用同一判据函数，
+    // 只把动作语义传成 'delete'（错误码位 / 文案 / 审计动作名不同）。命中即拒绝、零删除。
+    // 项目级与普通工作区文件不在此根内，保持可删。
+    // 与 write_file 同形包装成 toolError：securityError 本身无 errorCode，直接抛会给 LLM
+    // 一个「不可分类」错误（重试判断落空）；这里统一成 PERMISSION_DENIED（不可重试）。
+    try {
+      this.security.assertNotOverwrite(absolutePath, 'delete_file', 'builtin', 'delete');
+    } catch (err) {
+      const e = toError(err);
+      throw toolError(
+        '目标已存在，禁止删除',
+        e.message,
+        ['用户级资产目录内已存在的文件不允许通过对话删除', '如需删除，请在文件管理器中手动删除'],
+        e,
+        ToolErrorCode.PERMISSION_DENIED,
+      );
+    }
 
     try {
       // 删前预检：目标是目录时拒绝（防误删）
@@ -723,7 +740,7 @@ export class BuiltinToolHandlers {
       throw toolError(
         '目标已存在，禁止覆盖',
         e.message,
-        ['请与用户确认或换名写入', '不要静默覆盖用户已有文件'],
+        ['请换名写入（同名已存在的一律拒写）', '不要静默覆盖用户已有文件'],
         e,
         ToolErrorCode.PERMISSION_DENIED,
       );

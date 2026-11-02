@@ -973,7 +973,7 @@ describe('SecurityGuard · 禁止覆盖根（noOverwriteRoots，用户资产目�
     expect(() => guard.assertNotOverwrite(target, 'write_file')).toThrow(/禁止覆盖/);
     const last = audits[audits.length - 1]!;
     expect(last.type).toBe('path-deny');
-    expect(last.reason).toMatch(/禁止覆盖目录/);
+    expect(last.reason).toMatch(/禁止改写目录/);
   });
 
   it('禁止覆盖根内新建（文件不存在）⇒ 放行', () => {
@@ -994,6 +994,29 @@ describe('SecurityGuard · 禁止覆盖根（noOverwriteRoots，用户资产目�
     const target = join(siblingRoot, 'existing.md');
     writeFileSync(target, 'x', 'utf-8');
     expect(() => guard.assertNotOverwrite(target, 'write_file')).not.toThrow();
+  });
+
+  it('delete 动作：根内已存在文件 ⇒ 拒绝（同一判据，错误码位/审计动作名区分 delete）', () => {
+    const guard = makeGuard();
+    const target = join(assetRoot, 'existing-skill.md');
+    writeFileSync(target, 'old', 'utf-8');
+    const audits = collectAudits(guard);
+    expect(() => guard.assertNotOverwrite(target, 'delete_file', 'builtin', 'delete')).toThrow(
+      /禁止删除/,
+    );
+    const last = audits[audits.length - 1]!;
+    expect(last.type).toBe('path-deny');
+    expect(last.reason).toMatch(/禁止改写目录/);
+    expect(last.reason).toMatch(/动作=delete/);
+  });
+
+  it('delete 动作：根外已存在文件 ⇒ 放行（项目级与普通工作区保持可删）', () => {
+    const guard = makeGuard();
+    const target = join(projectPath, 'notes.md');
+    writeFileSync(target, 'mine', 'utf-8');
+    expect(() =>
+      guard.assertNotOverwrite(target, 'delete_file', 'builtin', 'delete'),
+    ).not.toThrow();
   });
 
   // 未挂载盘符路径：根的 dirname 自指（'Z:\' → 'Z:\'）且 realpath 必失败。

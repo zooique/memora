@@ -432,6 +432,81 @@ describe('BuiltinToolHandlers.writeFile', () => {
   });
 });
 
+// ─── 禁止改写根（用户级资产目录）：delete_file / write_file ────
+
+describe('BuiltinToolHandlers 禁止改写根', () => {
+  /**
+   * 构造带禁止改写根的处理器：资产根是项目根的子目录 ⇒
+   * 既在 allowedPaths（基准根内），也在 noOverwriteRoots（第 9 个构造参数）。
+   *
+   * @param assetRoot 用户级资产目录（真实绝对路径；可以尚未创建，realpath 会解析到父目录）
+   */
+  function makeHandlerWithAssetRoot(assetRoot: string): BuiltinToolHandlers {
+    const guarded = new SecurityGuard(
+      projectPath,
+      projectPath,
+      [],
+      false,
+      'owner',
+      false,
+      undefined,
+      undefined,
+      [assetRoot],
+    );
+    return new BuiltinToolHandlers(projectPath, guarded, storage);
+  }
+
+  it('delete_file 命中保护根 ⇒ PERMISSION_DENIED 且零删除（目标文件仍存在）', async () => {
+    const assetRoot = join(projectPath, 'user-assets');
+    await mkdir(assetRoot, { recursive: true });
+    await createFileInProject('user-assets/skill.md', '用户资产');
+    const h = makeHandlerWithAssetRoot(assetRoot);
+
+    await expect(h.deleteFile('user-assets/skill.md')).rejects.toMatchObject({
+      errorCode: ToolErrorCode.PERMISSION_DENIED,
+    });
+    // 零删除：判据在任何 fs 动作之前生效，目标文件必须还在
+    const stats = await (await import('node:fs/promises')).stat(join(assetRoot, 'skill.md'));
+    expect(stats.isFile()).toBe(true);
+  });
+
+  it('delete_file 保护根外 ⇒ 删除成功（项目级 / 普通工作区仍可删）', async () => {
+    await createFileInProject('notes.md', '工作区文件');
+    // 资产根不存在也不影响判据：根外路径照常放行
+    const h = makeHandlerWithAssetRoot(join(projectPath, 'user-assets'));
+    const result = await h.deleteFile('notes.md');
+    expect(result).toContain('已删除');
+    await expect(
+      (await import('node:fs/promises')).stat(join(projectPath, 'notes.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('write_file 缺省参数 = 旧语义：根外同名覆盖照常成功', async () => {
+    await createFileInProject('notes.md', '旧内容');
+    const h = makeHandlerWithAssetRoot(join(projectPath, 'user-assets'));
+    const result = await h.writeFile('notes.md', '新内容');
+    expect(result).toContain('旧文件'); // 覆盖语义未被缺省参数改变
+    const content = await (
+      await import('node:fs/promises')
+    ).readFile(join(projectPath, 'notes.md'), 'utf-8');
+    expect(content).toBe('新内容');
+  });
+
+  it('write_file 根内同名 ⇒ 拒绝（与 delete 共用同一判据函数）', async () => {
+    const assetRoot = join(projectPath, 'user-assets');
+    await mkdir(assetRoot, { recursive: true });
+    await createFileInProject('user-assets/skill.md', '用户资产');
+    const h = makeHandlerWithAssetRoot(assetRoot);
+    await expect(h.writeFile('user-assets/skill.md', '篡改')).rejects.toMatchObject({
+      errorCode: ToolErrorCode.PERMISSION_DENIED,
+    });
+    const content = await (
+      await import('node:fs/promises')
+    ).readFile(join(assetRoot, 'skill.md'), 'utf-8');
+    expect(content).toBe('用户资产');
+  });
+});
+
 // ─── listDir ─────────────────────────────────────────────
 
 describe('BuiltinToolHandlers.listDir', () => {

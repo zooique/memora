@@ -465,20 +465,24 @@ export class SecurityGuard {
   }
 
   /**
-   * 断言目标不得覆盖（禁止覆盖根内的已存在文件一律拒绝）
+   * 断言目标不得改写（禁止覆盖根内的已存在文件一律拒绝覆盖或删除）
    *
    * 判据顺序：不在任何禁止覆盖根 ⇒ 放行；文件不存在 ⇒ 放行（新建）；已存在 ⇒ 拒绝。
+   * 覆盖与删除共用同一判据，仅错误文案 / 审计动作名不同（见 `action`）。
    * 与 `assertPathAllowed` 同源（realpath 前缀匹配、追加 sep 防兄弟目录绕过），
    * 但**不替代**白名单校验——调用方须先过白名单再问覆盖。
    *
    * @param absolutePath 目标绝对路径
    * @param tool 工具名（审计用）
    * @param source 调用链来源（审计用）
+   * @param action 动作语义：「覆盖」或「删除」；只影响错误码位（title）、文案与审计动作名，
+   *   判据本身（目标已存在 + 命中禁止覆盖根）完全相同。缺省 `'overwrite'` = 旧语义。
    */
   assertNotOverwrite(
     absolutePath: string,
     tool?: string,
     source?: 'builtin' | 'custom' | 'system',
+    action: 'overwrite' | 'delete' = 'overwrite',
   ): void {
     if (this.noOverwriteRoots.length === 0) return;
     const resolved = resolveRealpath(absolutePath.normalize('NFKC'));
@@ -488,18 +492,25 @@ export class SecurityGuard {
       (root) => resolved === root || resolved.startsWith(root + sep),
     );
     if (!hitRoot) return;
+    // 动作名进审计 reason（AuditEvent 无 action 字段，不改公开接口）：
+    // 同一条 path-deny 要能复盘是「写被拒」还是「删被拒」。
+    // 目录定性用「禁止改写」而非「禁止覆盖 / 禁止删除」——根的性质不随动作改变，
+    // 写成「禁止删除目录」会反向暗示「该目录可覆盖」（假话）。
+    const verb = action === 'delete' ? '删除' : '覆盖';
     this.emitAudit({
       type: 'path-deny',
       path: resolved,
       tool,
       source,
-      reason: `目标已存在且位于禁止覆盖目录 (${hitRoot})`,
+      reason: `目标已存在且位于禁止改写目录 (${hitRoot})，动作=${action}`,
       timestamp: nowIso(),
     });
     throw securityError(
-      '目标已存在，禁止覆盖',
-      `路径 ${resolved} 已存在且位于禁止覆盖目录 ${hitRoot}`,
-      ['请与用户确认后换名写入', '如需覆盖，由用户在界面上明确确认'],
+      `目标已存在，禁止${verb}`,
+      `路径 ${resolved} 已存在且位于禁止改写目录 ${hitRoot}（动作=${action}）`,
+      action === 'delete'
+        ? ['用户级资产目录内已存在的文件不允许通过对话删除', '如需删除，请在文件管理器中手动删除']
+        : ['请换名写入（同名已存在的一律拒写）'],
     );
   }
 

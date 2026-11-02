@@ -147,10 +147,12 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * 重扫额外技能目录并与内存池对账（设置页「刷新技能」的唯一内核落点）。
    *
    * 形态对齐 `RolePackManager.resyncUserPacks`：先摘除本管理器持有的额外目录注入项，
-   * 再统一重扫（configDir + extraDirs），最后取**净差**回报。
+   * 再统一重扫（configDir + extraDirs），最后回报对账结果。
    * 与角色包版本的差异：技能没有「激活态」，故无 activeFallback。
    *
-   * @returns added 净新增数；removed 真消失的技能名；updated 同名重注入的技能名
+   * @returns added 净新增数；removed 真消失的技能名；updated **重扫后仍存在的同名项**
+   *   （字段保留以维持公开窄口形状；它**不代表内容变化**——不比对内容，避免引入
+   *   「什么算变化」的第二套定义与一次全量读取）
    */
   async resyncUserSkills(): Promise<{ added: number; removed: string[]; updated: string[] }> {
     // 摘除前名单 = 对账基线之一（deleteItem 同时注销运行时记账）
@@ -160,6 +162,7 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     await this.rescanAllSources();
     const finalNames = new Set(this.items.map((s) => s.name));
     const removed = beforeNames.filter((name) => !finalNames.has(name));
+    // updated = 同名留存（非内容变更）；宿主文案不得把它渲染成「更新 N 个」
     const updated = beforeNames.filter((name) => finalNames.has(name));
     const added = [...finalNames].filter(
       (name) => !baseline.has(name) && !beforeNames.includes(name),
