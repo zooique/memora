@@ -1011,6 +1011,7 @@ const result = await agent.works?.registerWork(relativePath, description);
 | `setBackgroundProvider(provider)` | 运行时切换后台 Provider |
 
 Agent 不再管理 Provider 映射表，宿主自行管理。
+两个方法均**即时生效**：任一变动都会重解析后台通道——未注入后台 Provider 时，后台操作跟随当前前台；已注入时，失败升级的兜底目标指向当前前台。
 
 ---
 
