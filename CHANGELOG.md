@@ -31,6 +31,10 @@
 
 - **输入区控件统一为无边框 `.ctl` 基类；选中态由边框改为图标染色**（`UI-INPUT-CTL-1`）：skill / 模型触发器与润色 / 上传 / 暂停按钮改由单一 `.ctl` 基类提供形态（`border:none`、2px 圆角、hover 底色 + 前景提亮、`[aria-disabled]` 统一置灰），各自不再自写 `border` / `border-color` / `border-radius`；发送按钮（实心、不挂 `.ctl`）补 1px 紧凑焦点环（全局 2px 对 32px 方钮偏重）。**选中态**（已挂载 Skill）由「accent 边框」改由「常驻图标染色（`.ctl--on` 的 accent 前景）」承载——**不写常驻底色**：`--accent-bg-hover` 实际映射 `--vscode-list-hoverBackground`（中性灰），常驻灰底会让选中态「看起来一直处于 hover」且与 hover 同底，三态不可分。**为什么**：边框在输入区同时承担了两种互斥语义（常驻选中 vs 瞬时 hover），去边框后必须让「常驻」走常驻通道（颜色）、「瞬时」走瞬时通道（底色）。**对消费者**：纯样式，零协议 / 零 DOM 结构变化（仅给既有按钮与下拉触发器追加 `ctl` class，`buildDropdownHtml` 增可选 `triggerClass` 入参）。
 
+### Fixed（宿主）
+
+- **MCP `readOnlyHint` 映射进只读闸**（`READONLY-CUSTOM-1`）：内核只读闸改为查「全部工具定义」后，`toToolDefinition` 此前从不写 `readonly` 字段的 MCP 工具会按缺省 false 被一律拒绝——只读 server 工具在只读模式全部不可用。现按既有判据 `readOnlyDeclaration`（`annotations.readOnlyHint === true && annotations.destructiveHint !== true`）显式映射：声明只读 ⇒ `readonly: true`；缺省 / false / 与 `destructiveHint: true` 矛盾 ⇒ 显式 `readonly: false`（不靠字段缺省，边界可审计）。与 `diskWrite` 同源镜像（同一份 `readOnlyDeclaration`，避免「写序说只读、只读闸说会写」的双头语义）。**对消费者**：MCP 读工具在只读模式恢复可用；`readOnlyHint` 仍是 server 自报，谎报只读同时绕过写串行闸与只读闸——该残余风险随本条一并放大，见仓库台账 `READONLY-CUSTOM-1`。
+
 ## [5.4.0] · 2026-11-02
 
 ### Deprecated（内核）
@@ -214,12 +218,6 @@
 ### Changed（内核）
 
 - **后台任务槽位按 Agent 实例隔离**（`MULTI-AGENT-1`，2026-10-18）：模块级槽位 → `class BackgroundTaskScheduler` 实例级，同进程多 Agent 不再交叉等待/挤占（形态定案后多实例是必然）。非公开 API 变更。
-
-## [Unreleased] · 宿主
-
-### Fixed（宿主）
-
-- **MCP `readOnlyHint` 映射进只读闸**（`READONLY-CUSTOM-1`）：内核只读闸改为查「全部工具定义」后，`toToolDefinition` 此前从不写 `readonly` 字段的 MCP 工具会按缺省 false 被一律拒绝——只读 server 工具在只读模式全部不可用。现按既有判据 `readOnlyDeclaration`（`annotations.readOnlyHint === true && annotations.destructiveHint !== true`）显式映射：声明只读 ⇒ `readonly: true`；缺省 / false / 与 `destructiveHint: true` 矛盾 ⇒ 显式 `readonly: false`（不靠字段缺省，边界可审计）。与 `diskWrite` 同源镜像（同一份 `readOnlyDeclaration`，避免「写序说只读、只读闸说会写」的双头语义）。**对消费者**：MCP 读工具在只读模式恢复可用；`readOnlyHint` 仍是 server 自报，谎报只读同时绕过写串行闸与只读闸——该残余风险随本条一并放大，见仓库台账 `READONLY-CUSTOM-1`。
 
 ## [0.6.0] · 2026-11-02 · 宿主
 
