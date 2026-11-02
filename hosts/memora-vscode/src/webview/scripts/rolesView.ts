@@ -127,6 +127,14 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     });
   }
 
+  // 「新建角色包」入口：只发消息，写盘与校验全在宿主命令处理器（webview 不写第二份）
+  const createBtn = root.querySelector<HTMLButtonElement>('#btnCreateRolePack');
+  if (createBtn) {
+    createBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'roles_create_request' });
+    });
+  }
+
   // 「刷新角色包列表」入口（对齐技能刷新按钮）：请求 host 重扫用户角色包目录对账内存池，
   // host 完成后回发 notice（对账结果）+ roles_loaded（最新列表）
   const refreshBtn = root.querySelector<HTMLButtonElement>('#btnRefreshRolePacks');

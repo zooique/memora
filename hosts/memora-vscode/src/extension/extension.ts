@@ -37,6 +37,8 @@ import { cleanupMemoriesCommand, memoryStatsCommand, runGcCommand } from './comm
 import { registerWorkCommand } from './commands/registerWork.js';
 import { addToChatCommand } from './commands/addToChat.js';
 import { createUserDataResetHandler } from './commands/userDataReset.js';
+import { createUserSkillCommand } from './commands/createUserSkill.js';
+import { createRolePackCommand } from './commands/createRolePack.js';
 import { readDisabledSkills, syncDisabledSkills } from './host/skillSync.js';
 import { FileChangeTracker } from './host/fileChangeTracker.js';
 import { FileChangeView } from './host/fileChangeView.js';
@@ -46,6 +48,9 @@ import {
   ACTIVE_ROLE_PACK_KEY,
   CONFIRM_WRITES_KEY,
   CONFIRM_SCRIPTS_KEY,
+  CREATE_ROLE_PACK_COMMAND,
+  CREATE_SKILL_COMMAND,
+  ROLE_PACK_TEMPLATE_REL_PATH,
   ROLE_PACK_TEAMS_KEY,
   USER_SKILLS_DIR_NAME,
   USER_ROLE_PACKS_DIR_NAME,
@@ -271,6 +276,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // 指向 dist/extension（role-packs 等资源所在）。若在 assemble 内用 import.meta.url
   // 相对推断，esbuild bundle 后路径漂移会导致内置角色包加载为 0（坑）。
   const configDir = join(context.extensionUri.fsPath, 'dist', 'extension');
+
+  // 新建角色包的内置模板目录（复用 role-pack-creator 的 templates/standard，不另写模板）
+  const rolePackTemplateDir = join(context.extensionUri.fsPath, ROLE_PACK_TEMPLATE_REL_PATH);
 
   // 用户技能目录：使用 VS Code 全局存储目录
   // 路径示例：C:\Users\SJ\AppData\Roaming\Code\User\globalStorage\zooique.memora-vscode\skills\
@@ -505,6 +513,30 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.reloadSkills', () =>
       reloadSkillsCommand(tryGetAgent, chatProvider, settingsProvider),
+    ),
+  );
+
+  // 命令：新建用户技能（命令面板 + 设置页「新建技能」按钮共用同一处理器）
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CREATE_SKILL_COMMAND, () =>
+      createUserSkillCommand({
+        userSkillsDir,
+        tryGetAgent,
+        chatProvider,
+        settingsProvider,
+      }),
+    ),
+  );
+
+  // 命令：新建用户角色包（命令面板 + 设置页「新建角色包」按钮共用同一处理器）
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CREATE_ROLE_PACK_COMMAND, () =>
+      createRolePackCommand({
+        userRolePacksDir,
+        templateDir: rolePackTemplateDir,
+        tryGetAgent,
+        settingsProvider,
+      }),
     ),
   );
 

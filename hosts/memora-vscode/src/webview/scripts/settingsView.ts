@@ -273,11 +273,21 @@ function createSkillsView({
   // 刷新按钮事件：**用户显式要求重载** ⇒ 缓存与展开态一并丢弃（与「被动重推」相反，
   // 见 skills_loaded 处理器——那条必须保状态，这条必须清状态，两者判据不同源）
   refreshBtn.addEventListener('click', () => {
-    vscode.postMessage({ type: 'skills_load' });
+    // 必须触发 host 侧真实重扫（skills_refresh），不能发 skills_load——
+    // 后者只读内存快照，用户刚放进目录的文件永远不出现（「建了不生效」的根因）
+    vscode.postMessage({ type: 'skills_refresh' });
     listEl.innerHTML = '<p class="loading-hint">加载中…</p>';
     contentMap.clear();
     expanded.clear();
   });
+
+  // 新建技能按钮事件：只发消息，写盘与校验全在宿主命令处理器（webview 不写第二份）
+  const createBtn = root.querySelector<HTMLButtonElement>('#btnCreateSkill');
+  if (createBtn) {
+    createBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'skills_create_request' });
+    });
+  }
 
   // 打开目录按钮事件
   if (openDirBtn) {

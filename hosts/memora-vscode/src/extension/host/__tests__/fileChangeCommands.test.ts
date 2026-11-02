@@ -247,18 +247,21 @@ describe('registerCommand 注册面 ↔ package.json#contributes', () => {
     (match) => match[1],
   );
 
-  // 注册点二：fileChangeView.ts 用常量注册（常量值另取自同文件 const 定义，非常量形态即解析失败）
+  // 注册点二/三：fileChangeView.ts 与 extension.ts 也可用**导入常量**注册
+  // （命令 id 真源 = shared/constants.ts，面板同样引用它 ⇒ 常量表须覆盖该文件，
+  //  否则「贡献 ↔ 注册」对拍对导入形态失明，把已注册命令误报为未注册）
   const viewSrc = readFileSync(REGISTER_SOURCES[1], 'utf-8');
-  /** 常量名 → 命令 id 映射（`const XXX_COMMAND = 'memora.…'` 形态） */
+  const constantsSrc = readFileSync(resolve(PKG_ROOT, 'src/shared/constants.ts'), 'utf-8');
+  /** 常量名 → 命令 id 映射（`const XXX_COMMAND = 'memora.…'` 形态；两份源合并） */
   const constantTable = new Map(
-    [...viewSrc.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*['"]([^'"]+)['"]/g)].map((match) => [
-      match[1],
-      match[2],
-    ]),
+    [constantsSrc, viewSrc]
+      .flatMap((src) => [...src.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*['"]([^'"]+)['"]/g)])
+      .map((match) => [match[1], match[2]])
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
   );
-  /** 调用点引用的常量名（形如 `registerCommand(\n  REVIEW_…`，允许跨行） */
-  const constantRefs = [...viewSrc.matchAll(/registerCommand\(\s*([A-Za-z_$][\w$]*)/g)].map(
-    (match) => match[1],
+  /** 调用点引用的常量名（形如 `registerCommand(\n  REVIEW_…`，允许跨行；两处源都收） */
+  const constantRefs = [extensionSrc, viewSrc].flatMap((src) =>
+    [...src.matchAll(/registerCommand\(\s*([A-Za-z_$][\w$]*)/g)].map((match) => match[1]),
   );
   /** 解析失败的调用点（用了非常量标识符 ⇒ 提取对它失明，必须红） */
   const unresolvedRefs = constantRefs.filter((name) => !constantTable.has(name));

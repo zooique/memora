@@ -10,13 +10,24 @@
 
 ## [Unreleased] · 内核
 
+### Added（内核）
+
+- **技能用户目录真重扫**（`SKILL-REFRESH-1`）：`SkillManager` 此前只在装配期经 `loadExtraDir` 读一遍用户技能目录，`reload()` 只重扫 `configDir` ⇒ 用户往 `<globalStorage>/skills/` 手工放新技能后，除 Reload Window 外没有任何重扫入口。现管理器自持已登记的用户目录（`extraDirs`），覆写 `reload()` 统一重扫「`configDir` + 已登记用户目录」；用户目录注入项（`userSkillNames`）与 `register()` 运行时项分开记账，重扫只摘前者，不误删运行时技能。**为什么**：若刷新时由宿主再传一次路径，就会形成「装配期一份、刷新期一份」的路径双源，第二个入口漏传即静默失效。**对消费者**：零签名变更；`loadExtraDir` 语义不变（只新增目录登记，不新增扫描源）。
+- **新增公开窄口 `resyncUserSkills()`**（`SKILL-REFRESH-1` / `SKILL-CREATE-1`）：重扫已登记的用户技能目录并回报净差 `{added, removed, updated}`（形态对齐 `RolePackManager.resyncUserPacks`），供设置页刷新与新建技能后立即生效。**对消费者**：纯新增成员，零既有签名变更。
+
 ### Fixed（内核）
 
 - **只读闸覆盖自定义工具与四个内置读工具**（`READONLY-CUSTOM-1` / `READONLY-BUILTIN-1`）：`toolReadonly='readonly'` 的只读闸此前只查暴露面 `tools.list`（受 `toolWhitelist` 过滤）⇒ 宿主 `registerTool` 注册的自定义 / MCP 工具完全不在射程（未声明 `readonly` 的写工具照常执行）；同时 `read_skill` / `read_resource` / `list_resources` / `list_skills` 四个渐进披露读工具漏标 `readonly`，只读模式下被误拦。现闸改查「全部工具定义」——来源单点 `ToolExecutor.allToolDefinitions`（原 `builtinDefinitions` 更名，含内置全量 + 自定义，**不过白名单过滤**），四个读工具补 `readonly: true`。**行为变更**：注册自定义工具时未声明 `readonly` ⇒ 按契约缺省 false = 写操作，只读模式下**将被拒**（此前因闸查不到定义而放行）——这是修正不是回归；需在只读模式使用的自定义工具请显式声明 `readonly: true`。**为什么**：暴露面 ≠ 覆盖面，闸查可见面等于「工具不可见即不受约束」。**对消费者**：不使用 `toolReadonly='readonly'` 的代码零影响；`ToolExecutor.allToolDefinitions` 为公开 getter 更名（原 `builtinDefinitions` 未在 5.x 承诺面清单内，消费方若有引用需同步改名）。
 
 ## [Unreleased] · 宿主
 
+### Added（宿主）
+
+- **新建用户技能 / 用户角色包命令**（`SKILL-CREATE-1` / `ROLEPACK-CREATE-1`）：新增 `memora.createSkill` / `memora.createRolePack`，命令面板与设置页按钮双入口、**单一写盘实现**（webview 只发协议消息，宿主同一命令处理器落盘）。技能写 `<globalStorage>/skills/<name>.md`：名字经白名单净化 + 目录逃逸断言，`description` 必填（缺了会被从模型可见清单过滤），同名用户文件拒绝、同名内置走「继续覆盖」确认；角色包复用内置模板写 `<globalStorage>/role-packs/<name>/`，`manifest.json` 复用内核 `validateManifestText`，`formatVersion` 缺省显式写 `1.0.0`，同名内置硬拒绝（否则创建成功但永不装载）。写后 `resyncUserSkills` / `resyncUserPacks` 并回显实际路径 + 「打开所在目录」。**对消费者**：纯新增命令与协议消息（`skills_refresh` / `skills_create_request` / `roles_create_request`），既有命令零变化。
+
 ### Changed（宿主）
+
+- **设置页「刷新技能」改为真重扫**（`SKILL-REFRESH-1`）：此前只重读内核内存快照，用户新增技能文件必须 Reload Window 才可见；现刷新走 `agent.skills.resyncUserSkills()` 后重推技能列表（`userAssetRefresh.ts` 薄委托，技能 / 角色包两个刷新按钮共用同一套净差文案）。**对消费者**：点刷新即可看到手工投放或新建的技能，无需重启窗口。
 
 - **输入区控件统一为无边框 `.ctl` 基类；选中态由边框改为图标染色**（`UI-INPUT-CTL-1`）：skill / 模型触发器与润色 / 上传 / 暂停按钮改由单一 `.ctl` 基类提供形态（`border:none`、2px 圆角、hover 底色 + 前景提亮、`[aria-disabled]` 统一置灰），各自不再自写 `border` / `border-color` / `border-radius`；发送按钮（实心、不挂 `.ctl`）补 1px 紧凑焦点环（全局 2px 对 32px 方钮偏重）。**选中态**（已挂载 Skill）由「accent 边框」改由「常驻图标染色（`.ctl--on` 的 accent 前景）」承载——**不写常驻底色**：`--accent-bg-hover` 实际映射 `--vscode-list-hoverBackground`（中性灰），常驻灰底会让选中态「看起来一直处于 hover」且与 hover 同底，三态不可分。**为什么**：边框在输入区同时承担了两种互斥语义（常驻选中 vs 瞬时 hover），去边框后必须让「常驻」走常驻通道（颜色）、「瞬时」走瞬时通道（底色）。**对消费者**：纯样式，零协议 / 零 DOM 结构变化（仅给既有按钮与下拉触发器追加 `ctl` class，`buildDropdownHtml` 增可选 `triggerClass` 入参）。
 

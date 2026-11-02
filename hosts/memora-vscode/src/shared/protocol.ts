@@ -547,6 +547,14 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'roles_open_dir' }
   /**
+   * 新建用户角色包（角色视图「新建角色包」按钮触发）
+   *
+   * host 执行 memora.createRolePack 命令（与命令面板同一处理器，webview 不写盘不校验），
+   * 复用内置 `role-pack-creator` 的 templates/standard 生成 `<用户角色包目录>/<name>/`，
+   * 写后 resyncUserPacks + 回显实际路径。
+   */
+  | { type: 'roles_create_request' }
+  /**
    * 重扫用户角色包目录（角色视图「刷新」按钮触发）
    *
    * host 调 rolePackManager.resyncUserPacks(userRolePacksDir)：摘除旧运行时注入项 →
@@ -708,6 +716,24 @@ export type WebviewToExtensionMessage =
    * host 调用 VS Code 命令在系统文件管理器中打开用户技能目录。
    */
   | { type: 'skills_open_dir' }
+  /**
+   * 重扫用户技能目录（技能视图「刷新」按钮触发）
+   *
+   * host 调 SkillManager.resyncUserSkills()（管理器自持用户目录清单，无需宿主再传路径）：
+   * 摘除旧用户注入项 → 重扫 configDir + 各 extraDir（新增 / 内容修改生效，已删文件摘除）。
+   * 完成后回发 notice（净差对账结果：新增/更新/移除）+ 刷新 skills_loaded。
+   *
+   * ⚠️ 不能用 skills_load 代替：那只读内存快照，磁盘新增文件不会出现在列表
+   * （「建了不生效」的根因），必须触发真实重扫。
+   */
+  | { type: 'skills_refresh' }
+  /**
+   * 新建用户技能（技能视图「新建技能」按钮触发）
+   *
+   * host 执行 memora.createSkill 命令（与命令面板同一处理器，webview 不写盘不校验），
+   * 弹输入框收集名字 / 描述，写 `<用户技能目录>/<name>.md` 后重扫 + 回显实际路径。
+   */
+  | { type: 'skills_create_request' }
   /**
    * L2 渐进披露：请求读取技能正文（技能视图的「查看正文」按钮触发）
    *

@@ -38,6 +38,7 @@ import { MemoraChatViewProvider } from './chatPanel.js';
 // 设置面板静态 DOM 骨架：本文件贴 eslint max-lines 上限、只降不升，
 // 而骨架每加一个选项卡就长一段（线性增长域）⇒ 外置为 panels/settingsPanelHtml.ts
 import { buildHtml } from './settingsPanelHtml.js';
+import { refreshUserRolePacksFlow, refreshUserSkillsFlow } from './userAssetRefresh.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 import type {
   CustomSearchEngineConfig,
@@ -82,6 +83,8 @@ import {
   ACTIVE_ROLE_PACK_KEY,
   CONFIRM_WRITES_KEY,
   CONFIRM_SCRIPTS_KEY,
+  CREATE_ROLE_PACK_COMMAND,
+  CREATE_SKILL_COMMAND,
   ROLE_PACK_TEAMS_KEY,
   MEMORY_RECYCLE_RETENTION_DAYS,
 } from '../../shared/constants.js';
@@ -319,14 +322,17 @@ export class MemoraSettingsPanel {
       this._chatProvider?.refreshActiveRolePackForTeam();
       return;
     }
-    // 打开用户角色包目录（与技能系统入口一致）
     if (msg.type === 'roles_open_dir') {
-      this.openUserRolePacksDir();
+      this.openDirInOs(this._userRolePacksDir, '用户角色包');
       return;
     }
     // 重扫用户角色包目录（刷新按钮）：内核对账后 notice 结果 + 刷新下发
     if (msg.type === 'roles_refresh') {
       await this.refreshRolePacks();
+      return;
+    }
+    if (msg.type === 'roles_create_request') {
+      void vscode.commands.executeCommand(CREATE_ROLE_PACK_COMMAND);
       return;
     }
     // 角色配置详情：读 manifest 原文 strategy 段回发（初值真源 = 原文，禁读装配值）
@@ -471,7 +477,15 @@ export class MemoraSettingsPanel {
       return;
     }
     if (msg.type === 'skills_open_dir') {
-      this.openUserSkillsDir();
+      this.openDirInOs(this._userSkillsDir, '用户技能');
+      return;
+    }
+    if (msg.type === 'skills_refresh') {
+      await this.refreshSkills();
+      return;
+    }
+    if (msg.type === 'skills_create_request') {
+      void vscode.commands.executeCommand(CREATE_SKILL_COMMAND);
       return;
     }
     // L2 渐进披露：按需读取技能正文（不预装载，用户点击展开时才读取）
@@ -1365,6 +1379,11 @@ export class MemoraSettingsPanel {
     await this.loadSkills();
   }
 
+  /** 重推角色包清单（写盘后由命令调用；重扫归命令，本方法只做投影刷新） */
+  public async refreshRolePackList(): Promise<void> {
+    await this.loadRoles();
+  }
+
   /**
    * 切换单个技能的禁用状态（面板延长线开关）
    *
@@ -1446,44 +1465,24 @@ export class MemoraSettingsPanel {
     );
   }
 
-  /** 打开用户技能目录（在系统文件管理器中显示） */
-  private openUserSkillsDir(): void {
-    this.openDirInOs(this._userSkillsDir, '用户技能');
-  }
-
-  /** 打开用户角色包目录（在系统文件管理器中显示，与技能目录入口一致） */
-  private openUserRolePacksDir(): void {
-    this.openDirInOs(this._userRolePacksDir, '用户角色包');
-  }
-
-  /**
-   * roles_refresh：重扫用户角色包目录，对账内核内存池（刷新按钮）。
-   *
-   * 背景：loadExtraDir 仅在 Agent 启动时执行一次，面板折叠展开读内存快照——
-   * 用户在目录里新增/改名/删除角色包后，不重启宿主不会生效。本方法调用内核
-   * resyncUserPacks 完成对账（摘除旧注入项 → 重扫 → 激活悬空走兜底单链），
-   * 结果以 notice 反馈并经 loadRoles 下发最新列表。
-   */
+  /** roles_refresh：摘除旧注入项 → 重扫用户角色包目录 → 净差 notice → 重推列表（执行面外置） */
   private async refreshRolePacks(): Promise<void> {
-    const agent = await this.ensureAgent();
-    const rpm = agent?.rolePackManager;
-    if (!rpm || !this._userRolePacksDir) {
-      this.post({ type: 'notice', level: 'error', message: '角色包系统未就绪，无法刷新' });
-      return;
-    }
-    const r = await rpm.resyncUserPacks(this._userRolePacksDir);
-    // 净差对账文案（对用户诚实）：同名重注入 = 更新生效，不与新增/移除混报
-    const parts: string[] = [];
-    if (r.added > 0) parts.push(`新增 ${r.added} 个`);
-    if (r.updated.length > 0) parts.push(`更新 ${r.updated.length} 个（${r.updated.join('、')}）`);
-    if (r.removed.length > 0) parts.push(`移除 ${r.removed.length} 个（${r.removed.join('、')}）`);
-    if (r.activeFallback) parts.push('原激活包已不在，已回退兜底角色包');
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: parts.length > 0 ? `角色包已刷新：${parts.join('；')}` : '角色包已刷新：无变化',
+    await refreshUserRolePacksFlow({
+      agent: await this.ensureAgent(),
+      userRolePacksDir: this._userRolePacksDir,
+      post: (msg) => this.post(msg),
+      reloadList: () => this.loadRoles(),
     });
-    await this.loadRoles();
+  }
+
+  /** skills_refresh：调内核窄口 `resyncUserSkills()`（目录由管理器自持，不重新传路径）→ 净差 notice → 重推列表 */
+  private async refreshSkills(): Promise<void> {
+    await refreshUserSkillsFlow({
+      agent: await this.ensureAgent(),
+      post: (msg) => this.post(msg),
+      reloadList: () => this.loadSkills(),
+      refreshChatSkills: () => this._chatProvider?.refreshSkillList(),
+    });
   }
 
   // ─── 安全子视图方法（写入审批） ───
