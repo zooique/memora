@@ -959,16 +959,16 @@ export class ToolExecutor {
   }
 
   /**
-   * 完整内置工具定义（只读闸查询用，单一真理源）
+   * 全部工具定义（只读闸查询用，单一真理源）
    *
    * 含全部始终内置工具 + 条件工具（web_search / web_fetch / run_code，仅定义层面，
-   * 不论 provider 是否注入）。不过白名单过滤、不含自定义工具——只读闸（ToolRunner）需要
-   * 「全部内置定义」以查 readonly 标记，而非「当前暴露面」（被白名单过滤的工具 LLM 调不到，
-   * 但 readonly 语义应覆盖全部内置写操作）。定义合集真源 = `builtinTools.ALL_BUILTIN_TOOL_DEFS`
-   * （写盘派生索引同源消费），此处只转手、不另存清单。
+   * 不论 provider 是否注入）+ 宿主 `registerTool` 注册的自定义工具。不过白名单过滤——
+   * 只读闸（ToolRunner）需要「全部定义」以查 readonly 标记，而非「当前暴露面」（被白名单
+   * 过滤的工具 LLM 调不到，但 readonly 语义应覆盖全部写操作，自定义工具同理）。
+   * 定义合集真源 = `builtinTools.ALL_BUILTIN_TOOL_DEFS` + `customTools`，此处只转手、不另存清单。
    */
-  get builtinDefinitions(): ToolDefinition[] {
-    return [...ALL_BUILTIN_TOOL_DEFS];
+  get allToolDefinitions(): ToolDefinition[] {
+    return [...ALL_BUILTIN_TOOL_DEFS, ...[...this.customTools.values()].map((e) => e.definition)];
   }
 
   /**

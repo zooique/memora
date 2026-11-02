@@ -112,8 +112,8 @@ describe('工具执行器（6 个工具）', () => {
       expect(names).toContain('run_team_meeting');
     });
 
-    it('builtinDefinitions 应含全部内置 + 条件工具（只读闸查询源，不受白名单影响）', () => {
-      const defs = executor.builtinDefinitions;
+    it('allToolDefinitions 应含全部内置 + 条件工具（只读闸查询源，不受白名单影响）', () => {
+      const defs = executor.allToolDefinitions;
       const names = defs.map((t) => t.name);
       // 始终内置 22 + 条件 4（web_search / web_fetch / run_code / search_project）
       expect(names.length).toBe(26);
@@ -131,6 +131,38 @@ describe('工具执行器（6 个工具）', () => {
       expect(defs.find((t) => t.name === 'web_fetch')!.readonly).toBe(true);
       // search_project 只读搜索，readonly 语义覆盖
       expect(defs.find((t) => t.name === 'search_project')!.readonly).toBe(true);
+      // 渐进披露的四个读工具（READONLY-BUILTIN-1）：只读标记必须显式 true
+      for (const name of ['read_skill', 'read_resource', 'list_resources', 'list_skills']) {
+        expect(defs.find((t) => t.name === name)!.readonly, `${name} 缺 readonly:true`).toBe(true);
+      }
+    });
+
+    it('白名单只收窄暴露面，不收窄只读闸查询面（run_code 被过滤仍在 allToolDefinitions）', () => {
+      // 白名单只控「LLM 可见/可调」，不改变 execute 路由与只读闸的覆盖面
+      executor.setToolWhitelist(['read_file']);
+      const exposed = executor.list.map((t) => t.name);
+      const all = executor.allToolDefinitions.map((t) => t.name);
+      expect(exposed).not.toContain('run_code');
+      expect(all).toContain('run_code');
+      executor.setToolWhitelist(null);
+    });
+
+    it('allToolDefinitions 含自定义工具（未声明 readonly 的写工具也进闸查询面）', () => {
+      const customWrite = {
+        name: 'custom_write_probe',
+        description: '测试写工具',
+        parameters: {
+          type: 'object',
+          properties: { path: { type: 'string', description: '目标路径' } },
+          required: ['path'],
+        },
+      };
+      executor.registerTool(customWrite as never, async () => 'ok');
+      const defs = executor.allToolDefinitions;
+      expect(defs.map((t) => t.name)).toContain('custom_write_probe');
+      // 缺省 readonly = false（契约：未声明即写操作）——只读闸据此拒绝
+      expect(defs.find((t) => t.name === 'custom_write_probe')!.readonly).toBeFalsy();
+      executor.removeTool('custom_write_probe');
     });
 
     it('每个工具应有 name + description + parameters（含 required 数组）', () => {

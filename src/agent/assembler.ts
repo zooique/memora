@@ -606,8 +606,8 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     systemPromptPrefix,
     rolePackBaseTokens,
     toolDefinitions: toolExec.list,
-    // 完整内置定义注入只读闸（toolReadonly 查询 readonly 标记；单一真理源取 toolExec.builtinDefinitions）
-    builtinTools: toolExec.builtinDefinitions,
+    // 全部工具定义注入只读闸（toolReadonly 查询 readonly 标记；含自定义工具，与暴露面无关）
+    allTools: toolExec.allToolDefinitions,
     maxContextTokens,
     // per-LLM 输出预算默认值（token）：buildChatOptions 填底座，策略覆盖项（chatOptions）后压
     defaultMaxTokens: maxTokens,

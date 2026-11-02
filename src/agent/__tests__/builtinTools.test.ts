@@ -626,6 +626,48 @@ describe('builtinTools · shouldSkipForIdempotency（仅一次语义）', () => 
   });
 });
 
+describe('builtinTools · 只读闸标记（readonly）全覆盖', () => {
+  /**
+   * 显式白名单：**有意不支持只读模式**的工具（改盘 / 执行 / 会话内状态变更）
+   *
+   * 不用「不是写就是读」的推断——读工具是否漏标正是本用例要拦的回归
+   * （READONLY-BUILTIN-1：read_skill / read_resource / list_resources / list_skills 曾漏标）。
+   */
+  const NON_READONLY_WHITELIST = [
+    // 改盘写（path / opaque）
+    'write_file',
+    'delete_file',
+    'run_code',
+    'run_skill_script',
+    'run_project_script',
+    'run_command',
+    'register_work',
+    // 副作用 / 会话状态变更（非改盘，但只读角色下不应执行）
+    'kill_command',
+    'compress_context',
+    'task_table_write',
+    'task_table_update',
+  ] as const;
+
+  it('除显式白名单外，全部内置工具必须显式 readonly:true；白名单工具不得标只读', () => {
+    const allNames = ALL_BUILTIN_TOOL_DEFS.map((t) => t.name);
+
+    // 白名单里的名字必须真实存在（防「豁免不存在的工具」变成永不生效的空文）
+    for (const name of NON_READONLY_WHITELIST) {
+      expect(allNames, `白名单工具不存在：${name}`).toContain(name);
+    }
+
+    const whitelist = new Set<string>(NON_READONLY_WHITELIST);
+    for (const def of ALL_BUILTIN_TOOL_DEFS) {
+      if (whitelist.has(def.name)) {
+        expect(def.readonly, `${def.name} 在白名单中却被标只读`).toBeFalsy();
+      } else {
+        expect(def.readonly, `${def.name} 是读工具却缺 readonly:true`).toBe(true);
+      }
+    }
+  });
+});
+
 describe('builtinTools · 写盘声明位（diskWrite）与派生索引', () => {
   it('声明契约钉：path 集 / opaque 集的工具名（行内声明变动必须复审本例）', () => {
     // 跨模块契约钉：串行闸与宿主改动追踪都由这两个集合派生，名单变动 = 排序语义变动。

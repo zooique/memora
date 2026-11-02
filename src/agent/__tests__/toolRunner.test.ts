@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ToolRunner, type ToolCall, type ToolRunnerDeps } from '@/agent/toolRunner.js';
 import {
+  ALL_BUILTIN_TOOL_DEFS,
   BUILTIN_TOOLS,
   WEB_SEARCH_TOOL,
   WEB_FETCH_TOOL,
@@ -66,7 +67,7 @@ describe('ToolRunner 单工具执行', () => {
       readonly: boolean;
     }>;
     const deps = makeDeps({
-      builtinTools: validTools as never,
+      allTools: validTools as never,
       getStrategy: () => strategy({ toolReadonly: 'readonly' }),
     });
     const runner = new ToolRunner(deps);
@@ -81,12 +82,12 @@ describe('ToolRunner 单工具执行', () => {
   });
 
   it('只读闸（生产全量内置定义）：readonly 放行 web_search/web_fetch/read_file，阻止 run_code/write_file', async () => {
-    // 修复 4-1/4-2 后的生产注入形态：assembler 传 toolExec.builtinDefinitions（全量内置含条件工具）
-    const builtinTools = [...BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL];
+    // 修复 4-1/4-2 后的生产注入形态：assembler 传 toolExec.allToolDefinitions（全量定义含条件工具与自定义工具）
+    const allTools = [...BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL];
     const execute = vi.fn(async () => 'OK');
     const deps = makeDeps({
       execute,
-      builtinTools,
+      allTools,
       getStrategy: () => strategy({ toolReadonly: 'readonly' }),
     });
     const runner = new ToolRunner(deps);
@@ -104,6 +105,56 @@ describe('ToolRunner 单工具执行', () => {
     expect(deniedCode.blockedReason).toBe('readonly_denied');
     // 拒绝路径不入 execute（execute 仅被上 3 个只读工具调用）
     expect(execute).toHaveBeenCalledTimes(3);
+  });
+
+  it('只读闸：自定义工具未声明 readonly（缺省 false）→ denied，声明 readonly:true → 放行', async () => {
+    // READONLY-CUSTOM-1：闸查的是全量定义（含自定义），未声明 = 写操作（公开契约的缺省语义）
+    const allTools = [
+      {
+        name: 'custom_write',
+        description: '写',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+      {
+        name: 'custom_read',
+        description: '读',
+        readonly: true,
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    ];
+    const execute = vi.fn(async () => 'OK');
+    const runner = new ToolRunner(
+      makeDeps({
+        execute,
+        allTools: allTools as never,
+        getStrategy: () => strategy({ toolReadonly: 'readonly' }),
+      }),
+    );
+
+    const denied = await runner.runOne(tc('custom_write', '{}'));
+    expect(denied.status).toBe('blocked');
+    expect(denied.blockedReason).toBe('readonly_denied');
+    expect(execute).not.toHaveBeenCalled();
+
+    const allowed = await runner.runOne(tc('custom_read', '{}'));
+    expect(allowed.status).toBe('ok');
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('只读闸：渐进披露四个读工具在只读模式放行（READONLY-BUILTIN-1 防回归）', async () => {
+    const execute = vi.fn(async () => 'OK');
+    const runner = new ToolRunner(
+      makeDeps({
+        execute,
+        allTools: ALL_BUILTIN_TOOL_DEFS,
+        getStrategy: () => strategy({ toolReadonly: 'readonly' }),
+      }),
+    );
+    for (const name of ['read_skill', 'read_resource', 'list_resources', 'list_skills']) {
+      const result = await runner.runOne(tc(name, '{}'));
+      expect(result.status, `${name} 在只读模式被误拦`).toBe('ok');
+    }
+    expect(execute).toHaveBeenCalledTimes(4);
   });
 
   it('宿主 preCheck 拒绝 → denied', async () => {
@@ -230,7 +281,7 @@ describe('SCRIPT-2 B4：runOne 返回 ToolOutcome（结构化事实，文本降�
     const readonlyTools = [{ name: 'write_file', readonly: false }] as never;
     const r1 = await new ToolRunner(
       makeDeps({
-        builtinTools: readonlyTools,
+        allTools: readonlyTools,
         getStrategy: () => strategy({ toolReadonly: 'readonly' }),
       }),
     ).runOne(tc('write_file'));

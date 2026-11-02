@@ -51,8 +51,9 @@ export interface ToolRunnerDeps {
     emitOutcome?: (outcome: ToolOutcome) => void,
     toolCallId?: string,
   ) => Promise<string>;
-  /** 内置工具定义（只读闸查 readonly 标记） */
-  builtinTools?: ToolDefinition[];
+  /** 全部工具定义（内置 + 自定义；只读闸查 readonly 标记，与暴露面无关）
+   *  readonly 修饰：闸只读不写，禁止任何消费方在此增删（防「查到一半改定义」的双头语义） */
+  allTools?: readonly ToolDefinition[];
   /** 宿主执行前检查（拒绝 / 跳过 / 改写参数） */
   preExecutionCheck?: (name: string, args: string) => PreExecutionResult;
   /** 工具执行完成回调（outbox 幂等记录是否已执行） */
@@ -175,8 +176,10 @@ export class ToolRunner {
     const strategy = this.deps.getStrategy();
 
     // ① 只读闸：toolReadonly='readonly' 阻止非只读工具
+    //    判据查「全部工具定义」（内置 + 自定义），不查暴露面——白名单过滤只影响 LLM 可见性，
+    //    不改变 readonly 语义覆盖面。未声明 readonly 的自定义工具按契约（缺省 false）被拒。
     if (strategy.toolReadonly === 'readonly') {
-      const toolDef = this.deps.builtinTools?.find((t) => t.name === name);
+      const toolDef = this.deps.allTools?.find((t) => t.name === name);
       if (toolDef && !toolDef.readonly) {
         logger.warn({ tool: name }, '工具只读模式：阻止写入工具执行');
         // 只读拦截前缀 [ERR:TOOL:READONLY_DENIED] 是独立登记标签（非 ToolErrorCode 枚举成员，

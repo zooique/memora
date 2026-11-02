@@ -8,6 +8,12 @@
 >
 > 本文件 2026-10-19 起按 `CHLOG-TRIM-1` 精简：只记「改了什么 + 为什么 + 对消费者的影响」；逐批拍板过程、变异验证收据、台账叙事的 SSOT 在仓库台账 `tasks/待完成任务.md` 对应 ID 条目（npm 包不含），此处只留 ID 锚保交叉引用。
 
+## [Unreleased] · 内核
+
+### Fixed（内核）
+
+- **只读闸覆盖自定义工具与四个内置读工具**（`READONLY-CUSTOM-1` / `READONLY-BUILTIN-1`）：`toolReadonly='readonly'` 的只读闸此前只查暴露面 `tools.list`（受 `toolWhitelist` 过滤）⇒ 宿主 `registerTool` 注册的自定义 / MCP 工具完全不在射程（未声明 `readonly` 的写工具照常执行）；同时 `read_skill` / `read_resource` / `list_resources` / `list_skills` 四个渐进披露读工具漏标 `readonly`，只读模式下被误拦。现闸改查「全部工具定义」——来源单点 `ToolExecutor.allToolDefinitions`（原 `builtinDefinitions` 更名，含内置全量 + 自定义，**不过白名单过滤**），四个读工具补 `readonly: true`。**行为变更**：注册自定义工具时未声明 `readonly` ⇒ 按契约缺省 false = 写操作，只读模式下**将被拒**（此前因闸查不到定义而放行）——这是修正不是回归；需在只读模式使用的自定义工具请显式声明 `readonly: true`。**为什么**：暴露面 ≠ 覆盖面，闸查可见面等于「工具不可见即不受约束」。**对消费者**：不使用 `toolReadonly='readonly'` 的代码零影响；`ToolExecutor.allToolDefinitions` 为公开 getter 更名（原 `builtinDefinitions` 未在 5.x 承诺面清单内，消费方若有引用需同步改名）。
+
 ## [5.4.0] · 2026-11-02
 
 ### Deprecated（内核）
@@ -191,6 +197,12 @@
 ### Changed（内核）
 
 - **后台任务槽位按 Agent 实例隔离**（`MULTI-AGENT-1`，2026-10-18）：模块级槽位 → `class BackgroundTaskScheduler` 实例级，同进程多 Agent 不再交叉等待/挤占（形态定案后多实例是必然）。非公开 API 变更。
+
+## [Unreleased] · 宿主
+
+### Fixed（宿主）
+
+- **MCP `readOnlyHint` 映射进只读闸**（`READONLY-CUSTOM-1`）：内核只读闸改为查「全部工具定义」后，`toToolDefinition` 此前从不写 `readonly` 字段的 MCP 工具会按缺省 false 被一律拒绝——只读 server 工具在只读模式全部不可用。现按既有判据 `readOnlyDeclaration`（`annotations.readOnlyHint === true && annotations.destructiveHint !== true`）显式映射：声明只读 ⇒ `readonly: true`；缺省 / false / 与 `destructiveHint: true` 矛盾 ⇒ 显式 `readonly: false`（不靠字段缺省，边界可审计）。与 `diskWrite` 同源镜像（同一份 `readOnlyDeclaration`，避免「写序说只读、只读闸说会写」的双头语义）。**对消费者**：MCP 读工具在只读模式恢复可用；`readOnlyHint` 仍是 server 自报，谎报只读同时绕过写串行闸与只读闸——该残余风险随本条一并放大，见仓库台账 `READONLY-CUSTOM-1`。
 
 ## [0.6.0] · 2026-11-02 · 宿主
 

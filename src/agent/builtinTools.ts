@@ -752,6 +752,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     name: 'read_skill',
     description:
       '读取技能完整正文（渐进披露 L2，按需装载）：先查激活角色包内嵌技能，再查全局通用技能池。当需要执行某项技能时，先读取其正文获取详细步骤。技能名来自技能清单（角色包声明或全局通用技能）。',
+    // 只读闸标记：读技能正文不改变任何项目状态，readonly 模式下必须保留
+    readonly: true,
     parameters: {
       type: 'object',
       properties: {
@@ -765,6 +767,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     name: 'read_resource',
     description:
       '读取技能的参考资源文件（渐进披露 L3，按需调用）。技能含 resources/ 或 references/ 目录时，可通过此工具读取参考资料。资源路径相对技能的 resources/ 或 references/ 目录。',
+    // 只读闸标记：读资源文件不改变任何项目状态，readonly 模式下必须保留
+    readonly: true,
     parameters: {
       type: 'object',
       properties: {
@@ -889,6 +893,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     name: 'list_resources',
     description:
       '列出技能的 L3 资源清单（渐进披露 L3）。返回 resources/ 与 references/ 目录下所有资源文件列表。',
+    // 只读闸标记：仅列举资源清单，readonly 模式下必须保留
+    readonly: true,
     parameters: {
       type: 'object',
       properties: {
@@ -901,6 +907,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     name: 'list_skills',
     description:
       '列出当前可用的所有技能清单（渐进披露 L1 补充）。当技能数量较多（>50）时使用此工具查询。',
+    // 只读闸标记：仅列举技能清单，readonly 模式下必须保留
+    readonly: true,
     parameters: {
       type: 'object',
       properties: {},
