@@ -1086,6 +1086,28 @@ describe('buildSystemPromptPrefix · Turn 起始策略', () => {
   });
 });
 
+// ─── buildSystemPromptPrefix · 技能落点提示（对话写入落点，≤5 行） ──
+
+describe('buildSystemPromptPrefix · 技能落点提示', () => {
+  it('含两处可写位置 + 默认项目级 + 同名不覆盖必须确认', () => {
+    const prefix = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
+    expect(prefix).toContain('## 技能落点');
+    expect(prefix).toContain('项目级 <工作区>/.memora/skills');
+    expect(prefix).toContain('用户级 skills 目录');
+    expect(prefix).toContain('默认写项目级');
+    expect(prefix).toContain('仅当用户明确要求');
+    expect(prefix).toContain('已存在同名技能不得覆盖');
+  });
+
+  it('段落不超过 5 行（不许长篇占用上下文）', () => {
+    const prefix = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
+    const start = prefix.indexOf('## 技能落点');
+    const end = prefix.indexOf('\n\n', start);
+    const block = prefix.slice(start, end === -1 ? undefined : end);
+    expect(block.split('\n').length).toBeLessThanOrEqual(5);
+  });
+});
+
 // ─── buildEnvironmentContextBlock · 宿主环境事实段（命令执行能力方案 §10.4-②）──
 
 describe('buildEnvironmentContextBlock · 运行环境注入', () => {

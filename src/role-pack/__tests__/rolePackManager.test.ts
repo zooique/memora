@@ -501,7 +501,8 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     await manager.load('翻译助手');
     // 用户包注入（与宿主 assemble.ts loadExtraDir(userRolePacksDir) 同路径）
     const injected = await manager.loadExtraDir(userPacksDir);
-    expect(injected).toBe(1);
+    expect(injected.loaded).toBe(1);
+    expect(injected.conflicts).toEqual([]);
     expect(
       manager
         .listMeta()
@@ -520,13 +521,13 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(manager.activeName).toBe('翻译助手');
   });
 
-  it('reload 后内置包保持磁盘真理源（磁盘包不被用户包覆盖）', async () => {
+  it('同名额外汇入内置：额外目录包胜出（2026-11-02 反转，旧行为是「内置优先、用户静默跳过」）', async () => {
     const packsDir = join(dir, 'role-packs');
     await mkdir(packsDir, { recursive: true });
     await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '内置翻译。' });
 
     const userPacksDir = join(dir, 'user-role-packs');
-    // 用户包与内置同名——loadExtraDir 重名跳过（内置优先），确认设备磁盘真理源不被稀释
+    // 用户包与内置同名——反转后用户版胜出（project > user > builtin），且必须留可见痕迹
     await writePack(
       userPacksDir,
       '翻译助手',
@@ -539,16 +540,131 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     const manager = new RolePackManager(dir);
     await manager.load('翻译助手');
     expect(manager.activeName).toBe('翻译助手');
-    // loadExtraDir 重名跳过（内置优先）
-    expect(await manager.loadExtraDir(userPacksDir)).toBe(0);
+    // 同名不再静默跳过：loaded=1 + conflicts 明确记录「用户覆盖内置」
+    const result = await manager.loadExtraDir(userPacksDir);
+    expect(result.loaded).toBe(1);
+    expect(result.conflicts).toEqual([
+      { name: '翻译助手', winner: 'user', loser: 'builtin', action: 'override' },
+    ]);
+    // 返回值与快照同源（可观测出口）
+    expect(manager.lastExtraConflicts).toEqual(result.conflicts);
 
-    // reload 后磁盘包仍为真理源（内置版本 persona 生效）
+    // 覆盖后池内只保留用户版（无同名双存）
+    expect(manager.listMeta()).toHaveLength(1);
+    expect(manager.getActive()!.personaPrompt).toContain('用户版本翻译');
+
+    // reload 后仍是用户版（isUserOverride 覆写：内置同名扫描结果被剔除）
     await manager.reload();
     expect(manager.activeName).toBe('翻译助手');
     expect(manager.listMeta()).toHaveLength(1);
-    const active = manager.getActive();
-    expect(active!.meta.name).toBe('翻译助手');
-    expect(active!.personaPrompt).toContain('内置翻译');
+    expect(manager.getActive()!.personaPrompt).toContain('用户版本翻译');
+  });
+
+  describe('项目级来源与三段覆盖（project > user > builtin）', () => {
+    it('项目级角色包被发现（新名字，不与任何来源冲突）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '你是翻译。' });
+
+      const userPacksDir = join(dir, 'user-role-packs');
+      await writePack(userPacksDir, '用户打磨', { name: '用户打磨', formatVersion: '1.0.0' });
+      const projectPacksDir = join(dir, '.memora', 'role-packs');
+      await writePack(projectPacksDir, '项目角色', {
+        name: '项目角色',
+        formatVersion: '1.0.0',
+      });
+
+      const manager = new RolePackManager(dir);
+      await manager.load('翻译助手');
+      // 宿主顺序：先用户、后项目（后加载者胜）
+      await manager.loadExtraDir(userPacksDir, 'user');
+      const result = await manager.loadExtraDir(projectPacksDir, 'project');
+
+      expect(result.loaded).toBe(1);
+      expect(result.conflicts).toEqual([]);
+      expect(
+        manager
+          .listMeta()
+          .map((m) => m.name)
+          .sort(),
+      ).toEqual(['项目角色', '用户打磨', '翻译助手'].sort());
+    });
+
+    it('三段同名覆盖：项目覆盖用户、用户覆盖内置（conflicts 逐段可观测）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '内置翻译。' });
+
+      const userPacksDir = join(dir, 'user-role-packs');
+      await writePack(
+        userPacksDir,
+        '翻译助手',
+        { name: '翻译助手', formatVersion: '1.0.0' },
+        { persona: '用户版本翻译。' },
+      );
+      const projectPacksDir = join(dir, '.memora', 'role-packs');
+      await writePack(
+        projectPacksDir,
+        '翻译助手',
+        { name: '翻译助手', formatVersion: '1.0.0' },
+        { persona: '项目版本翻译。' },
+      );
+
+      const manager = new RolePackManager(dir);
+      await manager.load('翻译助手');
+      // 第一段：用户覆盖内置
+      const userLoad = await manager.loadExtraDir(userPacksDir, 'user');
+      expect(userLoad.conflicts).toEqual([
+        { name: '翻译助手', winner: 'user', loser: 'builtin', action: 'override' },
+      ]);
+      expect(manager.getActive()!.personaPrompt).toContain('用户版本翻译');
+      // 第二段：项目覆盖用户（后加载者胜）
+      const projectLoad = await manager.loadExtraDir(projectPacksDir, 'project');
+      expect(projectLoad.conflicts).toEqual([
+        { name: '翻译助手', winner: 'project', loser: 'user', action: 'override' },
+      ]);
+      // 最终生效 = 项目版，且池内仅一个同名包
+      expect(manager.listMeta()).toHaveLength(1);
+      expect(manager.getActive()!.personaPrompt).toContain('项目版本翻译');
+
+      // reload 后项目版仍胜出（isUserOverride 覆写：内置同名扫描版被剔除）
+      await manager.reload();
+      expect(manager.listMeta()).toHaveLength(1);
+      expect(manager.getActive()!.personaPrompt).toContain('项目版本翻译');
+    });
+
+    it('顺序写反（项目先、用户后）：用户版被跳过并留下 skip 冲突（不许静默）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '内置翻译。' });
+
+      const userPacksDir = join(dir, 'user-role-packs');
+      await writePack(
+        userPacksDir,
+        '翻译助手',
+        { name: '翻译助手', formatVersion: '1.0.0' },
+        { persona: '用户版本翻译。' },
+      );
+      const projectPacksDir = join(dir, '.memora', 'role-packs');
+      await writePack(
+        projectPacksDir,
+        '翻译助手',
+        { name: '翻译助手', formatVersion: '1.0.0' },
+        { persona: '项目版本翻译。' },
+      );
+
+      const manager = new RolePackManager(dir);
+      await manager.load('翻译助手');
+      // 故意写反顺序：项目先、用户后
+      await manager.loadExtraDir(projectPacksDir, 'project');
+      const userLoad = await manager.loadExtraDir(userPacksDir, 'user');
+
+      expect(userLoad.loaded).toBe(0);
+      expect(userLoad.conflicts).toEqual([
+        { name: '翻译助手', winner: 'project', loser: 'user', action: 'skip' },
+      ]);
+      expect(manager.getActive()!.personaPrompt).toContain('项目版本翻译');
+    });
   });
 
   describe('resyncUserPacks —— 用户角色包目录重扫对账（角色视图「刷新」按钮内核落点）', () => {

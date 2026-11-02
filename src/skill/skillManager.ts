@@ -1,6 +1,8 @@
 /**
  * 技能管理器 — 继承 ConfigResourceManager。
- * 单层目录 <configDir>/skills/（宿主负责汇总全局+项目级技能到 configDir）。
+ * 三层来源：内置 <configDir>/skills/（磁盘真理源）+ 额外目录（loadExtraDir 运行时注入）：
+ * 用户级（globalStorage/skills）与项目级（<workspace>/.memora/skills）。
+ * 覆盖优先级 = **加载顺序**（内置 → 用户 → 项目，后加载者胜），与列表展示排序无关。
  * 三级渐进披露：L1 元数据常驻 / L2 read_skill 按需 / L3 resources+scripts。
  */
 import { logger } from '@/logging/logger.js';
@@ -37,34 +39,61 @@ function resolveLayer(raw: unknown): 'agent' | 'project' {
 }
 
 /**
+ * 额外技能目录的档位（决定同名覆盖优先级：project > user > builtin）
+ *
+ * 档位只影响**记账口径**与**非法顺序的守卫**，真正生效的覆盖由**加载顺序**决定
+ * （宿主必须先 user、后 project；先加载者被后加载者覆盖）。
+ */
+export type SkillExtraTier = 'user' | 'project';
+
+/**
  * 技能管理器
  */
 export class SkillManager extends ConfigResourceManager<SkillEntry> {
   /**
-   * 已被用户技能覆盖的内置技能名。
+   * 已被**用户级**技能覆盖的内置技能名。
    *
    * 与基类 runtimeNames 记账互补：runtimeNames 说明「该项无内核扫描真理源」，
-   * 本集合说明「同名磁盘（内置）项被用户版覆盖」——reload 扫描回同名内置时
+   * 本集合说明「同名内置项被用户版覆盖」——reload 扫描回同名内置时
    * 以用户版为准（基类 isUserOverride 钩子）。load()（纯内置重载）时一并清空。
    */
   private readonly userOverrides = new Set<string>();
 
   /**
-   * 用户技能目录清单（loadExtraDir 注入时登记）。
+   * 已被**项目级**技能覆盖的技能名（覆盖对象可能是内置、也可能是先加载的用户版）。
+   *
+   * 与 `userOverrides` 严格分账：项目覆盖**不计入用户覆盖**（否则「用户覆盖了内置」
+   * 这类报表会被项目级来源污染）。`isUserOverride` 取两者并集，只因基类只有一个
+   * 「运行时项胜过磁盘同名」的布尔位——并集不影响分账可观测性。
+   */
+  private readonly projectOverrides = new Set<string>();
+
+  /**
+   * 额外技能目录清单（loadExtraDir 注入时登记，值 = 档位）。
    *
    * 记账目的：`reload()` 必须能**统一重扫** configDir + 这些目录——若只靠宿主在刷新时
    * 再传一次路径，就会出现「装配期一条路径、刷新时另一条路径」的两份来源（同一目录
    * 两个真源，漏传即静默失效）。登记在此后，宿主只需调窄口 `resyncUserSkills()`。
+   * **Map 的插入序 = 加载顺序 = 覆盖顺序**（宿主按 user → project 登记）。
    */
-  private readonly extraDirs = new Set<string>();
+  private readonly extraDirs = new Map<string, SkillExtraTier>();
 
   /**
-   * 来自用户目录的技能名集合（loadExtraDir 注入成功者）。
+   * 来自额外目录的技能名集合（loadExtraDir 注入成功者，用户 + 项目合计）。
    *
    * 与 runtimeNames 的区别：runtimeNames 还包含 `register()` 注入的运行时技能，reload
    * 必须保留它们；只有本集合里的名字才该在重扫时先摘除再按磁盘重建。
    */
-  private readonly userSkillNames = new Set<string>();
+  private readonly extraSkillNames = new Set<string>();
+
+  /**
+   * 每个额外目录注入技能名 → 来源目录。
+   *
+   * 幂等判据的真源：**同一目录**重复扫描才跳过；同名但来自**不同目录**时，
+   * 后加载者胜（覆盖语义，不再误拦）。旧实现按名字全局幂等，导致项目级同名项
+   * 被用户级先注入的同名项挡掉。
+   */
+  private readonly injectedFrom = new Map<string, string>();
 
   /**
    * 禁用的技能名集合：宿主配置形态启停。命中者
@@ -96,32 +125,32 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   /**
-   * 重载：configDir 与全部已登记的用户技能目录**统一重扫**（重扫真理源单点）。
+   * 重载：configDir 与全部已登记的额外技能目录**统一重扫**（重扫真理源单点）。
    *
    * 与基类 reload 的差异只在一处：基类只扫 configDir 并保留运行时注入项，本类还需把
-   * 用户目录的磁盘变化重新读进来（新增 / 改名 / 删除 / 内容修改）。执行序：
-   *   1. 摘除全部用户目录注入项（`userSkillNames`；register() 注入项不动，仍由基类保留）；
-   *   2. 清空覆盖记账（否则用户版会在基类扫描后把内置同名项挤掉，且新目录内容无法重建）；
-   *   3. `super.reload()` 重扫 configDir；
-   *   4. 逐目录 `loadExtraDir()` 重扫用户目录（覆盖语义由该方法自身处理）。
+   * 额外目录（用户级 + 项目级）的磁盘变化重新读进来（新增 / 改名 / 删除 / 内容修改）。执行序：
+   *   1. 摘除全部额外目录注入项（`extraSkillNames`；register() 注入项不动，仍由基类保留）；
+   *   2. 清空覆盖记账与来源映射（否则旧账会让重扫后的同名项被误拦，且新目录内容无法重建）；
+   *   3. `super.reload()` 重扫 configDir（内置）；
+   *   4. 按 `extraDirs` 的**登记顺序**逐目录 `loadExtraDir()` 重扫——用户级先、项目级后，
+   *      后加载者胜（覆盖语义由该方法自身处理）。
    *
    * @returns 重载后的技能总数
    */
   override async reload(): Promise<number> {
-    for (const name of this.userSkillNames) this.deleteItem(name);
-    this.userSkillNames.clear();
-    this.userOverrides.clear();
+    for (const name of this.extraSkillNames) this.deleteItem(name);
+    this.clearExtraBookkeeping();
     await super.reload();
-    for (const dir of this.extraDirs) {
-      await this.loadExtraDir(dir);
+    for (const [dir, tier] of this.extraDirs) {
+      await this.loadExtraDir(dir, tier);
     }
     return this.items.length;
   }
 
   /**
-   * 重扫用户技能目录并与内存池对账（设置页「刷新技能」的唯一内核落点）。
+   * 重扫额外技能目录并与内存池对账（设置页「刷新技能」的唯一内核落点）。
    *
-   * 形态对齐 `RolePackManager.resyncUserPacks`：先摘除本管理器持有的用户注入项，
+   * 形态对齐 `RolePackManager.resyncUserPacks`：先摘除本管理器持有的额外目录注入项，
    * 再统一重扫（configDir + extraDirs），最后取**净差**回报。
    * 与角色包版本的差异：技能没有「激活态」，故无 activeFallback。
    *
@@ -129,15 +158,14 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    */
   async resyncUserSkills(): Promise<{ added: number; removed: string[]; updated: string[] }> {
     // 摘除前名单 = 对账基线之一（deleteItem 同时注销运行时记账）
-    const beforeNames = [...this.userSkillNames];
+    const beforeNames = [...this.extraSkillNames];
     for (const name of beforeNames) this.deleteItem(name);
-    this.userSkillNames.clear();
-    this.userOverrides.clear();
+    this.clearExtraBookkeeping();
     // 摘除后的池 = 净差基线（register() 注入项仍在，重扫不触碰它们）
     const baseline = new Set(this.items.map((s) => s.name));
     await super.reload();
-    for (const dir of this.extraDirs) {
-      await this.loadExtraDir(dir);
+    for (const [dir, tier] of this.extraDirs) {
+      await this.loadExtraDir(dir, tier);
     }
     const finalNames = new Set(this.items.map((s) => s.name));
     const removed = beforeNames.filter((name) => !finalNames.has(name));
@@ -145,8 +173,31 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     const added = [...finalNames].filter(
       (name) => !baseline.has(name) && !beforeNames.includes(name),
     ).length;
-    logger.info({ added, removed, updated }, '用户技能目录已重扫对账');
+    logger.info({ added, removed, updated }, '额外技能目录已重扫对账');
     return { added, removed, updated };
+  }
+
+  /** 清空额外目录的全部记账（覆盖分账 + 注入名单 + 来源映射；目录登记本身保留） */
+  private clearExtraBookkeeping(): void {
+    this.extraSkillNames.clear();
+    this.injectedFrom.clear();
+    this.userOverrides.clear();
+    this.projectOverrides.clear();
+  }
+
+  /**
+   * 用户级覆盖内置的技能名快照（只读，供宿主/测试核对分账口径）。
+   * 项目级覆盖**不在**本集合内（见 `projectOverrideNames`）。
+   */
+  get userOverrideNames(): string[] {
+    return [...this.userOverrides];
+  }
+
+  /**
+   * 项目级覆盖（内置或用户级）的技能名快照（只读，供宿主/测试核对分账口径）。
+   */
+  get projectOverrideNames(): string[] {
+    return [...this.projectOverrides];
   }
 
   // ── 公共方法 ──────────────────────────────────────
@@ -406,65 +457,102 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   // ── 基类抽象方法实现 ──────────────────────────────
 
   /**
-   * 加载用户目录的技能（宿主调用，用于扩展内置技能池）
+   * 加载额外目录的技能（宿主调用，用于扩展内置技能池）
    *
    * 与 load() 的区别：
    * - load() 从 configDir/skills/ 扫描内置技能（有磁盘真理源）
-   * - loadExtraDir() 从额外目录扫描用户技能（运行时注入，reload 时保留）
+   * - loadExtraDir() 从额外目录扫描（运行时注入，reload 时保留）
    *
-   * 设计哲学：内核保持单一真理源（configDir/skills/），宿主负责扩展用户目录。
-   * 用户技能通过 registerRuntimeItem 注入，reload() 时会保留（同名冲突以磁盘为准）。
+   * 设计哲学：内核保持单一真理源（configDir/skills/），宿主负责扩展额外目录。
+   * 覆盖优先级 = **加载顺序**（内置 → 用户 → 项目，后加载者胜）：
+   *   - 同名内置项被覆盖 → 按 `tier` 分账（用户覆盖 / 项目覆盖，互不混账）；
+   *   - 同名额外项被后加载目录覆盖 → 后加载者胜（项目覆盖用户时撤销用户覆盖账）；
+   *   - **同一目录**重复扫描 → 幂等跳过（避免同名双存）。
    *
-   * @param dir 用户技能目录（如 ~/.memora/skills/）
-   * @returns 加载的技能数量
+   * @param dir 额外技能目录（用户级如 globalStorage/skills；项目级如 <workspace>/.memora/skills）
+   * @param tier 档位（决定覆盖记账；默认 'user'，宿主注入项目目录时显式传 'project'）
+   * @returns 本次从该目录净注入的技能数量（含覆盖）
    */
-  async loadExtraDir(dir: string): Promise<number> {
+  async loadExtraDir(dir: string, tier: SkillExtraTier = 'user'): Promise<number> {
     // 登记目录：reload/resync 统一重扫依赖这份清单（禁宿主在刷新时再传第二份路径）
-    this.extraDirs.add(dir);
+    this.extraDirs.set(dir, tier);
+    // 目录不存在时 scanMarkdownDir 返回空数组（首次使用前 .memora/skills 可能还没建，必须容忍）
     const entries = await scanMarkdownDir(dir);
     let count = 0;
     for (const entry of entries) {
-      // 已注入过的用户项（幂等）：避免同名双存重复注入
-      if (this.userSkillNames.has(entry.name) || this.userOverrides.has(entry.name)) continue;
+      // 幂等：仅同一目录重复扫描才跳过；同名但来自不同目录必须走覆盖分支
+      if (this.injectedFrom.get(entry.name) === dir) continue;
 
-      const existingIdx = this.items.findIndex((s) => s.name === entry.name);
+      const existing = this.items.find((s) => s.name === entry.name);
+      const prevDir = this.injectedFrom.get(entry.name);
+      const prevTier = prevDir ? this.extraDirs.get(prevDir) : undefined;
+      // 顺序守卫：宿主若把项目目录先于用户目录注入（写反），按 project > user 保持项目版
+      if (existing && prevTier === 'project' && tier === 'user') {
+        logger.warn(
+          { name: entry.name, dir },
+          '用户级技能晚于项目级加载，按 project > user 保持项目版',
+        );
+        continue;
+      }
+
       const skill = await this.createEntry(entry);
       if (!skill) continue;
 
-      // 同名覆盖（对齐主流「用户可覆盖内置」）：用户版生效——
-      // 移除内置版（磁盘真理源，reload 可重扫）、
-      // 登记 userOverrides 供 reload 保持用户版胜出（基类 isUserOverride 钩子）；
-      // 不覆盖则用户同名技能会被静默丢弃。
-      if (existingIdx >= 0) {
-        this.items.splice(existingIdx, 1);
-        this.userOverrides.add(entry.name);
-        logger.info({ name: entry.name }, '用户技能覆盖内置技能');
+      if (existing) {
+        // 覆盖：先摘旧项（deleteItem 注销 runtimeNames 记账，防止悬挂）
+        this.deleteItem(entry.name);
+        this.injectedFrom.delete(entry.name);
+        if (prevDir) {
+          // 被覆盖的是额外目录项：后加载者胜。项目覆盖用户 → 用户账撤销、项目账登记；
+          // 同档（用户目录之间）覆盖 → 账仍归用户档（项目账不因用户目录改名而误留）
+          if (tier === 'project') {
+            this.userOverrides.delete(entry.name);
+            this.projectOverrides.add(entry.name);
+            logger.info(
+              { name: entry.name, dir, prevDir },
+              '项目技能覆盖用户级技能（project > user）',
+            );
+          } else {
+            this.userOverrides.add(entry.name);
+            this.projectOverrides.delete(entry.name);
+            logger.info({ name: entry.name, dir, prevDir }, '用户技能覆盖先加载的用户技能');
+          }
+        } else if (tier === 'project') {
+          this.projectOverrides.add(entry.name);
+          logger.info({ name: entry.name, dir }, '项目技能覆盖内置技能');
+        } else {
+          this.userOverrides.add(entry.name);
+          logger.info({ name: entry.name, dir }, '用户技能覆盖内置技能');
+        }
       }
       this.registerRuntimeItem(skill);
-      this.userSkillNames.add(entry.name);
+      this.extraSkillNames.add(entry.name);
+      this.injectedFrom.set(entry.name, dir);
       count++;
     }
-    logger.info({ count, dir }, '用户技能加载完成');
+    logger.info({ count, dir, tier }, '额外技能目录加载完成');
     return count;
   }
 
   /**
-   * 用户覆盖声明：userOverrides 中记录的同名技能，reload 扫描回内置版时
-   * 用户版胜出、内置版剔除（基类 retainRuntimeItems 消费）。其余同名不声明——
+   * 覆盖声明：用户级**或**项目级覆盖的同名技能，reload 扫描回内置版时
+   * 覆盖版胜出、内置版剔除（基类 retainRuntimeItems 消费）。其余同名不声明——
    * 保持基类默认「磁盘（内置）赢」语义（如 register() 运行时技能撞内置仍内置赢）。
+   *
+   * 两边取并集只为满足基类单一布尔位；分账口径仍由 userOverrideNames /
+   * projectOverrideNames 两个快照各自表达（项目覆盖不计入用户覆盖）。
    */
   protected override isUserOverride(name: string): boolean {
-    return this.userOverrides.has(name);
+    return this.userOverrides.has(name) || this.projectOverrides.has(name);
   }
 
   /**
-   * load()（纯内置重载）后 userOverrides 一并清空——与基类 runtimeNames 同寿命：
+   * load()（纯内置重载）后额外目录记账一并清空——与基类 runtimeNames 同寿命：
    * load() 整体替换 items、运行时注入全丢，账目须同步；否则残留名字会在未来
-   * loadExtraDir 同名时被幂等跳过（见其开头判定），用户技能静默丢失。
+   * loadExtraDir 同名时被幂等跳过（见其开头判定），额外目录技能静默丢失。
    */
   protected override onAfterLoad(): void {
-    this.userOverrides.clear();
-    this.userSkillNames.clear();
+    this.clearExtraBookkeeping();
     // 目录登记与 items 同寿命：load() 整体替换 items 后须由宿主重新 loadExtraDir 注入
     this.extraDirs.clear();
   }

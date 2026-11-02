@@ -860,6 +860,63 @@ describe('SkillManager · 补充分支路径', () => {
       // 无同名双存：同名技能仅一个条目
       expect(manager.list.filter((s) => s.name === 'dup')).toHaveLength(1);
     });
+
+    it('项目级技能被发现（第三个 extra dir，不与任何来源冲突）', async () => {
+      const manager = new SkillManager(testDir);
+      await manager.load();
+      const projectDir = join(testDir, '.memora', 'skills');
+      createSkillFile(projectDir, 'proj.md', '---\nname: proj\ndescription: p\n---\n项目技能');
+
+      const count = await manager.loadExtraDir(projectDir, 'project');
+      expect(count).toBe(1);
+      expect(manager.get('proj')?.content).toBe('项目技能');
+    });
+
+    it('三段同名覆盖：项目覆盖用户、用户覆盖内置（覆盖分账不混账）', async () => {
+      // 内置同名片
+      createSkillFile(skillsDir, 'dup.md', '---\nname: dup\ndescription: d\n---\n内置版本');
+      const userDir = join(testDir, 'user-skills');
+      createSkillFile(userDir, 'dup.md', '---\nname: dup\ndescription: d2\n---\n用户版本');
+      const projectDir = join(testDir, '.memora', 'skills');
+      createSkillFile(projectDir, 'dup.md', '---\nname: dup\ndescription: d3\n---\n项目版本');
+
+      const manager = new SkillManager(testDir);
+      await manager.load();
+      // 宿主顺序：先用户、后项目（后加载者胜）
+      await manager.loadExtraDir(userDir, 'user');
+      expect(manager.get('dup')?.content).toBe('用户版本');
+      expect(manager.userOverrideNames).toEqual(['dup']);
+
+      await manager.loadExtraDir(projectDir, 'project');
+      // 最终生效 = 项目版；项目覆盖不计入用户覆盖（分账口径）
+      expect(manager.get('dup')?.content).toBe('项目版本');
+      expect(manager.userOverrideNames).toEqual([]);
+      expect(manager.projectOverrideNames).toEqual(['dup']);
+      // 无同名双存
+      expect(manager.list.filter((s) => s.name === 'dup')).toHaveLength(1);
+
+      // reload 后项目版仍胜出（两个覆盖账并集喂 isUserOverride，内置扫描版被剔除）
+      await manager.reload();
+      expect(manager.get('dup')?.content).toBe('项目版本');
+      expect(manager.list.filter((s) => s.name === 'dup')).toHaveLength(1);
+    });
+
+    it('信任后注入项目目录立即生效（不重启，后加载者胜）', async () => {
+      // 模拟「未信任」阶段：只注入用户目录
+      const userDir = join(testDir, 'user-skills');
+      createSkillFile(userDir, 'shared.md', '---\nname: shared\ndescription: u\n---\n用户版');
+      const manager = new SkillManager(testDir);
+      await manager.load();
+      await manager.loadExtraDir(userDir, 'user');
+      expect(manager.get('shared')?.content).toBe('用户版');
+
+      // 模拟「授予信任」：宿主补注入项目目录，立即可见且覆盖用户版
+      const projectDir = join(testDir, '.memora', 'skills');
+      createSkillFile(projectDir, 'shared.md', '---\nname: shared\ndescription: p\n---\n项目版');
+      await manager.loadExtraDir(projectDir, 'project');
+      expect(manager.get('shared')?.content).toBe('项目版');
+      expect(manager.projectOverrideNames).toEqual(['shared']);
+    });
   });
 
   describe('resyncUserSkills（用户目录重扫对账 · 设置页刷新技能的落点）', () => {
@@ -940,6 +997,25 @@ describe('SkillManager · 补充分支路径', () => {
       expect(manager.get('late')?.content).toBe('后加正文');
       // 用户覆盖内置的语义在 reload 后仍成立
       expect(manager.get('extra')?.content).toBe('用户额外技能');
+    });
+
+    it('刷新（resyncUserSkills）后项目级新增文件可见（项目档位随登记保留）', async () => {
+      const { manager } = await setupManager();
+      // 项目级目录已登记（装配期/信任授予后注入）
+      const projectDir = join(testDir, '.memora', 'skills');
+      createSkillFile(projectDir, 'proj-a.md', '---\nname: proj-a\ndescription: a\n---\n项目A');
+      await manager.loadExtraDir(projectDir, 'project');
+      expect(manager.get('proj-a')).not.toBeNull();
+
+      // 用户在项目目录手工新增文件 → 设置页刷新（不重启）
+      createSkillFile(projectDir, 'proj-b.md', '---\nname: proj-b\ndescription: b\n---\n项目B');
+      const report = await manager.resyncUserSkills();
+      expect(report.added).toBe(1);
+      expect(manager.get('proj-b')?.content).toBe('项目B');
+      // 项目级既有技能与用户级/内置均不丢
+      expect(manager.get('proj-a')).not.toBeNull();
+      expect(manager.get('extra')).not.toBeNull();
+      expect(manager.get('builtin')).not.toBeNull();
     });
   });
 

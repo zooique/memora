@@ -643,6 +643,9 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'listMeta',
       'listSkillResources',
       'listSkills',
+      // 2026-11-02 ASSET-PROJECT-SCOPE-1：额外目录同名处置快照（项目 > 用户 > 内置
+      // 反转必须可观测，宿主刷新提示消费；与 loadExtraDir 返回值同源）
+      'get lastExtraConflicts',
       'load',
       'loadExtraDir',
       'onRolePackActivated',
@@ -1169,6 +1172,10 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       'formatSkillForPrompt',
       'get',
       'get disabledSkillNames',
+      // 2026-11-02 ASSET-PROJECT-SCOPE-1：覆盖分账只读快照（用户覆盖 / 项目覆盖互不混账，
+      // 宿主与测试据此核对「项目覆盖不计入用户覆盖」）
+      'get projectOverrideNames',
+      'get userOverrideNames',
       'getScriptPath',
       'listAvailable',
       'listResources',

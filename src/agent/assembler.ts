@@ -74,6 +74,19 @@ const TURN_START_STRATEGY_PROMPT = `## Turn 起始策略
 简单问题直接回答。`;
 
 /**
+ * 技能写入落点提示（固定段，≤5 行）
+ *
+ * 目的：让模型知道技能该写在哪、默认写哪、同名怎么处理——避免写到扩展内置目录（只读）
+ * 或静默覆盖用户已有技能。
+ * ⚠️ 事实同源：项目级目录只在**工作区已信任**时由宿主注入（信任门），未信任时该位置
+ * 不生效，故段内显式标注，不做「恒可写」的谎报（prompt 事实须与执行路径同源）。
+ */
+const SKILL_WRITE_LOCATION_PROMPT = `## 技能落点
+可写两处：项目级 <工作区>/.memora/skills（需工作区受信任）、用户级 skills 目录（所有项目通用）。
+默认写项目级；仅当用户明确要求「所有项目通用」时才写用户级。
+已存在同名技能不得覆盖，须先向用户确认。`;
+
+/**
  * 将宿主环境快照格式化为 system prompt 注入段（纯函数，命令执行能力方案 §10.4-②）
  *
  * 零解释转发：只做字段 → 文本的机械映射，不添加行为引导（环境事实自己会说话，
@@ -143,6 +156,9 @@ export function buildSystemPromptPrefix(
   const systemPrefixParts = [
     rolePackPrompt,
     globalSkillList,
+    // 技能落点提示（固定事实段）：紧贴技能清单，模型看完「有哪些技能」即看到「新技能写哪」。
+    // 无条件注入（无技能时用户仍可能要求创建技能）；SSOT = SKILL_WRITE_LOCATION_PROMPT。
+    SKILL_WRITE_LOCATION_PROMPT,
     workProjectionContext,
     environmentContext,
   ].filter(Boolean);

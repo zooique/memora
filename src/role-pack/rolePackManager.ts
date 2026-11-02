@@ -54,6 +54,36 @@ import { assembleRolePack } from '@/role-pack/strategyResolver.js';
 /** formatVersion 缺省值（未声明时按 1.0.0） */
 const DEFAULT_FORMAT_VERSION = '1.0.0';
 
+/**
+ * 额外角色包目录的档位（覆盖优先级：project > user > builtin）
+ *
+ * 真实生效顺序由**加载顺序**决定（宿主必须先 user、后 project，后加载者胜）；
+ * 档位用于记账与「顺序写反时保持 project 版」的守卫。
+ */
+export type RolePackExtraTier = 'user' | 'project';
+
+/**
+ * 额外目录同名处置记录（可观测出口：胜出/被跳过都必须留痕，不许静默）
+ */
+export interface ExtraPackConflict {
+  /** 角色包名 */
+  name: string;
+  /** 胜出方档位（builtin 仅在「内置守方胜」时出现） */
+  winner: RolePackExtraTier | 'builtin';
+  /** 被覆盖 / 被跳过的一方 */
+  loser: RolePackExtraTier | 'builtin';
+  /** override = 本次目录的包胜出并接管；skip = 守方胜出、本次未注入 */
+  action: 'override' | 'skip';
+}
+
+/** 额外目录加载结果（返回值可观测：净加载数 + 同名处置明细） */
+export interface ExtraDirLoadResult {
+  /** 本次从该目录净注入（新登记或覆盖）的角色包数 */
+  loaded: number;
+  /** 同名处置明细（空 = 无冲突） */
+  conflicts: ExtraPackConflict[];
+}
+
 /** 角色包扫描需排除的非包文件（如 README 等允许放在包根） */
 const EXCLUDED_FILES = new Set(['manifest.json']);
 
@@ -364,6 +394,28 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   private roundAssemblyRole: string | null = null;
 
   /**
+   * 额外角色包目录清单（loadExtraDir 注入时登记，值 = 档位）。
+   *
+   * Map 的插入序 = 加载顺序 = 覆盖顺序（宿主按 user → project 登记）；重扫时按此序重建，
+   * 避免「项目包先被注入、用户包再把它挤掉」的错序。
+   */
+  private readonly extraDirs = new Map<string, RolePackExtraTier>();
+
+  /** 每个额外目录包名 → 来源目录（幂等判据：同目录重复扫描才跳过） */
+  private readonly extraPackDirs = new Map<string, string>();
+
+  /**
+   * 已被额外目录覆盖的内置角色包名（含「项目覆盖用户」的接力结果）。
+   *
+   * 覆写基类 `isUserOverride`：reload 扫描回同名内置版时必须剔除，否则默认「磁盘赢」
+   * 会把用户级/项目级包挤掉（这是同名策略反转的另一半，只改 loadExtraDir 不够）。
+   */
+  private readonly extraOverrides = new Set<string>();
+
+  /** 最近一次 loadExtraDir / resync 的同名处置记录（可观测出口，不许静默） */
+  private lastConflicts: ExtraPackConflict[] = [];
+
+  /**
    * @param configDir 配置目录（角色包在 <configDir>/role-packs/ 下）
    */
   constructor(configDir?: string) {
@@ -588,8 +640,9 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   /** 重载角色包：重新扫描 + 保持激活态（覆盖基类 reload，基类扫描无法覆盖文件夹包形态）；激活包被删 → 落兜底包（§4.1 单链） */
   async reload(): Promise<number> {
     const oldActiveName = this.activePackName;
-    // 磁盘扫描 + 保留 loadExtraDir 注入的运行时项（retainRuntimeItems 记账合并，同名以磁盘为准）——
-    // 与基类 reload 语义一致：重载不抹除无磁盘真理源的运行时注入用户角色包
+    // 磁盘扫描 + 保留 loadExtraDir 注入的运行时项（retainRuntimeItems 记账合并）——
+    // 同名的处置由 isUserOverride 决定：被额外目录覆盖过的名字，内置版剔除、运行时版保留
+    //（project > user > builtin 的 reload 面）；未被覆盖的名字仍按默认「磁盘赢」。
     const scanned = await this.scanRolePacksForReload();
     this.items = this.retainRuntimeItems(scanned);
     this.validateTeams();
@@ -1179,44 +1232,95 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
-   * 加载用户目录的角色包（宿主调用，用于扩展内置角色包池）
+   * 加载额外目录的角色包（宿主调用，用于扩展内置角色包池）
    *
    * 与 load() 的区别：
    * - load() 从 configDir/role-packs/ 扫描内置角色包（有磁盘真理源）
-   * - loadExtraDir() 从额外目录扫描用户角色包（运行时注入，reload 时保留）
+   * - loadExtraDir() 从额外目录扫描（运行时注入，reload 时保留）
    *
-   * 设计哲学：内核保持单一真理源（configDir/role-packs/），宿主负责扩展用户目录。
-   * 用户角色包通过 registerRuntimeItem 注入，reload() 时会保留（同名冲突以磁盘为准）。
+   * 同名策略（2026-11-02 反转，旧行为是「内置优先、用户同名静默跳过」）：
+   * **project > user > builtin**，且同名胜出/被跳过**都留可见痕迹**——
+   * 日志 + 返回值 `conflicts` + `lastExtraConflicts` 快照，不许静默。
+   * 真实生效顺序由**加载顺序**决定：宿主必须先 user、后 project（后加载者胜）；
+   * 顺序写反时本方法按档位守卫，保持项目版并记一条 skip 冲突。
    *
-   * @param dir 用户角色包目录（每个子目录为一个角色包，须含 manifest.json）
-   * @returns 加载的角色包数量
+   * 目录不存在时 `buildFromDir` 已容错返回空数组（首次使用前 .memora/role-packs 可能还没建）。
+   *
+   * @param dir 额外角色包目录（每个子目录为一个角色包，须含 manifest.json）
+   * @param tier 档位（默认 'user'；宿主注入项目目录时显式传 'project'）
+   * @returns loaded 净注入数；conflicts 同名处置明细（可观测）
    */
-  async loadExtraDir(dir: string): Promise<number> {
-    let count = 0;
+  async loadExtraDir(dir: string, tier: RolePackExtraTier = 'user'): Promise<ExtraDirLoadResult> {
+    // 登记目录 + 档位：resync 重扫同一份清单（宿主刷新时无需重传路径）
+    this.extraDirs.set(dir, tier);
+    let loaded = 0;
+    const conflicts: ExtraPackConflict[] = [];
     try {
       // buildFromDir 接受任意目录路径，不依赖 configDir
       const packs = await this.buildFromDir(dir);
       for (const pack of packs) {
-        // 跳过已存在的角色包（内置优先）
-        if (this.items.some((p) => p.meta.name === pack.meta.name)) {
-          logger.info({ name: pack.meta.name }, '用户角色包与内置重名，跳过');
+        const name = pack.meta.name;
+        const prevDir = this.extraPackDirs.get(name);
+        // 幂等：同一目录重复扫描 → 跳过（非同名竞争，不记冲突）
+        if (prevDir === dir) continue;
+
+        const prevTier = prevDir ? (this.extraDirs.get(prevDir) ?? 'user') : undefined;
+        const hasExisting = this.items.some((p) => p.meta.name === name);
+        // 顺序写反（用户包晚于项目包加载）：按 project > user 保持项目版，记 skip
+        if (hasExisting && prevTier === 'project' && tier === 'user') {
+          conflicts.push({ name, winner: 'project', loser: 'user', action: 'skip' });
+          logger.warn({ name, dir }, '用户角色包晚于项目级加载，按 project > user 保持项目版');
           continue;
         }
+
+        if (hasExisting) {
+          // 覆盖：额外目录恒胜内置；项目胜用户；同档后到胜
+          const loser: RolePackExtraTier | 'builtin' = prevTier ?? 'builtin';
+          this.deleteItem(name);
+          this.extraPackDirs.delete(name);
+          this.extraOverrides.add(name);
+          conflicts.push({ name, winner: tier, loser, action: 'override' });
+          logger.info({ name, tier, dir, prevDir, loser }, '额外角色包覆盖同名角色包');
+        }
         this.registerRuntimeItem(pack);
-        count++;
+        this.extraPackDirs.set(name, dir);
+        loaded++;
       }
     } catch (err) {
-      logger.warn({ dir, err }, '加载用户角色包失败');
+      logger.warn({ dir, err }, '加载额外角色包失败');
     }
-    logger.info({ count, dir }, '用户角色包加载完成');
-    return count;
+    this.lastConflicts = conflicts;
+    logger.info({ loaded, dir, tier, conflicts }, '额外角色包目录加载完成');
+    return { loaded, conflicts };
   }
 
   /**
-   * 重扫用户角色包目录并与内存池对账（角色视图「刷新」按钮的唯一内核落点）。
+   * 覆写基类覆盖声明：凡是额外目录注入的包名（覆盖过内置），reload 扫描回同名内置版时
+   * 必须剔除内置版、保留运行时项——否则基类默认「磁盘赢」会把用户级/项目级包挤掉。
    *
-   * 语义 = 摘除全部运行时注入项 → 重新 loadExtraDir → 净差对账 + 激活态悬空兜底：
-   * - runtimeNames 记账即用户注入名单（本类 registerRuntimeItem 唯一调用点在 loadExtraDir）；
+   * 注：extraOverrides 在每次 loadExtraDir 覆盖时登记；resync 摘除后重建记账。
+   */
+  protected override isUserOverride(name: string): boolean {
+    return this.extraOverrides.has(name);
+  }
+
+  /**
+   * 额外目录同名处置记录快照（最近一次 loadExtraDir / resync 的结果）。
+   *
+   * 宿主刷新 UI 可据此提示「哪些同名包被项目/用户覆盖、哪些被跳过」——
+   * 与返回值同源的只读出口（行为反转必须可观测，不许静默）。
+   */
+  get lastExtraConflicts(): ExtraPackConflict[] {
+    return [...this.lastConflicts];
+  }
+
+  /**
+   * 重扫额外角色包目录并与内存池对账（角色视图「刷新」按钮的唯一内核落点）。
+   *
+   * 语义 = 摘除全部运行时注入项 → **按已登记顺序重扫全部额外目录** → 净差对账 + 激活态悬空兜底：
+   * - runtimeNames 记账即额外目录注入名单（本类 registerRuntimeItem 唯一调用点在 loadExtraDir）；
+   * - 重扫全部目录而非仅入参目录：信任门授予后会把项目目录新登记进来，若只重扫单个目录，
+   *   另一个目录的注入项会被摘掉后不再恢复；
    * - 对账结果取**净差**（对用户诚实）：同名重注入 = 磁盘版替换（updated），不算新增/移除；
    *   只有真消失（目录已删 / 改名旧名）才进 removed，全新名字才计入 added；
    * - 内置包不参与对账（磁盘真理源 = dist，构建期同步，运行中恒定）；
@@ -1224,23 +1328,37 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    *   激活包被删同源同判据，不自造第二套回退规则），经 setActivePackName 触发
    *   onActiveChanged（宿主同步 UI，属真实激活变更）。
    *
+   * @param dir 本次要确保登记并重扫的目录（可选；已登记目录恒参与重扫）
+   * @param tier dir 尚未登记时的档位（默认 'user'；信任门授予项目目录时传 'project'）
    * @returns added 净新增数；removed 真消失的包名；updated 同名重注入（内容生效）的包名；
    *          activeFallback 激活是否发生悬空兜底
    */
-  async resyncUserPacks(dir: string): Promise<{
+  async resyncUserPacks(
+    dir?: string,
+    tier: RolePackExtraTier = 'user',
+  ): Promise<{
     added: number;
     removed: string[];
     updated: string[];
     activeFallback: boolean;
   }> {
-    // 快照摘除名单后逐个摘除（deleteItem 注销记账；loadExtraDir 重名跳过判据因此不会误拦重扫注入）
+    if (dir) {
+      // 已登记的目录保持原档位（不因本次调用参数被降档）
+      if (!this.extraDirs.has(dir)) this.extraDirs.set(dir, tier);
+    }
+    // 快照摘除名单后逐个摘除（deleteItem 注销记账；重扫时同名守卫因此不会误拦重建）
     const beforeNames = this.runtimeItemNames;
     for (const name of beforeNames) {
       this.deleteItem(name);
     }
+    this.extraPackDirs.clear();
+    this.extraOverrides.clear();
+    this.lastConflicts = [];
     // 摘除后的池 = 净差基线（重扫不触碰内置包）
     const baseline = new Set(this.items.map((p) => p.meta.name));
-    await this.loadExtraDir(dir);
+    for (const [extraDir, extraTier] of this.extraDirs) {
+      await this.loadExtraDir(extraDir, extraTier);
+    }
     const finalNames = new Set(this.items.map((p) => p.meta.name));
     // 净差：摘除名单中未随重扫回来的 = 真消失；重扫回来的同名项 = 内容更新生效；
     // added = 全新名字（既不在摘除名单也不在基线，改名新名 / 全新包）
@@ -1254,7 +1372,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       this.activateFallback();
       activeFallback = true;
     }
-    logger.info({ dir, added, removed, updated, activeFallback }, '用户角色包目录已重扫对账');
+    logger.info({ dir, added, removed, updated, activeFallback }, '额外角色包目录已重扫对账');
     return { added, removed, updated, activeFallback };
   }
 }
