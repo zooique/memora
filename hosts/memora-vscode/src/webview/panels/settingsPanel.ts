@@ -134,6 +134,9 @@ export class MemoraSettingsPanel {
   private _userSkillsDir: string | undefined;
   /** 系统内置配置目录（configDir/skills/ 所在父目录，extension 注入，用于技能来源判定） */
   private _configDir: string | undefined;
+  /** 项目级资产目录（`<workspace>/.memora/skills` 与 `.memora/role-packs`，extension 注入，用于来源判定） */
+  private _projectSkillsDir: string | undefined;
+  private _projectRolePacksDir: string | undefined;
   /** 用户角色包目录路径（extension 注入，用于打开目录功能 + 角色来源判定） */
   private _userRolePacksDir: string | undefined;
   /** 「恢复初始状态」处理器（extension 注入：modal 确认 + 用户级数据清理 + reload window；
@@ -179,6 +182,12 @@ export class MemoraSettingsPanel {
   /** 注入系统内置配置目录（技能来源判定需要） */
   public setConfigDir(dir: string): void {
     this._configDir = dir;
+  }
+
+  /** 注入项目级资产目录（技能/角色包来源判定；与用户级目录名同构、来源由根路径区分） */
+  public setProjectDirs(skillsDir?: string, rolePacksDir?: string): void {
+    this._projectSkillsDir = skillsDir;
+    this._projectRolePacksDir = rolePacksDir;
   }
 
   /** 注入用户角色包目录路径（用于打开目录功能 + 角色来源判定） */
@@ -707,12 +716,11 @@ export class MemoraSettingsPanel {
     agent?.rolePackManager?.setRolePackTeams(next);
   }
 
-  /**
-   * 角色包来源层判定（单点收口）：用户目录命中 → user，否则内置。
-   * 与 loadRoles 的列表来源判定同源（filePath 前缀，configDir 与用户目录天然不重叠），
-   * 保存链路的内置包拒绝判据也复用本方法——禁第二份前缀判定副本。
-   */
-  private rolePackSource(filePath: string | undefined): 'builtin' | 'user' {
+  /** 角色包来源层单点判定（filePath 前缀）：项目 → project，用户 → user，否则内置；
+   *  保存链路的内置包拒绝判据复用本方法——禁第二份前缀判定副本。 */
+  private rolePackSource(filePath: string | undefined): 'builtin' | 'user' | 'project' {
+    if (this._projectRolePacksDir && filePath?.startsWith(this._projectRolePacksDir))
+      return 'project';
     return this._userRolePacksDir && filePath?.startsWith(this._userRolePacksDir)
       ? 'user'
       : 'builtin';
@@ -778,8 +786,9 @@ export class MemoraSettingsPanel {
       return;
     }
     const source = this.rolePackSource(pack.filePath);
-    // 内置包真拒绝（判据与列表来源判定同源：rolePackSource 单点）
-    if (source !== 'user') {
+    // 内置包真拒绝（判据与列表来源判定同源：rolePackSource 单点）；
+    // 用户级与项目级都可写（项目级是工作区内的自有文件，随仓库分发）。
+    if (source === 'builtin') {
       this.post({
         type: 'notice',
         level: 'error',
@@ -1327,6 +1336,7 @@ export class MemoraSettingsPanel {
       agent,
       configDir: this._configDir,
       userSkillsDir: this._userSkillsDir ?? '',
+      projectSkillsDir: this._projectSkillsDir,
     });
     // 写→验→用：对带 filePath 的技能（builtin/user）逐项健康校验叠加 health/issues；
     // 角色包技能无绝对路径，本轮不校验（按可用处理）。error 技能 UI 标「未生效」且内核 buildSkillList 已过滤不注入 LLM。

@@ -220,6 +220,9 @@ export const tokens = `
     /* 角色包技能来源：紫色语义区分内置(蓝)/用户(绿)/角色包(紫)，
      * 用 VSCode charts.purple，跟随主题 */
     --skill-rolepack-accent: var(--vscode-charts-purple, #a78bfa);
+    /* 项目级技能来源（<workspace>/.memora/skills）：复用 --chart-orange
+     * （同引同值，避免与 --occ-output/--chart-orange 形成第二种回退） */
+    --skill-project-accent: var(--chart-orange);
     /* 技能健康色：error 未生效 / warn 可优化
      * 用 VSCode charts.yellow，跟随主题 */
     --skill-health-error: var(--text-error, #f14c4c);

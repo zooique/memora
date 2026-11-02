@@ -1368,8 +1368,9 @@ export type ExtensionToWebviewMessage =
         name: string;
         displayName: string;
         description?: string;
-        /** 来源层：builtin=内置（configDir/role-packs），user=用户（globalStorageUri/role-packs） */
-        source?: 'builtin' | 'user';
+        /** 来源层：builtin=内置（configDir/role-packs），user=用户（globalStorageUri/role-packs），
+         *  project=项目级（<workspaceFolder>/.memora/role-packs） */
+        source?: 'builtin' | 'user' | 'project';
         capabilities: { capability: string; label: string }[];
         /** 角色性格特征（从 persona.md frontmatter traits 解析，0-1 数值） */
         traits?: Record<string, number>;
@@ -1420,7 +1421,7 @@ export type ExtensionToWebviewMessage =
   | {
       type: 'roles_detail_data';
       name: string;
-      source: 'builtin' | 'user';
+      source: 'builtin' | 'user' | 'project';
       /** manifest 原文 strategy 段（阶段 → 键 → 原始值）；未配置或缺省 = 全走默认 */
       strategy?: Record<string, Record<string, unknown>>;
     }
@@ -2249,8 +2250,9 @@ export interface SkillDto {
   displayName?: string;
   /** 技能文件路径（用于定位来源） */
   filePath?: string;
-  /** 技能来源三分类（SSOT）：'builtin'（系统内置）/ 'rolepack'（启用角色包内置）/ 'user'（用户本地目录自定义） */
-  layer?: 'builtin' | 'rolepack' | 'user';
+  /** 技能来源四分类（SSOT）：'project'（项目级 .memora/skills）/ 'builtin'（系统内置）/
+   *  'rolepack'（启用角色包内置）/ 'user'（用户本地目录自定义） */
+  layer?: 'project' | 'builtin' | 'rolepack' | 'user';
   /**
    * 是否已被用户禁用（配置形态启停）：true = 对模型语义不存在
    * （不进技能清单 / read_skill 读不到 / L3 资源与脚本不可达），但本 UI **不隐藏**它，

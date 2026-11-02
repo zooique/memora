@@ -47,8 +47,8 @@ interface RolesPayload {
     name: string;
     displayName: string;
     description?: string;
-    /** 来源层：builtin=内置（configDir/role-packs），user=用户（globalStorageUri/role-packs） */
-    source?: 'builtin' | 'user';
+    /** 来源层：builtin=内置（configDir/role-packs），user=用户（globalStorageUri/role-packs），project=项目（<工作区>/.memora/role-packs） */
+    source?: 'builtin' | 'user' | 'project';
     capabilities: { capability: string; label: string }[];
     traits?: Record<string, number>;
     handoffPrompt?: string;
@@ -144,7 +144,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   /** 当前详情弹窗数据（roles_detail_data 写入；弹窗重渲染共用） */
   let detail: {
     name: string;
-    source: 'builtin' | 'user';
+    source: 'builtin' | 'user' | 'project';
     strategy?: Record<string, Record<string, unknown>>;
   } | null = null;
   /** 当前打开的详情弹窗 overlay（编辑/查看模式切换时整弹窗重建；null = 未打开） */
@@ -524,7 +524,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       }
     }
     const actions: HTMLElement[] = [];
-    if (detail.source === 'user') {
+    // 用户级与项目级都可编辑（项目级是工作区自有文件）；仅内置包只读
+    if (detail.source !== 'builtin') {
       const edit = document.createElement('button');
       edit.className = 'btn btn-primary';
       edit.textContent = '编辑配置';
@@ -745,12 +746,15 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     nameEl.textContent = p.displayName;
     header.appendChild(nameEl);
 
-    // 来源徽章（对齐技能层徽章）：用户角色包标「用户」，内置角色包不标（内置为默认）
-    if (p.source === 'user') {
+    // 来源徽章（对齐技能层徽章）：用户/项目级角色包标来源，内置不标（内置为默认）
+    if (p.source === 'user' || p.source === 'project') {
+      const isProject = p.source === 'project';
       const srcBadge = document.createElement('span');
-      srcBadge.className = 'badge badge-source-user';
-      srcBadge.textContent = '用户';
-      srcBadge.title = '用户自建角色包：位于用户角色包目录，可编辑';
+      srcBadge.className = `badge ${isProject ? 'badge-source-project' : 'badge-source-user'}`;
+      srcBadge.textContent = isProject ? '项目' : '用户';
+      srcBadge.title = isProject
+        ? '项目级角色包：位于 <工作区>/.memora/role-packs，随仓库分发，可编辑'
+        : '用户自建角色包：位于用户角色包目录，可编辑';
       header.appendChild(srcBadge);
     }
 

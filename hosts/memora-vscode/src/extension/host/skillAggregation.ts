@@ -1,36 +1,53 @@
 /**
  * 宿主技能三源聚合（SSOT 收紧）
  *
- * 技能清单唯一来源 = 内核自身持有的三源，宿主只做「展示聚合」与「按名取提示」：
+ * 技能清单唯一来源 = 内核自身持有的多源，宿主只做「展示聚合」与「按名取提示」：
  *   1. 系统内置 —— <configDir>/skills/（SkillManager.load 磁盘真理源）
  *   2. 启用角色包内置 —— 激活角色包内嵌技能（RolePackManager.listSkills 只读枚举）
  *   3. 用户本地目录 —— <userSkillsDir>/（SkillManager.loadExtraDir 运行时注入）
+ *   4. 项目本地目录 —— <projectSkillsDir>/（同上，工作区受信任时才注入）
  *
  * settingsPanel / chatPanel 共用本模块，避免两处各自拼接清单造成第二份来源。
- * 来源判定用 filePath 前缀（configDir 与 userSkillsDir 天然不重叠，同名冲突按
- * 去重表 DEDUP_PRIORITY 裁决——用户可覆盖内置，见下），不改内核 SkillEntry 契约。
+ * 来源判定用 filePath 前缀（各目录天然不重叠），同名冲突按
+ * 去重表 DEDUP_PRIORITY 裁决——**与列表展示排序 SOURCE_ORDER 是两件事**（见下）。
+ * 不改内核 SkillEntry 契约。
  */
 import type { Agent } from '@zooique/memora';
-import { join } from 'node:path';
+import { join, normalize } from 'node:path';
 import type { SkillDto } from '../../shared/protocol.js';
 
-/** 技能来源三分类（与 SkillDto.layer 对应） */
-export type SkillSource = 'builtin' | 'rolepack' | 'user';
+/** 技能来源四分类（与 SkillDto.layer 对应） */
+export type SkillSource = 'builtin' | 'rolepack' | 'user' | 'project';
 
-/** 三源聚合所需上下文 */
+/** 多源聚合所需上下文 */
 export interface SkillAggregateContext {
   agent: Agent;
   /** 系统内置配置目录（<configDir>/skills/ 所在父目录） */
   configDir: string;
   /** 用户本地技能目录 */
   userSkillsDir: string;
+  /** 项目本地技能目录（<workspace>/.memora/skills；未信任工作区时为空/不传） */
+  projectSkillsDir?: string;
 }
 
-/** 来源排序权重（内置优先，其次角色包，最后用户） */
-const SOURCE_ORDER: Record<SkillSource, number> = { builtin: 0, rolepack: 1, user: 2 };
+/**
+ * 来源**展示排序**权重（只决定列表从上到下的顺序，不决定同名时谁生效）
+ *
+ * 展示习惯：项目级（最近、最相关）→ 内置 → 角色包 → 用户级。
+ * 🔴 本表**不是**冲突裁决表：同名覆盖由**加载顺序**决定
+ * （内置 → 用户 → 项目，后加载者胜，见内核 `SkillManager.loadExtraDir`），
+ * 与这里的排序权重无关。要判断「同名留谁」请看 DEDUP_PRIORITY。
+ */
+const SOURCE_ORDER: Record<SkillSource, number> = {
+  project: 0,
+  builtin: 1,
+  rolepack: 2,
+  user: 3,
+};
 
 /**
- * 判断内核技能条目归属源：优先按 filePath 前缀命中（userSkillsDir → user，configDir/skills → builtin），
+ * 判断内核技能条目归属源：优先按 filePath 前缀命中
+ * （projectSkillsDir → project，userSkillsDir → user，configDir/skills → builtin），
  * 无路径/未命中回退内核 layer（project=用户兜底，agent=内置）。
  */
 function sourceOf(
@@ -38,31 +55,43 @@ function sourceOf(
   layer: string | undefined,
   configDir: string,
   userSkillsDir: string,
+  projectSkillsDir?: string,
 ): SkillSource {
   if (filePath) {
-    if (userSkillsDir && filePath.startsWith(userSkillsDir)) return 'user';
-    if (filePath.startsWith(join(configDir, 'skills'))) return 'builtin';
+    // 统一分隔符再比对：调用方传的目录与 join 出来的 filePath 可能混用 / 与 \（Windows）
+    const fp = normalize(filePath);
+    if (projectSkillsDir && fp.startsWith(normalize(projectSkillsDir))) return 'project';
+    if (userSkillsDir && fp.startsWith(normalize(userSkillsDir))) return 'user';
+    if (fp.startsWith(normalize(join(configDir, 'skills')))) return 'builtin';
   }
   return layer === 'project' ? 'user' : 'builtin';
 }
 
 /**
- * 同名去重优先级（数值小 = 胜出）。**角色包 > 用户 > 内置**（对齐主流「用户可覆盖内置」）——
- * 与（a）内核装载层 loadExtraDir 用户同名覆盖内置同向；
- * （b）注入面（`skillPromptFor` / 内核 `read_skill`）同向：角色包优先、全局池次之。
- * 若为「内置 > 用户」则与内核装载层方向相反，UI 呈现与实际生效者错位。
+ * 同名**去重裁决**优先级（数值小 = 胜出）。
  *
- * ⚠️ 与 `SOURCE_ORDER` 是两件事，不可合并：本表管**同名时留谁**，`SOURCE_ORDER` 管**列表怎么排**。
+ * 全局池三者严格对齐内核加载顺序：**project > user > builtin**
+ * （内核 `SkillManager.loadExtraDir` 后加载者胜，国产/主流皆为「就近覆盖」）；
+ * 角色包技能单列最前，只因注入面（`skillPromptFor` / 内核 `read_skill`）解析顺序
+ * 是「角色包 → 全局池」——本表必须与注入面同向，否则 UI 呈现与实际生效者错位。
+ *
+ * ⚠️ 与 `SOURCE_ORDER` 是两件事，不可合并：本表管**同名时留谁**，
+ * `SOURCE_ORDER` 管**列表怎么排**。两处注释与用途不得共用一套措辞。
  */
-const DEDUP_PRIORITY: Record<SkillSource, number> = { rolepack: 0, user: 1, builtin: 2 };
+const DEDUP_PRIORITY: Record<SkillSource, number> = {
+  rolepack: 0,
+  project: 1,
+  user: 2,
+  builtin: 3,
+};
 
 /**
- * 三源聚合技能清单（settingsPanel / chatPanel 共用，单一真理源）。
- * 同名去重（**角色包 > 用户 > 内置**，DEDUP_PRIORITY 裁决）；按来源排序
- * （内置 → 角色包 → 用户，SOURCE_ORDER），组内按名。
+ * 多源聚合技能清单（settingsPanel / chatPanel 共用，单一真理源）。
+ * 同名去重（**角色包 > 项目 > 用户 > 内置**，DEDUP_PRIORITY 裁决）；
+ * 按来源展示排序（项目 → 内置 → 角色包 → 用户，SOURCE_ORDER），组内按名。
  */
 export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
-  const { agent, configDir, userSkillsDir } = ctx;
+  const { agent, configDir, userSkillsDir, projectSkillsDir } = ctx;
   const byName = new Map<string, SkillDto>();
   const push = (
     layer: SkillSource,
@@ -83,7 +112,7 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
   if (sm) {
     for (const s of sm.list) {
       push(
-        sourceOf(s.filePath, s.layer, configDir, userSkillsDir),
+        sourceOf(s.filePath, s.layer, configDir, userSkillsDir, projectSkillsDir),
         s.name,
         s.description,
         s.filePath,
@@ -104,7 +133,7 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
   // 宿主**不自读**一份 workspace 配置——两源会在 reloadConfig 重设禁用集后分叉，
   // 出现「UI 说已禁用、实际仍生效」（或反之）。此处只做**标注**，不隐藏条目（见 SkillDto.disabled）。
   //
-  // ⚠️ **作用域限全局技能池（builtin/user）**：`disabledNames` 是 `SkillManager` 的判据集，
+  // ⚠️ **作用域限全局技能池（builtin/user/project）**：`disabledNames` 是 `SkillManager` 的判据集，
   // 而角色包技能走 `rolePackManager`、**不经** `SkillManager.get()` ⇒ 对角色包技能禁用本就无效。
   // 故此处不得给 `rolepack` 层打标——那是 UI 谎报（「声明与实现不同源」）。
   //
@@ -115,7 +144,7 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
   const disabledNames = new Set(sm?.disabledSkillNames ?? []);
   return [...byName.values()]
     .map((s) => {
-      const inGlobalPool = s.layer === 'builtin' || s.layer === 'user';
+      const inGlobalPool = s.layer === 'builtin' || s.layer === 'user' || s.layer === 'project';
       return inGlobalPool && disabledNames.has(s.name) ? { ...s, disabled: true } : s;
     })
     .sort((a, b) => {

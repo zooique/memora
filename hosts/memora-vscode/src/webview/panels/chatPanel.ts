@@ -253,14 +253,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _agent: Agent | undefined;
   /** 配置热刷新未生效标记（IMG-5 顺延槽）：真源已变但换实例失败（唯一预期 = `assertNotBusy`）；消费点 = `handleInput` 的 `send` 前置补做。 */
   private _providerStale = false;
-  /** 系统内置配置目录 + 用户技能目录（extension 注入，composer 动态技能清单来源判定） */
+  /** 系统内置配置目录 + 用户技能目录 + 项目级技能目录（extension 注入，composer 清单来源判定） */
   private _configDir: string | undefined;
   private _userSkillsDir: string | undefined;
+  private _projectSkillsDir: string | undefined;
 
   /** 注入技能聚合所需目录（composer 动态技能下拉与设置面板同一清单来源） */
-  public setSkillDirs(configDir: string, userSkillsDir: string): void {
+  public setSkillDirs(configDir: string, userSkillsDir: string, projectSkillsDir?: string): void {
     this._configDir = configDir;
     this._userSkillsDir = userSkillsDir;
+    this._projectSkillsDir = projectSkillsDir;
   }
   /** 大模型配置存储（用于底部模型下拉框 + 切换） */
   private readonly _providerStore: ProviderStore;
@@ -642,6 +644,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         agent,
         configDir: this._configDir,
         userSkillsDir: this._userSkillsDir ?? '',
+        projectSkillsDir: this._projectSkillsDir,
       }),
     });
   }

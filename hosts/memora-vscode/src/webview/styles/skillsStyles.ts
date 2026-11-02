@@ -105,6 +105,11 @@ export const skillsStyles = `
     border-left: 3px solid var(--skill-rolepack-accent);
   }
 
+  /* 项目级技能：左侧橙色边框标识（语义令牌 --skill-project-accent） */
+  #skills-root .skill-item.skill-project {
+    border-left: 3px solid var(--skill-project-accent);
+  }
+
   #skills-root .skill-header {
     display: flex;
     align-items: center;
@@ -142,6 +147,12 @@ export const skillsStyles = `
   /* 角色包徽章：skill-rolepack-accent 字 + 灰底（技能三分类） */
   #skills-root .skill-badge.badge-rolepack {
     color: var(--skill-rolepack-accent);
+    background: var(--surface-hover, rgba(128,128,128,.2));
+  }
+
+  /* 项目级徽章：skill-project-accent 字 + 灰底 */
+  #skills-root .skill-badge.badge-project {
+    color: var(--skill-project-accent);
     background: var(--surface-hover, rgba(128,128,128,.2));
   }
 

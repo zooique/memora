@@ -383,11 +383,12 @@ function createSkillsView({
 /** 技能列表每页条数（分页组件；全量前端切片分页） */
 const SKILL_PAGE_SIZE = 10;
 
-/** 三源分类元数据（SSOT 收紧）：图层 item/badge class + 中文标签；模块级供分页渲染复用 */
+/** 技能来源分类元数据（SSOT 收紧）：图层 item/badge class + 中文标签；模块级供分页渲染复用 */
 const LAYER_META: Record<
-  'builtin' | 'rolepack' | 'user',
+  'builtin' | 'rolepack' | 'user' | 'project',
   { item: string; badge: string; label: string }
 > = {
+  project: { item: 'skill-project', badge: 'badge-project', label: '项目' },
   builtin: { item: 'skill-agent', badge: 'badge-agent', label: '内置' },
   rolepack: { item: 'skill-rolepack', badge: 'badge-rolepack', label: '角色包' },
   user: { item: 'skill-user', badge: 'badge-user', label: '用户' },
@@ -398,7 +399,8 @@ const LAYER_META: Record<
  * 更新计数 + 处理空态，返回按三源排序的全量数组（分页组件据此切片渲染）。
  */
 function renderSkills(listEl: HTMLElement, countEl: HTMLElement, skills: SkillDto[]): SkillDto[] {
-  // 分别统计内置 / 启用角色包 / 用户三源技能
+  // 分别统计项目级 / 内置 / 启用角色包 / 用户四源技能
+  const projectCount = skills.filter((s) => s.layer === 'project').length;
   const builtinCount = skills.filter((s) => s.layer === 'builtin').length;
   const rolePackCount = skills.filter((s) => s.layer === 'rolepack').length;
   const userCount = skills.filter((s) => s.layer === 'user').length;
@@ -406,6 +408,7 @@ function renderSkills(listEl: HTMLElement, countEl: HTMLElement, skills: SkillDt
   // 更新计数
   if (skills.length > 0) {
     const parts: string[] = [];
+    if (projectCount > 0) parts.push(`${projectCount} 项目`);
     if (builtinCount > 0) parts.push(`${builtinCount} 内置`);
     if (rolePackCount > 0) parts.push(`${rolePackCount} 角色包`);
     if (userCount > 0) parts.push(`${userCount} 用户`);
@@ -428,11 +431,13 @@ function renderSkills(listEl: HTMLElement, countEl: HTMLElement, skills: SkillDt
     return [];
   }
 
-  // 按类型分组排序：内置 → 角色包 → 用户，同类型按名称排序
-  const LAYER_ORDER: Record<'builtin' | 'rolepack' | 'user', number> = {
-    builtin: 0,
-    rolepack: 1,
-    user: 2,
+  // 按类型分组排序：项目 → 内置 → 角色包 → 用户，同类型按名称排序
+  // （与宿主 SOURCE_ORDER 同一展示习惯；它不是同名裁决表——裁决由内核加载顺序决定）
+  const LAYER_ORDER: Record<'builtin' | 'rolepack' | 'user' | 'project', number> = {
+    project: 0,
+    builtin: 1,
+    rolepack: 2,
+    user: 3,
   };
   return [...skills].sort((a, b) => {
     const oa = LAYER_ORDER[a.layer ?? 'builtin'];

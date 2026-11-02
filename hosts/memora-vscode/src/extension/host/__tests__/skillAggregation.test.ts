@@ -1,10 +1,10 @@
 /**
- * 宿主技能三源聚合单元测试（SSOT 收紧）
+ * 宿主技能多源聚合单元测试（SSOT 收紧）
  *
- * 锁住三类不变量，防「内置显示为用户」类来源错标复发：
- *   1. 来源判定：filePath 前缀 → builtin/user；rolePackManager → rolepack
- *   2. 同名去重：**角色包 > 用户 > 内置**（与注入面同序；勿回「内置优先」）
- *   3. 排序：内置 → 角色包 → 用户
+ * 锁住四类不变量，防「内置显示为用户」类来源错标复发：
+ *   1. 来源判定：filePath 前缀 → project/project、user/user、configDir/builtin；rolePackManager → rolepack
+ *   2. 同名去重（**裁决**）：角色包 > 项目 > 用户 > 内置（与注入面同序；勿回「内置优先」）
+ *   3. 展示排序：项目 → 内置 → 角色包 → 用户（SOURCE_ORDER，**不是**裁决表）
  * 以及 `resolveSkill`（正文解析唯一收口：角色包 → 全局，与内核 read_skill 同序）与
  * `skillPromptFor`（composer 注入，格式沿用内核 buildSystemPrompt）。
  */
@@ -22,6 +22,7 @@ import {
 
 const configDir = 'C:/app/dist/extension';
 const userSkillsDir = 'C:/Users/t/.vscode/globalStorage/skills';
+const projectSkillsDir = 'C:/work/project/.memora/skills';
 
 /** 构造最小 Agent 桩：skills（全局）+ rolePackManager（角色包技能）两级来源 */
 function makeAgent(opts: {
@@ -68,17 +69,20 @@ function makeAgent(opts: {
   } as unknown as Agent;
 }
 
-describe('listVisibleSkills · 三源技能聚合', () => {
-  it('来源判定：configDir → builtin，userSkillsDir → user，角色包 → rolepack，并按序排列', () => {
+describe('listVisibleSkills · 多源技能聚合', () => {
+  it('来源判定：configDir → builtin，userSkillsDir → user，projectSkillsDir → project，角色包 → rolepack，并按展示序排列', () => {
     const agent = makeAgent({
       global: [
         { name: '内置A', filePath: join(configDir, 'skills', 'a.md') },
         { name: '用户B', filePath: join(userSkillsDir, 'b.md') },
+        { name: '项目D', filePath: join(projectSkillsDir, 'd.md') },
       ],
       roleSkills: [{ name: '角色C' }],
     });
-    const out = listVisibleSkills({ agent, configDir, userSkillsDir });
+    const out = listVisibleSkills({ agent, configDir, userSkillsDir, projectSkillsDir });
+    // 展示序 = SOURCE_ORDER（project → builtin → rolepack → user），与同名裁决无关
     expect(out.map((s) => `${s.layer}:${s.name}`)).toEqual([
+      'project:项目D',
       'builtin:内置A',
       'rolepack:角色C',
       'user:用户B',
@@ -123,6 +127,38 @@ describe('listVisibleSkills · 三源技能聚合', () => {
     expect(out.filter((s) => s.name === '三方')).toHaveLength(1);
     // 胜者链：rolepack(0) > user(1) > builtin(2)；任一方向回退（如内置 > 用户）即红
     expect(out.find((s) => s.name === '三方')?.layer).toBe('rolepack');
+  });
+
+  it('守卫变异锁：四段同名（项目/用户/内置/角色包）→ 角色包居首、全局池内项目 > 用户 > 内置', () => {
+    const agent = makeAgent({
+      global: [
+        { name: '四段', filePath: join(configDir, 'skills', 'a.md') },
+        { name: '四段', filePath: join(userSkillsDir, 'b.md') },
+        { name: '四段', filePath: join(projectSkillsDir, 'c.md') },
+      ],
+      roleSkills: [{ name: '四段' }],
+    });
+    const out = listVisibleSkills({ agent, configDir, userSkillsDir, projectSkillsDir });
+    // 注入面解析顺序「角色包 → 全局池」⇒ 角色包仍居首；全局池内按内核加载顺序 project > user > builtin
+    expect(out.filter((s) => s.name === '四段')).toHaveLength(1);
+    expect(out.find((s) => s.name === '四段')?.layer).toBe('rolepack');
+
+    // 去掉角色包 → 项目覆盖用户与内置（DEDUP_PRIORITY project=1）
+    const noRole = makeAgent({
+      global: [
+        { name: '四段', filePath: join(configDir, 'skills', 'a.md') },
+        { name: '四段', filePath: join(userSkillsDir, 'b.md') },
+        { name: '四段', filePath: join(projectSkillsDir, 'c.md') },
+      ],
+    });
+    const noRoleOut = listVisibleSkills({
+      agent: noRole,
+      configDir,
+      userSkillsDir,
+      projectSkillsDir,
+    });
+    expect(noRoleOut.filter((s) => s.name === '四段')).toHaveLength(1);
+    expect(noRoleOut.find((s) => s.name === '四段')?.layer).toBe('project');
   });
 
   it('守卫变异锁：角色包未参与时，用户胜于内置（DEDUP_PRIORITY 的 user/builtin 位序）', () => {

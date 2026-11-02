@@ -179,9 +179,24 @@ export interface AssembleOptions {
    *
    * extension.ts 从 globalStorageUri/role-packs 传入有效路径，本装配处实际加载：
    * 用户角色包经内核 RolePackManager.loadExtraDir() 运行态注入，与内置包同池可切换。
-   * 同名冲突内置优先（loadExtraDir 跳过重名用户包）。
+   * 同名冲突按加载顺序裁决（内置 → 用户 → 项目，后加载者胜，见内核 loadExtraDir）。
    */
   userRolePacksDir?: string;
+  /**
+   * 项目级技能目录（可选）
+   *
+   * `<workspaceFolder>/.memora/skills/`，作为**第三个** extra dir 注入：
+   * 与用户级同一套 `loadExtraDir`（不另造扫描器），后加载者胜 ⇒ 项目覆盖用户/内置。
+   * ⚠️ 仅当工作区已受信任时由 extension 传入；未信任不注入（信任门）。
+   */
+  projectSkillsDir?: string;
+  /**
+   * 项目级角色包目录（可选）
+   *
+   * `<workspaceFolder>/.memora/role-packs/`，与用户角色包同一注入面，档位 = 'project'。
+   * 同上受工作区信任门约束。
+   */
+  projectRolePacksDir?: string;
   /**
    * 写入二次确认开关（H0）
    *
@@ -317,6 +332,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     configDir,
     userSkillsDir,
     userRolePacksDir,
+    projectSkillsDir,
+    projectRolePacksDir,
     confirmWrites,
     confirmScripts,
     allowedPaths,
@@ -469,9 +486,21 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   // extension.ts 经 globalStorageUri/role-packs 传入有效目录，本分支实际执行：
   // 用户可在该目录放置自己的角色包（manifest.json + persona.md/rules.md/skills/），
   // 经内核 RolePackManager.loadExtraDir() 以运行态注入，与内置包同池可切换。
-  // 同名冲突时「内置优先」（loadExtraDir 内部跳过重名用户包）。
+  // 同名冲突按加载顺序裁决（内置 → 用户 → 项目，后加载者胜）。
   if (userRolePacksDir) {
     await agent.rolePacks?.loadExtraDir(userRolePacksDir);
+  }
+
+  // 6.1 项目级来源（第三档，必须排在用户之后 ⇒ 同名时项目胜出）
+  //
+  // 与用户级共用同一注入面（loadExtraDir），不新增扫描器；档位显式传 'project'，
+  // 用于内核分账（项目覆盖不统计进用户覆盖）与顺序守卫（项目先加载时拒绝用户反超）。
+  // 目录不存在时内核扫描容错为空（首次使用前 .memora/skills 可能尚未创建）。
+  if (projectSkillsDir) {
+    await agent.skills?.loadExtraDir(projectSkillsDir, 'project');
+  }
+  if (projectRolePacksDir) {
+    await agent.rolePacks?.loadExtraDir(projectRolePacksDir, 'project');
   }
 
   // 7. 接入 MCP server（用户级设置 memora.mcpServers）

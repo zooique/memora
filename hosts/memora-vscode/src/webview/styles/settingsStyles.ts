@@ -135,6 +135,11 @@ export const settingsStyles = `
     background: var(--tag-bg, rgba(90, 93, 94, 0.31));
     color: var(--tag-fg, #cccccc);
   }
+  /* 项目级角色包来源徽章：与技能页项目来源同色（--skill-project-accent） */
+  #roles-root .badge.badge-source-project {
+    background: var(--tag-bg, rgba(90, 93, 94, 0.31));
+    color: var(--skill-project-accent);
+  }
   /* 角色区头部操作组（「打开目录」按钮，对齐技能区 header-actions） */
   #roles-root .header-actions {
     display: flex;
