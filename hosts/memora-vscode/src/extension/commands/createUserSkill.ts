@@ -93,6 +93,8 @@ export function validateSkillDraft(draft: SkillDraft): string | null {
     return '描述不得包含换行（会破坏技能 frontmatter 结构）';
   }
   if (!buildSkillBody(sanitized.name).trim()) {
+    // 🔴 当前不可达：正文由 buildSkillBody 的模板生成，用户无法输入正文。
+    // 保留是为将来开放「正文输入」时生效，勿据此当成现役防线（现役防线只有 description）。
     return '技能正文不能为空';
   }
   return null;
@@ -206,10 +208,12 @@ export async function createUserSkillCommand(deps: CreateUserSkillDeps): Promise
     return;
   }
   // 同名内置：用户文件已由上方排除 ⇒ 同名项必为内置（或运行时注入项），走覆盖确认。
-  // 语义与 kernel userOverrides 一致：同名用户版覆盖内置，内置文件本身不动。
+  // 为什么技能**允许**覆盖：内置技能只是「样板」，用户按自己习惯定制同名技能是正当需求；
+  // 且语义与内核 userOverrides 一致——同名用户版覆盖内置，内置文件本身不动。
+  // 与角色包策略相反（角色包同名硬拒绝），理由见 createRolePack.ts 的同名分支。
   if (agent.skills.list.some((s) => s.name === sanitized.name)) {
     const choice = await vscode.window.showWarningMessage(
-      `已存在同名内置技能「${sanitized.name}」。继续将创建一个同名用户技能覆盖它（内置文件不改动），确认继续？`,
+      `继续会覆盖内置技能「${sanitized.name}」：将创建一个同名用户技能（内置文件本身不改动），确认继续？`,
       { modal: true },
       '继续覆盖',
     );

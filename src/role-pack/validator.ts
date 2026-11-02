@@ -133,7 +133,10 @@ function validateMetaFields(
     }
   }
 
-  // formatVersion：缺省按 1.0.0，声明则必须 semver
+  // formatVersion：缺省按 1.0.0，声明则必须 semver。
+  // schema 已同步为可选（docs/role-pack/role-pack.schema.json 的 required 去掉本键）；
+  // 此处保持宽松是为不炸既有用户包——存量角色包可能没写该键。
+  // 🔴 不要改成「缺省即报错」：那会让能正常装载的老包集体加载失败。
   const formatVersion = manifest['formatVersion'];
   if (
     formatVersion !== undefined &&

@@ -10,7 +10,7 @@
  *   3. 同名角色包已在池内（内置必拒）⇒ 拒绝——内核 loadExtraDir 对同名包直接跳过，
  *      写进去也**永远不装载**（`rolePackManager.ts` 同名内置跳过判据），创建即白建；
  *   4. manifest 校验（复用内核 `validateManifestText`），`formatVersion` 缺省时显式写 1.0.0
- *      （schema 侧 required，不赌运行时默认）。
+ *      （schema 已随运行时改为可选；显式写是为让落盘文件自描述，不依赖任何人猜默认值）。
  */
 
 import * as vscode from 'vscode';
@@ -109,7 +109,8 @@ export async function writeUserRolePackFiles(
     delete manifest['description'];
   }
   manifest['handoffPrompt'] = defaultHandoff(displayName);
-  // formatVersion 缺省时显式写 1.0.0（schema required；不依赖运行时默认）
+  // formatVersion 缺省时显式写 1.0.0（schema 与运行时都已允许缺省；写入是为让文件自描述，
+  // 不依赖「读者记得默认是 1.0.0」）
   if (!manifest['formatVersion']) {
     manifest['formatVersion'] = '1.0.0';
   }
@@ -199,12 +200,15 @@ export async function createRolePackCommand(deps: CreateRolePackDeps): Promise<v
     void vscode.window.showWarningMessage('Memora Agent 未就绪，无法新建角色包');
     return;
   }
-  // 同名内置必拒：内核 loadExtraDir 对同名包直接跳过 ⇒ 用户包永远不装载（创建即白建）。
+  // 同名必拒（与技能侧相反，理由见 createUserSkill.ts 的覆盖分支：
+  // 角色包不是「样板文件」——内置角色包是**产品的一部分**，被用户同名包顶掉会让用户
+  // 以为某个角色功能消失了。故宁可拒绝，也不做「用户版覆盖内置版」的隐式替换）。
+  // 机制层原因：内核 loadExtraDir 对同名包直接跳过 ⇒ 用户包永远不装载（创建即白建）。
   // 同名用户包（不同目录但 manifest 同名）同样会被跳过，故一并拒绝（同一判据，不同文案）。
   const existing = rpm.get(sanitized.name);
   if (existing) {
     void vscode.window.showWarningMessage(
-      `同名角色包「${sanitized.name}」已存在（内置优先 / 同池同名只装载一个），新建的用户包不会被装载，请换一个标识`,
+      `不能与内置角色包「${sanitized.name}」同名，请换个名字（同池同名只装载内置，新建的用户包不会被装载）`,
     );
     return;
   }

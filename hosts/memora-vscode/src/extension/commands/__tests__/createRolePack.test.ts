@@ -175,7 +175,10 @@ describe('createRolePackCommand（命令面板与设置页共用入口）', () =
     expect(fsMock.writeFile).not.toHaveBeenCalled();
     expect(resync).not.toHaveBeenCalled();
     expect(vsMock.showWarningMessage).toHaveBeenCalledTimes(1);
-    expect(vsMock.showWarningMessage.mock.calls[0][0]).toContain('不会被装载');
+    const msg = String(vsMock.showWarningMessage.mock.calls[0][0]);
+    // 文案须说清「怎么办」：明确拒绝同名并给出换名指引，同时保留「不会被装载」的机制解释
+    expect(msg).toContain('不能与内置角色包「demo」同名，请换个名字');
+    expect(msg).toContain('不会被装载');
   });
 
   it('正常创建 ⇒ 写盘 + resyncUserPacks(用户目录) + 刷新角色列表', async () => {

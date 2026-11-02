@@ -145,7 +145,8 @@ describe('createUserSkillCommand（命令面板与设置页共用入口）', () 
     await createUserSkillCommand(deps);
 
     expect(vsMock.showWarningMessage).toHaveBeenCalledTimes(1);
-    expect(vsMock.showWarningMessage.mock.calls[0][0]).toContain('覆盖');
+    // 文案须说清「会发生什么」：明确写「会覆盖内置技能「X」」，不靠用户猜
+    expect(vsMock.showWarningMessage.mock.calls[0][0]).toContain('会覆盖内置技能「builtin-skill」');
     expect(fsMock.writeFile).not.toHaveBeenCalled();
     expect(resync).not.toHaveBeenCalled();
   });

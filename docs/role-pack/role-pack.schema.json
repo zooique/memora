@@ -4,7 +4,7 @@
   "title": "RolePack Spec v1.0.0",
   "description": "memora 参考实现 JSON Schema —— 角色包标准 v1.0.0（含 memora 特有扩展键，如 contextLimit/stepBudget 等未入中立标准 spec §六 的键）。适用于文件夹形态角色包的 manifest.json 校验（元数据 + strategy + capabilities 注册 + skills 白名单）。内容文件（persona.md/rules.md/skills/）约定俗成，不注册路径（零声明）。字段上限与 src/role-pack/strategyKeys.ts 对齐（SSOT）。中立标准键集见 role-pack-spec.md §六；memora 扩展键以 strategyKeys.ts 为准。",
   "type": "object",
-  "required": ["name", "formatVersion"],
+  "required": ["name"],
 
   "properties": {
     "name": {
@@ -20,7 +20,7 @@
     "formatVersion": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "description": "角色包格式版本（semver），绑定固定 schema URL，发布后永不改变内容"
+      "description": "角色包格式版本（semver），绑定固定 schema URL，发布后永不改变内容。缺省按 1.0.0（向后兼容，判据在 src/role-pack/validator.ts）"
     },
     "version": {
       "type": "string",
