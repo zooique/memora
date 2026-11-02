@@ -14,6 +14,12 @@
 
 - **只读闸覆盖自定义工具与四个内置读工具**（`READONLY-CUSTOM-1` / `READONLY-BUILTIN-1`）：`toolReadonly='readonly'` 的只读闸此前只查暴露面 `tools.list`（受 `toolWhitelist` 过滤）⇒ 宿主 `registerTool` 注册的自定义 / MCP 工具完全不在射程（未声明 `readonly` 的写工具照常执行）；同时 `read_skill` / `read_resource` / `list_resources` / `list_skills` 四个渐进披露读工具漏标 `readonly`，只读模式下被误拦。现闸改查「全部工具定义」——来源单点 `ToolExecutor.allToolDefinitions`（原 `builtinDefinitions` 更名，含内置全量 + 自定义，**不过白名单过滤**），四个读工具补 `readonly: true`。**行为变更**：注册自定义工具时未声明 `readonly` ⇒ 按契约缺省 false = 写操作，只读模式下**将被拒**（此前因闸查不到定义而放行）——这是修正不是回归；需在只读模式使用的自定义工具请显式声明 `readonly: true`。**为什么**：暴露面 ≠ 覆盖面，闸查可见面等于「工具不可见即不受约束」。**对消费者**：不使用 `toolReadonly='readonly'` 的代码零影响；`ToolExecutor.allToolDefinitions` 为公开 getter 更名（原 `builtinDefinitions` 未在 5.x 承诺面清单内，消费方若有引用需同步改名）。
 
+## [Unreleased] · 宿主
+
+### Changed（宿主）
+
+- **输入区控件统一为无边框 `.ctl` 基类；选中态由边框改为图标染色**（`UI-INPUT-CTL-1`）：skill / 模型触发器与润色 / 上传 / 暂停按钮改由单一 `.ctl` 基类提供形态（`border:none`、2px 圆角、hover 底色 + 前景提亮、`[aria-disabled]` 统一置灰），各自不再自写 `border` / `border-color` / `border-radius`；发送按钮（实心、不挂 `.ctl`）补 1px 紧凑焦点环（全局 2px 对 32px 方钮偏重）。**选中态**（已挂载 Skill）由「accent 边框」改由「常驻图标染色（`.ctl--on` 的 accent 前景）」承载——**不写常驻底色**：`--accent-bg-hover` 实际映射 `--vscode-list-hoverBackground`（中性灰），常驻灰底会让选中态「看起来一直处于 hover」且与 hover 同底，三态不可分。**为什么**：边框在输入区同时承担了两种互斥语义（常驻选中 vs 瞬时 hover），去边框后必须让「常驻」走常驻通道（颜色）、「瞬时」走瞬时通道（底色）。**对消费者**：纯样式，零协议 / 零 DOM 结构变化（仅给既有按钮与下拉触发器追加 `ctl` class，`buildDropdownHtml` 增可选 `triggerClass` 入参）。
+
 ## [5.4.0] · 2026-11-02
 
 ### Deprecated（内核）

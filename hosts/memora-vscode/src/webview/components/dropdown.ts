@@ -43,6 +43,8 @@ export function buildDropdownHtml(
   items: DropdownItem[],
   opts?: {
     extraClass?: string;
+    /** 触发器额外类名（如输入区 .ctl 去边框基类）；缺省只保留 .treedd__trigger */
+    triggerClass?: string;
     onSelect?: string;
     triggerLabel?: string;
     triggerTitle?: string;
@@ -50,6 +52,7 @@ export function buildDropdownHtml(
   },
 ): string {
   const extra = opts?.extraClass ? ` ${opts.extraClass}` : '';
+  const triggerExtra = opts?.triggerClass ? ` ${opts.triggerClass}` : '';
   // 实例级回调：data-on-select 指向全局回调名；缺省回退 __treeddOnSelect
   const onSelectAttr = opts?.onSelect ? ` data-on-select="${opts.onSelect}"` : '';
   // 默认触发器 = ellipsis 内联 SVG（icons.ts 唯一图标语言）。
@@ -69,7 +72,7 @@ export function buildDropdownHtml(
     .join('');
   return `
     <div class="treedd${extra}" data-treedd${onSelectAttr}>
-      <button class="treedd__trigger" title="${triggerTitle}" aria-label="${triggerAriaLabel}" aria-haspopup="menu">${triggerLabel}</button>
+      <button class="treedd__trigger${triggerExtra}" title="${triggerTitle}" aria-label="${triggerAriaLabel}" aria-haspopup="menu">${triggerLabel}</button>
       <div class="treedd__menu" role="menu">${itemHtml}</div>
     </div>`;
 }

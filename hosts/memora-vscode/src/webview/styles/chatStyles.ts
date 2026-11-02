@@ -1567,6 +1567,46 @@ export const chatStyles = `
     gap: var(--sp-2, 6px);
     min-width: 0;
   }
+  /* 输入区控件基类：无边框，状态用底色/颜色表达；控件自身禁止再带 border。
+   * 可点性 = hover 底色 + 前景色提亮；键盘焦点环压到 1px（全局 2px 对紧凑按钮偏重）。
+   * 禁用态只认 aria-disabled——「is-vision-off」等 class 是状态标记（测试/数据面），
+   * 视觉统一由本基类承载，避免「class 一套、aria 一套」两份判据。 */
+  .ctl {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--sq-xl, 28px);
+    min-height: var(--sq-lg, 24px);
+    border: none;
+    border-radius: var(--radius-sm, 2px);
+    background: transparent;
+    color: var(--text-secondary);
+    transition: color var(--dur-base), background var(--dur-base);
+  }
+  .ctl:hover {
+    background: var(--accent-bg-hover);
+    color: var(--text-primary);
+  }
+  /* 全局焦点环（tokens.ts）对紧凑控件偏重，这里收窄但保留可见性 */
+  .ctl:focus-visible {
+    outline: 1px solid var(--border-focus);
+    outline-offset: 1px;
+  }
+  .ctl[aria-disabled='true'] {
+    opacity: var(--op-3);
+  }
+  /* 置灰仍可点（如点击跳设置）：hover 只轻微提亮，不改变「弱」的语义 */
+  .ctl[aria-disabled='true']:hover {
+    opacity: 0.8;
+    color: var(--text-secondary);
+    background: transparent;
+  }
+  /* 选中/开启态：只染前景色，**不写常驻底色**——常驻标记必须由「常驻视觉」（图标染色）承载，
+   * 不能借用 hover 底色：--accent-bg-hover 实际映射 --vscode-list-hoverBackground（中性灰），
+   * 常驻灰底既「看起来一直处于 hover」，又与 hover 态同底 ⇒ 选中 / hover / 选中+hover 三态不可分。 */
+  .ctl--on {
+    color: var(--accent);
+  }
   /* Composer 当前角色徽章：胶囊 + accent 圆点，展示当前角色名让用户感知定位。
    * 可点跳转（2026-10-13，UX 拍板 A 方案）：点击 → open_settings_tab(roles) → host 打开设置面板「角色」选项卡；
    * 切换执行仍走角色视图「设为当前」→ roles_set_active → agent.switchRolePack 单路径，
@@ -1637,25 +1677,16 @@ export const chatStyles = `
     text-overflow: ellipsis;
     user-select: none;
   }
-  /* 润色按钮（图标化，弱化样式） */
+  /* 润色按钮（图标化，弱化样式）：边框/圆角/尺寸基座由 .ctl 提供，此处只留差异。
+   * hover 提亮到 accent（比通用 .ctl 的 --text-primary 更有指向性）。 */
   .polish-btn-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: var(--sq-xl, 28px);
     height: var(--sq-lg, 24px);
     padding: 0;
-    background: transparent;
-    border: var(--line-solid);
-    border-radius: var(--radius-sm, 2px);
-    color: var(--text-secondary, #9aa0a6);
     cursor: pointer;
-    transition: color var(--dur-base), background var(--dur-base), border-color var(--dur-base);
   }
   .polish-btn-icon:hover {
     color: var(--accent, #0e639c);
-    background: var(--accent-bg-hover);
-    border-color: var(--accent, #0e639c);
   }
   .polish-btn-icon:active { transform: scale(0.95); }
   .polish-btn-icon.loading {
@@ -1664,47 +1695,48 @@ export const chatStyles = `
   }
   .polish-btn-icon.loading svg { animation: spin var(--dur-spin) linear infinite; }
 
-  /* 上传图片按钮（IMG-2 Q3，常驻 D27）：与润色按钮同一图标化弱化范式；
-   * 置灰态 = is-vision-off（class + aria-disabled，不用 disabled——按钮保持可点跳设置）。
-   * 置灰语义走透明度而非换色：色值即契约，透明度只表达「可点但弱」。 */
+  /* 上传图片按钮（IMG-2 Q3，常驻 D27）：与润色按钮同一图标化弱化范式。
+   * 置灰态 = 「is-vision-off」（class + aria-disabled，不用 disabled——按钮保持可点跳设置）；
+   * 视觉弱化由 .ctl[aria-disabled='true'] 承载（class 只作状态标记，不再自写 opacity/border）。 */
   .image-attach-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: var(--sq-xl, 28px);
     height: var(--sq-lg, 24px);
     padding: 0;
-    background: transparent;
-    border: var(--line-solid);
-    border-radius: var(--radius-sm, 2px);
-    color: var(--text-secondary, #9aa0a6);
     cursor: pointer;
-    transition: color var(--dur-base), background var(--dur-base), border-color var(--dur-base);
   }
   .image-attach-btn:hover {
     color: var(--accent, #0e639c);
-    background: var(--accent-bg-hover);
-    border-color: var(--accent, #0e639c);
   }
   .image-attach-btn:active { transform: scale(0.95); }
-  .image-attach-btn.is-vision-off { opacity: var(--op-3); }
-  .image-attach-btn.is-vision-off:hover {
-    color: var(--text-secondary, #9aa0a6);
-    background: transparent;
-    border-color: var(--line-solid);
-    cursor: pointer;
-  }
 
   /* Skill 选择器胶囊差异（共用 .treedd--capsule 外壳，见 dropdown.ts）：
    * 单图标（⚡）触发器。胶囊底色/箭头/尺寸全复用 capsule；此处仅：
-   * 1) 选中态 accent 边框回显（.active 由 chatView toggle）；2) 菜单左对齐
-   * （左起触发器若沿用 capsule 的 right:0 会往左溢出面板边缘）；
-   * 3) 菜单内当前项高亮（icon-only 下，这是「我用了哪个 Skill」的唯一常驻入口）；
+   * 1) 选中态由触发器 .ctl--on（accent 图标染色）回显，不再靠边框；
+   * 2) 菜单左对齐（左起触发器若沿用 capsule 的 right:0 会往左溢出面板边缘）；
+   * 3) 菜单内当前项高亮（icon-only 下，这是菜单打开时「我用了哪个 Skill」的入口）；
    * 4) 触发器更窄（单图标不需要 200 兜底，引 tokens.ts 变体令牌，禁裸值）。 */
   .skill-picker { --dd-trigger-max-w: var(--dd-trigger-max-w-narrow); }
-  .skill-picker.active .treedd__trigger {
-    border-color: var(--accent, #0e639c);
-    color: var(--accent, #0e639c);
+  /* 输入区下拉触发器去边框（作用域仅限 .composer-left）：
+   * 刻意**不碰** dropdown.ts 的 .treedd--capsule 公共规则——历史切换等其他胶囊仍保留描边。
+   * 特异性 0,3,0 > 公共规则 0,2,0 ⇒ 不受 chatStyles→dropdownStyles 的注入顺序影响。 */
+  .composer-left .treedd--capsule .treedd__trigger {
+    border: none;
+    border-radius: var(--radius-sm, 2px);
+    background: transparent;
+  }
+  .composer-left .treedd--capsule .treedd__trigger:hover {
+    background: var(--accent-bg-hover);
+    color: var(--text-primary);
+  }
+  /* 选中态（Skill 已挂载）：常驻标记 = accent 图标染色（0,3,0 用于压过 capsule 公共 color 0,2,0），
+   * 不写常驻底色（理由同 .ctl--on）。hover 时补灰底并保住 accent 染色——
+   * 0,4,0 且位于 base .treedd__trigger:hover 之后，故不会被压回主色文字。 */
+  .composer-left .treedd--capsule .ctl--on {
+    color: var(--accent);
+  }
+  .composer-left .treedd--capsule .ctl--on:hover {
+    color: var(--accent);
+    background: var(--accent-bg-hover);
   }
   .skill-picker.treedd--capsule .treedd__menu { left: 0; right: auto; }
   .skill-picker .treedd__item.is-active {
@@ -2027,6 +2059,11 @@ export const chatStyles = `
     background: var(--accent-hover, #1177bb);
   }
   .send-btn-primary:active:not(.loading) { transform: scale(0.97); }
+  /* 实心主按钮无边框，只需与 .ctl 同款的紧凑焦点环（全局 2px 在此偏重） */
+  .send-btn-primary:focus-visible {
+    outline: 1px solid var(--border-focus);
+    outline-offset: 1px;
+  }
   /* 发送按钮三态图标：通过 data-icon 注入 SVG，用 display 切换显隐 */
   .send-btn-primary .send-icon,
   .send-btn-primary .stop-icon,
@@ -2053,18 +2090,14 @@ export const chatStyles = `
   .send-btn-primary:disabled { opacity: var(--op-3); cursor: not-allowed; }
 
   /* 暂停按钮：生成中与「停止」并列的软暂停入口。
-   * 次级控制，视觉弱化（同加载态灰调），与主发送按钮共列于右缘；
+   * 次级控制，视觉弱化（浅底 + 次级前景），与主发送按钮共列于右缘；
+   * display/居中/无边框/圆角由 .ctl 提供，此处只留尺寸与色值差异。
    * hidden 由 chatView.setStatus 控制——仅生成中暴露，暂停/空闲态收回。 */
   .pause-btn {
     flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: var(--sq-2xl, 32px);
     height: var(--sq-2xl, 32px);
     padding: 0;
-    border-radius: var(--radius-md, 6px);
-    border: var(--line-input);
     background: var(--surface-hover, rgba(128,128,128,.2));
     color: var(--text-secondary, #9aa0a6);
     cursor: pointer;

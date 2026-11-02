@@ -603,20 +603,24 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // 二态改由「形状 + 颜色」两个明确通道承载；实数经 scripts/count-token-refs.mjs 实锤。
     // 19：IMG-2 Q3 上传按钮置灰态 .image-attach-btn.is-vision-off opacity: var(--op-3)
     // +1（2026-10-28）——置灰 = 禁用态语义（op-3 的既有语义位），非「弱化装饰」。
-    'op-': 19,
+    'op-': 19, // 输入区控件去边框（2026-11-02）：.ctl[aria-disabled] 承接上传按钮置灰 opacity +1，
+    //            .image-attach-btn.is-vision-off 自写 opacity 退役 -1 ⇒ 净不变（19，机械实测同步）。
     'icon-': 17,
     'dot-': 22,
-    'line-': 83, // MEM-EVENT-2：工具行内命中块 border-top: var(--line-solid)（chatStyles）+1；
-    //             HOST-NAV-1：大纲条浮层 border: var(--line-input)（chatStyles）再 +1（2026-10-20）；
-    //             CTX-4 真机反馈：本轮注入回执行 .context-ring__injection 分隔线 +1（2026-10-21）；
+    'line-': 79, // 输入区控件去边框（2026-11-02）：润色按钮 border(-1)、上传按钮 border + 置灰 hover
+    //             border-color(-2)、暂停按钮 border(-1) 全量退役（边框改由 .ctl border:none 表达）
+    //             ⇒ 83→79，实数经 scripts/count-token-refs.mjs 实锤同步。
+    //             存量构成（未退役部分，按引入时间）：MEM-EVENT-2 工具行内命中块 border-top +1；
+    //             HOST-NAV-1 大纲条浮层 border +1（2026-10-20）；CTX-4 注入回执行分隔线 +1（2026-10-21）；
     //             指标空态指引 .activity-metrics-empty 分隔线 +1（2026-10-22）；
-    //             MCP 选项卡 mcpStyles（页头 border-bottom + 工具行 border-top）+2（2026-10-24）；
-    //             UI-TOAST-1：活动条浮层 .activity-bar.is-toast 描边 +1（2026-10-24）；
+    //             MCP 选项卡 mcpStyles 页头 + 工具行 +2（2026-10-24）；UI-TOAST-1 活动条浮层 +1（2026-10-24）；
     //             MCP-S1：远程标记 .mcp-server-tag 描边 +1（2026-10-25）；
     //             IMG-2：悬停预览浮层 .image-chip-tip 描边（var(--line-input)）+1（2026-10-28）；
     //             IMG-2 Q3：上传按钮 .image-attach-btn 描边 + hover 描边（var(--line-solid)）+2
-    //             （2026-10-28，实数经 scripts/count-token-refs.mjs 实锤同步）
-    'sq-': 49, // IMG-2 Q3：上传按钮 .image-attach-btn 尺寸 var(--sq-xl)/var(--sq-lg) +2
+    //             （2026-10-28，已于 2026-11-02 随「输入区控件去边框」按 -2 退役）
+    'sq-': 51, // 输入区控件去边框（2026-11-02）：.ctl 基类的 min-width/min-height 各引
+    //           var(--sq-xl)/var(--sq-lg) +2 ⇒ 49→51（机械实测同步）。
+    //           IMG-2 Q3：上传按钮 .image-attach-btn 尺寸 var(--sq-xl)/var(--sq-lg) +2
     //           （2026-10-28，实数经 scripts/count-token-refs.mjs 实锤同步）
     // 27→26：IMG-11 把 `.image-chip-tip__img` 的 max-width 由 var(--dim-2xl) 改为 100%
     //        （固定 320 会撑破已收窄的浮层容器，改「相对内容区收缩」）⇒ -1（2026-10-29，实数经

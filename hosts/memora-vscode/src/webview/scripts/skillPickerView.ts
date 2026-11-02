@@ -86,8 +86,8 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
   list.className = 'treedd__list';
 
   /** 更新选择器标签 + 盒内附件行 chip：
-   * 入口触发器 ⚡（accent 边框表示已启用）+ 菜单内 is-active 高亮 + title/aria 兜底；
-   * 输入盒内文字上方由 renderChip 呈现「名称 + × 可移除」的状态 chip。 */
+   * 入口触发器 ⚡（.ctl--on = accent 图标染色表示已启用）+ 菜单内 is-active 高亮
+   * + title/aria 兜底；输入盒内文字上方由 renderChip 呈现「名称 + × 可移除」的状态 chip。 */
   function syncLabel(): void {
     if (trigger) {
       if (currentSkill) {
@@ -98,7 +98,10 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
         trigger.setAttribute('title', '选择 Skill');
         trigger.setAttribute('aria-label', '选择 Skill');
       }
-      root?.classList.toggle('active', !!currentSkill);
+      const active = !!currentSkill;
+      // .ctl--on 归触发器（视觉），.active 归根容器（选择器级状态标记，供外部判读）
+      trigger.classList.toggle('ctl--on', active);
+      root?.classList.toggle('active', active);
     }
     if (menu) {
       menu.querySelectorAll<HTMLElement>('.treedd__item').forEach((it) => {

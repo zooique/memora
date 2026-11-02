@@ -4373,16 +4373,17 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           <!-- 左侧功能群：Skill + 模型选择 + 润色（次级功能，弱化展示） -->
           <div class="composer-left">
             <!-- Skill 选择器：单图标（bolt SVG，图标语言唯一 = icons.ts 柔和线条）胶囊触发器，与模型选择器共用 capsule 变体；选择后作为 system prompt 传给 LLM。
-                 Skill 名不常显（节省窄窗横向空间），当前项由菜单内 is-active 高亮 + 触发器 accent 边框 + title 兜底 -->
-            ${buildDropdownHtml([], { extraClass: 'skill-picker treedd--capsule', onSelect: '__skillPickerOnSelect', triggerLabel: '<span class="btn-icon" data-icon="bolt"></span>', triggerTitle: '选择 Skill', triggerAriaLabel: '选择 Skill' })}
-            <!-- 模型选择器：共用 capsule 变体，名称省略/菜单尺寸由 .model-picker 差异定制 -->
-            ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', onSelect: '__modelPickerOnSelect', triggerLabel: '选择模型', triggerTitle: '选择模型', triggerAriaLabel: '选择模型' })}
-            <!-- 文本润色按钮：图标化，降低视觉权重 -->
-            <button id="polishBtn" class="polish-btn-icon" title="润色输入内容" aria-label="润色">
+                 Skill 名不常显（节省窄窗横向空间），当前项由触发器 .ctl--on（accent 图标染色）、菜单内 is-active 高亮、输入盒内 skill chip 与 title 兜底
+                 触发器带 .ctl（输入区无边框基类），边框由 .composer-left 作用域规则清零 -->
+            ${buildDropdownHtml([], { extraClass: 'skill-picker treedd--capsule', triggerClass: 'ctl', onSelect: '__skillPickerOnSelect', triggerLabel: '<span class="btn-icon" data-icon="bolt"></span>', triggerTitle: '选择 Skill', triggerAriaLabel: '选择 Skill' })}
+            <!-- 模型选择器：共用 capsule 变体，名称省略/菜单尺寸由 .model-picker 差异定制；触发器带 .ctl 去边框 -->
+            ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', triggerClass: 'ctl', onSelect: '__modelPickerOnSelect', triggerLabel: '选择模型', triggerTitle: '选择模型', triggerAriaLabel: '选择模型' })}
+            <!-- 文本润色按钮：图标化，降低视觉权重（.ctl 无边框基类） -->
+            <button id="polishBtn" class="polish-btn-icon ctl" title="润色输入内容" aria-label="润色">
               <span class="btn-icon" data-icon="edit"></span>
             </button>
             <!-- 上传图片按钮（常驻，D27）：有视觉能力→发 image_pick_request；未声明→置灰可点跳设置。绑定/状态归 imageCapture，此处只出骨架 -->
-            <button id="imageAttachBtn" class="image-attach-btn is-vision-off" aria-disabled="true" title="当前模型未开启图片输入——点击前往设置开启" aria-label="添加图片">
+            <button id="imageAttachBtn" class="image-attach-btn is-vision-off ctl" aria-disabled="true" title="当前模型未开启图片输入——点击前往设置开启" aria-label="添加图片">
               <span class="btn-icon" data-icon="paperclip"></span>
             </button>
           </div>
@@ -4390,8 +4391,8 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
                + 生成中另行暴露「暂停」软控制（Gap A），与「停止」并列、可经「继续」恢复 -->
           <div class="composer-right">
             <!-- 暂停按钮（Gap A）：仅生成中显隐（setStatus 控制 hidden），软暂停当前 Agent 执行。
-                 「停止」丢弃本次流、「暂停」落检查点可恢复，二者语义区分、视觉同级弱化展示 -->
-            <button id="pauseBtn" class="pause-btn" title="暂停生成" aria-label="暂停生成" hidden>
+                 「停止」丢弃本次流、「暂停」落检查点可恢复，二者语义区分、视觉同级弱化展示（.ctl 无边框基类） -->
+            <button id="pauseBtn" class="pause-btn ctl" title="暂停生成" aria-label="暂停生成" hidden>
               <span class="btn-icon" data-icon="pause"></span>
             </button>
             <button id="send" class="send-btn-primary" title="发送 (Enter)" aria-label="发送">
