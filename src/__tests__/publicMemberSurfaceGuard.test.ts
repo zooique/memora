@@ -1177,6 +1177,14 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       'loadExtraDir',
       'readResource',
       'register',
+      // 🔴 2026-11-02 USER-SKILL-RESYNC-1（新成员定性 = 真能力，非 no-op 谎报）：
+      //   `reload`（覆写基类，统一重扫 configDir + 已登记用户目录）与 `resyncUserSkills`
+      //   （设置页「刷新技能」的唯一内核落点，形态对齐 RolePackManager.resyncUserPacks）。
+      //   缺此两者时，用户目录新增文件后不重启宿主永不生效（「建了不生效」的真伤）。
+      //   真消费者 = 宿主 settingsPanel.refreshSkills（`agent.skills.resyncUserSkills()`），
+      //   由宿主侧 vitest 用例守住；内核侧由 skillManager.test.ts 的重扫用例守住。
+      'reload',
+      'resyncUserSkills',
       'setDisabledSkills',
       'validateFile',
     ],

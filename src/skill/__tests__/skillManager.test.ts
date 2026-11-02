@@ -16,7 +16,7 @@ import {
   L1_COMPRESSED_THRESHOLD,
   L1_LIST_TOOL_THRESHOLD,
 } from '@/skill/skillManager.js';
-import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { writeFileSync, mkdirSync, rmSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -859,6 +859,87 @@ describe('SkillManager · 补充分支路径', () => {
       expect(manager.get('dup')?.content).toBe('用户版本');
       // 无同名双存：同名技能仅一个条目
       expect(manager.list.filter((s) => s.name === 'dup')).toHaveLength(1);
+    });
+  });
+
+  describe('resyncUserSkills（用户目录重扫对账 · 设置页刷新技能的落点）', () => {
+    /** 建一个带内置技能的管理器，并注入了用户目录（用户目录初始仅 extra.md） */
+    const setupManager = async (): Promise<{ manager: SkillManager; extraDir: string }> => {
+      createSkillFile(skillsDir, 'builtin.md', '---\nname: builtin\ndescription: d\n---\n内置正文');
+      const extraDir = join(testDir, 'user-skills');
+      mkdirSync(extraDir, { recursive: true });
+      createSkillFile(extraDir, 'extra.md', '---\nname: extra\ndescription: e\n---\n用户额外技能');
+      const manager = new SkillManager(testDir);
+      await manager.load();
+      await manager.loadExtraDir(extraDir);
+      return { manager, extraDir };
+    };
+
+    it('新增用户技能文件后重扫进入池（added 净增，无需 Reload Window）', async () => {
+      const { manager, extraDir } = await setupManager();
+      expect(manager.get('added')).toBeNull();
+
+      // 模拟「用户在 <globalStorage>/skills/ 手工放了一个新 .md」
+      createSkillFile(extraDir, 'added.md', '---\nname: added\ndescription: a\n---\n新增正文');
+
+      const report = await manager.resyncUserSkills();
+      expect(report).toEqual({ added: 1, removed: [], updated: ['extra'] });
+      expect(manager.get('added')?.content).toBe('新增正文');
+      // 既有用户技能与内置技能均不丢
+      expect(manager.get('extra')).not.toBeNull();
+      expect(manager.get('builtin')).not.toBeNull();
+    });
+
+    it('删除用户技能文件后重扫从池中消失（removed 回报真消失名）', async () => {
+      const { manager, extraDir } = await setupManager();
+      expect(manager.get('extra')?.content).toBe('用户额外技能');
+
+      unlinkSync(join(extraDir, 'extra.md'));
+
+      const report = await manager.resyncUserSkills();
+      expect(report.removed).toEqual(['extra']);
+      expect(report.updated).toEqual([]);
+      expect(report.added).toBe(0);
+      expect(manager.get('extra')).toBeNull();
+    });
+
+    it('同名用户技能内容修改后重扫以磁盘新内容为准（updated 回报）', async () => {
+      const { manager, extraDir } = await setupManager();
+
+      createSkillFile(extraDir, 'extra.md', '---\nname: extra\ndescription: e2\n---\n改后正文');
+
+      const report = await manager.resyncUserSkills();
+      expect(report.updated).toEqual(['extra']);
+      expect(report.removed).toEqual([]);
+      expect(report.added).toBe(0);
+      expect(manager.get('extra')?.content).toBe('改后正文');
+      expect(manager.get('extra')?.description).toBe('e2');
+    });
+
+    it('重扫不得误伤 register() 注入的运行时技能（只摘除用户目录项）', async () => {
+      const { manager } = await setupManager();
+      manager.register({
+        name: 'runtime-only',
+        content: '运行时正文',
+        description: '运行时注入',
+        layer: 'agent',
+        filePath: '',
+      });
+
+      const report = await manager.resyncUserSkills();
+      expect(report.removed).toEqual([]);
+      expect(manager.get('runtime-only')?.content).toBe('运行时正文');
+    });
+
+    it('reload() 统一重扫 configDir + 已登记用户目录（不依赖宿主再传路径）', async () => {
+      const { manager, extraDir } = await setupManager();
+      createSkillFile(extraDir, 'late.md', '---\nname: late\ndescription: l\n---\n后加正文');
+
+      // 不调 loadExtraDir —— 路径来源已由管理器自身持有，reload 自行重扫
+      await manager.reload();
+      expect(manager.get('late')?.content).toBe('后加正文');
+      // 用户覆盖内置的语义在 reload 后仍成立
+      expect(manager.get('extra')?.content).toBe('用户额外技能');
     });
   });
 

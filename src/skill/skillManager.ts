@@ -50,6 +50,23 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   private readonly userOverrides = new Set<string>();
 
   /**
+   * 用户技能目录清单（loadExtraDir 注入时登记）。
+   *
+   * 记账目的：`reload()` 必须能**统一重扫** configDir + 这些目录——若只靠宿主在刷新时
+   * 再传一次路径，就会出现「装配期一条路径、刷新时另一条路径」的两份来源（同一目录
+   * 两个真源，漏传即静默失效）。登记在此后，宿主只需调窄口 `resyncUserSkills()`。
+   */
+  private readonly extraDirs = new Set<string>();
+
+  /**
+   * 来自用户目录的技能名集合（loadExtraDir 注入成功者）。
+   *
+   * 与 runtimeNames 的区别：runtimeNames 还包含 `register()` 注入的运行时技能，reload
+   * 必须保留它们；只有本集合里的名字才该在重扫时先摘除再按磁盘重建。
+   */
+  private readonly userSkillNames = new Set<string>();
+
+  /**
    * 禁用的技能名集合：宿主配置形态启停。命中者
    * get() 返回 null（read_skill/L3 全链路经 get 短路）+ buildSkillList 不枚举。
    * list 快照保持完整——宿主 UI 依据同名设置标注「已禁用」徽章（对 LLM 静默）。
@@ -76,6 +93,60 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    */
   async load(): Promise<number> {
     return this.loadItems();
+  }
+
+  /**
+   * 重载：configDir 与全部已登记的用户技能目录**统一重扫**（重扫真理源单点）。
+   *
+   * 与基类 reload 的差异只在一处：基类只扫 configDir 并保留运行时注入项，本类还需把
+   * 用户目录的磁盘变化重新读进来（新增 / 改名 / 删除 / 内容修改）。执行序：
+   *   1. 摘除全部用户目录注入项（`userSkillNames`；register() 注入项不动，仍由基类保留）；
+   *   2. 清空覆盖记账（否则用户版会在基类扫描后把内置同名项挤掉，且新目录内容无法重建）；
+   *   3. `super.reload()` 重扫 configDir；
+   *   4. 逐目录 `loadExtraDir()` 重扫用户目录（覆盖语义由该方法自身处理）。
+   *
+   * @returns 重载后的技能总数
+   */
+  override async reload(): Promise<number> {
+    for (const name of this.userSkillNames) this.deleteItem(name);
+    this.userSkillNames.clear();
+    this.userOverrides.clear();
+    await super.reload();
+    for (const dir of this.extraDirs) {
+      await this.loadExtraDir(dir);
+    }
+    return this.items.length;
+  }
+
+  /**
+   * 重扫用户技能目录并与内存池对账（设置页「刷新技能」的唯一内核落点）。
+   *
+   * 形态对齐 `RolePackManager.resyncUserPacks`：先摘除本管理器持有的用户注入项，
+   * 再统一重扫（configDir + extraDirs），最后取**净差**回报。
+   * 与角色包版本的差异：技能没有「激活态」，故无 activeFallback。
+   *
+   * @returns added 净新增数；removed 真消失的技能名；updated 同名重注入的技能名
+   */
+  async resyncUserSkills(): Promise<{ added: number; removed: string[]; updated: string[] }> {
+    // 摘除前名单 = 对账基线之一（deleteItem 同时注销运行时记账）
+    const beforeNames = [...this.userSkillNames];
+    for (const name of beforeNames) this.deleteItem(name);
+    this.userSkillNames.clear();
+    this.userOverrides.clear();
+    // 摘除后的池 = 净差基线（register() 注入项仍在，重扫不触碰它们）
+    const baseline = new Set(this.items.map((s) => s.name));
+    await super.reload();
+    for (const dir of this.extraDirs) {
+      await this.loadExtraDir(dir);
+    }
+    const finalNames = new Set(this.items.map((s) => s.name));
+    const removed = beforeNames.filter((name) => !finalNames.has(name));
+    const updated = beforeNames.filter((name) => finalNames.has(name));
+    const added = [...finalNames].filter(
+      (name) => !baseline.has(name) && !beforeNames.includes(name),
+    ).length;
+    logger.info({ added, removed, updated }, '用户技能目录已重扫对账');
+    return { added, removed, updated };
   }
 
   // ── 公共方法 ──────────────────────────────────────
@@ -348,11 +419,13 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * @returns 加载的技能数量
    */
   async loadExtraDir(dir: string): Promise<number> {
+    // 登记目录：reload/resync 统一重扫依赖这份清单（禁宿主在刷新时再传第二份路径）
+    this.extraDirs.add(dir);
     const entries = await scanMarkdownDir(dir);
     let count = 0;
     for (const entry of entries) {
-      // 已是用户覆盖项（本会话此前注入过）：幂等跳过，避免同名双存重复注入
-      if (this.userOverrides.has(entry.name)) continue;
+      // 已注入过的用户项（幂等）：避免同名双存重复注入
+      if (this.userSkillNames.has(entry.name) || this.userOverrides.has(entry.name)) continue;
 
       const existingIdx = this.items.findIndex((s) => s.name === entry.name);
       const skill = await this.createEntry(entry);
@@ -368,6 +441,7 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
         logger.info({ name: entry.name }, '用户技能覆盖内置技能');
       }
       this.registerRuntimeItem(skill);
+      this.userSkillNames.add(entry.name);
       count++;
     }
     logger.info({ count, dir }, '用户技能加载完成');
@@ -390,6 +464,9 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    */
   protected override onAfterLoad(): void {
     this.userOverrides.clear();
+    this.userSkillNames.clear();
+    // 目录登记与 items 同寿命：load() 整体替换 items 后须由宿主重新 loadExtraDir 注入
+    this.extraDirs.clear();
   }
 
   protected async createEntry(entry: ScannedMarkdownEntry): Promise<SkillEntry> {
