@@ -14,6 +14,7 @@
 
 - **技能用户目录真重扫**（`SKILL-REFRESH-1`）：`SkillManager` 此前只在装配期经 `loadExtraDir` 读一遍用户技能目录，`reload()` 只重扫 `configDir` ⇒ 用户往 `<globalStorage>/skills/` 手工放新技能后，除 Reload Window 外没有任何重扫入口。现管理器自持已登记的用户目录（`extraDirs`），覆写 `reload()` 统一重扫「`configDir` + 已登记用户目录」；用户目录注入项（`userSkillNames`）与 `register()` 运行时项分开记账，重扫只摘前者，不误删运行时技能。**为什么**：若刷新时由宿主再传一次路径，就会形成「装配期一份、刷新期一份」的路径双源，第二个入口漏传即静默失效。**对消费者**：零签名变更；`loadExtraDir` 语义不变（只新增目录登记，不新增扫描源）。
 - **新增公开窄口 `resyncUserSkills()`**（`SKILL-REFRESH-1` / `SKILL-CREATE-1`）：重扫已登记的用户技能目录并回报净差 `{added, removed, updated}`（形态对齐 `RolePackManager.resyncUserPacks`），供设置页刷新与新建技能后立即生效。**对消费者**：纯新增成员，零既有签名变更。
+- **技能 / 角色包支持项目级来源，优先级项目 > 用户 > 内置**（`ASSET-PROJECT-SCOPE-1`）：`loadExtraDir` 的额外目录由「用户级」扩为**三段**——内置（`configDir/skills`）→ 用户级（`globalStorage/skills`）→ 项目级（`<workspace>/.memora/skills`）；角色包侧同构（内置 → 用户 → 项目）。**覆盖由加载顺序决定**（先加载者被后加载者覆盖），档位 `SkillExtraTier` / `RolePackExtraTier` 只用于记账与「顺序写反」守卫。技能侧项目覆盖单独记 `projectOverrides`，不混入 `userOverrides`；角色包侧同名处置经 `ExtraDirLoadResult.conflicts` 返回并可经 `lastExtraConflicts` 读取（胜出 / 被跳过均留日志，不再静默）。目录不存在时扫描返回空数组（首次使用前未建目录不报错）。**对消费者**：`loadExtraDir(dir, tier?)` 新增可选第二参（缺省 `'user'`，既有调用零改动）；新增 getter `userOverrideNames` / `projectOverrideNames` / `lastExtraConflicts`。
 
 ### Fixed（内核）
 
@@ -21,7 +22,13 @@
 
 ## [Unreleased] · 宿主
 
+### Added（宿主）
+
+- **项目级资产注入与工作区信任门**（`ASSET-TRUST-GATE-1`）：项目级技能 / 角色包目录取自 `workspaceFolders[0]` 的 `.memora/`（工作区数据目录单点 `resolveProjectDataDir`），**仅在 `vscode.workspace.isTrusted === true` 时注入**；未受信任时状态栏显示 `$(shield) Memora：项目级资产未启用` 并指向 `workbench.action.manageTrust`，装配期也不向 Agent 透传项目目录。授予信任由 `onDidGrantWorkspaceTrust` 监听：立即注入 `'project'` 档位并触发技能 / 角色包重扫 + 刷新技能列表，**无需重启窗口**。**限制**：多根工作区只加载第一个文件夹的项目级资产。**对消费者**：未信任工作区行为零变化（仍只有内置 + 用户级）；已信任工作区新增项目级来源，同名时按加载顺序覆盖。
+
 ### Changed（宿主）
+
+- **角色包同名策略反转：由「内置优先、用户静默跳过」改为项目 > 用户 > 内置**（`ASSET-PROJECT-SCOPE-1`）：此前额外目录（用户级）的同名角色包会被**静默跳过**，内置包恒胜；现按加载顺序覆盖（内置 → 用户 → 项目，后加载者胜），同名胜出 / 被跳过都会留**可见痕迹**（`logger.warn/info` + `loadExtraDir` 返回值 `conflicts` + `lastExtraConflicts`）。**这是面向用户的可见行为变化**：原先被静默忽略的用户同名包现在会接管内置包；设置页角色包来源徽章新增「项目」，项目级包可覆盖用户级与内置。**对消费者**：依赖「用户同名包不生效」旧行为的用户需重命名该包；技能侧同名策略不变（仍允许覆盖，两翼方向差异见 `SKILL-CREATE-1` 补注）。
 
 - **设置页「刷新技能」改为真重扫**（`SKILL-REFRESH-1`）：此前只重读内核内存快照，用户新增技能文件必须 Reload Window 才可见；现刷新走 `agent.skills.resyncUserSkills()` 后重推技能列表（`userAssetRefresh.ts` 薄委托，技能 / 角色包两个刷新按钮共用同一套净差文案）。**对消费者**：点刷新即可看到手工投放或新建的技能，无需重启窗口。
 
