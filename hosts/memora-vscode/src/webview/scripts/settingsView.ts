@@ -281,14 +281,6 @@ function createSkillsView({
     expanded.clear();
   });
 
-  // 新建技能按钮事件：只发消息，写盘与校验全在宿主命令处理器（webview 不写第二份）
-  const createBtn = root.querySelector<HTMLButtonElement>('#btnCreateSkill');
-  if (createBtn) {
-    createBtn.addEventListener('click', () => {
-      vscode.postMessage({ type: 'skills_create_request' });
-    });
-  }
-
   // 打开目录按钮事件
   if (openDirBtn) {
     openDirBtn.addEventListener('click', () => {

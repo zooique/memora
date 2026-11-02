@@ -1,15 +1,10 @@
 /**
- * 设置面板「用户资产创建 / 重扫」消息路由回归测试
+ * 设置面板「用户资产刷新」消息路由回归测试
  *
  * 被测不变量：
- *   1. `skills_create_request` / `roles_create_request` 只做**路由**：各调用一次对应命令
- *      （命令处理器是唯一实现，webview 侧零写盘）；
- *   2. `skills_refresh` 触发内核**真实重扫**（`resyncUserSkills`），不是「读内存快照」的
- *      `skills_load`——这是「建了不生效」的修复点。
- *
- * 「两个入口同一实现」的断言分两半：
- *   - 本文件：webview 消息 → `executeCommand('memora.createSkill')` 恰好一次、面板零 writeFile；
- *   - `createUserSkill.test.ts` / `createRolePack.test.ts`：命令处理器内部 `writeFile` 恰好一次。
+ *   `skills_refresh` 触发内核**真实重扫**（`resyncUserSkills`），不是「读内存快照」的
+ *   `skills_load`——这是「建了不生效」的修复点，也是表单新建入口剪除后唯一保留的用户资产
+ *   webview 通道（创建能力改由「对话写入 + 压缩包导入」承接，见台账 UI-CREATE-PRUNE-1）。
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -51,7 +46,6 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 import type { Agent } from '@zooique/memora';
 import { MemoraSettingsPanel } from '../panels/settingsPanel.js';
-import { CREATE_ROLE_PACK_COMMAND, CREATE_SKILL_COMMAND } from '../../shared/constants.js';
 
 /** 技能目录（绝对路径） */
 const SKILLS_DIR = resolve(process.cwd(), 'tmp-panel-skills');
@@ -106,26 +100,6 @@ function dispatch(provider: MemoraSettingsPanel, msg: unknown): Promise<void> {
 beforeEach(() => {
   vsMock.executeCommand.mockReset();
   writeFileMock.mockClear();
-});
-
-describe('新建入口只路由到命令处理器（webview 零写盘）', () => {
-  it('skills_create_request ⇒ executeCommand(memora.createSkill) 一次，且不写盘', async () => {
-    const { provider } = setup();
-    await dispatch(provider, { type: 'skills_create_request' });
-
-    expect(vsMock.executeCommand).toHaveBeenCalledTimes(1);
-    expect(vsMock.executeCommand.mock.calls[0][0]).toBe(CREATE_SKILL_COMMAND);
-    expect(writeFileMock).not.toHaveBeenCalled();
-  });
-
-  it('roles_create_request ⇒ executeCommand(memora.createRolePack) 一次，且不写盘', async () => {
-    const { provider } = setup();
-    await dispatch(provider, { type: 'roles_create_request' });
-
-    expect(vsMock.executeCommand).toHaveBeenCalledTimes(1);
-    expect(vsMock.executeCommand.mock.calls[0][0]).toBe(CREATE_ROLE_PACK_COMMAND);
-    expect(writeFileMock).not.toHaveBeenCalled();
-  });
 });
 
 describe('技能刷新 = 真实重扫（不是读内存快照）', () => {

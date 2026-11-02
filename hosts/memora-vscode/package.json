@@ -89,16 +89,6 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "memora.createSkill",
-        "title": "%command.createSkill.title%",
-        "icon": "$(add)"
-      },
-      {
-        "command": "memora.createRolePack",
-        "title": "%command.createRolePack.title%",
-        "icon": "$(add)"
-      },
-      {
         "command": "memora.registerWork",
         "title": "%command.registerWork.title%",
         "icon": "$(file-text)"

@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * IPC 消息类型治理阈值 = 137（判据类计数：数字 + 时点 + 重算指引，缺一即裸快照）
+ * IPC 消息类型治理阈值 = 135（判据类计数：数字 + 时点 + 重算指引，缺一即裸快照）
  *
  * 沿革：原 130 = 用户口径治理评估触发线（sprite 侧亦从 150 收紧至 130）。
  * 2026-10-28 IMG-2 走「治理评估扩位 +2」——新增 `image_ingest`（W→E）与
@@ -32,11 +32,14 @@ import { join } from 'node:path';
  * 2026-11-02 用户级资产创建 +3——新增 `skills_refresh` / `skills_create_request`（W→E）
  * 与 `roles_create_request`（W→E）：前者把「刷新技能」从读内存快照改为真实重扫，
  * 后者两入口（设置页按钮 / 命令面板）各只发一条消息、写盘统一走命令处理器。
+ * 2026-11-02 同日剪枝 −2（`UI-CREATE-PRUNE-1`）：表单新建入口属错位设计，两条 create
+ * 消息随按钮 / 命令一起删除（`skills_refresh` 保留）⇒ 类型数回退，阈值同步回退。
  * ⚠️ 本阈值每次协议治理重估即过期：引用前先跑本测试取当前类型集计数，
  * 按「阈值 = 当前计数 + 1 余量」口径重算
- * （2026-10-28 实测 131 ⇒ 132，Q3 后 133 ⇒ 134；2026-11-02 实测 136 ⇒ 137）。
+ * （2026-10-28 实测 131 ⇒ 132，Q3 后 133 ⇒ 134；2026-11-02 增三条后 136 ⇒ 137，
+ *  同日剪枝后实测 134 ⇒ 135）。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 137;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 135;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

@@ -6,13 +6,13 @@
  *   2. 即便名字净化被绕过，`resolveInsideDir` 仍须把「最终路径逃出用户目录」拦下
  *      （两道防线独立生效，任一道都不是装饰）。
  *
- * 为什么钉死：两条判据同时是两个「新建」命令的写盘前置，写错任一条都能把文件写到
- * globalStorage 之外（且不会有任何测试之外的报警）。
+ * 为什么钉死：这条判据是所有「写入用户目录」入口的前置（压缩包导入 / 对话写入的安装窄口），
+ * 写错任一条都能把文件写到 globalStorage 之外（且不会有任何测试之外的报警）。
  */
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { resolve, sep, join } from 'node:path';
-import { USER_ASSET_NAME_RE, resolveInsideDir, sanitizeAssetName } from '../userAssetPath.js';
+import { USER_ASSET_NAME_RE, resolveInsideDir, sanitizeAssetName } from '../userAssets/path.js';
 
 /** 测试用用户目录根（绝对路径；与真实 globalStorage 无关） */
 const ROOT = resolve(process.cwd(), 'user-assets-root');

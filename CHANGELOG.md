@@ -21,10 +21,6 @@
 
 ## [Unreleased] · 宿主
 
-### Added（宿主）
-
-- **新建用户技能 / 用户角色包命令**（`SKILL-CREATE-1` / `ROLEPACK-CREATE-1`）：新增 `memora.createSkill` / `memora.createRolePack`，命令面板与设置页按钮双入口、**单一写盘实现**（webview 只发协议消息，宿主同一命令处理器落盘）。技能写 `<globalStorage>/skills/<name>.md`：名字经白名单净化 + 目录逃逸断言，`description` 必填（缺了会被从模型可见清单过滤），同名用户文件拒绝、同名内置走「继续覆盖」确认；角色包复用内置模板写 `<globalStorage>/role-packs/<name>/`，`manifest.json` 复用内核 `validateManifestText`，`formatVersion` 缺省显式写 `1.0.0`，同名内置硬拒绝（否则创建成功但永不装载）。写后 `resyncUserSkills` / `resyncUserPacks` 并回显实际路径 + 「打开所在目录」。**对消费者**：纯新增命令与协议消息（`skills_refresh` / `skills_create_request` / `roles_create_request`），既有命令零变化。
-
 ### Changed（宿主）
 
 - **设置页「刷新技能」改为真重扫**（`SKILL-REFRESH-1`）：此前只重读内核内存快照，用户新增技能文件必须 Reload Window 才可见；现刷新走 `agent.skills.resyncUserSkills()` 后重推技能列表（`userAssetRefresh.ts` 薄委托，技能 / 角色包两个刷新按钮共用同一套净差文案）。**对消费者**：点刷新即可看到手工投放或新建的技能，无需重启窗口。

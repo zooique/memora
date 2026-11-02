@@ -83,8 +83,6 @@ import {
   ACTIVE_ROLE_PACK_KEY,
   CONFIRM_WRITES_KEY,
   CONFIRM_SCRIPTS_KEY,
-  CREATE_ROLE_PACK_COMMAND,
-  CREATE_SKILL_COMMAND,
   ROLE_PACK_TEAMS_KEY,
   MEMORY_RECYCLE_RETENTION_DAYS,
 } from '../../shared/constants.js';
@@ -331,10 +329,6 @@ export class MemoraSettingsPanel {
       await this.refreshRolePacks();
       return;
     }
-    if (msg.type === 'roles_create_request') {
-      void vscode.commands.executeCommand(CREATE_ROLE_PACK_COMMAND);
-      return;
-    }
     // 角色配置详情：读 manifest 原文 strategy 段回发（初值真源 = 原文，禁读装配值）
     if (msg.type === 'roles_detail') {
       await this.handleRolesDetail(msg.name);
@@ -482,10 +476,6 @@ export class MemoraSettingsPanel {
     }
     if (msg.type === 'skills_refresh') {
       await this.refreshSkills();
-      return;
-    }
-    if (msg.type === 'skills_create_request') {
-      void vscode.commands.executeCommand(CREATE_SKILL_COMMAND);
       return;
     }
     // L2 渐进披露：按需读取技能正文（不预装载，用户点击展开时才读取）
