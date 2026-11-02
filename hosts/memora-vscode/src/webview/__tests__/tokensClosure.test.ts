@@ -692,3 +692,57 @@ describe('浮层宽度必须带视口兜底（IMG-11 回归锁）', () => {
     expect(block).not.toMatch(/max-width:\s*var\(--dim-2xl\);/);
   });
 });
+
+/**
+ * 输入区胶囊触发器边框单一取值守卫（UI-CTL-BORDER-1 · 2026-11-02）
+ *
+ * CSS 无渲染测试 ⇒「同一属性两处判据」这类回归只能靠**源码文本**守住。本组钉两件事：
+ *   ① 公共规则按变量取值：dropdown.ts 的 `.treedd--capsule .treedd__trigger` 消费
+ *      `var(--dd-trigger-border, var(--line-input))`，输入区只改**取值**
+ *      （chatStyles 的 `.composer-left` 声明 `--dd-trigger-border: none`）；
+ *   ② 输入区作用域内**不得再长出**针对胶囊触发器的 border 覆盖规则——那正是被清掉的
+ *      第二落点；复写后两处判据会随特异性 / 注入顺序重新分叉，且无任何渲染测试会红。
+ *
+ * ⚠️ 刻意只判 `.composer-left` 范围的触发器：`.session-history .treedd__trigger`
+ * 的 `border: none` 是另一族（历史切换胶囊）的正当形态，全量禁 border 会假红。
+ */
+describe('输入区胶囊触发器边框单一取值（UI-CTL-BORDER-1）', () => {
+  const dropdownStyles = (): string => readFileSync(join(STYLES_DIR, 'dropdown.ts'), 'utf8');
+  const chatCss = (): string => readFileSync(join(STYLES_DIR, 'chatStyles.ts'), 'utf8');
+
+  /** 取首个 `selector {` 到收尾 `}` 的原文（本层规则无嵌套，够用） */
+  function blockOfIn(css: string, selector: string): string {
+    const start = css.indexOf(`${selector} {`);
+    expect(start, `样式块 ${selector} 未找到（选择器改名？同步本守卫）`).toBeGreaterThan(-1);
+    return css.slice(start, css.indexOf('}', start));
+  }
+
+  it('dropdown 公共规则按变量取值（不得退回写死的 var(--line-input)）', () => {
+    const block = blockOfIn(dropdownStyles(), '.treedd--capsule .treedd__trigger');
+    expect(block).toContain('border: var(--dd-trigger-border, var(--line-input));');
+    // 反向断言：退回写死单一取值 ⇒ 输入区只能再写覆盖规则（第二落点复活）
+    expect(block).not.toMatch(/border:\s*var\(--line-input\);/);
+  });
+
+  it('输入区只改取值：.composer-left 声明变量，且无 border 覆盖规则', () => {
+    // ① 取值声明必须落在输入区作用域（不散写到别处，也不靠选择器覆盖）
+    expect(blockOfIn(chatCss(), '.composer-left')).toContain('--dd-trigger-border: none;');
+    // ② 扫全部规则块：选择器同时命中 .composer-left 与触发器 ⇒ 体内不得出现 border 声明
+    const css = chatCss().replace(/\/\*[\s\S]*?\*\//g, '');
+    const leaks: string[] = [];
+    for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selector = (m[1] ?? '').trim();
+      // 触发器结尾可直接跟伪类（:hover 等）；其余属性组合不在此判（归属别的组件）
+      const isTrigger = /\.treedd__trigger(?::[a-z-]+(?:\([^)]*\))?)*\s*$/u.test(selector);
+      if (!selector.includes('.composer-left') || !isTrigger) continue;
+      // border-radius 不算本族开关（圆角仍由输入区显式声明，故从 border 族里排除）
+      if (/\bborder(?:-(?:color|width|style|top|right|bottom|left))?\s*:/u.test(m[2] ?? '')) {
+        leaks.push(selector);
+      }
+    }
+    expect(
+      leaks,
+      `输入区触发器又长出 border 覆盖规则（第二落点回归）：\n${leaks.join('\n')}`,
+    ).toEqual([]);
+  });
+});

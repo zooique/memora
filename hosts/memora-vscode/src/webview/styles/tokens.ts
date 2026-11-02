@@ -340,6 +340,7 @@ export const tokens = `
 
     /* === L3 组件令牌：下拉胶囊尺寸（dropdown.ts 引用） === */
     --dd-trigger-max-w: 200px;   /* 胶囊触发器最大宽（超长省略兜底） */
+    --dd-trigger-border: var(--line-input); /* 胶囊触发器描边（输入区覆写 none，见 chatStyles .composer-left） */
     --dd-menu-min-w: 160px;      /* 胶囊菜单最小宽 */
     --dd-menu-max-w: 240px;      /* 胶囊菜单最大宽 */
 

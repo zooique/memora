@@ -1551,6 +1551,10 @@ export const chatStyles = `
     gap: var(--sp-2, 6px);
     flex-shrink: 1;
     min-width: 0;
+    /* 输入区胶囊触发器去边框的唯一落点（UI-CTL-BORDER-1）：
+     * dropdown.ts 的公共规则按 var(--dd-trigger-border) 取值，这里只改取值，
+     * 不再另写一条 border 覆盖规则（第二落点会随特异性/注入顺序漂移）。 */
+    --dd-trigger-border: none;
   }
   /* 右侧发送按钮容器：唯一主操作，绝不收缩（视觉焦点恒定）。
    * 生成中并列「暂停」按钮（.pause-btn），容器为 flex 横向排列两钮 */
@@ -1716,11 +1720,12 @@ export const chatStyles = `
    * 3) 菜单内当前项高亮（icon-only 下，这是菜单打开时「我用了哪个 Skill」的入口）；
    * 4) 触发器更窄（单图标不需要 200 兜底，引 tokens.ts 变体令牌，禁裸值）。 */
   .skill-picker { --dd-trigger-max-w: var(--dd-trigger-max-w-narrow); }
-  /* 输入区下拉触发器去边框（作用域仅限 .composer-left）：
-   * 刻意**不碰** dropdown.ts 的 .treedd--capsule 公共规则——历史切换等其他胶囊仍保留描边。
-   * 特异性 0,3,0 > 公共规则 0,2,0 ⇒ 不受 chatStyles→dropdownStyles 的注入顺序影响。 */
+  /* 输入区下拉触发器残余差异（作用域仅限 .composer-left）：
+   * 边框已改由 --dd-trigger-border: none（见上方 .composer-left）单点取值，此处**不再**
+   * 写 border 覆盖；历史切换等其他胶囊仍保留 dropdown.ts 的默认描边。
+   * 圆角 / 底色仍在此声明：它们不是本族开关，且 .ctl 基类（0,1,0）压不过胶囊规则（0,2,0），
+   * 删掉会退回 6px 圆角 + 卡片底色（视觉回归）。 */
   .composer-left .treedd--capsule .treedd__trigger {
-    border: none;
     border-radius: var(--radius-sm, 2px);
     background: transparent;
   }
