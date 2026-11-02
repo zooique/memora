@@ -192,7 +192,9 @@
 
 - **后台任务槽位按 Agent 实例隔离**（`MULTI-AGENT-1`，2026-10-18）：模块级槽位 → `class BackgroundTaskScheduler` 实例级，同进程多 Agent 不再交叉等待/挤占（形态定案后多实例是必然）。非公开 API 变更。
 
-## [Unreleased] · 宿主
+## [0.6.0] · 2026-11-02 · 宿主
+
+> **随包内核代次 = `5.4.0`**（esbuild 内联 dist，内核自身变更见内核区）。
 
 ### Added（宿主）
 

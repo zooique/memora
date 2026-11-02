@@ -204,11 +204,10 @@ PAT 的优先级高于 OIDC，留着等于没切换。
 
 ```bash
 # 1. 先把内核发了（如果内核有变动）—— 宿主 workflow 会校验内核已先行发布
-# 2. 升 hosts/memora-vscode/package.json 的 version
-#    ⚠️ 0.2.0 已于 2026-10-23 发布到 Open VSX，不可重发 ⇒ 下一个是 0.3.0
+# 2. 升 hosts/memora-vscode/package.json 的 version（已发版本在 Open VSX 永久保留、不可重发）
 # 3. 提交 + 打 tag（tag 必须等于 package.json 的 version，workflow 会校验）
-git tag "vscode@0.3.0"
-git push origin "vscode@0.3.0"
+git tag "vscode@X.Y.Z"
+git push origin "vscode@X.Y.Z"
 ```
 
 CI 跑完门禁 → 自动出 vsix → 挂 GitHub Release → 发到 Open VSX → 回查市场版本。
@@ -229,12 +228,11 @@ CI 跑完门禁 → 自动出 vsix → 挂 GitHub Release → 发到 Open VSX �
 
 ## 八、当前状态与下一步
 
-- ✅ VS Code Marketplace：已上架（手动上传），publisher `zooique`
-- ⏳ **Open VSX**：**0.2.0 已上架**（2026-10-23 手动首发，<https://open-vsx.org/extension/zooique/memora-vscode>）；
+- ✅ VS Code Marketplace：已上架（手动上传），publisher `zooique`；当前版本以扩展页 Version History 为准
+- ✅ **Open VSX**：已上架（<https://open-vsx.org/extension/zooique/memora-vscode>，当前版本以该页为准）；
   namespace `zooique` **已 verified**、Trusted Publisher **已登记**、`host-release.yml`
-  **已加发布步 + 回查步** ⇒ 打 `vscode@*` tag 即自动发布。
-  **尚待 0.3.0 首次实跑验证**（已发版本不可重发，无法拿 0.2.0 试）。
-  建议顺序：先用 `workflow_dispatch` 空跑一次（门禁全跑，**不会发布**——发布步有 `if: push` 闸），
+  **已加发布步 + 回查步** ⇒ 打 `vscode@*` tag 即自动发布（自动链已实跑验证）。
+  发版前建议顺序：先用 `workflow_dispatch` 空跑一次（门禁全跑，**不会发布**——发布步有 `if: push` 闸），
   确认 CI 冷环境无差异后再升 version 打 tag。
 - 🔒 **VS Marketplace 自动化：定案不做，保持手动上传**（2026-10-23 复核）。理由：
   ① 干净路线 `vsce publish --oidc`（GitHub OIDC 直连 Marketplace、零密钥、免订阅）
