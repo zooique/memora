@@ -41,6 +41,7 @@
 ### Fixed（宿主）
 
 - **MCP `readOnlyHint` 映射进只读闸**（`READONLY-CUSTOM-1`）：内核只读闸改为查「全部工具定义」后，`toToolDefinition` 此前从不写 `readonly` 字段的 MCP 工具会按缺省 false 被一律拒绝——只读 server 工具在只读模式全部不可用。现按既有判据 `readOnlyDeclaration`（`annotations.readOnlyHint === true && annotations.destructiveHint !== true`）显式映射：声明只读 ⇒ `readonly: true`；缺省 / false / 与 `destructiveHint: true` 矛盾 ⇒ 显式 `readonly: false`（不靠字段缺省，边界可审计）。与 `diskWrite` 同源镜像（同一份 `readOnlyDeclaration`，避免「写序说只读、只读闸说会写」的双头语义）。**对消费者**：MCP 读工具在只读模式恢复可用；`readOnlyHint` 仍是 server 自报，谎报只读同时绕过写串行闸与只读闸——该残余风险随本条一并放大，见仓库台账 `READONLY-CUSTOM-1`。
+- **压缩包导入覆盖写到一半失败会毁掉原有资产**（`ASSET-ZIP-IMPORT-1`）：此前覆盖路径是「先删旧目标 → 再逐条写」，磁盘满 / 进程被杀 / 断电都会留下半包，且旧包已被删除、无法恢复（既有用例只覆盖「取消不动」与「成功替换」，失败中断无射程）。现改为**暂存 + 换名**：内容先写进目标同父目录的隐藏暂存区（同卷 ⇒ `rename` 原子），目标已存在时先换名成备份、提交成功才删备份；写入或换名任一步失败即反向换名回滚，旧目标按字节原样恢复，暂存与备份一并清理（清理失败只记日志，不误报导入失败）。残留按「严格命名 + 超过 1 小时」双判据在下次导入时清理，不删并发进行中的暂存。**对消费者**：成功路径的最终结果与文件数不变；失败时新增两种可读原因（「写入失败（目标未改动）」/「换名提交失败，已回滚」）。
 
 ## [5.4.0] · 2026-11-02
 
