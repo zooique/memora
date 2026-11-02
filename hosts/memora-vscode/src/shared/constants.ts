@@ -49,12 +49,6 @@ export const USER_SKILLS_DIR_NAME = 'skills';
 /** globalStorageUri 下的用户角色包目录名（用户级）：同上，与技能目录对偶。 */
 export const USER_ROLE_PACKS_DIR_NAME = 'role-packs';
 
-/** 内置角色包创建模板目录（相对扩展根；构建期由 esbuild copyGlobalSkills 同步到 dist）。
- *  路径真源：`host/userAssets/write.ts` 的调用方（压缩包导入 / 对话写入的安装窄口）从这里取，
- *  禁散落路径字面量。 */
-export const ROLE_PACK_TEMPLATE_REL_PATH =
-  'dist/extension/skills/role-pack-creator/templates/standard';
-
 /** 用户主输入长度上限（INPUT-LIMIT-1）：在**输入框阶段**以原生 maxLength 截断——
  *  超出部分进不了输入框，用户所见即所发；发送链路不做二次截断（发送时静默砍内容
  *  = 背刺，禁）。主输入框（#input textarea）= 任务指令语义，长档。 */
