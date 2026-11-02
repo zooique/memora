@@ -37,8 +37,14 @@ import { cleanupMemoriesCommand, memoryStatsCommand, runGcCommand } from './comm
 import { registerWorkCommand } from './commands/registerWork.js';
 import { addToChatCommand } from './commands/addToChat.js';
 import { createUserDataResetHandler } from './commands/userDataReset.js';
+import { importAssetCommand } from './commands/importAsset.js';
 import { readDisabledSkills, syncDisabledSkills } from './host/skillSync.js';
-import { projectAssetDirsFor, injectProjectAssets } from './host/userAssets/projectScope.js';
+import {
+  projectAssetDirsFor,
+  injectProjectAssets,
+  type ProjectAssetDirs,
+} from './host/userAssets/projectScope.js';
+import { mergeAllowedPathsWithUserAssets } from './host/userAssets/allowedPaths.js';
 import { FileChangeTracker } from './host/fileChangeTracker.js';
 import { FileChangeView } from './host/fileChangeView.js';
 import { stopMcpServers, applyMcpConfigChange } from './host/mcp/runtime.js';
@@ -304,20 +310,23 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // ─── 项目级来源目录（第三来源，优先级 项目 > 用户 > 内置）───
   //
-  // 路径 = `<workspaceFolder>/.memora/{skills,role-packs}`（根路径经 resolveProjectDataDir 单点）。
+  // **目录推导与信任判定只在 `projectAssetDirsFor` 一处发生**（本文件不再拼目录）：
+  // 此前这里另有一处 `resolveProjectDataDir + join(...)` 推导，与信任判定分散两处，
+  // 任一处改口径另一处静默走旧值（B 修复：单点化）。
   // ⚠️ **多根工作区只取 folders[0]**：与 resolveWorkspacePath 同一取根口径；
   //    其余根的 .memora 目录不扫描（限制见 CHANGELOG）。
-  // 信任门：目录路径恒按真实工作区推导，但**只有工作区受信任时才注入**——
-  //   未信任工作区的 .memora 内容属「未审代码」形态（可携带技能/角色包提示词），
-  //   不扫描即不进入模型上下文。
+  // 信任门：**只有工作区受信任时才注入**——未信任工作区的 .memora 内容属「未审代码」形态
+  //   （可携带技能/角色包提示词），不扫描即不进入模型上下文。判据每次调用现读
+  //   （`isTrusted` 可运行期变化；授予信任后由监听器补注入）。
+  /** 项目级目录的唯一读取入口（调用时现读信任状态与工作区根） */
+  const readProjectAssetDirs = (): ProjectAssetDirs =>
+    projectAssetDirsFor({
+      isTrusted: vscode.workspace.isTrusted,
+      workspaceFolderPath: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+    });
+  // 激活期的目录快照（供面板展示用；运行期补注入时再读一次并回推面板—见信任监听器）
+  const projectDirsAtActivation = readProjectAssetDirs();
   const firstWorkspaceFolder = vscode.workspace.workspaceFolders?.[0];
-  const projectDataDir = firstWorkspaceFolder
-    ? resolveProjectDataDir(firstWorkspaceFolder.uri.fsPath)
-    : undefined;
-  const projectSkillsDir = projectDataDir ? join(projectDataDir, USER_SKILLS_DIR_NAME) : undefined;
-  const projectRolePacksDir = projectDataDir
-    ? join(projectDataDir, USER_ROLE_PACKS_DIR_NAME)
-    : undefined;
 
   // 未信任可见提示（状态栏）：只提示、不阻断对话——用户可随时「信任工作区」后即时生效
   const trustNotice = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -351,10 +360,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const getAgent = (projectPath: string): Promise<Agent> => {
     // 信任门判据在**调用时**读取（workspace.isTrusted 可运行期变化）：
     // 未信任 ⇒ 返回空目录对，装配不注入项目级；授予信任后由监听器补注入。
-    const projectDirs = projectAssetDirsFor(vscode.workspace.isTrusted, {
-      skills: projectSkillsDir,
-      rolePacks: projectRolePacksDir,
-    });
+    const projectDirs = readProjectAssetDirs();
     return getOrCreateAgent(
       projectPath,
       providerStore,
@@ -448,9 +454,9 @@ export function activate(context: vscode.ExtensionContext): void {
   chatProvider.setFileChangesProvider(() => fileChangeView.snapshotFiles());
   context.subscriptions.push(fileChangeView.onDidChange(() => chatProvider.pushFileChanges()));
   // 注入技能聚合目录：composer 动态技能下拉与设置面板同一清单来源（SSOT）
-  // 项目级目录同样注入（来源判定用）；未信任时该目录下不会有已加载技能，
-  // 注入它不会伪造来源（listVisibleSkills 只对真实扫到的条目判源）。
-  chatProvider.setSkillDirs(configDir, userSkillsDir, projectSkillsDir);
+  // 项目级目录同样注入（来源判定用）；未信任时为空（目录与信任判定同源，见 readProjectAssetDirs），
+  // 不会伪造来源（listVisibleSkills 只对真实扫到的条目判源）。
+  chatProvider.setSkillDirs(configDir, userSkillsDir, projectDirsAtActivation.skills);
   // 打开面板即懒装配 Agent（不依赖先执行 open 命令），保证发送始终可用；
   // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写；
   // 装配路径与 sessionStore 同源（resolveWorkspacePath），保证读写的文件一致
@@ -492,8 +498,12 @@ export function activate(context: vscode.ExtensionContext): void {
   // 注入技能目录：用户目录（打开目录按钮）+ 内置配置目录（三源技能来源判定，SSOT 收紧）
   settingsProvider.setUserSkillsDir(userSkillsDir);
   settingsProvider.setConfigDir(configDir);
-  // 注入项目级目录（来源判定 + 打开目录）；信任门只影响**注入**（加载），不影响展示目录路径
-  settingsProvider.setProjectDirs(projectSkillsDir, projectRolePacksDir);
+  // 注入项目级目录（来源判定 + 打开目录）；目录与信任判定同源（未信任 ⇒ 空，
+  // 项目级资产未启用时不给打开入口，避免「有路径但打不开/写不进」的双头语义）
+  settingsProvider.setProjectDirs(
+    projectDirsAtActivation.skills,
+    projectDirsAtActivation.rolePacks,
+  );
   // 注入用户角色包目录（打开目录按钮 + 角色来源判定，对齐技能系统）
   settingsProvider.setUserRolePacksDir(userRolePacksDir);
   // 注入对话面板提供者：角色 handoff 预填需从设置面板跨 webview 投递到对话视图
@@ -567,15 +577,17 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.workspace.onDidGrantWorkspaceTrust(() => {
       syncTrustNotice();
+      // 目录与信任判定同源重算，并回推两面板——否则授予信任后项目级技能仍按旧目录（空）
+      // 判源，会被误标成 user/builtin（展示层说谎，属静默失效）。
+      const dirs = readProjectAssetDirs();
+      chatProvider.setSkillDirs(configDir, userSkillsDir, dirs.skills);
+      settingsProvider.setProjectDirs(dirs.skills, dirs.rolePacks);
+      // Agent 尚未装配时无需补注入——下次装配按已信任状态注入，路径不会漏。
       const pending = agentPromise;
       if (!pending) return;
       void pending
         .then(async (agent) => {
           // 顺序与装配同源（注入 → 重扫），由 host/userAssets/projectScope 单点持有
-          const dirs = projectAssetDirsFor(vscode.workspace.isTrusted, {
-            skills: projectSkillsDir,
-            rolePacks: projectRolePacksDir,
-          });
           await injectProjectAssets(agent, dirs);
           chatProvider.refreshSkillList();
           memoraOutput.appendLine('Memora 工作区已信任：项目级技能/角色包已注入并重扫');
@@ -590,6 +602,25 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.reloadSkills', () =>
       reloadSkillsCommand(tryGetAgent, chatProvider, settingsProvider),
+    ),
+  );
+
+  // 命令：导入技能 / 角色包压缩包（.zip）——三入口共用本处理器：
+  //   ① 命令面板 `Memora: 导入技能或角色包`
+  //   ② 设置页技能区「导入 .zip」→ import_asset_zip → executeCommand
+  //   ③ 设置页角色包区「导入 .zip」→ import_asset_zip → executeCommand（与 ② 同一条通道：
+  //      技能 / 角色包由压缩包内容识别，入口差异只是 UI 位置）
+  // 项目级目录由 `readProjectAssetDirs()`（信任门单点）现读，命令层不自行推导路径。
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.importAsset', () =>
+      importAssetCommand({
+        userSkillsDir,
+        userRolePacksDir,
+        readProjectDirs: readProjectAssetDirs,
+        tryGetAgent,
+        chatProvider,
+        settingsProvider,
+      }),
     ),
   );
 
@@ -635,7 +666,15 @@ export function activate(context: vscode.ExtensionContext): void {
       // 否则「已保存但运行时仍按旧白名单」，只能重载窗口（静默失效）。
       if (e.affectsConfiguration('memora.allowedPaths')) {
         runOnAssembledAgent(
-          (agent) => agent.security?.setAllowedPaths(readAllowedPaths()),
+          // 与装配期同一个合并函数（SSOT）：若此处只读用户配置，会把宿主注入的
+          // 用户资产目录（skills / role-packs）整体覆盖掉 ⇒ 写用户级资产再次被守卫拒绝。
+          (agent) =>
+            agent.security?.setAllowedPaths(
+              mergeAllowedPathsWithUserAssets(readAllowedPaths(), [
+                userSkillsDir,
+                userRolePacksDir,
+              ]),
+            ),
           '允许路径配置同步',
         );
       }

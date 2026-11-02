@@ -8,10 +8,21 @@
  * 外置后顺序只有一份，且可用桩 Agent 锁定「先注入、后重扫」的次序。
  *
  * 不构成第二套扫描器：扫描全部归内核 `loadExtraDir` / `resync*`，本模块只做编排。
+ *
+ * ## 目录推导与信任判定：单一入口（`projectAssetDirsFor`）
+ *
+ * 项目级目录的**推导**（`.memora` 下挂 `skills` / `role-packs`）与**信任门判定**
+ * 都在本函数的同一个返回点发生，调用方只接收结果、**不得自行拼目录**。
+ * 此前 extension.ts 另有一处 `resolveProjectDataDir + join(...)` 的推导，
+ * 与信任判定分散两处 ⇒ 任何一处改了目录名/信任口径，另一处会静默走旧值
+ * （且没有测试会红）。收成单点后「未信任」与「目录不存在」两种空态同源于此。
  */
+import { join } from 'node:path';
 import type { Agent } from '@zooique/memora';
+import { resolveProjectDataDir } from '../projectDataDir.js';
+import { USER_ROLE_PACKS_DIR_NAME, USER_SKILLS_DIR_NAME } from '../../../shared/constants.js';
 
-/** 项目级目录对（两者都可缺省：无工作区时不注入） */
+/** 项目级目录对（两者都可缺省：无工作区或未信任时不注入） */
 export interface ProjectAssetDirs {
   /** `<workspaceFolder>/.memora/skills` */
   skills?: string;
@@ -19,18 +30,33 @@ export interface ProjectAssetDirs {
   rolePacks?: string;
 }
 
+/** 项目级资产的唯一输入上下文（信任判定 + 工作区根） */
+export interface ProjectAssetContext {
+  /** 工作区是否已受信任（判据真源 = `vscode.workspace.isTrusted`，由调用方现读） */
+  isTrusted: boolean;
+  /** 工作区根路径（多根工作区只取 `workspaceFolders[0]`；无工作区时缺省） */
+  workspaceFolderPath?: string;
+}
+
 /**
- * 信任门判据（纯函数）：未受信任的工作区一律不注入项目级目录。
+ * 项目级目录的单点解析（信任门判据 + 目录推导，**唯一实现**）。
  *
- * 判据真源 = `vscode.workspace.isTrusted`（调用方传入，不在本模块自存状态副本）；
- * 未信任 ⇒ 返回空对象，装配与补注入两处共用，杜绝「一处判、一处漏判」。
+ * 未信任 / 无工作区 ⇒ 返回空对象：目录一并消失（UI 的项目级路径展示也随之关闭），
+ * 避免「路径给出去、写入却因信任门失败」的双头语义。
  *
- * @param isTrusted 工作区是否已受信任
- * @param dirs      按工作区推导出的项目级目录
- * @returns 可注入的目录对（未信任时为空对象）
+ * 信任后目录路径恒定（与工作区根同源，经 `resolveProjectDataDir` 单点，
+ * `.memora` 字面量不在本文件出现——受 `dataDirLiteralGuard` 守卫）。
+ *
+ * @param ctx 信任状态 + 工作区根（调用方现读，不在本模块自存状态副本）
+ * @returns 可注入的目录对（未信任 / 无工作区时为空对象）
  */
-export function projectAssetDirsFor(isTrusted: boolean, dirs: ProjectAssetDirs): ProjectAssetDirs {
-  return isTrusted ? dirs : {};
+export function projectAssetDirsFor(ctx: ProjectAssetContext): ProjectAssetDirs {
+  if (!ctx.isTrusted || !ctx.workspaceFolderPath) return {};
+  const dataDir = resolveProjectDataDir(ctx.workspaceFolderPath);
+  return {
+    skills: join(dataDir, USER_SKILLS_DIR_NAME),
+    rolePacks: join(dataDir, USER_ROLE_PACKS_DIR_NAME),
+  };
 }
 
 /**
