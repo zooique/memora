@@ -102,7 +102,7 @@ const TAB_BODY_HTML: Record<SettingsTab, string> = {
         <button id="btnOpenRolePacksDir" class="btn btn-secondary btn-icon-solo" title="打开用户角色包目录">
           <span class="btn-icon" data-icon="folder"></span>
         </button>
-        <button id="btnRefreshRolePacks" class="btn btn-secondary btn-icon-solo" title="刷新角色包列表（重扫用户角色包目录）">
+        <button id="btnRefreshRolePacks" class="btn btn-secondary btn-icon-solo" title="刷新角色包列表（重扫项目与用户角色包目录）">
           <span class="btn-icon" data-icon="refresh"></span>
         </button>
       </div>
@@ -213,7 +213,7 @@ const TAB_BODY_HTML: Record<SettingsTab, string> = {
         <button id="btnOpenSkillsDir" class="btn btn-secondary btn-icon-solo" title="打开用户技能目录">
           <span class="btn-icon" data-icon="folder"></span>
         </button>
-        <button id="btnRefreshSkills" class="btn btn-secondary btn-icon-solo" title="刷新技能列表（重扫用户技能目录）">
+        <button id="btnRefreshSkills" class="btn btn-secondary btn-icon-solo" title="刷新技能列表（重扫项目与用户技能目录）">
           <span class="btn-icon" data-icon="refresh"></span>
         </button>
       </div>

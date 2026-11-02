@@ -336,7 +336,7 @@ export class MemoraSettingsPanel {
       this.openDirInOs(this._userRolePacksDir, '用户角色包');
       return;
     }
-    // 重扫用户角色包目录（刷新按钮）：内核对账后 notice 结果 + 刷新下发
+    // 重扫项目与用户角色包目录（刷新按钮）：内核对账后 notice 结果 + 刷新下发
     if (msg.type === 'roles_refresh') {
       await this.refreshRolePacks();
       return;
@@ -1464,7 +1464,7 @@ export class MemoraSettingsPanel {
     );
   }
 
-  /** roles_refresh：摘除旧注入项 → 重扫用户角色包目录 → 净差 notice → 重推列表（执行面外置） */
+  /** roles_refresh：摘除旧注入项 → 重扫项目与用户角色包目录 → 净差 notice → 重推列表（执行面外置） */
   private async refreshRolePacks(): Promise<void> {
     await refreshUserRolePacksFlow({
       agent: await this.ensureAgent(),

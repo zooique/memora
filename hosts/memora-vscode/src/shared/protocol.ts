@@ -547,7 +547,7 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'roles_open_dir' }
   /**
-   * 重扫用户角色包目录（角色视图「刷新」按钮触发）
+   * 重扫项目与用户角色包目录（角色视图「刷新」按钮触发）
    *
    * host 调 rolePackManager.resyncUserPacks(userRolePacksDir)：摘除旧运行时注入项 →
    * 重新扫描注入（新增 / 改名 / 内容修改生效，已删包摘除，激活悬空走兜底单链）。
@@ -718,7 +718,7 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'skills_open_dir' }
   /**
-   * 重扫用户技能目录（技能视图「刷新」按钮触发）
+   * 重扫项目与用户技能目录（技能视图「刷新」按钮触发）
    *
    * host 调 SkillManager.resyncUserSkills()（管理器自持用户目录清单，无需宿主再传路径）：
    * 摘除旧用户注入项 → 重扫 configDir + 各 extraDir（新增 / 内容修改生效，已删文件摘除）。

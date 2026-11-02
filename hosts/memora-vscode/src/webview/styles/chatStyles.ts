@@ -1587,8 +1587,12 @@ export const chatStyles = `
     color: var(--text-secondary);
     transition: color var(--dur-base), background var(--dur-base);
   }
+  /* 悬停底色用 --surface-hover（toolbar hover），不用 --accent-bg-hover：
+   * 后者映射 list.hoverBackground，在 Modern 主题下与输入卡底色（input.background）
+   * 几乎同色（Dark #2a2d2e vs #313131 / Light #f0f0f0 vs #ffffff）⇒ 悬停不可感。
+   * 不改全局映射（其他消费点依赖 accent 语义），只在本族换既有 token。 */
   .ctl:hover {
-    background: var(--accent-bg-hover);
+    background: var(--surface-hover);
     color: var(--text-primary);
   }
   /* 全局焦点环（tokens.ts）对紧凑控件偏重，这里收窄但保留可见性 */
@@ -1730,7 +1734,7 @@ export const chatStyles = `
     background: transparent;
   }
   .composer-left .treedd--capsule .treedd__trigger:hover {
-    background: var(--accent-bg-hover);
+    background: var(--surface-hover);
     color: var(--text-primary);
   }
   /* 选中态（Skill 已挂载）：常驻标记 = accent 图标染色（0,3,0 用于压过 capsule 公共 color 0,2,0），
@@ -1741,7 +1745,7 @@ export const chatStyles = `
   }
   .composer-left .treedd--capsule .ctl--on:hover {
     color: var(--accent);
-    background: var(--accent-bg-hover);
+    background: var(--surface-hover);
   }
   .skill-picker.treedd--capsule .treedd__menu { left: 0; right: auto; }
   .skill-picker .treedd__item.is-active {
