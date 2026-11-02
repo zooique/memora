@@ -273,6 +273,31 @@ describe('改盘写声明（diskWrite · DISKWRITE-CUSTOM-1 源头接线）', ()
   it('buildToolBindings 走真实映射链路时声明一并带进注册面', () => {
     const { bindings } = buildToolBindings('srv', [makeTool('a'), makeTool('b')], NO_ALLOWLIST);
     expect(bindings.map((b) => b.definition.diskWrite)).toEqual(['opaque', 'opaque']);
+    expect(bindings.map((b) => b.definition.readonly)).toEqual([false, false]);
+  });
+
+  it('readonly 与 diskWrite 同源成对：readOnlyHint:true 且非 destructive → readonly:true 且无 diskWrite；其余显式 false', () => {
+    // 成对断言：两个字段都从同一份 readOnlyDeclaration 派生，单测不一漏一
+    const cases: Array<{ annotations?: McpTool['annotations']; label: string }> = [
+      { label: '未声明', annotations: undefined },
+      { label: 'readOnlyHint:false', annotations: { readOnlyHint: false } },
+      {
+        label: 'readOnlyHint:true + destructiveHint:true',
+        annotations: { readOnlyHint: true, destructiveHint: true },
+      },
+      { label: 'readOnlyHint:true', annotations: { readOnlyHint: true } },
+    ];
+    for (const { annotations, label } of cases) {
+      const result = toToolDefinition('srv', makeTool('t', undefined, annotations), NO_ALLOWLIST);
+      if ('skipped' in result) throw new Error(`不应被剔除：${label}`);
+      const expectReadonly = label === 'readOnlyHint:true';
+      expect(result.definition.readonly, `${label} 的 readonly 判据`).toBe(expectReadonly);
+      if (expectReadonly) {
+        expect(result.definition).not.toHaveProperty('diskWrite');
+      } else {
+        expect(result.definition.diskWrite).toBe('opaque');
+      }
+    }
   });
 });
 

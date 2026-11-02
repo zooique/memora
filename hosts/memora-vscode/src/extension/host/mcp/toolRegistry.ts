@@ -308,6 +308,10 @@ export function toToolDefinition(
       // 未命中 = 'always' 逐次确认。MCP 工具来源不可信，故无缺省路径（风险 2）。
       confirmPolicy: resolveConfirmPolicy(serverName, tool.name, allowlist),
       ...(diskWrite ? { diskWrite } : {}),
+      // 只读闸声明（readonly 模式放行判据）：与 diskWrite 用同一份 `readOnlyDeclaration`——
+      // 两个字段互为镜像而非各自判一次，避免「写序说只读、只读闸说会写」的双头语义。
+      // 显式写 false 而不靠缺省：缺省语义在公开契约里是「写操作」，但显式声明让谎报边界可审计。
+      readonly: readOnlyDeclaration,
     },
   };
 }

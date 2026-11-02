@@ -52,7 +52,7 @@ describe('键集合与内核内置工具清单对齐', () => {
   /**
    * 提取内核**完整内置工具定义**的工具名。
    *
-   * 判据同源：内核 SSOT = `ToolExecutor.builtinDefinitions`（toolExecutor.ts）=
+   * 判据同源：内核 SSOT = `ToolExecutor.allToolDefinitions`（toolExecutor.ts）=
    * `[...BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL, SEARCH_PROJECT_TOOL]`。
    * ⚠️ 注意 `BUILTIN_TOOLS`（builtinTools.ts 数组）只是**常驻**那批（22），另有 4 个能力门控
    * 工具（web_search/web_fetch/run_code/search_project）定义在数组外、按宿主注入的 provider

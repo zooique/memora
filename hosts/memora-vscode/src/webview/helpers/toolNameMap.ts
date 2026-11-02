@@ -8,7 +8,7 @@
  *     叙述句 toolSummaryText（2026-10-29 自 chatView.ts 迁出）；
  *   · chatPanel（extension）—— 写入确认描述 bindWriteConfirmation。
  *
- * **键集合对齐约束**：本映射的键须与内核内置工具清单（完整面 = ToolExecutor.builtinDefinitions：
+ * **键集合对齐约束**：本映射的键须与内核内置工具清单（完整面 = ToolExecutor.allToolDefinitions：
  * 22 常驻 + 4 能力门控 web_search/web_fetch/run_code/search_project）保持一致——webview 沙箱
  * 不可 import 内核，故由本文件显式对齐维护；新增内置工具时须同步补键（否则工具卡片回退英文名），
  * 删除工具时须删幽灵键。守卫：helpers/__tests__/toolNameMap.test.ts 双向闭合断言（读内核源码）。
