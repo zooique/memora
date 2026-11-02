@@ -551,7 +551,7 @@ export type WebviewToExtensionMessage =
    *
    * host 调 rolePackManager.resyncUserPacks(userRolePacksDir)：摘除旧运行时注入项 →
    * 重新扫描注入（新增 / 改名 / 内容修改生效，已删包摘除，激活悬空走兜底单链）。
-   * 完成后回发 notice（净差对账结果：新增/更新/移除）+ 刷新 roles_loaded。
+   * 完成后回发 notice（新增 / 移除 / 激活回退；同名留存不计数）+ 刷新 roles_loaded。
    */
   | { type: 'roles_refresh' }
   /**
@@ -722,7 +722,7 @@ export type WebviewToExtensionMessage =
    *
    * host 调 SkillManager.resyncUserSkills()（管理器自持用户目录清单，无需宿主再传路径）：
    * 摘除旧用户注入项 → 重扫 configDir + 各 extraDir（新增 / 内容修改生效，已删文件摘除）。
-   * 完成后回发 notice（净差对账结果：新增/更新/移除）+ 刷新 skills_loaded。
+   * 完成后回发 notice（新增 / 移除；同名留存不计数）+ 刷新 skills_loaded。
    *
    * ⚠️ 不能用 skills_load 代替：那只读内存快照，磁盘新增文件不会出现在列表
    * （「建了不生效」的根因），必须触发真实重扫。
