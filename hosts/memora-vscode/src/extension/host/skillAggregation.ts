@@ -13,8 +13,10 @@
  * 不改内核 SkillEntry 契约。
  */
 import type { Agent } from '@zooique/memora';
-import { join, normalize } from 'node:path';
+import { join } from 'node:path';
 import type { SkillDto } from '../../shared/protocol.js';
+// 路径归属判定单点：normalize + `sep` 边界，与设置页角色包来源判定共用同一函数
+import { isPathWithin } from './userAssets/path.js';
 
 /** 技能来源四分类（与 SkillDto.layer 对应） */
 export type SkillSource = 'builtin' | 'rolepack' | 'user' | 'project';
@@ -58,11 +60,11 @@ function sourceOf(
   projectSkillsDir?: string,
 ): SkillSource {
   if (filePath) {
-    // 统一分隔符再比对：调用方传的目录与 join 出来的 filePath 可能混用 / 与 \（Windows）
-    const fp = normalize(filePath);
-    if (projectSkillsDir && fp.startsWith(normalize(projectSkillsDir))) return 'project';
-    if (userSkillsDir && fp.startsWith(normalize(userSkillsDir))) return 'user';
-    if (fp.startsWith(normalize(join(configDir, 'skills')))) return 'builtin';
+    // 归属判定走 `isPathWithin`（resolve 规范化 + `sep` 边界）：裸 startsWith 会把
+    // `skills-x` 误判成 `skills` 内，且 Windows 的 \ 与 / 混用会漏判
+    if (projectSkillsDir && isPathWithin(projectSkillsDir, filePath)) return 'project';
+    if (isPathWithin(userSkillsDir, filePath)) return 'user';
+    if (isPathWithin(join(configDir, 'skills'), filePath)) return 'builtin';
   }
   return layer === 'project' ? 'user' : 'builtin';
 }

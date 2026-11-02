@@ -79,6 +79,8 @@ import {
   listVisibleSkills,
   resolveSkill,
 } from '../../extension/host/skillAggregation.js';
+// 角色包来源判定的判据单点（与技能聚合共用：normalize + sep 边界）
+import { isPathWithin } from '../../extension/host/userAssets/path.js';
 import {
   ACTIVE_ROLE_PACK_KEY,
   CONFIRM_WRITES_KEY,
@@ -717,14 +719,10 @@ export class MemoraSettingsPanel {
     agent?.rolePackManager?.setRolePackTeams(next);
   }
 
-  /** 角色包来源层单点判定（filePath 前缀）：项目 → project，用户 → user，否则内置；
-   *  保存链路的内置包拒绝判据复用本方法——禁第二份前缀判定副本。 */
+  /** 来源层单点判定：与技能聚合共用 `isPathWithin`，禁第二份前缀副本（裸 startsWith 会把 `role-packs-x` 误判进 `role-packs`） */
   private rolePackSource(filePath: string | undefined): 'builtin' | 'user' | 'project' {
-    if (this._projectRolePacksDir && filePath?.startsWith(this._projectRolePacksDir))
-      return 'project';
-    return this._userRolePacksDir && filePath?.startsWith(this._userRolePacksDir)
-      ? 'user'
-      : 'builtin';
+    if (isPathWithin(this._projectRolePacksDir, filePath)) return 'project';
+    return isPathWithin(this._userRolePacksDir, filePath) ? 'user' : 'builtin';
   }
 
   /**

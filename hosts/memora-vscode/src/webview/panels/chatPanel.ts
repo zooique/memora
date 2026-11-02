@@ -4377,7 +4377,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           <div class="composer-left">
             <!-- Skill 选择器：单图标（bolt SVG，图标语言唯一 = icons.ts 柔和线条）胶囊触发器，与模型选择器共用 capsule 变体；选择后作为 system prompt 传给 LLM。
                  Skill 名不常显（节省窄窗横向空间），当前项由触发器 .ctl--on（accent 图标染色）、菜单内 is-active 高亮、输入盒内 skill chip 与 title 兜底
-                 触发器带 .ctl（输入区无边框基类），边框由 .composer-left 作用域规则清零 -->
+                 触发器带 .ctl（输入区无边框基类），边框由 --dd-trigger-border 变量取值清零（见 chatStyles .composer-left），禁止在此另写 border 规则 -->
             ${buildDropdownHtml([], { extraClass: 'skill-picker treedd--capsule', triggerClass: 'ctl', onSelect: '__skillPickerOnSelect', triggerLabel: '<span class="btn-icon" data-icon="bolt"></span>', triggerTitle: '选择 Skill', triggerAriaLabel: '选择 Skill' })}
             <!-- 模型选择器：共用 capsule 变体，名称省略/菜单尺寸由 .model-picker 差异定制；触发器带 .ctl 去边框 -->
             ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', triggerClass: 'ctl', onSelect: '__modelPickerOnSelect', triggerLabel: '选择模型', triggerTitle: '选择模型', triggerAriaLabel: '选择模型' })}
