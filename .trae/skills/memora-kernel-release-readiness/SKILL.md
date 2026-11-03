@@ -118,6 +118,8 @@ error TS2367: This comparison appears to be unintentional because the types have
    - ⚠️ 宿主 eslint **忽略 `__tests__`**：显式传测试文件会报 `File ignored` 并让 `--max-warnings 0` 失败——这是预期行为，不是缺陷，别去改配置。
 
 > **第 1–3 步与第 4 步的顺序**：若本次改了内核导出形状，**第 4 步（内核 build）必须先于任何宿主 tsc/测试**（见铁律一子陷阱）。
+
+> **不在本清单的两道随包文档门**（`npm run verify:changelog` / `npm run verify:publish-docs`，命令本体 = `scripts/verify-changelog-version.mjs` / `scripts/verify-publish-docs.mjs`）：二者**不进** `local-ci`、也不属上面第 7 步的发布边界死链面。**何时跑由 `memora-kernel-release` Step 0.2（首次取证据）与 Step 2（文档改动后复跑）定义**——本技能只给命令名与通过标准（两条均 `exit=0`），不写第二套时序（时序真源在该发版技能，避免两处各写一套）。
 > ⚠️ **管道吞退出码**：`cmd | head` / `| tail` 时，退出码取自管道**尾端**，`cmd` 的失败会被吞成假绿。
 > 过滤长输出时，要么直读原始输出，要么 `... | node -e "..."` 用 Node 脚本过滤（`ls`/`head`/`tail`/`grep` 本身可用，
 > 但**别让它们当管道末端**去承接需要判读退出码的命令）。
@@ -249,4 +251,5 @@ Bash 仍只做只读 git（FS 错配红线不变）。
 - 内核：changed files eslint EXIT=0 + 全量测试 0 失败 + build 成功
 - 宿主：tsc 成功 + esbuild 成功 + **契约同代 hash** + 宿主测试 0 失败
 - 发布包：`docs:links` 0 死链 + 台账无过期状态 + `files` 白名单确认（`npm pack --dry-run` 实核）
+- 🔴 轴归属：脚本 / 门禁按其**扫描目标**定轴（扫 `hosts/**` = 宿主轴、扫 `src/**` = 内核轴、两面都扫 = 双轴并列），**不按放置目录**（`pre-release-audit.md` §1.2）。实证 `scripts/verify-modal-cancel.mjs`（`SCAN_ROOTS = ['hosts/memora-vscode/src']`）= 宿主轴闸；此类闸的判据维护与变异验证归宿主发版，本技能不重复判。
 - 以上全过 = 就绪；剩「发布动作」本身（publish / package / tag）由用户确认后执行

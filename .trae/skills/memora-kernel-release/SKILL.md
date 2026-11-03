@@ -46,7 +46,28 @@ agent_created: true
 5. **阻断**（判据 §4）：命中即停在 0.1 报告（已定性 / 已排除 / 待拍板）；**不得进入 Step 1，更不得 `git tag vX.Y.Z` / stage publish**。
 
 #### Step 0.2：确认就绪（前置，不重复 readiness）
+
 调用 `memora-kernel-release-readiness` 完成发布前核查：门禁全绿、宿主 dist 同代、测试零失败、变异验证通过、包清单核对。未过就绪度不动本流程。
+
+**五项验收 → 证据映射（判据 → 命令 → 出处 → 通过标准）**
+> 🔴 命令**本体**只在 readiness（`memora-kernel-release-readiness`「执行顺序」1–8 步 + 铁律三 / 四 / 五），本表只给**单条入口 + 判据 + 出处指针**——把 8 步链抄进来 = 第二份命令清单，两份必漂移（判据 = `single-truth-source-mindset.md` §「清单 / 命令 / 步数双写」）。
+
+| 验收项 | 判据 | 命令（单条入口） | 命令出处 | 通过标准 |
+| --- | --- | --- | --- | --- |
+| 门禁全绿 | full 档全部步骤 exit=0 | `npm run ci:local -- --preset=full` | 步骤定义真源 = `scripts/local-ci.mjs`；readiness「铁律一补」段 | 汇总行 `失败 0 · 告警 0`；步数取运行时自报（**禁写死**） |
+| 宿主 dist 同代 | 宿主 bundle 内联的内核 dist 与内核 `src` 同代 | `node scripts/verify-dist-contract.mjs` | readiness「执行顺序」第 6 步 +「铁律一」 | 内核 dist ↔ src 项数一致、零孤儿零缺失；宿主 `hash` 与内核同值 |
+| 测试零失败 | 内核 + 宿主全量 0 失败；有红先按假红四步法定性 | full 档内含（同「门禁全绿」单入口） | readiness「铁律五」 | 两边均 `0 failed`；判假红须给 `AssertionError = 0` 证据 |
+| 变异验证 | 新增 / 修改护栏后：临时改坏 → 仅该护栏转红 → 恢复后全绿 | 无单条命令：按被测文件手工改坏 + 跑该测试文件 + 恢复（步骤见出处） | readiness「铁律四」四步法 | 变异期仅目标用例红；恢复后 `includes('<变异文本>') === false` |
+| 包清单核对 | 实际打进包的内容 ↔ `package.json#files` 逐项对账 | `npm pack --dry-run` | readiness「铁律三」 | 无越界、关键产物（`dist` / `README` / `LICENSE` / 随包 `docs`）齐全、`files` 未临时扩容 |
+
+**full 档覆盖 vs 必须单跑**：第 1 / 2 / 3 项由 full 档覆盖（含 `verify:dist-contract` 与内核 / 宿主测试）；第 4 项（变异验证）与第 5 项（包清单）**full 档不覆盖，必须单跑**。
+
+**随包文档两道门（本步首次取证据 → Step 2 文档改动后复跑）**
+```powershell
+npm run verify:changelog; npm run verify:publish-docs
+```
+- 判据 / 命令本体：`scripts/verify-changelog-version.mjs` / `scripts/verify-publish-docs.mjs`（二者**不在** `local-ci`，只在 `release.yml` 与手工预检里跑）；通过标准 = 两条 `exit=0`。
+- **时序唯一口径（避免两处各写一套）**：这两道门**跟着文档改动走**——Step 0.2 首次跑，使 0.3 收据「门禁」字段有值；Step 1 若改了 `CHANGELOG.md` / 随包 md，0.2 的结果即失效，Step 2 **必须重跑**。两处跑的是同两条命令、同一判据，不构成两套时序：**「何时跑」在本节定义，readiness 只留命令本体与通过标准**。
 
 #### Step 0.3：放行判定（进 Step 1 / 进 Step 4 的两道判据）
 - **进 Step 1（文档对齐）**：① 问题清单无未处置项；② 每条修复已提交且定向验证转绿；③ CHANGELOG + 台账落账完成；④ 审查端点与「端点后记账提交清单」符合判据（→ `references/pre-release-audit.md` §1.3 / §4，本节不复述）；⑤ 收据已按 §3.4 落盘（判据 = §4）。缺任一 ⇒ 停在 0.3 报告，不得进入 Step 1。
@@ -64,9 +85,9 @@ agent_created: true
 
 ### Step 2：核对版本号（三方一致 + 本地预检）
 - **三方一致**：`package.json` `version` = CHANGELOG 标题版本 = 即将推送的 tag `vX.Y.Z`。
-- **本地预检**（`verify:changelog` / `verify:publish-docs` 只在 `release.yml` 跑、**不进** local-ci，故须手动在 tag 前跑；`format:check` / typecheck / lint / test 已含 `local-ci` full，此处前置跑是为省一次 CI 往返）：
-  - `npm run verify:changelog`（`scripts/verify-changelog-version.mjs`：标题须含合法日期 + 发布日窗口）
-  - `npm run verify:publish-docs`（`scripts/verify-publish-docs.mjs`：随包 md 无发布态陈述）
+- **本地预检**（`format:check` / typecheck / lint / test 已含 `local-ci` full，此处前置跑是为省一次 CI 往返；两道随包文档门的**时序**见 0.2，本步只是复跑）：
+  - `npm run verify:changelog`（`scripts/verify-changelog-version.mjs`：标题须含合法日期 + 发布日窗口）——**Step 1 改过 CHANGELOG 后必重跑**
+  - `npm run verify:publish-docs`（`scripts/verify-publish-docs.mjs`：随包 md 无发布态陈述）——**Step 1 改过随包 md 后必重跑**
   - `npm run format:check`（prettier）
   - 另跑 `npm run typecheck` / `npm run lint` / `npm test` 兜底（虽 local-ci 会跑，tag 前确认省一次 CI 往返）。
 - 🔴 **预检退出码禁接管道取**：Bash 里 `npm run format:check | tail` 拿到的是 `tail` 的退出码（5.2.0 实证：`FMT_EXIT=0` 假绿、真实 EXIT=1，拦路的是宿主文件格式伤——带伤打 tag 必被 release.yml format 步打红）。写法 = 重定向到文件后 `echo $?`。
