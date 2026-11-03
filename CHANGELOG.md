@@ -17,6 +17,10 @@
 - **技能 / 角色包支持项目级来源，优先级项目 > 用户 > 内置**（`ASSET-PROJECT-SCOPE-1`）：`loadExtraDir` 的额外目录由「用户级」扩为**三段**——内置（`configDir/skills`）→ 用户级（`globalStorage/skills`）→ 项目级（`<workspace>/.memora/skills`）；角色包侧同构（内置 → 用户 → 项目）。**覆盖由加载顺序决定**（先加载者被后加载者覆盖），档位 `SkillExtraTier` / `RolePackExtraTier` 只用于记账与「顺序写反」守卫。技能侧项目覆盖单独记 `projectOverrides`，不混入 `userOverrides`；角色包侧同名处置经 `ExtraDirLoadResult.conflicts` 返回并可经 `lastExtraConflicts` 读取（胜出 / 被跳过均留日志，不再静默）。目录不存在时扫描返回空数组（首次使用前未建目录不报错）。**对消费者**：`loadExtraDir(dir, tier?)` 新增可选第二参（缺省 `'user'`，既有调用零改动）；新增 getter `userOverrideNames` / `projectOverrideNames` / `lastExtraConflicts`。
 - **`AgentOptions.noOverwriteRoots`：与 `allowedPaths` 并列的「禁止覆盖根」判据**（`ASSET-WRITE-SCOPE-1`）：目标文件落在这些目录内且**已存在** ⇒ `write_file` 拒绝覆盖（结构化错误 + `path-deny` 审计），提示「目标已存在，请与用户确认或换名写入」。**为什么**：`write_file` 的确认档是 `idempotent-key`（owner 默认不弹窗），白名单放开了写面却没有任何判据拦覆盖 ⇒ 模型会静默覆盖用户已有技能 / 角色包。**方向与白名单相反**：白名单放宽可写面，本键收紧覆盖面；工具侧不硬编码任何路径字符串。**对消费者**：纯新增可选字段，缺省 `[]` = 不启用，既有调用零行为变化。
 
+### Changed（内核）
+
+- **系统提示不再承诺「用户资产不可改写」**（`ASSET-WRITE-SCOPE-1`）：真机实证——模型被 `delete_file` 拒绝后改写临时 `.mjs` 执行 `unlinkSync`，用户资产被真实删除，应用层路径闸对代码执行无效。原提示里「用户级写入会直接被拒绝 / 须换名写入」属守不住的承诺，现改为可实守的两条：① 用户级资产目录内**同名已存在不静默覆盖**（对正常写入路径有效）；② 明确边界「能通过执行代码绕过路径限制，但不应绕过；需要改动用户资产时先与用户确认」——这是行为约束，不是安全承诺。`noOverwriteRoots` 判据本身不变（仍只约束 `write_file` / `delete_file`）。**对消费者**：零接口 / 零行为变更，仅系统提示文案。
+
 ### Fixed（内核）
 
 - **只读闸覆盖自定义工具与四个内置读工具**（`READONLY-CUSTOM-1` / `READONLY-BUILTIN-1`）：`toolReadonly='readonly'` 的只读闸此前只查暴露面 `tools.list`（受 `toolWhitelist` 过滤）⇒ 宿主 `registerTool` 注册的自定义 / MCP 工具完全不在射程（未声明 `readonly` 的写工具照常执行）；同时 `read_skill` / `read_resource` / `list_resources` / `list_skills` 四个渐进披露读工具漏标 `readonly`，只读模式下被误拦。现闸改查「全部工具定义」——来源单点 `ToolExecutor.allToolDefinitions`（原 `builtinDefinitions` 更名，含内置全量 + 自定义，**不过白名单过滤**），四个读工具补 `readonly: true`。**行为变更**：注册自定义工具时未声明 `readonly` ⇒ 按契约缺省 false = 写操作，只读模式下**将被拒**（此前因闸查不到定义而放行）——这是修正不是回归；需在只读模式使用的自定义工具请显式声明 `readonly: true`。**为什么**：暴露面 ≠ 覆盖面，闸查可见面等于「工具不可见即不受约束」。**对消费者**：不使用 `toolReadonly='readonly'` 的代码零影响；`ToolExecutor.allToolDefinitions` 为公开 getter 更名（原 `builtinDefinitions` 未在 5.x 承诺面清单内，消费方若有引用需同步改名）。

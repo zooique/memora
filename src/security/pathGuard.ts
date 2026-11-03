@@ -299,6 +299,9 @@ export class SecurityGuard {
    * 与 allowedPaths 并列的第二条判据：白名单回答「能不能写」，本字段回答
    * 「能不能**覆盖已存在的文件**」。两者必须分开——`write_file` 的确认档是
    * `idempotent-key`（owner 默认不弹窗），没有本判据就会被静默覆盖。
+   * ⚠️ 射程：只约束 `write_file` / `delete_file` 两个内置写入工具（二者共用
+   * `assertNotOverwrite`）；**不约束代码执行**——`run_code` / `run_skill_script` /
+   * `run_project_script` 与进程同权限，应用层路径判据对它们无效。
    */
   private noOverwriteRoots: string[];
 

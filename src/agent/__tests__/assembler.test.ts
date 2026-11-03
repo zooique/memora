@@ -1089,7 +1089,7 @@ describe('buildSystemPromptPrefix · Turn 起始策略', () => {
 // ─── buildSystemPromptPrefix · 技能落点提示（对话写入落点，≤5 行） ──
 
 describe('buildSystemPromptPrefix · 技能落点提示', () => {
-  it('含两处可写位置 + 默认项目级 + 同名不覆盖必须确认', () => {
+  it('含两处可写位置 + 默认项目级 + 同名不覆盖', () => {
     const prefix = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
     expect(prefix).toContain('## 技能落点');
     expect(prefix).toContain('项目级 <工作区>/.memora/skills');
@@ -1097,8 +1097,23 @@ describe('buildSystemPromptPrefix · 技能落点提示', () => {
     expect(prefix).toContain('默认写项目级');
     expect(prefix).toContain('仅当用户明确要求');
     expect(prefix).toContain('已存在同名不得覆盖');
-    // 措辞必须与实现同宽：用户级写入是被内核拒绝（不是「建议确认」），模型据此避坑
-    expect(prefix).toContain('用户级写入会直接被拒绝');
+  });
+
+  it('不再承诺用户资产「受保护 / 不可改写 / 只能换名」这类守不住的表述', () => {
+    const prefix = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
+    // 真机实证（2026-11-03）：run_code 与进程同权限，应用层路径闸对代码执行无效
+    // ⇒ 不能向模型承诺资产写保护（承诺与执行面不同源 = 谎报）。
+    expect(prefix).not.toContain('受保护');
+    expect(prefix).not.toContain('不可改写');
+    expect(prefix).not.toContain('只能换名');
+    expect(prefix).not.toContain('用户级写入会直接被拒绝');
+  });
+
+  it('写明「不应绕过」的行为边界（行为约束，不是安全承诺）', () => {
+    const prefix = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
+    expect(prefix).toContain('能通过执行代码绕过路径限制');
+    expect(prefix).toContain('不应绕过');
+    expect(prefix).toContain('需要改动用户资产时先与用户确认');
   });
 
   it('段落不超过 5 行（不许长篇占用上下文）', () => {
