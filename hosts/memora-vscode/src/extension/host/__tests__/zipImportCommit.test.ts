@@ -330,7 +330,10 @@ describe('copyAssetToRoot · 项目级 → 用户级（拷贝非同步，复用�
     const source = join(project, 'TESTSKILL-A.md');
     writeFileSync(source, '# TESTSKILL-A\n正文一行\n', 'utf-8');
 
-    const result = await copyAssetToRoot(source, user, { confirmOverwrite: async () => false });
+    const result = await copyAssetToRoot(source, user, {
+      kind: 'skill',
+      confirmOverwrite: async () => false,
+    });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -350,7 +353,11 @@ describe('copyAssetToRoot · 项目级 → 用户级（拷贝非同步，复用�
     writeFileSync(join(source, 'manifest.json'), '{"name":"TESTPACK-A"}', 'utf-8');
     writeFileSync(join(source, 'skills', 'demo.md'), 'demo', 'utf-8');
 
-    const result = await copyAssetToRoot(source, user, { confirmOverwrite: async () => false });
+    const result = await copyAssetToRoot(source, user, {
+      // 角色包按整目录复制：kind 由调用方显式给出，执行面不得按源形态推断
+      kind: 'rolePack',
+      confirmOverwrite: async () => false,
+    });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -369,7 +376,10 @@ describe('copyAssetToRoot · 项目级 → 用户级（拷贝非同步，复用�
     const target = join(user, 'TESTSKILL-B.md');
     writeFileSync(target, '旧版内容', 'utf-8');
 
-    const result = await copyAssetToRoot(source, user, { confirmOverwrite: async () => false });
+    const result = await copyAssetToRoot(source, user, {
+      kind: 'skill',
+      confirmOverwrite: async () => false,
+    });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -386,7 +396,10 @@ describe('copyAssetToRoot · 项目级 → 用户级（拷贝非同步，复用�
     const target = join(user, 'TESTSKILL-C.md');
     writeFileSync(target, '旧版内容', 'utf-8');
 
-    const result = await copyAssetToRoot(source, user, { confirmOverwrite: async () => true });
+    const result = await copyAssetToRoot(source, user, {
+      kind: 'skill',
+      confirmOverwrite: async () => true,
+    });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -398,12 +411,82 @@ describe('copyAssetToRoot · 项目级 → 用户级（拷贝非同步，复用�
   it('源资产不存在 ⇒ 明确失败，不创建任何目标', async () => {
     const user = makeTempDir('memora-copy-user-');
     const result = await copyAssetToRoot(join(user, 'missing.md'), user, {
+      kind: 'skill',
       confirmOverwrite: async () => false,
     });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toContain('源资产不存在');
+    expect(readdirSync(user)).toEqual([]);
+  });
+
+  // ── 角色包专属回归（真机缺陷：manifest.json 被当技能平铺复制到用户根） ──
+  it('角色包来源误传 manifest.json ⇒ 必须拒绝，用户根目录不得出现平铺 manifest.json', async () => {
+    const project = makeTempDir('memora-copy-project-');
+    const user = makeTempDir('memora-copy-user-');
+    const packDir = join(project, 'TESTPACK-COPY');
+    mkdirSync(packDir, { recursive: true });
+    const manifestPath = join(packDir, 'manifest.json');
+    writeFileSync(manifestPath, '{"name":"TESTPACK-COPY"}', 'utf-8');
+
+    // 旧实现会把普通文件当单文件技能：name 只剥 .md ⇒ manifest.json 平铺进用户根目录
+    const result = await copyAssetToRoot(manifestPath, user, {
+      kind: 'rolePack',
+      confirmOverwrite: async () => false,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain('必须是包目录');
+    expect(result.reason).toContain(manifestPath);
+    expect(readdirSync(user)).toEqual([]);
+    expect(hasLeftovers(user)).toBe(false);
+  });
+
+  it('角色包按包目录复制：产出 <pkg>/manifest.json + persona.md + rules.md，根目录无平铺文件', async () => {
+    const project = makeTempDir('memora-copy-project-');
+    const user = makeTempDir('memora-copy-user-');
+    const packDir = join(project, 'TESTPACK-COPY');
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(join(packDir, 'manifest.json'), '{"name":"TESTPACK-COPY"}', 'utf-8');
+    writeFileSync(join(packDir, 'persona.md'), 'persona-body', 'utf-8');
+    writeFileSync(join(packDir, 'rules.md'), 'rules-body', 'utf-8');
+
+    const result = await copyAssetToRoot(packDir, user, {
+      kind: 'rolePack',
+      confirmOverwrite: async () => false,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.targetPath).toBe(join(user, 'TESTPACK-COPY'));
+    expect(result.fileCount).toBe(3);
+    expect(readFileSync(join(result.targetPath, 'manifest.json'), 'utf-8')).toBe(
+      '{"name":"TESTPACK-COPY"}',
+    );
+    expect(readFileSync(join(result.targetPath, 'persona.md'), 'utf-8')).toBe('persona-body');
+    expect(readFileSync(join(result.targetPath, 'rules.md'), 'utf-8')).toBe('rules-body');
+    // 用户级根目录只应有包目录，不得出现平铺的 manifest.json（真机缺陷形态）
+    expect(readdirSync(user)).toEqual(['TESTPACK-COPY']);
+  });
+
+  it('角色包目录缺 manifest.json ⇒ 拒绝并给绝对路径，不落半份', async () => {
+    const project = makeTempDir('memora-copy-project-');
+    const user = makeTempDir('memora-copy-user-');
+    const packDir = join(project, 'BROKEN-PACK');
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(join(packDir, 'persona.md'), 'persona', 'utf-8');
+
+    const result = await copyAssetToRoot(packDir, user, {
+      kind: 'rolePack',
+      confirmOverwrite: async () => false,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain('manifest.json');
+    expect(result.reason).toContain(packDir);
     expect(readdirSync(user)).toEqual([]);
   });
 });

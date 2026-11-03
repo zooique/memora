@@ -10,6 +10,8 @@
  *   - **执行面只有一处**：落盘 = `zipImport.ts` 的 `copyAssetToRoot`（暂存 → 备份 →
  *     rename → 失败回滚 → 回滚失败转 `.recovery-`），本文件只做编排，**不碰 fs**；
  *   - **拷贝，不是同步**：复制后项目级与用户级是两份独立资产，任一侧后续变更都不传播；
+ *   - **资产类型由本层显式给**：执行面按 `kind` 校验（角色包必须传**包目录**，
+ *     内核 `RolePack.filePath` 是 manifest 路径，须先 `dirname`）；
  *   - **只受理项目级来源**：技能按聚合结果的 `layer === 'project'`，角色包按
  *     `isPathWithin(项目角色包根, filePath)`——防止把用户级资产「复制到它自己」；
  *   - 同名 = 显式覆盖（先备份、可回滚），取消时回执写明「未做任何写入」，**不静默跳过**。
@@ -19,6 +21,7 @@
  * 执行面仍不设防。回执与 UI 只可写「正常工具路径不再写用户目录」，不得写
  * 「模型无法写用户目录」。
  */
+import { dirname } from 'node:path';
 import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
@@ -82,6 +85,28 @@ function postCopyError(deps: AssetCopyDeps, message: string): void {
 }
 
 /**
+ * 复制成功回执文案（技能 / 角色包共用一份，避免两份措辞从落笔起漂移）
+ *
+ * 必须同时写明四件事，缺一即误导：
+ *   1. **去重优先级**：同一项目内项目级优先（`project:1 > user:2`），用户级同名副本默认不显示——
+ *      不写这句，用户点完看到「界面没变化」会以为复制失败；
+ *   2. 绝对落点（用户能自己去核实）；
+ *   3. 文件数（只数叶子，与压缩包导入口径一致）；
+ *   4. **副本，不是同步**（之后两侧互不影响，免得用户以为改了项目级用户级会跟着变）。
+ *
+ * @param label 面向用户的资产类型名（「技能」/「角色包」）
+ * @param name 资产名
+ * @param result 执行面成功回执（绝对落点 + 文件数）
+ */
+function copySuccessMessage(
+  label: string,
+  name: string,
+  result: { targetPath: string; fileCount: number },
+): string {
+  return `已复制${label}「${name}」到用户级：${result.targetPath}（${result.fileCount} 个文件）。用户级副本已装好；同一项目内项目级优先，用户级副本在其它项目才生效。这是副本，不是同步——之后项目级与用户级互不影响。`;
+}
+
+/**
  * 把项目级技能复制到用户级（设置页项目技能卡片「添加到用户级」的落点）
  *
  * @param deps 面板依赖
@@ -109,17 +134,18 @@ export async function copyProjectSkillToUser(
   }
 
   const result = await copyAssetToRoot(skill.filePath, deps.userSkillsDir, {
+    // 类型由本层显式声明（技能 = 文件 / 目录），执行面不再按源节点形态推断
+    kind: 'skill',
     confirmOverwrite: confirmCopyOverwrite,
   });
   if (!result.ok) {
     postCopyError(deps, `复制到用户级失败：${result.reason}`);
     return;
   }
-  // 回执必须写清「拷贝非同步」——否则用户会以为项目级改了用户级会跟着变
   deps.post({
     type: 'notice',
     level: 'info',
-    message: `已复制技能「${skillName}」到用户级：${result.targetPath}（${result.fileCount} 个文件）。这是副本，不是同步——之后项目级与用户级互不影响。`,
+    message: copySuccessMessage('技能', skillName, result),
   });
   await refreshUserSkillsFlow({
     agent,
@@ -149,18 +175,17 @@ export async function copyProjectRolePackToUser(deps: AssetCopyDeps, name: strin
     return;
   }
 
-  const result = await copyAssetToRoot(filePath, deps.userRolePacksDir, {
+  // 内核 filePath 是 manifest.json 的绝对路径，包目录必须取 dirname：
+  // 直接传 filePath 会被当成单文件资产，产出平铺的 manifest.json（真机缺陷）
+  const result = await copyAssetToRoot(dirname(filePath), deps.userRolePacksDir, {
+    kind: 'rolePack',
     confirmOverwrite: confirmCopyOverwrite,
   });
   if (!result.ok) {
     postCopyError(deps, `复制到用户级失败：${result.reason}`);
     return;
   }
-  deps.post({
-    type: 'notice',
-    level: 'info',
-    message: `已复制角色包「${name}」到用户级：${result.targetPath}（${result.fileCount} 个文件）。这是副本，不是同步——之后项目级与用户级互不影响。`,
-  });
+  deps.post({ type: 'notice', level: 'info', message: copySuccessMessage('角色包', name, result) });
   await refreshUserRolePacksFlow({
     agent,
     userRolePacksDir: deps.userRolePacksDir,

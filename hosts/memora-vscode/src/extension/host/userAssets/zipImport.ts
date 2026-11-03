@@ -753,6 +753,14 @@ export async function importAssetZip(
 /** 复制资产到另一根目录（项目级 → 用户级）的入参 */
 export interface CopyAssetOptions {
   /**
+   * 资产类型（**由调用方显式给出，执行面禁止按源节点形态推断**）。
+   *
+   * 为什么不推断：内核 `RolePack.filePath` 是 `manifest.json` 的**绝对路径**而非包目录。
+   * 若按「源是文件 ⇒ 技能」推断，角色包会被当成同名技能把单个 manifest.json 平铺进用户根，
+   * 且回执报成功（真机缺陷形态）。类型的判据归调用方（技能 = 文件或目录、角色包 = 目录）。
+   */
+  kind: AssetKind;
+  /**
    * 同名已存在时的确认回调：true = 覆盖，false = 取消（**缺省语义即取消**）。
    *
    * 与压缩包导入共用同一语义：绝不静默覆盖用户已有资产，也绝不「点了没反应」——
@@ -788,32 +796,41 @@ async function countFilesInDir(root: string): Promise<number> {
  * 目标已存在则先换名成 `.bak-<hex>` 备份 → `rename(暂存 → 目标)` → 成功才删备份；
  * 任一步失败反向换名回滚，回滚再失败则把备份转成 `.recovery-<hex>`（清理永不删除）。
  *
- * 调用方负责「重扫 + UI 刷新」；本模块不碰 Agent、不碰 UI 状态。
+ * 调用方负责「资产类型判定 → 来源路径归一（角色包传包目录）+ 重扫 + UI 刷新」；
+ * 本模块只按 `options.kind` 校验与执行，不碰 Agent、不碰 UI 状态。
  *
- * @param sourcePath 项目级资产绝对路径（技能 `.md` 文件或目录；角色包目录）
+ * @param sourcePath 项目级资产绝对路径（技能：`.md` 文件或目录；角色包：**包目录**，不是 manifest 路径）
  * @param targetRoot 用户级资产根目录（skills / role-packs）
- * @param options 同名覆盖确认
+ * @param options 资产类型 + 同名覆盖确认
  */
 export async function copyAssetToRoot(
   sourcePath: string,
   targetRoot: string,
   options: CopyAssetOptions,
 ): Promise<CopyAssetResult> {
-  let sourceKind: 'file' | 'dir';
+  let sourceIsDir: boolean;
   try {
     const info = await stat(sourcePath);
-    sourceKind = info.isDirectory() ? 'dir' : 'file';
+    sourceIsDir = info.isDirectory();
   } catch (err) {
     return { ok: false, reason: `源资产不存在或不可读：${(err as Error).message}` };
   }
 
+  // 角色包来源必须是「含 manifest.json 的包目录」：先验来源，再做任何暂存/换名，
+  // 缺失即拒绝并给出绝对路径，绝不落半份（错误提示要给到人，读者才知道去哪个目录补文件）
+  if (options.kind === 'rolePack') {
+    if (!sourceIsDir) {
+      return { ok: false, reason: `角色包来源必须是包目录，收到文件路径：${sourcePath}` };
+    }
+    if (!(await pathExists(join(sourcePath, 'manifest.json')))) {
+      return { ok: false, reason: `角色包目录缺少 manifest.json：${sourcePath}` };
+    }
+  }
+
   const sourceName = basename(sourcePath);
-  // 单文件技能落点 = 原文件名（如 `foo.md`）；目录资产落点 = 目录名
-  const singleFile = sourceKind === 'file';
+  // 单文件技能落点 = 原文件名（如 `foo.md`）；目录资产落点 = 目录名（角色包即包名目录）
+  const singleFile = !sourceIsDir;
   const name = singleFile ? sourceName.replace(/\.md$/i, '') : sourceName;
-  // 来源类型仅用于确认弹窗文案；目录里含 manifest.json 视为角色包（与导入识别的顺序一致）
-  const kind: AssetKind =
-    singleFile || !(await pathExists(join(sourcePath, 'manifest.json'))) ? 'skill' : 'rolePack';
 
   // 候选目标：单文件技能同时防「同名目录」占位（与压缩包导入的 resolveTargets 同判据）
   const candidates = singleFile ? [sourceName, name] : [sourceName];
@@ -832,7 +849,8 @@ export async function copyAssetToRoot(
   }
   if (existing.length > 0) {
     const overwrite = await options.confirmOverwrite({
-      kind,
+      // 类型直接取自调用方声明，不再按源形态推断（否则角色包会被叫成「同名技能」）
+      kind: options.kind,
       name,
       targetPath: existing[0]!,
     });
