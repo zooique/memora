@@ -345,7 +345,8 @@ export class SecurityGuard {
     agentDataDir?: string,
     /**
      * 禁止覆盖根（可选，泛型）：目标文件落在这些目录内且已存在 ⇒ 写入工具拒绝覆盖。
-     * 内核不在工具里硬编码路径字面量；宿主当前不注入（生产零消费者，6.0.0 退役）。
+     * 内核不在工具里硬编码路径字面量；宿主装配期仍传参（`assemble.ts`），但用户资产目录
+     * 已不在 `allowedPaths` ⇒ 白名单阶段即拒、本判据生产不可达（保留键，6.0.0 退役）。
      */
     noOverwriteRoots: string[] = [],
   ) {

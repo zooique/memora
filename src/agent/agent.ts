@@ -195,7 +195,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       maxTokens: opts.maxTokens,
       permission: opts.permission ?? 'owner',
       allowedPaths: opts.allowedPaths ?? [],
-      // 禁止覆盖根（泛型保留键）：宿主当前不注入（生产零消费者），缺省空 = 不启用；6.0.0 退役
+      // 禁止覆盖根（泛型保留键）：宿主装配期仍传参（`assemble.ts`），但用户目录不在白名单 ⇒
+      // 判据生产不可达；缺省空 = 不启用；保留键随 6.0.0 退役
       noOverwriteRoots: opts.noOverwriteRoots ?? [],
       confirmWrites: opts.confirmWrites ?? false,
       confirmScripts: opts.confirmScripts ?? false,
