@@ -51,7 +51,7 @@ agent_created: true
 - 这是 `host-release.yml` gate ② 的本地预演；tag 前人工跑一遍，避免推上去才红。
 
 #### Step 0.3：放行判定（进 Step 1 / 进 Step 4 的两道判据）
-- **进 Step 1（文档对齐）**：① 问题清单无未处置项；② 每条修复已提交且定向验证转绿；③ 落账完成；④ 审查端点 HEAD 与收据一致；⑤ 收据已按 `../memora-kernel-release/references/pre-release-audit.md` §3.4 落盘（判据 = §4）。缺任一 ⇒ 停在 Step 0 报告，不得进入 Step 1。
+- **进 Step 1（文档对齐）**：① 问题清单无未处置项；② 每条修复已提交且定向验证转绿；③ 落账完成；④ 审查端点与「端点后记账提交清单」符合判据（→ `../memora-kernel-release/references/pre-release-audit.md` §1.3 / §4，本节不复述）；⑤ 收据已按 §3.4 落盘（判据 = §4）。缺任一 ⇒ 停在 Step 0 报告，不得进入 Step 1。
 - **进 Step 4（打 tag）的追加条件**：放行总收据的 §3.4 字段齐全且全绿——值一律取 Step 2 本地预检的原始输出，**不得转述**；未齐不得打 tag（Step 2 未全绿同样不得打 tag）。
 - **收据落盘（本步必做，不许只活在回报里）**：写入 `tasks/archive/<x.y.z>-host.md` 文件头——文件不存在则按 `../memora-kernel-release/references/pre-release-audit.md` §3.4 骨架预建（状态标「待上架」，含 `---` 分隔行），Step 2 产出后把该表各字段值补进同一处。读者 = 同轮 Step 2→4（tag 前唯一凭据）/ Step 6（订正为已发布）/ 下一轮 Step 0.1（追溯遗留项）。
   - 文件已预建 ⇒ Step 3 归档**必须** `--append`（不带会对已存在文件整体覆盖，收据会被毁）。
@@ -150,7 +150,7 @@ agent_created: true
 - 🔴 **CHANGELOG 双区**：宿主发版只动 `## [Unreleased] · 宿主` 区，内核区（`## [5.0.0] …`）不动。
 - 🔴 **host-release.yml 不含 `verify:changelog` / `verify:publish-docs`** ⇒ 须人工跑/核对（内核有、宿主无，这是两链最易踩的差异）。
 - 🔴 **Open VSX Trusted Publisher 绑定 workflow 文件名** ⇒ `host-release.yml` 不得改名。
-- 🔴 **Windows 上 Bash 跑 git 写操作会污染索引**（曾致 `tasks/` 十余文件被误标删除）——归档/提交/打 tag 用 PowerShell 直接命令或 `node -e`，忌用 Bash 流。push 走 Bash `env -u NODE_OPTIONS LEFTHOOK=0`（PowerShell 进程树拦 credential-manager ⇒ 网络 git 操作静默 EXIT=128）。
+- 🔴 **Windows 上 Bash 跑 git 写操作会污染索引**（曾致 `tasks/` 十余文件被误标删除）——归档/提交/打 tag 用 PowerShell 直接命令或 `node -e`，忌用 Bash 流。push 若 PowerShell 拦 credential-manager（网络 git 静默 EXIT=128）走 Bash `env -u NODE_OPTIONS git push`，**不设 `LEFTHOOK=0`**——pre-push 默认必须跑；确需绕行按 `memora-kernel-release-readiness` 提交环节的三件（用户显式授权并引原话 / 写明原因 / 补跑同一门禁并进收据）。
 - 🔴 **CI 冷 store 勿用 `--offline`**（0.2.0 首跑实证，run 39889566947）：根与宿主是两个独立 pnpm 工程（无 workspace），CI 只装了根依赖；宿主 lockfile 239 包中 ~187 个根没有（vsce/@vscode 系）⇒ 冷 store offline 解析必炸。workflow 安装步已定 `--frozen-lockfile`，**勿改回 `--offline`**；本地 store 已暖，本地跑 `--offline` 仍可。
 - 🔴 **平台相关 API 的断言写 `runIf(平台)` 互斥孪生**（0.2.0 二跑实证，run 39890131524）：`path.relative` / findFiles `fsPath` 等语义随 OS 变，反斜杠形态只在 Windows 运行时出现，ubuntu 上喂 Windows 路径必错。win32 用例 `runIf(process.platform === 'win32')` + POSIX 孪生 `runIf(!win32)` 各跑真实形态——**不产生隐藏 skip**，任一平台都有在跑的用例。
 - 🔴 **跨宿主契约测试的前置是 memora-mcp dist**：`crossHostLayout.test.ts` 加载 `hosts/memora-mcp/dist` 产物（非源码）且有 mtime 守卫。workflow 已带构建步（mcp 无 lockfile ⇒ `--no-frozen-lockfile`，mcp 出包补 lockfile 后收紧为 frozen）；本地新 clone 同样先 build mcp。
