@@ -285,6 +285,16 @@ function truncateForDiff(content: string | null | undefined): string | null | un
   return content.slice(0, MAX_DIFF_CONTENT_LENGTH) + `\n...（已截断，共 ${content.length} 字符）`;
 }
 
+/**
+ * 禁止改写判据的用户提示（single source）：`assertNotOverwrite` 抛出与
+ * `builtinToolHandlers` 包装 `toolError` 共用，防两处各写一份而漂移（B7）。
+ * 中性措辞：本判据是泛型选项，不点名任何具体目录。
+ */
+export const NO_OVERWRITE_HINTS: Record<'overwrite' | 'delete', string[]> = {
+  overwrite: ['请换名写入（同名已存在的一律拒写）'],
+  delete: ['已存在的目标文件不允许通过对话删除', '如需删除，请在文件管理器中手动删除'],
+};
+
 export class SecurityGuard {
   private readonly listeners: AuditListener[] = [];
   /**
@@ -299,11 +309,15 @@ export class SecurityGuard {
   /** 允许访问的根目录列表（白名单）= baseRoots + extraRoots（派生，断言时遍历） */
   private allowedRoots: string[];
   /**
-   * 禁止覆盖根（用户资产目录，运行时经 setNoOverwriteRoots 热更新）。
+   * 禁止覆盖根（泛型选项，运行时经 setNoOverwriteRoots 热更新）。
    *
    * 与 allowedPaths 并列的第二条判据：白名单回答「能不能写」，本字段回答
    * 「能不能**覆盖已存在的文件**」。两者必须分开——`write_file` 的确认档是
-   * `idempotent-key`（owner 默认不弹窗），没有本判据就会被静默覆盖。
+   * `idempotent-key`（owner 默认不弹窗），无本判据即直接写入、不拦覆盖。
+   * ⚠️ 现状（2026-11-03）：宿主已撤回用户目录的白名单注入
+   * （`mergeAllowedPathsWithUserAssets` 生产零调用）⇒ 目标文件在白名单阶段即被拒，
+   * 本判据**生产不可达**；本键作保留键，计划 6.0.0 随 `DEPRECATE-1` 退役。
+   * 不得据此声称「保护用户资产目录」。
    * ⚠️ 射程：只约束 `write_file` / `delete_file` 两个内置写入工具（二者共用
    * `assertNotOverwrite`）；**不约束代码执行**——`run_code` / `run_skill_script` /
    * `run_project_script` 与进程同权限，应用层路径判据对它们无效。
@@ -330,8 +344,8 @@ export class SecurityGuard {
     /** Agent 级数据目录（宿主传入；内核不假设其下的文件形态） */
     agentDataDir?: string,
     /**
-     * 禁止覆盖根（可选）：目标文件落在这些目录内且已存在 ⇒ 写入工具拒绝覆盖。
-     * 由宿主注入「用户资产目录」（skills / role-packs），内核不在工具里硬编码路径字面量。
+     * 禁止覆盖根（可选，泛型）：目标文件落在这些目录内且已存在 ⇒ 写入工具拒绝覆盖。
+     * 内核不在工具里硬编码路径字面量；宿主当前不注入（生产零消费者，6.0.0 退役）。
      */
     noOverwriteRoots: string[] = [],
   ) {
@@ -363,7 +377,8 @@ export class SecurityGuard {
    * 超限**抛错**而非截断（截断 = 用户以为已放行、实际被拒的静默失效）。
    *
    * @param paths 待归一化的额外白名单
-   * @param label 错误文案用键名（allowedPaths / noOverwriteRoots）
+   * @param label 错误文案用键名；当前唯一调用方 = `allowedPaths`
+   *   （`noOverwriteRoots` 走 `normalizeNoOverwriteRoots`，不经过本函数、不设上限）
    */
   private normalizeExtraRoots(paths: string[], label: string): string[] {
     if (!Array.isArray(paths)) {
@@ -516,9 +531,7 @@ export class SecurityGuard {
     throw securityError(
       `目标已存在，禁止${verb}`,
       `路径 ${resolved} 已存在且位于禁止改写目录 ${hitRoot}（动作=${action}）`,
-      action === 'delete'
-        ? ['用户级资产目录内已存在的文件不允许通过对话删除', '如需删除，请在文件管理器中手动删除']
-        : ['请换名写入（同名已存在的一律拒写）'],
+      NO_OVERWRITE_HINTS[action],
     );
   }
 

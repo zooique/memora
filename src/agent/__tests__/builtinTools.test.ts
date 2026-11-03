@@ -613,6 +613,15 @@ describe('builtinTools · shouldSkipForIdempotency（仅一次语义）', () => 
     expect(shouldSkipForIdempotency(records, 'read_file', args, level)).toEqual({ skip: false });
   });
 
+  it('幂等分类 read-only ⇒ 工具定义必须声明 readonly: true（两套语义不得漂移）', () => {
+    // 判据真源 = BUILTIN_TOOL_IDEMPOTENCY；定义面必须在同源处声明 readonly，
+    // 否则「幂等表说只读、定义面没标」会形成第二套语义（B11：compress_context 曾如此）
+    const offenders = ALL_BUILTIN_TOOL_DEFS.filter(
+      (t) => BUILTIN_TOOL_IDEMPOTENCY[t.name] === 'read-only' && t.readonly !== true,
+    ).map((t) => t.name);
+    expect(offenders).toEqual([]);
+  });
+
   it('task_table_update 跨轮同 args 不跳过——plan_item_id 是位置序号，任务表重写后同序号指向另一项', () => {
     // 真机观测 2026-10-25：跨轮同 name+args 命中上一轮记录 → 回显旧任务项。
     // 用真实映射值判定（禁用硬编码）：归类一旦回退为幂等，本例即红
@@ -644,7 +653,8 @@ describe('builtinTools · 只读闸标记（readonly）全覆盖', () => {
     'register_work',
     // 副作用 / 会话状态变更（非改盘，但只读角色下不应执行）
     'kill_command',
-    'compress_context',
+    // compress_context 不在此列：它由 loop 专有通道执行（toolExecutor 提前拦截，绕过只读闸），
+    // 定义面按幂等分类 'read-only' 标 readonly:true，使两张表同源（见下方 idempotency ↔ readonly 钉）
     'task_table_write',
     'task_table_update',
   ] as const;

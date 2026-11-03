@@ -589,11 +589,12 @@ export interface AgentOptions {
   /** 允许的路径白名单 */
   allowedPaths?: string[];
   /**
-   * 禁止覆盖根（可选）：目标文件落在这些目录内且已存在 ⇒ `write_file` 拒绝覆盖。
+   * 禁止覆盖根（可选，泛型）：目标文件落在这些目录内且已存在 ⇒ `write_file` / `delete_file` 拒绝改写。
    *
    * 与 allowedPaths **并列但方向相反**：白名单回答「能不能写」，本键回答「能不能覆盖」。
-   * 典型注入方是宿主「用户资产目录」（skills / role-packs）——`write_file` 的确认档是
-   * `idempotent-key`（owner 默认不弹窗），没有本键就会被静默覆盖。
+   * ⚠️ 现状（2026-11-03）：**保留键、生产零消费者**——宿主已撤回用户目录白名单注入，
+   * 目标文件在白名单阶段即被拒、到不了本判据；计划 6.0.0 按 `DEPRECATE-1` 退役。
+   * 不得据此声称「保护用户资产目录」。
    */
   noOverwriteRoots?: string[];
   /** 写入确认 */

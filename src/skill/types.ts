@@ -73,7 +73,7 @@ export interface SkillEntry {
    * 单文件技能 = 该文件本身；目录式技能 = 技能目录（资源随包）。
    * 由内核在扫描时给出（判据 SSOT = `utils/scanner.isFolderFormSkill`），宿主不得按入口路径反推。
    */
-  packageRoot?: string;
+  readonly packageRoot?: string;
   /**
    * 来源层（agent / project）
    *

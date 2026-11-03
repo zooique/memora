@@ -9,13 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ToolRunner, type ToolCall, type ToolRunnerDeps } from '@/agent/toolRunner.js';
-import {
-  ALL_BUILTIN_TOOL_DEFS,
-  BUILTIN_TOOLS,
-  WEB_SEARCH_TOOL,
-  WEB_FETCH_TOOL,
-  RUN_CODE_TOOL,
-} from '@/agent/builtinTools.js';
+import { ALL_BUILTIN_TOOL_DEFS } from '@/agent/builtinTools.js';
 import { MemoraError } from '@/utils/errors.js';
 import { NOOP_TRACER } from '@/agent/tracer.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
@@ -82,8 +76,9 @@ describe('ToolRunner 单工具执行', () => {
   });
 
   it('只读闸（生产全量内置定义）：readonly 放行 web_search/web_fetch/read_file，阻止 run_code/write_file', async () => {
-    // 修复 4-1/4-2 后的生产注入形态：assembler 传 toolExec.allToolDefinitions（全量定义含条件工具与自定义工具）
-    const allTools = [...BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL];
+    // 生产注入形态 = assembler 传 toolExec.allToolDefinitions；此处直接用派生合集单源，
+    // 不再手写枚举（手工清单曾漏 SEARCH_PROJECT_TOOL，与 builtinTools.ts「禁再独立枚举」同源纪律冲突）
+    const allTools = ALL_BUILTIN_TOOL_DEFS;
     const execute = vi.fn(async () => 'OK');
     const deps = makeDeps({
       execute,

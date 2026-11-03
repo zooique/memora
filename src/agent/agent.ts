@@ -195,7 +195,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       maxTokens: opts.maxTokens,
       permission: opts.permission ?? 'owner',
       allowedPaths: opts.allowedPaths ?? [],
-      // 禁止覆盖根：宿主注入用户资产目录；缺省空 = 不启用覆盖保护
+      // 禁止覆盖根（泛型保留键）：宿主当前不注入（生产零消费者），缺省空 = 不启用；6.0.0 退役
       noOverwriteRoots: opts.noOverwriteRoots ?? [],
       confirmWrites: opts.confirmWrites ?? false,
       confirmScripts: opts.confirmScripts ?? false,

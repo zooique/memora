@@ -16,7 +16,7 @@
 import { readFile, writeFile, mkdir, readdir, stat, access, unlink } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:path';
-import type { SecurityGuard } from '@/security/pathGuard.js';
+import { NO_OVERWRITE_HINTS, type SecurityGuard } from '@/security/pathGuard.js';
 import { toolError, MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { toError, isNodeErrorCode } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
@@ -568,9 +568,9 @@ export class BuiltinToolHandlers {
 
     const absolutePath = this.resolveSafePath(relativePath);
     this.guardPathOrThrow(absolutePath, 'delete_file');
-    // 禁止改写根（用户资产目录）的第二落点：与 write_file 共用同一判据函数，
-    // 只把动作语义传成 'delete'（错误码位 / 文案 / 审计动作名不同）。命中即拒绝、零删除。
-    // 项目级与普通工作区文件不在此根内，保持可删。
+    // 禁止改写根判据（泛型）：与 write_file 共用同一判据函数，只把动作语义传成 'delete'
+    // （错误码位 / 文案 / 审计动作名不同）。命中即拒绝、零删除。
+    // 现状（2026-11-03）：宿主不再注入用户目录，本判据生产不可达；保留键随 6.0.0 退役。
     // 与 write_file 同形包装成 toolError：securityError 本身无 errorCode，直接抛会给 LLM
     // 一个「不可分类」错误（重试判断落空）；这里统一成 PERMISSION_DENIED（不可重试）。
     try {
@@ -580,7 +580,7 @@ export class BuiltinToolHandlers {
       throw toolError(
         '目标已存在，禁止删除',
         e.message,
-        ['用户级资产目录内已存在的文件不允许通过对话删除', '如需删除，请在文件管理器中手动删除'],
+        NO_OVERWRITE_HINTS.delete,
         e,
         ToolErrorCode.PERMISSION_DENIED,
       );
@@ -731,8 +731,9 @@ export class BuiltinToolHandlers {
 
     const absolutePath = this.resolveSafePath(relativePath);
     this.guardPathOrThrow(absolutePath, 'write_file');
-    // 禁止覆盖根（用户资产目录）：write_file 的确认档是 idempotent-key，owner 默认不弹窗，
-    // 不过本判据就会静默覆盖用户已有技能/角色包文件。判据真源在 SecurityGuard，工具不硬编码路径。
+    // 禁止覆盖根判据（泛型）：write_file 的确认档是 idempotent-key，owner 默认不弹窗，
+    // 故设本判据。现状（2026-11-03）：宿主不再注入用户目录，本判据生产不可达，
+    // 保留键随 6.0.0 退役；判据真源在 SecurityGuard，工具不硬编码路径。
     try {
       this.security.assertNotOverwrite(absolutePath, 'write_file');
     } catch (err) {
@@ -740,7 +741,7 @@ export class BuiltinToolHandlers {
       throw toolError(
         '目标已存在，禁止覆盖',
         e.message,
-        ['请换名写入（同名已存在的一律拒写）', '不要静默覆盖用户已有文件'],
+        NO_OVERWRITE_HINTS.overwrite,
         e,
         ToolErrorCode.PERMISSION_DENIED,
       );

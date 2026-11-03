@@ -1160,7 +1160,7 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
   SecurityGuard: {
     kind: 'class',
     members: [
-      // 2026-11-02 ASSET-WRITE-SCOPE-1：禁止覆盖根（用户资产目录保护）
+      // 2026-11-02 ASSET-WRITE-SCOPE-1：禁止覆盖根（泛型保留键；生产零消费者，6.0.0 退役）
       'assertNotOverwrite',
       'assertPathAllowed',
       'confirmCommandRun',
@@ -1198,7 +1198,7 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       'readResource',
       'register',
       // 🔴 2026-11-02 USER-SKILL-RESYNC-1（新成员定性 = 真能力，非 no-op 谎报）：
-      //   `reload`（覆写基类，统一重扫 configDir + 已登记用户目录）与 `resyncUserSkills`
+      //   `reload`（覆写基类，统一重扫 configDir + 已登记用户目录 + 项目级目录，三段）与 `resyncUserSkills`
       //   （设置页「刷新技能」的唯一内核落点，形态对齐 RolePackManager.resyncUserPacks）。
       //   缺此两者时，用户目录新增文件后不重启宿主永不生效（「建了不生效」的真伤）。
       //   真消费者 = 宿主 settingsPanel.refreshSkills（`agent.skills.resyncUserSkills()`），
@@ -1396,10 +1396,11 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    行为由公开面 agent.polish.polish() 的 2 例测试 + 变异验证守护（移除注入即转红）。\n` +
       `    代价 = 零（新增方法，既有 polish 签名与语义不变）。\n` +
       `  ⑨ AgentOptions.noOverwriteRoots 新增（2026-11-02 · ASSET-WRITE-SCOPE-1，非 Breaking）：\n` +
-      `    定性 = **真能力**（非 no-op 谎报）：与 allowedPaths 并列但方向相反——白名单放宽可写面，\n` +
-      `    本键收紧覆盖面（目标已存在 ⇒ write_file 拒绝）。真消费者 = 宿主 assemble.ts 用用户资产\n` +
-      `    目录构造它；缺它时 write_file 的 idempotent-key 确认档不弹窗，模型会静默覆盖用户技能 / 角色包。\n` +
-      `    行为由 pathGuard.test.ts 的 6 例 + builtinToolHandlers 写入分支守护。\n` +
+      `    定性 = **保留键（生产零消费者）**：与 allowedPaths 并列但方向相反——白名单放宽可写面，\n` +
+      `    本键收紧覆盖面（目标已存在 ⇒ write_file / delete_file 拒绝改写）。宿主已于 2026-11-03 撤回\n` +
+      `    用户目录的白名单注入（mergeAllowedPathsWithUserAssets 零调用），目标文件在白名单阶段即被拒、\n` +
+      `    到不了本判据 ⇒ 缺它也不会静默覆盖用户技能 / 角色包。计划 6.0.0 按 DEPRECATE-1 退役。\n` +
+      `    判据本身仍有效，由 pathGuard.test.ts 的 6 例守护（移除判据即转红）；仅无生产注入点。\n` +
       `    代价 = 零（可选字段：缺省 [] = 不启用，既有调用零变化）。`;
     expect(
       issues,

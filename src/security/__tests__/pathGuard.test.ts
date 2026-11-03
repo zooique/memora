@@ -937,7 +937,7 @@ describe('SecurityGuard · 命令执行确认（confirmCommandRun，§13.2）', 
   });
 });
 
-describe('SecurityGuard · 禁止覆盖根（noOverwriteRoots，用户资产目录保护）', () => {
+describe('SecurityGuard · 禁止覆盖根（noOverwriteRoots，泛型禁止覆盖判据）', () => {
   let projectPath: string;
   let dataDir: string;
   let assetRoot: string;

@@ -268,6 +268,9 @@ export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
     },
     required: [],
   },
+  // 幂等映射 read-only（loop 拦截执行、永不跳过）：补 readonly 标记使两套分类同源，
+  // 防「幂等表说只读、定义面却没声明」的第二套语义（B11）
+  readonly: true,
 };
 
 /**
