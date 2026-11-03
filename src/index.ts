@@ -262,6 +262,9 @@ export { setLogger, logger } from '@/logging/logger.js';
 // 宿主零消费，不挂公共面（收回误暴露）。
 export { segmentLower } from '@/utils/segmenter.js';
 export { parseFrontmatter } from '@/utils/frontmatter.js';
+// 技能主文件约定名（文件夹形态入口）：宿主复制校验「目录式技能包根须含入口」时复用同一 SSOT，
+// 不在宿主硬编码 'SKILL.md'（硬编码即第二套判据，与扫描器大小写不敏感口径会漂移）。
+export { SKILL_MAIN_FILE } from '@/utils/scanner.js';
 export type { SkillEntry } from '@/skill/types.js';
 
 // ─── 安全层导出 ────────────────────────────────────────────

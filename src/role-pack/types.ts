@@ -225,6 +225,11 @@ export interface RolePack {
   readonly content: string;
   /** 来源文件路径（manifest.json 绝对路径，满足 ConfigResource 约束） */
   readonly filePath: string;
+  /**
+   * 资产包根（绝对路径）：复制 / 迁移的**唯一单元**，与 `SkillEntry.packageRoot` 同名字同语义。
+   * 角色包 = 包目录（含 manifest.json）；本字段由内核在装配时给出，宿主不得再按入口路径反推。
+   */
+  readonly packageRoot?: string;
 
   /** 角色包元数据（manifest.json） */
   readonly meta: RolePackMeta;
@@ -261,6 +266,11 @@ export interface RolePackAssembly {
   readonly meta: RolePackMeta;
   /** 来源文件路径（manifest.json 绝对路径，供宿主区分内置/用户来源） */
   readonly filePath: string;
+  /**
+   * 资产包根（绝对路径）= 包目录：复制 / 迁移的唯一单元，从 `RolePack.packageRoot` 直通。
+   * 宿主拿到的是 Assembly（`rpm.get(name)`），故本字段必须随装配一起带出，不能只留在 RolePack。
+   */
+  readonly packageRoot?: string;
   /** 合并后的 persona prompt（含规则注入与主动提问指令） */
   readonly personaPrompt: string;
   /** 内嵌技能注册（manifest.skills，对象数组，支持多个） */

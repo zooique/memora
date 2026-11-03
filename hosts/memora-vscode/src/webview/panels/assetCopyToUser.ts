@@ -10,8 +10,10 @@
  *   - **执行面只有一处**：落盘 = `zipImport.ts` 的 `copyAssetToRoot`（暂存 → 备份 →
  *     rename → 失败回滚 → 回滚失败转 `.recovery-`），本文件只做编排，**不碰 fs**；
  *   - **拷贝，不是同步**：复制后项目级与用户级是两份独立资产，任一侧后续变更都不传播；
- *   - **资产类型由本层显式给**：执行面按 `kind` 校验（角色包必须传**包目录**，
- *     内核 `RolePack.filePath` 是 manifest 路径，须先 `dirname`）；
+ *   - **复制单元 = 内核给出的资产包根**（`SkillEntry.packageRoot` / `RolePack.packageRoot`）：
+ *     单文件技能 = 文件、目录式技能 = 技能目录、角色包 = 包目录。宿主**零推导**——
+ *     不 `dirname(filePath)`，也不按「同目录有没有 SKILL.md」猜（猜法必与内核扫描器漂移）；
+ *   - **资产类型（kind）只决定校验规则与文案**，不决定复制单元；
  *   - **只受理项目级来源**：技能按聚合结果的 `layer === 'project'`，角色包按
  *     `isPathWithin(项目角色包根, filePath)`——防止把用户级资产「复制到它自己」；
  *   - 同名 = 显式覆盖（先备份、可回滚），取消时回执写明「未做任何写入」，**不静默跳过**。
@@ -21,7 +23,6 @@
  * 执行面仍不设防。回执与 UI 只可写「正常工具路径不再写用户目录」，不得写
  * 「模型无法写用户目录」。
  */
-import { dirname } from 'node:path';
 import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
@@ -133,8 +134,16 @@ export async function copyProjectSkillToUser(
     return;
   }
 
-  const result = await copyAssetToRoot(skill.filePath, deps.userSkillsDir, {
-    // 类型由本层显式声明（技能 = 文件 / 目录），执行面不再按源节点形态推断
+  // 复制单元 = 内核给出的包根（单文件技能 = 文件；目录式技能 = 技能目录），宿主不拿 filePath 反推
+  if (!skill.packageRoot) {
+    postCopyError(
+      deps,
+      `内核未提供技能「${skillName}」的包根（packageRoot），无法安全复制到用户级`,
+    );
+    return;
+  }
+  const result = await copyAssetToRoot(skill.packageRoot, deps.userSkillsDir, {
+    // 类型由本层显式声明，只影响校验分支与文案（不决定复制单元）
     kind: 'skill',
     confirmOverwrite: confirmCopyOverwrite,
   });
@@ -169,15 +178,18 @@ export async function copyProjectRolePackToUser(deps: AssetCopyDeps, name: strin
     return;
   }
   // 来源归属以 filePath 为唯一判据，不猜来源；同名时内核池项目级优先，但仍逐路径核对
-  const filePath = rpm.get(name)?.filePath;
-  if (!filePath || !isPathWithin(deps.projectRolePacksDir, filePath)) {
+  const pack = rpm.get(name);
+  if (!pack || !isPathWithin(deps.projectRolePacksDir, pack.filePath)) {
     postCopyError(deps, `「${name}」不是项目级角色包，无法复制到用户级`);
     return;
   }
+  // 复制单元 = 包根（包目录），由内核装配时给出；缺字段即拒绝，宿主不拿 manifest 路径反推
+  if (!pack.packageRoot) {
+    postCopyError(deps, `内核未提供角色包「${name}」的包根（packageRoot），无法安全复制到用户级`);
+    return;
+  }
 
-  // 内核 filePath 是 manifest.json 的绝对路径，包目录必须取 dirname：
-  // 直接传 filePath 会被当成单文件资产，产出平铺的 manifest.json（真机缺陷）
-  const result = await copyAssetToRoot(dirname(filePath), deps.userRolePacksDir, {
+  const result = await copyAssetToRoot(pack.packageRoot, deps.userRolePacksDir, {
     kind: 'rolePack',
     confirmOverwrite: confirmCopyOverwrite,
   });

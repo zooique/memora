@@ -66,8 +66,14 @@ export interface SkillEntry {
   displayName?: string;
   /** 技能 prompt 正文（L2 内容） */
   content: string;
-  /** 来源路径 */
+  /** 来源路径（入口文件：单文件技能 = 该 .md；目录式技能 = `<目录>/SKILL.md`） */
   filePath: string;
+  /**
+   * 资产包根（绝对路径）：复制 / 迁移的**唯一单元**，与 `RolePack.packageRoot` 同名字同语义。
+   * 单文件技能 = 该文件本身；目录式技能 = 技能目录（资源随包）。
+   * 由内核在扫描时给出（判据 SSOT = `utils/scanner.isFolderFormSkill`），宿主不得按入口路径反推。
+   */
+  packageRoot?: string;
   /**
    * 来源层（agent / project）
    *

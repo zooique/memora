@@ -556,6 +556,8 @@ description: 联网搜索资料
       expect(skill).not.toBeNull();
       // 裸 .md 为纯 L1/L2：layer3 为空，即使同级存在 resources/scripts
       expect(skill!.layer3).toBeUndefined();
+      // 资产包根 = 该文件本身（复制单元；取 dirname 会把 skills/ 根当包根、误搬兄弟技能）
+      expect(skill!.packageRoot).toBe(join(skillsDir, 'foo.md'));
     });
 
     it('文件夹形态（SKILL.md）正常扫描 L3 资源/脚本', async () => {
@@ -577,6 +579,8 @@ description: 联网搜索资料
       expect(skillDirSkill!.layer3?.resources[0]!.path).toBe('ref.md');
       expect(skillDirSkill!.layer3?.scripts).toHaveLength(1);
       expect(skillDirSkill!.layer3?.scripts[0]!.path).toBe('run.sh');
+      // 资产包根 = 技能目录（资源随包复制；不是入口文件路径）
+      expect(skillDirSkill!.packageRoot).toBe(skillDir);
     });
 
     it('文件夹形态（SKILL.md）扫描 references/ 且 read_resource 可读（B1 兼容主流）', async () => {

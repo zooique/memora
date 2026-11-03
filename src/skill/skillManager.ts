@@ -596,6 +596,10 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
       displayName: extractDisplayName(entry.body),
       content: entry.body.trim(),
       filePath: entry.filePath,
+      // 资产包根（复制 / 迁移的唯一单元）由扫描分支直接给出（见 scanner.ScanMarkdownEntry.packageRoot）：
+      // 目录式技能 = 技能目录（资源随包）；单文件技能 = 该文件本身。
+      // 宿主据此整包复制，禁止拿 filePath 反推（单文件技能 dirname 会变成 skills/ 根，误搬兄弟技能）。
+      packageRoot: entry.packageRoot,
       // 来源层（agent / project）：解析 frontmatter.layer，非法/缺失回退 project（与现状默认一致）。
       // ⚠️ 展示语义不由本字段单独决定：宿主以 filePath 前缀为主判据，
       // 本字段仅在无路径/未命中时兜底（project → 用户源，agent → 内置源）。

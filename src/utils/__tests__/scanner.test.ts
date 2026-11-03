@@ -217,6 +217,24 @@ description: 变体技能
       expect(names).toEqual(['文件夹技能', '独立技能']);
     });
 
+    it('packageRoot 由扫描分支决定：单文件 = 文件本身，目录式 = 技能目录', async () => {
+      await writeFile(join(tempDir, 'standalone.md'), '---\nname: 独立技能\n---\n独立正文');
+      await mkdir(join(tempDir, 'folder-skill'));
+      await writeFile(
+        join(tempDir, 'folder-skill', 'SKILL.md'),
+        '---\nname: 文件夹技能\n---\n文件夹正文',
+      );
+      // 顶层裸 SKILL.md（单文件技能恰好叫 SKILL.md）：包根仍必须是**该文件**，
+      // 不得按文件名反推成目录式（反推会把 dirname 退到扫描根，复制时误搬兄弟技能）
+      await writeFile(join(tempDir, 'SKILL.md'), '---\nname: 裸主文件\n---\n裸正文');
+
+      const result = await scanMarkdownDir(tempDir);
+      const byName = new Map(result.map((e) => [e.name, e]));
+      expect(byName.get('独立技能')?.packageRoot).toBe(join(tempDir, 'standalone.md'));
+      expect(byName.get('文件夹技能')?.packageRoot).toBe(join(tempDir, 'folder-skill'));
+      expect(byName.get('裸主文件')?.packageRoot).toBe(join(tempDir, 'SKILL.md'));
+    });
+
     it('子目录有 SKILL.md 时应跳过隐藏目录和私有目录', async () => {
       // 隐藏目录
       await mkdir(join(tempDir, '.hidden-skill'));

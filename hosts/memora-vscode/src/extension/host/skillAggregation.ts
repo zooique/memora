@@ -101,12 +101,21 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
     description: string | undefined,
     filePath?: string,
     displayName?: string,
+    packageRoot?: string,
   ): void => {
     if (!name) return;
     const prev = byName.get(name);
     // 新来源优先级不高于已有 → 保留已有（去重方向必须对齐注入面，故不可用「先到先得」）
     if (prev && DEDUP_PRIORITY[prev.layer ?? 'builtin'] <= DEDUP_PRIORITY[layer]) return;
-    byName.set(name, { name, description: description ?? '', displayName, filePath, layer });
+    byName.set(name, {
+      name,
+      description: description ?? '',
+      displayName,
+      filePath,
+      // 包根直通内核字段（复制单元），宿主聚合层不做任何推导
+      packageRoot,
+      layer,
+    });
   };
 
   // 源 1 + 3：SkillManager.list（内置 configDir/skills + 用户 loadExtraDir 注入）
@@ -119,6 +128,7 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
         s.description,
         s.filePath,
         s.displayName,
+        s.packageRoot,
       );
     }
   }

@@ -332,6 +332,7 @@ const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
   'Round',
   'RoundMessage',
   'RoundStatus',
+  'SKILL_MAIN_FILE',
   'SOURCE_LABELS',
   'SUMMARY_TYPES',
   'SearchEndpoint',

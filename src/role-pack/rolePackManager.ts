@@ -849,6 +849,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       name: meta.name,
       content,
       filePath: manifestPath,
+      // 包根 = manifest 所在目录；宿主据此整目录复制，禁止按 filePath 反推
+      packageRoot: dirname(manifestPath),
       // 角色包特有字段
       meta,
       personaContent,

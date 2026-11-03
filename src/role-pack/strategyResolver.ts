@@ -395,6 +395,8 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
   return {
     meta: pack.meta,
     filePath: pack.filePath,
+    // 包根随装配带出：宿主经 rpm.get() 拿的是 Assembly，缺此字段就会退回按 filePath 反推
+    packageRoot: pack.packageRoot,
     personaPrompt,
     skills: pack.skills,
     capabilities,

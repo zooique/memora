@@ -521,6 +521,19 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(manager.activeName).toBe('翻译助手');
   });
 
+  it('资产包根 packageRoot = 包目录（复制单元，不是 manifest 路径）', async () => {
+    // 目录式资产的通病：入口 filePath 是 manifest.json，取 dirname 之外任何反推都会丢资源
+    const packsDir = join(dir, 'role-packs');
+    await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '你是翻译。' });
+
+    const manager = new RolePackManager(dir);
+    await manager.load();
+
+    const pack = manager.get('翻译助手');
+    expect(pack?.filePath).toBe(join(packsDir, '翻译助手', 'manifest.json'));
+    expect(pack?.packageRoot).toBe(join(packsDir, '翻译助手'));
+  });
+
   it('reload 重读额外目录磁盘：新增包可见、同名内容更新生效，且运行时注入项仍在（ROLEPACK-RELOAD-1）', async () => {
     // 内置目录（configDir/role-packs/）
     const packsDir = join(dir, 'role-packs');

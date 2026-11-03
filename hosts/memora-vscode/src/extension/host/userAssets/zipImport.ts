@@ -6,8 +6,9 @@
  * 交互（开文件框 / 选目标级 / 覆盖确认 / toast）归命令层（`commands/importAsset.ts`）。
  * 这样命令面板、设置页技能区、设置页角色包区三个入口共用同一处理器，本模块保持可单测。
  *
- * **第二个消费面（2026-11-03）**：设置页「添加到用户级」把**项目级**技能 / 角色包复制到
- * 用户目录（`copyAssetToRoot`）。它不读 zip，但**必须复用同一套暂存 / 备份 / 换名 / 回滚 /
+ * **第二个消费面（2026-11-03）**：设置页「添加到用户级」把**项目级**技能 / 角色包从
+ * **资产包根**（内核 `SkillEntry.packageRoot` / `RolePack.packageRoot`）复制到用户目录
+ * （`copyAssetToRoot`）。它不读 zip，但**必须复用同一套暂存 / 备份 / 换名 / 回滚 /
  * `.recovery-` 原语**——再写一份「复制 + 覆盖」就是第二套覆盖语义，两份从落笔起必然漂移。
  *
  * ## 校验流水线（顺序固定，任一步不过即拒绝且不落盘）
@@ -33,7 +34,7 @@
 import { randomBytes } from 'node:crypto';
 import { cp, copyFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { logger, parseFrontmatter, validateManifestText } from '@zooique/memora';
+import { logger, parseFrontmatter, SKILL_MAIN_FILE, validateManifestText } from '@zooique/memora';
 import * as yauzl from 'yauzl';
 import { pathExists, resolveInsideDir, sanitizeAssetName } from './path.js';
 import { validateSkillAsset } from './validateSkill.js';
@@ -753,11 +754,11 @@ export async function importAssetZip(
 /** 复制资产到另一根目录（项目级 → 用户级）的入参 */
 export interface CopyAssetOptions {
   /**
-   * 资产类型（**由调用方显式给出，执行面禁止按源节点形态推断**）。
+   * 资产类型：**只决定校验规则与文案，绝不决定复制单元**。
    *
-   * 为什么不推断：内核 `RolePack.filePath` 是 `manifest.json` 的**绝对路径**而非包目录。
-   * 若按「源是文件 ⇒ 技能」推断，角色包会被当成同名技能把单个 manifest.json 平铺进用户根，
-   * 且回执报成功（真机缺陷形态）。类型的判据归调用方（技能 = 文件或目录、角色包 = 目录）。
+   * 复制单元恒为调用方传进来的「资产包根」（见 {@link copyAssetToRoot} 的 `packageRoot`）。
+   * 若用 kind 反推复制单元（或按「源是文件 ⇒ 技能」推断），角色包（入口 `manifest.json`）
+   * 会被当单文件平铺，单文件技能取 `dirname` 又会把 `skills/` 根当包根、误搬兄弟技能。
    */
   kind: AssetKind;
   /**
@@ -790,45 +791,82 @@ async function countFilesInDir(root: string): Promise<number> {
 }
 
 /**
- * 把已落盘的项目级资产复制到用户级根目录（**拷贝，不是移动/链接**）
+ * 目录内是否存在技能入口文件（大小写不敏感，口径 = 内核 `SKILL_MAIN_FILE` 的同一约定）
+ *
+ * @param dir 候选技能目录绝对路径
+ */
+async function hasSkillEntry(dir: string): Promise<boolean> {
+  const entries = await readdir(dir).catch(() => []);
+  return entries.some((name) => name.toLowerCase() === SKILL_MAIN_FILE.toLowerCase());
+}
+
+/**
+ * 把项目级资产从**包根**复制到用户级根目录（**拷贝，不是移动/链接**）
  *
  * 与压缩包导入共用同一条提交原语：内容先复制到目标同父目录的隐藏暂存区 →
  * 目标已存在则先换名成 `.bak-<hex>` 备份 → `rename(暂存 → 目标)` → 成功才删备份；
  * 任一步失败反向换名回滚，回滚再失败则把备份转成 `.recovery-<hex>`（清理永不删除）。
  *
- * 调用方负责「资产类型判定 → 来源路径归一（角色包传包目录）+ 重扫 + UI 刷新」；
- * 本模块只按 `options.kind` 校验与执行，不碰 Agent、不碰 UI 状态。
+ * ## 复制单元 = 包根（唯一判据，本模块不推导）
+ *   - 角色包 ⇒ 包目录（含 `manifest.json`）：`cp -r` 整目录；
+ *   - 目录式技能 ⇒ 技能目录（含入口 `SKILL.md`）：`cp -r` 整目录（资源随包）；
+ *   - 单文件技能 ⇒ 该文件本身：按文件复制。
+ * `packageRoot` 由内核条目字段给出（`SkillEntry.packageRoot` / `RolePack.packageRoot`）——
+ * 宿主不得自行 `dirname(filePath)` 或按「同目录有没有 SKILL.md」猜（猜法必与扫描器漂移）。
  *
- * @param sourcePath 项目级资产绝对路径（技能：`.md` 文件或目录；角色包：**包目录**，不是 manifest 路径）
+ * 调用方负责「取包根 + 重扫 + UI 刷新」；本模块只按 `options.kind` 校验与执行，
+ * 不碰 Agent、不碰 UI 状态。
+ *
+ * @param packageRoot 项目级资产**包根**绝对路径（见上；不是入口文件路径）
  * @param targetRoot 用户级资产根目录（skills / role-packs）
- * @param options 资产类型 + 同名覆盖确认
+ * @param options 资产类型（仅校验 / 文案）+ 同名覆盖确认
  */
 export async function copyAssetToRoot(
-  sourcePath: string,
+  packageRoot: string,
   targetRoot: string,
   options: CopyAssetOptions,
 ): Promise<CopyAssetResult> {
   let sourceIsDir: boolean;
   try {
-    const info = await stat(sourcePath);
+    const info = await stat(packageRoot);
     sourceIsDir = info.isDirectory();
   } catch (err) {
     return { ok: false, reason: `源资产不存在或不可读：${(err as Error).message}` };
   }
 
-  // 角色包来源必须是「含 manifest.json 的包目录」：先验来源，再做任何暂存/换名，
-  // 缺失即拒绝并给出绝对路径，绝不落半份（错误提示要给到人，读者才知道去哪个目录补文件）
+  // 前置校验（按包根，先验来源再动盘）：任一条不满足即拒绝并给绝对路径，暂存 / 换名一步都不做
   if (options.kind === 'rolePack') {
     if (!sourceIsDir) {
-      return { ok: false, reason: `角色包来源必须是包目录，收到文件路径：${sourcePath}` };
+      return { ok: false, reason: `角色包包根必须是包目录，收到文件路径：${packageRoot}` };
     }
-    if (!(await pathExists(join(sourcePath, 'manifest.json')))) {
-      return { ok: false, reason: `角色包目录缺少 manifest.json：${sourcePath}` };
+    if (!(await pathExists(join(packageRoot, 'manifest.json')))) {
+      return { ok: false, reason: `角色包目录缺少 manifest.json：${packageRoot}` };
+    }
+  } else {
+    // 技能分支只校验「包根形态与 entry 是否自洽」，自身不推导包根：
+    if (sourceIsDir) {
+      if (!(await hasSkillEntry(packageRoot))) {
+        // 目录式技能：内核已判定包根是目录，则该目录必须有入口文件；缺入口 = 坏包，拒复制
+        return {
+          ok: false,
+          reason: `目录式技能包根缺少入口文件 ${SKILL_MAIN_FILE}：${packageRoot}`,
+        };
+      }
+    } else if (basename(packageRoot).toLowerCase() === SKILL_MAIN_FILE.toLowerCase()) {
+      // 反向误传：目录式技能的入口文件被当成包根（旧调用方按 filePath 传参的形态）。
+      // 此时只复制入口会丢 resources/ 等随包资源，且会在用户根散落平铺 SKILL.md ⇒ 直接拒，不猜目录。
+      return {
+        ok: false,
+        // 含修复指引：单文件技能若恰好叫 SKILL.md，路径上无法与目录式入口区分 ⇒ 宁可拒也不误搬
+        reason:
+          `目录式技能应传入技能目录作为包根，收到入口文件：${packageRoot}` +
+          `（若这是单文件技能本身，请改用其它文件名——${SKILL_MAIN_FILE} 是目录式入口约定）`,
+      };
     }
   }
 
-  const sourceName = basename(sourcePath);
-  // 单文件技能落点 = 原文件名（如 `foo.md`）；目录资产落点 = 目录名（角色包即包名目录）
+  const sourceName = basename(packageRoot);
+  // 单文件技能落点 = 原文件名（如 `foo.md`）；目录式资产落点 = 目录名（技能目录 / 角色包名目录）
   const singleFile = !sourceIsDir;
   const name = singleFile ? sourceName.replace(/\.md$/i, '') : sourceName;
 
@@ -870,10 +908,10 @@ export async function copyAssetToRoot(
 
   try {
     if (singleFile) {
-      await copyFile(sourcePath, stagedPath);
+      await copyFile(packageRoot, stagedPath);
     } else {
       // dereference=true：把链接指向的真实内容复制进来，用户目录里不留可逃出根外的符号链接
-      await cp(sourcePath, stagedPath, { recursive: true, dereference: true });
+      await cp(packageRoot, stagedPath, { recursive: true, dereference: true });
     }
   } catch (err) {
     // 复制阶段失败：目标从未被改动，只需清掉暂存

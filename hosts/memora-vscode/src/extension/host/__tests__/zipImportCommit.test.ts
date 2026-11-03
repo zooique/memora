@@ -17,6 +17,7 @@
  * 生产代码不留测试专用开关（不为可测性引入第二套写盘路径）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import {
   createWriteStream,
   existsSync,
@@ -67,6 +68,15 @@ import { copyAssetToRoot, importAssetZip } from '../userAssets/zipImport.js';
 
 /** 本文件创建的临时目录（afterEach 统一清理） */
 const tempDirs: string[] = [];
+
+/**
+ * 计算文件 sha256（复制一致性判据：逐字节等价，不靠「看起来一样」）
+ *
+ * @param filePath 文件绝对路径
+ */
+function sha256Of(filePath: string): string {
+  return createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
 
 /**
  * 建一个临时目录并登记清理
@@ -339,6 +349,8 @@ describe('copyAssetToRoot · 项目级 → 用户级（拷贝非同步，复用�
     if (!result.ok) return;
     expect(result.targetPath).toBe(join(user, 'TESTSKILL-A.md'));
     expect(readFileSync(result.targetPath, 'utf-8')).toBe('# TESTSKILL-A\n正文一行\n');
+    // 逐字节一致（sha256），不是「内容看起来一样」
+    expect(sha256Of(result.targetPath)).toBe(sha256Of(source));
     expect(result.fileCount).toBe(1);
     // 拷贝而非链接：项目侧删掉后用户侧仍在（内容已实体化）
     rmSync(source);
@@ -467,8 +479,13 @@ describe('copyAssetToRoot · 项目级 → 用户级（拷贝非同步，复用�
     );
     expect(readFileSync(join(result.targetPath, 'persona.md'), 'utf-8')).toBe('persona-body');
     expect(readFileSync(join(result.targetPath, 'rules.md'), 'utf-8')).toBe('rules-body');
+    // 三文件逐字节一致（sha256 对源）
+    for (const file of ['manifest.json', 'persona.md', 'rules.md']) {
+      expect(sha256Of(join(result.targetPath, file))).toBe(sha256Of(join(packDir, file)));
+    }
     // 用户级根目录只应有包目录，不得出现平铺的 manifest.json（真机缺陷形态）
     expect(readdirSync(user)).toEqual(['TESTPACK-COPY']);
+    expect(hasLeftovers(user)).toBe(false);
   });
 
   it('角色包目录缺 manifest.json ⇒ 拒绝并给绝对路径，不落半份', async () => {
@@ -488,5 +505,113 @@ describe('copyAssetToRoot · 项目级 → 用户级（拷贝非同步，复用�
     expect(result.reason).toContain('manifest.json');
     expect(result.reason).toContain(packDir);
     expect(readdirSync(user)).toEqual([]);
+  });
+
+  // ── 目录式技能 / 单文件技能：同一通病（宿主拿到的 path 是入口，不是包根） ──
+  it('目录式技能：包根 = 技能目录 ⇒ 入口与资源随包复制，sha256 一致，根目录无平铺入口', async () => {
+    const project = makeTempDir('memora-copy-project-');
+    const user = makeTempDir('memora-copy-user-');
+    const skillDir = join(project, 'TEST-SKILL-DIR');
+    mkdirSync(join(skillDir, 'resources'), { recursive: true });
+    writeFileSync(
+      join(skillDir, 'SKILL.md'),
+      '---\nname: TEST-SKILL-DIR\n---\n# 目录式技能',
+      'utf-8',
+    );
+    writeFileSync(join(skillDir, 'resources', 'ref.md'), '资源正文', 'utf-8');
+    // 兄弟技能放在同一扫描根：整包复制只能搬这个目录，不得带走根下裸 .md
+    writeFileSync(join(project, 'SIBLING-SKILL.md'), '兄弟技能', 'utf-8');
+
+    const result = await copyAssetToRoot(skillDir, user, {
+      kind: 'skill',
+      confirmOverwrite: async () => false,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.targetPath).toBe(join(user, 'TEST-SKILL-DIR'));
+    expect(result.fileCount).toBe(2);
+    // 入口与资源都在包目录内，且逐字节一致
+    expect(sha256Of(join(result.targetPath, 'SKILL.md'))).toBe(
+      sha256Of(join(skillDir, 'SKILL.md')),
+    );
+    expect(sha256Of(join(result.targetPath, 'resources', 'ref.md'))).toBe(
+      sha256Of(join(skillDir, 'resources', 'ref.md')),
+    );
+    // 用户根只应有技能目录：不得散落平铺 SKILL.md，也不得搬走兄弟技能
+    expect(readdirSync(user)).toEqual(['TEST-SKILL-DIR']);
+    expect(existsSync(join(user, 'SKILL.md'))).toBe(false);
+    expect(existsSync(join(user, 'SIBLING-SKILL.md'))).toBe(false);
+    expect(hasLeftovers(user)).toBe(false);
+  });
+
+  it('目录式技能误传入口文件（旧调用方形态）⇒ 拒绝，不得只复制入口丢资源', async () => {
+    const project = makeTempDir('memora-copy-project-');
+    const user = makeTempDir('memora-copy-user-');
+    const skillDir = join(project, 'TEST-SKILL-DIR');
+    mkdirSync(join(skillDir, 'resources'), { recursive: true });
+    const entry = join(skillDir, 'SKILL.md');
+    writeFileSync(entry, '---\nname: TEST-SKILL-DIR\n---\n# 目录式技能', 'utf-8');
+    writeFileSync(join(skillDir, 'resources', 'ref.md'), '资源正文', 'utf-8');
+
+    // 旧调用方（拿 SkillEntry.filePath 直接复制）传入的是入口文件：必须拒，不许猜成 dirname
+    const result = await copyAssetToRoot(entry, user, {
+      kind: 'skill',
+      confirmOverwrite: async () => false,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain('技能目录作为包根');
+    expect(result.reason).toContain(entry);
+    // 零写入：用户根既无平铺 SKILL.md，也无任何残留
+    expect(readdirSync(user)).toEqual([]);
+    expect(hasLeftovers(user)).toBe(false);
+  });
+
+  it('单文件技能：只复制该文件，不搬兄弟技能（专打 dirname 反推）', async () => {
+    const project = makeTempDir('memora-copy-project-');
+    const user = makeTempDir('memora-copy-user-');
+    const skillsDir = join(project, 'skills');
+    mkdirSync(skillsDir, { recursive: true });
+    const source = join(skillsDir, 'TESTSKILL-ONE.md');
+    writeFileSync(source, '# TESTSKILL-ONE\n正文\n', 'utf-8');
+    // 兄弟技能在同一目录：若把 dirname(入口) 当包根，就会整目录搬走
+    writeFileSync(join(skillsDir, 'TESTSKILL-TWO.md'), '# TESTSKILL-TWO\n', 'utf-8');
+
+    const result = await copyAssetToRoot(source, user, {
+      kind: 'skill',
+      confirmOverwrite: async () => false,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.targetPath).toBe(join(user, 'TESTSKILL-ONE.md'));
+    expect(result.fileCount).toBe(1);
+    expect(sha256Of(result.targetPath)).toBe(sha256Of(source));
+    // 只有这一个文件；兄弟技能不得被搬过来
+    expect(readdirSync(user)).toEqual(['TESTSKILL-ONE.md']);
+    expect(existsSync(join(user, 'TESTSKILL-TWO.md'))).toBe(false);
+    expect(hasLeftovers(user)).toBe(false);
+  });
+
+  it('目录式技能包根缺入口 ⇒ 拒绝并给绝对路径，零写入', async () => {
+    const project = makeTempDir('memora-copy-project-');
+    const user = makeTempDir('memora-copy-user-');
+    const broken = join(project, 'BROKEN-SKILL');
+    mkdirSync(join(broken, 'resources'), { recursive: true });
+    writeFileSync(join(broken, 'resources', 'ref.md'), '资源', 'utf-8');
+
+    const result = await copyAssetToRoot(broken, user, {
+      kind: 'skill',
+      confirmOverwrite: async () => false,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain('SKILL.md');
+    expect(result.reason).toContain(broken);
+    expect(readdirSync(user)).toEqual([]);
+    expect(hasLeftovers(user)).toBe(false);
   });
 });

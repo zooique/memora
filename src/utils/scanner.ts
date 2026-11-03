@@ -25,6 +25,13 @@ export interface ScannedMarkdownEntry {
   body: string;
   /** 文件绝对路径 */
   filePath: string;
+  /**
+   * 资产包根（绝对路径）：复制 / 迁移的**唯一单元**，`SkillEntry.packageRoot` 直取本字段。
+   * 单文件技能（顶层 .md）= 该文件本身；目录式技能（子目录内 SKILL.md）= 该技能目录（资源随包）。
+   * 由扫描的**分支本身**给出（顶层文件分支 / 子目录分支各自知道形态），不按文件名反推——
+   * 反推的盲区：顶层裸 `SKILL.md` 会被误判为目录式，`dirname` 即退到 `skills/` 根、误搬兄弟技能。
+   */
+  packageRoot: string;
 }
 
 /** 技能主文件约定名（文件夹形态的唯一入口，SSOT：scanner 校验 + skillManager/rolePackManager 据此判定 L3 归属） */
@@ -142,6 +149,8 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
         frontmatter: fm as Record<string, string>,
         body,
         filePath,
+        // 顶层单文件技能：包根 = 该文件本身（不是所在 skills/ 目录）
+        packageRoot: filePath,
       });
     } catch (err) {
       getLogger().warn({ file, err }, '解析 Markdown 文件失败');
@@ -191,6 +200,8 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
         frontmatter: fm as Record<string, string>,
         body,
         filePath: skillPath,
+        // 目录式技能：包根 = 技能目录（入口旁的 resources/ scripts/ 随包一起复制）
+        packageRoot: itemPath,
       });
     } catch (err) {
       getLogger().warn({ dir: item, err }, '解析 SKILL.md 失败');

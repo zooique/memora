@@ -2271,6 +2271,12 @@ export interface SkillDto {
   displayName?: string;
   /** 技能文件路径（用于定位来源） */
   filePath?: string;
+  /**
+   * 资产包根（绝对路径，内核 `SkillEntry.packageRoot` 直通）：**复制 / 迁移的唯一单元**。
+   * 单文件技能 = 文件本身；目录式技能 = 技能目录（资源随包）。
+   * 角色包内嵌技能无此项（不可复制）。宿主不得按 `filePath` 自行反推包根。
+   */
+  packageRoot?: string;
   /** 技能来源四分类（SSOT）：'project'（项目级 .memora/skills）/ 'builtin'（系统内置）/
    *  'rolepack'（启用角色包内置）/ 'user'（用户本地目录自定义） */
   layer?: 'project' | 'builtin' | 'rolepack' | 'user';
