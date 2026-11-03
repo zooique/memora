@@ -583,6 +583,23 @@ description: 联网搜索资料
       expect(skillDirSkill!.packageRoot).toBe(skillDir);
     });
 
+    it('额外目录 + reload 重扫同样填充 packageRoot（构造点全覆盖）', async () => {
+      // 额外目录（宿主 loadExtraDir 注入的用户 / 项目级来源）
+      const extraDir = join(testDir, 'extra-skills');
+      createSkillFile(extraDir, 'outside.md', '---\nname: outside\ndescription: 额外\n---\n正文');
+
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+      await skillManager.loadExtraDir(extraDir, 'user');
+
+      // loadExtraDir 路径：包根 = 单文件本身
+      expect(skillManager.get('outside')!.packageRoot).toBe(join(extraDir, 'outside.md'));
+
+      // reload 重扫路径：额外目录被重新注入，包根不能丢（丢了宿主复制才报「缺包根」）
+      await skillManager.reload();
+      expect(skillManager.get('outside')!.packageRoot).toBe(join(extraDir, 'outside.md'));
+    });
+
     it('文件夹形态（SKILL.md）扫描 references/ 且 read_resource 可读（B1 兼容主流）', async () => {
       // references/ 是 TRAE / Agent Skills 主流辅助文档目录，纳入 L3 资源索引
       const skillDir = join(skillsDir, 'tree');

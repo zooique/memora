@@ -7,7 +7,11 @@
  */
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
-import { ConfigResourceManager } from '@/utils/configResourceManager.js';
+import {
+  ConfigResourceManager,
+  isOutOfOrderExtraTier,
+  type AssetExtraTier,
+} from '@/utils/configResourceManager.js';
 import type { SkillEntry, SkillLayer3, SkillIssue, SkillValidation } from '@/skill/types.js';
 import { extractDisplayName, scanMarkdownDir } from '@/utils/scanner.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
@@ -43,8 +47,9 @@ function resolveLayer(raw: unknown): 'agent' | 'project' {
  *
  * 档位只影响**记账口径**与**非法顺序的守卫**，真正生效的覆盖由**加载顺序**决定
  * （宿主必须先 user、后 project；先加载者被后加载者覆盖）。
+ * 类型本体 = `AssetExtraTier`（唯一判据，见 utils/configResourceManager），本名只是就地别名。
  */
-export type SkillExtraTier = 'user' | 'project';
+export type SkillExtraTier = AssetExtraTier;
 
 /**
  * 技能管理器
@@ -507,8 +512,8 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
       const existing = this.items.find((s) => s.name === entry.name);
       const prevDir = this.injectedFrom.get(entry.name);
       const prevTier = prevDir ? this.extraDirs.get(prevDir) : undefined;
-      // 顺序守卫：宿主若把项目目录先于用户目录注入（写反），按 project > user 保持项目版
-      if (existing && prevTier === 'project' && tier === 'user') {
+      // 顺序守卫（判据 SSOT = isOutOfOrderExtraTier，与角色包共用同一函数）
+      if (existing && isOutOfOrderExtraTier(prevTier, tier)) {
         logger.warn(
           { name: entry.name, dir },
           '用户级技能晚于项目级加载，按 project > user 保持项目版',
@@ -578,7 +583,10 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     this.extraDirs.clear();
   }
 
-  protected async createEntry(entry: ScannedMarkdownEntry): Promise<SkillEntry> {
+  // 返回类型钉死 `packageRoot: string`（编译期构造点守卫）：扫描器已保证，本处若漏传即 typecheck 红
+  protected async createEntry(
+    entry: ScannedMarkdownEntry,
+  ): Promise<SkillEntry & { packageRoot: string }> {
     // L3 隔离纪律（对齐 Claude Code 主流）：仅「文件夹形态」（入口为 SKILL.md）才发现
     // resources/ scripts/。顶层裸 .md 单文件技能目录 = 技能池共享根，同级扫描会把别的技能的
     // resources/scripts 误归给自己 → 污染。故裸 .md 为纯 L1/L2，需要 L3 资源/脚本必须用文件夹+SKILL.md。

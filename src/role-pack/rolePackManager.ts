@@ -7,7 +7,8 @@ import { readFile, readdir, access, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
-import { ConfigResourceManager } from '@/utils/configResourceManager.js';
+import { ConfigResourceManager, isOutOfOrderExtraTier } from '@/utils/configResourceManager.js';
+import type { AssetExtraTier } from '@/utils/configResourceManager.js';
 import {
   extractDisplayName,
   resolveSubdir,
@@ -60,7 +61,7 @@ const DEFAULT_FORMAT_VERSION = '1.0.0';
  * 真实生效顺序由**加载顺序**决定（宿主必须先 user、后 project，后加载者胜）；
  * 档位用于记账与「顺序写反时保持 project 版」的守卫。
  */
-export type RolePackExtraTier = 'user' | 'project';
+export type RolePackExtraTier = AssetExtraTier;
 
 /**
  * 额外目录同名处置记录（可观测出口：胜出/被跳过都必须留痕，不许静默）
@@ -712,7 +713,9 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /** 从角色包目录构建条目列表（仅文件夹形态） */
-  private async buildFromDir(dir: string): Promise<RolePack[]> {
+  // 返回类型钉死 `packageRoot: string`：内置 / 用户 / 项目 / reload 四条路径都经 buildFromDir，
+  // 任何一条漏填包根都会在 typecheck 层暴露（不等宿主复制时报「缺包根」）
+  private async buildFromDir(dir: string): Promise<(RolePack & { packageRoot: string })[]> {
     let entries: string[];
     try {
       await access(dir);
@@ -725,7 +728,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       return [];
     }
 
-    const map = new Map<string, RolePack>();
+    const map = new Map<string, RolePack & { packageRoot: string }>();
     for (const entry of entries) {
       const fullPath = join(dir, entry);
       try {
@@ -741,7 +744,11 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /** 解析单个角色包（manifest.json + 独立内容文件），失败返回 null */
-  private async parseManifestPack(packDir: string, fallbackName: string): Promise<RolePack | null> {
+  // 返回类型钉死 `packageRoot: string`（编译期构造点守卫）：所有扫描路径都经此，漏填即 typecheck 红
+  private async parseManifestPack(
+    packDir: string,
+    fallbackName: string,
+  ): Promise<(RolePack & { packageRoot: string }) | null> {
     const manifestPath = join(packDir, 'manifest.json');
 
     // 读取并解析 manifest.json
@@ -844,7 +851,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const content = personaContent;
 
     // 预计算装配结果并缓存（角色包装载后不可变，缓存安全）
-    const pack: RolePack = {
+    // 标注交集类型：漏填 packageRoot 即编译期报错（构造点守卫）
+    const pack: RolePack & { packageRoot: string } = {
       // ConfigResource 约束字段
       name: meta.name,
       content,
@@ -1270,7 +1278,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
         const prevTier = prevDir ? (this.extraDirs.get(prevDir) ?? 'user') : undefined;
         const hasExisting = this.items.some((p) => p.meta.name === name);
         // 顺序写反（用户包晚于项目包加载）：按 project > user 保持项目版，记 skip
-        if (hasExisting && prevTier === 'project' && tier === 'user') {
+        // 判据 SSOT = isOutOfOrderExtraTier（与技能共用同一函数，勿在本处重写条件）
+        if (hasExisting && isOutOfOrderExtraTier(prevTier, tier)) {
           conflicts.push({ name, winner: 'project', loser: 'user', action: 'skip' });
           logger.warn({ name, dir }, '用户角色包晚于项目级加载，按 project > user 保持项目版');
           continue;

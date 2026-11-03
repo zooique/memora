@@ -15,6 +15,34 @@ export interface ConfigResource {
 }
 
 /**
+ * 额外目录档位（**唯一判据**）：用户级 / 项目级。
+ *
+ * `SkillManager` / `RolePackManager` 各自的 `SkillExtraTier` / `RolePackExtraTier`
+ * 都是本类型的**别名**（保留各自名字只为读代码时就地理解）——档位语义只有一套，
+ * 新增资产类型时不得再造第三个同值 union。
+ */
+export type AssetExtraTier = 'user' | 'project';
+
+/**
+ * 「档位顺序写反」判据（**唯一判据**）：宿主若把用户目录晚于项目目录注入，
+ * 按 project > user **保持先注册的项目版**（调用方跳过本次注入，不改动已注册项）。
+ *
+ * 真正生效的覆盖仍由**加载顺序**决定（内置 → 用户 → 项目，后加载者胜）；
+ * 本判据只拦「后加载者本应更弱」这一种非法顺序。两个资产管理器共用本函数，
+ * 不得在各自的 `loadExtraDir()` 里再写一遍同型条件。
+ *
+ * @param prevTier 已注册同名胜出项的档位（内置项无档位 ⇒ `undefined`）
+ * @param nextTier 本次注入目录的档位
+ * @returns true = 顺序写反，应保持项目版并跳过本次注入
+ */
+export function isOutOfOrderExtraTier(
+  prevTier: AssetExtraTier | undefined,
+  nextTier: AssetExtraTier,
+): boolean {
+  return prevTier === 'project' && nextTier === 'user';
+}
+
+/**
  * 配置资源管理器 — 抽象基类
  * @typeParam T 子类资源类型
  * @typeParam TOptions load() 的可选参数类型

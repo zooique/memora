@@ -576,6 +576,8 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     ).toEqual(['用户打磨', '新增包', '翻译助手'].sort());
     // 运行时注入项仍在（重扫按已登记目录重新注入，不丢失）
     expect(manager.get('用户打磨')).not.toBeNull();
+    // 重扫路径同样填充包根（构造点全覆盖：内置 / 用户 / 项目 / reload 全经 buildFromDir）
+    expect(manager.get('用户打磨')!.packageRoot).toBe(join(userPacksDir, '用户打磨'));
     expect(manager.activeName).toBe('翻译助手');
   });
 
