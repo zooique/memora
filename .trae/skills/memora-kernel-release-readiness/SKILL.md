@@ -204,7 +204,9 @@ git log --oneline -3 -- <file>   # 逐文件确认是否已提交
 
 1. 写 UTF-8 提交信息文件到 `.git/COMMIT_MSG_N.txt`（不会被 `git add` 误纳）
 2. 预验：`node node_modules/@commitlint/cli/lib/cli.js --edit .git/COMMIT_MSG_N.txt`
-3. PowerShell：`$env:LEFTHOOK='0'`（质量门已先行跑过 full 档，非裸 skip）→ `git add` **逐文件**（禁 `git add -A`）→ `git commit -F .git/COMMIT_MSG_N.txt` → 输出 `| Out-File -Encoding utf8` 落盘 → Read 复核
+3. PowerShell：`git add` **逐文件**（禁 `git add -A`）→ `git commit -F .git/COMMIT_MSG_N.txt` → 输出 `| Out-File -Encoding utf8` 落盘 → Read 复核。
+   - **默认不绕钩子**：不设 `LEFTHOOK`、不加 `--no-verify`；pre-commit / commit-msg / pre-push 按 lefthook 配置照跑。
+   - **确需绕行**（如本环境钩子无法派生）时三件缺一不可：① **用户显式授权**，并在回报里引用原话；② 写明绕行原因与受影响的钩子；③ 绕行后**补跑同一门禁**，原始输出进发版收据（判据 = `.trae/skills/memora-kernel-release/references/pre-release-audit.md` §3.4）。不许用「质量门已先行跑过 / 非裸 skip」这类措辞自我合理化。
 4. 再用 **Bash 只读** `git log -1 --format=%B | od -c` 独立校验中文字节（PowerShell 回显中文是 GBK 乱码，勿据此重提交）
 5. 提交但不推送（用户自己 push）
 

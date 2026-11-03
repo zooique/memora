@@ -8,7 +8,7 @@
 - 仓库 origin 双推 gitee+github：GitHub 收到 tag 即触发；gitee 端无对应 workflow，不重复发。
 - 两轴互斥：内核 `v[0-9]*` 一轴、宿主 `vscode@*` 一轴（宿主误触发内核会被 tag↔version 护栏 fail-closed 拦下，不误发，但留噪音红 run）。
 
-## 流水线步序（release.yml，9 步）
+## 流水线步序（release.yml；步数以 workflow 为真源，本文不写死计数）
 
 | # | 步 | 命令 / 校验 | 备注 |
 |---|---|---|---|

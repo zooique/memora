@@ -76,7 +76,8 @@ it('A 落盘 → B 跨重启恢复', async () => {
 ## 提交纪律（Windows，硬性）
 
 - 用 **PowerShell**，禁用 Bash 跑 git 写操作（POSIX 沙箱 FS 视图错配会误报删除）。
-- 门全绿后提交：`$env:LEFTHOOK='0'`（钩子体已在 PowerShell 下手动验过，跳过其 sh 子进程）；`git commit -F <utf8 文件>`（勿用 `-m` 中文引号/编码坑）；**手术式 `git add <绝对路径>`**，严禁 `git add -A`（曾误纳临时 `.git_*.txt`）。
+- 门全绿后提交：`git commit -F <utf8 文件>`（勿用 `-m` 中文引号/编码坑）；**手术式 `git add <绝对路径>`**，严禁 `git add -A`（曾误纳临时 `.git_*.txt`）。
+- **默认不绕钩子**：不设 `LEFTHOOK`、不加 `--no-verify`。确需绕行须 ① 用户显式授权并引原话、② 写明原因、③ 绕行后补跑同一门禁并把原始输出记进收据。
 - 删临时文件用 `-LiteralPath` + `Test-Path` 复验（safe-delete 不继承 cd，相对路径必失败）。
 - git 管道中文/路径经 PowerShell 渲染成 `X`：落盘 UTF-8 文件再 `Read` 查看结果，勿盲信退出码显示。
 
