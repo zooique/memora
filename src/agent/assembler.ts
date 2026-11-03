@@ -83,7 +83,7 @@ const TURN_START_STRATEGY_PROMPT = `## Turn 起始策略
  */
 const SKILL_WRITE_LOCATION_PROMPT = `## 技能落点
 只写项目级 <工作区>/.memora/skills（需工作区受信任）。
-用户级资产不由你直接写入；用户级同名资产不会被静默覆盖，需要改动时交由用户处理。
+不要直接写入用户级资产；不要静默覆盖用户已有的同名资产，需要改动时交由用户处理。
 你能通过执行代码绕过路径限制，但不应绕过。`;
 
 /**

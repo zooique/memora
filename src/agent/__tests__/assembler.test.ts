@@ -1089,19 +1089,23 @@ describe('buildSystemPromptPrefix · Turn 起始策略', () => {
 // ─── buildSystemPromptPrefix · 技能落点提示（对话写入落点，≤5 行） ──
 
 describe('buildSystemPromptPrefix · 技能落点提示', () => {
-  it('含可写位置 + 项目级 + 用户级不由模型直接写', () => {
+  it('含可写位置 + 项目级 + 用户级改走行为约束（不直接写入）', () => {
     const prefix = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
     expect(prefix).toContain('## 技能落点');
     expect(prefix).toContain('项目级 <工作区>/.memora/skills');
     expect(prefix).toContain('只写项目级');
-    expect(prefix).toContain('用户级资产不由你直接写入');
+    // 行为约束（「不要」）而非事实承诺（「不由你」）——run_code 可绕过，写成事实即是假话
+    expect(prefix).toContain('不要直接写入用户级资产');
+    expect(prefix).not.toContain('不由你直接写入');
   });
 
   it('中性表述：同名不静默覆盖 + 交由用户处理，不承诺确认路径 / 资产受保护', () => {
     const prefix = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
-    // 语义断言（不是只查几个词不存在）：中性事实必须真的存在
-    expect(prefix).toContain('用户级同名资产不会被静默覆盖');
+    // 语义断言（不是只查几个词不存在）：中性约束必须真的存在
+    expect(prefix).toContain('不要静默覆盖用户已有的同名资产');
     expect(prefix).toContain('交由用户处理');
+    // 反向断言：不能写成「不会被静默覆盖」的事实承诺（代码执行面可绕过）
+    expect(prefix).not.toContain('不会被静默覆盖');
     // 旧承诺式表述必须不存在——界面从未提供该确认路径，说「先与用户确认」会让模型
     // 先承诺再被 write_file 硬拒；「须换名写入」与之只差语气词，同样不得残留
     expect(prefix).not.toContain('先与用户确认');
