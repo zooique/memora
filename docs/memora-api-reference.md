@@ -114,6 +114,18 @@ configDir/
 
 **宿主如何选**：需要来源语义区分（UI 分组、只读标记、信任门）时，直接登记多个额外目录并按档位传参；内核按上述优先级合并成单一池，宿主不必也不能自造第二套合并逻辑。
 
+**条目上的资产包根 `packageRoot`**：`SkillEntry` 与 `RolePack` 都带这个同名字段（激活角色包的装配对象原样透传），语义只有一条——**该资产在磁盘上从哪个根算起**，绝对路径。它是复制 / 迁移的**唯一单元**，宿主不得按 `filePath` 反推。
+
+| 形态 | `packageRoot` 指向 |
+| --- | --- |
+| 角色包 | 包目录（含 `manifest.json` / `persona.md`，资源随包） |
+| 目录式技能 | 技能目录（入口为 `SKILL.md`，`resources/` `scripts/` 随包） |
+| 单文件技能 | **该 `.md` 文件本身** |
+
+⚠️ **`packageRoot` 可能是一个文件，不总是目录**——消费方必须按「文件 / 目录」分别处理，假定它是目录会在单文件技能上直接失败。
+
+字段在类型上**取可选**：外部自造条目可经 `register()` 注入，内核拿不到包根时**不猜**（不按入口路径反推）——消费方遇到缺失应**明确拒绝并提示**，而不是自己拼一个根。目录式技能的入口文件名由内核导出 `SKILL_MAIN_FILE`（`'SKILL.md'`，大小写不敏感比较）作为**唯一约定**，宿主判定「目录式技能是否完整 / 是否误把入口文件当包根」时复用它，不得另写字面量。
+
 ### 〇.5 构造 `Agent` 的参数
 
 ```ts
@@ -684,6 +696,8 @@ export interface ForkResult {
 | `rolePack.activate(name)` | 方法 → `boolean` | 手动切换到指定角色包（30s 内超 5 次切换后锁 2 分钟防抖） |
 | `rolePack.getSwitchLockStatus()` | 方法 → `{ locked, unlockAt }` | 切换防抖锁定状态 |
 | `rolePack.onRolePackActivated(handler)` | 方法 | 注册激活变更回调（`(from, to)`） |
+
+> `getActive()` 的装配对象原样透传 `packageRoot`（资产包根；语义与三形态见 §〇.4），复制 / 迁移直接用它，不要按 `filePath` 反推。
 
 ```typescript
 // 使用示例
@@ -1309,6 +1323,8 @@ export type { RolePackMeta } from '@zooique/memora';
 
 // 技能
 export type { SkillEntry } from '@zooique/memora';
+// 目录式技能的入口文件名常量（大小写不敏感）；宿主判定包根完整性时复用，勿自写字面量
+export { SKILL_MAIN_FILE } from '@zooique/memora';
 
 // LLM
 export { createProviderFromConfig } from '@zooique/memora';
