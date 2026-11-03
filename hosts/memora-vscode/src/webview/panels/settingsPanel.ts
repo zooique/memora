@@ -81,6 +81,8 @@ import {
 } from '../../extension/host/skillAggregation.js';
 // 角色包来源判定的判据单点（与技能聚合共用：normalize + sep 边界）
 import { isPathWithin } from '../../extension/host/userAssets/path.js';
+// 项目级 → 用户级复制编排层（执行面 = zipImport 的事务化原语，本面板只分发）
+import { copyProjectRolePackToUser, copyProjectSkillToUser } from './assetCopyToUser.js';
 import {
   ACTIVE_ROLE_PACK_KEY,
   CONFIRM_WRITES_KEY,
@@ -338,7 +340,12 @@ export class MemoraSettingsPanel {
     }
     // 重扫项目与用户角色包目录（刷新按钮）：内核对账后 notice 结果 + 刷新下发
     if (msg.type === 'roles_refresh') {
-      await this.refreshRolePacks();
+      await refreshUserRolePacksFlow({
+        agent: await this.ensureAgent(),
+        userRolePacksDir: this._userRolePacksDir,
+        post: (notice) => this.post(notice),
+        reloadList: () => this.loadRoles(),
+      });
       return;
     }
     // 角色配置详情：读 manifest 原文 strategy 段回发（初值真源 = 原文，禁读装配值）
@@ -487,7 +494,30 @@ export class MemoraSettingsPanel {
       return;
     }
     if (msg.type === 'skills_refresh') {
-      await this.refreshSkills();
+      await refreshUserSkillsFlow({
+        agent: await this.ensureAgent(),
+        post: (notice) => this.post(notice),
+        reloadList: () => this.loadSkills(),
+        refreshChatSkills: () => this._chatProvider?.refreshSkillList(),
+      });
+      return;
+    }
+    // 项目级 → 用户级复制（拷贝非同步，同名覆盖先备份可回滚；与 import_asset_zip 同为单条通道）
+    if (msg.type === 'asset_copy_to_user') {
+      const deps = {
+        ensureAgent: () => this.ensureAgent(),
+        post: (notice: ExtensionToWebviewMessage) => this.post(notice),
+        configDir: this._configDir,
+        userSkillsDir: this._userSkillsDir,
+        projectSkillsDir: this._projectSkillsDir,
+        userRolePacksDir: this._userRolePacksDir,
+        projectRolePacksDir: this._projectRolePacksDir,
+        loadSkills: () => this.loadSkills(),
+        loadRoles: () => this.loadRoles(),
+        refreshChatSkills: () => this._chatProvider?.refreshSkillList(),
+      };
+      if (msg.assetKind === 'skill') await copyProjectSkillToUser(deps, msg.name);
+      else await copyProjectRolePackToUser(deps, msg.name);
       return;
     }
     // L2 渐进披露：按需读取技能正文（不预装载，用户点击展开时才读取）
@@ -1365,14 +1395,9 @@ export class MemoraSettingsPanel {
   }
 
   /**
-   * 重推技能清单（供 extension 在「技能启停」配置变更 / 手动重载后调用）
+   * 重推技能清单（配置变更 / 手动重载后调用）
    *
-   * 复用 `loadSkills()` **单一实现**而非另写一份：该方法同时承载 health 校验与
-   * 「已禁用」标注，配置变更后两条标注都需按最新禁用集/最新文件重算 —— 分开写迟早分叉
-   * （改可见集时只刷一半消费通道是既有教训）。
-   *
-   * 代价说明：`loadSkills` 对带 filePath 的技能逐项 `validateFile`（读盘）。配置变更是低频
-   * 用户操作，且健康态是设置页卡片的**既有展示维度**，省掉校验会让卡片回退成无 health 快照。
+   * 复用 `loadSkills()` 单一实现：health 校验与「已禁用」标注一并重算——分开写必分叉。
    */
   public async refreshSkillList(): Promise<void> {
     await this.loadSkills();
@@ -1464,34 +1489,9 @@ export class MemoraSettingsPanel {
     );
   }
 
-  /** roles_refresh：摘除旧注入项 → 重扫项目与用户角色包目录 → 净差 notice → 重推列表（执行面外置） */
-  private async refreshRolePacks(): Promise<void> {
-    await refreshUserRolePacksFlow({
-      agent: await this.ensureAgent(),
-      userRolePacksDir: this._userRolePacksDir,
-      post: (msg) => this.post(msg),
-      reloadList: () => this.loadRoles(),
-    });
-  }
-
-  /** skills_refresh：调内核窄口 `resyncUserSkills()`（目录由管理器自持，不重新传路径）→ 净差 notice → 重推列表 */
-  private async refreshSkills(): Promise<void> {
-    await refreshUserSkillsFlow({
-      agent: await this.ensureAgent(),
-      post: (msg) => this.post(msg),
-      reloadList: () => this.loadSkills(),
-      refreshChatSkills: () => this._chatProvider?.refreshSkillList(),
-    });
-  }
-
   // ─── 安全子视图方法（写入审批） ───
 
-  /**
-   * 切换写入二次确认开关（security_toggle target=confirmWrites 消息处理）
-   *
-   * 持久化到 globalState + 热更新 agent.security.setConfirmWrites()。
-   * 无需重启 Agent——SecurityGuard 支持运行时切换。
-   */
+  /** 切换写入二次确认开关（security_toggle target=confirmWrites）：持久化 globalState + 热更新 agent.security，无需重启 Agent */
   private async toggleConfirmWrites(enabled: boolean): Promise<void> {
     try {
       // 1. 持久化到 globalState（用户级偏好）

@@ -44,7 +44,6 @@ import {
   injectProjectAssets,
   type ProjectAssetDirs,
 } from './host/userAssets/projectScope.js';
-import { mergeAllowedPathsWithUserAssets } from './host/userAssets/allowedPaths.js';
 import { FileChangeTracker } from './host/fileChangeTracker.js';
 import { FileChangeView } from './host/fileChangeView.js';
 import { stopMcpServers, applyMcpConfigChange } from './host/mcp/runtime.js';
@@ -668,15 +667,10 @@ export function activate(context: vscode.ExtensionContext): void {
       // 否则「已保存但运行时仍按旧白名单」，只能重载窗口（静默失效）。
       if (e.affectsConfiguration('memora.allowedPaths')) {
         runOnAssembledAgent(
-          // 与装配期同一个合并函数（SSOT）：若此处只读用户配置，会把宿主注入的
-          // 用户资产目录（skills / role-packs）整体覆盖掉 ⇒ 写用户级资产再次被守卫拒绝。
-          (agent) =>
-            agent.security?.setAllowedPaths(
-              mergeAllowedPathsWithUserAssets(readAllowedPaths(), [
-                userSkillsDir,
-                userRolePacksDir,
-              ]),
-            ),
+          // 与装配期同源：白名单 = 用户配置项；**不并入用户资产目录**（本轮已收回
+          // LLM 对用户级的写权限，装配期与热更新两处必须口径一致，否则改一次设置就对
+          // 用户目录重新放行——装配期收回、热更新放行的双头语义）。
+          (agent) => agent.security?.setAllowedPaths(readAllowedPaths()),
           '允许路径配置同步',
         );
       }

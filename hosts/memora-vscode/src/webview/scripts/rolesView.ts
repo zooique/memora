@@ -17,6 +17,7 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
+import { appendPromoteToUserButton } from '../helpers/assetPromoteButton.js';
 import { createPager, PagerController } from './pager.js';
 import { getIconSvg } from './icons.js';
 import { STRATEGY_KEY_META, formatDetailValue } from '../helpers/strategyKeyMeta.js';
@@ -772,13 +773,11 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       badge.textContent = '当前';
       header.appendChild(badge);
     }
-    // 兜底标记已合并至下方策略区的「系统兜底」chip（避免重复）
-
     // 操作按钮（右侧，margin-left: auto）
     const actions = document.createElement('div');
     actions.className = 'card-actions';
 
-    // 「带入对话」：所有角色均可一键切换并跳转到对话
+    // 「带入对话」：切换角色并跳到对话视图（预填过渡语，不自动发送）
     const handoffBtn = document.createElement('button');
     handoffBtn.className = 'btn btn-primary';
     handoffBtn.textContent = '带入对话';
@@ -788,6 +787,9 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       vscode.postMessage({ type: 'roles_handoff', name: p.name }),
     );
     actions.appendChild(handoffBtn);
+    // 项目级专属：拷贝到用户级（非同步；同名先备份再覆盖）
+    if (p.source === 'project')
+      appendPromoteToUserButton(actions, 'rolePack', p.name, (m) => vscode.postMessage(m));
 
     // 「设为当前」：仅非激活角色展示
     if (p.name !== activeName) {

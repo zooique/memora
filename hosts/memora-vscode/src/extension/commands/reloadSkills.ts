@@ -53,6 +53,15 @@ export async function reloadSkillsCommand(
   }
   try {
     const result = await agent.reloadConfig();
+    // 🔴 重载成功后必须主动回推设置面板（#3 根因修复）：内核已重读磁盘，但面板持有的是
+    // 重载前的快照；用户随后点「刷新」时 resync 已无净差 ⇒ 只回「无变化」，旧快照继续显示。
+    // 技能与角色包两份列表都要拉——只拉一份就会留下同形态的陈旧面板（措辞折叠的反面）。
+    await Promise.all([
+      settingsProvider.refreshSkillList(),
+      settingsProvider.refreshRolePackList(),
+    ]);
+    // 对话区技能下拉同理：重载会改变可用技能集，必须同代刷新
+    chatProvider.refreshSkillList();
     vscode.window.showInformationMessage(
       `技能已重载：全局技能 ${result.skill} 个 / 角色包技能 ${result.rolePack} 个`,
     );

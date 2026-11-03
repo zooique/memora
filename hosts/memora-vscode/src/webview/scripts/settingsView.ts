@@ -240,6 +240,13 @@ function createSkillsView({
                </label>`
         }
         <button class="skill-content-toggle btn btn-ghost" data-skill-name="${escapeHtml(s.name)}" title="查看技能正文">${isOpen ? '收起正文' : '查看正文'}</button>
+        ${
+          // 项目级技能专属动作：复制一份到用户级。用户级目录已收回 LLM 写权限，
+          // 升级路径只此一条（宿主事务化复制）。文案必须写清「拷贝非同步」。
+          s.layer === 'project'
+            ? `<button class="skill-promote btn btn-secondary" data-skill-name="${escapeHtml(s.name)}" title="复制一份到用户级目录（拷贝，不是同步；同名会先备份现有内容再覆盖，失败可回滚）">添加到用户级</button>`
+            : ''
+        }
       </div>
       <p class="skill-desc">${escapeHtml(s.description)}</p>
       ${
@@ -322,6 +329,17 @@ function createSkillsView({
     // 未加载 → 请求内容
     btn.textContent = '加载中…';
     vscode.postMessage({ type: 'skills_read_content', skillName });
+  });
+
+  // 「添加到用户级」：项目级技能卡片专属。点击只发消息，**不做本地乐观更新**——
+  // 复制是否成功、是否覆盖均由宿主执行面裁决，成功后以 skills_loaded 重推为准
+  //（与禁用开关同口径：UI 不预判能力位）。
+  listEl.addEventListener('click', (ev) => {
+    const btn = (ev.target as HTMLElement).closest('.skill-promote') as HTMLButtonElement | null;
+    if (!btn) return;
+    const skillName = btn.dataset.skillName;
+    if (!skillName) return;
+    vscode.postMessage({ type: 'asset_copy_to_user', assetKind: 'skill', name: skillName });
   });
 
   // S4 延长线开关：事件委托监听全局池技能卡片的禁用开关（change 事件冒泡）——

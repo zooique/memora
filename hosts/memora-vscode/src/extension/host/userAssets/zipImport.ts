@@ -6,6 +6,10 @@
  * 交互（开文件框 / 选目标级 / 覆盖确认 / toast）归命令层（`commands/importAsset.ts`）。
  * 这样命令面板、设置页技能区、设置页角色包区三个入口共用同一处理器，本模块保持可单测。
  *
+ * **第二个消费面（2026-11-03）**：设置页「添加到用户级」把**项目级**技能 / 角色包复制到
+ * 用户目录（`copyAssetToRoot`）。它不读 zip，但**必须复用同一套暂存 / 备份 / 换名 / 回滚 /
+ * `.recovery-` 原语**——再写一份「复制 + 覆盖」就是第二套覆盖语义，两份从落笔起必然漂移。
+ *
  * ## 校验流水线（顺序固定，任一步不过即拒绝且不落盘）
  * 1. 解压前上限：条目数 / 单条解压后大小 / 总解压大小（防 zip bomb），
  *    流式读取时再按**实际字节**二次校验（中央目录声明可被伪造）；
@@ -27,7 +31,7 @@
  * **不执行包内任何脚本**：只把条目当普通文件落盘（`.js` / `.py` 只写不跑）。
  */
 import { randomBytes } from 'node:crypto';
-import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, copyFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { logger, parseFrontmatter, validateManifestText } from '@zooique/memora';
 import * as yauzl from 'yauzl';
@@ -743,5 +747,131 @@ export async function importAssetZip(
       targetPath,
       fileCount: plan.entries.length,
     },
+  };
+}
+
+/** 复制资产到另一根目录（项目级 → 用户级）的入参 */
+export interface CopyAssetOptions {
+  /**
+   * 同名已存在时的确认回调：true = 覆盖，false = 取消（**缺省语义即取消**）。
+   *
+   * 与压缩包导入共用同一语义：绝不静默覆盖用户已有资产，也绝不「点了没反应」——
+   * 取消时回执里写明目标路径，让用户知道为什么没动。
+   */
+  confirmOverwrite: (prompt: OverwritePrompt) => Promise<boolean>;
+}
+
+/** 复制结果（失败必须给具体原因；成功带回实际落点与文件数） */
+export type CopyAssetResult =
+  { ok: true; targetPath: string; fileCount: number } | { ok: false; reason: string };
+
+/**
+ * 递归统计目录内文件数（仅用于成功回执；不跟随符号链接）
+ *
+ * @param root 资产目录绝对路径
+ */
+async function countFilesInDir(root: string): Promise<number> {
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  let count = 0;
+  for (const entry of entries) {
+    // 目录递归；文件与其它类型都计 1（与压缩包导入的「文件数」口径一致：只数叶子）
+    if (entry.isDirectory()) count += await countFilesInDir(join(root, entry.name));
+    else count += 1;
+  }
+  return count;
+}
+
+/**
+ * 把已落盘的项目级资产复制到用户级根目录（**拷贝，不是移动/链接**）
+ *
+ * 与压缩包导入共用同一条提交原语：内容先复制到目标同父目录的隐藏暂存区 →
+ * 目标已存在则先换名成 `.bak-<hex>` 备份 → `rename(暂存 → 目标)` → 成功才删备份；
+ * 任一步失败反向换名回滚，回滚再失败则把备份转成 `.recovery-<hex>`（清理永不删除）。
+ *
+ * 调用方负责「重扫 + UI 刷新」；本模块不碰 Agent、不碰 UI 状态。
+ *
+ * @param sourcePath 项目级资产绝对路径（技能 `.md` 文件或目录；角色包目录）
+ * @param targetRoot 用户级资产根目录（skills / role-packs）
+ * @param options 同名覆盖确认
+ */
+export async function copyAssetToRoot(
+  sourcePath: string,
+  targetRoot: string,
+  options: CopyAssetOptions,
+): Promise<CopyAssetResult> {
+  let sourceKind: 'file' | 'dir';
+  try {
+    const info = await stat(sourcePath);
+    sourceKind = info.isDirectory() ? 'dir' : 'file';
+  } catch (err) {
+    return { ok: false, reason: `源资产不存在或不可读：${(err as Error).message}` };
+  }
+
+  const sourceName = basename(sourcePath);
+  // 单文件技能落点 = 原文件名（如 `foo.md`）；目录资产落点 = 目录名
+  const singleFile = sourceKind === 'file';
+  const name = singleFile ? sourceName.replace(/\.md$/i, '') : sourceName;
+  // 来源类型仅用于确认弹窗文案；目录里含 manifest.json 视为角色包（与导入识别的顺序一致）
+  const kind: AssetKind =
+    singleFile || !(await pathExists(join(sourcePath, 'manifest.json'))) ? 'skill' : 'rolePack';
+
+  // 候选目标：单文件技能同时防「同名目录」占位（与压缩包导入的 resolveTargets 同判据）
+  const candidates = singleFile ? [sourceName, name] : [sourceName];
+  const targets: string[] = [];
+  for (const candidate of candidates) {
+    const resolved = resolveInsideDir(targetRoot, candidate);
+    if (!resolved.ok) return { ok: false, reason: resolved.reason };
+    targets.push(resolved.path);
+  }
+  const targetPath = targets[0]!;
+
+  // 同名处置：任一候选已存在 ⇒ 必须由调用方明确确认；取消则零写入
+  const existing: string[] = [];
+  for (const target of targets) {
+    if (await pathExists(target)) existing.push(target);
+  }
+  if (existing.length > 0) {
+    const overwrite = await options.confirmOverwrite({
+      kind,
+      name,
+      targetPath: existing[0]!,
+    });
+    if (!overwrite) {
+      return { ok: false, reason: `已取消复制：目标已存在（${existing[0]}），未做任何写入` };
+    }
+  }
+
+  // ── 暂存复制：内容先落进隐藏暂存区，此阶段目标一字未动 ──
+  const parentDir = dirname(targetPath);
+  await mkdir(parentDir, { recursive: true }).catch(() => undefined);
+  await cleanupStaleArtifacts(parentDir);
+  const suffix = makeSuffix();
+  const stagedPath = singleFile
+    ? join(parentDir, `${IMPORT_TMP_PREFIX}${suffix}.md`)
+    : join(parentDir, `${IMPORT_TMP_PREFIX}${suffix}`);
+
+  try {
+    if (singleFile) {
+      await copyFile(sourcePath, stagedPath);
+    } else {
+      // dereference=true：把链接指向的真实内容复制进来，用户目录里不留可逃出根外的符号链接
+      await cp(sourcePath, stagedPath, { recursive: true, dereference: true });
+    }
+  } catch (err) {
+    // 复制阶段失败：目标从未被改动，只需清掉暂存
+    await rm(stagedPath, { recursive: true, force: true }).catch((cleanupErr: unknown) => {
+      logger.warn({ cleanupErr, stagedPath }, '复制到用户级写入失败后清理暂存失败');
+    });
+    return { ok: false, reason: `复制失败（目标未改动）：${(err as Error).message}` };
+  }
+
+  // ── 换名提交：与压缩包导入完全同一原语（备份 → rename → 删备份；失败回滚） ──
+  const committed = await commitStaged(stagedPath, targetPath, targets.slice(1), suffix);
+  if (!committed.ok) return { ok: false, reason: committed.reason };
+
+  return {
+    ok: true,
+    targetPath,
+    fileCount: singleFile ? 1 : await countFilesInDir(targetPath),
   };
 }

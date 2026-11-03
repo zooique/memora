@@ -729,6 +729,18 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'skills_refresh' }
   /**
+   * 把**项目级**资产复制到用户级（设置页项目级卡片「添加到用户级」按钮触发）
+   *
+   * `assetKind` 区分技能 / 角色包，**共用一条通道**（与 `import_asset_zip` 同口径：
+   * 两入口的差异只是 UI 位置，执行语义相同 ⇒ 不为入口各开一条）。
+   *
+   * 语义：**拷贝，不是同步**——复制后项目级与用户级是两份独立资产，任一侧后续变更
+   * 不会传播到另一侧。宿主经 `copyAssetToRoot`（与压缩包导入同一暂存 / 备份 / 换名原语）
+   * 落盘；同名已存在必须由用户明确确认「覆盖」（先备份、失败可回滚），绝不静默覆盖。
+   * 完成回执 = notice（落点绝对路径 + 文件数 + 「副本非同步」说明）+ 重扫后回推列表。
+   */
+  | { type: 'asset_copy_to_user'; assetKind: 'skill' | 'rolePack'; name: string }
+  /**
    * L2 渐进披露：请求读取技能正文（技能视图的「查看正文」按钮触发）
    *
    * host 调 SkillManager.get(name).content 或 RolePackManager.readSkillContent()

@@ -40,7 +40,6 @@ import { createVscodeEnvironmentProvider } from './environmentProvider.js';
 import { createVscodeProjectSearchProvider } from './projectSearchProvider.js';
 import { createHostMemoryStorage } from './memoryStorage.js';
 import { resolveProjectDataDir } from './projectDataDir.js';
-import { mergeAllowedPathsWithUserAssets } from './userAssets/allowedPaths.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
 import { vscodeTracer } from './tracer.js';
 import { startMcpServers } from './mcp/runtime.js';
@@ -453,16 +452,23 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 可观测性 Tracer（P2：§5.2.1 指纹由 ITracer 承载，宿主采集不落盘）
     tracer: vscodeTracer,
     permission: 'owner',
-    // 白名单 = 基准根 projectPath + 用户额外允许目录 + **用户资产目录**（运行时可热更新，基准根不可移除）。
-    // 用户资产目录必须并入：系统提示承诺「用户级可写」，而 `<globalStorage>/skills`、
-    // `/role-packs` 不在基准根内，不并入则写入被路径守卫拒绝（承诺与实现不一致）。
-    // 去重交给 mergeAllowedPathsWithUserAssets；条数上限由内核如实报错，宿主不截断。
-    allowedPaths: mergeAllowedPathsWithUserAssets(
-      [projectPath, ...(allowedPaths ?? [])],
-      [userSkillsDir, userRolePacksDir],
-    ),
-    // 禁止覆盖根 = 用户资产目录（与白名单并列的第二条判据）：write_file 默认不弹窗，
-    // 没有本判据就会静默覆盖用户已有技能/角色包文件。
+    // 白名单 = 基准根 projectPath + 用户在 `memora.allowedPaths` 额外允许的目录。
+    //
+    // ⚠️ 用户级资产目录（`<globalStorage>/skills`、`/role-packs`）**刻意不再并入**：
+    // 本轮方向定案为「LLM 只写当前项目 `.memora/` 下的技能与角色包，用户级资产由用户在
+    // 设置页点『添加到用户级』复制装载」。用户目录不在白名单内 ⇒ 正常工具路径的写入
+    // （`write_file` / `delete_file`）会被基准根判据拒绝；**读取面不受影响**——下方
+    // `loadExtraDir(userSkillsDir)` / `loadExtraDir(userRolePacksDir)` 照旧扫描用户目录，
+    // 复制过去的资产仍可见、可选中（收回写 ≠ 收回读）。
+    // 基准根不可移除；条数上限由内核如实报错，宿主不截断。
+    // ⚠️ `run_code` / `run_skill_script` 等任意代码执行面不在本判据射程内（已知不设防），
+    // 故对外措辞只能是「正常工具路径不再写用户目录」，不得写成「模型无法写用户目录」。
+    allowedPaths: [projectPath, ...(allowedPaths ?? [])],
+    // 禁止覆盖根 = 用户资产目录（与白名单并列的第二条判据）。
+    // 🔴 本轮起**生产零消费者**：用户目录已不在 `allowedPaths`，`write_file` 会在
+    // `assertNotOverwrite` 之前先被白名单拒绝，本键当前不会命中任何正常写入。
+    // 保留仅为不破坏内核契约（`setNoOverwriteRoots` 仍存在）；计划 6.0.0 随该内核方法
+    // 一并退役，见台账 ASSET-WRITE-SCOPE-1，**不许静默保留**。
     noOverwriteRoots: [userSkillsDir, userRolePacksDir].filter(
       (dir): dir is string => typeof dir === 'string' && dir.length > 0,
     ),

@@ -63,7 +63,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
-import { importAssetZip } from '../userAssets/zipImport.js';
+import { copyAssetToRoot, importAssetZip } from '../userAssets/zipImport.js';
 
 /** 本文件创建的临时目录（afterEach 统一清理） */
 const tempDirs: string[] = [];
@@ -320,5 +320,90 @@ describe('importAssetZip · 暂存换名（失败中断不得损坏旧目标）'
 
     expect(result.ok).toBe(true);
     expect(readdirSync(root).sort()).toEqual(['.import-tmp-fedcba987654', 'new-skill.md']);
+  });
+});
+
+describe('copyAssetToRoot · 项目级 → 用户级（拷贝非同步，复用同一提交原语）', () => {
+  it('单文件技能：内容逐字节一致，落点 = 同名 .md，回执 1 个文件', async () => {
+    const project = makeTempDir('memora-copy-project-');
+    const user = makeTempDir('memora-copy-user-');
+    const source = join(project, 'TESTSKILL-A.md');
+    writeFileSync(source, '# TESTSKILL-A\n正文一行\n', 'utf-8');
+
+    const result = await copyAssetToRoot(source, user, { confirmOverwrite: async () => false });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.targetPath).toBe(join(user, 'TESTSKILL-A.md'));
+    expect(readFileSync(result.targetPath, 'utf-8')).toBe('# TESTSKILL-A\n正文一行\n');
+    expect(result.fileCount).toBe(1);
+    // 拷贝而非链接：项目侧删掉后用户侧仍在（内容已实体化）
+    rmSync(source);
+    expect(readFileSync(result.targetPath, 'utf-8')).toBe('# TESTSKILL-A\n正文一行\n');
+  });
+
+  it('角色包目录：整目录递归复制，文件数如实统计', async () => {
+    const project = makeTempDir('memora-copy-project-');
+    const user = makeTempDir('memora-copy-user-');
+    const source = join(project, 'TESTPACK-A');
+    mkdirSync(join(source, 'skills'), { recursive: true });
+    writeFileSync(join(source, 'manifest.json'), '{"name":"TESTPACK-A"}', 'utf-8');
+    writeFileSync(join(source, 'skills', 'demo.md'), 'demo', 'utf-8');
+
+    const result = await copyAssetToRoot(source, user, { confirmOverwrite: async () => false });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.fileCount).toBe(2);
+    expect(readFileSync(join(result.targetPath, 'manifest.json'), 'utf-8')).toBe(
+      '{"name":"TESTPACK-A"}',
+    );
+    expect(readFileSync(join(result.targetPath, 'skills', 'demo.md'), 'utf-8')).toBe('demo');
+  });
+
+  it('同名已存在 + 用户取消 ⇒ 目标一字未动，回执说明原因（不静默跳过）', async () => {
+    const project = makeTempDir('memora-copy-project-');
+    const user = makeTempDir('memora-copy-user-');
+    const source = join(project, 'TESTSKILL-B.md');
+    writeFileSync(source, '新版内容', 'utf-8');
+    const target = join(user, 'TESTSKILL-B.md');
+    writeFileSync(target, '旧版内容', 'utf-8');
+
+    const result = await copyAssetToRoot(source, user, { confirmOverwrite: async () => false });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain('已取消复制');
+    expect(readFileSync(target, 'utf-8')).toBe('旧版内容');
+    expect(hasLeftovers(user)).toBe(false);
+  });
+
+  it('同名已存在 + 用户确认覆盖 ⇒ 新内容生效，事务备份按同原语清理（无残留）', async () => {
+    const project = makeTempDir('memora-copy-project-');
+    const user = makeTempDir('memora-copy-user-');
+    const source = join(project, 'TESTSKILL-C.md');
+    writeFileSync(source, '新版内容', 'utf-8');
+    const target = join(user, 'TESTSKILL-C.md');
+    writeFileSync(target, '旧版内容', 'utf-8');
+
+    const result = await copyAssetToRoot(source, user, { confirmOverwrite: async () => true });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(readFileSync(target, 'utf-8')).toBe('新版内容');
+    // 与压缩包导入同一语义：备份是事务内临时物，提交成功后清理；失败路径由上方回滚用例覆盖
+    expect(hasLeftovers(user)).toBe(false);
+  });
+
+  it('源资产不存在 ⇒ 明确失败，不创建任何目标', async () => {
+    const user = makeTempDir('memora-copy-user-');
+    const result = await copyAssetToRoot(join(user, 'missing.md'), user, {
+      confirmOverwrite: async () => false,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain('源资产不存在');
+    expect(readdirSync(user)).toEqual([]);
   });
 });

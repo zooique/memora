@@ -10,14 +10,15 @@
  *
  * ## 模块边界（`userAssets/`）
  *   - 本文件 = 名字净化 / 路径推导 / 逃逸断言 / 路径归属判定，**零写入**；
- *   - `zipImport.ts` = **唯一的资产建仓执行面**（读包 → 校验 → 暂存 → 换名提交）；
+ *   - `zipImport.ts` = **唯一的资产建仓执行面**（读包 → 校验 → 暂存 → 换名提交；
+ *     项目级 → 用户级的「添加到用户级」复制也在这里，复用同一提交原语）；
  *   - `validateSkill.ts` = 技能格式校验，**只校验、不落盘**（被 `zipImport` 复用）；
- *   - `projectScope.ts` = 项目级目录推导与信任门单点；
- *   - `allowedPaths.ts` = 白名单合并。
+ *   - `projectScope.ts` = 项目级目录推导与信任门单点。
  *
- * **不要再往本目录加写盘函数**：对话路径写资产走内核 `write_file`（白名单 + `noOverwriteRoots`），
- * 宿主若再留第二套写盘器，就是两条覆盖语义（且 `pathExists` → `writeFile` 还有 TOCTOU），
- * 从落笔那一刻起必然分叉。
+ * **不要再往本目录加写盘函数**：LLM 的正常工具路径只写项目 `.memora/` 下的资产
+ * （宿主不再把用户目录注入 `allowedPaths`），用户级资产一律由宿主经
+ * `zipImport.ts` 的暂存 / 备份 / 换名事务装载。宿主若再留第二套写盘器，就是两条覆盖语义
+ * （且 `pathExists` → `writeFile` 还有 TOCTOU），从落笔那一刻起必然分叉。
  */
 
 import { resolve, sep } from 'node:path';

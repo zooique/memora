@@ -274,9 +274,11 @@ describe('settingsPanel.toggleSkillDisabled —— 技能启停开关', () => {
 describe('settingsPanel.refreshRolePacks —— 角色包刷新链路', () => {
   const USER_DIR = '/mock/user-packs';
 
-  /** 调私有 refreshRolePacks */
+  /** 触发角色包刷新链路（走真实 webview 分发分支；面板已把执行面内联到 roles_refresh 分支） */
   function refresh(provider: MemoraSettingsPanel): Promise<void> {
-    return (provider as unknown as { refreshRolePacks(): Promise<void> }).refreshRolePacks();
+    return (provider as unknown as { handleMessage(msg: unknown): Promise<void> }).handleMessage({
+      type: 'roles_refresh',
+    });
   }
 
   /** 取 notice 列表 */

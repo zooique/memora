@@ -37,12 +37,15 @@ import { join } from 'node:path';
  * 2026-11-02 压缩包导入 +1（`ASSET-ZIP-IMPORT-1`）：初版按「哪个区点的」加了两条
  * （`roles_import_zip` / `skills_import_zip`），**当日按治理口径自剪为单条 `import_asset_zip`**
  * ——技能 / 角色包由压缩包内容识别，入口差异只是 UI 位置，不含语义差异 ⇒ 两按钮共用一条通道。
+ * 2026-11-03 复制到用户级 +1（`ASSET-COPY-USER-1`）：技能 / 角色包复用单条
+ * `asset_copy_to_user`（`assetKind` 区分），同 `import_asset_zip` 的合并口径。
  * ⚠️ 本阈值每次协议治理重估即过期：引用前先跑本测试取当前类型集计数，
  * 按「阈值 = 当前计数 + 1 余量」口径重算
  * （2026-10-28 实测 131 ⇒ 132，Q3 后 133 ⇒ 134；2026-11-02 增三条后 136 ⇒ 137，
- *  同日剪枝后实测 134 ⇒ 135；同日压缩包导入合并为单条后实测 135 ⇒ 136）。
+ *  同日剪枝后实测 134 ⇒ 135；同日压缩包导入合并为单条后实测 135 ⇒ 136；
+ *  2026-11-03 复制通道合并为单条后实测 136 ⇒ 137）。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 136;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 137;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {
