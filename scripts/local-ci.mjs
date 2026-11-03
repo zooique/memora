@@ -391,6 +391,20 @@ const ALL_STEPS = [
     required: true,
     presets: ['fast', 'full'],
   },
+  // 模态调用点窄闸（`MODAL-DUP-CANCEL-1` 第一段）：任何 `modal: true` 调用不得自拼
+  // 「取消 / Cancel」item——VS Code 自带系统级 Cancel，再传必现 `[确认] [取消] [取消]`。
+  // 缺口实证：2026-10-13 已修过一轮、2026-11-03 用户真机再次截到同一形态（新增调用点回退）。
+  // **只上窄闸**：严闸（`modal: true` 只许出现在 confirmModal.ts）一上就会把剩余 12 处
+  // 既存调用点全部判红 ⇒ 留第二段 14 处收口时再上（见台账该条「第二段」）。
+  // 确定性文本扫描、秒级、零依赖。
+  {
+    id: 'modal:cancel',
+    name: '模态调用点不自拼取消项（窄闸）',
+    cmd: 'npm run verify:modal-cancel',
+    cwd: ROOT,
+    required: true,
+    presets: ['fast', 'full'],
+  },
   // 台账折叠结清（硬闸）：防「整区折叠时条目凭空蒸发」。
   // 缺口实证：2026-10-26 归元把 5.0.0 / 5.1.0 / 宿主 0.x 四个版本区折叠成索引表的一行，
   // 那次靠**人工复读**才捞回 `rules-B2`（带「待迁」标记但差点被整条折走）；2026-10-27 用本步

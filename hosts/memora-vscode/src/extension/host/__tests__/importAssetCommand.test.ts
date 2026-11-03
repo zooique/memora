@@ -8,10 +8,12 @@
  *   2. 未信任 + 选项目级 ⇒ 明确警告并零写入（不静默降级为用户级）；
  *   3. 用户级成功 ⇒ 写入 + `resyncUserSkills` + 两面板刷新 + toast 含类型/名称/落点/文件数；
  *   4. 项目级成功 ⇒ 先 `loadExtraDir(..., 'project')` 再重扫（顺序即覆盖方向）；
- *   5. 同名覆盖取消 ⇒ 原文件不变 + 失败提示给出具体原因（不是「导入失败」四个字）；
+ *   5. 同名覆盖取消 ⇒ 原文件 **hash / mtime 零改动**、无 `.import-tmp-` / `.bak-` / `.recovery-` 残留
+ *      + 失败提示给出具体原因（不是「导入失败」四个字）；确认模态**只传一个 item**（不出现双取消）；
  *   6. 角色包走 `resyncUserPacks`（档位与目标级一致）+ 角色列表刷新；
  *   7. 角色包与**内置包同名** ⇒ 拒绝且零写入（不询问覆盖、不创建目录）；
- *   8. 同名**用户级**角色包 ⇒ 仍走既有覆盖确认流（内置判定不误伤）。
+ *   8. 同名**用户级**角色包 ⇒ 仍走既有覆盖确认流（内置判定不误伤）；
+ *   9. 同名覆盖确认 ⇒ 内容替换成功且事务无残留（暂存 / 备份 / 恢复备份）。
  *
  * vscode 全量 mock（命令层是唯一交互面；执行面 `zipImport.ts` 用真实实现 + 真实 zip 夹具）。
  */
@@ -22,9 +24,12 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ZipFile } from 'yazl';
@@ -58,6 +63,25 @@ function makeTempDir(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   tempDirs.push(dir);
   return dir;
+}
+
+/**
+ * 计算文件 sha256（「零改动」判据必须逐字节，不靠“看起来一样”）
+ *
+ * @param filePath 文件绝对路径
+ */
+function sha256Of(filePath: string): string {
+  return createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
+/** 目录里是否还有导入事务残留（暂存 / 备份；`.recovery-` 是主动保留的恢复备份，也算残留） */
+function hasLeftovers(dir: string): boolean {
+  return readdirSync(dir).some(
+    (name) =>
+      name.startsWith('.import-tmp-') ||
+      /\.bak-[0-9a-f]{12}$/.test(name) ||
+      /\.recovery-[0-9a-f]{12}$/.test(name),
+  );
 }
 
 afterEach(() => {
@@ -297,7 +321,7 @@ describe('importAssetCommand · 项目级导入成功（已信任）', () => {
 });
 
 describe('importAssetCommand · 同名覆盖确认', () => {
-  it('用户选「取消」⇒ 原文件不变 + 失败提示含具体原因', async () => {
+  it('用户点 VS Code 自带 Cancel（undefined）⇒ 原文件 hash / mtime 零改动、无事务残留、具体原因', async () => {
     const dir = makeTempDir('memora-import-cancel-');
     const zipPath = join(dir, 'skill.zip');
     await makeSkillZip(zipPath, 'dup-skill', '新', '新正文');
@@ -305,13 +329,16 @@ describe('importAssetCommand · 同名覆盖确认', () => {
     mkdirSync(userSkillsDir, { recursive: true });
     const existing = join(userSkillsDir, 'dup-skill.md');
     writeFileSync(existing, '---\nname: dup-skill\ndescription: 旧\n---\n旧正文', 'utf-8');
+    // 取消前快照：逐字节 hash + mtime（「零改动」的判据，不靠“看起来一样”）
+    const hashBefore = sha256Of(existing);
+    const mtimeBefore = statSync(existing).mtimeMs;
     const { agent, calls } = makeAgentStub();
     const panels = makePanels();
 
     vscodeMock.showOpenDialog.mockResolvedValue([{ fsPath: zipPath }]);
     vscodeMock.showQuickPick.mockResolvedValue({ label: '用户级（默认）', level: 'user' });
-    // 覆盖确认弹窗返回「取消」
-    vscodeMock.showWarningMessage.mockResolvedValue('取消');
+    // VS Code modal 自带的 Cancel / Esc / 关 X 统一解析为 undefined（我们不再自拼「取消」）
+    vscodeMock.showWarningMessage.mockResolvedValue(undefined);
 
     await importAssetCommand({
       userSkillsDir,
@@ -323,11 +350,52 @@ describe('importAssetCommand · 同名覆盖确认', () => {
       settingsProvider: panels.settingsProvider,
     });
 
-    expect(readFileSync(existing, 'utf-8')).toContain('旧正文');
+    expect(sha256Of(existing)).toBe(hashBefore);
+    expect(statSync(existing).mtimeMs).toBe(mtimeBefore);
+    expect(hasLeftovers(userSkillsDir)).toBe(false);
     expect(calls).toEqual([]);
     const err = vscodeMock.showErrorMessage.mock.calls[0]?.[0] as string;
     expect(err).toContain('导入失败');
     expect(err).toContain('已取消导入');
+    // 覆盖确认只有「确认项 + options」两个实参，不存在取消 item（双取消的结构性防线）
+    const confirmArgs = vscodeMock.showWarningMessage.mock.calls.find((args) =>
+      String(args[0]).includes('目标已存在'),
+    ) as unknown[];
+    expect(confirmArgs).toHaveLength(3);
+    expect(confirmArgs[2]).toBe('覆盖');
+  });
+
+  it('用户点「覆盖」⇒ 内容替换 + 无事务残留 + resync 一次', async () => {
+    const dir = makeTempDir('memora-import-overwrite-');
+    const zipPath = join(dir, 'skill.zip');
+    await makeSkillZip(zipPath, 'dup-skill', '新', '新正文');
+    const userSkillsDir = join(dir, 'user-skills');
+    mkdirSync(userSkillsDir, { recursive: true });
+    const existing = join(userSkillsDir, 'dup-skill.md');
+    writeFileSync(existing, '---\nname: dup-skill\ndescription: 旧\n---\n旧正文', 'utf-8');
+    const hashBefore = sha256Of(existing);
+    const { agent, calls } = makeAgentStub();
+    const panels = makePanels();
+
+    vscodeMock.showOpenDialog.mockResolvedValue([{ fsPath: zipPath }]);
+    vscodeMock.showQuickPick.mockResolvedValue({ label: '用户级（默认）', level: 'user' });
+    vscodeMock.showWarningMessage.mockResolvedValue('覆盖');
+
+    await importAssetCommand({
+      userSkillsDir,
+      userRolePacksDir: join(dir, 'user-role-packs'),
+      builtinRolePacksDir: join(dir, 'builtin-role-packs'),
+      readProjectDirs: () => ({}),
+      tryGetAgent: async () => agent,
+      chatProvider: panels.chatProvider,
+      settingsProvider: panels.settingsProvider,
+    });
+
+    expect(readFileSync(existing, 'utf-8')).toContain('新正文');
+    expect(sha256Of(existing)).not.toBe(hashBefore);
+    // 事务成功：暂存 / 备份 / 恢复备份均不得残留
+    expect(hasLeftovers(userSkillsDir)).toBe(false);
+    expect(calls).toEqual(['skills.resync']);
   });
 });
 

@@ -19,6 +19,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Agent } from '@zooique/memora';
 import { importAssetZip, type AssetKind } from '../host/userAssets/zipImport.js';
+import { confirmModal } from '../host/ui/confirmModal.js';
 import type { ProjectAssetDirs } from '../host/userAssets/projectScope.js';
 import { isPathWithin } from '../host/userAssets/path.js';
 import type { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
@@ -172,15 +173,14 @@ export async function importAssetCommand(deps: ImportAssetDeps): Promise<void> {
   // ③ 执行校验与落盘（包内容识别类型 → 内置同名判定 → 目标根 → 同名确认 → 暂存换名）
   const result = await importAssetZip(zipPath, {
     targetRootFor,
-    confirmOverwrite: async (prompt) => {
-      const choice = await vscode.window.showWarningMessage(
-        `目标已存在：${prompt.targetPath}\n覆盖会备份并替换原内容，失败自动回滚，确定继续？`,
-        { modal: true },
-        '覆盖',
-        '取消',
-      );
-      return choice === '覆盖';
-    },
+    // 同名覆盖确认：只传「覆盖」；取消是 VS Code modal 自带的 Cancel（undefined ⇒ false），
+    // 不再自拼「取消」item（那会造成 `[覆盖] [取消] [取消]`，见台账 MODAL-DUP-CANCEL-1）
+    confirmOverwrite: (prompt) =>
+      confirmModal({
+        message: `目标已存在：${prompt.targetPath}`,
+        detail: '覆盖会备份并替换原内容，失败自动回滚，确定继续？',
+        confirmLabel: '覆盖',
+      }),
     isNameTaken: (name) => isBuiltinRolePackName(name, deps.builtinRolePacksDir, agent),
   });
 

@@ -23,14 +23,11 @@
  * 执行面仍不设防。回执与 UI 只可写「正常工具路径不再写用户目录」，不得写
  * 「模型无法写用户目录」。
  */
-import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { isPathWithin } from '../../extension/host/userAssets/path.js';
-import {
-  copyAssetToRoot,
-  type OverwritePrompt,
-} from '../../extension/host/userAssets/zipImport.js';
+import { copyAssetToRoot } from '../../extension/host/userAssets/zipImport.js';
+import { confirmModal } from '../../extension/host/ui/confirmModal.js';
 import { listVisibleSkills } from '../../extension/host/skillAggregation.js';
 import { refreshUserRolePacksFlow, refreshUserSkillsFlow } from './userAssetRefresh.js';
 
@@ -56,23 +53,6 @@ export interface AssetCopyDeps {
   loadRoles: () => Promise<void>;
   /** 对话区技能下拉刷新 */
   refreshChatSkills: () => void;
-}
-
-/**
- * 同名覆盖确认（复制入口的唯一确认形态）
- *
- * @param prompt 执行面回传的目标信息（kind / name / 已存在的绝对路径）
- * @returns true = 覆盖；false = 取消（执行面据此返回「未做任何写入」）
- */
-async function confirmCopyOverwrite(prompt: OverwritePrompt): Promise<boolean> {
-  const label = prompt.kind === 'skill' ? '技能' : '角色包';
-  const choice = await vscode.window.showWarningMessage(
-    `用户级已存在同名${label}：${prompt.targetPath}\n继续会先备份现有内容再覆盖，失败自动回滚；确定复制？`,
-    { modal: true },
-    '覆盖',
-    '取消',
-  );
-  return choice === '覆盖';
 }
 
 /**
@@ -145,7 +125,13 @@ export async function copyProjectSkillToUser(
   const result = await copyAssetToRoot(skill.packageRoot, deps.userSkillsDir, {
     // 类型由本层显式声明，只影响校验分支与文案（不决定复制单元）
     kind: 'skill',
-    confirmOverwrite: confirmCopyOverwrite,
+    // 同名覆盖确认：只传「覆盖」；取消是 VS Code modal 自带的 Cancel（undefined ⇒ false）
+    confirmOverwrite: (prompt) =>
+      confirmModal({
+        message: `用户级已存在同名技能：${prompt.targetPath}`,
+        detail: '继续会先备份现有内容再覆盖，失败自动回滚；确定复制？',
+        confirmLabel: '覆盖',
+      }),
   });
   if (!result.ok) {
     postCopyError(deps, `复制到用户级失败：${result.reason}`);
@@ -191,7 +177,13 @@ export async function copyProjectRolePackToUser(deps: AssetCopyDeps, name: strin
 
   const result = await copyAssetToRoot(pack.packageRoot, deps.userRolePacksDir, {
     kind: 'rolePack',
-    confirmOverwrite: confirmCopyOverwrite,
+    // 同名覆盖确认：只传「覆盖」；取消是 VS Code modal 自带的 Cancel（undefined ⇒ false）
+    confirmOverwrite: (prompt) =>
+      confirmModal({
+        message: `用户级已存在同名角色包：${prompt.targetPath}`,
+        detail: '继续会先备份现有内容再覆盖，失败自动回滚；确定复制？',
+        confirmLabel: '覆盖',
+      }),
   });
   if (!result.ok) {
     postCopyError(deps, `复制到用户级失败：${result.reason}`);
