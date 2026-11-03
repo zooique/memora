@@ -14,6 +14,8 @@ import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
 import { toNoticeText } from '../host/noticeText.js';
 import { MEMORY_RECYCLE_RETENTION_DAYS } from '../../shared/constants.js';
+// 模态确认框唯一入口（禁自开 showWarningMessage + modal: true，见 scripts/verify-modal-cancel.mjs 严闸）
+import { confirmModal } from '../host/ui/confirmModal.js';
 
 /**
  * 查看记忆统计（agent.memory + agent.getMetrics()）
@@ -55,14 +57,12 @@ export async function cleanupMemoriesCommand(
     vscode.window.showWarningMessage('Memora Agent 未就绪，无法清理记忆');
     return;
   }
-  // 确认对话框——防止误操作。不传显式「取消」：VS Code modal 自带系统级取消
-  // （取消钮 / Esc / 关闭 X），再传会出现双取消；confirmed !== '确认清理' 已兼容 undefined
-  const confirmed = await vscode.window.showWarningMessage(
-    `将永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆，此操作不可撤销。`,
-    { modal: true },
-    '确认清理',
-  );
-  if (confirmed !== '确认清理') return;
+  // 确认对话框——防止误操作。统一走 confirmModal（唯一入口，取消交给系统 Cancel）
+  const confirmed = await confirmModal({
+    message: `将永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆，此操作不可撤销。`,
+    confirmLabel: '确认清理',
+  });
+  if (!confirmed) return;
   try {
     // 保留期 SSOT = shared/constants（与设置面板「清理过期」同源，改一处即两侧同步）
     const cutoff = new Date(Date.now() - MEMORY_RECYCLE_RETENTION_DAYS * 24 * 60 * 60 * 1000);

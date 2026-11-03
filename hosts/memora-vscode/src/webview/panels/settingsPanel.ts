@@ -40,6 +40,8 @@ import { MemoraChatViewProvider } from './chatPanel.js';
 import { buildHtml } from './settingsPanelHtml.js';
 import { refreshUserRolePacksFlow, refreshUserSkillsFlow } from './userAssetRefresh.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
+// 模态确认框唯一入口（禁自开 showWarningMessage + modal: true，见 scripts/verify-modal-cancel.mjs 严闸）
+import { confirmModal } from '../../extension/host/ui/confirmModal.js';
 import type {
   CustomSearchEngineConfig,
   ExtensionToWebviewMessage,
@@ -380,12 +382,11 @@ export class MemoraSettingsPanel {
       return;
     }
     if (msg.type === 'cfg_delete') {
-      const choice = await vscode.window.showWarningMessage(
-        `确定删除服务商 "${msg.name}"？此操作不可恢复。`,
-        { modal: true },
-        '删除',
-      );
-      if (choice !== '删除') return;
+      const confirmed = await confirmModal({
+        message: `确定删除服务商 "${msg.name}"？此操作不可恢复。`,
+        confirmLabel: '删除',
+      });
+      if (!confirmed) return;
       try {
         const r = await this.store.remove(msg.name);
         this.post({ type: 'cfg_result', ok: r.ok, message: r.message, action: 'delete' });
@@ -1084,12 +1085,11 @@ export class MemoraSettingsPanel {
       this.post({ type: 'memory_deleted', ok: false, id, message: 'Agent 未就绪，无法删除记忆' });
       return;
     }
-    const choice = await vscode.window.showWarningMessage(
-      '确定删除这条记忆？它将进入回收站，可随时恢复。',
-      { modal: true },
-      '删除',
-    );
-    if (choice !== '删除') return;
+    const confirmed = await confirmModal({
+      message: '确定删除这条记忆？它将进入回收站，可随时恢复。',
+      confirmLabel: '删除',
+    });
+    if (!confirmed) return;
     try {
       memory.writeDelete(id);
       this.post({ type: 'memory_deleted', ok: true, id });
@@ -1149,12 +1149,11 @@ export class MemoraSettingsPanel {
       });
       return;
     }
-    const choice = await vscode.window.showWarningMessage(
-      '永久删除这条记忆？此操作不可恢复。',
-      { modal: true },
-      '永久删除',
-    );
-    if (choice !== '永久删除') return;
+    const confirmed = await confirmModal({
+      message: '永久删除这条记忆？此操作不可恢复。',
+      confirmLabel: '永久删除',
+    });
+    if (!confirmed) return;
     try {
       memory.writePurge(id);
       this.post({ type: 'memory_purged', ok: true, id });
@@ -1196,12 +1195,11 @@ export class MemoraSettingsPanel {
       this.post({ type: 'memory_recycle_cleared', ok: true, count: 0 });
       return;
     }
-    const choice = await vscode.window.showWarningMessage(
-      `确定清空回收站？将永久删除 ${deleted.length} 条记忆，此操作不可恢复。`,
-      { modal: true },
-      '清空回收站',
-    );
-    if (choice !== '清空回收站') return;
+    const confirmed = await confirmModal({
+      message: `确定清空回收站？将永久删除 ${deleted.length} 条记忆，此操作不可恢复。`,
+      confirmLabel: '清空回收站',
+    });
+    if (!confirmed) return;
     try {
       for (const m of deleted) memory.writePurge(m.id);
       this.post({ type: 'memory_recycle_cleared', ok: true, count: deleted.length });
@@ -1324,13 +1322,11 @@ export class MemoraSettingsPanel {
       });
       return;
     }
-    const confirmed = await vscode.window.showWarningMessage(
-      `将永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆，此操作不可撤销。`,
-      { modal: true },
-      '确认清理',
-      // 不传显式「取消」：VS Code modal 自带系统级取消，再传出现双取消（对齐全仓多数派）
-    );
-    if (confirmed !== '确认清理') return;
+    const confirmed = await confirmModal({
+      message: `将永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆，此操作不可撤销。`,
+      confirmLabel: '确认清理',
+    });
+    if (!confirmed) return;
     try {
       const cutoff = new Date(Date.now() - MEMORY_RECYCLE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
       const purged = agent.memory.writePurgeExpired(cutoff);

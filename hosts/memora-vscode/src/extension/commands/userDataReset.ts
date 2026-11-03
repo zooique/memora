@@ -10,11 +10,14 @@
  * 已经是项目的一部分（用户拍板）。
  *
  * 从 extension.ts 外置而来（零行为变更）：modal 文案与返回结构逐字保留
- * （settingsPanel 按 `cancelled` / `message` 分支出 Neutral / 错误提示）。
+ * （settingsPanel 按 `cancelled` / `message` 分支出 Neutral / 错误提示）；
+ * 模态机制统一委托 `confirmModal`（唯一入口）。
  */
 import * as vscode from 'vscode';
 import { resetUserData, type UserDataResetScope } from '../host/userDataReset.js';
 import { toNoticeText } from '../host/noticeText.js';
+// 模态确认框唯一入口（禁自开 showWarningMessage + modal: true，见 scripts/verify-modal-cancel.mjs 严闸）
+import { confirmModal } from '../host/ui/confirmModal.js';
 
 /** 处理器返回结构（与 settingsPanel.setResetHandler 的结构化契约同形） */
 export interface UserDataResetResult {
@@ -42,19 +45,18 @@ export function createUserDataResetHandler(
   output: vscode.OutputChannel,
 ): () => Promise<UserDataResetResult> {
   return async (): Promise<UserDataResetResult> => {
-    // 不传显式「取消」：VS Code modal 自带系统级取消（取消钮 / Esc / 关闭 X），
-    // 再传会出现双取消（真机截图实锤）；confirmed !== '确认初始化并重载' 已兼容 undefined
-    const confirmed = await vscode.window.showWarningMessage(
-      '将清空插件的全部用户级数据：\n' +
+    // 统一走 confirmModal（唯一入口）：取消交给 VS Code 系统级 Cancel，调用点不自拼取消项
+    const confirmed = await confirmModal({
+      message:
+        '将清空插件的全部用户级数据：\n' +
         '· 用户技能与用户角色包\n' +
         '· 大模型配置与 API Key\n' +
         '· 激活角色包、角色包组、安全开关与用户级设置\n\n' +
         '保留：当前项目的记忆与会话记录（.memora/）、项目设置。\n' +
         '清理完成后将自动重载窗口，进行中的对话会中断。此操作不可撤销。',
-      { modal: true },
-      '确认初始化并重载',
-    );
-    if (confirmed !== '确认初始化并重载') {
+      confirmLabel: '确认初始化并重载',
+    });
+    if (!confirmed) {
       return { ok: false, cancelled: true, message: '已取消' };
     }
     try {

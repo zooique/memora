@@ -26,6 +26,8 @@ import { imageTurnRejection } from '../../extension/host/imageTurnGuard.js';
 import { userEcho, stampRoundAttachmentUris } from '../../extension/host/attachmentUris.js';
 import { ingestImageFiles, pickAndIngestImages } from '../../extension/host/imagePick.js';
 import { scanWorkspaceTextFiles } from '../../extension/host/workspaceTextScan.js';
+// 模态确认框唯一入口（禁自开 showWarningMessage + modal: true，见 scripts/verify-modal-cancel.mjs 严闸）
+import { confirmModal } from '../../extension/host/ui/confirmModal.js';
 // 图片字节缓存（IMG-2 §5.4.1）：仅类型引用——实例由 extension 创建并注入，本类不构造
 import type { ImageCache } from '../../extension/host/imageCache.js';
 // 引用路径 ↔ 首根的双向判据唯一真源 = refPath（生成侧 relativeUnderPrimaryRoot 归 addToChat /
@@ -1541,12 +1543,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'memory_deleted', ok: false, id, message: 'Agent 未就绪，无法删除记忆' });
       return;
     }
-    const choice = await vscode.window.showWarningMessage(
-      '标记为无用并移入回收站？可随时在记忆管理中恢复。',
-      { modal: true },
-      '删除',
-    );
-    if (choice !== '删除') return;
+    const confirmed = await confirmModal({
+      message: '标记为无用并移入回收站？可随时在记忆管理中恢复。',
+      confirmLabel: '删除',
+    });
+    if (!confirmed) return;
     try {
       memory.writeDelete(id);
       this.post({ type: 'memory_deleted', ok: true, id });
@@ -1705,12 +1706,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return { ok: false, reason: 'busy' };
     }
     // 破坏性操作：确认不可恢复（与「清空对话」同强度确认）
-    const choice = await vscode.window.showWarningMessage(
-      confirmMessage,
-      { modal: true },
-      confirmButton,
-    );
-    if (choice !== confirmButton) return { ok: false, reason: 'cancel' };
+    const confirmed = await confirmModal({ message: confirmMessage, confirmLabel: confirmButton });
+    if (!confirmed) return { ok: false, reason: 'cancel' };
     try {
       // sessionId 格式契约 SSOT：内核 splitSessionId 拆解（session 名可含连字符）
       const { date, session } = splitSessionId(this._currentSessionId);
@@ -1777,7 +1774,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 删除指定历史会话（历史浮层垃圾桶触发）
    *
-   * 危险操作确认走 host 侧原生 modal（与 delete_turn 同强度确认）。
+   * 危险操作确认走 confirmModal（唯一入口，与 delete_turn 同强度确认）。
    * 当前会话不进历史记录（设计收敛），正常不会删除到当前会话；防御性保护：若目标是
    * 当前会话则拒绝 + 提示（防未来 UI 变动误删当前会话导致空窗）。
    * 删除后重推列表（webview 浮层同步移除该项）。
@@ -1792,12 +1789,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     const meta = this.sessionStore.getSessionMeta(sessionId);
     const title = getSessionDisplayName(meta) || sessionId;
-    const choice = await vscode.window.showWarningMessage(
-      `确定删除会话「${title}」？此操作不可恢复。`,
-      { modal: true },
-      '删除',
-    );
-    if (choice !== '删除') return;
+    const confirmed = await confirmModal({
+      message: `确定删除会话「${title}」？此操作不可恢复。`,
+      confirmLabel: '删除',
+    });
+    if (!confirmed) return;
     if (sessionId === this._currentSessionId) {
       this.post({ type: 'notice', level: 'info', message: '当前会话不在历史记录，无法删除' });
       return;

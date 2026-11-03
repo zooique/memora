@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * 窄闸：模态调用点禁止自拼「取消」项（`MODAL-DUP-CANCEL-1` 第一段）
+ * 模态确认框闸：窄闸（禁自拼取消项）+ 严闸（modal: true 只许出现在 helper 内）
+ * （`MODAL-DUP-CANCEL-1`：第一段窄闸 + 第二段严闸）
  *
  * ## 判据（窄）
  * 生产代码（`hosts/<宿主>/src`，排除 `__tests__`）中任何 `showWarningMessage` /
@@ -12,10 +13,14 @@
  * `undefined`）。调用点再自己传一个「取消」，屏幕就变成 `[确认] [取消] [取消]`
  * （2026-11-03 用户真机截图实锤）。此闸拦「新增 / 改动引入的双取消」。
  *
- * ## 为什么不上严闸
- * 「生产代码 `modal: true` 只许出现在 `confirmModal.ts`」是第二段的严闸：一上就会把
- * 剩余 12 处既存调用点（不传取消项、行为正确）全部判红。严闸待第二段 14 处收口时再上，
- * 见台账 `MODAL-DUP-CANCEL-1`。
+ * ## 判据（严）
+ * 生产代码（同上射程）中 `modal: true` **只许出现在** `host/ui/confirmModal.ts` 内部。
+ * 任何其它文件出现该字面量即违规——这是「唯一入口」的机器化判据：新增模态确认必须
+ * 改调 helper，不允许再自开一个 `showWarningMessage(..., { modal: true }, ...)`。
+ *
+ * 为什么窄闸单独不够：窄闸按字面量 grep 找「取消」项，`const CANCEL = '取消'` 再传变量、
+ * 或把取消项拼进模板串都能绕过；严闸不看取消项写法，只看「是否绕开 helper」，从结构上
+ * 堵住这类绕过。
  *
  * ## 退出码
  * 0 = 全过；1 = 发现违规（逐条打印 `文件:行` 与命中片段）。
@@ -37,6 +42,21 @@ const SKIP_DIR_NAMES = new Set(['__tests__', 'node_modules', 'dist']);
 const CALL_PATTERN = /show(?:Warning|Information|Error)Message\s*\(/g;
 const MODAL_PATTERN = /modal\s*:\s*true/;
 const CANCEL_ITEM_PATTERN = /['"`](?:取消|Cancel)['"`]/i;
+
+/** 严闸唯一允许出现 `modal: true` 的文件（相对仓库根，正斜杠） */
+const CONFIRM_MODAL_REL = 'hosts/memora-vscode/src/extension/host/ui/confirmModal.ts';
+
+/**
+ * 去掉行注释与块注释（严闸只看代码，避免把注释里的示例当成真实调用）
+ *
+ * @param text 源文本
+ * @returns 去掉注释后的文本
+ */
+function stripComments(text) {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' ')) // 保留换行，行号不漂
+    .replace(/\/\/[^\n]*/g, '');
+}
 
 /**
  * 递归收集待扫描的 `.ts` 文件（只收生产代码）
@@ -89,11 +109,14 @@ function findCallEnd(text, openIndex) {
   return -1;
 }
 
-/** 违规清单（元素 = { file, line, snippet }） */
+/** 违规清单（元素 = { kind, file, line, snippet, item? }） */
 const violations = [];
 
-/** 扫描到的 modal 调用点数（打印用） */
-let modalCallCount = 0;
+/** helper 内 `modal: true` 的代码出现次数（严闸正向计数） */
+let helperModalCount = 0;
+
+/** helper 内 `modal: true` 所在行号（去重后打印，证明命中是代码而非注释） */
+const helperModalLines = new Set();
 
 /** 扫描到的文件数（打印用） */
 let scannedFileCount = 0;
@@ -105,6 +128,31 @@ for (const rootRel of SCAN_ROOTS) {
 
   for (const file of files) {
     const text = readFileSync(file, 'utf-8');
+    const rel = relative(ROOT, file).replace(/\\/g, '/');
+
+    // 严闸：modal: true 只许出现在 confirmModal.ts 内部（注释里的示例不算调用）
+    const codeText = stripComments(text);
+    const modalHits = [...codeText.matchAll(/modal\s*:\s*true/g)];
+    if (rel === CONFIRM_MODAL_REL) {
+      helperModalCount += modalHits.length;
+      for (const hit of modalHits) {
+        const index = hit.index ?? 0;
+        helperModalLines.add(codeText.slice(0, index).split('\n').length);
+      }
+    } else if (modalHits.length > 0) {
+      // 逐处登记（同一文件多处调用要能一次看全，便于按清单收口）
+      for (const hit of modalHits) {
+        const index = hit.index ?? 0;
+        const line = codeText.slice(0, index).split('\n').length;
+        violations.push({
+          kind: 'strict',
+          file: rel,
+          line,
+          snippet: text.split('\n')[line - 1]?.trim() ?? '',
+        });
+      }
+    }
+
     CALL_PATTERN.lastIndex = 0;
     for (let match = CALL_PATTERN.exec(text); match; match = CALL_PATTERN.exec(text)) {
       const openIndex = match.index + match[0].length - 1;
@@ -112,7 +160,6 @@ for (const rootRel of SCAN_ROOTS) {
       if (endIndex === -1) continue;
       const callText = text.slice(match.index, endIndex + 1);
       if (!MODAL_PATTERN.test(callText)) continue; // 非 modal，不在本闸射程
-      modalCallCount += 1;
 
       // item 区域 = options 对象结束 `}` 之后（避开 message 正文里可能出现的「取消」字样）
       const modalIndex = callText.search(MODAL_PATTERN);
@@ -124,7 +171,8 @@ for (const rootRel of SCAN_ROOTS) {
       const line = text.slice(0, match.index).split('\n').length;
       const snippet = callText.split('\n')[0].trim();
       violations.push({
-        file: relative(ROOT, file),
+        kind: 'narrow',
+        file: rel,
         line,
         snippet,
         item: itemsRegion.slice(hit.index, hit.index + 8).trim(),
@@ -134,11 +182,23 @@ for (const rootRel of SCAN_ROOTS) {
 }
 
 if (violations.length > 0) {
-  console.error(
-    `[modal-cancel] ❌ 发现 ${violations.length} 处 modal 调用自拼取消项（modal 自带 Cancel，再传必现双取消）：`,
-  );
-  for (const v of violations) {
-    console.error(`  - ${v.file}:${v.line}  ${v.snippet}  → 命中 ${v.item}`);
+  const narrow = violations.filter((v) => v.kind === 'narrow');
+  const strict = violations.filter((v) => v.kind === 'strict');
+  if (narrow.length > 0) {
+    console.error(
+      `[modal-cancel] ❌ 窄闸：发现 ${narrow.length} 处 modal 调用自拼取消项（modal 自带 Cancel，再传必现双取消）：`,
+    );
+    for (const v of narrow) {
+      console.error(`  - ${v.file}:${v.line}  ${v.snippet}  → 命中 ${v.item}`);
+    }
+  }
+  if (strict.length > 0) {
+    console.error(
+      `[modal-cancel] ❌ 严闸：发现 ${strict.length} 处绕过 helper 的 modal: true（唯一入口 = ${CONFIRM_MODAL_REL}）：`,
+    );
+    for (const v of strict) {
+      console.error(`  - ${v.file}:${v.line}  ${v.snippet}`);
+    }
   }
   console.error(
     '[modal-cancel] 修法：改调 host/ui/confirmModal.js（只传确认项，取消交给系统 Cancel）。',
@@ -146,6 +206,15 @@ if (violations.length > 0) {
   process.exit(1);
 }
 
+if (helperModalCount === 0) {
+  console.error(
+    `[modal-cancel] ❌ 严闸：未在 ${CONFIRM_MODAL_REL} 内找到 modal: true —— helper 被移除或射程文件改名，本闸已失去判据，先修闸再放行。`,
+  );
+  process.exit(1);
+}
+
 console.log(
-  `[modal-cancel] ✅ 扫描 ${scannedFileCount} 个生产文件 / ${modalCallCount} 处 modal 调用，未发现自拼取消项`,
+  `[modal-cancel] ✅ 扫描 ${scannedFileCount} 个生产文件；严闸：代码级 modal: true 仅 ` +
+    `${CONFIRM_MODAL_REL}:${[...helperModalLines].join(',')}（${helperModalCount} 个字面量 / 同一行三元分支）；` +
+    `窄闸：0 处自拼取消项`,
 );

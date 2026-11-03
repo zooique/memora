@@ -50,6 +50,8 @@ import * as vscode from 'vscode';
 // 只统一**数值**，不统一行为；不得据「同一常量」推论行为等价。
 import { MAX_DIFF_CONTENT_LENGTH } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
+// 模态确认框唯一入口（禁自开 showWarningMessage + modal: true，见 scripts/verify-modal-cancel.mjs 严闸）
+import { confirmModal } from './ui/confirmModal.js';
 import { applyHunkReverts, hunkKey, type DiffHunk } from './fileChangeDiff.js';
 import { FileChangeRenderer, safeLineRange, type HunkSnapshot } from './fileChangeRenderer.js';
 import {
@@ -616,12 +618,12 @@ export class FileChangeView implements FileChangeSink {
       '',
       ...preview,
     ].join('\n');
-    const choice = await vscode.window.showWarningMessage(
-      `确认回退全部 ${records.length} 个文件的改动？`,
-      { modal: true, detail },
-      '确认回退',
-    );
-    if (choice !== '确认回退') return;
+    const confirmed = await confirmModal({
+      message: `确认回退全部 ${records.length} 个文件的改动？`,
+      detail,
+      confirmLabel: '确认回退',
+    });
+    if (!confirmed) return;
     let okCount = 0;
     const failures: string[] = [];
     for (const rec of records) {
@@ -645,23 +647,22 @@ export class FileChangeView implements FileChangeSink {
   }
 
   /**
-   * 「有未保存编辑」的模态确认（**回退 / 拒绝此处共用**）
+   * 「有未保存编辑」的确认（**回退 / 拒绝此处共用**）
    *
    * 共用的理由：「if dirty → 弹模态 → 确认则带 `overwriteDirty` 重试」这段若各写一份必漂移
    * ——一处加了提示、另一处没有 ⇒ 用户在一个入口被明确告知、在另一个入口被静默覆盖。
-   * 差异只在文案（动作不同），机制同一处。
+   * 差异只在文案（动作不同）；模态机制统一委托 `confirmModal`（唯一入口）。
    */
   private async confirmOverwriteDirty(
     rec: FileChangeRecord,
     detail: string,
     confirmLabel: string,
   ): Promise<boolean> {
-    const choice = await vscode.window.showWarningMessage(
-      `Memora：${rec.relPath} 有未保存的编辑`,
-      { modal: true, detail },
+    return confirmModal({
+      message: `Memora：${rec.relPath} 有未保存的编辑`,
+      detail,
       confirmLabel,
-    );
-    return choice === confirmLabel;
+    });
   }
 
   /**

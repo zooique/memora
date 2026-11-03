@@ -391,15 +391,17 @@ const ALL_STEPS = [
     required: true,
     presets: ['fast', 'full'],
   },
-  // 模态调用点窄闸（`MODAL-DUP-CANCEL-1` 第一段）：任何 `modal: true` 调用不得自拼
-  // 「取消 / Cancel」item——VS Code 自带系统级 Cancel，再传必现 `[确认] [取消] [取消]`。
-  // 缺口实证：2026-10-13 已修过一轮、2026-11-03 用户真机再次截到同一形态（新增调用点回退）。
-  // **只上窄闸**：严闸（`modal: true` 只许出现在 confirmModal.ts）一上就会把剩余 12 处
-  // 既存调用点全部判红 ⇒ 留第二段 14 处收口时再上（见台账该条「第二段」）。
+  // 模态确认框唯一入口闸（`MODAL-DUP-CANCEL-1` 两段均已闭合）：
+  //   窄闸 —— 任何 `modal: true` 调用不得自拼「取消 / Cancel」item（VS Code 自带系统级
+  //           Cancel，再传必现 `[确认] [取消] [取消]`；2026-10-13 修过一轮、2026-11-03 真机
+  //           再次截到同一形态，即新增调用点回退）；
+  //   严闸 —— 生产代码 `modal: true` **只许**出现在 `confirmModal.ts` 内（结构判据，
+  //           窄闸的文本判据挡不住 `const CANCEL = '取消'` 起变量再传、模板串拼接这类绕过）。
+  // 2026-11-03 第二段：原剩余 12 处直调调用点已全部迁入 helper，严闸因此可上（此前会上即判红）。
   // 确定性文本扫描、秒级、零依赖。
   {
     id: 'modal:cancel',
-    name: '模态调用点不自拼取消项（窄闸）',
+    name: '模态确认框唯一入口（窄闸 + 严闸）',
     cmd: 'npm run verify:modal-cancel',
     cwd: ROOT,
     required: true,

@@ -7,10 +7,10 @@
  * 解析为 `undefined`，若写成「不等于 `'取消'` 就确认」，一次真取消会被当成确认执行覆盖。
  *
  * 被测不变量：
- *   1. 只传**一个** item（confirmLabel），传参形式固定为 `(message, { modal: true }, item)`；
+ *   1. 只传**一个** item（confirmLabel），传参形式固定为 `(message, { modal: true, detail? }, item)`；
  *   2. 只有 `resolved === confirmLabel` 返回 true；
  *   3. `undefined`（自带 Cancel / Esc / 关 X）、`'取消'`、`'取消 '`、近似字符串一律 false；
- *   4. `detail` 缺省时 message 不带多余换行；有 detail 时用单换行拼接。
+ *   4. `detail` 透传 VS Code 原生 `MessageOptions.detail`（不并入 message，渲染与迁移前等价）。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -55,13 +55,15 @@ describe('confirmModal', () => {
     expect(args.some((arg) => typeof arg === 'string' && /取消|Cancel/i.test(arg))).toBe(false);
   });
 
-  it('detail 缺省不带多余换行；有 detail 时单换行拼接', async () => {
+  it('detail 透传原生 options（不并入 message）', async () => {
     showWarningMessage.mockResolvedValue(undefined);
     await confirmModal({ message: '主行', confirmLabel: '覆盖' });
     expect(showWarningMessage.mock.calls[0]![0]).toBe('主行');
+    expect(showWarningMessage.mock.calls[0]![1]).toEqual({ modal: true });
 
     showWarningMessage.mockResolvedValue(undefined);
     await confirmModal({ message: '主行', confirmLabel: '覆盖', detail: '附行' });
-    expect(showWarningMessage.mock.calls[1]![0]).toBe('主行\n附行');
+    expect(showWarningMessage.mock.calls[1]![0]).toBe('主行');
+    expect(showWarningMessage.mock.calls[1]![1]).toEqual({ modal: true, detail: '附行' });
   });
 });

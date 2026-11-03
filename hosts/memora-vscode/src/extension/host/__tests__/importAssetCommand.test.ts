@@ -468,7 +468,12 @@ describe('importAssetCommand · 角色包同名判定（内置 vs 用户级）',
     });
 
     // 确认弹窗文案须与事务化实现一致（备份并替换，而非「先删除」）
-    const confirmText = vscodeMock.showWarningMessage.mock.calls[0]?.[0] as string;
+    // 主行在 message、说明行在原生 options.detail（helper 不把 detail 并入 message）
+    const confirmArgs = vscodeMock.showWarningMessage.mock.calls[0] as unknown as [
+      string,
+      { detail?: string },
+    ];
+    const confirmText = `${confirmArgs?.[0] ?? ''}\n${confirmArgs?.[1]?.detail ?? ''}`;
     expect(confirmText).toContain('会备份并替换原内容，失败自动回滚');
     expect(calls).toEqual([]);
     expect(vscodeMock.showErrorMessage.mock.calls[0]?.[0]).toContain('已取消导入');
