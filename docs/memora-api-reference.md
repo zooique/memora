@@ -96,16 +96,23 @@ configDir/
 > `new Agent({ dataDir })`。内核不消费它，也没有任何默认值；`config.example.json` 里写 `~/.memora` 只是一个示例值，
 > 不等于内核的缺省行为。
 
-### 〇.4 多来源双路径编排（内置 + 用户）
+### 〇.4 多来源编排（内置 + 用户 + 项目）
 
-内核**刻意保持"单 `configDir` 输入"**——`SkillManager`/`RolePackManager` 只扫 `<configDir>/skills/`、`<configDir>/role-packs/`，无"多来源"概念。宿主若想开放"内置（随插件打包）+ 用户自定义"双路径，由宿主在传入内核**之前**自行编排归一，两种形态：
+内核**不再是"单 `configDir` 输入"**——`SkillManager` / `RolePackManager` 除扫描 `<configDir>/skills/`、`<configDir>/role-packs/`（内置）外，还支持宿主在运行期通过 `loadExtraDir(dir, tier?)` 登记**额外目录**，并按档位记账：
 
-| 形态 | 做法 | 适用 |
-|------|------|------|
-| **A. 宿主文件层汇总（推荐，零内核改动）** | 宿主在文件系统层把"内置目录 + 用户目录"合并/软链到**一个 `configDir`** 再传内核 | 角色包、全局技能均可；内容本质同构、希望同池匹配 |
-| **B. 宿主多 Manager 实例聚合** | 宿主建多个 `RolePackManager(configDirA/B)` 各管一个来源，聚合 `listMeta()` 在 UI 层分组展示，激活仍逐个调用 | 来源语义需要区分（UI 分组、只读标记） |
+| 档位 | 典型目录（宿主决定） | 含义 |
+|------|----------------------|------|
+| `builtin`（隐式） | `<configDir>/skills`、`<configDir>/role-packs` | 随包内置，只读 |
+| `user`（缺省档） | `<globalStorage>/skills`、`<globalStorage>/role-packs` | 用户级，所有项目通用 |
+| `project` | `<workspace>/.memora/skills`、`<workspace>/.memora/role-packs` | 项目级，仅当前工作区 |
 
-选择依据：内容**不必区分来源**走 A（合并到同一 configDir）；**必须区分来源**（只读/可编辑、分组）走 B（多实例聚合展示）。内核两种都支持。
+**同名优先级 = 项目 > 用户 > 内置**，由**加载顺序**决定（内置 → 用户 → 项目，后加载者胜）；档位本身只用于记账与「顺序写反」守卫。同名胜出 / 被跳过都会留可见痕迹（`loadExtraDir` 返回值 `conflicts` + `lastExtraConflicts` + 日志），不再静默。
+
+- `loadExtraDir(dir, tier?)`：登记目录并扫描；缺省 `tier='user'`，项目级目录须显式传 `'project'`（宿主在**工作区已信任**时才注入项目目录）。
+- `reload()` / `resyncUserPacks()` / `resyncUserSkills()`：按已登记目录**统一重扫**（内置 + 额外目录）；`resync*` 额外回报净差 `{added, removed, updated}`，其中 `updated` 只表示「同名留存」，**不代表内容变化**。
+- 目录不存在时扫描返回空数组（首次使用前目录可能尚未创建），不报错。
+
+**宿主如何选**：需要来源语义区分（UI 分组、只读标记、信任门）时，直接登记多个额外目录并按档位传参；内核按上述优先级合并成单一池，宿主不必也不能自造第二套合并逻辑。
 
 ### 〇.5 构造 `Agent` 的参数
 

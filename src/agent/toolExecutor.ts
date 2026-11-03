@@ -972,6 +972,15 @@ export class ToolExecutor {
   }
 
   /**
+   * @deprecated 使用 `allToolDefinitions`（5.5.0 起更名；本别名只为 5.x 兼容保留，6.0.0 删除）。
+   *
+   * 转向同一 getter，不复制定义清单——语义与 `allToolDefinitions` 完全等价。
+   */
+  get builtinDefinitions(): ToolDefinition[] {
+    return this.allToolDefinitions;
+  }
+
+  /**
    * 按登记表把执行面路由到对应确认入口（CMD-1-BYPASS 2026-10-03）
    *
    * 入口由 `security/confirmEntries.ts` 的 `CONFIRM_ENTRY_BY_TOOL` 唯一指定，

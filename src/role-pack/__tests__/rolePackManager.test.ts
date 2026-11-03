@@ -521,6 +521,51 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(manager.activeName).toBe('翻译助手');
   });
 
+  it('reload 重读额外目录磁盘：新增包可见、同名内容更新生效，且运行时注入项仍在（ROLEPACK-RELOAD-1）', async () => {
+    // 内置目录（configDir/role-packs/）
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '你是翻译。' });
+
+    // 用户目录（宿主力 loadExtraDir 注入的运行时来源）
+    const userPacksDir = join(dir, 'user-role-packs');
+    await writePack(
+      userPacksDir,
+      '用户打磨',
+      { name: '用户打磨', formatVersion: '1.0.0' },
+      { persona: '旧内容。' },
+    );
+
+    const manager = new RolePackManager(dir);
+    await manager.load('翻译助手');
+    await manager.loadExtraDir(userPacksDir);
+    expect(manager.get('用户打磨')!.personaPrompt).toContain('旧内容');
+
+    // 模拟用户手工改动：同名包内容更新 + 新增一个包（磁盘变化必须被 reload 读到）
+    await writePack(
+      userPacksDir,
+      '用户打磨',
+      { name: '用户打磨', formatVersion: '1.0.0' },
+      { persona: '新内容。' },
+    );
+    await writePack(userPacksDir, '新增包', { name: '新增包', formatVersion: '1.0.0' });
+
+    await manager.reload();
+
+    // 同名内容更新生效（旧 reload 不重读额外目录，这里会仍是「旧内容」）
+    expect(manager.get('用户打磨')!.personaPrompt).toContain('新内容');
+    // 新增包进入池
+    expect(
+      manager
+        .listMeta()
+        .map((m) => m.name)
+        .sort(),
+    ).toEqual(['用户打磨', '新增包', '翻译助手'].sort());
+    // 运行时注入项仍在（重扫按已登记目录重新注入，不丢失）
+    expect(manager.get('用户打磨')).not.toBeNull();
+    expect(manager.activeName).toBe('翻译助手');
+  });
+
   it('同名额外汇入内置：额外目录包胜出（2026-11-02 反转，旧行为是「内置优先、用户静默跳过」）', async () => {
     const packsDir = join(dir, 'role-packs');
     await mkdir(packsDir, { recursive: true });

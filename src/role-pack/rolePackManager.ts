@@ -637,15 +637,16 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return count;
   }
 
-  /** 重载角色包：重新扫描 + 保持激活态（覆盖基类 reload，基类扫描无法覆盖文件夹包形态）；激活包被删 → 落兜底包（§4.1 单链） */
+  /**
+   * 重载角色包：统一重扫全部来源 + 保持激活态；激活包被删 → 落兜底包（§4.1 单链）。
+   *
+   * 与基类 reload 的差异：基类只扫 configDir，本类还需把额外目录（用户级 + 项目级）的
+   * 磁盘变化重新读进来（新增 / 改名 / 删除 / 内容修改）。重扫序与 resyncUserPacks 共用
+   * rescanAllSources（唯一实现）——运行时注入项由该重扫序按已登记目录重新注入，不会丢失。
+   */
   async reload(): Promise<number> {
     const oldActiveName = this.activePackName;
-    // 磁盘扫描 + 保留 loadExtraDir 注入的运行时项（retainRuntimeItems 记账合并）——
-    // 同名的处置由 isUserOverride 决定：被额外目录覆盖过的名字，内置版剔除、运行时版保留
-    //（project > user > builtin 的 reload 面）；未被覆盖的名字仍按默认「磁盘赢」。
-    const scanned = await this.scanRolePacksForReload();
-    this.items = this.retainRuntimeItems(scanned);
-    this.validateTeams();
+    await this.rescanAllSources();
     const count = this.items.length;
 
     // 保持当前激活角色包（若仍存在）；否则落兜底包
@@ -1324,7 +1325,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * - **内置包也必须重扫**：额外目录覆盖内置时内置版已从池中摘除，若这里不重扫内置，
    *   用户删掉覆盖包后内置版会永久消失（「覆盖可逆」是对用户的隐含承诺）；
    * - 对账只保证 added / removed 是真净差：同名留存项进 updated，但它**不代表内容变化**
-   *   （不比对内容，避免「什么算变化」的第二套定义）；宿主文案不得把 updated 渲染成「更新」；
+   *   （updated 只表示「同名仍在池中」，不比对内容，避免「什么算变化」的第二套定义）；
+   *   宿主文案不得把 updated 渲染成「更新」；
    *   只有真消失（目录已删 / 改名旧名）才进 removed，全新名字才计入 added；
    * - 原激活包被摘除（目录删除 / 改名）时走 §4.1 单链兜底（activateFallback，与 reload
    *   激活包被删同源同判据，不自造第二套回退规则），经 setActivePackName 触发
@@ -1348,29 +1350,13 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       // 已登记的目录保持原档位（不因本次调用参数被降档）
       if (!this.extraDirs.has(dir)) this.extraDirs.set(dir, tier);
     }
-    // 快照摘除名单后逐个摘除（deleteItem 注销记账；重扫时同名守卫因此不会误拦重建）
+    // 摘除名单 = 对账基线（必须在重扫前快照，重扫后同名项已重新入池）
     const beforeNames = this.runtimeItemNames;
-    for (const name of beforeNames) {
-      this.deleteItem(name);
-    }
-    this.extraPackDirs.clear();
-    this.extraOverrides.clear();
-    // 重扫内置：被额外目录覆盖过的内置同名包在覆盖时已被摘除，这里必须从磁盘复活
-    // （否则删掉项目/用户覆盖包后，内置版永久消失——覆盖不可逆）
-    this.items = this.retainRuntimeItems(await this.scanRolePacksForReload());
-    this.validateTeams();
     // 重扫后的池 = 净差基线（内置版复活不计入 added）
-    const baseline = new Set(this.items.map((p) => p.meta.name));
-    // 冲突聚合：resync 会依次扫多个目录，若只留最后一次，用户级覆盖记录会被项目级覆盖掉
-    const allConflicts: ExtraPackConflict[] = [];
-    for (const [extraDir, extraTier] of this.extraDirs) {
-      const loaded = await this.loadExtraDir(extraDir, extraTier);
-      allConflicts.push(...loaded.conflicts);
-    }
-    this.lastConflicts = allConflicts;
+    const baseline = new Set(await this.rescanAllSources());
     const finalNames = new Set(this.items.map((p) => p.meta.name));
-    // 净差：摘除名单中未随重扫回来的 = 真消失；重扫回来的同名项 = 内容更新生效；
-    // added = 全新名字（既不在摘除名单也不在基线，改名新名 / 全新包）
+    // 净差：摘除名单中未随重扫回来的 = 真消失；重扫回来的同名项 = 同名留存（**不代表内容变化**，
+    // 与方法头「updated 不比对内容」同一口径）；added = 全新名字（改名新名 / 全新包）
     const removed = beforeNames.filter((name) => !finalNames.has(name));
     const updated = beforeNames.filter((name) => finalNames.has(name));
     const added = [...finalNames].filter(
@@ -1383,6 +1369,43 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     }
     logger.info({ dir, added, removed, updated, activeFallback }, '额外角色包目录已重扫对账');
     return { added, removed, updated, activeFallback };
+  }
+
+  /**
+   * 统一重扫全部来源（重扫序单点）：摘除额外目录注入项 → 重扫内置 configDir → 按登记序重扫额外目录。
+   *
+   * reload 与 resyncUserPacks 共用本方法——两处各写一遍重扫序会产生第二份「扫什么」清单，
+   * 改一处即静默漂移（SSOT 纪律；对齐 SkillManager.rescanAllSources 同型实现）。
+   *
+   * - 摘除必须发生在重扫前：`loadExtraDir` 的同名守卫按「同目录重复扫描」幂等跳过，
+   *   不先摘除就重扫，磁盘上的内容修改不会生效（这是旧 reload「只保留运行时项、不重读磁盘」的病根）；
+   * - 运行时注入项不会因摘除而丢失：它们是 `extraDirs` 登记的目录内容，重扫会按原顺序重新注入；
+   * - 内置包也必须重扫：额外目录覆盖内置时内置版已从池中摘除，不重扫则删掉覆盖包后内置版永久消失；
+   * - 冲突记录按目录聚合：若只留最后一次，用户级覆盖记录会被项目级覆盖掉。
+   *
+   * @returns 内置重扫后的池中包名（额外目录重扫前的净差基线；reload 不消费）
+   */
+  private async rescanAllSources(): Promise<string[]> {
+    // 快照摘除名单后逐个摘除（deleteItem 注销运行时记账；重扫时同名守卫因此不会误拦重建）
+    const beforeNames = this.runtimeItemNames;
+    for (const name of beforeNames) {
+      this.deleteItem(name);
+    }
+    this.extraPackDirs.clear();
+    this.extraOverrides.clear();
+    // 重扫内置（此时运行时注入项已全部摘除，retainRuntimeItems 只做「磁盘赢」合并）
+    this.items = this.retainRuntimeItems(await this.scanRolePacksForReload());
+    this.validateTeams();
+    // 内置重扫后的池 = 净差基线（内置版复活不计入 added）
+    const baseline = this.items.map((p) => p.meta.name);
+    // 按登记顺序重扫全部额外目录（用户级先、项目级后，后加载者胜）
+    const allConflicts: ExtraPackConflict[] = [];
+    for (const [extraDir, extraTier] of this.extraDirs) {
+      const loaded = await this.loadExtraDir(extraDir, extraTier);
+      allConflicts.push(...loaded.conflicts);
+    }
+    this.lastConflicts = allConflicts;
+    return baseline;
   }
 }
 

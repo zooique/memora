@@ -581,7 +581,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'write_file',
     description:
-      '写入或创建文件。owner 模式默认自动批准；guest 模式会要求用户确认。受路径白名单保护。' +
+      '写入或创建文件。owner 模式默认自动批准；guest 模式会要求用户确认。写入路径受白名单限制。' +
       `支持 ${WRITE_FILE_MODES.length} 种写入模式：${WRITE_FILE_MODES_BRIEF}。` +
       '改局部优先用 replace（只替换唯一匹配的 old_string，无需持有整份文件）；' +
       '大文件手上没有完整内容，无法 overwrite 全量重写；文末追加用 append，单点插入用 insert。' +
@@ -615,7 +615,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'delete_file',
     description:
-      '删除项目内文件。用于清理 LLM 创建的临时脚本等一次性文件（配合 run_code 的 script_path 模式：写脚本 → 执行 → 删除，不留痕）。受路径白名单保护；owner 模式默认自动批准，guest 模式会要求用户确认。仅支持删除文件，不支持删除目录。',
+      '删除项目内文件。用于清理 LLM 创建的临时脚本等一次性文件（配合 run_code 的 script_path 模式：写脚本 → 执行 → 删除，不留痕）。写入路径受白名单限制；owner 模式默认自动批准，guest 模式会要求用户确认。仅支持删除文件，不支持删除目录。',
     diskWrite: 'path',
     parameters: {
       type: 'object',

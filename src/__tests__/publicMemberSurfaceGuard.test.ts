@@ -1209,6 +1209,7 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
     members: [
       'execute',
       'get allToolDefinitions',
+      'get builtinDefinitions',
       'get currentToolWhitelist',
       'get list',
       'listResources',
