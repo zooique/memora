@@ -1,6 +1,6 @@
 ---
 name: memora-host-release
-description: "VS Code 宿主插件（hosts/memora-vscode）的发版执行流程：内核先行门禁 → 文档对齐（宿主文档 + CHANGELOG 宿主区）→ 版本号核对（tag vscode@X.Y.Z ↔ 宿主 package.json）→ 台账归档（宿主项）→ 打 tag 触发 host-release.yml（build 内核 dist + 出 vsix + GitHub Release 自动）→ Open VSX / VS Code Marketplace 手动分发 → 市场展示面核对（Changelog 标签 / Resources 链接 / 分类词表 … 版本号可见 ≠ 页面完整）。触发场景：用户说『发宿主版 / 宿主发版 / vscode@ 发版 / 插件上架 / 扩展发布』时。"
+description: "VS Code 宿主插件（hosts/memora-vscode）的发版执行流程：Step 0 前置闸（发版前质量审查：审上一宿主 tag→HEAD 的 git 区间 + 未提交改动，按 SSOT / 自然生长 / 不带伤 修完放行；再验内核先行）→ 文档对齐（宿主文档 + CHANGELOG 宿主区）→ 版本号核对（tag vscode@X.Y.Z ↔ 宿主 package.json）→ 台账归档（宿主项）→ 打 tag 触发 host-release.yml（build 内核 dist + 出 vsix + GitHub Release 自动）→ Open VSX / VS Code Marketplace 手动分发 → 市场展示面核对（Changelog 标签 / Resources 链接 / 分类词表 … 版本号可见 ≠ 页面完整）。触发场景：用户说『发宿主版 / 宿主发版 / vscode@ 发版 / 插件上架 / 扩展发布』时。"
 agent_created: true
 ---
 
@@ -22,13 +22,39 @@ agent_created: true
 - ⚠️ 宿主 tag 一律用 `vscode@X.Y.Z`。**勿与内核 `vX.Y.Z` 混**（那是内核轴，触发的是 `release.yml`）；**勿用 `memora@`**（既不触发内核也不触发宿主链，静默不发版）。内核 `memora@` 漂移教训见 `memora-kernel-release` 技能「tag 格式真源」段与 ADR-033 决策 2「偏离原案」注释。
 - 枚举宿主历史：`git tag -l "vscode@*"`。
 
-## 六步法
+## 六步法（Step 0 是前置闸，不属六步）
 
-### Step 0：内核已先行发布（硬前置，不重复内核流程）
+> **顺序不可换：先审、再修、后验。** 审查与修复会改代码，任何在修复前跑的门禁都必须重跑 ⇒ 质量审查（0.1）必须排在版本号核对与本地预检之前。
+> **成本提示**：0.2 只是一条 `npm view`；若已知内核尚未发 npm，先判 0.2 会终止，别先投入 0.1。
+
+### Step 0：前置闸（0.1 质量审查 → 0.2 内核先行 → 0.3 放行判定）
+
+#### Step 0.1：发版前质量审查（闸前闸）
+> 判据、产出模板、阻断条件 = `../memora-kernel-release/references/pre-release-audit.md`（**内核 / 宿主共用一份**，避免第二份真理源；与 Step 3 复用内核归档脚本同一依赖方向）。本技能只列**宿主轴**的调用形式。
+
+1. **取范围**（PowerShell，`;` 连接；`--match 'vscode@*'` 必须带，否则 `git describe` 可能取到更近的内核 tag）：
+   ```powershell
+   $prev = git describe --tags --abbrev=0 --match 'vscode@*'
+   git log ($prev + '..HEAD') --oneline --stat
+   git status --porcelain; git diff --stat; git diff --cached --stat
+   git rev-parse --short HEAD; git rev-list --count ($prev + '..HEAD')
+   ```
+2. **面归属**：区间含内核 commit（单仓库单历史），宿主闸判**宿主面**（`hosts/`、上架文档、宿主 `package.json` manifest）+「是否消费 npm 上不存在的内核能力」；内核面细节由内核发版那一轮的收据负责——但**跨面改动（内核导出形状 + 宿主消费点）两面各判自己那一半**，只判一半 = 半补丁。
+3. **修 + 落账**：用户可见修复进 CHANGELOG 宿主区；缺陷 / 未收敛项进台账（规则交 `memora-ledger-governance`）。
+4. **复核**：每条修复跑受影响面定向验证，原始输出进收据；**全量门禁证据由 Step 2 本地预检提供——命令真源在 Step 2，本节不复制第二份清单**。
+5. **阻断**（判据 §4）：命中即停在 0.1 报告；**不得进入 Step 1，更不得 `git tag vscode@X.Y.Z`**——宿主 tag 一推即由 `host-release.yml` 自动发 Open VSX，同版本永久不可重发，且**没有 2FA 那种人工审批闸**。
+
+#### Step 0.2：内核已先行发布（硬前置，不重复内核流程）
 宿主 bundle 由 esbuild **内联**内核 dist ⇒ 产物里带的是本地构建的内核代次。若内核未先发 npm，市场上会出现「宿主依赖一个 npm 上不存在的内核版本」。
 - 校验：`npm view @zooique/memora version`（= npm latest）== 本仓库根 `package.json` `version`（即已发内核版本）。
 - 不等 ⇒ **终止**，先发内核（打 `vX.Y.Z` tag 走 `memora-kernel-release`），再回来发宿主。
 - 这是 `host-release.yml` gate ② 的本地预演；tag 前人工跑一遍，避免推上去才红。
+
+#### Step 0.3：放行判定（进 Step 1 / 进 Step 4 的两道判据）
+- **进 Step 1（文档对齐）**：① 问题清单无未处置项；② 每条修复已提交且定向验证转绿；③ 落账完成；④ 审查端点 HEAD 与收据一致；⑤ 收据已按 `../memora-kernel-release/references/pre-release-audit.md` §3.4 落盘（判据 = §4）。缺任一 ⇒ 停在 Step 0 报告，不得进入 Step 1。
+- **进 Step 4（打 tag）的追加条件**：放行总收据的 §3.4 字段齐全且全绿——值一律取 Step 2 本地预检的原始输出，**不得转述**；未齐不得打 tag（Step 2 未全绿同样不得打 tag）。
+- **收据落盘（本步必做，不许只活在回报里）**：写入 `tasks/archive/<x.y.z>-host.md` 文件头——文件不存在则按 `../memora-kernel-release/references/pre-release-audit.md` §3.4 骨架预建（状态标「待上架」，含 `---` 分隔行），Step 2 产出后把该表各字段值补进同一处。读者 = 同轮 Step 2→4（tag 前唯一凭据）/ Step 6（订正为已发布）/ 下一轮 Step 0.1（追溯遗留项）。
+  - 文件已预建 ⇒ Step 3 归档**必须** `--append`（不带会对已存在文件整体覆盖，收据会被毁）。
 
 ### Step 1：对齐发版文档（必须在 tag 前提交）
 1. **CHANGELOG.md 宿主区**（`## [Unreleased] · 宿主（随做随用 · 不占内核版本号）`，含 `### Added（宿主）` / `### Fixed（宿主）`）：目标版本标题改为 `## [x.y.z] · YYYY-MM-DD`（合法日历日期，发布日 ±1 天窗口），删开发期合法存在的「未发布 / Unreleased」字样（**仅该区**，内核区不动）。
@@ -59,10 +85,10 @@ agent_created: true
 > 以下只列**宿主线特有的约束**：
 
 1. 复用内核技能的归档脚本（带 `--kind host`）：
-   `node ../memora-kernel-release/scripts/archive-kernel-release.mjs --kind host --version x.y.z --ids ID1,ID2,... --dry-run` 预览 → 逐字节核对 → `--apply`。发现漏扫时，对**已存在**的归档文件必须加 `--append` 补批（禁整体覆盖）。
-2. 产出 `tasks/archive/<x.y.z>-host.md`，迁入**该宿主版已关闭（✅）项**（内核相关项不在此归档，由内核发版单独归档）；条目 **ID 沿用不改**。
-3. 归档文件头标 **「待上架」**（Step 6 再订正为「已发布」）。
-4. **提交前必跑两道台账硬闸**：`npm run verify:ledger-hygiene` + `npm run verify:ledger-fold`。
+   `node ../memora-kernel-release/scripts/archive-kernel-release.mjs --kind host --version x.y.z --ids ID1,ID2,... --dry-run` 预览 → 逐字节核对 → `--apply`。文件已由 Step 0.3 预建 ⇒ **一律加 `--append`**（不带会对已存在文件整体覆盖，收据会被毁）。
+2. `tasks/archive/<x.y.z>-host.md`（Step 0.3 已预建；**不存在 = 0.3 漏写**，先回去补收据）迁入**该宿主版已关闭（✅）项**（内核相关项不在此归档，由内核发版单独归档）；条目 **ID 沿用不改**。
+3. 归档文件头确认仍为 **「待上架」**（Step 0.3 已标；Step 6 再订正为「已发布」）。
+4. **提交前必跑台账硬闸**（命令 / 判据 / 数量一律以 `memora-ledger-governance` 闸门表为准，本技能不复制、不写死数量）。
 5. 🔴 **ID 白名单靠人肉编 ⇒ 漏扫是常态**（0.2.0 漏 45 条，欠账 `ARCH-DRAIN-1`；后补 9 条）。兜底 = 上一条的机检门；任何计数以**当场重扫实测**为准，不采信清点快照（快照会算术不闭合 + 随台账编辑漂移）。
 
 ### Step 4：发版（打 tag 触发 host-release.yml）
@@ -115,7 +141,7 @@ agent_created: true
    - Step 6 第 1 条订正为「已发布」时，若 Marketplace 尚未上传，头标会留下一句「**未执行** = VS Code Marketplace 手动上传」。这是**一次性快照，不会自动跟进后续收口**；用户上传完成后须订正 `tasks/archive/<x.y.z>-host.md` 头标 + `tasks/archive/README.md` 归档表该行**两处**，补执行日期与「上传物 = 同一 asset、未本地重出包」。
    - **连带回扫上一版**：该标记从写下到被订正跨越整个发版周期，0.3.0 的同类标记自 2026-10-27 遗留到 2026-10-30 才暴露，且长期与本文件 H6 正文收据**自相矛盾**。订正本版时顺手 grep 前一版归档头 + 归档表，一并清掉同类遗留。
    - ⚠️ grep `未执行` 会命中大量无关语义（「尚未执行」「断言中断未执行」等）⇒ **逐条判语义，严禁批量替换**。
-   - 订正提交同样必跑两道台账硬闸（`verify:ledger-hygiene` + `verify:ledger-fold`）。
+   - 订正提交同样必跑台账硬闸（命令与判据同上，不复制）。
 
 ## 已知坑（对抗式核查清单）
 - 🔴 **内核未先行**：宿主 bundle 内联内核 dist，内核未发 npm 会在市场出现「依赖不存在的内核版本」（host-release.yml gate ② 拦，但 tag 前人工跑更省一次 CI 往返）。

@@ -1,6 +1,6 @@
 ---
 name: memora-kernel-release
-description: "内核（@zooique/memora）npm 发版的端到端执行流程：发版前文档对齐（CHANGELOG 日期 + 随包文档去发布态陈述）→ 版本号三方核对 → 台账归档 → 打 tag 触发 release.yml（OIDC 免令牌暂存发布 + 本人 2FA 审批）→ 发版后订正。触发场景：用户说『发内核版 / 走发版流程 / 内核 X.Y.Z 发版 / 内核发布』，或 memora-kernel-release-readiness 确认就绪后要执行发布动作时。"
+description: "内核（@zooique/memora）npm 发版的端到端执行流程：Step 0 前置闸（发版前质量审查：审上一内核 tag→HEAD 的 git 区间 + 未提交改动，按 SSOT / 自然生长 / 不带伤 修完放行，再跑就绪度核查）→ 发版前文档对齐（CHANGELOG 日期 + 随包文档去发布态陈述）→ 版本号三方核对 → 台账归档 → 打 tag 触发 release.yml（OIDC 免令牌暂存发布 + 本人 2FA 审批）→ 发版后订正。触发场景：用户说『发内核版 / 走发版流程 / 内核 X.Y.Z 发版 / 内核发布』，或 memora-kernel-release-readiness 确认就绪后要执行发布动作时。"
 agent_created: true
 ---
 
@@ -23,10 +23,37 @@ agent_created: true
 - ✅ 内核 tag 一律用 `vX.Y.Z`。ADR-033 决策 2 原案写 `memora@X.Y.Z`，已于 2026-10-23 订正为 `vX.Y.Z`（详见 ADR-033 决策 2「偏离原案」注释）；`memora-kernel-release-readiness` 技能末尾「发布动作链」亦同步订正。**`memora@` 不会触发发布链（静默不发版）**，勿再用。
 - 宿主 tag = `vscode@X.Y.Z`（另一条 workflow，勿混）。
 
-## 五步法
+## 五步法（Step 0 是前置闸，不属五步）
 
-### Step 0：确认就绪（前置，不重复 readiness）
+> **顺序不可换：先审、再修、后验。** 审查与修复会改代码，任何在修复前跑的门禁都必须重跑 ⇒ 质量审查（0.1）必须排在就绪度核查（0.2）之前。
+> 若已先按 readiness 结论进入本流程：0.1 仍须先做——审查产生的修复会作废旧的 readiness 结论，修复后由 0.2 重跑拿新收据。
+
+### Step 0：前置闸（0.1 质量审查 → 0.2 就绪核查 → 0.3 放行判定）
+
+#### Step 0.1：发版前质量审查（闸前闸）
+> 判据、产出模板、阻断条件 = `references/pre-release-audit.md`（**内核 / 宿主共用一份**，勿另抄）。本技能只列内核轴的调用形式。
+
+1. **取范围**（PowerShell，`;` 连接；`--match` 必须带，否则 `git describe` 可能取到更近的宿主 tag）：
+   ```powershell
+   $prev = git describe --tags --abbrev=0 --match 'v[0-9]*'
+   git log ($prev + '..HEAD') --oneline --stat
+   git status --porcelain; git diff --stat; git diff --cached --stat
+   git rev-parse --short HEAD; git rev-list --count ($prev + '..HEAD')
+   ```
+2. **按三原则审**：SSOT / 自然生长 / 不带伤——判据见 `references/pre-release-audit.md` §2，四条实证错判见 §2.4。
+3. **修 + 落账**：用户可见修复进 CHANGELOG 对应版本区（发版时由 Step 1 折叠日期）；缺陷 / 未收敛项进台账（规则交 `memora-ledger-governance`，本技能不复制）。
+4. **复核**：每条修复跑受影响面定向验证，原始输出进收据；**门禁 / 测试 / 契约的全量证据由 0.2 的 readiness 输出提供——本节不列第二份命令清单**。
+5. **阻断**（判据 §4）：命中即停在 0.1 报告（已定性 / 已排除 / 待拍板）；**不得进入 Step 1，更不得 `git tag vX.Y.Z` / stage publish**。
+
+#### Step 0.2：确认就绪（前置，不重复 readiness）
 调用 `memora-kernel-release-readiness` 完成发布前核查：门禁全绿、宿主 dist 同代、测试零失败、变异验证通过、包清单核对。未过就绪度不动本流程。
+
+#### Step 0.3：放行判定（进 Step 1 / 进 Step 4 的两道判据）
+- **进 Step 1（文档对齐）**：① 问题清单无未处置项；② 每条修复已提交且定向验证转绿；③ CHANGELOG + 台账落账完成；④ 审查端点 HEAD 与收据一致；⑤ 收据已按 §3.4 落盘（判据 = `references/pre-release-audit.md` §4）。缺任一 ⇒ 停在 0.3 报告，不得进入 Step 1。
+- **进 Step 4（打 tag）的追加条件**：放行总收据的 §3.4 字段齐全且全绿——值一律取 0.2 的原始输出，**不得转述**；未齐不得打 tag。
+- **收据落盘（本步必做，不许只活在回报里）**：写入 `tasks/archive/<X.Y.Z>-kernel.md` 文件头——文件不存在则按 `references/pre-release-audit.md` §3.4 骨架预建（状态标「待上架」，含 `---` 分隔行），并把 0.2 的各字段原始输出填入该节。读者 = 同轮 Step 4（tag 前唯一凭据）/ Step 5（订正为已发布）/ 下一轮 Step 0.1（追溯遗留项）。
+  - 文件已预建 ⇒ Step 3 归档**必须** `--append`（不带会对已存在文件整体覆盖，收据会被毁）。
+- 本轴不可逆点 = 已 published 不可重发（staged 可 Reject 后重打同 tag）⇒ 阻断最晚必须落在 tag 前。
 
 ### Step 1：对齐发版文档到最新版（必须在 tag 前提交）
 1. **CHANGELOG.md**：目标版本标题须为 `## [X.Y.Z] · YYYY-MM-DD`（合法日历日期，落在发布日 ±1 天窗口）。删除开发期合法存在的「未发布」「Unreleased」字样（仅该版本区，历史区不动）。
@@ -37,7 +64,7 @@ agent_created: true
 
 ### Step 2：核对版本号（三方一致 + 本地预检）
 - **三方一致**：`package.json` `version` = CHANGELOG 标题版本 = 即将推送的 tag `vX.Y.Z`。
-- **本地预检**（这些闸只在 `release.yml` 跑、**不进** local-ci/pre-push，故须手动在 tag 前跑，避免 tag 推上去才红）：
+- **本地预检**（`verify:changelog` / `verify:publish-docs` 只在 `release.yml` 跑、**不进** local-ci，故须手动在 tag 前跑；`format:check` / typecheck / lint / test 已含 `local-ci` full，此处前置跑是为省一次 CI 往返）：
   - `npm run verify:changelog`（`scripts/verify-changelog-version.mjs`：标题须含合法日期 + 发布日窗口）
   - `npm run verify:publish-docs`（`scripts/verify-publish-docs.mjs`：随包 md 无发布态陈述）
   - `npm run format:check`（prettier）
@@ -51,10 +78,10 @@ agent_created: true
 >
 > 以下只列**本时点特有的约束**：
 
-1. 新建 `tasks/archive/<X.Y.Z>-kernel.md`，迁入主台账**该版已关闭项**——口径对齐 `tasks/archive/README.md` 纪律 3 真源：**✅ 销项 / ❌ 证伪关闭 / 全案闭合**三类都迁（开放 / 观察 / 明确不做项留主台账）；条目 **ID 沿用不改**（防跨文档引用断裂）。⚠️ 清点只盯 ✅ 必漏：`ledger:hygiene` ⑧ 会抓「落态早于发版线且无归档副本」的**任何**落态条目，含 ❌ 证伪关闭（5.3.0 实证：`ASK-PENDINGASK-CLEAR-1` 证伪回滚条目 Step 5 时被 ⑧ 当场打红，靠 `--append` 补批迁入）。
-2. 归档文件头标 **「待上架」**（Step 5 再订正为「已发布」）。
-3. **提交前必跑两道台账硬闸**：`npm run verify:ledger-hygiene` + `npm run verify:ledger-fold`（挂 `local-ci` full 档 `required:true`）。
-4. 机械搬运用 `.trae/skills/memora-kernel-release/scripts/archive-kernel-release.mjs --version X.Y.Z --ids ID1,ID2,... --dry-run` 预览、核对逐字节无损后再 `--apply`；对**已存在**的归档文件必须加 `--append`（整体覆盖会毁掉既有归档）。脚本**整块移出、不逐条留指针**（归元纪律 7；块边界连续空行压 1 行）。
+1. 确认 `tasks/archive/<X.Y.Z>-kernel.md` 已由 Step 0.3 预建（含审查收据与 `---` 分隔行）；**不存在 = 0.3 漏写**，先回到 0.3 补收据再归档。迁入主台账**该版已关闭项**——口径对齐 `tasks/archive/README.md` 纪律 3 真源：**✅ 销项 / ❌ 证伪关闭 / 全案闭合**三类都迁（开放 / 观察 / 明确不做项留主台账）；条目 **ID 沿用不改**（防跨文档引用断裂）。⚠️ 清点只盯 ✅ 必漏：`ledger:hygiene` ⑧ 会抓「落态早于发版线且无归档副本」的**任何**落态条目，含 ❌ 证伪关闭（5.3.0 实证：`ASK-PENDINGASK-CLEAR-1` 证伪回滚条目 Step 5 时被 ⑧ 当场打红，靠 `--append` 补批迁入）。
+2. 归档文件头确认仍为 **「待上架」**（Step 0.3 已标；Step 5 再订正为「已发布」）。
+3. **提交前必跑台账硬闸**（命令 / 判据 / 数量一律以 `memora-ledger-governance` 闸门表为准，本技能不复制、不写死数量）。
+4. 机械搬运用 `.trae/skills/memora-kernel-release/scripts/archive-kernel-release.mjs --version X.Y.Z --ids ID1,ID2,... --dry-run` 预览、核对逐字节无损后再 `--apply`；文件已由 Step 0.3 预建 ⇒ **一律加 `--append`**（不带会对已存在文件整体覆盖，收据与既有归档一起被毁）。脚本**整块移出、不逐条留指针**（归元纪律 7；块边界连续空行压 1 行）。
 5. 🔴 **tag 前先做轴归属扫查（错置条目归位）**：主台账内核轴里若滞留宿主面 / 仓库面条目（判据 = 条目自身完成判据提到的文件全在 `hosts/` 或根 `scripts/`），**须在 tag 前搬回宿主轴**。否则 tag 一打，内核轴发版线生效，`ledger:hygiene` ⑧（落态早于发版线且无归档副本）在 Step 5 补索引行时**当场硬红**，被迫在发版窗口中途做结构手术（5.2.0 实证：`CHATVIEW-SLIM-1` / `IMG-12` / `IMG-13` 三条被 ⑧ 强制归位）。
 6. 🔴 **同批新增的批注 / 收据小标题须带语义后缀**：多条注记若逐字相同，`ledger:hygiene` ⑩（跨条目逐字克隆）当场红（5.2.0 实证：三条归位注记同文 ×3 被打红）。
 7. 🔴 **ID 白名单靠人肉编 ⇒ 漏扫是常态**（0.2.0 漏 45 条 / 5.0.0 收口无指针 22 条，均欠账 `ARCH-DRAIN-1`）。兜底已改为上面第 3 条的机检门；**计数以当场重扫实测为准，不采信任何清点快照**（快照自身算术不闭合，且随台账编辑漂移）。
