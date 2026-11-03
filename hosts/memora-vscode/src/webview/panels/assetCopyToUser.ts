@@ -26,7 +26,10 @@
 import type { Agent } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { isPathWithin } from '../../extension/host/userAssets/path.js';
-import { copyAssetToRoot } from '../../extension/host/userAssets/zipImport.js';
+import {
+  copyAssetToRoot,
+  type OverwritePrompt,
+} from '../../extension/host/userAssets/zipImport.js';
 import { confirmModal } from '../../extension/host/ui/confirmModal.js';
 import { listVisibleSkills } from '../../extension/host/skillAggregation.js';
 import { refreshUserRolePacksFlow, refreshUserSkillsFlow } from './userAssetRefresh.js';
@@ -88,6 +91,32 @@ function copySuccessMessage(
 }
 
 /**
+ * 缺包根时的拒绝文案（技能 / 角色包共用）：`packageRoot` 是内核可选字段，外部经 `register()`
+ * 注入的条目可能没有——**不猜**（不按 `filePath` 反推包根），缺根即明确拒绝并给出原因。
+ *
+ * @param assetLabel 面向用户的资产类型名（「技能」/「角色包」）
+ * @param name 资产名
+ */
+function missingPackageRootMessage(assetLabel: string, name: string): string {
+  return `内核未提供${assetLabel}「${name}」的包根（packageRoot），无法安全复制到用户级`;
+}
+
+/**
+ * 同名覆盖确认回调（复制到用户级共用）：两个入口只差资产名词，
+ * 附属文案与按钮集（只传「覆盖」）不得分叉。
+ *
+ * @param assetLabel 面向用户的资产类型名（「技能」/「角色包」）
+ */
+function confirmOverwriteCopy(assetLabel: string): (prompt: OverwritePrompt) => Promise<boolean> {
+  return (prompt) =>
+    confirmModal({
+      message: `用户级已存在同名${assetLabel}：${prompt.targetPath}`,
+      detail: '继续会先备份现有内容再覆盖，失败自动回滚；确定复制？',
+      confirmLabel: '覆盖',
+    });
+}
+
+/**
  * 把项目级技能复制到用户级（设置页项目技能卡片「添加到用户级」的落点）
  *
  * @param deps 面板依赖
@@ -116,22 +145,14 @@ export async function copyProjectSkillToUser(
 
   // 复制单元 = 内核给出的包根（单文件技能 = 文件；目录式技能 = 技能目录），宿主不拿 filePath 反推
   if (!skill.packageRoot) {
-    postCopyError(
-      deps,
-      `内核未提供技能「${skillName}」的包根（packageRoot），无法安全复制到用户级`,
-    );
+    postCopyError(deps, missingPackageRootMessage('技能', skillName));
     return;
   }
   const result = await copyAssetToRoot(skill.packageRoot, deps.userSkillsDir, {
     // 类型由本层显式声明，只影响校验分支与文案（不决定复制单元）
     kind: 'skill',
-    // 同名覆盖确认：只传「覆盖」；取消是 VS Code modal 自带的 Cancel（undefined ⇒ false）
-    confirmOverwrite: (prompt) =>
-      confirmModal({
-        message: `用户级已存在同名技能：${prompt.targetPath}`,
-        detail: '继续会先备份现有内容再覆盖，失败自动回滚；确定复制？',
-        confirmLabel: '覆盖',
-      }),
+    // 同名覆盖确认走共用回调（只传「覆盖」；取消是 VS Code modal 自带的 Cancel ⇒ false）
+    confirmOverwrite: confirmOverwriteCopy('技能'),
   });
   if (!result.ok) {
     postCopyError(deps, `复制到用户级失败：${result.reason}`);
@@ -171,19 +192,14 @@ export async function copyProjectRolePackToUser(deps: AssetCopyDeps, name: strin
   }
   // 复制单元 = 包根（包目录），由内核装配时给出；缺字段即拒绝，宿主不拿 manifest 路径反推
   if (!pack.packageRoot) {
-    postCopyError(deps, `内核未提供角色包「${name}」的包根（packageRoot），无法安全复制到用户级`);
+    postCopyError(deps, missingPackageRootMessage('角色包', name));
     return;
   }
 
   const result = await copyAssetToRoot(pack.packageRoot, deps.userRolePacksDir, {
     kind: 'rolePack',
-    // 同名覆盖确认：只传「覆盖」；取消是 VS Code modal 自带的 Cancel（undefined ⇒ false）
-    confirmOverwrite: (prompt) =>
-      confirmModal({
-        message: `用户级已存在同名角色包：${prompt.targetPath}`,
-        detail: '继续会先备份现有内容再覆盖，失败自动回滚；确定复制？',
-        confirmLabel: '覆盖',
-      }),
+    // 同名覆盖确认走共用回调（只传「覆盖」；取消是 VS Code modal 自带的 Cancel ⇒ false）
+    confirmOverwrite: confirmOverwriteCopy('角色包'),
   });
   if (!result.ok) {
     postCopyError(deps, `复制到用户级失败：${result.reason}`);
