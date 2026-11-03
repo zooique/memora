@@ -1535,12 +1535,20 @@ export const chatStyles = `
     align-items: center;
   }
   /* Row 2 · 状态行：弱化显示角色/能力信息；两端分布——左徽章 + 右上下文占用圆环
-   * （占用属状态信息归本行，不干扰 Row 1 主操作；圆环在行最右，向上弹出不挤压面板） */
+   * （占用属状态信息归本行，不干扰 Row 1 主操作；圆环在行最右，向上弹出不挤压面板）
+   * 分隔（2026-11-04，0.7.0 发版前 UI 优化）：Row 1 控件在 UI-CTL-BORDER-1 后全部无边框，
+   * 与 Row 2 实心底色徽章只隔 #inputFooter 的 4px gap ⇒ 真机读成「按钮和徽章混在一起」。
+   * 只画线不够（拥挤本身是间距问题），故线 + 顶距一起给：border-top 走既有 --line-solid
+   * （面板边框族，与 .context-ring__injection 同源同值，弱于卡片描边 --line-input，
+   * 不与卡片边界争读；不新造颜色令牌），padding-top 取 sp-2（6px）补出上下呼吸。
+   * 仅样式层改动：不动 Row 1 无边框契约、不加实体边框、不改任何交互与 DOM 层级。 */
   .composer-row--status {
     display: flex;
     align-items: center;
     justify-content: space-between;
     min-height: var(--sq-sm, 18px);
+    padding-top: var(--sp-2, 6px);
+    border-top: var(--line-solid);
   }
   /* 左侧功能群：Skill ⚡ + 模型 + 润色（次级弱化组）。
    * 允许本组收缩（flex-shrink:1 + min-width:0），窄窗下由内部触发器省略号兜底，
