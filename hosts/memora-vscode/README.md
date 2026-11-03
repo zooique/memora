@@ -2,11 +2,11 @@
 
 用 AI 打磨设计、沉淀记忆、生成骨架——在 IDE 侧边栏里做，消灭"反复拉扯代码导致一团乱"。
 
-Memora 是内核驱动的 **VS Code AI 助手**：薄壳装配、复用内核全部能力，功能定位由**内置角色包**承载（出厂自带「文档打磨」角色），插件本身不硬编码任何定位。
+Memora 是内核驱动的 **VS Code AI 助手**：薄壳装配、复用内核全部能力，功能定位由**内置角色包**承载（出厂自带「memora 助手」「共鸣小说家」「白话方案设计师」角色），插件本身不硬编码任何定位。
 
 **开源仓库**：[github.com/zooique/memora](https://github.com/zooique/memora)
 
-**内核**：基于 npm 包 [@zooique/memora](https://www.npmjs.com/package/@zooique/memora) `5.4.0` 开发（本版本内联的内核代次，随宿主版本发布核对）
+**内核**：基于 npm 包 [@zooique/memora](https://www.npmjs.com/package/@zooique/memora) `5.5.0` 开发（本版本内联的内核代次，随宿主版本发布核对）
 
 ---
 

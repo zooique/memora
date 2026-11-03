@@ -32,12 +32,14 @@
 - **路径守卫 realpath 回退在文件系统根终止，修复栈溢出**（`PATH-GUARD-REALPATH-1`）：`resolveRealpath` 在目标不存在时逐级向上解析父目录，Windows 根的 `dirname` 自指（`dirname('Z:\\') === 'Z:\\'`），配置里写一个不存在的盘符即可无限递归直至调用栈溢出。现以「`dirname` 不再变短」为终止判据。**对消费者**：零签名 / 零可见行为变更，只消除极端路径下的崩溃。
 - **删除用户级角色包后无法恢复内置版本**（`ROLEPACK-OVERWRITE-REVERSIBLE-1`）：重扫序此前只重扫内置 `configDir` 并保留旧运行时注入项，用户包胜出的内存态不会因磁盘上用户包消失而回退。现重扫先摘除额外目录注入项（连同 `extraPackDirs` / `extraOverrides` 记账一并清空），再按目录顺序重读磁盘重放；删除 / 改名用户包后刷新即恢复内置版本。**对消费者**：`reload()` / `resyncUserPacks()` 对齐「按磁盘现状重建」，零签名变更。
 
-## [Unreleased] · 宿主
+## [0.7.0] · 2026-11-04 · 宿主
+
+> **随包内核代次 = `5.5.0`**（esbuild 内联 dist，内核自身变更见内核区）。
 
 ### Added（宿主）
 
 - **项目级资产注入与工作区信任门**（`ASSET-TRUST-GATE-1`）：项目级技能 / 角色包目录取自 `workspaceFolders[0]` 的 `.memora/`（工作区数据目录单点 `resolveProjectDataDir`），**仅在 `vscode.workspace.isTrusted === true` 时注入**；未受信任时状态栏显示 `$(shield) Memora：项目级资产未启用` 并指向 `workbench.action.manageTrust`，装配期也不向 Agent 透传项目目录。授予信任由 `onDidGrantWorkspaceTrust` 监听：立即注入 `'project'` 档位并触发技能 / 角色包重扫 + 刷新技能列表，**无需重启窗口**。**单点约束**：项目目录推导与信任判定只在 `projectAssetDirsFor(ctx)` 一处发生（`extension.ts` 不再自行拼 `.memora/{skills,role-packs}`），任何调用方只消费其结果。**限制**：多根工作区只加载第一个文件夹的项目级资产。**对消费者**：未信任工作区行为零变化（仍只有内置 + 用户级）；已信任工作区新增项目级来源，同名时按加载顺序覆盖。
-- **压缩包导入技能 / 角色包（.zip）**（`ASSET-ZIP-IMPORT-1`）：设置页技能区、角色包区与命令面板三入口共用同一命令处理器 `memora.importAsset`（webview 只发 `import_asset_zip` 路由，开框 / 选目标级 / 校验 / 落盘 / 重扫只有一份实现）。默认**用户级**；工作区受信任时可选项目级（未信任时该项标注「不可选：工作区未受信任」并在选中后明确拒绝，不静默降级）。校验流水线六步：① 解压前条目数（500）/ 单条解压后大小（5 MB）/ 总解压量（20 MB）上限（防 zip bomb）；② 逐条目路径校验（拒绝对路径、盘符、`..`、反斜杠、空名与符号链接条目，最终路径必须落在目标根内）；③ 类型识别（含 `manifest.json` ⇒ 角色包；否则含带 `description` 的 `.md` ⇒ 技能；都不像 ⇒ 拒绝并说明）；④ 格式校验（技能走 `validateSkillAsset`，角色包走 `validateManifestText` 且 `formatVersion` 缺省 `1.0.0`）；⑤ 同名必须询问「覆盖 / 取消」，取消则零写入；⑥ 落盘后重扫内核池并刷新面板，toast 显示类型、名称、落点与文件数。**不执行包内任何脚本**，只落盘。**对消费者**：新增一条命令与一条 webview→host 消息通道（协议类型总数不变：两区按钮合并为单条 `import_asset_zip`）。
+- **压缩包导入技能 / 角色包（.zip）**（`ASSET-ZIP-IMPORT-1`）：设置页技能区、角色包区与命令面板三入口共用同一命令处理器 `memora.importAsset`（webview 只发 `import_asset_zip` 路由，开框 / 选目标级 / 校验 / 落盘 / 重扫只有一份实现）。默认**用户级**；工作区受信任时可选项目级（未信任时该项标注「不可选：工作区未受信任」并在选中后明确拒绝，不静默降级）。校验流水线六步：① 解压前条目数（500）/ 单条解压后大小（5 MB）/ 总解压量（20 MB）上限（防 zip bomb）；② 逐条目路径校验（拒绝对路径、盘符、`..`、反斜杠、空名与符号链接条目，最终路径必须落在目标根内）；③ 类型识别（含 `manifest.json` ⇒ 角色包；否则含带 `description` 的 `.md` ⇒ 技能；都不像 ⇒ 拒绝并说明）；④ 格式校验（技能走 `validateSkillAsset`，角色包走 `validateManifestText` 且 `formatVersion` 缺省 `1.0.0`）；⑤ 同名必须询问「覆盖 / 取消」，取消则零写入；⑥ 落盘后重扫内核池并刷新面板，toast 显示类型、名称、落点与文件数。**不执行包内任何脚本**，只落盘。**对消费者**：新增一条命令与一条 webview→host 消息通道（两区按钮合并为单条 `import_asset_zip`；本版另新增 `skills_refresh` / `asset_copy_to_user` 两条消息，未删除任何既有类型）。
 - **「添加到用户级」复制入口**（`ASSET-COPY-USER-1`）：设置页项目级技能 / 角色包卡片新增「添加到用户级」按钮，把一个项目级资产复制进 `globalStorage`。落盘复用 `zipImport.ts` 的 `copyAssetToRoot`（暂存 → 备份 → 换名 → 失败回滚，取消**零写入**），复制单元 = 内核给出的 `packageRoot`（单文件技能 = 文件本身；目录式技能 / 角色包 = 整包复制，资源随行），宿主不再按 `filePath` 反推（反推会把单文件技能的兄弟技能一起搬走）。技能与角色包共用同一条协议通道 `asset_copy_to_user`（`assetKind` 仅区分校验与文案）。**对消费者**：新增按钮与一条 webview→host 消息；`packageRoot` 缺失（外部 `register()` 自行构造的条目）时明确拒绝并提示，不猜。
 
 ### Changed（宿主）
@@ -49,6 +51,11 @@
 - **设置页「刷新技能」改为真重扫**（`SKILL-REFRESH-1`）：此前只重读内核内存快照，用户新增技能文件必须 Reload Window 才可见；现刷新走 `agent.skills.resyncUserSkills()` 后重推技能列表（`userAssetRefresh.ts` 薄委托，技能 / 角色包两个刷新按钮共用同一套净差文案）。**对消费者**：点刷新即可看到手工投放或新建的技能，无需重启窗口。
 
 - **输入区控件统一为无边框 `.ctl` 基类；选中态由边框改为图标染色**（`UI-INPUT-CTL-1`）：skill / 模型触发器与润色 / 上传 / 暂停按钮改由单一 `.ctl` 基类提供形态（`border:none`、2px 圆角、hover 底色 + 前景提亮、`[aria-disabled]` 统一置灰），各自不再自写 `border` / `border-color` / `border-radius`；发送按钮（实心、不挂 `.ctl`）补 1px 紧凑焦点环（全局 2px 对 32px 方钮偏重）。**选中态**（已挂载 Skill）由「accent 边框」改由「常驻图标染色（`.ctl--on` 的 accent 前景）」承载——**不写常驻底色**：`--accent-bg-hover` 实际映射 `--vscode-list-hoverBackground`（中性灰），常驻灰底会让选中态「看起来一直处于 hover」且与 hover 同底，三态不可分。**为什么**：边框在输入区同时承担了两种互斥语义（常驻选中 vs 瞬时 hover），去边框后必须让「常驻」走常驻通道（颜色）、「瞬时」走瞬时通道（底色）。**对消费者**：纯样式，零协议 / 零 DOM 结构变化（仅给既有按钮与下拉触发器追加 `ctl` class，`buildDropdownHtml` 增可选 `triggerClass` 入参）。
+
+- **角色包来源徽章判定与技能聚合统一**（审查轮 `P2-8`）：设置面板此前用裸 `startsWith(projectRolePacksDir)` 判来源，既无 `resolve` 规范化也无 `path.sep` 边界，与技能聚合的口径不一致 ⇒ 兄弟目录 `role-packs-x` 会被误判为项目级。现两处共用 `isPathWithin`（`resolve` 规范化 + `root + sep` 前缀），面板内第二份判定副本删除；该函数同时接受 `undefined` 根，调用方无需先判空。**对消费者**：来源徽章在兄弟目录同名前缀场景下不再误判。
+- **覆盖确认文案与事务化实现对齐**（审查轮 `P2-9`）：导入覆盖弹窗原写「会先删除原内容」，而实现早已是「先备份再替换、失败回滚」——文案描述的是被退役的旧路径。现改为「会备份并替换原内容，失败自动回滚」。**对消费者**：仅提示文案变化，无行为变化。
+- **设置页两个「刷新」提示改为实际覆盖面**（`SKILL-REFRESH-1`）：两个 tooltip 此前都写「重扫**用户**…目录」，而执行面 `resyncUserSkills` / `resyncUserPacks` 均重扫**全部已登记额外目录**（项目级 + 用户级，且含内置复活）——真机实测：把文件放进 `<项目>/.memora/skills/`、不重启窗口、点刷新即出现。现两处提示改为「重扫项目与用户…目录」，协议注释与相关行内注释同步订正。**对消费者**：仅文案与注释变化，零行为变化（两个入口的实际重扫范围本就一致）。
+- **输入区控件悬停底色改为可感知**（`UI-INPUT-CTL-1`）：`.ctl` 族悬停底色原用 `--accent-bg-hover`（映射 `list.hoverBackground`），与输入卡底色 `input.background` 近似同色（Dark Modern Δ≈7/255、Light Modern Δ≈15/255）⇒ 真机逐像素比对读成「悬停无变化」。现只把该族悬停底色换成既有 `--surface-hover`（`toolbar.hoverBackground`，全站其它 hover 已用它），不动全局 token 映射、不新增变量；选中态仍只靠前景 accent 染色、无常驻底色，选中 + 悬停 = 染色保留 + 底色出现。**对消费者**：悬停可感知，三态仍可分。
 
 ### Fixed（宿主）
 
@@ -63,13 +70,6 @@
 ### Removed（宿主）
 
 - **退役零调用方的资产写盘器与僵尸常量**（`UI-CREATE-PRUNE-1`）：`host/userAssets/write.ts` 的技能单文件落盘与角色包模板复制两套写盘函数在生产侧零调用——表单新建入口剪除后，真实写盘只剩「对话走内核 `write_file`」与「压缩包导入 `zipImport`」两条，留着它就是第二套覆盖语义（`pathExists` → `writeFile` 还带 TOCTOU）。现只把**校验能力**迁到独立的 `validateSkill.ts`（`validateSkillAsset` 只校验、不落盘，由 `zipImport` 复用），写盘函数、`ROLE_PACK_TEMPLATE_REL_PATH` 僵尸常量及其测试一并删除；执行面 / 零写入判据的模块边界写进 `path.ts` 头注释。**对消费者**：零行为变化、零公开导出变动，纯内部收敛。
-
-### Changed（宿主）
-
-- **角色包来源徽章判定与技能聚合统一**（审查轮 `P2-8`）：设置面板此前用裸 `startsWith(projectRolePacksDir)` 判来源，既无 `resolve` 规范化也无 `path.sep` 边界，与技能聚合的口径不一致 ⇒ 兄弟目录 `role-packs-x` 会被误判为项目级。现两处共用 `isPathWithin`（`resolve` 规范化 + `root + sep` 前缀），面板内第二份判定副本删除；该函数同时接受 `undefined` 根，调用方无需先判空。**对消费者**：来源徽章在兄弟目录同名前缀场景下不再误判。
-- **覆盖确认文案与事务化实现对齐**（审查轮 `P2-9`）：导入覆盖弹窗原写「会先删除原内容」，而实现早已是「先备份再替换、失败回滚」——文案描述的是被退役的旧路径。现改为「会备份并替换原内容，失败自动回滚」。**对消费者**：仅提示文案变化，无行为变化。
-- **设置页两个「刷新」提示改为实际覆盖面**（`SKILL-REFRESH-1`）：两个 tooltip 此前都写「重扫**用户**…目录」，而执行面 `resyncUserSkills` / `resyncUserPacks` 均重扫**全部已登记额外目录**（项目级 + 用户级，且含内置复活）——真机实测：把文件放进 `<项目>/.memora/skills/`、不重启窗口、点刷新即出现。现两处提示改为「重扫项目与用户…目录」，协议注释与相关行内注释同步订正。**对消费者**：仅文案与注释变化，零行为变化（两个入口的实际重扫范围本就一致）。
-- **输入区控件悬停底色改为可感知**（`UI-INPUT-CTL-1`）：`.ctl` 族悬停底色原用 `--accent-bg-hover`（映射 `list.hoverBackground`），与输入卡底色 `input.background` 近似同色（Dark Modern Δ≈7/255、Light Modern Δ≈15/255）⇒ 真机逐像素比对读成「悬停无变化」。现只把该族悬停底色换成既有 `--surface-hover`（`toolbar.hoverBackground`，全站其它 hover 已用它），不动全局 token 映射、不新增变量；选中态仍只靠前景 accent 染色、无常驻底色，选中 + 悬停 = 染色保留 + 底色出现。**对消费者**：悬停可感知，三态仍可分。
 
 ## [5.4.0] · 2026-11-02
 
