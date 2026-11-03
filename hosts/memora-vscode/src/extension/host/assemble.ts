@@ -465,10 +465,10 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 故对外措辞只能是「正常工具路径不再写用户目录」，不得写成「模型无法写用户目录」。
     allowedPaths: [projectPath, ...(allowedPaths ?? [])],
     // 禁止覆盖根 = 用户资产目录（与白名单并列的第二条判据）。
-    // 🔴 本轮起**生产零消费者**：用户目录已不在 `allowedPaths`，`write_file` 会在
-    // `assertNotOverwrite` 之前先被白名单拒绝，本键当前不会命中任何正常写入。
-    // 保留仅为不破坏内核契约（`setNoOverwriteRoots` 仍存在）；计划 6.0.0 随该内核方法
-    // 一并退役，见台账 ASSET-WRITE-SCOPE-1，**不许静默保留**。
+    // 🔴 现状（2026-11-04 订正）：本键**照旧传入**，但用户目录已不在 `allowedPaths` ⇒
+    // `write_file` 会先被白名单拒绝、目标文件到不了 `assertNotOverwrite`（白名单阶段即拒、
+    // 判据生产不可达）。保留仅为不破坏内核契约（`setNoOverwriteRoots` 仍存在）；计划 6.0.0
+    // 随该内核方法一并退役，见台账 `ASSET-WRITE-SCOPE-1` / `NOOVERWRITE-WORD-1`，**不许静默保留**。
     noOverwriteRoots: [userSkillsDir, userRolePacksDir].filter(
       (dir): dir is string => typeof dir === 'string' && dir.length > 0,
     ),

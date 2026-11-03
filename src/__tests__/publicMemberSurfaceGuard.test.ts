@@ -1160,7 +1160,7 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
   SecurityGuard: {
     kind: 'class',
     members: [
-      // 2026-11-02 ASSET-WRITE-SCOPE-1：禁止覆盖根（泛型保留键；生产零消费者，6.0.0 退役）
+      // 2026-11-02 ASSET-WRITE-SCOPE-1：禁止覆盖根（保留键：宿主装配期仍传参，但用户资产目录不在 allowedPaths ⇒ 判据生产不可达；6.0.0 退役）
       'assertNotOverwrite',
       'assertPathAllowed',
       'confirmCommandRun',
@@ -1396,11 +1396,11 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    行为由公开面 agent.polish.polish() 的 2 例测试 + 变异验证守护（移除注入即转红）。\n` +
       `    代价 = 零（新增方法，既有 polish 签名与语义不变）。\n` +
       `  ⑨ AgentOptions.noOverwriteRoots 新增（2026-11-02 · ASSET-WRITE-SCOPE-1，非 Breaking）：\n` +
-      `    定性 = **保留键（生产零消费者）**：与 allowedPaths 并列但方向相反——白名单放宽可写面，\n` +
-      `    本键收紧覆盖面（目标已存在 ⇒ write_file / delete_file 拒绝改写）。宿主已于 2026-11-03 撤回\n` +
-      `    用户目录的白名单注入（mergeAllowedPathsWithUserAssets 零调用），目标文件在白名单阶段即被拒、\n` +
-      `    到不了本判据 ⇒ 缺它也不会静默覆盖用户技能 / 角色包。计划 6.0.0 按 DEPRECATE-1 退役。\n` +
-      `    判据本身仍有效，由 pathGuard.test.ts 的 6 例守护（移除判据即转红）；仅无生产注入点。\n` +
+      `    定性 = **保留键**：与 allowedPaths 并列但方向相反——白名单放宽可写面，\n` +
+      `    本键收紧覆盖面（目标已存在 ⇒ write_file / delete_file 拒绝改写）。宿主装配期仍传参\n` +
+      `    （assemble.ts 注入用户目录），但用户资产目录不在 allowedPaths ⇒ 白名单阶段即拒、本判据\n` +
+      `    生产不可达 ⇒ 缺它也不会静默覆盖用户技能 / 角色包。计划 6.0.0 按 DEPRECATE-1 退役。\n` +
+      `    判据本身仍有效，由 pathGuard.test.ts 的 6 例守护（移除判据即转红）；仅无生产命中点。\n` +
       `    代价 = 零（可选字段：缺省 [] = 不启用，既有调用零变化）。`;
     expect(
       issues,
