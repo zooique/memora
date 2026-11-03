@@ -607,9 +607,13 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //            .image-attach-btn.is-vision-off 自写 opacity 退役 -1 ⇒ 净不变（19，机械实测同步）。
     'icon-': 17,
     'dot-': 22,
-    'line-': 79, // 输入区控件去边框（2026-11-02）：润色按钮 border(-1)、上传按钮 border + 置灰 hover
+    'line-': 80, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
+    //             var(--line-solid) +1 ⇒ 79→80（UI-STATUS-DIVIDE-1，与
+    //             `.context-ring__injection` 同一既有令牌，未新造颜色）；
+    //             实数经 scripts/count-token-refs.mjs 实锤同步。
+    //             输入区控件去边框（2026-11-02）：润色按钮 border(-1)、上传按钮 border + 置灰 hover
     //             border-color(-2)、暂停按钮 border(-1) 全量退役（边框改由 .ctl border:none 表达）
-    //             ⇒ 83→79，实数经 scripts/count-token-refs.mjs 实锤同步。
+    //             ⇒ 83→79。
     //             存量构成（未退役部分，按引入时间）：MEM-EVENT-2 工具行内命中块 border-top +1；
     //             HOST-NAV-1 大纲条浮层 border +1（2026-10-20）；CTX-4 注入回执行分隔线 +1（2026-10-21）；
     //             指标空态指引 .activity-metrics-empty 分隔线 +1（2026-10-22）；
