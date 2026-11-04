@@ -107,8 +107,10 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
  * 唯一实现，contextPreparer 与 seed 编排器经此统一取策略，杜绝跨模块镜像重复。
  *
  * @param rolePackManager 角色包管理器（可为 null）
- * @param override 宿主装配级策略覆盖（可选）：**压过角色包声明**，表达宿主产品能力边界。
- *  只影响 override 声明过的键（无内置示例键；无自动匹配链，机制保留）。
+ * @param override 宿主装配级策略覆盖（可选）：表达宿主产品能力边界，只影响 override 声明过的键。
+ *  **非权限类字段由覆盖值胜出；`toolReadonly` / `toolMode` 只能收紧**（`readonly` 严于 `full`、
+ *  `block` 严于 `allow`），判据唯一真源 = 本文件 `PERMISSION_FIELD_LENIENCE`（`mergeStrategy` 内）。
+ *  （无内置示例键；无自动匹配链，机制保留。）
  * @returns 当前激活行为策略（含装配级覆盖）
  */
 export function resolveActiveStrategy(

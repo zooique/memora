@@ -227,8 +227,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       disabledSkills: opts.disabledSkills ?? [],
       // 宿主审批/审计/参数改写通道，透传供装配阶段与内部幂等检查组合为一处执行前检查点
       preExecutionCheck: opts.preExecutionCheck,
-      // 宿主装配级策略覆盖（能力边界）：透传 #config → 装入策略解析链（resolveActiveStrategy），
-      // 压过角色包声明（v0.13 后无宿主注入默认值；机制保留供宿主产品能力边界使用）
+      // 宿主装配级策略覆盖（能力边界）：透传 #config → 装入策略解析链（resolveActiveStrategy）。
+      // 非权限类字段由覆盖值胜出；toolReadonly / toolMode 只能收紧（readonly 严于 full、block 严于
+      // allow），判据唯一真源 = role-pack/strategyResolver.ts 的 PERMISSION_FIELD_LENIENCE。
+      //（v0.13 后无宿主注入默认值；机制保留供宿主产品能力边界使用）
       strategyOverride: opts.strategyOverride,
     };
     this.#provider = opts.provider;
@@ -485,7 +487,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       refreshRolePackPrefixForRound: (roundRole) => this.refreshRolePackPrefixForRound(roundRole),
       consumeExecutionStream: (source, signal) => this.consumeExecutionStream(source, signal),
       getBackgroundProvider: () => this.#backgroundProvider,
-      // 宿主装配级策略覆盖（能力边界）：传给策略解析链，压过角色包声明（单一语义键不变）
+      // 宿主装配级策略覆盖（能力边界）：传给策略解析链（单一语义键不变）。
+      // 非权限类字段由覆盖值胜出；toolReadonly / toolMode 只能收紧（真源 = PERMISSION_FIELD_LENIENCE）
       strategyOverride: this.#config.strategyOverride,
       // 事件发射回调：orchestrator.runSummary 完成后 emit roundSummaryGenerated，
       // 让宿主感知后台摘要收口 → 解锁 UI 生命周期（删除/分叉按钮解禁，防孤儿记忆）
@@ -1324,7 +1327,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       existingSkillManager: this.skillManager,
       // 策略覆盖不经组装器：AssembleInput 零消费，真实消费链 = 本类
       // 构造 SeedOrchestrator deps 时直传（见 #createSeedOrchestrator 的 strategyOverride），
-      // 经 resolveActiveStrategy 压过角色包声明——策略解析唯一链在 seed 侧。
+      // 由 resolveActiveStrategy 解析——非权限类字段由覆盖值胜出，toolReadonly / toolMode 只能收紧
+      //（判据唯一真源 = role-pack/strategyResolver.ts 的 PERMISSION_FIELD_LENIENCE）；策略解析唯一链在 seed 侧。
       // Agent 稳定能力（emit/守卫/暂停/角色切换）：接线下沉后仅传能力，接线语义在组装器唯一实现
       hooks: {
         // 桥接 SessionManager 宽类型事件到 Agent 强类型 emit（校验事件名在 AgentEventMap 内，避免不安全断言）

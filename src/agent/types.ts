@@ -559,9 +559,10 @@ export interface AgentOptions {
   /** 程序级内置兜底角色（可选）：覆盖内核常量 BUILTIN_FALLBACK_PACK；覆盖值须指向存在的包，否则回退内核常量 */
   builtinFallbackRole?: string;
   /**
-   * 宿主装配级**策略覆盖**（可选）：经 resolveActiveStrategy 压过角色包声明，表达宿主产品能力边界。
-   * 只影响 override 声明过的键；是「宿主策略层」通用覆盖，不新增任何独立开关。
-   *（无内置示例键；角色包无自动匹配链，本机制保留供宿主能力边界使用）
+   * 宿主装配级**策略覆盖**（可选）：表达宿主产品能力边界，只影响 override 声明过的键。
+   * **非权限类字段由覆盖值胜出；`toolReadonly` / `toolMode` 只能收紧**（`readonly` 严于 `full`、
+   * `block` 严于 `allow`），判据唯一真源 = `role-pack/strategyResolver.ts` 的 `PERMISSION_FIELD_LENIENCE`。
+   * 是「宿主策略层」通用覆盖，不新增任何独立开关。（无内置示例键；角色包无自动匹配链）
    */
   strategyOverride?: Partial<BehaviorStrategy>;
   /**

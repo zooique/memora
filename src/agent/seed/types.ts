@@ -102,7 +102,9 @@ export interface SeedDeps {
    */
   getBackgroundProvider(): LlmProvider | null;
   /**
-   * 宿主装配级策略覆盖（可选）：经 resolveActiveStrategy 压过角色包声明，表达宿主产品能力边界。
+   * 宿主装配级策略覆盖（可选）：表达宿主产品能力边界，只影响 override 声明过的键。
+   * **非权限类字段由覆盖值胜出；`toolReadonly` / `toolMode` 只能收紧**（`readonly` 严于 `full`、
+   * `block` 严于 `allow`），判据唯一真源 = `role-pack/strategyResolver.ts` 的 `PERMISSION_FIELD_LENIENCE`。
    *（v0.13 后无内置示例键；机制保留供宿主能力边界使用）
    */
   strategyOverride?: Partial<BehaviorStrategy>;

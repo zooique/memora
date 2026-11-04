@@ -42,7 +42,8 @@ configDir/
 ├── config.json              ← ★ LLM 配置真理源：providers + active + background + taskRouter
 ├── role-packs/              ← 角色包目录（每个包一个文件夹，含 manifest.json）
 │   └── 工程师/
-│       ├── manifest.json    ← 必填：元数据 + strategy + capabilities
+│       ├── manifest.json    ← 必填字段仅 `name`；`strategy` / `capabilities` 可省
+│       │                       （capabilities 省略 = 全部工具；`[]` = 仅常驻工具；非空 = 白名单）
 │       ├── persona.md       ← 约定名，可省（身份设定）
 │       ├── rules.md         ← 约定名，可省（安全契约）
 │       └── skills/          ← 角色包内嵌技能（目录动态扫描，可选）
@@ -203,7 +204,7 @@ new Agent({
 | `activeRolePack` | `string` | ❌ | 启动激活的角色包名（缺失/不存在回退默认激活首个） |
 | `rolePackTeams` | `RolePackTeam[]` | ❌ | 组（宿主装配级）：组长角色包 + 组员名单（会议名单容器；组长唯一、组员可跨组引用，仅用于小组会议，不用于日常） |
 | `builtinFallbackRole` | `string` | ❌ | 程序级内置兜底角色（覆盖内核常量 `BUILTIN_FALLBACK_PACK`；覆盖值须指向存在的包，否则回退内核常量） |
-| `strategyOverride` | `Partial<BehaviorStrategy>` | ❌ | 宿主装配级策略覆盖：经 `resolveActiveStrategy` 压过角色包声明（只影响 override 声明过的键），表达宿主产品能力边界 |
+| `strategyOverride` | `Partial<BehaviorStrategy>` | ❌ | 宿主装配级策略覆盖：表达宿主产品能力边界，只影响 override 声明过的键。**非权限类字段由覆盖值胜出；`toolReadonly` / `toolMode` 只能收紧**（`readonly` 严于 `full`、`block` 严于 `allow`），判据唯一真源 = `role-pack/strategyResolver.ts` 的 `PERMISSION_FIELD_LENIENCE`（ADR-045） |
 | `permission` | `'owner' \| 'guest'` | ❌ | 安全权限（默认 'owner'） |
 | `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
 | `noOverwriteRoots` | `string[]` | ❌ | 禁止覆盖根（默认 [] = 不启用）：目标文件落在这些目录内且已存在 ⇒ `write_file` / `delete_file` 拒绝改写。与 `allowedPaths` 并列但方向相反（白名单放宽可写面，本键收紧覆盖面；`write_file` 确认档是 `idempotent-key`，缺本判据即直接写入）。⚠️ **现状（2026-11-04 订正）**：宿主装配期仍传参（`assemble.ts`），但用户资产目录不在 `allowedPaths` ⇒ 白名单阶段即拒、本判据生产不可达；保留键，计划 6.0.0 按 `DEPRECATE-1` 退役。**不要用它描述「保护用户资产目录」** |

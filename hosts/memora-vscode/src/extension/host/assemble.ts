@@ -443,7 +443,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // agent.switchRolePack，`activeRolePack` 键保留并扩展为 §4.1 解析链第一层。
     // 此处不传 `strategyOverride`：它与「自动匹配」无关——是宿主**产品能力边界**覆盖（内核 types 明示
     // 「本机制保留供宿主能力边界使用」，活着、非废弃）；宿主当前不就任何策略键声明边界，故留空。
-    // 未来若需从产品侧压过角色包声明（如强制关 userFollowup），入口即此键。
+    // 覆盖语义：非权限类字段由覆盖值胜出；`toolReadonly` / `toolMode` 只能收紧（`readonly` 严于 `full`、
+    // `block` 严于 `allow`）——判据唯一真源 = 内核 `role-pack/strategyResolver.ts` 的 `PERMISSION_FIELD_LENIENCE`。
+    // 未来若需从产品侧收紧或调整角色包行为（如强制关 userFollowup），入口即此键。
     // 执行前检查：单用户桌面场景恒放行（intentionally left blank）。
     // 理由：1) VSCode 插件运行在用户本地，天然信任模型；2) 工具审计已由
     // tool_start/tool_result chunk + tool.execute span 承担，不重复记录。
