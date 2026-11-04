@@ -13,9 +13,33 @@ import { ALL_BUILTIN_TOOL_DEFS } from '@/agent/builtinTools.js';
 import { MemoraError } from '@/utils/errors.js';
 import { NOOP_TRACER } from '@/agent/tracer.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
-import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
+import {
+  DEFAULT_BEHAVIOR_STRATEGY,
+  DEFAULT_L2_STRATEGY,
+  mergeStrategy,
+  resolveL2Strategy,
+} from '@/role-pack/strategyResolver.js';
 // 原生 outcome 类型（执行器回调载荷契约）
 import type { ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
+
+/**
+ * 无 `readonly` 标记的 10 个内置工具（真源 = ADR-045 决策 §5）
+ *
+ * 显式列举而非「从 allToolDefinitions 过滤 readonly 缺失」派生：派生等于用被测判据生成期望
+ * （循环论证），漏标 readonly 的新工具会被自动豁免。builtinTools 增删写类工具时须同步本清单与 ADR。
+ */
+const NON_READONLY_TOOLS = [
+  'write_file',
+  'delete_file',
+  'task_table_write',
+  'task_table_update',
+  'run_skill_script',
+  'run_project_script',
+  'run_command',
+  'kill_command',
+  'register_work',
+  'run_code',
+] as const;
 
 function tc(name = 'echo', args = '{}'): ToolCall {
   return { id: 't1', type: 'function', function: { name, arguments: args } };
@@ -93,13 +117,41 @@ describe('ToolRunner 单工具执行', () => {
     await runner.runOne(tc('read_file', '{"path":"a"}'));
     expect(execute).toHaveBeenCalledTimes(3);
 
-    // 写/执行工具（write_file / run_code）被只读闸拒绝
-    const deniedWrite = await runner.runOne(tc('write_file', '{"path":"a","content":"x"}'));
-    expect(deniedWrite.blockedReason).toBe('readonly_denied');
-    const deniedCode = await runner.runOne(tc('run_code', '{"language":"python","code":"x"}'));
-    expect(deniedCode.blockedReason).toBe('readonly_denied');
+    // V1（ADR-045 验收判据）：10 个无 readonly 标记的工具必须逐个 denied，不许只抽样
+    // 清单 = 文件级常量 NON_READONLY_TOOLS（真源 ADR-045 §5），V2 端到端用例复用同一清单
+    for (const name of NON_READONLY_TOOLS) {
+      const denied = await runner.runOne(tc(name, '{}'));
+      expect(denied.status).toBe('blocked');
+      expect(denied.blockedReason).toBe('readonly_denied');
+      expect(denied.text).toContain('[ERR:TOOL:READONLY_DENIED]');
+    }
     // 拒绝路径不入 execute（execute 仅被上 3 个只读工具调用）
     expect(execute).toHaveBeenCalledTimes(3);
+  });
+
+  it('ADR-045 V2（端到端）：角色包 readonly + 运行时覆盖 full ⇒ 仍拦 10 个写工具', async () => {
+    // 还原真实装配链：角色包声明 readonly → 运行时 strategyOverride 传 full（同一 mergeStrategy）
+    const packStrategy = mergeStrategy(DEFAULT_BEHAVIOR_STRATEGY, {
+      act: { toolReadonly: 'readonly' },
+    });
+    const merged = mergeStrategy(packStrategy, { act: { toolReadonly: 'full' } });
+    // L2 解析层不得落回 full（resolveToolReadonly 的 fallback 在此不该被触发）
+    const l2 = resolveL2Strategy(merged);
+    expect(l2.toolReadonly).toBe('readonly');
+
+    const execute = vi.fn(async () => 'OK');
+    const runner = new ToolRunner(
+      makeDeps({ execute, allTools: () => ALL_BUILTIN_TOOL_DEFS, getStrategy: () => l2 }),
+    );
+
+    for (const name of NON_READONLY_TOOLS) {
+      const denied = await runner.runOne(tc(name, '{}'));
+      expect(denied.status).toBe('blocked');
+      expect(denied.blockedReason).toBe('readonly_denied');
+      expect(denied.text).toContain('[ERR:TOOL:READONLY_DENIED]');
+    }
+    // 只读角色包下没有任何写工具进入执行面
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('只读闸：自定义工具未声明 readonly（缺省 false）→ denied，声明 readonly:true → 放行', async () => {

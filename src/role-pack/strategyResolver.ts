@@ -24,6 +24,7 @@ import {
   TOOL_READONLY_MODES,
 } from './strategyKeys.js';
 import type {
+  ActStrategy,
   BehaviorStrategy,
   ErrorHandling,
   ProviderRouting,
@@ -314,7 +315,102 @@ export function resolveL2Strategy(strategy: BehaviorStrategy | undefined): L2Run
 // ════════════════════════════════════════════════════════════
 
 /**
- * 合并行为策略：角色包声明值覆盖默认值
+ * 权限类策略字段的宽松度秩表 —— 「谁更严」的唯一判据源
+ *
+ * 语义：返回值越小 = 越严格；合并时取更小者。返回 `null` 表示该值非法或未声明，
+ * 不参与比较（等价于「这一侧不生效」）——不交给下游 `resolve*` 的 fallback 去裁决。
+ *
+ * 入表门槛：只收「能授予写 / 执行能力」或「收紧执行面」的开关字段。
+ * - `toolReadonly`：`readonly` 严于 `full`（只读闸唯一开关，ADR-045）。
+ * - `toolMode`：`block` 严于 `allow`（block = 禁用全部工具调用，同属执行面收紧）。
+ * 普通行为字段（temperature / outputLimit / toolStepLimit / providerRouting /
+ * multiStepReasoning）**不得入表**：它们的覆盖属既有语义，混入会静默改变行为。
+ */
+const PERMISSION_FIELD_LENIENCE = {
+  /** 只读闸：readonly(0) 严于 full(1) */
+  toolReadonly: (value: unknown): number | null => {
+    if (value === 'readonly') return 0;
+    if (value === 'full') return 1;
+    return null;
+  },
+  /** 工具调用开关：block(0) 严于 allow(1) */
+  toolMode: (value: unknown): number | null => {
+    if (value === 'block') return 0;
+    if (value === 'allow') return 1;
+    return null;
+  },
+} as const;
+
+/** 权限类字段名（从秩表派生：增字段只改上表，不另写清单） */
+type PermissionField = keyof typeof PERMISSION_FIELD_LENIENCE;
+
+/** 运行时遍历用的字段清单（同样从秩表派生，避免第二份手写枚举） */
+const PERMISSION_FIELDS = Object.keys(PERMISSION_FIELD_LENIENCE) as PermissionField[];
+
+/**
+ * 权限类字段的单字段裁决：只能收紧，不能放松
+ *
+ * @param baseValue 基础侧值（角色包声明或默认值）
+ * @param overrideValue 覆盖侧值（运行时 strategyOverride）
+ * @param rank 该字段的宽松度秩函数（来自 `PERMISSION_FIELD_LENIENCE`，本函数不复制判据）
+ * @returns 裁决后的值；**永不**把非法覆盖值透传给下游
+ *
+ * 为什么只能收紧：权限的失败方向必须朝「拒绝」。角色包已声明 `readonly` 时，
+ * 运行时覆盖传 `'full'` 或任意非法值都不得撬开只读锁 —— 否则覆盖通道就是提权后门
+ * （ADR-045 决策 §2、§7(1)）。
+ *
+ * 非法值处理（关键）：覆盖值非法 ⇒ 秩为 `null` ⇒ 丢弃该值、原样保留 base，
+ * 而不是让 `resolveToolReadonly` 的 fallback 把它归位成 `'full'`（那正好等于放松）。
+ */
+function mergePermissionField(
+  baseValue: unknown,
+  overrideValue: unknown,
+  rank: (value: unknown) => number | null,
+): unknown {
+  // 基础侧宽松度（null = 基础侧未声明或值非法）
+  const baseRank = rank(baseValue);
+  // 覆盖侧宽松度（null = 覆盖侧未传或值非法 ⇒ 视为不生效）
+  const overrideRank = rank(overrideValue);
+
+  // 覆盖侧不生效：base 原样保留（非法值不进结果）
+  if (overrideRank === null) return baseValue;
+  // 基础侧无可比较基准：合法覆盖值直接生效
+  if (baseRank === null) return overrideValue;
+  // 两侧合法：秩小 = 更严；覆盖更宽松或相等 ⇒ 保留 base
+  return overrideRank < baseRank ? overrideValue : baseValue;
+}
+
+/**
+ * 合并 act 段：普通字段由 override 覆盖，权限类字段按「更严者胜」裁决
+ *
+ * 权限判据单点 = `PERMISSION_FIELD_LENIENCE`；本函数只负责「按表逐字段调用裁决」，
+ * 不复制任何「谁更严」的知识（增字段只改表）。
+ *
+ * @param base 基础 act 段（可为空，空时全部取覆盖值）
+ * @param override 覆盖 act 段（可为空，空时全部保留 base）
+ * @returns 合并后的 act 段
+ */
+function mergeActStrategy(
+  base: ActStrategy | undefined,
+  override: ActStrategy | undefined,
+): ActStrategy {
+  // 先按既有语义浅合并：普通行为字段保持「override 赢」
+  const merged = { ...base, ...override } as { -readonly [K in keyof ActStrategy]: ActStrategy[K] };
+
+  for (const field of PERMISSION_FIELDS) {
+    // union 键写入需收窄为可写字典（读侧类型不受影响）
+    (merged as Record<PermissionField, unknown>)[field] = mergePermissionField(
+      base?.[field],
+      override?.[field],
+      PERMISSION_FIELD_LENIENCE[field],
+    );
+  }
+
+  return merged;
+}
+
+/**
+ * 合并行为策略：普通字段由角色包声明值覆盖默认值，权限类字段只能收紧
  *
  * @param base 基础策略（通常传入 DEFAULT_BEHAVIOR_STRATEGY）
  * @param override 角色包声明的覆盖值，未配置的维度保持默认值不变
@@ -328,7 +424,8 @@ export function mergeStrategy(
 
   return {
     prepare: { ...base.prepare, ...override.prepare },
-    act: { ...base.act, ...override.act },
+    // act 段含权限类字段，交给「更严者胜」的单点裁决（ADR-045）
+    act: mergeActStrategy(base.act, override.act),
     reflect: { ...base.reflect, ...override.reflect },
     global: { ...base.global, ...override.global },
   };

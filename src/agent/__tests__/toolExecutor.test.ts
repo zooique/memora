@@ -30,6 +30,8 @@ import type { IWebSearchProvider, SearchResult } from '@/web-search/types.js';
 import type { IFetchProvider } from '@/web-fetch/types.js';
 import { MemoraError, toolError, ToolErrorCode } from '@/utils/errors.js';
 import { type ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
+// ADR-045 V4：能力声明 → 工具白名单映射（验证「陷阱」链路，而非只验证常量）
+import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 
 describe('工具执行器（6 个工具）', () => {
   let tmpProject: string;
@@ -1293,6 +1295,31 @@ describe('工具执行器（6 个工具）', () => {
     it('注入 codeExecutionProvider 后 list 应包含 run_code 工具', () => {
       const names = execWithCode.list.map((t) => t.name);
       expect(names).toContain('run_code');
+    });
+
+    // ADR-045 V3/V4 必须用「注入了 provider 的 executor」取证：未注入时 run_code 根本不在
+    // baseTools 里，白名单断言会因错误的原因通过（看起来全关，实则工具不存在）
+    afterEach(() => {
+      // 复位白名单，避免用例间污染
+      execWithCode.setToolWhitelist(null);
+    });
+
+    it('ADR-045 V3（回归）：未定义工具控制（toolWhitelist=null）⇒ 特权工具 run_code 照常暴露', () => {
+      execWithCode.setToolWhitelist(null);
+      const names = execWithCode.list.map((t) => t.name);
+      // 默认全开：不得把「权限默认值」误改成「默认全关」
+      expect(names).toContain('run_code');
+    });
+
+    it('ADR-045 V4：capabilities 只写 llm:summarize ⇒ whitelist=[] ⇒ 特权工具全关、常驻工具仍在', () => {
+      // 整条链：能力声明映射出 []（陷阱根源），[] 在装配层被当作「有白名单且为空」
+      const whitelist = resolveCapabilityTools([{ capability: 'llm:summarize' }]);
+      expect(whitelist).toEqual([]);
+      execWithCode.setToolWhitelist(whitelist);
+      const names = execWithCode.list.map((t) => t.name);
+      expect(names).not.toContain('run_code');
+      // 常驻豁免集不受白名单影响（不是「全关」）
+      expect(names).toContain('read_file');
     });
 
     it('执行 run_code 成功应返回 stdout', async () => {

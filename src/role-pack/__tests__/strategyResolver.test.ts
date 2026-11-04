@@ -416,6 +416,55 @@ describe('mergeStrategy — 策略合并', () => {
     expect(result.act!.toolMode).toBe('allow');
     expect(result.act!.temperature).toBe(0.7);
   });
+
+  it('ADR-045 V2：角色包 readonly + 运行时覆盖 full ⇒ 仍 readonly（覆盖通道不能放松权限）', () => {
+    // 第一层：角色包声明（默认值 + 包声明）
+    const packStrategy = mergeStrategy(base, { act: { toolReadonly: 'readonly' } });
+    // 第二层：运行时覆盖（宿主 strategyOverride 走同一 mergeStrategy）
+    const result = mergeStrategy(packStrategy, { act: { toolReadonly: 'full' } });
+
+    // 合并结果保持更严侧
+    expect(result.act!.toolReadonly).toBe('readonly');
+    // 解析层同样不得落回 full（若合并结果被改成 full，resolveToolReadonly 会如实返回 full）
+    expect(resolveToolReadonly(result)).toBe('readonly');
+  });
+
+  it('ADR-045：覆盖通道传非法值 ⇒ 按「不生效」处理，不落回 full', () => {
+    // 角色包已声明 readonly（这是必须被守住的收紧）
+    const packStrategy = mergeStrategy(base, { act: { toolReadonly: 'readonly' } });
+    // 覆盖侧传非法值：若原样透传，resolveToolReadonly 的 fallback 会归位 'full' ⇒ 正好撬开只读锁
+    const result = mergeStrategy(packStrategy, {
+      act: { toolReadonly: 'banana' as never },
+    });
+
+    // 非法值被丢弃（不进入结果），base 的 readonly 原样保留
+    expect(result.act!.toolReadonly).toBe('readonly');
+    expect(resolveToolReadonly(result)).toBe('readonly');
+  });
+
+  it('ADR-045：基础侧未收紧时，合法覆盖值正常生效（不是把权限字段钉死）', () => {
+    // base 默认 full ⇒ 覆盖 readonly 应生效（更严方向）
+    const stricter = mergeStrategy(base, { act: { toolReadonly: 'readonly' } });
+    expect(stricter.act!.toolReadonly).toBe('readonly');
+    // base full ⇒ 覆盖非法值丢弃后仍是 full（没有锁可撬，但不产生非法值）
+    const invalid = mergeStrategy(base, { act: { toolReadonly: 'banana' as never } });
+    expect(invalid.act!.toolReadonly).toBe('full');
+    expect(resolveToolReadonly(invalid)).toBe('full');
+  });
+
+  it('ADR-045：toolMode 同属权限类（block 不可被覆盖 allow 放松）', () => {
+    // 角色包声明 block（禁用全部工具调用）⇒ 覆盖传 allow 不得放开
+    const blocked = mergeStrategy(base, { act: { toolMode: 'block' } });
+    const result = mergeStrategy(blocked, { act: { toolMode: 'allow' } });
+    expect(result.act!.toolMode).toBe('block');
+  });
+
+  it('ADR-045：普通行为字段仍由覆盖赢（不得被「更严」误伤）', () => {
+    // temperature 不是权限字段：覆盖必须生效（否则会静默改变既有语义）
+    const lowTemp = mergeStrategy(base, { act: { temperature: 0.2 } });
+    const result = mergeStrategy(lowTemp, { act: { temperature: 1.2 } });
+    expect(result.act!.temperature).toBe(1.2);
+  });
 });
 
 // ════════════════════════════════════════════════════════
