@@ -13,7 +13,7 @@
    `strategy.toolReadonly === 'readonly'` 时，凡全量工具定义中 `!toolDef.readonly` 的工具一律 denied，回执前缀 `[ERR:TOOL:READONLY_DENIED]`（`:191`、`:195`）。
 2. **值只有一个来源**：`act.toolReadonly`（`src/role-pack/types.ts:78-79`），默认 `'full'`（`src/role-pack/strategyResolver.ts:64`，非法值也回退 `'full'`：`:261-263`）。
 3. **有 16 个工具声明了 `readonly: true`，另有 10 个没有**（清单与行号见「决策」§5）。没有声明的工具全部落在写操作侧。
-4. **合并方向是「override 赢」**：`src/role-pack/strategyResolver.ts:331` 为 `act: { ...base.act, ...override.act }`，没有「取更严」。
+4. **合并方向是「override 赢」（2026-11-04 前现状，已订正）**：`src/role-pack/strategyResolver.ts` 的 `act` 合并原为 `act: { ...base.act, ...override.act }`，没有「取更严」；现由秩表 `PERMISSION_FIELD_LENIENCE` 裁决（见 §决策 2）。
 5. **校验不拦放松写法**：`src/role-pack/validator.ts:89-100` 对未知顶层键只 push `warning`（`UNKNOWN_TOP_LEVEL_KEY`），而 `valid` 判据 = 「无 error」（`:28-29`）⇒ 「写了就装不上」不成立。
 6. **只读闸只管工具调用**：内核 turn 持久化、宿主自身写盘、MCP server 运行期行为都不经 `ToolRunner`（见「影响」§1）。
 
@@ -28,7 +28,7 @@
 - 只读必须**显式**声明 `act.toolReadonly: 'readonly'`；它不是一个「默认值」。
 - 反过来说：`'full'` 不等于「强制可写」，只是「不额外收紧」。
 
-### 2. 三层取最严：系统默认 / 宿主运行时开关 / 角色包声明
+### 2. 三层合并：权限类字段取更严，其余字段取覆盖
 
 三层只能收紧，**禁止出现「强制可写」态**——任何一层都不能把另一层已收紧的权限重新放开。
 
@@ -103,7 +103,7 @@
 
 - **单一判据优于工具黑名单**：只读的语义是「不许写」，而写是属性（`readonly` 缺失），不是名单。名单会随新增工具过时，属性不会。
 - **默认全开 + 显式否定**：与仓内既有的 `contextLimit: 0` / `stepBudget: 0` 同构——「未声明」用中性值承载，避免把「没写」解释成「禁止」造成误伤。
-- **三层取最严**：权限系统的失败方向必须朝「拒绝」，否则任何一层的疏忽都会变成放松。
+- **权限类字段三层合并必须取更严**：权限系统的失败方向必须朝「拒绝」，否则任何一层的疏忽都会变成放松。
 - **override 不落盘**：宿主开关是运行时意图，不是资产内容；写进角色包会污染分享面，且三级同名的歧义无法消解。
 - **任务表也禁**：只读包的职责边界决定了它不需要把活干完；留下任务表写能力等于给它一个「持久化进度」的后门。
 
@@ -149,7 +149,7 @@
 ## 何时回顾
 
 - 新增任何内置工具时：必须确认它是否需要 `readonly: true`，否则默认被视为写工具（`src/agent/builtinTools.ts:559` 起）。
-- 修改 `mergeStrategy` / `strategyOverride` 形状时：重验「三层取最严」与 V2 变异。
+- 修改 `mergeStrategy` / `strategyOverride` 形状时：重验「权限类字段只能收紧」与 V2 / V5 变异。
 - 角色包新增「权限类字段」时：重验 validator 的 error 级判据（决策 §7(2)）。
 - 宿主新增写盘入口（导入/摄取/设置保存）时：重验「已知边界」清单是否需要更新。
 - 若未来给 AI 增加「切换角色包」工具：项目级同名覆盖将从业余埋雷升级为**即时提权路径**，必须重新评估本 ADR。
