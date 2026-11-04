@@ -38,3 +38,24 @@ const CAPABILITY_LABELS: Readonly<Record<string, string>> = {
 export function capabilityLabel(capability: string): string {
   return CAPABILITY_LABELS[capability] ?? capability;
 }
+
+/** 输入区能力徽章的**域级短标签**（`file:read` → 「文件」）：该处只有一行空间，按域折叠 */
+const CAPABILITY_DOMAIN_LABELS: Readonly<Record<string, string>> = {
+  file: '文件',
+  web: '联网',
+  memory: '记忆',
+  llm: 'LLM',
+};
+
+/**
+ * 能力名 → 域级短标签（取 `域:动作` 的域段；未知域回退原始域段，不硬造文案）
+ *
+ * 供输入区能力徽章使用（`roles_loaded` 的角色卡用 `capabilityLabel` 的细粒度文案）。
+ * 两者都只是**标签投影**；三态判定仍只由 `capabilityState.ts` 一处做。
+ *
+ * @param capability 中立能力名，如 `web:search`
+ */
+export function capabilityDomainLabel(capability: string): string {
+  const [domain] = capability.split(':');
+  return CAPABILITY_DOMAIN_LABELS[domain] ?? domain;
+}

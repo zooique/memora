@@ -126,6 +126,8 @@ import { dedupeRefs } from '../../shared/refKey.js';
 import { mergeProcessEvents } from '../helpers/processEventMerge.js';
 // 能力面三态判定的唯一出口（CAP-TRISTATE-1）：本文件只传「域级标签投影」，不自行判 length
 import { deriveCapabilityState } from '../helpers/capabilityState.js';
+// 输入区徽章的域级短标签（标签投影与三态判定分离，见 capabilityLabels 头注释）
+import { capabilityDomainLabel } from '../helpers/capabilityLabels.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 // 引用发送前存在性核实（HOST-CTX-9 发送侧）：解析器复用 refPath（首根 SSOT），不由本文件另写
 import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
@@ -238,29 +240,6 @@ interface LiveFlowBuffer {
 }
 
 // 宿主会话存储契约（HostSessionStore）随其实现类定义在 extension/host/sessionStore.ts（本面板贴行数闸门）。
-
-/**
- * 输入区能力徽章的**域级短标签**（`file:read` → 「文件」）
- *
- * 角色的粗粒度呈现：角色卡（roles_loaded）用 `capabilityLabel` 的细粒度文案（「读取文件」），
- * 输入区徽章只有一行空间，故按域折叠。两张表的**判定**仍只由 `deriveCapabilityState` 一处做。
- */
-const CAPABILITY_DOMAIN_LABELS: Readonly<Record<string, string>> = {
-  file: '文件',
-  web: '联网',
-  memory: '记忆',
-  llm: 'LLM',
-};
-
-/**
- * 能力名 → 域级短标签（取 `域:动作` 的域段；未知域回退原始域段，不硬造文案）
- *
- * @param capability 中立能力名，如 `web:search`
- */
-function capabilityDomainLabel(capability: string): string {
-  const [domain] = capability.split(':');
-  return CAPABILITY_DOMAIN_LABELS[domain] ?? domain;
-}
 
 /** 侧边栏视图提供者 */
 export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
