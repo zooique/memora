@@ -94,9 +94,29 @@ src/
 > **I-prefix 例外**：宿主注入的接口（依赖倒置契约面，如 `ILogger`/`IMemoryStorage`/`ITracer`）允许 `I` 前缀——它承载「由外部实现」的架构意图，不算 Hungarian 违规。非注入接口仍须纯 PascalCase。
 > **语义归属**（step / planItem 等指什么）见 [terminology-anchor-rules.md](./terminology-anchor-rules.md)。
 
-## 5. Git 提交规范
+## 5. Git 提交与推送规范
 
 类型：`feat` / `fix` / `docs` / `test` / `refactor` / `chore`；格式 `<type>(<scope>): <subject>`
+
+### 5.1 推送节奏
+
+- **日常可攒批**：提交照常（`pre-commit` = `gate-fast`，约 46s）；推送可攒批，**默认 3~5 个提交或一天一次**。
+- **上限用可读命令判，不凭感觉**：`git rev-list --count origin/main..HEAD`。
+  以该命令输出为准；**不以「今天推过几次」为准——那不可自证**。
+- **例外一（发版）**：打 tag / 发版前必须推送。依据：发版判据含「本地 HEAD = 远端 main」三方一致，
+  攒批会使该判据无法验证。
+- **例外二（触达面，立即推送）**：改动触及以下任一面 ⇒ 立即推送，不攒批：
+  - 公开成员（导出 / 接口 / 类型签名）
+  - 协议或消息负载
+  - 权限闸 / 只读闸 / 策略键
+  - 删除文件
+  - 本条**只认触达面**，不认「高风险」——「高风险」由执行者自评，评测不了就等于没有判据
+    （同「不可机械定义的闸必然假红或漏检」）。
+- **例外三（禁止降级）**：不许把推送档位从 `full` 换成 `fast`；**也不许用「手动跑一次
+  `ci:local --preset=full`」替代推送**——后者不留推送收据（收据只由钩子落盘），等于自欺。
+- **与既有拍板共存**：本规则**不写**「推送必须跑 full / 禁止绕行」——
+  [lefthook.yml](../../lefthook.yml) 与 [ADR-032](../decisions/ADR-032-gate-ownership-loop.md) 已拍板
+  「推送绕过 full 是故意设计、禁止修成强制」；本规则只约束**节奏**与**禁止降级**，不改变绕行权限。
 
 ## 6. 规则文件索引
 

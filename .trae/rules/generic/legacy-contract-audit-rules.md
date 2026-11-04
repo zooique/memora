@@ -140,7 +140,8 @@ description: 带伤设计（历史折衷残痕）审查规则——五类带伤�
 3. **保留两处失败语义**：带伤点若有"报错 / 兜底"两种结局，收敛后须逐一保留（openSession 抛错的 + markSessionTimedOut 兜底的）
 4. **验证**：内核 + 宿主 `tsc` + 全量 `vitest` 全绿
 5. **炼化归元**：规则对齐（命名 / 注释 / SSOT 声明一致）→ 剪枝（无"不是 XX 而是 XX"、无修复思路旁白、无修改痕迹）→ 提交前审查
-6. 用 `refactor:` 提交，经 pre-commit（lint-staged + typecheck + commitlint）后推送
+6. 用 `refactor:` 提交，经 pre-commit（lint-staged + typecheck + commitlint）后提交；**推送按 [project-rules.md](../project-rules.md) §5.1 节奏**
+   （2026-11-04 调整：与 §5.1 推送节奏对齐，原隐含「提交即推送」）
 
 ## 6. 已收敛残留清单（避免重复审查）
 
