@@ -5209,6 +5209,67 @@ describe('read_dedup 撞墙升级与兜底观测', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// 测试：只读态事实段（UNAVAILABLE-WRITE-HINT-1）
+// 真源 = tasks/待完成任务.md · UNAVAILABLE-WRITE-HINT-1
+// 覆盖：只读 + 暴露面含写工具 ⇒ 注入且列名 / 工具面齐全 ⇒ 不注入 / 不可用集为空 ⇒ 不注入
+// 定性：降低概率的止血，不是修复（病因未定见 AGENT-FAKE-CREATE-1）
+// ═══════════════════════════════════════════════════════════════
+describe('AgentLoop · 只读态事实段（UNAVAILABLE-WRITE-HINT-1）', () => {
+  /** 测试用写工具定义：readonly 缺省 = 只读闸会拒绝它（判据与 applyPrechecks 同源） */
+  const WRITE_TOOL_DEF = {
+    name: 'write_file',
+    description: '写入文件',
+    parameters: {
+      type: 'object' as const,
+      properties: { path: { type: 'string', description: '文件路径' } },
+      required: ['path'],
+    },
+  };
+
+  it('只读态 + 暴露面含写工具 ⇒ prompt 注入事实段并列出会被拒的工具名', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: [WEB_SEARCH_TOOL, WRITE_TOOL_DEF],
+    });
+    // 策略在构造后设置（真实装配顺序：prepare 期 setStrategy）——断言 setStrategy 会重建 system prompt
+    loop.setStrategy({ toolReadonly: 'readonly' });
+
+    const prompt = loop.getMessages()[0]!.content;
+    expect(prompt).toContain('## 只读会话');
+    const section = prompt.split('## 只读会话')[1] ?? '';
+    expect(section).toContain('write_file');
+    // 读工具（readonly:true）不属于不可用集，不得被误列
+    expect(section).not.toContain('web_search');
+  });
+
+  it('工具面齐全（非只读态）⇒ 不得出现该段（防每轮念「我没能力」）', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: [WEB_SEARCH_TOOL, WRITE_TOOL_DEF],
+    });
+    loop.setStrategy({ toolReadonly: 'full' });
+
+    expect(loop.getMessages()[0]!.content).not.toContain('## 只读会话');
+  });
+
+  it('只读态但暴露面全为读工具 ⇒ 不可用集为空 ⇒ 不得注入', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: [WEB_SEARCH_TOOL],
+    });
+    loop.setStrategy({ toolReadonly: 'readonly' });
+
+    expect(loop.getMessages()[0]!.content).not.toContain('## 只读会话');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // 测试：指纹埋点（"模型看到了什么"可追溯）
 // 覆盖：LLM_CALL span 记录 systemPromptHash /
 //       NOOP tracer 下跳过指纹计算（零开销边界）

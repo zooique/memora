@@ -876,6 +876,9 @@ export class AgentLoop {
   setStrategy(partial: Partial<L2RuntimeStrategy>): void {
     this.strategy = { ...this.strategy, ...partial };
     this.#recomputeEffectiveWindow();
+    // 策略参与 system prompt 组装（如只读事实段 / 记忆回想引导）⇒ 必须重建 messages[0]。
+    // 不重建的后果是「首轮按上一轮（冷启动则按默认）口径下发」——只读会话首轮缺事实段即属此坑。
+    this.rebuildSystemMessage();
   }
 
   /**
@@ -2810,6 +2813,21 @@ export class AgentLoop {
       // 工具导语纪律（分区式 UI 配套）：正文只承载最终交付；调用工具前意图说明压到一句话，
       // 抑制长导语混入正文（首轮工具步在消息级分类前仍逐字流式，纪律把残余降到可忽略）
       prompt += `\n\n${LOOP_CONSTANTS.TOOL_NARRATION_DISCIPLINE}`;
+
+      // 只读态事实段（真源 = tasks/待完成任务.md · UNAVAILABLE-WRITE-HINT-1）：
+      // 仅当「当前列给模型的工具里存在会被只读闸拒绝的项」时注入；工具面齐全（toolReadonly!=='readonly'）时不得出现。
+      // 判据复用 ToolDefinition.readonly（与 toolRunner.applyPrechecks 同一判据），不另立写工具名单（名单=第二真源）。
+      // 数据源 = 本函数已算出的 tools（暴露面真源），不二次读 opts.toolDefinitions。
+      // 定性：降低概率的止血，**不是修复**——真机事故病因未定（见 AGENT-FAKE-CREATE-1），不得据此宣称已闭环。
+      const blockedTools =
+        this.strategy.toolReadonly === 'readonly'
+          ? tools.filter((t) => t.readonly !== true).map((t) => t.name)
+          : [];
+      if (blockedTools.length > 0) {
+        prompt +=
+          `\n\n## 只读会话\n本会话处于只读模式：下列工具的调用会被拒绝 —— ${blockedTools.join('、')}。` +
+          `\n若用户要求写文件或修改内容，请直接说明本会话处于只读模式、无法执行写入；需要写入时，由用户调整当前角色包的只读设置。`;
+      }
 
       // 工具选择规则：仅对工具清单中实际存在的 create_* 工具生成指引；
       // 无 create_* 工具时（编辑类宿主直接管理角色/技能/规则配置）整个规则节不输出，
