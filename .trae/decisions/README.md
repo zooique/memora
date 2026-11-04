@@ -51,6 +51,7 @@ description: Memora 关键决策年轮
 | [ADR-042](./ADR-042-package-surface-localization.md) | package 面本地化（原生 `package.nls*` 两文件：默认英文 + `zh-cn`；语言真源 = VS Code 显示语言，不设 `memora.language`；键命名契约 + 七条机检判据含射程下限；本切片只做元数据面，运行时 UI 不在范围 = 半本地化边界如实登记） | ✅ 已接受 | 前端 |
 | [ADR-043](./ADR-043-ask-batch-identity-kernel-single-source.md) | ask 批次题身份内核单源（题身份真源 = `ask_user` 工具调用 id，内核挂起即下发、宿主纯消费不自造；去重从「时序巧合」升级为「身份保证」；分三刀落地，第一刀内核产出保持回退兼容） | ✅ 已接受 | 架构 |
 | [ADR-044](./ADR-044-turn-existence-decoupled-from-settlement.md) | 轮的存在性与收场解耦：建轮即入会话（存在性由创建决定、不由收场决定）；中断三路统一收场；超时保底去相位化；GC 孤儿判据换轴，`refCount` 只表达引用不再兼职孤儿标记 | ✅ 已落地（四刀全部完成） | 架构 |
+| [ADR-045](./ADR-045-readonly-mode-single-gate.md) | 工作区只读模式：`toolReadonly` 单一总闸（默认未定义 = 全开 + 三层取最严 + 执行判据唯一落点 `applyPrechecks`；任务表也禁；宿主开关 = 运行时 override 不落盘） | ✅ 已接受（实现待排期） | 安全 |
 
 ### 插件宿主（VC 系列）
 
@@ -82,7 +83,7 @@ description: Memora 关键决策年轮
 | 数据层 | 3    | ADR-002, ADR-016, ADR-041 |
 | 集成层 | 2    | ADR-003, ADR-017-web-search |
 | 架构   | 20   | ADR-004, ADR-010~011, ADR-015, ADR-021~025, ADR-027~031, ADR-034~036, ADR-038, ADR-043~044 |
-| 安全   | 2    | ADR-006, ADR-040 |
+| 安全   | 3    | ADR-006, ADR-040, ADR-045 |
 | 质量   | 1    | ADR-007 |
 | 工程   | 5    | ADR-008, ADR-017, ADR-032, ADR-033, ADR-039 |
 | 前端   | 2    | ADR-018, ADR-037 |
