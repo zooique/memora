@@ -264,6 +264,12 @@ export class LlmCaller {
         .map((m) => m.content)
         .join('\n');
       llmSpan.setAttribute('systemPromptHash', sha256Fingerprint(systemPrompt));
+
+      // 观测：记录「本次实际下发给模型的工具名清单」（真源 = tasks/待完成任务.md · LLM-TOOLSNAPSHOT-1）。
+      // 取真实下发载荷 effectiveOpts.tools，不取暴露面列表——无工具通道时为空集，照记 "[]"，
+      // 与「完全没记录」可区分。纯观测：不参与任何判据 / 不改行为 / 不加闸 / 不加 UI。
+      const toolNames = effectiveOpts.tools?.map((t) => t.function.name) ?? [];
+      llmSpan.setAttribute('llmToolNames', JSON.stringify(toolNames));
     }
 
     // ─── 发送边界守卫 ───

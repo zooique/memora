@@ -5263,6 +5263,27 @@ describe('AgentLoop · 建议B埋点（"模型看到了什么"可追溯）', () 
     // llm.call span 应带系统提示指纹（64 位 hex）
     const llmAttrs = tracer.attrs(TRACE_SPANS.LLM_CALL);
     expect(llmAttrs?.['systemPromptHash']).toMatch(/^[0-9a-f]{64}$/);
+    // 工具名清单同处记录：无工具集时也必须落 "[]"（空集 ≠ 没记录）
+    expect(llmAttrs?.['llmToolNames']).toBe('[]');
+  });
+
+  it('注入真实 Tracer 时，LLM_CALL span 记录本次实际下发的工具名清单（JSON 数组）', async () => {
+    const tracer = new CapturingTracer();
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复内容' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: [WEB_SEARCH_TOOL],
+      tracer,
+    });
+
+    for await (const _ of loop.processUserInput('搜索一下')) {
+      void _;
+    }
+
+    // 真源 = 实际下发载荷（effectiveOpts.tools），不是暴露面列表
+    const llmAttrs = tracer.attrs(TRACE_SPANS.LLM_CALL);
+    expect(llmAttrs?.['llmToolNames']).toBe(JSON.stringify(['web_search']));
   });
 
   it('未注入 Tracer（默认 NOOP）时不计算指纹，保持零开销边界', async () => {
