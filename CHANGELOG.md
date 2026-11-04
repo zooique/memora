@@ -10,10 +10,15 @@
 
 ## [Unreleased]
 
+### Added（内核）
+
+- **LLM 调用观测新增「本次实际下发的工具名清单」**（`LLM-TOOLSNAPSHOT-1`）：LLM 调用 span 新增属性 `llmToolNames`，取值 = **实际下发载荷** `effectiveOpts.tools`，不取暴露面列表。**纯观测**：只记录、无消费方、不参与判据、不加闸、不改行为、不加 UI；无工具通道时记 `[]`——**空集照记**，与「完全没记录」可区分。**为什么**：暴露面与下发面是两层事实，先落一个只记不判的地基，避免将来拿暴露面冒充下发面（快照真源仍待定，本条不裁决）。**对消费者**：零签名 / 零行为变更；trace 多一个属性。
+
 ### Changed（内核）
 
 - **运行时策略覆盖只能收紧权限类字段，不能放松**（`READONLY-MODE-1` / ADR-045）：`mergeStrategy` 的 `act` 段此前整段「后写覆盖」⇒ 角色包声明 `act.toolReadonly: 'readonly'` 时，运行时覆盖传 `'full'` 会把只读锁直接去掉。现 `act` 段经单点秩表 `PERMISSION_FIELD_LENIENCE` 裁决：权限类字段（`toolReadonly`：`readonly` 严于 `full`；`toolMode`：`block` 严于 `allow`）**只取更严、不可放松**，覆盖侧非法值按「不生效」处理（不落回 `'full'`）；其余行为字段（temperature / outputLimit / toolStepLimit / providerRouting / multiStepReasoning）仍由覆盖赢。**对消费者**：不传 `strategyOverride` 的代码零行为变化；「覆盖可放松权限」从未是承诺路径，现已关闭。验收判据与变异收据见台账 `READONLY-MODE-1`。
 - **`capabilities` 三态：拆开「未声明」与「显式空能力」**（`CAP-TRISTATE-1`）：此前 manifest 无 `capabilities` 与显式 `capabilities: []` 在解析层被折叠成同一个 `[]`，装配层再以 `length > 0` 判「有无声明」⇒ 两者都按「全开」放行，**「显式空能力」这一意图无法表达**。现 `RolePack.capabilities` / `RolePackAssembly.capabilities` 与解析返回值均为可选：`undefined` = 未声明（放行全部）；`[]` = 显式空（仅常驻工具，特权工具全关）；非空数组 = 白名单。装配层去掉 `?? []`，应用层改判 `undefined` 而非 `length > 0`（宿主能力徽章侧仅做解引用安全折叠，不参与裁决）。**⚠️ 这是公开 manifest 语义的收紧，不是纯 bugfix**：既有外部角色包若显式写 `capabilities: []`，行为从「全开」变为「仅常驻工具」——旧折叠让该写法永远拿不到想要的收紧效果，现按字面生效。**证据边界**：仓内三个内置包均无显式 `[]`，本机与仓库内全部包已核对（行为不变）；**外部包状态不可知**。**对消费者**：不写 `capabilities` 的包零变化；显式写 `[]` 的包若要全开请删掉该字段，若要白名单请补能力项。验收判据与变异收据见台账 `CAP-TRISTATE-1`。
+- **只读会话向模型如实列出「哪些工具会被拒绝」**（`UNAVAILABLE-WRITE-HINT-1`）：只读模式（`act.toolReadonly: 'readonly'`）下，系统提示新增「## 只读会话」一段，列出本会话中调用会被拒绝的工具名——判据复用 `ToolDefinition.readonly`（与 `toolRunner.applyPrechecks` 同一判据，不另立写工具名单）。**定性 = 降低概率的止血，不是修复**：应用层只读闸仍是唯一执行判据，模型仍可能被用户指令推着去试（真机已见模型改走代码执行绕过路径限制），这段文字只把确定会被拒的项提前讲清——不承诺、不闭环、不替代任何闸，不得据此宣称原事故已解决（病因未定，见台账 `AGENT-FAKE-CREATE-1`）。**触发边界**：仅当不可用工具集非空时出现；非只读会话、以及全部工具都标了 `readonly: true` 的会话零变化。**只讲事实不讲禁令**：只列工具名与「会被拒绝」这一事实，并说明本会话无法执行写入（需写入时由用户调整角色包设置），不对模型下达「不许 / 禁止」类行为禁令。**同族补齐**：`setStrategy()` 此前不重建系统消息 ⇒ 只读会话首轮按旧口径（冷启动时按默认口径）下发，现每次策略变更后重建 `messages[0]`。**对消费者**：零接口变更；仅在只读角色包会话里多一段提示文案。
 
 ## [5.5.0] · 2026-11-03
 
