@@ -240,7 +240,7 @@ description: 把成稿写入本地文件
 
 * 命名空间采用 `域:动作`（`file:` / `web:` / `memory:` / `task:` / `llm:` / `code:`），扩展由社区协商，先保持最小集。
 
-**capability 是内核的特权入口**（tool-exposure-model：默认常驻 vs 角色启动）：`manifest.capabilities` 声明的能力（如 `web:search`）装载时映射为**特权工具白名单**；本地只读/项目内/内核基建工具默认常驻、不受白名单影响；未声明 capabilities 的角色包 → 白名单为 null（全部暴露，保持现状）。
+**capability 是内核的特权入口**（tool-exposure-model：默认常驻 vs 角色启动）：`manifest.capabilities` 声明的能力（如 `web:search`）装载时映射为**特权工具白名单**；本地只读/项目内/内核基建工具默认常驻、不受白名单影响；未声明 capabilities 的角色包 → 白名单为 null（全部暴露，保持现状）；**显式 `[]` 不等于未声明**——白名单为空数组（仅常驻集），这是三态中的「显式空」；旧实现曾把 `[]` 折叠成 null，写法一致但语义已收紧。
 
 > **技能正文定位（渐进披露 L1/L2）**：`skills/{file}` 指向的技能文件正文默认**不预装载**，`capabilities` 是内核的**工具暴露入口**（映射工具白名单）。技能正文经**渐进披露**按需装载（对齐 Agent Skills 行业标准）：
 >
