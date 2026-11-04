@@ -1219,17 +1219,21 @@ export type ExtensionToWebviewMessage =
   /**
    * 角色能力徽章（工具权限白名单可见性）
    *
-   * 角色包激活时由 host 推送：工具模式（allow/block）+ 能力标签列表 + 策略指示器。
-   * webview 据此在输入区角色徽章旁追加工具权限徽章，让用户直观感知「当前角色能做什么」：
-   *   - block：纯 LLM 模式，无工具暴露
-   *   - allow + capabilities：按能力白名单暴露工具（如只读/可读写+联网）
-   *   - allow + 空 capabilities：全工具暴露
+   * 角色包激活时由 host 推送：工具模式（allow/block）+ **已判定的能力面三态** + 策略指示器。
+   * 注意这里是**判定结果**而非原始数组——`capabilities` 的「未声明 / 显式空 / 白名单」三态
+   * 已由 host 唯一出口判定，webview 只按 `capabilityState.kind` 分支渲染，不得自行判 `length`
+   * （否则三态在显示层再次折叠，见台账 `CAP-TRISTATE-1`）。
+   *   - block：纯 LLM 模式，无工具暴露（此时 capabilityState 不参与渲染）
+   *   - allow + all：角色包未声明 capabilities ⇒ 全部工具
+   *   - allow + residentOnly：显式 `capabilities: []` ⇒ 仅常驻工具（联网 / 代码执行已关）
+   *   - allow + list：非空白名单 ⇒ 按名单显示能力标签
    * 新增 strategyHint 提供策略级提示（只读模式/审批模式/温度），让用户感知角色行为偏好。
    */
   | {
       type: 'capability_badge';
       toolMode: 'allow' | 'block';
-      capabilities: { capability: string; label: string }[];
+      /** 能力面三态判定结果（host 单点派生；webview 只渲染，不裁决） */
+      capabilityState: CapabilityStateDto;
       /** 关键策略指示器（供渲染只读/审批/温度等策略徽章） */
       strategyHint?: RoleStrategyIndicatorDto;
     }
@@ -1392,7 +1396,8 @@ export type ExtensionToWebviewMessage =
         /** 来源层：builtin=内置（configDir/role-packs），user=用户（globalStorageUri/role-packs），
          *  project=项目级（<workspaceFolder>/.memora/role-packs） */
         source?: 'builtin' | 'user' | 'project';
-        capabilities: { capability: string; label: string }[];
+        /** 能力面三态判定结果（host 单点派生；webview 只渲染，不裁决） */
+        capabilityState: CapabilityStateDto;
         /** 角色性格特征（从 persona.md frontmatter traits 解析，0-1 数值） */
         traits?: Record<string, number>;
         /** 接手衔接提示词（带入对话时预填的特色话术） */
@@ -2257,6 +2262,24 @@ export interface RoleIssueDto {
   /** 问题描述（映射内核 issue.message） */
   message: string;
 }
+/**
+ * 能力面三态判定结果（`CAP-TRISTATE-1`）
+ *
+ * 语义真源在内核：`RolePack.capabilities === undefined` = 未声明（放行全部工具），
+ * `[]` = 显式空（仅常驻工具），非空 = 白名单。三者**各自可区分**，不可折叠。
+ *
+ * 本 DTO 承载的是**已判定结果**，由 host 唯一出口 `deriveCapabilityState()` 产出：
+ * 判定只做一次，webview（`roleBadgeView` / `rolesView`）只按 `kind` 分支渲染，
+ * 禁止在显示层再判 `length`——两处判 = 两份语义，必然漂移。
+ */
+export type CapabilityStateDto =
+  /** 未声明：角色包没写 capabilities 字段 ⇒ 全部工具可用 */
+  | { kind: 'all' }
+  /** 显式空：`capabilities: []` ⇒ 仅常驻工具（联网 / 代码执行等特权工具已关） */
+  | { kind: 'residentOnly' }
+  /** 空白名单：`capabilities` 为该名单的可读标签（label 由 host 翻译） */
+  | { kind: 'list'; capabilities: { capability: string; label: string }[] };
+
 export interface SkillDto {
   /** 技能名称（唯一 id：选择回传 / 禁用集 / 正文读取一律用它） */
   name: string;

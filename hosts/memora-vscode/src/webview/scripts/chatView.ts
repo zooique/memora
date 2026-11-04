@@ -3372,7 +3372,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
     } else if (msg.type === 'capability_badge') {
       // 角色能力徽章 → 更新工具权限展示
-      roleBadgeView.updateCapabilityBadge(msg.toolMode, msg.capabilities);
+      roleBadgeView.updateCapabilityBadge(msg.toolMode, msg.capabilityState);
     } else if (msg.type === 'metrics') {
       // 活动指标（透明面板 + 指纹可见）：每轮结束后刷新详情折叠区
       activityDrawerView.renderMetrics(msg);

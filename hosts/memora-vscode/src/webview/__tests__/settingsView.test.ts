@@ -180,7 +180,9 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
       new MessageEvent('message', {
         data: {
           type: 'roles_loaded',
-          packs: [{ name: 'doc-review', displayName: '文档打磨', capabilities: [] }],
+          packs: [
+            { name: 'doc-review', displayName: '文档打磨', capabilityState: { kind: 'all' } },
+          ],
           activeName: 'doc-review',
           teams: [],
           maxTeamMembers: 4,

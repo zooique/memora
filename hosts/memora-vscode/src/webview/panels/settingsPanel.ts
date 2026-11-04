@@ -75,7 +75,8 @@ import { PRESET_SEARCH_ENGINES } from '../../shared/protocol.js';
 // 本面板的「测试 / 保存」两条路径与装配侧 resolveSearchEndpoints 共用同一函数；
 // probeSearchEngine 同域导入，禁在本文件另写校验规则。
 import { probeSearchEngine, validateCustomEngines } from '../../extension/host/searchEngines.js';
-import { capabilityLabel } from '../helpers/capabilityLabels.js';
+// 能力面三态判定的唯一出口（CAP-TRISTATE-1）：角色卡只消费判定结果，不判 length
+import { deriveCapabilityState } from '../helpers/capabilityState.js';
 import {
   findUnmatchedDisabled,
   listVisibleSkills,
@@ -933,10 +934,8 @@ export class MemoraSettingsPanel {
           displayName: m.displayName ?? m.name,
           source,
           description: m.description ?? '',
-          capabilities: (pack?.capabilities ?? []).map((c) => ({
-            capability: c.capability,
-            label: capabilityLabel(c.capability),
-          })),
+          // 三态判定走 host 唯一出口（CAP-TRISTATE-1）：这里只透传结果，不自行判 length
+          capabilityState: deriveCapabilityState(pack?.capabilities),
           // 从装配结果中传递 traits/handoffPrompt 等字段
           traits: pack?.traits,
           handoffPrompt: pack?.meta.handoffPrompt,

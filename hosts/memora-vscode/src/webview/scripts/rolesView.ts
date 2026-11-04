@@ -13,6 +13,7 @@
  * 入口），在 webview HTML 中 <script src> 引用（CSP script-src cspSource）。
  */
 import type {
+  CapabilityStateDto,
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
@@ -50,7 +51,8 @@ interface RolesPayload {
     description?: string;
     /** 来源层：builtin=内置（configDir/role-packs），user=用户（globalStorageUri/role-packs），project=项目（<工作区>/.memora/role-packs） */
     source?: 'builtin' | 'user' | 'project';
-    capabilities: { capability: string; label: string }[];
+    /** 能力面三态判定结果（host 单点派生；本视图只渲染 `list` 支，不判 length） */
+    capabilityState: CapabilityStateDto;
     traits?: Record<string, number>;
     handoffPrompt?: string;
     strategyHint?: {
@@ -817,11 +819,12 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       info.appendChild(desc);
     }
 
-    // 能力标签 chips（紧凑单行）
-    if (p.capabilities && p.capabilities.length > 0) {
+    // 能力标签 chips（紧凑单行）：只渲染三态里的 `list` 支——判定已在 host 唯一出口完成，
+    // 此处不再判 length（`all` / `residentOnly` 均不渲染 chips，与既有视觉一致）
+    if (p.capabilityState.kind === 'list') {
       const caps = document.createElement('div');
       caps.className = 'cap-chips';
-      p.capabilities.forEach((c) => {
+      p.capabilityState.capabilities.forEach((c) => {
         const chip = document.createElement('span');
         chip.className = 'cap-chip';
         chip.textContent = c.label;

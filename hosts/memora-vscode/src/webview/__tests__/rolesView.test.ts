@@ -71,8 +71,13 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     mountRolesView();
     dispatchLoaded(
       [
-        { name: 'doc-review', displayName: '文档打磨', description: '打磨文档', capabilities: [] },
-        { name: 'translator', displayName: '翻译助手', capabilities: [] },
+        {
+          name: 'doc-review',
+          displayName: '文档打磨',
+          description: '打磨文档',
+          capabilityState: { kind: 'all' },
+        },
+        { name: 'translator', displayName: '翻译助手', capabilityState: { kind: 'all' } },
       ],
       'doc-review',
     );
@@ -114,10 +119,13 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
         {
           name: 'doc-review',
           displayName: '文档打磨',
-          capabilities: [
-            { capability: 'file:read', label: '读取文件' },
-            { capability: 'llm:summarize', label: '摘要生成' },
-          ],
+          capabilityState: {
+            kind: 'list',
+            capabilities: [
+              { capability: 'file:read', label: '读取文件' },
+              { capability: 'llm:summarize', label: '摘要生成' },
+            ],
+          },
         },
       ],
       'doc-review',
@@ -136,13 +144,13 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
         {
           name: 'doc-review',
           displayName: '文档打磨',
-          capabilities: [],
+          capabilityState: { kind: 'all' },
           issues: [
             { level: 'error' as const, message: '缺 name 字段' },
             { level: 'warning' as const, message: '未知键 keywords（宽容忽略）' },
           ],
         },
-        { name: 'translator', displayName: '翻译助手', capabilities: [] },
+        { name: 'translator', displayName: '翻译助手', capabilityState: { kind: 'all' } },
       ],
       'doc-review',
     );
@@ -167,7 +175,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
         {
           name: 'translator',
           displayName: '翻译助手',
-          capabilities: [],
+          capabilityState: { kind: 'all' },
           issues: [{ level: 'warning' as const, message: '未知键 trigger（宽容忽略）' }],
         },
       ],
@@ -183,8 +191,8 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     const { postMessage } = mountRolesView();
     dispatchLoaded(
       [
-        { name: 'doc-review', displayName: '文档打磨', capabilities: [] },
-        { name: 'translator', displayName: '翻译助手', capabilities: [] },
+        { name: 'doc-review', displayName: '文档打磨', capabilityState: { kind: 'all' } },
+        { name: 'translator', displayName: '翻译助手', capabilityState: { kind: 'all' } },
       ],
       'doc-review',
     );
@@ -204,8 +212,8 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     const { postMessage } = mountRolesView();
     dispatchLoaded(
       [
-        { name: 'doc-review', displayName: '文档打磨', capabilities: [] },
-        { name: 'translator', displayName: '翻译助手', capabilities: [] },
+        { name: 'doc-review', displayName: '文档打磨', capabilityState: { kind: 'all' } },
+        { name: 'translator', displayName: '翻译助手', capabilityState: { kind: 'all' } },
       ],
       'doc-review',
     );
@@ -224,10 +232,15 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
   it('② 卡片级组队：无队伍 → ribbon「暂无队伍」+ 创建按钮 → 弹窗排除自身、勾选保存', () => {
     const { postMessage } = mountRolesView();
     const packs = [
-      { name: '共鸣小说家', displayName: '共鸣小说家', capabilities: [] },
-      { name: '编辑', displayName: '编辑', capabilities: [] },
-      { name: '评论家', displayName: '评论家', capabilities: [] },
-      { name: 'memora助手', displayName: 'memora 助手', capabilities: [], isFallback: true },
+      { name: '共鸣小说家', displayName: '共鸣小说家', capabilityState: { kind: 'all' } },
+      { name: '编辑', displayName: '编辑', capabilityState: { kind: 'all' } },
+      { name: '评论家', displayName: '评论家', capabilityState: { kind: 'all' } },
+      {
+        name: 'memora助手',
+        displayName: 'memora 助手',
+        capabilityState: { kind: 'all' },
+        isFallback: true,
+      },
     ];
     dispatchLoaded(packs, '共鸣小说家', []); // 无队伍
 
@@ -267,10 +280,15 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
   it('② 卡片级组队：既有队伍 → ribbon 显示阵容 + 编辑态回显 + 删除队伍入口', () => {
     const { postMessage } = mountRolesView();
     const packs = [
-      { name: '共鸣小说家', displayName: '共鸣小说家', capabilities: [] },
-      { name: '编辑', displayName: '编辑', capabilities: [] },
-      { name: '评论家', displayName: '评论家', capabilities: [] },
-      { name: 'memora助手', displayName: 'memora 助手', capabilities: [], isFallback: true },
+      { name: '共鸣小说家', displayName: '共鸣小说家', capabilityState: { kind: 'all' } },
+      { name: '编辑', displayName: '编辑', capabilityState: { kind: 'all' } },
+      { name: '评论家', displayName: '评论家', capabilityState: { kind: 'all' } },
+      {
+        name: 'memora助手',
+        displayName: 'memora 助手',
+        capabilityState: { kind: 'all' },
+        isFallback: true,
+      },
     ];
     dispatchLoaded(packs, '共鸣小说家', [{ leader: '共鸣小说家', members: ['编辑', '评论家'] }]);
 
@@ -297,12 +315,12 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
   it('② 卡片组队弹窗：5 人组上限（队长 1 + 组员 ≤ 4），第 5 名勾选被拒绝', () => {
     mountRolesView();
     const packs = [
-      { name: '共鸣小说家', displayName: '共鸣小说家', capabilities: [] },
-      { name: '编辑', displayName: '编辑', capabilities: [] },
-      { name: '评论家', displayName: '评论家', capabilities: [] },
-      { name: '校对', displayName: '校对', capabilities: [] },
-      { name: '排版', displayName: '排版', capabilities: [] },
-      { name: '发行', displayName: '发行', capabilities: [] },
+      { name: '共鸣小说家', displayName: '共鸣小说家', capabilityState: { kind: 'all' } },
+      { name: '编辑', displayName: '编辑', capabilityState: { kind: 'all' } },
+      { name: '评论家', displayName: '评论家', capabilityState: { kind: 'all' } },
+      { name: '校对', displayName: '校对', capabilityState: { kind: 'all' } },
+      { name: '排版', displayName: '排版', capabilityState: { kind: 'all' } },
+      { name: '发行', displayName: '发行', capabilityState: { kind: 'all' } },
     ];
     dispatchLoaded(packs, '共鸣小说家', []);
     const card = Array.from(document.querySelectorAll('.card')).find(
@@ -328,12 +346,12 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
   it('② 存量超限队伍：卡片标注实际参会人数，不虚报（名单原样展示）', () => {
     mountRolesView();
     const packs = [
-      { name: '共鸣小说家', displayName: '共鸣小说家', capabilities: [] },
-      { name: '编辑', displayName: '编辑', capabilities: [] },
-      { name: '评论家', displayName: '评论家', capabilities: [] },
-      { name: '校对', displayName: '校对', capabilities: [] },
-      { name: '排版', displayName: '排版', capabilities: [] },
-      { name: '发行', displayName: '发行', capabilities: [] },
+      { name: '共鸣小说家', displayName: '共鸣小说家', capabilityState: { kind: 'all' } },
+      { name: '编辑', displayName: '编辑', capabilityState: { kind: 'all' } },
+      { name: '评论家', displayName: '评论家', capabilityState: { kind: 'all' } },
+      { name: '校对', displayName: '校对', capabilityState: { kind: 'all' } },
+      { name: '排版', displayName: '排版', capabilityState: { kind: 'all' } },
+      { name: '发行', displayName: '发行', capabilityState: { kind: 'all' } },
     ];
     // 存量数据：5 名组员（超上限 4）
     dispatchLoaded(packs, '共鸣小说家', [
@@ -359,8 +377,8 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     createRolesView({ vscode: { postMessage }, window: window as unknown as Window, root });
     dispatchLoaded(
       [
-        { name: '共鸣小说家', displayName: '共鸣小说家', capabilities: [] },
-        { name: '编辑', displayName: '编辑', capabilities: [] },
+        { name: '共鸣小说家', displayName: '共鸣小说家', capabilityState: { kind: 'all' } },
+        { name: '编辑', displayName: '编辑', capabilityState: { kind: 'all' } },
       ],
       '共鸣小说家',
       [],
@@ -381,10 +399,13 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       const others = Array.from({ length: 11 }, (_, i) => ({
         name: `role-${i}`,
         displayName: `角色${i}`,
-        capabilities: [],
+        capabilityState: { kind: 'all' },
       }));
       dispatchLoaded(
-        [{ name: 'doc-review', displayName: '文档打磨', capabilities: [] }, ...others],
+        [
+          { name: 'doc-review', displayName: '文档打磨', capabilityState: { kind: 'all' } },
+          ...others,
+        ],
         'doc-review',
       );
       // 激活角色恒显 + 其他角色第 1 页 8 张（ROLE_PAGE_SIZE=8）
@@ -400,10 +421,13 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       const others = Array.from({ length: 11 }, (_, i) => ({
         name: `role-${i}`,
         displayName: `角色${i}`,
-        capabilities: [],
+        capabilityState: { kind: 'all' },
       }));
       dispatchLoaded(
-        [{ name: 'doc-review', displayName: '文档打磨', capabilities: [] }, ...others],
+        [
+          { name: 'doc-review', displayName: '文档打磨', capabilityState: { kind: 'all' } },
+          ...others,
+        ],
         'doc-review',
       );
       document.querySelectorAll<HTMLButtonElement>('.pager-btn')[1]!.click();
@@ -420,8 +444,8 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       mountRolesView();
       dispatchLoaded(
         [
-          { name: 'doc-review', displayName: '文档打磨', capabilities: [] },
-          { name: 'translator', displayName: '翻译助手', capabilities: [] },
+          { name: 'doc-review', displayName: '文档打磨', capabilityState: { kind: 'all' } },
+          { name: 'translator', displayName: '翻译助手', capabilityState: { kind: 'all' } },
         ],
         'doc-review',
       );
@@ -432,8 +456,8 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
   describe('遗留队伍区块（2026-10-08 检测不删除语义：组长已卸载的组置顶标注）', () => {
     /** 基础包池：一个现役组长 + 一个组员（供缺员标注对照） */
     const PACKS = [
-      { name: 'memora助手', displayName: 'memora助手', capabilities: [] },
-      { name: '白话方案设计师', displayName: '白话方案设计师', capabilities: [] },
+      { name: 'memora助手', displayName: 'memora助手', capabilityState: { kind: 'all' } },
+      { name: '白话方案设计师', displayName: '白话方案设计师', capabilityState: { kind: 'all' } },
     ];
 
     it('组长已卸载的组 → 独立遗留区块渲染 + 清理按钮发 roles_team_delete', () => {
@@ -503,7 +527,10 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
 
   it('内置包：点卡片发 roles_detail → 收到应答弹出只读查看弹窗（弹窗未开也必须首挂）', () => {
     const { postMessage } = mountRolesView();
-    dispatchLoaded([{ name: 'builtin-a', displayName: '内置甲', capabilities: [] }], 'builtin-a');
+    dispatchLoaded(
+      [{ name: 'builtin-a', displayName: '内置甲', capabilityState: { kind: 'all' } }],
+      'builtin-a',
+    );
     // 点卡片空白区：交互元素被 closest 过滤，卡片本体点击 → 上行 roles_detail
     const card = Array.from(document.querySelectorAll('.card')).find(
       (c) => c.querySelector('.card-name')?.textContent === '内置甲',
@@ -531,7 +558,7 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
   it('用户包：查看弹窗有「编辑配置」→ 键面驱动编辑表单 → 保存上行 roles_save', () => {
     const { postMessage } = mountRolesView();
     dispatchLoaded(
-      [{ name: 'user-a', displayName: '用户甲', capabilities: [] }],
+      [{ name: 'user-a', displayName: '用户甲', capabilityState: { kind: 'all' } }],
       'user-a',
       [],
       4,
@@ -562,7 +589,10 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
 
   it('重挂幂等：连续两次 roles_detail_data → 弹窗不叠加（先摘后挂，保存成功回显场景）', () => {
     mountRolesView();
-    dispatchLoaded([{ name: 'user-a', displayName: '用户甲', capabilities: [] }], 'user-a');
+    dispatchLoaded(
+      [{ name: 'user-a', displayName: '用户甲', capabilityState: { kind: 'all' } }],
+      'user-a',
+    );
     dispatchDetail('user-a', 'user', {});
     dispatchDetail('user-a', 'user', { global: { stepBudget: 300 } });
     expect(document.querySelectorAll('.team-modal.role-detail')).toHaveLength(1);
@@ -575,7 +605,7 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
     return Array.from({ length: count }, (_, i) => ({
       name: `p${i}`,
       displayName: `角色${i}`,
-      capabilities: [],
+      capabilityState: { kind: 'all' },
     }));
   }
 

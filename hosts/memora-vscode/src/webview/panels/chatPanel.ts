@@ -124,6 +124,8 @@ import { friendlyErrorMessage } from '../../shared/errorText.js';
 import { dedupeRefs } from '../../shared/refKey.js';
 // 过程事件 / 指标段级合并（纯函数，HOST-SPLIT-1 切片自本类外置；三条调用面共用同一语义）
 import { mergeProcessEvents } from '../helpers/processEventMerge.js';
+// 能力面三态判定的唯一出口（CAP-TRISTATE-1）：本文件只传「域级标签投影」，不自行判 length
+import { deriveCapabilityState } from '../helpers/capabilityState.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 // 引用发送前存在性核实（HOST-CTX-9 发送侧）：解析器复用 refPath（首根 SSOT），不由本文件另写
 import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
@@ -236,6 +238,29 @@ interface LiveFlowBuffer {
 }
 
 // 宿主会话存储契约（HostSessionStore）随其实现类定义在 extension/host/sessionStore.ts（本面板贴行数闸门）。
+
+/**
+ * 输入区能力徽章的**域级短标签**（`file:read` → 「文件」）
+ *
+ * 角色的粗粒度呈现：角色卡（roles_loaded）用 `capabilityLabel` 的细粒度文案（「读取文件」），
+ * 输入区徽章只有一行空间，故按域折叠。两张表的**判定**仍只由 `deriveCapabilityState` 一处做。
+ */
+const CAPABILITY_DOMAIN_LABELS: Readonly<Record<string, string>> = {
+  file: '文件',
+  web: '联网',
+  memory: '记忆',
+  llm: 'LLM',
+};
+
+/**
+ * 能力名 → 域级短标签（取 `域:动作` 的域段；未知域回退原始域段，不硬造文案）
+ *
+ * @param capability 中立能力名，如 `web:search`
+ */
+function capabilityDomainLabel(capability: string): string {
+  const [domain] = capability.split(':');
+  return CAPABILITY_DOMAIN_LABELS[domain] ?? domain;
+}
 
 /** 侧边栏视图提供者 */
 export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
@@ -741,23 +766,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const active = agent.rolePackManager?.getActive();
     if (!active) return;
     const toolMode = active.strategy.act?.toolMode ?? 'allow';
-    // 能力标签映射（简单域→中文，复杂描述用 capability.description）。
-    // 显示层折叠：`undefined`（未声明）与 `[]`（显式空）在这里都表现为「无徽章」，不回流到白名单裁决
-    // （三态真源 = tasks/待完成任务.md · CAP-TRISTATE-1；此处的 `?? []` 仅为解引用安全，不参与权限判定）。
-    const labels = (active.capabilities ?? []).map((c) => {
-      const [domain] = c.capability.split(':');
-      const domainLabel: Record<string, string> = {
-        file: '文件',
-        web: '联网',
-        memory: '记忆',
-        llm: 'LLM',
-      };
-      const domainText = domainLabel[domain] ?? domain;
-      return {
-        capability: c.capability,
-        label: domainText,
-      };
-    });
+    // 三态判定走 host 唯一出口 `deriveCapabilityState`（未声明 / 显式空 / 白名单各为一支），
+    // 本文件只提供**域级短标签投影**（输入区徽章比角色卡更紧凑），不在此重算 length——
+    // 显示层再判一次就会与内核语义漂移（CAP-TRISTATE-1 的真机缺陷正是这样产生的）。
+    const capabilityState = deriveCapabilityState(active.capabilities, capabilityDomainLabel);
 
     // 提取策略指示器：从内核完整策略中提炼 UI 友好的摘要
     const strategy = active.strategy;
@@ -775,7 +787,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       outputLimit: strategy.act?.outputLimit,
     };
 
-    this.post({ type: 'capability_badge', toolMode, capabilities: labels, strategyHint });
+    this.post({ type: 'capability_badge', toolMode, capabilityState, strategyHint });
   }
 
   /**

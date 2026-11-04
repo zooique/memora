@@ -12,6 +12,7 @@
  */
 
 import { createIcon } from './icons.js';
+import type { CapabilityStateDto } from '../../shared/protocol.js';
 
 /** 徽章行依赖：文档对象 + 两个徽章节点引用（节点身份由 chatView 持有，此处只读用） */
 export interface RoleBadgeViewDeps {
@@ -27,11 +28,8 @@ export interface RoleBadgeViewDeps {
 export interface RoleBadgeView {
   /** 构造 team-meeting 图标按钮并挂到 roleBadge 同行容器（调用方负责单例引用） */
   createTeamMeetingIcon(): HTMLElement;
-  /** 更新工具权限徽章（block → 「纯 LLM」/ allow+能力 → 能力列表 / allow+无能力 → 「全部工具」） */
-  updateCapabilityBadge(
-    toolMode: 'allow' | 'block',
-    capabilities: { capability: string; label: string }[],
-  ): void;
+  /** 更新工具权限徽章（block → 「纯 LLM」；allow 按三态 → 全部工具 / 仅基础工具 / 能力列表） */
+  updateCapabilityBadge(toolMode: 'allow' | 'block', capabilityState: CapabilityStateDto): void;
 }
 
 export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
@@ -75,16 +73,17 @@ export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
   /**
    * 更新工具权限徽章（角色能力面可见性）
    *
-   * 根据 capability_badge 消息更新：
+   * 按 `capability_badge` 的 **已判定三态**渲染（本函数只分支，不判 length）：
    * - block 模式 → 显示「纯 LLM」标签
-   * - allow + 有能力 → 显示能力列表（如「文件」「联网」「记忆」）
-   * - allow + 无能力 → 显示「全部工具」
+   * - allow + `all`（未声明）→ 显示「全部工具」
+   * - allow + `residentOnly`（显式空）→ 显示「仅基础工具」（标题说明联网 / 代码执行已关）
+   * - allow + `list`（白名单）→ 显示能力列表（如「文件」「联网」「记忆」）
    * 无隐藏分支：「无数据」态即骨架初始 hidden（未收到 capability_badge 前不亮），
    * 本函数只负责点亮与更新，不回置隐藏。
    */
   function updateCapabilityBadge(
     toolMode: 'allow' | 'block',
-    capabilities: { capability: string; label: string }[],
+    capabilityState: CapabilityStateDto,
   ): void {
     if (!capabilityBadge) return;
     if (toolMode === 'block') {
@@ -93,13 +92,20 @@ export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
       capabilityBadge.title = '纯 LLM 模式（无工具暴露）';
       return;
     }
-    if (capabilities.length === 0) {
+    if (capabilityState.kind === 'all') {
       capabilityBadge.hidden = false;
       capabilityBadge.textContent = '全部工具';
-      capabilityBadge.title = '允许所有工具';
+      capabilityBadge.title = '允许所有工具（角色包未声明能力白名单）';
       return;
     }
-    const labels = [...new Set(capabilities.map((c) => c.label))];
+    if (capabilityState.kind === 'residentOnly') {
+      capabilityBadge.hidden = false;
+      capabilityBadge.textContent = '仅基础工具';
+      capabilityBadge.title =
+        '仅基础工具：角色包声明了空能力白名单（联网、代码执行等特权工具已关闭）';
+      return;
+    }
+    const labels = [...new Set(capabilityState.capabilities.map((c) => c.label))];
     capabilityBadge.hidden = false;
     capabilityBadge.textContent = labels.join(' · ');
     capabilityBadge.title = `允许：${labels.join('、')}`;
