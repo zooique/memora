@@ -1830,16 +1830,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 应用当前角色包的工具暴露面（换角色 → 工具集切换）：声明 capabilities 时解析为工具白名单，未声明放行全部。
-   * 空数组（parseCapabilities 对 undefined 返回 []）同样视为"未声明能力"放行全部，避免误解释为"禁止所有"。
+   * 应用当前角色包的工具暴露面（换角色 → 工具集切换）。
+   * 🔴 三态（CAP-TRISTATE-1）：`undefined` = 未声明能力（放行全部，向后兼容旧包）；
+   * `[]` = 显式空能力（仅常驻工具）；非空数组 = 白名单。
+   * **必须判 `undefined`，不得判 `length > 0`**——后者把「显式空」与「未声明」折叠成同一个「全开」。
    * toolMode=block 全禁与此正交；变更经 setToolWhitelist → onToolsChanged 链路同步 loop 快照与 system prompt。
    */
   private applyRolePackToolExposure(): void {
     if (!this.toolExec) return;
     const active = this._rolePackManager?.getActive();
     const capabilities = active?.capabilities;
-    const whitelist =
-      capabilities && capabilities.length > 0 ? resolveCapabilityTools(capabilities) : null;
+    // undefined ⇒ null（setToolWhitelist(null) = 不设白名单）；[] ⇒ resolveCapabilityTools([]) = []（仅常驻）
+    const whitelist = capabilities === undefined ? null : resolveCapabilityTools(capabilities);
     this.toolExec.setToolWhitelist(whitelist);
   }
 

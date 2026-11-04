@@ -317,8 +317,8 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(active!.skills.map((s) => s.name).sort()).toEqual(['read', 'search', 'write']);
     // persona 缺省 → personaPrompt 不含身份设定，仅规则注入
     expect(active!.personaPrompt).toContain('不生成违法内容');
-    // 能力声明聚合（仅声明了 capability 的项）
-    expect(active!.capabilities.map((c) => c.capability).sort()).toEqual([
+    // 能力声明聚合（仅声明了 capability 的项）；`?? []` 仅用于用例断言解引用（三态裁决在生产消费方）
+    expect((active!.capabilities ?? []).map((c) => c.capability).sort()).toEqual([
       'file:write',
       'web:search',
     ]);
@@ -339,8 +339,8 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(active!.meta.name).toBe('项目总监');
     // 纯能力声明在顶层 capabilities，skills 为空（无技能文件引用）
     expect(active!.skills).toHaveLength(0);
-    // capabilities 独立派生
-    expect(active!.capabilities.map((c) => c.capability).sort()).toEqual([
+    // capabilities 独立派生（`?? []` 仅用于用例断言解引用，不代表生产折叠语义）
+    expect((active!.capabilities ?? []).map((c) => c.capability).sort()).toEqual([
       'file:read',
       'web:search',
     ]);

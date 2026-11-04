@@ -741,8 +741,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const active = agent.rolePackManager?.getActive();
     if (!active) return;
     const toolMode = active.strategy.act?.toolMode ?? 'allow';
-    // 能力标签映射（简单域→中文，复杂描述用 capability.description）
-    const labels = active.capabilities.map((c) => {
+    // 能力标签映射（简单域→中文，复杂描述用 capability.description）。
+    // 显示层折叠：`undefined`（未声明）与 `[]`（显式空）在这里都表现为「无徽章」，不回流到白名单裁决
+    // （三态真源 = tasks/待完成任务.md · CAP-TRISTATE-1；此处的 `?? []` 仅为解引用安全，不参与权限判定）。
+    const labels = (active.capabilities ?? []).map((c) => {
       const [domain] = c.capability.split(':');
       const domainLabel: Record<string, string> = {
         file: '文件',

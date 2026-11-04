@@ -486,8 +486,9 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
 
   const personaPrompt = promptParts.join('\n\n');
 
-  // 能力声明：manifest 顶层 capabilities 直接派生
-  const capabilities: readonly RolePackCapability[] = pack.capabilities ?? [];
+  // 能力声明：manifest 顶层 capabilities **原样透传**（三态：undefined=未声明 / []=显式空 / 非空=白名单）。
+  // 🔴 不得写 `?? []`——那会把「显式空能力」折叠成「未声明」，装配层把权限偷偷放大（CAP-TRISTATE-1）。
+  const capabilities: readonly RolePackCapability[] | undefined = pack.capabilities;
 
   return {
     meta: pack.meta,

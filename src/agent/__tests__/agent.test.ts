@@ -1411,6 +1411,42 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
 
   // ─── switchRolePack 手动切换（角色包系统，与自动匹配共享事件链路） ─────
 
+  it('能力三态（CAP-TRISTATE-1）：未声明 ⇒ 白名单 null；显式空 ⇒ []；非空 ⇒ 解析结果', async () => {
+    const packsDir = join(tmpConfig, 'role-packs');
+    const writePack = (dirName: string, manifest: object) => {
+      const packDir = join(packsDir, dirName);
+      mkdirSync(packDir, { recursive: true });
+      writeFileSync(join(packDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
+      writeFileSync(join(packDir, 'persona.md'), '你是测试角色。', 'utf-8');
+    };
+    // 基准包：只为制造一次切换（exposure 在 switchRolePack 内应用）
+    writePack('基准', { name: '基准', formatVersion: '1.0.0' });
+    // 三态样本
+    writePack('未声明', { name: '未声明', formatVersion: '1.0.0' });
+    writePack('显式空', { name: '显式空', formatVersion: '1.0.0', capabilities: [] });
+    writePack('白名单', {
+      name: '白名单',
+      formatVersion: '1.0.0',
+      capabilities: [{ capability: 'web:search' }],
+    });
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    agent.rolePackManager!.activate('基准');
+    // toolExec 为私有字段：测试读取白名单当前值（裁决真源 = currentToolWhitelist）
+    const exec = (agent as unknown as { toolExec: { currentToolWhitelist: string[] | null } })
+      .toolExec;
+
+    expect(agent.switchRolePack('未声明')).toBe(true);
+    expect(exec.currentToolWhitelist).toBeNull(); // 未声明 = 放行全部（不得被折叠成 []）
+
+    expect(agent.switchRolePack('显式空')).toBe(true);
+    expect(exec.currentToolWhitelist).toEqual([]); // 显式空 = 仅常驻（不得被折叠成 null）
+
+    expect(agent.switchRolePack('白名单')).toBe(true);
+    expect(exec.currentToolWhitelist).toEqual(['web_search']);
+  });
+
   it('switchRolePack 应切换角色包并发射 rolePackSwitched 事件', async () => {
     // 写两个角色包（manifest.json 文件夹形态）
     const packsDir = join(tmpConfig, 'role-packs');

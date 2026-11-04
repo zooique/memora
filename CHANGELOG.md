@@ -13,6 +13,7 @@
 ### Changed（内核）
 
 - **运行时策略覆盖只能收紧权限类字段，不能放松**（`READONLY-MODE-1` / ADR-045）：`mergeStrategy` 的 `act` 段此前整段「后写覆盖」⇒ 角色包声明 `act.toolReadonly: 'readonly'` 时，运行时覆盖传 `'full'` 会把只读锁直接去掉。现 `act` 段经单点秩表 `PERMISSION_FIELD_LENIENCE` 裁决：权限类字段（`toolReadonly`：`readonly` 严于 `full`；`toolMode`：`block` 严于 `allow`）**只取更严、不可放松**，覆盖侧非法值按「不生效」处理（不落回 `'full'`）；其余行为字段（temperature / outputLimit / toolStepLimit / providerRouting / multiStepReasoning）仍由覆盖赢。**对消费者**：不传 `strategyOverride` 的代码零行为变化；「覆盖可放松权限」从未是承诺路径，现已关闭。验收判据与变异收据见台账 `READONLY-MODE-1`。
+- **`capabilities` 三态：拆开「未声明」与「显式空能力」**（`CAP-TRISTATE-1`）：此前 manifest 无 `capabilities` 与显式 `capabilities: []` 在解析层被折叠成同一个 `[]`，装配层再以 `length > 0` 判「有无声明」⇒ 两者都按「全开」放行，**「显式空能力」这一意图无法表达**。现 `RolePack.capabilities` / `RolePackAssembly.capabilities` 与解析返回值均为可选：`undefined` = 未声明（放行全部）；`[]` = 显式空（仅常驻工具，特权工具全关）；非空数组 = 白名单。装配层去掉 `?? []`，应用层改判 `undefined` 而非 `length > 0`（宿主能力徽章侧仅做解引用安全折叠，不参与裁决）。**⚠️ 这是公开 manifest 语义的收紧，不是纯 bugfix**：既有外部角色包若显式写 `capabilities: []`，行为从「全开」变为「仅常驻工具」——旧折叠让该写法永远拿不到想要的收紧效果，现按字面生效。**证据边界**：仓内三个内置包均无显式 `[]`，本机与仓库内全部包已核对（行为不变）；**外部包状态不可知**。**对消费者**：不写 `capabilities` 的包零变化；显式写 `[]` 的包若要全开请删掉该字段，若要白名单请补能力项。验收判据与变异收据见台账 `CAP-TRISTATE-1`。
 
 ## [5.5.0] · 2026-11-03
 

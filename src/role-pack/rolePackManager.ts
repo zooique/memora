@@ -221,9 +221,20 @@ async function scanPackSkills(
     });
 }
 
-/** 从 manifest.capabilities 解析能力声明（能力面与技能内容分离，经 capabilityMap 映射为工具白名单） */
-function parseManifestCapabilities(capabilitiesNode: unknown): RolePackCapability[] {
+/**
+ * 从 manifest.capabilities 解析能力声明（能力面与技能内容分离，经 capabilityMap 映射为工具白名单）。
+ *
+ * 三态（真源 = tasks/待完成任务.md · CAP-TRISTATE-1）：
+ *   - `undefined` = **未声明**（旧包无该字段 ⇒ 放行全部，向后兼容）；
+ *   - `[]` = **显式空能力**（只给常驻工具，特权工具全关）；
+ *   - 非空数组 = 白名单。
+ * 🔴 `undefined` 与 `[]` 必须可区分——装配层任何 `?? []` 都会把「显式空」折叠成「未声明」→ 权限放大。
+ */
+function parseManifestCapabilities(capabilitiesNode: unknown): RolePackCapability[] | undefined {
+  // 缺省（manifest 无该字段）⇒ 未声明；非数组（畸形）⇒ 按「显式空能力」处理（最收紧，不放大权限）
+  if (capabilitiesNode === undefined) return undefined;
   if (!Array.isArray(capabilitiesNode)) return [];
+
   const capabilities: RolePackCapability[] = [];
   for (const item of capabilitiesNode) {
     if (typeof item !== 'object' || item === null) continue;

@@ -472,6 +472,13 @@ describe('mergeStrategy — 策略合并', () => {
 // ════════════════════════════════════════════════════════
 
 describe('assembleRolePack — 角色包装配', () => {
+  it('未声明 capabilities 时装配层原样透传 undefined（不得被 ?? [] 折叠成显式空）', () => {
+    // 三态真源 = tasks/待完成任务.md · CAP-TRISTATE-1：undefined=未声明 / []=显式空
+    const pack = makeRolePack({ capabilities: undefined });
+    const assembly = assembleRolePack(pack);
+    expect(assembly.capabilities).toBeUndefined();
+  });
+
   it('基础装配：最小角色包', () => {
     const pack = makeRolePack();
     const result = assembleRolePack(pack);

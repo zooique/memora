@@ -244,8 +244,12 @@ export interface RolePack {
   readonly rules: readonly string[];
   /** 内嵌技能注册（manifest.skills 对象数组，各自引用包内技能文件 file 路径；能力声明已独立为顶层 capabilities） */
   readonly skills: readonly RolePackManifestSkill[];
-  /** 能力声明（manifest.capabilities 顶层数组，独立于 skills——「能力面（权限）」与「内容面（技能正文）」分离） */
-  readonly capabilities: readonly RolePackCapability[];
+  /**
+   * 能力声明（manifest.capabilities 顶层数组，独立于 skills——「能力面（权限）」与「内容面（技能正文）」分离）。
+   * 🔴 三态（CAP-TRISTATE-1）：`undefined` = 未声明（放行全部）；`[]` = 显式空能力（仅常驻工具）；
+   * 非空数组 = 白名单。**不得**用 `?? []` 折叠（会把「显式空」误读成「全开」）。
+   */
+  readonly capabilities?: readonly RolePackCapability[];
 
   // ── L2 策略层 ──
 
@@ -275,8 +279,12 @@ export interface RolePackAssembly {
   readonly personaPrompt: string;
   /** 内嵌技能注册（manifest.skills，对象数组，支持多个） */
   readonly skills: readonly RolePackManifestSkill[];
-  /** 能力声明列表（manifest 顶层 capabilities） */
-  readonly capabilities: readonly RolePackCapability[];
+  /**
+   * 能力声明列表（manifest 顶层 capabilities）。
+   * 🔴 三态（CAP-TRISTATE-1）原样透传：`undefined` = 未声明（放行全部）；`[]` = 显式空能力（仅常驻工具）。
+   * 消费方必须判 `undefined`，**不得**判 `length > 0`（后者把两者折叠成「全开」）。
+   */
+  readonly capabilities?: readonly RolePackCapability[];
   /** 完整行为策略（所有维度都有值，未声明维度用默认值，异于 RolePack.strategy） */
   readonly strategy: BehaviorStrategy;
   /** 角色性格特征（traits），从 persona.md frontmatter 解析（traits.xxx = 0-1 数值），供宿主情感计算 */
