@@ -8,6 +8,12 @@
 >
 > 本文件 2026-10-19 起按 `CHLOG-TRIM-1` 精简：只记「改了什么 + 为什么 + 对消费者的影响」；逐批拍板过程、变异验证收据、台账叙事的 SSOT 在仓库台账 `tasks/待完成任务.md` 对应 ID 条目（npm 包不含），此处只留 ID 锚保交叉引用。
 
+## [Unreleased]
+
+### Changed（内核）
+
+- **运行时策略覆盖只能收紧权限类字段，不能放松**（`READONLY-MODE-1` / ADR-045）：`mergeStrategy` 的 `act` 段此前整段「后写覆盖」⇒ 角色包声明 `act.toolReadonly: 'readonly'` 时，运行时覆盖传 `'full'` 会把只读锁直接去掉。现 `act` 段经单点秩表 `PERMISSION_FIELD_LENIENCE` 裁决：权限类字段（`toolReadonly`：`readonly` 严于 `full`；`toolMode`：`block` 严于 `allow`）**只取更严、不可放松**，覆盖侧非法值按「不生效」处理（不落回 `'full'`）；其余行为字段（temperature / outputLimit / toolStepLimit / providerRouting / multiStepReasoning）仍由覆盖赢。**对消费者**：不传 `strategyOverride` 的代码零行为变化；「覆盖可放松权限」从未是承诺路径，现已关闭。验收判据与变异收据见台账 `READONLY-MODE-1`。
+
 ## [5.5.0] · 2026-11-03
 
 ### Added（内核）

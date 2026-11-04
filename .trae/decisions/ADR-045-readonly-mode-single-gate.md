@@ -1,6 +1,6 @@
 # ADR-045 · 工作区只读模式：`toolReadonly` 单一总闸
 
-> **状态**：✅ 已接受（实现待排期，台账条目 `READONLY-MODE-1`）
+> **状态**：✅ 已接受（决策 §2 / §7(1) **已于 2026-11-04 落地**；宿主开关与 §7(2) 校验待排期，台账条目 `READONLY-MODE-1`）
 > **日期**：2026-11-04 **播种批次**：工作区只读模式设计核查 **来源**：只读事实核查（读取时 HEAD `73e91a4d`；`git diff --stat e1de60ae..HEAD` 仅动 `CHANGELOG.md` / `hosts/memora-vscode/README.md` / `tasks/archive/0.7.0-host.md`，`src/**` 零差异）
 
 ## 背景
@@ -32,15 +32,16 @@
 
 三层只能收紧，**禁止出现「强制可写」态**——任何一层都不能把另一层已收紧的权限重新放开。
 
-这里有一个必须在实现层修的现状缺口：三层目前靠 `mergeStrategy` 的普通展开合并，**override 会压过角色包的收紧声明**（`src/role-pack/strategyResolver.ts:331`）。实测路径：角色包 `readonly` + override 传 `full` ⇒ 最终 `full` ⇒ 锁失效。
+落地前（2026-11-04 之前）的真实缺口：三层靠 `mergeStrategy` 的普通展开合并，**override 会压过角色包的收紧声明**（`src/role-pack/strategyResolver.ts` 原 `act` 合并行）。实测路径：角色包 `readonly` + override 传 `full` ⇒ 最终 `full` ⇒ 锁失效。**该缺口已于 2026-11-04 按下方修法关闭**（`READONLY-MODE-1` 代码提交）。
 
-**修法（唯一合法位置）**：把 `src/role-pack/strategyResolver.ts:331` 的 `act` 合并改为权限类字段「取更严」，判据为：
+**修法（唯一合法位置）**：`src/role-pack/strategyResolver.ts` 的 `mergeStrategy` —— `act` 段不再整段「后写覆盖」，改由单点判据表 `PERMISSION_FIELD_LENIENCE` 裁决：
 
-```
-最终值 = 任一层出现 'readonly' ⇒ 'readonly'；否则 'full'
-```
+- **入表字段（权限类，只有两个）**：`toolReadonly`（`'readonly'` 严于 `'full'`）、`toolMode`（`'block'` 严于 `'allow'`——block = 禁用全部工具调用，同属执行面收紧）。普通行为字段（`temperature` / `outputLimit` / `toolStepLimit` / `providerRouting` / `multiStepReasoning`）**不入表**，仍由 override 赢。
+- **裁决规则**：任一侧出现更严的**合法**值 ⇒ 取更严；相等 ⇒ 保留基础侧。
+- **非法值规则（关键）**：覆盖侧传非法值 ⇒ 该值**不生效**（丢弃、沿用基础侧），**不得**透传给 `resolveToolReadonly`——否则它的 fallback 会归位 `'full'`，正好把只读锁撬开。基础侧非法时，合法覆盖值可正常生效。
+- **判据单点**：秩表（宽松度 0=最严）在 `strategyResolver.ts` 内定义一次，合并函数 `mergePermissionField` 按表裁决；`mergeActStrategy` 只遍历表。增删权限字段只改表，不另写清单。
 
-即 `'readonly' < 'full'`（按宽松度排序，取最小值）。该判据只在这一行落地，不复制到别处。
+> 落地记录（2026-11-04）：`PERMISSION_FIELD_LENIENCE`（秩表）+ `mergePermissionField`（单字段裁决）+ `mergeActStrategy`（act 段按表合并）已实现；V1~V5 用例已入库并全绿（V5 变异：把 `act` 改回整段展开 ⇒ 5 条用例红 ⇒ 恢复 ⇒ 绿）。
 
 ### 3. 判据唯一落点（红线）
 
@@ -76,13 +77,13 @@
 - 用户原始设想是「快速切换本质上就是改角色包配置」；讨论后改为走运行时 `strategyOverride`。
 - **理由 1（资产洁净）**：角色包是可分享资产（内置 / 用户 / 项目三级，可下载可共享）。改角色包文件等于把一个宿主开关写进别人的包，分享出去就污染接收方。
 - **理由 2（层级歧义）**：改「哪一级（builtin / user / project）」有歧义——同名角色包可能三级并存（加载顺序 `builtin → user → project`，后加载者胜，见 `src/role-pack/rolePackManager.ts:1264-1307`）。运行时 override 不落盘，天然没有「改哪份」的问题。
-- **已知风险（必须登记）**：`strategyOverride` 目前是 **override 赢**（`src/role-pack/strategyResolver.ts:331`），没有「取更严」⇒ 快速开关在「取更严」未落地前会造成**放松**（见决策 §2 的修法）。开关落地必须先于或同版于「取更严」。
+- **已知风险（2026-11-04 已解除）**：~~`strategyOverride` 是 override 赢，快速开关在「取更严」落地前会造成放松~~ —— 决策 §2 / §7(1) 已于 2026-11-04 落地，运行时覆盖现在只能收紧、不能放松；宿主开关的前提已满足（仍必须先于或同版于宿主开关落地，现已满足）。
 - **宿主现状（事实）**：宿主侧只有**展示**、没有切换——`rolesView.ts` 现有 chip「只读模式 / 完整工具」（`hosts/memora-vscode/src/webview/scripts/rolesView.ts:840-844`），`strategyOverride` 在宿主 `src/` 内零调用点。
 
 ### 7. 防延迟提权的两条结构判据（本 ADR 的核心）
 
-**(1) 合并处取更严**（已述 §2）：改 `src/role-pack/strategyResolver.ts:331`，判据 =「任一层 `'readonly'` ⇒ `'readonly'`」。
-实测反例（脚本次）：角色包 `act.toolReadonly: 'readonly'`、override 只传 `{ act: { toolReadonly: 'full' } }` ⇒ `mergeStrategy` 展开后 `full` ⇒ 锁失效。`strategyOverride` 是**部分策略**（`Partial<BehaviorStrategy>`：`src/agent/types.ts:566`、`src/agent/seed/types.ts:108`；装配链 `src/agent/agent.ts:232`、`:489` → `src/agent/seed/prepare.ts:84`），未传的**其他**字段继承 base（阶段内浅合并），但 `toolReadonly` 这个键一旦传了就是「后写覆盖」。
+**(1) 合并处取更严（2026-11-04 已落地）**（已述 §2）：`src/role-pack/strategyResolver.ts` 的 `mergeStrategy` 经 `mergeActStrategy` 按 `PERMISSION_FIELD_LENIENCE` 表裁决，判据 =「任一层 `'readonly'` ⇒ `'readonly'`；任一侧合法值更严 ⇒ 取更严；非法覆盖值不生效」。
+实测反例（**落地前**，2026-11-04 修复）：角色包 `act.toolReadonly: 'readonly'`、override 只传 `{ act: { toolReadonly: 'full' } }` ⇒ 旧 `mergeStrategy` 展开后 `full` ⇒ 锁失效。`strategyOverride` 是**部分策略**（`Partial<BehaviorStrategy>`：`src/agent/types.ts:566`、`src/agent/seed/types.ts:108`；装配链 `src/agent/agent.ts:232`、`:489` → `src/agent/seed/prepare.ts:84`），未传的**其他**字段继承 base（阶段内浅合并），但 `toolReadonly` 这个键一旦传了就是「后写覆盖」——该行为已由 §2 的秩表裁决取代。
 
 **(2) 放松写法升级为 error 级校验**：`src/role-pack/validator.ts` 现状对未知顶层键只 `warning`（`:89-100` 的 `UNKNOWN_TOP_LEVEL_KEY`），`valid = 无 error`（`:28-29`）⇒ 在 manifest 里写一个「放松权限」的自造键（或写非法枚举值）**照样装得上**。须把「权限类字段的放松写法」升级为 `error`，使 `valid=false` ⇒ `RolePackManager` 跳过装载（`src/role-pack/rolePackManager.ts:776-784`）。TOP-LEVEL 已知键集合见 `src/role-pack/validator.ts:41-55`。
 
@@ -129,15 +130,15 @@
 
 | # | 判据 | 跑法 / 观测点 | 通过标准 | 备注 |
 | --- | --- | --- | --- | --- |
-| V1 | 只读态下 10 个无 `readonly` 工具全部 denied | `npx vitest run src/agent/__tests__/toolRunner.test.ts`（新增用例：逐个名字喂 `strategy({toolReadonly:'readonly'})`） | 每个结果 `status === 'blocked'` 且 `text` 含 `[ERR:TOOL:READONLY_DENIED]`；前缀契约另见 `src/__tests__/toolFailurePrefixGuard.test.ts:239` | 现测试已有单工具样本（`toolRunner.test.ts:65-74`），需补齐 10 个 |
-| V2 | `readonly` + override `full` 仍 denied | `npx vitest run src/role-pack/__tests__/strategyResolver.test.ts`（新增用例：`mergeStrategy`/`resolveActiveStrategy` + 断言最终 `resolveToolReadonly(...) === 'readonly'`） | 最终值 `'readonly'` | **前提：需先落地「取更严」（决策 §2）**；未落地时该判据必红，属预期 |
-| V3 | 未定义工具控制 ⇒ 特权工具照常可用（回归） | 同上测试文件 + `resolveToolReadonly({})==='full'` | `'full'`，且 `toolWhitelist === null` 时 `run_code` 等特权工具出现在 `list` | 防止把默认全开关死 |
-| V4 | `capabilities` 只写 `llm:summarize` ⇒ 特权全关（把陷阱钉成测试） | 新增/追加 `capabilityMap` 或 `agent` 装配测试：`resolveCapabilityTools(['llm:summarize'])` 与 `setToolWhitelist([])` 后的 `list` | 返回 `[]`；`list` 中特权工具为空、常驻集仍在 | 不靠注释提醒，靠测试钉死 |
-| V5 | 变异验证 | 删掉某工具的 `readonly: true`（如 `read_file`）或删掉「取更严」那一行后重跑 V1/V3 | 对应测试**变红**；恢复后**变绿** | 新增测试必须做变异验证（仓内既有铁律） |
+| V1 | 只读态下 10 个无 `readonly` 工具全部 denied | `npx vitest run src/agent/__tests__/toolRunner.test.ts`（`NON_READONLY_TOOLS` 逐个名字） | 每个结果 `status === 'blocked'`、`blockedReason === 'readonly_denied'`、`text` 含 `[ERR:TOOL:READONLY_DENIED]` | **已落地 2026-11-04**；清单显式列举（真源 §5），**不**从「`readonly` 缺失」派生（那会用被测判据生成期望） |
+| V2 | `readonly` + override `full` 仍 denied | `strategyResolver.test.ts`（合并层）+ `toolRunner.test.ts`（端到端：`mergeStrategy` → `resolveL2Strategy` → 10 工具 denied） | 合并值 `'readonly'`；`resolveToolReadonly(...) === 'readonly'`；10 工具全部 blocked 且 `execute` 零调用 | **已落地 2026-11-04**（双层用例） |
+| V3 | 未定义工具控制 ⇒ 特权工具照常可用（回归） | `toolExecutor.test.ts`（**注入 `codeExecutionProvider` 的 executor**） | `resolveToolReadonly({}) === 'full'`；`toolWhitelist = null` 时 `list` 含 `run_code` | **已落地 2026-11-04**；必须用注入 provider 的 executor 取证，否则 `run_code` 本不存在、断言会因错误的原因假绿 |
+| V4 | `capabilities` 只写 `llm:summarize` ⇒ 特权全关（把陷阱钉成测试） | `toolExecutor.test.ts`：`resolveCapabilityTools([{ capability: 'llm:summarize' }])` → `setToolWhitelist(...)` → 读 `list` | 映射返回 `[]`；`list` 无 `run_code`，常驻集 `read_file` 仍在 | **已落地 2026-11-04**；不靠注释提醒，靠测试钉死 |
+| V5 | 变异验证 | 把 `mergeStrategy` 的 `act` 改回整段展开（旧「override 赢」行为）后重跑 V1/V2/非法值 | 5 条用例**变红**（`strategyResolver` 4 / `toolRunner` 1）；恢复后**变绿** | **已做 2026-11-04**；收据见台账 `READONLY-MODE-1` |
 
 ### 3. 排期
 
-**待定，由发版节奏决定。** 内核候选 5.6.0（**非承诺版本号**）；宿主侧 UI 开关随宿主那一版走（现称 0.8.0，**同样待定**）。先写死版本号会绑住手。仓内 `hosts/memora-vscode/CHANGELOG.md:12` 最新条目为 **0.7.0**，**无 0.8.0 条目**（0.8.0 目前只是口头编号，未登记）。
+**待定，由发版节奏决定。** §7(1)（合并处取更严）的代码 + 测试已于 **2026-11-04 落地**，随下一版内核发版出包；本条不绑定任何版本承诺。内核候选 5.6.0（**非承诺版本号**）；宿主侧 UI 开关随宿主那一版走（现称 0.8.0，**同样待定**）。先写死版本号会绑住手。仓内 `hosts/memora-vscode/CHANGELOG.md:12` 最新条目为 **0.7.0**，**无 0.8.0 条目**（0.8.0 目前只是口头编号，未登记）。
 
 ### 4. 不在本轮做（明确划界，防后世误读为漏项）
 
