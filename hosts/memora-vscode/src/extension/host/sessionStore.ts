@@ -446,6 +446,29 @@ export class WorkspaceSessionStore implements ISessionStore {
   }
 
   /**
+   * 不持锁时的元数据补写（**延后到持短锁完成**，不产生任何无锁写）
+   *
+   * 背景：内核 `SessionArchiver` / `SessionNamer` 会把 `summary` / `keyTopics` / `autoName`
+   * 异步写回 `updateSessionMeta`，而自动归档是**离场 fire-and-forget**
+   * （`AGENT_EVENTS.sessionSwitched` / `sessionForked` → `archiveCoordinator`；内核零改动约束下
+   * 宿主拿不到归档完成时刻）。宿主在切走时就释放了旧会话锁，等 LLM 返回时已无锁。
+   *
+   * 为什么不能「只替换盘上 meta」：JSON 文件没有字段级原子写——所谓「只替换 meta」仍是
+   * 「读整份 → 写整份」，读与写之间对方新写入的轮次会被这份快照覆盖（**会缩短 roundIds**）。
+   * 所以这里不写盘，只记下待补字段，随后**拿同一个短锁 → 重读 → 持锁整写**：
+   * 对方的轮次写入也必须持同一把锁 ⇒ 两写被 OS 命名管道串行化，不存在读旧写新的交错。
+   *
+   * 拿不到锁（对方正持有该会话）⇒ 本次补写放弃：`meta` 是派生展示数据，丢了只影响
+   * 摘要/标题显示，绝不为它去覆盖别人的会话内容。待补字段留在内存，下次同名会话再
+   * 触发 `updateSessionMeta` 时重试。
+   */
+  private readonly pendingMeta = new Map<string, Partial<SessionMeta>>();
+  /** 已排队、尚未执行的补写（防同一会话重复排队） */
+  private readonly metaFlushScheduled = new Set<string>();
+  /** 在跑的补写任务（供测试 / 关停前等待） */
+  private readonly metaFlushTasks = new Set<Promise<void>>();
+
+  /**
    * 写盘前判据：本次写能否整文件覆盖（与 `assertSessionWriteAllowed` **同一份判据**）
    *
    * 三态：
@@ -478,32 +501,82 @@ export class WorkspaceSessionStore implements ISessionStore {
   }
 
   /**
-   * 【唯一豁免】不持锁时只合并写 SessionMeta（**内容字段一律取盘上真相**）
+   * 排队一次「持短锁的元数据补写」
    *
-   * 为什么存在这条豁免：内核 `SessionArchiver` / `SessionNamer` 会把 `summary` / `keyTopics` /
-   * `autoName` 异步写回 `updateSessionMeta`，而自动归档是**离场 fire-and-forget**
-   * （`AGENT_EVENTS.sessionSwitched` / `sessionForked` → `archiveCoordinator`，内核零改动约束下
-   * 宿主拿不到完成时刻）。宿主在切换完成时就释放了旧会话锁，等 LLM 返回时已无锁。
-   *
-   * 为什么合并写而不是整文件写：`summary` 等是**派生展示数据**，而 roundIds / archived /
-   * lastActiveAt 是内容真相。合并写只替换盘上的 `meta`，其余字段完全取自盘面 ⇒
-   * 即使这份内存里的 roundIds 过期，也不会覆盖另一个窗口刚写入的轮次。
-   *
-   * 为什么盘上文件不存在时直接放弃：那意味着会话已被另一个窗口删除，写回只会造出一个
-   * 无内容幽灵会话（与 `reloadSessionFile` 的「文件不存在即清空内存」同判据）。
+   * 与 `updateSessionMeta` 的同步部分解耦：内存态已立即更新（读路径不受影响），
+   * 只有盘上落盘被延后到拿到锁之后。
    */
-  private writeMetaOnlyIfLockless(sessionId: string, meta: SessionMeta): void {
-    const path = this.sessionFilePath(sessionId);
-    let disk: SessionFileShape;
+  private scheduleMetaFlush(sessionId: string, meta: Partial<SessionMeta>): void {
+    const merged = { ...(this.pendingMeta.get(sessionId) ?? {}), ...meta };
+    this.pendingMeta.set(sessionId, merged);
+    if (this.metaFlushScheduled.has(sessionId)) return;
+    this.metaFlushScheduled.add(sessionId);
+    const task = this.flushMetaUnderLock(sessionId).finally(() => {
+      this.metaFlushScheduled.delete(sessionId);
+      this.metaFlushTasks.delete(task);
+    });
+    this.metaFlushTasks.add(task);
+  }
+
+  /**
+   * 补写主体：短锁 → 重读盘面 → 叠加待补字段 → 持锁整写
+   *
+   * 三态拿锁（不能直接用 `acquireSessionLock`）：必须区分「本进程早已持有长锁」与
+   * 「本次临时拿到的短锁」——前者若在收尾 `release`，会把用户正在使用的当前会话
+   * 长锁误放掉（随后 `appendRoundId` 会被断言拦成静默漏轮）。
+   */
+  private async flushMetaUnderLock(sessionId: string): Promise<void> {
+    let acquiredByUs = false;
     try {
-      disk = JSON.parse(readFileSync(path, 'utf8')) as SessionFileShape;
+      const partial = this.pendingMeta.get(sessionId);
+      if (!partial) return;
+      if (!this.sessionAliveOnDiskForFlush(sessionId)) {
+        this.pendingMeta.delete(sessionId);
+        return;
+      }
+      if (!this.crossProcessLockEnabled) {
+        // 单进程模式：不需要锁，直接写
+        this.metas.set(sessionId, this.mergeSessionMeta(sessionId, partial));
+        this.writeSessionFile(sessionId);
+        this.pendingMeta.delete(sessionId);
+        return;
+      }
+      if (!this.sessionLock.isHeld(sessionId)) {
+        if (!(await this.acquireSessionLock(sessionId))) return; // 对方持锁 ⇒ 放弃本次补写
+        acquiredByUs = true;
+      }
+      if (!this.sessionAliveOnDiskForFlush(sessionId)) {
+        this.pendingMeta.delete(sessionId);
+        return;
+      }
+      this.metas.set(sessionId, this.mergeSessionMeta(sessionId, partial));
+      this.writeSessionFile(sessionId); // 持锁整写：与对方的轮次写入同一把锁串行化
+      // 落盘成功才销账（写失败保留待补字段，下次同名会话再触发重试）
+      this.pendingMeta.delete(sessionId);
     } catch (err) {
-      // 文件已被删除 / 坏档：本次元数据写放弃（不复活幽灵会话、不覆盖坏档）
-      console.warn(`Memora 会话元数据合并写跳过（盘上不可读）：${sessionId}`, err);
-      return;
+      // 补写失败不阻断任何对话路径；内存态仍在，下次同名会话写元数据时重试
+      console.warn('Memora 会话元数据补写失败（保留内存态）', err);
+    } finally {
+      // 只放本次临时拿到的短锁；长锁（当前会话）归切换/关闭流程释放
+      if (acquiredByUs) this.releaseSessionLock(sessionId);
     }
-    const body: SessionFileShape = { ...disk, sessionId, meta };
-    atomicWriteFileSync(path, JSON.stringify(body, null, 2));
+  }
+
+  /**
+   * 补写前的盘面存活检查：文件不存在 ⇒ 会话已被另一窗口删除（写回会复活幽灵）
+   *
+   * 单进程模式不做该判据（没有跨进程删除者，保持既有行为）。
+   */
+  private sessionAliveOnDiskForFlush(sessionId: string): boolean {
+    if (!this.crossProcessLockEnabled) return true;
+    return existsSync(this.sessionFilePath(sessionId));
+  }
+
+  /** 等待所有排队中的元数据补写结束（测试收口 / 将来的关停收口共用） */
+  async waitForPendingMetaWrites(): Promise<void> {
+    while (this.metaFlushTasks.size > 0) {
+      await Promise.all(Array.from(this.metaFlushTasks));
+    }
   }
 
   /**
@@ -803,7 +876,7 @@ export class WorkspaceSessionStore implements ISessionStore {
   }
 
   /**
-   * 更新 LLM 生成只读元数据（双层命名单一写点）：
+   * 合成 LLM 生成的只读元数据（合并语义的**单点实现**）：
    * autoName/keyTopics/summary 由内核 SessionNamer/SessionArchiver 写入；displayName
    * 由用户手动改名（renameSession）写入。setSessionTitle 亦收口于此，避免双路径分叉
    * （缺此实现时内核 updateSessionMeta 调用静默 no-op，自动命名/改名失效）。
@@ -827,13 +900,10 @@ export class WorkspaceSessionStore implements ISessionStore {
    * 尚不存在（`setRoundIds` 内的计数回写因 `if (!meta) return` 提前退出）。写 0 会让
    * 分叉会话在 meta 上留下假值 0，而 `getSessionMeta` 见 meta 即直接返回（不走
    * roundIds 占位兜底），于是 `getMessageCount()` 对它返回 0（真值 N*2）。
-   *
-   * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
-   * @param meta 部分元数据（autoName/displayName/keyTopics/summary/createdAt）
    */
-  updateSessionMeta(sessionId: string, meta: Partial<SessionMeta>): void {
+  private mergeSessionMeta(sessionId: string, meta: Partial<SessionMeta>): SessionMeta {
     const existing = this.metas.get(sessionId);
-    const updated: SessionMeta = {
+    return {
       // 基底 + 覆盖：非本次入参字段（createdAt 等）随基底留存，不被白名单重建丢弃
       ...existing,
       ...meta,
@@ -852,11 +922,30 @@ export class WorkspaceSessionStore implements ISessionStore {
       updatedAt: existing?.updatedAt ?? new Date().toISOString(),
       messageCount: existing?.messageCount ?? this.deriveMessageCount(sessionId),
     };
-    this.metas.set(sessionId, updated);
-    // 元数据是异步派生面（内核归档/命名 fire-and-forget）：不持锁时不整文件覆盖，
-    // 改为「盘上内容字段 + 本次 meta」的合并写（见 writeMetaOnlyIfLockless 的论证）
+  }
+
+  /**
+   * 更新会话元数据（**唯一写点**）
+   *
+   * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
+   * @param meta 部分元数据（autoName/displayName/keyTopics/summary/createdAt）
+   */
+  updateSessionMeta(sessionId: string, meta: Partial<SessionMeta>): void {
+    this.metas.set(sessionId, this.mergeSessionMeta(sessionId, meta));
+    // 盘上已无该会话（只有「不持锁 + 非本进程新建」才可能是被另一窗口删除）：
+    // 此时任何补写都会用本进程旧内存复活一个幽灵会话，故放弃并清空内存镜像
+    if (
+      this.crossProcessLockEnabled &&
+      !this.sessionLock.isHeld(sessionId) &&
+      !this.locklessCreated.has(sessionId) &&
+      !existsSync(this.sessionFilePath(sessionId))
+    ) {
+      this.metas.delete(sessionId);
+      return;
+    }
     if (this.resolveWriteScope(sessionId) === 'denied') {
-      this.writeMetaOnlyIfLockless(sessionId, updated);
+      // 不持锁 ⇒ 延后到持短锁的补写（见 pendingMeta 声明处论证），绝不无锁整写
+      this.scheduleMetaFlush(sessionId, meta);
       return;
     }
     this.writeSessionFile(sessionId);

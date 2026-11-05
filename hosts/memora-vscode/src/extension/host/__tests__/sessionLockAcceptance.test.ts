@@ -8,6 +8,8 @@
  *   ④ 释放后同会话可重开并写入，且「拿锁后重读」读到对方刚写的轮（不是装饰）
  *   ⑤ 两窗口同时恢复到最后活跃会话：第二窗口**不被挡死**，按真实判据让位到
  *      最近的可用会话，且首选会话数据完好
+ *   ⑥ 归档异步 meta 回写（短锁已释放）与另一窗口「持锁追加轮次」交错：补写要么放弃、
+ *      要么在持锁重读后整写 ⇒ 盘上 roundIds 绝不被缩短（内容字段只来自盘面）
  *
  * 判据口径：
  *   - 锁 = 每会话一把，锁名含数据目录哈希（跨工作区同名会话不得互挡）
@@ -238,6 +240,42 @@ describe('6.0.0 步 3 验收：每会话跨进程写锁', () => {
     expect(ids.filter((id) => id.includes('hold-0'))).toHaveLength(1);
     expect(ids.filter((id) => id.includes('hold-1'))).toHaveLength(1);
   }, 30_000);
+
+  it('⑥ 归档 meta 短锁补写：对方持锁写轮次时绝不缩短 roundIds', async () => {
+    const sessionId = 's-archive';
+    plantSession(ws, sessionId, 2); // 盘上已有 2 轮
+
+    // 两个实例模拟两窗口：B 持锁追加轮次；A 是离场归档（短锁已随切走释放）
+    const writer = new WorkspaceSessionStore(ws);
+    const archiver = new WorkspaceSessionStore(ws);
+    writer.load();
+    archiver.load();
+    writer.enableCrossProcessLock();
+    archiver.enableCrossProcessLock();
+
+    await writer.acquireSessionLock(sessionId);
+    writer.appendRoundId(sessionId, `${sessionId}-w0`); // 持锁写第 3 轮
+    // A 不持锁写 meta ⇒ 延后短锁补写；此刻 B 持锁 ⇒ 补写必须整体放弃，不得无锁整写
+    archiver.updateSessionMeta(sessionId, { summary: '归档摘要' });
+    await archiver.waitForPendingMetaWrites();
+    const during = JSON.parse(readFileSync(sessionFile(ws, sessionId), 'utf8')) as {
+      roundIds?: string[];
+      meta?: { summary?: string };
+    };
+    expect(during.roundIds).toHaveLength(3); // 新轮没被旧快照缩短
+    expect(during.meta?.summary).toBeUndefined(); // 也没抢写（内容归持锁方）
+
+    // B 释放后重试：拿到短锁 ⇒ 重读 3 轮 + 合并 meta ⇒ 持锁整写，轮次与摘要都在
+    writer.releaseSessionLock(sessionId);
+    archiver.updateSessionMeta(sessionId, { summary: '归档摘要' });
+    await archiver.waitForPendingMetaWrites();
+    const after = JSON.parse(readFileSync(sessionFile(ws, sessionId), 'utf8')) as {
+      roundIds?: string[];
+      meta?: { summary?: string };
+    };
+    expect(after.roundIds).toEqual([`${sessionId}-p0`, `${sessionId}-p1`, `${sessionId}-w0`]);
+    expect(after.meta?.summary).toBe('归档摘要');
+  }, 20_000);
 
   it('生产装配守卫：extension.ts 必须启用跨进程锁', () => {
     const source = readFileSync(join(HOST_ROOT, 'src', 'extension', 'extension.ts'), 'utf8');
