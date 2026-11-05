@@ -46,10 +46,6 @@ export type {
 // loop 的写序判据已改读**工具定义行 `diskWrite` 声明**（含自定义工具），本表不再是串行闸判据；
 // 宿主改动追踪（fileChangeTracker）仍据其 keys 派生**旧事件兜底**集合（现行事件已带 diskWrite 声明）。
 export { WRITE_PATH_EXTRACTORS } from '@/agent/toolResultCache.js';
-// OPAQUE_WRITE_TOOL_NAMES：目标不可静态定位的**内置**写工具名集（diskWrite:'opaque' 派生）。
-// @deprecated 6.0.0 移除——移除清单真源 = tasks/待完成任务.md · DEPRECATE-1。
-// 现行判据是 tool_start 上报的 diskWrite 声明，宿主已零消费；本版保留导出仅为废弃预警期承诺。
-export { OPAQUE_WRITE_TOOL_NAMES } from '@/agent/builtinTools.js';
 // 角色包（Role Pack）：文件夹形态（manifest.json 核心控制 + 独立内容文件）。
 // 只挂宿主/文档消费的装配元类型；装配结果/策略/团队/能力等子类型随签名推断可用，为内部实现
 export type { RolePackMeta } from '@/role-pack/types.js';

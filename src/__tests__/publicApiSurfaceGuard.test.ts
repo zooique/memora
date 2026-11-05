@@ -308,9 +308,6 @@ const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
   'Memory',
   'MemoryInspector',
   'MemorySnapshot',
-  // OPAQUE_WRITE_TOOL_NAMES：已注册废弃（6.0.0 移除，真源 tasks/待完成任务.md · DEPRECATE-1），
-  // 本版保留导出（承诺面），故快照恢复该符号。
-  'OPAQUE_WRITE_TOOL_NAMES',
   'PROJECT_SEARCH_RESULT_MAX_LEN',
   'Permission',
   'PolishResult',
