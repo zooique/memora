@@ -20,6 +20,12 @@
 - **`capabilities` 三态：拆开「未声明」与「显式空能力」**（`CAP-TRISTATE-1`）：此前 manifest 无 `capabilities` 与显式 `capabilities: []` 在解析层被折叠成同一个 `[]`，装配层再以 `length > 0` 判「有无声明」⇒ 两者都按「全开」放行，**「显式空能力」这一意图无法表达**。现 `RolePack.capabilities` / `RolePackAssembly.capabilities` 与解析返回值均为可选：`undefined` = 未声明（放行全部）；`[]` = 显式空（仅常驻工具，特权工具全关）；非空数组 = 白名单。**读侧影响**：该字段由必填改为可选 ⇒ 读侧类型变为 `string[] | undefined`，既有 `pack.capabilities.length` / `.map()` 一类直接解引用的消费者**会编译失败**，须先判空再分支（`undefined` = 全部工具、`[]` = 仅常驻）。装配层去掉 `?? []`，应用层改判 `undefined` 而非 `length > 0`（宿主侧已同代改为按已判定的三态渲染，不参与裁决）。**对直接 import 内核并读取 `capabilities` 的第三方，从 5.5.0 升上来是源级破坏**：该字段由必填变可选，`.length` / `.map()` 需先判空；本仓宿主已同代适配，终端用户无感。**⚠️ 这是公开 manifest 语义的收紧，不是纯 bugfix**：既有外部角色包若显式写 `capabilities: []`，行为从「全开」变为「仅常驻工具」——旧折叠让该写法永远拿不到想要的收紧效果，现按字面生效。**证据边界**：仓内三个内置包均无显式 `[]`，本机与仓库内全部包已核对（行为不变）；**外部包状态不可知**。**对消费者**：不写 `capabilities` 的包零变化；显式写 `[]` 的包若要全开请删掉该字段，若要白名单请补能力项。验收判据与变异收据见台账 `CAP-TRISTATE-1`。
 - **只读会话向模型如实列出「哪些工具会被拒绝」**（`UNAVAILABLE-WRITE-HINT-1`）：只读模式（`act.toolReadonly: 'readonly'`）下，系统提示新增「## 只读会话」一段，列出本会话中调用会被拒绝的工具名——判据复用 `ToolDefinition.readonly`（与 `toolRunner.applyPrechecks` 同一判据，不另立写工具名单）。**定性 = 降低概率的止血，不是修复**：应用层只读闸仍是唯一执行判据，模型仍可能被用户指令推着去试（真机已见模型改走代码执行绕过路径限制），这段文字只把确定会被拒的项提前讲清——不承诺、不闭环、不替代任何闸，不得据此宣称原事故已解决（病因未定，见台账 `AGENT-FAKE-CREATE-1`）。**触发边界**：仅当不可用工具集非空时出现；非只读会话、以及全部工具都标了 `readonly: true` 的会话零变化。**只讲事实不讲禁令**：只列工具名与「会被拒绝」这一事实，并说明本会话无法执行写入（需写入时由用户调整角色包设置），不对模型下达「不许 / 禁止」类行为禁令。**同族补齐**：`setStrategy()` 此前不重建系统消息 ⇒ 只读会话首轮按旧口径（冷启动时按默认口径）下发，现每次策略变更后重建 `messages[0]`。**对消费者**：零接口变更；仅在只读角色包会话里多一段提示文案。
 
+### Breaking（内核 · 6.0.0 废弃清账）
+
+- **`OPAQUE_WRITE_TOOL_NAMES` 不再导出**（`DEPRECATE-1`）：该常量只是「内置写工具中目标不可静态定位者」的静态索引，事实载体已长期是工具定义行的 `diskWrite: 'opaque'` 声明（`tool_start` 事件原样上报），宿主与内核生产均零消费。**删除的是公开面那一行**（导出 / 手册镜像 / 守卫快照），常量保留内核内部，内部契约钉测试零改动。**迁移**：需要「目标不可静态定位」这一事实请读 `ToolDefinition.diskWrite`，不要依赖该名单。
+- **`ToolExecutor.builtinDefinitions` 已删除**（`DEPRECATE-1`）：5.5.0 更名 `allToolDefinitions` 后保留的转发 getter，逐行等价同一 getter、全仓零调用。**迁移**：一律改读 `allToolDefinitions`（或直接读 `ToolDefinition` 声明），行为零差异。
+- **`AgentOptions.noOverwriteRoots` 装配期配置键已删除**（`DEPRECATE-1`）：**能力未撤**——「禁止覆盖根」判据（`SecurityGuard.assertNotOverwrite`）与 `agent.security.setNoOverwriteRoots(paths)` 均保留，入口从「Agent 构造期」改为「运行期热更新」。**为什么**：该键在本仓宿主装配期传入的用户资产目录已不在 `allowedPaths`，目标文件先被白名单拒绝、判据生产不可达；继续保留键只会让调用方误以为装配期配置生效。**迁移**：在 `new Agent(...)` 之后调用 `agent.security.setNoOverwriteRoots([...])`；不调用即不启用（行为与原默认值 `[]` 一致）。
+
 ## [5.5.0] · 2026-11-03
 
 ### Added（内核）
