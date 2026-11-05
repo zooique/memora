@@ -126,12 +126,16 @@ describe('6.0.0 步 3 验收：每会话跨进程写锁', () => {
   });
 
   it('① 两进程同会话：第二者被拒，第一者仍能正常收尾', async () => {
-    const holder = spawnLockChild(ws, 'hold', 's-one');
+    const holder = spawnLockChild(ws, 'holdwait', 's-one');
     await holder.waitForLine('LOCKED');
     const second = spawnLockChild(ws, 'try', 's-one');
     const acquiredLine = await second.waitForLine('ACQUIRED');
     expect(acquiredLine.split(' ')[1]).toBe('false');
     await second.done;
+    // 断言完再放行持锁方：`hold` 的固定 1.5s 窗口在全量套件满载（147 文件并行）时
+    // 会被 tsx 冷启吃掉 ⇒ 持锁方先退出把锁交出去、第二者误判为 acquired=true（假红）。
+    // `holdwait` 用显式哨兵，正是为这种「第二个子进程冷启慢」的场景准备的。
+    writeFileSync(join(ws, '.lock-release'), '', 'utf-8');
     // 第一写者不受影响：等它写完第二轮并正常退出
     const holderDone = await holder.done;
     expect(holderDone.code).toBe(0);

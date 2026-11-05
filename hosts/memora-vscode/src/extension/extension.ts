@@ -22,6 +22,7 @@ import { resolveProjectDataDir } from './host/projectDataDir.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
+import { AgentRegistry } from './host/agentRegistry.js';
 import { ImageCache } from './host/imageCache.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
@@ -151,6 +152,8 @@ function runOnAssembledAgent(
  * @param projectPath 工作区路径
  * @param providerStore 大模型配置存储
  * @param sessionStore 会话存储单例（SSOT：与 UI 面板共享，杜绝双实例覆盖写导致会话记录加载不全）
+ * @param roundStore 问答闭环存储单例（与 sessionStore 同一项目的共享实例）
+ * @param agentRegistry 会话 → Agent 登记表（E4 登记；强制持有同一对存储单例）
  * @param globalState vscode 全局状态（读取持久化的激活角色包，重启后恢复用户选择；
  *   用户级而非工作区级——角色选择是用户偏好，不随工作区漂移）
  * @param configDir 插件内置配置目录（SSOT：由 extension.extensionUri 显式定位——
@@ -167,6 +170,7 @@ function getOrCreateAgent(
   providerStore: ProviderStore,
   sessionStore: WorkspaceSessionStore,
   roundStore: IRoundStore,
+  agentRegistry: AgentRegistry,
   globalState: vscode.Memento,
   configDir: string,
   imageCache: ImageCache,
@@ -250,7 +254,14 @@ function getOrCreateAgent(
   // 两参 then：装配失败分支显式吞掉，避免产生未处理的 rejection。
   void agentPromise.then(
     (agent) => {
-      currentAgent = agent;
+      // E4：登记「会话 → Agent」并**立即按会话查回一次**——证明登记表是活件（被创建、被查询），
+      // 不是只写不读的死代码。本轮只登记装配时的这一个会话；按会话拆实例在 E5，不在此扩容。
+      // 会话标识取内核公开 getter（`agentHistory` 在 init 后非空），异常兜底用 projectPath。
+      const sessionId = agent.agentHistory?.currentSessionName ?? projectPath;
+      agentRegistry.register(sessionId, agent);
+      // 同步引用**从登记表取回**（唯一读取面）：取不到说明登记环节被破坏，保留 null 让
+      // 依赖 currentAgent 的同步写校验 fail-closed（降级为拒绝写，而不是无校验直写）。
+      currentAgent = agentRegistry.get(sessionId) ?? null;
     },
     () => {
       // 装配失败：调用方各自处理；此处仅维护同步引用，不重复处理
@@ -365,6 +376,7 @@ export function activate(context: vscode.ExtensionContext): void {
       providerStore,
       sessionStore,
       roundStore,
+      agentRegistry,
       context.globalState,
       configDir,
       imageCache,
@@ -408,6 +420,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // 第二个写者被明确拒绝而不是静默覆盖。锁名含工作区路径哈希，跨工作区互不误挡；
   // 迁移/打捞在 load() 内直接写盘（不经过写断言），故必须在 load() 之后启用。
   sessionStore.enableCrossProcessLock();
+
+  // 会话 → Agent 登记表（E4：只登记不启用）。构造参数强制传入**同一对**存储单例——
+  // 这来自 E3 实证的硬约束（各建一份 roundStore ⇒ `rounds/index.json` 覆盖写丢视图），
+  // 登记表自身不得新建存储；本轮仍只有一条登记（getOrCreateAgent 内）。
+  const agentRegistry = new AgentRegistry({ sessionStore, roundStore });
 
   // 孤儿清扫（无会话引用 Round 统一回收）：删除会话/截断后遗留的无引用轮
   // 在启动时清理，防磁盘膨胀与「无引用卡片滞留」（引用归 SessionStore、物理归 RoundStore）。
