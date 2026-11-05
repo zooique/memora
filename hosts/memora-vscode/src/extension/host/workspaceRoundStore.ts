@@ -317,7 +317,7 @@ export class WorkspaceRoundStore implements IRoundStore {
    * 再由 sessionStore 现场派生引用集合判 0。
    */
   decrementRef(_roundId: string): void {
-    // 有意为空：引用变化只发生在 sessions.json
+    // 有意为空：引用变化只发生在会话 roundIds（落盘 = sessions/<sessionId>.json）
   }
 
   /**

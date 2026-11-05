@@ -8,7 +8,7 @@
  * 装配：
  *   - LLM Provider：createProvider（配置面板激活 / 环境变量回退）
  *   - 记忆存储：SQLite（.memora/memories.db，经内核工厂；旧环境降级 JSON，见 host/memoryStorage.ts）
- *   - 会话存储：WorkspaceSessionStore（.memora/sessions.json）
+ *   - 会话存储：WorkspaceSessionStore（.memora/sessions/<sessionId>.json + _global.json）
  *   - 网络搜索：FetchWebSearchProvider（Bing→DuckDuckGo 降级）
  *   - 功能定位：内置角色包（dist/extension/role-packs/ 构建期同步）+ 用户角色包（globalStorageUri/role-packs 运行态注入）
  *   - 日志对接：setLogger(vscodeOutputChannel) 将内核日志导向 VSCode 输出通道
@@ -134,7 +134,7 @@ export interface AssembleOptions {
    * 会话存储（SSOT 复用：由 extension 单例注入，与 UI 面板共享同一实例）
    *
    * 不传时内部新建（独立用途/测试）。必须复用：否则 UI 面板与 Agent 各持一个
-   * WorkspaceSessionStore 实例，双实例独立内存、覆盖写同一 sessions.json，
+   * WorkspaceSessionStore 实例，双实例独立内存、各自写同一会话文件，
    * 会导致「UI 加载的会话记录不完整 / 互相覆盖丢消息」（无法加载会话记录根因）。
    */
   sessionStore?: ISessionStore;

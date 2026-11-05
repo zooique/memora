@@ -344,7 +344,7 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   syncTrustNotice();
 
-  // 侧边栏视图：对话面板（sessionStore 与 assemble 同路径 .memora/sessions.json）
+  // 侧边栏视图：对话面板（sessionStore 与 assemble 同路径 .memora/sessions/）
   const workspacePath = resolveWorkspacePath();
 
   /**

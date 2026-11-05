@@ -474,11 +474,14 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
   });
 
   it('会话文件损坏 → load 降级为空不抛错', () => {
+    // 旧单文件（迁移源）损坏：跳过迁移但保留文件（可人工修复），本次启动只见已有会话文件（空）
     mkdirSync(join(dir, '.memora'), { recursive: true });
     writeFileSync(join(dir, '.memora', 'sessions.json'), '{invalid json', 'utf8');
     const s = new WorkspaceSessionStore(dir);
     expect(() => s.load()).not.toThrow();
     expect(s.listSessions()).toEqual([]);
+    // 未迁走（坏档不删），下次启动仍会尝试（人修好后可续摊）
+    expect(existsSync(join(dir, '.memora', 'sessions.json'))).toBe(true);
   });
 });
 
@@ -1026,8 +1029,10 @@ describe('WorkspaceSessionStore · 导航指针（SESSION-RESUME-1）', () => {
   it('② 指针落盘往返：新实例（重启）读得回，不需要额外迁移', () => {
     seedTwoSessions();
     store.setLastActiveSession('2026-08-01-old');
-    // 直接读磁盘形态，证明是持久化而非内存巧合
-    const raw = JSON.parse(readFileSync(join(dir, '.memora', 'sessions.json'), 'utf8')) as {
+    // 直接读磁盘形态（全局态文件），证明是持久化而非内存巧合
+    const raw = JSON.parse(
+      readFileSync(join(dir, '.memora', 'sessions', '_global.json'), 'utf8'),
+    ) as {
       lastActiveSessionId?: string;
     };
     expect(raw.lastActiveSessionId).toBe('2026-08-01-old');
@@ -1040,14 +1045,37 @@ describe('WorkspaceSessionStore · 导航指针（SESSION-RESUME-1）', () => {
     expect(store.getInitialSessionId()).toBe('2026-08-05-new');
   });
 
-  it('④ 旧档无该字段 ⇒ 空指针走「最近写入」兜底（向后兼容，无迁移）', () => {
-    seedTwoSessions();
-    // 模拟加字段前的旧档：把字段删掉再重开
-    const file = join(dir, '.memora', 'sessions.json');
-    const raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
-    delete raw.lastActiveSessionId;
-    writeFileSync(file, JSON.stringify(raw, null, 2));
-    expect(reopen().getInitialSessionId()).toBe('2026-08-05-new');
+  it('④ 旧档无该字段 ⇒ 迁移成每会话文件后仍走「最近写入」兜底', () => {
+    // 模拟加字段前的旧 workspace（3.x 形态：metas/roundIdsStore 全写在一份 sessions.json，
+    // 且没有 lastActiveSessionId）。本用例同时覆盖「旧档迁移后语义不回退」：
+    // 迁移只搬会话内容/roundIds，全局态缺字段 ⇒ 空指针 ⇒ 必须退回 updatedAt [0]。
+    mkdirSync(join(dir, '.memora'), { recursive: true });
+    writeFileSync(
+      join(dir, '.memora', 'sessions.json'),
+      JSON.stringify({
+        metas: {
+          '2026-08-01-old': {
+            sessionId: '2026-08-01-old',
+            updatedAt: '2026-08-01T10:00:00.000Z',
+            messageCount: 2,
+          },
+          '2026-08-05-new': {
+            sessionId: '2026-08-05-new',
+            updatedAt: '2026-08-05T10:00:00.000Z',
+            messageCount: 2,
+          },
+        },
+        roundIdsStore: {
+          '2026-08-01-old': ['round-old-1'],
+          '2026-08-05-new': ['round-new-1'],
+        },
+      }),
+      'utf8',
+    );
+    const migrated = reopen();
+    expect(migrated.getInitialSessionId()).toBe('2026-08-05-new');
+    // 迁移后两个会话都可见（集合判据，不依赖读盘顺序）
+    expect(new Set(migrated.listSessions())).toEqual(new Set(['2026-08-01-old', '2026-08-05-new']));
   });
 
   it('⑤ 删除会话同步清指针（否则重启复活已删会话）', () => {

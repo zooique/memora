@@ -7,7 +7,7 @@
  *
  * 实测结论（本文件锁定的形态，2026-10-30；refCount 口径按 6.0.0 批 1 更新）：
  *   进程被 SIGKILL 的瞬间，磁盘上是 —— `rounds/{id}.json` 存在（`refCount: 1` 作为存在性标记）、
- *   `index.json` 记为 `status: 'pending'`（**不再含 refCount 副本**）；`sessions.json` 可能尚未写。
+ *   `index.json` 记为 `status: 'pending'`（**不再含 refCount 副本**）；`sessions/<sessionId>.json` 可能尚未写。
  *   即：崩溃残留轮对「按会话列历史」的路径可能**不可见**，靠 `listInterruptedRecent`
  *   按「pending/error + 本地日」打捞（判据与 refCount 无关）。这正是打捞口存在的唯一理由。
  *
@@ -16,7 +16,15 @@
  */
 // @vitest-environment node
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  readFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -154,9 +162,17 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
     // ADR-044：建轮即登记会话 ⇒ 崩溃瞬间会话侧**已经**认它（可见、可删、可续跑）。
     // 打捞的意义随之从「让它可见」变为「把 pending 收场为 interrupted」。
     // 旧契约下这里断言的是「会话不认它」——那是本条要消灭的形态，不再作为判据。
-    const sessionsPath = join(dataDir, 'sessions.json');
-    expect(existsSync(sessionsPath)).toBe(true);
-    expect(readFileSync(sessionsPath, 'utf8')).toContain(crashedRoundId);
+    // 会话落盘形态 = 每会话一文件（`sessions/<encodeURIComponent(sessionId)>.json`）：
+    // 扫目录时排除 `_global.json` 与 `.tmp`，并以文件内内容（含 roundIds）为准判定。
+    const sessionsDir = join(dataDir, 'sessions');
+    expect(existsSync(sessionsDir)).toBe(true);
+    const sessionFiles = readdirSync(sessionsDir).filter(
+      (n) => n.endsWith('.json') && !n.endsWith('.tmp') && n !== '_global.json',
+    );
+    expect(sessionFiles.length).toBeGreaterThan(0);
+    expect(
+      sessionFiles.some((n) => readFileSync(join(sessionsDir, n), 'utf8').includes(crashedRoundId)),
+    ).toBe(true);
   });
 
   it('重启后按会话日期打捞到该轮，且叙述派生走 shared 单点', () => {
