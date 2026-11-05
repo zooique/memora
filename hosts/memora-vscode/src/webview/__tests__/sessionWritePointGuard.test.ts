@@ -9,11 +9,17 @@
  * 路径**。新增第 N 条导航路径时，只要它自己直接 `this._currentSessionId = ...` 而不落盘，
  * 既有的 spy 用例照绿（它压根没走那条新路径），bug 重新落地而无人报警。
  *
- * 判据（源码扫描，三条同时成立）：
- *   ① `chatPanel.ts` 中 `this._currentSessionId = <右值>;` 恰好 **2 处**；
- *   ② 一处右值为 `sessionId`，且位于 `setCurrentSessionId()` 内、紧跟 `setLastActiveSession(sessionId)`；
- *   ③ 另一处右值为 `this.sessionStore.getInitialSessionId()`（构造期**只读**指针灌入，不改状态）。
- * 任何第三处赋值 ⇒ 红（新增导航路径必须回到收口方法）。
+ * 判据（源码扫描，四条同时成立）：
+ *   ① `this._currentSessionId = <右值>;` 的右值**只允许三类**：
+ *      - `sessionId`：收口写，**恰好 1 处**，位于 `setCurrentSessionId()` 内、紧跟
+ *        `setLastActiveSession(sessionId)`；
+ *      - `this.sessionStore.getInitialSessionId()`：**只读**导航指针灌入（构造期 + 面板销毁后
+ *        重开，B1 重开自愈），不写状态、不落盘；
+ *      - `''`：面板销毁归还跨进程锁时的**清空**（B1），**恰好 1 处**，位于
+ *        `releaseHeldSessionLock()` 内且**不得**落盘。
+ *   ② 收口方法内必须成对写「内存字段 + 上次停留指针」；
+ *   ③ 清空点不得调用 `setLastActiveSession`——销毁不是导航，写盘会让重开跳到别的会话；
+ *   ④ 任何第四类右值 ⇒ 红（新增导航路径必须回到收口方法）。
  *
  * 反向守卫：先断言赋值总数 > 0 —— 防提取正则失效后空集恒过（与 `narrowWidthGuard` 同纪律）。
  */
@@ -37,8 +43,14 @@ const SETTER_NAME = 'private setCurrentSessionId(';
 /** 落盘调用（收口方法内必须紧跟出现） */
 const PERSIST_CALL = 'this.sessionStore.setLastActiveSession(sessionId);';
 
-/** 构造期灌入的**唯一**合法右值（只读导航指针，不改状态） */
+/** 构造期 / 面板重开灌入的合法右值（只读导航指针，不改状态） */
 const INIT_VALUE = 'this.sessionStore.getInitialSessionId()';
+
+/** 面板销毁归还锁时的清空方法名（B1） */
+const RELEASE_NAME = 'private releaseHeldSessionLock(';
+
+/** 清空点的**唯一**合法右值（不落盘：不得改写「上次停留」指针） */
+const CLEAR_VALUE = "''";
 
 /**
  * 提取源码中全部「当前会话赋值」的右值。
@@ -53,13 +65,14 @@ function collectAssignValues(source: string): string[] {
 }
 
 /**
- * 截取收口方法体：从方法签名到**第一个同级缩进 `}`**（该方法体内无嵌套块，按缩进闭合足够）。
+ * 截取方法体：从方法签名到**第一个同级缩进 `}`**（这些方法体内无嵌套块，按缩进闭合足够）。
  *
  * @param source chatPanel.ts 全文
+ * @param methodName 方法签名前缀（含可见性修饰符）
  * @returns 方法体文本；方法不存在时返回空串（由用例把「不存在」判红）
  */
-function extractSetterBody(source: string): string {
-  const start = source.indexOf(SETTER_NAME);
+function extractMethodBody(source: string, methodName: string): string {
+  const start = source.indexOf(methodName);
   if (start < 0) return '';
   const bodyStart = source.indexOf('{', start);
   if (bodyStart < 0) return '';
@@ -75,20 +88,32 @@ describe('SESSION-RESUME-1 · 会话导航写点守卫', () => {
     expect(assignValues.length).toBeGreaterThan(0);
   });
 
-  it('赋值点恰好 2 处（收口写 + 构造期灌入）', () => {
-    expect(assignValues.length).toBe(2);
+  it('赋值点只允许三类右值（收口写 / 只读灌入 / 销毁清空）', () => {
+    const allowed = ['sessionId', INIT_VALUE, CLEAR_VALUE];
+    expect(assignValues.every((v) => allowed.includes(v))).toBe(true);
+    // 收口写只能 1 处：多于 1 处 = 有导航路径绕过了收口方法
+    expect(assignValues.filter((v) => v === 'sessionId')).toHaveLength(1);
   });
 
   it('收口方法存在，且内部成对写「内存字段 + 上次停留指针」', () => {
-    const body = extractSetterBody(source);
+    const body = extractMethodBody(source, SETTER_NAME);
     expect(body).not.toBe('');
     expect(body).toContain('this._currentSessionId = sessionId;');
     expect(body).toContain(PERSIST_CALL);
   });
 
-  it('另一处赋值只能是构造期 getInitialSessionId（只读灌入）', () => {
-    // 排除收口方法内的那处，剩下的必须全部是初始化灌入
-    const nonSetter = assignValues.filter((v) => v !== 'sessionId');
-    expect(nonSetter).toEqual([INIT_VALUE]);
+  it('非收口 / 非清空的赋值只能是只读灌入（构造期 + 面板重开）', () => {
+    // 排除收口写与销毁清空后，剩下的必须全部是 getInitialSessionId（只读，不改状态）
+    const nonSetter = assignValues.filter((v) => v !== 'sessionId' && v !== CLEAR_VALUE);
+    expect(nonSetter).toEqual([INIT_VALUE, INIT_VALUE]);
+  });
+
+  it('清空点恰好 1 处，位于 releaseHeldSessionLock 内且不落盘', () => {
+    expect(assignValues.filter((v) => v === CLEAR_VALUE)).toHaveLength(1);
+    const body = extractMethodBody(source, RELEASE_NAME);
+    expect(body).not.toBe('');
+    expect(body).toContain(`this._currentSessionId = ${CLEAR_VALUE};`);
+    // 清空点绝不能顺带写「上次停留」：销毁不是导航，写盘会让重开跳走
+    expect(body).not.toContain(PERSIST_CALL);
   });
 });

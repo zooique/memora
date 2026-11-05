@@ -114,6 +114,15 @@ let gcScheduler: MemoryGcScheduler | null = null;
 let gcDriverAgent: Agent | null = null;
 
 /**
+ * 激活期会话存储单例的模块级引用（仅用于停用时释放跨进程会话锁）
+ *
+ * 会话锁是**进程级 OS 句柄**（命名管道 / Unix socket）：不释放就一直占着，别的窗口
+ * 永远拿不到该会话。`deactivate` 原本拿不到 `activate` 内的局部 `sessionStore`，
+ * 于是锁只能等进程退出才由 OS 回收 ⇒ 「关掉面板/停用插件后另一个窗口仍打不开该会话」。
+ */
+let hostSessionStore: WorkspaceSessionStore | null = null;
+
+/**
  * 扩展版本号（MCP 客户端握手时上报给 server，仅作遥测，不参与任何判据）
  *
  * activate 时从扩展清单取值——版本号唯一真源是 package.json，宿主不另存常量
@@ -275,8 +284,11 @@ function getOrCreateAgent(
   // 两参 then：装配失败分支显式吞掉，避免产生未处理的 rejection。
   void agentPromise.then(
     (agent) => {
-      // E4：登记「会话 → Agent」并**立即按会话查回一次**——证明登记表是活件（被创建、被查询），
-      // 不是只写不读的死代码。本轮只登记装配时的这一个会话；按会话拆实例在 E5，不在此扩容。
+      // E4：登记「会话 → Agent」并立即按同一会话键查回一次——**同键读同键不构成活性证明**，
+      // 只说明这条调用链没断；登记表当前无收益（`unregister` 零调用、`stores` 只赋不读、
+      // `createAgentForSession` 不存在），E7 前不启用，若 E7 换方案则整类删除
+      // （台账 `AGENTREGISTRY-PREEMPT-1`）。
+      // 本轮只登记装配时的这一个会话；`switchToSession` 不更新 key，故登记键会与当前会话漂移。
       // 会话标识取内核公开 getter（`agentHistory` 在 init 后非空），异常兜底用 projectPath。
       const sessionId = agent.agentHistory?.currentSessionName ?? projectPath;
       agentRegistry.register(sessionId, agent);
@@ -443,6 +455,8 @@ export function activate(context: vscode.ExtensionContext): void {
   roundStore.load();
   const sessionStore = new WorkspaceSessionStore(workspacePath, roundStore);
   sessionStore.load();
+  // 模块级引用交给 deactivate（停用路径释放跨进程锁的唯一入口）
+  hostSessionStore = sessionStore;
   // 跨进程写锁启用：两个 VS Code 窗口（各自一个 extension host 进程）同时打开会话时，
   // 第二个写者被明确拒绝而不是静默覆盖。锁名含工作区路径哈希，跨工作区互不误挡；
   // 迁移/打捞在 load() 内直接写盘（不经过写断言），故必须在 load() 之后启用。
@@ -852,6 +866,12 @@ export function activate(context: vscode.ExtensionContext): void {
  * `close()` 失败也要清：半关闭的实例比 `null` 更危险（`null` 会触发重新装配）。
  */
 export async function deactivate(): Promise<void> {
+  // 跨进程会话锁必须**无条件**先释放：它挂在下方所有早退分支之前。
+  // 「本窗口没装配 Agent」时也会走到 `if (!agentPromise) return`——若把释放放进 finally，
+  // 那条早退就会漏放锁，该会话对其他窗口永久不可用（本补丁修的头号伤）。
+  // 锁是进程级 OS 句柄，与 Agent 生命周期无关：Agent 没装配也可能已因面板打开而拿过锁。
+  hostSessionStore?.releaseAllSessionLocks();
+  hostSessionStore = null;
   if (!agentPromise) return;
   try {
     // MCP 子进程先停：注销工具 + 关闭 stdio（子进程随 transport 关闭退出）。

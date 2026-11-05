@@ -172,12 +172,17 @@ export class WorkspaceSessionStore implements ISessionStore {
    * 当前被任意会话引用的 Round ID 全集（**引用真源**）
    *
    * 供孤儿判定现场派生（内核 GC / 宿主启动清扫都经 `WorkspaceRoundStore.setReferencedIdsProvider`
-   * 回读本方法）。返回「此刻真实被引用」的集合，不是缓存计数。
+   * 回读本方法）。**每次调用都扫 `sessions/` 目录的全部会话文件求并集**——会话文件是跨窗口的
+   * 唯一真源；进程内的 `roundIdsStore` 只是本进程 `load()` / `reloadSessionFile()` 时的快照，
+   * 另一个窗口新建/分叉出的会话它看不见（按内存快照算引用集，会把仍被引用的轮当孤儿删掉）。
+   *
+   * 读盘口径与 `load()` 同源（同一个 `readSessionFiles`）：排除 `.migrated`、`.tmp` 与
+   * 全局态文件，不会把迁移留档或半写文件当成引用。
    */
   referencedIds(): string[] {
     const ids = new Set<string>();
-    for (const roundIds of this.roundIdsStore.values()) {
-      for (const id of roundIds) ids.add(id);
+    for (const file of readSessionFiles(this.sessionsDir)) {
+      for (const id of file.roundIds) ids.add(id);
     }
     return Array.from(ids);
   }
@@ -539,7 +544,9 @@ export class WorkspaceSessionStore implements ISessionStore {
     // 只删该会话文件（不碰其他会话；没有任何全局共享文件需要重写）
     this.removeSessionFile(sessionId);
 
-    // ② 现场重算引用集合：仍被其他会话（含分叉）引用的轮保留，无人引用才移入回收站。
+    // ② 现场重算引用集合：仍被其他会话（含**另一窗口**分叉出的会话）引用的轮保留，
+    // 无人引用才移入回收站。`referencedIds()` 现扫 `sessions/` 全部会话文件，
+    // 本进程内存名单不参与判定（内存名单看不到别窗口新建的会话）。
     // 这替代了旧的 refCount 递减 + 删轮循环——计数不是真源，派生才是。
     const referenced = new Set(this.referencedIds());
     const removedIds: string[] = [];
@@ -644,7 +651,7 @@ export class WorkspaceSessionStore implements ISessionStore {
     this.writeSessionFile(sessionId);
 
     const removed = roundIds.slice(idx);
-    // 现场重算：被其他会话（分叉）仍引用的轮保留；无人引用才移入回收站
+    // 现场重算（同上，扫盘）：被其他会话（含另一窗口分叉）仍引用的轮保留，无人引用才移入回收站
     const referenced = new Set(this.referencedIds());
     const removedIds: string[] = [];
     for (const id of removed) {

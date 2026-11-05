@@ -315,6 +315,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 是否在流式生成中（由 consumeFlow 维护）：生成中禁止切换历史，
    *  避免重放清空消息区后，进行中的 chunk 污染重放视图。 */
   private _streaming = false;
+  /**
+   * 「面板已销毁但本流尚未收场」时挂起的锁释放标记
+   *
+   * 生成中面板被折叠/关闭时**不能立刻放锁**：流还在往这个会话写盘，提前释放会让另一窗口
+   * 拿到锁后本进程的写断言直接失败（等于丢轮）。故推迟到 `consumeFlow` 收场（`_streaming`
+   * 复位处）再放。面板若在流结束前又被展开（新 webview），标记在 `resolveWebviewView`
+   * 里清掉——面板回来了就该继续持有。
+   */
+  private _releaseLockOnStreamEnd = false;
   /** 视图重建代数（每次 resolveWebviewView 自增）：供流尾检测「流期间 webview 被折叠/展开
    *  重建过」——重建后新 webview 没有本流的实时投影，落盘完成后须补一次 replaySession 刷全。 */
   private _viewEpoch = 0;
@@ -1142,6 +1151,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken,
   ): void {
     this._view = webviewView;
+    // 重开自愈（会话锁 B1）：面板销毁时已归还锁并清空 `_currentSessionId`（见 onDidDispose），
+    // 再次展开要能「回到上次那个会话」——真源仍是 getInitialSessionId（与构造函数同一处），
+    // 不另存一份「上次会话」指针。真正的拿锁在 ready 握手的 claimInitialSessionOwnership。
+    if (!this._currentSessionId) this._currentSessionId = this.sessionStore.getInitialSessionId();
+    // 面板回来了：撤销「流结束后归还锁」的挂起标记（挂起只因销毁而设）
+    this._releaseLockOnStreamEnd = false;
     // 视图重建代数自增：本次流若跨重建，流尾据此补移植（见 _viewEpoch 注释）
     this._viewEpoch += 1;
     // 活动文件显示订阅随视图装配：面板折叠/展开会重建 webview，必须重注册并补推一次
@@ -1180,6 +1195,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // bindSecurityAudit 幂等重绑。
       this._securityAuditUnsub?.();
       this._securityAuditUnsub = undefined;
+      // 会话锁收尾（会话锁 B1）：本面板**长持有**当前会话的跨进程锁，面板销毁必须归还，
+      // 否则该会话对其他窗口永久不可用（只能等本扩展宿主进程退出）。
+      // 生成中不能立刻放：流还在往这个会话写盘，放锁后别窗口接管会让本进程写断言失败（丢轮）
+      // ⇒ 挂起到 consumeFlow 收场再放（见 `_releaseLockOnStreamEnd`）。
+      if (this._streaming) {
+        this._releaseLockOnStreamEnd = true;
+      } else {
+        this.releaseHeldSessionLock();
+      }
     });
 
     // 消息分发入口（HOST-CTX-12）：整条 if-else 链已摘为 private handleWebviewMessage，此处只
@@ -1188,6 +1212,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
       this.handleWebviewMessage(msg);
     });
+  }
+
+  /**
+   * 归还本面板长持有的会话锁，并清空「当前会话」标识
+   *
+   * 两者同源：创建 / 切换 / 分叉三条路径都是「先拿新锁、成功后才改 `_currentSessionId`」，
+   * 失败则回滚 id（见各方法），所以 `_currentSessionId` 指向的就是本面板持有的那把锁。
+   * `releaseSessionLock` 只关**本进程**的监听（`sessionLock.release` 对未持有的会话是空操作），
+   * 不会误删别的窗口的锁。
+   *
+   * 调用点只有两个：面板销毁（`onDidDispose`）与流收场（挂起标记的落点）。
+   */
+  private releaseHeldSessionLock(): void {
+    const held = this._currentSessionId;
+    this._currentSessionId = '';
+    if (held) this.sessionStore.releaseSessionLock(held);
   }
 
   /**
@@ -2264,6 +2304,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           .filter((m) => m.sessionId !== preferred && !this.sessionStore.isArchived(m.sessionId))
           .map((m) => m.sessionId),
     });
+    // 握手期间面板被销毁（onDidDispose 已清空 id 并尝试归还，但锁此刻才拿到）⇒ 补归还，
+    // 否则这把锁会挂在一个已销毁的面板上、直到扩展宿主进程退出（同族漏锁）。
+    if (!this._currentSessionId) {
+      if (claim.sessionId) this.sessionStore.releaseSessionLock(claim.sessionId);
+      return;
+    }
     if (!claim.displaced) return; // 首选归属本进程：单窗口常态
     if (claim.sessionId) {
       const manager = this._agent?.sessionManager;
@@ -3942,6 +3988,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.postMetrics();
     // 预算可视化：推送上下文占用快照（输入区常驻指示器，脱离 showMetrics 独立常驻）
     this.postContextOccupancy();
+    // 面板在流期间被销毁过（挂起标记，见 onDidDispose）：全部落盘写完才归还会话锁。
+    // 必须落在本方法**最末**——上方所有收场写盘都用 `_currentSessionId`，提前清空会写到空会话。
+    if (this._releaseLockOnStreamEnd) {
+      this._releaseLockOnStreamEnd = false;
+      this.releaseHeldSessionLock();
+    }
   }
 
   /**
