@@ -66,6 +66,11 @@ agent_created: true
 > ⚠️ 内核 `release.yml` 有 `verify:changelog` / `verify:publish-docs` 两道 CI 闸；**`host-release.yml` 没有**（gate ③ 只含 format:check / typecheck / lint / 测试 / package）。故 CHANGELOG 日期窗 + 文档发布态**须人工在 tag 前确认**，CI 不会替你拦。
 
 ### Step 2：核对版本号（宿主专属三方一致 + 本地预检）
+- **判号（SEMVER-GATE-1）**：宿主版本同样按「改动形态 → 版本号」判据走，真源 =
+  [`../memora-kernel-release/references/pre-release-audit.md`](../memora-kernel-release/references/pre-release-audit.md)
+  §2.5（本技能不复制表格）。宿主对外面 = 命令 / 配置键 / webview 协议与可见文案；**结论写进
+  CHANGELOG 宿主区该条 + 台账该条**；例外三项（承担方 + 举证 / CHANGELOG 写法 / 台账 `版本例外` 行）
+  缺一即本步不放行。
 - **三方一致**：`hosts/memora-vscode/package.json` `version` = CHANGELOG 宿主区标题版本 = 即将推送的 tag `vscode@X.Y.Z`。
   - 🔴 **是宿主 `package.json`（`hosts/memora-vscode/`），不是根 `package.json`**（根的是内核版本，宿主发版不动它）。
 - **本地预检**（host-release.yml 不替你跑 changelog 闸，须手动在 tag 前跑，避免 tag 推上去才红）：

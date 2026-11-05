@@ -137,6 +137,27 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     expect(chips[1]?.textContent).toBe('摘要生成');
   });
 
+  it('三态可分辨：residentOnly 与 all 在角色卡上渲染出不同的状态标记', () => {
+    mountRolesView();
+    dispatchLoaded(
+      [
+        { name: 'open', displayName: '全开角色', capabilityState: { kind: 'all' } },
+        { name: 'resident', displayName: '常驻角色', capabilityState: { kind: 'residentOnly' } },
+      ],
+      'open',
+    );
+    const cards = document.querySelectorAll('.card');
+    const allMarker = cards[0]?.querySelector('.cap-chip--state');
+    const residentMarker = cards[1]?.querySelector('.cap-chip--state');
+    // 两态各自有标记（此前两者都留空 ⇒ 用户读成同一件事）
+    expect(allMarker?.textContent).toBe('全部工具');
+    expect(residentMarker?.textContent).toBe('仅基础工具');
+    // 核心可红断言：拿掉 residentOnly 分支（两态共用同一文案）时，本行必红
+    expect(allMarker?.textContent).not.toBe(residentMarker?.textContent);
+    // `list` 支不受影响：能力名 chip 不带状态修饰类
+    expect(cards[0]?.querySelectorAll('.cap-chip:not(.cap-chip--state)')).toHaveLength(0);
+  });
+
   it('G29 健康区：roles_loaded issues 渲染徽章 + 问题列表（error/warning 分色）', () => {
     mountRolesView();
     dispatchLoaded(

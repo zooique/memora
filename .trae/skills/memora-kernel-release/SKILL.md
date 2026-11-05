@@ -84,6 +84,11 @@ npm run verify:changelog; npm run verify:publish-docs
 3. `git` 提交文档改动。
 
 ### Step 2：核对版本号（三方一致 + 本地预检）
+- **判号（SEMVER-GATE-1）**：版本号由「改动形态 → 版本号」判据决定，真源 =
+  [`references/pre-release-audit.md`](./references/pre-release-audit.md) §2.5（本技能不复制表格）。
+  取证对**已发布包**，不对工作树；**结论写进 CHANGELOG 该条 + 台账该条**；判出 breaking 却按
+  minor / patch 发 = **例外**，例外三项（承担方 + 举证 / CHANGELOG 写法 / 台账 `版本例外` 行）
+  缺一即本步不放行。
 - **三方一致**：`package.json` `version` = CHANGELOG 标题版本 = 即将推送的 tag `vX.Y.Z`。
 - **本地预检**（`format:check` / typecheck / lint / test 已含 `local-ci` full，此处前置跑是为省一次 CI 往返；两道随包文档门的**时序**见 0.2，本步只是复跑）：
   - `npm run verify:changelog`（`scripts/verify-changelog-version.mjs`：标题须含合法日期 + 发布日窗口）——**Step 1 改过 CHANGELOG 后必重跑**

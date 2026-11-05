@@ -116,6 +116,9 @@ src/
     （同「不可机械定义的闸必然假红或漏检」）。
 - **例外三（禁止降级）**：不许把推送档位从 `full` 换成 `fast`；**也不许用「手动跑一次
   `ci:local --preset=full`」替代推送**——后者不留推送收据（收据只由钩子落盘），等于自欺。
+- **版本号判据（SEMVER-GATE-1）**：改动形态 → major / minor / patch 的**唯一判据**见
+  [pre-release-audit.md §2.5](../skills/memora-kernel-release/references/pre-release-audit.md)（受众三分 /
+  四类形态 / 取证命令 / 例外三项）；本文件**不复述表格**（复制即第二真源）。
 - **与既有拍板共存**：本规则**不写**「推送必须跑 full / 禁止绕行」——
   [lefthook.yml](../../lefthook.yml) 与 [ADR-032](../decisions/ADR-032-gate-ownership-loop.md) 已拍板
   「推送绕过 full 是故意设计、禁止修成强制」；本规则只约束**节奏**与**禁止降级**，不改变绕行权限。

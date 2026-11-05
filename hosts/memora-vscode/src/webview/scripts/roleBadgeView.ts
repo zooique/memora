@@ -12,6 +12,7 @@
  */
 
 import { createIcon } from './icons.js';
+import { CAPABILITY_STATE_TEXT } from '../helpers/capabilityLabels.js';
 import type { CapabilityStateDto } from '../../shared/protocol.js';
 
 /** 徽章行依赖：文档对象 + 两个徽章节点引用（节点身份由 chatView 持有，此处只读用） */
@@ -94,15 +95,14 @@ export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
     }
     if (capabilityState.kind === 'all') {
       capabilityBadge.hidden = false;
-      capabilityBadge.textContent = '全部工具';
-      capabilityBadge.title = '允许所有工具（角色包未声明能力白名单）';
+      capabilityBadge.textContent = CAPABILITY_STATE_TEXT.all.label;
+      capabilityBadge.title = CAPABILITY_STATE_TEXT.all.title;
       return;
     }
     if (capabilityState.kind === 'residentOnly') {
       capabilityBadge.hidden = false;
-      capabilityBadge.textContent = '仅基础工具';
-      capabilityBadge.title =
-        '仅基础工具：角色包声明了空能力白名单（联网、代码执行等特权工具已关闭）';
+      capabilityBadge.textContent = CAPABILITY_STATE_TEXT.residentOnly.label;
+      capabilityBadge.title = CAPABILITY_STATE_TEXT.residentOnly.title;
       return;
     }
     const labels = [...new Set(capabilityState.capabilities.map((c) => c.label))];

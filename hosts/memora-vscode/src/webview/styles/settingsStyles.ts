@@ -182,6 +182,11 @@ export const settingsStyles = `
     white-space: nowrap;
     user-select: none;
   }
+  /* 状态 chip 变体：表示「能力面三态」而非某个能力项 —— 虚线边 + 透明底，与能力名 chip 区分 */
+  #roles-root .cap-chip--state {
+    background: transparent;
+    border: var(--sp-hair, 1px) dashed var(--text-secondary, #9aa0a6);
+  }
   /* Hint：居中占位提示（roles/memory/config 共用；skills 为带 code 的说明文字、语义不同不并入） */
   #roles-root .hint, #memory-root .hint, #config-root .hint {
     text-align: center;

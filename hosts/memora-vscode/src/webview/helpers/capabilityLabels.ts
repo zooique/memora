@@ -6,11 +6,9 @@
  * capabilityMap.ts 的能力→工具映射），本文档只负责「UI 展示文案」，由 host 在
  * 推送 roles_loaded 时把 capability 翻译为 label。
  *
- * 特权模型口径：
- * memora 特权键 = web:search / web:fetch / code:execute，均已在此翻译；task:plan /
- * file:* / memory:recall 在 memora 属默认常驻工具、非特权键，但保留翻译作
- * **中立字典兼容**——其它实现生成的角色包若声明这些键（跨实现中立契约），
- * UI 仍能给出可读文案而非生硬回退原始名。
+ * 能力 → 工具映射与「特权键」分类的真源 = 内核 `capabilityMap.ts`；本表只是文案
+ * 投影，不复述分类（复述即第二份文字真源，内核改分类时无门会红）。表内保留
+ * 非特权键的翻译，只为兼容其它实现生成的中立角色包：未知能力仍回退原始名。
  *
  * 未知能力回退显示原始 capability（不硬造文案，避免误导）。
  */
@@ -45,6 +43,25 @@ const CAPABILITY_DOMAIN_LABELS: Readonly<Record<string, string>> = {
   web: '联网',
   memory: '记忆',
   llm: 'LLM',
+};
+
+/**
+ * 能力面**三态**的界面文案（`all` / `residentOnly` 两种；`list` 走 `capabilityLabel` 的能力名）。
+ *
+ * 输入区能力徽章（`roleBadgeView.updateCapabilityBadge`）与角色卡（`rolesView`）**共用这一份**——
+ * 两个显示面都只是投影，判定仍只在 `capabilityState.ts` 一处做。新增显示面请复用本表，
+ * 禁止在视图里另写文案。
+ */
+export const CAPABILITY_STATE_TEXT: Readonly<
+  Record<'all' | 'residentOnly', { label: string; title: string }>
+> = {
+  /** 未声明能力白名单 = 放行全部工具 */
+  all: { label: '全部工具', title: '允许所有工具（角色包未声明能力白名单）' },
+  /** 显式声明空能力白名单 = 仅常驻工具，特权工具全关 */
+  residentOnly: {
+    label: '仅基础工具',
+    title: '仅基础工具：角色包声明了空能力白名单（联网、代码执行等特权工具已关闭）',
+  },
 };
 
 /**

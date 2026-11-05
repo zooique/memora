@@ -18,6 +18,7 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
+import { appendCapabilityChips } from '../helpers/capabilityChips.js';
 import { appendPromoteToUserButton } from '../helpers/assetPromoteButton.js';
 import { createPager, PagerController } from './pager.js';
 import { getIconSvg } from './icons.js';
@@ -818,19 +819,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       info.appendChild(desc);
     }
 
-    // 能力标签 chips（紧凑单行）：只渲染三态 `list` 支（判定已在 host 唯一出口完成，此处不判 length）
-    if (p.capabilityState.kind === 'list') {
-      const caps = document.createElement('div');
-      caps.className = 'cap-chips';
-      p.capabilityState.capabilities.forEach((c) => {
-        const chip = document.createElement('span');
-        chip.className = 'cap-chip';
-        chip.textContent = c.label;
-        chip.title = c.capability;
-        caps.appendChild(chip);
-      });
-      info.appendChild(caps);
-    }
+    // 能力面三态 chip（判定已在 host 唯一出口完成；`list` 与 `all` / `residentOnly` 各有文案）
+    appendCapabilityChips(document, info, p.capabilityState);
 
     // 策略指示器 + 兜底定位（紧凑单行）：完整工具/自动执行/平衡等策略 chips + 「系统兜底」chip（isFallback）
     if (p.strategyHint || p.isFallback) {
