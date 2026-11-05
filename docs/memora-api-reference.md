@@ -207,7 +207,7 @@ new Agent({
 | `strategyOverride` | `Partial<BehaviorStrategy>` | ❌ | 宿主装配级策略覆盖：表达宿主产品能力边界，只影响 override 声明过的键。**非权限类字段由覆盖值胜出；`toolReadonly` / `toolMode` 只能收紧**（`readonly` 严于 `full`、`block` 严于 `allow`），判据唯一真源 = `role-pack/strategyResolver.ts` 的 `PERMISSION_FIELD_LENIENCE`（ADR-045） |
 | `permission` | `'owner' \| 'guest'` | ❌ | 安全权限（默认 'owner'） |
 | `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
-| `noOverwriteRoots` | `string[]` | ❌ | 禁止覆盖根（默认 [] = 不启用）：目标文件落在这些目录内且已存在 ⇒ `write_file` / `delete_file` 拒绝改写。与 `allowedPaths` 并列但方向相反（白名单放宽可写面，本键收紧覆盖面；`write_file` 确认档是 `idempotent-key`，缺本判据即直接写入）。⚠️ **现状（2026-11-04 订正）**：宿主装配期仍传参（`assemble.ts`），但用户资产目录不在 `allowedPaths` ⇒ 白名单阶段即拒、本判据生产不可达；保留键，计划 6.0.0 按 `DEPRECATE-1` 退役。**不要用它描述「保护用户资产目录」** |
+| ~~`noOverwriteRoots`~~ | ~~`string[]`~~ | — | **已移除（2026-11-05 · 6.0.0）**：装配期配置键退役（`DEPRECATE-1`）。「禁止覆盖根」判据本身**保留**（`SecurityGuard.assertNotOverwrite`），迁移方式 = Agent 构造后运行期调用 `agent.security.setNoOverwriteRoots(paths)`；未启用时该字段为空、判据空转。原语义（目标文件落在这些目录内且已存在 ⇒ 拒绝改写）不变。**不要用它描述「保护用户资产目录」** |
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入（默认内置内存实现，不挂公共面） |
 | ~~`vectorStore`~~ | ~~`IVectorStore`~~ | — | **已删除（2026-09-18 B0 收编）**：向量语义召回通道此前**写端缺失、从未在生产生效**（`upsert` 零调用 → 库恒空 → 语义分支永不触发 = 僵尸能力）。经主流 agent 调研（Anthropic Memory/Claude Code/Librarian Pattern 实证「LLM 消费者 + 小语料」纯关键词足用）拍板收编：`IVectorStore` 接口、`JsonVectorStore`、`EmbeddingProvider` 及 `config.embedding` 段全链删除；`search_memories` 走纯关键词，未命中提示 LLM 换词重试 |

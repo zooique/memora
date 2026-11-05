@@ -484,7 +484,8 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'maxContextTokens',
       'maxTokens',
       'messages',
-      'noOverwriteRoots',
+      // 删后注记（2026-11-05 · 6.0.0 废弃清账）：`AgentOptions.noOverwriteRoots` 装配期配置键
+      // 已移除；「禁止覆盖根」判据保留，入口改为运行期 `agent.security.setNoOverwriteRoots(paths)`。
       'permission',
       'preExecutionCheck',
       'projectPath',
@@ -1160,7 +1161,9 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
   SecurityGuard: {
     kind: 'class',
     members: [
-      // 2026-11-02 ASSET-WRITE-SCOPE-1：禁止覆盖根（保留键：宿主装配期仍传参，但用户资产目录不在 allowedPaths ⇒ 判据生产不可达；6.0.0 退役）
+      // 2026-11-02 ASSET-WRITE-SCOPE-1：禁止覆盖根（判据 + setter 均保留）。
+      // 2026-11-05 订正：装配期配置键 `AgentOptions.noOverwriteRoots` 已于 6.0.0 移除，
+      // 入口改为运行期 `agent.security.setNoOverwriteRoots(paths)` ⇒ 本表该成员不删。
       'assertNotOverwrite',
       'assertPathAllowed',
       'confirmCommandRun',

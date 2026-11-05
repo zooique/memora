@@ -314,9 +314,10 @@ export class SecurityGuard {
    * 与 allowedPaths 并列的第二条判据：白名单回答「能不能写」，本字段回答
    * 「能不能**覆盖已存在的文件**」。两者必须分开——`write_file` 的确认档是
    * `idempotent-key`（owner 默认不弹窗），无本判据即直接写入、不拦覆盖。
-   * ⚠️ 现状（2026-11-03）：宿主已撤回用户目录的白名单注入
-   * （`mergeAllowedPathsWithUserAssets` 生产零调用）⇒ 目标文件在白名单阶段即被拒，
-   * 本判据**生产不可达**；本键作保留键，计划 6.0.0 随 `DEPRECATE-1` 退役。
+   * ⚠️ 现状（2026-11-05 · 6.0.0 · `DEPRECATE-1`）：`AgentOptions.noOverwriteRoots` 装配期
+   * 配置键已移除，本判据与 `setNoOverwriteRoots` **保留**，入口改为运行期热更新
+   * （`agent.security.setNoOverwriteRoots(paths)`）；未显式启用时该字段为空 = 判据空转。
+   * 宿主已撤回用户目录的白名单注入（`mergeAllowedPathsWithUserAssets` 生产零调用）⇒
    * 不得据此声称「保护用户资产目录」。
    * ⚠️ 射程：只约束 `write_file` / `delete_file` 两个内置写入工具（二者共用
    * `assertNotOverwrite`）；**不约束代码执行**——`run_code` / `run_skill_script` /
@@ -345,8 +346,9 @@ export class SecurityGuard {
     agentDataDir?: string,
     /**
      * 禁止覆盖根（可选，泛型）：目标文件落在这些目录内且已存在 ⇒ 写入工具拒绝覆盖。
-     * 内核不在工具里硬编码路径字面量；宿主装配期仍传参（`assemble.ts`），但用户资产目录
-     * 已不在 `allowedPaths` ⇒ 白名单阶段即拒、本判据生产不可达（保留键，6.0.0 退役）。
+     * 内核不在工具里硬编码路径字面量；构造参数 = 初始值，运行期经 `setNoOverwriteRoots` 热更新。
+     * 现状（2026-11-05 · 6.0.0）：`AgentOptions.noOverwriteRoots` 装配期入口已移除，
+     * 本判据与 setter 保留——消费者在 Agent 构造后经 `agent.security.setNoOverwriteRoots(paths)` 启用。
      */
     noOverwriteRoots: string[] = [],
   ) {

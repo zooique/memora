@@ -589,15 +589,9 @@ export interface AgentOptions {
   permission?: 'owner' | 'guest';
   /** 允许的路径白名单 */
   allowedPaths?: string[];
-  /**
-   * 禁止覆盖根（可选，泛型）：目标文件落在这些目录内且已存在 ⇒ `write_file` / `delete_file` 拒绝改写。
-   *
-   * 与 allowedPaths **并列但方向相反**：白名单回答「能不能写」，本键回答「能不能覆盖」。
-   * ⚠️ 现状（2026-11-04 订正）：宿主装配期仍传参（`assemble.ts`），但用户资产目录不在
-   * `allowedPaths` ⇒ 白名单阶段即拒、本判据生产不可达；保留键，计划 6.0.0 按 `DEPRECATE-1` 退役。
-   * 不得据此声称「保护用户资产目录」。
-   */
-  noOverwriteRoots?: string[];
+  // 删后注记（2026-11-05 · 6.0.0 废弃清账 · DEPRECATE-1）：`noOverwriteRoots` 装配期配置键已移除。
+  // 「禁止覆盖根」判据本身**保留**（SecurityGuard.noOverwriteRoots / assertNotOverwrite），
+  // 入口改为运行期 `agent.security.setNoOverwriteRoots(paths)`；宿主装配期不再有该键。
   /** 写入确认 */
   confirmWrites?: boolean;
   /** 脚本/代码执行确认（独立于写入确认；true 时 run_code/run_project_script 执行前弹窗，默认 false 不弹窗） */
@@ -676,7 +670,6 @@ export type AgentConfig = Omit<
   | 'maxContextTokens'
   | 'permission'
   | 'allowedPaths'
-  | 'noOverwriteRoots'
   | 'confirmWrites'
   | 'confirmScripts'
   | 'enableContextSummary'
@@ -686,8 +679,8 @@ export type AgentConfig = Omit<
   maxContextTokens: number;
   permission: 'owner' | 'guest';
   allowedPaths: string[];
-  /** 禁止覆盖根（AgentOptions.noOverwriteRoots 的默认值解析结果） */
-  noOverwriteRoots: string[];
+  // 删后注记（2026-11-05）：原 `noOverwriteRoots` 默认值解析结果字段已随 AgentOptions 键移除；
+  // 禁止覆盖根的初始值由 SecurityGuard 构造默认（空 = 不启用），运行期经 setNoOverwriteRoots 变更。
   confirmWrites: boolean;
   /** 脚本/代码执行确认开关（AgentOptions.confirmScripts 的默认值解析结果） */
   confirmScripts: boolean;

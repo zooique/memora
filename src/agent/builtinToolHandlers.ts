@@ -570,7 +570,8 @@ export class BuiltinToolHandlers {
     this.guardPathOrThrow(absolutePath, 'delete_file');
     // 禁止改写根判据（泛型）：与 write_file 共用同一判据函数，只把动作语义传成 'delete'
     // （错误码位 / 文案 / 审计动作名不同）。命中即拒绝、零删除。
-    // 现状（2026-11-03）：宿主不再注入用户目录，本判据生产不可达；保留键随 6.0.0 退役。
+    // 现状（2026-11-05 · 6.0.0）：装配期配置键已移除，判据保留——消费者可运行期经
+    // `agent.security.setNoOverwriteRoots(paths)` 启用；未启用时本判据为空转（零行为）。
     // 与 write_file 同形包装成 toolError：securityError 本身无 errorCode，直接抛会给 LLM
     // 一个「不可分类」错误（重试判断落空）；这里统一成 PERMISSION_DENIED（不可重试）。
     try {
@@ -732,8 +733,9 @@ export class BuiltinToolHandlers {
     const absolutePath = this.resolveSafePath(relativePath);
     this.guardPathOrThrow(absolutePath, 'write_file');
     // 禁止覆盖根判据（泛型）：write_file 的确认档是 idempotent-key，owner 默认不弹窗，
-    // 故设本判据。现状（2026-11-03）：宿主不再注入用户目录，本判据生产不可达，
-    // 保留键随 6.0.0 退役；判据真源在 SecurityGuard，工具不硬编码路径。
+    // 故设本判据。现状（2026-11-05 · 6.0.0）：装配期配置键已移除、判据保留，
+    // 消费者运行期经 `agent.security.setNoOverwriteRoots(paths)` 启用；判据真源在 SecurityGuard，
+    // 工具不硬编码路径。
     try {
       this.security.assertNotOverwrite(absolutePath, 'write_file');
     } catch (err) {

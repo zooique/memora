@@ -195,9 +195,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       maxTokens: opts.maxTokens,
       permission: opts.permission ?? 'owner',
       allowedPaths: opts.allowedPaths ?? [],
-      // 禁止覆盖根（泛型保留键）：宿主装配期仍传参（`assemble.ts`），但用户目录不在白名单 ⇒
-      // 判据生产不可达；缺省空 = 不启用；保留键随 6.0.0 退役
-      noOverwriteRoots: opts.noOverwriteRoots ?? [],
+      // 删后注记（2026-11-05 · 6.0.0 · DEPRECATE-1）：原 `noOverwriteRoots` 装配期透传已移除；
+      // 禁止覆盖根判据保留，运行期经 `agent.security.setNoOverwriteRoots(paths)` 启用。
       confirmWrites: opts.confirmWrites ?? false,
       confirmScripts: opts.confirmScripts ?? false,
       storage: opts.storage,
@@ -383,7 +382,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           this.#config.confirmScripts,
           configDir ?? this.#config.configDir,
           agentDataDir ?? this.#config.dataDir,
-          this.#config.noOverwriteRoots,
+          // 禁止覆盖根初始值：装配期不再有配置入口（6.0.0 移除 AgentOptions.noOverwriteRoots），
+          // 恒传空 = 初始不启用；需要时由消费者运行期调 `agent.security.setNoOverwriteRoots(...)`。
+          [],
         ),
     });
 

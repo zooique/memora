@@ -466,14 +466,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // ⚠️ `run_code` / `run_skill_script` 等任意代码执行面不在本判据射程内（已知不设防），
     // 故对外措辞只能是「正常工具路径不再写用户目录」，不得写成「模型无法写用户目录」。
     allowedPaths: [projectPath, ...(allowedPaths ?? [])],
-    // 禁止覆盖根 = 用户资产目录（与白名单并列的第二条判据）。
-    // 🔴 现状（2026-11-04 订正）：本键**照旧传入**，但用户目录已不在 `allowedPaths` ⇒
-    // `write_file` 会先被白名单拒绝、目标文件到不了 `assertNotOverwrite`（白名单阶段即拒、
-    // 判据生产不可达）。保留仅为不破坏内核契约（`setNoOverwriteRoots` 仍存在）；计划 6.0.0
-    // 随该内核方法一并退役，见台账 `ASSET-WRITE-SCOPE-1` / `NOOVERWRITE-WORD-1`，**不许静默保留**。
-    noOverwriteRoots: [userSkillsDir, userRolePacksDir].filter(
-      (dir): dir is string => typeof dir === 'string' && dir.length > 0,
-    ),
+    // 删后注记（2026-11-05 · 内核 6.0.0 · DEPRECATE-1）：`noOverwriteRoots` 装配期传参已移除——
+    // 内核「禁止覆盖根」判据与 `SecurityGuard.setNoOverwriteRoots` 均保留，入口改为运行期；
+    // 本宿主不显式启用（用户资产目录本就不在 `allowedPaths`，装配期传参判据不可达）。
     // 写入二次确认（用户级安全偏好；开启后 owner 写文件前触发审批确认）
     confirmWrites: confirmWrites ?? false,
     // 脚本/代码执行确认（与写入确认同模式，开则 run_code/run_project_script 执行前询问）
