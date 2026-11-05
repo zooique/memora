@@ -11,6 +11,7 @@
  */
 import type { LlmProvider, Message, ChatOptions, ImageRef } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';
+import { generateRoundId } from '@/memory/roundStore.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition, WebSearchExecInfo } from '@/agent/toolExecutor.js';
 import {
@@ -3434,9 +3435,14 @@ export class AgentLoop {
     this.currentRoundId = roundId;
   }
 
-  /** 分配新轮次 ID（SSOT：prepare 提前生成与 processUserInput 回退生成共用唯一出处，避免 round-模板串重复漂移） */
+  /** 分配新轮次 ID（SSOT：prepare 提前生成与 processUserInput 回退生成共用唯一出处）
+   *
+   * 生成规则单点 = 内核 `generateRoundId`（UUID，降级为时间戳+随机）。**不得**改回
+   * `round-${Date.now()}`——毫秒粒度的 ID 会在同毫秒/跨进程并发时撞车，而
+   * `appendUser` 的非交互分支以「创建语义」覆盖同 ID 的轮，撞车即把已完成轮整体冲成
+   * pending（内容不可恢复）。 */
   allocRoundId(): string {
-    return `round-${Date.now()}`;
+    return generateRoundId();
   }
 
   /**
