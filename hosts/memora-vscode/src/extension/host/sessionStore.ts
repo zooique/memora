@@ -21,7 +21,7 @@
  *   - 旧 `_global.json`（step 2 过渡形态）的归档标记 / 停留会话摊进会话文件后改名
  *     `_global.json.migrated`（作回退副本）；**此后不再读取它**
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   buildSessionId,
@@ -37,6 +37,14 @@ import { atomicWriteFileSync } from './atomicWriteSync.js';
 import { resolveProjectDataDir } from './projectDataDir.js';
 import { CrossProcessSessionLock } from './sessionLock.js';
 import { WorkspaceRoundStore } from './workspaceRoundStore.js';
+import {
+  LEGACY_GLOBAL_FILE_NAME,
+  migrateLegacyGlobalState,
+  migrateLegacySessionFile,
+  readSessionFiles,
+  type SessionFileShape,
+  type SessionMigrationPaths,
+} from './sessionFileMigration.js';
 
 /** 会话目录名（相对 `.memora`）：每会话一文件，写一个会话不触碰其他会话 */
 const SESSIONS_DIR_NAME = 'sessions';
@@ -44,45 +52,8 @@ const SESSIONS_DIR_NAME = 'sessions';
 const LEGACY_FILE_NAME = 'sessions.json';
 /** 旧单文件迁移完成后的保留名（回退副本，不自动删除） */
 const LEGACY_MIGRATED_NAME = 'sessions.json.migrated';
-/** step 2 过渡期的全局态文件（迁移源；归档标记 / 停留会话在此，迁移后不再读取） */
-const LEGACY_GLOBAL_FILE_NAME = '_global.json';
 /** 全局态迁移完成后的保留名（回退副本，不自动删除） */
 const LEGACY_GLOBAL_MIGRATED_NAME = '_global.json.migrated';
-
-/**
- * 单会话文件形态
- *
- * `meta` 可为 null（内核分叉先 setRoundIds 后 updateSessionMeta 的时序窗口内只有 roundIds）；
- * `sessionId` 写在内容里而**不是**从文件名反解——会话名可能含路径分隔符等不安全字符。
- *
- * `archived` / `lastActiveAt` 是**会话自身属性**（不是全局清单的两个条目）：
- *   - `archived`：留存区分组标签；缺省（不写 key）= 归属近期列表
- *   - `lastActiveAt`：该会话最后一次被浏览的时刻（ISO）；缺省 = 从未停留过
- * 两者都不参与任何数据判据（见字段声明处语义边界），丢了只影响界面分组 / 默认落点。
- */
-interface SessionFileShape {
-  sessionId: string;
-  meta: SessionMeta | null;
-  roundIds: string[];
-  /** 留存区标记（true = 留存区；省略 = 近期列表） */
-  archived?: boolean;
-  /** 上次停留时刻（ISO 8601；`getInitialSessionId` 取最大者） */
-  lastActiveAt?: string;
-}
-
-/** 旧单文件形态（迁移源，字段名沿用旧版） */
-interface LegacySessionFileShape {
-  metas?: Record<string, SessionMeta>;
-  roundIdsStore?: Record<string, string[]>;
-  archivedIds?: string[];
-  lastActiveSessionId?: string;
-}
-
-/** step 2 全局态形态（迁移源；`schemaVersion` 无消费者，迁移时直接丢弃） */
-interface LegacyGlobalStateShape {
-  lastActiveSessionId?: string;
-  archivedIds?: string[];
-}
 
 /**
  * 截断结果（truncateFrom 返回值）：ok = 锚点命中并完成截断；
@@ -230,171 +201,22 @@ export class WorkspaceSessionStore implements ISessionStore {
       console.warn('Memora 会话目录创建失败，降级为空', err);
       return;
     }
-    this.migrateLegacyFile();
-    this.migrateLegacyGlobal();
-    this.loadSessionFiles();
-  }
-
-  /**
-   * 旧单文件 → 每会话文件（可重入 / 可断点续摊）
-   *
-   * 触发判据 = **旧 `sessions.json` 仍存在**（未被改名为 `.migrated`），与会话目录空不空无关：
-   * 摊到一半崩溃时，`sessions/` 已非空但旧文件仍在 ⇒ 下次启动继续补摊缺失的会话，
-   * 已存在的一律跳过（**以每会话文件为准，不覆盖**）。全部补齐后才改名 `.migrated`。
-   * 这样最坏结果是「暂时少看见」，不是「永久少看见」。
-   *
-   * 旧档里的 `archivedIds` 是**最老形态**（归档标记还写在会话清单里）：摊平会话文件时
-   * 顺带把标记写进对应会话文件的 `archived` 字段，不另起一套迁移。
-   */
-  private migrateLegacyFile(): void {
-    if (!existsSync(this.legacyFilePath)) return;
-    let legacy: LegacySessionFileShape;
-    try {
-      legacy = JSON.parse(readFileSync(this.legacyFilePath, 'utf8')) as LegacySessionFileShape;
-    } catch (err) {
-      // 坏档不删（保留可人工修复），只告警；本次启动只见已有会话文件
-      console.warn('Memora 旧会话单文件损坏，跳过迁移（文件保留）', err);
-      return;
-    }
-    const archivedIds = new Set(
-      Array.isArray(legacy.archivedIds)
-        ? legacy.archivedIds.filter((id): id is string => typeof id === 'string')
-        : [],
-    );
-    const ids = new Set<string>([
-      ...Object.keys(legacy.metas ?? {}),
-      ...Object.keys(legacy.roundIdsStore ?? {}),
-    ]);
-    // 旧档的导航指针（若有）落到目标会话文件：取迁移时刻，使其在这次迁移后仍胜出
-    const migratedAt = new Date().toISOString();
-    for (const sessionId of ids) {
-      const target = this.sessionFilePath(sessionId);
-      // 已存在即视为「本次（或上次）已摊过」：以会话文件为准，不覆盖
-      if (existsSync(target)) continue;
-      const meta = legacy.metas?.[sessionId] ?? null;
-      const roundIds = legacy.roundIdsStore?.[sessionId] ?? [];
-      if (!meta && roundIds.length === 0) continue;
-      const body: SessionFileShape = {
-        sessionId,
-        meta,
-        roundIds,
-        ...(archivedIds.has(sessionId) ? { archived: true } : {}),
-        ...(legacy.lastActiveSessionId === sessionId ? { lastActiveAt: migratedAt } : {}),
-      };
-      atomicWriteFileSync(target, JSON.stringify(body, null, 2));
-    }
-    // 全部补齐后才落幕：改名保留（回退副本）。Windows 下目标已存在 rename 会失败，先清旧副本
-    try {
-      if (existsSync(this.legacyMigratedPath)) unlinkSync(this.legacyMigratedPath);
-      renameSync(this.legacyFilePath, this.legacyMigratedPath);
-    } catch (err) {
-      // 改名失败不影响可读性（下次启动重试；本轮已补齐全部会话）
-      console.warn('Memora 旧会话单文件改名失败，下次启动重试', err);
-    }
-  }
-
-  /**
-   * step 2 全局态 → 会话自身属性（可重入 / 可断点续摊，复用同一套「已存在跳过」纪律）
-   *
-   * 触发判据 = **`_global.json` 仍存在**（未改名 `.migrated`），与文件内容无关：
-   * 摊到一半崩溃时 `_global.json` 仍在 ⇒ 下次启动继续补摊；已打标字段的文件跳过
-   * （`archived` 已存在 / `lastActiveAt` 已存在 = 上次已写过，以会话文件为准不覆盖）。
-   * 全部补齐后才改名 `.migrated`。
-   *
-   * 两个字段的去向：
-   *   - `archivedIds` → 对应会话文件的 `archived: true`（归档是会话自身属性）
-   *   - `lastActiveSessionId` → 对应会话文件的 `lastActiveAt`（取迁移时刻，使旧指针仍胜出）
-   * 目标会话文件不存在 ⇒ 跳过（幽灵 id 不再落盘，界面对照会话列表自然看不见）。
-   * `schemaVersion` 无任何消费者 ⇒ 直接丢弃，不再落盘。
-   */
-  private migrateLegacyGlobal(): void {
-    if (!existsSync(this.legacyGlobalPath)) return;
-    let legacy: LegacyGlobalStateShape;
-    try {
-      legacy = JSON.parse(readFileSync(this.legacyGlobalPath, 'utf8')) as LegacyGlobalStateShape;
-    } catch (err) {
-      console.warn('Memora 旧全局态文件损坏，跳过迁移（文件保留）', err);
-      return;
-    }
-    const archivedIds = new Set(
-      Array.isArray(legacy.archivedIds)
-        ? legacy.archivedIds.filter((id): id is string => typeof id === 'string')
-        : [],
-    );
-    const lastActive =
-      typeof legacy.lastActiveSessionId === 'string' ? legacy.lastActiveSessionId : '';
-    const patch = (sessionId: string, add: Partial<SessionFileShape>): void => {
-      const path = this.sessionFilePath(sessionId);
-      if (!existsSync(path)) return;
-      try {
-        const data = JSON.parse(readFileSync(path, 'utf8')) as Partial<SessionFileShape>;
-        // 已有字段 = 上次迁移已写过（会话文件是更新的事实），不覆盖
-        const next: SessionFileShape = {
-          sessionId: typeof data.sessionId === 'string' ? data.sessionId : sessionId,
-          meta: (data.meta as SessionMeta | null) ?? null,
-          roundIds: Array.isArray(data.roundIds) ? data.roundIds : [],
-          ...(typeof data.archived === 'boolean' ? { archived: data.archived } : {}),
-          ...(typeof data.lastActiveAt === 'string' ? { lastActiveAt: data.lastActiveAt } : {}),
-        };
-        if (typeof data.archived !== 'boolean' && add.archived) next.archived = true;
-        if (typeof data.lastActiveAt !== 'string' && add.lastActiveAt) {
-          next.lastActiveAt = add.lastActiveAt;
-        }
-        atomicWriteFileSync(path, JSON.stringify(next, null, 2));
-      } catch (err) {
-        console.warn(`Memora 全局态迁移失败，跳过：${sessionId}`, err);
-      }
+    // 迁移与扫描外置在 `sessionFileMigration.ts`（判据与限制随该模块头部注释走）
+    const migrationPaths: SessionMigrationPaths = {
+      legacyFilePath: this.legacyFilePath,
+      legacyMigratedPath: this.legacyMigratedPath,
+      legacyGlobalPath: this.legacyGlobalPath,
+      legacyGlobalMigratedPath: this.legacyGlobalMigratedPath,
+      sessionFilePath: (sessionId) => this.sessionFilePath(sessionId),
     };
-    for (const sessionId of archivedIds) patch(sessionId, { archived: true });
-    if (lastActive) patch(lastActive, { lastActiveAt: new Date().toISOString() });
-    // 全部补齐后才落幕（回退副本；此后不再读取）
-    try {
-      if (existsSync(this.legacyGlobalMigratedPath)) unlinkSync(this.legacyGlobalMigratedPath);
-      renameSync(this.legacyGlobalPath, this.legacyGlobalMigratedPath);
-    } catch (err) {
-      console.warn('Memora 旧全局态文件改名失败，下次启动重试', err);
-    }
-  }
-
-  /** 扫描会话目录：只认 `*.json`，排除 `_global.json` 与 `*.tmp`（否则临时/全局文件会被当会话） */
-  private loadSessionFiles(): void {
-    let names: string[];
-    try {
-      names = readdirSync(this.sessionsDir);
-    } catch (err) {
-      console.warn('Memora 会话目录读取失败，降级为空', err);
-      return;
-    }
-    for (const name of names) {
-      // 白名单判据：必须以 .json 结尾；排除迁移残留的 `_global.json` 与原子写的 .tmp 中间态
-      // （`.migrated` 不以 .json 结尾，天然被上一行排除）
-      if (!name.endsWith('.json') || name.endsWith('.tmp')) continue;
-      if (name === LEGACY_GLOBAL_FILE_NAME) continue;
-      try {
-        const data = JSON.parse(
-          readFileSync(join(this.sessionsDir, name), 'utf8'),
-        ) as Partial<SessionFileShape>;
-        // **以文件内 sessionId 为准，不靠文件名反解**（会话名可能含分隔符，文件名是编码形态）
-        const sessionId = data.sessionId;
-        if (typeof sessionId !== 'string' || sessionId.length === 0) continue;
-        if (data.meta && typeof data.meta === 'object') {
-          this.metas.set(sessionId, data.meta as SessionMeta);
-        }
-        if (Array.isArray(data.roundIds) && data.roundIds.length > 0) {
-          this.roundIdsStore.set(
-            sessionId,
-            data.roundIds.filter((id): id is string => typeof id === 'string'),
-          );
-        }
-        // 会话自身属性：归档标记 / 上次停留时刻（缺省即未归档 / 从未停留）
-        if (data.archived === true) this.archivedIdsSet.add(sessionId);
-        if (typeof data.lastActiveAt === 'string' && data.lastActiveAt.length > 0) {
-          this.lastActiveAtStore.set(sessionId, data.lastActiveAt);
-        }
-      } catch (err) {
-        // 单文件坏只丢这一个会话，不连坐其他会话（旧实现是整份清空）
-        console.warn(`Memora 会话文件损坏，跳过：${name}`, err);
-      }
+    migrateLegacySessionFile(migrationPaths);
+    migrateLegacyGlobalState(migrationPaths);
+    for (const file of readSessionFiles(this.sessionsDir)) {
+      if (file.meta) this.metas.set(file.sessionId, file.meta);
+      if (file.roundIds.length > 0) this.roundIdsStore.set(file.sessionId, file.roundIds);
+      // 会话自身属性：归档标记 / 上次停留时刻（缺省即未归档 / 从未停留）
+      if (file.archived) this.archivedIdsSet.add(file.sessionId);
+      if (file.lastActiveAt) this.lastActiveAtStore.set(file.sessionId, file.lastActiveAt);
     }
   }
 
@@ -492,7 +314,8 @@ export class WorkspaceSessionStore implements ISessionStore {
    *
    * 合法无锁写只有一种：本进程第一次创建**尚不存在**的会话文件（内核新建/分叉的同步连写，
    * 会话 id 由时间戳 + 随机后缀生成，跨进程不可能撞）。已存在的会话文件必须持锁。
-   * 迁移/崩溃打捞在 `load()` 里直接走 `atomicWriteFileSync`，根本不进本断言。
+   * 迁移（`sessionFileMigration.ts`，由 `load()` 调用）与崩溃打捞直走
+   * `atomicWriteFileSync`，根本不进本断言。
    */
   private assertSessionWriteAllowed(sessionId: string): void {
     if (this.resolveWriteScope(sessionId) === 'denied') {

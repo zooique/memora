@@ -103,13 +103,6 @@ const SNAPSHOT_OVERSIZE_NOTICE = '工作区文本文件过多，脚本改动未�
  */
 const TRUNCATE_FAIL_NOTICE = '未能定位该问答（会话可能已变更），请刷新会话后重试';
 
-/**
- * 目标会话被另一进程持锁时的统一提示（切会话 / 归档 / 恢复 / 删除共用）
- *
- * 文案必须回答「为什么不行 + 怎么办」，否则用户只会看到「打不开」。
- */
-const SESSION_HELD_NOTICE = '该会话正在另一个窗口中使用。请先在那边的窗口切换或关闭它，再重试。';
-
 /** 启动时首选会话被另一窗口占用、已自动让位到最近可用会话的提示（解释「为什么不是上次那个会话」） */
 const SESSION_DISPLACED_NOTICE = '上次停留的会话正在另一个窗口中使用，已为你打开另一个会话。';
 
@@ -139,6 +132,13 @@ import { dedupeRefs } from '../../shared/refKey.js';
 import { mergeProcessEvents } from '../helpers/processEventMerge.js';
 // 启动会话归属裁决（首选被另一窗口占用时让位）——判据单点，面板与验收测试共用同一实现
 import { claimStartupSession } from '../helpers/sessionStartupClaim.js';
+import {
+  SESSION_HELD_NOTICE,
+  archiveSessionAction,
+  deleteSessionAction,
+  restoreSessionAction,
+  type SessionHistoryDeps,
+} from '../helpers/sessionHistoryActions.js';
 // 能力面三态判定的唯一出口（CAP-TRISTATE-1）：本文件只传「域级标签投影」，不自行判 length
 import { deriveCapabilityState } from '../helpers/capabilityState.js';
 // 输入区徽章的域级短标签（标签投影与三态判定分离，见 capabilityLabels 头注释）
@@ -1779,144 +1779,38 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  /**
-   * 删除指定历史会话（历史浮层垃圾桶触发）
-   *
-   * 危险操作确认走 confirmModal（唯一入口，与 delete_turn 同强度确认）。
-   * 当前会话不进历史记录（设计收敛），正常不会删除到当前会话；防御性保护：若目标是
-   * 当前会话则拒绝 + 提示（防未来 UI 变动误删当前会话导致空窗）。
-   * 删除后重推列表（webview 浮层同步移除该项）。
-   *
-   * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
-   */
-  private async handleDeleteSession(sessionId: string): Promise<void> {
-    // 运行时守卫（SSOT：与 newSession/switchToSession 同源 _streaming，禁止运行中改会话结构）
-    if (this._streaming) {
-      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再删除会话' });
-      return;
-    }
-    const meta = this.sessionStore.getSessionMeta(sessionId);
-    const title = getSessionDisplayName(meta) || sessionId;
-    const confirmed = await confirmModal({
-      message: `确定删除会话「${title}」？此操作不可恢复。`,
-      confirmLabel: '删除',
-    });
-    if (!confirmed) return;
-    if (sessionId === this._currentSessionId) {
-      this.post({ type: 'notice', level: 'info', message: '当前会话不在历史记录，无法删除' });
-      return;
-    }
-    // 一次性写（短持有）：删除会重写/移除会话文件，另一个窗口正在用时必须拒绝
-    if (!(await this.sessionStore.acquireSessionLock(sessionId))) {
-      this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
-      return;
-    }
-    try {
-      // 联动：整删会话 → 被回收 Round（引用归零）的轮次摘要软删进回收站
-      // （脱钩溯源，可恢复为独立记忆）。分叉共享轮由 deleteSession 返回值天然排除——
-      // 不影响仍在使用的关联会话记忆。会话级路标存于 SessionMeta，随本调用一并删除。
-      const removedIds = this.sessionStore.deleteSession(sessionId);
-      void this.softDeleteSessionMemories(removedIds);
-      // 删除成功给用户可见反馈，与「当前会话无法删除」提示对称
-      this.post({ type: 'notice', level: 'info', message: '会话已删除' });
-    } catch (err) {
-      // 删除失败不阻塞（重推列表仍可用），但需记录 + 给用户可见提示（SSOT 不藏错）
-      console.warn('Memora 删除会话记录失败', err);
-      this.post({ type: 'notice', level: 'error', message: '删除会话失败，请稍后重试' });
-    } finally {
-      // 目标必不是当前会话（上方已拦），短持有锁用完即还
-      this.sessionStore.releaseSessionLock(sessionId);
-    }
-    this.pushSessionList();
+  /** 历史运维动作的依赖注入（单一构建点：新增动作只在此挂依赖，不在各处散开） */
+  private historyDeps(): SessionHistoryDeps {
+    return {
+      store: this.sessionStore,
+      isStreaming: () => this._streaming,
+      currentSessionId: () => this._currentSessionId,
+      notify: (level, message) => this.post({ type: 'notice', level, message }),
+      pushList: () => this.pushSessionList(),
+      softDeleteMemories: (removedIds) => this.softDeleteSessionMemories(removedIds),
+      archiveMode: () => this._agent?.getArchiveMode(),
+      // Agent 未装配 ⇒ 抛错由 triggerManualArchive 兜成可见 notice（与改前同文案）
+      requestArchive: async (date, session) => {
+        const agent = this._agent;
+        if (!agent) throw new Error('Agent 未就绪');
+        await agent.archiveSession(date, session, { skipIfUnchanged: true });
+      },
+    };
   }
 
-  /**
-   * 把会话移入留存区（历史浮层「移入留存」触发）——**只改显示分组，数据一字不动**
-   *
-   * 与 `handleDeleteSession` 的三点刻意差异（勿互相靠拢，靠拢即造伤）：
-   *   ① **无 modal 确认**：移入留存完全可逆（Round 文件、引用计数、内容全部不变），
-   *      对它弹「此操作不可恢复」是撒谎——删除才配这个确认强度；
-   *   ② **不减引用、不删任何文件**：引用归零会让启动清扫（`sweepOrphans`）把 Round 当孤儿
-   *      物理删除，与「留存 = 保住记忆溯源的原文」的立项目的正好相反；
-   *   ③ **给可见反馈**：改位是不可见的动作，没有反馈用户不知道发生了什么（静默改位 =
-   *      「点了没反应」的观感）。
-   *
-   * **manual 模式顺带触发会话归档**（用户拍板嫁接 · 2026-10-19）：`archiveMode = manual`
-   * 时自动归档被内核关掉（离场不生成摘要），设置的承诺「仅手动触发时生成」需要宿主给入口——
-   * 嫁接到本按钮（用户「这个会话我处理完了」的既有手势），衔接见 `triggerManualArchive`。
-   *
-   * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
-   */
-  private async handleArchiveSession(sessionId: string): Promise<void> {
-    // 运行时守卫（与 newSession/switchToSession/handleDeleteSession 同源 _streaming）
-    if (this._streaming) {
-      this.post({ type: 'notice', level: 'info', message: '生成中，请稍后再整理会话' });
-      return;
-    }
-    // 一次性写（短持有）：归档会重写会话文件。当前会话已长持有锁，不再重复拿/放
-    const oneShotLock = sessionId !== this._currentSessionId;
-    if (oneShotLock && !(await this.sessionStore.acquireSessionLock(sessionId))) {
-      this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
-      return;
-    }
-    try {
-      if (!this.sessionStore.archiveSession(sessionId)) {
-        // 归档返回 false 的两种情形：会话不存在 / 已在留存区——都无需打扰，仅低强度提示
-        this.post({ type: 'notice', level: 'info', message: '该会话已在留存区' });
-        return;
-      }
-      // manual 模式顺带触发会话归档（fire-and-forget，成败走既有事件；full 模式零动作）
-      const archiveTriggered = this.triggerManualArchive(sessionId);
-      this.post({
-        type: 'notice',
-        level: 'info',
-        // 触发了才提摘要：未触发（full 模式）时文案与改动前**一字不差**（不打扰既有用户）
-        message: archiveTriggered
-          ? '已移入留存区 · 已顺带请求会话摘要更新（内容未变则跳过）'
-          : '已移入留存区（会话内容保留，可随时移回）',
-      });
-      this.pushSessionList();
-    } finally {
-      if (oneShotLock) this.sessionStore.releaseSessionLock(sessionId);
-    }
+  /** 删除会话（薄包装：实现外置在 `helpers/sessionHistoryActions`，测试按方法名直达） */
+  private handleDeleteSession(sessionId: string): Promise<void> {
+    return deleteSessionAction(this.historyDeps(), sessionId);
   }
 
-  /**
-   * manual 模式下「移入留存区」顺带触发会话归档（用户拍板嫁接 · 2026-10-19）
-   *
-   * 四条定案（改前必读，均属判据/边界，勿顺手改）：
-   *   ① **模式门控**：仅 `archiveMode === 'manual'` 触发。full 模式零动作——自动归档已在离场
-   *      时跑过，再点按钮重复调 LLM 等于给既有用户加成本与时延（**带伤**，不做）。
-   *   ② **防重判据不在宿主**：传 `{ skipIfUnchanged: true }` 交内核 `SessionArchiver`
-   *      单点判断（消息数快照）。宿主**不**自查「summary 是否存在」——那判据更粗，会把
-   *      「归档后又聊了新内容、本该刷新」的摘要永久挡掉（防重 ≠ 防更新）。
-   *   ③ **fire-and-forget**：成败走既有 `sessionArchived`（重拉列表 → 悬停 tooltip 落摘要）
-   *      / `archiveFailed`（notice）事件，不阻塞点击；防重跳过 = 静默（无浪费亦无噪音）。
-   *   ④ **重复点击到不了这里**：留存幂等（`sessionStore.archiveSession` 返回 false）已在
-   *      调用方早退；「移出再移入」由 ② 的快照挡住。
-   *
-   * 术语：本文件的「留存」= 视图分组标记（本地/可逆/不动数据）；「归档」= 会话摘要生成
-   * （LLM/可失败/写 SessionMeta）。二者**同词不同义**，注释与文案不得混用。
-   *
-   * @returns 是否触发了归档（false = full 模式 / Agent 未就绪 / 会话标识非法）
-   */
-  private triggerManualArchive(sessionId: string): boolean {
-    const agent = this._agent;
-    if (!agent) return false; // Agent 未装配：无运行时可触发（留存照常生效，文案不提摘要）
-    if (agent.getArchiveMode() !== 'manual') return false;
-    const { date, session } = splitSessionId(sessionId);
-    if (!date || !session) return false;
-    void agent.archiveSession(date, session, { skipIfUnchanged: true }).catch((err) => {
-      // 内核 ArchiveCoordinator 已吞掉归档内部异常并发 archiveFailed 事件；此处兜的是
-      // 更外层的失败（如 Agent 未初始化时 assertInitialized 抛错）——不藏错，给用户可见提示
-      console.warn('Memora 手动归档触发失败', err);
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: '会话摘要归档失败：Agent 未就绪',
-      });
-    });
-    return true;
+  /** 移入留存区（薄包装：实现在 `helpers/sessionHistoryActions`） */
+  private handleArchiveSession(sessionId: string): Promise<void> {
+    return archiveSessionAction(this.historyDeps(), sessionId);
+  }
+
+  /** 移回近期列表（薄包装：实现在 `helpers/sessionHistoryActions`） */
+  private handleRestoreSession(sessionId: string): Promise<void> {
+    return restoreSessionAction(this.historyDeps(), sessionId);
   }
 
   /**
@@ -1932,35 +1826,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const agent = this._agent;
     if (!agent) return;
     this.post({ type: 'chat_archive_mode', mode: agent.getArchiveMode() });
-  }
-
-  /**
-   * 把会话移回归属列表（留存区条目「移回」触发）——`handleArchiveSession` 的逆操作
-   *
-   * 同样只改显示分组：不存在「数据恢复」这一说（数据从头到尾没动过）。
-   *
-   * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
-   */
-  private async handleRestoreSession(sessionId: string): Promise<void> {
-    if (this._streaming) {
-      this.post({ type: 'notice', level: 'info', message: '生成中，请稍后再整理会话' });
-      return;
-    }
-    // 一次性写（短持有）：与归档同判据（改会话文件即需归属）
-    const oneShotLock = sessionId !== this._currentSessionId;
-    if (oneShotLock && !(await this.sessionStore.acquireSessionLock(sessionId))) {
-      this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
-      return;
-    }
-    try {
-      if (!this.sessionStore.unarchiveSession(sessionId)) {
-        return; // 本就不在留存区：无变化即无反馈（避免为幂等动作刷提示）
-      }
-      this.post({ type: 'notice', level: 'info', message: '已移回会话记录' });
-      this.pushSessionList();
-    } finally {
-      if (oneShotLock) this.sessionStore.releaseSessionLock(sessionId);
-    }
   }
 
   /**
