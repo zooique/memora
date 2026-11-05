@@ -8,7 +8,7 @@
  * 装配：
  *   - LLM Provider：createProvider（配置面板激活 / 环境变量回退）
  *   - 记忆存储：SQLite（.memora/memories.db，经内核工厂；旧环境降级 JSON，见 host/memoryStorage.ts）
- *   - 会话存储：WorkspaceSessionStore（.memora/sessions/<sessionId>.json + _global.json）
+ *   - 会话存储：WorkspaceSessionStore（.memora/sessions/<sessionId>.json，**无全局共享文件**）
  *   - 网络搜索：FetchWebSearchProvider（Bing→DuckDuckGo 降级）
  *   - 功能定位：内置角色包（dist/extension/role-packs/ 构建期同步）+ 用户角色包（globalStorageUri/role-packs 运行态注入）
  *   - 日志对接：setLogger(vscodeOutputChannel) 将内核日志导向 VSCode 输出通道

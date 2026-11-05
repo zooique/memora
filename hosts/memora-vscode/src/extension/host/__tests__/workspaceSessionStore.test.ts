@@ -1026,16 +1026,22 @@ describe('WorkspaceSessionStore · 导航指针（SESSION-RESUME-1）', () => {
     expect(reopen().getInitialSessionId()).toBe('2026-08-01-old');
   });
 
-  it('② 指针落盘往返：新实例（重启）读得回，不需要额外迁移', () => {
+  it('② 停留时刻落在会话自己的文件：新实例（重启）读得回，且没有全局共享文件', () => {
     seedTwoSessions();
     store.setLastActiveSession('2026-08-01-old');
-    // 直接读磁盘形态（全局态文件），证明是持久化而非内存巧合
+    // 直接读磁盘形态（该会话自己的文件），证明是持久化而非内存巧合
     const raw = JSON.parse(
-      readFileSync(join(dir, '.memora', 'sessions', '_global.json'), 'utf8'),
+      readFileSync(
+        join(dir, '.memora', 'sessions', `${encodeURIComponent('2026-08-01-old')}.json`),
+        'utf8',
+      ),
     ) as {
-      lastActiveSessionId?: string;
+      lastActiveAt?: string;
     };
-    expect(raw.lastActiveSessionId).toBe('2026-08-01-old');
+    expect(typeof raw.lastActiveAt).toBe('string');
+    // 不再有全局共享文件（归档 / 停留都随会话文件走）
+    expect(existsSync(join(dir, '.memora', 'sessions', '_global.json'))).toBe(false);
+    expect(reopen().getInitialSessionId()).toBe('2026-08-01-old');
   });
 
   it('③ 指针不可解析 ⇒ 退回最近写入，绝不返回悬空 id', () => {

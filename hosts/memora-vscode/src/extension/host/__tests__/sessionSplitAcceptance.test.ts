@@ -214,21 +214,25 @@ describe('6.0.0 步 2 验收：会话清单拆文件', () => {
     expect(store.getRoundIds('2026-08-01-a')).toEqual(['r-a1', 'r-a2']);
     expect(store.getRoundIds('2026-08-02-b')).toEqual(['r-b1']);
     expect(store.getRoundIds('2026-08-03-c')).toEqual(['r-c1']);
-    // 全局态两字段逐项相等（非数据路径，但迁移不能丢）
+    // 会话自身属性（归档标记 / 停留时刻）随会话文件走，不再有全局清单
     expect(store.listArchivedIds()).toEqual(['2026-08-02-b']);
     expect(store.getInitialSessionId()).toBe('2026-08-01-a');
 
-    // 落盘形态：三个会话文件都在；旧档已改名保留；全局态文件已写出
+    // 落盘形态：三个会话文件都在；旧档已改名保留；不再产出 `_global.json`
     for (const id of ['2026-08-01-a', '2026-08-02-b', '2026-08-03-c']) {
       expect(existsSync(sessionFile(ws, id))).toBe(true);
     }
     expect(existsSync(legacyFile(ws))).toBe(false);
     expect(existsSync(migratedFile(ws))).toBe(true);
-    const globalRaw = JSON.parse(
-      readFileSync(join(memoraDir(ws), 'sessions', '_global.json'), 'utf8'),
-    ) as { lastActiveSessionId: string; archivedIds: string[] };
-    expect(globalRaw.lastActiveSessionId).toBe('2026-08-01-a');
-    expect(globalRaw.archivedIds).toEqual(['2026-08-02-b']);
+    const archivedRaw = JSON.parse(readFileSync(sessionFile(ws, '2026-08-02-b'), 'utf8')) as {
+      archived?: boolean;
+    };
+    expect(archivedRaw.archived).toBe(true);
+    const activeRaw = JSON.parse(readFileSync(sessionFile(ws, '2026-08-01-a'), 'utf8')) as {
+      lastActiveAt?: string;
+    };
+    expect(typeof activeRaw.lastActiveAt).toBe('string');
+    expect(existsSync(join(memoraDir(ws), 'sessions', '_global.json'))).toBe(false);
   });
 
   it('④ 摊了 1/3 就中断 ⇒ 再次启动三个会话全部可见，且已摊会话不被覆盖', () => {
