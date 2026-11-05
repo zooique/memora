@@ -144,11 +144,16 @@ function injectAgent(provider: MemoraChatViewProvider, agent: Agent | null): voi
   (provider as unknown as { _agent: Agent | null })._agent = agent;
 }
 
-/** 驱动「移入留存区」入口（私有方法） */
-function moveToRetention(provider: MemoraChatViewProvider, sessionId: string): void {
-  (provider as unknown as { handleArchiveSession(id: string): void }).handleArchiveSession(
-    sessionId,
-  );
+/**
+ * 驱动「移入留存区」入口（私有方法）
+ *
+ * 6.0.0 起 `handleArchiveSession` 为 async（一次性写要先拿跨进程短持有锁）：
+ * 这里必须 await，否则同步断言会跑在锁获取之前（归档 0 次、notice 尚未推送）。
+ */
+async function moveToRetention(provider: MemoraChatViewProvider, sessionId: string): Promise<void> {
+  await (
+    provider as unknown as { handleArchiveSession(id: string): Promise<void> }
+  ).handleArchiveSession(sessionId);
 }
 
 describe('chatPanel 手动归档入口（manual 模式嫁接留存按钮 · 2026-10-19）', () => {
@@ -157,14 +162,14 @@ describe('chatPanel 手动归档入口（manual 模式嫁接留存按钮 · 2026
     stubMode = 'full';
   });
 
-  it('manual 模式：移入留存区顺带触发归档，且防重判据交内核（{ skipIfUnchanged: true }）', () => {
+  it('manual 模式：移入留存区顺带触发归档，且防重判据交内核（{ skipIfUnchanged: true }）', async () => {
     const { store, roundStore, provider, posted } = setup();
     seedSession(store, roundStore, '2026-08-14-s2');
     const { agent, archiveSession } = agentStub();
     stubMode = 'manual';
     injectAgent(provider, agent);
 
-    moveToRetention(provider, '2026-08-14-s2');
+    await moveToRetention(provider, '2026-08-14-s2');
 
     // 防重判据不落宿主：形态即契约——传 skipIfUnchanged 让内核单点判断（消息数快照）
     expect(archiveSession).toHaveBeenCalledTimes(1);
@@ -174,40 +179,40 @@ describe('chatPanel 手动归档入口（manual 模式嫁接留存按钮 · 2026
     expect(notices.at(-1)?.message).toContain('已顺带请求会话摘要更新');
   });
 
-  it('full 模式：按钮零归档动作 + 文案与改动前一字不差（不给既有用户加 LLM 成本）', () => {
+  it('full 模式：按钮零归档动作 + 文案与改动前一字不差（不给既有用户加 LLM 成本）', async () => {
     const { store, roundStore, provider, posted } = setup();
     seedSession(store, roundStore, '2026-08-14-s2');
     const { agent, archiveSession } = agentStub();
     stubMode = 'full';
     injectAgent(provider, agent);
 
-    moveToRetention(provider, '2026-08-14-s2');
+    await moveToRetention(provider, '2026-08-14-s2');
 
     expect(archiveSession).not.toHaveBeenCalled();
     const notices = ofType<{ type: string; message: string }>(posted, 'notice');
     expect(notices.at(-1)?.message).toBe('已移入留存区（会话内容保留，可随时移回）');
   });
 
-  it('Agent 未就绪：不触发归档、不抛错，留存照常生效且文案不提摘要（不编造承诺）', () => {
+  it('Agent 未就绪：不触发归档、不抛错，留存照常生效且文案不提摘要（不编造承诺）', async () => {
     const { store, roundStore, provider, posted } = setup();
     seedSession(store, roundStore, '2026-08-14-s2');
     injectAgent(provider, null); // 装配未完成
 
-    expect(() => moveToRetention(provider, '2026-08-14-s2')).not.toThrow();
+    await expect(moveToRetention(provider, '2026-08-14-s2')).resolves.toBeUndefined();
     expect(store.isArchived('2026-08-14-s2')).toBe(true); // 留存（本地动作）照常生效
     const notices = ofType<{ type: string; message: string }>(posted, 'notice');
     expect(notices.at(-1)?.message).toBe('已移入留存区（会话内容保留，可随时移回）');
   });
 
-  it('重复点击：留存幂等早退 ⇒ 归档根本不被触发（防重第一道闸在宿主）', () => {
+  it('重复点击：留存幂等早退 ⇒ 归档根本不被触发（防重第一道闸在宿主）', async () => {
     const { store, roundStore, provider } = setup();
     seedSession(store, roundStore, '2026-08-14-s2');
     const { agent, archiveSession } = agentStub();
     stubMode = 'manual';
     injectAgent(provider, agent);
 
-    moveToRetention(provider, '2026-08-14-s2');
-    moveToRetention(provider, '2026-08-14-s2'); // 已在留存区 → archiveSession 返回 false 早退
+    await moveToRetention(provider, '2026-08-14-s2');
+    await moveToRetention(provider, '2026-08-14-s2'); // 已在留存区 → archiveSession 返回 false 早退
 
     expect(archiveSession).toHaveBeenCalledTimes(1);
   });

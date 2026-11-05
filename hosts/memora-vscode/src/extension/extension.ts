@@ -404,6 +404,10 @@ export function activate(context: vscode.ExtensionContext): void {
   roundStore.load();
   const sessionStore = new WorkspaceSessionStore(workspacePath, roundStore);
   sessionStore.load();
+  // 跨进程写锁启用：两个 VS Code 窗口（各自一个 extension host 进程）同时打开会话时，
+  // 第二个写者被明确拒绝而不是静默覆盖。锁名含工作区路径哈希，跨工作区互不误挡；
+  // 迁移/打捞在 load() 内直接写盘（不经过写断言），故必须在 load() 之后启用。
+  sessionStore.enableCrossProcessLock();
 
   // 孤儿清扫（无会话引用 Round 统一回收）：删除会话/截断后遗留的无引用轮
   // 在启动时清理，防磁盘膨胀与「无引用卡片滞留」（引用归 SessionStore、物理归 RoundStore）。

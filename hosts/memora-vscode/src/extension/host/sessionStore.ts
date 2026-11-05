@@ -35,6 +35,7 @@ import {
 } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
 import { resolveProjectDataDir } from './projectDataDir.js';
+import { CrossProcessSessionLock } from './sessionLock.js';
 import { WorkspaceRoundStore } from './workspaceRoundStore.js';
 
 /** 会话目录名（相对 `.memora`）：每会话一文件，写一个会话不触碰其他会话 */
@@ -117,6 +118,25 @@ export class WorkspaceSessionStore implements ISessionStore {
   private readonly legacyGlobalPath: string;
   /** 全局态迁移完成后的保留路径（回退副本） */
   private readonly legacyGlobalMigratedPath: string;
+  /** 每会话跨进程写锁（进程级单例，由本存储独占持有；锁名哈希取数据目录绝对路径） */
+  private readonly sessionLock: CrossProcessSessionLock;
+  /**
+   * 是否启用跨进程写锁（生产装配调用 `enableCrossProcessLock()`；未启用 = 单进程 / 测试模式）
+   *
+   * 为什么默认关闭而不是默认开启：本仓库有大量单进程测试直接驱动本存储的写方法
+   * （它们没有也不该有「拿锁」这一步）。把开关放在**构造后的显式装配点**，而非到处撒参数，
+   * 豁免入口只有一个；生产漏调由静态守卫测试兜住（见 sessionLockAcceptance）。
+   */
+  private crossProcessLockEnabled = false;
+  /**
+   * 本进程「无锁创建」的会话（sessionId 集合）
+   *
+   * 只允许一种无锁写：**本进程第一次写下这个尚不存在的会话文件**（内核分叉
+   * `setRoundIds → updateSessionMeta` 在同一次同步调用里连写两次，ID 由时间戳/随机后缀生成，
+   * 跨进程不可能撞）。一旦该会话被 `acquireSessionLock` 接管，立即移出本集合。
+   * 已存在的会话文件**不在**豁免内——覆盖别人的会话必须持锁（fail-closed）。
+   */
+  private readonly locklessCreated = new Set<string>();
 
   /**
    * 「留存区」会话标记（**视图层分组标签，不是数据状态**）
@@ -157,6 +177,7 @@ export class WorkspaceSessionStore implements ISessionStore {
   constructor(workspacePath: string, roundStore?: IRoundStore) {
     // 落盘目录经单点推导（唯一计算点 = projectDataDir.ts，禁就地拼字面量）
     const dataDir = resolveProjectDataDir(workspacePath);
+    this.sessionLock = new CrossProcessSessionLock(dataDir);
     this.sessionsDir = join(dataDir, SESSIONS_DIR_NAME);
     this.legacyFilePath = join(dataDir, LEGACY_FILE_NAME);
     this.legacyMigratedPath = join(dataDir, LEGACY_MIGRATED_NAME);
@@ -382,8 +403,151 @@ export class WorkspaceSessionStore implements ISessionStore {
     return join(this.sessionsDir, `${encodeURIComponent(sessionId)}.json`);
   }
 
+  /**
+   * 启用跨进程会话写锁（**生产装配的唯一开关**）
+   *
+   * 由 extension.ts 在 `load()` 之后显式调用；未启用时本存储按「单进程 / 测试模式」工作
+   * （写盘不加锁断言）。开关只此一处，避免把 `lockless` 参数撒进每个写方法。
+   */
+  enableCrossProcessLock(): void {
+    this.crossProcessLockEnabled = true;
+  }
+
+  /**
+   * 获取某会话的跨进程写锁（**不等待**，拿不到立即返回 false）
+   *
+   * 拿锁成功后**必须重读该会话文件**：本进程内存里的 roundIds 可能落后于另一个窗口
+   * 刚写入的轮次，不重读就写会把它覆盖掉（锁白加）。重读后内存 = 盘上真相。
+   *
+   * @param sessionId 会话标识（空串视为「尚无会话」，直接成功）
+   * @returns true = 本进程持有（含已持有 / 未启用锁）；false = 被其他进程持有
+   */
+  async acquireSessionLock(sessionId: string): Promise<boolean> {
+    if (!this.crossProcessLockEnabled || !sessionId) return true;
+    if (this.sessionLock.isHeld(sessionId)) return true;
+    const acquired = await this.sessionLock.tryAcquire(sessionId);
+    if (acquired) {
+      // 已被本进程接管 ⇒ 不再走「无锁新建」豁免（后续覆盖必须持锁）
+      this.locklessCreated.delete(sessionId);
+      this.reloadSessionFile(sessionId);
+    }
+    return acquired;
+  }
+
+  /** 释放某会话的写锁（未持有则忽略；进程退出时由 OS 兜底释放） */
+  releaseSessionLock(sessionId: string): void {
+    if (!this.crossProcessLockEnabled) return;
+    this.sessionLock.release(sessionId);
+  }
+
+  /** 释放本进程持有的全部会话锁（扩展停用 / 测试收尾用） */
+  releaseAllSessionLocks(): void {
+    this.sessionLock.releaseAll();
+  }
+
+  /**
+   * 写盘前判据：本次写能否整文件覆盖（与 `assertSessionWriteAllowed` **同一份判据**）
+   *
+   * 三态：
+   *   - `locked`：持锁（内容可整写）
+   *   - `create`：文件尚不存在（首次创建豁免，登记进 `locklessCreated`）
+   *   - `denied`：不持锁而要覆盖已存在文件 ⇒ 整文件写禁止
+   */
+  private resolveWriteScope(sessionId: string): 'locked' | 'create' | 'denied' {
+    if (!this.crossProcessLockEnabled) return 'locked';
+    if (this.sessionLock.isHeld(sessionId)) return 'locked';
+    if (this.locklessCreated.has(sessionId)) return 'locked';
+    if (!existsSync(this.sessionFilePath(sessionId))) {
+      this.locklessCreated.add(sessionId);
+      return 'create';
+    }
+    return 'denied';
+  }
+
+  /**
+   * 写盘前的跨进程锁断言（**fail-closed**：宁可写失败，也不静默覆盖别人的会话）
+   *
+   * 合法无锁写只有一种：本进程第一次创建**尚不存在**的会话文件（内核新建/分叉的同步连写，
+   * 会话 id 由时间戳 + 随机后缀生成，跨进程不可能撞）。已存在的会话文件必须持锁。
+   * 迁移/崩溃打捞在 `load()` 里直接走 `atomicWriteFileSync`，根本不进本断言。
+   */
+  private assertSessionWriteAllowed(sessionId: string): void {
+    if (this.resolveWriteScope(sessionId) === 'denied') {
+      throw new Error(`Memora 会话文件写入缺少跨进程锁：${sessionId}`);
+    }
+  }
+
+  /**
+   * 【唯一豁免】不持锁时只合并写 SessionMeta（**内容字段一律取盘上真相**）
+   *
+   * 为什么存在这条豁免：内核 `SessionArchiver` / `SessionNamer` 会把 `summary` / `keyTopics` /
+   * `autoName` 异步写回 `updateSessionMeta`，而自动归档是**离场 fire-and-forget**
+   * （`AGENT_EVENTS.sessionSwitched` / `sessionForked` → `archiveCoordinator`，内核零改动约束下
+   * 宿主拿不到完成时刻）。宿主在切换完成时就释放了旧会话锁，等 LLM 返回时已无锁。
+   *
+   * 为什么合并写而不是整文件写：`summary` 等是**派生展示数据**，而 roundIds / archived /
+   * lastActiveAt 是内容真相。合并写只替换盘上的 `meta`，其余字段完全取自盘面 ⇒
+   * 即使这份内存里的 roundIds 过期，也不会覆盖另一个窗口刚写入的轮次。
+   *
+   * 为什么盘上文件不存在时直接放弃：那意味着会话已被另一个窗口删除，写回只会造出一个
+   * 无内容幽灵会话（与 `reloadSessionFile` 的「文件不存在即清空内存」同判据）。
+   */
+  private writeMetaOnlyIfLockless(sessionId: string, meta: SessionMeta): void {
+    const path = this.sessionFilePath(sessionId);
+    let disk: SessionFileShape;
+    try {
+      disk = JSON.parse(readFileSync(path, 'utf8')) as SessionFileShape;
+    } catch (err) {
+      // 文件已被删除 / 坏档：本次元数据写放弃（不复活幽灵会话、不覆盖坏档）
+      console.warn(`Memora 会话元数据合并写跳过（盘上不可读）：${sessionId}`, err);
+      return;
+    }
+    const body: SessionFileShape = { ...disk, sessionId, meta };
+    atomicWriteFileSync(path, JSON.stringify(body, null, 2));
+  }
+
+  /**
+   * 拿锁后重读单个会话文件（盘上真相覆盖内存，防「拿锁了但内存过期」）
+   *
+   * 文件不存在 ⇒ 清空该会话的内存态（新会话 / 刚被删除）；坏 JSON ⇒ 保留内存旧值并告警
+   * （坏档本身已丢数据，此时再清内存只会扩大损失）。
+   */
+  private reloadSessionFile(sessionId: string): void {
+    const path = this.sessionFilePath(sessionId);
+    if (!existsSync(path)) {
+      this.metas.delete(sessionId);
+      this.roundIdsStore.delete(sessionId);
+      this.archivedIdsSet.delete(sessionId);
+      this.lastActiveAtStore.delete(sessionId);
+      return;
+    }
+    let data: SessionFileShape;
+    try {
+      data = JSON.parse(readFileSync(path, 'utf8')) as SessionFileShape;
+    } catch (err) {
+      console.warn(`Memora 会话文件重读失败（保留内存态）：${sessionId}`, err);
+      return;
+    }
+    const meta = data.meta && typeof data.meta === 'object' ? data.meta : null;
+    if (meta) this.metas.set(sessionId, meta);
+    else this.metas.delete(sessionId);
+    const roundIds = Array.isArray(data.roundIds)
+      ? data.roundIds.filter((id): id is string => typeof id === 'string')
+      : [];
+    if (roundIds.length > 0) this.roundIdsStore.set(sessionId, roundIds);
+    else this.roundIdsStore.delete(sessionId);
+    if (data.archived === true) this.archivedIdsSet.add(sessionId);
+    else this.archivedIdsSet.delete(sessionId);
+    if (typeof data.lastActiveAt === 'string' && data.lastActiveAt) {
+      this.lastActiveAtStore.set(sessionId, data.lastActiveAt);
+    } else {
+      this.lastActiveAtStore.delete(sessionId);
+    }
+  }
+
   /** 原子写单个会话文件（只触碰该会话，不重写其他会话） */
   private writeSessionFile(sessionId: string): void {
+    this.assertSessionWriteAllowed(sessionId);
     const meta = this.metas.get(sessionId) ?? null;
     const roundIds = this.roundIdsStore.get(sessionId) ?? [];
     if (!meta && roundIds.length === 0) {
@@ -405,6 +569,8 @@ export class WorkspaceSessionStore implements ISessionStore {
 
   /** 删除单个会话文件（不存在则忽略） */
   private removeSessionFile(sessionId: string): void {
+    // 删除也是写：未持锁且文件存在 ⇒ 拒绝（防止删掉另一个窗口正在用的会话）
+    this.assertSessionWriteAllowed(sessionId);
     try {
       const path = this.sessionFilePath(sessionId);
       if (existsSync(path)) unlinkSync(path);
@@ -687,6 +853,12 @@ export class WorkspaceSessionStore implements ISessionStore {
       messageCount: existing?.messageCount ?? this.deriveMessageCount(sessionId),
     };
     this.metas.set(sessionId, updated);
+    // 元数据是异步派生面（内核归档/命名 fire-and-forget）：不持锁时不整文件覆盖，
+    // 改为「盘上内容字段 + 本次 meta」的合并写（见 writeMetaOnlyIfLockless 的论证）
+    if (this.resolveWriteScope(sessionId) === 'denied') {
+      this.writeMetaOnlyIfLockless(sessionId, updated);
+      return;
+    }
     this.writeSessionFile(sessionId);
   }
 
@@ -901,4 +1073,13 @@ export type HostSessionStore = Omit<ISessionStore, 'deleteSession'> & {
   getInitialSessionId: () => string;
   /** 记录上次停留会话：切会话 / 新建 / 分叉三条路径的单一写点 */
   setLastActiveSession: (sessionId: string) => void;
+  /**
+   * 获取会话跨进程写锁（不等待）；false = 该会话正在另一个窗口中使用
+   *
+   * 长持有：当前打开的会话（切换/新建/分叉时拿，切走释放）；
+   * 短持有：历史菜单归档/删除这类对非当前会话的一次性写（拿→写→放）。
+   */
+  acquireSessionLock: (sessionId: string) => Promise<boolean>;
+  /** 释放会话跨进程写锁（未持有则忽略） */
+  releaseSessionLock: (sessionId: string) => void;
 };

@@ -102,6 +102,19 @@ const SNAPSHOT_OVERSIZE_NOTICE = '工作区文本文件过多，脚本改动未�
  * 必漂移，且「点了没反应」是最难排障的形态——失败必须可见）
  */
 const TRUNCATE_FAIL_NOTICE = '未能定位该问答（会话可能已变更），请刷新会话后重试';
+
+/**
+ * 目标会话被另一进程持锁时的统一提示（切会话 / 归档 / 恢复 / 删除共用）
+ *
+ * 文案必须回答「为什么不行 + 怎么办」，否则用户只会看到「打不开」。
+ */
+const SESSION_HELD_NOTICE = '该会话正在另一个窗口中使用。请先在那边的窗口切换或关闭它，再重试。';
+
+/** 启动时首选会话被另一窗口占用、已自动让位到最近可用会话的提示（解释「为什么不是上次那个会话」） */
+const SESSION_DISPLACED_NOTICE = '上次停留的会话正在另一个窗口中使用，已为你打开另一个会话。';
+
+/** 启动时首选会话被占且工作区无其他可用会话、已新建空会话的提示（如实说「新建」而非「另一个」） */
+const SESSION_DISPLACED_NEW_NOTICE = '上次停留的会话正在另一个窗口中使用，已为你新建一个空会话。';
 import type {
   ChatRef,
   InjectionSegment,
@@ -124,6 +137,8 @@ import { friendlyErrorMessage } from '../../shared/errorText.js';
 import { dedupeRefs } from '../../shared/refKey.js';
 // 过程事件 / 指标段级合并（纯函数，HOST-SPLIT-1 切片自本类外置；三条调用面共用同一语义）
 import { mergeProcessEvents } from '../helpers/processEventMerge.js';
+// 启动会话归属裁决（首选被另一窗口占用时让位）——判据单点，面板与验收测试共用同一实现
+import { claimStartupSession } from '../helpers/sessionStartupClaim.js';
 // 能力面三态判定的唯一出口（CAP-TRISTATE-1）：本文件只传「域级标签投影」，不自行判 length
 import { deriveCapabilityState } from '../helpers/capabilityState.js';
 // 输入区徽章的域级短标签（标签投影与三态判定分离，见 capabilityLabels 头注释）
@@ -1023,10 +1038,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       void this.handleDeleteSession(msg.sessionId);
     } else if (msg.type === 'archive_session') {
       // 历史浮层「移入留存」→ 仅改显示分组，不动数据（与删除是两种不同强度的动作）
-      this.handleArchiveSession(msg.sessionId);
+      void this.handleArchiveSession(msg.sessionId);
     } else if (msg.type === 'restore_session') {
       // 留存区条目「移回」→ 同上的逆操作
-      this.handleRestoreSession(msg.sessionId);
+      void this.handleRestoreSession(msg.sessionId);
     } else if (msg.type === 'rename_request') {
       // 标题条改名笔 → 弹 InputBox 输入新标题写入元数据
       void this.renameCurrentSession();
@@ -1791,6 +1806,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'notice', level: 'info', message: '当前会话不在历史记录，无法删除' });
       return;
     }
+    // 一次性写（短持有）：删除会重写/移除会话文件，另一个窗口正在用时必须拒绝
+    if (!(await this.sessionStore.acquireSessionLock(sessionId))) {
+      this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
+      return;
+    }
     try {
       // 联动：整删会话 → 被回收 Round（引用归零）的轮次摘要软删进回收站
       // （脱钩溯源，可恢复为独立记忆）。分叉共享轮由 deleteSession 返回值天然排除——
@@ -1803,6 +1823,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 删除失败不阻塞（重推列表仍可用），但需记录 + 给用户可见提示（SSOT 不藏错）
       console.warn('Memora 删除会话记录失败', err);
       this.post({ type: 'notice', level: 'error', message: '删除会话失败，请稍后重试' });
+    } finally {
+      // 目标必不是当前会话（上方已拦），短持有锁用完即还
+      this.sessionStore.releaseSessionLock(sessionId);
     }
     this.pushSessionList();
   }
@@ -1824,28 +1847,38 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
    */
-  private handleArchiveSession(sessionId: string): void {
+  private async handleArchiveSession(sessionId: string): Promise<void> {
     // 运行时守卫（与 newSession/switchToSession/handleDeleteSession 同源 _streaming）
     if (this._streaming) {
       this.post({ type: 'notice', level: 'info', message: '生成中，请稍后再整理会话' });
       return;
     }
-    if (!this.sessionStore.archiveSession(sessionId)) {
-      // 归档返回 false 的两种情形：会话不存在 / 已在留存区——都无需打扰，仅低强度提示
-      this.post({ type: 'notice', level: 'info', message: '该会话已在留存区' });
+    // 一次性写（短持有）：归档会重写会话文件。当前会话已长持有锁，不再重复拿/放
+    const oneShotLock = sessionId !== this._currentSessionId;
+    if (oneShotLock && !(await this.sessionStore.acquireSessionLock(sessionId))) {
+      this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
       return;
     }
-    // manual 模式顺带触发会话归档（fire-and-forget，成败走既有事件；full 模式零动作）
-    const archiveTriggered = this.triggerManualArchive(sessionId);
-    this.post({
-      type: 'notice',
-      level: 'info',
-      // 触发了才提摘要：未触发（full 模式）时文案与改动前**一字不差**（不打扰既有用户）
-      message: archiveTriggered
-        ? '已移入留存区 · 已顺带请求会话摘要更新（内容未变则跳过）'
-        : '已移入留存区（会话内容保留，可随时移回）',
-    });
-    this.pushSessionList();
+    try {
+      if (!this.sessionStore.archiveSession(sessionId)) {
+        // 归档返回 false 的两种情形：会话不存在 / 已在留存区——都无需打扰，仅低强度提示
+        this.post({ type: 'notice', level: 'info', message: '该会话已在留存区' });
+        return;
+      }
+      // manual 模式顺带触发会话归档（fire-and-forget，成败走既有事件；full 模式零动作）
+      const archiveTriggered = this.triggerManualArchive(sessionId);
+      this.post({
+        type: 'notice',
+        level: 'info',
+        // 触发了才提摘要：未触发（full 模式）时文案与改动前**一字不差**（不打扰既有用户）
+        message: archiveTriggered
+          ? '已移入留存区 · 已顺带请求会话摘要更新（内容未变则跳过）'
+          : '已移入留存区（会话内容保留，可随时移回）',
+      });
+      this.pushSessionList();
+    } finally {
+      if (oneShotLock) this.sessionStore.releaseSessionLock(sessionId);
+    }
   }
 
   /**
@@ -1908,16 +1941,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
    */
-  private handleRestoreSession(sessionId: string): void {
+  private async handleRestoreSession(sessionId: string): Promise<void> {
     if (this._streaming) {
       this.post({ type: 'notice', level: 'info', message: '生成中，请稍后再整理会话' });
       return;
     }
-    if (!this.sessionStore.unarchiveSession(sessionId)) {
-      return; // 本就不在留存区：无变化即无反馈（避免为幂等动作刷提示）
+    // 一次性写（短持有）：与归档同判据（改会话文件即需归属）
+    const oneShotLock = sessionId !== this._currentSessionId;
+    if (oneShotLock && !(await this.sessionStore.acquireSessionLock(sessionId))) {
+      this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
+      return;
     }
-    this.post({ type: 'notice', level: 'info', message: '已移回会话记录' });
-    this.pushSessionList();
+    try {
+      if (!this.sessionStore.unarchiveSession(sessionId)) {
+        return; // 本就不在留存区：无变化即无反馈（避免为幂等动作刷提示）
+      }
+      this.post({ type: 'notice', level: 'info', message: '已移回会话记录' });
+      this.pushSessionList();
+    } finally {
+      if (oneShotLock) this.sessionStore.releaseSessionLock(sessionId);
+    }
   }
 
   /**
@@ -1977,12 +2020,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'notice', level: 'error', message: 'Memora：会话管理未就绪，请稍候再试' });
       return false;
     }
+    // 新会话 id 由时间戳/随机后缀生成，跨进程不会撞；拿锁只为让后续写盘有归属
+    if (!(await this.sessionStore.acquireSessionLock(sessionId))) {
+      this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
+      return false;
+    }
+    const previous = this._currentSessionId;
     try {
       await agent.sessionManager.switchToSession(sessionId);
       this.setCurrentSessionId(sessionId);
       this.replayCurrentSession();
+      // 先拿新、再放旧：切换过程中内核仍可能写旧会话（归档/摘要），旧锁必须撑到切换完成
+      if (previous && previous !== sessionId) this.sessionStore.releaseSessionLock(previous);
       return true;
     } catch (err) {
+      // 没切成就把新锁还回去，旧会话仍是当前会话（保持可写）
+      this.sessionStore.releaseSessionLock(sessionId);
       this.post({
         type: 'notice',
         level: 'error',
@@ -2029,8 +2082,23 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // round-based 分叉：从指定 Round 位置创建新会话
       const { newSession, roundCount } = agent.forkSession(forkRoundId);
       const forkedId = `${formatDateKey(new Date())}-${newSession}`;
+      // 内核分叉已在同步调用里写好了新会话文件（无锁创建豁免）；此处接管锁并重读，
+      // 之后对它的写入必须有归属——拿不到说明有第三方在写这个 id（极罕见），拒绝并保持原会话
+      const previous = this._currentSessionId;
+      if (!(await this.sessionStore.acquireSessionLock(forkedId))) {
+        // 拿不到锁就回滚内核当前会话：内核 forkSession 已同步切到新会话，
+        // 不回滚会让「内核当前会话」与「宿主 _currentSessionId」分叉（后续写到无锁会话上）
+        try {
+          if (agent.sessionManager) await agent.sessionManager.switchToSession(previous);
+        } catch (rollbackErr) {
+          console.warn('Memora 分叉回滚失败（内核当前会话可能已偏离）', rollbackErr);
+        }
+        this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
+        return;
+      }
       this.setCurrentSessionId(forkedId);
       this.replayCurrentSession();
+      if (previous && previous !== forkedId) this.sessionStore.releaseSessionLock(previous);
       this.post({
         type: 'notice',
         level: 'info',
@@ -2077,6 +2145,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (sessionId === this._currentSessionId) return; // 已在目标会话
     const agent = await this.getAgentOrWarn();
     if (!agent) return;
+    // 先拿目标会话的锁：拿不到 = 另一窗口正在用，明确拒绝（不静默覆盖对方写入）
+    if (!(await this.sessionStore.acquireSessionLock(sessionId))) {
+      this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
+      return;
+    }
+    const previous = this._currentSessionId;
     try {
       if (!agent.sessionManager) {
         this.post({
@@ -2084,12 +2158,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           level: 'error',
           message: 'Memora：会话管理未就绪，请稍候再试',
         });
+        this.sessionStore.releaseSessionLock(sessionId);
         return;
       }
       await agent.sessionManager.switchToSession(sessionId);
       this.setCurrentSessionId(sessionId);
       this.replayCurrentSession();
+      if (previous && previous !== sessionId) this.sessionStore.releaseSessionLock(previous);
     } catch (err) {
+      this.sessionStore.releaseSessionLock(sessionId);
       this.post({
         type: 'notice',
         level: 'error',
@@ -2250,6 +2327,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     try {
       // ① 等 Agent 装配完成（在途即等待；失败内部消化为错误提示，不抛出）
       await this.ensureAgent();
+      // ①.5 跨进程会话归属：两窗口同时恢复到最后活跃会话时，本窗口让位（防静默覆盖）
+      await this.claimInitialSessionOwnership();
       // ② 打捞升级崩溃残留轮（once-guard；无当前会话/无 Agent 时跳过，等待下次触发再试）
       await this.upgradeInterruptedRounds();
     } catch (err) {
@@ -2282,6 +2361,56 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'addRef', refs: this._pendingRefs });
       this._pendingRefs = undefined;
     }
+  }
+
+  /**
+   * 启动会话归属裁决（跨进程）：两个窗口同时恢复到最后活跃会话时，本窗口让位
+   *
+   * 判据单点 = `webview/helpers/sessionStartupClaim`（面板与验收测试共用同一实现，
+   * 避免「测试测的是另一份循环」）。让位顺序：首选 → 最近写入的非留存会话 →
+   * 全被占则新建空会话（窗口始终可用，绝不让整窗卡死）。
+   */
+  private async claimInitialSessionOwnership(): Promise<void> {
+    const preferred = this._currentSessionId;
+    // 空态（从未有过会话）：交给 ensureInitialSession 新建，createSession 内含拿锁
+    if (!preferred) return;
+    const claim = await claimStartupSession(preferred, {
+      acquire: (id) => this.sessionStore.acquireSessionLock(id),
+      fallbackCandidates: () =>
+        this.sessionStore
+          .listSessionMetas()
+          .filter((m) => m.sessionId !== preferred && !this.sessionStore.isArchived(m.sessionId))
+          .map((m) => m.sessionId),
+    });
+    if (!claim.displaced) return; // 首选归属本进程：单窗口常态
+    if (claim.sessionId) {
+      const manager = this._agent?.sessionManager;
+      if (manager) {
+        try {
+          await manager.switchToSession(claim.sessionId);
+          this.setCurrentSessionId(claim.sessionId);
+        } catch (err) {
+          // 让位切换失败：把刚落到的锁还回去，改建新会话（不留在「无锁的旧会话」上）
+          console.warn('Memora 启动让位切换失败，改建新会话', err);
+          this.sessionStore.releaseSessionLock(claim.sessionId);
+        }
+      } else {
+        this.sessionStore.releaseSessionLock(claim.sessionId);
+      }
+    }
+    if (this._currentSessionId === preferred) {
+      // 候选全被占 / 让位失败 ⇒ 新建（新 id 无冲突）
+      const created = await this.createSession(
+        `${formatDateKey(new Date())}-s${Date.now().toString(36)}`,
+      );
+      // 新建失败：createSession 已推送错误通知，此处不再补一句「已新建」的假话
+      if (created) {
+        this.post({ type: 'notice', level: 'info', message: SESSION_DISPLACED_NEW_NOTICE });
+      }
+      return;
+    }
+    // 成功让位到既有会话
+    this.post({ type: 'notice', level: 'info', message: SESSION_DISPLACED_NOTICE });
   }
 
   /**
