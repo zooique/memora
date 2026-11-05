@@ -171,13 +171,8 @@ export class WorkspaceSessionStore implements ISessionStore {
   /**
    * 当前被任意会话引用的 Round ID 全集（**引用真源**）
    *
-   * 供孤儿判定现场派生（内核 GC / 宿主启动清扫都经 `WorkspaceRoundStore.setReferencedIdsProvider`
-   * 回读本方法）。**每次调用都扫 `sessions/` 目录的全部会话文件求并集**——会话文件是跨窗口的
-   * 唯一真源；进程内的 `roundIdsStore` 只是本进程 `load()` / `reloadSessionFile()` 时的快照，
-   * 另一个窗口新建/分叉出的会话它看不见（按内存快照算引用集，会把仍被引用的轮当孤儿删掉）。
-   *
-   * 读盘口径与 `load()` 同源（同一个 `readSessionFiles`）：排除 `.migrated`、`.tmp` 与
-   * 全局态文件，不会把迁移留档或半写文件当成引用。
+   * 每次调用都扫 `sessions/` 全部会话文件求并集（口径同 `load()`：排除 `.migrated` / `.tmp` /
+   * 全局态文件）——进程内 `roundIdsStore` 只是本进程快照，看不见别窗口新建 / 分叉的会话。
    */
   referencedIds(): string[] {
     const ids = new Set<string>();

@@ -46,9 +46,6 @@ const PERSIST_CALL = 'this.sessionStore.setLastActiveSession(sessionId);';
 /** 构造期 / 面板重开灌入的合法右值（只读导航指针，不改状态） */
 const INIT_VALUE = 'this.sessionStore.getInitialSessionId()';
 
-/** 面板销毁归还锁时的清空方法名（B1） */
-const RELEASE_NAME = 'private releaseHeldSessionLock(';
-
 /** 清空点的**唯一**合法右值（不落盘：不得改写「上次停留」指针） */
 const CLEAR_VALUE = "''";
 
@@ -108,12 +105,15 @@ describe('SESSION-RESUME-1 · 会话导航写点守卫', () => {
     expect(nonSetter).toEqual([INIT_VALUE, INIT_VALUE]);
   });
 
-  it('清空点恰好 1 处，位于 releaseHeldSessionLock 内且不落盘', () => {
+  it('清空点恰好 1 处，位于 finalizer 的 clearSessionId 回调且不落盘', () => {
     expect(assignValues.filter((v) => v === CLEAR_VALUE)).toHaveLength(1);
-    const body = extractMethodBody(source, RELEASE_NAME);
-    expect(body).not.toBe('');
-    expect(body).toContain(`this._currentSessionId = ${CLEAR_VALUE};`);
+    // 清空点是构造收尾器时的回调：prettier 可能把箭头函数体换行，故看相邻上一行
+    const lines = source.split('\n');
+    const idx = lines.findIndex((l) => l.includes(`this._currentSessionId = ${CLEAR_VALUE};`));
+    expect(idx).toBeGreaterThan(0);
+    expect(lines[idx - 1]).toContain('clearSessionId:');
     // 清空点绝不能顺带写「上次停留」：销毁不是导航，写盘会让重开跳走
-    expect(body).not.toContain(PERSIST_CALL);
+    expect(lines[idx - 1]).not.toContain('setLastActiveSession');
+    expect(lines[idx]).not.toContain('setLastActiveSession');
   });
 });

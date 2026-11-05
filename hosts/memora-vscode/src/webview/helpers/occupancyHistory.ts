@@ -55,3 +55,23 @@ export function toOccupancyMessages(rounds: readonly RoundView[]): OccupancyMess
   }
   return msgs;
 }
+
+/**
+ * 按会话形态选取历史数据源，统一转为占用估算输入
+ *
+ * 与 `toOccupancyMessages` 同域（占用估算的取数面）：round-based（注入 viewLoader）走
+ * 按轮取正文，legacy 扁平路径走 `loadMessages`；两路径归一为 `OccupancyMessage[]`。
+ *
+ * @param hasViewLoader 是否注入会话视图加载器（true = round-based）
+ * @param loadRounds round-based 取数（按时间顺序排列的轮次）
+ * @param loadLegacy legacy 扁平取数（本函数只消费 role / content）
+ * @returns 占用估算输入序列
+ */
+export function collectOccupancyHistory(
+  hasViewLoader: boolean,
+  loadRounds: () => readonly RoundView[],
+  loadLegacy: () => readonly { role: 'user' | 'assistant'; content: string }[],
+): OccupancyMessage[] {
+  if (hasViewLoader) return toOccupancyMessages(loadRounds());
+  return loadLegacy().map((m) => ({ role: m.role, content: m.content }));
+}
