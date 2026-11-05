@@ -83,8 +83,8 @@ describe('ISessionStore 契约 · round-based 写入', () => {
     expect(mockSessionStore.appendRoundId).toHaveBeenCalledTimes(1);
   });
 
-  // ADR-044 兼容面：refCount 0 = 存量无归属轮（ADR-044 之前落盘），收场时补到 1 并登记。
-  it('appendAssistant 遇到存量无归属轮（refCount 0）：补到 1 并登记进会话', async () => {
+  // 旧档兼容纪律：refCount 不是引用真源 ⇒ **读入不判、不改、不回写**，收场也不补登记。
+  it('appendAssistant 遇到旧档轮（refCount 0）：不判不改不回写，也不补登记', async () => {
     mockRoundStore.getById = vi.fn().mockReturnValue({
       id: 'round-1',
       userMessage: { id: 'm1', role: 'user', content: 'q', timestamp: 't' },
@@ -98,12 +98,9 @@ describe('ISessionStore 契约 · round-based 写入', () => {
     const saved = vi.mocked(mockRoundStore.save).mock.calls[0]![0];
     expect(saved.assistantMessage?.content).toBe('回复消息');
     expect(saved.status).toBe('complete');
-    expect(saved.refCount).toBe(1); // 补到 1（不是靠 incrementRef 二次落盘）
+    expect(saved.refCount).toBe(0); // 不回写：字段值原样保留，不参与任何判定
     expect(mockRoundStore.incrementRef).not.toHaveBeenCalled();
-    expect(mockSessionStore.appendRoundId).toHaveBeenCalledWith(
-      expect.stringContaining('-main'),
-      'round-1',
-    );
+    expect(mockSessionStore.appendRoundId).not.toHaveBeenCalled(); // 收场不补登记
   });
 
   it('未传入 roundId 时不写入 RoundStore', async () => {

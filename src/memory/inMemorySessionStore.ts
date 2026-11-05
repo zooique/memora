@@ -29,6 +29,10 @@ export class InMemorySessionStore implements ISessionStore {
 
   constructor(roundStore?: IRoundStore) {
     this.roundStore = roundStore ?? new InMemoryRoundStore();
+    // 引用真源单点注入：内存 RoundStore 不持有会话，孤儿判定必须回读本会话存储的 roundIds
+    if (this.roundStore instanceof InMemoryRoundStore) {
+      this.roundStore.setReferencedIdsProvider(() => new Set(this.referencedIds()));
+    }
   }
 
   // ─── 会话消息读写（round-based 唯一真相源） ──────────
@@ -208,15 +212,33 @@ export class InMemorySessionStore implements ISessionStore {
 
   /**
    * 删除会话
+   *
+   * 引用真源 = 会话 `roundIds`：**先注销会话**，再现场派生「仍被其他会话引用的轮」，
+   * 只回收无人引用者。不再使用 `Round.refCount`（该字段非真源，冻结为存在性标记）。
    */
   deleteSession(sessionId: string): void {
-    // 引用递减：被删除会话放弃其 Round 引用（refCount 归零的轮由 GC 回收）
     const roundIds = this.roundIdsMap.get(sessionId) ?? [];
-    for (const roundId of roundIds) {
-      this.roundStore.decrementRef(roundId);
-    }
+    // 先注销（引用消失先于物理回收，派生结果才准确）
     this.metas.delete(sessionId);
     this.roundIdsMap.delete(sessionId);
+    // 现场重算：其他会话（含分叉）仍引用的轮保留，无人引用才删
+    const referenced = new Set(this.referencedIds());
+    for (const roundId of roundIds) {
+      if (!referenced.has(roundId)) this.roundStore.delete(roundId);
+    }
+  }
+
+  /**
+   * 当前被任意会话引用的 Round ID 全集（**引用真源**）
+   *
+   * 供孤儿判定现场派生：返回值是「此刻真实被引用」的集合，不是缓存计数。
+   */
+  referencedIds(): string[] {
+    const ids = new Set<string>();
+    for (const roundIds of this.roundIdsMap.values()) {
+      for (const id of roundIds) ids.add(id);
+    }
+    return Array.from(ids);
   }
 
   // ─── 私有辅助方法 ─────────────────────────────────────

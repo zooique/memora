@@ -638,11 +638,9 @@ describe('内核 InMemorySessionStore（真实实现）· round-based 行为', (
     expect(store.getRoundIds('2026-09-13-main')).toEqual([id3]);
   });
 
-  it('deleteSession：清空 meta 与 roundIds 并递减 Round 引用', () => {
-    // 构造 refCount=2 的 complete Round（save 前设置以持久化）
+  it('deleteSession：先注销会话，再按派生引用集合回收无人引用的 Round', () => {
     const round = createPendingRound('删除测试');
     const completed = completeRound(round, '回答');
-    completed.refCount = 2; // 被 2 个会话引用
     roundStore.save(completed);
     const roundId = completed.id;
     store.createSession({ sessionId: '2026-09-13-main', updatedAt: 't', messageCount: 0 });
@@ -651,8 +649,8 @@ describe('内核 InMemorySessionStore（真实实现）· round-based 行为', (
 
     expect(store.getSessionMeta('2026-09-13-main')).toBeUndefined();
     expect(store.getRoundIds('2026-09-13-main')).toEqual([]);
-    // 引用递减 1（2 → 1）
-    expect(roundStore.getById(roundId)!.refCount).toBe(1);
+    // 无其他会话引用 ⇒ 轮被回收；refCount 冻结为存在性标记，不参与判定也不再递减
+    expect(roundStore.getById(roundId)).toBeNull();
   });
 });
 

@@ -238,11 +238,11 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
     expect(sessionStore.getRoundIds(sessionId).filter((id) => id === roundId)).toHaveLength(1);
   });
 
-  it('ADR-044 兼容面：存量无归属轮（refCount 0）在中断收场时补到 1 并登记进会话', async () => {
+  it('旧档无归属轮（refCount 0）：收场不补登记、不回写计数（引用真源 = 会话 roundIds）', async () => {
     const { history, roundStore, sessionStore } = createRoundBackedHistory();
     const roundId = generateRoundId();
     const ts = new Date().toISOString();
-    // 直接落一个「存量」轮：refCount 0 且不在会话（模拟 ADR-044 之前落盘，或建轮时登记失败）
+    // 直接落一个「旧档」轮：refCount 0 且不在会话（模拟 ADR-044 之前落盘）
     roundStore.save({
       id: roundId,
       userMessage: {
@@ -260,8 +260,9 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
     await history.appendInterrupted(roundId);
     const settled = roundStore.getById(roundId);
     expect(settled?.status).toBe('interrupted');
-    expect(settled?.refCount).toBe(1);
-    expect(sessionStore.getRoundIds(sessionId)).toContain(roundId);
+    // 不判不改不回写：旧值原样保留；也不补登记（由用户/宿主显式恢复，而非收场暗中迁移）
+    expect(settled?.refCount).toBe(0);
+    expect(sessionStore.getRoundIds(sessionId)).not.toContain(roundId);
   });
 
   it('appendUser 题身份单源（ADR-043）：草稿带 id 即用题身份落盘，缺省回退轮内序号', async () => {
@@ -545,7 +546,7 @@ describe('MessageHistory · getFirstRoundId（会话起点背景互斥排除）'
 });
 
 describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop turn，T1）', () => {
-  /** 构造「崩溃残局」：真实 Round/Session 存储 + 仅 appendUser 的中断轮（refCount=0、未登记会话） */
+  /** 构造「崩溃残局」：真实 Round/Session 存储 + 仅 appendUser 的中断轮（已登记会话、未收场） */
   function createCrashScene(): {
     roundStore: InMemoryRoundStore;
     sessionStore: InMemorySessionStore;
@@ -563,13 +564,12 @@ describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop tu
     return { roundStore, sessionStore };
   }
 
-  it('中断轮（带恢复文本）升级为 interrupted：写 assistantMessage（含中断标记）+ refCount 0→1 + 入 roundIds', async () => {
+  it('中断轮（带恢复文本）升级为 interrupted：写 assistantMessage（含中断标记）+ 会话归属保留', async () => {
     const { roundStore, sessionStore } = createCrashScene();
     const roundId = generateRoundId();
     const first = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
-    // 崩溃前形态：appendUser 后 pending（refCount=0），宿主 step 检查点已落盘 processEvents
+    // 崩溃前形态：appendUser 后 pending（建轮即入会话），宿主 step 检查点已落盘 processEvents
     await first.appendUser('帮我梳理架构', roundId);
-    roundStore.getById(roundId)!.refCount = 0;
 
     // 重启后打捞升级：宿主从 narrate 派生文本 → 内核收场
     const restarted = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
@@ -586,7 +586,7 @@ describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop tu
     expect(sessionStore.getRoundIds(`${todayDate()}-main`)).toContain(roundId);
   });
 
-  it('无恢复文本的中断轮仍按 stop 语义收场：interrupted 但无 assistantMessage，照样登记会话', async () => {
+  it('无恢复文本的中断轮仍按 stop 语义收场：interrupted 但无 assistantMessage，会话归属保留', async () => {
     const { roundStore, sessionStore } = createCrashScene();
     // 工具阶段崩溃：无任何 narrate 文本，processEvents 仅有 tool 事件
     const roundId = generateRoundId();
@@ -625,7 +625,7 @@ describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop tu
     expect(roundStore.size()).toBe(0);
   });
 
-  it('重复升级幂等：不二次登记 roundIds、refCount 不虚增（T3 宿主不双重复放的底座）', async () => {
+  it('重复升级幂等：roundIds 不重复登记（T3 宿主不双重复放的底座）', async () => {
     const { roundStore, sessionStore } = createCrashScene();
     const roundId = generateRoundId();
     const first = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
@@ -639,6 +639,6 @@ describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop tu
 
     const ids = sessionStore.getRoundIds(`${todayDate()}-main`);
     expect(ids.filter((id) => id === roundId)).toHaveLength(1); // 只登记一次
-    expect(roundStore.getById(roundId)!.refCount).toBe(1); // refCount 不虚增
+    expect(roundStore.getById(roundId)!.refCount).toBe(1); // 冻结值为存在性标记，不随升级变化
   });
 });

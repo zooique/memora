@@ -106,6 +106,25 @@ export class WorkspaceSessionStore implements ISessionStore {
       rs.load();
       this.roundStore = rs;
     }
+    // 引用真源单点注入：RoundStore 不持有会话，孤儿判定必须回读本存储的 roundIds。
+    // 由此内核定时 GC 与宿主启动清扫都读同一套引用集合（不再读 Round.refCount）。
+    if (this.roundStore instanceof WorkspaceRoundStore) {
+      this.roundStore.setReferencedIdsProvider(() => new Set(this.referencedIds()));
+    }
+  }
+
+  /**
+   * 当前被任意会话引用的 Round ID 全集（**引用真源**）
+   *
+   * 供孤儿判定现场派生（内核 GC / 宿主启动清扫都经 `WorkspaceRoundStore.setReferencedIdsProvider`
+   * 回读本方法）。返回「此刻真实被引用」的集合，不是缓存计数。
+   */
+  referencedIds(): string[] {
+    const ids = new Set<string>();
+    for (const roundIds of this.roundIdsStore.values()) {
+      for (const id of roundIds) ids.add(id);
+    }
+    return Array.from(ids);
   }
 
   /**
@@ -196,20 +215,11 @@ export class WorkspaceSessionStore implements ISessionStore {
    * 删除整条会话（历史浮层垃圾桶触发）：Round ID 列表 + 元数据 + 检查点。
    *
    * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
-   * @returns 被物理删除（引用归零）的 Round ID 列表，供调用方联动软删其记忆摘要（⑥）
+   * @returns 被移入回收站的 Round ID 列表，供调用方联动软删其记忆摘要（⑥）
    */
   deleteSession(sessionId: string): string[] {
-    // 引用递减 + 物理回收：被删除会话放弃其 Round 引用后，refCount 归零的轮
-    // 立即物理删除（SSOT：Round 物理生命周期归 RoundStore，引用归 SessionStore；
-    // 分叉共享轮由 RoundStore.delete 内部 refCount>0 护栏安全保留）
     const roundIds = this.roundIdsStore.get(sessionId) ?? [];
-    const removedIds: string[] = [];
-    for (const roundId of roundIds) {
-      this.roundStore.decrementRef(roundId);
-      // 物理删除成功（引用归零）→ 记录被回收的 Round，供调用方联动软删其记忆摘要（⑥）
-      if (this.roundStore.delete(roundId)) removedIds.push(roundId);
-    }
-    // 清理：移除 Round ID 指针 + 元数据（物理 Round 由 RoundStore 引用计数 + GC 管理）
+    // ① 先注销会话（引用真源 = roundIds；引用消失必须先于物理回收，派生结果才准确）
     this.roundIdsStore.delete(sessionId);
     this.metas.delete(sessionId);
     // 留存区标记同步摘除（**唯一清理点**）：会话已不存在，若留着标记会让留存区分组出现
@@ -222,6 +232,15 @@ export class WorkspaceSessionStore implements ISessionStore {
     // 换机同步 / 旧档残留等外部入口。
     if (this.lastActiveSessionId === sessionId) this.lastActiveSessionId = '';
     this.save();
+
+    // ② 现场重算引用集合：仍被其他会话（含分叉）引用的轮保留，无人引用才移入回收站。
+    // 这替代了旧的 refCount 递减 + 删轮循环——计数不是真源，派生才是。
+    const referenced = new Set(this.referencedIds());
+    const removedIds: string[] = [];
+    for (const roundId of roundIds) {
+      if (referenced.has(roundId)) continue;
+      if (this.roundStore.delete(roundId)) removedIds.push(roundId);
+    }
     return removedIds;
   }
 
@@ -231,10 +250,10 @@ export class WorkspaceSessionStore implements ISessionStore {
    * 把会话移入留存区（纯视图改位，**不动任何数据**）
    *
    * 刻意不改的东西（这是本方法的核心不变式，改动前必读）：
-   *   - **不调 `roundStore.decrementRef`**：引用一旦归零，`WorkspaceRoundStore.sweepOrphans`
-   *     （宿主启动清理，默认 24h 存活保护）就会把该会话的 Round 当孤儿物理删除 ——
-   *     留存区若这么做，等于「存了但 24 小时后被自家保洁清空」，与立项目的（保住记忆溯源的原文）
-   *     完全相反。
+   *   - **不收缩会话 `roundIds`**：引用真源是 roundIds，留存区保留引用，轮就不会成为孤儿；
+   *     `WorkspaceRoundStore.sweepOrphans`（宿主启动清理，默认 24h 存活保护）按引用集合
+   *     现场派生候选，故「存了但 24 小时后被自家保洁清空」不会发生——与立项目的
+   *     （保住记忆溯源的原文）一致。
    *   - **不移 files、不改 Round 内容**：Round 原地留在 `.memora/rounds/`，记忆里的 roundId
    *     依旧可指到原文。
    *
@@ -305,13 +324,7 @@ export class WorkspaceSessionStore implements ISessionStore {
     // 只取该轮而非整批 `getByIds(roundIds)`：后者会跳过缺失项（见 loadMessages 注释），
     // 整批下标与 roundIds 不同源，按下标取位会错轮。
     const removedUserText = this.roundStore.getByIds([roundId])[0]?.userMessage?.content;
-    // 删除 [idx, 末尾) 的全部 Round（含目标问答）
-    const removed = roundIds.slice(idx);
-    const removedIds: string[] = [];
-    for (const id of removed) {
-      this.roundStore.decrementRef(id);
-      if (this.roundStore.delete(id)) removedIds.push(id); // refCount 归零才真删文件；若被分叉引用则安全保留
-    }
+    // 截断 [idx, 末尾) 的全部 Round：**先收缩 roundIds 真源**，再派生引用集合判 0
     const kept = roundIds.slice(0, idx);
     this.roundIdsStore.set(sessionId, kept);
     // 同步元数据（roundIds 真源为 roundIdsStore，读时派生；此处仅更新 messageCount）
@@ -320,6 +333,15 @@ export class WorkspaceSessionStore implements ISessionStore {
       this.metas.set(sessionId, { ...existing, messageCount: this.deriveMessageCount(sessionId) });
     }
     this.save();
+
+    const removed = roundIds.slice(idx);
+    // 现场重算：被其他会话（分叉）仍引用的轮保留；无人引用才移入回收站
+    const referenced = new Set(this.referencedIds());
+    const removedIds: string[] = [];
+    for (const id of removed) {
+      if (referenced.has(id)) continue;
+      if (this.roundStore.delete(id)) removedIds.push(id);
+    }
     return { ok: true, removedIds, removedUserText };
   }
 

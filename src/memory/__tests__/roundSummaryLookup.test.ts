@@ -113,9 +113,10 @@ describe('roundSummaryLookup · 联动裁决双路径对拍', () => {
       const purgeStorage = new InMemoryStorage();
       purgeStorage.upsert(seedSummary('2026-10-15-a', ROUND_ID));
       const roundStore = new InMemoryRoundStore();
+      // 引用真源注入空集合：该轮不在任何会话 roundIds 中 ⇒ GC 候选
+      roundStore.setReferencedIdsProvider(() => new Set());
       const round = completeRound(createPendingRound('q'), 'a');
       round.id = ROUND_ID;
-      round.refCount = 0;
       roundStore.save(round);
       const gc = new GCService(roundStore, purgeStorage, {
         minAgeMs: 0,
@@ -147,9 +148,10 @@ describe('roundSummaryLookup · 联动裁决双路径对拍', () => {
       const storage = new InMemoryStorage();
       storage.upsert(seedSummary('2026-10-16-b', OTHER_ROUND_ID));
       const roundStore = new InMemoryRoundStore();
+      // 该轮仍被会话引用 ⇒ 不属 GC 候选
+      roundStore.setReferencedIdsProvider(() => new Set([OTHER_ROUND_ID]));
       const other = completeRound(createPendingRound('q'), 'a');
       other.id = OTHER_ROUND_ID;
-      other.refCount = 1; // 仍被会话引用
       roundStore.save(other);
       const gc = new GCService(roundStore, storage, {
         minAgeMs: 0,

@@ -12,7 +12,7 @@
  *     - 空会话 / 全 tool 消息容错
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Round } from '@zooique/memora';
 import { getSessionDisplayName } from '@zooique/memora';
@@ -445,7 +445,7 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     }
   });
 
-  it('deleteSession：删除消息 + meta + 物理回收无引用 Round（0 引用孤儿不留滞）', () => {
+  it('deleteSession：删除消息 + meta + 回收无会话引用 Round（派生集合判 0）', () => {
     const roundId = seedRound(store, roundStore, '2026-08-17', 'main', {
       content: '你好',
       ts: 't1',
@@ -454,21 +454,20 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     const removedIds = store.deleteSession('2026-08-17-main');
     expect(store.getSessionMeta('2026-08-17-main')).toBeUndefined();
     expect(store.listSessions()).not.toContain('2026-08-17-main');
-    // refCount 归零 → Round 物理文件同步回收（deleteSession 减引用后立即物理删除）
+    // 先注销会话 roundIds → 现场派生引用集合判 0 ⇒ 移入回收站（不再读 refCount）
     expect(roundStore.getById(roundId)).toBeNull();
-    // 返回值 = 被物理回收的 Round 列表（供调用方联动软删记忆摘要）
+    // 返回值 = 被回收的 Round 列表（供调用方联动软删记忆摘要）
     expect(removedIds).toEqual([roundId]);
   });
 
-  it('deleteSession：分叉共享轮（refCount>0）安全保留，不被物理删除', () => {
+  it('deleteSession：分叉共享轮安全保留（仍被其他会话 roundIds 引用）', () => {
     const roundId = seedRound(store, roundStore, '2026-08-17', 'main', { content: 'x', ts: 't1' });
-    // 模拟分叉引用：另一会话共享同一 Round（refCount 1→3）
-    roundStore.incrementRef(roundId);
-    roundStore.incrementRef(roundId);
+    // 分叉引用 = 另一会话 roundIds 共享同一 Round（指针复制，refCount 不变）
+    store.setRoundIds('2026-08-17-fork', [roundId]);
     const removedIds = store.deleteSession('2026-08-17-main');
-    // Round 仍被分叉会话引用 → 物理保留（RoundStore.delete 的 refCount>0 护栏）
+    // Round 仍被分叉会话引用 → 保留（delete 不再有 refCount 护栏，保护来自引用集合派生）
     expect(roundStore.getById(roundId)).not.toBeNull();
-    // 返回值不含共享轮（未物理删除 → 不联动记忆，共享会话摘要保留）
+    // 返回值不含共享轮（未回收 → 不联动记忆，共享会话摘要保留）
     expect(removedIds).toEqual([]);
     // 会话侧指针已清除
     expect(store.getSessionMeta('2026-08-17-main')).toBeUndefined();
@@ -703,12 +702,12 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
     };
     roundStore.save(round);
 
-    // refCount=0 可直接删除（GC 孤儿回收 / 宿主主动删除同路径）
+    // 无会话引用的轮可直接回收（引用判定在会话层；delete 只负责物理层）
     expect(roundStore.delete('round-e2')).toBe(true);
     expect(roundStore.getById('round-e2')).toBeNull();
   });
 
-  it('分叉共享 roundId 即共享 processEvents（指针复制，任一引用存在则不删）', () => {
+  it('delete 移入回收站：processEvents 随文件一起离开活轮集合（7 天可找回）', () => {
     const round: Round = {
       id: 'round-e3',
       userMessage: { id: 'u1', role: 'user', content: '问题', timestamp: 't1' },
@@ -716,38 +715,43 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
       status: 'complete',
       createdAt: 't1',
       completedAt: 't2',
-      refCount: 2, // 两个会话引用（分叉后）
+      refCount: 1, // 冻结为存在性标记；共享保护由会话引用集合承担
       processEvents: [{ type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } }],
     };
     roundStore.save(round);
-    // refCount>0 → 不可删除（任一会话仍引用），事件随文件保留
-    expect(roundStore.delete('round-e3')).toBe(false);
-    expect(roundStore.getById('round-e3')?.processEvents).toBeDefined();
+
+    expect(roundStore.delete('round-e3')).toBe(true);
+    expect(roundStore.getById('round-e3')).toBeNull();
+    // 物理文件未抹除：进入 rounds/.trash（保留 7 天）
+    const trashDir = join(dir, '.memora', 'rounds', '.trash');
+    expect(existsSync(trashDir)).toBe(true);
+    expect(readdirSync(trashDir).some((n) => n.startsWith('round-e3.'))).toBe(true);
   });
 });
 
 describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）', () => {
   /** 临时工作区路径（每用例独立） */
   let dir: string;
-  /** 问答闭环物理存储（仅 roundStore，模拟无引用残留场景） */
+  /** 问答闭环物理存储 */
   let roundStore: WorkspaceRoundStore;
+  /** 引用真源（模拟会话 roundIds）：孤儿判定现场派生，不读 refCount */
+  let referencedIds: Set<string>;
 
   beforeEach(() => {
+    referencedIds = new Set();
     dir = makeTempDir('memora-round-sweep-');
     roundStore = new WorkspaceRoundStore(dir);
     roundStore.load();
+    roundStore.setReferencedIdsProvider(() => referencedIds);
   });
 
   /**
-   * 直接落一个自定义 refCount 的 Round（绕过 SessionStore 登记，模拟历史残留孤儿）。
+   * 直接落一个 Round（绕过 SessionStore 登记，模拟无会话引用残留孤儿）。
    * status 可指定为 'pending' 以复现「CRASH 残留」形态。
-   *
-   * ⚠️ ADR-044 起 `appendUser` **建轮即 refCount 1**，故「pending 且 refCount 0」只代表
-   * **存量**轮（升级前落盘）；新轮的进行中形态是「pending + refCount 1」。
+   * `refCount` 固定为 1（存在性标记），不参与任何孤儿判据。
    */
   function seedRawRound(
     roundId: string,
-    refCount: number,
     createdAt: string,
     status: Round['status'] = 'complete',
   ): void {
@@ -756,14 +760,15 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
       userMessage: { id: `${roundId}-u`, role: 'user', content: 'x', timestamp: createdAt },
       status,
       createdAt,
-      refCount,
+      refCount: 1,
     };
     roundStore.save(round);
   }
 
-  it('清理 refCount=0 的孤儿并返回被清扫 Round ID；被引用轮保留', () => {
-    seedRawRound('round-loss', 0, '2026-08-20T00:00:00.000Z');
-    seedRawRound('round-keep', 1, '2026-08-20T00:00:00.000Z');
+  it('清理无会话引用的孤儿并返回被清扫 Round ID；被引用轮保留', () => {
+    seedRawRound('round-loss', '2026-08-20T00:00:00.000Z');
+    seedRawRound('round-keep', '2026-08-20T00:00:00.000Z');
+    referencedIds.add('round-keep'); // 被会话 roundIds 引用
     // 返回值 = 清扫产物（Round ID 列表），供调用方延迟联动软删 round-summary
     expect(roundStore.sweepOrphans()).toEqual(['round-loss']);
     expect(roundStore.getById('round-loss')).toBeNull();
@@ -771,7 +776,7 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
   });
 
   it('minAgeMs 存活保护：刚创建/进行中的轮不被误删', () => {
-    seedRawRound('round-fresh', 0, new Date().toISOString());
+    seedRawRound('round-fresh', new Date().toISOString());
     // 超短存活内不清（暂存保护区）
     expect(roundStore.sweepOrphans(60 * 60 * 1000)).toEqual([]);
     expect(roundStore.getById('round-fresh')).not.toBeNull();
@@ -784,20 +789,35 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
     expect(roundStore.sweepOrphans()).toEqual([]);
   });
 
-  it('默认调用（不传参）不删进行中轮——存量形态（pending + refCount 0）的安全默认', () => {
-    // 复现生产路径：extension 启动装配点调 sweepOrphans() 不传参。
-    // 存量轮（ADR-044 之前落盘）建轮写 0，若默认值无存活保护即被误删 → 用户提问丢失。
-    seedRawRound('round-inflight', 0, new Date().toISOString(), 'pending');
+  it('默认调用（不传参）不删超龄新鲜轮——24h 存活保护的安全默认', () => {
+    // 复现生产路径：extension 启动装配点调 sweepOrphans(DEFAULT_SWEEP_MIN_AGE_MS)。
+    seedRawRound('round-inflight', new Date().toISOString(), 'pending');
     expect(roundStore.sweepOrphans()).toEqual([]);
     expect(roundStore.getById('round-inflight')).not.toBeNull();
   });
 
-  it('ADR-044：新轮（pending + refCount 1）即便 minAgeMs=0 也不被回收——在途提问不会被保洁吃掉', () => {
-    // 新形态的进行中轮：建轮即 refCount 1（appendUser），落不进 refCount===0 的孤儿判据。
-    // 变异锚：listOrphaned 若忽略 refCount（只按 status/年龄筛）⇒ 本例红在 getById 为 null。
-    seedRawRound('round-inflight-adr044', 1, new Date().toISOString(), 'pending');
+  it('在途轮（pending，在会话 roundIds 中）即便 minAgeMs=0 也不被回收', () => {
+    // 判据 = 「不在任何会话 roundIds 中」：在途轮建轮即登记会话，不属孤儿。
+    // 变异锚：listOrphaned 若忽略引用集合（只按 status/年龄筛）⇒ 本例红在 getById 为 null。
+    seedRawRound('round-inflight-live', new Date().toISOString(), 'pending');
+    referencedIds.add('round-inflight-live');
     expect(roundStore.sweepOrphans(0)).toEqual([]);
-    expect(roundStore.getById('round-inflight-adr044')).not.toBeNull();
+    expect(roundStore.getById('round-inflight-live')).not.toBeNull();
+  });
+
+  it('未注入引用真源时 sweep 返回空（宁可不回收，也不按过期计数误删）', () => {
+    const bare = new WorkspaceRoundStore(dir);
+    bare.load();
+    // 必须用 bare 自己 save（另一个实例的 save 不更新 bare 的内存索引）
+    bare.save({
+      id: 'round-no-provider',
+      userMessage: { id: 'u', role: 'user', content: 'x', timestamp: '2026-08-20T00:00:00.000Z' },
+      status: 'complete',
+      createdAt: '2026-08-20T00:00:00.000Z',
+      refCount: 1,
+    });
+    expect(bare.sweepOrphans(0)).toEqual([]);
+    expect(bare.getById('round-no-provider')).not.toBeNull();
   });
 });
 
@@ -805,10 +825,10 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
  * 留存区分组标签（宿主扩展能力，非 ISessionStore 契约）
  *
  * 守的是四条**立身不变式**（实现改动前必读，任何一条破了本机制就名存实亡）：
- *   ① 移入留存 = **纯视图改位**：Round 文件、引用计数、会话内容一律不变；会话仍在
+ *   ① 移入留存 = **纯视图改位**：Round 文件、会话内容、引用集合一律不变；会话仍在
  *      `listSessions()` 结果里（它没被移出存储，只是换了显示分组）。
- *   ② **留存数据不能被启动清扫吃掉**——不清引用是保住它的唯一机制：引用一旦归零，
- *      `WorkspaceRoundStore.sweepOrphans`（宿主启动清理）就会把 Round 当孤儿物理删除，
+ *   ② **留存数据不能被启动清扫吃掉**——不清会话 roundIds 是保住它的唯一机制：引用一旦消失，
+ *      `WorkspaceRoundStore.sweepOrphans`（宿主启动清理）就会把 Round 当孤儿移入回收站，
  *      表现为「存进留存区了，24 小时后被自家保洁清空」。
  *   ③ 标记与会话**同生共死**：删除会话必须同步摘标记，否则留存区分组出现无标题幽灵条目。
  *   ④ 旧档无 `archivedIds` 字段 → 空集（向后兼容，不做迁移分发）。
@@ -831,7 +851,7 @@ describe('WorkspaceSessionStore · 留存区分组标签', () => {
   const roundFileOf = (roundId: string): string =>
     join(dir, '.memora', 'rounds', `${roundId}.json`);
 
-  it('① 移入留存是纯改位：会话内容 / Round 文件 / 引用计数一律不变', () => {
+  it('① 移入留存是纯改位：会话内容 / Round 文件 / 引用集合一律不变', () => {
     seedThreeTurns(store, roundStore);
     const sessionId = '2026-08-16-main';
     const roundIds = store.getRoundIds(sessionId);
@@ -849,16 +869,16 @@ describe('WorkspaceSessionStore · 留存区分组标签', () => {
       '问题三',
       '回答三',
     ]);
-    // 物理文件与引用计数均在
+    // 物理文件与引用集合均在
     for (const id of roundIds) {
       expect(existsSync(roundFileOf(id))).toBe(true);
-      expect(roundStore.getById(id)?.refCount).toBe(1);
+      expect(store.referencedIds()).toContain(id);
     }
   });
 
   it('② 留存数据不被启动清扫吃掉：归档后强制清扫（minAgeMs=0）仍完好', () => {
-    // 本用例是留存机制的**存在证明**：若归档实现改成「清引用 + 搬文件」的直觉写法，
-    // 引用归零 → sweepOrphans 把 Round 当孤儿物理删 → 留存区里只剩一个空壳会话。
+    // 本用例是留存机制的**存在证明**：若归档实现改成「清会话引用 + 搬文件」的直觉写法，
+    // 引用消失 → sweepOrphans 把 Round 当孤儿移入回收站 → 留存区里只剩一个空壳会话。
     seedThreeTurns(store, roundStore);
     const sessionId = '2026-08-16-main';
     const roundIds = store.getRoundIds(sessionId);

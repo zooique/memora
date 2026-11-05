@@ -129,7 +129,7 @@ export interface RoundInteractiveInput extends RoundMessage {
  *   → `history.appendInterrupted` 写 `status:'interrupted'`。
  * - **打捞关系**：`listInterruptedRecent`（内核 + 宿主两端）打捞条件仍为 `pending || error`，
  *   **不含 interrupted**——interrupted 是「已收场的停 turn」，本就不属崩溃残留。
- *   ⚠️ ADR-044 起新建轮**建轮即 refCount 1 并登记会话**，故「`refCount===0` 才需要打捞」这一
+ *   ⚠️ ADR-044 起新建轮**建轮即登记会话**，故「无归属才需要打捞」这一
  *   理由只对存量轮成立；新数据的打捞意义从「让它可见」变为「把 pending 收场为 interrupted」。
  *
  * ⚠️ 关于 `error`（防未来误判）：
@@ -603,11 +603,15 @@ export interface Round {
   completedAt?: string;
 
   /**
-   * 引用计数（被多少个会话引用）：分叉 +1、删除会话 −1、**归零即可被 GC 清理**。
+   * 引用计数（**历史字段，非引用真源**，@deprecated）
    *
-   * ⚠️ ADR-044 起：**建轮即 1**（创建它的会话立刻引用它），收场不再 +1。
-   * 因此「refCount 0」不再表示「尚未完成」，只表示「没有任何会话持有它」——
-   * 后者仅出现在存量轮（ADR-044 之前落盘）或建轮时登记失败的异常残留上。
+   * 🔴 引用真源 = 会话的 `roundIds` 列表（ISessionStore）。任何「是否还有会话引用」的判定
+   * 都必须从会话集合**现场派生**，禁止读本字段（冻结口径：6.0.0 批 1）。
+   *
+   * - **新建轮固定写 1**：它只是「该轮已创建」的标记，不再随分叉 / 删会话增减；
+   *   `incrementRef` / `decrementRef` 已降为 no-op（API 保留至 7.0.0）。
+   * - **旧档读入不判、不改、不回写**：历史值可能是 0 或任意数字，一律忽略。
+   * - 字段暂留仅为兼容旧档 schema，7.0.0 追加事件模型时移除。
    */
   refCount: number;
 
@@ -666,14 +670,20 @@ export interface IRoundStore {
   listAll(): Round[];
 
   /**
-   * 增加引用计数（分叉时调用）
+   * 增加引用计数（**6.0.0 起为 no-op**，@deprecated）
+   *
+   * 引用真源 = 会话 `roundIds`；分叉只复制指针，不再改动任何轮次文件。
+   * 实现方**必须**不做持久化写入。API 保留至 7.0.0 以维持公开面稳定。
    *
    * @param roundId - 需要增加引用的 Round ID
    */
   incrementRef(roundId: string): void;
 
   /**
-   * 减少引用计数（删除会话时调用）
+   * 减少引用计数（**6.0.0 起为 no-op**，@deprecated）
+   *
+   * 删除会话 / 截断时先收缩会话 `roundIds`，再由会话侧现场派生引用集合判 0。
+   * 实现方**必须**不做持久化写入。API 保留至 7.0.0。
    *
    * @param roundId - 需要减少引用的 Round ID
    */
@@ -682,12 +692,12 @@ export interface IRoundStore {
   /**
    * 删除问答闭环（物理删除，不可恢复）
    *
-   * 前置条件：
-   * - refCount === 0（无其他会话引用）
-   * - 一般由 GC 服务调用
+   * 🔴 **不再有 `refCount` 前置条件**（该字段非引用真源）。调用方必须先确认该轮
+   * 已不在任何会话的 `roundIds` 中；本方法只负责物理层。
+   * 宿主实现应移入 `.trash` 保留 7 天，而非直接抹除。
    *
    * @param roundId - 要删除的 Round ID
-   * @returns 是否删除成功
+   * @returns 是否删除成功（不存在时返回 false）
    */
   delete(roundId: string): boolean;
 
@@ -700,16 +710,15 @@ export interface IRoundStore {
   listByStatus?(status: RoundStatus): Round[];
 
   /**
-   * 获取孤立的问答闭环列表（refCount === 0）
+   * 获取孤立的问答闭环列表
    *
-   * 用于 GC 服务批量清理。
+   * 🔴 **判据 = 「不在任何会话的 `roundIds` 中」且 `createdAt` 超龄**；实现方必须现场派生
+   * 引用集合（宿主经 `sessionStore.referencedIds()`），**禁止读 `Round.refCount`**。
+   * 未接入引用真源的实现一律返回空数组——宁可不回收，也不按过期计数误删。
    *
-   * ⚠️ 判据语义（ADR-044 第四刀确认）：`refCount === 0` = **真正无人引用**。
-   * ADR-044 起建轮即 `refCount: 1`，故「进行中（pending）」本身**不再**构成孤儿判据——
-   * 已入会话的轮不会被超龄静默回收；能落到 0 的只有：存量轮（ADR-044 之前落盘）、
-   * 删会话/截断后归零的轮、归属登记失败的残留（后者为已知取舍，不可见但保留、不自动回收）。
+   * 用于 GC / 启动清扫的候选枚举（只出候选，不在本方法内删除）。
    *
-   * @param minAgeMs - 最小存活时间（毫秒）：给刚归零的轮留后悔窗口，**不是**「防误清在途轮」
+   * @param minAgeMs - 最小存活时间（毫秒）：给「刚失去引用」的轮留后悔窗口
    * @returns 孤立 Round 数组
    */
   listOrphaned?(minAgeMs?: number): Round[];
@@ -721,11 +730,9 @@ export interface IRoundStore {
    * 找回这些轮，再调 `MessageHistory.appendInterrupted` 收场为正常 stop turn。
    *
    * 语义约束（SSOT）：① **只读**——不登记会话、不改写 Round、不改变 appendAssistant 完成语义；
-   * ② **不改变可见性判定**——轮是否已入会话由 `refCount` 表达（ADR-044 起建轮即 1），
+   * ② **不改变可见性判定**——轮是否已入会话由会话 `roundIds`（引用真源）表达，
    *    本方法不负责「让它可见」；
-   * ③ 不改变生命周期——⚠️ ADR-044 后新建的 pending 轮 `refCount === 1`，**不再落进
-   *    `sweepOrphans` 的 `refCount===0` 判据**，故不会被超龄回收（可见即可由用户删除）。
-   *    该口径已在 ADR-044 第四刀确认（判据保持不变，语义收窄为「真正无人引用」）。
+   * ③ 不改变生命周期——本方法只出候选；是否回收由 `listOrphaned`（引用集合派生）判定。
    *
    * @param date - YYYY-MM-DD **本地日期**（与会话 ID 日期同口径）：按本地日区间
    *   `[D 00:00, D+1 00:00)` 换算 UTC 后比较 createdAt，判据单点 = `isWithinLocalDay`

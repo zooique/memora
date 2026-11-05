@@ -5,11 +5,11 @@
  * 的业务逻辑，但**从未验过「进程被硬杀之后磁盘上到底是什么」**。“打捞逻辑对” 与
  * “崩溃真的会留下可打捞的轮” 是两个命题，前者绿不能推后者。
  *
- * 实测结论（本文件锁定的形态，2026-10-30）：
- *   进程被 SIGKILL 的瞬间，磁盘上是 —— `rounds/{id}.json` 存在、`index.json` 记为
- *   `status: 'pending', refCount: 0`，而 **`sessions.json` 根本还没写**（会话不认这一轮）。
- *   即：崩溃残留轮对「按会话列历史」的路径是**不可见**的，只能靠 `listInterruptedRecent`
- *   按 refCount=0 + pending 打捞。这正是打捞口存在的唯一理由。
+ * 实测结论（本文件锁定的形态，2026-10-30；refCount 口径按 6.0.0 批 1 更新）：
+ *   进程被 SIGKILL 的瞬间，磁盘上是 —— `rounds/{id}.json` 存在（`refCount: 1` 作为存在性标记）、
+ *   `index.json` 记为 `status: 'pending'`（**不再含 refCount 副本**）；`sessions.json` 可能尚未写。
+ *   即：崩溃残留轮对「按会话列历史」的路径可能**不可见**，靠 `listInterruptedRecent`
+ *   按「pending/error + 本地日」打捞（判据与 refCount 无关）。这正是打捞口存在的唯一理由。
  *
  * 铁律（来自 memora-host-e2e-persistence）：宿主测试跑的是**构建后的内核**（dist），
  * 改过内核 src 须先 `npm run build`；免 API Key 用桩 provider；store 必须先 load()。
@@ -141,15 +141,15 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
     const index = JSON.parse(readFileSync(indexPath, 'utf8')) as {
       id: string;
       status: string;
-      refCount: number;
     }[];
     expect(index).toHaveLength(1);
     expect(index[0]!.status).toBe('pending');
-    // ADR-044：建轮即入会话 ⇒ 崩溃瞬间 refCount 已是 1（旧契约此处为 0）
-    expect(index[0]!.refCount).toBe(1);
     crashedRoundId = index[0]!.id;
     // 轮文件本体必须在（只有索引没有文件 = 打捞时会拿到 null，属另一种坏）
-    expect(existsSync(join(dataDir, 'rounds', `${crashedRoundId}.json`))).toBe(true);
+    const roundPath = join(dataDir, 'rounds', `${crashedRoundId}.json`);
+    expect(existsSync(roundPath)).toBe(true);
+    // ADR-044：建轮即写 refCount 1（存在性标记；引用真源 = 会话 roundIds）
+    expect((JSON.parse(readFileSync(roundPath, 'utf8')) as { refCount: number }).refCount).toBe(1);
 
     // ADR-044：建轮即登记会话 ⇒ 崩溃瞬间会话侧**已经**认它（可见、可删、可续跑）。
     // 打捞的意义随之从「让它可见」变为「把 pending 收场为 interrupted」。
@@ -210,7 +210,7 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
     // 终态：interrupted（不是 complete——崩溃轮不能伪装成正常完成）
     const after = roundStore.getById(crashedRoundId)!;
     expect(after.status).toBe('interrupted');
-    expect(after.refCount).toBeGreaterThan(0);
+    expect(after.refCount).toBe(1); // 冻结为存在性标记，不随升级变化
     expect(after.completedAt).toBeTruthy();
 
     // 端到端「重启后能看见」：宿主加载链正是 loadMessages → roundIds → RoundStore。
@@ -220,7 +220,7 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
     const messages = sessionStore.loadMessages(localDate, session);
     expect(messages.some((m) => m.roundId === crashedRoundId)).toBe(true);
 
-    // 打捞队列不再含它（已收场 ⇒ refCount>0，不再符合崩溃孤儿条件，重复打捞无意义）
+    // 打捞队列不再含它（已收场 ⇒ 不属崩溃残留，重复打捞无意义）
     expect((roundStore.listInterruptedRecent?.(date) ?? []).map((r) => r.id)).not.toContain(
       crashedRoundId,
     );
@@ -388,9 +388,7 @@ describe('本地日期口径：凌晨窗口的中断轮按本地日期也能捞�
     const createdAt = new Date('2026-10-30T01:30:00').toISOString();
     writeFileSync(
       join(roundsDir, 'index.json'),
-      JSON.stringify([
-        { id: roundId, status: 'pending', refCount: 0, createdAt, file: `${roundId}.json` },
-      ]),
+      JSON.stringify([{ id: roundId, status: 'pending', createdAt, file: `${roundId}.json` }]),
       'utf-8',
     );
     writeFileSync(
@@ -398,7 +396,7 @@ describe('本地日期口径：凌晨窗口的中断轮按本地日期也能捞�
       JSON.stringify({
         id: roundId,
         status: 'pending',
-        refCount: 0,
+        refCount: 1,
         createdAt,
         userMessage: { id: 'm1', role: 'user', content: '凌晨的提问', timestamp: createdAt },
         processEvents: [],

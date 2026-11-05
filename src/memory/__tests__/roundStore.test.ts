@@ -17,9 +17,13 @@ import {
 
 describe('问答闭环存储', () => {
   let store: InMemoryRoundStore;
+  /** 引用真源（模拟会话 roundIds）：孤儿判定现场派生，不读 refCount */
+  let referencedIds: Set<string>;
 
   beforeEach(() => {
+    referencedIds = new Set();
     store = new InMemoryRoundStore();
+    store.setReferencedIdsProvider(() => referencedIds);
   });
 
   describe('InMemoryRoundStore', () => {
@@ -39,15 +43,14 @@ describe('问答闭环存储', () => {
       expect(retrieved?.refCount).toBe(1);
     });
 
-    it('listInterruptedRecent：列出指定日期崩溃残留轮（pending/error + refCount=0 + 倒序）', () => {
-      // 构造崩溃残留轮：覆盖工厂默认（refCount=1）为 refCount=0（崩溃发生在 appendAssistant 前的形态）
+    it('listInterruptedRecent：列出指定日期崩溃残留轮（pending/error + 倒序）', () => {
+      // 构造崩溃残留轮（判据只看「未收场 + 本地日」，与 refCount 无关）
       const mk = (date: string, min: string, status: Round['status']): void => {
         const base = createPendingRound(`q-${min}`);
         // status 覆盖为 complete（此处仅验证过滤，不做模型完整性校验）
         const round: Round = {
           ...base,
           status,
-          refCount: 0,
           // 本地墙上时钟构造（date 无时区标记 = 本地时间 → toISOString 转 UTC）——
           // 打捞按本地日区间判定（E2E-TZ-SALVAGE-1），旧的 `${date}T${min}:00.00.000Z`
           // 手拼 UTC 串是前缀匹配时代的产物（且格式非法，Date.parse 为 NaN）
@@ -59,13 +62,9 @@ describe('问答闭环存储', () => {
       mk('2026-09-09', '00', 'pending');
       mk('2026-09-09', '01', 'pending');
       mk('2026-09-09', '02', 'error');
-      // 排除项：他日 pending、同日 complete（归零轮非未完成残留）
+      // 排除项：他日 pending、同日 complete（已收场不属未完成残留）
       mk('2026-09-08', '03', 'pending');
       mk('2026-09-09', '04', 'complete');
-      // 排除项：被引用（refCount>0）的 pending——进行中轮不属崩溃残留
-      const refed = createPendingRound('refed');
-      refed.refCount = 1;
-      store.save(refed);
 
       // 全量：仅 3 条目标，按 createdAt 倒序（最新在前，分钟序 02 > 01 > 00）
       const all = store.listInterruptedRecent('2026-09-09');
@@ -84,7 +83,6 @@ describe('问答闭环存储', () => {
       const round: Round = {
         ...createPendingRound('凌晨的提问'),
         status: 'pending',
-        refCount: 0,
         createdAt: new Date('2026-09-09T01:30:00').toISOString(),
       };
       store.save(round);
@@ -169,66 +167,44 @@ describe('问答闭环存储', () => {
       expect(completedList.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('应该管理引用计数', () => {
+    it('引用计数 API 为 no-op（refCount 冻结为存在性标记）', () => {
       const round = createPendingRound('测试引用');
       store.save(round);
 
-      // 初始 refCount = 1
+      // 建轮固定为 1
       const initial = store.getById(round.id);
       expect(initial?.refCount).toBe(1);
 
-      // 增加引用
+      // incrementRef / decrementRef 不再修改计数（引用真源 = 会话 roundIds）
       store.incrementRef(round.id);
-      const afterIncrement = store.getById(round.id);
-      expect(afterIncrement?.refCount).toBe(2);
+      expect(store.getById(round.id)?.refCount).toBe(1);
 
-      // 减少引用
       store.decrementRef(round.id);
-      const afterDecrement = store.getById(round.id);
-      expect(afterDecrement?.refCount).toBe(1);
-
-      // 减少到 0 以下不允许
       store.decrementRef(round.id);
-      store.decrementRef(round.id); // 尝试继续减少
-      const afterOverflow = store.getById(round.id);
-      expect(afterOverflow?.refCount).toBe(0); // 不会降到 0 以下
+      expect(store.getById(round.id)?.refCount).toBe(1);
     });
 
-    it('应该删除孤立的问答闭环', () => {
-      // 创建 refCount=0 的 Round
+    it('delete 不再有 refCount 护栏（引用判定由调用方/会话负责）', () => {
       const round = createPendingRound('待删除');
-      // 手动设置 refCount=0
-      round.refCount = 0;
       store.save(round);
 
-      // 应该能删除
+      // 物理层只负责删除；调用方须先确认该轮已不在任何会话 roundIds 中
       const deleted = store.delete(round.id);
       expect(deleted).toBe(true);
       expect(store.getById(round.id)).toBeNull();
       expect(store.size()).toBe(0);
     });
 
-    it('不应该删除仍被引用的问答闭环', () => {
-      const round = createPendingRound('被引用');
-      store.save(round);
-
-      // refCount=1 > 0，不允许删除
-      const deleted = store.delete(round.id);
-      expect(deleted).toBe(false);
-      expect(store.getById(round.id)).not.toBeNull();
-    });
-
-    it('应该列出孤立的问答闭环', () => {
-      // 创建孤立的 Round（refCount=0 且 complete）
+    it('应该列出孤立的问答闭环（引用集合派生）', () => {
+      // 创建孤立 Round（不在任何会话 roundIds 中）
       const round1 = createPendingRound('孤立1');
       const completed1 = completeRound(round1, '完成1');
-      completed1.refCount = 0;
       store.save(completed1);
 
-      // 创建非孤立的 Round（refCount=2）
+      // 创建非孤立 Round（在引用集合中）
       const round2 = createPendingRound('非孤立');
       const completed2 = completeRound(round2, '完成2');
-      completed2.refCount = 2;
+      referencedIds.add(round2.id);
       store.save(completed2);
 
       // 列出孤立的
@@ -238,15 +214,22 @@ describe('问答闭环存储', () => {
     });
 
     it('应该尊重最小存活时间', () => {
-      // 创建刚完成的 Round
+      // 创建刚完成的 Round（无会话引用）
       const round = createPendingRound('新的');
       const completed = completeRound(round, '新完成');
-      completed.refCount = 0;
       store.save(completed);
 
       // 存活时间设置为 1 小时，应该过滤掉
       const orphaned = store.listOrphaned(60 * 60 * 1000);
       expect(orphaned.length).toBe(0); // 不会被列出
+    });
+
+    it('未注入引用真源时 listOrphaned 返回空（宁可不回收）', () => {
+      const round = createPendingRound('无真源');
+      store.save(round);
+      const bare = new InMemoryRoundStore();
+      bare.save(round);
+      expect(bare.listOrphaned(0)).toHaveLength(0);
     });
 
     it('应该忽略不存在的 Round 操作', () => {

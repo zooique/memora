@@ -8,7 +8,6 @@
  */
 
 import type { Round, RoundStatus, IRoundStore } from '@/memory/roundStore.js';
-import { logger } from '@/logging/logger.js';
 import { isWithinLocalDay } from '@/utils/time.js';
 
 /**
@@ -16,7 +15,7 @@ import { isWithinLocalDay } from '@/utils/time.js';
  *
  * 核心实现：
  * - Map 存储（id → Round）
- * - 引用计数内置于 Round.refCount
+ * - **引用真源由会话侧注入**（`referencedIdsProvider`）——`Round.refCount` 不是真源
  * - 支持批量获取（getByIds）
  * - 支持按状态筛选（listByStatus）
  * - 支持孤立检查（listOrphaned）
@@ -24,6 +23,22 @@ import { isWithinLocalDay } from '@/utils/time.js';
 export class InMemoryRoundStore implements IRoundStore {
   /** Round 存储（id → Round） */
   private rounds: Map<string, Round> = new Map();
+  /**
+   * 引用真源提供者（由 `InMemorySessionStore` 构造时注入）
+   *
+   * 内存存储本身不持有会话，只能靠会话侧给出「当前被引用的 Round ID 集合」；
+   * 未注入时 `listOrphaned` 返回空（宁可不回收，也不读过期 `refCount` 误删）。
+   */
+  private referencedIdsProvider: (() => ReadonlySet<string>) | null = null;
+
+  /**
+   * 注入引用真源（引用真源 = 会话 roundIds，单一来源）
+   *
+   * @param provider - 返回当前被任意会话引用的 Round ID 集合
+   */
+  setReferencedIdsProvider(provider: () => ReadonlySet<string>): void {
+    this.referencedIdsProvider = provider;
+  }
 
   /**
    * 存储问答闭环（新增或更新）
@@ -78,60 +93,37 @@ export class InMemoryRoundStore implements IRoundStore {
   }
 
   /**
-   * 增加引用计数
+   * 增加引用计数（**no-op**：引用真源 = 会话 roundIds）
    *
-   * 分叉时调用：新会话引用同一个 Round
+   * 保留 API 仅供公开面兼容（7.0.0 移除）；调用不产生任何状态变化。
    *
    * @param roundId - 需要增加引用的 Round ID
    */
-  incrementRef(roundId: string): void {
-    const round = this.rounds.get(roundId);
-    if (!round) {
-      logger.warn({ roundId }, 'incrementRef: Round 不存在');
-      return;
-    }
-    round.refCount++;
-    this.rounds.set(roundId, { ...round });
+  incrementRef(_roundId: string): void {
+    // 有意为空：分叉只复制会话 roundIds 指针，不触碰轮次数据
   }
 
   /**
-   * 减少引用计数
+   * 减少引用计数（**no-op**：引用真源 = 会话 roundIds）
    *
-   * 删除会话时调用
-   * 引用计数不会降到 0 以下
+   * 保留 API 仅供公开面兼容（7.0.0 移除）；调用不产生任何状态变化。
    *
    * @param roundId - 需要减少引用的 Round ID
    */
-  decrementRef(roundId: string): void {
-    const round = this.rounds.get(roundId);
-    if (!round) {
-      logger.warn({ roundId }, 'decrementRef: Round 不存在');
-      return;
-    }
-    if (round.refCount > 0) {
-      round.refCount--;
-      this.rounds.set(roundId, { ...round });
-    }
+  decrementRef(_roundId: string): void {
+    // 有意为空：删除会话 / 截断先收缩 roundIds，再由会话侧现场派生死
   }
 
   /**
    * 删除问答闭环（物理删除，不可恢复）
    *
-   * 前置条件：refCount === 0
+   * 🔴 无 `refCount` 前置条件：调用方须先确认该轮已不在任何会话 roundIds 中。
    *
    * @param roundId - 要删除的 Round ID
-   * @returns 是否删除成功（refCount > 0 时返回 false）
+   * @returns 是否删除成功（不存在时返回 false）
    */
   delete(roundId: string): boolean {
-    const round = this.rounds.get(roundId);
-    if (!round) return false;
-
-    // 检查引用计数
-    if (round.refCount > 0) {
-      logger.warn({ roundId, refCount: round.refCount }, 'delete: Round 仍被引用，无法删除');
-      return false;
-    }
-
+    if (!this.rounds.has(roundId)) return false;
     this.rounds.delete(roundId);
     return true;
   }
@@ -149,36 +141,22 @@ export class InMemoryRoundStore implements IRoundStore {
   }
 
   /**
-   * 获取孤立的问答闭环列表（refCount === 0）
+   * 获取孤立的问答闭环列表
    *
-   * 用于 GC 服务批量清理。ADR-044 第四刀确认：`refCount === 0` = **真正无人引用**
-   * （新轮建轮即 1，故「进行中」本身不再是孤儿判据），能落到 0 的只有存量轮、
-   * 删会话/截断后的轮、归属登记失败的残留。
+   * 判据 = **不在任何会话 roundIds 中** + `createdAt` 超龄（引用集合由会话侧现场注入）。
+   * 未注入引用真源时返回空数组——宁可不回收，也不按过期 `refCount` 误删。
    *
-   * @param minAgeMs - 最小存活时间（毫秒）：给「刚归零」的轮留后悔窗口，
-   *   **不再**承担「防误清进行中轮」职责（那条已由 `refCount 1` 保证）
+   * @param minAgeMs - 最小存活时间（毫秒）：给「刚失去引用」的轮留后悔窗口
    * @returns 孤立 Round 数组
    */
   listOrphaned(minAgeMs: number = 0): Round[] {
+    const referenced = this.referencedIdsProvider?.();
+    if (!referenced) return [];
+
     const now = Date.now();
-    const minAgeMsSec = minAgeMs / 1000; // 转换为秒
-
     return Array.from(this.rounds.values())
-      .filter((r) => {
-        // 检查引用计数
-        if (r.refCount > 0) return false;
-
-        // 检查存活时间
-        const createdAtMs = new Date(r.createdAt).getTime();
-        const ageSec = (now - createdAtMs) / 1000;
-        if (ageSec < minAgeMsSec) return false;
-
-        // 孤儿 = 无引用且超龄：
-        // complete 轮在删会话归零后回收；存量 pending/error 轮（ADR-044 之前落盘、refCount 0）
-        // 同样回收。⚠️ ADR-044 起新轮建轮即 refCount 1 ⇒ **进行中轮不进本判据**，
-        // 「防误删在途提问」不再靠 minAgeMs 承担（该保护现在只给「刚归零」的轮留窗口）。
-        return true;
-      })
+      .filter((r) => !referenced.has(r.id))
+      .filter((r) => now - new Date(r.createdAt).getTime() >= minAgeMs)
       .map((r) => ({ ...r }));
   }
 

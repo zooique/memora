@@ -1,6 +1,6 @@
 /**
  * 单元测试：垃圾回收服务（GC Service）
- * 验证引用计数和孤立 Round 清理机制
+ * 验证「引用集合派生」的孤立 Round 清理机制（不读 Round.refCount）
  */
 import { describe, expect, it, beforeEach, vi, afterEach } from 'vitest';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
@@ -15,9 +15,14 @@ describe('垃圾回收服务', () => {
   let roundStore: InMemoryRoundStore;
   let memoryStorage: InMemoryStorage;
   let gc: GCService;
+  /** 引用真源（模拟会话 roundIds）：GC 判定「孤儿」而不是看 refCount */
+  let referencedIds: Set<string>;
 
   beforeEach(() => {
+    referencedIds = new Set();
     roundStore = new InMemoryRoundStore();
+    // 引用真源单点注入：内存 RoundStore 不持有会话，必须由测试给出被引用集合
+    roundStore.setReferencedIdsProvider(() => referencedIds);
     memoryStorage = new InMemoryStorage();
     gc = new GCService(roundStore, memoryStorage, {
       minAgeMs: 0, // 测试时设置为 0，忽略存活时间
@@ -29,10 +34,9 @@ describe('垃圾回收服务', () => {
 
   describe('基本功能', () => {
     it('应该清理孤立的 Round', () => {
-      // 创建孤立的 Round（refCount=0, complete 状态）
+      // 创建孤立的 Round（不在任何会话 roundIds 中）
       const round = createPendingRound('孤立的问题');
       const completed = completeRound(round, '孤立的回答');
-      completed.refCount = 0;
       roundStore.save(completed);
 
       // 验证存在
@@ -51,7 +55,7 @@ describe('垃圾回收服务', () => {
       // 创建被引用的 Round
       const round = createPendingRound('被引用的问题');
       const completed = completeRound(round, '被引用的回答');
-      completed.refCount = 2; // 被 2 个会话引用
+      referencedIds.add(round.id); // 被会话引用 ⇒ 不是孤儿
       roundStore.save(completed);
 
       // 执行 GC
@@ -64,11 +68,9 @@ describe('垃圾回收服务', () => {
     });
 
     it('应该清理 pending 状态的孤立 Round（崩溃残留）', () => {
-      // 创建 pending 状态的 Round（refCount=0 = 从未登记会话，如 appendUser 后崩溃残留）。
-      // GC 不按状态过滤——pending 残留同样是孤儿，超龄（minAgeMs=0）即可回收，
-      // 进行中轮由超龄判龄保护而非状态保护。
+      // 创建 pending 状态的 Round（未登记任何会话，如 appendUser 后崩溃残留）。
+      // GC 不按状态过滤——pending 残留同样是孤儿，超龄（minAgeMs=0）即可回收。
       const round = createPendingRound('待处理的问题');
-      round.refCount = 0;
       roundStore.save(round);
 
       // 执行 GC
@@ -79,10 +81,11 @@ describe('垃圾回收服务', () => {
       expect(roundStore.size()).toBe(0);
     });
 
-    it('不应该清理 refCount>0 的 pending Round（进行中轮）', () => {
-      // 进行中轮被会话持有引用（refCount=1）：仅由删除会话/分叉释放引用，GC 不动
+    it('不应该清理被会话引用的 pending Round（进行中轮）', () => {
+      // 进行中轮被会话持有引用（在会话 roundIds 中）：仅由删除会话/分叉释放引用，GC 不动
       const round = createPendingRound('进行中的问题');
-      roundStore.save(round); // createPendingRound 默认 refCount=1
+      referencedIds.add(round.id);
+      roundStore.save(round);
 
       const result = gc.run();
       expect(result.deleted).toBe(0);
@@ -94,7 +97,6 @@ describe('垃圾回收服务', () => {
       // 创建 Round 并完成
       const round = createPendingRound('需要清理摘要');
       const completed = completeRound(round, '完成回答');
-      completed.refCount = 0;
       roundStore.save(completed);
 
       // 创建关联的记忆摘要（规范两段式 ID，宿主实际写入形态）
@@ -122,15 +124,14 @@ describe('垃圾回收服务', () => {
     });
 
     it('GC purge 替代物后旧摘要仍存活（数据层不丢失；悬空指针由消费侧判据处理）', () => {
-      // 分叉场景：round A 仍被引用（refCount=1），round B 成孤儿（refCount=0）
+      // 分叉场景：round A 仍被会话引用，round B 成孤儿（不在任何会话 roundIds 中）
       const roundA = createPendingRound('被引用的轮');
       const completedA = completeRound(roundA, '回答A');
-      completedA.refCount = 1;
+      referencedIds.add(roundA.id);
       roundStore.save(completedA);
 
       const roundB = createPendingRound('孤儿的轮');
       const completedB = completeRound(roundB, '回答B');
-      completedB.refCount = 0;
       roundStore.save(completedB);
 
       const sessionName = '2026-09-10-main';
@@ -178,7 +179,6 @@ describe('垃圾回收服务', () => {
       for (let i = 0; i < 25; i++) {
         const round = createPendingRound(`问题 ${i}`);
         const completed = completeRound(round, `回答 ${i}`);
-        completed.refCount = 0;
         roundStore.save(completed);
       }
 
@@ -207,7 +207,6 @@ describe('垃圾回收服务', () => {
       // 创建孤立的 Round（存活时间不够）
       const round = createPendingRound('新的问题');
       const completed = completeRound(round, '新的回答');
-      completed.refCount = 0;
       roundStore.save(completed);
 
       // 执行 GC
@@ -226,7 +225,6 @@ describe('垃圾回收服务', () => {
       // 创建 Round
       const round = createPendingRound('不清理摘要');
       const completed = completeRound(round, '回答');
-      completed.refCount = 0;
       roundStore.save(completed);
 
       // 创建关联的记忆
@@ -267,17 +265,15 @@ describe('垃圾回收服务', () => {
       // 创建一些 Round
       const orphaned1 = createPendingRound('孤立1');
       const completed1 = completeRound(orphaned1, '回答1');
-      completed1.refCount = 0;
       roundStore.save(completed1);
 
       const active = createPendingRound('活跃的');
       const completedActive = completeRound(active, '活跃回答');
-      completedActive.refCount = 3; // 被引用
+      referencedIds.add(active.id); // 被会话引用
       roundStore.save(completedActive);
 
       const orphaned2 = createPendingRound('孤立2');
       const completed2 = completeRound(orphaned2, '回答2');
-      completed2.refCount = 0;
       roundStore.save(completed2);
 
       // 执行 GC
@@ -321,9 +317,8 @@ describe('垃圾回收服务', () => {
         shouldSkip: () => true,
       });
 
-      // 孤立 Round 已就绪（超龄、refCount=0）
+      // 孤立 Round 已就绪（超龄、不被任何会话引用）
       const round = createPendingRound('忙时的孤儿');
-      round.refCount = 0;
       roundStore.save(round);
 
       const result = busyGC.run();
@@ -348,7 +343,6 @@ describe('垃圾回收服务', () => {
       // 孤立的 complete Round + 关联摘要（规范两段式 ID：round-summary:{session}:{roundId}）
       const round = createPendingRound('摘要清理');
       const completed = completeRound(round, '回答');
-      completed.refCount = 0;
       roundStore.save(completed);
       const summaryId = `round-summary:2026-09-10-main:${round.id}`;
       memoryStorage.upsert({
@@ -374,6 +368,8 @@ describe('GC 补充分支路径', () => {
 
   beforeEach(() => {
     roundStore = new InMemoryRoundStore();
+    // 本组用例全部是孤儿：注入空引用集合（引用真源 = 会话 roundIds）
+    roundStore.setReferencedIdsProvider(() => new Set());
     memoryStorage = new InMemoryStorage();
   });
 
@@ -381,11 +377,10 @@ describe('GC 补充分支路径', () => {
     vi.useRealTimers();
   });
 
-  /** 构造一个游离的 complete Round（refCount=0） */
+  /** 构造一个游离的 complete Round（不被任何会话引用） */
   function seedOrphan(): void {
     const round = createPendingRound('孤儿');
     const completed = completeRound(round, '回答');
-    completed.refCount = 0;
     roundStore.save(completed);
   }
 
@@ -466,7 +461,6 @@ describe('GC 补充分支路径', () => {
   it('示例：摘要清理主流程不受影响（B0 收编后向量 catch 分支已移除）', async () => {
     const round = createPendingRound('清理验证');
     const completed = completeRound(round, '回答');
-    completed.refCount = 0;
     roundStore.save(completed);
     const summaryId = `round-summary:2026-09-10-main:${round.id}`;
     memoryStorage.upsert({

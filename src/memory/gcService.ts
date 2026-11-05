@@ -2,13 +2,13 @@
  * 垃圾回收服务 —— 清理孤立的问答闭环和关联摘要
  *
  * 设计理念：
- * - 基于引用计数的自动清理机制
- * - 只清理 refCount === 0 且超龄的 Round（不分状态：pending/error 崩溃残留同样可回收）
+ * - 基于**引用真源**（会话 `roundIds`）的自动清理机制，`Round.refCount` 不参与判定
+ * - 只清理「不在任何会话 roundIds 中」且超龄的 Round（不分状态：pending/error 崩溃残留同样可回收）
  * - 同时清理关联的记忆摘要（round-summary）
  * - 支持定时执行和手动触发
  *
  * 触发时机：
- * 1. 会话删除时，减少引用计数后检查
+ * 1. 启动清扫 / 删除会话后由宿主 sessionStore 侧触发（候选同样经引用集合派生）
  * 2. 定时任务（如每天一次）自动执行（启动时立即执行一次清存量孤儿）
  * 3. 宿主手动触发（run() 公开入口）
  */
@@ -25,11 +25,11 @@ export interface GCConfig {
   /**
    * 最小存活时间（毫秒）
    *
-   * 给「引用刚归零」的轮留后悔窗口：删会话/截断把 refCount 降到 0 后，用户可能在
-   * 短时间内又想恢复；窗口内不动物理文件。
+   * 给「刚失去引用」的轮留后悔窗口：删会话/截断后用户可能在短时间内想恢复，
+   * 窗口内不动物理文件。
    *
-   * ⚠️ 它**不再**承担「防误清进行中轮」：ADR-044 起建轮即 `refCount: 1`，
-   * 在途轮根本进不了 `listOrphaned` 的 `refCount === 0` 判据。
+   * ⚠️ 它**不承担**「防误清在途轮」：孤儿判据是「不在任何会话 roundIds 中」，
+   * 在途轮建轮即登记会话，天然不进候选。
    * - 默认 5 分钟
    */
   minAgeMs: number;
@@ -62,7 +62,7 @@ export interface GCConfig {
    * 忙碌检查回调（可选）
    *
    * 定时 GC 在对话进行中（chatLock busy / 长任务执行中）延迟执行。
-   * 一阶防线是 `listOrphaned` 的 `refCount === 0`（ADR-044 起在途轮 refCount 1，天然排除）；
+   * 一阶防线是 `listOrphaned` 的「不在会话 roundIds 中」（在途轮建轮即登记，天然排除）；
    * 本回调是**二阶**保护：对话框运行期间不碰存储，避免与活跃写入/删会话动作交错。
    * 返回 true = 当前忙，跳过本次 GC。
    */
@@ -79,7 +79,7 @@ export interface GCResult {
   orphaned: number;
   /** 成功删除的 Round 数 */
   deleted: number;
-  /** 因引用计数导致删除失败的数量 */
+  /** 删除失败的数量（命名历史：旧 refCount 护栏；现为存储层拒删 / IO 失败） */
   failedDueToRefCount: number;
   /** 清理的记忆摘要数量 */
   memoryCleaned: number;
@@ -126,7 +126,7 @@ export class GCService {
    * 流程：
    * 1. 忙碌检查（可选 shouldSkip）：对话进行中（长任务执行）跳过本次，
    *    minAgeMs 判龄对多轮长任务不可靠，防止进行中 pending Round 被误清
-   * 2. 列出所有孤立的 Round（refCount === 0 且超龄，不分状态）
+   * 2. 列出所有孤立的 Round（不在任何会话 roundIds 中且超龄，不分状态）
    * 3. 分批删除孤立 Round
    * 4. 同时清理关联的记忆摘要（purge 硬删除，不进回收站）
    *
@@ -152,7 +152,7 @@ export class GCService {
 
     try {
       // 1. 获取所有孤立的 Round
-      // listOrphaned 可能是可选方法，需要检查
+      // 判据真源在实现方（宿主经 sessionStore.referencedIds() 现场派生），本服务不读 refCount
       const listOrphanedFn = this.roundStore.listOrphaned;
       const orphanedRounds = listOrphanedFn
         ? listOrphanedFn.call(this.roundStore, this.config.minAgeMs)
@@ -186,6 +186,7 @@ export class GCService {
               result.memoryCleaned++;
             }
           } else {
+            // 存储层拒绝删除 / IO 失败（字段名是历史命名，不再是 refCount 护栏）
             result.failedDueToRefCount++;
           }
         }

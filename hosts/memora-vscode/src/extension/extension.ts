@@ -402,10 +402,14 @@ export function activate(context: vscode.ExtensionContext): void {
   // 杜绝双实例覆盖写 / 缓存漂移——否则 UI 重载历史读不到 Agent 刚写入的 Round）
   const roundStore = new WorkspaceRoundStore(workspacePath);
   roundStore.load();
-  // 孤儿清扫（0 引用 Round 统一回收）：删除会话/截断后遗留的无引用轮
-  // 在启动时物理清理，防磁盘膨胀与「0 引用卡片滞留」（引用归 SessionStore、物理归 RoundStore）
-  // 存活保护必须显式带上：进行中轮（pending）refCount 恒为 0，无保护会删掉
-  // 「用户已提问、LLM 尚未作答」的轮（重载/崩溃重启时静默丢失用户提问）。
+  const sessionStore = new WorkspaceSessionStore(workspacePath, roundStore);
+  sessionStore.load();
+
+  // 孤儿清扫（无会话引用 Round 统一回收）：删除会话/截断后遗留的无引用轮
+  // 在启动时清理，防磁盘膨胀与「无引用卡片滞留」（引用归 SessionStore、物理归 RoundStore）。
+  // 🔴 必须在 sessionStore.load() **之后**执行：判据 = 「不在任何会话 roundIds 中」，
+  // 由 sessionStore.referencedIds() 现场派生（构造时已注入 provider），不读 Round.refCount。
+  // 存活保护必须显式带上：刚失去引用的轮给 24h 后悔窗口，无保护会立即移入回收站。
   const sweptIds = roundStore.sweepOrphans(DEFAULT_SWEEP_MIN_AGE_MS);
   if (sweptIds.length > 0) {
     console.info(`Memora 启动清扫无引用问答闭环 ${sweptIds.length} 条`);
@@ -414,8 +418,6 @@ export function activate(context: vscode.ExtensionContext): void {
     // 详见 setAgentFactory 处的消费逻辑。
     pendingSweptRoundIds.push(...sweptIds);
   }
-  const sessionStore = new WorkspaceSessionStore(workspacePath, roundStore);
-  sessionStore.load();
 
   // 视图加载器：将 Session（Round ID 列表）+ RoundStore 组合为完整视图
   const viewLoader = new WorkspaceSessionViewLoader(roundStore, sessionStore);
