@@ -16,6 +16,14 @@ import { logger } from '@/logging/logger.js';
 export class ChatLockManager {
   /** 并发锁标志 */
   private _chatBusy = false;
+  /**
+   * 锁持有者会话快照（E1 · 2026-11-05）。
+   *
+   * **纯记录，不参与任何门控判据**：`isBusy` 仍只读 `_chatBusy`，
+   * 现有 8 个消费点的语义一律保持「任一会话忙」；ownerSessionId 只供诊断/后续切片读取。
+   * 若让本字段参与判忙，就会在同一处生出「按会话忙」与「任一会话忙」两套真源（SSOT 红线）。
+   */
+  private _lockOwner: { ownerSessionId: string; acquiredAt: number } | null = null;
   /** 锁持有者 token（race condition 防护，校验当前持有者避免误清新调用者资源） */
   private _chatLockToken: number = 0;
   /** 锁超时计时器（防 LLM 卡死时锁永久持有） */
@@ -23,9 +31,19 @@ export class ChatLockManager {
   /** 内部 AbortController（超时时中断 generator） */
   private chatAbortController: AbortController | null = null;
 
-  /** 当前是否持有锁 */
+  /** 当前是否持有锁（门控唯一真源；语义 = 任一会话占用执行位） */
   get isBusy(): boolean {
     return this._chatBusy;
+  }
+
+  /** 当前锁持有者的会话 ID（无锁或未传持有者时为 null）。纯记录，不参与判忙 */
+  get busySessionId(): string | null {
+    return this._lockOwner?.ownerSessionId ?? null;
+  }
+
+  /** 当前锁的获取时刻（毫秒时间戳；无锁或未传持有者时为 null）。纯记录 */
+  get lockAcquiredAt(): number | null {
+    return this._lockOwner?.acquiredAt ?? null;
   }
 
   /**
@@ -36,8 +54,11 @@ export class ChatLockManager {
   acquire(
     timeoutMs: number,
     onTimeout?: () => void,
+    ownerSessionId?: string,
   ): { token: number; internalAbort: AbortController } {
     this._chatBusy = true;
+    // 持有者快照：仅记录（调用方传当前会话全名），不改变任何判据
+    this._lockOwner = ownerSessionId ? { ownerSessionId, acquiredAt: Date.now() } : null;
     // 分配本调用 token，超时/finally 据此判断是否仍是持有者，避免误清新调用资源
     const token = ++this._chatLockToken;
     // 中断信号（用户 stop / 插话 / 锁释放会 abort 它；锁自身超时不 abort）
@@ -55,6 +76,8 @@ export class ChatLockManager {
       // 锁不再对「整次对话时长」设硬上限，慢但正常的长时间对话不被误杀。
       this._chatLockToken++;
       this._chatBusy = false;
+      // 持有者快照随锁一并清空（仅记录，清空不影响门控）
+      this._lockOwner = null;
       this.chatLockTimer = null;
       this.chatAbortController = null;
       onTimeout?.();
@@ -84,6 +107,8 @@ export class ChatLockManager {
       return;
     }
     this._chatBusy = false;
+    // 持有者快照随锁一并清空（仅记录，清空不影响门控）
+    this._lockOwner = null;
     this.chatAbortController = null;
     if (this.chatLockTimer) {
       clearSafeTimeout(this.chatLockTimer);
@@ -111,5 +136,7 @@ export class ChatLockManager {
       this.chatLockTimer = null;
     }
     this._chatBusy = false;
+    // 持有者快照随销毁清空（仅记录，清空不影响门控）
+    this._lockOwner = null;
   }
 }

@@ -571,6 +571,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
     const { token: myToken, internalAbort } = chatLock.acquire(
       AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS,
+      // 无超时回调（超时仅释放锁，行为与既有路径一致）
+      undefined,
+      // E1：写入当前会话 ID 作纯记录（date-session 全名），不参与任何判忙判据
+      this.history?.currentSessionName,
     );
     const cleanupExternalSignal = chatLock.attachExternalSignal(signal, internalAbort);
     return { myToken, internalAbort, cleanupExternalSignal, combinedSignal: internalAbort.signal };
