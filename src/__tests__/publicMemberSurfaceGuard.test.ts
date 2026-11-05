@@ -1218,7 +1218,8 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
     members: [
       'execute',
       'get allToolDefinitions',
-      'get builtinDefinitions',
+      // 删后注记（2026-11-05 · 6.0.0 废弃清账）：`get builtinDefinitions` 为 5.5.0 更名后的
+      // 转发别名（逐行等价 `allToolDefinitions`，全仓零调用），按 DEPRECATE-1 移除，不还原。
       'get currentToolWhitelist',
       'get list',
       'listResources',
