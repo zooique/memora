@@ -575,7 +575,8 @@ describe('公共 API 面登记门槛守卫（PUBLIC-API-SURFACE-1）', () => {
       if (f) ifaceMembers.add(f);
     }
     // 双向差集：表有接口无 = 幻觉/已删未标（删除线历史行豁免）；接口有表无 = 新字段未补文档
-    const DELETED_FIELDS = new Set(['vectorStore', 'recallExcludeSources']); // 删除线历史行，合法
+    // 删除线历史行，合法（每删一个 AgentOptions 键，须同批登记于此，否则本守卫会把留痕行误报成幻觉行）
+    const DELETED_FIELDS = new Set(['vectorStore', 'recallExcludeSources', 'noOverwriteRoots']);
     const phantom = [...tableFields].filter((f) => !ifaceMembers.has(f) && !DELETED_FIELDS.has(f));
     const undocumented = [...ifaceMembers].filter((f) => !tableFields.has(f));
     const hint =
