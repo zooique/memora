@@ -87,6 +87,54 @@ describe('referencedIds 现场扫盘（跨进程）', () => {
     expect(roundStore.getById('r2')).not.toBeNull();
   });
 
+  it('部分引用：分叉只引用 3 轮中的 2 轮 ⇒ 删原会话后「删 1 留 2」', () => {
+    const dir = makeTempDir('memora-refids-partial-');
+    const roundStore = new WorkspaceRoundStore(dir);
+    roundStore.load();
+    const storeA = new WorkspaceSessionStore(dir, roundStore);
+    storeA.load();
+
+    // 原会话（A 侧）：三轮 r1 / r2 / r3；轮文件均先落盘（与生产时序同：建轮即落盘）
+    const originalId = '2026-11-06-original3';
+    storeA.createSession({
+      sessionId: originalId,
+      displayName: 'original3',
+      updatedAt: '2026-11-06T00:00:00.000Z',
+      messageCount: 0,
+    });
+    for (const [id, offset] of [
+      ['r1', 'T00:00:00'],
+      ['r2', 'T00:01:00'],
+      ['r3', 'T00:02:00'],
+    ] as const) {
+      roundStore.save(makeRound(id, `2026-11-06${offset}.000Z`));
+      storeA.appendRoundId(originalId, id);
+    }
+
+    // 另一窗口（真子进程）分叉：只引用 r1 / r2（r3 无人引用）
+    const forkDir = sessionsDirOf(dir);
+    mkdirSync(forkDir, { recursive: true });
+    const forkFile = join(forkDir, '2026-11-06-fork12.json');
+    const body = JSON.stringify({
+      sessionId: '2026-11-06-fork12',
+      meta: null,
+      roundIds: ['r1', 'r2'],
+    });
+    const child = spawnSync(
+      process.execPath,
+      ['-e', 'require("fs").writeFileSync(process.argv[1], process.argv[2])', forkFile, body],
+      { encoding: 'utf8' },
+    );
+    expect(child.status).toBe(0);
+
+    // 删原会话：r3 引用归零 ⇒ 唯一被回收；r1/r2 仍被分叉引用 ⇒ 必须留下
+    const removed = storeA.deleteSession(originalId);
+    expect(removed).toEqual(['r3']);
+    expect(roundStore.getById('r3')).toBeNull();
+    expect(roundStore.getById('r1')).not.toBeNull();
+    expect(roundStore.getById('r2')).not.toBeNull();
+  });
+
   it('200 个会话文件下 referencedIds 的耗时（代价实测）', () => {
     const dir = makeTempDir('memora-refids-perf-');
     const roundStore = new WorkspaceRoundStore(dir);
