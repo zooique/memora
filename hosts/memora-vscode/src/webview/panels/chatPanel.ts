@@ -1788,7 +1788,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       notify: (level, message) => this.post({ type: 'notice', level, message }),
       pushList: () => this.pushSessionList(),
       softDeleteMemories: (removedIds) => this.softDeleteSessionMemories(removedIds),
-      archiveMode: () => this._agent?.getArchiveMode(),
+      archiveMode: () => {
+        // 走「先取局部再判空」而非直接对 _agent 用可选链调用：
+        // 可选链调用会被 agent 强制依赖面守卫记成**严格形态**（新增严格依赖须先登记并补替身）
+        const agent = this._agent;
+        return agent ? agent.getArchiveMode() : undefined;
+      },
       // Agent 未装配 ⇒ 抛错由 triggerManualArchive 兜成可见 notice（与改前同文案）
       requestArchive: async (date, session) => {
         const agent = this._agent;
