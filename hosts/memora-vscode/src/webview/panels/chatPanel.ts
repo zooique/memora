@@ -194,6 +194,7 @@ import { AskCoordinator } from '../../extension/host/askCoordinator.js';
 import { recordHostDiag, type DiagnosticsData, type HostDiagEntry } from './hostDiagnostics.js';
 // 角色包激活态 → 面板的桥（自本文件拆出，守住 max-lines 只降不升）
 import { bridgeRolePackActivation } from './rolePackActivationBridge.js';
+import { AgentEventScope } from '../../extension/host/agentEventScope.js';
 // thought 落盘折叠域（自本文件拆出；纯逻辑 + 长不变量说明，详见真源模块）
 import { foldThoughtEvents, MAX_THOUGHT_PAYLOAD_LENGTH } from '../../extension/host/thoughtFold.js';
 
@@ -332,6 +333,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     [];
   /** 安全审计订阅取消函数（幂等管理，防重复绑定） */
   private _securityAuditUnsub: (() => void) | undefined;
+  /**
+   * 会话级可观测事件的订阅作用域（E5：面板 × 所属 Agent 实例）
+   *
+   * 所有 `agent.on(...)` 统一经 `bindAgentNoticeEvents` 装订进来；面板销毁/换实例时
+   * `dispose()` 一次性解绑，避免监听器滞留（作用域自身保证只碰本面板那台实例）。
+   */
+  private readonly _noticeEventScope = new AgentEventScope();
   /** 当前进行中流的 AbortController（mvp-scope 打断能力）：停止按钮 / 生成中插话共用，
    *  abort() 中断 chat()/resumeExecution() 流，内核下一 await 点退出并 yield aborted chunk；
    *  无进行中流时为 undefined（stop 可安全 no-op）。 */
@@ -1165,6 +1173,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     webviewView.onDidDispose(() => {
       if (this._view === webviewView) this._view = undefined;
       this._activeFile.disposeActiveFileTracking();
+      // E5：面板销毁时解绑本面板在所属 Agent 上的全部会话级订阅（A 事件不再流向已销毁面板；
+      // 共享 Agent 不因面板生命周期而累积监听器）。
+      this.unbindAgentNoticeEvents();
+      // 安全审计订阅同属 agent.security 上的长期监听：一并释放，重新装配时由
+      // bindSecurityAudit 幂等重绑。
+      this._securityAuditUnsub?.();
+      this._securityAuditUnsub = undefined;
     });
 
     // 消息分发入口（HOST-CTX-12）：整条 if-else 链已摘为 private handleWebviewMessage，此处只
@@ -1565,80 +1580,77 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 绑定会话级可观测事件 → 错误提示
+   * 绑定会话级可观测事件（E5：订阅源 = **本面板持有的那台 Agent 实例**）
    *
-   * Agent 为单例跨面板展开共享，此处先 off 再 on（命名 handler 引用一致），
-   * 避免折叠/展开重建视图时重复注册导致重复通知。
+   * 绑定路径：`AgentEventScope.bindTo(this._agent, binder)` —— 作用域只碰传入的实例，
+   * 不做全局转发；换实例/面板销毁时由 `dispose()` 统一解绑（见 webviewView.onDidDispose）。
+   * binder 内每个事件仍先 `off` 再 `on`（同一面板重复绑定幂等），并返回解绑闭包。
    */
   private bindAgentNoticeEvents(): void {
     if (!this._agent) return;
     const a = this._agent;
-    a.off('sessionError', this.onSessionError);
-    a.on('sessionError', this.onSessionError);
-    a.off('sessionResumeFailed', this.onSessionResumeFailed);
-    a.on('sessionResumeFailed', this.onSessionResumeFailed);
-    a.off('sessionResumeBlocked', this.onSessionResumeBlocked);
-    a.on('sessionResumeBlocked', this.onSessionResumeBlocked);
-    a.off('sessionPauseTimedOut', this.onSessionPauseTimedOut);
-    a.on('sessionPauseTimedOut', this.onSessionPauseTimedOut);
-    // 低扰信息（截断/压缩/归档失败）→ info 级提示条
-    a.off('contextTruncated', this.onContextTruncated);
-    a.on('contextTruncated', this.onContextTruncated);
-    // LLM 主动压缩事件订阅（与 contextTruncated 的内核自动截断区分）
-    a.off('contextCompressed', this.onContextCompressed);
-    a.on('contextCompressed', this.onContextCompressed);
-    a.off('archiveFailed', this.onArchiveFailed);
-    a.on('archiveFailed', this.onArchiveFailed);
-    // 会话归档写入成功（内核异步归档完成后发）→ 重拉会话列表：历史条目摘要/keyTopics
-    // 即时更新，否则条目停留在切走时的快照、悬停 tooltip 恒空
-    a.off('sessionArchived', this.onSessionArchived);
-    a.on('sessionArchived', this.onSessionArchived);
-    // 角色包切换 → UI 角色选择器实时对齐（内核粘性切换/显式激活）
-    a.off('rolePackSwitched', this.onRolePackSwitched);
-    a.on('rolePackSwitched', this.onRolePackSwitched);
+    this._noticeEventScope.bindTo(a, (agent) => {
+      // 每条订阅的解绑闭包：与「事件名 + handler 引用」一一对应，作用域统一释放
+      const unsubscribers: Array<() => void> = [];
+      /** 注册一对 off→on（幂等），并把解绑闭包收进作用域 */
+      const on = <K extends keyof AgentEventMap>(
+        event: K,
+        handler: (payload: AgentEventMap[K]) => void,
+      ): void => {
+        agent.off(event, handler);
+        agent.on(event, handler);
+        unsubscribers.push(() => agent.off(event, handler));
+      };
+      on('sessionError', this.onSessionError);
+      on('sessionResumeFailed', this.onSessionResumeFailed);
+      on('sessionResumeBlocked', this.onSessionResumeBlocked);
+      on('sessionPauseTimedOut', this.onSessionPauseTimedOut);
+      // 低扰信息（截断/压缩/归档失败）→ info 级提示条
+      on('contextTruncated', this.onContextTruncated);
+      // LLM 主动压缩事件订阅（与 contextTruncated 的内核自动截断区分）
+      on('contextCompressed', this.onContextCompressed);
+      on('archiveFailed', this.onArchiveFailed);
+      // 会话归档写入成功（内核异步归档完成后发）→ 重拉会话列表：历史条目摘要/keyTopics
+      // 即时更新，否则条目停留在切走时的快照、悬停 tooltip 恒空
+      on('sessionArchived', this.onSessionArchived);
+      // 角色包切换 → UI 角色选择器实时对齐（内核粘性切换/显式激活）
+      on('rolePackSwitched', this.onRolePackSwitched);
+      // 后台任务自然终态 → 推 UI 快照（脱管后 turn 已结束：周期性推送点（step_boundary /
+      // background_report）都已过、也没有 kill 动作，覆盖不到「任务自然跑完」⇒ 条会一直
+      // 显示假活跃的「运行中」。主动 kill 不发本事件。见方案文档 §5.2.2）
+      on('backgroundTaskSettled', this.onBackgroundTaskSettled);
+      // 项目切换：projectSwitched 事件随内核 PR-SWITCH-1 一并删除（多项目改为宿主各建一个
+      // Agent 实例，内核不再切换项目）⇒ 此处原订阅为僵尸（永不触发），已移除。
+      on('workProjectionGenerated', this.onWorkProjectionGenerated);
+      // 后台事件 → info 级提示条（调试可观测性）
+      on('configReloaded', this.onConfigReloaded);
+      on('archiveModeChanged', this.onArchiveModeChanged);
+      // 角色包切换锁定事件（补全 rolesView 点设为当前被锁时的 silent failure）
+      on('rolePackSwitchLocked', this.onRolePackSwitchLocked);
+      // memoryRecalled：LLM 回答前召回 N 条记忆 → info 级感知提示
+      on('memoryRecalled', this.onMemoryRecalled);
+      // 高价值事件：输入过大预警
+      on('inputTooLarge', this.onInputTooLarge);
+      // 中价值事件：分叉完成 + 去重完成 + 槽位澄清
+      on('sessionForked', this.onSessionForked);
+      // 删后注记（2026-10-18 · 5.0.0）：曾订阅内核 `dedupCompleted` 弹 notice，该事件随内核
+      // 治理链退役（GOVERNANCE-SRC-1）一并拆除——留着就是僵尸订阅（永不发射 ⇒ 静态检查恒过）。
+      // 勿加回；内核 `AgentEventMap` 已无此键。
+      // 低价值事件：会话状态冗余确认
+      on('sessionPaused', this.onSessionPaused);
+      on('sessionResumed', this.onSessionResumed);
+      on('sessionRecovered', this.onSessionRecovered);
+      // SSOT 会话标题同步：LLM 自动生成标题后，刷新 webview 顶部标题
+      on('sessionTitleUpdated', this.onSessionTitleUpdated);
+      return unsubscribers;
+    });
     // 角色包**激活态**变更（含删激活包后的兜底回退）→ 复用同一条 UI 更新路径；防双发在处理器内
     bridgeRolePackActivation(a.rolePacks, this.onRolePackSwitched);
-    // 后台任务自然终态 → 推 UI 快照（脱管后 turn 已结束：周期性推送点（step_boundary /
-    // background_report）都已过、也没有 kill 动作，覆盖不到「任务自然跑完」⇒ 条会一直
-    // 显示假活跃的「运行中」。主动 kill 不发本事件。见方案文档 §5.2.2）
-    a.off('backgroundTaskSettled', this.onBackgroundTaskSettled);
-    a.on('backgroundTaskSettled', this.onBackgroundTaskSettled);
+  }
 
-    // 项目切换 + 工作投影生成事件 → info 级提示条
-    // 注：projectSwitched 事件随内核 PR-SWITCH-1 一并删除（多项目改为宿主各建一个 Agent
-    // 实例，内核不再切换项目）⇒ 此处原订阅为僵尸（永不触发），已移除。
-    a.off('workProjectionGenerated', this.onWorkProjectionGenerated);
-    a.on('workProjectionGenerated', this.onWorkProjectionGenerated);
-    // 后台事件 → info 级提示条（调试可观测性）
-    a.off('configReloaded', this.onConfigReloaded);
-    a.on('configReloaded', this.onConfigReloaded);
-    a.off('archiveModeChanged', this.onArchiveModeChanged);
-    a.on('archiveModeChanged', this.onArchiveModeChanged);
-    // 角色包切换锁定事件（补全 rolesView 点设为当前被锁时的 silent failure）
-    a.off('rolePackSwitchLocked', this.onRolePackSwitchLocked);
-    a.on('rolePackSwitchLocked', this.onRolePackSwitchLocked);
-    // memoryRecalled：LLM 回答前召回 N 条记忆 → info 级感知提示
-    a.off('memoryRecalled', this.onMemoryRecalled);
-    a.on('memoryRecalled', this.onMemoryRecalled);
-    // 高价值事件：输入过大预警
-    a.off('inputTooLarge', this.onInputTooLarge);
-    a.on('inputTooLarge', this.onInputTooLarge);
-    // 中价值事件：分叉完成 + 去重完成 + 槽位澄清
-    a.off('sessionForked', this.onSessionForked);
-    a.on('sessionForked', this.onSessionForked);
-    // 删后注记（2026-10-18 · 5.0.0）：曾订阅内核 `dedupCompleted` 弹 notice，该事件随内核
-    // 治理链退役（GOVERNANCE-SRC-1）一并拆除——留着就是僵尸订阅（永不发射 ⇒ 静态检查恒过）。
-    // 勿加回；内核 `AgentEventMap` 已无此键。
-    // 低价值事件：会话状态冗余确认
-    a.off('sessionPaused', this.onSessionPaused);
-    a.on('sessionPaused', this.onSessionPaused);
-    a.off('sessionResumed', this.onSessionResumed);
-    a.on('sessionResumed', this.onSessionResumed);
-    a.off('sessionRecovered', this.onSessionRecovered);
-    a.on('sessionRecovered', this.onSessionRecovered);
-    // SSOT 会话标题同步：LLM 自动生成标题后，刷新 webview 顶部标题
-    a.off('sessionTitleUpdated', this.onSessionTitleUpdated);
-    a.on('sessionTitleUpdated', this.onSessionTitleUpdated);
+  /** 解绑本面板在所属 Agent 上的全部会话级订阅（幂等；面板销毁/换实例时调用） */
+  private unbindAgentNoticeEvents(): void {
+    this._noticeEventScope.dispose();
   }
 
   /**

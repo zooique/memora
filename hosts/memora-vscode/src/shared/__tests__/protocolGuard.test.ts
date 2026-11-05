@@ -136,7 +136,9 @@ function extractHostConsumedEvents(filePaths: string[]): Set<string> {
     const noBlockComments = source.replace(/\/\*[\s\S]*?\*\//g, '');
     const noComments = noBlockComments.replace(/\/\/[^\n]*/g, '');
     // 同时匹配 .on 和 .once（TypedEventEmitter 两种订阅方法）
-    const re = /\.(?:on|once)\(['"]([^'"]+)['"]/g;
+    // 另接受本地装订器形态 `on('event', handler)`（E5 面板订阅作用域 AgentEventScope 的
+    // binder）：词边界 `\b` 同时覆盖 `agent.on(` 与裸 `on(`，且不会误匹配 `fooOn(`。
+    const re = /\b(?:on|once)\(['"]([^'"]+)['"]/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(noComments)) !== null) {
       consumed.add(m[1]);
