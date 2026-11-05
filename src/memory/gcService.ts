@@ -2,7 +2,7 @@
  * 垃圾回收服务 —— 清理孤立的问答闭环和关联摘要
  *
  * 设计理念：
- * - 基于**引用真源**（会话 `roundIds`）的自动清理机制，`Round.refCount` 不参与判定
+ * - 候选判据 = **引用真源**（会话 `roundIds`）的 Round GC，`Round.refCount` 不参与判定
  * - 只清理「不在任何会话 roundIds 中」且超龄的 Round（不分状态：pending/error 崩溃残留同样可回收）
  * - 同时清理关联的记忆摘要（round-summary）
  * - 支持定时执行和手动触发
