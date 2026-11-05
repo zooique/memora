@@ -128,6 +128,8 @@ function createMockHistory(overrides: Partial<MessageHistory> = {}): MessageHist
     currentSessionName: '2026-08-08-main',
     currentDateValue: '2026-08-08',
     currentSessionValue: 'main',
+    // E2 会话漂移判据：createCheckpoint 会先调此方法（无活动 turn 时应为 no-op）
+    assertTurnSessionStable: vi.fn(),
     ...overrides,
   } as unknown as MessageHistory;
 }

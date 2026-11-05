@@ -126,6 +126,25 @@ export function chatBusyError(action: string): MemoraError {
   ]);
 }
 
+/**
+ * 工厂：会话漂移错误——turn 进行中当前会话被替换（E2 防御判据）
+ *
+ * 触发点 = turn 内的身份写入点（持久化用户消息 / 创建检查点 / 清理任务表）。
+ * 当前无已知生产触发路径（宿主切会话走 SessionManager 的 busy 闸）；本错误只在
+ * 「绕过闸直接改 MessageHistory.currentSession」时出现，用于把隐含前提显式化。
+ */
+export function sessionDriftError(
+  writePoint: string,
+  expected: string,
+  actual: string,
+): MemoraError {
+  return configError(
+    '会话漂移',
+    `对话进行中当前会话被替换（${writePoint}）：预期 ${expected}，实际 ${actual}`,
+    ['不要在对话进行中切换会话', '等待本轮回答结束后再切换'],
+  );
+}
+
 /** 工厂：网络错误 */
 export function networkError(
   title: string,

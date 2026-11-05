@@ -25,7 +25,8 @@ import { MemoraError } from '@/utils/errors.js';
 
 /**
  * 创建 Mock MessageHistory
- * 仅实现 SessionManager 用到的方法：switchSession / forkSession / currentSessionName
+ * 仅实现 SessionManager 用到的方法：switchSession / forkSession / currentSessionName /
+ * assertTurnSessionStable（E2 漂移判据，createCheckpoint 首行调用）
  * （loadSessionMessages mock 保留——switchToSession 内部经 history 同名方法读消息，非 SessionManager 公开面）
  */
 function createMockHistory(overrides: Partial<MessageHistory> = {}): MessageHistory {
@@ -43,6 +44,8 @@ function createMockHistory(overrides: Partial<MessageHistory> = {}): MessageHist
     ]),
     loadSessionMessages: vi.fn().mockResolvedValue([]),
     currentSessionName: '2026-06-27-main',
+    // E2 会话漂移判据：createCheckpoint 会先调此方法（无活动 turn 时应为 no-op）
+    assertTurnSessionStable: vi.fn(),
     ...overrides,
   } as unknown as MessageHistory;
 }

@@ -15,7 +15,8 @@
  * 锁文件策略：
  *   - 打开项目时创建 .lock 文件（含 PID + 时间戳 + 主机名）
  *   - 关闭/切换项目时删除 .lock 文件
- *   - 检测到残留锁时：判断进程是否存活 → 存活则警告 / 已死则清理
+ *   - 检测到残留锁时：先判锁主人是否为**本进程**（同 pid = 同进程多实例，不告警）
+ *     → 异 pid 且存活则警告 / 已死则清理
  *
  * 与 ProjectManager 的分工：
  *   - LockManager：锁文件获取/释放 + 残留锁检测/清理
@@ -82,8 +83,8 @@ export class LockManager {
   /**
    * 获取锁文件
    *
-   * 如果锁文件存在且进程存活，发出警告但不阻止。
-   * 如果锁文件存在但进程已死，清理残留锁。
+   * 判据：**锁主人 pid ≠ 本进程 pid 且进程存活**才告警（同 pid = 同进程多实例，不是冲突，不告警）。
+   * 如果锁文件存在但锁主人进程已死，清理残留锁。
    * 如果锁文件损坏（结构不合法），清理后重新获取。
    *
    * @param memoraDir - 项目 .memora/ 目录（锁文件所在目录）
@@ -97,9 +98,13 @@ export class LockManager {
       // 使用类型守卫校验 JSON.parse 结果，替代 `as LockInfo` 类型断言
       const parsed: unknown = JSON.parse(raw);
       if (isLockInfo(parsed)) {
-        // 合法锁文件：检查进程是否存活
+        // 合法锁文件：判据 =「锁主人 pid ≠ 本进程 pid」才告警（E1.5，2026-11-05 从 E6 提前）。
+        // 同 pid = 同一进程内的多实例（多窗口 / 多 Agent 共享 SQLite + WAL），本就不是冲突；
+        // ⚠️ 不得退化为「锁文件存在就告警」（那会把正常的多开误报成数据冲突）。
         const info = parsed;
-        if (this.isProcessAlive(info.pid)) {
+        if (info.pid === process.pid) {
+          logger.debug({ pid: info.pid }, '锁文件属于本进程（同进程多实例），不告警');
+        } else if (this.isProcessAlive(info.pid)) {
           logger.warn(
             { pid: info.pid, acquiredAt: info.acquiredAt, hostname: info.hostname },
             '项目已被其他进程打开（锁文件存在），继续操作可能导致数据冲突',

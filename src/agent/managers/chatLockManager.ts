@@ -14,7 +14,13 @@ import { logger } from '@/logging/logger.js';
  * dispose 供 Agent.close（原 forceRelease 供宿主无进展超时兜底——宿主从未调用，已随 5.0.0 拆除）。
  */
 export class ChatLockManager {
-  /** 并发锁标志 */
+  /**
+   * 并发锁标志（门控唯一真源；语义 = 任一会话占用执行位）。
+   *
+   * 🔴 **唯一写 `true` 点 = `acquire()`（生产唯一入口 = `Agent.acquireChatLock`）**。
+   * 新增任何 `_chatBusy = true` 写点**必须同时写 `_lockOwner`**，否则「owner 记录」与
+   * 「门控」开始漂移（E1 隐含前提）。机判见 `chatLockOwnerInvariant.test.ts`。
+   */
   private _chatBusy = false;
   /**
    * 锁持有者会话快照（E1 · 2026-11-05）。

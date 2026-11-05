@@ -521,6 +521,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 流活跃置位：requestPause 空闲守卫据此判「任务进行中」——锁 180s 超时释放后
       // isBusy=false 但流仍在产出，必须以流生命周期（而非锁持有）为准（09-03 锁语义变更回归修补）
       this._flowActive = true;
+      // E2 会话漂移判据：快照本轮入口的会话身份；turn 内写点（appendUser / createCheckpoint /
+      // clearPlanOnTurnEnd）逐点比对，漂移即抛 sessionDriftError（防绕过闸直接改会话）。
+      this.history!.beginTurnSessionSnapshot();
       // 状态机翻转是副作用，必须在并发闸门内执行——PAUSED 态收到 chat = 自动恢复 + 继续（作为补充注入）；ERROR 态仍拒绝
       if (!this.autoResumeIfPaused()) {
         yield {
@@ -542,8 +545,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       cleanupExternalSignal();
       // turn 结束自动收尾：非暂停态无条件清理任务表（turn 内能力，不跨 turn 残留）；
       // 清空前产出 plan_snapshot 快照 chunk（任务项完成态落盘真源）
-      yield* this.clearPlanOnTurnEnd();
-      await this.flushPendingTurnEndTasks();
+      try {
+        yield* this.clearPlanOnTurnEnd();
+        await this.flushPendingTurnEndTasks();
+      } finally {
+        // E2：快照只在本次 chat 生成器生命周期内有效（异常/暂停边界也必须清，防泄漏到下一轮）
+        this.history?.endTurnSessionSnapshot();
+      }
     }
   }
 
@@ -1161,6 +1169,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 无条件执行——即使宿主提前终止流（快照未被消费），plan 也不跨 turn 残留（行为与改造前一致）。
    */
   private *clearPlanOnTurnEnd(): Generator<AgentChunk, void, unknown> {
+    // E2 会话漂移判据：任务表归属当前会话，turn 内会话被替换时拒绝清理（放在所有早退之前）
+    this.history?.assertTurnSessionStable('turn 结束清理任务表');
     const sm = this._sessionManager;
     if (!sm) return;
     const cp = sm.getCheckpoint();

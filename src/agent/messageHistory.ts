@@ -19,7 +19,7 @@ import type {
 } from '@/memory/roundStore.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
-import { configError } from '@/utils/errors.js';
+import { configError, sessionDriftError } from '@/utils/errors.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { nowIso, todayDate } from '@/utils/time.js';
 
@@ -82,6 +82,14 @@ export class MessageHistory {
   private pendingArchives: Set<Promise<unknown>> = new Set();
   /** Round-based 模式下当前轮次的 pending Round 缓存（roundId → Round） */
   private pendingRounds: Map<string, Round> = new Map();
+  /**
+   * 当前 turn 的会话快照（null = 无活动 turn）。
+   *
+   * E2 漂移判据：唯一写入口 = `beginTurnSessionSnapshot()`（调用方 `Agent.chat()` 持锁后），
+   * 唯一清空点 = `endTurnSessionSnapshot()`（chat 的 finally）。turn 内任何身份写入点先经
+   * `assertTurnSessionStable()` 比对；漂移即抛 `sessionDriftError`。
+   */
+  private turnSessionSnapshot: string | null = null;
 
   constructor(
     /** 会话存储（可选）；注入则持久化，否则仅在内存保存（AgentLoop.messages[]） */
@@ -132,6 +140,38 @@ export class MessageHistory {
   /** 当前会话标识 */
   get session(): string {
     return this.currentSession;
+  }
+
+  /**
+   * 开启 turn 会话快照（E2）——唯一写入口，由 `Agent.chat()` 在持锁后调用。
+   *
+   * 背景：`switchSession` / `forkSession` 是**公开可调**且自身不判忙（判忙闸在 `SessionManager`），
+   * 而 `Agent.agentHistory` 是公开 getter ⇒ 存在绕过闸直接改会话的路径（E2 勘察结论）。
+   * 本快照把「turn 内会话身份不变」从隐含前提变成机判；当前无已知生产触发路径（宿主走闸）。
+   */
+  beginTurnSessionSnapshot(): void {
+    this.turnSessionSnapshot = this.currentSessionName;
+  }
+
+  /** 结束 turn 会话快照（chat 的 finally 无条件调用，含异常/暂停边界） */
+  endTurnSessionSnapshot(): void {
+    this.turnSessionSnapshot = null;
+  }
+
+  /**
+   * 会话漂移判据（E2）：turn 内有快照且当前会话名 ≠ 快照 ⇒ 抛 `sessionDriftError`。
+   *
+   * 仅防御性判据（非已知 bug 的修复）：无活动 turn（快照为 null）时零副作用，
+   * 故注入 prepare / act / reflect 各写点的调用不会影响正常流程。
+   *
+   * @param writePoint 写入点中文名（错误文案定位用）
+   */
+  assertTurnSessionStable(writePoint: string): void {
+    if (this.turnSessionSnapshot === null) return;
+    const current = this.currentSessionName;
+    if (current !== this.turnSessionSnapshot) {
+      throw sessionDriftError(writePoint, this.turnSessionSnapshot, current);
+    }
   }
 
   /** 切换会话，返回新会话全名 */
@@ -283,6 +323,8 @@ export class MessageHistory {
       attachments?: readonly ImageRef[];
     },
   ): Promise<void> {
+    // E2 会话漂移判据：用户消息的轮归属依赖当前会话，漂移时拒绝写入（防旧轮记入新会话）
+    this.assertTurnSessionStable('持久化用户消息');
     const message: SessionMessage = {
       role: 'user',
       content,

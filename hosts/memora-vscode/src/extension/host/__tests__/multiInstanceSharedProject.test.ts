@@ -10,12 +10,15 @@
  *   ③ `.memora/memories.db` 可读无损坏
  *   ④ 全程无 `database is locked`（捕获内核 logger 全量消息后正则判否）
  *   ⑤ 两实例同时触发 GC / `sweepOrphans(0)` ⇒ 会不会互删对方轮次？（ROUNDSIDX-SHARED-1）
- *   ⑥ `.memora/.lock` 同 pid 是否误告警（`lockManager.ts` 的 `isProcessAlive(同 pid)` 为真）
+ *   ⑥ `.memora/.lock` 判据：**锁主人 pid ≠ 本进程 pid 才告警**（同 pid = 同进程多实例，
+ *     共享 SQLite/WAL，不是冲突 ⇒ 必须零告警）。E1.5（2026-11-05 从 E6 提前）修正原误报。
  *
  * ## 用例分工
  * - 用例①「装配镜像」：共享 `sessionStore` / `roundStore` 单例（= 现有宿主装配形态，
  *   extension.ts 各建一份后注入），但每个 Agent 持有**独立的 SQLite 连接**（`assemble` 每次
- *   新建 `createHostMemoryStorage`）⇒ 记忆库真并发 + 断言 ①①③④⑥
+ *   新建 `createHostMemoryStorage`）⇒ 记忆库真并发 + 断言 ①①③④⑥（同 pid 零告警）
+ * - 用例①b「外 pid 真冲突」：`.lock` 写成**另一个真实存活进程**的 pid ⇒ 必须告警
+ *   （证伪方向：不能把真冲突与同 pid 多开一并关掉）
  * - 用例②「最坏情形探针」：两实例各持**独立** `roundStore`（B 方案若按实例各建 store 就会这样）
  *   ⇒ 回答 ⑤；同时记录 `index.json` 覆盖写现象（供 ROUNDSIDX-SHARED-1，只记录不锁死缺陷）
  *
@@ -28,7 +31,9 @@
  */
 // @vitest-environment node
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 import {
   Agent,
@@ -312,16 +317,14 @@ describe('E3 · 两 Agent 同 dataDir（共享 store 单例）', () => {
     await agentA.init();
     await agentB.init();
 
-    // ── 断言⑥：`.lock` 同 pid 误告警（第二实例 init 读到第一实例写的锁） ──
+    // ── 断言⑥：`.lock` 同 pid **零告警**（同进程多实例共享 SQLite/WAL，不是冲突） ──
     const lockFile = JSON.parse(
       readFileSync(join(resolveProjectDataDir(projectPath), '.lock'), 'utf8'),
     ) as { pid?: number };
     expect(lockFile.pid).toBe(process.pid);
     const lockWarns = captured.filter((l) => l.msg.includes('项目已被其他进程打开'));
-    expect(lockWarns.length).toBeGreaterThanOrEqual(1);
-    expect(lockWarns[0]!.fields?.['pid']).toBe(process.pid);
-    // 实测输出原文（回报父会话用；非断言）
-    console.log('[E3] .lock 同 pid 告警原文 =', JSON.stringify(lockWarns[0]));
+    expect(lockWarns).toHaveLength(0);
+    console.log('[E3] .lock 同 pid 告警数 =', lockWarns.length);
 
     // 两个 Agent 切到不同会话后**同时**跑一轮
     await agentA.sessionManager!.switchToSession(SESSION_A);
@@ -378,6 +381,62 @@ describe('E3 · 两 Agent 同 dataDir（共享 store 单例）', () => {
     expect(roundStore.sweepOrphans(0)).toEqual([]);
     for (const id of [...idsA, ...idsB]) {
       expect(existsSync(roundFilePath(projectPath, id))).toBe(true);
+    }
+  }, 120_000);
+
+  it('.lock 锁主人 pid ≠ 本进程 ⇒ 仍告警（同 pid 免告警不得把真冲突一并关掉）', async () => {
+    const projectPath = makeTempDir('memora-e1-5-foreign-');
+    const configDir = join(projectPath, 'config');
+    seedRolePacks(configDir);
+    const dataDir = resolveProjectDataDir(projectPath);
+    mkdirSync(dataDir, { recursive: true });
+
+    // 起一个**真实存活**的外部进程作"锁主人"（60s 后自然退出；finally 强制清理）
+    // 用它而不是伪造一个随机 pid：`isProcessAlive` 若判 false 会走"清理残留"分支，
+    // 用例就会因判据走错分支而失去意义。
+    const foreign = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], {
+      stdio: 'ignore',
+    });
+    const foreignPid = foreign.pid;
+    expect(typeof foreignPid).toBe('number');
+    writeFileSync(
+      join(dataDir, '.lock'),
+      JSON.stringify({
+        pid: foreignPid,
+        acquiredAt: new Date().toISOString(),
+        hostname: hostname(),
+      }),
+      'utf-8',
+    );
+
+    try {
+      const roundStore = new WorkspaceRoundStore(projectPath);
+      roundStore.load();
+      const sessionStore = new WorkspaceSessionStore(projectPath, roundStore);
+      sessionStore.load();
+      const agent = makeAgent(
+        projectPath,
+        configDir,
+        new EchoProvider('foreign') as unknown as LlmProvider,
+        createHostMemoryStorage(projectPath),
+        sessionStore,
+        roundStore,
+      );
+      agents.push(agent);
+      await agent.init();
+
+      // ── 判据：外 pid 存活 ⇒ 必须告警，且告警字段里的 pid 就是外进程 pid ──
+      const foreignWarns = captured.filter((l) => l.msg.includes('项目已被其他进程打开'));
+      expect(foreignWarns.length).toBeGreaterThanOrEqual(1);
+      expect(foreignWarns[0]!.fields?.['pid']).toBe(foreignPid);
+      console.log('[E1.5] .lock 外 pid 告警数 =', foreignWarns.length, '（pid =', foreignPid, '）');
+    } finally {
+      // Windows 用 taskkill 强杀；其他平台走 SIGKILL（避免残留 60s 挂起进程）
+      if (process.platform === 'win32') {
+        spawnSync('taskkill', ['/F', '/PID', String(foreignPid)], { stdio: 'ignore' });
+      } else {
+        foreign.kill('SIGKILL');
+      }
     }
   }, 120_000);
 });

@@ -325,6 +325,9 @@ export class SessionManager {
    *  不落盘——中止/断电走中断轮补全，运行时暂停同 turn 内存续跑） */
   createCheckpoint(): SessionCheckpoint {
     const history = this.getHistory();
+    // E2 会话漂移判据：检查点以当前会话归属，若 turn 内会话被替换则拒绝快照
+    // （否则旧轮的 checkpoint 会被记到新会话名下）。无活动 turn 时零副作用。
+    history.assertTurnSessionStable('创建检查点');
 
     const prev = this.checkpoint;
 
