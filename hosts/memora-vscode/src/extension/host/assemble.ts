@@ -241,6 +241,13 @@ export interface AssembleOptions {
    */
   archiveMode?: ArchiveMode;
   /**
+   * 是否让内核 Agent 自启周期 GC（默认 true，透传 AgentOptions.autoStartGc）
+   *
+   * 宿主多实例共享同一对存储单例时必须传 false：GC 由宿主 `MemoryGcScheduler` 单点驱动
+   * （E6），否则 N 个实例各挂一个定时器、每周期重复扫同一份存储。
+   */
+  autoStartGc?: boolean;
+  /**
    * 禁用的技能名清单
    *
    * 由 extension 从 workspace 设置 memora.disabledSkills 读取注入，配置形态启停：
@@ -341,6 +348,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     disabledSkills,
     scriptNodePath,
     archiveMode,
+    autoStartGc,
     mcpServers,
     mcpToolAllowlist,
     extensionVersion,
@@ -480,6 +488,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 只做透传：默认值与模式判据的真源都在内核（archiveCoordinator.resolveAutoArchiveAllowed），
     // 宿主不重算；运行时切换经 agent.setArchiveMode 热更新（设置面板）。
     archiveMode,
+    // GC 自启开关：宿主统一传 false，由 MemoryGcScheduler 单点驱动（E6）；
+    // undefined 保持内核默认 true（demo / 独立装配场景自足）
+    autoStartGc,
   });
 
   // 4. 初始化（加载记忆/角色包/会话，注册内置工具）

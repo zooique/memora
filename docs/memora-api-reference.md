@@ -218,6 +218,7 @@ new Agent({
 | `messages` | `UIMessages` | ❌ | 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） |
 | `enableContextSummary` | `boolean` | ❌ | 上下文超限时是否自动生成摘要（默认 true，开启后首次截断时增加 ~1-2s 延迟） |
 | `archiveMode` | `ArchiveMode` | ❌ | 归档模式（ADR-015，默认 `'full'`）。`'full'`：会话内容在会话切换前自动归档；`'manual'`：全部需手动触发（2026-08-14 洞察层移除后三态收敛为二态，原 `'insights-only'` 已移除） |
+| `autoStartGc` | `boolean` | ❌ | 是否自动启动周期 GC（默认 true）。false = 只登记不启动：GCService 仍创建（`gcNow()` 可手动调用），但不挂本实例的周期定时器——供宿主在多实例共享同一份存储时把 GC 收口到一个共享调度点 |
 | `webSearchProvider` | `IWebSearchProvider` | ❌ | 网络搜索提供者注入（提供时自动暴露 `web_search` 工具给 LLM，不传则不暴露） |
 | `fetchProvider` | `IFetchProvider` | ❌ | 网页抓取提供者注入（提供时自动暴露 `web_fetch` 工具给 LLM，与 `webSearchProvider` 成对构成「搜索→抓取」闭环，不传则不暴露） |
 | `codeExecutionProvider` | `ICodeExecutionProvider` | ❌ | 代码执行提供者注入（提供时自动暴露 `run_code` 工具给 LLM，沙箱执行能力完全由宿主 provider 决定，内核零运行时依赖，不传则不暴露） |

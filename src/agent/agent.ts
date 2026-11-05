@@ -214,6 +214,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       messages: opts.messages,
       enableContextSummary: opts.enableContextSummary ?? true,
       archiveMode: opts.archiveMode ?? 'full',
+      // GC 自动启动开关（缺省 true）：宿主多实例时传 false，由宿主共享调度点单点驱动
+      autoStartGc: opts.autoStartGc ?? true,
       webSearchProvider: opts.webSearchProvider,
       fetchProvider: opts.fetchProvider,
       codeExecutionProvider: opts.codeExecutionProvider,
@@ -429,7 +431,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // 忙碌检查：chatLock busy = 对话/长任务进行中，跳过本次 GC
         () => this.internals.chatLockManager?.isBusy ?? false,
       );
-      this.internals.gcService.startPeriodic(AGENT_CONSTANTS.GC_INTERVAL_MS);
+      // 周期定时器只在 autoStartGc 时挂载：多实例宿主（共享同一对 store 单例）
+      // 由宿主共享调度点单点驱动 `gcNow()`，避免 N 个实例重复扫同一份存储（E6 定案）
+      if (this.#config.autoStartGc) {
+        this.internals.gcService.startPeriodic(AGENT_CONSTANTS.GC_INTERVAL_MS);
+      }
     }
 
     // 归档操作委托给 ArchiveCoordinator（content 会话归档）

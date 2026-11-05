@@ -610,6 +610,15 @@ export interface AgentOptions {
   enableContextSummary?: boolean;
   /** 归档模式（默认 'full'） */
   archiveMode?: ArchiveMode;
+  /**
+   * 是否自动启动周期 GC（默认 true）
+   *
+   * false = 「只登记不启动」：GCService 仍创建（手动 `gcNow()` 可用），但**不挂本实例的周期定时器**。
+   * 供宿主在多实例共存时把孤儿 Round 回收收口到**一个共享调度点**——N 个实例各挂一个定时器
+   * 会重复扫同一份共享存储（`sessionStore` / `roundStore` 单例），既浪费又放大竞态窗口。
+   * 缺省 true 保持单实例/测试场景的自足行为。
+   */
+  autoStartGc?: boolean;
   /** 网络搜索提供者（可选，不配则不启用网络搜索） */
   webSearchProvider?: IWebSearchProvider;
   /** 网页抓取提供者（可选，不配则不启用 web_fetch；与 webSearchProvider 构成搜索→抓取闭环） */
@@ -674,6 +683,7 @@ export type AgentConfig = Omit<
   | 'confirmScripts'
   | 'enableContextSummary'
   | 'archiveMode'
+  | 'autoStartGc'
 > & {
   dataDir: string;
   maxContextTokens: number;
@@ -686,6 +696,8 @@ export type AgentConfig = Omit<
   confirmScripts: boolean;
   enableContextSummary: boolean;
   archiveMode: ArchiveMode;
+  /** 是否自动启动周期 GC（AgentOptions.autoStartGc 的默认值解析结果，缺省 true） */
+  autoStartGc: boolean;
   /**
    * 组（会议名单容器）：内部运行态必选——外部 AgentOptions 可选（不配 = 无团队），
    * Agent 构造时 `?? []` 归一化后恒为数组。

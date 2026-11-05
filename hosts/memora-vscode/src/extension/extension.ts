@@ -17,12 +17,15 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import type { Agent, ArchiveMode, IRoundStore } from '@zooique/memora';
+// GC 周期单点驱动取内核常量（不复制 24h 字面量）
+import { AGENT_CONSTANTS } from '@zooique/memora';
 import { assembleAgent, createVscodeLogger } from './host/assemble.js';
 import { resolveProjectDataDir } from './host/projectDataDir.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
 import { AgentRegistry } from './host/agentRegistry.js';
+import { MemoryGcScheduler } from './host/memoryGcScheduler.js';
 import { ImageCache } from './host/imageCache.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
@@ -93,6 +96,22 @@ let agentPromise: Promise<Agent> | null = null;
  * 未装配时为 null（此时恢复会被安全拒绝——降级优先，绝不无校验直写）。
  */
 let currentAgent: Agent | null = null;
+
+/**
+ * 孤儿 Round GC 的单点调度器（E6：一个宿主进程只有一份）
+ *
+ * 内核侧 Agent 一律以 `autoStartGc: false` 装配（只登记不启动），周期扫描只由本调度器驱动；
+ * 否则 N 个实例各挂一个定时器，会对同一对共享存储重复扫描 N 次。
+ */
+let gcScheduler: MemoryGcScheduler | null = null;
+
+/**
+ * GC 驱动实例（首个装配成功的 Agent）
+ *
+ * 为什么用「首个」而不是遍历全表：全部实例共享同一对 `sessionStore` / `roundStore` 单例
+ * （E3 硬约束），任一实例的 `gcNow()` 扫的是同一份存储，扫一次即覆盖全量。
+ */
+let gcDriverAgent: Agent | null = null;
 
 /**
  * 扩展版本号（MCP 客户端握手时上报给 server，仅作遥测，不参与任何判据）
@@ -226,6 +245,8 @@ function getOrCreateAgent(
       searchEngine,
       customSearchEngines,
       archiveMode,
+      // E6：GC 不自启——周期扫描由宿主 MemoryGcScheduler 单点驱动（见下方装配成功的 then 块）
+      autoStartGc: false,
       userSkillsDir,
       userRolePacksDir,
       // 项目级来源（仅信任时非空；顺序由 assemble 保证 user → project 后加载者胜）
@@ -262,6 +283,12 @@ function getOrCreateAgent(
       // 同步引用**从登记表取回**（唯一读取面）：取不到说明登记环节被破坏，保留 null 让
       // 依赖 currentAgent 的同步写校验 fail-closed（降级为拒绝写，而不是无校验直写）。
       currentAgent = agentRegistry.get(sessionId) ?? null;
+      // E6：GC 单点驱动——首个实例即驱动者，调度器全局只建一份、启动幂等。
+      // 后续实例只登记不再各起定时器（内核侧 autoStartGc:false 已保证），
+      // 故「实例数 N」与「每周期扫描次数」解耦，恒为 1。
+      gcDriverAgent ??= agent;
+      gcScheduler ??= new MemoryGcScheduler(() => gcDriverAgent?.gcNow());
+      gcScheduler.startPeriodic(AGENT_CONSTANTS.GC_INTERVAL_MS);
     },
     () => {
       // 装配失败：调用方各自处理；此处仅维护同步引用，不重复处理
@@ -835,6 +862,10 @@ export async function deactivate(): Promise<void> {
   } catch {
     // 关闭失败静默降级：不阻断插件退出（VS Code 不因 deactivate 异常而阻塞）
   } finally {
+    // GC 单点调度器先停：避免定时器在 Agent 关闭后继续扫已关闭的存储
+    gcScheduler?.stopPeriodic();
+    gcScheduler = null;
+    gcDriverAgent = null;
     agentPromise = null;
     currentAgent = null;
   }

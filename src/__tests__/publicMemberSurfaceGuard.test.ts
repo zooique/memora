@@ -470,6 +470,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'activeRolePack',
       'allowedPaths',
       'archiveMode',
+      'autoStartGc',
       'backgroundProvider',
       'builtinFallbackRole',
       'codeExecutionProvider',
@@ -1408,7 +1409,14 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    （assemble.ts 注入用户目录），但用户资产目录不在 allowedPaths ⇒ 白名单阶段即拒、本判据\n` +
       `    生产不可达 ⇒ 缺它也不会静默覆盖用户技能 / 角色包。计划 6.0.0 按 DEPRECATE-1 退役。\n` +
       `    判据本身仍有效，由 pathGuard.test.ts 的 6 例守护（移除判据即转红）；仅无生产命中点。\n` +
-      `    代价 = 零（可选字段：缺省 [] = 不启用，既有调用零变化）。`;
+      `    代价 = 零（可选字段：缺省 [] = 不启用，既有调用零变化）。\n` +
+      `  ⑩ AgentOptions.autoStartGc 新增（2026-11-05 · 6.0.0 E6，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：false = 「只登记不启动」——GCService 仍创建、\n` +
+      `    gcNow() 仍可手动调用，只是不挂本实例的周期定时器。真消费者 = 宿主 assembleAgent\n` +
+      `    （extension.ts 固定传 false）+ 宿主 MemoryGcScheduler 单点驱动；\n` +
+      `    B 方案 N 实例共享同一对 sessionStore/roundStore 单例，不关自启则 N 个定时器重复扫同一份存储。\n` +
+      `    行为由宿主 gcSingleScheduler.test.ts 的计数断言守护（两实例 / 3 周期 ⇒ 扫描恰好 3 次）。\n` +
+      `    代价 = 零（可选字段：缺省 true，既有调用与单实例语义零变化）。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
