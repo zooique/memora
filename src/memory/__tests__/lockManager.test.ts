@@ -290,6 +290,82 @@ describe('LockManager · 损坏锁文件处理', () => {
   });
 });
 
+describe('LockManager · 同进程多实例共享同一锁（PROJECTLOCK-SHARED-1）', () => {
+  /** 每个用例隔离的临时项目根目录 */
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'memora-lm-shared-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('同进程两实例：先关其一锁文件仍在（pid 仍为本进程），关最后一个才消失', async () => {
+    const memoraDir = join(tmpDir, '.memora');
+    const lockPath = join(memoraDir, '.lock');
+    // 两个 LockManager = 同进程两个 Agent 实例，共享同一项目锁路径
+    const agentA = new LockManager();
+    const agentB = new LockManager();
+
+    await agentA.acquire(memoraDir);
+    await agentB.acquire(memoraDir);
+
+    // 先关闭 A：pid 判据会命中（同进程），但 B 仍持有 ⇒ 文件必须保留
+    await agentA.release();
+    expect(existsSync(lockPath)).toBe(true);
+    expect(JSON.parse(readFileSync(lockPath, 'utf-8')).pid).toBe(process.pid);
+
+    // 最后一个持有者 B 关闭：此时才允许删除
+    await agentB.release();
+    expect(existsSync(lockPath)).toBe(false);
+  });
+});
+
+describe('LockManager · 异进程存活仍告警（持有计数不得吞掉告警）', () => {
+  /** 每个用例隔离的临时项目根目录 */
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'memora-lm-foreign-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('锁文件属于异 pid 且进程存活时应告警（写入覆盖后仍以本进程身份持有）', async () => {
+    const memoraDir = join(tmpDir, '.memora');
+    mkdirSync(memoraDir, { recursive: true });
+    // 异进程 pid（真实存活与否由下方 process.kill spy 决定）
+    const foreignPid = 4242;
+    writeFileSync(join(memoraDir, '.lock'), makeLockContent(foreignPid), 'utf-8');
+
+    // isProcessAlive 依赖 process.kill(pid, 0)：不抛 = 存活
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    const warnSpy = vi.spyOn(logger, 'warn');
+
+    try {
+      const lm = new LockManager();
+      await lm.acquire(memoraDir);
+
+      // 告警本身是唯一可观测效果：去掉异 pid 分支 / 让计数逻辑短路告警都会使本断言转红
+      expect(warnSpy).toHaveBeenCalledWith(
+        { pid: foreignPid, acquiredAt: expect.any(String), hostname: expect.any(String) },
+        '项目已被其他进程打开（锁文件存在），继续操作可能导致数据冲突',
+      );
+      expect(JSON.parse(readFileSync(join(memoraDir, '.lock'), 'utf-8')).pid).toBe(process.pid);
+
+      // 收尾释放，避免持有计数跨用例残留
+      await lm.release();
+    } finally {
+      warnSpy.mockRestore();
+      killSpy.mockRestore();
+    }
+  });
+});
+
 describe('LockManager · 跨实例与多目录', () => {
   let tmpDir: string;
 

@@ -30,6 +30,45 @@ import { toError } from '@/utils/toError.js';
 import { nowIso } from '@/utils/time.js';
 import { isPlainObject } from '@/utils/objects.js';
 
+// ─── 进程内持有计数 ─────────────────────────────────────
+
+/**
+ * 锁路径 → **本进程内**持有该锁的实例数（跨实例共享，模块级即进程级）
+ *
+ * 为什么需要它：锁文件按**项目路径**唯一，归属判据只看 `pid`；同一进程内多个 Agent
+ * （按会话装配）pid 完全相同，`pid === process.pid` 无法区分「我这一份」与「别人的那一份」 ⇒
+ * 先关闭的实例会满足判据并 unlink，把仍存活的实例的锁一起删掉（跨进程告警随后失效）。
+ * 计数是唯一能区分同 pid 不同持有者的口径。
+ *
+ * 生命周期 = 进程：进程退出即随内存消失（锁文件留给残留锁检测清理），不落盘。
+ */
+const heldLockRefs = new Map<string, number>();
+
+/**
+ * 登记一次持有（acquire 写盘成功后调用）
+ *
+ * @param lockPath 锁文件的绝对路径（同一路径即同一把锁）
+ */
+function retainHeldLock(lockPath: string): void {
+  heldLockRefs.set(lockPath, (heldLockRefs.get(lockPath) ?? 0) + 1);
+}
+
+/**
+ * 注销一次持有并返回剩余持有数（release 调用；无论文件最终是否删除都要记账）
+ *
+ * @param lockPath 锁文件的绝对路径
+ * @returns 剩余持有实例数（0 = 本进程已无实例持有该锁）
+ */
+function releaseHeldLock(lockPath: string): number {
+  const remaining = Math.max(0, (heldLockRefs.get(lockPath) ?? 0) - 1);
+  if (remaining === 0) {
+    heldLockRefs.delete(lockPath);
+  } else {
+    heldLockRefs.set(lockPath, remaining);
+  }
+  return remaining;
+}
+
 // ─── 类型 ────────────────────────────────────────────────
 
 /**
@@ -135,29 +174,44 @@ export class LockManager {
     await mkdir(memoraDir, { recursive: true });
     await writeFile(lockPath, JSON.stringify(lockInfo, null, 2), 'utf-8');
     this.currentLockPath = lockPath;
+    // 写盘成功后登记本进程持有：同进程另一个实例可能有同一路径的持有，计数即「谁还活着」
+    retainHeldLock(lockPath);
   }
 
   /**
-   * 释放锁文件（双重保险——校验 PID 归属后再删除）
+   * 释放锁文件（三重判据：PID 归属 + 进程内持有计数 + 文件存在性）
    *
-   * 读取锁文件校验 PID 仍是本进程，匹配才删除；不匹配（锁已被其他进程覆盖）
-   * 则跳过删除保护他人锁。无论是否删除都重置内部状态（本进程不再持有引用）。
-   * 未持有锁时为 no-op。
+   * 读取锁文件校验 PID 仍是本进程，**且本进程已无其他实例持有该路径**，才删除；
+   * 不匹配（锁已被其他进程覆盖）则跳过删除保护他人锁。无论是否删除都重置内部状态
+   * 并扣减持有计数（本实例不再持有引用）。未持有锁时为 no-op。
    *
    * 设计依据（不可逆操作的双重保险）：
    *   acquire 非阻塞（仅警告），两进程可同时持有「锁文件路径」。
    *   若 release 不校验 PID，进程 A 会 unlink 进程 B 的锁——双重保险缺失。
+   *   同进程多实例（pid 相同）时 PID 判据会失效，须由 `heldLockRefs` 计数补位：
+   *   仅最后一个持有者删除，先关闭的实例只退计数不删文件。
    */
   async release(): Promise<void> {
     if (!this.currentLockPath) return;
     const lockPath = this.currentLockPath;
     // 无论后续校验结果如何，本进程不再持有该路径引用（先重置避免异常时残留）
     this.currentLockPath = null;
+    // 先扣减进程内持有计数：pid 匹配只证明「属于本进程」，不证明「本进程已无人持有」
+    // （同进程多 Agent 共享同一项目锁）⇒ 是否 unlink 必须由计数决定，不由 pid 决定。
+    const remaining = releaseHeldLock(lockPath);
     try {
       const raw = await readFile(lockPath, 'utf-8');
       const parsed: unknown = JSON.parse(raw);
       if (isLockInfo(parsed) && parsed.pid === process.pid) {
-        // PID 匹配——本进程持有的锁，安全删除
+        if (remaining > 0) {
+          // 还有同进程实例持有：锁文件必须保留（否则异进程窗口失去「项目已被打开」告警）
+          logger.debug(
+            { path: lockPath, remaining },
+            '同进程仍有实例持有项目锁，跳过 unlink（保留锁文件）',
+          );
+          return;
+        }
+        // 本进程最后一个持有者——安全删除
         await this.safeUnlink(lockPath);
       } else {
         // PID 不匹配或锁文件结构改变——锁已被其他进程覆盖，不删除他人锁
