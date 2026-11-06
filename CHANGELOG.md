@@ -14,6 +14,11 @@
 
 - **LLM 调用观测新增「本次实际下发的工具名清单」**（`LLM-TOOLSNAPSHOT-1`）：LLM 调用 span 新增属性 `llmToolNames`，取值 = **实际下发载荷** `effectiveOpts.tools`，不取暴露面列表。**纯观测**：只记录、无消费方、不参与判据、不加闸、不改行为、不加 UI；无工具通道时记 `[]`——**空集照记**，与「完全没记录」可区分。**为什么**：暴露面与下发面是两层事实，先落一个只记不判的地基，避免将来拿暴露面冒充下发面（快照真源仍待定，本条不裁决）。**对消费者**：零签名 / 零行为变更；trace 多一个属性。
 
+### Added（内核 · Minor：进程治理共享原语）
+
+- **导出进程树终止原语 `killProcessTree` + 结果类型 `ProcessTreeKillResult`**（`TOOL-ABORT-KILL-1`）：中断 / 硬超时杀树原为内核私有实现，宿主够不着 ⇒ 曾只能自写一份 `taskkill` 逻辑（双轨腐化）。现提为共享原语，宿主经包入口复用**同一份**判据。结果三态：`ok`（仅 `taskkill` 退出码 0 / POSIX `kill(-pid)` 成功才为 `true` = **已确认终止**）、`alreadyExited`（Windows 128 = **根 pid 已不在**，⚠️ **不蕴含树已清空**——根先退出时孙进程可能仍存活且无人收割）、`error`（未确认原因）。**定位 = 宿主进程治理的共享原语、面向内部使用**，**不是**给第三方直接调用的稳定 API：签名与语义随内核进程治理需要调整，不承诺第三方兼容。**SemVer = minor**（纯新增导出，零既有签名变更）。**已知边界**：128 孤儿需 Windows Job Object 才能收回，Node 无原生接口；本轮只做到「不谎报成功」，台账 `TOOL-ABORT-KILL-1` 记残余。
+- **执行面中断信号与结果字段（均为可选）**（`TOOL-ABORT-KILL-1`）：`CodeExecutionOptions.signal`（宿主执行器收到中断后先杀进程树、确认后结算）；`CodeExecutionResult.aborted`（结果由中断产生，与 `timedOut` 分列）；`CodeExecutionResult.terminationError`（终止**未确认**的原因，空 = 已确认；非空时文案须如实写「可能仍有残留进程」）；`ToolContext.signal`（进程内自定义工具只能协作式感知，**无可杀进程**，编排层 1.8s 上限兜底返回 `ABORTED`）。**对消费者**：不传 `signal` / 不读新字段的代码零行为变化。**SemVer = minor**。
+
 ### Changed（内核）
 
 - **运行时策略覆盖只能收紧权限类字段，不能放松**（`READONLY-MODE-1` / ADR-045）：`mergeStrategy` 的 `act` 段此前整段「后写覆盖」⇒ 角色包声明 `act.toolReadonly: 'readonly'` 时，运行时覆盖传 `'full'` 会把只读锁直接去掉。现 `act` 段经单点秩表 `PERMISSION_FIELD_LENIENCE` 裁决：权限类字段（`toolReadonly`：`readonly` 严于 `full`；`toolMode`：`block` 严于 `allow`）**只取更严、不可放松**，覆盖侧非法值按「不生效」处理（不落回 `'full'`）；其余行为字段（temperature / outputLimit / toolStepLimit / providerRouting / multiStepReasoning）仍由覆盖赢。**对消费者**：不传 `strategyOverride` 的代码零行为变化；「覆盖可放松权限」从未是承诺路径，现已关闭。验收判据与变异收据见台账 `READONLY-MODE-1`。

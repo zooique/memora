@@ -877,11 +877,13 @@ export function formatExecutionResult(
   // 中断分支：与超时/失败分列（TOOL-ABORT-KILL-1 判据）
   // - 终止已确认：明说「进程树已终止」，用户看到「已中止」时进程确已死；
   // - 终止未确认：如实告知可能仍有残留（kill 失败不得假装成功）。
+  // 文案纪律：括号不嵌套——termination 自带原因（如 128 的整句说明），故用分号分句，
+  // 禁止 `执行被用户中断（…（可能仍有残留进程））` 这种括号套括号。
   if (result.aborted) {
     const termination = result.terminationError
-      ? `进程树终止未确认：${result.terminationError}（可能仍有残留进程）`
+      ? `进程树终止未确认：${result.terminationError}；可能仍有残留进程`
       : '进程树已终止';
-    return `[${labels.kind}_ABORTED] 执行被用户中断（${termination}）\nstdout: ${result.stdout}\nstderr: ${result.stderr}${truncatedNote}`;
+    return `[${labels.kind}_ABORTED] 执行被用户中断；${termination}\nstdout: ${result.stdout}\nstderr: ${result.stderr}${truncatedNote}`;
   }
   if (result.exitCode !== 0) {
     return `[${labels.kind}_ERROR] ${labels.errorDetail}（退出码: ${result.exitCode}）\nstdout: ${result.stdout}\nstderr: ${result.stderr}${truncatedNote}`;
