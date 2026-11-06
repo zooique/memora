@@ -3927,11 +3927,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 按内核产出的 category 映射友好文案（connection/timeout/unknown），
           // 无 category（普通错误）回退原始 message——语义分类走结构化字段，不做裸前缀/字符串匹配。
           // 映射 SSOT = shared/errorText（见该文件头）。
-          this.post({
-            type: 'error',
-            message: friendlyErrorMessage(chunk.category, chunk.message),
-            category: chunk.category,
-          });
+          const friendly = friendlyErrorMessage(chunk.category, chunk.message);
+          this.post({ type: 'error', message: friendly, category: chunk.category });
+          // 后台流（用户已切到其他会话）时 post 被流归属闸整批丢弃 ⇒ 这条明确失败永远看不到；
+          // 明确失败必须到达用户：后台时改走既有全局通知（零新增协议，切回前也能看到）。
+          if (this.isBackgroundFlow()) void vscode.window.showWarningMessage(friendly);
           // 重放可见性：error 必须落 processEvents（不能只 post）——只 post 则实时有提示条，
           // 回看历史只剩 generic「对话已中断」，失败原因永久丢失。
           // 落盘存**原始 message + category**（非友好文案）——与 `aborted` 存 reason + stopReason
