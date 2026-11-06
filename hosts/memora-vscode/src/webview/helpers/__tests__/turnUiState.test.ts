@@ -313,6 +313,19 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     expect(spec.send.disabled).toBe(false);
   });
 
+  it('已收场 + 非暂停 + 无待答提问（投影 settled）→ 不给 play 键（pause === null）', () => {
+    // 场景真源：切到分叉会话后 status 非 paused、pendingQuestions 为空、末轮已收场
+    // ⇒ deriveTurnState 三条件都收敛到 settled 分支（此处以 settled 快照代表该投影结果）。
+    // 变异锚：settled 分支被改成渲染续跑键，或 deriveSessionUiState 把 settled 映射成 paused ⇒ 本例红。
+    const projected = skeletonFromTurnState({
+      phase: 'settled',
+      roundId: 'r5',
+      status: 'complete',
+    });
+    const spec = deriveButtonSemantics({ state: projected, hasInput: false });
+    expect(spec.pause).toBeNull();
+  });
+
   it('不变量：disabled 只可能出现在 done + 空输入（其余格恒可用）', () => {
     const states: SkeletonState[] = [
       { phase: 'idle' },
