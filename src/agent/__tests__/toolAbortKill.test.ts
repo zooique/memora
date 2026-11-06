@@ -42,11 +42,27 @@ function writeSleeperScript(dir: string, name: string, markerPath: string): stri
   return scriptPath;
 }
 
-/** 定时 abort 的控制器（返回 controller + 已安排的中断计时器） */
-function makeTimedAbort(): { controller: AbortController; timer: NodeJS.Timeout } {
+/**
+ * 定时 abort 的控制器（返回 controller + 已安排的中断计时器 + 实际中断时刻读取器）
+ *
+ * 计时口径：判据「中断后 ≤2s 返回」的时钟起点必须是**实际 abort 时刻**。
+ * 原写法用 `startedAt + ABORT_AFTER_MS` 假定定时器准点——全量负载下实测晚 50–80ms，
+ * 曾把 3.06s 判红（被计的是定时器迟到，不是中断处理变慢）。这不是放宽预算：
+ * 2s 仍从**真正的中断时点**起算，预算本身一分未加。
+ */
+function makeTimedAbort(): {
+  controller: AbortController;
+  timer: NodeJS.Timeout;
+  getAbortedAt: () => number;
+} {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ABORT_AFTER_MS);
-  return { controller, timer };
+  /** 实际触发 abort 的时刻（performance.now；0 = 未触发） */
+  let abortedAt = 0;
+  const timer = setTimeout(() => {
+    abortedAt = performance.now();
+    controller.abort();
+  }, ABORT_AFTER_MS);
+  return { controller, timer, getAbortedAt: () => abortedAt };
 }
 
 /** 等到「脚本本该写标记」之后再检查（不残留 = 文件不存在） */
@@ -80,7 +96,7 @@ describe('TOOL-ABORT-KILL-1：五个执行面的中断不残留机判', () => {
   it('面 1/5 run_command：中断后 ≤2s 返回且子进程不残留', { timeout: 20_000 }, async () => {
     const marker = join(tmpProject, 'cmd-marker.txt');
     const sleeper = writeSleeperScript(tmpProject, 'cmd-sleeper.js', marker);
-    const { controller, timer } = makeTimedAbort();
+    const { controller, timer, getAbortedAt } = makeTimedAbort();
     const startedAt = performance.now();
     const result = await executor.execute(
       'run_command',
@@ -91,17 +107,17 @@ describe('TOOL-ABORT-KILL-1：五个执行面的中断不残留机判', () => {
       controller.signal,
     );
     clearTimeout(timer);
-    const elapsed = performance.now() - startedAt;
+    const elapsed = performance.now() - getAbortedAt();
     expect(result).toContain('COMMAND_ABORTED');
-    // 返回时点 ≤ 中断时点 + 2s
-    expect(elapsed).toBeLessThanOrEqual(ABORT_AFTER_MS + RETURN_BUDGET_MS);
+    // 返回时点 ≤ 实际中断时点 + 2s（预算未动，只把时钟起点校准到真实 abort 时刻）
+    expect(elapsed).toBeLessThanOrEqual(RETURN_BUDGET_MS);
     await assertNoResidue(marker, startedAt);
   });
 
   it('面 2/5 run_project_script：中断后 ≤2s 返回且子进程不残留', { timeout: 20_000 }, async () => {
     const marker = join(tmpProject, 'project-marker.txt');
     writeSleeperScript(tmpProject, 'project-sleeper.js', marker);
-    const { controller, timer } = makeTimedAbort();
+    const { controller, timer, getAbortedAt } = makeTimedAbort();
     const startedAt = performance.now();
     const result = await executor.execute(
       'run_project_script',
@@ -112,9 +128,9 @@ describe('TOOL-ABORT-KILL-1：五个执行面的中断不残留机判', () => {
       controller.signal,
     );
     clearTimeout(timer);
-    const elapsed = performance.now() - startedAt;
+    const elapsed = performance.now() - getAbortedAt();
     expect(result).toContain('SCRIPT_ABORTED');
-    expect(elapsed).toBeLessThanOrEqual(ABORT_AFTER_MS + RETURN_BUDGET_MS);
+    expect(elapsed).toBeLessThanOrEqual(RETURN_BUDGET_MS);
     await assertNoResidue(marker, startedAt);
   });
 
@@ -124,7 +140,7 @@ describe('TOOL-ABORT-KILL-1：五个执行面的中断不残留机判', () => {
     // 注入装配层同款回调：第 4 参 signal 必须被透传给内核 runSkillScript
     executor.runSkillScript = async (_skillName, _scriptPath, args, signal) =>
       runSkillScript(sleeper, 'node', args, 60_000, tmpProject, undefined, signal);
-    const { controller, timer } = makeTimedAbort();
+    const { controller, timer, getAbortedAt } = makeTimedAbort();
     const startedAt = performance.now();
     const result = await executor.execute(
       'run_skill_script',
@@ -135,9 +151,9 @@ describe('TOOL-ABORT-KILL-1：五个执行面的中断不残留机判', () => {
       controller.signal,
     );
     clearTimeout(timer);
-    const elapsed = performance.now() - startedAt;
+    const elapsed = performance.now() - getAbortedAt();
     expect(result).toContain('SCRIPT_ABORTED');
-    expect(elapsed).toBeLessThanOrEqual(ABORT_AFTER_MS + RETURN_BUDGET_MS);
+    expect(elapsed).toBeLessThanOrEqual(RETURN_BUDGET_MS);
     await assertNoResidue(marker, startedAt);
   });
 
