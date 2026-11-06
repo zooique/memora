@@ -13,7 +13,7 @@
 
 import { createIcon } from './icons.js';
 import { CAPABILITY_STATE_TEXT } from '../helpers/capabilityLabels.js';
-import type { CapabilityStateDto } from '../../shared/protocol.js';
+import type { CapabilityStateDto, RoleStrategyIndicatorDto } from '../../shared/protocol.js';
 
 /** 徽章行依赖：文档对象 + 两个徽章节点引用（节点身份由 chatView 持有，此处只读用） */
 export interface RoleBadgeViewDeps {
@@ -29,8 +29,17 @@ export interface RoleBadgeViewDeps {
 export interface RoleBadgeView {
   /** 构造 team-meeting 图标按钮并挂到 roleBadge 同行容器（调用方负责单例引用） */
   createTeamMeetingIcon(): HTMLElement;
-  /** 更新工具权限徽章（block → 「纯 LLM」；allow 按三态 → 全部工具 / 仅基础工具 / 能力列表） */
-  updateCapabilityBadge(toolMode: 'allow' | 'block', capabilityState: CapabilityStateDto): void;
+  /**
+   * 更新工具权限徽章（block → 「纯 LLM」；allow 按三态 → 全部工具 / 仅基础工具 / 能力列表）
+   *
+   * @param strategyHint 内核策略投影（只读模式等）。本视图**只做投影**，判定仍在
+   *   内核 `toolReadonly` 一处；传 undefined 时输出与旧版逐字相同。
+   */
+  updateCapabilityBadge(
+    toolMode: 'allow' | 'block',
+    capabilityState: CapabilityStateDto,
+    strategyHint?: RoleStrategyIndicatorDto,
+  ): void;
 }
 
 export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
@@ -79,12 +88,14 @@ export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
    * - allow + `all`（未声明）→ 显示「全部工具」
    * - allow + `residentOnly`（显式空）→ 显示「仅基础工具」（标题说明联网 / 代码执行已关）
    * - allow + `list`（白名单）→ 显示能力列表（如「文件」「联网」「记忆」）
+   * - 任一 allow 三态 + `toolReadonly='readonly'` → 在既有文案后附加只读提示（不改三态语义）
    * 无隐藏分支：「无数据」态即骨架初始 hidden（未收到 capability_badge 前不亮），
    * 本函数只负责点亮与更新，不回置隐藏。
    */
   function updateCapabilityBadge(
     toolMode: 'allow' | 'block',
     capabilityState: CapabilityStateDto,
+    strategyHint?: RoleStrategyIndicatorDto,
   ): void {
     if (!capabilityBadge) return;
     if (toolMode === 'block') {
@@ -93,22 +104,30 @@ export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
       capabilityBadge.title = '纯 LLM 模式（无工具暴露）';
       return;
     }
+    /** 只读提示文案：照内核事实陈述（`toolReadonly='readonly'` 时写类工具会被拒绝），不写承诺 */
+    const READONLY_LABEL = '只读模式（写类工具会被拒绝）';
+    /** 三态先定文案（本段不读 strategyHint，保证三态语义不被只读项干扰） */
+    let label: string;
+    let title: string;
     if (capabilityState.kind === 'all') {
-      capabilityBadge.hidden = false;
-      capabilityBadge.textContent = CAPABILITY_STATE_TEXT.all.label;
-      capabilityBadge.title = CAPABILITY_STATE_TEXT.all.title;
-      return;
+      label = CAPABILITY_STATE_TEXT.all.label;
+      title = CAPABILITY_STATE_TEXT.all.title;
+    } else if (capabilityState.kind === 'residentOnly') {
+      label = CAPABILITY_STATE_TEXT.residentOnly.label;
+      title = CAPABILITY_STATE_TEXT.residentOnly.title;
+    } else {
+      const labels = [...new Set(capabilityState.capabilities.map((c) => c.label))];
+      label = labels.join(' · ');
+      title = `允许：${labels.join('、')}`;
     }
-    if (capabilityState.kind === 'residentOnly') {
-      capabilityBadge.hidden = false;
-      capabilityBadge.textContent = CAPABILITY_STATE_TEXT.residentOnly.label;
-      capabilityBadge.title = CAPABILITY_STATE_TEXT.residentOnly.title;
-      return;
+    // 只读是附加投影：三态文案与悬浮说明各追加一句，不替换、不重判
+    if (strategyHint?.toolReadonly === 'readonly') {
+      label = `${label} · ${READONLY_LABEL}`;
+      title = `${title}；${READONLY_LABEL}`;
     }
-    const labels = [...new Set(capabilityState.capabilities.map((c) => c.label))];
     capabilityBadge.hidden = false;
-    capabilityBadge.textContent = labels.join(' · ');
-    capabilityBadge.title = `允许：${labels.join('、')}`;
+    capabilityBadge.textContent = label;
+    capabilityBadge.title = title;
   }
 
   return { createTeamMeetingIcon, updateCapabilityBadge };

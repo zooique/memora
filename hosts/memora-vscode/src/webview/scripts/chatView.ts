@@ -3371,8 +3371,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         streamingActive = false;
       }
     } else if (msg.type === 'capability_badge') {
-      // 角色能力徽章 → 更新工具权限展示
-      roleBadgeView.updateCapabilityBadge(msg.toolMode, msg.capabilityState);
+      // 角色能力徽章 → 更新工具权限展示（第三个参数 = 内核策略投影，只读模式不再被丢弃）
+      roleBadgeView.updateCapabilityBadge(msg.toolMode, msg.capabilityState, msg.strategyHint);
     } else if (msg.type === 'metrics') {
       // 活动指标（透明面板 + 指纹可见）：每轮结束后刷新详情折叠区
       activityDrawerView.renderMetrics(msg);
