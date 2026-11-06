@@ -1064,7 +1064,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 生命周期 | `init()` / `close()` |
 | 对话 | `chat(input, signal?, attachments?)` / `chatSync(input, signal?)` / `resumeExecution()` |
 | 事件 | `on()` / `off()` / `once()`（继承自 TypedEventEmitter） |
-| 暂停/继续 | `pause(reason, source?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content)` / `removePendingInterject(index)` / `clearPendingInterjections()` / `getPendingInterjections()` / `discardCurrentCheckpoint()` |
+| 暂停/继续 | `pause(reason, source?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content): Promise<'queued' \| 'queued-unpersisted' \| 'rejected-limit'>` / `removePendingInterject(index)` / `clearPendingInterjections()` / `getPendingInterjections()` / `discardCurrentCheckpoint()` |
 | 会话 | `forkSession(targetSession?)` / `createCheckpoint()` / `getCheckpoint()` |
 | Provider | `setProvider(provider)` / `setBackgroundProvider(provider)` |
 | 归档模式 | `setArchiveMode(mode)` / `getArchiveMode()` |
@@ -1262,6 +1262,10 @@ export type {
   AgentContext,
 } from '@zooique/memora';
 export { type AgentForkResult } from '@zooique/memora';
+// 插话受理三态（`Agent.interject` 的返回类型）：
+// `queued` 已入队且已落盘 / `queued-unpersisted` 已生效但历史未写入 / `rejected-limit` 达上限未送出。
+// 🔴 三态不可折叠成单个布尔值：折叠会让宿主把「已生效」误读为「未生效」而诱导用户重发 ⇒ 同一条插话双执行。
+export type { InterjectOutcome } from '@zooique/memora';
 export type { SessionCheckpoint } from '@zooique/memora';
 
 // 记忆快照与搜索（MemoryInspector）

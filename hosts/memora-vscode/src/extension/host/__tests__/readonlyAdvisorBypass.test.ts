@@ -37,7 +37,6 @@ interface StubCall {
  */
 class ExecAttemptProvider {
   readonly name = 'readonly-bypass-stub';
-  readonly supportsStructuredOutput = false;
 
   /** 本 provider 在首个工具轮要发起的执行面调用 */
   constructor(private readonly calls: StubCall[]) {}

@@ -717,14 +717,13 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'imageResolver',
       'model',
       'provider',
-      'supportsStructuredOutput',
       'supportsToolCalling',
       'supportsVision',
     ],
   },
   LlmProvider: {
     kind: 'class',
-    members: ['chat', 'name', 'supportsStructuredOutput', 'supportsToolCalling', 'supportsVision'],
+    members: ['chat', 'name', 'supportsToolCalling', 'supportsVision'],
   },
   ImageRef: {
     kind: 'interface',

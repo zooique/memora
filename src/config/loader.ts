@@ -317,12 +317,10 @@ function parseProviders(value: unknown): Record<string, ProviderEntryConfig> | u
       apiKey: typeof p.apiKey === 'string' && p.apiKey ? p.apiKey : undefined,
       temperature: p.temperature !== undefined ? validateTemperature(p.temperature, 0) : undefined,
       contextWindow: validateContextWindow(p.contextWindow),
-      // 能力位（互斥双能力位）：三态保真透传——显式 true/false 如实保留，
-      // 仅未配置（undefined）才由下游 Provider 内回落默认（toolCalling 默认 true、structured 默认 false）。
+      // 能力位：三态保真透传——显式 true/false 如实保留，
+      // 仅未配置（undefined）才由下游 Provider 内回落默认（toolCalling 默认 true）。
       supportsToolCalling:
         typeof p.supportsToolCalling === 'boolean' ? p.supportsToolCalling : undefined,
-      supportsStructuredOutput:
-        typeof p.supportsStructuredOutput === 'boolean' ? p.supportsStructuredOutput : undefined,
     };
   }
 

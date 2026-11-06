@@ -2,7 +2,6 @@
  * LLM Provider 抽象类测试
  *
  * 覆盖范围：
- *   - supportsStructuredOutput 默认值 false
  *   - abstract chat() 方法编译期约束（子类必须实现）
  *   - name 抽象属性编译期约束
  *   - Message / ChatOptions 类型契约（可选字段组合）
@@ -25,28 +24,6 @@ class TestProvider extends LlmProvider {
     yield { content: 'ok', finishReason: 'stop' };
   }
 }
-
-// ─── supportsStructuredOutput 默认值 ──────────────────────
-
-describe('LlmProvider · supportsStructuredOutput 默认值', () => {
-  it('未覆盖时默认为 false', () => {
-    const provider = new TestProvider();
-    expect(provider.supportsStructuredOutput).toBe(false);
-  });
-
-  it('子类可覆盖为 true', () => {
-    // 验证 supportsStructuredOutput 是可覆盖的实例属性
-    class StructuredProvider extends LlmProvider {
-      readonly name = 'structured';
-      readonly supportsStructuredOutput = true;
-      async *chat(): AsyncIterable<LlmChunk> {
-        yield { content: 'ok' };
-      }
-    }
-    const provider = new StructuredProvider();
-    expect(provider.supportsStructuredOutput).toBe(true);
-  });
-});
 
 // ─── supportsToolCalling 能力位 ──
 

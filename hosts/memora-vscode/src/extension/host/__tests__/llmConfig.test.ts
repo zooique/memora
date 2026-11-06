@@ -3,9 +3,9 @@
  *
  * 覆盖缺口：`createProvider` 的 **store 分支**（配置面板激活的 Provider）零既有覆盖——
  * 既有 hostIntegration 只测环境变量回退分支（store 恒传 undefined）。
- * 该分支是能力位（supportsToolCalling / supportsStructuredOutput）进入内核的**唯一通路**，
+ * 该分支是能力位（supportsToolCalling）进入内核的**唯一通路**，
  * 而能力位错一位的后果是工具调用整链失效（无原生 FC 的模型静默失败即此面），故以测试锁死
- * 「原样透传」与「缺省方向不对称（toolCalling→true / structured→false）」两件事实。
+ * 「原样透传」与「缺省工具调用能力」两件事实。
  *
  * 不引入真实 VS Code 运行时：vi.mock 提供内存版 workspace.getConfiguration + SecretStorage
  * （与 providerStore 的测试同构）。
@@ -53,7 +53,6 @@ const LOCAL_PROVIDER = {
   model: 'qwen2.5',
   baseUrl: 'http://localhost:11434/v1',
   supportsToolCalling: false,
-  supportsStructuredOutput: true,
 };
 
 /** 云 Provider 形态：不落能力位 → 走内核缺省方向 */
@@ -83,19 +82,17 @@ describe('llmConfig · Provider 构建（能力位唯一通路）', () => {
     const provider = await createProvider(store, {});
 
     expect(provider.supportsToolCalling).toBe(false);
-    expect(provider.supportsStructuredOutput).toBe(true);
   });
 
-  it('store 分支：未声明能力位 → 按各自方向回落（toolCalling=true / structured=false）', async () => {
+  it('store 分支：未声明能力位 → 回落工具调用能力 true', async () => {
     h.store['providers'] = [{ ...CLOUD_PROVIDER }];
     h.store['activeProvider'] = 'cloud';
     secretsStore['memora.provider.cloud.apiKey'] = 'sk-cloud-test';
 
     const provider = await createProvider(store, {});
 
-    // 方向不对称：既非「默认都开」也非「默认都关」
+    // 缺省方向：工具调用能力默认开启（保留存量云 LLM 行为）
     expect(provider.supportsToolCalling).toBe(true);
-    expect(provider.supportsStructuredOutput).toBe(false);
   });
 
   it('优先级：有激活 Provider 时不再落环境变量分支（env 残缺也不报错）', async () => {
@@ -107,14 +104,13 @@ describe('llmConfig · Provider 构建（能力位唯一通路）', () => {
     await expect(createProvider(store, {})).resolves.toBeDefined();
   });
 
-  it('无激活 Provider → 落环境变量分支并继承同一套缺省方向', async () => {
+  it('无激活 Provider → 落环境变量分支并继承同一套缺省能力位', async () => {
     const provider = await createProvider(store, {
       MEMORA_BASE_URL: 'https://api.example.com/v1',
       MEMORA_MODEL: 'deepseek-chat',
     });
 
     expect(provider.supportsToolCalling).toBe(true);
-    expect(provider.supportsStructuredOutput).toBe(false);
   });
 
   it('createBackgroundProvider：配置了后台通道 → 能力位同样原样透传', async () => {
@@ -126,7 +122,6 @@ describe('llmConfig · Provider 构建（能力位唯一通路）', () => {
     const provider = await createBackgroundProvider(store);
 
     expect(provider?.supportsToolCalling).toBe(false);
-    expect(provider?.supportsStructuredOutput).toBe(true);
   });
 
   it('createBackgroundProvider：未配置后台通道 → undefined（内核回退前台 Provider）', async () => {

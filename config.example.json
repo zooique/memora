@@ -8,8 +8,7 @@
         "baseUrl": "https://api.xiaomimimo.com/v1",
         "temperature": 0.7,
         "contextWindow": 128000,
-        "supportsToolCalling": true,
-        "supportsStructuredOutput": false
+        "supportsToolCalling": true
       },
       "openai": {
         "provider": "openai",
@@ -18,8 +17,7 @@
         "baseUrl": "https://api.openai.com/v1",
         "temperature": 0.7,
         "contextWindow": 128000,
-        "supportsToolCalling": true,
-        "supportsStructuredOutput": true
+        "supportsToolCalling": true
       }
     },
     "active": "mimimo"

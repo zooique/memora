@@ -74,8 +74,6 @@ const SESSION_D = '2026-11-05-e3d';
 class EchoProvider {
   /** Provider 名（日志/标题生成可见） */
   readonly name: string;
-  /** 结构化输出能力声明（本用例不依赖） */
-  readonly supportsStructuredOutput = false;
 
   /**
    * @param name Provider 名（用于区分两个实例的输出）

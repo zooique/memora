@@ -26,7 +26,6 @@ import { WorkspaceStorage } from '../../workspaceStorage.js';
  */
 class HangingProvider {
   readonly name = 'hanging';
-  readonly supportsStructuredOutput = false;
   // eslint-disable-next-line require-yield
   async *chat(): AsyncIterable<LlmChunk> {
     yield { content: '第一段叙述' };
@@ -45,7 +44,6 @@ class HangingProvider {
  */
 class AskProvider {
   readonly name = 'ask';
-  readonly supportsStructuredOutput = false;
   // eslint-disable-next-line require-yield
   async *chat(): AsyncIterable<LlmChunk> {
     yield {

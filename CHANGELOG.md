@@ -31,12 +31,16 @@
 ### Fixed（内核）
 
 - **`roundId` 毫秒撞车会覆盖已完成轮**（`ROUND-ID-COLLIDE-1` · `a06d46e3`）：`allocRoundId` 原为 `round-${Date.now()}`，同一毫秒内再次建轮会与已有轮撞 ID，`appendUser` 的「创建语义」随即把已完成轮**整体替换成 pending**，正文不可恢复。现改接既有 `generateRoundId()`（保留 `round-` 前缀）；轮序真源仍是会话 `roundIds`、时间序按 `createdAt`，全库无 ID 格式依赖。**对消费者**：轮 ID 形态变化（仍以 `round-` 开头），不承诺旧形态可解析。
+- **删除生产零调用的内部导出 `completeRound`**（`COMPLETE-ROUND-DEADAPI-1`）：真实收尾唯一路径是 `MessageHistory.appendAssistant`（写 AI 消息 + 置 complete + 清 pendingAsk 同一次 save）；`completeRound` 只被 7 个存储 / 视图 / GC 测试当作「造完成态现场」的夹具。**该函数未在包入口 `src/index.ts` 导出 ⇒ 不属公开面**，删除不构成 breaking；测试夹具迁为 `memory/__tests__/helpers/roundFixture.ts` 的 `completeRoundFixture`。**对消费者**：零影响。
+- **`MessageHistory.appendUser` 缺轮时返回 `'round-missing'`**（`INTERJECT-PERSIST-1` / `FAKE-ROUND-TIMEOUT-1` 共用判定点 · 内部语义变更）：交互 / 补充两类输入在目标轮缺失时不再降级建轮或静默 warn，而是 **fail-closed 返回 `'round-missing'`**（不建轮、不落盘）。`MessageHistory` **不在包入口导出**，故不进 Breaking；但它让调用方能区分「已生效但历史未写入」，是 `Agent.interject` 三态与「续跑中止提示」的唯一判据来源。**对消费者**：零公开面变化。
 - **历史只读的内核侧写入守卫**（`ROUND-HISTORY-READONLY-1` 内核侧）：`appendUser` 非交互分支同 ID 轮已存在即**拒绝整体替换**（只记日志、不落盘），不再用「创建语义」抹掉已收场轮的正文与过程事件；`appendAssistant` 轮不存在时 **fail-closed**（不造轮、不登记），删除原先写死 `<历史消息>` 的假原文兜底——没有真实 user 原文时凭空造轮等于编造用户从未发过的历史。**对消费者**：自实现 `IRoundStore` 者接口不变；上述两条异常路径从「静默覆盖 / 造假」变为「拒绝并留日志」。
 
 ### Breaking（内核 · 6.0.0 废弃清账）
 
 - **`OPAQUE_WRITE_TOOL_NAMES` 不再导出**（`DEPRECATE-1`）：该常量只是「内置写工具中目标不可静态定位者」的静态索引，事实载体已长期是工具定义行的 `diskWrite: 'opaque'` 声明（`tool_start` 事件原样上报），宿主与内核生产均零消费。**删除的是公开面那一行**（导出 / 手册镜像 / 守卫快照），常量保留内核内部，内部契约钉测试零改动。**迁移**：需要「目标不可静态定位」这一事实请读 `ToolDefinition.diskWrite`，不要依赖该名单。
 - **`ToolExecutor.builtinDefinitions` 已删除**（`DEPRECATE-1`）：5.5.0 更名 `allToolDefinitions` 后保留的转发 getter，逐行等价同一 getter、全仓零调用。**迁移**：一律改读 `allToolDefinitions`（或直接读 `ToolDefinition` 声明），行为零差异。
+- **`LlmProvider.supportsStructuredOutput` 能力位整链删除**（`STRUCT-OUTPUT-DEADAPI-1`）：该位在 T1-TOOL-SELECTION-1（2026-11-07）删除 `response_format` 回落分支后**已无任何行为消费**——内核不据它选通道，宿主设置页也从未暴露它；继续保留只会让配置里的 `supportsStructuredOutput: true` 被读成「存在 JSON mode 工具通道」（实际不存在）。现删净：`LlmProvider` 成员、`OpenAICompatibleConfig` / `ProviderConfig` / `ProviderEntryConfig` 字段、工厂与后台装饰器的透传 / 镜像、`config.example.json` 示例键（宿主 DTO / 存储 / 装配同步移除）。**迁移**：从配置里删掉该键即可。**旧配置残留该键不报错、不刷警告，被静默忽略**（加载器只挑已知键）。**不保留「字段在、永远 undefined」的中间态**：公共面守卫基线已同步为两能力位。
+- **`Agent.interject()` 返回值由 `boolean` 改为 `Promise<InterjectOutcome>`**（`INTERJECT-PERSIST-1` · 公开面源级破坏）：`Agent` 在包入口可达，故此变化破坏第三方调用点。三态 `'queued' | 'queued-unpersisted' | 'rejected-limit'` **不可折叠**：`queued-unpersisted` = 插话已在 loop 队列生效、但本轮历史已不存在（执行不依赖落盘）；若按 `true` 处理让用户重发，同一条会被注入两次（**双执行**）。**迁移**：`await agent.interject(x)` 后按三态分支；旧写法 `if (agent.interject(x)) {…}` 会拿到恒真 Promise（未 await ⇒ 永远为真），是最危险的静默误用。本仓调用点只有宿主 `chatPanel.ts`（已同代适配）与内核测试。
 - **`AgentOptions.noOverwriteRoots` 装配期配置键已删除**（`DEPRECATE-1`）：**能力未撤**——「禁止覆盖根」判据（`SecurityGuard.assertNotOverwrite`）与 `agent.security.setNoOverwriteRoots(paths)` 均保留，入口从「Agent 构造期」改为「运行期热更新」。**为什么**：该键在本仓宿主装配期传入的用户资产目录已不在 `allowedPaths`，目标文件先被白名单拒绝、判据生产不可达；继续保留键只会让调用方误以为装配期配置生效。**迁移**：在 `new Agent(...)` 之后调用 `agent.security.setNoOverwriteRoots([...])`；不调用即不启用（行为与原默认值 `[]` 一致）。
 
 ## [5.5.0] · 2026-11-03
@@ -74,6 +78,10 @@
 - **会话活跃度：列表状态标识 + 入口角标**（`BG-SESS-RUN-1` 批 4）：新增协议消息 `session_activity`（全量快照 `runningIds` / `pendingIds` / `badgeCount`），入口角标显示**待处理会话数**（一个会话里 3 个问题仍计 1——唯一动作是「切到该会话」）；会话列表项同源显示「运行中 / 待处理」。视图关闭重开**不丢运行态**（运行态归面板而非视图），后台会话的提问 / 确认同样点亮角标。**对消费者**：新增一条宿主→webview 消息类型，协议只增不改。
 - **只读项目顾问角色包**（`READONLY-RUNTIME-1` 前置样本）：内置 `role-packs/readonly-advisor`，显示名「只读项目顾问」，能力面只给联网与读取类工具；写入类工具在只读闸下被拒，聊天面徽章同时标明只读（见 Changed 区）。
 - **存储升级（本版定位之一）**：① 会话清单拆为 `sessions/<id>.json`（一会话一文件：元数据 + `roundIds`），全局信息随 `_global.json` 取消落到会话自有文件；② 引用真源移出轮次文件——`round-<id>.json` 写完即冻结，`refCount` 只作存在性标记、不参与判定、不再回写轮次文件；③ 每会话一把跨进程写锁（Windows 命名管道 / Unix socket，进程退出由 OS 回收），同一会话第二写者**直接拒绝并提示「已在别处运行」**，不等待；④ 启动时按盘上轮文件校正派生索引（「轮文件已写、索引未写」的崩溃窗口不再让轮次永久隐形，`.trash` 已删轮不复活）。**用户可见**：两个窗口开同一项目可分别跑不同会话；强退 / 崩溃后轮次不丢、已删轮不复活。
+
+### Breaking（宿主 · 6.0.0）
+
+- **provider 配置项 `supportsStructuredOutput` 已删除**（`STRUCT-OUTPUT-DEADAPI-1`）：该能力位**从未影响行为**（设置页无入口、内核无消费），现从协议 `LlmProviderDto`、`providerStore` 存档读回、`llmConfig` 装配与官方 `config.example.json` 示例中一并移除。**旧 provider 存档 / 旧配置文件里残留该键不报错、不刷警告，被静默忽略**；无需迁移动作。
 
 ### Changed（宿主）
 

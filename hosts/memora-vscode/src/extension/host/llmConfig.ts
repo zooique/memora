@@ -35,12 +35,11 @@ export async function createProvider(
         model: active.model,
         apiKey: active.apiKey,
         provider: active.provider,
-        // 能力位透传（互斥双能力位）：未声明（undefined）交内核回落，**两键方向不同**——
-        // supportsToolCalling → true（缺省保留工具调用能力）；supportsStructuredOutput → false（缺省不发 response_format）。
-        // 勿读成「默认都开」；内核 SSOT = openaiCompatible 构造器的 `?? true` / `?? false`。
+        // 能力位透传：未声明（undefined）交内核回落——
+        // supportsToolCalling → true（缺省保留工具调用能力）。勿读成「默认都开」；
+        // 内核 SSOT = openaiCompatible 构造器的 `?? true`。
         supportsToolCalling: active.supportsToolCalling,
-        supportsStructuredOutput: active.supportsStructuredOutput,
-        // 视觉能力位：与上面两位同构透传（未填 → 内核回落 false）。
+        // 视觉能力位：与上面的能力位同构透传（未填 → 内核回落 false）。
         // 注入面分工（勿混）：能力位是**用户声明**（进 DTO、可持久化）；
         // 图片解析器是**运行时回调**（函数、不可持久化），由下方的 resolver 参数单独传入，
         // 不进 DTO——两者都汇集到同一个 createProviderFromConfig 入参。
@@ -65,7 +64,7 @@ export async function createProvider(
 
   // 复用内核工厂：内核校验 baseUrl/model 并创建 OpenAICompatibleProvider
   //
-  // 本分支**不落任何能力声明**（与既有 supportsToolCalling / supportsStructuredOutput 同处理）：
+  // 本分支**不落任何能力声明**（与既有 supportsToolCalling 同处理）：
   // 环境变量是 CI / 本地兜底通道，没有「用户勾选」这一能力位来源，一律交内核回落。
   // 同理不注入 imageResolver——视觉能力位在此必为 false，一级门禁会先拦住图片，
   // 传了解析器也永远不会被调用；与其留一条死接线误导后来者，不如不接。
@@ -101,7 +100,6 @@ export async function createBackgroundProvider(
     provider: background.provider,
     // 能力位透传：后台通道与前台同构
     supportsToolCalling: background.supportsToolCalling,
-    supportsStructuredOutput: background.supportsStructuredOutput,
     //
     // ⚠️ 此处**刻意不传 supportsVision**（与上面两位处理不同，勿误补）：
     // 后台通道（轮次摘要 / 会话归档 / 文本润色）的消息由各处自行拼装，

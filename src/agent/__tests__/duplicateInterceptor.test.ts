@@ -256,7 +256,6 @@ function mockMultiTurnProvider(responses: Message[][]): AgentLoopOptions['provid
   let callIndex = 0;
   return {
     name: 'mock',
-    supportsStructuredOutput: true,
     async *chat(_messages: Message[], opts?: { model?: string }) {
       const roundIndex = callIndex % responses.length;
       callIndex++;

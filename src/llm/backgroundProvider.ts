@@ -70,13 +70,9 @@ class EscalatingProvider extends LlmProvider {
 
     // 能力位镜像 primary：装饰器只增加「失败升级」这一条行为，**不得改变能力语义**
     // （否则调用方按能力位做的判据会与实际执行面不符 = 谎报）。
-    // 基类把三者声明为 own property（构造期赋值），prototype 上的 getter 会被它遮蔽，
+    // 基类把两者声明为 own property（构造期赋值），prototype 上的 getter 会被它遮蔽，
     // 故此处用 defineProperty 直接覆写同名的 own property。
-    for (const key of [
-      'supportsToolCalling',
-      'supportsStructuredOutput',
-      'supportsVision',
-    ] as const) {
+    for (const key of ['supportsToolCalling', 'supportsVision'] as const) {
       Object.defineProperty(this, key, {
         value: primary[key],
         enumerable: true,

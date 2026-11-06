@@ -482,10 +482,8 @@ export class ProviderStore {
         model: config.model.trim(),
         apiKey: config.apiKey.trim(),
         provider: config.provider,
-        // 能力位透传（互斥双能力位）：未声明由内核按**各自方向**回落——
-        // supportsToolCalling → true；supportsStructuredOutput → false（勿读成「默认都开」）。
+        // 能力位透传：未声明由内核回落——supportsToolCalling → true（勿读成「默认都开」）。
         supportsToolCalling: config.supportsToolCalling,
-        supportsStructuredOutput: config.supportsStructuredOutput,
         //
         // ⚠️ 此处刻意不透传 supportsVision：test() 只做连通性探测（ping 一次「通不通」），
         // 不解析 capabilities 响应，也拿不到任何「该模型是否真支持视觉」的证据。

@@ -92,9 +92,9 @@ describe('能力位透传守卫 · 抽取面自检（防守卫失明）', () => 
     expect(CAPABILITY_FIELDS.length).toBeGreaterThan(0);
   });
 
-  it('清单含三个已知能力位（确认抽取命中的是 DTO 字段而非别处同名 token）', () => {
+  it('清单含两个已知能力位（确认抽取命中的是 DTO 字段而非别处同名 token）', () => {
     expect(CAPABILITY_FIELDS).toEqual(
-      expect.arrayContaining(['supportsToolCalling', 'supportsStructuredOutput', 'supportsVision']),
+      expect.arrayContaining(['supportsToolCalling', 'supportsVision']),
     );
   });
 });
@@ -175,12 +175,11 @@ describe('能力位透传守卫 · 通道布局（前台 / 后台）', () => {
     secretsStore['memora.provider.cap.apiKey'] = 'sk-cap-test';
   }
 
-  it('通用能力位：前台开启的（工具调用 / 结构化输出）后台同样生效', async () => {
+  it('通用能力位：前台开启的工具调用后台同样生效', async () => {
     seedAllTrue();
     const background = await createBackgroundProvider(store);
     const asRecord = background as unknown as Record<string, unknown>;
     expect(asRecord.supportsToolCalling).toBe(true);
-    expect(asRecord.supportsStructuredOutput).toBe(true);
   });
 
   it('视觉能力位是**登记在案的例外**：后台恒不声明（想改这条，先读 llmConfig 的决策注释）', async () => {

@@ -381,7 +381,6 @@ describe('config/loader · 多 Provider 与高级配置', () => {
               provider: 'ollama',
               model: 'qwen2.5-coder',
               supportsToolCalling: false,
-              supportsStructuredOutput: false,
             },
           },
           active: 'local',
@@ -392,7 +391,6 @@ describe('config/loader · 多 Provider 与高级配置', () => {
 
       // 显式 false 必须如实保留，不得被下游 `?? true` 静默回滚为 true
       expect(config.llm.providers!.local!.supportsToolCalling).toBe(false);
-      expect(config.llm.providers!.local!.supportsStructuredOutput).toBe(false);
     });
 
     it('supportsToolCalling 显式 true 应保真透传', async () => {
@@ -403,7 +401,6 @@ describe('config/loader · 多 Provider 与高级配置', () => {
               provider: 'deepseek',
               model: 'deepseek-chat',
               supportsToolCalling: true,
-              supportsStructuredOutput: true,
             },
           },
           active: 'cloud',
@@ -413,7 +410,6 @@ describe('config/loader · 多 Provider 与高级配置', () => {
       const config = await loadConfig(configPath);
 
       expect(config.llm.providers!.cloud!.supportsToolCalling).toBe(true);
-      expect(config.llm.providers!.cloud!.supportsStructuredOutput).toBe(true);
     });
 
     it('能力位未配置时应为 undefined（交给下游 Provider 回落默认）', async () => {
@@ -423,7 +419,28 @@ describe('config/loader · 多 Provider 与高级配置', () => {
 
       const provider = config.llm.providers!.deepseek!;
       expect(provider.supportsToolCalling).toBeUndefined();
-      expect(provider.supportsStructuredOutput).toBeUndefined();
+    });
+
+    it('旧配置残留已删除的能力位：加载成功、不报错、不透传（未知键静默忽略）', async () => {
+      // 判据：已删除的能力位不得让旧配置加载失败；加载器只挑已知键 ⇒ 未知键静默忽略
+      const configPath = writeConfigFile({
+        llm: {
+          providers: {
+            legacy: {
+              provider: 'deepseek',
+              model: 'deepseek-chat',
+              supportsStructuredOutput: true,
+            },
+          },
+          active: 'legacy',
+        },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.providers!.legacy!.provider).toBe('deepseek');
+      // 不得退化成「字段还在、永远 undefined」：该键根本不出现在解析结果里
+      expect(Object.hasOwn(config.llm.providers!.legacy!, 'supportsStructuredOutput')).toBe(false);
     });
   });
 });

@@ -47,7 +47,6 @@ vi.mock('vscode', () => ({
 /** 桩 provider：init 不调 chat，安全 */
 class StubProvider {
   readonly name = 'stub';
-  readonly supportsStructuredOutput = false;
   // eslint-disable-next-line require-yield
   async *chat(): AsyncIterable<LlmChunk> {}
 }

@@ -126,17 +126,6 @@ export abstract class LlmProvider {
   readonly supportsToolCalling: boolean = true;
 
   /**
-   * 是否支持结构化输出（response_format / JSON mode，默认 false）。
-   *
-   * ⚠️ 当前内核**无消费点**（2026-11-07 起，T1-TOOL-SELECTION-1）：它曾用于「无原生工具能力时的
-   * response_format 工具清单回落」，但该回落是半设计——schema 产出、内核零消费，模型吐出的
-   * `{tools:[…]}` JSON 会被当普通正文交付，从不转成工具调用；该分支已整条删除。
-   * 本字段保留为**预留能力声明**（宿主 provider 配置仍透传），**不得**据此推断 loop 会走
-   * JSON mode、或存在原生 FC 之外的第二工具通道。
-   */
-  readonly supportsStructuredOutput: boolean = false;
-
-  /**
    * 是否支持视觉 / 多模态图片输入（默认 **false**，fail-closed）。
    *
    * 与 `supportsToolCalling` 默认 true 相反：能力缺失只是「功能不可用」，而「误判支持」会让图片

@@ -32,16 +32,13 @@ export interface ProviderConfig {
    * 是否支持原生工具调用（OpenAI Function Calling tools 协议）。
    *
    * 本地运行时（Ollama/LM Studio 等）是否支持原生 FC 无法从 baseUrl 推断，须宿主显式置 false；
-   * 未填（undefined）→ OpenAICompatibleProvider 内回落 true（保留存量云 LLM 工具行为，
-   * 互斥双能力位）。
+   * 未填（undefined）→ OpenAICompatibleProvider 内回落 true（保留存量云 LLM 工具行为）。
    */
   supportsToolCalling?: boolean;
-  /** 是否支持结构化输出（response_format / JSON mode）；未填 → 回落 false */
-  supportsStructuredOutput?: boolean;
   /**
    * 是否支持图片输入（多模态 vision / content parts）；未填 → 回落 **false**（失败必闭）
    *
-   * 【持久化数据】与上面两个能力位同性质：宿主须经「DTO → 表单 → 存储 → 建房」全链路透传。
+   * 【持久化数据】与上面的能力位同性质：宿主须经「DTO → 表单 → 存储 → 建房」全链路透传。
    * 缺省方向选 false 而非 true，是因为「声称看得见图却看不懂」比「坦承不支持」危害更大——
    * 前者让图片静默丢失且用户无法归因，后者由 llmCaller 一级门禁明确拒收并给出可执行建议。
    */
@@ -95,10 +92,9 @@ export function createProviderFromConfig(
     apiKey: apiKey ?? '',
     defaultModel: model,
     // 能力位透传：未填（undefined）由 OpenAICompatibleProvider 内按**各自方向**回落——
-    // supportsToolCalling → true，supportsStructuredOutput / supportsVision → false
+    // supportsToolCalling → true，supportsVision → false
     // （见上方字段文档；勿读成「默认都开」）。
     supportsToolCalling: providerConfig.supportsToolCalling,
-    supportsStructuredOutput: providerConfig.supportsStructuredOutput,
     supportsVision: providerConfig.supportsVision,
     imageResolver: providerConfig.imageResolver,
   });

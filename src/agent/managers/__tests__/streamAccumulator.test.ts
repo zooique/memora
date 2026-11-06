@@ -19,7 +19,6 @@ import type { LlmChunk } from '@/llm/types.js';
 function createMockProvider(chunks: LlmChunk[]): LlmProvider {
   return {
     name: 'mock-stream',
-    supportsStructuredOutput: true,
     async *chat(_messages: Message[], _opts?: unknown) {
       for (const chunk of chunks) {
         yield chunk;
@@ -32,7 +31,6 @@ function createMockProvider(chunks: LlmChunk[]): LlmProvider {
 function createErrorProvider(error: Error): LlmProvider {
   return {
     name: 'mock-error',
-    supportsStructuredOutput: true,
     async *chat(_messages: Message[], _opts?: unknown) {
       throw error;
     },
@@ -137,7 +135,6 @@ describe('accumulateStream — options 传递', () => {
 
     const provider = {
       name: 'mock',
-      supportsStructuredOutput: true,
       chat: chatSpy,
     } as unknown as LlmProvider;
 
@@ -153,7 +150,6 @@ describe('accumulateStream — options 传递', () => {
     let receivedOpts: unknown = 'not-set';
     const provider = {
       name: 'mock',
-      supportsStructuredOutput: true,
       async *chat(_messages: Message[], opts?: unknown) {
         receivedOpts = opts;
         yield { content: 'ok' };

@@ -2865,18 +2865,11 @@ export class AgentLoop {
     // 无原生工具调用能力时，显式告知 LLM「工具不可用」——让其直接给出文本作答，
     // **不诱导**其试图用文本骨架"调用"工具（避免复现文本 tool_call 旧伤）。logger.warn 留痕可观测。
     //
-    // 🔴 不再有 `supportsStructuredOutput` 回落通道（T1-TOOL-SELECTION-1，2026-11-07）：
-    // 旧 branches 在 `response_format` 里塞工具清单（schema 名 `tool_selection`），注释声称
-    // 「由内核兜底处理」，但全仓零消费点——模型吐出的 `{tools:[…]}` JSON 会被 `handleTextResponse`
-    // 当普通正文交付（用户看到一段 JSON），从不转成工具调用。无原生 FC 一律按「工具不可用」明示，
-    // 不承诺任何内核不执行的通道（半设计胜过谎报）。
+    // 🔴 无原生 FC 一律按「工具不可用」明示，不承诺任何内核不执行的通道
+    // （T1-TOOL-SELECTION-1，2026-11-07 整条删除了 response_format 工具清单回落——半设计胜过谎报）。
     if (tools && tools.length > 0 && !supportsToolCalling) {
       logger.warn(
-        {
-          provider: this.opts.provider?.name,
-          // 记录该能力位取值仅作诊断：true 表示「曾会触达旧回落分支」，现在同样按工具不可用处理
-          supportsStructuredOutput: this.opts.provider?.supportsStructuredOutput,
-        },
+        { provider: this.opts.provider?.name },
         '当前 provider 不支持原生工具调用（supportsToolCalling=false），工具清单收起并显式告知 LLM',
       );
       prompt += `\n\n## 工具不可用\n当前模型不支持工具调用（无原生工具协议）。请直接用文本回答，不要假装调用工具。`;

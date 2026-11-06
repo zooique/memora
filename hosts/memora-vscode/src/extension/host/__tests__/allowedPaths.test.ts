@@ -49,7 +49,6 @@ import { WorkspaceSessionStore } from '../sessionStore.js';
 /** 免 API Key 的桩 LLM：仅满足 LlmProvider 契约，不触发任何 chat 调用 */
 class StubProvider {
   readonly name = 'stub';
-  readonly supportsStructuredOutput = false;
   // eslint-disable-next-line require-yield
   async *chat(_messages: unknown[], _opts?: unknown): AsyncIterable<LlmChunk> {}
 }

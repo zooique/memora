@@ -6888,10 +6888,10 @@ describe('AgentLoop · 情报区（LLM 私有工作笔记，Step 2）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：互斥双能力位（本地 LLM 前置）
-// 工具通道确定性选择 + 无工具能力显式回落（可观测、不静默）
+// 测试：工具调用能力位（本地 LLM 前置）
+// 工具通道确定性选择 + 无工具能力显式告知（可观测、不静默）
 // ═══════════════════════════════════════════════════════════════
-describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStructuredOutput）', () => {
+describe('AgentLoop · 工具调用能力位（supportsToolCalling）', () => {
   // 捕获每次 LLM 调用的 opts（tools / response_format），供断言
   type CapturedChatOptions = Record<string, unknown> & {
     tools?: Array<{ function: { name: string } }>;
@@ -6904,7 +6904,7 @@ describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStruct
    * @param chunks 每轮返回的 chunk 数组
    */
   function capabilityProvider(
-    caps: { supportsToolCalling?: boolean; supportsStructuredOutput?: boolean },
+    caps: { supportsToolCalling?: boolean },
     chunks: ChunkItem[][],
   ): { provider: LlmProvider; captured: CapturedChatOptions[] } {
     const captured: CapturedChatOptions[] = [];
@@ -6979,42 +6979,12 @@ describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStruct
     expect(systemPrompt).not.toContain('## 可用工具');
   });
 
-  it('F3: supportsStructuredOutput=true 不再触达任何回落——无原生 FC 一律按「工具不可用」明示（T1）', async () => {
-    const loggerSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    const { provider, captured } = capabilityProvider(
-      { supportsToolCalling: false, supportsStructuredOutput: true },
-      [[{ content: '直接回答' }]],
-    );
-    const loop = new AgentLoop({
-      provider,
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-      toolDefinitions: [WEB_SEARCH_TOOL],
-    });
-
-    for await (const {} of loop.processUserInput('做分析')) void 0;
-
-    // 旧回落分支已整条删除：response_format 里塞工具清单是半设计（schema 产出、内核零消费，
-    // 模型吐出的 JSON 被当正文交付）⇒ 不得再下发该通道（T1-TOOL-SELECTION-1）。
-    expect(captured[0]?.response_format).toBeUndefined();
-    // 与 supportsStructuredOutput=false 同构：收起清单 + 明示工具不可用（不沉默、不诱导文本工具调用）
-    const systemPrompt = loop.getMessages()[0]!.content;
-    expect(systemPrompt).toContain('工具不可用');
-    expect(systemPrompt).not.toContain('## 可用工具');
-    expect(loggerSpy).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringContaining('不支持原生工具调用'),
-    );
-    loggerSpy.mockRestore();
-  });
-
-  it('F4: 两者皆 false → 收起清单 + logger.warn 显式声明「无工具通道」且 system prompt 明示', async () => {
+  it('F4: supportsToolCalling=false → 收起清单 + logger.warn 显式声明「无工具通道」且 system prompt 明示', async () => {
     // spy logger.warn 断言非静默跳过（可观测留痕）
     const loggerSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    const { provider } = capabilityProvider(
-      { supportsToolCalling: false, supportsStructuredOutput: false },
-      [[{ content: '直接回答' }]],
-    );
+    const { provider } = capabilityProvider({ supportsToolCalling: false }, [
+      [{ content: '直接回答' }],
+    ]);
     const loop = new AgentLoop({
       provider,
       bootstrapMemories: [],
@@ -7028,7 +6998,7 @@ describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStruct
     const systemPrompt = loop.getMessages()[0]!.content;
     expect(systemPrompt).toContain('工具不可用');
     expect(systemPrompt).not.toContain('## 可用工具');
-    // 留下可观测 warn 信号（防静默跳过语义；文案与 F3 同源：只按「不支持原生工具调用」判定）
+    // 留下可观测 warn 信号（防静默跳过语义：只按「不支持原生工具调用」判定）
     expect(loggerSpy).toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining('不支持原生工具调用'),

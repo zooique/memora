@@ -43,7 +43,6 @@ const OTHER_PACK = '默认助手';
  */
 class SingleToolProvider {
   readonly name = 'session-role-pack-stub';
-  readonly supportsStructuredOutput = false;
   /** 必须为 true：本测试要走的 run_code 路径依赖工具调用能力（否则内核不会下发工具集） */
   readonly supportsToolCalling = true;
   /** 无图片消费面 */

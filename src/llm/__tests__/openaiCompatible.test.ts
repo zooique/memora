@@ -57,6 +57,27 @@ function makeProvider(apiKey = 'test-key'): OpenAICompatibleProvider {
   });
 }
 
+describe('OpenAICompatibleProvider · 旧配置残留已删除的能力位', () => {
+  it('构造入参带 supportsStructuredOutput 时对话照常（未知键被忽略）', async () => {
+    // 旧配置文件 / 旧宿主 DTO 可能残留该键：内核已不再声明它 ⇒ 构造器根本不读取，
+    // 这里用「原始对象 + 未知键」模拟那条现实路径，验证对话行为零变化（删干净、无中间态）。
+    const legacyConfig = {
+      baseUrl: 'http://localhost:9999',
+      apiKey: 'test-key',
+      defaultModel: 'test-model',
+      supportsStructuredOutput: true,
+    } as unknown as ConstructorParameters<typeof OpenAICompatibleProvider>[1];
+    const provider = new OpenAICompatibleProvider('legacy', legacyConfig);
+
+    const chunks: string[] = [];
+    for await (const chunk of provider.chat([{ role: 'user', content: 'legacy' }])) {
+      if (chunk.content) chunks.push(chunk.content);
+    }
+
+    expect(chunks.join('')).toContain('Mock response');
+  });
+});
+
 describe('OpenAICompatibleProvider · 流式响应', () => {
   it('应该解析 SSE 流并产出文本块', async () => {
     const provider = makeProvider();

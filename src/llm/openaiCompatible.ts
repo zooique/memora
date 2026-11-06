@@ -24,8 +24,6 @@ export interface OpenAICompatibleConfig {
   /** 是否支持原生工具调用（OpenAI Function Calling tools 协议）。三态透传：仅 undefined 回落默认 true，
    *  显式 false 保留关闭工具通道（本地 LLM 如 Ollama/LM Studio 无原生 FC 时由宿主配置 false）。 */
   supportsToolCalling?: boolean;
-  /** 是否支持结构化输出（response_format / JSON mode），默认 false */
-  supportsStructuredOutput?: boolean;
   /** 是否支持视觉 / 多模态图片输入（默认 false，fail-closed；显式 true 才走图片通道） */
   supportsVision?: boolean;
   /**
@@ -97,8 +95,6 @@ export class OpenAICompatibleProvider extends LlmProvider {
   private _setCapabilities(config: OpenAICompatibleConfig): void {
     (this as { supportsToolCalling: boolean }).supportsToolCalling =
       config.supportsToolCalling ?? true;
-    (this as { supportsStructuredOutput: boolean }).supportsStructuredOutput =
-      config.supportsStructuredOutput ?? false;
     (this as { supportsVision: boolean }).supportsVision = config.supportsVision ?? false;
   }
 

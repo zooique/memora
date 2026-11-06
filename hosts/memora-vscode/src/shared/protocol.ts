@@ -63,12 +63,10 @@ export interface LlmProviderConfig {
    * 未填（undefined）→ 内核回落 true（云 LLM 工具能力的缺省值）。
    */
   supportsToolCalling?: boolean;
-  /** 是否支持结构化输出（response_format / JSON mode），与 supportsToolCalling 互斥（OpenAI 协议限制）；未填 → 回落 false */
-  supportsStructuredOutput?: boolean;
   /**
    * 是否支持图片输入（多模态 vision / content parts）；未填 → 回落 **false**（失败必闭）
    *
-   * 与上面两个能力位的透传结构完全相同，但**取值来源不同**：
+   * 与上面的能力位透传结构完全相同，但**取值来源不同**：
    * - `supportsToolCalling` 可由 provider 标识（cloud/local）驱动缺省；
    * - **视觉能力无法从 cloud/local 推断**——同一个 OpenAI 兼容 endpoint 下，gpt-4o 看得见图、
    *   deepseek-chat 看不懂，宿主不预置模型对照表（同 contextWindow 的立场：不维护第二真理源）。

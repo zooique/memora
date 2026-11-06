@@ -36,7 +36,7 @@ private interruptQueue: InterruptRequest[] = [];
 |----------|-----------|-----------|----------|
 | 点暂停按钮 | `agent.requestPause(reason, source)` | `loop.requestPause()` | `queue.push({kind:'pause'})`（幂等：已有 pause 条目则不重复） |
 | 取消暂停（生效前反悔） | `agent.cancelPauseRequest()` | `loop.clearPauseRequest()` | `queue.filter(r => r.kind !== 'pause')` |
-| 执行中插话 | `agent.interject(content)` | `loop.interject(content)` | `queue.push({kind:'interject', content})` + history 持久化（TS-9 问答归属） |
+| 执行中插话 | `agent.interject(content): Promise<InterjectOutcome>` | `loop.interject(content)` | `queue.push({kind:'interject', content})` + history 持久化（TS-9 问答归属）；返回三态：`queued` / `queued-unpersisted`（已入队但历史未写入）/ `rejected-limit`（达上限未入队）——执行只看队列，故持久化失败**不回滚、不诱导重发**（重发即双执行） |
 | 删一条插话（后悔） | `agent.removePendingInterject(index)` | `loop.removePendingInterject(index)` | 计算 interject 条目的全局索引映射，splice 删除 |
 | 清空全部插话 | `agent.clearPendingInterjections()` | `loop.clearPendingInterjections()` | `queue.filter(r => r.kind !== 'interject')` |
 

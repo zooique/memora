@@ -91,8 +91,6 @@ const REPEAT_COUNT = 20;
 class EchoProvider {
   /** Provider 名（日志/会话命名可见） */
   readonly name: string;
-  /** 结构化输出能力声明（本用例不依赖） */
-  readonly supportsStructuredOutput = false;
 
   /**
    * @param name Provider 名（区分父子两个实例的输出）

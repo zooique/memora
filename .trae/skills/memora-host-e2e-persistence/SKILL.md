@@ -28,7 +28,6 @@ description: 在 memora 双包架构（内核 @zooique/memora + VS Code 宿主�
    ```ts
    class StubProvider {
      readonly name = 'stub';
-     readonly supportsStructuredOutput = false;
      async *chat(_m: unknown[], _o?: unknown): AsyncIterable<LlmChunk> {}
    }
    const provider = new StubProvider() as unknown as LlmProvider;

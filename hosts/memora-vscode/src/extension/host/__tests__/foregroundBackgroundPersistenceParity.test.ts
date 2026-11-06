@@ -80,8 +80,6 @@ const FINAL_TEXT = '已写入 notes/out.md。';
 class ToolCallProvider {
   /** Provider 名（日志/标题生成可见） */
   readonly name = 'parity-stub';
-  /** 结构化输出能力声明（本用例不依赖） */
-  readonly supportsStructuredOutput = false;
 
   /**
    * @param messages 对话消息（只在「是否已回填工具结果」上判读）
