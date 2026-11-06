@@ -186,7 +186,7 @@ interface AssemblyDeps {
   sessionStore: WorkspaceSessionStore;
   /** 问答闭环存储单例（与 sessionStore 同一项目） */
   roundStore: IRoundStore;
-  /** vscode 全局状态（角色包 / 安全开关等用户级偏好） */
+  /** vscode 全局状态（用户级偏好：角色组 teams / 脚本确认开关；**不含角色包激活态**，后者随会话文件落盘） */
   globalState: vscode.Memento;
   /** 插件内置配置目录（由 extensionUri 显式定位） */
   configDir: string;
