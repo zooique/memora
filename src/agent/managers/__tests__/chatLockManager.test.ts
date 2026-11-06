@@ -27,34 +27,6 @@ describe('ChatLockManager', () => {
     clearAllSafeTimers();
   });
 
-  // ─── E1：持有者会话记录（纯记录，不参与判忙） ───────────
-
-  describe('busySessionId（E1 持有者记录）', () => {
-    it('acquire 传入 ownerSessionId 后应记录当前会话 ID 与获取时刻', () => {
-      const { token } = manager.acquire(180_000, undefined, '2026-11-05-main');
-      // 记录可读
-      expect(manager.busySessionId).toBe('2026-11-05-main');
-      expect(manager.lockAcquiredAt).toBeTypeOf('number');
-      // 门控语义不变：仍是「任一会话忙」
-      expect(manager.isBusy).toBe(true);
-      manager.release(token);
-    });
-
-    it('release 后清空持有者记录', () => {
-      const { token } = manager.acquire(180_000, undefined, '2026-11-05-main');
-      manager.release(token);
-      expect(manager.busySessionId).toBeNull();
-      expect(manager.lockAcquiredAt).toBeNull();
-    });
-
-    it('未传 ownerSessionId 时记录为空（既不伪造也不影响判忙）', () => {
-      const { token } = manager.acquire(180_000);
-      expect(manager.busySessionId).toBeNull();
-      expect(manager.isBusy).toBe(true);
-      manager.release(token);
-    });
-  });
-
   // ─── isBusy 状态 ──────────────────────────────────────
 
   describe('isBusy', () => {

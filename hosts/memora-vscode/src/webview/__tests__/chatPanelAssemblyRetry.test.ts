@@ -64,7 +64,6 @@ interface AssemblyCast {
   _agent: Agent | null;
   _view: unknown;
   _agentReady: Promise<void> | null;
-  _agentResolving: boolean;
   _providerStale: boolean;
 }
 
@@ -158,7 +157,6 @@ describe('HOST-BUG-1 · 装配失败可重试（僵尸 Promise 回归守卫）',
     // 失败被 catch 消化（不抛给调用方），但缓存必须清掉
     expect(cast._agent).toBeFalsy();
     expect(cast._agentReady).toBeNull();
-    expect(cast._agentResolving).toBe(false);
     expect(vscode.window.showErrorMessage).toHaveBeenCalled();
   });
 
@@ -290,7 +288,7 @@ describe('HOST-BUG-1 · retryAgentAssembly（配置变更重试入口）', () =>
     expect(cast._agent).toBeFalsy();
   });
 
-  it('装配在途（_agentResolving）→ 跳过（不制造并行装配）', async () => {
+  it('装配在途（_agentReady 非空）→ 跳过（不制造并行装配）', async () => {
     const { provider, cast } = setup();
     attachView(cast);
     const agent = agentStub();
@@ -305,7 +303,7 @@ describe('HOST-BUG-1 · retryAgentAssembly（配置变更重试入口）', () =>
     });
     provider.setAgentFactory(factory);
 
-    const inflight = cast.ensureAgent(); // 同步进入在途态（_agentResolving=true）
+    const inflight = cast.ensureAgent(); // 同步置入在途 Promise（_agentReady 非空）
     await cast.retryAgentAssembly();
 
     release();

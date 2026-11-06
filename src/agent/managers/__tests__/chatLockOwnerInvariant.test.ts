@@ -1,11 +1,14 @@
 /**
- * E1 隐含前提机判：`_chatBusy = true` 在生产源码中**恰好 1 处写点**，且位于
+ * 隐含前提机判：`_chatBusy = true` 在生产源码中**恰好 1 处写点**，且位于
  * `ChatLockManager.acquire()`（生产唯一入口 = `Agent.acquireChatLock`）。
  *
  * 为什么要机判：
- * `_lockOwner`（纯记录）与 `_chatBusy`（门控真源）不漂移的前提是「只有 acquire 会置 true」。
- * 若未来在别处新增 `_chatBusy = true` 而忘了同步 `_lockOwner`，两套记录会静默分叉，
- * 且**没有任何运行期测试会红**（门控照旧工作，只是 owner 诊断失真）。故用源码扫描把前提钉死。
+ * 门控与 token 协议的前提是「只有 acquire 会置 true」。若未来在别处新增 `_chatBusy = true`
+ * （如某路径绕开 acquire 直接占位），token 递增顺序就被破坏 ⇒ 超时/finally 的
+ * 「是否仍是持有者」校验失效，会静默误清别人的资源。故用源码扫描把前提钉死。
+ *
+ * ⚠ 2026-11-06：本文件原为 E1「owner 记录不漂移」而设，`_lockOwner` 组已作为零生产消费的
+ * 僵尸一并删除；但「唯一写点」前提本身仍有效（守护 token 协议），故保留扫描器、只改由头。
  *
  * 口径：
  * - 只扫 `src/**` 下 `.ts`，排除 `__tests__`（测试需要直接置 `_chatBusy` 造 busy 态）

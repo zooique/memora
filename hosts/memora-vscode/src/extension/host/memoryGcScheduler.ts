@@ -47,11 +47,6 @@ export class MemoryGcScheduler {
     return this._scanCount;
   }
 
-  /** 定时器是否在运行 */
-  get running(): boolean {
-    return this._timer !== null;
-  }
-
   /**
    * 启动周期驱动（幂等：已启动时直接返回，不会挂第二个定时器）
    *

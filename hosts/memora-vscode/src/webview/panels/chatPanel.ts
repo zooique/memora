@@ -296,8 +296,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _releaseAgent: ((sessionId: string) => Promise<void>) | undefined;
   /** 实例改键回调（extension 注入：分叉后同一实例改挂新会话键，登记表键不得漂移） */
   private _rekeyAgent: ((from: string, to: string) => void) | undefined;
-  /** 是否已尝试装配（避免面板每次展开都重复装配） */
-  private _agentResolving = false;
   /**
    * Agent 装配 Promise：缓存「在途装配」供等待，而非仅布尔标记——
    * 否则 'ready' 在装配进行中调用 ensureAgent() 会早退，崩溃恢复打捞（依赖 agent.agentHistory）
@@ -1316,14 +1314,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       await this.applyActiveProviderRefresh();
       return;
     }
-    if (this._agentResolving || !this._view) return;
+    if (this._agentReady !== null || !this._view) return;
     await this.ensureAgent();
   }
 
   /** Agent 懒装配实际执行体（ensureAgent 分离：Promise 缓存 + 一次性执行） */
   private async performAgentAssembly(): Promise<void> {
-    if (this._agentResolving || !this._getAgent) return;
-    this._agentResolving = true;
+    if (!this._getAgent) return;
     try {
       const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       if (!ws) {
@@ -1345,8 +1342,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // _agent 仍 null」的僵尸，后续 ensureAgent 永远 await 它、永不重试。
       // 对齐 `AgentRegistry` 的「失败不入表、下次可重试」契约（宿主侧不再持有 Promise 缓存）。
       this._agentReady = null;
-    } finally {
-      this._agentResolving = false;
     }
   }
 
