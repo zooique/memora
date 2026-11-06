@@ -1,7 +1,7 @@
 # Lefthook 钩子配置 — 门禁的**触发器**（步骤定义不在这里，见 .trae/decisions/ADR-032）
 #
 # 分层（2026-09-16）：
-#   pre-commit → fast 档（两侧 tsc，≤60s）  —— 提交时便宜，默认路径才有人走
+#   pre-commit → fast 档（两侧 tsc + 两侧 lint + 秒级守卫，≈50s）  —— 提交时便宜，默认路径才有人走
 #   pre-push   → full 档（步骤/耗时以 local-ci 收据日志为准）—— 推送前完整体检，含宿主构建与 dist 契约
 #
 # 步骤清单**只**在 scripts/local-ci.mjs 定义；本文件只传 --preset，禁止在此复制步骤
@@ -9,6 +9,10 @@
 #
 # 为何内核 tsc 不再单列：fast 档已含 kernel:typecheck（同一条 `npm run typecheck`），
 # 单列即与 preset 重复；故收敛给 preset，本文件只留 preset 不含的 lint-staged 自动修复。
+#
+# 为何两侧 lint 也不再单列（2026-11-07 用户拍板）：kernel:lint / host:lint 已并入 fast 档；
+# 此前只靠 lint-staged（staged 限定）⇒ 未 stage 的越限文件提交时看不见、推送时才被拦
+# （「提交时以为干净」）。lint-staged 保留「就地修复」角色，判据归 preset。
 #
 # 诚实结论（不承诺强制）：本地钩子物理上不可强制（LEFTHOOK=0 / --no-verify / 删钩子都能绕）。
 # 设计只保证「① 默认路径便宜 ② 绕过可被外部发现」——每次运行落盘带 tree/head 收据的日志，
@@ -34,13 +38,13 @@ pre-commit:
       run: npx prettier --write {staged_files}
       stage_fixed: true
 
-    # fast 档前的「就地修复」：只扫 staged 的 .ts 并自动修格式（preset 刻意不含全量 lint）
+    # fast 档前的「就地修复」：只扫 staged 的 .ts 并自动修格式（全仓 lint 判据已由 preset 承担）
     lint-staged:
       glob: "*.ts"
       run: npx eslint {staged_files} --max-warnings 0 --no-warn-ignored
       stage_fixed: true
 
-    # 门禁 fast 档：内核 tsc + 宿主 tsc（落盘收据日志）
+    # 门禁 fast 档：两侧 tsc + 两侧 lint + 秒级守卫（落盘收据日志）
     gate-fast:
       run: npm run ci:local -- --preset=fast
 

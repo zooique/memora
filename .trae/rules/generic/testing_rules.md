@@ -322,8 +322,10 @@ pre-commit 时新行还没有 blame 时间。只实现一条而自称「已加�
 跨文件 flake，**常驻的长默认路径本身就是 `--no-verify` 的诱因**（这一条比「多跑一次更安全」
 更硬——把门禁做成必须绕过的东西，等于没有门禁）。
 
-fast 档现在 = 两侧 `tsc` + 台账 hygiene + **一条 5s 单文件守卫**（`kernel:surface-guard`）。
-该守卫是**唯一例外**，加它的理由不是「多测一点」，而是它**已经在没人跑的情况下红过一次**。
+fast 档现在 = 两侧 `tsc` + **两侧 `lint`（全仓 `eslint .`）** + 台账 hygiene + **一条 5s 单文件守卫**
+（`kernel:surface-guard`）。该守卫是**唯一测试类例外**，加它的理由不是「多测一点」，而是它
+**已经在没人跑的情况下红过一次**。两侧 lint 于 2026-11-07 并入（理由：`lint-staged` 只扫 staged，
+未 stage 的越限文件提交时看不见、推送时才发现 =「提交时以为干净」）。
 
 全量自证放在提交前的独立步骤：内核 `vitest run`、宿主
 `node ../../node_modules/vitest/vitest.mjs run --config vitest.config.ts --no-file-parallelism`。

@@ -26,7 +26,8 @@
 
 1. **回填既有 `pre-push` 钩子体**作为触发器；**不新增第四条通道**（不恢复 Actions 自动触发、不建门禁服务）。
 2. **分层**：
-   - `pre-commit` → `--preset=fast`（内核 `tsc` + 宿主 `tsc`）；`lint-staged`（staged `.ts`）留在钩子里就地修复。
+   - `pre-commit` → `--preset=fast`（内核 `tsc` + 宿主 `tsc` + **两侧 lint**，两 lint 于 2026-11-07 并入）；
+     `lint-staged`（staged `.ts`）留在钩子里就地修复。
    - `pre-push` → `--preset=full`（10 步）。
 3. **步骤定义唯一收口在 `scripts/local-ci.mjs`**；`lefthook.yml` 只传 `--preset`，**禁止复制步骤清单**
    （复制即产生第二份「要跑什么」的清单 = 并列）。
@@ -43,7 +44,11 @@
     内核 `test` 98s、宿主 `test` 119s **出局**）；
   - J3 失败可归因本次改动 —— 决定性依据是 `vitest.config.ts:29` 自记的已知跨文件 flake：
     **测试进 pre-commit 必出假红，而假红直接诱发 `--no-verify`**。
-- **fast 档刻意不含全量 lint**：`lint-staged` 只扫 staged 文件，足够；把全量 lint 塞进 fast 会突破时间预算。
+- **fast 档已含全量 lint（2026-11-07 用户拍板，取代本文原判）**：原判「`lint-staged` 只扫 staged 足够、
+  全量 lint 会突破时间预算」被实锤推翻——staged 限定恰是缺口：**未 stage 的越限文件（行数闸）
+  提交时不被看见，推送时才被 full 档拦下 ⇒「提交时以为干净」**。实测 `kernel:lint` ≈11.5s +
+  `host:lint` ≈5.4s，fast 档总耗时约 50s（含原有 tsc 与秒级守卫），仍在「默认路径便宜」预算内 ⇒
+  两侧 lint 与 tsc 一并收敛进 preset，`lint-staged` 只保留「就地修复」角色。
 - **内核 `tsc` 不再单独挂在钩子里**：fast 档已含 `kernel:typecheck`（同一条 `npm run typecheck`），
   单列即重复 → 收敛给 preset（这是「嫁接而非并列」在本 ADR 的最小落点）。
 

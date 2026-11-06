@@ -32,7 +32,7 @@
  *
  * 用法：
  *   node scripts/local-ci.mjs                 # ≡ --preset=full（全量；步数由运行时打印，注释不写死）
- *   node scripts/local-ci.mjs --preset=fast   # 快档：只跑两侧 tsc（≤60s，挂 pre-commit）
+ *   node scripts/local-ci.mjs --preset=fast   # 快档：两侧 tsc + 两侧 lint + 秒级守卫（≈50s，挂 pre-commit）
  *   node scripts/local-ci.mjs --preset=full   # 全档（挂 pre-push）
  *   node scripts/local-ci.mjs --kernel-only   # 只跑内核（≈ CI 原范围 + 覆盖率）
  *   node scripts/local-ci.mjs --skip-cov      # 跳过覆盖率闸门（省 ~40s）
@@ -148,9 +148,14 @@ const STEP_TIMEOUT_MS = 15 * 60 * 1000; // 单步 15 分钟上限，防挂死
 
 /**
  * 步骤定义 —— **全库唯一定义处**（钩子只传 `--preset`，不得在别处复制这份清单）
- * `presets`：该步骤属于哪些档。fast 档 = 两侧 `tsc` + 一条 5s 单文件守卫——lint 由 pre-commit
- * 的 lint-staged 承担（staged 集合限定），测试/覆盖率/构建因超时与 flake 成本**不进 fast**
- * （唯一例外见文件头分层说明）。
+ * `presets`：该步骤属于哪些档。fast 档 = 两侧 `tsc` + **两侧 `lint`（全仓 `eslint .`）** +
+ * 秒级守卫（`kernel:surface-guard` / `ledger:hygiene` / `modal:cancel`）；测试/覆盖率/构建
+ * 因超时与 flake 成本**不进 fast**（唯一例外见文件头分层说明）。
+ *
+ * 为什么两侧 lint 也进 fast（2026-11-07 用户拍板，取代旧「lint 交给 lint-staged」的判据）：
+ * `lint-staged` 只扫 **staged** 文件，未 stage 的越限文件提交时完全不被看见（行数闸实锤：
+ * 提交时绿、推送时才被 full 档拦下 =「提交时以为干净」）。实测两侧 lint 合计 ≈17s，
+ * fast 档总耗时约 50s，仍在「默认路径便宜」预算内 ⇒ 宁可提交时多 17s，不要推送时才发现。
  * @type {{id:string,name:string,cmd:string,cwd:string,required:boolean,presets:string[],optionalFlag?:string,env?:Record<string,string>}[]}
  */
 const ALL_STEPS = [
@@ -195,7 +200,7 @@ const ALL_STEPS = [
     cmd: 'npm run lint',
     cwd: ROOT,
     required: true,
-    presets: ['full'],
+    presets: ['fast', 'full'],
   },
   // ⚠️ 为什么这里带 `--no-file-parallelism`（2026-10-27 用户拍板，属对 SOP §5 的**显式例外**）：
   //    full 档每跑必红 toolExecutor 2 条（后台执行 EBUSY + `kill_command` 终态失败任务 timeout），
@@ -271,7 +276,7 @@ const ALL_STEPS = [
     cmd: 'npm run lint',
     cwd: HOST,
     required: true,
-    presets: ['full'],
+    presets: ['fast', 'full'],
   },
   // package 面本地化（HOST-I18N-1 切片 1）：`%key%` 拼错 / 两侧键面不等 / 默认文件混中文，
   // VS Code 都不报错而是把 `%key%` 原样显示给用户——纯静态判据，秒级，故挂硬闸。
