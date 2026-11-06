@@ -1271,6 +1271,12 @@ export type ExtensionToWebviewMessage =
         keyTopics?: string[];
         /** 会话级摘要（内核写入；缺省 = 尚未生成）。FD-3-A 元数据搜索匹配域之一 */
         summary?: string;
+        /**
+         * 会话记录的角色包名快照（宿主经 `readSessionRolePackName` 单点判据读出；缺省 = 从未选过角色）。
+         * 只是名字快照，**不是**「该包仍可用」的保证——列表不判断可用性，避免第二份状态源；
+         * 包已卸载时打开会话由既有回落 notice 告知。
+         */
+        activeRolePackName?: string;
       }[];
       /** 属于留存区（视图分组标签）的会话 id；**不是**状态字段，会话本身与近期条目无任何差别 */
       archivedIds: string[];

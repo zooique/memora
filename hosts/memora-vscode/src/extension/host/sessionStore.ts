@@ -274,7 +274,7 @@ export class WorkspaceSessionStore implements ISessionStore {
    * 背景：内核 `SessionArchiver` / `SessionNamer` 会把 `summary` / `keyTopics` / `autoName`
    * 异步写回 `updateSessionMeta`，而自动归档是**离场 fire-and-forget**
    * （`AGENT_EVENTS.sessionSwitched` / `sessionForked` → `archiveCoordinator`；内核零改动约束下
-   * 宿主拿不到归档完成时刻）。宿主在切走时就释放了旧会话锁，等 LLM 返回时已无锁。
+   * 宿主拿不到归档完成时刻）。切走后仍长持有锁（切走不释放）；无锁 = 面板已销毁 / 从未进入，归档稍后返回。
    *
    * 为什么不能「只替换盘上 meta」：JSON 文件没有字段级原子写——所谓「只替换 meta」仍是
    * 「读整份 → 写整份」，读与写之间对方新写入的轮次会被这份快照覆盖（**会缩短 roundIds**）。
@@ -381,7 +381,7 @@ export class WorkspaceSessionStore implements ISessionStore {
       // 补写失败不阻断任何对话路径；内存态仍在，下次同名会话写元数据时重试
       console.warn('Memora 会话元数据补写失败（保留内存态）', err);
     } finally {
-      // 只放本次临时拿到的短锁；长锁（当前会话）归切换/关闭流程释放
+      // 只放本次临时拿到的短锁；长锁（本面板进入过的会话）归面板销毁 / 实例关闭释放（切走不释放）
       if (acquiredByUs) this.releaseSessionLock(sessionId);
     }
   }
@@ -991,7 +991,7 @@ export type HostSessionStore = Omit<ISessionStore, 'deleteSession'> & {
   /**
    * 获取会话跨进程写锁（不等待）；false = 该会话正在另一个窗口中使用
    *
-   * 长持有：当前打开的会话（切换/新建/分叉时拿，切走释放）；
+   * 长持有：本面板进入过的会话（切换/新建/分叉时拿，切走不释放，面板销毁 / 实例关闭时放）；
    * 短持有：历史菜单归档/删除这类对非当前会话的一次性写（拿→写→放）。
    */
   acquireSessionLock: (sessionId: string) => Promise<boolean>;

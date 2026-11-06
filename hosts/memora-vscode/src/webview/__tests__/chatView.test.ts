@@ -4222,6 +4222,33 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     void postMessage;
   });
 
+  it('历史条目渲染会话角色包名（副标题并槽）；缺省时旧会话不出现「角色：」', () => {
+    mountChatView();
+    dispatch({
+      type: 'session_list_data',
+      sessions: [
+        {
+          sessionId: '2026-08-15-s1',
+          title: '会话A',
+          updatedAt: new Date().toISOString(),
+          activeRolePackName: '只读项目顾问',
+        },
+        { sessionId: '2026-08-15-s2', title: '会话B', updatedAt: new Date().toISOString() },
+      ],
+      archivedIds: [],
+    });
+    const items = document.querySelectorAll('#historyMenu .treedd__item');
+    const withRole = items[0]?.querySelector('.session-history__item-time') as HTMLElement | null;
+    const withoutRole = items[1]?.querySelector(
+      '.session-history__item-time',
+    ) as HTMLElement | null;
+    expect(withRole?.textContent).toContain('角色：只读项目顾问');
+    expect(withRole?.title).toBe('角色包：只读项目顾问');
+    // 未选过角色的旧会话：副标题不出现角色段（与改动前零差异）
+    expect(withoutRole?.textContent).not.toContain('角色：');
+    expect(withoutRole?.title).toBe('');
+  });
+
   it('留存按钮文案随归档模式运行时真值：manual 模式说全「归档并留存」（不瞒报 LLM 调用）', () => {
     mountChatView();
     // 运行时真值后到/先到都成立（按钮文案只读 currentArchiveMode，与列表下发顺序无关）

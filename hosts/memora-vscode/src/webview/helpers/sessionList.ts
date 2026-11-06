@@ -12,6 +12,7 @@
  */
 import { getSessionDisplayName, type SessionMeta } from '@zooique/memora';
 import type { HostSessionStore } from '../../extension/host/sessionStore.js';
+import { readSessionRolePackName } from '../../extension/host/sessionRolePack.js';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 
 /** `session_list_data` 消息类型（从协议联合中提取，宿主不另写一份 DTO） */
@@ -35,7 +36,7 @@ export function buildSessionListMessage(
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return {
     type: 'session_list_data',
-    sessions: metas.map(toSessionSummary),
+    sessions: metas.map((meta) => toSessionSummary(store, meta)),
     archivedIds: store.listArchivedIds(),
   };
 }
@@ -43,9 +44,13 @@ export function buildSessionListMessage(
 /**
  * 单条会话摘要投影（字段口径见协议注释，此处不重复定义）
  *
+ * @param store 宿主会话存储（角色包名经单点判据读回，不在本处另写解析）
  * @param meta 会话元数据（计数已在 `getSessionMeta` 读路径现场派生，直取即新鲜值）
  */
-function toSessionSummary(meta: SessionMeta): SessionListMessage['sessions'][number] {
+function toSessionSummary(
+  store: HostSessionStore,
+  meta: SessionMeta,
+): SessionListMessage['sessions'][number] {
   return {
     sessionId: meta.sessionId,
     title: getSessionDisplayName(meta),
@@ -54,5 +59,8 @@ function toSessionSummary(meta: SessionMeta): SessionListMessage['sessions'][num
     // FD-3-A 元数据搜索匹配域：undefined 经 postMessage JSON 序列化自然剔除
     keyTopics: meta.keyTopics,
     summary: meta.summary,
+    // 角色包名同样走单点判据（缺字段 / 已卸载未知）→ undefined，旧会话保持零差异；
+    // 这里只给名字快照，不判断包是否仍装着（可用性判断会造第二份状态源）
+    activeRolePackName: readSessionRolePackName(store, meta.sessionId),
   };
 }

@@ -332,8 +332,11 @@ export const chatStyles = `
   .session-history__item-title {
     flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  /* 副标题（时间 · 消息数 · 角色包名）：可收缩 + 省略号，防止长角色包名挤掉标题 */
   .session-history__item-time {
-    flex: 0 0 auto; font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+    flex: 0 1 auto; min-width: 0; max-width: 58%;
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   /* 会话活跃度标识（E4 批 4）：待处理 = accent（需用户动作），运行中 = 次要色（无需动作）。
      纯文本标签而非圆点：用户不需要记颜色语义，字面直接说明状态。 */

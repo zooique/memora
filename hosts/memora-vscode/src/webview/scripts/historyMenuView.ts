@@ -40,6 +40,8 @@ export interface SessionSummaryDto {
   keyTopics?: string[];
   summary?: string;
   messageCount?: number;
+  /** 会话记录的角色包名快照（缺省 = 从未选过角色；列表只展示快照，不判断包是否仍可用） */
+  activeRolePackName?: string;
 }
 
 /** 本域经 postMessage 发出的消息型（窄联合：历史菜单的全部出口动作） */
@@ -238,10 +240,16 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
     const timeEl = document.createElement('span');
     timeEl.className = 'session-history__item-time';
     // 计数并槽（messageCount 缺省 = 旧会话未生成，只显示时间不显示 0）
-    timeEl.textContent =
+    const timeText =
       typeof s.messageCount === 'number' && s.messageCount > 0
         ? `${fmtRelativeTime(s.updatedAt)} · ${s.messageCount} 条`
         : fmtRelativeTime(s.updatedAt);
+    // 角色包名并槽（缺省 = 从未选过角色，旧会话副标题一字不变）；
+    // 只展示名字快照，不判断包是否仍可用——可用性判断会造第二份状态源，卸载场景由打开会话时的既有回落 notice 告知
+    timeEl.textContent = [timeText, s.activeRolePackName ? `角色：${s.activeRolePackName}` : '']
+      .filter(Boolean)
+      .join(' · ');
+    if (s.activeRolePackName) timeEl.title = `角色包：${s.activeRolePackName}`;
     /**
      * 活跃度标识（E4 批 4）：待处理优先于运行中——既在跑又在等你答，先说的是「等你答」；
      * 同一条目只挂一个标签（两个都挂会让用户以为要处理两件事）。

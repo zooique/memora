@@ -14,7 +14,7 @@ import type { HostSessionStore } from '../../extension/host/sessionStore.js';
 
 /** 目标会话正被另一个窗口持有时的统一提示（创建 / 切换 / 分叉 / 历史动作共用一句） */
 export const SESSION_HELD_NOTICE =
-  '该会话正在另一个窗口中使用。请先在那边的窗口切换或关闭它，再重试。';
+  '该会话正在另一个窗口中使用。切换会话不会释放占用，请先关闭那个窗口再重试。';
 
 /** 面板注入的能力（全部直连既有实现；本模块不持有面板状态） */
 export interface SessionHistoryDeps {

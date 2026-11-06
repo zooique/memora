@@ -249,7 +249,7 @@ describe('6.0.0 步 3 验收：每会话跨进程写锁', () => {
     const sessionId = 's-archive';
     plantSession(ws, sessionId, 2); // 盘上已有 2 轮
 
-    // 两个实例模拟两窗口：B 持锁追加轮次；A 是离场归档（短锁已随切走释放）
+    // 两个实例模拟两窗口：B 持锁追加轮次；A 是离场归档（只走短锁，不持长锁）
     const writer = new WorkspaceSessionStore(ws);
     const archiver = new WorkspaceSessionStore(ws);
     writer.load();

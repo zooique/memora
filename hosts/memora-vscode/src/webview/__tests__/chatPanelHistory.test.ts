@@ -309,6 +309,24 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(data[0]?.sessions[0]?.messageCount).toBe(2);
   });
 
+  it('pushSessionList：随条目下发会话记录的角色包名（单点判据 trim；未选过则缺省）', () => {
+    const { store, roundStore, provider, posted } = setup();
+    seedSession(store, roundStore, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);
+    seedSession(store, roundStore, '2026-08-13-s3', [{ role: 'user', content: 'z', ts: 't3' }]);
+    // 走唯一写点写入角色包名快照（首尾空白验证复用 readSessionRolePackName 的 trim 口径）
+    store.updateSessionMeta('2026-08-14-s2', { activeRolePackName: '  只读项目顾问  ' });
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    (provider as unknown as { pushSessionList(): void }).pushSessionList();
+    const data = ofType<{
+      type: string;
+      sessions: { sessionId: string; activeRolePackName?: string }[];
+    }>(posted, 'session_list_data');
+    const withRole = data[0]?.sessions.find((s) => s.sessionId === '2026-08-14-s2');
+    const withoutRole = data[0]?.sessions.find((s) => s.sessionId === '2026-08-13-s3');
+    expect(withRole?.activeRolePackName).toBe('只读项目顾问');
+    expect(withoutRole?.activeRolePackName).toBeUndefined();
+  });
+
   it('onSessionArchived：归档写入成功信号 → 触发会话列表重拉（否则条目快照摘要恒空）', () => {
     const { store, roundStore, provider, posted } = setup();
     seedSession(store, roundStore, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);
