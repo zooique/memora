@@ -2,9 +2,14 @@
  * E4 验收：`AgentRegistry` 会话 → Agent 登记表
  *
  * 只验登记表本身（纯内存映射 + 注入工厂），不起真实 Agent：
+ *
+ * （下方「判据 3 · 装配层」describe 例外：它起真实 Agent，专为补强判据 3）
  *  - 同 sessionId 两次取回**同一实例**（不是每调一次新建）
  *  - 不同 sessionId 取回**不同实例**
  *  - 两次装配拿到**同一对**存储单例（类型 + 引用同一性，防各 Agent 自建一份）
+ *  - **装配层**（判据 3 的真证明）：两个不同会话经 `createAgentForSession` 走**真实装配**
+ *    （`assembleAgent` → `new Agent({ storage })` → `init()`）后，`agent.context.index`
+ *    是**同一对象引用**——验「真实 Agent 实际用的记忆存储」，不是只验「登记表收到的参数相同」
  *  - 注销一个不影响另一个（**仅限进程内实例状态**）；注销后再取 = 重建新实例（close 后重建）
  *    ⚠️ 作用域界定：本判据**只覆盖进程内登记表状态**——关/注销 A 不改变登记表中 B 的引用与可取回性。
  *    跨进程告警通道在该场景下会失效：同进程多 Agent 共享 `.memora/.lock`，先关的实例会删掉锁文件，
@@ -13,13 +18,30 @@
  *  - 并发同键只装配一次（在途去重复用同一 Promise）
  */
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
 import type { Agent, IRoundStore, ISessionStore } from '@zooique/memora';
 import {
   AgentRegistry,
   type ProjectStoreSingletons,
   type SessionAgentFactory,
 } from '../agentRegistry.js';
+// 真实装配路径（判据 3 装配层验证）所需依赖
+import { assembleAgent } from '../assemble.js';
+import { createHostMemoryStorage } from '../memoryStorage.js';
+import { WorkspaceSessionStore } from '../sessionStore.js';
+import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
+import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
+
+// `assemble.ts` 间接 import `projectSearchProvider.ts`（模块级 import vscode），
+// 本文件不触真实 VS Code API，用最小 mock 让模块可解析；被测路径不调用它。
+vi.mock('vscode', () => ({
+  workspace: {
+    workspaceFolders: undefined,
+    getConfiguration: () => ({ get: (_key: string, fallback: unknown) => fallback }),
+  },
+}));
 
 /**
  * 假 Agent（登记表只做 Map 存取，不触碰 Agent 内部）
@@ -157,4 +179,96 @@ describe('E4 · AgentRegistry', () => {
     expect(registry.get('2026-11-05-a')).toBe(retried);
     expect(attempts).toBe(2);
   });
+});
+
+// ─────────────────────────────────────────────────────────────
+// 判据 3 · 装配层（真证明）：真实 Agent 实际使用的记忆存储同一性
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * 播种角色包目录（真实 `assembleAgent` 的 init 必须能扫描到角色包）
+ *
+ * @param configDir 装配用的配置目录（`AssembleOptions.configDir`）
+ */
+function seedRolePacks(configDir: string): void {
+  for (const name of ['默认助手', 'memora助手']) {
+    const dir = join(configDir, 'role-packs', name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'manifest.json'),
+      JSON.stringify({ name, displayName: name, strategy: {} }),
+      'utf-8',
+    );
+    writeFileSync(join(dir, 'persona.md'), '你是一个通用助手。', 'utf-8');
+  }
+  mkdirSync(join(configDir, 'skills'), { recursive: true });
+}
+
+describe('E4 · 判据 3 装配层（真实装配路径）', () => {
+  it('两会话经 createAgentForSession 真实装配后，实际使用的记忆存储是同一对象引用', async () => {
+    const projectPath = makeTempDir('memora-e4-assembly-');
+    const configDir = join(projectPath, 'config');
+    seedRolePacks(configDir);
+
+    // 与生产装配同一份共享单例（E3 硬约束）：会话 + 轮次 + 记忆存储
+    const roundStore = new WorkspaceRoundStore(projectPath);
+    roundStore.load();
+    const sessionStore = new WorkspaceSessionStore(projectPath, roundStore);
+    sessionStore.load();
+    const sharedStorage = createHostMemoryStorage(projectPath);
+
+    // 已装配实例（用例结束统一 close，逆序释放）
+    const agents: Agent[] = [];
+
+    // 工厂 = 生产 `assembleAgentForSession` 的同形实现：
+    // 真实装配（assembleAgent → new Agent({ storage }) → init）→ 绑定目标会话
+    const registry = new AgentRegistry({ sessionStore, roundStore }, async (sessionId) => {
+      const agent = await assembleAgent({
+        projectPath,
+        configDir,
+        sessionStore,
+        roundStore,
+        // 关键判据输入：所有会话 Agent 共用宿主持有的同一份记忆存储
+        storage: sharedStorage,
+        // 不引入后台摘要 LLM 调用与时序噪声
+        archiveMode: 'manual',
+        autoStartGc: false,
+        allowedPaths: [projectPath],
+        // Provider 仅构造、不发起网络请求：填必填的环境变量形态即可
+        env: {
+          MEMORA_BASE_URL: 'http://127.0.0.1:1/v1',
+          MEMORA_MODEL: 'e4-probe',
+          MEMORA_API_KEY: 'e4-probe',
+        } as NodeJS.ProcessEnv,
+      });
+      // 绑定目标会话（生产装配同款：载入该会话消息并重建工作记忆）
+      await agent.sessionManager!.switchToSession(sessionId);
+      agents.push(agent);
+      return agent;
+    });
+
+    try {
+      // 两个**不同** sessionId：一会话一实例
+      const a = await registry.createAgentForSession('2026-11-06-e4a');
+      const b = await registry.createAgentForSession('2026-11-06-e4b');
+
+      expect(a).not.toBe(b);
+      // 真实装配出来的实例确实绑定到了各自会话
+      expect(a.agentHistory?.currentSessionName).toBe('2026-11-06-e4a');
+      expect(b.agentHistory?.currentSessionName).toBe('2026-11-06-e4b');
+
+      // ── 判据 3 的真证明：真实 Agent 实际用的记忆存储是同一个对象 ──
+      // `context.index` 是 Agent 内部 ProjectManager 实际装进 ProjectContext 的存储实例，
+      // 不是工厂入参的副本 ⇒ 这一条才证明「共存储共记忆」在装配层成立。
+      expect(a.context?.index).toBe(b.context?.index);
+      expect(a.context?.index).toBe(sharedStorage);
+    } finally {
+      for (const agent of agents.reverse()) {
+        await agent.close().catch(() => {
+          // 关闭失败不影响判据结论（临时目录由 tmpDir helper 回收）
+        });
+      }
+      sharedStorage.close?.();
+    }
+  }, 120_000);
 });
