@@ -1,21 +1,18 @@
 /**
- * 会话 → Agent 实例登记表（6.0.0 E4 · 只登记不启用）
+ * 会话 → Agent 实例登记表（6.0.0 E4）
  *
- * 背景（B 方案 = 一会话一 Agent 实例）：E5 起需要按会话取/建 Agent，因此先把「登记表」
- * 与「共享存储单例约束」立起来。**本轮不接线**——`extension.ts` 仍只装配一个 Agent、
- * 只登记一条，不改变现有多会话共享单例的行为。
+ * 职责 = 「一会话一 Agent」的唯一登记面：按键复用、在途去重、注销、close 后重建。
+ * 装配细节（vscode 配置 / Provider / 目录）不进本类——由宿主注入 `SessionAgentFactory`。
  *
- * 🔶 **处置登记**（台账 `AGENTREGISTRY-PREEMPT-1`）：本类属**预支基础设施**——当前无收益、
- * E7 前不启用；若 E7 换方案（不走「一会话一 Agent 实例」）则删除。现状事实：`unregister`
- * 本轮零调用点、`stores` 只赋不读、`createAgentForSession` 不存在；`extension.ts` 只在装配时
- * 按当时的 `currentSessionName` 登记一次，`switchToSession` 不更新 key。这些是**未接线**，
- * 不得读成「已具备按会话取 Agent 的能力」。
+ * 现状（E4 第一片）：`createAgentForSession` 已实现并有单测；**生产仍未接线**——
+ * 面板与命令仍走单实例 `getOrCreateAgent`，`unregister` 仍零生产调用。E5/E7 前
+ * 不得读成「已具备多会话并行」。
  *
  * 🔴 硬约束（E3 实证，见台账 `ROUNDSIDX-SHARED-1`）：多 Agent 必须共享**同一**
  * `sessionStore` / `roundStore` 单例。两个实例各建一份 `roundStore` 时，`rounds/index.json`
  * 的整份覆盖写会让另一实例写入的轮次「文件在、视图不可见」。故本类构造参数**强制**传入
- * 该对单例（`ProjectStoreSingletons`），登记表自身**不自建任何存储**——这条约束写在类型上，
- * 不靠注释提醒。若将来真需要各建一份，必须显式改成双实例形态，而不是悄悄回落。
+ * 该对单例（`ProjectStoreSingletons`），并原样交给工厂；登记表自身**不自建任何存储**——
+ * 这条约束写在类型上，不靠注释提醒。
  */
 import type { Agent, IRoundStore, ISessionStore } from '@zooique/memora';
 
@@ -27,19 +24,39 @@ export interface ProjectStoreSingletons {
   readonly roundStore: IRoundStore;
 }
 
+/**
+ * 会话 Agent 装配函数（宿主注入）
+ *
+ * 只负责「怎样装出一个属于该会话的实例」；登记/复用/在途去重归登记表。
+ * 实现约定：必须使用传入的共享存储单例（记忆存储亦须由宿主单例注入），
+ * 且返回的实例必须真正绑定到 `sessionId`（工作记忆 = 该会话历史）。
+ */
+export type SessionAgentFactory = (
+  sessionId: string,
+  stores: ProjectStoreSingletons,
+) => Promise<Agent>;
+
 /** 会话 → Agent 实例登记表 */
 export class AgentRegistry {
-  /** 共享存储单例（构造期保存；E5 按会话建 Agent 时复用。**当前只赋不读**，属预支基础设施） */
+  /** 共享存储单例（构造期保存，原样交给工厂；登记表自身不消费存储方法） */
   readonly stores: ProjectStoreSingletons;
 
-  /** 登记表本体：sessionId → Agent（E4 只有一条） */
+  /** 装配函数（宿主注入；登记表不认识 vscode 配置与装配细节） */
+  private readonly factory: SessionAgentFactory;
+
+  /** 登记表本体：sessionId → Agent */
   private readonly agents = new Map<string, Agent>();
+
+  /** 在途创建：同会话并发取用时复用同一 Promise，避免建出两个实例 */
+  private readonly inflight = new Map<string, Promise<Agent>>();
 
   /**
    * @param stores 共享存储单例对（必传；类型上强制，防止各 Agent 自建一份）
+   * @param factory 会话 Agent 装配函数（必传；缺它本类就无法兑现 createAgentForSession）
    */
-  constructor(stores: ProjectStoreSingletons) {
+  constructor(stores: ProjectStoreSingletons, factory: SessionAgentFactory) {
     this.stores = stores;
+    this.factory = factory;
   }
 
   /**
@@ -63,13 +80,47 @@ export class AgentRegistry {
   }
 
   /**
-   * 注销登记（会话关闭时调用；E5 接线，本轮无调用点）
+   * 注销登记（调用方负责随后 `agent.close()`；本类不碰实例生命周期）
    *
-   * 零调用点 = 未接线，不是「已具备注销能力」；处置见文件头 `AGENTREGISTRY-PREEMPT-1`。
+   * 生产调用方将在 E5/E7 接线（面板/会话关闭时）；当前仍零生产调用点。
    *
    * @param sessionId 会话标识
    */
   unregister(sessionId: string): void {
     this.agents.delete(sessionId);
+  }
+
+  /**
+   * 取得（必要时创建）该会话的 Agent 实例
+   *
+   * 三种命中路径（判据独立）：
+   * 1. 已登记 → 直接返回同一实例（不是每调一次新建）；
+   * 2. 创建在途 → 返回同一 Promise（并发两次只建一个）；
+   * 3. 未登记 → 调工厂装配并登记。
+   *
+   * 工厂失败不登记、不留脏 Promise，下一次调用可重试。
+   *
+   * @param sessionId 会话标识（内核 `MessageHistory.currentSessionName` 口径）
+   * @returns 属于该会话的 Agent 实例
+   */
+  async createAgentForSession(sessionId: string): Promise<Agent> {
+    const existing = this.agents.get(sessionId);
+    if (existing) return existing;
+
+    const pending = this.inflight.get(sessionId);
+    if (pending) return pending;
+
+    const created = this.factory(sessionId, this.stores)
+      .then((agent) => {
+        // 装配成功才登记：失败路径不得留下半成品
+        this.agents.set(sessionId, agent);
+        return agent;
+      })
+      .finally(() => {
+        // 无论成败都清在途标记：失败后允许下一次重试
+        this.inflight.delete(sessionId);
+      });
+    this.inflight.set(sessionId, created);
+    return created;
   }
 }

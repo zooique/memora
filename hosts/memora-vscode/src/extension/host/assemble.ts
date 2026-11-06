@@ -23,6 +23,7 @@ import {
 import type {
   ISessionStore,
   IRoundStore,
+  IMemoryStorage,
   UIMessages,
   ProviderRouter,
   LlmProvider,
@@ -145,6 +146,14 @@ export interface AssembleOptions {
    * 会话通过 Round ID 列表组装。不传则仅 legacy 模式（向后兼容）。
    */
   roundStore?: IRoundStore;
+  /**
+   * 记忆存储单例（多实例宿主必传）
+   *
+   * 同一项目的所有 Agent 必须共享**同一实例**（共存储共记忆）；所有权归注入方，
+   * 任一 Agent close 不会关闭它（内核 ProjectManager 只关自建存储）。
+   * 不传时按 `projectPath` 内部新建——单实例/独立用途/测试路径，所有权归该 Agent。
+   */
+  storage?: IMemoryStorage;
   /**
    * 插件内置配置目录（configDir）
    *
@@ -371,8 +380,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   // 2. 创建工作区记忆存储 + 会话存储（宿主注入持久化）
   // 记忆存储接线：按「迁移状态 × 环境能力」分档选实现（SQLite / 降级 JSON），
   // 并内含旧 JSON 一次性迁移（含退役设定来源清理 + 旧档改名保留）——
-  // 装配点只调本工厂，判据与分档逻辑收口在 host/memoryStorage.ts（禁散点）
-  const storage = createHostMemoryStorage(projectPath, logger);
+  // 装配点只调本工厂，判据与分档逻辑收口在 host/memoryStorage.ts（禁散点）；
+  // 多实例宿主注入共享单例（所有权归注入方），不传才内部新建（单实例/测试）
+  const storage = options.storage ?? createHostMemoryStorage(projectPath, logger);
   // SSOT：复用 extension 单例 sessionStore（与 UI 面板共享同一实例，杜绝双实例覆盖写）；
   // 未注入时（独立用途/测试）才内部新建并加载，且共享同一 roundStore 实例。
   const store: ISessionStore =

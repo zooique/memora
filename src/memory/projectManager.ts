@@ -47,7 +47,13 @@ export interface ProjectContext {
 export interface ProjectManagerOptions {
   /** Agent 级数据目录（宿主传入；内核不假设其下的文件形态） */
   dataDir: string;
-  /** 外部注入存储实例（可选，不传则内部 InMemoryStorage 兜底） */
+  /**
+   * 外部注入存储实例（可选，不传则内部 InMemoryStorage 兜底）
+   *
+   * 所有权归注入方：本管理器只借用、不关闭（多 Agent 共享同一实例时，
+   * 任一 Agent close 都不得把其他实例的库关掉）。缺省自建的 InMemoryStorage
+   * 才由 `shutdown()` 关闭。
+   */
   storage?: IMemoryStorage;
   /**
    * SecurityGuard 工厂函数（Agent 层注入，解除 memory→security 反向依赖）。
@@ -77,6 +83,8 @@ export class ProjectManager {
   private currentProjectPath: string | null = null;
   /** 外部注入存储实例（不传则内部 InMemoryStorage 兜底） */
   private externalStorage: IMemoryStorage | null;
+  /** 是否拥有存储所有权：外部注入 = 否（由注入方关闭）；内部兜底 = 是 */
+  private readonly ownsStorage: boolean;
   /** SecurityGuard 工厂函数（Agent 层注入） */
   private readonly createSecurityGuard?: (
     projectPath: string,
@@ -91,13 +99,16 @@ export class ProjectManager {
     const { dataDir, storage, createSecurityGuard } = options;
     this.agentDataDir = resolve(expandHome(dataDir));
     this.externalStorage = storage ?? null;
+    // 所有权判据只看「是否外部注入」：外部实例可能被多个 Agent 共享
+    this.ownsStorage = storage === undefined;
     this.createSecurityGuard = createSecurityGuard;
     this.lockManager = new LockManager();
   }
 
   /**
    * 确保 Agent 级资源（存储实例）已初始化，Agent 实例生命周期内保持同一实例。
-   * 构造注入的外部实例直接用，否则内部 InMemoryStorage（非持久化，仅开发/测试）。
+   * 构造注入的外部实例直接用（所有权归注入方，shutdown 不关闭），
+   * 否则内部 InMemoryStorage（非持久化，仅开发/测试）。
    */
   private async ensureAgentResources(): Promise<{ index: IMemoryStorage }> {
     if (!this.agentIndex) {
@@ -196,16 +207,26 @@ export class ProjectManager {
     this.currentProjectPath = null;
   }
 
-  /** 完全关闭：释放项目锁 + 关闭 Agent 级数据库（由 `Agent.close()` 调用） */
+  /**
+   * 完全关闭：释放项目锁 + 关闭 Agent 级数据库（由 `Agent.close()` 调用）
+   *
+   * 所有权边界：只关闭**本管理器自建**的存储；外部注入的存储归注入方所有，
+   * 多 Agent 共享同一实例时任一实例关闭都不得把它关掉（否则其余实例全断）。
+   */
   async shutdown(): Promise<void> {
     if (this.currentProjectPath) {
       await this.closeProject();
     }
     if (this.agentIndex) {
-      try {
-        this.agentIndex.close?.();
-      } catch (err) {
-        logger.warn({ err }, '关闭 Agent 数据库失败');
+      if (this.ownsStorage) {
+        try {
+          this.agentIndex.close?.();
+        } catch (err) {
+          logger.warn({ err }, '关闭 Agent 数据库失败');
+        }
+      } else {
+        // 外部实例：只解除引用，不关闭（关闭动作归注入方）
+        logger.debug({}, '外部注入的存储所有权归注入方，Agent 关闭时不关闭它');
       }
       this.agentIndex = null;
     }

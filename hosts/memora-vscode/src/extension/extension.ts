@@ -16,10 +16,11 @@ import * as vscode from 'vscode';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
-import type { Agent, ArchiveMode, IRoundStore } from '@zooique/memora';
+import type { Agent, ArchiveMode, IRoundStore, IMemoryStorage } from '@zooique/memora';
 // GC 周期单点驱动取内核常量（不复制 24h 字面量）
 import { AGENT_CONSTANTS } from '@zooique/memora';
-import { assembleAgent, createVscodeLogger } from './host/assemble.js';
+import { assembleAgent, createVscodeLogger, type AssembleOptions } from './host/assemble.js';
+import { createHostMemoryStorage } from './host/memoryStorage.js';
 import { resolveProjectDataDir } from './host/projectDataDir.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
@@ -123,6 +124,15 @@ let gcDriverAgent: Agent | null = null;
 let hostSessionStore: WorkspaceSessionStore | null = null;
 
 /**
+ * 激活期记忆存储单例的模块级引用（所有权归宿主，停用时由宿主关闭）
+ *
+ * 多 Agent 共享同一实例（共存储共记忆）；内核 `ProjectManager` 只借用、不关闭，
+ * 因此「关掉一个会话 Agent」不会把其他实例的库关掉。懒建：首次装配才打开 DB，
+ * 打开失败的时机与现状一致（落在装配错误路径，而不是激活期把插件拖死）。
+ */
+let hostMemoryStorage: IMemoryStorage | null = null;
+
+/**
  * 扩展版本号（MCP 客户端握手时上报给 server，仅作遥测，不参与任何判据）
  *
  * activate 时从扩展清单取值——版本号唯一真源是 package.json，宿主不另存常量
@@ -175,106 +185,133 @@ function runOnAssembledAgent(
 }
 
 /**
- * 获取（或创建）指定工作区的 Agent 实例
+ * 装配期稳定依赖（activate 内采样一次）
+ *
+ * 单实例装配（`getOrCreateAgent`）与按会话装配（`assembleAgentForSession`）共用同一份，
+ * 杜绝两处各写一套选项导致行为漂移（E4 验收判据「选项键快照」）。
+ */
+interface AssemblyDeps {
+  /** 大模型配置存储 */
+  providerStore: ProviderStore;
+  /** 会话存储单例（SSOT：与 UI 面板共享，杜绝双实例覆盖写） */
+  sessionStore: WorkspaceSessionStore;
+  /** 问答闭环存储单例（与 sessionStore 同一项目） */
+  roundStore: IRoundStore;
+  /** vscode 全局状态（角色包 / 安全开关等用户级偏好） */
+  globalState: vscode.Memento;
+  /** 插件内置配置目录（由 extensionUri 显式定位） */
+  configDir: string;
+  /** 图片字节缓存（激活期单例） */
+  imageCache: ImageCache;
+  /** 用户技能目录（可选） */
+  userSkillsDir?: string;
+  /** 用户角色包目录（可选，与内置包同池注入） */
+  userRolePacksDir?: string;
+  /** 输出通道（日志对接） */
+  outputChannel?: vscode.OutputChannel;
+  /** 项目级来源目录（调用时现读信任状态：未受信任返回空） */
+  readProjectDirs: () => ProjectAssetDirs;
+  /** 记忆存储单例（懒建；所有会话 Agent 共用此同一对象，所有权归宿主） */
+  storage: () => IMemoryStorage;
+}
+
+/**
+ * 唯一的装配选项构建点
+ *
+ * 所有装配入口（单实例 / 按会话）都经此函数产出 `AssembleOptions`：选项键只在此处
+ * 写一次，新增字段不会漏传某一路（防「单实例能用、会话实例少注入」）。
  *
  * @param projectPath 工作区路径
- * @param providerStore 大模型配置存储
- * @param sessionStore 会话存储单例（SSOT：与 UI 面板共享，杜绝双实例覆盖写导致会话记录加载不全）
- * @param roundStore 问答闭环存储单例（与 sessionStore 同一项目的共享实例）
+ * @param deps 装配期稳定依赖
+ */
+function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): AssembleOptions {
+  // 读取持久化的激活角色包（用户上次选择；无记录时为 undefined → 内核 §4.1 单链落兜底包）
+  const activeRolePack = deps.globalState.get<string>(ACTIVE_ROLE_PACK_KEY);
+  // 读取角色包组（会议名单，用户级数据；无记录为空数组）
+  const rolePackTeams =
+    deps.globalState.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
+  // 读取写入二次确认开关（用户安全偏好；默认 false → owner 写文件自动批准）
+  const confirmWrites = deps.globalState.get<boolean>(CONFIRM_WRITES_KEY) ?? false;
+  // 读取脚本/代码执行确认开关（用户安全偏好；默认 false → owner 脚本执行自动批准）
+  const confirmScripts = deps.globalState.get<boolean>(CONFIRM_SCRIPTS_KEY) ?? false;
+  // 读取白名单额外路径（用户级设置，机器级目录信任；项目目录基准根恒在，此处仅含额外路径）
+  const allowedPaths = readAllowedPaths();
+  // 内置网页搜索引擎（memora.searchEngine 设置；'auto' = Bing→DuckDuckGo 默认链，亦可为自定义引擎名）
+  const searchEngine = vscode.workspace
+    .getConfiguration('memora')
+    .get<string>('searchEngine', 'auto');
+  // 用户自定义搜索引擎清单（memora.customSearchEngines 设置）
+  const customSearchEngines = vscode.workspace
+    .getConfiguration('memora')
+    .get<CustomSearchEngineConfig[]>('customSearchEngines', []);
+  // 会话归档模式（memora.archiveMode 设置；'full'=自动归档允许，'manual'=仅手动）。
+  // 装配期一次性注入内核 AgentOptions.archiveMode；运行时切换走配置变更监听
+  // （agent.setArchiveMode，繁忙顺延）——设置面板与直接改 settings.json 同一路径。
+  const archiveMode = readArchiveMode();
+  // 禁用的技能名清单（配置形态启停）：命中技能对 LLM 全链不可用
+  // （L1 清单 / list_skills / read_skill / L3 全不可达）。此处只是**装配期快照**；
+  // 用户改设置由 activate 内的配置监听实时重设，无需重新装配。
+  const disabledSkills = readDisabledSkills();
+  // 脚本执行 node 路径（S3-接续）：用户显式配置的 node 可执行文件绝对路径；
+  // 空/未配置 = 不注入（内核走 'node' PATH 查找）。修改需重建会话（装配期一次性注入）。
+  const scriptNodePath = vscode.workspace
+    .getConfiguration('memora')
+    .get<string>('scriptNodePath', '');
+  // 项目级来源（仅工作区受信任时非空；信任门在 activate 采样，调用时现读）
+  const projectDirs = deps.readProjectDirs();
+
+  return {
+    projectPath,
+    // 项目搜索根 = 真实工作区文件夹（无 folder 时 undefined → 不注入 search_project）
+    projectSearchRoot: resolveProjectSearchRoot(),
+    providerStore: deps.providerStore,
+    sessionStore: deps.sessionStore,
+    roundStore: deps.roundStore,
+    activeRolePack,
+    rolePackTeams,
+    configDir: deps.configDir,
+    searchEngine,
+    customSearchEngines,
+    archiveMode,
+    // E6：GC 不自启——周期扫描由宿主 MemoryGcScheduler 单点驱动（见 getOrCreateAgent 成功分支）
+    autoStartGc: false,
+    userSkillsDir: deps.userSkillsDir,
+    userRolePacksDir: deps.userRolePacksDir,
+    // 项目级来源（仅信任时非空；顺序由 assemble 保证 user → project 后加载者胜）
+    projectSkillsDir: projectDirs.skills,
+    projectRolePacksDir: projectDirs.rolePacks,
+    confirmWrites,
+    confirmScripts,
+    allowedPaths,
+    disabledSkills,
+    scriptNodePath: scriptNodePath || undefined,
+    // MCP server（用户级设置；装配末尾接入并注册工具，失败只影响该 server）
+    mcpServers: readMcpServers(),
+    // MCP 工具免确认 allowlist（同名寻址键，按原名；空 = 全部逐次确认）
+    mcpToolAllowlist: readMcpToolAllowlist(),
+    extensionVersion: extensionVersion || undefined,
+    // 图片解析器（IMG-2 §5.4）：运行时回调，与能力位 supportsVision 一起才构成可用视觉链
+    imageResolver: deps.imageCache.resolver,
+    outputChannel: deps.outputChannel,
+    // 记忆存储单例（多 Agent 共享同一对象；所有权归宿主，close 单个实例不关它）
+    storage: deps.storage(),
+  };
+}
+
+/**
+ * 获取（或创建）单实例 Agent（旧路径，生产仍唯一在用）
+ *
+ * @param projectPath 工作区路径
+ * @param deps 装配期稳定依赖（与按会话装配共用同一份，防选项漂移）
  * @param agentRegistry 会话 → Agent 登记表（E4 登记；强制持有同一对存储单例）
- * @param globalState vscode 全局状态（读取持久化的激活角色包，重启后恢复用户选择；
- *   用户级而非工作区级——角色选择是用户偏好，不随工作区漂移）
- * @param configDir 插件内置配置目录（SSOT：由 extension.extensionUri 显式定位——
- *   若在 assemble 内用 import.meta.url 相对推断，esbuild bundle 后路径漂移会导致角色包加载失败（坑））
- * @param imageCache 图片字节缓存（激活期单例；预读填字节，resolver 供 Provider 同步查表）
- * @param userSkillsDir 用户技能目录（可选）
- * @param userRolePacksDir 用户角色包目录（可选，与内置包同池注入）
- * @param projectSkillsDir 项目级技能目录（可选；仅工作区受信任时传入，信任门在调用方）
- * @param projectRolePacksDir 项目级角色包目录（可选；同上）
- * @param outputChannel VSCode 输出通道（日志对接）
  */
 function getOrCreateAgent(
   projectPath: string,
-  providerStore: ProviderStore,
-  sessionStore: WorkspaceSessionStore,
-  roundStore: IRoundStore,
+  deps: AssemblyDeps,
   agentRegistry: AgentRegistry,
-  globalState: vscode.Memento,
-  configDir: string,
-  imageCache: ImageCache,
-  userSkillsDir?: string,
-  userRolePacksDir?: string,
-  projectSkillsDir?: string,
-  projectRolePacksDir?: string,
-  outputChannel?: vscode.OutputChannel,
 ): Promise<Agent> {
   if (!agentPromise) {
-    // 读取持久化的激活角色包（用户上次选择；无记录时为 undefined → 内核 §4.1 单链落兜底包）
-    const activeRolePack = globalState.get<string>(ACTIVE_ROLE_PACK_KEY);
-    // 读取角色包组（会议名单，用户级数据；无记录为空数组）
-    const rolePackTeams =
-      globalState.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
-    // 读取写入二次确认开关（用户安全偏好；默认 false → owner 写文件自动批准）
-    const confirmWrites = globalState.get<boolean>(CONFIRM_WRITES_KEY) ?? false;
-    // 读取脚本/代码执行确认开关（用户安全偏好；默认 false → owner 脚本执行自动批准）
-    const confirmScripts = globalState.get<boolean>(CONFIRM_SCRIPTS_KEY) ?? false;
-    // 读取白名单额外路径（用户级设置，机器级目录信任；项目目录基准根恒在，此处仅含额外路径）
-    const allowedPaths = readAllowedPaths();
-    // 内置网页搜索引擎（memora.searchEngine 设置；'auto' = Bing→DuckDuckGo 默认链，亦可为自定义引擎名）
-    const searchEngine = vscode.workspace
-      .getConfiguration('memora')
-      .get<string>('searchEngine', 'auto');
-    // 用户自定义搜索引擎清单（memora.customSearchEngines 设置）
-    const customSearchEngines = vscode.workspace
-      .getConfiguration('memora')
-      .get<CustomSearchEngineConfig[]>('customSearchEngines', []);
-    // 会话归档模式（memora.archiveMode 设置；'full'=自动归档允许，'manual'=仅手动）。
-    // 装配期一次性注入内核 AgentOptions.archiveMode；运行时切换走配置变更监听
-    // （agent.setArchiveMode，繁忙顺延）——设置面板与直接改 settings.json 同一路径。
-    const archiveMode = readArchiveMode();
-    // 禁用的技能名清单（配置形态启停）：命中技能对 LLM 全链不可用
-    // （L1 清单 / list_skills / read_skill / L3 全不可达）。此处只是**装配期快照**；
-    // 用户改设置由 activate 内的配置监听实时重设，无需重新装配。
-    const disabledSkills = readDisabledSkills();
-    // 脚本执行 node 路径（S3-接续）：用户显式配置的 node 可执行文件绝对路径；
-    // 空/未配置 = 不注入（内核走 'node' PATH 查找）。修改需重建会话（装配期一次性注入）。
-    const scriptNodePath = vscode.workspace
-      .getConfiguration('memora')
-      .get<string>('scriptNodePath', '');
-    agentPromise = assembleAgent({
-      projectPath,
-      // 项目搜索根 = 真实工作区文件夹（无 folder 时 undefined → 不注入 search_project）
-      projectSearchRoot: resolveProjectSearchRoot(),
-      providerStore,
-      sessionStore,
-      roundStore,
-      activeRolePack,
-      rolePackTeams,
-      configDir,
-      searchEngine,
-      customSearchEngines,
-      archiveMode,
-      // E6：GC 不自启——周期扫描由宿主 MemoryGcScheduler 单点驱动（见下方装配成功的 then 块）
-      autoStartGc: false,
-      userSkillsDir,
-      userRolePacksDir,
-      // 项目级来源（仅信任时非空；顺序由 assemble 保证 user → project 后加载者胜）
-      projectSkillsDir,
-      projectRolePacksDir,
-      confirmWrites,
-      confirmScripts,
-      allowedPaths,
-      disabledSkills,
-      scriptNodePath: scriptNodePath || undefined,
-      // MCP server（用户级设置；装配末尾接入并注册工具，失败只影响该 server）
-      mcpServers: readMcpServers(),
-      // MCP 工具免确认 allowlist（同名寻址键，按原名；空 = 全部逐次确认）
-      mcpToolAllowlist: readMcpToolAllowlist(),
-      extensionVersion: extensionVersion || undefined,
-      // 图片解析器（IMG-2 §5.4）：运行时回调，与能力位 supportsVision 一起才构成可用视觉链
-      imageResolver: imageCache.resolver,
-      outputChannel,
-    }).catch((err) => {
+    agentPromise = assembleAgent(buildAssembleOptions(projectPath, deps)).catch((err) => {
       // 装配失败则重置，下次命令重试
       agentPromise = null;
       throw err;
@@ -284,11 +321,7 @@ function getOrCreateAgent(
   // 两参 then：装配失败分支显式吞掉，避免产生未处理的 rejection。
   void agentPromise.then(
     (agent) => {
-      // E4：登记「会话 → Agent」并立即按同一会话键查回一次——**同键读同键不构成活性证明**，
-      // 只说明这条调用链没断；登记表当前无收益（`unregister` 零调用、`stores` 只赋不读、
-      // `createAgentForSession` 不存在），E7 前不启用，若 E7 换方案则整类删除
-      // （台账 `AGENTREGISTRY-PREEMPT-1`）。
-      // 本轮只登记装配时的这一个会话；`switchToSession` 不更新 key，故登记键会与当前会话漂移。
+      // E4：只登记装配时的这一个会话；`switchToSession` 不更新 key，故登记键会与当前会话漂移。
       // 会话标识取内核公开 getter（`agentHistory` 在 init 后非空），异常兜底用 projectPath。
       const sessionId = agent.agentHistory?.currentSessionName ?? projectPath;
       agentRegistry.register(sessionId, agent);
@@ -307,6 +340,42 @@ function getOrCreateAgent(
     },
   );
   return agentPromise;
+}
+
+/**
+ * 按会话装配 Agent（E4 第一片）
+ *
+ * - 存储：由 `deps` 提供共享单例（sessionStore / roundStore / 记忆存储 = 同一对象）
+ * - 会话归属：装配后 `switchToSession(sessionId)` 真正切到目标会话（载入该会话消息、
+ *   重建工作记忆），而不是「装出来还停在 today-main」
+ * - 失败不留半成品：绑定失败即关闭刚装配的实例，避免锁 / 定时器泄漏
+ * - 复用 / 在途去重 / 登记：归 `AgentRegistry.createAgentForSession`
+ *
+ * ⚠️ 生产尚未接线（面板与命令仍走单实例）：本函数只被 registry 工厂调用，
+ * E5/E7 前无生产消费方，不得据此声称「多会话并行已上线」。
+ *
+ * @param projectPath 工作区路径（一个宿主 = 一个项目）
+ * @param sessionId 目标会话标识（内核 `MessageHistory.currentSessionName` 口径）
+ * @param deps 装配期稳定依赖
+ */
+async function assembleAgentForSession(
+  projectPath: string,
+  sessionId: string,
+  deps: AssemblyDeps,
+): Promise<Agent> {
+  const agent = await assembleAgent(buildAssembleOptions(projectPath, deps));
+  try {
+    // getter 类型为可空（未初始化时 null）；此处刚装配完成，为空即内部状态异常
+    const sessionManager = agent.sessionManager;
+    if (!sessionManager) throw new Error('Agent 装配完成但 sessionManager 为空，无法绑定会话');
+    // 生产会话切换走 switchToSession：同时载入该会话消息并重建工作记忆
+    await sessionManager.switchToSession(sessionId);
+  } catch (err) {
+    // 装配成功但绑定失败：按 Agent 生命周期关掉，不留半成品
+    await agent.close().catch(() => {});
+    throw err;
+  }
+  return agent;
 }
 
 /** 插件激活入口 */
@@ -407,24 +476,9 @@ export function activate(context: vscode.ExtensionContext): void {
    * @param projectPath 工作区路径（仅首次装配生效；后续调用复用同一 Agent 单例）
    */
   const getAgent = (projectPath: string): Promise<Agent> => {
-    // 信任门判据在**调用时**读取（workspace.isTrusted 可运行期变化）：
-    // 未信任 ⇒ 返回空目录对，装配不注入项目级；授予信任后由监听器补注入。
-    const projectDirs = readProjectAssetDirs();
-    return getOrCreateAgent(
-      projectPath,
-      providerStore,
-      sessionStore,
-      roundStore,
-      agentRegistry,
-      context.globalState,
-      configDir,
-      imageCache,
-      userSkillsDir,
-      userRolePacksDir,
-      projectDirs.skills,
-      projectDirs.rolePacks,
-      memoraOutput,
-    );
+    // 装配选项的构建（含信任门现读）已收口到 buildAssembleOptions；
+    // 此处只负责把稳定依赖与登记表交给单实例装配路径。
+    return getOrCreateAgent(projectPath, assemblyDeps, agentRegistry);
   };
 
   /**
@@ -462,10 +516,43 @@ export function activate(context: vscode.ExtensionContext): void {
   // 迁移/打捞在 load() 内直接写盘（不经过写断言），故必须在 load() 之后启用。
   sessionStore.enableCrossProcessLock();
 
-  // 会话 → Agent 登记表（E4：只登记不启用）。构造参数强制传入**同一对**存储单例——
-  // 这来自 E3 实证的硬约束（各建一份 roundStore ⇒ `rounds/index.json` 覆盖写丢视图），
-  // 登记表自身不得新建存储；本轮仍只有一条登记（getOrCreateAgent 内）。
-  const agentRegistry = new AgentRegistry({ sessionStore, roundStore });
+  /**
+   * 记忆存储单例（懒建，所有权归宿主）
+   *
+   * 首次装配才打开 DB：打开失败的时机与现状一致（落在装配错误路径），
+   * 不会把 activate 拖死；此后所有会话 Agent 共用这一对象（共存储共记忆）。
+   */
+  const getMemoryStorage = (): IMemoryStorage => {
+    hostMemoryStorage ??= createHostMemoryStorage(workspacePath, createVscodeLogger(memoraOutput));
+    return hostMemoryStorage;
+  };
+
+  // 装配期稳定依赖：单实例路径与按会话路径共用同一份（选项唯一构建点 = buildAssembleOptions）
+  const assemblyDeps: AssemblyDeps = {
+    providerStore,
+    sessionStore,
+    roundStore,
+    globalState: context.globalState,
+    configDir,
+    imageCache,
+    userSkillsDir,
+    userRolePacksDir,
+    outputChannel: memoraOutput,
+    // 信任门判据在**调用时**读取（workspace.isTrusted 可运行期变化）：
+    // 未信任 ⇒ 返回空目录对，装配不注入项目级；授予信任后由监听器补注入。
+    readProjectDirs: readProjectAssetDirs,
+    storage: getMemoryStorage,
+  };
+
+  // 会话 → Agent 登记表（E4 第一片：创建能力已实现，生产仍未接线）。构造参数强制传入
+  // **同一对**存储单例——这来自 E3 实证的硬约束（各建一份 roundStore ⇒ `rounds/index.json`
+  // 覆盖写丢视图），登记表自身不得新建存储；工厂只负责「装一个属于该会话的实例」。
+  const agentRegistry = new AgentRegistry(
+    { sessionStore, roundStore },
+    // 工厂：共享存储单例由 assemblyDeps 提供；会话归属在装配后 switchToSession 落实。
+    // 当前无生产调用方（面板仍单实例），接线归 E5/E7。
+    (sessionId) => assembleAgentForSession(workspacePath, sessionId, assemblyDeps),
+  );
 
   // 孤儿清扫（无会话引用 Round 统一回收）：删除会话/截断后遗留的无引用轮
   // 在启动时清理，防磁盘膨胀与「无引用卡片滞留」（引用归 SessionStore、物理归 RoundStore）。
@@ -872,7 +959,26 @@ export async function deactivate(): Promise<void> {
   // 锁是进程级 OS 句柄，与 Agent 生命周期无关：Agent 没装配也可能已因面板打开而拿过锁。
   hostSessionStore?.releaseAllSessionLocks();
   hostSessionStore = null;
-  if (!agentPromise) return;
+
+  /**
+   * 关闭宿主拥有的记忆存储单例（所有权归宿主：Agent close 只借用、不关它）
+   *
+   * 装配失败（`agentPromise` 被复位但存储已打开）与正常关闭都会走到这里；
+   * 必须排在 `agent.close()` 之后，避免关闭过程中再写已关的库。
+   */
+  const closeHostMemoryStorage = (): void => {
+    try {
+      hostMemoryStorage?.close?.();
+    } catch {
+      // 退出路径静默降级：不阻断插件退出
+    }
+    hostMemoryStorage = null;
+  };
+
+  if (!agentPromise) {
+    closeHostMemoryStorage();
+    return;
+  }
   try {
     // MCP 子进程先停：注销工具 + 关闭 stdio（子进程随 transport 关闭退出）。
     // 放在 agent.close() 之前——工具注销走 agent.tools，需要执行器还活着。
@@ -886,6 +992,8 @@ export async function deactivate(): Promise<void> {
     gcScheduler?.stopPeriodic();
     gcScheduler = null;
     gcDriverAgent = null;
+    // 共享记忆存储最后关（所有 Agent 已 close，再关库不会留下写半途）
+    closeHostMemoryStorage();
     agentPromise = null;
     currentAgent = null;
   }

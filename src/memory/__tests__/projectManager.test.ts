@@ -3,7 +3,7 @@
  * 覆盖 initProject / 项目名推断 / closeProject / 锁文件
  * （项目注册表整链已于 PR-SWITCH-1 删除，注册表相关用例随之移除）
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -95,6 +95,28 @@ describe('ProjectManager · initProject', () => {
 
     const lockPath = join(tmpDir, '.memora', '.lock');
     expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('外部注入存储：shutdown 不关闭它（所有权归注入方，多实例共享）', async () => {
+    const config = makeConfig(join(tmpHome, '.memora'));
+    // 模拟「多个 Agent 共享同一记忆存储单例」
+    const sharedStorage = new InMemoryStorage();
+    // 记录 close 调用：注入方拥有该实例，Agent 侧关闭不得触碰
+    const closeSpy = vi.spyOn(sharedStorage, 'close');
+
+    const pm = new ProjectManager({ dataDir: config.memory.dataDir, storage: sharedStorage });
+    await pm.initProject(tmpDir);
+    await pm.shutdown();
+
+    // 关掉一个 Agent 不得把共享库关掉——否则同进程其余 Agent 全部断库
+    expect(closeSpy).not.toHaveBeenCalled();
+
+    // 反证：同一存储实例在「另一个 Agent」手里仍可用
+    const pm2 = new ProjectManager({ dataDir: config.memory.dataDir, storage: sharedStorage });
+    const ctx2 = await pm2.initProject(tmpDir);
+    expect(ctx2.index).toBe(sharedStorage);
+    expect(sharedStorage.count()).toBeGreaterThanOrEqual(0);
+    await pm2.shutdown();
   });
 
   it('项目名：显式传入优先，缺省由路径末段推断', async () => {
