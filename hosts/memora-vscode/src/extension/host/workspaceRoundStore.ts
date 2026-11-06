@@ -54,7 +54,9 @@ export const ROUND_TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
  * 孤儿清扫的默认存活保护（24h）。
  *
  * 判据 = 「不在任何会话 roundIds 中」（由 sessionStore 现场派生，不读 refCount）。
- * 存活保护给「刚失去引用」的轮留后悔窗口：刚删会话/截断的轮 24h 内不动物理文件。
+ * 存活保护给「刚失去引用」的轮留后悔窗口：**刚删会话的轮 24h 内不动物理文件**
+ * （`deleteSession` 复用本判据；截断 `truncateFrom` 是用户显式操作、调用方持有会话锁，
+ * 不经本保护、即时回收）。
  * 本常量是 listOrphaned / sweepOrphans 的默认参数——危险 API 必须有安全默认值，
  * 调用方想关闭保护须显式传 0。
  */

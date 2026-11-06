@@ -36,7 +36,8 @@ import {
 import { atomicWriteFileSync } from './atomicWriteSync.js';
 import { resolveProjectDataDir } from './projectDataDir.js';
 import { CrossProcessSessionLock } from './sessionLock.js';
-import { WorkspaceRoundStore } from './workspaceRoundStore.js';
+// 存活保护常量与 sweepOrphans 同源（一处来源，deleteSession 复用，不另写第二份 24h）
+import { DEFAULT_SWEEP_MIN_AGE_MS, WorkspaceRoundStore } from './workspaceRoundStore.js';
 import {
   LEGACY_GLOBAL_FILE_NAME,
   migrateLegacyGlobalState,
@@ -518,6 +519,9 @@ export class WorkspaceSessionStore implements ISessionStore {
   /**
    * 删除整条会话（历史浮层垃圾桶触发）：Round ID 列表 + 元数据 + 检查点。
    *
+   * 物理回收沿用 sweepOrphans 的 24h 存活保护（`DEFAULT_SWEEP_MIN_AGE_MS`）：`referencedIds()` 扫盘
+   * 不持锁，别窗口刚 fork 的会话文件可能尚未落盘 ⇒ 超龄才删（漏掉的引用由下一次 sweepOrphans 兜住）。
+   *
    * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
    * @returns 被移入回收站的 Round ID 列表，供调用方联动软删其记忆摘要（⑥）
    */
@@ -526,27 +530,24 @@ export class WorkspaceSessionStore implements ISessionStore {
     // ① 先注销会话（引用真源 = roundIds；引用消失必须先于物理回收，派生结果才准确）
     this.roundIdsStore.delete(sessionId);
     this.metas.delete(sessionId);
-    // 留存区标记同步摘除（**唯一清理点**）：会话已不存在，若留着标记会让留存区分组出现
-    // 无标题的幽灵条目（标记是挂载在 sessionId 上的视图标签，随会话删除一并失效）。
-    // 由此本方法对「近期列表条目」与「留存区条目」是同一条删除链路，不需要第二个删除 API。
+    // 留存区标记 / 导航指针 / 停留时刻随会话失效一并摘除（「近期」「留存区」同一条删除链路）
     this.archivedIdsSet.delete(sessionId);
-    // 导航指针同步失效（**防御性清理**）：指针指向的会话已不存在时若留着它，下次启动
-    // 会静默切到一个空会话（内核 switchToSession 对不存在会话不报错，见 getInitialSessionId）。
-    // 宿主 UI 有「当前会话不可删」守卫，故正常路径走不到这里——本行兜的是手工删数据 /
-    // 换机同步 / 旧档残留等外部入口。
     if (this.lastActiveSessionId === sessionId) this.lastActiveSessionId = '';
     this.lastActiveAtStore.delete(sessionId);
     // 只删该会话文件（不碰其他会话；没有任何全局共享文件需要重写）
     this.removeSessionFile(sessionId);
 
-    // ② 现场重算引用集合：仍被其他会话（含**另一窗口**分叉出的会话）引用的轮保留，
-    // 无人引用才移入回收站。`referencedIds()` 现扫 `sessions/` 全部会话文件，
-    // 本进程内存名单不参与判定（内存名单看不到别窗口新建的会话）。
-    // 这替代了旧的 refCount 递减 + 删轮循环——计数不是真源，派生才是。
+    // ② 现场重算引用集合：仍被其他会话（含**另一窗口**分叉出的会话）引用的轮保留；内存名单不参与判定。
     const referenced = new Set(this.referencedIds());
     const removedIds: string[] = [];
+    const now = Date.now();
     for (const roundId of roundIds) {
       if (referenced.has(roundId)) continue;
+      const round = this.roundStore.getById(roundId);
+      if (!round) continue;
+      const createdAtMs = new Date(round.createdAt).getTime();
+      // 时间不可解析 = 不删（与 listOrphaned 同一条 fail-closed 判据，不各写一份）
+      if (!Number.isFinite(createdAtMs) || now - createdAtMs < DEFAULT_SWEEP_MIN_AGE_MS) continue;
       if (this.roundStore.delete(roundId)) removedIds.push(roundId);
     }
     return removedIds;

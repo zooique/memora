@@ -405,7 +405,11 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const { store, roundStore, provider, posted } = setup();
     const { agent, softDeleteRoundSummaries } = agentStub();
     provider.setAgent(agent);
-    seedSession(store, roundStore, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);
+    // 轮创建时刻取超龄（>24h）：删除路径复用 sweepOrphans 的 24h 存活保护，
+    // 新轮本就不会被物理回收；用超龄时间戳才能验证「回收 → 软删摘要」这条联动。
+    seedSession(store, roundStore, '2026-08-14-s2', [
+      { role: 'user', content: 'y', ts: '2026-08-14T00:00:00.000Z' },
+    ]);
     store.setSessionTitle('2026-08-14-s2', '昨天会话');
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
     await (

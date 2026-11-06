@@ -69,30 +69,35 @@ function seedRound(
 }
 
 /** 铺三问答闭环的会话 [u1,a1,u2,a2,u3,a3] */
-function seedThreeTurns(store: WorkspaceSessionStore, roundStore: WorkspaceRoundStore): void {
+function seedThreeTurns(
+  store: WorkspaceSessionStore,
+  roundStore: WorkspaceRoundStore,
+  /** 三条轮的创建/消息时刻（缺省 'u1' 等不可解析占位，仅用于不涉及物理回收的用例） */
+  ts = 'u1',
+): void {
   seedRound(
     store,
     roundStore,
     '2026-08-16',
     'main',
-    { content: '问题一', ts: 'u1' },
-    { content: '回答一', ts: 'a1' },
+    { content: '问题一', ts },
+    { content: '回答一', ts },
   );
   seedRound(
     store,
     roundStore,
     '2026-08-16',
     'main',
-    { content: '问题二', ts: 'u2' },
-    { content: '回答二', ts: 'a2' },
+    { content: '问题二', ts },
+    { content: '回答二', ts },
   );
   seedRound(
     store,
     roundStore,
     '2026-08-16',
     'main',
-    { content: '问题三', ts: 'u3' },
-    { content: '回答三', ts: 'a3' },
+    { content: '问题三', ts },
+    { content: '回答三', ts },
   );
 }
 
@@ -445,10 +450,11 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     }
   });
 
-  it('deleteSession：删除消息 + meta + 回收无会话引用 Round（派生集合判 0）', () => {
+  it('deleteSession：删除消息 + meta + 回收无会话引用的超龄 Round（派生集合判 0）', () => {
     const roundId = seedRound(store, roundStore, '2026-08-17', 'main', {
       content: '你好',
-      ts: 't1',
+      // 超龄（>24h）：物理回收走 sweepOrphans 同一套存活保护，新轮不参与本判据
+      ts: '2026-08-17T00:00:00.000Z',
     });
     store.setSessionTitle?.('2026-08-17-main', '会话一');
     const removedIds = store.deleteSession('2026-08-17-main');
@@ -949,15 +955,31 @@ describe('WorkspaceSessionStore · 留存区分组标签', () => {
     expect(store.listArchivedIds()).toEqual([]);
   });
 
-  it('回归护栏：删除语义未变（物理回收 Round + 返回联动产物）', () => {
-    // 本用例锁的是「既有删除行为一字未动」——留存能力是新增面，不得改变删除的既有语义。
-    seedThreeTurns(store, roundStore);
+  it('删除会话：超龄无引用轮仍物理回收（存活保护不妨碍过期回收）', () => {
+    // 删除不再是「立即烧证据」：物理回收复用 sweepOrphans 的 24h 存活保护（下一用例锁保护面），
+    // 但**超龄**的轮必须照旧回收，否则回收链路会永久停摆。
+    seedThreeTurns(store, roundStore, '2026-08-16T00:00:00.000Z');
     const removed = store.deleteSession('2026-08-16-main');
     expect(removed).toEqual(['round-1', 'round-2', 'round-3']);
     for (const id of removed) {
       expect(roundStore.getById(id)).toBeNull();
       expect(existsSync(roundFileOf(id))).toBe(false);
     }
+  });
+
+  it('删除会话：24h 内的无引用轮不物理回收（扫描不持锁，防漏看导致误删）', () => {
+    // 判据来源：`referencedIds()` 扫会话文件不持锁，别窗口刚分叉出的会话文件可能尚未落盘；
+    // 刚建的轮若被误判孤儿会**立刻**丢数据。24h 内一律不动物理文件，交给下一次 sweepOrphans。
+    const fresh = new Date().toISOString();
+    const roundId = seedRound(store, roundStore, '2026-11-06', 'fresh', {
+      content: '新',
+      ts: fresh,
+    });
+    const removed = store.deleteSession('2026-11-06-fresh');
+    expect(removed).toEqual([]);
+    expect(roundStore.getById(roundId)).not.toBeNull();
+    // 会话本身仍被删除（保护只针对轮文件，不针对会话文件）
+    expect(store.listSessions()).not.toContain('2026-11-06-fresh');
   });
 });
 

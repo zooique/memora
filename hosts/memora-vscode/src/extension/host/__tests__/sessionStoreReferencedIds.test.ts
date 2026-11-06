@@ -94,7 +94,9 @@ describe('referencedIds 现场扫盘（跨进程）', () => {
     const storeA = new WorkspaceSessionStore(dir, roundStore);
     storeA.load();
 
-    // 原会话（A 侧）：三轮 r1 / r2 / r3；轮文件均先落盘（与生产时序同：建轮即落盘）
+    // 原会话（A 侧）：三轮 r1 / r2 / r3；轮文件均先落盘（与生产时序同：建轮即落盘）。
+    // 轮创建时刻取「超龄」（>24h）：删除路径复用 sweepOrphans 的 24h 存活保护，
+    // 刚建的轮本就不会被物理回收，用新时间戳会掩盖「引用集合是否真扫到分叉」这一判据。
     const originalId = '2026-11-06-original3';
     storeA.createSession({
       sessionId: originalId,
@@ -107,7 +109,7 @@ describe('referencedIds 现场扫盘（跨进程）', () => {
       ['r2', 'T00:01:00'],
       ['r3', 'T00:02:00'],
     ] as const) {
-      roundStore.save(makeRound(id, `2026-11-06${offset}.000Z`));
+      roundStore.save(makeRound(id, `2026-10-30${offset}.000Z`));
       storeA.appendRoundId(originalId, id);
     }
 
