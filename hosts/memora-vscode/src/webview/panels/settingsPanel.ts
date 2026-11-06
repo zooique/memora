@@ -5,28 +5,19 @@
  * 共存于单一「设置」面板，内部通过选项卡切换。
  * 子视图保留各自独立行为逻辑，通过共享同一 webview 文档 + root 容器 id 空间隔离共存。
  *
- * L3 分家（2026-10-26）：设置六页整体从侧栏 view 迁入 editor tab——**六页合一迁入，
- * 非回退到分页前形态**；对话仍留侧栏。关 tab 即 dispose，重开走 ready 握手重建 + _pendingTab 补发。
- * 方案与九条验收判据见 `tasks/待完成任务.md`「L3 设置分家方案」条。
+ * L3 分家（2026-10-26）：设置六页整体从侧栏 view 迁入 editor tab（六页合一迁入，非回退到分页前
+ * 形态）；对话仍留侧栏。关 tab 即 dispose，重开走 ready 握手重建 + _pendingTab 补发。
  *
- * 上下文保留（2026-10-26 审查订正，**勿按旧事实决策**）：panel **设** `retainContextWhenHidden: true`。
- * ⚠️ 落地初版曾记「panel 无 retainContextWhenHidden 选项（API 本就不存在）⇒ 与原侧栏销毁语义等价」——
- * **该前提是假的**：`createWebviewPanel` 的 options 类型是 `WebviewPanelOptions & WebviewOptions`，
- * 后者明载 `retainContextWhenHidden?: boolean`，且默认行为是「面板不可见即销毁 html context」。
- * 两处容器形态的**失焦频率差一个量级**（侧栏切走 vs 每个代码 tab 切换都算失焦）：不设该选项，
- * 用户「改一半配置去看代码、切回来」就丢掉六页全部表单草稿，且 webview 侧零 `setState` 兜底。
- * 隐藏期的投递语义**官方注释自相矛盾**（`retainContextWhenHidden` 注：「You cannot send messages
- * to a hidden webview, even with retainContextWhenHidden enabled」；同文件 `Webview.postMessage`
- * 注却把「hidden webviews that set retainContextWhenHidden」算作 live）⇒ **按不可靠设计，不赌**：
- * 凡「投出就清状态」的判据一律要求 `isDeliverable()`（panel 在 ∧ 已 ready ∧ 可见），隐藏期只记
- * `_pendingTab`，转可见时 `flushPendingTab()` 补发。数据面同一时机 `refreshAll()` 兜底——那是
- * 「宿主侧有些变更没有推送路径」的收敛网，**不是**对消息丢失的补偿。
+ * 上下文保留：panel **设** `retainContextWhenHidden: true`（editor tab 失焦是常态，不设即丢六页
+ * 表单草稿）。⚠️ 别按「panel 无该选项」的旧结论决策——`WebviewPanelOptions & WebviewOptions`
+ * 明载该字段。隐藏期投递语义官方注释自相矛盾 ⇒ 按不可靠设计：凡「投出就清状态」必经
+ * `isDeliverable()`（panel 在 ∧ 已 ready ∧ 可见），隐藏期只记 `_pendingTab`、转可见
+ * `flushPendingTab()` 补发；`refreshAll()` 是「宿主侧无推送路径的变更」收敛网，不是补偿。
  *
  * 设计（对齐单一真理源 + 自然生长）：
  *   - 渲染逻辑全部在 webview 内（postMessage 驱动），extension host 不做 DOM；
  *   - 子视图数据源（roles: RolePackManager / config: ProviderStore / memory: MemoryInspector）；
- *   - 各子视图的 load 逻辑在 host 侧统一由 settingsPanel 分发（根据 activeTab 决定推送哪个子视图的数据）；
- *   - 选项卡切换时只切换 content 区域显示隐藏，不销毁/重建 DOM（保留子视图状态，减少闪烁）。
+ *   - 各子视图 load 由本面板按 activeTab 分发；切选项卡只显隐 content 区，不销毁/重建 DOM。
  */
 import * as vscode from 'vscode';
 import type { Agent, ArchiveMode, MemoryInspector } from '@zooique/memora';
@@ -35,8 +26,7 @@ import type { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createBackgroundProvider } from '../../extension/host/llmConfig.js';
 import { inspectRolePackTeams } from '../../extension/host/rolePackTeams.js';
 import { MemoraChatViewProvider } from './chatPanel.js';
-// 设置面板静态 DOM 骨架：本文件贴 eslint max-lines 上限、只降不升，
-// 而骨架每加一个选项卡就长一段（线性增长域）⇒ 外置为 panels/settingsPanelHtml.ts
+// 静态 DOM 骨架外置（settingsPanelHtml.ts）：本文件贴 max-lines 只降不升，骨架线性增长
 import { buildHtml } from './settingsPanelHtml.js';
 import { refreshUserRolePacksFlow, refreshUserSkillsFlow } from './userAssetRefresh.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
@@ -119,9 +109,12 @@ export class MemoraSettingsPanel {
 
   /** 当前面板（关 tab 即 dispose → undefined；undefined = 未打开） */
   private _panel: vscode.WebviewPanel | undefined;
-  /** 同步探视「当前显示会话」的已登记 Agent（只查登记表、**不触发装配**；MCP restart 的
-   *  「已装配才重启」判据用。其余取用一律走 `_getAgent`——本面板不缓存任何实例） */
-  private _peekAgent: (() => Agent | undefined) | undefined;
+  /** 同步探视指定会话的已登记 Agent（无参 = 当前会话；不装配；其余取用走 `_getAgent`） */
+  private _peekAgent: ((sessionId?: string) => Agent | undefined) | undefined;
+  /** 已绑定角色包监听的会话 id（只存 id、不持有 Agent 引用；解绑时按 id 取回旧实例） */
+  private _boundSessionId: string | undefined;
+  /** 当前显示会话解析（与取用面同一真源；切会话时据此判定是否需要解绑旧监听） */
+  private _resolveSessionId: (() => string | undefined) | undefined;
   /** Agent 懒装配工厂（由 extension 注入，与 chat 面板同一 `AgentRegistry` 取用面） */
   private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
   /** 全局状态存储（持久化激活角色包，用户级） */
@@ -164,13 +157,16 @@ export class MemoraSettingsPanel {
   }
 
   /** 注入 Agent 取用面（真源 = extension 的 `AgentRegistry`；本面板**不缓存实例**）
-   *  `getAgent` 可能触发装配；`peekAgent` 同步探视已登记实例（不装配，MCP restart 用） */
+   *  `getAgent` 可能触发装配；`peekAgent` 同步探视已登记实例（不装配，MCP restart 用）；
+   *  `resolveSessionId` 提供「当前显示会话」——切会话时按它解绑旧监听 */
   public setAgentFactory(
     getAgent: (projectPath: string) => Promise<Agent>,
-    peekAgent?: () => Agent | undefined,
+    peekAgent?: (sessionId?: string) => Agent | undefined,
+    resolveSessionId?: () => string | undefined,
   ): void {
     this._getAgent = getAgent;
     this._peekAgent = peekAgent;
+    this._resolveSessionId = resolveSessionId;
   }
 
   /** 注入全局状态（持久化激活角色包，用户级，跨项目共享） */
@@ -622,7 +618,7 @@ export class MemoraSettingsPanel {
    * 取「面板当前显示会话」的 Agent（**不缓存实例**：复用/在途/登记全在 extension 登记表）
    *
    * 会话归属由 extension 的取用面解析（chat 面板 `_currentSessionId` 只读）⇒ 设置页的
-   * 角色/记忆/MCP 动作恒作用于**当前显示**的会话，切会话后无需清任何缓存。
+   * 动作恒作用于**当前显示**的会话；角色包监听按 `_boundSessionId` 解绑——不持有旧实例引用。
    */
   private async ensureAgent(): Promise<Agent | undefined> {
     if (!this._getAgent) return undefined;
@@ -641,8 +637,14 @@ export class MemoraSettingsPanel {
     }
     // 装配工厂可能以 undefined 收场（「Agent 未就绪」的一条出口）：此时不得去碰事件面
     if (!agent) return undefined;
-    // 每次取用都按**当前实例**幂等重绑（同一实例先 off 再 on，不叠加监听）。不保留上一台
-    // 的引用 ⇒ 切到别的会话后不对旧实例做任何操作（旧实例状态零改动）。
+    // 切会话：按旧 id 取回旧实例解绑（只存 id、不留 Agent 引用），再在当前实例上幂等重绑
+    const sessionId = this._resolveSessionId?.();
+    if (this._boundSessionId !== undefined && this._boundSessionId !== sessionId) {
+      const previous = this._peekAgent?.(this._boundSessionId);
+      previous?.off('rolePackSwitched', this.onRolePackSwitched);
+      previous?.off('rolePackSwitchLocked', this.onRolePackSwitchLocked);
+    }
+    this._boundSessionId = sessionId;
     agent.off('rolePackSwitched', this.onRolePackSwitched);
     agent.on('rolePackSwitched', this.onRolePackSwitched);
     agent.off('rolePackSwitchLocked', this.onRolePackSwitchLocked);

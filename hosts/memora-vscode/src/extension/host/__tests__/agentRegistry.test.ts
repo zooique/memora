@@ -16,6 +16,8 @@
  *    后来的实例失去「他人正持有」的告警。已登记 `PROJECTLOCK-SHARED-1`，**不在本片修复**。
  *    本判据不构成「关一个对一个毫无影响」的全称保证。
  *  - 并发同键只装配一次（在途去重复用同一 Promise）
+ *  - **fail-closed**：`dispose()` 后 `register` / `createAgentForSession` 一律拒绝、`get` 取不到；
+ *    在途装配 resolve 后**立即 close 且不登记**（deactivate 期间迟到的装配不得把死实例写回表）
  */
 // @vitest-environment node
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -181,7 +183,7 @@ describe('E4 · AgentRegistry', () => {
     expect(attempts).toBe(2);
   });
 
-  it('list() 返回全部在册实例的快照；clear() 同时清空登记表与在途表', async () => {
+  it('list() 返回全部在册实例的快照；dispose() 置停用并清空登记表与在途表', async () => {
     const registry = new AgentRegistry(sharedStores, async (id) => makeFakeAgent(id));
     const a = await registry.createAgentForSession('2026-11-05-a');
     const b = await registry.createAgentForSession('2026-11-05-b');
@@ -198,8 +200,42 @@ describe('E4 · AgentRegistry', () => {
     expect(registry.get('2026-11-05-b')).toBeUndefined();
     expect(registry.get('2026-11-05-b2')).toBe(b);
 
-    // 停用收口：清表后全空（实例生命周期由调用方先 close，登记表不碰）
-    registry.clear();
+    // 停用收口：置停用标志 + 清表后全空（实例生命周期由调用方先 close，登记表不碰）
+    registry.dispose();
+    expect(registry.list()).toEqual([]);
+    expect(registry.get('2026-11-05-a')).toBeUndefined();
+  });
+
+  it('dispose 后一律拒绝：register 抛错、createAgentForSession 拒绝、get 取不到', async () => {
+    const registry = new AgentRegistry(sharedStores, async (id) => makeFakeAgent(id));
+    const registered = await registry.createAgentForSession('2026-11-05-a');
+    registry.dispose();
+
+    // 已登记实例在停用后不可取：表已清空，拒绝返回「还活着但已停用」的实例
+    expect(registry.get('2026-11-05-a')).toBeUndefined();
+    expect(registry.list()).toEqual([]);
+    expect(() => registry.register('2026-11-05-a', registered)).toThrow(/已停用/);
+    await expect(registry.createAgentForSession('2026-11-05-a')).rejects.toThrow(/已停用/);
+  });
+
+  it('在途装配在 dispose 后完成 ⇒ 立即 close 且不登记（fail-closed）', async () => {
+    /** 手动控制的装配 Promise（模拟 close 期间仍在途的装配） */
+    let resolveFactory: (agent: Agent) => void = () => undefined;
+    const close = vi.fn(async () => undefined);
+    const lateAgent = { close } as unknown as Agent;
+    const registry = new AgentRegistry(
+      sharedStores,
+      () => new Promise<Agent>((resolve) => (resolveFactory = resolve)),
+    );
+
+    const pending = registry.createAgentForSession('2026-11-05-a');
+    registry.dispose();
+    resolveFactory(lateAgent);
+
+    // 调用方拿到拒绝（fail-closed），不是一台已关闭的实例
+    await expect(pending).rejects.toThrow(/已停用/);
+    // 迟到的实例被立即 close，且没有写回已停用的表
+    expect(close).toHaveBeenCalledTimes(1);
     expect(registry.list()).toEqual([]);
     expect(registry.get('2026-11-05-a')).toBeUndefined();
   });

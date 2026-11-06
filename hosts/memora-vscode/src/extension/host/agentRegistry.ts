@@ -50,6 +50,9 @@ export class AgentRegistry {
   /** 在途创建：同会话并发取用时复用同一 Promise，避免建出两个实例 */
   private readonly inflight = new Map<string, Promise<Agent>>();
 
+  /** 停用标志（fail-closed）：置位后拒绝一切登记与装配，在途装配 resolve 后立即关闭 */
+  private disposed = false;
+
   /**
    * @param stores 共享存储单例对（必传；类型上强制，防止各 Agent 自建一份）
    * @param factory 会话 Agent 装配函数（必传；缺它本类就无法兑现 createAgentForSession）
@@ -66,6 +69,8 @@ export class AgentRegistry {
    * @param agent 该会话的 Agent 实例
    */
   register(sessionId: string, agent: Agent): void {
+    // fail-closed：停用后拒绝登记（否则「清表后迟到的改键/补登记」会让表重新长出来）
+    if (this.disposed) throw new Error('AgentRegistry 已停用：拒绝登记');
     this.agents.set(sessionId, agent);
   }
 
@@ -102,8 +107,15 @@ export class AgentRegistry {
     this.agents.delete(sessionId);
   }
 
-  /** 清空登记表与在途表（停用收口；实例生命周期由调用方先 close） */
-  clear(): void {
+  /**
+   * 停用登记表（fail-closed 收口）
+   *
+   * 置位后 `register` / `createAgentForSession` 一律拒绝（不返回实例、不入表）；
+   * 在途装配无法撤回，resolve 后**立即 close 且不登记**——防「deactivate 期间迟到的装配」
+   * 往已清空但还活着的表里登记（换 close / 清表的**顺序**拦不住，只有状态位拦得住）。
+   */
+  dispose(): void {
+    this.disposed = true;
     this.agents.clear();
     this.inflight.clear();
   }
@@ -122,6 +134,9 @@ export class AgentRegistry {
    * @returns 属于该会话的 Agent 实例
    */
   async createAgentForSession(sessionId: string): Promise<Agent> {
+    // fail-closed：停用后拒绝装配（调用方拿到拒绝，而不是一台已关闭的实例）
+    if (this.disposed) throw new Error('AgentRegistry 已停用：拒绝装配');
+
     const existing = this.agents.get(sessionId);
     if (existing) return existing;
 
@@ -129,7 +144,12 @@ export class AgentRegistry {
     if (pending) return pending;
 
     const created = this.factory(sessionId, this.stores)
-      .then((agent) => {
+      .then(async (agent) => {
+        // 停用后迟到的装配：立即关闭、不入表，并把失败回给调用方（fail-closed）
+        if (this.disposed) {
+          await agent.close().catch(() => undefined);
+          throw new Error('AgentRegistry 已停用：在途装配已关闭');
+        }
         // 装配成功才登记：失败路径不得留下半成品
         this.agents.set(sessionId, agent);
         return agent;

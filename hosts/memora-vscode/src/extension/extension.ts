@@ -523,11 +523,14 @@ export function activate(context: vscode.ExtensionContext): void {
   // 模块级引用供 deactivate 关闭全部实例（停用路径拿不到 activate 局部变量）
   hostAgentRegistry = agentRegistry;
 
-  /** 同步探视「当前显示会话」的已登记实例（**不触发装配**；会话归属与 `getAgent` 同一解析） */
-  const peekAgent = (): Agent | undefined => {
-    const sessionId = resolveCommandSessionId(chatProvider, sessionStore);
-    return sessionId ? agentRegistry.get(sessionId) : undefined;
+  /** 同步探视指定会话的已登记实例（无参 = 当前显示会话；**不触发装配**） */
+  const peekAgent = (sessionId?: string): Agent | undefined => {
+    const id = sessionId ?? resolveCommandSessionId(chatProvider, sessionStore);
+    return id ? agentRegistry.get(id) : undefined;
   };
+  /** 当前显示会话 id（设置面板按会话解绑监听的判据；与 `getAgent` 同一解析） */
+  const resolveSessionId = (): string | undefined =>
+    resolveCommandSessionId(chatProvider, sessionStore) || undefined;
 
   // 孤儿清扫（无会话引用 Round 统一回收）：删除会话/截断后遗留的无引用轮
   // 在启动时清理，防磁盘膨胀与「无引用卡片滞留」（引用归 SessionStore、物理归 RoundStore）。
@@ -636,7 +639,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 装配复用与 chat 面板同一登记表（SSOT），角色切换持久化用户级激活态；
   // providerStore 注入供大模型子视图读写（与 chat 面板共用一个 store 单例）。
   const settingsProvider = new MemoraSettingsPanel(context.extensionUri, providerStore);
-  settingsProvider.setAgentFactory(getAgent, peekAgent);
+  settingsProvider.setAgentFactory(getAgent, peekAgent, resolveSessionId);
   settingsProvider.setGlobalState(context.globalState);
   // 注入技能目录：用户目录（打开目录按钮）+ 内置配置目录（三源技能来源判定，SSOT 收紧）
   settingsProvider.setUserSkillsDir(userSkillsDir);
@@ -938,12 +941,11 @@ export function activate(context: vscode.ExtensionContext): void {
  *   （真机观察点 ⑧ 实锤）。扩展崩溃 / 被强杀时本函数来不及执行，该场景不承诺清理。
  * 失败不阻塞插件退出。
  *
- * ⚠️ 末尾**必须清空登记表**（`hostAgentRegistry`）：
+ * ⚠️ 末尾**必须 `dispose()` 登记表**（`hostAgentRegistry`）——置停用标志 + 清表，二者缺一：
  * 本函数已把所有 Agent `close()`，而 `createAgentForSession` 的复用判据只看「有没有」、
- * 不看「死没死」。若不清表，同一扩展宿主进程内再次 `activate()`
- * 时——即 VS Code 热卸载/重装载路径（真机实证：扩展宿主因第三方扩展 veto 未重启时
- * 走的正是这条）——新面板会绑到一个已关闭的 Agent：功能全坏且**无任何报错**
- * （命令能调、agent 是死的，最难查的那种）。
+ * 不看「死没死」。若只清表不置停用，close 期间迟到的装配仍会把关闭后的实例登记回来；
+ * 同一宿主进程内再次 `activate()`（VS Code 热卸载/重装载：第三方扩展 veto 未重启宿主）
+ * 时新面板会绑到一台死 Agent——功能全坏且**无任何报错**（命令能调、agent 是死的）。
  * `close()` 失败也要清：半关闭的实例比「表里没有」更危险（表里没有会触发重新装配）。
  */
 export async function deactivate(): Promise<void> {
@@ -968,9 +970,10 @@ export async function deactivate(): Promise<void> {
     hostMemoryStorage = null;
   };
 
-  // 快照后立即清表：close 过程中若还有迟到的装配完成，也不会再被登记进「已停用」的表
+  // 快照后立即置停用 + 清表（fail-closed）：close 期间迟到的装配 resolve 后会自行 close、
+  // 不登记——换顺序拦不住它，只有 registry 的 disposed 状态位拦得住
   const agents = hostAgentRegistry?.list() ?? [];
-  hostAgentRegistry?.clear();
+  hostAgentRegistry?.dispose();
   try {
     // 没有实例也要走 finally（锁可能只因面板打开而持有，Agent 没装配照样要还）
     if (agents.length > 0) {

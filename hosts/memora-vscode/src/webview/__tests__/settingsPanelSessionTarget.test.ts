@@ -8,9 +8,11 @@
  * 面板若再缓存一份实例（旧实现 `_agentPromise`），切会话后它会静默停在 A——设置页改的是
  * 已经不在显示的那个会话，**没有任何编译错**，也没有别的测试会红。
  *
- * ⚠ 变异靶标：在 ensureAgent 里恢复「第一次取到就存下来、之后复用」⇒ 三个用例同时转红。
+ * ⚠ 变异靶标：在 ensureAgent 里恢复「第一次取到就存下来、之后复用」⇒ 前三个用例转红；
+ * 把按 sessionId 解绑改回「只绑当前实例」⇒ 监听数用例转红。
  */
 // @vitest-environment node
+import { EventEmitter } from 'node:events';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Agent } from '@zooique/memora';
 import { MemoraSettingsPanel } from '../panels/settingsPanel.js';
@@ -43,18 +45,21 @@ vi.mock('../../extension/host/mcp/runtime.js', () => ({
   restartMcpServer: vi.fn(async () => ({ ok: true })),
 }));
 
-/** 会话实例桩（角色切换 / 记忆写入可观测；事件订阅为空实现，够 ensureAgent 绑定用） */
+/** 会话实例桩（角色切换 / 记忆写入可观测；on/off 走真事件源，监听数可机判） */
 function agentStub(): {
   agent: Agent;
   switchRolePack: ReturnType<typeof vi.fn>;
   writeUpsert: ReturnType<typeof vi.fn>;
   on: ReturnType<typeof vi.fn>;
   off: ReturnType<typeof vi.fn>;
+  listeners: (event: string) => number;
 } {
   const switchRolePack = vi.fn(() => true);
   const writeUpsert = vi.fn();
-  const on = vi.fn();
-  const off = vi.fn();
+  // 真事件源：监听数回落是「按 sessionId 解绑」的直接判据，只数调用次数看不出净监听
+  const emitter = new EventEmitter();
+  const on = vi.fn((event: string, listener: () => void) => emitter.on(event, listener));
+  const off = vi.fn((event: string, listener: () => void) => emitter.off(event, listener));
   // 记忆面只需满足 editMemory → loadMemory / loadGovernance 的最小读取契约
   const memory = {
     getById: (id: string) => ({ id, name: 'n', source: 's', content: 'old' }),
@@ -70,7 +75,14 @@ function agentStub(): {
     on,
     off,
   } as unknown as Agent;
-  return { agent, switchRolePack, writeUpsert, on, off };
+  return {
+    agent,
+    switchRolePack,
+    writeUpsert,
+    on,
+    off,
+    listeners: (e) => emitter.listenerCount(e),
+  };
 }
 
 /**
@@ -84,9 +96,12 @@ function setup() {
   const b = agentStub();
   /** 当前显示会话（模拟 chat 面板 `_currentSessionId`） */
   let current: 'a' | 'b' = 'a';
-  const pick = (): Agent => (current === 'a' ? a.agent : b.agent);
+  // 带会话参数的探视：无参 = 当前会话，有参 = 按 id 取（解绑旧监听靠这条）
+  const pick = (sessionId?: string): Agent => ((sessionId ?? current) === 'a' ? a.agent : b.agent);
   const getAgent = vi.fn(async () => pick());
-  const peekAgent = vi.fn(() => pick());
+  const peekAgent = vi.fn((sessionId?: string) => pick(sessionId));
+  /** 当前显示会话解析（与生产 `resolveCommandSessionId` 同一语义） */
+  const resolveSessionId = (): string => current;
   // provider 第二参 = LLM 配置 store（ready 握手会 loadConfig，给最小可满足面）
   const store = {
     listMasked: async () => [],
@@ -94,7 +109,7 @@ function setup() {
     getBackgroundName: () => '',
   };
   const provider = new MemoraSettingsPanel({} as never, store as never);
-  provider.setAgentFactory(getAgent, peekAgent);
+  provider.setAgentFactory(getAgent, peekAgent, resolveSessionId);
   provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
   (provider as unknown as { _panel: unknown })._panel = {
     webview: { postMessage: async () => true },
@@ -105,7 +120,7 @@ function setup() {
   const switchTo = (s: 'a' | 'b'): void => {
     current = s;
   };
-  return { a, b, send, switchTo, getAgent, peekAgent };
+  return { a, b, send, switchTo, getAgent, peekAgent, resolveSessionId, provider };
 }
 
 describe('settingsPanel 会话归属（SETTINGS-AGENT-STALE-1 方案 B）', () => {
@@ -123,11 +138,38 @@ describe('settingsPanel 会话归属（SETTINGS-AGENT-STALE-1 方案 B）', () =
     await send({ type: 'roles_set_active', name: 'r2' });
 
     expect(b.switchRolePack).toHaveBeenCalledWith('r2');
-    // A 零新增调用：实例方法只被 A 显示时那一次触碰，切走后再取用也不碰它
+    // A 零新增业务调用：实例方法只被 A 显示时那一次触碰，切走后再取用也不碰它
     expect(a.switchRolePack).toHaveBeenCalledTimes(1);
     expect(a.on).toHaveBeenCalledTimes(2);
-    expect(a.off).toHaveBeenCalledTimes(2);
+    // A 的监听被按 sessionId 解绑（每次解绑 2 个 off：两事件）
+    expect(a.off).toHaveBeenCalledTimes(4);
     expect(b.on).toHaveBeenCalledTimes(2);
+  });
+
+  it('切走再切回：旧实例监听按 sessionId 解绑，监听数不累积、面板不持有 Agent 引用', async () => {
+    const { a, b, send, switchTo, provider } = setup();
+
+    await send({ type: 'roles_set_active', name: 'r1' });
+    expect(a.listeners('rolePackSwitched')).toBe(1);
+
+    switchTo('b');
+    await send({ type: 'roles_set_active', name: 'r2' });
+    // 切走：A 上监听归零；B 各事件恰好 1 份
+    expect(a.listeners('rolePackSwitched')).toBe(0);
+    expect(a.listeners('rolePackSwitchLocked')).toBe(0);
+    expect(b.listeners('rolePackSwitched')).toBe(1);
+
+    switchTo('a');
+    await send({ type: 'roles_set_active', name: 'r3' });
+    // 切回：B 监听归零，A 重新绑定且**不累积**（仍是 1，不是 2）
+    expect(b.listeners('rolePackSwitched')).toBe(0);
+    expect(a.listeners('rolePackSwitched')).toBe(1);
+    expect(a.listeners('rolePackSwitchLocked')).toBe(1);
+
+    // 全程不持有旧 agent 引用：面板自有字段里没有任何 Agent 实例
+    const fields = Object.values(provider as unknown as Record<string, unknown>);
+    expect(fields).not.toContain(a.agent);
+    expect(fields).not.toContain(b.agent);
   });
 
   it('记忆操作：切到 B 后 edit 作用在 B 的 memory，A 的记忆零写入', async () => {
