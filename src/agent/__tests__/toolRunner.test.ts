@@ -74,8 +74,9 @@ describe('ToolRunner 单工具执行', () => {
 
     expect(result.status).toBe('ok');
     expect(result.text).toBe('OK');
-    // raceToolWithSignal 把原生 outcome 回调作第 3 参、工具调用唯一 ID（tc.id）作第 4 参传入
-    expect(deps.execute).toHaveBeenCalledWith('echo', '{}', expect.any(Function), 't1');
+    // raceToolWithSignal 把原生 outcome 回调作第 3 参、工具调用唯一 ID（tc.id）作第 4 参、
+    // 中断信号作第 5 参（无 signal 时为 undefined）传入
+    expect(deps.execute).toHaveBeenCalledWith('echo', '{}', expect.any(Function), 't1', undefined);
     expect(onToolExecuted).toHaveBeenCalledWith('echo', '{}', 'OK', true);
   });
 

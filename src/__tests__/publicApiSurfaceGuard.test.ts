@@ -381,6 +381,7 @@ const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
   // 定性 = 真能力（有真实消费者：hosts chatPanel 执行指标），非 no-op 谎报。
   'isRoundSuccessful',
   'isWithinLocalDay',
+  'killProcessTree',
   'loadConfig',
   'logger',
   'parseFrontmatter',

@@ -10,6 +10,9 @@
  * 用 node 环境执行（非 jsdom），直接 await createLocalCodeExecutor().execute()。
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createLocalCodeExecutor } from '../codeExecutor.js';
 
 describe('codeExecutor（G2 本地子进程执行器）', () => {
@@ -75,4 +78,31 @@ describe('codeExecutor（G2 本地子进程执行器）', () => {
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain('function');
   });
+
+  it(
+    'TOOL-ABORT-KILL-1：中断 → 终止真实子进程树，aborted true 且脚本不再写出标记',
+    { timeout: 20_000 },
+    async () => {
+      const exe = createLocalCodeExecutor();
+      // 标记文件：脚本存活到 3s 才写。中断发生在 1s；若进程树真死，文件永不出现。
+      const marker = join(tmpdir(), `memora-run-code-abort-${Date.now()}.txt`);
+      const controller = new AbortController();
+      const code = `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'alive'), 3000);`;
+      const startedAt = performance.now();
+      const timer = setTimeout(() => controller.abort(), 1_000);
+      const r = await exe.execute(code, 'js', { signal: controller.signal });
+      clearTimeout(timer);
+      const elapsed = performance.now() - startedAt;
+      // 返回时点 ≤ 中断时点 + 2s（判据）
+      expect(elapsed).toBeLessThanOrEqual(1_000 + 2_000);
+      expect(r.aborted).toBe(true);
+      expect(r.exitCode).toBe(-1);
+      expect(r.terminationError).toBeUndefined();
+      // 观察窗：等过脚本本来要写标记的时点
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.max(0, 4_500 - (performance.now() - startedAt))),
+      );
+      expect(existsSync(marker), `中断后子进程仍在运行：标记文件被写出（${marker}）`).toBe(false);
+    },
+  );
 });

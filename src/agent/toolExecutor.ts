@@ -47,7 +47,7 @@ import { safeSearch } from '@/web-search/webSearchProvider.js';
 import type { IFetchProvider } from '@/web-fetch/types.js';
 import { safeFetch } from '@/web-fetch/webFetchProvider.js';
 import { isLoginWallPage } from '@/web-fetch/loginWall.js';
-import type { ICodeExecutionProvider } from '@/code-exec/types.js';
+import type { ICodeExecutionProvider, CodeExecutionOptions } from '@/code-exec/types.js';
 import { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
 import {
   formatExecutionResult,
@@ -386,6 +386,15 @@ export interface ToolContext {
    * @throws MemoraError 路径不在白名单内时抛出
    */
   guardPath: (path: string) => void;
+  /**
+   * turn 中止信号（可选）
+   *
+   * ⚠️ **自定义工具是进程内执行面**：内核无法强杀它。signal 只能**协作式**传递——
+   * handler 若做长耗时工作，应自行监听 `signal.aborted` 并尽早返回；不监听则工具会
+   * 在用户看到「已中止」后继续在后台跑（这是结构限制，不是本参数能解决的）。
+   * 提供本字段的意义：至少让「愿意配合的 handler」能感知中断，而不是完全失明。
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -676,6 +685,8 @@ export class ToolExecutor {
     skillName: string,
     scriptPath: string,
     args: string[],
+    /** 中断信号（TOOL-ABORT-KILL-1）：闭包把它透传给内核 runSkillScript，中断时先杀树再返回 */
+    signal?: AbortSignal,
   ) => Promise<ScriptExecutionResult | null>;
 
   /**
@@ -1014,6 +1025,10 @@ export class ToolExecutor {
    * @param toolCallId 本次工具调用的唯一 ID（可选 · 证据配对通道）：web_search 执行时随
    *   观测留痕一并携带，使宿主渲染能把证据唯一配对回工具行（不再按 query 文本猜）。
    *   非 web_search 工具忽略此参；缺省 = 证据不带 ID，宿主回退 query 启发式（保不带伤）。
+   * @param signal turn 中止信号（可选 · TOOL-ABORT-KILL-1）：
+   *   子进程执行面（run_command 同步 / run_project_script / run_skill_script / run_code）
+   *   收到 abort 后**先杀进程树再返回**；自定义工具（进程内）只能经 `ctx.signal` 协作式传递。
+   *   后台 run_command 不接此信号（后台任务活过 turn，不能随 turn 中断被杀）。
    * @returns 工具结果的字符串描述（渲染面，逐字保持）
    */
   async execute(
@@ -1022,6 +1037,7 @@ export class ToolExecutor {
     extensions?: WriteExtensions,
     emitOutcome?: (outcome: ToolOutcome) => void,
     toolCallId?: string,
+    signal?: AbortSignal,
   ): Promise<string> {
     let args: Record<string, unknown>;
     try {
@@ -1281,7 +1297,11 @@ export class ToolExecutor {
         // 此前 code 模式不传 → 执行器 spawn 无 cwd → 子进程继承宿主进程 cwd（VS Code 启动目录，
         // 不可控）→ 内联代码相对路径写文件可逃出项目根 / 读项目数据 ENOENT。
         // 四执行面（run_command / run_project_script / run_skill_script / run_code）cwd 判据至此对称。
-        const execOptions: { cwd?: string } = { cwd: this.builtinHandlers.projectPath };
+        // cwd 恒=项目根；signal 透传中断（宿主执行器据此杀自己 spawn 的子进程树）
+        const execOptions: CodeExecutionOptions = {
+          cwd: this.builtinHandlers.projectPath,
+          signal,
+        };
         if (scriptPath) {
           // 读取脚本文件原样执行（路径白名单 + 长度上限由 readScriptFile 负责，截断会破坏语法）
           execCode = await this.builtinHandlers.readScriptFile(scriptPath);
@@ -1371,12 +1391,21 @@ export class ToolExecutor {
           SCRIPT_RESULT_TAIL_CHARS,
         );
         // 格式化：与 run_skill_script 共用 formatExecutionResult（同一真理源，改格式契约须两链路同步）
+        // ⚠️ aborted / terminationError 必须原样带进格式化（TOOL-ABORT-KILL-1）：
+        // 丢掉它们 ⇒ 用户中断被报成普通「执行失败」，且「进程树终止未确认」的诚实提示消失。
         const codeText = formatExecutionResult(
-          { stdout, stderr, exitCode: result.exitCode, timedOut: result.timedOut },
+          {
+            stdout,
+            stderr,
+            exitCode: result.exitCode,
+            timedOut: result.timedOut,
+            aborted: result.aborted,
+            terminationError: result.terminationError,
+          },
           { kind: 'CODE', timeoutDetail: '代码执行超时', errorDetail: '代码执行失败' },
         );
-        // status 直接读执行事实（B2-a：不扫文本前缀）：超时或退出码非 0 = failed，其余 = ok
-        const codeFailed = result.timedOut || result.exitCode !== 0;
+        // status 直接读执行事实（B2-a：不扫文本前缀）：超时 / 中断 / 退出码非 0 = failed
+        const codeFailed = result.timedOut || result.aborted === true || result.exitCode !== 0;
         emitOutcome?.(codeFailed ? failedOutcome(codeText) : okOutcome(codeText));
         return codeText;
       }
@@ -1654,7 +1683,7 @@ export class ToolExecutor {
           emitOutcome?.(blockedOutcome('permission_denied', declineText));
           return declineText;
         }
-        const result = await this.runSkillScript(skillName, scriptPath, scriptArgs);
+        const result = await this.runSkillScript(skillName, scriptPath, scriptArgs, signal);
         if (result === null) {
           // 脚本不存在/无法执行 = 执行事实失败（区别于权限拒绝）
           const notFoundText = `[ERR:SCRIPT_NOT_FOUND] 未找到脚本 "${scriptPath}"（技能 "${skillName}" 无此脚本，或执行失败）`;
@@ -1667,8 +1696,8 @@ export class ToolExecutor {
           RUN_SCRIPT_RESULT_MAX_LEN,
           SCRIPT_RESULT_TAIL_CHARS,
         );
-        // status 直接读执行事实：超时或退出码非 0 = failed，其余 = ok（不扫文本前缀）
-        const scriptFailed = result.timedOut || result.exitCode !== 0;
+        // status 直接读执行事实：超时 / 中断 / 退出码非 0 = failed，其余 = ok（不扫文本前缀）
+        const scriptFailed = result.timedOut || result.aborted === true || result.exitCode !== 0;
         emitOutcome?.(scriptFailed ? failedOutcome(formattedText) : okOutcome(formattedText));
         return formattedText;
       }
@@ -1736,6 +1765,8 @@ export class ToolExecutor {
           this.builtinHandlers.projectPath,
           // node 路径（可选）：node runtime 分支走宿主注入的真实 node，避免无独立 node 时 ENOENT
           this.scriptNodePath,
+          // signal：中断时先杀这个脚本的进程树再返回
+          signal,
         );
         // 返回净化：脚本输出当外部内容去控制字符 + 长度上限（防刷屏撑爆上下文，对齐 run_skill_script）
         // 超时文案按本次实际超时生成（未传 timeout_ms → 内核默认 60s，见上），不恒报上限 600s
@@ -1744,8 +1775,9 @@ export class ToolExecutor {
           RUN_SCRIPT_RESULT_MAX_LEN,
           SCRIPT_RESULT_TAIL_CHARS,
         );
-        // status 直接读执行事实（B2-a：不扫文本前缀）：超时或退出码非 0 = failed，其余 = ok
-        const projectScriptFailed = result.timedOut || result.exitCode !== 0;
+        // status 直接读执行事实（B2-a：不扫文本前缀）：超时 / 中断 / 退出码非 0 = failed
+        const projectScriptFailed =
+          result.timedOut || result.aborted === true || result.exitCode !== 0;
         emitOutcome?.(
           projectScriptFailed ? failedOutcome(projectScriptText) : okOutcome(projectScriptText),
         );
@@ -1842,12 +1874,12 @@ export class ToolExecutor {
         const effectiveTimeoutMs = resolveCommandTimeoutMs(
           typeof args['timeoutMs'] === 'number' ? args['timeoutMs'] : undefined,
         );
-        const result = await runShellCommand(command, cwd, effectiveTimeoutMs);
+        const result = await runShellCommand(command, cwd, effectiveTimeoutMs, signal);
         // 定长与净化由 formatCommandResult 自带（真源在格式化层，回流面共用同一上限）
         const text = formatCommandResult(result, effectiveTimeoutMs);
         // 原生 status 直接读**执行事实**（不扫文本前缀）：超时或退出码非 0 = failed，其余 = ok。
         // status 与 text 同源产出，编排层/计数层只读 status（B4 判据切换，无文本交叉核对）。
-        const commandFailed = result.timedOut || result.exitCode !== 0;
+        const commandFailed = result.timedOut || result.aborted === true || result.exitCode !== 0;
         emitOutcome?.(commandFailed ? failedOutcome(text) : okOutcome(text));
         return text;
       }
@@ -2042,6 +2074,8 @@ export class ToolExecutor {
               const absolutePath = this.builtinHandlers.resolveSafePath(path);
               this.builtinHandlers.guardPathOrThrow(absolutePath, name, 'custom');
             },
+            // 进程内面只能协作式取消：内核无法强杀 handler（见 ToolContext.signal 注释）
+            signal,
           };
           try {
             return await custom.handler(args, ctx);

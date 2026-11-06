@@ -19,6 +19,18 @@ export interface CodeExecutionResult {
   exitCode: number;
   /** 是否超时 */
   timedOut: boolean;
+  /**
+   * 是否被调用方中断（turn 中止 signal 触发）。
+   *
+   * 与 `timedOut` 分列（不是同义合并）：超时是执行器自己到点，中断是用户/上层主动中止——
+   * 文案与归因都不同，合并会让「用户按了停止」被报成「执行超时」。
+   */
+  aborted?: boolean;
+  /**
+   * 中断时进程树终止未确认的原因（权限不足 / 目标不可终止等）。
+   * 只在 `aborted` 为真时有意义；非空 ⇒ 结果文案必须如实告知可能仍有残留，不假装已终止。
+   */
+  terminationError?: string;
 }
 
 /** 代码执行选项 */
@@ -27,6 +39,12 @@ export interface CodeExecutionOptions {
   timeoutMs?: number;
   /** 工作目录（可选，未传由执行器决定） */
   cwd?: string;
+  /**
+   * 中断信号（可选）：执行器监听 abort 后必须终止自己 spawn 的子进程树，
+   * 并在终止完成后才 settle。宿主实现负责调用内核导出的 `killProcessTree`
+   * （禁止在宿主侧自写一份杀树实现——那会与内核超时路径形成双轨）。
+   */
+  signal?: AbortSignal;
 }
 
 /**

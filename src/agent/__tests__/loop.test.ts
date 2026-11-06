@@ -1144,6 +1144,8 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
       '{"path":"a.ts"}',
       expect.any(Function),
       expect.any(String),
+      // 第 5 参 = turn 中止信号（无 signal 时为 undefined，TOOL-ABORT-KILL-1）
+      undefined,
     );
 
     const messages = loop.getMessages();
@@ -1206,6 +1208,8 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
       '{"path":"a.md"}',
       expect.any(Function),
       expect.any(String),
+      // 第 5 参 = turn 中止信号（无 signal 时为 undefined，TOOL-ABORT-KILL-1）
+      undefined,
     );
     expect(chunks.filter((c) => c.type === 'tool_start')).toHaveLength(1);
   });
@@ -1273,12 +1277,16 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
       '{"path":"a.ts"}',
       expect.any(Function),
       expect.any(String),
+      // 第 5 参 = turn 中止信号（无 signal 时为 undefined，TOOL-ABORT-KILL-1）
+      undefined,
     );
     expect(toolExecutor).toHaveBeenCalledWith(
       'list_dir',
       '{}',
       expect.any(Function),
       expect.any(String),
+      // 第 5 参 = turn 中止信号（无 signal 时为 undefined，TOOL-ABORT-KILL-1）
+      undefined,
     );
   });
 
@@ -1849,14 +1857,20 @@ describe('AgentLoop · processUserInput 工具调用 signal 中断', () => {
     expectWellFormedToolPairing(loop.getMessages());
   });
 
-  it('signal 在工具执行中 abort 时应解除 generator 阻塞', async () => {
-    // 工具执行耗时 100ms，signal 在 10ms 时 abort
-    // raceToolWithSignal 应在 abort 时立即返回 ABORTED，不等工具完成
-    const toolExecutor = vi
-      .fn()
-      .mockImplementation(
-        () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 100)),
-      );
+  it('signal 在工具执行中 abort：signal 传到执行器，进程内工具在宽限内完成则结果按事实为 ok', async () => {
+    // 工具执行耗时 100ms，signal 在 10ms 时 abort。
+    // TOOL-ABORT-KILL-1 语义：abort 不再立刻夺回返回值（那会让子进程继续跑却显示已中止），
+    // 而是把 signal 透传给执行器并给 1.8s 结算宽限。本用例是进程内工具（忽略 signal，
+    // 100ms 完成）⇒ 结果按事实 ok；turn 中断仍由 aborted chunk 表达。
+    /** 执行器收到的第 5 参（判 signal 确实传到执行面） */
+    let seenSignal: AbortSignal | undefined;
+    const toolExecutor = vi.fn().mockImplementation(
+      (_n: string, _a: string, _e: unknown, _id: string, signal?: AbortSignal) =>
+        new Promise<string>((resolve) => {
+          seenSignal = signal;
+          setTimeout(() => resolve('工具结果'), 100);
+        }),
+    );
 
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -1881,13 +1895,15 @@ describe('AgentLoop · processUserInput 工具调用 signal 中断', () => {
       chunks.push(chunk);
     }
 
-    // 应有 aborted chunk（raceToolWithSignal 检测到 abort 返回 ABORTED → 循环结束后 abort 检查触发）
+    // 应有 aborted chunk（循环结束后的 abort 检查触发）
     const aborted = chunks.filter((c) => c.type === 'aborted');
     expect(aborted.length).toBeGreaterThan(0);
-    // tool_result 应标记为失败（ABORTED 错误）
+    // 进程内面判据：signal 确实传到执行器且已 abort（能否被杀由 handler 决定，内核杀不掉）
+    expect(seenSignal?.aborted).toBe(true);
+    // 工具在宽限内自行完成 ⇒ 结果按事实 ok（不谎报失败；中断事实由 aborted chunk 承载）
     const toolResults = chunks.filter((c) => c.type === 'tool_result');
     if (toolResults.length > 0 && toolResults[0]!.type === 'tool_result') {
-      expect(toolResults[0]!.ok).toBe(false);
+      expect(toolResults[0]!.ok).toBe(true);
     }
   });
 });
@@ -3758,6 +3774,8 @@ describe('AgentLoop · L2 策略 setToolCallsBlocked', () => {
       '{"path":"a.ts"}',
       expect.any(Function),
       expect.any(String),
+      // 第 5 参 = turn 中止信号（无 signal 时为 undefined，TOOL-ABORT-KILL-1）
+      undefined,
     );
     const toolResults = chunks.filter((c) => c.type === 'tool_result');
     expect(toolResults).toHaveLength(1);
@@ -4001,6 +4019,8 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
       '{"path":"a.ts"}',
       expect.any(Function),
       expect.any(String),
+      // 第 5 参 = turn 中止信号（无 signal 时为 undefined，TOOL-ABORT-KILL-1）
+      undefined,
     );
   });
 
@@ -4346,6 +4366,8 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
       '{"path":"a.ts"}',
       expect.any(Function),
       expect.any(String),
+      // 第 5 参 = turn 中止信号（无 signal 时为 undefined，TOOL-ABORT-KILL-1）
+      undefined,
     );
     expect(chunks2.some((c) => c.type === 'paused')).toBe(false);
     expect(chunks2[chunks2.length - 1]!.type).toBe('done');

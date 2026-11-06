@@ -872,12 +872,16 @@ interface CodeExecutionResult {
   stderr: string;
   exitCode: number;
   timedOut: boolean;
+  aborted?: boolean;          // 被调用方中断（turn 中止 signal 触发）；与 timedOut 分列，文案不同
+  terminationError?: string;  // 中断时进程树终止未确认的原因（非空 ⇒ 结果文案须如实告知可能残留）
 }
 
 // 执行选项
 interface CodeExecutionOptions {
   timeoutMs?: number;  // 单次执行超时上限（毫秒，默认 30000，最大 120000）
   cwd?: string;        // 工作目录（可选，未传由执行器决定）
+  signal?: AbortSignal; // 中断信号：abort 后宿主执行器必须终止自己 spawn 的子进程树，
+                        // 并在终止完成后才 settle；终止请调用内核导出的 killProcessTree（禁止自写一份）
 }
 
 // 代码执行提供者接口

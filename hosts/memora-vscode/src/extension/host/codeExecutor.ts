@@ -8,8 +8,11 @@
  *     与插件主进程（extension host）进程级隔离——**死循环/崩溃只影响子进程，
  *     不会卡死或污染插件主进程**（这是首选 vm 沙箱但 vm 的 timeout 对纯 CPU
  *     死循环实测不可靠、会卡死主进程后放弃 vm 方案的根因）；
- *   - 硬超时强杀：到 timeoutMs 未退出即 `child.kill()`（Windows 下 TerminateProcess），
- *     返回 timedOut:true，防无限执行拖垮系统；
+ *   - 硬超时强杀：到 timeoutMs 未退出即 `killProcessTree`（taskkill /T /F 或进程组，
+ *     **不是**只 `child.kill()` 单杀），返回 timedOut:true，防无限执行拖垮系统；
+ *   - 中断强杀（TOOL-ABORT-KILL-1）：`options.signal` abort 后同样走 `killProcessTree`，
+ *     **终止完成后**才 resolve（aborted:true）；终止未确认时带 terminationError 如实上报。
+ *     与内核超时路径共用**同一个**杀树原语（禁止宿主自写一份 = 双轨腐化）。
  *   - 输出收集 + 上限截断：stdout/stderr 累计进 result；超长输出由内核 ToolExecutor
  *     的 RUN_CODE_RESULT_MAX_LEN 截断，不在本层重复。
  *
@@ -25,10 +28,11 @@
  * 「node」对齐 script_path 模式按扩展名推断（.js/.mjs/.cjs/.ts → node）。
  */
 import { spawn } from 'node:child_process';
-import type {
-  ICodeExecutionProvider,
-  CodeExecutionResult,
-  CodeExecutionOptions,
+import {
+  killProcessTree,
+  type ICodeExecutionProvider,
+  type CodeExecutionResult,
+  type CodeExecutionOptions,
 } from '@zooique/memora';
 
 /** 默认执行超时（毫秒）：纯计算场景足够 */
@@ -81,11 +85,18 @@ export function createLocalCodeExecutor(): ICodeExecutionProvider {
       // 外部兜底超时（safeExecuteCode 已包一层，此处再保底以防 not-race 场景）
       return new Promise<CodeExecutionResult>((resolve) => {
         let settled = false;
+        /** 硬超时定时器（finish 时清理；提前声明以免 finish 的 TDZ） */
+        let killer: NodeJS.Timeout | undefined;
+        /** 中断监听（finish 时摘除，防同一 turn 多工具累积监听器） */
+        let onAbort: (() => void) | undefined;
+        /** 是否处于「中断杀树中」：此窗口内 close/error 不得抢先结算（否则 aborted 结果被丢） */
+        let aborting = false;
         /** 一次结算：保证只 resolve/落定时器一次 */
         const finish = (result: CodeExecutionResult): void => {
           if (settled) return;
           settled = true;
-          clearTimeout(killer);
+          if (killer) clearTimeout(killer);
+          if (onAbort) options?.signal?.removeEventListener('abort', onAbort);
           resolve(result);
         };
 
@@ -109,6 +120,8 @@ export function createLocalCodeExecutor(): ICodeExecutionProvider {
         });
         // 子进程启动失败（如 execPath 不可用）
         child.on('error', (err) => {
+          // 中断杀树窗口内让位：中断结果由 kill 完成后的 continuation 统一产出
+          if (aborting) return;
           finish({
             stdout,
             stderr: stderr || `执行失败：${err.message}`,
@@ -118,21 +131,53 @@ export function createLocalCodeExecutor(): ICodeExecutionProvider {
         });
         // 子进程正常退出：exitCode = code
         child.on('close', (code) => {
+          // 同上：杀树会触发 close，若抢先结算会丢掉 aborted / terminationError（谎报）
+          if (aborting) return;
           finish({ stdout, stderr, exitCode: code ?? -1, timedOut: false });
         });
 
-        // 硬超时：到点强杀子进程，返回 timedOut
-        const killer = setTimeout(() => {
+        // 硬超时：到点强杀**进程树**，返回 timedOut
+        // （改用内核共享原语：代码可能再 spawn 子进程，单杀直接子进程会留下孤儿）
+        killer = setTimeout(() => {
           // 已退出则无需杀
           if (child.exitCode !== null || child.killed) {
             finish({ stdout, stderr, exitCode: child.exitCode ?? -1, timedOut: false });
             return;
           }
-          child.kill(); // Windows 下等价 TerminateProcess
+          void killProcessTree(child);
           finish({ stdout, stderr, exitCode: -1, timedOut: true });
         }, timeoutMs);
         // 定时器在 finish 中清理（unref 防仅定时器残留阻塞进程退出）
         if (typeof killer.unref === 'function') killer.unref();
+
+        // 中断（TOOL-ABORT-KILL-1）：先杀树、确认终止后才结算——
+        // 用户看到「已中止」时进程必须已死；终止未确认则如实带 terminationError。
+        const handleAbort = (): void => {
+          if (settled) return;
+          aborting = true;
+          if (killer) {
+            clearTimeout(killer);
+            killer = undefined;
+          }
+          void killProcessTree(child).then((r) => {
+            finish({
+              stdout,
+              stderr,
+              exitCode: -1,
+              timedOut: false,
+              aborted: true,
+              terminationError: r.ok ? undefined : (r.error ?? '进程树终止未确认'),
+            });
+          });
+        };
+        if (options?.signal) {
+          if (options.signal.aborted) {
+            handleAbort();
+          } else {
+            onAbort = handleAbort;
+            options.signal.addEventListener('abort', onAbort, { once: true });
+          }
+        }
       });
     },
   };

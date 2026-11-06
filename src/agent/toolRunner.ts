@@ -44,12 +44,14 @@ type PreCheckDecision =
 export interface ToolRunnerDeps {
   /** 执行单个工具（loop 的 opts.toolExecutor）。
    *  第 3 参 emitOutcome：执行器按调用独立产出原生 outcome 的通道（见 toolExecutor.execute）
-   *  第 4 参 toolCallId：本次工具调用唯一 ID（web_search 证据配对通道，透传至 toolExecutor.execute） */
+   *  第 4 参 toolCallId：本次工具调用唯一 ID（web_search 证据配对通道，透传至 toolExecutor.execute）
+   *  第 5 参 signal：turn 中止信号（TOOL-ABORT-KILL-1）——子进程执行面据此先杀进程树再返回 */
   execute: (
     name: string,
     args: string,
     emitOutcome?: (outcome: ToolOutcome) => void,
     toolCallId?: string,
+    signal?: AbortSignal,
   ) => Promise<string>;
   /**
    * 全部工具定义提供者（内置 + 自定义；只读闸查 readonly 标记，与暴露面无关）
@@ -231,11 +233,16 @@ export class ToolRunner {
   }
 
   /**
-   * 工具执行与 signal abort 竞争包裹。toolExecutor 签名不接受 signal，无法真正中断；
-   * 用 Promise.race 竞争，signal 先 abort 则返回 [ERR:TOOL:ABORTED]（而非抛 AbortError，
-   * 避免破坏"工具失败回传 LLM"契约；ABORTED 不入错误码体系，不触发 Reflection）
+   * 工具执行与 signal abort 竞争包裹。
    *
-   * @param emitOutcome 原生 outcome 回调（透传给 execute；abort 出口也经它显式 emit failed，
+   * TOOL-ABORT-KILL-1 后的语义：signal **同时透传给 execute**，子进程执行面收到 abort
+   * 会先杀进程树、再返回真实中断结果。故 abort 发生时不能像旧实现那样立刻夺回返回值
+   * （那会让用户看到「已中止」时进程还在跑）——本函数先给 execute 一个结算宽限
+   * （`ABORT_SETTLE_GRACE_MS`，略大于内核杀树确认上限 1.5s），让真实的「进程树已终止」
+   * 结果优先胜出；仅当 execute 在宽限内仍未返回（进程内工具无法被杀）才由编排层兜底
+   * 返回 [ERR:TOOL:ABORTED]。
+   *
+   * @param emitOutcome 原生 outcome 回调（透传给 execute；abort 兜底出口也经它显式 emit failed，
    *   保证 runOne 兜底（nativeOutcome ?? ok）读到中断事实而非误判 ok）
    * @param toolCallId 工具调用唯一 ID（透传给 execute，web_search 证据配对通道）
    */
@@ -249,7 +256,7 @@ export class ToolRunner {
     const { execute } = this.deps;
     // 无 signal 时直接执行工具（保持原行为，测试场景常用）
     if (!signal) {
-      return execute(name, args, emitOutcome, toolCallId);
+      return execute(name, args, emitOutcome, toolCallId, undefined);
     }
 
     // signal 已 abort：直接返回中断错误，不发起工具调用
@@ -260,24 +267,44 @@ export class ToolRunner {
       return abortedText;
     }
 
-    // abort 监听 Promise（signal abort 时 resolve 错误串）；onAbort 提外层便于 race 后清理
+    // abort 监听：不立即 resolve，先给 execute 杀树的机会（见方法注释）；宽限计时器
+    // 需在 race 结束后清掉，否则会留下一个悬挂定时器
     let onAbort: (() => void) | null = null;
+    let graceTimer: NodeJS.Timeout | undefined;
     const abortPromise = new Promise<string>((resolve) => {
       onAbort = () => {
         const abortedText = '[ERR:TOOL:ABORTED] 错误：工具执行被中断';
-        // 中断胜出 = 失败事实（execute 仍在后台跑但结果丢弃），显式 emit 防兜底误判 ok
-        emitOutcome(failedOutcome(abortedText));
-        resolve(abortedText);
+        graceTimer = setTimeout(() => {
+          // 中断兜底 = 失败事实（execute 仍未返回，结果丢弃），显式 emit 防兜底误判 ok
+          emitOutcome(failedOutcome(abortedText));
+          resolve(abortedText);
+        }, ABORT_SETTLE_GRACE_MS);
+        if (typeof graceTimer.unref === 'function') graceTimer.unref();
       };
       signal.addEventListener('abort', onAbort, { once: true });
     });
 
-    // race 结束清理监听器，避免并发工具调用累积残留监听器（{ once: true } 不保证未触发时被移除）。
-    // ⚠️ 注意：execute 胜出时已完成（含可能的 emitOutcome）；abort 胜出时执行仍在后台跑但结果丢弃。
-    return Promise.race([execute(name, args, emitOutcome, toolCallId), abortPromise]).finally(
-      () => {
-        if (onAbort) signal.removeEventListener('abort', onAbort);
-      },
-    );
+    // race 结束清理监听器与宽限计时器，避免并发工具调用累积残留资源
+    // （{ once: true } 不保证未触发时被移除）。
+    return Promise.race([
+      execute(name, args, emitOutcome, toolCallId, signal),
+      abortPromise,
+    ]).finally(() => {
+      if (onAbort) signal.removeEventListener('abort', onAbort);
+      if (graceTimer) clearTimeout(graceTimer);
+    });
   }
 }
+
+/**
+ * abort 后等待执行面自行结算的宽限（毫秒）。
+ *
+ * 为什么必须存在：子进程面（run_command / 项目脚本 / 技能脚本 / run_code）收到 signal
+ * 后要跑一次 `taskkill /T /F`（实测 212–287ms）并等 close，才能保证「返回时进程已死」。
+ * 若像旧实现那样 abort 即刻 resolve，就会出现「界面说已中止、后台进程还在写文件」——
+ * 这正是 TOOL-ABORT-KILL-1 要消灭的缺陷。
+ *
+ * 1.8s > 内核杀树确认上限 1.5s，< 判据上限 2s：子进程面正常在 ~300ms 内返回真实结果；
+ * 进程内工具（自定义 handler / 内置文件工具）无法被强杀，1.8s 后由本层兜底返回 ABORTED。
+ */
+const ABORT_SETTLE_GRACE_MS = 1_800;

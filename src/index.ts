@@ -243,6 +243,10 @@ export { BACKGROUND_TASK_STATUS_LABELS } from '@/agent/backgroundTasks.js';
 // 经本函数派生（environmentProvider），禁自写平台三元副本——两侧映射漂移 = 对模型说假话
 // （模型按 A shell 语法写命令却在 B shell 下执行，每次必败）。
 export { resolveShellCommand } from '@/skill/skillScriptRunner.js';
+// 进程树终止原语（TOOL-ABORT-KILL-1）：宿主 ICodeExecutionProvider（run_code）中断/超时时
+// 必须用它杀自己 spawn 的整棵树——禁止宿主自写一份（内核对超时路径用同一份 = 单点）。
+// 返回终止结果（ok/error）使宿主能如实上报「终止未确认」，而不是假装成功。
+export { killProcessTree } from '@/skill/skillScriptRunner.js';
 // MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）
 export type { ForkResult } from '@/agent/messageHistory.js';
 // 注：extractKeywords 为 keywordsTouch 导出的内核分词 SSOT（project-search/terms.ts 同源消费，不另造分词器），

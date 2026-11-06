@@ -616,9 +616,10 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     providerRouter: providerRouter ?? undefined,
     bootstrapMemories: pctx.bootstrapMemories,
     // 第 5 参透传：ToolRunner 的原生 outcome 回调必须直达 ToolExecutor（不透传 = 已切族静默回落文本判据）；
-    // toolCallId 透传 = web_search 证据按调用唯一 ID 配对（宿主渲染不再按 query 文本猜）
-    toolExecutor: (name: string, args: string, emitOutcome, toolCallId) =>
-      toolExec.execute(name, args, undefined, emitOutcome, toolCallId),
+    // toolCallId 透传 = web_search 证据按调用唯一 ID 配对（宿主渲染不再按 query 文本猜）；
+    // signal 透传 = turn 中止时子进程执行面先杀进程树再返回（TOOL-ABORT-KILL-1）
+    toolExecutor: (name: string, args: string, emitOutcome, toolCallId, signal) =>
+      toolExec.execute(name, args, undefined, emitOutcome, toolCallId, signal),
     systemPromptPrefix,
     rolePackBaseTokens,
     toolDefinitions: toolExec.list,
@@ -906,7 +907,13 @@ export async function assembleComponents(
   };
 
   // 渐进披露 L3：注入 run_skill_script 脚本执行回调
-  toolExec.runSkillScript = async (skillName: string, scriptPath: string, args: string[]) => {
+  toolExec.runSkillScript = async (
+    skillName: string,
+    scriptPath: string,
+    args: string[],
+    // 中断信号透传（TOOL-ABORT-KILL-1）：技能脚本是子进程面，abort 后先杀树再返回
+    signal?: AbortSignal,
+  ) => {
     // cwd=项目根（SKILL-CWD-1，2026-10-14）：与 run_project_script 同款供给——修因不修果，
     // 改喂给判据的事实：脚本内相对路径 / 省略 --dir 走默认，落点一律受 projectPath 约束。
     // 修复前此处传 undefined → 子进程继承宿主进程 cwd（VS Code 安装目录）→ 写文件可逃出项目根。
@@ -923,6 +930,7 @@ export async function assembleComponents(
       undefined,
       projectPath,
       input.scriptNodePath,
+      signal,
     );
   };
 

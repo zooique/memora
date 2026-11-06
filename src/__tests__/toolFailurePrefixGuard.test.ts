@@ -238,6 +238,11 @@ const TOOL_RESULT_TAGS: Readonly<Record<string, string>> = {
   ERR_TOOL_PERMISSION_DENIED: '宿主 preExecutionCheck 拒绝（权限闸拦截，未执行）',
   ERR_TOOL_READONLY_DENIED: '只读模式下写入工具被拦截（安全闸，未执行）',
   ERR_TOOL_UNKNOWN: '工具执行抛非 MemoraError 异常（兜底失败串）',
+  // 中断族（TOOL-ABORT-KILL-1）：执行被用户/上层中断——工具**没跑完**，LLM 须知道结果
+  // 不可当作完整产出；同时「进程树是否已确认终止」由正文承载（终止失败不得假装成功）。
+  SCRIPT_ABORTED: '脚本执行被中断（进程树终止状态见正文；未跑完 ⇒ 输出不可当完整结果）',
+  CODE_ABORTED: '代码执行被中断（进程树终止状态见正文；未跑完 ⇒ 输出不可当完整结果）',
+  COMMAND_ABORTED: '命令执行被中断（进程树终止状态见正文；未跑完 ⇒ 输出不可当完整结果）',
 
   // ── 软降级 / 非失败族：语义上**不是**失败（status 恒 ok / blocked，不该触发自纠）──
   KILLED: '主动终止（被强杀无退出码，贴失败码即谎报——刻意不走三态格式化）',
@@ -360,6 +365,7 @@ function expandTemplateTags(): ReadonlyMap<string, readonly string[]> {
   return new Map<string, readonly string[]>([
     ['${labels.kind}_ERROR', kinds.map((k) => `${k}_ERROR`)],
     ['${labels.kind}_TIMEOUT', kinds.map((k) => `${k}_TIMEOUT`)],
+    ['${labels.kind}_ABORTED', kinds.map((k) => `${k}_ABORTED`)],
     ['ERR:TOOL:${code}', codes.map((c) => `ERR:TOOL:${c}`)],
     // 后台通知查表产出：模板键从扫描器路径提取，展开成员 = 穷尽表值全集
     [deriveBackgroundNoticeTemplate(), deriveBackgroundNoticeTags()],

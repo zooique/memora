@@ -107,12 +107,15 @@ export interface AgentLoopOptions {
    * 工具执行入口（装配层注入）。
    * 第 3 参 emitOutcome：已切族工具产出原生结构化 outcome 的通道（透传至 toolExecutor.execute）。
    * 第 4 参 toolCallId：本次工具调用唯一 ID（web_search 证据配对通道，透传至 toolExecutor.execute）。
+   * 第 5 参 signal：turn 中止信号（TOOL-ABORT-KILL-1，透传至 toolExecutor.execute；
+   *   子进程执行面收到 abort 后先杀进程树再返回，进程内工具只能协作式感知）。
    */
   toolExecutor: (
     name: string,
     args: string,
     emitOutcome?: (outcome: ToolOutcome) => void,
     toolCallId?: string,
+    signal?: AbortSignal,
   ) => Promise<string>;
   maxIterations?: number;
   /** 系统 prompt 前缀（角色包 prompt），注入到 bootstrap 记忆之前 */
@@ -675,9 +678,10 @@ export class AgentLoop {
     // 单工具执行器：注入 loop 稳定能力窄面，strategy 经闭包读最新（setStrategy 动态生效）
     this.toolRunner = new ToolRunner({
       // 原生 outcome 回调逐跳透传：ToolRunner → opts.toolExecutor → toolExecutor.execute；
-      // toolCallId 同步透传（web_search 证据配对通道，见 ToolRunnerDeps.execute 第 4 参）
-      execute: (name, args, emitOutcome, toolCallId) =>
-        this.opts.toolExecutor(name, args, emitOutcome, toolCallId),
+      // toolCallId 同步透传（web_search 证据配对通道，见 ToolRunnerDeps.execute 第 4 参）；
+      // signal 同步透传（TOOL-ABORT-KILL-1：子进程执行面据此先杀树再返回）
+      execute: (name, args, emitOutcome, toolCallId, signal) =>
+        this.opts.toolExecutor(name, args, emitOutcome, toolCallId, signal),
       allTools: opts.allTools,
       preExecutionCheck: opts.preExecutionCheck,
       onToolExecuted: opts.onToolExecuted,

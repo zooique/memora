@@ -159,43 +159,92 @@ function buildTaskkillArgs(pid: number): string[] {
  * - POSIX：spawn 时 `detached: true` 使子进程自成进程组（pgid == pid），
  *   故 `process.kill(-pid, 'SIGKILL')` 杀整组；失败降级同上。
  *
- * ⚠️ 本原语是**私有**实现：宿主 codeExecutor 属另一进程上下文，够不着本函数；其同款缺口
- * （`child.kill()` 单杀）已独立登记立项（方案文档 命令执行能力方案 §13.6 未决一）——**禁止**在宿主侧复制
- * 一份实现（双轨各造 = 并列腐化），要么阶段 2 一起提成内核内部共享原语，要么维持登记。
+ * ✅ 本原语已**导出**（不再私有）：宿主 `ICodeExecutionProvider` 执行器（run_code）在自己的
+ * 进程上下文里 spawn 子进程，中断时同样需要杀树。历史注释曾禁止宿主复制一份实现（双轨各造
+ * = 并列腐化），本次按该注释的「阶段 2 一起提成共享原语」路径收口——内核与宿主共用**这一份**。
+ *
+ * 返回值是「终止结果」而非 void：中断路径必须在 kill **完成后**才向用户返回「已中止」，
+ * 且 kill 失败（权限不足等）必须如实上报，不许假装成功（`ok:false` + `error` 供文案使用）。
+ *
+ * @param child 目标子进程句柄（pid 为空时视为无法终止）
+ * @returns 终止结果（`ok` = 进程树已确认终止；`alreadyExited` = 目标已先行退出，视为达成）
  */
-function killProcessTree(child: childProcess.ChildProcess): void {
+export interface ProcessTreeKillResult {
+  /** 进程树是否已确认终止（目标已先行退出也算达成） */
+  ok: boolean;
+  /** 目标进程已先行退出（Windows taskkill 128 语义；正常竞态，不是失败） */
+  alreadyExited: boolean;
+  /** 未成功时的原因（降级为 `child.kill()` 单杀时说明「只及直接子进程」） */
+  error?: string;
+}
+
+export function killProcessTree(child: childProcess.ChildProcess): Promise<ProcessTreeKillResult> {
   const pid = child.pid;
-  if (pid === undefined) return;
+  if (pid === undefined) {
+    return Promise.resolve({ ok: false, alreadyExited: false, error: '子进程无 pid，无法终止' });
+  }
   if (process.platform === 'win32') {
-    const killer = childProcess.spawn('taskkill', buildTaskkillArgs(pid), {
-      windowsHide: true,
-      stdio: 'ignore',
+    return new Promise<ProcessTreeKillResult>((resolve) => {
+      const killer = childProcess.spawn('taskkill', buildTaskkillArgs(pid), {
+        windowsHide: true,
+        stdio: 'ignore',
+      });
+      killer.on('error', (err) => {
+        logger.warn({ pid, err }, 'taskkill 启动失败，降级为 kill 直接子进程');
+        try {
+          child.kill();
+        } catch {
+          // 已退出 / 句柄失效：降级也失败，交给 error 文案如实上报
+        }
+        resolve({
+          ok: false,
+          alreadyExited: false,
+          error: `taskkill 启动失败（${String(err)}），已降级为只杀直接子进程`,
+        });
+      });
+      killer.on('close', (code) => {
+        if (code === 128) {
+          // 128 = ERROR_PROC_NOT_FOUND（Windows taskkill 语义）：目标进程已退出——
+          // 强杀目标已达成（正常竞态：探活与 taskkill 之间进程自然结束），
+          // 静默结束，不当降级也不打 WARN（2026-10-03 实锤：门禁日志噪音源）。
+          // 主 pid 已死时孙进程成孤儿无人收割——child.kill 够不着，属残余边界
+          // （Windows pid 复用窗口下的 taskkill 误杀风险同样在此，见 命令执行能力方案 §13.6-A 登记）。
+          resolve({ ok: true, alreadyExited: true });
+          return;
+        }
+        if (code !== 0) {
+          logger.warn({ pid, code }, 'taskkill 未成功结束进程树，降级为 kill 直接子进程');
+          try {
+            child.kill();
+          } catch {
+            // 同上：降级失败由 error 文案承载
+          }
+          resolve({
+            ok: false,
+            alreadyExited: false,
+            error: `taskkill 退出码 ${code}（权限不足或目标不可终止），已降级为只杀直接子进程`,
+          });
+          return;
+        }
+        resolve({ ok: true, alreadyExited: false });
+      });
     });
-    killer.on('error', (err) => {
-      logger.warn({ pid, err }, 'taskkill 启动失败，降级为 kill 直接子进程');
-      child.kill();
-    });
-    killer.on('close', (code) => {
-      if (code === 128) {
-        // 128 = ERROR_PROC_NOT_FOUND（Windows taskkill 语义）：目标进程已退出——
-        // 强杀目标已达成（正常竞态：探活与 taskkill 之间进程自然结束），
-        // 静默结束，不当降级也不打 WARN（2026-10-03 实锤：门禁日志噪音源）。
-        // 主 pid 已死时孙进程成孤儿无人收割——child.kill 够不着，属残余边界
-        // （Windows pid 复用窗口下的 taskkill 误杀风险同样在此，见 命令执行能力方案 §13.6-A 登记）。
-        return;
-      }
-      if (code !== 0) {
-        logger.warn({ pid, code }, 'taskkill 未成功结束进程树，降级为 kill 直接子进程');
-        child.kill();
-      }
-    });
-    return;
   }
   try {
     process.kill(-pid, 'SIGKILL');
+    return Promise.resolve({ ok: true, alreadyExited: false });
   } catch (err) {
     logger.warn({ pid, err }, '进程组强杀失败，降级为 kill 直接子进程');
-    child.kill('SIGKILL');
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // 降级失败由 error 文案承载
+    }
+    return Promise.resolve({
+      ok: false,
+      alreadyExited: false,
+      error: `进程组强杀失败（${String(err)}），已降级为只杀直接子进程`,
+    });
   }
 }
 
@@ -320,7 +369,23 @@ interface GovernanceOptions {
   logLabel: string;
   /** 终局回调（**只调用一次**） */
   resolve: (result: ScriptExecutionResult & { enoent: boolean }) => void;
+  /**
+   * 中断信号（前台执行面专用）：abort 后先终止进程树，**终止完成**才结算。
+   * 后台路径不传（后台任务活过 turn，不得被 turn 的中断连带杀死）。
+   */
+  signal?: AbortSignal;
 }
+
+/**
+ * 中断后等待进程树确认退出的上限（毫秒）。
+ *
+ * 取值依据 2026-11-06 Windows 实测：`taskkill /T /F` 杀一棵 cmd→node 树耗时
+ * 212–287ms（3 轮）。1.5s = 实测值 ×5 的余量，同时给上游 `ToolRunner` 的 1.8s
+ * 结算宽限留出余量，保证「用户看到已中止」时进程确已死、且整条链 ≤2s。
+ * 超过本值时按「未确认退出」如实上报，绝不假装已终止。POSIX `kill(-pid)` 是
+ * 系统调用级，远快于此。
+ */
+const ABORT_CONFIRM_TIMEOUT_MS = 1_500;
 
 /**
  * 给已 spawn 的子进程挂上**统一治理**：输出收集（内存护栏）+ 超时杀树 + 终局回调。
@@ -336,6 +401,10 @@ function attachGovernance(
   let stderr = '';
   let timedOut = false;
   let enoent = false;
+  /** 是否被中断 signal 中止（用户/上层主动停止） */
+  let aborted = false;
+  /** 中断时进程树终止未确认的原因（空 = 已确认终止） */
+  let terminationError: string | undefined;
   /** 是否已结算（超时强杀与 close/error 竞争时的单点守卫） */
   let settled = false;
   /** 收集侧内存护栏：stdout/stderr 共享字节预算（方案文档 命令执行能力方案 §13.6-B） */
@@ -353,14 +422,78 @@ function attachGovernance(
     stderr,
     exitCode,
     timedOut,
+    aborted,
+    terminationError,
     enoent,
     truncated: collector.truncated,
     discardedBytes: collector.discardedBytes,
   });
 
+  let killer: NodeJS.Timeout | undefined;
+  /** 中断后等 close 的兜底计时器（close 不来也必须结算，且如实标「未确认退出」） */
+  let abortSafety: NodeJS.Timeout | undefined;
+
+  /** 结算前的统一清理：清两个计时器 + 摘掉 signal 监听（防同一 turn 多工具累积监听器） */
+  const cleanup = (): void => {
+    if (killer) {
+      clearTimeout(killer);
+      killer = undefined;
+    }
+    if (abortSafety) {
+      clearTimeout(abortSafety);
+      abortSafety = undefined;
+    }
+    opts.signal?.removeEventListener('abort', onAbort);
+  };
+
+  /** 是否处于「中断杀树中」：此窗口内 close/error 不得抢先结算（否则 aborted 结果会被丢） */
+  let aborting = false;
+
+  /**
+   * 中断处理：**先杀树、后结算**。
+   *
+   * 顺序是判据的一部分（TOOL-ABORT-KILL-1）：用户看到「已中止」时进程必须已死。
+   * 故不在 abort 事件里立即 resolve，而是等 `killProcessTree` 完成后再结算——
+   * 杀树会触发 close 事件，若 close 抢先结算，结果里既没有 `aborted` 也没有
+   * `terminationError`（会被当成「正常退出」或普通失败，即谎报）；故 close/error
+   * 在 `aborting` 窗口内一律让位。1.5s 兜底计时器只在杀树本身卡住时结算，
+   * 并写 `terminationError`（如实告知，禁止假装成功）。
+   */
+  const onAbort = (): void => {
+    if (settled) return;
+    aborted = true;
+    aborting = true;
+    if (killer) {
+      clearTimeout(killer);
+      killer = undefined;
+    }
+    logger.warn({ logLabel: opts.logLabel }, '执行收到中止信号，正在终止进程树');
+    void killProcessTree(child).then((r) => {
+      if (!r.ok) {
+        terminationError = r.error ?? '进程树终止未确认';
+        logger.warn({ logLabel: opts.logLabel, error: terminationError }, '中断时进程树终止失败');
+      }
+      if (settled) return;
+      settled = true;
+      cleanup();
+      opts.resolve(snapshot(-1));
+    });
+    abortSafety = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      if (!terminationError) terminationError = '进程树未在 1.5s 内确认退出';
+      logger.warn(
+        { logLabel: opts.logLabel, terminationError },
+        '中断后进程树未在时限内确认退出，按未确认状态结算',
+      );
+      cleanup();
+      opts.resolve(snapshot(-1));
+    }, ABORT_CONFIRM_TIMEOUT_MS);
+    if (typeof abortSafety.unref === 'function') abortSafety.unref();
+  };
+
   // 硬超时：到点强杀**进程树**并立即结算——对齐宿主 codeExecutor 的 killer 形态
   // （不等 close，避免 taskkill 异步失败 / 子进程僵死时终局永不发生）
-  let killer: NodeJS.Timeout | undefined;
   if (opts.timeoutMs !== null) {
     killer = setTimeout(() => {
       if (settled) return;
@@ -370,11 +503,21 @@ function attachGovernance(
         { logLabel: opts.logLabel, timeoutMs: opts.timeoutMs },
         '子进程执行超时，已强杀进程树',
       );
-      killProcessTree(child);
+      void killProcessTree(child);
+      cleanup();
       opts.resolve(snapshot(-1));
     }, opts.timeoutMs);
     // 定时器不阻塞宿主进程退出（对齐宿主 codeExecutor 的 killer.unref 语义）
     if (typeof killer.unref === 'function') killer.unref();
+  }
+
+  // 中断监听：先注册，再处理「挂载时已经 abort」的竞态（否则整个执行面会漏掉这次中断）
+  if (opts.signal) {
+    if (opts.signal.aborted) {
+      onAbort();
+    } else {
+      opts.signal.addEventListener('abort', onAbort, { once: true });
+    }
   }
 
   child.on('error', (err) => {
@@ -382,16 +525,18 @@ function attachGovernance(
     // 记标记供 L2 fallback，其余错误原样返回
     enoent = (err as NodeJS.ErrnoException).code === 'ENOENT';
     logger.error({ logLabel: opts.logLabel, err }, '子进程执行错误');
-    if (settled) return;
+    // 杀树触发的 error/close 不得抢先结算：中断结果由 kill 完成后的 continuation 统一产出
+    if (settled || aborting) return;
     settled = true;
-    if (killer) clearTimeout(killer);
+    cleanup();
     opts.resolve({ ...snapshot(-1), stderr: stderr || String(err) });
   });
 
   child.on('close', (code) => {
-    if (settled) return;
+    // 同上：中断窗口内让位，避免把「被杀的退出码」当成正常结局
+    if (settled || aborting) return;
     settled = true;
-    if (killer) clearTimeout(killer);
+    cleanup();
     opts.resolve(snapshot(code ?? 0));
   });
 
@@ -432,6 +577,8 @@ export async function runShellCommand(
   command: string,
   cwd?: string,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  /** 中断信号（前台执行面）：abort 后先杀树再结算 */
+  signal?: AbortSignal,
 ): Promise<ScriptExecutionResult> {
   const { command: shell, args } = resolveShellCommand(command);
   return new Promise((resolve) => {
@@ -452,6 +599,7 @@ export async function runShellCommand(
       timeoutMs: normalizeTimeoutMs(timeoutMs),
       logLabel: command,
       resolve,
+      signal,
     });
   });
 }
@@ -498,7 +646,7 @@ export function startBackgroundCommand(
     resolve: onSettled,
   });
   return {
-    killNow: () => killProcessTree(child),
+    killNow: () => void killProcessTree(child),
     killNowSync: () => killProcessTreeSync(child),
     peek: governance.peek,
   };
@@ -528,6 +676,11 @@ export async function runSkillScript(
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
   cwd?: string,
   nodePath?: string,
+  /**
+   * 中断信号（前台执行面）：abort 后先杀树、后结算。
+   * 已 abort 时不进入 python 兜底链（那是「解释器不可用」的补救，不是中断后的重试）。
+   */
+  signal?: AbortSignal,
 ): Promise<ScriptExecutionResult> {
   // win32 + shell + 非 .bat/.cmd → 在 spawn 前显式拒绝，
   // 不让假 status=0 进入 formatExecutionResult（喂给判据的事实必须为真）
@@ -572,10 +725,15 @@ export async function runSkillScript(
         timeoutMs: effectiveTimeout,
         logLabel: scriptPath,
         resolve,
+        signal,
       });
     });
 
   const result = await runOnce(command, cmdArgs);
+
+  // 中断优先于兜底：用户已中止时不再为「解释器不可用」重试（否则会在中止后
+  // 又 spawn 一个新进程，直接违背「已中止 = 无残留」判据）
+  if (signal?.aborted) return result;
 
   // Windows python 不可用兜底链。python 命令在本机
   // 不可用有两种形态：① spawn ENOENT（现代 Python 只装 py 启动器、无 python 命令）；
@@ -693,6 +851,15 @@ export function formatExecutionResult(
     : '';
   if (result.timedOut) {
     return `[${labels.kind}_TIMEOUT] ${labels.timeoutDetail}\nstdout: ${result.stdout}\nstderr: ${result.stderr}${truncatedNote}`;
+  }
+  // 中断分支：与超时/失败分列（TOOL-ABORT-KILL-1 判据）
+  // - 终止已确认：明说「进程树已终止」，用户看到「已中止」时进程确已死；
+  // - 终止未确认：如实告知可能仍有残留（kill 失败不得假装成功）。
+  if (result.aborted) {
+    const termination = result.terminationError
+      ? `进程树终止未确认：${result.terminationError}（可能仍有残留进程）`
+      : '进程树已终止';
+    return `[${labels.kind}_ABORTED] 执行被用户中断（${termination}）\nstdout: ${result.stdout}\nstderr: ${result.stderr}${truncatedNote}`;
   }
   if (result.exitCode !== 0) {
     return `[${labels.kind}_ERROR] ${labels.errorDetail}（退出码: ${result.exitCode}）\nstdout: ${result.stdout}\nstderr: ${result.stderr}${truncatedNote}`;

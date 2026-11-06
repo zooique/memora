@@ -607,7 +607,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
     kind: 'interface',
     members: ['confirmPolicy', 'description', 'diskWrite', 'name', 'parameters', 'readonly'],
   },
-  ToolContext: { kind: 'interface', members: ['guardPath'] },
+  ToolContext: { kind: 'interface', members: ['guardPath', 'signal'] },
   WriteExtensions: { kind: 'interface', members: ['onBeforeWrite'] },
   RolePackMeta: {
     kind: 'interface',
@@ -850,8 +850,11 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   FetchOptions: { kind: 'interface', members: ['maxChars'] },
   FetchWebFetchProvider: { kind: 'class', members: ['fetch'] },
   ICodeExecutionProvider: { kind: 'interface', members: ['execute', 'supportedLanguages'] },
-  CodeExecutionResult: { kind: 'interface', members: ['exitCode', 'stderr', 'stdout', 'timedOut'] },
-  CodeExecutionOptions: { kind: 'interface', members: ['cwd', 'timeoutMs'] },
+  CodeExecutionResult: {
+    kind: 'interface',
+    members: ['aborted', 'exitCode', 'stderr', 'stdout', 'terminationError', 'timedOut'],
+  },
+  CodeExecutionOptions: { kind: 'interface', members: ['cwd', 'signal', 'timeoutMs'] },
   IEnvironmentProvider: { kind: 'interface', members: ['getEnvironment'] },
   HostEnvironmentInfo: { kind: 'interface', members: ['os', 'runtimes', 'shell'] },
   IProjectSearchProvider: { kind: 'interface', members: ['searchFiles', 'searchText'] },
