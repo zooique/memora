@@ -74,6 +74,14 @@ import type { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 
 // ─── 模块级常量 ─────────────────────────────────────────
 
+/**
+ * 插话受理结果（`Agent.interject` 的唯一返回值形状）
+ *
+ * 🔴 三态必须区分，不可折叠成 boolean：`'queued-unpersisted'` 是「**已生效但历史没存**」——
+ * 折成 true 会让宿主无从提示（用户重发即双执行），折成 false 会让宿主诱导用户重发（同样双执行）。
+ */
+export type InterjectOutcome = 'queued' | 'queued-unpersisted' | 'rejected-limit';
+
 // ─── Agent 门面类 ───────────────────────────────────────
 
 /**
@@ -1001,28 +1009,35 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 无「立即中断」模式：只有单一申请模式（无 inputInterrupt 立即中断通道）。
    *
    * 归属：插话同时以「补充」交互输入持久化到当前闭环节点（interactiveInputs），
-   * 保证跨重启重放时插话内容不丢失、不分裂新轮。持久化 fire-and-forget（appendUser 内部
-   * 已 catch 写入失败，仅记日志），不阻塞插话本身。
+   * 保证跨重启重放时插话内容不丢失、不分裂新轮。
+   *
+   * 🔴 顺序即语义 =「先入队、后落盘」，且**落盘失败不回滚队列**：
+   * 插话的执行面是 loop 队列（step 边界必注入），不依赖历史落盘——落盘只服务跨重启重放。
+   * 若因落盘失败就中断/回滚，用户会以为「这条没送出」而重发 ⇒ 同一条被注入两次（双执行）。
+   * 故落盘失败只如实上报（`'queued-unpersisted'`），执行与当前轮照常走到收场，由宿主提示
+   * 「已生效但未写入历史」。
    *
    * 上限裁决：loop 待注入插话达 LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS 时**整条拒收**——
-   * 先入队后持久化（顺序即语义）：拒收时零入队、零落盘、零上屏（调用方据返回值提示用户）。
+   * 拒收时零入队、零落盘、零上屏（调用方据此提示用户）。
    *
-   * @returns true=已入队并持久化；false=已达上限被拒收（未入队未落盘）
+   * @returns 受理结果（`'queued'` 已入队且已落盘；`'queued-unpersisted'` 已入队但历史未写入；
+   *   `'rejected-limit'` 已达上限被拒收，未入队未落盘）
    */
-  interject(content: string): boolean {
+  async interject(content: string): Promise<InterjectOutcome> {
     this.assertInitialized('interject');
     // 先入队（上限裁决在此）：满员拒收时不可写盘——队列没进、落盘却写 = 数据不一致
     const accepted = this.requireLoop.interject(content);
-    if (!accepted) return false;
+    if (!accepted) return 'rejected-limit';
     // 持久化插话为闭环节点交互补充输入（roundId 非空时才写；空=无在途闭环，跳过）
     const closureRoundId = this.loop?.getCurrentRoundId();
-    if (closureRoundId) {
-      void this.history?.appendUser(content, closureRoundId, {
-        interactive: true,
-        kind: 'supplement',
-      });
-    }
-    return true;
+    if (!closureRoundId) return 'queued';
+    const outcome = await this.history?.appendUser(content, closureRoundId, {
+      interactive: true,
+      kind: 'supplement',
+    });
+    // 交互归属被 fail-closed 拒绝（目标轮不存在）：插话已在队列生效，不得回滚，
+    // 只把「未能写入历史」如实交给宿主提示。
+    return outcome === 'round-missing' ? 'queued-unpersisted' : 'queued';
   }
 
   /**

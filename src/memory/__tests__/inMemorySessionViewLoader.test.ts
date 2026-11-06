@@ -13,8 +13,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { InMemorySessionViewLoader } from '@/memory/inMemorySessionViewLoader.js';
 import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
-import { completeRound } from '@/memory/roundStore.js';
-import { createPendingRoundFixture } from './helpers/roundFixture.js';
+import { completeRoundFixture, createPendingRoundFixture } from './helpers/roundFixture.js';
 
 describe('InMemorySessionViewLoader', () => {
   let roundStore: InMemoryRoundStore;
@@ -31,7 +30,7 @@ describe('InMemorySessionViewLoader', () => {
   /** 保存一个 complete Round 到会话 */
   function seedRound(content: string, ai: string): string {
     const round = createPendingRoundFixture(content);
-    const completed = completeRound(round, ai);
+    const completed = completeRoundFixture(round, ai);
     roundStore.save(completed);
     sessionStore.createSession({
       sessionId: SID,

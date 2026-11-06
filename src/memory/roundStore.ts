@@ -767,38 +767,3 @@ export function generateMessageId(): string {
   const random = Math.random().toString(36).slice(2, 10);
   return `msg-${timestamp}${random}`;
 }
-
-/**
- * 完成 Round（设置 AI 消息）
- *
- * 辅助函数：将 pending Round 转换为 complete 状态
- *
- * ⚠️ 注意：本函数**不设置任何摘要关联字段**——摘要记忆的 ID 由 roundSummaryGenerator
- * 按 `round-summary:{sessionName}:{roundId}` 独立构造并按 roundId 溯源，
- * Round 侧不持有反向指针（GC 清理走 roundId 派生寻址，见 gcService）。
- *
- * @param round - 要完成的 Round（必须是 pending 状态）
- * @param assistantContent - AI 回复内容
- * @param tokenUsage - Token 用量统计
- * @returns 更新后的 complete Round
- */
-export function completeRound(
-  round: Round,
-  assistantContent: string,
-  tokenUsage?: { input: number; output: number },
-): Round {
-  const now = new Date().toISOString();
-
-  return {
-    ...round,
-    assistantMessage: {
-      id: generateMessageId(),
-      role: 'assistant',
-      content: assistantContent,
-      timestamp: now,
-      tokenUsage,
-    },
-    status: 'complete',
-    completedAt: now,
-  };
-}

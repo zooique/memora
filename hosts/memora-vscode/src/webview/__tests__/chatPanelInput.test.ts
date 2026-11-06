@@ -24,7 +24,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
 import { join } from 'node:path';
-import type { Agent, ImageRef } from '@zooique/memora';
+import type { Agent, ImageRef, InterjectOutcome } from '@zooique/memora';
 import { MAX_PENDING_INTERJECTIONS } from '../../shared/constants.js';
 import type { PendingQuestionDto, TurnState } from '../../shared/protocol.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
@@ -57,8 +57,8 @@ vi.mock('vscode', async () => ({
 
 /** agent 桩：覆盖输入路由 + consumeFlow 尾部依赖的最小面 */
 function inputAgentStub() {
-  // 默认受理（内核未满员常态）：宿主上屏以返回值为判，undefined 会被当拒收
-  const interject = vi.fn((): boolean => true);
+  // 默认受理（内核未满员常态）：内核返回三态之一，宿主按字符串判分支
+  const interject = vi.fn(async (): Promise<InterjectOutcome> => 'queued');
   const answerQuestion = vi.fn();
   const getPendingInterjections = vi.fn((): string[] => []);
   // 显式参数类型：mock.calls 元组元素可索引（TS2493：无参推导为空 tuple）
@@ -451,9 +451,9 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
   it('INPUT-LIMIT-1：插话队列达上限 → 整条拒收，不排队不上屏，警告提示', async () => {
     const h = setupInput();
     const { interject, chat } = mount(h);
-    // 上限裁决单一真源在内核：agent.interject() 达上限返回 false（零入队零落盘），
+    // 上限裁决单一真源在内核：agent.interject() 达上限返回 'rejected-limit'（零入队零落盘），
     // 宿主只消费返回值——桩模拟内核满员拒收
-    interject.mockReturnValue(false);
+    interject.mockResolvedValue('rejected-limit');
     h.cast.runtimeFor().streaming = true;
     h.cast.runtimeFor().abortController = new AbortController();
     h.cast._turnState = { phase: 'running' };
@@ -472,7 +472,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     const h = setupInput();
     const { interject } = mount(h);
     // 内核受理（未满员）→ 宿主不 post user 气泡（呈现时机 = 消费时刻）
-    interject.mockReturnValue(true);
+    interject.mockResolvedValue('queued');
     h.cast.runtimeFor().streaming = true;
     h.cast.runtimeFor().abortController = new AbortController();
     h.cast._turnState = { phase: 'running' };
@@ -481,6 +481,27 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
 
     expect(interject).toHaveBeenCalledTimes(1);
     expect(h.posted.filter((m) => (m as { type?: string }).type === 'user')).toHaveLength(0);
+  });
+
+  it('INTERJECT-PERSIST-1：插话已生效但历史未写入 → 上屏 error 提示且不诱导重发', async () => {
+    const h = setupInput();
+    const { interject, chat } = mount(h);
+    // 内核三态之一：'queued-unpersisted'（入队成功、appendUser 因目标轮不存在被 fail-closed）
+    interject.mockResolvedValue('queued-unpersisted');
+    h.cast.runtimeFor().streaming = true;
+    h.cast.runtimeFor().abortController = new AbortController();
+    h.cast._turnState = { phase: 'running' };
+
+    await h.cast.handleInput({ kind: 'send', text: '补充要求' });
+
+    // ① 可见提示（复用流内 error 消息协议，零新增通道）
+    const errorMsg = h.posted.find((m) => (m as { type?: string }).type === 'error') as
+      { message?: string } | undefined;
+    expect(errorMsg?.message).toContain('已生效');
+    expect(errorMsg?.message).toContain('无需重发');
+    // ② 不双执行：不发起新 chat、不重复入队
+    expect(interject).toHaveBeenCalledTimes(1);
+    expect(chat).not.toHaveBeenCalled();
   });
 
   it('INPUT-LIMIT-1：webview 镜像常量与内核真源同值（跨包数值漂移守卫）', async () => {

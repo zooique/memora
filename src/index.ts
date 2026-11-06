@@ -9,6 +9,9 @@
 
 // ─── 库导出：供宿主项目 import 接入 ──────────────────────
 export { Agent } from '@/agent/agent.js';
+// 插话受理三态（`queued` / `queued-unpersisted` / `rejected-limit`）：宿主据此分别
+// 「静默上屏」「提示已生效但未写入历史」「提示达上限未送出」，折叠成 boolean 必误导用户重发。
+export type { InterjectOutcome } from '@/agent/agent.js';
 export type {
   AgentChunk,
   ThinkingPhase,

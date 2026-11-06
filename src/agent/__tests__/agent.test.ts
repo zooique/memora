@@ -114,6 +114,8 @@ function makeAgent(
   configDir: string,
   dataDir: string,
   archiveMode?: 'full' | 'manual',
+  /** 可选注入 RoundStore：需要验证「落盘面」行为的用例（如插话缺轮）用它造真实 store */
+  roundStore?: IRoundStore,
 ): Agent {
   return new Agent({
     projectPath,
@@ -123,6 +125,7 @@ function makeAgent(
     permission: 'owner',
     allowedPaths: [dataDir],
     archiveMode,
+    roundStore,
     messages: {
       abortedByUser: '用户取消了对话',
       maxIterationsReached: '\n\n[已达到最大迭代次数]',
@@ -355,30 +358,30 @@ describe('Agent · interject 插话上限（KERNEL-QUEUE-LIMIT-1）', () => {
     rmSync(tmpData, { recursive: true, force: true });
   });
 
-  it('未初始化时 interject 抛明确错误（assertInitialized 统一拦截形态）', () => {
+  it('未初始化时 interject 抛明确错误（assertInitialized 统一拦截形态）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    expect(() => agent!.interject('提前插话')).toThrow(/Agent 未初始化/);
+    await expect(agent!.interject('提前插话')).rejects.toThrow(/Agent 未初始化/);
   });
 
-  it('受理：未满员返回 true 且入队（getPendingInterjections 可见）', async () => {
+  it('受理：未满员返回 queued 且入队（getPendingInterjections 可见）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    expect(agent.interject('补充甲')).toBe(true);
-    expect(agent.interject('补充乙')).toBe(true);
+    await expect(agent.interject('补充甲')).resolves.toBe('queued');
+    await expect(agent.interject('补充乙')).resolves.toBe('queued');
     expect(agent.getPendingInterjections()).toEqual(['补充甲', '补充乙']);
   });
 
-  it('满员：第 6 条返回 false 且队列不增（整条拒收，透传 loop 裁决）', async () => {
+  it('满员：第 6 条返回 rejected-limit 且队列不增（整条拒收，透传 loop 裁决）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
     for (let i = 0; i < LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS; i++) {
-      expect(agent.interject(`插话${i}`)).toBe(true);
+      await expect(agent.interject(`插话${i}`)).resolves.toBe('queued');
     }
     expect(agent.getPendingInterjections()).toHaveLength(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);
-    // 上限裁决单一真源在内核：agent 层只透传 boolean，不重复裁决
-    expect(agent.interject('超出上限的一条')).toBe(false);
+    // 上限裁决单一真源在内核：agent 层只透传三态，不重复裁决
+    await expect(agent.interject('超出上限的一条')).resolves.toBe('rejected-limit');
     expect(agent.getPendingInterjections()).toHaveLength(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);
   });
 
@@ -387,12 +390,31 @@ describe('Agent · interject 插话上限（KERNEL-QUEUE-LIMIT-1）', () => {
     await agent.init();
 
     for (let i = 0; i < LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS; i++) {
-      agent.interject(`插话${i}`);
+      await agent.interject(`插话${i}`);
     }
-    expect(agent.interject('第 6 条先拒')).toBe(false);
+    await expect(agent.interject('第 6 条先拒')).resolves.toBe('rejected-limit');
     expect(agent.removePendingInterject(0)).toBe(true);
-    expect(agent.interject('腾位后新插话')).toBe(true);
+    await expect(agent.interject('腾位后新插话')).resolves.toBe('queued');
     expect(agent.getPendingInterjections()).toHaveLength(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);
+  });
+
+  it('缺轮：插话已在队列生效但历史未写入 → queued-unpersisted（不中断、不造假记录）', async () => {
+    const roundStore = new InMemoryRoundStore();
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, roundStore);
+    await agent.init();
+    // 造「在途闭环 id 指向一个不存在的轮」（模拟该轮档案被中途清理/删除）
+    // 只替换 id 读取，不碰 loop 队列——被测行为正是「执行面与落盘面解耦」
+    const loop = (agent as unknown as { loop: { getCurrentRoundId(): string | undefined } }).loop;
+    loop.getCurrentRoundId = () => 'round-missing-fixture';
+    const before = roundStore.size();
+
+    await expect(agent.interject('补充要求')).resolves.toBe('queued-unpersisted');
+
+    // ① 执行面照常生效：已入队（不因落盘失败而回滚/中断，回滚会诱导用户重发 ⇒ 双执行）
+    expect(agent.getPendingInterjections()).toEqual(['补充要求']);
+    // ② 盘上无假记录：appendUser fail-closed 不建轮
+    expect(roundStore.getById('round-missing-fixture')).toBeNull();
+    expect(roundStore.size()).toBe(before);
   });
 });
 

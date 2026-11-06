@@ -129,6 +129,8 @@ import {
 import { friendlyErrorMessage } from '../../shared/errorText.js';
 // 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
 import { dedupeRefs } from '../../shared/refKey.js';
+// 插话受理三态的可见文案（INPUT-LIMIT-1 / INTERJECT-PERSIST-1）：文案单点，勿在面板内嵌字面量
+import { INTERJECT_LIMIT_NOTICE, INTERJECT_UNSAVED_NOTICE } from '../../shared/constants.js';
 // 历史会话列表投影（store → DTO 纯映射，外置于 max-lines TARGET 文件）
 import { buildSessionListMessage } from '../helpers/sessionList.js';
 // 过程事件 / 指标段级合并（纯函数，HOST-SPLIT-1 切片自本类外置；三条调用面共用同一语义）
@@ -3148,15 +3150,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 无缝插话（SSOT）：生成中 Enter 补充 → agent.interject() 排队，内核下一 step 边界并入为
     // user 消息续跑（不 abort 旧流、不新开 chat）；pausePending 窗口发补充 = interject + 取消暂停。
     if (this.runtimeFor().streaming && this.runtimeFor().abortController) {
-      // INPUT-LIMIT-1 条数上限：裁决真源在内核（MAX_PENDING_INTERJECTIONS），interject 达上限返回
-      // false（零入队零落盘）；宿主只消费返回值做提示，不自持计数。拒收必须提示（静默丢整条 = 背刺）。
-      const accepted = agent.interject(input);
-      if (!accepted) {
-        void vscode.window.showWarningMessage(
-          `Memora：待并入的插话已达 ${INTERJECT_LIMIT} 条上限，本条未送出——可在待发送区删减后再试`,
-        );
-        return;
-      }
+      // 三态裁决真源在内核：'rejected-limit' 零入队零落盘（须提示）；'queued-unpersisted'=已生效但历史未写（勿诱导重发，重发即双执行）
+      const outcome = await agent.interject(input);
+      if (outcome === 'rejected-limit')
+        return void vscode.window.showWarningMessage(INTERJECT_LIMIT_NOTICE(INTERJECT_LIMIT));
+      if (outcome === 'queued-unpersisted')
+        this.post({ type: 'error', message: INTERJECT_UNSAVED_NOTICE, category: 'unknown' });
       // 上屏时机 = 消费时刻（吸收时上屏）：排队中 ≠ 已说出，入队成功**不再**即时 post type:'user'
       // （退役设计：变异加回 `this.post({type:'user',…})` 即 chatPanelInterject「入队不 post」红）。
       // 排队期唯一呈现 = 待发送区；内核消费落盘后队列快照减少 → webview diff 上屏「你补充」行。

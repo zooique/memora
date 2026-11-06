@@ -15,8 +15,8 @@ import type { ISessionStore, SessionMessage, SessionMeta } from '../sessionStore
 // 内核真实实现（测试替身改名 TestInMemorySessionStore 后，本名恢复独占，无需再取别名区分）
 import { InMemorySessionStore } from '../inMemorySessionStore.js';
 import { InMemoryRoundStore } from '../inMemoryRoundStore.js';
-import { completeRound, type Round } from '../roundStore.js';
-import { createPendingRoundFixture } from './helpers/roundFixture.js';
+import type { Round } from '../roundStore.js';
+import { completeRoundFixture, createPendingRoundFixture } from './helpers/roundFixture.js';
 import { getSessionDisplayName, getSessionAutoName } from '../sessionStore.js';
 
 // ══════════════════════════════════════════════════════════════
@@ -509,7 +509,7 @@ describe('内核 InMemorySessionStore（真实实现）· round-based 行为', (
   /** 创建一个 complete Round（含 assistant 消息）并保存 */
   function saveCompleteRound(seed: string): string {
     const round = createPendingRoundFixture(`问题 ${seed}`);
-    const completed = completeRound(round, `回答 ${seed}`);
+    const completed = completeRoundFixture(round, `回答 ${seed}`);
     roundStore.save(completed);
     return completed.id;
   }
@@ -525,7 +525,7 @@ describe('内核 InMemorySessionStore（真实实现）· round-based 行为', (
   function saveInterruptedRound(seed: string): string {
     const round = createPendingRoundFixture(`被取消 ${seed}`);
     const interrupted: Round = {
-      ...completeRound(round, `半截回答 ${seed}`),
+      ...completeRoundFixture(round, `半截回答 ${seed}`),
       status: 'interrupted',
     };
     roundStore.save(interrupted);
@@ -641,7 +641,7 @@ describe('内核 InMemorySessionStore（真实实现）· round-based 行为', (
 
   it('deleteSession：先注销会话，再按派生引用集合回收无人引用的 Round', () => {
     const round = createPendingRoundFixture('删除测试');
-    const completed = completeRound(round, '回答');
+    const completed = completeRoundFixture(round, '回答');
     roundStore.save(completed);
     const roundId = completed.id;
     store.createSession({ sessionId: '2026-09-13-main', updatedAt: 't', messageCount: 0 });

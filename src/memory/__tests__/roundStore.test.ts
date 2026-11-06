@@ -7,13 +7,12 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 import {
-  completeRound,
   generateRoundId,
   generateMessageId,
   type ProcessEvent,
   type Round,
 } from '@/memory/roundStore.js';
-import { createPendingRoundFixture } from './helpers/roundFixture.js';
+import { completeRoundFixture, createPendingRoundFixture } from './helpers/roundFixture.js';
 
 describe('问答闭环存储', () => {
   let store: InMemoryRoundStore;
@@ -99,7 +98,7 @@ describe('问答闭环存储', () => {
       const round = createPendingRoundFixture('你好');
       store.save(round);
 
-      const completed = completeRound(round, '你好！有什么可以帮你的？');
+      const completed = completeRoundFixture(round, '你好！有什么可以帮你的？');
       store.save(completed);
 
       // 获取并验证
@@ -156,7 +155,7 @@ describe('问答闭环存储', () => {
       store.save(pendingRound);
 
       const completedRound = createPendingRoundFixture('已完成');
-      const completed = completeRound(completedRound, '完成');
+      const completed = completeRoundFixture(completedRound, '完成');
       store.save(completed);
 
       // 按状态筛选
@@ -198,12 +197,12 @@ describe('问答闭环存储', () => {
     it('应该列出孤立的问答闭环（引用集合派生）', () => {
       // 创建孤立 Round（不在任何会话 roundIds 中）
       const round1 = createPendingRoundFixture('孤立1');
-      const completed1 = completeRound(round1, '完成1');
+      const completed1 = completeRoundFixture(round1, '完成1');
       store.save(completed1);
 
       // 创建非孤立 Round（在引用集合中）
       const round2 = createPendingRoundFixture('非孤立');
-      const completed2 = completeRound(round2, '完成2');
+      const completed2 = completeRoundFixture(round2, '完成2');
       referencedIds.add(round2.id);
       store.save(completed2);
 
@@ -216,7 +215,7 @@ describe('问答闭环存储', () => {
     it('应该尊重最小存活时间', () => {
       // 创建刚完成的 Round（无会话引用）
       const round = createPendingRoundFixture('新的');
-      const completed = completeRound(round, '新完成');
+      const completed = completeRoundFixture(round, '新完成');
       store.save(completed);
 
       // 存活时间设置为 1 小时，应该过滤掉
@@ -257,7 +256,7 @@ describe('问答闭环存储', () => {
     it('应该完整透传保存的 processEvents（含 seq 顺序与各类型 payload）', () => {
       // 构造一轮完整的过程事件（meta 首条 → thinking → tool_start → metrics 末条）
       const round = createPendingRoundFixture('你好');
-      const completed = completeRound(round, '你好！');
+      const completed = completeRoundFixture(round, '你好！');
       const events: ProcessEvent[] = [
         {
           type: 'meta',
@@ -324,7 +323,7 @@ describe('问答闭环存储', () => {
     it('增量变更 processEvents（Write-once 前宿主追加）后重新保存可覆盖', () => {
       // 模拟宿主流结束后的「读 Round → 附加 processEvents → save」写入路径
       const round = createPendingRoundFixture('问题');
-      const completed = completeRound(round, '回答');
+      const completed = completeRoundFixture(round, '回答');
       store.save(completed);
 
       const current = store.getById(completed.id)!;
@@ -353,7 +352,7 @@ describe('问答闭环存储', () => {
     it('应该完整透传保存的 evidence（按序、含 coverage/request payload）', () => {
       // 悬案取证轨：证据消费方是人工/抽样裁决，随 Round 整对象持久化
       const round = createPendingRoundFixture('你好');
-      const completed = completeRound(round, '你好！');
+      const completed = completeRoundFixture(round, '你好！');
       completed.evidence = [
         {
           type: 'empty_response',
@@ -423,7 +422,7 @@ describe('问答闭环存储', () => {
 
     it('应该完成 Round', () => {
       const round = createPendingRoundFixture('用户问题');
-      const completed = completeRound(round, 'AI 回答', { input: 10, output: 20 });
+      const completed = completeRoundFixture(round, 'AI 回答', { input: 10, output: 20 });
 
       expect(completed.status).toBe('complete');
       expect(completed.assistantMessage?.content).toBe('AI 回答');
@@ -517,7 +516,7 @@ describe('isRoundSettled 判据单源守卫', () => {
 
   it("生产代码中不得自写 status ==/!= /=== /!== 'complete' 收场判据（豁免须登记理由）", () => {
     const roots = ['src', 'hosts/memora-vscode/src'];
-    // 只认比较运算，不匹配写点（`status: 'complete'` 是 appendAssistant / completeRound 的合法落盘）
+    // 只认比较运算，不匹配写点（`status: 'complete'` 是 appendAssistant 的合法落盘）
     // 单 / 双引号都认：本项目 singleQuote 仅为 prettier 约定，而 prettier **不进门禁**——
     // 只认单引号等于留一条静默逃逸缝（`status === "complete"` 同样绕开了 isRoundSettled）。
     // 已知未覆盖：解构别名（`const { status: st } = round` 之后写 `st === 'complete'`）——

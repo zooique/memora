@@ -43,9 +43,10 @@ vi.mock('vscode', async () => ({
 /** 可变队列桩：interject/remove/clear 真实改数组（宿主「先读后丢」依赖读删间的真实变化） */
 function interjectAgentStub(items: string[]): Agent {
   return {
-    interject: (text: string) => {
+    interject: async (text: string) => {
       items.push(text);
-      return true;
+      // 三态受理结果：默认走「已入队且已落盘」
+      return 'queued' as const;
     },
     getPendingInterjections: () => [...items],
     removePendingInterject: (index: number) => {

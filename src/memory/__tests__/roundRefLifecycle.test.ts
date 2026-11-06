@@ -20,8 +20,8 @@ import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import { MessageHistory } from '@/agent/messageHistory.js';
 import { GCService } from '@/memory/gcService.js';
-import { completeRound, generateRoundId } from '@/memory/roundStore.js';
-import { createPendingRoundFixture } from './helpers/roundFixture.js';
+import { generateRoundId } from '@/memory/roundStore.js';
+import { completeRoundFixture, createPendingRoundFixture } from './helpers/roundFixture.js';
 import { todayDate } from '@/utils/time.js';
 import type { Memory } from '@/memory/types.js';
 
@@ -70,7 +70,7 @@ async function appendRound(history: MessageHistory, content: string): Promise<st
 /** 直接造一个「无会话引用」的 complete 轮（模拟崩溃残留 / 存量孤儿） */
 function seedOrphanRound(roundStore: InMemoryRoundStore, content: string): string {
   const round = createPendingRoundFixture(content);
-  const completed = completeRound(round, `回答：${content}`);
+  const completed = completeRoundFixture(round, `回答：${content}`);
   roundStore.save(completed);
   return completed.id;
 }

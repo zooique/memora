@@ -32,3 +32,36 @@ export function createPendingRoundFixture(userMessage: string): Round {
     refCount: 1,
   };
 }
+
+/**
+ * 构造 complete 状态的 Round（测试夹具）
+ *
+ * 与 `createPendingRoundFixture` 同理：生产库**不提供**「把轮标成完成」的工具函数——
+ * 生产侧收尾由 `MessageHistory.appendAssistant` 承担（写 AI 消息 + 置 complete + 清 pendingAsk
+ * 同一次 save）。此处只为「以完成态轮为输入」的存储 / 视图 / GC 用例造现场。
+ *
+ * @param round - 待完成的 Round（通常来自 `createPendingRoundFixture`）
+ * @param assistantContent - AI 回复正文
+ * @param tokenUsage - 可选的 token 用量
+ * @returns 新构造的 complete Round（未落盘，需调用方 `store.save`）
+ */
+export function completeRoundFixture(
+  round: Round,
+  assistantContent: string,
+  tokenUsage?: { input: number; output: number },
+): Round {
+  const now = new Date().toISOString();
+
+  return {
+    ...round,
+    assistantMessage: {
+      id: generateMessageId(),
+      role: 'assistant',
+      content: assistantContent,
+      timestamp: now,
+      tokenUsage,
+    },
+    status: 'complete',
+    completedAt: now,
+  };
+}
