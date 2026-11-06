@@ -382,11 +382,12 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile && node scripts/gen-changelog.mjs",
+    "vscode:prepublish": "npm run compile && node scripts/gen-changelog.mjs && node scripts/verify-changelog-fresh.mjs",
     "compile": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p ./ && node esbuild.config.mjs && node scripts/verify-bundle-loadable.mjs",
     "watch": "tsc -watch -p ./",
     "typecheck": "tsc --noEmit -p ./ && tsc --noEmit -p ./tsconfig.scripts.json",
-    "package": "npm run compile && node scripts/gen-changelog.mjs && node scripts/verify-nls.mjs && node scripts/verify-package-manifest.mjs && vsce package --no-dependencies --baseContentUrl https://raw.githubusercontent.com/zooique/memora/main/hosts/memora-vscode/ --baseImagesUrl https://raw.githubusercontent.com/zooique/memora/main/hosts/memora-vscode/ --out memora-vscode.vsix",
+    "verify:changelog-fresh": "node scripts/verify-changelog-fresh.mjs",
+    "package": "npm run compile && node scripts/gen-changelog.mjs && node scripts/verify-changelog-fresh.mjs && node scripts/verify-nls.mjs && node scripts/verify-package-manifest.mjs && vsce package --no-dependencies --baseContentUrl https://raw.githubusercontent.com/zooique/memora/main/hosts/memora-vscode/ --baseImagesUrl https://raw.githubusercontent.com/zooique/memora/main/hosts/memora-vscode/ --out memora-vscode.vsix",
     "test": "node ../../node_modules/vitest/vitest.mjs run --config vitest.config.ts --no-file-parallelism",
     "lint": "eslint . --max-warnings 0"
   },

@@ -94,7 +94,11 @@ jobs:
       # CHANGELOG.md 在 package.json `files` 白名单内 ⇒ 随包发出，而 npm tarball 不可变、
       # 已发布版本不可重发 ⇒ 版本标题漏改日期是**永久**瑕疵（5.0.0 即带着 `· 未发布` 上架）。
       # 该校验只挂本流程、**不进 local-ci**：开发期版本区合法地写着「未发布」，进 pre-push 会稳定假红。
+      # 2026-11-07：脚本改为「发版模式闸」——裸跑跳过并 exit 0（台账 CHANGELOG-GATE-FAKE-RED-1），
+      # 故本步骤必须显式置 RELEASE=1，否则会在发布流水线里静默跳过（等于没挂）。
       - name: 校验 CHANGELOG 目标版本标题已带发布日期
+        env:
+          RELEASE: '1'
         run: node scripts/verify-changelog-version.mjs
 
       # 防「随包文档陈述发布态」（2026-10-23 实证缺口 · 台账 RELEASE-DOCS-STATE-1）：

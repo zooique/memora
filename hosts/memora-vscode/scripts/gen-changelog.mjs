@@ -28,49 +28,14 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// 宿主区抽取规则唯一真源（与 verify-changelog-fresh 共用，禁各写一份）
+import { extractHostSections, findMisnestedHostSubsections } from './changelog-host-sections.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HOST_ROOT = join(HERE, '..');
 const REPO_ROOT = join(HOST_ROOT, '..', '..');
 const SRC = join(REPO_ROOT, 'CHANGELOG.md');
 const OUT = join(HOST_ROOT, 'CHANGELOG.md');
-
-/**
- * 宿主区标题：`## [x.y.z] · <date> · 宿主`（`· 宿主` 是根文件既有的轴标记，ADR-033）。
- *
- * `[Unreleased]` 也计入：未发版期宿主条目就住在这个块里，抽取若把它排除，条目会
- * 「存在于根文件、却从产物里消失」且无红灯——这正是本条要修的那类静默失效。
- * 发版时该标题会被改写成 `## [x.y.z] · <date> · 宿主`，故产物定版后仍是数字版本。
- */
-const HOST_SECTION_RE = /^## \[(?:\d+\.\d+\.\d+|Unreleased)\][^\n]*·\s*宿主\s*$/;
-
-/**
- * 轴一致性守卫：任何 `### …（宿主）` 小节都必须落在 `· 宿主` 的 `##` 块内。
- *
- * 为什么需要：`### Changed（宿主）` 若寄生在内核区，抽取器仍能从老版本块抽到内容并
- * 判绿（`--check` 只要求「至少一个宿主块」）⇒ 新写的宿主条目被静默当成内核条目。
- * 本守卫在生成与 `--check` 两条路径上都跑，打包（`vscode:prepublish` / `package`）即红。
- *
- * @param {string} text 根 CHANGELOG 全文
- * @returns {{ line: number; text: string }[]} 寄生的小节（行号为 1 基）
- */
-function findMisnestedHostSubsections(text) {
-  const lines = text.split(/\r?\n/);
-  /** 当前所在 `##` 块是否宿主块 */
-  let inHostBlock = false;
-  const offenders = [];
-  lines.forEach((line, i) => {
-    const trimmed = line.trim();
-    if (/^## /.test(trimmed)) {
-      inHostBlock = HOST_SECTION_RE.test(trimmed);
-      return;
-    }
-    if (!inHostBlock && /^### .*（宿主）/u.test(trimmed)) {
-      offenders.push({ line: i + 1, text: trimmed });
-    }
-  });
-  return offenders;
-}
 
 const HEADER = `# Changelog · memora-vscode（宿主）
 
@@ -83,21 +48,6 @@ const HEADER = `# Changelog · memora-vscode（宿主）
 > 条目里出现的 \`IMG-1\` / \`COPY-1\` 这类大写短标识是内部缺陷追踪号，读者可忽略；
 > 每条末尾的「**对消费者**」一段才是使用者关心的行为变化。
 `;
-
-function extractHostSections(text) {
-  const lines = text.split(/\r?\n/);
-  const starts = [];
-  lines.forEach((line, i) => {
-    if (HOST_SECTION_RE.test(line.trim())) starts.push(i);
-  });
-  const blocks = [];
-  for (const start of starts) {
-    let end = start + 1;
-    while (end < lines.length && !/^## /.test(lines[end])) end++;
-    blocks.push(lines.slice(start, end).join('\n').trimEnd());
-  }
-  return blocks;
-}
 
 function main() {
   const checkOnly = process.argv.includes('--check');

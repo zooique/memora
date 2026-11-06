@@ -40,9 +40,16 @@
  *   明确「保持不动——5.0.0 未发布，『未发布』是事实」），进 pre-push 会**稳定假红** ⇒ 噪音门禁必腐烂。
  *   正确挂点 = 「版本确定要出包」这一刻，即 release.yml。
  *
+ * 发版模式闸（2026-11-07 加固 · 修 `CHANGELOG-GATE-FAKE-RED-1`）：
+ *   裸跑（无 `RELEASE=1` / 无 `RELEASE_DATE`）= **非发版模式** ⇒ 打印跳过原因并 **exit 0**。
+ *   为什么：一个「非发版日必红」的闸，实际效果是被所有人无视——比没有闸更坏。
+ *   发版模式 = `RELEASE=1`（发布日取当天 UTC）或 `RELEASE_DATE=YYYY-MM-DD`（确定性复盘）。
+ *   release.yml 必须显式置 `RELEASE=1`，否则本闸会在发布流水线里静默跳过（等于没挂）。
+ *
  * 用法：
- *   node scripts/verify-changelog-version.mjs                    # 发布日取当天（UTC）
- *   RELEASE_DATE=2026-10-22 node scripts/verify-changelog-version.mjs   # 注入发布日（确定性 / 复盘）
+ *   node scripts/verify-changelog-version.mjs                    # 裸跑：跳过（exit 0）
+ *   RELEASE=1 node scripts/verify-changelog-version.mjs          # 发版模式：发布日取当天（UTC）
+ *   RELEASE_DATE=2026-10-22 node scripts/verify-changelog-version.mjs   # 发版模式：注入发布日（复盘）
  *   node scripts/verify-changelog-version.mjs --selfTest          # 闸门自检（样例：绿 / 红 / 边界）
  */
 import { readFileSync } from 'node:fs';
@@ -250,10 +257,24 @@ if (args.includes('--selfTest')) {
   process.exit(selfTest() ? 0 : 1);
 }
 
+// 发版模式闸：裸跑只报「跳过」且 exit 0。
+// 非发版日版本区合法写着 [Unreleased]，按当天校验必红 ⇒ 稳定假红会让所有人无视本闸
+//（台账 CHANGELOG-GATE-FAKE-RED-1：比没有闸更坏）。仅发版流水线显式置 RELEASE=1
+// 或注入 RELEASE_DATE 时才做日期校验。
+const releaseDateEnv = process.env.RELEASE_DATE;
+const inReleaseMode = process.env.RELEASE === '1' || releaseDateEnv !== undefined;
+if (!inReleaseMode) {
+  console.log(
+    '⏭️ [changelog-version] 未处于发版模式，跳过日期校验' +
+      '（发版流水线须置 RELEASE=1 或 RELEASE_DATE=YYYY-MM-DD）',
+  );
+  process.exit(0);
+}
+
 const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
 const changelogText = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8');
-// 发布日：CI 取当天（UTC）；注入 RELEASE_DATE 可复现/复盘
-const todayISO = process.env.RELEASE_DATE ?? new Date().toISOString().slice(0, 10);
+// 发布日：发版模式取当天（UTC）；注入 RELEASE_DATE 可复现/复盘
+const todayISO = releaseDateEnv ?? new Date().toISOString().slice(0, 10);
 
 const { ok, reasons } = evaluateChangelogVersion(changelogText, version, todayISO);
 
