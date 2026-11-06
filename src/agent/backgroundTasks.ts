@@ -173,7 +173,12 @@ export class BackgroundTaskRegistry {
    * 同 `kill` 单点约定：**不回调 listener**（实例正在关闭，回流队列已无消费方）；
    * 终态条目保留在表内（关闭流程不读它，无谓清理）。
    *
-   * @returns 实际收割的 running 任务数（已终态的不计）
+   * @returns **发起**收割的 running 任务数（已终态的不计）
+   *
+   * ⚠️ 口径边界：本数 = 「进入终止流程的条目数」，**≠ 已确认终止数**。杀树失败
+   * （权限不足 / taskkill 128：根已退出但孙进程可能存活）同样计入——`killNow` 是
+   * fire-and-forget，注册表拿不到 `ProcessTreeKillResult`。需要「确认终止」证据时
+   * 走 `killProcessTree` 的返回值，不要拿本计数当收割凭证。
    */
   killAllRunning(): number {
     let count = 0;
@@ -192,7 +197,7 @@ export class BackgroundTaskRegistry {
    * Agent 关闭后不注销 = 旧实例钩子残留（多实例场景堆积 + 闭包泄漏）。注销后若进程
    * 随即退出，`exitHook` 经 `disposed` 判空转——close 已杀光，钩子无事可做（幂等）。
    *
-   * @returns 实际收割的 running 任务数（与 `killAllRunning` 同口径）
+   * @returns 发起收割的 running 任务数（与 `killAllRunning` 同口径：**不等于**已确认终止数）
    */
   shutdown(): number {
     const killed = this.killAllRunning();

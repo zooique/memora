@@ -167,12 +167,23 @@ function buildTaskkillArgs(pid: number): string[] {
  * 且 kill 失败（权限不足等）必须如实上报，不许假装成功（`ok:false` + `error` 供文案使用）。
  *
  * @param child 目标子进程句柄（pid 为空时视为无法终止）
- * @returns 终止结果（`ok` = 进程树已确认终止；`alreadyExited` = 目标已先行退出，视为达成）
+ * @returns 终止结果（`ok` = 进程树**已确认**终止；`alreadyExited` = 根进程已先行退出，
+ *          **不等于**树已清空）
  */
 export interface ProcessTreeKillResult {
-  /** 进程树是否已确认终止（目标已先行退出也算达成） */
+  /**
+   * 进程树是否**已确认**终止
+   *
+   * 只有 taskkill 退出码 0（或 POSIX kill(-pid) 成功）才算确认；根进程已先行退出
+   * （Windows 128）只能证明**根节点**不在，不能证明它派生的孙进程已死 ⇒ 不是确认。
+   */
   ok: boolean;
-  /** 目标进程已先行退出（Windows taskkill 128 语义；正常竞态，不是失败） */
+  /**
+   * 根进程已先行退出（Windows taskkill 128 语义）
+   *
+   * ⚠️ 该字段**不**蕴含「树已清空」：根自己先退出、孙进程仍在跑时 taskkill /T /F
+   * 同样返回 128（孙进程已成孤儿，无人收割）。消费方不得据此报「进程树已终止」。
+   */
   alreadyExited: boolean;
   /** 未成功时的原因（降级为 `child.kill()` 单杀时说明「只及直接子进程」） */
   error?: string;
@@ -204,12 +215,19 @@ export function killProcessTree(child: childProcess.ChildProcess): Promise<Proce
       });
       killer.on('close', (code) => {
         if (code === 128) {
-          // 128 = ERROR_PROC_NOT_FOUND（Windows taskkill 语义）：目标进程已退出——
-          // 强杀目标已达成（正常竞态：探活与 taskkill 之间进程自然结束），
-          // 静默结束，不当降级也不打 WARN（2026-10-03 实锤：门禁日志噪音源）。
-          // 主 pid 已死时孙进程成孤儿无人收割——child.kill 够不着，属残余边界
-          // （Windows pid 复用窗口下的 taskkill 误杀风险同样在此，见 命令执行能力方案 §13.6-A 登记）。
-          resolve({ ok: true, alreadyExited: true });
+          // 128 = ERROR_PROC_NOT_FOUND：**根 pid** 已不在，仅此而已。
+          // ⚠️ 这只证明根节点消失，**不证明树清空**：根先退出、孙进程仍在跑时 taskkill
+          // /T /F 同样返回 128，孙进程已成孤儿且 child.kill 够不着（残余边界，见
+          // 命令执行能力方案 §13.6-A；Windows pid 复用窗口下的误杀风险亦在此登记）。
+          // 故**不得**按「强杀已达成」上报——旧实现此处 ok:true 会让模型看到
+          // 「进程树已终止」，属谎报（TOOL-ABORT-KILL-1 复查订正）。
+          // 仍不打 WARN（正常竞态：探活与 taskkill 之间进程自然结束，2026-10-03 门禁噪音源），
+          // 由调用方文案承载「终止未确认、可能仍有残留」。
+          resolve({
+            ok: false,
+            alreadyExited: true,
+            error: '根进程已先行退出（taskkill 128），无法确认进程树已清空，孙进程可能仍在运行',
+          });
           return;
         }
         if (code !== 0) {
@@ -256,8 +274,10 @@ export function killProcessTree(child: childProcess.ChildProcess): Promise<Proce
  *   可能**来不及完成** taskkill 就随宿主进程消失——杀树静默失败（假阴性）。
  *   `execFileSync` 在当前进程内同步等 taskkill 执行完，钩子返回前杀树已落地。
  *
- * - Windows：`execFileSync('taskkill', …)`；退出码 128（目标已退出）= 强杀已达成，静默；
- *   其他失败（权限不足等）降级 `child.kill()` 并记 WARN。
+ * - Windows：`execFileSync('taskkill', …)`；退出码 128（根 pid 已不在）保持静默——
+ *   本语境（exit 钩子）无上报面，且根已死 `child.kill` 也够不着孙进程，重试无意义。
+ *   ⚠️ 静默**不等于**树已清空（孙进程可能已成孤儿），该边界由异步版的
+ *   `ProcessTreeKillResult` 与产物文案承载；其他失败（权限不足等）降级 `child.kill()` 并记 WARN。
  * - POSIX：`process.kill(-pid, 'SIGKILL')` 本就是同步系统调用，语义与异步版一致。
  *
  * 调用纪律：只在 exit 钩子（或等价的「进程即将终止、无后续异步机会」语境）使用；
@@ -274,7 +294,9 @@ export function killProcessTreeSync(child: childProcess.ChildProcess): void {
       });
     } catch (err) {
       const code = (err as NodeJS.ErrnoException & { status?: number }).status;
-      if (code === 128) return; // 目标已退出 = 强杀已达成（与异步版 128 语义同源）
+      // 128 = 根 pid 已不在：exit 钩子无上报面且根已死够不着孙进程，保持静默；
+      // 与异步版同源判据（异步版如实返回未确认，见 killProcessTree）
+      if (code === 128) return;
       logger.warn({ pid, code }, 'exit 兜底 taskkill 未成功，降级为 kill 直接子进程');
       child.kill();
     }

@@ -28,7 +28,7 @@ vi.mock('node:child_process', async (importOriginal) => {
 
 import { EventEmitter } from 'node:events';
 import * as childProcess from 'node:child_process';
-import { runSkillScript, startBackgroundCommand } from '../skillScriptRunner.js';
+import { killProcessTree, runSkillScript, startBackgroundCommand } from '../skillScriptRunner.js';
 
 /** 平台标识符（与真实执行测试同口径） */
 const IS_WINDOWS = process.platform === 'win32';
@@ -423,15 +423,18 @@ describe('killProcessTreeSync（exit 兜底同步杀树，经 startBackgroundCom
     }
   });
 
-  it.runIf(IS_WINDOWS)('execFileSync 退出码 128（目标已退出）→ 静默达成，不降级 kill', () => {
-    const { handle, killCalls } = startWithFakeChild();
-    mockedExecFileSync.mockImplementation(() => {
-      throw Object.assign(new Error('command failed'), { status: 128 });
-    });
+  it.runIf(IS_WINDOWS)(
+    'execFileSync 退出码 128（根 pid 已不在）→ 静默不降级（无上报面；不等于树已清空）',
+    () => {
+      const { handle, killCalls } = startWithFakeChild();
+      mockedExecFileSync.mockImplementation(() => {
+        throw Object.assign(new Error('command failed'), { status: 128 });
+      });
 
-    expect(() => handle.killNowSync()).not.toThrow();
-    expect(killCalls).toHaveLength(0);
-  });
+      expect(() => handle.killNowSync()).not.toThrow();
+      expect(killCalls).toHaveLength(0);
+    },
+  );
 
   it.runIf(IS_WINDOWS)('execFileSync 非零非 128（权限不足等）→ 降级 child.kill 单杀', () => {
     const { handle, killCalls } = startWithFakeChild();
@@ -441,5 +444,45 @@ describe('killProcessTreeSync（exit 兜底同步杀树，经 startBackgroundCom
 
     expect(() => handle.killNowSync()).not.toThrow();
     expect(killCalls).toHaveLength(1); // 降级路径（只及直接子进程，属降级非等价）
+  });
+});
+
+describe('killProcessTree（异步杀树的「根已退出」归类）', () => {
+  const mockedSpawn = vi.mocked(childProcess.spawn);
+  afterEach(() => mockedSpawn.mockReset());
+
+  /** 构造假 taskkill 子进程（stdout/stderr 置 null，close 由用例驱动） */
+  function fakeKiller() {
+    const killer = new EventEmitter() as unknown as childProcess.ChildProcess;
+    (killer as unknown as Record<string, unknown>).stdout = null;
+    (killer as unknown as Record<string, unknown>).stderr = null;
+    mockedSpawn.mockReturnValue(killer);
+    return killer;
+  }
+
+  it.runIf(IS_WINDOWS)(
+    'taskkill 128（根 pid 已不在）→ ok=false + alreadyExited=true：不报「进程树已终止」',
+    async () => {
+      // 判据：128 只证明根节点不在，孙进程可能仍存活 ⇒ 必须归为「未确认」，
+      // 由产物文案说「可能仍有残留进程」。
+      // 变异方向：把 128 改回 ok:true → 本例第一条断言恰红（模型会收到「进程树已终止」）
+      const killer = fakeKiller();
+      const pending = killProcessTree(fakeChildWithPid(() => undefined));
+      killer.emit('close', 128, null); // 监听在 Promise executor 内同步挂好，此处 emit 必被收到
+      const r = await pending;
+      expect(r.ok).toBe(false);
+      expect(r.alreadyExited).toBe(true);
+      expect(r.error).toMatch(/根进程已先行退出/);
+    },
+  );
+
+  it.runIf(IS_WINDOWS)('taskkill 0 → ok=true（确认终止），与 128 分列', async () => {
+    const killer = fakeKiller();
+    const pending = killProcessTree(fakeChildWithPid(() => undefined));
+    killer.emit('close', 0, null);
+    const r = await pending;
+    expect(r.ok).toBe(true);
+    expect(r.alreadyExited).toBe(false);
+    expect(r.error).toBeUndefined();
   });
 });
