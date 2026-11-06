@@ -21,7 +21,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 // 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync）
 import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
-import type { Agent } from '@zooique/memora';
+import type { Agent, BackgroundTask } from '@zooique/memora';
 import type * as vscode from 'vscode';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
@@ -70,8 +70,13 @@ type SessionAgentStub = Agent & {
  *
  * @param label 会话标识（用于断言「取回的是同一个对象」）
  * @param flow  该替身的流工厂（未给 = 空流，用于只做切换的用例）
+ * @param backgroundTasks 该会话实例后台任务注册表的观察值（切会话重投影用例据此区分两会话）
  */
-function sessionAgent(label: string, flow?: () => AsyncGenerator<Chunk>): SessionAgentStub {
+function sessionAgent(
+  label: string,
+  flow?: () => AsyncGenerator<Chunk>,
+  backgroundTasks: readonly BackgroundTask[] = [],
+): SessionAgentStub {
   return {
     label,
     chat: () => flow?.() ?? (async function* () {})(),
@@ -102,7 +107,7 @@ function sessionAgent(label: string, flow?: () => AsyncGenerator<Chunk>): Sessio
     getPendingInterjections: () => [],
     clearPendingInterjections: () => [],
     removePendingInterjections: () => [],
-    listBackgroundTasks: () => [],
+    listBackgroundTasks: () => backgroundTasks,
     memory: { softDeleteRoundSummaries: vi.fn() },
     on: vi.fn(),
     off: vi.fn(),
@@ -282,6 +287,41 @@ describe('E4 批 2 · 切换 = 换绑显示源（不换实例、不关闭旧实�
     await provider.switchToSession('2026-11-06-a');
     expect(provider.getCurrentAgent()).toBe(agentA);
     expect(factory).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('E4 批 3 · 后台任务条随切换会话重投影（BGTASK-SWITCH-REPUSH-1）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('切到另一会话 ⇒ 常驻条改显示该会话的任务，不残留上一个会话的清单', async () => {
+    const agentA = sessionAgent('2026-11-06-a', undefined, [
+      { taskId: 'bg-1', command: 'npm run build', startedAt: 1, status: 'running' },
+    ]);
+    const agentB = sessionAgent('2026-11-06-b', undefined, [
+      { taskId: 'bg-9', command: 'npm test', startedAt: 2, status: 'running' },
+    ]);
+    const { provider, posted } = setupPanel();
+    provider.setAgentFactory(async (_projectPath, sessionId) =>
+      sessionId === '2026-11-06-a' ? agentA : agentB,
+    );
+    /** 取最后一条后台任务快照的任务 id（空列表 = 常驻条隐藏） */
+    const lastTaskIds = () => {
+      const msgs = posted.filter((m) => m.type === 'background_tasks') as unknown as Array<{
+        items: Array<{ taskId: string }>;
+      }>;
+      return msgs.at(-1)?.items.map((i) => i.taskId);
+    };
+
+    await provider.switchToSession('2026-11-06-a');
+    // 起点：把 A 的注册表内容推上屏（等价 ready / step_boundary 这一既有推送时机）
+    (provider as unknown as { postBackgroundTasks(): void }).postBackgroundTasks();
+    expect(lastTaskIds()).toEqual(['bg-1']);
+
+    await provider.switchToSession('2026-11-06-b');
+    // 判据：切换完成即按 B 的注册表重投影（不推则常驻条停留 A 的 bg-1）
+    expect(lastTaskIds()).toEqual(['bg-9']);
   });
 });
 

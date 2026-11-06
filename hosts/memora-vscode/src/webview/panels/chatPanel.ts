@@ -2176,6 +2176,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const agent = await this.agentForSession(sessionId);
       this.bindAgent(agent);
       this.replayCurrentSession();
+      // 后台任务条按会话重投影（BGTASK-SWITCH-REPUSH-1）：任务清单真源 = 各会话实例的注册表，
+      // 切会话不推 ⇒ 常驻条继续显示上一个会话的任务（跨会话串台，新会话有任务时也看不到）。
+      // 必须 force：两会话的任务列表都可能为空、内容签名相同，不让去重层决定「切会话是否到达 UI」。
+      this.postBackgroundTasks('force');
     } catch (err) {
       // 切失败：只还**本次新拿**的锁（切回旧会话时本是长锁，误放会放掉仍在写盘的归属）
       if (!wasHeld) this._lockFinalizer.releaseOne(sessionId);
