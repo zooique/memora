@@ -18,8 +18,9 @@
  *  - 并发同键只装配一次（在途去重复用同一 Promise）
  */
 // @vitest-environment node
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { Agent, IRoundStore, ISessionStore } from '@zooique/memora';
 import {
@@ -178,6 +179,62 @@ describe('E4 · AgentRegistry', () => {
     const retried = await registry.createAgentForSession('2026-11-05-a');
     expect(registry.get('2026-11-05-a')).toBe(retried);
     expect(attempts).toBe(2);
+  });
+
+  it('list() 返回全部在册实例的快照；clear() 同时清空登记表与在途表', async () => {
+    const registry = new AgentRegistry(sharedStores, async (id) => makeFakeAgent(id));
+    const a = await registry.createAgentForSession('2026-11-05-a');
+    const b = await registry.createAgentForSession('2026-11-05-b');
+
+    // 快照：两次调用互不影响（调用方修改返回值不得改到内部表）
+    const first = registry.list();
+    expect(first).toEqual([a, b]);
+    registry.list().length = 0;
+    expect(registry.list()).toEqual([a, b]);
+
+    // 改键（分叉场景）：同一实例从旧键迁到新键，旧键不再可取
+    registry.unregister('2026-11-05-b');
+    registry.register('2026-11-05-b2', b);
+    expect(registry.get('2026-11-05-b')).toBeUndefined();
+    expect(registry.get('2026-11-05-b2')).toBe(b);
+
+    // 停用收口：清表后全空（实例生命周期由调用方先 close，登记表不碰）
+    registry.clear();
+    expect(registry.list()).toEqual([]);
+    expect(registry.get('2026-11-05-a')).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// 取用面守卫（源码级）：生产取 Agent 只有 AgentRegistry 一条路
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * 单实例取用面的历史名字（E4 批 2 已删除）
+ *
+ * 用**去掉注释后的源码**判：注释里提到旧名字是合法的历史说明（说明「为什么删」），
+ * 只有**可执行代码**里再出现才是真绕过。
+ */
+const FORBIDDEN_SINGLE_AGENT_NAMES = ['agentPromise', 'currentAgent', 'getOrCreateAgent'];
+
+describe('E4 批 2 · 取用面守卫（源码级）', () => {
+  const EXTENSION_SOURCE = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'extension.ts'),
+    'utf8',
+  );
+  /** 去掉块注释与行注释后的可执行源码 */
+  const EXTENSION_CODE = EXTENSION_SOURCE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+  it('单实例取用面在可执行代码中零残留（注释里的历史说明不算）', () => {
+    for (const name of FORBIDDEN_SINGLE_AGENT_NAMES) {
+      expect(EXTENSION_CODE).not.toMatch(new RegExp(name));
+    }
+  });
+
+  it('createAgentForSession 的生产调用点恰好 2 处（命令取用入口 + 面板工厂）', () => {
+    const hits = [...EXTENSION_CODE.matchAll(/agentRegistry\.createAgentForSession\(/g)];
+    // 新增第三处 = 多了一条取用面，必须回来改本条（防「顺手再加一条旁路」）
+    expect(hits).toHaveLength(2);
   });
 });
 

@@ -75,7 +75,6 @@ import {
   COMPRESS_TARGET_LABELS,
   estimateTokensText,
   type CompressTarget,
-  BACKGROUND_TASK_STATUS_LABELS,
   // 「这轮算不算跑成功」判据取内核单点（isRoundSuccessful）：宿主不得自写
   // `status === 'complete'`（内核 roundStore.test 的判据单源守卫会拦，见 helpers/occupancyHistory.ts 先例）
   isRoundSuccessful,
@@ -156,10 +155,17 @@ import {
 } from '../../extension/host/providerRefresh.js';
 import { createVscodeAttention } from '../../extension/host/vscodeAttention.js';
 import { collectOccupancyHistory } from '../helpers/occupancyHistory.js';
-import { PanelSessionLockFinalizer } from '../helpers/panelSessionLockFinalizer.js';
-// 会话级流运行态（E4 批 1：_streaming / _abortController / _currentFlow / _liveBuffer 按会话命名空间化）
+import {
+  PanelSessionLockFinalizer,
+  type PanelSessionIdAccess,
+} from '../helpers/panelSessionLockFinalizer.js';
+// 任务看板 / 后台任务 / 上下文占用三项快照投影（HOST-SPLIT-1 行数闸门整域外置；
+// 面板只注入 getAgent/post/isBackground 三个依赖，缓存留在外置域内）
+import { PanelSnapshots } from '../helpers/panelSnapshots.js';
+// 会话级流运行态 + 流归属闸（E4 批 1/2）：四项状态按会话命名空间化；后台流 UI 投递整批丢弃
 import {
   SessionRuntimeStates,
+  BackgroundFlowGate,
   type LiveFlowBuffer,
   type SessionRuntimeState,
 } from '../helpers/sessionRuntime.js';
@@ -261,8 +267,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 异常路径也归位——否则一次 findFiles 抛错就把这个门永久焊死。
    */
   private _mentionQuickPickOpen = false;
-  /** 当前装配的 Agent（由 extension 装配后注入） */
+  /** 当前**显示会话**的 Agent（`_sessionAgents` 的一份投影；真正的实例归属表在 extension） */
   private _agent: Agent | undefined;
+  /**
+   * 本面板已绑定的会话实例（sessionId → Agent）
+   *
+   * ⚠️ 这是**登记表的本地投影**，不是第二个真源：写入点只有 `agentForSession`（一律先经
+   * extension 的 `AgentRegistry`），本表只用于「按会话同步取已绑定实例」（ask 超时回执、
+   * 后台流控制面）。复用/在途/装配仍全归登记表；实例被回收时必须同步删除本表项。
+   */
+  private readonly _sessionAgents = new Map<string, Agent>();
   /** 配置热刷新未生效标记（IMG-5 顺延槽）：真源已变但换实例失败（唯一预期 = `assertNotBusy`）；消费点 = `handleInput` 的 `send` 前置补做。 */
   private _providerStale = false;
   /** 系统内置配置目录 + 用户技能目录 + 项目级技能目录（extension 注入，composer 清单来源判定） */
@@ -278,8 +292,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
   /** 大模型配置存储（用于底部模型下拉框 + 切换） */
   private readonly _providerStore: ProviderStore;
-  /** Agent 懒装配工厂（由 extension 注入，打开面板即装配，不依赖先执行 open 命令） */
-  private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
+  /** Agent 懒装配工厂（由 extension 注入：入参 = 工作区 + **目标会话**；实现 = 登记表取/建） */
+  private _getAgent: ((projectPath: string, sessionId: string) => Promise<Agent>) | undefined;
+  /** 实例回收回调（extension 注入：登记表 unregister + close；删除会话时调用） */
+  private _releaseAgent: ((sessionId: string) => Promise<void>) | undefined;
+  /** 实例改键回调（extension 注入：分叉后同一实例改挂新会话键，登记表键不得漂移） */
+  private _rekeyAgent: ((from: string, to: string) => void) | undefined;
   /** 是否已尝试装配（避免面板每次展开都重复装配） */
   private _agentResolving = false;
   /**
@@ -300,14 +318,24 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 以本会话为准（单一真理源），无跨天合并视图。
    */
   private _currentSessionId: string;
-  /**
-   * 会话级流运行态表（E4 批 1）：`streaming` / `abortController` / `currentFlow` / `liveBuffer`
-   * 按 sessionId 命名空间化，取代原先四份单份字段。批 1 行为不变（同一时刻仍只有当前会话可达）；
-   * 批 2 起各会话读自己的记录，不再需要「切走前先复位全局字段」。
-   */
+  /** 会话级流运行态表（E4 批 1/2）：四项按 sessionId 命名空间化，见 {@link SessionRuntimeStates} */
   private readonly _runtime = new SessionRuntimeStates();
+  /** 流归属会话闸（E4 批 2）：后台流的 UI 投递与单份投影缓存整批丢弃，判据见 {@link BackgroundFlowGate} */
+  private readonly _flowGate = new BackgroundFlowGate();
   /** 会话锁收尾器：销毁 / 重开 / 流收场 / 握手销毁的唯一收口（B1） */
   private readonly _lockFinalizer: PanelSessionLockFinalizer;
+  /**
+   * 当前会话 id 的读写面（收尾器与本类回滚共用同一份清空写点）
+   *
+   * 会话导航写点守卫（sessionWritePointGuard 测试）要求「清空」在源码中**恰好 1 处**——
+   * 回滚（新建/切换失败退回旧会话）也必须走这里，否则会多出第二处裸赋值。
+   */
+  private readonly _sessionIdAccess: PanelSessionIdAccess = {
+    getSessionId: () => this._currentSessionId,
+    clearSessionId: () => {
+      this._currentSessionId = '';
+    },
+  };
   /** 视图重建代数（每次 resolveWebviewView 自增）：供流尾检测「流期间 webview 被折叠/展开
    *  重建过」——重建后新 webview 没有本流的实时投影，落盘完成后须补一次 replaySession 刷全。 */
   private _viewEpoch = 0;
@@ -338,17 +366,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *  让「队列变空」这一真理源变化总能被推送（消费后必有后续 chunk 触发同步）。 */
   private _lastPendingQueueLen: number | undefined = undefined;
   /**
-   * 上次推送给 webview 的后台任务快照**内容签名**（`taskId:status` 拼接串）
+   * 任务看板 / 后台任务 / 上下文占用三项快照投影（外置域，HOST-SPLIT-1 行数闸门）
    *
-   * 纯推送去重守卫，**不是后台任务的真相源**（真相源恒为内核注册表，宿主零副本）。
-   * 与 `_lastPendingQueueLen` 同族但更强：能捕获「条数不变而状态变」（kill 后 `running → killed`），长度判据会漏。
+   * 本域自己持有两份推送缓存（后台任务签名 / 用户收起偏好），面板不再持有——
+   * 见 `helpers/panelSnapshots.ts` 头注（会话归属纪律：写缓存前先问 isBackground）。
    */
-  private _backgroundSignature: string | null = null;
-  /**
-   * 用户已手动收起的后台任务（webview 终态行 `×`）：只存用户偏好，不存任务数据。
-   * 放宿主（webview 折叠重建会丢）；生命周期 = 宿主实例（切会话 / 重开窗口即重置）。
-   */
-  private readonly _dismissedBackgroundTaskIds = new Set<string>();
+  private readonly _snapshots = new PanelSnapshots({
+    getAgent: () => this._agent,
+    post: (msg) => this.post(msg),
+    isBackground: () => this.isBackgroundFlow(),
+  });
   /** 最近 webview 错误上报（复制诊断命令消费；容量/格式化归 hostDiagnostics 模块） */
   private readonly _recentHostDiags: HostDiagEntry[] = [];
   /**
@@ -461,12 +488,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 无历史不自动创建（新建唯一入口为标题条「＋」）。
     // 存在性校验与回退序全在 store.getInitialSessionId（SESSION-RESUME-1 判据单点），本处只消费结果。
     this._currentSessionId = this.sessionStore.getInitialSessionId();
-    this._lockFinalizer = new PanelSessionLockFinalizer(this.sessionStore, {
-      getSessionId: () => this._currentSessionId,
-      clearSessionId: () => {
-        this._currentSessionId = '';
-      },
-    });
+    this._lockFinalizer = new PanelSessionLockFinalizer(this.sessionStore, this._sessionIdAccess);
     // 文档上下文不在此处预取（发送时实时读活动编辑器，见 snapshotDocContext）。
     // 曾用 onDidChangeActiveTextEditor 缓存——盖不住「同一文件被编辑」，脏态停在「打开时干净」⇒ 每轮拿磁盘旧版当真相（P0 撒谎源）。
   }
@@ -481,15 +503,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /**
    * 取某会话的 ask 协调器（缺省 = 当前会话；懒建）。
-   * 未覆盖面：`getAgent` 仍返回面板唯一 `_agent`（批 1 只有当前会话可达，故等价）；
-   * 批 2 面板按会话持有 Agent 后改按 sessionId 取，此处是唯一改动点。
+   * 批 2 起依赖必须按 sessionId 取：超时回调/停止收场发生在**面板显示可能在别的会话**时，
+   * 读 `this._agent` / 直接 `post` 会把 A 的现场写到 B 的界面（跨会话串台）。
    */
   private askFor(sessionId: string = this._currentSessionId): AskCoordinator {
     let coordinator = this._asks.get(sessionId);
     if (!coordinator) {
       coordinator = new AskCoordinator({
-        getAgent: () => this._agent,
-        post: (msg) => this.post(msg),
+        // 该会话自己的实例（不是面板当前显示实例）；`this._agent` 兜底**仅**服务直接
+        // 构造面板的测试（本地投影表未填充），生产由 agentForSession 保证表必命中
+        getAgent: () => this._sessionAgents.get(sessionId) ?? this._agent,
+        // 投递按会话归属门控：超时计时器回调不在流上下文（ALS 取不到），必须显式判会话；
+        // 丢弃不丢内容——切回该会话时由 replay 从落盘历史重建
+        post: (msg) => {
+          if (sessionId !== this._currentSessionId) return;
+          this.post(msg);
+        },
         // 续跑的是该会话自己的流：显式传 sessionId，避免超时回调落到切换后的当前会话
         runFlow: (factory) => this.runFlow(factory, undefined, sessionId),
       });
@@ -595,13 +624,47 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'file_changes', count: files.length, files });
   }
 
-  /** 注入 Agent 懒装配工厂（由 extension.ts 提供 getOrCreateAgent） */
-  public setAgentFactory(getAgent: (projectPath: string) => Promise<Agent>): void {
+  /** 注入 Agent 懒装配工厂（由 extension.ts 提供「会话 → 登记表实例」的取用面） */
+  public setAgentFactory(
+    getAgent: (projectPath: string, sessionId: string) => Promise<Agent>,
+  ): void {
     this._getAgent = getAgent;
+  }
+
+  /** 注入实例回收回调（删除会话时：登记表 unregister + close；E4 批 2） */
+  public setAgentReleaser(release: (sessionId: string) => Promise<void>): void {
+    this._releaseAgent = release;
+  }
+
+  /** 注入实例改键回调（分叉后：同一实例从旧会话键改挂新会话键；E4 批 2） */
+  public setAgentRekeyer(rekey: (from: string, to: string) => void): void {
+    this._rekeyAgent = rekey;
   }
 
   /** 由 extension 在装配 Agent 后注入（open 命令路径），同时绑定会话级可观测事件 */
   public setAgent(agent: Agent): void {
+    // 记入本地投影表（键 = 面板当前会话）；真正归属仍由 extension 登记表持有
+    if (this._currentSessionId) this._sessionAgents.set(this._currentSessionId, agent);
+    this.bindAgent(agent);
+  }
+
+  /** 当前显示会话标识（extension 解析「命令作用于哪个会话」的唯一读取口） */
+  public getCurrentSessionId(): string {
+    return this._currentSessionId;
+  }
+
+  /** 当前显示会话的 Agent（同步；未装配时 undefined ⇒ 调用方须 fail-closed，不得无校验直写） */
+  public getCurrentAgent(): Agent | undefined {
+    return this._agent;
+  }
+
+  /**
+   * 把实例绑定为「当前显示会话」的投影源（换会话 / 换实例的唯一收口）
+   *
+   * 重置投影缓存 + 重绑事件/守卫/确认回调 + 装配后补推。`AgentEventScope.bindTo`
+   * 内部先解绑上一台，故换会话不会滞留旧实例监听（幂等，重复绑定安全）。
+   */
+  private bindAgent(agent: Agent): void {
     this._agent = agent;
     // 换 agent = 投影源切换（SSOT）：重置待发送区长度投影缓存为「从未投影过」，
     // 防旧 agent 队列长度残留导致 syncPendingQueue 长度未变误判不推送
@@ -1245,18 +1308,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         void vscode.window.showWarningMessage('Memora：请先打开一个工作区');
         return;
       }
-      this._agent = await this._getAgent(ws);
-      // 装配成功后绑定会话级可观测事件 → 错误提示（会话异常/恢复失败等，不插入消息区）
-      this.bindAgentNoticeEvents();
-      // 绑定路径守卫安全审计订阅（幂等）
-      this.bindSecurityAudit();
-      // 绑定确认回调（写入 confirmWrites / 脚本与命令 confirmScripts / guest 恒确认）
-      this.bindWriteConfirmation();
-      // 装配完成后统一补推（与 setAgent 路径共用同一收口点）：
-      // ready 时 agent 可能尚未装配 / _activeRolePack 未设置，
-      // 装配完成即补推，避免输入区角色选择器永久缺失；面板未就绪时 post 静默，
-      // 由 replaySession 兜底。
-      this.refreshAfterAssemble();
+      // 会话先于实例：无会话时先造 id 并拿锁（拿锁失败保持空态，不造半成品）
+      const sessionId = await this.ensureSessionForAssembly();
+      if (!sessionId) return;
+      const agent = await this.agentForSession(sessionId);
+      // 绑定显示源（事件/守卫/确认 + 装配后补推的唯一收口）
+      this.bindAgent(agent);
       // 首次启动兜底：装配成功后若无任何会话记录，自动创建首个会话（用户可直接输入）
       void this.ensureInitialSession();
     } catch (err) {
@@ -1264,11 +1321,23 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       void vscode.window.showErrorMessage(`Memora 装配失败：${msg}`);
       // HOST-BUG-1：失败必须重置 Promise 缓存——否则 _agentReady 成「已 settle 但
       // _agent 仍 null」的僵尸，后续 ensureAgent 永远 await 它、永不重试。
-      // 对齐 extension.ts agentPromise / settingsPanel _agentPromise 两对照组的 catch 重置。
+      // 对齐 extension.ts 的登记表回收 / settingsPanel 的 `_agentPromise` 两对照组的 catch 重置。
       this._agentReady = null;
     } finally {
       this._agentResolving = false;
     }
+  }
+
+  /** 首次装配时确保有会话 id：无会话则造 id 并拿锁（拿锁失败 = 放弃装配，保持空态） */
+  private async ensureSessionForAssembly(): Promise<string> {
+    if (this._currentSessionId) return this._currentSessionId;
+    const sessionId = `${formatDateKey(new Date())}-s${Date.now().toString(36)}`;
+    if (!(await this.sessionStore.acquireSessionLock(sessionId))) {
+      void vscode.window.showWarningMessage(`Memora：${SESSION_HELD_NOTICE}`);
+      return '';
+    }
+    this.setCurrentSessionId(sessionId);
+    return sessionId;
   }
 
   // ─── 会话异常可观测出口（错误级 notice） ───
@@ -1622,7 +1691,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 后台任务自然终态 → 推 UI 快照（脱管后 turn 已结束：周期性推送点（step_boundary /
       // background_report）都已过、也没有 kill 动作，覆盖不到「任务自然跑完」⇒ 条会一直
       // 显示假活跃的「运行中」。主动 kill 不发本事件。见方案文档 §5.2.2）
-      on('backgroundTaskSettled', this.onBackgroundTaskSettled);
+      on('backgroundTaskSettled', this._snapshots.onTaskSettled);
       // 项目切换：projectSwitched 事件随内核 PR-SWITCH-1 一并删除（多项目改为宿主各建一个
       // Agent 实例，内核不再切换项目）⇒ 此处原订阅为僵尸（永不触发），已移除。
       on('workProjectionGenerated', this.onWorkProjectionGenerated);
@@ -1799,7 +1868,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private historyDeps(): SessionHistoryDeps {
     return {
       store: this.sessionStore,
-      isStreaming: () => this.runtimeFor().streaming,
+      // 按**目标会话**判（批 2 起后台会话可独立跑流：只判当前会话会放行对后台流会话的删除/归档）
+      isStreaming: (sessionId?: string) => this.runtimeFor(sessionId).streaming,
       currentSessionId: () => this._currentSessionId,
       notify: (level, message) => this.post({ type: 'notice', level, message }),
       pushList: () => this.pushSessionList(),
@@ -1820,8 +1890,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /** 删除会话（薄包装：实现外置在 `helpers/sessionHistoryActions`，测试按方法名直达） */
-  private handleDeleteSession(sessionId: string): Promise<void> {
-    return deleteSessionAction(this.historyDeps(), sessionId);
+  private async handleDeleteSession(sessionId: string): Promise<void> {
+    await deleteSessionAction(this.historyDeps(), sessionId);
+    // E4 批 2：删除成功（会话元数据已不存在）⇒ 回收该会话实例（登记表 unregister + close），
+    // 否则后面对同 id 的取用会拿到「挂在已删会话上」的活实例（写盘无归属）
+    if (this.sessionStore.getSessionMeta(sessionId)) return; // 用户取消 / 锁占用 / 失败：实例保留
+    this._sessionAgents.delete(sessionId);
+    await this._releaseAgent?.(sessionId);
   }
 
   /** 移入留存区（薄包装：实现在 `helpers/sessionHistoryActions`） */
@@ -1878,10 +1953,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 切入空会话（工作记忆清空），UI 清空消息区
    */
   public async newSessionFromCommand(): Promise<void> {
-    if (this.runtimeFor().streaming) {
-      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再新建会话' });
-      return;
-    }
+    // 流中新建会话 = 切到另一个会话，允许（E4 批 2 拆宿主闸；当前会话的流留在后台继续）
     // 生成唯一会话名（字母前缀，避免与数字日期混淆；标题层才是用户可读身份）
     await this.createSession(`${formatDateKey(new Date())}-s${Date.now().toString(36)}`);
   }
@@ -1894,18 +1966,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 切入指定会话（新建/首次自动创建共用）：调内核 switchToSession + 更新当前会话 + 回放
+   * 切入指定会话（新建/首次自动创建共用）：**先拿锁 → 切宿主当前会话 → 按会话取/建实例 → 回放**
+   *
+   * E4 批 2 起各会话有自己的 Agent 实例：此处不再调 `switchToSession` 改单实例身份，
+   * 而是「取该会话的实例并绑定为显示源」（实例装配时已在核内核侧切到该会话）。
    *
    * @param sessionId 目标会话 id（date-name 格式）
    * @returns 是否切入成功
    */
   private async createSession(sessionId: string): Promise<boolean> {
-    const agent = await this.getAgentOrWarn();
-    if (!agent) return false;
-    if (!agent.sessionManager) {
-      this.post({ type: 'notice', level: 'error', message: 'Memora：会话管理未就绪，请稍候再试' });
-      return false;
-    }
     // 新会话 id 由时间戳/随机后缀生成，跨进程不会撞；拿锁只为让后续写盘有归属
     if (!(await this.sessionStore.acquireSessionLock(sessionId))) {
       this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
@@ -1913,15 +1982,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     const previous = this._currentSessionId;
     try {
-      await agent.sessionManager.switchToSession(sessionId);
+      // 先切宿主当前会话：装配会由登记表在核内核侧切到该会话（无需再改单实例身份）
       this.setCurrentSessionId(sessionId);
+      const agent = await this.agentForSession(sessionId);
+      this.bindAgent(agent);
       this.replayCurrentSession();
       // 先拿新、再放旧：切换过程中内核仍可能写旧会话（归档/摘要），旧锁必须撑到切换完成
       if (previous && previous !== sessionId) this.sessionStore.releaseSessionLock(previous);
       return true;
     } catch (err) {
-      // 没切成就把新锁还回去，旧会话仍是当前会话（保持可写）
+      // 没切成就把新锁还回去，并把显示源退回旧会话（旧实例仍在本地投影表里，直接重绑）
       this.sessionStore.releaseSessionLock(sessionId);
+      this._sessionAgents.delete(sessionId);
+      if (previous) {
+        this.setCurrentSessionId(previous);
+        const previousAgent = this._sessionAgents.get(previous);
+        if (previousAgent) this.bindAgent(previousAgent);
+      } else {
+        // 无旧会话可退：经收尾器同一清空写点归零（守卫要求源码仅一处清空赋值）
+        this._sessionIdAccess.clearSessionId();
+      }
       this.post({
         type: 'notice',
         level: 'error',
@@ -1936,8 +2016,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 仅空态触发（_currentSessionId 为空 = 从未有过会话），有历史/已创建后不再自动创建（幂等）。
    */
   private async ensureInitialSession(): Promise<void> {
-    if (this._currentSessionId || this.runtimeFor().streaming) return;
+    if (this._currentSessionId) return;
     await this.createSession(`${formatDateKey(new Date())}-s${Date.now().toString(36)}`);
+  }
+
+  /**
+   * 取（或建）指定会话的 Agent 实例，并把结果记入本地投影表
+   *
+   * **唯一写入点**：先查本地投影表（同步可复用），未命中则经 extension 的 `AgentRegistry`
+   * 取/建（复用、在途去重、装配都在那里）。本方法**不绑定显示源**——是否绑定由调用方决定
+   * （后台会话也要能取到实例，但不能抢走显示）。
+   *
+   * @param sessionId 目标会话标识
+   */
+  private async agentForSession(sessionId: string): Promise<Agent> {
+    if (!this._getAgent) throw new Error('Agent 装配工厂未注入');
+    const cached = this._sessionAgents.get(sessionId);
+    if (cached) return cached;
+    const agent = await this._getAgent(this.workspacePath, sessionId);
+    this._sessionAgents.set(sessionId, agent);
+    return agent;
   }
 
   /**
@@ -1948,10 +2046,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * host 兜底转错误通知。
    */
   public async forkCurrentSession(roundId?: string): Promise<void> {
-    if (this.runtimeFor().streaming) {
-      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再分叉会话' });
-      return;
-    }
+    // 流中分叉由内核 forkSession 自行拒绝（对话繁忙），宿主不再前置拦——E4 批 2 拆宿主闸
     const agent = await this.getAgentOrWarn();
     if (!agent) return;
 
@@ -1983,6 +2078,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         return;
       }
       this.setCurrentSessionId(forkedId);
+      // 内核 forkSession 已把**同一实例**的当前会话切到 forkedId ⇒ 登记表键必须同步改键，
+      // 否则「实例 ↔ 注册键」漂移（切回旧会话会取到停在 forkedId 的实例）
+      this._rekeyAgent?.(previous, forkedId);
+      if (previous) this._sessionAgents.delete(previous);
+      this._sessionAgents.set(forkedId, agent);
+      this.bindAgent(agent);
       this.replayCurrentSession();
       if (previous && previous !== forkedId) this.sessionStore.releaseSessionLock(previous);
       this.post({
@@ -1999,11 +2100,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
   public async renameCurrentSession(): Promise<void> {
-    // 运行时守卫（SSOT：与 newSession/switchToSession 同源「当前会话是否在流」，禁止运行中改会话结构）
-    if (this.runtimeFor().streaming) {
-      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再重命名会话' });
-      return;
-    }
+    // 重命名只改元数据、不改会话结构：流中允许（E4 批 2 拆宿主闸）
     const title = await vscode.window.showInputBox({
       prompt: '输入新的会话名称',
       value: this.currentSessionTitle(),
@@ -2018,19 +2115,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 切换到指定会话：调内核 switchToSession（切换身份 + 同步工作记忆），
-   * 更新当前会话并回放其历史
+   * 切换到指定会话：**按会话取/建实例**并绑定为显示源 + 回放该会话历史
+   *
+   * E4 批 2：不再调内核 `switchToSession` 改单实例身份（各会话各有实例、各停在自己的会话）。
+   * 流中允许切换——后台会话的流继续跑，其 UI 投递由 `isBackgroundFlow()`
+   * （`BackgroundFlowGate`）挡在显示会话之外。
    *
    * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
    */
   public async switchToSession(sessionId: string): Promise<void> {
-    if (this.runtimeFor().streaming) {
-      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再切换会话' });
-      return;
-    }
     if (sessionId === this._currentSessionId) return; // 已在目标会话
-    const agent = await this.getAgentOrWarn();
-    if (!agent) return;
     // 先拿目标会话的锁：拿不到 = 另一窗口正在用，明确拒绝（不静默覆盖对方写入）
     if (!(await this.sessionStore.acquireSessionLock(sessionId))) {
       this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
@@ -2038,21 +2132,24 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     const previous = this._currentSessionId;
     try {
-      if (!agent.sessionManager) {
-        this.post({
-          type: 'notice',
-          level: 'error',
-          message: 'Memora：会话管理未就绪，请稍候再试',
-        });
-        this.sessionStore.releaseSessionLock(sessionId);
-        return;
-      }
-      await agent.sessionManager.switchToSession(sessionId);
+      // 切宿主当前会话 → 取该会话实例（首次进入时才装配）→ 绑定显示源
       this.setCurrentSessionId(sessionId);
+      const agent = await this.agentForSession(sessionId);
+      this.bindAgent(agent);
       this.replayCurrentSession();
       if (previous && previous !== sessionId) this.sessionStore.releaseSessionLock(previous);
     } catch (err) {
+      // 切失败：还锁、退显示源（旧实例仍在本地投影表，直接重绑）
       this.sessionStore.releaseSessionLock(sessionId);
+      this._sessionAgents.delete(sessionId);
+      if (previous) {
+        this.setCurrentSessionId(previous);
+        const previousAgent = this._sessionAgents.get(previous);
+        if (previousAgent) this.bindAgent(previousAgent);
+      } else {
+        // 无旧会话可退：经收尾器同一清空写点归零（守卫要求源码仅一处清空赋值）
+        this._sessionIdAccess.clearSessionId();
+      }
       this.post({
         type: 'notice',
         level: 'error',
@@ -2733,8 +2830,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     );
   }
 
-  /** 向 webview 发送消息 */
+  /**
+   * 当前执行栈是否属于「后台流」（判据与理由见 {@link BackgroundFlowGate}）
+   *
+   * ⚠️ 消费面必须逐个投影 helper 早退，不能只挡 `post()` 出口（单份缓存被后台写脏不会有测试红）。
+   */
+  private isBackgroundFlow(): boolean {
+    return this._flowGate.isBackground(this._currentSessionId);
+  }
+
+  /** 向 webview 发送消息（后台流的投递一律丢弃：判据见 `isBackgroundFlow`） */
   private post(msg: ExtensionToWebviewMessage): void {
+    if (this.isBackgroundFlow()) return;
     void this._view?.webview.postMessage(msg);
   }
 
@@ -2752,7 +2859,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *        （rounds 仅作骨架/重建备用，webview 不整批渲染——杜绝 settle 时对已运行时渲染的轮重绘重复）
    */
   private postTurnUpdate(live?: PendingLiveRound, replay = false): void {
-    if (!this._view) return;
+    // 后台上投一律丢弃（`_turnState` 是宿主单份、只描述当前显示会话，见 isBackgroundFlow）
+    if (!this._view || this.isBackgroundFlow()) return;
     const history = this._viewLoader ? this.loadRoundBasedHistory() : [];
     const merged = mergeLiveRound(history, live);
     // 附件预览 URL 盖在**合并之后**：live 轮的 userMessage 来自上行 seed（只有 ref，没有 URL）
@@ -3223,19 +3331,25 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   ): Promise<void> {
     // 取本会话的运行态记录（不是「当前会话」——两者在后台续跑时可能已不同）
     const runtime = this.runtimeFor(sessionId);
-    runtime.abortController = new AbortController();
+    const controller = new AbortController();
+    runtime.abortController = controller;
     try {
-      runtime.currentFlow = this.consumeFlow(
-        factory(runtime.abortController.signal),
-        runtime.abortController,
-        seed,
-        sessionId,
+      // 流归属会话写进 ALS：本流后续一切 UI 投递的去留由 `isBackgroundFlow()` 判定
+      // （用户在流中切走 → A 仍属于后台流，不得改写 B 的界面与宿主单份投影）
+      runtime.currentFlow = this._flowGate.run(sessionId, () =>
+        this.consumeFlow(factory(controller.signal), controller, seed, sessionId),
       );
       await runtime.currentFlow;
     } catch (err) {
       // 同步抛错路径：清理 controller，避免 AbortController 泄漏
       runtime.abortController = undefined;
-      this.post({ type: 'error', message: toNoticeText(err) });
+      // 后台流的失败不投递到当前界面（此处在 ALS 作用域外：run 只覆盖 consumeFlow 的执行链），
+      // 但必须留痕——后台流异常若静默吞掉，用户切回时只看到「跑完了却什么都没有」
+      if (sessionId !== this._currentSessionId) {
+        console.warn(`Memora 后台会话流异常（${sessionId}）`, err);
+      } else {
+        this.post({ type: 'error', message: toNoticeText(err) });
+      }
     }
   }
 
@@ -3400,7 +3514,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     seed: FlowSeed | undefined,
     sessionId: string = this._currentSessionId,
   ): Promise<void> {
-    if (!this._agent) return;
+    // 本流归属实例：优先按会话取（不是 `this._agent` ——用户在流中切到 B 后，this._agent 已指向 B，
+    // 用它读 metrics / 解绑监听就是「A 的流失控面」被 B 改坏）。
+    // `this._agent` 兜底**仅**服务直接驱动 consumeFlow 的测试（此时本地投影表未填充）；
+    // 生产不可达：`runFlow` 的调用方都先经 `agentForSession` 取实例（表必命中）。
+    const agent = this._sessionAgents.get(sessionId) ?? this._agent;
+    if (!agent) return;
     // 本流归属会话的运行态与 ask 协调器（一次性取出，闭包内一律用它们，防误用「当前会话」）
     const runtime = this.runtimeFor(sessionId);
     const ask = this.askFor(sessionId);
@@ -3426,7 +3545,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       ask.armAskTimeout(); // 超时保底：未答 → 自动续跑
       this._attention.onAskWaiting({ question: questions[0]?.question ?? '' }); // 交互提醒（事件写入源）
     };
-    this._agent.on('questionPending', onPendingQuestion);
+    agent.on('questionPending', onPendingQuestion);
     // 监听记忆沉淀事件（memoryAdded，非 chunk 通道）→ 与 chunk 同源进过程事件缓冲（单源，
     // 渲染/落盘同一份 ProcessEvent）。content 5.0.0 起携带（可选 = 跨 dist 契约），
     // webview「已沉淀」提示按用户心智显示内容（缺失回退 name）。
@@ -3443,7 +3562,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         ...(info.content !== undefined ? { content: info.content } : {}),
       });
     };
-    this._agent.on('memoryAdded', onMemoryAdded);
+    agent.on('memoryAdded', onMemoryAdded);
 
     // 进入生成状态（webview 展示加载动画 + 禁用输入）
     this.post({ type: 'status', state: 'thinking' });
@@ -3459,14 +3578,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 流开始时刻与 token 累计快照（metrics 事件需本轮增量：结束减开始）
     const flowStartMs = Date.now();
     const metricsBefore = {
-      in: this._agent.getMetrics().llm.totalInputTokens,
-      out: this._agent.getMetrics().llm.totalOutputTokens,
+      in: agent.getMetrics().llm.totalInputTokens,
+      out: agent.getMetrics().llm.totalOutputTokens,
       // 未解析工具意图累计基准：本流增量 = 终结时累计 - 本基准
-      unparsed: this._agent.getMetrics().tools.unparsedToolIntentCount,
+      unparsed: agent.getMetrics().tools.unparsedToolIntentCount,
       // 空响应兜底累计基准：同 unparsed 口径（内核计数器累计，流尾取 diff 得本轮增量）
-      emptyResp: this._agent.getMetrics().llm.emptyResponseCount,
+      emptyResp: agent.getMetrics().llm.emptyResponseCount,
       // 截断救回累计基准：同上口径（换策略重试救回的观测面，验证 T2 真机效力靠它）
-      truncRecover: this._agent.getMetrics().llm.truncationRecoveryCount,
+      truncRecover: agent.getMetrics().llm.truncationRecoveryCount,
     };
     // 过程事件缓冲 + 单形态投影：流式期间攒内存、逐条 post process_event，流结束按 turn roundId
     // 分组附到各 Round.processEvents 落盘。分段归属 SSOT：roundId 由内核 chunk 携带（AgentChunk.roundId），
@@ -3778,10 +3897,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // assistant 消息持久化由内核 appendAssistant 完成（写入当前会话 _currentSessionId），
       // 此处不再 persist，避免与内核双写同一条回复（SSOT 单一真理源）
     } catch (err) {
+      // 后台流的错误投递被投影闸挡掉 ⇒ 必须留痕，否则「后台跑挂了」对用户与日志双重静默
+      if (this.isBackgroundFlow()) {
+        console.warn('Memora 后台会话流内错误', err);
+      }
       this.post({ type: 'error', message: toNoticeText(err) });
     } finally {
-      this._agent.off('questionPending', onPendingQuestion);
-      this._agent.off('memoryAdded', onMemoryAdded);
+      agent.off('questionPending', onPendingQuestion);
+      agent.off('memoryAdded', onMemoryAdded);
       // 无论成败均清除生成态（恢复历史切换能力）——写本流归属会话的记录
       runtime.streaming = false;
       // live 缓冲退场（实例字段；流尾收场逻辑全用局部 liveBuffer，不受影响）。
@@ -3828,7 +3951,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       if (!settledRound && latestRoundId) {
         console.warn('Memora metrics.success 盘面缺失回合，退回进程内口径', latestRoundId);
       }
-      const metricsNow = this._agent.getMetrics();
+      const metricsNow = agent.getMetrics();
       emitEvent('metrics', {
         durationMs: Date.now() - flowStartMs,
         tokenIn: Math.max(0, metricsNow.llm.totalInputTokens - metricsBefore.in),
@@ -3841,7 +3964,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 本轮未解析文本工具意图增量：「想调用工具却未走原生协议」不得显示为成功收尾
         unparsedToolIntentCount: Math.max(
           0,
-          this._agent.getMetrics().tools.unparsedToolIntentCount - metricsBefore.unparsed,
+          agent.getMetrics().tools.unparsedToolIntentCount - metricsBefore.unparsed,
         ),
         // 空响应兜底增量：正文是兜底文案而非模型产出——同族诚实信号，展示层合成「不算成功收尾」
         emptyResponseCount: Math.max(
@@ -3851,7 +3974,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 截断救回增量：曾截断但换策略重试救回——正文是真实产出（不影响成功收尾），仅观测留痕
         truncationRecoveryCount: Math.max(
           0,
-          this._agent.getMetrics().llm.truncationRecoveryCount - metricsBefore.truncRecover,
+          agent.getMetrics().llm.truncationRecoveryCount - metricsBefore.truncRecover,
         ),
         // success 口径改盘面投影（TERMINUS-SSOT-1）：盘面成功才算出成功（判据 = 内核
         // isRoundSuccessful 单点，宿主不自写比较）；盘面缺失时退回进程内口径
@@ -3896,9 +4019,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 摘要 Promise 的 then/catch 都会 emit roundSummaryGenerated（成功或失败），正常事件很快到达；
       // 5秒兜底足够抗偶发网络抖动，避免 UI 长时间卡在 thinking 态让用户困惑
       const SUMMARY_WAIT_TIMEOUT_MS = 5_000;
-      // 局部捕获 agent——函数入口已 guard this._agent，但 setTimeout 闭包内 tsc 不传播 guard，
-      // 局部变量让闭包捕获到确定存在的引用（入口 if (!this._agent) return 已保证到此点必有值）
-      const agent = this._agent;
+      // 本流归属实例已在上方捕获（`const agent`）——闭包内直接复用，不读 this._agent
+      // （用户切走后 this._agent 已是另一会话的实例，读它即串台）
       let resolved = false;
       /** 解锁回调：受本会话 streaming 状态门控，防跨轮竞态（旧轮事件误触冲掉新轮 thinking） */
       const unlockDone = () => {
@@ -3906,33 +4028,42 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         resolved = true;
         // 竞态防护：本流归属会话的新轮已开始 → 跳过，让新轮走自己的 done 流程
         if (runtime.streaming) return;
+        // 会话归属防护：摘要回调在流上下文之外触发，用户可能已切走——
+        // 此时该 done 属于 A，投给 B 会把 B 的相位误置为完成（切回 A 时 replay 自会对齐）
+        if (sessionId !== this._currentSessionId) return;
         this.post({ type: 'status', state: 'done' });
       };
       const timeoutHandle = setTimeout(() => {
         // 超时也手动解绑事件监听，防累积泄漏（.once 只在触发时自动解绑，超时不触发会遗留 handler）
-        agent?.off('roundSummaryGenerated', onSummary);
+        agent.off('roundSummaryGenerated', onSummary);
         unlockDone();
       }, SUMMARY_WAIT_TIMEOUT_MS);
       const onSummary = (info: { roundId: string; success: boolean }): void => {
         clearTimeout(timeoutHandle);
         // 与 setTimeout 分支对称解绑：本回调经 agent.on 注册（非 .once），只在
         // 事件触发路径上解绑是不够的——每轮正常收到事件都会遗留一个 handler 累积。
-        agent?.off('roundSummaryGenerated', onSummary);
+        agent.off('roundSummaryGenerated', onSummary);
         // 摘要失败可观测出口：内核 runSummary 的三条失败路径（异步 reject / 同步 catch）
         // 都发 success:false，此处此前只拿它解锁 UI 定时器、直接丢弃该字段 ⇒
         // 摘要失败在 metrics/事件/记忆库四面皆不可见（「静默失败 = 假阴性」）。
         // 走本文件既有的错误级 notice 单通道（见「会话异常可观测出口」节），
         // 不新增日志路径、不新增协议字段、不改内核。
         if (!info.success) {
-          this.post({
-            type: 'notice',
-            level: 'error',
-            message: '本轮记忆摘要生成失败，本轮内容不会被自动沉淀（对话本身不受影响）',
-          });
+          // 摘要失败可观测：事件回调不在流上下文（ALS 取不到），故显式判会话归属——
+          // 后台会话的摘要失败不乱弹到当前界面上，但仍**留痕**（不静默吞掉失败）
+          if (sessionId === this._currentSessionId) {
+            this.post({
+              type: 'notice',
+              level: 'error',
+              message: '本轮记忆摘要生成失败，本轮内容不会被自动沉淀（对话本身不受影响）',
+            });
+          } else {
+            console.warn('Memora 后台会话记忆摘要生成失败', sessionId);
+          }
         }
         unlockDone();
       };
-      agent?.on('roundSummaryGenerated', onSummary);
+      agent.on('roundSummaryGenerated', onSummary);
       // 删后注记（2026-10-18 · 5.0.0）：此处曾在轮次正常收尾时推送 Follow-up 建议
       // （governance.suggest() → 'suggestions' 协议）。该连锁随内核治理链整链退役同步拆除。
     }
@@ -3944,138 +4075,34 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._lockFinalizer.onStreamEnd();
   }
 
-  /**
-   * 推送任务看板快照（任务驱动多步闭环的最小可视化）
-   *
-   * 从 agent.getCheckpoint().plan 提取当前计划任务项快照，推给 webview 渲染任务看板。
-   * 仅当 plan 非空时推送（空计划不产生看板）。薄壳装配：只读提取，不参与 LLM 执行，
-   * 任务表的创建/推进由内核 task_table_write/update 工具完成，宿主仅做可视化消费。
-   *
-   * 任务节点聚合：额外从 checkpoint.planItemLog 提取 planItemId 关联，按任务项分组携带各任务项
-   * 推进记录（planItemLog），webview 展开任务节点时展示该任务项下的推进摘要。
-   */
+  /** 任务看板快照（实现见 `helpers/panelSnapshots.ts` 的 `postPlan`，本处只留调用点名称） */
   private postPlanUpdate(): void {
-    if (!this._agent) return;
-    const checkpoint = this._agent.getCheckpoint();
-    // checkpoint 不存在时推空消息让 webview 清看板；plan 为空也推（autoClearPlan 后）
-    if (!checkpoint || !checkpoint.plan) {
-      this.post({ type: 'plan_update', items: [] });
-      return;
-    }
-    // plan 为空时也推（turn 结束 autoClearPlan 或 LLM 新任务写入空 plan）
-    if (checkpoint.plan.length === 0) {
-      this.post({ type: 'plan_update', items: [] });
-      return;
-    }
-    // 任务项 → 关联任务项推进记录（planItemLog 的 planItemId 关联，内核已写入，宿主只读消费）
-    const planItemLogById = new Map<
-      string,
-      { planItemId: string; summary: string; completedAt?: number }[]
-    >();
-    for (const r of checkpoint.planItemLog ?? []) {
-      if (!r.planItemId) continue;
-      const list = planItemLogById.get(r.planItemId) ?? [];
-      list.push({ planItemId: r.planItemId, summary: r.summary, completedAt: r.completedAt });
-      planItemLogById.set(r.planItemId, list);
-    }
-    // 按 order 排序列化（内核 PlanItem 已含 order，防冗余中断序漂移）
-    const items = [...checkpoint.plan]
-      .sort((a, b) => a.order - b.order)
-      .map((s) => ({
-        id: s.id,
-        description: s.description,
-        status: s.status,
-        order: s.order,
-        planItemLog: planItemLogById.get(s.id) ?? [],
-      }));
-    this.post({ type: 'plan_update', items });
+    this._snapshots.postPlan();
   }
 
   /**
-   * 推送后台任务快照（CMD-1 阶段 2 · 见 `docs/方案-后台任务可见性与kill入口-20261004.md`）
+   * 推送后台任务快照
    *
-   * 真源 = 内核 `agent.listBackgroundTasks()`（只读投影，含进程句柄的字段已被内核剥离）；宿主
-   * 零副本、零裁决，只按快照转发。刻意**不下发 `result`**（命令输出）：体量可达 KB~MB 级，
-   * UI 不呈现输出——输出归模型消费（经 `kill_command` / 回流通道给 LLM），随包搬运纯属浪费。
-   *
-   * agent 未就绪时不推（`_agent` 为空 = 未装配，与 `postPlanUpdate` 同守卫形态）——不静默推
-   * 空快照，否则「未就绪」会被 UI 读成「没有后台任务」。
-   *
-   * **内容签名去重**（见方案 §2.4）：`taskId:status` 拼接串未变则不推。推送点共五个：
-   * `step_boundary` / `background_report` / `background_kill` 后回推 / 内核
-   * `backgroundTaskSettled` 事件 / webview ready（force）。step 边界周期性到达 ⇒ 无任务时逐
-   * step 推空快照纯属 IPC 噪音，由签名去重拦掉。用**签名**而非「条数」判变化：`kill` 后
-   * `running → killed` 条数恒为 1 而内容已变，长度守卫会把这次关键刷新判成 no-op
-   * （同 `syncPendingQueue` 长度守卫的反向教训）。
-   *
-   * @param mode `dedup`（默认）= 周期推送点，走签名去重降噪；`force` = **webview ready 全量
-   *   对齐**，绕过去重——签名存于 extension 实例、跨 webview 重建（折叠/关闭再打开）残留，
-   *   不绕则这次补推被自己的守卫吞掉，表现为「面板重开后后台任务条凭空消失，而进程还在跑、
-   *   用户也砍不掉」。两者语义不同（降噪 vs 对齐），故不合并成一条判据。
+   * 实现与判据已整体外置到 `helpers/panelSnapshots.ts`（`PanelSnapshots.pushTasks`）——
+   * 本文件不留第二份口径，面板侧只保留同名薄包装供既有消息分派按方法名直达。
    */
   private postBackgroundTasks(mode: 'dedup' | 'force' = 'dedup'): void {
-    if (!this._agent) return;
-    // 用户已收起的条目不再下发（**只是视图过滤，内核条目与输出都留着**，`kill_command`
-    // 随时可取回）。过滤放在**投影出口**而非内核：宿主只存「哪条别显示」这个用户偏好，
-    // 真相源恒为内核注册表，零第二份数据。
-    const items = this._agent
-      .listBackgroundTasks()
-
-      .filter((t) => !this._dismissedBackgroundTaskIds.has(t.taskId))
-      .map((t) => ({
-        taskId: t.taskId,
-        command: t.command,
-        status: t.status,
-        // 状态文案真源 = 内核词表（宿主零自建），在此转成字面量下发——
-        // webview 只做 type import，值导入内核会把整包打进 bundle
-        statusLabel: BACKGROUND_TASK_STATUS_LABELS[t.status],
-      }));
-    const signature = items.map((t) => `${t.taskId}:${t.status}`).join('|');
-    if (mode === 'dedup' && signature === this._backgroundSignature) return;
-    this._backgroundSignature = signature;
-    this.post({ type: 'background_tasks', items });
+    this._snapshots.pushTasks(mode);
   }
 
-  /**
-   * 收起一条终态任务（webview 终态行的 `×` → `background_kill` + `reason:'dismiss'`）
-   *
-   * **不碰内核**（不 kill、不清条目）：关掉的是「眼睛」不是「东西」——任务与输出留在
-   * 注册表里，`kill_command` 随时能取回。**可逆 > 不可逆**：用户反悔了还能把这条捞回来显示。
-   *
-   * 「记住了」放宿主而非 webview：放 webview 则面板一折叠即忘，刚收起的行又冒出来
-   * （与 ready 全量对齐同源的问题）。进程存活期不设上限，与注册表实例同生命周期。
-   */
+  /** 收起后台任务终态行（实现见 `PanelSnapshots.dismiss`） */
   private dismissBackgroundTask(taskId: string): void {
-    this._dismissedBackgroundTaskIds.add(taskId);
-    // ⚠️ 必须把签名置为**永不可能与真实签名相等的哨兵**再推，不能置空串：
-    // 最后一条被收起时过滤后 `items` 为空 ⇒ 签名也是空串，置空串等于「没变」⇒
-    // 去重判成 no-op ⇒ UI 根本不更新（实测踩中：条收不起来）。
-    this._backgroundSignature = null;
-    this.postBackgroundTasks();
+    this._snapshots.dismiss(taskId);
   }
 
-  /**
-   * 后台任务转入终态 → 推一次 UI 快照（事件订阅 · 见方案文档 §5.2.2）
-   *
-   * 用默认 `dedup` 即可：签名含 `status`，`running → completed` 必判为变化并推送；
-   * 重复终态（同 status）判为 no-op，正是去重要的行为。**不需 force**——force 只为
-   * 「webview 重建后重新对齐」而存在（签名跨重建残留会误吞），与本路径无关。
-   */
-  private readonly onBackgroundTaskSettled = (): void => {
-    this.postBackgroundTasks();
-  };
-
-  /**
-   * 终止后台任务（webview 浮层「终止」按钮 → `background_kill` 消息）
-   *
-   * 内核按 Agent 实例隔离 ⇒ 只能杀本会话自起的任务（与 `kill_command` 同一不变量）。
-   * 任务已不在返回 `null`，此处按「已终结」处理并照常回推快照（浮层据此刷新为终态），
-   * 不弹错误提示——用户视角「点了终止、它没了」就是正确结果。
-   */
+  /** 终止后台任务（实现见 `PanelSnapshots.kill`） */
   private killBackgroundTask(taskId: string): void {
-    if (!this._agent) return;
-    this._agent.killBackgroundTask(taskId);
-    this.postBackgroundTasks();
+    this._snapshots.kill(taskId);
+  }
+
+  /** 上下文占用快照（实现见 `PanelSnapshots.postOccupancy`） */
+  private postContextOccupancy(): void {
+    this._snapshots.postOccupancy();
   }
 
   /** 待发送区同步守卫：
@@ -4086,7 +4113,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *  队列消费后无「空通知」→ 待发送区弹窗残留）；本守卫由调用方（入队/清空/删除/step 边界后 chunk）
    *  统一调用，队列变空必然触发长度变化 → post 空 pendingQueue → webview 隐藏。 */
   private syncPendingQueue(force = false): void {
-    if (!this._agent) return;
+    // 后台流不触碰 `_lastPendingQueueLen`（宿主单份缓存）：写入即让当前会话的「长度未变」
+    // 判据失真，表现为待发送区该刷新时不刷新（该形态无测试会红）
+    if (!this._agent || this.isBackgroundFlow()) return;
     // optional 调用：consumeFlow 主循环每 chunk 同步，测试桩可能缺该方法
     // （chatPanelHistory 的 mock agent 不实现 getPendingInterjections）——缺则跳过不阻断流
     const items = this._agent.getPendingInterjections?.() ?? [];
@@ -4113,7 +4142,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 详情区不显示指标块，彻底隐藏而非「显示后折叠」）。
    */
   private postMetrics(): void {
-    if (!this._agent) return;
+    if (!this._agent || this.isBackgroundFlow()) return;
     // 深度隐藏开关：默认 false（普通用户零噪音），调试可观测性时开启
     const show = vscode.workspace.getConfiguration('memora').get<boolean>('showMetrics', false);
     if (!show) return;
@@ -4150,34 +4179,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       trace: traces,
       ...(securityAudit ? { securityAudit } : {}),
     });
-  }
-
-  /**
-   * 推送上下文占用快照（预算可视化 · 输入区常驻指示器）
-   *
-   * 与 postMetrics 不同：本推送**脱离 memora.showMetrics 开关**，每轮流式结束必推，
-   * 供输入区常驻渲染「上下文占用比例条 + hover 明细」。数据来自内核
-   * AgentMetrics.context.occupancy（prepare 期真实用量），宿主只透传、不重算。
-   */
-  private postContextOccupancy(): void {
-    if (!this._agent) return;
-    const ctx = this._agent.getMetrics().context;
-    const occ = ctx.occupancy;
-    if (!occ) return;
-    // 角色包底盘占用可能已在切换时由内核刷新（setRolePackBaseTokens），早于下一轮 prepare；
-    // 用最新底盘值覆盖快照中的旧值，使圆环在角色包切换即时反映，无需等到下一轮。
-    const freshRolePack = ctx.rolePackBaseTokens;
-    if (freshRolePack !== undefined && freshRolePack !== occ.rolePackBaseTokens) {
-      this.post({
-        type: 'context_occupancy',
-        occupancy: estimateOccupancy({
-          ...occ,
-          rolePackBaseTokens: freshRolePack,
-        }),
-      });
-      return;
-    }
-    this.post({ type: 'context_occupancy', occupancy: occ });
   }
 }
 

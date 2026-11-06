@@ -440,7 +440,7 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     const actions: string[] = [];
 
     // 「待接入」是唯一有**出路**的空转态：点接入即让运行态按当前配置追平一次
-    // （未装配时先懒装配，与对话面板同一个 getOrCreateAgent 单例；判据 = 该名没进 applied）。
+    // （未装配时先懒装配，与对话面板同一个 `AgentRegistry` 取用面；判据 = 该名没进 applied）。
     // 没有这个按钮，pending 卡片只能编辑/停用/删除——
     // 而重启按钮不渲染（restart 只恢复已有运行时），用户点不出任何东西（2026-10-24 实测）。
     if (state === 'pending') {

@@ -3,7 +3,7 @@
  *
  * 职责：
  *   - 注册侧栏对话视图 + 设置面板（editor tab）+ 通用命令（打开对话 / 打开设置 / 配置大模型）
- *   - 懒加载装配 Agent（getOrCreateAgent）
+ *   - 按会话懒装配 Agent（`AgentRegistry.createAgentForSession`，会话 → 实例唯一真源）
  *
  * 结构（通用化设计，功能定位由内置角色包承载）：
  *   - commands/   命令处理器（薄壳：装配 + 聚焦，核心逻辑全部由内核 + 角色包承载）
@@ -86,17 +86,14 @@ function resolveProjectSearchRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 
-/** 懒加载的 Agent 单例（跨命令复用） */
-let agentPromise: Promise<Agent> | null = null;
-
 /**
- * 最近装配成功的 Agent 实例（同步引用）
+ * 会话 → Agent 登记表（模块级引用，供 deactivate 关闭**全部**实例）
  *
- * `agentPromise` 是异步的，无法同步取用；文件改动「回退本文件改动」需要**同步**拿到
- * `agent.security`（路径守卫）做写前校验，故在装配成功时缓存一份同步引用。
- * 未装配时为 null（此时恢复会被安全拒绝——降级优先，绝不无校验直写）。
+ * E4 批 2 起生产唯一取用面：面板工厂 / 命令 / 设置面板 / 信任门 / 配置热更一律经它。
+ * 单实例 `agentPromise` / 同步引用 `currentAgent` 已删除——多会话下一台实例不够用，
+ * 「同步取当前 Agent」改由面板提供（`chatProvider.getCurrentAgent()`）。
  */
-let currentAgent: Agent | null = null;
+let hostAgentRegistry: AgentRegistry | null = null;
 
 /**
  * 孤儿 Round GC 的单点调度器（E6：一个宿主进程只有一份）
@@ -105,14 +102,6 @@ let currentAgent: Agent | null = null;
  * 否则 N 个实例各挂一个定时器，会对同一对共享存储重复扫描 N 次。
  */
 let gcScheduler: MemoryGcScheduler | null = null;
-
-/**
- * GC 驱动实例（首个装配成功的 Agent）
- *
- * 为什么用「首个」而不是遍历全表：全部实例共享同一对 `sessionStore` / `roundStore` 单例
- * （E3 硬约束），任一实例的 `gcNow()` 扫的是同一份存储，扫一次即覆盖全量。
- */
-let gcDriverAgent: Agent | null = null;
 
 /**
  * 激活期会话存储单例的模块级引用（仅用于停用时释放跨进程会话锁）
@@ -176,19 +165,20 @@ function runOnAssembledAgent(
   failLabel: string,
 ): void {
   void (async () => {
-    const agent = agentPromise ? await agentPromise.catch(() => null) : null;
-    if (!agent) return;
-    await action(agent);
+    // 遍历登记表：多会话下「所有已装配实例」都可能持有该配置的镜像，
+    // 只同步「当前那台」会让后台会话读到旧配置（静默分叉，无测试会红）
+    const agents = hostAgentRegistry?.list() ?? [];
+    for (const agent of agents) {
+      await action(agent);
+    }
   })().catch((err) => {
     console.warn(`Memora ${failLabel}失败`, err);
   });
 }
 
 /**
- * 装配期稳定依赖（activate 内采样一次）
- *
- * 单实例装配（`getOrCreateAgent`）与按会话装配（`assembleAgentForSession`）共用同一份，
- * 杜绝两处各写一套选项导致行为漂移（E4 验收判据「选项键快照」）。
+ * 装配期稳定依赖（activate 内采样一次）：只服务按会话装配（`assembleAgentForSession`），
+ * 杜绝「每处各写一套选项」导致行为漂移（E4 验收判据「选项键快照」）。
  */
 interface AssemblyDeps {
   /** 大模型配置存储 */
@@ -273,7 +263,7 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
     searchEngine,
     customSearchEngines,
     archiveMode,
-    // E6：GC 不自启——周期扫描由宿主 MemoryGcScheduler 单点驱动（见 getOrCreateAgent 成功分支）
+    // E6：GC 不自启——周期扫描由宿主 MemoryGcScheduler 单点驱动（见 assembleAgentForSession 尾部）
     autoStartGc: false,
     userSkillsDir: deps.userSkillsDir,
     userRolePacksDir: deps.userRolePacksDir,
@@ -299,60 +289,29 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
 }
 
 /**
- * 获取（或创建）单实例 Agent（旧路径，生产仍唯一在用）
+ * 取当前时刻的「命令作用会话」标识
  *
- * @param projectPath 工作区路径
- * @param deps 装配期稳定依赖（与按会话装配共用同一份，防选项漂移）
- * @param agentRegistry 会话 → Agent 登记表（E4 登记；强制持有同一对存储单例）
+ * 命令（记忆统计 / 整理 / 角色刷新等）没有会话入参：作用对象 = 面板**正在显示**的会话；
+ * 面板尚未初始化时退回存储里的启动会话。二者都为空 ⇒ 命令侧拒绝（不凭空造会话）。
+ *
+ * @param chatProvider 对话面板（当前会话的唯一真源）
+ * @param sessionStore 会话存储（启动会话兜底）
  */
-function getOrCreateAgent(
-  projectPath: string,
-  deps: AssemblyDeps,
-  agentRegistry: AgentRegistry,
-): Promise<Agent> {
-  if (!agentPromise) {
-    agentPromise = assembleAgent(buildAssembleOptions(projectPath, deps)).catch((err) => {
-      // 装配失败则重置，下次命令重试
-      agentPromise = null;
-      throw err;
-    });
-  }
-  // 缓存同步引用（供文件改动「回退本文件改动」同步取 agent.security 做写前校验）；
-  // 两参 then：装配失败分支显式吞掉，避免产生未处理的 rejection。
-  void agentPromise.then(
-    (agent) => {
-      // E4：只登记装配时的这一个会话；`switchToSession` 不更新 key，故登记键会与当前会话漂移。
-      // 会话标识取内核公开 getter（`agentHistory` 在 init 后非空），异常兜底用 projectPath。
-      const sessionId = agent.agentHistory?.currentSessionName ?? projectPath;
-      agentRegistry.register(sessionId, agent);
-      // 同步引用**从登记表取回**（唯一读取面）：取不到说明登记环节被破坏，保留 null 让
-      // 依赖 currentAgent 的同步写校验 fail-closed（降级为拒绝写，而不是无校验直写）。
-      currentAgent = agentRegistry.get(sessionId) ?? null;
-      // E6：GC 单点驱动——首个实例即驱动者，调度器全局只建一份、启动幂等。
-      // 后续实例只登记不再各起定时器（内核侧 autoStartGc:false 已保证），
-      // 故「实例数 N」与「每周期扫描次数」解耦，恒为 1。
-      gcDriverAgent ??= agent;
-      gcScheduler ??= new MemoryGcScheduler(() => gcDriverAgent?.gcNow());
-      gcScheduler.startPeriodic(AGENT_CONSTANTS.GC_INTERVAL_MS);
-    },
-    () => {
-      // 装配失败：调用方各自处理；此处仅维护同步引用，不重复处理
-    },
-  );
-  return agentPromise;
+function resolveCommandSessionId(
+  chatProvider: MemoraChatViewProvider,
+  sessionStore: WorkspaceSessionStore,
+): string {
+  return chatProvider.getCurrentSessionId() || sessionStore.getInitialSessionId();
 }
 
 /**
- * 按会话装配 Agent（E4 第一片）
+ * 按会话装配 Agent（E4 批 2：生产唯一装配面）
  *
  * - 存储：由 `deps` 提供共享单例（sessionStore / roundStore / 记忆存储 = 同一对象）
  * - 会话归属：装配后 `switchToSession(sessionId)` 真正切到目标会话（载入该会话消息、
  *   重建工作记忆），而不是「装出来还停在 today-main」
  * - 失败不留半成品：绑定失败即关闭刚装配的实例，避免锁 / 定时器泄漏
  * - 复用 / 在途去重 / 登记：归 `AgentRegistry.createAgentForSession`
- *
- * ⚠️ 生产尚未接线（面板与命令仍走单实例）：本函数只被 registry 工厂调用，
- * E5/E7 前无生产消费方，不得据此声称「多会话并行已上线」。
  *
  * @param projectPath 工作区路径（一个宿主 = 一个项目）
  * @param sessionId 目标会话标识（内核 `MessageHistory.currentSessionName` 口径）
@@ -375,6 +334,12 @@ async function assembleAgentForSession(
     await agent.close().catch(() => {});
     throw err;
   }
+  // E6：GC 单点驱动——全部实例共享同一对存储单例（E3），任一实例 scan 即覆盖全量。
+  // 驱动实例**现取登记表首个存活实例**、不持有引用：删除会话会 close 实例，持有引用会让
+  // 周期扫描打到已关闭的 Agent（静默失效）。调度器全局只建一份、启动幂等；后续实例只登记
+  // 不再各起定时器（内核侧 autoStartGc:false 已保证）。
+  gcScheduler ??= new MemoryGcScheduler(() => hostAgentRegistry?.list()[0]?.gcNow());
+  gcScheduler.startPeriodic(AGENT_CONSTANTS.GC_INTERVAL_MS);
   return agent;
 }
 
@@ -467,18 +432,21 @@ export function activate(context: vscode.ExtensionContext): void {
   const workspacePath = resolveWorkspacePath();
 
   /**
-   * 统一装配入口（**唯一调用面**）
+   * 统一取 Agent 入口（**唯一调用面**，E4 批 2）
    *
-   * 此前四处（chat 工厂 / settings 工厂 / open 命令 / 命令侧取 Agent）各抄一遍九个实参，
-   * 装配签名一改就要在四处同步——漏一处就是「某个入口装出来的 Agent 少读一项配置」，
-   * 而且没有测试会红。收成一个闭包后，装配参数只有这一处定义。
+   * 取用面一律带会话归属：命令/设置面板没有会话入参 ⇒ 作用对象 = 面板当前显示的会话
+   * （面板未初始化时退回存储的启动会话）。**不经任何单实例缓存**——复用/在途/登记
+   * 全在 `AgentRegistry.createAgentForSession`，宿主不得在登记表之外再存一份实例。
    *
-   * @param projectPath 工作区路径（仅首次装配生效；后续调用复用同一 Agent 单例）
+   * @param _projectPath 工作区路径（工作区在 activate 时已固定，保留形参兼容既有调用点）
    */
-  const getAgent = (projectPath: string): Promise<Agent> => {
-    // 装配选项的构建（含信任门现读）已收口到 buildAssembleOptions；
-    // 此处只负责把稳定依赖与登记表交给单实例装配路径。
-    return getOrCreateAgent(projectPath, assemblyDeps, agentRegistry);
+  const getAgent = (_projectPath: string): Promise<Agent> => {
+    const sessionId = resolveCommandSessionId(chatProvider, sessionStore);
+    if (!sessionId) {
+      // 无任何会话 ⇒ 没有可归属的 Agent；显式拒绝，避免「装出来挂在空会话上」
+      return Promise.reject(new Error('尚未创建任何会话，无法装配 Agent'));
+    }
+    return agentRegistry.createAgentForSession(sessionId);
   };
 
   /**
@@ -544,15 +512,16 @@ export function activate(context: vscode.ExtensionContext): void {
     storage: getMemoryStorage,
   };
 
-  // 会话 → Agent 登记表（E4 第一片：创建能力已实现，生产仍未接线）。构造参数强制传入
+  // 会话 → Agent 登记表（E4 批 2：生产唯一取用面）。构造参数强制传入
   // **同一对**存储单例——这来自 E3 实证的硬约束（各建一份 roundStore ⇒ `rounds/index.json`
   // 覆盖写丢视图），登记表自身不得新建存储；工厂只负责「装一个属于该会话的实例」。
   const agentRegistry = new AgentRegistry(
     { sessionStore, roundStore },
     // 工厂：共享存储单例由 assemblyDeps 提供；会话归属在装配后 switchToSession 落实。
-    // 当前无生产调用方（面板仍单实例），接线归 E5/E7。
     (sessionId) => assembleAgentForSession(workspacePath, sessionId, assemblyDeps),
   );
+  // 模块级引用供 deactivate 关闭全部实例（停用路径拿不到 activate 局部变量）
+  hostAgentRegistry = agentRegistry;
 
   // 孤儿清扫（无会话引用 Round 统一回收）：删除会话/截断后遗留的无引用轮
   // 在启动时清理，防磁盘膨胀与「无引用卡片滞留」（引用归 SessionStore、物理归 RoundStore）。
@@ -591,7 +560,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // 「回退本文件改动」经 agent.security.assertPathAllowed 校验 + 宿主原子写（判据与内核守门同源）。
   const fileChangeTracker = new FileChangeTracker(workspacePath);
   const fileChangeView = new FileChangeView(fileChangeTracker, {
-    getSecurityGuard: () => currentAgent?.security ?? undefined,
+    // 同步取「面板正在显示的会话」实例的守卫：回退动作作用于当前视图，不能取任意后台实例
+    getSecurityGuard: () => chatProvider.getCurrentAgent()?.security ?? undefined,
     // 判据同源：与内核装配读的是同一配置键（extension.ts 装配处同读 CONFIRM_WRITES_KEY）
     isConfirmWrites: () => context.globalState.get<boolean>(CONFIRM_WRITES_KEY) ?? false,
     // 诊断日志：装饰/打开/恢复的失败必须留痕（真机曾因静默吞异常导致「打开了但看不出改了哪里」无从定位）
@@ -610,15 +580,16 @@ export function activate(context: vscode.ExtensionContext): void {
   // 打开面板即懒装配 Agent（不依赖先执行 open 命令），保证发送始终可用；
   // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写；
   // 装配路径与 sessionStore 同源（resolveWorkspacePath），保证读写的文件一致
-  chatProvider.setAgentFactory((projectPath) => {
-    const agentPromise = getAgent(projectPath);
+  chatProvider.setAgentFactory((_projectPath, sessionId) => {
+    // 工厂只做「按会话取/建 + 一次性联动」，不持有实例：复用与在途去重归登记表
+    const assembling = agentRegistry.createAgentForSession(sessionId);
     // 孤儿轮摘要延迟联动：启动清扫发生 Agent 尚未装配，
     // Agent 首次就绪后补做「对称的另一半」——软删被清扫轮的 round-summary
     // （与手动删会话同语义：脱钩溯源 + 进回收站，可恢复为无溯源独立记忆）。
     // 消费语义：**软删成功后才清空 pending**——失败/未就绪保留待下次装配重试，
     // 避免「清空了却未删」导致的永久悬空（软删由存储端 deletedAt 过滤，幂等，重复消费无害）。
     if (pendingSweptRoundIds.length > 0) {
-      void agentPromise.then((agent) => {
+      void assembling.then((agent) => {
         const memory = agent.memory;
         if (!memory) return; // memory 未就绪：不消费，pending 保留待下次装配
         try {
@@ -630,7 +601,23 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       });
     }
-    return agentPromise;
+    return assembling;
+  });
+  // 会话实例回收（删除会话时唯一生产调用点）：先注销登记再 close——
+  // 反序会让「close 后仍留在表里」的实例被下次取用当活实例复用（僵尸）
+  chatProvider.setAgentReleaser(async (sessionId) => {
+    const agent = agentRegistry.get(sessionId);
+    if (!agent) return;
+    agentRegistry.unregister(sessionId);
+    await agent.close();
+  });
+  // 会话实例改键（分叉）：内核把**同一实例**切到新会话，实例本身未换 ⇒
+  // 必须同步改登记键，否则「实例实际会话」与「登记键」分叉成两份漂移语义
+  chatProvider.setAgentRekeyer((from, to) => {
+    const agent = agentRegistry.get(from);
+    if (!agent) return;
+    agentRegistry.unregister(from);
+    agentRegistry.register(to, agent);
   });
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
@@ -640,7 +627,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // L3 分家（2026-10-26）：设置整体从侧栏 view 迁入 editor tab——**六页合一迁入，
   // 非回退到分页前形态**；对话仍留侧栏。原「避免活动栏底部选项卡拥挤（用户反馈）」
   // 的动机由「设置整体独立 tab」承接。
-  // 装配复用与 chat 面板同一 getOrCreateAgent 单例（SSOT），角色切换持久化用户级激活态；
+  // 装配复用与 chat 面板同一登记表（SSOT），角色切换持久化用户级激活态；
   // providerStore 注入供大模型子视图读写（与 chat 面板共用一个 store 单例）。
   const settingsProvider = new MemoraSettingsPanel(context.extensionUri, providerStore);
   settingsProvider.setAgentFactory(getAgent);
@@ -733,19 +720,20 @@ export function activate(context: vscode.ExtensionContext): void {
       chatProvider.setSkillDirs(configDir, userSkillsDir, dirs.skills);
       settingsProvider.setProjectDirs(dirs.skills, dirs.rolePacks);
       // Agent 尚未装配时无需补注入——下次装配按已信任状态注入，路径不会漏。
-      const pending = agentPromise;
-      if (!pending) return;
-      void pending
-        .then(async (agent) => {
+      // 多会话：所有已装配实例都要补注入（只补当前那台会让后台会话缺项目级技能）。
+      const agents = hostAgentRegistry?.list() ?? [];
+      if (agents.length === 0) return;
+      void (async () => {
+        for (const agent of agents) {
           // 顺序与装配同源（注入 → 重扫），由 host/userAssets/projectScope 单点持有
           await injectProjectAssets(agent, dirs);
-          chatProvider.refreshSkillList();
-          memoraOutput.appendLine('Memora 工作区已信任：项目级技能/角色包已注入并重扫');
-        })
-        .catch((err) => {
-          // 降级优先：注入失败不打断对话（下次装配仍会按已信任状态读取，用户也可手动刷新）
-          console.warn('Memora 信任工作区后注入项目级资产失败', err);
-        });
+        }
+        chatProvider.refreshSkillList();
+        memoraOutput.appendLine('Memora 工作区已信任：项目级技能/角色包已注入并重扫');
+      })().catch((err) => {
+        // 降级优先：注入失败不打断对话（下次装配仍会按已信任状态读取，用户也可手动刷新）
+        console.warn('Memora 信任工作区后注入项目级资产失败', err);
+      });
     }),
   );
 
@@ -789,7 +777,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 技能文件本身未变，重扫磁盘无意义，还会引入「忙碌态需排队」的额外语义。
   //
   // 未装配则不动作：下次装配本就按新配置注入，不该为「改一次设置」付整个 Agent 装配成本
-  //（故**不用** tryGetAgent —— 它会懒装配；此处只读已存在的 agentPromise）。
+  //（故**不用** tryGetAgent —— 它会懒装配；此处只读登记表里已存在的实例）。
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       // HOST-BUG-1：LLM 配置（Provider 列表 / 激活项）变更 → 对话面板重试装配。
@@ -944,17 +932,17 @@ export function activate(context: vscode.ExtensionContext): void {
  *   （真机观察点 ⑧ 实锤）。扩展崩溃 / 被强杀时本函数来不及执行，该场景不承诺清理。
  * 失败不阻塞插件退出。
  *
- * ⚠️ 末尾**必须复位两个模块级单例**（`agentPromise` / `currentAgent`）：
- * 本函数已把 Agent `close()`，而 `getOrCreateAgent` 的复用判据只看「有没有」、
- * 不看「死没死」。若不清引用，同一扩展宿主进程内再次 `activate()`
+ * ⚠️ 末尾**必须清空登记表**（`hostAgentRegistry`）：
+ * 本函数已把所有 Agent `close()`，而 `createAgentForSession` 的复用判据只看「有没有」、
+ * 不看「死没死」。若不清表，同一扩展宿主进程内再次 `activate()`
  * 时——即 VS Code 热卸载/重装载路径（真机实证：扩展宿主因第三方扩展 veto 未重启时
  * 走的正是这条）——新面板会绑到一个已关闭的 Agent：功能全坏且**无任何报错**
  * （命令能调、agent 是死的，最难查的那种）。
- * `close()` 失败也要清：半关闭的实例比 `null` 更危险（`null` 会触发重新装配）。
+ * `close()` 失败也要清：半关闭的实例比「表里没有」更危险（表里没有会触发重新装配）。
  */
 export async function deactivate(): Promise<void> {
   // 跨进程会话锁必须**无条件**先释放：它挂在下方所有早退分支之前。
-  // 「本窗口没装配 Agent」时也会走到 `if (!agentPromise) return`——若把释放放进 finally，
+  // 「本窗口没装配 Agent」时也会走到 `if (agents.length === 0) return`——若把释放放进 finally，
   // 那条早退就会漏放锁，该会话对其他窗口永久不可用（本补丁修的头号伤）。
   // 锁是进程级 OS 句柄，与 Agent 生命周期无关：Agent 没装配也可能已因面板打开而拿过锁。
   hostSessionStore?.releaseAllSessionLocks();
@@ -963,7 +951,7 @@ export async function deactivate(): Promise<void> {
   /**
    * 关闭宿主拥有的记忆存储单例（所有权归宿主：Agent close 只借用、不关它）
    *
-   * 装配失败（`agentPromise` 被复位但存储已打开）与正常关闭都会走到这里；
+   * 装配失败（登记表里没有实例但存储已打开）与正常关闭都会走到这里；
    * 必须排在 `agent.close()` 之后，避免关闭过程中再写已关的库。
    */
   const closeHostMemoryStorage = (): void => {
@@ -975,7 +963,10 @@ export async function deactivate(): Promise<void> {
     hostMemoryStorage = null;
   };
 
-  if (!agentPromise) {
+  // 快照后立即清表：close 过程中若还有迟到的装配完成，也不会再被登记进「已停用」的表
+  const agents = hostAgentRegistry?.list() ?? [];
+  hostAgentRegistry?.clear();
+  if (agents.length === 0) {
     closeHostMemoryStorage();
     return;
   }
@@ -983,18 +974,16 @@ export async function deactivate(): Promise<void> {
     // MCP 子进程先停：注销工具 + 关闭 stdio（子进程随 transport 关闭退出）。
     // 放在 agent.close() 之前——工具注销走 agent.tools，需要执行器还活着。
     await stopMcpServers();
-    const agent = await agentPromise;
-    await agent.close();
+    for (const agent of agents) {
+      await agent.close();
+    }
   } catch {
     // 关闭失败静默降级：不阻断插件退出（VS Code 不因 deactivate 异常而阻塞）
   } finally {
     // GC 单点调度器先停：避免定时器在 Agent 关闭后继续扫已关闭的存储
     gcScheduler?.stopPeriodic();
     gcScheduler = null;
-    gcDriverAgent = null;
     // 共享记忆存储最后关（所有 Agent 已 close，再关库不会留下写半途）
     closeHostMemoryStorage();
-    agentPromise = null;
-    currentAgent = null;
   }
 }

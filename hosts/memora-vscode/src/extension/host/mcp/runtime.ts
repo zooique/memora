@@ -50,7 +50,7 @@ interface RunningServer {
   allowKeys: McpToolAllowlist;
 }
 
-/** 运行态集合（模块级单例，与宿主 agentPromise/currentAgent 的单例口径一致） */
+/** 运行态集合（模块级单例：所有会话实例共享同一份 MCP 子进程集合，不按会话分家） */
 let running: Map<string, RunningServer> | null = null;
 
 /**

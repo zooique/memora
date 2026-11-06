@@ -308,10 +308,11 @@ describe('HOST-BUG-1 · retryAgentAssembly（配置变更重试入口）', () =>
     const inflight = cast.ensureAgent(); // 同步进入在途态（_agentResolving=true）
     await cast.retryAgentAssembly();
 
-    expect(factory).toHaveBeenCalledTimes(1); // 入口未叠加第二次装配
-
     release();
     await inflight;
+    // 入口未叠加第二次装配：批 2 装配前多了一步「确保会话」（await 让出微任务），
+    // 故断言移到放行之后——此时「重试已发生 + 装配已完成」二者都成立，才证明没叠第二台
+    expect(factory).toHaveBeenCalledTimes(1);
     expect(cast._agent).toBe(agent);
   });
 });

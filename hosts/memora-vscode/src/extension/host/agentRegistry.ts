@@ -4,9 +4,9 @@
  * 职责 = 「一会话一 Agent」的唯一登记面：按键复用、在途去重、注销、close 后重建。
  * 装配细节（vscode 配置 / Provider / 目录）不进本类——由宿主注入 `SessionAgentFactory`。
  *
- * 现状（E4 第一片）：`createAgentForSession` 已实现并有单测；**生产仍未接线**——
- * 面板与命令仍走单实例 `getOrCreateAgent`，`unregister` 仍零生产调用。E5/E7 前
- * 不得读成「已具备多会话并行」。
+ * 现状（E4 批 2）：`createAgentForSession` 已是**生产唯一取用面**——面板工厂、命令、
+ * 设置面板、信任门补注入、配置热更全部经本表；单实例 `agentPromise` 已删除。
+ * `unregister` 的生产调用点 = 删除会话时回收该会话实例（面板 `deleteSession` 路径）。
  *
  * 🔴 硬约束（E3 实证，见台账 `ROUNDSIDX-SHARED-1`）：多 Agent 必须共享**同一**
  * `sessionStore` / `roundStore` 单例。两个实例各建一份 `roundStore` 时，`rounds/index.json`
@@ -80,14 +80,32 @@ export class AgentRegistry {
   }
 
   /**
+   * 列出现已登记的全部实例（快照）
+   *
+   * 用途 = 对所有已装配实例执行同一动作（配置热更 / 信任门补注入 / 停用收口）：
+   * 取用面已是「一会话一实例」，宿主不得再靠单例引用假设「只有一个 Agent」。
+   *
+   * @returns 实例快照（遍历期间增删不影响本次遍历）
+   */
+  list(): Agent[] {
+    return [...this.agents.values()];
+  }
+
+  /**
    * 注销登记（调用方负责随后 `agent.close()`；本类不碰实例生命周期）
    *
-   * 生产调用方将在 E5/E7 接线（面板/会话关闭时）；当前仍零生产调用点。
+   * 生产调用点 = 面板删除会话时回收该会话实例（`chatPanel.deleteSession`）。
    *
    * @param sessionId 会话标识
    */
   unregister(sessionId: string): void {
     this.agents.delete(sessionId);
+  }
+
+  /** 清空登记表与在途表（停用收口；实例生命周期由调用方先 close） */
+  clear(): void {
+    this.agents.clear();
+    this.inflight.clear();
   }
 
   /**

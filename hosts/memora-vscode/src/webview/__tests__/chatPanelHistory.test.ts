@@ -450,14 +450,16 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
   it('新建会话 → 生成唯一会话名 + 清空重放 + 推送占位标题', async () => {
     const { provider, posted } = setup();
-    const { agent, switchToSession } = agentStub();
-    provider.setAgent(agent);
+    const { agent } = agentStub();
+    // 批 2：切换/新建一律「按会话取或建实例」——不再对单实例调内核 switchToSession
+    const agentFactory = vi.fn().mockResolvedValue(agent);
+    provider.setAgentFactory(agentFactory);
 
     await provider.newSessionFromCommand();
 
-    // 内核 switchToSession 被调用，且会话名以 s 开头（唯一前缀）
-    expect(switchToSession).toHaveBeenCalledTimes(1);
-    const calledId = switchToSession.mock.calls[0]?.[0] as string;
+    // 真走按会话装配：工厂被调用一次，会话名以 s 开头（唯一前缀）
+    expect(agentFactory).toHaveBeenCalledTimes(1);
+    const calledId = agentFactory.mock.calls[0]?.[1] as string;
     expect(calledId).toMatch(/^\d{4}-\d{2}-\d{2}-s/);
     // 重放：clear_ok + 占位标题（无消息）
     const types = posted.map((m) => (m as { type: string }).type);
@@ -466,10 +468,12 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(title[0]?.title).toMatch(/^新会话 \d{2}:\d{2}$/);
   });
 
-  it('切换会话 → 调内核 switchToSession + 重放该会话历史 + 推送标题', async () => {
+  it('切换会话 → 按会话取实例 + 重放该会话历史 + 推送标题', async () => {
     const { store, roundStore, provider, posted } = setup();
-    const { agent, switchToSession } = agentStub();
-    provider.setAgent(agent);
+    const { agent } = agentStub();
+    // 批 2：切换 = 换绑该会话实例（首次进入才装配），不再是单实例改身份
+    const agentFactory = vi.fn().mockResolvedValue(agent);
+    provider.setAgentFactory(agentFactory);
     seedSession(store, roundStore, '2026-08-15-s1', [
       { role: 'user', content: '问题A', ts: '2026-08-15T10:00:00.000Z' },
       { role: 'assistant', content: '回答A', ts: '2026-08-15T10:00:30.000Z' },
@@ -482,7 +486,9 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     await provider.switchToSession('2026-08-15-s1');
 
-    expect(switchToSession).toHaveBeenCalledWith('2026-08-15-s1');
+    // 真走按会话装配：工厂收到的就是目标会话 id（而不是对旧实例改身份）
+    expect(agentFactory).toHaveBeenCalledTimes(1);
+    expect(agentFactory.mock.calls[0]?.[1]).toBe('2026-08-15-s1');
     // 导航指针同批落盘：只赋值不落盘 = 重启跳回别处（SESSION-RESUME-1 的复发形态）
     expect(persistPointer).toHaveBeenCalledWith('2026-08-15-s1');
     // 重放：clear_ok + 该会话消息 + session_title
@@ -1494,15 +1500,17 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
   // ─── 首次启动自动创建首会话（无记录时免手动点「＋」） ───
   it('无历史会话：ensureInitialSession 自动创建首个会话（用户可直接输入）', async () => {
     const { provider, posted } = setup();
-    const { agent, switchToSession } = agentStub();
-    provider.setAgent(agent);
+    const { agent } = agentStub();
+    const agentFactory = vi.fn().mockResolvedValue(agent);
+    provider.setAgentFactory(agentFactory);
     // 首次启动：无任何会话记录 → _currentSessionId 为空
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '';
     await (provider as unknown as { ensureInitialSession(): Promise<void> }).ensureInitialSession();
-    // 自动创建：switchToSession 被调用，会话 id 为 date-sxxx 格式，_currentSessionId 已更新
-    expect(switchToSession).toHaveBeenCalledTimes(1);
+    // 自动创建：按会话装配被调用一次，会话 id 为 date-sxxx 格式，_currentSessionId 已更新
+    expect(agentFactory).toHaveBeenCalledTimes(1);
     const createdId = (provider as unknown as { _currentSessionId: string })._currentSessionId;
     expect(createdId).toMatch(/^\d{4}-\d{2}-\d{2}-s[0-9a-z]+$/);
+    expect(agentFactory.mock.calls[0]?.[1]).toBe(createdId);
     // UI 推送新会话标题
     expect(ofType(posted, 'session_title').length).toBeGreaterThanOrEqual(1);
   });
@@ -1529,6 +1537,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     ]);
     const { agent } = agentStub();
     provider.setAgent(agent);
+    // 新建会话 B 需要按会话装配 → 注入工厂（返回同一桩即可）
+    provider.setAgentFactory(vi.fn().mockResolvedValue(agent));
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-31-a';
     // 新建会话 B（空）→ 触发 clear_ok + replay(B 空) + session_title
     await (

@@ -52,7 +52,7 @@ export interface McpOpsDeps {
    * 「该名没进 applied」，本动作就是让它进 applied（判据与按钮动作同源，见 protocol 该 op 说明）。
    * 不带 name：追平是**全局**动作（一次按当前配置处理所有台），拿 name 只会让本模块
    * 误以为它是按台操作。回执文案由本模块拼（它知道用户点的是哪张卡）。
-   * 注入实现必须复用对话面板同一个 agent 单例（`getOrCreateAgent`），否则会出现第二个
+   * 注入实现必须复用对话面板同一个 `AgentRegistry` 取用面，否则会出现第二个
    * MCP 运行时 —— 两台同时注册同名工具。
    */
   connect(): Promise<{ ok: boolean; error?: string }>;

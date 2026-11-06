@@ -11,6 +11,7 @@
  * 生命周期 = 懒建、随面板实例存活（会话数上界 = 本面板打开过的会话数）。会话关闭时的
  * 清理归批 3 接线；本表暂不提供删除面，避免留下零调用点的僵尸 API。
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ProcessEvent } from '@zooique/memora';
 import type { RoundView } from '../../shared/protocol.js';
 
@@ -65,5 +66,41 @@ export class SessionRuntimeStates {
       this.states.set(sessionId, state);
     }
     return state;
+  }
+}
+
+/**
+ * 流归属会话闸（E4 批 2 投影闸）
+ *
+ * 用 `AsyncLocalStorage` 标记「当前执行栈属于哪个会话的流」。判据 = 流归属会话 ≠ 面板正在
+ * 显示的会话 ⇒ 后台流：其 UI 投递与宿主单份投影缓存（`_turnState` / 快照签名 / 待发送区长度）
+ * 必须整批丢弃，否则 A 的流会改写 B 的界面与相位。切回 A 时由 replay 从该会话 liveBuffer /
+ * 落盘历史重建，内容不丢。
+ *
+ * ⚠️ 消费面必须逐个投影 helper 早退（而非只挡 `post()` 出口）：各 helper 持有宿主单份缓存，
+ * 只挡出口会让缓存被后台流写脏——B 的下一轮去重/相位判据随之出错，且无测试会红。
+ */
+export class BackgroundFlowGate {
+  /** 流归属会话的异步上下文存储（`run` 作用域覆盖该流全部异步链） */
+  private readonly storage = new AsyncLocalStorage<{ sessionId: string }>();
+
+  /**
+   * 在「流归属会话」作用域内执行
+   *
+   * @param sessionId 流归属会话
+   * @param fn 流主体（其整个异步链内 `isBackground` 都能读到本归属）
+   */
+  run<T>(sessionId: string, fn: () => T): T {
+    return this.storage.run({ sessionId }, fn);
+  }
+
+  /**
+   * 当前执行栈是否属于后台流
+   *
+   * @param currentSessionId 面板当前显示的会话 id（对照基准，由面板现读）
+   */
+  isBackground(currentSessionId: string): boolean {
+    const ctx = this.storage.getStore();
+    return ctx !== undefined && ctx.sessionId !== currentSessionId;
   }
 }

@@ -2,7 +2,7 @@
  * MCP 配置读取（vscode 耦合层 · 唯一读取点）
  *
  * 与 `host/mcp/` 下各模块的分界：那些是纯逻辑（零 vscode 依赖、可单测）；本文件读
- * VS Code 用户设置，是配置进宿主 MCP 运行时的唯一入口。**装配期**（getOrCreateAgent）
+ * VS Code 用户设置，是配置进宿主 MCP 运行时的唯一入口。**装配期**（按会话装配）
  * 与**热更**（activate 内的 onDidChangeConfiguration）都走这里，禁两处各写一份
  * getConfiguration（判据散点）。
  *

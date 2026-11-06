@@ -18,8 +18,14 @@ export const SESSION_HELD_NOTICE =
 export interface SessionHistoryDeps {
   /** 会话存储（锁 / 归档 / 删除的唯一真源） */
   store: HostSessionStore;
-  /** 是否正在生成（与 newSession/switchToSession 同源守卫） */
-  isStreaming: () => boolean;
+  /**
+   * 目标会话是否正在生成（缺省 = 当前会话）
+   *
+   * ⚠️ 必须按**目标会话**判（E4 批 2）：后台会话可以在别的会话正在显示时继续跑流，
+   * 只判当前会话会让「删除/归档一个后台仍在流式写盘的会话」被放行——实例随即被关闭，
+   * 流在写盘中途炸掉（且锁被提前还回去，另一窗口可接管后写冲突）。
+   */
+  isStreaming: (sessionId?: string) => boolean;
   /** 当前打开的会话 id（判「是否需一次性短锁」与「拒删当前会话」） */
   currentSessionId: () => string;
   /** 面板通知通道 */
@@ -47,8 +53,8 @@ export async function deleteSessionAction(
   deps: SessionHistoryDeps,
   sessionId: string,
 ): Promise<void> {
-  // 运行时守卫（SSOT：与 newSession/switchToSession 同源「当前会话 streaming」，禁止运行中改会话结构）
-  if (deps.isStreaming()) {
+  // 运行时守卫（SSOT：与 newSession/switchToSession 同源「目标会话 streaming」，禁止运行中改会话结构）
+  if (deps.isStreaming(sessionId)) {
     deps.notify('info', '生成中，请稍候再删除会话');
     return;
   }
@@ -108,8 +114,8 @@ export async function archiveSessionAction(
   deps: SessionHistoryDeps,
   sessionId: string,
 ): Promise<void> {
-  // 运行时守卫（与 newSession/switchToSession/deleteSession 同源「当前会话 streaming」）
-  if (deps.isStreaming()) {
+  // 运行时守卫（与 newSession/switchToSession/deleteSession 同源「目标会话 streaming」）
+  if (deps.isStreaming(sessionId)) {
     deps.notify('info', '生成中，请稍后再整理会话');
     return;
   }
@@ -183,7 +189,7 @@ export async function restoreSessionAction(
   deps: SessionHistoryDeps,
   sessionId: string,
 ): Promise<void> {
-  if (deps.isStreaming()) {
+  if (deps.isStreaming(sessionId)) {
     deps.notify('info', '生成中，请稍后再整理会话');
     return;
   }

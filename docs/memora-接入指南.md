@@ -753,21 +753,24 @@ preExecutionCheck: () => ({ skip: false }),  // 放行，等价于 allow
 
 ### 规范模式（VS Code 宿主实证）
 
-在 `activate()` 中创建一次，注入两侧（见仓库内参考实现 `hosts/memora-vscode/src/extension/extension.ts`，**非随包产物**：`activate()` 内 `new WorkspaceRoundStore(...)` 与 `new WorkspaceSessionStore(workspacePath, roundStore)` 各建一次；面板侧经 `new MemoraChatViewProvider(..., sessionStore, ...)` 与 `settingsProvider.setAgentFactory(...)`，Agent 侧经 `getOrCreateAgent(..., sessionStore, roundStore, ...)` → `assembleAgent(...)`）：
+在 `activate()` 中创建一次，注入两侧（见仓库内参考实现 `hosts/memora-vscode/src/extension/extension.ts`，**非随包产物**：`activate()` 内 `new WorkspaceRoundStore(...)` 与 `new WorkspaceSessionStore(workspacePath, roundStore)` 各建一次；面板侧经 `new MemoraChatViewProvider(..., sessionStore, ...)` 与 `settingsProvider.setAgentFactory(...)`，Agent 侧经宿主的 `AgentRegistry.createAgentForSession(sessionId)` → `assembleAgent(...)` 透传同一对 store）：
 
 ```ts
 // 单例：activate 中创建一次
 const sessionStore = new WorkspaceSessionStore(workspacePath, roundStore);
 sessionStore.load();
 
-// 注入 UI 面板：面板经 setAgentFactory 复用同一 agentPromise → 同一份 store
-chatProvider.setAgentFactory((projectPath) =>
-  getOrCreateAgent(projectPath, providerStore, sessionStore, roundStore, /* ... */));
+// 登记表：复用 / 在途去重 / 装配 / 登记全在它里面，宿主不再另存一份实例
+const agentRegistry = new AgentRegistry(
+  { sessionStore, roundStore },
+  async (sessionId, stores) => assembleAgent({ /* ... */ sessionStore: stores.sessionStore }),
+);
 
-// 注入 Agent 装配：assembleAgent 透传同一 sessionStore / roundStore 进内核
+// 注入 UI 面板与命令侧：按会话取实例（同会话恒同一实例，跨会话互不共享）
+const getAgent = (sessionId: string) => agentRegistry.createAgentForSession(sessionId);
 ```
 
-`sessionStore` 经 `getOrCreateAgent` → `assembleAgent` 透传进内核；UI 面板经 `chatProvider.setAgentFactory` 复用同一 `agentPromise`，从而共用同一份 store。**两侧的 store 引用必须指向同一对象**，禁止各建各的。
+`sessionStore` 经 `AgentRegistry` 的装配工厂 → `assembleAgent` 透传进内核；UI 面板与命令侧统一经 `agentRegistry.createAgentForSession(sessionId)` 取实例，同会话多次取回**同一实例**，因此两侧共用同一份 store。**两侧的 store 引用必须指向同一对象**，禁止各建各的。
 
 ### 单例 / 原子写各防什么（边界辨析）
 

@@ -125,7 +125,7 @@ export class MemoraSettingsPanel {
   private _agentPromise: Promise<Agent | undefined> | undefined;
   /** 是否已绑定 rolePackSwitched 事件（角色切换可观测，只绑定一次避免重复监听） */
   private _rolePackBound = false;
-  /** Agent 懒装配工厂（由 extension 注入，与 chat 面板同一 getOrCreateAgent） */
+  /** Agent 懒装配工厂（由 extension 注入，与 chat 面板同一 `AgentRegistry` 取用面） */
   private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
   /** 全局状态存储（持久化激活角色包，用户级） */
   private _globalState: vscode.Memento | undefined;

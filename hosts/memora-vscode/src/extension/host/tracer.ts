@@ -9,7 +9,7 @@
  *
  * 设计（薄壳 + 装配）：
  *   - 内核只负责埋点（TRACE_SPANS），本类只做采集 + 提取，不重复埋点
- *   - 模块级单例（vscodeTracer）：插件为单 Agent 单窗口模型，与 agentPromise 单例同构，
+ *   - 模块级单例（vscodeTracer）：所有会话实例共用同一份日志通道（日志不按会话分家）
  *     装配（assemble）与面板（chatPanel）共享同一实例，避免跨层传参
  */
 import type { ISpan, ITracer } from '@zooique/memora';

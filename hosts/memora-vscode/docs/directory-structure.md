@@ -70,7 +70,7 @@ hosts/memora-vscode/
 
 1. **内核在 extension host，Webview 只做 UI**（ADR-VC-001 决策 5）：memora 内核 + `node:fs` 在 extension host；webview 仅通过 `shared/protocol.ts` 的 postMessage 通信。
 2. **薄壳装配**（ADR-VC-001 决策 2）：host/ 只 `new Agent()` + 注入，不重复实现内核能力。
-3. **单 Agent 串行**：内核保持单 Agent；多面板共享同一 Agent 实例（getOrCreateAgent 懒加载单例）。
+3. **内核单 Agent 串行 / 宿主一会话一实例**：内核一次只跑一个 turn（单 Agent 语义不变）；宿主按会话装配 `Agent`，登记在 `AgentRegistry`（同会话复用、切换会话只换绑显示源），不再有 `getOrCreateAgent` 单例。
 4. **消息协议单一真理源**：`shared/protocol.ts` 定义所有 postMessage 载荷，两侧共用，防漂移。
 5. **定位由角色包承载（单一真理源）**：插件不自定性，不硬编码功能定位；角色包维护于内核 `role-packs/`，宿主构建期从内核同步至 `dist/extension/role-packs/`，由内核 RolePackManager 自动扫描激活。宿主不自持可写副本，避免与内核分叉漂移。
 

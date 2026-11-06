@@ -7,7 +7,7 @@
  *   （extension.ts → commands/* → extension.ts），故把这一块共享能力下沉到 host/。
  *
  * 消费面（两个，缺一即「只刷一半」）：
- *   ① 装配期注入：`getOrCreateAgent` 读 {@link readDisabledSkills} 喂内核；
+ *   ① 装配期注入：`assembleAgentForSession` 读 {@link readDisabledSkills} 喂内核；
  *   ② 运行期同步：配置变更监听 + 重载命令调 {@link syncDisabledSkills}。
  */
 import * as vscode from 'vscode';
