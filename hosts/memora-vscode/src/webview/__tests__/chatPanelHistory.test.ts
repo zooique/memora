@@ -2936,7 +2936,11 @@ describe('角色包激活回调接线（B：删激活包 → 对话头部同步�
    *
    * @param displays 角色包内部名 → 显示名（供 roleDisplayName 解析）
    */
-  function roleStub(displays: Record<string, string>): {
+  function roleStub(
+    displays: Record<string, string>,
+    /** 内核该 agent 实际激活的角色包内部名（方案 A 的投影真源；undefined = 无激活） */
+    activeName?: string,
+  ): {
     agent: Agent;
     onRolePackActivated: ReturnType<typeof vi.fn>;
     getSwitched: () => ((info: { from: string | null; to: string }) => void) | undefined;
@@ -2959,6 +2963,8 @@ describe('角色包激活回调接线（B：删激活包 → 对话头部同步�
           Object.entries(displays).map(([name, displayName]) => ({ name, displayName })),
         getActive: () => undefined,
         getActiveTeam: () => undefined,
+        // 方案 A：面板角色名必须投影「当前 agent 实际激活的角色包」，不是宿主自持字段
+        activeName,
       },
       getMetrics: () => ({ context: { occupancy: { rolePackBaseTokens: 9000 } } }),
     } as unknown as Agent;
@@ -3024,5 +3030,25 @@ describe('角色包激活回调接线（B：删激活包 → 对话头部同步�
     const msgs = ofType<{ type: 'chat_role_pack'; rolePack: string }>(posted, 'chat_role_pack');
     expect(msgs).toHaveLength(1);
     expect(msgs[0]!.rolePack).toBe('包B');
+  });
+
+  it('切会话即按该会话 agent 的 activeName 重刷角色名（方案 A，不残留上一会话）', () => {
+    const { provider, posted } = setup();
+    // 两会话各自的内核激活角色不同：A 会话 = packA，B 会话 = packB
+    const stubA = roleStub({ packA: '包A', packB: '包B' }, 'packA');
+    const stubB = roleStub({ packA: '包A', packB: '包B' }, 'packB');
+
+    provider.setAgent(stubA.agent);
+    const first = ofType<{ type: 'chat_role_pack'; rolePack: string }>(posted, 'chat_role_pack');
+    expect(first[first.length - 1]!.rolePack).toBe('包A');
+
+    posted.length = 0; // 基线：切会话前的推送不计入本次断言
+    provider.setAgent(stubB.agent);
+
+    const msgs = ofType<{ type: 'chat_role_pack'; rolePack: string }>(posted, 'chat_role_pack');
+    // 旧实现（"仅空时补齐"）在这里不推送、面板继续停留在「包A」——
+    // 同一面板 name 来自 A 会话、traits 来自 B 会话（正是本用例要钉死的串台形态）
+    expect(msgs[msgs.length - 1]?.rolePack).toBe('包B');
+    expect((provider as unknown as { _activeRolePack: string })._activeRolePack).toBe('packB');
   });
 });

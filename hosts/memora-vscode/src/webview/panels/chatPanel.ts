@@ -673,6 +673,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private bindAgent(agent: Agent): void {
     this._agent = agent;
+    // 角色包随显示会话走（方案 A，2026-11-06）：`_activeRolePack` 是**当前 agent 的投影**，
+    // 不是宿主自持的跨会话字段。bindAgent 是换实例/换会话的唯一收口 ⇒ 在此强制重读，
+    // 不能用「仅空时补齐」——否则同一张面板里 name 来自 A 会话、traits 来自 B 会话。
+    // SSOT = 内核 `rolePackManager.activeName`；新会话默认值来自内核兜底包（assembler §4.1）。
+    this._activeRolePack = agent.rolePackManager?.activeName ?? undefined;
     // 换 agent = 投影源切换（SSOT）：重置待发送区长度投影缓存为「从未投影过」，
     // 防旧 agent 队列长度残留导致 syncPendingQueue 长度未变误判不推送
     // （新 agent 首次 sync 必推送一次，无论队列空满）
@@ -2595,10 +2600,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 装配完成后统一收口（会话对齐 + 时序竞态补推 + 占用补推，单一入口）
    *
    * 懒装配路径（直接点活动栏面板图标）：ensureAgent 异步装配，webview ready 时 _agent 往往
-   * 尚未就绪，replaySession 会因 _agent 为空（pushRolePacks）或 _activeRolePack 未设置
-   * （chat_role_pack，仅 open 命令路径的 setRolePack 会设置）而跳过推送 → 输入区角色选择器
-   * 永久缺失。装配完成即补推：① 启动会话对齐（见 alignKernelSession）；② _activeRolePack 缺省
-   * 时从 agent 实际激活角色补齐；③ 补推 chat_role_pack（角色选择器 / AI 消息标签可见，即使
+   * 尚未就绪，replaySession 会因 _agent 为空（pushRolePacks）或 `_activeRolePack` 未就绪
+   * （chat_role_pack）而跳过推送 → 输入区角色选择器永久缺失。装配完成即补推：
+   * ① 启动会话对齐（见 alignKernelSession）；② 角色名由 bindAgent 按当前会话投影（方案 A），
+   * 本方法只推送不补值；③ 补推 chat_role_pack（角色选择器 / AI 消息标签可见，即使
    * 无激活角色也推送）；④ 补推 chat_role_packs（角色切换入口数据）；⑤ 补推历史会话占用
    * （输入区圆环脱离空态 0%）。
    *
@@ -2613,11 +2618,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!this._agent) return;
     // 启动会话对齐（装配即校正内核 current；幂等：同会话重入直接跳过，见方法注释清单 1）
     void this.alignKernelSession(this._agent);
-    // 懒装配路径从未调用 setRolePack：从 agent 实际激活角色补齐（无角色包时为 undefined）
-    if (!this._activeRolePack) {
-      // ?? undefined：activeName 可能为 null（内核未激活任何角色包），归一并避免 null 赋值
-      this._activeRolePack = this._agent.rolePackManager?.activeName ?? undefined;
-    }
+    // 角色名已在 bindAgent 按当前 agent 投影（方案 A，SSOT = rolePackManager.activeName）；
+    // 本方法不再「空则补齐」——那种写法会让旧会话的角色名在切会话后滞留。
+
     // 角色数据：无论是否有激活角色都推送，让 webview 正确更新 UI 状态
     if (this._view) {
       if (this._activeRolePack) {

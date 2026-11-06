@@ -1,15 +1,13 @@
 /**
  * 插件共享常量 — extension host 与 webview 面板共用的单个真理源
  *
- * 跨两侧引用的常量（激活角色包键等）统一定义于此，两侧直接引用，禁止各自另立副本
+ * 跨两侧引用的常量（脚本确认开关键等）统一定义于此，两侧直接引用，禁止各自另立副本
  * （即使注释标注"保持同值"也是 stale mirror），消除手工同步的漂移风险。
  */
 
-/** 激活角色包的持久化键（vscode globalState）：
- *  用户切换角色包时写入，Agent 装配时读取并优先激活，实现"重启后记住用户选择"。
- *  作用域为用户级（globalState），
- *  符合"角色选择是用户偏好，跨项目共享"的语义。 */
-export const ACTIVE_ROLE_PACK_KEY = 'memora.activeRolePack';
+/** ⚠️ 激活角色包的全局键（`memora.activeRolePack`）已于 2026-11-06（方案 A）退役：
+ *  角色包激活改为**会话级**（每会话 Agent 各持 `rolePackManager.activeName`），宿主不再
+ *  读/写该键；新会话默认角色来自内核 §4.1 单链兜底包。旧 globalState 残留值无消费面。 */
 
 /** 角色包组（会议名单）的持久化键（vscode globalState）：
  *  组 = 组长角色包 + 组员名单（{leader, members[]}[]），用户级数据（会议名单容器）。
@@ -33,7 +31,7 @@ export const MEMORY_RECYCLE_RETENTION_DAYS = 30;
 
 /** 用户级 globalState 键前缀（「初始化」清空判据）：
  *  globalState 是 VS Code **跨扩展共享**存储库，无脑枚举全清会删其他扩展的键
- *  ⇒ 初始化只清本前缀的键。本插件全部 globalState 键（activeRolePack/rolePackTeams/
+ *  ⇒ 初始化只清本前缀的键。本插件全部 globalState 键（rolePackTeams/
  *  confirmScripts）均带此前缀；新增用户级 globalState 键时自动纳入清空范围，
  *  无需维护第二份清单（SSOT：清空判据从存储真源派生，不手写枚举）。 */
 export const USER_STATE_KEY_PREFIX = 'memora.';

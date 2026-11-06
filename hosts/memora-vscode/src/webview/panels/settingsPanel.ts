@@ -77,7 +77,6 @@ import { isPathWithin } from '../../extension/host/userAssets/path.js';
 // 项目级 → 用户级复制编排层（执行面 = zipImport 的事务化原语，本面板只分发）
 import { copyProjectRolePackToUser, copyProjectSkillToUser } from './assetCopyToUser.js';
 import {
-  ACTIVE_ROLE_PACK_KEY,
   CONFIRM_SCRIPTS_KEY,
   ROLE_PACK_TEAMS_KEY,
   MEMORY_RECYCLE_RETENTION_DAYS,
@@ -676,10 +675,11 @@ export class MemoraSettingsPanel {
     // 走内核「单一切换入口」agent.switchRolePack：activate + emit rolePackSwitched + 刷新 loop 前缀。
     // 角色视图刷新由 rolePackSwitched 事件驱动（onRolePackSwitched → loadRoles），不再显式
     // loadRoles——单一事件通知所有消费者，消除并行推送路径（SSOT）。
+    // 角色选择是**会话级**状态（方案 A，2026-11-06 定案）：切换只作用于当前会话的 agent，
+    // 不再写 globalState——那会让下一个新建会话偷偷继承「上次全局选择」的默认值。
+    // 新会话默认角色 = 内核 §4.1 单链兜底包（assembler），宿主不提供任何默认值。
     const ok = agent.switchRolePack(name);
-    if (ok) {
-      this._globalState?.update(ACTIVE_ROLE_PACK_KEY, name);
-    } else {
+    if (!ok) {
       // ok=false 有两种成因，须用内核公开判据区分：
       // rolePackSwitchLocked 只在**触发锁定**那一次发射（该次返回 true），被锁期间的切换
       // 直接 return false 且不发射任何事件——故「未收到事件」不能推断为"角色包不存在"。

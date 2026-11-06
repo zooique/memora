@@ -54,7 +54,6 @@ import { FileChangeView } from './host/fileChangeView.js';
 import { stopMcpServers, applyMcpConfigChange } from './host/mcp/runtime.js';
 import { readMcpServers, readMcpToolAllowlist } from './mcpConfig.js';
 import {
-  ACTIVE_ROLE_PACK_KEY,
   CONFIRM_SCRIPTS_KEY,
   ROLE_PACK_TEAMS_KEY,
   USER_SKILLS_DIR_NAME,
@@ -214,8 +213,9 @@ interface AssemblyDeps {
  * @param deps 装配期稳定依赖
  */
 function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): AssembleOptions {
-  // 读取持久化的激活角色包（用户上次选择；无记录时为 undefined → 内核 §4.1 单链落兜底包）
-  const activeRolePack = deps.globalState.get<string>(ACTIVE_ROLE_PACK_KEY);
+  // 角色包激活状态是**会话级**（方案 A，2026-11-06 定案）：装配不再从 globalState 读「上次
+  // 全局选择」当默认值——那会让新会话偷偷继承别的会话的选择。未注入时内核 §4.1 单链落兜底包，
+  // 这就是「新会话默认角色」的唯一真源；会话内的角色切换只走该会话 agent 的 switchRolePack。
   // 读取角色包组（会议名单，用户级数据；无记录为空数组）
   const rolePackTeams =
     deps.globalState.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
@@ -256,7 +256,6 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
     providerStore: deps.providerStore,
     sessionStore: deps.sessionStore,
     roundStore: deps.roundStore,
-    activeRolePack,
     rolePackTeams,
     configDir: deps.configDir,
     searchEngine,

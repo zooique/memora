@@ -180,7 +180,7 @@ describe('settingsPanel.activateRole —— 切换失败两成因判定', () => 
     expect(msgs[0]?.message).toBe('角色包切换已被限流锁定，请稍后再试');
   });
 
-  it('切换成功 → 持久化激活角色包名 + 不弹任何 notice', async () => {
+  it('切换成功 → 只作用于当前会话 agent（不写 globalState）+ 不弹任何 notice', async () => {
     ({ agent, switchRolePack, getRolePackSwitchLockStatus } = agentStub({
       switchOk: true,
       locked: false,
@@ -190,7 +190,10 @@ describe('settingsPanel.activateRole —— 切换失败两成因判定', () => 
     const ok = await activateRole(provider, 'writer');
 
     expect(ok).toBe(true);
-    expect(globalUpdate).toHaveBeenCalledWith('memora.activeRolePack', 'writer');
+    // 方案 A（2026-11-06）：角色激活是会话级状态，宿主不再写全局键——写了会让
+    // 下一个新建会话偷偷继承本次选择（「偷偷写的默认值」正是本次要拆掉的东西）。
+    expect(switchRolePack).toHaveBeenCalledWith('writer');
+    expect(globalUpdate).not.toHaveBeenCalled();
     expect(notices(posted)).toEqual([]);
     // 成功路径不需要查询锁定判据
     expect(getRolePackSwitchLockStatus).not.toHaveBeenCalled();
