@@ -10,6 +10,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { MessageHistory } from '@/agent/messageHistory.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
+import { ASK_TIMEOUT_NOTICE } from '@/agent/seed/orchestrator.js';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import { generateRoundId } from '@/memory/roundStore.js';
@@ -39,7 +40,7 @@ describe('MessageHistory · 基本操作', () => {
 
   it('appendUser 不应抛错', async () => {
     const history = new MessageHistory();
-    await expect(history.appendUser('你好')).resolves.toBeUndefined();
+    await expect(history.appendUser('你好')).resolves.toBe('ok');
   });
 
   it('appendAssistant 不应抛错', async () => {
@@ -233,6 +234,23 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
     const { history, roundStore } = createRoundBackedHistory();
     await history.markPendingAsk('round-not-exist', [{ question: '孤儿题' }]);
     expect(roundStore.size()).toBe(0);
+  });
+
+  it('交互输入目标轮缺失：fail-closed 拒绝建轮且不落盘（系统文案不得冒充用户输入）', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+    const missingRoundId = generateRoundId();
+    // FAKE-ROUND-TIMEOUT-1 现场：timeout 续跑但目标轮已不存在
+    await expect(
+      history.appendUser(ASK_TIMEOUT_NOTICE, missingRoundId, {
+        interactive: true,
+        kind: 'timeout',
+      }),
+    ).resolves.toBe('round-missing');
+    // ① 未新建轮（缺轮不得降级建 pending 轮）
+    expect(roundStore.getById(missingRoundId)).toBeNull();
+    expect(roundStore.size()).toBe(0);
+    // ② 盘上无该文案（系统文案不进任何 userMessage）
+    expect(JSON.stringify(roundStore.listAll())).not.toContain('用户未在时限内回答');
   });
 
   it('作答记录落盘同一次 save 内原子清 pendingAsk（question-answer / timeout 二值；supplement 不动）', async () => {

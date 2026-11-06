@@ -8,16 +8,17 @@ import {
   truncateRoundsUpTo,
   countMessagesInRounds,
 } from '@/memory/sessionViewLoader.js';
-import { createPendingRound, completeRound, type Round } from '@/memory/roundStore.js';
+import { completeRound, type Round } from '@/memory/roundStore.js';
+import { createPendingRoundFixture } from './helpers/roundFixture.js';
 
 describe('会话视图加载器', () => {
   describe('flattenRoundsToMessages', () => {
     it('应该将 Round 列表展开为扁平消息列表', () => {
       // 创建多个 Round
-      const round1 = createPendingRound('第一个问题');
+      const round1 = createPendingRoundFixture('第一个问题');
       const completed1 = completeRound(round1, '第一个回答');
 
-      const round2 = createPendingRound('第二个问题');
+      const round2 = createPendingRoundFixture('第二个问题');
       const completed2 = completeRound(round2, '第二个回答');
 
       // 展开
@@ -37,11 +38,11 @@ describe('会话视图加载器', () => {
 
     it('应该跳过未完成的 AI 消息', () => {
       // 一个完成的 Round
-      const completedRound = createPendingRound('完成的');
+      const completedRound = createPendingRoundFixture('完成的');
       const completed = completeRound(completedRound, '完成的回答');
 
       // 一个 pending 的 Round
-      const pendingRound = createPendingRound('未完成的');
+      const pendingRound = createPendingRoundFixture('未完成的');
 
       // 展开
       const messages = flattenRoundsToMessages([completed, pendingRound]);
@@ -62,7 +63,7 @@ describe('会话视图加载器', () => {
       // 中断轮 = 等同用户点停止的正常 turn（assistantMessage 含半截正文 + 中断标记）。
       // 回归点：appendInterrupted 曾伪 complete 而恰好放行；改落 interrupted 后若判据仍自写
       // 'complete'，中断轮回复会静默从会话视图 / LLM 历史消失。判据 SSOT = isRoundSettled。
-      const round = createPendingRound('被取消的提问');
+      const round = createPendingRoundFixture('被取消的提问');
       const interrupted: Round = { ...completeRound(round, '半截回答'), status: 'interrupted' };
 
       const messages = flattenRoundsToMessages([interrupted]);
@@ -77,13 +78,13 @@ describe('会话视图加载器', () => {
   describe('truncateRoundsUpTo', () => {
     it('应该截断到指定 Round', () => {
       // 创建多个 Round
-      const round1 = createPendingRound('第一个');
+      const round1 = createPendingRoundFixture('第一个');
       const completed1 = completeRound(round1, '回答1');
 
-      const round2 = createPendingRound('第二个');
+      const round2 = createPendingRoundFixture('第二个');
       const completed2 = completeRound(round2, '回答2');
 
-      const round3 = createPendingRound('第三个');
+      const round3 = createPendingRoundFixture('第三个');
       const completed3 = completeRound(round3, '回答3');
 
       // 截断到第二个
@@ -96,10 +97,10 @@ describe('会话视图加载器', () => {
     });
 
     it('应该包含指定的 Round', () => {
-      const round1 = createPendingRound('第一个');
+      const round1 = createPendingRoundFixture('第一个');
       const completed1 = completeRound(round1, '回答1');
 
-      const round2 = createPendingRound('第二个');
+      const round2 = createPendingRoundFixture('第二个');
       const completed2 = completeRound(round2, '回答2');
 
       // 截断到第一个（应该包含第一个）
@@ -110,10 +111,10 @@ describe('会话视图加载器', () => {
     });
 
     it('应该返回全部如果未找到指定 Round', () => {
-      const round1 = createPendingRound('第一个');
+      const round1 = createPendingRoundFixture('第一个');
       const completed1 = completeRound(round1, '回答1');
 
-      const round2 = createPendingRound('第二个');
+      const round2 = createPendingRoundFixture('第二个');
       const completed2 = completeRound(round2, '回答2');
 
       // 指定不存在的 ID
@@ -131,10 +132,10 @@ describe('会话视图加载器', () => {
 
   describe('countMessagesInRounds', () => {
     it('应该计算已完成 Round 的消息数', () => {
-      const round1 = createPendingRound('问题1');
+      const round1 = createPendingRoundFixture('问题1');
       const completed1 = completeRound(round1, '回答1');
 
-      const round2 = createPendingRound('问题2');
+      const round2 = createPendingRoundFixture('问题2');
       const completed2 = completeRound(round2, '回答2');
 
       // 完成的 Round：每个包含用户+AI 两条消息
@@ -143,10 +144,10 @@ describe('会话视图加载器', () => {
     });
 
     it('应该计算包含 pending Round 的消息数', () => {
-      const completedRound = createPendingRound('完成的');
+      const completedRound = createPendingRoundFixture('完成的');
       const completed = completeRound(completedRound, '回答');
 
-      const pendingRound = createPendingRound('未完成的');
+      const pendingRound = createPendingRoundFixture('未完成的');
 
       // pending Round 只有用户消息（1条），completed Round 有 2 条
       const count = countMessagesInRounds([completed, pendingRound]);
@@ -162,7 +163,7 @@ describe('会话视图加载器', () => {
       // 会话的 roundIds 只登记已收场轮（appendAssistant / appendInterrupted 均仅在终态登记），
       // 故「每已收场轮 = User+AI 两条」的 O(1) 缓存与本节精确口径必须恒等；
       // 若只认 'complete'，中断轮在精确口径算 1 条、在缓存口径算 2 条 → 上下文占用指示器口径分叉。
-      const round = createPendingRound('被取消的提问');
+      const round = createPendingRoundFixture('被取消的提问');
       const interrupted: Round = { ...completeRound(round, '半截回答'), status: 'interrupted' };
 
       expect(countMessagesInRounds([interrupted])).toBe(2);

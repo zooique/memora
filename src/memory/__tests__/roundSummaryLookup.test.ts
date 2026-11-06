@@ -18,7 +18,8 @@ import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 import { GCService } from '@/memory/gcService.js';
 import { findRoundSummaries } from '@/memory/roundSummaryLookup.js';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
-import { createPendingRound, completeRound } from '@/memory/roundStore.js';
+import { completeRound } from '@/memory/roundStore.js';
+import { createPendingRoundFixture } from './helpers/roundFixture.js';
 import type { Memory } from '@/memory/types.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
@@ -115,7 +116,7 @@ describe('roundSummaryLookup · 联动裁决双路径对拍', () => {
       const roundStore = new InMemoryRoundStore();
       // 引用真源注入空集合：该轮不在任何会话 roundIds 中 ⇒ GC 候选
       roundStore.setReferencedIdsProvider(() => new Set());
-      const round = completeRound(createPendingRound('q'), 'a');
+      const round = completeRound(createPendingRoundFixture('q'), 'a');
       round.id = ROUND_ID;
       roundStore.save(round);
       const gc = new GCService(roundStore, purgeStorage, {
@@ -150,7 +151,7 @@ describe('roundSummaryLookup · 联动裁决双路径对拍', () => {
       const roundStore = new InMemoryRoundStore();
       // 该轮仍被会话引用 ⇒ 不属 GC 候选
       roundStore.setReferencedIdsProvider(() => new Set([OTHER_ROUND_ID]));
-      const other = completeRound(createPendingRound('q'), 'a');
+      const other = completeRound(createPendingRoundFixture('q'), 'a');
       other.id = OTHER_ROUND_ID;
       roundStore.save(other);
       const gc = new GCService(roundStore, storage, {

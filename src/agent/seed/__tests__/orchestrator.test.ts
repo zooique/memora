@@ -279,6 +279,27 @@ describe('SeedOrchestrator 最小 turn', () => {
     // 盘上清理不在此处：清盘是 MessageHistory.appendUser 在同一次 save 内的事（见其 askConsumed）
   });
 
+  it('runResume timeout 遇交互归属拒绝（轮缺失）：中止续跑并给用户 error chunk，不进入 act', async () => {
+    const { mocks, deps } = createHarness();
+    // timeout 快照存在（说明宿主确实发起了超时续跑），但盘上目标轮已不存在
+    mocks.loop.takeAnsweredAsk.mockReturnValue([
+      { slot: 'ask', askCallId: 'tc-1', question: 'Q1？', options: ['a', 'b'] },
+    ]);
+    mocks.history.appendUser.mockResolvedValue('round-missing');
+
+    const { chunks } = await collectGen(
+      new SeedOrchestrator(deps).runResume(undefined, new AbortController().signal, 'timeout'),
+    );
+
+    // ③ 用户侧收到明确提示：走 error chunk（宿主既有上屏通道），文案点明「中止 + 原因」
+    expect(chunks).toContainEqual(
+      expect.objectContaining({ type: 'error', message: expect.stringContaining('续跑已中止') }),
+    );
+    // 不继续 act：否则回答可见却无法落盘（appendAssistant 同 fail-closed），用户会误以为成功
+    expect(mocks.loop.continueAfterPause).not.toHaveBeenCalled();
+    expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
+  });
+
   it('runResume 提问类 kind 但未取到快照 ⇒ 输入仍按原样归档（不因缺快照而丢用户输入）', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubContinue(mocks, '续跑回复');

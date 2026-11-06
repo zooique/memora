@@ -189,10 +189,24 @@ export class SeedOrchestrator {
           })
         : undefined;
       try {
-        await parts.history.appendUser(content, closureRoundId, {
+        const outcome = await parts.history.appendUser(content, closureRoundId, {
           interactive: true,
           ...(askGroup ? { group: askGroup } : { kind }),
         });
+        // 🔴 fail-closed 拒绝的**可见后果**（FAKE-ROUND-TIMEOUT-1）：交互归属要求目标轮已存在，
+        // 轮缺失 = 本轮已被删除/清理（或身份错位），续跑的任何内容都无法落盘。
+        // 走 error chunk（宿主既有分支：即时上屏 + 落 processEvents），不新造 notice 机制；
+        // 也不继续 loop.continueAfterPause——否则回答可见却无法持久化（appendAssistant 同 fail-closed），
+        // 用户会以为这轮成功了。宁可当场明示失败，不静默吞掉。
+        if (outcome === 'round-missing') {
+          yield {
+            type: 'error',
+            message:
+              '续跑已中止：本轮历史记录不存在（可能已被删除或清理），回答无法落盘。请重新发起对话。',
+            category: 'unknown',
+          };
+          return;
+        }
       } catch (err) {
         logger.warn({ err }, '续跑用户回答历史写入失败');
       }

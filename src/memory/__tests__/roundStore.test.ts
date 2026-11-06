@@ -7,13 +7,13 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 import {
-  createPendingRound,
   completeRound,
   generateRoundId,
   generateMessageId,
   type ProcessEvent,
   type Round,
 } from '@/memory/roundStore.js';
+import { createPendingRoundFixture } from './helpers/roundFixture.js';
 
 describe('问答闭环存储', () => {
   let store: InMemoryRoundStore;
@@ -29,7 +29,7 @@ describe('问答闭环存储', () => {
   describe('InMemoryRoundStore', () => {
     it('应该保存和获取问答闭环', () => {
       // 创建 pending Round
-      const round = createPendingRound('你好');
+      const round = createPendingRoundFixture('你好');
 
       // 保存
       store.save(round);
@@ -46,7 +46,7 @@ describe('问答闭环存储', () => {
     it('listInterruptedRecent：列出指定日期崩溃残留轮（pending/error + 倒序）', () => {
       // 构造崩溃残留轮（判据只看「未收场 + 本地日」，与 refCount 无关）
       const mk = (date: string, min: string, status: Round['status']): void => {
-        const base = createPendingRound(`q-${min}`);
+        const base = createPendingRoundFixture(`q-${min}`);
         // status 覆盖为 complete（此处仅验证过滤，不做模型完整性校验）
         const round: Round = {
           ...base,
@@ -81,7 +81,7 @@ describe('问答闭环存储', () => {
     it('listInterruptedRecent 按本地日区间判定：本地凌晨的轮按本地日期捞得到、邻日不中（E2E-TZ-SALVAGE-1）', () => {
       // 本地 01:30 创建（UTC+8 下其 UTC 日期头 = 前一天）——旧前缀匹配按日期头在本地日漏捞
       const round: Round = {
-        ...createPendingRound('凌晨的提问'),
+        ...createPendingRoundFixture('凌晨的提问'),
         status: 'pending',
         createdAt: new Date('2026-09-09T01:30:00').toISOString(),
       };
@@ -96,7 +96,7 @@ describe('问答闭环存储', () => {
 
     it('应该完成问答闭环', () => {
       // 创建并完成 Round
-      const round = createPendingRound('你好');
+      const round = createPendingRoundFixture('你好');
       store.save(round);
 
       const completed = completeRound(round, '你好！有什么可以帮你的？');
@@ -113,9 +113,9 @@ describe('问答闭环存储', () => {
 
     it('应该批量获取问答闭环', () => {
       // 创建多个 Round
-      const round1 = createPendingRound('第一个问题');
-      const round2 = createPendingRound('第二个问题');
-      const round3 = createPendingRound('第三个问题');
+      const round1 = createPendingRoundFixture('第一个问题');
+      const round2 = createPendingRoundFixture('第二个问题');
+      const round3 = createPendingRoundFixture('第三个问题');
 
       store.save(round1);
       store.save(round2);
@@ -129,7 +129,7 @@ describe('问答闭环存储', () => {
     });
 
     it('应该跳过批量获取中不存在的 ID', () => {
-      const round1 = createPendingRound('存在的');
+      const round1 = createPendingRoundFixture('存在的');
       store.save(round1);
 
       // 包含不存在的 ID
@@ -139,8 +139,8 @@ describe('问答闭环存储', () => {
     });
 
     it('应该列出所有问答闭环', () => {
-      const round1 = createPendingRound('问题1');
-      const round2 = createPendingRound('问题2');
+      const round1 = createPendingRoundFixture('问题1');
+      const round2 = createPendingRoundFixture('问题2');
 
       store.save(round1);
       store.save(round2);
@@ -152,10 +152,10 @@ describe('问答闭环存储', () => {
 
     it('应该按状态筛选问答闭环', () => {
       // 创建不同状态的 Round
-      const pendingRound = createPendingRound('待处理');
+      const pendingRound = createPendingRoundFixture('待处理');
       store.save(pendingRound);
 
-      const completedRound = createPendingRound('已完成');
+      const completedRound = createPendingRoundFixture('已完成');
       const completed = completeRound(completedRound, '完成');
       store.save(completed);
 
@@ -168,7 +168,7 @@ describe('问答闭环存储', () => {
     });
 
     it('引用计数 API 为 no-op（refCount 冻结为存在性标记）', () => {
-      const round = createPendingRound('测试引用');
+      const round = createPendingRoundFixture('测试引用');
       store.save(round);
 
       // 建轮固定为 1
@@ -185,7 +185,7 @@ describe('问答闭环存储', () => {
     });
 
     it('delete 不再有 refCount 护栏（引用判定由调用方/会话负责）', () => {
-      const round = createPendingRound('待删除');
+      const round = createPendingRoundFixture('待删除');
       store.save(round);
 
       // 物理层只负责删除；调用方须先确认该轮已不在任何会话 roundIds 中
@@ -197,12 +197,12 @@ describe('问答闭环存储', () => {
 
     it('应该列出孤立的问答闭环（引用集合派生）', () => {
       // 创建孤立 Round（不在任何会话 roundIds 中）
-      const round1 = createPendingRound('孤立1');
+      const round1 = createPendingRoundFixture('孤立1');
       const completed1 = completeRound(round1, '完成1');
       store.save(completed1);
 
       // 创建非孤立 Round（在引用集合中）
-      const round2 = createPendingRound('非孤立');
+      const round2 = createPendingRoundFixture('非孤立');
       const completed2 = completeRound(round2, '完成2');
       referencedIds.add(round2.id);
       store.save(completed2);
@@ -215,7 +215,7 @@ describe('问答闭环存储', () => {
 
     it('应该尊重最小存活时间', () => {
       // 创建刚完成的 Round（无会话引用）
-      const round = createPendingRound('新的');
+      const round = createPendingRoundFixture('新的');
       const completed = completeRound(round, '新完成');
       store.save(completed);
 
@@ -225,7 +225,7 @@ describe('问答闭环存储', () => {
     });
 
     it('未注入引用真源时 listOrphaned 返回空（宁可不回收）', () => {
-      const round = createPendingRound('无真源');
+      const round = createPendingRoundFixture('无真源');
       store.save(round);
       const bare = new InMemoryRoundStore();
       bare.save(round);
@@ -244,7 +244,7 @@ describe('问答闭环存储', () => {
     });
 
     it('应该支持清空操作', () => {
-      const round = createPendingRound('测试');
+      const round = createPendingRoundFixture('测试');
       store.save(round);
       expect(store.size()).toBe(1);
 
@@ -256,7 +256,7 @@ describe('问答闭环存储', () => {
   describe('processEvents 过程事件透传', () => {
     it('应该完整透传保存的 processEvents（含 seq 顺序与各类型 payload）', () => {
       // 构造一轮完整的过程事件（meta 首条 → thinking → tool_start → metrics 末条）
-      const round = createPendingRound('你好');
+      const round = createPendingRoundFixture('你好');
       const completed = completeRound(round, '你好！');
       const events: ProcessEvent[] = [
         {
@@ -314,7 +314,7 @@ describe('问答闭环存储', () => {
     });
 
     it('缺省 processEvents（pending/error 轮无过程数据），不渲染 round-block', () => {
-      const round = createPendingRound('用户问题');
+      const round = createPendingRoundFixture('用户问题');
       store.save(round);
 
       const retrieved = store.getById(round.id);
@@ -323,7 +323,7 @@ describe('问答闭环存储', () => {
 
     it('增量变更 processEvents（Write-once 前宿主追加）后重新保存可覆盖', () => {
       // 模拟宿主流结束后的「读 Round → 附加 processEvents → save」写入路径
-      const round = createPendingRound('问题');
+      const round = createPendingRoundFixture('问题');
       const completed = completeRound(round, '回答');
       store.save(completed);
 
@@ -352,7 +352,7 @@ describe('问答闭环存储', () => {
   describe('evidence 裁决证据透传', () => {
     it('应该完整透传保存的 evidence（按序、含 coverage/request payload）', () => {
       // 悬案取证轨：证据消费方是人工/抽样裁决，随 Round 整对象持久化
-      const round = createPendingRound('你好');
+      const round = createPendingRoundFixture('你好');
       const completed = completeRound(round, '你好！');
       completed.evidence = [
         {
@@ -384,7 +384,7 @@ describe('问答闭环存储', () => {
     });
 
     it('缺省 evidence（无证据轮零冗余）', () => {
-      const round = createPendingRound('用户问题');
+      const round = createPendingRoundFixture('用户问题');
       store.save(round);
 
       const retrieved = store.getById(round.id);
@@ -411,7 +411,7 @@ describe('问答闭环存储', () => {
     });
 
     it('应该创建 pending Round', () => {
-      const round = createPendingRound('测试消息');
+      const round = createPendingRoundFixture('测试消息');
 
       expect(round.id).toBeDefined();
       expect(round.status).toBe('pending');
@@ -422,7 +422,7 @@ describe('问答闭环存储', () => {
     });
 
     it('应该完成 Round', () => {
-      const round = createPendingRound('用户问题');
+      const round = createPendingRoundFixture('用户问题');
       const completed = completeRound(round, 'AI 回答', { input: 10, output: 20 });
 
       expect(completed.status).toBe('complete');

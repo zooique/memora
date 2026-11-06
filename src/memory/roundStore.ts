@@ -769,32 +769,6 @@ export function generateMessageId(): string {
 }
 
 /**
- * 创建 pending 状态的 Round
- *
- * 辅助函数：快速创建新问答闭环的骨架
- *
- * @param userMessage - 用户消息内容
- * @returns 新创建的 pending Round
- */
-export function createPendingRound(userMessage: string): Round {
-  const id = generateRoundId();
-  const now = new Date().toISOString();
-
-  return {
-    id,
-    userMessage: {
-      id: generateMessageId(),
-      role: 'user',
-      content: userMessage,
-      timestamp: now,
-    },
-    status: 'pending',
-    createdAt: now,
-    refCount: 1,
-  };
-}
-
-/**
  * 完成 Round（设置 AI 消息）
  *
  * 辅助函数：将 pending Round 转换为 complete 状态

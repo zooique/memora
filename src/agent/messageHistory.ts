@@ -23,6 +23,15 @@ import { configError, sessionDriftError } from '@/utils/errors.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { nowIso, todayDate } from '@/utils/time.js';
 
+/**
+ * `appendUser` 的结果：
+ * - `'ok'`：未触发 fail-closed 拒绝（含既有降级路径：无 roundStore、同 ID 轮已存在、存储写入失败仅记日志）。
+ * - `'round-missing'`：**交互归属被拒绝**——目标轮在 RoundStore / pendingRounds 均不存在，
+ *   未建轮、未落盘任何内容（含 `ASK_TIMEOUT_NOTICE` 等系统文案）。
+ *   调用方须据此给出用户可见后果（当前唯一消费面 = `SeedOrchestrator.runResume` 的 error chunk）。
+ */
+export type AppendUserOutcome = 'ok' | 'round-missing';
+
 /** 分叉结果（round-based 模式） */
 export interface ForkResult {
   /** 新会话标识（不含日期前缀，平等普通会话） */
@@ -307,12 +316,20 @@ export class MessageHistory {
    * 交互输入：opts.interactive 为真且 roundId 对应轮已存在（prepare 建 pending 或
    * 暂停已完成轮）时，不再创建/覆盖新轮——按序追加到该轮 interactiveInputs，保问答闭环不分裂。
    *
+   * 🔴 交互归属 fail-closed（与 `appendAssistant` 同一口径）：交互输入**必须**挂到已存在的轮，
+   * 轮缺失即拒绝（`'round-missing'`）——**不建轮**、不把内容（尤其 `ASK_TIMEOUT_NOTICE`
+   * 这类系统文案）写进 `userMessage`。旧行为「降级新建 pending 轮」会让系统文案冒充用户输入，
+   * 后续上下文与「重新生成」会把它当真实输入重放（FAKE-ROUND-TIMEOUT-1）。
+   * 交互轮缺失属前置条件不满足，拒绝是唯一诚实处置；是否让用户看见由调用方决定。
+   *
    * @param content 用户输入内容
    * @param roundId 闭环节点轮次 ID（可选，交互输入必须携带 = appendUser 的 head roundId）
    * @param opts 交互输入选项（interactive=是否交互归属；kind/question/options=单条形态的
    *        折叠块类型与所对 ask_user 提问原文/候选选项；group=整组形态，ASK-MULTI-Q-1：
    *        作答/超时多题批次逐题落档，与崩溃收场转化同宽——提供时按序展开为 N 条，
    *        单条形态等价于 1 元素组，同时提供以 group 为准）
+   * @returns `'ok'` = 未触发 fail-closed 拒绝（含既有降级路径）；`'round-missing'` = 交互归属
+   *        被拒绝（目标轮不存在，未建轮未落盘）。判据说明见 `AppendUserOutcome`。
    */
   async appendUser(
     content: string,
@@ -327,7 +344,7 @@ export class MessageHistory {
       /** 图片附件（可选，多模态输入）；须显式透传到 `userMessage` 白名单与 SessionMessage，否则重启 / 切会话后图静默消失（方案 §7 P0-12） */
       attachments?: readonly ImageRef[];
     },
-  ): Promise<void> {
+  ): Promise<AppendUserOutcome> {
     // E2 会话漂移判据：用户消息的轮归属依赖当前会话，漂移时拒绝写入（防旧轮记入新会话）
     this.assertTurnSessionStable('持久化用户消息');
     const message: SessionMessage = {
@@ -385,10 +402,14 @@ export class MessageHistory {
               { roundId, count: inputs.length, firstKind: inputs[0]?.kind },
               'appendUser: 交互输入归属问答闭环',
             );
-            return;
+            return 'ok';
           }
-          // 轮不存在（异常兜底）：降级为普通 pending Round（内容不丢失，GC 兜底）
-          logger.warn({ roundId }, 'appendUser: 交互输入对应轮缺失，降级为新建 pending Round');
+          // 🔴 交互归属 fail-closed：轮不存在 = 前置条件不满足（该轮已被删除/清理，或身份已错位）。
+          // 不建轮、不落盘——旧「降级新建 pending 轮」会把 timeout 的 ASK_TIMEOUT_NOTICE 写成
+          // 用户真实输入（FAKE-ROUND-TIMEOUT-1），后续上下文与「重新生成」将重放这条假输入。
+          // 拒绝的可见后果由调用方承担（runResume → error chunk，见 AppendUserOutcome）。
+          logger.warn({ roundId }, 'appendUser: 交互输入对应轮缺失，拒绝建轮（fail-closed）');
+          return 'round-missing';
         }
         // 重复 appendUser 到同一 roundId（异常路径）：**拒绝整体替换**。
         // 旧写法会用一个全新 pending 轮覆盖已存在的轮，正文 / 过程事件被静默抹掉
@@ -396,7 +417,7 @@ export class MessageHistory {
         const preexisting = this.roundStore.getById(roundId) ?? this.pendingRounds.get(roundId);
         if (preexisting) {
           logger.warn({ roundId }, 'appendUser: 同 ID 轮已存在，拒绝整体替换（历史只读）');
-          return;
+          return 'ok';
         }
         const pendingRound: Round = {
           id: roundId,
@@ -421,10 +442,14 @@ export class MessageHistory {
         logger.debug({ roundId }, 'appendUser: pending Round created（已归属当前会话）');
       } catch (err) {
         logger.warn({ err, roundId }, 'appendUser: Round-based 写入失败');
+        // 存储写入失败维持既有「不抛出、不阻塞对话」契约（与 fail-closed 拒绝不同类）：
+        // 拒绝只针对「目标轮不存在」这一前置条件不满足，故此处仍报 'ok'。
+        return 'ok';
       }
     }
 
     logger.debug({ role: message.role, session: this.currentSessionName }, 'appendUser');
+    return 'ok';
   }
 
   /**
@@ -438,9 +463,9 @@ export class MessageHistory {
    * 这是**有意的取舍**：宁可留一个看不见的文件，也不静默删掉用户刚输入的内容；
    * 触发条件 = 会话存储写入抛错（已 warn 日志可查）。
    *
-   * 调用面只有两处，判据各不相同（勿扩张）：
-   * - `appendUser` 建轮后（新轮必登记）；
-   * - `appendAssistant` 兜底分支（轮原本不存在，新建即归属）。
+   * 调用面**只有一处**：`appendUser` 建轮后（新轮必登记）。
+   * `appendAssistant` 已 fail-closed（轮不存在即拒绝，不造轮、不登记），故不再是调用面；
+   * 旧注释「appendAssistant 兜底分支」与实现相反，勿按旧口径扩充调用点。
    */
   private registerRoundInSession(roundId: string): void {
     const sessionId = this.currentSessionName;

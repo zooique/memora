@@ -75,8 +75,8 @@ describe('降级策略 · P1 消息持久化', () => {
     };
     const history = new MessageHistory(failingStore, undefined, 'main', mockRoundStore);
 
-    // 应正常返回，不抛出
-    await expect(history.appendUser('测试消息', 'round-1')).resolves.toBeUndefined();
+    // 应正常返回（不抛出）；返回 'ok' = 未触发交互 fail-closed 拒绝
+    await expect(history.appendUser('测试消息', 'round-1')).resolves.toBe('ok');
     // ADR-044：建轮**会**尝试登记归属；此处 appendRoundId 抛错，被归属登记单点吞掉，
     // 故本题真正验证的是「登记失败也不抛出」（原来的「不登记」断言已随契约变更失效）。
     expect(mockRoundStore.save).toHaveBeenCalledOnce();
@@ -119,7 +119,7 @@ describe('降级策略 · P1 消息持久化', () => {
 
   it('未注入 sessionStore 时不崩溃（内存模式）', async () => {
     const history = new MessageHistory(undefined);
-    await expect(history.appendUser('无存储模式')).resolves.toBeUndefined();
+    await expect(history.appendUser('无存储模式')).resolves.toBe('ok');
     await expect(history.appendAssistant('无存储回复')).resolves.toBeUndefined();
   });
 });
