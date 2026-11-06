@@ -147,7 +147,10 @@ import { deriveCapabilityState } from '../helpers/capabilityState.js';
 // 输入区徽章的域级短标签（标签投影与三态判定分离，见 capabilityLabels 头注释）
 import { capabilityDomainLabel } from '../helpers/capabilityLabels.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
-import { sessionRolePackFallbackNotice } from '../../extension/host/sessionRolePack.js'; // 角色包回落告知（判据单点）
+import {
+  readSessionRolePackName,
+  sessionRolePackFallbackNotice,
+} from '../../extension/host/sessionRolePack.js'; // 角色包回落判据 / 文案单点
 // 引用发送前存在性核实（HOST-CTX-9 发送侧）：解析器复用 refPath（首根 SSOT），不由本文件另写
 import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
@@ -310,6 +313,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _salvageUpgraded = false;
   /** 当前激活角色包（对话面板承载的定位角色；装配时由 extension 注入，切换时持久化） */
   private _activeRolePack: string | undefined;
+  /**
+   * 已弹过「角色包回落」提示的会话（进程内去重，不落盘）：每会话每进程只弹一次，
+   * 差异改由角色徽章常驻显示（`chat_role_packs.unavailableName`）
+   */
+  private readonly _rolePackFallbackNotified = new Set<string>();
   /**
    * 当前活跃会话标识（YYYY-MM-DD-sessionName 会话标题层）
    *
@@ -676,7 +684,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private bindAgent(agent: Agent): void {
     this._agent = agent;
-    // 角色包随显示会话走（方案 A）：`_activeRolePack` 是当前 agent 的投影 ⇒ bindAgent 强制重读
+    // 角色包随显示会话走（方案 A）：投影必须强制重读，不能「仅空时补齐」（否则 name 与 traits 跨会话错配）
     this._activeRolePack = agent.rolePackManager?.activeName ?? undefined;
     // 解析不到不许静默：会话文件写了 X 而内核实际激活 Y ⇒ 落一条可见 notice（判据/文案单点外置）
     const fallbackNotice = sessionRolePackFallbackNotice(
@@ -684,8 +692,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._currentSessionId,
       this._activeRolePack,
     );
-    if (fallbackNotice) this.post(fallbackNotice);
-    // 换 agent = 投影源切换（SSOT）：重置队列长度投影缓存（新 agent 首次 sync 必推一次）
+    // 每会话每进程只弹一次（反复弹窗会盖住新消息）；差异由徽章常驻显示（见 pushRolePacks）
+    if (fallbackNotice) {
+      const key = this._currentSessionId;
+      if (!key || !this._rolePackFallbackNotified.has(key)) {
+        if (key) this._rolePackFallbackNotified.add(key);
+        this.post(fallbackNotice);
+      }
+    }
+    // 换 agent = 投影源切换（SSOT）：重置队列长度缓存，防旧会话残留致「长度未变」误判不推送（新 agent 首 sync 必推）
     this._lastPendingQueueLen = undefined;
     // 与 ensureAgent 懒装配路径同收口：注入即绑定（bindAgentNoticeEvents 内部先 off 再 on，幂等）
     this.bindAgentNoticeEvents();
@@ -1911,6 +1926,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     this._confirm.disposeSession(sessionId);
     this._runtime.delete(sessionId);
+    this._rolePackFallbackNotified.delete(sessionId); // 回落提示去重键同生命周期收口
     this.refreshSessionActivity(); // 摘除后立即重推快照（角标 / 列表标识随之熄灭）
   }
 
@@ -2653,10 +2669,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * description 取自 manifest.description（listMeta 已含，零额外读取），供下拉展示副标题。
    */
   private pushRolePacks(): void {
+    // 会话记录里请求的角色包 vs 内核实际激活：不一致 = 回落，徽章须常驻标明差异
+    const requested = readSessionRolePackName(this.sessionStore, this._currentSessionId);
     const rpm = this._agent?.rolePackManager;
     if (!rpm) {
-      // agent 未装配或无 rolePackManager：发送空列表，让 webview 正确隐藏角色选择器
-      this.post({ type: 'chat_role_packs', packs: [], activeName: '' });
+      // 未装配：空列表让 webview 隐藏选择器，但仍报记录差异
+      this.post({ type: 'chat_role_packs', packs: [], activeName: '', unavailableName: requested });
       return;
     }
     const metaList = rpm.listMeta();
@@ -2671,7 +2689,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 即使列表为空也发送消息，让 webview 正确处理显示/隐藏
     // activeName 缺省时回退首个（与内核「默认激活首个」一致），无角色包时为空串
     const activeName = rpm.activeName ?? (packs.length > 0 ? packs[0]!.name : '');
-    this.post({ type: 'chat_role_packs', packs, activeName });
+    // 回落差异只由「记录请求名 ≠ 实际激活名」派生，不另存第二份状态
+    const unavailableName = requested && requested !== activeName ? requested : undefined;
+    this.post({ type: 'chat_role_packs', packs, activeName, unavailableName });
   }
 
   /**

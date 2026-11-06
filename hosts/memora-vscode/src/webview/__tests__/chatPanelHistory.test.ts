@@ -106,6 +106,10 @@ function agentStub(): {
     // 输出上限**生效值**读取口（取证面用）：缺省 undefined = 未传 max_tokens（回服务端默认）；
     // 需非缺省的用例就地覆盖（替身约定：只补约定内的最小面）
     getEffectiveMaxTokens: () => undefined,
+    // 后台任务快照（会话视图入口的 force 重投影消费）：空 = 无后台任务。
+    // 缺此方法会抛错并被 createSession/switchToSession 的 catch 吞成「回滚 + error notice」，
+    // 表现为会话没切过去（替身违约，不是产品缺陷）
+    listBackgroundTasks: () => [],
   } as unknown as Agent;
   return { agent, switchToSession, renameSession, softDeleteRoundSummaries };
 }
@@ -2967,6 +2971,8 @@ describe('角色包激活回调接线（B：删激活包 → 对话头部同步�
         activeName,
       },
       getMetrics: () => ({ context: { occupancy: { rolePackBaseTokens: 9000 } } }),
+      // replaySession → postPlanUpdate 读检查点（替身契约：缺会抛 getCheckpoint is not a function）
+      getCheckpoint: () => null,
     } as unknown as Agent;
     return {
       agent,
@@ -3076,6 +3082,8 @@ describe('会话级角色包：解析失败不许静默（2026-11-07）', () => 
       on: vi.fn(),
       off: vi.fn(),
       isPausePending: () => false,
+      // 会话视图入口的 force 重投影会读注册表（切会话用例经 switchToSession 进入）
+      listBackgroundTasks: () => [],
     } as unknown as Agent;
   }
 
@@ -3136,5 +3144,46 @@ describe('会话级角色包：解析失败不许静默（2026-11-07）', () => 
     provider.setAgent(rolePackAgentStub('memora助手'));
 
     expect(noticesOf(posted)).toHaveLength(0);
+  });
+
+  it('回落提示每会话每进程只弹一次：切走再切回不重复弹，差异仍由徽章常驻显示（N5）', async () => {
+    const { store, provider, posted } = setup();
+    const bad = '2026-11-07-sgone-a';
+    const ok = '2026-11-07-sok-b';
+    store.createSession({
+      sessionId: bad,
+      updatedAt: '2026-11-07T10:00:00.000Z',
+      messageCount: 0,
+      activeRolePackName: '已删除的角色包',
+    });
+    store.createSession({
+      sessionId: ok,
+      updatedAt: '2026-11-07T09:00:00.000Z',
+      messageCount: 0,
+      activeRolePackName: 'memora助手',
+    });
+    // 两个会话都由同一个「回落到默认角色」的实例提供服务（差异只体现在记录里）
+    provider.setAgentFactory(async () => rolePackAgentStub('memora助手'));
+    /** 取最后一条角色包投影里「记录请求但不可用」的包名（徽章差异真源） */
+    const lastUnavailable = () => {
+      const msgs = posted.filter(
+        (m) => (m as { type: string }).type === 'chat_role_packs',
+      ) as unknown as Array<{ unavailableName?: string }>;
+      return msgs.at(-1)?.unavailableName;
+    };
+
+    await provider.switchToSession(bad);
+    expect(noticesOf(posted), '首次进入该会话必须弹一次').toHaveLength(1);
+    expect(lastUnavailable(), '徽章必须常驻显示差异').toBe('已删除的角色包');
+
+    posted.length = 0;
+    await provider.switchToSession(ok);
+    expect(noticesOf(posted), '解析成功的会话不该弹').toHaveLength(0);
+    expect(lastUnavailable()).toBeUndefined();
+
+    posted.length = 0;
+    await provider.switchToSession(bad);
+    expect(noticesOf(posted), '同一会话切回不应再弹').toHaveLength(0);
+    expect(lastUnavailable(), '差异仍要可见（靠徽章而不是重复弹窗）').toBe('已删除的角色包');
   });
 });

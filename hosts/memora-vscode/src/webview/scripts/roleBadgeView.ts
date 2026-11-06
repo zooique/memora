@@ -15,6 +15,18 @@ import { createIcon } from './icons.js';
 import { CAPABILITY_STATE_TEXT } from '../helpers/capabilityLabels.js';
 import type { CapabilityStateDto, RoleStrategyIndicatorDto } from '../../shared/protocol.js';
 
+/**
+ * 角色包回落差异文案（记录请求的包已不可用 ⇒ 徽章常驻标记）
+ *
+ * 单点原因：视觉后缀与读屏说明必须同源，各拼一份必漂移；空名 = 无差异，
+ * 返回空串（调用方不必再判一次）。
+ */
+export function roleFallbackDiffText(name: string): { note: string; spoken: string } {
+  return name
+    ? { note: `（原「${name}」不可用）`, spoken: `\n原角色包「${name}」已不可用，当前使用默认角色` }
+    : { note: '', spoken: '' };
+}
+
 /** 徽章行依赖：文档对象 + 两个徽章节点引用（节点身份由 chatView 持有，此处只读用） */
 export interface RoleBadgeViewDeps {
   /** webview 文档对象（构造唯一 DOM 入口） */

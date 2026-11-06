@@ -1392,6 +1392,8 @@ export type ExtensionToWebviewMessage =
       type: 'chat_role_packs';
       packs: { name: string; displayName: string; description?: string }[];
       activeName: string;
+      /** 记录里请求但已解析不到的角色包名（当前正用默认角色）；UI 常驻显示差异，缺省不显示 */
+      unavailableName?: string;
     }
   // ─── 角色管理面板消息 ───
   /** 角色能力项（capability 为中立能力名「域:动作」，label 为中文可读文案，由 host 生成） */

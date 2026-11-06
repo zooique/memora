@@ -187,6 +187,28 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(badge.hidden).toBe(true);
   });
 
+  it('回落差异常驻显示：unavailableName ⇒ 徽章后缀 + title（切走切回仍可见，N5）', () => {
+    mountChatView();
+    const badge = document.getElementById('currentRoleBadge') as HTMLElement;
+    // 实际激活名先到（chat_role_pack 路径）
+    dispatch({ type: 'chat_role_pack', rolePack: 'memora助手' });
+    // 记录里请求的包已不可用：宿主判定后下发差异，webview 只显示
+    dispatch({
+      type: 'chat_role_packs',
+      packs: [],
+      activeName: 'memora助手',
+      unavailableName: '已删除的角色包',
+    });
+    expect(badge.hidden).toBe(false);
+    expect(badge.textContent).toBe('memora助手（原「已删除的角色包」不可用）');
+    expect(badge.getAttribute('aria-label')).toContain('原角色包「已删除的角色包」已不可用');
+
+    // 差异消失（正常推送）⇒ 后缀撤下，不残留上一次会话的标记
+    dispatch({ type: 'chat_role_packs', packs: [], activeName: 'memora助手' });
+    expect(badge.textContent).toBe('memora助手');
+    expect(badge.getAttribute('aria-label')).not.toContain('已不可用');
+  });
+
   it('角色徽章点击 → post open_settings_tab(roles)（导航到设置面板角色选项卡，切换逻辑不走本路径）', () => {
     const { postMessage } = mountChatView();
     const badge = document.getElementById('currentRoleBadge') as HTMLButtonElement;

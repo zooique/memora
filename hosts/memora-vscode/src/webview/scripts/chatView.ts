@@ -121,7 +121,7 @@ import { createPickerView } from './pickerView.js';
 import { createSkillPickerView } from './skillPickerView.js';
 import { createQaRowView } from './qaRowView.js';
 import { createEmptyStateView } from './emptyStateView.js';
-import { createRoleBadgeView } from './roleBadgeView.js';
+import { createRoleBadgeView, roleFallbackDiffText } from './roleBadgeView.js';
 import { createToolRowView } from './toolRowView.js';
 // 历史菜单（会话记录/留存区）：渲染与分组状态收口于 historyMenuView（HOST-SPLIT-1 chatView 第 2 刀）
 import { createHistoryMenuView } from './historyMenuView.js';
@@ -318,6 +318,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const clarifySend = document.getElementById('clarifySend') as HTMLButtonElement;
   // 当前角色显示名（AI 消息头部标签 + 空状态标题共用；由 chat_role_pack 填充）
   let currentRoleName = '';
+  // 会话记录里请求但已不可用的角色包名（非空 ⇒ 徽章常驻显示回落差异，不靠反复弹窗）
+  let currentUnavailableRolePack = '';
   // 当前模型名（AI 消息头部标签显示；由模型选择变化时更新）
   let currentModelName = '';
   // 当前角色性格特征（traits，可选；由 chat_role_pack 填充，供徽章/顶栏展示）
@@ -1838,10 +1840,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       return;
     }
     roleBadge.hidden = false;
-    // 可访问性：aria-label 优先于按钮内容 ⇒ 须动态拼入当前角色名，
-    // 写死文案会让读屏用户丢失「现在是谁」这一关键信息（2026-10-13 徽章可点化时补）。
-    roleBadge.setAttribute('aria-label', `当前角色：${currentRoleName}，点击管理角色包`);
-    // 附加最高分 trait 简要（可选），让角色气质一眼可见
+    // 回落差异常驻：记录里请求的包不可用 ⇒ 徽章后缀（切走切回仍可见，不靠反复弹窗）
+    const { note, spoken } = roleFallbackDiffText(currentUnavailableRolePack);
+    // 可访问性：aria-label 优先于按钮内容 ⇒ 须动态拼入角色名（写死会丢「现在是谁」）
+    roleBadge.setAttribute('aria-label', `当前角色：${currentRoleName}${spoken}，点击管理角色包`);
     const traits = currentRoleTraits;
     if (traits && Object.keys(traits).length > 0) {
       // 选择得分最高的 trait 展示，避免徽章过长
@@ -1865,15 +1867,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           curiosity: '好奇',
         };
         const label = traitLabelMap[topKey] ?? topKey;
-        roleBadge.textContent = `${currentRoleName} · ${label}`;
+        roleBadge.textContent = `${currentRoleName} · ${label}${note}`;
         roleBadge.title = `角色：${currentRoleName}\n性格特征：${Object.entries(traits)
           .map(([k, v]) => `${traitLabelMap[k] ?? k} ${Math.round(v * 100)}%`)
-          .join('、')}`;
+          .join('、')}${spoken}`;
         return;
       }
     }
-    // 无 trait 时仅显示角色名
-    roleBadge.textContent = currentRoleName;
+    roleBadge.textContent = `${currentRoleName}${note}`;
   }
 
   /**
@@ -3578,6 +3579,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'chat_role_packs') {
       // 角色包列表（description 供空状态提示副文案）；切换入口已独立到「角色」视图
       currentRolePacks = msg.packs || [];
+      // 回落差异（记录请求名 ≠ 实际激活名）：由宿主单点判定后下发，webview 只显示
+      currentUnavailableRolePack = msg.unavailableName ?? '';
       // 若当前角色名未同步到列表（如 displayName 未收录），回退为激活角色的显示名
       if (!currentRoleName && msg.activeName) {
         const activePack = currentRolePacks.find((p) => p.name === msg.activeName);
