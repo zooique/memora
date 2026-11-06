@@ -5,7 +5,11 @@
  *  - 同 sessionId 两次取回**同一实例**（不是每调一次新建）
  *  - 不同 sessionId 取回**不同实例**
  *  - 两次装配拿到**同一对**存储单例（类型 + 引用同一性，防各 Agent 自建一份）
- *  - 注销一个不影响另一个；注销后再取 = 重建新实例（close 后重建）
+ *  - 注销一个不影响另一个（**仅限进程内实例状态**）；注销后再取 = 重建新实例（close 后重建）
+ *    ⚠️ 作用域界定：本判据**只覆盖进程内登记表状态**——关/注销 A 不改变登记表中 B 的引用与可取回性。
+ *    跨进程告警通道在该场景下会失效：同进程多 Agent 共享 `.memora/.lock`，先关的实例会删掉锁文件，
+ *    后来的实例失去「他人正持有」的告警。已登记 `PROJECTLOCK-SHARED-1`，**不在本片修复**。
+ *    本判据不构成「关一个对一个毫无影响」的全称保证。
  *  - 并发同键只装配一次（在途去重复用同一 Promise）
  */
 // @vitest-environment node
@@ -118,7 +122,7 @@ describe('E4 · AgentRegistry', () => {
     expect(calls).toHaveLength(1);
   });
 
-  it('注销一个实例不影响另一个；注销后再取为重建的新实例', async () => {
+  it('注销一个实例不影响另一个（进程内登记表状态）；注销后再取为重建的新实例', async () => {
     const calls: { sessionId: string; stores: ProjectStoreSingletons }[] = [];
     const registry = new AgentRegistry(sharedStores, makeRecordingFactory(calls));
 

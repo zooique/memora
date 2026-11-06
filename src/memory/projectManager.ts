@@ -210,8 +210,9 @@ export class ProjectManager {
   /**
    * 完全关闭：释放项目锁 + 关闭 Agent 级数据库（由 `Agent.close()` 调用）
    *
-   * 所有权边界：只关闭**本管理器自建**的存储；外部注入的存储归注入方所有，
-   * 多 Agent 共享同一实例时任一实例关闭都不得把它关掉（否则其余实例全断）。
+   * **契约（与 CHANGELOG「行为变更」同句）**：外部注入的存储在 `shutdown()` 后不再被关闭，由注入方负责；
+   * 原因：多 Agent 共享同一存储单例，先关的实例会断掉其余实例。
+   * 因此只有**未注入**时内部兜底的存储才在此关闭，外部实例只解除引用。
    */
   async shutdown(): Promise<void> {
     if (this.currentProjectPath) {
