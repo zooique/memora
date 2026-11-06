@@ -605,7 +605,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       flowEl = flow;
       return flow;
     }
-    // 常规：插入点 .msg-ai-label 之后、.msg-body（报告正文）之前
     const label = host.querySelector(':scope > .msg-ai-label');
     const msgBody = host.querySelector(':scope > .msg-body');
     if (msgBody) {
@@ -633,7 +632,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const host = activeAssistantEl;
     // 无过程事件（纯问答轮 / 无 processEvents 的老数据）不产生空块；无助手块也暂不挂载
     if (!host || roundBlockHostEl === host || currentEvents.length === 0) return null;
-    // 移除旧的（如上一轮残留），再挂到当前 assistant 块标签之后、正文之前
+    // 先摘旧容器（上一轮残留）；挂载点 = 报告正文前（「过程在上 · 报告在下」，语义见 insertBeforeBody）
     roundBlockEl?.remove();
     const rb = document.createElement('details');
     rb.className = 'round-block';
@@ -644,7 +643,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const body = document.createElement('div');
     body.className = 'round-block__details';
     rb.appendChild(body);
-    // 挂载点：报告正文（.msg-body）之前——「过程在上 · 报告在下」，锚点语义详见 insertBeforeBody
     insertBeforeBody(host, rb);
     roundBlockEl = rb;
     roundBlockHostEl = host;
@@ -733,7 +731,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       liveMemoryHits?.get(toolCallId) ?? byEvidence.get(toolCallId);
     const rb = ensureRoundBlock();
     if (!rb) return; // 正文块未创建（meta 先到）：挂载推迟到正文块出现时再补一次（beginStreaming）
-    // summary：统计摘要（计数 + 耗时）
     const summary = rb.querySelector('.round-block__summary') as HTMLElement;
     if (summary) {
       // 重置前先清掉旧 stats span 的 baseStats 缓存（textContent 清空会移除子节点，
@@ -2262,7 +2259,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
       return roundGroupEl;
     }
-    // 新容器：插在该段之前（袋紧 user 提问），段移入容器
     const g = document.createElement('div');
     g.className = 'round-group';
     g.dataset.roundId = roundId;

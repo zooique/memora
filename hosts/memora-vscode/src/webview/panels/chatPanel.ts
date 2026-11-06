@@ -311,7 +311,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 崩溃残留轮升级为 stop turn 是否已执行：每面板实例一次；
    *  升级后轮已 complete + refCount>0，listInterruptedRecent 不再命中，重复执行无意义 */
   private _salvageUpgraded = false;
-  /** 当前激活角色包（对话面板承载的定位角色；装配时由 extension 注入，切换时持久化） */
+  /** 当前激活角色包（**会话 Agent 真实值的投影**：bindAgent 强制重读，不再由外部写入） */
   private _activeRolePack: string | undefined;
   /**
    * 已弹过「角色包回落」提示的会话（进程内去重，不落盘）：每会话每进程只弹一次，
@@ -871,12 +871,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 显示层再判一次就会与内核语义漂移（CAP-TRISTATE-1 的真机缺陷正是这样产生的）。
     const capabilityState = deriveCapabilityState(active.capabilities, capabilityDomainLabel);
 
-    // 提取策略指示器：从内核完整策略中提炼 UI 友好的摘要
     const strategy = active.strategy;
-    // 温度分组：基于 temperature 值动态计算
     const temp = strategy.act?.temperature ?? 0.7;
     const tempGroup = temp >= 0.8 ? 'high' : temp <= 0.4 ? 'low' : 'mid';
-    // 推理模式：基于 multiStepReasoning 字段
     const reasoningMode = strategy.act?.multiStepReasoning;
 
     const strategyHint = {
@@ -891,26 +888,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 设置当前激活角色包（由 extension 装配时注入）
+   * 角色包投影的唯一来源是 `bindAgent`（会话 Agent 的真实激活值）
    *
-   * 对话面板为通用宿主，定位由内置角色包承载；角色包名在就绪回放时推送给
-   * webview 的 AI 消息头部标签 + 空状态标题（角色切换入口在独立的「角色」视图）。
-   *
-   * @param rolePack 角色包内部名（如 '白话方案设计师'）
+   * ⚠ 不要再加「外部写一份展示名」的入口：那会与内核实际激活值形成双源，
+   * 无激活包时就会显示一个未生效的角色名（谎报）。差异提示走下方 fallback 口径。
    */
-  public setRolePack(rolePack: string): void {
-    this._activeRolePack = rolePack;
-    // 视图已就绪时立即推送（而非等待下次 replaySession），保证角色选择器即时刷新；
-    // 视图未就绪时由 replaySession 兜底（就绪回放时读取 _activeRolePack 推送）。
-    if (this._view) {
-      this.post({
-        type: 'chat_role_pack',
-        rolePack: this.roleDisplayName(rolePack),
-        traits: this.getActiveTraits(),
-        team: this.getActiveTeamForProtocol(),
-      });
-    }
-  }
 
   /**
    * 角色包组（会议名单）热更新通知：settingsPanel 保存/删除队伍后调。
@@ -2494,12 +2476,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         team: this.getActiveTeamForProtocol(),
       });
     } else {
-      // 无激活角色包：推送空信息，让 webview 清除角色标签
       this.post({ type: 'chat_role_pack', rolePack: '', traits: undefined });
     }
-    // 推送 Provider 列表到 webview（底部模型下拉框）
     void this.pushProviders();
-    // 推送角色包列表到输入区切换下拉
     this.pushRolePacks();
     // 补推工具权限徽章（replaySession 时角色信息已就绪）
     this.postCapabilityBadge();
@@ -2779,7 +2758,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private loadRoundBasedHistory(): RoundView[] {
     if (!this._viewLoader) {
-      // 没有 viewLoader 时返回空数组
       console.warn('Memora：round-based 会话需要 viewLoader，但未注入');
       return [];
     }
@@ -3051,7 +3029,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 错位（迟到回答：提问已超时自动续跑 / 流异常结束）→ 丢弃，不污染进行中的轮。
         // 留痕（T2 观测）：对用户仍静默，但「答了没反应」的排障线索必须在日志可查
         if (!this.isAskWaiting()) {
-          // 仅 waiting 相位有 reason 字段，其余相位如实显示降级符
           const reason = 'reason' in this._turnState ? this._turnState.reason : '—';
           console.warn(
             `Memora：错位回答已丢弃（当前相位=${this._turnState.phase}/${reason}，答案数=${answers.length}）`,
@@ -3078,7 +3055,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 纯续跑（deriveButtonSemantics 死键不渲染），正常操作流不可达此守卫——只兜
         // 跨消息竞态残留（如提问超时续跑后迟到的 resume），保留「不污染进行中的轮」语义
         if (!this.isPauseWaiting()) {
-          // 仅 waiting 相位有 reason 字段，其余相位如实显示降级符
           const reason = 'reason' in this._turnState ? this._turnState.reason : '—';
           console.warn(`Memora：错位续跑已丢弃（当前相位=${this._turnState.phase}/${reason}）`);
           return;
@@ -3646,7 +3622,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     runtime.streaming = true;
     // 列表标识「运行中」随置位亮起（本条跨会话推送，后台 ALS 上下文也不得丢弃）
     this.refreshSessionActivity();
-    // 推送 turn 投影（运行态起点）
     this.postTurnUpdate();
     // 记录流起始视图代数：流尾比对 _viewEpoch 判断「流期间 view 被折叠/展开重建过」
     // （重建后新 webview 无本流实时投影 → 落盘完成须补 replaySession 刷全）

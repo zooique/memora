@@ -17,17 +17,6 @@ import { toNoticeText } from '../host/noticeText.js';
 import { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
 
 /**
- * 内置角色包名（面板徽章展示当前激活角色，在装配处声明，主动可见）
- *
- * 兜底值：装配后以 agent 实际激活角色为准（由持久化的用户选择或内核默认首个决定），
- * 仅当 agent 未装配/无角色包时回退此默认值。该名字段与 role-packs/ 目录名保持一员的
- * 约定（随内核随包目录核对），宿主不承载角色包内容。
- * 语义边界：本常量是「UI 徽章回退展示名」，与内核 BUILTIN_FALLBACK_PACK（'memora助手'，
- * 兜底契约包，构建期校验）是两个不同概念——勿混用/合并。
- */
-const BUILTIN_ROLE_PACK = '白话方案设计师';
-
-/**
  * 打开对话面板（聚焦侧边栏视图）
  *
  * @param getAgent 按工作区路径懒加载/复用 Agent 的工厂（由 extension.ts 注入）
@@ -45,10 +34,9 @@ export async function openChatCommand(
   try {
     const agent = await getAgent(workspaceFolder.uri.fsPath);
     // 注入 Agent（文档上下文由 chatPanel 实时跟随活动编辑器，见构造函数）
+    // 角色徽章由 `bindAgent` 按 agent 真实激活值投影——不再额外写一份「回退默认名」，
+    // 否则内核无激活包时徽章会显示一个并未生效的角色名（谎报）
     chatProvider.setAgent(agent);
-    // 声明当前激活角色包 → toolbar 角色徽章（定位由角色包承载，主动可见）
-    // 取 agent 实际激活角色（持久化用户选择 / 内核默认首个），未装配时回退默认
-    chatProvider.setRolePack(agent.rolePackManager?.activeName ?? BUILTIN_ROLE_PACK);
     // 聚焦侧边栏视图
     void vscode.commands.executeCommand(`${MemoraChatViewProvider.viewType}.focus`);
   } catch (err) {

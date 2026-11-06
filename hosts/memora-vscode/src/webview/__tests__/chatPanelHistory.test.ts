@@ -2982,17 +2982,32 @@ describe('角色包激活回调接线（B：删激活包 → 对话头部同步�
     };
   }
 
+  it('内核无激活包 ⇒ 角色名投影为空，不出现任何角色名（N2：旧硬编码入口已退役）', () => {
+    const { provider, posted } = setup();
+    // activeName = undefined：内核没有任何激活角色包
+    const agent = roleStub({ packA: '包A' }, undefined).agent;
+    provider.setAgent(agent);
+    (provider as unknown as { replaySession(): void }).replaySession();
+
+    const msgs = ofType<{ type: 'chat_role_pack'; rolePack: string }>(posted, 'chat_role_pack');
+    // 判据：最后一条投影必须是空名（webview 据此清标签），而不是某个并没生效的角色名
+    expect(msgs.at(-1)!.rolePack).toBe('');
+    expect(msgs.some((m) => m.rolePack === '白话方案设计师')).toBe(false);
+  });
+
   it('删激活包 ⇒ 回调注册一次、面板收到新（兜底）包名', () => {
     const { provider, posted } = setup();
-    const { agent, onRolePackActivated, getActivated } = roleStub({
-      'deleted-pack': '已删包',
-      'fallback-pack': '兜底角色包',
-    });
+    const { agent, onRolePackActivated, getActivated } = roleStub(
+      {
+        'deleted-pack': '已删包',
+        'fallback-pack': '兜底角色包',
+      },
+      'deleted-pack',
+    );
     provider.setAgent(agent);
     // 生产侧唯一注册点：面板绑定 agent 事件时注册一次（onRolePackActivated 是单槽回调）
     expect(onRolePackActivated).toHaveBeenCalledTimes(1);
 
-    provider.setRolePack('deleted-pack');
     posted.length = 0; // 基线：注入时的角色推送不计入本次断言
     // 模拟内核「删除激活包 → 兜底回退」（resyncUserPacks → setActivePackName → onActiveChanged）
     getActivated()!('deleted-pack', 'fallback-pack');
@@ -3007,12 +3022,14 @@ describe('角色包激活回调接线（B：删激活包 → 对话头部同步�
 
   it('同一轮回调与事件都到（兜底回退后又补发事件）⇒ 只推一次（防双发）', () => {
     const { provider, posted } = setup();
-    const { agent, getSwitched, getActivated } = roleStub({
-      'deleted-pack': '已删包',
-      'fallback-pack': '兜底角色包',
-    });
+    const { agent, getSwitched, getActivated } = roleStub(
+      {
+        'deleted-pack': '已删包',
+        'fallback-pack': '兜底角色包',
+      },
+      'deleted-pack',
+    );
     provider.setAgent(agent);
-    provider.setRolePack('deleted-pack');
     posted.length = 0;
 
     getActivated()!('deleted-pack', 'fallback-pack');
@@ -3024,9 +3041,8 @@ describe('角色包激活回调接线（B：删激活包 → 对话头部同步�
 
   it('手动切换（activate 回调先、角色事件后）⇒ 只推一次、不误触发双份', () => {
     const { provider, posted } = setup();
-    const { agent, getSwitched, getActivated } = roleStub({ packA: '包A', packB: '包B' });
+    const { agent, getSwitched, getActivated } = roleStub({ packA: '包A', packB: '包B' }, 'packA');
     provider.setAgent(agent);
-    provider.setRolePack('packA');
     posted.length = 0;
 
     // 内核真实顺序：switchRolePack → rpm.activate（触发 onActiveChanged）→ emit rolePackSwitched
