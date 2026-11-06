@@ -325,6 +325,68 @@ describe('E4 批 3 · 后台任务条随切换会话重投影（BGTASK-SWITCH-RE
   });
 });
 
+describe('E4 批 3 补 · 会话视图入口 = 新建/分叉同样强制重投影（N1）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** 取最后一条后台任务快照的任务 id（空列表 = 常驻条隐藏） */
+  function lastTaskIds(posted: PanelHandle['posted']): string[] | undefined {
+    const msgs = posted.filter((m) => m.type === 'background_tasks') as unknown as Array<{
+      items: Array<{ taskId: string }>;
+    }>;
+    return msgs.at(-1)?.items.map((i) => i.taskId);
+  }
+
+  it('新建会话 ⇒ 常驻条换成新会话自己的任务（不残留旧会话清单）', async () => {
+    const oldAgent = sessionAgent('2026-11-06-a', undefined, [
+      { taskId: 'bg-1', command: 'npm run build', startedAt: 1, status: 'running' },
+    ]);
+    // 新会话 = 空注册表：新建后常驻条必须为空（不推则停在旧会话的 bg-1）
+    const freshAgent = sessionAgent('2026-11-07-new');
+    const { provider, posted, cast } = setupPanel();
+    provider.setAgentFactory(async (_projectPath, sessionId) =>
+      sessionId === '2026-11-06-a' ? oldAgent : freshAgent,
+    );
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = oldAgent;
+    // 基线：旧会话的任务已在屏上（等价 ready ⑤ 的 force）
+    (provider as unknown as { postBackgroundTasks(mode?: string): void }).postBackgroundTasks(
+      'force',
+    );
+    expect(lastTaskIds(posted)).toEqual(['bg-1']);
+
+    await provider.newSessionFromCommand();
+    // 判据：新建入口自己做重投影（缺了 force ⇒ 这里仍是 bg-1）
+    expect(lastTaskIds(posted)).toEqual([]);
+  });
+
+  it('分叉会话 ⇒ 同样强制重投影（同一实例继续，但视图入口必须自己推）', async () => {
+    const agentA = sessionAgent('2026-11-06-a', undefined, [
+      { taskId: 'bg-1', command: 'npm run build', startedAt: 1, status: 'running' },
+    ]);
+    // 分叉 = 内核把同一实例切到新会话（宿主随后改键），实例注册表内容不变；
+    // 判据是「入口自己发了一次强制投影」，不是内容变化——故断言消息条数递增。
+    (
+      agentA as unknown as { forkSession: () => { newSession: string; roundCount: number } }
+    ).forkSession = () => ({ newSession: 'child-fork', roundCount: 1 });
+    const { provider, posted, cast } = setupPanel();
+    provider.setAgentFactory(async () => agentA);
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = agentA;
+    (provider as unknown as { postBackgroundTasks(mode?: string): void }).postBackgroundTasks(
+      'force',
+    );
+    const taskMsgs = () => posted.filter((m) => m.type === 'background_tasks').length;
+    const before = taskMsgs();
+    expect(lastTaskIds(posted)).toEqual(['bg-1']);
+
+    await provider.forkCurrentSession('round-1');
+    expect(taskMsgs(), '分叉入口没有重投影后台任务条').toBe(before + 1);
+    expect(lastTaskIds(posted)).toEqual(['bg-1']);
+  });
+});
+
 describe('E4 批 2 · 流中切换隔离（A 跑流时切到 B）', () => {
   beforeEach(() => {
     vi.clearAllMocks();

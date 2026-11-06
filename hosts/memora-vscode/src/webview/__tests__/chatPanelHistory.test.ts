@@ -429,6 +429,29 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(data[0]?.sessions).toEqual([]);
   });
 
+  it('handleDeleteSession：成功删除后同批清理面板内部会话桶（N4：收起态 / 回落去重键）', async () => {
+    const { store, roundStore, provider } = setup();
+    seedSession(store, roundStore, '2026-08-14-s2', [
+      { role: 'user', content: 'y', ts: '2026-08-14T00:00:00.000Z' },
+    ]);
+    const cast = provider as unknown as {
+      _snapshots: { _dismissedBySession: Map<string, Set<string>> };
+      _rolePackFallbackNotified: Set<string>;
+    };
+    // 模型：该会话此前打开过且有过「收起任务」/「回落提示」记录
+    cast._snapshots._dismissedBySession.set('2026-08-14-s2', new Set(['bg-1']));
+    cast._rolePackFallbackNotified.add('2026-08-14-s2');
+
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
+    await (
+      provider as unknown as { handleDeleteSession(s: string): Promise<void> }
+    ).handleDeleteSession('2026-08-14-s2');
+
+    // 判据：删除后两个桶都不再有该会话 id（否则僵尸 id 永久驻留）
+    expect(cast._snapshots._dismissedBySession.has('2026-08-14-s2')).toBe(false);
+    expect(cast._rolePackFallbackNotified.has('2026-08-14-s2')).toBe(false);
+  });
+
   it('handleDeleteSession：确认取消则不删除', async () => {
     const { store, roundStore, provider } = setup();
     seedSession(store, roundStore, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);

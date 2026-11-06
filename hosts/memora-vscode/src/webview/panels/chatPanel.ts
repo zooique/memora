@@ -1908,6 +1908,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     this._confirm.disposeSession(sessionId);
     this._runtime.delete(sessionId);
+    this._snapshots.deleteSession(sessionId); // 任务条「收起态」桶随会话一起消失（防僵尸 id 长期驻留）
     this._rolePackFallbackNotified.delete(sessionId); // 回落提示去重键同生命周期收口
     this.refreshSessionActivity(); // 摘除后立即重推快照（角标 / 列表标识随之熄灭）
   }
@@ -2000,6 +2001,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const agent = await this.agentForSession(sessionId);
       this.bindAgent(agent);
       this.replayCurrentSession();
+      // 会话视图入口（新建）：任务条按「显示会话」投影，必须显式 force（不赌后续事件到来，否则串台）
+      this.postBackgroundTasks('force');
       return true;
     } catch (err) {
       // 没切成就把新锁还回去，并把显示源退回旧会话（旧实例仍在本地投影表里，直接重绑）
@@ -2099,6 +2102,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._sessionAgents.set(forkedId, agent);
       this.bindAgent(agent);
       this.replayCurrentSession();
+      // 会话视图入口（分叉）：同新建——后台任务条必须切到新分支自己的任务，显式 force
+      this.postBackgroundTasks('force');
       this.post({
         type: 'notice',
         level: 'info',

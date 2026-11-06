@@ -175,6 +175,16 @@ export class PanelSnapshots {
   }
 
   /**
+   * 会话删除时摘除其「已收起任务」桶（纯内存态清理，零行为变化）
+   *
+   * 不摘的后果：已删会话的 id 永久驻留在 `_dismissedBySession` 里（僵尸状态）；
+   * 与 `_asks` / `_runtime` 同生命周期收口，避免「删除只清一半」。
+   */
+  deleteSession(sessionId: string): void {
+    this._dismissedBySession.delete(sessionId);
+  }
+
+  /**
    * 收起一条终态任务（webview 终态行的 `×` → `background_kill` + `reason:'dismiss'`）
    *
    * **不碰内核**（不 kill、不清条目）：关掉的是「眼睛」不是「东西」——任务与输出留在
