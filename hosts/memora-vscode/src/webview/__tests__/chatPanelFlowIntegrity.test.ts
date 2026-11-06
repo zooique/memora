@@ -124,7 +124,8 @@ interface PanelHandle {
   posted: { type: string; message?: string; state?: unknown }[];
   cast: {
     _agent: Agent;
-    _streaming: boolean;
+    /** E4 批 1：原 _streaming 单份字段已按会话命名空间化 */
+    runtimeFor(sessionId?: string): { streaming: boolean };
     _currentSessionId: string;
     sendInput(p: string): Promise<void>;
   };
@@ -194,7 +195,7 @@ describe('chatPanel 流完整性（P1-1：不得被静默截断）', () => {
     expect(turnUpdates(h.posted).length).toBeGreaterThan(0);
     expect(errorMessages(h.posted)).toEqual([]);
     // 生成态必须复位（否则会话切换/重放被永久拒绝）
-    expect(h.cast._streaming).toBe(false);
+    expect(h.cast.runtimeFor().streaming).toBe(false);
   });
 
   it('强制依赖缺方法时，上述三条契约必须同时可见地破裂（证明它们是承重的）', async () => {

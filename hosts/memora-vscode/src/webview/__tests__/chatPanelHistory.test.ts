@@ -1451,8 +1451,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const { provider, posted } = setup();
     const { agent, requestPause, pause } = pauseAgentStub();
     provider.setAgent(agent);
-    // 生成中（流进行中）暂停按钮才可见 → _streaming=true
-    (provider as unknown as { _streaming: boolean })._streaming = true;
+    // 生成中（流进行中）暂停按钮才可见 → 会话级 streaming=true
+    (provider as unknown as { runtimeFor(): { streaming: boolean } }).runtimeFor().streaming = true;
     (provider as unknown as { handlePause(): void }).handlePause();
     // 应调 step 边界软暂停入口 requestPause，而非立即翻态的 pause
     expect(requestPause).toHaveBeenCalledWith('user-pause', 'user');
@@ -1468,8 +1468,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const { agent, requestPause } = pauseAgentStub();
     requestPause.mockReturnValue(false);
     provider.setAgent(agent);
-    // handlePause 不再检查 _streaming
-    (provider as unknown as { _streaming: boolean })._streaming = true;
+    // handlePause 不再检查会话级 streaming
+    (provider as unknown as { runtimeFor(): { streaming: boolean } }).runtimeFor().streaming = true;
     (provider as unknown as { handlePause(): void }).handlePause();
     // 反馈申请未生效（空闲守卫作废 / 幂等 / paused、error 态）——不再保持沉默
     const notices = ofType(posted, 'notice');
@@ -1481,9 +1481,10 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const { provider, posted } = setup();
     const { agent, requestPause } = pauseAgentStub();
     provider.setAgent(agent);
-    // _streaming=false 时 UI 本来就隐藏暂停按钮（syncButtonSemantics 控制）；
+    // streaming=false 时 UI 本来就隐藏暂停按钮（syncButtonSemantics 控制）；
     // 但如果 handlePause 被调（边缘场景），应该正常调 requestPause 不被拦截
-    (provider as unknown as { _streaming: boolean })._streaming = false;
+    (provider as unknown as { runtimeFor(): { streaming: boolean } }).runtimeFor().streaming =
+      false;
     (provider as unknown as { handlePause(): void }).handlePause();
     expect(requestPause).toHaveBeenCalledWith('user-pause', 'user');
     // 申请已发送（requestPause 默认 true）反馈
@@ -2457,7 +2458,7 @@ describe('turn_update 含运行时 live 轮（M3b-2a）', () => {
 //
 // 根因：webview 重建（折叠展开重建 HTML）→ ready 握手重放只读落盘历史——
 // 本流未落盘内容（流式正文不落盘、过程事件仅 step 边界增量 checkpoint）无重放通道，
-// 用户切回来只见运行中空转、内容全空白。修复：流缓冲提升实例级（_liveBuffer），
+// 用户切回来只见运行中空转、内容全空白。修复：流缓冲提升为**会话级**（runtimeFor().liveBuffer），
 // 重放时经 buildLiveTurnFromBuffer 并入投影（原位替换落盘半残快照）。
 //
 // **变异验证锚点**：
@@ -2497,7 +2498,7 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
     events: ProcessEvent[],
     text: string,
   ): void {
-    (provider as unknown as { _liveBuffer: unknown })._liveBuffer = {
+    (provider as unknown as { runtimeFor(): { liveBuffer?: unknown } }).runtimeFor().liveBuffer = {
       sessionId,
       eventsByRound: new Map([[roundId, events]]),
       textByRound: new Map([[roundId, text]]),
@@ -2657,7 +2658,9 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
     await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('新问题');
     // 收场后缓冲退场（done 非暂停）
-    expect((provider as unknown as { _liveBuffer: unknown })._liveBuffer).toBeUndefined();
+    expect(
+      (provider as unknown as { runtimeFor(): { liveBuffer?: unknown } }).runtimeFor().liveBuffer,
+    ).toBeUndefined();
     (provider as unknown as { replayHistory(): void }).replayHistory();
     const last = lastTurnUpdate(posted);
     expect(last.rounds.find((r) => r.id === 'round-9')?.live).toBeUndefined();
@@ -2679,7 +2682,9 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
     await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('新问题');
     // 内核 paused 不 appendAssistant（保留现场待续跑）→ 半截正文只在缓冲 → 缓冲必须保留
-    expect((provider as unknown as { _liveBuffer: unknown })._liveBuffer).toBeDefined();
+    expect(
+      (provider as unknown as { runtimeFor(): { liveBuffer?: unknown } }).runtimeFor().liveBuffer,
+    ).toBeDefined();
     (provider as unknown as { replayHistory(): void }).replayHistory();
     const last = lastTurnUpdate(posted);
     const live = last.rounds.find((r) => r.id === 'round-9');
@@ -2870,7 +2875,8 @@ describe('启动会话对齐（启动即分叉根因修复）', () => {
 describe('truncateTurnCore 返回值契约（COPY-2-OK-CONTRACT-1）', () => {
   interface TruncateCast {
     _currentSessionId: string;
-    _streaming: boolean;
+    /** E4 批 1：原 _streaming 单份字段已按会话命名空间化 */
+    runtimeFor(): { streaming: boolean };
     truncateTurnCore(
       roundId: string,
       confirmMessage: string,
@@ -2901,7 +2907,7 @@ describe('truncateTurnCore 返回值契约（COPY-2-OK-CONTRACT-1）', () => {
     const { provider } = setup();
     const cast = provider as unknown as TruncateCast;
     cast._currentSessionId = '2026-08-16-empty';
-    cast._streaming = true;
+    cast.runtimeFor().streaming = true;
     vi.mocked(vscode.window.showWarningMessage).mockClear();
     const outcome = await cast.truncateTurnCore('round-missing', '确认？', '删除');
     expect(outcome).toEqual({ ok: false, reason: 'busy' });

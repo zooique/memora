@@ -47,7 +47,7 @@ export async function deleteSessionAction(
   deps: SessionHistoryDeps,
   sessionId: string,
 ): Promise<void> {
-  // 运行时守卫（SSOT：与 newSession/switchToSession 同源 _streaming，禁止运行中改会话结构）
+  // 运行时守卫（SSOT：与 newSession/switchToSession 同源「当前会话 streaming」，禁止运行中改会话结构）
   if (deps.isStreaming()) {
     deps.notify('info', '生成中，请稍候再删除会话');
     return;
@@ -108,7 +108,7 @@ export async function archiveSessionAction(
   deps: SessionHistoryDeps,
   sessionId: string,
 ): Promise<void> {
-  // 运行时守卫（与 newSession/switchToSession/deleteSession 同源 _streaming）
+  // 运行时守卫（与 newSession/switchToSession/deleteSession 同源「当前会话 streaming」）
   if (deps.isStreaming()) {
     deps.notify('info', '生成中，请稍后再整理会话');
     return;

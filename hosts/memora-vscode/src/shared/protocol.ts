@@ -168,7 +168,7 @@ export type SearchEngineSetting = string;
  *   - `regenerate`：重新生成（COPY-2 右键菜单）——仅携带 `roundId` 锚点，宿主先截断该
  *     问答及之后所有（与 delete_turn 同一截断原语 + 同强度 modal 确认），再以截断起点
  *     Round 的 user 原文（store 真源）重开闭环。仅对已落盘轮次可发（生成中由 webview
- *     入口禁用 + 宿主 _streaming 守卫双保险）。协议扩张走枚举成员 + 字段（PROTO-CAP-1
+ *     入口禁用 + 宿主会话级 streaming 守卫双保险）。协议扩张走枚举成员 + 字段（PROTO-CAP-1
  *     纪律：0.5.0 禁开新 type）。
  */
 export type WebviewInputKind = 'send' | 'answer' | 'resume' | 'regenerate';

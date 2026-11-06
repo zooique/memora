@@ -70,8 +70,8 @@ function interjectAgentStub(items: string[]): Agent {
 interface HostCast {
   _agent: Agent;
   _view: unknown;
-  _streaming: boolean;
-  _abortController: AbortController | null;
+  /** E4 批 1：原 _streaming / _abortController 单份字段已按会话命名空间化 */
+  runtimeFor(sessionId?: string): { streaming: boolean; abortController?: AbortController };
   sendInput(input: string, skillName?: string): Promise<void>;
 }
 
@@ -133,8 +133,8 @@ function takeDiscarded(posted: Array<Record<string, unknown>>): { items: string[
 describe('插话吸收时上屏 · 宿主出口（chatPanel）', () => {
   it('interject 入队成功不 post type:user（旧即时上屏已退役——变异加回即本用例红）', async () => {
     const h = setup([]);
-    h.cast._streaming = true;
-    h.cast._abortController = new AbortController();
+    h.cast.runtimeFor().streaming = true;
+    h.cast.runtimeFor().abortController = new AbortController();
     await h.cast.sendInput('排队中的补充');
     expect(h.posted.some((m) => m.type === 'user')).toBe(false);
   });

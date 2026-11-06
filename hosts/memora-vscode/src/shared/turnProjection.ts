@@ -5,7 +5,7 @@
  *
  * 职责边界（只做投影，不做编排）：
  *   - `toRoundView`：把运行时累积的「当前轮」投影为 `RoundView`（与落盘 Round 同形状）。
- *   - `deriveTurnState`：把宿主侧散落的状态信号（`_streaming` / paused / pausePending /
+ *   - `deriveTurnState`：把宿主侧散落的状态信号（会话级 `streaming` / paused / pausePending /
  *     pendingQuestions / 最近轮）**折叠为单一 `TurnState` 枚举**——这是「五条状态消息」的收口点。
  * 本文件不含任何 postMessage / DOM / 内核调用，纯函数便于单测与变异验证。
  */
@@ -62,7 +62,7 @@ export function toRoundView(live: LiveRoundState, status: RoundStatus = 'pending
 
 /** 状态折叠入参（宿主侧现有信号的**只读快照**，不含任何判据） */
 export interface TurnStateInput {
-  /** 是否有流在运行（宿主 `_streaming`） */
+  /** 是否有流在运行（宿主会话级运行态 `streaming`） */
   streaming: boolean;
   /** 会话状态机是否已真正挂起（内核 `sessionManager.status === 'paused'`） */
   paused: boolean;

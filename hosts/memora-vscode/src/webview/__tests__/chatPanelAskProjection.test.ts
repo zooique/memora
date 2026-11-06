@@ -5,7 +5,7 @@
  * （askCoordinator 域单测、turnProjection 纯函数单测），但把它们串起来的事件链无一例端到端：
  * 断掉投影读取时 43 例全绿。本文件钉住全链五段：
  *   ① 内核 `questionPending` 事件（consumeFlow 注册的监听）
- *   ② → `_ask.setPending(questions)` 写入（overwrite 全量写）
+ *   ② → `askFor().setPending(questions)` 写入（overwrite 全量写）
  *   ③ → `postTurnUpdate` 读 `pendingQuestions()` → `deriveTurnState` 派生 →
  *        写回宿主 `_turnState`（提问原文真源，非镜像）+ post `turn_update`
  *   ④ → webview 收 `turn_update.state = waiting/ask + questions`（问答卡渲染真源）
@@ -85,16 +85,18 @@ function projectionAgentStub(): {
   return { agent, listeners };
 }
 
-/** 私有面 cast（驱动路径 = consumeFlow 注册的监听 + ask 域随迁字段 `_ask`） */
+/** 私有面 cast（驱动路径 = consumeFlow 注册的监听 + ask 域按会话取 `askFor()`） */
 interface AskProjectionCast {
   consumeFlow(
     gen: AsyncGenerator<unknown, void, unknown>,
     controller: AbortController,
   ): Promise<void>;
-  _streaming: boolean;
+  /** E4 批 1：原 _streaming 单份字段已按会话命名空间化 */
+  runtimeFor(sessionId?: string): { streaming: boolean };
   _agent: Agent;
   _turnState: { phase: string; reason?: string; questions?: unknown[] };
-  _ask: {
+  /** E4 批 1：原 _ask 单份字段已按会话命名空间化 */
+  askFor(sessionId?: string): {
     clearAskTimeout(): void;
     setPending(qs: unknown[]): void;
     pendingQuestions(): unknown[];
@@ -136,7 +138,7 @@ function setup() {
   const { agent, listeners } = projectionAgentStub();
   const cast = provider as unknown as AskProjectionCast;
   cast._agent = agent;
-  cast._streaming = true; // 提问发生于流内（流首投影亦会重置为 true）
+  cast.runtimeFor().streaming = true; // 提问发生于流内（流首投影亦会重置为 true）
   return { provider, posted, listeners, cast };
 }
 
@@ -162,7 +164,7 @@ function driveSuspendedFlow(questions: unknown[]) {
   const finish = async () => {
     releaseFlow();
     await flowDone;
-    ctx.cast._ask.clearAskTimeout(); // 事件 arm 的 30min 保底计时器，收尾清掉
+    ctx.cast.askFor().clearAskTimeout(); // 事件 arm 的 30min 保底计时器，收尾清掉
   };
   return { ...ctx, finish };
 }
@@ -178,7 +180,7 @@ describe('ask 端到端：questionPending 事件 → setPending → postTurnUpda
   it('流中即刻投影：turn_update.state = waiting/ask + questions（不等流尾、不延迟渲染）', async () => {
     const { posted, cast, finish } = driveSuspendedFlow([QUESTION]);
     try {
-      expect(cast._streaming).toBe(true); // 前置：流仍运行中（流尾未发生）
+      expect(cast.runtimeFor().streaming).toBe(true); // 前置：流仍运行中（流尾未发生）
       const update = posted.find((m) => {
         if ((m as { type?: string }).type !== 'turn_update') return false;
         return (m as { state?: { phase?: string } }).state?.phase === 'waiting';
@@ -201,16 +203,16 @@ describe('ask 端到端：questionPending 事件 → setPending → postTurnUpda
     const { cast, posted, finish } = driveSuspendedFlow([QUESTION]);
     try {
       expect(cast._turnState.phase).toBe('waiting'); // 前置：确实停在 ask 等待
-      // 提问挂起后流已结束（_streaming=false）、会话处 paused：
+      // 提问挂起后流已结束（会话级 streaming=false）、会话处 paused：
       // 旧实现正是在这一格只弃检查点 ⇒ 轮永久 pending + 宿主镜像不清 ⇒ 下一条输入被吞
-      cast._streaming = false;
+      cast.runtimeFor().streaming = false;
       (cast._agent.sessionManager as unknown as { status: string }).status = 'paused';
 
       await cast.handleStop();
 
       // ① 宿主镜像已清 + 相位重投影（不重算 ⇒ `_turnState` 停在 waiting/ask，
       //    handleInput 会把用户的下一句话路由成「回答一个已死的提问」，内核内存消费、不落盘）
-      expect(cast._ask.pendingQuestions()).toEqual([]);
+      expect(cast.askFor().pendingQuestions()).toEqual([]);
       expect(cast._turnState.phase).not.toBe('waiting');
       // ② 未答提问带题面上屏（文案与内核 appendInterrupted 落盘的 unanswered 行同源）
       const rows = posted.filter((m) => (m as { type?: string }).type === 'user') as Array<{
@@ -245,7 +247,7 @@ describe('ask 端到端：questionPending 事件 → setPending → postTurnUpda
   it('提问优先于 running：streaming=true 派生 waiting/ask（判据①压过④，提问那一刻≈running）', async () => {
     const { cast, posted, finish } = driveSuspendedFlow([QUESTION]);
     try {
-      expect(cast._streaming).toBe(true); // 前置：流在跑
+      expect(cast.runtimeFor().streaming).toBe(true); // 前置：流在跑
       const waiting = posted.filter((m) => {
         if ((m as { type?: string }).type !== 'turn_update') return false;
         return (m as { state?: { phase?: string } }).state?.phase === 'waiting';

@@ -13,11 +13,11 @@
  *   - 错位输入（相位不符）→ 丢弃并落 console.warn 留痕（T2 观测：对用户仍静默、
  *     不改变路由裁决，但「答了没反应」的排障线索必须在扩展宿主日志可查）
  *
- * 替身策略：agent 桩 + cast 注入私有状态（`_streaming` / `_abortController` / `_turnState` /
- * `_ask`（ask 域协调器）/ `_currentSessionId`），与 chatPanelHistory.test 既有模式一致。
+ * 替身策略：agent 桩 + cast 注入私有状态（`runtimeFor()`（会话级 streaming / abortController）/
+ * `_turnState` / `askFor()`（ask 域协调器）/ `_currentSessionId`），与 chatPanelHistory.test 既有模式一致。
  *
- * ⚠️ HOST-SPLIT-1 第 4 刀：ask 域迁至 `_ask`，**闸门字段随迁**——驱动经 `setPending` /
- * `clearPending`，断言经 `pendingQuestions()`。
+ * ⚠️ HOST-SPLIT-1 第 4 刀 + E4 批 1：ask 域经 `askFor()` 按会话取协调器，**闸门字段随迁**——
+ * 驱动经 `setPending` / `clearPending`，断言经 `pendingQuestions()`。
  * 🔴 不改成直接改 tracker 内部字段会**静默失效**（给不存在的字段赋值不报错、运行时不抛），
  * 而本文件多数用例先 `setPending` 再经宿主读同一状态 ⇒ 自洽仍绿，但生产逻辑已不经该字段。
  */
@@ -136,14 +136,15 @@ function setupInput() {
 
 /** 可 cast 注入的私有状态集合 */
 interface InputCast {
-  _streaming: boolean;
-  _abortController?: AbortController;
-  _turnState: TurnState;
-  _ask: {
+  /** 会话级流运行态（E4 批 1：原 _streaming / _abortController 已按 sessionId 命名空间化） */
+  runtimeFor(sessionId?: string): { streaming: boolean; abortController?: AbortController };
+  /** ask 域协调器（E4 批 1：原 _ask 已按 sessionId 命名空间化） */
+  askFor(sessionId?: string): {
     setPending(q: PendingQuestionDto[]): void;
     clearPending(): void;
     pendingQuestions(): PendingQuestionDto[];
   };
+  _turnState: TurnState;
   _currentSessionId: string;
   _agent: Agent;
   /** IMG-8 兜底取窗口用；个别用例覆写 getActive 返回值（默认 undefined = 未配置） */
@@ -170,8 +171,8 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     const h = setupInput();
     const { interject, chat } = mount(h);
     // 相位：running（流在跑 + 非挂起）
-    h.cast._streaming = true;
-    h.cast._abortController = new AbortController();
+    h.cast.runtimeFor().streaming = true;
+    h.cast.runtimeFor().abortController = new AbortController();
     h.cast._turnState = { phase: 'running' };
 
     await h.cast.handleInput({ kind: 'send', text: '补充要求' });
@@ -195,11 +196,11 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
       options: ['继续', '停止'],
     };
     // 相位：waiting/ask（提问挂起中，用户在**底部输入框**打字回车）
-    // 真实语义：内核 yield paused chunk 后 consumeFlow break → finally 复位 _streaming=false。
+    // 真实语义：内核 yield paused chunk 后 consumeFlow break → finally 复位 streaming=false。
     // sendInput 第一分支（流式插话）因此不可命中。
-    h.cast._streaming = false;
-    h.cast._abortController = undefined;
-    h.cast._ask.setPending([question]);
+    h.cast.runtimeFor().streaming = false;
+    h.cast.runtimeFor().abortController = undefined;
+    h.cast.askFor().setPending([question]);
     h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: [question] };
 
     await h.cast.handleInput({ kind: 'send', text: '继续' });
@@ -226,10 +227,10 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
       question: '继续吗？',
       options: ['继续', '停止'],
     };
-    // 相位：waiting/ask（内核 yield paused → 流已收场，_streaming=false）
-    h.cast._streaming = false;
-    h.cast._abortController = undefined;
-    h.cast._ask.setPending([question]);
+    // 相位：waiting/ask（内核 yield paused → 流已收场，会话级 streaming=false）
+    h.cast.runtimeFor().streaming = false;
+    h.cast.runtimeFor().abortController = undefined;
+    h.cast.askFor().setPending([question]);
     h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: [question] };
 
     await h.cast.handleInput({ kind: 'answer', answers: ['继续'] });
@@ -251,7 +252,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     expect(resumeExecution.mock.calls[0][0]).toBe('继续');
     expect(resumeExecution.mock.calls[0][2]).toBe('question-answer');
     // ask 域在途提问整体清空（overwrite 语义，非消费式 splice）
-    expect(h.cast._ask.pendingQuestions()).toEqual([]);
+    expect(h.cast.askFor().pendingQuestions()).toEqual([]);
   });
 
   it('多 ask 聚合 answer（P2）：answers 与提问按序一对一，逐条透出 + join 续跑', async () => {
@@ -262,9 +263,9 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
       { slot: 'q1', askCallId: 'call-lang', question: '语言？' },
       { slot: 'q2', askCallId: 'call-len', question: '篇幅？' },
     ];
-    h.cast._streaming = false;
-    h.cast._abortController = undefined;
-    h.cast._ask.setPending(qs);
+    h.cast.runtimeFor().streaming = false;
+    h.cast.runtimeFor().abortController = undefined;
+    h.cast.askFor().setPending(qs);
     h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: qs };
 
     await h.cast.handleInput({ kind: 'answer', answers: ['中文', '长篇'] });
@@ -289,9 +290,9 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
       { slot: 'q1', askCallId: 'call-lang', question: '语言？' },
       { slot: 'q2', askCallId: 'call-len', question: '篇幅？' },
     ];
-    h.cast._streaming = false;
-    h.cast._abortController = undefined;
-    h.cast._ask.setPending(qs);
+    h.cast.runtimeFor().streaming = false;
+    h.cast.runtimeFor().abortController = undefined;
+    h.cast.askFor().setPending(qs);
     h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: qs };
 
     // 等长同序：第 1 题空串（未答）、第 2 题有答案。压缩位次会让「长篇」前移贴到「语言？」头上。
@@ -326,9 +327,9 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
       { slot: 'q1', askCallId: 'call-lang', question: '语言？' },
       { slot: 'q2', askCallId: 'call-len', question: '篇幅？' },
     ];
-    h.cast._streaming = false;
-    h.cast._abortController = undefined;
-    h.cast._ask.setPending(qs);
+    h.cast.runtimeFor().streaming = false;
+    h.cast.runtimeFor().abortController = undefined;
+    h.cast.askFor().setPending(qs);
     h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: qs };
 
     // 2 道题只给 1 条答案：位次已无从推断 ⇒ 宁可拒收，不按位瞎配
@@ -338,7 +339,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     expect(resumeExecution).not.toHaveBeenCalled();
     expect(h.posted).toContainEqual(expect.objectContaining({ type: 'notice', level: 'error' }));
     // 拒收不得消费在途提问（用户还能重答）
-    expect(h.cast._ask.pendingQuestions()).toHaveLength(2);
+    expect(h.cast.askFor().pendingQuestions()).toHaveLength(2);
   });
 
   it('ADR-043 回退面：内核未给题身份 ⇒ 批内仍逐条唯一（不退回「同批共享 ts 互相吃掉」）', async () => {
@@ -351,9 +352,9 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
       { slot: 'q1', question: '语言？' },
       { slot: 'q2', question: '篇幅？' },
     ];
-    h.cast._streaming = false;
-    h.cast._abortController = undefined;
-    h.cast._ask.setPending(qs);
+    h.cast.runtimeFor().streaming = false;
+    h.cast.runtimeFor().abortController = undefined;
+    h.cast.askFor().setPending(qs);
     h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: qs };
 
     await h.cast.handleInput({ kind: 'answer', answers: ['中文', '长篇'] });
@@ -372,9 +373,9 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     const { answerQuestion, resumeExecution } = mount(h);
     const warnSpy = vi.spyOn(console, 'warn');
     // 相位：waiting/pause（非 ask——迟到/错位回答）
-    h.cast._streaming = false;
-    h.cast._abortController = undefined;
-    h.cast._ask.clearPending(); // 无在途提问
+    h.cast.runtimeFor().streaming = false;
+    h.cast.runtimeFor().abortController = undefined;
+    h.cast.askFor().clearPending(); // 无在途提问
     h.cast._turnState = { phase: 'waiting', reason: 'pause' };
 
     await h.cast.handleInput({ kind: 'answer', answers: ['迟到回答'] });
@@ -399,7 +400,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     const { resumeExecution } = mount(h);
     const warnSpy = vi.spyOn(console, 'warn');
     // 相位：idle（无流、无挂起——resume 无意义）
-    h.cast._streaming = false;
+    h.cast.runtimeFor().streaming = false;
     h.cast._turnState = { phase: 'idle' };
 
     await h.cast.handleInput({ kind: 'resume' });
@@ -417,10 +418,10 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
   it('waiting(pause) 态 resume → 纯续跑（resumeExecution 无文本身份）', async () => {
     const h = setupInput();
     const { resumeExecution } = mount(h);
-    // 相位：waiting/pause（软暂停后流已收场，_streaming=false）
-    h.cast._streaming = false;
-    h.cast._abortController = undefined;
-    h.cast._ask.clearPending();
+    // 相位：waiting/pause（软暂停后流已收场，会话级 streaming=false）
+    h.cast.runtimeFor().streaming = false;
+    h.cast.runtimeFor().abortController = undefined;
+    h.cast.askFor().clearPending();
     h.cast._turnState = { phase: 'waiting', reason: 'pause', pausePending: false };
 
     await h.cast.handleInput({ kind: 'resume' });
@@ -433,8 +434,8 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
   it('空文本 / 空 answers → 不发任何内核入口', async () => {
     const h = setupInput();
     const { interject, answerQuestion, resumeExecution, chat } = mount(h);
-    h.cast._streaming = true;
-    h.cast._abortController = new AbortController();
+    h.cast.runtimeFor().streaming = true;
+    h.cast.runtimeFor().abortController = new AbortController();
     h.cast._turnState = { phase: 'running' };
 
     await h.cast.handleInput({ kind: 'send', text: '   ' });
@@ -453,8 +454,8 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     // 上限裁决单一真源在内核：agent.interject() 达上限返回 false（零入队零落盘），
     // 宿主只消费返回值——桩模拟内核满员拒收
     interject.mockReturnValue(false);
-    h.cast._streaming = true;
-    h.cast._abortController = new AbortController();
+    h.cast.runtimeFor().streaming = true;
+    h.cast.runtimeFor().abortController = new AbortController();
     h.cast._turnState = { phase: 'running' };
 
     await h.cast.handleInput({ kind: 'send', text: '第 6 条' });
@@ -472,8 +473,8 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     const { interject } = mount(h);
     // 内核受理（未满员）→ 宿主不 post user 气泡（呈现时机 = 消费时刻）
     interject.mockReturnValue(true);
-    h.cast._streaming = true;
-    h.cast._abortController = new AbortController();
+    h.cast.runtimeFor().streaming = true;
+    h.cast.runtimeFor().abortController = new AbortController();
     h.cast._turnState = { phase: 'running' };
 
     await h.cast.handleInput({ kind: 'send', text: '第 5 条' });
@@ -725,17 +726,16 @@ describe('IMG-8 · 宿主兜底：三维聚合限额（与 webview 预检同判�
 });
 
 describe('会话结构操作 · 删除问答后 live 现场必须作废（防已删内容被重放复活）', () => {
-  it('truncateTurnCore 删除成功 ⇒ 清 _liveBuffer：已删轮的 user 气泡不得由软暂停现场并回', async () => {
+  it('truncateTurnCore 删除成功 ⇒ 清 liveBuffer：已删轮的 user 气泡不得由软暂停现场并回', async () => {
     const h = setupInput();
     mount(h);
     const c = h.cast as unknown as {
-      _streaming: boolean;
-      _liveBuffer: unknown;
+      runtimeFor(sessionId?: string): { streaming: boolean; liveBuffer?: unknown };
       sessionStore: unknown;
       _viewLoader: unknown;
       deleteTurnFrom(roundId: string): Promise<void>;
     };
-    c._streaming = false;
+    c.runtimeFor().streaming = false;
     c._viewLoader = () => [];
     // 数据层不参与本判据：只验「删成功后现场作废」这个副作用（truncateFrom 本身有独立单测）
     c.sessionStore = {
@@ -743,7 +743,7 @@ describe('会话结构操作 · 删除问答后 live 现场必须作废（防已
     };
     // 软暂停刻意保留的 live 现场（consumeFlow finally 的 pausedOnPurpose）：
     // 轮已删而现场还在 ⇒ 重放经 buildLiveTurnFromBuffer 把 seedUserMessage 并回投影 ⇒ 气泡复活
-    c._liveBuffer = {
+    c.runtimeFor().liveBuffer = {
       sessionId: '2026-09-23-test',
       eventsByRound: new Map(),
       textByRound: new Map(),
@@ -755,34 +755,63 @@ describe('会话结构操作 · 删除问答后 live 现场必须作废（防已
 
     await c.deleteTurnFrom('round-a');
 
-    // 变异锚：删掉 `_liveBuffer = undefined` ⇒ 本例红在 toBeUndefined
+    // 变异锚：删掉 `runtimeFor().liveBuffer = undefined` ⇒ 本例红在 toBeUndefined
     //（真机实证：删除中断轮后残留提问气泡，重启才消失；重启即现场为空）
-    expect(c._liveBuffer).toBeUndefined();
+    expect(c.runtimeFor().liveBuffer).toBeUndefined();
   });
 
   it('反例：锚未命中（truncateFrom 未删任何轮）⇒ 现场保留，不白丢软暂停内容', async () => {
     const h = setupInput();
     mount(h);
     const c = h.cast as unknown as {
-      _streaming: boolean;
-      _liveBuffer: unknown;
+      runtimeFor(sessionId?: string): { streaming: boolean; liveBuffer?: unknown };
       sessionStore: unknown;
       deleteTurnFrom(roundId: string): Promise<void>;
     };
-    c._streaming = false;
+    c.runtimeFor().streaming = false;
     c.sessionStore = { truncateFrom: () => ({ ok: false, removedIds: [] }) };
     const buffer = {
       sessionId: '2026-09-23-test',
       eventsByRound: new Map(),
       textByRound: new Map(),
     };
-    c._liveBuffer = buffer;
+    c.runtimeFor().liveBuffer = buffer;
     const { window } = await import('vscode');
     vi.mocked(window.showWarningMessage).mockResolvedValue('删除' as never);
 
     await c.deleteTurnFrom('round-miss');
 
     // 什么都没删 ⇒ 不得清现场（否则暂停中的半截正文丢失，见 consumeFlow finally 注释）
-    expect(c._liveBuffer).toBe(buffer);
+    expect(c.runtimeFor().liveBuffer).toBe(buffer);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// E4 批 1：流运行态 / ask 协调器按会话命名空间化（结构判据，行为不变）
+// ═══════════════════════════════════════════════════════════
+// 变异锚：把 runtimeFor / askFor 改回「单份字段」⇒ 本例红在 B 会话读到 A 的 streaming/提问。
+// 本文件其余用例全绿也拦不住该退化（它们只跑单会话，单份字段恰好多相吻合）——
+// 这正是本片必须先立这条判据的原因。
+describe('E4 批 1 · 流运行态按会话命名空间化', () => {
+  it('同会话恒同一对象；A 会话的流状态与在途提问不渗到 B 会话', () => {
+    const h = setupInput();
+    const c = h.cast;
+    c._currentSessionId = 'sid-a';
+    // 同会话取两次 = 同一引用（懒建后不再新建）
+    expect(c.runtimeFor('sid-a')).toBe(c.runtimeFor('sid-a'));
+    c.runtimeFor().streaming = true;
+    c.askFor().setPending([{ slot: 'q1', question: 'A 会话的提问' } as never]);
+
+    // 切到 B：读到的是 B 自己的空记录（旧单份字段会让 A 的 streaming / 提问原样泄漏）
+    c._currentSessionId = 'sid-b';
+    expect(c.runtimeFor().streaming).toBe(false);
+    expect(c.askFor().pendingQuestions()).toEqual([]);
+    // 不同会话 = 不同对象
+    expect(c.runtimeFor('sid-b')).not.toBe(c.runtimeFor('sid-a'));
+
+    // 切回 A：状态还在（「切走不杀实例」的同一条语义）
+    c._currentSessionId = 'sid-a';
+    expect(c.runtimeFor().streaming).toBe(true);
+    expect(c.askFor().pendingQuestions()).toHaveLength(1);
   });
 });
