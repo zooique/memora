@@ -73,8 +73,14 @@ vi.mock('vscode', () => ({
 /** 父会话在测试内的固定标识（switchToSession 要求 YYYY-MM-DD-sessionName 格式） */
 const PARENT_SESSION = '2026-11-06-parent';
 
-/** 迭代次数（原文「重复 20 次零差异」） */
-const ITERATIONS = 20;
+/**
+ * 重复次数（原文「重复 20 次零差异」）
+ *
+ * ⚠️ 刻意不叫 `REPEAT_COUNT`：`iteration` 是 step 的历史别名（`→ 术语锚点` §6），
+ * 这里是「同一验收场景重复跑 N 次」，与 loop 的 step 迭代无关；用别名会让术语载体集合
+ * 多出一个同形异义载体（`terminology:check` 亦会判漂移）。
+ */
+const REPEAT_COUNT = 20;
 
 /**
  * 回显 Provider：每轮吐一段正文后收尾（无工具调用，最小 turn）
@@ -262,8 +268,8 @@ describe('6.0.0 批 1 验收 ④：fork 父子会话同时各跑一轮', () => {
   }
 
   it('20 次并发父子各跑一轮：轮次完整、原 complete 不回滚、GC 不误删引用轮', async () => {
-    // 每轮迭代前后比对的基线：所有既有轮文件（旧轮字节必须一成不变）
-    for (let i = 0; i < ITERATIONS; i++) {
+    // 每次重复前后比对的基线：所有既有轮文件（旧轮字节必须一成不变）
+    for (let i = 0; i < REPEAT_COUNT; i++) {
       // ⚠️ 必须拷贝：getRoundIds 返回内部数组引用，直接持有会被后续 append 原地污染（前后快照相等）
       const beforeParent = [...sessionStore.getRoundIds(parentId)];
       const beforeChild = [...sessionStore.getRoundIds(childId)];
@@ -294,7 +300,7 @@ describe('6.0.0 批 1 验收 ④：fork 父子会话同时各跑一轮', () => {
         expect(round!.status).toBe('complete');
       }
 
-      // ③ 原 complete 不回滚：本次迭代开始前盘上的每个轮文件，字节 sha256 必须完全不变
+      // ③ 原 complete 不回滚：本次重复开始前盘上的每个轮文件，字节 sha256 必须完全不变
       const afterFiles = snapshotRoundFiles();
       for (const [name, hash] of beforeFiles) {
         expect(afterFiles.get(name), `旧轮文件被改写：${name}`).toBe(hash);
@@ -309,8 +315,8 @@ describe('6.0.0 批 1 验收 ④：fork 父子会话同时各跑一轮', () => {
     // ── 收尾判据：20 次后总量与状态 ──
     const parentIds = sessionStore.getRoundIds(parentId);
     const childIds = sessionStore.getRoundIds(childId);
-    expect(parentIds.length).toBe(3 + ITERATIONS);
-    expect(childIds.length).toBe(3 + ITERATIONS);
+    expect(parentIds.length).toBe(3 + REPEAT_COUNT);
+    expect(childIds.length).toBe(3 + REPEAT_COUNT);
 
     // GC 正例（反证「不误删」不是「GC 没工作」）：人造一个无引用轮，sweep(0) 必须恰好收走它
     const orphanId = 'round-fork-orphan-probe';
