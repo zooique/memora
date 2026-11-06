@@ -80,6 +80,8 @@ import {
   // `status === 'complete'`（内核 roundStore.test 的判据单源守卫会拦，见 helpers/occupancyHistory.ts 先例）
   isRoundSuccessful,
 } from '@zooique/memora';
+// step 检查点落盘（已收场轮取盘上现值、只并事件；能力探测与判据单点外置）
+import { checkpointRoundEvents } from './roundEventCheckpoint.js';
 
 /** 插话条数上限提示文案用值：直接消费内核真源（webview 侧无法 import 内核包，
  *  其 shared/constants.ts 同名常量是本值的镜像，由 chatPanelInput 守卫测试锁同值） */
@@ -196,7 +198,7 @@ import { recordHostDiag, type DiagnosticsData, type HostDiagEntry } from './host
 import { bridgeRolePackActivation } from './rolePackActivationBridge.js';
 import { AgentEventScope } from '../../extension/host/agentEventScope.js';
 // thought 落盘折叠域（自本文件拆出；纯逻辑 + 长不变量说明，详见真源模块）
-import { foldThoughtEvents, MAX_THOUGHT_PAYLOAD_LENGTH } from '../../extension/host/thoughtFold.js';
+import { MAX_THOUGHT_PAYLOAD_LENGTH } from '../../extension/host/thoughtFold.js';
 
 // 判据与快照的真源已迁至 activeFileTracker.ts；此处 re-export **仅为保住既有测试的导入路径**
 // （chatPanelHistory.test.ts 直驱这 5 个纯函数）——按规则 §6.2「sugar API 保留、内部委托」。
@@ -3378,20 +3380,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @param events 该轮当前已累积过程事件（含刚 emit 的边界/metrics）
    */
   private checkpointRound(roundId: string, events: ProcessEvent[]): void {
-    const store = this._eventLogRoundStore;
-    if (!store || !roundId || events.length === 0) return;
-    try {
-      const round = store.getById(roundId);
-      if (!round) return;
-      // thought 碎片落盘前按 step 聚合（信封开销收敛；UI 流式不受影响，见 foldThoughtEvents）
-      round.processEvents = mergeProcessEvents(
-        round.processEvents ?? [],
-        foldThoughtEvents(events),
-      );
-      store.save(round);
-    } catch (err) {
-      console.warn('Memora step 原子检查点落盘失败', err);
-    }
+    // 判据与正文来源单点外置（已收场轮取盘上现值、只并事件；见 roundEventCheckpoint）
+    checkpointRoundEvents(this._eventLogRoundStore, roundId, events);
   }
 
   /** 消费 Agent 流：转发 text chunk，监听主动提问事件，透出运行状态，支持用户打断

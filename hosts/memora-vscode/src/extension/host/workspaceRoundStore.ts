@@ -24,7 +24,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Round, RoundStatus, IRoundStore } from '@zooique/memora';
-import { logger, isWithinLocalDay } from '@zooique/memora';
+import { logger, isRoundSettled, isWithinLocalDay } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
 import { resolveProjectDataDir } from './projectDataDir.js';
 
@@ -46,6 +46,21 @@ interface RoundIndexEntry {
 
 /** 回收站目录名（与 rounds/*.json 同层，明确不属于活轮集合） */
 export const ROUND_TRASH_DIR_NAME = '.trash';
+
+/**
+ * 「盘上新鲜读」能力（`WorkspaceRoundStore.getByIdFresh` 提供，不在内核 IRoundStore 契约内）
+ *
+ * 已收场轮的事件落盘必须基于盘上现值；`getById` 可能返回本进程旧缓存快照，
+ * 用它整轮 `save` 会把旧正文写回盘（等于改写历史）。消费方用结构化探测，缺失即 fail-closed。
+ */
+export interface FreshRoundReadable {
+  getByIdFresh(roundId: string): Round | null;
+}
+
+/** 判断某 roundStore 是否具备「盘上新鲜读」能力 */
+export function hasFreshRoundRead(store: IRoundStore): store is IRoundStore & FreshRoundReadable {
+  return typeof (store as Partial<FreshRoundReadable>).getByIdFresh === 'function';
+}
 
 /** 回收站保留期（7 天）：到期由 load() 清理，删除后仍可人工找回 */
 export const ROUND_TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -83,6 +98,14 @@ export class WorkspaceRoundStore implements IRoundStore {
    * （宁可不回收，也不读过期 `refCount` 误删用户数据）。
    */
   private referencedIdsProvider: (() => ReadonlySet<string>) | null = null;
+  /**
+   * 会话末尾轮提供者（历史只读写入闸的真源，由 `WorkspaceSessionStore` 注入）
+   *
+   * 判据 = 「该 Round 是某个会话 `roundIds` 的**最后一个元素**」，真源现场扫会话文件，
+   * 不用 `updatedAt` 比大小、不另存「当前轮」字段（见台账 `ROUND-HISTORY-READONLY-1`）。
+   * 未注入时写入闸关闭（单进程 / 测试模式，与跨进程锁同款装配纪律）。
+   */
+  private tailRoundIdsProvider: (() => ReadonlySet<string>) | null = null;
 
   constructor(workspacePath: string) {
     // 轮次目录经单点推导（唯一计算点 = projectDataDir.ts，禁就地拼字面量）
@@ -98,6 +121,15 @@ export class WorkspaceRoundStore implements IRoundStore {
    */
   setReferencedIdsProvider(provider: () => ReadonlySet<string>): void {
     this.referencedIdsProvider = provider;
+  }
+
+  /**
+   * 注入「会话末尾轮」真源（写入闸 / 删除闸的唯一判据来源）
+   *
+   * @param provider - 返回所有会话 `roundIds` 末位元素的 Round ID 集合
+   */
+  setTailRoundIdsProvider(provider: () => ReadonlySet<string>): void {
+    this.tailRoundIdsProvider = provider;
   }
 
   /**
@@ -184,6 +216,13 @@ export class WorkspaceRoundStore implements IRoundStore {
         logger.warn({ roundId }, '轮文件无法解析，跳过索引补缺');
         continue;
       }
+      // 索引条目是四字段结构（id / status / createdAt / file）：status 与 createdAt
+      // 是下游 `listByStatus` / `listInterruptedRecent` / `listOrphaned` 的判据来源，
+      // 缺失即写入 `undefined` ⇒ 这些查询会静默漏轮。缺字段的轮文件视为脏档，不补条目。
+      if (typeof round.status !== 'string' || typeof round.createdAt !== 'string') {
+        logger.warn({ roundId }, '轮文件缺 status/createdAt，跳过索引补缺（防下游读到 undefined）');
+        continue;
+      }
       this.index.set(roundId, {
         id: roundId,
         status: round.status,
@@ -267,9 +306,32 @@ export class WorkspaceRoundStore implements IRoundStore {
   }
 
   /**
-   * 存储问答闭环
+   * 存储问答闭环（**唯一物理写通道**，历史只读闸也在这里）
+   *
+   * 🔴 历史只读判据（只此一道，不许各 append 各写一份）：
+   *   已收场（complete / interrupted）的轮，**只有会话末尾轮**允许再次写入——
+   *   末尾轮是唯一可续跑目标（暂停 / 中断后用户继续答，仍是同一个 roundId）；
+   *   非末尾轮的已收场内容一律拒绝落盘（任何 append / checkpoint 的整轮回写都到不了盘）。
+   *
+   * 判据真源 = 会话文件 `roundIds` 的**末位元素**（由 sessionStore 现场扫盘注入），
+   * 不用 `updatedAt` 比大小、不另存「当前轮」字段。
+   * 未注入 provider = 单进程 / 测试模式，闸关闭（生产装配点唯一：sessionStore 构造函数）。
    */
   save(round: Round): void {
+    // 读盘上现值判「是否已收场」：不能读内存缓存（缓存可能是旧快照）
+    const stored = this.loadRoundFromFile(round.id);
+    if (stored && isRoundSettled(stored.status)) {
+      const tailRoundIds = this.tailRoundIdsProvider?.();
+      // provider 已注入（生产模式）但不含该轮 ⇒ 拒绝；未注入（测试模式）⇒ 放行
+      if (tailRoundIds && !tailRoundIds.has(round.id)) {
+        logger.warn(
+          { roundId: round.id, storedStatus: stored.status },
+          '拒绝写入：该轮已收场且不是会话末尾轮（历史只读）',
+        );
+        return;
+      }
+    }
+
     // 更新缓存
     this.cache.set(round.id, round);
 
@@ -288,6 +350,19 @@ export class WorkspaceRoundStore implements IRoundStore {
 
     // 保存索引
     this.saveIndex();
+  }
+
+  /**
+   * 按 ID 从**盘上**读取新鲜内容（绕过内存缓存，读后以盘上值覆盖缓存）
+   *
+   * 用途：已收场轮的事件增量落盘（checkpoint）必须基于盘上现值，不能把调用方
+   * 可能持有的旧快照正文写回去。返回浅拷贝，调用方改字段不会污染缓存。
+   */
+  getByIdFresh(roundId: string): Round | null {
+    const round = this.loadRoundFromFile(roundId);
+    if (!round) return null;
+    this.cache.set(roundId, round);
+    return { ...round };
   }
 
   /**
@@ -393,8 +468,12 @@ export class WorkspaceRoundStore implements IRoundStore {
   /**
    * 删除问答闭环（物理层：移入 `.trash`，保留 7 天）
    *
-   * 🔴 **无 `refCount` 护栏**（该字段非引用真源）。调用方须先确认该轮已不在任何
-   * 会话 roundIds 中；本方法负责「从活轮集合摘除 + 文件移入回收站」。
+   * 🔴 **引用即禁删**（机器判据，不靠调用方声明 origin）：仍被任意会话 `roundIds` 引用时
+   * 直接返回 false。GC / 同步 / 分叉等后台动作因此删不掉历史轮。
+   *
+   * 用户显式删除的唯一链路 = `sessionStore.truncateFrom` / `deleteSession`：两者都**先收缩
+   * 会话 roundIds 并落盘**，再当场重算引用集合，此处判据自然放行——没有「传 user 标记」的旁路。
+   * 未注入 provider（单进程 / 测试模式）时闸关闭。
    *
    * 顺序：先 rename 到 `.trash`，再从 index/cache 摘除并保存索引。崩溃造成索引残留时，
    * 后续读取因文件不存在自然跳过；`.trash` 文件不属活轮集合。
@@ -402,6 +481,13 @@ export class WorkspaceRoundStore implements IRoundStore {
   delete(roundId: string): boolean {
     const entry = this.index.get(roundId);
     if (!entry) return false;
+
+    // 引用真源现场派生（与 listOrphaned 同一 provider，不另读 refCount）
+    const referenced = this.referencedIdsProvider?.();
+    if (referenced?.has(roundId)) {
+      logger.warn({ roundId }, '拒绝删除：该轮仍被会话引用（后台动作不得删历史）');
+      return false;
+    }
 
     const filePath = this.getRoundFilePath(roundId);
     if (existsSync(filePath)) {

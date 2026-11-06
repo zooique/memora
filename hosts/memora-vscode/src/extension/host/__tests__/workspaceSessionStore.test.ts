@@ -1182,6 +1182,18 @@ describe('WorkspaceRoundStore.load 索引校正（轮文件在、索引缺）', 
     expect(reopened.getById('round-crash')?.assistantMessage?.content).toBe('回答');
     expect(reopened.getByIds(['round-crash']).map((r) => r.id)).toEqual(['round-crash']);
     expect(reopened.listAll().map((r) => r.id)).toEqual(['round-crash']);
+
+    // 判据三（字段完整性）：补出的条目与真实 `RoundIndexEntry` 四字段对齐。
+    // 触发一次 saveIndex 落盘后核对 index.json —— status/createdAt 缺失会让下游
+    // `listByStatus` / `listInterruptedRecent` / `listOrphaned` 静默漏轮（读到 undefined）。
+    reopened.save(makeRound('round-after'));
+    const entries = JSON.parse(readFileSync(indexPath, 'utf8')) as Array<Record<string, unknown>>;
+    expect(entries.find((e) => e.id === 'round-crash')).toMatchObject({
+      id: 'round-crash',
+      status: 'complete',
+      createdAt: '2026-11-06T00:00:00.000Z',
+      file: 'round-crash.json',
+    });
   });
 
   it('② index 有条目、轮文件不存在 → 不凭空造轮（只摘幽灵条目、不创建文件）', () => {
@@ -1221,5 +1233,121 @@ describe('WorkspaceRoundStore.load 索引校正（轮文件在、索引缺）', 
     // `.trash` 是目录、不是直系轮文件 ⇒ 不会被补进索引
     expect(reopened.getById('round-deleted')).toBeNull();
     expect(reopened.size()).toBe(0);
+  });
+});
+
+describe('历史只读闸（save 唯一写通道 / delete 引用即禁删）', () => {
+  /** 临时工作区路径（每用例独立） */
+  let dir: string;
+  /** 轮存储（与 sessionStore 共用同一实例，产线装配形态） */
+  let roundStore: WorkspaceRoundStore;
+  /** 会话存储（构造时注入引用真源 + 末尾轮真源） */
+  let store: WorkspaceSessionStore;
+
+  beforeEach(() => {
+    dir = makeTempDir('memora-history-guard-');
+    roundStore = new WorkspaceRoundStore(dir);
+    roundStore.load();
+    store = new WorkspaceSessionStore(dir, roundStore);
+    store.load();
+  });
+
+  it('① 已收场轮：非末位拒绝改写、末位放行续跑（B 的正面判据）', () => {
+    const r1 = seedRound(
+      store,
+      roundStore,
+      '2026-11-06',
+      'write',
+      { content: '一', ts: '2026-11-06T00:00:00.000Z' },
+      { content: '答一', ts: '2026-11-06T00:00:01.000Z' },
+    );
+    const r2 = seedRound(
+      store,
+      roundStore,
+      '2026-11-06',
+      'write',
+      { content: '二', ts: '2026-11-06T00:01:00.000Z' },
+      { content: '答二', ts: '2026-11-06T00:01:01.000Z' },
+    );
+
+    // 非末位：整轮改写被拒（判据 = 会话 roundIds 末位，不看 updatedAt）
+    const stale = roundStore.getByIdFresh(r1)!;
+    roundStore.save({
+      ...stale,
+      assistantMessage: { ...stale.assistantMessage!, content: '被篡改' },
+    });
+    expect(roundStore.getByIdFresh(r1)?.assistantMessage?.content).toBe('答一');
+
+    // 末位：续跑放行（正面判据，防止闸把正常续跑挡死）
+    const tail = roundStore.getByIdFresh(r2)!;
+    roundStore.save({
+      ...tail,
+      assistantMessage: { ...tail.assistantMessage!, content: '续跑答二' },
+    });
+    expect(roundStore.getByIdFresh(r2)?.assistantMessage?.content).toBe('续跑答二');
+  });
+
+  it('② 引用即禁删：后台通道删不掉；用户截断先收缩 roundIds 后放行', () => {
+    const r1 = seedRound(
+      store,
+      roundStore,
+      '2026-11-06',
+      'del',
+      { content: '一', ts: '2026-11-06T00:00:00.000Z' },
+      { content: '答一', ts: '2026-11-06T00:00:01.000Z' },
+    );
+    const r2 = seedRound(
+      store,
+      roundStore,
+      '2026-11-06',
+      'del',
+      { content: '二', ts: '2026-11-06T00:01:00.000Z' },
+      { content: '答二', ts: '2026-11-06T00:01:01.000Z' },
+    );
+
+    // GC / 同步 / 分叉共用 delete：只要仍被引用就拒绝（不靠调用方声明 origin）
+    expect(roundStore.delete(r1)).toBe(false);
+    expect(roundStore.delete(r2)).toBe(false);
+    expect(existsSync(join(dir, '.memora', 'rounds', `${r1}.json`))).toBe(true);
+    // GC 的候选面同源：全被引用 ⇒ 无可回收
+    expect(roundStore.listOrphaned(0)).toEqual([]);
+
+    // 用户显式截断 = 唯一放行链路：先收缩会话 roundIds 并落盘，引用归零后自然可删
+    const result = store.truncateFrom('2026-11-06', 'del', r1);
+    expect(result.ok).toBe(true);
+    expect(result.removedIds).toEqual([r1, r2]);
+    expect(existsSync(join(dir, '.memora', 'rounds', `${r1}.json`))).toBe(false);
+  });
+
+  it('③ 已收场轮事件落盘取盘上正文（不回写本进程旧快照）', () => {
+    const r1 = seedRound(
+      store,
+      roundStore,
+      '2026-11-06',
+      'fresh',
+      { content: '问', ts: '2026-11-06T00:00:00.000Z' },
+      { content: '旧正文', ts: '2026-11-06T00:00:01.000Z' },
+    );
+    // 进缓存：本进程此后 getById 会拿到旧正文
+    expect(roundStore.getById(r1)?.assistantMessage?.content).toBe('旧正文');
+
+    // 另一窗口直接改盘上正文（等价于 appendAssistant 在别进程先落盘）
+    const filePath = join(dir, '.memora', 'rounds', `${r1}.json`);
+    const onDisk = roundStore.getById(r1)!;
+    writeFileSync(
+      filePath,
+      JSON.stringify(
+        { ...onDisk, assistantMessage: { ...onDisk.assistantMessage!, content: '别窗口正文' } },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    // checkpointRound 走的就是这条路：盘上新鲜读 ⇒ 正文不回退
+    expect(roundStore.getByIdFresh(r1)?.assistantMessage?.content).toBe('别窗口正文');
+    // 末位 ⇒ 放行写；正文仍取盘上现值
+    roundStore.save(roundStore.getByIdFresh(r1)!);
+    expect(roundStore.getByIdFresh(r1)?.assistantMessage?.content).toBe('别窗口正文');
   });
 });

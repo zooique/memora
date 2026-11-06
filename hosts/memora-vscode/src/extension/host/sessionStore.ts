@@ -43,6 +43,8 @@ import {
   migrateLegacyGlobalState,
   migrateLegacySessionFile,
   readSessionFiles,
+  collectTailRoundIds,
+  collectReferencedIds,
   type SessionFileShape,
   type SessionMigrationPaths,
 } from './sessionFileMigration.js';
@@ -166,21 +168,19 @@ export class WorkspaceSessionStore implements ISessionStore {
     // 由此内核定时 GC 与宿主启动清扫都读同一套引用集合（不再读 Round.refCount）。
     if (this.roundStore instanceof WorkspaceRoundStore) {
       this.roundStore.setReferencedIdsProvider(() => new Set(this.referencedIds()));
+      // 历史只读写入闸的「末尾轮」真源：同一批扫盘结果，不引入第二份「当前轮」字段
+      this.roundStore.setTailRoundIdsProvider(() => new Set(this.tailRoundIds()));
     }
   }
 
-  /**
-   * 当前被任意会话引用的 Round ID 全集（**引用真源**）
-   *
-   * 每次调用都扫 `sessions/` 全部会话文件求并集（口径同 `load()`：排除 `.migrated` / `.tmp` /
-   * 全局态文件）——进程内 `roundIdsStore` 只是本进程快照，看不见别窗口新建 / 分叉的会话。
-   */
+  /** 所有会话末尾轮的 Round ID 集合（历史只读写入闸真源；扫描逻辑见 collectTailRoundIds） */
+  tailRoundIds(): string[] {
+    return collectTailRoundIds(this.sessionsDir);
+  }
+
+  /** 当前被任意会话引用的 Round ID 全集（引用真源；扫描逻辑见 collectReferencedIds） */
   referencedIds(): string[] {
-    const ids = new Set<string>();
-    for (const file of readSessionFiles(this.sessionsDir)) {
-      for (const id of file.roundIds) ids.add(id);
-    }
-    return Array.from(ids);
+    return collectReferencedIds(this.sessionsDir);
   }
 
   /**

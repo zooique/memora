@@ -237,3 +237,32 @@ export function readSessionFiles(sessionsDir: string): LoadedSessionFile[] {
   }
   return loaded;
 }
+
+/**
+ * 所有会话末尾轮的 Round ID 集合（**历史只读写入闸真源**）
+ *
+ * 判据 = 每个会话文件 `roundIds` 的**最后一个元素**（唯一可续跑目标）；
+ * 不用 `updatedAt` 比大小、不另存「当前轮」字段。
+ */
+export function collectTailRoundIds(sessionsDir: string): string[] {
+  const ids: string[] = [];
+  for (const file of readSessionFiles(sessionsDir)) {
+    const tail = file.roundIds[file.roundIds.length - 1];
+    if (tail) ids.push(tail);
+  }
+  return ids;
+}
+
+/**
+ * 所有会话引用到的 Round ID 全集（**删除闸真源**）
+ *
+ * 每次调用都扫全部会话文件求并集——进程内 `roundIdsStore` 只是本进程快照，
+ * 看不见别窗口新建 / 分叉的会话。
+ */
+export function collectReferencedIds(sessionsDir: string): string[] {
+  const ids = new Set<string>();
+  for (const file of readSessionFiles(sessionsDir)) {
+    for (const id of file.roundIds) ids.add(id);
+  }
+  return Array.from(ids);
+}

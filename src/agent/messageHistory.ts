@@ -385,8 +385,14 @@ export class MessageHistory {
           // 轮不存在（异常兜底）：降级为普通 pending Round（内容不丢失，GC 兜底）
           logger.warn({ roundId }, 'appendUser: 交互输入对应轮缺失，降级为新建 pending Round');
         }
-        // 重复 appendUser 到同一 roundId（异常路径）不重复登记，防 roundIds 堆叠
+        // 重复 appendUser 到同一 roundId（异常路径）：**拒绝整体替换**。
+        // 旧写法会用一个全新 pending 轮覆盖已存在的轮，正文 / 过程事件被静默抹掉
+        // （已收场轮就是历史内容）。历史只读：同 ID 已存在即停手，只记日志不落盘。
         const preexisting = this.roundStore.getById(roundId) ?? this.pendingRounds.get(roundId);
+        if (preexisting) {
+          logger.warn({ roundId }, 'appendUser: 同 ID 轮已存在，拒绝整体替换（历史只读）');
+          return;
+        }
         const pendingRound: Round = {
           id: roundId,
           userMessage: {
@@ -406,7 +412,7 @@ export class MessageHistory {
         };
         this.roundStore.save(pendingRound);
         this.pendingRounds.set(roundId, pendingRound);
-        if (!preexisting) this.registerRoundInSession(roundId);
+        this.registerRoundInSession(roundId);
         logger.debug({ roundId }, 'appendUser: pending Round created（已归属当前会话）');
       } catch (err) {
         logger.warn({ err, roundId }, 'appendUser: Round-based 写入失败');
@@ -513,8 +519,8 @@ export class MessageHistory {
    *
    * Round-based 路径：完成 pending Round 时**只改状态**——归属已在建轮时登记（ADR-044），
    * 此处不再 incrementRef / appendRoundId。旧档 `refCount` **不判、不改、不回写**。
-   * pending 缓存丢失（跨重启）时从 RoundStore 取回补全；Round 不存在（异常兜底）时创建独立
-   * complete Round 并登记，保证用户消息不丢失。
+   * pending 缓存丢失（跨重启）时从 RoundStore 取回补全；Round **不存在时 fail-closed**：
+   * 不造轮、不登记——没有真实 user 原文，凭空造轮等于编造用户从未发过的历史。
    *
    * 闭环节点续写：同一 roundId 已存在 assistantMessage（跨暂停-续跑：
    * 暂停轮已把 ask_user 提问/中断半截落为 assistantMessage）时，旧段入 assistantLog，
@@ -574,29 +580,13 @@ export class MessageHistory {
         this.roundStore.save(completed);
         logger.debug({ roundId }, 'appendAssistant: Round-based Round completed');
       } else {
-        // Round 不存在（异常兜底）：独立 complete Round，不让用户消息丢失
-        const fallback: Round = {
-          id: roundId,
-          userMessage: {
-            id: `msg-${roundId}-user`,
-            role: 'user',
-            content: '<历史消息>',
-            timestamp: message.timestamp,
-          } as RoundMessage,
-          assistantMessage: {
-            id: `msg-${roundId}-assistant`,
-            role: 'assistant',
-            content,
-            timestamp: message.timestamp,
-          } as RoundMessage,
-          status: 'complete',
-          createdAt: message.timestamp,
-          completedAt: message.timestamp,
-          refCount: 1,
-        };
-        this.roundStore.save(fallback);
-        // 兜底轮是「新建即归属」：走 ADR-044 单点（不再手写 try/catch 与 sessionStore 断言）。
-        this.registerRoundInSession(roundId);
+        // 🔴 禁止凭空造轮（fail-closed）：轮不存在时**没有真实 user 原文**，
+        // 旧写法写死 `<历史消息>` 是造假原文——历史里会多出一条用户从未发过的消息，
+        // 且无任何测试会红。丢一条可重试的助手消息，优于永久污染历史。
+        logger.error(
+          { roundId },
+          'appendAssistant: Round 不存在，拒绝凭空造轮（无真实 user 原文）',
+        );
       }
     }
 

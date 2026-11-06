@@ -157,6 +157,48 @@ describe('MessageHistory · appendEvidence（裁决证据挂载）', () => {
   });
 });
 
+describe('MessageHistory · 历史只读（重复建轮拒绝 / 缺失轮不造轮）', () => {
+  /** 构造带 InMemory 双存储的 history（同 appendEvidence 先例） */
+  function createRoundBackedHistory(): {
+    history: MessageHistory;
+    roundStore: InMemoryRoundStore;
+  } {
+    const roundStore = new InMemoryRoundStore();
+    const sessionStore = new InMemorySessionStore();
+    const history = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
+    sessionStore.createSession({
+      sessionId: history.currentSessionName,
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    return { history, roundStore };
+  }
+
+  it('appendUser 同一 roundId 二次调用 → 拒绝整体替换，user 原文保持首次内容', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+    const roundId = generateRoundId();
+    await history.appendUser('第一次原文', roundId);
+    // 异常路径（旧写法会用全新 pending 轮覆盖，历史正文被静默抹掉）
+    await history.appendUser('第二次覆盖', roundId);
+
+    expect(roundStore.size()).toBe(1);
+    expect(roundStore.getById(roundId)?.userMessage.content).toBe('第一次原文');
+  });
+
+  it('appendAssistant 轮不存在 → fail-closed 不造轮，盘面无 <历史消息> 假原文', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+    const roundId = generateRoundId();
+    await history.appendAssistant('助手回复', roundId);
+
+    // 判据一：不凭空造轮
+    expect(roundStore.size()).toBe(0);
+    expect(roundStore.getById(roundId)).toBeNull();
+    // 判据二：不出现假造的 user 原文（旧写法写死 `<历史消息>`）
+    expect(roundStore.listAll().some((r) => r.userMessage.content === '<历史消息>')).toBe(false);
+  });
+});
+
 describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1）', () => {
   /** 构造带 InMemory 双存储的 history（同 appendEvidence 先例） */
   function createRoundBackedHistory(): {

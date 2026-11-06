@@ -1684,10 +1684,10 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     expect(saves[0]).toContain('metrics');
   });
 
-  it('一次 chat() 多turn（多 turn 任务编排）：各turn processEvents 独立落盘，不堆叠不覆盖', async () => {
+  it('历史只读：非末尾已收场轮的事件被拒写，末尾轮事件正常落盘且不串位', async () => {
     const { store, roundStore, provider } = setup();
     provider.setRoundStore(roundStore); // 落盘依赖 _eventLogRoundStore 注入
-    // 预造两个turn的 Round（round-1 / round-2）
+    // 预造两个turn的 Round（round-1 / round-2），会话 roundIds 末尾 = round-2
     seedSession(store, roundStore, '2026-08-15-s1', [
       { role: 'user', content: '任务', ts: 't0' },
       { role: 'assistant', content: 'turn1回答', ts: 't1' },
@@ -1696,7 +1696,7 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
       { role: 'user', content: '继续', ts: 't2' },
       { role: 'assistant', content: 'turn2回答', ts: 't3' },
     ]);
-    // mock chat：一次流内两个turn（round-1 工具 / round-2 思考+工具），各自独立 roundId
+    // mock chat：一次流内为两个已收场轮各发事件（round-1 非末尾 / round-2 末尾）
     provider.setAgent(
       chatAgentStub(() =>
         (async function* () {
@@ -1740,10 +1740,12 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
     await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('任务');
 
-    // 每个 turn 的 processEvents 独立归属到自己的 Round（meta 段首 + 各自工具；metrics 归入收尾 turn）
+    // 判据一（历史只读）：round-1 已收场且非末尾 ⇒ save 闸拒写，正文与事件均保持播种态
     const r1 = roundStore.getById('round-1')!;
+    expect(r1.processEvents).toBeUndefined();
+    expect(r1.assistantMessage?.content).toBe('turn1回答');
+    // 判据二（末尾续跑放行）：round-2 是会话末尾 ⇒ 事件正常落盘（meta 段首 + 工具 + 流尾 metrics）
     const r2 = roundStore.getById('round-2')!;
-    expect(r1.processEvents?.map((e) => e.type)).toEqual(['meta', 'tool_start', 'tool_result']);
     expect(r2.processEvents?.map((e) => e.type)).toEqual([
       'meta',
       'thinking',
@@ -1751,16 +1753,13 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
       'tool_result',
       'metrics',
     ]);
-    // 工具归属精确：t1 只在 round-1，t2 只在 round-2（不堆叠、不串位）
-    expect(
-      r1.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't1'),
-    ).toBe(true);
-    expect(
-      r1.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2'),
-    ).toBe(false);
+    // 判据三（不串位）：t2 只在末尾轮，非末尾轮的 t1 不得被挪到末尾轮
     expect(
       r2.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2'),
     ).toBe(true);
+    expect(
+      r2.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't1'),
+    ).toBe(false);
   });
 
   it('流首 chunk 补推 plan_update：prepare 预置骨架（不经 task_table 工具事件）顶部条开局即可见', async () => {
