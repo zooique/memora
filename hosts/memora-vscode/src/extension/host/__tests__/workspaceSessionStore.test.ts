@@ -1131,3 +1131,95 @@ describe('WorkspaceSessionStore · 导航指针（SESSION-RESUME-1）', () => {
     ]);
   });
 });
+
+describe('WorkspaceRoundStore.load 索引校正（轮文件在、索引缺）', () => {
+  /** 临时工作区路径（每用例独立） */
+  let dir: string;
+  /** rounds 目录（索引文件所在目录） */
+  let roundsDir: string;
+  /** 派生索引文件路径 */
+  let indexPath: string;
+
+  beforeEach(() => {
+    dir = makeTempDir('memora-round-index-');
+    roundsDir = join(dir, '.memora', 'rounds');
+    indexPath = join(roundsDir, 'index.json');
+  });
+
+  /** 造一份已收场轮（不登记会话：本组只验轮存储自身的索引校正） */
+  function makeRound(roundId: string): Round {
+    return {
+      id: roundId,
+      userMessage: {
+        id: `${roundId}-u`,
+        role: 'user',
+        content: '问题',
+        timestamp: '2026-11-06T00:00:00.000Z',
+      },
+      assistantMessage: {
+        id: `${roundId}-a`,
+        role: 'assistant',
+        content: '回答',
+        timestamp: '2026-11-06T00:00:01.000Z',
+      },
+      status: 'complete',
+      createdAt: '2026-11-06T00:00:00.000Z',
+      completedAt: '2026-11-06T00:00:01.000Z',
+      refCount: 1,
+    };
+  }
+
+  it('① 轮文件在盘、index 缺条目 → 启动后能读到该轮（写完文件、未写索引的崩溃窗口）', () => {
+    const writer = new WorkspaceRoundStore(dir);
+    writer.load();
+    writer.save(makeRound('round-crash'));
+    // 复现「save() 写完轮文件、saveIndex 尚未落盘」：把索引恢复成空表
+    writeFileSync(indexPath, '[]', 'utf8');
+
+    const reopened = new WorkspaceRoundStore(dir);
+    reopened.load();
+    // 判据一：轮可见（原先 index.has 为假会永久返回 null）
+    expect(reopened.getById('round-crash')?.assistantMessage?.content).toBe('回答');
+    expect(reopened.getByIds(['round-crash']).map((r) => r.id)).toEqual(['round-crash']);
+    expect(reopened.listAll().map((r) => r.id)).toEqual(['round-crash']);
+  });
+
+  it('② index 有条目、轮文件不存在 → 不凭空造轮（只摘幽灵条目、不创建文件）', () => {
+    // 模拟「删轮中途崩溃」：文件已移走、索引残留
+    mkdirSync(roundsDir, { recursive: true });
+    writeFileSync(
+      indexPath,
+      JSON.stringify([
+        {
+          id: 'round-ghost',
+          status: 'complete',
+          createdAt: '2026-11-06T00:00:00.000Z',
+          file: 'round-ghost.json',
+        },
+      ]),
+      'utf8',
+    );
+
+    const reopened = new WorkspaceRoundStore(dir);
+    reopened.load();
+    // 判据二：不返回（不造成假数据）、不落盘、不计数
+    expect(reopened.getById('round-ghost')).toBeNull();
+    expect(existsSync(join(roundsDir, 'round-ghost.json'))).toBe(false);
+    expect(reopened.size()).toBe(0);
+  });
+
+  it('③ .trash 内的已删轮不因索引重建而复活', () => {
+    const writer = new WorkspaceRoundStore(dir);
+    writer.load();
+    writer.save(makeRound('round-deleted'));
+    expect(writer.delete('round-deleted')).toBe(true);
+    // 已删轮文件在 rounds/.trash/ 下；索引再丢失一次（等价于重建时的最坏盘面）
+    writeFileSync(indexPath, '[]', 'utf8');
+
+    const reopened = new WorkspaceRoundStore(dir);
+    reopened.load();
+    // `.trash` 是目录、不是直系轮文件 ⇒ 不会被补进索引
+    expect(reopened.getById('round-deleted')).toBeNull();
+    expect(reopened.size()).toBe(0);
+  });
+});

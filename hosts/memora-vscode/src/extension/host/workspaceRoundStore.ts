@@ -103,7 +103,13 @@ export class WorkspaceRoundStore implements IRoundStore {
   /**
    * 启动时从文件加载索引和数据
    *
-   * 只读 `index.json`，**不扫描 rounds 目录** ⇒ `.trash/` 天然不在活轮集合中。
+   * 先读 `index.json`（派生缓存），再用盘上真实轮文件**补缺 / 摘除幽灵条目**：
+   * 覆盖「`save()` 写完轮文件、还没写索引就崩溃」的窗口——轮文件在盘上而索引缺条目时，
+   * `getById` 会因 `index.has` 为假而永久看不见该轮。
+   *
+   * 只补缺、不造轮：反向「索引有条目、文件不存在」绝不创建轮文件，只把幽灵条目从内存摘除。
+   * 扫描只认 `rounds/*.json` 直系文件 ⇒ `.trash/`（目录）天然不在活轮集合中，已删轮不会复活。
+   *
    * 加载前先清理回收站中超过保留期的文件（保留期内可人工找回）。
    */
   load(): void {
@@ -128,8 +134,70 @@ export class WorkspaceRoundStore implements IRoundStore {
       }
     }
 
+    // 用盘上真实轮文件校正派生索引（补缺 + 摘除幽灵条目）
+    this.reconcileIndexWithRoundFiles();
+
     // 预热缓存：加载最近的 Round（可选，避免一次性加载全部）
     // 生产环境可以按需加载，这里保持简单
+  }
+
+  /**
+   * 用盘上真实轮文件校正内存索引（**只补缺、不造轮**）
+   *
+   * - 轮文件在、索引缺条目 ⇒ 从文件读 `status` / `createdAt` 补入内存索引（补出的事实
+   *   来自轮文件本身，不臆造）；
+   * - 索引有条目、轮文件不在 ⇒ 从内存索引摘除（该文件已被删除 / 移入 `.trash`），
+   *   **不创建任何轮文件**（这是防假数据，不是防漏）；
+   * - 只认 `rounds/*.json` **直系文件**：`.trash/` 是目录、`index.json` 是索引自身、
+   *   `*.tmp` 是原子写中间态，均不在活轮集合中 ⇒ 已删轮不会因重建而复活。
+   *
+   * 为什么补出的条目**不回写** `index.json`：索引是派生缓存，下一次 `save()` 的
+   * `saveIndex()` 会自然带上；启动期额外写盘会与另一进程的 `save()` 争整份覆盖
+   * （多实例下无数据目录级锁，见台账 `ROUNDSIDX-SHARED-1`），收益为零、风险为正。
+   */
+  private reconcileIndexWithRoundFiles(): void {
+    // 首次启动尚无 rounds 目录：无可补，静默返回（不是异常）
+    if (!existsSync(this.roundsDir)) return;
+    let names: string[];
+    try {
+      names = readdirSync(this.roundsDir);
+    } catch (err) {
+      // 目录存在但不可读：保持索引原样（不能因此清空已有条目）
+      logger.warn({ err }, 'rounds 目录扫描失败，跳过索引补缺');
+      return;
+    }
+    /** 盘上真实存在的轮 ID 集合（反向摘除幽灵条目的判据） */
+    const fileRoundIds = new Set<string>();
+    for (const name of names) {
+      // 只认 `{roundId}.json` 直系文件（目录名 / 中间态后缀在此自然被排除）
+      if (!name.endsWith('.json')) continue;
+      // 索引自身不是轮
+      if (name === 'index.json') continue;
+      const roundId = name.slice(0, -'.json'.length);
+      if (!roundId) continue;
+      fileRoundIds.add(roundId);
+      // 条目已存在：不重复解析（存在性由上面的目录列表已经证实）
+      if (this.index.has(roundId)) continue;
+      const round = this.loadRoundFromFile(roundId);
+      if (!round) {
+        // 坏档 / 半截文件：跳过，不从坏数据臆造索引条目
+        logger.warn({ roundId }, '轮文件无法解析，跳过索引补缺');
+        continue;
+      }
+      this.index.set(roundId, {
+        id: roundId,
+        status: round.status,
+        createdAt: round.createdAt,
+        file: `${roundId}.json`,
+      });
+      logger.warn({ roundId }, '轮文件在盘上但索引缺条目，已补入派生索引（仅内存）');
+    }
+    // 反向：索引有条目但轮文件已不在 ⇒ 摘除幽灵条目（不创建轮文件）
+    for (const roundId of Array.from(this.index.keys())) {
+      if (fileRoundIds.has(roundId)) continue;
+      this.index.delete(roundId);
+      logger.warn({ roundId }, '索引条目对应轮文件不存在，已从派生索引摘除');
+    }
   }
 
   /**
