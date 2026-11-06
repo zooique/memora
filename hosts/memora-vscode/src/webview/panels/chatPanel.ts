@@ -325,10 +325,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 会话锁收尾器：销毁 / 重开 / 流收场 / 握手销毁的唯一收口（B1） */
   private readonly _lockFinalizer: PanelSessionLockFinalizer;
   /**
-   * 当前会话 id 的读写面（收尾器与本类回滚共用同一份清空写点）
-   *
-   * 会话导航写点守卫（sessionWritePointGuard 测试）要求「清空」在源码中**恰好 1 处**——
-   * 回滚（新建/切换失败退回旧会话）也必须走这里，否则会多出第二处裸赋值。
+   * 当前会话 id 的读写面：收尾器与本类回滚共用同一份清空写点
+   * （sessionWritePointGuard 要求「清空」在源码中恰好 1 处；回滚也必须走这里）
    */
   private readonly _sessionIdAccess: PanelSessionIdAccess = {
     getSessionId: () => this._currentSessionId,
@@ -1246,7 +1244,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // bindSecurityAudit 幂等重绑。
       this._securityAuditUnsub?.();
       this._securityAuditUnsub = undefined;
-      this._lockFinalizer.onDispose(this.runtimeFor().streaming);
+      // 批 3：按持有集逐个放锁（流中会话挂起，收场后归还）；**不注销、不 close** 任何实例
+      // （实例归登记表所有，视图折叠/重开不得让旧会话的活实例变成 use-after-close）
+      this._lockFinalizer.onDispose((id) => this.runtimeFor(id).streaming);
     });
 
     // 消息分发入口（HOST-CTX-12）：整条 if-else 链已摘为 private handleWebviewMessage，此处只
@@ -1321,7 +1321,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       void vscode.window.showErrorMessage(`Memora 装配失败：${msg}`);
       // HOST-BUG-1：失败必须重置 Promise 缓存——否则 _agentReady 成「已 settle 但
       // _agent 仍 null」的僵尸，后续 ensureAgent 永远 await 它、永不重试。
-      // 对齐 extension.ts 的登记表回收 / settingsPanel 的 `_agentPromise` 两对照组的 catch 重置。
+      // 对齐 `AgentRegistry` 的「失败不入表、下次可重试」契约（宿主侧不再持有 Promise 缓存）。
       this._agentReady = null;
     } finally {
       this._agentResolving = false;
@@ -1332,7 +1332,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private async ensureSessionForAssembly(): Promise<string> {
     if (this._currentSessionId) return this._currentSessionId;
     const sessionId = `${formatDateKey(new Date())}-s${Date.now().toString(36)}`;
-    if (!(await this.sessionStore.acquireSessionLock(sessionId))) {
+    if (!(await this._lockFinalizer.acquire(sessionId))) {
       void vscode.window.showWarningMessage(`Memora：${SESSION_HELD_NOTICE}`);
       return '';
     }
@@ -1868,8 +1868,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private historyDeps(): SessionHistoryDeps {
     return {
       store: this.sessionStore,
-      // 按**目标会话**判（批 2 起后台会话可独立跑流：只判当前会话会放行对后台流会话的删除/归档）
+      // 按**目标会话**判（批 2：后台会话可独立跑流；只判当前会话会放行对后台流会话的删除/归档）
       isStreaming: (sessionId?: string) => this.runtimeFor(sessionId).streaming,
+      // 判「本面板是否已为该会话长持锁」而非「是否当前会话」：切走的旧会话仍有活实例写盘
+      isLockHeld: (sessionId) => this._lockFinalizer.holds(sessionId),
       currentSessionId: () => this._currentSessionId,
       notify: (level, message) => this.post({ type: 'notice', level, message }),
       pushList: () => this.pushSessionList(),
@@ -1897,6 +1899,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (this.sessionStore.getSessionMeta(sessionId)) return; // 用户取消 / 锁占用 / 失败：实例保留
     this._sessionAgents.delete(sessionId);
     await this._releaseAgent?.(sessionId);
+    this._lockFinalizer.releaseOne(sessionId); // 批 3：实例 close 之后才归还长锁（不放长锁见 oneShotLock）
   }
 
   /** 移入留存区（薄包装：实现在 `helpers/sessionHistoryActions`） */
@@ -1976,7 +1979,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private async createSession(sessionId: string): Promise<boolean> {
     // 新会话 id 由时间戳/随机后缀生成，跨进程不会撞；拿锁只为让后续写盘有归属
-    if (!(await this.sessionStore.acquireSessionLock(sessionId))) {
+    if (!(await this._lockFinalizer.acquire(sessionId))) {
       this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
       return false;
     }
@@ -1987,12 +1990,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const agent = await this.agentForSession(sessionId);
       this.bindAgent(agent);
       this.replayCurrentSession();
-      // 先拿新、再放旧：切换过程中内核仍可能写旧会话（归档/摘要），旧锁必须撑到切换完成
-      if (previous && previous !== sessionId) this.sessionStore.releaseSessionLock(previous);
       return true;
     } catch (err) {
       // 没切成就把新锁还回去，并把显示源退回旧会话（旧实例仍在本地投影表里，直接重绑）
-      this.sessionStore.releaseSessionLock(sessionId);
+      this._lockFinalizer.releaseOne(sessionId);
       this._sessionAgents.delete(sessionId);
       if (previous) {
         this.setCurrentSessionId(previous);
@@ -2066,7 +2067,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 内核分叉已在同步调用里写好了新会话文件（无锁创建豁免）；此处接管锁并重读，
       // 之后对它的写入必须有归属——拿不到说明有第三方在写这个 id（极罕见），拒绝并保持原会话
       const previous = this._currentSessionId;
-      if (!(await this.sessionStore.acquireSessionLock(forkedId))) {
+      if (!(await this._lockFinalizer.acquire(forkedId))) {
         // 拿不到锁就回滚内核当前会话：内核 forkSession 已同步切到新会话，
         // 不回滚会让「内核当前会话」与「宿主 _currentSessionId」分叉（后续写到无锁会话上）
         try {
@@ -2085,7 +2086,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._sessionAgents.set(forkedId, agent);
       this.bindAgent(agent);
       this.replayCurrentSession();
-      if (previous && previous !== forkedId) this.sessionStore.releaseSessionLock(previous);
       this.post({
         type: 'notice',
         level: 'info',
@@ -2125,8 +2125,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   public async switchToSession(sessionId: string): Promise<void> {
     if (sessionId === this._currentSessionId) return; // 已在目标会话
+    const wasHeld = this._lockFinalizer.holds(sessionId); // 切回旧会话 = 已是长锁（②A），失败不得误放
     // 先拿目标会话的锁：拿不到 = 另一窗口正在用，明确拒绝（不静默覆盖对方写入）
-    if (!(await this.sessionStore.acquireSessionLock(sessionId))) {
+    if (!(await this._lockFinalizer.acquire(sessionId))) {
       this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
       return;
     }
@@ -2137,10 +2138,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const agent = await this.agentForSession(sessionId);
       this.bindAgent(agent);
       this.replayCurrentSession();
-      if (previous && previous !== sessionId) this.sessionStore.releaseSessionLock(previous);
     } catch (err) {
-      // 切失败：还锁、退显示源（旧实例仍在本地投影表，直接重绑）
-      this.sessionStore.releaseSessionLock(sessionId);
+      // 切失败：只还**本次新拿**的锁（切回旧会话时本是长锁，误放会放掉仍在写盘的归属）
+      if (!wasHeld) this._lockFinalizer.releaseOne(sessionId);
       this._sessionAgents.delete(sessionId);
       if (previous) {
         this.setCurrentSessionId(previous);
@@ -2343,7 +2343,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 空态（从未有过会话）：交给 ensureInitialSession 新建，createSession 内含拿锁
     if (!preferred) return;
     const claim = await claimStartupSession(preferred, {
-      acquire: (id) => this.sessionStore.acquireSessionLock(id),
+      acquire: (id) => this._lockFinalizer.acquire(id),
       fallbackCandidates: () =>
         this.sessionStore
           .listSessionMetas()
@@ -2362,10 +2362,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         } catch (err) {
           // 让位切换失败：把刚落到的锁还回去，改建新会话（不留在「无锁的旧会话」上）
           console.warn('Memora 启动让位切换失败，改建新会话', err);
-          this.sessionStore.releaseSessionLock(claim.sessionId);
+          this._lockFinalizer.releaseOne(claim.sessionId);
         }
       } else {
-        this.sessionStore.releaseSessionLock(claim.sessionId);
+        this._lockFinalizer.releaseOne(claim.sessionId);
       }
     }
     if (this._currentSessionId === preferred) {
@@ -4072,7 +4072,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 预算可视化：推送上下文占用快照（输入区常驻指示器，脱离 showMetrics 独立常驻）
     this.postContextOccupancy();
     // 面板在流期间被销毁过：全部落盘写完才归还会话锁（本方法最末）
-    this._lockFinalizer.onStreamEnd();
+    this._lockFinalizer.onStreamEnd(sessionId);
   }
 
   /** 任务看板快照（实现见 `helpers/panelSnapshots.ts` 的 `postPlan`，本处只留调用点名称） */

@@ -2,8 +2,10 @@
  * 会话历史运维动作（删除 / 移入留存 / 移回 + manual 归档嫁接）——从 chatPanel 外置
  * （HOST-SPLIT-1 行数闸门；判据与文案随函数搬走，面板只做依赖注入，不新增第二份口径）
  *
- * 三个动作的共同点：都会改写**非当前会话**的会话文件 ⇒ 一次性短锁（拿 → 写 → 放）；
- * 当前会话由面板长持有锁，`oneShotLock` 判据保证不重复拿/放（重复放会误伤长锁）。
+ * 三个动作的共同点：都会改写会话文件 ⇒ 需要该会话的写归属。
+ * **本面板已持锁的会话**（面板为每个进入过的会话长持有，E4 批 3）不再重复拿/放
+ * （重复放会误伤长锁）；其余会话一次性短锁（拿 → 写 → 放）。判据真源 = 面板锁收尾器的
+ * 持有集（`isLockHeld`），**不是**「是否当前会话」——切走后旧会话仍由本面板持锁。
  * 面板侧只保留同名薄包装（既有测试与 webview 消息分派按方法名直达）。
  */
 import { getSessionDisplayName, splitSessionId } from '@zooique/memora';
@@ -26,7 +28,9 @@ export interface SessionHistoryDeps {
    * 流在写盘中途炸掉（且锁被提前还回去，另一窗口可接管后写冲突）。
    */
   isStreaming: (sessionId?: string) => boolean;
-  /** 当前打开的会话 id（判「是否需一次性短锁」与「拒删当前会话」） */
+  /** 本面板是否已为该会话长持锁（判「是否需一次性短锁」；真源 = 面板锁收尾器的持有集） */
+  isLockHeld: (sessionId: string) => boolean;
+  /** 当前打开的会话 id（仅用于「拒删当前会话」守卫） */
   currentSessionId: () => string;
   /** 面板通知通道 */
   notify: (level: 'info' | 'error', message: string) => void;
@@ -69,8 +73,10 @@ export async function deleteSessionAction(
     deps.notify('info', '当前会话不在历史记录，无法删除');
     return;
   }
-  // 一次性写（短持有）：删除会重写/移除会话文件，另一个窗口正在用时必须拒绝
-  if (!(await deps.store.acquireSessionLock(sessionId))) {
+  // 一次性写（短持有）：删除会重写/移除会话文件，另一个窗口正在用时必须拒绝；
+  // 已有长锁（本面板进入过该会话）则不重复拿——长锁由面板在实例 close 后归还
+  const oneShotLock = !deps.isLockHeld(sessionId);
+  if (oneShotLock && !(await deps.store.acquireSessionLock(sessionId))) {
     deps.notify('info', SESSION_HELD_NOTICE);
     return;
   }
@@ -87,8 +93,8 @@ export async function deleteSessionAction(
     console.warn('Memora 删除会话记录失败', err);
     deps.notify('error', '删除会话失败，请稍后重试');
   } finally {
-    // 目标必不是当前会话（上方已拦），短持有锁用完即还
-    deps.store.releaseSessionLock(sessionId);
+    // 短持有才还；长锁留在面板手里，随实例 close 一起归还（批 3 判据）
+    if (oneShotLock) deps.store.releaseSessionLock(sessionId);
   }
   deps.pushList();
 }
@@ -119,8 +125,8 @@ export async function archiveSessionAction(
     deps.notify('info', '生成中，请稍后再整理会话');
     return;
   }
-  // 一次性写（短持有）：归档会重写会话文件。当前会话已长持有锁，不再重复拿/放
-  const oneShotLock = sessionId !== deps.currentSessionId();
+  // 一次性写（短持有）：归档会重写会话文件。已持长锁的会话不再重复拿/放
+  const oneShotLock = !deps.isLockHeld(sessionId);
   if (oneShotLock && !(await deps.store.acquireSessionLock(sessionId))) {
     deps.notify('info', SESSION_HELD_NOTICE);
     return;
@@ -193,8 +199,8 @@ export async function restoreSessionAction(
     deps.notify('info', '生成中，请稍后再整理会话');
     return;
   }
-  // 一次性写（短持有）：与归档同判据（改会话文件即需归属）
-  const oneShotLock = sessionId !== deps.currentSessionId();
+  // 一次性写（短持有）：与归档同判据（判「是否已持锁」，不判「是否当前会话」）
+  const oneShotLock = !deps.isLockHeld(sessionId);
   if (oneShotLock && !(await deps.store.acquireSessionLock(sessionId))) {
     deps.notify('info', SESSION_HELD_NOTICE);
     return;

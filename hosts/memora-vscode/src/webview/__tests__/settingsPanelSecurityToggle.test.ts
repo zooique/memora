@@ -186,7 +186,7 @@ describe('settingsPanel mcp_write/connect → 运行态追平接线', () => {
     expect(posted.some((msg) => msg.type === 'mcp_status')).toBe(true);
   });
 
-  it('连点两次只装配一次（装配有记忆：重复点击不该起第二个运行时）', async () => {
+  it('连点两次 ⇒ 每次都经唯一真源取用（面板不缓存实例）', async () => {
     const { agent } = agentStub();
     const { provider, factory } = setup(agent);
     const send = () =>
@@ -199,16 +199,18 @@ describe('settingsPanel mcp_write/connect → 运行态追平接线', () => {
     await send();
     await send();
 
-    expect(factory).toHaveBeenCalledTimes(1);
+    // SETTINGS-AGENT-STALE-1 方案 B：面板级缓存已删，每次动作都向登记表取用。
+    // 「不来第二个运行时」由 `AgentRegistry` 的按会话复用保证（其单测覆盖）。
+    expect(factory).toHaveBeenCalledTimes(2);
   });
 
   /**
    * 判据同源：pending = 「该名没进 applied」，接入 = 「按当前配置让它进 applied」。
    * 旧实现拿「Agent 是否装配过」当完成条件 ⇒ 已装配 + 工具执行器不可用时，按钮返回
-   * 成功却什么都没做（面板纹丝不动）。⚠ 变异靶标：把 connect 的已装配分支改回
-   * `if (_agentPromise) return { ok: true }` ⇒ 本用例转红（收不到 error 回执）。
+   * 成功却什么都没做（面板纹丝不动）。⚠ 变异靶标：把 `connect` 的
+   * `return result` 改成无条件 `return { ok: true }` ⇒ 本用例转红（收不到 error 回执）。
    */
-  it('已装配但工具执行器不可用 ⇒ 接入必须报真实失败（不能假动作）', async () => {
+  it('同一实例但工具执行器不可用 ⇒ 接入必须报真实失败（不能假动作）', async () => {
     const { agent } = agentStub();
     const { provider, posted, factory } = setup(agent);
     const send = () =>
@@ -219,15 +221,15 @@ describe('settingsPanel mcp_write/connect → 运行态追平接线', () => {
       });
 
     await send();
-    // 只看**第二次**（已装配之后）的回执：第一次未装配时的失败回执不能当作证据
+    // 只看**第二次**（同一实例再次取用后）的回执：第一次未装配时的失败回执不能当作证据
     posted.length = 0;
     await send();
 
-    expect(factory).toHaveBeenCalledTimes(1);
+    expect(factory).toHaveBeenCalledTimes(2);
     expect(posted.some((msg) => msg.type === 'notice' && msg.level === 'error')).toBe(true);
   });
 
-  it('已装配且工具执行器可用 ⇒ 接入走一次热更追平（不重复装配、不报错）', async () => {
+  it('同一实例且工具执行器可用 ⇒ 接入走热更追平（不报错）', async () => {
     const { tools } = {
       tools: { registerTool: vi.fn(), removeTool: vi.fn(), listTools: () => [] },
     };
@@ -243,7 +245,7 @@ describe('settingsPanel mcp_write/connect → 运行态追平接线', () => {
     await send();
     await send();
 
-    expect(factory).toHaveBeenCalledTimes(1);
+    expect(factory).toHaveBeenCalledTimes(2);
     expect(posted.some((msg) => msg.type === 'notice' && msg.level === 'error')).toBe(false);
   });
 });

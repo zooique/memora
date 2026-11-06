@@ -119,12 +119,9 @@ export class MemoraSettingsPanel {
 
   /** 当前面板（关 tab 即 dispose → undefined；undefined = 未打开） */
   private _panel: vscode.WebviewPanel | undefined;
-  /** Agent 懒装配 promise（与 chat 面板共享同一单例，roles + memory 两个子视图共用一条装配路径）
-   *  undefined = 尚未尝试装配；装配中/成功 = 同一 Promise，并发调用共享一次装配；
-   *  失败时 catch 内清空为 undefined，允许下次重试（替代 boolean 标记的冗余空推+重复装配） */
-  private _agentPromise: Promise<Agent | undefined> | undefined;
-  /** 是否已绑定 rolePackSwitched 事件（角色切换可观测，只绑定一次避免重复监听） */
-  private _rolePackBound = false;
+  /** 同步探视「当前显示会话」的已登记 Agent（只查登记表、**不触发装配**；MCP restart 的
+   *  「已装配才重启」判据用。其余取用一律走 `_getAgent`——本面板不缓存任何实例） */
+  private _peekAgent: (() => Agent | undefined) | undefined;
   /** Agent 懒装配工厂（由 extension 注入，与 chat 面板同一 `AgentRegistry` 取用面） */
   private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
   /** 全局状态存储（持久化激活角色包，用户级） */
@@ -166,9 +163,14 @@ export class MemoraSettingsPanel {
     setMcpStatusListener(() => this.pushMcpStatus());
   }
 
-  /** 注入 Agent 懒装配工厂（与 chat 面板共享同一单例装配，SSOT） */
-  public setAgentFactory(getAgent: (projectPath: string) => Promise<Agent>): void {
+  /** 注入 Agent 取用面（真源 = extension 的 `AgentRegistry`；本面板**不缓存实例**）
+   *  `getAgent` 可能触发装配；`peekAgent` 同步探视已登记实例（不装配，MCP restart 用） */
+  public setAgentFactory(
+    getAgent: (projectPath: string) => Promise<Agent>,
+    peekAgent?: () => Agent | undefined,
+  ): void {
     this._getAgent = getAgent;
+    this._peekAgent = peekAgent;
   }
 
   /** 注入全局状态（持久化激活角色包，用户级，跨项目共享） */
@@ -616,32 +618,35 @@ export class MemoraSettingsPanel {
 
   // ─── 角色子视图数据加载 ───
 
+  /**
+   * 取「面板当前显示会话」的 Agent（**不缓存实例**：复用/在途/登记全在 extension 登记表）
+   *
+   * 会话归属由 extension 的取用面解析（chat 面板 `_currentSessionId` 只读）⇒ 设置页的
+   * 角色/记忆/MCP 动作恒作用于**当前显示**的会话，切会话后无需清任何缓存。
+   */
   private async ensureAgent(): Promise<Agent | undefined> {
     if (!this._getAgent) return undefined;
-    if (!this._agentPromise) {
-      const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      if (!ws) {
-        void vscode.window.showWarningMessage('Memora：请先打开一个工作区');
-        return undefined;
-      }
-      // 装配失败清空 promise（允许下次重试）；并发调用共享同一次装配
-      this._agentPromise = this._getAgent(ws).catch((err) => {
-        this._agentPromise = undefined;
-        const message = toNoticeText(err);
-        void vscode.window.showErrorMessage(`Memora 装配失败：${message}`);
-        return undefined;
-      });
+    const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!ws) {
+      void vscode.window.showWarningMessage('Memora：请先打开一个工作区');
+      return undefined;
     }
-    const agent = await this._agentPromise;
-    // 只绑定一次 rolePackSwitched + rolePackSwitchLocked（角色包切换可观测 —— 跨面板一致）
-    if (agent && !this._rolePackBound) {
-      this._rolePackBound = true;
-      agent.off('rolePackSwitched', this.onRolePackSwitched);
-      agent.on('rolePackSwitched', this.onRolePackSwitched);
-      // 切换被锁时提示宿主（同步 emit，activateRole 内可据此区分"被锁"vs"不存在"）
-      agent.off('rolePackSwitchLocked', this.onRolePackSwitchLocked);
-      agent.on('rolePackSwitchLocked', this.onRolePackSwitchLocked);
+    let agent: Agent | undefined;
+    try {
+      agent = await this._getAgent(ws);
+    } catch (err) {
+      const message = toNoticeText(err);
+      void vscode.window.showErrorMessage(`Memora 装配失败：${message}`);
+      return undefined;
     }
+    // 装配工厂可能以 undefined 收场（「Agent 未就绪」的一条出口）：此时不得去碰事件面
+    if (!agent) return undefined;
+    // 每次取用都按**当前实例**幂等重绑（同一实例先 off 再 on，不叠加监听）。不保留上一台
+    // 的引用 ⇒ 切到别的会话后不对旧实例做任何操作（旧实例状态零改动）。
+    agent.off('rolePackSwitched', this.onRolePackSwitched);
+    agent.on('rolePackSwitched', this.onRolePackSwitched);
+    agent.off('rolePackSwitchLocked', this.onRolePackSwitchLocked);
+    agent.on('rolePackSwitchLocked', this.onRolePackSwitchLocked);
     return agent;
   }
 
@@ -1851,8 +1856,8 @@ export class MemoraSettingsPanel {
    *
    * 三件事都是回调注入：回推 / 回执 / 重启/接入。`restart` 只走**已装配**的 agent
    * （不懒装配：重启是「恢复现有运行时」，不该顺手把 Agent 拉起来）；`connect` 正相反，
-   * 它就是「待接入」那张卡的唯一出路——走 `ensureAgent()`（与对话面板共享
-   * `getOrCreateAgent` 单例，不会出现第二个 MCP 运行时）。
+   * 它就是「待接入」那张卡的唯一出路——走 `ensureAgent()`（与对话面板共用同一
+   * `AgentRegistry` 按会话取用面，不会出现第二个 MCP 运行时）。
    */
   private mcpOpsDeps(): McpOpsDeps {
     return {
@@ -1864,7 +1869,7 @@ export class MemoraSettingsPanel {
         // 本动作就是让它进 applied）。**不能**拿「Agent 是否装配过」当完成条件：
         // 装配早于配置变更 / 热更被静默跳过时两者会同时成立，按钮就成了假动作。
         // 未装配才懒装配（与 restart「只走已装配」相对，语义见 mcpServerOps 的 deps 注释）。
-        // 装配判据的检查只在 ensureAgent 内部一处（这里不再复制一份「有没有 promise」）。
+        // 装配判据的检查只在 ensureAgent 内部一处（这里不复制一份「是否已登记」）。
         const agent = await this.ensureAgent();
         // ensureAgent 的失败已在窗口层提示过（无工作区 → warning / 装配异常 → error），
         // 这里只补一条指向它的回执：让用户知道「点了接入、没成功」而不是按钮失灵。
@@ -1877,11 +1882,11 @@ export class MemoraSettingsPanel {
         return result;
       },
       restart: async (name) => {
-        if (!this._agentPromise) {
+        // 只探视已登记实例：未装配时「按当前配置启动」是下次装配的天然行为，不为重启而装配
+        const agent = this._peekAgent?.();
+        if (!agent) {
           return { ok: false, error: 'Agent 未装配（下次装配会按当前配置启动，无需重启）' };
         }
-        const agent = await this._agentPromise;
-        if (!agent) return { ok: false, error: 'Agent 未就绪' };
         // 日志/版本不在此传：runtime 沿用最近一次应用配置时的注入值（单点，不为此加面板字段）
         return restartMcpServer(agent, name);
       },

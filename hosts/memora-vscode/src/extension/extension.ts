@@ -523,6 +523,12 @@ export function activate(context: vscode.ExtensionContext): void {
   // 模块级引用供 deactivate 关闭全部实例（停用路径拿不到 activate 局部变量）
   hostAgentRegistry = agentRegistry;
 
+  /** 同步探视「当前显示会话」的已登记实例（**不触发装配**；会话归属与 `getAgent` 同一解析） */
+  const peekAgent = (): Agent | undefined => {
+    const sessionId = resolveCommandSessionId(chatProvider, sessionStore);
+    return sessionId ? agentRegistry.get(sessionId) : undefined;
+  };
+
   // 孤儿清扫（无会话引用 Round 统一回收）：删除会话/截断后遗留的无引用轮
   // 在启动时清理，防磁盘膨胀与「无引用卡片滞留」（引用归 SessionStore、物理归 RoundStore）。
   // 🔴 必须在 sessionStore.load() **之后**执行：判据 = 「不在任何会话 roundIds 中」，
@@ -630,7 +636,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 装配复用与 chat 面板同一登记表（SSOT），角色切换持久化用户级激活态；
   // providerStore 注入供大模型子视图读写（与 chat 面板共用一个 store 单例）。
   const settingsProvider = new MemoraSettingsPanel(context.extensionUri, providerStore);
-  settingsProvider.setAgentFactory(getAgent);
+  settingsProvider.setAgentFactory(getAgent, peekAgent);
   settingsProvider.setGlobalState(context.globalState);
   // 注入技能目录：用户目录（打开目录按钮）+ 内置配置目录（三源技能来源判定，SSOT 收紧）
   settingsProvider.setUserSkillsDir(userSkillsDir);
@@ -941,11 +947,10 @@ export function activate(context: vscode.ExtensionContext): void {
  * `close()` 失败也要清：半关闭的实例比「表里没有」更危险（表里没有会触发重新装配）。
  */
 export async function deactivate(): Promise<void> {
-  // 跨进程会话锁必须**无条件**先释放：它挂在下方所有早退分支之前。
-  // 「本窗口没装配 Agent」时也会走到 `if (agents.length === 0) return`——若把释放放进 finally，
-  // 那条早退就会漏放锁，该会话对其他窗口永久不可用（本补丁修的头号伤）。
-  // 锁是进程级 OS 句柄，与 Agent 生命周期无关：Agent 没装配也可能已因面板打开而拿过锁。
-  hostSessionStore?.releaseAllSessionLocks();
+  // 会话存储先摘引用，锁在**末尾**统一归还（E4 批 3）：先 close 再放锁——放锁前本窗口仍是
+  // 该会话的写归属；而「锁全放」必须无条件执行（进程级 OS 句柄，漏放 = 该会话对其他窗口
+  // 永久不可用），故用 try/finally 兜住，早退分支也照放。
+  const store = hostSessionStore;
   hostSessionStore = null;
 
   /**
@@ -966,16 +971,15 @@ export async function deactivate(): Promise<void> {
   // 快照后立即清表：close 过程中若还有迟到的装配完成，也不会再被登记进「已停用」的表
   const agents = hostAgentRegistry?.list() ?? [];
   hostAgentRegistry?.clear();
-  if (agents.length === 0) {
-    closeHostMemoryStorage();
-    return;
-  }
   try {
-    // MCP 子进程先停：注销工具 + 关闭 stdio（子进程随 transport 关闭退出）。
-    // 放在 agent.close() 之前——工具注销走 agent.tools，需要执行器还活着。
-    await stopMcpServers();
-    for (const agent of agents) {
-      await agent.close();
+    // 没有实例也要走 finally（锁可能只因面板打开而持有，Agent 没装配照样要还）
+    if (agents.length > 0) {
+      // MCP 子进程先停：注销工具 + 关闭 stdio（子进程随 transport 关闭退出）。
+      // 放在 agent.close() 之前——工具注销走 agent.tools，需要执行器还活着。
+      await stopMcpServers();
+      for (const agent of agents) {
+        await agent.close();
+      }
     }
   } catch {
     // 关闭失败静默降级：不阻断插件退出（VS Code 不因 deactivate 异常而阻塞）
@@ -985,5 +989,7 @@ export async function deactivate(): Promise<void> {
     gcScheduler = null;
     // 共享记忆存储最后关（所有 Agent 已 close，再关库不会留下写半途）
     closeHostMemoryStorage();
+    // 锁最后全放（沿用 releaseAllSessionLocks：会话锁是进程级句柄，随本进程退出彻底归还）
+    store?.releaseAllSessionLocks();
   }
 }

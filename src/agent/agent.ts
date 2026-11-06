@@ -1534,7 +1534,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   setArchiveMode(mode: ArchiveMode): void {
     if (this.internals.chatLockManager?.isBusy) {
       // 先暂存后抛：任何一次拒切都排期到轮终，用户偏好既不会丢也不会被伪造为「已生效」
-      // （最坏情况还有「装配期读持久化配置注入」兜底，见 extension.ts getOrCreateAgent）。
+      // （最坏情况还有「装配期读持久化配置注入」兜底，见宿主 `buildAssembleOptions`）。
       this.pendingArchiveMode = mode;
       logger.info({ mode }, '对话进行中，归档模式切换已暂存，将在流退出时补执行');
       throw chatBusyError('切换归档模式');
