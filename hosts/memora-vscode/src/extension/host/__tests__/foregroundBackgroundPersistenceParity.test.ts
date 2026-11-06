@@ -12,8 +12,9 @@
  *  - 一次操作 = 一轮对话：stub provider 首轮吐 `write_file`（界内相对路径）+ 次轮吐最终文本
  *  - 比对面 = 「界内写出的文件字节」+「会话引用的轮内容（归一化后整对象）」
  *
- * ⚠️ 归一化只抹掉天然不同的标识：roundId、ISO 时间戳、两次临时工作区绝对路径。
- * 内容面（用户文本 / 助手文本 / 工具名与参数 / 过程事件类型 / 状态）一律不做替换。
+ * ⚠️ 归一化只抹掉天然不同的东西：roundId、ISO 时间戳、两次临时工作区绝对路径、真实墙钟耗时
+ * `durationMs`（两次运行不可能相等，不属「持久化内容」）。其余内容面（用户文本 / 助手文本 /
+ * 工具名与参数 / 工具结果摘要 / 过程事件类型与顺序 / seq / 状态 / refCount）一律不做替换。
  *
  * 附带判据：后台运行时 chatPanel **确实**走了后台分支（`runtime.liveBuffer` 仍建立，
  * 但投递被闸挡），否则两次运行可能都走前台，测试会假绿。
@@ -153,6 +154,8 @@ const VOLATILE_KEYS = new Set([
   'finishedAt',
   'startTime',
   'endTime',
+  // 真实墙钟耗时：两次运行必然不同，不属「持久化内容」；除它之外内容面一律照比
+  'durationMs',
 ]);
 
 /**
@@ -276,6 +279,9 @@ async function runOnce(mode: 'foreground' | 'background'): Promise<RunResult> {
     {} as vscode.WebviewViewResolveContext,
     {} as vscode.CancellationToken,
   );
+
+  // 生产注入：过程事件落盘目标（不注入则宿主侧 processEvents 落盘整条路径零覆盖，判据有洞）
+  panel.setRoundStore(roundStore);
 
   // 真实运行态：把目标会话实例挂进面板投影表，并决定「谁在显示」
   const cast = panel as unknown as {
