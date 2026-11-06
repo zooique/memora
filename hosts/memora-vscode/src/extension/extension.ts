@@ -55,7 +55,6 @@ import { stopMcpServers, applyMcpConfigChange } from './host/mcp/runtime.js';
 import { readMcpServers, readMcpToolAllowlist } from './mcpConfig.js';
 import {
   ACTIVE_ROLE_PACK_KEY,
-  CONFIRM_WRITES_KEY,
   CONFIRM_SCRIPTS_KEY,
   ROLE_PACK_TEAMS_KEY,
   USER_SKILLS_DIR_NAME,
@@ -220,8 +219,8 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
   // 读取角色包组（会议名单，用户级数据；无记录为空数组）
   const rolePackTeams =
     deps.globalState.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
-  // 读取写入二次确认开关（用户安全偏好；默认 false → owner 写文件自动批准）
-  const confirmWrites = deps.globalState.get<boolean>(CONFIRM_WRITES_KEY) ?? false;
+  // 写文件一律直接落盘（E4 批 4）：不再读写入确认开关 —— 界内写在前后台一致地直接执行；
+  // 界外仍是**硬拒**（`assertPathAllowed`），拆除确认不会放开越界写。guest 语义留在内核公开面。
   // 读取脚本/代码执行确认开关（用户安全偏好；默认 false → owner 脚本执行自动批准）
   const confirmScripts = deps.globalState.get<boolean>(CONFIRM_SCRIPTS_KEY) ?? false;
   // 读取白名单额外路径（用户级设置，机器级目录信任；项目目录基准根恒在，此处仅含额外路径）
@@ -270,7 +269,6 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
     // 项目级来源（仅信任时非空；顺序由 assemble 保证 user → project 后加载者胜）
     projectSkillsDir: projectDirs.skills,
     projectRolePacksDir: projectDirs.rolePacks,
-    confirmWrites,
     confirmScripts,
     allowedPaths,
     disabledSkills,
@@ -571,8 +569,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const fileChangeView = new FileChangeView(fileChangeTracker, {
     // 同步取「面板正在显示的会话」实例的守卫：回退动作作用于当前视图，不能取任意后台实例
     getSecurityGuard: () => chatProvider.getCurrentAgent()?.security ?? undefined,
-    // 判据同源：与内核装配读的是同一配置键（extension.ts 装配处同读 CONFIRM_WRITES_KEY）
-    isConfirmWrites: () => context.globalState.get<boolean>(CONFIRM_WRITES_KEY) ?? false,
+    // 写入确认已退役：不再注入 isConfirmWrites（改动自动打开即唯一呈现）
     // 诊断日志：装饰/打开/恢复的失败必须留痕（真机曾因静默吞异常导致「打开了但看不出改了哪里」无从定位）
     log: (message) => memoraOutput.appendLine(message),
   });

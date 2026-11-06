@@ -300,7 +300,6 @@ function makeView(opts: { getSecurityGuard?: () => FileChangeSecurityGuard | und
   const tracker = new FileChangeTracker(ROOT, { io, now: (): number => 1 });
   const deps: FileChangeViewDeps = {
     getSecurityGuard: opts.getSecurityGuard ?? ((): undefined => undefined),
-    isConfirmWrites: (): boolean => false,
     log: (message: string): void => void h.state.logs.push(message),
   };
   return {
@@ -1035,7 +1034,6 @@ describe('FileChangeView · 右栏指向真实文件（真实 FS）', () => {
       const tracker = new FileChangeTracker(root, { io, now: (): number => 1 });
       const view = new FileChangeView(tracker, {
         getSecurityGuard: (): undefined => undefined,
-        isConfirmWrites: (): boolean => false,
         log: (): void => undefined,
       });
       view.register(makeContext());

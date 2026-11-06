@@ -33,7 +33,7 @@ export interface UserDataResetResult {
  * 创建「恢复初始状态」处理器
  *
  * reload 是「回首装态」的组成部分而非可选项：activeRolePack / rolePackTeams /
- * confirmWrites / confirmScripts 都是装配期读一次进内存，globalState 清了内存
+ * confirmScripts 都是装配期读一次进内存，globalState 清了内存
  * 不跟着变 ⇒ 清理成功后必须重载窗口。
  *
  * @param scope 清理范围（globalState / secrets / 存储目录 / package.json）

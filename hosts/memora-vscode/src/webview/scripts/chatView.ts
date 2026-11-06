@@ -287,9 +287,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 属可接受残留（输入源本身已截，输出同量级）。
   input.maxLength = MAX_INPUT_CHARS;
   clarifyInput.maxLength = MAX_ASK_ANSWER_CHARS;
-  // 写入审批卡：confirmWrites=true 时写文件触发，渲染审批卡
-  // 供用户确认/拒绝；回传 write_confirm_answer（fail-closed：host CONFIRM_TIMEOUT_MS
-  // = 30 分钟超时即自动拒绝，末 60 秒面板显倒计时）
+  // 确认审批卡：命令/脚本执行确认（写文件已退役为直接落盘）→ 渲染卡并回传裁决；fail-closed（30 分钟超时自动拒绝）
   const writeConfirmCard = document.getElementById('writeConfirmCard') as HTMLElement | null;
   const writeConfirmTool = document.getElementById('writeConfirmTool') as HTMLElement | null;
   const writeConfirmPath = document.getElementById('writeConfirmPath') as HTMLElement | null;
@@ -3531,12 +3529,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 解决多条历史消息 rAF 节流导致滚动位置不正确的问题
       forceScrollToBottom(messages);
     } else if (msg.type === 'session_title') {
-      // 更新会话标题条（ADR-024 会话标题层）：textContent 防注入；
-      // 切换/改名/清空后由 chatPanel 推送最新标题，标题条始终指向当前会话。
+      // 更新会话标题条（ADR-024）：textContent 防注入；切换/改名/清空后由 chatPanel 推送最新标题
       sessionTitleText.textContent = msg.title;
     } else if (msg.type === 'session_list_data') {
-      // 历史会话列表：渲染到 treedd 历史下拉菜单（全量 + 留存区标记，前端过滤分两组）
+      // 历史会话列表：渲染到 treedd 历史下拉（全量 + 留存区标记，前端过滤分两组）
       historyMenuApi.renderMenu(msg.sessions, msg.archivedIds ?? []);
+    } else if (msg.type === 'session_activity') {
+      // 会话活跃度快照：列表条目 + 入口角标同一数据源，统一由历史菜单域投影
+      historyMenuApi.setActivity(msg.runningIds, msg.pendingIds, msg.badgeCount);
     } else if (msg.type === 'chat_archive_mode') {
       // 归档模式运行时真值：只驱动留存按钮文案（manual 模式按钮兼做归档触发）；
       // 「有数据才就地重渲染」的判断收在容器 setArchiveMode 内
@@ -3667,8 +3667,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'image_picked') {
       imageCapture.applyPicked(msg); // 文件选择框回执（Q3）：ref 即真相建卡 / 转可见拒收 chip，同归采集层单点
     } else if (msg.type === 'write_confirm_request') {
-      // H0 写入审批卡：confirmWrites 时写文件触发 → 渲染审批卡等用户裁决，回传 write_confirm_answer。
-      // 多请求**不再并存**（宿主侧 FIFO 串行送审）⇒ 旧请求不会「用户看不到就超时静默拒绝」（修 S2）。
+      // H0 确认审批卡：命令/脚本执行确认（或 guest 写入）→ 渲染卡并回传裁决；多请求已由宿主 FIFO 串行送审（修 S2）
       renderWriteConfirmCard(msg);
     } else if (msg.type === 'write_confirm_closed') {
       // 请求已终结（裁决 / 超时自动拒绝）→ 收卡；requestId 不匹配即丢弃（当前卡可能已切到更新的请求）
@@ -4116,6 +4115,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     tabArchived: historyTabArchived,
     archivedCountEl: historyArchivedCount,
     searchInput: historySearch,
+    entryBadge: document.getElementById('historyPendingBadge') as HTMLElement,
     postMessage: (msg) => vscode.postMessage(msg),
   });
 

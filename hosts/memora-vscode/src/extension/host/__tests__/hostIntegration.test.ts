@@ -344,11 +344,13 @@ describe('宿主集成端到端测试', () => {
       expect(noComments).toContain("type: 'security_status'");
     });
 
-    it('CONFIRM_WRITES_KEY 常量存在', async () => {
+    it('CONFIRM_SCRIPTS_KEY 常量存在（写入确认键已于 E4 批 4 退役，不再导出）', async () => {
       const constantsModule = await import('../../../shared/constants.js');
-      expect(constantsModule.CONFIRM_WRITES_KEY).toBeDefined();
-      expect(typeof constantsModule.CONFIRM_WRITES_KEY).toBe('string');
-      expect(constantsModule.CONFIRM_WRITES_KEY.length).toBeGreaterThan(0);
+      expect(constantsModule.CONFIRM_SCRIPTS_KEY).toBeDefined();
+      expect(typeof constantsModule.CONFIRM_SCRIPTS_KEY).toBe('string');
+      expect(constantsModule.CONFIRM_SCRIPTS_KEY.length).toBeGreaterThan(0);
+      // 写文件不再二次确认：该键不得回流（回流 = 宿主又有写入审批开关的存储面）
+      expect('CONFIRM_WRITES_KEY' in constantsModule).toBe(false);
     });
   });
 

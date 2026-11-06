@@ -17,17 +17,13 @@ export const ACTIVE_ROLE_PACK_KEY = 'memora.activeRolePack';
  *  运行时修改经 agent.rolePackManager.setRolePackTeams 热更新。 */
 export const ROLE_PACK_TEAMS_KEY = 'memora.rolePackTeams';
 
-/** 写入二次确认开关的持久化键（vscode globalState）：
- *  用户在设置面板开启/关闭时写入，Agent 装配时读取决定是否传 confirmWrites=true，
- *  运行时切换时直接调 agent.security.setConfirmWrites() 热更新。
- *  作用域为用户级（globalState）——安全偏好是用户级设置，跨项目共享。 */
-export const CONFIRM_WRITES_KEY = 'memora.confirmWrites';
-
 /** 脚本/代码执行确认开关的持久化键（vscode globalState）：
- *  与写入二次确认同模式：用户在设置面板开启/关闭时写入，Agent 装配时读取决定是否传
- *  confirmScripts=true，运行时切换时直接调 agent.security.setConfirmScripts() 热更新。
+ *  用户在设置面板开启/关闭时写入，Agent 装配时读取决定是否传 confirmScripts=true，
+ *  运行时切换时直接调 agent.security.setConfirmScripts() 热更新。
  *  作用域为用户级（globalState）——安全偏好是用户级设置，跨项目共享。
- *  注意：这是「执行前是否询问」开关，不是脚本能力总开关（run_project_script 始终默认开放）。 */
+ *  注意：这是「执行前是否询问」开关，不是脚本能力总开关（run_project_script 始终默认开放）。
+ *  ⚠️ 写入二次确认键（memora.confirmWrites）已于 2026-11-06（E4 批 4）退役：
+ *  写文件一律直接落盘（前后台一致），宿主不再读/写该键；旧用户 globalState 里的残留值无消费面。 */
 export const CONFIRM_SCRIPTS_KEY = 'memora.confirmScripts';
 
 /** 回收站保留期（天）：`memora.cleanupMemories` 命令与设置面板「清理过期」共用的单一真理源，
@@ -38,7 +34,7 @@ export const MEMORY_RECYCLE_RETENTION_DAYS = 30;
 /** 用户级 globalState 键前缀（「初始化」清空判据）：
  *  globalState 是 VS Code **跨扩展共享**存储库，无脑枚举全清会删其他扩展的键
  *  ⇒ 初始化只清本前缀的键。本插件全部 globalState 键（activeRolePack/rolePackTeams/
- *  confirmWrites/confirmScripts）均带此前缀；新增用户级 globalState 键时自动纳入清空范围，
+ *  confirmScripts）均带此前缀；新增用户级 globalState 键时自动纳入清空范围，
  *  无需维护第二份清单（SSOT：清空判据从存储真源派生，不手写枚举）。 */
 export const USER_STATE_KEY_PREFIX = 'memora.';
 

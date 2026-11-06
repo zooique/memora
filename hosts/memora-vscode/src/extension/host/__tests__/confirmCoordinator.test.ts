@@ -406,3 +406,112 @@ describe('ConfirmCoordinator · onConfirmShown 交互提醒钩子（HOST-ATTN-1�
     expect(posted.filter((m) => m.type === 'write_confirm_request')).toHaveLength(1);
   });
 });
+
+/**
+ * 按会话绑定（E4 批 4）：后台会话的确认同样入队、可裁决，只是**卡不跨会话串台上屏**
+ *
+ * 四条判据：
+ *   ① 后台会话触发确认 ⇒ 零上屏 + 待处理计数亮（onPendingChanged 收到 (会话, 1)）；
+ *   ② 切到该会话 ⇒ 卡出现，裁决生效（后台挂着不等于只能等超时）；
+ *   ③ 切走 ⇒ 只收卡（`write_confirm_closed`）**不终结请求**；切回 ⇒ 同一 requestId 重推；
+ *   ④ 后台会话的迟到回执被拒（不得从别的会话界面替它做决定）。
+ */
+describe('ConfirmCoordinator · 按会话绑定（E4 批 4）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 带待处理计数的协调器 */
+  function makeSessionCoordinator() {
+    const posted: Posted[] = [];
+    const pendingChanges: Array<{ sessionId: string; count: number }> = [];
+    const coordinator = new ConfirmCoordinator({
+      getAgent: () => undefined,
+      post: (msg) => {
+        posted.push(msg as unknown as Posted);
+      },
+      onPendingChanged: (sessionId, count) => pendingChanges.push({ sessionId, count }),
+    });
+    return {
+      coordinator,
+      pendingChanges,
+      requests: () =>
+        posted.filter((m) => m.type === 'write_confirm_request') as Array<{
+          requestId: string;
+        }>,
+      closed: () => posted.filter((m) => m.type === 'write_confirm_closed'),
+    };
+  }
+
+  it('后台会话入队 ⇒ 零上屏 + 待处理计数亮；切过去才推卡并可裁决', async () => {
+    const h = makeSessionCoordinator();
+    const stub = agentStub();
+    h.coordinator.bindSession('2026-11-06-a', stub.agent);
+
+    const settled = stub.trigger(confirmInfo());
+    // 后台（前台仍是默认 ''）：卡不上屏，但计数亮（否则用户永远不知道后台在等）
+    expect(h.requests()).toHaveLength(0);
+    expect(h.coordinator.pendingCount('2026-11-06-a')).toBe(1);
+    expect(h.pendingChanges.at(-1)).toEqual({ sessionId: '2026-11-06-a', count: 1 });
+
+    // 切到该会话 ⇒ 补推卡
+    h.coordinator.setForeground('2026-11-06-a');
+    expect(h.requests()).toHaveLength(1);
+    h.coordinator.answer(h.requests()[0].requestId, true);
+    await expect(settled).resolves.toBe(true);
+    // 裁决后计数归零（列表标识 / 角标随之熄灭）
+    expect(h.coordinator.pendingCount('2026-11-06-a')).toBe(0);
+  });
+
+  it('切走只收卡不终结；切回重推同一 requestId', async () => {
+    const h = makeSessionCoordinator();
+    const stub = agentStub();
+    h.coordinator.bindSession('2026-11-06-a', stub.agent);
+    h.coordinator.setForeground('2026-11-06-a');
+
+    let settled = false;
+    const promise = stub.trigger(confirmInfo()).then((v) => {
+      settled = true;
+      return v;
+    });
+    expect(h.requests()).toHaveLength(1);
+    const requestId = h.requests()[0].requestId;
+
+    h.coordinator.setForeground('2026-11-06-b');
+    // 收卡（界面上不残留 A 的卡），但不 resolve（回来还能答）
+    expect(h.closed()).toHaveLength(1);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    h.coordinator.setForeground('2026-11-06-a');
+    expect(h.requests()).toHaveLength(2);
+    expect(h.requests()[1].requestId).toBe(requestId); // 请求身份不因上屏次数而变
+    h.coordinator.answer(requestId, false);
+    await expect(promise).resolves.toBe(false);
+  });
+
+  it('后台会话的迟到回执被拒：只认当前显示会话在途请求', async () => {
+    const h = makeSessionCoordinator();
+    const stub = agentStub();
+    h.coordinator.bindSession('2026-11-06-a', stub.agent);
+
+    stub.trigger(confirmInfo()); // 后台入队（前台 ''）
+    // 前台上没卡 ⇒ 用队列里的 id 也无法替后台裁决（answer 只查前台会话的在途）
+    h.coordinator.answer('wc_any', true);
+    expect(h.coordinator.pendingCount('2026-11-06-a')).toBe(1);
+    expect(h.requests()).toHaveLength(0);
+  });
+
+  it('repostForeground：视图重建后重推当前会话在途卡（否则卡凭空消失、无从作答）', () => {
+    const h = makeSessionCoordinator();
+    const stub = agentStub();
+    h.coordinator.bindSession('2026-11-06-a', stub.agent);
+    h.coordinator.setForeground('2026-11-06-a');
+    stub.trigger(confirmInfo());
+
+    expect(h.requests()).toHaveLength(1);
+    h.coordinator.repostForeground();
+    expect(h.requests()).toHaveLength(2);
+    expect(h.requests()[1].requestId).toBe(h.requests()[0].requestId);
+  });
+});

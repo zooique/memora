@@ -170,10 +170,8 @@ import {
   type SessionRuntimeState,
 } from '../helpers/sessionRuntime.js';
 import { vscodeTracer } from '../../extension/host/tracer.js';
-import { buildDropdownHtml, dropdownStyles } from '../components/dropdown.js';
-import { contextMenuStyles } from '../styles/contextMenu.js';
-import { chatStyles } from '../styles/chatStyles.js';
-import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
+// HTML 骨架已外置（纯静态模板，见 chatPanelHtml 模块头）
+import { buildHtml } from './chatPanelHtml.js';
 import {
   buildDocContextBlock,
   buildGitChangesContextBlock,
@@ -459,6 +457,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     getAgent: () => this._agent,
     post: (msg) => this.post(msg),
     onConfirmShown: (info) => this._attention.onConfirmShown({ requestId: info.requestId }),
+    // 待处理确认数变化（含后台会话入队）⇒ 重算列表标识与入口角标
+    onPendingChanged: () => this.refreshSessionActivity(),
   });
 
   /**
@@ -467,6 +467,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 绑定到该协调器所属会话（见 `askFor`）。
    */
   private readonly _asks = new Map<string, AskCoordinator>();
+
+  /**
+   * 最近一次推给 webview 的活跃度快照（JSON 串，用于「无变化不重发」去重）
+   *
+   * undefined = 从未推过：视图重建后必须**强制**补推（新 webview 内存里没有旧快照）。
+   */
+  private _lastSessionActivity: string | undefined;
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -519,6 +526,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         },
         // 续跑的是该会话自己的流：显式传 sessionId，避免超时回调落到切换后的当前会话
         runFlow: (factory) => this.runFlow(factory, undefined, sessionId),
+        // 在途提问变化（写入 / 回答 / 超时 / 停止）⇒ 重算待处理标识（后台会话同样亮起）
+        onPendingChanged: () => this.refreshSessionActivity(),
       });
       this._asks.set(sessionId, coordinator);
     }
@@ -673,8 +682,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.bindAgentNoticeEvents();
     // 绑定路径守卫安全审计订阅（幂等，先取消旧订阅再绑新）
     this.bindSecurityAudit();
-    // 绑定确认回调（写入 confirmWrites / 脚本与命令 confirmScripts / guest 恒确认，默认 fail-closed）
+    // 确认队列随显示会话切换：先更新前台（切走会话收卡 / 切入会话补推卡），再绑回调——
+    // 顺序不可换：`bindWriteConfirmation` 的 sugar 按 `_foreground` 取会话，先切后绑才不会
+    // 把新会话的回调绑到旧会话的队列上
+    this._confirm.setForeground(this._currentSessionId);
+    // 绑定确认回调（命令/脚本执行确认 + guest 写入；owner 写文件已直接落盘，默认 fail-closed）
     this.bindWriteConfirmation();
+    // 装配完成后重算活跃度：切换会话会改变角标口径（当前显示会话的待处理不计入角标）
+    this.refreshSessionActivity();
     // 装配注入后统一补推（时序竞态）：webview ready 时 agent 可能尚未装配，replaySession 的
     // chat_role_pack / pushRolePacks 会因 _agent 为空跳过 → 角色徽章与列表永久缺失。此处装配
     // 完成即补推（面板未就绪时 post 静默忽略，由 replaySession 兜底再推）；统一收口在
@@ -2036,6 +2051,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (cached) return cached;
     const agent = await this._getAgent(this.workspacePath, sessionId);
     this._sessionAgents.set(sessionId, agent);
+    // 装配即绑定确认回调（按会话）：后台会话的确认请求也必须能入队并标待处理；
+    // 若只在「绑定显示源」时绑，后台实例的守卫回调永远是空的 ⇒ 确认永远不触发（静默挂起）
+    this._confirm.bindSession(sessionId, agent);
     return agent;
   }
 
@@ -2320,6 +2338,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     //    面板重开时新 webview 从未收到 ⇒ chip 凭空消失（用户失去「本轮带了什么」的唯一入口）。
     //    **必须 force**：去重基线跨重建残留，不绕就会把首推吞掉。
     this._activeFile.pushActiveFile(true);
+    // ⑧ 会话活跃度快照补推（同上：新 webview 无旧快照 ⇒ 「运行中/待处理」标识全部消失）。
+    //    必须先对齐前台会话：启动让位路径（claimInitialSessionOwnership）会改 _currentSessionId
+    //    但不走 bindAgent，不同步会让确认卡推到旧会话名下。
+    this._confirm.setForeground(this._currentSessionId);
+    this.refreshSessionActivity(true);
+    // 在途审批卡重推：视图重建不终结请求，但新 webview 没有旧卡 ⇒ 不重推就永远无法作答
+    // （后台会话切回来时由 setForeground 补推，这里只管「重建时仍停在前台」的那张）
+    this._confirm.repostForeground();
     // 角色 handoff 预填补发：视图解析后 webview 监听器已就绪，安全投递
     if (this._pendingPrefill !== undefined) {
       this.post({ type: 'prefill_input', text: this._pendingPrefill });
@@ -2846,6 +2872,40 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * 重算并推送「会话活跃度快照」（列表条目标识 + 历史入口角标的唯一数据源）
+   *
+   * 遍历面 = 已装配实例（`_sessionAgents`）+ 已建 ask 协调器（`_asks`）+ 当前会话——
+   * **不遍历 registry**：实例上没有可用的「运行中」判据（`Agent.isBusy` 是 chat 锁，
+   * 180s 自动释放而流仍在续跑，拿它当运行态会在长工具循环中途误报「没在跑」）；
+   * 也**不遍历全部历史会话**：读侧不应为没跑过的会话建运行态记录（`peek` 不建记录）。
+   *
+   * @param force true = 忽略去重强制重发（视图重建 / webview ready 时必须：新 webview 内存无旧快照）
+   */
+  private refreshSessionActivity(force = false): void {
+    const ids = new Set<string>(this._sessionAgents.keys());
+    for (const sessionId of this._asks.keys()) ids.add(sessionId);
+    if (this._currentSessionId) ids.add(this._currentSessionId);
+    const runningIds = [...ids].filter((id) => this._runtime.peek(id)?.streaming === true);
+    const pendingIds = [...ids].filter((id) => {
+      const askPending = (this._asks.get(id)?.pendingQuestions().length ?? 0) > 0;
+      return askPending || this._confirm.pendingCount(id) > 0;
+    });
+    const snapshot: ExtensionToWebviewMessage = {
+      type: 'session_activity',
+      runningIds,
+      pendingIds,
+      // 角标只数「别的会话」：当前显示会话的待处理已在屏上可见，再计数就是重复提示
+      badgeCount: pendingIds.filter((id) => id !== this._currentSessionId).length,
+    };
+    const serialized = JSON.stringify(snapshot);
+    if (!force && serialized === this._lastSessionActivity) return;
+    this._lastSessionActivity = serialized;
+    // 刻意绕过 `post()` 的后台闸：本条是**跨会话的全局信号**，不属于任何正在跑的流的界面投影；
+    // 若被丢弃，「后台会话等到提问 ⇒ 入口角标亮」这条判据永远不可能成立。
+    void this._view?.webview.postMessage(snapshot);
+  }
+
+  /**
    * 推送 turn 投影（状态/轮次单通道，不再有独立状态消息）。
    *
    * `rounds` = 落盘历史 + 运行时当前轮（`live: true`）。当前轮按 id **原位替换**历史同名轮
@@ -3343,13 +3403,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } catch (err) {
       // 同步抛错路径：清理 controller，避免 AbortController 泄漏
       runtime.abortController = undefined;
-      // 后台流的失败不投递到当前界面（此处在 ALS 作用域外：run 只覆盖 consumeFlow 的执行链），
-      // 但必须留痕——后台流异常若静默吞掉，用户切回时只看到「跑完了却什么都没有」
-      if (sessionId !== this._currentSessionId) {
-        console.warn(`Memora 后台会话流异常（${sessionId}）`, err);
-      } else {
-        this.post({ type: 'error', message: toNoticeText(err) });
-      }
+      // 留痕**无条件**：后台流异常若静默吞掉，用户切回时只看到「跑完了却什么都没有」；
+      // 前台流同样值得一条日志（投递去留交给 post 的后台闸，本处不再判前后台——行为层零分支）
+      console.warn(`Memora 会话流异常（${sessionId}）`, err);
+      this.post({ type: 'error', message: toNoticeText(err) });
     }
   }
 
@@ -3568,6 +3625,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'status', state: 'thinking' });
     // 置位生成态：会话切换/新建据此拒绝（避免重放与进行中流混血）
     runtime.streaming = true;
+    // 列表标识「运行中」随置位亮起（本条跨会话推送，后台 ALS 上下文也不得丢弃）
+    this.refreshSessionActivity();
     // 推送 turn 投影（运行态起点）
     this.postTurnUpdate();
     // 记录流起始视图代数：流尾比对 _viewEpoch 判断「流期间 view 被折叠/展开重建过」
@@ -3897,16 +3956,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // assistant 消息持久化由内核 appendAssistant 完成（写入当前会话 _currentSessionId），
       // 此处不再 persist，避免与内核双写同一条回复（SSOT 单一真理源）
     } catch (err) {
-      // 后台流的错误投递被投影闸挡掉 ⇒ 必须留痕，否则「后台跑挂了」对用户与日志双重静默
-      if (this.isBackgroundFlow()) {
-        console.warn('Memora 后台会话流内错误', err);
-      }
+      // 留痕**无条件**：后台流的错误投递会被投影闸挡掉，若连日志也只写后台，
+      // 「后台跑挂了」对用户与日志双重静默；前台流同样值得一条日志（投递去留交给 post 的闸）
+      console.warn('Memora 会话流内错误', err);
       this.post({ type: 'error', message: toNoticeText(err) });
     } finally {
       agent.off('questionPending', onPendingQuestion);
       agent.off('memoryAdded', onMemoryAdded);
       // 无论成败均清除生成态（恢复历史切换能力）——写本流归属会话的记录
       runtime.streaming = false;
+      // 列表标识「运行中」随复位熄灭（跨会话推送，不受后台投递闸影响）
+      this.refreshSessionActivity();
       // live 缓冲退场（实例字段；流尾收场逻辑全用局部 liveBuffer，不受影响）。
       // ⚠ 软暂停不清：内核 paused = 保留现场待续跑、**不 appendAssistant**——半截正文只在
       // 缓冲（textByRound），清了则暂停中切界面重建 = 半截回答丢失；保留到 resume 新流覆盖
@@ -4180,274 +4240,4 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       ...(securityAudit ? { securityAudit } : {}),
     });
   }
-}
-
-/** 生成 Webview HTML（含消息区 / 输入框 + 模型下拉框 / 主动提问框）
- *  @param scriptUri 外部脚本 chatView.js 的 asWebviewUri（CSP script-src cspSource 加载）
- *  @param cspSource webview 本地资源源（webview.cspSource，供 CSP script-src 放行 asWebviewUri 外部脚本） */
-function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
-  return `${buildHtmlHead({
-    lang: resolveHtmlLang(vscode.env?.language),
-    cspSource,
-    styles: `${chatStyles}\n${dropdownStyles}\n${contextMenuStyles}`,
-  })}
-<body>
-  <!-- SSOT：面板无顶部身份条，角色切换在「角色」视图。
-       角色/模型/状态职责归位：模型选择在输入区 composer（model-picker），生成状态由
-       思考折叠块 + 发送按钮承载，「谁在回答」由 AI 消息头部标签 msg-ai-label 表达。
-       面板结构为三层：消息区 → 活动区 → 输入区。 -->
-
-  <!-- 消息流：日期分隔线 + 消息 + 空状态引导 -->
-  <!-- 会话标题条：
-       左侧 = 会话标题 + 改名笔；右侧 = 新建会话「＋」+ 历史记录按钮。
-       无「清空对话」入口（删除会话记录覆盖该需求），会话导航全量在标题条。 -->
-  <div id="sessionTitleBar" class="session-title-bar">
-    <!-- ⚠️ title 只挂在内层标题文本上：容器级 title 会被所有无 title 的后代继承显示
-         （历史下拉菜单挂在标题条内，空摘要条目悬停会误显示容器的「当前会话」） -->
-    <span id="sessionTitleText" class="session-title-bar__text" title="当前会话"></span>
-    <button id="renameSessionBtn" class="session-title-bar__btn" title="重命名会话" aria-label="重命名会话">
-      <span class="btn-icon" data-icon="edit"></span>
-    </button>
-    <span class="session-title-bar__spacer"></span>
-    <button id="newSessionBtn" class="session-title-bar__btn" title="新建会话" aria-label="新建会话">
-      <span class="btn-icon" data-icon="plus"></span>
-    </button>
-    <!-- 历史记录下拉（SSOT）：复用 treedd 组件——trigger=历史按钮，
-         菜单紧挨按钮下方弹出（无遮罩、轻量），开合/外部关闭/Escape 由 initDropdowns 管理 -->
-    <div id="historyDd" class="treedd session-history" data-treedd data-on-select="__historyOnSelect">
-      <button id="historyBtn" class="treedd__trigger" title="历史记录" aria-label="历史记录" aria-haspopup="menu">
-        <span class="btn-icon" data-icon="history"></span>
-      </button>
-      <!-- 下拉面板 = 分组切换器 + 条目容器（**两者不可合并**，勿合并这两个 div）：
-           ① tab 必须在 .treedd__menu 内——菜单是绝对定位面板，其之外的内容不随菜单显隐；
-           ② 条目容器 #historyMenu 必须独立于 tab——renderHistoryMenu 每次整块重建条目
-              （textContent=''），tab 若在其内会被一并清掉。
-           注意：tab 按钮**绝不可带 .treedd__item 类**：dropdown 的点击委托命中该类后立即
-              收起菜单，带了会导致「点 tab 即关浮层」。
-           role 取舍（如实登记，不伪装合规）：面板保留 role="menu"（下拉组件与条目
-           role="menuitem" 依赖它），其内嵌 role="tablist" 在严格 ARIA 下非标准组合；
-           为不破坏既有下拉语义与键盘模型，此处保留该组合并登记为已知取舍。 -->
-      <div class="treedd__menu" role="menu">
-        <div id="historyTabs" class="session-tabs" role="tablist" aria-label="会话列表分组">
-          <button id="historyTabRecent" class="session-tab is-active" type="button" role="tab" aria-selected="true" data-view="recent">会话记录</button>
-          <button id="historyTabArchived" class="session-tab" type="button" role="tab" aria-selected="false" data-view="archived">留存区<span id="historyArchivedCount" class="session-tab__count"></span></button>
-        </div>
-        <!-- FD-3-A 元数据搜索框（匹配域：标题 / 主题 / 摘要）：
-             ① 必须独立于 #historyMenu——renderHistoryView 每次清空重建条目，放里面会被一并清掉；
-             ② 与 tab 同样禁带 .treedd__item 类（点击委托命中即收起浮层）；
-             ③ 键盘行为随 dropdown 既有模型：字符输入不受拦截，方向键跳条目，Escape 收起浮层。 -->
-        <input id="historySearch" class="session-search" type="text" placeholder="搜索会话（标题 / 主题 / 摘要）" aria-label="搜索会话" autocomplete="off" />
-        <div id="historyMenu"></div>
-      </div>
-    </div>
-  </div>
-  <!-- 任务进度常驻条（单轨）：与 #messages **同级**的固定插槽——
-       #messages 是 overflow-y:auto 滚动容器，插进它内部一滚即消失；默认一行
-       N/M + 进度条 + 当前任务项，点击展开锚定浮层看全量。隐藏态由 chatView 控制。 -->
-  <div id="planBar" class="plan-bar" hidden>
-    <button id="planBarHead" class="plan-bar__head" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="planBarPanel">
-      <span id="planBarCount" class="plan-bar__count"></span>
-      <span class="plan-bar__progress"><span id="planBarFill" class="plan-bar__fill"></span></span>
-      <span id="planBarCurrent" class="plan-bar__current"></span>
-      <span id="planBarChevron" class="plan-bar__chevron" aria-hidden="true"></span>
-    </button>
-    <div id="planBarPanel" class="plan-bar__panel" hidden></div>
-  </div>
-  <div id="messages">
-    <!-- 空状态引导：标题 + 提示 + 示例提问 chips（点击填入输入框，主动引导新用户）。
-         标题/提示加 id：由 chatView 随激活角色包动态更新，
-         切换角色不产生定位错位；示例 chips 由 chatView 随 showcase 角色动态渲染
-         （白话方案设计师展示"种子收敛"引导，其余角色回退通用打磨引导），容器留空由脚本填充。 -->
-    <div id="emptyState" class="empty-state" hidden>
-      <div id="emptyTitle" class="empty-title">开始打磨你的设计文档</div>
-      <div id="emptyHint" class="empty-hint">在下方输入你的想法，或点击示例提问快速开始</div>
-      <div id="emptySuggestions" class="empty-suggestions"></div>
-    </div>
-    <!-- 写入审批卡已于 2026-10-05 移出本容器（见下方 #writeConfirmCard 处说明）。
-         红线：#messages 是 overflow-y:auto 滚动容器（chatStyles.ts 内 #messages 规则），
-         任何「需要用户即时看见/操作」的交互 UI 都**不得**挂在其内部——插进去会被 12 处
-         appendChild 顶到消息流最顶端，一滚即不可见（chatView.test.ts 审批卡锚点守卫用例
-         锁定本约束）。 -->
-  </div>
-
-  <!-- UI-TOAST-1 浮层槽：零高度锚不占流高；activity 主位由 resolveDock 搬入本槽上浮 --><div id="activityToastSlot"></div>
-  <!-- 会话大纲导航条（HOST-NAV-1）：右缘按轮锚点外壳，条列/浮层由 chatView 经
-       helpers/roundNav.ts 动态构建；不足两轮或不可滚动时整条 hidden。
-       🔴 挂 #messages 之外（同 scrollToBottomBtn 血训：滚动容器内 absolute 随内容滚走）；
-       🔴 panel 不挂 hidden 属性（显形走 :hover/:focus-within，全局 [hidden]!important
-       会压死 CSS 显形，见 chatStyles .round-nav 段注释）。
-       🔴 两层结构不可合并（HOST-NAV-1 四轮）：.round-nav__panel = 命中盒（紧贴条列、
-       无 margin/overflow），.round-nav__list = 视觉盒 + 滚动容器。合并即重建「视觉间隙
-       里没有元素接住指针 → 浮层闪退」的原缺陷，见 chatStyles 同名注释与守卫用例。 -->
-  <div id="roundNav" class="round-nav" hidden>
-    <div class="round-nav__track"></div>
-    <div class="round-nav__panel"><div class="round-nav__list"></div></div>
-  </div>
-
-  <!-- 活动状态条（错误/低扰通知的**瞬态单条**：info 2500ms / error 8000ms 自动撤）。
-       归位/显隐由 resolveDock 单点裁决。历史与指标**不在本条**——固定归下方
-       #dockPanel 的时间段（C1，2026-10-05）：本条再怎么生灭，时间线都不陪葬。
-       不把时间段做成本条子节点的原因不变：showActivity 每次整体重置
-       activityBar.textContent，嵌套即被销毁。 -->
-  <div id="activityBar" class="activity-bar" hidden></div>
-  <div id="clarifyBar">
-    <div id="clarifyText"></div>
-    <div id="clarifyOptions"></div>
-    <div id="clarifyRow">
-      <input id="clarifyInput" type="text" placeholder="回答 Agent 的问题，回车提交……" aria-label="回答 Agent 的问题" />
-      <button id="clarifySend">提交回答</button>
-    </div>
-  </div>
-  <!-- 审批卡（A 类决策面板）：confirmWrites=true / classifyCommand 裁决需确认 / 脚本确认时触发，
-       host 推送 write_confirm_request，webview 渲染此卡；用户确认/拒绝回传 write_confirm_answer。
-       默认隐藏，由脚本按需显示（fail-closed：超时即拒）。
-       位置红线（2026-10-05 实锤修复）：本卡原挂 #messages **内部**，是 #messages 的第 2 个
-       子节点（紧跟 #emptyState）；#messages 是 overflow-y:auto 滚动容器且流式全程吸底
-       （helpers/scrollToBottom.ts），视口钉在底部 ⇒ 卡永远停在消息流最顶端、视口之上，
-       表现为「确认 UI 根本没弹」，超时后 fail-closed 自动拒绝（命令确认首跑即翻车；
-       当时超时为 30s，2026-10-05 已放宽至 CONFIRM_TIMEOUT_MS = 30 分钟）。
-       现归位到输入区紧上方（对齐 Cline / Roo 的「输入区上方动作区」形态）——与 #messages
-       同级、不在其内，恒定可见。守卫：chatView.test.ts「审批卡锚点守卫」。 -->
-  <div id="writeConfirmCard" class="write-confirm-card" hidden>
-    <div class="write-confirm-card__body">
-      <div class="write-confirm-card__head">
-        <span class="write-confirm-card__tool" id="writeConfirmTool"></span>
-        <span class="write-confirm-card__path" id="writeConfirmPath"></span>
-      </div>
-      <div class="write-confirm-card__desc" id="writeConfirmDesc"></div>
-      <div class="write-confirm-card__countdown" id="writeConfirmCountdown" hidden></div>
-      <details class="write-confirm-card__diff">
-        <summary>查看内容</summary>
-        <pre id="writeConfirmDiff"></pre>
-      </details>
-      <!-- 等待态提示（2026-10-05 P5 落地 A）：点击裁决后**不收卡**，等宿主推下一条
-           （write_confirm_request 覆盖渲染）或 write_confirm_closed 收卡。
-           原实现点击即同步 closeWriteConfirmCard、下一条由宿主异步推 ⇒ 中间空档 = 闪烁；
-           且队列无下一条时卡片会带旧内容滞留，形成重复提交窗口（宿主 pending 已delete，
-           第二个 answer 静默丢弃 ⇒ 用户视角「点了没反应」）。本提示 + 按钮 disabled 消解之。 -->
-      <div class="write-confirm-card__hint" id="writeConfirmHint" hidden></div>
-      <div class="write-confirm-card__actions">
-        <button id="writeConfirmReject" class="write-confirm-card__btn write-confirm-card__btn--reject">拒绝</button>
-        <button id="writeConfirmOk" class="write-confirm-card__btn write-confirm-card__btn--ok">确认</button>
-      </div>
-    </div>
-  </div>
-  <!-- 状态抽屉（C1 · ADR-037 形态宪法的结构落点）：
-       唯一常驻状态面 = 入口 #dockChip——被收纳的活跃条 >0 时显「+N」，
-       仅有时间段内容时显「活动」；未读挂 is-unread 徽章。从不自动弹（宪法④）。
-       下拉体 #dockPanel 分两段：#dockControls 控件段（被收纳的活跃条由
-       resolveDock 单实例搬运）+ #activityDetail 时间段（活动历史/诊断指标，
-       静态固定，不再随瞬态条进出——P4 follower 机制在 C1 整组拆除）。
-       静态序 chip → panel → inputBar：主位条归位插 inputBar 前，恒紧贴输入框，
-       抽屉开合不挤占 A 类确认卡位置。 -->
-  <button id="dockChip" class="status-dock__chip" type="button" title="状态与活动" aria-expanded="false" hidden></button>
-  <div id="dockPanel" class="status-dock__panel" hidden>
-    <div id="dockControls" class="status-dock__controls" hidden></div>
-    <div id="activityDetail" class="status-dock__timeline">
-      <div id="activityList" class="activity-list"></div>
-      <!-- 指标空态指引（showMetrics 默认关时指标块永不到达）：只解释「为什么空」，
-           不参与时间线/未读判据（数据面真源仍是 activityMetrics 的渲染结果）。 -->
-      <div id="activityMetricsEmpty" class="activity-metrics-empty">
-        <span>指标默认隐藏（开发者调试信息）。</span>
-        <button id="activityMetricsEmptyOpen" class="activity-metrics-empty__open" type="button">在设置中开启</button>
-      </div>
-      <div id="activityMetrics" class="activity-metrics" hidden></div>
-    </div>
-  </div>
-  <div id="inputBar">
-    <!-- 一键到底（对齐 TRAE App / TraeWork「上滚后回到底部」）：真机反馈 2026-10-01——
-         原挂在 #messages 内：#messages 是 overflow-y:auto 滚动容器，absolute 子元素随内容
-         滚动（与 #planBar 注释警告过的同款错），表现为「和会话记录一起滚走」。挪到
-         #inputBar 内（已 position:relative）锚定其顶边（bottom: calc(100% + sp-4)）=
-         恒钉消息区可视框右下角，输入区多行增高时自动跟随，零补偿逻辑。守卫测试锁定：
-         按钮不得是 #messages 后代（scroll-to-bottom-anchored 用例）。 -->
-    <button id="scrollToBottomBtn" class="scroll-to-bottom" hidden
-      title="回到底部" aria-label="回到底部">
-      <span class="btn-icon" data-icon="scroll-bottom"></span>
-    </button>
-    <div id="inputWrap">
-      <!-- 附件行（选择态行）：你亲手选的内容（skill，将来图片/手动记忆等）统一排在盒内文字上方——
-           面单贴在信封上；盒外留给系统运行时条，两种来源由物理位置分界，不混住。
-           空态 hidden 零高度，盒子不预留空行 -->
-      <div id="skillChips" class="skill-chip-row" hidden></div>
-      <div id="refChips" class="skill-chip-row" hidden></div>
-      <!-- 图片附件行：粘贴 / 拖入采集的 chip（与上面两行同构单轨，D28 只显示文件名不做缩略图） -->
-      <div id="imageChips" class="skill-chip-row" hidden></div>
-      <textarea id="input" rows="1" placeholder="@ 引用文件，/ 选择技能；Enter 发送，Shift+Enter 换行" aria-label="消息输入"></textarea>
-      <div id="inputFooter">
-        <!-- Row 1 · 一级直面：左侧功能群 + 右侧唯一发送按钮（发送突出化） -->
-        <div class="composer-row composer-row--main">
-          <!-- 左侧功能群：Skill + 模型选择 + 润色（次级功能，弱化展示） -->
-          <div class="composer-left">
-            <!-- Skill 选择器：单图标（bolt SVG，图标语言唯一 = icons.ts 柔和线条）胶囊触发器，与模型选择器共用 capsule 变体；选择后作为 system prompt 传给 LLM。
-                 Skill 名不常显（节省窄窗横向空间），当前项由触发器 .ctl--on（accent 图标染色）、菜单内 is-active 高亮、输入盒内 skill chip 与 title 兜底
-                 触发器带 .ctl（输入区无边框基类），边框由 --dd-trigger-border 变量取值清零（见 chatStyles .composer-left），禁止在此另写 border 规则 -->
-            ${buildDropdownHtml([], { extraClass: 'skill-picker treedd--capsule', triggerClass: 'ctl', onSelect: '__skillPickerOnSelect', triggerLabel: '<span class="btn-icon" data-icon="bolt"></span>', triggerTitle: '选择 Skill', triggerAriaLabel: '选择 Skill' })}
-            <!-- 模型选择器：共用 capsule 变体，名称省略/菜单尺寸由 .model-picker 差异定制；触发器带 .ctl 去边框 -->
-            ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', triggerClass: 'ctl', onSelect: '__modelPickerOnSelect', triggerLabel: '选择模型', triggerTitle: '选择模型', triggerAriaLabel: '选择模型' })}
-            <!-- 文本润色按钮：图标化，降低视觉权重（.ctl 无边框基类） -->
-            <button id="polishBtn" class="polish-btn-icon ctl" title="润色输入内容" aria-label="润色">
-              <span class="btn-icon" data-icon="edit"></span>
-            </button>
-            <!-- 上传图片按钮（常驻，D27）：有视觉能力→发 image_pick_request；未声明→置灰可点跳设置。绑定/状态归 imageCapture，此处只出骨架 -->
-            <button id="imageAttachBtn" class="image-attach-btn is-vision-off ctl" aria-disabled="true" title="当前模型未开启图片输入——点击前往设置开启" aria-label="添加图片">
-              <span class="btn-icon" data-icon="paperclip"></span>
-            </button>
-          </div>
-          <!-- 右侧：主发送按钮（单图标三态：发送↑ / 停止■ / 继续▶，均无文字省空间）
-               + 生成中另行暴露「暂停」软控制（Gap A），与「停止」并列、可经「继续」恢复 -->
-          <div class="composer-right">
-            <!-- 暂停按钮（Gap A）：仅生成中显隐（setStatus 控制 hidden），软暂停当前 Agent 执行。
-                 「停止」丢弃本次流、「暂停」落检查点可恢复，二者语义区分、视觉同级弱化展示（.ctl 无边框基类） -->
-            <button id="pauseBtn" class="pause-btn ctl" title="暂停生成" aria-label="暂停生成" hidden>
-              <span class="btn-icon" data-icon="pause"></span>
-            </button>
-            <button id="send" class="send-btn-primary" title="发送 (Enter)" aria-label="发送">
-              <span class="send-icon" data-icon="send"></span>
-              <span class="stop-icon" data-icon="stop"></span>
-              <span class="play-icon" data-icon="play"></span>
-            </button>
-          </div>
-        </div>
-        <!-- Row 2 · 状态行：左角色/能力徽章 + 右上下文占用圆环（两端分布；占用属状态信息归本行，
-             不干扰 Row 1 主操作；hover/聚焦**向上**弹卡片出「分层明细文字 + 占用构成条 +
-             本轮注入回执行」，避免向下展开挤压面板底部）
-             角色徽章 = button（可点跳转角色管理视图，open_settings_tab(roles) → memora.openSettings('roles')）：
-             外观与旧 span 徽章完全一致（零常驻视觉增量，仅 hover 反馈 + title 提示可点），
-             id 保持 currentRoleBadge 不变 ⇒ 现有 chat_role_pack 消费链路（含测试断言）零改动。 -->
-        <div class="composer-row composer-row--status">
-          <div class="composer-status">
-            <button id="currentRoleBadge" class="role-badge" type="button" title="点击管理角色包"></button>
-            <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
-          </div>
-          <!-- 上下文占用圆环：常驻不占行，非噪点；首帧由 chat_providers 渲染所选模型容量上限，
-               真实分层占用由首轮后 context_occupancy 覆盖。
-               hover 卡片 = 分层明细文字（上）+ 占用构成条（中）+ 本轮注入回执行（最下）。
-               构成条（HOST-S3-2）2026-10-18 由状态行常驻**移入卡片底部**：圆环（总量占比）与
-               构成条（分段构成）同吃 context_occupancy，在输入条并排 = 同源信号双渲染
-               （真机反馈「功能冲突」）⇒ 输入条只留圆环一个进度信号，构成一瞥改驻 hover 卡片，
-               能力不撤。 -->
-          <div id="contextOccupancy" class="context-ring" hidden>
-            <svg class="context-ring__svg" viewBox="0 0 40 40" aria-hidden="true">
-              <circle class="context-ring__track" cx="20" cy="20" r="16" />
-              <circle class="context-ring__fill" id="occFill" cx="20" cy="20" r="16" />
-            </svg>
-            <span class="context-ring__percent" id="occPercent">0%</span>
-            <div class="context-ring__tip" id="occTip" role="tooltip">
-              <div class="context-ring__tip-text" id="occTipText"></div>
-              <div id="occSegments" class="context-segments" hidden></div>
-              <!-- 本轮注入回执行（HOST-CTX-4 ②）：2026-10-21 由状态行徽记迁入卡片底部——
-                   状态行是稳定身份徽章的行，随挂载忽隐忽现的数字 pill 混入其中突兀（真机反馈）；
-                   而它是预算归因数、与圆环同域 ⇒ 回位 hover 卡片，分项明细同屏可见。 -->
-              <div id="occInjection" class="context-ring__injection" hidden></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <!-- 运行时脚本由外部 chatView.js 提供（CSP script-src cspSource 加载） -->
-  <script src="${scriptUri}"></script>
-</body>
-</html>`;
 }

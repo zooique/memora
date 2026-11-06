@@ -207,18 +207,13 @@ export interface AssembleOptions {
    */
   projectRolePacksDir?: string;
   /**
-   * 写入二次确认开关（H0）
-   *
-   * 用户级安全偏好：开启后 owner 模式写文件前触发审批确认（需宿主 UI 确认放行）；
-   * 关闭后 owner 模式写文件自动批准（审计仍记录）。由 extension 从 globalState 读取注入。
-   */
-  confirmWrites?: boolean;
-  /**
    * 脚本/代码执行确认开关
    *
-   * 与 confirmWrites 同模式：开启后 owner 模式 run_code/run_project_script 执行前
-   * 触发审批确认；关闭后自动批准。由 extension 从 globalState 读取注入，
-   * 运行时经 agent.security.setConfirmScripts() 热更新（设置面板），无需重启。
+   * 开启后 owner 模式 run_code/run_project_script 执行前触发审批确认；关闭后自动批准。
+   * 由 extension 从 globalState 读取注入，运行时经 agent.security.setConfirmScripts()
+   * 热更新（设置面板），无需重启。
+   * ⚠️ 写入侧的 confirmWrites 装配参数已于 2026-11-06（E4 批 4）移除：写文件一律直接落盘，
+   * 宿主不再提供开关（内核 `AgentOptions.confirmWrites` 仍在，仅保留 guest 语义与公开面）。
    */
   confirmScripts?: boolean;
   /**
@@ -350,7 +345,6 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     userRolePacksDir,
     projectSkillsDir,
     projectRolePacksDir,
-    confirmWrites,
     confirmScripts,
     allowedPaths,
     outputChannel,
@@ -487,9 +481,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 删后注记（2026-11-05 · 内核 6.0.0 · DEPRECATE-1）：`noOverwriteRoots` 装配期传参已移除——
     // 内核「禁止覆盖根」判据与 `SecurityGuard.setNoOverwriteRoots` 均保留，入口改为运行期；
     // 本宿主不显式启用（用户资产目录本就不在 `allowedPaths`，装配期传参判据不可达）。
-    // 写入二次确认（用户级安全偏好；开启后 owner 写文件前触发审批确认）
-    confirmWrites: confirmWrites ?? false,
-    // 脚本/代码执行确认（与写入确认同模式，开则 run_code/run_project_script 执行前询问）
+    // 写入二次确认已退役（E4 批 4）：不传 confirmWrites ⇒ 内核默认 false ⇒ 界内写直接落盘；
+    // 界外仍由 assertPathAllowed 硬拒，拆除确认不放开越界。
+    // 脚本/代码执行确认（开则 run_code/run_project_script 执行前询问）
     confirmScripts: confirmScripts ?? false,
     // 禁用技能清单（配置形态启停）：命中技能对 LLM 全链不可用（L1/L2/L3），
     // 宿主 settingsView 依据同名设置标注「已禁用」徽章

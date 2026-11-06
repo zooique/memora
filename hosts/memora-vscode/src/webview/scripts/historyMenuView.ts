@@ -63,6 +63,8 @@ export interface HistoryMenuViewDeps {
   archivedCountEl: HTMLElement;
   /** #historySearch：FD-3-A 元数据搜索框（标题 / 主题 / 摘要） */
   searchInput: HTMLInputElement;
+  /** #historyPendingBadge：历史入口按钮上的角标（等待处理的**别的会话**数；0 时 hidden） */
+  entryBadge: HTMLElement;
   /** 消息通道（view 侧包一层 `vscode.postMessage`；本域不 import vscode） */
   postMessage: (msg: HistoryMenuMessage) => void;
 }
@@ -77,6 +79,16 @@ export interface HistoryMenuViewDeps {
 export interface HistoryMenuView {
   /** 渲染历史菜单（对 `session_list_data` 的应答）：存快照并按当前视图渲染 */
   renderMenu(sessions: SessionSummaryDto[], archivedIds: string[]): void;
+  /**
+   * 会话活跃度快照（对 `session_activity` 的应答）：驱动条目「运行中 / 待处理」标识与入口角标
+   *
+   * 数据源只有面板这一条消息 ⇒ **列表标识与入口角标由本域统一投影**（同源双面，
+   * 不分成两处判读，避免「列表亮了角标没亮」）。本域只做「按 id 查表上标签 / 按数上角标」，
+   * 不自行判运行态（判断真源在宿主会话级运行态表）。
+   *
+   * @param badgeCount 入口角标数（宿主已剔除当前显示会话；0 ⇒ 隐藏）
+   */
+  setActivity(runningIds: string[], pendingIds: string[], badgeCount: number): void;
   /** 归档模式运行时真值（对 `chat_archive_mode` 的应答）：驱动留存按钮文案；
    *  已有数据则就地重渲染（title/aria 由归档模式派生），无数据不重建空菜单 */
   setArchiveMode(mode: ArchiveMode): void;
@@ -91,8 +103,16 @@ export interface HistoryMenuView {
  * @returns 窄接口（状态封装在闭包内）
  */
 export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuView {
-  const { document, menuEl, tabRecent, tabArchived, archivedCountEl, searchInput, postMessage } =
-    deps;
+  const {
+    document,
+    menuEl,
+    tabRecent,
+    tabArchived,
+    archivedCountEl,
+    searchInput,
+    entryBadge,
+    postMessage,
+  } = deps;
 
   /** 当前分组视图：recent=会话记录 / archived=留存区 */
   let sessionListView: 'recent' | 'archived' = 'recent';
@@ -108,6 +128,10 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
    * ⚠️ 不可改用持久偏好值：偏好保存后运行时可能顺延未生效，文案会在顺延窗口内说谎。
    */
   let currentArchiveMode: ArchiveMode = 'full';
+  /** 正在跑流的会话 id（来自宿主 `session_activity` 快照） */
+  let runningSessionIds = new Set<string>();
+  /** 等用户处理的会话 id（ask 未答 / 确认未裁决） */
+  let pendingSessionIds = new Set<string>();
 
   // ── 渲染（函数名零改名，自 chatView 平移）──
 
@@ -218,6 +242,19 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
       typeof s.messageCount === 'number' && s.messageCount > 0
         ? `${fmtRelativeTime(s.updatedAt)} · ${s.messageCount} 条`
         : fmtRelativeTime(s.updatedAt);
+    /**
+     * 活跃度标识（E4 批 4）：待处理优先于运行中——既在跑又在等你答，先说的是「等你答」；
+     * 同一条目只挂一个标签（两个都挂会让用户以为要处理两件事）。
+     * 纯展示元素（span，非 .treedd__item）：不得干扰下拉选择委托与键盘导航。
+     */
+    const stateEl = document.createElement('span');
+    if (pendingSessionIds.has(s.sessionId)) {
+      stateEl.className = 'session-history__item-state is-pending';
+      stateEl.textContent = '待处理';
+    } else if (runningSessionIds.has(s.sessionId)) {
+      stateEl.className = 'session-history__item-state is-running';
+      stateEl.textContent = '运行中';
+    }
     // 分组动作：会话记录 → 移入留存区；留存区 → 移回会话记录。
     // 两者都**不是删除**（数据一字不动），故图标与文案都不用删除类语言。
     // 用 span 而非 button：treedd__item 本身是 button，HTML 规范 button 内不可嵌套 button
@@ -253,7 +290,10 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
       e.stopPropagation(); // 阻断冒泡到 menu 的选择委托，仅触发删除（菜单保持展开可连续删）
       postMessage({ type: 'delete_session', sessionId: s.sessionId });
     });
-    item.append(titleEl, timeEl, keepBtn, delBtn);
+    // 无活跃度时不 append（空 span 仍占 flex gap，会凭空多出两段间距）
+    item.append(titleEl);
+    if (stateEl.className) item.append(stateEl);
+    item.append(timeEl, keepBtn, delBtn);
     menuEl.appendChild(item);
   }
 
@@ -289,6 +329,15 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
 
   return {
     renderMenu: renderHistoryMenu,
+    setActivity(runningIds: string[], pendingIds: string[], badgeCount: number): void {
+      runningSessionIds = new Set(runningIds);
+      pendingSessionIds = new Set(pendingIds);
+      // 入口角标：0 时零显示（hidden 而非留一个「0」——零待处理是常态，挂数字反成噪音）
+      entryBadge.hidden = badgeCount <= 0;
+      entryBadge.textContent = badgeCount > 0 ? String(badgeCount) : '';
+      // 已渲染则就地重渲染标签（不清搜索词、不换分组：活跃度变化不是「重新开始浏览」）
+      if (lastSessionList.length > 0) renderHistoryView();
+    },
     setArchiveMode(mode: ArchiveMode): void {
       currentArchiveMode = mode;
       // 已渲染则就地重渲染（按钮 title/aria 由归档模式派生，无数据时不重建空菜单）

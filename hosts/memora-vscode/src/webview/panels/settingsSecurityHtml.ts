@@ -15,23 +15,13 @@
  * 各自手写 root 容器 ⇒ tab 的 id / role / aria 是判据散点。
  */
 
-/** 安全子视图主体（security 选项卡：写入审批 / 路径白名单 / 搜索引擎 / 调试与提示入口） */
+/** 安全子视图主体（security 选项卡：执行审批 / 路径白名单 / 搜索引擎 / 调试与提示入口） */
 export const SECURITY_BODY_HTML = `
-  <!-- 安全子视图（security 选项卡：写入审批） -->
+  <!-- 安全子视图（security 选项卡：执行审批 / 路径白名单） -->
     <div class="header">
       <h2>安全</h2>
     </div>
     <div class="security-section">
-      <div class="security-item">
-        <div class="security-item-header">
-          <label for="confirmWritesToggle" class="security-label">写入二次确认</label>
-          <label class="toggle-switch">
-            <input id="confirmWritesToggle" type="checkbox" role="switch" aria-label="写入二次确认开关" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <p class="security-desc">开启后，AI 写文件前会弹出审批卡，需确认放行。默认关闭（owner 模式自动批准）。</p>
-      </div>
       <div class="security-item">
         <div class="security-item-header">
           <label for="confirmScriptsToggle" class="security-label">执行二次确认</label>

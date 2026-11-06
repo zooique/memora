@@ -2252,7 +2252,7 @@ describe('UI-TOAST-1 瞬态提示浮层化（活动条出流 · 不挤占消息�
     // jsdom 无布局引擎证不了「浮不浮/盖不盖」——形态契约用源码守卫钉住（T4 防线边界内：
     // 读生产样式文本，可抓「规则被删/令牌被换/源序被改」）。
     const css = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf8');
-    const html = readFileSync(join(__dirname, '..', 'panels', 'chatPanel.ts'), 'utf8');
+    const html = readFileSync(join(__dirname, '..', 'panels', 'chatPanelHtml.ts'), 'utf8');
     expect(css).toContain('#activityToastSlot {');
     expect(css).toMatch(/#activityToastSlot \{[^}]*position: relative/);
     expect(css).toMatch(/#activityToastSlot \{[^}]*height: 0/);
@@ -9537,7 +9537,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     // （沿用「审批卡位置源码守卫」的 readFileSync 范式）。
     const shell = '<div class="round-nav__panel"><div class="round-nav__list"></div></div>';
     for (const [label, file] of [
-      ['生产', join(__dirname, '..', 'panels', 'chatPanel.ts')],
+      ['生产', join(__dirname, '..', 'panels', 'chatPanelHtml.ts')],
       ['夹具', join(__dirname, 'helpers', 'chatViewTestEnv.ts')],
     ] as const) {
       expect(readFileSync(file, 'utf8'), `${label}骨架缺「命中盒 > 视觉盒」两层外壳`).toContain(
@@ -9878,7 +9878,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     // S9 防线：测试夹具 chatViewTestEnv.ts 的 HTML 是生产 buildHtml 的**手工镜像**，
     // 仅靠 DOM 层守卫会在夹具漂移时失效。此处直接锁生产模板（沿用 iconLanguage /
     // tokensClosure 的 readFileSync 范式），夹具漂了生产也跑不掉。
-    const src = readFileSync(join(__dirname, '..', 'panels', 'chatPanel.ts'), 'utf8');
+    const src = readFileSync(join(__dirname, '..', 'panels', 'chatPanelHtml.ts'), 'utf8');
     // 缩进 2 空格 = 面板骨架层（与 #messages / #inputBar 同级）；4 空格 = 嵌在 #messages 内
     expect(/^ {2}<div id="writeConfirmCard"/m.test(src)).toBe(true);
     expect(/^ {4,}<div id="writeConfirmCard"/m.test(src)).toBe(false);
@@ -9892,7 +9892,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     // 等待态样式真源 = CSS `.write-confirm-card__btn[disabled]`（chatStyles.ts）。基类必须
     // 静态在骨架上、由原生 disabled 触发——若改回「进等待态时 JS 补类」，漏补的键会
     // disabled=true 却无等待态样式（悬停仍手型、无降透明），且 jsdom 证不了计算样式。
-    const prod = readFileSync(join(__dirname, '..', 'panels', 'chatPanel.ts'), 'utf8');
+    const prod = readFileSync(join(__dirname, '..', 'panels', 'chatPanelHtml.ts'), 'utf8');
     const fixture = readFileSync(join(__dirname, 'helpers', 'chatViewTestEnv.ts'), 'utf8');
     for (const [label, src] of [
       ['生产', prod],
@@ -12106,7 +12106,7 @@ describe('骨架 id 三方一致性（UI-CONFIRM-P6 轻量版）', () => {
   const consumed = consumedIds(
     readFileSync(join(__dirname, '..', 'scripts', 'chatView.ts'), 'utf8'),
   );
-  const prod = idsOf(readFileSync(join(__dirname, '..', 'panels', 'chatPanel.ts'), 'utf8'));
+  const prod = idsOf(readFileSync(join(__dirname, '..', 'panels', 'chatPanelHtml.ts'), 'utf8'));
   const fixture = idsOf(
     readFileSync(join(__dirname, '..', '__tests__', 'helpers', 'chatViewTestEnv.ts'), 'utf8'),
   );
@@ -13294,5 +13294,32 @@ describe('COPY-2 锚点契约与引用快照事务（复审回归）', () => {
       expect.objectContaining({ type: 'input', kind: 'send', text: '> 原文一句\n\n正文' }),
     );
     expect(chipRow.textContent).not.toContain('引用：');
+  });
+});
+
+/**
+ * 历史入口角标（E4 批 4）
+ *
+ * 驱动消息 = `session_activity` 全量快照（宿主唯一数据源）；本层只做投影：
+ * 0 ⇒ 隐藏（不得显示「0」），≥1 ⇒ 显示数字。变异靶标：把分支改成 `badgeCount < 0`
+ * 或去掉 `hidden` 赋值 ⇒ 用例转红。
+ */
+describe('历史入口角标（E4 批 4：会话活跃度快照投影）', () => {
+  it('无待处理时零显示；有 1 个时显示 1', () => {
+    mountChatView();
+    const badge = document.getElementById('historyPendingBadge') as HTMLElement;
+
+    dispatch({ type: 'session_activity', runningIds: [], pendingIds: [], badgeCount: 0 });
+    expect(badge.hidden).toBe(true);
+    // 不得把「0」写进屏上（隐藏元素里留 0 会在某些 CSS 覆盖下重新露出）
+    expect(badge.textContent).not.toBe('0');
+
+    dispatch({ type: 'session_activity', runningIds: [], pendingIds: ['s1'], badgeCount: 1 });
+    expect(badge.hidden).toBe(false);
+    expect(badge.textContent).toBe('1');
+
+    // 回答后回到 0 ⇒ 角标消失（标识不得残留成僵尸）
+    dispatch({ type: 'session_activity', runningIds: [], pendingIds: [], badgeCount: 0 });
+    expect(badge.hidden).toBe(true);
   });
 });

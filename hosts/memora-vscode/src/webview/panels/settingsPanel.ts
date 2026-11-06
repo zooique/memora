@@ -78,7 +78,6 @@ import { isPathWithin } from '../../extension/host/userAssets/path.js';
 import { copyProjectRolePackToUser, copyProjectSkillToUser } from './assetCopyToUser.js';
 import {
   ACTIVE_ROLE_PACK_KEY,
-  CONFIRM_WRITES_KEY,
   CONFIRM_SCRIPTS_KEY,
   ROLE_PACK_TEAMS_KEY,
   MEMORY_RECYCLE_RETENTION_DAYS,
@@ -531,11 +530,10 @@ export class MemoraSettingsPanel {
       return;
     }
 
-    // ─── 安全子视图消息（写入审批 + 路径白名单） ───
-    // 两个同形开关按 target 寻址（2026-10-24 协议治理：原两条独立通道合并）
+    // ─── 安全子视图消息（执行确认 + 路径白名单） ───
+    // 写入确认开关已退役（E4 批 4：写文件一律直接落盘），本通道只剩执行确认语义
     if (msg.type === 'security_toggle') {
-      if (msg.target === 'confirmWrites') await this.toggleConfirmWrites(msg.enabled);
-      else await this.toggleConfirmScripts(msg.enabled);
+      await this.toggleConfirmScripts(msg.enabled);
       return;
     }
     if (msg.type === 'allowed_paths_set') {
@@ -1491,43 +1489,10 @@ export class MemoraSettingsPanel {
     );
   }
 
-  // ─── 安全子视图方法（写入审批） ───
-
-  /** 切换写入二次确认开关（security_toggle target=confirmWrites）：持久化 globalState + 热更新 agent.security，无需重启 Agent */
-  private async toggleConfirmWrites(enabled: boolean): Promise<void> {
-    try {
-      // 1. 持久化到 globalState（用户级偏好）
-      this._globalState?.update(CONFIRM_WRITES_KEY, enabled);
-      // 2. 热更新已装配的 Agent（SecurityGuard 运行时切换）
-      const agent = await this.ensureAgent();
-      if (agent?.security) {
-        agent.security.setConfirmWrites(enabled);
-      }
-      // 3. 推送最新状态给 webview（脚本确认沿用持久值，保持双开关状态一致）
-      const scriptsEnabled = this._globalState?.get<boolean>(CONFIRM_SCRIPTS_KEY) ?? false;
-      this.post({
-        type: 'security_status',
-        confirmWrites: enabled,
-        confirmScripts: scriptsEnabled,
-      });
-      this.post({
-        type: 'notice',
-        level: 'info',
-        message: enabled
-          ? '已开启写入二次确认（写文件前将弹出审批卡）'
-          : '已关闭写入二次确认（写文件自动批准）',
-      });
-    } catch (err) {
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: `切换写入确认开关失败：${toNoticeText(err)}`,
-      });
-    }
-  }
+  // ─── 安全子视图方法（执行确认） ───
 
   /**
-   * 切换脚本/代码/命令执行确认开关（security_toggle target=confirmScripts 消息处理）
+   * 切换脚本/代码/命令执行确认开关（security_toggle 消息处理）
    *
    * 持久化到 globalState + 热更新 agent.security.setConfirmScripts()。
    * 无需重启 Agent——SecurityGuard 支持运行时切换。语义：开 = run_code / run_project_script /
@@ -1544,9 +1509,8 @@ export class MemoraSettingsPanel {
       if (agent?.security) {
         agent.security.setConfirmScripts(enabled);
       }
-      // 3. 推送最新状态给 webview（confirmWrites 沿用持久值，保持双开关状态一致）
-      const writesEnabled = this._globalState?.get<boolean>(CONFIRM_WRITES_KEY) ?? false;
-      this.post({ type: 'security_status', confirmWrites: writesEnabled, confirmScripts: enabled });
+      // 3. 推送最新状态给 webview（写入确认已退役，只剩执行确认这一项）
+      this.post({ type: 'security_status', confirmScripts: enabled });
       this.post({
         type: 'notice',
         level: 'info',
@@ -1569,9 +1533,8 @@ export class MemoraSettingsPanel {
    * 从 globalState 读取持久化开关值，推送给 webview 渲染初始状态。
    */
   private loadSecurityStatus(): void {
-    const enabled = this._globalState?.get<boolean>(CONFIRM_WRITES_KEY) ?? false;
     const scripts = this._globalState?.get<boolean>(CONFIRM_SCRIPTS_KEY) ?? false;
-    this.post({ type: 'security_status', confirmWrites: enabled, confirmScripts: scripts });
+    this.post({ type: 'security_status', confirmScripts: scripts });
   }
 
   /**

@@ -68,8 +68,11 @@ export default [
     // 净减 80 行（语义零变化），基线按闸门自报（max 临时置 1 读数）同步下调。
     // 随后同一批 P4 把 metrics.success 判据切到内核 `isRoundSuccessful`（+4 行 import 注释与
     // 兜底注释），基线再按闸门自报刷新为 4453——相对原 4529 仍净减 76 行。
-    files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域 + 过程事件合并域已外置）
-    rules: { 'max-lines': ['error', { max: 4453 }] },
+    // E4 批 4 会话活跃度（+64）撞顶格 ⇒ 顺带外置纯静态 HTML 骨架到 `panels/chatPanelHtml.ts`
+    // （零 this / 零运行时状态，与 settingsPanelHtml 同型），净减 210；
+    // 基线按闸门自报下调为 4243，不留虚空余量。
+    files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域 + 过程事件合并域 + HTML 骨架已外置）
+    rules: { 'max-lines': ['error', { max: 4243 }] },
   },
   {
     files: ['src/webview/panels/settingsPanel.ts'], // TARGET（六页合一；安全页静态骨架已外置）

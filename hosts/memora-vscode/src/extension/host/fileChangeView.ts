@@ -131,8 +131,6 @@ export interface FileChangeSecurityGuard {
 export interface FileChangeViewDeps {
   /** 取路径守卫（懒取，Agent 可能尚未装配） */
   getSecurityGuard: () => FileChangeSecurityGuard | undefined;
-  /** 是否开启写前审批（confirmWrites）：开启时抑制自动打开（审批卡已展示） */
-  isConfirmWrites: () => boolean;
   /** 诊断日志（接 Memora 输出通道；用于暴露装饰/打开等静默失败） */
   log: (message: string) => void;
 }
@@ -453,8 +451,7 @@ export class FileChangeView implements FileChangeSink {
     this.refreshStatusBar();
     this.lensProvider.refresh();
     this.notifyChanged();
-    // 写前审批开启时，审批卡已展示 diff；此处抑制自动打开，避免双呈现（§3.3）
-    if (this.deps.isConfirmWrites()) return;
+    // 写入确认已退役（写文件一律直接落盘）：改动一律自动打开对照，无「审批卡已展示」的抑制面
     void this._render.revealChange(record);
   }
 
@@ -468,7 +465,6 @@ export class FileChangeView implements FileChangeSink {
     this.refreshStatusBar();
     this.lensProvider.refresh();
     this.notifyChanged();
-    if (this.deps.isConfirmWrites()) return;
     for (const rec of records) void this._render.revealChange(rec);
   }
 

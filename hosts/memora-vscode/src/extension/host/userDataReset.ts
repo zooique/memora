@@ -25,9 +25,9 @@
  *   - 旧键 memora.maxContextTokens 不由本模块清——activate 的 migrateMaxContextTokens
  *     无条件迁移时已清除（providerStore.ts），用户点初始化时该键早已不在。
  *
- * 落盘清理 ≠ 内存回首装态：activeRolePack / rolePackTeams / confirmWrites /
- * confirmScripts 都是装配期读一次，globalState 清了内存不跟着变 ⇒ 调用方清理成功后
- * 必须 reload window。本模块**不自己 reload**——重启时机归命令层决策，本模块只管存储。
+ * 落盘清理 ≠ 内存回首装态：activeRolePack / rolePackTeams / confirmScripts 都是装配期
+ * 读一次，globalState 清了内存不跟着变 ⇒ 调用方清理成功后必须 reload window。
+ * 本模块**不自己 reload**——重启时机归命令层决策，本模块只管存储。
  *
  * 幂等：已清的键/目录二次执行零副作用（keys() 不再返回已删键、update undefined 可重放、
  * rm force 对不存在的目录静默），失败可安全重试。

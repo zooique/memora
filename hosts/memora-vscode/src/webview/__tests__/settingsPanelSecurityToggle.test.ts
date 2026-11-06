@@ -1,23 +1,19 @@
 /**
- * settingsPanel `security_toggle` 路由测试（2026-10-24 协议治理：两通道合并后的 target 分流）
+ * settingsPanel `security_toggle` 路由测试
+ *
+ * 2026-11-06（E4 批 4）写入二次确认退役：写文件一律直接落盘，协议里的 `target` 字段
+ * 随双开关一起删除，本通道只剩「执行确认」一个语义。
  *
  * 覆盖被测不变量：
- *   ① `target: 'confirmWrites'` → 持久化 CONFIRM_WRITES_KEY + 热更新
- *      `agent.security.setConfirmWrites`，**不**碰 setConfirmScripts；
- *   ② `target: 'confirmScripts'` → 持久化 CONFIRM_SCRIPTS_KEY + 热更新
- *      `agent.security.setConfirmScripts`，**不**碰 setConfirmWrites；
- *   ③ 两个分支各自回推 security_status（另一开关沿用持久值，保持双开关显示一致）。
- *
- * 为什么必须测（不带伤自证）：合并前分流由「消息类型」天然完成（open 两条通道各走各的
- * 分支）；合并后分流由本处的 `msg.target` 判断完成——**这是新写的路由逻辑**，写反了
- * （confirmWrites 调 setConfirmScripts）不会有任何编译错，只会表现为「勾写入却改了脚本
- * 确认」。⚠ 变异靶标：把两个分支对调 ⇒ 用例 ①② 同时转红。
+ *   ① `security_toggle` → 持久化 CONFIRM_SCRIPTS_KEY + 热更新 `setConfirmScripts`；
+ *   ② 写入确认无任何宿主通道（`setConfirmWrites` 永远不会被本通道触碰）；
+ *   ③ 回推 `security_status` 只含 `confirmScripts`（协议面残留 confirmWrites 即双源）。
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Agent } from '@zooique/memora';
 import { MemoraSettingsPanel } from '../panels/settingsPanel.js';
-import { CONFIRM_SCRIPTS_KEY, CONFIRM_WRITES_KEY } from '../../shared/constants.js';
+import { CONFIRM_SCRIPTS_KEY } from '../../shared/constants.js';
 
 vi.mock('vscode', () => ({
   Uri: { joinPath: () => ({ toString: () => 'mock://uri' }) },
@@ -35,7 +31,7 @@ vi.mock('vscode', () => ({
   env: { language: 'zh-cn' },
 }));
 
-/** agent 桩：只暴露 security 双热更新入口 + 事件订阅空实现（ensureAgent 绑定用） */
+/** agent 桩：只暴露 security 热更新入口 + 事件订阅空实现（ensureAgent 绑定用） */
 function agentStub(): {
   agent: Agent;
   setConfirmWrites: ReturnType<typeof vi.fn>;
@@ -82,55 +78,31 @@ function setup(agent: Agent): {
   return { provider, posted, globalUpdate, factory };
 }
 
-/** 经 handleMessage 路由发 security_toggle（测全链：消息分支 → target 分流 → 具体 toggle） */
-function sendSecurityToggle(
-  provider: MemoraSettingsPanel,
-  target: string,
-  enabled: boolean,
-): Promise<void> {
+/** 经 handleMessage 路由发 security_toggle（测全链：消息分支 → toggleConfirmScripts） */
+function sendSecurityToggle(provider: MemoraSettingsPanel, enabled: boolean): Promise<void> {
   return (provider as unknown as { handleMessage(msg: unknown): Promise<void> }).handleMessage({
     type: 'security_toggle',
-    target,
     enabled,
   });
 }
 
-describe('settingsPanel 安全开关 target 路由（协议合并后的唯一分流点）', () => {
+describe('settingsPanel 安全开关（只剩执行确认一个语义）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('target=confirmWrites → 只动写入确认（持久化 + 热更新），不碰脚本开关', async () => {
+  it('security_toggle → 持久化 + 热更新执行确认；写入确认无任何通道', async () => {
     const { agent, setConfirmWrites, setConfirmScripts } = agentStub();
     const { provider, posted, globalUpdate } = setup(agent);
 
-    await sendSecurityToggle(provider, 'confirmWrites', true);
-
-    expect(globalUpdate).toHaveBeenCalledWith(CONFIRM_WRITES_KEY, true);
-    expect(setConfirmWrites).toHaveBeenCalledWith(true);
-    expect(setConfirmScripts).not.toHaveBeenCalled();
-    // 回推双开关状态：另一开关沿用持久值（未配置 → false）
-    expect(posted).toContainEqual({
-      type: 'security_status',
-      confirmWrites: true,
-      confirmScripts: false,
-    });
-  });
-
-  it('target=confirmScripts → 只动脚本确认（持久化 + 热更新），不碰写入开关', async () => {
-    const { agent, setConfirmWrites, setConfirmScripts } = agentStub();
-    const { provider, posted, globalUpdate } = setup(agent);
-
-    await sendSecurityToggle(provider, 'confirmScripts', true);
+    await sendSecurityToggle(provider, true);
 
     expect(globalUpdate).toHaveBeenCalledWith(CONFIRM_SCRIPTS_KEY, true);
     expect(setConfirmScripts).toHaveBeenCalledWith(true);
+    // 写入确认已退役：本通道绝不能回退成「顺手也改写入」
     expect(setConfirmWrites).not.toHaveBeenCalled();
-    expect(posted).toContainEqual({
-      type: 'security_status',
-      confirmWrites: false,
-      confirmScripts: true,
-    });
+    // 协议面只剩执行确认一项
+    expect(posted).toContainEqual({ type: 'security_status', confirmScripts: true });
   });
 });
 

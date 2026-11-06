@@ -43,9 +43,10 @@ import { join } from 'node:path';
  * 按「阈值 = 当前计数 + 1 余量」口径重算
  * （2026-10-28 实测 131 ⇒ 132，Q3 后 133 ⇒ 134；2026-11-02 增三条后 136 ⇒ 137，
  *  同日剪枝后实测 134 ⇒ 135；同日压缩包导入合并为单条后实测 135 ⇒ 136；
- *  2026-11-03 复制通道合并为单条后实测 136 ⇒ 137）。
+ *  2026-11-03 复制通道合并为单条后实测 136 ⇒ 137；
+ *  2026-11-06 增会话活跃度快照 `session_activity` 后实测 137 ⇒ 138）。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 137;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 138;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

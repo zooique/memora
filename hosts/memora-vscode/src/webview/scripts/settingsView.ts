@@ -491,10 +491,10 @@ function renderUnmatchedDisabledTip(countEl: HTMLElement, unmatched: string[] | 
 }
 
 /**
- * 安全子视图初始化与渲染（写入审批）
+ * 安全子视图初始化与渲染（执行确认 + 路径白名单）
  *
  * 职责：
- *   - 渲染「写入二次确认」toggle 开关
+ *   - 渲染「执行二次确认」toggle 开关（写入确认开关已退役：写文件一律直接落盘）
  *   - 监听 host 的 security_status 消息更新开关状态
  *   - 开关切换时发送 security_toggle 消息通知 host
  */
@@ -507,7 +507,6 @@ function createSecurityView({
   window: Window;
   root: HTMLElement;
 }): void {
-  const toggle = root.querySelector<HTMLInputElement>('#confirmWritesToggle');
   const scriptsToggle = root.querySelector<HTMLInputElement>('#confirmScriptsToggle');
   const statusEl = root.querySelector<HTMLElement>('#securityStatus');
 
@@ -563,35 +562,18 @@ function createSecurityView({
     vscode.postMessage({ type: 'allowed_paths_set', paths: currentPaths });
   });
 
-  // 开关切换事件：通知 host（仅当 toggle 存在时）
-  if (toggle) {
-    toggle.addEventListener('change', () => {
-      vscode.postMessage({
-        type: 'security_toggle',
-        target: 'confirmWrites',
-        enabled: toggle.checked,
-      });
-      if (statusEl) {
-        statusEl.textContent = toggle.checked
-          ? '已开启：写文件前将弹出审批卡'
-          : '已关闭：写文件自动批准';
-        statusEl.hidden = false;
-      }
-    });
-  }
-
-  // 脚本执行二次确认开关：通知 host（security_toggle target=confirmScripts）
+  // 执行二次确认开关：通知 host（security_toggle；写入确认已退役，通道只剩这一项）
   if (scriptsToggle) {
     scriptsToggle.addEventListener('change', () => {
       vscode.postMessage({
         type: 'security_toggle',
-        target: 'confirmScripts',
         enabled: scriptsToggle.checked,
       });
       if (statusEl) {
+        // 文案与 security_status 分支同源（同一判据两处措辞必漂移）：统一说「脚本/命令」
         statusEl.textContent = scriptsToggle.checked
-          ? '已开启：运行脚本/代码前将弹出审批卡'
-          : '已关闭：脚本自动运行';
+          ? '已开启：脚本/命令执行前审批'
+          : '已关闭：脚本/命令自动放行';
         statusEl.hidden = false;
       }
     });
@@ -840,13 +822,11 @@ function createSecurityView({
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
     if (msg.type === 'security_status') {
-      if (toggle) toggle.checked = msg.confirmWrites;
       if (scriptsToggle) scriptsToggle.checked = msg.confirmScripts;
       if (statusEl) {
-        const parts: string[] = [];
-        parts.push(msg.confirmWrites ? '写文件前审批' : '写文件自动批准');
-        parts.push(msg.confirmScripts ? '脚本/命令执行前审批' : '脚本/命令自动放行');
-        statusEl.textContent = `已开启：${parts.join(' · ')}`;
+        statusEl.textContent = msg.confirmScripts
+          ? '已开启：脚本/命令执行前审批'
+          : '已关闭：脚本/命令自动放行';
         statusEl.hidden = false;
       }
     }

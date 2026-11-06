@@ -41,6 +41,14 @@ export interface AskDeps {
   runFlow: (
     factory: (signal: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>,
   ) => Promise<void>;
+  /**
+   * 在途提问集合变化（写入 / 回答 / 超时 / 停止收场）
+   *
+   * 宿主据此重算「待处理会话」——后台会话等到提问时，列表标识与入口角标必须亮；
+   * 若只在 chatPanel 的 setPending 调用点刷新，超时与停止两条清除路径必漏（标识留在屏上）。
+   * 无参：面板按会话建协调器，会话身份在构造闭包里，宿主不需要第二份会话标识。
+   */
+  onPendingChanged?: () => void;
 }
 
 /**
@@ -73,6 +81,8 @@ export class AskCoordinator {
   /** 提问写入源（overwrite 全量写）：事件驱动与流尾兜底两处共用 */
   setPending(questions: PendingQuestionDto[]): void {
     this._pending = questions;
+    // 待处理标识的唯一变更通知点（后台会话等到提问 ⇒ 列表标识 / 入口角标亮）
+    this._deps.onPendingChanged?.();
   }
 
   /** 在途提问只读投影（供宿主 `deriveTurnState` 派生 turnState 用） */
@@ -83,6 +93,7 @@ export class AskCoordinator {
   /** 提问被回答 / 被新提问覆盖 ⇒ 整体清空（非消费式 splice 逐条弹出） */
   clearPending(): void {
     this._pending = [];
+    this._deps.onPendingChanged?.();
   }
 
   /** 启动/重置 ask 等待超时计时器（覆写式；超时保底入口） */
@@ -130,6 +141,7 @@ export class AskCoordinator {
     const pendingQs = this._pending;
     if (pendingQs.length === 0) return;
     this._pending = []; // 提问已超时消费（整体清空，非 splice 逐条弹出）
+    this._deps.onPendingChanged?.(); // 标识随「提问已消费」熄灭（超时是清除路径之一）
     this.postQaRows(pendingQs, 'timeout', ASK_TIMEOUT_NOTICE);
     // 可续跑的唯一事实 = 内核仍持暂停检查点：`resumeExecution` 内部判据同源
     //（`status !== 'paused'` 直接 return）。不先问这一句，就会在无可续跑点时
@@ -167,6 +179,8 @@ export class AskCoordinator {
     const pendingQs = this._pending;
     this._pending = [];
     this.clearAskTimeout();
+    // 停止收场同样属于「提问被消费」：标识必须熄灭，否则停止后列表还挂着「待处理」
+    this._deps.onPendingChanged?.();
     // 未答提问逐条留痕：与内核 appendInterrupted 落盘的 unanswered 行**同文案、同题身份**，
     // 保证运行时与重放同面（题面与候选不丢）
     if (pendingQs.length > 0) {

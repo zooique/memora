@@ -23,7 +23,7 @@ const HTML = `
     <button id="newSessionBtn"><span class="btn-icon" data-icon="plus"></span></button>
   </div>
   <div id="historyDd" class="treedd session-history" data-treedd data-on-select="__historyOnSelect">
-    <button id="historyBtn" class="treedd__trigger"><span class="btn-icon" data-icon="history"></span></button>
+    <button id="historyBtn" class="treedd__trigger"><span class="btn-icon" data-icon="history"></span><span id="historyPendingBadge" class="session-history__entry-badge" hidden></span></button>
     <!-- 镜像生产 DOM 结构（分组切换器 + 搜索框 + 条目容器同级；tab/搜索框不带 .treedd__item） -->
     <div class="treedd__menu">
       <div id="historyTabs" class="session-tabs" role="tablist">

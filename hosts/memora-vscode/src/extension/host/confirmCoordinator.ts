@@ -43,6 +43,34 @@ export interface ConfirmDeps {
    * 通知里**不得**承载 diff 全文——`info.description` 是全文级内容，进 toast 即撑爆且泄露。
    */
   onConfirmShown?: (info: { requestId: string; label: string }) => void;
+  /**
+   * 某会话的「待处理确认」数量变化（入队 / 裁决 / 超时）
+   *
+   * 宿主据此重算列表标识与入口角标。**必须按会话回调**：后台会话的确认请求入队时
+   * 也要亮标识，否则「后台在等你处理」对用户完全不可见（静默挂起）。
+   */
+  onPendingChanged?: (sessionId: string, count: number) => void;
+}
+
+/** 单条确认请求（入队即定型：requestId / logLabel 只算一次，重推不换身份） */
+interface ConfirmEntry {
+  requestId: string;
+  info: Parameters<WriteConfirmationRequest>[0];
+  resolve: (v: boolean) => void;
+  /** 决策记录工具面（预计算 `${toolLabel}：${basename}`；裁决/超时同源消费，不记载荷全文） */
+  logLabel: string;
+  /** 是否已推出过审批卡（切走后置 false，切回按需重推） */
+  presented: boolean;
+  /** 超时计时器（**首次推出时**才启动；从未上屏的后台请求不烧超时额度） */
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+/** 单会话确认队列（FIFO 串行：同会话同时只推一张卡） */
+interface SessionConfirmState {
+  /** 尚未送审的请求 */
+  queue: ConfirmEntry[];
+  /** 当前在途（已推出或待重推）的请求；null = 无在途 */
+  current: ConfirmEntry | null;
 }
 
 /**
@@ -51,46 +79,25 @@ export interface ConfirmDeps {
  * 承载**全部四类**确认请求（写入 / 命令 / 代码 / 脚本执行）——它们在内核共用 `confirmGate`，
  * 宿主只认这一个注入点，故方法名中的 `Write` 是历史命名，不代表「只管写入」。
  *
- * 职责 = 注册回调 + FIFO 排队 + 推送审批卡 + 裁决应答 + 决策留痕 + 收卡，
+ * 职责 = 注册回调 + 每会话 FIFO 排队 + 推送审批卡 + 裁决应答 + 决策留痕 + 收卡，
  * 故名 `ConfirmCoordinator`（协调器）而非 `ConfirmQueue`——域不止队列这一件事。
+ *
+ * **E4 批 4 起按会话绑定**（后台运行与前台一视同仁的唯一例外是「屏幕能显示哪个会话」）：
+ *   - 每会话独立队列与在途请求（`_sessions`），后台会话的确认**照常入队、照常可被裁决**，
+ *     只是**卡先不上屏**——避免 A 的审批卡盖在 B 的界面上（同为「跨会话串台」）；
+ *   - 切到该会话时补推卡（`setForeground`）；切走时收卡但**不终结请求**（回来还能答）；
+ *   - 时延计时只在「卡真正上屏」时启动——排队中的请求不白烧超时额度（沿用 FIFO 语义）。
  */
 export class ConfirmCoordinator {
-  /**
-   * 待处理确认请求（写入 / 命令 / 代码 / 脚本执行共用同一张审批卡）
-   *
-   * 内核触发任一确认时，host 创建 requestId + pending Promise，向 webview 推送
-   * write_confirm_request 审批卡；用户确认/拒绝后 webview 回传 write_confirm_answer，
-   * host resolve 对应 pending Promise，回调内核 confirmationHandler。
-   * 超时自动拒绝（fail-closed）。协议名沿用 write_* 历史命名（改协议面 = breaking，不值）。
-   *
-   * ⚠️ 并发语义（2026-10-05 串行化，修 S2）：内核同一 step 内可**并行**发起多个确认
-   * （如并行 write_file），原先「同时推给 webview、webview 只展示最新」⇒ 旧请求用户根本
-   * 看不到、只能等超时被动拒绝（静默拒绝）。现改 **FIFO 串行**：先入队，一次只推一条，
-   * 裁决/超时后再推下一条 ⇒ 每个请求都真正经过用户，无静默拒绝。
-   * 附带收益：计时从「推送时刻」起算，排在后面的请求不会在排队期间白烧超时额度。
-   */
-  private _pending = new Map<
-    string,
-    {
-      resolve: (v: boolean) => void;
-      timer: ReturnType<typeof setTimeout>;
-      /** 决策记录工具面（预计算 `${toolLabel}：${basename}`；裁决/超时同源消费，不记载荷全文） */
-      logLabel: string;
-    }
-  >();
-  /** 待推送的确认请求队列（FIFO；内核并发确认在此排队，逐个送审）
-   *  载荷类型从 `WriteConfirmationRequest` 形参推导——不自抄一份接口，也无需多引一个类型。 */
-  private _queue: Array<{
-    info: Parameters<WriteConfirmationRequest>[0];
-    resolve: (v: boolean) => void;
-  }> = [];
-  /** 当前正在送审的 requestId（null = 无在途请求，可推下一条） */
-  private _currentId: string | null = null;
+  /** 会话 → 该会话的确认队列（懒建；键 = 会话 id） */
+  private readonly _sessions = new Map<string, SessionConfirmState>();
+  /** 当前显示会话（唯一允许上屏的会话；初值 '' 服务直接驱动协调器的测试） */
+  private _foreground = '';
 
   constructor(private readonly _deps: ConfirmDeps) {}
 
   /**
-   * 绑定确认回调（`SecurityGuard.onWriteConfirmation` 唯一注入口）
+   * 为某会话的 Agent 绑定确认回调（`SecurityGuard.onWriteConfirmation` 唯一注入口）
    *
    * 触发条件随内核判据：写入 = `guest || confirmWrites`；命令 = `classifyCommand` 三档；
    * 代码与脚本 = `guest || confirmScripts`。
@@ -102,57 +109,146 @@ export class ConfirmCoordinator {
    * VS Code 切走/隐藏面板也会触发 onDidDispose，若在 dispose 时逐个 resolve(false)，
    * 用户切走看个东西回来就被拒（误伤）。正确兜底链 = ①超时（CONFIRM_TIMEOUT_MS，fail-closed）
    * ②webview ready 时补推 pending 队列快照（P2，保证切回来卡还在）。本方法**不在** dispose 清理。
+   *
+   * @param sessionId 该 Agent 所属会话（决定卡推到哪个会话、切会话时的挂起/重推）
+   * @param agent     该会话的实例（缺省时静默返回，供装配未完成的容错路径）
    */
-  bindWriteConfirmation(): void {
-    const agent = this._deps.getAgent();
+  bindSession(sessionId: string, agent: Agent | undefined): void {
     const guard = agent?.security;
     if (!guard) return;
     // 注入确认回调（幂等：onWriteConfirmation 内部覆盖赋值，无重复注册风险）
     const handler: WriteConfirmationRequest = (info) =>
-      // 入队后尝试推送（FIFO 串行）：并发确认逐个送审，杜绝「只展示最新、旧请求静默超时」
       new Promise<boolean>((resolve) => {
-        this._queue.push({ info, resolve });
-        this._pump();
+        this._enqueue(sessionId, info, resolve);
       });
     guard.onWriteConfirmation(handler);
   }
 
   /**
-   * 推送队首确认请求（FIFO 串行送审的唯一推送点）
+   * 兼容入口：把**当前显示会话**的确认回调绑到最新 agent（chatPanel `bindAgent` 的 sugar）
    *
-   * 有在途请求则**不推**（等其裁决/超时后由 `_settle` 再泵）——同时推多条会让
-   * webview 只留最后一张卡，其余用户根本看不到（S2 静默拒绝的根因）。
-   * 计时自推送时刻起算：排在后面的请求不会在排队期间白烧超时额度。
+   * 保留理由：chatPanel 的「换实例即重绑」只有这一处收口，拆成调用方自己传 sessionId
+   * 会让「绑定会话」与「设置显示会话」在不同方法里各写一次，时序上容易漏。
    */
-  private _pump(): void {
-    if (this._currentId !== null) return;
-    const next = this._queue.shift();
-    if (!next) return;
-    const { info, resolve } = next;
-    // 生成唯一请求 ID，用于匹配 write_confirm_answer
-    const requestId = `wc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  bindWriteConfirmation(): void {
+    this.bindSession(this._foreground, this._deps.getAgent());
+  }
+
+  /**
+   * 切换当前显示会话（卡的上屏权随会话走）
+   *
+   * @param sessionId 新的显示会话
+   */
+  setForeground(sessionId: string): void {
+    if (this._foreground === sessionId) return;
+    const previous = this._foreground;
+    this._foreground = sessionId;
+    // 离开旧会话：先收卡（不终结请求——回来还能答；计时器继续走，属已上屏请求的既定语义）
+    const old = this._sessions.get(previous);
+    if (old?.current?.presented) {
+      old.current.presented = false;
+      this._deps.post({ type: 'write_confirm_closed', requestId: old.current.requestId });
+    }
+    // 进入新会话：有在途未上屏卡 ⇒ 补推；否则泵队首
+    const next = this._sessions.get(sessionId);
+    if (next?.current && !next.current.presented) {
+      this._show(next.current);
+    } else if (!next?.current) {
+      this._pump(sessionId);
+    }
+  }
+
+  /**
+   * 重推当前显示会话的审批卡（webview 重建 / 面板重开时调用）
+   *
+   * 视图重建不会终结请求，但新 webview 里没有旧卡 ⇒ 不重推就会「卡凭空消失、用户无从作答」。
+   */
+  repostForeground(): void {
+    const state = this._sessions.get(this._foreground);
+    if (state?.current) this._show(state.current);
+  }
+
+  /**
+   * 某会话未处理确认数（列表标识 / 入口角标的判据）
+   *
+   * @param sessionId 会话标识
+   */
+  pendingCount(sessionId: string): number {
+    const state = this._sessions.get(sessionId);
+    if (!state) return 0;
+    return state.queue.length + (state.current ? 1 : 0);
+  }
+
+  /**
+   * 入队（同一会话 FIFO 串行）
+   *
+   * 只有**当前显示会话**才立即尝试送审；后台会话只入队（标识由 `pendingCount` 亮起），
+   * 等 `setForeground` 切过去再上屏——这是「卡不跨会话串台」的唯一实现点。
+   */
+  private _enqueue(
+    sessionId: string,
+    info: Parameters<WriteConfirmationRequest>[0],
+    resolve: (v: boolean) => void,
+  ): void {
     // 工具中文名走 toolNameMap 单一真源（复用公开入口 getToolDisplayName）：
     // 本地另建映射易产生幽灵键（edit_file / create_file / append_file 内核并不存在——
     // 唯一写入工具是 write_file），还可能同工具异名双写（「写文件」vs「写入文件」）；
     // 复用入口后内核工具更名/新增无需第二处同步。
     const toolLabel = getToolDisplayName(info.tool);
-    this._currentId = requestId;
-    // 决策记录工具面（预计算）：basename 与安全审计同款取法，防折叠区冗长且不泄露完整目录结构
-    const logLabel = `${toolLabel}：${info.targetPath.split(/[\\/]/).pop() ?? info.targetPath}`;
-    // 超时 timer（fail-closed：超时 = 拒绝）
-    const timer = setTimeout(() => {
-      resolve(false);
-      // 超时拒同样走决策记录（唯一发点 _logDecision）：红条警示 + 时间线留痕，单条双职不双写
-      this._logDecision(requestId, 'timeout');
-      this._settle(requestId);
-    }, CONFIRM_TIMEOUT_MS);
-    this._pending.set(requestId, { resolve, timer, logLabel });
+    const entry: ConfirmEntry = {
+      requestId: `wc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      info,
+      resolve,
+      // 决策记录工具面：basename 与安全审计同款取法，防折叠区冗长且不泄露完整目录结构
+      logLabel: `${toolLabel}：${info.targetPath.split(/[\\/]/).pop() ?? info.targetPath}`,
+      presented: false,
+    };
+    const state = this._stateFor(sessionId);
+    state.queue.push(entry);
+    this._deps.onPendingChanged?.(sessionId, this.pendingCount(sessionId));
+    if (sessionId === this._foreground) this._pump(sessionId);
+  }
+
+  /** 取（或建）某会话的确认队列 */
+  private _stateFor(sessionId: string): SessionConfirmState {
+    let state = this._sessions.get(sessionId);
+    if (!state) {
+      state = { queue: [], current: null };
+      this._sessions.set(sessionId, state);
+    }
+    return state;
+  }
+
+  /**
+   * 推送该会话队首确认请求（FIFO 串行送审的唯一推送点）
+   *
+   * 有在途请求则**不推**（等其裁决/超时后由 `_settle` 再泵）——同时推多条会让
+   * webview 只留最后一张卡，其余用户根本看不到（S2 静默拒绝的根因）。
+   * 计时自推送时刻起算：排在后面的请求不会在排队期间白烧超时额度。
+   */
+  private _pump(sessionId: string): void {
+    const state = this._sessions.get(sessionId);
+    if (!state || state.current) return;
+    const next = state.queue.shift();
+    if (!next) return;
+    state.current = next;
+    this._show(next);
+  }
+
+  /**
+   * 把一条请求推出 webview（首推 / 切回重推共用）
+   *
+   * 同一 requestId 可以推多次（webview 按 id 覆盖渲染）：请求身份不因上屏次数而变。
+   */
+  private _show(entry: ConfirmEntry): void {
+    entry.presented = true;
+    const { info, requestId } = entry;
     this._deps.post({
       type: 'write_confirm_request',
       requestId,
       targetPath: info.targetPath,
       tool: info.tool,
-      description: info.description || `${toolLabel}：${info.targetPath}`,
+      description: info.description || `${getToolDisplayName(info.tool)}：${info.targetPath}`,
       permission: info.permission,
       beforeContent: info.beforeContent ?? null,
       afterContent: info.afterContent,
@@ -162,9 +258,25 @@ export class ConfirmCoordinator {
       // 不自算，末段倒计时因此不可能与宿主计时漂移。
       timeoutMs: CONFIRM_TIMEOUT_MS,
     });
+    // 首次上屏才起计时：从未上屏的排队请求不得白烧超时额度
+    if (!entry.timer && CONFIRM_TIMEOUT_MS > 0) {
+      entry.timer = setTimeout(() => this._timeout(entry), CONFIRM_TIMEOUT_MS);
+    }
     // 交互提醒钩子（可选）：卡已推出 ⇒ 通知不在面板前的用户。放在 post 之后：
     // 只有卡真的发出去了，提醒才有承接面（先提醒后发卡 = 用户回来找不到卡）。
-    this._deps.onConfirmShown?.({ requestId, label: logLabel });
+    this._deps.onConfirmShown?.({ requestId, label: entry.logLabel });
+  }
+
+  /**
+   * 超时 fail-closed（不批准 = 不执行）
+   *
+   * @param entry 已上屏的请求
+   */
+  private _timeout(entry: ConfirmEntry): void {
+    entry.resolve(false);
+    // 超时拒同样走决策记录（唯一发点 _logDecision）：红条警示 + 时间线留痕，单条双职不双写
+    this._logDecision(entry, 'timeout');
+    this._settle(entry);
   }
 
   /**
@@ -173,11 +285,8 @@ export class ConfirmCoordinator {
    * 载荷纪律：**只记工具面（`logLabel`）+ 裁决结果，不记载荷全文**——`info.description`
    * 是 diff 全文级内容，入线即撑爆时间线窗口（20 条淘汰下挤掉的全是别人的记录）。
    * 超时拒 level 保留 error（红条警示职责不变，单条双职：瞬态条 + 时间线决策行，不双写）。
-   * 必须在 `_settle` **之前**调用（settle 会 delete pending 表项）。
    */
-  private _logDecision(requestId: string, verdict: 'approved' | 'declined' | 'timeout'): void {
-    const pending = this._pending.get(requestId);
-    if (!pending) return;
+  private _logDecision(entry: ConfirmEntry, verdict: 'approved' | 'declined' | 'timeout'): void {
     const word =
       verdict === 'approved'
         ? '已批准'
@@ -188,36 +297,48 @@ export class ConfirmCoordinator {
       type: 'notice',
       level: verdict === 'timeout' ? 'error' : 'info',
       // 动作词中性化：同一张卡也承载命令/代码/脚本执行确认，写「写入」即失实
-      message:
-        verdict === 'timeout' ? `${word}（${pending.logLabel}）` : `${word} ${pending.logLabel}`,
+      message: verdict === 'timeout' ? `${word}（${entry.logLabel}）` : `${word} ${entry.logLabel}`,
       kind: 'decision',
     });
   }
 
   /**
-   * 终结当前在途请求（裁决 / 超时同源）并泵下一条
+   * 终结某会话的当前在途请求（裁决 / 超时同源）并泵下一条
    *
-   * 队列还有 ⇒ **立即**推下一条（卡片被覆盖渲染，不出现「关了又开」的闪烁，composer 也
-   * 不会中途恢复）；队列空 ⇒ 推 write_confirm_closed 收卡（否则卡残留成僵尸交互）。
+   * 队列还有 ⇒ 仅当该会话是显示会话才**立即**推下一条（卡片被覆盖渲染，不出现「关了又开」
+   * 的闪烁，composer 也不会中途恢复）；队列空 ⇒ 推 write_confirm_closed 收卡
+   * （否则卡残留成僵尸交互）。
    */
-  private _settle(requestId: string): void {
-    const pending = this._pending.get(requestId);
-    if (pending) {
-      clearTimeout(pending.timer);
-      this._pending.delete(requestId);
-    }
-    // 只终结「当前在途」那一个：迟到的旧回执不得清空已推进到的新请求状态
-    if (this._currentId !== requestId) return;
-    this._currentId = null;
-    if (this._queue.length > 0) {
-      this._pump();
+  private _settle(entry: ConfirmEntry): void {
+    const sessionId = this._findSession(entry);
+    // 空串是合法会话键（协调器单测直驱时的默认会话）⇒ 必须判 undefined，不能用 falsy 判
+    if (sessionId === undefined) return;
+    const state = this._sessions.get(sessionId)!;
+    if (state.current?.requestId !== entry.requestId) return; // 迟到旧回执不得推进新请求
+    if (entry.timer) clearTimeout(entry.timer);
+    state.current = null;
+    this._deps.onPendingChanged?.(sessionId, this.pendingCount(sessionId));
+    if (sessionId !== this._foreground) return; // 后台会话裁决后不驱动屏幕
+    if (state.queue.length > 0) {
+      this._pump(sessionId);
       return;
     }
-    this._deps.post({ type: 'write_confirm_closed', requestId });
+    this._deps.post({ type: 'write_confirm_closed', requestId: entry.requestId });
+  }
+
+  /** 按 requestId 反查所属会话（裁决/超时终结用） */
+  private _findSession(entry: ConfirmEntry): string | undefined {
+    for (const [sessionId, state] of this._sessions) {
+      if (state.current?.requestId === entry.requestId) return sessionId;
+    }
+    return undefined;
   }
 
   /**
    * 应答入口（webview 回传 `write_confirm_answer` 的唯一处理点）
+   *
+   * 只接受**当前显示会话**的在途请求：切走后收卡，迟到回执（或别的会话的 id）一律丢弃，
+   * 杜绝「B 的界面点了 A 的确认」这类跨会话串台。
    *
    * 顺序**原样保留**（不可调换）：
    *   ① resolve 挂起的 Promise → 内核 confirmationHandler 得裁决
@@ -226,10 +347,11 @@ export class ConfirmCoordinator {
    *      webview 侧不再自行假设「点了就算关」）
    */
   answer(requestId: string, approved: boolean): void {
-    const pending = this._pending.get(requestId);
-    if (!pending) return;
-    pending.resolve(approved);
-    this._logDecision(requestId, approved ? 'approved' : 'declined');
-    this._settle(requestId);
+    const state = this._sessions.get(this._foreground);
+    const entry = state?.current;
+    if (!entry || entry.requestId !== requestId) return;
+    entry.resolve(approved);
+    this._logDecision(entry, approved ? 'approved' : 'declined');
+    this._settle(entry);
   }
 }

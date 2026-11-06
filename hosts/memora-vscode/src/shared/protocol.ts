@@ -268,20 +268,6 @@ export type InjectionSummary = {
 };
 
 /**
- * `security_toggle` 的开关对象（写入确认 / 脚本执行确认）
- *
- * 两个开关同形（都是 boolean），按 target 寻址——对齐 `toggle_skill_disabled`
- * 的「按名寻址」先例。2026-10-24 协议治理：原 `security_toggle` /
- * `security_scripts_toggle` 两条独立通道合并为一条（协议类型总数触达治理阈值 130，
- * 见 `shared/__tests__/protocolGuard.test.ts`），勿再按消息名分裂回去。
- *
- * ⚠️ target 是**传输层语义名**，不是存储键：持久化地址另有真源
- * （`shared/constants.ts` 的 `CONFIRM_WRITES_KEY` / `CONFIRM_SCRIPTS_KEY`，形如
- * `memora.confirmWrites`）。两者刻意不同层——改存储键不该动消息契约，反之亦然。
- */
-export type SecurityToggleTarget = 'confirmWrites' | 'confirmScripts';
-
-/**
  * 引用的身份键与去重规则见 `shared/refKey.ts`（**独立小模块**，非本文件）。
  *
  * 不放本文件的理由：webview 需**值导入**这两个函数（不是 type），若放本协议文件
@@ -769,15 +755,14 @@ export type WebviewToExtensionMessage =
   /**
    * 切换安全类二次确认开关（设置面板「安全」选项卡的 toggle 开关）
    *
-   * 由设置面板「安全」选项卡两个同形开关触发，按 {@link SecurityToggleTarget} 寻址：
-   * host 持久化到 globalState + 热更新 agent.security（setConfirmWrites /
-   * setConfirmScripts）。无需重启 Agent。
+   * 由设置面板「安全」选项卡的执行确认开关触发：host 持久化到 globalState + 热更新
+   * agent.security（setConfirmScripts）。无需重启 Agent。写入确认开关已退役（见上）。
    * 语义：confirmScripts 开 = run_code / run_project_script / run_command（普通命令）
    * 执行前弹窗询问；关（默认）= 自动批准。⚠️ git 写操作与 npm publish 属 ALWAYS_ASK
    * 档，**不受本开关影响**（恒询问不可豁免，内核 `pathGuard.classifyCommand` 裁决），
    * 故开关关闭时它们仍会弹窗。
    */
-  | { type: 'security_toggle'; target: SecurityToggleTarget; enabled: boolean }
+  | { type: 'security_toggle'; enabled: boolean }
   /**
    * 写入审批应答（对 write_confirm_request 的应答）
    *
@@ -1292,6 +1277,28 @@ export type ExtensionToWebviewMessage =
       archivedIds: string[];
     }
   /**
+   * 会话活跃度快照（列表条目标识 + 历史入口角标的**唯一**数据源）
+   *
+   * host 在「运行态 / 待处理态」变化时推送**全量快照**（非增量补丁）：
+   *   - `runningIds` = 正在跑流的会话（真源 = 宿主会话级运行态表，跨视图重建存活）；
+   *   - `pendingIds` = 等用户处理的会话（ask 在途提问 **或** 确认队列有待处理请求）；
+   *   - `badgeCount` = 除当前显示会话外的待处理会话数（入口角标数字 = **会话数**而非事项数：
+   *     角标的唯一动作是「切到那个会话」，事项数无法表达切哪个）。
+   *
+   * 为什么不把这些字段塞进 `session_list_data`：列表是**请求-应答**（用户点历史才拉一次），
+   * 而活跃度是**实时推送**（每步起止都变）。两处都放 = 静态字段与实时字段双源，必漂移；
+   * 且每次活跃度变化都重发整份列表会在用户浏览历史时反复重建菜单 DOM。
+   */
+  | {
+      type: 'session_activity';
+      /** 正在跑流的会话 id */
+      runningIds: string[];
+      /** 等用户处理的会话 id（ask 未答 / 确认未裁决） */
+      pendingIds: string[];
+      /** 入口角标数字（当前显示会话不计入：它的待处理已在屏上可见） */
+      badgeCount: number;
+    }
+  /**
    * Chat Panel Provider 列表同步（底部模型下拉框的数据）
    *
    * 扩展侧在渲染/切换时推送最新 Provider 列表及激活状态，
@@ -1674,11 +1681,12 @@ export type ExtensionToWebviewMessage =
   | { type: 'polish_input_result'; ok: boolean; text?: string; message?: string }
   // ─── 安全/写入审批消息（E→W 方向） ───
   /**
-   * 写入审批请求（E→W：内核触发写入确认时，由 host 推送到 chat webview）
+   * 确认请求（E→W：内核触发任一确认时，由 host 推送到 chat webview）
    *
-   * 当 confirmWrites=true 且发生文件写入操作时，host 生成审批请求推送给 webview。
-   * webview 渲染审批卡（显示目标文件、工具名、diff 预览），用户点击确认/拒绝后
-   * 发送 write_confirm_answer 回传结果。
+   * 触发面 = 命令执行（classifyCommand 需确认档）/ 脚本与代码执行（confirmScripts）/
+   * guest 模式写入。**写文件（owner 模式）不再触发**（2026-11-06 E4 批 4：写文件一律直接落盘，
+   * 前后台一致）。webview 渲染审批卡（目标文件、工具名、diff 预览），用户点击确认/拒绝后
+   * 发送 write_confirm_answer 回传结果。协议名沿用 write_* 历史命名（改协议面 = breaking，不值）。
    */
   | {
       type: 'write_confirm_request';
@@ -1710,12 +1718,11 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'write_confirm_closed'; requestId: string }
   /**
-   * 安全设置状态推送（设置面板加载时推送当前开关状态）
+   * 安全设置状态推送（设置面板加载 / 开关切换后）
    *
-   * 由 host 在 settings 视图 ready 时推送，webview 据此渲染 toggle 初始状态。
-   * enabled=true 时开关高亮开启。
+   * 只剩执行确认一个开关；写入确认开关已退役（写文件一律直接落盘）。
    */
-  | { type: 'security_status'; confirmWrites: boolean; confirmScripts: boolean }
+  | { type: 'security_status'; confirmScripts: boolean }
   /**
    * 白名单额外允许路径状态推送（设置面板加载时推送当前列表）
    *

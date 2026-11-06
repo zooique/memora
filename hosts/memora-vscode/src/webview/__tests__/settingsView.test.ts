@@ -78,10 +78,6 @@ const HTML = `
     <div class="header"><h2>安全设置</h2></div>
     <div class="security-section">
       <label class="toggle-label">
-        <input type="checkbox" id="confirmWritesToggle" />
-        <span>写入二次确认</span>
-      </label>
-      <label class="toggle-label">
         <input type="checkbox" id="confirmScriptsToggle" />
         <span>脚本执行二次确认</span>
       </label>
@@ -267,7 +263,7 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
   });
 });
 
-describe('脚本执行二次确认开关（security_toggle target=confirmScripts，2026-10-24 协议治理合并）', () => {
+describe('脚本执行二次确认开关（2026-10-24 协议治理合并；2026-11-06 写入确认退役后单开关）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -275,57 +271,53 @@ describe('脚本执行二次确认开关（security_toggle target=confirmScripts
     vi.restoreAllMocks();
   });
 
-  it('security_status 推送双开关初始状态（confirmWrites + confirmScripts 各自回显）', () => {
+  it('security_status 推送执行确认初始状态', () => {
     mountSettingsView();
     window.dispatchEvent(
       new MessageEvent('message', {
-        data: { type: 'security_status', confirmWrites: true, confirmScripts: true },
+        data: { type: 'security_status', confirmScripts: true },
       }),
     );
-    expect((document.getElementById('confirmWritesToggle') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('confirmScriptsToggle') as HTMLInputElement).checked).toBe(
       true,
     );
     const statusEl = document.getElementById('securityStatus') as HTMLElement;
-    expect(statusEl.textContent).toContain('写文件前审批');
     // 2026-10-03：开关语义已含 run_command（普通命令），文案随之改判——
     // 原「脚本执行前审批」漏了命令执行这一档，对用户是安全承诺失实
     expect(statusEl.textContent).toContain('脚本/命令执行前审批');
   });
 
-  it('切换脚本确认开关 → 发送 security_toggle(target=confirmScripts) + 更新状态文案', () => {
+  it('切换执行确认开关 → 发送 security_toggle（无 target 字段）+ 更新状态文案', () => {
     const { postMessage } = mountSettingsView();
     const scriptsToggle = document.getElementById('confirmScriptsToggle') as HTMLInputElement;
     scriptsToggle.checked = true;
     scriptsToggle.dispatchEvent(new Event('change'));
     expect(postMessage).toHaveBeenCalledWith({
       type: 'security_toggle',
-      target: 'confirmScripts',
       enabled: true,
     });
     expect((document.getElementById('securityStatus') as HTMLElement).textContent).toContain(
-      '运行脚本/代码前将弹出审批卡',
+      '脚本/命令执行前审批',
     );
   });
 
-  it('host 单独回推 confirmScripts=false 只改脚本开关、不影响写开关', () => {
+  it('host 回推 confirmScripts=false → 开关回显为关（写入开关已不存在）', () => {
     mountSettingsView();
-    // 先置双开
     window.dispatchEvent(
       new MessageEvent('message', {
-        data: { type: 'security_status', confirmWrites: true, confirmScripts: true },
+        data: { type: 'security_status', confirmScripts: true },
       }),
     );
-    // 再单独关脚本确认
     window.dispatchEvent(
       new MessageEvent('message', {
-        data: { type: 'security_status', confirmWrites: true, confirmScripts: false },
+        data: { type: 'security_status', confirmScripts: false },
       }),
     );
-    expect((document.getElementById('confirmWritesToggle') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('confirmScriptsToggle') as HTMLInputElement).checked).toBe(
       false,
     );
+    // 写入确认已退役：DOM 里不得再出现该开关（残留即死通路）
+    expect(document.getElementById('confirmWritesToggle')).toBeNull();
   });
 });
 

@@ -67,6 +67,18 @@ export class SessionRuntimeStates {
     }
     return state;
   }
+
+  /**
+   * 只读查看某会话的运行态（不存在返回 undefined，**不建记录**）
+   *
+   * 列表标识 / 入口角标要遍历「所有已装配会话」，若用 `get()` 会为没跑过的会话
+   * 逐个建空记录——读操作产生写副作用，且会让后续「在跑集合」的派生依赖这份垃圾。
+   *
+   * @param sessionId 会话标识
+   */
+  peek(sessionId: string): SessionRuntimeState | undefined {
+    return this.states.get(sessionId);
+  }
 }
 
 /**

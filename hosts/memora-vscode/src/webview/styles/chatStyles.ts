@@ -335,6 +335,21 @@ export const chatStyles = `
   .session-history__item-time {
     flex: 0 0 auto; font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
+  /* 会话活跃度标识（E4 批 4）：待处理 = accent（需用户动作），运行中 = 次要色（无需动作）。
+     纯文本标签而非圆点：用户不需要记颜色语义，字面直接说明状态。 */
+  .session-history__item-state {
+    flex: 0 0 auto; font-size: var(--font-xs, 10px);
+  }
+  .session-history__item-state.is-pending { color: var(--accent, #0e639c); font-weight: 600; }
+  .session-history__item-state.is-running { color: var(--text-secondary, #9aa0a6); }
+  /* 历史入口角标：绝对定位在 trigger 右上角（数字 = 待处理会话数；0 时 hidden）。
+     尺寸用 em 相对父级字号（角标是字号的派生刻度，不引入一次性 px 裸值）。 */
+  #historyBtn { position: relative; }
+  .session-history__entry-badge {
+    position: absolute; top: -0.22em; right: -0.22em; min-width: 1.55em; height: 1.55em; padding: 0 0.33em;
+    border-radius: 1em; background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff);
+    font-size: 0.9em; line-height: 1.55; text-align: center; pointer-events: none;
+  }
   .session-history__item-del {
     display: inline-flex; align-items: center; justify-content: center;
     width: var(--icon-md); height: var(--icon-md); padding: 0; border: none; border-radius: var(--radius-sm, 2px);
@@ -579,7 +594,7 @@ export const chatStyles = `
     cursor: not-allowed;
   }
   .ask-inline__submit:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
-  /* 写入审批卡：confirmWrites=true 写文件时浮现于消息区底部。
+  /* 确认审批卡：命令/脚本执行确认或 guest 写入时浮现于消息区底部（写文件默认不再确认）。
    * 浅底卡片 + 头部（工具/路径）+ 描述 + 可折叠 diff + 确认/拒绝按钮；
    * 确认用语义令牌 --status-pass、拒绝用 --status-fail —— 与工具执行状态色同源，不造新色。 */
   /* 🔴 同盒替身（UI-CONFIRM-FIT-1，2026-10-22 真机反馈）：本卡在 resolveDock 里**替换**
