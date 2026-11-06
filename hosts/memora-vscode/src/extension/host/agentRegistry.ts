@@ -93,7 +93,17 @@ export class AgentRegistry {
    * @returns 实例快照（遍历期间增删不影响本次遍历）
    */
   list(): Agent[] {
-    return [...this.agents.values()];
+    return this.listEntries().map((entry) => entry.agent);
+  }
+
+  /**
+   * 列出现已登记实例及其会话 id（快照）
+   *
+   * 与 `list()` 同源（后者由本方法派生，不另遍历一次）：需要「按会话汇报广播结果」的动作
+   * 必须拿到 id——否则失败只能报下标，用户不知道哪条会话没生效（组队广播的成功/失败汇总即此）。
+   */
+  listEntries(): { sessionId: string; agent: Agent }[] {
+    return [...this.agents.entries()].map(([sessionId, agent]) => ({ sessionId, agent }));
   }
 
   /**

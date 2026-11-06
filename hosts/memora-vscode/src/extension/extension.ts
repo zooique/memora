@@ -27,6 +27,7 @@ import { readSessionRolePackName } from './host/sessionRolePack.js';
 import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
 import { AgentRegistry } from './host/agentRegistry.js';
+import { broadcastRolePackTeams } from './host/rolePackTeams.js';
 import { MemoryGcScheduler } from './host/memoryGcScheduler.js';
 import { ImageCache } from './host/imageCache.js';
 import { ProviderStore } from './providers/providerStore.js';
@@ -86,28 +87,24 @@ function resolveProjectSearchRoot(): string | undefined {
 }
 
 /**
- * 会话 → Agent 登记表（模块级引用，供 deactivate 关闭**全部**实例）
+ * 会话 → Agent 登记表（模块级引用；供 deactivate 关闭**全部**实例）
  *
- * E4 批 2 起生产唯一取用面：面板工厂 / 命令 / 设置面板 / 信任门 / 配置热更一律经它。
- * 单实例 `agentPromise` / 同步引用 `currentAgent` 已删除——多会话下一台实例不够用，
- * 「同步取当前 Agent」改由面板提供（`chatProvider.getCurrentAgent()`）。
+ * 生产唯一取用面：面板 / 命令 / 设置面板 / 信任门 / 配置热更一律经它（单实例引用已删）。
  */
 let hostAgentRegistry: AgentRegistry | null = null;
 
 /**
- * 孤儿 Round GC 的单点调度器（E6：一个宿主进程只有一份）
+ * 孤儿 Round GC 的单点调度器（一个宿主进程只有一份）
  *
- * 内核侧 Agent 一律以 `autoStartGc: false` 装配（只登记不启动），周期扫描只由本调度器驱动；
- * 否则 N 个实例各挂一个定时器，会对同一对共享存储重复扫描 N 次。
+ * 内核 Agent 一律 `autoStartGc: false`、只登记不启动；周期扫描仅由本调度器驱动，避免 N 份重复扫描。
  */
 let gcScheduler: MemoryGcScheduler | null = null;
 
 /**
  * 激活期会话存储单例的模块级引用（仅用于停用时释放跨进程会话锁）
  *
- * 会话锁是**进程级 OS 句柄**（命名管道 / Unix socket）：不释放就一直占着，别的窗口
- * 永远拿不到该会话。`deactivate` 原本拿不到 `activate` 内的局部 `sessionStore`，
- * 于是锁只能等进程退出才由 OS 回收 ⇒ 「关掉面板/停用插件后另一个窗口仍打不开该会话」。
+ * 会话锁是进程级 OS 句柄：不释放别的窗口永远打不开该会话；`deactivate` 原本拿不到局部
+ * `sessionStore`，锁只能等进程退出才由 OS 回收。
  */
 let hostSessionStore: WorkspaceSessionStore | null = null;
 
@@ -122,7 +119,6 @@ let hostMemoryStorage: IMemoryStorage | null = null;
 
 /**
  * 扩展版本号（MCP 客户端握手时上报给 server，仅作遥测，不参与任何判据）
- *
  * activate 时从扩展清单取值——版本号唯一真源是 package.json，宿主不另存常量
  * （另存一份必然与发版数字漂移）。activate 前为空串，此时 MCP 尚未装配，不影响使用。
  */
@@ -643,6 +639,10 @@ export function activate(context: vscode.ExtensionContext): void {
   settingsProvider.setAgentFactory(getAgent, peekAgent, resolveSessionId);
   settingsProvider.setGlobalState(context.globalState);
   settingsProvider.setSessionStore(sessionStore); // 角色切换落盘到会话文件（装配期读回）
+  // 组队热更广播：全局一份数据 ⇒ 写时打所有已装配实例（判据见 setTeamBroadcaster 文档）
+  settingsProvider.setTeamBroadcaster((teams) =>
+    broadcastRolePackTeams(agentRegistry.listEntries(), teams),
+  );
   // 注入技能目录：用户目录（打开目录按钮）+ 内置配置目录（三源技能来源判定，SSOT 收紧）
   settingsProvider.setUserSkillsDir(userSkillsDir);
   settingsProvider.setConfigDir(configDir);

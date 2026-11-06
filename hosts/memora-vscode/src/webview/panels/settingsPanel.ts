@@ -26,7 +26,13 @@ import type { ProviderStore } from '../../extension/providers/providerStore.js';
 // 会话存储（角色切换成功后按会话落盘；只用 updateSessionMeta 这一写点）
 import type { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { createBackgroundProvider } from '../../extension/host/llmConfig.js';
-import { inspectRolePackTeams } from '../../extension/host/rolePackTeams.js';
+import {
+  inspectRolePackTeams,
+  saveRolePackTeam,
+  deleteRolePackTeam,
+  describeTeamBroadcast,
+  type TeamBroadcastResult,
+} from '../../extension/host/rolePackTeams.js';
 import { MemoraChatViewProvider } from './chatPanel.js';
 // 静态 DOM 骨架外置（settingsPanelHtml.ts）：本文件贴 max-lines 只降不升，骨架线性增长
 import { buildHtml } from './settingsPanelHtml.js';
@@ -85,7 +91,7 @@ import {
 } from '../../shared/constants.js';
 // 内核常量与键面/校验入口（宿主不复制字面量，SSOT 单一来源）：
 //   BUILTIN_FALLBACK_PACK — 兜底契约包名，随内核包分发，宿主 UI 禁删标记；
-//   MAX_TEAM_MEMBERS      — 小组会议组员上限，本处用于保存校验，并随 roles_loaded 下发给 webview；
+//   MAX_TEAM_MEMBERS      — 小组会议组员上限，随 roles_loaded 下发给 webview（保存校验在 rolePackTeams.ts）；
 //   describeStrategyKeys  — UI 键面唯一来源（strategyKeys.ts），随 roles_loaded 下发，宿主零清单维护；
 //   validateManifestText  — 角色包保存前校验入口（宿主不重写判据，校验失败不写盘）。
 import {
@@ -121,6 +127,11 @@ export class MemoraSettingsPanel {
   private _sessionStore: WorkspaceSessionStore | undefined;
   /** 全局状态存储（Memento；角色激活态已改为**会话级**落盘，这里不再承载角色，保留供其他用户级配置） */
   private _globalState: vscode.Memento | undefined;
+  /** 组队热更广播器（extension 注入，真源 = `AgentRegistry.listEntries()`）。
+   *  组队数据是用户级全局一份 ⇒ 写时必须打所有已装配实例（`TEAM-HOTUPDATE-FANOUT-1`）；
+   *  未注入时退回当前显示会话（改造前行为，仅覆盖未接线装配路径）。 */
+  private _broadcastTeams:
+    ((teams: { leader: string; members: string[] }[]) => TeamBroadcastResult) | undefined;
   /** 待切换的子选项卡（configureModel 命令在视图未就绪时缓存，webview ready 后补发） */
   private _pendingTab: SettingsTab | undefined;
   /** webview 是否已发 `ready`（html context 已建立 + 全部子视图监听器已注册）。
@@ -179,6 +190,19 @@ export class MemoraSettingsPanel {
   /** 注入全局状态（Memento；角色激活态已改为会话级，不再经此持久化） */
   public setGlobalState(gs: vscode.Memento): void {
     this._globalState = gs;
+  }
+
+  /**
+   * 注入组队热更广播器（真源 = `AgentRegistry.listEntries()`，见 `broadcastRolePackTeams`）
+   *
+   * 为什么必须广播：组队名单存 `globalState`（用户级、全局一份），装配期注入**所有**会话。
+   * 写的时候只打当前显示会话 = 「读的时候全局、写的时候单实例」的不对称：A 改组后 B 仍持
+   * 旧名单，且用户无从察觉。故广播的判据是**数据归属**，不是「哪个面板在改」。
+   */
+  public setTeamBroadcaster(
+    broadcast: (teams: { leader: string; members: string[] }[]) => TeamBroadcastResult,
+  ): void {
+    this._broadcastTeams = broadcast;
   }
 
   /** 注入对话面板提供者（角色 handoff 预填跨 webview 投递，由 extension 装配时注入） */
@@ -319,24 +343,54 @@ export class MemoraSettingsPanel {
       }
       return;
     }
-    // 保存角色包组（会议名单）：校验 → 持久化 globalState → 热更新内核 → 重推角色视图 → 通知 chatPanel
+    // 保存角色包组（会议名单）：校验 → 持久化 globalState → 广播热更所有已装配实例 → 重推角色视图
     if (msg.type === 'roles_team_save') {
-      const result = await this.saveRolePackTeam(msg.leader, msg.members);
+      // 保存成功后的用户可见提示（含广播汇总）由本分支统一发，避免两条 notice 打架
+      const agent = await this.ensureAgent();
+      const result = await saveRolePackTeam(
+        {
+          globalState: this._globalState,
+          rpm: agent?.rolePackManager ?? undefined,
+          broadcast: this._broadcastTeams,
+        },
+        msg.leader,
+        msg.members,
+      );
+      if (!result.ok) {
+        this.post({ type: 'notice', level: 'error', message: result.reason });
+        return;
+      }
+      // 有失败会话 = 部分会话未生效：提示升为 error，避免用户以为全量成功（不静默吞）
+      const hasFailure = (result.broadcast?.failed.length ?? 0) > 0;
       this.post({
         type: 'notice',
-        level: result.ok ? 'info' : 'error',
-        message: result.ok ? '小组已保存' : result.reason,
+        level: hasFailure ? 'error' : 'info',
+        message: describeTeamBroadcast('保存', result.broadcast),
       });
-      if (result.ok) {
-        await this.loadRoles();
-        // 热更新通知：chatPanel 重推 chat_role_pack 让 chatView 刷新 team 图标（组长队伍变更后图标显隐）
-        this._chatProvider?.refreshActiveRolePackForTeam();
-      }
+      await this.loadRoles();
+      // 热更新通知：chatPanel 重推 chat_role_pack 让 chatView 刷新 team 图标（组长队伍变更后图标显隐）
+      this._chatProvider?.refreshActiveRolePackForTeam();
       return;
     }
-    // 删除角色包组（会议名单）：持久化移除 + 热更新内核 → 通知 chatPanel
+    // 删除角色包组（会议名单）：持久化移除 + 广播热更 → 通知 chatPanel
     if (msg.type === 'roles_team_delete') {
-      await this.deleteRolePackTeam(msg.leader);
+      const agent = await this.ensureAgent();
+      const result = await deleteRolePackTeam(
+        {
+          globalState: this._globalState,
+          rpm: agent?.rolePackManager ?? undefined,
+          broadcast: this._broadcastTeams,
+        },
+        msg.leader,
+      );
+      // 删除只在广播失败时提示（成功删除无需新增确认；失败必须可见，不许静默吞）
+      if (result && result.failed.length > 0) {
+        this.post({
+          type: 'notice',
+          level: 'error',
+          message: describeTeamBroadcast('删除', result),
+        });
+      }
       await this.loadRoles();
       // 热更新通知：同上，删除组长队伍后 team 图标应隐藏
       this._chatProvider?.refreshActiveRolePackForTeam();
@@ -719,58 +773,6 @@ export class MemoraSettingsPanel {
       }
     }
     return ok;
-  }
-
-  /**
-   * 保存角色包组（会议名单）：校验 → 持久化用户级 globalState → 热更新内核组数据。
-   * 组 = 组长角色包的会议名单（非选择对象）；组员仅作小组会议参与者，不用于日常。
-   * 校验：组长/组员须为存在的角色包、名单非空、组长身份唯一（一个角色包只能是一个组的组长）。
-   */
-  private async saveRolePackTeam(
-    leader: string,
-    members: string[],
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const agent = await this.ensureAgent();
-    const rpm = agent?.rolePackManager;
-    if (!rpm || !leader) return { ok: false, reason: '小组保存失败：内核未就绪' };
-    const validPacks = new Set(rpm.listMeta().map((m) => m.name));
-    const deduped = [...new Set(members)];
-    // 校验（全部分支在此收口，失败均带可直接展示的原因，调用方不再猜测）：
-    // 组长存在、组员存在、组员非空且不重复、组长与组员身份互斥、组员数量不超上限
-    if (!validPacks.has(leader))
-      return { ok: false, reason: `小组保存失败：组长「${leader}」不存在` };
-    if (deduped.length === 0) return { ok: false, reason: '小组保存失败：至少选择 1 名组员' };
-    if (deduped.some((m) => !validPacks.has(m))) {
-      return { ok: false, reason: '小组保存失败：存在不存在的组员角色包' };
-    }
-    if (deduped.includes(leader))
-      return { ok: false, reason: '小组保存失败：组长不能同时是自己的组员' };
-    // 5 人组上限（队长 1 + 组员 ≤ MAX_TEAM_MEMBERS，组队功能用户约定）：超限拒绝保存
-    if (deduped.length > MAX_TEAM_MEMBERS) {
-      return {
-        ok: false,
-        reason: `小组保存失败：组员最多 ${MAX_TEAM_MEMBERS} 名（队长 1 + 组员 ≤ ${MAX_TEAM_MEMBERS} = ${MAX_TEAM_MEMBERS + 1} 人组上限）`,
-      };
-    }
-    // 组长身份唯一：同一组长不允许两处建组
-    const teams =
-      this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
-    const others = teams.filter((t) => t.leader !== leader);
-    const next = [...others, { leader, members: deduped }];
-    await this._globalState?.update(ROLE_PACK_TEAMS_KEY, next);
-    // 热更新内核组数据（运行时立即生效，无需重启）
-    rpm.setRolePackTeams(next);
-    return { ok: true };
-  }
-
-  /** 删除角色包组（会议名单）：持久化移除 + 热更新内核组数据。 */
-  private async deleteRolePackTeam(leader: string): Promise<void> {
-    const agent = await this.ensureAgent();
-    const teams =
-      this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
-    const next = teams.filter((t) => t.leader !== leader);
-    await this._globalState?.update(ROLE_PACK_TEAMS_KEY, next);
-    agent?.rolePackManager?.setRolePackTeams(next);
   }
 
   /** 来源层单点判定：与技能聚合共用 `isPathWithin`，禁第二份前缀副本（裸 startsWith 会把 `role-packs-x` 误判进 `role-packs`） */

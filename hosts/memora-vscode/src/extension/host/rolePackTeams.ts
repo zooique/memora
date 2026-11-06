@@ -22,7 +22,9 @@
  * 单接线点（SSOT）：settingsPanel.loadRoles（读期检测）——不写回则无需启动接线点，
  * 检测视图随每次下发实时计算，天然覆盖装配竞态窗口。
  */
-import type { RolePackManager } from '@zooique/memora';
+import type { Agent, RolePackManager } from '@zooique/memora';
+// 组员上限（保存校验用；内核常量单点，宿主不复制 5 字面量）
+import { MAX_TEAM_MEMBERS } from '@zooique/memora';
 import type { Memento } from 'vscode';
 import { ROLE_PACK_TEAMS_KEY } from '../../shared/constants.js';
 
@@ -40,6 +42,146 @@ export interface TeamHealth {
   leaderMissing: boolean;
   /** 已卸载的组员名单（缺员标注；空数组 = 组员全部健康） */
   missingMembers: string[];
+}
+
+/** 组队广播目标（会话 id + 实例；只要求 `rolePackManager` 这一面，便于测试替身注入） */
+export interface TeamBroadcastTarget {
+  /** 会话标识（失败汇总用它指明「哪条会话没生效」） */
+  sessionId: string;
+  /** 该会话的实例（只需角色包管理器） */
+  agent: Pick<Agent, 'rolePackManager'>;
+}
+
+/** 组队广播结果（成功会话 id + 失败原因；调用方必须明示，不许静默吞） */
+export interface TeamBroadcastResult {
+  /** 热更成功的会话 id */
+  updated: string[];
+  /** 热更失败的会话（含原因） */
+  failed: { sessionId: string; reason: string }[];
+}
+
+/**
+ * 组队热更广播（**作用域必须与数据归属一致**）
+ *
+ * 组队名单是**全局一份**（`globalState` 用户级，装配期注入所有会话）⇒ 写的时候**必须**打所有
+ * 已装配实例。只打「当前显示会话」会造出「读的时候全局、写的时候单实例」的不对称：会话 A 改完、
+ * 会话 B 开会仍用旧名单，且用户无从察觉（本仓 `TEAM-HOTUPDATE-FANOUT-1` 即此伤）。
+ *
+ * 失败隔离：单实例抛错只记入 `failed`，**不中断**其余实例（一次坏连接不该让整批广播失败）；
+ * 返回值供 UI 明示「成功 N / 失败 M + 原因」。
+ *
+ * @param targets 已装配实例快照（生产真源 = `AgentRegistry.listEntries()`）
+ * @param teams 新组队名单（globalState 存储形态）
+ */
+export function broadcastRolePackTeams(
+  targets: readonly TeamBroadcastTarget[],
+  teams: RolePackTeamSnapshot[],
+): TeamBroadcastResult {
+  const updated: string[] = [];
+  const failed: { sessionId: string; reason: string }[] = [];
+  for (const { sessionId, agent } of targets) {
+    try {
+      const rpm = agent.rolePackManager;
+      // 内核未就绪不算「已生效」：记失败，避免汇总数虚高
+      if (!rpm) {
+        failed.push({ sessionId, reason: '内核未就绪（无 rolePackManager）' });
+        continue;
+      }
+      rpm.setRolePackTeams(teams);
+      updated.push(sessionId);
+    } catch (err) {
+      failed.push({ sessionId, reason: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return { updated, failed };
+}
+
+/** 组队写操作依赖（由面板注入：用户级存储 + 当前会话内核 + 广播器） */
+export interface TeamWriteDeps {
+  /** 用户级存储（组队名单的持久化真源） */
+  globalState?: Memento;
+  /** 当前显示会话的角色包管理器（未注入广播器时的降级目标） */
+  rpm?: Pick<RolePackManager, 'listMeta' | 'setRolePackTeams'>;
+  /** 热更广播器（生产真源 = `AgentRegistry.listEntries()`） */
+  broadcast?: (teams: RolePackTeamSnapshot[]) => TeamBroadcastResult;
+}
+
+/** 热更落点（广播优先；未注入广播器时退回单实例——降级路径，非目标行为） */
+function applyTeams(
+  next: RolePackTeamSnapshot[],
+  deps: TeamWriteDeps,
+): TeamBroadcastResult | undefined {
+  if (!deps.broadcast) {
+    deps.rpm?.setRolePackTeams(next);
+    return undefined;
+  }
+  return deps.broadcast(next);
+}
+
+/**
+ * 保存角色包组（会议名单）：校验 → 持久化用户级存储 → 广播热更所有已装配实例。
+ *
+ * 组 = 组长角色包的会议名单（非选择对象）；组员仅作小组会议参与者，不用于日常。
+ * 校验：组长/组员须为存在的角色包、名单非空、组长身份唯一（一个角色包只能是一个组的组长）、
+ * 组员数量不超上限。全部失败分支在此收口（原因可直接展示，调用方不猜测）。
+ */
+export async function saveRolePackTeam(
+  deps: TeamWriteDeps,
+  leader: string,
+  members: string[],
+): Promise<{ ok: true; broadcast?: TeamBroadcastResult } | { ok: false; reason: string }> {
+  const rpm = deps.rpm;
+  if (!rpm || !leader) return { ok: false, reason: '小组保存失败：内核未就绪' };
+  const validPacks = new Set(rpm.listMeta().map((m) => m.name));
+  const deduped = [...new Set(members)];
+  if (!validPacks.has(leader))
+    return { ok: false, reason: `小组保存失败：组长「${leader}」不存在` };
+  if (deduped.length === 0) return { ok: false, reason: '小组保存失败：至少选择 1 名组员' };
+  if (deduped.some((m) => !validPacks.has(m))) {
+    return { ok: false, reason: '小组保存失败：存在不存在的组员角色包' };
+  }
+  if (deduped.includes(leader))
+    return { ok: false, reason: '小组保存失败：组长不能同时是自己的组员' };
+  // 5 人组上限（队长 1 + 组员 ≤ MAX_TEAM_MEMBERS，组队功能用户约定）：超限拒绝保存
+  if (deduped.length > MAX_TEAM_MEMBERS) {
+    return {
+      ok: false,
+      reason: `小组保存失败：组员最多 ${MAX_TEAM_MEMBERS} 名（队长 1 + 组员 ≤ ${MAX_TEAM_MEMBERS} = ${MAX_TEAM_MEMBERS + 1} 人组上限）`,
+    };
+  }
+  // 组长身份唯一：同一组长不允许两处建组
+  const teams = deps.globalState?.get<RolePackTeamSnapshot[]>(ROLE_PACK_TEAMS_KEY) ?? [];
+  const next = [...teams.filter((t) => t.leader !== leader), { leader, members: deduped }];
+  await deps.globalState?.update(ROLE_PACK_TEAMS_KEY, next);
+  return { ok: true, broadcast: applyTeams(next, deps) };
+}
+
+/** 删除角色包组（会议名单）：持久化移除 + 广播热更所有已装配实例。 */
+export async function deleteRolePackTeam(
+  deps: TeamWriteDeps,
+  leader: string,
+): Promise<TeamBroadcastResult | undefined> {
+  const teams = deps.globalState?.get<RolePackTeamSnapshot[]>(ROLE_PACK_TEAMS_KEY) ?? [];
+  const next = teams.filter((t) => t.leader !== leader);
+  await deps.globalState?.update(ROLE_PACK_TEAMS_KEY, next);
+  return applyTeams(next, deps);
+}
+
+/** 组队热更结果的用户可见措辞（保存/删除共用，禁两套口径） */
+export function describeTeamBroadcast(
+  actionLabel: string,
+  result: TeamBroadcastResult | undefined,
+): string {
+  if (!result) return `小组已${actionLabel}`;
+  if (result.failed.length > 0) {
+    const detail = result.failed.map((f) => `${f.sessionId}：${f.reason}`).join('；');
+    return `小组已${actionLabel}；热更成功 ${result.updated.length} 个会话，失败 ${result.failed.length} 个（${detail}）——失败会话需重开面板或重启后生效`;
+  }
+  // 零已装配会话不是失败：下次装配本就按新名单注入，说清楚免得用户以为没生效
+  if (result.updated.length === 0) {
+    return `小组已${actionLabel}（当前无已装配会话，下次打开即按新名单生效）`;
+  }
+  return `小组已${actionLabel}`;
 }
 
 /**
