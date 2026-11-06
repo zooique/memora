@@ -1922,6 +1922,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._sessionAgents.delete(sessionId);
     await this._releaseAgent?.(sessionId);
     this._lockFinalizer.releaseOne(sessionId); // 批 3：实例 close 之后才归还长锁（不放长锁见 oneShotLock）
+    // 会话级僵尸清理（E4 批 3）：ask 协调器 / 确认队列 / 流运行态三处都按会话持有内存态，
+    // 不随会话元数据删除消失 ⇒ 已删会话会永久留在活跃度遍历面（角标误亮、超时计时器照烧）。
+    const ask = this._asks.get(sessionId);
+    if (ask) {
+      // 先摘登记再清在途：clearPending 会触发 onPendingChanged 重算活跃度，
+      // 此时已不在遍历面，不会把已删会话短暂算进待处理
+      this._asks.delete(sessionId);
+      ask.clearAskTimeout(); // 停掉 30 分钟超时（否则到点会对已删会话续跑）
+      ask.clearPending();
+    }
+    this._confirm.disposeSession(sessionId);
+    this._runtime.delete(sessionId);
+    this.refreshSessionActivity(); // 摘除后立即重推快照（角标 / 列表标识随之熄灭）
   }
 
   /** 移入留存区（薄包装：实现在 `helpers/sessionHistoryActions`） */

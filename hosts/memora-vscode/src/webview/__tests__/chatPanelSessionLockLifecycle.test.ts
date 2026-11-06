@@ -11,7 +11,9 @@
  *   ③ 后台流中切换 → 锁不提前释放（旧流还在写盘）；
  *   ④ 删非当前会话 → 注销 + close 后放锁；删当前会话 → 拒绝删除守卫仍在；
  *   ⑤ dispose（有流）→ 只挂起放锁（流收场后才归还），实例零注销零 close；
- *   ⑥ `releaseAllSessionLocks`（deactivate 的收尾入口）一次归还全部。
+ *   ⑥ `releaseAllSessionLocks`（deactivate 的收尾入口）一次归还全部；
+ *   ⑦ 删除会话 ⇒ 会话级内存僵尸（ask 在途 / 确认队列 / 流运行态）同步清理，
+ *     删除后该会话不再出现在活跃度快照（入口角标 / 列表待处理）。
  *
  * 判据实现：两个**独立** `WorkspaceSessionStore` 实例各持一条跨进程命名管道来模拟两个窗口——
  * 第二个实例 `acquireSessionLock` 能拿到 = 第一个实例已经真正放锁。同进程两实例与真实两窗口
@@ -54,11 +56,29 @@ vi.mock('vscode', async () => {
   };
 });
 
-/** agent 桩：只补「面板 ready / 换绑 / 删除联动」会碰到的成员（其余留空，缺则被各调用点兜住） */
-function agentStub(): Agent {
+/**
+ * agent 桩：只补「面板 ready / 换绑 / 删除联动」会碰到的成员（其余留空，缺则被各调用点兜住）
+ *
+ * @param sessionId 该实例所属会话（`agentForSession` 装配即调 `bindSession` 注入确认回调，
+ *   这里把回调按会话登记，供用例手动触发一条「内核发起、宿主待确认」的请求）
+ * @param confirmHandlers 会话 → 已注入确认回调（删除用例据此造出待确认状态）
+ */
+function agentStub(
+  sessionId: string,
+  confirmHandlers: Map<string, (info: unknown) => Promise<boolean>>,
+): Agent {
   return {
     sessionManager: { switchToSession: vi.fn().mockResolvedValue(0), renameSession: vi.fn() },
     memory: { softDeleteRoundSummaries: vi.fn().mockReturnValue(0) },
+    // 确认回调注入口（ConfirmCoordinator.bindSession 消费；捕获后由用例调用）
+    security: {
+      onWriteConfirmation: (h: (info: unknown) => Promise<boolean>) => {
+        confirmHandlers.set(sessionId, h);
+      },
+      // bindAgent 会同时订阅安全审计（缺则 `guard.onAudit is not a function`）；
+      // 返回值必须是「取消订阅函数」本身（生产直接调用 `_securityAuditUnsub()`）
+      onAudit: vi.fn(() => vi.fn()),
+    },
     on: vi.fn(),
     off: vi.fn(),
     isPausePending: () => false,
@@ -203,10 +223,12 @@ describe('会话锁生命周期（按会话长持有 + 三类关闭场景）', (
     const agents = new Map<string, Agent>();
     /** 已注销 + close 的会话（顺序 = 关闭发生顺序） */
     const closed: string[] = [];
+    /** 会话 → 该实例上被注入的确认回调（删除用例据此造出「内核发起、宿主待确认」状态） */
+    const confirmHandlers = new Map<string, (info: unknown) => Promise<boolean>>();
     provider.setAgentFactory(async (_projectPath, sid) => {
       const existing = agents.get(sid);
       if (existing) return existing;
-      const agent = agentStub();
+      const agent = agentStub(sid, confirmHandlers);
       agents.set(sid, agent);
       return agent;
     });
@@ -234,6 +256,7 @@ describe('会话锁生命周期（按会话长持有 + 三类关闭场景）', (
       closed,
       runtimeOf,
       finalizer,
+      confirmHandlers,
     };
   }
 
@@ -342,6 +365,65 @@ describe('会话锁生命周期（按会话长持有 + 三类关闭场景）', (
     expect(storeA.getSessionMeta(sessionId)).toBeDefined();
     expect(closed).toEqual([secondId]);
     expect(await storeB.acquireSessionLock(sessionId)).toBe(false);
+  });
+
+  it('删除会话清理会话级内存僵尸：ask 在途 / 确认队列 / 流运行态（E4 批 3）', async () => {
+    const { provider, sessionId, secondId, agents, confirmHandlers } = await setup();
+
+    await openReady(provider);
+    // 进入过 secondId 再切回：面板为该会话建好实例（装配即 `bindSession` 注入确认回调）
+    await provider.switchToSession(secondId);
+    await provider.switchToSession(sessionId);
+
+    // 私有面探针（三处清理面都在 chatPanel 实例上按会话持有）
+    const cast = provider as unknown as {
+      _asks: Map<string, unknown>;
+      _runtime: { get(id: string): unknown; peek(id: string): unknown };
+      _confirm: { pendingCount(id: string): number };
+      askFor(id: string): { setPending(q: unknown[]): void };
+    };
+    // 造三处僵尸：① ask 在途提问；② 待确认请求；③ 流运行态记录
+    cast.askFor(secondId).setPending([{ slot: 's1', question: '继续吗？' }]);
+    const handler = confirmHandlers.get(secondId);
+    expect(handler).toBeTypeOf('function');
+    const confirmed = handler!({
+      tool: 'write_file',
+      targetPath: '/mock/workspace/second.md',
+      description: '写入 second.md',
+      permission: 'confirm',
+      beforeContent: null,
+      afterContent: 'x',
+      hasDiff: true,
+    });
+    cast._runtime.get(secondId);
+    // 删除前：三处记录都活着（确认计数亮 + ask 待答）
+    expect(cast._confirm.pendingCount(secondId)).toBe(1);
+    expect(cast._asks.has(secondId)).toBe(true);
+    expect(cast._runtime.peek(secondId)).toBeDefined();
+
+    // 删除该会话（非当前会话 ⇒ 删除守卫放行）
+    const view = makeView();
+    provider.resolveWebviewView(view.view as never, {} as never, {} as never);
+    view.fireMessage({ type: 'delete_session', sessionId: secondId });
+    // 等清理面落地（运行态摘除是删除路径最后一步，其后紧接活跃度重推）
+    await waitFor(() => cast._runtime.peek(secondId) === undefined);
+
+    // 三处清理面：ask 协调器摘除、确认队列整会话丢弃、运行态摘除
+    expect(agents.has(secondId)).toBe(false);
+    expect(cast._asks.has(secondId)).toBe(false);
+    expect(cast._confirm.pendingCount(secondId)).toBe(0);
+    // 未裁决的确认请求按 fail-closed 终结（内核不会永久挂在已删会话上）
+    await expect(confirmed).resolves.toBe(false);
+
+    // 可观测判据：删除后该会话不再出现在活跃度快照（入口角标 / 列表待处理）
+    const snapshots = view.posted.filter(
+      (m) => (m as { type?: string })?.type === 'session_activity',
+    ) as Array<{ pendingIds: string[]; runningIds: string[]; badgeCount: number }>;
+    const last = snapshots.at(-1);
+    expect(last).toBeDefined();
+    expect(last!.pendingIds).not.toContain(secondId);
+    expect(last!.runningIds).not.toContain(secondId);
+    expect(last!.badgeCount).toBe(0);
   });
 
   it('视图 dispose（有后台流）：只挂起放锁，流收场后才归还；实例零注销零 close', async () => {

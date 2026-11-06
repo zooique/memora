@@ -335,6 +335,38 @@ export class ConfirmCoordinator {
   }
 
   /**
+   * 某会话被删除时丢弃其确认队列（会话级僵尸清理 · E4 批 3）
+   *
+   * 为什么必须丢弃：`_sessions` 按会话懒建、单条终结只在裁决/超时路径发生，**没有任何
+   * 「整会话移除」的出口** ⇒ 已删会话的条目永久留在表里，排队中的 Promise 永不 settle
+   * （内核一直等），计时器继续烧，`pendingCount` 还持续给已删会话亮待处理标识。
+   *
+   * 语义 = fail-closed：所有未裁决请求一律 `resolve(false)`（不批准 = 不执行），与超时同向。
+   * **刻意不写决策记录**——会话已删，把「已拒绝」行推到别的会话的时间线就是跨会话串台。
+   *
+   * @param sessionId 被删除的会话
+   */
+  disposeSession(sessionId: string): void {
+    const state = this._sessions.get(sessionId);
+    if (!state) return;
+    // ① 该会话正在前台且卡已上屏 ⇒ 收卡（否则 webview 残留一张点了无响应的僵尸卡）
+    if (sessionId === this._foreground && state.current?.presented) {
+      this._deps.post({ type: 'write_confirm_closed', requestId: state.current.requestId });
+    }
+    // ② 清计时器 + fail-closed 终结全部未裁决请求（在途 + 排队，一个不留）
+    const entries = [state.current, ...state.queue].filter(
+      (entry): entry is ConfirmEntry => entry !== null,
+    );
+    for (const entry of entries) {
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.resolve(false);
+    }
+    // ③ 整会话条目摘除：此后 pendingCount 恒 0，迟到回执经 `answer` 查无此会话 ⇒ 零副作用
+    this._sessions.delete(sessionId);
+    this._deps.onPendingChanged?.(sessionId, 0);
+  }
+
+  /**
    * 应答入口（webview 回传 `write_confirm_answer` 的唯一处理点）
    *
    * 只接受**当前显示会话**的在途请求：切走后收卡，迟到回执（或别的会话的 id）一律丢弃，

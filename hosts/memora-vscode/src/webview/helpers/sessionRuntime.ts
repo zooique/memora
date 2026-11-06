@@ -8,8 +8,8 @@
  * 批 1 只改结构不改行为——同一时刻仍只有当前会话可达（切换守卫仍在），故对外表现与旧版
  * 逐字节一致；批 2 起切换会话放开后，流状态自然跟随各自会话，不再需要「切走前先复位」。
  *
- * 生命周期 = 懒建、随面板实例存活（会话数上界 = 本面板打开过的会话数）。会话关闭时的
- * 清理归批 3 接线；本表暂不提供删除面，避免留下零调用点的僵尸 API。
+ * 生命周期 = 懒建、随面板实例存活（会话数上界 = 本面板打开过的会话数）。会话被删除时由
+ * `delete()` 摘除记录（E4 批 3 接线，见会话删除路径）：不摘就是永久残留的僵尸记录。
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ProcessEvent } from '@zooique/memora';
@@ -78,6 +78,18 @@ export class SessionRuntimeStates {
    */
   peek(sessionId: string): SessionRuntimeState | undefined {
     return this.states.get(sessionId);
+  }
+
+  /**
+   * 摘除某会话的运行态记录（会话被删除时的唯一清理面 · E4 批 3）
+   *
+   * 只摘记录、不处理在途流：会话删除守卫已先拒绝「该会话仍在流式生成」的情况
+   * （`isStreaming`），故到这里时不应有活流；真实流与 `abortController` 归 Agent 自身。
+   *
+   * @param sessionId 会话标识
+   */
+  delete(sessionId: string): void {
+    this.states.delete(sessionId);
   }
 }
 

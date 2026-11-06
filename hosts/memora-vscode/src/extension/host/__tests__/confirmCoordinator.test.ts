@@ -515,3 +515,99 @@ describe('ConfirmCoordinator · 按会话绑定（E4 批 4）', () => {
     expect(h.requests()[1].requestId).toBe(h.requests()[0].requestId);
   });
 });
+
+/**
+ * 会话删除清理（E4 批 3 · 会话级僵尸）
+ *
+ * 伤：`_sessions` 只在裁决/超时终结单条请求，没有「整会话移除」出口 ⇒ 已删会话的条目
+ * 永久留在表里（排队 Promise 永不 settle、计时器照烧、`pendingCount` 持续亮待处理）。
+ *
+ * 判据：
+ *   ① 在途 + 排队的请求全部 `resolve(false)`（fail-closed，与超时同向）；
+ *   ② `pendingCount` 归零且回调收到 (会话, 0)；
+ *   ③ 前台已上屏的卡收掉（不留点了无响应的僵尸卡）；
+ *   ④ 条目摘除后，迟到回执零副作用。
+ */
+describe('ConfirmCoordinator · disposeSession 会话删除清理（E4 批 3）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 带待处理计数的协调器（复用「按会话绑定」的构造，避免第二份装配） */
+  function makeSessionCoordinator() {
+    const posted: Posted[] = [];
+    const pendingChanges: Array<{ sessionId: string; count: number }> = [];
+    const coordinator = new ConfirmCoordinator({
+      getAgent: () => undefined,
+      post: (msg) => {
+        posted.push(msg as unknown as Posted);
+      },
+      onPendingChanged: (sessionId, count) => pendingChanges.push({ sessionId, count }),
+    });
+    return {
+      coordinator,
+      pendingChanges,
+      requests: () =>
+        posted.filter((m) => m.type === 'write_confirm_request') as Array<{
+          requestId: string;
+        }>,
+      closed: () => posted.filter((m) => m.type === 'write_confirm_closed'),
+    };
+  }
+
+  it('在途 + 排队全部 fail-closed 终结，计数归零且收卡', async () => {
+    const h = makeSessionCoordinator();
+    const stub = agentStub();
+    h.coordinator.bindSession('2026-11-06-a', stub.agent);
+    h.coordinator.setForeground('2026-11-06-a');
+
+    const first = stub.trigger(confirmInfo({ targetPath: '/mock/workspace/a.md' }));
+    const second = stub.trigger(confirmInfo({ targetPath: '/mock/workspace/b.md' }));
+    // 删除前：一张在途 + 一张排队
+    expect(h.coordinator.pendingCount('2026-11-06-a')).toBe(2);
+    expect(h.requests()).toHaveLength(1);
+    expect(h.closed()).toHaveLength(0);
+
+    h.coordinator.disposeSession('2026-11-06-a');
+
+    // ① fail-closed：两条都拒绝（不得永久挂起内核）
+    await expect(first).resolves.toBe(false);
+    await expect(second).resolves.toBe(false);
+    // ② 整会话条目摘除 ⇒ 待处理归零 + 通知宿主熄灭标识
+    expect(h.coordinator.pendingCount('2026-11-06-a')).toBe(0);
+    expect(h.pendingChanges.at(-1)).toEqual({ sessionId: '2026-11-06-a', count: 0 });
+    // ③ 已上屏的卡必须收掉
+    expect(h.closed()).toHaveLength(1);
+  });
+
+  it('计时器随条目摘除而停（不再到点重推/重结算），迟到回执零副作用', async () => {
+    vi.useFakeTimers();
+    const h = makeSessionCoordinator();
+    const stub = agentStub();
+    h.coordinator.bindSession('2026-11-06-a', stub.agent);
+    h.coordinator.setForeground('2026-11-06-a');
+
+    const settled = stub.trigger(confirmInfo());
+    const requestId = h.requests()[0].requestId;
+    h.coordinator.disposeSession('2026-11-06-a');
+    await expect(settled).resolves.toBe(false);
+    const postedAfterDispose = h.requests().length;
+    const closedAfterDispose = h.closed().length;
+
+    // ③ 超时计时器已清：推进超时窗口后不得再推卡、再收卡
+    vi.advanceTimersByTime(30 * 60 * 1000 + 1);
+    expect(h.requests()).toHaveLength(postedAfterDispose);
+    expect(h.closed()).toHaveLength(closedAfterDispose);
+    // ④ 迟到回执：`answer` 只查前台会话的在途，条目已摘 ⇒ 零副作用
+    h.coordinator.answer(requestId, true);
+    expect(h.requests()).toHaveLength(postedAfterDispose);
+    expect(h.closed()).toHaveLength(closedAfterDispose);
+  });
+
+  it('未建队列的会话 ⇒ 幂等零副作用（不重复回调、不抛错）', () => {
+    const h = makeSessionCoordinator();
+    const before = h.pendingChanges.length;
+    expect(() => h.coordinator.disposeSession('2026-11-06-never')).not.toThrow();
+    expect(h.pendingChanges.length).toBe(before);
+  });
+});
