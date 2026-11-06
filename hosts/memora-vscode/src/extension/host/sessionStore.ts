@@ -43,7 +43,7 @@ import {
   migrateLegacyGlobalState,
   migrateLegacySessionFile,
   readSessionFiles,
-  collectTailRoundIds,
+  collectContinuableRoundIds,
   collectReferencedIds,
   type SessionFileShape,
   type SessionMigrationPaths,
@@ -168,14 +168,14 @@ export class WorkspaceSessionStore implements ISessionStore {
     // 由此内核定时 GC 与宿主启动清扫都读同一套引用集合（不再读 Round.refCount）。
     if (this.roundStore instanceof WorkspaceRoundStore) {
       this.roundStore.setReferencedIdsProvider(() => new Set(this.referencedIds()));
-      // 历史只读写入闸的「末尾轮」真源：同一批扫盘结果，不引入第二份「当前轮」字段
-      this.roundStore.setTailRoundIdsProvider(() => new Set(this.tailRoundIds()));
+      // 历史只读写入闸的「可续跑轮」真源：同一批扫盘结果，不引入第二份「当前轮」字段
+      this.roundStore.setContinuableRoundIdsProvider(() => new Set(this.continuableRoundIds()));
     }
   }
 
-  /** 所有会话末尾轮的 Round ID 集合（历史只读写入闸真源；扫描逻辑见 collectTailRoundIds） */
-  tailRoundIds(): string[] {
-    return collectTailRoundIds(this.sessionsDir);
+  /** 所有「在所有引用会话中都是末位」的 Round ID（写入闸真源；扫描逻辑见 collectContinuableRoundIds） */
+  continuableRoundIds(): string[] {
+    return collectContinuableRoundIds(this.sessionsDir);
   }
 
   /** 当前被任意会话引用的 Round ID 全集（引用真源；扫描逻辑见 collectReferencedIds） */

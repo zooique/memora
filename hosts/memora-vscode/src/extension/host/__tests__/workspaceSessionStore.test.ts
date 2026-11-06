@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import type { Round } from '@zooique/memora';
 import { getSessionDisplayName } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../sessionStore.js';
-import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
+import { DEFAULT_SWEEP_MIN_AGE_MS, WorkspaceRoundStore } from '../workspaceRoundStore.js';
 // 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync，见 helpers/tmpDir.ts）
 import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
 
@@ -1317,6 +1317,77 @@ describe('历史只读闸（save 唯一写通道 / delete 引用即禁删）', (
     expect(result.ok).toBe(true);
     expect(result.removedIds).toEqual([r1, r2]);
     expect(existsSync(join(dir, '.memora', 'rounds', `${r1}.json`))).toBe(false);
+  });
+
+  it('④ B 口径边界：共享轮只在其中一个会话是末位 ⇒ 从非末位会话视角改写被拒', () => {
+    // A = [r1, r2]，B = [r1]（分叉后停在同一批指针）：r1 在 A 是中间轮、在 B 是末位
+    const r1 = seedRound(
+      store,
+      roundStore,
+      '2026-11-06',
+      'shared-a',
+      { content: '一', ts: '2026-11-06T00:00:00.000Z' },
+      { content: '答一', ts: '2026-11-06T00:00:01.000Z' },
+    );
+    const r2 = seedRound(
+      store,
+      roundStore,
+      '2026-11-06',
+      'shared-a',
+      { content: '二', ts: '2026-11-06T00:01:00.000Z' },
+      { content: '答二', ts: '2026-11-06T00:01:01.000Z' },
+    );
+    // 分叉会话 B：只复制到 r1 的指针（与内核 forkSession 时序一致：先 setRoundIds 后写 meta）
+    store.setRoundIds('2026-11-06-shared-b', [r1]);
+    store.updateSessionMeta('2026-11-06-shared-b', {});
+
+    // 可续跑集合：r1 被 A 的中间位置一票否决；r2 只在 A 末位，放行
+    expect(store.continuableRoundIds()).toContain(r2);
+    expect(store.continuableRoundIds()).not.toContain(r1);
+
+    // 断言 = 从非末位会话（A）视角改写 r1 → 被拒，盘上正文不变
+    const shared = roundStore.getByIdFresh(r1)!;
+    roundStore.save({
+      ...shared,
+      assistantMessage: { ...shared.assistantMessage!, content: '借道篡改' },
+    });
+    expect(roundStore.getByIdFresh(r1)?.assistantMessage?.content).toBe('答一');
+
+    // 正面对照：r2 是所有引用会话的末位 ⇒ 续跑放行
+    const tail = roundStore.getByIdFresh(r2)!;
+    roundStore.save({
+      ...tail,
+      assistantMessage: { ...tail.assistantMessage!, content: '续跑答二' },
+    });
+    expect(roundStore.getByIdFresh(r2)?.assistantMessage?.content).toBe('续跑答二');
+  });
+
+  it('⑤ GC 实测：无任何会话引用的超龄孤儿 → sweepOrphans 走 delete 闸放行并移入 .trash', () => {
+    // 复现生产链路：extension.ts 启动时调 roundStore.sweepOrphans(DEFAULT_SWEEP_MIN_AGE_MS)
+    // 现场：rounds/ 有一个轮文件，任何会话 roundIds 都不含它（创建于 48h 前，过存活保护）
+    const orphanId = 'round-orphan-gc';
+    roundStore.save({
+      id: orphanId,
+      userMessage: {
+        id: `${orphanId}-u`,
+        role: 'user',
+        content: '无主残留',
+        timestamp: '2026-11-04T00:00:00.000Z',
+      },
+      status: 'pending',
+      createdAt: '2026-11-04T00:00:00.000Z',
+      refCount: 1,
+    });
+    expect(store.referencedIds()).not.toContain(orphanId);
+
+    // 生产调用点那条链路（默认 24h 存活保护）：孤儿无引用 ⇒ 引用即禁删闸不拦
+    const swept = roundStore.sweepOrphans(DEFAULT_SWEEP_MIN_AGE_MS);
+    expect(swept).toEqual([orphanId]);
+    expect(roundStore.getById(orphanId)).toBeNull();
+    // 盘面：活轮文件消失，回收站出现 {roundId}.{trashAtMs}.json
+    expect(existsSync(join(dir, '.memora', 'rounds', `${orphanId}.json`))).toBe(false);
+    const trashFiles = readdirSync(join(dir, '.memora', 'rounds', '.trash'));
+    expect(trashFiles.some((name) => name.startsWith(`${orphanId}.`))).toBe(true);
   });
 
   it('③ 已收场轮事件落盘取盘上正文（不回写本进程旧快照）', () => {

@@ -99,13 +99,15 @@ export class WorkspaceRoundStore implements IRoundStore {
    */
   private referencedIdsProvider: (() => ReadonlySet<string>) | null = null;
   /**
-   * 会话末尾轮提供者（历史只读写入闸的真源，由 `WorkspaceSessionStore` 注入）
+   * 「可续跑轮」提供者（历史只读写入闸的真源，由 `WorkspaceSessionStore` 注入）
    *
-   * 判据 = 「该 Round 是某个会话 `roundIds` 的**最后一个元素**」，真源现场扫会话文件，
-   * 不用 `updatedAt` 比大小、不另存「当前轮」字段（见台账 `ROUND-HISTORY-READONLY-1`）。
+   * 判据 = 该 Round 是**所有引用它的会话** `roundIds` 的最后一个元素（全局末位）。
+   * 为什么不是「任一会话末位」：共享轮在 A 是中间轮、在 B 是末位时，从 A 的视角它仍是历史，
+   * 允许 B 改写等于借道改写 A 的历史。真源现场扫会话文件，不用 `updatedAt` 比大小、
+   * 不另存「当前轮」字段（见台账 `ROUND-HISTORY-READONLY-1`）。
    * 未注入时写入闸关闭（单进程 / 测试模式，与跨进程锁同款装配纪律）。
    */
-  private tailRoundIdsProvider: (() => ReadonlySet<string>) | null = null;
+  private continuableRoundIdsProvider: (() => ReadonlySet<string>) | null = null;
 
   constructor(workspacePath: string) {
     // 轮次目录经单点推导（唯一计算点 = projectDataDir.ts，禁就地拼字面量）
@@ -124,12 +126,12 @@ export class WorkspaceRoundStore implements IRoundStore {
   }
 
   /**
-   * 注入「会话末尾轮」真源（写入闸 / 删除闸的唯一判据来源）
+   * 注入「可续跑轮」真源（唯一物理写通道 `save()` 的判据来源）
    *
-   * @param provider - 返回所有会话 `roundIds` 末位元素的 Round ID 集合
+   * @param provider - 返回「在所有引用会话中都处于末位」的 Round ID 集合
    */
-  setTailRoundIdsProvider(provider: () => ReadonlySet<string>): void {
-    this.tailRoundIdsProvider = provider;
+  setContinuableRoundIdsProvider(provider: () => ReadonlySet<string>): void {
+    this.continuableRoundIdsProvider = provider;
   }
 
   /**
@@ -309,11 +311,12 @@ export class WorkspaceRoundStore implements IRoundStore {
    * 存储问答闭环（**唯一物理写通道**，历史只读闸也在这里）
    *
    * 🔴 历史只读判据（只此一道，不许各 append 各写一份）：
-   *   已收场（complete / interrupted）的轮，**只有会话末尾轮**允许再次写入——
-   *   末尾轮是唯一可续跑目标（暂停 / 中断后用户继续答，仍是同一个 roundId）；
-   *   非末尾轮的已收场内容一律拒绝落盘（任何 append / checkpoint 的整轮回写都到不了盘）。
+   *   已收场（complete / interrupted）的轮，**只有「所有引用会话的末位轮」**允许再次写入——
+   *   这是唯一可续跑目标（暂停 / 中断后用户继续答，仍是同一个 roundId）；
+   *   非末位轮的已收场内容一律拒绝落盘（任何 append / checkpoint 的整轮回写都到不了盘）。
    *
-   * 判据真源 = 会话文件 `roundIds` 的**末位元素**（由 sessionStore 现场扫盘注入），
+   * 判据真源 = 会话文件 `roundIds` 的**末位元素**（由 sessionStore 现场扫盘注入）；
+   * 共享轮只要在**任一**引用会话里不是末位，即视为该会话的历史，禁止借道改写。
    * 不用 `updatedAt` 比大小、不另存「当前轮」字段。
    * 未注入 provider = 单进程 / 测试模式，闸关闭（生产装配点唯一：sessionStore 构造函数）。
    */
@@ -321,12 +324,12 @@ export class WorkspaceRoundStore implements IRoundStore {
     // 读盘上现值判「是否已收场」：不能读内存缓存（缓存可能是旧快照）
     const stored = this.loadRoundFromFile(round.id);
     if (stored && isRoundSettled(stored.status)) {
-      const tailRoundIds = this.tailRoundIdsProvider?.();
+      const continuableRoundIds = this.continuableRoundIdsProvider?.();
       // provider 已注入（生产模式）但不含该轮 ⇒ 拒绝；未注入（测试模式）⇒ 放行
-      if (tailRoundIds && !tailRoundIds.has(round.id)) {
+      if (continuableRoundIds && !continuableRoundIds.has(round.id)) {
         logger.warn(
           { roundId: round.id, storedStatus: stored.status },
-          '拒绝写入：该轮已收场且不是会话末尾轮（历史只读）',
+          '拒绝写入：该轮已收场且不是所有引用会话的末位轮（历史只读）',
         );
         return;
       }

@@ -239,18 +239,24 @@ export function readSessionFiles(sessionsDir: string): LoadedSessionFile[] {
 }
 
 /**
- * 所有会话末尾轮的 Round ID 集合（**历史只读写入闸真源**）
+ * 所有「可续跑轮」的 Round ID 集合（**历史只读写入闸真源**）
  *
- * 判据 = 每个会话文件 `roundIds` 的**最后一个元素**（唯一可续跑目标）；
+ * 判据 = 该轮是**所有引用它的会话** `roundIds` 的最后一个元素（全局末位）。
+ * 共享轮只要在任一会话里不是末位，就属于那个会话的历史 ⇒ 排除（禁止借道改写）。
  * 不用 `updatedAt` 比大小、不另存「当前轮」字段。
  */
-export function collectTailRoundIds(sessionsDir: string): string[] {
-  const ids: string[] = [];
+export function collectContinuableRoundIds(sessionsDir: string): string[] {
+  // 所有会话的末位元素（候选）
+  const lastOfSession = new Set<string>();
+  // 所有出现在任何会话「非末位」位置的元素（一票否决）
+  const nonLast = new Set<string>();
   for (const file of readSessionFiles(sessionsDir)) {
-    const tail = file.roundIds[file.roundIds.length - 1];
-    if (tail) ids.push(tail);
+    const ids = file.roundIds;
+    if (ids.length === 0) continue;
+    lastOfSession.add(ids[ids.length - 1]!);
+    for (let i = 0; i < ids.length - 1; i += 1) nonLast.add(ids[i]!);
   }
-  return ids;
+  return Array.from(lastOfSession).filter((id) => !nonLast.has(id));
 }
 
 /**
