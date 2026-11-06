@@ -129,6 +129,8 @@ import {
 import { friendlyErrorMessage } from '../../shared/errorText.js';
 // 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
 import { dedupeRefs } from '../../shared/refKey.js';
+// 历史会话列表投影（store → DTO 纯映射，外置于 max-lines TARGET 文件）
+import { buildSessionListMessage } from '../helpers/sessionList.js';
 // 过程事件 / 指标段级合并（纯函数，HOST-SPLIT-1 切片自本类外置；三条调用面共用同一语义）
 import { mergeProcessEvents } from '../helpers/processEventMerge.js';
 // 启动会话归属裁决（首选被另一窗口占用时让位）——判据单点，面板与验收测试共用同一实现
@@ -1857,28 +1859,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 供 webview 渲染历史模态浮层。无历史时 sessions 为空数组（webview 显示空态）。
    */
   private pushSessionList(): void {
-    const metas = this.sessionStore
-      .listSessionMetas()
-      .filter((m) => m.sessionId !== this._currentSessionId)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    this.post({
-      type: 'session_list_data',
-      sessions: metas.map((m) => ({
-        sessionId: m.sessionId,
-        title: getSessionDisplayName(m),
-        updatedAt: m.updatedAt,
-        // 计数已在 getSessionMeta 读路径现场派生（Round 真源），此处直取即新鲜值
-        messageCount: m.messageCount,
-        // FD-3-A 元数据搜索匹配域：随条目下发（metas 已全量在内存，零新 IO）；
-        // undefined 值经 postMessage JSON 序列化自然剔除，协议侧标注可选
-        keyTopics: m.keyTopics,
-        summary: m.summary,
-      })),
-      // 留存区标记随全量列表一同下发（**单一数据源 + 前端过滤**）：
-      // 不拆「近期 / 留存」两份数组——拆了就是两份真相源，标记与归属不同步时会出现
-      // 「两边都有 / 两边都没有」。会话本身与近期条目无任何数据差别，标记只在显示层生效。
-      archivedIds: this.sessionStore.listArchivedIds(),
-    });
+    // 投影口径（非当前会话 / 降序 / 单数据源 + 前端过滤）见 helpers/sessionList 头注释
+    this.post(buildSessionListMessage(this.sessionStore, this._currentSessionId));
   }
 
   /** 历史运维动作的依赖注入（单一构建点：新增动作只在此挂依赖，不在各处散开） */

@@ -71,8 +71,10 @@ export default [
     // E4 批 4 会话活跃度（+64）撞顶格 ⇒ 顺带外置纯静态 HTML 骨架到 `panels/chatPanelHtml.ts`
     // （零 this / 零运行时状态，与 settingsPanelHtml 同型），净减 210；
     // 基线按闸门自报下调为 4243，不留虚空余量。
-    files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域 + 过程事件合并域 + HTML 骨架已外置）
-    rules: { 'max-lines': ['error', { max: 4243 }] },
+    // BGTASK-SWITCH-REPUSH-1 撞顶格 ⇒ 历史会话列表投影外置 `helpers/sessionList.ts`
+    // （store → DTO 纯映射），基线按闸门自报再降为 4242（只降不升）。
+    files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域 + 过程事件合并域 + HTML 骨架 + 会话列表投影已外置）
+    rules: { 'max-lines': ['error', { max: 4242 }] },
   },
   {
     files: ['src/webview/panels/settingsPanel.ts'], // TARGET（六页合一；安全页静态骨架已外置）
