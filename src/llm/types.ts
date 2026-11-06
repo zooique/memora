@@ -57,10 +57,13 @@ export interface ProviderEntryConfig {
   /**
    * 是否支持原生工具调用（OpenAI Function Calling tools 协议）。
    * 本地运行时（Ollama/LM Studio 等）是否支持原生 FC 无法从 baseUrl 推断，搬到配置显式声明。
-   * 与 supportsStructuredOutput 互斥（response_format 不能与 tools 同用）。
    */
   supportsToolCalling?: boolean;
-  /** 是否支持结构化输出（response_format / JSON mode） */
+  /**
+   * 是否支持结构化输出（response_format / JSON mode）。
+   * ⚠️ 当前内核无消费点（2026-11-07 T1-TOOL-SELECTION-1 后）：仅向 provider 透传作预留声明，
+   * 不驱动 loop 的任何通道选择（见 provider.ts 同名字段注释）。
+   */
   supportsStructuredOutput?: boolean;
 }
 

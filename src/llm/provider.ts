@@ -116,18 +116,24 @@ export abstract class LlmProvider {
   /**
    * 是否支持原生工具调用（OpenAI Function Calling 的 tools 协议）。
    *
-   * 与 supportsStructuredOutput 互斥（response_format 不能与 tools 同时使用，OpenAI 协议限制）：
-   * - 支持 tools → loop 走原生工具通道（列工具 + 传 tools 参数）。
-   * - 支持 structured → loop 传 response_format（JSON mode 回落）。
-   * - 两者皆 false → 无工具能力，loop 收起工具清单并显式告知（可观测，不静默）。
+   * - 支持 → loop 走原生工具通道（列工具 + 传 tools 参数，**唯一可执行通道**）。
+   * - 不支持 → loop **收起工具清单**，并在 system prompt 显式告知「工具不可用」（可观测，不静默）。
    *
    * 默认 **true**（存量行为）：云 LLM 绝大多数支持原生 FC（有工具集就传 tools，与历史一致）。
    * 本地运行时（Ollama/LM Studio 等）是否支持原生 FC 无法从 baseUrl 推断，须在宿主配置时
-   * 显式置 false（互斥双能力位）。
+   * 显式置 false。
    */
   readonly supportsToolCalling: boolean = true;
 
-  /** 是否支持结构化输出（默认 false）。注意：response_format 不能与 tools 同时使用（OpenAI 协议限制） */
+  /**
+   * 是否支持结构化输出（response_format / JSON mode，默认 false）。
+   *
+   * ⚠️ 当前内核**无消费点**（2026-11-07 起，T1-TOOL-SELECTION-1）：它曾用于「无原生工具能力时的
+   * response_format 工具清单回落」，但该回落是半设计——schema 产出、内核零消费，模型吐出的
+   * `{tools:[…]}` JSON 会被当普通正文交付，从不转成工具调用；该分支已整条删除。
+   * 本字段保留为**预留能力声明**（宿主 provider 配置仍透传），**不得**据此推断 loop 会走
+   * JSON mode、或存在原生 FC 之外的第二工具通道。
+   */
   readonly supportsStructuredOutput: boolean = false;
 
   /**

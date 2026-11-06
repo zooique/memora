@@ -2861,15 +2861,25 @@ export class AgentLoop {
       }
     }
 
-    // 工具能力缺失的显式告知（互斥双能力位回落，防静默）：系统配置了工具集、但当前 provider
-    // 既无原生工具调用也无结构化输出时，显式告知 LLM「工具不可用」——让其直接给出文本作答，
+    // 工具能力缺失的显式告知（无原生工具通道，防静默）：系统配置了工具集、但当前 provider
+    // 无原生工具调用能力时，显式告知 LLM「工具不可用」——让其直接给出文本作答，
     // **不诱导**其试图用文本骨架"调用"工具（避免复现文本 tool_call 旧伤）。logger.warn 留痕可观测。
-    if (tools && tools.length > 0 && !supportsToolCalling && !this.structuredOutputEnabled()) {
+    //
+    // 🔴 不再有 `supportsStructuredOutput` 回落通道（T1-TOOL-SELECTION-1，2026-11-07）：
+    // 旧 branches 在 `response_format` 里塞工具清单（schema 名 `tool_selection`），注释声称
+    // 「由内核兜底处理」，但全仓零消费点——模型吐出的 `{tools:[…]}` JSON 会被 `handleTextResponse`
+    // 当普通正文交付（用户看到一段 JSON），从不转成工具调用。无原生 FC 一律按「工具不可用」明示，
+    // 不承诺任何内核不执行的通道（半设计胜过谎报）。
+    if (tools && tools.length > 0 && !supportsToolCalling) {
       logger.warn(
-        { provider: this.opts.provider?.name },
-        '当前 provider 无工具通道（supportsToolCalling=false 且 supportsStructuredOutput=false），工具清单收起并显式告知 LLM',
+        {
+          provider: this.opts.provider?.name,
+          // 记录该能力位取值仅作诊断：true 表示「曾会触达旧回落分支」，现在同样按工具不可用处理
+          supportsStructuredOutput: this.opts.provider?.supportsStructuredOutput,
+        },
+        '当前 provider 不支持原生工具调用（supportsToolCalling=false），工具清单收起并显式告知 LLM',
       );
-      prompt += `\n\n## 工具不可用\n当前模型不支持工具调用（无原生工具协议，也无可用的结构化输出回落）。请直接用文本回答，不要假装调用工具。`;
+      prompt += `\n\n## 工具不可用\n当前模型不支持工具调用（无原生工具协议）。请直接用文本回答，不要假装调用工具。`;
     }
 
     // 注：不追加 `## 行为护栏` 通用声明节（this.guardier.buildPromptSection()）——
@@ -2923,16 +2933,6 @@ export class AgentLoop {
   }
 
   /**
-   * 当前 provider 是否支持结构化输出（response_format / JSON mode）。
-   *
-   * 与 toolCallingEnabled 互斥：response_format 不能与 tools 同用（OpenAI 协议限制）。
-   * 作为「无原生工具能力」时的显式回落通道（产出机器可读 JSON，而非静默丢弃工具）。
-   */
-  private structuredOutputEnabled(): boolean {
-    return this.opts.provider?.supportsStructuredOutput ?? false;
-  }
-
-  /**
    * 解析「本轮可用工具集」——单一真源（SSOT）
    *
    * 工具可用性事实本来被写作两处（buildSystemPrompt 文本出口 + buildChatOptions 原生出口），
@@ -2946,15 +2946,15 @@ export class AgentLoop {
   }
 
   /**
-   * 构建 LLM 调用选项（互斥双能力位的确定性通道选择）。
+   * 构建 LLM 调用选项（工具通道由 provider 能力位确定性选择）。
    *
-   * 通道取当前 provider 的能力位：
-   *   - 支持原生工具调用（supportsToolCalling）→ 走 tools 原生 FC 通道（唯一可调用通道）；
-   *   - 否则若支持结构化输出（supportsStructuredOutput）→ 走 response_format（JSON mode 回落）；
-   *   - 两者皆否 → 不传任何通道（工具不可用，见 buildSystemPrompt 展示的显式回落告知，不静默）。
+   * - 支持原生工具调用（supportsToolCalling）→ 走 tools 原生 FC 通道（唯一可执行通道）；
+   * - 否则不传任何工具通道（工具不可用，见 buildSystemPrompt 的显式告知，不静默）。
    *
-   * 不传 response_format 的原因（既有纪律保留）：它约束最终响应体，而 tool_calls 是通过
-   * tools 参数触发的独立流式协议，两者不能并存；此处仅在「无 tools 能力」时作为落回通道拉通。
+   * 不传 response_format 的原因：它约束最终响应体，而 tool_calls 是通过 tools 参数触发的
+   * 独立流式协议，两者不能并存；且「response_format 里塞工具清单」曾是半设计（schema 产出、
+   * 内核零消费，模型吐出的 JSON 被当正文交付），已按 T1-TOOL-SELECTION-1 整条删除——
+   * 不要把工具清单挪回 response_format。
    */
   private buildChatOptions(): ChatOptions {
     const tools = this.resolveActiveTools();
@@ -2978,35 +2978,7 @@ export class AgentLoop {
         },
       }));
     }
-
-    // 无原生工具通道 → 显式回落 response_format（仅 provider 声明支持 JSON mode 时）
-    if (tools.length > 0 && !supportsToolCalling && this.structuredOutputEnabled()) {
-      // 回落 schema：把工具名 + 描述交给模型，让它以 JSON 结构返回「欲调用的工具」，由内核兜底处理。
-      // 不为 persistence 承诺闭合——此处是「无原生 FC 时的可观测出口」，非被攻破可执行通道。
-      baseOptions.response_format = {
-        type: 'json_schema',
-        json_schema: {
-          name: 'tool_selection',
-          strict: false,
-          schema: {
-            type: 'object',
-            properties: {
-              tools: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    name: { type: 'string', description: '欲调用的工具名' },
-                    arguments: { type: 'object', description: '工具参数' },
-                  },
-                  required: ['name', 'arguments'],
-                },
-              },
-            },
-          },
-        },
-      };
-    }
+    // 无原生工具通道时**不传任何通道**（旧 response_format「工具清单回落」已删，理由见方法头注释）。
 
     // 角色包策略覆盖项（temperature / outputLimit 等）
     if (this.opts.chatOptions) {

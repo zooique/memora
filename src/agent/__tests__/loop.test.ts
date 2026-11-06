@@ -6979,7 +6979,8 @@ describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStruct
     expect(systemPrompt).not.toContain('## 可用工具');
   });
 
-  it('F3: supportsStructuredOutput=true（且无原生工具）→ 产出 response_format（JSON mode 回落）', async () => {
+  it('F3: supportsStructuredOutput=true 不再触达任何回落——无原生 FC 一律按「工具不可用」明示（T1）', async () => {
+    const loggerSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const { provider, captured } = capabilityProvider(
       { supportsToolCalling: false, supportsStructuredOutput: true },
       [[{ content: '直接回答' }]],
@@ -6993,8 +6994,18 @@ describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStruct
 
     for await (const {} of loop.processUserInput('做分析')) void 0;
 
-    // 无原生 tools → 走显式结构化回落（response_format JSON mode），而非静默丢弃工具意图
-    expect(captured[0]?.response_format).toBeDefined();
+    // 旧回落分支已整条删除：response_format 里塞工具清单是半设计（schema 产出、内核零消费，
+    // 模型吐出的 JSON 被当正文交付）⇒ 不得再下发该通道（T1-TOOL-SELECTION-1）。
+    expect(captured[0]?.response_format).toBeUndefined();
+    // 与 supportsStructuredOutput=false 同构：收起清单 + 明示工具不可用（不沉默、不诱导文本工具调用）
+    const systemPrompt = loop.getMessages()[0]!.content;
+    expect(systemPrompt).toContain('工具不可用');
+    expect(systemPrompt).not.toContain('## 可用工具');
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining('不支持原生工具调用'),
+    );
+    loggerSpy.mockRestore();
   });
 
   it('F4: 两者皆 false → 收起清单 + logger.warn 显式声明「无工具通道」且 system prompt 明示', async () => {
@@ -7017,10 +7028,10 @@ describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStruct
     const systemPrompt = loop.getMessages()[0]!.content;
     expect(systemPrompt).toContain('工具不可用');
     expect(systemPrompt).not.toContain('## 可用工具');
-    // 留下可观测 warn 信号（防静默跳过语义）
+    // 留下可观测 warn 信号（防静默跳过语义；文案与 F3 同源：只按「不支持原生工具调用」判定）
     expect(loggerSpy).toHaveBeenCalledWith(
       expect.anything(),
-      expect.stringContaining('无工具通道'),
+      expect.stringContaining('不支持原生工具调用'),
     );
     loggerSpy.mockRestore();
   });
