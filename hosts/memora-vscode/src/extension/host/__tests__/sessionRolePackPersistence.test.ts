@@ -13,7 +13,14 @@
 import { describe, it, expect } from 'vitest';
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { Agent, type AgentChunk, type LlmChunk, type LlmProvider } from '@zooique/memora';
+import {
+  Agent,
+  todayDate,
+  type AgentChunk,
+  type LlmChunk,
+  type LlmProvider,
+  type Round,
+} from '@zooique/memora';
 import { WorkspaceSessionStore } from '../sessionStore.js';
 import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
 import { createHostMemoryStorage } from '../memoryStorage.js';
@@ -295,6 +302,93 @@ describe('会话级角色包：落盘 → 重启读回 → 只读闸仍生效', 
     // 没有请求 ⇒ 不是失败 ⇒ 不提示
     expect(sessionRolePackFallbackNotice(store, '2026-11-05-sold', FALLBACK_PACK)).toBeNull();
   });
+
+  it('分叉继承父会话角色包：新存储实例读回子会话仍是只读包，run_code 实际被拒（N3）', async () => {
+    const projectPath = makeTempDir('memora-session-role-pack-fork-');
+    const configDir = join(projectPath, 'config');
+    seedPacks(configDir);
+    const marker = join(projectPath, 'LEAK_AFTER_FORK.txt');
+
+    // ── 父会话：只读包 + 一个已完成轮（分叉点）
+    const roundStore1 = new WorkspaceRoundStore(projectPath);
+    roundStore1.load();
+    const store1 = new WorkspaceSessionStore(projectPath, roundStore1);
+    store1.load();
+    // 内核 MessageHistory 的惰性初值 = `${todayDate()}-main`；分叉要求「当前会话」实体存在，
+    // 故父会话直接用同一 id（不额外造第二个写点）
+    const parentId = `${todayDate()}-main`;
+    store1.createSession({
+      sessionId: parentId,
+      updatedAt: '2026-11-07T10:00:00.000Z',
+      messageCount: 2,
+    });
+    store1.updateSessionMeta(parentId, { activeRolePackName: READONLY_PACK });
+    const roundId = 'round-fork-parent-1';
+    const round: Round = {
+      id: roundId,
+      userMessage: {
+        id: `${roundId}-user`,
+        role: 'user',
+        content: '父会话的问题',
+        timestamp: '2026-11-07T10:00:00.000Z',
+      },
+      assistantMessage: {
+        id: `${roundId}-assistant`,
+        role: 'assistant',
+        content: '父会话的回答',
+        timestamp: '2026-11-07T10:00:30.000Z',
+      },
+      status: 'complete',
+      createdAt: '2026-11-07T10:00:00.000Z',
+      completedAt: '2026-11-07T10:00:30.000Z',
+      refCount: 1,
+    };
+    roundStore1.save(round);
+    store1.setRoundIds(parentId, [roundId]);
+
+    // ── 生产分叉入口（Agent.forkSession → SessionManager → MessageHistory.forkSession）
+    const { agent: parentAgent, close: closeParent } = makeAgent({
+      projectPath,
+      configDir,
+      sessionStore: store1,
+      roundStore: roundStore1,
+      provider: new SingleToolProvider('void 0;'),
+      activeRolePack: READONLY_PACK,
+    });
+    await parentAgent.init();
+    const fork = parentAgent.forkSession(roundId, 'child-fork');
+    closeParent();
+    const childId = `${fork.date}-${fork.newSession}`;
+
+    // ── 模拟重启：全新存储实例从盘上 load（不复用任何内存）
+    const roundStore2 = new WorkspaceRoundStore(projectPath);
+    roundStore2.load();
+    const store2 = new WorkspaceSessionStore(projectPath, roundStore2);
+    store2.load();
+    expect(readSessionRolePackName(store2, childId), '分叉没继承父会话角色包').toBe(READONLY_PACK);
+
+    // ── 按读回值装配子会话 → 用实际写工具证明只读闸仍生效（名字断言不算）
+    const { agent: childAgent, close: closeChild } = makeAgent({
+      projectPath,
+      configDir,
+      sessionStore: store2,
+      roundStore: roundStore2,
+      provider: new SingleToolProvider(
+        `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'x');`,
+      ),
+      activeRolePack: readSessionRolePackName(store2, childId),
+    });
+    await childAgent.init();
+    const results: Array<Extract<AgentChunk, { type: 'tool_result' }>> = [];
+    for await (const chunk of childAgent.chat('把这个内容写进项目。')) {
+      if (chunk.type === 'tool_result') results.push(chunk);
+    }
+    expect(results, '未收到 run_code 的 tool_result').toHaveLength(1);
+    expect(results[0]!.ok, '分叉后的 run_code 竟然执行成功').toBe(false);
+    expect(results[0]!.blocked, '分叉后的 run_code 未被只读闸拦截').toBe(true);
+    expect(existsSync(marker), `执行面写盘成功：${marker}`).toBe(false);
+    closeChild();
+  }, 60_000);
 });
 
 describe('接线守卫：extension.ts 两处注入不得丢失（该文件零测试覆盖，用源码锚定）', () => {

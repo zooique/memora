@@ -433,6 +433,62 @@ describe('MessageHistory · forkSession', () => {
       'r2',
     ]);
   });
+
+  it('分叉继承父会话角色包名（「从这一支长出来」⇒ 能力不突然回落默认）', () => {
+    const updateSessionMeta = vi.fn();
+    const store = {
+      loadMessages: () => [],
+      listSessions: () => [],
+      getRoundIds: () => ['r1', 'r2'],
+      setRoundIds: vi.fn(),
+      appendRoundId: () => {},
+      appendRoundIds: () => {},
+      createSession: () => {},
+      deleteSession: () => {},
+      getSessionMeta: () => ({
+        sessionId: '2000-01-01-main',
+        updatedAt: '2000-01-01T00:00:00Z',
+        messageCount: 4,
+        activeRolePackName: '只读项目顾问',
+      }),
+      updateSessionMeta,
+      listSessionMetas: () => [],
+    };
+    const history = new MessageHistory(store, '2000-01-01', 'main');
+    const result = history.forkSession('r2');
+
+    expect(updateSessionMeta).toHaveBeenCalledWith(
+      `${todayDate()}-${result.newSession}`,
+      expect.objectContaining({ activeRolePackName: '只读项目顾问' }),
+    );
+  });
+
+  it('父会话从未选过角色 ⇒ 子会话不写假选择记录（反向守卫）', () => {
+    const updateSessionMeta = vi.fn();
+    const store = {
+      loadMessages: () => [],
+      listSessions: () => [],
+      getRoundIds: () => ['r1'],
+      setRoundIds: vi.fn(),
+      appendRoundId: () => {},
+      appendRoundIds: () => {},
+      createSession: () => {},
+      deleteSession: () => {},
+      getSessionMeta: () => ({
+        sessionId: '2000-01-01-main',
+        updatedAt: '2000-01-01T00:00:00Z',
+        messageCount: 2,
+      }),
+      updateSessionMeta,
+      listSessionMetas: () => [],
+    };
+    const history = new MessageHistory(store, '2000-01-01', 'main');
+    const result = history.forkSession('r1');
+
+    const childMeta = updateSessionMeta.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(childMeta).not.toHaveProperty('activeRolePackName');
+    expect(result.newSession).toBeTruthy();
+  });
 });
 
 describe('MessageHistory · forkSession 错误分支', () => {

@@ -277,6 +277,11 @@ export class MessageHistory {
     // 保存会话元数据
     store.updateSessionMeta(newSessionId, {
       createdAt: new Date().toISOString(),
+      // 分叉继承父会话的角色包名（「从这一支长出来」⇒ 能力不应突然变回默认）；
+      // undefined 不写，避免给「从未选过角色」的会话造出假选择记录
+      ...(currentSession.activeRolePackName
+        ? { activeRolePackName: currentSession.activeRolePackName }
+        : {}),
     });
 
     // 7. 切换到新会话（同步日期锚点为今天：分叉键 = todayDate()-newSession，
