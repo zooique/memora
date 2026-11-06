@@ -371,6 +371,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     getAgent: () => this._agent,
     post: (msg) => this.post(msg),
     isBackground: () => this.isBackgroundFlow(),
+    // 收起偏好 / 去重签名的会话维度键：taskId 是每实例序号（bg-1 在两个会话重复）
+    getSessionId: () => this._currentSessionId,
   });
   /** 最近 webview 错误上报（复制诊断命令消费；容量/格式化归 hostDiagnostics 模块） */
   private readonly _recentHostDiags: HostDiagEntry[] = [];

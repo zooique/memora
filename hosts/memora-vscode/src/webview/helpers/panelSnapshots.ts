@@ -1,13 +1,17 @@
 /**
  * 面板快照投影（任务看板 / 后台任务 / 上下文占用）——自 chatPanel 外置（max-lines 只降不升）
  *
- * 三者同族：都是「读当前显示会话的 Agent 快照 → 投递给唯一界面」，且都带宿主单份缓存
+ * 三者同族：都是「读当前显示会话的 Agent 快照 → 投递给唯一界面」，且都带宿主缓存
  * （后台任务签名 / 用户收起偏好）。判据与文案随方法整体搬走，面板只做依赖注入，
  * 不新增第二份口径。
  *
  * 会话归属纪律（E4 批 2）：`getAgent()` 返回的是**当前显示会话**的实例，因此本域任何
  * 写缓存动作前必须先问 `isBackground()`——后台流调用时若不挡，会把 A 的任务签名写进
- * 宿主单份缓存，B 的下一轮去重判据随之失真（该形态无测试会红）。
+ * 宿主缓存，B 的下一轮去重判据随之失真（该形态无测试会红）。
+ *
+ * 跨会话键控（2026-11-06 修 `BGTASK-DISMISS-CROSSTALK-1`）：`taskId` 是**每实例序号**
+ * （`bg-${seq}`），两个会话都会出现 `bg-1` ⇒ 收起偏好与去重签名都必须带会话维度，
+ * 否则「A 里收起 bg-1」会连带隐藏 B 的 bg-1（无测试会红）。
  */
 import { BACKGROUND_TASK_STATUS_LABELS, estimateOccupancy, type Agent } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
@@ -20,6 +24,13 @@ export interface PanelSnapshotDeps {
   post: (msg: ExtensionToWebviewMessage) => void;
   /** 当前执行栈是否属于后台流（写本域缓存前必须挡） */
   isBackground: () => boolean;
+  /**
+   * 当前**显示**会话的标识（收起偏好与去重签名的会话维度键）
+   *
+   * `taskId` 只在单个 Agent 实例内唯一（`bg-${seq}`）⇒ 不带会话维度就无法区分
+   * 「A 的 bg-1」与「B 的 bg-1」。
+   */
+  getSessionId: () => string;
 }
 
 /** 任务看板 / 后台任务 / 上下文占用的快照投影器（生命周期 = 面板实例） */
@@ -34,10 +45,21 @@ export class PanelSnapshots {
   private _backgroundSignature: string | null = null;
 
   /**
-   * 用户已手动收起的后台任务（webview 终态行 `×`）：只存用户偏好，不存任务数据。
-   * 放宿主（webview 折叠重建会丢）；生命周期 = 宿主实例（切会话 / 重开窗口即重置）。
+   * 上面那份签名属于哪个会话（`null` = 尚未推送过）
+   *
+   * 切会话时签名必须失效：`taskId` 跨实例重名（`bg-1` 在两个会话都存在），沿用旧签名
+   * 会把新会话的首推判成 no-op（通常内容恰好相同）⇒ 后台任务条停留在上一会话的内容。
    */
-  private readonly _dismissedIds = new Set<string>();
+  private _signatureSessionId: string | null = null;
+
+  /**
+   * 用户已手动收起的后台任务，**按会话分组**：只存用户偏好，不存任务数据。
+   * 放宿主（webview 折叠重建会丢）；生命周期 = 宿主实例。
+   *
+   * 用例：A 会话收起 `bg-1` 后，B 会话的 `bg-1` 必须仍显示——`taskId` 是每实例序号，
+   * 不带会话维度即跨会话串台（`BGTASK-DISMISS-CROSSTALK-1`）。
+   */
+  private readonly _dismissedBySession = new Map<string, Set<string>>();
 
   /**
    * @param deps 面板注入的能力（见 `PanelSnapshotDeps`）
@@ -110,14 +132,19 @@ export class PanelSnapshots {
    */
   pushTasks(mode: 'dedup' | 'force' = 'dedup'): void {
     const agent = this._deps.getAgent();
-    // 后台流不推：签名是宿主单份缓存，被后台任务写脏后当前会话的 dedup 判据即错
+    // 后台流不推：签名是当前会话的 dedup 守卫，被后台任务写脏后判据即错
     if (!agent || this._deps.isBackground()) return;
+    // 会话切换即令签名失效：同名 taskId（bg-1）跨会话重复，沿用旧签名会吞掉新会话首推
+    const sessionId = this._deps.getSessionId();
+    const sessionChanged = sessionId !== this._signatureSessionId;
+    this._signatureSessionId = sessionId;
     // 用户已收起的条目不再下发（**只是视图过滤，内核条目与输出都留着**，`kill_command`
     // 随时可取回）。过滤放在**投影出口**而非内核：宿主只存「哪条别显示」这个用户偏好，
-    // 真相源恒为内核注册表，零第二份数据。
+    // 真相源恒为内核注册表，零第二份数据。收起偏好按会话隔离（跨会话同名不共用）。
+    const dismissed = this._dismissedFor(sessionId);
     const items = agent
       .listBackgroundTasks()
-      .filter((t) => !this._dismissedIds.has(t.taskId))
+      .filter((t) => !dismissed.has(t.taskId))
       .map((t) => ({
         taskId: t.taskId,
         command: t.command,
@@ -127,9 +154,24 @@ export class PanelSnapshots {
         statusLabel: BACKGROUND_TASK_STATUS_LABELS[t.status],
       }));
     const signature = items.map((t) => `${t.taskId}:${t.status}`).join('|');
-    if (mode === 'dedup' && signature === this._backgroundSignature) return;
+    // 会话刚切换时即使签名相同也必须推：条上的内容属于上一会话，不能拿「相同」当「没变」
+    if (mode === 'dedup' && !sessionChanged && signature === this._backgroundSignature) return;
     this._backgroundSignature = signature;
     this._deps.post({ type: 'background_tasks', items });
+  }
+
+  /**
+   * 取（或建）某会话的「已收起任务」集合
+   *
+   * @param sessionId 会话标识（`taskId` 只在实例内唯一，必须按会话分桶）
+   */
+  private _dismissedFor(sessionId: string): Set<string> {
+    let set = this._dismissedBySession.get(sessionId);
+    if (!set) {
+      set = new Set<string>();
+      this._dismissedBySession.set(sessionId, set);
+    }
+    return set;
   }
 
   /**
@@ -144,7 +186,9 @@ export class PanelSnapshots {
    * @param taskId 目标后台任务标识
    */
   dismiss(taskId: string): void {
-    this._dismissedIds.add(taskId);
+    // 只记到当前会话桶：同名 taskId 属于两个会话的两条不同任务，收起 A 的那条
+    // 不得连带隐藏 B 的同名任务（BGTASK-DISMISS-CROSSTALK-1）
+    this._dismissedFor(this._deps.getSessionId()).add(taskId);
     // ⚠️ 必须把签名置为**永不可能与真实签名相等的哨兵**再推，不能置空串：
     // 最后一条被收起时过滤后 `items` 为空 ⇒ 签名也是空串，置空串等于「没变」⇒
     // 去重判成 no-op ⇒ UI 根本不更新（实测踩中：条收不起来）。
