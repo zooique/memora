@@ -224,6 +224,17 @@ type InterruptRequest =
   | { readonly kind: 'command-result'; readonly content: string };
 
 /**
+ * 插话**入队**结果（loop 层能观测到的全部答案）
+ *
+ * 与 `Agent.interject` 的三态（`InterjectOutcome`）同一词表，是它的**真子集**：
+ * loop 只裁决「队列收不收」，看不到落盘结果，故不包含 `'queued-unpersisted'`——
+ * 把持久化态塞进 layer 返回值等于让下层谎报自己不可观测的事实。
+ * 🔴 长于一个布尔：`rejected-limit` = 零入队零落盘，调用方据此提示；boolean 会把
+ * 「入队成功」与「入队失败」之外的第三种可能（落盘态）留给调用方猜。
+ */
+export type InterjectQueueOutcome = 'queued' | 'rejected-limit';
+
+/**
  * `compress_context` 的压缩目标枚举（第二级压缩，CTX-WIN-2）
  *
  * 三个目标**按上下文形态分工**，不是同一件事的三种叫法（合并即降级为「泛化遍历」）：
@@ -912,14 +923,17 @@ export class AgentLoop {
    * 提示（webview 预检与其 shared 镜像常量由守卫测试与本常量锁同值）。pause 条目不受
    * 本上限管辖（软暂停申请是内部控制语义，非用户输入洪流）。
    *
-   * @returns true=已入队；false=待注入插话已满，本条未入队（调用方不应持久化/上屏）
+   * 🔴 **判限额与入队必须在同一个同步段**（本方法内部无任何 await）：二者一旦被 await 拆开，
+   * 两条几乎同时的插话会各自读到「未满」而双双入队 ⇒ 队列超上限（并发插话的唯一正确性前提）。
+   *
+   * @returns `'queued'`=已入队；`'rejected-limit'`=待注入插话已满，本条未入队（调用方不应持久化/上屏）
    */
-  interject(content: string): boolean {
+  interject(content: string): InterjectQueueOutcome {
     if (this.getPendingInterjections().length >= LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS) {
-      return false;
+      return 'rejected-limit';
     }
     this.interruptQueue.push({ kind: 'interject', content });
-    return true;
+    return 'queued';
   }
 
   /**

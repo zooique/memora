@@ -6,7 +6,7 @@
  * （RolePackManager / ToolExecutor / SkillManager / MemoryInspector）。
  */
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
-import type { AgentLoop } from '@/agent/loop.js';
+import type { AgentLoop, InterjectQueueOutcome } from '@/agent/loop.js';
 import type {
   AgentChunk,
   ArchiveMode,
@@ -77,10 +77,11 @@ import type { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 /**
  * 插话受理结果（`Agent.interject` 的唯一返回值形状）
  *
+ * = loop 的入队结果（`InterjectQueueOutcome`）+ Agent 层独有的持久化结果，**同一词表不另造**。
  * 🔴 三态必须区分，不可折叠成 boolean：`'queued-unpersisted'` 是「**已生效但历史没存**」——
  * 折成 true 会让宿主无从提示（用户重发即双执行），折成 false 会让宿主诱导用户重发（同样双执行）。
  */
-export type InterjectOutcome = 'queued' | 'queued-unpersisted' | 'rejected-limit';
+export type InterjectOutcome = InterjectQueueOutcome | 'queued-unpersisted';
 
 // ─── Agent 门面类 ───────────────────────────────────────
 
@@ -1025,9 +1026,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async interject(content: string): Promise<InterjectOutcome> {
     this.assertInitialized('interject');
-    // 先入队（上限裁决在此）：满员拒收时不可写盘——队列没进、落盘却写 = 数据不一致
+    // 🔴 先入队（上限裁决 + push 在 loop 同一个同步段内完成，且**位于本方法第一个 await 之前**）：
+    // 满员拒收时不可写盘——队列没进、落盘却写 = 数据不一致；并发两条也不会双双越过限额。
     const accepted = this.requireLoop.interject(content);
-    if (!accepted) return 'rejected-limit';
+    if (accepted === 'rejected-limit') return 'rejected-limit';
     // 持久化插话为闭环节点交互补充输入（roundId 非空时才写；空=无在途闭环，跳过）
     const closureRoundId = this.loop?.getCurrentRoundId();
     if (!closureRoundId) return 'queued';

@@ -3386,19 +3386,19 @@ describe('AgentLoop · 执行中插话', () => {
       toolExecutor: vi.fn(),
     });
     const limit = LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS;
-    // 逐条入队至满员，每条受理返回 true
+    // 逐条入队至满员，每条受理返回 'queued'
     for (let i = 0; i < limit; i++) {
-      expect(loop.interject(`插话${i}`)).toBe(true);
+      expect(loop.interject(`插话${i}`)).toBe('queued');
     }
     expect(loop.getPendingInterjections()).toHaveLength(limit);
-    // 满员后第 limit+1 条：整条拒收（返回 false），队列不增——插话是原子思路不截半条
-    expect(loop.interject('超出上限的一条')).toBe(false);
+    // 满员后第 limit+1 条：整条拒收（'rejected-limit'），队列不增——插话是原子思路不截半条
+    expect(loop.interject('超出上限的一条')).toBe('rejected-limit');
     expect(loop.getPendingInterjections()).toHaveLength(limit);
     // pause 条目不受上限管辖：满员态仍可申请挂起（内部控制语义非用户输入洪流）
     expect(() => loop.requestPause()).not.toThrow();
     // 删一条腾位后可再入：上限管存量不管历史
     loop.removePendingInterject(0);
-    expect(loop.interject('腾位后新插话')).toBe(true);
+    expect(loop.interject('腾位后新插话')).toBe('queued');
     expect(loop.getPendingInterjections()).toHaveLength(limit);
   });
 
@@ -7244,9 +7244,9 @@ describe('AgentLoop · 后台命令回流与 turn 终态脱管（§14 · 脱管�
     });
     // 塞满插话
     for (let i = 0; i < LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS; i++) {
-      expect(loop.interject(`插话${i}`)).toBe(true);
+      expect(loop.interject(`插话${i}`)).toBe('queued');
     }
-    expect(loop.interject('多出来的一条')).toBe(false); // 已满
+    expect(loop.interject('多出来的一条')).toBe('rejected-limit'); // 已满
     // 回流走独立通道，不受插话满员影响
     loop.enqueueCommandResult('[后台命令完成] taskId=bg-9');
     expect(loop.getPendingInterjections()).toHaveLength(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);

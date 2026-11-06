@@ -26,6 +26,7 @@ import type { LlmChunk } from '@/llm/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { IRoundStore, Round } from '@/memory/roundStore.js';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
+import { createPendingRoundFixture } from '@/memory/__tests__/helpers/roundFixture.js';
 import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import { todayDate } from '@/utils/time.js';
 import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
@@ -396,6 +397,34 @@ describe('Agent · interject 插话上限（KERNEL-QUEUE-LIMIT-1）', () => {
     expect(agent.removePendingInterject(0)).toBe(true);
     await expect(agent.interject('腾位后新插话')).resolves.toBe('queued');
     expect(agent.getPendingInterjections()).toHaveLength(LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS);
+  });
+
+  it('并发两次插话：判限额与入队同处一个同步段 —— 第二条必被拒、队列不超限、盘上只多一条', async () => {
+    const roundStore = new InMemoryRoundStore();
+    const round = createPendingRoundFixture('原始提问');
+    roundStore.save(round);
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, roundStore);
+    await agent.init();
+    // 造「在途闭环」：id 指向盘上真实存在的轮 ⇒ appendUser 真正落盘（await 段不可被跳过）
+    const loop = (agent as unknown as { loop: { getCurrentRoundId(): string | undefined } }).loop;
+    loop.getCurrentRoundId = () => round.id;
+
+    const limit = LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS;
+    for (let i = 0; i < limit - 1; i++) await agent.interject(`占位${i}`);
+    const persistedBefore = roundStore.getById(round.id)?.interactiveInputs?.length ?? 0;
+
+    // 并发发出（不串行 await）：两条都在首个 await 之前完成「读长度 + push」
+    const [first, second] = await Promise.all([
+      agent.interject('并发甲'),
+      agent.interject('并发乙'),
+    ]);
+
+    // ① 恰好一条受理、一条拒收（同步执行次序决定谁先，但绝不允许双双受理）
+    expect([first, second].sort()).toEqual(['queued', 'rejected-limit']);
+    // ② 队列不超限（若「判限额」与「入队」之间夹了 await，此处会是 limit+1）
+    expect(agent.getPendingInterjections()).toHaveLength(limit);
+    // ③ 盘上只多一条：被拒的那条零落盘（拒收 = 零入队 + 零落盘）
+    expect(roundStore.getById(round.id)?.interactiveInputs?.length).toBe(persistedBefore + 1);
   });
 
   it('缺轮：插话已在队列生效但历史未写入 → queued-unpersisted（不中断、不造假记录）', async () => {
