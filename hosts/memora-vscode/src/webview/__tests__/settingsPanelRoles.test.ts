@@ -200,6 +200,66 @@ describe('settingsPanel.activateRole —— 切换失败两成因判定', () => 
   });
 });
 
+describe('settingsPanel.activateRole —— 会话级落盘（方案 A，切换写）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('切换成功 → 写回当前会话的 activeRolePackName（重启后据此读回）', async () => {
+    const { agent } = agentStub({ switchOk: true, locked: false });
+    const { provider } = setup(agent);
+    const updateSessionMeta = vi.fn();
+    provider.setAgentFactory(
+      async () => agent,
+      undefined,
+      () => '2026-11-07-s1',
+    );
+    provider.setSessionStore({ updateSessionMeta } as never);
+
+    const ok = await activateRole(provider, 'writer');
+
+    expect(ok).toBe(true);
+    expect(updateSessionMeta).toHaveBeenCalledTimes(1);
+    expect(updateSessionMeta).toHaveBeenCalledWith('2026-11-07-s1', {
+      activeRolePackName: 'writer',
+    });
+  });
+
+  it('切换失败 → 不写盘（不能把「没切成」记成用户选择）', async () => {
+    const { agent } = agentStub({ switchOk: false, locked: false });
+    const { provider } = setup(agent);
+    const updateSessionMeta = vi.fn();
+    provider.setAgentFactory(
+      async () => agent,
+      undefined,
+      () => '2026-11-07-s1',
+    );
+    provider.setSessionStore({ updateSessionMeta } as never);
+
+    const ok = await activateRole(provider, 'ghost');
+
+    expect(ok).toBe(false);
+    expect(updateSessionMeta).not.toHaveBeenCalled();
+  });
+
+  it('无当前会话（切换发生时还没定位会话）→ 不写不崩', async () => {
+    const { agent } = agentStub({ switchOk: true, locked: false });
+    const { provider } = setup(agent);
+    const updateSessionMeta = vi.fn();
+    provider.setAgentFactory(
+      async () => agent,
+      undefined,
+      () => undefined,
+    );
+    provider.setSessionStore({ updateSessionMeta } as never);
+
+    const ok = await activateRole(provider, 'writer');
+
+    expect(ok).toBe(true);
+    expect(updateSessionMeta).not.toHaveBeenCalled();
+  });
+});
+
 describe('settingsPanel.toggleSkillDisabled —— 技能启停开关', () => {
   beforeEach(() => {
     vi.clearAllMocks();

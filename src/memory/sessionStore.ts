@@ -107,6 +107,21 @@ export interface SessionMeta {
    */
   archivedMessageCount?: number;
 
+  // ── 会话级角色包 ──
+  /**
+   * 该会话激活的角色包**名字快照**（会话级，方案 A 的落盘真源）
+   *
+   * 语义边界（两条都极易误解）：
+   *   - 只是名字，**不是「该包仍可用」的保证**：装配时按名解析，解析不到 ⇒ 回落兜底链
+   *     （assembler §4.1），宿主**必须**向用户显式告知（静默回落 = 安全承诺静默失效）；
+   *   - **不是热恢复开关**：同名包重装后，已装配的 Agent 不会自动切回（装配期一次性解析），
+   *     需重新装配（重开面板 / 重启宿主）或手动切回。
+   *
+   * 写入方 = 宿主会话层（切换成功后 `updateSessionMeta`）；内核装配只读（注入 `activeRolePack`）。
+   * 缺省 `undefined` = 该会话从未主动选过角色 ⇒ 装配走兜底链，**不得**写成猜测值。
+   */
+  activeRolePackName?: string;
+
   /** 创建时间（ISO 8601） */
   createdAt?: string;
 }

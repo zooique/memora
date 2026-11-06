@@ -147,6 +147,7 @@ import { deriveCapabilityState } from '../helpers/capabilityState.js';
 // 输入区徽章的域级短标签（标签投影与三态判定分离，见 capabilityLabels 头注释）
 import { capabilityDomainLabel } from '../helpers/capabilityLabels.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
+import { sessionRolePackFallbackNotice } from '../../extension/host/sessionRolePack.js'; // 角色包回落告知（判据单点）
 // 引用发送前存在性核实（HOST-CTX-9 发送侧）：解析器复用 refPath（首根 SSOT），不由本文件另写
 import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
@@ -675,17 +676,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private bindAgent(agent: Agent): void {
     this._agent = agent;
-    // 角色包随显示会话走（方案 A，2026-11-06）：`_activeRolePack` 是**当前 agent 的投影**，
-    // 不是宿主自持的跨会话字段。bindAgent 是换实例/换会话的唯一收口 ⇒ 在此强制重读，
-    // 不能用「仅空时补齐」——否则同一张面板里 name 来自 A 会话、traits 来自 B 会话。
-    // SSOT = 内核 `rolePackManager.activeName`；新会话默认值来自内核兜底包（assembler §4.1）。
+    // 角色包随显示会话走（方案 A）：`_activeRolePack` 是当前 agent 的投影 ⇒ bindAgent 强制重读
     this._activeRolePack = agent.rolePackManager?.activeName ?? undefined;
-    // 换 agent = 投影源切换（SSOT）：重置待发送区长度投影缓存为「从未投影过」，
-    // 防旧 agent 队列长度残留导致 syncPendingQueue 长度未变误判不推送
-    // （新 agent 首次 sync 必推送一次，无论队列空满）
+    // 解析不到不许静默：会话文件写了 X 而内核实际激活 Y ⇒ 落一条可见 notice（判据/文案单点外置）
+    const fallbackNotice = sessionRolePackFallbackNotice(
+      this.sessionStore,
+      this._currentSessionId,
+      this._activeRolePack,
+    );
+    if (fallbackNotice) this.post(fallbackNotice);
+    // 换 agent = 投影源切换（SSOT）：重置队列长度投影缓存（新 agent 首次 sync 必推一次）
     this._lastPendingQueueLen = undefined;
-    // 与 ensureAgent 懒装配路径保持一致：注入即绑定，确保事件通知两条路径都生效
-    // （bindAgentNoticeEvents 内部先 off 再 on，幂等，折叠展开重复注入不重复注册）
+    // 与 ensureAgent 懒装配路径同收口：注入即绑定（bindAgentNoticeEvents 内部先 off 再 on，幂等）
     this.bindAgentNoticeEvents();
     // 绑定路径守卫安全审计订阅（幂等，先取消旧订阅再绑新）
     this.bindSecurityAudit();
@@ -697,10 +699,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.bindWriteConfirmation();
     // 装配完成后重算活跃度：切换会话会改变角标口径（当前显示会话的待处理不计入角标）
     this.refreshSessionActivity();
-    // 装配注入后统一补推（时序竞态）：webview ready 时 agent 可能尚未装配，replaySession 的
-    // chat_role_pack / pushRolePacks 会因 _agent 为空跳过 → 角色徽章与列表永久缺失。此处装配
-    // 完成即补推（面板未就绪时 post 静默忽略，由 replaySession 兜底再推）；统一收口在
-    // refreshAfterAssemble，本方法不另推一份（否则懒装配路径漏推）。
+    // 装配后统一补推（时序竞态：ready 时 agent 可能未装配 ⇒ 徽章/角色列表会永久缺失）；
+    // 唯一收口 = refreshAfterAssemble，本方法不另推一份（否则懒装配路径漏推）。
     this.refreshAfterAssemble();
   }
 
@@ -2153,9 +2153,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const agent = await this.agentForSession(sessionId);
       this.bindAgent(agent);
       this.replayCurrentSession();
-      // 后台任务条按会话重投影（BGTASK-SWITCH-REPUSH-1）：任务清单真源 = 各会话实例的注册表，
-      // 切会话不推 ⇒ 常驻条继续显示上一个会话的任务（跨会话串台，新会话有任务时也看不到）。
-      // 必须 force：两会话的任务列表都可能为空、内容签名相同，不让去重层决定「切会话是否到达 UI」。
+      // 后台任务条按会话重投影（BGTASK-SWITCH-REPUSH-1）：切会话不推 ⇒ 常驻条继续显示上一个会话的任务。
+      // 必须 force（两会话任务都可能为空、签名相同）；force 是**第二道保险**——`sessionChanged`
+      // 已在起作用，保留它防未来调用顺序漂移，**不是必需成本，勿当冗余删掉**。
       this.postBackgroundTasks('force');
     } catch (err) {
       // 切失败：只还**本次新拿**的锁（切回旧会话时本是长锁，误放会放掉仍在写盘的归属）

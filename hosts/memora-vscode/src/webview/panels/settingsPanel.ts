@@ -23,6 +23,8 @@ import * as vscode from 'vscode';
 import type { Agent, ArchiveMode, MemoryInspector } from '@zooique/memora';
 import { hasActiveSuperseder } from '@zooique/memora';
 import type { ProviderStore } from '../../extension/providers/providerStore.js';
+// 会话存储（角色切换成功后按会话落盘；只用 updateSessionMeta 这一写点）
+import type { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { createBackgroundProvider } from '../../extension/host/llmConfig.js';
 import { inspectRolePackTeams } from '../../extension/host/rolePackTeams.js';
 import { MemoraChatViewProvider } from './chatPanel.js';
@@ -115,7 +117,9 @@ export class MemoraSettingsPanel {
   private _resolveSessionId: (() => string | undefined) | undefined;
   /** Agent 懒装配工厂（由 extension 注入，与 chat 面板同一 `AgentRegistry` 取用面） */
   private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
-  /** 全局状态存储（持久化激活角色包，用户级） */
+  /** 会话存储（角色切换成功后写回该会话的 `activeRolePackName`；extension 注入） */
+  private _sessionStore: WorkspaceSessionStore | undefined;
+  /** 全局状态存储（Memento；角色激活态已改为**会话级**落盘，这里不再承载角色，保留供其他用户级配置） */
   private _globalState: vscode.Memento | undefined;
   /** 待切换的子选项卡（configureModel 命令在视图未就绪时缓存，webview ready 后补发） */
   private _pendingTab: SettingsTab | undefined;
@@ -167,7 +171,12 @@ export class MemoraSettingsPanel {
     this._resolveSessionId = resolveSessionId;
   }
 
-  /** 注入全局状态（持久化激活角色包，用户级，跨项目共享） */
+  /** 注入会话存储：角色切换成功后按会话落盘（装配期读回的唯一写入侧） */
+  public setSessionStore(store: WorkspaceSessionStore): void {
+    this._sessionStore = store;
+  }
+
+  /** 注入全局状态（Memento；角色激活态已改为会话级，不再经此持久化） */
   public setGlobalState(gs: vscode.Memento): void {
     this._globalState = gs;
   }
@@ -679,6 +688,14 @@ export class MemoraSettingsPanel {
     // 不再写 globalState——那会让下一个新建会话偷偷继承「上次全局选择」的默认值。
     // 新会话默认角色 = 内核 §4.1 单链兜底包（assembler），宿主不提供任何默认值。
     const ok = agent.switchRolePack(name);
+    // 落盘（方案 A）：**只在切换成功时写**——失败 / 被限流锁定不写，避免把「没切成」记成用户选择。
+    // 会话 id 与下方监听解绑共用 `_resolveSessionId` 同一解析面（不另算「当前会话」）。
+    if (ok) {
+      const sessionId = this._resolveSessionId?.();
+      if (sessionId) {
+        this._sessionStore?.updateSessionMeta(sessionId, { activeRolePackName: name });
+      }
+    }
     if (!ok) {
       // ok=false 有两种成因，须用内核公开判据区分：
       // rolePackSwitchLocked 只在**触发锁定**那一次发射（该次返回 true），被锁期间的切换

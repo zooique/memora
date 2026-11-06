@@ -3052,3 +3052,89 @@ describe('角色包激活回调接线（B：删激活包 → 对话头部同步�
     expect((provider as unknown as { _activeRolePack: string })._activeRolePack).toBe('packB');
   });
 });
+
+describe('会话级角色包：解析失败不许静默（2026-11-07）', () => {
+  /**
+   * 可绑定 agent 桩：只补 bindAgent → refreshAfterAssemble 链路所需最小面
+   *
+   * @param activeName 装配后内核实际激活的角色包名（= bindAgent 投影值）
+   */
+  function rolePackAgentStub(activeName: string): Agent {
+    return {
+      sessionManager: {
+        getCurrentSessionInfo: () => null,
+        switchToSession: vi.fn(async () => 0),
+      },
+      rolePackManager: {
+        activeName,
+        listMeta: () => [],
+        getActiveTeam: () => undefined,
+        getActive: () => ({ strategy: { act: {} }, capabilities: [], traits: {} }),
+      },
+      security: { onAudit: () => () => {}, onWriteConfirmation: () => () => {} },
+      getMetrics: () => ({ context: {} }),
+      on: vi.fn(),
+      off: vi.fn(),
+      isPausePending: () => false,
+    } as unknown as Agent;
+  }
+
+  /** 取 notice 消息（过滤其余推送） */
+  function noticesOf(posted: unknown[]): { type: string; level: string; message: string }[] {
+    return posted.filter((m) => (m as { type: string }).type === 'notice') as {
+      type: string;
+      level: string;
+      message: string;
+    }[];
+  }
+
+  it('会话记录写了已不存在的包 → 装配不崩、回落默认，且下发指名原包的 error notice', () => {
+    const { store, provider, posted } = setup();
+    // 造「包已删除/改名/换工作区」的会话记录：字段在、包解析不到
+    const sessionId = '2026-11-07-spackgone';
+    store.createSession({
+      sessionId,
+      updatedAt: '2026-11-07T10:00:00.000Z',
+      messageCount: 0,
+      activeRolePackName: '已删除的角色包',
+    });
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = sessionId;
+
+    provider.setAgent(rolePackAgentStub('memora助手'));
+
+    // 断言**实际下发的那条 UI 消息**（不是断言某个布尔为 true）
+    const notices = noticesOf(posted);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.level).toBe('error');
+    expect(notices[0]!.message).toBe(
+      '原角色包「已删除的角色包」已不可用，当前使用默认角色「memora助手」。',
+    );
+  });
+
+  it('包名解析成功 → 不提示（正常路径零打扰）', () => {
+    const { store, provider, posted } = setup();
+    const sessionId = '2026-11-07-spackok';
+    store.createSession({
+      sessionId,
+      updatedAt: '2026-11-07T10:00:00.000Z',
+      messageCount: 0,
+      activeRolePackName: '只读项目顾问',
+    });
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = sessionId;
+
+    provider.setAgent(rolePackAgentStub('只读项目顾问'));
+
+    expect(noticesOf(posted)).toHaveLength(0);
+  });
+
+  it('会话记录无角色字段（老会话）→ 走兜底且零提示（不把默认值当成失败）', () => {
+    const { store, provider, posted } = setup();
+    const sessionId = '2026-11-05-sold';
+    store.createSession({ sessionId, updatedAt: '2026-11-05T10:00:00.000Z', messageCount: 0 });
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = sessionId;
+
+    provider.setAgent(rolePackAgentStub('memora助手'));
+
+    expect(noticesOf(posted)).toHaveLength(0);
+  });
+});

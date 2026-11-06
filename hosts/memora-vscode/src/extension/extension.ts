@@ -23,6 +23,7 @@ import { assembleAgent, createVscodeLogger, type AssembleOptions } from './host/
 import { createHostMemoryStorage } from './host/memoryStorage.js';
 import { resolveProjectDataDir } from './host/projectDataDir.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
+import { readSessionRolePackName } from './host/sessionRolePack.js';
 import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
 import { AgentRegistry } from './host/agentRegistry.js';
@@ -206,8 +207,9 @@ interface AssemblyDeps {
 /**
  * 唯一的装配选项构建点
  *
- * 所有装配入口（单实例 / 按会话）都经此函数产出 `AssembleOptions`：选项键只在此处
- * 写一次，新增字段不会漏传某一路（防「单实例能用、会话实例少注入」）。
+ * 所有装配入口（单实例 / 按会话）都经此函数产出 `AssembleOptions`：**静态选项键**只在此处
+ * 写一次，新增字段不会漏传某一路（防「单实例能用、会话实例少注入」）。会话级的
+ * `activeRolePack` 需 sessionId，由 `assembleAgentForSession` 装配前注入。
  *
  * @param projectPath 工作区路径
  * @param deps 装配期稳定依赖
@@ -319,7 +321,11 @@ async function assembleAgentForSession(
   sessionId: string,
   deps: AssemblyDeps,
 ): Promise<Agent> {
-  const agent = await assembleAgent(buildAssembleOptions(projectPath, deps));
+  // 会话级角色包（方案 A）：按会话文件读回名字快照；解析不到由内核 §4.1 落兜底包，
+  // 宿主侧由 chatPanel.bindAgent 读同一份 meta 发可见提示（不许静默回落）。
+  const options = buildAssembleOptions(projectPath, deps);
+  options.activeRolePack = readSessionRolePackName(deps.sessionStore, sessionId);
+  const agent = await assembleAgent(options);
   try {
     // getter 类型为可空（未初始化时 null）；此处刚装配完成，为空即内部状态异常
     const sessionManager = agent.sessionManager;
@@ -629,14 +635,14 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // 设置面板：editor tab 形态（角色 / 大模型 / 记忆 / 技能 / MCP / 安全 六页合一）。
-  // L3 分家（2026-10-26）：设置整体从侧栏 view 迁入 editor tab——**六页合一迁入，
-  // 非回退到分页前形态**；对话仍留侧栏。原「避免活动栏底部选项卡拥挤（用户反馈）」
-  // 的动机由「设置整体独立 tab」承接。
-  // 装配复用与 chat 面板同一登记表（SSOT），角色切换持久化用户级激活态；
+  // L3 分家（2026-10-26）：设置整体从侧栏 view 迁入 editor tab（**六页合一迁入，非回退**）；
+  // 原「避免活动栏底部选项卡拥挤（用户反馈）」的动机由「设置整体独立 tab」承接。
+  // 装配复用与 chat 面板同一登记表（SSOT）；角色切换随**会话文件**落盘（方案 A，不再用户级）
   // providerStore 注入供大模型子视图读写（与 chat 面板共用一个 store 单例）。
   const settingsProvider = new MemoraSettingsPanel(context.extensionUri, providerStore);
   settingsProvider.setAgentFactory(getAgent, peekAgent, resolveSessionId);
   settingsProvider.setGlobalState(context.globalState);
+  settingsProvider.setSessionStore(sessionStore); // 角色切换落盘到会话文件（装配期读回）
   // 注入技能目录：用户目录（打开目录按钮）+ 内置配置目录（三源技能来源判定，SSOT 收紧）
   settingsProvider.setUserSkillsDir(userSkillsDir);
   settingsProvider.setConfigDir(configDir);

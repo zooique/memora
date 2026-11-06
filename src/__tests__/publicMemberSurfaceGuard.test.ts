@@ -908,6 +908,8 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   SessionMeta: {
     kind: 'interface',
     members: [
+      // 2026-11-07 新增（定性见下方 ⑪）：会话级角色包名快照，可选字段、非破坏
+      'activeRolePackName',
       // 2026-10-19 新增（定性见下方 ⑦）：归档防重快照的落盘副本，可选字段、非破坏
       'archivedMessageCount',
       'autoName',
@@ -1419,7 +1421,14 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    （extension.ts 固定传 false）+ 宿主 MemoryGcScheduler 单点驱动；\n` +
       `    B 方案 N 实例共享同一对 sessionStore/roundStore 单例，不关自启则 N 个定时器重复扫同一份存储。\n` +
       `    行为由宿主 gcSingleScheduler.test.ts 的计数断言守护（两实例 / 3 周期 ⇒ 扫描恰好 3 次）。\n` +
-      `    代价 = 零（可选字段：缺省 true，既有调用与单实例语义零变化）。`;
+      `    代价 = 零（可选字段：缺省 true，既有调用与单实例语义零变化）。` +
+      `\n  ⑪ SessionMeta.activeRolePackName 新增（2026-11-07 · 角色包会话级落盘，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：它是「会话级角色选择」的**落盘真源**，否则重启后\n` +
+      `    每个会话都回兜底包——用户选的「只读项目顾问」在重启后变成可写角色（安全承诺静默失效）。\n` +
+      `    真消费者 = 宿主 sessionStore（切换成功后 updateSessionMeta 写）+ 装配期读取注入\n` +
+      `    AgentOptions.activeRolePack（见 hosts 的 sessionRolePack.ts）；内核侧只读。\n` +
+      `    行为由宿主 sessionRolePackPersistence.test.ts 守护（真写工具被拒 + 解析失败可见 notice）。\n` +
+      `    代价 = 零（可选字段：老会话读不到 ⇒ 装配走兜底链，自然降级，无 deprecation 需求）。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
