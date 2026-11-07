@@ -390,6 +390,7 @@ const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
   'resolveContextWindow',
   'resolveShellCommand',
   'segmentLower',
+  'sessionIdCreatedAt',
   'setLogger',
   'splitSessionId',
   'todayDate',

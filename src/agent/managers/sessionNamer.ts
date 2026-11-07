@@ -136,7 +136,7 @@ ${content}
  *
  * @param createdAt 会话创建时刻（来源：`sessionIdCreatedAt(sessionId)` 或 meta.createdAt）
  */
-export function defaultTitle(createdAt: Date | string | number): string {
+export function defaultTitle(createdAt: Date | string | number = new Date()): string {
   const at = createdAt instanceof Date ? createdAt : new Date(createdAt);
   if (Number.isNaN(at.getTime())) return '新会话';
   const hh = String(at.getHours()).padStart(2, '0');

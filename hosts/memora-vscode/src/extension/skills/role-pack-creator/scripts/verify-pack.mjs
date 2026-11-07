@@ -11,7 +11,7 @@
  *   （能动态加载内核时直接调用；加载不到时明确 SKIP，不静默放行）
  * - 包名规则/保留名：`role-pack-creator/scripts/skaffold.mjs` + `src/role-pack/validator.ts`
  * - 内嵌技能 frontmatter：`src/skill/skillManager.ts#validateFile`
- * - 双向引用：`hosts/memora-vscode/src/extension/host/__tests__/builtinPackCoverage.test.ts`
+ * - 双向引用：`src/role-pack/__tests__/builtinPackCoverage.test.ts`
  *
  * 调用方式：
  *   node verify-pack.mjs <角色包目录> [--kernel-root 内核仓库根] [--json]
