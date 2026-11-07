@@ -49,7 +49,7 @@ export interface RoundAction {
    * 可用判据（单点，两面共用）
    *
    * @param ctx    轮级锚点（空锚 = 该动作在此轮不可用）
-   * @param locked 会话结构锁（运行时禁用一切改变会话结构的操作）
+   * @param locked 会话结构写窗口锁（截断 / 分叉会重写会话文件，窗口内禁用；导航类不在其内）
    */
   available(ctx: RoundActionCtx, locked: boolean): boolean;
   /**

@@ -965,12 +965,14 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     expect(input.disabled).toBe(false);
   });
 
-  it('运行时（thinking）禁用会话导航类控件：新建/历史/删除按钮全 disabled', () => {
+  it('运行时（thinking）导航控件保持可用：新建/历史不禁用，截断类（删除/重新生成）仍禁用', () => {
     mountChatView();
     dispatch({ type: 'status', state: 'thinking' });
-    expect((document.getElementById('newSessionBtn') as HTMLButtonElement).disabled).toBe(true);
-    expect((document.getElementById('historyBtn') as HTMLButtonElement).disabled).toBe(true);
-    // 已渲染的 AI 消息删除按钮同样被锁（重放单条 turn_update 渲染消息，锁态因 thinking 生效）
+    // 导航类可用态由 turn_update 单写点施加（宿主 E4 批 2 已放开流中切换/新建）；
+    // 本用例不派 turn_update，故断言「status 不再改写导航 disabled」这一退场契约
+    expect((document.getElementById('newSessionBtn') as HTMLButtonElement).disabled).toBe(false);
+    expect((document.getElementById('historyBtn') as HTMLButtonElement).disabled).toBe(false);
+    // 已渲染的 AI 消息删除按钮仍被结构写窗口锁住（重放单条 turn_update 渲染消息，锁态因 thinking 生效）
     dispatchReplay(
       makeRound({
         id: 'round-x',
@@ -987,7 +989,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     expect(regen.disabled).toBe(true);
   });
 
-  it('非运行时（done）恢复会话导航类控件：新建/历史/删除按钮全 enabled', () => {
+  it('非运行时（done）结构动作恢复：导航保持可用，删除放开', () => {
     mountChatView();
     dispatch({ type: 'status', state: 'thinking' });
     dispatchReplay(
@@ -1006,11 +1008,11 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     expect(del.disabled).toBe(false);
   });
 
-  it('暂停态（paused）同样禁用会话导航类控件（运行时挂起从严）', () => {
+  it('暂停态（paused）导航控件同样可用（结构锁只约束截断 / 分叉）', () => {
     mountChatView();
     dispatch({ type: 'status', state: 'paused' });
-    expect((document.getElementById('newSessionBtn') as HTMLButtonElement).disabled).toBe(true);
-    expect((document.getElementById('historyBtn') as HTMLButtonElement).disabled).toBe(true);
+    expect((document.getElementById('newSessionBtn') as HTMLButtonElement).disabled).toBe(false);
+    expect((document.getElementById('historyBtn') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('生成中发送按钮切换为停止态，点击发送 stop 消息', () => {

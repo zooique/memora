@@ -1372,9 +1372,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let skeletonState: SkeletonState = { phase: 'idle' };
 
   /**
-   * 骨架状态单写点：更新容器 → 重算按钮语义。
-   * 只做语义重算（与 legacy 调用集逐一对应）；`send.disabled`（syncSendEnabled）与
-   * 会话控件锁由调用方按各自原有节奏调用，避免夹带行为变更。
+   * 骨架状态单写点：更新容器 → 重算按钮语义 → 施加导航可用态。
+   * `send.disabled`（syncSendEnabled）与结构锁（updateSessionControlsLock）仍由调用方按各自
+   * 原有节奏调用；导航可用态是本函数负责的施加项（真源 = turn 状态，非 status 锁）。
    */
   function applySkeletonState(next: SkeletonState): void {
     skeletonState = next;
@@ -1383,6 +1383,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // disabled 属按钮语义一部分，须在单写点同步——否则 running/paused/settled 切换后
     // disabled 停留旧值（如 running 空输入仍禁用 → 停止按钮点不出）。
     syncSendEnabled();
+    // 导航类控件（历史 / 新建）不参与会话状态门控：宿主侧流中已允许切换与新建（E4 批 2），
+    // 可用态在此与发送按钮同点施加（旧实现对 status 的 running 置 disabled，前提已失效）。
+    // 重建后 replayed turn_update 也经本函数 → 折叠/展开恢复时不会残留禁用态。
+    newSessionBtn.disabled = false;
+    historyBtn.disabled = false;
   }
 
   /**
@@ -1393,7 +1398,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * pauseBtn 图标永远是 pause（‖），不做本地 toggle——request/cancel 的行为 toggle 完全由 host 层
    * handlePause 通过 agent.isPausePending() 判断，UI 不感知 pending 状态。
    * 调用点 = applySkeletonState（骨架状态变了）+ input 事件（输入内容变了）+ sendMessage（发送/停止后复位）。
-   * 不改变 disabled 态（那是 syncSendEnabled 的职责），不负责 round-block 呼吸点/导航锁（setStatus 的职责）。
+   * 不改变 disabled 态（那是 syncSendEnabled / applySkeletonState 的职责），不负责 round-block 呼吸点
+   * 与结构写窗口锁（setStatus 的职责）。
    */
   function syncButtonSemantics(): void {
     applyButtonSemantics(currentButtonSemantics());
@@ -1677,12 +1683,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         roundBlockEl.classList.remove('is-running');
       }
     }
-    // 2b-2b 换真源：骨架容器由 setStatus 的 legacy 三态写入改为 turn_update.state 直接赋值——
-    // status 消息职责收窄为「呼吸点 / 会话控件锁 / 焦点恢复」，不再参与按钮语义（发送按钮恢复
-    // 时机 = turn_update(settled) 流尾即时，R-2b-1 裁决；控件锁仍跟随 status:'done' 延后解锁，
-    // 护 round-summary 写入窗口——两个概念各回各的真源）。会话导航类控件运行时锁：**语义 =
-    // 「宿主有在途后台写」窗口，不是 turn 状态**（宿主延迟发 status:'done' 是为护住摘要写入期，
-    // 避免用户在该窗口删除轮次产生孤儿摘要）
+    // status 职责收窄为「呼吸点 / 结构写窗口锁 / 焦点恢复」，不参与按钮语义；结构锁仍跟随
+    // status:'done' 延后解锁（护 round-summary 写入窗口），与「turn 在跑」不等价。导航类控件
+    // （历史 / 新建 / 重命名）不受此锁：宿主流中已允许切换与新建（E4 批 2），可用态由
+    // turn_update 单写点施加
     updateSessionControlsLock(state !== 'done');
     // done 态才需要恢复输入焦点（避免强制 focus 打断用户其他操作）
     if (state === 'done' && document.activeElement === document.body) input.focus();
@@ -1700,25 +1704,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 会话导航类控件运行时锁（SSOT 收口点）：运行时（thinking/paused）禁用「新建会话 /
-   * 切换历史 / 删除问答闭环」三类改变会话结构的操作，仅非运行时（done）可用。
-   *
-   * 单一真相源 = 宿主 `status` 事件（经 setStatus 驱动），webview 不另维护 isRunning 标志。
-   * 删除按钮按消息实例存在（每条 AI 消息一个），故批量 querySelectorAll 统一置态；
-   * locked 态优先（运行时强制禁用），unlock 时还原为「无 roundId 则禁用」的原始语义。
+   * 会话结构写窗口锁（SSOT）：只约束**会重写会话文件**的动作（截断 / 分叉）；导航类
+   * （历史 / 新建 / 切换 / 重命名）不在此列，可用态在 turn_update 单写点施加。
+   * 真源 = 宿主 `status`（`done` = summary 落盘窗口关闭）——护的是摘要，不是「turn 在跑」；
+   * 锁态优先，unlock 时还原「锚点缺失则禁用」。
    */
   let sessionControlsLocked = false;
-  /**
-   * 会话导航类控件运行时锁（SSOT 收口点）：运行时禁用改变会话结构的操作。
-   * 覆盖范围：新建会话 / 切换历史 / 删除问答闭环 / 分叉问答闭环。
-   * 单一真相源 = 宿主 status 事件（经 setStatus 驱动）；locked 态优先，unlock 时还原为锚点缺失则禁用的原始语义。
-   */
+  /** 结构锁施加点：写入锁态并刷新轮级动作；判据只在 `roundActions.available` 一处（不触碰导航） */
   function updateSessionControlsLock(locked: boolean): void {
     sessionControlsLocked = locked;
-    newSessionBtn.disabled = locked;
-    historyBtn.disabled = locked;
-    // 轮级动作（重新生成 / 分叉 / 删除）统一交给真源刷新：判据只在 roundActions.available
-    // 一处（取代旧的「删除扫一遍 + 分叉扫一遍 + 各写一份锚点提取」双实现）
     refreshRoundActionButtons(document, locked);
   }
 
@@ -4204,10 +4198,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   // 角色徽章点击 → open_settings_tab(roles)（host 打开设置面板「角色」选项卡，导航单点）。
   // 拍板 2（2026-10-13）：**运行时不禁用**——跳界面不改变任何状态，禁 = 挡无害操作；也不挂
-  // updateSessionControlsLock 收口——该锁语义 = 「运行时禁用改变会话结构的操作」（新建/切历史/
-  // 删除），导航不属于此类，塞进去即语义污染。权限面如实声明：运行时切换能力**本就可及**（内核
-  // switchRolePack 对话中允许，自动匹配依赖它，设置面板「设为当前」无 busy 守门），本入口只是
-  // 补上「发现性」，未放宽也未收紧任何切换权限。
+  // updateSessionControlsLock 收口——该锁语义 = 「禁用会重写会话文件的结构动作」（截断 / 分叉），
+  // 导航（新建 / 切历史 / 重命名）不属于此类，塞进去即语义污染。权限面如实声明：运行时切换能力
+  // **本就可及**（内核 switchRolePack 对话中允许，自动匹配依赖它，设置面板「设为当前」无 busy
+  // 守门），本入口只是补上「发现性」，未放宽也未收紧任何切换权限。
   roleBadge?.addEventListener('click', () => {
     vscode.postMessage({ type: 'open_settings_tab', tab: 'roles' });
   });

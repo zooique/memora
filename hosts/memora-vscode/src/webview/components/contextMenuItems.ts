@@ -29,7 +29,7 @@ export interface ContextMenuActions {
   quoteReply(text: string): void;
   /** 发消息（零新 type：复用既有 fork_session / delete_turn / input 三通道） */
   post(msg: WebviewToExtensionMessage): void;
-  /** 会话结构锁是否生效（运行时禁用改变会话结构的操作） */
+  /** 会话结构写窗口锁是否生效（只约束截断 / 分叉；导航类不受其约束） */
   isLocked(): boolean;
 }
 

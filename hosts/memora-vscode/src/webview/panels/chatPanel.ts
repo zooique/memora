@@ -1811,7 +1811,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   ): Promise<
     { ok: true; userText?: string } | { ok: false; reason: 'busy' | 'cancel' | 'miss' | 'error' }
   > {
-    // 运行时守卫（SSOT：与 newSession/switchToSession 同源「当前会话是否在流」，禁止运行中改会话结构）
+    // 运行时守卫：**只拦截断类**（删除 / 重新生成会重写会话文件，与在途落盘冲突）；导航不设此闸
     if (this.runtimeFor().streaming) {
       this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再操作会话结构' });
       return { ok: false, reason: 'busy' };
@@ -3620,9 +3620,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     };
     agent.on('memoryAdded', onMemoryAdded);
 
-    // 进入生成状态（webview 展示加载动画 + 禁用输入）
+    // 进入生成状态（webview 据 status 开呼吸点；输入框**不禁用**——运行中输入即插话）
     this.post({ type: 'status', state: 'thinking' });
-    // 置位生成态：会话切换/新建据此拒绝（避免重放与进行中流混血）
+    // 置位生成态：供插话路由、截断类结构动作与会话删除/归档的 streaming 守卫消费；
+    // **不**拒绝会话导航（流中切换 / 新建自 E4 批 2 起由宿主放开）
     runtime.streaming = true;
     // 列表标识「运行中」随置位亮起（本条跨会话推送，后台 ALS 上下文也不得丢弃）
     this.refreshSessionActivity();
