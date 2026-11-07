@@ -900,7 +900,11 @@ export const chatStyles = `
     background: var(--surface-code, rgba(127, 127, 127, 0.15));
     padding: var(--sp-hair, 1px) var(--sp-1, 4px); border-radius: var(--radius-sm, 2px);
   }
-  /* 代码块：横向滚动防撑爆，独立底色 */
+  /* 代码块：横向滚动防撑爆，独立底色。
+   * 行高钉回 --lh-normal（1.6）：代码块是独立内容类型，不是正文段落——
+   * 它此前从 .msg 继承 1.6，本次「正文行高统一到 --lh-relaxed」对它是连带副作用；
+   * 这里钉回只是恢复原状、保持代码密度，不是新增口径。
+   * pre 内的 code 随之继承 1.6；行内 code 仍随所在段落（段落本就是 1.7，无变化）。 */
   .msg.assistant .msg-body pre {
     background: var(--surface-code, rgba(127, 127, 127, 0.15));
     border: 1px solid var(--border-panel, rgba(128, 128, 128, .4));
@@ -908,6 +912,7 @@ export const chatStyles = `
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
     overflow-x: auto; margin: 0 0 var(--sp-3, 8px);
     white-space: pre;
+    line-height: var(--lh-normal);
   }
   .msg.assistant .msg-body pre code { background: transparent; padding: 0; font-size: var(--font-md, 12px); }
   /* 代码块增强（对齐 TraeWork 代码块「语言标签 + 一键复制」）：
@@ -936,10 +941,15 @@ export const chatStyles = `
     display: block; width: 100%; overflow-x: auto;
     border-collapse: collapse; margin: 0 0 var(--sp-3, 8px);
   }
+  /* 表格单元格：行高钉回 --lh-normal（1.6）。
+   * 判据：读的文字跟正文齐行高（p/li/blockquote 走 1.7），扫的密集数据保持紧——
+   * 表格是密集数据，扫读需要更紧的行距，不跟正文段落放大。
+   * 该值原本就从 .msg 继承，钉回是恢复原状，不是新增口径。 */
   .msg.assistant .msg-body th,
   .msg.assistant .msg-body td {
     border: 1px solid var(--border-panel, rgba(128, 128, 128, .4));
     padding: var(--sp-2, 6px) var(--sp-3, 8px); text-align: left;
+    line-height: var(--lh-normal);
   }
   .msg.assistant .msg-body th { font-weight: 600; background: var(--surface-hover, rgba(128, 128, 128, .2)); }
   /* 引用块 */
