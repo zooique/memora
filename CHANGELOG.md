@@ -10,6 +10,8 @@
 
 ## [6.0.0] · 2026-11-07
 
+> **为什么是 major（6.0.0）**：内核本版的两条语义依据——① **存储所有权变更**：`ProjectManager.shutdown()` 不再关闭外部注入的存储（只有内部兜底存储由它关闭），所有权归注入方；按旧语义理解的外部调用方会漏收尾。② **会话标题口径收敛**：占位标题从「读取时刻」改为「会话创建时刻」（新增 `sessionIdCreatedAt` + `defaultSessionTitle(createdAt?)` 可选参数），命名失败不再把占位串写成 `autoName`。**SemVer 归类**：① 是行为契约变更，② 本身属 minor 级（新增导出 + 可选参数）；真正把版本推到 major 的是下方 Breaking 的**公开面源级破坏**（`Agent.interject()` 返回值三态、`RolePack.capabilities` 必填→可选、三处导出/成员/键删除），三者共同构成 6.0.0。用户可见的多会话 / 草稿形态归宿主区，此处不重复。
+
 ### Added（内核）
 
 - **公开 `sessionIdCreatedAt(sessionId)` + `defaultSessionTitle` 新增可选 `createdAt`**（`05e51b97`）：未命名会话的占位标题「新会话 HH:MM」时间口径从「读取时刻」改为「会话创建时刻」——旧实现每次读取都现算 `new Date()`，同一条会话每刷新一次就换一个时间。创建时刻从 id 的 `-s<base36>` 段解析（宿主新建会话的固定命名规则），解析不到（历史 `-main` 等自定义名）由调用方按当日 00:00 降级；`sessionIdCreatedAt` 带时间戳合理区间（约 2001–2096 年）护栏，防止把普通单词会话名误当时间戳。`defaultSessionTitle(createdAt?)` 的参数**可选**，省略取当前时刻 ⇒ 既有零参调用零变化，非法时刻回退「新会话」。**对消费者**：纯新增一个导出 + 一个可选参数，SemVer = minor。
