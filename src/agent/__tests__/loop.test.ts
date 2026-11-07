@@ -7832,20 +7832,30 @@ describe('AgentLoop · 写后缓存失效面（WRITECAP-1）', () => {
     expect(chunks.filter((c) => c.type === 'tool_result' && c.blocked)).toHaveLength(0);
   });
 
-  it('path 写成功 ⇒ 清掉目标父目录的 list_dir 缓存（新建文件改变目录结构）', async () => {
-    const toolExecutor = mockExecutorReturning('a.md', '写入成功', 'a.md\nnew.md');
+  it('path 写成功 ⇒ 清掉目标父目录与祖先链的 list_dir 缓存（新建文件改变目录结构）', async () => {
+    const toolExecutor = mockExecutorReturning(
+      'docs/a.md',
+      'a.md',
+      '写入成功',
+      'docs/a.md\ndocs/new.md',
+      'a.md\nnew.md',
+    );
     const provider = mockMultiTurnProvider([
-      [call('l1', 'list_dir', { path: 'docs' })],
+      // 递归列表以仓库根为根：写入 docs/new.md 后，根视图必须同样失效
+      [call('l1', 'list_dir', { path: '.', recursive: 'true', max_depth: '2' })],
+      [call('l2', 'list_dir', { path: 'docs' })],
       // write_file 是 diskWrite:'path'：目标 = args.path，父目录 = docs
       [call('w1', 'write_file', { path: 'docs/new.md', content: 'x' })],
-      [call('l2', 'list_dir', { path: 'docs' })],
+      [call('l3', 'list_dir', { path: '.', recursive: 'true', max_depth: '2' })],
+      [call('l4', 'list_dir', { path: 'docs' })],
       [{ content: '完成' }],
     ]);
     const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
     const chunks = await drain(loop, '列目录 → 新建文件 → 重列');
 
-    // 三次都真执行：若目录视图未失效，l2 会命中缓存被拦（旧注释「改文件不改目录结构」即此漏洞）
-    expect(toolExecutor).toHaveBeenCalledTimes(3);
+    // 五次都真执行：若目录视图未失效，l3/l4 会各自命中缓存被拦
+    //（l4 钉直接父目录，l3 钉递归列表的祖先根——list_dir 支持 maxDepth ≤ 3）
+    expect(toolExecutor).toHaveBeenCalledTimes(5);
     expect(chunks.filter((c) => c.type === 'tool_result' && c.blocked)).toHaveLength(0);
   });
 });

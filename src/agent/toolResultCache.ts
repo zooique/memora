@@ -287,15 +287,31 @@ export class ToolResultCache {
    * 失效「写入目标所在目录」的 list_dir 缓存（WRITECAP-1）
    *
    * 理由：写工具既可能改文件内容、也可能**新建 / 删除**文件条目 ⇒ 目录结构确实会变，
-   * 旧的 list_dir 结果不再与磁盘一致。只失效直接父目录：一次写只影响其所在目录的条目集合。
+   * 旧的 list_dir 结果不再与磁盘一致。
    *
-   * @param rawPath 被写入 / 删除的文件路径（取其直接父目录的规范化键）
+   * 为何要清**祖先链**而非只清直接父目录：`list_dir` 支持 `recursive`（maxDepth ≤ 3），
+   * 以祖先为根的递归列表同样包含被写路径 ⇒ 只清父目录会留下「根目录仍显示旧条目」的陈旧视图。
+   * 非递归列表会被顺带清掉（略多一次重列），正确性优先于这点开销。
+   *
+   * @param rawPath 被写入 / 删除的文件路径（从其直接父目录一直清到仓库根 '.'）
    */
   invalidateDirOf(rawPath: string): void {
     const target = normalizePathKey(rawPath);
-    const dir = normalizePathKey(path.posix.dirname(target));
+    // 逐级向上收集目录键：直接父目录 → 祖父 → … → '.'（根）
+    const dirs = new Set<string>();
+    let dir = normalizePathKey(path.posix.dirname(target));
+    while (true) {
+      dirs.add(dir);
+      const parent = normalizePathKey(path.posix.dirname(dir));
+      if (parent === dir) break; // 已到根（'.' / '/'），dirname 不再变化
+      dir = parent;
+    }
     for (const [k, entry] of this.cache) {
-      if (entry.toolName === 'list_dir' && entry.subject.path === dir) {
+      if (
+        entry.toolName === 'list_dir' &&
+        entry.subject.path !== undefined &&
+        dirs.has(entry.subject.path)
+      ) {
         this.cache.delete(k);
       }
     }
