@@ -3522,6 +3522,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'session_title') {
       // 更新会话标题条（ADR-024）：textContent 防注入；切换/改名/清空后由 chatPanel 推送最新标题
       sessionTitleText.textContent = msg.title;
+      // 草稿页没有会话 id ⇒ 不可改名：禁用改名笔（否则点了只能得到一个无从落库的失败）
+      renameSessionBtn.disabled = msg.draft === true;
+      renameSessionBtn.title = msg.draft === true ? '草稿尚未发送，暂不能命名' : '重命名会话';
     } else if (msg.type === 'session_list_data') {
       // 历史会话列表：渲染到 treedd 历史下拉（全量 + 留存区标记，前端过滤分两组）
       historyMenuApi.renderMenu(msg.sessions, msg.archivedIds ?? []);

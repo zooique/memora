@@ -10,7 +10,8 @@
  *   - sessions 是**全量**，archivedIds 只是留存区分组标签（单数据源 + 前端过滤，
  *     不拆两份列表——两份真相源必然出现「两边都有 / 两边都没有」）。
  */
-import { getSessionDisplayName, type SessionMeta } from '@zooique/memora';
+import type { SessionMeta } from '@zooique/memora';
+import { sessionDisplayTitle } from '../../extension/host/sessionTitle.js';
 import type { HostSessionStore } from '../../extension/host/sessionStore.js';
 import { readSessionRolePackName } from '../../extension/host/sessionRolePack.js';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
@@ -53,7 +54,8 @@ function toSessionSummary(
 ): SessionListMessage['sessions'][number] {
   return {
     sessionId: meta.sessionId,
-    title: getSessionDisplayName(meta),
+    // 标题兜底在读点补（占位串不进 meta）：displayName/autoName 都空 = 尚未命名，显示创建时刻
+    title: sessionDisplayTitle(meta.sessionId, meta),
     updatedAt: meta.updatedAt,
     messageCount: meta.messageCount,
     // FD-3-A 元数据搜索匹配域：undefined 经 postMessage JSON 序列化自然剔除

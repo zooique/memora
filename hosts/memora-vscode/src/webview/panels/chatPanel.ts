@@ -56,9 +56,7 @@ import {
   REVERT_ALL_FILE_CHANGES_COMMAND,
 } from '../../extension/host/fileChangeView.js';
 import {
-  defaultSessionTitle,
   formatDateKey,
-  getSessionDisplayName,
   resolveContextWindow,
   estimateOccupancy,
   estimateTokensMessages,
@@ -71,7 +69,6 @@ import {
   type ImageRef,
   type ProcessEvent,
   type ProcessMetaPayload,
-  type SessionView,
   COMPRESS_TARGET_LABELS,
   estimateTokensText,
   type CompressTarget,
@@ -131,8 +128,14 @@ import { friendlyErrorMessage } from '../../shared/errorText.js';
 import { dedupeRefs } from '../../shared/refKey.js';
 // 插话受理三态的可见文案（INPUT-LIMIT-1 / INTERJECT-PERSIST-1）：文案单点，勿在面板内嵌字面量
 import { INTERJECT_LIMIT_NOTICE, INTERJECT_UNSAVED_NOTICE } from '../../shared/constants.js';
+// 会话标题读侧兜底（列表 / 面板标题条 / 占位 meta 三处同一口径）
+import { sessionDisplayTitle } from '../../extension/host/sessionTitle.js';
 // 历史会话列表投影（store → DTO 纯映射，外置于 max-lines TARGET 文件）
 import { buildSessionListMessage } from '../helpers/sessionList.js';
+// 会话历史读取（round-based 投影 / legacy 回退）——纯数据逻辑外置，面板只消费结果
+import { loadMessagesHistory, loadRoundBasedHistory } from '../helpers/historyLoad.js';
+// 草稿会话态（「＋」后、首次发送前的空白页）：红线与降级理由见该模块头注释
+import { DraftSessionController } from '../helpers/draftSession.js';
 // 过程事件 / 指标段级合并（纯函数，HOST-SPLIT-1 切片自本类外置；三条调用面共用同一语义）
 import { mergeProcessEvents } from '../helpers/processEventMerge.js';
 // 启动会话归属裁决（首选被另一窗口占用时让位）——判据单点，面板与验收测试共用同一实现
@@ -186,7 +189,6 @@ import {
   buildInjectedContextEnvelope,
   buildProblemsContextBlock,
   buildRefContextBlock,
-  stripInjectedContextPrefix,
 } from '../helpers/docContext.js';
 // HOST-CTX-4：发送时刻的注入正文采集（problems 诊断 / git-changes 未提交改动）——自本文件拆出
 // （贴 max-lines 上限；「每加一个注入源加一个 collectXxxBody」是线性增长域，留此必爆线）
@@ -229,12 +231,6 @@ export {
   projectActiveFile,
 } from '../../extension/host/activeFileTracker.js';
 
-/** 历史回放单次最大条数：跨天合并视图聚焦近期对话，防长期使用后累积导致每次打开/切换全量回放 + 逐条建 DOM。 */
-const MAX_HISTORY_MESSAGES = 200;
-
-/** 历史回放最大轮数（round-based 模式）：按完整 round 截断，杜绝「正文有、过程无」的半轮不对称 */
-const MAX_HISTORY_ROUNDS = 60;
-
 /**
  * 运行一轮流的「种子」信息——宿主知情、内核不回传的本轮要素。
  *
@@ -275,6 +271,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _mentionQuickPickOpen = false;
   /** 当前**显示会话**的 Agent（`_sessionAgents` 的一份投影；真正的实例归属表在 extension） */
   private _agent: Agent | undefined;
+  /**
+   * 草稿会话态（「＋」后、首次发送前的空白页）——**只存在于本面板内存**
+   *
+   * 🔴 草稿不是会话：无 id、不写 sessionStore、不进历史、不占锁、不装配 Agent；
+   * 「当前有没有会话」仍只由 `_currentSessionId` 表示（草稿期恒为 ''），本控制器只标记
+   * 「这个空值态是用户主动新建的空白页」，不是第二份会话状态。红线全文与角色切换降级
+   * 理由见 `helpers/draftSession.ts` 模块头。
+   */
+  private readonly _draft: DraftSessionController;
   /**
    * 本面板已绑定的会话实例（sessionId → Agent）
    *
@@ -506,6 +511,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 无历史不自动创建（新建唯一入口为标题条「＋」）。
     // 存在性校验与回退序全在 store.getInitialSessionId（SESSION-RESUME-1 判据单点），本处只消费结果。
     this._currentSessionId = this.sessionStore.getInitialSessionId();
+    // 无历史会话 ⇒ 启动即草稿：干净空白页，首次真正发送才建会话（有历史则回放上次停留会话）
+    this._draft = new DraftSessionController(
+      {
+        post: (msg) => this.post(msg),
+        clearSessionId: () => this._sessionIdAccess.clearSessionId(),
+        setConfirmForeground: (id) => this._confirm.setForeground(id),
+        pushSessionList: () => this.pushSessionList(),
+        refreshActivity: () => this.refreshSessionActivity(),
+        createSession: (id) => this.createSession(id),
+      },
+      !this._currentSessionId,
+    );
     this._lockFinalizer = new PanelSessionLockFinalizer(this.sessionStore, this._sessionIdAccess);
     // 文档上下文不在此处预取（发送时实时读活动编辑器，见 snapshotDocContext）。
     // 曾用 onDidChangeActiveTextEditor 缓存——盖不住「同一文件被编辑」，脏态停在「打开时干净」⇒ 每轮拿磁盘旧版当真相（P0 撒谎源）。
@@ -671,6 +688,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 当前显示会话标识（extension 解析「命令作用于哪个会话」的唯一读取口） */
   public getCurrentSessionId(): string {
     return this._currentSessionId;
+  }
+
+  /**
+   * 是否处于草稿态（**给 extension / 设置面板**：草稿期不得装配 Agent、不得写会话 meta）
+   *
+   * 草稿期「当前会话不存在」不能只靠 `getCurrentSessionId() === ''` 判断——命令路径会退回
+   * `getInitialSessionId()`（上一个停留会话），拿它装配/写 meta 就作用到了错误的会话上。
+   */
+  public isDraftSession(): boolean {
+    return this.isDraft;
+  }
+
+  /**
+   * 草稿判据（**单一真源**）：标记为草稿 **且** 当前确实没有会话 id
+   *
+   * 二者缺一即非草稿：任何路径（含测试直注私有态）一旦写入 `_currentSessionId`，
+   * 草稿即自动失效——避免「标记还在、会话已经有了」的双态。
+   */
+  private get isDraft(): boolean {
+    return this._draft.isDraft && !this._currentSessionId;
   }
 
   /** 当前显示会话的 Agent（同步；未装配时 undefined ⇒ 调用方须 fail-closed，不得无校验直写） */
@@ -1224,8 +1261,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken,
   ): void {
     this._view = webviewView;
-    // 重开自愈（B1）：销毁时已清空会话 id，按真源重新派生（拿锁在 ready 握手）
-    if (!this._currentSessionId) this._currentSessionId = this.sessionStore.getInitialSessionId();
+    // 重开自愈（B1）：销毁时已清空会话 id，按真源重新派生（拿锁在 ready 握手）。
+    // 草稿态必须跳过：重开视图若按 `getInitialSessionId()` 派生，会把草稿悄悄退回上一个会话
+    if (!this._currentSessionId && !this.isDraft) {
+      this._currentSessionId = this.sessionStore.getInitialSessionId();
+    }
     this._lockFinalizer.onResolve();
     // 视图重建代数自增：本次流若跨重建，流尾据此补移植（见 _viewEpoch 注释）
     this._viewEpoch += 1;
@@ -1288,6 +1328,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 而非早退——保证 'ready' 流程可在首次回放前拿到 Agent（崩溃恢复打捞的前置）。
    */
   private async ensureAgent(): Promise<void> {
+    // 草稿态不装配 Agent（红线）：草稿没有会话 id，装配只能绑到错误的会话上
+    if (this.isDraft) return;
     // Agent 已注入（open 命令路径先装配）：仍兜底首次无会话自动创建（幂等，仅面板打开触发）
     if (this._agent) {
       this._agentReady ??= Promise.resolve();
@@ -1322,19 +1364,24 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** Agent 懒装配实际执行体（ensureAgent 分离：Promise 缓存 + 一次性执行） */
   private async performAgentAssembly(): Promise<void> {
     if (!this._getAgent) return;
+    // 草稿不装配 Agent（红线）：没有会话 id 就没有可绑定的会话，装配出来只能绑到别处去
+    if (this.isDraft) return;
     try {
       const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       if (!ws) {
         void vscode.window.showWarningMessage('Memora：请先打开一个工作区');
         return;
       }
-      // 会话先于实例：无会话时先造 id 并拿锁（拿锁失败保持空态，不造半成品）
+      // 会话先于实例：无会话 ⇒ 直接进草稿（不造 id、不拿锁）
       const sessionId = await this.ensureSessionForAssembly();
-      if (!sessionId) return;
+      if (!sessionId) {
+        this._draft.enter();
+        return;
+      }
       const agent = await this.agentForSession(sessionId);
       // 绑定显示源（事件/守卫/确认 + 装配后补推的唯一收口）
       this.bindAgent(agent);
-      // 首次启动兜底：装配成功后若无任何会话记录，自动创建首个会话（用户可直接输入）
+      // 首次启动兜底：装配成功后若无任何会话记录，进入草稿态（不再自动建空会话）
       void this.ensureInitialSession();
     } catch (err) {
       const msg = toNoticeText(err);
@@ -1346,16 +1393,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** 首次装配时确保有会话 id：无会话则造 id 并拿锁（拿锁失败 = 放弃装配，保持空态） */
+  /** 首次装配时确保有会话 id：无会话 ⇒ 返回 ''（**不再自动造会话**，草稿由控制器承载） */
   private async ensureSessionForAssembly(): Promise<string> {
-    if (this._currentSessionId) return this._currentSessionId;
-    const sessionId = `${formatDateKey(new Date())}-s${Date.now().toString(36)}`;
-    if (!(await this._lockFinalizer.acquire(sessionId))) {
-      void vscode.window.showWarningMessage(`Memora：${SESSION_HELD_NOTICE}`);
-      return '';
-    }
-    this.setCurrentSessionId(sessionId);
-    return sessionId;
+    // 不再无会话即造 id：面板打开/启动时造会话 = 空会话记录（2026-11-07 用户拍板废弃该行为）
+    return this._currentSessionId;
   }
 
   // ─── 会话异常可观测出口（错误级 notice） ───
@@ -1965,19 +2006,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 新建会话（由「＋ 新建会话」触发）：生成唯一会话名，调内核 switchToSession
-   * 切入空会话（工作记忆清空），UI 清空消息区
+   * 进入草稿态（标题条「＋」/ 工作区无任何会话时的启动兜底）：展示面归零，不产生会话状态
    */
   public async newSessionFromCommand(): Promise<void> {
-    // 流中新建会话 = 切到另一个会话，允许（E4 批 2 拆宿主闸；当前会话的流留在后台继续）
-    // 生成唯一会话名（字母前缀，避免与数字日期混淆；标题层才是用户可读身份）
-    await this.createSession(`${formatDateKey(new Date())}-s${Date.now().toString(36)}`);
+    this._draft.enter();
   }
 
   /** 会话导航唯一写点：内存字段 + 「上次停留」指针必须成对更新
    * （只赋值不落盘 = 复现 SESSION-RESUME-1：切过去看历史、重启跳回别处，且症状静默）。 */
   private setCurrentSessionId(sessionId: string): void {
     this._currentSessionId = sessionId;
+    // 有会话 id ⇒ 必然已离开草稿（唯一退出写点）
+    this._draft.exit();
     this.sessionStore.setLastActiveSession(sessionId);
   }
 
@@ -2028,12 +2068,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 首次启动兜底：无任何会话记录时自动创建首个会话，用户可直接输入（免手动点「＋」）。
-   * 仅空态触发（_currentSessionId 为空 = 从未有过会话），有历史/已创建后不再自动创建（幂等）。
+   * 首次启动兜底：无任何会话记录 → **进入草稿态**（不再自动建会话）
+   *
+   * 旧行为「装配成功即造空会话」正是空会话记录的来源；新行为下用户看到干净空白页，
+   * 第一次发送才落会话（见 `DraftSessionController.flush`）。已创建/已草稿不触发。
    */
   private async ensureInitialSession(): Promise<void> {
-    if (this._currentSessionId) return;
-    await this.createSession(`${formatDateKey(new Date())}-s${Date.now().toString(36)}`);
+    if (this._currentSessionId || this.isDraft) return;
+    this._draft.enter();
   }
 
   /**
@@ -2195,6 +2237,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /** 清空 webview 消息区并重放当前会话历史 + 刷新会话标题 + 推送历史会话占用 */
   private replayCurrentSession(): void {
+    // 草稿态没有会话可回放：重建草稿页（防御分支，正常路径不会在草稿里调到这里）
+    if (this.isDraft) {
+      this._draft.replay();
+      return;
+    }
     this.post({ type: 'clear_ok' });
     this.replayHistory();
     this.post({ type: 'session_title', title: this.currentSessionTitle() });
@@ -2226,8 +2273,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 对话消息序列：round-based（viewLoader）或 legacy 扁平路径统一提取
       const history = collectOccupancyHistory(
         !!this._viewLoader,
-        () => this.loadRoundBasedHistory(),
-        () => this.loadMessagesHistory(),
+        () => loadRoundBasedHistory(this._viewLoader, this.sessionStore, this._currentSessionId),
+        () => loadMessagesHistory(this.sessionStore, this._currentSessionId),
       );
       const dialogueTokens = estimateTokensMessages(history);
       // 角色包固定开销：优先取内核当前激活角色包底盘占用（装配/切换即确定，冷启动也有真实值）；
@@ -2279,7 +2326,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       }
       // legacy 扁平回退（viewLoader 未注入时）：重放正文统一走 round-based rounds，
       // 此路径仅回放 user 消息。
-      const history = this.loadMessagesHistory();
+      const history = loadMessagesHistory(this.sessionStore, this._currentSessionId);
       for (const m of history) {
         if (m.role === 'user') {
           this.post({ type: 'user', text: m.content, ts: m.ts, roundId: m.roundId });
@@ -2316,6 +2363,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 回放通道（否则与 _viewEpoch 折叠重建回放产生双重复放）。
    */
   private async handleWebviewReady(): Promise<void> {
+    // 草稿态（webview 重建，面板对象存活）：只重建草稿页。
+    // 不能走启动归属裁决——它按「无当前会话」会退回/新建会话，那会在草稿期落记录。
+    if (this.isDraft) {
+      this.replaySession();
+      this.refreshSessionActivity(true);
+      return;
+    }
     try {
       // ① 等 Agent 装配完成（在途即等待；失败内部消化为错误提示，不抛出）
       await this.ensureAgent();
@@ -2459,6 +2513,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private replaySession(): void {
     if (!this._view) return;
+    // 草稿态（webview 重载但面板对象存活）→ 重建**草稿页**：不读 store、不投影任何会话内容。
+    // 面板销毁/进程重启后草稿不在（只存在面板内存），此处只服务「刷新 webview」这一种情形。
+    if (this.isDraft) {
+      this._draft.replay(true);
+      return;
+    }
     // 恢复当前会话历史消息（只回放 _currentSessionId；round-based 按轮交织重放）。
     // 运行中/暂停中的本流轮由 replayHistory 内 buildLiveTurnFromBuffer 并入同一条
     // turn_update（replay:true），webview 收到即整批重建 + 骨架状态一步到位；后续
@@ -2750,113 +2810,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     return outcome;
   }
 
-  /**
-   * 从 sessionStore 恢复当前会话的完整历史（round-based 模式，交织重放）
-   *
-   * 每轮恢复策略：
-   *   - user 消息：剥离宿主注入的上下文信封前缀（技能块 + `[当前打磨文档内容]` 文档块，
-   *     二者均属宿主注入的当前任务上下文，不属于用户实际输入，仅用于 LLM 上下文，
-   *     不应回显 —— 与实时回显发裸 input 对称）。
-   *   - assistant 消息：完整内容（避免拼接不完整流；仅 complete 状态恢复）。
-   *   - processEvents：该轮过程事件（正文与过程同源同轮，与运行时同一渲染数据源）。
-   *   - 内核注入的 `<user_input>` 系统消息跳过（由内核 appendUser 持久化的 user 消息替代）。
-   *
-   * @returns 按轮分组的重放视图（按完整 round 截断，杜绝半轮不对称）
-   */
-  private loadRoundBasedHistory(): RoundView[] {
-    if (!this._viewLoader) {
-      console.warn('Memora：round-based 会话需要 viewLoader，但未注入');
-      return [];
-    }
-    // 空会话守卫（SSOT 单点，replayHistory / postTurnUpdate / collectHistoryMessages 共用判据）：
-    // 无轮次记录（新建/空会话）→ 返回空数组，不触发 loadView「会话不存在」抛错路径。
-    // 判据直用完整 sessionId（getRoundIds 以 sessionId 为键，parse 再拼回是恒等变换）
-    if (this.sessionStore.getRoundIds(this._currentSessionId).length === 0) {
-      return [];
-    }
-
-    try {
-      const view: SessionView = this._viewLoader.loadView(this._currentSessionId);
-      const rounds: RoundView[] = [];
-
-      // 从 SessionView 中提取并投影为 RoundView（正文与过程事件同源同轮，单文件内聚）：
-      // 直接透出 Round 形状（不手工扁平化为 {content,ts}），由 postTurnUpdate 承载投递；
-      // replay 单通道投递 rounds（不派生 user/replay_events/assistant 消息风暴）。
-      for (const round of view.rounds) {
-        rounds.push({
-          id: round.id,
-          // 用户正文剥离宿主注入的上下文信封前缀（技能块 + 文档块），与实时回显发裸 input 对称
-          userMessage: {
-            ...round.userMessage,
-            content: stripInjectedContextPrefix(round.userMessage.content),
-          },
-          assistantMessage: round.assistantMessage,
-          interactiveInputs: round.interactiveInputs,
-          assistantLog: round.assistantLog,
-          status: round.status,
-          createdAt: round.createdAt,
-          completedAt: round.completedAt,
-          // 过程事件与证据同源同轮：view.rounds 即 roundStore.getByIds 返回的完整 Round
-          // （含 processEvents/evidence），与正文同对象，直接透出——不再经 _eventLogRoundStore
-          // 二次 getById（同 store 重复查缓存，且与 evidence 取法不一致）。无则空/undefined。
-          processEvents: round.processEvents ?? [],
-          // 裁决证据（悬案取证轨）：随 Round 整对象已在 view.rounds 中，直接透出（无证据轮
-          // undefined，零冗余）。重放经本投影下发；运行时由宿主 settle 从同一 roundStore 读出随
-          // done/interrupted 下发（证据轮末才落盘，不进 processEvents，见内核 RoundEvidenceEvent）。
-          evidence: round.evidence,
-        });
-      }
-
-      // 按完整 round 截断（杜绝「正文有、过程无」半轮不对称）
-      return rounds.slice(-MAX_HISTORY_ROUNDS);
-    } catch (err) {
-      console.warn('Memora 加载 round-based 会话历史失败', err);
-      return [];
-    }
-  }
-
-  /**
-   * 回退路径：经 ISessionStore.loadMessages 加载（round-based 展开 roundIds→Rounds）
-   *
-   * 与 loadRoundBasedHistory 语义一致，仅在 viewLoader 未注入时启用。
-   */
-  private loadMessagesHistory(): {
-    role: 'user' | 'assistant';
-    content: string;
-    ts?: string;
-    roundId?: string;
-  }[] {
-    // sessionId 格式契约 SSOT：内核 splitSessionId 拆解
-    const { date, session } = splitSessionId(this._currentSessionId);
-    const result: { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] =
-      [];
-    const msgs = this.sessionStore.loadMessages(date, session) as {
-      role?: string;
-      content?: string;
-      timestamp?: string;
-      roundId?: string;
-    }[];
-    for (const m of msgs) {
-      if (!m.content || m.content.startsWith('<user_input>')) continue;
-      result.push({
-        role: (m.role === 'user' || m.role === 'assistant' ? m.role : 'user') as
-          'user' | 'assistant',
-        content: m.role === 'user' ? stripInjectedContextPrefix(m.content) : m.content,
-        ts: m.timestamp,
-        roundId: m.roundId,
-      });
-    }
-    // 按时间升序（消息存储顺序可能因多次回放而乱序）
-    result.sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
-    // 上限保护：仅回放最近 MAX_HISTORY_MESSAGES 条
-    return result.slice(-MAX_HISTORY_MESSAGES);
-  }
-
   /** 当前会话标题（无元数据时回退占位标题，不暴露 sessionId，供 UI 展示） */
   private currentSessionTitle(): string {
-    return (
-      getSessionDisplayName(this.sessionStore.getSessionMeta(this._currentSessionId)) ||
-      defaultSessionTitle()
+    // 占位标题的时间取**会话创建时刻**（不是读取时刻）：同一会话每次刷新必须显示同一时间，
+    // 否则标题时间随刷新跳动，用户只会当 bug（真机实锤「新会话 08:06」）。
+    return sessionDisplayTitle(
+      this._currentSessionId,
+      this.sessionStore.getSessionMeta(this._currentSessionId),
     );
   }
 
@@ -2925,7 +2885,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private postTurnUpdate(live?: PendingLiveRound, replay = false): void {
     // 后台上投一律丢弃（`_turnState` 是宿主单份、只描述当前显示会话，见 isBackgroundFlow）
     if (!this._view || this.isBackgroundFlow()) return;
-    const history = this._viewLoader ? this.loadRoundBasedHistory() : [];
+    const history = this._viewLoader
+      ? loadRoundBasedHistory(this._viewLoader, this.sessionStore, this._currentSessionId)
+      : [];
     const merged = mergeLiveRound(history, live);
     // 附件预览 URL 盖在**合并之后**：live 轮的 userMessage 来自上行 seed（只有 ref，没有 URL）
     const rounds = stampRoundAttachmentUris(merged, this.workspacePath, this.toWebviewUri);
@@ -3006,6 +2968,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private async handleInput(
     msg: Extract<WebviewToExtensionMessage, { type: 'input' }>,
   ): Promise<void> {
+    // 草稿态：**只有「真正发送内容」才创建会话**（唯一落点，见 DraftSessionController.flush）。
+    // 必须放在 `_agent` / `_currentSessionId` 两道守卫之前——草稿本来就没有 Agent、没有 id。
+    // 空文本不建会话；草稿里没有可答的提问/可续跑的流，其余意图一律忽略。
+    if (this.isDraft) {
+      if (msg.kind !== 'send' || !(msg.text?.trim() ?? '')) return;
+      if (!(await this._draft.flush())) return;
+    }
     if (!this._agent) {
       // Agent 未装配（可能仍在懒装配中）：提示用户稍候，而非静默无反应
       void vscode.window.showWarningMessage('Memora：Agent 尚未就绪，请稍候片刻再发送');

@@ -294,4 +294,4 @@ export type { ToolErrorCodeValue } from '@/utils/errors.js';
 // isWithinLocalDay = 本地日期 ↔ UTC 时间戳换算判据单点（宿主 WorkspaceRoundStore 打捞过滤同源消费）；
 // truncate（字符串截断）为内核内部通用工具，宿主零消费，不挂公共面（收回误暴露）；
 // isValidConfigName / parseConfigId / MAX_CONFIG_NAME_LENGTH 为配置名内部校验，不挂公共面
-export { formatDateKey, todayDate, isWithinLocalDay } from '@/utils/time.js';
+export { formatDateKey, todayDate, isWithinLocalDay, sessionIdCreatedAt } from '@/utils/time.js';

@@ -493,7 +493,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(notice[0]?.message).toContain('当前会话不在历史记录');
   });
 
-  it('新建会话 → 生成唯一会话名 + 清空重放 + 推送占位标题', async () => {
+  it('新建会话 → 进入草稿页（不生成会话 id / 不装配 / 不落盘）', async () => {
     const { provider, posted } = setup();
     const { agent } = agentStub();
     // 批 2：切换/新建一律「按会话取或建实例」——不再对单实例调内核 switchToSession
@@ -502,15 +502,17 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     await provider.newSessionFromCommand();
 
-    // 真走按会话装配：工厂被调用一次，会话名以 s 开头（唯一前缀）
-    expect(agentFactory).toHaveBeenCalledTimes(1);
-    const calledId = agentFactory.mock.calls[0]?.[1] as string;
-    expect(calledId).toMatch(/^\d{4}-\d{2}-\d{2}-s/);
-    // 重放：clear_ok + 占位标题（无消息）
+    // 2026-11-07 行为变更（用户拍板）：「＋」不再立刻落空会话记录，先进草稿空白页；
+    // 只有第一次真正发送才建会话 ⇒ 此处工厂零调用、当前会话 id 仍为空。
+    expect(agentFactory).not.toHaveBeenCalled();
+    expect(provider.getCurrentSessionId()).toBe('');
+    expect(provider.isDraftSession()).toBe(true);
+    // 重放：clear_ok + 草稿标题（无时间、draft 标记 = webview 禁用改名笔）
     const types = posted.map((m) => (m as { type: string }).type);
     expect(types).toContain('clear_ok');
-    const title = ofType<{ type: string; title: string }>(posted, 'session_title');
-    expect(title[0]?.title).toMatch(/^新会话 \d{2}:\d{2}$/);
+    const title = ofType<{ type: string; title: string; draft?: boolean }>(posted, 'session_title');
+    expect(title[0]?.title).toBe('新会话');
+    expect(title[0]?.draft).toBe(true);
   });
 
   it('切换会话 → 按会话取实例 + 重放该会话历史 + 推送标题', async () => {
@@ -1542,8 +1544,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(ofType(posted, 'notice')).toHaveLength(1);
   });
 
-  // ─── 首次启动自动创建首会话（无记录时免手动点「＋」） ───
-  it('无历史会话：ensureInitialSession 自动创建首个会话（用户可直接输入）', async () => {
+  // ─── 首次启动：无记录 → 草稿页（不再自动建会话） ───
+  it('无历史会话：ensureInitialSession 进入草稿页（不自动造会话）', async () => {
     const { provider, posted } = setup();
     const { agent } = agentStub();
     const agentFactory = vi.fn().mockResolvedValue(agent);
@@ -1551,13 +1553,13 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // 首次启动：无任何会话记录 → _currentSessionId 为空
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '';
     await (provider as unknown as { ensureInitialSession(): Promise<void> }).ensureInitialSession();
-    // 自动创建：按会话装配被调用一次，会话 id 为 date-sxxx 格式，_currentSessionId 已更新
-    expect(agentFactory).toHaveBeenCalledTimes(1);
-    const createdId = (provider as unknown as { _currentSessionId: string })._currentSessionId;
-    expect(createdId).toMatch(/^\d{4}-\d{2}-\d{2}-s[0-9a-z]+$/);
-    expect(agentFactory.mock.calls[0]?.[1]).toBe(createdId);
-    // UI 推送新会话标题
-    expect(ofType(posted, 'session_title').length).toBeGreaterThanOrEqual(1);
+    // 2026-11-07 行为变更（用户拍板）：旧行为「装配即造空会话」= 空会话记录的来源；
+    // 新行为只进草稿页，首次真正发送才建会话 ⇒ 工厂零调用、id 仍为空。
+    expect(agentFactory).not.toHaveBeenCalled();
+    expect(provider.getCurrentSessionId()).toBe('');
+    expect(provider.isDraftSession()).toBe(true);
+    // 构造期已按「无历史会话」置为草稿 ⇒ 本方法短路（草稿页投影由 ready/replay 链路统一做）
+    expect(ofType(posted, 'session_title')).toHaveLength(0);
   });
 
   it('已有会话（历史恢复）：ensureInitialSession 不自动创建', async () => {
@@ -1585,14 +1587,14 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // 新建会话 B 需要按会话装配 → 注入工厂（返回同一桩即可）
     provider.setAgentFactory(vi.fn().mockResolvedValue(agent));
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-31-a';
-    // 新建会话 B（空）→ 触发 clear_ok + replay(B 空) + session_title
+    // 新建会话 B（草稿）→ 触发 clear_ok + 草稿标题（B 尚无 id，不读 A 的历史）
     await (
       provider as unknown as { newSessionFromCommand(): Promise<void> }
     ).newSessionFromCommand();
-    // B 切入后 _currentSessionId 应更新为新的 date-sxxx
-    const newId = (provider as unknown as { _currentSessionId: string })._currentSessionId;
-    expect(newId).toMatch(/^\d{4}-\d{2}-\d{2}-s[0-9a-z]+$/);
-    // clear_ok 之后的 post 中不应有消息类事件（B 是空会话，replay 不重放 A 的历史）；
+    // 2026-11-07 行为变更（用户拍板）：草稿不产 id、不装配，B 的 id 在首次发送时才生成
+    expect(provider.getCurrentSessionId()).toBe('');
+    expect(provider.isDraftSession()).toBe(true);
+    // clear_ok 之后的 post 中不应有消息类事件（草稿页不重放 A 的历史）；
     // 旧 wire 消息清单保留作防回归守卫（消息风暴已删，出现即协议回退）
     const clearIdx = posted.findIndex((m) => (m as { type: string }).type === 'clear_ok');
     expect(clearIdx).toBeGreaterThanOrEqual(0);
@@ -1608,13 +1610,11 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     ];
     const leaked = afterClear.filter((m) => msgTypes.includes((m as { type: string }).type));
     expect(leaked).toHaveLength(0);
-    // 重放泄漏真断言：历史泄漏面在 turn_update.rounds——B 为空会话，
-    // 整批 rounds 必须为空；且重放链路必须走完（turn_update ≥1 条，杜绝「链路挂掉 → 断言空转」假绿）
-    const turnUpdates = ofType<{ type: string; rounds: RoundView[] }>(afterClear, 'turn_update');
-    expect(turnUpdates.length).toBeGreaterThanOrEqual(1);
-    for (const tu of turnUpdates) {
-      expect(tu.rounds).toEqual([]);
-    }
+    // 历史泄漏真断言：草稿页没有会话可回放 ⇒ 期间不得出现任何 turn_update
+    // （旧行为「B 为空会话也要走完 replay 链路」已随草稿态取消：无 id 就没有 replay 请求）
+    expect(ofType<{ type: string; rounds: RoundView[] }>(afterClear, 'turn_update')).toHaveLength(
+      0,
+    );
   });
 });
 

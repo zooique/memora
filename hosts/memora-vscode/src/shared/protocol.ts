@@ -1247,7 +1247,15 @@ export type ExtensionToWebviewMessage =
    * host 在会话回放/新建/切换/改名时推送当前会话标题，webview 顶部展示，
    * 让用户识别当前在哪个会话（主动可见）。title 为未命名会话时占位。
    */
-  | { type: 'session_title'; title: string }
+  | {
+      type: 'session_title';
+      title: string;
+      /**
+       * 草稿页标记（可选，最小面扩张）：草稿没有会话 id，**不可改名**。
+       * webview 据此禁用标题条改名笔；普通会话不传该字段（语义不变）。
+       */
+      draft?: boolean;
+    }
   /**
    * 历史会话列表（对 session_list 的应答）
    *

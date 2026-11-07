@@ -65,6 +65,7 @@ interface AssemblyCast {
   _view: unknown;
   _agentReady: Promise<void> | null;
   _providerStale: boolean;
+  _currentSessionId: string;
 }
 
 /** setup 返回形状 */
@@ -99,6 +100,9 @@ function setup(activeConfig?: Record<string, unknown>): AssemblyFixture {
     '/mock/workspace',
   );
   const cast = provider as unknown as AssemblyCast;
+  // 2026-11-07 行为变更：草稿态（无会话 id）按设计**不装配 Agent**，装配用例必须先有会话 id
+  // （生产里 id 由首次发送的 createSession 写入；这里直注等价「已进入某会话」）
+  cast._currentSessionId = '2026-11-07-testSession';
   return { provider, cast };
 }
 

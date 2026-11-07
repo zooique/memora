@@ -139,3 +139,26 @@ export function splitSessionId(sessionId: string): { date: string; session: stri
 export function isValidSessionId(sessionId: string): boolean {
   return /^(\d{4}-\d{2}-\d{2})-(.+)$/.test(sessionId);
 }
+
+/**
+ * 从会话 id 解析**创建时刻**（「创建时间占位标题」的唯一时间来源）
+ *
+ * 为什么从 id 解析而不是读 meta：会话创建后、首次落盘 meta 前存在「只有 roundIds、无 meta」
+ * 的常态窗口，此时若标题现算 `new Date()`，同一条会话每次刷新都会换一个时间（用户只会当 bug）。
+ * 宿主新建会话的命名规则固定为 `-s<Date.now() 的 base36>`（见 `s` 前缀生成处），
+ * 该段就是创建时刻本身——解析它比任何「读取时现算」都稳定。
+ *
+ * 不能解析的形态（历史 `-main` 等自定义会话名）返回 null，由调用方按「当日零点」降级。
+ *
+ * @param sessionId 会话标识（`YYYY-MM-DD-<会话名>`）
+ * @returns 创建时刻；无法解析或时间戳越界（非本规则生成）时 null
+ */
+export function sessionIdCreatedAt(sessionId: string): Date | null {
+  const match = /-s([0-9a-z]+)$/.exec(sessionId);
+  const base36 = match?.[1];
+  if (!base36) return null;
+  const ms = Number.parseInt(base36, 36);
+  // 合理性区间（约 2001 ~ 2096 年）：防止把任意单词会话名误当时间戳（`-suser` 等）
+  if (!Number.isFinite(ms) || ms < 1e12 || ms > 4e12) return null;
+  return new Date(ms);
+}

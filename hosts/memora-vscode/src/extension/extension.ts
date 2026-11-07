@@ -633,10 +633,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // 设置面板：editor tab 形态（角色 / 大模型 / 记忆 / 技能 / MCP / 安全 六页合一）。
   // L3 分家（2026-10-26）：设置整体从侧栏 view 迁入 editor tab（**六页合一迁入，非回退**）；
   // 原「避免活动栏底部选项卡拥挤（用户反馈）」的动机由「设置整体独立 tab」承接。
-  // 装配复用与 chat 面板同一登记表（SSOT）；角色切换随**会话文件**落盘（方案 A，不再用户级）
-  // providerStore 注入供大模型子视图读写（与 chat 面板共用一个 store 单例）。
+  // 装配复用与 chat 面板同一登记表（SSOT）；角色切换随**会话文件**落盘（方案 A）；providerStore 供大模型子视图共用
   const settingsProvider = new MemoraSettingsPanel(context.extensionUri, providerStore);
-  settingsProvider.setAgentFactory(getAgent, peekAgent, resolveSessionId);
+  const isDraft = () => chatProvider.isDraftSession(); // 草稿无 id/Agent ⇒ 角色切换必须拒绝
+  settingsProvider.setAgentFactory(getAgent, peekAgent, resolveSessionId, isDraft);
   settingsProvider.setGlobalState(context.globalState);
   settingsProvider.setSessionStore(sessionStore); // 角色切换落盘到会话文件（装配期读回）
   // 组队热更广播：全局一份数据 ⇒ 写时打所有已装配实例（判据见 setTeamBroadcaster 文档）

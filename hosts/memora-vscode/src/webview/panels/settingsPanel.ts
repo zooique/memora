@@ -121,6 +121,8 @@ export class MemoraSettingsPanel {
   private _boundSessionId: string | undefined;
   /** 当前显示会话解析（与取用面同一真源；切会话时据此判定是否需要解绑旧监听） */
   private _resolveSessionId: (() => string | undefined) | undefined;
+  /** 草稿态判据（chat 面板内存态）：草稿没有会话 id/Agent，角色切换必须拒绝（见 activateRole） */
+  private _isDraftSession: (() => boolean) | undefined;
   /** Agent 懒装配工厂（由 extension 注入，与 chat 面板同一 `AgentRegistry` 取用面） */
   private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
   /** 会话存储（角色切换成功后写回该会话的 `activeRolePackName`；extension 注入） */
@@ -176,10 +178,12 @@ export class MemoraSettingsPanel {
     getAgent: (projectPath: string) => Promise<Agent>,
     peekAgent?: (sessionId?: string) => Agent | undefined,
     resolveSessionId?: () => string | undefined,
+    isDraftSession?: () => boolean,
   ): void {
     this._getAgent = getAgent;
     this._peekAgent = peekAgent;
     this._resolveSessionId = resolveSessionId;
+    this._isDraftSession = isDraftSession;
   }
 
   /** 注入会话存储：角色切换成功后按会话落盘（装配期读回的唯一写入侧） */
@@ -733,6 +737,18 @@ export class MemoraSettingsPanel {
 
   /** 切换激活角色包（SSOT：roles_set_active 与 roles_handoff 共用），返回是否成功 */
   private async activateRole(name: string): Promise<boolean> {
+    // 草稿期**不提供角色切换**（用户拍板 2026-11-07，接受降级）：草稿没有会话 id、没有 Agent，
+    // 切换既无处落盘、也无实例可切；为它造「角色目录 + 待装配队列」= 第二份会话状态，故拒绝。
+    // 必须在 ensureAgent 之前：命令路径会把「当前会话」解析成上一个停留会话，
+    // 放行就会把角色切到**错误的会话**上（静默改错目标）。
+    if (this._isDraftSession?.()) {
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: '草稿尚未发送，请先发送第一条内容后再选择角色',
+      });
+      return false;
+    }
     const agent = await this.ensureAgent();
     if (!agent) return false;
     // 走内核「单一切换入口」agent.switchRolePack：activate + emit rolePackSwitched + 刷新 loop 前缀。

@@ -963,3 +963,42 @@ describe('settingsPanel.switchTab —— 导航落点兜底（不可投递时只
     expect(refreshSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * 草稿期角色切换降级（用户拍板 2026-11-07）
+ *
+ * 草稿没有会话 id、没有 Agent：为它造「角色目录 + 待装配队列」= 第二份会话状态，故拒绝。
+ * 判据必须**先于 ensureAgent**（命令路径会把「当前会话」解析成上一个停留会话，
+ * 放行即把角色切到错误的会话上）。本组钉住「拒绝 + 不装配 + 给出解释」三件事。
+ */
+describe('settingsPanel.activateRole —— 草稿期拒绝角色切换', () => {
+  it('草稿态：返回 false、不装配 Agent、给出「先发送」提示', async () => {
+    const { agent } = agentStub({ switchOk: true, locked: false });
+    const getAgent = vi.fn(async () => agent);
+    const posted: { type: string; level?: string; message?: string }[] = [];
+    const provider = new MemoraSettingsPanel({} as never, {} as never);
+    // 第 4 参 = 草稿态判据（生产由 extension.ts 注入 chat 面板的 `isDraftSession`）
+    provider.setAgentFactory(getAgent, undefined, undefined, () => true);
+    (provider as unknown as { _panel: unknown })._panel = {
+      webview: {
+        postMessage: (msg: never) => {
+          posted.push(msg);
+          return Promise.resolve(true);
+        },
+      },
+    };
+
+    const ok = await activateRole(provider, 'any-pack');
+
+    expect(ok).toBe(false);
+    // 拦在装配之前：草稿不装配 Agent（否则会绑到错误会话）
+    expect(getAgent).not.toHaveBeenCalled();
+    expect(notices(posted)).toEqual([
+      {
+        type: 'notice',
+        level: 'info',
+        message: '草稿尚未发送，请先发送第一条内容后再选择角色',
+      },
+    ]);
+  });
+});

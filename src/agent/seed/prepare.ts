@@ -112,13 +112,14 @@ export class SeedPrepare {
 
     // 会话标题自动命名（fire-and-forget）：仅新建会话首次问答触发（以"会话无标题"判定，不覆盖手动改名）
     if (sessionNamer) {
+      // 写回目标 = **调度时刻**的会话名，必须先快照再进闭包：
+      // 闭包可能在后台槽位排队后才执行，届时 `history.current*` 可能已被切会话改写
+      // ⇒ 标题写到别的会话上，原会话永远停在占位名（真机实锤）。
+      const sessionDate = history.currentDateValue;
+      const sessionName = history.currentSessionValue;
       // 后台槽位调度器归属本 Agent 实例（SeedDeps 注入）——命名 fire-and-forget 不阻塞回答前
       this.deps.backgroundTasks.schedule('session-title', () =>
-        sessionNamer.ensureSessionTitle(
-          history.currentDateValue,
-          history.currentSessionValue,
-          input,
-        ),
+        sessionNamer.ensureSessionTitle(sessionDate, sessionName, input),
       );
     }
 

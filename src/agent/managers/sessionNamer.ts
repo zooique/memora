@@ -1,7 +1,8 @@
 /**
  * 会话命名器：为新建会话生成 autoName + displayName 写入元数据，标题与会话身份（date-session）解耦。
  * 触发时机：仅"新建会话首次问答"触发——判定以"会话尚无 autoName"为准，有即不覆盖，天然只触发一次。
- * 降级：sessionStore 未注入静默跳过；LLM 失败/无价值降级为"新会话 HH:MM"占位。getProvider 惰性获取当前 Provider。
+ * 降级：sessionStore 未注入静默跳过；LLM 失败/无价值**不写 autoName**（读侧现算占位标题，下一轮可重试）。
+ * getProvider 惰性获取当前 Provider。
  */
 
 import { logger } from '@/logging/logger.js';
@@ -37,7 +38,11 @@ export class SessionNamer {
 
   /**
    * 确保会话拥有 autoName（仅新建会话首次问答触发）。已有 autoName 则跳过（不覆盖）。
-   * LLM 失败/无价值降级为"新会话 HH:MM"占位；写入 autoName + displayName（初始一致，用户可后续改 displayName）。
+   *
+   * 失败语义（2026-11-07 修正）：LLM 失败 / 无价值时**什么都不写**，只留一条 warn。
+   * 旧实现把 `defaultTitle()` 占位串同时写进 autoName，等于把「一次失败」永久记为「已命名」，
+   * 后续每轮都被 `existing.autoName` 命中而跳过 —— 真机上表现为标题永远是「新会话 HH:MM」。
+   * 现在占位标题由读侧按创建时间现算，命名只承载**真实标题**，失败留待下一轮重试。
    * best-effort：不抛异常，由调用方 fire-and-forget。
    */
   async ensureSessionTitle(date: string, session: string, firstUserContent: string): Promise<void> {
@@ -58,13 +63,16 @@ export class SessionNamer {
       return;
     }
 
-    // 生成标题（LLM 失败或无价值时降级为占位，不阻塞）
-    let title: string;
+    // 生成标题：失败 / 无价值一律为 null（不降级写入，下一轮重试）
+    let title: string | null = null;
     try {
-      title = (await this.generateTitle(firstUserContent)) ?? defaultTitle();
+      title = await this.generateTitle(firstUserContent);
     } catch (err) {
-      logger.warn({ err, sessionId }, 'SessionNamer: 标题生成失败，降级为占位');
-      title = defaultTitle();
+      logger.warn({ err, sessionId }, 'SessionNamer: 标题生成失败，本轮不写，下一轮重试');
+    }
+    if (!title) {
+      logger.warn({ sessionId }, 'SessionNamer: 未取得有效标题，本轮不写，下一轮重试');
+      return;
     }
 
     // autoName 为 LLM 生成只读名；displayName 初始值一致、用户可修改
@@ -84,7 +92,7 @@ export class SessionNamer {
     }
   }
 
-  /** 调用 LLM 生成一句话标题：复用 accumulateStream + parseLlmJson（与 SessionArchiver 一致）；无价值（空消息/打招呼）返回 null 由调用方降级 */
+  /** 调用 LLM 生成一句话标题：复用 accumulateStream + parseLlmJson（与 SessionArchiver 一致）；无价值（空消息/打招呼）返回 null，调用方本轮不写、下一轮重试 */
   private async generateTitle(content: string): Promise<string | null> {
     const prompt = `你是会话命名助手。请根据用户的第一条消息，为会话生成一个简短标题（10 字以内），用于在历史列表中识别。
 
@@ -121,10 +129,17 @@ ${content}
   }
 }
 
-/** 生成占位标题（LLM 不可用/失败/无价值时降级）："新会话 HH:MM"。导出供宿主复用，单一真理源避免重复实现 */
-export function defaultTitle(): string {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
+/** 生成占位标题（"新会话 HH:MM"）。导出供宿主复用，单一真理源避免重复实现。
+ *
+ * 时间口径 = **会话创建时刻**，不是调用时刻：占位标题代表「某时创建、尚未命名」，
+ * 每次读时现算 `new Date()` 会让同一会话标题随刷新变化（用户只会当 bug）。
+ *
+ * @param createdAt 会话创建时刻（来源：`sessionIdCreatedAt(sessionId)` 或 meta.createdAt）
+ */
+export function defaultTitle(createdAt: Date | string | number): string {
+  const at = createdAt instanceof Date ? createdAt : new Date(createdAt);
+  if (Number.isNaN(at.getTime())) return '新会话';
+  const hh = String(at.getHours()).padStart(2, '0');
+  const mm = String(at.getMinutes()).padStart(2, '0');
   return `新会话 ${hh}:${mm}`;
 }

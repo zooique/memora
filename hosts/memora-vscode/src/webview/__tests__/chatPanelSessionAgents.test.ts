@@ -612,7 +612,173 @@ describe('E4 批 4 · 关视图再重开：会话运行态标识不失真（真�
   });
 });
 
-/** `session_activity` 快照的测试侧形状（只取本文件断言的字段） */
+/**
+ * 草稿态（「＋ 新建会话」）—— 用户拍板 2026-11-07
+ *
+ * 行为变更：点「＋」不再立刻落一条空会话记录，先显示干净空白页，
+ * **只有第一次真正发送内容时才创建会话**。
+ *
+ * 红线（任一破坏即本组转红）：
+ *  ① 草稿只存在于面板内存：不写 sessionStore、不调 setLastActiveSession、不进历史列表；
+ *  ② 不占会话锁（`createSession` 是唯一拿锁点，草稿从未调用它）；
+ *  ③ 不装配 Agent（工厂零调用）；
+ *  ④ 活跃度快照不含草稿（无 id 可入表；别的会话的待处理仍照常亮，那是「别的会话」不是草稿）；
+ *  ⑤ webview 重建（刷新）草稿仍在；切到别的会话即丢弃草稿。
+ */
+describe('草稿态 · 「＋」不再立刻落空会话（首次发送才建会话）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** 取最后一条 `session_title`（标题条推送） */
+  function lastTitle(posted: PanelHandle['posted']): { title?: string; draft?: boolean } {
+    return posted.filter((m) => m.type === 'session_title').at(-1) as unknown as {
+      title?: string;
+      draft?: boolean;
+    };
+  }
+
+  /**
+   * 进入草稿后：零落盘 / 零锁 / 零装配
+   *
+   * 变异靶标（旧行为）：把 `newSessionFromCommand` 改回 `createSession(...)` ⇒
+   * 「工厂零调用」「setLastActiveSession 零调用」「标题带 draft」三条同时转红。
+   */
+  it('「＋」= 空白草稿页：不建会话、不写 lastActive、不装配 Agent，标题带 draft 标记', async () => {
+    const agentA = sessionAgent('2026-11-06-a');
+    const { provider, posted, cast } = setupPanel({ '2026-11-06-a': agentA }, ['2026-11-06-a']);
+    const store = (provider as unknown as { sessionStore: WorkspaceSessionStore }).sessionStore;
+    const factory = vi.fn(async () => agentA);
+    provider.setAgentFactory(factory);
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = agentA;
+    const setLastActive = vi.spyOn(store, 'setLastActiveSession');
+    const metasBefore = store.listSessionMetas().length;
+
+    await provider.newSessionFromCommand();
+
+    expect(provider.isDraftSession()).toBe(true);
+    expect(provider.getCurrentSessionId()).toBe('');
+    // ① 零落盘：没有新增会话记录，停留指针不动（历史列表与「上次停留」都不受影响）
+    expect(store.listSessionMetas().length).toBe(metasBefore);
+    expect(setLastActive).not.toHaveBeenCalled();
+    // ③ 零装配（② = 不占锁：拿锁只发生在 createSession，本用例从未走到那里）
+    expect(factory).not.toHaveBeenCalled();
+    // 草稿标题：draft 标记是 webview 禁用改名笔的唯一判据
+    expect(lastTitle(posted)).toMatchObject({ title: '新会话', draft: true });
+    // 后台任务条按空投影重推（不残留上一个会话的清单）
+    const tasks = posted.filter((m) => m.type === 'background_tasks').at(-1) as unknown as {
+      items: unknown[];
+    };
+    expect(tasks.items).toEqual([]);
+  });
+
+  it('首次真正发送才建会话：只装配一次，草稿标记消失', async () => {
+    const agentA = sessionAgent('2026-11-06-a');
+    const freshAgent = sessionAgent('2026-11-07-draft');
+    const { provider, posted, cast, fireMessage } = setupPanel({ '2026-11-06-a': agentA }, [
+      '2026-11-06-a',
+    ]);
+    const store = (provider as unknown as { sessionStore: WorkspaceSessionStore }).sessionStore;
+    const factory = vi.fn(async (_projectPath: string, sessionId: string) =>
+      sessionId === '2026-11-06-a' ? agentA : freshAgent,
+    );
+    provider.setAgentFactory(factory);
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = agentA;
+
+    await provider.newSessionFromCommand();
+    expect(provider.isDraftSession()).toBe(true);
+    expect(factory).not.toHaveBeenCalled();
+
+    // 空文本发送不建会话（草稿页仍可继续输入）
+    fireMessage({ type: 'input', kind: 'send', text: '   ' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(provider.isDraftSession()).toBe(true);
+    expect(factory).not.toHaveBeenCalled();
+
+    fireMessage({ type: 'input', kind: 'send', text: '帮我看一下仓库结构' });
+    await vi.waitFor(() => expect(provider.isDraftSession()).toBe(false), { timeout: 5000 });
+
+    // 会话 id 由时间戳生成，形态与生产一致
+    const newId = provider.getCurrentSessionId();
+    expect(newId).toMatch(/^\d{4}-\d{2}-\d{2}-s[0-9a-z]+$/);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(factory.mock.calls[0]?.[1]).toBe(newId);
+    // 建会话只切换显示源；**没有空壳记录落盘**（round 尚未写入 ⇒ 文件不存在）
+    expect(store.getSessionMeta(newId)).toBeUndefined();
+    // 标题不再是草稿态（改名笔恢复可用）
+    expect(lastTitle(posted).draft).toBeUndefined();
+    expect(lastTitle(posted).title).toMatch(/^新会话 \d{2}:\d{2}$/);
+  });
+
+  it('活跃度快照不含草稿（无 id 可入表），别的会话的待处理仍照常亮', async () => {
+    const agentA = sessionAgent('2026-11-06-a');
+    const { provider, posted, cast } = setupPanel({ '2026-11-06-a': agentA }, ['2026-11-06-a']);
+    provider.setAgentFactory(async () => agentA);
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = agentA;
+    // A 在后台等到提问（用户此刻在草稿页）
+    cast.askFor('2026-11-06-a').setPending([{ slot: 'q1', question: '继续吗？' }]);
+
+    await provider.newSessionFromCommand();
+
+    const snap = lastActivity(posted);
+    // 草稿不是会话：不得出现在运行中/待处理名单里（'' 或任何伪 id 都不许）
+    expect(snap.runningIds).not.toContain('');
+    expect(snap.pendingIds).not.toContain('');
+    // 别的会话的待处理照常亮（那是「别的会话」，不是草稿）
+    expect(snap.pendingIds).toEqual(['2026-11-06-a']);
+    expect(snap.badgeCount).toBe(1);
+    cast.askFor('2026-11-06-a').clearPending();
+  });
+
+  it('webview 重建（刷新）后草稿仍在：重建草稿页，不退回任何会话', async () => {
+    const agentA = sessionAgent('2026-11-06-a');
+    const { provider, posted, cast, reopenView, fireMessage } = setupPanel(
+      { '2026-11-06-a': agentA },
+      ['2026-11-06-a'],
+    );
+    provider.setAgentFactory(async () => agentA);
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = agentA;
+    await provider.newSessionFromCommand();
+    expect(provider.isDraftSession()).toBe(true);
+
+    reopenView();
+    const beforeReady = posted.length;
+    fireMessage({ type: 'ready' });
+
+    await vi.waitFor(
+      () => {
+        const title = posted
+          .slice(beforeReady)
+          .filter((m) => m.type === 'session_title')
+          .at(-1) as unknown as { draft?: boolean } | undefined;
+        expect(title?.draft).toBe(true);
+      },
+      { timeout: 5000 },
+    );
+    // 草稿只在面板内存：重建后仍是草稿，没有被「启动归属裁决」退回上一个会话
+    expect(provider.isDraftSession()).toBe(true);
+    expect(provider.getCurrentSessionId()).toBe('');
+  });
+
+  it('切到别的会话 ⇒ 草稿丢弃（草稿不是会话，没有「切回草稿」）', async () => {
+    const agentA = sessionAgent('2026-11-06-a');
+    const { provider, cast } = setupPanel({ '2026-11-06-a': agentA }, ['2026-11-06-a']);
+    provider.setAgentFactory(async () => agentA);
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = agentA;
+    await provider.newSessionFromCommand();
+    expect(provider.isDraftSession()).toBe(true);
+
+    await provider.switchToSession('2026-11-06-a');
+    expect(provider.isDraftSession()).toBe(false);
+    expect(provider.getCurrentSessionId()).toBe('2026-11-06-a');
+    expect(provider.getCurrentAgent()).toBe(agentA);
+  });
+});
 interface ActivitySnapshot {
   type: 'session_activity';
   runningIds: string[];
@@ -723,5 +889,125 @@ describe('E4 批 4 · 会话活跃度快照（后台待处理 ⇒ 列表标识 +
 
     // 收尾（清提问，避免残留 ask 超时定时器）
     cast.askFor('2026-11-06-b').clearPending();
+  });
+});
+
+/**
+ * #13 · 结构写窗口锁的重建回放（折叠 / 展开 = webview HTML 重建）
+ *
+ * 锁态真源 = 流内 `status` 消息（`done` 才解锁）；新 webview 的锁态初值是「可用」，
+ * 不补推就等于把写盘窗口（流在跑 / 会话已挂起）里的截断 / 分叉放开。
+ * 变异靶标：删掉 `handleWebviewReady` 里的 `replayStructureWriteLock()` 调用 ⇒ 第一条转红；
+ * 把该方法改成「无条件补 status」⇒ 第二条转红（反向锁死）。
+ */
+describe('#13 · 结构写窗口锁的重建回放（只回放锁、不碰导航）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('流中重建：ready 后补推 status=thinking（结构锁仍为锁）', async () => {
+    let reachedGate!: () => void;
+    const atGate = new Promise<void>((resolve) => {
+      reachedGate = resolve;
+    });
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    const roundId = 'round-reopen-lock';
+    const flow = (): AsyncGenerator<Chunk> => {
+      return (async function* () {
+        yield { type: 'thinking', phase: 'processing', roundId };
+        reachedGate();
+        await gate;
+        yield { type: 'text', content: '重开后仍在跑', roundId };
+        yield { type: 'step_boundary', roundId };
+      })();
+    };
+    const agentA = sessionAgent('2026-11-06-a', flow);
+    const { cast, posted, reopenView, disposeView, fireMessage } = setupPanel(
+      { '2026-11-06-a': agentA },
+      ['2026-11-06-a'],
+    );
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = agentA;
+
+    // 起流（此刻视图在；该会话进入写盘窗口）
+    const running = cast.runFlow(() => flow());
+    await atGate;
+
+    // 折叠：关视图（生产清理只清视图引用，不清运行态）
+    disposeView();
+    // 展开：新 webview + ready 握手（流仍在跑 = 写盘窗口未关）
+    reopenView();
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = agentA;
+    const beforeReady = posted.length;
+    fireMessage({ type: 'ready' });
+
+    // 新 webview 必须收到锁态补推（旧实现只有流内 status，重建后锁态丢失）
+    await vi.waitFor(
+      () => {
+        const lockMsg = posted
+          .slice(beforeReady)
+          .find((m) => m.type === 'status' && (m.state === 'thinking' || m.state === 'paused'));
+        expect(lockMsg).toBeDefined();
+      },
+      { timeout: 5000 },
+    );
+
+    releaseGate();
+    await running;
+  });
+
+  it('锁已解除后重建：不再补锁（不反向锁死）', async () => {
+    const roundId = 'round-reopen-unlocked';
+    const flow = (): AsyncGenerator<Chunk> => {
+      return (async function* () {
+        yield { type: 'thinking', phase: 'processing', roundId };
+        yield { type: 'text', content: '收场了', roundId };
+        yield { type: 'step_boundary', roundId };
+      })();
+    };
+    const agentA = sessionAgent('2026-11-06-a', flow);
+    const { cast, posted, reopenView, disposeView, fireMessage } = setupPanel(
+      { '2026-11-06-a': agentA },
+      ['2026-11-06-a'],
+    );
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = agentA;
+
+    await cast.runFlow(() => flow());
+    expect(cast.runtimeFor('2026-11-06-a').streaming).toBe(false);
+
+    // 摘要落地（正常事件路径）→ status:done 已投递 = 结构写窗口锁解除
+    const onMock = (agentA as unknown as { on: { mock: { calls: unknown[][] } } }).on;
+    const summaryCall = onMock.mock.calls.find((c) => c[0] === 'roundSummaryGenerated');
+    expect(summaryCall).toBeDefined();
+    (summaryCall![1] as (info: { roundId: string; success: boolean }) => void)({
+      roundId,
+      success: true,
+    });
+    expect(posted.some((m) => m.type === 'status' && m.state === 'done')).toBe(true);
+
+    // 锁解除之后再折叠 / 展开：回放必须是「可用」，不得反向锁死
+    disposeView();
+    reopenView();
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = agentA;
+    const beforeReady = posted.length;
+    fireMessage({ type: 'ready' });
+    // 等 ready 链跑完（活跃度快照是 ready 末段的既有补推，可作完成信号）
+    await vi.waitFor(
+      () => {
+        expect(posted.slice(beforeReady).some((m) => m.type === 'session_activity')).toBe(true);
+      },
+      { timeout: 5000 },
+    );
+    expect(
+      posted
+        .slice(beforeReady)
+        .filter((m) => m.type === 'status' && (m.state === 'thinking' || m.state === 'paused')),
+    ).toHaveLength(0);
   });
 });

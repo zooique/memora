@@ -25,7 +25,6 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   buildSessionId,
-  defaultSessionTitle,
   isRoundSettled,
   LOOP_CONSTANTS,
   type IRoundStore,
@@ -33,6 +32,7 @@ import {
   type SessionMessage,
   type SessionMeta,
 } from '@zooique/memora';
+import { sessionDisplayTitle } from './sessionTitle.js';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
 import { resolveProjectDataDir } from './projectDataDir.js';
 import { CrossProcessSessionLock } from './sessionLock.js';
@@ -678,22 +678,21 @@ export class WorkspaceSessionStore implements ISessionStore {
     // SSOT：SessionMeta 为纯展示 DTO（无 roundIds），Round ID 需经 getRoundIds() 真源读取
     const meta = this.metas.get(sessionId);
     if (meta) {
-      // 计数读值一律现场派生（O(1)）：与下方占位兜底路径同口径，读值不信任缓存副本——
-      // 派生真源 = deriveMessageCount（单一真源，见其注释），副本仅服务持久化形态
-      return { ...meta, messageCount: this.deriveMessageCount(sessionId) };
+      // 计数读值现场派生（O(1)），与占位路径同口径；标题兜底也在**读点**补（占位串不写回）
+      return {
+        ...meta,
+        displayName: sessionDisplayTitle(sessionId, meta),
+        messageCount: this.deriveMessageCount(sessionId),
+      };
     }
-    // round-based 会话兜底：如果有 Round ID 列表，创建占位元数据
+    // round-based 会话兜底：有 Round ID 列表但缺 meta ⇒ 创建占位元数据
     const roundIds = this.roundIdsStore.get(sessionId);
     if (roundIds && roundIds.length > 0) {
       return {
         sessionId,
-        displayName: defaultSessionTitle(),
-        // updatedAt **不得取 now()**：占位 meta 每次查询都重新生成，用 now() 等于把该会话
-        // 永久标成「刚刚活跃」⇒ 在 listSessionMetas 的 updatedAt 降序里恒排第一，启动时
-        // 抢走「最近写入」位把用户带进无关会话。而「新会话首轮刚落盘、SessionNamer 尚未
-        // 回写 autoName」正是缺 meta 的常态窗口。
-        // 取会话 id 前缀日期（buildSessionId 契约编码的真实数据，非编造）的当日零点：
-        // 同日排最后（零点是最早时刻），跨日仍落在自己那一天，语义 = 「具体时刻未知」。
+        displayName: sessionDisplayTitle(sessionId, undefined), // 占位=创建时刻（读侧兜底，不写回 meta）
+        // updatedAt **不得取 now()**（占位 meta 每次查询重生成 ⇒ 该会话恒排「最近活跃」第一，启动时
+        // 抢走最近写入位）；取会话 id 前缀日期（buildSessionId 契约编码的真实数据）当日零点 = 具体时刻未知。
         updatedAt: `${sessionId.slice(0, 10)}T00:00:00.000Z`,
         messageCount: this.deriveMessageCount(sessionId),
       };
@@ -736,7 +735,8 @@ export class WorkspaceSessionStore implements ISessionStore {
       sessionId,
       // 以下显式行：入参未给时回退既有值（而非被 spread 抹成 undefined）
       autoName: meta.autoName ?? existing?.autoName,
-      displayName: meta.displayName ?? existing?.displayName ?? defaultSessionTitle(),
+      // ⚠️ 不得回退占位串：占位是「读侧展示兜底」不是数据；写回会压住 autoName（真机实锤）
+      displayName: meta.displayName ?? existing?.displayName,
       keyTopics: meta.keyTopics ?? existing?.keyTopics,
       summary: meta.summary ?? existing?.summary,
       // 归档防重快照（同族保护，显式 undefined 不抹既有）：被抹则重启后判「无归档记录」，
