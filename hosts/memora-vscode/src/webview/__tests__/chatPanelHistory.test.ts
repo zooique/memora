@@ -110,6 +110,9 @@ function agentStub(): {
     // 缺此方法会抛错并被 createSession/switchToSession 的 catch 吞成「回滚 + error notice」，
     // 表现为会话没切过去（替身违约，不是产品缺陷）
     listBackgroundTasks: () => [],
+    // 看板快照读取口（setAgent → refreshAfterAssemble → postPlanUpdate 同步读取）：
+    // null = 无检查点；缺此方法会直接抛错中断 setAgent（替身违约，不是产品缺陷）
+    getCheckpoint: () => null,
   } as unknown as Agent;
   return { agent, switchToSession, renameSession, softDeleteRoundSummaries };
 }
@@ -383,6 +386,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       memory: { writeDelete },
       on: vi.fn(),
       off: vi.fn(),
+      // 装配收口点 postPlanUpdate 必读（见 agentStub 同款说明）
+      getCheckpoint: () => null,
     } as unknown as Agent);
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
     await (provider as unknown as { deleteMemory(id: string): Promise<void> }).deleteMemory('m1');
@@ -400,6 +405,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       memory: { writeDelete },
       on: vi.fn(),
       off: vi.fn(),
+      // 装配收口点 postPlanUpdate 必读（见 agentStub 同款说明）
+      getCheckpoint: () => null,
     } as unknown as Agent);
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never);
     await (provider as unknown as { deleteMemory(id: string): Promise<void> }).deleteMemory('m1');
@@ -1316,6 +1323,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
         context: { occupancy: { rolePackBaseTokens: 15000 } },
       }),
       isPausePending: () => false,
+      // 装配收口点 postPlanUpdate 必读（见 agentStub 同款说明）
+      getCheckpoint: () => null,
     } as unknown as Agent;
     provider.setAgent(agent);
     // providerStore 桩：listMasked 返回 [] + getActiveName undefined → totalTokens 回落内核默认窗口
@@ -1359,6 +1368,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       getMetrics: () => ({
         context: { occupancy: { rolePackBaseTokens: 15000 } },
       }),
+      // 装配收口点 postPlanUpdate 必读（懒装配同样走 refreshAfterAssemble）
+      getCheckpoint: () => null,
     } as unknown as Agent;
     // 懒装配入口：只注入工厂、不调 setAgent（点侧栏图标 / 重启恢复面板走此路径）
     provider.setAgentFactory(async () => agent);
@@ -1384,6 +1395,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
         if (event === 'rolePackSwitched') rolePackHandler = cb;
       }),
       off: vi.fn(),
+      // 装配收口点 postPlanUpdate 必读（见 agentStub 同款说明）
+      getCheckpoint: () => null,
       getMetrics: () => ({
         context: {
           // 角色包切换后的底盘占用（内核已在切换时 setRolePackBaseTokens 重算）
@@ -1415,6 +1428,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
         if (event === 'rolePackSwitched') rolePackHandler = cb;
       }),
       off: vi.fn(),
+      // 装配收口点 postPlanUpdate 必读（见 agentStub 同款说明）
+      getCheckpoint: () => null,
       getMetrics: () => ({
         context: {
           occupancy: { rolePackBaseTokens: 0 } as never, // 快照降级值
@@ -1451,6 +1466,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       getMetrics: () => ({
         context: { occupancy: { rolePackBaseTokens: 15000 } },
       }),
+      // 装配收口点 postPlanUpdate 必读（见 agentStub 同款说明）
+      getCheckpoint: () => null,
     } as unknown as Agent;
     provider.setAgent(agent);
     // 装配收口点（refreshAfterAssemble）先推一次 occupancy——等它落定后清空 posted，
@@ -1496,6 +1513,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       cancelPauseRequest,
       on: vi.fn(),
       off: vi.fn(),
+      // 装配收口点 postPlanUpdate 必读（见 agentStub 同款说明）
+      getCheckpoint: () => null,
     } as unknown as Agent;
     return { agent, requestPause, pause, isPausePending, cancelPauseRequest };
   }
@@ -2347,6 +2366,8 @@ describe('技能启停：重推清单入口（SKILL-S3b）', () => {
       },
       on: vi.fn(),
       off: vi.fn(),
+      // 装配收口点 postPlanUpdate 必读（见 agentStub 同款说明）
+      getCheckpoint: () => null,
     } as unknown as Agent;
   }
 
@@ -2817,6 +2838,8 @@ describe('启动会话对齐（启动即分叉根因修复）', () => {
       off: vi.fn(),
       isPausePending: () => false,
       getEffectiveMaxTokens: () => undefined,
+      // 装配收口点 postPlanUpdate 必读（见 agentStub 同款说明）
+      getCheckpoint: () => null,
     } as unknown as Agent;
     return { agent, switchToSession };
   }
@@ -3141,6 +3164,8 @@ describe('会话级角色包：解析失败不许静默（2026-11-07）', () => 
       isPausePending: () => false,
       // 会话视图入口的 force 重投影会读注册表（切会话用例经 switchToSession 进入）
       listBackgroundTasks: () => [],
+      // 装配收口点 postPlanUpdate 必读（缺失时 setAgent 抛错，会额外多弹一条 error notice）
+      getCheckpoint: () => null,
     } as unknown as Agent;
   }
 
