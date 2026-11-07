@@ -595,7 +595,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //          实数经 scripts/count-token-refs.mjs 实锤同步）
     // 52：COPY-2 右键菜单 .ctxmenu__item line-height: var(--lh-snug)（contextMenuStyles）+1
     // （2026-10-30，与 .treedd__item 同语义同令牌）
-    'lh-': 52, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
+    // 53：技能同名覆盖说明行 #skills-root .skill-override line-height: var(--lh-tight)
+    // （skillsStyles）+1（2026-11-07，SKILL-OVERRIDE-1；实数经 scripts/count-token-refs.mjs 实锤）
+    'lh-': 53, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
     //             MCP 页级说明段落改 var(--lh-relaxed) +1（2026-10-24）
     //             MCP 隐藏条目解释行 var(--lh-relaxed) +1（2026-10-24）
     // 18：回到原值。中途曾 +2（🔒 未钉态 / ✕ 弱化态各用 opacity: var(--op-6)），后经真机

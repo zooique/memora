@@ -3048,6 +3048,12 @@ describe('角色包激活回调接线（B：删激活包 → 对话头部同步�
 
   it('内核无激活包 ⇒ 角色名投影为空，不出现任何角色名（N2：旧硬编码入口已退役）', () => {
     const { provider, posted } = setup();
+    // 本用例判的是「会话回放」面：setup 的空 store 让面板落在草稿态（无 sessionId），
+    // 而 replaySession 在草稿态会早退去重建草稿页、投影 defaultRolePackName（草稿判据，
+    // 归 draftSession 自测），与这里要验的内核 activeName 投影不是同一层。先写入宿主持有
+    // 会话（isDraft getter 要求 _draft.isDraft && !_currentSessionId，有 id 即脱离草稿态）。
+    // 注：setHostSession helper 定义在另一 describe 作用域内，此处置入同一语义的一行。
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
     // activeName = undefined：内核没有任何激活角色包
     const agent = roleStub({ packA: '包A' }, undefined).agent;
     provider.setAgent(agent);
