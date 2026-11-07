@@ -237,6 +237,8 @@ const TOOL_RESULT_TAGS: Readonly<Record<string, string>> = {
   ERR_TOOL_NOT_AVAILABLE: '工具能力未装配（宿主未注入 provider / 回调）',
   ERR_TOOL_PERMISSION_DENIED: '宿主 preExecutionCheck 拒绝（权限闸拦截，未执行）',
   ERR_TOOL_READONLY_DENIED: '只读模式下写入工具被拦截（安全闸，未执行）',
+  ERR_TOOL_NOT_EXPOSED:
+    '工具已注册但本轮未暴露（EXPOSURE-GATE-1 执行闸拦下，未执行；不得重试该工具）',
   ERR_TOOL_UNKNOWN: '工具执行抛非 MemoraError 异常（兜底失败串）',
   // 中断族（TOOL-ABORT-KILL-1）：执行被用户/上层中断——工具**没跑完**，LLM 须知道结果
   // 不可当作完整产出；同时「进程树是否已确认终止」由正文承载（终止失败不得假装成功）。

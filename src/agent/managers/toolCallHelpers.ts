@@ -162,9 +162,9 @@ export function isRetryableToolError(input: ToolOutcome | string): boolean {
 export type ToolStatus = 'ok' | 'failed' | 'blocked';
 
 /**
- * blocked 的原因（**11 值穷尽 · 与 status 正交**——只回答「为什么没成功」）。
+ * blocked 的原因（**12 值穷尽 · 与 status 正交**——只回答「为什么没成功」）。
  *
- * 为什么是独立维度而非第 4 个 status 值：11 种主动挡下**全部是「没成功」**，无例外；
+ * 为什么是独立维度而非第 4 个 status 值：12 种主动挡下**全部是「没成功」**，无例外；
  * 它们之间差别回答的是「为什么没成功」。两个正交问题硬塞一个字段 ⇒ 字段随护栏增加
  * 持续膨胀且语义退化。新增值须对应真实新语义，**禁止硬塞进既有值**。
  */
@@ -179,10 +179,11 @@ export type BlockedReason =
   | 'ledger_stub' //        台账替身：用摘要顶替整读
   | 'no_compress_target' // compress_context 目标不存在
   | 'invalid_intel_note' // remember_intel 参数为空
-  // ── 执行层闸门族（ToolRunner denied/skip）──
+  // ── 执行层闸门族（ToolRunner denied/skip + ToolExecutor 暴露闸）──
   | 'permission_denied' //  宿主审批拒绝 / fail-closed
   | 'readonly_denied' //    只读模式禁写工具
-  | 'idempotent_skip'; //   outbox 幂等：已执行过
+  | 'idempotent_skip' //    outbox 幂等：已执行过
+  | 'not_exposed'; //       工具已注册但本轮未暴露（EXPOSURE-GATE-1 执行闸）
 
 /**
  * 工具结果契约（结构化出口，`text` 与判据面配对）。

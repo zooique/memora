@@ -924,19 +924,14 @@ export class ToolExecutor {
   }
 
   /**
-   * 获取所有工具定义（getter 风格，与 persona/skill 一致）
+   * 当前已装配的工具定义（暴露判定的原料 · 与 `list` 同源）
    *
-   * 白名单语义（tool-exposure-model 特权声明模型）：
-   * - toolWhitelist === null：全部暴露（内置 + web_search 条件 + 自定义工具）；
-   * - toolWhitelist === string[]：全部暴露命中「默认常驻豁免集 DEFAULT_EXPOSED_TOOLS」的
-   *   内置工具，特权工具（web_search / web_fetch / run_code / task_table_*）按名单过滤；
-   * - toolWhitelist === []：仅常驻豁免集（角色无任何特权能力时，本地能力仍完整可用）。
-   * - 自定义工具始终暴露（宿主注册，属宿主能力面，角色包能力声明不越权过滤宿主工具）；
-   * - search_project：宿主注入即暴露（方案乙）——本地只读工具，等价 read_file 的只读语义，
-   *   不受角色包能力声明与豁免集语义约束（具备与否不决定其可见性）。
+   * 「已装配」= 内置工具 + 已注入 provider 的条件工具 + 宿主注册的自定义工具 + search_project。
+   * 本 getter **不做任何暴露过滤**——是否对外暴露由 `isToolExposed()` 判定，暴露面（`list`）
+   * 与执行闸（`execute`）都从同一个判定取答案，避免「两套白名单逻辑」各写一份。
    */
-  get list(): ToolDefinition[] {
-    // 条件性包含外部信息工具：仅当注入了对应 provider 时才暴露给 LLM
+  private get assembledTools(): ToolDefinition[] {
+    // 条件性包含外部信息工具：仅当注入了对应 provider 时才存在
     // - web_search：webSearchProvider 注入时
     // - web_fetch：fetchProvider 注入时（与 web_search 构成搜索→抓取闭环）
     // - run_code：codeExecutionProvider 注入时
@@ -949,24 +944,52 @@ export class ToolExecutor {
     if (this.codeExecutionProvider)
       baseTools = [...baseTools, buildRunCodeTool(this.codeExecutionProvider.supportedLanguages)];
 
-    // 常驻豁免集无条件暴露（LLM 工具面不因角色包能力声明收窄本地能力）
-    const exposed = baseTools.filter((t) => DEFAULT_EXPOSED_TOOLS.has(t.name));
-
-    // 特权工具按白名单过滤（toolWhitelist=null 全暴露；否则只在名单内）
-    const privileged = baseTools.filter((t) => !DEFAULT_EXPOSED_TOOLS.has(t.name));
-    const whitelisted = this.toolWhitelist
-      ? privileged.filter((t) => this.toolWhitelist?.includes(t.name))
-      : privileged;
-
-    // search_project 作为宿主注入工具（方案乙）：注入即暴露，追加在自定义工具之后，不受白名单过滤
-    const projectSearchTool = this.projectSearchProvider ? [SEARCH_PROJECT_TOOL] : [];
-
     return [
-      ...exposed,
-      ...whitelisted,
+      ...baseTools,
       ...[...this.customTools.values()].map((e) => e.definition),
-      ...projectSearchTool,
+      // search_project 作为宿主注入工具（方案乙）：注入即存在，追加在自定义工具之后
+      ...(this.projectSearchProvider ? [SEARCH_PROJECT_TOOL] : []),
     ];
+  }
+
+  /**
+   * 「某工具此刻是否暴露」的唯一判定（EXPOSURE-GATE-1 单点）
+   *
+   * 暴露面（`list`）与执行闸（`execute`）共用本方法：前者决定「摆给 LLM 看什么」，
+   * 后者决定「模型硬点名时放不放行」。只此一份规则，不并列第二套白名单判据（两个轴）。
+   *
+   * 判据分层（tool-exposure-model 特权声明模型）：
+   * - 自定义工具 / search_project：宿主能力面，注入即暴露（角色包能力声明不越权过滤）；
+   * - DEFAULT_EXPOSED_TOOLS：常驻豁免集，无条件暴露（能力收窄只收窄特权工具）；
+   * - 其余特权工具：`toolWhitelist === null` 全暴露；非 null 只在名单内暴露
+   *   （`[]` 即仅常驻集：角色无任何特权能力时，本地能力仍完整可用）。
+   *
+   * ⚠️ 本判定**不消费** loop 的逐轮过滤（`searchDisabled` 等）：执行闸只回答「能力面是否暴露」，
+   * 搜索限额等运行时护栏仍由 GuardRail 挡（reason=`search_limit`）。若把逐轮屏蔽并入本判定，
+   * 会产生「模型本轮刚看到、执行时却判未暴露」的假拒——已知边界，见下方 execute 闸注释。
+   *
+   * @param name 工具名
+   * @returns 此刻是否在 LLM 可见的工具面内
+   */
+  private isToolExposed(name: string): boolean {
+    // 自定义工具（含 MCP 桥接注册）恒暴露：宿主注册属宿主能力面
+    if (this.customTools.has(name)) return true;
+    // search_project 注入即暴露（方案乙）：本地只读，等价 read_file 的只读语义
+    if (this.projectSearchProvider && name === SEARCH_PROJECT_TOOL.name) return true;
+    // 常驻豁免集恒暴露（LLM 工具面不因角色包能力声明收窄本地能力）
+    if (DEFAULT_EXPOSED_TOOLS.has(name)) return true;
+    // 特权工具按白名单过滤（null = 全暴露；数组 = 仅名单内）
+    return this.toolWhitelist === null || this.toolWhitelist.includes(name);
+  }
+
+  /**
+   * 获取所有工具定义（getter 风格，与 persona/skill 一致）
+   *
+   * 暴露模型语义见 `isToolExposed`（单点）；此处只做过滤与排序（装配顺序）——
+   * 常驻集 → 特权（白名单命中或全开）→ 自定义工具 → search_project。
+   */
+  get list(): ToolDefinition[] {
+    return this.assembledTools.filter((t) => this.isToolExposed(t.name));
   }
 
   /**
@@ -1051,6 +1074,33 @@ export class ToolExecutor {
         e,
         ToolErrorCode.ARGUMENT_ERROR,
       );
+    }
+
+    // ── 执行闸（EXPOSURE-GATE-1）：暴露面 ≠ 安全边界 ─────────────────────────
+    // 白名单原先只收窄暴露面：已注册但本轮未暴露的工具，模型硬点名时照样执行——
+    // 用户以为关掉了某项能力，其实只是没摆出来。此处复用 `isToolExposed` 单点现算，
+    // 对「已注册但本轮未暴露」的调用在执行前拒绝，并以 blocked 语义回喂可读原因。
+    //
+    // 豁免逐条（不是"约等于"，每条都落在明确分支）：
+    // · `compress_context` / `remember_intel`：loop 在进入 executor 前自执行
+    //   （`loop.ts` 的 executeToolCalls 旁路分支），根本走不到本方法；
+    // · `ask_user`：loop 在派发前经 `willSuspendForAsk` 收口挂起，同批其余调用补占位，
+    //   也不会走本方法；
+    // · 自定义工具（含 MCP 桥接注册）：`isToolExposed` 第一层判 true（宿主能力面恒暴露）；
+    // · `search_project`：provider 注入即暴露（`isToolExposed` 第二层）；
+    // · 常驻豁免集 `DEFAULT_EXPOSED_TOOLS`：`isToolExposed` 第三层恒 true；
+    // · 未装配的 toolName：不是"未暴露"，保持原 `default` 分支的「未注册工具」报错。
+    //
+    // 已知代价（口径 b：执行时现算）：本闸只判「能力面是否暴露」，不消费 loop 的逐轮过滤
+    // （`searchDisabled`）。同批内搜索限额置真后，web_search 仍判 exposed，由 search_limit
+    // 护栏挡下；若把逐轮屏蔽并入本闸，会出现「模型本轮刚看到、执行时却判未暴露」的假拒。
+    if (this.assembledTools.some((t) => t.name === name) && !this.isToolExposed(name)) {
+      const text =
+        `[ERR:TOOL:NOT_EXPOSED] 工具 "${name}" 本轮未暴露：模型可见的工具列表中没有它` +
+        `（角色包能力白名单未开启该能力），已拒绝执行。不要重试该工具，` +
+        `请改用本轮已暴露的工具，或直接说明无法完成。`;
+      emitOutcome?.(blockedOutcome('not_exposed', text));
+      return text;
     }
 
     // 参数类型校验 + 自动修正

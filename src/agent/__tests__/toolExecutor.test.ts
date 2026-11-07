@@ -213,9 +213,114 @@ describe('工具执行器（6 个工具）', () => {
       expect(names).toContain('task_table_write');
     });
 
-    it('白名单过滤后执行路由不受影响（暴露面控制 ≠ execute 拦截）——call 不存在工具直接参数报错', async () => {
-      // task_table_write 被过滤仅影响 LLM 可见性；刻意直接调用仍走 execute（由参数校验兜底）
-      await expect(executor.execute('task_table_write', JSON.stringify({}))).rejects.toThrow();
+    it('白名单收窄同步收口执行面（EXPOSURE-GATE-1）：未暴露工具硬点名 → blocked not_exposed', async () => {
+      // 旧口径「暴露面控制 ≠ execute 拦截」已被本闸改写：收窄暴露面即收窄可执行面。
+      // run_team_meeting 是已装配的特权工具（不在常驻豁免集），空白名单下未暴露。
+      executor.setToolWhitelist([]);
+      const outcomes: ToolOutcome[] = [];
+      const text = await executor.execute('run_team_meeting', JSON.stringify({}), undefined, (o) =>
+        outcomes.push(o),
+      );
+      expect(text).toContain('[ERR:TOOL:NOT_EXPOSED]');
+      expect(outcomes[0]).toMatchObject({ status: 'blocked', blockedReason: 'not_exposed' });
+    });
+  });
+
+  // ─── EXPOSURE-GATE-1：未暴露工具的执行侧单点拒绝 ───────────────────────
+  describe('EXPOSURE-GATE-1 执行闸（暴露面 = 可执行面）', () => {
+    afterEach(() => {
+      // 复位白名单，避免用例间污染
+      executor.setToolWhitelist(null);
+    });
+
+    it('已注册但本轮未暴露 ⇒ blocked not_exposed，且 provider 零调用', async () => {
+      const search = vi.fn().mockResolvedValue([]);
+      const exec = new ToolExecutor(tmpProject, security, index, { search });
+      // 本轮可见面只有 read_file：web_search 虽已装配，但未暴露
+      exec.setToolWhitelist(['read_file']);
+      expect(exec.list.map((t) => t.name)).not.toContain('web_search');
+
+      const outcomes: ToolOutcome[] = [];
+      const text = await exec.execute(
+        'web_search',
+        JSON.stringify({ query: '不该执行' }),
+        undefined,
+        (o) => outcomes.push(o),
+      );
+      // 可读拒绝：说明「本轮未暴露」而不是空泛失败
+      expect(text).toContain('[ERR:TOOL:NOT_EXPOSED]');
+      expect(text).toContain('web_search');
+      expect(text).toContain('本轮未暴露');
+      // 可归因：blocked + not_exposed（非 failed，非 permission_denied）
+      expect(outcomes[0]).toMatchObject({ status: 'blocked', blockedReason: 'not_exposed' });
+      // 拒绝发生在执行前：provider 一次都没被调
+      expect(search).not.toHaveBeenCalled();
+    });
+
+    it('常驻集零变化：空白名单下 read_file 照常执行', async () => {
+      executor.setToolWhitelist([]);
+      const text = await executor.execute('read_file', JSON.stringify({ path: 'README.md' }));
+      // 未落到执行闸 ⇒ 结果就是真实读取内容（不是 NOT_EXPOSED 文本）
+      expect(text).toContain('# Test Project');
+      expect(text).not.toContain('NOT_EXPOSED');
+    });
+
+    it('自定义工具零变化：空白名单下仍可执行（宿主能力面恒暴露）', async () => {
+      const def = {
+        name: 'exposure_probe_tool',
+        description: '执行闸豁免探针',
+        parameters: { type: 'object' as const, properties: {}, required: [] },
+      };
+      try {
+        executor.setToolWhitelist([]);
+        executor.registerTool(def, async () => 'custom-ok');
+        const text = await executor.execute('exposure_probe_tool', JSON.stringify({}));
+        expect(text).toBe('custom-ok');
+      } finally {
+        executor.removeTool('exposure_probe_tool');
+      }
+    });
+
+    it('loop 前置处理工具零变化：常驻豁免集恒在暴露面，本闸不会加 not_exposed', () => {
+      // 这三个工具在 loop 进入 executor 前就被旁路处理（compress/remember 分支、ask 挂起），
+      // 根本走不到本方法；此前置判定只确认「执行闸没有把它们误标成未暴露」。
+      executor.setToolWhitelist([]);
+      const visibleNames = executor.list.map((t) => t.name);
+      for (const name of ['compress_context', 'remember_intel', 'ask_user']) {
+        expect(visibleNames, `${name} 应恒暴露`).toContain(name);
+      }
+    });
+
+    it('已知代价（口径 b · 执行时现算）：同轮内暴露面收窄会拒掉模型刚看到的 web_search', async () => {
+      const search = vi.fn().mockResolvedValue([]);
+      const exec = new ToolExecutor(tmpProject, security, index, { search });
+      exec.setToolWhitelist(['web_search']);
+      // 模型本轮 LLM 调用看到的工具面确实含 web_search
+      expect(exec.list.map((t) => t.name)).toContain('web_search');
+      // 同一轮内角色切换 / 能力收窄（真实入口 switchRolePack → setToolWhitelist）
+      exec.setToolWhitelist([]);
+
+      const outcomes: ToolOutcome[] = [];
+      const text = await exec.execute(
+        'web_search',
+        JSON.stringify({ query: '本轮刚看到' }),
+        undefined,
+        (o) => outcomes.push(o),
+      );
+      // 这是**已知接受的代价**（口径 b）：执行时现算无法回溯「本次 LLM 调用下发了什么」，
+      // 因此模型刚看到的工具也可能在执行时被判未暴露。不是 bug；改口径 a（消费 LLM 快照）
+      // 才能消除，但那要改快照契约，故不做。
+      expect(text).toContain('[ERR:TOOL:NOT_EXPOSED]');
+      expect(outcomes[0]).toMatchObject({ status: 'blocked', blockedReason: 'not_exposed' });
+    });
+
+    it('已知代价（口径 b · 不消费 loop 逐轮过滤）：searchDisabled 不进执行闸判据', async () => {
+      const search = vi.fn().mockResolvedValue([]);
+      const exec = new ToolExecutor(tmpProject, security, index, { search });
+      // 搜索硬上限命中后，loop 用 searchDisabled 从**下一次 LLM 调用**的工具集剔除 web_search
+      // （resolveActiveTools），但不回写 executor.list ⇒ 执行闸只认能力面，不认逐轮屏蔽。
+      // 同批内的限额拦截仍由 search_limit 护栏负责，避免把「限额」误报成「未暴露」。
+      expect(exec.list.map((t) => t.name)).toContain('web_search');
     });
   });
 
