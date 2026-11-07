@@ -26,7 +26,7 @@ layer: agent
 - **采集需求**：问清角色名/定位/能力面/行为偏好（四件事）。
 - **脚本初始化**：静态模板复制 + 填槽，产出 4 个文件骨架。
 - **LLM 精修**：唯一允许改的环节（manifest/persona/rules/skills）。
-- **校验**：写→验→用闭环，逐项核对。
+- **校验**：写→验→用闭环，跑 `scripts/verify-pack.mjs` 确定性校验。
 - **交付**：把 `<角色名>/` 目录交给用户，不复制到任何宿主目录。
 
 ## 详细步骤
@@ -98,12 +98,25 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 
 ### 第四步：校验（写→验→用闭环）
 
-1. `manifest.json` 为合法 JSON；`formatVersion` 建议声明（semver x.y.z；缺省按 1.0.0，绑定固定 schema URL）。
-2. 所有数值/枚举在上述区内；`summaryFocus` ≤500 字符。
-3. `name` 有效（1~64 位，中文/字母/数字/下划线/连字符，不以 `.` 开头）。
-4. `skills/*.md` 均含 frontmatter 且带 `description`（缺则技能不可用）；正文首个 H1 须写**纯中文显示名**（不重复 frontmatter 的英文 id）——它是宿主选择器 / chip / 卡片的展示名，缺失则界面回退英文 id。
-5. （软自查）`skills/*.md` 的 description 按[四问规范](#四问规范软自查)对照，含糊措辞（如"处理数据"）须重写。
-6. **禁止**命名 `memora助手`（memora 内置兜底契约角色，避免冲突）。
+运行确定性校验脚本（与 `skill-creator` 共用 `_lib/verify-core.mjs` 的同一套判据原语，本脚本只补角色包专属结构）：
+
+```bash
+node scripts/verify-pack.mjs <角色名> [--kernel-root <内核仓库根>]
+```
+
+脚本逐项输出 PASS / FAIL / SKIP，任一项 FAIL 不得交付。覆盖范围：
+
+| 判据 | 检查什么 | 真源 |
+|------|----------|------|
+| manifest-json / manifest | 合法 JSON；displayName、description、formatVersion、strategy 结构 | 本脚本的产品级必填 + 内核校验 |
+| manifest-kernel | 策略键区间、枚举、内容红线；能加载内核时由 `validateManifestText` 判定，加载不到则明确 SKIP | `src/role-pack/validator.ts` |
+| pack-name | 1~64 位中文/字母/数字/下划线/连字符，不以 `.` 开头；禁止保留名 `memora助手` | `src/role-pack/validator.ts` + `skaffold.mjs` |
+| skills | 每份内嵌技能 frontmatter 可解析、description 合规、H1 中文展示名、L3 引用存在 | `src/skill/skillManager.ts` + `src/utils/scanner.ts` |
+| ref-closure | persona/rules 与技能双向闭合：每个技能至少被引用一次；每条反引号 kebab 词指向真实技能 | `src/role-pack/__tests__/builtinPackCoverage.test.ts` |
+
+> `--kernel-root` 只在脚本无法自动探测内核仓库时使用。SKIP 不等于通过：交付报告必须写明哪条判据被跳过、为什么。
+
+软自查（脚本判不了语义）：`skills/*.md` 的 description 按[四问规范](#四问规范软自查)对照，含糊措辞（如"处理数据"）须重写。
 
 #### 四问规范（软自查）
 
@@ -134,7 +147,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 - **正向**：每个内置 skill 在 persona/rules **至少一处**被引用，避免"存在但永不调用"的僵尸技能（共鸣小说家最初 5 个技能零引用即此缺口；白话方案设计师曾 6/6 全部零引用）；
 - **反向**：每条引用都指向真实存在的技能——防改名后残留的**悬空引用**（改了 `skills/` 里的名字却漏改设定文本）。
 
-> 完整规范与论证见内核仓库 `docs/architecture/role-pack-authoring-guide.md` §2.5（使用引导）与 §2.6（引用格式）；两个方向均由 `src/role-pack/__tests__/builtinPackCoverage.test.ts` 自动守卫（新增未引用技能 / 引用不存在的技能都会红）。
+> 完整规范与论证见内核仓库 `docs/architecture/role-pack-authoring-guide.md` §2.5（使用引导）与 §2.6（引用格式）；两个方向均由 `src/role-pack/__tests__/builtinPackCoverage.test.ts` 守卫内置包，生成物由 `scripts/verify-pack.mjs` 的 ref-closure 判据守卫。
 
 ### 第五步：交付
 
@@ -146,7 +159,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 
 - 先采集四要素需求再跑脚本，不凭空假设角色定位。
 - 用 `node scripts/skaffold.mjs` 初始化骨架（模板 = 结构唯一真相源，不手写 JSON 结构）。
-- 精修只在产出文件内进行，产出后逐项跑校验清单。
+- 精修只在产出文件内进行，产出后跑 `scripts/verify-pack.mjs`，不手工逐项核对。
 - `capabilities` 写数组前确认每个键都是特权键（web/code/task）；纯本地角色写 `[]`（仅常驻工具）；需要全部暴露才省略字段。
 - `skills/*.md` 一律带 frontmatter `name` + `description`，且 description 按[四问规范](#四问规范软自查)写清 做什么/何时用/输入/返回。
 - 每个内置 skill 都在 persona.md/rules.md **至少一处**高亮"何时用"，且**引用一律用反引号包裹技能名**（如 `foreshadow`）；交付前双向核对：无僵尸技能（每个技能被引用）+ 无悬空引用（每条引用都存在），见[技能使用引导](#技能使用引导personarules高亮何时用)。
@@ -156,7 +169,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 - 禁止手写 manifest.json 结构（一律从模板生成，防止键名/区间漂移）。
 - 禁止把产物复制进任何宿主目录（memora 的 role-packs/、用户 skills 目录均不负责）。
 - 禁止创建保留名 `memora助手`。
-- 禁止漏校验：数值超出速查区间必须拦截。
+- 禁止漏校验：`verify-pack.mjs` 任一 FAIL 必须修到 PASS，SKIP 必须在交付报告里说明原因。
 - 禁止交付未校验的产物。
 
 ## 不适用场景

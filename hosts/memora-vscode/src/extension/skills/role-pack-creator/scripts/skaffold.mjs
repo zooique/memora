@@ -139,7 +139,7 @@ async function main() {
   console.log(`  1. 编辑 ${targetDir}/manifest.json（增删 capabilities / 调整 strategy）`);
   console.log(`  2. 编辑 persona.md / rules.md / skills/（按角色精修）`);
   console.log(
-    '  3. 校验：manifest 为合法 JSON；数值/枚举在 SKILL.md 键速查区间内；skills/*.md 含 description',
+    `  3. 校验：node scripts/verify-pack.mjs ${targetDir}（manifest/包名/内嵌技能/引用闭合）`,
   );
   console.log('  4. 完成产物即交付用户，由用户决定复制到哪个 memora 宿主');
 }

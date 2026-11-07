@@ -98,10 +98,11 @@ describe('全局技能池合规守卫（Agent Skills 规范）', () => {
   it('守卫自身不失明：须扫到内置全局技能且含已知锚点', () => {
     const skills = scanGlobalSkills();
     // 防路径解析失败 → 空集合 → 其余用例空转通过
-    expect(skills.length).toBeGreaterThanOrEqual(4);
+    expect(skills.length).toBeGreaterThanOrEqual(5);
     const names = skills.map((s) => s.diskName);
     expect(names).toContain('code-review');
     expect(names).toContain('role-pack-creator');
+    expect(names).toContain('skill-creator');
   });
 
   it('name 须符合 kebab 字符集（规范：仅小写字母 / 数字 / 连字符）', () => {
@@ -125,6 +126,16 @@ describe('全局技能池合规守卫（Agent Skills 规范）', () => {
     expect(missing).toEqual([]);
   });
 
+  it('生成器类技能须为文件夹形态，且自带标准模板与校验脚本（两条生成器同规格）', () => {
+    // 生成器 = 模板（结构 SSOT）+ 脚本（复制/校验）；缺任一份都会退化成手写结构
+    for (const name of ['role-pack-creator', 'skill-creator']) {
+      const dir = join(SKILLS_DIR, name);
+      expect(existsSync(join(dir, 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(dir, 'templates', 'standard'))).toBe(true);
+      expect(existsSync(join(dir, 'scripts'))).toBe(true);
+    }
+  });
+
   it('全局技能名不得与角色包技能名重名（跨源唯一性，防 UI 侧同名被去重吃掉）', () => {
     // 为何必须守：全局池 `name` 若为中文、角色包全为 kebab ⇒ 重名
     // **结构上不可能**。两侧同为 kebab 字母表 ⇒ 重名变可能，且后果不是报错而是
@@ -133,7 +144,7 @@ describe('全局技能池合规守卫（Agent Skills 规范）', () => {
     const globals = scanGlobalSkills().map((s) => s.diskName);
     const packSkills = scanRolePackSkillNames();
     // 自锚：两侧都须真的扫到东西，否则交集恒空 → 假绿（本类守卫最高频失效模式）
-    expect(globals.length).toBeGreaterThanOrEqual(4);
+    expect(globals.length).toBeGreaterThanOrEqual(5);
     expect(packSkills.length).toBeGreaterThanOrEqual(20);
     const collisions = globals.filter((n) => packSkills.includes(n));
     expect(collisions).toEqual([]);
