@@ -41,19 +41,25 @@ cd f:\zooique\memora\hosts\memora-vscode; node -p "require('./package.json').ver
 
 1. **整轮测试期间**（不只是开工前）要求其他会话不跑门禁、不写盘：`ci:local` / vitest / build 会重写宿主 `dist`，而开发宿主**打开与 `Reload Window` 都读 `dist`**。实测：另一会话在测试中途跑了一轮 full、重写了 `dist`（内核 hash 未变）⇒ 一旦发现 `dist` 被重写，必须在报告里登记，并**重新确认一次扩展激活状态**。
 2. 关掉上一次的 Extension Development Host 窗口。
-3. 找残留开发宿主（🔴 **不要按进程找**）：开发宿主**不是独立进程**，而是**同一个 `Code.exe` 进程内的新窗口**，`CommandLine` 里**没有** `extensionDevelopmentPath` ⇒ 按进程的判据永远命中不了。改为按窗口标题枚举 / 目视：
+3. 找残留开发宿主（🔴 **不要按进程找**）：开发宿主**不是独立进程**，而是**同一个 `Code.exe` 进程内的新窗口**，`CommandLine` 里**没有** `extensionDevelopmentPath` ⇒ 按进程的判据永远命中不了。必须用**进程无关的顶层窗口枚举**（Win32 `EnumWindows` 逐窗口取 `PID|HWND|标题`）。
 
 ```powershell
-# 辅助判据：MainWindowTitle 只反映主窗口，多窗口时可能漏；漏判时以任务栏 / Alt+Tab 为准
+# 仅辅助：MainWindowTitle 对基础窗口返回空（实测 16 个 Code.exe 全空），不能单独作判据
 Get-Process Code -ErrorAction SilentlyContinue |
   Where-Object { $_.MainWindowTitle -like '*扩展开发宿主*' } |
   Select-Object Id, MainWindowTitle
 ```
 
-🔴 **空结果不能当结论**：实测同一时刻确有两个带标题的窗口，而该进程组（16 个 `Code.exe`）的 `MainWindowTitle` **全为空**——基础窗口返回空 ⇒「查不到」既不能证明无残留，也分不清「真没有」与「枚举失效」。判读规则：
+**判读规则（必须带正向对照，缺对照 = 没兜底）**：
 
-- **命中** ⇒ 有残留，先关掉；
-- **空结果** ⇒ **不得**写成「无残留」，必须补一次**进程无关的顶层窗口枚举**（Win32 `EnumWindows` 逐窗口取标题）**或人目视**（任务栏 / `Alt+Tab`）确认后才能开测。
+| 结论 | 判据 |
+| --- | --- |
+| **有残留** | 存在任意**可见**窗口标题含 `[扩展开发宿主]` **或** `[Extension Development Host]`（随 UI 语言变，两种都要匹配；最小化窗口仍带 `WS_VISIBLE`，不会漏） |
+| **干净** | **同一次 `EnumWindows` 调用**里既有**正向对照**（至少 1 条必然存在的窗口，如 `Program Manager` 或主窗口 `… - Visual Studio Code`）**且**无残留行 |
+| **不可判** | 空结果且**没有**正向对照 ⇒ 一律判不可判，报人重跑 / 人目视；**只有带正向对照的空结果才算干净** |
+
+- 报告里贴 `PID|HWND|标题` 原文，**不许**只写「没有残留」。
+- 样本（本轮实测）：`PID 55444 | HWND 15732068 | memora-vscode - Visual Studio Code`；同刻该进程 `MainWindowTitle` 为空 ⇒ 这就是必须走 `EnumWindows` 的理由。
 
 4. 锁的真相（别找错东西）：
 
