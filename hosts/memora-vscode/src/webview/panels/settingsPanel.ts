@@ -744,9 +744,20 @@ export class MemoraSettingsPanel {
    * 草稿期角色选择（activateRole 的草稿分支）
    *
    * 存在性判据 = 已登记实例的 `rolePackManager.get`（与真实会话同一条内核目录，宿主不另写）；
-   * 只读、不装配。无任何已登记实例时无法校验 ⇒ 如实失败（不允许「先记下、建会话时才炸」）。
+   * 只读、不装配。无任何已登记实例时无法校验 ⇒ 如实失败（不允许「先记下、建会话时才炸」）；
+   * 读写桥未注入时同理 ⇒ 返回 false（没有记录选择的地方，就不能报成功）。
    */
   private async selectDraftRolePack(name: string): Promise<boolean> {
+    // 入口先判读写桥：未注入 = 没有地方记录选择，必须如实失败——
+    // 旧实现短路后仍 return true，是「报成功但什么都没发生」的静默谎报。
+    if (!this._draftRolePackAccess) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: '草稿期角色切换通道未就绪，无法记录选择，请稍后重试',
+      });
+      return false;
+    }
     const rpm = this._peekAgent?.(this._resolveSessionId?.())?.rolePackManager;
     if (!rpm) {
       this.post({

@@ -1004,8 +1004,12 @@ describe('settingsPanel.activateRole —— 草稿期角色切换', () => {
     return { agent, get, switchRolePack };
   }
 
-  /** 造草稿态 provider：isDraftSession 恒 true；peekAgent = 已登记实例（undefined = 无实例） */
-  function draftSetup(peeked: Agent | undefined): {
+  /** 造草稿态 provider：isDraftSession 恒 true；peekAgent = 已登记实例（undefined = 无实例）。
+   *  `injectBridge: false` 模拟 extension 未注入读写桥（生产缺陷形态：没有记录选择的地方）。 */
+  function draftSetup(
+    peeked: Agent | undefined,
+    opts: { injectBridge?: boolean } = {},
+  ): {
     provider: MemoraSettingsPanel;
     posted: { type: string; level?: string; message?: string }[];
     setName: ReturnType<typeof vi.fn>;
@@ -1029,7 +1033,8 @@ describe('settingsPanel.activateRole —— 草稿期角色切换', () => {
       () => true,
     );
     provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
-    provider.setDraftRolePackAccess({ getName, setName });
+    // 默认注入（生产接线正常形态）；`injectBridge: false` 只在「桥未注入」用例里用
+    if (opts.injectBridge !== false) provider.setDraftRolePackAccess({ getName, setName });
     (provider as unknown as { _panel: unknown })._panel = {
       webview: {
         postMessage: (msg: never) => {
@@ -1087,6 +1092,26 @@ describe('settingsPanel.activateRole —— 草稿期角色切换', () => {
         type: 'notice',
         level: 'error',
         message: '草稿期暂无可校验的角色目录（尚未装配任何会话），请先发送一条内容后再选择',
+      },
+    ]);
+  });
+
+  it('实例已登记但草稿桥未注入 → 返回 false + 错误提示（不静默成功）', async () => {
+    // 生产缺陷形态：extension 漏接线时旧实现短路 setName 后仍 return true ⇒ UI 报成功但选择没记下。
+    // 变异靶标：把入口的未注入分支改回 `return true` ⇒ 本例首条断言转红。
+    const { agent } = draftAgentStub(['代码助手']);
+    const { provider, posted, setName, getAgent } = draftSetup(agent, { injectBridge: false });
+
+    const ok = await activateRole(provider, '代码助手');
+
+    expect(ok).toBe(false);
+    expect(setName).not.toHaveBeenCalled();
+    expect(getAgent).not.toHaveBeenCalled();
+    expect(notices(posted)).toEqual([
+      {
+        type: 'notice',
+        level: 'error',
+        message: '草稿期角色切换通道未就绪，无法记录选择，请稍后重试',
       },
     ]);
   });

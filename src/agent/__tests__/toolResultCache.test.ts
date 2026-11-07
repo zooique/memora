@@ -294,13 +294,26 @@ describe('DEDUP_SUBJECT_EXTRACTORS.read_file', () => {
 });
 
 describe('DEDUP_SUBJECT_EXTRACTORS.list_dir', () => {
-  it('正确提取并规范化路径', () => {
+  it('正确提取并规范化路径（递归面缺省归 false / undefined）', () => {
     expect(DEDUP_SUBJECT_EXTRACTORS.list_dir!('{"path":"/some/dir"}')).toEqual({
       path: '/some/dir',
+      recursive: false,
     });
     expect(DEDUP_SUBJECT_EXTRACTORS.list_dir!('{"path":"./some/dir/"}')).toEqual({
       path: 'some/dir',
+      recursive: false,
     });
+  });
+
+  it('递归标志缺省与显式 false 同一主体；浅列与递归列不是同一主体', () => {
+    const bare = DEDUP_SUBJECT_EXTRACTORS.list_dir!('{"path":"pkg"}');
+    // 「不写 recursive」与「显式 false」必须同键，否则真正的重复调用会被放过
+    expect(bare).toEqual(DEDUP_SUBJECT_EXTRACTORS.list_dir!('{"path":"pkg","recursive":"false"}'));
+    // 递归列结果含子层条目，与浅列不是同一请求
+    expect(
+      DEDUP_SUBJECT_EXTRACTORS.list_dir!('{"path":"pkg","recursive":"true","maxDepth":"2"}'),
+    ).toMatchObject({ path: 'pkg', recursive: true, maxDepth: 2 });
+    expect(bare?.recursive).toBe(false);
   });
 
   it('path 缺失 / 非法 JSON → undefined', () => {

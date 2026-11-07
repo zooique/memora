@@ -42,6 +42,10 @@ import { positiveInt } from '@/utils/math.js';
 export interface DedupSubject {
   /** 文件 / 目录路径（read_file、list_dir）—— 已经过 `normalizePathKey`；**纯文件语义**，供覆盖度台账分支②按文件回显 */
   path?: string;
+  /** list_dir 是否递归遍历（缺省 false，与 handler 同语义）——「浅列」与「递归列」不是同一请求，不能同键 */
+  recursive?: boolean;
+  /** list_dir 递归最大深度（缺省 undefined；仅在 `recursive` 为真时影响结果，缺省与其他值不得同键） */
+  maxDepth?: number;
   /** 查询目标主定位（web_search.query / web_fetch.url / trace_summary.sessionId）—— query 槽统一承载"查什么" */
   query?: string;
   /** 子定位标识（trace_summary 的 roundId 等）：同一主定位下的细分目标，纳入去重 span，文案渲染为「主定位 · 子定位」 */
@@ -107,6 +111,33 @@ function nonEmptyString(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() !== '' ? v : undefined;
 }
 
+/**
+ * list_dir 递归标志归一（与 handler 同语义：`recursiveStr === 'true' || recursiveStr === '1'`）
+ *
+ * 缺省 / 非法一律归 `false` —— 保证「不写 recursive」与「显式写 false」得到同一主体
+ *（否则同一份请求会因写法差异而分裂成两个缓存键，真正的重复调用被放过）。
+ */
+function normalizeRecursive(v: unknown): boolean {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') return v === 1;
+  return typeof v === 'string' ? v.trim() === 'true' || v.trim() === '1' : false;
+}
+
+/**
+ * list_dir 递归深度归一：数字 / 数字字符串 → 整数；缺省 / 非法 → undefined
+ *
+ * 只做**形态归一**，不复制 handler 的 1..3 钳制——那是执行期预算，不是「是否同一请求」的判据
+ *（钳制后不同深度恰好等价属执行层事实；此处按写入值分键，代价是多放行一次，不会误拦）。
+ */
+function normalizeMaxDepth(v: unknown): number | undefined {
+  if (typeof v === 'number') return Number.isFinite(v) ? Math.trunc(v) : undefined;
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number.parseInt(v.trim(), 10);
+    return Number.isNaN(n) ? undefined : n;
+  }
+  return undefined;
+}
+
 /** 内置去重主体生成器集合（SSOT：loop 注册防重拦截时引用） */
 export const DEDUP_SUBJECT_EXTRACTORS: Readonly<Record<string, DedupSubjectExtractor>> = {
   /** read_file 主体 = 规范化路径 + 读取区间（区间语义与 handler 一致） */
@@ -120,11 +151,16 @@ export const DEDUP_SUBJECT_EXTRACTORS: Readonly<Record<string, DedupSubjectExtra
       limit: positiveInt(a?.limit),
     };
   },
-  /** list_dir 主体 = 规范化路径 */
+  /** list_dir 主体 = 规范化路径 + 递归标志 / 深度（浅列与递归列结果不同，缺一维即误并成同一主体） */
   list_dir: (argsJson) => {
     const a = parseArgs(argsJson);
     const rawPath = a ? nonEmptyString(a.path) : undefined;
-    return rawPath ? { path: normalizePathKey(rawPath) } : undefined;
+    if (!rawPath) return undefined;
+    return {
+      path: normalizePathKey(rawPath),
+      recursive: normalizeRecursive(a?.recursive),
+      maxDepth: normalizeMaxDepth(a?.maxDepth),
+    };
   },
   /** web_search 主体 = query（短时间内同 query 结果近似） */
   web_search: (argsJson) => {
@@ -197,6 +233,9 @@ function keyOf(toolName: string, subject: DedupSubject): string {
   return [
     toolName,
     subject.path ?? '',
+    // list_dir 的递归面：同一目录「浅列」与「递归列」结果不同，只按 path 去重会误拦合法请求
+    subject.recursive ?? '',
+    subject.maxDepth ?? '',
     subject.query ?? '',
     subject.item ?? '',
     subject.offset ?? '',
@@ -227,7 +266,7 @@ export function formatDedupSubject(toolName: string, subject: DedupSubject): str
 }
 
 /**
- * 同主体聚合键（工具名 + 规范化 path/query/item），粒度 = 同参。
+ * 同主体聚合键（工具名 + 规范化 path / recursive / maxDepth / query / item），粒度 = 同参。
  *
  * **两个消费语境共用本函数**（SSOT）：① `read_failed` 的连续失败计数；
  * ② `read_dedup` 的撞墙升级计数。二者要的都是「工具 + 请求主体」这一个标识，
@@ -240,7 +279,10 @@ export function formatDedupSubject(toolName: string, subject: DedupSubject): str
  */
 export function failureSubjectKey(toolName: string, subject: DedupSubject): string {
   // item 纳入：trace_summary 同 sessionId 不同 roundId 计为不同主体，不把「任一 round 失败」误并到整个会话
-  return `${toolName}\u0002${subject.path ?? ''}\u0002${subject.query ?? ''}\u0002${subject.item ?? ''}`;
+  // recursive/maxDepth 纳入：list_dir 浅列失败与递归列失败不是同一条链，否则撞墙阈值会把两者合并计数
+  return `${toolName}\u0002${subject.path ?? ''}\u0002${subject.recursive ?? ''}\u0002${
+    subject.maxDepth ?? ''
+  }\u0002${subject.query ?? ''}\u0002${subject.item ?? ''}`;
 }
 
 /**
@@ -293,11 +335,12 @@ export class ToolResultCache {
    * 以祖先为根的递归列表同样包含被写路径 ⇒ 只清父目录会留下「根目录仍显示旧条目」的陈旧视图。
    * 非递归列表会被顺带清掉（略多一次重列），正确性优先于这点开销。
    *
-   * @param rawPath 被写入 / 删除的文件路径（从其直接父目录一直清到仓库根 '.'）
+   * @param rawPath 被写入 / 删除的文件路径（从其直接父目录逐级清到路径解析的根：
+   *   相对路径止于 `.`，绝对路径止于 `/`——本方法不识别「仓库根」，那属宿主概念）
    */
   invalidateDirOf(rawPath: string): void {
     const target = normalizePathKey(rawPath);
-    // 逐级向上收集目录键：直接父目录 → 祖父 → … → '.'（根）
+    // 逐级向上收集目录键：直接父目录 → 祖父 → … → 根（相对路径 `.` / 绝对路径 `/`）
     const dirs = new Set<string>();
     let dir = normalizePathKey(path.posix.dirname(target));
     while (true) {

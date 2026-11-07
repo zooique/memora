@@ -5231,6 +5231,59 @@ describe('read_dedup 撞墙升级与兜底观测', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// 测试：list_dir 去重主体必须含递归面（LISTDIR-DEDUP-1）
+// 覆盖：同一目录「先浅列 → 再递归列」与「先递归列 → 再浅列」都必须放行真执行。
+// 变异靶标：把 list_dir 主体退回只含 path（keyOf 同步去掉 recursive/maxDepth）⇒ 两例的执行次数
+// 都从 2 掉到 1，且被拦调用留下 [ALREADY_READ] ⇒ 两例同时转红。
+// ═══════════════════════════════════════════════════════════════
+describe('AgentLoop · list_dir 去重主体（递归面）', () => {
+  /** 单调用单轮（参数走 JSON 字符串） */
+  const call = (id: string, args: Record<string, unknown>): ChunkItem => ({
+    content: '',
+    toolCalls: [
+      { id, type: 'function', function: { name: 'list_dir', arguments: JSON.stringify(args) } },
+    ],
+  });
+
+  /** 跑完一轮并丢弃 chunk */
+  async function drain(loop: AgentLoop, input: string): Promise<void> {
+    for await (const _ of loop.processUserInput(input)) {
+      // drain：本组只断言执行次数与拦截文案
+    }
+  }
+
+  it('同目录先浅列、再递归列 → 两次都真执行（结果不同，不是重复请求）', async () => {
+    const toolExecutor = mockExecutorReturning('pkg/a.md', 'pkg/a.md\npkg/sub/b.md');
+    const provider = mockMultiTurnProvider([
+      [call('l1', { path: 'pkg' })],
+      [call('l2', { path: 'pkg', recursive: 'true', maxDepth: '2' })],
+      [{ content: '完成' }],
+    ]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+
+    await drain(loop, '先浅列、再递归列');
+
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
+  });
+
+  it('同目录先递归列、后浅列 → 两次都真执行（反向同样不得误拦）', async () => {
+    const toolExecutor = mockExecutorReturning('pkg/a.md\npkg/sub/b.md', 'pkg/a.md');
+    const provider = mockMultiTurnProvider([
+      [call('l1', { path: 'pkg', recursive: 'true', maxDepth: '2' })],
+      [call('l2', { path: 'pkg' })],
+      [{ content: '完成' }],
+    ]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+
+    await drain(loop, '先递归列、后浅列');
+
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // 测试：只读态事实段（UNAVAILABLE-WRITE-HINT-1）
 // 真源 = tasks/待完成任务.md · UNAVAILABLE-WRITE-HINT-1
 // 覆盖：只读 + 暴露面含写工具 ⇒ 注入且列名 / 工具面齐全 ⇒ 不注入 / 不可用集为空 ⇒ 不注入
@@ -7842,11 +7895,11 @@ describe('AgentLoop · 写后缓存失效面（WRITECAP-1）', () => {
     );
     const provider = mockMultiTurnProvider([
       // 递归列表以仓库根为根：在 pkg 下新建文件后，根视图必须同样失效
-      [call('l1', 'list_dir', { path: '.', recursive: 'true', max_depth: '2' })],
+      [call('l1', 'list_dir', { path: '.', recursive: 'true', maxDepth: '2' })],
       [call('l2', 'list_dir', { path: 'pkg' })],
       // write_file 是 diskWrite:'path'：目标 = args.path，父目录 = pkg
       [call('w1', 'write_file', { path: 'pkg/new.md', content: 'x' })],
-      [call('l3', 'list_dir', { path: '.', recursive: 'true', max_depth: '2' })],
+      [call('l3', 'list_dir', { path: '.', recursive: 'true', maxDepth: '2' })],
       [call('l4', 'list_dir', { path: 'pkg' })],
       [{ content: '完成' }],
     ]);

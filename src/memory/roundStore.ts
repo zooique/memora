@@ -452,7 +452,7 @@ export type RoundEvidenceEvent =
         /** 被拦的工具名（read_file / list_dir / web_search / web_fetch / trace_summary / search_memories） */
         toolName: string;
         /**
-         * 去重主体字段（存在才带）：定位 + read_file 区间，逐案裁决用。
+         * 去重主体字段（存在才带）：定位 + read_file 区间 + list_dir 递归面，逐案裁决用。
          *
          * 字段形状真源 = **生产侧** `DedupSubject`（agent 层 toolResultCache）——本层**不镜像其清单**：
          * `memory → agent` 类型禁向（见 `backend_layers_rules.md`）使本层无法 import 该类型，故以开放式
@@ -464,7 +464,9 @@ export type RoundEvidenceEvent =
          * - **透传 spread 顺序**：生产侧写法为 `{ toolName, ...subject }`，spread 在后——若 `DedupSubject`
          *   将来新增 `toolName` 字段，会**静默覆盖**这里的 `toolName`；增该字段时须同步调整透传顺序。
          */
-        [dedupField: string]: string | number | undefined;
+        // 值类型须覆盖 `DedupSubject` 的全部字段类型（现含 boolean 的 list_dir `recursive`）：
+        // 只加 string/number 字段可零同步，新增 boolean 等类型字段时须同步放宽此处
+        [dedupField: string]: string | number | boolean | undefined;
       };
     }
   | {

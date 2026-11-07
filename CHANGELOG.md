@@ -37,6 +37,7 @@
 - **`AgentLoop.interject` 返回值 `boolean` → `InterjectQueueOutcome`**（`KERNEL-QUEUE-LIMIT-1` 同族 · 内部口径统一）：`AgentLoop` 未从包入口导出 ⇒ 非公开面；但它被 `Agent.interject` 转调，原先「外层三态 / 内层布尔」两套口径。现内层返回 `'queued' | 'rejected-limit'`——与 `InterjectOutcome` **同一词表、真子集**（loop 看不到落盘态，不谎报 `'queued-unpersisted'`）。**并发不变量**：判限额与入队必须在同一同步段（方法内无 await），且位于 `Agent.interject` 的第一个 await 之前；新增并发用例锁死（第二条 `'rejected-limit'` / 队列不超限 / 盘上只多一条）。变异实测：把两段之间插入 await ⇒ 用例转红（双受理、队列 limit+1）；把两段整体移到 await 之后 ⇒ 仍绿（continuation 串行，check+push 仍原子）——真正的不变量是「同段」，不是「在 await 之前」。
 - **`MessageHistory.appendUser` 缺轮时返回 `'round-missing'`**（`INTERJECT-PERSIST-1` / `FAKE-ROUND-TIMEOUT-1` 共用判定点 · 内部语义变更）：交互 / 补充两类输入在目标轮缺失时不再降级建轮或静默 warn，而是 **fail-closed 返回 `'round-missing'`**（不建轮、不落盘）。`MessageHistory` **不在包入口导出**，故不进 Breaking；但它让调用方能区分「已生效但历史未写入」，是 `Agent.interject` 三态与「续跑中止提示」的唯一判据来源。**对消费者**：零公开面变化。
 - **历史只读的内核侧写入守卫**（`ROUND-HISTORY-READONLY-1` 内核侧）：`appendUser` 非交互分支同 ID 轮已存在即**拒绝整体替换**（只记日志、不落盘），不再用「创建语义」抹掉已收场轮的正文与过程事件；`appendAssistant` 轮不存在时 **fail-closed**（不造轮、不登记），删除原先写死 `<历史消息>` 的假原文兜底——没有真实 user 原文时凭空造轮等于编造用户从未发过的历史。**对消费者**：自实现 `IRoundStore` 者接口不变；上述两条异常路径从「静默覆盖 / 造假」变为「拒绝并留日志」。
+- **写盘成功后的缓存 / 覆盖度台账失效补齐 `opaque` 写工具**（`WRITECAP-1`）：此前只有可静态定位的写路径会失效，`opaque` 写工具（脚本 / 命令 / MCP 等目标不可知）成功后旧 `read_file` / `list_dir` 缓存与覆盖度台账照旧存活 ⇒ 模型可能拿着过期正文被去重误拦重读。现按 `diskWrite` 声明分判：`opaque` 成功后 `read_file` / `list_dir` 缓存与覆盖度台账**全量失效**；可定位写仍精确失效该文件 `read_file` + 父目录及祖先链 `list_dir` + 该文件覆盖度替身。**对消费者是用户可感知的代价**：紧接写操作的去重收益短时归零、重读 token 上升——这是用确定性换「不把过期内容当最新」的取舍。
 
 ### Breaking（内核 · 6.0.0 废弃清账）
 
