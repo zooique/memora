@@ -7,13 +7,14 @@
  */
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
+import { basename, dirname, join } from 'node:path';
 import {
   ConfigResourceManager,
   isOutOfOrderExtraTier,
   type AssetExtraTier,
 } from '@/utils/configResourceManager.js';
 import type { SkillEntry, SkillLayer3, SkillIssue, SkillValidation } from '@/skill/types.js';
-import { extractDisplayName, scanMarkdownDir } from '@/utils/scanner.js';
+import { extractDisplayName, isFolderFormSkill, scanMarkdownDir } from '@/utils/scanner.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
 import {
@@ -31,8 +32,22 @@ import { readFileCapped, existsSyncSafe } from '@/utils/fileSafe.js';
  * SSOT：全局技能（SkillManager）与角色包内嵌技能（RolePackManager）共用同一渐进披露阈值。
  */
 export const L1_COMPRESSED_THRESHOLD = 30;
+
 /** L1 阈值保护：技能数超过此值时切换为 list_skills 工具动态查询（SSOT 同一来源） */
 export const L1_LIST_TOOL_THRESHOLD = 50;
+
+/**
+ * 正文引用的 L3 目录路径（`references/` `resources/` `scripts/` 后紧跟文件名）。
+ * 目录名真源 = `utils/scanner` 的三个子目录常量；负向环视排除 URL 与相对路径
+ * （`https://x/scripts/y`、`../scripts/y` 不算正文引用）。
+ * 镜像点（刻意为之）：内核 `validateFile` 是**运行时**真源；生成期闸门
+ * `hosts/.../_lib/verify-core.mjs` 是**预检镜像**（脚本无法 import 内核包，
+ * 内核也不能反向依赖宿主资源，故同一判据存在两份实现，改动须同步）。
+ */
+const L3_REF_RE = /(?<![\w./-])(references|resources|scripts)\/([^\s`'"()<>]+)/g;
+
+/** 引用末尾的标点（中文句读 / 英文标点 / 右括号）不属于路径本身 */
+const REF_TRAILING_PUNCT_RE = /[.,;:!?，。、；：！？)】」』]+$/;
 
 /**
  * 解析来源层（agent / project）：SSOT 收口——仅接受合法枚举值，
@@ -377,8 +392,10 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   /**
    * 校验单技能文件（写→验→用闭环，宿主 UI 校验入口）。
    * 复用 parser frontmatter 解析做单一真理源，不重写解析；只做确定性结构检查，不做语义 schema。
-   * 判级（三点强化）：
+   * 判级（判据清单）：
    *   - error：无 frontmatter / description 缺失/空（渐进披露唯一依据，缺则技能不可用）/ 正文空
+   *   - error：声明了 `name` 但与磁盘名（目录名 / 文件名）不一致（用户/项目级手写技能无生成器闸门，运行期兜底）
+   *   - error：正文引用的 `references/` `resources/` `scripts/` 文件不存在（L3 读取必然失败）
    *   - warning：layer 非法（回退 project）
    */
   async validateFile(filePath: string): Promise<SkillValidation> {
@@ -418,6 +435,38 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
         level: 'warning',
         field: 'layer',
         message: `layer 值「${layer}」非法，将回退为 project`,
+      });
+    }
+
+    // 命名一致性：技能以磁盘名定位（scanner 回退口径），声明 name 时必须与之一致。
+    // 生成器产出的技能已在交付前校验；用户/项目级手写技能无该闸门，运行期在此兜底。
+    const folderForm = isFolderFormSkill(filePath);
+    const diskName = folderForm ? basename(dirname(filePath)) : basename(filePath, '.md');
+    const declaredName = frontmatter['name'];
+    if (declaredName && declaredName !== diskName) {
+      issues.push({
+        level: 'error',
+        field: 'name',
+        message: `name「${declaredName}」与磁盘名「${diskName}」不一致（技能以磁盘名定位，声明须一致）`,
+      });
+    }
+
+    // 正文 L3 引用存在性：声明了不存在的 references/resources/scripts 文件时，
+    // read_resource 只能返回 null（不是「没写引用」，而是「写了但读不到」）。
+    const refBaseDir = dirname(filePath);
+    const missingRefs = new Set<string>();
+    for (const match of body.matchAll(L3_REF_RE)) {
+      const subdir = match[1];
+      const filePart = (match[2] ?? '').replace(REF_TRAILING_PUNCT_RE, '');
+      if (!subdir || !filePart) continue;
+      const refPath = `${subdir}/${filePart}`;
+      if (!existsSyncSafe(join(refBaseDir, refPath))) missingRefs.add(refPath);
+    }
+    for (const refPath of missingRefs) {
+      issues.push({
+        level: 'error',
+        field: 'references',
+        message: `正文引用的 ${refPath} 不存在（L3 读取会失败）`,
       });
     }
     return { ok: issues.every((i) => i.level !== 'error'), issues };

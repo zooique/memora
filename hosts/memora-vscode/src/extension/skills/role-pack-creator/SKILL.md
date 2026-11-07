@@ -108,8 +108,8 @@ node scripts/verify-pack.mjs <角色名> [--kernel-root <内核仓库根>]
 
 | 判据 | 检查什么 | 真源 |
 |------|----------|------|
-| manifest-json / manifest | 合法 JSON；displayName、description、formatVersion、strategy 结构 | 本脚本的产品级必填 + 内核校验 |
-| manifest-kernel | 策略键区间、枚举、内容红线；能加载内核时由 `validateManifestText` 判定，加载不到则明确 SKIP | `src/role-pack/validator.ts` |
+| manifest-json / manifest | 合法 JSON；displayName、description（宿主展示必需的两项产品级字段） | 本脚本仅此两项 |
+| manifest-kernel | `formatVersion` 版本语义、策略键区间/枚举/内容红线；能加载内核时由 `validateManifestText` 判定，加载不到则明确 SKIP | `src/role-pack/validator.ts`（唯一真源，包侧不自判） |
 | pack-name | 1~64 位中文/字母/数字/下划线/连字符，不以 `.` 开头；禁止保留名 `memora助手` | `src/role-pack/validator.ts` + `skaffold.mjs` |
 | skills | 每份内嵌技能 frontmatter 可解析、description 合规、H1 中文展示名、L3 引用存在 | `src/skill/skillManager.ts` + `src/utils/scanner.ts` |
 | ref-closure | persona/rules 与技能双向闭合：每个技能至少被引用一次；每条反引号 kebab 词指向真实技能 | `src/role-pack/__tests__/builtinPackCoverage.test.ts` |

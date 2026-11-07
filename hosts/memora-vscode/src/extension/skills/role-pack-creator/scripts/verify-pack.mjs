@@ -127,7 +127,11 @@ function checkPackName(value, report) {
 }
 
 /**
- * 内核 validator 不可用时的最小结构检查（不做策略区间——区间是内核专属判据）
+ * 产品级必填结构检查（**只查内核不管的字段**）
+ *
+ * 收口口径：`formatVersion` 版本语义与 `strategy` 结构/区间/枚举/红线都是内核判据，
+ * 唯一真源 = 内核 `src/role-pack/validator.ts`；本脚本不再复制一份（避免两份真源漂移无测试拦截）。
+ * 这里只保留宿主角色选择器与说明所需的 `displayName` / `description`。
  * @param {Record<string, unknown>} manifest 已解析的 manifest
  * @param {ReturnType<typeof createReport>} report 报告
  */
@@ -137,27 +141,6 @@ function checkManifestStructure(manifest, report) {
   }
   if (typeof manifest.description !== 'string' || !manifest.description.trim()) {
     report.error('manifest', '缺少 description（角色包用途说明）');
-  }
-  if (
-    manifest.formatVersion !== undefined &&
-    !/^\d+\.\d+\.\d+$/.test(String(manifest.formatVersion))
-  ) {
-    report.error(
-      'manifest',
-      `formatVersion 必须是 semver（当前：${String(manifest.formatVersion)}）`,
-    );
-  }
-  if (manifest.strategy !== undefined) {
-    if (
-      typeof manifest.strategy !== 'object' ||
-      manifest.strategy === null ||
-      Array.isArray(manifest.strategy)
-    ) {
-      report.error('manifest', 'strategy 必须是嵌套对象（{ prepare/act/reflect/global }）');
-    }
-  } else {
-    // strategy 是可选字段，缺省走内核默认；不把「未声明」判成结构错误
-    report.skip('manifest', '未声明 strategy，使用内核默认行为');
   }
 }
 
@@ -266,11 +249,14 @@ async function main() {
         else report.warning('manifest-kernel', message);
       }
       if (result.valid)
-        report.pass('manifest-kernel', '内核 validator 通过（策略区间/枚举/红线由内核判定）');
+        report.pass(
+          'manifest-kernel',
+          '内核 validator 通过（formatVersion/策略区间/枚举/红线由内核判定）',
+        );
     } else {
       report.skip(
         'manifest-kernel',
-        '策略键区间/枚举/内容红线未校验（未能加载内核 validator；可用 --kernel-root 指定内核仓库根）',
+        'formatVersion 与策略键区间/枚举/内容红线未校验（未能加载内核 validator；可用 --kernel-root 指定内核仓库根）',
       );
     }
   } else if (manifest) {

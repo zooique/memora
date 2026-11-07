@@ -17,7 +17,8 @@
  * - 技能 frontmatter 校验：`src/skill/skillManager.ts#validateFile`
  * - 技能扫描与 L3 目录：`src/utils/scanner.ts`
  * - 技能落点：`src/agent/assembler.ts` 的 `SKILL_WRITE_LOCATION_PROMPT`
- * - 名称/跨源重名：`hosts/memora-vscode/src/extension/host/__tests__/globalSkillsConformance.test.ts`
+ * - 名称=磁盘名 / 正文 L3 引用存在性：`src/skill/skillManager.ts#validateFile`（运行时真源）
+ * - 名称 kebab 字符集 / 跨源重名：`hosts/memora-vscode/src/extension/host/__tests__/globalSkillsConformance.test.ts`
  */
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -213,11 +214,15 @@ export function checkDocRefs({ text, baseDir, report }) {
 /**
  * 校验一份技能文档（standalone 技能与角色包内嵌技能共用）
  *
- * 覆盖判据（与 `SkillManager.validateFile` 同源，且补充了它不查的命名/H1/引用）：
- * 1. frontmatter 可解析、description 非空且合规、正文非空、layer 合法；
- * 2. `name` 为 kebab 且等于所在目录名；
- * 3. 正文首个 H1 存在且不等于英文 id；
- * 4. 正文 L3 引用逐个存在，禁止 `assets/`。
+ * 覆盖判据（内核 `SkillManager.validateFile` 是**运行时真源**；本文件是**生成期预检镜像**，
+ * 并补充内核刻意不管的生成期专属规则）：
+ * 1. frontmatter 可解析、description 非空且合规、正文非空、layer 合法（镜像内核）；
+ * 2. `name` 等于磁盘名（镜像内核），另加 kebab 字符集（生成期专属，内核不强制）；
+ * 3. 正文首个 H1 存在且不等于英文 id（生成期专属）；
+ * 4. 正文 L3 引用逐个存在（镜像内核），另禁 `assets/`（生成期专属）。
+ *
+ * 镜像点（刻意为之）：内核不能反向依赖宿主 `_lib`，生成期脚本也无法在无内核环境替代运行时判定，
+ * 故同一判据存在两份实现——内核为运行时真源，本文件为预检镜像，**改判据必须两边同步**。
  *
  * @param {{
  *   filePath: string,

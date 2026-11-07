@@ -88,9 +88,9 @@ node scripts/verify-skill.mjs <技能目录|SKILL.md>
 | 判据 | 脚本检查什么 | 内核 SSOT |
 |------|--------------|-----------|
 | frontmatter | 可解析、description 非空且合规、正文非空、layer 合法 | `src/skill/skillManager.ts` 的 `validateFile`、`src/utils/frontmatter.ts` |
-| name | kebab，且等于目录名 | `hosts/memora-vscode/src/extension/host/__tests__/globalSkillsConformance.test.ts` |
+| name | kebab，且等于目录名 | `src/skill/skillManager.ts` 的 `validateFile`（运行时真源）+ `globalSkillsConformance.test.ts`（kebab 字符集） |
 | landing | 必须是 `<workspace>/.memora/skills/<name>/SKILL.md` | `src/agent/assembler.ts` 的写入位置提示 |
-| doc-refs | 正文引用的三个 L3 目录路径逐个存在，禁止目录逃逸 | `src/utils/scanner.ts` 的 L3 白名单 |
+| doc-refs | 正文引用的三个 L3 目录路径逐个存在，禁止目录逃逸 | `src/skill/skillManager.ts` 的 `validateFile` + `src/utils/scanner.ts` 的 L3 白名单 |
 | collision | 不与可见技能重名 | 同上守卫测试（跨源重名会被 UI 静默去重） |
 | scripts | 正文指向的每个脚本实际跑一次 | 与角色包生成器同一条写→验→用纪律 |
 

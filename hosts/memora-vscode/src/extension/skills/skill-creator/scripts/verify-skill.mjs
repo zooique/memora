@@ -9,11 +9,12 @@
  * 1. frontmatter 可解析、description/正文非空、layer 合法
  *    → 真源 `src/skill/skillManager.ts#validateFile` + `src/utils/frontmatter.ts`
  * 2. `name` 是 kebab 且等于目录名
- *    → 真源 `hosts/memora-vscode/src/extension/host/__tests__/globalSkillsConformance.test.ts`
+ *    → 真源 `src/skill/skillManager.ts#validateFile`（等于磁盘名）
+ *      + `hosts/memora-vscode/src/extension/host/__tests__/globalSkillsConformance.test.ts`（kebab）
  * 3. 落点是 `<workspace>/.memora/skills/<name>/SKILL.md`
  *    → 真源 `src/agent/assembler.ts` 的 SKILL_WRITE_LOCATION_PROMPT
  * 4. 正文引用的 `references/` `resources/` `scripts/` 路径逐个存在；`assets/` 直接判错
- *    → 真源 `src/utils/scanner.ts` 的 L3 目录白名单
+ *    → 真源 `src/skill/skillManager.ts#validateFile`（存在性）+ `src/utils/scanner.ts` 的 L3 目录白名单
  * 5. 与可见技能不重名
  *    → 真源同判据 2 的守卫文件（跨源重名会被 UI 静默去重）
  * 6. 正文指向的新脚本实际能跑一次

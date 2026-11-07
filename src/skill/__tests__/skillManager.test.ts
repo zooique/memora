@@ -811,7 +811,7 @@ describe('SkillManager · 补充分支路径', () => {
     const m = new SkillManager();
     it('正文为空 → error body', async () => {
       const p = join(skillsDir, 'empty-body.md');
-      createSkillFile(skillsDir, 'empty-body.md', '---\nname: x\ndescription: d\n---\n  ');
+      createSkillFile(skillsDir, 'empty-body.md', '---\nname: empty-body\ndescription: d\n---\n  ');
       const v = await m.validateFile(p);
       expect(v.ok).toBe(false);
       expect(v.issues).toContainEqual(expect.objectContaining({ level: 'error', field: 'body' }));
@@ -822,13 +822,60 @@ describe('SkillManager · 补充分支路径', () => {
       createSkillFile(
         skillsDir,
         'bad-layer.md',
-        '---\nname: x\ndescription: d\nlayer: invalid\n---\n正文',
+        '---\nname: bad-layer\ndescription: d\nlayer: invalid\n---\n正文',
       );
       const v = await m.validateFile(p);
       expect(v.ok).toBe(true); // warning 不引发 error
       expect(v.issues).toContainEqual(
         expect.objectContaining({ level: 'warning', field: 'layer' }),
       );
+    });
+
+    it('声明 name 与文件名不一致 → error name（手写技能运行期兜底）', async () => {
+      const p = join(skillsDir, 'wrong-id.md');
+      createSkillFile(skillsDir, 'wrong-id.md', '---\nname: other-id\ndescription: d\n---\n正文');
+      const v = await m.validateFile(p);
+      expect(v.ok).toBe(false);
+      expect(v.issues).toContainEqual(expect.objectContaining({ level: 'error', field: 'name' }));
+    });
+
+    it('文件夹形态 name 与目录名不一致 → error name', async () => {
+      const skillDir = join(skillsDir, 'dir-skill');
+      createSkillFile(skillDir, 'SKILL.md', '---\nname: not-dir\ndescription: d\n---\n正文');
+      const v = await m.validateFile(join(skillDir, 'SKILL.md'));
+      expect(v.ok).toBe(false);
+      expect(v.issues).toContainEqual(expect.objectContaining({ level: 'error', field: 'name' }));
+    });
+
+    it('正文引用不存在的 references 文件 → error references', async () => {
+      const skillDir = join(skillsDir, 'ref-missing');
+      createSkillFile(
+        skillDir,
+        'SKILL.md',
+        '---\nname: ref-missing\ndescription: d\n---\n详见 `references/guide.md`。',
+      );
+      const v = await m.validateFile(join(skillDir, 'SKILL.md'));
+      expect(v.ok).toBe(false);
+      expect(v.issues).toContainEqual(
+        expect.objectContaining({
+          level: 'error',
+          field: 'references',
+          message: expect.stringContaining('references/guide.md'),
+        }),
+      );
+    });
+
+    it('正文引用的 references 文件存在 → 无 references error', async () => {
+      const skillDir = join(skillsDir, 'ref-ok');
+      createSkillFile(
+        skillDir,
+        'SKILL.md',
+        '---\nname: ref-ok\ndescription: d\n---\n详见 `references/guide.md`。',
+      );
+      createSkillFile(join(skillDir, 'references'), 'guide.md', '# 指南');
+      const v = await m.validateFile(join(skillDir, 'SKILL.md'));
+      expect(v.ok).toBe(true);
+      expect(v.issues.some((i) => i.field === 'references')).toBe(false);
     });
   });
 
