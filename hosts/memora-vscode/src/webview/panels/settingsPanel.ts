@@ -27,7 +27,6 @@ import type { ProviderStore } from '../../extension/providers/providerStore.js';
 import type { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { createBackgroundProvider } from '../../extension/host/llmConfig.js';
 import {
-  inspectRolePackTeams,
   saveRolePackTeam,
   deleteRolePackTeam,
   describeTeamBroadcast,
@@ -73,8 +72,8 @@ import { PRESET_SEARCH_ENGINES } from '../../shared/protocol.js';
 // 本面板的「测试 / 保存」两条路径与装配侧 resolveSearchEndpoints 共用同一函数；
 // probeSearchEngine 同域导入，禁在本文件另写校验规则。
 import { probeSearchEngine, validateCustomEngines } from '../../extension/host/searchEngines.js';
-// 能力面三态判定的唯一出口（CAP-TRISTATE-1）：角色卡只消费判定结果，不判 length
-import { deriveCapabilityState } from '../helpers/capabilityState.js';
+// 角色列表投影外置（纯投影不占本文件行数；判据全部来自既有点）
+import { postRolePackList } from '../helpers/rolePackListView.js';
 import {
   findUnmatchedDisabled,
   listVisibleSkills,
@@ -84,22 +83,11 @@ import {
 import { isPathWithin } from '../../extension/host/userAssets/path.js';
 // 项目级 → 用户级复制编排层（执行面 = zipImport 的事务化原语，本面板只分发）
 import { copyProjectRolePackToUser, copyProjectSkillToUser } from './assetCopyToUser.js';
-import {
-  CONFIRM_SCRIPTS_KEY,
-  ROLE_PACK_TEAMS_KEY,
-  MEMORY_RECYCLE_RETENTION_DAYS,
-} from '../../shared/constants.js';
+import { CONFIRM_SCRIPTS_KEY, MEMORY_RECYCLE_RETENTION_DAYS } from '../../shared/constants.js';
 // 内核常量与键面/校验入口（宿主不复制字面量，SSOT 单一来源）：
 //   BUILTIN_FALLBACK_PACK — 兜底契约包名，随内核包分发，宿主 UI 禁删标记；
-//   MAX_TEAM_MEMBERS      — 小组会议组员上限，随 roles_loaded 下发给 webview（保存校验在 rolePackTeams.ts）；
-//   describeStrategyKeys  — UI 键面唯一来源（strategyKeys.ts），随 roles_loaded 下发，宿主零清单维护；
 //   validateManifestText  — 角色包保存前校验入口（宿主不重写判据，校验失败不写盘）。
-import {
-  BUILTIN_FALLBACK_PACK,
-  MAX_TEAM_MEMBERS,
-  describeStrategyKeys,
-  validateManifestText,
-} from '@zooique/memora';
+import { BUILTIN_FALLBACK_PACK, validateManifestText } from '@zooique/memora';
 // 角色包 manifest 原文读写（详情弹窗初值 + 全量保真写回的真源是文件原文，不是装配值）
 import { readFile, writeFile } from 'node:fs/promises';
 
@@ -121,8 +109,17 @@ export class MemoraSettingsPanel {
   private _boundSessionId: string | undefined;
   /** 当前显示会话解析（与取用面同一真源；切会话时据此判定是否需要解绑旧监听） */
   private _resolveSessionId: (() => string | undefined) | undefined;
-  /** 草稿态判据（chat 面板内存态）：草稿没有会话 id/Agent，角色切换必须拒绝（见 activateRole） */
+  /** 草稿态判据（chat 面板内存态）：草稿没有会话 id/Agent，角色选择只写草稿内存（见 activateRole） */
   private _isDraftSession: (() => boolean) | undefined;
+  /**
+   * 草稿期角色选择的读写桥（由 extension 注入 chat 面板的两个既有面）
+   *
+   * 草稿期没有 Agent 可切，选择只记在草稿内存；真正落盘发生在建会话时那一次
+   * `updateSessionMeta`（chatPanel.createSession），不另开写入路径。
+   * 未注入 ⇒ 草稿期切换如实失败（不静默写全局、不装配任何会话）。
+   */
+  private _draftRolePackAccess:
+    { getName: () => string | undefined; setName: (name: string) => void } | undefined;
   /** Agent 懒装配工厂（由 extension 注入，与 chat 面板同一 `AgentRegistry` 取用面） */
   private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
   /** 会话存储（角色切换成功后写回该会话的 `activeRolePackName`；extension 注入） */
@@ -189,6 +186,14 @@ export class MemoraSettingsPanel {
   /** 注入会话存储：角色切换成功后按会话落盘（装配期读回的唯一写入侧） */
   public setSessionStore(store: WorkspaceSessionStore): void {
     this._sessionStore = store;
+  }
+
+  /** 注入草稿期角色选择桥（extension 接线；不注入 = 草稿期只能显示、不能切） */
+  public setDraftRolePackAccess(access: {
+    getName: () => string | undefined;
+    setName: (name: string) => void;
+  }): void {
+    this._draftRolePackAccess = access;
   }
 
   /** 注入全局状态（Memento；角色激活态已改为会话级，不再经此持久化） */
@@ -735,20 +740,39 @@ export class MemoraSettingsPanel {
     });
   };
 
-  /** 切换激活角色包（SSOT：roles_set_active 与 roles_handoff 共用），返回是否成功 */
-  private async activateRole(name: string): Promise<boolean> {
-    // 草稿期**不提供角色切换**（用户拍板 2026-11-07，接受降级）：草稿没有会话 id、没有 Agent，
-    // 切换既无处落盘、也无实例可切；为它造「角色目录 + 待装配队列」= 第二份会话状态，故拒绝。
-    // 必须在 ensureAgent 之前：命令路径会把「当前会话」解析成上一个停留会话，
-    // 放行就会把角色切到**错误的会话**上（静默改错目标）。
-    if (this._isDraftSession?.()) {
+  /**
+   * 草稿期角色选择（activateRole 的草稿分支）
+   *
+   * 存在性判据 = 已登记实例的 `rolePackManager.get`（与真实会话同一条内核目录，宿主不另写）；
+   * 只读、不装配。无任何已登记实例时无法校验 ⇒ 如实失败（不允许「先记下、建会话时才炸」）。
+   */
+  private async selectDraftRolePack(name: string): Promise<boolean> {
+    const rpm = this._peekAgent?.(this._resolveSessionId?.())?.rolePackManager;
+    if (!rpm) {
       this.post({
         type: 'notice',
-        level: 'info',
-        message: '草稿尚未发送，请先发送第一条内容后再选择角色',
+        level: 'error',
+        message: '草稿期暂无可校验的角色目录（尚未装配任何会话），请先发送一条内容后再选择',
       });
       return false;
     }
+    if (!rpm.get(name)) {
+      this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
+      return false;
+    }
+    this._draftRolePackAccess?.setName(name);
+    // 草稿没有 Agent ⇒ rolePackSwitched 不会来；显式重推既有 roles_loaded 刷新「当前」高亮
+    await this.loadRoles();
+    return true;
+  }
+
+  /** 切换激活角色包（SSOT：roles_set_active 与 roles_handoff 共用），返回是否成功 */
+  private async activateRole(name: string): Promise<boolean> {
+    // 草稿期（2026-11-07 用户否掉「不可切换」初版）：只写草稿内存，落盘随建会话的 meta 一次完成。
+    // 存在性判据取已登记实例的 `rolePackManager`（与真实会话同一条内核目录），**不装配任何会话**、
+    // 不写 globalState；必须在 ensureAgent 之前——命令路径会把「当前会话」解析成上一个停留会话，
+    // 放行就会把角色切到**错误的会话**上（静默改错目标）。
+    if (this._isDraftSession?.()) return this.selectDraftRolePack(name);
     const agent = await this.ensureAgent();
     if (!agent) return false;
     // 走内核「单一切换入口」agent.switchRolePack：activate + emit rolePackSwitched + 刷新 loop 前缀。
@@ -912,96 +936,38 @@ export class MemoraSettingsPanel {
   }
 
   private async loadRoles(): Promise<void> {
-    const agent = await this.ensureAgent();
-    const rpm = agent?.rolePackManager;
-    if (!rpm) {
-      this.post({
-        type: 'roles_loaded',
-        packs: [],
-        teams: [],
-        activeName: '',
-        maxTeamMembers: MAX_TEAM_MEMBERS,
-        // 键面与 rpm 无关（静态派生），未就绪时也下发，编辑模式不因装配时序缺席
-        keyface: describeStrategyKeys(),
-      });
+    // 草稿期：**不得** ensureAgent（命令路径会把「当前会话」解析成上一个停留会话，白白装配它）。
+    // 目录只读已登记实例；当前角色 = 草稿选择 ?? 内核兜底契约包（**不是** packs[0]，那是第二份回落真源）。
+    if (this._isDraftSession?.()) {
+      this.postRoleList(
+        this._peekAgent?.(this._resolveSessionId?.())?.rolePackManager,
+        this._draftRolePackAccess?.getName() ?? BUILTIN_FALLBACK_PACK,
+      );
       return;
     }
-    // 读期健康检测（唯一接线点，只读不写回）：对照包池算出每支队伍的受损状态
-    // （组长失效=遗留队伍 / 组员失效=缺员），随 teams 下发供角色页持久标注；
-    // 「清理/修复」由用户主动触发（roles_team_delete / roles_team_save），宿主不静默改用户数据。
-    const teamHealth = inspectRolePackTeams(rpm, this._globalState);
-    // 组（会议名单）用户级数据：组员仅作小组会议参与者
-    const teams = (
-      this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? []
-    ).map((t) => {
-      // 检测视图附加（读期派生，不落盘）：健康组不带标记字段，存量 webview 兼容旧载荷
-      const health = teamHealth.get(t.leader);
-      return health && (health.leaderMissing || health.missingMembers.length > 0)
-        ? {
-            ...t,
-            leaderMissing: health.leaderMissing,
-            missingMembers: health.missingMembers,
-          }
-        : t;
-    });
-    const packs = rpm
-      .listMeta()
-      .filter((m) => m.name)
-      .map((m) => {
-        const pack = rpm.get(m.name);
-        // 来源层判定：rolePackSource 单点（与保存链路内置拒绝判据同源，禁第二份前缀副本）
-        const source = this.rolePackSource(pack?.filePath);
-        // 提取策略指示器：从内核完整策略中提炼 UI 友好的摘要
-        const strategy = pack?.strategy;
-        // 温度分组：基于 temperature 值动态计算
-        const temp = strategy?.act?.temperature ?? 0.7;
-        const tempGroup = temp >= 0.8 ? 'high' : temp <= 0.4 ? 'low' : 'mid';
-        // 推理模式：基于 multiStepReasoning 字段
-        const reasoningMode = strategy?.act?.multiStepReasoning;
+    const agent = await this.ensureAgent();
+    this.postRoleList(agent?.rolePackManager);
+  }
 
-        const strategyHint = strategy
-          ? {
-              toolReadonly: strategy.act?.toolReadonly,
-              tempGroup: tempGroup as 'high' | 'mid' | 'low',
-              reasoningMode: reasoningMode as 'auto' | 'manual' | undefined,
-              summaryFocus: strategy.prepare?.summaryFocus,
-              outputLimit: strategy.act?.outputLimit,
-            }
-          : undefined;
-
-        return {
-          name: m.name,
-          displayName: m.displayName ?? m.name,
-          source,
-          description: m.description ?? '',
-          // 三态判定走 host 唯一出口（CAP-TRISTATE-1）：这里只透传结果，不自行判 length
-          capabilityState: deriveCapabilityState(pack?.capabilities),
-          // 从装配结果中传递 traits/handoffPrompt 等字段
-          traits: pack?.traits,
-          handoffPrompt: pack?.meta.handoffPrompt,
-          strategyHint,
-          interactionType: pack?.meta.interactionType,
-          version: pack?.meta.version,
-          // 兜底契约包禁删标记（组员反向索引已退役：组员不感知被引用，见 ADR-028 收敛补记）
-          isFallback: m.name === BUILTIN_FALLBACK_PACK,
-          // 健康徽章：内核装配期的校验 issues 全量透传给 webview（error/warning 均渲染）
-          issues: (pack?.validationIssues ?? []).map((i) => ({
-            level: i.severity,
-            message: i.message,
-          })),
-        };
-      });
-    const activeName = rpm.activeName ?? (packs.length > 0 ? packs[0]!.name : '');
-    // maxTeamMembers：内核常量透传给 webview（浏览器沙箱不可直连内核，UI 侧禁止另写字面量）
-    // keyface：内核键面透传（UI 键面唯一来源 = describeStrategyKeys，宿主零清单维护）
-    this.post({
-      type: 'roles_loaded',
-      packs,
-      teams,
-      activeName,
-      maxTeamMembers: MAX_TEAM_MEMBERS,
-      keyface: describeStrategyKeys(),
-    });
+  /**
+   * `roles_loaded` 的单点发送（真实会话 / 草稿共用）
+   *
+   * 投影实现外置在 `helpers/rolePackListView.ts`：本文件贴 max-lines 只降不升基线，
+   * 纯投影（无面板状态、无写盘）不该占本文件行数。
+   *
+   * @param rpm 角色包管理器（undefined = 目录不可得：如实空列表，不伪造条目）
+   * @param draftActiveName 草稿期「当前角色」显式值（未选时 = 内核兜底包；真实会话传 undefined）
+   */
+  private postRoleList(rpm: Agent['rolePackManager'] | undefined, draftActiveName?: string): void {
+    postRolePackList(
+      {
+        post: (msg) => this.post(msg),
+        globalState: this._globalState,
+        rolePackSource: (filePath) => this.rolePackSource(filePath),
+      },
+      rpm,
+      draftActiveName,
+    );
   }
 
   // ─── 大模型配置子视图数据加载 ───

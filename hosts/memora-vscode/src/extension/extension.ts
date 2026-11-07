@@ -630,13 +630,15 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
   );
 
-  // 设置面板：editor tab 形态（角色 / 大模型 / 记忆 / 技能 / MCP / 安全 六页合一）。
-  // L3 分家（2026-10-26）：设置整体从侧栏 view 迁入 editor tab（**六页合一迁入，非回退**）；
-  // 原「避免活动栏底部选项卡拥挤（用户反馈）」的动机由「设置整体独立 tab」承接。
-  // 装配复用与 chat 面板同一登记表（SSOT）；角色切换随**会话文件**落盘（方案 A）；providerStore 供大模型子视图共用
+  // 设置面板：editor tab 形态（六页合一、独立 tab 非回退；装配复用 chat 面板同一登记表 SSOT，
+  // 角色切换随会话文件落盘）——草稿无 id/Agent ⇒ 角色读写桥只碰草稿内存（落盘随建会话 meta 一次完成）
   const settingsProvider = new MemoraSettingsPanel(context.extensionUri, providerStore);
-  const isDraft = () => chatProvider.isDraftSession(); // 草稿无 id/Agent ⇒ 角色切换必须拒绝
+  const isDraft = () => chatProvider.isDraftSession();
   settingsProvider.setAgentFactory(getAgent, peekAgent, resolveSessionId, isDraft);
+  settingsProvider.setDraftRolePackAccess({
+    getName: () => chatProvider.getDraftRolePackName(),
+    setName: (name) => chatProvider.setDraftRolePack(name),
+  });
   settingsProvider.setGlobalState(context.globalState);
   settingsProvider.setSessionStore(sessionStore); // 角色切换落盘到会话文件（装配期读回）
   // 组队热更广播：全局一份数据 ⇒ 写时打所有已装配实例（判据见 setTeamBroadcaster 文档）
@@ -646,8 +648,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 注入技能目录：用户目录（打开目录按钮）+ 内置配置目录（三源技能来源判定，SSOT 收紧）
   settingsProvider.setUserSkillsDir(userSkillsDir);
   settingsProvider.setConfigDir(configDir);
-  // 注入项目级目录（来源判定 + 打开目录）；目录与信任判定同源（未信任 ⇒ 空，
-  // 项目级资产未启用时不给打开入口，避免「有路径但打不开/写不进」的双头语义）
+  // 注入项目级目录（来源判定 + 打开目录）；目录与信任判定同源（未信任 ⇒ 空，避免「有路径但打不开」）
   settingsProvider.setProjectDirs(
     projectDirsAtActivation.skills,
     projectDirsAtActivation.rolePacks,
@@ -662,8 +663,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('memora.open', () => openChatCommand(getAgent, chatProvider)),
   );
 
-  // 命令：添加图片到对话（IMG-2 Q3）：命令面板入口。拾取编排（开框/读盘/落盘/回执）
-  // 全归 chatPanel.pickAndAttachImages 单点——面板未打开时不开框（防「落了盘没 chip」孤儿）。
+  // 命令：添加图片到对话（IMG-2 Q3）：拾取编排（开框/读盘/落盘/回执）全归 chatPanel.pickAndAttachImages 单点
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.attachImage', () => chatProvider.pickAndAttachImages()),
   );

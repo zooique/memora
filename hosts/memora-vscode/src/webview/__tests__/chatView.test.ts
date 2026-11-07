@@ -36,6 +36,8 @@ import type {
 } from '../../shared/protocol.js';
 import type { InteractiveInputKind } from '@zooique/memora';
 import type { ProcessEvent } from '@zooique/memora';
+// 草稿页「当前角色」真源 = 内核兜底契约包常量（不硬编码包名，内核改名即随动）
+import { BUILTIN_FALLBACK_PACK } from '@zooique/memora';
 
 /**
  * 2b-2b 换真源：发送 `turn_update` 状态快照（按钮语义唯一真源）
@@ -13376,11 +13378,14 @@ describe('历史入口角标（E4 批 4：会话活跃度快照投影）', () =>
 });
 
 /**
- * 草稿页会话级投影归零（2026-11-07 真机缺陷「再新建会话后看不到角色包徽章」收口）
+ * 草稿页会话级投影（2026-11-07：角色显示内核兜底包，其余四项归零）
  *
- * 判据：草稿页 = 无会话 ⇒ 无 Agent ⇒ **所有会话级投影都必须空**。五项（角色 / 能力徽章 /
- * 上下文占用 / 后台任务 / 看板）少清一项 = 把上一会话的事实留在屏上，用户读成「当前会话」
- * ——与谎报同向（隐藏真实事实 ≠ 诚实，展示旧会话事实更不是当前会话）。
+ * 判据：草稿 = 无会话 ⇒ 无 Agent ⇒ 所有**从会话派生**的投影必须清空（能力徽章 / 占用 /
+ * 后台任务 / 看板）；**角色徽章例外**——草稿期显示「即将生效」的角色（未选 = 内核 §4.1
+ * 兜底契约包），这是用户在草稿页选包后的真实预期，不是残留。
+ *
+ * 单独钉住「角色不得继承上一会话」：投影里的角色必须是兜底包，**不是**上一会话的
+ * 「代码助手」——继承旧值才会让用户误以为草稿在用上一个会话的角色。
  *
  * 驱动序列 = 宿主 `DraftSessionController.project()` 的投递顺序（语义单点在宿主；本用例只按
  * 该序列派发，不另造一份判据）。归零信号复用既有 `session_title.draft === true`，不新增消息类型。
@@ -13390,7 +13395,7 @@ describe('历史入口角标（E4 批 4：会话活跃度快照投影）', () =>
  *  · 把 `hideCapabilityBadge` 挪成「无激活角色包就隐藏」的通用分支 ⇒ 「真实会话无激活包」
  *    会把「全部工具」这一真实能力面藏起来（方向同谎报，宿主级用例另钉）。
  */
-describe('草稿页 = 会话级投影全部为空（角色 / 能力徽章 / 占用 / 后台任务 / 看板）', () => {
+describe('草稿页 = 角色显示内核兜底包，其余四项会话级投影归零（能力 / 占用 / 后台任务 / 看板）', () => {
   /**
    * 造「上一会话」的五个非空投影
    *
@@ -13464,7 +13469,7 @@ describe('草稿页 = 会话级投影全部为空（角色 / 能力徽章 / 占�
     };
   }
 
-  it('五个会话级投影在草稿页全部归零（上一会话的事实一个都不留）', () => {
+  it('角色 = 内核兜底包（不继承上一会话），能力 / 占用 / 后台任务 / 看板四项归零', () => {
     mountChatView();
     seedPreviousSessionProjections();
 
@@ -13481,13 +13486,18 @@ describe('草稿页 = 会话级投影全部为空（角色 / 能力徽章 / 占�
     // —— 草稿投影序列（顺序 = DraftSessionController.project）——
     dispatch({ type: 'clear_ok' });
     dispatch({ type: 'session_title', title: '新会话', draft: true });
-    dispatch({ type: 'chat_role_pack', rolePack: '', traits: undefined });
+    // 未选角色 ⇒ 内核 §4.1 兜底包名（宿主不猜默认值）；草稿角色可见，但必须是这一个
+    dispatch({ type: 'chat_role_pack', rolePack: BUILTIN_FALLBACK_PACK, traits: undefined });
     dispatch({ type: 'chat_role_packs', packs: [], activeName: '' });
     dispatch({ type: 'background_tasks', items: [] });
 
-    // —— 反证：五项全部回到空态 ——
+    // —— 角色：可见且 = 兜底包（不得继承上一会话的「代码助手」）——
     el = projections();
-    expect(el.roleBadge.hidden).toBe(true);
+    expect(el.roleBadge.hidden).toBe(false);
+    expect(el.roleBadge.textContent).toContain(BUILTIN_FALLBACK_PACK);
+    expect(el.roleBadge.textContent).not.toContain('代码助手');
+
+    // —— 反证：其余四项全部回到空态 ——
     expect(el.capabilityBadge.hidden).toBe(true);
     // 隐藏之外还要清文案：隐藏元素里的旧文案在某些 CSS 覆盖下会露出来（与「不得留 0」同族）
     expect(el.capabilityBadge.textContent).toBe('');

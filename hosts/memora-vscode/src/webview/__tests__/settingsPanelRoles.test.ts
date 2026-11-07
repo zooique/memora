@@ -22,6 +22,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as vscode from 'vscode';
 import { readFile, writeFile } from 'node:fs/promises';
 import type { Agent } from '@zooique/memora';
+// 默认包判据真源 = 内核导出常量（装配 §4.1 单链实际生效值）；测试不硬编码包名，改名即随内核走
+import { BUILTIN_FALLBACK_PACK } from '@zooique/memora';
 import { MemoraSettingsPanel } from '../panels/settingsPanel.js';
 
 // 可观测的 workspace 配置 mock（vi.hoisted：vi.mock 工厂被提升到文件顶部，闭包外变量
@@ -965,20 +967,69 @@ describe('settingsPanel.switchTab —— 导航落点兜底（不可投递时只
 });
 
 /**
- * 草稿期角色切换降级（用户拍板 2026-11-07）
+ * 草稿期角色切换（2026-11-07 用户否掉初版「草稿期不可切换」后重定）
  *
- * 草稿没有会话 id、没有 Agent：为它造「角色目录 + 待装配队列」= 第二份会话状态，故拒绝。
- * 判据必须**先于 ensureAgent**（命令路径会把「当前会话」解析成上一个停留会话，
- * 放行即把角色切到错误的会话上）。本组钉住「拒绝 + 不装配 + 给出解释」三件事。
+ * 草稿没有会话 id、没有 Agent，但角色目录与切换**都不是新通道**：
+ *   - 目录 = 已登记实例的 `rolePackManager`（与真实会话同一条内核判据，只读、不装配）；
+ *   - 选择只写草稿内存（经 extension 注入的读写桥），落盘随建会话那一次
+ *     `updateSessionMeta`（硬判据见 `chatPanelSessionAgents.test.ts` 的草稿选包用例）。
+ *
+ * 本组钉住四件事：① 成功 = 写桥 setName + roles_loaded 高亮所选 + **全程不装配**；
+ * ② 不存在的包 = 失败并告知；③ 无已登记实例 = 如实失败（不装配、不静默记下）；
+ * ④ 未选时「当前角色」= 内核兜底包（**不是**列表第一个——那是第二份回落真源）。
  */
-describe('settingsPanel.activateRole —— 草稿期拒绝角色切换', () => {
-  it('草稿态：返回 false、不装配 Agent、给出「先发送」提示', async () => {
-    const { agent } = agentStub({ switchOk: true, locked: false });
-    const getAgent = vi.fn(async () => agent);
+describe('settingsPanel.activateRole —— 草稿期角色切换', () => {
+  /** 草稿态 Agent 桩：只提供角色目录读面；切换入口应零调用 */
+  function draftAgentStub(names: readonly string[]): {
+    agent: Agent;
+    get: ReturnType<typeof vi.fn>;
+    switchRolePack: ReturnType<typeof vi.fn>;
+  } {
+    const get = vi.fn((name: string) =>
+      names.includes(name) ? { name, meta: {}, traits: {} } : undefined,
+    );
+    const switchRolePack = vi.fn(() => true);
+    const agent = {
+      rolePackManager: {
+        activeName: names[0],
+        get,
+        listMeta: () => names.map((n) => ({ name: n, displayName: n, description: '' })),
+        getActive: () => undefined,
+      },
+      switchRolePack,
+      getRolePackSwitchLockStatus: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+    } as unknown as Agent;
+    return { agent, get, switchRolePack };
+  }
+
+  /** 造草稿态 provider：isDraftSession 恒 true；peekAgent = 已登记实例（undefined = 无实例） */
+  function draftSetup(peeked: Agent | undefined): {
+    provider: MemoraSettingsPanel;
+    posted: { type: string; level?: string; message?: string }[];
+    setName: ReturnType<typeof vi.fn>;
+    getAgent: ReturnType<typeof vi.fn>;
+  } {
     const posted: { type: string; level?: string; message?: string }[] = [];
+    const getAgent = vi.fn(async () => peeked as Agent);
+    // 读写桥按生产形态「同一份存储」：getName 立即读回 setName 刚写入的值
+    // （生产 = chatProvider 草稿内存：getDraftRolePackName / setDraftRolePack 同一字段）
+    let selected: string | undefined;
+    const getName = vi.fn(() => selected);
+    const setName = vi.fn((name: string) => {
+      selected = name;
+    });
     const provider = new MemoraSettingsPanel({} as never, {} as never);
-    // 第 4 参 = 草稿态判据（生产由 extension.ts 注入 chat 面板的 `isDraftSession`）
-    provider.setAgentFactory(getAgent, undefined, undefined, () => true);
+    // 第 2/3/4 参：草稿目录读已登记实例、会话解析为空串、草稿判据恒 true
+    provider.setAgentFactory(
+      getAgent,
+      () => peeked,
+      () => '',
+      () => true,
+    );
+    provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
+    provider.setDraftRolePackAccess({ getName, setName });
     (provider as unknown as { _panel: unknown })._panel = {
       webview: {
         postMessage: (msg: never) => {
@@ -987,18 +1038,73 @@ describe('settingsPanel.activateRole —— 草稿期拒绝角色切换', () => 
         },
       },
     };
+    return { provider, posted, setName, getAgent };
+  }
 
-    const ok = await activateRole(provider, 'any-pack');
+  it('选有效包 → 成功、写草稿桥、roles_loaded 高亮所选；全程不装配也不调内核切换入口', async () => {
+    const { agent, switchRolePack } = draftAgentStub(['代码助手', '只读项目顾问']);
+    const { provider, posted, setName, getAgent } = draftSetup(agent);
 
-    expect(ok).toBe(false);
+    const ok = await activateRole(provider, '只读项目顾问');
+
+    expect(ok).toBe(true);
+    expect(setName).toHaveBeenCalledWith('只读项目顾问');
     // 拦在装配之前：草稿不装配 Agent（否则会绑到错误会话）
     expect(getAgent).not.toHaveBeenCalled();
+    // 草稿没有 Agent 可切：内核唯一切换入口一次都不能被调（调了就是作用在错误会话上）
+    expect(switchRolePack).not.toHaveBeenCalled();
+    const loaded = posted.filter((m) => m.type === 'roles_loaded').at(-1) as unknown as {
+      activeName: string;
+    };
+    // 草稿没有 rolePackSwitched 事件 ⇒ 必须显式重推，否则角色页「当前」高亮停在旧值
+    expect(loaded.activeName).toBe('只读项目顾问');
+  });
+
+  it('选不存在的包 → false + 「角色包不存在」，不写草稿桥', async () => {
+    const { agent } = draftAgentStub(['代码助手']);
+    const { provider, posted, setName, getAgent } = draftSetup(agent);
+
+    const ok = await activateRole(provider, 'ghost');
+
+    expect(ok).toBe(false);
+    expect(setName).not.toHaveBeenCalled();
+    expect(getAgent).not.toHaveBeenCalled();
+    expect(notices(posted)).toEqual([
+      { type: 'notice', level: 'error', message: '角色包不存在：ghost' },
+    ]);
+  });
+
+  it('无已登记实例 → 如实失败（不装配、不静默记下选择）', async () => {
+    const { provider, posted, setName, getAgent } = draftSetup(undefined);
+
+    const ok = await activateRole(provider, '代码助手');
+
+    expect(ok).toBe(false);
+    expect(getAgent).not.toHaveBeenCalled();
+    expect(setName).not.toHaveBeenCalled();
     expect(notices(posted)).toEqual([
       {
         type: 'notice',
-        level: 'info',
-        message: '草稿尚未发送，请先发送第一条内容后再选择角色',
+        level: 'error',
+        message: '草稿期暂无可校验的角色目录（尚未装配任何会话），请先发送一条内容后再选择',
       },
     ]);
+  });
+
+  it('未选角色 → 「当前角色」= 内核兜底包，不拿列表第一个冒充', async () => {
+    // 列表第一个刻意不是兜底包：若宿主写成 packs[0]，本条转红
+    const { agent } = draftAgentStub(['代码助手', '只读项目顾问']);
+    const { provider, posted } = draftSetup(agent);
+
+    await (provider as unknown as { loadRoles(): Promise<void> }).loadRoles();
+
+    const loaded = posted.filter((m) => m.type === 'roles_loaded').at(-1) as unknown as {
+      activeName: string;
+      packs: unknown[];
+    };
+    expect(loaded.packs).toHaveLength(2);
+    // 默认包判据只能来自内核导出常量（装配 §4.1 实际生效值），不是宿主自造的名单首项
+    expect(loaded.activeName).toBe(BUILTIN_FALLBACK_PACK);
+    expect(loaded.activeName).not.toBe('代码助手');
   });
 });

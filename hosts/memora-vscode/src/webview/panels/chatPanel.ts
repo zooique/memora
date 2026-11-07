@@ -75,6 +75,7 @@ import {
   // 「这轮算不算跑成功」判据取内核单点（isRoundSuccessful）：宿主不得自写
   // `status === 'complete'`（内核 roundStore.test 的判据单源守卫会拦，见 helpers/occupancyHistory.ts 先例）
   isRoundSuccessful,
+  BUILTIN_FALLBACK_PACK, // 内核兜底契约包名（草稿未选角色时的当前角色 = 装配 §4.1 即将生效的包）
 } from '@zooique/memora';
 // step 检查点落盘（已收场轮取盘上现值、只并事件；能力探测与判据单点外置）
 import { checkpointRoundEvents } from './roundEventCheckpoint.js';
@@ -173,6 +174,8 @@ import {
 // 任务看板 / 后台任务 / 上下文占用三项快照投影（HOST-SPLIT-1 行数闸门整域外置；
 // 面板只注入 getAgent/post/isBackground 三个依赖，缓存留在外置域内）
 import { PanelSnapshots } from '../helpers/panelSnapshots.js';
+// 角色列表消息投影（聊天页 chat_role_packs / 设置页 roles_loaded 共用构造点，外置控行数）
+import { buildChatRolePacks } from '../helpers/rolePackListView.js';
 // 会话级流运行态 + 流归属闸（E4 批 1/2）：四项状态按会话命名空间化；后台流 UI 投递整批丢弃
 import {
   SessionRuntimeStates,
@@ -519,7 +522,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         setConfirmForeground: (id) => this._confirm.setForeground(id),
         pushSessionList: () => this.pushSessionList(),
         refreshActivity: () => this.refreshSessionActivity(),
-        createSession: (id) => this.createSession(id),
+        createSession: (id, rolePackName) => this.createSession(id, rolePackName),
+        // 草稿未选角色时的「当前角色」= 内核兜底契约包（宿主不另写默认名）
+        defaultRolePackName: BUILTIN_FALLBACK_PACK,
       },
       !this._currentSessionId,
     );
@@ -2005,11 +2010,23 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /**
-   * 进入草稿态（标题条「＋」/ 工作区无任何会话时的启动兜底）：展示面归零，不产生会话状态
-   */
+  /** 进入草稿态（标题条「＋」/ 无会话启动兜底）：展示面归零，不产生会话状态 */
   public async newSessionFromCommand(): Promise<void> {
     this._draft.enter();
+  }
+
+  /**
+   * 草稿期角色选择（设置页「设为当前」在草稿态的唯一写点）：只写草稿内存，不装配、不写 meta；
+   * 落盘在 `createSession` 随会话 meta 一次写入。非草稿调用无效（真实会话仍走 `agent.switchRolePack`）。
+   */
+  public setDraftRolePack(name: string): void {
+    if (!this._draft.isDraft) return;
+    this._draft.selectRolePack(name);
+  }
+
+  /** 草稿期当前角色名（undefined = 未选 ⇒ 设置页显示内核兜底包；真实会话返回 undefined） */
+  public getDraftRolePackName(): string | undefined {
+    return this._draft.isDraft ? this._draft.rolePackName : undefined;
   }
 
   /** 会话导航唯一写点：内存字段 + 「上次停留」指针必须成对更新
@@ -2030,7 +2047,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @param sessionId 目标会话 id（date-name 格式）
    * @returns 是否切入成功
    */
-  private async createSession(sessionId: string): Promise<boolean> {
+  private async createSession(sessionId: string, rolePackName?: string): Promise<boolean> {
     // 新会话 id 由时间戳/随机后缀生成，跨进程不会撞；拿锁只为让后续写盘有归属
     if (!(await this._lockFinalizer.acquire(sessionId))) {
       this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
@@ -2040,6 +2057,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     try {
       // 先切宿主当前会话：装配会由登记表在核内核侧切到该会话（无需再改单实例身份）
       this.setCurrentSessionId(sessionId);
+      // 草稿角色选择的**唯一落盘点**（必须早于装配：装配经 readSessionRolePackName 读回）；未选不写
+      if (rolePackName) {
+        this.sessionStore.updateSessionMeta(sessionId, { activeRolePackName: rolePackName });
+      }
       const agent = await this.agentForSession(sessionId);
       this.bindAgent(agent);
       this.replayCurrentSession();
@@ -2738,37 +2759,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 推送角色包列表到 webview（输入区角色切换下拉的数据）
-   *
-   * 从内核 RolePackManager 读取全部角色包（listMeta）+ 当前激活名（activeName），
-   * 推送为 chat_role_packs 协议消息。即使列表为空也发送消息，确保 webview 能正确
-   * 处理角色选择器的显示/隐藏状态（而非静默失败导致 UI 永远不更新）。
-   * description 取自 manifest.description（listMeta 已含，零额外读取），供下拉展示副标题。
+   * 推送角色包列表到 webview（输入区角色切换下拉）：载荷构造外置在 `helpers/rolePackListView.ts`
+   * （本文件贴 max-lines 只降不升基线，纯投影不占行数）。
    */
   private pushRolePacks(): void {
-    // 会话记录里请求的角色包 vs 内核实际激活：不一致 = 回落，徽章须常驻标明差异
-    const requested = readSessionRolePackName(this.sessionStore, this._currentSessionId);
-    const rpm = this._agent?.rolePackManager;
-    if (!rpm) {
-      // 未装配：空列表让 webview 隐藏选择器，但仍报记录差异
-      this.post({ type: 'chat_role_packs', packs: [], activeName: '', unavailableName: requested });
-      return;
-    }
-    const metaList = rpm.listMeta();
-    const packs = metaList
-      .filter((p) => p.name) // 过滤无 name 的异常包
-      .map((p) => ({
-        name: p.name,
-        // SSOT：displayName 从 manifest 读取，缺省回退 name（单一来源）
-        displayName: p.displayName ?? p.name,
-        description: p.description ?? '', // 角色包定位描述（manifest.description，可选）
-      }));
-    // 即使列表为空也发送消息，让 webview 正确处理显示/隐藏
-    // activeName 缺省时回退首个（与内核「默认激活首个」一致），无角色包时为空串
-    const activeName = rpm.activeName ?? (packs.length > 0 ? packs[0]!.name : '');
-    // 回落差异只由「记录请求名 ≠ 实际激活名」派生，不另存第二份状态
-    const unavailableName = requested && requested !== activeName ? requested : undefined;
-    this.post({ type: 'chat_role_packs', packs, activeName, unavailableName });
+    this.post(
+      buildChatRolePacks(
+        this._agent?.rolePackManager,
+        readSessionRolePackName(this.sessionStore, this._currentSessionId),
+      ),
+    );
   }
 
   /**

@@ -22,6 +22,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync）
 import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
 import type { Agent, BackgroundTask } from '@zooique/memora';
+// 默认包判据真源 = 内核导出常量（装配 §4.1 单链实际生效值）；测试不硬编码包名
+import { BUILTIN_FALLBACK_PACK } from '@zooique/memora';
+// 生产同源读回判据：装配桩按它取「会话 meta → 实际激活名」，保证硬判据不是自造链条
+import { readSessionRolePackName } from '../../extension/host/sessionRolePack.js';
 import type * as vscode from 'vscode';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
@@ -710,6 +714,74 @@ describe('草稿态 · 「＋」不再立刻落空会话（首次发送才建会
     // 标题不再是草稿态（改名笔恢复可用）
     expect(lastTitle(posted).draft).toBeUndefined();
     expect(lastTitle(posted).title).toMatch(/^新会话 \d{2}:\d{2}$/);
+  });
+
+  /**
+   * 草稿选包 → 首条发送 → 实际生效角色 = 所选（**硬判据**，不看界面文案）
+   *
+   * 判据链（三处都必须相等，缺一即「选了没生效」）：
+   *   ① 会话文件：`SessionMeta.activeRolePackName` = 所选（唯一写点 = 面板建会话路径里那一次
+   *      `updateSessionMeta`，早于装配）；
+   *   ② 装配实际值：`rolePackManager.activeName` = 所选（本用例的装配桩按生产同源判据
+   *      `readSessionRolePackName(store, sessionId)` 取回——meta 没写就会落兜底包，本条即转红）；
+   *   ③ 屏上投影：`chat_role_pack.rolePack` = 所选（投影只是事实的下游，不能自己造值）。
+   *
+   * 变异靶标：删掉 `createSession` 里的 `updateSessionMeta` ⇒ ①②③ 同时转红；
+   * 把它挪到 `agentForSession` 之后 ⇒ 装配读到兜底包，② 转红（写点必须早于装配）。
+   */
+  it('草稿选包 → 首条发送：meta 落盘 + 装配实际生效包 + 屏上投影 三者都等于所选', async () => {
+    const agentA = sessionAgent('2026-11-06-a');
+    const { provider, posted, cast, fireMessage } = setupPanel({ '2026-11-06-a': agentA }, [
+      '2026-11-06-a',
+    ]);
+    const store = (provider as unknown as { sessionStore: WorkspaceSessionStore }).sessionStore;
+    // 装配桩：activeName 严格取自会话 meta（与生产 assembler 同一判据），不自己编默认值
+    const factory = vi.fn(async (_projectPath: string, sessionId: string) => {
+      const requested = readSessionRolePackName(store, sessionId);
+      return {
+        ...sessionAgent(sessionId),
+        rolePackManager: {
+          activeName: requested ?? BUILTIN_FALLBACK_PACK,
+          getActive: () => ({
+            strategy: { act: { toolMode: 'allow', temperature: 0.7 }, prepare: {} },
+            capabilities: undefined,
+            traits: {},
+          }),
+          listMeta: () => [
+            {
+              name: requested ?? BUILTIN_FALLBACK_PACK,
+              displayName: requested ?? BUILTIN_FALLBACK_PACK,
+              description: '',
+            },
+          ],
+          getActiveTeam: () => undefined,
+        },
+      } as unknown as Agent;
+    });
+    provider.setAgentFactory(factory);
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = agentA;
+
+    await provider.newSessionFromCommand();
+    expect(provider.isDraftSession()).toBe(true);
+    // 草稿期选择只进草稿内存：此刻**零落盘**（还没有会话可写）
+    provider.setDraftRolePack('只读项目顾问');
+    expect(provider.getDraftRolePackName()).toBe('只读项目顾问');
+
+    fireMessage({ type: 'input', kind: 'send', text: '梳理一下这个仓库' });
+    await vi.waitFor(() => expect(provider.isDraftSession()).toBe(false), { timeout: 5000 });
+
+    const newId = provider.getCurrentSessionId();
+    // ① 唯一写点：随建会话那一次写进 meta（不是第二条写入路径）
+    expect(store.getSessionMeta(newId)?.activeRolePackName).toBe('只读项目顾问');
+    // ② 装配实际生效包（能力面真源）——不是「界面显示对了」就算过
+    const assembled = cast._sessionAgents.get(newId) as Agent;
+    expect(assembled.rolePackManager?.activeName).toBe('只读项目顾问');
+    // ③ 屏上投影与事实同源
+    const rolePack = posted.filter((m) => m.type === 'chat_role_pack').at(-1) as unknown as {
+      rolePack: string;
+    };
+    expect(rolePack.rolePack).toBe('只读项目顾问');
   });
 
   /**
