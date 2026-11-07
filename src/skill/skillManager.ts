@@ -574,6 +574,13 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
       if (!skill) continue;
 
       if (existing) {
+        // 覆盖事实取证（必须在 deleteItem 之前：它会注销 runtimeNames，之后分不清「内置」与
+        // register() 注入项）。覆盖语义本身不变（后加载者胜），本字段只供 UI 说清「盖掉了谁」。
+        const overriddenLayer: SkillEntry['overriddenLayer'] = prevDir
+          ? prevTier
+          : this.runtimeItemNames.includes(entry.name)
+            ? undefined // register() 运行时注入项不属内置/用户/项目三档，来源不可考 ⇒ 不臆测
+            : 'builtin';
         // 覆盖：先摘旧项（deleteItem 注销 runtimeNames 记账，防止悬挂）
         this.deleteItem(entry.name);
         this.injectedFrom.delete(entry.name);
@@ -599,6 +606,8 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
           this.userOverrides.add(entry.name);
           logger.info({ name: entry.name, dir }, '用户技能覆盖内置技能');
         }
+        // 覆盖事实随胜者上屏（宿主 SkillDto 直通；不改变生效者，也不进模型面）
+        if (overriddenLayer) skill.overriddenLayer = overriddenLayer;
       }
       this.registerRuntimeItem(skill);
       this.extraSkillNames.add(entry.name);

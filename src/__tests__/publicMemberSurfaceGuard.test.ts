@@ -1022,6 +1022,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'layer',
       'layer3',
       'name',
+      'overriddenLayer',
       'packageRoot',
     ],
   },
@@ -1427,7 +1428,14 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    真消费者 = 宿主 sessionStore（切换成功后 updateSessionMeta 写）+ 装配期读取注入\n` +
       `    AgentOptions.activeRolePack（见 hosts 的 sessionRolePack.ts）；内核侧只读。\n` +
       `    行为由宿主 sessionRolePackPersistence.test.ts 守护（真写工具被拒 + 解析失败可见 notice）。\n` +
-      `    代价 = 零（可选字段：老会话读不到 ⇒ 装配走兜底链，自然降级，无 deprecation 需求）。`;
+      `    代价 = 零（可选字段：老会话读不到 ⇒ 装配走兜底链，自然降级，无 deprecation 需求）。` +
+      `\n  ⑫ SkillEntry.overriddenLayer 新增（2026-11-07 · 同名覆盖可见性，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：同名覆盖是合法语义（后加载者胜），此前被淘汰一方\n` +
+      `    从 UI 静默消失（用户不知自己盖掉了谁 / 被谁盖掉）。本字段只在覆盖分支记录**被淘汰来源**，\n` +
+      `    不参与生效判定、不进模型面。真消费者 = 宿主 skillAggregation.listVisibleSkills（直通 SkillDto），\n` +
+      `    再由 settingsView 渲染为「已覆盖 X 同名技能」；行为由内核 skillManager 三段覆盖测试 +\n` +
+      `    宿主 skillAggregation/settingsView 测试守护，变异验证（移除赋值/记录即转红）。\n` +
+      `    代价 = 零（可选字段：缺省 = 未覆盖，既有调用与模型面零变化）。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

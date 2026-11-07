@@ -954,12 +954,16 @@ describe('SkillManager · 补充分支路径', () => {
       await manager.loadExtraDir(userDir, 'user');
       expect(manager.get('dup')?.content).toBe('用户版本');
       expect(manager.userOverrideNames).toEqual(['dup']);
+      // 覆盖事实随胜者携带：用户版记录「盖掉了内置版」——UI 靠它把静默覆盖说清
+      expect(manager.get('dup')?.overriddenLayer).toBe('builtin');
 
       await manager.loadExtraDir(projectDir, 'project');
       // 最终生效 = 项目版；项目覆盖不计入用户覆盖（分账口径）
       expect(manager.get('dup')?.content).toBe('项目版本');
       expect(manager.userOverrideNames).toEqual([]);
       expect(manager.projectOverrideNames).toEqual(['dup']);
+      // 项目版记录「盖掉了用户版」（不是笼统的「内置」——来源必须精确，不许谎报）
+      expect(manager.get('dup')?.overriddenLayer).toBe('user');
       // 无同名双存
       expect(manager.list.filter((s) => s.name === 'dup')).toHaveLength(1);
 
@@ -967,6 +971,38 @@ describe('SkillManager · 补充分支路径', () => {
       await manager.reload();
       expect(manager.get('dup')?.content).toBe('项目版本');
       expect(manager.list.filter((s) => s.name === 'dup')).toHaveLength(1);
+    });
+
+    it('覆盖事实不臆测来源：被 register() 运行时项占位时 overriddenLayer 缺省（不谎报 builtin）', async () => {
+      const userDir = join(testDir, 'user-skills');
+      createSkillFile(
+        userDir,
+        'runtime-dup.md',
+        '---\nname: runtime-dup\ndescription: d\n---\n用户版',
+      );
+      const manager = new SkillManager(testDir);
+      await manager.load();
+      manager.register({
+        name: 'runtime-dup',
+        content: '运行时正文',
+        description: '运行时注入',
+        layer: 'agent',
+        filePath: '',
+      });
+      await manager.loadExtraDir(userDir, 'user');
+      expect(manager.get('runtime-dup')?.content).toBe('用户版');
+      // 被覆盖者不是磁盘内置项，来源不可考 ⇒ 必须缺省，不得为了凑字段谎报成 builtin
+      expect(manager.get('runtime-dup')?.overriddenLayer).toBeUndefined();
+    });
+
+    it('未被覆盖的技能不携带覆盖事实（overriddenLayer 缺省）', async () => {
+      const userDir = join(testDir, 'user-skills');
+      createSkillFile(userDir, 'plain.md', '---\nname: plain\ndescription: p\n---\n独立版');
+      const manager = new SkillManager(testDir);
+      await manager.load();
+      await manager.loadExtraDir(userDir, 'user');
+      expect(manager.get('plain')?.content).toBe('独立版');
+      expect(manager.get('plain')?.overriddenLayer).toBeUndefined();
     });
 
     it('信任后注入项目目录立即生效（不重启，后加载者胜）', async () => {

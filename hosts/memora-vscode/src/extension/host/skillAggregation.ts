@@ -10,7 +10,8 @@
  * settingsPanel / chatPanel 共用本模块，避免两处各自拼接清单造成第二份来源。
  * 来源判定用 filePath 前缀（各目录天然不重叠），同名冲突按
  * 去重表 DEDUP_PRIORITY 裁决——**与列表展示排序 SOURCE_ORDER 是两件事**（见下）。
- * 不改内核 SkillEntry 契约。
+ * 同名覆盖是**合法语义**（后加载者胜）：本模块只把「淘汰了谁」记到胜者的
+ * `overriddenLayer`（供 UI 说明），**不改生效判定、不报错**。
  */
 import type { Agent } from '@zooique/memora';
 import { join } from 'node:path';
@@ -102,11 +103,21 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
     filePath?: string,
     displayName?: string,
     packageRoot?: string,
+    // 内核已记录的全局池覆盖来源（`SkillEntry.overriddenLayer` 只读直通；角色包推送不传）
+    overriddenLayer?: SkillSource,
   ): void => {
     if (!name) return;
     const prev = byName.get(name);
-    // 新来源优先级不高于已有 → 保留已有（去重方向必须对齐注入面，故不可用「先到先得」）
-    if (prev && DEDUP_PRIORITY[prev.layer ?? 'builtin'] <= DEDUP_PRIORITY[layer]) return;
+    if (prev) {
+      // 新来源优先级不高于已有 → 保留已有（去重方向必须对齐注入面，故不可用「先到先得」）
+      if (DEDUP_PRIORITY[prev.layer ?? 'builtin'] <= DEDUP_PRIORITY[layer]) {
+        // 已有条目胜出：把被淘汰来源记到胜者身上（覆盖事实可见，生效者不变）
+        if (prev.overriddenLayer !== layer) byName.set(name, { ...prev, overriddenLayer: layer });
+        return;
+      }
+      // 新条目胜出：内核全局池覆盖优先（如项目覆盖用户），否则记被淘汰的 prev 来源
+      overriddenLayer = overriddenLayer ?? prev.layer;
+    }
     byName.set(name, {
       name,
       description: description ?? '',
@@ -115,6 +126,8 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
       // 包根直通内核字段（复制单元），宿主聚合层不做任何推导
       packageRoot,
       layer,
+      // 覆盖事实：仅在真的淘汰了同名项时出现（缺省 = 无覆盖）
+      overriddenLayer,
     });
   };
 
@@ -129,6 +142,8 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
         s.filePath,
         s.displayName,
         s.packageRoot,
+        // 全局池加载覆盖事实（builtin → user → project），内核直通
+        s.overriddenLayer,
       );
     }
   }

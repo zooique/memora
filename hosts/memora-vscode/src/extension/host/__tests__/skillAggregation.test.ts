@@ -33,6 +33,8 @@ function makeAgent(opts: {
     /** 内核 SkillEntry.displayName（正文 H1 派生）；缺省 = 无 H1，展示面回退 name */
     displayName?: string;
     layer?: string;
+    /** 内核记录的全局池覆盖来源（只读直通 UI；缺省 = 未覆盖任何同名项） */
+    overriddenLayer?: 'builtin' | 'user' | 'project';
   }>;
   roleSkills?: Array<{ name: string; description?: string; displayName?: string }>;
   roleContent?: { [name: string]: string };
@@ -49,6 +51,8 @@ function makeAgent(opts: {
         displayName: g.displayName,
         filePath: g.filePath,
         layer: (g.layer ?? 'project') as 'agent' | 'project',
+        // 覆盖事实直通（内核是唯一产生点，桩不额外推导）
+        overriddenLayer: g.overriddenLayer,
       })),
       get: (n: string) => {
         // 与真实 SkillManager.get 同构：禁用名**短路返回 null**。
@@ -171,6 +175,29 @@ describe('listVisibleSkills · 多源技能聚合', () => {
     const out = listVisibleSkills({ agent, configDir, userSkillsDir });
     expect(out).toHaveLength(1);
     expect(out[0].layer).toBe('user');
+  });
+
+  it('同名覆盖可见事实：胜者携带被覆盖来源（角色包现场记录 / 内核全局池事实直通）', () => {
+    // ① 跨源（角色包 vs 全局池）：宿主去重现场记录被淘汰一方，胜者携带 user
+    const agent = makeAgent({
+      global: [{ name: '同名', filePath: join(userSkillsDir, 'dup.md') }],
+      roleSkills: [{ name: '同名' }],
+    });
+    const out = listVisibleSkills({ agent, configDir, userSkillsDir });
+    expect(out).toHaveLength(1);
+    expect(out[0].layer).toBe('rolepack');
+    expect(out[0].overriddenLayer).toBe('user');
+
+    // ② 全局池内（builtin → user）：内核已判定，宿主只直通，不得再推导第二份来源
+    const agent2 = makeAgent({
+      global: [
+        { name: '同源', filePath: join(userSkillsDir, 'same.md'), overriddenLayer: 'builtin' },
+      ],
+    });
+    const out2 = listVisibleSkills({ agent: agent2, configDir, userSkillsDir });
+    expect(out2).toHaveLength(1);
+    expect(out2[0].layer).toBe('user');
+    expect(out2[0].overriddenLayer).toBe('builtin');
   });
 
   it('禁用标注：命中内核禁用集 → disabled=true，且条目**保留不隐藏**（供用户对照确认启停）', () => {

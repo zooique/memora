@@ -466,6 +466,20 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     dispatchSkills([makeSkill(0)]);
     expect(document.querySelector('#skills-root .skill-unmatched-tip')).toBeNull();
   });
+
+  it('E 同名覆盖说明：overriddenLayer 有值才渲染「已覆盖 X 同名技能」，缺省不渲染', () => {
+    mountSettingsView();
+    dispatchSkills([
+      { name: 'skill-a', description: '覆盖者', layer: 'rolepack', overriddenLayer: 'user' },
+      { name: 'skill-b', description: '普通技能', layer: 'user' },
+    ]);
+    // 覆盖是合法语义的可见事实：胜者卡片说明它盖掉了谁（不是健康问题，走中性样式）
+    const lines = document.querySelectorAll('#skills-root .skill-override');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.textContent).toContain('已覆盖用户同名技能');
+    // 未覆盖者不得凭空多出一行（防「无条件渲染」的假绿）
+    expect(document.querySelectorAll('.skill-item')).toHaveLength(2);
+  });
 });
 
 describe('技能禁用延长线开关（S4 E，2026-09-22）', () => {

@@ -14,6 +14,12 @@
  * 3. 两侧允许的差异必须登记在夹具的 `allowedDifferences`（含理由），测试断言「不一致的用例
  *    恰好等于白名单」，既防漏登记，也防白名单悄悄过期（差异消失同样转红，逼人删白名单）。
  * 4. `valid` 夹具必须两侧都通过——否则「两边都恒错」也能让「一致」成立，是典型假绿。
+ *
+ * 跨包边界（尾巴 1 的收法 = 甲：显式 SKIP）：
+ * 本测试位于内核测试目录，却要执行宿主侧 `verify-skill.mjs`。同仓检出时能跑，但内核包
+ * 单独发布 / 单独检出（不带 `hosts/`）时必须**显式跳过并打印原因**，不允许静默放过，也不
+ * 允许因 spawn ENOENT 变成含糊的假红。选择甲而不搬去宿主侧的理由：夹具与判据真源都在内核
+ * （`validateFile` 是运行时真源），搬去宿主会让内核侧的漂移无人守门。
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -95,6 +101,24 @@ const REQUIRED_CASE_IDS = [
 ];
 
 /**
+ * 当前检出是否带宿主侧预检脚本。
+ *
+ * 内核包单独发布 / 单独检出时不包含 `hosts/`；此时本测试**显式跳过**（而不是红或静默绿），
+ * 并把原因打印到测试输出，保证「跳过」是一个看得见的事实。
+ */
+const HOST_VERIFY_SCRIPT_AVAILABLE = existsSync(VERIFY_SKILL_SCRIPT);
+if (!HOST_VERIFY_SCRIPT_AVAILABLE) {
+  console.warn(
+    `[SKIP] 未找到宿主侧预检脚本：${VERIFY_SKILL_SCRIPT}\n` +
+      '原因：内核包单独检出/发布时不含 hosts/ 目录。夹具与判据真源仍在内核，' +
+      '故本测试保留但显式跳过（不静默放过）；同仓检出时自动恢复执行。',
+  );
+}
+
+/** 需要宿主脚本的用例统一用本别名：脚本缺席时注册为 skip（输出里显示跳过） */
+const parityIt = HOST_VERIFY_SCRIPT_AVAILABLE ? it : it.skip;
+
+/**
  * 读取唯一夹具来源
  * @returns 夹具结构
  */
@@ -154,8 +178,8 @@ describe('技能校验双份一致性：内核 validateFile ↔ verify-skill 预
   let results: CaseResult[] = [];
 
   beforeAll(async () => {
-    // 脚本缺失时给出明确失败，而不是让 spawn 的 ENOENT 变成含糊的 JSON 解析错误
-    expect(existsSync(VERIFY_SKILL_SCRIPT)).toBe(true);
+    // 脚本缺席时不建 workspace、不 spawn：所有依赖它的用例已注册为 skip（原因见模块头）
+    if (!HOST_VERIFY_SCRIPT_AVAILABLE) return;
     workspace = join(tmpdir(), `memora-skill-parity-${Date.now()}`);
     results = [];
     for (const fixtureCase of fixture.cases) {
@@ -186,7 +210,7 @@ describe('技能校验双份一致性：内核 validateFile ↔ verify-skill 预
   });
 
   for (const fixtureCase of fixture.cases) {
-    it(`夹具「${fixtureCase.id}」：两侧判定与共享判据错误集合一致`, () => {
+    parityIt(`夹具「${fixtureCase.id}」：两侧判定与共享判据错误集合一致`, () => {
       const result = results.find((r) => r.fixtureCase.id === fixtureCase.id);
       if (!result) throw new Error(`未找到夹具「${fixtureCase.id}」的执行结果`);
 
@@ -240,7 +264,7 @@ describe('技能校验双份一致性：内核 validateFile ↔ verify-skill 预
     });
   }
 
-  it('白名单完备：两侧不一致的用例恰好等于 allowedDifferences 声明', () => {
+  parityIt('白名单完备：两侧不一致的用例恰好等于 allowedDifferences 声明', () => {
     const disagreements = results
       .filter((r) => r.kernel.ok !== r.script.ok)
       .map((r) => r.fixtureCase.id)

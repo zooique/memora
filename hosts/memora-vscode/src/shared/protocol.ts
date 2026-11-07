@@ -2337,6 +2337,15 @@ export interface SkillDto {
   health?: 'ok' | 'warn' | 'error';
   /** 校验问题清单（health!=='ok' 时携带，供列表/展开区错误定位） */
   issues?: SkillIssueDto[];
+  /**
+   * 本条覆盖掉的同名技能来源（覆盖事实，供 UI 把「静默覆盖」说清）。
+   *
+   * 跨源同名是**合法覆盖语义**（后加载者胜），本字段绝不用于报错或改变生效者；
+   * 缺省 = 本条未覆盖任何同名项。真源两段、互不重叠：
+   * - 全局池加载覆盖（builtin → user → project）→ 内核 `SkillEntry.overriddenLayer` 直通；
+   * - 角色包与全局同名（`DEDUP_PRIORITY` 裁决）→ `skillAggregation.ts` 的去重分支现场记录。
+   */
+  overriddenLayer?: 'project' | 'builtin' | 'rolepack' | 'user';
 }
 
 /** 任务看板任务项条目（对齐内核 PlanItem 扁平化） */

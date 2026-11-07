@@ -257,4 +257,11 @@ export const skillsStyles = `
   }
   #skills-root .skill-problems .prob-error { color: var(--skill-health-error); }
   #skills-root .skill-problems .prob-warning { color: var(--skill-health-warn); }
+  /* 同名覆盖说明：合法覆盖语义的可见事实，不是健康问题 ⇒ 中性色，不借 warn/error 配色 */
+  #skills-root .skill-override {
+    margin: 0 0 var(--sp-2, 6px);
+    font-size: var(--font-sm, 11px);
+    color: var(--text-secondary, #9aa0a6);
+    line-height: var(--lh-tight);
+  }
 `;

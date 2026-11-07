@@ -83,6 +83,15 @@ export interface SkillEntry {
    */
   layer: 'agent' | 'project';
   /**
+   * 本条覆盖掉的同名技能来源（覆盖事实，供宿主 UI 让「静默覆盖」变为可解释）。
+   *
+   * 跨源同名是**合法覆盖语义**（后加载者胜），本字段绝不用于报错或改变生效者，
+   * 只记录被淘汰一方的来源；缺省 = 本条未覆盖任何同名项。
+   * 唯一产生点 = `SkillManager.loadExtraDir` 的覆盖分支（用户/项目注入时）。
+   * **不进模型面**：L1/L2 装配不读取本字段。
+   */
+  overriddenLayer?: 'builtin' | 'user' | 'project';
+  /**
    * L3 层数据（资源 + 脚本，可选）
    *
    * 当技能目录包含 resources/ 或 scripts/ 时自动填充。

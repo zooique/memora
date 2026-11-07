@@ -250,6 +250,13 @@ function createSkillsView({
       </div>
       <p class="skill-desc">${escapeHtml(s.description)}</p>
       ${
+        // 同名覆盖事实（合法覆盖语义的可见出口）：让用户知道本条盖掉了谁，而不是静默吞并。
+        // 只陈述来源，不改变生效者、不引导用户「修复」——覆盖本身不是错误。
+        s.overriddenLayer
+          ? `<p class="skill-override">已覆盖${LAYER_META[s.overriddenLayer].label}同名技能（被覆盖的版本不在本列表中）</p>`
+          : ''
+      }
+      ${
         s.issues && s.issues.length > 0
           ? `<ul class="skill-problems">${s.issues.map((i) => `<li class="prob-${i.level}">${escapeHtml(i.message)}</li>`).join('')}</ul>`
           : ''
