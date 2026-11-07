@@ -269,7 +269,8 @@ export class ToolResultCache {
    * 失效指定 path 关联的 read_file 缓存（副作用型工具成功后调用，放行后续合法重读）
    *
    * 按 `subject.path` 匹配 —— **该文件所有读取区间一起失效**（文件内容变了，任何区间的旧结果都作废）。
-   * `list_dir` 不失效：文件修改不改目录结构。
+   * ⚠️ 本方法**只管文件正文视图**：目录视图由 `invalidateDirOf` 单独负责 —— 写 = 新建 / 删除
+   * 也可能改变目录条目集合，旧注释「改文件不改目录结构」不成立（WRITECAP-1）。
    *
    * @param rawPath 被修改 / 删除的文件路径
    */
@@ -279,6 +280,49 @@ export class ToolResultCache {
       if (entry.toolName === 'read_file' && entry.subject.path === target) {
         this.cache.delete(k);
       }
+    }
+  }
+
+  /**
+   * 失效「写入目标所在目录」的 list_dir 缓存（WRITECAP-1）
+   *
+   * 理由：写工具既可能改文件内容、也可能**新建 / 删除**文件条目 ⇒ 目录结构确实会变，
+   * 旧的 list_dir 结果不再与磁盘一致。只失效直接父目录：一次写只影响其所在目录的条目集合。
+   *
+   * @param rawPath 被写入 / 删除的文件路径（取其直接父目录的规范化键）
+   */
+  invalidateDirOf(rawPath: string): void {
+    const target = normalizePathKey(rawPath);
+    const dir = normalizePathKey(path.posix.dirname(target));
+    for (const [k, entry] of this.cache) {
+      if (entry.toolName === 'list_dir' && entry.subject.path === dir) {
+        this.cache.delete(k);
+      }
+    }
+  }
+
+  /**
+   * 全量失效 read_file 缓存（`diskWrite:'opaque'` 写成功后调用，WRITECAP-1）
+   *
+   * 为何必须全量：opaque 写（脚本 / 命令 / MCP 写工具）的目标**不可静态定位**，
+   * 上下文里任何一份已读文件都可能是它改过的对象。逐个猜路径必然漏，漏判的后果是
+   * 「工具报成功、重读仍被拦」——模型只能换路径或放弃，属静默死锁。
+   */
+  invalidateAllReads(): void {
+    for (const [k, entry] of this.cache) {
+      if (entry.toolName === 'read_file') this.cache.delete(k);
+    }
+  }
+
+  /**
+   * 全量失效 list_dir 缓存（同上，opaque 写：目录结构变更面不可知）
+   *
+   * 与 `invalidateAllReads` 成对：opaque 写既可能改文件内容，也可能增删目录条目，
+   * 两种视图都必须失效，否则模型重列目录会拿到写前快照。
+   */
+  invalidateAllDirs(): void {
+    for (const [k, entry] of this.cache) {
+      if (entry.toolName === 'list_dir') this.cache.delete(k);
     }
   }
 

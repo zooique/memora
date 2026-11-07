@@ -2493,17 +2493,26 @@ export class AgentLoop {
         // 自持状态因此不再把「用户拒绝」当失败升级文案，语义对齐「主动挡下」
         outcome: outcome.status,
       });
-      // 副作用型工具成功 → 主动失效关联的 read_file 缓存（放行后续合法重读）
-      // 覆盖面派生自 `diskWrite:'path'` 声明（与串行闸**同一判据**，自定义工具同生效），
+      // 副作用型工具成功 → 主动失效受影响的缓存视图（WRITECAP-1，放行后续合法重读）
+      // 覆盖面派生自 `diskWrite` 声明（与串行闸**同一判据**，自定义工具同生效）。
+      //  'path'   ：目标可定位 → 失效该文件的 read_file + 其**直接父目录**的 list_dir
+      //            （写 = 改内容 或 新建/删除条目，旧注释「改文件不改目录结构」不成立）。
+      //  'barrier'：opaque 写（脚本 / 命令 / MCP）或 path 提取失败 ⇒ 目标不可知 →
+      //            全量失效 read_file 与 list_dir、清空覆盖度台账。宁全量重读，不留静默死锁。
+      //            宿主 workspace 快照 diff 仍负责改动**可视化**追踪（fileChangeTracker.noteExternalMutations），
+      //            与本失效面职责不同：一个给人看，一个给模型放行。
       // 目标提取复用同一提取器——必须用**归一后**路径才对得上缓存/台账的键（raw 写法如 './a.md' 会失效不中）。
-      // opaque 写（脚本类）目标不可知、无法按 path 失效：但宿主已通过执行前后 workspace 目录快照 diff 收口
-      //（见 fileChangeTracker.noteExternalMutations），改动可视化盲区已闭环（台账 DIFF-4 可视化半已解除）。
       const invalidatedIntent = this.resolveWriteIntent(tc.function.name, tc.function.arguments);
-      const invalidatedPath = invalidatedIntent.kind === 'path' ? invalidatedIntent.key : undefined;
-      if (ok && invalidatedPath) {
-        this.toolResultCache.invalidateFile(invalidatedPath);
+      if (ok && invalidatedIntent.kind === 'path') {
+        this.toolResultCache.invalidateFile(invalidatedIntent.key);
+        this.toolResultCache.invalidateDirOf(invalidatedIntent.key);
         // 台账同步失效：文件内容变了，旧覆盖度替身作废（防替身回显陈旧摘要 → 放行合法重读）
-        this.fileExposure.invalidate(invalidatedPath);
+        this.fileExposure.invalidate(invalidatedIntent.key);
+      } else if (ok && invalidatedIntent.kind === 'barrier') {
+        this.toolResultCache.invalidateAllReads();
+        this.toolResultCache.invalidateAllDirs();
+        // 覆盖度台账全量作废：目标不可知 ⇒ 任何「已覆盖到此区间」的替身都可能是陈旧快照
+        this.fileExposure.clear();
       }
       yield {
         type: 'tool_result',

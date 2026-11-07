@@ -7794,3 +7794,58 @@ describe('AgentLoop · 自定义工具写盘声明（DISKWRITE-CUSTOM-1）', () 
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：写后缓存失效面（WRITECAP-1）
+// 病灶：串行闸与宿主追踪都按 `diskWrite` 判「这是写」，缓存失效面却只认 `kind==='path'`：
+//       opaque 写落到 `barrier` → 目标 undefined → 什么都不清 ⇒ 模型重读必被 [ALREADY_READ] 拦。
+//       path 写又漏清父目录的 list_dir ⇒ 新建 / 删除文件后重列目录拿到写前快照。
+// ═══════════════════════════════════════════════════════════════
+describe('AgentLoop · 写后缓存失效面（WRITECAP-1）', () => {
+  /** 单调用单轮构造（与 DISKWRITE-CUSTOM-1 同形，参数走 JSON 字符串） */
+  const call = (id: string, name: string, args: Record<string, unknown>): ChunkItem => ({
+    content: '',
+    toolCalls: [{ id, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
+  });
+
+  /** 跑完一轮并收集全部 chunk（工具结果按原始顺序落 messages） */
+  async function drain(loop: AgentLoop, input: string): Promise<AgentChunk[]> {
+    const out: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput(input)) out.push(chunk);
+    return out;
+  }
+
+  it('opaque 写成功 ⇒ 清空 read_file 缓存与覆盖度台账（重读放行，非假绿）', async () => {
+    const toolExecutor = mockExecutorReturning('文件正文');
+    const provider = mockMultiTurnProvider([
+      [call('r1', 'read_file', { path: 'a.md' })],
+      // run_command 是 diskWrite:'opaque' 的写工具：目标不可静态定位
+      [call('w1', 'run_command', { command: 'node scripts/gen.mjs' })],
+      [call('r2', 'read_file', { path: 'a.md' })],
+      [{ content: '完成' }],
+    ]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+    const chunks = await drain(loop, '读 → 跑脚本 → 重读');
+
+    // 三次都真执行：若缓存未失效，r2 会被 [ALREADY_READ] 拦下 ⇒ 执行器只有 2 次
+    expect(toolExecutor).toHaveBeenCalledTimes(3);
+    expect(chunks.filter((c) => c.type === 'tool_result' && c.blocked)).toHaveLength(0);
+  });
+
+  it('path 写成功 ⇒ 清掉目标父目录的 list_dir 缓存（新建文件改变目录结构）', async () => {
+    const toolExecutor = mockExecutorReturning('a.md', '写入成功', 'a.md\nnew.md');
+    const provider = mockMultiTurnProvider([
+      [call('l1', 'list_dir', { path: 'docs' })],
+      // write_file 是 diskWrite:'path'：目标 = args.path，父目录 = docs
+      [call('w1', 'write_file', { path: 'docs/new.md', content: 'x' })],
+      [call('l2', 'list_dir', { path: 'docs' })],
+      [{ content: '完成' }],
+    ]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+    const chunks = await drain(loop, '列目录 → 新建文件 → 重列');
+
+    // 三次都真执行：若目录视图未失效，l2 会命中缓存被拦（旧注释「改文件不改目录结构」即此漏洞）
+    expect(toolExecutor).toHaveBeenCalledTimes(3);
+    expect(chunks.filter((c) => c.type === 'tool_result' && c.blocked)).toHaveLength(0);
+  });
+});
