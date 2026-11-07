@@ -9,8 +9,8 @@
 
 - ⚠️ **必须跑含本次修复的构建**。④（allowlist 热更同步运行态 `allowKeys`）在
   `ce1aadea` 之前不存在——用旧版安装验不到，且会误判成「缺陷仍在」。
-  二选一：① 仓库根 `F5` 启动 Extension Development Host；② `npm run package` 打
-  `memora-vscode.vsix` 后从 VSIX 安装。
+  二选一：① 打开 `hosts/memora-vscode` 后按 `F5`（配置名 `Run Extension`）启动 Extension
+  Development Host；② `npm run package` 打 `memora-vscode.vsix` 后从 VSIX 安装。
 - 构建必须走 `npm run compile`（**F5 的默认构建任务就是它**，无需手跑）。其末尾已挂产物
   加载冒烟 `scripts/verify-bundle-loadable.mjs`——产物若加载不了，构建直接失败，不会给你
   一个装上就炸的 vsix（该冒烟为 2026-10-24 真机首曝缺陷所加，见 §4 判别表首行）。
