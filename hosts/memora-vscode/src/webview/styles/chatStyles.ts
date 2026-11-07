@@ -815,6 +815,19 @@ export const chatStyles = `
    * 流式期间按 markdown 增量渲染 + 末尾光标（运行态 data-status / 终态 data-terminus）；流结束后终渲染。
    * 表格 display:block + 横向滚动防撑爆气泡（pure CSS 降维，不写复杂正表格补全）。 */
   .msg.assistant .msg-body { white-space: normal; }
+  /* 正文排版唯一来源（2026-11-07）：AI 正文文字只在下面声明一次字号/颜色。
+   * 三处消费者同属「AI 说的正文」——
+   *   ① .msg.assistant .msg-body：最终结论正文（本类此前靠继承 body/msg.assistant，隐式不可见）；
+   *   ② .process-flow__narrate：运行中流式叙述行（工具步期间正文平铺于此）；
+   *   ③ .round-block__narrate：收场后同段正文收进过程折叠区。
+   * 收进同一组 = 运行中与结论不再出现「11px / 13px」两套排版，改 tokens 也只跟着一处走。
+   * 边界（刻意不并入）：工具卡 / 系统提示 / 排队提示 / 错误提示属过程性提示，各自保留降级。 */
+  .msg.assistant .msg-body,
+  .process-flow__narrate,
+  .round-block__narrate {
+    font-size: var(--font-base, 13px);
+    color: var(--text-primary, #cccccc);
+  }
   /* 光标双通道（UI-BLOCK-ICON 批次二，方案-过程块视觉辨识-20261001.md §三定案 B；2026-10-19 SSOT 收敛）：
    * 运行/挂起态写 .msg-body[data-status]，终态写 [data-terminus]
    * ——一属性背两语义 = 双真相源，且终态覆盖运行态令「运行结束」表现为被覆盖而非自然消失；
@@ -2498,10 +2511,10 @@ export const chatStyles = `
   @media (prefers-reduced-motion: reduce) {
     .process-flow__phase::before { animation: none; }
   }
-  /* 叙述冒号行：平铺直示（非折叠）——「AI 说什么：」后接工具折叠块 */
+  /* 叙述冒号行：平铺直示（非折叠）——「AI 说什么：」后接工具折叠块。
+   * 字号/颜色不在此声明：与 .msg-body 共用「正文排版唯一来源」（见 Components 段头组规则）。 */
   .process-flow__narrate {
-    font-size: var(--font-sm, 11px); line-height: var(--lh-normal);
-    color: var(--text-primary, #cccccc);
+    line-height: var(--lh-normal);
     white-space: pre-wrap; word-break: break-all;
   }
   /* 中断轮平铺收尾行（过程折叠、停止行折叠块外平铺常驻——RT/RP 同构） */
@@ -2554,12 +2567,12 @@ export const chatStyles = `
   }
   .is-plan-done .round-block__plan-item-status { color: var(--status-pass, #4ec9b0); }
   .is-plan-active .round-block__plan-item-status { color: var(--accent, #0e639c); }
-  /* 过程叙述行：LLM 一段行动叙述 = 一行纯文本直显（流式 process-flow__narrate 同构形态），
-   * 与工具行平级平铺 details 顶层——无折叠（叙述语义即短句，details+双份消费已废） */
+  /* 过程叙述行：LLM 一段行动叙述 = 一行纯文本直显（与流式 process-flow__narrate 同构形态），
+   * 与工具行平级平铺 details 顶层——无折叠（叙述语义即短句，details+双份消费已废）。
+   * 字号/颜色不在此声明：与 .msg-body 共用「正文排版唯一来源」（见 Components 段头组规则）——
+   * 同一段正文在运行中/收场后/结论三处不得出现三档字号。 */
   .round-block__narrate {
     padding: var(--sp-1, 4px) 0; line-height: var(--lh-normal);
-    font-size: var(--font-xs, 10px);
-    color: var(--text-primary, #cccccc);
     word-break: break-all; white-space: pre-wrap;
   }
   /* 思考折叠行/块：模型 thought 流，
