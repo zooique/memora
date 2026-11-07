@@ -7834,20 +7834,20 @@ describe('AgentLoop · 写后缓存失效面（WRITECAP-1）', () => {
 
   it('path 写成功 ⇒ 清掉目标父目录与祖先链的 list_dir 缓存（新建文件改变目录结构）', async () => {
     const toolExecutor = mockExecutorReturning(
-      'docs/a.md',
+      'pkg/a.md',
       'a.md',
       '写入成功',
-      'docs/a.md\ndocs/new.md',
+      'pkg/a.md\npkg/new.md',
       'a.md\nnew.md',
     );
     const provider = mockMultiTurnProvider([
-      // 递归列表以仓库根为根：写入 docs/new.md 后，根视图必须同样失效
+      // 递归列表以仓库根为根：在 pkg 下新建文件后，根视图必须同样失效
       [call('l1', 'list_dir', { path: '.', recursive: 'true', max_depth: '2' })],
-      [call('l2', 'list_dir', { path: 'docs' })],
-      // write_file 是 diskWrite:'path'：目标 = args.path，父目录 = docs
-      [call('w1', 'write_file', { path: 'docs/new.md', content: 'x' })],
+      [call('l2', 'list_dir', { path: 'pkg' })],
+      // write_file 是 diskWrite:'path'：目标 = args.path，父目录 = pkg
+      [call('w1', 'write_file', { path: 'pkg/new.md', content: 'x' })],
       [call('l3', 'list_dir', { path: '.', recursive: 'true', max_depth: '2' })],
-      [call('l4', 'list_dir', { path: 'docs' })],
+      [call('l4', 'list_dir', { path: 'pkg' })],
       [{ content: '完成' }],
     ]);
     const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
