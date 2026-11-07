@@ -2406,6 +2406,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 在途审批卡重推：视图重建不终结请求，但新 webview 没有旧卡 ⇒ 不重推就永远无法作答
     // （后台会话切回来时由 setForeground 补推，这里只管「重建时仍停在前台」的那张）
     this._confirm.repostForeground();
+    // ⑨ 结构写窗口锁回放（#13）：webview 折叠/展开会重建 HTML，新 webview 锁态回到初值
+    //    「可用」；若此刻仍处于写盘窗口（流在跑 / 会话已挂起），截断 / 分叉会被错误放开。
+    //    status 只驱动结构锁这一层，导航态不在此处（其可用性由 turn_update 单写点派生）。
+    this.replayStructureWriteLock();
     // 角色 handoff 预填补发：视图解析后 webview 监听器已就绪，安全投递
     if (this._pendingPrefill !== undefined) {
       this.post({ type: 'prefill_input', text: this._pendingPrefill });
@@ -2560,6 +2564,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     //（generator 未 close）则 checkpoint.plan 仍在，缺的只是 UI 重放投递——补推一次让任务表
     // 看板恢复（turn 结束后内核 clearPlanOnTurnEnd 清 plan）。_agent 未装配时 postPlanUpdate 静默跳过。
     this.postPlanUpdate();
+  }
+
+  /**
+   * 结构写窗口锁回放（#13：webview 折叠/展开重建后锁态丢失）
+   *
+   * 只补「截断 / 分叉 / 右键菜单」这一层，判据与流内 status 推送同源、不新造锁态快照：
+   * 流在跑（`runtimeFor().streaming`，与 consumeFlow 同生命周期）→ thinking；
+   * 否则已挂起（`sessionManager.status === 'paused'`，与 deriveTurnState 同一入参）→ paused。
+   * 两者都不成立 ⇒ **不发**：新 webview 的结构锁初值即「可用」，补一条 done 只会多做
+   * 焦点恢复 / 呼吸点清理，且违背「锁已解除后重建必须可用」。
+   * 导航（历史 / 新建 / 切换）不在本层：其可用态由 turn_update 单写点派生，status 不触碰它。
+   */
+  private replayStructureWriteLock(): void {
+    const state =
+      this.runtimeFor().streaming === true
+        ? 'thinking'
+        : this._agent?.sessionManager?.status === 'paused'
+          ? 'paused'
+          : undefined;
+    if (state) this.post({ type: 'status', state });
   }
 
   /**
