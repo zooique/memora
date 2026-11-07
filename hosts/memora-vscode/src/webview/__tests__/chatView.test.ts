@@ -13374,3 +13374,127 @@ describe('历史入口角标（E4 批 4：会话活跃度快照投影）', () =>
     expect(badge.hidden).toBe(true);
   });
 });
+
+/**
+ * 草稿页会话级投影归零（2026-11-07 真机缺陷「再新建会话后看不到角色包徽章」收口）
+ *
+ * 判据：草稿页 = 无会话 ⇒ 无 Agent ⇒ **所有会话级投影都必须空**。五项（角色 / 能力徽章 /
+ * 上下文占用 / 后台任务 / 看板）少清一项 = 把上一会话的事实留在屏上，用户读成「当前会话」
+ * ——与谎报同向（隐藏真实事实 ≠ 诚实，展示旧会话事实更不是当前会话）。
+ *
+ * 驱动序列 = 宿主 `DraftSessionController.project()` 的投递顺序（语义单点在宿主；本用例只按
+ * 该序列派发，不另造一份判据）。归零信号复用既有 `session_title.draft === true`，不新增消息类型。
+ *
+ * 变异靶标（删掉保护必转红）：
+ *  · 删掉 chatView 的 `msg.draft === true` 分支 ⇒ 能力徽章 / 占用残留，本用例转红；
+ *  · 把 `hideCapabilityBadge` 挪成「无激活角色包就隐藏」的通用分支 ⇒ 「真实会话无激活包」
+ *    会把「全部工具」这一真实能力面藏起来（方向同谎报，宿主级用例另钉）。
+ */
+describe('草稿页 = 会话级投影全部为空（角色 / 能力徽章 / 占用 / 后台任务 / 看板）', () => {
+  /**
+   * 造「上一会话」的五个非空投影
+   *
+   * 必须先证明基线可见/非空，否则「归零」断言可能只是开局即空（假绿）。
+   */
+  function seedPreviousSessionProjections(): void {
+    // ① 占用：先有 Provider 容量（renderLimit 空态）→ 再叠真实占用（25%）
+    dispatch({
+      type: 'chat_providers',
+      providers: [{ name: 'deepseek', displayName: 'DeepSeek', limitTokens: 100000 }],
+      activeName: 'deepseek',
+    });
+    dispatch({
+      type: 'context_occupancy',
+      occupancy: {
+        totalTokens: 100000,
+        rolePackBaseTokens: 10000,
+        dynamicSystemTokens: 0,
+        dialogueTokens: 15000,
+        dialogueCount: 2,
+        inputAnchorTokens: 0,
+        outputReserveTokens: 0,
+        freeTokens: 75000,
+      },
+    });
+    // ② 角色徽章
+    dispatch({ type: 'chat_role_pack', rolePack: '代码助手', traits: undefined });
+    dispatch({
+      type: 'chat_role_packs',
+      packs: [{ name: '代码助手', displayName: '代码助手', description: '写代码' }],
+      activeName: '代码助手',
+    });
+    // ③ 能力徽章（allow + 未声明 = 「全部工具」）
+    dispatch({
+      type: 'capability_badge',
+      toolMode: 'allow',
+      capabilityState: { kind: 'all' },
+    });
+    // ④ 后台任务条
+    dispatch({
+      type: 'background_tasks',
+      items: [
+        { taskId: 'bg-1', command: 'npm run build', status: 'running', statusLabel: '运行中' },
+      ],
+    });
+    // ⑤ 任务看板（webview 展示门槛 = ≥3 个任务项）
+    dispatch({
+      type: 'plan_update',
+      items: [
+        { id: 'p1', description: '读仓库结构', status: 'done', order: 1, planItemLog: [] },
+        { id: 'p2', description: '梳理模块边界', status: 'active', order: 2, planItemLog: [] },
+        { id: 'p3', description: '给出结论', status: 'pending', order: 3, planItemLog: [] },
+      ],
+    });
+  }
+
+  /** 取上一会话投影的 DOM 观察点（五项，缺一不可） */
+  function projections(): {
+    roleBadge: HTMLElement;
+    capabilityBadge: HTMLElement;
+    percent: HTMLElement;
+    backgroundBar: HTMLElement | null;
+    planBar: HTMLElement;
+  } {
+    return {
+      roleBadge: document.getElementById('currentRoleBadge') as HTMLElement,
+      capabilityBadge: document.getElementById('currentCapabilityBadge') as HTMLElement,
+      percent: document.getElementById('occPercent') as HTMLElement,
+      backgroundBar: document.querySelector<HTMLElement>('.background-tasks-bar'),
+      planBar: document.getElementById('planBar') as HTMLElement,
+    };
+  }
+
+  it('五个会话级投影在草稿页全部归零（上一会话的事实一个都不留）', () => {
+    mountChatView();
+    seedPreviousSessionProjections();
+
+    // —— 基线：五项必须非空/可见（否则后面的「归零」是假绿）——
+    let el = projections();
+    expect(el.roleBadge.hidden).toBe(false);
+    expect(el.roleBadge.textContent).toContain('代码助手');
+    expect(el.capabilityBadge.hidden).toBe(false);
+    expect(el.capabilityBadge.textContent).toBe('全部工具');
+    expect(el.percent.textContent).toBe('25%');
+    expect(el.backgroundBar?.hidden).toBe(false);
+    expect(el.planBar.hidden).toBe(false);
+
+    // —— 草稿投影序列（顺序 = DraftSessionController.project）——
+    dispatch({ type: 'clear_ok' });
+    dispatch({ type: 'session_title', title: '新会话', draft: true });
+    dispatch({ type: 'chat_role_pack', rolePack: '', traits: undefined });
+    dispatch({ type: 'chat_role_packs', packs: [], activeName: '' });
+    dispatch({ type: 'background_tasks', items: [] });
+
+    // —— 反证：五项全部回到空态 ——
+    el = projections();
+    expect(el.roleBadge.hidden).toBe(true);
+    expect(el.capabilityBadge.hidden).toBe(true);
+    // 隐藏之外还要清文案：隐藏元素里的旧文案在某些 CSS 覆盖下会露出来（与「不得留 0」同族）
+    expect(el.capabilityBadge.textContent).toBe('');
+    expect(el.percent.textContent).toBe('0%');
+    expect(el.backgroundBar?.hidden).toBe(true);
+    expect(el.planBar.hidden).toBe(true);
+    // 占用环复位而非被隐藏：草稿页仍有「当前模型容量」可展示，空环才是空态（隐藏会丢容量事实）
+    expect((document.getElementById('contextOccupancy') as HTMLElement).hidden).toBe(false);
+  });
+});

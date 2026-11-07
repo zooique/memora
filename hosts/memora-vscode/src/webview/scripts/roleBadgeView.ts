@@ -52,6 +52,13 @@ export interface RoleBadgeView {
     capabilityState: CapabilityStateDto,
     strategyHint?: RoleStrategyIndicatorDto,
   ): void;
+  /**
+   * 隐藏能力徽章（**仅草稿页投影归零用**，不代表「无能力面」的通用语义）
+   *
+   * 真实会话即使无激活角色包，能力面也是真实事实（如「全部工具」），不得隐藏；
+   * 只有草稿页（无会话 ⇒ 无 Agent ⇒ 无能力面投影）才调用本方法。
+   */
+  hideCapabilityBadge(): void;
 }
 
 export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
@@ -101,8 +108,8 @@ export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
    * - allow + `residentOnly`（显式空）→ 显示「仅基础工具」（标题说明联网 / 代码执行已关）
    * - allow + `list`（白名单）→ 显示能力列表（如「文件」「联网」「记忆」）
    * - 任一 allow 三态 + `toolReadonly='readonly'` → 在既有文案后附加只读提示（不改三态语义）
-   * 无隐藏分支：「无数据」态即骨架初始 hidden（未收到 capability_badge 前不亮），
-   * 本函数只负责点亮与更新，不回置隐藏。
+   * 本函数只负责点亮与更新、不回置隐藏（「无数据」态即骨架初始 hidden）；
+   * 唯一的隐藏入口是 `hideCapabilityBadge`（草稿页投影归零专用，见其注释）。
    */
   function updateCapabilityBadge(
     toolMode: 'allow' | 'block',
@@ -142,5 +149,18 @@ export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
     capabilityBadge.title = title;
   }
 
-  return { createTeamMeetingIcon, updateCapabilityBadge };
+  /**
+   * 隐藏能力徽章（草稿页 = 无会话 ⇒ 无能力面投影）
+   *
+   * 与 updateCapabilityBadge 的「有数据即显示」语义不冲突：本方法只在草稿投影里被调用，
+   * 不在任何「无激活角色包」分支自动触发（那会把真实会话的能力事实藏起来）。
+   */
+  function hideCapabilityBadge(): void {
+    if (!capabilityBadge) return;
+    capabilityBadge.hidden = true;
+    capabilityBadge.textContent = '';
+    capabilityBadge.title = '';
+  }
+
+  return { createTeamMeetingIcon, updateCapabilityBadge, hideCapabilityBadge };
 }

@@ -712,6 +712,116 @@ describe('草稿态 · 「＋」不再立刻落空会话（首次发送才建会
     expect(lastTitle(posted).title).toMatch(/^新会话 \d{2}:\d{2}$/);
   });
 
+  /**
+   * 草稿首条发送后，五个会话级投影全部恢复（CRITICAL：防「下次再加投影又漏一项」）
+   *
+   * 判据 = 草稿页归零的反向面：归零后必须有一处把它们重新点亮。本用例不逐个方法去测，
+   * 而是断言「首条发送这一条真实链路上，五类消息都必须到达」——新增会话级投影时若只挂
+   * draft 归零、忘了装配后补推，本条转红。
+   *
+   * 五项与 webview 侧归零用例逐项对应：角色 / 能力徽章 / 占用 / 后台任务 / 看板。
+   * 新实例刻意带**非空**数据（角色包 / 任务表 / 后台任务），否则「恢复了」可能只是「碰巧为空」。
+   *
+   * 变异靶标：删掉 `refreshAfterAssemble` 里的 `postPlanUpdate()` ⇒ 看板项转红；
+   * 删掉 `postCapabilityBadge()` / `pushRolePacks()` ⇒ 对应项转红。
+   */
+  it('草稿首条发送 ⇒ 角色 / 能力徽章 / 占用 / 后台任务 / 看板 五项全部恢复', async () => {
+    const agentA = sessionAgent('2026-11-06-a');
+    // 流**永不结束**：屏蔽「流收尾时的 plan 快照对齐」（否则尾部那条 plan_update 会掩盖
+    // 「装配/回放入口没补推」的缺陷——本用例要钉的正是恢复点本身，不是流收尾的顺带推送）
+    const hangingFlow = async function* (): AsyncGenerator<Chunk> {
+      await new Promise(() => {});
+      yield { type: 'never', roundId: 'never' };
+    };
+    // 新会话实例：角色包 + 任务表 + 一条后台任务（三项非空才能证明「恢复」）
+    const fresh = {
+      ...sessionAgent('2026-11-07-draft', hangingFlow, [
+        { taskId: 'bg-1', command: 'npm run build', startedAt: 1, status: 'running' },
+      ]),
+      rolePackManager: {
+        activeName: '代码助手',
+        getActive: () => ({
+          strategy: { act: { toolMode: 'allow', temperature: 0.7 }, prepare: {} },
+          capabilities: undefined,
+          traits: {},
+        }),
+        listMeta: () => [{ name: '代码助手', displayName: '代码助手', description: '写代码' }],
+        getActiveTeam: () => undefined,
+      },
+      // 任务看板快照源（checkpoint.plan）：装配后补推读的就是它
+      getCheckpoint: () => ({
+        plan: [
+          { id: 'p1', description: '读仓库结构', status: 'active', order: 1 },
+          { id: 'p2', description: '给出结论', status: 'pending', order: 2 },
+        ],
+        planItemLog: [],
+      }),
+    } as unknown as Agent;
+
+    const { provider, posted, cast, fireMessage } = setupPanel({ '2026-11-06-a': agentA }, [
+      '2026-11-06-a',
+    ]);
+    provider.setAgentFactory(async (_p, sessionId: string) =>
+      sessionId === '2026-11-06-a' ? agentA : fresh,
+    );
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = agentA;
+    // 本文件对 vscode 配置的 mock 恒返回 false ⇒ 真实 ProviderStore.listMasked 抛错，
+    // 占用补推被静默吞掉（圆环不更新）。本用例要验「占用恢复」，故给本实例换最小读面
+    // （只替 Provider 读三面，不碰共享 setupPanel 桩，避免影响既有断言）。
+    // cast 类型面未暴露 _providerStore ⇒ 经窄化断言写入（只本用例生效，不影响共享桩）
+    (cast as unknown as { _providerStore: unknown })._providerStore = {
+      listMasked: async () => [
+        { name: 'deepseek', displayName: 'DeepSeek', contextWindow: 128000, apiKey: '' },
+      ],
+      getActiveName: () => 'deepseek',
+      getActive: async () => ({
+        name: 'deepseek',
+        displayName: 'DeepSeek',
+        model: 'deepseek-chat',
+        baseUrl: 'https://api.example.com',
+        apiKey: 'sk-test',
+      }),
+    };
+
+    await provider.newSessionFromCommand();
+    // 草稿页基线：五项投影已在 project() 里归零
+    expect(provider.isDraftSession()).toBe(true);
+    // 取「首条发送」之后的投递窗口（草稿投影消息不参与断言）
+    const mark = posted.length;
+
+    fireMessage({ type: 'input', kind: 'send', text: '帮我看一下仓库结构' });
+
+    // 建会话 → 装配 → 装配后补推（占用为异步补推，故整体等齐五项）
+    await vi.waitFor(
+      () => {
+        const tail = posted.slice(mark);
+        expect(tail.some((m) => m.type === 'chat_role_pack')).toBe(true);
+        expect(tail.some((m) => m.type === 'capability_badge')).toBe(true);
+        expect(tail.some((m) => m.type === 'context_occupancy')).toBe(true);
+        expect(tail.some((m) => m.type === 'background_tasks')).toBe(true);
+        expect(tail.some((m) => m.type === 'plan_update')).toBe(true);
+      },
+      // 小于用例全局 5s 上限：让失败以「缺了哪条消息」的形式报出，而不是笼统的 timeout
+      { timeout: 3000, interval: 50 },
+    );
+    expect(provider.isDraftSession()).toBe(false);
+
+    // 逐项核对内容：非空、确属新会话（不是「碰巧推了空壳」）
+    const tail = posted.slice(mark);
+    const lastOf = (type: string) => tail.filter((m) => m.type === type).at(-1);
+    const rolePack = lastOf('chat_role_pack') as unknown as { rolePack: string };
+    expect(rolePack.rolePack).toBe('代码助手');
+    const badge = lastOf('capability_badge') as unknown as { toolMode: string };
+    expect(badge.toolMode).toBe('allow');
+    const occupancy = lastOf('context_occupancy') as unknown as { occupancy: unknown };
+    expect(occupancy.occupancy).toBeTruthy();
+    const tasks = lastOf('background_tasks') as unknown as { items: { taskId: string }[] };
+    expect(tasks.items.map((t) => t.taskId)).toEqual(['bg-1']);
+    const plan = lastOf('plan_update') as unknown as { items: { id: string }[] };
+    expect(plan.items.map((i) => i.id)).toEqual(['p1', 'p2']);
+  });
+
   it('活跃度快照不含草稿（无 id 可入表），别的会话的待处理仍照常亮', async () => {
     const agentA = sessionAgent('2026-11-06-a');
     const { provider, posted, cast } = setupPanel({ '2026-11-06-a': agentA }, ['2026-11-06-a']);

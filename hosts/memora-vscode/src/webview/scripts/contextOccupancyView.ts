@@ -29,10 +29,16 @@ export interface ContextOccupancyViewDeps {
 export interface ContextOccupancyView {
   /** context_occupancy 到达：真实占用渲染（圆环充能 + 明细 + 构成条） */
   updateOccupancy(occ: ContextOccupancySnapshot): void;
-  /** chat_providers 到达：按选中 LLM 上限渲染空态（上限未变跳过，防误清零） */
+  /**
+   * 空态渲染（chat_providers 到达 / 草稿页投影归零）
+   *
+   * @param force 草稿页复位用：上限未变也强制回到空态（无会话 ⇒ 不得保留上一会话占用）；
+   *   常规 Provider 推送不传，保持「上限未变跳过、防误清零」原语义
+   */
   renderLimit(
     providers: { name: string; limitTokens: number }[],
     activeName: string | undefined,
+    force?: boolean,
   ): void;
 }
 
@@ -178,14 +184,16 @@ export function createContextOccupancyView(deps: ContextOccupancyViewDeps): Cont
   function renderOccupancyLimit(
     providers: { name: string; limitTokens: number }[],
     activeName: string | undefined,
+    force = false,
   ): void {
     const el = document.getElementById('contextOccupancy');
     if (!el) return;
     if (!activeName) return;
     const active = providers.find((p) => p.name === activeName);
     if (!active || typeof active.limitTokens !== 'number') return;
-    // 上限未变化 → 保留已展示的真实占用（同一模型，无重置必要）
-    if (contextLimitShown === active.limitTokens) return;
+    // 上限未变化 → 保留已展示的真实占用（同一模型，无重置必要）；
+    // force = 草稿页复位：无会话时不得保留上一会话的占用，即使上限相同也回到空态
+    if (!force && contextLimitShown === active.limitTokens) return;
     // 展示容量上限 + 空环（真实占用待 context_occupancy 覆盖）
     el.hidden = false;
     setRingFill(el, 0);

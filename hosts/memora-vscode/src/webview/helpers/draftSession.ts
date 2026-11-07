@@ -102,9 +102,13 @@ export class DraftSessionController {
   /** 草稿页投影（进入 / 重建 / 建会话失败回滚共用同一序列，避免三种空白页漂移） */
   private project(historyLoaded: boolean): void {
     this.deps.post({ type: 'clear_ok' });
-    // draft: true 是 webview 禁用改名笔的唯一判据（草稿没有可改名的会话）
+    // draft: true = 草稿页的**唯一标识**，承担两件事：
+    //   ① webview 禁用改名笔（草稿没有可改名的会话）；
+    //   ② 会话级投影归零信号——webview 据此隐藏能力徽章、把上下文占用环复位为空态
+    //     （无会话 ⇒ 不得保留上一会话的能力面与占用；不为此新增消息类型）
     this.deps.post({ type: 'session_title', title: DRAFT_SESSION_TITLE, draft: true });
-    // 草稿没有 Agent ⇒ 角色 / 后台任务投影一律空，不把上一个会话的投影留在屏上
+    // 草稿没有 Agent ⇒ 角色 / 后台任务 / 看板投影一律空（看板由 clear_ok 的 DOM 复位承担），
+    // 不把上一个会话的投影留在屏上
     this.deps.post({ type: 'chat_role_pack', rolePack: '', traits: undefined });
     this.deps.post({ type: 'chat_role_packs', packs: [], activeName: '' });
     this.deps.post({ type: 'background_tasks', items: [] });

@@ -3525,6 +3525,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 草稿页没有会话 id ⇒ 不可改名：禁用改名笔（否则点了只能得到一个无从落库的失败）
       renameSessionBtn.disabled = msg.draft === true;
       renameSessionBtn.title = msg.draft === true ? '草稿尚未发送，暂不能命名' : '重命名会话';
+      // 草稿页 = 无会话：能力面 / 占用一并归零（只认 draft 标记，不新增消息类型；真实会话不触发）
+      if (msg.draft === true) {
+        roleBadgeView.hideCapabilityBadge();
+        occupancyView.renderLimit(currentProviders, currentActive, true);
+      }
     } else if (msg.type === 'session_list_data') {
       // 历史会话列表：渲染到 treedd 历史下拉（全量 + 留存区标记，前端过滤分两组）
       historyMenuApi.renderMenu(msg.sessions, msg.archivedIds ?? []);
@@ -3532,8 +3537,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 会话活跃度快照：列表条目 + 入口角标同一数据源，统一由历史菜单域投影
       historyMenuApi.setActivity(msg.runningIds, msg.pendingIds, msg.badgeCount);
     } else if (msg.type === 'chat_archive_mode') {
-      // 归档模式运行时真值：只驱动留存按钮文案（manual 模式按钮兼做归档触发）；
-      // 「有数据才就地重渲染」的判断收在容器 setArchiveMode 内
+      // 归档模式运行时真值：只驱动留存按钮文案（manual 模式按钮兼做归档触发；是否有数据收在容器内）
       historyMenuApi.setArchiveMode(msg.mode);
     } else if (msg.type === 'chat_providers') {
       currentProviders = msg.providers || [];

@@ -2248,6 +2248,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 历史会话占用：切会话后圆环即时展示该会话真实占用（而非空态 0%），
     // 与对话记录对齐；对话层从持久化消息重算，记忆层历史会话无法预测故如实置 0
     this.postHistoryOccupancy();
+    // 任务看板：clear_ok 已清空 DOM，必须按当前 checkpoint 补推快照。
+    // 本入口覆盖切会话 / 新建 / 分叉 / 截断（replaySession 之外的共同回放入口），
+    // 漏推 = 看板消失，直到该会话下一次 plan_update 事件（暂停/进行中会话可能永不到来）。
+    this.postPlanUpdate();
   }
 
   /**
@@ -2728,6 +2732,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 装配后 agent.getMetrics 的 rolePackBaseTokens 方为真实值。本收口点是 setAgent 与
     // ensureAgent 懒装配两条入口的共用点，占用补推只在此一处（不得各推一份，否则必漏懒装配路径）。
     void this.postHistoryOccupancy();
+    // 任务看板同属会话级投影：装配即按 checkpoint 补推快照——切换会话走 bindAgent→本收口，
+    // 若只等实时 plan_update 事件，切到「进行中/暂停」的会话会看不到看板（既有推送点复用，不新开通道）
+    this.postPlanUpdate();
   }
 
   /**
