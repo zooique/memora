@@ -1,0 +1,137 @@
+{
+  "$comment": "技能校验双份一致性的唯一夹具来源。内核运行期真源 src/skill/skillManager.ts#validateFile 与生成期预检镜像 hosts/memora-vscode/src/extension/skills/_lib/verify-core.mjs 必须消费同一份：测试把本文件的 cases 原样落盘到临时 workspace，再分别驱动两侧，禁止在任何一侧另写一套看起来一样的夹具。`files` 的值是逐行数组，测试以 \\n 连接后写盘（避免 JSON 里堆满转义换行）。",
+  "sharedChecks": {
+    "frontmatter": "frontmatter",
+    "description": "description",
+    "body": "body",
+    "layer": "layer",
+    "name": "name",
+    "references": "doc-refs"
+  },
+  "cases": [
+    {
+      "id": "valid",
+      "diskName": "parity-valid",
+      "files": {
+        "SKILL.md": [
+          "---",
+          "name: parity-valid",
+          "description: 用于校验两侧判据一致的合法技能样例",
+          "layer: project",
+          "---",
+          "",
+          "# 一致性校验合法样例",
+          "",
+          "本技能仅用于测试，不含实际指令。"
+        ]
+      },
+      "expectedKernelOk": true,
+      "expectedScriptOk": true,
+      "expectedSharedErrors": []
+    },
+    {
+      "id": "name-mismatch",
+      "diskName": "parity-name-mismatch",
+      "files": {
+        "SKILL.md": [
+          "---",
+          "name: parity-other-name",
+          "description: 声明名与磁盘名不一致的样例",
+          "layer: project",
+          "---",
+          "",
+          "# 名称错位样例",
+          "",
+          "正文不含 L3 引用。"
+        ]
+      },
+      "expectedKernelOk": false,
+      "expectedScriptOk": false,
+      "expectedSharedErrors": ["name"]
+    },
+    {
+      "id": "missing-ref",
+      "diskName": "parity-missing-ref",
+      "files": {
+        "SKILL.md": [
+          "---",
+          "name: parity-missing-ref",
+          "description: 正文引用不存在的 L3 文件的样例",
+          "layer: project",
+          "---",
+          "",
+          "# 缺失引用样例",
+          "",
+          "详细说明见 references/guide.md。"
+        ]
+      },
+      "expectedKernelOk": false,
+      "expectedScriptOk": false,
+      "expectedSharedErrors": ["references"]
+    },
+    {
+      "id": "empty-description",
+      "diskName": "parity-empty-description",
+      "files": {
+        "SKILL.md": [
+          "---",
+          "name: parity-empty-description",
+          "layer: project",
+          "---",
+          "",
+          "# 描述为空样例",
+          "",
+          "正文有内容，但渐进披露无法展示它。"
+        ]
+      },
+      "expectedKernelOk": false,
+      "expectedScriptOk": false,
+      "expectedSharedErrors": ["description"]
+    },
+    {
+      "id": "empty-body",
+      "diskName": "parity-empty-body",
+      "files": {
+        "SKILL.md": [
+          "---",
+          "name: parity-empty-body",
+          "description: 正文为空的样例",
+          "layer: project",
+          "---"
+        ]
+      },
+      "expectedKernelOk": false,
+      "expectedScriptOk": false,
+      "expectedSharedErrors": ["body"]
+    },
+    {
+      "id": "layer-invalid",
+      "diskName": "parity-layer-invalid",
+      "files": {
+        "SKILL.md": [
+          "---",
+          "name: parity-layer-invalid",
+          "description: layer 非法的样例",
+          "layer: global",
+          "---",
+          "",
+          "# layer 非法样例",
+          "",
+          "正文有内容，但 layer 不在允许枚举内。"
+        ]
+      },
+      "expectedKernelOk": true,
+      "expectedScriptOk": false,
+      "expectedSharedErrors": []
+    }
+  ],
+  "allowedDifferences": [
+    {
+      "id": "layer-invalid",
+      "check": "layer",
+      "kernel": { "ok": true, "level": "warning" },
+      "script": { "ok": false, "level": "error" },
+      "reason": "layer 非法时内核降级为 warning 并回退 project（运行时既有技能仍可加载，不该因一个枚举笔误整条失效）；生成器闸门在出生口从严判 error（新技能不应带着非法 layer 交付）。两侧判据本身是同一条「layer 只允许 agent/project」，差异只在严重度，且运行时真源已把该降级行为写进 validateFile 注释。"
+    }
+  ]
+}
