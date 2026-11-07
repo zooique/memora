@@ -21,9 +21,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 // 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync）
 import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
+import { join } from 'node:path';
+import { mkdir, writeFile } from 'node:fs/promises';
 import type { Agent, BackgroundTask } from '@zooique/memora';
-// 默认包判据真源 = 内核导出常量（装配 §4.1 单链实际生效值）；测试不硬编码包名
-import { BUILTIN_FALLBACK_PACK } from '@zooique/memora';
+// 默认包判据真源 = 内核导出常量（装配 §4.1 单链实际生效值）；测试不硬编码包名。
+// RolePackManager = 真实内核实现（草稿未选包的硬判据夹具直接跑它，不用按假设写的桩）
+import { BUILTIN_FALLBACK_PACK, RolePackManager } from '@zooique/memora';
 // 生产同源读回判据：装配桩按它取「会话 meta → 实际激活名」，保证硬判据不是自造链条
 import { readSessionRolePackName } from '../../extension/host/sessionRolePack.js';
 import type * as vscode from 'vscode';
@@ -782,6 +785,84 @@ describe('草稿态 · 「＋」不再立刻落空会话（首次发送才建会
       rolePack: string;
     };
     expect(rolePack.rolePack).toBe('只读项目顾问');
+  });
+
+  /**
+   * 草稿「未选包」→ 首条发送：屏上默认角色 == 装配实际 activeName（**硬判据 2**）
+   *
+   * 用户判据（2026-11-07 追加）：草稿未选时显示的不能是宿主自造的「列表第一个」。
+   * 夹具刻意让**自定义包排在兜底包前面**，且装配侧直接用**真实内核 `RolePackManager`**
+   * （不是按「兜底 = 列表首项」假设写的桩）：
+   *   - 若草稿取值靠列表首项 ⇒ 屏上值与装配值不等，转红；
+   *   - 若内核回落链真的退化成 `items[0]` ⇒ 装配值与屏上常量不等，同样转红。
+   *
+   * 结论（本用例钉住）：无 meta 时内核 §4.1 单链恒为 `builtinFallbackRole ?? BUILTIN_FALLBACK_PACK`，
+   * 而宿主零注入 `builtinFallbackRole` ⇒ 装配 `activeName` 恒等于该常量，与列表顺序无关。
+   *
+   * 变异靶标：把 `defaultRolePackName` 注入改成列表首项名 ⇒ 第一条断言转红；
+   * 把内核 `activateFallback` 改成激活 `items[0]`（需重建内核 dist）⇒ 末条相等断言转红。
+   */
+  it('草稿未选包 → 首条发送：屏上默认角色 == 装配实际 activeName（兜底包不在列表首位）', async () => {
+    // 夹具：两本以上角色包，folder 名决定扫描序 ⇒ 自定义包在前、兜底包不在首位
+    const rolePackRoot = makeTempDir('memora-draft-rolepack-');
+    const packsDir = join(rolePackRoot, 'role-packs');
+    /** 写一本最小角色包（folder 名决定扫描序；manifest.name = 实际包名） */
+    async function writePack(folder: string, name: string): Promise<void> {
+      const packDir = join(packsDir, folder);
+      await mkdir(packDir, { recursive: true });
+      await writeFile(
+        join(packDir, 'manifest.json'),
+        JSON.stringify({ name, formatVersion: '1.0.0' }, null, 2),
+        'utf-8',
+      );
+      await writeFile(join(packDir, 'persona.md'), `你是${name}。`, 'utf-8');
+    }
+    await writePack('00-只读项目顾问', '只读项目顾问');
+    await writePack('01-代码助手', '代码助手');
+    await writePack('99-兜底包', BUILTIN_FALLBACK_PACK);
+
+    // 真实内核回落链：无 activePack（= 新会话未选角色）⇒ §4.1 兜底包
+    const rpm = new RolePackManager(rolePackRoot);
+    expect(await rpm.load()).toBe(3);
+    // 前置守卫：兜底包不在首位（否则本用例失去区分力）
+    expect(rpm.listMeta()[0]?.name).toBe('只读项目顾问');
+    expect(rpm.activeName).toBe(BUILTIN_FALLBACK_PACK);
+
+    const agentA = sessionAgent('2026-11-06-a');
+    const { provider, posted, cast, fireMessage } = setupPanel({ '2026-11-06-a': agentA }, [
+      '2026-11-06-a',
+    ]);
+    // 装配桩只做「会话 id → 实例」的替换；角色事实全部来自真实内核 rpm
+    const factory = vi.fn(
+      async (_projectPath: string, sessionId: string) =>
+        ({ ...sessionAgent(sessionId), rolePackManager: rpm }) as unknown as Agent,
+    );
+    provider.setAgentFactory(factory);
+    cast._currentSessionId = '2026-11-06-a';
+    cast._agent = agentA;
+
+    await provider.newSessionFromCommand();
+    // 草稿不选包：记下屏上显示的包名（最后一条 chat_role_pack = 草稿投影）
+    const draftRole = posted.filter((m) => m.type === 'chat_role_pack').at(-1) as unknown as {
+      rolePack: string;
+    };
+    expect(draftRole.rolePack).toBe(BUILTIN_FALLBACK_PACK);
+    expect(draftRole.rolePack).not.toBe(rpm.listMeta()[0]?.name);
+
+    fireMessage({ type: 'input', kind: 'send', text: '随便问一句' });
+    await vi.waitFor(() => expect(provider.isDraftSession()).toBe(false), { timeout: 5000 });
+
+    const newId = provider.getCurrentSessionId();
+    const assembled = cast._sessionAgents.get(newId) as Agent;
+    // 硬判据：草稿屏上值 == 装配后内核真实生效值（列表首项不参与）
+    expect(assembled.rolePackManager?.activeName).toBe(draftRole.rolePack);
+    // 选择器数据与同一真源（无 meta 时 activeName 不得退化成 packs[0]）
+    const selector = posted.filter((m) => m.type === 'chat_role_packs').at(-1) as unknown as {
+      activeName: string;
+      packs: { name: string }[];
+    };
+    expect(selector.activeName).toBe(draftRole.rolePack);
+    expect(selector.packs[0]?.name).not.toBe(BUILTIN_FALLBACK_PACK);
   });
 
   /**
