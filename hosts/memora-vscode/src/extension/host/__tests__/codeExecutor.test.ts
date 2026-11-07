@@ -10,7 +10,7 @@
  * 用 node 环境执行（非 jsdom），直接 await createLocalCodeExecutor().execute()。
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createLocalCodeExecutor } from '../codeExecutor.js';
@@ -105,4 +105,18 @@ describe('codeExecutor（G2 本地子进程执行器）', () => {
       expect(existsSync(marker), `中断后子进程仍在运行：标记文件被写出（${marker}）`).toBe(false);
     },
   );
+
+  /**
+   * 静态守卫：POSIX 上子进程必须自成进程组（detached）。
+   *
+   * 为什么需要它：`killProcessTree` 的 POSIX 分支按 `process.kill(-pid)` 杀整组，
+   * 而 `-pid` 只有在子进程 `pgid == pid`（即 detached 自成组）时才指向真实进程组。
+   * 缺 detached ⇒ 组从未存在 ⇒ 每次 ESRCH ⇒ 降级只杀直接子进程、孙进程成孤儿。
+   * 本机是 Windows，走 `taskkill /T /F` 不暴露该路径，故用静态断言守契约（防误删后
+   * 只有 ubuntu CI 才会红）。
+   */
+  it('POSIX 分支必须 detached 自成进程组（killProcessTree 的 -pid 前提）', () => {
+    const src = readFileSync(join(import.meta.dirname, '..', 'codeExecutor.ts'), 'utf8');
+    expect(src).toContain("process.platform === 'win32' ? {} : { detached: true }");
+  });
 });

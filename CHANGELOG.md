@@ -149,6 +149,7 @@
 
 - **重载技能后已打开的面板仍是旧快照**（`SKILL-REFRESH-1`）：`memora.reloadSkills` 空闲路径只重扫内核池，没有主动回推已打开的设置页与对话面板；用户随后点「刷新」时 `resync` 已无净差，面板继续显示重载前列表。现空闲重载后同时刷新设置页技能 / 角色包两份列表与对话区技能下拉，忙碌路径仍按带 `source` 的两条请求提交后由内核补执行。**对消费者**：重载 / 新建技能后已打开面板即时更新，无需重开面板。
 - **模态确认框 12 处调用点收口为单一 helper**（`MODAL-DUP-CANCEL-1` 第二段）：第一段只迁入了两个「同名覆盖」调用点，其余 12 处（`settingsPanel` 5 / `chatPanel` 3 / `fileChangeView` 2 / `memory` 1 / `userDataReset` 1）仍各自直调 `showWarningMessage(..., { modal: true }, ...)`，判据写法不统一（存在 `choice !== '删除'` 这类负判据）。现全部迁入 `host/ui/confirmModal.ts`，判据统一为「`resolved === confirmLabel`」，取消分支零写入；`scripts/verify-modal-cancel.mjs` 同步上**严闸**：生产代码 `modal: true` 只许出现在 helper 内，违规非零退出并挂进门禁。**对消费者**：可见行为等价（确认文案不变、取消仍走系统 Cancel），只是按钮集与判据收进唯一入口。
+- **Linux / macOS 上中断执行后孙进程残留**（`TOOL-ABORT-KILL-1` 宿主侧补齐）：宿主执行器 `spawn` 子进程时未设 `detached`，而内核 `killProcessTree` 的 POSIX 分支按 `process.kill(-pid)` 杀**进程组**——`-pid` 指向的组从未存在 ⇒ 每次 `ESRCH` 后降级为「只杀直接子进程」，脚本再派生的孙进程成孤儿继续运行（Windows 走 `taskkill /T`，不受影响，故此前只在 ubuntu CI 暴露）。现 POSIX 上让子进程自成进程组（`detached: true`），中断即杀整组。**对消费者**：Linux / macOS 上中止代码执行后不再残留子进程；Windows 行为不变。
 
 ### Removed（宿主）
 

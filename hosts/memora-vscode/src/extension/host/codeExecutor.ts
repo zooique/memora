@@ -102,10 +102,16 @@ export function createLocalCodeExecutor(): ICodeExecutionProvider {
 
         // 子进程执行（-e 直接传代码，不经 shell，避免命令注入；windowsHide 防多余的终端窗口弹出；
         // env 禁色：防 stdout/stderr 带 ANSI 颜色码（LLM 读到的输出应干净可解析））
+        //
+        // POSIX `detached`：子进程自成进程组（pgid == pid），`killProcessTree` 才能按 `-pid`
+        // 杀整组。缺它时 `process.kill(-pid)` 指向一个**从未存在**的进程组 ⇒ 每次都 ESRCH，
+        // 降级为只杀直接子进程，孙进程成孤儿（内核 `buildSpawnOptions` 同款契约，不得两处漂移）。
+        // Windows 不需要（走 `taskkill /T /F`）。
         const child = spawn(process.execPath, ['-e', code, '--no-warnings'], {
           stdio: ['ignore', 'pipe', 'pipe'],
           cwd: options?.cwd,
           windowsHide: true,
+          ...(process.platform === 'win32' ? {} : { detached: true }),
           env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
         });
 

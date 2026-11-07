@@ -77,6 +77,10 @@ function spawnLockChild(
     cwd: HOST_ROOT,
     env: { ...process.env, NODE_OPTIONS: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
+    // POSIX：自成进程组（pgid == pid），强杀时用 `kill(-pid)` 连 tsx 派生的孙 node 一起杀。
+    // 缺它 ⇒ 只杀死 tsx 主进程，孙进程仍持有 stdout pipe ⇒ `close` 不触发 ⇒
+    // 无超时的 `await child.done` 挂死（ubuntu CI 上 ② 用例 20s 超时的真因）。
+    ...(process.platform === 'win32' ? {} : { detached: true }),
   });
   let stdout = '';
   let stderr = '';
@@ -152,10 +156,21 @@ describe('6.0.0 步 3 验收：每会话跨进程写锁', () => {
     const pid = holder.child.pid;
     expect(pid).toBeTruthy();
     // 用户口径：`taskkill /F` 强杀（Windows）；非 Windows 用 SIGKILL 等价
+    // `-pid` + detached：连 tsx 派生的孙 node 一起杀（只杀直接子进程时孙进程持 pipe，
+    // `done` 永不 resolve）。Windows 对应加 `/T` 杀子树。
     if (process.platform === 'win32') {
-      spawnSync('taskkill', ['/F', '/PID', String(pid)], { stdio: 'ignore' });
+      spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)], { stdio: 'ignore' });
     } else {
-      process.kill(Number(pid), 'SIGKILL');
+      try {
+        process.kill(-Number(pid), 'SIGKILL');
+      } catch {
+        // 组已不存在（进程先自行退出）：降级单杀，不留异常
+        try {
+          process.kill(Number(pid), 'SIGKILL');
+        } catch {
+          // 已退出
+        }
+      }
     }
     await holder.done;
     const retry = spawnLockChild(ws, 'try', 's-kill');
