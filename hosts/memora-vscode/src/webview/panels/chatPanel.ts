@@ -13,6 +13,9 @@
  *   - 持久化复用内核 sessionStore 机制（date-session 组织消息）；
  *   - 面板为通用对话宿主，功能定位由内核同步的内置角色包承载，
  *     角色名在 AI 消息头部标签 + 空状态标题展示（角色切换入口在独立的「角色」视图）。
+ *
+ * ⚠️ 行数已贴死 eslint `max-lines` 上限（余量不足一个方法）：新增逻辑先外置到 `helpers/` / 独立模块，
+ *    本文件只留接线。下一批第一个动作必须是搬迁（台账 `CHATPANEL-MARGIN-1`），不得在此继续加行。
  */
 import * as vscode from 'vscode';
 import { basename } from 'node:path';
@@ -1891,7 +1894,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 联动软删回收站（轮次摘要；会话级不联动——会话仍在）
       this.softDeleteSessionMemories(result.removedIds);
       // 截断后重放当前会话（消息已减少），保证 UI 与存储一致
-      this.replayCurrentSession();
+      this.replaySession();
       return { ok: true, userText: result.removedUserText };
     } catch (err) {
       // 截断失败不阻塞展示（仅清理 UI），但需记录（SSOT 不藏错）
@@ -2084,7 +2087,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 默认包失效 / 无法校验：meta 未写 ⇒ 既有「原角色包」提示不会触发，用独立文案如实告知
       const roleNotice = newSessionRolePackNotice(roleDecision, agent.rolePackManager?.activeName);
       if (roleNotice) this.post(roleNotice);
-      this.replayCurrentSession();
+      this.replaySession();
       // 会话视图入口（新建）：任务条按「显示会话」投影，必须显式 force（不赌后续事件到来，否则串台）
       this.postBackgroundTasks('force');
       return true;
@@ -2187,7 +2190,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       if (previous) this._sessionAgents.delete(previous);
       this._sessionAgents.set(forkedId, agent);
       this.bindAgent(agent);
-      this.replayCurrentSession();
+      this.replaySession();
       // 会话视图入口（分叉）：同新建——后台任务条必须切到新分支自己的任务，显式 force
       this.postBackgroundTasks('force');
       this.post({
@@ -2241,7 +2244,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.setCurrentSessionId(sessionId);
       const agent = await this.agentForSession(sessionId);
       this.bindAgent(agent);
-      this.replayCurrentSession();
+      this.replaySession();
       // 后台任务条按会话重投影（BGTASK-SWITCH-REPUSH-1）：切会话不推 ⇒ 常驻条继续显示上一个会话的任务。
       // 必须 force（两会话任务都可能为空、签名相同）；force 是**第二道保险**——`sessionChanged`
       // 已在起作用，保留它防未来调用顺序漂移，**不是必需成本，勿当冗余删掉**。
@@ -2275,25 +2278,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return undefined;
     }
     return this._agent;
-  }
-
-  /** 清空 webview 消息区并重放当前会话历史 + 刷新会话标题 + 推送历史会话占用 */
-  private replayCurrentSession(): void {
-    // 草稿态没有会话可回放：重建草稿页（防御分支，正常路径不会在草稿里调到这里）
-    if (this.isDraft) {
-      this._draft.replay();
-      return;
-    }
-    this.post({ type: 'clear_ok' });
-    this.replayHistory();
-    this.post({ type: 'session_title', title: this.currentSessionTitle() });
-    // 历史会话占用：切会话后圆环即时展示该会话真实占用（而非空态 0%），
-    // 与对话记录对齐；对话层从持久化消息重算，记忆层历史会话无法预测故如实置 0
-    this.postHistoryOccupancy();
-    // 任务看板：clear_ok 已清空 DOM，必须按当前 checkpoint 补推快照。
-    // 本入口覆盖切会话 / 新建 / 分叉 / 截断（replaySession 之外的共同回放入口），
-    // 漏推 = 看板消失，直到该会话下一次 plan_update 事件（暂停/进行中会话可能永不到来）。
-    this.postPlanUpdate();
   }
 
   /**
@@ -2556,10 +2540,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 回放当前会话（历史消息 + 历史日期列表 + Skill + Provider）
+   * 重建显示层（唯一入口）：清空消息区 + 回放当前会话 + 全部随会话推送清单
    *
-   * 仅在 webview 发来 ready（脚本监听器已注册）后调用，避免 postMessage
-   * 在监听器就绪前到达而被丢弃（折叠/展开重建 HTML 时尤其明显）。
+   * 覆盖两条触发面：webview ready（脚本监听器已注册，避免 postMessage 丢失）；
+   * 宿主侧会话切换（切会话 / 新建 / 分叉 / 截断）。两处**同一份**推送清单——
+   * 曾拆成「重建当前会话」/「重建指定会话」两套入口，清单各自演化必漂移（漏推看板/占用）。
    */
   private replaySession(): void {
     if (!this._view) return;
@@ -2569,6 +2554,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._draft.replay(true);
       return;
     }
+    // 清空消息区：切换会话时旧会话 DOM 必须先清（turn_update(replay) 自身也会复位，此处是显式前置）
+    this.post({ type: 'clear_ok' });
     // 恢复当前会话历史消息（只回放 _currentSessionId；round-based 按轮交织重放）。
     // 运行中/暂停中的本流轮由 replayHistory 内 buildLiveTurnFromBuffer 并入同一条
     // turn_update（replay:true），webview 收到即整批重建 + 骨架状态一步到位；后续
@@ -3317,14 +3304,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._activeFile.postActiveFile(activeFile.projection, true);
 
     // runFlow 统一管理 AbortController + consumeFlow + 同步抛错兜底
-    // seed：把开轮用户输入交给 live 轮投影。内容用 `chatInput`（与内核 `appendUser`
-    // 落盘**同源**，含注入信封），与上屏用的原始 `input` 刻意不同——运行时投影必须与重放读到的
-    // 落盘版本同形，否则对拍测试会因「同一轮两种 user 内容」失败。id/timestamp 复用上屏的 now。
+    // seed：开轮用户文本交给 live 轮投影。只放**上屏裸输入**——注入信封仅进 `chatInput`（内核
+    // appendUser 落盘原文）；历史重放读的是 `stripInjectedContextPrefix(落盘原文)`，两者必须同值。
     await this.runFlow((signal) => this._agent!.chat(chatInput, signal, attachments), {
       userMessage: {
         id: `live-user-${now}`,
         role: 'user',
-        content: chatInput,
+        content: input,
         timestamp: now,
         // 图片随行（IMG-2）：live 投影必须与重放读到的落盘版本同形，否则同一轮两种 user 内容
         ...(attachments ? { attachments } : {}),

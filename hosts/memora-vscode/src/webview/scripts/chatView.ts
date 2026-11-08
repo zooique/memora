@@ -2934,7 +2934,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 「上一轮残留」——此处**不得**做跨轮清理（历史事故 INTERRUPT-MULTI-1：删上一轮
         // 中断轮的 .round-group 连其过程块 / 问答行 / 底栏一并抹除，多中断轮会话只剩最后一个）
         renderInterruptedRound(r.id, r.evidence, r.createdAt);
-      } else {
+      } else if (!r.live) {
         // 普通轮：任务过程折叠区一次性渲染（finalize=true，收起态）；证据随轮透传（web_search 行补归因）
         renderRoundBlock(currentEvents, true, undefined, r.evidence);
       }
@@ -2944,9 +2944,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const item of middle) {
       if (!item.content) continue;
       if (item.kind === 'seg') {
-        // 正文块建立后补挂任务过程折叠区 + 回收同轮 fallback 残留
+        // 正文块建立后补挂任务过程折叠区 + 回收同轮 fallback 残留（live 轮统一在第 4 步挂到进行中块）
         append('assistant', item.content, item.ts, r.id);
-        renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, r.evidence);
+        if (!r.live) renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, r.evidence);
         if (r.id && roundBlockEl?.isConnected) {
           messages
             .querySelectorAll<HTMLElement>(`.round-block__input[data-round-id="${r.id}"]`)
@@ -2994,34 +2994,34 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         );
       }
     }
-    // 4) 最终回答（complete 轮挂正文——中断轮正文与平铺 narrate 同源，避免双份；
-    //    live 轮 = 切界面重建重放时的本流进行中轮，正文为宿主 live buffer 的 streamingText 投影，
-    //    同挂才能恢复「切走前已生成的半截回答」）
+    // 4) 最终回答（complete 轮挂正文；live 轮 = 切回时本流进行中轮：半截正文 + 过程容器接手）
     if ((r.status === 'complete' || r.live) && r.assistantMessage?.content) {
-      append('assistant', r.assistantMessage.content, r.assistantMessage.timestamp, r.id);
-      // 重放终态：complete 轮直接落「已完成」（与实时 done 收尾同一函数、同一形态）；
-      // live 轮在下方分支切运行态推导覆盖。变量化判据 = 渲染分流（怎么画光标，非收场判定），
-      // isRoundSettled 判据单源守卫按此片段登记豁免
-      const settledReplay = r.status === 'complete';
-      if (settledReplay) {
-        setTerminus(activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'), '已完成');
-      }
-      // live 轮流式状态接手：重放正文同步进 streamingRaw——finalize 终渲染以 streamingRaw
-      // 为全量真源（body.innerHTML = renderMarkdown(streamingRaw)），不同步则流尾 done
-      // 会用空 raw 覆盖掉重放正文；同步后后续 chunk 走增量续写分支（同环 roundId 相等），
-      // 重放文本 + 增量文本无缝拼接，与运行时单块续写同一管线。
+      // live 轮与运行时同形重建：beginStreaming 建 label/body 壳 + 平铺过程容器，后续实时事件沿同一容器续写
       if (r.live) {
         streamingActive = true;
         streamingRaw = r.assistantMessage.content;
-        // live 轮重放接手运行态：与实时流同一推导函数（工具在途/思考相位/默认回答）
-        syncRunningCursor();
+        beginStreaming(r.assistantMessage.timestamp, r.id);
+        renderStreamBody();
+      } else {
+        append('assistant', r.assistantMessage.content, r.assistantMessage.timestamp, r.id);
+        // 重放终态：complete 轮直接落「已完成」（与实时 done 收尾同一函数、同一形态）；
+        // 变量化判据 = 渲染分流（怎么画光标，非收场判定），isRoundSettled 守卫按此片段豁免
+        const settledReplay = r.status === 'complete';
+        if (settledReplay) {
+          setTerminus(activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'), '已完成');
+        }
+        renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, r.evidence);
+        if (r.id && roundBlockEl?.isConnected) {
+          messages
+            .querySelectorAll<HTMLElement>(`.round-block__input[data-round-id="${r.id}"]`)
+            .forEach((el) => el.remove());
+        }
       }
-      renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, r.evidence);
-      if (r.id && roundBlockEl?.isConnected) {
-        messages
-          .querySelectorAll<HTMLElement>(`.round-block__input[data-round-id="${r.id}"]`)
-          .forEach((el) => el.remove());
-      }
+    } else if (r.live) {
+      // live 轮尚无正文（切回时首 token 未产出）：仍须先建 assistant 壳——无壳则过程块无宿主、
+      // 无身份标签（真机症状：切回空白 / 过程记录迟到且顶部缺角色名）
+      streamingActive = true;
+      beginStreaming(r.assistantMessage?.timestamp, r.id);
     }
   }
 

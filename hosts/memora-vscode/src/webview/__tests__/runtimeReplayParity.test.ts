@@ -23,6 +23,8 @@ import type { RoundView } from '../../shared/protocol.js';
 import {
   REAL_ROUND,
   ASSISTANT_REPLY_TEXT,
+  PERSISTED_USER_TEXT,
+  DISPLAY_USER_TEXT,
   expandEvents,
   buildRoundView,
   buildReplayTurnUpdate,
@@ -247,6 +249,51 @@ describe('运行时 × 重放对拍（round-1789565571934 同一 fixture 两路�
       expect(sortRows(liveRows)).toEqual(sortRows(expected));
       expect(sortRows(replayRows)).toEqual(sortRows(expected));
       expect(sortRows(liveRows)).toEqual(sortRows(replayRows));
+    },
+  );
+
+  it(
+    '§5 live 轮 × 注入信封：气泡不泄漏信封，过程块有身份标签与容器（真机症状 1/2/3 回归锁）',
+    { timeout: PARITY_TIMEOUT_MS },
+    () => {
+      // 输入侧证据：夹具落盘原文确实带信封，宿主投影（剥壳）后即显示文本
+      expect(PERSISTED_USER_TEXT).toContain('[参考文件/目录]');
+      expect(buildRoundView().userMessage?.content).toBe(DISPLAY_USER_TEXT);
+      expect(DISPLAY_USER_TEXT).toBe(REAL_ROUND.userText);
+
+      // live 轮 = 切回仍在运行的会话：有身份事件 + 在途工具，但尚无 assistant 正文
+      const liveView: RoundView = {
+        ...buildRoundView(),
+        status: 'pending' as const,
+        live: true,
+        assistantMessage: undefined,
+        processEvents: [
+          { type: 'meta', seq: 1, ts: '', payload: { role: '组长', llm: 'mimo' } },
+          {
+            type: 'tool_start',
+            seq: 2,
+            ts: '',
+            payload: { toolCallId: 'call-live-1', name: 'read_file', args: '{"path":"a.md"}' },
+          },
+        ],
+      };
+      mountChatView();
+      dispatch(buildReplayTurnUpdate(liveView));
+
+      const semantics = extractRoundSemantics();
+      // 症状 1：气泡只显示请求原文，信封不得上屏
+      expect(semantics.userText).toBe(DISPLAY_USER_TEXT);
+      expect(document.getElementById('messages')!.textContent ?? '').not.toContain(
+        '[参考文件/目录]',
+      );
+
+      // 症状 2/3：无正文也先建 assistant 壳（身份标签）+ 过程容器，供后续实时事件续写
+      const host = document.querySelector<HTMLElement>('.msg.assistant');
+      expect(host).not.toBeNull();
+      expect(host!.querySelector('.msg-ai-label__role')?.textContent).toBe('组长');
+      const flow = host!.querySelector<HTMLElement>('.process-flow');
+      expect(flow).not.toBeNull();
+      expect(flow!.children.length).toBeGreaterThan(0);
     },
   );
 });

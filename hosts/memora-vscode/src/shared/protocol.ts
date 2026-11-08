@@ -491,7 +491,7 @@ export type WebviewToExtensionMessage =
    *
    * 由轮容器底栏 / 右键菜单的「删除」触发，携带该轮 `Round.id` 作锚点（**身份而非时间**：
    * 宿主以 `roundIds` 序 `indexOf` 精确定位，不做时间窗猜测）。host 调
-   * sessionStore.truncateFrom 删除【该问答及其之后所有】轮，随后 replayCurrentSession
+   * sessionStore.truncateFrom 删除【该问答及其之后所有】轮，随后 replaySession
    * 重放会话（保证剩余上下文自洽）。需 host 侧确认不可恢复后执行。
    * 锚未命中（轮已被别处删除 / 陈旧 DOM）⇒ 什么都不删，如实回「删除失败」。
    */

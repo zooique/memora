@@ -67,8 +67,8 @@ export function mergeMetricsPayload(
  * - metrics 同轮合并：prior 与 incoming 同轮各有 metrics（多流续跑）时求和成单条
  *   （mergeMetricsPayload：计数求和、success 取末段），前段指标不再被静默丢弃；
  *   incoming 无 metrics（step 检查点常态）时 prior metrics 原样保留，待流尾合并。
- * - 身份去重：多流续跑（prior 非空）时剔除 incoming 的 meta——身份保留首流，
- *   续跑不重复身份；单流轮（prior 空）保留 meta（else 分支）。
+ * - 身份去重：**prior 里确实含 meta** 时剔除 incoming 的 meta——身份保留既有那份，
+ *   续跑不重复身份；prior 无 meta（检查点只有过程事件）时保留 incoming meta（身份不丢）。
  * - 幂等去重：incoming 中 seq 已写入的丢弃（跨流不重叠，seq 全局唯一）。
  *
  * @param prior Round 既有 processEvents（前流/上次检查点产物，可为空）
@@ -99,9 +99,12 @@ export function mergeProcessEvents(
   const base = prior.filter(
     (e) => e.type !== 'aborted' && !(e.type === 'metrics' && incomingMetrics !== undefined),
   );
-  // 身份去重：仅多流续跑（prior 非空）剔 incoming 的 meta，避免重复身份
-  const freshIncoming =
-    prior.length > 0 ? effectiveIncoming.filter((e) => e.type !== 'meta') : effectiveIncoming;
+  // 身份去重：**prior 确实含 meta** 才剔 incoming 的 meta——身份保留既有那份，续跑不重复身份。
+  // 判据须按「有身份」而非「prior 非空」：检查点可能只含过程事件（无 meta），
+  // 旧写法 `prior.length > 0` 会把 incoming 唯一的身份事件剔掉 ⇒ 重放轮失去角色名（真机症状 3）。
+  const freshIncoming = prior.some((e) => e.type === 'meta')
+    ? effectiveIncoming.filter((e) => e.type !== 'meta')
+    : effectiveIncoming;
   // 幂等去重：seq 全局唯一，incoming 中已写入的丢弃；fresh 恒在 base 之后（seq 单调保序）
   const have = new Set(base.map((e) => e.seq));
   const fresh = freshIncoming.filter((e) => !have.has(e.seq));

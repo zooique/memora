@@ -24,7 +24,8 @@ import type {
   ProcessMetricsPayload,
   Round,
 } from '@zooique/memora';
-import type { RoundView, TurnState } from '../../shared/protocol.js';
+import type { ChatRef, RoundView, TurnState } from '../../shared/protocol.js';
+import { stripInjectedContextPrefix } from '../helpers/docContext.js';
 import { todayDate, resolveContextWindow, LOOP_CONSTANTS, MemoraError } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
@@ -724,7 +725,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     ];
     roundStore.save(round);
 
-    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+    (provider as unknown as { replaySession(): void }).replaySession();
 
     // 重放 = clear_ok → 单条 turn_update（replay:true）→ session_title；不再有 process_event /
     // replay_events / assistant 重放消息风暴（协议类型已删）
@@ -777,7 +778,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     ];
     roundStore.save(round);
 
-    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+    (provider as unknown as { replaySession(): void }).replaySession();
 
     const view = lastTurnUpdate(posted).rounds[0]!;
     // 键必须是 sha256（不是下标 / 文件名）：webview 渲染按 ref.sha256 查表
@@ -797,14 +798,14 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       { role: 'assistant', content: '好', ts: 't2' },
     ]);
 
-    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+    (provider as unknown as { replaySession(): void }).replaySession();
 
     const view = lastTurnUpdate(posted).rounds[0]!;
     expect('attachmentUris' in view).toBe(false);
   });
 
   // ─── 会话加载期预读接线（IMG-2 §5.4.1） ───
-  it('回放前预读窗口内附件字节：replayCurrentSession 后窗口内 resolver 命中、窗口外为 null', () => {
+  it('回放前预读窗口内附件字节：replaySession 后窗口内 resolver 命中、窗口外为 null', () => {
     const imageCache = new ImageCache();
     // 附件落盘根单开一个临时目录：预读读的是「面板工作区根」下的 attachments，
     // 与 setup 内部给存储用的目录不必同一个（真路径经第二参显式交给 setup）
@@ -848,7 +849,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     }
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-10-28-s1';
 
-    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+    (provider as unknown as { replaySession(): void }).replaySession();
 
     // 窗口内（最后一轮）：命中且是 data URL（模型可取形态，不是 webview 专用地址）
     const hit = imageCache.resolver(refs[refs.length - 1]!);
@@ -895,7 +896,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     ];
     roundStore.save(round);
 
-    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+    (provider as unknown as { replaySession(): void }).replaySession();
 
     // host 只投递单条 turn_update，interactiveInputs 随 rounds[0] 完整透传（时序归位在 webview renderReplayRound 端）
     const tu = lastTurnUpdate(posted);
@@ -950,7 +951,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     ];
     roundStore.save(round);
 
-    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+    (provider as unknown as { replaySession(): void }).replaySession();
 
     // timeout 行随 rounds[0].interactiveInputs 完整透传（含超时保底 question/options）
     const r = lastTurnUpdate(posted).rounds[0]!;
@@ -982,7 +983,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       { role: 'assistant', content: '回答A', ts: 't2' },
     ]);
 
-    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+    (provider as unknown as { replaySession(): void }).replaySession();
 
     // 不发 process_event/replay_events 重放消息风暴；纯问答轮 processEvents 为空数组，
     // 但 user 输入 + 最终回答仍由 round 承载（webview 端 renderReplayRound 退化为仅正文渲染）
@@ -1304,7 +1305,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
   });
 
   // ─── 历史会话占用重算（轻量版）：切会话后圆环展示真实占用而非空态 0% ───
-  it('replayCurrentSession 推送历史会话占用：对话层重算 + 角色包当前值', async () => {
+  it('replaySession 推送历史会话占用：对话层重算 + 角色包当前值', async () => {
     const { store, roundStore, provider, posted } = setup();
     // viewLoader + roundStore：round-based 消息路径
     provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
@@ -1328,14 +1329,14 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     } as unknown as Agent;
     provider.setAgent(agent);
     // providerStore 桩：listMasked 返回 [] + getActiveName undefined → totalTokens 回落内核默认窗口
-    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+    (provider as unknown as { replaySession(): void }).replaySession();
     // 等待 fire-and-forget 的 postHistoryOccupancy（async）落定
     await vi.waitFor(() => {
       const occs = ofType<{
         type: string;
         occupancy: { dialogueCount: number; rolePackBaseTokens: number };
       }>(posted, 'context_occupancy');
-      // setAgent 装配兜底推 1 次 + replayCurrentSession 推 1 次（幂等，取最后一次验证）
+      // setAgent 装配兜底推 1 次 + replaySession 推 1 次（幂等，取最后一次验证）
       expect(occs.length).toBeGreaterThanOrEqual(1);
       const occ = occs[occs.length - 1]!.occupancy;
       // 对话层 = 1 个问答闭环（1 条 user，assistant 不计入条数）
@@ -1348,7 +1349,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
   it('无 agent（未装配）→ 历史会话占用不推送（静默跳过，非关键路径）', () => {
     const { provider, posted } = setup();
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
-    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+    (provider as unknown as { replaySession(): void }).replaySession();
     // _agent 为 undefined → postHistoryOccupancy 直接 return，不推 context_occupancy
     expect(ofType(posted, 'context_occupancy').length).toBe(0);
   });
@@ -2527,6 +2528,49 @@ describe('turn_update 含运行时 live 轮（M3b-2a）', () => {
     expect(live.live).toBe(true);
     expect(live.status).toBe('pending');
   });
+
+  // 变异验证锚点：seed 内容改回 `chatInput`（含信封）→ 本用例转红。
+  // 真机症状：运行中切会话，用户气泡里冒出 `[参考文件/目录]` 信封。
+  it('seed 只携上屏裸输入：含注入信封的一轮，live 轮 user 文本不泄漏信封', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setRoundStore(roundStore);
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    seedSession(store, roundStore, '2026-08-15-s1', historyPair);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    // 捕获真正发给模型的那份：证明本轮确实带信封（否则本用例测不到泄漏路径）
+    const sentToModel: string[] = [];
+    provider.setAgent({
+      ...chatAgentStub(() =>
+        (async function* () {
+          /* 对照用例不用默认流 */
+        })(),
+      ),
+      chat: ((modelInput: string) => {
+        sentToModel.push(modelInput);
+        return (async function* () {
+          yield { type: 'text', content: '好', roundId: 'round-9' } as AgentChunk;
+          yield { type: 'done' } as AgentChunk;
+        })();
+      }) as Agent['chat'],
+      // 展开 chatAgentStub（替身契约单点）后仅覆盖 chat：类私有成员不可被对象字面量满足，按本文件既有口径取脱壳断言
+    } as unknown as Agent);
+    // 目录引用不核实存在性（refProbe 边界）⇒ 恒产出引用块，用例零依赖真实文件
+    const refs: ChatRef[] = [{ path: 'novels/04-大纲', kind: 'folder' }];
+    await (
+      provider as unknown as {
+        sendInput(i: string, s?: string, r?: ChatRef[]): Promise<void>;
+      }
+    ).sendInput('继续下一章', undefined, refs);
+
+    expect(sentToModel[0]).toContain('[参考文件/目录]');
+    const updates = ofType<{ type: string; rounds: RoundView[] }>(posted, 'turn_update');
+    const live =
+      updates[updates.length - 1]!.rounds[updates[updates.length - 1]!.rounds.length - 1]!;
+    expect(live.live).toBe(true);
+    // 投影面与历史重放同一份口径：= strip(信封原文)
+    expect(live.userMessage.content).toBe('继续下一章');
+    expect(live.userMessage.content).toBe(stripInjectedContextPrefix(sentToModel[0]!));
+  });
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -2696,6 +2740,26 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
     expect(ms).toHaveLength(1);
     expect((ms[0] as { payload: ProcessMetricsPayload }).payload.toolFailureCount).toBe(7);
     expect(out.map((e) => e.seq)).toEqual([1, 2, 3]);
+  });
+
+  // 变异验证锚点：判据改回 `prior.length > 0` → 第一个断言转红（incoming 身份被当重复剔掉 ⇒ 轮无角色名）。
+  it('身份去重按「prior 确实含 meta」判定：检查点只有过程事件时保留 incoming meta', () => {
+    const { provider } = setup();
+    const merge = mergeFn(provider);
+    // 检查点只写了过程事件（无 meta）：prior 非空，但**没有身份可保留**
+    const priorOnlyEvents = [ev(1, 'thinking'), ev(2, 'tool_start')];
+    const incomingWithMeta = [ev(3, 'meta'), ev(4, 'thinking')];
+
+    const kept = merge(priorOnlyEvents, incomingWithMeta);
+
+    // 身份必须取 incoming 那份（否则重放轮 meta 缺失 → 顶部无角色包名）
+    expect(kept.filter((e) => e.type === 'meta').map((e) => e.seq)).toEqual([3]);
+    expect(kept.map((e) => e.seq)).toEqual([1, 2, 3, 4]);
+
+    // 反向：prior 已含 meta（真·续跑）仍按原判据剔 incoming meta，身份不重复
+    const priorWithMeta = [ev(1, 'meta'), ev(2, 'thinking')];
+    const deduped = merge(priorWithMeta, [ev(3, 'meta'), ev(4, 'thinking')]);
+    expect(deduped.filter((e) => e.type === 'meta').map((e) => e.seq)).toEqual([1]);
   });
 
   it('流中重放：replay:true rounds 并入 live 轮（半截正文 + 缓冲事件原位替换）', () => {

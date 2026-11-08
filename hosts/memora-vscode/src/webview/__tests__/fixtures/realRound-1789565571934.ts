@@ -32,6 +32,12 @@
 // 直接自内核导入，避免经 protocol.js 再中转（TS2459 本地声明未导出）。
 import type { ProcessEvent } from '@zooique/memora';
 import type { RoundView } from '../../../shared/protocol.js';
+// 信封写入侧 / 剥离侧同一真源：夹具据此构造「落盘原文含信封、UI 只显示请求原文」的真机形态
+import {
+  buildInjectedContextEnvelope,
+  buildRefContextBlock,
+  stripInjectedContextPrefix,
+} from '../../helpers/docContext.js';
 
 /** 代表性正文：与 buildRealRoundTimeline 的流式 chunk 同文本，保证两路正文可对齐断言 */
 export const ASSISTANT_REPLY_TEXT = '【组长开场】介绍会议主题和讨论框架';
@@ -56,6 +62,21 @@ export const REAL_ROUND = {
   firstSeq: 3,
   lastSeq: 1358,
 } as const;
+
+/**
+ * 落盘原文（含宿主注入信封）——真机踩坑输入
+ *
+ * 宿主 `appendUser` 落盘的是塞了上下文信封的 chatInput 原文；UI 只该显示用户请求。
+ * 夹具带信封后，重放/实时两路都必须显示 {@link DISPLAY_USER_TEXT}，气泡出现
+ * `[参考文件/目录]` 即信封泄漏（真机症状 1）。
+ */
+export const PERSISTED_USER_TEXT = buildInjectedContextEnvelope(
+  [buildRefContextBlock([{ path: 'novels/04-大纲', kind: 'folder' }])],
+  REAL_ROUND.userText,
+);
+
+/** UI 显示文本 = 宿主投影口径（`historyLoad` 对落盘原文剥壳），与实时回显的裸 input 同值 */
+export const DISPLAY_USER_TEXT = stripInjectedContextPrefix(PERSISTED_USER_TEXT);
 
 /** 4 步计划的顺序与标识（由任务表工具的 task_table_write 建立） */
 export const PLAN_STEP_IDS = ['68e90642', '1110041a', '6f3b1624', '3f5bf7fc'] as const;
@@ -527,7 +548,8 @@ export function buildRoundView(): RoundView {
       // RoundMessage 的 id 为必填；宿主透出 round.userMessage 本含 id，此处对齐补全
       id: `${REAL_ROUND.id}-user`,
       role: 'user',
-      content: REAL_ROUND.userText,
+      // 宿主投影口径：落盘原文（PERSISTED_USER_TEXT 含信封）→ 剥壳后即显示文本
+      content: DISPLAY_USER_TEXT,
       timestamp: REAL_ROUND.createdAt,
     },
     assistantMessage: {

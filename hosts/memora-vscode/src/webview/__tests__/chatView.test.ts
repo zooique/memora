@@ -11823,6 +11823,85 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
       '异常中断',
     );
   });
+
+  // 变异验证锚点：第 4 步去掉 live 无正文分支（回退为「无 content 整块跳过」）→ 本用例转红。
+  // 真机症状：运行中切会话，思考期空白、过程记录迟到且顶部缺角色包名。
+  it('重放 live 轮无正文也建 assistant 壳：身份标签 + 可挂过程容器（切回空白回归锁）', () => {
+    mountChatView();
+    dispatchReplay({
+      ...makeRound({
+        id: 'r-live-empty',
+        user: { content: '问题' },
+        processEvents: [
+          { type: 'meta', seq: 1, ts: '', payload: { role: '方案设计师', llm: 'mimo' } },
+          {
+            type: 'tool_start',
+            seq: 2,
+            ts: '',
+            payload: { toolCallId: 't1', name: 'read_file' },
+          },
+        ],
+        status: 'pending',
+      }),
+      live: true,
+    });
+    // 无正文也必须先落 assistant 壳：否则过程块无宿主（只能挂孤儿容器，且顶部无身份标签）
+    const host = document.querySelector<HTMLElement>('.msg.assistant');
+    expect(host).not.toBeNull();
+    // 身份条取本轮 meta（角色包名）——症状 3 的断言面
+    expect(host!.querySelector('.msg-ai-label__role')?.textContent).toBe('方案设计师');
+    // 过程容器挂在本轮壳内：后续实时事件沿同一容器增量续写，不另起孤儿平铺
+    expect(host!.querySelector('.process-flow')).not.toBeNull();
+    // live 轮运行态挂在 body 上（与实时流同载体契约）
+    expect(host!.querySelector<HTMLElement>('.msg-body')?.dataset.status).toBeTruthy();
+  });
+
+  // 变异验证锚点：live 分支若改成「append 正文」或漏置 streamingRaw / 漏 renderStreamBody
+  // ⇒ 下方「不重复 / 不丢失 / 顺序」三条断言至少一条转红。
+  it('重放 live 轮带半段正文：不重复不丢失，后续 chunk 沿同一块按序拼接', () => {
+    vi.useFakeTimers();
+    try {
+      mountChatView();
+      dispatchReplay({
+        ...makeRound({
+          id: 'r-live-part',
+          user: { content: '问题' },
+          // 切回时该轮已产出半段正文（toRoundView 把 streamingText 投影为 assistantMessage）
+          assistantMessage: { content: '半段正文。', ts: '2026-09-16T10:00:00.000Z' },
+          processEvents: [
+            { type: 'meta', seq: 1, ts: '', payload: { role: '方案设计师', llm: 'mimo' } },
+            {
+              type: 'tool_start',
+              seq: 2,
+              ts: '',
+              payload: { toolCallId: 't1', name: 'read_file' },
+            },
+          ],
+          status: 'pending',
+        }),
+        live: true,
+      });
+      // 只建一个 assistant 块：重建走实时入口（beginStreaming），不得「收场块 + 正文块」两份
+      expect(document.querySelectorAll('.msg.assistant').length).toBe(1);
+      const body = document.querySelector<HTMLElement>('.msg.assistant .msg-body')!;
+      // 不重复：streamingRaw 全量重渲染（非追加），半段正文只出现一次
+      expect((body.textContent ?? '').split('半段正文').length - 1).toBe(1);
+
+      // 后续实时 chunk：streamingActive 已置 → 走增量分支续写同一块（不重置 streamingRaw）
+      dispatch({ type: 'chunk', content: '续写第二段。', roundId: 'r-live-part' });
+      vi.advanceTimersByTime(200); // 流式节流重渲染间隔 150ms
+
+      const finalText =
+        document.querySelector<HTMLElement>('.msg.assistant .msg-body')!.textContent ?? '';
+      // 不丢失 + 不重复：切回前的半段与切回后的续写各一次
+      expect(finalText.split('半段正文').length - 1).toBe(1);
+      expect(finalText.split('续写第二段').length - 1).toBe(1);
+      // 顺序正确：半段在前、续写在后
+      expect(finalText.indexOf('半段正文')).toBeLessThan(finalText.indexOf('续写第二段'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 // ═══════════════════════════════════════════════════════════
