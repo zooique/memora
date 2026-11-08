@@ -107,7 +107,7 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
       const fs = await import('node:fs/promises');
       const filePath = join(memoraDir, 'work-projections.json');
-      // 模拟另一写入方（如后续常驻层）已落盘的字段
+      // 模拟另一写入方（如项目规则层）已落盘的字段
       await fs.writeFile(
         filePath,
         JSON.stringify([
@@ -277,7 +277,7 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       expect(block).toContain('read_file');
     });
 
-    it('常驻项从索引块剔除、非常驻项照常列出（设计 §4.4：注入块剔除，清单不剔除）', async () => {
+    it('项目规则条目从索引块剔除、其余照常列出（设计 §4.4：注入块剔除，清单不剔除）', async () => {
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
       const fs = await import('node:fs/promises');
       const filePath = join(memoraDir, 'work-projections.json');
@@ -291,15 +291,15 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       await manager.refresh();
 
       const block = manager.contextBlock();
-      // 非常驻项照常出现
+      // 非项目规则条目照常出现
       expect(block).toContain('架构说明');
       expect(block).toContain('docs/arch.md');
-      // 常驻项正文由常驻规则段承载，索引块不得再出现（防「同一对象两种描述 + 诱导二次 read_file」）
+      // 项目规则条目正文由项目规则段承载，索引块不得再出现（防「同一对象两种描述 + 诱导二次 read_file」）
       expect(block).not.toContain('docs/agent-rules.md');
       expect(block).not.toContain('项目规则');
     });
 
-    it('全部条目为常驻时索引块为空串（不产出空壳标题）', async () => {
+    it('全部条目均为项目规则时索引块为空串（不产出空壳标题）', async () => {
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
       const fs = await import('node:fs/promises');
       const filePath = join(memoraDir, 'work-projections.json');
@@ -481,9 +481,9 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
     return rel;
   }
 
-  describe('setResident（七态）', () => {
+  describe('setResident（失败四态 + 成功两态）', () => {
     it('未信任（第 4 参缺省）⇒ untrusted，且**先拒后读**（源文件不存在也报 untrusted）', async () => {
-      // 只登记、不建源文件：若实现「先读盘再判信任」，就会返回 source-missing —— 本用例钉住判据顺序
+      // 只登记、不建源文件：若实现「先读盘再判信任」，就会返回 not-found —— 本用例钉住判据顺序
       await writeList([{ name: 'rules', description: '项目规则', source: 'missing.md' }]);
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
 
@@ -496,7 +496,7 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
 
     it('已信任 + 源文件可用 ⇒ enabled，只翻字段并保留未知字段', async () => {
       await writeSource('rules.md', '# 项目规则\n- 文档一律中文\n');
-      // 手工写入带未知字段的条目：置常驻不得整条重建（否则未知字段被静默丢弃）
+      // 手工写入带未知字段的条目：置为项目规则不得整条重建（否则未知字段被静默丢弃）
       await writeList([
         { name: 'rules', description: '项目规则', source: 'rules.md', extra: 'keep-me' },
       ]);
@@ -524,7 +524,7 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       expect(await readList()).toEqual([]);
     });
 
-    it('幂等：已是常驻再置 true ⇒ enabled（文案标明未重复写入）', async () => {
+    it('幂等：已是项目规则再置 true ⇒ enabled（文案标明未重复写入）', async () => {
       await writeSource('rules.md', '# 项目规则\n');
       await writeList([
         { name: 'rules', description: '项目规则', source: 'rules.md', resident: true },
@@ -537,17 +537,21 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       expect(result.message).toContain('未重复写入');
     });
 
-    it('已登记但源文件不存在 ⇒ source-missing（与「存在但不可用」分开）', async () => {
+    it('已登记但源文件不存在 ⇒ not-found（message 说明是文件侧不存在，与清单无条目可区分）', async () => {
       await writeList([{ name: 'rules', description: '项目规则', source: 'gone.md' }]);
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
 
       const result = await manager.setResident('gone.md', true);
 
-      expect(result.reason).toBe('source-missing');
+      expect(result.reason).toBe('not-found');
+      // 反向断言：旧的细分码 source-missing 已收敛，不得再出现（只断言新码出现挡不住回退）
+      expect(result.reason).not.toBe('source-missing');
+      // 机器码粗、文案细：同为 not-found，文案必须说出「源文件不存在」
+      expect(result.message).toContain('不存在');
       expect((await readList())[0]).not.toHaveProperty('resident');
     });
 
-    it('source-rejected 的四类 message 各不相同（工作区外 / 凭据 / 非文本 / 读取失败）', async () => {
+    it('source-unreadable 的四类 message 各不相同（工作区外 / 凭据 / 非文本 / 读取失败）', async () => {
       const fs = await import('node:fs/promises');
       // 凭据文件：真实存在但命中黑名单
       await writeSource('.env', 'SECRET=1\n');
@@ -571,7 +575,9 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       const readError = await manager.setResident('somedir', true);
 
       for (const r of [outside, blocked, notTextual, readError]) {
-        expect(r.reason).toBe('source-rejected');
+        // 四类统一收敛到 source-unreadable（旧细分码 source-rejected 已删除）
+        expect(r.reason).toBe('source-unreadable');
+        expect(r.reason).not.toBe('source-rejected');
       }
       // 四类文案必须可区分（共用一句「文件不可用」= 宿主的四类动作无法区分）
       const messages = new Set([
@@ -587,8 +593,8 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       expect((await readList()).every((e) => !('resident' in e) || e.resident !== true)).toBe(true);
     });
 
-    it('单条超 10000 ⇒ too-long，文案指向「拆分该文件」，不写入', async () => {
-      const body = 'x'.repeat(10100);
+    it('单条超 5000 ⇒ too-long，文案指向「拆分该文件」，不写入', async () => {
+      const body = 'x'.repeat(5100);
       await writeSource('big.md', body);
       await writeList([{ name: 'big', description: '大文件', source: 'big.md' }]);
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
@@ -596,17 +602,17 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       const result = await manager.setResident('big.md', true);
 
       expect(result.reason).toBe('too-long');
-      expect(result.message).toContain('10000');
+      expect(result.message).toContain('5000');
       // 处置必须指向文件本身（拆分），不许让合计去迁就单篇
       expect(result.message).toContain('单文件超上限，请拆分该文件');
       expect((await readList())[0]).not.toHaveProperty('resident');
     });
 
-    it('合计超 20000 ⇒ too-long，并列出会被挤掉的已常驻条目', async () => {
-      // 前两条各 9000 字（合计未越 20000），第三条 3000 字加入后越限 ⇒ 按序会丢弃末位 r3
-      await writeSource('r1.md', 'y'.repeat(9000));
-      await writeSource('r2.md', 'y'.repeat(9000));
-      await writeSource('r3.md', 'y'.repeat(3000));
+    it('合计超 10000 ⇒ too-long，并列出会被挤掉的项目规则条目', async () => {
+      // 前两条各 4000 字（合计未越 10000），第三条 2100 字加入后越限 ⇒ 按序会丢弃末位 r3
+      await writeSource('r1.md', 'y'.repeat(4000));
+      await writeSource('r2.md', 'y'.repeat(4000));
+      await writeSource('r3.md', 'y'.repeat(2100));
       await writeList([
         { name: 'r1', description: '规则1', source: 'r1.md', resident: true },
         { name: 'r2', description: '规则2', source: 'r2.md', resident: true },
@@ -617,14 +623,14 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       const result = await manager.setResident('r3.md', true);
 
       expect(result.reason).toBe('too-long');
-      expect(result.message).toContain('20000');
+      expect(result.message).toContain('10000');
       // 「加入后会丢弃谁」必须说清，不让宿主面对一个没有解释的拒绝
       expect(result.message).toContain('按清单顺序丢弃');
       // 第三条仍未写入（全有或全无：不允许后写者静默挤掉先写者）
       expect((await readList())[2]).not.toHaveProperty('resident');
     });
 
-    it('未信任也能取消常驻（置 false 不做信任/读盘/限额检查）', async () => {
+    it('未信任也能取消项目规则（置 false 不做信任/读盘/限额检查）', async () => {
       await writeList([
         { name: 'rules', description: '项目规则', source: 'rules.md', resident: true },
       ]);
@@ -693,7 +699,7 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       expect(await fs.readFile(join(memoraDir, 'work-projections.json'), 'utf-8')).toBe(raw);
     });
 
-    it('listManagedWorks：常驻态由 SSOT 判据归一（字符串 "true" 不算常驻）', async () => {
+    it('listManagedWorks：项目规则态由 SSOT 判据归一（字符串 "true" 不算项目规则）', async () => {
       await writeList([
         { name: 'a', description: '甲', source: 'a.md', resident: true },
         { name: 'b', description: '乙', source: 'b.md', resident: 'true' },

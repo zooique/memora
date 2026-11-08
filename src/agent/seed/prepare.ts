@@ -156,8 +156,8 @@ export async function refreshTurnAssembly(deps: SeedDeps): Promise<void> {
   try {
     await deps.refreshResidentRulesContext?.();
   } catch (err) {
-    // 防御位：沿用上次缓存 / 空段继续本轮，不中断 turn（措辞与内层降级一致，便于排障时区分来源）
-    logger.warn({ err }, '注入边界：常驻规则刷新抛错，已忽略（沿用上次缓存 / 空段，不中断 turn）');
+    // 防御位：本轮不注入项目规则，继续本轮（不中断 turn；措辞与内层降级一致，便于排障时区分来源）
+    logger.warn({ err }, '注入边界：项目规则刷新抛错，已忽略（本轮不注入，不中断 turn）');
   }
 
   // active 任务项谓词**唯一落点**：两个入口共用本函数，禁止在入口各抄一份

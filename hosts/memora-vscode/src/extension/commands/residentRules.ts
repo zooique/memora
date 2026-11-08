@@ -1,20 +1,20 @@
 /**
- * 命令：项目常驻规则（清单管理 + 单文件切换）
+ * 命令：项目规则（清单管理 + 单文件切换）
  *
  * 两条命令，同一套内核能力（本文件**只做「调用 + 显示结果」**）：
  *  - `memora.toggleResidentRule`：右键文件 / 编辑器标签切换该文件的常驻态；
  *  - `memora.manageResidentRules`：QuickPick 管理整份清单（切换 / 移除登记）。
  *
  * 🔴 纪律（宿主零判据）：
- *  1. **能不能常驻、超没超上限、文件在不在、当前是不是常驻** —— 全部由内核回答。
- *     本文件不得出现 `10000` / `20000` / 文件存在性 / `resident === true` 这类判断；
- *     常驻态一律读内核归一后的 `listManagedWorks().resident`（判据 = `isResidentEntry`）。
- *  2. 结果文案**原样展示**内核 message（七态 / 四态），宿主不改写、不归纳。
+ *  1. **能不能设为项目规则、超没超上限、文件在不在、当前是不是项目规则** —— 全部由内核回答。
+ *     本文件不得出现字符上限数值 / 文件存在性 / `resident === true` 这类判断；
+ *     项目规则态一律读内核归一后的 `listManagedWorks().resident`（判据 = `isResidentEntry`）。
+ *  2. 结果文案**原样展示**内核 message（失败四态 + 成功两态），宿主不改写、不归纳。
  *  3. URI → 相对路径**必须**走 `toWorkspaceRelativePath` 单点判据（禁用 `asRelativePath`）。
  *
  * 已知平台限制（诚实登记）：VS Code 的菜单标题是 `package.json` 静态贡献，**不支持按文件状态
  * 动态改文案**（`when` 只能读全局上下文键，读到的是「最后选中的文件」，会显示错误状态）。
- * 故右键项用中性标题「切换项目规则（常驻）」，当前态由 QuickPick 后缀与内核回执显式展示。
+ * 故右键项用中性标题「切换项目规则」，当前态由 QuickPick 后缀与内核回执显式展示。
  */
 import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
@@ -58,7 +58,7 @@ export async function toggleResidentRuleCommand(
 ): Promise<void> {
   const uris = Array.isArray(uri) ? uri : uri ? [uri] : [];
   if (uris.length === 0) {
-    void vscode.window.showWarningMessage('请在文件上右键，选择「Memora: 切换项目规则（常驻）」');
+    void vscode.window.showWarningMessage('请在文件上右键，选择「Memora: 切换项目规则」');
     return;
   }
 
@@ -111,8 +111,8 @@ function showManagePick(
 ): Promise<{ item: ManageItem; action: 'toggle' | 'remove' } | null> {
   return new Promise((resolve) => {
     const pick = vscode.window.createQuickPick<ManageItem>();
-    pick.title = 'Memora: 管理项目常驻规则';
-    pick.placeholder = '回车切换常驻 / 点右侧按钮仅移除登记（不会删除源文件）';
+    pick.title = 'Memora: 管理项目规则';
+    pick.placeholder = '回车切换项目规则 / 点右侧按钮仅移除登记（不会删除源文件）';
     pick.items = items;
     /** 用户选择（关闭时据此回传） */
     let chosen: { item: ManageItem; action: 'toggle' | 'remove' } | null = null;
@@ -134,7 +134,7 @@ function showManagePick(
 }
 
 /**
- * 管理项目常驻规则（QuickPick：切换 / 移除登记）
+ * 管理项目规则（QuickPick：切换 / 移除登记）
  *
  * 每次动作后重新拉取清单，用户看到的是内核最新态（不在宿主侧维护镜像）。
  *
@@ -145,7 +145,7 @@ export async function manageResidentRulesCommand(
 ): Promise<void> {
   const agent = await tryGetAgent();
   if (!agent?.works) {
-    void vscode.window.showWarningMessage('Memora Agent 未就绪，无法管理项目常驻规则');
+    void vscode.window.showWarningMessage('Memora Agent 未就绪，无法管理项目规则');
     return;
   }
   const works = agent.works;
@@ -163,7 +163,7 @@ export async function manageResidentRulesCommand(
       entries = await works.listManagedWorks();
     } catch (err) {
       void vscode.window.showErrorMessage(
-        '读取项目常驻规则清单失败：' + (err instanceof Error ? err.message : String(err)),
+        '读取项目规则清单失败：' + (err instanceof Error ? err.message : String(err)),
       );
       return;
     }
@@ -176,7 +176,7 @@ export async function manageResidentRulesCommand(
 
     const items: ManageItem[] = entries.map((e) => ({
       label: `${e.resident ? '$(check)' : '$(circle-outline)'} ${e.name}`,
-      description: `${e.source} · ${e.resident ? '已常驻' : '未常驻'}`,
+      description: `${e.source} · ${e.resident ? '已设为项目规则' : '未设为项目规则'}`,
       detail: e.description,
       source: e.source,
       resident: e.resident,
@@ -195,7 +195,7 @@ export async function manageResidentRulesCommand(
 }
 
 /**
- * 注册两条常驻规则命令（extension.ts 只留一次调用，不展开命令表）
+ * 注册两条项目规则命令（extension.ts 只留一次调用，不展开命令表）
  *
  * @param context 扩展上下文（订阅随停用自动释放）
  * @param tryGetAgent 取当前工作区 Agent 的闭包（与其余命令同源）

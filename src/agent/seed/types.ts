@@ -90,7 +90,7 @@ export interface SeedDeps {
    */
   refreshRolePackPrefixForRound?(roundRole: string | null): void;
   /**
-   * 门面能力：刷新项目常驻规则上下文（异步读盘，随后由同步刷新链消费缓存）。
+   * 门面能力：刷新项目规则上下文（异步读盘，随后由同步刷新链消费缓存）。
    *
    * 为什么单独一个异步入口：`refreshRolePackPrefixForRound` 是**同步 void**（前缀重建链全程同步），
    * 磁盘 IO 不能塞进同步函数；两个 turn 入口（`prepare.run` / `runResume`）必须在调用同步刷新

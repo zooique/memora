@@ -224,7 +224,7 @@ new Agent({
 | `codeExecutionProvider` | `ICodeExecutionProvider` | ❌ | 代码执行提供者注入（提供时自动暴露 `run_code` 工具给 LLM，沙箱执行能力完全由宿主 provider 决定，内核零运行时依赖，不传则不暴露） |
 | `projectSearchProvider` | `IProjectSearchProvider` | ❌ | 项目内搜索提供者注入（提供时 LLM 获项目文件检索能力，不传则不暴露） |
 | `environmentProvider` | `IEnvironmentProvider` | ❌ | 宿主环境提供者（不配则 system prompt 不注入环境段）：宿主上报运行环境事实（OS / shell / 可用运行时），内核零解释转发 |
-| `workspaceTrusted` | `boolean` | ❌ | 工作区是否已受信任（宿主作为**新入参**传入的内核事实快照）：内核侧无 `isTrusted` 态，装配期无法现读。**只认严格 `=== true`** 才启用常驻层；未传 / `false` / 任何非 `true` 值一律按**未信任**处理（fail-closed：不给常驻正文，不静默扩权）。判据唯一实现 = `src/agent/managers/residentRules.ts` 的 `isResidentLayerEnabled`，消费点禁止各自写 `if (trusted)` |
+| `workspaceTrusted` | `boolean` | ❌ | 工作区是否已受信任（宿主作为**新入参**传入的内核事实快照）：内核侧无 `isTrusted` 态，装配期无法现读。**只认严格 `=== true`** 才启用项目规则层；未传 / `false` / 任何非 `true` 值一律按**未信任**处理（fail-closed：不给项目规则正文，不静默扩权）。判据唯一实现 = `src/agent/managers/residentRules.ts` 的 `isResidentLayerEnabled`，消费点禁止各自写 `if (trusted)` |
 | `scriptNodePath` | `string` | ❌ | node 可执行文件路径：宿主注入真实 node 路径给 L3 脚本执行器（`run_skill_script` / `run_project_script` 的 node 分支）；缺省走 `'node'`（PATH 查找），宿主机无独立 node 时注入可避免 ENOENT |
 | `disabledSkills` | `string[]` | ❌ | 禁用的技能名清单：命中的技能从 L1 清单消失、L2/L3 访问不可用（对 LLM 语义 = 技能不存在，宿主 UI 据同名设置标「已禁用」徽章） |
 | `preExecutionCheck` | `(name, args) => PreExecutionResult` | ❌ | 工具执行前检查回调（宿主审批/审计/参数改写通道；装配时与内部幂等检查组合为单点入口） |
@@ -1004,9 +1004,9 @@ interface BackgroundTask {
 ```typescript
 interface WorkProjectionEntry {
   name: string;        // 作品名（默认取源文件名去扩展名）
-  description: string; // 一句话说明（告诉 AI 这个文件是干什么的）；常驻后只服务清单展示，不进注入块
+  description: string; // 一句话说明（告诉 AI 这个文件是干什么的）；设为项目规则后只服务清单展示，不进注入块
   source: string;      // 源文件路径（相对项目根，指向真实文件）
-  resident?: boolean;  // 项目规则常驻标记（可选）：只有严格 === true 才算常驻（fail-closed）
+  resident?: boolean;  // 项目规则标记（可选；标识符保留 resident）：只有严格 === true 才算项目规则（fail-closed）
                        // 字段缺失 = 原作品投影（只进索引、AI 按需 read_file）；
                        // 判据唯一实现 = residentRules.ts 的 isResidentEntry（禁止 Boolean(...)）
                        // 与宿主 capabilityState.kind === 'residentOnly'（常驻工具）无关
@@ -1022,6 +1022,8 @@ interface WorkProjectionEntry {
 | `agent.works.listWorks()` | 列出全部投影条目（读盘同步后返回） |
 | `agent.works.contextBlock()` | 生成系统提示词注入块（`【项目索引】` 段；无条目返回空串） |
 | `agent.works.loadAndGetContextBlock()` | `refresh()` + `contextBlock()` 的组合 |
+| `agent.works.listManagedWorks()` | 列出「被管理的」投影条目（宿主清单 UI 的数据源；`resident` 为内核归一后的布尔） |
+| `agent.works.setResident(sourcePath, resident)` | 切换项目规则标记（只翻字段、**绝不新建**；置 `true` 时先读正文判两道上限，置 `false` 不读）。返回 `{ reason, message }`：成功两态 `enabled` / `disabled`；失败四态 `not-found`（清单无登记 **或** 源文件不存在）/ `untrusted`（工作区未信任）/ `too-long`（单条或合计超限）/ `source-unreadable`（工作区外、凭据黑名单、非文本、读取失败，以及清单写入失败——`message` 标明是否可重试）。纪律：**机器码粗、文案细**，精确原因只在 `message` |
 
 > **注意**：`agent.works` 在 `init()` 前返回 `null`。内核侧**零 LLM 依赖**（纯读写、无后台任务）；`description` 可由宿主生成后传入（vscode 命令即先经 LLM 生成一句话描述、失败时用文件名兜底）。并发：当前为单 Agent 单进程场景，`registerWork` 无文件锁。
 

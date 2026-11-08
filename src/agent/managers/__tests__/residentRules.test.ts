@@ -1,10 +1,10 @@
 /**
- * 项目常驻规则层测试（读盘判据 + 两道上限 + 段渲染 + 三道 fail-safe）
+ * 项目规则层测试（读盘判据 + 两道上限 + 段渲染 + 两道 fail-safe）
  *
  * 重点锁死三类「没有测试会红」的语义：
- * ① 判据只认严格 `true`（`"false"` 字符串不得变常驻）；
+ * ① 判据只认严格 `true`（`"false"` 字符串不得变项目规则）；
  * ② 计量按**渲染块**（单条 = 标题行 + 正文；合计 = 整段渲染长度）；
- * ③ 「沿用上次内容」标注行**不计入合计上限预算**（有意例外，自噬链）；
+ * ③ 读失败 ⇒ **该条本轮不进段**并写明「本次未注入（读取失败，下轮重试）」（不缓存、不沿用）；
  * ④ 合计超限 ⇒ **按清单顺序从末尾逐条丢弃**（靠前者优先），不再整段降级。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -15,7 +15,6 @@ import {
   MAX_RESIDENT_SINGLE_CHARS,
   MAX_RESIDENT_TOTAL_CHARS,
   ResidentRulesManager,
-  annotateReadFailure,
   evaluateResidentSegment,
   isResidentEntry,
   isResidentLayerEnabled,
@@ -28,7 +27,7 @@ import type { WorkProjectionEntry } from '../workProjection.js';
  * 构造一条最小作品投影条目（测试只关心 source / resident，其余字段给占位值）
  *
  * @param source 清单相对路径
- * @param resident 常驻标记（缺省 = 字段缺失）
+ * @param resident 项目规则标记（缺省 = 字段缺失）
  * @returns 完整条目（满足 WorkProjectionEntry 形状）
  */
 function entryOf(source: string, resident?: boolean): WorkProjectionEntry {
@@ -50,6 +49,11 @@ function entryOf(source: string, resident?: boolean): WorkProjectionEntry {
 describe('上限常量（政策线不变量）', () => {
   it('合计恒等于单条 × 2（改其一会红）', () => {
     expect(MAX_RESIDENT_TOTAL_CHARS).toBe(MAX_RESIDENT_SINGLE_CHARS * 2);
+  });
+
+  it('政策线数值：单条 5000 / 合计 10000（只改 ×2 关系的断言挡不住整体改数）', () => {
+    expect(MAX_RESIDENT_SINGLE_CHARS).toBe(5000);
+    expect(MAX_RESIDENT_TOTAL_CHARS).toBe(10000);
   });
 });
 
@@ -75,7 +79,7 @@ describe('residentRules', () => {
       expect(isResidentLayerEnabled('true' as unknown as boolean)).toBe(false);
     });
 
-    it('isResidentEntry 只认严格 true（字符串 "false" 不得变常驻）', () => {
+    it('isResidentEntry 只认严格 true（字符串 "false" 不得变项目规则）', () => {
       expect(isResidentEntry({ resident: true })).toBe(true);
       expect(isResidentEntry({})).toBe(false);
       expect(isResidentEntry({ resident: false })).toBe(false);
@@ -157,17 +161,18 @@ describe('residentRules', () => {
       expect(renderResidentSegment([], [])).toBe('');
     });
 
-    it('段首三句 + 失效汇总行 + 各条块按清单顺序', async () => {
+    it('段首三句 + 读失败未注入行 + 各条块按清单顺序', async () => {
       await writeFile(join(projectDir, 'a.md'), 'A 规则', 'utf8');
       await writeFile(join(projectDir, 'b.md'), 'B 规则', 'utf8');
       const evaluation = await evaluateResidentSegment(projectDir, ['a.md', 'missing.md', 'b.md']);
 
-      expect(evaluation.segment).toContain(
-        '## 项目常驻规则（本仓库具体约束；按清单顺序，靠前者优先）',
-      );
+      expect(evaluation.segment).toContain('## 项目规则（本仓库具体约束；按清单顺序，靠前者优先）');
       expect(evaluation.segment).toContain('- 适用范围：');
       expect(evaluation.segment).toContain('- 优先级：');
-      expect(evaluation.segment).toContain('（以下 1 条未能注入：missing.md）');
+      // 读失败与单条超限分开写：这里的处置是「下轮重试」，不是「拆分文件」
+      expect(evaluation.segment).toContain(
+        '（以下 1 条本次未注入（读取失败，下轮重试）：missing.md）',
+      );
       // 顺序真源 = 清单数组顺序
       expect(evaluation.segment.indexOf('### 来源文件：a.md')).toBeLessThan(
         evaluation.segment.indexOf('### 来源文件：b.md'),
@@ -184,11 +189,13 @@ describe('residentRules', () => {
 
       // 标题行使渲染块越限 ⇒ big 失效
       expect(evaluation.failures.map((f) => f.reason)).toEqual(['too-long']);
-      expect(evaluation.segment).toContain('（以下 1 条未能注入：big.md）');
+      expect(evaluation.segment).toContain(
+        '（以下 1 条本次未注入（单文件超上限，需拆分）：big.md）',
+      );
       expect(evaluation.segment).toContain('### 来源文件：ok.md');
       expect(evaluation.segment).not.toContain('### 来源文件：big.md');
       // 拒绝文案必须给实际计量与差额，并把处置指向「拆分文件」而不是「让合计迁就」
-      expect(evaluation.failures[0]!.message).toMatch(/共 \d+ 字符，超过单条 10000 上限 \d+ 字符/);
+      expect(evaluation.failures[0]!.message).toMatch(/共 \d+ 字符，超过单条 5000 上限 \d+ 字符/);
       expect(evaluation.failures[0]!.message).toContain('单文件超上限，请拆分该文件');
     });
 
@@ -220,17 +227,12 @@ describe('residentRules', () => {
       // 丢弃清单必须显式上段（模型与宿主都要知道「哪篇、因为合计超限」）
       expect(evaluation.segment).toContain('（以下 1 条因合计超限未注入：d.md');
       expect(evaluation.segment).toContain('已按清单顺序丢弃靠后条目，靠前者优先');
-      // 丢弃 ≠ 失效：不得混进失效汇总行
+      // 丢弃 ≠ 失效：不得混进未注入行
       expect(evaluation.failures).toHaveLength(0);
-    });
-
-    it('标注行插入段首标题下一行', () => {
-      const annotated = annotateReadFailure('## 标题\n- 第一行\n- 第二行');
-      expect(annotated).toBe('## 标题\n（本次读取失败，沿用上次内容）\n- 第一行\n- 第二行');
     });
   });
 
-  describe('ResidentRulesManager（三道 fail-safe）', () => {
+  describe('ResidentRulesManager（两道 fail-safe）', () => {
     /** 构造一个成功返回给定条目的依赖（可替换为抛错实现） */
     const listEntriesOf = (entries: Array<{ source: string; resident?: boolean }>) =>
       vi.fn(async () => entries.map((e) => entryOf(e.source, e.resident)));
@@ -249,7 +251,7 @@ describe('residentRules', () => {
       expect(listEntries).not.toHaveBeenCalled();
     });
 
-    it('已信任 + 读失败 + 有缓存 ⇒ 沿用缓存 + 段首标注', async () => {
+    it('已信任 + 清单读失败 ⇒ 空段（不缓存、不沿用上次内容）', async () => {
       await writeFile(join(projectDir, 'a.md'), '规则正文', 'utf8');
       let fail = false;
       const listEntries = vi.fn(async () => {
@@ -264,23 +266,22 @@ describe('residentRules', () => {
       });
 
       await manager.refresh();
-      const beforeFailure = manager.contextBlock();
-      expect(beforeFailure).toContain('### 来源文件：a.md');
+      expect(manager.contextBlock()).toContain('### 来源文件：a.md');
 
       fail = true;
       await manager.refresh();
-      const afterFailure = manager.contextBlock();
-      // 内容未丢 + 标注已给模型
-      expect(afterFailure).toContain('### 来源文件：a.md');
-      expect(afterFailure).toContain('（本次读取失败，沿用上次内容）');
+      // 读失败 ⇒ 本轮一条都不注入（拿不到声明就不猜它是什么），且**不留**上一轮正文
+      expect(manager.contextBlock()).toBe('');
+      expect(manager.contextBlock()).not.toContain('规则正文');
+      expect(manager.contextBlock()).not.toContain('沿用上次内容');
 
-      // 恢复后标注消失（缓存本体无标注，不叠罗汉）
+      // 恢复后重新注入（下一轮读盘即可自愈，因为根本没有「缓存」这个东西）
       fail = false;
       await manager.refresh();
-      expect(manager.contextBlock()).not.toContain('（本次读取失败，沿用上次内容）');
+      expect(manager.contextBlock()).toContain('### 来源文件：a.md');
     });
 
-    it('已信任 + 读失败 + 无缓存 ⇒ 空段（不抛错，turn 不中断）', async () => {
+    it('已信任 + 读失败 ⇒ 空段（不抛错，turn 不中断）', async () => {
       const manager = new ResidentRulesManager({
         projectDir,
         workspaceTrusted: true,
@@ -294,7 +295,7 @@ describe('residentRules', () => {
       expect(manager.contextBlock()).toBe('');
     });
 
-    it('清单格式错误等同读失败（有缓存 ⇒ 沿用 + 标注）', async () => {
+    it('清单格式错误等同读失败 ⇒ 空段（不沿用上一轮已注入的正文）', async () => {
       await writeFile(join(projectDir, 'a.md'), '规则正文', 'utf8');
       let malformed = false;
       const manager = new ResidentRulesManager({
@@ -305,12 +306,11 @@ describe('residentRules', () => {
       });
 
       await manager.refresh();
-      const healthy = manager.contextBlock();
-      expect(healthy).toContain('规则正文');
+      expect(manager.contextBlock()).toContain('规则正文');
 
       malformed = true;
       await manager.refresh();
-      expect(manager.contextBlock()).toContain('（本次读取失败，沿用上次内容）');
+      expect(manager.contextBlock()).toBe('');
     });
 
     it('合计超限 ⇒ 仍注入靠前条目，段首列出丢弃清单（不再整段降级）', async () => {
@@ -340,46 +340,11 @@ describe('residentRules', () => {
       expect(segment).not.toContain('### 来源文件：c.md');
       expect(segment).toContain('（以下 1 条因合计超限未注入：c.md');
       // 状态行只留给「丢光也装不下」的极端兜底
-      expect(segment).not.toContain('项目常驻规则未注入');
+      expect(segment).not.toContain('项目规则未注入');
       expect(segment.length).toBeLessThanOrEqual(MAX_RESIDENT_TOTAL_CHARS);
     });
 
-    it('🔴 有意例外：带失败标注的段可以超过合计上限但不触发丢弃（自噬链）', async () => {
-      const sources = ['a.md', 'b.md', 'c.md', 'd.md'];
-      for (const s of sources) await writeFile(join(projectDir, s), '', 'utf8');
-      const overhead = (await evaluateResidentSegment(projectDir, sources)).segment.length;
-
-      // 构造「成功时长度紧贴上限之下」的段：上限 - 3（标注行 16 字符后会越限）
-      const targetLength = MAX_RESIDENT_TOTAL_CHARS - 3;
-      const bodies = [4000, 4000, 4000, targetLength - 12000 - overhead];
-      for (let i = 0; i < sources.length; i += 1) {
-        await writeFile(join(projectDir, sources[i]!), 'k'.repeat(bodies[i]!), 'utf8');
-      }
-
-      let fail = false;
-      const manager = new ResidentRulesManager({
-        projectDir,
-        workspaceTrusted: true,
-        listEntries: async () => {
-          if (fail) throw new Error('IO 抖动');
-          return sources.map((source) => entryOf(source, true));
-        },
-        isListMalformed: () => false,
-      });
-
-      await manager.refresh();
-      expect(manager.contextBlock().length).toBeLessThanOrEqual(MAX_RESIDENT_TOTAL_CHARS);
-
-      fail = true;
-      await manager.refresh();
-      const annotated = manager.contextBlock();
-      // 标注行不入预算 ⇒ 段长度 > 合计上限是设计预期，规则正文必须仍在（不得触发丢弃）
-      expect(annotated.length).toBeGreaterThan(MAX_RESIDENT_TOTAL_CHARS);
-      expect(annotated).toContain('### 来源文件：a.md');
-      expect(annotated).not.toContain('项目常驻规则未注入');
-    });
-
-    it('无常驻条目 ⇒ 空段（不注入空壳）', async () => {
+    it('无项目规则条目 ⇒ 空段（不注入空壳）', async () => {
       const manager = new ResidentRulesManager({
         projectDir,
         workspaceTrusted: true,

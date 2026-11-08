@@ -194,9 +194,9 @@ describe('assembleComponents', () => {
     });
   });
 
-  // ─── 项目常驻规则层装配（fail-closed 闸）───────────────
+  // ─── 项目规则层装配（fail-closed 闸）───────────────
 
-  describe('项目常驻规则层装配（fail-closed 闸）', () => {
+  describe('项目规则层装配（fail-closed 闸）', () => {
     /**
      * 写一份含 resident=true 条目的投影清单 + 对应正文文件（均在临时项目根内，通过路径守卫）
      */
@@ -216,21 +216,21 @@ describe('assembleComponents', () => {
       );
     }
 
-    it('workspaceTrusted 缺省 ⇒ 常驻层不装配、不读正文（fail-closed）', async () => {
+    it('workspaceTrusted 缺省 ⇒ 项目规则层不装配、不读正文（fail-closed）', async () => {
       writeResidentFixture();
       const output = await assembleComponents(createPctx(), createInput());
       // 非 true 一律按未信任：装配期首次求值也必须是空段（不能「看起来能跑」再拒）
       expect(output.residentRules.contextBlock()).toBe('');
     });
 
-    it('workspaceTrusted: true ⇒ 装配期首次求值即注入正文，且常驻项从索引块剔除', async () => {
+    it('workspaceTrusted: true ⇒ 装配期首次求值即注入正文，且项目规则条目从索引块剔除', async () => {
       writeResidentFixture();
       const output = await assembleComponents(
         createPctx(),
         createInput({ workspaceTrusted: true }),
       );
       expect(output.residentRules.contextBlock()).toContain('本仓库文档一律用中文');
-      // §4.4：常驻项不留索引块（否则同一对象两种描述 + 诱导二次 read_file）
+      // §4.4：项目规则条目不留索引块（否则同一对象两种描述 + 诱导二次 read_file）
       expect(output.workProjection.contextBlock()).toBe('');
     });
   });
@@ -1254,27 +1254,27 @@ describe('buildEnvironmentContextBlock · 运行环境注入', () => {
   });
 });
 
-// ─── buildSystemPromptPrefix · 项目常驻规则段（第 6 参） ──
+// ─── buildSystemPromptPrefix · 项目规则段（第 6 参） ──
 
-describe('buildSystemPromptPrefix · 项目常驻规则段', () => {
-  it('常驻段紧贴角色包之后、全局技能清单之前（位置即优先级声明）', () => {
+describe('buildSystemPromptPrefix · 项目规则段', () => {
+  it('项目规则段紧贴角色包之后、全局技能清单之前（位置即优先级声明）', () => {
     const prefix = buildSystemPromptPrefix(
       '## 角色包 persona',
       '## 技能清单',
       'zh-CN',
       '## 作品投影',
       undefined,
-      '## 项目常驻规则（本仓库具体约束；按清单顺序，靠前者优先）',
+      '## 项目规则（本仓库具体约束；按清单顺序，靠前者优先）',
     );
     const roleIdx = prefix.indexOf('## 角色包 persona');
-    const residentIdx = prefix.indexOf('## 项目常驻规则');
+    const residentIdx = prefix.indexOf('## 项目规则');
     const skillIdx = prefix.indexOf('## 技能清单');
     expect(residentIdx).toBeGreaterThan(roleIdx);
     expect(skillIdx).toBeGreaterThan(residentIdx);
   });
 
-  it('residentRulesContext 缺省 → prefix 不含常驻段（未信任 / 无条目零痕迹）', () => {
+  it('residentRulesContext 缺省 → prefix 不含项目规则段（未信任 / 无条目零痕迹）', () => {
     const prefix = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
-    expect(prefix).not.toContain('## 项目常驻规则');
+    expect(prefix).not.toContain('## 项目规则');
   });
 });

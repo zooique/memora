@@ -130,7 +130,7 @@ export function buildEnvironmentContextBlock(
  *
  * 初始化时和刷新时都必须使用此函数，确保前缀包含：
  *   1. 角色包 L1 persona + 技能清单（rolePackPrompt）
- *   2. 项目常驻规则段（residentRulesContext，可选：清单里 resident=true 的条目正文）
+ *   2. 项目规则段（residentRulesContext，可选：清单里 resident=true 的条目正文）
  *   3. 全局技能 L1 清单（globalSkillList）
  *   4. 技能落点固定段（SKILL_WRITE_LOCATION_PROMPT）
  *   5. 作品投影装配注入块（workProjectionContext，可选：极简元数据清单，AI 按需 read_file）
@@ -148,7 +148,7 @@ export function buildEnvironmentContextBlock(
  * @param locale 时间格式化 locale
  * @param workProjectionContext 作品投影装配注入块（可选；由 WorkProjectionManager.loadAndGetContextBlock() 产出）
  * @param environmentContext 运行环境事实段（可选；由 buildEnvironmentContextBlock 格式化宿主快照产出）
- * @param residentRulesContext 项目常驻规则段（可选；由 ResidentRulesManager.contextBlock() 产出，空串不注入）
+ * @param residentRulesContext 项目规则段（可选；由 ResidentRulesManager.contextBlock() 产出，空串不注入）
  * @returns 完整的 systemPromptPrefix
  */
 export function buildSystemPromptPrefix(
@@ -161,7 +161,7 @@ export function buildSystemPromptPrefix(
 ): string {
   const systemPrefixParts = [
     rolePackPrompt,
-    // 项目常驻规则段：紧跟角色包之后 —— 段内自陈「本段 > 角色包规则 > 技能清单等资料」，
+    // 项目规则段：紧跟角色包之后 —— 段内自陈「本段 > 角色包规则 > 技能清单等资料」，
     // 位置即优先级声明的一部分；未信任 / 无常驻条目时空串，filter(Boolean) 自动跳过。
     residentRulesContext,
     globalSkillList,
@@ -322,7 +322,7 @@ type LoopAndDepsParams = Pick<
   sessionManager: SessionManager;
   /** 作品投影装配注入块（L1 name+description+source 清单；**不含正文**，正文由模型按需 read_file） */
   workProjectionContext: string;
-  /** 项目常驻规则段（可选；assembleComponents 装配期首次求值产出，空串/undefined 不注入） */
+  /** 项目规则段（可选；assembleComponents 装配期首次求值产出，空串/undefined 不注入） */
   residentRulesContext?: string;
   /** 运行环境事实段（可选；assembleComponents 从 environmentProvider 快照格式化产出，空串/undefined 不注入） */
   environmentContext?: string;
@@ -347,7 +347,7 @@ export interface AssembleOutput {
   /** 后台任务槽位调度器（实例级，Agent 持有 → 注入 SeedDeps + BuiltinToolHandlers，close 单点等待） */
   backgroundTasks: BackgroundTaskScheduler;
   workProjection: WorkProjectionManager;
-  /** 项目常驻规则管理器（每轮 refresh 缓存，同步 contextBlock 供 system prompt 注入） */
+  /** 项目规则管理器（每轮 refresh 缓存，同步 contextBlock 供 system prompt 注入） */
   residentRules: ResidentRulesManager;
   skillManager: SkillManager;
   memoryInspector: MemoryInspector;
@@ -575,7 +575,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   } = params;
 
   // 系统前缀：使用共享函数构建（SSOT：buildSystemPromptPrefix）
-  // 包含角色包 L1 persona + 项目常驻规则段 + 全局技能清单 + 作品投影装配块（L1 清单）+ 运行环境事实段 + 当前时间戳
+  // 包含角色包 L1 persona + 项目规则段 + 全局技能清单 + 作品投影装配块（L1 清单）+ 运行环境事实段 + 当前时间戳
   const globalSkillList = skillManager.buildSkillList();
   const systemPromptPrefix = buildSystemPromptPrefix(
     rolePackPrompt,
@@ -808,7 +808,7 @@ export async function assembleComponents(
     workspaceTrusted,
   );
 
-  // 项目常驻规则管理器：清单来源**复用**作品投影（同一份 JSON、同一份刷新缓存），不新开第二份清单读取实现。
+  // 项目规则管理器：清单来源**复用**作品投影（同一份 JSON、同一份刷新缓存），不新开第二份清单读取实现。
   // 依赖经闭包注入而非持有实例：listEntries 每次调用都走 workProjection.refresh()，
   // 保证「常驻段」与「索引块」看到的是同一次读盘的同一份条目（含 resident 字段）。
   // workspaceTrusted 非 true ⇒ 整层不装配且不读任何正文（fail-closed，见 residentRules 常量注释）。
@@ -1044,7 +1044,7 @@ export async function assembleComponents(
   // 刷新失败不阻断装配——loadAndGetContextBlock 内部已容错，返回空串即不注入（投影是可选项，非装配硬依赖）
   const workProjectionContext = await workProjection.loadAndGetContextBlock();
 
-  // 项目常驻规则装配首次求值（每轮 turn 入口还会再刷一次，见 SeedDeps.refreshResidentRulesContext）。
+  // 项目规则装配首次求值（每轮 turn 入口还会再刷一次，见 SeedDeps.refreshResidentRulesContext）。
   // 注意顺序：本调用内部经 listEntries 再刷一次作品投影缓存（装配期一次性多一次读盘），
   // 不应依赖「上一步的 loadAndGetContextBlock 已经刷过」——两个 manager 各自自足，
   // 否则 setResident / 单测单独使用 residentRules 时会读到陈旧清单。
@@ -1077,7 +1077,7 @@ export async function assembleComponents(
       hooks,
       workProjectionContext,
       environmentContext,
-      // 常驻段：同步读上一步 refresh 的缓存（未信任 / 无条目时为空串，不注入）
+      // 项目规则段：同步读上一步 refresh 得到的段（未信任 / 无条目 / 读失败时为空串，不注入）
       residentRulesContext: residentRules.contextBlock(),
     });
   loopRef = loop;

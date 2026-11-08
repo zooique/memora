@@ -123,7 +123,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** WorkProjectionManager（作品投影极简 JSON 索引，宿主经 works getter 消费） */
   private workProjection: WorkProjectionManager | null = null;
   /**
-   * ResidentRulesManager（项目常驻规则层：清单里 resident=true 的条目正文每轮注入 system prompt）。
+   * ResidentRulesManager（项目规则层：清单里 resident=true 的条目正文每轮注入 system prompt）。
    * 纯内部组件（暂无宿主 getter 契约）——turn 入口 await `refresh()`，同步刷新链读 `contextBlock()`。
    */
   private residentRules: ResidentRulesManager | null = null;
@@ -1652,7 +1652,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const globalSkillList = this.skillManager?.buildSkillList() ?? '';
     // 作品投影装配块：缓存于 manager（装配时刷新 + register_work 更新），同步读取即可
     const workProjectionContext = this.workProjection?.contextBlock() ?? '';
-    // 项目常驻规则段：同步读缓存（本轮入口已 await refresh；未信任 / 无条目时为空串）。
+    // 项目规则段：同步读缓存（本轮入口已 await refresh；未信任 / 无条目时为空串）。
     // 禁止在此做 IO —— 本函数是同步 void 刷新链，读盘必须在 turn 入口（refreshTurnAssembly）。
     const residentRulesContext = this.residentRules?.contextBlock() ?? '';
     // 运行环境事实段（命令执行能力方案 §10.4-②）：同步取宿主快照并格式化（未注入 → 空串不注入）。

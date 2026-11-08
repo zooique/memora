@@ -135,6 +135,6 @@ export async function applyGrantedWorkspaceTrust(deps: GrantedTrustDeps): Promis
   deps.refreshSkillList();
   deps.report(
     `Memora 工作区已信任：项目级技能/角色包已注入并重扫；` +
-      `项目常驻规则将在 ${marked} 个已装配会话的下一轮取用时生效`,
+      `项目规则将在 ${marked} 个已装配会话的下一轮取用时生效`,
   );
 }

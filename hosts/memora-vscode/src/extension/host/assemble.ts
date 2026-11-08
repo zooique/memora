@@ -209,7 +209,7 @@ export interface AssembleOptions {
   /**
    * 工作区信任态（现读快照，来源唯一 = 本模块导出 `readWorkspaceTrusted`）
    *
-   * 透传 `AgentOptions.workspaceTrusted`，内核侧唯一消费面 = 项目常驻规则层的第一道闸
+   * 透传 `AgentOptions.workspaceTrusted`，内核侧唯一消费面 = 项目规则层的第一道闸
    * （`setResident` 与装配期 `ResidentRulesManager` 同一判据：**非布尔 `true` 一律按未信任**）。
    * ⚠️ 必须由 extension **装配时刻现读**注入，不得在 activate 时采样缓存——
    * 信任可运行期授予/撤销，快照会与真实判定不同源（漏传 ⇒ 常驻层恒关且所有测试仍全绿）。
