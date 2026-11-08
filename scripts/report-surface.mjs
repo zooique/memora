@@ -195,14 +195,14 @@ if (args.has('--with-tests')) {
       return m ? `${m[1].trim()}（有失败）` : '执行失败';
     }
   };
+  // 全量测试一律经 `scripts/test-run.mjs`：它是**唯一**的全量启动点（内含与门禁共用的互斥锁）。
+  // 直接 `node node_modules/vitest/vitest.mjs run` 会绕开锁 ⇒ 与并行门禁抢 CPU ⇒ 超时类假红，
+  // 本报表报出的用例数就是假的（这正是「第二处全量入口」危害的形态）。
   report.tests = {
-    kernel: run(ROOT, 'node ./node_modules/vitest/vitest.mjs run'),
-    host: run(
-      join(ROOT, 'hosts', 'memora-vscode'),
-      // ⚠️ 必须带 --no-file-parallelism：宿主官方口径（package.json 的 test 脚本）是串行，
-      // 并行会稳定吃掉 3 条 I/O 密集用例 ⇒ 报出来的用例数是假的。
-      'node ../../node_modules/vitest/vitest.mjs run --no-file-parallelism',
-    ),
+    kernel: run(ROOT, 'node scripts/test-run.mjs kernel'),
+    // 宿主串行口径由套件定义自带（`--config vitest.config.ts --no-file-parallelism`）：
+    // 宿主并行会稳定吃掉 3 条 I/O 密集用例 ⇒ 报出来的用例数是假的。
+    host: run(join(ROOT, 'hosts', 'memora-vscode'), 'node ../../scripts/test-run.mjs host'),
   };
 }
 

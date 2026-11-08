@@ -415,7 +415,7 @@
     "typecheck": "tsc --noEmit -p ./ && tsc --noEmit -p ./tsconfig.scripts.json",
     "verify:changelog-fresh": "node scripts/verify-changelog-fresh.mjs",
     "package": "npm run compile && node scripts/gen-changelog.mjs && node scripts/verify-changelog-fresh.mjs && node scripts/verify-nls.mjs && node scripts/verify-package-manifest.mjs && vsce package --no-dependencies --baseContentUrl https://raw.githubusercontent.com/zooique/memora/main/hosts/memora-vscode/ --baseImagesUrl https://raw.githubusercontent.com/zooique/memora/main/hosts/memora-vscode/ --out memora-vscode.vsix",
-    "test": "node ../../node_modules/vitest/vitest.mjs run --config vitest.config.ts --no-file-parallelism",
+    "test": "node ../../scripts/test-run.mjs host",
     "lint": "eslint . --max-warnings 0"
   },
   "devDependencies": {

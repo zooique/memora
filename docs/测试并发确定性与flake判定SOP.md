@@ -11,6 +11,7 @@
 - **为什么开**：跨文件并发是本地与 CI 速度的主要来源。**实测（2026-09-14，提交 e771d262）：并行 57s，串行（`--no-file-parallelism`）136s ≈ 2.4x**。（此前版记「约 4 分钟 / 约 9 分钟」，已按实测校正。）
 - **代价（已知）**：跨文件共享态竞争会引发偶发 flake（见 §2）。这是**速度换确定性**的取舍，团队选择保速度、用 SOP 兜底，而非默认序列化。
 - **宿主 `host:test` 已是串行（2026-10-27 订正事实）**：`hosts/memora-vscode/package.json` 的 `test` 脚本自带 `--no-file-parallelism`（独立包配置，非本 SOP 管辖），故 `local-ci` 无需再加；「host:test 是否也改串行」一题**前提不成立**，不另设改动。
+- **另有一层「份数」并发控制（与文件级并发正交）**：`npm test` 与门禁共用一把互斥锁，禁止**两份全量**同时跑（那不是 flake 根因，是「假红发生器」，见 §7）。
 
 ## 2. 已知 flake 根因（对抗式实锤）
 
@@ -96,7 +97,7 @@
   - **✅ 已批例外（2026-10-27 · 用户拍板）**：`scripts/local-ci.mjs` 的 `kernel:test` 步**常驻** `npm run test -- --no-file-parallelism`。
     - 理由：full 档每跑必红上述 `toolExecutor` 2 条（假红，见 §2 表），**常驻红会让 full 的结论失去信号**；`local-ci` 是本地 pre-push 的最后一道统一口径，宁慢勿疑。
     - 代价**实测**（本环境，3026 用例，2026-10-27）：并行 135.65s / 串行 166.58s ⇒ **仅 +22%**，远小于本 SOP 记的历史 2.4x（2026-09-14 在另一规模下测，勿据历史倍数推当前代价）。
-    - 边界：例外**只**覆盖这一步。`vitest.config.ts` 仍 `fileParallelism: true`、`package.json` 的 `test` 仍不带该参数 ⇒ 日常手工跑維持并行。
+    - 边界：例外**只**覆盖这一步。`vitest.config.ts` 仍 `fileParallelism: true`、`package.json` 的 `test` 脚本（现为 `node scripts/test-run.mjs kernel`）仍不带该参数 ⇒ 日常手工跑維持并行。
     - 🔴 若将来这一步的串行也出现红 ⇒ **那是真回归信号**，不得再放宽口径，按 §3 转入排错。
 - ❌ **勿把「retry 绿」当「已修复」** —— retry 只证明 flake，仍须按 §3 核实是否真回归。
 - ❌ **勿为绕过容器慢 I/O 而改测试的清理实现** —— 例如把 `rmSync` 换成异步/并发删除。实测（2026-09-26）
@@ -106,8 +107,26 @@
 ## 6. 配置落点
 
 - `vitest.config.ts`：`fileParallelism: true`（显式声明策略意图，= vitest 默认，行为零变更）＋ 注释指向本 SOP。
-- `package.json`：`"test": "vitest run"`（不带 `--no-file-parallelism`，保持并发加速）。
+- `package.json`：`"test": "node scripts/test-run.mjs kernel"` —— 包装体只做锁决策后原样拉起 `vitest run`，**不带 `--no-file-parallelism`**（保持并发加速；并发口径与旧脚本逐字一致）。
+- `scripts/lib/gateLock.mjs`：锁的**唯一实现处**（门禁与 `npm test` 共用同一锁文件、同一判据）；`scripts/local-ci.mjs` 只取锁并向**所有**子步骤注入 `MEMORA_GATE_TOKEN`。详见 §7。
 - **`scripts/local-ci.mjs` 的 `kernel:test` 步：常驻 `npm run test -- --no-file-parallelism`** —— §5「勿进常驻」的**已批例外**（2026-10-27 用户拍板，实测代价 +22%，详见 §5 该项批注）。**本 SOP 与那处注释互为引用，改一处必须同步改另一处**。
 - CI（`.github/workflows/kernel-ci.yml` 的 `npm test`）：保持并发；偶然红按 §3 重跑判定，不盲目 revert。（上一版记「`build.yml` 三处 `npx vitest run`」——该 workflow 文件**已不存在**，2026-09-14 实测仅剩 `kernel-ci.yml`。）
 
 > 对抗式实锤（2026-09-14 复核实测）：grep 确认 `agent.test.ts` 的 `memory.snapshot().working` 用例为唯一内核**跨文件共享态** flake（`llmIntegration` 属**文件内**共享态，另一类）；全仓测试文件（2026-09-14 实测 **117** 个，时点早于 webview include 收敛，当前数以 `vitest.config.ts` 为准）无 `fileParallelism: false`/`pool`/`retry` 配置（仅 `vitest.config.ts` 一处 `fileParallelism: true` 显式声明策略意图）；CI（`kernel-ci.yml`）无 `--no-file-parallelism`。**另**：本 SOP 为并发策略与 flake 判定的**唯一权威**，不依赖 `tasks/` 编号（原记「对应 T5」——该编号已不在台账，勿据它回溯）。
+
+## 7. 互斥锁：禁止两份全量同时跑（2026-11-08 落地）
+
+**为什么这条属于本 SOP**：它不改变任何用例判据，只消除一种**假红发生器** —— 两份全量并发抢 CPU ⇒ 超时类假红 ⇒ §3「先数 `AssertionError`」的诊断被污染 ⇒ 训练出「红了先重跑」的习惯 ⇒ 那个习惯迟早放行一个真红。**价值不在省时间，在红灯的可信度。**
+
+- **唯一真源**：`scripts/lib/gateLock.mjs`（门禁与 `npm test` 共用同一锁文件 `.workbuddy/tmp/local-ci.lock`、同一判据，**不设第二把锁**）。锁目录在 `.workbuddy/`（已 gitignore）。
+- **脚本化全量启动点只有一处**：`scripts/test-run.mjs`（根 `package.json` 的 `test` / `test:cov`、宿主 `package.json` 的 `test`、`scripts/report-surface.mjs --with-tests` 全部经它）。任何脚本再直接 `node node_modules/vitest/vitest.mjs run` 都是绕锁的第二入口（`report-surface.mjs` 曾如此，已改）。技能/文档里给人手敲的 `vitest run` 示例属人工操作，口径仍按 §7——跑全量用 `npm test`。
+- **判活三段式**：锁文件可解析 → pid 存活 → **心跳新鲜**（持锁方每 30s 刷 `heartbeatAt`，超 90s 判死锁）。心跳同时消掉两种误判：崩溃残留（进程已死）与 **pid 复用**（进程活着但不是锁主，旧实现会永久拒绝）。
+- **接管不是原子的（如实登记，不写「原子接管」）**：接管路径是「删残留 → 重试 `wx`」，两步之间有窗口。命中条件 = **两个进程同时判同一个残留锁为死锁**：A 判死 → B 判死 → B 删+写成功 → A 的 `rmSync` 把 **B 刚写的锁**删掉 → A 再写成功 ⇒ **两个都自认持锁**，后果是静默并发（即假红回归）。概率低（需同毫秒级判死），但后果无声无息 —— 代码这一刀先不修（改为「临时文件 + rename」才能真原子），遇到时的处理建议：① 看到两份全量同时在跑，直接杀其一；② 以 `kind` 与 `pid` 对照 `.workbuddy/tmp/local-ci.lock` 判断谁是真持有者；③ 若锁文件已丢，等两进程都结束再重跑（`rmSync` 残留锁后重来）。
+- **令牌继承**：门禁取锁后向**所有**子步骤注入 `MEMORA_GATE_TOKEN`；`scripts/test-run.mjs` 见到与锁文件一致的令牌即直接跑。**这不是优化，是前置条件**——门禁的 `kernel:test` 本身是子进程，不与父进程共享令牌就会「自己锁死自己」。令牌不一致（旧 shell 残留变量）按未持锁处理。
+- **单文件豁免（硬条件）**：`npm test -- <文件/目录>` 带位置参数**且该路径真实存在**时**不取锁**，打印「单文件复核，已跳过互斥」。理由：§3 步骤 2 的复核手段必须随时可用，锁若罩住它等于把假红判定纪律锁死。
+  - **判据必须查存在性，不能只看「不以 `-` 开头」**：选项的**取值**也不以 `-` 开头（`--reporter verbose` 的 `verbose`、`--testNamePattern foo` 的 `foo`）——只看前缀会把它们当文件名 ⇒ 整份全量从豁免口子漏出锁外（本锁要治的病从自己的口子漏回来）。代价是路径打错字时不享受豁免、退回取锁跑全量（宁慢不错）。两条反例（选项取值 / 不存在的路径）已由 `lock:verify` 钉住。
+- **逃生开关**：`MEMORA_TEST_ALLOW_CONCURRENT=1` 或 `npm test -- --concurrent` ⇒ 放行 + 醒目告警（自担假红判断成本）。**门禁自身没有逃生开关**（避免「绕过即静默」）。
+- **覆盖面（如实声明，勿外推）**：只保证**同仓同机**互斥；**不**宣称跨 clone / 跨机器（锁文件在 gitignore 目录，天然不共享）。
+- **孤儿进程（如实登记，不假装干净）**：接管只保证「新锁可获取」，**不保证旧进程已退出** —— Windows 下强杀 npm 父进程后其 vitest 子树可能存活，此时心跳停止、锁可接管，但孤儿仍在抢 CPU。接管告警会把这句话打给用户。
+- **自检**：fast 档步骤 `lock:verify`（`scripts/verify-test-lock.mjs`）跑八条矩阵 —— ①活锁拒绝 ②令牌继承（同用例另断言陈旧令牌被拒）③pid 死接管 ④心跳过期接管 ⑤锁文件损坏接管 ⑥单文件豁免（真实路径）⑦选项取值不算文件名 ⑧不存在的路径不豁免。已做**变异验证**（判活恒 true ⇒ ③④⑤ 必红；删豁免分支 ⇒ ⑥ 必红；位置参数判据改回宽松版 ⇒ ⑦⑧ 必红，还原后必绿）。
+- **边界**：`lock:verify` 只证明**锁的判据**正确，**不**证明「假红不再发生」—— 后者依赖真实负载，属人工压力验收项，不冒充自动化证据。

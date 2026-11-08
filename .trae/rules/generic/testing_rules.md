@@ -173,6 +173,9 @@ description: 测试规范（三层金字塔 + Mock LLM 策略 + 守卫硬化与�
 
 `1034 − 1031 = 3` ⇒ 并行失败的 3 条在串行下**全部通过**，**零真缺陷**。
 宿主 `hosts/memora-vscode/package.json#scripts.test` **自带** `--no-file-parallelism`，官方口径本就串行。
+⚠️ **上表的命令形态已过期（2026-11-08）**：根 `npm test` 现为 `node scripts/test-run.mjs kernel`
+（默认**并行** + 与门禁共用的互斥锁），不再等于「串行官方口径」。要串行须显式
+`npm test -- --no-file-parallelism`；锁的规则见 `docs/测试并发确定性与flake判定SOP.md` §7。
 ⚠️ 表中两组数字是**当次实验的实测证据**，**不是当前基线**——用例增删后必变，引用前须**重跑取新值**
 （与 `project-rules.md` §7.6 IPC 通道条同款三件套：数字 + 时点 + 重算指引）。
 

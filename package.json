@@ -42,9 +42,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
     "build:clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && npm run build",
-    "test": "vitest run",
+    "test": "node scripts/test-run.mjs kernel",
     "test:watch": "vitest",
-    "test:cov": "node scripts/verify-node-pin.mjs && vitest run --coverage",
+    "test:cov": "node scripts/verify-node-pin.mjs && node scripts/test-run.mjs cov",
     "test:all": "npm run test && npm run test --prefix hosts/memora-vscode",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",

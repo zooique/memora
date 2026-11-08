@@ -55,9 +55,10 @@
  * 发布前清单一行比对即可发现（自觉不可观测，缺口可观测）。
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TOKEN_ENV, acquire as acquireGateLock, describeHolder } from './lib/gateLock.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -80,62 +81,12 @@ const HOSTS = readdirSync(join(ROOT, 'hosts'), { withFileTypes: true })
   .filter((dir) => existsSync(join(dir, 'package.json')));
 const SECONDARY_HOSTS = HOSTS.filter((dir) => dir !== HOST);
 const LOG_DIR = join(ROOT, '.workbuddy', 'tmp');
-// 门禁互斥锁：两份全量门禁并发 = spawn 资源对撞（2026-10-03 实锤：两个 push
-// 任务并发各触发一份 gate-full，spawn 类测试成片假失败 + 步骤耗时暴涨 5-7 倍）。
-// 锁文件只写 pid；启动时校验持有者存活——活着即拒绝（exit 2），死锁（崩溃残留）
-// 自动接管；正常路径经 process exit 钩子释放。探活用 process.kill(pid,0)（lockManager 同款）。
-const LOCK_FILE = join(LOG_DIR, 'local-ci.lock');
-
-/**
- * 门禁互斥锁获取：并发即拒绝，崩溃残留锁自动接管。
- * 返回 true = 成功持有；进程退出时经 exit 钩子释放。
- */
-function acquireLock() {
-  mkdirSync(LOG_DIR, { recursive: true });
-  try {
-    // 'wx' 独占创建：已存在即抛——并发第一道闸（不依赖读后判的竞态窗口）
-    writeFileSync(LOCK_FILE, String(process.pid), { flag: 'wx' });
-  } catch (err) {
-    if (err?.code !== 'EEXIST') throw err;
-    let holderPid = 0;
-    try {
-      holderPid = Number(readFileSync(LOCK_FILE, 'utf8'));
-    } catch {
-      /* 锁文件读到空/坏 = 异常残留，按死锁处理（下方覆盖接管） */
-    }
-    const holderAlive =
-      holderPid > 0 &&
-      (() => {
-        try {
-          process.kill(holderPid, 0);
-          return true;
-        } catch (e) {
-          return e?.code === 'EPERM'; // EPERM = 进程存在但无权探活，视为活着
-        }
-      })();
-    if (holderAlive) {
-      console.error(
-        `\n[local-ci] ❌ 另一份门禁正在运行（pid=${holderPid}），已拒绝并发执行——` +
-          `两份全量门禁并发会对撞 spawn 资源，测试成片假失败（2026-10-03 实锤）。` +
-          `\n[local-ci] 等待其结束或手动杀进程后重试。`,
-      );
-      process.exit(2);
-    }
-    // 死锁自动接管：持有者进程已不存在（上次运行崩溃残留）
-    console.warn(`[local-ci] 检测到崩溃残留锁（pid=${holderPid || '未知'}），已自动接管`);
-    writeFileSync(LOCK_FILE, String(process.pid));
-  }
-  // 正常路径：进程退出（含门禁失败 exit(1)/并发拒绝 exit(2) 前的持有期）释放
-  process.on('exit', () => {
-    try {
-      // 只释放自己持有的锁（防误删接管场景下新持有者的锁）
-      if (readFileSync(LOCK_FILE, 'utf8') === String(process.pid)) rmSync(LOCK_FILE);
-    } catch {
-      /* 锁文件已消失/不可读 = 无需释放 */
-    }
-  });
-  return true;
-}
+// 门禁互斥锁：实现与判据的**唯一真源**在 `scripts/lib/gateLock.mjs`——与 `npm test` 包装
+// （`scripts/test-run.mjs`）共用**同一锁文件、同一判据**，不新增第二把锁。
+// 判活 = pid 存活 且 心跳新鲜（持有者 30s 刷一次，超 90s 判死）；崩溃残留 / pid 复用均可接管。
+// 本文件只负责两件事：① 取锁（并发即拒绝 exit 2）；② 把令牌注入**所有**子步骤（见 runStep）。
+// 覆盖面如实声明：只保证同仓同机互斥，不宣称跨 clone / 跨机器。
+let gateToken = '';
 
 const argv = process.argv.slice(2);
 const has = (flag) => argv.includes(flag);
@@ -194,6 +145,21 @@ const ALL_STEPS = [
     required: true,
     presets: ['fast', 'full'],
   },
+  // 测试互斥锁矩阵自检（TEST-TIMEOUT-FAKERED-1）：`npm test` 与门禁共用一把锁（真源
+  // `scripts/lib/gateLock.mjs`），本步用临时锁目录跑八条矩阵（不碰真实锁、不跑用例、秒级），
+  // 钉住：活锁拒绝 / 令牌继承 / pid 死接管 / **心跳过期接管（pid 复用）** / 损坏接管 /
+  // 单文件豁免（真实路径）/ **选项取值不算文件名** / **不存在的路径不豁免**。
+  // 后两条是「豁免口子」的反例：只看「不以 `-` 开头」会让 `--reporter verbose` 把整份全量
+  // 漏出锁外（那正是这把锁要治的病）。
+  // 只证明锁判据正确，**不**证明「假红不再发生」——后者是人工压力验收项，不冒充自动化证据。
+  {
+    id: 'lock:verify',
+    name: '测试互斥锁矩阵自检（令牌继承 / 双泄漏接管 / 单文件豁免 / 豁免口子反例）',
+    cmd: 'node scripts/verify-test-lock.mjs',
+    cwd: ROOT,
+    required: true,
+    presets: ['fast', 'full'],
+  },
   {
     id: 'kernel:lint',
     name: '内核 ESLint（含 --max-warnings 0）',
@@ -207,7 +173,8 @@ const ALL_STEPS = [
   //    隔离复跑同一文件 229/229 全绿 ⇒ 假红。常驻红会让「full 档红了」失去信号 ⇒ 结论被无视。
   //    代价用实测说话（本环境 3026 用例）：并行 135.65s → 串行 166.58s，**只慢 22%**，
   //    而非 SOP 文档记的历史 2.4x（那次是 2026-09-14 在另一规模下测的）⇒ 取舍成立。
-  //  ⚠️ 不改 `vitest.config.ts`、不改 package.json 的 test 脚本：日常手工跑仍是并发。
+  //  ⚠️ 不改 `vitest.config.ts`；`test` 脚本已改为锁包装（`scripts/test-run.mjs`）——
+  //     并发口径不变（vitest 文件级并发仍开），只是给「全量」加了一把与门禁共用的互斥锁。
   {
     id: 'kernel:test',
     name: '内核单元测试（串行口径 · 免 toolExecutor 常态假红）',
@@ -589,7 +556,16 @@ function runStep(step, index, total) {
       shell: true,
       // 非 Windows：建独立进程组，供 killTree 打整组（Windows 走 taskkill /T，无需此位）
       detached: process.platform !== 'win32',
-      env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1', ...(step.env ?? {}) },
+      // 令牌注入**在 spawn 单点做**，覆盖全部步骤（含二级宿主自动生成的步骤）——
+      // 遍历步骤再逐个拼 env 需要人记得加，漏配的后果是门禁自己的测试步骤被锁拒绝（新假红）。
+      // 放在最后：覆盖调用方环境里可能存在的陈旧令牌。
+      env: {
+        ...process.env,
+        FORCE_COLOR: '0',
+        NO_COLOR: '1',
+        ...(step.env ?? {}),
+        [TOKEN_ENV]: gateToken,
+      },
     });
     const timer = setTimeout(() => {
       killTree(child);
@@ -674,7 +650,17 @@ function formatReceipt(receipt) {
 }
 
 async function main() {
-  acquireLock(); // 门禁互斥：并发 gate-full 对撞防线（见 LOCK_FILE 注释）
+  // 门禁互斥：与其他门禁、以及手动全量测试（`npm test`）共用同一把锁（真源 gateLock.mjs）
+  const lock = acquireGateLock({ kind: 'gate' });
+  if (!lock.ok) {
+    console.error(
+      `\n[local-ci] ❌ 另一份门禁或全量测试正在运行（${describeHolder(lock.holder)}），已拒绝并发执行——` +
+        '并发会对撞 CPU / spawn 资源，测试成片假失败（2026-10-03 实锤）。' +
+        '\n[local-ci] 等待其结束或手动杀进程后重试。',
+    );
+    process.exit(2);
+  }
+  gateToken = lock.token;
   const preset = argOf('preset') ?? 'full';
   const steps = selectSteps();
   const receipt = buildReceipt(preset, steps.length);
