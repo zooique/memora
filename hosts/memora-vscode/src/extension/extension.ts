@@ -49,7 +49,8 @@ import { importAssetCommand } from './commands/importAsset.js';
 import { readDisabledSkills, syncDisabledSkills } from './host/skillSync.js';
 import {
   projectAssetDirsFor,
-  injectProjectAssets,
+  applyGrantedWorkspaceTrust,
+  readWorkspaceTrusted,
   type ProjectAssetDirs,
 } from './host/userAssets/projectScope.js';
 import { FileChangeTracker } from './host/fileChangeTracker.js';
@@ -267,6 +268,8 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
     // 项目级来源（仅信任时非空；顺序由 assemble 保证 user → project 后加载者胜）
     projectSkillsDir: projectDirs.skills,
     projectRolePacksDir: projectDirs.rolePacks,
+    // 工作区信任态现读（非 activate 采样）；漏传 ⇒ 常驻层恒关且所有测试仍全绿
+    workspaceTrusted: readWorkspaceTrusted(),
     confirmScripts,
     allowedPaths,
     disabledSkills,
@@ -400,7 +403,7 @@ export function activate(context: vscode.ExtensionContext): void {
   /** 项目级目录的唯一读取入口（调用时现读信任状态与工作区根） */
   const readProjectAssetDirs = (): ProjectAssetDirs =>
     projectAssetDirsFor({
-      isTrusted: vscode.workspace.isTrusted,
+      isTrusted: readWorkspaceTrusted(),
       workspaceFolderPath: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
     });
   // 激活期的目录快照（供面板展示用；运行期补注入时再读一次并回推面板—见信任监听器）
@@ -416,7 +419,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(trustNotice);
   /** 刷新信任提示显隐（真源 = vscode.workspace.isTrusted，不自存状态副本） */
   const syncTrustNotice = (): void => {
-    if (firstWorkspaceFolder && !vscode.workspace.isTrusted) {
+    if (firstWorkspaceFolder && !readWorkspaceTrusted()) {
       trustNotice.show();
     } else {
       trustNotice.hide();
@@ -731,16 +734,13 @@ export function activate(context: vscode.ExtensionContext): void {
       settingsProvider.setProjectDirs(dirs.skills, dirs.rolePacks);
       // Agent 尚未装配时无需补注入——下次装配按已信任状态注入，路径不会漏。
       // 多会话：所有已装配实例都要补注入（只补当前那台会让后台会话缺项目级技能）。
-      const agents = hostAgentRegistry?.list() ?? [];
-      if (agents.length === 0) return;
-      void (async () => {
-        for (const agent of agents) {
-          // 顺序与装配同源（注入 → 重扫），由 host/userAssets/projectScope 单点持有
-          await injectProjectAssets(agent, dirs);
-        }
-        chatProvider.refreshSkillList();
-        memoraOutput.appendLine('Memora 工作区已信任：项目级技能/角色包已注入并重扫');
-      })().catch((err) => {
+      void applyGrantedWorkspaceTrust({
+        affectedAgents: hostAgentRegistry?.list() ?? [],
+        dirs,
+        markRebuildPending: () => hostAgentRegistry?.markAllRebuildPending('workspace-trust') ?? 0,
+        refreshSkillList: () => chatProvider.refreshSkillList(),
+        report: (line) => memoraOutput.appendLine(line),
+      }).catch((err) => {
         // 降级优先：注入失败不打断对话（下次装配仍会按已信任状态读取，用户也可手动刷新）
         console.warn('Memora 信任工作区后注入项目级资产失败', err);
       });

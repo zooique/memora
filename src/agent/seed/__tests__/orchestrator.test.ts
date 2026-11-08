@@ -205,6 +205,39 @@ describe('SeedOrchestrator 最小 turn', () => {
     expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
   });
 
+  it('runResume 走 refreshTurnAssembly：常驻规则先读盘、再刷新装配视角（与 prepare 同一组合函数）', async () => {
+    const { mocks, deps } = createHarness();
+    stubContinue(mocks, '续跑回复');
+    // active 任务项声明角色包：谓词由组合函数单点解析
+    mocks.sessionManager.getCheckpoint.mockReturnValue({
+      plan: [{ id: 's1', description: '步骤1', status: 'active', order: 0, rolePack: '成员A' }],
+    });
+    mocks.rolePackManager.resolveRoundAssemblyRole.mockReturnValue('成员A');
+    const order: string[] = [];
+    mocks.refreshResidentRulesContext.mockImplementation(async () => {
+      order.push('resident');
+    });
+    mocks.refreshRolePackPrefixForRound.mockImplementation(() => {
+      order.push('prefix');
+    });
+
+    await collectGen(new SeedOrchestrator(deps).runResume(undefined, new AbortController().signal));
+
+    expect(order).toEqual(['resident', 'prefix']);
+    expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalledWith('成员A');
+  });
+
+  it('runResume：常驻规则刷新抛错不中断续跑（注入边界防御位）', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    stubContinue(mocks, '续跑回复');
+    consumeControl.result = { content: '续跑回复', aborted: false, paused: false, failed: false };
+    mocks.refreshResidentRulesContext.mockRejectedValue(new Error('注入面意外抛错'));
+
+    await collectGen(new SeedOrchestrator(deps).runResume(undefined, new AbortController().signal));
+    // 续跑仍完整执行到 act
+    expect(mocks.loop.continueAfterPause).toHaveBeenCalledTimes(1);
+  });
+
   it('runResume question-answer：快照整组逐题落盘（作答+跳过两形态，Q2..N 不丢）', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubContinue(mocks, '续跑回复');

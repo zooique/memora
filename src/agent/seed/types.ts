@@ -89,6 +89,16 @@ export interface SeedDeps {
    * 键（strategy/ChatOptions）恒为 activePack，不随视角变。缺省 no-op（纯工厂单测）。
    */
   refreshRolePackPrefixForRound?(roundRole: string | null): void;
+  /**
+   * 门面能力：刷新项目常驻规则上下文（异步读盘，随后由同步刷新链消费缓存）。
+   *
+   * 为什么单独一个异步入口：`refreshRolePackPrefixForRound` 是**同步 void**（前缀重建链全程同步），
+   * 磁盘 IO 不能塞进同步函数；两个 turn 入口（`prepare.run` / `runResume`）必须在调用同步刷新
+   * **之前** await 本函数，否则本轮用的是上一轮缓存（规则晚一轮生效）。
+   * 读盘异常**不得中断** turn：门面内部 catch 并降级（无缓存 ⇒ 空段；有缓存 ⇒ 沿用 + 段首标注）。
+   * 缺省 no-op（纯工厂单测）。
+   */
+  refreshResidentRulesContext?(): Promise<void>;
   /** 门面能力：统一流收口协议（消费 loop 执行流 → AgentChunk；物理实现在 Agent）。
    *  signal 透传：consumeExecutionStream 据此区分「宿主/插话真取消」（signal.aborted）
    *  与「provider/网络内部中断」（signal 未 abort 却抛 AbortError）——避免连接中断谎报为用户取消 */

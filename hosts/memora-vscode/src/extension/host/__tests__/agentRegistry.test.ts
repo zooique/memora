@@ -241,6 +241,95 @@ describe('E4 · AgentRegistry', () => {
   });
 });
 
+/**
+ * 造一台「可关闭 + 可切忙碌」的假实例（重建路径必须读 `isBusy` 并调 `close`）
+ *
+ * @param label 标识（断言取回的是新实例而非旧对象）
+ * @param busy 初始忙碌态（模拟「面板正在跑一轮」）
+ */
+function makeCloseableAgent(label: string, busy = false): Agent {
+  return {
+    label,
+    isBusy: busy,
+    close: vi.fn(async () => undefined),
+  } as unknown as Agent;
+}
+
+describe('E4 · 信任变化 → 待重建标记', () => {
+  it('空闲会话：取用时换新实例并 close 旧实例（标记只延后重建，不立即关）', async () => {
+    const calls: string[] = [];
+    const registry = new AgentRegistry(sharedStores, async (id) => {
+      calls.push(id);
+      return makeCloseableAgent(`${id}#${calls.length}`);
+    });
+
+    const old = await registry.createAgentForSession('2026-11-05-a');
+    registry.markRebuildPending('2026-11-05-a', 'workspace-trust');
+
+    // 标记期不得动旧实例：面板此时可能正握着它
+    expect(registry.get('2026-11-05-a')).toBe(old);
+    expect((old as unknown as { close: ReturnType<typeof vi.fn> }).close).not.toHaveBeenCalled();
+
+    const rebuilt = await registry.createAgentForSession('2026-11-05-a');
+
+    // 换实例（构造期快照的 workspaceTrusted 无法原地更新）+ 旧实例已关闭
+    expect(rebuilt).not.toBe(old);
+    expect((old as unknown as { close: ReturnType<typeof vi.fn> }).close).toHaveBeenCalledTimes(1);
+    expect(registry.get('2026-11-05-a')).toBe(rebuilt);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('忙碌会话：顺延（返回旧实例、标记保留），转空闲后下次取用才重建', async () => {
+    const calls: string[] = [];
+    const registry = new AgentRegistry(sharedStores, async (id) => {
+      calls.push(id);
+      return makeCloseableAgent(`${id}#${calls.length}`, true);
+    });
+
+    const old = await registry.createAgentForSession('2026-11-05-a');
+    registry.markRebuildPending('2026-11-05-a', 'workspace-trust');
+
+    // 忙碌 ⇒ 顺延：同一实例返回，绝不 close（否则面板手里的活实例变僵尸）
+    const duringBusy = await registry.createAgentForSession('2026-11-05-a');
+    expect(duringBusy).toBe(old);
+    expect((old as unknown as { close: ReturnType<typeof vi.fn> }).close).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(1);
+
+    // 忙碌结束（模拟上一轮收尾）：下一次取用是新的取用 → 此前的标记此时才生效
+    (old as unknown as { isBusy: boolean }).isBusy = false;
+    const rebuilt = await registry.createAgentForSession('2026-11-05-a');
+    expect(rebuilt).not.toBe(old);
+    expect((old as unknown as { close: ReturnType<typeof vi.fn> }).close).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('markAllRebuildPending 返回标记数，并让每个已登记会话下次取用时重建', async () => {
+    const calls: string[] = [];
+    const registry = new AgentRegistry(sharedStores, async (id) => {
+      calls.push(id);
+      return makeCloseableAgent(`${id}#${calls.length}`);
+    });
+
+    const a = await registry.createAgentForSession('2026-11-05-a');
+    const b = await registry.createAgentForSession('2026-11-05-b');
+
+    // 全量标记（工作区信任这类全局外部状态）：返回值供宿主写可见记录
+    expect(registry.markAllRebuildPending('workspace-trust')).toBe(2);
+
+    const [nextA, nextB] = await Promise.all([
+      registry.createAgentForSession('2026-11-05-a'),
+      registry.createAgentForSession('2026-11-05-b'),
+    ]);
+
+    expect(nextA).not.toBe(a);
+    expect(nextB).not.toBe(b);
+    // 每个会话各自重建一次（不是只重建「最后标记的那一个」）
+    expect(calls).toHaveLength(4);
+    expect(registry.get('2026-11-05-a')).toBe(nextA);
+    expect(registry.get('2026-11-05-b')).toBe(nextB);
+  });
+});
+
 // ─────────────────────────────────────────────────────────────
 // 取用面守卫（源码级）：生产取 Agent 只有 AgentRegistry 一条路
 // ─────────────────────────────────────────────────────────────

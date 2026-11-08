@@ -18,9 +18,24 @@
  * （且没有测试会红）。收成单点后「未信任」与「目录不存在」两种空态同源于此。
  */
 import { join } from 'node:path';
+import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
 import { resolveProjectDataDir } from '../projectDataDir.js';
 import { USER_ROLE_PACKS_DIR_NAME, USER_SKILLS_DIR_NAME } from '../../../shared/constants.js';
+
+/**
+ * 工作区信任态的**唯一读取点**（宿主侧）
+ *
+ * 现读 `vscode.workspace.isTrusted`：不缓存、不在 activate 时采样——
+ * 信任可在运行期被授予/撤销，快照会与「此刻的真实判定」不同源。
+ * 装配期传参（`AssembleOptions.workspaceTrusted`）与信任变化监听都走本函数，
+ * 禁止在调用方直接读 API（三处手读 = 三套口径，其中一处漏改不会被任何测试发现）。
+ *
+ * @returns 工作区是否已受信任
+ */
+export function readWorkspaceTrusted(): boolean {
+  return vscode.workspace.isTrusted;
+}
 
 /** 项目级目录对（两者都可缺省：无工作区或未信任时不注入） */
 export interface ProjectAssetDirs {
@@ -81,4 +96,45 @@ export async function injectProjectAssets(agent: Agent, dirs: ProjectAssetDirs):
   // 重扫顺序固定：技能与角色包各自重扫全部已登记目录（技能无参、角色包带档位入参）
   await agent.skills?.resyncUserSkills();
   if (dirs.rolePacks) await agent.rolePacks?.resyncUserPacks(dirs.rolePacks, 'project');
+}
+
+/** 授予信任后的收尾动作依赖（回调注入，本模块不认识面板 / 日志 / 登记表的具体实现） */
+export interface GrantedTrustDeps {
+  /** 已装配的实例快照（空 = 未装配，下次装配按已信任状态注入） */
+  affectedAgents: readonly Agent[];
+  /** 已通过信任门的项目级目录 */
+  dirs: ProjectAssetDirs;
+  /** 标记「所有已装配会话下次取用时重建」，返回标记数（常驻层信任态是装配期快照） */
+  markRebuildPending: () => number;
+  /** 重推面板技能清单（注入后 UI 与内核同一份） */
+  refreshSkillList: () => void;
+  /** 写可见记录（Output Channel） */
+  report: (line: string) => void;
+}
+
+/**
+ * 工作区**授予信任后**的完整收尾（补注入 → 标记重建 → 重推面板 → 写记录）
+ *
+ * **本函数是编排，不是判据；通用判据仍是 `readWorkspaceTrusted()`。**
+ * 本文件的主定位仍是读口（信任态 / 项目资产目录）；往这里再加「动作」前先问：
+ * 它是不是只是把既有判据的结果串起来？否则应外置到独立模块，别把读口做成写口。
+ *
+ * 与 `injectProjectAssets` 同文件的理由：顺序契约（注入 → 重扫）已在本模块单点持有，
+ * 把收尾编排留在 extension.ts 会让「谁先谁后」再抄一份。
+ *
+ * 常驻规则层为什么只能标记重建：内核 `ResidentRulesManager` 在装配时按信任态定死启用位，
+ * 补注入改不了它 ⇒ 换实例才能从「恒关」变「可用」；忙碌会话由登记表顺延到下一轮取用。
+ *
+ * @param deps 收尾动作依赖（见 `GrantedTrustDeps`）
+ */
+export async function applyGrantedWorkspaceTrust(deps: GrantedTrustDeps): Promise<void> {
+  // 未装配 ⇒ 不做无意义的全量重扫；下次装配会按已信任状态注入，路径不会漏
+  if (deps.affectedAgents.length === 0) return;
+  for (const agent of deps.affectedAgents) await injectProjectAssets(agent, deps.dirs);
+  const marked = deps.markRebuildPending();
+  deps.refreshSkillList();
+  deps.report(
+    `Memora 工作区已信任：项目级技能/角色包已注入并重扫；` +
+      `项目常驻规则将在 ${marked} 个已装配会话的下一轮取用时生效`,
+  );
 }

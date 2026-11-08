@@ -9,7 +9,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { SeedPrepare } from '@/agent/seed/prepare.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { SeedPrepare, refreshTurnAssembly } from '@/agent/seed/prepare.js';
 import { createHarness, collectGen } from './harness.js';
 
 describe('SeedPrepare 回答前', () => {
@@ -166,5 +169,72 @@ describe('SeedPrepare 回答前', () => {
     );
     expect(result?.aborted).toBe(false);
     expect(mocks.loop.setStrategy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('refreshTurnAssembly（两个 turn 入口的唯一共用点）', () => {
+  it('先 await 常驻规则读盘，再按 active 任务项同步刷新前缀（顺序不可颠倒）', async () => {
+    const { mocks, deps } = createHarness();
+    // 调用顺序真源：两个桩各记一笔，断言「读盘在前、前缀刷新在后」
+    const order: string[] = [];
+    mocks.refreshResidentRulesContext.mockImplementation(async () => {
+      order.push('resident');
+    });
+    mocks.refreshRolePackPrefixForRound.mockImplementation(() => {
+      order.push('prefix');
+    });
+    mocks.sessionManager.getCheckpoint.mockReturnValue({
+      plan: [{ id: 's1', description: '步骤1', status: 'active', order: 0, rolePack: '成员A' }],
+    });
+    mocks.rolePackManager.resolveRoundAssemblyRole.mockReturnValue('成员A');
+
+    await refreshTurnAssembly(deps);
+
+    expect(order).toEqual(['resident', 'prefix']);
+    expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalledWith('成员A');
+  });
+
+  it('防御位：注入依赖抛错 ⇒ 吞掉并继续刷新前缀（不中断 turn）', async () => {
+    const { mocks, deps } = createHarness();
+    mocks.refreshResidentRulesContext.mockRejectedValue(new Error('注入面意外抛错'));
+
+    // 不抛到调用方
+    await expect(refreshTurnAssembly(deps)).resolves.toBeUndefined();
+    // 后半段照常执行（缓存/空段语义由内层 manager 保证，这里只钉「不中断」）
+    expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalled();
+  });
+
+  it('prepare.run 走组合函数（常驻规则刷新恰好一次）', async () => {
+    const { mocks, deps } = createHarness();
+    await collectGen(new SeedPrepare(deps).run('输入', new AbortController().signal));
+    expect(mocks.refreshResidentRulesContext).toHaveBeenCalledTimes(1);
+  });
+
+  it('结构守卫：两个入口都调 refreshTurnAssembly；active 谓词只落一处（禁入口各抄一份）', () => {
+    // 为什么用源码扫描而不是只测行为：入口若各自再抄一份 active 谓词/刷新逻辑，
+    // 行为测试仍可能全绿（两份分别都对），只有结构约束能把「同一组合函数」钉死。
+    //
+    // 🔴 **失效条件说明（本守卫是形状守卫，不是语义守卫——红了先读这三句，别直接删）：**
+    // 1. 本守卫守的是「**两个 turn 入口不得各自实现 active 谓词 / 刷新链**」，
+    //    **不是**「必须用 `.plan.find(` / `getCheckpoint` 这些具体写法」。下面的字面量只是
+    //    当前实现的形状指纹，不是契约本身。
+    // 2. 红了先看语义：若新实现**仍然只有一处**、且**两个入口共用**（例如改成 `findIndex`、
+    //    `for` 循环、或封装成具名函数），代码是对的、甚至更好 ⇒ **改本守卫的匹配式，不要删守卫**。
+    // 3. **删除本守卫必须同时删除它保护的约束说明**（refreshTurnAssembly 的 JSDoc 与本节注释）——
+    //    不允许「守卫挡烦了就删」：只删守卫、留下「两入口共用」的承诺，等于给后来者一个无人核对的谎。
+    //
+    // 断言的三个字面量都是本仓既有的稳定写法，改动它们等于改动本契约，须同步改本测试。
+    const seedDir = join(dirname(fileURLToPath(import.meta.url)), '..');
+    const prepareSrc = readFileSync(join(seedDir, 'prepare.ts'), 'utf8');
+    const orchestratorSrc = readFileSync(join(seedDir, 'orchestrator.ts'), 'utf8');
+
+    // ① 两个入口都以 await 调用同一组合函数
+    expect(prepareSrc).toContain('await refreshTurnAssembly(');
+    expect(orchestratorSrc).toContain('await refreshTurnAssembly(');
+    // ② 续跑入口不得自己读 checkpoint / 找 active 任务项（谓词唯一落点在 prepare.ts 的组合函数）
+    expect(orchestratorSrc).not.toContain('getCheckpoint');
+    expect(orchestratorSrc).not.toContain('.plan.find(');
+    // ③ 谓词在 prepare.ts 内也只出现一次（组合函数本身）
+    expect(prepareSrc.split('.plan.find(').length - 1).toBe(1);
   });
 });

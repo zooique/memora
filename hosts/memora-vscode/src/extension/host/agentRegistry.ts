@@ -36,6 +36,9 @@ export type SessionAgentFactory = (
   stores: ProjectStoreSingletons,
 ) => Promise<Agent>;
 
+/** 触发「换新实例」的外部状态变更源（旧实例把该状态作为构造期快照持有，无法原地更新） */
+export type RebuildSource = 'workspace-trust';
+
 /** 会话 → Agent 实例登记表 */
 export class AgentRegistry {
   /** 共享存储单例（构造期保存，原样交给工厂；登记表自身不消费存储方法） */
@@ -52,6 +55,16 @@ export class AgentRegistry {
 
   /** 停用标志（fail-closed）：置位后拒绝一切登记与装配，在途装配 resolve 后立即关闭 */
   private disposed = false;
+
+  /**
+   * 待重建标记：sessionId → 触发源
+   *
+   * 用于「构造期快照类外部状态」发生变化（如工作区信任被授予）——旧实例的
+   * `workspaceTrusted` 是装配时快照，原地改不了，必须换实例。**不在监听器里立即
+   * close**（面板可能正在用），改为标记 + 在下次取用（`createAgentForSession`）时重建；
+   * 忙碌会话自动顺延（标记保留），无需「轮末钩子」——下一次取用本就发生在上一轮之后。
+   */
+  private readonly pendingRebuilds = new Map<string, RebuildSource>();
 
   /**
    * @param stores 共享存储单例对（必传；类型上强制，防止各 Agent 自建一份）
@@ -128,6 +141,32 @@ export class AgentRegistry {
     this.disposed = true;
     this.agents.clear();
     this.inflight.clear();
+    this.pendingRebuilds.clear();
+  }
+
+  /**
+   * 标记「该会话下次取用时重建」
+   *
+   * 只写标记、不碰实例：立即 close 会让面板手中的活实例变成僵尸。
+   *
+   * @param sessionId 会话标识
+   * @param source 触发源（仅用于日志/排查，不参与判定）
+   */
+  markRebuildPending(sessionId: string, source: RebuildSource): void {
+    this.pendingRebuilds.set(sessionId, source);
+  }
+
+  /**
+   * 全量标记「所有已登记会话下次取用时重建」（工作区信任这类全局外部状态）
+   *
+   * @param source 触发源
+   * @returns 标记的会话数（供宿主写可见记录）
+   */
+  markAllRebuildPending(source: RebuildSource): number {
+    for (const sessionId of this.agents.keys()) {
+      this.pendingRebuilds.set(sessionId, source);
+    }
+    return this.agents.size;
   }
 
   /**
@@ -148,7 +187,23 @@ export class AgentRegistry {
     if (this.disposed) throw new Error('AgentRegistry 已停用：拒绝装配');
 
     const existing = this.agents.get(sessionId);
-    if (existing) return existing;
+    if (existing) {
+      // 带待重建标记的命中：换实例（旧实例把外部状态当构造期快照持有）
+      if (!this.pendingRebuilds.has(sessionId)) return existing;
+      // 在途创建 ⇒ 顺延到该 Promise（标记保留，待其完成后再下一次取用重建）
+      const pendingCreate = this.inflight.get(sessionId);
+      if (pendingCreate) return pendingCreate;
+      // 忙碌 ⇒ 顺延（标记保留；下一次取用发生在上一轮之后，天然满足「收尾补执行」）
+      if (existing.isBusy) return existing;
+      this.pendingRebuilds.delete(sessionId);
+      this.agents.delete(sessionId);
+      // 先摘出登记表再 close：反序会让「等待期内的取用」拿到正在关闭的实例
+      await existing.close().catch(() => undefined);
+      // 落到下方「未登记」路径完成重建
+    } else if (this.pendingRebuilds.has(sessionId)) {
+      // 实例已不在表里（已注销）：标记无意义，清掉避免残留
+      this.pendingRebuilds.delete(sessionId);
+    }
 
     const pending = this.inflight.get(sessionId);
     if (pending) return pending;

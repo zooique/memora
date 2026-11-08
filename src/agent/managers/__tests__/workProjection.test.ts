@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { WorkProjectionManager } from '../workProjection.js';
 import { logger } from '@/logging/logger.js';
@@ -276,6 +276,44 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       expect(block).toContain('docs/arch.md');
       expect(block).toContain('read_file');
     });
+
+    it('常驻项从索引块剔除、非常驻项照常列出（设计 §4.4：注入块剔除，清单不剔除）', async () => {
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
+      const fs = await import('node:fs/promises');
+      const filePath = join(memoraDir, 'work-projections.json');
+      await fs.writeFile(
+        filePath,
+        JSON.stringify([
+          { name: 'rules', description: '项目规则', source: 'docs/agent-rules.md', resident: true },
+          { name: 'arch', description: '架构说明', source: 'docs/arch.md' },
+        ]),
+      );
+      await manager.refresh();
+
+      const block = manager.contextBlock();
+      // 非常驻项照常出现
+      expect(block).toContain('架构说明');
+      expect(block).toContain('docs/arch.md');
+      // 常驻项正文由常驻规则段承载，索引块不得再出现（防「同一对象两种描述 + 诱导二次 read_file」）
+      expect(block).not.toContain('docs/agent-rules.md');
+      expect(block).not.toContain('项目规则');
+    });
+
+    it('全部条目为常驻时索引块为空串（不产出空壳标题）', async () => {
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
+      const fs = await import('node:fs/promises');
+      const filePath = join(memoraDir, 'work-projections.json');
+      await fs.writeFile(
+        filePath,
+        JSON.stringify([
+          { name: 'rules', description: '项目规则', source: 'docs/agent-rules.md', resident: true },
+        ]),
+      );
+      await manager.refresh();
+
+      // 空壳标题 = 谎报段（「【项目索引】」下无任何可用指针）
+      expect(manager.contextBlock()).toBe('');
+    });
   });
 
   describe('registerWork 写路径容错（防覆盖丢失）', () => {
@@ -412,6 +450,184 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       const block = await manager.loadAndGetContextBlock();
       expect(block).toBe('');
       expect(manager.isFileMalformed).toBe(true);
+    });
+  });
+
+  // ─── setResident（七态）────────────────────────────────
+
+  describe('setResident（七态）', () => {
+    /** 直接写清单文件（模拟「已登记」与「用户手改 JSON」两种情况） */
+    async function writeList(entries: unknown[]): Promise<void> {
+      const fs = await import('node:fs/promises');
+      await fs.mkdir(memoraDir, { recursive: true });
+      await fs.writeFile(
+        join(memoraDir, 'work-projections.json'),
+        JSON.stringify(entries, null, 2),
+        'utf-8',
+      );
+    }
+
+    /** 读回清单（验证「是否真的落盘」） */
+    async function readList(): Promise<Array<Record<string, unknown>>> {
+      const fs = await import('node:fs/promises');
+      return JSON.parse(await fs.readFile(join(memoraDir, 'work-projections.json'), 'utf-8'));
+    }
+
+    /** 在项目根写一个源文件，返回相对路径 */
+    async function writeSource(rel: string, body: string): Promise<string> {
+      const fs = await import('node:fs/promises');
+      const full = join(projectDir, rel);
+      await fs.mkdir(dirname(full), { recursive: true });
+      await fs.writeFile(full, body, 'utf-8');
+      return rel;
+    }
+
+    it('未信任（第 4 参缺省）⇒ untrusted，且**先拒后读**（源文件不存在也报 untrusted）', async () => {
+      // 只登记、不建源文件：若实现「先读盘再判信任」，就会返回 source-missing —— 本用例钉住判据顺序
+      await writeList([{ name: 'rules', description: '项目规则', source: 'missing.md' }]);
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
+
+      const result = await manager.setResident('missing.md', true);
+
+      expect(result.reason).toBe('untrusted');
+      // 未写入：字段保持不变
+      expect((await readList())[0]).not.toHaveProperty('resident');
+    });
+
+    it('已信任 + 源文件可用 ⇒ enabled，只翻字段并保留未知字段', async () => {
+      await writeSource('rules.md', '# 项目规则\n- 文档一律中文\n');
+      // 手工写入带未知字段的条目：置常驻不得整条重建（否则未知字段被静默丢弃）
+      await writeList([
+        { name: 'rules', description: '项目规则', source: 'rules.md', extra: 'keep-me' },
+      ]);
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
+
+      const result = await manager.setResident('rules.md', true);
+
+      expect(result.reason).toBe('enabled');
+      const saved = (await readList())[0];
+      expect(saved!.resident).toBe(true);
+      expect(saved!.extra).toBe('keep-me');
+    });
+
+    it('清单无该条目 ⇒ not-found，且**不新建条目**', async () => {
+      await writeSource('rules.md', '# 项目规则\n');
+      await writeList([]);
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
+
+      const result = await manager.setResident('rules.md', true);
+
+      expect(result.reason).toBe('not-found');
+      expect(await readList()).toEqual([]);
+    });
+
+    it('幂等：已是常驻再置 true ⇒ enabled（文案标明未重复写入）', async () => {
+      await writeSource('rules.md', '# 项目规则\n');
+      await writeList([
+        { name: 'rules', description: '项目规则', source: 'rules.md', resident: true },
+      ]);
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
+
+      const result = await manager.setResident('rules.md', true);
+
+      expect(result.reason).toBe('enabled');
+      expect(result.message).toContain('未重复写入');
+    });
+
+    it('已登记但源文件不存在 ⇒ source-missing（与「存在但不可用」分开）', async () => {
+      await writeList([{ name: 'rules', description: '项目规则', source: 'gone.md' }]);
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
+
+      const result = await manager.setResident('gone.md', true);
+
+      expect(result.reason).toBe('source-missing');
+      expect((await readList())[0]).not.toHaveProperty('resident');
+    });
+
+    it('source-rejected 的四类 message 各不相同（工作区外 / 凭据 / 非文本 / 读取失败）', async () => {
+      const fs = await import('node:fs/promises');
+      // 凭据文件：真实存在但命中黑名单
+      await writeSource('.env', 'SECRET=1\n');
+      // 非文本：含 NUL 字节
+      const binary = join(projectDir, 'blob.bin');
+      await fs.writeFile(binary, Buffer.from([0x00, 0x01, 0x02]));
+      // 读取失败：源是目录（readFile 报 EISDIR）
+      await fs.mkdir(join(projectDir, 'somedir'), { recursive: true });
+      // 工作区外：清单里写绝对路径 / ../ 逃逸（registerWork 会拒绝，故直接手写清单）
+      await writeList([
+        { name: 'a', description: 'a', source: '../outside.md' },
+        { name: 'b', description: 'b', source: '.env' },
+        { name: 'c', description: 'c', source: 'blob.bin' },
+        { name: 'd', description: 'd', source: 'somedir' },
+      ]);
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
+
+      const outside = await manager.setResident('../outside.md', true);
+      const blocked = await manager.setResident('.env', true);
+      const notTextual = await manager.setResident('blob.bin', true);
+      const readError = await manager.setResident('somedir', true);
+
+      for (const r of [outside, blocked, notTextual, readError]) {
+        expect(r.reason).toBe('source-rejected');
+      }
+      // 四类文案必须可区分（共用一句「文件不可用」= 宿主的四类动作无法区分）
+      const messages = new Set([
+        outside.message,
+        blocked.message,
+        notTextual.message,
+        readError.message,
+      ]);
+      expect(messages.size).toBe(4);
+      // 读取失败必须是「可重试」语义（惩罚措辞会误导用户放弃）
+      expect(readError.message).toContain('重试');
+      // 一律未写入
+      expect((await readList()).every((e) => !('resident' in e) || e.resident !== true)).toBe(true);
+    });
+
+    it('单条超 6000 ⇒ too-long，不写入', async () => {
+      const body = 'x'.repeat(6100);
+      await writeSource('big.md', body);
+      await writeList([{ name: 'big', description: '大文件', source: 'big.md' }]);
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
+
+      const result = await manager.setResident('big.md', true);
+
+      expect(result.reason).toBe('too-long');
+      expect(result.message).toContain('6000');
+      expect((await readList())[0]).not.toHaveProperty('resident');
+    });
+
+    it('合计超 15000 ⇒ too-long（用装配期同一求值函数判定）', async () => {
+      // 三条各 5000 字：前两条合计 ~10000 未越限，第三条加入后合计 > 15000
+      for (const name of ['r1.md', 'r2.md', 'r3.md']) {
+        await writeSource(name, 'y'.repeat(5000));
+      }
+      await writeList([
+        { name: 'r1', description: '规则1', source: 'r1.md', resident: true },
+        { name: 'r2', description: '规则2', source: 'r2.md', resident: true },
+        { name: 'r3', description: '规则3', source: 'r3.md' },
+      ]);
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
+
+      const result = await manager.setResident('r3.md', true);
+
+      expect(result.reason).toBe('too-long');
+      expect(result.message).toContain('15000');
+      // 第三条仍未写入
+      expect((await readList())[2]).not.toHaveProperty('resident');
+    });
+
+    it('未信任也能取消常驻（置 false 不做信任/读盘/限额检查）', async () => {
+      await writeList([
+        { name: 'rules', description: '项目规则', source: 'rules.md', resident: true },
+      ]);
+      // 第 4 参缺省 = 未信任，且源文件刻意不存在
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
+
+      const result = await manager.setResident('rules.md', false);
+
+      expect(result.reason).toBe('disabled');
+      expect((await readList())[0]!.resident).toBe(false);
     });
   });
 });

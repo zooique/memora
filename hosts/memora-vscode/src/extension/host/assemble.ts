@@ -207,6 +207,15 @@ export interface AssembleOptions {
    */
   projectRolePacksDir?: string;
   /**
+   * 工作区信任态（现读快照，来源唯一 = 本模块导出 `readWorkspaceTrusted`）
+   *
+   * 透传 `AgentOptions.workspaceTrusted`，内核侧唯一消费面 = 项目常驻规则层的第一道闸
+   * （`setResident` 与装配期 `ResidentRulesManager` 同一判据：**非布尔 `true` 一律按未信任**）。
+   * ⚠️ 必须由 extension **装配时刻现读**注入，不得在 activate 时采样缓存——
+   * 信任可运行期授予/撤销，快照会与真实判定不同源（漏传 ⇒ 常驻层恒关且所有测试仍全绿）。
+   */
+  workspaceTrusted?: boolean;
+  /**
    * 脚本/代码执行确认开关
    *
    * 开启后 owner 模式 run_code/run_project_script 执行前触发审批确认；关闭后自动批准。
@@ -345,6 +354,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     userRolePacksDir,
     projectSkillsDir,
     projectRolePacksDir,
+    workspaceTrusted,
     confirmScripts,
     allowedPaths,
     outputChannel,
@@ -440,6 +450,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 宿主环境提供者（命令执行能力方案 §10.4-②）：上报 OS/shell/可用运行时 → 内核注入 system prompt
     // 「## 运行环境」段；环境事实只给模型看，内核零解释（不进判据）
     environmentProvider: createVscodeEnvironmentProvider(),
+    // 工作区信任态（现读快照）：内核常驻规则层 fail-closed 闸的唯一入参；
+    // 缺省 = undefined ⇒ 内核按未信任处理（不读任何常驻正文）
+    workspaceTrusted,
     // 脚本执行 node 路径（S3-接续）：用户经 memora.scriptNodePath 显式配置，
     // 内核 run_skill_script / run_project_script 的 node runtime 分支零解释转发
     scriptNodePath: scriptNodePath || undefined,

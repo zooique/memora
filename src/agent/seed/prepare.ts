@@ -11,6 +11,7 @@
 
 import type { AgentChunk } from '@/agent/types.js';
 import type { ImageRef } from '@/llm/provider.js';
+import { logger } from '@/logging/logger.js';
 import { resolveL2Strategy, resolveActiveStrategy } from '@/role-pack/strategyResolver.js';
 import { buildMeetingPlanSkeleton } from '@/role-pack/rolePackManager.js';
 import { type SeedDeps, type SeedParts, type SeedPrepareResult } from './types.js';
@@ -48,10 +49,9 @@ export class SeedPrepare {
     // 每次回答前先清临时 system 消息（技能/最近对话 prompt 是当轮注入，不跨轮累积）
     loop.cleanTemporarySystemMessages();
 
-    // 会议机制：读取当前 active 任务项声明的 rolePack，按本轮表层装配刷新前缀（范围校验 + 回落）
-    const checkpoint = sessionManager?.getCheckpoint();
-    const activePlanItem = checkpoint?.plan.find((s) => s.status === 'active');
-    refreshAssemblyForRolePack(this.deps, activePlanItem?.rolePack);
+    // turn 入口统一装配刷新：先 await 常驻规则读盘，再按 active 任务项同步刷新前缀
+    // （唯一组合函数，与 runResume 共用；active 谓词只在组合函数里出现一次）
+    await refreshTurnAssembly(this.deps);
 
     // 会议机制实施前提②：组/成员清单暴露给 LLM（防编造角色名）——仅当 activePack 是某组组长时注入
     const teamContext = rolePackManager?.buildTeamContextBlock() ?? '';
@@ -128,10 +128,41 @@ export class SeedPrepare {
 }
 
 /**
+ * turn 入口统一装配刷新（`runChat` / `runResume` 的**唯一共用点**）：先异步读盘，再同步刷新表层装配。
+ *
+ * 为什么必须两段：`refreshAssemblyForRolePack` 所在的前缀重建链全程**同步 void**（不能在同步函数里做磁盘 IO），
+ * 常驻规则正文只能异步读；顺序颠倒（先同步刷新、后异步读盘）⇒ 本轮注入的是上一轮缓存，规则晚一轮生效。
+ *
+ * 异常边界（两层兜底的分工，勿混为一体）：
+ * - **内层**：`ResidentRulesManager.refresh()` 已把「清单读失败 / 条目失效」全部降级（有缓存 ⇒ 沿用+段首标注；
+ *   无缓存 ⇒ 空段），常规读盘异常**不抛**；
+ * - **外层**（本函数 catch）：**防御位**——可达路径只有「注入依赖自身抛错」（今日 Agent 侧实现不抛，
+ *   故正常路径不可达；包含未来 manager 新增第二种读盘源、或 `projectDir` 非法等编程错误类）。
+ *   保留理由：不得让注入面的意外异常把 turn 拖死；契约由 prepare / orchestrator 单测的**抛错桩**钉住
+ *   （stub 抛错 ⇒ turn 仍完整跑完）。未注入时可选链直接 no-op，不进 catch。
+ *
+ * @param deps 种子依赖（常驻规则刷新门面 + 刷新前缀能力）
+ */
+export async function refreshTurnAssembly(deps: SeedDeps): Promise<void> {
+  try {
+    await deps.refreshResidentRulesContext?.();
+  } catch (err) {
+    // 防御位：沿用上次缓存 / 空段继续本轮，不中断 turn（措辞与内层降级一致，便于排障时区分来源）
+    logger.warn({ err }, '注入边界：常驻规则刷新抛错，已忽略（沿用上次缓存 / 空段，不中断 turn）');
+  }
+
+  // active 任务项谓词**唯一落点**：两个入口共用本函数，禁止在入口各抄一份
+  // （双份谓词的漂移没有任何测试会红，见 resident-layer-design §12.3）
+  const checkpoint = deps.getParts().sessionManager?.getCheckpoint();
+  const activePlanItem = checkpoint?.plan.find((s) => s.status === 'active');
+  refreshAssemblyForRolePack(deps, activePlanItem?.rolePack);
+}
+
+/**
  * 会议机制：按给定任务项 rolePack 刷新本轮表层装配视角。
  *
  * 装配逻辑单一真理源。两个调用入口共用本函数，避免双写：
- *   - prepare.run（turn 开头：按首个 active 任务项的 rolePack 设一次）
+ *   - refreshTurnAssembly（turn 开头：两个 turn 入口共用，按首个 active 任务项的 rolePack 设一次）
  *   - 任务表每轮注入（assembler.getTaskTable → hooks.applyActivePlanItemAssembly → agent.applyActivePlanItemAssemblyIfChanged，
  *     随 active 任务项推进逐项换角色，防重见 agent 实现）
  * 内部动作：

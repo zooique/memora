@@ -501,6 +501,9 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'strategyOverride',
       'tracer',
       'webSearchProvider',
+      // 2026-11-08 新增（常驻层 fail-closed 闸的快照入参）：宿主传入工作区信任态，
+      // 非 true 一律按未信任（判据唯一实现 = residentRules 的 isResidentLayerEnabled）。
+      'workspaceTrusted',
     ],
   },
   AGENT_CONSTANTS: {
@@ -707,7 +710,12 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
     ],
   },
   AgentStats: { kind: 'interface', members: ['bySource', 'total'] },
-  WorkProjectionEntry: { kind: 'interface', members: ['description', 'name', 'source'] },
+  WorkProjectionEntry: {
+    kind: 'interface',
+    // 2026-11-08 新增 `resident`（项目常驻层）：只认布尔 true（字符串 "true" 视为未开启，
+    // 已作为「已定边界」登记在设计文档 §10，不得「修复」为宽容解析）。
+    members: ['description', 'name', 'resident', 'source'],
+  },
   PolishResult: { kind: 'interface', members: ['changed', 'polished'] },
   ProviderConfig: {
     kind: 'interface',
@@ -1265,6 +1273,9 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       'loadAndGetContextBlock',
       'refresh',
       'registerWork',
+      // 2026-11-08 新增（常驻层字段翻转）：清单已登记条目的 resident 置/取消，
+      // 七态结果码 + 同一写队列 + 只翻字段（不建条目），落点见设计 §5.4 / §6.1
+      'setResident',
     ],
   }, // 来源 Agent.works / 宿主调用 2 个 / 文件 F:\zooique\memora\src\agent\managers\workProjection.ts
 };

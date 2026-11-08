@@ -636,6 +636,16 @@ export interface AgentOptions {
    */
   environmentProvider?: IEnvironmentProvider;
   /**
+   * 工作区是否已受信任（可选）：宿主作为**新入参**传入内核的事实快照。
+   *
+   * 为什么必须由宿主传：内核侧没有 `isTrusted` 态（信任是 VS Code 宿主的事实），
+   * 装配期现读在物理上做不到；未传 / `false` / 任何非 `true` 值一律按**未信任**处理
+   * （fail-closed：宁可不给常驻正文，不静默扩权）。判据唯一实现在
+   * `agent/managers/residentRules.ts`，消费面只调用它，禁止各点各写一遍 `if (trusted)`。
+   * 设计锚：`hosts/memora-vscode/docs/resident-layer-design.md` §12.2。
+   */
+  workspaceTrusted?: boolean;
+  /**
    * node 可执行文件路径（可选）：宿主注入真实 node 路径
    * （如 IDE 内置 node / 用户配置的 node）给 L3 脚本执行器（run_skill_script /
    * run_project_script 的 node runtime 分支）。缺省走 'node'（PATH 查找）；

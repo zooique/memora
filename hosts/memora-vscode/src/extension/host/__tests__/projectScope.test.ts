@@ -11,7 +11,26 @@
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Agent } from '@zooique/memora';
-import { injectProjectAssets, projectAssetDirsFor } from '../userAssets/projectScope.js';
+
+/**
+ * `vscode` 运行期桩：`readWorkspaceTrusted` 现读 `workspace.isTrusted`，
+ * 用可写 holder 模拟「运行期信任变化」（`vi.mock` 工厂被提升，不能引用外层变量）
+ */
+const trustHolder = vi.hoisted(() => ({ isTrusted: true }));
+vi.mock('vscode', () => ({
+  workspace: {
+    get isTrusted() {
+      return trustHolder.isTrusted;
+    },
+  },
+}));
+
+import {
+  applyGrantedWorkspaceTrust,
+  injectProjectAssets,
+  projectAssetDirsFor,
+  readWorkspaceTrusted,
+} from '../userAssets/projectScope.js';
 
 /** 工作区根（测试夹具，只用于推导目录） */
 const WORKSPACE = join('/w');
@@ -85,5 +104,60 @@ describe('injectProjectAssets · 授予信任后的补注入顺序', () => {
       projectAssetDirsFor({ isTrusted: false, workspaceFolderPath: WORKSPACE }),
     );
     expect(calls).toEqual([]);
+  });
+});
+
+describe('applyGrantedWorkspaceTrust · 授予信任后的收尾顺序', () => {
+  it('已装配 ⇒ 先补注入，再标记重建 / 重推面板 / 写记录（记录含标记数）', async () => {
+    const { agent, calls } = makeRecordingAgent();
+    const order: string[] = [];
+    const markRebuildPending = vi.fn(() => {
+      order.push('mark');
+      return 2;
+    });
+    const refreshSkillList = vi.fn(() => order.push('refresh'));
+    const report = vi.fn((line: string) => order.push(`report:${line}`));
+
+    await applyGrantedWorkspaceTrust({
+      affectedAgents: [agent],
+      dirs: DIRS,
+      markRebuildPending,
+      refreshSkillList,
+      report,
+    });
+
+    // 注入先于重建标记：重建会让旧实例关闭，注入必须发生在它还活着时
+    expect(calls).toHaveLength(4);
+    expect(order[0]).toBe('mark');
+    expect(order[1]).toBe('refresh');
+    expect(order[2]).toMatch(/report:.*2 个已装配会话/);
+  });
+
+  it('未装配 ⇒ 零动作（不标记、不重推、不写记录）', async () => {
+    const markRebuildPending = vi.fn(() => 0);
+    const refreshSkillList = vi.fn();
+    const report = vi.fn();
+
+    await applyGrantedWorkspaceTrust({
+      affectedAgents: [],
+      dirs: DIRS,
+      markRebuildPending,
+      refreshSkillList,
+      report,
+    });
+
+    expect(markRebuildPending).not.toHaveBeenCalled();
+    expect(refreshSkillList).not.toHaveBeenCalled();
+    expect(report).not.toHaveBeenCalled();
+  });
+});
+
+describe('readWorkspaceTrusted · 信任态唯一读取点', () => {
+  it('现读 vscode.workspace.isTrusted（不缓存快照，运行期变化即刻反映）', () => {
+    trustHolder.isTrusted = true;
+    expect(readWorkspaceTrusted()).toBe(true);
+    // 运行期撤销信任后必须立刻读到 false（缓存实现会在这里静默通过旧值）
+    trustHolder.isTrusted = false;
+    expect(readWorkspaceTrusted()).toBe(false);
   });
 });

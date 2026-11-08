@@ -11,6 +11,15 @@ import { logger } from '@/logging/logger.js';
 import { getBaseName } from '@/utils/path.js';
 import { resolveSafePath } from '@/utils/scanner.js';
 import { atomicWriteFile } from '@/utils/atomicWrite.js';
+// 常驻判据（单点，勿在本文件重写 `resident === true`）：注入块剔除常驻项需要同一把尺子
+import {
+  isResidentEntry,
+  isResidentLayerEnabled,
+  readResidentSource,
+  evaluateResidentSegment,
+  MAX_RESIDENT_SINGLE_CHARS,
+  MAX_RESIDENT_TOTAL_CHARS,
+} from './residentRules.js';
 
 /** 投影文件名（位于 memoraDir 下） */
 const PROJECTIONS_FILE = 'work-projections.json';
@@ -70,14 +79,64 @@ async function withFileWriteQueue<T>(filePath: string, task: () => Promise<T>): 
 
 /**
  * 作品投影的极简结构（纯元数据指针）
+ *
+ * 同一实体两个消费面（不是两个实体）：`resident === true` ⇒ 条目正文进「项目常驻规则」固定段，
+ * 且**不进**【项目索引】注入块；其余值 ⇒ 原作品投影（只进索引，模型按需 read_file）。
+ * 设计锚：`hosts/memora-vscode/docs/resident-layer-design.md` §3.2 / §4.4。
  */
 export interface WorkProjectionEntry {
   /** 作品名（默认取源文件名去扩展名） */
   name: string;
-  /** 一句话说明（告诉 AI 这个文件是干什么的） */
+  /** 一句话说明（告诉 AI 这个文件是干什么的）；常驻后只服务清单展示，不进注入块 */
   description: string;
   /** 源文件路径（相对项目根，指向真实文件） */
   source: string;
+  /**
+   * 项目规则常驻标记（可选，新增）；**只有严格 `=== true` 才算常驻**（fail-closed）。
+   * 判据唯一实现 = `residentRules.ts` 的 `isResidentEntry`，禁止在此或消费点写成 `Boolean(...)`
+   * （`"false"` 字符串会变 true）。字段缺失 = 原作品投影，读取过滤器**不得**把缺失变成「记录消失」。
+   */
+  resident?: boolean;
+}
+
+/**
+ * `setResident` 的粗粒度结果码（**固定七态**，宿主按它给可读文案）
+ *
+ * 与「单条读取失败」的细粒度原因（`ResidentSourceFailure`）分工：
+ * - 细粒度原因只进内核日志与 message，**不暴露为返回码**；
+ * - 公开面只保留「不存在 / 存在但被判据拒绝使用」这个二分（`source-missing` vs `source-rejected`），
+ *   `source-rejected` 内部覆盖四类原因（工作区外 / 凭据文件 / 非文本 / 读取失败），message 各不相同。
+ *
+ * ⚠️ 已知折中：清单**写入失败**（磁盘只读 / 权限不足）在七态里没有独立槽位，折进 `source-rejected`
+ * 并在 message 标注「可重试」——若后续需要独立态，须与设计文档同步修订并更新公开面基线。
+ */
+export type SetResidentReason =
+  /** 已置为项目规则（成功；含「本来就是」的幂等成功，不重复写盘） */
+  | 'enabled'
+  /** 已取消项目规则（成功；含「本来就不是」的幂等成功，不重复写盘） */
+  | 'disabled'
+  /** 清单里没有该条目的登记记录（**绝不新建条目**；清单损坏导致无法定位也归此态，靠 message 区分） */
+  | 'not-found'
+  /** 工作区未受信任（`workspaceTrusted` 非布尔 `true`）：先拒且**不读正文** */
+  | 'untrusted'
+  /** 单条或合计超出注入上限（`MAX_RESIDENT_SINGLE_CHARS` / `MAX_RESIDENT_TOTAL_CHARS`） */
+  | 'too-long'
+  /** 源文件不存在（读盘 ENOENT）——「不存在」与「存在但不可用」刻意分开 */
+  | 'source-missing'
+  /** 源文件存在但被判据拒绝使用（工作区外 / 凭据 / 非文本 / 读取失败）；message 区分四类 */
+  | 'source-rejected';
+
+/**
+ * `setResident` 返回面
+ *
+ * 只有 `enabled` / `disabled` 是成功（其余均为「未写入」）。判定一律走 `reason`，
+ * 不提供独立的 `ok` 布尔——两套真假源必然漂移。
+ */
+export interface SetResidentResult {
+  /** 粗粒度结果码（七态） */
+  reason: SetResidentReason;
+  /** 人读文案（宿主直接展示；`source-rejected` 的 message 已是四类细分） */
+  message: string;
 }
 
 /**
@@ -93,6 +152,14 @@ export class WorkProjectionManager {
   private readonly filePath: string;
   /** 项目根目录（用于路径穿越防御，可选） */
   private readonly projectDir?: string;
+  /**
+   * 工作区信任态快照（宿主传入；**非布尔 `true` 一律按未信任**，与 `AgentOptions.workspaceTrusted`
+   * 同一句判据，不另写一套措辞）
+   *
+   * 唯一消费面 = `setResident` 的第一道闸（置 true 前置检查）。注入块渲染不读它——
+   * 渲染侧的闸在 `ResidentRulesManager`（同一判据函数 `isResidentLayerEnabled`）。
+   */
+  private readonly workspaceTrusted?: boolean;
   /** 投影登记回调（宿主通知用，可选） */
   private readonly onGenerated?: (sourcePath: string, description: string) => void;
   /** 已加载投影缓存（refresh() 同步自磁盘，contextBlock() 读取此缓存） */
@@ -104,15 +171,19 @@ export class WorkProjectionManager {
    * @param memoraDir 项目级 .memora/ 目录
    * @param onGenerated 投影登记回调（宿主通知用，可选）
    * @param projectDir 项目根目录（用于路径穿越防御，可选）
+   * @param workspaceTrusted 工作区信任态快照（**非 `true` 一律按未信任**，与
+   *   `AgentOptions.workspaceTrusted` 同一句判据；缺省 = 未信任，置常驻一律拒绝）
    */
   constructor(
     memoraDir: string,
     onGenerated?: (sourcePath: string, description: string) => void,
     projectDir?: string,
+    workspaceTrusted?: boolean,
   ) {
     this.filePath = join(memoraDir, PROJECTIONS_FILE);
     this.onGenerated = onGenerated;
     this.projectDir = projectDir;
+    this.workspaceTrusted = workspaceTrusted;
   }
 
   /**
@@ -203,6 +274,158 @@ export class WorkProjectionManager {
   }
 
   /**
+   * 置 / 取消「项目常驻规则」（清单里已登记条目的**字段翻转**，绝不新建条目）
+   *
+   * 关键纪律（与设计 §5.4 / §6.1 对齐）：
+   * 1. **置 true 先判信任**：`workspaceTrusted` 非布尔 `true` ⇒ 立即 `untrusted`，**不读正文**；
+   * 2. **只翻字段**：命中条目后仅改 `resident`，保留 name/description/未知字段，不重建对象；
+   * 3. **同一把尺子**：单条上限用 `readResidentSource` 产出的渲染块长度，合计上限用装配期同一个
+   *    `evaluateResidentSegment`（禁止在此另写一套加总逻辑，否则两处判定必然漂移）；
+   * 4. **同一把锁**：写入与 `registerWork` 共用 `withFileWriteQueue`（锁 → 重读盘 → 改字段 → 原子写）；
+   * 5. **置 false 不做前置读盘/限额/信任检查**：用户必须随时能关掉（未信任时也能关）。
+   *
+   * @param sourcePath 清单里的源文件路径（相对项目根；按单行归一后精确匹配 `source`）
+   * @param resident true = 置为项目规则；false = 取消
+   * @returns 七态结果（只有 `enabled` / `disabled` 是写入成功）
+   */
+  async setResident(sourcePath: string, resident: boolean): Promise<SetResidentResult> {
+    const source = toSingleLine(sourcePath);
+
+    // 取消路径：不读正文、不判上限、不看信任态
+    if (resident !== true) {
+      return this.writeResidentFlag(source, false);
+    }
+
+    // 第一道闸：未信任 ⇒ 先拒且不读正文（fail-closed；判据与 AgentOptions.workspaceTrusted 同源）
+    if (!isResidentLayerEnabled(this.workspaceTrusted)) {
+      logger.warn({ source }, '置常驻被拒：工作区未受信任（非 true 一律按未信任）');
+      return {
+        reason: 'untrusted',
+        message: '工作区未受信任，无法把文件置为项目规则；请先信任当前工作区',
+      };
+    }
+
+    // 缺项目根 ⇒ 无法做路径守卫/读盘（装配期总会传；此处只防误用，一律拒绝）
+    if (!this.projectDir) {
+      logger.error({ source }, '置常驻被拒：未提供项目根目录，无法校验源文件');
+      return {
+        reason: 'source-rejected',
+        message: `无法校验源文件（管理器未提供项目根目录）：${source}`,
+      };
+    }
+
+    // 读盘 + 单条上限：临界区外（不依赖清单状态，且必须先证明「可用且不超单条」再落盘）
+    const read = await readResidentSource(this.projectDir, source);
+    if (!read.ok) {
+      // 细粒度原因只进日志；公开面按「不存在 / 存在但被判据拒绝使用」二分
+      logger.warn({ source, failure: read.failure }, '置常驻被拒：源文件不可用');
+      return {
+        reason: read.failure === 'missing' ? 'source-missing' : 'source-rejected',
+        message: read.message,
+      };
+    }
+    if (read.block.length > MAX_RESIDENT_SINGLE_CHARS) {
+      const message =
+        `该文件含标题行共 ${read.block.length} 字符，超过单条 ${MAX_RESIDENT_SINGLE_CHARS} 上限 ` +
+        `${read.block.length - MAX_RESIDENT_SINGLE_CHARS} 字符；本次未写入：${source}`;
+      logger.warn({ source, length: read.block.length }, '置常驻被拒：单条超出上限');
+      return { reason: 'too-long', message };
+    }
+
+    return this.writeResidentFlag(source, true);
+  }
+
+  /**
+   * 常驻字段的落盘实现（`setResident` 的唯一写入口，置 true / false 共用）
+   *
+   * 临界区：锁 → `refresh()` 重读盘 → 定位条目 → （仅置 true）合计闸 → 翻字段 → 原子写。
+   *
+   * @param source 已单行归一的源路径
+   * @param value 目标值
+   * @returns 七态结果
+   */
+  private async writeResidentFlag(source: string, value: boolean): Promise<SetResidentResult> {
+    try {
+      return await withFileWriteQueue(this.filePath, async () => {
+        // 临界区内重读盘：磁盘是真相源（别的会话实例可能刚写过）
+        await this.refresh();
+
+        // fail-safe：清单损坏 ⇒ 定位不到条目，绝不改写原文件（同 registerWork 的防线）
+        if (this.fileWasMalformed) {
+          logger.warn({ file: this.filePath }, '置常驻中止：清单文件格式错误，无法定位条目');
+          return {
+            reason: 'not-found',
+            message: '作品投影清单文件格式错误，无法定位条目；请修正为顶层 JSON 数组后重试',
+          };
+        }
+
+        const index = this.entries.findIndex((e) => e.source === source);
+        if (index < 0) {
+          logger.warn({ source }, '置常驻中止：清单无该条目（不新建条目）');
+          return {
+            reason: 'not-found',
+            message: `作品投影清单中没有该文件的登记记录；请先登记再置为项目规则：${source}`,
+          };
+        }
+
+        const entry = this.entries[index]!;
+        // 幂等：目标态已成立 ⇒ 不重复写盘
+        if (value === true && isResidentEntry(entry)) {
+          return { reason: 'enabled', message: `该文件已是项目规则（未重复写入）：${source}` };
+        }
+        if (value === false && !isResidentEntry(entry)) {
+          return { reason: 'disabled', message: `该文件本来就不是项目规则（未改写）：${source}` };
+        }
+
+        // 合计闸（仅置 true）：用装配期同一个求值函数算「加上本条之后」的合计渲染长度
+        if (value === true && this.projectDir) {
+          const candidateSources = this.entries
+            .map((e, i) => (i === index ? { ...e, resident: true } : e))
+            .filter(isResidentEntry)
+            .map((e) => e.source);
+          const evaluation = await evaluateResidentSegment(this.projectDir, candidateSources);
+          // 兜底：本条在求值时被判 too-long（临界区外已查过一次，二次读盘后文件可能变长）
+          const selfFailure = evaluation.failures.find((f) => f.source === source);
+          if (selfFailure) {
+            logger.warn({ source, reason: selfFailure.reason }, '置常驻被拒：求值判定本条不可注入');
+            return { reason: 'too-long', message: selfFailure.message };
+          }
+          if (evaluation.segment.length > MAX_RESIDENT_TOTAL_CHARS) {
+            const overflow = evaluation.segment.length - MAX_RESIDENT_TOTAL_CHARS;
+            const message =
+              `加入本条后常驻段合计 ${evaluation.segment.length} 字符，超过合计 ` +
+              `${MAX_RESIDENT_TOTAL_CHARS} 上限 ${overflow} 字符；本次未写入：${source}`;
+            logger.warn({ source, length: evaluation.segment.length }, '置常驻被拒：合计超出上限');
+            return { reason: 'too-long', message };
+          }
+        }
+
+        // 只翻字段：保留既有对象的全部字段（含未来新增字段），不重建条目
+        entry.resident = value;
+
+        await mkdir(dirname(this.filePath), { recursive: true });
+        await atomicWriteFile(this.filePath, JSON.stringify(this.entries, null, 2));
+
+        logger.info(
+          { file: source, resident: value },
+          value ? '已置为项目常驻规则' : '已取消项目常驻规则',
+        );
+        return {
+          reason: value ? 'enabled' : 'disabled',
+          message: value ? `已置为项目规则：${source}` : `已取消项目规则：${source}`,
+        };
+      });
+    } catch (err) {
+      // 已知折中：七态无「写失败」槽位 ⇒ 折进 source-rejected，message 标注可重试（见类型注释）
+      logger.error({ err, file: source }, '置常驻失败：清单写入失败');
+      return {
+        reason: 'source-rejected',
+        message: `作品投影清单写入失败（可重试）：${(err as Error)?.message ?? String(err)}`,
+      };
+    }
+  }
+
+  /**
    * 从磁盘加载投影数据
    *
    * @returns 当前全部投影条目
@@ -255,16 +478,22 @@ export class WorkProjectionManager {
    * 仅注入 name + description + source 清单，不注入任何正文。
    * AI 根据 description 判断相关性，自主 read_file 读取原文。
    *
+   * **常驻项剔除**（设计 §4.1-⑤ / §4.4）：`resident === true` 的条目正文已由常驻规则段承载，
+   * 留在索引会形成「同一对象的两种描述」并诱导模型再 read_file 一次。剔除只作用于**注入块**；
+   * 清单展示面（QuickPick / 右键状态）照常列出，用户必须看得见、能取消。
+   *
    * 注意：此方法读取内存缓存（上一次 refresh() 同步的结果）。
    * 若需从磁盘强制刷新，请使用 loadAndGetContextBlock()。
    *
-   * @returns 装配注入文本块；无投影时为空串
+   * @returns 装配注入文本块；无投影（或全部为常驻项）时为空串
    */
   contextBlock(): string {
-    if (this.entries.length === 0) return '';
+    // 判据走 residentRules 的 isResidentEntry（SSOT），不在此重写 `=== true`
+    const listed = this.entries.filter((e) => !isResidentEntry(e));
+    if (listed.length === 0) return '';
 
     const parts: string[] = [CONTEXT_BLOCK_HEADER];
-    for (const e of this.entries) {
+    for (const e of listed) {
       parts.push(`- ${e.name}：${e.description} (源: ${e.source})`);
     }
     parts.push('');

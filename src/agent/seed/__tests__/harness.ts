@@ -86,6 +86,8 @@ export interface SeedMocks {
   applyRolePackToolExposure: ReturnType<typeof vi.fn>;
   /** 会议机制：按本轮装配视角刷新 loop 前缀（prepare 每轮调用；缺省 no-op 测试不断言） */
   refreshRolePackPrefixForRound: ReturnType<typeof vi.fn>;
+  /** 常驻规则读盘门面（turn 入口在同步刷新之前 await；缺省 no-op 测试不断言） */
+  refreshResidentRulesContext: ReturnType<typeof vi.fn>;
   /** 流收口桩（AsyncGenerator，forward 后返回注入的 consumeResult） */
   consumeExecutionStream: ReturnType<typeof vi.fn>;
 }
@@ -212,6 +214,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
     span: { end: vi.fn() },
     applyRolePackToolExposure: vi.fn(),
     refreshRolePackPrefixForRound: vi.fn(),
+    refreshResidentRulesContext: vi.fn(async () => {}),
     consumeExecutionStream: vi.fn(async function* (
       source: AsyncGenerator<AgentChunk, void, unknown>,
       _signal?: AbortSignal,
@@ -234,6 +237,9 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
     // 会议机制：按本轮装配视角刷新 loop 前缀（prepare 每轮调用）
     refreshRolePackPrefixForRound:
       mocks.refreshRolePackPrefixForRound as unknown as SeedDeps['refreshRolePackPrefixForRound'],
+    // 常驻规则：turn 入口先 await 读盘，再同步刷新前缀
+    refreshResidentRulesContext:
+      mocks.refreshResidentRulesContext as unknown as SeedDeps['refreshResidentRulesContext'],
     consumeExecutionStream:
       mocks.consumeExecutionStream as unknown as SeedDeps['consumeExecutionStream'],
     // 难度分级后台 Provider（默认 NULL → 判定 unknown，不影响既有测试主回答摘要）

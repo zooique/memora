@@ -19,6 +19,7 @@ import { MessageHistory } from '@/agent/messageHistory.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
 import { SkillManager } from '@/skill/skillManager.js';
 import { WorkProjectionManager } from '@/agent/managers/workProjection.js';
+import { ResidentRulesManager } from '@/agent/managers/residentRules.js';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import { TextPolishManager } from '@/agent/managers/textPolishManager.js';
@@ -129,11 +130,14 @@ export function buildEnvironmentContextBlock(
  *
  * 初始化时和刷新时都必须使用此函数，确保前缀包含：
  *   1. 角色包 L1 persona + 技能清单（rolePackPrompt）
- *   2. 全局技能 L1 清单（globalSkillList）
- *   3. 作品投影装配注入块（workProjectionContext，可选：极简元数据清单，AI 按需 read_file）
- *   4. 运行环境事实段（environmentContext，可选：宿主上报的 OS/shell/运行时）
- *   5. 当前时间戳
- *   6. 分隔线
+ *   2. 项目常驻规则段（residentRulesContext，可选：清单里 resident=true 的条目正文）
+ *   3. 全局技能 L1 清单（globalSkillList）
+ *   4. 技能落点固定段（SKILL_WRITE_LOCATION_PROMPT）
+ *   5. 作品投影装配注入块（workProjectionContext，可选：极简元数据清单，AI 按需 read_file）
+ *   6. 运行环境事实段（environmentContext，可选：宿主上报的 OS/shell/运行时）
+ *   7. 当前时间戳
+ *   8. Turn 起始策略固定段
+ *   9. 分隔线
  *
  * 必须包含全局技能清单和时间戳——若只拼接 rolePackPrompt，
  * 首次角色切换后全局技能永久不可见。
@@ -144,6 +148,7 @@ export function buildEnvironmentContextBlock(
  * @param locale 时间格式化 locale
  * @param workProjectionContext 作品投影装配注入块（可选；由 WorkProjectionManager.loadAndGetContextBlock() 产出）
  * @param environmentContext 运行环境事实段（可选；由 buildEnvironmentContextBlock 格式化宿主快照产出）
+ * @param residentRulesContext 项目常驻规则段（可选；由 ResidentRulesManager.contextBlock() 产出，空串不注入）
  * @returns 完整的 systemPromptPrefix
  */
 export function buildSystemPromptPrefix(
@@ -152,9 +157,13 @@ export function buildSystemPromptPrefix(
   locale?: string,
   workProjectionContext?: string,
   environmentContext?: string,
+  residentRulesContext?: string,
 ): string {
   const systemPrefixParts = [
     rolePackPrompt,
+    // 项目常驻规则段：紧跟角色包之后 —— 段内自陈「本段 > 角色包规则 > 技能清单等资料」，
+    // 位置即优先级声明的一部分；未信任 / 无常驻条目时空串，filter(Boolean) 自动跳过。
+    residentRulesContext,
     globalSkillList,
     // 技能落点提示（固定事实段）：紧贴技能清单，模型看完「有哪些技能」即看到「新技能写哪」。
     // 无条件注入（无技能时用户仍可能要求创建技能）；SSOT = SKILL_WRITE_LOCATION_PROMPT。
@@ -259,6 +268,7 @@ type AssembleRuntimeParams = Pick<
   | 'codeExecutionProvider'
   | 'projectSearchProvider'
   | 'environmentProvider'
+  | 'workspaceTrusted'
   | 'scriptNodePath'
   | 'disabledSkills'
 >;
@@ -310,8 +320,10 @@ type LoopAndDepsParams = Pick<
   toolExec: ToolExecutor;
   /** 会话管理器（先于 loop 创建，工具执行回调可直接写入，消除暂存队列补丁） */
   sessionManager: SessionManager;
-  /** 作品投影装配注入块（L1 name+description 清单 + L2 always 正文，两级渐进披露） */
+  /** 作品投影装配注入块（L1 name+description+source 清单；**不含正文**，正文由模型按需 read_file） */
   workProjectionContext: string;
+  /** 项目常驻规则段（可选；assembleComponents 装配期首次求值产出，空串/undefined 不注入） */
+  residentRulesContext?: string;
   /** 运行环境事实段（可选；assembleComponents 从 environmentProvider 快照格式化产出，空串/undefined 不注入） */
   environmentContext?: string;
 };
@@ -335,6 +347,8 @@ export interface AssembleOutput {
   /** 后台任务槽位调度器（实例级，Agent 持有 → 注入 SeedDeps + BuiltinToolHandlers，close 单点等待） */
   backgroundTasks: BackgroundTaskScheduler;
   workProjection: WorkProjectionManager;
+  /** 项目常驻规则管理器（每轮 refresh 缓存，同步 contextBlock 供 system prompt 注入） */
+  residentRules: ResidentRulesManager;
   skillManager: SkillManager;
   memoryInspector: MemoryInspector;
   /** 会话归档器（负责生成/更新 SessionMeta） */
@@ -557,10 +571,11 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     hooks,
     workProjectionContext,
     environmentContext,
+    residentRulesContext,
   } = params;
 
   // 系统前缀：使用共享函数构建（SSOT：buildSystemPromptPrefix）
-  // 包含角色包 L1 persona + 全局技能清单 + 作品投影装配块（L1 清单 + L2 always 正文）+ 运行环境事实段 + 当前时间戳
+  // 包含角色包 L1 persona + 项目常驻规则段 + 全局技能清单 + 作品投影装配块（L1 清单）+ 运行环境事实段 + 当前时间戳
   const globalSkillList = skillManager.buildSkillList();
   const systemPromptPrefix = buildSystemPromptPrefix(
     rolePackPrompt,
@@ -568,6 +583,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     locale,
     workProjectionContext,
     environmentContext,
+    residentRulesContext,
   );
   // 角色包底盘占用（system prompt 总体 token）= 装配此刻即确定的真值，早于 prepare；
   // 冷启动 / 重启首屏即可显示真实占比。与运行时 prepare 用同一 estimateTokensMessages 估算器（口径一致）。
@@ -762,6 +778,9 @@ export async function assembleComponents(
     enableContextSummary,
     existingSkillManager,
     locale,
+    // 宿主传入的工作区信任态快照：只用于常驻规则层的 fail-closed 闸（判据唯一实现 =
+    // residentRules 的 isResidentLayerEnabled；非 true 一律按未信任）
+    workspaceTrusted,
   } = input;
   const hooks = input.hooks;
 
@@ -785,7 +804,20 @@ export async function assembleComponents(
       hooks?.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary: description });
     },
     projectPath,
+    // 信任态入参：唯一消费面 = setResident 的第一道闸（非 true 一律按未信任）
+    workspaceTrusted,
   );
+
+  // 项目常驻规则管理器：清单来源**复用**作品投影（同一份 JSON、同一份刷新缓存），不新开第二份清单读取实现。
+  // 依赖经闭包注入而非持有实例：listEntries 每次调用都走 workProjection.refresh()，
+  // 保证「常驻段」与「索引块」看到的是同一次读盘的同一份条目（含 resident 字段）。
+  // workspaceTrusted 非 true ⇒ 整层不装配且不读任何正文（fail-closed，见 residentRules 常量注释）。
+  const residentRules = new ResidentRulesManager({
+    projectDir: projectPath,
+    workspaceTrusted,
+    listEntries: () => workProjection.refresh(),
+    isListMalformed: () => workProjection.isFileMalformed,
+  });
 
   const toolExec = new ToolExecutor(
     projectPath,
@@ -1012,6 +1044,13 @@ export async function assembleComponents(
   // 刷新失败不阻断装配——loadAndGetContextBlock 内部已容错，返回空串即不注入（投影是可选项，非装配硬依赖）
   const workProjectionContext = await workProjection.loadAndGetContextBlock();
 
+  // 项目常驻规则装配首次求值（每轮 turn 入口还会再刷一次，见 SeedDeps.refreshResidentRulesContext）。
+  // 注意顺序：本调用内部经 listEntries 再刷一次作品投影缓存（装配期一次性多一次读盘），
+  // 不应依赖「上一步的 loadAndGetContextBlock 已经刷过」——两个 manager 各自自足，
+  // 否则 setResident / 单测单独使用 residentRules 时会读到陈旧清单。
+  // 读盘失败一律降级（不抛错），装配不因常驻段失败而中断。
+  await residentRules.refresh();
+
   // 运行环境事实段（命令执行能力方案 §10.4-②）：从宿主环境提供者同步取快照并格式化。
   // getEnvironment 同步返回（探测节奏宿主自理，内核零等待）；未注入/返回 null → 空串不注入。
   // 环境事实只进 prompt（给模型看），不进任何内核判据（命令执行能力方案 §10.5 刻意不做）。
@@ -1038,6 +1077,8 @@ export async function assembleComponents(
       hooks,
       workProjectionContext,
       environmentContext,
+      // 常驻段：同步读上一步 refresh 的缓存（未信任 / 无条目时为空串，不注入）
+      residentRulesContext: residentRules.contextBlock(),
     });
   loopRef = loop;
 
@@ -1098,6 +1139,7 @@ export async function assembleComponents(
     toolExec,
     backgroundTasks,
     workProjection,
+    residentRules,
     skillManager,
     memoryInspector,
     sessionArchiver,

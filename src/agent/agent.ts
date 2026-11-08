@@ -32,6 +32,7 @@ import { SessionNamer } from '@/agent/managers/sessionNamer.js';
 import type { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
+import type { ResidentRulesManager } from '@/agent/managers/residentRules.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import { createDefaultGCService, type GCService, type GCResult } from '@/memory/gcService.js';
 import {
@@ -121,6 +122,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private _sessionManager: SessionManager | null = null;
   /** WorkProjectionManager（作品投影极简 JSON 索引，宿主经 works getter 消费） */
   private workProjection: WorkProjectionManager | null = null;
+  /**
+   * ResidentRulesManager（项目常驻规则层：清单里 resident=true 的条目正文每轮注入 system prompt）。
+   * 纯内部组件（暂无宿主 getter 契约）——turn 入口 await `refresh()`，同步刷新链读 `contextBlock()`。
+   */
+  private residentRules: ResidentRulesManager | null = null;
 
   // ─── 纯内部组件聚合（无宿主 getter 契约，init 后填充、close 统一清空） ───
   /**
@@ -235,6 +241,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       scriptNodePath: opts.scriptNodePath,
       // 禁用技能清单（配置形态启停）：透传装配 → SkillManager 过滤 L1/L2/L3
       disabledSkills: opts.disabledSkills ?? [],
+      // 工作区信任态（宿主 vscode.workspace.isTrusted 的现读快照）：唯一消费面 = 常驻规则层
+      // fail-closed 闸（判据见 residentRules.isResidentLayerEnabled）；非 true 一律按未信任。
+      // 无默认值归一（保持 undefined 原样）——「缺省」必须与「false」同一结论，不得在配置层补 true。
+      workspaceTrusted: opts.workspaceTrusted,
       // 宿主审批/审计/参数改写通道，透传供装配阶段与内部幂等检查组合为一处执行前检查点
       preExecutionCheck: opts.preExecutionCheck,
       // 宿主装配级策略覆盖（能力边界）：透传 #config → 装入策略解析链（resolveActiveStrategy）。
@@ -501,6 +511,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
       // 会议机制：按本轮表层装配视角刷新 loop 前缀（roundRole=null 回落 activePack）
       refreshRolePackPrefixForRound: (roundRole) => this.refreshRolePackPrefixForRound(roundRole),
+      // 常驻规则刷新：turn 入口（prepare.run / runResume）await 本回调读盘，
+      // 随后同一条链里的 refreshRolePackPrefixForRound 同步读缓存注入段（顺序由 refreshTurnAssembly 固定）
+      refreshResidentRulesContext: async () => {
+        await this.residentRules?.refresh();
+      },
       consumeExecutionStream: (source, signal) => this.consumeExecutionStream(source, signal),
       getBackgroundProvider: () => this.#backgroundProvider,
       // 宿主装配级策略覆盖（能力边界）：传给策略解析链（单一语义键不变）。
@@ -1360,6 +1375,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       scriptNodePath: this.#config.scriptNodePath,
       // 禁用技能清单：透传装配 → SkillManager.setDisabledSkills
       disabledSkills: this.#config.disabledSkills,
+      // 工作区信任态：透传装配 → ResidentRulesManager 的 fail-closed 闸（非 true = 整层不装配）
+      workspaceTrusted: this.#config.workspaceTrusted,
       existingSkillManager: this.skillManager,
       // 策略覆盖不经组装器：AssembleInput 零消费，真实消费链 = 本类
       // 构造 SeedOrchestrator deps 时直传（见 #createSeedOrchestrator 的 strategyOverride），
@@ -1414,6 +1431,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     });
     this.memoryInspector = result.memoryInspector;
     this.workProjection = result.workProjection;
+    this.residentRules = result.residentRules;
     this.internals.sessionArchiver = result.sessionArchiver;
     this.textPolisher = result.textPolisher;
     this.internals.roundSummaryGenerator = result.roundSummaryGenerator;
@@ -1634,6 +1652,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const globalSkillList = this.skillManager?.buildSkillList() ?? '';
     // 作品投影装配块：缓存于 manager（装配时刷新 + register_work 更新），同步读取即可
     const workProjectionContext = this.workProjection?.contextBlock() ?? '';
+    // 项目常驻规则段：同步读缓存（本轮入口已 await refresh；未信任 / 无条目时为空串）。
+    // 禁止在此做 IO —— 本函数是同步 void 刷新链，读盘必须在 turn 入口（refreshTurnAssembly）。
+    const residentRulesContext = this.residentRules?.contextBlock() ?? '';
     // 运行环境事实段（命令执行能力方案 §10.4-②）：同步取宿主快照并格式化（未注入 → 空串不注入）。
     // getEnvironment 为同步接口，刷新路径（本函数为同步 void）可无等待拉取最新快照；
     // 环境事实是低频变化数据，宿主可自行缓存，内核每次重建前缀即拉最新。
@@ -1646,6 +1667,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       undefined,
       workProjectionContext,
       environmentContext,
+      residentRulesContext,
     );
     this.loop.refreshRolePackPrefix(newPrefix);
     // 角色包底盘占用随切换实时更新（不依赖跑 prepare）：装配此刻即确定的真值
@@ -2019,6 +2041,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this._rolePackManager = null;
     this.memoryInspector = null;
     this.workProjection = null;
+    this.residentRules = null;
     this.textPolisher = null;
     this._sessionManager = null;
     this.projectManager = null;
