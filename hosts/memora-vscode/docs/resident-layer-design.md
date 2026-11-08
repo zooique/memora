@@ -1,9 +1,10 @@
 # 常驻层（作品投影的 resident 字段）设计定稿
 
 > 状态：**已定稿**（九条决策已拍板直接落地）；本文档只描述设计与边界，不含实现代码。
-> 定位：设计 + 排雷结论。现状均为实测并带文件:行；推断与未查实已分别标注。
+> 定位：设计 + 排雷结论。现状均为实测并带**符号引用**（文件 + 函数 / 类 / 成员名）。
 > 日期：2026-11-08
 > 一句话：作品投影条目加一个布尔字段——`true` 的条目正文每轮注入 system prompt 固定段并永久生效；`false` / 缺失者维持原能力（只给简介，模型按需 `read_file`）。
+> **引用口径**：本文档引用代码一律用**符号**（文件 + 函数 / 类 / 成员名），**不写行号**——行号随实现漂移，符号不会。
 
 ---
 
@@ -27,45 +28,45 @@
 
 | 事项 | 实测 | 位置 |
 | --- | --- | --- |
-| 条目结构 | `{ name, description, source }`，**无类型/用途判别字段** | `src/agent/managers/workProjection.ts:28-35` |
-| 存储 | `<memoraDir>/work-projections.json`，顶层 JSON 数组；`memoraDir` = 项目 `.memora/` | 构造 `workProjection.ts:60-68`；装配传入 `src/agent/assembler.ts:782-788` |
-| 写入唯一函数 | `registerWork(sourcePath, description)`：路径守卫 → 读盘 → 合并/追加 → 整文件写回 | `workProjection.ts:90-139` |
-| 写入方式 | **整文件重写**：`atomicWriteFile(JSON.stringify(this.entries, null, 2))` | `workProjection.ts:129` |
-| 并发 | 类注释自认「当前为单 Agent 单进程场景，registerWork 无文件锁保护」 | `workProjection.ts:40-42` |
-| 实例数 | **每会话一个** Agent ⇒ 每会话一个 manager 实例，指向同一文件 | 宿主按 sessionId 取 Agent `hosts/memora-vscode/src/extension/extension.ts:442-449`；每会话独立实例 `hosts/memora-vscode/src/webview/panels/chatPanel.ts:2044-2051` |
-| 损坏 fail-safe | 预存文件非数组根 / 解析失败 ⇒ `fileWasMalformed` ⇒ `registerWork` 拒写，不覆盖原索引 | `workProjection.ts:110-118`、`:146-177` |
-| 读取过滤 | `parsed.filter((e) => e && e.source && e.name)` | `workProjection.ts:153` |
-| 索引渲染 | 每条一律 `- ${name}：${description} (源: ${source})` | `workProjection.ts:199-210` |
-| 装配读盘 | Agent 装配时 `loadAndGetContextBlock()`（refresh + 渲染） | `src/agent/assembler.ts:1011-1013` |
-| 每轮重建前缀 | `prepare.run` 先调 `refreshAssemblyForRolePack`（`prepare.ts:51-54`），其内部调 `refreshRolePackPrefixForRound`，读 manager **缓存**（注释：装配时刷新 + register_work 更新） | `src/agent/seed/prepare.ts:51-54,146-151`；缓存 `src/agent/agent.ts:1635-1636` |
-| description 生成（用户入口） | 右键「登记作品投影」：读文件截 8000 字 → LLM 一句话总结（失败用文件名兜底）→ `agent.works.registerWork` | `hosts/memora-vscode/src/extension/commands/registerWork.ts:20,63-70,72-113,116` |
-| description 生成（模型入口） | 工具 `register_work`，`description` 由模型给（工具描述：LLM 总结，用户可后续手改） | `src/agent/builtinTools.ts:923-947` |
-| 描述更新 / 条目更新 | 同 `source` 再登记 = **整条替换**（新对象只带 `name`/`description`/`source` ⇒ 抹掉 `resident` 与未知字段，§5.4 A 级缺口）；**无独立「改描述」接口** | `workProjection.ts:121-126` |
-| 描述归一 | 单行化 + 100 字硬截断 | `workProjection.ts:239-251` |
-| 工具层写串行闸 | `diskWrite:'opaque'` 屏障：与同一 loop 内一切写互斥 | `src/agent/loop.ts:2344-2375`；`register_work` 声明 `builtinTools.ts:927` |
-| 闸门作用域 | **仅单个 AgentLoop 实例**；宿主命令直接调 `agent.works.registerWork`，**绕过闸门** | `loop.ts:2356-2362`；`registerWork.ts:116` |
-| 公开成员面守卫 | `WorkProjectionManager` 成员表被钉死（`:1259-1269`）；`WorkProjectionEntry` 接口成员基线也钉死（`:710` 附近） | `src/__tests__/publicMemberSurfaceGuard.test.ts:710,1259-1269` |
+| 条目结构 | `{ name, description, source }`，**无类型/用途判别字段** | `src/agent/managers/workProjection.ts` |
+| 存储 | `<memoraDir>/work-projections.json`，顶层 JSON 数组；`memoraDir` = 项目 `.memora/` | 构造 `workProjection.ts`；装配传入 `src/agent/assembler.ts` |
+| 写入唯一函数 | `registerWork(sourcePath, description)`：路径守卫 → 读盘 → 合并/追加 → 整文件写回 | `workProjection.ts` |
+| 写入方式 | **整文件重写**：`atomicWriteFile(JSON.stringify(this.entries, null, 2))` | `workProjection.ts` |
+| 并发 | **进程内**写入按绝对文件路径串行化（模块级 `withFileWriteQueue`，P0-b 已落地）；跨进程不覆盖 | `workProjection.ts` 的 `withFileWriteQueue` |
+| 实例数 | **每会话一个** Agent ⇒ 每会话一个 manager 实例，指向同一文件 | 宿主按 sessionId 取 Agent `hosts/memora-vscode/src/extension/extension.ts`；每会话独立实例 `hosts/memora-vscode/src/webview/panels/chatPanel.ts` |
+| 损坏 fail-safe | 预存文件非数组根 / 解析失败 ⇒ `fileWasMalformed` ⇒ `registerWork` 拒写，不覆盖原索引 | `workProjection.ts` 的 `refresh`（损坏判定）与 `registerWork`（临界区内先判） |
+| 读取过滤 | `parsed.filter((e) => e && e.source && e.name)` | `workProjection.ts` |
+| 索引渲染 | 每条一律 `- ${name}：${description} (源: ${source})` | `workProjection.ts` |
+| 装配读盘 | Agent 装配时 `loadAndGetContextBlock()`（refresh + 渲染） | `src/agent/assembler.ts` |
+| 每轮重建前缀 | `prepare.run` 先调 `refreshAssemblyForRolePack`（`prepare.ts`），其内部调 `refreshRolePackPrefixForRound`，读 manager **缓存**（注释：装配时刷新 + register_work 更新） | `src/agent/seed/prepare.ts`；缓存 `src/agent/agent.ts` |
+| description 生成（用户入口） | 右键「登记作品投影」：读文件截 8000 字 → LLM 一句话总结（失败用文件名兜底）→ `agent.works.registerWork` | `hosts/memora-vscode/src/extension/commands/registerWork.ts` |
+| description 生成（模型入口） | 工具 `register_work`，`description` 由模型给（工具描述：LLM 总结，用户可后续手改） | `src/agent/builtinTools.ts` |
+| 描述更新 / 条目更新 | 同 `source` 再登记 = **合并式 upsert**（只覆盖 `name`/`description`，保留 `resident` 与未知字段；P0-b 已落地）；**无独立「改描述」接口** | `workProjection.ts` 的 `registerWork`（upsert 分支） |
+| 描述归一 | 单行化 + 100 字硬截断 | `workProjection.ts` |
+| 工具层写串行闸 | `diskWrite:'opaque'` 屏障：与同一 loop 内一切写互斥 | `src/agent/loop.ts`；`register_work` 声明 `builtinTools.ts` |
+| 闸门作用域 | **仅单个 AgentLoop 实例**；宿主命令直接调 `agent.works.registerWork`，**绕过闸门** | `loop.ts`；`registerWork.ts` |
+| 公开成员面守卫 | `WorkProjectionManager` 成员表被钉死（同文件的成员基线）；`WorkProjectionEntry` 接口成员基线也钉死（同文件的 `WorkProjectionEntry` members 段） | `src/__tests__/publicMemberSurfaceGuard.test.ts` |
 
-**写入方穷举（本稿结论）**：写盘只有一处（`workProjection.ts:129`）；能到达它的只有两条路——模型工具 `register_work`、宿主右键命令 `registerWork.ts:116`。用户用编辑器手改 JSON 属**外部写入**，不在代码防线内，由损坏 fail-safe 兜底（`:146-177`）。⇒ **单主人在「方法层」成立，在「实例层」不成立**（每会话一个实例）。
+**写入方穷举（本稿结论）**：写盘只有一处（`workProjection.ts` 的 `registerWork` 临界区）；能到达它的只有两条路——模型工具 `register_work`、宿主右键命令 `registerWork.ts`。用户用编辑器手改 JSON 属**外部写入**，不在代码防线内，由损坏 fail-safe（`refresh` + `registerWork`）兜底。⇒ **单主人在「方法层」成立，在「实例层」不成立**（每会话一个实例）。
 
 ### 1.2 临时锁（现状，项目常驻不得改变它）
 
 | 环节 | 实现 | 位置 |
 | --- | --- | --- |
-| 引用结构 | `ChatRef = { path, kind: 'file' \| 'folder', range? }`，只挂指针不携内容 | `hosts/memora-vscode/src/shared/protocol.ts:181-194` |
-| 「临时锁」= `pinned` | chip 上的 `pinned: boolean`，**纯 UI 态**；注释原文「pinned 纯 UI 状态，不进协议/内核」 | `hosts/memora-vscode/src/webview/scripts/chatView.ts:208-227` |
-| 发送后保留 | `currentRefs = currentRefs.filter((r) => r.pinned)`——未锁的发送即清 | `hosts/memora-vscode/src/webview/scripts/chatView.ts:3995-3996` |
-| 切锁 / 上浮 | 🔒 按钮切 `pinned`；渲染时钉住上浮 | `hosts/memora-vscode/src/webview/scripts/chatView.ts:4449-4498`，排序 `:4477` |
-| 测试口径 | 明写「pinned 纯 UI 态，不进协议/内核；每轮发送照旧带全部当前 chip」 | `hosts/memora-vscode/src/webview/__tests__/chatView.test.ts:10348-10350` |
-| 入信封形态 | 发送时拼 `[参考文件/目录]` 块（仅路径 + 行区间读取参数） | `hosts/memora-vscode/src/webview/helpers/docContext.ts:33-36,98-152` |
-| 宿主拼信封 | 发送时刻 `buildRefContextBlock` + `buildInjectedContextEnvelope` | `hosts/memora-vscode/src/webview/panels/chatPanel.ts:3257-3286` |
-| 发送前失效核实 | `collectMissingFileRefPaths` 对文件引用 stat，失效者降级为「裸指针 + 标记」 | `hosts/memora-vscode/src/extension/host/refProbe.ts:33-58` |
+| 引用结构 | `ChatRef = { path, kind: 'file' \| 'folder', range? }`，只挂指针不携内容 | `hosts/memora-vscode/src/shared/protocol.ts` |
+| 「临时锁」= `pinned` | chip 上的 `pinned: boolean`，**纯 UI 态**；注释原文「pinned 纯 UI 状态，不进协议/内核」 | `hosts/memora-vscode/src/webview/scripts/chatView.ts` |
+| 发送后保留 | `currentRefs = currentRefs.filter((r) => r.pinned)`——未锁的发送即清 | `hosts/memora-vscode/src/webview/scripts/chatView.ts` |
+| 切锁 / 上浮 | 🔒 按钮切 `pinned`；渲染时钉住上浮 | `hosts/memora-vscode/src/webview/scripts/chatView.ts`（chip 渲染段） |
+| 测试口径 | 明写「pinned 纯 UI 态，不进协议/内核；每轮发送照旧带全部当前 chip」 | `hosts/memora-vscode/src/webview/__tests__/chatView.test.ts` |
+| 入信封形态 | 发送时拼 `[参考文件/目录]` 块（仅路径 + 行区间读取参数） | `hosts/memora-vscode/src/webview/helpers/docContext.ts` |
+| 宿主拼信封 | 发送时刻 `buildRefContextBlock` + `buildInjectedContextEnvelope` | `hosts/memora-vscode/src/webview/panels/chatPanel.ts` |
+| 发送前失效核实 | `collectMissingFileRefPaths` 对文件引用 stat，失效者降级为「裸指针 + 标记」 | `hosts/memora-vscode/src/extension/host/refProbe.ts` |
 
 **生命周期结论（实测）**：临时锁只活在 **webview 进程内存**（`currentRefs`），**不在会话 meta、不在磁盘、不在附件目录**；webview 重建即清空，宿主无任何持久化入口。**跨重启：不具备。**
 
 ### 1.3 system prompt 层结构（注入位置的证据）
 
-`buildSystemPromptPrefix` 的分段顺序（实测，`src/agent/assembler.ts:149-184`）：
+`buildSystemPromptPrefix` 的分段顺序（实测，`src/agent/assembler.ts`）：
 
 ```
 ① rolePackPrompt      ← 角色包段（personaPrompt；角色 rules 在 personaPrompt 内）
@@ -78,17 +79,17 @@
 --- 分隔线 ---
 ```
 
-- **角色 rules 在哪（关键）**：角色包的 `## 规则` 段由 `strategyResolver.ts:454` 拼进 `personaPrompt`，`personaPrompt` 再作为 `rolePackPrompt`（第 ① 段）传入。故「角色 rules 之后」= **插入点在第 ① 段之后**。
-- **工具描述在哪**：工具描述**不在** `buildSystemPromptPrefix` 里。system message = `prefix + buildSystemPrompt(memories)`，工具描述在**后段**的 `## 可用工具` 里（`src/agent/loop.ts:2813-2846`，拼接点 `src/agent/loop.ts:683`）。
+- **角色 rules 在哪（关键）**：角色包的 `## 规则` 段由 `strategyResolver.ts` 拼进 `personaPrompt`，`personaPrompt` 再作为 `rolePackPrompt`（第 ① 段）传入。故「角色 rules 之后」= **插入点在第 ① 段之后**。
+- **工具描述在哪**：工具描述**不在** `buildSystemPromptPrefix` 里。system message = `prefix + buildSystemPrompt(memories)`，工具描述在**后段**的 `## 可用工具` 里（`src/agent/loop.ts`，拼接点 `src/agent/loop.ts`）。
 - **结论**：常驻段插在 ① 与 ② 之间，天然满足「角色 rules 之后、工具描述之前」。
 
 ### 1.4 `.memora/` 是项目数据目录（事实，不做跨项目假设）
 
 | 事实 | 实测 | 位置 |
 | --- | --- | --- |
-| 项目数据目录定义 | `<workspace>/.memora`，宿主内唯一计算点 | `hosts/memora-vscode/src/extension/host/projectDataDir.ts:59-61` |
-| 既有项目级资产 | `.memora/skills`、`.memora/role-packs`，同受信任门 | `hosts/memora-vscode/src/extension/host/userAssets/projectScope.ts:26-59` |
-| 既有清单型文件 | 作品投影 `work-projections.json` 也在 `<workspace>/.memora/` 下 | `workProjection.ts:60-68`、`src/agent/assembler.ts:782-788` |
+| 项目数据目录定义 | `<workspace>/.memora`，宿主内唯一计算点 | `hosts/memora-vscode/src/extension/host/projectDataDir.ts` |
+| 既有项目级资产 | `.memora/skills`、`.memora/role-packs`，同受信任门 | `hosts/memora-vscode/src/extension/host/userAssets/projectScope.ts` |
+| 既有清单型文件 | 作品投影 `work-projections.json` 也在 `<workspace>/.memora/` 下 | `workProjection.ts`、`src/agent/assembler.ts` |
 
 **边界一句话**：`f:\zooique\memora` 是 memora 源码仓库（其中 `.memora/` 是开发期运行数据）；本功能的落点是**用户自己的项目**。memora **不替用户决定**其仓库里放什么。
 
@@ -96,18 +97,18 @@
 
 | 机制 | 实测 | 位置 |
 | --- | --- | --- |
-| 工作区相对路径守卫（生成侧） | `relativeUnderPrimaryRoot(root, abs)`：相对**首根**产出规范形；`undefined` = 不在首根。`resolveUnderPrimaryRoot` 是其反向解析（校验规范形后回投影） | `hosts/memora-vscode/src/extension/host/refPath.ts:22-58` |
-| 投影写入侧守卫 | `resolveSafePath(projectDir, sourcePath)`：把**项目数据目录**拼上输入路径，越界即拒登记 | `workProjection.ts:92-95` |
-| 现有登记命令的路径来源 | `vscode.workspace.asRelativePath(targetUri)`——**与上两者不同源**；多根工作区下相对「所在根」，会产出「chip 正常、模型读不到」的撒谎指针 | `hosts/memora-vscode/src/extension/commands/registerWork.ts:49`；禁止性说明见 `addToChat.ts:47`、`refPath.test.ts:6-7` |
-| 信任门判据（仅宿主侧） | `vscode.workspace.isTrusted` 现读，未信任 ⇒ 空对象 fail-closed | `hosts/memora-vscode/src/extension/host/userAssets/projectScope.ts:34-60` |
-| 信任门在内核侧 | **无此态**：内核装配只拿 `dataDir`，无条件传入 ⇒「装配期现读 `isTrusted`」在物理上不成立；须宿主把信任态作为**新入参**传内核（内核公开面变更，minor） | 装配 `src/agent/assembler.ts:782-788` |
-| 符号链接 | `relativeUnderPrimaryRoot` **是纯字符串解析，不 realpath** ⇒ 工作区内指向外部的符号链接仍可逃逸 | `refPath.ts:22-58` |
-| 真实路径解析 | 内核有 `resolveRealpath`（realpathSync + 逐级父目录回退），但**模块私有、未导出** | `src/security/pathGuard.ts:22-43` |
-| 凭据黑名单 | `BLOCKED_PATTERNS` **模块私有、未导出**；且**只匹配路径**——全库唯一密钥相关处理是日志脱敏，**内容侧零防线** | `src/security/pathGuard.ts:45-75` |
+| 工作区相对路径守卫（生成侧） | `relativeUnderPrimaryRoot(root, abs)`：相对**首根**产出规范形；`undefined` = 不在首根。`resolveUnderPrimaryRoot` 是其反向解析（校验规范形后回投影） | `hosts/memora-vscode/src/extension/host/refPath.ts` |
+| 投影写入侧守卫 | `resolveSafePath(projectDir, sourcePath)`：把**项目数据目录**拼上输入路径，越界即拒登记 | `workProjection.ts` |
+| 现有登记命令的路径来源 | `vscode.workspace.asRelativePath(targetUri)`——**与上两者不同源**；多根工作区下相对「所在根」，会产出「chip 正常、模型读不到」的撒谎指针 | `hosts/memora-vscode/src/extension/commands/registerWork.ts`；禁止性说明见 `addToChat.ts`、`refPath.test.ts` |
+| 信任门判据（仅宿主侧） | `vscode.workspace.isTrusted` 现读，未信任 ⇒ 空对象 fail-closed | `hosts/memora-vscode/src/extension/host/userAssets/projectScope.ts` |
+| 信任门在内核侧 | **无此态**：内核装配只拿 `dataDir`，无条件传入 ⇒「装配期现读 `isTrusted`」在物理上不成立；须宿主把信任态作为**新入参**传内核（内核公开面变更，minor） | 装配 `src/agent/assembler.ts` |
+| 符号链接 | `relativeUnderPrimaryRoot` **是纯字符串解析，不 realpath** ⇒ 工作区内指向外部的符号链接仍可逃逸 | `refPath.ts` |
+| 真实路径解析 | 内核有 `resolveRealpath`（realpathSync + 逐级父目录回退），**已导出**（P0-a 落地） | `src/security/pathGuard.ts` |
+| 凭据黑名单 | `BLOCKED_PATTERNS` 常量仍模块私有，**已封装为导出判据** `matchBlockedPathPattern` / `isBlockedPath`（P0-a 落地）；且**只匹配路径**——全库唯一密钥相关处理是日志脱敏，**内容侧零防线** | `src/security/pathGuard.ts` |
 
 ### 1.6 旧提案 `.memora/rules.md`
 
-全库 grep 在产品代码（`src/`、`hosts/`）中只命中**角色包 L1 的 `rules.md`**（角色包自带规则文件，`src/role-pack/rolePackManager.ts:91-95`），**没有** `.memora/rules.md` 项目规则实现 ⇒ 该提案**未落地**，迁移面为 0。
+全库 grep 在产品代码（`src/`、`hosts/`）中只命中**角色包 L1 的 `rules.md`**（角色包自带规则文件，`src/role-pack/rolePackManager.ts`），**没有** `.memora/rules.md` 项目规则实现 ⇒ 该提案**未落地**，迁移面为 0。
 
 ---
 
@@ -126,7 +127,7 @@
 - **优先级写死**：项目常驻 > 角色 rules > 资料；< 安全铁律（§4.3）。
 - **单条 6000 字符 / 合计 15000 字符上限**；添加或置常驻时**当场拒绝**并回报占用。装配期因外部改动：**单条超限 ⇒ 剔该条 + 汇总提示**；**仅合计超限 ⇒ 整段不注入 + 一条显式提示**；两者都不阻断发送（§6.1）。
 - **顺序 = 清单数组顺序**（先添加者优先；删除条目后其余顺延前移）（§3.3）。
-- 凭据防护：**先导出 `BLOCKED_PATTERNS`（或封装成单函数判据）**，禁止复制第二份；**本期只防凭据路径，内容夹带不防**（§7.1-4）。
+- 凭据防护：**复用已导出的判据面**（`isBlockedPath` / `matchBlockedPathPattern`，P0-a 落地），禁止复制第二份；**本期只防凭据路径，内容夹带不防**（§7.1-4）。
 - 项目级变更**对所有会话实例生效**（§5.8、§10）。
 - **失效判定只用文件存在性判断 + 与清单声明集合比对，不引入任何 git 调用**（§6.2）。
 
@@ -164,7 +165,7 @@ WorkProjectionEntry {
 顺序由清单数组天然表达，不另存顺序字段（§3.3）。
 
 > **术语锚点（防撞车）**：本稿 `resident` = **项目规则常驻**（条目正文每轮注入）。
-> 代码另有 `capabilityState.kind === 'residentOnly'`（**常驻工具**，宿主 `capabilityState.ts:39`、`roleBadgeView.ts:134`），**两者语义无关**。命名 / 注释 / 文案不得用同一个「常驻」把二者折叠（本仓「措辞折叠」纪律）。
+> 代码另有 `capabilityState.kind === 'residentOnly'`（**常驻工具**，宿主 `capabilityState.ts`、`roleBadgeView.ts`），**两者语义无关**。命名 / 注释 / 文案不得用同一个「常驻」把二者折叠（本仓「措辞折叠」纪律）。
 
 ### 3.2 两态语义（不是三态）
 
@@ -202,9 +203,9 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 - 插在 ① 之后 = **角色 rules 之后**；在 ② 之后才是工具描述所在的后段 = **工具描述之前**。
 - **禁止**追加到 `buildSystemPrompt` 尾部（那会让规则落到工具描述之后，语义降级为资料）。
 
-**实现口径**：`buildSystemPromptPrefix` 增**第 6 个可选参数** `residentRulesContext`，但**渲染位置固定排在 `rolePackPrompt` 之后**——参数放尾部只为不动既有 5 个位置参数调用点（`assembler.ts:565-571`、`agent.ts:1643-1649`；实测均为位置传参）。
+**实现口径**：`buildSystemPromptPrefix` 增**第 6 个可选参数** `residentRulesContext`，但**渲染位置固定排在 `rolePackPrompt` 之后**——参数放尾部只为不动既有 5 个位置参数调用点（`assembler.ts`、`agent.ts`；实测均为位置传参）。
 
-**每轮刷新口径（实测依据，订正）**：每轮重建前缀的真落点是 `prepare.run()` 里的 `refreshAssemblyForRolePack(...)`（`src/agent/seed/prepare.ts:51-54`），它内部调 `deps.refreshRolePackPrefixForRound`（同文件 `:146-151`，自由函数，**不是**独立的每轮重建）。位置关键：`:54` 在 `await contextPreparer.assembleContext(input)`（`:94`）**之前**。因此「每轮按清单读正文」的落点是：在 `:54` 之前先 `await` 一次「刷新常驻上下文」（重读清单 JSON + 每个常驻正文进缓存），再由 `:54` 的同步重建收口。**按旧稿字面插在 `refreshAssemblyForRolePack` 内部会首轮用旧缓存、规则晚一轮生效**。不得在同步函数里做磁盘 IO。
+**每轮刷新口径（实测依据，订正）**：每轮重建前缀的真落点是 `prepare.run()` 里的 `refreshAssemblyForRolePack(...)`（`src/agent/seed/prepare.ts`），它内部调 `deps.refreshRolePackPrefixForRound`（同文件的自由函数，**不是**独立的每轮重建）。位置关键：`prepare.run` 在 `await contextPreparer.assembleContext(input)` **之前**调用 `refreshAssemblyForRolePack`。因此「每轮按清单读正文」的落点是：在 `refreshAssemblyForRolePack` 之前先 `await` 一次「刷新常驻上下文」（重读清单 JSON + 每个常驻正文进缓存），再由同步重建收口。**按旧稿字面插在 `refreshAssemblyForRolePack` 内部会首轮用旧缓存、规则晚一轮生效**。不得在同步函数里做磁盘 IO。
 
 ### 4.2 段内格式（定稿）
 
@@ -265,10 +266,10 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 
 | # | 取证项 | 实测结果 | 对本设计的影响 | 位置 |
 | --- | --- | --- | --- | --- |
-| 1 | schema 是否有「类型 / 用途」判别字段 | **没有**类型字段；但本设计只需一个二值判别（常驻 / 非常驻），一个布尔字段即可表达，不需要多类型体系 | 可扩展：加 `resident` 足够 | `workProjection.ts:28-35` |
-| 2 | 写入方与方式（**决定性**） | **整文件重写**；`registerWork` 先 `refresh()` 读全量进内存 → 合并/追加 → 把整份内存数组写回。类注释自认无文件锁 | **必须先串行化** ⇒ 前置闸 A（§5.3） | `workProjection.ts:90-139`、`:40-42` |
-| 3 | 读取方与误读面 | `filter(e => e && e.source && e.name)` 会**静默丢弃缺字段条目**；`contextBlock()` 把每条一律渲染成投影行 | **新条目必须补齐 name/source**（闸 B）；**常驻项必须从注入块剔除**（闸 D） | 过滤 `:153`；渲染 `:199-210` |
-| 4 | 原子写 / 损坏 fail-safe / 并发写 | 有 `atomicWriteFile` 与损坏拒写；**没有并发锁**；实例每会话一个 | 持久化形态可复用；并发必须补（闸 A） | `:129`、`:110-118`、`:146-177`；实例 `assembler.ts:782` |
+| 1 | schema 是否有「类型 / 用途」判别字段 | **没有**类型字段；但本设计只需一个二值判别（常驻 / 非常驻），一个布尔字段即可表达，不需要多类型体系 | 可扩展：加 `resident` 足够 | `workProjection.ts` |
+| 2 | 写入方与方式（**决定性**） | **整文件重写**；`registerWork` 先 `refresh()` 读全量进内存 → 合并/追加 → 把整份内存数组写回。写入已在模块级 `withFileWriteQueue` 内串行（P0-b） | 持久化形态可复用（闸 A 已落地） | `workProjection.ts` 的 `registerWork` 与 `withFileWriteQueue` |
+| 3 | 读取方与误读面 | `filter(e => e && e.source && e.name)` 会**静默丢弃缺字段条目**；`contextBlock()` 把每条一律渲染成投影行 | **新条目必须补齐 name/source**（闸 B）；**常驻项必须从注入块剔除**（闸 D） | 过滤在 `refresh`；渲染在 `contextBlock` |
+| 4 | 原子写 / 损坏 fail-safe / 并发写 | 有 `atomicWriteFile` 与损坏拒写；**进程内写已串行**（P0-b）；实例每会话一个 | 持久化形态可复用；跨进程并发仍不覆盖（§5.3） | `workProjection.ts` 的写盘段与损坏 fail-safe；实例 `assembler.ts` |
 
 **判定标准（写进设计，供同类问题复用）**：
 
@@ -280,9 +281,9 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 
 **事实三条（实测）**：
 
-1. 写入是整文件重写（`workProjection.ts:129`）。
-2. 实例是每会话一个（`extension.ts:442-449` 按 sessionId 取 Agent；`assembler.ts:782` 每 Agent 新建 manager），全部指向同一文件。
-3. 工具层已有写串行闸（`diskWrite:'opaque'`，`loop.ts:2344-2375`），但**只在单个 AgentLoop 内生效**；宿主命令直调 `agent.works.registerWork`（`registerWork.ts:116`），**绕过闸门**。
+1. 写入是整文件重写（`workProjection.ts`）。
+2. 实例是每会话一个（`extension.ts` 按 sessionId 取 Agent；`assembler.ts` 每 Agent 新建 manager），全部指向同一文件。
+3. 工具层已有写串行闸（`diskWrite:'opaque'`，`loop.ts`），但**只在单个 AgentLoop 内生效**；宿主命令直调 `agent.works.registerWork`（`registerWork.ts`），**绕过闸门**。
 
 **后果（推断，依据代码结构；未跑实测复现）**：两个会话，或「某会话的模型工具 + 用户右键命令」并发时——A 读盘 → B 读盘 → A 写 → B 写 ⇒ A 的 `resident: true` 被 B 的旧快照覆盖。
 
@@ -291,8 +292,8 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 | 方案 | 覆盖实测面（同进程多会话 + 宿主命令） | 覆盖跨进程 | 代价 | 取舍 |
 | --- | --- | --- | --- | --- |
 | **进程内「按文件路径的 Promise 队列」+ 临界区 reread** | ✅ | ❌ | 零依赖，约十几行 | **采用** |
-| 单实例注入（每项目一个 manager 共享） | ✅ | ❌ | 要改 Agent 装配链（`assembler.ts:782` 每会话建）与公开面 | 不采用：改动面更大，收益相同 |
-| 真文件锁（`proper-lockfile` 等） | ✅ | ✅ | 新增三方依赖 + 锁残留/超时语义 | 不采用：内核口径为零三方依赖（`workProjection.ts:239-251` 注释），且锁失效的代价高于丢失一次勾选 |
+| 单实例注入（每项目一个 manager 共享） | ✅ | ❌ | 要改 Agent 装配链（`assembler.ts` 每会话建）与公开面 | 不采用：改动面更大，收益相同 |
+| 真文件锁（`proper-lockfile` 等） | ✅ | ✅ | 新增三方依赖 + 锁残留/超时语义 | 不采用：内核口径为零三方依赖（`workProjection.ts` 注释），且锁失效的代价高于丢失一次勾选 |
 | 只加「写前 reread」（无互斥） | ❌ | ❌ | 最小 | 不采用：读-改-写窗口无互斥，交错照旧 |
 
 **选定落地细节**：
@@ -300,8 +301,8 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 1. **锁键 = 绝对文件路径**；队列容器放**模块级 Map**（不是实例字段）——实例每会话一个，实例级队列等于没锁。
 2. 临界区顺序固定：**锁 → `refresh()` 重读盘 → 合并 → `atomicWriteFile`**。
 3. **所有写函数都必须走同一队列**：`registerWork` 与新增 `setResident`；**禁止**出现第三个写盘点（宿主、webview、设置页一律只调用这两个）。
-4. 失败语义沿用工具层口径：队列任务异常不毒化后续（同 `loop.ts:2360-2362` 的「链尾吞失败」）。
-5. 损坏 fail-safe 保持在临界区内先判（`:110-118`）：文件坏 ⇒ 拒写，不覆盖用户原索引。
+4. 失败语义沿用工具层口径：队列任务异常不毒化后续（同 `loop.ts` 的「链尾吞失败」）。
+5. 损坏 fail-safe 保持在临界区内先判（`refresh` 置 `fileWasMalformed` → `registerWork` 先判）：文件坏 ⇒ 拒写，不覆盖用户原索引。
 
 **跨进程：本期不做，但必须有可见兜底**：
 
@@ -311,24 +312,24 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
   - **声明没有、盘上无关**（清单里 `resident` 已为 `false` 或条目已删）⇒ **正常操作**，不报警。
   - ⚠️ 旧写法「与上一轮集合做差」有两个洞：① 差集方向不会误报「全部失效」（重启后上一轮为空、结果为空），但**检测盲区**是「重启期间与新会话内发生的丢失」查不到；② 差集无法区分「被覆盖丢失」与「另一窗口主动取消」，后者会**假报警**。改为对清单声明的集合判定即同时解掉这两点。
 - 因此这是「**可见的丢失**」，不是「已解决」：那一轮规则确实没生效，但用户能看到哪一条没了、能重新置常驻。**不得**把它写成「并发已解决」。
-- 验收用例（**未运行**，属待写测试）：N 个不同 `source` 并发 `registerWork` ⇒ 盘上 N 条；`setResident` 与 `registerWork` 并发 ⇒ 两者都存活。按当前代码结构，该用例**预期必红**（推断）。
+- 验收用例（**已落地，P0-b**）：N 个不同 `source` 并发 `registerWork` ⇒ 盘上 N 条；同 `source` 并发 ⇒ 单条且未知字段保留。`setResident` 与 `registerWork` 并发用例待 `setResident` 落地后补。
 
 ### 5.4 前置闸 B：新入口必须补齐 `name` 与 `source`
 
-**事实**：读取入口 `filter(e => e && e.source && e.name)`（`:153`）——缺字段 = **整条记录消失**，不是「未常驻」。
+**事实**：读取入口 `refresh` 的 `filter(e => e && e.source && e.name)`——缺字段 = **整条记录消失**，不是「未常驻」。
 
 **落地规则**：
 
-1. 条目创建**只允许**走 `registerWork`（它负责 `name` / `source` 规范化：`:97-104`）。
+1. 条目创建**只允许**走 `registerWork`（它负责 `name` / `source` 规范化）。
 2. `setResident(sourcePath, resident)` **只翻字段**；条目不存在时返回 `false`，**绝不创建**。
 3. 用户「置常驻」对**未登记**文件：先走登记（含 LLM 描述）→ 再 `setResident(true)`；两条写各自进同一队列（可合并为一次临界区，非必需）。**右键快捷入口按同一顺序执行**（§8.1），不得反过来先置位再补登记。
 
-**A 级缺口（必须修，否则新功能会被旧路径静默抹掉）**：
+**A 级缺口（**已修，P0-b 已落地**）**：
 
-- **事实**：`registerWork` 对已存在的 `source` 是**整条替换**，新对象只带原三字段 `name` / `description` / `source`（`workProjection.ts:121-126`）⇒ 既有条目的 `resident: true` 与任何未来新增字段**被静默丢弃**。
+- **事实（修复前）**：`registerWork` 对已存在的 `source` 是**整条替换**，新对象只带原三字段 `name` / `description` / `source` ⇒ 既有条目的 `resident: true` 与任何未来新增字段**被静默丢弃**。
 - **触发者包括本版本的模型工具 `register_work`**（不是只有手改才会发生）：模型对同一文件再登记一次，项目规则就没了，且**无任何提示**。
-- **处置（硬前置）**：`registerWork` 改为 **upsert 分支**——命中同 `source` 时**保留既有 `resident` 与未知字段**，只覆盖 `name` / `description`；不得整条替换为三字段新对象。
-- **测试**：已常驻条目 → 再 `registerWork`（同 `source`）⇒ 重新加载后 `resident === true` 仍在；手工塞入未知字段 `x-extra` ⇒ 重登记后仍保留。
+- **处置（已落地）**：`registerWork` 已改为**合并式 upsert**——命中同 `source` 时**保留既有 `resident` 与未知字段**，只覆盖 `name` / `description`。
+- **测试（已落地）**：见 `workProjection.test.ts` 的「`registerWork` upsert（保留未知字段）」两条——已常驻条目再登记后 `resident === true` 仍在；手工塞入未知字段 `x-extra` 重登记后仍保留。
 
 **显式用例（必须落成测试）**：
 
@@ -347,7 +348,7 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 | `"true"`（字符串） / `1` / 对象 / 数组 | `false` |
 | 严格 `true` | 常驻 |
 
-- **禁止**把 `resident` 加进 `:153` 的加载过滤条件——那会把「字段缺失」从 `false` 变成「记录消失」。
+- **禁止**把 `resident` 加进 `refresh` 的加载 filter——那会把「字段缺失」从 `false` 变成「记录消失」。
 - **禁止** `Boolean(entry.resident)`（`"false"` 会变 `true`）。
 - 用例：上表每种畸变输入 ⇒ 条目仍在清单 / 索引中、常驻段不出现。
 
@@ -357,19 +358,19 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 
 **自动总结仅发生在首次登记**：
 
-- ✅ **首次登记**（文件尚未进清单）必然触发既有 LLM 总结（`registerWork.ts:72-113`）——这是既有能力，不需要新机制。
+- ✅ **首次登记**（文件尚未进清单）必然触发既有 LLM 总结（`registerWork.ts`）——这是既有能力，不需要新机制。
 - ❌ **已登记条目转常驻不再触发**：文件内容未变，description 已存在，重复调用只会多花一次 LLM 调用、只改界面文案，对模型行为零收益。
-- 可选（不进必做）：若 description 曾由文件名兜底（LLM 失败，`:103-110`），可在首次置常驻时复用**同一条**生成通道重试一次。
+- 可选（不进必做）：若 description 曾由文件名兜底（LLM 失败时走 `registerWork.ts` 的文件名兜底段），可在首次置常驻时复用**同一条**生成通道重试一次。
 
 ### 5.7 兼容面（旧读取方与旧数据）
 
 | 面 | 结论 | 依据 |
 | --- | --- | --- |
-| 旧数据（无 `resident`） | `=== true` 不成立 ⇒ `false` ⇒ 索引输出**逐字不变** | 渲染只看 `name/description/source`（`:199-210`） |
-| 旧读取方 | `filter` 不看 `resident`；注入块的剔除只影响 `true` 条目 | `:153`、`:199-210` |
-| 公开成员面 | 新增 `setResident` 会与守卫基线冲突 ⇒ **必须同笔更新基线**，否则测试红 | `publicMemberSurfaceGuard.test.ts:1259-1269` |
+| 旧数据（无 `resident`） | `=== true` 不成立 ⇒ `false` ⇒ 索引输出**逐字不变** | 渲染只看 `name/description/source`（`contextBlock`） |
+| 旧读取方 | `filter` 不看 `resident`；注入块的剔除只影响 `true` 条目 | `refresh` 的 filter、`contextBlock` |
+| 公开成员面 | 新增 `setResident` 会与守卫基线冲突 ⇒ **必须同笔更新基线**，否则测试红 | `publicMemberSurfaceGuard.test.ts` |
 | 文档漂移 | `docs/architecture/work-projection.md` 现写「全部条目进索引」；实现时须同步（本稿不改该文件） | 该文件非本笔改动范围 |
-| 工具描述 | `register_work` 描述需补一句「是否常驻由用户开关控制」 | `builtinTools.ts:923-947` |
+| 工具描述 | `register_work` 描述需补一句「是否常驻由用户开关控制」 | `builtinTools.ts` |
 
 ### 5.8 唯一真源规则
 
@@ -397,18 +398,18 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 - **单条上限 6000 字符、合计上限 15000 字符**——这两个数是**可调政策线，不是实测结论**。
 - **重算口径一句话**：先把「常驻段允许占用的上下文比例」定死（建议 ≤ 上下文窗口的 20%），再用实测的「字符 → token」换算修正这两个数；每次修订都要带「时点 + 重算依据」，否则就是裸快照。
 - **判据只用字符数**（`String.length`），**不把 token 估算作为闸门**——两把尺子会得出两个「超限」结论。
-- **禁止**把 `registerWork.ts:20` 那套「截前 8000 字」的描述用裁切混进正文读取。
+- **禁止**把 `registerWork.ts` 那套「截前 8000 字」的描述用裁切混进正文读取。
 - **粒度不打架（订正）**：单条超限 ≠ 合计超限。单条超限只剔该条（§6.2 与「单条失效」同处置）；只有**合计**超限才整段停用。旧稿写「超限 ⇒ 整段不注入」与 §6.2「单条失效只剔该条」冲突，已拆开。
 
 ### 6.2 失效可见（禁止静默跳过）
 
 | 失效场景 | 检测点 | 处置 |
 | --- | --- | --- |
-| 文件被删除 / 改名 / 移动 | 装配前 stat（复用 `refProbe.ts:33-58` 的 stat 思路） | 该条**标失效**、**正文不注入**；界面红点；装配段首**一行汇总条数与路径** |
+| 文件被删除 / 改名 / 移动 | 装配前 stat（复用 `refProbe.ts` 的 stat 思路） | 该条**标失效**、**正文不注入**；界面红点；装配段首**一行汇总条数与路径** |
 | 文件无法读取（权限 / IO 错误） | 读盘异常 | 同上 |
 | 文件变成二进制 / 非 UTF-8（登记后才变） | 装配期读盘时做一次 **fatal UTF-8 解码复核**（§7.1-9） | 该条判失效、正文不注入；段首汇总 |
-| 被移出工作区 / 变成绝对路径 / `..` 逃逸 | 每次装配都过 `resolveUnderPrimaryRoot`（与写入侧 `relativeUnderPrimaryRoot` 同一文件、互逆，`refPath.ts:22-58`） | 判为失效；**拒绝读盘** |
-| 符号链接指向工作区外 | realpath 复核——`resolveRealpath` **模块私有未导出**，须先导出或封装成单函数判据（禁止复制第二份，`pathGuard.ts:22-43`） | 判为失效 / 拒绝；不得按字符串路径放行 |
+| 被移出工作区 / 变成绝对路径 / `..` 逃逸 | 每次装配都过 `resolveUnderPrimaryRoot`（与写入侧 `relativeUnderPrimaryRoot` 同一文件、互逆，`refPath.ts`） | 判为失效；**拒绝读盘** |
+| 符号链接指向工作区外 | realpath 复核——`resolveRealpath` 已导出（P0-a），复用同一实现（禁止复制第二份，`pathGuard.ts`） | 判为失效 / 拒绝；不得按字符串路径放行 |
 | 条目被外部覆盖 / 另一窗口主动取消 | **与「清单声明的常驻集合」比对**（不是与上一轮快照比对）：声明有、读不到 ⇒ 失效；声明没有、盘上无关 ⇒ 正常取消，不报警 | 失效者段首汇总 + 命令回执；正常取消**不报警**（§5.3 兜底） |
 | 工作区未信任 | **宿主传入的信任态（新入参）**——内核无 `isTrusted` 态，装配期不能现读（§1.5） | **整层不装配** + 显式提示，不是「跳过某条」 |
 
@@ -435,17 +436,17 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 | 9 | **二进制 / 超大文件** | **新入口已覆盖**（NUL / UTF-8 解码失败即拒）+ **装配期也做一次 fatal 复核**；**既有「登记作品投影」路径两条都没加**——小于 6000 字符的二进制仍会被当文本登记并注入乱码 | 有（新入口明确拒绝 + 装配期判失效）；既有登记路径**无专门信号** |
 | 10 | **非 UTF-8 编码** | **新入口 + 装配期已覆盖**（fatal 解码失败即拒 / 判失效）；既有登记路径仍一律按 UTF-8 读，GBK 文件会乱码 | 有（新入口与装配期明确拒绝）；既有路径**无信号** |
 | 11 | **只读文件系统** | 写清单失败（原子替换不可写） | 有：命令报错（写失败） |
-| 12 | **多根工作区下的相对路径歧义** | 只认**首个工作区根**（`relativeUnderPrimaryRoot` 语义）；其他根的文件不可用。现有登记命令用 `asRelativePath`，多根下会产生「chip 正常、模型读不到」的**撒谎指针**（`addToChat.ts:47` 有禁止性说明） | 有：非首根文件登记 / 置常驻时报错（统一改 `relativeUnderPrimaryRoot` 后）；旧路径的撒谎指针**无信号** |
+| 12 | **多根工作区下的相对路径歧义** | 只认**首个工作区根**（`relativeUnderPrimaryRoot` 语义）；其他根的文件不可用。现有登记命令用 `asRelativePath`，多根下会产生「chip 正常、模型读不到」的**撒谎指针**（`addToChat.ts` 有禁止性说明） | 有：非首根文件登记 / 置常驻时报错（统一改 `relativeUnderPrimaryRoot` 后）；旧路径的撒谎指针**无信号** |
 | 13 | **`.memora/` 被用户仓库忽略或未提交** | 他人 clone 后可能没有这份清单；本地与他人环境不一致 | **无信号**（界面只显示本机磁盘实际内容，不做来源或共享标注） |
 | 14 | **右键与清单两个入口同时存在** | 两处都能改同一个 `resident` 字段：右键是**快捷面**，清单 QuickPick 是**管理面**（§8.1）。不覆盖：另一面板/另一窗口不会即时看到改动；跨进程并发覆盖仍按 §7-4 处理 | 有（同字段同文件，下一轮读盘后一致；无「两个开关互不同步」歧义）；跨面板即时同步**无信号**（§7-6） |
 | 15 | **凭据内容夹带** | **只防凭据路径**（`BLOCKED_PATTERNS` 只匹配路径）；文件正文里写死的 token / 私钥**不防**——全库唯一密钥相关处理是日志脱敏，**内容侧零防线** | **无信号**（正文照常注入 prompt；不做内容扫描） |
 
 ### 7.1 硬拒绝项（不接受的东西）
 
-1. **只接受工作区相对路径、且为规范形**：**统一改用 `relativeUnderPrimaryRoot(root, abs)`**（`refPath.ts:22-58`，已导出），`undefined` **当场拒绝**；绝对路径 / UNC / 任何 `..` 段 / 非规范形一律拒。⚠️ 现有登记命令用的 `asRelativePath`（`registerWork.ts:49`）与写入守卫 `resolveSafePath`（`workProjection.ts:95`）**三者不同源**，不得当作已对齐。
+1. **只接受工作区相对路径、且为规范形**：**统一改用 `relativeUnderPrimaryRoot(root, abs)`**（`refPath.ts`，已导出），`undefined` **当场拒绝**；绝对路径 / UNC / 任何 `..` 段 / 非规范形一律拒。⚠️ 现有登记命令用的 `asRelativePath`（`registerWork.ts`）与写入守卫 `resolveSafePath`（`workProjection.ts`）**三者不同源**，不得当作已对齐。
 2. **受工作区信任门约束**：信任态由**宿主作为新入参**传入内核（未信任 ⇒ 整层 fail-closed）。内核侧无 `isTrusted` 态，装配期现读在物理上做不到；这是**内核公开面变更（minor）**，不是文档能自行实现的。
-3. **符号链接逃逸**：`relativeUnderPrimaryRoot` 不 realpath ⇒ 读盘前必须 realpath 复核仍在首根内。**`resolveRealpath`（`pathGuard.ts:22-43`）是模块私有、未导出** ⇒ 先导出（或封装成单函数判据），**禁止复制第二份**。这是安全闸，不因「子模块/链接语义」未覆盖而放宽。
-4. **凭据类路径拒绝（须先导出 `BLOCKED_PATTERNS`）**：`pathGuard.ts:45-75` 的 `BLOCKED_PATTERNS` 是**模块私有、未导出**，「复用」在物理上不成立 ⇒ 先导出（或封装成单函数判据），禁止复制第二份。即使在工作区内，也不该把 `.env` / `.npmrc` / `.git-credentials` 每轮读进 prompt；常驻比索引更危险（**永久**注入）。⚠️ **它只匹配路径**——证据不足时**不敢写「已防凭据内容」**：本期只防凭据路径，正文内容夹带不防（§7-15）。
+3. **符号链接逃逸**：`relativeUnderPrimaryRoot` 不 realpath ⇒ 读盘前必须 realpath 复核仍在首根内。`resolveRealpath` 已导出（P0-a），复用同一实现，**禁止复制第二份**。这是安全闸，不因「子模块/链接语义」未覆盖而放宽。
+4. **凭据类路径拒绝（复用已导出判据）**：`pathGuard.ts` 的黑名单常量是模块私有，但**判据已导出**（`matchBlockedPathPattern` / `isBlockedPath`，P0-a 落地）⇒ 复用同一实现，禁止复制第二份。即使在工作区内，也不该把 `.env` / `.npmrc` / `.git-credentials` 每轮读进 prompt；常驻比索引更危险（**永久**注入）。⚠️ **它只匹配路径**——证据不足时**不敢写「已防凭据内容」**：本期只防凭据路径，正文内容夹带不防（§7-15）。
 5. **不做规则引擎**：无通配符、无 glob、无目录扫描、无条件判断、无自动发现；一个条目只对应一个具体文件。
 6. **不自动迁移**：不做 `.memora/rules.md` 迁移，不把临时锁自动转常驻。
 7. **禁止绕过写队列**：宿主、webview、设置页一律不得直接读写 `work-projections.json`；手改文件属外部写入，只由损坏 fail-safe 与「**与清单声明集比对**的失效检测」兜底。
@@ -453,7 +454,7 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 9. **非文本文件拒绝（作用域仅限新入口「提升为项目规则」）**：
    - **判据（最小化，二选一命中即拒）**：读取内容**含 NUL 字节**（`buf.includes(0x00)`）；或**按 UTF-8 解码失败**（`new TextDecoder('utf-8', { fatal: true })` 抛错）⇒ 提示「该文件不是文本文件，不能作为项目规则」。
    - **原子性**：**不登记、不置位、不留半成品**；不做扩展名 / 魔数嗅探（§7-9 已改口径）。
-   - **执行点（两侧都要）**：① 新入口的宿主命令读取段（与 `registerWork.ts:63-70` 同层），在调 `registerWork` / `setResident` **之前**；② **装配期读正文时再做一次 fatal 解码复核**（登记后文件可能变成二进制 / GBK，装配期不复核就会每轮注入乱码，§6.2）。**判据不放内核登记路径**——放内核会同时作用到既有登记路径，违背本节的作用域限定。
+   - **执行点（两侧都要）**：① 新入口的宿主命令读取段（与 `registerWork.ts` 同层），在调 `registerWork` / `setResident` **之前**；② **装配期读正文时再做一次 fatal 解码复核**（登记后文件可能变成二进制 / GBK，装配期不复核就会每轮注入乱码，§6.2）。**判据不放内核登记路径**——放内核会同时作用到既有登记路径，违背本节的作用域限定。
    - ⚠️ 既有「登记作品投影」路径**本轮不动**、两处都未加同一判据（该洞仍在，另计 §10-3）。
 10. **`registerWork` 必须 upsert，不得抹掉 `resident`**：同 `source` 重登记时**保留既有 `resident` 与未知字段**，只覆盖 `name` / `description`（§5.4 A 级缺口）。触发者是模型工具 `register_work`，不是假设场景。
 
@@ -470,11 +471,11 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 
 **命令面（定稿，订正改动面）**：写路径仍是**同一套**（`registerWork` + `setResident`），但命令层是**新增行为，不是「沿用现有」**：
 
-- **现状**：`memora.registerWork`（`registerWork.ts:35-125`）在**无 uri** 时直接 `showWarningMessage` 退出（`:40-44`）——**没有任何清单视图**；右键菜单只有「登记」一条、无状态（`package.json:341-363`）。
+- **现状**：`memora.registerWork`（`registerWork.ts`）在**无 uri** 时直接 `showWarningMessage` 退出（`execute` 无 uri 分支）——**没有任何清单视图**；右键菜单只有「登记」一条、无状态（`package.json`）。
 - **本期新增**：① 无 uri ⇒ 打开临时 QuickPick 清单；② 右键两条互斥菜单项（提升 / 取消）；③ `setContext` 状态键；④ `commandPalette` 里按状态隐藏不合状态的项。
 - **命令面板旧标题处置（必须定稿）**：`memora.registerWork` 的 title 从「登记作品投影」改为「**管理项目规则（登记 / 开关）**」，**命令 ID 不变**（保留既有键绑定与调用入口）；原「无 uri ⇒ 警告退出」分支**删除**，改为打开 QuickPick。
 - **右键菜单用独立 command ID**：`memora.promoteProjectRule`（title「提升为项目规则」）/ `memora.demoteProjectRule`（title「取消项目规则」），`when` 互斥，同一位置只出现一条。**不得用同一个 ID 期待标题随状态变化**——VS Code 菜单项标题不支持动态改。
-- `explorer/context` 与 `editor/context` **两处都要**按同一 `when` 规则加（现有登记命令就在这两处，`package.json:341-363`）。
+- `explorer/context` 与 `editor/context` **两处都要**按同一 `when` 规则加（现有登记命令就在这两处，`package.json`）。
 
 | 调用方式 | 结果 |
 | --- | --- |
@@ -497,9 +498,9 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
     └─ 不存在 → registerWork(...) → setResident(true)    （先登记，再翻）
   ```
 
-  不新增平行的登记 / 写盘逻辑；写盘仍只有 `workProjection.ts:129` 一处（§5.3、§5.8）。
+  不新增平行的登记 / 写盘逻辑；写盘仍只有 `workProjection.ts` 一处（§5.3、§5.8）。
 
-- **必须先查重（顺序不可反）**：`registerWork` 按 `source` **覆盖**既有条目，连 `description` 一起覆盖（`workProjection.ts:121-126`）。
+- **必须先查重（顺序不可反）**：`registerWork` 按 `source` 做**合并式 upsert**——`description` 被覆盖、未知字段（含 `resident`）保留（`workProjection.ts`，P0-b 已落地）。
   🔴 **反例（必须防）**：对已登记文件点右键却走「重新登记」⇒ 覆盖用户已手改的简介 + 白跑一次 LLM 总结（多花钱、更慢、简介还可能被改坏）。已存在时**只翻 `resident`**，不重跑登记、不重跑自动总结（§5.6）。
 - **全有或全无（动手前拦截）**：超上限（单条 6000 / 合计 15000 字符）、命中 `BLOCKED_PATTERNS`、路径在工作区外、**非文本文件**（§7.1-9）⇒ 一律在**写盘前**拒绝。不允许出现「提示失败但清单里多了一条半成品」的中间态。
 - **菜单按状态变文案，同一位置只出现一条**（不并列三个选项）：
@@ -510,10 +511,10 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
   | 已登记、非常驻 | **提升为项目规则** | 仅翻 `resident = true`（不重登记） |
   | 已常驻 | **取消项目规则** | `resident = false`（条目保留在清单） |
 
-  **实现取向（有实测先例）**：VS Code 菜单项标题不能动态改 ⇒ 用 `setContext` 暴露「当前文件登记/常驻状态」上下文键，注册**两个独立 command ID** 的菜单项，`when` **互斥**。先例：宿主 `fileChangeView.ts:94,381-387`（`setContext` + `when` 控 `editor/title` 显隐）；`explorer/context` 用同一机制。命令 ID / 标题的完整处置见 §8。
+  **实现取向（有实测先例）**：VS Code 菜单项标题不能动态改 ⇒ 用 `setContext` 暴露「当前文件登记/常驻状态」上下文键，注册**两个独立 command ID** 的菜单项，`when` **互斥**。先例：宿主 `fileChangeView.ts`（`setContext` + `when` 控 `editor/title` 显隐）；`explorer/context` 用同一机制。命令 ID / 标题的完整处置见 §8。
 
 - **文案口径**：菜单与回执一律「提升为项目规则 / 取消项目规则」，清单行状态标记同步写「**项目规则**」；**不使用「设为常驻」「加锁」这类内部词**。设计层与代码仍用「常驻 / `resident`」表达持久语义——这是**概念名与界面文案的分工，不是两套能力**。
-- **失败路径**：简介生成失败（LLM 失败 / 超时）时仍要**成功开启常驻**（简介只服务界面、不参与注入），但必须明确告知「简介已用文件名兜底」（`registerWork.ts:103-110`），**不得静默降级**。
+- **失败路径**：简介生成失败（LLM 失败 / 超时）时仍要**成功开启常驻**（简介只服务界面、不参与注入），但必须明确告知「简介已用文件名兜底」（`registerWork.ts`），**不得静默降级**。
 - **与清单开关的关系**：QuickPick 里的逐条开关是**管理面**，右键是**快捷面**；两者写同一个 `resident` 字段、同一份清单、同一写入队列。**不是两条并行能力，也不存在第二个真相源**。
 
 ---
@@ -527,11 +528,11 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 | 「哪些文件常驻」唯一真源 | **`work-projections.json` 里的 `resident` 字段**（一份文件） | 同一路径不得同时出现在 webview 本地数组 / 会话 meta / 设置页副本 |
 | 会不会双真源（索引 vs 常驻段） | 不会：同源同文件，只是**两个渲染规则不同的消费面**（§4.4） | 注入块剔除 `=== true`；常驻段只取 `=== true` |
 | 正文与磁盘的关系 | **每轮装配重读**（truth = disk） | 外部改文件后下一轮即生效；不得把正文缓存在 webview |
-| 清单缓存 | manager 内存缓存只作读缓存，**写只写磁盘** | 写路径单一；缓存失效可重建（`agent.ts:1635-1636` 读缓存，异步段刷新） |
+| 清单缓存 | manager 内存缓存只作读缓存，**写只写磁盘** | 写路径单一；缓存失效可重建（`agent.ts` 读缓存，异步段刷新） |
 | 写路径 | **唯一队列 + 唯一写函数**（§5.3、§5.8） | 任何第三写盘点即未收口 |
 | 顺序 | **清单数组顺序**（不另存顺序字段） | 删除即顺延，不存在需要维护的编号 |
 | 两个入口（右键 / 清单开关）会不会双真源 | **不会**：右键 = `查重 → registerWork → setResident` 的组合调用，写同一字段、同一文件、同一队列（§8.1） | 不出现第二个写入面；「快捷面 / 管理面」只是两个触发方式 |
-| 术语撞车（`resident`） | 本稿 `resident` = **项目规则常驻**；代码里另有 `capabilityState.kind === 'residentOnly'`（**常驻工具**，宿主 `capabilityState.ts:39`、`roleBadgeView.ts:134`），**两者无关** | 见 §3.1 术语锚点；命名 / 注释不得混用「常驻」指工具 |
+| 术语撞车（`resident`） | 本稿 `resident` = **项目规则常驻**；代码里另有 `capabilityState.kind === 'residentOnly'`（**常驻工具**，宿主 `capabilityState.ts`、`roleBadgeView.ts`），**两者无关** | 见 §3.1 术语锚点；命名 / 注释不得混用「常驻」指工具 |
 
 ### 9.2 自然生长
 
@@ -539,34 +540,34 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 
 | 复用点 | 复用对象 | 位置 |
 | --- | --- | --- |
-| 清单文件与写函数 | `work-projections.json` + `registerWork` | `src/agent/managers/workProjection.ts:90-139` |
-| 持久化形态 | `atomicWriteFile` + 损坏 fail-safe + 路径校验 | `workProjection.ts:106-177` |
-| 用户登记入口与 LLM 描述 | 右键命令 | `hosts/memora-vscode/src/extension/commands/registerWork.ts:35-125` |
-| 路径根归属 / 越界守卫 | **写入侧改 `relativeUnderPrimaryRoot`**（`undefined` 即拒）；`resolveSafePath` 作二道 | `refPath.ts:22-58`、`workProjection.ts:92-95` |
-| 信任门判据（**仅宿主侧**） | `vscode.workspace.isTrusted`（宿主读，**内核侧无此态**，须新入参；见真新增 ⑪） | `projectScope.ts:34-60` |
-| 项目数据目录 | `resolveProjectDataDir`（`.memora` 唯一计算点） | `projectDataDir.ts:59-61` |
-| system prompt 固定段 | `buildSystemPromptPrefix` 加一个可选段 | `src/agent/assembler.ts:149-184` |
-| 每轮前缀重建 | `refreshAssemblyForRolePack`（`prepare.ts:51-54`）在 `await assembleContext`（`:94`）之前 | `src/agent/seed/prepare.ts:51-54,94,146-151` |
-| 工具层写串行闸 | `diskWrite:'opaque'` 屏障（同 loop 内仍是第一道） | `src/agent/loop.ts:2344-2375` |
+| 清单文件与写函数 | `work-projections.json` + `registerWork` | `src/agent/managers/workProjection.ts` |
+| 持久化形态 | `atomicWriteFile` + 损坏 fail-safe + 路径校验 | `workProjection.ts` |
+| 用户登记入口与 LLM 描述 | 右键命令 | `hosts/memora-vscode/src/extension/commands/registerWork.ts` |
+| 路径根归属 / 越界守卫 | **写入侧改 `relativeUnderPrimaryRoot`**（`undefined` 即拒）；`resolveSafePath` 作二道 | `refPath.ts`、`workProjection.ts` |
+| 信任门判据（**仅宿主侧**） | `vscode.workspace.isTrusted`（宿主读，**内核侧无此态**，须新入参；见真新增 ⑪） | `projectScope.ts` |
+| 项目数据目录 | `resolveProjectDataDir`（`.memora` 唯一计算点） | `projectDataDir.ts` |
+| system prompt 固定段 | `buildSystemPromptPrefix` 加一个可选段 | `src/agent/assembler.ts` |
+| 每轮前缀重建 | `refreshAssemblyForRolePack`（`prepare.ts`）在 `await assembleContext` 之前调用 | `src/agent/seed/prepare.ts` |
+| 工具层写串行闸 | `diskWrite:'opaque'` 屏障（同 loop 内仍是第一道） | `src/agent/loop.ts` |
 | 字符统计 | `String.length`（无需新工具） | 语言内建 |
-| 错误上屏 | `notice` 消息类型 | `hosts/memora-vscode/src/webview/panels/chatPanel.ts:2053` |
-| 失效核实 | stat 思路 | `hosts/memora-vscode/src/extension/host/refProbe.ts:33-58` |
-| 真实路径解析 | `resolveRealpath` **语义可借鉴但未导出** ⇒ 先导出/封装再复用（§7.1-3） | `src/security/pathGuard.ts:22-43` |
+| 错误上屏 | `notice` 消息类型 | `hosts/memora-vscode/src/webview/panels/chatPanel.ts` |
+| 失效核实 | stat 思路 | `hosts/memora-vscode/src/extension/host/refProbe.ts` |
+| 真实路径解析 | `resolveRealpath` 已导出（P0-a），直接复用（§7.1-3） | `src/security/pathGuard.ts` |
 
 **真新增（无法复用，逐条说明）：**
 
 | 新增点 | 为什么不能复用 |
 | --- | --- |
-| ① `resident` 字段 | 既有三字段无任何类型或开关语义（`workProjection.ts:28-35`） |
+| ① `resident` 字段 | 既有三字段无任何类型或开关语义（`workProjection.ts`） |
 | ② `setResident`（只翻字段、不创建） | 现有只有 upsert（`registerWork`），没有「改一个字段而不重写其余」的入口 |
-| ③ 模块级「按文件路径写队列」 | 库内只有 loop 内的屏障（单实例作用域，`loop.ts:2356-2362`），不覆盖跨会话与宿主命令 |
+| ③ 模块级「按文件路径写队列」 | 库内只有 loop 内的屏障（单实例作用域，`loop.ts`），不覆盖跨会话与宿主命令 |
 | ④ 常驻**正文**注入段 | 库里没有「正文进 system prompt 固定段」的通道（投影只注清单，信封只注指针） |
-| ⑤ 装配前异步「刷新常驻上下文」 | 现同步刷新只读缓存（`agent.ts:1635-1636`），不重读盘 |
-| ⑥ 注入块剔除常驻项 | 现一律渲染（`workProjection.ts:199-210`） |
+| ⑤ 装配前异步「刷新常驻上下文」 | 现同步刷新只读缓存（`agent.ts`），不重读盘 |
+| ⑥ 注入块剔除常驻项 | 现一律渲染（`workProjection.ts`） |
 | ⑦ 字符上限 + 超限报错 | 现有注入源是「有界截断并明示」或「100 字截断」，都不是「拒绝 + 报错」 |
 | ⑧ 失效可见（stat + **与清单声明集比对** + 段首汇总 + 红点） | 投影读取无失效概念，`filter` 只按字段存在与否 |
 | ⑨ 右键状态菜单（提升 / 取消项目规则） | 现只有无状态的「登记」一条命令；菜单须**按 `resident` 现状变文案**，且内部是组合调用而非第二套登记逻辑（§8.1） |
-| ⑩ 清单切换入口（QuickPick 逐条切换） | 现只有「登记」，无常驻开关与清单视图（`registerWork.ts:35-125`） |
+| ⑩ 清单切换入口（QuickPick 逐条切换） | 现只有「登记」，无常驻开关与清单视图（`registerWork.ts`） |
 | ⑪ 信任态入参（内核公开面，minor） | 内核装配只拿 `dataDir`，无 `isTrusted` 态；装配期现读做不到（§1.5） |
 | ⑫ `registerWork` upsert 保留 `resident` / 未知字段 | 现为整条替换、只带三字段 ⇒ 重登记会抹掉常驻（§5.4 A 级缺口） |
 | ⑬ 装配期非文本复核（fatal UTF-8） | 现无文本校验；登记后文件变成二进制仍会每轮注入（§7.1-9） |
@@ -576,22 +577,22 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 
 | # | 面 | 是否带伤 | 判据 / 处置 |
 | --- | --- | --- | --- |
-| ① | 临时锁 | **不带伤**（零读写） | `chatView.test.ts:10348-10350,10352-10465` 全绿 |
-| ② | 技能 `pinned` | **不带伤**（不动） | `skillPickerView.test.ts:324` 全绿 |
+| ① | 临时锁 | **不带伤**（零读写） | `chatView.test.ts` 全绿 |
+| ② | 技能 `pinned` | **不带伤**（不动） | `skillPickerView.test.ts` 全绿 |
 | ③ | 非 `resident` 投影 | **不带伤**（索引逐字不变） | `workProjection.test.ts` 全绿；旧数据无字段 ⇒ `false` |
 | ④ | `resident` 投影 | 带伤风险：并发覆盖 ⇒ 丢规则 | **前置闸 A** + 与清单声明集比对（可见的丢失，非已解决） |
 | ⑤ | 新入口建条目 | 带伤风险：缺 `name`/`source` ⇒ 记录消失 | **前置闸 B** + 三条用例（§5.4） |
 | ⑥ | 判定字段 | 带伤风险：`Boolean()` 或宽松比较 ⇒ 误常驻 | **前置闸 C**：只许 `=== true`（§5.5） |
 | ⑦ | 重复注入 | 带伤风险：索引 + 常驻段双份真相 | **前置闸 D**：注入块剔除（§4.4） |
 | ⑧ | system prompt 前缀 | 可能带伤：新增一段改变全串 | `assembler.test.ts` 相关全串断言需同步 |
-| ⑨ | 公开成员面 | 会带伤：新增 `setResident` 与守卫基线冲突；**`WorkProjectionEntry` 接口基线也会红** | `publicMemberSurfaceGuard.test.ts:1259-1269`（成员）**+ 同文件 `:710` 附近（`WorkProjectionEntry` members）** 同笔更新 |
+| ⑨ | 公开成员面 | 会带伤：新增 `setResident` 与守卫基线冲突；**`WorkProjectionEntry` 接口基线也会红** | `publicMemberSurfaceGuard.test.ts`（成员）**+ 同文件 `WorkProjectionEntry` members 段** 同笔更新 |
 | ⑩ | 失效文件 | 静默读空 = 静默失败 | 失效态可见 + 不注入正文 + 段首汇总（§6.2） |
 | ⑪ | 未信任工作区 | 未信任仍读盘 = 越过信任门 | 宿主传信任态新入参 + 整层不装配 + 显式提示 |
-| ⑫ | 符号链接 / 凭据 | 字符串守卫可逃逸；凭据**路径**被永久注入 | 先导出 `resolveRealpath` + `BLOCKED_PATTERNS`（§7.1-3、§7.1-4）；**内容夹带不防**（§7-15） |
+| ⑫ | 符号链接 / 凭据 | 字符串守卫可逃逸；凭据**路径**被永久注入 | 复用已导出的 `resolveRealpath` + 判据函数（P0-a，§7.1-3、§7.1-4）；**内容夹带不防**（§7-15） |
 | ⑬ | 用户心智 | 两种锁分不清 ⇒ 误以为规则永久生效 | 「项目规则」标记 + 命令回执如实说明（§8） |
 | ⑭ | 右键快捷入口 | 带伤风险：对已登记文件重跑登记 ⇒ 覆盖用户简介 + 白跑 LLM | **先按 `source` 查重**，已存在只翻字段（§8.1） |
 | ⑮ | 新入口非文本文件 | 带伤风险：乱码正文每轮**永久**注入 | 新入口 NUL / UTF-8 解码失败即拒（§7.1-9）；既有登记路径未覆盖（§10-3） |
-| ⑯ | `registerWork` 重登记 | **A 级**：整条替换抹掉 `resident` 与未知字段，模型工具即可触发 | **upsert 保留既有字段** + 测试（§5.4） |
+| ⑯ | `registerWork` 重登记 | 原为 **A 级**：整条替换抹掉 `resident` 与未知字段，模型工具即可触发 | **已落地（P0-b）**：合并式 upsert 保留既有字段 + 测试（§5.4） |
 | ⑰ | 装配期乱码 | 登记后文件变二进制/GBK，每轮注入乱码 | 装配期 fatal 解码复核 → 判失效（§7.1-9） |
 | ⑱ | 术语 `resident` | 与「常驻工具」（`residentOnly`）撞车 ⇒ 代码注释/命名误读 | 术语锚点声明两者无关（§3.1） |
 
@@ -605,7 +606,7 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 
 1. **上限政策线的实测校准**：6000 / 15000 是政策线，字符 ≠ token；需按「常驻段允许占用的上下文比例」实测后带「时点 + 重算依据」修订一次。
 2. **多根工作区若将来要支持**：首根之外的文件如何归属（按打开文件夹顺序？按清单写入方所在根？）未定；本期直接拒绝（§7-12）。⚠️ 现有登记命令的 `asRelativePath` 撒谎指针不因本期只拒新增而消失（旧条目仍可能已存在）。
-3. **既有「登记作品投影」路径是否补同一判据**：现状 = **读盘侧与装配侧都未加**（该路径直接读文件前 8000 字符并送 LLM 总结，`registerWork.ts:20,63-70`）；不做则二进制 / GBK 文件被当文本登记、每轮注入乱码（仅剩 6000 字符上限与用户自查兜底）；要做的代价 = 改动既有命令行为（可能拒绝用户此前能登记的文件类型），须同步测试与回执文案。**本轮只在新入口与装配期加判据，不替用户决定既有登记路径的取舍。**
+3. **既有「登记作品投影」路径是否补同一判据**：现状 = **读盘侧与装配侧都未加**（该路径直接读文件前 8000 字符并送 LLM 总结，`registerWork.ts`）；不做则二进制 / GBK 文件被当文本登记、每轮注入乱码（仅剩 6000 字符上限与用户自查兜底）；要做的代价 = 改动既有命令行为（可能拒绝用户此前能登记的文件类型），须同步测试与回执文案。**本轮只在新入口与装配期加判据，不替用户决定既有登记路径的取舍。**
 
 ---
 
@@ -653,5 +654,5 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 - 全库 grep `pinned` / `rules.md` / `isTrusted` / `resolveRealpath` / `SessionMeta` / `workProjections` / `WorkProjectionEntry` / `registerWork` / `register_work`。
 - 逐文件阅读：`workProjection.ts`、`assembler.ts`、`agent.ts`、`loop.ts`、`builtinTools.ts`、`seed/prepare.ts`、`seed/types.ts`、`chatView.ts`、`docContext.ts`、`refProbe.ts`、`refPath.ts`、`pathGuard.ts`、`contextManager.ts`、`rolePackManager.ts`、`strategyResolver.ts`、`registerWork.ts`、`extension.ts`、`chatPanel.ts`、`skillPickerView.ts`、`publicMemberSurfaceGuard.test.ts` 相关段。
 - **未查实 / 推断**：6000 / 15000 的实际 token 占用（字符 ≠ token，需实测）；模型对「段首优先级声明」的实际服从度；常驻层落地后对首轮延迟的影响；跨进程并发写入的实际发生率；二进制 / 非 UTF-8 内容的真实占比。
-- **本轮订正（2026-11-08，独立只读审查回填）**：订正 14 处假承诺 / 自相矛盾 / 漏记事实——信任门不可内核现读（改新入参）、凭据只防路径不防内容、路径侧三函数不同源（统一 `relativeUnderPrimaryRoot`）、安全判据未导出（先导出禁复制）、上限单条/合计拆开、异步刷新落点 `prepare.ts:51-54`、命令面低估改动、右键不是清单面、公开面基线补 `:710`、`registerWork` 抹 `resident` 的 A 级缺口、装配期非文本复核、失效改与声明集比对、`resident` 与 `residentOnly` 术语撞车、台账双真源。
+- **本轮订正（2026-11-08，独立只读审查回填）**：订正 14 处假承诺 / 自相矛盾 / 漏记事实——信任门不可内核现读（改新入参）、凭据只防路径不防内容、路径侧三函数不同源（统一 `relativeUnderPrimaryRoot`）、安全判据未导出（先导出禁复制）、上限单条/合计拆开、异步刷新落点 `prepare.ts`、命令面低估改动、右键不是清单面、公开面基线补 `WorkProjectionEntry` members、`registerWork` 抹 `resident` 的 A 级缺口、装配期非文本复核、失效改与声明集比对、`resident` 与 `residentOnly` 术语撞车、台账双真源。
 - 本稿不产生实现代码。
