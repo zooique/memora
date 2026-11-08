@@ -1017,7 +1017,7 @@ interface WorkProjectionEntry {
 
 | 方法 | 用途 |
 |------|------|
-| `agent.works.registerWork(sourcePath, description)` | 登记作品索引（`register_work` 工具数据源）：同 `source` 覆盖、否则追加；写入为「读盘 refresh → 追加 → 原子写盘」。预存文件格式异常（非顶层 JSON 数组）时**拒绝写入**防覆盖原索引（fail-safe） |
+| `agent.works.registerWork(sourcePath, description)` | 登记作品索引（`register_work` 工具数据源）：同 `source` **合并式 upsert**（只覆盖 `name` / `description`，保留 `resident` 与未知字段）、否则追加；写入为「锁 → 读盘 refresh → 合并 → 原子写盘」。预存文件格式异常（非顶层 JSON 数组）时**拒绝写入**防覆盖原索引（fail-safe） |
 | `agent.works.refresh()` | 从磁盘重新同步条目缓存，返回当前条目 |
 | `agent.works.listWorks()` | 列出全部投影条目（读盘同步后返回） |
 | `agent.works.contextBlock()` | 生成系统提示词注入块（`【项目索引】` 段；无条目返回空串） |
@@ -1025,13 +1025,17 @@ interface WorkProjectionEntry {
 | `agent.works.listManagedWorks()` | 列出「被管理的」投影条目（宿主清单 UI 的数据源；`resident` 为内核归一后的布尔） |
 | `agent.works.setResident(sourcePath, resident)` | 切换项目规则标记（只翻字段、**绝不新建**；置 `true` 时先读正文判两道上限，置 `false` 不读）。返回 `{ reason, message }`：成功两态 `enabled` / `disabled`；失败四态 `not-found`（清单无登记 **或** 源文件不存在）/ `untrusted`（工作区未信任）/ `too-long`（单条或合计超限）/ `source-unreadable`（工作区外、凭据黑名单、非文本、读取失败，以及清单写入失败——`message` 标明是否可重试）。纪律：**机器码粗、文案细**，精确原因只在 `message` |
 
-> **注意**：`agent.works` 在 `init()` 前返回 `null`。内核侧**零 LLM 依赖**（纯读写、无后台任务）；`description` 可由宿主生成后传入（vscode 命令即先经 LLM 生成一句话描述、失败时用文件名兜底）。并发：当前为单 Agent 单进程场景，`registerWork` 无文件锁。
+
+
+> **注意**：`agent.works` 在 `init()` 前返回 `null`。内核侧**零 LLM 依赖**（纯读写、无后台任务）；`description` 可由宿主生成后传入（vscode 命令即先经 LLM 生成一句话描述、失败时用文件名兜底）。并发：**进程内**写入已按绝对文件路径串行化（模块级 `withFileWriteQueue`，跨 manager 实例共用），跨进程（两个窗口同开同一文件夹）仍**无锁**，靠「与清单声明集比对」的失效检测把丢失变成可见。
 
 ### 宿主接入示例
 
 ```typescript
 // vscode 宿主命令（memora.registerWork）：把工作区文件登记为作品索引
-const relativePath = vscode.workspace.asRelativePath(targetUri);
+const rel = toWorkspaceRelativePath(targetUri); // 宿主单点判据（workspaceRelativePath.ts，首根语义）
+if (!rel.ok) return;                           // 非首根 / 越界 / 跨盘 / 非规范形：当场拒绝，不静默截断
+const relativePath = rel.relPath;              // ⚠️ 禁用 vscode.workspace.asRelativePath（多根下会撒谎）
 // 宿主可选：先自行生成一句话描述（LLM 或用户输入）——内核只负责落盘
 const result = await agent.works?.registerWork(relativePath, description);
 // result: WorkProjectionEntry | null（null = 路径越界或索引文件格式异常被拒写）
@@ -1108,7 +1112,8 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.skills` | `SkillManager` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
 | ~~记忆治理门面~~ | ~~`MemoryGovernance`~~ | **已移除（2026-10-18 · 5.0.0）**：整链退役，无成员可调；健康度需求改走 `agent.memory.stats().bySource`（见 §四 注记） |
 | `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.searchByKeyword()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()`（**`.search()` 已于 4.0.0 移除**）；写：`.writeUpsert()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` |
-| `agent.works` | `WorkProjectionManager` | `.registerWork(sourcePath, description)` / `.refresh()` / `.listWorks()` / `.contextBlock()` / `.loadAndGetContextBlock()` |
+| `agent.works` | `WorkProjectionManager` | `.registerWork(sourcePath, description)` / `.refresh()` / `.listWorks()` / `.listManagedWorks()` / `.setResident(sourcePath, resident)` / `.unregisterWork(sourcePath)` / `.contextBlock()` / `.loadAndGetContextBlock()` |
+| `agent.residentSegmentReport` | `ResidentSegmentReport \| null` | 本轮项目规则求值**只读快照**（非 `null` 即已求值）：`{ segment, failures, dropped, listReadable }`。`failures` = **完整失效集**（含不进模型段首的 `resident-not-boolean` 误配），`dropped` = 按清单顺序因合计超限被丢弃的条目；`listReadable === false` = 清单没读到（`failures` 为空但**不等于**零失效）。判据唯一实现仍是 `ResidentRulesManager.refresh()`，宿主只消费不重算（作品投影树即按此渲染行徽标） |
 | `agent.polish` | `TextPolishManager` | `.polish(...)`（文本润色：LLM 语法修正 + 表达优化） |
 
 > **说明**：记忆查询与写入**只有** `agent.memory`（`MemoryInspector`）一个入口。历史访问器 memoryMutator 与 MemoryMutator 类（4.0.0 前）已合并回 `MemoryInspector`；治理门面已于 5.0.0 整链退役（§四 注记）——三个旧名都不在源码中，读旧文档时勿按其名查找。

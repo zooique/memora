@@ -9,6 +9,7 @@
 - reloadSkills：重载技能与角色包（空闲重载 / 忙碌提交待执行，语义见实现注释）
 - memory：记忆治理三命令（统计 / 清理过期 / 孤儿回收）
 - registerWork：登记作品投影（右键文件，LLM 生成一句话描述）
+- residentRules：项目规则三入口（切换 / 管理清单 / 树行内联切换与移除；写路径单点 `toggleByRelativePath`）
 - addToChat：添加到对话（右键文件/目录，仅挂路径与形态，不注入内容）
 - userDataReset：「恢复初始状态」处理器（命令与设置面板按钮共用同一 handler）
 
