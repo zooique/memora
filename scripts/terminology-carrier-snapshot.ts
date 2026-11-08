@@ -91,7 +91,7 @@ type Layer = 'code' | 'text';
 /**
  * code 层路径前缀（正斜杠相对路径）：`src` / `hosts` / `scripts` 是**现行代码契约**——
  * 正名后的旧词不允许回到这里，故对其单独锁集合（回归即报警，见「关键设计 4」）。
- * 其余一切（docs / .trae / tasks / CHANGELOG / role-packs / prompts / 根配置 / .github）归 text 层。
+ * 其余一切（docs / .trae / tasks / CHANGELOG / role-packs / 根配置 / .github）归 text 层。
  */
 const CODE_PREFIXES: readonly string[] = ['src/', 'hosts/', 'scripts/'];
 

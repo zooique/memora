@@ -125,8 +125,7 @@ function classify(by) {
   if (by === 'docs/导航索引.md') return 'index';
   if (by === 'tasks/待完成任务.md' || by.startsWith('tasks/archive/')) return 'truth';
   if (by.startsWith('.trae/') || by.startsWith('src/') || by.startsWith('scripts/')) return 'truth';
-  if (by.startsWith('hosts/') || by.startsWith('prompts/') || by.startsWith('role-packs/'))
-    return 'truth';
+  if (by.startsWith('hosts/') || by.startsWith('role-packs/')) return 'truth';
   if (by === 'package.json' || by === 'CHANGELOG.md' || /^README(\.[a-z]{2})?\.md$/.test(by))
     return 'truth';
   if (by.startsWith('docs/')) return 'process';
