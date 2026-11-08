@@ -6,7 +6,7 @@
  * 逻辑：只做索引，不存内容。source 指向真实文件，AI 按需 read_file 读取。
  */
 import { mkdir, readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getBaseName } from '@/utils/path.js';
 import { resolveSafePath } from '@/utils/scanner.js';
@@ -23,6 +23,52 @@ const CONTEXT_BLOCK_FOOTER =
   '（项目关键文件指针。如需详细内容，请使用 read_file 读取对应 source 路径。）';
 
 /**
+ * 投影写队列（键 = 绝对文件路径，值 = 该路径上最后一次写入的链尾）
+ *
+ * 为什么必须放**模块级**：manager 实例按会话装配（每会话一个），实例级队列等于没锁——
+ * 同一项目目录的两个会话仍会并发读改写同一文件，后写方静默覆盖先写方。
+ *
+ * 射程（定稿已明确，不自行扩）：仅覆盖**本 extension host 进程内**的写入方；
+ * 跨进程（多窗口 / 用户手工编辑器改写）不在覆盖范围，仍按「最后落盘者胜」处理。
+ */
+const writeQueues = new Map<string, Promise<void>>();
+
+/**
+ * 在「按绝对文件路径」的进程内互斥队列上执行写入临界区
+ *
+ * 语义：同一路径的写入串行化，不同路径互不阻塞；前序任务失败**不阻断**本次，
+ * 本次失败也**不毒化**后续（链上只保留顺序保证，失败由各任务自身的 try/catch 承担）。
+ *
+ * @param filePath 目标文件路径（内部统一 resolve 为绝对路径作锁键）
+ * @param task 临界区任务（读盘 → 合并 → 落盘），必须自己吞掉业务失败
+ * @returns 临界区任务的返回值（任务抛错时按原样抛给调用方处理）
+ */
+async function withFileWriteQueue<T>(filePath: string, task: () => Promise<T>): Promise<T> {
+  // 锁键：绝对路径——同一文件的不同写法（相对 / 符号链接前的写法）应共用同一队列
+  const key = resolve(filePath);
+  // 前序链尾（首次写入时为空队列）
+  const previousTail = writeQueues.get(key) ?? Promise.resolve();
+  // 前序失败只吞不传：失败不阻断本次（否则一次写失败会让该文件后续写入永久挂死）
+  const start = previousTail.then(
+    () => undefined,
+    () => undefined,
+  );
+  // 本次任务（返回值给调用方，异常也原样交给调用方）
+  const run = start.then(task);
+  // 链尾：本次失败亦不毒化下一次
+  const tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  writeQueues.set(key, tail);
+  // 空闲后回收 Map 条目（防长期运行下路径无限累积；仅当尾节点仍是本次登记的那一个）
+  void tail.finally(() => {
+    if (writeQueues.get(key) === tail) writeQueues.delete(key);
+  });
+  return run;
+}
+
+/**
  * 作品投影的极简结构（纯元数据指针）
  */
 export interface WorkProjectionEntry {
@@ -37,8 +83,10 @@ export interface WorkProjectionEntry {
 /**
  * 作品投影管理器：极简索引读写
  *
- * 并发说明：当前为单 Agent 单进程场景，registerWork 无文件锁保护。
- * 如需多进程/多线程并发写支持，需在此扩展文件锁机制（如 proper-lockfile）。
+ * 并发说明：**进程内**写入已按绝对文件路径串行化（模块级 `withFileWriteQueue`，
+ * 见上方队列注释）——所有写入方经 `registerWork` 汇入同一临界区：
+ * 锁 → `refresh()` 重读盘 → 合并 → `atomicWriteFile`，消除「读-改-写」竞态。
+ * 跨进程（多窗口 / 用户手工改写）不覆盖，仍按「最后落盘者胜」（定稿射程）。
  */
 export class WorkProjectionManager {
   /** 投影文件路径（<memoraDir>/work-projections.json） */
@@ -81,14 +129,16 @@ export class WorkProjectionManager {
   /**
    * 登记作品索引（register_work 工具数据源）
    *
-   * 向 JSON 数组追加/更新一条记录。同名 source 会被覆盖。
+   * 向 JSON 数组追加/更新一条记录。**同 source 为 upsert**：只覆盖 `name` / `description`，
+   * 保留既有条目的**未知字段**（如 `resident` 及未来新增字段），不再整条替换。
+   * 写入在**进程内按文件路径串行**的临界区中完成（锁 → 重读盘 → 合并 → 原子写）。
    *
    * @param sourcePath 源文件路径（相对项目根）
    * @param description 作品的一句话说明
-   * @returns 登记成功的投影条目；失败返回 null
+   * @returns 登记成功的投影条目（含保留的既有字段）；失败返回 null
    */
   async registerWork(sourcePath: string, description: string): Promise<WorkProjectionEntry | null> {
-    // 路径穿越防御：验证 sourcePath 不越界
+    // 路径穿越防御：验证 sourcePath 不越界（纯校验，不触碰磁盘，放在临界区外）
     if (this.projectDir && resolveSafePath(this.projectDir, sourcePath) === null) {
       logger.warn({ sourcePath }, '作品投影登记失败：source 路径越界');
       return null;
@@ -97,41 +147,55 @@ export class WorkProjectionManager {
     // 提取作品名（文件名去扩展名；getBaseName 返回带扩展名末段，故需补一次去扩展名）
     const baseName = getBaseName(sourcePath).replace(/\.[^.]+$/, '') || 'unknown';
 
-    const newEntry: WorkProjectionEntry = {
+    // 本次登记要写入的字段（其余既有字段由临界区内的 upsert 合并保留）
+    const incoming: WorkProjectionEntry = {
       name: baseName,
       description: normalizeDescription(description),
       source: toSingleLine(sourcePath),
     };
 
     try {
-      // 读取现有数据（如果文件存在）
-      await this.refresh();
+      // 所有写入方最终都汇到本临界区：锁 → refresh() 重读盘 → 合并 → atomicWriteFile
+      return await withFileWriteQueue(this.filePath, async () => {
+        // 临界区内重读盘：磁盘是真相源，缓存可能已被本实例或别的实例写脏
+        await this.refresh();
 
-      // fail-safe：预存文件格式错误（非数组根/损坏）时不覆盖写盘，避免丢失用户原索引
-      // （与路径越界守卫同构：不可解析的文件不擅自改写）
-      if (this.fileWasMalformed) {
-        logger.warn(
-          { file: this.filePath },
-          '作品投影登记中止：预存文件格式错误，已跳过以免覆盖原索引；请修正为顶层 JSON 数组后重试',
-        );
-        return null;
-      }
+        // fail-safe：预存文件格式错误（非数组根/损坏）时不覆盖写盘，避免丢失用户原索引
+        // （与路径越界守卫同构：不可解析的文件不擅自改写）
+        if (this.fileWasMalformed) {
+          logger.warn(
+            { file: this.filePath },
+            '作品投影登记中止：预存文件格式错误，已跳过以免覆盖原索引；请修正为顶层 JSON 数组后重试',
+          );
+          return null;
+        }
 
-      // 检查是否已存在相同 source，存在则更新，不存在则追加
-      const existingIndex = this.entries.findIndex((e) => e.source === newEntry.source);
-      if (existingIndex >= 0) {
-        this.entries[existingIndex] = newEntry;
-      } else {
-        this.entries.push(newEntry);
-      }
+        // upsert：命中同 source 时只覆盖 name/description，保留既有条目的未知字段
+        // （整条替换会静默丢弃后来写入的字段，且没有任何测试会红）
+        const existingIndex = this.entries.findIndex((e) => e.source === incoming.source);
+        // 实际落盘的条目（新登记 or 合并后的既有条目）
+        let saved: WorkProjectionEntry;
+        if (existingIndex >= 0) {
+          saved = {
+            // 既有条目（findIndex 已保证存在；展开它即保留全部未知字段）
+            ...this.entries[existingIndex]!,
+            name: incoming.name,
+            description: incoming.description,
+          };
+          this.entries[existingIndex] = saved;
+        } else {
+          saved = incoming;
+          this.entries.push(saved);
+        }
 
-      await mkdir(dirname(this.filePath), { recursive: true });
-      await atomicWriteFile(this.filePath, JSON.stringify(this.entries, null, 2));
+        await mkdir(dirname(this.filePath), { recursive: true });
+        await atomicWriteFile(this.filePath, JSON.stringify(this.entries, null, 2));
 
-      logger.info({ file: sourcePath, name: newEntry.name }, '作品投影已登记');
-      this.onGenerated?.(sourcePath, newEntry.description);
+        logger.info({ file: sourcePath, name: saved.name }, '作品投影已登记');
+        this.onGenerated?.(sourcePath, saved.description);
 
-      return newEntry;
+        return saved;
+      });
     } catch (err) {
       logger.warn({ err, file: sourcePath }, '作品投影登记失败');
       return null;

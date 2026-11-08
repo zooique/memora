@@ -102,6 +102,106 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
     });
   });
 
+  describe('registerWork upsert（保留未知字段）', () => {
+    it('命中同 source 时保留既有条目的未知字段，只覆盖 name/description', async () => {
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
+      const fs = await import('node:fs/promises');
+      const filePath = join(memoraDir, 'work-projections.json');
+      // 模拟另一写入方（如后续常驻层）已落盘的字段
+      await fs.writeFile(
+        filePath,
+        JSON.stringify([
+          {
+            name: 'architecture',
+            description: '旧描述',
+            source: 'docs/architecture.md',
+            resident: true, // 未知于当前接口的扩展字段（定稿里的 resident 标记）
+            'x-extra': 'keep-me', // 任意未来字段：整条替换会静默丢弃它
+          },
+        ]),
+      );
+
+      const result = await manager.registerWork('docs/architecture.md', '新描述');
+      expect(result).not.toBeNull();
+
+      // 断言落盘真相（raw JSON），而非仅看内存对象
+      const raw = JSON.parse(await fs.readFile(filePath, 'utf-8')) as Array<
+        Record<string, unknown>
+      >;
+      expect(raw).toHaveLength(1);
+      expect(raw[0]).toMatchObject({
+        name: 'architecture',
+        description: '新描述',
+        source: 'docs/architecture.md',
+      });
+      expect(raw[0]!.resident).toBe(true); // 既有扩展字段保留
+      expect(raw[0]!['x-extra']).toBe('keep-me');
+    });
+
+    it('新增 source 时既有条目的未知字段同样不被动到', async () => {
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
+      const fs = await import('node:fs/promises');
+      const filePath = join(memoraDir, 'work-projections.json');
+      await fs.writeFile(
+        filePath,
+        JSON.stringify([{ name: 'a', description: 'A', source: 'a.md', resident: true }]),
+      );
+
+      await manager.registerWork('b.md', 'B');
+
+      const raw = JSON.parse(await fs.readFile(filePath, 'utf-8')) as Array<
+        Record<string, unknown>
+      >;
+      expect(raw).toHaveLength(2);
+      expect(raw.find((e) => e.source === 'a.md')!.resident).toBe(true);
+    });
+  });
+
+  describe('registerWork 写路径串行化（进程内按绝对路径互斥）', () => {
+    it('两个 manager 实例并发登记不同 source ⇒ 全部落盘，无读-改-写互相覆盖', async () => {
+      // 同项目目录的两个会话实例（装配期各建一个）：实例级队列会失效，模块级队列才覆盖
+      const managerA = new WorkProjectionManager(memoraDir, undefined, projectDir);
+      const managerB = new WorkProjectionManager(memoraDir, undefined, projectDir);
+
+      await Promise.all([
+        managerA.registerWork('a.md', 'A'),
+        managerB.registerWork('b.md', 'B'),
+        managerA.registerWork('c.md', 'C'),
+        managerB.registerWork('d.md', 'D'),
+      ]);
+
+      const fs = await import('node:fs/promises');
+      const raw = JSON.parse(
+        await fs.readFile(join(memoraDir, 'work-projections.json'), 'utf-8'),
+      ) as Array<{ source: string }>;
+      expect(raw.map((e) => e.source).sort()).toEqual(['a.md', 'b.md', 'c.md', 'd.md']);
+    });
+
+    it('同一 source 并发登记 ⇒ 只出一条条目（upsert 幂等），未知字段不丢', async () => {
+      const fs = await import('node:fs/promises');
+      const filePath = join(memoraDir, 'work-projections.json');
+      await fs.writeFile(
+        filePath,
+        JSON.stringify([{ name: 'doc', description: '初始', source: 'doc.md', resident: true }]),
+      );
+
+      const managerA = new WorkProjectionManager(memoraDir, undefined, projectDir);
+      const managerB = new WorkProjectionManager(memoraDir, undefined, projectDir);
+      await Promise.all([
+        managerA.registerWork('doc.md', '描述一'),
+        managerB.registerWork('doc.md', '描述二'),
+      ]);
+
+      const raw = JSON.parse(await fs.readFile(filePath, 'utf-8')) as Array<
+        Record<string, unknown>
+      >;
+      expect(raw).toHaveLength(1);
+      expect(raw[0]!.resident).toBe(true);
+      // 最后一次落盘的描述胜出（两者之一），但条目唯一
+      expect(['描述一', '描述二']).toContain(raw[0]!.description);
+    });
+  });
+
   describe('refresh & listWorks', () => {
     it('加载空文件时返回空数组', async () => {
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
