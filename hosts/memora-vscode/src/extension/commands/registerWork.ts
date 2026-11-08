@@ -11,6 +11,7 @@ import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
 import { accumulateStream } from '@zooique/memora';
 import { toNoticeText } from '../host/noticeText.js';
+import { toWorkspaceRelativePath } from '../host/workspaceRelativePath.js';
 
 /**
  * 文件内容裁切上限：超长文件只取头部
@@ -44,9 +45,15 @@ export async function registerWorkCommand(
     return;
   }
 
-  // 提取第一个文件路径
+  // 提取第一个文件路径；相对路径走宿主单点判据（首根语义，禁用 asRelativePath）
   const targetUri = uris[0];
-  const relativePath = vscode.workspace.asRelativePath(targetUri);
+  const relResult = toWorkspaceRelativePath(targetUri);
+  if (!relResult.ok) {
+    // 非首根 / 越界 / 跨盘 / 非规范形：当场拒绝并给出可读原因（不静默截断成能存下的路径）
+    vscode.window.showWarningMessage('无法登记：' + relResult.message);
+    return;
+  }
+  const relativePath = relResult.relPath;
 
   // 显示进度
   vscode.window.showInformationMessage('正在登记：' + relativePath + ' ...');

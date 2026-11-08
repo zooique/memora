@@ -69,7 +69,8 @@ export async function addToChatCommand(
     const rel = root ? relativeUnderPrimaryRoot(root, u.fsPath) : undefined;
     if (!rel) {
       // 不在主根下（含未打开工作区 / 跨盘 / 第二个根）：整条拒绝
-      skippedOutsideRoot.push(vscode.workspace.asRelativePath(u));
+      // 提示里用绝对路径：此时相对路径本身就是错的语义（引用路径单点判据见 workspaceRelativePath）
+      skippedOutsideRoot.push(u.fsPath);
       continue;
     }
     let kind: 'file' | 'folder' = 'file';

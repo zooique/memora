@@ -40,11 +40,9 @@ vi.mock('vscode', () => ({
     },
   },
   workspace: {
-    // 忠实模拟官方语义：工作区内返回相对路径，工作区外回退绝对路径
-    asRelativePath: (u: { fsPath: string }) =>
-      u.fsPath.startsWith('/mock/workspace/')
-        ? u.fsPath.slice('/mock/workspace/'.length)
-        : u.fsPath,
+    // 首根基准（相对路径单点判据 workspaceRelativePath 只认 workspaceFolders[0]）
+    // 不再模拟 asRelativePath：宿主生产代码已禁用（多根工作区会产出撒谎指针）
+    workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],
     onDidChangeTextDocument: (cb: (e: { document: unknown }) => void) => {
       h.docSubs.push(cb);
       return h.disposable();

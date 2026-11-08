@@ -99,7 +99,7 @@
 | --- | --- | --- |
 | 工作区相对路径守卫（生成侧） | `relativeUnderPrimaryRoot(root, abs)`：相对**首根**产出规范形；`undefined` = 不在首根。`resolveUnderPrimaryRoot` 是其反向解析（校验规范形后回投影） | `hosts/memora-vscode/src/extension/host/refPath.ts` |
 | 投影写入侧守卫 | `resolveSafePath(projectDir, sourcePath)`：把**项目数据目录**拼上输入路径，越界即拒登记 | `workProjection.ts` |
-| 现有登记命令的路径来源 | `vscode.workspace.asRelativePath(targetUri)`——**与上两者不同源**；多根工作区下相对「所在根」，会产出「chip 正常、模型读不到」的撒谎指针 | `hosts/memora-vscode/src/extension/commands/registerWork.ts`；禁止性说明见 `addToChat.ts`、`refPath.test.ts` |
+| 现有登记命令的路径来源 | 已改为宿主**单点判据** `toWorkspaceRelativePath(targetUri)`（首根语义，P0-c 落地）；活动文件快照同步收口，`vscode.workspace.asRelativePath` 已从宿主生产代码移除 | `hosts/memora-vscode/src/extension/host/workspaceRelativePath.ts`（判据委托 `refPath.ts`） |
 | 信任门判据（仅宿主侧） | `vscode.workspace.isTrusted` 现读，未信任 ⇒ 空对象 fail-closed | `hosts/memora-vscode/src/extension/host/userAssets/projectScope.ts` |
 | 信任门在内核侧 | **无此态**：内核装配只拿 `dataDir`，无条件传入 ⇒「装配期现读 `isTrusted`」在物理上不成立；须宿主把信任态作为**新入参**传内核（内核公开面变更，minor） | 装配 `src/agent/assembler.ts` |
 | 符号链接 | `relativeUnderPrimaryRoot` **是纯字符串解析，不 realpath** ⇒ 工作区内指向外部的符号链接仍可逃逸 | `refPath.ts` |
@@ -432,18 +432,18 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 | 5 | **独立清单面板** | 没有一个常驻面板可看；只有命令回执与临时 QuickPick | 有：命令回执；关掉 QuickPick 就没有常驻视图 |
 | 6 | **跨面板角标** | 同一项目的另一个会话面板不会即时刷新「项目规则」标记 | **无信号**（面板无角标）；语义在下一轮读盘时生效 |
 | 7 | **工作区外路径** | 绝对路径 / UNC / `..` 一律不可登记、不可常驻 | 有：命令报错「只支持工作区内相对路径」 |
-| 8 | **符号链接与子模块** | 指向工作区外的符号链接需 realpath 闸拒绝，但 `resolveRealpath` **未导出** ⇒ 不先导出就无法接；子模块被当普通目录，不识别其独立仓库语义 | 部分有：导出后外链被拒有报错；子模块**无信号** |
+| 8 | **符号链接与子模块** | 指向工作区外的符号链接需 realpath 闸拒绝；`resolveRealpath` 已导出（P0-a），可直接接；子模块被当普通目录，不识别其独立仓库语义 | 部分有：外链被拒有报错；子模块**无信号** |
 | 9 | **二进制 / 超大文件** | **新入口已覆盖**（NUL / UTF-8 解码失败即拒）+ **装配期也做一次 fatal 复核**；**既有「登记作品投影」路径两条都没加**——小于 6000 字符的二进制仍会被当文本登记并注入乱码 | 有（新入口明确拒绝 + 装配期判失效）；既有登记路径**无专门信号** |
 | 10 | **非 UTF-8 编码** | **新入口 + 装配期已覆盖**（fatal 解码失败即拒 / 判失效）；既有登记路径仍一律按 UTF-8 读，GBK 文件会乱码 | 有（新入口与装配期明确拒绝）；既有路径**无信号** |
 | 11 | **只读文件系统** | 写清单失败（原子替换不可写） | 有：命令报错（写失败） |
-| 12 | **多根工作区下的相对路径歧义** | 只认**首个工作区根**（`relativeUnderPrimaryRoot` 语义）；其他根的文件不可用。现有登记命令用 `asRelativePath`，多根下会产生「chip 正常、模型读不到」的**撒谎指针**（`addToChat.ts` 有禁止性说明） | 有：非首根文件登记 / 置常驻时报错（统一改 `relativeUnderPrimaryRoot` 后）；旧路径的撒谎指针**无信号** |
+| 12 | **多根工作区下的相对路径歧义** | 只认**首个工作区根**（`relativeUnderPrimaryRoot` 语义）；其他根的文件不可用。宿主生成侧已收口到单点 `toWorkspaceRelativePath`（P0-c 落地，当场拒绝并给可读原因） | 有：非首根文件登记 / 置常驻时报错；**旧条目里已存在的撒谎指针无信号**（本批不做数据迁移） |
 | 13 | **`.memora/` 被用户仓库忽略或未提交** | 他人 clone 后可能没有这份清单；本地与他人环境不一致 | **无信号**（界面只显示本机磁盘实际内容，不做来源或共享标注） |
 | 14 | **右键与清单两个入口同时存在** | 两处都能改同一个 `resident` 字段：右键是**快捷面**，清单 QuickPick 是**管理面**（§8.1）。不覆盖：另一面板/另一窗口不会即时看到改动；跨进程并发覆盖仍按 §7-4 处理 | 有（同字段同文件，下一轮读盘后一致；无「两个开关互不同步」歧义）；跨面板即时同步**无信号**（§7-6） |
 | 15 | **凭据内容夹带** | **只防凭据路径**（`BLOCKED_PATTERNS` 只匹配路径）；文件正文里写死的 token / 私钥**不防**——全库唯一密钥相关处理是日志脱敏，**内容侧零防线** | **无信号**（正文照常注入 prompt；不做内容扫描） |
 
 ### 7.1 硬拒绝项（不接受的东西）
 
-1. **只接受工作区相对路径、且为规范形**：**统一改用 `relativeUnderPrimaryRoot(root, abs)`**（`refPath.ts`，已导出），`undefined` **当场拒绝**；绝对路径 / UNC / 任何 `..` 段 / 非规范形一律拒。⚠️ 现有登记命令用的 `asRelativePath`（`registerWork.ts`）与写入守卫 `resolveSafePath`（`workProjection.ts`）**三者不同源**，不得当作已对齐。
+1. **只接受工作区相对路径、且为规范形**：**统一调用宿主单点判据 `toWorkspaceRelativePath`**（`workspaceRelativePath.ts`，判据委托 `refPath.ts` 的 `relativeUnderPrimaryRoot` / `resolveUnderPrimaryRoot`），`undefined` **当场拒绝**；绝对路径 / UNC / 任何 `..` 段 / 非规范形一律拒。⚠️ 内核写入守卫 `resolveSafePath`（`workProjection.ts`）是**另一层**（防写出项目根），不得当作与宿主生成侧同源。
 2. **受工作区信任门约束**：信任态由**宿主作为新入参**传入内核（未信任 ⇒ 整层 fail-closed）。内核侧无 `isTrusted` 态，装配期现读在物理上做不到；这是**内核公开面变更（minor）**，不是文档能自行实现的。
 3. **符号链接逃逸**：`relativeUnderPrimaryRoot` 不 realpath ⇒ 读盘前必须 realpath 复核仍在首根内。`resolveRealpath` 已导出（P0-a），复用同一实现，**禁止复制第二份**。这是安全闸，不因「子模块/链接语义」未覆盖而放宽。
 4. **凭据类路径拒绝（复用已导出判据）**：`pathGuard.ts` 的黑名单常量是模块私有，但**判据已导出**（`matchBlockedPathPattern` / `isBlockedPath`，P0-a 落地）⇒ 复用同一实现，禁止复制第二份。即使在工作区内，也不该把 `.env` / `.npmrc` / `.git-credentials` 每轮读进 prompt；常驻比索引更危险（**永久**注入）。⚠️ **它只匹配路径**——证据不足时**不敢写「已防凭据内容」**：本期只防凭据路径，正文内容夹带不防（§7-15）。
@@ -543,7 +543,7 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 | 清单文件与写函数 | `work-projections.json` + `registerWork` | `src/agent/managers/workProjection.ts` |
 | 持久化形态 | `atomicWriteFile` + 损坏 fail-safe + 路径校验 | `workProjection.ts` |
 | 用户登记入口与 LLM 描述 | 右键命令 | `hosts/memora-vscode/src/extension/commands/registerWork.ts` |
-| 路径根归属 / 越界守卫 | **写入侧改 `relativeUnderPrimaryRoot`**（`undefined` 即拒）；`resolveSafePath` 作二道 | `refPath.ts`、`workProjection.ts` |
+| 路径根归属 / 越界守卫 | 宿主生成侧统一走 `toWorkspaceRelativePath`（单点，P0-c 已落地）；内核写入侧 `resolveSafePath` 作二道 | `workspaceRelativePath.ts`、`workProjection.ts` |
 | 信任门判据（**仅宿主侧**） | `vscode.workspace.isTrusted`（宿主读，**内核侧无此态**，须新入参；见真新增 ⑪） | `projectScope.ts` |
 | 项目数据目录 | `resolveProjectDataDir`（`.memora` 唯一计算点） | `projectDataDir.ts` |
 | system prompt 固定段 | `buildSystemPromptPrefix` 加一个可选段 | `src/agent/assembler.ts` |
@@ -605,7 +605,7 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 **真未决（3 条）**：
 
 1. **上限政策线的实测校准**：6000 / 15000 是政策线，字符 ≠ token；需按「常驻段允许占用的上下文比例」实测后带「时点 + 重算依据」修订一次。
-2. **多根工作区若将来要支持**：首根之外的文件如何归属（按打开文件夹顺序？按清单写入方所在根？）未定；本期直接拒绝（§7-12）。⚠️ 现有登记命令的 `asRelativePath` 撒谎指针不因本期只拒新增而消失（旧条目仍可能已存在）。
+2. **多根工作区若将来要支持**：首根之外的文件如何归属（按打开文件夹顺序？按清单写入方所在根？）未定；本期直接拒绝（§7-12）。⚠️ P0-c 已把宿主侧生成改为单点拒绝，但**旧条目中可能已存在的 `asRelativePath` 撒谎指针不会因本批消失**（无迁移）。
 3. **既有「登记作品投影」路径是否补同一判据**：现状 = **读盘侧与装配侧都未加**（该路径直接读文件前 8000 字符并送 LLM 总结，`registerWork.ts`）；不做则二进制 / GBK 文件被当文本登记、每轮注入乱码（仅剩 6000 字符上限与用户自查兜底）；要做的代价 = 改动既有命令行为（可能拒绝用户此前能登记的文件类型），须同步测试与回执文案。**本轮只在新入口与装配期加判据，不替用户决定既有登记路径的取舍。**
 
 ---

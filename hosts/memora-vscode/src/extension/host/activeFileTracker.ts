@@ -15,6 +15,7 @@
  */
 import * as vscode from 'vscode';
 import type { ActiveFileProjection, ExtensionToWebviewMessage } from '../../shared/protocol.js';
+import { toWorkspaceRelativePath } from './workspaceRelativePath.js';
 
 /** 文档正文注入上限（字符，约 3~4k token，防大文档爆上下文）——仅脏/未命名/工作区外文件走注入 */
 const MAX_DOC_CONTEXT_CHARS = 12000;
@@ -37,11 +38,6 @@ export type DocContextSnapshot = {
   relativePath?: string;
 };
 
-/** 绝对路径判定（跨平台）：Windows 盘符 / UNC / POSIX 根 */
-function isAbsolutePathLike(p: string): boolean {
-  return /^([A-Za-z]:[\\/]|[\\/]{1,2})/.test(p);
-}
-
 /**
  * 读取活动编辑器**廉价快照**（**发送时实时取，不缓存；不含正文**）
  *
@@ -59,14 +55,15 @@ export function snapshotDocContext(
 ): DocContextSnapshot | undefined {
   if (!editor) return undefined;
   const doc = editor.document;
-  // 未命名文档没有磁盘身份；工作区外文件 asRelativePath 会回退成绝对路径形态，
-  // 对「模型 read_file」与「宿主 open_ref 定位」都不可用 ⇒ 一律视为无相对路径。
-  const rel = doc.isUntitled ? undefined : vscode.workspace.asRelativePath(doc.uri);
+  // 未命名文档没有磁盘身份；相对路径走宿主单点判据（首根语义）——
+  // 工作区外 / 第二根 / 跨盘一律判为不可用（对「模型 read_file」与「宿主 open_ref 定位」都读不到）。
+  // 不用 `vscode.workspace.asRelativePath`：它相对「所在根」，多根下会产出撒谎指针。
+  const relResult = doc.isUntitled ? undefined : toWorkspaceRelativePath(doc.uri);
   return {
     fileName: doc.fileName.split(/[\\/]/).pop() || doc.fileName,
     isDirty: doc.isDirty,
     isUntitled: doc.isUntitled,
-    relativePath: rel && !isAbsolutePathLike(rel) ? rel : undefined,
+    relativePath: relResult?.ok ? relResult.relPath : undefined,
   };
 }
 
