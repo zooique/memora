@@ -99,6 +99,16 @@
         "icon": "$(file-text)"
       },
       {
+        "command": "memora.toggleResidentRule",
+        "title": "%command.toggleResidentRule.title%",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "memora.manageResidentRules",
+        "title": "%command.manageResidentRules.title%",
+        "icon": "$(list-tree)"
+      },
+      {
         "command": "memora.addToChat",
         "title": "%command.addToChat.title%",
         "icon": "$(references)"
@@ -354,6 +364,11 @@
           "command": "memora.registerWork",
           "when": "!explorerResourceIsRoot && !explorerResourceIsFolder",
           "group": "navigation@9"
+        },
+        {
+          "command": "memora.toggleResidentRule",
+          "when": "!explorerResourceIsRoot && !explorerResourceIsFolder",
+          "group": "navigation@10"
         }
       ],
       "editor/context": [
@@ -377,6 +392,12 @@
           "command": "memora.fileChange.restoreFile",
           "when": "memora.fileChangePending",
           "group": "navigation@2"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "memora.toggleResidentRule",
+          "group": "1_modification@3"
         }
       ]
     },

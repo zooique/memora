@@ -1276,8 +1276,12 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       // 2026-11-08 新增（常驻层字段翻转）：清单已登记条目的 resident 置/取消，
       // 七态结果码 + 同一写队列 + 只翻字段（不建条目），落点见设计 §5.4 / §6.1
       'setResident',
+      // 2026-11-08 新增（宿主入口）：清单管理面的两项能力——归一常驻态的快照（宿主不得二次判
+      // resident 字段）与「只删条目、不删源文件」的移除（四态 + 同一写队列）
+      'listManagedWorks',
+      'unregisterWork',
     ],
-  }, // 来源 Agent.works / 宿主调用 2 个 / 文件 F:\zooique\memora\src\agent\managers\workProjection.ts
+  }, // 来源 Agent.works / 宿主调用 3 个 / 文件 F:\zooique\memora\src\agent\managers\workProjection.ts
 };
 
 const actual = collectActualSurface();

@@ -140,6 +140,47 @@ export interface SetResidentResult {
 }
 
 /**
+ * `unregisterWork` 的结果码（语义：**只删清单条目，不删源文件**）
+ *
+ * 命名与 `registerWork` 成对——撤销的是「登记」，不是磁盘上的文件本身；
+ * 文案里也必须显式写「未删除任何文件」，让「删条目」与「删文件」不可能混淆。
+ */
+export type UnregisterWorkReason =
+  /** 已从清单移除（成功） */
+  | 'removed'
+  /** 清单里没有该条目（未写盘、不删文件） */
+  | 'not-found'
+  /** 清单文件格式错误（fail-safe，绝不改写原文件） */
+  | 'list-malformed'
+  /** 落盘失败（可重试；原文件可能未被改动） */
+  | 'write-failed';
+
+/** `unregisterWork` 返回面（成功唯一 = `removed`；判定走 `reason`，不设 `ok` 布尔） */
+export interface UnregisterWorkResult {
+  /** 粗粒度结果码（四态） */
+  reason: UnregisterWorkReason;
+  /** 人读文案（宿主原样展示） */
+  message: string;
+}
+
+/**
+ * 管理面条目快照：`resident` 已按 SSOT 判据（`isResidentEntry`）归一为布尔
+ *
+ * 宿主 QuickPick / 右键状态只许读这个字段，**不得**自行判 `entry.resident === true`
+ * （字符串 `"true"` 会被 `Boolean` 误认成常驻，与内核判据分叉）。
+ */
+export interface ManagedWorkEntry {
+  /** 作品名 */
+  name: string;
+  /** 一句话说明 */
+  description: string;
+  /** 源文件路径（相对项目根） */
+  source: string;
+  /** 是否常驻（已归一；判据唯一实现 = `isResidentEntry`） */
+  resident: boolean;
+}
+
+/**
  * 作品投影管理器：极简索引读写
  *
  * 并发说明：**进程内**写入已按绝对文件路径串行化（模块级 `withFileWriteQueue`，
@@ -470,6 +511,81 @@ export class WorkProjectionManager {
    */
   async listWorks(): Promise<WorkProjectionEntry[]> {
     return this.refresh();
+  }
+
+  /**
+   * 管理面清单（含归一后的常驻态）
+   *
+   * 供宿主 QuickPick / 右键状态展示：`resident` 由 `isResidentEntry` 判定一次，
+   * 宿主不得再对原始字段做二次判断（否则 `"true"` 字符串会在两处得出不同答案）。
+   *
+   * @returns 条目快照（磁盘为准；调用即重读盘）
+   */
+  async listManagedWorks(): Promise<ManagedWorkEntry[]> {
+    const entries = await this.refresh();
+    return entries.map((e) => ({
+      name: e.name,
+      description: e.description,
+      source: e.source,
+      resident: isResidentEntry(e),
+    }));
+  }
+
+  /**
+   * 从清单移除一条登记（**只删条目，不删源文件**）
+   *
+   * 与 `setResident` / `registerWork` 共用同一条写队列（锁 → 重读盘 → 定位 → splice → 原子写）：
+   * 多会话 / 多命令并发时不会把别人刚写的条目覆盖回去。
+   *
+   * 纪律：① 清单格式错误 ⇒ fail-safe，绝不改写原文件；② 未命中不新建、不写盘；
+   * ③ 只动清单数组，**不触碰任何源文件**。
+   *
+   * @param sourcePath 清单里的源文件路径（相对项目根；单行归一后精确匹配 `source`）
+   * @returns 四态结果（成功唯一 = `removed`）
+   */
+  async unregisterWork(sourcePath: string): Promise<UnregisterWorkResult> {
+    const source = toSingleLine(sourcePath);
+    try {
+      return await withFileWriteQueue(this.filePath, async () => {
+        // 临界区内重读盘：磁盘是真相源（别的会话实例可能刚写过）
+        await this.refresh();
+
+        // fail-safe：损坏清单定位不到条目，且改写会覆盖用户原内容（同 registerWork 的防线）
+        if (this.fileWasMalformed) {
+          logger.warn({ file: this.filePath }, '移除登记中止：清单文件格式错误');
+          return {
+            reason: 'list-malformed',
+            message: '作品投影清单文件格式错误，未移除任何条目；请修正为顶层 JSON 数组后重试',
+          };
+        }
+
+        const index = this.entries.findIndex((e) => e.source === source);
+        if (index < 0) {
+          logger.warn({ source }, '移除登记中止：清单无该条目（不删文件、不新建）');
+          return {
+            reason: 'not-found',
+            message: `作品投影清单中没有该文件的登记记录（未删除任何文件）：${source}`,
+          };
+        }
+
+        // 只删清单里的这一条；其余条目（含其未知字段）原样保留
+        this.entries.splice(index, 1);
+        await mkdir(dirname(this.filePath), { recursive: true });
+        await atomicWriteFile(this.filePath, JSON.stringify(this.entries, null, 2));
+
+        logger.info({ file: source }, '已从作品投影清单移除登记（源文件未删）');
+        return {
+          reason: 'removed',
+          message: `已从清单移除登记（源文件未删除）：${source}`,
+        };
+      });
+    } catch (err) {
+      logger.error({ err, file: source }, '移除登记失败：清单写入失败');
+      return {
+        reason: 'write-failed',
+        message: `作品投影清单写入失败（可重试）：${(err as Error)?.message ?? String(err)}`,
+      };
+    }
   }
 
   /**

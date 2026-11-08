@@ -13,6 +13,8 @@
   "command.reloadSkills.title": "Memora: Reload Skills and Role Packs",
   "command.importAsset.title": "Memora: Import Skill or Role Pack (.zip)",
   "command.registerWork.title": "Memora: Register Work Projection",
+  "command.toggleResidentRule.title": "Memora: Toggle Project Rule (Resident)",
+  "command.manageResidentRules.title": "Memora: Manage Resident Project Rules",
   "command.addToChat.title": "Memora: Add to Chat",
   "command.reviewFileChanges.title": "Memora: Review File Changes",
   "command.confirmAllFileChanges.title": "Memora: Confirm All File Changes",

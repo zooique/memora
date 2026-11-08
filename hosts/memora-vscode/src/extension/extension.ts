@@ -43,6 +43,7 @@ import { runDemoCommand } from './commands/demo.js';
 import { reloadSkillsCommand } from './commands/reloadSkills.js';
 import { cleanupMemoriesCommand, memoryStatsCommand, runGcCommand } from './commands/memory.js';
 import { registerWorkCommand } from './commands/registerWork.js';
+import { registerResidentRuleCommands } from './commands/residentRules.js';
 import { addToChatCommand } from './commands/addToChat.js';
 import { createUserDataResetHandler } from './commands/userDataReset.js';
 import { importAssetCommand } from './commands/importAsset.js';
@@ -727,13 +728,11 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.workspace.onDidGrantWorkspaceTrust(() => {
       syncTrustNotice();
-      // 目录与信任判定同源重算，并回推两面板——否则授予信任后项目级技能仍按旧目录（空）
-      // 判源，会被误标成 user/builtin（展示层说谎，属静默失效）。
+      // 目录与信任判定同源重算：否则授予信任后项目级技能仍按旧目录（空）判源，会被误标成 user/builtin
       const dirs = readProjectAssetDirs();
       chatProvider.setSkillDirs(configDir, userSkillsDir, dirs.skills);
       settingsProvider.setProjectDirs(dirs.skills, dirs.rolePacks);
-      // Agent 尚未装配时无需补注入——下次装配按已信任状态注入，路径不会漏。
-      // 多会话：所有已装配实例都要补注入（只补当前那台会让后台会话缺项目级技能）。
+      // 多会话：所有已装配实例都要补注入（只补当前那台会让后台会话缺项目级技能）
       void applyGrantedWorkspaceTrust({
         affectedAgents: hostAgentRegistry?.list() ?? [],
         dirs,
@@ -909,6 +908,8 @@ export function activate(context: vscode.ExtensionContext): void {
       addToChatCommand(uri, chatProvider),
     ),
   );
+
+  registerResidentRuleCommands(context, tryGetAgent);
 
   // 命令：复制诊断摘要（用户报障时一条命令带走版本 / 环境 / 配置 / 最近 webview 错误 / 指标）
   // 取数与格式化分离：chatProvider 只交出原始数据（缓冲 + 指标），脱敏与排版归 hostDiagnostics

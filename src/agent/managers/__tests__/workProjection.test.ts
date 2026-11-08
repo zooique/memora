@@ -455,33 +455,33 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
 
   // ─── setResident（七态）────────────────────────────────
 
+  /** 直接写清单文件（模拟「已登记」与「用户手改 JSON」两种情况） */
+  async function writeList(entries: unknown[]): Promise<void> {
+    const fs = await import('node:fs/promises');
+    await fs.mkdir(memoraDir, { recursive: true });
+    await fs.writeFile(
+      join(memoraDir, 'work-projections.json'),
+      JSON.stringify(entries, null, 2),
+      'utf-8',
+    );
+  }
+
+  /** 读回清单（验证「是否真的落盘」） */
+  async function readList(): Promise<Array<Record<string, unknown>>> {
+    const fs = await import('node:fs/promises');
+    return JSON.parse(await fs.readFile(join(memoraDir, 'work-projections.json'), 'utf-8'));
+  }
+
+  /** 在项目根写一个源文件，返回相对路径 */
+  async function writeSource(rel: string, body: string): Promise<string> {
+    const fs = await import('node:fs/promises');
+    const full = join(projectDir, rel);
+    await fs.mkdir(dirname(full), { recursive: true });
+    await fs.writeFile(full, body, 'utf-8');
+    return rel;
+  }
+
   describe('setResident（七态）', () => {
-    /** 直接写清单文件（模拟「已登记」与「用户手改 JSON」两种情况） */
-    async function writeList(entries: unknown[]): Promise<void> {
-      const fs = await import('node:fs/promises');
-      await fs.mkdir(memoraDir, { recursive: true });
-      await fs.writeFile(
-        join(memoraDir, 'work-projections.json'),
-        JSON.stringify(entries, null, 2),
-        'utf-8',
-      );
-    }
-
-    /** 读回清单（验证「是否真的落盘」） */
-    async function readList(): Promise<Array<Record<string, unknown>>> {
-      const fs = await import('node:fs/promises');
-      return JSON.parse(await fs.readFile(join(memoraDir, 'work-projections.json'), 'utf-8'));
-    }
-
-    /** 在项目根写一个源文件，返回相对路径 */
-    async function writeSource(rel: string, body: string): Promise<string> {
-      const fs = await import('node:fs/promises');
-      const full = join(projectDir, rel);
-      await fs.mkdir(dirname(full), { recursive: true });
-      await fs.writeFile(full, body, 'utf-8');
-      return rel;
-    }
-
     it('未信任（第 4 参缺省）⇒ untrusted，且**先拒后读**（源文件不存在也报 untrusted）', async () => {
       // 只登记、不建源文件：若实现「先读盘再判信任」，就会返回 source-missing —— 本用例钉住判据顺序
       await writeList([{ name: 'rules', description: '项目规则', source: 'missing.md' }]);
@@ -628,6 +628,73 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
 
       expect(result.reason).toBe('disabled');
       expect((await readList())[0]!.resident).toBe(false);
+    });
+  });
+
+  // ─── unregisterWork（只删条目，不删文件）───────────────
+
+  describe('unregisterWork（四态）', () => {
+    it('removed：只删该条目，其余条目（含未知字段）原样保留，源文件仍在磁盘', async () => {
+      await writeSource('a.md', '# A\n');
+      await writeSource('b.md', '# B\n');
+      await writeList([
+        { name: 'a', description: '甲', source: 'a.md', extra: 'keep-me' },
+        { name: 'b', description: '乙', source: 'b.md', resident: true },
+      ]);
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
+
+      const result = await manager.unregisterWork('a.md');
+
+      expect(result.reason).toBe('removed');
+      // 文案必须显式否认「删文件」，否则用户会以为源文件也没了
+      expect(result.message).toContain('未删除');
+      const saved = await readList();
+      expect(saved).toHaveLength(1);
+      expect(saved[0]!.source).toBe('b.md');
+      // 未触碰的条目连未知字段都保留（只 splice，不重建）
+      expect(saved[0]!.resident).toBe(true);
+      // 源文件仍在（删条目 ≠ 删文件）
+      const fs = await import('node:fs');
+      expect(fs.existsSync(join(projectDir, 'a.md'))).toBe(true);
+    });
+
+    it('not-found：未命中不新建、不写盘，文案声明未删除任何文件', async () => {
+      await writeList([{ name: 'a', description: '甲', source: 'a.md' }]);
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
+
+      const result = await manager.unregisterWork('不存在.md');
+
+      expect(result.reason).toBe('not-found');
+      expect(result.message).toContain('未删除任何文件');
+      expect(await readList()).toHaveLength(1);
+    });
+
+    it('list-malformed：清单根节点非数组 ⇒ fail-safe，绝不改写原文件', async () => {
+      const fs = await import('node:fs/promises');
+      await fs.mkdir(memoraDir, { recursive: true });
+      const raw = JSON.stringify({ entries: [] });
+      await fs.writeFile(join(memoraDir, 'work-projections.json'), raw, 'utf-8');
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
+
+      const result = await manager.unregisterWork('a.md');
+
+      expect(result.reason).toBe('list-malformed');
+      // 原文件逐字未变（没有为了「修好」而覆盖用户内容）
+      expect(await fs.readFile(join(memoraDir, 'work-projections.json'), 'utf-8')).toBe(raw);
+    });
+
+    it('listManagedWorks：常驻态由 SSOT 判据归一（字符串 "true" 不算常驻）', async () => {
+      await writeList([
+        { name: 'a', description: '甲', source: 'a.md', resident: true },
+        { name: 'b', description: '乙', source: 'b.md', resident: 'true' },
+        { name: 'c', description: '丙', source: 'c.md' },
+      ]);
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
+
+      const listed = await manager.listManagedWorks();
+
+      expect(listed.map((e) => e.resident)).toEqual([true, false, false]);
+      expect(listed.map((e) => e.source)).toEqual(['a.md', 'b.md', 'c.md']);
     });
   });
 });
