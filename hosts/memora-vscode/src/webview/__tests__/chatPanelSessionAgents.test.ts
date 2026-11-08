@@ -1089,17 +1089,17 @@ describe('新建会话默认角色包 · 用户级默认 → 会话快照', () =
   }
 
   /**
-   * 装配桩：activeName 严格取自会话 meta（与生产 assembler 同一判据），
-   * 并暴露 `get`（默认包存在性校验的探针面）
+   * 装配桩：activeName 严格取自会话 meta（与生产 assembler 同一判据）。
+   * 注意**不再提供存在性 `get`**：默认包校验的真源已换成角色包目录编目
+   * （`setRolePackCatalog`），装配桩若继续充当探针，本组用例就测不出「乐观放行」回潮。
    */
-  function makeFactory(store: WorkspaceSessionStore, installed: readonly string[]) {
+  function makeFactory(store: WorkspaceSessionStore) {
     return vi.fn(async (_projectPath: string, sessionId: string) => {
       const requested = readSessionRolePackName(store, sessionId);
       return {
         ...sessionAgent(sessionId),
         rolePackManager: {
           activeName: requested ?? BUILTIN_FALLBACK_PACK,
-          get: (name: string) => (installed.includes(name) ? { name } : undefined),
           getActive: () => ({
             strategy: { act: { toolMode: 'allow', temperature: 0.7 }, prepare: {} },
             capabilities: undefined,
@@ -1112,24 +1112,47 @@ describe('新建会话默认角色包 · 用户级默认 → 会话快照', () =
     });
   }
 
-  /** 建面板 + 注入装配桩 + 进入草稿（当前停在 seed 会话） */
-  async function enterDraft(installed: readonly string[]) {
+  /**
+   * 建面板 + 注入装配桩与角色包目录编目 + 进入草稿（当前停在 seed 会话）
+   *
+   * @param catalog 目录编目内容（`null` = 目录读不到，校验不可用）
+   */
+  async function enterDraft(catalog: ReadonlySet<string> | null) {
     const agentA = sessionAgent('2026-11-06-a');
     const ctx = setupPanel({ '2026-11-06-a': agentA }, ['2026-11-06-a']);
     const store = (ctx.provider as unknown as { sessionStore: WorkspaceSessionStore }).sessionStore;
-    const factory = makeFactory(store, installed);
+    const factory = makeFactory(store);
     ctx.provider.setAgentFactory(factory);
+    // 校验真相源 = 角色包目录（不是已装配实例）：本组用例据此独立控制「包在不在」
+    ctx.provider.setRolePackCatalog(async () => catalog);
     ctx.cast._currentSessionId = '2026-11-06-a';
-    // 存在性校验的探针 = 当前显示实例（与生产同一顺序：当前源优先）
     ctx.cast._agent = await factory('/mock/workspace', '2026-11-06-a');
-    // 探针构造不算「建会话装配」：清掉调用记录，后续断言只统计真实装配
+    // 构造当前源不算「建会话装配」：清掉调用记录，后续断言只统计真实装配
     factory.mockClear();
     await ctx.provider.newSessionFromCommand();
     return { ...ctx, store, factory, agentA };
   }
 
-  /** 草稿首条发送 → 等建会话完成，返回新会话 id */
-  async function sendFirst(ctx: Awaited<ReturnType<typeof enterDraft>>): Promise<string> {
+  /**
+   * 冷启动：面板没有任何会话、没有任何已装配实例，直接进草稿（首次发送才建会话）
+   *
+   * @param catalog 目录编目内容（`null` = 目录读不到）
+   */
+  async function enterColdDraft(catalog: ReadonlySet<string> | null) {
+    const ctx = setupPanel();
+    const store = (ctx.provider as unknown as { sessionStore: WorkspaceSessionStore }).sessionStore;
+    const factory = makeFactory(store);
+    ctx.provider.setAgentFactory(factory);
+    ctx.provider.setRolePackCatalog(async () => catalog);
+    await ctx.provider.newSessionFromCommand();
+    return { ...ctx, store, factory };
+  }
+
+  /** 草稿首条发送 → 等建会话完成，返回新会话 id（冷启动/带 seed 两种夹具通用） */
+  async function sendFirst(ctx: {
+    fireMessage: (msg: unknown) => void;
+    provider: MemoraChatViewProvider;
+  }): Promise<string> {
     ctx.fireMessage({ type: 'input', kind: 'send', text: '梳理一下这个仓库' });
     await vi.waitFor(() => expect(ctx.provider.isDraftSession()).toBe(false), { timeout: 5000 });
     return ctx.provider.getCurrentSessionId();
@@ -1137,7 +1160,7 @@ describe('新建会话默认角色包 · 用户级默认 → 会话快照', () =
 
   it('未选包 + 全局默认=X ⇒ 建会话写入 meta，装配与投影都等于 X', async () => {
     stubDefaultRolePack('代码助手');
-    const ctx = await enterDraft(['代码助手']);
+    const ctx = await enterDraft(new Set(['代码助手']));
 
     const newId = await sendFirst(ctx);
 
@@ -1152,7 +1175,7 @@ describe('新建会话默认角色包 · 用户级默认 → 会话快照', () =
 
   it('全局默认未设置（空串）⇒ 走现状：不写 meta，装配落兜底包', async () => {
     stubDefaultRolePack('');
-    const ctx = await enterDraft([]);
+    const ctx = await enterDraft(new Set());
 
     const newId = await sendFirst(ctx);
 
@@ -1164,7 +1187,7 @@ describe('新建会话默认角色包 · 用户级默认 → 会话快照', () =
 
   it('全局默认指向已删包 ⇒ 不写 meta、回落兜底、弹「默认角色包不可用」', async () => {
     stubDefaultRolePack('幽灵角色');
-    const ctx = await enterDraft([]); // 目录里没有「幽灵角色」
+    const ctx = await enterDraft(new Set()); // 目录里没有「幽灵角色」
 
     const newId = await sendFirst(ctx);
 
@@ -1184,7 +1207,7 @@ describe('新建会话默认角色包 · 用户级默认 → 会话快照', () =
 
   it('草稿徽章投影全局默认；草稿期间不装配（默认只在建会话时快照）', async () => {
     stubDefaultRolePack('代码助手');
-    const ctx = await enterDraft(['代码助手']);
+    const ctx = await enterDraft(new Set(['代码助手']));
 
     expect(ctx.provider.isDraftSession()).toBe(true);
     expect(lastRolePack(ctx.posted).rolePack).toBe('代码助手');
@@ -1221,6 +1244,50 @@ describe('新建会话默认角色包 · 用户级默认 → 会话快照', () =
     expect(store.getSessionMeta(forkedId)?.activeRolePackName).toBe(parentRole);
     // 分叉不是建会话：不得读取全局默认（否则老会话会被追溯改写）
     expect(get.mock.calls.filter(([key]) => key === 'defaultRolePack')).toEqual([]);
+  });
+
+  it('冷启动零实例 + 默认包不存在 ⇒ meta 为空，弹「默认角色包不可用」而非「原角色包」', async () => {
+    stubDefaultRolePack('幽灵角色');
+    const ctx = await enterColdDraft(new Set());
+
+    // 前置：这条用例的全部价值建立在「零已装配实例」上（旧实现正是在此乐观放行）
+    expect(ctx.cast._agent).toBeUndefined();
+    expect(ctx.cast._sessionAgents.size).toBe(0);
+
+    const newId = await sendFirst(ctx);
+
+    // ① 根因判据：失效默认名不得落进 meta（旧实现会写进去，进而被当成用户真选）
+    expect(ctx.store.getSessionMeta(newId)?.activeRolePackName).toBeUndefined();
+    const assembled = ctx.cast._sessionAgents.get(newId) as Agent;
+    expect(assembled.rolePackManager?.activeName).toBe(BUILTIN_FALLBACK_PACK);
+    // ② 文案判据：走「默认角色包不可用」这条，不是给老会话用的「原角色包不可用」
+    const notice = ctx.posted
+      .filter((m) => m.type === 'notice' && String(m.message ?? '').includes('角色包'))
+      .at(-1) as unknown as { level?: string; message?: string } | undefined;
+    expect(notice?.message).toBe(
+      `默认角色包「幽灵角色」不可用，当前使用兜底角色「${BUILTIN_FALLBACK_PACK}」。`,
+    );
+    expect(notice?.message).not.toContain('原角色包');
+  });
+
+  it('角色包目录读不到 ⇒ 不写 meta，弹「无法校验」（与「包不存在」区分）', async () => {
+    stubDefaultRolePack('代码助手');
+    const ctx = await enterColdDraft(null);
+
+    const newId = await sendFirst(ctx);
+
+    expect(ctx.store.getSessionMeta(newId)?.activeRolePackName).toBeUndefined();
+    const assembled = ctx.cast._sessionAgents.get(newId) as Agent;
+    expect(assembled.rolePackManager?.activeName).toBe(BUILTIN_FALLBACK_PACK);
+    const notice = ctx.posted
+      .filter((m) => m.type === 'notice' && String(m.message ?? '').includes('无法校验'))
+      .at(-1) as unknown as { level?: string; message?: string } | undefined;
+    expect(notice?.level).toBe('error');
+    expect(notice?.message).toBe(
+      `默认角色包「代码助手」无法校验（角色包目录读取失败），已使用兜底角色「${BUILTIN_FALLBACK_PACK}」。`,
+    );
+    // 第三出口不得折叠成「包不存在」：否则用户会去改包名，永远修不好目录问题
+    expect(notice?.message).not.toContain('不可用，当前使用兜底角色');
   });
 });
 

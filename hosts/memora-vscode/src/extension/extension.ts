@@ -28,6 +28,7 @@ import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceR
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
 import { AgentRegistry } from './host/agentRegistry.js';
 import { broadcastRolePackTeams } from './host/rolePackTeams.js';
+import { attachRolePackCatalog } from './host/rolePackCatalog.js';
 import { MemoryGcScheduler } from './host/memoryGcScheduler.js';
 import { ImageCache } from './host/imageCache.js';
 import { ProviderStore } from './providers/providerStore.js';
@@ -377,13 +378,9 @@ export function activate(context: vscode.ExtensionContext): void {
     // 目录创建失败不阻塞插件启动，用户技能功能不可用而已
   });
 
-  // 用户角色包目录（对齐技能系统）
-  //
-  // 双池注入：内置角色包（dist/extension/role-packs/，构建期从内核同步）
-  //   + 用户角色包（globalStorageUri/role-packs/，运行态经内核 loadExtraDir() 注入同池切换）。
-  //
-  // 使用方式：用户在此目录放置角色包文件夹（manifest.json + persona.md/rules.md/skills/）即生效；
-  //   同名冲突按加载顺序裁决（内置 → 用户 → 项目，后加载者胜）。目录创建失败不阻塞插件启动。
+  // 用户角色包目录（对齐技能系统）：内置（dist/extension/role-packs/，构建期同步）
+  //   + 用户（globalStorageUri/role-packs/，运行态经 loadExtraDir() 注入同池）。用户放入
+  //   manifest.json + persona.md/rules.md/skills/ 即生效；同名按加载顺序裁决（内置 → 用户 → 项目）。
   // （目录名常量 USER_ROLE_PACKS_DIR_NAME 与「初始化」清空目标共用，禁散落字面量）
   const userRolePacksDir = join(context.globalStorageUri.fsPath, USER_ROLE_PACKS_DIR_NAME);
   void mkdir(userRolePacksDir, { recursive: true }).catch(() => {
@@ -580,13 +577,15 @@ export function activate(context: vscode.ExtensionContext): void {
   // （两个时机缺一即漏面：只推变化 ⇒ 面板重开常驻条消失）
   chatProvider.setFileChangesProvider(() => fileChangeView.snapshotFiles());
   context.subscriptions.push(fileChangeView.onDidChange(() => chatProvider.pushFileChanges()));
-  // 注入技能聚合目录：composer 动态技能下拉与设置面板同一清单来源（SSOT）
-  // 项目级目录同样注入（来源判定用）；未信任时为空（目录与信任判定同源，见 readProjectAssetDirs），
-  // 不会伪造来源（listVisibleSkills 只对真实扫到的条目判源）。
+  // 技能聚合目录：composer 与设置面板同一清单来源；项目级未信任时为空（不伪造来源）
   chatProvider.setSkillDirs(configDir, userSkillsDir, projectDirsAtActivation.skills);
-  // 打开面板即懒装配 Agent（不依赖先执行 open 命令），保证发送始终可用；
-  // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写；
-  // 装配路径与 sessionStore 同源（resolveWorkspacePath），保证读写的文件一致
+  // 建会话校验默认角色包：目录编目（与装配/角色页同一内核扫描器，冷启动无实例亦可校验）
+  attachRolePackCatalog(chatProvider, {
+    configDir,
+    userRolePacksDir,
+    projectRolePacksDir: projectDirsAtActivation.rolePacks,
+  });
+  // 打开面板即懒装配 Agent（不依赖 open 命令）；复用同一 sessionStore（SSOT），路径同源
   chatProvider.setAgentFactory((_projectPath, sessionId) => {
     // 工厂只做「按会话取/建 + 一次性联动」，不持有实例：复用与在途去重归登记表
     const assembling = agentRegistry.createAgentForSession(sessionId);

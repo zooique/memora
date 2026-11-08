@@ -82,6 +82,29 @@ export function defaultRolePackFallbackNotice(
 }
 
 /**
+ * 构造「默认角色包无法校验」的可见提示（纯函数；仅在角色包目录读不到时使用）
+ *
+ * 与「默认角色包不可用」必须分开：这两件事的**用户可行动作不同**——
+ *   - 不可用 = 包确实不在目录里 ⇒ 用户应重选一个存在的默认包；
+ *   - 无法校验 = 目录本身读不到 ⇒ 用户应先修目录/权限，重选包也不会生效。
+ * 合并成一句会让第二种情况被当成第一种，用户照着改包名永远修不好。
+ *
+ * @param requested 用户级默认设置里的包名
+ * @param activeName 装配后内核实际激活的包名（null = 连兜底包都缺失）
+ * @returns error 级 notice
+ */
+export function defaultRolePackUnverifiedNotice(
+  requested: string,
+  activeName: string | null | undefined,
+): ExtensionToWebviewMessage | null {
+  if (!requested) return null;
+  const message = activeName
+    ? `默认角色包「${requested}」无法校验（角色包目录读取失败），已使用兜底角色「${activeName}」。`
+    : `默认角色包「${requested}」无法校验（角色包目录读取失败），且兜底角色包缺失，当前无可用角色。`;
+  return { type: 'notice', level: 'error', message };
+}
+
+/**
  * 一次性取「某会话是否发生了角色包回落」的提示（供面板 bindAgent 直接 post）
  *
  * @param store 会话存储

@@ -155,12 +155,15 @@ import { toNoticeText } from '../../extension/host/noticeText.js';
 import {
   readSessionRolePackName,
   sessionRolePackFallbackNotice,
-  defaultRolePackFallbackNotice,
 } from '../../extension/host/sessionRolePack.js'; // 角色包回落判据 / 文案单点
 // 用户级「新建会话默认角色包」的单点读口（配置键只在那里被读取；装配链禁止引用）
 import { resolveDraftRolePackName } from '../../extension/host/rolePackDefault.js';
-// 新建会话角色决策（显式选择 > 全局默认 > 兜底包；决策与失效判定同源，见模块头）
-import { decideNewSessionRolePack } from '../../extension/host/newSessionRolePack.js';
+// 新建会话角色决策（显式选择 > 全局默认 > 兜底包；校验真源 = 角色包目录编目，见模块头）
+import {
+  decideNewSessionRolePack,
+  newSessionRolePackNotice,
+  type RolePackCatalogReader,
+} from '../../extension/host/newSessionRolePack.js';
 // 引用发送前存在性核实（HOST-CTX-9 发送侧）：解析器复用 refPath（首根 SSOT），不由本文件另写
 import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
@@ -307,6 +310,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._configDir = configDir;
     this._userSkillsDir = userSkillsDir;
     this._projectSkillsDir = projectSkillsDir;
+  }
+  /** 角色包目录编目（宿主注入；建会话校验默认包用，冷启动无实例时同样可读） */
+  private _readRolePackCatalog?: RolePackCatalogReader;
+  public setRolePackCatalog(reader: RolePackCatalogReader): void {
+    this._readRolePackCatalog = reader;
   }
   /** 大模型配置存储（用于底部模型下拉框 + 切换） */
   private readonly _providerStore: ProviderStore;
@@ -2063,11 +2071,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     try {
       // 先切宿主当前会话：装配会由登记表在核内核侧切到该会话（无需再改单实例身份）
       this.setCurrentSessionId(sessionId);
-      // 角色来源：草稿显式选择 > 用户级默认 > 兜底包（决策/失效判定同源）；探针取当前显示源优先
-      const roleDecision = decideNewSessionRolePack(rolePackName, [
-        ...(this._agent ? [this._agent] : []),
-        ...this._sessionAgents.values(),
-      ]);
+      // 角色来源：草稿显式选择 > 用户级默认 > 兜底包；校验真源 = 角色包目录编目（冷启动亦可读）
+      const roleDecision = await decideNewSessionRolePack(rolePackName, this._readRolePackCatalog);
       // 角色名的**唯一落盘点**（必须早于装配：装配经 readSessionRolePackName 读回）；未选/失效不写
       if (roleDecision.rolePackName) {
         this.sessionStore.updateSessionMeta(sessionId, {
@@ -2076,14 +2081,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       }
       const agent = await this.agentForSession(sessionId);
       this.bindAgent(agent);
-      // 默认包失效：meta 未写，既有「原角色包」提示不会触发 ⇒ 用独立文案如实告知（不追溯老会话）
-      if (roleDecision.unavailableName) {
-        const notice = defaultRolePackFallbackNotice(
-          roleDecision.unavailableName,
-          agent.rolePackManager?.activeName,
-        );
-        if (notice) this.post(notice);
-      }
+      // 默认包失效 / 无法校验：meta 未写 ⇒ 既有「原角色包」提示不会触发，用独立文案如实告知
+      const roleNotice = newSessionRolePackNotice(roleDecision, agent.rolePackManager?.activeName);
+      if (roleNotice) this.post(roleNotice);
       this.replayCurrentSession();
       // 会话视图入口（新建）：任务条按「显示会话」投影，必须显式 force（不赌后续事件到来，否则串台）
       this.postBackgroundTasks('force');
