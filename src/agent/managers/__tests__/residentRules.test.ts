@@ -4,7 +4,8 @@
  * 重点锁死三类「没有测试会红」的语义：
  * ① 判据只认严格 `true`（`"false"` 字符串不得变常驻）；
  * ② 计量按**渲染块**（单条 = 标题行 + 正文；合计 = 整段渲染长度）；
- * ③ 「沿用上次内容」标注行**不计入 15000 预算**（有意例外，自噬链）。
+ * ③ 「沿用上次内容」标注行**不计入合计上限预算**（有意例外，自噬链）；
+ * ④ 合计超限 ⇒ **按清单顺序从末尾逐条丢弃**（靠前者优先），不再整段降级。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
@@ -33,6 +34,24 @@ import type { WorkProjectionEntry } from '../workProjection.js';
 function entryOf(source: string, resident?: boolean): WorkProjectionEntry {
   return { name: source, description: '', source, resident };
 }
+
+/**
+ * 上限常量的政策线不变量：**合计恒等于单条 × 2**
+ *
+ * 两个常量是**彼此独立的字面量**（政策线由用户拍板），而「合计 = 单条 × 2」是可解释预算关系
+ * （最坏容得下两篇顶格规则）。只改其一时，`residentRules.ts` 的常量注释与设计文档 §6.1 立刻
+ * 变成假话，且此前**没有任何测试会红**——此处用一行断言把关系钉死。
+ *
+ * 为什么用断言而不是把合计直接写成 `MAX_RESIDENT_SINGLE_CHARS * 2`：
+ * 派生写法虽能「结构上不可能漂移」，但既有测试全部引用该常量（没有绝对数值锚），
+ * 把 `* 2` 变异成 `* 3` 会**静默保持全绿**——那正是本仓禁止的「绿 ≠ 做对了」。
+ * 断言写法能通过变异验证（关系被改即红），故取断言。
+ */
+describe('上限常量（政策线不变量）', () => {
+  it('合计恒等于单条 × 2（改其一会红）', () => {
+    expect(MAX_RESIDENT_TOTAL_CHARS).toBe(MAX_RESIDENT_SINGLE_CHARS * 2);
+  });
+});
 
 describe('residentRules', () => {
   /** 临时项目根 */
@@ -168,11 +187,12 @@ describe('residentRules', () => {
       expect(evaluation.segment).toContain('（以下 1 条未能注入：big.md）');
       expect(evaluation.segment).toContain('### 来源文件：ok.md');
       expect(evaluation.segment).not.toContain('### 来源文件：big.md');
-      // 拒绝文案必须给实际计量与差额
-      expect(evaluation.failures[0]!.message).toMatch(/共 \d+ 字符，超过单条 6000 上限 \d+ 字符/);
+      // 拒绝文案必须给实际计量与差额，并把处置指向「拆分文件」而不是「让合计迁就」
+      expect(evaluation.failures[0]!.message).toMatch(/共 \d+ 字符，超过单条 10000 上限 \d+ 字符/);
+      expect(evaluation.failures[0]!.message).toContain('单文件超上限，请拆分该文件');
     });
 
-    it('用户钉住的边界：正文之和 14990 但加段首文案越 15000 ⇒ 整段降级', async () => {
+    it('合计超限 ⇒ 按清单顺序从末尾丢弃，靠前者保留（不整段降级）', async () => {
       const sources = ['a.md', 'b.md', 'c.md', 'd.md'];
       for (const s of sources) await writeFile(join(projectDir, s), '', 'utf8');
 
@@ -180,16 +200,28 @@ describe('residentRules', () => {
       const probe = await evaluateResidentSegment(projectDir, sources);
       const overhead = probe.segment.length;
 
-      // 构造：四条正文之和恰好 14990（每条都低于单条上限）
-      const bodies = [4000, 4000, 4000, 14990 - 12000];
+      // 构造：四条正文之和比合计上限多 30 字符（每条都远低于单条上限）
+      const total = MAX_RESIDENT_TOTAL_CHARS - overhead + 30;
+      const per = Math.floor(total / 4);
+      const bodies = [per, per, per, total - 3 * per];
       for (let i = 0; i < sources.length; i += 1) {
         await writeFile(join(projectDir, sources[i]!), 'y'.repeat(bodies[i]!), 'utf8');
       }
 
       const evaluation = await evaluateResidentSegment(projectDir, sources);
-      // 正文 14990 + 段首/标题开销 ⇒ 渲染长度必然超过合计上限（这正是定稿要求的口径）
-      expect(14990 + overhead).toBeGreaterThan(MAX_RESIDENT_TOTAL_CHARS);
-      expect(evaluation.segment.length).toBe(14990 + overhead);
+      // 段长度必须回到上限内（丢弃的唯一目的就是装得下）
+      expect(evaluation.segment.length).toBeLessThanOrEqual(MAX_RESIDENT_TOTAL_CHARS);
+      // 只丢清单末尾那一条；靠前者全部保留
+      expect(evaluation.dropped.map((d) => d.source)).toEqual(['d.md']);
+      expect(evaluation.dropped[0]!.reason).toBe('total-exceeded');
+      expect(evaluation.blocks).toHaveLength(3);
+      expect(evaluation.segment).toContain('### 来源文件：a.md');
+      expect(evaluation.segment).not.toContain('### 来源文件：d.md');
+      // 丢弃清单必须显式上段（模型与宿主都要知道「哪篇、因为合计超限」）
+      expect(evaluation.segment).toContain('（以下 1 条因合计超限未注入：d.md');
+      expect(evaluation.segment).toContain('已按清单顺序丢弃靠后条目，靠前者优先');
+      // 丢弃 ≠ 失效：不得混进失效汇总行
+      expect(evaluation.failures).toHaveLength(0);
     });
 
     it('标注行插入段首标题下一行', () => {
@@ -281,12 +313,14 @@ describe('residentRules', () => {
       expect(manager.contextBlock()).toContain('（本次读取失败，沿用上次内容）');
     });
 
-    it('合计超限 ⇒ 整段降级为一条状态行（不注入残段）', async () => {
+    it('合计超限 ⇒ 仍注入靠前条目，段首列出丢弃清单（不再整段降级）', async () => {
       const sources = ['a.md', 'b.md', 'c.md'];
       for (const s of sources) await writeFile(join(projectDir, s), '', 'utf8');
       const overhead = (await evaluateResidentSegment(projectDir, sources)).segment.length;
       // 让渲染长度恰好越限 1 字符（每条都低于单条上限）
-      const bodies = [5000, 5000, MAX_RESIDENT_TOTAL_CHARS + 1 - overhead - 10000];
+      const total = MAX_RESIDENT_TOTAL_CHARS + 1 - overhead;
+      const per = Math.floor(total / 3);
+      const bodies = [per, per, total - 2 * per];
       for (let i = 0; i < sources.length; i += 1) {
         await writeFile(join(projectDir, sources[i]!), 'z'.repeat(bodies[i]!), 'utf8');
       }
@@ -300,18 +334,22 @@ describe('residentRules', () => {
 
       await manager.refresh();
       const segment = manager.contextBlock();
-      expect(segment).toContain('项目常驻规则未注入');
-      expect(segment).toContain('本轮常驻规则未生效');
-      // 残段不得被当规则注入
-      expect(segment).not.toContain('### 来源文件：');
+      // 靠前者照常注入；只有清单末尾被丢
+      expect(segment).toContain('### 来源文件：a.md');
+      expect(segment).toContain('### 来源文件：b.md');
+      expect(segment).not.toContain('### 来源文件：c.md');
+      expect(segment).toContain('（以下 1 条因合计超限未注入：c.md');
+      // 状态行只留给「丢光也装不下」的极端兜底
+      expect(segment).not.toContain('项目常驻规则未注入');
+      expect(segment.length).toBeLessThanOrEqual(MAX_RESIDENT_TOTAL_CHARS);
     });
 
-    it('🔴 有意例外：带失败标注的段可以超过 15000 但不降级（自噬链）', async () => {
+    it('🔴 有意例外：带失败标注的段可以超过合计上限但不触发丢弃（自噬链）', async () => {
       const sources = ['a.md', 'b.md', 'c.md', 'd.md'];
       for (const s of sources) await writeFile(join(projectDir, s), '', 'utf8');
       const overhead = (await evaluateResidentSegment(projectDir, sources)).segment.length;
 
-      // 构造「成功时长度紧贴上限之下」的段：14997（标注 16 字符后会越限）
+      // 构造「成功时长度紧贴上限之下」的段：上限 - 3（标注行 16 字符后会越限）
       const targetLength = MAX_RESIDENT_TOTAL_CHARS - 3;
       const bodies = [4000, 4000, 4000, targetLength - 12000 - overhead];
       for (let i = 0; i < sources.length; i += 1) {
@@ -335,7 +373,7 @@ describe('residentRules', () => {
       fail = true;
       await manager.refresh();
       const annotated = manager.contextBlock();
-      // 标注行不入预算 ⇒ 段长度 > 15000 是设计预期，规则正文必须仍在
+      // 标注行不入预算 ⇒ 段长度 > 合计上限是设计预期，规则正文必须仍在（不得触发丢弃）
       expect(annotated.length).toBeGreaterThan(MAX_RESIDENT_TOTAL_CHARS);
       expect(annotated).toContain('### 来源文件：a.md');
       expect(annotated).not.toContain('项目常驻规则未注入');

@@ -204,10 +204,17 @@ describe('keybindings ↔ package.json#contributes', () => {
 /** 包根目录（本文件位于 `<pkg>/src/extension/host/__tests__/` ⇒ 上溯四层） */
 const PKG_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
 
-/** `registerCommand` 调用点已登记的源文件（全库第三处出现 = 扫描盲区，须先登记再断言） */
+/**
+ * `registerCommand` 调用点已登记的源文件（新文件出现调用点 = 扫描盲区，须先登记再断言；
+ * 登记后下面的字面量 / 常量两条提取会一并覆盖该文件，不漏提取）
+ */
 const REGISTER_SOURCES = [
+  // 注册点一：extension.ts，以字面量直写为主
   resolve(PKG_ROOT, 'src/extension/extension.ts'),
+  // 注册点二：fileChangeView.ts，以导入常量注册为主
   resolve(PKG_ROOT, 'src/extension/host/fileChangeView.ts'),
+  // 注册点三：commands/residentRules.ts（常驻规则两条命令，字面量直写）
+  resolve(PKG_ROOT, 'src/extension/commands/residentRules.ts'),
 ];
 
 /** 注册豁免：两个块级 hunk 命令刻意不贡献（CodeLens 带参调用，暴露即静默失败） */
@@ -235,32 +242,34 @@ function collectSourceFiles(dir: string, out: string[] = []): string[] {
  * 前三面全钉在 `package.json` 声明侧，**看不见 `registerCommand` 注册侧**：改名 /
  * 漏注册时贡献面、键位面照样全绿，按命令面板条目或快捷键却无任何反应、无报错
  * （漂移静默发生，且恰好在真机点验时才暴露）。本面补上注册侧对拍：
- *   ① 调用点文件范围先钉死——提取逻辑只认登记过的两个文件，第三处出现即红，
+ *   ① 调用点文件范围先钉死——提取逻辑只认登记表内的文件，表外出现即红，
  *      防「新文件里注册的新命令」绕过下面全部断言（扫描盲区型假阴性）；
  *   ② 声明了未注册 ⇒ 命令面板可见但按了没反应；
  *   ③ 注册了未声明 ⇒ 代码能跑但用户永远够不着（豁免 = 两个 hunk 内部命令）。
  */
 describe('registerCommand 注册面 ↔ package.json#contributes', () => {
-  // 注册点一：extension.ts 直接用字面量注册
-  const extensionSrc = readFileSync(REGISTER_SOURCES[0], 'utf-8');
-  const literalIds = [...extensionSrc.matchAll(/registerCommand\(\s*['"]([^'"]+)['"]/g)].map(
-    (match) => match[1],
+  // 登记表内每个文件都参与提取（只认固定下标会让新登记的文件「登记了反而漏提取」，
+  // 把已注册命令误报为未注册）
+  const sourcesSrc = REGISTER_SOURCES.map((file) => readFileSync(file, 'utf-8'));
+
+  // 注册形态一：`registerCommand('memora.xxx', …)` 字面量直写
+  const literalIds = sourcesSrc.flatMap((src) =>
+    [...src.matchAll(/registerCommand\(\s*['"]([^'"]+)['"]/g)].map((match) => match[1]),
   );
 
-  // 注册点二/三：fileChangeView.ts 与 extension.ts 也可用**导入常量**注册
-  // （命令 id 真源 = shared/constants.ts，面板同样引用它 ⇒ 常量表须覆盖该文件，
+  // 注册形态二：`registerCommand(CONST_NAME, …)` 导入常量注册
+  // （命令 id 真源 = shared/constants.ts 或定义该常量的源文件 ⇒ 常量表须同时覆盖两类，
   //  否则「贡献 ↔ 注册」对拍对导入形态失明，把已注册命令误报为未注册）
-  const viewSrc = readFileSync(REGISTER_SOURCES[1], 'utf-8');
   const constantsSrc = readFileSync(resolve(PKG_ROOT, 'src/shared/constants.ts'), 'utf-8');
-  /** 常量名 → 命令 id 映射（`const XXX_COMMAND = 'memora.…'` 形态；两份源合并） */
+  /** 常量名 → 命令 id 映射（`const XXX_COMMAND = 'memora.…'` 形态；真源 + 各登记源合并） */
   const constantTable = new Map(
-    [constantsSrc, viewSrc]
+    [constantsSrc, ...sourcesSrc]
       .flatMap((src) => [...src.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*['"]([^'"]+)['"]/g)])
       .map((match) => [match[1], match[2]])
       .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
   );
-  /** 调用点引用的常量名（形如 `registerCommand(\n  REVIEW_…`，允许跨行；两处源都收） */
-  const constantRefs = [extensionSrc, viewSrc].flatMap((src) =>
+  /** 调用点引用的常量名（形如 `registerCommand(\n  REVIEW_…`，允许跨行） */
+  const constantRefs = sourcesSrc.flatMap((src) =>
     [...src.matchAll(/registerCommand\(\s*([A-Za-z_$][\w$]*)/g)].map((match) => match[1]),
   );
   /** 解析失败的调用点（用了非常量标识符 ⇒ 提取对它失明，必须红） */

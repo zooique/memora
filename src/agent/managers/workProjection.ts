@@ -366,9 +366,11 @@ export class WorkProjectionManager {
       };
     }
     if (read.block.length > MAX_RESIDENT_SINGLE_CHARS) {
+      // 处置方向必须指向文件本身：单篇超限靠「拆分该文件」解决，不许让合计去迁就一篇
       const message =
         `该文件含标题行共 ${read.block.length} 字符，超过单条 ${MAX_RESIDENT_SINGLE_CHARS} 上限 ` +
-        `${read.block.length - MAX_RESIDENT_SINGLE_CHARS} 字符；本次未写入：${source}`;
+        `${read.block.length - MAX_RESIDENT_SINGLE_CHARS} 字符；单文件超上限，请拆分该文件后再置常驻` +
+        `（本次未写入）：${source}`;
       logger.warn({ source, length: read.block.length }, '置常驻被拒：单条超出上限');
       return { reason: 'too-long', message };
     }
@@ -418,7 +420,9 @@ export class WorkProjectionManager {
           return { reason: 'disabled', message: `该文件本来就不是项目规则（未改写）：${source}` };
         }
 
-        // 合计闸（仅置 true）：用装配期同一个求值函数算「加上本条之后」的合计渲染长度
+        // 合计闸（仅置 true）：装配期同一个求值函数算「加上本条之后会被丢弃哪些条目」
+        // 写路径判据 = 只要会**丢弃任何已常驻条目**就拒写（含本条自己）——
+        // 否则「置常驻成功」会静默挤掉别人，「全有或全无」退化成「后写者驱逐先写者」
         if (value === true && this.projectDir) {
           const candidateSources = this.entries
             .map((e, i) => (i === index ? { ...e, resident: true } : e))
@@ -431,12 +435,16 @@ export class WorkProjectionManager {
             logger.warn({ source, reason: selfFailure.reason }, '置常驻被拒：求值判定本条不可注入');
             return { reason: 'too-long', message: selfFailure.message };
           }
-          if (evaluation.segment.length > MAX_RESIDENT_TOTAL_CHARS) {
-            const overflow = evaluation.segment.length - MAX_RESIDENT_TOTAL_CHARS;
+          if (evaluation.dropped.length > 0) {
+            const droppedPaths = evaluation.dropped.map((d) => d.source).join('、');
             const message =
-              `加入本条后常驻段合计 ${evaluation.segment.length} 字符，超过合计 ` +
-              `${MAX_RESIDENT_TOTAL_CHARS} 上限 ${overflow} 字符；本次未写入：${source}`;
-            logger.warn({ source, length: evaluation.segment.length }, '置常驻被拒：合计超出上限');
+              `加入本条后常驻段将按清单顺序丢弃靠后条目 ${evaluation.dropped.length} 条` +
+              `（${droppedPaths}），触及合计 ${MAX_RESIDENT_TOTAL_CHARS} 上限；本次未写入：${source}` +
+              '；请先取消部分常驻条目，或精简常驻文件正文后再试';
+            logger.warn(
+              { source, dropped: evaluation.dropped.map((d) => d.source) },
+              '置常驻被拒：加入后会挤掉已常驻条目',
+            );
             return { reason: 'too-long', message };
           }
         }

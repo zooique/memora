@@ -7,7 +7,7 @@
  *
  * 🔴 纪律（宿主零判据）：
  *  1. **能不能常驻、超没超上限、文件在不在、当前是不是常驻** —— 全部由内核回答。
- *     本文件不得出现 `6000` / `15000` / 文件存在性 / `resident === true` 这类判断；
+ *     本文件不得出现 `10000` / `20000` / 文件存在性 / `resident === true` 这类判断；
  *     常驻态一律读内核归一后的 `listManagedWorks().resident`（判据 = `isResidentEntry`）。
  *  2. 结果文案**原样展示**内核 message（七态 / 四态），宿主不改写、不归纳。
  *  3. URI → 相对路径**必须**走 `toWorkspaceRelativePath` 单点判据（禁用 `asRelativePath`）。

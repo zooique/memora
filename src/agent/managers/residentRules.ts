@@ -10,7 +10,7 @@
  * 1. **fail-closed**：工作区未信任（非严格 `true`）⇒ 整层不装配，且不读任何正文；
  * 2. **计量按渲染块**：单条按「标题行 + 正文」、合计按**整段渲染长度**（`String.length`），
  *    不按裸正文之和——两把尺子会在边界上得出两个结论；
- * 3. **失败标注行不计入预算（有意例外）**：理由见 `README_RESIDENT_ANNOTATION` 注释（自噬链）。
+ * 3. **失败标注行不计入预算（有意例外）**：理由见 `READ_FAILURE_ANNOTATION` 注释（自噬链）。
  */
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, sep } from 'node:path';
@@ -19,11 +19,21 @@ import { isBlockedPath, resolveRealpath } from '@/security/pathGuard.js';
 import { resolveSafePath } from '@/utils/scanner.js';
 import type { WorkProjectionEntry } from './workProjection.js';
 
-/** 单条常驻正文渲染块的上限（字符，UTF-16 码元）——**内核私有常量，不从包根导出** */
-export const MAX_RESIDENT_SINGLE_CHARS = 6000;
+/**
+ * 单条常驻条目渲染块的上限（字符，UTF-16 码元）——**内核私有常量，不从包根导出**
+ *
+ * 政策线，不是实测结论（设计锚 §6.1）。2026-11-08 由 6000 调整为 10000（用户拍板）。
+ */
+export const MAX_RESIDENT_SINGLE_CHARS = 10000;
 
-/** 常驻段合计（最终注入段渲染长度）的上限——同上，内核私有 */
-export const MAX_RESIDENT_TOTAL_CHARS = 15000;
+/**
+ * 常驻段合计（最终注入段渲染长度）的上限——同上，内核私有
+ *
+ * 🔴 **合计 = 单条 × 2**（10000 × 2 = 20000）：这是**可解释的预算关系**，不是巧合数字——
+ * 最坏情况容得下「两篇各自顶格的规则」，第三篇起必然触发按序丢弃。
+ * 改单条线时必须同笔改本条，否则「合计 = 单条 × 2」这条解释就变成假话。
+ */
+export const MAX_RESIDENT_TOTAL_CHARS = 20000;
 
 /** 常驻段标题行（§4.2 定稿文案） */
 const SEGMENT_TITLE = '## 项目常驻规则（本仓库具体约束；按清单顺序，靠前者优先）';
@@ -39,11 +49,11 @@ const SEGMENT_PRIORITY =
 /**
  * 读失败沿用缓存时的段首标注（给**模型**看，不是给用户看）。
  *
- * 🔴 **有意例外（不得「修正」）：本行不计入 15000 预算。**
- * 自噬链：若计入——上次渲染贴着 15000 ⇒ 本次读失败追加标注 ⇒ 越限 ⇒ 整段降级 ⇒
- * 常驻规则被抹掉，恰好反噬「已有缓存必须沿用」这条自身。因此「段长度超过 15000 且带本行」
- * 是设计预期，不是越限；把它算进预算的「修复」会让降级路径静默抹掉规则。
- * 边界：例外**只**覆盖本行；标题、优先级、失效汇总行照常计入（§6.1）。
+ * 🔴 **有意例外（不得「修正」）：本行不计入合计上限预算。**
+ * 自噬链：若计入——上次渲染贴着上限 ⇒ 本次读失败追加标注 ⇒ 越限 ⇒ 触发丢弃 ⇒
+ * 常驻规则被挤掉，恰好反噬「已有缓存必须沿用」这条自身。因此「段长度超过合计上限且带本行」
+ * 是设计预期，不是越限；把它算进预算的「修复」会让丢弃路径静默抹掉规则。
+ * 边界：例外**只**覆盖本行；标题、优先级、失效汇总行、丢弃清单行照常计入（§6.1）。
  */
 const READ_FAILURE_ANNOTATION = '（本次读取失败，沿用上次内容）';
 
@@ -225,8 +235,8 @@ export async function readResidentSource(
 export interface ResidentSegmentEntryFailure {
   /** 失效条目的清单相对路径 */
   source: string;
-  /** 失效原因（读盘判据失败，或单条超限） */
-  reason: ResidentSourceFailure | 'too-long';
+  /** 失效原因（读盘判据失败、单条超限，或合计超限被按序丢弃） */
+  reason: ResidentSourceFailure | 'too-long' | 'total-exceeded';
   /** 人读文案（含实际计量与差额） */
   message: string;
 }
@@ -242,31 +252,50 @@ export interface ResidentSegmentEvaluation {
   blocks: string[];
   /** 失效条目（段首汇总行与日志的唯一数据源） */
   failures: ResidentSegmentEntryFailure[];
+  /**
+   * 因合计超限被按序丢弃的条目（按**清单顺序**，`reason` 恒为 `total-exceeded`）
+   *
+   * 与 `failures` 分开的理由：失效 = 「这条本身有问题」（读盘 / 单条超限），丢弃 = 「这条没问题、
+   * 只是预算不够」。两者混一列会让「修文件就能救」与「必须先精简别人」共用同一条汇总文案。
+   */
+  dropped: ResidentSegmentEntryFailure[];
 }
 
 /**
  * 渲染常驻段（纯函数）
  *
- * 段内顺序（§4.2 定稿）：标题 → 适用范围 → 优先级 → 失效汇总行（仅当有失效条目）→ 空行 → 各条渲染块。
+ * 段内顺序（§4.2 定稿）：标题 → 适用范围 → 优先级 → 失效汇总行（仅当有失效条目）→
+ * 丢弃清单行（仅当有因合计超限被丢弃的条目）→ 空行 → 各条渲染块。
  * 求值顺序的「先定失效集合、再渲染」在这里落地：失效汇总行的内容在渲染前已确定，
- * 不会因「丢条 → 汇总变长 → 再丢条」形成循环依赖（§6.1）。
+ * 不会因「丢条 → 汇总变长 → 再丢条」形成循环依赖（§6.1）；丢弃清单行**计入**合计预算，
+ * 其收敛性由 `evaluateResidentSegment` 的单调性论证保证（每丢一条就少一个正文块）。
  *
- * @param blocks 已通过读盘判据与单条上限的条目渲染块
+ * @param blocks 已通过读盘判据、单条上限与合计预算的条目渲染块
  * @param invalidPaths 失效条目的路径（只进段首汇总，不注入正文）
+ * @param droppedPaths 因合计超限被丢弃的条目路径（按清单顺序；只进段首汇总，不注入正文）
  * @returns 整段文本；无内容时为空串
  */
 export function renderResidentSegment(
   blocks: readonly string[],
   invalidPaths: readonly string[],
+  droppedPaths: readonly string[] = [],
 ): string {
-  // 既无正文又无失效 ⇒ 本轮不存在常驻规则，不注入空段（避免模型读到只有标题的空壳）
-  if (blocks.length === 0 && invalidPaths.length === 0) return '';
+  // 既无正文又无失效/丢弃 ⇒ 本轮不存在常驻规则，不注入空段（避免模型读到只有标题的空壳）
+  if (blocks.length === 0 && invalidPaths.length === 0 && droppedPaths.length === 0) return '';
 
   const parts: string[] = [SEGMENT_TITLE, SEGMENT_USAGE, SEGMENT_PRIORITY];
 
   // 失效汇总行：放段首（模型先知道「有几条没注入」，再读注入的正文）
   if (invalidPaths.length > 0) {
     parts.push(`（以下 ${invalidPaths.length} 条未能注入：${invalidPaths.join('、')}）`);
+  }
+
+  // 丢弃清单行：与失效分开写，模型才分得清「这条自己坏了」还是「这条没问题、只是预算不够」
+  if (droppedPaths.length > 0) {
+    parts.push(
+      `（以下 ${droppedPaths.length} 条因合计超限未注入：${droppedPaths.join('、')}；` +
+        '已按清单顺序丢弃靠后条目，靠前者优先）',
+    );
   }
 
   // 正文块之间空一行，保证 `###` 标题在渲染上独立成块
@@ -279,12 +308,12 @@ export function renderResidentSegment(
 }
 
 /**
- * 合计超限时的整段降级文案（唯一一条状态行，不含任何条目正文）
+ * 极端兜底：**全部条目已被丢弃**、段内只剩标题/优先级/汇总行仍超合计上限时的状态行
  *
- * 为什么整段降级而不是截前半段：截断会让模型把「被截的残段」当完整规则执行；
- * 明确「本轮未生效」比一份伪造的完整感更安全（§6.1）。
+ * 正常不会发生（合计 20000 远大于段首固定行 + 路径清单）。保留它只为兜住「路径清单本身撑爆段首」，
+ * 使任何输入都返回可注入的文本，而不是让一段超长文本漏进 prompt。
  *
- * @param totalLength 未降级时的整段渲染长度（用于报文给出实际计量与差额）
+ * @param totalLength 全部丢弃后段首固定行的实际渲染长度（用于报文给出实测计量与差额）
  * @returns 单行状态文本
  */
 export function renderDegradedSegment(totalLength: number): string {
@@ -316,21 +345,31 @@ export function annotateReadFailure(segment: string): string {
 }
 
 /**
- * 求值一整段常驻规则（读盘 + 单条上限 + 渲染；**不含**合计判定）
+ * 求值一整段常驻规则（读盘 + 单条上限 + **合计预算按序丢弃** + 渲染）
  *
- * 装配期与写路径共用本函数：装配期拿到段文本后判合计；`setResident` 用同一函数算出
- * 「加上候选条之后的合计长度」，从而保证两处用的是**同一把尺子**。
+ * 装配期与写路径共用本函数：装配期直接用返回段；`setResident` 用同一函数算
+ * 「加上候选条之后会被丢弃哪些条目」，从而保证两处用的是**同一把尺子**。
+ *
+ * 🔴 **丢弃顺序的定义（可预测、可解释，不许随机）**：
+ * 顺序真源 = **清单数组顺序**（段首标题已明写「按清单顺序，靠前者优先」）。合计超限时
+ * **从清单末尾逐条丢弃**：丢一条 → 重算段长度 → 仍超则继续丢，直到装得下。
+ * 不引入 `priority` 字段：那会与标题行已声明的「清单顺序」形成第二套排序真源，
+ * 且需要用户手填数字，冲突时无法解释「到底听谁的」。
+ *
+ * 收敛性（不用「丢条 → 汇总变长 → 再丢条」的循环依赖）：每丢一条，正文少一个块
+ * （块 ≥ 路径 + `### 来源文件：` 标题），段首只多一个路径 + 一个分隔符；故总长单调下降，
+ * 循环上界 = 条目数。丢光后仍超限才退到状态行（`renderDegradedSegment`）。
  *
  * @param projectDir 主根绝对路径
  * @param residentSources 常驻条目的清单相对路径（按清单数组顺序）
- * @returns 渲染结果 + 逐条失效记录
+ * @returns 渲染结果 + 逐条失效记录 + 按序丢弃清单
  */
 export async function evaluateResidentSegment(
   projectDir: string,
   residentSources: readonly string[],
 ): Promise<ResidentSegmentEvaluation> {
-  // 实际注入的条目渲染块
-  const blocks: string[] = [];
+  // 候选条目（保留路径以便丢弃时按清单顺序回报；`blocks` 只是它的投影）
+  const kept: { source: string; block: string }[] = [];
   // 失效条目（路径 + 精确原因 + 人读文案）
   const failures: ResidentSegmentEntryFailure[] = [];
 
@@ -347,7 +386,10 @@ export async function evaluateResidentSegment(
     const blockLength = read.block.length;
     if (blockLength > MAX_RESIDENT_SINGLE_CHARS) {
       const exceed = blockLength - MAX_RESIDENT_SINGLE_CHARS;
-      const message = `该文件含标题行共 ${blockLength} 字符，超过单条 ${MAX_RESIDENT_SINGLE_CHARS} 上限 ${exceed} 字符`;
+      // 「单文件超上限」的处置必须指向文件本身，不许让合计去迁就单篇（§8.1）
+      const message =
+        `该文件含标题行共 ${blockLength} 字符，超过单条 ${MAX_RESIDENT_SINGLE_CHARS} 上限 ${exceed} 字符` +
+        '；单文件超上限，请拆分该文件';
       failures.push({ source, reason: 'too-long', message });
       logger.warn(
         { source, blockLength, limit: MAX_RESIDENT_SINGLE_CHARS, exceed },
@@ -356,16 +398,51 @@ export async function evaluateResidentSegment(
       continue;
     }
 
-    blocks.push(read.block);
+    kept.push({ source, block: read.block });
+  }
+
+  const failurePaths = failures.map((f) => f.source);
+  // 因合计超限被丢弃的条目（按清单顺序，供段首汇总与日志/写路径回执）
+  const dropped: ResidentSegmentEntryFailure[] = [];
+
+  /** 按当前保留集渲染（丢弃清单行一并计入预算） */
+  const render = (): string =>
+    renderResidentSegment(
+      kept.map((k) => k.block),
+      failurePaths,
+      dropped.map((d) => d.source),
+    );
+
+  let segment = render();
+  // 丢弃前的真实溢出量（排障用）：丢弃后段长恒 ≤ 上限，只看最终长度看不出「溢出多少」
+  const overflowBeforeDrop = segment.length - MAX_RESIDENT_TOTAL_CHARS;
+  // 从清单末尾逐条丢弃：靠后者让位给靠前者（顺序真源 = 清单数组顺序）
+  while (segment.length > MAX_RESIDENT_TOTAL_CHARS && kept.length > 0) {
+    const evicted = kept.pop()!;
+    dropped.unshift({
+      source: evicted.source,
+      reason: 'total-exceeded',
+      message:
+        `常驻段合计超过 ${MAX_RESIDENT_TOTAL_CHARS} 上限，本条按清单顺序靠后被丢弃` +
+        '（本轮未注入；请精简靠前的常驻文件或缩短其正文）',
+    });
+    logger.warn(
+      { source: evicted.source, limit: MAX_RESIDENT_TOTAL_CHARS, overflow: overflowBeforeDrop },
+      `项目常驻规则合计超限：按清单顺序丢弃靠后条目 ${evicted.source}`,
+    );
+    segment = render();
+  }
+
+  // 极端兜底：丢光全部条目后段首仍超限（只可能由路径清单本身撑爆）⇒ 退到状态行
+  if (segment.length > MAX_RESIDENT_TOTAL_CHARS) {
+    segment = renderDegradedSegment(segment.length);
   }
 
   return {
-    segment: renderResidentSegment(
-      blocks,
-      failures.map((f) => f.source),
-    ),
-    blocks,
+    segment,
+    blocks: kept.map((k) => k.block),
     failures,
+    dropped,
   };
 }
 
@@ -394,6 +471,8 @@ export interface ResidentRulesManagerParams {
  * - 已信任 + 读失败 + 有缓存 ⇒ **沿用缓存** + 段首标注（IO 抖动不得静默抹掉项目约束）；
  * - 已信任 + 读失败 + 无缓存 ⇒ 空段 + 日志。
  * 读盘异常**一律不向上抛**：不得中断 `prepare` / `resume`。
+ *
+ * 合计超限**不是** fail-safe 分支：它按清单顺序逐条丢弃靠后条目并继续注入其余（§6.1）。
  */
 export class ResidentRulesManager {
   /** 主根绝对路径（读盘判据的基目录） */
@@ -458,21 +537,21 @@ export class ResidentRulesManager {
 
     const evaluation = await evaluateResidentSegment(this.projectDir, residentSources);
 
-    // 合计闸：只判「最终注入段」的渲染长度（标题 + 优先级 + 各条块 + 失效汇总行）
-    if (evaluation.segment.length > MAX_RESIDENT_TOTAL_CHARS) {
-      this.lastSegment = renderDegradedSegment(evaluation.segment.length);
+    // 合计超限已在内核求值里**按清单顺序逐条丢弃**（§6.1）：这里不再整段降级，
+    // 只负责把「丢了哪几篇」汇总回给宿主日志（段首同时有一行给模型看的丢弃清单）
+    if (evaluation.dropped.length > 0) {
       logger.warn(
         {
-          totalLength: evaluation.segment.length,
+          dropped: evaluation.dropped.map((d) => d.source),
           limit: MAX_RESIDENT_TOTAL_CHARS,
-          exceed: evaluation.segment.length - MAX_RESIDENT_TOTAL_CHARS,
-          count: residentSources.length,
+          totalLength: evaluation.segment.length,
+          residentCount: residentSources.length,
         },
-        '项目常驻规则合计超限：本轮整段降级为状态行（不截断、不注入残段）',
+        '项目常驻规则合计超限：已按清单顺序丢弃靠后条目（丢弃清单已写入段首，靠前者优先）',
       );
-    } else {
-      this.lastSegment = evaluation.segment;
     }
+
+    this.lastSegment = evaluation.segment;
     this.staleNotice = false;
   }
 

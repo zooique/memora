@@ -587,8 +587,8 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       expect((await readList()).every((e) => !('resident' in e) || e.resident !== true)).toBe(true);
     });
 
-    it('单条超 6000 ⇒ too-long，不写入', async () => {
-      const body = 'x'.repeat(6100);
+    it('单条超 10000 ⇒ too-long，文案指向「拆分该文件」，不写入', async () => {
+      const body = 'x'.repeat(10100);
       await writeSource('big.md', body);
       await writeList([{ name: 'big', description: '大文件', source: 'big.md' }]);
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir, true);
@@ -596,15 +596,17 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       const result = await manager.setResident('big.md', true);
 
       expect(result.reason).toBe('too-long');
-      expect(result.message).toContain('6000');
+      expect(result.message).toContain('10000');
+      // 处置必须指向文件本身（拆分），不许让合计去迁就单篇
+      expect(result.message).toContain('单文件超上限，请拆分该文件');
       expect((await readList())[0]).not.toHaveProperty('resident');
     });
 
-    it('合计超 15000 ⇒ too-long（用装配期同一求值函数判定）', async () => {
-      // 三条各 5000 字：前两条合计 ~10000 未越限，第三条加入后合计 > 15000
-      for (const name of ['r1.md', 'r2.md', 'r3.md']) {
-        await writeSource(name, 'y'.repeat(5000));
-      }
+    it('合计超 20000 ⇒ too-long，并列出会被挤掉的已常驻条目', async () => {
+      // 前两条各 9000 字（合计未越 20000），第三条 3000 字加入后越限 ⇒ 按序会丢弃末位 r3
+      await writeSource('r1.md', 'y'.repeat(9000));
+      await writeSource('r2.md', 'y'.repeat(9000));
+      await writeSource('r3.md', 'y'.repeat(3000));
       await writeList([
         { name: 'r1', description: '规则1', source: 'r1.md', resident: true },
         { name: 'r2', description: '规则2', source: 'r2.md', resident: true },
@@ -615,8 +617,10 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       const result = await manager.setResident('r3.md', true);
 
       expect(result.reason).toBe('too-long');
-      expect(result.message).toContain('15000');
-      // 第三条仍未写入
+      expect(result.message).toContain('20000');
+      // 「加入后会丢弃谁」必须说清，不让宿主面对一个没有解释的拒绝
+      expect(result.message).toContain('按清单顺序丢弃');
+      // 第三条仍未写入（全有或全无：不允许后写者静默挤掉先写者）
       expect((await readList())[2]).not.toHaveProperty('resident');
     });
 
