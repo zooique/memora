@@ -499,15 +499,22 @@ export type WebviewToExtensionMessage =
   /** Chat Panel 切换激活 Provider（底部模型下拉框） */
   | { type: 'chat_set_provider'; name: string }
   /**
-   * 角色管理面板切换激活角色包
+   * 角色管理面板设置角色（**一个通道、两种作用域**；`scope` 缺省 = `session`）
    *
-   * 由角色管理视图的「设为当前」触发，host 调 agent.switchRolePack(name) 切换（内核
-   * 单一切换入口：activate + emit rolePackSwitched + 刷新 loop 前缀）；成功后把名字写回
-   * **该会话的文件**（`SessionMeta.activeRolePackName`，切换写 / 装配读，方案 A；不再是
-   * 用户级全局激活态）。各视图刷新统一由 rolePackSwitched 事件驱动（设置→loadRoles，
-   * 对话→chat_role_pack），无并行推送路径。
+   * - `scope: 'session'`（缺省，兼容既有消息）：切换**当前会话**的激活角色。由「设为当前」
+   *   触发，host 调 agent.switchRolePack(name)（内核单一切换入口：activate + emit
+   *   rolePackSwitched + 刷新 loop 前缀），成功后把名字写回**该会话的文件**
+   *   （`SessionMeta.activeRolePackName`，切换写 / 装配读）。各视图刷新统一由
+   *   rolePackSwitched 事件驱动（设置→loadRoles，对话→chat_role_pack），无并行推送路径。
+   * - `scope: 'default'`：设置 / 取消「新建会话默认角色包」（用户级配置
+   *   `memora.defaultRolePack`），**不碰任何会话的 meta**，只影响此后新建会话
+   *   （名字在建会话时快照进 meta，改默认不追溯老会话）；`name` 空串 = 取消默认。
+   *
+   * 为什么不单开 `roles_set_default`：协议消息类型计数守卫已到治理阈值
+   * （protocolGuard.test.ts），两者差异只是「写到哪一层」——用显式 `scope` 字段表达，
+   * 比新增 op 更小；字段名标出作用域，不构成两个层面的措辞折叠。
    */
-  | { type: 'roles_set_active'; name: string }
+  | { type: 'roles_set_active'; name: string; scope?: 'session' | 'default' }
   /**
    * 角色 handoff：将指定角色包带入对话
    *
@@ -1447,6 +1454,12 @@ export type ExtensionToWebviewMessage =
         missingMembers?: string[];
       }[];
       activeName: string;
+      /**
+       * 用户级「新建会话默认角色包」名（空串 = 未设置，新建会话落内核兜底包）。
+       * 与 `activeName` 语义分离：activeName = 当前会话/草稿的激活角色；
+       * defaultName = 仅影响**此后新建**会话的默认，改它不追溯已有会话。
+       */
+      defaultName: string;
       /**
        * 小组会议组员数量上限（SSOT 下发）：由宿主从内核常量
        * `MAX_TEAM_MEMBERS` 透传——webview 运行在浏览器沙箱，不可直连内核包，

@@ -147,6 +147,12 @@
           "default": "",
           "description": "%config.activeProvider.description%"
         },
+        "memora.defaultRolePack": {
+          "type": "string",
+          "scope": "application",
+          "default": "",
+          "description": "%config.defaultRolePack.description%"
+        },
         "memora.backgroundProvider": {
           "type": "string",
           "scope": "application",

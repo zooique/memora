@@ -36,6 +36,8 @@ import { MemoraChatViewProvider } from './chatPanel.js';
 // 静态 DOM 骨架外置（settingsPanelHtml.ts）：本文件贴 max-lines 只降不升，骨架线性增长
 import { buildHtml } from './settingsPanelHtml.js';
 import { refreshUserRolePacksFlow, refreshUserSkillsFlow } from './userAssetRefresh.js';
+// 用户级「新建会话默认角色包」的单点读口（配置键只在那里被读取）
+import { readDefaultRolePackSetting } from '../../extension/host/rolePackDefault.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 // 模态确认框唯一入口（禁自开 showWarningMessage + modal: true，见 scripts/verify-modal-cancel.mjs 严闸）
 import { confirmModal } from '../../extension/host/ui/confirmModal.js';
@@ -74,6 +76,8 @@ import { PRESET_SEARCH_ENGINES } from '../../shared/protocol.js';
 import { probeSearchEngine, validateCustomEngines } from '../../extension/host/searchEngines.js';
 // 角色列表投影外置（纯投影不占本文件行数；判据全部来自既有点）
 import { postRolePackList } from '../helpers/rolePackListView.js';
+// 角色选择动作外置（草稿选择 / 设为默认；校验链与文案单点，见模块头）
+import { selectDraftRolePack, setDefaultRolePack } from '../helpers/rolePackSelectionActions.js';
 import {
   findUnmatchedDisabled,
   listVisibleSkills,
@@ -331,7 +335,9 @@ export class MemoraSettingsPanel {
     }
     // ─── 角色子视图消息 ───
     if (msg.type === 'roles_set_active') {
-      await this.activateRole(msg.name);
+      // 一个通道两种作用域：default = 用户级「新建会话默认角色」（不切换当前会话、不写任何 meta）
+      if (msg.scope === 'default') await this.setDefaultRole(msg.name);
+      else await this.activateRole(msg.name);
       return;
     }
     // 角色 handoff：切换激活角色包 + 聚焦对话视图（上下文由单 Agent 共享记忆承载）
@@ -741,40 +747,41 @@ export class MemoraSettingsPanel {
   };
 
   /**
-   * 草稿期角色选择（activateRole 的草稿分支）
+   * 草稿期角色选择（activateRole 的草稿分支）：校验链与文案外置在 rolePackSelectionActions
    *
-   * 存在性判据 = 已登记实例的 `rolePackManager.get`（与真实会话同一条内核目录，宿主不另写）；
-   * 只读、不装配。无任何已登记实例时无法校验 ⇒ 如实失败（不允许「先记下、建会话时才炸」）；
-   * 读写桥未注入时同理 ⇒ 返回 false（没有记录选择的地方，就不能报成功）。
+   * @param name 角色包名
+   * @returns 是否记录成功
    */
-  private async selectDraftRolePack(name: string): Promise<boolean> {
-    // 入口先判读写桥：未注入 = 没有地方记录选择，必须如实失败——
-    // 旧实现短路后仍 return true，是「报成功但什么都没发生」的静默谎报。
-    if (!this._draftRolePackAccess) {
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: '草稿期角色切换通道未就绪，无法记录选择，请稍后重试',
-      });
-      return false;
-    }
-    const rpm = this._peekAgent?.(this._resolveSessionId?.())?.rolePackManager;
-    if (!rpm) {
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: '草稿期暂无可校验的角色目录（尚未装配任何会话），请先发送一条内容后再选择',
-      });
-      return false;
-    }
-    if (!rpm.get(name)) {
-      this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
-      return false;
-    }
-    this._draftRolePackAccess?.setName(name);
-    // 草稿没有 Agent ⇒ rolePackSwitched 不会来；显式重推既有 roles_loaded 刷新「当前」高亮
-    await this.loadRoles();
-    return true;
+  private selectDraftRolePack(name: string): Promise<boolean> {
+    return selectDraftRolePack(
+      {
+        peekRolePackManager: () => this._peekAgent?.(this._resolveSessionId?.())?.rolePackManager,
+        hasDraftBridge: !!this._draftRolePackAccess,
+        setDraftRolePackName: (value) => this._draftRolePackAccess?.setName(value),
+        post: (message) => this.post(message),
+        reloadRoles: () => this.loadRoles(),
+      },
+      name,
+    );
+  }
+
+  /**
+   * 设置 / 取消「新建会话默认角色包」：写用户级配置，不碰任何会话 meta
+   *
+   * 实现外置在 rolePackSelectionActions（校验链与文案单点）；本方法只注入面板能力。
+   *
+   * @param name 角色包名；空串 = 取消默认（恢复内核兜底包）
+   * @returns 是否写入成功
+   */
+  private setDefaultRole(name: string): Promise<boolean> {
+    return setDefaultRolePack(
+      {
+        peekRolePackManager: () => this._peekAgent?.(this._resolveSessionId?.())?.rolePackManager,
+        post: (message) => this.post(message),
+        reloadRoles: () => this.loadRoles(),
+      },
+      name,
+    );
   }
 
   /** 切换激活角色包（SSOT：roles_set_active 与 roles_handoff 共用），返回是否成功 */
@@ -791,7 +798,8 @@ export class MemoraSettingsPanel {
     // loadRoles——单一事件通知所有消费者，消除并行推送路径（SSOT）。
     // 角色选择是**会话级**状态（方案 A，2026-11-06 定案）：切换只作用于当前会话的 agent，
     // 不再写 globalState——那会让下一个新建会话偷偷继承「上次全局选择」的默认值。
-    // 新会话默认角色 = 内核 §4.1 单链兜底包（assembler），宿主不提供任何默认值。
+    // 新会话默认角色 = 用户级 `memora.defaultRolePack`（未设置则内核 §4.1 单链兜底包）；
+    // 本路径只切当前会话，绝不把「切了什么」写成全局默认。
     const ok = agent.switchRolePack(name);
     // 落盘（方案 A）：**只在切换成功时写**——失败 / 被限流锁定不写，避免把「没切成」记成用户选择。
     // 会话 id 与下方监听解绑共用 `_resolveSessionId` 同一解析面（不另算「当前会话」）。
@@ -978,6 +986,7 @@ export class MemoraSettingsPanel {
       },
       rpm,
       draftActiveName,
+      readDefaultRolePackSetting(),
     );
   }
 

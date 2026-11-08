@@ -75,7 +75,6 @@ import {
   // 「这轮算不算跑成功」判据取内核单点（isRoundSuccessful）：宿主不得自写
   // `status === 'complete'`（内核 roundStore.test 的判据单源守卫会拦，见 helpers/occupancyHistory.ts 先例）
   isRoundSuccessful,
-  BUILTIN_FALLBACK_PACK, // 内核兜底契约包名（草稿未选角色时的当前角色 = 装配 §4.1 即将生效的包）
 } from '@zooique/memora';
 // step 检查点落盘（已收场轮取盘上现值、只并事件；能力探测与判据单点外置）
 import { checkpointRoundEvents } from './roundEventCheckpoint.js';
@@ -156,7 +155,12 @@ import { toNoticeText } from '../../extension/host/noticeText.js';
 import {
   readSessionRolePackName,
   sessionRolePackFallbackNotice,
+  defaultRolePackFallbackNotice,
 } from '../../extension/host/sessionRolePack.js'; // 角色包回落判据 / 文案单点
+// 用户级「新建会话默认角色包」的单点读口（配置键只在那里被读取；装配链禁止引用）
+import { resolveDraftRolePackName } from '../../extension/host/rolePackDefault.js';
+// 新建会话角色决策（显式选择 > 全局默认 > 兜底包；决策与失效判定同源，见模块头）
+import { decideNewSessionRolePack } from '../../extension/host/newSessionRolePack.js';
 // 引用发送前存在性核实（HOST-CTX-9 发送侧）：解析器复用 refPath（首根 SSOT），不由本文件另写
 import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
@@ -523,8 +527,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         pushSessionList: () => this.pushSessionList(),
         refreshActivity: () => this.refreshSessionActivity(),
         createSession: (id, rolePackName) => this.createSession(id, rolePackName),
-        // 草稿未选角色时的「当前角色」= 内核兜底契约包（宿主不另写默认名）
-        defaultRolePackName: BUILTIN_FALLBACK_PACK,
+        // 草稿未选角色时的「即将生效」角色 = 用户级默认；未设置则内核兜底契约包
+        getDefaultRolePackName: resolveDraftRolePackName,
       },
       !this._currentSessionId,
     );
@@ -932,26 +936,33 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 角色包投影的唯一来源是 `bindAgent`（会话 Agent 的真实激活值）
+   * 投影一条 `chat_role_pack`（角色徽章 / 选择器当前项的**唯一上屏点**）
    *
-   * ⚠ 不要再加「外部写一份展示名」的入口：那会与内核实际激活值形成双源，
-   * 无激活包时就会显示一个未生效的角色名（谎报）。差异提示走下方 fallback 口径。
+   * ⚠ 展示名只能经 `roleDisplayName` 反查内核 listMeta（外部写一份 = 双源谎报）；差异提示走 fallback 口径。
+   *
+   * @param name 角色包名（undefined / 空串 = 无激活角色，投空名让 webview 清标签）
    */
+  private postActiveRolePack(name: string | undefined): void {
+    if (!name) {
+      this.post({ type: 'chat_role_pack', rolePack: '', traits: undefined });
+      return;
+    }
+    this.post({
+      type: 'chat_role_pack',
+      rolePack: this.roleDisplayName(name),
+      traits: this.getActiveTraits(),
+      team: this.getActiveTeamForProtocol(),
+    });
+  }
 
   /**
    * 角色包组（会议名单）热更新通知：settingsPanel 保存/删除队伍后调。
    * 不改变当前角色，只重推一次 chat_role_pack（带最新 team 字段）让 chatView 刷新 team 图标。
-   * 兜底：若 activePack 就是保存/删除的组长 → team 图标立即显隐；
-   * 非组长改队不影响 chatView（activePack 不是组长时本来就不显示 team 图标）。
+   * 兜底：activePack 即保存/删除的组长 → team 图标立即显隐；非组长改队本就不显示。
    */
   public refreshActiveRolePackForTeam(): void {
     if (!this._view || !this._activeRolePack) return;
-    this.post({
-      type: 'chat_role_pack',
-      rolePack: this.roleDisplayName(this._activeRolePack),
-      traits: this.getActiveTraits(),
-      team: this.getActiveTeamForProtocol(),
-    });
+    this.postActiveRolePack(this._activeRolePack);
   }
 
   /**
@@ -1586,12 +1597,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 只 post 不更新会让视图重解析时读到陈旧值 → 徽章与设置面板分叉。
     this._activeRolePack = info.to;
     // 仅转发切换后的角色显示名（to），触发角色选择器 + AI 消息标签同步（视图存活时）
-    this.post({
-      type: 'chat_role_pack',
-      rolePack: this.roleDisplayName(info.to),
-      traits: this.getActiveTraits(),
-      team: this.getActiveTeamForProtocol(),
-    });
+    this.postActiveRolePack(info.to);
     // 同步推送工具权限徽章（角色切换后能力面随之变化）
     this.postCapabilityBadge();
     // 角色切换后「启用角色包」技能源变化 → 刷新技能清单（composer 动态下拉与设置面板同步，SSOT）
@@ -2057,12 +2063,27 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     try {
       // 先切宿主当前会话：装配会由登记表在核内核侧切到该会话（无需再改单实例身份）
       this.setCurrentSessionId(sessionId);
-      // 草稿角色选择的**唯一落盘点**（必须早于装配：装配经 readSessionRolePackName 读回）；未选不写
-      if (rolePackName) {
-        this.sessionStore.updateSessionMeta(sessionId, { activeRolePackName: rolePackName });
+      // 角色来源：草稿显式选择 > 用户级默认 > 兜底包（决策/失效判定同源）；探针取当前显示源优先
+      const roleDecision = decideNewSessionRolePack(rolePackName, [
+        ...(this._agent ? [this._agent] : []),
+        ...this._sessionAgents.values(),
+      ]);
+      // 角色名的**唯一落盘点**（必须早于装配：装配经 readSessionRolePackName 读回）；未选/失效不写
+      if (roleDecision.rolePackName) {
+        this.sessionStore.updateSessionMeta(sessionId, {
+          activeRolePackName: roleDecision.rolePackName,
+        });
       }
       const agent = await this.agentForSession(sessionId);
       this.bindAgent(agent);
+      // 默认包失效：meta 未写，既有「原角色包」提示不会触发 ⇒ 用独立文案如实告知（不追溯老会话）
+      if (roleDecision.unavailableName) {
+        const notice = defaultRolePackFallbackNotice(
+          roleDecision.unavailableName,
+          agent.rolePackManager?.activeName,
+        );
+        if (notice) this.post(notice);
+      }
       this.replayCurrentSession();
       // 会话视图入口（新建）：任务条按「显示会话」投影，必须显式 force（不赌后续事件到来，否则串台）
       this.postBackgroundTasks('force');
@@ -2564,16 +2585,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
     // 推送当前激活角色包 → 输入区角色选择器 + AI 消息标签（主动可见）。
     // 即使没有激活的角色包也推送，让 webview 正确处理状态
-    if (this._activeRolePack) {
-      this.post({
-        type: 'chat_role_pack',
-        rolePack: this.roleDisplayName(this._activeRolePack),
-        traits: this.getActiveTraits(),
-        team: this.getActiveTeamForProtocol(),
-      });
-    } else {
-      this.post({ type: 'chat_role_pack', rolePack: '', traits: undefined });
-    }
+    this.postActiveRolePack(this._activeRolePack);
     void this.pushProviders();
     this.pushRolePacks();
     // 补推工具权限徽章（replaySession 时角色信息已就绪）
@@ -2729,19 +2741,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 本方法不再「空则补齐」——那种写法会让旧会话的角色名在切会话后滞留。
 
     // 角色数据：无论是否有激活角色都推送，让 webview 正确更新 UI 状态
-    if (this._view) {
-      if (this._activeRolePack) {
-        this.post({
-          type: 'chat_role_pack',
-          rolePack: this.roleDisplayName(this._activeRolePack),
-          traits: this.getActiveTraits(),
-          team: this.getActiveTeamForProtocol(),
-        });
-      } else {
-        // 无激活角色包时推送空信息，让 webview 清除角色标签
-        this.post({ type: 'chat_role_pack', rolePack: '', traits: undefined });
-      }
-    }
+    if (this._view) this.postActiveRolePack(this._activeRolePack);
     // 角色切换入口数据（webview 收到后自动显示输入区内下拉）
     this.pushRolePacks();
     // 装配完成即补推工具权限徽章

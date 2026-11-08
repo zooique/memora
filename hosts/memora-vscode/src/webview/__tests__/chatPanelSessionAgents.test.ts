@@ -18,18 +18,22 @@
  *   · 把 `isBackgroundFlow()` 恒返回 false → 「后台投影闸」用例转红。
  */
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync）
 import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
-import { join } from 'node:path';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { join, relative } from 'node:path';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import type { Agent, BackgroundTask } from '@zooique/memora';
 // 默认包判据真源 = 内核导出常量（装配 §4.1 单链实际生效值）；测试不硬编码包名。
 // RolePackManager = 真实内核实现（草稿未选包的硬判据夹具直接跑它，不用按假设写的桩）
-import { BUILTIN_FALLBACK_PACK, RolePackManager } from '@zooique/memora';
+// formatDateKey = 宿主建会话/分叉 id 的同一真源（fork 用例要按生产 id 形态断言）
+import { BUILTIN_FALLBACK_PACK, RolePackManager, formatDateKey } from '@zooique/memora';
 // 生产同源读回判据：装配桩按它取「会话 meta → 实际激活名」，保证硬判据不是自造链条
 import { readSessionRolePackName } from '../../extension/host/sessionRolePack.js';
 import type * as vscode from 'vscode';
+// 共享 vscode mock 的运行时引用：默认角色包用例要按用例改写 getConfiguration
+import { workspace as mockedWorkspace } from 'vscode';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
@@ -61,6 +65,18 @@ vi.mock('vscode', async () => ({
     onDidSaveTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
   },
 }));
+
+/** 共享 getConfiguration 桩的原始实现（默认角色包用例会按用例改写，结束后恢复防串场） */
+const originalGetConfigurationImpl = vi
+  .mocked(mockedWorkspace.getConfiguration)
+  .getMockImplementation();
+
+afterEach(() => {
+  // clearAllMocks 只清调用记录、不清实现；不恢复会让某用例的默认包取值漏到后续用例
+  if (originalGetConfigurationImpl) {
+    vi.mocked(mockedWorkspace.getConfiguration).mockImplementation(originalGetConfigurationImpl);
+  }
+});
 
 /** 过程 chunk 形态（与内核 AgentChunk 的宿主消费面同形；只取本文件用到的字段） */
 type Chunk = { type: string; roundId: string; [k: string]: unknown };
@@ -1042,6 +1058,210 @@ describe('草稿态 · 「＋」不再立刻落空会话（首次发送才建会
     expect(provider.getCurrentAgent()).toBe(agentA);
   });
 });
+
+/**
+ * 新建会话默认角色包 · 用户级默认 → 会话快照（2026-11-08 用户拍板）
+ *
+ * 三条不变式：
+ *  ① 快照语义：默认值只在**建会话**时读一次并写进 `SessionMeta`，此后改默认不影响已有会话；
+ *  ② 单点读取：配置键只在 `rolePackDefault.ts` 被读（见下方守卫组）；
+ *  ③ 不追溯：装配链与 fork 路径不得引用全局默认（否则老会话会被「引用语义」改写）。
+ */
+describe('新建会话默认角色包 · 用户级默认 → 会话快照', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** 让 `memora.defaultRolePack` 读到指定值；返回该配置读的 spy（断言「不读默认」用） */
+  function stubDefaultRolePack(value: string): { get: ReturnType<typeof vi.fn> } {
+    const get = vi.fn((key: string) => (key === 'defaultRolePack' ? value : false));
+    vi.mocked(mockedWorkspace.getConfiguration).mockImplementation(
+      () => ({ get, update: vi.fn(async () => {}) }) as never,
+    );
+    return { get };
+  }
+
+  /** 取最后一条 `chat_role_pack` 投影（徽章取值） */
+  function lastRolePack(posted: PanelHandle['posted']): { rolePack: string } {
+    return posted.filter((m) => m.type === 'chat_role_pack').at(-1) as unknown as {
+      rolePack: string;
+    };
+  }
+
+  /**
+   * 装配桩：activeName 严格取自会话 meta（与生产 assembler 同一判据），
+   * 并暴露 `get`（默认包存在性校验的探针面）
+   */
+  function makeFactory(store: WorkspaceSessionStore, installed: readonly string[]) {
+    return vi.fn(async (_projectPath: string, sessionId: string) => {
+      const requested = readSessionRolePackName(store, sessionId);
+      return {
+        ...sessionAgent(sessionId),
+        rolePackManager: {
+          activeName: requested ?? BUILTIN_FALLBACK_PACK,
+          get: (name: string) => (installed.includes(name) ? { name } : undefined),
+          getActive: () => ({
+            strategy: { act: { toolMode: 'allow', temperature: 0.7 }, prepare: {} },
+            capabilities: undefined,
+            traits: {},
+          }),
+          listMeta: () => [],
+          getActiveTeam: () => undefined,
+        },
+      } as unknown as Agent;
+    });
+  }
+
+  /** 建面板 + 注入装配桩 + 进入草稿（当前停在 seed 会话） */
+  async function enterDraft(installed: readonly string[]) {
+    const agentA = sessionAgent('2026-11-06-a');
+    const ctx = setupPanel({ '2026-11-06-a': agentA }, ['2026-11-06-a']);
+    const store = (ctx.provider as unknown as { sessionStore: WorkspaceSessionStore }).sessionStore;
+    const factory = makeFactory(store, installed);
+    ctx.provider.setAgentFactory(factory);
+    ctx.cast._currentSessionId = '2026-11-06-a';
+    // 存在性校验的探针 = 当前显示实例（与生产同一顺序：当前源优先）
+    ctx.cast._agent = await factory('/mock/workspace', '2026-11-06-a');
+    // 探针构造不算「建会话装配」：清掉调用记录，后续断言只统计真实装配
+    factory.mockClear();
+    await ctx.provider.newSessionFromCommand();
+    return { ...ctx, store, factory, agentA };
+  }
+
+  /** 草稿首条发送 → 等建会话完成，返回新会话 id */
+  async function sendFirst(ctx: Awaited<ReturnType<typeof enterDraft>>): Promise<string> {
+    ctx.fireMessage({ type: 'input', kind: 'send', text: '梳理一下这个仓库' });
+    await vi.waitFor(() => expect(ctx.provider.isDraftSession()).toBe(false), { timeout: 5000 });
+    return ctx.provider.getCurrentSessionId();
+  }
+
+  it('未选包 + 全局默认=X ⇒ 建会话写入 meta，装配与投影都等于 X', async () => {
+    stubDefaultRolePack('代码助手');
+    const ctx = await enterDraft(['代码助手']);
+
+    const newId = await sendFirst(ctx);
+
+    // ① 唯一写点：随建会话那一次写进 meta
+    expect(ctx.store.getSessionMeta(newId)?.activeRolePackName).toBe('代码助手');
+    // ② 装配实际生效包（能力面真源）
+    const assembled = ctx.cast._sessionAgents.get(newId) as Agent;
+    expect(assembled.rolePackManager?.activeName).toBe('代码助手');
+    // ③ 屏上投影与事实同源
+    expect(lastRolePack(ctx.posted).rolePack).toBe('代码助手');
+  });
+
+  it('全局默认未设置（空串）⇒ 走现状：不写 meta，装配落兜底包', async () => {
+    stubDefaultRolePack('');
+    const ctx = await enterDraft([]);
+
+    const newId = await sendFirst(ctx);
+
+    expect(ctx.store.getSessionMeta(newId)).toBeUndefined();
+    const assembled = ctx.cast._sessionAgents.get(newId) as Agent;
+    expect(assembled.rolePackManager?.activeName).toBe(BUILTIN_FALLBACK_PACK);
+    expect(lastRolePack(ctx.posted).rolePack).toBe(BUILTIN_FALLBACK_PACK);
+  });
+
+  it('全局默认指向已删包 ⇒ 不写 meta、回落兜底、弹「默认角色包不可用」', async () => {
+    stubDefaultRolePack('幽灵角色');
+    const ctx = await enterDraft([]); // 目录里没有「幽灵角色」
+
+    const newId = await sendFirst(ctx);
+
+    expect(ctx.store.getSessionMeta(newId)).toBeUndefined();
+    const assembled = ctx.cast._sessionAgents.get(newId) as Agent;
+    expect(assembled.rolePackManager?.activeName).toBe(BUILTIN_FALLBACK_PACK);
+    const defaultNotice = ctx.posted
+      .filter((m) => m.type === 'notice' && String(m.message ?? '').includes('默认角色包'))
+      .at(-1) as unknown as { level?: string; message?: string } | undefined;
+    expect(defaultNotice?.level).toBe('error');
+    expect(defaultNotice?.message).toBe(
+      `默认角色包「幽灵角色」不可用，当前使用兜底角色「${BUILTIN_FALLBACK_PACK}」。`,
+    );
+    // 与既有「原角色包不可用」区分：默认包不是用户在该会话里选过的角色
+    expect(defaultNotice?.message).not.toContain('原角色包');
+  });
+
+  it('草稿徽章投影全局默认；草稿期间不装配（默认只在建会话时快照）', async () => {
+    stubDefaultRolePack('代码助手');
+    const ctx = await enterDraft(['代码助手']);
+
+    expect(ctx.provider.isDraftSession()).toBe(true);
+    expect(lastRolePack(ctx.posted).rolePack).toBe('代码助手');
+    expect(ctx.factory).not.toHaveBeenCalled();
+  });
+
+  it('fork 保持父会话的角色包：不读全局默认、不把默认写进子会话', async () => {
+    const { get } = stubDefaultRolePack('代码助手');
+    const parentRole = '只读项目顾问';
+    const agentA = sessionAgent('2026-11-06-a');
+    const ctx = setupPanel();
+    const store = (ctx.provider as unknown as { sessionStore: WorkspaceSessionStore }).sessionStore;
+    ctx.cast._currentSessionId = '2026-11-06-a';
+    ctx.cast._agent = agentA;
+    // 内核 forkSession 的落盘语义：子会话文件继承父会话角色快照
+    // （真源在内核 messageHistory，内核侧已有独立用例；此处只模拟这一步落盘）
+    (
+      agentA as unknown as {
+        forkSession: (roundId: string) => { newSession: string; roundCount: number };
+      }
+    ).forkSession = () => {
+      store.updateSessionMeta(`${formatDateKey(new Date())}-fx1`, {
+        activeRolePackName: parentRole,
+      });
+      return { newSession: 'fx1', roundCount: 1 };
+    };
+    get.mockClear();
+
+    await ctx.provider.forkCurrentSession('round-1');
+
+    const forkedId = ctx.provider.getCurrentSessionId();
+    expect(forkedId).toBe(`${formatDateKey(new Date())}-fx1`);
+    // 宿主零改写：子会话仍是父包，不得被全局默认覆盖
+    expect(store.getSessionMeta(forkedId)?.activeRolePackName).toBe(parentRole);
+    // 分叉不是建会话：不得读取全局默认（否则老会话会被追溯改写）
+    expect(get.mock.calls.filter(([key]) => key === 'defaultRolePack')).toEqual([]);
+  });
+});
+
+describe('新建会话默认角色包 · 读口单一性守卫（SSOT）', () => {
+  /** 宿主 src 根（本文件位于 src/webview/__tests__/） */
+  const srcRoot = fileURLToPath(new URL('../..', import.meta.url));
+
+  /** 递归列出 src 下全部生产 .ts 文件绝对路径（测试目录排除：本组守卫只盯生产代码） */
+  async function listSourceFiles(dir: string = srcRoot): Promise<string[]> {
+    const out: string[] = [];
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === '__tests__' || entry.name === 'fixtures') continue;
+        out.push(...(await listSourceFiles(full)));
+      } else if (entry.name.endsWith('.ts')) out.push(full);
+    }
+    return out;
+  }
+
+  it("配置键读取（get<string>('defaultRolePack')）只出现在 rolePackDefault.ts", async () => {
+    const readers: string[] = [];
+    for (const file of await listSourceFiles()) {
+      const text = await readFile(file, 'utf-8');
+      if (/get<string>\(\s*['"]defaultRolePack['"]/.test(text)) {
+        readers.push(relative(srcRoot, file).replaceAll('\\', '/'));
+      }
+    }
+    expect(readers).toEqual(['extension/host/rolePackDefault.ts']);
+  });
+
+  it('装配链源码零引用全局默认（防止改成「引用语义」追溯改写老会话）', async () => {
+    for (const rel of ['extension/extension.ts', 'extension/host/assemble.ts']) {
+      const text = await readFile(join(srcRoot, rel), 'utf-8');
+      expect(text, `${rel} 不得读取/引用全局默认角色包`).not.toMatch(
+        /defaultRolePack|DefaultRolePackSetting|resolveNewSessionRolePackName|decideNewSessionRolePack/,
+      );
+    }
+  });
+});
+
 interface ActivitySnapshot {
   type: 'session_activity';
   runningIds: string[];

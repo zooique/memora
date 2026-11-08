@@ -61,6 +61,27 @@ export function rolePackFallbackNotice(
 }
 
 /**
+ * 构造「默认角色包不可用」的可见提示（纯函数；无失败返回 null）
+ *
+ * 与 {@link rolePackFallbackNotice} 分开的原因：默认包不是用户在**该会话**里选过的角色，
+ * 文案不能说「原角色包」；且该路径**不写 meta**，不能让既有回落提示承接。
+ *
+ * @param requested 用户级默认设置里的包名（空串 = 未设置 ⇒ 不提示）
+ * @param activeName 装配后内核实际激活的包名（null = 连兜底包都缺失）
+ * @returns error 级 notice；能解析成功时返回 null
+ */
+export function defaultRolePackFallbackNotice(
+  requested: string,
+  activeName: string | null | undefined,
+): ExtensionToWebviewMessage | null {
+  if (!requested || requested === activeName) return null;
+  const message = activeName
+    ? `默认角色包「${requested}」不可用，当前使用兜底角色「${activeName}」。`
+    : `默认角色包「${requested}」不可用，且兜底角色包缺失，当前无可用角色。`;
+  return { type: 'notice', level: 'error', message };
+}
+
+/**
  * 一次性取「某会话是否发生了角色包回落」的提示（供面板 bindAgent 直接 post）
  *
  * @param store 会话存储

@@ -32,13 +32,13 @@ export interface DraftSessionDeps {
   pushSessionList: () => void;
   refreshActivity: () => void;
   /**
-   * 内核兜底契约包名（无草稿选择时的「当前角色」事实）
+   * 草稿未选角色时「即将生效」的角色名（每次投影现读，避免设置页改默认后徽章停在旧值）
    *
-   * 真源 = 内核 `BUILTIN_FALLBACK_PACK`（装配 §4.1 单链：`builtinFallbackRole ?? 本常量`；
-   * 宿主当前零注入 `builtinFallbackRole` ⇒ 实际生效值就是本常量）。宿主不得另写默认包名，
-   * 更不得拿「列表第一个」冒充（那是第二份回落真源）。
+   * 真源在宿主单点读口 `rolePackDefault.ts`：用户级默认；未设置则投影内核
+   * `BUILTIN_FALLBACK_PACK`（装配 §4.1 单链：`builtinFallbackRole ?? 本常量`）。
+   * 宿主不得另写默认包名，更不得拿「列表第一个」冒充（那是第二份回落真源）。
    */
-  defaultRolePackName: string;
+  getDefaultRolePackName: () => string;
   /** 面板唯一的建会话路径（拿锁 / 装配 / 回放全在它里面；角色包名随 meta 一次性落盘） */
   createSession: (sessionId: string, rolePackName?: string) => Promise<boolean>;
 }
@@ -134,10 +134,10 @@ export class DraftSessionController {
 
   /** 草稿角色徽章投影（进入 / 切换共用，避免两处各拼一次包名） */
   private postRolePack(): void {
-    // 未选 ⇒ 内核 §4.1 兜底包名（这才是「即将生效」的真实角色，不是宿主猜的默认值）
+    // 未选 ⇒ 用户级默认；未设置则内核 §4.1 兜底包名（括号里才是「即将生效」的真实角色）
     this.deps.post({
       type: 'chat_role_pack',
-      rolePack: this._rolePackName ?? this.deps.defaultRolePackName,
+      rolePack: this._rolePackName ?? this.deps.getDefaultRolePackName(),
       traits: undefined,
     });
   }

@@ -34,11 +34,13 @@ export interface RolePackListContext {
  * @param ctx 宿主面（post / globalState / 来源判定）
  * @param rpm 角色包管理器（undefined = 目录不可得：如实空列表，不伪造条目）
  * @param draftActiveName 草稿期「当前角色」显式值（未选时 = 内核兜底包；真实会话传 undefined）
+ * @param defaultName 用户级「新建会话默认角色包」名（空串 = 未设置；只作「默认」徽章数据源）
  */
 export function postRolePackList(
   ctx: RolePackListContext,
   rpm: Agent['rolePackManager'] | undefined,
   draftActiveName?: string,
+  defaultName = '',
 ): void {
   if (!rpm) {
     ctx.post({
@@ -47,6 +49,7 @@ export function postRolePackList(
       teams: [],
       // 草稿仍有「当前角色」事实（内核兜底包）；真实会话未就绪时保持空串
       activeName: draftActiveName ?? '',
+      defaultName,
       maxTeamMembers: MAX_TEAM_MEMBERS,
       // 键面与 rpm 无关（静态派生），未就绪时也下发，编辑模式不因装配时序缺席
       keyface: describeStrategyKeys(),
@@ -116,6 +119,7 @@ export function postRolePackList(
     packs,
     teams,
     activeName,
+    defaultName,
     // maxTeamMembers / keyface：内核常量与键面透传（UI 侧禁另写字面量 / 清单）
     maxTeamMembers: MAX_TEAM_MEMBERS,
     keyface: describeStrategyKeys(),

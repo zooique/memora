@@ -23,7 +23,7 @@ const HTML = `
       <div class="header-actions"><button id="btnOpenRolePacksDir" class="btn btn-secondary btn-icon-solo" title="打开用户角色包目录"><span class="btn-icon" data-icon="folder"></span></button><button id="btnRefreshRolePacks" class="btn btn-secondary btn-icon-solo" title="刷新角色包列表（重扫用户角色包目录）"><span class="btn-icon" data-icon="refresh"></span></button></div>
     </div>
     <div id="list"><p class="hint">加载中…</p></div>
-    <p class="footer-hint">「设为当前」仅切换默认角色；「带入对话」还会跳到对话并预填一句过渡语（不自动发送，可编辑后再发）。</p>
+    <p class="footer-hint">「当前」= 本会话正在使用的角色（「设为当前」只切本会话）；「默认」= 此后新建会话自动使用的角色（「设为默认」只影响未来，不改已有会话）；「带入对话」还会跳到对话并预填一句过渡语（不自动发送，可编辑后再发）。默认角色若是只读策略，此后每个新会话都会失去写入能力。</p>
   </div>
 `;
 
@@ -51,10 +51,19 @@ function dispatchLoaded(
   teams: unknown[] = [],
   maxTeamMembers = 4,
   keyface?: unknown[],
+  defaultName?: string,
 ): void {
   window.dispatchEvent(
     new MessageEvent('message', {
-      data: { type: 'roles_loaded', packs, activeName, teams, maxTeamMembers, keyface },
+      data: {
+        type: 'roles_loaded',
+        packs,
+        activeName,
+        teams,
+        maxTeamMembers,
+        keyface,
+        defaultName,
+      },
     }),
   );
 }
@@ -108,8 +117,72 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     // 按钮 title 提示：解释各自行为（对齐 chip.title 可发现性范式）
     expect(cards[0]?.querySelector('.btn-primary')?.getAttribute('title')).toContain('跳到对话');
     expect(cards[1]?.querySelector('.btn-secondary')?.getAttribute('title')).toContain(
-      '仅切换默认角色',
+      '切换当前会话',
     );
+  });
+
+  it('默认徽章与「设为默认 / 取消默认」：动作只发 scope=default，不碰会话级切换', () => {
+    const { postMessage } = mountRolesView();
+    dispatchLoaded(
+      [
+        { name: 'doc-review', displayName: '文档打磨', capabilityState: { kind: 'all' } },
+        { name: 'translator', displayName: '翻译助手', capabilityState: { kind: 'all' } },
+      ],
+      'doc-review',
+      [],
+      4,
+      undefined,
+      'translator',
+    );
+    const list = document.getElementById('list') as HTMLElement;
+    const cards = list.querySelectorAll('.card');
+    /** 卡片上的状态徽章文本（顺序 = 渲染顺序：当前 → 默认） */
+    const badgesOf = (card: Element) =>
+      Array.from(card.querySelectorAll('.badge')).map((b) => b.textContent);
+    expect(badgesOf(cards[0]!)).toEqual(['当前']);
+    expect(badgesOf(cards[1]!)).toEqual(['默认']);
+    expect(cards[1]!.querySelector('.badge')?.getAttribute('title')).toContain(
+      '新建会话将自动使用该角色',
+    );
+    /** 卡片上的次要按钮文本集合（设为当前 / 设为默认 / 取消默认） */
+    const secondaryTexts = (card: Element) =>
+      Array.from(card.querySelectorAll('.btn-secondary')).map((b) => b.textContent);
+    expect(secondaryTexts(cards[0]!)).toContain('设为默认');
+    expect(secondaryTexts(cards[1]!)).toContain('取消默认');
+    // 「设为默认」→ 用户级默认（scope=default），不是会话级 roles_set_active 默认语义
+    const defBtn = Array.from(cards[0]!.querySelectorAll('.btn-secondary')).find(
+      (b) => b.textContent === '设为默认',
+    ) as HTMLElement;
+    defBtn.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'roles_set_active',
+      name: 'doc-review',
+      scope: 'default',
+    });
+    // 「取消默认」→ 空串 + scope=default（恢复内核兜底包）
+    const clearBtn = Array.from(cards[1]!.querySelectorAll('.btn-secondary')).find(
+      (b) => b.textContent === '取消默认',
+    ) as HTMLElement;
+    clearBtn.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'roles_set_active',
+      name: '',
+      scope: 'default',
+    });
+  });
+
+  it('「当前」与「默认」是两个层面：同一角色可同时渲染两枚徽章', () => {
+    mountRolesView();
+    dispatchLoaded(
+      [{ name: 'doc-review', displayName: '文档打磨', capabilityState: { kind: 'all' } }],
+      'doc-review',
+      [],
+      4,
+      undefined,
+      'doc-review',
+    );
+    const badges = Array.from(document.querySelectorAll('.card .badge')).map((b) => b.textContent);
+    expect(badges).toEqual(['当前', '默认']);
   });
 
   it('能力标签 chips：展示 host 翻译的中文 label，title 承载原始能力名', () => {

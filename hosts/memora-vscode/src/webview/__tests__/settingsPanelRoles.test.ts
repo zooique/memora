@@ -262,6 +262,98 @@ describe('settingsPanel.activateRole —— 会话级落盘（方案 A，切换�
   });
 });
 
+describe('settingsPanel.setDefaultRole —— 新建会话默认角色包（用户级写入）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** 调私有 setDefaultRole */
+  function setDefaultRole(provider: MemoraSettingsPanel, name: string): Promise<boolean> {
+    return (provider as unknown as { setDefaultRole(n: string): Promise<boolean> }).setDefaultRole(
+      name,
+    );
+  }
+
+  /** 带角色目录的 agent 桩（peekAgent 用它校验包存在性；listMeta 空表足够投影） */
+  function roleDirectoryAgent(installed: string[]): Agent {
+    return {
+      rolePackManager: {
+        activeName: BUILTIN_FALLBACK_PACK,
+        get: (name: string) => (installed.includes(name) ? { name } : undefined),
+        listMeta: () => [],
+      },
+      on: vi.fn(),
+      off: vi.fn(),
+    } as unknown as Agent;
+  }
+
+  /** 装配面板：固定当前会话 + 目录探针（setDefaultRole 需要 peekAgent） */
+  function setupWithDirectory(agent: Agent): ReturnType<typeof setup> {
+    const ctx = setup(agent);
+    ctx.provider.setAgentFactory(
+      async () => agent,
+      () => agent,
+      () => '2026-11-08-s1',
+      () => false,
+    );
+    return ctx;
+  }
+
+  it('角色包存在 → 写用户级 defaultRolePack（Global），不写会话 meta / globalState', async () => {
+    const agent = roleDirectoryAgent(['代码助手']);
+    const { provider, posted, globalUpdate } = setupWithDirectory(agent);
+
+    const ok = await setDefaultRole(provider, '代码助手');
+
+    expect(ok).toBe(true);
+    expect(vscodeConfigMock.cfgUpdate).toHaveBeenCalledWith('defaultRolePack', '代码助手', 1);
+    // 用户级配置之外不得有第二写点（会话快照只在建会话处写）
+    expect(globalUpdate).not.toHaveBeenCalled();
+    expect(notices(posted).at(-1)).toEqual({
+      type: 'notice',
+      level: 'info',
+      message: '已将「代码助手」设为新建会话的默认角色（不影响已有会话）',
+    });
+  });
+
+  it('角色包不存在 → 拒绝写入并弹「角色包不存在」', async () => {
+    const agent = roleDirectoryAgent([]);
+    const { provider, posted } = setupWithDirectory(agent);
+
+    const ok = await setDefaultRole(provider, 'ghost');
+
+    expect(ok).toBe(false);
+    expect(vscodeConfigMock.cfgUpdate).not.toHaveBeenCalled();
+    expect(notices(posted)[0]).toEqual({
+      type: 'notice',
+      level: 'error',
+      message: '角色包不存在：ghost',
+    });
+  });
+
+  it('空串 → 取消默认（写入空串，新建会话回落内核兜底包）', async () => {
+    const agent = roleDirectoryAgent(['代码助手']);
+    const { provider, posted } = setupWithDirectory(agent);
+
+    const ok = await setDefaultRole(provider, '');
+
+    expect(ok).toBe(true);
+    expect(vscodeConfigMock.cfgUpdate).toHaveBeenCalledWith('defaultRolePack', '', 1);
+    expect(notices(posted).at(-1)?.message).toBe('已取消默认角色：新建会话将使用系统兜底角色');
+  });
+
+  it('无已登记实例（peek 不到目录）→ 拒绝写入，不写不可解析的名字', async () => {
+    const { agent } = agentStub({ switchOk: true, locked: false });
+    const { provider, posted } = setup(agent); // 不给 peekAgent：目录不可得
+
+    const ok = await setDefaultRole(provider, '代码助手');
+
+    expect(ok).toBe(false);
+    expect(vscodeConfigMock.cfgUpdate).not.toHaveBeenCalled();
+    expect(notices(posted)[0]?.message).toContain('没有可校验的角色目录');
+  });
+});
+
 describe('settingsPanel.toggleSkillDisabled —— 技能启停开关', () => {
   beforeEach(() => {
     vi.clearAllMocks();

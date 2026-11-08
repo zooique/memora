@@ -110,7 +110,7 @@ const TAB_BODY_HTML: Record<SettingsTab, string> = {
     <div id="list">
       <p class="loading-hint">加载中…</p>
     </div>
-    <p class="footer-hint">「设为当前」仅切换默认角色；「带入对话」还会跳到对话并预填一句过渡语（不自动发送，可编辑后再发）。</p>`,
+    <p class="footer-hint">「当前」= 本会话正在使用的角色（「设为当前」只切本会话）；「默认」= 此后新建会话自动使用的角色（「设为默认」只影响未来，不改已有会话）；「带入对话」还会跳到对话并预填一句过渡语（不自动发送，可编辑后再发）。默认角色若是只读策略，此后每个新会话都会失去写入能力。</p>`,
   config: `  <!-- 大模型配置子视图（config 选项卡） -->
     <div class="header">
       <h2>大模型配置</h2>

@@ -19,7 +19,12 @@ import type {
 } from '../../shared/protocol.js';
 import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
 import { appendCapabilityChips } from '../helpers/capabilityChips.js';
-import { appendPromoteToUserButton } from '../helpers/assetPromoteButton.js';
+// 卡片顶部控件（当前/默认徽章 + 操作按钮）外置：语义边界与文案集中一处，且本文件贴行数红线
+import {
+  appendRoleCardActions,
+  appendRoleStateBadges,
+  type RoleCardControlDeps,
+} from '../helpers/roleCardActions.js';
 import { createPager, PagerController } from './pager.js';
 import { getIconSvg } from './icons.js';
 import { STRATEGY_KEY_META, formatDetailValue } from '../helpers/strategyKeyMeta.js';
@@ -80,6 +85,12 @@ interface RolesPayload {
     missingMembers?: string[];
   }[];
   activeName: string;
+  /**
+   * 用户级「新建会话默认角色包」名（空串 = 未设置，新建会话落内核兜底包）。
+   * 与 activeName 是两个层面：activeName = 当前会话/草稿的激活角色；
+   * defaultName = 只影响此后新建会话，改它不追溯已有会话。
+   */
+  defaultName?: string;
   /** 组员数量上限（内核常量 MAX_TEAM_MEMBERS，由宿主随 roles_loaded 下发；UI 侧禁止写死） */
   maxTeamMembers: number;
   /** 策略键面（内核 describeStrategyKeys 透传；缺省 = 旧载荷，编辑模式不可用） */
@@ -148,6 +159,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   }
 
   let activeName: string | undefined;
+  /** 用户级默认角色包名（空串 = 未设置）：「默认」徽章与「设为默认 / 取消默认」动作的判据 */
+  let defaultName = '';
   /** 最近一次 roles_loaded 载荷（分页渲染需 teams 等上下文；每次 render 刷新） */
   let lastData: RolesPayload | null = null;
   /** 策略键面（roles_loaded 下发；编辑表单的唯一数据源，缺省 = 编辑不可用） */
@@ -197,6 +210,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     statBar.textContent = `已加载 ${data.packs?.length ?? 0} 个角色`;
     list.textContent = '';
     lastData = data;
+    // 默认角色名先落（空态也要与载荷同步：清空列表不能留着上一轮的「默认」判据）
+    defaultName = data.defaultName ?? '';
     // 键面随载荷刷新（内核加键自动跟随；缺省保留旧值防瞬时载荷抖动清空）
     if (data.keyface) keyface = data.keyface;
     if (!data.packs || data.packs.length === 0) {
@@ -769,41 +784,18 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       header.appendChild(srcBadge);
     }
 
-    if (p.name === activeName) {
-      const badge = document.createElement('span');
-      badge.className = 'badge';
-      badge.textContent = '当前';
-      header.appendChild(badge);
-    }
+    // 状态徽章（当前 / 默认）与操作按钮外置（语义边界集中在 helpers/roleCardActions）
+    const controlDeps: RoleCardControlDeps = {
+      document,
+      post: (msg) => vscode.postMessage(msg),
+      activeName,
+      defaultName,
+    };
+    appendRoleStateBadges(controlDeps, header, p);
     // 操作按钮（右侧，margin-left: auto）
     const actions = document.createElement('div');
     actions.className = 'card-actions';
-
-    // 「带入对话」：切换角色并跳到对话视图（预填过渡语，不自动发送）
-    const handoffBtn = document.createElement('button');
-    handoffBtn.className = 'btn btn-primary';
-    handoffBtn.textContent = '带入对话';
-    handoffBtn.title =
-      '切换角色并跳到对话视图：已在输入框预填一句过渡语（不自动发送，可编辑后再发）';
-    handoffBtn.addEventListener('click', () =>
-      vscode.postMessage({ type: 'roles_handoff', name: p.name }),
-    );
-    actions.appendChild(handoffBtn);
-    // 项目级专属：拷贝到用户级（非同步；同名先备份再覆盖）
-    if (p.source === 'project')
-      appendPromoteToUserButton(actions, 'rolePack', p.name, (m) => vscode.postMessage(m));
-
-    // 「设为当前」：仅非激活角色展示
-    if (p.name !== activeName) {
-      const actBtn = document.createElement('button');
-      actBtn.className = 'btn btn-secondary';
-      actBtn.textContent = '设为当前';
-      actBtn.title = '仅切换默认角色，停留在设置页（不跳转到对话）';
-      actBtn.addEventListener('click', () =>
-        vscode.postMessage({ type: 'roles_set_active', name: p.name }),
-      );
-      actions.appendChild(actBtn);
-    }
+    appendRoleCardActions(controlDeps, actions, p);
     header.appendChild(actions);
     card.appendChild(header);
 
