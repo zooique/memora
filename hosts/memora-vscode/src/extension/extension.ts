@@ -42,8 +42,9 @@ import { openChatCommand } from './commands/openChat.js';
 import { runDemoCommand } from './commands/demo.js';
 import { reloadSkillsCommand } from './commands/reloadSkills.js';
 import { cleanupMemoriesCommand, memoryStatsCommand, runGcCommand } from './commands/memory.js';
-import { registerWorkCommand } from './commands/registerWork.js';
+import { registerRegisterWorkCommand } from './commands/registerWork.js';
 import { registerResidentRuleCommands } from './commands/residentRules.js';
+import { registerWorkProjectionUi } from './host/workProjectionTree.js';
 import { addToChatCommand } from './commands/addToChat.js';
 import { createUserDataResetHandler } from './commands/userDataReset.js';
 import { importAssetCommand } from './commands/importAsset.js';
@@ -895,11 +896,10 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  // 命令：登记作品投影（实现见 `commands/registerWork.ts`）
-  context.subscriptions.push(
-    vscode.commands.registerCommand('memora.registerWork', (uri) =>
-      registerWorkCommand(uri, tryGetAgent, memoraOutput),
-    ),
+  // 作品投影树：行派生在 host/workProjectionRows.ts（纯函数、可单测）
+  const workProjectionTree = registerWorkProjectionUi(context, tryGetAgent);
+  registerRegisterWorkCommand(context, tryGetAgent, memoraOutput, () =>
+    workProjectionTree.refresh(),
   );
 
   // 命令：添加到对话（实现见 `commands/addToChat.ts`）
@@ -909,7 +909,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
   );
 
-  registerResidentRuleCommands(context, tryGetAgent);
+  registerResidentRuleCommands(context, tryGetAgent, () => workProjectionTree.refresh());
 
   // 命令：复制诊断摘要（用户报障时一条命令带走版本 / 环境 / 配置 / 最近 webview 错误 / 指标）
   // 取数与格式化分离：chatProvider 只交出原始数据（缓冲 + 指标），脱敏与排版归 hostDiagnostics

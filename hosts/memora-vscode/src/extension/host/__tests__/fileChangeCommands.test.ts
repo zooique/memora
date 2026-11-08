@@ -215,6 +215,12 @@ const REGISTER_SOURCES = [
   resolve(PKG_ROOT, 'src/extension/host/fileChangeView.ts'),
   // 注册点三：commands/residentRules.ts（常驻规则两条命令，字面量直写）
   resolve(PKG_ROOT, 'src/extension/commands/residentRules.ts'),
+  // 注册点四：commands/registerWork.ts（2026-11-08 作品投影 UI 落地：`memora.registerWork`
+  // 的注册随命令整体外置（extension.ts 行数闸），字面量直写；命令本身仍只有一处注册）
+  resolve(PKG_ROOT, 'src/extension/commands/registerWork.ts'),
+  // 注册点五：host/workProjectionTree.ts（2026-11-08 作品投影树：`memora.refreshWorkProjection`
+  // 与树 provider 同处注册，字面量直写）
+  resolve(PKG_ROOT, 'src/extension/host/workProjectionTree.ts'),
 ];
 
 /** 注册豁免：两个块级 hunk 命令刻意不贡献（CodeLens 带参调用，暴露即静默失败） */

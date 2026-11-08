@@ -109,6 +109,21 @@
         "icon": "$(list-tree)"
       },
       {
+        "command": "memora.refreshWorkProjection",
+        "title": "%command.refreshWorkProjection.title%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "memora.toggleResidentRuleFromTree",
+        "title": "%command.toggleResidentRuleFromTree.title%",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "memora.unregisterWork",
+        "title": "%command.unregisterWork.title%",
+        "icon": "$(trash)"
+      },
+      {
         "command": "memora.addToChat",
         "title": "%command.addToChat.title%",
         "icon": "$(references)"
@@ -343,6 +358,10 @@
           "type": "webview",
           "id": "memora.chat",
           "name": "%view.chat.name%"
+        },
+        {
+          "id": "memora.workProjection",
+          "name": "%view.workProjection.name%"
         }
       ]
     },
@@ -352,6 +371,33 @@
           "command": "memora.openSettings",
           "when": "view == memora.chat",
           "group": "navigation"
+        },
+        {
+          "command": "memora.refreshWorkProjection",
+          "when": "view == memora.workProjection",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "memora.toggleResidentRuleFromTree",
+          "when": "view == memora.workProjection && viewItem == memoraWorkProjectionEntry",
+          "group": "inline@1"
+        },
+        {
+          "command": "memora.unregisterWork",
+          "when": "view == memora.workProjection && viewItem == memoraWorkProjectionEntry",
+          "group": "1_modification@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "memora.toggleResidentRuleFromTree",
+          "when": "false"
+        },
+        {
+          "command": "memora.unregisterWork",
+          "when": "false"
         }
       ],
       "explorer/context": [

@@ -26,17 +26,40 @@ const DESCRIPTION_MAX_INPUT_CHARS = 8000;
 const DESCRIPTION_MAX_TOKENS = 4096;
 
 /**
+ * 注册「登记作品投影」命令（extension.ts 只留一次调用，不展开命令表）
+ *
+ * @param context 扩展上下文（订阅随停用自动释放）
+ * @param tryGetAgent 取当前工作区 Agent（与其余命令同源）
+ * @param output 输出通道（LLM 原始返回与降级原因留痕）
+ * @param onRegistered 登记成功后的刷新回调（树视图据此重拉；失败不调）
+ */
+export function registerRegisterWorkCommand(
+  context: vscode.ExtensionContext,
+  tryGetAgent: () => Promise<Agent | null>,
+  output: vscode.OutputChannel,
+  onRegistered?: () => void,
+): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.registerWork', (uri) =>
+      registerWorkCommand(uri, tryGetAgent, output, onRegistered),
+    ),
+  );
+}
+
+/**
  * 登记作品投影
  *
  * @param uri 右键菜单传入的目标（文件 / 多选数组 / 命令面板调用时为 undefined）
  * @param tryGetAgent 取当前工作区 Agent（**失败返 null 不抛错**：装配失败时本命令只提示
  *   「未就绪」，与其余命令同一口径；工作区根的回退规则由该闭包统一持有，本命令不重算）
  * @param output 输出通道（LLM 原始返回与降级原因留痕，用户报障时唯一可查的面）
+ * @param onRegistered 登记成功后的回调（树视图刷新用；失败不调，避免「刷新了但没有新行」的假信号）
  */
 export async function registerWorkCommand(
   uri: vscode.Uri | vscode.Uri[] | undefined,
   tryGetAgent: () => Promise<Agent | null>,
   output: vscode.OutputChannel,
+  onRegistered?: () => void,
 ): Promise<void> {
   // 仅支持从右键菜单触发（必须带 uri 参数）
   const uris = Array.isArray(uri) ? uri : uri ? [uri] : [];
@@ -123,6 +146,8 @@ export async function registerWorkCommand(
     const result = await agent.works.registerWork(relativePath, description);
     if (result) {
       vscode.window.showInformationMessage('作品登记成功：' + result.name + ' | ' + description);
+      // 只有真落盘成功才刷新树（失败路径保持旧视图，不让用户以为多了一条）
+      onRegistered?.();
     } else {
       vscode.window.showErrorMessage('作品登记失败，路径可能越界或发生其他错误');
     }
