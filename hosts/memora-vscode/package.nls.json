@@ -15,7 +15,7 @@
   "command.registerWork.title": "Memora: Register Work Projection",
   "command.toggleResidentRule.title": "Memora: Toggle Project Rule",
   "command.manageResidentRules.title": "Memora: Manage Project Rules",
-  "command.refreshWorkProjection.title": "Memora: Refresh Work Projections",
+  "command.refreshWorkProjection.title": "Memora: Refresh Work Projections (list only; badges recompute next turn)",
   "command.toggleResidentRuleFromTree.title": "Memora: Toggle Project Rule (List)",
   "command.unregisterWork.title": "Memora: Remove Work Projection Registration",
   "command.addToChat.title": "Memora: Add to Chat",

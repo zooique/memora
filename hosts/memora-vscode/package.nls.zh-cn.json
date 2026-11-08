@@ -15,7 +15,7 @@
   "command.registerWork.title": "Memora: 登记作品投影",
   "command.toggleResidentRule.title": "Memora: 切换项目规则",
   "command.manageResidentRules.title": "Memora: 管理项目规则",
-  "command.refreshWorkProjection.title": "Memora: 刷新作品投影",
+  "command.refreshWorkProjection.title": "Memora: 刷新作品投影（只重读清单，红标待下轮对话重算）",
   "command.toggleResidentRuleFromTree.title": "Memora: 切换项目规则（列表）",
   "command.unregisterWork.title": "Memora: 移除作品投影登记",
   "command.addToChat.title": "Memora: 添加到对话",

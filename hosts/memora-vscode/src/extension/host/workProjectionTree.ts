@@ -151,8 +151,17 @@ export function registerWorkProjectionUi(
   tryGetAgent: () => Promise<Agent | null>,
 ): WorkProjectionTreeProvider {
   const provider = new WorkProjectionTreeProvider(tryGetAgent);
+  // 用 createTreeView（而非 registerTreeDataProvider）取到视图对象：
+  // registerTreeDataProvider 只返回 Disposable（旧 typings），拿不到 description 槽位
+  const treeView = vscode.window.createTreeView(WorkProjectionTreeProvider.viewType, {
+    treeDataProvider: provider,
+  });
+  // 视图副标题（挂在视图标题栏下，不需要点开任何入口就能看到）
+  // 🔴 必须写：徽标 = 上一次对话装配的事实，本命令只重读清单、不重算它；
+  //    不说明的话「手改 JSON → 点刷新 → 红标不动」会被直接判成按钮失灵。
+  treeView.description = '红标反映上一次对话装配的结果；改完清单需下一轮对话才会重算';
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider(WorkProjectionTreeProvider.viewType, provider),
+    treeView,
     // 手动刷新（视图标题按钮）：不做文件监听，跨窗口手改落盘靠这一下兜底
     vscode.commands.registerCommand('memora.refreshWorkProjection', () => provider.refresh()),
     provider,
