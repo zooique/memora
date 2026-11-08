@@ -213,6 +213,122 @@ describe('chatPanel 流完整性（P1-1：不得被静默截断）', () => {
   });
 });
 
+describe('chatPanel · prepare 期归轮（LIVE-ROUND-BLOCK-LOST-1）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * 构造「prepare 期首枚 thinking」流，并在**首枚已被宿主消费完、第二枚尚未生成**的时刻触发 observe。
+   *
+   * 这个时刻的语义 = 「首枚 thinking/assembling 到达宿主」：consumeFlow 的 chunk 循环已跑完
+   * 归轮判据 + meta 补齐 + 首枚事件分发，因此它读到的正是该 chunk 到达造成的后果。
+   *
+   * @param tagFirst 首枚 chunk 是否携带 roundId（false = 对照：模拟内核未在 prepare 期下发 id）
+   * @param observe 首枚消费完后的取证回调
+   */
+  function preparePhaseAgent(tagFirst: boolean, observe: () => void): Agent {
+    const agent = flowAgentStub() as unknown as Record<string, unknown>;
+    const roundId = 'round-born';
+    agent.chat = () =>
+      (async function* () {
+        yield tagFirst
+          ? { type: 'thinking', phase: 'assembling', roundId }
+          : { type: 'thinking', phase: 'assembling' };
+        // ← 首枚已消费完（第二枚尚未 yield）
+        observe();
+        yield { type: 'thinking', phase: 'processing', roundId };
+        yield { type: 'text', content: 'hi', roundId };
+        yield { type: 'step_boundary', roundId };
+      })();
+    return agent as unknown as Agent;
+  }
+
+  /** 首枚消费完瞬间的取证：归轮键 + 已下发的 process_event 列表 */
+  interface FirstChunkSnapshot {
+    currentRoundKey: string | undefined;
+    processEvents: { event?: { type: string } }[];
+  }
+
+  function snapshotWhenFirstChunkArrives(tagFirst: boolean): {
+    handle: PanelHandle;
+    sent: Promise<void>;
+    snap: Promise<FirstChunkSnapshot>;
+  } {
+    let resolveSnap: (v: FirstChunkSnapshot) => void = () => {};
+    const snap = new Promise<FirstChunkSnapshot>((r) => {
+      resolveSnap = r;
+    });
+    let h: PanelHandle;
+    h = setupPanel(
+      preparePhaseAgent(tagFirst, () => {
+        const live = (
+          h.cast.runtimeFor() as unknown as {
+            liveBuffer?: { currentRoundKey?: string };
+          }
+        ).liveBuffer;
+        resolveSnap({
+          currentRoundKey: live?.currentRoundKey,
+          processEvents: h.posted.filter(
+            (m) => m.type === 'process_event',
+          ) as FirstChunkSnapshot['processEvents'],
+        });
+      }),
+    );
+    h.cast._currentSessionId = '2026-11-08-s1';
+    return { handle: h, sent: h.cast.sendInput('你好'), snap };
+  }
+
+  it('首枚 prepare chunk 带 roundId ⇒ 到达瞬间已置位 currentRoundKey，且 meta 为该轮首条', async () => {
+    const { sent, snap } = snapshotWhenFirstChunkArrives(true);
+
+    const observed = await snap;
+    await sent;
+
+    // ① 首枚到达瞬间已归轮（改造前此处为空——把 allocRoundId 移回原位即红）
+    expect(observed.currentRoundKey).toBe('round-born');
+    // ② 段内首条事件是 meta（webview 的「真新轮 → 建流式骨架」分支据此触发）
+    expect(observed.processEvents.map((m) => m.event?.type)).toEqual(['meta', 'thinking']);
+  });
+
+  it('对照：首枚不带 roundId ⇒ 到达瞬间仍未归轮、meta 尚未下发（证明上一例的断言是承重的）', async () => {
+    const { sent, snap } = snapshotWhenFirstChunkArrives(false);
+
+    const observed = await snap;
+    await sent;
+
+    expect(observed.currentRoundKey).toBeUndefined();
+    // 只有 thinking 事件，没有 meta（骨架无法建立）
+    expect(observed.processEvents.map((m) => m.event?.type)).toEqual(['thinking']);
+  });
+
+  it('prepare 期中断：interrupted 携提前出生的 roundId（webview 据此把骨架收口进本轮）', async () => {
+    const roundId = 'round-born-abort';
+    const agent = flowAgentStub() as unknown as Record<string, unknown>;
+    let h: PanelHandle;
+    agent.chat = () =>
+      (async function* () {
+        yield { type: 'thinking', phase: 'assembling', roundId };
+        // 模拟用户在 prepare 期点停止：宿主 controller 置 aborted ⇒ 收场按中断路径走
+        (
+          h.cast.runtimeFor() as unknown as { abortController?: AbortController }
+        ).abortController?.abort();
+        yield { type: 'aborted', reason: 'stop', stopReason: 'user' };
+      })();
+    h = setupPanel(agent as unknown as Agent);
+    h.cast._currentSessionId = '2026-11-08-s1';
+
+    await h.cast.sendInput('你好');
+
+    // 中断消息必须带**提前出生的** id（SSOT = liveBuffer.currentRoundKey）——
+    // 否则 webview 无轮可归，骨架会挂在容器外（本改动要防的新症状）
+    expect(h.posted.find((m) => m.type === 'interrupted')).toMatchObject({
+      type: 'interrupted',
+      roundId: 'round-born-abort',
+    });
+  });
+});
+
 describe('chatPanel · agent 强制依赖面守卫（P1-2）', () => {
   /**
    * 从源码提取「三类写法」的机械真值，与显式登记表比对。

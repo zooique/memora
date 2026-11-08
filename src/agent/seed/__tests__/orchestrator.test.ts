@@ -103,7 +103,10 @@ describe('SeedOrchestrator 最小 turn', () => {
         stopReason: 'user',
       }),
     );
-    expect(mocks.loop.setCurrentRoundId).not.toHaveBeenCalled();
+    // 轮身份在 prepare 入口即刻出生（宿主首枚 chunk 即带 id）⇒ 中止不回滚内存状态；
+    // 但用户消息未入史 ⇒ 该 id 无对应轮文件（写路径 fail-closed，见 prepare/agent 用例）
+    expect(mocks.loop.setCurrentRoundId).toHaveBeenCalledTimes(1);
+    expect(mocks.loop.setCurrentRoundId).toHaveBeenCalledWith(expect.any(String));
     expect(mocks.history.appendUser).not.toHaveBeenCalled();
     expect(mocks.history.appendAssistant).not.toHaveBeenCalled();
   });

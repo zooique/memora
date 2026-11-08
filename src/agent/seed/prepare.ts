@@ -1,7 +1,7 @@
 /**
  * 回答前（Prepare）— 种子闭环第一阶段
  *
- * 编排骨架：策略装配 → 角色 → 上下文装配 → roundId
+ * 编排骨架：roundId → 策略装配 → 角色 → 上下文装配
  * → appendUser → 会话命名。会议机制：任务项表层装配视角经本模块读取并驱动前缀刷新。
  *
  * 设计原则：
@@ -46,6 +46,15 @@ export class SeedPrepare {
     const { loop, history, sessionManager, rolePackManager, contextPreparer, sessionNamer } =
       this.deps.getParts() as SeedParts;
 
+    // 轮身份在回答前入口**即刻出生**（先于任何可能耗时 / 可能抛错的装配动作）：
+    // 宿主拿到的首枚 thinking chunk 即带 roundId ⇒ 实时视图从 prepare 起点就归入该轮，
+    // `meta` 随之提前到达 webview ⇒ 流式骨架在首个正文 chunk 之前建立
+    // （根因与验收口径见台账 LIVE-ROUND-BLOCK-LOST-1）。
+    // 残留边界：置位后若在 appendUser 之前中断，此 id 无对应轮文件——写路径对缺席轮
+    // 一律 fail-closed（如 interject ⇒ round-missing），不会污染上一轮。
+    const roundId = loop.allocRoundId();
+    loop.setCurrentRoundId(roundId);
+
     // 每次回答前先清临时 system 消息（技能/最近对话 prompt 是当轮注入，不跨轮累积）
     loop.cleanTemporarySystemMessages();
 
@@ -89,7 +98,9 @@ export class SeedPrepare {
     // 会议机制：工具面恒为 activePack（组员只"说"不执行，需完整能力应手动切换）——此处不走 roundAssemblyRole
     this.deps.applyRolePackToolExposure();
 
-    yield { type: 'thinking', phase: 'assembling' };
+    // roundId 随首枚 prepare 阶段 chunk 一起下发：宿主的归轮判据在 chunk 循环顶部，
+    // 无需另开通道即可在 prepare 期把实时事件归入本轮（`RoundTagged` 已含可选 roundId，零类型改动）
+    yield { type: 'thinking', phase: 'assembling', roundId };
     // 上下文装配（无自动记忆召回，仅细则预算 + 对话层注入，见 memory-tool-recall-design §4）
     await contextPreparer.assembleContext(input);
 
@@ -98,10 +109,8 @@ export class SeedPrepare {
     }
 
     // 技能按渐进披露 L1 清单常驻 system prompt，正文由模型按需 read_skill，回答前不预注入
-    yield { type: 'thinking', phase: 'processing' };
+    yield { type: 'thinking', phase: 'processing', roundId };
 
-    const roundId = loop.allocRoundId();
-    loop.setCurrentRoundId(roundId);
     // 无附件时调用形状与升级前**完全一致**（不传第 3 参）：prepare / orchestrator 的
     // `appendUser` 断言按双参验收，无条件多出一个 `{}` 属行为变更（务必带条件传参）。
     if (attachments) {

@@ -188,4 +188,68 @@ describe('异常终态轮容器 footer 显形（chatView · settleRoundFooter �
     expect(host).not.toBeNull();
     expect(host!.closest('.round-group')).toBeNull();
   });
+
+  it('prepare 期中断（仅 meta+thinking、无正文）→ 提前建立的骨架被 interrupted 收口，无残留空壳（LIVE-ROUND-BLOCK-LOST-1）', () => {
+    const roundId = 'round-prep-abort';
+    dispatch({ type: 'user', text: '问', ts: '2026-11-08T10:00:00.000Z' });
+    // ③ 改后的真实序：首枚 prepare chunk（thinking/assembling）带 roundId ⇒ 宿主先发 meta
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'thinking',
+        seq: 2,
+        ts: '2026-11-08T10:00:00.100Z',
+        payload: { phase: 'assembling' },
+      },
+    });
+    // 第二枚 prepare 事件（处理输入）：两枚都带 roundId ⇒ 同轮归桶（PREPARE-EVENT-LOST-1 的修复面）
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'thinking',
+        seq: 3,
+        ts: '2026-11-08T10:00:00.150Z',
+        payload: { phase: 'processing' },
+      },
+    });
+
+    // 前提取证：prepare 期骨架**确已建立**（尚无任何正文 chunk），且尚未收口进容器
+    const skeleton = document.querySelector<HTMLElement>('.msg.assistant');
+    expect(skeleton).not.toBeNull();
+    expect(document.querySelector('.round-group')).toBeNull();
+
+    // 中断：内核 aborted 事件 + 宿主尾按 signal.aborted 发 interrupted（携提前出生的 roundId）
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'aborted',
+        seq: 4,
+        ts: '2026-11-08T10:00:00.200Z',
+        payload: { reason: 'stop', stopReason: 'user' },
+      },
+    });
+    dispatch({ type: 'interrupted', roundId });
+
+    // ① 骨架被收口到本轮容器（不是留在容器外的裸壳）
+    const group = document.querySelector<HTMLElement>(`.round-group[data-round-id="${roundId}"]`);
+    expect(group).not.toBeNull();
+    expect(group!.querySelector('.msg.assistant')).not.toBeNull();
+    // ② 容器 footer 显形（settle 已跑，非 pending）
+    const footer = group!.querySelector<HTMLElement>('.round-group__footer');
+    expect(footer).not.toBeNull();
+    expect(footer!.classList.contains('is-pending')).toBe(false);
+    // ③ aborted 事件未被丢弃：收口态归「用户中断」（中断信息由底栏标签承载）
+    expect(group!.querySelector('.msg.assistant[data-terminus="用户中断"]')).not.toBeNull();
+    // ③-b prepare 期两枚过程事件确实可见（PREPARE-EVENT-LOST-1 的修复面：归桶后不再被 meta 清空）
+    expect(group!.textContent).toContain('装配上下文中…');
+    expect(group!.textContent).toContain('处理中…');
+    // ④ 无残留空壳：所有 assistant 块都在容器内（容器外孤块 = 本改动要防的新症状）
+    const all = Array.from(document.querySelectorAll<HTMLElement>('.msg.assistant'));
+    expect(all.length).toBeGreaterThan(0);
+    for (const el of all) expect(el.closest('.round-group')).toBe(group);
+  });
 });

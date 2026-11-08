@@ -445,6 +445,29 @@ describe('Agent · interject 插话上限（KERNEL-QUEUE-LIMIT-1）', () => {
     expect(roundStore.getById('round-missing-fixture')).toBeNull();
     expect(roundStore.size()).toBe(before);
   });
+
+  it('prepare 期插话（id 已提前出生、用户消息未入史）：round-missing 不落盘，且上一轮 interactiveInputs 不被污染', async () => {
+    const roundStore = new InMemoryRoundStore();
+    // 盘上真实存在的上一轮：改造前 currentRoundId 仍指它 ⇒ 插话会被静默写进上一轮；
+    // 本用例钉的正是「提前出生后改为 fail-closed」这条行为变化（LIVE-ROUND-BLOCK-LOST-1）
+    const prevRound = createPendingRoundFixture('上一轮提问');
+    roundStore.save(prevRound);
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, roundStore);
+    await agent.init();
+
+    // 模拟 SeedPrepare 入口：id 已置为新分配的轮号，但 appendUser 尚未执行（无盘上档案）
+    const loop = (agent as unknown as { loop: { getCurrentRoundId(): string | undefined } }).loop;
+    loop.getCurrentRoundId = () => 'round-born-in-prepare';
+    const prevLen = roundStore.getById(prevRound.id)?.interactiveInputs?.length ?? 0;
+
+    // ① 受理口径：执行面照常入队，落盘面如实回报 unpersisted（appendUser 判词 round-missing）
+    await expect(agent.interject('prepare 期补充')).resolves.toBe('queued-unpersisted');
+
+    // ② **关键**：上一轮零写入（只测「返回错误」证明不了污染消失）
+    expect(roundStore.getById(prevRound.id)?.interactiveInputs?.length ?? 0).toBe(prevLen);
+    // ③ 提前出生的 id 也不留假记录（appendUser 对缺席轮 fail-closed，不建轮）
+    expect(roundStore.getById('round-born-in-prepare')).toBeNull();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════

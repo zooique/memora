@@ -23,10 +23,12 @@ describe('SeedPrepare 回答前', () => {
       new SeedPrepare(deps).run('用户输入', new AbortController().signal),
     );
 
-    // thinking 阶段提示（assembling → processing）
+    // thinking 阶段提示（assembling → processing）：两枚 chunk 均携带同一 roundId
+    // （宿主凭它在 prepare 期就归轮，见台账 LIVE-ROUND-BLOCK-LOST-1）
+    const roundId = mocks.loop.setCurrentRoundId.mock.calls[0]?.[0];
     expect(chunks).toEqual([
-      { type: 'thinking', phase: 'assembling' },
-      { type: 'thinking', phase: 'processing' },
+      { type: 'thinking', phase: 'assembling', roundId },
+      { type: 'thinking', phase: 'processing', roundId },
     ]);
 
     // L2 策略注入 + 工具暴露面应用（工具面恒为 activePack）
@@ -36,7 +38,6 @@ describe('SeedPrepare 回答前', () => {
     expect(mocks.contextPreparer.assembleContext).toHaveBeenCalledWith('用户输入');
     // roundId 生成 + 用户消息入史（同 roundId 溯源）
     expect(mocks.loop.setCurrentRoundId).toHaveBeenCalledTimes(1);
-    const roundId = mocks.loop.setCurrentRoundId.mock.calls[0]?.[0];
     expect(mocks.history.appendUser).toHaveBeenCalledWith('用户输入', roundId);
     // 会话命名 fire-and-forget
     expect(mocks.sessionNamer.ensureSessionTitle).toHaveBeenCalledWith(
@@ -139,20 +140,59 @@ describe('SeedPrepare 回答前', () => {
     expect(mocks.rolePackManager.setRoundAssemblyRole).toHaveBeenCalledWith('组员1');
   });
 
-  it('回答前中断：signal.aborted → 返回 aborted，跳过技能注入与用户消息入史', async () => {
+  it('回答前中断：signal.aborted → 返回 aborted，跳过用户消息入史（轮 id 仍在入口即刻出生）', async () => {
     const { mocks, deps } = createHarness();
 
     // 召回阶段前先中止 signal
     const ac = new AbortController();
     ac.abort();
 
-    const { result } = await collectGen(new SeedPrepare(deps).run('输入', ac.signal));
+    const { chunks, result } = await collectGen(new SeedPrepare(deps).run('输入', ac.signal));
 
     expect(result).toEqual({ input: '输入', aborted: true });
+    // 轮身份在入口即刻出生：中止**不回滚**这个内存状态——首枚 chunk 已带 id，
+    // 宿主据此把中断收口到同一轮（骨架不裸挂）。但 appendUser 未执行 ⇒ 该 id 无对应轮文件，
+    // 写路径对缺席轮 fail-closed（interject ⇒ round-missing），不污染上一轮。
+    expect(mocks.loop.setCurrentRoundId).toHaveBeenCalledTimes(1);
+    const roundId = mocks.loop.setCurrentRoundId.mock.calls[0]?.[0];
+    expect(chunks).toContainEqual({ type: 'thinking', phase: 'assembling', roundId });
     // 中断后不再注入用户消息 / 不命名
-    expect(mocks.loop.setCurrentRoundId).not.toHaveBeenCalled();
     expect(mocks.history.appendUser).not.toHaveBeenCalled();
     expect(mocks.sessionNamer.ensureSessionTitle).not.toHaveBeenCalled();
+  });
+
+  it('轮身份制备顺序：alloc/set 先于清理临时消息与装配刷新（窗口归零）', async () => {
+    const { mocks, deps } = createHarness();
+    // 顺序真源：四个桩各记一笔
+    const order: string[] = [];
+    mocks.loop.allocRoundId.mockImplementation(() => {
+      order.push('alloc');
+      return 'round-born';
+    });
+    mocks.loop.setCurrentRoundId.mockImplementation(() => {
+      order.push('set');
+    });
+    mocks.loop.cleanTemporarySystemMessages.mockImplementation(() => {
+      order.push('clean');
+    });
+    mocks.refreshResidentRulesContext.mockImplementation(async () => {
+      order.push('resident');
+    });
+
+    const { chunks } = await collectGen(
+      new SeedPrepare(deps).run('输入', new AbortController().signal),
+    );
+
+    // 契约：id 出生 → 置位 → 清理临时消息 → 常驻读盘刷新。把 alloc 移回 appendUser 之前
+    // （原实现位置）⇒ 该顺序变 ['clean','resident','alloc','set'] ⇒ 本用例红（变异验证锚点）。
+    expect(order).toEqual(['alloc', 'set', 'clean', 'resident']);
+    // 两枚 prepare chunk 都带同一 id（宿主归轮判据在首枚 chunk 即命中）
+    expect(chunks).toEqual([
+      { type: 'thinking', phase: 'assembling', roundId: 'round-born' },
+      { type: 'thinking', phase: 'processing', roundId: 'round-born' },
+    ]);
+    // 全轮只分配一次（appendUser 不另行生成 id）
+    expect(mocks.loop.allocRoundId).toHaveBeenCalledTimes(1);
   });
 
   it('每次运行前清理临时 system 消息（技能 prompt 不跨轮累积）', async () => {
