@@ -505,6 +505,9 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       const result = await manager.setResident('rules.md', true);
 
       expect(result.reason).toBe('enabled');
+      // 回执必须分方向：置成功与取消成功不得共用同一句形态（否则用户看不出是否生效）
+      expect(result.message).toContain('已置为项目规则');
+      expect(result.message).not.toContain('已取消');
       const saved = (await readList())[0];
       expect(saved!.resident).toBe(true);
       expect(saved!.extra).toBe('keep-me');
@@ -627,6 +630,9 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       const result = await manager.setResident('rules.md', false);
 
       expect(result.reason).toBe('disabled');
+      // 取消成功必须明确说「已取消」——宿主原样展示，文案真源在内核，不许宿主拼
+      expect(result.message).toContain('已取消项目规则');
+      expect(result.message).not.toContain('已置为');
       expect((await readList())[0]!.resident).toBe(false);
     });
   });
