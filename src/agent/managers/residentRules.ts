@@ -51,8 +51,9 @@ const SEGMENT_PRIORITY =
  * 项目规则判据（唯一实现）：只有严格 `=== true` 才算项目规则（fail-closed）。
  *
  * 🔴 合法写法只有**布尔值** `true`：手改 JSON 写成字符串 `"resident": "true"` **视为未开启**
- * （不报错、不进失效汇总、该条按原作品投影处理）。这是**故意**的——宁可不开，也不猜用户意图：
- * 宽容解析会把「写错」变成「看起来能用」，比明确不开更坏。可读提示归界面批次（§10 已登记）。
+ * （该条按原作品投影处理；**不报错**，但会进完整失效集与日志，判据见 `isNonBooleanResident`）。
+ * 这是**故意**的——宁可不开，也不猜用户意图：宽容解析会把「写错」变成「看起来能用」，
+ * 比明确不开更坏。可读提示由界面批次消费 `ResidentSegmentReport`（设计稿 §10-6 已闭合）。
  *
  * 为什么不信 `Boolean(...)`：清单文件用户可手改，`"false"` 是**非空字符串**
  * ⇒ 会被 truthy 判成项目规则，等于手改一个字符串就能绕过「非项目规则条目不进正文」的约定。
@@ -62,6 +63,21 @@ const SEGMENT_PRIORITY =
  */
 export function isResidentEntry(entry: Pick<WorkProjectionEntry, 'resident'>): boolean {
   return entry.resident === true;
+}
+
+/**
+ * 是否为「`resident` 字段存在但不是布尔」的清单误配（唯一实现）
+ *
+ * 判据：字段**缺失**（`undefined`）是合法「非规则」，不算误配；`null` / `"true"` / `"false"` /
+ * 数字 / 对象一律算误配（JSON 手改笔误）。误配条目的效果与 `false` 相同（不进项目规则段），
+ * 但必须**留痕**（进完整失效集 + 日志），否则用户永远不知道自己写了一行无效配置。
+ *
+ * @param entry 作品投影条目（只读 resident 字段）
+ * @returns true = 该条 resident 值不是布尔（按未设为规则处理并记失效）
+ */
+export function isNonBooleanResident(entry: Pick<WorkProjectionEntry, 'resident'>): boolean {
+  const raw: unknown = entry.resident;
+  return raw !== undefined && raw !== true && raw !== false;
 }
 
 /**
@@ -221,13 +237,25 @@ export async function readResidentSource(
   return { ok: true, text, block: renderResidentBlock(source, text) };
 }
 
-/** 项目规则段内一条未注入记录（供段内文案、日志与 `setResident` 拒绝文案） */
+/**
+ * 项目规则段内一条失效记录（**完整失效集**：供日志、宿主报告与 `setResident` 拒绝文案）
+ *
+ * 🔴 与「段首未注入清单」（`ResidentNotInjected`）不是同一层：本集合是**全量失效**，
+ * 段首只投影其中 `read-failed` / `too-long` 两类（见 `toNotInjected`）。新增原因码时
+ * 必须显式决定「是不是模型可见」——默认**不进段首**（模型改不了清单文件，写进去只会污染上下文）。
+ */
 export interface ResidentSegmentEntryFailure {
   /** 失效条目的清单相对路径 */
   source: string;
-  /** 失效原因（读盘判据失败、单条超限，或合计超限被按序丢弃） */
-  reason: ResidentSourceFailure | 'too-long' | 'total-exceeded';
-  /** 人读文案（含实际计量与差额） */
+  /**
+   * 失效原因：
+   * - `ResidentSourceFailure`：读盘判据失败（可重试或需修正文件路径 / 权限）；
+   * - `'too-long'`：单条渲染块超上限（需拆分文件）；
+   * - `'total-exceeded'`：合计超限被按清单顺序丢弃（本条本身没问题，只是预算不够）；
+   * - `'resident-not-boolean'`：清单里该条 `resident` 值不是布尔（手改笔误，已按「未设为规则」处理）。
+   */
+  reason: ResidentSourceFailure | 'too-long' | 'total-exceeded' | 'resident-not-boolean';
+  /** 人读文案（含实际计量与差额 / 实际写入值） */
   message: string;
 }
 
@@ -244,13 +272,49 @@ export interface ResidentNotInjected {
   reason: 'read-failed' | 'too-long';
 }
 
+/**
+ * 把完整失效记录投影成「模型可见的未注入清单」（唯一映射点）
+ *
+ * 只接受两类：`too-long`（需拆分文件）、读盘判据失败（`read-failed` 家族，可重试 / 可改路径）。
+ * 其余一律返回 null（不投影）：非布尔误配是**用户改清单**的动作，模型重试永远解决不了；
+ * 合计丢弃另有 `dropped` 清单行，不走这里。
+ *
+ * @param failure 完整失效记录
+ * @returns 段首条目，或 null（模型不可见）
+ */
+function toNotInjected(failure: ResidentSegmentEntryFailure): ResidentNotInjected | null {
+  switch (failure.reason) {
+    case 'too-long':
+      return { source: failure.source, reason: 'too-long' };
+    case 'outside-workspace':
+    case 'blocked-path':
+    case 'not-textual':
+    case 'missing':
+    case 'read-error':
+      return { source: failure.source, reason: 'read-failed' };
+    // 非布尔误配 / 合计丢弃：模型不可见（前者是用户动作，后者由 dropped 行承载）
+    case 'resident-not-boolean':
+    case 'total-exceeded':
+      return null;
+    default:
+      // 未来新增原因码的默认落点：**不投影**（宁可少说，不可让模型对无能为力的事反复解释）
+      return null;
+  }
+}
+
 /** 项目规则段的一次求值结果 */
 export interface ResidentSegmentEvaluation {
   /** 渲染后的整段文本；无任何条目且无未注入/丢弃条目时为空串（不注入空段） */
   segment: string;
   /** 实际注入的条目渲染块（按清单顺序） */
   blocks: string[];
-  /** 失效条目（段首汇总行与日志的唯一数据源） */
+  /**
+   * 完整失效集（日志与宿主报告的唯一数据源）
+   *
+   * 与段首的关系：段首只投影 `read-failed` / `too-long` 两类（处置动作对模型可理解）；
+   * 其余原因（如 `resident-not-boolean`）**只留在本条与日志**——模型改不了清单文件，
+   * 把它写进 prompt 只会让模型对一条自己无能为力的配置笔误反复解释。
+   */
   failures: ResidentSegmentEntryFailure[];
   /**
    * 因合计超限被按序丢弃的条目（按**清单顺序**，`reason` 恒为 `total-exceeded`）
@@ -259,6 +323,30 @@ export interface ResidentSegmentEvaluation {
    * 只是预算不够」。两者混一列会让「修文件就能救」与「必须先精简别人」共用同一条汇总文案。
    */
   dropped: ResidentSegmentEntryFailure[];
+}
+
+/**
+ * 本轮项目规则求值快照（**只读报告**，宿主 UI 消费；不参与注入、不参与写路径判定）
+ *
+ * 定位：把「这一轮到底注入了什么、哪些条目没生效」从 Manager 内部人读日志提升为可读面，
+ * 供宿主展示失效徽标。判据仍在 `refresh()` 单点生产，宿主**不得**据此本地复算或改写清单。
+ *
+ * 生命周期：每次 `refresh()` 全量覆盖（不跨轮沿用）；`null` = 尚未求值过
+ * （未初始化 / 还没跑过任何 turn / 工作区未受信任整层不装配）。
+ */
+export interface ResidentSegmentReport {
+  /** 本轮渲染段（与 `contextBlock()` 同一份；空串 = 本轮不注入项目规则段） */
+  segment: string;
+  /**
+   * 完整失效集（见 `ResidentSegmentEntryFailure` 的层级说明）
+   *
+   * 含 `resident-not-boolean` 这类**不进段首**的失效——宿主徽标要显示它，模型看不到它。
+   */
+  failures: ResidentSegmentEntryFailure[];
+  /** 因合计超限被按序丢弃的条目（按清单顺序） */
+  dropped: ResidentSegmentEntryFailure[];
+  /** 本轮清单是否读到了（false ⇒ 清单缺失/格式错误/读取异常，本轮整段为空） */
+  listReadable: boolean;
 }
 
 /**
@@ -397,11 +485,12 @@ export async function evaluateResidentSegment(
     kept.push({ source, block: read.block });
   }
 
-  // 段首未注入清单：读失败（可重试）与单条超限（需拆分）分两类，处置方向相反
-  const notInjected: ResidentNotInjected[] = failures.map((f) => ({
-    source: f.source,
-    reason: f.reason === 'too-long' ? 'too-long' : 'read-failed',
-  }));
+  // 段首未注入清单：只投影「改文件能救」的两类（读失败可重试 / 单条超限需拆分），
+  // 其余失效（非布尔误配、合计丢弃）不进模型可见面——映射显式列举，禁止再写成三目折叠
+  // （折叠会把未来新增的原因码静默当 read-failed，给模型一句永远无法被满足的「下轮重试」）。
+  const notInjected: ResidentNotInjected[] = failures
+    .map(toNotInjected)
+    .filter((n): n is ResidentNotInjected => n !== null);
   // 因合计超限被丢弃的条目（按清单顺序，供段首汇总与日志/写路径回执）
   const dropped: ResidentSegmentEntryFailure[] = [];
 
@@ -485,6 +574,17 @@ export class ResidentRulesManager {
   private readonly isListMalformed: () => boolean;
   /** 本轮求值得到的段文本（**不跨轮沿用**：每次 refresh 全量覆盖，失败即清空） */
   private segment = '';
+  /**
+   * 本轮求值快照（宿主只读报告；`null` = 尚未求值过或整层未启用）
+   *
+   * 与 `segment` 同步在同一处写入，避免两个字段漂移；宿主通过 `Agent.residentSegmentReport` 消费。
+   */
+  private reportSnapshot: ResidentSegmentReport | null = null;
+
+  /** 本轮求值快照（只读；`null` = 尚未求值 / 整层未启用） */
+  get report(): ResidentSegmentReport | null {
+    return this.reportSnapshot;
+  }
 
   /**
    * @param params 构造参数（见 `ResidentRulesManagerParams`）
@@ -507,22 +607,44 @@ export class ResidentRulesManager {
     // 分支 1：未信任 ⇒ 空段（fail-closed 的硬面，与读盘成败无关）
     if (!this.enabled) {
       this.segment = '';
+      // 整层未启用不是「本轮求值结果」，快照归 null（宿主据此区分「没求值」与「求值了但零条目」）
+      this.reportSnapshot = null;
       logger.debug('项目规则：工作区未受信任，整层不装配');
       return;
     }
 
     // 清单级读取：把「格式错误」与「读取异常」同归为读失败（两者都意味着拿不到最新声明）
     let residentSources: string[];
+    let misconfigured: ResidentSegmentEntryFailure[];
     try {
       const entries = await this.listEntries();
       if (this.isListMalformed()) throw new Error('作品投影清单文件格式异常');
+      // 非布尔误配（唯一判据 isNonBooleanResident）：**先于过滤器采集**——过滤器会把它们与
+      // 「未设规则」一起剔除，事后就再也分不出「漏写 true」和「故意不设」了。
+      misconfigured = entries.filter(isNonBooleanResident).map((e) => {
+        // 实际写入值的字面形态（供用户定位手改笔误；JSON.stringify 对 null/字符串/对象都安全）
+        const raw = JSON.stringify(e.resident) ?? String(e.resident);
+        return {
+          source: e.source,
+          reason: 'resident-not-boolean' as const,
+          message:
+            `该条 resident 字段值为 ${raw}（非布尔），已按「未设为项目规则」处理` +
+            '；请在 work-projections.json 中改为 true / false 或删除该字段',
+        };
+      });
       // 项目规则判据唯一实现；顺序真源 = 清单数组顺序（不另排序）
       residentSources = entries.filter(isResidentEntry).map((e) => e.source);
     } catch (err) {
       // 分支 2：已信任 + 清单读失败 ⇒ 空段 + 说明（不沿用上次内容：拿不到声明就不猜它是什么）
       this.segment = '';
+      this.reportSnapshot = { segment: '', failures: [], dropped: [], listReadable: false };
       logger.warn({ err }, '项目规则：清单读取失败，本轮不注入任何规则（下轮重试）');
       return;
+    }
+
+    // 误配留痕：曾静默忽略 ⇒ 用户手改的 "true" 永远没人告诉他没生效（假阴性）
+    for (const f of misconfigured) {
+      logger.warn({ source: f.source }, `项目规则清单条目误配：${f.message}`);
     }
 
     const evaluation = await evaluateResidentSegment(this.projectDir, residentSources);
@@ -542,6 +664,13 @@ export class ResidentRulesManager {
     }
 
     this.segment = evaluation.segment;
+    // 快照 = 完整失效集（误配在前 + 求值失效在后）；段首仍只投影求值失效里的两类
+    this.reportSnapshot = {
+      segment: evaluation.segment,
+      failures: [...misconfigured, ...evaluation.failures],
+      dropped: evaluation.dropped,
+      listReadable: true,
+    };
   }
 
   /**

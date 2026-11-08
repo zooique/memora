@@ -16,6 +16,7 @@ import {
   MAX_RESIDENT_TOTAL_CHARS,
   ResidentRulesManager,
   evaluateResidentSegment,
+  isNonBooleanResident,
   isResidentEntry,
   isResidentLayerEnabled,
   readResidentSource,
@@ -84,6 +85,19 @@ describe('residentRules', () => {
       expect(isResidentEntry({})).toBe(false);
       expect(isResidentEntry({ resident: false })).toBe(false);
       expect(isResidentEntry({ resident: 'false' as unknown as boolean })).toBe(false);
+    });
+
+    it('isNonBooleanResident 只把「字段存在且非布尔」算误配（缺失 / true / false 不算）', () => {
+      // 字段缺失是合法「非规则」：绝不能把每一条普通作品投影都报成误配
+      expect(isNonBooleanResident({})).toBe(false);
+      expect(isNonBooleanResident({ resident: undefined })).toBe(false);
+      expect(isNonBooleanResident({ resident: true })).toBe(false);
+      expect(isNonBooleanResident({ resident: false })).toBe(false);
+      // 手改笔误族：字符串 / null / 数字一律算误配（不猜意图）
+      expect(isNonBooleanResident({ resident: 'true' as unknown as boolean })).toBe(true);
+      expect(isNonBooleanResident({ resident: 'false' as unknown as boolean })).toBe(true);
+      expect(isNonBooleanResident({ resident: null as unknown as boolean })).toBe(true);
+      expect(isNonBooleanResident({ resident: 1 as unknown as boolean })).toBe(true);
     });
   });
 
@@ -248,6 +262,8 @@ describe('residentRules', () => {
 
       await manager.refresh();
       expect(manager.contextBlock()).toBe('');
+      // 整层未启用不是「求值结果」：快照为 null，宿主据此区分「没求值」与「求值了但零条目」
+      expect(manager.report).toBeNull();
       expect(listEntries).not.toHaveBeenCalled();
     });
 
@@ -354,6 +370,76 @@ describe('residentRules', () => {
 
       await manager.refresh();
       expect(manager.contextBlock()).toBe('');
+    });
+
+    it('构造后未刷新 ⇒ 报告为 null（宿主不得把 null 当「零失效」用）', () => {
+      const manager = new ResidentRulesManager({
+        projectDir,
+        workspaceTrusted: true,
+        listEntries: async () => [],
+        isListMalformed: () => false,
+      });
+
+      expect(manager.report).toBeNull();
+    });
+
+    /**
+     * 非布尔误配（`"resident": "true"` 手改笔误）是「复用失效通道」的核心用例：
+     * 必须进完整失效集与宿主报告，但**不得**进段首（模型改不了清单文件，写进去只会
+     * 让模型对一件自己无能为力的事反复解释，且句尾的「下轮重试」永远无法被满足）。
+     */
+    it('resident 非布尔 ⇒ 按未设规则处理 + 进完整失效集，但不进模型可见段首', async () => {
+      await writeFile(join(projectDir, 'a.md'), 'A 规则', 'utf8');
+      await writeFile(join(projectDir, 'b.md'), 'B 规则', 'utf8');
+      const manager = new ResidentRulesManager({
+        projectDir,
+        workspaceTrusted: true,
+        listEntries: async () => [
+          // 手改笔误：字符串 "true"（运行时来自 JSON.parse，故用双重断言造非法形态）
+          {
+            name: 'a',
+            description: '',
+            source: 'a.md',
+            resident: 'true' as unknown as boolean,
+          },
+          entryOf('b.md', true),
+        ],
+        isListMalformed: () => false,
+      });
+
+      await manager.refresh();
+      const report = manager.report;
+      expect(report).not.toBeNull();
+      expect(report!.listReadable).toBe(true);
+
+      // ① 误配条目不注入正文（与 false 同效），正常条目照常注入
+      expect(report!.segment).not.toContain('### 来源文件：a.md');
+      expect(report!.segment).toContain('### 来源文件：b.md');
+
+      // ② 但进完整失效集（宿主徽标据此亮），且文案带实际写入值
+      const misconfigured = report!.failures.find((f) => f.source === 'a.md');
+      expect(misconfigured?.reason).toBe('resident-not-boolean');
+      expect(misconfigured?.message).toContain('"true"');
+
+      // ③ 段首不出现它的路径、也不出现「下轮重试」（模型面不投影这类失效）
+      expect(report!.segment).not.toContain('a.md');
+      expect(report!.segment).not.toContain('下轮重试');
+    });
+
+    it('清单格式错误 ⇒ 报告非 null 且 listReadable=false（区别于「没求值」）', async () => {
+      const manager = new ResidentRulesManager({
+        projectDir,
+        workspaceTrusted: true,
+        listEntries: async () => [],
+        isListMalformed: () => true,
+      });
+
+      await manager.refresh();
+      const report = manager.report;
+      expect(report).not.toBeNull();
+      expect(report!.listReadable).toBe(false);
+      expect(report!.failures).toEqual([]);
+      expect(report!.segment).toBe('');
     });
   });
 });

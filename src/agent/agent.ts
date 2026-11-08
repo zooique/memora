@@ -32,7 +32,10 @@ import { SessionNamer } from '@/agent/managers/sessionNamer.js';
 import type { TextPolishManager } from '@/agent/managers/textPolishManager.js';
 import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
-import type { ResidentRulesManager } from '@/agent/managers/residentRules.js';
+import type {
+  ResidentRulesManager,
+  ResidentSegmentReport,
+} from '@/agent/managers/residentRules.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import { createDefaultGCService, type GCService, type GCResult } from '@/memory/gcService.js';
 import {
@@ -124,7 +127,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private workProjection: WorkProjectionManager | null = null;
   /**
    * ResidentRulesManager（项目规则层：清单里 resident=true 的条目正文每轮注入 system prompt）。
-   * 纯内部组件（暂无宿主 getter 契约）——turn 入口 await `refresh()`，同步刷新链读 `contextBlock()`。
+   * turn 入口 await `refresh()`，同步刷新链读 `contextBlock()`；宿主经 `residentSegmentReport`
+   * getter 只读消费本轮求值快照（失效徽标）。
    */
   private residentRules: ResidentRulesManager | null = null;
 
@@ -2219,6 +2223,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** 作品投影管理器（用户主动登记的 JSON 极简索引；`registerWork`/`listWorks`/`loadAndGetContextBlock`/`isFileMalformed`） */
   get works(): WorkProjectionManager | null {
     return this.workProjection;
+  }
+
+  /**
+   * 本轮项目规则求值快照（只读；`null` = 尚未求值——未初始化 / 还没跑过 turn / 工作区未受信任）
+   *
+   * 宿主只用于展示（失效徽标 / 清单面板），**不得**据此改写清单或本地复算「哪条生效」——
+   * 判据唯一实现在 `ResidentRulesManager.refresh()`。
+   */
+  get residentSegmentReport(): ResidentSegmentReport | null {
+    return this.residentRules?.report ?? null;
   }
 
   /** 会话管理器（会话恢复/切换/分叉功能） */

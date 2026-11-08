@@ -407,6 +407,13 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'get memory',
       'get polish',
       'get provider',
+      // 2026-11-08 新增（项目规则层 UI 落地 · K 刀）：本轮求值快照 getter。
+      // 定性 = 真能力（宿主失效徽标 / 清单面板的唯一只读数据源），非 no-op 谎报；
+      // 生产点 ResidentRulesManager.refresh()（每轮全量覆盖），判据不复制到宿主 ⇒ 非第二真源。
+      // 🔴 返回类型 `ResidentSegmentReport` **不进包根导出面**（PUBLIC-API-SURFACE-1「向 A」要求
+      // 每个导出都有真实消费方）；宿主用 ReturnType<Agent['residentSegmentReport']> 推导，
+      // 契约漂移仍被宿主 typecheck 抓住，同时零新增公共符号（符号量基线保持 81）。
+      'get residentSegmentReport',
       'get rolePack',
       'get rolePackManager',
       'get rolePacks',
