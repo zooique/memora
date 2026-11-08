@@ -206,8 +206,36 @@ git rev-list --count ($prev + '..HEAD')      # 区间 commit 数（实测，禁�
 | 门禁 | 逐项结果 + 退出码；门禁脚本运行时若打印步数则引原值（**禁在文档写死步数**） |
 | 测试 | 文件数 / 通过数 / 失败数 + 假红判定依据（判据 = readiness 铁律五，此处不重述四步法） |
 | 契约 / 产物 hash | `verify-dist-contract` 的同代 hash（内核 dist ↔ 宿主 bundle，涉及宿主 dist 时必给） |
+| 闸门态清单 | §3.5 逐行三态（真校验 / 条件跳过 / 完全空转）+ 跳过理由原文；未确认写「未查实」 |
 
 - **结论句（「已通过 / 已修复 / 没问题」）不构成收据**；缺任一字段 = 未复核。
+- 🔴 **禁写否定性状态描述**（2026-11-08 立）：收据与回报里不得出现「故未再跑 full」「未再验证」「没有其他改动」「未动 X 文件」这类**无实证支撑**的句子——它陈述的是「执行者没看到」，不是「世界上不存在」，既不可复核，也会被下一次实测当场推翻。
+  - **查不到就写「未查实」**，并附你查过的命令；不得把「查不到」写成「无 / 没有问题」。
+  - 正例（准）：「`git log <端点>..HEAD --oneline` = 空（2026-11-08 15:12 现取）。」
+  - 反例（禁）：「端点后没有其他改动。」
+
+### 3.5 闸门态清单（发版收据必附；三态字典固定）
+
+**为什么必附**：本仓多个闸在特定输入下打印「跳过」并 **exit 0**，肉眼看与 CI 都呈绿。「门禁全绿」这句话可以同时容纳「全部真校验」与「一半空转」，不标态读者无法区分。
+
+**三态字典（只此三种，禁自造第四种）**：
+- **真校验**：当次确实做了判定，输出里有结论行（✅ / ❌ / 命中数 / hash）。
+- **条件跳过**：当次打印了跳过理由并 exit 0 ⇒ **该面未判**，须把跳过理由原文摘进收据。
+- **完全空转**：该闸当次根本没被任何链路调用（或调用参数使其恒定跳过）⇒ 视同不存在。
+
+| 闸门 | 什么情况下会空转（判据） | 怎么确认它真跑了 |
+| --- | --- | --- |
+| `npm run verify:changelog`（`verify-changelog-version.mjs`） | 裸跑：未设 `RELEASE=1` 也未设 `RELEASE_DATE` ⇒ 打印 `⏭️ … 未处于发版模式，跳过日期校验`，`process.exit(0)` | 命令里显式带 `RELEASE_DATE`；输出**不含**「跳过」字样，且给出标题日期校验结论 |
+| `verify:publish-docs` 的文件发现面 | `package.json#files` 白名单某项在盘上不存在 ⇒ 静默 `continue`（该项不参与判定） | 输出里能看到被检文件名清单，条数与 `files` 白名单实际 md 数一致 |
+| `verify-ledger-receipt` | 区间解析为 0 个提交 ⇒ 打印「本次未做任何校验（≠ 通过）」且 exit 0；local-ci 里该步 `required: false` | 输出含逐提交收据行（非 0 条），区间起点 = 上一发版 tag |
+| `ledger:hygiene` ⑧ | 三分支 fail-open：标题行工作树 ≠ HEAD / HEAD 无该条目 / 该轴无 tag ⇒ 该条免判（静默 continue） | 输出里 ⑧ 有明确判定行（整段缺失 = 未跑）；Step 5 补索引行时会再判一次 |
+| `local-ci` 的 `audit` 步 | 默认不传 `--audit` ⇒ 该步被剔除；传了但失败也仅 `⚠️ WARN`，不参与失败判定 | 命令里显式 `--audit`，且输出出现 audit 步名 |
+| `verify:dist-contract --allow-absent` | dist 缺失 **且**显式传 flag ⇒ `出声跳过（未校验，不代表通过）`，`return` → exit 0（当前无任何链路使用该 flag） | 命令**不带** `--allow-absent`；输出含同代 hash |
+| `rules:refs`（`check-rule-refs`）对 `.trae/skills/**` | 引用方在技能目录 ⇒ 判 `skip`；`publish-links` 只扫 `files` 白名单 ⇒ **技能文档的路径引用无闸覆盖** | 两个文档闸的绿**不能**作为技能文档引用证据；改完须逐个 `Test-Path` / 点开被引路径 |
+| `pre-push → gate-full`（推 tag 时） | 推送内容全是 tag ⇒ push files 为空 ⇒ lefthook 判 `gate-full (skip)` / `no matching push files`（**0.8.0 上架实证**） | 该 commit 的 full 证据只能取自它当次的 full 实跑：汇总行原文 + exit=0 + 实跑时刻的 `git rev-parse HEAD` 等于被 tag 的 commit |
+| `host-release.yml` dry-run 分支 | `workflow_dispatch` 且 `expected_version` 留空 ⇒ 跳过 tag 一致性；上传 Release / 发 Open VSX / 回查在非 push 下整体 skip | 正式发版必须走 tag push；dry-run 的绿只证明「门禁跑过」，**不证明「已上架」** |
+
+**填写纪律**：收据「门禁」字段逐行附本表三态；未确认的一律写「**未查实**」，禁写「应当通过」。**本机绿 ≠ CI 绿**（本轮实测：两条 POSIX 用例只在 ubuntu 红、本机 Windows 全绿），门禁结论须取 CI 对应 job 的输出原文。
 
 ---
 

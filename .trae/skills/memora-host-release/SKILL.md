@@ -136,7 +136,7 @@ agent_created: true
    - `categories` 官方词表：`Programming Languages` / `Snippets` / `Linters` / `Themes` / `Debuggers` / `Formatters` / `Keymaps` / `SCM Providers` / `Other` / `Extension Packs` / `Language Packs` / `Data Science` / `Machine Learning` / `Visualization` / `Notebooks` / `Education` / `Testing`。填词表外的值 = 市场侧报错或降级，别凭「AI 插件应该选 AI」想当然（本条 2026-10-30 查官方 manifest 文档确认）。
 
 ### Step 6：发版后订正
-1. 将 Step 3 的「待上架」订正为「已发布」：`tasks/archive/<x.y.z>-host.md` 文件头 + 主台账**版本索引**里该版那一行的状态列（归档文件不在 `files` 白名单，订正在 tag 之后不影响已发 `.vsix`）。
+1. 将 Step 3 的「待上架」订正为「已发布」：`tasks/archive/<x.y.z>-host.md` 文件头 + **本步新补**主台账**版本索引**该版一行（tag 前该行**不存在**，Step 3 不得预加——`ledger:hygiene` ⑤「版本索引行 ⇔ git tag 存在」在 tag 前加行当场红；且上架时刻在 tag 前不存在，提前写只能靠猜）（归档文件不在 `files` 白名单，订正在 tag 之后不影响已发 `.vsix`）。
 2. 核对三市场上架状态：GitHub Release（asset）/ Open VSX / VS Code Marketplace 均可见目标版本。
    - **Marketplace 侧按「可用时间」排序，别拿最慢的那个判失败**：① **vspackage 端点最早可用**——`/_apis/public/gallery/publishers/<publisher>/vsextensions/<name>/<ver>/vspackage`（VS Code 装扩展走的就是它）→ ② `extensionquery` 索引滞后约 2–5 分钟（0.5.0 实测：01:56–01:58 三度探测仍回 0.4.0，01:59:05Z 翻到 0.5.0）→ ③ 扩展列表页最慢（0.4.0 实证正文仍是上一版 README）。
    - 🔴 **先做中间层反证，再信那个 `200`**：本机加速代理会把该域名 DNS 改写到 `127.0.0.1`（响应头 `Server: FastGithub`，`--noproxy '*'` 也绕不过）⇒ 必须用**必然不存在的版本**（如 `0.9.9`）请求同一端点，只有它返回 `404` 才能证明端点是按版本真实应答、目标版本的 `200` 不是兜底缓存。

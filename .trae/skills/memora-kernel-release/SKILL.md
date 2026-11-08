@@ -64,9 +64,11 @@ agent_created: true
 
 **随包文档两道门（本步首次取证据 → Step 2 文档改动后复跑）**
 ```powershell
-npm run verify:changelog; npm run verify:publish-docs
+# RELEASE_DATE 必设：不设时脚本打印「未处于发版模式，跳过日期校验」并 exit 0 ⇒ 等于没校验
+$env:RELEASE_DATE = 'YYYY-MM-DD'; npm run verify:changelog; npm run verify:publish-docs
 ```
 - 判据 / 命令本体：`scripts/verify-changelog-version.mjs` / `scripts/verify-publish-docs.mjs`（二者**不在** `local-ci`，只在 `release.yml` 与手工预检里跑）；通过标准 = 两条 `exit=0`。
+- 🔴 **`verify:changelog` 裸跑 = 空转（实测）**：脚本在既无 `RELEASE=1` 又无 `RELEASE_DATE` 时打印 `⏭️ [changelog-version] 未处于发版模式，跳过日期校验` 并 `process.exit(0)`（`scripts/verify-changelog-version.mjs` 头注释已声明该「发版模式闸」）。故必须显式给 `RELEASE_DATE`（CI 流水线里等价于 `RELEASE=1` + 发布日）；收据里引用裸跑的 `exit=0` = 把「没校验」记成「通过」。
 - **时序唯一口径（避免两处各写一套）**：这两道门**跟着文档改动走**——Step 0.2 首次跑，使 0.3 收据「门禁」字段有值；Step 1 若改了 `CHANGELOG.md` / 随包 md，0.2 的结果即失效，Step 2 **必须重跑**。两处跑的是同两条命令、同一判据，不构成两套时序：**「何时跑」在本节定义，readiness 只留命令本体与通过标准**。
 
 #### Step 0.3：放行判定（进 Step 1 / 进 Step 4 的两道判据）
@@ -91,7 +93,7 @@ npm run verify:changelog; npm run verify:publish-docs
   缺一即本步不放行。
 - **三方一致**：`package.json` `version` = CHANGELOG 标题版本 = 即将推送的 tag `vX.Y.Z`。
 - **本地预检**（`format:check` / typecheck / lint / test 已含 `local-ci` full，此处前置跑是为省一次 CI 往返；两道随包文档门的**时序**见 0.2，本步只是复跑）：
-  - `npm run verify:changelog`（`scripts/verify-changelog-version.mjs`：标题须含合法日期 + 发布日窗口）——**Step 1 改过 CHANGELOG 后必重跑**
+  - `$env:RELEASE_DATE = 'YYYY-MM-DD'; npm run verify:changelog`（`scripts/verify-changelog-version.mjs`：标题须含合法日期 + 发布日窗口）——**Step 1 改过 CHANGELOG 后必重跑**；漏设 `RELEASE_DATE` 时本闸打印「未处于发版模式，跳过日期校验」并 exit 0（空转，`§3.5` 记「完全空转」态）
   - `npm run verify:publish-docs`（`scripts/verify-publish-docs.mjs`：随包 md 无发布态陈述）——**Step 1 改过随包 md 后必重跑**
   - `npm run format:check`（prettier）
   - 另跑 `npm run typecheck` / `npm run lint` / `npm test` 兜底（虽 local-ci 会跑，tag 前确认省一次 CI 往返）。
@@ -120,6 +122,14 @@ npm run verify:changelog; npm run verify:publish-docs
    - ⚠️ 判读只看**实际改动文件**，不看 commit 标题措辞——标题写「宿主」也可能动了内核文件（反之亦然）。
    - **重点防区**：仓库级工程基建 commit（`scripts/` / `package.json` 非版本号改动 / CI 配置 / `.trae/` 技能脚本）最易漏登——它们不对应业务功能条目、常被忽视；此类改动须确认已有 `GATE-*` / `CI-*` / 技能类 ID 覆盖，否则补登后再归档。
    - **实证**：5.2.0 发版后暴露 `b05aa124`（双门升硬闸）、`16ac90d4`（决策指针落注释）两笔随版发布却从未登记、归档漏载，发版后才以 `LEDGER-GATE-1` / `DEC-PTR-1` 补登 truth-source。
+
+### Step 4.0：tag 前四项硬判据（缺一不得打 tag）
+> **为何单列**：推 tag 时 pre-push 的 `gate-full` 被 lefthook 判 `no matching push files` **直接 skip**（0.8.0 上架实证：日志 `gate-full (skip)`）⇒ **被 tag 的 commit 从未被本地全量门禁跑过**。下列四项是该缺口的替代证据，逐项附原始命令输出，**禁转述**。
+1. **commit 在分支上**：`git branch --contains HEAD` 的输出里有 `*` 行（= 当前分支包含它；`--show-current` 不能与该选项组合，实测 exit 129）；`git rev-list --count '@{u}..HEAD'` = 0（tag 目标不是本地独有提交）。
+2. **该 commit 的 full 是绿的**：full 实跑的汇总行原文 + `exit=0`，且**实跑时刻的 `git rev-parse HEAD` 等于**将要 tag 的 commit（收据头即打印 `head=` / `tree=`，见 `local-ci` 输出首行「收据：preset=full head=… tree=… dirty=…」）。
+3. **tree 与 full 记录一致**：`git status --porcelain` 在 tag 前只剩收据 / 归档类文档写入；`git rev-parse HEAD^{tree}` 与 full 收据里的 `tree=` 相同（差异只允许落在收据文件，且须在该次 full 之后写入）。
+4. **tag 目标 = 本次审查端点**：`git rev-parse HEAD` = 收据「审查端点」字段（`references/pre-release-audit.md` §1.3）；端点后有代码类提交 ⇒ 先补审再打。
+- 任一项给不出原始输出 ⇒ 写「未查实」并停在 Step 4；**不得用「CI 会替我跑」替代**（CI 不跑 `ledger:*` 与本机差异面，且本机绿 ≠ CI 绿）。
 
 ### Step 4：发版（打 tag 触发流水线）
 1. 确认 Step 1–3 全部已提交到当前 HEAD。
