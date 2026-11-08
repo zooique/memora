@@ -579,12 +579,13 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(fileChangeView.onDidChange(() => chatProvider.pushFileChanges()));
   // 技能聚合目录：composer 与设置面板同一清单来源；项目级未信任时为空（不伪造来源）
   chatProvider.setSkillDirs(configDir, userSkillsDir, projectDirsAtActivation.skills);
-  // 建会话校验默认角色包：目录编目（与装配/角色页同一内核扫描器，冷启动无实例亦可校验）
-  attachRolePackCatalog(chatProvider, {
+  // 默认角色包校验：目录编目（与装配/角色页同一内核扫描器，冷启动无实例亦可校验；两面板共用）
+  const rolePackCatalogDirs = {
     configDir,
     userRolePacksDir,
     projectRolePacksDir: projectDirsAtActivation.rolePacks,
-  });
+  };
+  attachRolePackCatalog(chatProvider, rolePackCatalogDirs);
   // 打开面板即懒装配 Agent（不依赖 open 命令）；复用同一 sessionStore（SSOT），路径同源
   chatProvider.setAgentFactory((_projectPath, sessionId) => {
     // 工厂只做「按会话取/建 + 一次性联动」，不持有实例：复用与在途去重归登记表
@@ -609,16 +610,14 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     return assembling;
   });
-  // 会话实例回收（删除会话时唯一生产调用点）：先注销登记再 close——
-  // 反序会让「close 后仍留在表里」的实例被下次取用当活实例复用（僵尸）
+  // 会话实例回收（删除会话时唯一生产调用点）：先注销登记再 close——反序会让「close 后仍留在表里」的实例被当活实例复用（僵尸）
   chatProvider.setAgentReleaser(async (sessionId) => {
     const agent = agentRegistry.get(sessionId);
     if (!agent) return;
     agentRegistry.unregister(sessionId);
     await agent.close();
   });
-  // 会话实例改键（分叉）：内核把**同一实例**切到新会话，实例本身未换 ⇒
-  // 必须同步改登记键，否则「实例实际会话」与「登记键」分叉成两份漂移语义
+  // 会话实例改键（分叉）：内核把**同一实例**切到新会话 ⇒ 必须同步改登记键，否则「实例实际会话」与「登记键」漂移成两份语义
   chatProvider.setAgentRekeyer((from, to) => {
     const agent = agentRegistry.get(from);
     if (!agent) return;
@@ -629,11 +628,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
   );
 
-  // 设置面板：editor tab 形态（六页合一、独立 tab 非回退；装配复用 chat 面板同一登记表 SSOT，
-  // 角色切换随会话文件落盘）——草稿无 id/Agent ⇒ 角色读写桥只碰草稿内存（落盘随建会话 meta 一次完成）
+  // 设置面板：editor tab 形态；装配复用 chat 面板同一登记表 SSOT，草稿只碰草稿内存（落盘随建会话 meta）
   const settingsProvider = new MemoraSettingsPanel(context.extensionUri, providerStore);
   const isDraft = () => chatProvider.isDraftSession();
   settingsProvider.setAgentFactory(getAgent, peekAgent, resolveSessionId, isDraft);
+  // 默认角色包校验与建会话共用同一编目读面（设置页冷启动无实例亦可校验，不再要求先打开会话）
+  attachRolePackCatalog(settingsProvider, rolePackCatalogDirs);
   settingsProvider.setDraftRolePackAccess({
     getName: () => chatProvider.getDraftRolePackName(),
     setName: (name) => chatProvider.setDraftRolePack(name),

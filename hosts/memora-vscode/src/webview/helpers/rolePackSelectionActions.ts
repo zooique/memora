@@ -3,8 +3,8 @@
  *
  * 从 settingsPanel 外置的两个动作，理由有二：
  *   - settingsPanel 贴 max-lines `只降不升`基线，「取值校验 + 提示文案 + 写盘」不该再往里堆；
- *   - 两个动作共用同一套校验链（已登记实例的 `rolePackManager` → 存在性 → 提示），
- *     放在一处才能保证「不存在就拒绝」的判据与文案只有一份。
+ *   - 两个动作都做「包名存在性」判断，判据与文案必须各有单一真源，不能一个用这一套、
+ *     另一个用另一套（同一判据两份实现 = 两份语义从落笔那天开始漂移）。
  *
  * 语义边界（两个动作**互不代替**）：
  *   - {@link selectDraftRolePack}：只写草稿内存，落盘随建会话的 meta 一次完成；
@@ -13,16 +13,16 @@
  */
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { writeErrorText, writeSetting } from '../../extension/settingsWrite.js';
+import type { RolePackCatalogReader } from '../../extension/host/newSessionRolePack.js';
+import { UNVERIFIED_ROLE_PACK_TEXT } from '../../extension/host/sessionRolePack.js';
 
 /** 角色包管理器的最小读面（只用到存在性查询；不引入 Agent 全类型） */
 interface RolePackDirectory {
   get?(packName: string): unknown;
 }
 
-/** 两个动作共用的依赖（面板注入；本模块不持有任何状态） */
+/** 两个动作共用的投递 / 刷新面（面板注入；本模块不持有任何状态） */
 export interface RolePackActionDeps {
-  /** 已登记实例的角色目录（只读、不装配；null/undefined = 无可校验目录） */
-  peekRolePackManager(): RolePackDirectory | null | undefined;
   /** 发送一条 notice（与面板同一投递通道） */
   post(message: ExtensionToWebviewMessage): void;
   /** 动作完成后重推角色视图（`roles_loaded` 的单一刷新面） */
@@ -31,10 +31,28 @@ export interface RolePackActionDeps {
 
 /** 草稿期选择的额外依赖（读写桥由面板在装配时注入） */
 export interface DraftRolePackActionDeps extends RolePackActionDeps {
+  /**
+   * 已登记实例的角色目录（只读、不装配；null/undefined = 无可校验目录）
+   *
+   * 草稿态没有 Agent 可直接问，且其角色列表本身就是从该实例投影出来的——
+   * 无实例时列表为空、用户根本无从选择，故此处保留实例读面（与列表同源）。
+   */
+  peekRolePackManager(): RolePackDirectory | null | undefined;
   /** 草稿读写桥是否就绪（false = 没有记录选择的地方，必须如实失败） */
   hasDraftBridge: boolean;
   /** 把选择写进草稿内存（不落盘） */
   setDraftRolePackName(name: string): void;
+}
+
+/** 设置默认角色的额外依赖（校验真源 = 角色包目录编目，与建会话同一读面） */
+export interface DefaultRolePackActionDeps extends RolePackActionDeps {
+  /**
+   * 角色包目录编目读面（实现见 rolePackCatalog.ts；未注入 = 无法校验）
+   *
+   * 与建会话同源：冷启动没有任何已装配实例时它照样可读，因此设置页不再有
+   * 「请先在对话中打开任一会话」这种与建会话口径不一致的拒绝理由。
+   */
+  readRolePackCatalog?: RolePackCatalogReader;
 }
 
 /**
@@ -84,26 +102,39 @@ export async function selectDraftRolePack(
 /**
  * 设置 / 取消「新建会话默认角色包」（只写用户级配置，不碰任何会话 meta）
  *
- * 校验必须在写入前：目录真源 = 已登记实例的 `rolePackManager`（与装配同一份目录，不另写扫描器）；
- * 草稿期若还没有任何已登记实例（角色列表此时同样为空），直接拒绝——避免写入不可解析的名字。
+ * 校验真源 = 角色包目录编目（`RolePackCatalogReader`，与建会话 `decideNewSessionRolePack`
+ * 同一读面）：冷启动无已装配实例同样可校验，不再有「先打开任一会话」这条与建会话口径
+ * 不一致的拒绝理由。
+ *
+ * 三个出口（文案不许合并）：
+ *   ① 列表读不到 ⇒ 不写，报「无法校验角色包列表」（中性措辞，不指定原因）；
+ *   ② 名单里没有该包 ⇒ 不写，报「角色包不存在」；
+ *   ③ 校验通过 ⇒ 写入。
+ * 空串 = 取消默认，**无需校验**（没有名字要判存在性，不该被「列表读不到」挡住）。
  *
  * @param deps 面板注入的依赖
  * @param name 角色包名；空串 = 取消默认（恢复内核兜底包）
  * @returns 是否写入成功
  */
-export async function setDefaultRolePack(deps: RolePackActionDeps, name: string): Promise<boolean> {
-  const rpm = deps.peekRolePackManager();
-  if (!rpm) {
-    deps.post({
-      type: 'notice',
-      level: 'error',
-      message: '当前没有可校验的角色目录：请先在对话中打开任一会话，再设置默认角色',
-    });
-    return false;
-  }
-  if (name && !rpm.get?.(name)) {
-    deps.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
-    return false;
+export async function setDefaultRolePack(
+  deps: DefaultRolePackActionDeps,
+  name: string,
+): Promise<boolean> {
+  if (name) {
+    // 未注入编目视同「读不到」：绝不因「没接线」而乐观放行一个不可解析的名字
+    const catalog = deps.readRolePackCatalog ? await deps.readRolePackCatalog() : null;
+    if (!catalog) {
+      deps.post({
+        type: 'notice',
+        level: 'error',
+        message: `${UNVERIFIED_ROLE_PACK_TEXT}，未写入默认角色「${name}」`,
+      });
+      return false;
+    }
+    if (!catalog.has(name)) {
+      deps.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
+      return false;
+    }
   }
   const written = await writeSetting('defaultRolePack', name);
   if (!written.ok) {

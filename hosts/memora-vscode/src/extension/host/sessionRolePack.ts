@@ -82,11 +82,21 @@ export function defaultRolePackFallbackNotice(
 }
 
 /**
- * 构造「默认角色包无法校验」的可见提示（纯函数；仅在角色包目录读不到时使用）
+ * 「无法校验」的中性措辞（**不指定原因**，建会话与设置页共用同一句）
+ *
+ * 编目侧把 `RolePackManager.load()` 的任何异常都降级为「读不到」（保守方向：宁可报无法校验，
+ * 也不误判成包不存在去催用户改包名），而异常既可能来自目录 IO，也可能来自某个包 manifest
+ * 损坏。**说错原因比不说原因更糟**——用户会照着错误归因去修一个不存在的目录问题。
+ * 精确归因需区分内核内部错误类型（内核面改动），故本期只保留中性表述。
+ */
+export const UNVERIFIED_ROLE_PACK_TEXT = '无法校验角色包列表';
+
+/**
+ * 构造「默认角色包无法校验」的可见提示（纯函数；仅在编目读不到时使用）
  *
  * 与「默认角色包不可用」必须分开：这两件事的**用户可行动作不同**——
  *   - 不可用 = 包确实不在目录里 ⇒ 用户应重选一个存在的默认包；
- *   - 无法校验 = 目录本身读不到 ⇒ 用户应先修目录/权限，重选包也不会生效。
+ *   - 无法校验 = 列表读不到、存在性无从判断 ⇒ 重选包也不会生效，先别改包名。
  * 合并成一句会让第二种情况被当成第一种，用户照着改包名永远修不好。
  *
  * @param requested 用户级默认设置里的包名
@@ -99,8 +109,8 @@ export function defaultRolePackUnverifiedNotice(
 ): ExtensionToWebviewMessage | null {
   if (!requested) return null;
   const message = activeName
-    ? `默认角色包「${requested}」无法校验（角色包目录读取失败），已使用兜底角色「${activeName}」。`
-    : `默认角色包「${requested}」无法校验（角色包目录读取失败），且兜底角色包缺失，当前无可用角色。`;
+    ? `默认角色包「${requested}」${UNVERIFIED_ROLE_PACK_TEXT}，已使用兜底角色「${activeName}」。`
+    : `默认角色包「${requested}」${UNVERIFIED_ROLE_PACK_TEXT}，且兜底角色包缺失，当前无可用角色。`;
   return { type: 'notice', level: 'error', message };
 }
 

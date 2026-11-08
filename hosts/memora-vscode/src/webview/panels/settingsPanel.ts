@@ -78,6 +78,8 @@ import { probeSearchEngine, validateCustomEngines } from '../../extension/host/s
 import { postRolePackList } from '../helpers/rolePackListView.js';
 // 角色选择动作外置（草稿选择 / 设为默认；校验链与文案单点，见模块头）
 import { selectDraftRolePack, setDefaultRolePack } from '../helpers/rolePackSelectionActions.js';
+// 角色包目录编目读面（与建会话同一份；类型来自决策模块，实现在 extension/host/rolePackCatalog.ts）
+import type { RolePackCatalogReader } from '../../extension/host/newSessionRolePack.js';
 import {
   findUnmatchedDisabled,
   listVisibleSkills,
@@ -124,6 +126,14 @@ export class MemoraSettingsPanel {
    */
   private _draftRolePackAccess:
     { getName: () => string | undefined; setName: (name: string) => void } | undefined;
+  /**
+   * 角色包目录编目读面（由 extension 注入，与建会话校验同一份，见 `rolePackCatalog.ts`）
+   *
+   * 设置默认角色时据此判「包在不在」：冷启动无已装配实例同样可读，
+   * 因此不再需要「请先在对话中打开任一会话」这条与建会话口径不一致的拒绝理由。
+   * 未注入 ⇒ 视同「读不到」，如实失败（不得乐观放行）。
+   */
+  private _readRolePackCatalog: RolePackCatalogReader | undefined;
   /** Agent 懒装配工厂（由 extension 注入，与 chat 面板同一 `AgentRegistry` 取用面） */
   private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
   /** 会话存储（角色切换成功后写回该会话的 `activeRolePackName`；extension 注入） */
@@ -198,6 +208,11 @@ export class MemoraSettingsPanel {
     setName: (name: string) => void;
   }): void {
     this._draftRolePackAccess = access;
+  }
+
+  /** 注入角色包目录编目读面（与建会话同一份；不注入 = 无法校验，如实失败） */
+  public setRolePackCatalog(reader: RolePackCatalogReader): void {
+    this._readRolePackCatalog = reader;
   }
 
   /** 注入全局状态（Memento；角色激活态已改为会话级，不再经此持久化） */
@@ -769,6 +784,7 @@ export class MemoraSettingsPanel {
    * 设置 / 取消「新建会话默认角色包」：写用户级配置，不碰任何会话 meta
    *
    * 实现外置在 rolePackSelectionActions（校验链与文案单点）；本方法只注入面板能力。
+   * 校验读面 = 角色包目录编目（与建会话同一份，冷启动无实例亦可校验）。
    *
    * @param name 角色包名；空串 = 取消默认（恢复内核兜底包）
    * @returns 是否写入成功
@@ -776,7 +792,7 @@ export class MemoraSettingsPanel {
   private setDefaultRole(name: string): Promise<boolean> {
     return setDefaultRolePack(
       {
-        peekRolePackManager: () => this._peekAgent?.(this._resolveSessionId?.())?.rolePackManager,
+        readRolePackCatalog: this._readRolePackCatalog,
         post: (message) => this.post(message),
         reloadRoles: () => this.loadRoles(),
       },

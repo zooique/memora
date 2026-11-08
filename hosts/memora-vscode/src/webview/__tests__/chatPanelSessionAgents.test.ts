@@ -1284,7 +1284,7 @@ describe('新建会话默认角色包 · 用户级默认 → 会话快照', () =
       .at(-1) as unknown as { level?: string; message?: string } | undefined;
     expect(notice?.level).toBe('error');
     expect(notice?.message).toBe(
-      `默认角色包「代码助手」无法校验（角色包目录读取失败），已使用兜底角色「${BUILTIN_FALLBACK_PACK}」。`,
+      `默认角色包「代码助手」无法校验角色包列表，已使用兜底角色「${BUILTIN_FALLBACK_PACK}」。`,
     );
     // 第三出口不得折叠成「包不存在」：否则用户会去改包名，永远修不好目录问题
     expect(notice?.message).not.toContain('不可用，当前使用兜底角色');

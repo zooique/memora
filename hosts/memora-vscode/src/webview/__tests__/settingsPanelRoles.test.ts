@@ -274,34 +274,25 @@ describe('settingsPanel.setDefaultRole —— 新建会话默认角色包（用�
     );
   }
 
-  /** 带角色目录的 agent 桩（peekAgent 用它校验包存在性；listMeta 空表足够投影） */
-  function roleDirectoryAgent(installed: string[]): Agent {
-    return {
-      rolePackManager: {
-        activeName: BUILTIN_FALLBACK_PACK,
-        get: (name: string) => (installed.includes(name) ? { name } : undefined),
-        listMeta: () => [],
-      },
-      on: vi.fn(),
-      off: vi.fn(),
-    } as unknown as Agent;
-  }
-
-  /** 装配面板：固定当前会话 + 目录探针（setDefaultRole 需要 peekAgent） */
-  function setupWithDirectory(agent: Agent): ReturnType<typeof setup> {
+  /**
+   * 冷启动形态：**零已装配实例**（只注入装配工厂，不注入 peekAgent），只注入角色包目录编目
+   *
+   * 校验真源已换成与建会话同一份角色包目录（`createRolePackCatalogReader`）⇒ 没有 Agent
+   * 也能判存在性。这正是旧实现做不到的事（旧实现要求「先打开任一会话」）。
+   *
+   * @param catalog 编目内容；`null` = 列表读不到；`undefined` = 读面未注入（都要如实失败）
+   */
+  function setupColdStart(
+    catalog: ReadonlySet<string> | null | undefined,
+  ): ReturnType<typeof setup> {
+    const { agent } = agentStub({ switchOk: true, locked: false });
     const ctx = setup(agent);
-    ctx.provider.setAgentFactory(
-      async () => agent,
-      () => agent,
-      () => '2026-11-08-s1',
-      () => false,
-    );
+    if (catalog !== undefined) ctx.provider.setRolePackCatalog(async () => catalog);
     return ctx;
   }
 
-  it('角色包存在 → 写用户级 defaultRolePack（Global），不写会话 meta / globalState', async () => {
-    const agent = roleDirectoryAgent(['代码助手']);
-    const { provider, posted, globalUpdate } = setupWithDirectory(agent);
+  it('冷启动零实例 + 包存在 → 成功写入用户级配置（不再要求先打开会话）', async () => {
+    const { provider, posted, globalUpdate } = setupColdStart(new Set(['代码助手']));
 
     const ok = await setDefaultRole(provider, '代码助手');
 
@@ -316,41 +307,51 @@ describe('settingsPanel.setDefaultRole —— 新建会话默认角色包（用�
     });
   });
 
-  it('角色包不存在 → 拒绝写入并弹「角色包不存在」', async () => {
-    const agent = roleDirectoryAgent([]);
-    const { provider, posted } = setupWithDirectory(agent);
+  it('冷启动零实例 + 包不存在 → 「角色包不存在」，不是「请先打开任一会话」', async () => {
+    const { provider, posted } = setupColdStart(new Set(['代码助手']));
 
     const ok = await setDefaultRole(provider, 'ghost');
 
     expect(ok).toBe(false);
     expect(vscodeConfigMock.cfgUpdate).not.toHaveBeenCalled();
-    expect(notices(posted)[0]).toEqual({
-      type: 'notice',
-      level: 'error',
-      message: '角色包不存在：ghost',
-    });
+    const message = notices(posted)[0]?.message ?? '';
+    expect(message).toBe('角色包不存在：ghost');
+    // 旧拒绝路径（与建会话口径不一致的「先打开会话」）必须彻底消失
+    expect(message).not.toContain('请先在对话中打开');
+    expect(message).not.toContain('没有可校验的角色目录');
   });
 
-  it('空串 → 取消默认（写入空串，新建会话回落内核兜底包）', async () => {
-    const agent = roleDirectoryAgent(['代码助手']);
-    const { provider, posted } = setupWithDirectory(agent);
+  it('目录读不到 → 不写，报中性「无法校验角色包列表」（与「不存在」区分）', async () => {
+    const { provider, posted } = setupColdStart(null);
+
+    const ok = await setDefaultRole(provider, '代码助手');
+
+    expect(ok).toBe(false);
+    expect(vscodeConfigMock.cfgUpdate).not.toHaveBeenCalled();
+    const message = notices(posted)[0]?.message ?? '';
+    // 中性措辞：不承诺失败原因是目录 IO 还是包损坏（说明错原因比不说更糟）
+    expect(message).toBe('无法校验角色包列表，未写入默认角色「代码助手」');
+    expect(message).not.toContain('角色包不存在');
+  });
+
+  it('编目读面未注入 → 不写，报「无法校验角色包列表」（不得乐观放行）', async () => {
+    const { provider, posted } = setupColdStart(undefined);
+
+    const ok = await setDefaultRole(provider, '代码助手');
+
+    expect(ok).toBe(false);
+    expect(vscodeConfigMock.cfgUpdate).not.toHaveBeenCalled();
+    expect(notices(posted)[0]?.message).toContain('无法校验角色包列表');
+  });
+
+  it('空串 → 取消默认（无需校验：目录读不到也应允许取消）', async () => {
+    const { provider, posted } = setupColdStart(null);
 
     const ok = await setDefaultRole(provider, '');
 
     expect(ok).toBe(true);
     expect(vscodeConfigMock.cfgUpdate).toHaveBeenCalledWith('defaultRolePack', '', 1);
     expect(notices(posted).at(-1)?.message).toBe('已取消默认角色：新建会话将使用系统兜底角色');
-  });
-
-  it('无已登记实例（peek 不到目录）→ 拒绝写入，不写不可解析的名字', async () => {
-    const { agent } = agentStub({ switchOk: true, locked: false });
-    const { provider, posted } = setup(agent); // 不给 peekAgent：目录不可得
-
-    const ok = await setDefaultRole(provider, '代码助手');
-
-    expect(ok).toBe(false);
-    expect(vscodeConfigMock.cfgUpdate).not.toHaveBeenCalled();
-    expect(notices(posted)[0]?.message).toContain('没有可校验的角色目录');
   });
 });
 
