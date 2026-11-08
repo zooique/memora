@@ -105,6 +105,8 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
     packageRoot?: string,
     // 内核已记录的全局池覆盖来源（`SkillEntry.overriddenLayer` 只读直通；角色包推送不传）
     overriddenLayer?: SkillSource,
+    // 正文体量（字符数，仅成本提示用；角色包内嵌技能无此项 = 未知，UI 不显示）
+    contentChars?: number,
   ): void => {
     if (!name) return;
     const prev = byName.get(name);
@@ -128,6 +130,8 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
       layer,
       // 覆盖事实：仅在真的淘汰了同名项时出现（缺省 = 无覆盖）
       overriddenLayer,
+      // 正文体量（字符数）：只用于「钉住后每轮都发送」的成本提示，不参与任何预算裁决
+      contentChars,
     });
   };
 
@@ -144,6 +148,8 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
         s.packageRoot,
         // 全局池加载覆盖事实（builtin → user → project），内核直通
         s.overriddenLayer,
+        // 正文体量：只读内核条目已有的正文长度（宿主不读盘、不重算）
+        s.content?.length,
       );
     }
   }
@@ -152,7 +158,17 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
   const rpm = agent.rolePackManager;
   if (rpm) {
     for (const s of rpm.listSkills ? rpm.listSkills() : []) {
-      push('rolepack', s.name, s.description, undefined, s.displayName);
+      push(
+        'rolepack',
+        s.name,
+        s.description,
+        undefined,
+        s.displayName,
+        undefined,
+        undefined,
+        // 正文体量：内核 listSkills 取装载时预缓存的同一份正文（宿主不读盘、不额外加载）
+        s.contentChars,
+      );
     }
   }
 

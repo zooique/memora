@@ -10345,9 +10345,10 @@ describe('添加到对话：引用气泡（file/folder · 去重 · 发送清空
 });
 
 // ═══════════════════════════════════════════════════════════
-// 常驻锁（pinned）：chip 发送后是否保留——ref 默认不钉（发送即清，现状）/ skill 默认钉住（锁预开）
+// 常驻锁（pinned）：chip 发送后是否保留——引用与技能**同默认**：选中即挂、发完即清；
+// 锁（pinned=true）= 会话级钉住，写进会话元数据、跨重启接得上（0.10.0）。
 // SSOT = chip 的 pinned 属性（两类 chip 共用同一判据，不另建 pinned 数组）；
-// pinned 纯 UI 态，不进协议/内核——每轮发送照旧带全部当前 chip（模型每轮要完整上下文）。
+// pinned 随 `input.kind='pin'` 上行即时落盘，也随 send 载荷上行（草稿期补落）；
 // ═══════════════════════════════════════════════════════════
 describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () => {
   beforeEach(() => {
@@ -10379,12 +10380,12 @@ describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () =>
     input.value = '讲讲';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     send.click();
-    // 钉住的仍随本轮消息发出（模型每轮要完整上下文）
+    // 钉住的仍随本轮消息发出（模型每轮要完整上下文），并带上钉住标记（宿主据此写会话元数据）
     expect(postMessage).toHaveBeenCalledWith({
       type: 'input',
       kind: 'send',
       text: '讲讲',
-      refs: [{ path: 'src/foo.ts', kind: 'file' }],
+      refs: [{ path: 'src/foo.ts', kind: 'file', pinned: true }],
     });
     // 发送后保留不消失
     const after = document.querySelectorAll('#refChips .skill-chip');
@@ -10429,7 +10430,7 @@ describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () =>
     expect(names()).toEqual(['b-second.ts', 'a-first.ts']); // 钉住者上浮，同组内序不变
   });
 
-  it('技能默认钉住（锁预开）→ chip 带 is-pinned，发送后不清除（保持既有常驻行为）', () => {
+  it('技能默认不钉住（与引用对齐「发完即清」）→ chip 无 is-pinned，发送后清除', () => {
     const { postMessage } = mountChatView();
     const input = document.getElementById('input') as HTMLTextAreaElement;
     const send = document.getElementById('send') as HTMLButtonElement;
@@ -10439,7 +10440,7 @@ describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () =>
       (document.querySelector('#skillChips .skill-chip') as HTMLElement).classList.contains(
         'is-pinned',
       ),
-    ).toBe(true);
+    ).toBe(false);
     input.value = 'x';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     send.click();
@@ -10448,27 +10449,121 @@ describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () =>
       kind: 'send',
       text: 'x',
       skillName: '正常技能',
+      skillPinned: false,
     });
-    // 常驻：发送后 chip 仍在（这是「锁预开」要保住的既有行为）
-    expect(document.querySelectorAll('#skillChips .skill-chip').length).toBe(1);
+    // 发完即清：未钉住的技能 chip 不再跟到下一轮
+    expect(document.querySelectorAll('#skillChips .skill-chip').length).toBe(0);
   });
 
-  it('技能取消常驻 → 发送后清除（与引用同一 pinned 判据，非两条规则）', () => {
-    mountChatView();
+  it('技能钉住（显式🔒）→ 发送后保留，且发送载荷带 skillPinned=true', () => {
+    const { postMessage } = mountChatView();
     const input = document.getElementById('input') as HTMLTextAreaElement;
     const send = document.getElementById('send') as HTMLButtonElement;
     dispatchSkills();
     (document.querySelector('.skill-picker [data-treedd-id="正常技能"]') as HTMLElement).click();
     (document.querySelector('#skillChips .skill-chip .skill-chip__pin') as HTMLElement).click();
-    expect(
-      (document.querySelector('#skillChips .skill-chip') as HTMLElement).classList.contains(
-        'is-pinned',
-      ),
-    ).toBe(false);
     input.value = 'x';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     send.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'send',
+      text: 'x',
+      skillName: '正常技能',
+      skillPinned: true,
+    });
+    expect(document.querySelectorAll('#skillChips .skill-chip').length).toBe(1);
+  });
+
+  // 修复的既有 bug：切会话完全不清技能 chip ⇒ A 会话挂的技能会跟到 B 继续发出去。
+  // 判据 = clear_ok 后 composer 为空（回种由宿主随后按目标会话元数据推送）。
+  it('切会话不泄漏：clear_ok 清空技能 chip（A 挂的技能不得跟到 B）', () => {
+    mountChatView();
+    dispatchSkills();
+    (document.querySelector('.skill-picker [data-treedd-id="正常技能"]') as HTMLElement).click();
+    expect(document.querySelectorAll('#skillChips .skill-chip').length).toBe(1);
+    dispatch({ type: 'clear_ok' });
     expect(document.querySelectorAll('#skillChips .skill-chip').length).toBe(0);
+    expect(document.getElementById('skillChips')?.hasAttribute('hidden')).toBe(true);
+  });
+
+  it('切会话不泄漏：clear_ok 同时清空引用 chip（回种由宿主按目标会话元数据推送）', () => {
+    mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(1);
+    dispatch({ type: 'clear_ok' });
+    expect(document.querySelectorAll('#refChips .skill-chip').length).toBe(0);
+  });
+
+  it('切会话回种：skills_loaded.pinnedSkillName 恢复该会话自己的钉住技能（带锁）', () => {
+    mountChatView();
+    dispatch({ type: 'clear_ok' });
+    dispatch({
+      type: 'skills_loaded',
+      skills: [{ name: '正常技能', description: 'd', layer: 'builtin' }],
+      pinnedSkillName: '正常技能',
+    });
+    const chip = document.querySelector('#skillChips .skill-chip') as HTMLElement;
+    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('正常技能');
+    expect(chip.classList.contains('is-pinned')).toBe(true);
+  });
+
+  it('失效灰显：回种的技能名不在清单里 → 灰「已失效」，不静默丢', () => {
+    mountChatView();
+    dispatch({ type: 'clear_ok' });
+    dispatch({
+      type: 'skills_loaded',
+      skills: [{ name: '正常技能', description: 'd', layer: 'builtin' }],
+      pinnedSkillName: '已删除的技能',
+    });
+    const chip = document.querySelector('#skillChips .skill-chip') as HTMLElement;
+    expect(chip.classList.contains('is-missing')).toBe(true);
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('已失效');
+  });
+
+  it('失效灰显：回种的引用路径被宿主判失效（missing）→ 灰「已失效」，不静默丢', () => {
+    mountChatView();
+    dispatch({ type: 'clear_ok' });
+    dispatch({
+      type: 'addRef',
+      refs: [{ path: 'src/gone.ts', kind: 'file', pinned: true, missing: true }],
+    });
+    const chip = document.querySelector('#refChips .skill-chip') as HTMLElement;
+    expect(chip.classList.contains('is-missing')).toBe(true);
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('已失效');
+  });
+
+  it('锁即落盘：🔒 动作即时上行 kind=pin（不等发送）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'addRef', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    (document.querySelector('#refChips .skill-chip .skill-chip__pin') as HTMLElement).click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'pin',
+      refs: [{ path: 'src/foo.ts', kind: 'file', pinned: true }],
+    });
+  });
+
+  it('锁即落盘：技能 🔒 / × 也即时上行 kind=pin（带 skillName 与 skillPinned）', () => {
+    const { postMessage } = mountChatView();
+    dispatchSkills();
+    (document.querySelector('.skill-picker [data-treedd-id="正常技能"]') as HTMLElement).click();
+    (document.querySelector('#skillChips .skill-chip .skill-chip__pin') as HTMLElement).click();
+    expect(postMessage).toHaveBeenLastCalledWith({
+      type: 'input',
+      kind: 'pin',
+      refs: [],
+      skillName: '正常技能',
+      skillPinned: true,
+    });
+    (document.querySelector('#skillChips .skill-chip .skill-chip__remove') as HTMLElement).click();
+    expect(postMessage).toHaveBeenLastCalledWith({
+      type: 'input',
+      kind: 'pin',
+      refs: [],
+      skillName: undefined,
+      skillPinned: undefined,
+    });
   });
 
   // 回归锁：曾把 pin 图标写死为常量 'lock' ⇒ 钉住/未钉同一把锁，用户真机无法分辨状态。
@@ -10504,8 +10599,13 @@ describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () =>
     const chip = document.querySelector('#skillChips .skill-chip') as HTMLElement;
     const pin = chip.querySelector('.skill-chip__pin') as HTMLElement;
     expect(chip.classList.contains('is-disabled')).toBe(true); // 前置：确实处在禁用态
-    expect(pin.classList.contains('is-on')).toBe(true); // 锁预开常驻，视觉不被禁用态吞掉
-    expect(pin.querySelector('svg')?.getAttribute('data-icon-name')).toBe('lock');
+    pin.click(); // 默认不钉 → 显式上锁
+    // 上锁会整枚重绘 chip ⇒ 必须重取节点（旧引用已脱离文档）
+    const pinAfter = document
+      .querySelector('#skillChips .skill-chip')
+      ?.querySelector('.skill-chip__pin') as HTMLElement;
+    expect(pinAfter.classList.contains('is-on')).toBe(true); // 上锁后视觉不被禁用态吞掉
+    expect(pinAfter.querySelector('svg')?.getAttribute('data-icon-name')).toBe('lock');
   });
 
   // ✕ 的显隐 100% 由 CSS 决定（颜色 / hover），JS 只负责它在不在 DOM 里。

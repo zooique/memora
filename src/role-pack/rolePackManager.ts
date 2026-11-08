@@ -1082,7 +1082,13 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * name 缺省时按文件名去扩展名推导；无装配角色返回空数组。SSOT：技能清单只由
    * 角色包自身持有，宿主不重复扫描目录。
    */
-  listSkills(): Array<{ name: string; description?: string; displayName?: string }> {
+  listSkills(): Array<{
+    name: string;
+    description?: string;
+    displayName?: string;
+    /** 正文体量（字符数）：仅 UI 成本提示用，不作为预算判据；正文未缓存时省略 */
+    contentChars?: number;
+  }> {
     const target = this.resolveSkillTarget();
     if (!target) return [];
     const pack = this.items.find((p) => p.meta.name === target);
@@ -1093,6 +1099,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
         description: s.description,
         // 显示名取自装载时缓存的正文 H1（SSOT = extractDisplayName）；正文未缓存时省略 → UI 回退 name
         displayName: extractDisplayName(s.content ?? ''),
+        // 字数同理取自同一份缓存正文（不额外读盘）：正文为 null（未缓存）时省略 = 宿主不显示体积提示
+        contentChars: s.content?.length,
       }))
       .filter((s) => s.name.length > 0);
   }

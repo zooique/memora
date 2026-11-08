@@ -1726,6 +1726,11 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(listed[0]!.name).toBe('资源工具');
       // 显示名 = 装载时缓存的正文 H1（UI 专用；正文未缓存时省略 → 展示面回退 name）
       expect(listed[0]!.displayName).toBe('资源工具');
+      // 正文体量 = 实际注入正文的长度（宿主「此文 N 万字」提示的唯一数据源）：
+      // 与 readSkillContent 同源校验，防「按一份文本报字数、发出去是另一份文本」
+      const body = await manager.readSkillContent('资源工具');
+      expect(body).not.toBeNull();
+      expect(listed[0]!.contentChars).toBe(body!.length);
     });
   });
 });

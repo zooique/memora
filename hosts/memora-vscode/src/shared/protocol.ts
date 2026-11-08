@@ -168,8 +168,13 @@ export type SearchEngineSetting = string;
  *     Round 的 user 原文（store 真源）重开闭环。仅对已落盘轮次可发（生成中由 webview
  *     入口禁用 + 宿主会话级 streaming 守卫双保险）。协议扩张走枚举成员 + 字段（PROTO-CAP-1
  *     纪律：0.5.0 禁开新 type）。
+ *   - `pin`：更新本会话钉住清单（**不发送任何消息**）。锁/解锁/移除都是「动作」，
+ *     动作发生即上报（不等发送）。宿主在任何 turn 相位**直接受理**：不建草稿会话、
+ *     不触发 Agent；载荷复用 `refs`（带 `pinned`）+ `skillName` + `skillPinned`。
+ *     ⚠️ 已知限制：**草稿期**（会话尚未建立、无元数据载体）的加锁无处可写，要等首条
+ *     消息把草稿 flush 成会话后由宿主补落——「草稿期锁了、没发就关窗」会白锁。
  */
-export type WebviewInputKind = 'send' | 'answer' | 'resume' | 'regenerate';
+export type WebviewInputKind = 'send' | 'answer' | 'resume' | 'regenerate' | 'pin';
 
 /**
  * 对话引用（右键「添加到对话」挂到下一轮上下文）：文件或目录
@@ -191,6 +196,19 @@ export type ChatRef = {
    * 由 `buildRefContextBlock` 在信封里提示模型以实际内容为准，不做拦截）。
    */
   range?: { start: number; end: number };
+  /**
+   * 会话级钉住（锁）——**锁即持久**，跨轮 / 跨重启保留；缺省 = 发完即清。
+   *
+   * 双向同义：W→E 随 `input` 上行（宿主据此把钉住清单写进会话元数据，锁是动作、动作即落盘），
+   * E→W 随 `addRef` 回种（切会话时按元数据单向回种）。
+   */
+  pinned?: boolean;
+  /**
+   * 指针已失效（文件/文件夹已被删除）——**仅宿主下发投影**，上行忽略。
+   *
+   * UI 据此灰显「已失效」，**不得静默过滤**：静默消失会让用户以为「自己没锁」。
+   */
+  missing?: boolean;
 };
 
 /**
@@ -377,6 +395,13 @@ export type WebviewToExtensionMessage =
       text?: string;
       answers?: string[];
       skillName?: string;
+      /**
+       * 技能是否钉住（会话级锁）——`skillName` 的伴随标记
+       *
+       * 缺省 = 未钉住（选中即用、发完即清，与引用对齐）。`kind='pin'` 时它是落盘真值；
+       * `kind='send'` 时宿主用它把「草稿期已锁」的清单补落进新会话元数据（草稿态无会话可写）。
+       */
+      skillPinned?: boolean;
       refs?: ChatRef[];
       /**
        * 本轮挂载的**注入型**上下文来源（HOST-CTX-4 ④：挂载只记通道标记）
@@ -1622,6 +1647,15 @@ export type ExtensionToWebviewMessage =
        * 禁用尚未安装的技能）。判定真源 = `listVisibleSkills` 聚合结果（与 UI 展示同一份名单）。
        */
       unmatchedDisabled?: string[];
+      /**
+       * 本会话钉住的技能名（会话元数据真源的**单向回种**）
+       *
+       * 只在对话面板推送时可能带（切会话/重开面板后回种 composer）；技能管理面板忽略它。
+       * 只有 name、不带 DTO——显示状态一律按本消息同批的 `skills` 现查（**禁用优先**：
+       * 同批里 `disabled` 的技能 chip 必须标「已禁用」）。名字不在同批 `skills` 里 ⇒
+       * webview 渲染灰色「已失效」，**不得静默过滤**（静默消失 = 用户以为自己没锁）。
+       */
+      pinnedSkillName?: string;
     }
   /** 渐进披露：技能正文响应（对 skills_read_content 的应答） */
   | { type: 'skill_content'; skillName: string; content: string }
@@ -2359,6 +2393,14 @@ export interface SkillDto {
    * - 角色包与全局同名（`DEDUP_PRIORITY` 裁决）→ `skillAggregation.ts` 的去重分支现场记录。
    */
   overriddenLayer?: 'project' | 'builtin' | 'rolepack' | 'user';
+  /**
+   * 技能正文的字数（仅用于「钉住大技能」的成本提示；**不是**预算判据）
+   *
+   * 宿主从内核 `SkillEntry.content` 直通计数（全局池可用；角色包技能列表不带正文 ⇒ 缺省）。
+   * 缺省 = 字数未知 ⇒ UI 不显示提示（不猜、不按文件大小反推）。
+   * ⚠️ 正文照旧整篇拼进消息信封——本字段只服务提示文案，**不得**据此裁剪/拦截技能。
+   */
+  contentChars?: number;
 }
 
 /** 任务看板任务项条目（对齐内核 PlanItem 扁平化） */

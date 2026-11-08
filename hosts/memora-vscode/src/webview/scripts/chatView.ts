@@ -21,7 +21,7 @@ import type {
 } from '../../shared/protocol.js';
 // 引用身份键与去重判据：**必须**与宿主缓冲共用同一实现——同文件不同选区是两条引用，
 // 若各自按 path 判等，chip 的锁 / 移除会误伤同 path 的另一条（见 shared/refKey.ts）。
-import { dedupeRefs, formatRefRange, normalizeRefRange, refKeyOf } from '../../shared/refKey.js';
+import { dedupeRefs, normalizeRefRange, refKeyOf } from '../../shared/refKey.js';
 // 中断轮复制源 = 过程叙述按序拼接：单点在 shared（宿主崩溃打捞派生消费同一份，禁各写一遍）
 import { deriveNarrateText } from '../../shared/narrateText.js';
 // 注入源命名 / 信封标记单一真源（HOST-CTX-4 第 1 笔 SSOT 化）：chip 可见名、回执分项名、
@@ -41,6 +41,9 @@ import {
   MAX_PENDING_INTERJECTIONS,
 } from '../../shared/constants.js';
 import { bindSingleTrackRow, syncRowEdges } from '../helpers/chipRow.js';
+// 引用 chip 渲染外置（chatView 行数贴死 eslint 上限的纪律性抽取）：本文件只接线，
+// `currentRefs` 仍是唯一真源，交互经回调回流（见 refChips.ts 模块头）
+import { appendRefChips, refDisplayName } from '../helpers/refChips.js';
 import { createQuoteDraft } from '../helpers/quoteDraft.js';
 import { createClampUserBubble } from '../helpers/userBubble.js';
 import { createImageCapture } from '../helpers/imageCapture.js';
@@ -203,12 +206,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 附件行（选择态行）：输入盒内、文字上方展示当前已选 Skill（名称 + × 可移除）
     chipRow: document.getElementById('skillChips') as HTMLElement | null,
     input, // 斜杠触发观测主输入框（`/` 在行首或空白后打开选择器）
+    // 钉住清单变更 → 即时上报宿主落盘（锁是动作，动作即持久，不等发送）
+    onPinnedChange: () => persistPins(),
   });
   // 引用行（右键「添加到对话」挂的文件/目录，与 #skillChips 同构复用样式；file/folder 二态）
-  // pinned = 常驻锁（发送后是否保留）：ref 默认 false = 发送即清（现状）；skill 默认 true =
-  // 锁预开常驻（该态随域在 `skillPickerView` 内持有）。两类 chip 共用同一 pinned 语义，不另建
-  // 钉住集数组（SSOT：钉住集与上下文集同源，杜绝两处漂移）。pinned 纯 UI 状态，不进协议/内核。
+  // pinned = 会话级钉住（锁）：缺省 false = 发完即清；锁定后写进会话元数据、跨重启接得上。
+  // skill 同语义（缺省 false，同为发完即清；该态随域在 `skillPickerView` 内持有）。
+  // 两类 chip 共用同一 pinned 语义，不另建钉住集数组（SSOT：钉住集与上下文集同源）。
+  // missing = 宿主下发的失效投影（文件已删）：灰显「已失效」，不静默丢弃。
   const refChipRow = document.getElementById('refChips') as HTMLElement | null;
+  /** 引用 chip 状态：协议 ChatRef + webview 持有的锁 / 失效投影 */
+  type RefChip = ChatRef & { pinned: boolean; missing?: boolean };
   // 引用回复快照草稿（COPY-2 形态优化）：文本快照 ≠ 文件指针，消费链独立（发送时展开引用块），
   // 状态单点在工厂；chip 渲染编排归 renderAttachmentRow（refChipRow 全清重绘单点）
   const quoteDraft = createQuoteDraft({ document, onRemove: () => renderAttachmentRow() });
@@ -219,13 +227,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }).clamp;
   // 图片附件行（粘贴 / 拖入采集的 chip；D28：与引用 chip 同构、只显示文件名不做缩略图）
   const imageChipRow = document.getElementById('imageChips') as HTMLElement | null;
-  let currentRefs: {
-    path: string;
-    kind: 'file' | 'folder';
-    /** 行区间（1-based 闭区间，宿主已转换；整文件引用时缺省） */
-    range?: { start: number; end: number };
-    pinned: boolean;
-  }[] = [];
+  let currentRefs: RefChip[] = [];
   /**
    * 活动文件投影（宿主推送，**纯显示**）：当前打开文件会不会进本轮上下文
    *
@@ -3515,6 +3517,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // ——跨会话/重建前同样需要复位，避免旧渲染残留污染新会话）。
       resetChatView();
       emptyStateView.update();
+      // 切会话/清空 = composer 回种前置：先把**本会话遗留**的引用与技能清空。
+      // 现状 bug（本批修复）：切会话完全不清技能 chip ⇒ A 会话挂的技能会跟到 B 继续发。
+      // 清空是**静默**的（不走 persistPins）——回种紧跟其后由宿主按元数据推送，此处上报
+      // 会把「清空瞬间」误写成目标会话的钉住清单（先清后种两笔相抵的上行噪音）。
+      currentRefs = [];
+      renderAttachmentRow();
+      skillPickerView.clear();
     } else if (msg.type === 'history_loaded') {
       // 历史消息加载完成 → 强制滚到底部（不走吸底逻辑）
       // 解决多条历史消息 rAF 节流导致滚动位置不正确的问题
@@ -3590,6 +3599,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // （含 displayName / disabled / health）——逐字段拷贝会让新字段在第二个消费面静默丢失。
       // 标记只用于显示、**不做拦截**：真源判定在 host（`isSkillDisabled`），webview 拒绝会变假拒绝。
       skillPickerView.setSkills(msg.skills);
+      // 会话级钉住回种（单向：元数据 → composer）：宿主在 clear_ok 之后推本消息。
+      // 只有 name（不带 DTO）——显示状态按同批 skills 现查（禁用优先），
+      // 名字不在清单里 ⇒ 域内渲染灰色「已失效」，**不静默过滤**。
+      if (msg.pinnedSkillName) skillPickerView.restorePinned(msg.pinnedSkillName);
     } else if (msg.type === 'file_changes') {
       // 未确认文件改动快照：宿主在**改动集变化**时推 + **webview ready 时补推一次**
       // （两个时机缺一即漏面——只推变化的话，面板重开后常驻条会消失）
@@ -3972,12 +3985,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       kind: 'send' as const,
       text,
       ...(selectedSkill ? { skillName: selectedSkill.name } : {}),
+      // 钉住标记随发送上行：草稿期（尚无会话元数据）锁的清单在首条 send 时补落
+      // （正常路径已由 `kind='pin'` 即时落盘，此处只是兜底，宿主写同值=幂等）
+      ...(selectedSkill ? { skillPinned: selectedSkill.pinned } : {}),
       ...(currentRefs.length
         ? {
             refs: currentRefs.map((r) => ({
               path: r.path,
               kind: r.kind,
               ...(r.range ? { range: r.range } : {}),
+              // 钉住态上行：宿主据此把本会话钉住清单写进会话元数据（引用模式仍只带指针）
+              ...(r.pinned ? { pinned: true } : {}),
             })),
           }
         : {}),
@@ -3997,7 +4015,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     renderAttachmentRow();
     // 图片 chip 发送后整批收场（IMG-2）：留着会变成下一轮的重复附件（图已在数据目录）
     if (sendable.refs.length > 0) imageCapture.clear();
-    // 技能同一 pinned 判据：默认钉住常驻（锁预开）⇒ 发送不清除；未钉住即清（域内含重绘）
+    // 技能同一 pinned 判据：默认不钉住 ⇒ 发送即清；钉住常驻（域内含重绘）
     skillPickerView.afterSend();
   }
   // 发送按钮：空闲 = 发送；生成中 = 停止（按钮已切为停止方块）；暂停中 = 继续。
@@ -4221,21 +4239,42 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const r of dedupeRefs(refs)) {
       const key = refKeyOf(r);
       if (!seen.has(key)) {
-        // 新挂载默认不钉住（发送即清，保持现状）；已存在的走上面 seen 分支，
-        // 不会重置其 pinned（保留用户已钉的锁）。无 range 时不写该字段（保持「缺省」语义）。
-        // 区间经 `normalizeRefRange` 归一后才入列：非法区间一律降级为整文件引用，
-        // 否则它会以「无标签」形态存活在 currentRefs 里，与真正的整文件引用撞同一个键。
+        // 新挂载默认不钉住（发完即清）；已存在的走上面 seen 分支，不会重置其 pinned
+        //（保留用户已钉的锁）。区间经归一后才入列：非法区间一律降级为整文件引用。
+        // 宿主回种（切会话）时带 pinned / missing —— 回种是元数据的单向投影，必须原样接住，
+        // 否则「切回来锁就没了」，missing 也会被吞成普通引用。
         const range = normalizeRefRange(r.range);
         currentRefs.push({
           path: r.path,
           kind: r.kind,
           ...(range ? { range } : {}),
-          pinned: false,
+          pinned: r.pinned === true,
+          ...(r.missing ? { missing: true } : {}),
         });
         seen.add(key);
       }
     }
     renderAttachmentRow();
+  }
+
+  /**
+   * 会话级钉住清单即时上报（`input.kind='pin'`，**不发送任何消息**）
+   *
+   * 锁是动作、动作即报到：已建立会话时宿主收到即写会话元数据，不等发送。
+   * ⚠️ 草稿期（会话尚未建立、无元数据载体）的加锁**不会落盘**——要等首条消息把草稿
+   * flush 成会话后由宿主补落；「草稿期锁了、没发就关窗」会白锁（已知限制）。
+   * 载荷只带指针（chatView 自己就是编辑面真源）：引用的 `pinned` 已随 ChatRef 上行，
+   * 技能是单槽 ⇒ 只带当前名 + 钉住标记。**本函数不做任何持久化**——元数据是唯一持久面。
+   */
+  function persistPins(): void {
+    const skill = skillPickerView.getSelected();
+    vscode.postMessage({
+      type: 'input',
+      kind: 'pin',
+      refs: currentRefs.filter((r) => r.pinned),
+      skillName: skill?.name,
+      skillPinned: skill?.pinned,
+    });
   }
 
   /** 注入原因 → 中文短语（唯一产地：chip 徽记与 title 共用，别在调用点各写一套） */
@@ -4339,25 +4378,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     });
     chip.appendChild(remove);
     return chip;
-  }
-
-  /**
-   * 引用 chip 的**可见**文件名（HOST-CTX-17：全路径降噪）
-   *
-   * 真机反馈「气泡显示完整相对路径噪音太多」——可见文本只留文件名（`a/b/foo.ts` → `foo.ts`）。
-   * 这不是把路径信息删掉，完整路径仍在三处：① chip title（hover 即见，同名文件可辨）；
-   * ② pin/remove 的 aria-label（屏幕阅读器要全量信息）；③ open_ref 上行载荷与发送信封
-   * （功能面，本就不随显示形态改）。
-   * 已知限制：同一批引用里两个同名文件（如两个 `index.ts`）可见标签相同，靠 title 区分——
-   * 刻意不做 VS Code 式「父目录消歧」：附件行通常个位数 chip，hover 成本低于维护歧义判据
-   * （复杂度守恒；真痛了再按 tab 同款算法加）。
-   *
-   * 路径形态 = `relativeUnderPrimaryRoot` 的规范形（POSIX `/`、无冗余段，消费侧 round-trip
-   * 校验保证）⇒ 按 `/` 切末段即可；webview 包不引 node:path，一个 split 不造依赖。
-   */
-  function refDisplayName(path: string): string {
-    const segs = path.split('/');
-    return segs[segs.length - 1] || path;
   }
 
   /** 回执归零（新一轮发送 / 清空会话 / 本轮无注入）：不做「本轮注入 0」这种无信息显示 */
@@ -4472,137 +4492,34 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const source of currentInjections) refChipRow.appendChild(buildInjectionChip(source));
     // 引用回复快照胶囊（COPY-2 形态优化）：快照语义 ≠ 文件指针，但同属「本轮挂载的引用」混排
     if (quoteChip) refChipRow.appendChild(quoteChip);
-    // 钉住的排最前（「锁定在顶部」）：稳定排序保同组内插入序；只影响渲染顺序，
-    // 不改 currentRefs 本体——pinned 判据仍以 currentRefs 为唯一真源（SSOT）。
-    const ordered = [...currentRefs].sort((a, b) => Number(b.pinned) - Number(a.pinned));
-    for (const ref of ordered) {
-      const chip = document.createElement('span');
-      chip.className = 'skill-chip';
-      // 同 skill chip：.is-pinned 只是 chip 级状态标记与测试锚点，视觉在 pin 按钮上
-      if (ref.pinned) {
-        chip.classList.add('is-pinned');
-      }
-      const icon = document.createElement('span');
-      icon.className = 'skill-chip__icon';
-      icon.innerHTML = getIconSvg(ref.kind === 'folder' ? 'folder' : 'file', 11, 11);
-      icon.setAttribute('aria-hidden', 'true');
-      chip.appendChild(icon);
-      // 区间先归一再渲染：非法区间（start>end / 非整数）不渲染行号 span、不上行，
-      // 视觉与协议两处同时降级为「整文件引用」，不产生 `#Lundefined` 这类脏标签。
-      const markedRange = normalizeRefRange(ref.range);
-      // aria-label 用**全路径**+行号（屏幕阅读器要全量信息）；可见文本用文件名——两个受众
-      // 两种形态，见 refDisplayName（HOST-CTX-17 降噪）。
-      const label = `${ref.path}${formatRefRange(markedRange)}`;
-      // 点击跳转（open_ref，W→E）：**路径与行号两个 span 都可点**——行号 span 不参与截断
-      //（flex-shrink: 0），窄路径被 ellipsis 截掉尾部时行号依然点得中。载荷只带协议字段（path/kind/range）：
-      // webview 私有的 pinned 不随上行（协议契约，见 open_ref 注释）；行号保持 1-based 原样上行，逆转换归宿主单点。
-      const openRef = (): void => {
-        vscode.postMessage({
-          type: 'open_ref',
-          ref: { path: ref.path, kind: ref.kind, ...(markedRange ? { range: markedRange } : {}) },
-        });
-      };
-      const name = document.createElement('span');
-      name.className = 'skill-chip__name';
-      // HOST-CTX-17 降噪：可见文本只留文件名（全路径在 title 与 aria-label，见下）。
-      name.textContent = refDisplayName(ref.path);
-      // 定位提示是**中文语句**而非协议标签，故不复用 formatRefRange（两者语言不同、不可共享）；
-      // 但端点同样取归一化结果，避免出现「第 NaN 行」。
-      const rangeHint = markedRange
-        ? `并定位到第 ${markedRange.start}${markedRange.start === markedRange.end ? '' : `-${markedRange.end}`} 行`
-        : '';
-      // CTX-6①：指针语义提示放最前（用户 hover 的第一问是「这挂的是啥、占不占」）——引用只挂
-      // 指针不注入内容，目录更是只给模型一张目录地图（内容按需 list_dir）。与信封侧
-      // buildRefContextBlock 的「按需读取」标注同义：信封说给模型听，这里说给用户听。
-      // HOST-CTX-17：全路径附在末尾括号——可见文本降噪后，同名文件的区分靠 hover 这一眼。
-      name.title = `仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开${rangeHint}（${ref.path}）`;
-      // 键盘可达：span 非原生按钮，补 role/tabindex/Enter-Space 与鼠标同构
-      // （焦点环走 tokens.ts 全局 focus-visible，此处不自写）
-      name.setAttribute('role', 'button');
-      name.tabIndex = 0;
-      name.addEventListener('click', openRef);
-      name.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          openRef();
-        }
-      });
-      chip.appendChild(name);
-      if (markedRange) {
-        // 行号独立 span：语义与可点性与路径对等，但**不继承 name 的 ellipsis 截断**
-        const rng = document.createElement('span');
-        rng.className = 'skill-chip__range';
-        rng.textContent = formatRefRange(markedRange);
-        rng.title = name.title;
-        rng.setAttribute('role', 'button');
-        rng.tabIndex = 0;
-        rng.addEventListener('click', openRef);
-        rng.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            openRef();
-          }
-        });
-        chip.appendChild(rng);
-      }
-      // 常驻锁切换（🔒）：与 ✕ 语义二分——🔒 只切「发送后是否保留」，✕ 才是移除。
-      const pin = document.createElement('button');
-      pin.type = 'button';
-      pin.className = 'skill-chip__pin';
-      // 与 skill chip 同一组二态规则：class + 图标形状都由 pinned 投影（详见 skill 侧注释）
-      if (ref.pinned) {
-        pin.classList.add('is-on');
-      }
-      pin.innerHTML = getIconSvg(ref.pinned ? 'lock' : 'lock-open', 11, 11);
-      pin.setAttribute('aria-pressed', String(ref.pinned));
-      pin.setAttribute('title', ref.pinned ? '取消常驻（发送后清除）' : '常驻（发送后保留）');
-      pin.setAttribute('aria-label', (ref.pinned ? '取消常驻：' : '常驻：') + label);
-      pin.addEventListener('click', () => {
+    // 引用 chip 渲染外置 helpers/refChips.ts（只产 DOM、不持状态）：排序（钉住置顶）、
+    // 失效灰显、🔒/✕/清空的语义全在该单点；本处只把「状态改动」与「即时落盘」接起来。
+    appendRefChips(refChipRow, currentRefs, {
+      // 载荷只带协议字段（钉住态不随 open_ref 上行）
+      onOpen: (ref) => vscode.postMessage({ type: 'open_ref', ref }),
+      onTogglePin: (ref) => {
         // 按身份键匹配（非 path）：同文件不同选区是两条引用，按 path 会一并翻转
         const key = refKeyOf(ref);
         currentRefs = currentRefs.map((r) =>
           refKeyOf(r) === key ? { ...r, pinned: !r.pinned } : r,
         );
+        persistPins();
         renderAttachmentRow();
-      });
-      chip.appendChild(pin);
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'skill-chip__remove';
-      remove.innerHTML = getIconSvg('close', 11, 11);
-      remove.setAttribute('title', `移除引用：${label}`);
-      remove.setAttribute('aria-label', `移除引用：${label}`);
-      remove.addEventListener('click', () => {
-        // 同 pin：按身份键过滤（非 path），否则删一条会带走同 path 的另一条选区引用
+      },
+      // 同 pin：按身份键过滤（非 path），否则删一条会带走同 path 的另一条选区引用
+      onRemove: (ref) => {
         const key = refKeyOf(ref);
         currentRefs = currentRefs.filter((r) => refKeyOf(r) !== key);
+        persistPins();
         renderAttachmentRow();
-      });
-      chip.appendChild(remove);
-      refChipRow.appendChild(chip);
-    }
-    // CTX-7：批量出口「清空全部引用」——同一 chip 行缺同类批量出口（挂 6 条要逐个点 ✕ 六次）。
-    // 范式照抄 pending-queue-bar__clear（图标同 close、title/aria 同款），但**不走上行消息**：
-    // 待发送队列的 SSOT 在宿主（须 post clear_pending_queue 由宿主清），而引用 SSOT =
-    // 本文件 currentRefs，单删 ✕ 同为纯本地过滤——批量移除只是同一过滤的全量版，上行反而让
-    // 宿主镜像一份引用状态（第二真理源）。显隐与范式一致：有引用即在（单条也无害）。
-    // 范围只清引用：活动文件 chip 是另一语义（CTX-3 本会话开关，宿主投影），不受牵连；注入
-    // chip 同理不牵连（各有自己的 ✕，且批量出口标题/aria 明写「引用」——不把「清空全部」
-    // 扩成「清空全部附件」：标题说引用却连注入一起清 = 语义越界）。pinned 一并清——与 ✕
-    // 语义一致（✕ 也能删 pinned），🔒 只管「发送后是否保留」。
-    if (currentRefs.length > 0) {
-      const clearAll = document.createElement('button');
-      clearAll.type = 'button';
-      clearAll.className = 'ref-chips__clear';
-      clearAll.innerHTML = getIconSvg('close', 11, 11);
-      clearAll.setAttribute('title', '清空全部引用（含常驻）');
-      clearAll.setAttribute('aria-label', '清空全部引用');
-      clearAll.addEventListener('click', () => {
+      },
+      // 范围只清引用（活动文件 / 注入 chip 各有语义，不牵连）；pinned 一并清——与 ✕ 一致
+      onClearAll: () => {
         currentRefs = [];
+        persistPins();
         renderAttachmentRow();
-      });
-      refChipRow.appendChild(clearAll);
-    }
+      },
+    });
     // 同一行里既有活动文件 chip 又有引用：重建后必须按新宽度重算渐隐（见 syncRowEdges）
     syncRowEdges(refChipRow);
   }

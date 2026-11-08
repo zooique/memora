@@ -36,6 +36,7 @@ import type { ImageCache } from '../../extension/host/imageCache.js';
 // 引用路径 ↔ 首根的双向判据唯一真源 = refPath（生成侧 relativeUnderPrimaryRoot 归 addToChat /
 // mention QuickPick 用，消费侧 resolveUnderPrimaryRoot 归本文件 openRefInEditor 用）——两半分居必漂移，故同模块。
 import { relativeUnderPrimaryRoot, resolveUnderPrimaryRoot } from '../../extension/host/refPath.js';
+import * as pinned from '../../extension/host/pinnedContext.js';
 // 列工作区文件的排除 glob 单一真源（HOST-CTX-14）：与 projectSearchProvider 同挂一处，
 // 派生自内核 IGNORED_DIR_NAMES——findFiles 只吃 files.exclude，不显式传 exclude 时
 // node_modules 等噪音会挤占 MENTION_FILE_LIMIT 上限（排除语义实读见 ignoredDirs.ts）
@@ -826,6 +827,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private pushSkillList(): void {
     const agent = this._agent;
     if (!agent || !this._configDir) return;
+    // 顺带回种钉住技能名（只有 name，不带 DTO）：显示态由同批 skills 现查（禁用优先）
+    const pinnedName = pinned.pinnedNameOfStore(this.sessionStore, this._currentSessionId);
     this.post({
       type: 'skills_loaded',
       skills: listVisibleSkills({
@@ -834,6 +837,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         userSkillsDir: this._userSkillsDir ?? '',
         projectSkillsDir: this._projectSkillsDir,
       }),
+      ...(pinnedName ? { pinnedSkillName: pinnedName } : {}),
     });
   }
 
@@ -2580,6 +2584,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 视图重解析时补推三源技能清单（与 refreshAfterAssemble 输出同构，
     // 避免 agent 已装配时 ensureAgent 提前返回导致技能下拉为空）
     this.pushSkillList();
+    // 会话级钉住回种（0.10.0）：clear_ok 已清空 composer，此处按本会话元数据回种钉住引用（失效投影 missing）
+    void pinned.pushPinnedRefsTo(this.sessionStore, this._currentSessionId, (m) => this.post(m));
     // 历史会话占用（轻量版）：首次启动回放即推真实占用（而非空态 0%）。
     // _agent 未装配完成时本调用静默跳过，由装配后收口点 refreshAfterAssemble 兜底再推
     // （两条装配入口——memora.open 命令与懒装配——都经该收口点，不漏路径）。
@@ -2986,6 +2992,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private async handleInput(
     msg: Extract<WebviewToExtensionMessage, { type: 'input' }>,
   ): Promise<void> {
+    // 会话级钉住（0.10.0）：锁/解锁/移除是动作 ⇒ 动作即落盘，必须在草稿/Agent 守卫之前受理
+    if (msg.kind === 'pin') {
+      pinned.writePinnedItems(this.sessionStore, this._currentSessionId, msg);
+      return;
+    }
     // 草稿态：**只有「真正发送内容」才创建会话**（唯一落点，见 DraftSessionController.flush）。
     // 必须放在 `_agent` / `_currentSessionId` 两道守卫之前——草稿本来就没有 Agent、没有 id。
     // 空文本不建会话；草稿里没有可答的提问/可续跑的流，其余意图一律忽略。
@@ -3012,6 +3023,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 发送**：一级门禁会给可见文案（含「改用支持图片的模型」指引），比静默吞掉或卡输入更诚实。
         if (this._providerStale) await this.applyActiveProviderRefresh();
         await this.sendInput(text, msg.skillName, msg.refs, msg.injections, msg.attachments);
+        // 草稿期已锁清单补落（sendInput 已把草稿 flush 成会话，此刻才有元数据载体）
+        if (msg.skillPinned === true || msg.refs?.some((r) => r.pinned === true))
+          pinned.writePinnedItems(this.sessionStore, this._currentSessionId, msg);
         return;
       }
       case 'answer': {

@@ -1886,6 +1886,20 @@ export const chatStyles = `
     background: transparent;
     border: 1px dashed var(--text-secondary, #9aa0a6);
   }
+  /* 失效 chip（会话元数据里锁着、对象已不存在：文件被删 / 技能被删或改名）：
+   * 与 .is-disabled 共用灰虚线观感（同属「挂着但不会生效」），语义差别由后缀文案
+   * 「已失效」/「已禁用」承担——前者 = 对象不在了，后者 = 对象还在但被关。
+   * ⚠️ 不做删除线：chip 内含按钮与 SVG 图标，整枚划线会波及控件本身。 */
+  .skill-chip.is-missing {
+    color: var(--text-secondary, #9aa0a6);
+    background: transparent;
+    border: 1px dashed var(--text-secondary, #9aa0a6);
+  }
+  /* 钉住的大技能（体积提示生效时放宽上限）：后缀「此文 X 万字，每轮都会发送」必须完整可读，
+   * 220px 会把提示本身 ellipsis 成半句——比不提示更糟（用户误读为文件名的一部分）。 */
+  .skill-chip.is-large {
+    max-width: var(--dim-3xl);
+  }
   /* 活动文件 chip（第三种 chip）：基类仍走 .skill-chip，此处只补两件按钮态必需物——
    * ① font-family 继承（关闭态整枚是 <button>，UA 默认字体会与相邻 span chip 不一致）；
    * ② pointer（关闭态可点回开）。不改颜色：attached 用 accent 实线、suppressed 复用

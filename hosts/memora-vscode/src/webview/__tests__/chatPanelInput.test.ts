@@ -150,10 +150,17 @@ interface InputCast {
   /** IMG-8 兜底取窗口用；个别用例覆写 getActive 返回值（默认 undefined = 未配置） */
   _providerStore: { getActive(): Promise<{ contextWindow?: number } | undefined> };
   handleInput(msg: {
-    kind: 'send' | 'answer' | 'resume';
+    kind: 'send' | 'answer' | 'resume' | 'pin';
     text?: string;
     answers?: string[];
     skillName?: string;
+    skillPinned?: boolean;
+    refs?: {
+      path: string;
+      kind: 'file' | 'folder';
+      range?: { start: number; end: number };
+      pinned?: boolean;
+    }[];
     injections?: 'problems'[];
     attachments?: readonly ImageRef[];
   }): Promise<void>;
@@ -834,5 +841,101 @@ describe('E4 批 1 · 流运行态按会话命名空间化', () => {
     c._currentSessionId = 'sid-a';
     expect(c.runtimeFor().streaming).toBe(true);
     expect(c.askFor().pendingQuestions()).toHaveLength(1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// 0.10.0 会话级钉住：`input.kind='pin'` 即时落盘 / 无会话受理 / running 受理 / merge 不抹
+// ═══════════════════════════════════════════════════════════
+// 变异锚：删掉 `kind='pin'` 分支 ⇒「即时落盘」「running 受理」红；把它挪到 `isDraft` / 无会话
+// 守卫之后 ⇒「无会话受理」红（该态会被守卫拦成「请先新建会话」提示）。
+// ⚠️ 不设「send 草稿补落」的锚：本文件没有能真正 flush 草稿的夹具（`mount()` 直注会话 id、
+// `_draft` 未进入草稿态），该分支在此测不出差别——只断言「函数被调用」的锚是假绿，故不写。
+describe('0.10.0 会话级钉住 · 落盘语义', () => {
+  it('pin 即时落盘：锁/解锁是动作、动作即写会话元数据（不建轮、不发 chat）', async () => {
+    const h = setupInput();
+    const { chat } = mount(h);
+    h.cast._turnState = { phase: 'idle' };
+
+    await h.cast.handleInput({
+      kind: 'pin',
+      refs: [
+        { path: 'src/foo.ts', kind: 'file', pinned: true },
+        { path: 'src/bar.ts', kind: 'file' }, // 未锁的不得进清单
+      ],
+      skillName: '正常技能',
+      skillPinned: true,
+    });
+
+    expect(h.store.getSessionMeta('2026-09-23-test')?.pinnedItems).toEqual([
+      { kind: 'file', path: 'src/foo.ts' },
+      { kind: 'skill', name: '正常技能' },
+    ]);
+    expect(chat).not.toHaveBeenCalled();
+    expect(h.posted.some((m) => (m as { type?: string }).type === 'user')).toBe(false);
+  });
+
+  it('pin 解锁清空：再次 pin 未带钉住项 ⇒ pinnedItems 变空数组（不残留旧锁）', async () => {
+    const h = setupInput();
+    mount(h);
+    await h.cast.handleInput({
+      kind: 'pin',
+      refs: [{ path: 'src/foo.ts', kind: 'file', pinned: true }],
+    });
+    await h.cast.handleInput({ kind: 'pin', refs: [{ path: 'src/foo.ts', kind: 'file' }] });
+    expect(h.store.getSessionMeta('2026-09-23-test')?.pinnedItems).toEqual([]);
+  });
+
+  it('pin 在 running 相位也受理（不插话、不中断），且不依赖 agent 存在', async () => {
+    const h = setupInput();
+    const { interject } = mount(h);
+    h.cast.runtimeFor().streaming = true;
+    h.cast.runtimeFor().abortController = new AbortController();
+    h.cast._turnState = { phase: 'running' };
+
+    await h.cast.handleInput({
+      kind: 'pin',
+      refs: [{ path: 'src/foo.ts', kind: 'file', pinned: true }],
+    });
+
+    expect(h.store.getSessionMeta('2026-09-23-test')?.pinnedItems).toEqual([
+      { kind: 'file', path: 'src/foo.ts' },
+    ]);
+    expect(interject).not.toHaveBeenCalled();
+  });
+
+  it('无会话态 pin 直接受理：不惊动「请先新建会话」守卫，且不写任何元数据（草稿期无载体 ⇒ 不落盘）', async () => {
+    const h = setupInput();
+    mount(h);
+    h.cast._currentSessionId = '';
+    // 装配期可能已有下行消息：只看 pin 之后新增的那一段
+    const before = h.posted.length;
+
+    await h.cast.handleInput({
+      kind: 'pin',
+      refs: [{ path: 'src/foo.ts', kind: 'file', pinned: true }],
+      skillName: '正常技能',
+      skillPinned: true,
+    });
+
+    // 守卫链（isDraft / _agent / 无会话）都在 pin 分支之后：一旦该分支挪位，
+    // 这一段会多出「请先点击上方「＋」新建会话」的 info 提示（用户锁一下就被打断）
+    const after = h.posted.slice(before);
+    expect(after.some((m) => (m as { type?: string }).type === 'notice')).toBe(false);
+    // 无会话 = 无元数据载体 ⇒ 本次加锁没有任何落点（这就是「草稿期锁了没发会白锁」的成因）
+    expect(h.store.getSessionMeta('')).toBeUndefined();
+  });
+
+  it('merge 保护：更新无关字段（显式 undefined）不抹既有钉住清单', () => {
+    const h = setupInput();
+    const id = '2026-09-23-test';
+    // 先造一条会话（createSession 之外的直接 meta 写入按 store 契约即可）
+    h.store.updateSessionMeta(id, { pinnedItems: [{ kind: 'skill', name: '正常技能' }] });
+    // 模拟「其它写方只改别的字段」：pinnedItems 显式 undefined（缺省不提供）
+    h.store.updateSessionMeta(id, { activeRolePackName: '某个角色包', pinnedItems: undefined });
+    expect(h.store.getSessionMeta(id)?.pinnedItems).toEqual([{ kind: 'skill', name: '正常技能' }]);
+    // 清空钉住传 `[]`（已定义）⇒ 正常覆盖（保护不得把「主动清空」也吞掉）
+    h.store.updateSessionMeta(id, { pinnedItems: [] });
+    expect(h.store.getSessionMeta(id)?.pinnedItems).toEqual([]);
   });
 });

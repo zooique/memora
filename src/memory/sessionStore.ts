@@ -63,6 +63,19 @@ export interface ISessionStore {
 }
 
 /**
+ * 会话级钉住清单条目（**只存指针，绝不存正文**）
+ *
+ * 语义：输入框挂着的文件引用 / 技能默认「发完即清」；加锁（钉住）后留到本会话结束、
+ * 跨重启接得上。落盘真源 = 会话元数据（webview 是唯一可编辑面，元数据是唯一持久面）。
+ *
+ * 只存指针的理由：引用正文由宿主按路径/区间现读（文件可变），技能正文由宿主按名现解析
+ * （技能可变）——存快照会同时制造「陈旧正文」与「双写漂移」。
+ */
+export type SessionPinnedItem =
+  | { kind: 'file' | 'folder'; path: string; range?: { start: number; end: number } }
+  | { kind: 'skill'; name: string };
+
+/**
  * 会话元数据：会话身份（date-session）与展示标题解耦。
  * 双层命名——autoName（LLM 生成只读）+ displayName（用户可改，覆盖显示）。sessionId 即 `${date}-${session}`。
  */
@@ -122,6 +135,22 @@ export interface SessionMeta {
    * 缺省 `undefined` = 该会话从未主动选过角色 ⇒ 装配走兜底链，**不得**写成猜测值。
    */
   activeRolePackName?: string;
+
+  // ── 会话级钉住清单 ──
+  /**
+   * 本会话钉住的引用/技能（钉住 = 加锁后不再「发完即清」，留到本会话结束）
+   *
+   * 写入方 = 宿主会话层（webview 每次锁定/解锁/移除即时报到，**锁是动作、动作即落盘**，
+   * 不等发送）；读取方 = 宿主回种 composer（切会话 / 重开面板时单向回种，webview 是唯一
+   * 可编辑面）。内核不消费本字段。
+   *
+   * ⚠️ 已知限制（草稿期）：会话尚未建立（无 sessionId、无元数据载体）时的加锁**不落盘**，
+   * 要等首条消息把草稿 flush 成会话后再补落 ⇒「草稿期锁了、没发就关窗」会白锁。
+   *
+   * 缺省 `undefined` 与空数组同义 = 本会话无钉住；**只存指针**（见 `SessionPinnedItem`），
+   * 正文/缓存一律不得进元数据。
+   */
+  pinnedItems?: SessionPinnedItem[];
 
   /** 创建时间（ISO 8601） */
   createdAt?: string;

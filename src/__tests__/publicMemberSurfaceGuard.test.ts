@@ -924,6 +924,8 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'displayName',
       'keyTopics',
       'messageCount',
+      // 2026-11-08 新增（定性见下方 ⑬）：会话级钉住清单（只存指针），可选字段、非破坏
+      'pinnedItems',
       'sessionId',
       'summary',
       'updatedAt',
@@ -1450,7 +1452,15 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    不参与生效判定、不进模型面。真消费者 = 宿主 skillAggregation.listVisibleSkills（直通 SkillDto），\n` +
       `    再由 settingsView 渲染为「已覆盖 X 同名技能」；行为由内核 skillManager 三段覆盖测试 +\n` +
       `    宿主 skillAggregation/settingsView 测试守护，变异验证（移除赋值/记录即转红）。\n` +
-      `    代价 = 零（可选字段：缺省 = 未覆盖，既有调用与模型面零变化）。`;
+      `    代价 = 零（可选字段：缺省 = 未覆盖，既有调用与模型面零变化）。\n` +
+      `  ⑬ SessionMeta.pinnedItems 新增（2026-11-08 · 会话级钉住清单，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：它是「加锁后留到本会话结束、跨重启接得上」的\n` +
+      `    **落盘真源**；不落盘则重启后钉住全丢（用户以为还锁着，实际下一轮就不发了）。\n` +
+      `    真消费者 = 宿主 sessionStore（锁定/解锁即 write）+ chatPanel 切会话回种 composer；\n` +
+      `    内核不消费。**只存指针**（path/kind/range 或技能 name），正文/缓存一律不进元数据。\n` +
+      `    行为由宿主 workspaceSessionStore merge 测试（显式 undefined 不抹既有）+ chatPanel\n` +
+      `    pin 落盘测试守护；变异验证（让 merge 失去 undefined 保护 / 改存正文即转红）。\n` +
+      `    代价 = 零（可选字段：缺省 = 无钉住，老会话自然降级为空，无 deprecation 需求）。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

@@ -739,11 +739,11 @@ export class WorkspaceSessionStore implements ISessionStore {
       displayName: meta.displayName ?? existing?.displayName,
       keyTopics: meta.keyTopics ?? existing?.keyTopics,
       summary: meta.summary ?? existing?.summary,
-      // 归档防重快照（同族保护，显式 undefined 不抹既有）：被抹则重启后判「无归档记录」，
-      // 对内容未变的会话又烧一次 LLM（跨进程防重失效）。
+      // 归档防重快照（同族保护，显式 undefined 不抹既有）：被抹则重启后判「无归档记录」又烧一次 LLM
       archivedMessageCount: meta.archivedMessageCount ?? existing?.archivedMessageCount,
       // 会话级角色包名（同族保护，显式 undefined 不抹既有）：被抹 = 重启回兜底包，只读变可写且无人察觉
       activeRolePackName: meta.activeRolePackName ?? existing?.activeRolePackName,
+      pinnedItems: meta.pinnedItems ?? existing?.pinnedItems, // 同族保护：undefined 不抹，清空传 `[]` 仍覆盖
       // 改名/命名非活跃事件：不重置 updatedAt 与计数
       updatedAt: existing?.updatedAt ?? new Date().toISOString(),
       messageCount: existing?.messageCount ?? this.deriveMessageCount(sessionId),

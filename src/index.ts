@@ -196,7 +196,13 @@ export { IGNORED_DIR_NAMES } from '@/agent/builtinToolHandlers.js';
 // `ProjectEntry` / `projectSwitched` 事件 / `projects.json` 写入一并删除）。项目名只从路径
 // 推断，见 `projectManager.ts` 的模块级 `inferProjectName`。
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
-export type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
+export type {
+  ISessionStore,
+  SessionMessage,
+  SessionMeta,
+  // 会话级钉住清单条目（只存指针）：宿主按此类型映射会话元数据
+  SessionPinnedItem,
+} from '@/memory/sessionStore.js';
 // 会话显示名回退单一真理源（displayName→autoName），宿主从内核取，避免重复实现
 export { getSessionDisplayName } from '@/memory/sessionStore.js';
 

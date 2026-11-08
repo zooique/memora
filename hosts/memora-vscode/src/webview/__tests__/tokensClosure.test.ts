@@ -631,7 +631,7 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // 27→26：IMG-11 把 `.image-chip-tip__img` 的 max-width 由 var(--dim-2xl) 改为 100%
     //        （固定 320 会撑破已收窄的浮层容器，改「相对内容区收缩」）⇒ -1（2026-10-29，实数经
     //        scripts/count-token-refs.mjs 实锤同步）。容器侧仍保留 min(var(--dim-2xl), …) 未减。
-    'dim-': 27, // HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）；
+    // 27：HOST-NAV-1：大纲条浮层 min-width/max-width 改引 var(--dim-lg)/var(--dim-2xl) +2（2026-10-20）；
     //             UI-CONFIRM-FIT-1：审批卡 max-height 引 var(--dim-2xl)（替代裸值 420px）+1（2026-10-22）；
     //             IMG-2：悬停预览 3 处（浮层 max-width + 预览图 max-width/max-height，均复用
     //             var(--dim-2xl) 的「提示卡最大宽高」既有语义）+3（2026-10-28，
@@ -641,6 +641,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             刻度里无档，按「不造并列值」复用邻近档，故此处是刻度复用不是新增刻度）
     //             27：COPY-2 右键菜单 .ctxmenu min-width 引 var(--dim-lg)（contextMenuStyles，
     //             原稿裸值 148px 在刻度里无档，按「不造并列值」复用邻近档）+1（2026-10-30）
+    //             DIM-28（0.10.0 会话级钉住）：.skill-chip.is-large 的 max-width 引 var(--dim-3xl)
+    //             （钉住大技能时放宽，让「此文 N 万字，每轮都会发送」提示完整可读）+1（2026-11-08）
+    'dim-': 28,
   } as const;
 
   for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {

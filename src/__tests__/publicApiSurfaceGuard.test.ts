@@ -340,6 +340,8 @@ const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
   'SessionManager',
   'SessionMessage',
   'SessionMeta',
+  // 会话级钉住清单条目（0.10.0）：会话元数据新增字段的类型载体，宿主按此映射（只存指针）
+  'SessionPinnedItem',
   'SessionSummary',
   'SessionView',
   'SkillEntry',

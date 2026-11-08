@@ -5,7 +5,8 @@
  *   - 菜单项必须是可聚焦的 `button`（div 的 focus() 是空操作 ⇒ 键盘导航静默失效）
  *   - 搜索三字段：name（id）/ displayName / description 任一命中
  *   - 选中态 → 触发器 label 与 chip 文本用 displayName，回传 id 用 name
- *   - pinned 语义：默认常驻、afterSend 不清；取消常驻后 afterSend 清除
+ *   - pinned 语义：默认不钉住（发完即清）、锁切换即落盘；afterSend 只清未钉住的
+ *   - 禁用优先：清单重推按 name 重解析（disabled 反映此刻真值）；找不到 ⇒ 灰显「已失效」
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -24,7 +25,7 @@ interface Mounted {
 
 /** 复刻**真机 DOM 形状**：buildDropdownHtml 产物（treedd + capsule 变体 + data-treedd 契约）
  * + initDropdowns 装配（开合/委托/键盘/全局 click 关闭）——手写简化 DOM 测不到装配差异。 */
-function mount(): Mounted {
+function mount(onPinnedChange?: () => void): Mounted {
   document.body.innerHTML = `
     ${buildDropdownHtml([], {
       extraClass: 'skill-picker treedd--capsule',
@@ -42,7 +43,15 @@ function mount(): Mounted {
   const chipRow = document.getElementById('skillChips') as HTMLElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
   initDropdowns(document, { __skillPickerOnSelect: () => {} });
-  const view = createSkillPickerView({ document, root, menu, trigger, chipRow, input });
+  const view = createSkillPickerView({
+    document,
+    root,
+    menu,
+    trigger,
+    chipRow,
+    input,
+    onPinnedChange,
+  });
   return { view, root, menu, trigger, chipRow, input };
 }
 
@@ -321,19 +330,112 @@ describe('skillPickerView 选中态与 pinned', () => {
     expect(chipRow.hidden).toBe(true);
   });
 
-  it('afterSend：默认常驻（pinned=true）不清；取消常驻后清除', () => {
+  it('默认不钉住：选中后 pinned=false（与引用对齐「选中即挂、发完即清」）', () => {
+    const { view } = mount();
+    view.setSkills(SKILLS);
+    view.select('summarize');
+    expect(view.getSelected()?.pinned).toBe(false);
+  });
+
+  it('afterSend：未钉住即清；钉住常驻（锁是用户显式动作）', () => {
     const { view } = mount();
     view.setSkills(SKILLS);
     view.select('summarize');
     view.afterSend();
-    expect(view.getSelected()?.name).toBe('summarize');
-
-    expect(view.getSelected()?.pinned).toBe(true);
-    view.refreshEdges();
-    const pin = document.querySelector<HTMLElement>('.skill-chip__pin') as HTMLElement;
-    pin.click(); // 切到未钉住
-    expect(view.getSelected()?.pinned).toBe(false);
-    view.afterSend();
     expect(view.getSelected()).toBeNull();
+
+    view.select('summarize');
+    (document.querySelector<HTMLElement>('.skill-chip__pin') as HTMLElement).click();
+    expect(view.getSelected()?.pinned).toBe(true);
+    view.afterSend();
+    expect(view.getSelected()?.name).toBe('summarize');
+  });
+
+  it('禁用优先：清单重推刷新 disabled（不是选择时刻快照）→ chip 标「已禁用」', () => {
+    const { view } = mount();
+    view.setSkills(SKILLS);
+    view.select('summarize');
+    // 发送前仍是可用态
+    expect(document.querySelector('.skill-chip')?.classList.contains('is-disabled')).toBe(false);
+    // 全局禁用后宿主重推同一批清单
+    view.setSkills([{ ...SKILLS[0]!, disabled: true }, SKILLS[1]!]);
+    const chip = document.querySelector<HTMLElement>('.skill-chip') as HTMLElement;
+    expect(chip.classList.contains('is-disabled')).toBe(true);
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('已禁用');
+  });
+
+  it('失效不静默：清单重推找不到同名 → 保留条目并灰显「已失效」', () => {
+    const { view } = mount();
+    view.setSkills(SKILLS);
+    view.select('summarize');
+    view.setSkills([SKILLS[1]!]); // summarize 被删 / 改名
+    const sel = view.getSelected();
+    expect(sel?.name).toBe('summarize');
+    expect(sel?.missing).toBe(true);
+    const chip = document.querySelector<HTMLElement>('.skill-chip') as HTMLElement;
+    expect(chip.classList.contains('is-missing')).toBe(true);
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('已失效');
+  });
+
+  it('restorePinned：无选择时按名回种并置锁；已有不同名选择不被覆盖', () => {
+    const { view } = mount();
+    view.setSkills(SKILLS);
+    view.restorePinned('summarize');
+    expect(view.getSelected()?.name).toBe('summarize');
+    expect(view.getSelected()?.pinned).toBe(true);
+
+    view.select('foreshadow'); // 用户此刻已改选（composer 编辑态优先）
+    view.restorePinned('summarize');
+    expect(view.getSelected()?.name).toBe('foreshadow');
+  });
+
+  it('restorePinned 遇到清单里没有的名字 → 失效灰显（不静默丢弃）', () => {
+    const { view } = mount();
+    view.setSkills(SKILLS);
+    view.restorePinned('__gone__');
+    expect(view.getSelected()?.missing).toBe(true);
+    expect(document.querySelector('.skill-chip')?.classList.contains('is-missing')).toBe(true);
+  });
+
+  it('clear() 静默清空（切会话前置），不触发落盘回调', () => {
+    let calls = 0;
+    const { view } = mount(() => {
+      calls += 1;
+    });
+    view.setSkills(SKILLS);
+    view.select('summarize');
+    expect(calls).toBe(1); // 选中即上报
+    view.clear();
+    expect(view.getSelected()).toBeNull();
+    expect(calls).toBe(1); // 清空是宿主驱动的静默投影，不得反向上报
+  });
+
+  it('选中 / 锁切换 / 移除都触发落盘回调（锁是动作、动作即持久）', () => {
+    let calls = 0;
+    const { view } = mount(() => {
+      calls += 1;
+    });
+    view.setSkills(SKILLS);
+    view.select('summarize');
+    const pin = document.querySelector<HTMLElement>('.skill-chip__pin') as HTMLElement;
+    pin.click();
+    expect(calls).toBe(2);
+    const remove = document.querySelector<HTMLElement>('.skill-chip__remove') as HTMLElement;
+    remove.click();
+    expect(calls).toBe(3);
+  });
+
+  it('钉住的大技能显示字数成本提示（contentChars ≥ 2 万）', () => {
+    const { view } = mount();
+    view.setSkills([{ ...SKILLS[0]!, contentChars: 32_000 }, SKILLS[1]!]);
+    view.select('summarize');
+    // 未钉住：发完即清，不存在「每轮发送」成本 ⇒ 不提示
+    expect(document.querySelector('.skill-chip.is-large')).toBeNull();
+    (document.querySelector<HTMLElement>('.skill-chip__pin') as HTMLElement).click();
+    const chip = document.querySelector<HTMLElement>('.skill-chip') as HTMLElement;
+    expect(chip.classList.contains('is-large')).toBe(true);
+    expect(chip.querySelector('.skill-chip__size')?.textContent).toBe(
+      '此文 3.2 万字，每轮都会发送',
+    );
   });
 });

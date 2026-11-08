@@ -23,11 +23,22 @@ import { closeOtherDropdowns, setDropdownOpen } from '../components/dropdown.js'
 import { bindSingleTrackRow, syncRowEdges } from '../helpers/chipRow.js';
 import { getIconSvg } from './icons.js';
 
-/** 当前选中技能 = 整条 DTO 快照 + pinned（禁逐字段拷贝：displayName 随行带到 chip 与标题） */
-export type SelectedSkill = SkillDto & { pinned: boolean };
+/**
+ * 当前选中技能 = 整条 DTO 快照 + pinned（禁逐字段拷贝：displayName 随行带到 chip 与标题）
+ *
+ * `missing` = 会话元数据里钉住的技能名在当前清单里找不到（已删除 / 改名）——**只作灰显投影**，
+ * 与协议 `ChatRef.missing` 同语义：不静默过滤，让用户看见「锁着一个不存在的东西」。
+ */
+export type SelectedSkill = SkillDto & { pinned: boolean; missing?: boolean };
 
 /** 「未选择技能」清除项的 id（菜单首项，与真实技能名不可能冲突） */
 const CLEAR_ID = '__clear_skill';
+
+/**
+ * 「大技能」体积提示阈值（字符数，2 万字）：钉住后每轮都整篇拼进信封，用户须看得见成本。
+ * 只作**显示**判据——预算 / 丢弃 / 截断以内核为准，本域不重算（禁第二真理源）。
+ */
+const LARGE_SKILL_CHARS = 20_000;
 
 export interface SkillPickerViewDeps {
   /** webview 文档对象（构造唯一 DOM 入口；禁在模块内读全局 document） */
@@ -42,18 +53,28 @@ export interface SkillPickerViewDeps {
   chipRow: HTMLElement | null;
   /** 正文输入框（斜杠触发的宿主：本域只观测它，不改它的其它语义） */
   input: HTMLTextAreaElement | null;
+  /**
+   * 钉住/挂载态变更回调（选中、锁切换、移除）——**锁是动作、动作即落盘**：
+   * chatView 在此即时上行 `input.kind='pin'`，不等发送。
+   * 静默态变更（`clear()` 清空、`setSkills` 重解析、`afterSend`）**不**触发本回调。
+   */
+  onPinnedChange?: () => void;
 }
 
 /** 技能选择器窄接口：chatView 仅经此驱动 */
 export interface SkillPickerView {
-  /** 菜单项选中（含 `CLEAR_ID` 清除项） */
+  /** 菜单项选中（含 `CLEAR_ID` 清除项）；新挂载默认不钉住（发完即清） */
   select(id: string): void;
-  /** 宿主推送技能清单（`skills_loaded`）→ 全量重建菜单 */
+  /** 宿主推送技能清单（`skills_loaded`）→ 全量重建菜单，并按 name 重解析当前选择 */
   setSkills(skills: SkillDto[]): void;
-  /** 当前选中技能（含 pinned）；无选择返回 null */
+  /** 当前选中技能（含 pinned / missing）；无选择返回 null */
   getSelected(): SelectedSkill | null;
   /** 发送后处置：未钉住（`pinned=false`）即清除，钉住常驻 */
   afterSend(): void;
+  /** 回种会话元数据里钉住的技能名（切会话）；当前已有不同名选择则不覆盖 */
+  restorePinned(name: string): void;
+  /** 静默清空选择（切会话前置清 composer；不触发 `onPinnedChange`） */
+  clear(): void;
   /** 按当前宽度重算 chip 行边缘渐隐（窗口尺寸变化时由调用方驱动） */
   refreshEdges(): void;
 }
@@ -136,9 +157,15 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     if (skill.pinned) {
       chip.classList.add('is-pinned');
     }
-    // 选中的技能已禁用 → 标记 chip。否则用户以为「已挂载」，实际发送时不注入。
-    // 术语沿用设置页同一词汇「已禁用」，不新增概念。
-    if (skill.disabled) {
+    if (skill.missing) {
+      // 失效（会话元数据里锁着、当前清单里已没有）：灰显 + 明示，**不静默过滤**。
+      // 与 .is-disabled 共用灰样式，但文案不同——「已失效」= 对象不存在，「已禁用」= 对象存在但被关。
+      chip.classList.add('is-missing');
+      chip.setAttribute('title', '该技能已不存在（已删除或改名），发送时不会注入；可移除');
+    } else if (skill.disabled) {
+      // 选中的技能已禁用 → 标记 chip。否则用户以为「已挂载」，实际发送时不注入。
+      // 术语沿用设置页同一词汇「已禁用」，不新增概念。
+      // 判据始终取 DTO 当前值（`setSkills` 按 name 重解析），不是选择时刻快照。
       chip.classList.add('is-disabled');
       chip.setAttribute('title', '该技能已禁用，发送时不会注入');
     }
@@ -152,11 +179,30 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     name.className = 'skill-chip__name';
     name.textContent = label;
     chip.appendChild(name);
-    if (skill.disabled) {
+    if (skill.missing) {
+      const note = document.createElement('span');
+      note.className = 'skill-chip__note';
+      note.textContent = '已失效';
+      chip.appendChild(note);
+    } else if (skill.disabled) {
       const note = document.createElement('span');
       note.className = 'skill-chip__note';
       note.textContent = '已禁用';
       chip.appendChild(note);
+    }
+    // 体积提示（只对钉住生效：未钉住发完即清，每轮成本不成立）：
+    // 「此文 3.2 万字，每轮都会发送」——技能正文照旧整篇拼进信封，链路一行不改。
+    // contentChars 缺省 = 未知 ⇒ 不显示（不猜、不落假数据）。
+    if (
+      skill.pinned &&
+      skill.contentChars !== undefined &&
+      skill.contentChars >= LARGE_SKILL_CHARS
+    ) {
+      const sizeNote = document.createElement('span');
+      sizeNote.className = 'skill-chip__note skill-chip__size';
+      sizeNote.textContent = `此文 ${(skill.contentChars / 10_000).toFixed(1)} 万字，每轮都会发送`;
+      chip.appendChild(sizeNote);
+      chip.classList.add('is-large');
     }
     // 常驻锁切换（🔒）：与 ✕ 语义二分——🔒 只切「发送后是否保留」，✕ 才是移除。
     const pin = document.createElement('button');
@@ -176,6 +222,8 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     pin.addEventListener('click', () => {
       currentSkill = { ...skill, pinned: !skill.pinned };
       renderChip();
+      // 锁是动作、动作即落盘（`renderChip` 重绘在前，回调里的上行载荷读到的已是新态）
+      deps.onPinnedChange?.();
     });
     chip.appendChild(pin);
     const remove = document.createElement('button');
@@ -187,6 +235,8 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     remove.addEventListener('click', () => {
       currentSkill = null;
       syncLabel();
+      // 移除也是动作（钉住清单少一槽）⇒ 即时落盘
+      deps.onPinnedChange?.();
     });
     chip.appendChild(remove);
     chipRow.appendChild(chip);
@@ -382,10 +432,10 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     select(id: string): void {
       const found = id === CLEAR_ID ? undefined : skillOptions.find((s) => s.name === id);
       if (found) {
-        // 随行带出 disabled（选择时刻的快照）——仅供 chip 显示提示，
-        // 发送时的**判定**仍由 host 真源（`isSkillDisabled`）负责，webview 不拦截。
-        // 新挂载 = 锁预开常驻（pinned 默认 true，与「skill 发送后不消失」的既有行为一致）
-        currentSkill = { ...found, pinned: true };
+        // 随行带出 disabled（**当前清单**的判据，仅供 chip 显示提示；发送时的判定仍由 host
+        // 真源 `isSkillDisabled` 负责，webview 不拦截）。
+        // 新挂载默认**不钉住**：与引用对齐「选中即挂、发完即清」，锁要用户显式点。
+        currentSkill = { ...found, pinned: false };
       } else if (id === CLEAR_ID) {
         currentSkill = null;
       } else {
@@ -395,20 +445,59 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
       syncLabel();
       // 选中后用 token 换 chip：`/su` 留在正文里就是一条伪造的用户输入
       consumeSlashToken();
+      // 选中会替换（或清空）本会话的钉住槽 ⇒ 即时落盘，不等发送
+      deps.onPinnedChange?.();
     },
     setSkills(skills: SkillDto[]): void {
       skillOptions = skills;
+      // 清单重推 = 当前选择状态的**唯一刷新点**：按 name 重解析，让 `disabled` 反映此刻真值
+      // （旧实现是选择时刻快照 ⇒ 清单里被全局禁用后 chip 仍显示可用 = 看着挂着、实则不注入）。
+      // 找不到 ⇒ 标记 missing（失效灰显，不静默丢弃）；pinned 是 webview 持有的锁，须原样保留。
+      if (currentSkill) {
+        const found = skills.find((s) => s.name === currentSkill!.name);
+        currentSkill = found
+          ? { ...found, pinned: currentSkill.pinned }
+          : {
+              name: currentSkill.name,
+              description: '',
+              displayName: currentSkill.displayName,
+              pinned: currentSkill.pinned,
+              missing: true,
+            };
+      }
       renderMenu();
     },
     getSelected(): SelectedSkill | null {
       return currentSkill;
     },
     afterSend(): void {
-      // 技能同一 pinned 判据：默认钉住常驻（锁预开）⇒ 发送不清除；syncLabel 内含重绘
+      // 发送后处置：未钉住即清除（与引用同语义）；钉住常驻
       if (currentSkill && !currentSkill.pinned) {
         currentSkill = null;
         syncLabel();
       }
+    },
+    restorePinned(name: string): void {
+      // 切会话回种（元数据 → composer 单向投影）：当前已有**不同名**选择说明 composer 里有
+      // 用户刚做的编辑（上行 pin 在途），不得被旧元数据覆盖；同名则只补 locked 态。
+      if (currentSkill && currentSkill.name !== name) return;
+      if (currentSkill?.name === name) {
+        currentSkill = { ...currentSkill, pinned: true, missing: undefined };
+      } else {
+        const found = skillOptions.find((s) => s.name === name);
+        currentSkill = found
+          ? { ...found, pinned: true }
+          : { name, description: '', displayName: name, pinned: true, missing: true };
+      }
+      syncLabel();
+      // 回种是宿主数据驱动的投影，不是用户动作 ⇒ 不触发 onPinnedChange（防回环写）
+    },
+    clear(): void {
+      // 静默清空：切会话的前置步骤，落盘由宿主随元数据切换负责；此处上报会造成
+      // 「先清后种」两笔相抵的上行噪音，且清空瞬间的会话可能已不是当前会话。
+      if (!currentSkill) return;
+      currentSkill = null;
+      syncLabel();
     },
     refreshEdges(): void {
       syncRowEdges(chipRow);

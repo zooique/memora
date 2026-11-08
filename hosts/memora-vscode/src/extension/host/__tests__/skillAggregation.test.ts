@@ -36,7 +36,13 @@ function makeAgent(opts: {
     /** 内核记录的全局池覆盖来源（只读直通 UI；缺省 = 未覆盖任何同名项） */
     overriddenLayer?: 'builtin' | 'user' | 'project';
   }>;
-  roleSkills?: Array<{ name: string; description?: string; displayName?: string }>;
+  roleSkills?: Array<{
+    name: string;
+    description?: string;
+    displayName?: string;
+    /** 内核 listSkills 给出的正文体量（正文未缓存时省略 ⇒ 宿主不显示体积提示） */
+    contentChars?: number;
+  }>;
   roleContent?: { [name: string]: string };
   /** 全局技能正文（真实 SkillEntry 恒有 content；缺省给非空值，防「假空」掩盖解析分支） */
   globalContent?: { [name: string]: string };
@@ -53,6 +59,8 @@ function makeAgent(opts: {
         layer: (g.layer ?? 'project') as 'agent' | 'project',
         // 覆盖事实直通（内核是唯一产生点，桩不额外推导）
         overriddenLayer: g.overriddenLayer,
+        // 正文与 get 同源：真实 SkillEntry.content 恒有值 ⇒ 列表侧 contentChars 也恒有值
+        content: opts.globalContent?.[g.name] ?? `全局正文:${g.name}`,
       })),
       get: (n: string) => {
         // 与真实 SkillManager.get 同构：禁用名**短路返回 null**。
@@ -105,6 +113,25 @@ describe('listVisibleSkills · 多源技能聚合', () => {
     expect(out.find((s) => s.name === 'run')?.displayName).toBe('运行脚本');
     expect(out.find((s) => s.name === 'plain')?.displayName).toBeUndefined();
     expect(out.find((s) => s.name === 'summarize')?.displayName).toBe('要点提炼');
+  });
+
+  it('contentChars 逐源：全局池取 SkillEntry.content.length，角色包直通内核缓存正文长度', () => {
+    const agent = makeAgent({
+      global: [{ name: '长文', filePath: join(configDir, 'skills', 'long.md') }],
+      globalContent: { 长文: 'x'.repeat(321) },
+      // 角色包：内核 listSkills 从装载时预缓存的同一份正文取长度（宿主不读盘、不重算）
+      roleSkills: [{ name: '角色长文', contentChars: 32_000 }],
+    });
+    const out = listVisibleSkills({ agent, configDir, userSkillsDir });
+    expect(out.find((s) => s.name === '长文')?.contentChars).toBe(321);
+    expect(out.find((s) => s.name === '角色长文')?.contentChars).toBe(32_000);
+  });
+
+  it('contentChars 缺失不编造：内核正文未缓存（省略字段）⇒ 保持 undefined，UI 不显示体积提示', () => {
+    // 角色包正文为 null 时内核 listSkills 不带 contentChars；宿主不得猜一个字数顶上
+    const agent = makeAgent({ global: [], roleSkills: [{ name: '未缓存正文' }] });
+    const out = listVisibleSkills({ agent, configDir, userSkillsDir });
+    expect(out.find((s) => s.name === '未缓存正文')?.contentChars).toBeUndefined();
   });
 
   it('同名去重：用户优先于内置（S5 反转，2026-09-22，对齐内核装载层「用户覆盖内置」）', () => {

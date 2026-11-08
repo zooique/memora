@@ -65,6 +65,8 @@ const EXEMPT: Record<string, string> = {
     'inline-flex 正常流：flex-shrink 默认可收缩，且内容为单行徽章文本会 ellipsis',
   'chatStyles.ts :: .skill-chip :: max-width = 220px':
     'flex:0 0 auto 确实不收缩，但所在 .skill-chip-row 自带 overflow-x 滚动容器，溢出被行裁住、不产生面板级横向滚动条',
+  'chatStyles.ts :: .skill-chip.is-large :: max-width = var(--dim-3xl)':
+    '同一行容器 .skill-chip-row 的 overflow-x 滚动照旧兜底；此项只在钉住大技能时放宽，让「此文 N 万字」提示完整可读',
   'configStyles.ts :: #config-root .modal :: max-width = var(--dim-3xl)':
     '同块已声明 width:90%：百分比先行决定宽度，max-width 仅在宽容器里封顶；配置弹窗不驻留侧栏',
   'dropdown.ts :: .treedd--capsule .treedd__trigger :: max-width = var(--dd-trigger-max-w, 200px)':
