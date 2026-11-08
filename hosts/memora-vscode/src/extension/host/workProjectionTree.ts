@@ -7,8 +7,9 @@
  * 🔴 纪律（宿主零判据）：
  *  1. 行内容一律来自内核 `listManagedWorks()`（`resident` 已归一），本文件不出现
  *     `resident === true` / 字符上限 / 文件存在性判断。
- *  2. 失效徽标（H2 批）读内核 `Agent.residentSegmentReport`，不在这里复算；
- *     报告为 null（还没跑过 turn / 未信任）时不得显示「零失效」。
+ *  2. 失效徽标读内核 `Agent.residentSegmentReport`（只读报告，不在宿主复算「哪条生效」）；
+ *     报告为 null（还没跑过 turn / 整层未启用）或 `listReadable === false` 时，
+ *     由派生层的 notice 行如实说明，**不得**显示成「零失效」。
  *  3. 刷新只由「本视图命令 / 登记命令」触发；不做文件监听（跨窗口手改落盘的时效性
  *     由 `memora.refreshWorkProjection` 手动兜底，与工作投影「最后落盘者胜」口径一致）。
  */
@@ -76,7 +77,12 @@ export class WorkProjectionTreeProvider implements vscode.TreeDataProvider<vscod
     try {
       const agent = await this.tryGetAgent();
       if (!agent?.works) {
-        state = deriveWorkProjectionView({ hasAgent: false, listMalformed: false, entries: [] });
+        state = deriveWorkProjectionView({
+          hasAgent: false,
+          listMalformed: false,
+          entries: [],
+          residentReport: null,
+        });
       } else {
         const works = agent.works;
         state = deriveWorkProjectionView({
@@ -84,6 +90,8 @@ export class WorkProjectionTreeProvider implements vscode.TreeDataProvider<vscod
           // 格式异常时内核拒绝写入：必须让用户看见，否则「登记后什么都没变」无法解释
           listMalformed: works.isFileMalformed,
           entries: await works.listManagedWorks(),
+          // 规则求值报告（null = 尚未求值）；宿主不改写、不补算，只做形状翻译
+          residentReport: agent.residentSegmentReport,
         });
       }
     } catch (err) {
@@ -95,7 +103,10 @@ export class WorkProjectionTreeProvider implements vscode.TreeDataProvider<vscod
     if (state.kind !== 'rows') {
       return [this.infoItem(state.message, state.kind === 'malformed' ? 'warning' : 'info')];
     }
-    return state.rows.map((row) => this.rowItem(row));
+    const items = state.rows.map((row) => this.rowItem(row));
+    // 报告层面的说明行放在行上方：它是「整份报告可不可信」的前提，不是某一条的状态
+    if (state.notice) items.unshift(this.infoItem(state.notice.text, state.notice.level));
+    return items;
   }
 
   /**
