@@ -15,11 +15,18 @@ import { nowIso } from '@/utils/time.js';
 import { MAX_ALLOWED_PATHS } from '@/config/loader.js';
 
 /**
- * 解析符号链接后的真实绝对路径。
+ * 解析符号链接后的真实绝对路径（**导出**：安全判据面的一部分）。
+ *
  * 安全考量：不解析符号链接时，攻击者可用项目内指向 /etc 的符号链接绕过白名单前缀匹配访问任意系统目录（路径穿越逃逸）。
  * 不存在时（写新文件）逐级向上解析已存在父目录再拼接；全程不存在时回退 resolve()（白名单/黑名单仍兜底校验）。
+ *
+ * 为什么导出：其他安全闸（如常驻规则读盘前的符号链接逃逸复核）必须复用**这一份实现**；
+ * 复制第二份 realpath 实现 = 双真源，两份语义从落笔那刻起就会漂移。
+ *
+ * @param p 待解析的路径（可非绝对，内部先 resolve）
+ * @returns 解析后的绝对路径；路径/祖先均不存在时返回逐级回退拼接的结果
  */
-function resolveRealpath(p: string): string {
+export function resolveRealpath(p: string): string {
   const resolved = resolve(p);
   try {
     return realpathSync(resolved);
@@ -42,6 +49,7 @@ function resolveRealpath(p: string): string {
   }
 }
 
+/** 凭据 / 系统敏感路径黑名单（**唯一真源**；对外只经下方判据函数使用，禁止复制第二份） */
 const BLOCKED_PATTERNS = [
   // 系统凭证文件（跨平台，路径段匹配）
   /(^|[\\/])\.ssh([\\/]|$)/i,
@@ -80,6 +88,43 @@ const BLOCKED_PATTERNS = [
   // 虚拟文件系统 + 启动目录（根目录锚定）
   /^\/(proc|sys|boot)([\\/]|$)/i,
 ];
+
+/**
+ * 凭据 / 系统敏感路径判据（**唯一匹配点**，导出供其他安全闸复用）
+ *
+ * 入参必须是**已经 NFKC 规范化 + realpath 解析**的路径（本函数不再做这两步，
+ * 因为调用方 SecurityGuard 需要复用同一个 resolved 值落审计、避免二次磁盘 IO）。
+ * 需要「从任意绝对路径直接判定」的场景用 `isBlockedPath`。
+ *
+ * @param resolvedPath 已规范化的真实绝对路径
+ * @returns 命中的黑名单模式；未命中返回 undefined（调用方据此落审计原因）
+ */
+export function matchBlockedPathPattern(resolvedPath: string): RegExp | undefined {
+  for (const pattern of BLOCKED_PATTERNS) {
+    if (pattern.test(resolvedPath)) return pattern;
+  }
+  return undefined;
+}
+
+/**
+ * 凭据 / 系统敏感路径组合判据（任意绝对路径 → NFKC + realpath + 黑名单）
+ *
+ * 供**不持有 SecurityGuard** 的安全闸复用（如常驻规则读盘前的凭据路径拒绝）。
+ * 判据实现全部委托给 `resolveRealpath` 与 `matchBlockedPathPattern`，
+ * 本函数只做组合——禁止在此复制正则表或 realpath 逻辑（双真源）。
+ *
+ * ⚠️ 射程：只匹配**路径**；文件正文里写死的 token / 私钥不在本判据内。
+ *
+ * @param absolutePath 待判定的绝对路径（可含符号链接）
+ * @returns true = 命中黑名单（应拒绝读取 / 写入）
+ */
+export function isBlockedPath(absolutePath: string): boolean {
+  // NFKC 规范化：与 assertPathAllowed 同款，防全角字符绕过正则
+  const normalized = absolutePath.normalize('NFKC');
+  // 符号链接真实化：保证判定的是实际访问目标
+  const resolved = resolveRealpath(normalized);
+  return matchBlockedPathPattern(resolved) !== undefined;
+}
 
 /**
  * 额外白名单最大条数 = `config/loader.ts` 的 `MAX_ALLOWED_PATHS`（同一常量，非同值副本）。
@@ -561,23 +606,22 @@ export class SecurityGuard {
     // 解析符号链接，防项目内符号链接逃逸到系统目录
     const resolved = resolveRealpath(normalized);
 
-    // 1. 黑名单优先
-    for (const pattern of BLOCKED_PATTERNS) {
-      if (pattern.test(resolved)) {
-        this.emitAudit({
-          type: 'path-deny',
-          path: resolved,
-          tool,
-          source,
-          reason: `命中黑名单规则 (${pattern})`,
-          timestamp: nowIso(),
-        });
-        throw securityError(
-          '禁止访问：路径命中黑名单',
-          `路径 ${resolved} 命中黑名单规则 (${pattern})`,
-          ['检查路径是否正确', '如需访问该路径，请联系管理员添加白名单'],
-        );
-      }
+    // 1. 黑名单优先（匹配点单点在 matchBlockedPathPattern，不在此复制正则循环）
+    const blockedPattern = matchBlockedPathPattern(resolved);
+    if (blockedPattern) {
+      this.emitAudit({
+        type: 'path-deny',
+        path: resolved,
+        tool,
+        source,
+        reason: `命中黑名单规则 (${blockedPattern})`,
+        timestamp: nowIso(),
+      });
+      throw securityError(
+        '禁止访问：路径命中黑名单',
+        `路径 ${resolved} 命中黑名单规则 (${blockedPattern})`,
+        ['检查路径是否正确', '如需访问该路径，请联系管理员添加白名单'],
+      );
     }
 
     // 2. 白名单：严格前缀匹配（追加 sep 防兄弟目录绕过）

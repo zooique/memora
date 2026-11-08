@@ -7,12 +7,15 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import {
   SecurityGuard,
   classifyCommand,
+  isBlockedPath,
+  matchBlockedPathPattern,
+  resolveRealpath,
   type CommandVerdict,
   type WriteConfirmationInfo,
   type AuditEvent,
 } from '@/security/pathGuard.js';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { existsSync, symlinkSync, writeFileSync } from 'node:fs';
 // 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync，见 helpers/tmpDir.ts）
 import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
@@ -1044,5 +1047,48 @@ describe('SecurityGuard · 禁止覆盖根（noOverwriteRoots，泛型禁止覆�
     expect(() => makeGuard([]).setAllowedPaths(overflow)).toThrow(/超过上限（50 条）/);
     // 50 条恰好可用（边界不误伤）
     expect(() => makeGuard([]).setAllowedPaths(overflow.slice(0, 50))).not.toThrow();
+  });
+});
+
+// ─── 导出判据面（常驻层前置：其他安全闸必须复用同一份实现，不得复制第二份）───
+// 缺口动因：BLOCKED_PATTERNS 与 resolveRealpath 此前模块私有 ⇒ 「复用」在物理上不成立，
+// 后来者只能复制黑名单与 realpath 逻辑 = 双真源（设计 doc：resident-layer-design.md §7.1-3/4）。
+
+describe('pathGuard · 导出判据面（常驻层复用入口）', () => {
+  let projectPath: string;
+
+  beforeEach(() => {
+    projectPath = makeTempDir('memora-exported-');
+  });
+
+  it('isBlockedPath：凭据类路径命中、普通项目文件不命中', () => {
+    expect(isBlockedPath(join(projectPath, '.env'))).toBe(true);
+    expect(isBlockedPath(join(projectPath, '.ssh', 'id_rsa'))).toBe(true);
+    expect(isBlockedPath(join(projectPath, 'docs', 'agent-rules.md'))).toBe(false);
+  });
+
+  it('matchBlockedPathPattern：返回命中的模式供审计落原因，未命中返回 undefined', () => {
+    const hit = matchBlockedPathPattern('/etc/passwd');
+    expect(hit).toBeInstanceOf(RegExp);
+    expect(matchBlockedPathPattern('/workspace/docs/rules.md')).toBeUndefined();
+  });
+
+  it('resolveRealpath：已存在路径返回真实绝对路径（非绝对入参先 resolve）', () => {
+    const target = join(projectPath, 'docs');
+    expect(resolveRealpath(target)).toBe(resolveRealpath(projectPath) + sep + 'docs');
+  });
+
+  it.skipIf(process.platform === 'win32')('resolveRealpath：符号链接解析为目标真实路径', () => {
+    const realDir = makeTempDir('memora-real-');
+    const linkPath = join(projectPath, 'link-to-real');
+    let created = false;
+    try {
+      symlinkSync(realDir, linkPath);
+      created = true;
+    } catch {
+      // 无权限创建符号链接时跳过（与上方逃逸用例同口径）
+    }
+    if (!created) return;
+    expect(resolveRealpath(linkPath)).toBe(resolveRealpath(realDir));
   });
 });
