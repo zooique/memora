@@ -63,6 +63,17 @@
  *      防「新面板天然无判据」。
  *   ⑲ **`--report` 规模报告**（不判红）：对全 `src` 跑⑬ 的窗口面锚点，并按面板打印 CJK 计数。
  *      只用于量规模与出收据，**不参与退出码**。
+ *   ⑳ **zh bundle 译文一致性**（B9 收口）：`bundle.l10n.zh-cn.json` 每条译文
+ *      ①非空（与⑪ 同判据，此处不重复）②**不得照抄英文源键**（专有名词走
+ *      `ZH_SAME_AS_KEY_ALLOWLIST` 白名单）③**`{n}` 插值占位符集合必须与键完全一致**。
+ *
+ *      **为什么落在这里、而不做「屏级 zh 渲染用例」**（写死理由，免得下次有人再提一遍）：
+ *      - 「键加了、译文漏了」已由⑧ 键面相等 + ⑪ 非空挡住——键没进 zh bundle 就红；
+ *      - 真正漏得过去的只剩两类**静默失效**：zh 值照抄英文源键、译文丢了 `{n}` 占位符。
+ *        这两类在屏级用例里既难稳定复现，又只能覆盖被点到的那几屏，全量覆盖不了；
+ *        在 bundle 面判断是**单一判据 + 全量覆盖**，成本远低于屏级用例；
+ *      - 「zh 界面不出现英文」这个断言本身会**误报**：MCP / API Key / URL 这类专有名词
+ *        在中文界面本就该保留英文，屏级断言写不出可维护的边界。
  *
  * ### 🔴 注册制盲区（如实写死，不假装覆盖）
  *
@@ -109,6 +120,29 @@ const MIN_CONFIG_PROPS = 10;
 
 /** CJK 判定：汉字 + CJK 标点 + 全角字符（中文文案里必然出现其中之一） */
 const CJK = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u3000-\u303F\uFF00-\uFFEF]/;
+
+/**
+ * 判据⑳ 白名单：zh 译文**合法地**与英文源键同形的条目（专有名词 / 纯占位符组合）
+ *
+ * 判据⑳ 的目标是抓「键加了、译文直接照抄英文」这种漏译，而不是逼专有名词硬造中文
+ * （MCP / API Key 在中文界面本就保留英文）。加白名单必须逐条给出理由，不整类放行。
+ */
+const ZH_SAME_AS_KEY_ALLOWLIST = new Set([
+  'MCP', // 协议名，无通行中文译名
+  'LLM', // 缩写，中文界面通用英文
+  'API Base URL', // URL 一词在中文界面保留英文
+  'API Key', // 同上
+  '{0} {1}%', // 纯占位符组合（拼装「比例」文案），本身不含自然语言
+]);
+
+/**
+ * 抽取字符串里的 `{n}` 插值占位符，返回**排序后**的列表（顺序无关，集合比对）
+ *
+ * @param {string} text 待抽取文本
+ */
+function placeholdersOf(text) {
+  return (String(text).match(/\{\d+\}/g) ?? []).sort();
+}
 
 /**
  * 收集 manifest 里**所有**字符串叶子（路径 + 值）。
@@ -433,8 +467,18 @@ const WEBVIEW_PANELS = {
   //     缺省相位与「已等待」后缀是本域自有键；
   //   · roleBadgeView —— 徽章读屏 / 可见文案 / 悬浮说明 / 组队 tooltip 提为纯函数；
   //   · traitLabels —— 特征名表从 rolesView 提升为唯一真源（chatView 徽章与角色面板共用）；
-  //   · fmtTime —— 新增 fmtMonthDay（日期分隔线的月日短格式，中文版式只由 zh 译文给）；
-  //     仍未迁移：chatView.ts 交互确认 / 附件注入域（C-3）⇒ 面板仍 pending。
+  //   · fmtTime —— 新增 fmtMonthDay（日期分隔线的月日短格式，中文版式只由 zh 译文给）。
+  //
+  // B9-C-3（交互确认 / 附件注入域，`chatView.ts` 第三刀 = B9-C 收尾）已收口并登记：
+  //   · askInlineView —— 内联提问卡整域外置（逐题累计 / 强制单选 / 位次不变量 / 提交按钮）；
+  //   · writeConfirmCardView —— 确认审批卡整域外置（内容填充 / 末段倒计时 / 等待态 / 裁决）；
+  //   · chatView —— 剩余散落文案（状态提示 / 附件注入 chip / clarify 兜底）全走 l10n.t，
+  //     ⑰ 口径 CJK 字面量 = 0（仅剩 2 条 console.* 日志，白名单）。
+  //   **面板为何仍是 pending（不翻 migrated）**：`state` 是**面板级**开关，⑰ 只守登记面。
+  //   本面板尚未迁移的文件（`chatPanel.ts` → B9-D；imageCapture / historyMenuView /
+  //   contextOccupancyView / emptyStateView / turnUiState / sessionHistoryActions /
+  //   docContext / refChips 等 → B9-E）一旦登记就会立刻红 ⇒ 现在翻转等于「守卫报绿、
+  //   屏幕仍中文」（守卫撒谎比没有守卫更贵）。待 B9-E 收口一次性登记齐全再翻。
   chat: {
     state: 'pending',
     files: [
@@ -453,6 +497,9 @@ const WEBVIEW_PANELS = {
       'webview/scripts/roleBadgeView.ts',
       'webview/helpers/traitLabels.ts',
       'webview/helpers/fmtTime.ts',
+      'webview/scripts/askInlineView.ts',
+      'webview/scripts/writeConfirmCardView.ts',
+      'webview/scripts/chatView.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。
@@ -834,6 +881,24 @@ export function auditBundle({
     }
   }
 
+  // ⑳ zh 译文一致性（键面相等⑧ / 非空⑪ 都挡不住的两类静默失效）
+  //   a) 照抄英文源键 ⇒ 中文用户看到英文（键加了、译文忘了，⑧⑪ 全绿）
+  //   b) 丢 {n} 占位符 ⇒ 运行时该位置为空，信息静默丢失（无异常、无日志）
+  for (const [key, value] of Object.entries(bundleZh)) {
+    if (typeof value !== 'string' || value.trim() === '') continue; // ⑪ 已报，不重复
+    // 只抓「含英文单词的键被照抄」：纯占位符 / 纯标点键（如 `; `）与译文同形属正常
+    if (!ZH_SAME_AS_KEY_ALLOWLIST.has(key) && /[A-Za-z]/.test(key) && value === key) {
+      issues.push(`判据⑳ zh 译文照抄英文源键（漏译）：${key.slice(0, 50)}`);
+    }
+    const keyPh = placeholdersOf(key).join(',');
+    const valPh = placeholdersOf(value).join(',');
+    if (keyPh !== valPh) {
+      issues.push(
+        `判据⑳ zh 译文占位符与键不一致（键 [${keyPh || '无'}] / 译文 [${valPh || '无'}]）：${key.slice(0, 50)}`,
+      );
+    }
+  }
+
   // ⑫ 模板串第一参违规
   for (const f of templateViolations) {
     issues.push(`l10n.t 第一参必须是静态字面量（模板串 ⇒ 键面守卫失明）：${f}`);
@@ -1060,6 +1125,23 @@ function selfTest() {
       expect: 'bundle 中文译文为空',
     },
     {
+      label: '⑳ zh 译文照抄英文源键（漏译）',
+      mutate: (d) => {
+        // 挑一条「像句子的」键（长且有空格），避开专有名词白名单
+        const key = [...d.bundle.staticKeys].find((k) => k.length > 20 && k.includes(' '));
+        d.bundle.bundleZh[key] = key;
+      },
+      expect: 'zh 译文照抄英文源键',
+    },
+    {
+      label: '⑳ zh 译文丢 {n} 占位符',
+      mutate: (d) => {
+        const key = Object.keys(d.bundle.bundleZh).find((k) => /\{\d+\}/.test(k));
+        d.bundle.bundleZh[key] = d.bundle.bundleZh[key].replace(/\{\d+\}/g, '');
+      },
+      expect: '占位符与键不一致',
+    },
+    {
       label: '⑫ t() 模板串第一参',
       mutate: (d) => {
         d.bundle.templateViolations.push('src/extension/mutated.ts');
@@ -1201,7 +1283,7 @@ function selfTest() {
     const data = structuredClone(base);
     c.mutate(data);
     // bundle 用例打 bundle 判据（auditBundle 入参与 auditNls 不同），其余打 package 判据
-    const isBundleCase = c.label.includes('bundle') || /[⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱]/.test(c.label);
+    const isBundleCase = c.label.includes('bundle') || /[⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑳]/.test(c.label);
     const issues = isBundleCase ? auditBundle(data.bundle) : auditNls(data);
     const hit = issues.some((s) => s.includes(c.expect));
     console.log(
