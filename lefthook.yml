@@ -32,7 +32,7 @@
 #   由此本文件曾按 `gate-fast → lint-staged → prettier-fix` 执行：**判据跑在就地修复之前**，
 #   于是「格式化前 1000 行、格式化后 1005 行」的内容被判据放行、再由 prettier 折行后提交
 #   （实证 `09621033` 把 extension.ts 推到 1005 行仍过 pre-commit）。
-#   故三条命令**全部显式写 priority**：修复(1/2) 在判据(3) 之前，判据看到的就是将被提交的内容。
+#   故三条命令**全部显式写 priority**：修复(1) → 快判(2) → 全判(3)，判据看到的就是将被提交的内容。
 #   新增命令必须一并写 priority——不写就会被字母序塞到判据前后任意位置，洞会静默复发。
 pre-commit:
   parallel: false
@@ -47,15 +47,20 @@ pre-commit:
       run: npx prettier --write {staged_files}
       stage_fixed: true
 
-    # fast 档前的「就地修复」：只扫 staged 的 .ts 并自动修格式（全仓 lint 判据已由 preset 承担）
+    # 职责分工（2026-11-10 定 · 勿折叠成「两边都 lint」）：
+    #   - 本条 = **内核文件**的提交前快反馈（staged 限定，省一次全量）；
+    #   - **宿主文件**的 lint 判据归 gate-fast 的 `host:lint`（cwd 在 hosts/memora-vscode，
+    #     用宿主自己的 eslint.config.mjs——覆盖本来就在，本条不承担）。
+    # 根配置 `ignores: ['hosts/**']` ⇒ 本条在仓库根跑时会把宿主文件静默忽略、exit 0 无输出，
+    # 以前 lefthook 照样打 ✔️（空判据报通过）。现改走 scripts/lint-staged-guard.mjs：全被忽略时
+    # 显式打 skip 并 exit 0，不再让 ✔️ 冒充「判过」；不为此另起一轮 eslint。
     lint-staged:
       priority: 2
       glob: "*.ts"
-      run: npx eslint {staged_files} --max-warnings 0 --no-warn-ignored
-      stage_fixed: true
+      run: node scripts/lint-staged-guard.mjs {staged_files}
 
     # 门禁 fast 档：两侧 tsc + 两侧 lint + 秒级守卫（落盘收据日志）
-    # priority 3 = 排在两处就地修复之后（顺序理由见本文件 pre-commit 上方的执行顺序说明）
+    # priority 3 = 排在就地修复与快判之后（顺序理由见本文件 pre-commit 上方的执行顺序说明）
     gate-fast:
       priority: 3
       run: npm run ci:local -- --preset=fast
