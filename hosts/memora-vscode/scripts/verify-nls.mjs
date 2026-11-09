@@ -63,6 +63,10 @@
  *        那等于给所有漏译开后门）。新增条目必须写清「谁对齐谁」。
  *      - **第二登记面 `SHARED_CJK_FILES`**（2026-11-10 立）：跨页签域的共享文件不挂任何面板
  *        state，登记即按同一口径判（非日志 CJK = 0）。理由见该常量注释——同一事实不接受两处表达。
+ *      - **第三登记面 `DEFERRED_CJK_FILES`**（2026-11-10 立，B10-F 第二刀）：**已判定「不翻」**
+ *        的含 CJK 文件（双面载荷 / 纯模型诊断 / 本地化注入面）。它不判红、也不清零，作用是
+ *        把「判定结论」从 `--report` 的待翻清单里摘出去，避免下一批拿「还是中文」当漏项重判。
+ *        准入三条 + 每项必带 kind / reason，见该常量注释；self-test 守「不过期、不重叠、不空判据」。
  *   ⑱ **面板清单 = 设置页签 + chat**：`WEBVIEW_PANELS` 的 panel id 集合必须等于
  *      `shared/settingsTabs.ts` 的 `SETTINGS_TABS`（文本抽取）加 `chat`。新增页签未登记 ⇒ 红，
  *      防「新面板天然无判据」。
@@ -809,6 +813,66 @@ const SHARED_CJK_FILES = [
   // 两个 webview 入口（chatViewMain / settingsViewMain）各装配一次的全局错误边界：
   // 文案（卡片标题 + 自救指引）不归任何页签域。2026-11-10（B10-F 第一刀）清零后登记。
   'webview/helpers/errorBoundary.ts',
+];
+
+/**
+ * 第三登记面 `DEFERRED_CJK_FILES`：已判定「**不翻**」的含 CJK 文件（2026-11-10 立）
+ *
+ * 与另两面的分工：`WEBVIEW_PANELS` / `SHARED_CJK_FILES` 是「已清零，再塞中文即红」；
+ * 本面是「中文是**正确形态**，翻了才是错」——两者都是「已判定」，只是后者没有清零动作。
+ *
+ * 为什么必须落成登记而不能只写进台账：`--report` 的「未登记含 CJK」清单是「下一批翻
+ * 哪些」的唯一坐标；把这些文件留在里面，下一批就会拿「还是中文」当漏项再判一遍
+ * （B10-F 第一刀末已实际付出过一次判断成本）。**判定结论要可执行，否则等于没判。**
+ *
+ * 🔴 准入判据（三条全满足才可入表；缺一条 ⇒ 该翻，只是排在后面）：
+ *   ① 中文读者是**模型或诊断链**，不是「只看这个键的界面」；
+ *   ② 换成 `l10n.t` 会产生**随 locale 漂移的载荷**（同一份工具结果 / 协议文本在不同
+ *      用户机器上不一样），或造出**第三套语言真源**；
+ *   ③ 用户可见的外壳另有承载面（渲染层），不需要动这里。
+ *
+ * 每项必须写全 `kind`（读者面）与 `reason`（为什么不翻 + 翻了会错在哪）——这两项就是
+ * 「下次别再判一遍」的全部信息，空着视同未登记（self-test 有完整性不变量）。
+ */
+const DEFERRED_CJK_FILES = [
+  {
+    file: 'extension/host/codeExecutor.ts',
+    kind: '双面串（模型 + 用户）',
+    // stderr 文本同时是 run_code 的工具结果与用户在对话里看到的失败原因
+    reason:
+      '三条都是 run_code 的工具结果（不支持的语言 / 执行失败 / 进程树终止未确认），' +
+      '模型要靠它改代码、用户看到的也是同一段文字；换 l10n 会让工具结果随 locale 变，' +
+      '模型输入不再可复现。中文外壳归渲染层。',
+  },
+  {
+    file: 'extension/host/gitExec.ts',
+    kind: '双面串（模型 + 用户）',
+    reason:
+      '三条是 git 工具的回执（拒绝非只读命令 / 输出超上限 / 命令超时），与 codeExecutor 同型；' +
+      '载荷保持单一语言，否则同一协议在不同语言用户下产出不同文本。',
+  },
+  {
+    file: 'extension/host/agentRegistry.ts',
+    kind: '纯诊断面（模型 / 日志）',
+    reason:
+      '三条是 AgentRegistry 停用后的拒绝原因（登记 / 装配 / 在途装配关闭），经抛错进诊断链，' +
+      '界面上不出现；它回答的是「为什么被拒」这一事实，应与工具结果同源。',
+  },
+  {
+    file: 'extension/host/assemble.ts',
+    kind: '本地化注入面（本身即机制）',
+    reason:
+      'CHINESE_MESSAGES 是 pickUiMessages 按 vscode.env.language 选择的中文覆盖表（zh 用户注入中文、' +
+      '其余走内核英文默认），它**就是**本地化机制；且这些文案要进模型上下文与落盘，必须与 locale ' +
+      '同源、不能在渲染前求值，改 l10n.t 会变成第三套真源。',
+  },
+  {
+    file: 'extension/host/askCoordinator.ts',
+    kind: '混合（模型指令 + 双面串）',
+    reason:
+      '`ASK_TIMEOUT_NOTICE` 是给模型的代选指令（纯模型面），`abandonOnStop` 的停止通知是' +
+      '模型与用户同看的回执（双面串）；两者都属载荷，理由同上。',
+  },
 ];
 
 /**
@@ -1593,6 +1657,44 @@ function selfTest() {
   );
   if (overlap.length > 0) allOk = false;
 
+  // 不变量：判定不翻的条目必须**可复核**——kind / reason 齐全（空判据 = 未登记）
+  const emptyDeferred = DEFERRED_CJK_FILES.filter(
+    (d) => !d.kind || !d.reason || d.reason.length < 20,
+  );
+  console.log(
+    `  ${emptyDeferred.length === 0 ? '✅' : '❌'} 判定不翻的条目均带 kind + reason${
+      emptyDeferred.length > 0 ? `（缺判据：${emptyDeferred.map((d) => d.file).join('、')}）` : ''
+    }`,
+  );
+  if (emptyDeferred.length > 0) allOk = false;
+
+  // 不变量：判定不翻的条目**不得过期**——文件仍存在且仍含 CJK。
+  // 清零后就该删条目（改登记 SHARED / 面板），留着会变成「僵尸豁免」：下次读的人以为
+  // 这里还有中文要守，实际早就干净了。
+  const staleDeferred = DEFERRED_CJK_FILES.filter((d) => {
+    const abs = join(HOST_ROOT, 'src', d.file);
+    if (!existsSync(abs)) return true;
+    return collectPanelFileCjk(d.file, readFileSync(abs, 'utf8')).length === 0;
+  });
+  console.log(
+    `  ${staleDeferred.length === 0 ? '✅' : '❌'} 判定不翻的条目未过期（文件在且仍有 CJK）${
+      staleDeferred.length > 0 ? `（过期：${staleDeferred.map((d) => d.file).join('、')}）` : ''
+    }`,
+  );
+  if (staleDeferred.length > 0) allOk = false;
+
+  // 不变量：同一文件不得既「已清零登记」又「判定不翻」——那是两条互相矛盾的判据
+  const deferredFiles = new Set(DEFERRED_CJK_FILES.map((d) => d.file));
+  const deferredOverlap = [...deferredFiles].filter(
+    (f) => panelFiles.has(f) || SHARED_CJK_FILES.includes(f),
+  );
+  console.log(
+    `  ${deferredOverlap.length === 0 ? '✅' : '❌'} 判定不翻与已清零登记不重叠${
+      deferredOverlap.length > 0 ? `（同时出现：${deferredOverlap.join('、')}）` : ''
+    }`,
+  );
+  if (deferredOverlap.length > 0) allOk = false;
+
   // 负向控制：白名单口径必须**不**误报（只测「能红」会放过「把所有中文都红」的过宽判据）
   const negativeCases = [
     [
@@ -1696,16 +1798,26 @@ function report() {
   }
 
   const all = walkTs(join(HOST_ROOT, 'src'));
+  // 第三面：已判定「不翻」——不是漏项，是结论；不计入下面的待翻清单
+  const deferredSet = new Set(DEFERRED_CJK_FILES.map((d) => `src/${d.file}`));
+  console.log(
+    `\n已判定不翻（\`DEFERRED_CJK_FILES\` · ${DEFERRED_CJK_FILES.length} 个文件，不计入待翻清单）：`,
+  );
+  for (const d of DEFERRED_CJK_FILES) {
+    const abs = join(HOST_ROOT, 'src', d.file);
+    const hits = existsSync(abs) ? collectPanelFileCjk(d.file, readFileSync(abs, 'utf8')) : [];
+    console.log(`      src/${d.file}：${hits.length} 处 · ${d.kind}`);
+  }
   const unregistered = [];
   for (const abs of all) {
     const rel = abs.slice(HOST_ROOT.length + 1).replace(/\\/g, '/');
-    if (registered.has(rel)) continue;
+    if (registered.has(rel) || deferredSet.has(rel)) continue;
     const hits = collectPanelFileCjk(rel, readFileSync(abs, 'utf8'));
     if (hits.length > 0) unregistered.push([rel, hits.length]);
   }
   unregistered.sort((a, b) => b[1] - a[1]);
   console.log(
-    `\n未登记进注册表（WEBVIEW_PANELS + SHARED_CJK_FILES）的文件（注册制盲区，判据⑰ 扫不到）：${unregistered.length} 个含 CJK 字面量`,
+    `\n未登记进注册表（WEBVIEW_PANELS + SHARED_CJK_FILES + DEFERRED_CJK_FILES）的文件（注册制盲区，判据⑰ 扫不到）：${unregistered.length} 个含 CJK 字面量`,
   );
   // 全量列出（2026-11-10 去截断）：本段是「下一批选哪些文件」的唯一清单，
   // 只列前 20 + 「另有 N 个」会让剩下的文件**连坐标都没有**——盲区里的盲区。
