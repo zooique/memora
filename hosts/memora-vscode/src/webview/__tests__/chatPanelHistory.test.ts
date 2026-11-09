@@ -402,7 +402,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       // 装配收口点 postPlanUpdate 必读（见 agentStub 同款说明）
       getCheckpoint: () => null,
     } as unknown as Agent);
-    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('Delete' as never);
     await (provider as unknown as { deleteMemory(id: string): Promise<void> }).deleteMemory('m1');
     expect(writeDelete).toHaveBeenCalledWith('m1');
     const data = ofType<{ type: string; ok: boolean; id: string }>(posted, 'memory_deleted');
@@ -433,7 +433,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const data = ofType<{ type: string; ok: boolean; message?: string }>(posted, 'memory_deleted');
     expect(data).toHaveLength(1);
     expect(data[0]?.ok).toBe(false);
-    expect(data[0]?.message).toContain('Agent 未就绪');
+    expect(data[0]?.message).toContain('The Agent is not ready');
   });
 
   it('pushSessionList：无历史时返回空数组（webview 显示空态）', () => {

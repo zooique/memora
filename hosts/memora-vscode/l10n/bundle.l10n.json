@@ -1072,5 +1072,6 @@
   "Could not retrieve the original prompt text; nothing was regenerated": "",
   "This session has no completed turn to fork from": "",
   "Enter a new session name": "",
-  "Session name cannot be empty": ""
+  "Session name cannot be empty": "",
+  "Mark this memory as useless and move it to the recycle bin? You can restore it at any time in memory management.": ""
 }

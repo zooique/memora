@@ -31,8 +31,6 @@ import { imageTurnRejection } from '../../extension/host/imageTurnGuard.js';
 import { userEcho, stampRoundAttachmentUris } from '../../extension/host/attachmentUris.js';
 import { ingestImageFiles, pickAndIngestImages } from '../../extension/host/imagePick.js';
 import { scanWorkspaceTextFiles } from '../../extension/host/workspaceTextScan.js';
-// 模态确认框唯一入口（禁自开 showWarningMessage + modal: true，见 scripts/verify-modal-cancel.mjs 严闸）
-import { confirmModal } from '../../extension/host/ui/confirmModal.js';
 // 图片字节缓存（IMG-2 §5.4.1）：仅类型引用——实例由 extension 创建并注入，本类不构造
 import type { ImageCache } from '../../extension/host/imageCache.js';
 import * as pinned from '../../extension/host/pinnedContext.js';
@@ -181,6 +179,8 @@ import { createChatRefOps } from './chatRefOps.js';
 import { createChatTurnStructureOps, truncateFailNotice } from './chatTurnStructureOps.js';
 // 会话导航域（B9-D-4 按 op 组外置）：分叉 / 改名 / 切换共用「拿锁 → 换显示源 → 回放」
 import { createChatSessionNavOps } from './chatSessionNavOps.js';
+// 记忆软删域（B9-D-5 按 op 组外置）：单条反馈删除 + 会话删除联动软删，同一套降级口径
+import { createChatMemoryOps } from './chatMemoryOps.js';
 import {
   buildDocContextBlock,
   buildGitChangesContextBlock,
@@ -324,6 +324,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     bindAgent: (agent) => this.bindAgent(agent),
     replaySession: () => this.replaySession(),
     postBackgroundTasks: () => this.postBackgroundTasks('force'),
+  });
+  /** 记忆软删域（B9-D-5 外置）：单条反馈删除 + 会话删除联动软删（降级口径同一份） */
+  private readonly _memoryOps = createChatMemoryOps({
+    post: (msg) => this.post(msg),
+    getAgent: () => this._agent,
+    getAgentOrWarn: () => this.getAgentOrWarn(),
   });
   /** 当前**显示会话**的 Agent（`_sessionAgents` 的一份投影；真正的实例归属表在 extension） */
   private _agent: Agent | undefined;
@@ -1342,32 +1348,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   // 本类只负责：拿到稳定引用、按事件名装订、解绑。
 
   /**
-   * 记忆反馈删除（HOST-S3-3）：对话面板命中行 ✕ → 模态确认后软删。
-   *
-   * 复用内核软删契约 `agent.memory.writeDelete(id)`（进入回收站，可恢复），与记忆管理
-   * 视图的删除同契约（settingsPanel.deleteMemory）但**语境文案不同**：此处是「反馈
-   * 没用/已过时」而非管理删除，故不复用其方法（面板实例方法不可跨面板调用，抽共享
-   * helper 需为两处造回调抽象——两处仅一行内核调用相同，下沉收益低于抽象成本）。
-   * 应答 memory_deleted 驱动 webview 摘除；取消确认不推送（同款契约）。
+   * 记忆反馈删除（HOST-S3-3）—— 实现已按 op 组外置到 `chatMemoryOps.ts`（B9-D-5）；
+   * 本处只留转发口（webview 分发与既有白盒测试继续按原入口驱动）。
    */
   private async deleteMemory(id: string): Promise<void> {
-    const agent = await this.getAgentOrWarn();
-    const memory = agent?.memory ?? undefined;
-    if (!memory) {
-      this.post({ type: 'memory_deleted', ok: false, id, message: 'Agent 未就绪，无法删除记忆' });
-      return;
-    }
-    const confirmed = await confirmModal({
-      message: '标记为无用并移入回收站？可随时在记忆管理中恢复。',
-      confirmLabel: '删除',
-    });
-    if (!confirmed) return;
-    try {
-      memory.writeDelete(id);
-      this.post({ type: 'memory_deleted', ok: true, id });
-    } catch (err) {
-      this.post({ type: 'memory_deleted', ok: false, id, message: toNoticeText(err) });
-    }
+    await this._memoryOps.deleteMemory(id);
   }
 
   /**
@@ -1589,27 +1574,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 随问答闭环物理删除联动软删记忆摘要。
-   *
-   * 触发语义：Round 引用归 0 被物理回收 → 该轮 round-summary 软删。软删除走现有回收站
-   * （deletedAt），恢复后为无溯源独立记忆（脱钩在删除时完成）。
+   * 随问答闭环物理删除联动软删记忆摘要（实现见 `chatMemoryOps.ts`：降级优先，不阻断主流程）
    *
    * 会话级摘要不在此列：它不进记忆库，而存于 SessionMeta（summary/keyTopics），
    * 随 deleteSession 一并删除，无需联动。
-   * 降级优先：Agent 未就绪 / 记忆操作异常不阻塞删除主流程。
-   *
-   * @param removedIds 被物理删除的 Round ID 列表（可空）
    */
   private softDeleteSessionMemories(removedIds: string[]): void {
-    if (removedIds.length === 0) return;
-    const memory = this._agent?.memory;
-    if (!memory) return; // Agent 未就绪：降级跳过（记忆遗留不影响会话删除主流程）
-    try {
-      memory.softDeleteRoundSummaries(removedIds);
-    } catch (err) {
-      // 联动失败仅记录：记忆软删属后台治理，不阻断会话删除（SSOT 不藏错）
-      console.warn('Memora 联动软删会话记忆失败（降级：记忆遗留，可在记忆治理页手动处理）', err);
-    }
+    this._memoryOps.softDeleteSessionMemories(removedIds);
   }
 
   /** 进入草稿态（标题条「＋」/ 无会话启动兜底）：展示面归零，不产生会话状态 */

@@ -1072,5 +1072,6 @@
   "Could not retrieve the original prompt text; nothing was regenerated": "未能取得原提问文本，未重新生成",
   "This session has no completed turn to fork from": "当前会话没有可用的问答闭环，无法分叉",
   "Enter a new session name": "输入新的会话名称",
-  "Session name cannot be empty": "会话名称不能为空"
+  "Session name cannot be empty": "会话名称不能为空",
+  "Mark this memory as useless and move it to the recycle bin? You can restore it at any time in memory management.": "标记为无用并移入回收站？可随时在记忆管理中恢复。"
 }

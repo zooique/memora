@@ -509,6 +509,14 @@ const WEBVIEW_PANELS = {
   //     三条不变量因此只有一份实现；依赖面 13 个窄接口（含 lock 与 sessionAgents 两个
   //     子接口），全部是**延迟取**的闭包（字段初始化早于 `_lockFinalizer` / `_sessionAgents`）；
   //   · chatPanel —— 三个公开方法只留转发口（webview 分发与既有白盒测试按原入口驱动）。
+  //
+  // B9-D-5（记忆软删域，`chatPanel.ts` 第五刀）已收口并登记：
+  //   · chatMemoryOps —— 单条反馈删除（确认框 → `memory.writeDelete` → `memory_deleted` 应答）
+  //     与会话删除后的联动软删（Round 物理回收 → `softDeleteRoundSummaries`）整域外置；
+  //     两者共用同一套降级口径（Agent 未就绪跳过 / 异常只记录、不阻断主流程），故同域承载；
+  //   · 与设置页 `settingsMemoryOps.ts` **不合并**：那边是记忆管理语境（删完刷列表与治理统计），
+  //     这边是对话语境（只回 `memory_deleted` 摘行），仅一行内核调用同形，抽象成本高于各写一份；
+  //   · chatPanel —— 两个私有方法只留转发口；`confirmModal` 导入随域迁出（本类不再直接开框）。
   chat: {
     state: 'pending',
     files: [
@@ -534,6 +542,7 @@ const WEBVIEW_PANELS = {
       'webview/panels/chatRefOps.ts',
       'webview/panels/chatTurnStructureOps.ts',
       'webview/panels/chatSessionNavOps.ts',
+      'webview/panels/chatMemoryOps.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。
