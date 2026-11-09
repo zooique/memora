@@ -138,7 +138,8 @@ export class ProviderStore {
    * 与 secretsAccess 的 secretErrorText / secretMissingText 组成三层派生链。
    */
   private keyReadError(name: string, r: { timedOut: boolean; reason: string }): string {
-    return secretErrorText(`API Key「${name}」读取`, r);
+    // label 是插值内容（用户数据），不参与翻译；键 = 英文整句
+    return secretErrorText(vscode.l10n.t('API Key for "{0}" read', name), r);
   }
 
   /**
@@ -228,7 +229,7 @@ export class ProviderStore {
     const entry = await this.readOne(target);
     if (entry.keyError) throw new Error(entry.keyError);
     if (!entry.apiKey) {
-      throw new Error(secretMissingText(`API Key「${name}」`));
+      throw new Error(secretMissingText(vscode.l10n.t('API Key "{0}"', name)));
     }
     return entry;
   }
@@ -282,7 +283,11 @@ export class ProviderStore {
       ) {
         return {
           ok: false,
-          message: `上下文上限需为 ${CONTEXT_WINDOW_MIN}–${CONTEXT_WINDOW_MAX} 之间的整数 token`,
+          message: vscode.l10n.t(
+            'Context window must be an integer number of tokens between {0} and {1}',
+            CONTEXT_WINDOW_MIN,
+            CONTEXT_WINDOW_MAX,
+          ),
         };
       }
     }
@@ -299,21 +304,28 @@ export class ProviderStore {
       ) {
         return {
           ok: false,
-          message: `输出上限需为 ${MAX_TOKENS_MIN}–${MAX_TOKENS_MAX} 之间的整数 token`,
+          message: vscode.l10n.t(
+            'Max output must be an integer number of tokens between {0} and {1}',
+            MAX_TOKENS_MIN,
+            MAX_TOKENS_MAX,
+          ),
         };
       }
     }
 
     // 新增模式：apiKey 必填
     if (!isEditing && !trimmed.apiKey.trim()) {
-      return { ok: false, message: '请填写 API Key' };
+      return { ok: false, message: vscode.l10n.t('Please fill in the API Key') };
     }
 
     const providers = this.readConfig();
 
     // 新增模式：检查 name 重复
     if (!isEditing && providers.some((p) => p.name === trimmed.name)) {
-      return { ok: false, message: `别名 "${trimmed.name}" 已存在，请更换` };
+      return {
+        ok: false,
+        message: vscode.l10n.t('Alias "{0}" already exists, please choose another', trimmed.name),
+      };
     }
 
     // 编辑模式：替换（保留原有 apiKey 除非用户输入新值），否则追加
@@ -331,7 +343,11 @@ export class ProviderStore {
     // 写入失败（含只读/受管设置的「永不 settle」超时）⇒ 不写 apiKey、返回回执：
     // 配置没落盘却把 key 存进 SecretStorage，会让「UI 有服务商、重启后消失」且留下孤儿密钥
     const written = await this.writeConfig(next);
-    if (!written.ok) return { ok: false, message: writeErrorText('服务商配置', written) };
+    if (!written.ok)
+      return {
+        ok: false,
+        message: writeErrorText(vscode.l10n.t('Provider configuration'), written),
+      };
 
     // 写 apiKey：编辑且留空 → 保留原值（不覆盖）；否则写入新值。
     // 经密钥写入唯一通道：钥匙串不可用时返回失败而不是裸抛——
@@ -347,9 +363,10 @@ export class ProviderStore {
       if (!stored.ok) {
         return {
           ok: false,
-          message:
-            `服务商配置已保存，但 ${secretErrorText('API Key', stored)}。` +
-            `该服务商暂时无法使用；请关闭表单，在服务商列表中编辑它补填 API Key。`,
+          message: vscode.l10n.t(
+            'The provider configuration was saved, but {0}. This provider is temporarily unusable; close the form and edit it in the provider list to fill in the API Key',
+            secretErrorText(vscode.l10n.t('API Key'), stored),
+          ),
         };
       }
     }
@@ -364,12 +381,21 @@ export class ProviderStore {
    */
   async remove(name: string): Promise<{ ok: boolean; message?: string }> {
     if (this.getActiveName() === name) {
-      return { ok: false, message: '不能删除当前激活的服务商，请先切换到其他服务商' };
+      return {
+        ok: false,
+        message: vscode.l10n.t(
+          'Cannot delete the currently active provider; switch to another provider first',
+        ),
+      };
     }
     const providers = this.readConfig().filter((p) => p.name !== name);
     // 配置没删掉就不能删 apiKey：否则配置里还留着服务商、密钥却没了（下次激活必然失败）
     const written = await this.writeConfig(providers);
-    if (!written.ok) return { ok: false, message: writeErrorText('服务商配置', written) };
+    if (!written.ok)
+      return {
+        ok: false,
+        message: writeErrorText(vscode.l10n.t('Provider configuration'), written),
+      };
     // 密钥删除同走唯一通道：此刻配置已删（服务商从列表消失）而密钥没删掉 = 孤儿密钥，
     // 回执必须点出后果——同名服务商重新添加后「编辑留空」会读到旧密钥（静默用错 key），
     // 并给出出路（重启重试 / 系统凭证管理器手动删）。不谎报 ok:true。
@@ -377,10 +403,10 @@ export class ProviderStore {
     if (!deleted.ok) {
       return {
         ok: false,
-        message:
-          `服务商已从配置中删除，但 ${secretErrorText('API Key 清理', deleted)}。` +
-          `旧密钥仍留在系统钥匙串中，重新添加同名服务商可能沿用旧密钥；` +
-          `请重启 VS Code 后重试，或在系统凭证管理器中手动删除。`,
+        message: vscode.l10n.t(
+          'The provider was removed from the configuration, but {0}. The old secret is still in the system keychain, so re-adding a provider with the same name may reuse it; restart VS Code and retry, or delete it manually in the system credential manager',
+          secretErrorText(vscode.l10n.t('API Key cleanup'), deleted),
+        ),
       };
     }
     // 删除的若是后台模型 Provider，清除后台通道引用（避免悬空指向不存在的 name）
@@ -401,10 +427,15 @@ export class ProviderStore {
    */
   async setActive(name: string): Promise<{ ok: boolean; message?: string }> {
     const exists = this.readConfig().some((p) => p.name === name);
-    if (!exists) return { ok: false, message: `服务商 "${name}" 不存在` };
+    if (!exists)
+      return { ok: false, message: vscode.l10n.t('Provider "{0}" does not exist', name) };
     // 激活态也是用户级配置：经统一写入通道（带 5s 上限），失败回执而不是挂死
     const written = await writeSetting(CFG_ACTIVE, name);
-    if (!written.ok) return { ok: false, message: writeErrorText('服务商激活状态', written) };
+    if (!written.ok)
+      return {
+        ok: false,
+        message: writeErrorText(vscode.l10n.t('Provider active state'), written),
+      };
     return { ok: true };
   }
 
@@ -419,7 +450,11 @@ export class ProviderStore {
    */
   async clearActive(): Promise<{ ok: boolean; message?: string }> {
     const written = await writeSetting(CFG_ACTIVE, undefined);
-    if (!written.ok) return { ok: false, message: writeErrorText('服务商激活状态', written) };
+    if (!written.ok)
+      return {
+        ok: false,
+        message: writeErrorText(vscode.l10n.t('Provider active state'), written),
+      };
     return { ok: true };
   }
 
@@ -445,7 +480,11 @@ export class ProviderStore {
    */
   async setBackground(name: string): Promise<{ ok: boolean; message?: string }> {
     const written = await writeSetting(CFG_BACKGROUND, name || undefined);
-    if (!written.ok) return { ok: false, message: writeErrorText('后台模型设置', written) };
+    if (!written.ok)
+      return {
+        ok: false,
+        message: writeErrorText(vscode.l10n.t('Background model setting'), written),
+      };
     return { ok: true };
   }
 
@@ -473,7 +512,10 @@ export class ProviderStore {
    */
   async test(config: LlmProviderConfig): Promise<{ ok: boolean; message?: string }> {
     if (!config.model.trim() || !config.apiKey.trim()) {
-      return { ok: false, message: '请先填写模型和 API Key' };
+      return {
+        ok: false,
+        message: vscode.l10n.t('Please fill in the model and the API Key first'),
+      };
     }
     try {
       // 复用内核工厂创建 OpenAI 兼容 Provider
@@ -498,7 +540,12 @@ export class ProviderStore {
         reply += chunk.content;
         if (reply.length > 0) break;
       }
-      return { ok: true, message: reply ? '连接成功' : '连接成功（无返回内容）' };
+      return {
+        ok: true,
+        message: reply
+          ? vscode.l10n.t('Connection succeeded')
+          : vscode.l10n.t('Connection succeeded (no content returned)'),
+      };
     } catch (err) {
       return {
         ok: false,
@@ -532,7 +579,9 @@ export class ProviderStore {
     if (merged.length !== globalProviders.length) {
       const written = await writeSetting(CFG_PROVIDERS, merged);
       if (!written.ok) {
-        console.warn(`Memora 旧 Provider 配置迁移中止：${writeErrorText('服务商配置', written)}`);
+        console.warn(
+          `Memora 旧 Provider 配置迁移中止：${writeErrorText(vscode.l10n.t('Provider configuration'), written)}`,
+        );
         return;
       }
     }
@@ -540,7 +589,7 @@ export class ProviderStore {
       const written = await writeSetting(CFG_ACTIVE, wsActive);
       if (!written.ok) {
         console.warn(
-          `Memora 旧 Provider 激活态迁移中止：${writeErrorText('服务商激活状态', written)}`,
+          `Memora 旧 Provider 激活态迁移中止：${writeErrorText(vscode.l10n.t('Provider active state'), written)}`,
         );
         return;
       }
@@ -586,7 +635,7 @@ export class ProviderStore {
         // 新值没落盘就绝不能删旧键：否则用户已填的窗口配置凭空消失（无副本可恢复）
         if (!written.ok) {
           console.warn(
-            `Memora 旧 maxContextTokens 迁移中止：${writeErrorText('服务商配置', written)}`,
+            `Memora 旧 maxContextTokens 迁移中止：${writeErrorText(vscode.l10n.t('Provider configuration'), written)}`,
           );
           return;
         }
@@ -595,7 +644,9 @@ export class ProviderStore {
     // 清除旧全局设置（不作真理源，避免与 per-LLM contextWindow 双源）
     const cleared = await writeSetting('maxContextTokens', undefined);
     if (!cleared.ok) {
-      console.warn(`Memora 旧 maxContextTokens 清理未完成：${writeErrorText('旧设置', cleared)}`);
+      console.warn(
+        `Memora 旧 maxContextTokens 清理未完成：${writeErrorText(vscode.l10n.t('Legacy settings'), cleared)}`,
+      );
     }
   }
 }

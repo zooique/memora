@@ -510,8 +510,9 @@ export class MemoraSettingsPanel {
     }
     if (msg.type === 'cfg_delete') {
       const confirmed = await confirmModal({
-        message: `确定删除服务商 "${msg.name}"？此操作不可恢复。`,
-        confirmLabel: '删除',
+        // 服务商名走 {0} 插值（插值内容不参与翻译，键 = 英文整句）
+        message: l10n.t('Delete provider "{0}"? This cannot be undone.', msg.name),
+        confirmLabel: l10n.t('Delete'),
       });
       if (!confirmed) return;
       try {

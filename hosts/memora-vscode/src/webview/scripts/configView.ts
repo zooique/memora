@@ -8,6 +8,8 @@
  * 由 esbuild 以 browser/iife 打包进 dist/webview/scripts/settingsView.js（经 settingsViewMain
  * 入口），在 webview HTML 中 <script src> 引用（CSP script-src 'self'）。
  */
+// 命名空间导入而非裸 `t`：静态键采集（判据⑨）只认 `l10n.t('…')`，裸导入会让键脱离采集面
+import * as l10n from '@vscode/l10n';
 import type {
   ExtensionToWebviewMessage,
   LlmProviderConfig,
@@ -53,7 +55,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   const btnAdd = root.querySelector('#btnAdd') as HTMLButtonElement;
   // 后台模型下拉：选择后台任务的独立 Provider（空 = 同实时对话）
   const bgModel = root.querySelector('#bgModel') as HTMLSelectElement;
-  btnAdd.title = '新增一个大模型 API 配置';
+  btnAdd.title = l10n.t('Add a new LLM API configuration');
   const modal = root.querySelector('#modal') as HTMLElement;
   const modalTitle = root.querySelector('#modalTitle') as HTMLElement;
   const fName = root.querySelector('#f-name') as HTMLInputElement;
@@ -184,7 +186,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
 
   function openModal(name?: string): void {
     editName = name || '';
-    modalTitle.textContent = editName ? '编辑 API' : '添加 API';
+    modalTitle.textContent = editName ? l10n.t('Edit API') : l10n.t('Add API');
     // 重置上一轮测试结果（每次打开表单都清空，避免残留误导）
     testResult.hidden = true;
     testResult.textContent = '';
@@ -203,11 +205,13 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       fModel.value = target?.model || '';
       fBaseUrl.value = target?.baseUrl || '';
       fApiKey.value = '';
-      fApiKey.placeholder = '留空保持不变';
+      fApiKey.placeholder = l10n.t('Leave blank to keep unchanged');
       // 脱敏回显：标明已配置的 key（如 sk-••••1234），确认无需重新输入
       const masked = target?.maskedKey || '';
       apikeyHint.hidden = !masked;
-      apikeyHint.textContent = masked ? '已配置：' + masked + '（留空保持不变）' : '';
+      apikeyHint.textContent = masked
+        ? l10n.t('Configured: {0} (leave blank to keep unchanged)', masked)
+        : '';
       // 上下文窗口上限回填（per-LLM 真理源；K 值回显，整千整数/非整千小数，label 已标 K 单位）
       fContextWindow.value = target?.contextWindow ? tokensToKValue(target.contextWindow) : '';
       // 输出上限回填（T1，与 contextWindow 共用 ×1000 反向换算 tokensToKValue；空 = 服务端默认）
@@ -253,15 +257,15 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   function render(data: ProvidersPayload): void {
     // 顶栏统计：已配置 N 个 API
     statBar.hidden = false;
-    statBar.textContent = `已配置 ${data.providers?.length ?? 0} 个 API`;
+    statBar.textContent = l10n.t('{0} APIs configured', data.providers?.length ?? 0);
     if (!data.providers || data.providers.length === 0) {
       currentProviders = [];
       // 空态引导（SSOT：createEmptyState 纯函数，对齐 rolesView 列表级同构）
       list.textContent = '';
       list.appendChild(
         createEmptyState(document, {
-          title: '配置你的大模型',
-          hint: '添加一个 API 后即可开始对话',
+          title: l10n.t('Configure your LLM'),
+          hint: l10n.t('Add an API to start chatting'),
         }),
       );
       return;
@@ -273,13 +277,13 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     // ② 激活 Provider 分区（置顶高亮）
     const active = data.providers.filter((p) => p.name === activeName);
     if (active.length > 0) {
-      list.appendChild(createGroupTitle(document, '激活 Provider'));
+      list.appendChild(createGroupTitle(document, l10n.t('Active provider')));
       active.forEach((p) => list.appendChild(buildCard(p)));
     }
     // ③ 其他 Provider 分区
     const others = data.providers.filter((p) => p.name !== activeName);
     if (others.length > 0) {
-      list.appendChild(createGroupTitle(document, '其他 Provider'));
+      list.appendChild(createGroupTitle(document, l10n.t('Other providers')));
       others.forEach((p) => list.appendChild(buildCard(p)));
     }
     // ④ 后台模型下拉选项：排除激活 Provider（后台可配置任意已保存的 Provider）
@@ -294,7 +298,8 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
    */
   function renderBackground(providers: LlmProviderConfig[], backgroundName?: string): void {
     // 保留「同实时对话」默认空项
-    bgModel.innerHTML = '<option value="">同实时对话</option>';
+    // 选项文案先本地化再拼进 innerHTML（此处只拼常量 + 已转义的本地化文本，无用户输入）
+    bgModel.innerHTML = `<option value="">${l10n.t('Same as live chat')}</option>`;
     providers.forEach((p) => {
       const opt = document.createElement('option');
       opt.value = p.name;
@@ -319,11 +324,13 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     info.className = 'card-info';
     const nameRow = document.createElement('div');
     nameRow.className = 'card-name';
-    nameRow.textContent = (p.displayName || p.name) + (p.provider === 'local' ? '（本地）' : '');
+    // 来源后缀并进整句键（碎片单独建键会让译文无法决定括号与语序）
+    const displayName = p.displayName || p.name;
+    nameRow.textContent = p.provider === 'local' ? l10n.t('{0} (local)', displayName) : displayName;
     if (p.name === activeName) {
       const badge = document.createElement('span');
       badge.className = 'badge';
-      badge.textContent = '当前';
+      badge.textContent = l10n.t('Current');
       nameRow.appendChild(badge);
     }
     const detail = document.createElement('div');
@@ -334,7 +341,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       ' · ' +
       p.baseUrl +
       (p.contextWindow ? ` · ${fmtTokens(p.contextWindow)} tokens` : '') +
-      (p.maxTokens ? ` · 输出上限 ${fmtTokens(p.maxTokens)}` : '');
+      (p.maxTokens ? ' · ' + l10n.t('Max output {0}', fmtTokens(p.maxTokens)) : '');
     info.appendChild(nameRow);
     info.appendChild(detail);
     // apiKey 读取失败痕迹（钥匙串不可用）：卡片上必须可见——
@@ -357,8 +364,10 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     if (p.name !== activeName) {
       const actBtn = document.createElement('button');
       actBtn.className = 'btn btn-secondary';
-      actBtn.textContent = '设为当前';
-      actBtn.title = '切换为默认使用的大模型（即时生效，后续对话用此模型）';
+      actBtn.textContent = l10n.t('Set as current');
+      actBtn.title = l10n.t(
+        'Switch the default LLM (takes effect immediately; later conversations use this model)',
+      );
       actBtn.addEventListener('click', () =>
         vscode.postMessage({ type: 'cfg_set_active', name: p.name }),
       );
@@ -366,15 +375,15 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     }
     const editBtn = document.createElement('button');
     editBtn.className = 'btn btn-secondary';
-    editBtn.textContent = '编辑';
-    editBtn.title = '修改该 API 的配置（别名 / 模型 / Key 等）';
+    editBtn.textContent = l10n.t('Edit');
+    editBtn.title = l10n.t('Edit this API configuration (alias / model / key, etc.)');
     editBtn.addEventListener('click', () => openModal(p.name));
     actions.appendChild(editBtn);
     if (p.name !== activeName) {
       const delBtn = document.createElement('button');
       delBtn.className = 'btn btn-danger';
-      delBtn.textContent = '删除';
-      delBtn.title = '删除该 API 配置（不可恢复）';
+      delBtn.textContent = l10n.t('Delete');
+      delBtn.title = l10n.t('Delete this API configuration (cannot be undone)');
       delBtn.addEventListener('click', () => {
         // 危险操作确认在 extension host 侧完成（VSCode webview 禁用原生 confirm()，
         // 由 host 弹原生 modal，避免确认框静默失效 → 按钮无反应）
@@ -408,19 +417,21 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
         resultIcon.setAttribute('aria-hidden', 'true');
         resultIcon.innerHTML = getIconSvg(msg.ok ? 'check' : 'cancel', 12, 12);
         testResult.appendChild(resultIcon);
+        // 分隔符（半角冒号）并进整句键：碎片单独建键会让译文无法决定标点
+        const resultHead = msg.ok ? l10n.t('Connection succeeded') : l10n.t('Connection failed');
         testResult.appendChild(
           document.createTextNode(
-            (msg.ok ? '连接成功' : '连接失败') + (msg.message ? '：' + msg.message : ''),
+            msg.message ? l10n.t('{0}: {1}', resultHead, msg.message) : resultHead,
           ),
         );
       } else {
         // 操作反馈走共享 toast（UI-TOAST-1：与 settings notice 同元素同时长同分级，
         // ok/err 布尔改走 info/error 级别——勿在本文件再写一份 toast 逻辑）
         if (msg.ok) {
-          showToast(document, 'info', msg.message || '操作成功');
+          showToast(document, 'info', msg.message || l10n.t('Operation succeeded'));
           if (msg.action === 'save') closeModal();
         } else {
-          showToast(document, 'error', msg.message || '操作失败');
+          showToast(document, 'error', msg.message || l10n.t('Operation failed'));
         }
       }
     }
@@ -444,7 +455,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       // 下方实时展示转换后的 token 数（单一 K 输入 → 具体 token）
       setCwFeedback(`= ${parsed.toLocaleString('en-US')} tokens`, false);
     } else {
-      setCwFeedback('请填 K 单位数字，如 128（= 128,000 tokens）', true);
+      setCwFeedback(l10n.t('Enter a number in K, e.g. 128 (= 128,000 tokens)'), true);
     }
   });
   // 输出上限输入改键实时反馈（×1000 口径换算提示 / 非法就地报错，与 contextWindow 同构）
@@ -456,7 +467,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     if (parsed !== undefined && !Number.isNaN(parsed)) {
       setMtFeedback(`= ${parsed.toLocaleString('en-US')} tokens`, false);
     } else {
-      setMtFeedback('请填 K 单位数字，如 64（= 64,000 tokens）', true);
+      setMtFeedback(l10n.t('Enter a number in K, e.g. 64 (= 64,000 tokens)'), true);
     }
   });
 
@@ -467,7 +478,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     if (cwRaw) {
       const parsed = parseTokenInput(cwRaw);
       if (parsed === undefined || Number.isNaN(parsed)) {
-        setCwFeedback('请填 K 单位数字，如 128（= 128,000 tokens）', true);
+        setCwFeedback(l10n.t('Enter a number in K, e.g. 128 (= 128,000 tokens)'), true);
         fContextWindow.focus();
         return false;
       }
@@ -482,7 +493,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     if (mtRaw) {
       const parsed = parseTokenInput(mtRaw);
       if (parsed === undefined || Number.isNaN(parsed)) {
-        setMtFeedback('请填 K 单位数字，如 64（= 64,000 tokens）', true);
+        setMtFeedback(l10n.t('Enter a number in K, e.g. 64 (= 64,000 tokens)'), true);
         fMaxTokens.focus();
         return false;
       }
@@ -513,7 +524,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     btnTest.disabled = true;
     testResult.hidden = false;
     testResult.className = 'test-result';
-    testResult.textContent = '测试中…';
+    testResult.textContent = l10n.t('Testing…');
     vscode.postMessage({ type: 'cfg_test', config: readForm() });
   });
   // 点击遮罩关闭

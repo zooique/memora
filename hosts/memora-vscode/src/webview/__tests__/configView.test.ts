@@ -11,57 +11,23 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createConfigView } from '../scripts/configView.js';
+import { buildConfigBodyHtml } from '../panels/settingsConfigHtml.js';
 import type { LlmProviderConfig } from '../../shared/protocol.js';
 
+/**
+ * 英文本地化器替身（{0} 插值照做）
+ *
+ * 用 `buildConfigBodyHtml` 产骨架而不是在用例里另抄一份 HTML：骨架是生产真源，
+ * 用例自抄 = 第二份 DOM 清单，改结构时两份会静默漂移（rolesView 用例已立同款范式）。
+ */
+const en = {
+  t: (message: string, ...args: (string | number)[]): string =>
+    message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+};
+
 /** 覆盖 createConfigView 全部查询引用的最小 HTML 骨架（子视图挂载在 #config-root 根容器内，
- *  与设置面板选项卡合并后的 id 空间隔离约定一致） */
-const HTML = `
-  <div id="config-root">
-    <div class="header">
-      <h2>大模型配置</h2>
-      <span id="statBar" class="stat-bar" hidden></span>
-      <button id="btnAdd" class="btn">添加 API</button>
-    </div>
-    <div class="cfg-bg">
-      <label for="bgModel" class="cfg-bg-label">后台模型（可选）</label>
-      <select id="bgModel" class="cfg-bg-select"><option value="">同实时对话</option></select>
-      <p class="cfg-bg-hint"></p>
-    </div>
-    <div id="list"></div>
-    <div id="modal" class="modal-mask">
-      <div class="modal">
-        <h3 id="modalTitle"></h3>
-        <form id="cfgForm">
-          <input id="f-name" />
-          <input id="f-display" />
-          <input id="f-model" />
-          <input id="f-baseurl" />
-          <input id="f-apikey" />
-          <select id="f-providertype">
-            <option value="cloud">云端 API</option>
-            <option value="local">本地运行时</option>
-          </select>
-          <div id="toolcalling-field" class="field" hidden>
-            <label class="checkbox-label" for="f-toolcalling"><input id="f-toolcalling" type="checkbox" /></label>
-          </div>
-          <!-- 视觉能力位：与 toolcalling 不同，**恒显示**（不随 provider 类型隐显），默认不勾选 -->
-          <div id="vision-field" class="field">
-            <label class="checkbox-label" for="f-vision"><input id="f-vision" type="checkbox" /></label>
-          </div>
-          <input id="f-contextwindow" type="text" />
-          <div id="f-contextwindow-feedback" hidden></div>
-          <input id="f-maxtokens" type="text" />
-          <div id="f-maxtokens-feedback" hidden></div>
-          <div id="apikeyHint" hidden></div>
-          <div id="testResult" hidden></div>
-          <button id="btnTest" type="button"></button>
-          <button id="btnCancel" type="button"></button>
-          <button id="btnSave" type="submit"></button>
-        </form>
-      </div>
-    </div>
-  </div>
-`;
+ *  与设置面板选项卡合并后的 id 空间隔离约定一致；骨架本体来自生产构建函数） */
+const HTML = `<div id="config-root">${buildConfigBodyHtml(en)}</div>`;
 
 /** 挂载 createConfigView 并返回 postMessage mock */
 function mountConfigView(): { postMessage: ReturnType<typeof vi.fn> } {
@@ -132,11 +98,11 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
 
     const statBar = document.getElementById('statBar') as HTMLElement;
     expect(statBar.hidden).toBe(false);
-    expect(statBar.textContent).toBe('已配置 0 个 API');
+    expect(statBar.textContent).toBe('0 APIs configured');
 
     const list = document.getElementById('list') as HTMLElement;
     expect(list.querySelector('.empty-state')).not.toBeNull();
-    expect(list.querySelector('.empty-title')?.textContent).toBe('配置你的大模型');
+    expect(list.querySelector('.empty-title')?.textContent).toBe('Configure your LLM');
     expect(list.querySelector('.group-title')).toBeNull();
   });
 
@@ -148,7 +114,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     // 分区标题：仅激活分区
     const titles = list.querySelectorAll('.group-title');
     expect(titles.length).toBe(1);
-    expect(titles[0].textContent).toBe('激活 Provider');
+    expect(titles[0].textContent).toBe('Active provider');
 
     const card = list.querySelector('.card') as HTMLElement;
     expect(card).not.toBeNull();
@@ -158,7 +124,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(icon).not.toBeNull();
     expect(icon.textContent).toBe('D');
     // 当前徽章
-    expect(card.querySelector('.badge')?.textContent).toBe('当前');
+    expect(card.querySelector('.badge')?.textContent).toBe('Current');
   });
 
   it('多 Provider：激活与其他分区分离渲染', () => {
@@ -170,7 +136,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
 
     const list = document.getElementById('list') as HTMLElement;
     const titles = Array.from(list.querySelectorAll('.group-title')).map((t) => t.textContent);
-    expect(titles).toEqual(['激活 Provider', '其他 Provider']);
+    expect(titles).toEqual(['Active provider', 'Other providers']);
 
     // 卡片顺序：激活在前，其他在后
     const icons = Array.from(list.querySelectorAll('.cfg-icon')).map((i) => i.textContent);
@@ -355,7 +321,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     mountConfigView();
     dispatchLoaded([makeProvider('mimo', { maxTokens: 64000 })], 'mimo');
     const detail = document.querySelector('.card-detail') as HTMLElement;
-    expect(detail.textContent).toContain('输出上限');
+    expect(detail.textContent).toContain('Max output');
   });
 
   it('非法输入「abc」→ 就地报错并阻断提交（不发出 cfg_save，防静默回落默认值）', () => {
@@ -372,7 +338,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'cfg_save' }));
     const feedback = document.getElementById('f-contextwindow-feedback') as HTMLElement;
     expect(feedback.hidden).toBe(false);
-    expect(feedback.textContent).toContain('请填 K 单位数字');
+    expect(feedback.textContent).toContain('Enter a number in K');
   });
 
   it('非法 contextWindow 点「测试连接」→ 就地报错并阻断发送（不发出 cfg_test，防以默认窗口测错配置）', () => {
@@ -388,7 +354,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'cfg_test' }));
     const feedback = document.getElementById('f-contextwindow-feedback') as HTMLElement;
     expect(feedback.hidden).toBe(false);
-    expect(feedback.textContent).toContain('请填 K 单位数字');
+    expect(feedback.textContent).toContain('Enter a number in K');
   });
 
   it('输入合法简写时实时反馈换算（200K → = 200,000 tokens）', () => {
@@ -414,19 +380,19 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     // 激活卡：仅「编辑」按钮带 tooltip
     const activeCard = cards[0] as HTMLElement;
     expect(activeCard?.querySelector('.btn-secondary')?.getAttribute('title')).toContain(
-      '修改该 API 的配置',
+      'Edit this API configuration',
     );
     // 其他卡：设为当前 / 编辑 / 删除 均带 tooltip
     const otherCard = cards[1] as HTMLElement;
     const titles = Array.from(otherCard.querySelectorAll('.btn')).map((b) =>
       b.getAttribute('title'),
     );
-    expect(titles.some((t) => t && t.includes('默认使用的大模型'))).toBe(true);
-    expect(titles.some((t) => t && t.includes('不可恢复'))).toBe(true);
-    expect(titles.some((t) => t && t.includes('修改该 API 的配置'))).toBe(true);
+    expect(titles.some((t) => t && t.includes('Switch the default LLM'))).toBe(true);
+    expect(titles.some((t) => t && t.includes('cannot be undone'))).toBe(true);
+    expect(titles.some((t) => t && t.includes('Edit this API configuration'))).toBe(true);
     // 头部「添加 API」按钮 tooltip
     expect(document.getElementById('btnAdd')?.getAttribute('title')).toContain(
-      '新增一个大模型 API 配置',
+      'Add a new LLM API configuration',
     );
   });
 
@@ -442,7 +408,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     // 默认空项 + 两个 Provider 选项
     expect(bg.options.length).toBe(3);
     expect(bg.options[0]?.value).toBe('');
-    expect(bg.options[0]?.textContent).toBe('同实时对话');
+    expect(bg.options[0]?.textContent).toBe('Same as live chat');
     expect(bg.options[1]?.textContent).toBe('deepseek');
     expect(bg.options[2]?.textContent).toBe('本地');
     // 未配置后台 → 选中默认空项
@@ -464,7 +430,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     mountConfigView();
     dispatchLoaded(
       [
-        { ...makeProvider('broken'), keyError: 'API Key「broken」读取 失败：凭证服务未运行' },
+        { ...makeProvider('broken'), keyError: 'API Key for "broken" read failed: 凭证服务未运行' },
         makeProvider('healthy'),
       ],
       'healthy',
@@ -477,7 +443,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(healthyCard.querySelector('.card-key-error')).toBeNull();
     const brokenCard = cards[1] as HTMLElement;
     const marker = brokenCard.querySelector('.card-key-error');
-    expect(marker?.textContent).toContain('API Key「broken」读取 失败：凭证服务未运行');
+    expect(marker?.textContent).toContain('API Key for "broken" read failed: 凭证服务未运行');
   });
 
   it('后台模型下拉切换（选 Provider）→ postMessage cfg_set_background', () => {
@@ -693,11 +659,11 @@ describe('configView 操作反馈 toast（UI-TOAST-1 三面收口：与 settings
 
   it('保存成功 ⇒ #settings-toast info 态（.show、无 .error），2.5s 自动隐藏', () => {
     mountConfigView();
-    dispatchResult(true, '已保存');
+    dispatchResult(true, 'Saved');
     const toast = document.getElementById('settings-toast') as HTMLElement;
     expect(toast).not.toBeNull();
     expect(toast.className).toBe('settings-toast show');
-    expect(toast.textContent).toBe('已保存');
+    expect(toast.textContent).toBe('Saved');
     vi.advanceTimersByTime(2500);
     expect(toast.classList.contains('show')).toBe(false);
   });
@@ -707,7 +673,7 @@ describe('configView 操作反馈 toast（UI-TOAST-1 三面收口：与 settings
     dispatchResult(false);
     const toast = document.getElementById('settings-toast') as HTMLElement;
     expect(toast.className).toBe('settings-toast error show');
-    expect(toast.textContent).toBe('操作失败');
+    expect(toast.textContent).toBe('Operation failed');
   });
 
   it('🔴 不再查询根内 #toast（平行形态已删：ok/err/visible 旧类名契约整体退役）', () => {

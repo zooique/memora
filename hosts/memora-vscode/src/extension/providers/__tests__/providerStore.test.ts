@@ -38,6 +38,11 @@ const secrets = {
 vi.mock('vscode', () => ({
   ConfigurationTarget: { Global: 1, Workspace: 2 },
   workspace: { getConfiguration: () => h.config },
+  // 宿主文案已本地化：`{0}` 插值照做，断言用英文源键比对
+  l10n: {
+    t: (message: string, ...args: (string | number)[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
 }));
 
 import { ProviderStore } from '../providerStore.js';
@@ -243,7 +248,7 @@ describe('ProviderStore · save/remove 语义', () => {
     h.store['activeProvider'] = 'act';
     const res = await store.remove('act');
     expect(res.ok).toBe(false);
-    expect(res.message).toContain('激活');
+    expect(res.message).toContain('currently active provider');
   });
 });
 
@@ -281,9 +286,9 @@ describe('ProviderStore 密钥写入通道（secretsAccess 收口）', () => {
 
     expect(res.ok).toBe(false);
     // 半完成态回执：先说配置已保存（事实），再说 API Key 失败（原因），最后给出路
-    expect(res.message).toContain('服务商配置已保存');
-    expect(res.message).toContain('API Key 失败：Credential Manager 不可用');
-    expect(res.message).toContain('暂时无法使用');
+    expect(res.message).toContain('The provider configuration was saved');
+    expect(res.message).toContain('API Key failed: Credential Manager 不可用');
+    expect(res.message).toContain('temporarily unusable');
     // 磁盘事实与回执一致：配置确已落盘（服务商会出现在列表）、密钥确未存上
     expect(h.store['providers']).toHaveLength(1);
     expect(secretsStore['memora.provider.deepseek.apiKey']).toBeUndefined();
@@ -297,9 +302,9 @@ describe('ProviderStore 密钥写入通道（secretsAccess 收口）', () => {
       await vi.advanceTimersByTimeAsync(5000);
       const res = await pending;
       expect(res.ok).toBe(false);
-      expect(res.message).toContain('服务商配置已保存');
-      expect(res.message).toContain('超时');
-      expect(res.message).toContain('系统钥匙串');
+      expect(res.message).toContain('The provider configuration was saved');
+      expect(res.message).toContain('timed out');
+      expect(res.message).toContain('system keychain');
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
@@ -316,9 +321,9 @@ describe('ProviderStore 密钥写入通道（secretsAccess 收口）', () => {
 
     expect(res.ok).toBe(false);
     // 半完成态回执：配置已删是事实 + 孤儿密钥的安全后果（同名重添沿用旧 key）+ 出路
-    expect(res.message).toContain('已从配置中删除');
-    expect(res.message).toContain('API Key 清理 失败：凭证被占用');
-    expect(res.message).toContain('重新添加同名服务商可能沿用旧密钥');
+    expect(res.message).toContain('removed from the configuration');
+    expect(res.message).toContain('API Key cleanup failed: 凭证被占用');
+    expect(res.message).toContain('re-adding a provider with the same name may reuse it');
     // 磁盘事实与回执一致：配置确已删、密钥确成孤儿
     expect(h.store['providers']).toHaveLength(0);
     expect(secretsStore['memora.provider.deepseek.apiKey']).toBe('sk-real');
@@ -333,8 +338,8 @@ describe('ProviderStore 密钥写入通道（secretsAccess 收口）', () => {
       await vi.advanceTimersByTimeAsync(5000);
       const res = await pending;
       expect(res.ok).toBe(false);
-      expect(res.message).toContain('已从配置中删除');
-      expect(res.message).toContain('超时');
+      expect(res.message).toContain('removed from the configuration');
+      expect(res.message).toContain('timed out');
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
@@ -384,7 +389,9 @@ describe('ProviderStore 密钥读取通道（secretsAccess 收口）', () => {
     // 列表完整（两条都在）——面板必须打得开，禁静默空列表
     expect(list).toHaveLength(2);
     // 失败条：留痕 + 不伪装脱敏值（ maskedKey 缺席 = 状态未知，不是「没有 key」）
-    expect(list[0].keyError).toContain('API Key「alpha」读取 失败：Credential Manager 不可用');
+    expect(list[0].keyError).toContain(
+      'API Key for "alpha" read failed: Credential Manager 不可用',
+    );
     expect(list[0].maskedKey).toBeUndefined();
     // 正常条：脱敏串照常生成，不受邻居失败影响
     expect(list[1].maskedKey).toBe('sk-••••1234');
@@ -421,7 +428,7 @@ describe('ProviderStore 密钥读取通道（secretsAccess 收口）', () => {
 
     // 抛而不是返回空 key：空 key 会让请求带无效密钥打服务端，报一个无关的 401
     await expect(store.getActive()).rejects.toThrow(
-      'API Key「alpha」读取 失败：Credential Manager 不可用',
+      'API Key for "alpha" read failed: Credential Manager 不可用',
     );
   });
 
@@ -460,7 +467,9 @@ describe('ProviderStore 密钥读取通道（secretsAccess 收口）', () => {
       return secretsStore[k] ?? null;
     });
 
-    await expect(store.getBackground()).rejects.toThrow('API Key「beta」读取 失败：凭证被占用');
+    await expect(store.getBackground()).rejects.toThrow(
+      'API Key for "beta" read failed: 凭证被占用',
+    );
     // 触达面钉子：只读后台条，前台 alpha 的 key 不被触碰
     expect(secrets.get).toHaveBeenCalledTimes(1);
     expect(secrets.get).toHaveBeenCalledWith('memora.provider.beta.apiKey');
@@ -505,7 +514,7 @@ describe('ProviderStore 密钥读取通道（secretsAccess 收口）', () => {
     // 空 key config 打到服务端 = 与真实原因无关的 401 ⇒ 运行面必须拒绝。
     // 触发来路：save 半完成态残留 / userDataReset 中间态 / 设置同步不含密钥 / 凭证被清理
     await expect(store.getActive()).rejects.toThrow(
-      'API Key「alpha」未存储：可能保存未成功、系统凭证被清理，或设置同步未包含密钥；请在配置面板编辑该服务商补填 API Key',
+      'API Key "alpha" is not stored: the save may not have succeeded, the system credential may have been cleared, or settings sync may not include secrets; edit this provider in the configuration panel to fill in the API Key',
     );
   });
 
@@ -516,7 +525,7 @@ describe('ProviderStore 密钥读取通道（secretsAccess 收口）', () => {
     // beta 不存 key：前台完好、后台空 ⇒ 后台单独抛，不静默回落前台
 
     await expect(store.getBackground()).rejects.toThrow(
-      'API Key「beta」未存储：可能保存未成功、系统凭证被清理，或设置同步未包含密钥；请在配置面板编辑该服务商补填 API Key',
+      'API Key "beta" is not stored: the save may not have succeeded, the system credential may have been cleared, or settings sync may not include secrets; edit this provider in the configuration panel to fill in the API Key',
     );
   });
 
@@ -528,7 +537,7 @@ describe('ProviderStore 密钥读取通道（secretsAccess 收口）', () => {
     secrets.get.mockRejectedValueOnce(new Error('Credential Manager 不可用'));
 
     await expect(store.getActive()).rejects.toThrow(
-      'API Key「alpha」读取 失败：Credential Manager 不可用',
+      'API Key for "alpha" read failed: Credential Manager 不可用',
     );
   });
 });
