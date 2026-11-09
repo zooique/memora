@@ -91,5 +91,8 @@ description: package 面本地化定案——VS Code 原生 package.nls* 两文�
 ## 落地与销项
 
 - 切片 1（package 面）已落地：两份 nls 文件 + 46 个 `%key%` + 机检判据 + 打包白名单。
-- 完成判据剩「真机两态验收」：切 `en` / `zh-cn` 各重启一次，抽查扩展描述、命令面板、设置项描述、视图名四处。
+- 切片 1 真机两态验收：随 `HOST-I18N-LLM-1` 真机验证（2026-11-09）顺带确认——`en` 下扩展描述 / 命令面板 / 设置描述走英文，`zh-cn` 下走中文。
+- **三拍板项已答（2026-11-09，方案 §8 同步）**：① 做全切片 1-4（目标 = 英文用户真可用）；② 接受源码倒英文 + `l10n.t()`（原生机制前置条件）；③ 覆盖 `zh-tw`（单独 bundle，避免「简体界面 + 繁体回答」混搭）。
 - 切片 2（宿主运行时）→ 3（webview 静态模板）→ 4（webview 动态脚本）按过程稿的操作指点分片推进，各自独立提交与验收；本 ADR 不预先承诺它们的时间点。
+- 切片 2 范围内已定案的两条实现决策：**运行时提示嵌命令标题**用「占位符 + 读 `package.nls.<locale>.json` 解析」实现同源引用（VS Code 无运行时取标题 API，`packageJSON` 返回未解析原始值）；**bundle 不引入 `@vscode/l10n-dev`**（生成工具降级为手工维护 + 键面三面对账守卫：源码 `t()` 键集合 = 默认 bundle 键集合 = zh-cn bundle 键集合，漏键即红）。
+- 切片 2 宿主面代码已落地（2026-11-09）：l10n 管线骨架（manifest `"l10n"` 声明 + 双 bundle + `verify-nls.mjs` 判据 ⑧-⑬）+ `host/manifestNls.ts` 标题解析（三命令：addToChat / registerWork / toggleResidentRule）+ 宿主通知面 `l10n.t` 化 + `CHINESE_MESSAGES` 按 `vscode.env.language` 供给；遗留（`zipImport.ts` / `fileChangeView` 富文本区 / `shared/errorText.ts` 双消费者 / 间接传参盲区）登记台账 HOST-I18N-2；**待真机 en / zh-cn 各一次重启冒烟验收**后方可销项。
