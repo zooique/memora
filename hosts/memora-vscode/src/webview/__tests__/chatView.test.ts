@@ -1030,7 +1030,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     // 2b-2b 换真源：按钮语义由 turn_update.state 快照驱动（status 只负责控件锁/焦点）
     dispatchTurn({ phase: 'running' });
     expect(send.classList.contains('loading')).toBe(true);
-    expect(send.title).toBe('停止生成');
+    expect(send.title).toBe('Stop generating');
     send.click();
     // 生成中点击按钮 = 停止（不是发送），发 stop 消息由 host 中断当前流
     expect(postMessage).toHaveBeenCalledWith({ type: 'stop' });
@@ -1045,7 +1045,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     dispatchTurn({ phase: 'running' });
     // 生成中：暂停按钮暴露（软暂停入口），发送按钮仍为「停止」
     expect(pauseBtn.hidden).toBe(false);
-    expect(send.title).toBe('停止生成');
+    expect(send.title).toBe('Stop generating');
     pauseBtn.click();
     // 点击暂停 → 发 pause 消息，host 调 agent.requestPause() step 边界软暂停（可经「继续」恢复）
     expect(postMessage).toHaveBeenCalledWith({ type: 'pause' });
@@ -1061,7 +1061,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     // host 推 turn_update(waiting pausePending)（申请已入队，step 未到）→ 按钮即时切「继续 ▶」可反悔
     dispatchTurn({ phase: 'waiting', reason: 'pause', pausePending: true });
     expect(icon.dataset.icon).toBe('play');
-    expect(pauseBtn.title).toContain('取消暂停申请');
+    expect(pauseBtn.title).toContain('cancel pause request');
     // 申请态再点 → 仍发 pause 消息（host 侧 isPausePending → cancelPauseRequest 反悔）
     postMessage.mockClear();
     pauseBtn.click();
@@ -1069,7 +1069,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     // host 推 turn_update(running)（取消成功）→ 恢复「暂停」形态
     dispatchTurn({ phase: 'running' });
     expect(icon.dataset.icon).toBe('pause');
-    expect(pauseBtn.title).toBe('暂停生成');
+    expect(pauseBtn.title).toBe('Pause generation');
   });
 
   it('暂停态双按钮：暂停按钮换「继续」▶、发送按钮保持「停止」■', () => {
@@ -1084,7 +1084,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     expect(pauseBtn.querySelector('.btn-icon')?.getAttribute('data-icon')).toBe('play');
     expect(send.classList.contains('loading')).toBe(true);
     expect(send.classList.contains('paused')).toBe(false);
-    expect(send.title).toContain('停止生成');
+    expect(send.title).toContain('Stop generating');
     // pauseBtn 发 resume，sendBtn 发 stop
     postMessage.mockClear();
     pauseBtn.click();
@@ -1116,7 +1116,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     // 流尾 → turn_update(settled)：发送按钮即时恢复（不等 status done）
     dispatchTurn({ phase: 'settled', roundId: 'round-1', status: 'complete' });
     expect(send.classList.contains('loading')).toBe(false);
-    expect(send.title).toBe('发送 (Enter)');
+    expect(send.title).toBe('Send (Enter)');
   });
 
   it('空闲点击发送按钮发送输入内容', () => {
@@ -1280,7 +1280,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     // pauseBtn 显示 play ▶ + 补充提示
     expect(pauseBtn.hidden).toBe(false);
     expect(pauseBtn.querySelector('.btn-icon')?.getAttribute('data-icon')).toBe('play');
-    expect(pauseBtn.title).toContain('补充');
+    expect(pauseBtn.title).toContain('follow-up');
   });
 
   it('ask + 空输入 → pauseBtn 隐藏（纯续跑死键不宣告），send 保持 stop ■', () => {
@@ -1389,7 +1389,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     dispatchTurn({ phase: 'running' });
     expect(pauseBtn.hidden).toBe(false);
     expect(icon?.dataset.icon).toBe('pause');
-    expect(pauseBtn.title).toBe('暂停生成');
+    expect(pauseBtn.title).toBe('Pause generation');
     // 点击 → 只 post pause 消息，不做任何视觉变化
     pauseBtn.click();
     expect(postMessage).toHaveBeenLastCalledWith({ type: 'pause' });
@@ -1418,14 +1418,14 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     // 判据已从协议/投影/矩阵撤除 ⇒ 只要相位是 running，按钮必须在且可点。
     dispatchTurn({ phase: 'running' });
     expect(pauseBtn.hidden).toBe(false);
-    expect(pauseBtn.title).toBe('暂停生成');
+    expect(pauseBtn.title).toBe('Pause generation');
     // 申请在途 → 切成可反悔的「继续 ▶」，仍然可见（不因判据转 false 消失）
     dispatchTurn({ phase: 'waiting', reason: 'pause', pausePending: true });
     expect(pauseBtn.hidden).toBe(false);
     // 回到纯运行态 → 恢复「暂停生成」
     dispatchTurn({ phase: 'running' });
     expect(pauseBtn.hidden).toBe(false);
-    expect(pauseBtn.title).toBe('暂停生成');
+    expect(pauseBtn.title).toBe('Pause generation');
   });
 
   // ─── pending-queue-bar DOM 渲染（pendingQueue 并入 turn_update 单通道） ───
@@ -5690,11 +5690,11 @@ describe('chatView 预填输入框（角色 handoff 上下文传递）', () => {
     const send = document.getElementById('send') as HTMLButtonElement;
     const input = document.getElementById('input') as HTMLTextAreaElement;
     // running+空输入：发送键默认「停止生成」
-    expect(send.title).toBe('停止生成');
+    expect(send.title).toBe('Stop generating');
     // 生成中预填文本 → 必须同步语义（标题随相位+输入重算），否则窗口期文案过期（血训同型）
     dispatch({ type: 'prefill_input', text: '补充：先核对术语表' });
     expect(input.value).toBe('补充：先核对术语表');
-    expect(send.title).toBe('发送补充（排队等 step 边界注入）');
+    expect(send.title).toBe('Send follow-up (queued until step boundary)');
   });
 });
 

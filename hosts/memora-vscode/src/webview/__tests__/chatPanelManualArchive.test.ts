@@ -186,7 +186,7 @@ describe('chatPanel 手动归档入口（manual 模式嫁接留存按钮 · 2026
     expect(archiveSession).toHaveBeenCalledWith('2026-08-14', 's2', { skipIfUnchanged: true });
     // 文案必须说全两件事（按钮兼做归档触发，只写「移入留存区」= 瞒报一次 LLM 调用）
     const notices = ofType<{ type: string; message: string }>(posted, 'notice');
-    expect(notices.at(-1)?.message).toContain('已顺带请求会话摘要更新');
+    expect(notices.at(-1)?.message).toContain('session summary update requested');
   });
 
   it('full 模式：按钮零归档动作 + 文案与改动前一字不差（不给既有用户加 LLM 成本）', async () => {
@@ -200,7 +200,9 @@ describe('chatPanel 手动归档入口（manual 模式嫁接留存按钮 · 2026
 
     expect(archiveSession).not.toHaveBeenCalled();
     const notices = ofType<{ type: string; message: string }>(posted, 'notice');
-    expect(notices.at(-1)?.message).toBe('已移入留存区（会话内容保留，可随时移回）');
+    expect(notices.at(-1)?.message).toBe(
+      'Moved to retained (content preserved; you can move it back anytime)',
+    );
   });
 
   it('Agent 未就绪：不触发归档、不抛错，留存照常生效且文案不提摘要（不编造承诺）', async () => {
@@ -211,7 +213,9 @@ describe('chatPanel 手动归档入口（manual 模式嫁接留存按钮 · 2026
     await expect(moveToRetention(provider, '2026-08-14-s2')).resolves.toBeUndefined();
     expect(store.isArchived('2026-08-14-s2')).toBe(true); // 留存（本地动作）照常生效
     const notices = ofType<{ type: string; message: string }>(posted, 'notice');
-    expect(notices.at(-1)?.message).toBe('已移入留存区（会话内容保留，可随时移回）');
+    expect(notices.at(-1)?.message).toBe(
+      'Moved to retained (content preserved; you can move it back anytime)',
+    );
   });
 
   it('重复点击：留存幂等早退 ⇒ 归档根本不被触发（防重第一道闸在宿主）', async () => {

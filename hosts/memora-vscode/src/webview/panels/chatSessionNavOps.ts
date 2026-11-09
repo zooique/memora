@@ -15,7 +15,7 @@
  */
 import * as vscode from 'vscode';
 import { formatDateKey, type Agent } from '@zooique/memora';
-import { SESSION_HELD_NOTICE } from '../helpers/sessionHistoryActions.js';
+import { sessionHeldNotice } from '../helpers/sessionHistoryActions.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 
@@ -118,7 +118,7 @@ export function createChatSessionNavOps(deps: ChatSessionNavOpsDeps): ChatSessio
               rollbackErr,
             );
           }
-          deps.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
+          deps.post({ type: 'notice', level: 'info', message: sessionHeldNotice() });
           return;
         }
         deps.setCurrentSessionId(forkedId);
@@ -174,7 +174,7 @@ export function createChatSessionNavOps(deps: ChatSessionNavOpsDeps): ChatSessio
       const wasHeld = deps.lock.holds(sessionId); // 切回旧会话 = 已是长锁，失败不得误放
       // 先拿目标会话的锁：拿不到 = 另一窗口正在用，明确拒绝（不静默覆盖对方写入）
       if (!(await deps.lock.acquire(sessionId))) {
-        deps.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
+        deps.post({ type: 'notice', level: 'info', message: sessionHeldNotice() });
         return;
       }
       const previous = deps.getCurrentSessionId();

@@ -540,6 +540,12 @@ const WEBVIEW_PANELS = {
   //     字符串完全相同，旧消息的剥离不受影响）；
   //   · 引用块喂给**模型**的提示正文（指针行 + read_file 的 offset/limit 提示）改英文源字面量、
   //     **不过 l10n**——那是模型指令正文，不是界面文案，界面语言与它无关。
+  //
+  // B9-E-2（按钮语义矩阵 + 会话历史运维）已收口并登记：
+  //   · turnUiState —— 按钮 title / ariaLabel 全走 webview 侧 `l10n.t`（namespace 导入）；
+  //   · sessionHistoryActions —— 运行在 extension host（依赖 HostSessionStore / confirmModal），
+  //     用宿主侧 `vscode.l10n.t`；`SESSION_HELD_NOTICE` 常量改为 `sessionHeldNotice()` 函数
+  //     （模块加载期不能定语言，且守卫 ⑨⑩ 认的是静态 `t('键')` 字面量）；两处 console.warn 顺手改英文。
   chat: {
     state: 'pending',
     files: [
@@ -569,6 +575,8 @@ const WEBVIEW_PANELS = {
       'webview/panels/chatRunControlOps.ts',
       'webview/helpers/refChips.ts',
       'webview/helpers/docContext.ts',
+      'webview/helpers/turnUiState.ts',
+      'webview/helpers/sessionHistoryActions.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。

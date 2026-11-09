@@ -8,13 +8,22 @@
  * 持有集（`isLockHeld`），**不是**「是否当前会话」——切走后旧会话仍由本面板持锁。
  * 面板侧只保留同名薄包装（既有测试与 webview 消息分派按方法名直达）。
  */
+import * as vscode from 'vscode';
 import { getSessionDisplayName, splitSessionId } from '@zooique/memora';
 import { confirmModal } from '../../extension/host/ui/confirmModal.js';
 import type { HostSessionStore } from '../../extension/host/sessionStore.js';
 
-/** 目标会话正被另一个窗口持有时的统一提示（创建 / 切换 / 分叉 / 历史动作共用一句） */
-export const SESSION_HELD_NOTICE =
-  '该会话正在另一个窗口中使用。切换会话不会释放占用，请先关闭那个窗口再重试。';
+/**
+ * 目标会话正被另一个窗口持有时的统一提示（创建 / 切换 / 分叉 / 历史动作共用一句）
+ *
+ * 英文源键 + **宿主侧本地化器**（`vscode.l10n.t`）：本模块运行在 extension host
+ * （依赖 HostSessionStore / confirmModal），不属于 webview 内代码。
+ */
+export function sessionHeldNotice(): string {
+  return vscode.l10n.t(
+    'This session is in use by another window. Switching sessions does not release the lock, so close that window and try again.',
+  );
+}
 
 /** 面板注入的能力（全部直连既有实现；本模块不持有面板状态） */
 export interface SessionHistoryDeps {
@@ -60,25 +69,28 @@ export async function deleteSessionAction(
   // 运行时守卫：按**目标会话**判定（删除会重写/移除会话文件，与在途落盘冲突）；
   // 会话导航（切换 / 新建 / 重命名）不设此闸（E4 批 2 已放开）
   if (deps.isStreaming(sessionId)) {
-    deps.notify('info', '生成中，请稍候再删除会话');
+    deps.notify('info', vscode.l10n.t('Generating, please wait before deleting the session'));
     return;
   }
   const meta = deps.store.getSessionMeta(sessionId);
   const title = getSessionDisplayName(meta) || sessionId;
   const confirmed = await confirmModal({
-    message: `确定删除会话「${title}」？此操作不可恢复。`,
-    confirmLabel: '删除',
+    message: vscode.l10n.t('Delete session "{0}"? This cannot be undone.', title),
+    confirmLabel: vscode.l10n.t('Delete'),
   });
   if (!confirmed) return;
   if (sessionId === deps.currentSessionId()) {
-    deps.notify('info', '当前会话不在历史记录，无法删除');
+    deps.notify(
+      'info',
+      vscode.l10n.t('The current session is not in history and cannot be deleted'),
+    );
     return;
   }
   // 一次性写（短持有）：删除会重写/移除会话文件，另一个窗口正在用时必须拒绝；
   // 已有长锁（本面板进入过该会话）则不重复拿——长锁由面板在实例 close 后归还
   const oneShotLock = !deps.isLockHeld(sessionId);
   if (oneShotLock && !(await deps.store.acquireSessionLock(sessionId))) {
-    deps.notify('info', SESSION_HELD_NOTICE);
+    deps.notify('info', sessionHeldNotice());
     return;
   }
   try {
@@ -88,11 +100,11 @@ export async function deleteSessionAction(
     const removedIds = deps.store.deleteSession(sessionId);
     deps.softDeleteMemories(removedIds);
     // 删除成功给用户可见反馈，与「当前会话无法删除」提示对称
-    deps.notify('info', '会话已删除');
+    deps.notify('info', vscode.l10n.t('Session deleted'));
   } catch (err) {
     // 删除失败不阻塞（重推列表仍可用），但需记录 + 给用户可见提示（SSOT 不藏错）
-    console.warn('Memora 删除会话记录失败', err);
-    deps.notify('error', '删除会话失败，请稍后重试');
+    console.warn('Memora failed to delete the session record', err);
+    deps.notify('error', vscode.l10n.t('Failed to delete the session, please try again later'));
   } finally {
     // 短持有才还；长锁留在面板手里，随实例 close 一起归还（批 3 判据）
     if (oneShotLock) deps.store.releaseSessionLock(sessionId);
@@ -123,19 +135,19 @@ export async function archiveSessionAction(
 ): Promise<void> {
   // 运行时守卫：按**目标会话**判定（归档会重写会话文件，与在途落盘冲突）
   if (deps.isStreaming(sessionId)) {
-    deps.notify('info', '生成中，请稍后再整理会话');
+    deps.notify('info', vscode.l10n.t('Generating, please wait before organizing sessions'));
     return;
   }
   // 一次性写（短持有）：归档会重写会话文件。已持长锁的会话不再重复拿/放
   const oneShotLock = !deps.isLockHeld(sessionId);
   if (oneShotLock && !(await deps.store.acquireSessionLock(sessionId))) {
-    deps.notify('info', SESSION_HELD_NOTICE);
+    deps.notify('info', sessionHeldNotice());
     return;
   }
   try {
     if (!deps.store.archiveSession(sessionId)) {
       // 归档返回 false 的两种情形：会话不存在 / 已在留存区——都无需打扰，仅低强度提示
-      deps.notify('info', '该会话已在留存区');
+      deps.notify('info', vscode.l10n.t('This session is already in the retained area'));
       return;
     }
     // manual 模式顺带触发会话归档（fire-and-forget，成败走既有事件；full 模式零动作）
@@ -144,8 +156,10 @@ export async function archiveSessionAction(
       'info',
       // 触发了才提摘要：未触发（full 模式）时文案与改动前**一字不差**（不打扰既有用户）
       archiveTriggered
-        ? '已移入留存区 · 已顺带请求会话摘要更新（内容未变则跳过）'
-        : '已移入留存区（会话内容保留，可随时移回）',
+        ? vscode.l10n.t(
+            'Moved to retained · session summary update requested (skipped if content unchanged)',
+          )
+        : vscode.l10n.t('Moved to retained (content preserved; you can move it back anytime)'),
     );
     deps.pushList();
   } finally {
@@ -179,8 +193,8 @@ export function triggerManualArchive(deps: SessionHistoryDeps, sessionId: string
   void deps.requestArchive(date, session).catch((err) => {
     // 内核 ArchiveCoordinator 已吞掉归档内部异常并发 archiveFailed 事件；此处兜的是
     // 更外层的失败（如 Agent 未初始化时 assertInitialized 抛错）——不藏错，给用户可见提示
-    console.warn('Memora 手动归档触发失败', err);
-    deps.notify('error', '会话摘要归档失败：Agent 未就绪');
+    console.warn('Memora manual archive trigger failed', err);
+    deps.notify('error', vscode.l10n.t('Session summary archiving failed: Agent not ready'));
   });
   return true;
 }
@@ -197,20 +211,20 @@ export async function restoreSessionAction(
   sessionId: string,
 ): Promise<void> {
   if (deps.isStreaming(sessionId)) {
-    deps.notify('info', '生成中，请稍后再整理会话');
+    deps.notify('info', vscode.l10n.t('Generating, please wait before organizing sessions'));
     return;
   }
   // 一次性写（短持有）：与归档同判据（判「是否已持锁」，不判「是否当前会话」）
   const oneShotLock = !deps.isLockHeld(sessionId);
   if (oneShotLock && !(await deps.store.acquireSessionLock(sessionId))) {
-    deps.notify('info', SESSION_HELD_NOTICE);
+    deps.notify('info', sessionHeldNotice());
     return;
   }
   try {
     if (!deps.store.unarchiveSession(sessionId)) {
       return; // 本就不在留存区：无变化即无反馈（避免为幂等动作刷提示）
     }
-    deps.notify('info', '已移回会话记录');
+    deps.notify('info', vscode.l10n.t('Moved back to session records'));
     deps.pushList();
   } finally {
     if (oneShotLock) deps.store.releaseSessionLock(sessionId);

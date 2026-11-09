@@ -453,7 +453,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       { role: 'user', content: 'y', ts: '2026-08-14T00:00:00.000Z' },
     ]);
     store.setSessionTitle('2026-08-14-s2', '昨天会话');
-    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('Delete' as never);
     await (
       provider as unknown as { handleDeleteSession(s: string): Promise<void> }
     ).handleDeleteSession('2026-08-14-s2');
@@ -480,7 +480,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     cast._snapshots._dismissedBySession.set('2026-08-14-s2', new Set(['bg-1']));
     cast._rolePackFallbackNotified.add('2026-08-14-s2');
 
-    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('Delete' as never);
     await (
       provider as unknown as { handleDeleteSession(s: string): Promise<void> }
     ).handleDeleteSession('2026-08-14-s2');
@@ -504,13 +504,13 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const { store, roundStore, provider, posted } = setup();
     seedSession(store, roundStore, '2026-08-15-s1', [{ role: 'user', content: 'x', ts: 't1' }]);
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
-    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('Delete' as never);
     await (
       provider as unknown as { handleDeleteSession(s: string): Promise<void> }
     ).handleDeleteSession('2026-08-15-s1');
     expect(store.getSessionMeta('2026-08-15-s1')).toBeDefined(); // 未删
     const notice = ofType<{ type: string; message: string }>(posted, 'notice');
-    expect(notice[0]?.message).toContain('当前会话不在历史记录');
+    expect(notice[0]?.message).toContain('The current session is not in history');
   });
 
   it('新建会话 → 进入草稿页（不生成会话 id / 不装配 / 不落盘）', async () => {

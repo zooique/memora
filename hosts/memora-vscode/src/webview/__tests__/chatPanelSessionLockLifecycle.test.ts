@@ -52,7 +52,7 @@ vi.mock('vscode', async () => {
       onDidChangeActiveTextEditor: vi.fn(() => ({ dispose: vi.fn() })),
       activeTextEditor: undefined,
       // 删除会话的确认框走 confirmModal（唯一入口）：恒返回确认文案 = 用户点了「删除」
-      showWarningMessage: vi.fn(async () => '删除'),
+      showWarningMessage: vi.fn(async () => 'Delete'),
       // 装配失败出口（正常路径不触发）
       showErrorMessage: vi.fn(async () => undefined),
     },
@@ -369,7 +369,8 @@ describe('会话锁生命周期（按会话长持有 + 三类关闭场景）', (
       view.posted.some(
         (m) =>
           (m as { type?: string; message?: string })?.type === 'notice' &&
-          (m as { message?: string })?.message === '当前会话不在历史记录，无法删除',
+          (m as { message?: string })?.message ===
+            'The current session is not in history and cannot be deleted',
       ),
     );
     expect(storeA.getSessionMeta(sessionId)).toBeDefined();

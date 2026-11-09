@@ -171,13 +171,13 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     const spec = deriveButtonSemantics({ state: { phase: 'running' }, hasInput: false });
     expect(spec.pause).toEqual({
       icon: 'pause',
-      title: '暂停生成',
-      ariaLabel: '暂停生成',
+      title: 'Pause generation',
+      ariaLabel: 'Pause generation',
     });
     expect(spec.send).toEqual({
       loading: true,
-      title: '停止生成',
-      ariaLabel: '停止生成',
+      title: 'Stop generating',
+      ariaLabel: 'Stop generating',
       disabled: false,
     });
   });
@@ -186,8 +186,8 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     const spec = deriveButtonSemantics({ state: { phase: 'running' }, hasInput: true });
     expect(spec.send).toEqual({
       loading: false,
-      title: '发送补充（排队等 step 边界注入）',
-      ariaLabel: '发送补充',
+      title: 'Send follow-up (queued until step boundary)',
+      ariaLabel: 'Send follow-up',
       disabled: false,
     });
     expect(spec.pause?.icon).toBe('pause');
@@ -199,13 +199,13 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     const filled = deriveButtonSemantics({ state: pending, hasInput: true });
     expect(empty.pause).toEqual({
       icon: 'play',
-      title: '继续（点击取消暂停申请）',
-      ariaLabel: '继续（取消暂停申请）',
+      title: 'Continue (click to cancel pause request)',
+      ariaLabel: 'Continue (cancel pause request)',
     });
     expect(filled.pause).toEqual(empty.pause);
     // 申请在途不改变发送按钮职责（空=停止，有输入=补充）——与挂起态文案不同
-    expect(empty.send.title).toBe('停止生成');
-    expect(filled.send.title).toBe('发送补充（排队等 step 边界注入）');
+    expect(empty.send.title).toBe('Stop generating');
+    expect(filled.send.title).toBe('Send follow-up (queued until step boundary)');
   });
 
   // ─── 暂停按钮恒显示（2026-10-19 撤除 canContinue 门控，ARCH-GAP-F1）───
@@ -218,8 +218,8 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
       const spec = deriveButtonSemantics({ state: { phase: 'running' }, hasInput });
       expect(spec.pause).toEqual({
         icon: 'pause',
-        title: '暂停生成',
-        ariaLabel: '暂停生成',
+        title: 'Pause generation',
+        ariaLabel: 'Pause generation',
       });
     }
   });
@@ -229,8 +229,8 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     const spec = deriveButtonSemantics({ state: pending, hasInput: false });
     expect(spec.pause).toEqual({
       icon: 'play',
-      title: '继续（点击取消暂停申请）',
-      ariaLabel: '继续（取消暂停申请）',
+      title: 'Continue (click to cancel pause request)',
+      ariaLabel: 'Continue (cancel pause request)',
     });
   });
 
@@ -239,7 +239,11 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
       state: { phase: 'waiting', reason: 'pause' },
       hasInput: false,
     });
-    expect(spec.pause).toEqual({ icon: 'play', title: '继续生成', ariaLabel: '继续生成' });
+    expect(spec.pause).toEqual({
+      icon: 'play',
+      title: 'Continue generating',
+      ariaLabel: 'Continue generating',
+    });
   });
 
   it('waiting(pause) + 空输入：续跑键 = 继续生成（纯续跑是真能力），发送按钮 = 硬停止', () => {
@@ -247,11 +251,15 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
       state: { phase: 'waiting', reason: 'pause' },
       hasInput: false,
     });
-    expect(spec.pause).toEqual({ icon: 'play', title: '继续生成', ariaLabel: '继续生成' });
+    expect(spec.pause).toEqual({
+      icon: 'play',
+      title: 'Continue generating',
+      ariaLabel: 'Continue generating',
+    });
     expect(spec.send).toEqual({
       loading: true,
-      title: '停止生成（丢弃检查点）',
-      ariaLabel: '停止生成',
+      title: 'Stop generating (discard checkpoint)',
+      ariaLabel: 'Stop generating',
       disabled: false,
     });
   });
@@ -263,8 +271,8 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     });
     expect(spec.pause).toEqual({
       icon: 'play',
-      title: '发送补充并继续',
-      ariaLabel: '发送补充并继续',
+      title: 'Send follow-up and continue',
+      ariaLabel: 'Send follow-up and continue',
     });
   });
 
@@ -276,7 +284,7 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     });
     expect(spec.pause).toBeNull();
     // 发送按钮职责不受影响（挂起态恒硬停止）
-    expect(spec.send.title).toBe('停止生成（丢弃检查点）');
+    expect(spec.send.title).toBe('Stop generating (discard checkpoint)');
   });
 
   it('waiting(ask) + 有输入：续跑键仍隐藏（「补充并继续」是假能力，send 落 answerQuestion）', () => {
@@ -289,7 +297,7 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     // 变异锚：去掉 askWaiting 判据 ⇒ 本例红在 toBeNull。
     expect(spec.pause).toBeNull();
     // 发送按钮职责不变（挂起态恒硬停止），停止能力不受本次收敛影响
-    expect(spec.send.title).toBe('停止生成（丢弃检查点）');
+    expect(spec.send.title).toBe('Stop generating (discard checkpoint)');
   });
 
   it('done + 空输入：暂停按钮隐藏（null）、发送按钮禁用', () => {
@@ -298,8 +306,8 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     expect(spec.pause).toBeNull();
     expect(spec.send).toEqual({
       loading: false,
-      title: '发送 (Enter)',
-      ariaLabel: '发送',
+      title: 'Send (Enter)',
+      ariaLabel: 'Send',
       disabled: true,
     });
   });

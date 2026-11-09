@@ -132,7 +132,7 @@ import { mergeProcessEvents } from '../helpers/processEventMerge.js';
 // 启动会话归属裁决（首选被另一窗口占用时让位）——判据单点，面板与验收测试共用同一实现
 import { claimStartupSession } from '../helpers/sessionStartupClaim.js';
 import {
-  SESSION_HELD_NOTICE,
+  sessionHeldNotice,
   archiveSessionAction,
   deleteSessionAction,
   restoreSessionAction,
@@ -1658,7 +1658,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private async createSession(sessionId: string, rolePackName?: string): Promise<boolean> {
     // 新会话 id 由时间戳/随机后缀生成，跨进程不会撞；拿锁只为让后续写盘有归属
     if (!(await this._lockFinalizer.acquire(sessionId))) {
-      this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
+      this.post({ type: 'notice', level: 'info', message: sessionHeldNotice() });
       return false;
     }
     const previous = this._currentSessionId;

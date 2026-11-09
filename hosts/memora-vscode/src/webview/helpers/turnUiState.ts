@@ -12,6 +12,8 @@
 
 // TurnState 纯类型导入（仅编译期用，esbuild 剥离，不影响 browser bundle）
 import type { TurnState } from '../../shared/protocol.js';
+// webview 侧本地化器（namespace 导入是守卫 ⑯ 的形态要求）
+import * as l10n from '@vscode/l10n';
 
 /**
  * 骨架可见的 turn 状态（`TurnState` 的**投影子集**）
@@ -152,16 +154,29 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
       // 代价（用户丧失中断能力），且判据的采样时机在架构上不可靠（状态在流内持续变化）。
       // 暂停请求本身由内核软暂停模型兜底：无在途计划时暂停即收场，不是错误路径。
       pause: pausePending
-        ? { icon: 'play', title: '继续（点击取消暂停申请）', ariaLabel: '继续（取消暂停申请）' }
-        : { icon: 'pause', title: '暂停生成', ariaLabel: '暂停生成' },
+        ? {
+            icon: 'play',
+            title: l10n.t('Continue (click to cancel pause request)'),
+            ariaLabel: l10n.t('Continue (cancel pause request)'),
+          }
+        : {
+            icon: 'pause',
+            title: l10n.t('Pause generation'),
+            ariaLabel: l10n.t('Pause generation'),
+          },
       send: hasInput
         ? {
             loading: false,
-            title: '发送补充（排队等 step 边界注入）',
-            ariaLabel: '发送补充',
+            title: l10n.t('Send follow-up (queued until step boundary)'),
+            ariaLabel: l10n.t('Send follow-up'),
             disabled: false,
           }
-        : { loading: true, title: '停止生成', ariaLabel: '停止生成', disabled: false },
+        : {
+            loading: true,
+            title: l10n.t('Stop generating'),
+            ariaLabel: l10n.t('Stop generating'),
+            disabled: false,
+          },
     };
   }
 
@@ -178,15 +193,17 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
       pause: showPause
         ? {
             icon: 'play',
-            title: hasInput ? '发送补充并继续' : '继续生成',
-            ariaLabel: hasInput ? '发送补充并继续' : '继续生成',
+            title: hasInput ? l10n.t('Send follow-up and continue') : l10n.t('Continue generating'),
+            ariaLabel: hasInput
+              ? l10n.t('Send follow-up and continue')
+              : l10n.t('Continue generating'),
           }
         : null,
       // 发送按钮在挂起态始终承担「硬停止」（丢弃检查点）
       send: {
         loading: true,
-        title: '停止生成（丢弃检查点）',
-        ariaLabel: '停止生成',
+        title: l10n.t('Stop generating (discard checkpoint)'),
+        ariaLabel: l10n.t('Stop generating'),
         disabled: false,
       },
     };
@@ -194,6 +211,11 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
 
   return {
     pause: null,
-    send: { loading: false, title: '发送 (Enter)', ariaLabel: '发送', disabled: !hasInput },
+    send: {
+      loading: false,
+      title: l10n.t('Send (Enter)'),
+      ariaLabel: l10n.t('Send'),
+      disabled: !hasInput,
+    },
   };
 }
