@@ -1178,7 +1178,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     dispatch({ type: 'interrupted' });
     const activityBar = document.getElementById('activityBar') as HTMLElement;
     expect(activityBar.hidden).toBe(false);
-    expect(activityBar.textContent).toContain('已停止生成');
+    expect(activityBar.textContent).toContain('Stopped generating');
   });
 
   it('输入为空时发送按钮禁用（空闲态），输入后解除禁用', () => {
@@ -1609,7 +1609,7 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     dispatch({ type: 'retry', attempt: 1, maxRetries: 3, delayMs: 200, error: 'ECONNRESET' });
     const activityBar = document.getElementById('activityBar') as HTMLElement;
     expect(activityBar.hidden).toBe(false);
-    expect(activityBar.textContent).toContain('重试 1/3');
+    expect(activityBar.textContent).toContain('Retrying LLM call 1/3');
   });
 
   it('paused 渲染「Agent 已暂停」提示条', () => {
@@ -1617,7 +1617,7 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     dispatch({ type: 'paused' });
     const activityBar = document.getElementById('activityBar') as HTMLElement;
     expect(activityBar.hidden).toBe(false);
-    expect(activityBar.textContent).toContain('已暂停');
+    expect(activityBar.textContent).toContain('Agent paused');
   });
 
   it('guardrailBlocked chunk 不再弹提示条、文本正常追加（排雷 2026-08-17，阻断文案由内核 content 承载）', () => {
@@ -1704,9 +1704,9 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     });
     dispatch({ type: 'paused' });
     // 历史累积三条，全部可见（不互相覆盖丢失）
-    expect(list.textContent).toContain('重试 1/3');
+    expect(list.textContent).toContain('Retrying LLM call 1/3');
     expect(list.textContent).toContain('决策：数据库用 PG');
-    expect(list.textContent).toContain('已暂停');
+    expect(list.textContent).toContain('Agent paused');
     // 每条带时间戳（.activity-list__time 存在）
     expect(list.querySelectorAll('.activity-list__time').length).toBeGreaterThanOrEqual(3);
   });
@@ -6481,7 +6481,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
       expect.objectContaining({ type: 'input', kind: 'answer' }),
     );
     expect(submit.disabled).toBe(false);
-    expect(submit.textContent).toContain('还有 1 题未答');
+    expect(submit.textContent).toContain('1 unanswered');
     // 已答题按钮高亮 is-selected（可再点改选）
     expect((btns[0] as HTMLElement).classList.contains('is-selected')).toBe(true);
     expect((btns[1] as HTMLElement).classList.contains('is-selected')).toBe(false);
@@ -6559,7 +6559,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     inputs[1].dispatchEvent(new Event('input'));
     // 判据②：部分作答合法——至少答一题即可提交，按钮文案明示未答数（不静默丢题）
     expect(submit.disabled).toBe(false);
-    expect(submit.textContent).toContain('还有 1 题未答');
+    expect(submit.textContent).toContain('1 unanswered');
     submit.click();
     // 判据①：按位回传（长度 2、第 1 位空串）。压缩位次会让「长篇」成为唯一元素 ⇒ 贴到第 1 题
     expect(postMessage).toHaveBeenCalledWith({
@@ -9101,9 +9101,13 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(document.getElementById('writeConfirmPath')!.textContent).toBe('/workspace/src/foo.ts');
     expect(document.getElementById('writeConfirmDesc')!.textContent).toBe('写文件：foo.ts');
     // diff 预览：before → after（textContent 防注入，与消息区同纪律；纯内容对比，不含描述）
-    expect(document.getElementById('writeConfirmDiff')!.textContent).toContain('--- 写入前 ---');
+    expect(document.getElementById('writeConfirmDiff')!.textContent).toContain(
+      '--- Before write ---',
+    );
     expect(document.getElementById('writeConfirmDiff')!.textContent).toContain('old');
-    expect(document.getElementById('writeConfirmDiff')!.textContent).toContain('+++ 写入后 +++');
+    expect(document.getElementById('writeConfirmDiff')!.textContent).toContain(
+      '+++ After write +++',
+    );
     expect(document.getElementById('writeConfirmDiff')!.textContent).toContain('new');
     // S3 断言升级：原只断言 hidden（真机 hidden=false 却不可见 ⇒ 假绿）。此处补结构断言——
     // 卡片必须不在滚动容器 #messages 内，否则「渲染成功」与「用户看得见」不等价。
@@ -9130,10 +9134,10 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       hasDiff: false, // 命令场景：内核恒 false
     });
     const diff = document.getElementById('writeConfirmDiff')!.textContent ?? '';
-    expect(diff).toContain('--- 目标 ---');
+    expect(diff).toContain('--- Target ---');
     expect(diff).toContain('git push origin main');
-    expect(diff).not.toContain('--- 写入前 ---');
-    expect(diff).not.toContain('+++ 写入后 +++');
+    expect(diff).not.toContain('--- Before write ---');
+    expect(diff).not.toContain('+++ After write +++');
     // 按钮动词中性（不写死「确认写入」）
     expect(document.getElementById('writeConfirmOk')!.textContent).toBe('确认');
   });
@@ -9152,8 +9156,8 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       hasDiff: false, // 删除场景：内核恒 false（同命令确认）
     });
     const diff = document.getElementById('writeConfirmDiff')!.textContent ?? '';
-    expect(diff).toContain('--- 目标 ---');
-    expect(diff).not.toContain('--- 写入前 ---');
+    expect(diff).toContain('--- Target ---');
+    expect(diff).not.toContain('--- Before write ---');
   });
 
   it('confirmWrites 审批卡：确认按钮回传 answer(approved=true) 并进入等待态（**不收卡**）', () => {
@@ -9186,7 +9190,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       true,
     );
     expect(card.getAttribute('data-pending')).toBe('true');
-    expect(document.getElementById('writeConfirmHint')!.textContent).toContain('已确认');
+    expect(document.getElementById('writeConfirmHint')!.textContent).toContain('Confirmed');
     // 倒计时停表（F3）：已裁决的卡不再倒数
     expect((document.getElementById('writeConfirmCountdown') as HTMLElement).hidden).toBe(true);
   });
@@ -9215,13 +9219,13 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       true,
     );
     expect(card.getAttribute('data-pending')).toBe('true');
-    expect(document.getElementById('writeConfirmHint')!.textContent).toContain('已拒绝');
+    expect(document.getElementById('writeConfirmHint')!.textContent).toContain('Rejected');
   });
 
   it('等待态期间重复点击不再回传 answer（消解 F1：宿主 pending 已 delete，重复提交会被静默丢弃）', () => {
     // 无disabled 时：点第2 下 ⇒ postMessage 再发一条同 requestId 的 answer ⇒ 宿主 pending
     // 已 delete ⇒ 静默丢弃 ⇒ 用户视角「点了没反应」。disabled 是第一道防线，
-    // writeConfirmAwaitingNext 的显式 early-return 是第二道（双保险）。
+    // writeConfirmCardView 内的 awaitingNext early-return 是第二道（双保险）。
     const { postMessage } = mountChatView();
     dispatch({
       type: 'write_confirm_request',
@@ -9619,7 +9623,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
   });
 
   it('载荷缺 timeoutMs 必显式报错（禁静默失效：倒计时无声消失且无痕可查）', () => {
-    // 反向守卫：startConfirmCountdown 曾对非法 timeoutMs 静默 return——宿主一旦漏填
+    // 反向守卫：writeConfirmCardView.startCountdown 曾对非法 timeoutMs 静默 return——宿主一旦漏填
     // （真源漂移），倒计时无声消失，用户只见一张永不提示的卡，直到 30 分钟后突然被拒，
     // 现场无任何痕迹（与E2 同款病）。此处锁死「必须抛」，不锁抛的文案。
     mountChatView();
@@ -9675,8 +9679,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       timeoutMs: 30_000,
     });
     expect(countdown.hidden).toBe(false);
-    expect(countdown.textContent).toContain('还有');
-    expect(countdown.textContent).toContain('秒将自动拒绝');
+    expect(countdown.textContent).toContain('seconds until auto-reject');
   });
 
   it('末段倒计时：收卡即停表（不在关闭后残留倒计时）', () => {
@@ -10704,9 +10707,13 @@ describe('活动文件 chip（是否进本轮上下文 · 本会话开关）', (
     mountChatView();
     dispatch(attached({ injected: true, reason: 'dirty' }));
     const chip = document.querySelector('#refChips .active-file-chip') as HTMLElement;
-    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('未保存·全文已附');
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe(
+      'Unsaved · full text attached',
+    );
     // title 兜住窄面板下徽记被省略号吃掉的情况
-    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('已附全文');
+    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain(
+      'Full text attached',
+    );
   });
 
   it('注入量归因（CTX-6② / HOST-CTX-4 ②）：汇总在先 + 投影认领 → 徽记短显 ≈k、title 给全数', () => {
@@ -10720,9 +10727,11 @@ describe('活动文件 chip（是否进本轮上下文 · 本会话开关）', (
     dispatch(attached({ injected: true, reason: 'dirty' }));
     const chip = document.querySelector('#refChips .active-file-chip') as HTMLElement;
     // 短显（3258 → ≈3.3k）挤得进徽记；全数在 title（悬停可见精确值）
-    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('未保存·全文已附 ≈3.3k');
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe(
+      'Unsaved · full text attached ≈3.3k',
+    );
     expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain(
-      '注入约 3258 token',
+      '~3258 tokens',
     );
   });
 
@@ -10737,7 +10746,9 @@ describe('活动文件 chip（是否进本轮上下文 · 本会话开关）', (
     // 不能把上一个文件（3258）的数字按在新文件 chip 上。
     dispatch(attached({ injected: true, reason: 'dirty', label: 'docs/其他.md' }));
     const chip = document.querySelector('#refChips .active-file-chip') as HTMLElement;
-    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('未保存·全文已附');
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe(
+      'Unsaved · full text attached',
+    );
     expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).not.toContain('token');
   });
 
@@ -10760,7 +10771,7 @@ describe('活动文件 chip（是否进本轮上下文 · 本会话开关）', (
     const chip = document.querySelector('#refChips .active-file-chip') as HTMLElement;
     expect(chip.tagName).toBe('BUTTON');
     expect(chip.classList.contains('is-disabled')).toBe(true);
-    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('当前文件未附加');
+    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('Current file not attached');
     chip.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'set_active_file_attach', enabled: true });
   });
@@ -12554,7 +12565,7 @@ describe('记忆命中明细（HOST-S3-1 · MEM-EVENT-2 落位）', () => {
     expect(document.querySelector('.memory-hits')).toBeNull();
     // 降级 = notice 同款形态（activity 条提示），对齐 0.1.0 行为
     const bar = document.querySelector('.activity-bar') as HTMLElement;
-    expect(bar.textContent).toContain('LLM 查询记忆命中 3 条');
+    expect(bar.textContent).toContain('LLM memory lookup matched 3 hits');
   });
 
   it('降级路径①：无 toolCallId（老内核 / 直调）→ 轮次级聚合行，不做猜测式配对', () => {
@@ -12715,7 +12726,7 @@ describe('记忆反馈通道（HOST-S3-3）', () => {
     expect(document.querySelectorAll('[data-memory-id="m1"]')).toHaveLength(0);
     expect(document.querySelectorAll('[data-memory-id="m2"]')).toHaveLength(1);
     const bar = document.querySelector('.activity-bar') as HTMLElement;
-    expect(bar.textContent).toContain('已反馈「无用」');
+    expect(bar.textContent).toContain('Marked as "not useful"');
   });
 
   it('memory_deleted ok:false → error 提示，命中行不动', () => {
@@ -12729,7 +12740,7 @@ describe('记忆反馈通道（HOST-S3-3）', () => {
     });
     dispatch({ type: 'memory_deleted', ok: false, id: 'm1', message: '内核拒绝删除' });
     const bar = document.querySelector('.activity-bar') as HTMLElement;
-    expect(bar.textContent).toContain('反馈失败');
+    expect(bar.textContent).toContain('Feedback failed');
     expect(bar.textContent).toContain('内核拒绝删除');
     // 删除失败行不摘（记忆仍在库中，行如实保留）
     expect(document.querySelectorAll('.memory-hits__item')).toHaveLength(1);

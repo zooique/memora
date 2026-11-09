@@ -55,7 +55,7 @@ export const USER_ROLE_PACKS_DIR_NAME = 'role-packs';
 export const MAX_INPUT_CHARS = 20000;
 
 /** ask/clarify 回答长度上限（INPUT-LIMIT-1）：回答「一个问题」的短语义。
- *  消费点：ask-inline 每题输入框（renderAskInline 创建处）+ clarifyBar 兜底输入框。
+ *  消费点：ask-inline 每题输入框（askInlineView 创建处）+ clarifyBar 兜底输入框。
  *  取 4000 的依据：ask 回答的常见超档场景是粘贴报错/日志，而栈回溯的关键信息
  *  （异常行 / Caused by）在尾部，maxLength 保留头部砍尾部 ⇒ 档位必须容得下单段
  *  日志（4000 字符 ≈ 1000+ token，10 问最坏 ≈ 1 万 token，内核默认窗口（真源 = AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS）仍安全）；

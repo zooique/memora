@@ -56,7 +56,10 @@ export default [
     // 基线按闸门自报下调，不留虚空余量。
     // SKILL-PICKER-SPLIT-1（2026-11-01）：技能选择器域（选中态 / 菜单渲染 / 搜索 / chip 构建）
     // 整体外置到 scripts/skillPickerView.ts（净减 215），基线按闸门自报同步下调。
-    rules: { 'max-lines': ['error', { max: 4739 }] },
+    // HOST-I18N-2 C-3（2026-11-09）：提问卡 / 写确认卡两域整体外置为
+    // scripts/askInlineView.ts + scripts/writeConfirmCardView.ts（净减 384），
+    // 剩余 CJK 文案全量走 l10n.t；基线按闸门自报（max 临时置 1 读数）同步下调。
+    rules: { 'max-lines': ['error', { max: 4353 }] },
   },
   {
     // FORMAT-1 清零（2026-10-29）：prettier --write 还原折行欠账，物理行 4515→4529（+14 全为

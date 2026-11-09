@@ -24,6 +24,6 @@ describe('onMessage 渲染异常用户可见（观察点③）', () => {
     const bar = document.querySelector<HTMLElement>('#activityBar');
     expect(bar).not.toBeNull();
     expect(bar!.dataset.level).toBe('error');
-    expect(bar!.textContent ?? '').toContain('渲染异常');
+    expect(bar!.textContent ?? '').toContain('UI rendering error');
   });
 });

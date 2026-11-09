@@ -152,6 +152,10 @@ import { isToastHead, placeDockHead, toastLoopSkip } from '../helpers/dockToast.
 import { createStatusBarsView } from './statusBarsView.js';
 // 回答等待指示器（相位 + 已等待秒数）：元素/计时/缺省相位收口于 pendingWaitView（C-2 域外置）
 import { createPendingWaitView } from './pendingWaitView.js';
+// 内联提问卡：DOM 构造 / 逐题累计 / 提交按钮收口于 askInlineView（C-3 域外置）
+import { createAskInlineView } from './askInlineView.js';
+// 确认审批卡：内容填充 / 末段倒计时 / 按钮裁决收口于 writeConfirmCardView（C-3 域外置）
+import { createWriteConfirmCardView } from './writeConfirmCardView.js';
 
 /** chatView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ChatViewDeps {
@@ -302,38 +306,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const clarifyInput = document.getElementById('clarifyInput') as HTMLInputElement;
   // INPUT-LIMIT-1：输入长度上限在**输入框阶段**生效（原生 maxLength，超出部分进不了
   // 输入框，所见即所发）；分档 = 主输入长档 / clarify 回答短档（ask-inline 每题输入框
-  // 在 renderAskInline 创建处同源设限）。程序化赋值（润色回填等）不受 maxLength 约束，
+  // 在 askInlineView.render 创建处同源设限）。程序化赋值（润色回填等）不受 maxLength 约束，
   // 属可接受残留（输入源本身已截，输出同量级）。
   input.maxLength = MAX_INPUT_CHARS;
   clarifyInput.maxLength = MAX_ASK_ANSWER_CHARS;
-  // 确认审批卡：命令/脚本执行确认（写文件已退役为直接落盘）→ 渲染卡并回传裁决；fail-closed（30 分钟超时自动拒绝）
-  const writeConfirmCard = document.getElementById('writeConfirmCard') as HTMLElement | null;
-  const writeConfirmTool = document.getElementById('writeConfirmTool') as HTMLElement | null;
-  const writeConfirmPath = document.getElementById('writeConfirmPath') as HTMLElement | null;
-  const writeConfirmDesc = document.getElementById('writeConfirmDesc') as HTMLElement | null;
-  const writeConfirmDiff = document.getElementById('writeConfirmDiff') as HTMLElement | null;
-  const writeConfirmOk = document.getElementById('writeConfirmOk') as HTMLButtonElement | null;
-  const writeConfirmReject = document.getElementById(
-    'writeConfirmReject',
-  ) as HTMLButtonElement | null;
-  const writeConfirmCountdown = document.getElementById(
-    'writeConfirmCountdown',
-  ) as HTMLElement | null;
-  const writeConfirmHint = document.getElementById('writeConfirmHint') as HTMLElement | null;
-  let pendingWriteConfirmRequestId: string | null = null;
-  /**
-   * 等待态标记（2026-10-05 P5 落地 A）：用户已裁决、卡等宿主推下一条的过渡态。
-   *
-   * 🔴 为何需要它（消解 F1 重复提交 + 闪烁）：
-   * 原实现点击后**同步** closeWriteConfirmCard()，而下一条 write_confirm_request 由宿主
-   * **异步**推 ⇒ ①两帧空档 = 用户实测的闪烁；②队列无下一条时，卡片会带着已裁决的旧内容
-   * 滞留，用户再点一次 → 宿主 pending 已 delete ⇒ 第二个 answer 静默丢弃（点了没反应）。
-   * 等待态把「点了 → 下一张」显式化：按钮 disabled（防重复）+ 卡片降透明度（明示过渡）。
-   *
-   * 🔴 显隐真源仍在宿主（确认协调器 `ConfirmCoordinator` 的收卡逻辑）：本状态只改**按钮可用性与提示**，
-   * 绝不开关卡片——否则又回到「两个显隐写入点」（双源）。
-   */
-  let writeConfirmAwaitingNext = false;
+  // 确认审批卡（命令/脚本执行确认，写文件已退役为直接落盘）：元素查询、渲染、倒计时与
+  // 按钮裁决收口于 writeConfirmCardView（C-3 域外置）；本文件只接线 Dock 与协议消息。
   const clarifySend = document.getElementById('clarifySend') as HTMLButtonElement;
   // 当前角色显示名（AI 消息头部标签 + 空状态标题共用；由 chat_role_pack 填充）
   let currentRoleName = '';
@@ -1560,8 +1538,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // ——注册必须在 dockEntries（const Map）初始化之后，放声明区会踩 TDZ
   registerDockEntry('activity', activityBar);
   // A 类阻断面板（审批卡）接入同一收纳器：显隐与归位自此**只由 resolveDock 裁决**，
-  // renderWriteConfirmCard / 按钮回调一律改走 setDockActive，禁直写 hidden（散写即回到堆叠）。
-  if (writeConfirmCard) registerDockEntry('confirm', writeConfirmCard);
+  // 视图渲染 / 按钮回调一律改走 setDockActive，禁直写 hidden（散写即回到堆叠）。
+  // 视图实例化放在这里（dockEntries 初始化之后）——工厂内会同步注册卡片元素。
+  const writeConfirmView = createWriteConfirmCardView({
+    document,
+    registerDockEntry: (el) => registerDockEntry('confirm', el),
+    setDockActive: (active) => setDockActive('confirm', active),
+    postAnswer: (requestId, approved) => {
+      vscode.postMessage({ type: 'write_confirm_answer', requestId, approved });
+    },
+  });
 
   /**
    * 主位条裁决（SSOT 单点）：A 类阻断面板恒主位 > error 豁免（fixed）> priority 最大。
@@ -2244,135 +2230,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 渲染内联选择题（提问形态内联化）
-   *
-   * 对齐主流对话流（Claude / TraeWork）：提问正文下直接出「选项按钮 + 补充输入」，
-   * 点击选项即答（无需二次回车），也可直接打字补充后发送。渲染在提问块下方，
-   * 不替换底部输入栏（clarifyBar 仅异常兜底）。
-   *
-   * 多 ask 聚合：多提问（questions.length > 1）合并一个卡片——逐题点选/输入，
-   * answers[i] 逐题累计，全部答完才可点底部「提交全部回答」一次性提交（坑：逐个点选
-   * 即提交会「点一个其余被跳过」）；单问同形态（单问 = 只有一个问题的多问）。
-   *
-   * @param questions 提问列表（question + 候选 options，可选）
-   * @returns 内联块元素；无可用 assistant 锚点时返回 null（调用方走 clarifyBar 兜底）
+   * 内联提问卡（C-3 域外置）：DOM 构造 / 逐题累计 / 提交按钮收口于 askInlineView，
+   * 本文件只注入锚点解析、等待态光标、提交动作与滚动（判据与回声仍在本文件）。
    */
-  function renderAskInline(
-    questions: { question: string; options?: string[]; allowCustom?: boolean }[],
-  ): HTMLElement | null {
-    // 锚点 = 同轮交互链末位（提问块/骨架/前一问答对之后；连环 ask 与回答行
-    // 共用 resolveInteractionAnchor——第二次提问框须出现在第一问答对之后而非之前）；
-    // 无链接（异常）返回 null 降级 clarifyBar
-    const host = resolveInteractionAnchor();
-    if (!host?.parentNode) return null;
-    // 提问等待态：容器操作栏保持隐藏（底部只留 ask-inline 交互块，不出现「复制+时间」）。
-    // 防御 interrupted 已提前移除 is-pending 的路径——提问未回答前操作栏不显示，
-    // 回答 resume 完成（done）后 finalizeStreaming 再统一显示（SSOT 同态收敛）
-    host
-      .closest<HTMLElement>('.round-group')
-      ?.querySelector<HTMLElement>('.round-group__footer')
-      ?.classList.add('is-pending');
-    // 光标挂起态「等待输入」：ask 预检停顿（无正文块时 no-op——纯问答轮由 ask-inline 承担可见性）
-    setActiveSheetStatus('waiting-input');
-    // 幂等：重复提问（如连续多问/多次 turn_update 推送）先移除旧内联块，再挂新
-    document.querySelector('.ask-inline')?.remove();
-    const box = document.createElement('div');
-    box.className = 'ask-inline';
-    // 单一形态：单问 = 只有一个问题的多问，统一「逐题点选/输入 → 一次性提交」。
-    // 选项点击/输入/提交逻辑单一同源（SSOT），不为单/多问分写两套。answers[i] 逐题累计。
-    // **部分作答合法（ASK-PARTIAL-ANSWER-1 判据②）**：至少答一题即可提交，未答项不拦提交、
-    // 在按钮上明示「将记为未回答」；提交时按提问顺序**原样**回传（未答位空串），宿主与内核
-    // 均按位消费 ⇒ 位次即配对真源，压缩位次即错位。
-    const answers: (string | undefined)[] = questions.map(() => undefined);
-    let submitBtn: HTMLButtonElement | null = null;
-    const syncSubmit = (): void => {
-      if (!submitBtn) return;
-      const answered = answers.filter((a) => a && a.trim().length > 0).length;
-      const missing = questions.length - answered;
-      submitBtn.disabled = answered === 0;
-      // 只在「已答一部分」时改文案：0 答时按钮 disabled，此时喊「还有 N 题未答」是空指针式提示
-      submitBtn.textContent =
-        questions.length > 1 && answered > 0 && missing > 0
-          ? `提交（还有 ${missing} 题未答，将记为未回答）`
-          : questions.length > 1
-            ? '提交全部回答'
-            : '提交回答';
-    };
-    // 强制单选：任一题带 options 且 allowCustom=false → 全部隐藏输入框（仅限点选，语义对齐内核 ask_user）
-    const forceChoose = questions.some(
-      (q) => q.options && q.options.length > 0 && q.allowCustom === false,
-    );
-    // 每题构建：question 标题 + 选项按钮组（点选标记该题已答，可再点改选）+ 每题输入框
-    for (const [i, q] of questions.entries()) {
-      const item = document.createElement('div');
-      item.className = 'ask-inline__item';
-      const qEl = document.createElement('div');
-      qEl.className = 'ask-inline__q';
-      qEl.textContent = q.question; // textContent 防注入
-      item.appendChild(qEl);
-      if (q.options && q.options.length > 0) {
-        const opts = document.createElement('div');
-        opts.className = 'ask-inline__opts';
-        for (const opt of q.options) {
-          const b = document.createElement('button');
-          b.className = 'ask-inline__opt';
-          b.textContent = opt;
-          b.addEventListener('click', () => {
-            // 点选标记该题已答（is-selected 高亮，可再点改选），不立即提交——全部答完走底部提交按钮
-            answers[i] = opt;
-            opts
-              .querySelectorAll<HTMLElement>('.ask-inline__opt')
-              .forEach((o) => o.classList.toggle('is-selected', o === b));
-            syncSubmit();
-          });
-          opts.appendChild(b);
-        }
-        item.appendChild(opts);
-      }
-      // 每题输入框（forceChoose 时隐藏——仅点选，见下）
-      const input = document.createElement('input');
-      input.className = 'ask-inline__input';
-      // INPUT-LIMIT-1：ask 回答 = 短档（值真源 shared/constants.ts，与 clarifyBar 兜底输入同档）
-      input.maxLength = MAX_ASK_ANSWER_CHARS;
-      input.placeholder = '输入你的回答…';
-      input.addEventListener('input', () => {
-        answers[i] = input.value;
-        syncSubmit();
-      });
-      input.addEventListener('keydown', (e) => {
-        if (e.isComposing) return;
-        if (e.key === 'Enter') {
-          // 回车即视为提交当前输入：先同步 answers[i]（免依赖先触发 input 事件），再点提交按钮
-          answers[i] = input.value;
-          syncSubmit();
-          submitBtn?.click();
-        }
-      });
-      if (forceChoose) input.hidden = true;
-      item.appendChild(input);
-      box.appendChild(item);
-    }
-    // 底部一次性提交按钮（initial 文案由 syncSubmit 统一决定，此处只建节点）
-    submitBtn = document.createElement('button');
-    submitBtn.className = 'ask-inline__submit';
-    submitBtn.textContent = questions.length > 1 ? '提交全部回答' : '提交回答';
-    submitBtn.disabled = true;
-    submitBtn.addEventListener('click', () => {
-      // 🔴 位次不变量：按提问顺序原样提交，未答位传空串。旧实现 `reduce` 压掉空位 ⇒
-      // 其后答案整体前移 ⇒ 宿主按位回填时「答第 2 题的文本」落到第 1 题头上（错位根因）。
-      // 「未答」不是错误态：内核把空串归一为 `[ASK_ABORTED]` 占位，并在盘上落 unanswered 行。
-      commitAskAnswers(answers.map((a) => (a ?? '').trim()));
-      box.remove();
-      scrollToBottom(messages);
-    });
-    box.appendChild(submitBtn);
-    host.after(box);
-    // 焦点：连同输入行可见时才给输入框（强制单选时无从聚焦；多问聚焦首题输入框）
-    const firstInput = box.querySelector<HTMLInputElement>('.ask-inline__input');
-    if (firstInput && !firstInput.hidden) firstInput.focus();
-    scrollToBottom(messages);
-    return box;
-  }
+  const askInlineView = createAskInlineView({
+    document,
+    resolveAnchor: resolveInteractionAnchor,
+    markWaitingInput: () => setActiveSheetStatus('waiting-input'),
+    onSubmit: commitAskAnswers,
+    scrollToBottom: () => scrollToBottom(messages),
+  });
 
   /**
    * 提交多问答聚合回答（ask 提交唯一入口——单/多问统一走数组）
@@ -3324,10 +3191,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
     } else if (msg.type === 'retry') {
       // LLM 失败重试 → 低扰提示条（活动透明，对齐 UX 基线）
-      activityDrawerView.showActivity('info', `LLM 调用重试 ${msg.attempt}/${msg.maxRetries}…`);
+      activityDrawerView.showActivity(
+        'info',
+        l10n.t('Retrying LLM call {0}/{1}…', String(msg.attempt), String(msg.maxRetries)),
+      );
     } else if (msg.type === 'paused') {
       // Agent 暂停（输入待定/step 边界软暂停）→ 提示条
-      activityDrawerView.showActivity('info', 'Agent 已暂停');
+      activityDrawerView.showActivity('info', l10n.t('Agent paused'));
       // 记录暂停块（resume 原位续接锚）：无输入 continue 的首 text chunk 复用此块
       // 续写，避免 beginStreaming 新建第 2 个 assistant 块（视觉双回答分裂）；块 A 保留静态展示。
       if (activeAssistantEl && activeAssistantEl.isConnected) {
@@ -3419,7 +3289,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 容器 footer 显形收口（commitTurnTs 前置契约已内嵌）：正文流中断走「容器已建」分支，
       // 早相位中断（骨架未归位）走「建容器」分支——两相位都保证中断轮有底部栏
       settleRoundWithFooter(msg.roundId, interruptedHost);
-      activityDrawerView.showActivity('info', '已停止生成');
+      activityDrawerView.showActivity('info', l10n.t('Stopped generating'));
     } else if (msg.type === 'prefill_input') {
       // 角色 handoff 上下文传递：填入输入框并聚焦，不自动发送（用户可编辑后回车）
       input.value = msg.text;
@@ -3493,7 +3363,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         polishBtn.classList.remove('loading');
       }
       if (!msg.ok && msg.message) {
-        activityDrawerView.showActivity('info', `润色失败：${msg.message}`);
+        activityDrawerView.showActivity('info', l10n.t('Polish failed: {0}', msg.message));
       }
     } else if (msg.type === 'clear_ok') {
       // 清空消息区与全部渲染状态（resetChatView，重放渲染 renderReplayFromRounds 复用
@@ -3603,7 +3473,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 降级单点：hits 缺失/空 = 4.0.x 内核不发明细 → 回落条数提示（notice 同款形态），
       // 宿主不分支（跨 dist 容错收敛在渲染层）。
       if (!msg.hits || msg.hits.length === 0) {
-        activityDrawerView.showActivity('info', `LLM 查询记忆命中 ${msg.count} 条`);
+        activityDrawerView.showActivity(
+          'info',
+          l10n.t('LLM memory lookup matched {0} hits', String(msg.count)),
+        );
       } else if (msg.toolCallId) {
         // 主路径：按 toolCallId 收进**对应那次调用**的工具折叠块（一次调用一块，块内按 id
         // 去重——同一次调用重复命中同一记忆只列一次；跨调用各算各的，不互相吞并）。
@@ -3656,10 +3529,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         renderMemoryHits(); // 兜底聚合空则整行摘除（renderMemoryHits 空态分支）
         activityDrawerView.showActivity(
           'info',
-          '已反馈「无用」，记忆移入回收站（可在记忆管理中恢复）',
+          l10n.t('Marked as "not useful"; memory moved to trash (restorable in Memory Management)'),
         );
       } else {
-        activityDrawerView.showActivity('error', `反馈失败：${msg.message ?? '未知错误'}`);
+        activityDrawerView.showActivity(
+          'error',
+          l10n.t('Feedback failed: {0}', msg.message ?? l10n.t('Unknown error')),
+        );
       }
     } else if (msg.type === 'image_ingest_result') {
       imageCapture.applyIngestResult(msg); // 图片落盘回执（IMG-2）：chip 换真 / 转拒收态归采集层单点
@@ -3667,215 +3543,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       imageCapture.applyPicked(msg); // 文件选择框回执（Q3）：ref 即真相建卡 / 转可见拒收 chip，同归采集层单点
     } else if (msg.type === 'write_confirm_request') {
       // H0 确认审批卡：命令/脚本执行确认（或 guest 写入）→ 渲染卡并回传裁决；多请求已由宿主 FIFO 串行送审（修 S2）
-      renderWriteConfirmCard(msg);
+      writeConfirmView.render(msg);
     } else if (msg.type === 'write_confirm_closed') {
       // 请求已终结（裁决 / 超时自动拒绝）→ 收卡；requestId 不匹配即丢弃（当前卡可能已切到更新的请求）
-      if (pendingWriteConfirmRequestId === msg.requestId) closeWriteConfirmCard();
+      writeConfirmView.closeIfMatches(msg.requestId);
     }
-  }
-
-  /**
-   * 确认审批卡渲染（webview 侧唯一实现点）
-   *
-   * 填充卡片字段（工具名 / 目标 / 描述 / 内容预览）并显示；
-   * 记录当前 requestId，供确认/拒绝按钮回传 write_confirm_answer。
-   *
-   * ⚠️ 本卡承载**全部四类**确认（写入 / 命令 / 代码 / 脚本执行）——文案一律用中性动词
-   * （「确认」而非「确认写入」），diff 域缺省时不得渲染假的写入前后对比（见下方 hasDiff 注释）。
-   *
-   * @param msg write_confirm_request 载荷（host 推送）
-   */
-  function renderWriteConfirmCard(
-    msg: Extract<ExtensionToWebviewMessage, { type: 'write_confirm_request' }>,
-  ): void {
-    if (
-      !writeConfirmCard ||
-      !writeConfirmTool ||
-      !writeConfirmPath ||
-      !writeConfirmDesc ||
-      !writeConfirmDiff
-    )
-      return;
-    // 全部字段用 textContent 填充（SSOT：不信任 host 输入，防注入——与消息区渲染同纪律）
-    // 工具名走展示名单一真源（与工具行 toolActionLabel 同源）；表值 = 英文源键，
-    // 须经 webview 本地化器解析——与宿主侧 confirmCoordinator（vscode.l10n）严格同源同键，
-    // 少过这一步即「弹窗英文、卡片中文」的双头语义（B9-A 实修）
-    writeConfirmTool.textContent = l10n.t(getToolDisplayName(msg.tool));
-    writeConfirmPath.textContent = msg.targetPath;
-    writeConfirmDesc.textContent = msg.description ?? '';
-    // diff 域判据归内核单点（`WriteConfirmationInfo.hasDiff` 经协议载荷透传）：
-    // 仅写入场景 true；命令 / 代码 / 脚本执行（含删除文件）恒 false——宿主不再用
-    // beforeContent/afterContent truthy 自猜（2026-10-03 实锤：truthy 判据属措辞折叠型带伤，
-    // 判据归位内核后，即使载荷意外带内容字段也不会渲染假的写入前后对比）。
-    if (msg.hasDiff) {
-      // 有 diff 对比域（仅写入场景）：before 为 null 即新建文件
-      const before = msg.beforeContent ?? '(新建文件)';
-      writeConfirmDiff.textContent =
-        before === msg.afterContent
-          ? before
-          : `--- 写入前 ---\n${before}\n\n+++ 写入后 +++\n${msg.afterContent ?? ''}`;
-    } else {
-      // 无 diff 域（命令 / 代码 / 脚本执行确认）：渲染目标摘要，绝不伪造写入前后对比
-      writeConfirmDiff.textContent = `--- 目标 ---\n${msg.targetPath}\n\n${msg.description ?? ''}`;
-    }
-    pendingWriteConfirmRequestId = msg.requestId;
-    // 退出等待态（2026-10-05 P5 落地 A）：宿主推来新 request = 上一张已终结、队列还有下一条。
-    // 此处复位按钮可用性与提示——卡片**保持可见**（同DOM 覆盖内容，天然无闪烁）。
-    // ⚠️ 显隐不归本函数：只 setDockActive('confirm', true)（幂等，SSOT 仍是 resolveDock）。
-    exitConfirmAwaitingNext();
-    // 显隐交裁决器（SSOT）：不再直写 hidden——直写会绕过 resolveDock 的主位/收纳裁决，
-    // 与 B 类条同屏时顺序不定（方案 §九 A1）。
-    setDockActive('confirm', true);
-    // 末段倒计时（时长真源 = 宿主 timeoutMs）
-    startConfirmCountdown(msg.timeoutMs);
-    // 焦点落「拒绝」：composer 已被替换，焦点不能丢到 body（键盘用户会失去落点）。
-    // 选拒绝而非确认是与 fail-closed 同向的安全默认（超时亦为拒绝），误触不会造成副作用。
-    writeConfirmReject?.focus();
-  }
-
-  /** 末段倒计时窗口（ms）：剩余不足该值才显示倒计时，之前保持静默不打扰 */
-  const CONFIRM_COUNTDOWN_WINDOW_MS = 60_000;
-  /** 当前审批截止时刻（epoch ms）——由宿主透传的 timeoutMs 换算，webview 不自算时长 */
-  let confirmDeadlineAt = 0;
-  /** 倒计时定时器（唯一实例；关卡与 dispose 都必须清，否则跨测试污染 DOM） */
-  let confirmCountdownTimer: ReturnType<typeof setInterval> | undefined;
-
-  /** 停表 + 清空倒计时（关卡 / 新请求覆盖 / dispose 共用唯一收口） */
-  function stopConfirmCountdown(): void {
-    if (confirmCountdownTimer !== undefined) {
-      clearInterval(confirmCountdownTimer);
-      confirmCountdownTimer = undefined;
-    }
-    confirmDeadlineAt = 0;
-    if (writeConfirmCountdown) {
-      writeConfirmCountdown.hidden = true;
-      writeConfirmCountdown.textContent = '';
-    }
-  }
-
-  /**
-   * 启动末段倒计时
-   *
-   * 时长**只**来自宿主载荷（timeoutMs）——真源是宿主 CONFIRM_TIMEOUT_MS；webview 自算即
-   * 真源双写，末段提示会与宿主实际拒绝时刻漂移。
-   */
-  function startConfirmCountdown(timeoutMs: number): void {
-    stopConfirmCountdown();
-    const el = writeConfirmCountdown;
-    if (!el) return;
-    // 载荷缺 timeoutMs / 非正数 = 协议违约（真源必须由宿主透传，见 protocol.ts 该字段注释）。
-    // 🔴 不得静默 return：真源一旦漂移（如宿主漏填），倒计时会无声消失——用户只见一张
-    // 永不提示的卡，直到 30 分钟后突然被拒，且**无任何痕迹可查**（E2 同款病：
-    // 字段进了协议零消费）。显式抛错让违约在开发期第一眼暴露，而非潜伏到真机。
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-      throw new Error(
-        `write_confirm_request 载荷缺少合法 timeoutMs（收到 ${String(timeoutMs)}）——` +
-          `超时真源在宿主 CONFIRM_TIMEOUT_MS，必须经协议透传`,
-      );
-    }
-    confirmDeadlineAt = Date.now() + timeoutMs;
-    const tick = (): void => {
-      const left = confirmDeadlineAt - Date.now();
-      if (left <= 0) {
-        stopConfirmCountdown();
-        return;
-      }
-      if (left > CONFIRM_COUNTDOWN_WINDOW_MS) {
-        el.hidden = true;
-        return;
-      }
-      el.hidden = false;
-      el.textContent = `还有 ${Math.ceil(left / 1000)} 秒将自动拒绝`;
-    };
-    tick();
-    confirmCountdownTimer = setInterval(tick, 1000);
-  }
-
-  /**
-   * 关闭审批卡（唯一收口点）
-   *
-   * 🔴 真源已迁至宿主（2026-10-05 P5 落地 A）：卡片显隐只由本函数与 renderWriteConfirmCard
-   * 两处**互斥**触发，且两处的内容源都是宿主消息——
-   * ① `write_confirm_request` ⇒ 覆盖渲染（队列还有下一条，宿主协调器不推 closed）
-   * ② `write_confirm_closed` ⇒ 收卡（队列已空）
-   * 用户点击**不再**调本函数（改调 enterConfirmAwaitingNext），否则会造出第三处显隐写入点
-   * 并造成「同步关卡 / 异步开卡」两帧空档（用户实测的闪烁，F1 重复提交窗口）。
-   * 另两种调用来源：宿主推 closed（含超时兜底）、write_confirm_closed 终结。
-   *
-   * 注：等待态（writeConfirmAwaitingNext）**刻意不进dispose 清理**——它只改DOM 属性
-   * 与 button.disabled，无定时器 ⇒ 无跨用例泄漏；dispose 时页面已销毁、清它反而多余。
-   */
-  function closeWriteConfirmCard(): void {
-    stopConfirmCountdown();
-    exitConfirmAwaitingNext();
-    pendingWriteConfirmRequestId = null;
-    setDockActive('confirm', false);
-  }
-
-  /**
-   * 进入等待态（点击裁决后、宿主推下一条前）
-   *
-   * 只改**按钮可用性 + 提示 + 卡片透明度**，**不开关卡片**（显隐真源在宿主）。
-   * 同时停掉倒计时（F3）：这张已裁决，倒数对它已无意义。
-   */
-  function enterConfirmAwaitingNext(approved: boolean): void {
-    writeConfirmAwaitingNext = true;
-    stopConfirmCountdown();
-    // 两键同构：JS 只翻 disabled 布尔；等待态样式（cursor/opacity）由 CSS
-    // `.write-confirm-card__btn[disabled]` 接管（基类静态在骨架上），样式类不进 JS。
-    if (writeConfirmOk) writeConfirmOk.disabled = true;
-    if (writeConfirmReject) writeConfirmReject.disabled = true;
-    if (writeConfirmHint) {
-      writeConfirmHint.hidden = false;
-      writeConfirmHint.textContent = approved ? '已确认，等待下一条…' : '已拒绝，等待下一条…';
-    }
-    writeConfirmCard?.setAttribute('data-pending', 'true');
-  }
-
-  /** 退出等待态（宿主推来新的 request 覆盖渲染时，由 renderWriteConfirmCard 调） */
-  function exitConfirmAwaitingNext(): void {
-    if (!writeConfirmAwaitingNext) return;
-    writeConfirmAwaitingNext = false;
-    if (writeConfirmOk) writeConfirmOk.disabled = false;
-    if (writeConfirmReject) writeConfirmReject.disabled = false;
-    if (writeConfirmHint) {
-      writeConfirmHint.hidden = true;
-      writeConfirmHint.textContent = '';
-    }
-    writeConfirmCard?.removeAttribute('data-pending');
-  }
-
-  /**
-   * H0 审批卡按钮事件（确认/拒绝 → 回传 write_confirm_answer + 进入等待态）
-   *
-   * ⚠️ 等待态期间**不再收卡**（显隐真源在宿主，见 closeWriteConfirmCard 注释）。
-   * 双击由 disabled 天然挡住（F4）；pendingWriteConfirmRequestId 在等待态期间保持非空，
-   * 故重复 click 事件若漏网仍会回传同一 requestId —— 宿主 pending 已 delete 会静默丢弃，
-   * 但那不该发生，disabled 是第一道防线，requestId 相同只是兜底。
-   */
-  if (writeConfirmOk && writeConfirmReject && writeConfirmCard) {
-    writeConfirmOk.addEventListener('click', () => {
-      if (writeConfirmAwaitingNext) return;
-      if (pendingWriteConfirmRequestId !== null) {
-        vscode.postMessage({
-          type: 'write_confirm_answer',
-          requestId: pendingWriteConfirmRequestId,
-          approved: true,
-        });
-        enterConfirmAwaitingNext(true);
-      }
-    });
-    writeConfirmReject.addEventListener('click', () => {
-      if (writeConfirmAwaitingNext) return;
-      if (pendingWriteConfirmRequestId !== null) {
-        vscode.postMessage({
-          type: 'write_confirm_answer',
-          requestId: pendingWriteConfirmRequestId,
-          approved: false,
-        });
-        enterConfirmAwaitingNext(false);
-      }
-    });
   }
 
   /**
@@ -3895,7 +3567,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 既有观测兜底保留（根因定位靠 Extension Host Console，不掩盖）——补用户侧非阻断红条，
       // 避免「渲染抛异常 → 冻住/半成品 UI + 零报错」的可见性黑洞（观察点③）。
       console.error('[chatView] 消息处理异常（已兜底，UI 可能不完整）：', err);
-      activityDrawerView.showActivity('error', '界面渲染异常，详情见开发者控制台');
+      activityDrawerView.showActivity(
+        'error',
+        l10n.t('UI rendering error; see the developer console for details'),
+      );
     }
   }
 
@@ -3927,7 +3602,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (skeletonState.phase === 'waiting' && skeletonState.reason === 'ask') {
       activityDrawerView.showActivity(
         'info',
-        '提问等待中——请在上方提问卡逐题作答；不答可点 ■ 停止本轮',
+        l10n.t(
+          'Waiting for answers — answer each question in the card above; click ■ to stop this turn if you skip',
+        ),
       );
       return;
     }
@@ -3945,7 +3622,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (isInterjectRoute && statusBars.getPendingCount() >= MAX_PENDING_INTERJECTIONS) {
       activityDrawerView.showActivity(
         'info',
-        `待发送已满 ${MAX_PENDING_INTERJECTIONS} 条——先在待发送区删减，本条仍保留在输入框`,
+        l10n.t(
+          'Pending queue full ({0}) — remove some in the pending area; your text stays in the input',
+          String(MAX_PENDING_INTERJECTIONS),
+        ),
       );
       return;
     }
@@ -4265,12 +3945,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     });
   }
 
-  /** 注入原因 → 中文短语（唯一产地：chip 徽记与 title 共用，别在调用点各写一套） */
+  /**
+   * 注入原因 → 展示短语（唯一产地：chip 徽记与 title 共用，别在调用点各写一套）
+   *
+   * 值 = **英文源键**（l10n 键面）：本模块在 `initWebviewL10n` 之前即被 import，
+   * 表内不可预解析成译文（早于 config 的 t() 只会拿到键）——解析放在调用点，
+   * 见 `activeFileReasonLabel`。
+   */
+  // @nls-keys
   const ACTIVE_FILE_REASON_LABELS: Record<'dirty' | 'untitled' | 'outside', string> = {
-    dirty: '未保存',
-    untitled: '未命名',
-    outside: '工作区外',
+    dirty: 'Unsaved',
+    untitled: 'Untitled',
+    outside: 'Outside workspace',
   };
+
+  /** 取注入原因的本地化短语（表内存英文源键，此处统一过 l10n.t） */
+  function activeFileReasonLabel(reason?: 'dirty' | 'untitled' | 'outside'): string {
+    return l10n.t(ACTIVE_FILE_REASON_LABELS[reason ?? 'dirty']);
+  }
 
   /** token 数的短显（3258 → ≈3.3k；842 → 842）：chip 徽记空间窄，长数字难扫读 */
   function formatTokensShort(n: number): string {
@@ -4311,14 +4003,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       chip.type = 'button';
       chip.className = 'skill-chip active-file-chip is-disabled';
       chip.dataset.activeFile = 'suppressed';
-      chip.title = '当前打开文件未作为上下文附加（本会话）——点击重新启用';
-      chip.setAttribute('aria-label', '重新启用当前文件上下文');
+      chip.title = l10n.t(
+        'Current file is not attached as context (this session) — click to re-enable',
+      );
+      chip.setAttribute('aria-label', l10n.t('Re-enable current file context'));
       const name = document.createElement('span');
       name.className = 'skill-chip__name';
-      name.textContent = '当前文件未附加';
+      name.textContent = l10n.t('Current file not attached');
       const note = document.createElement('span');
       note.className = 'skill-chip__note';
-      note.textContent = '点击启用';
+      note.textContent = l10n.t('Click to enable');
       chip.append(icon(), name, note);
       chip.addEventListener('click', () => {
         vscode.postMessage({ type: 'set_active_file_attach', enabled: true });
@@ -4340,10 +4034,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 的投影推送即抹掉），挂在「全文已附」同一句上——CTX-3/CTX-6 文案不拆两处。
     // CTX-18：完整路径附在末尾括号——可见文本降噪后，目录位置靠 hover 这一眼。
     name.title = p.injected
-      ? `本轮已附全文（${ACTIVE_FILE_REASON_LABELS[p.reason ?? 'dirty']}）${
-          activeFileTokens !== undefined ? `· 注入约 ${activeFileTokens} token（估算）` : ''
-        }（${p.label}）`
-      : `本轮仅给路径指针，正文由模型按需读取（不占预算）（${p.label}）`;
+      ? l10n.t(
+          'Full text attached this turn ({0}){1} ({2})',
+          activeFileReasonLabel(p.reason),
+          activeFileTokens !== undefined
+            ? l10n.t('· ~{0} tokens (estimated)', String(activeFileTokens))
+            : '',
+          p.label,
+        )
+      : l10n.t(
+          'Path pointer only this turn; model reads content on demand (no budget cost) ({0})',
+          p.label,
+        );
     chip.appendChild(name);
     if (p.injected) {
       const note = document.createElement('span');
@@ -4351,7 +4053,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 徽记带短显估算（≈3.3k）：全数字（3258）在窄 chip 里挤且难扫读；无值时不显示
       // （常态附加 chip = 判据已知、本轮规模未知，不造假数）
       note.textContent =
-        `${ACTIVE_FILE_REASON_LABELS[p.reason ?? 'dirty']}·全文已附` +
+        l10n.t('{0} · full text attached', activeFileReasonLabel(p.reason)) +
         (activeFileTokens !== undefined ? ` ≈${formatTokensShort(activeFileTokens)}` : '');
       chip.appendChild(note);
     }
@@ -4359,8 +4061,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     remove.type = 'button';
     remove.className = 'skill-chip__remove';
     remove.innerHTML = getIconSvg('close', 11, 11);
-    remove.setAttribute('title', '本会话不再附加当前文件');
-    remove.setAttribute('aria-label', `关闭当前文件上下文：${p.label}`);
+    remove.setAttribute('title', l10n.t('Stop attaching current file this session'));
+    remove.setAttribute('aria-label', l10n.t('Close current file context: {0}', p.label));
     remove.addEventListener('click', () => {
       vscode.postMessage({ type: 'set_active_file_attach', enabled: false });
     });
@@ -4412,8 +4114,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     remove.type = 'button';
     remove.className = 'skill-chip__remove';
     remove.innerHTML = getIconSvg('close', 11, 11);
-    remove.setAttribute('title', `移除：${sourceName}`);
-    remove.setAttribute('aria-label', `移除${sourceName}注入`);
+    remove.setAttribute('title', l10n.t('Remove: {0}', sourceName));
+    remove.setAttribute('aria-label', l10n.t('Remove {0} injection', sourceName));
     remove.addEventListener('click', () => {
       currentInjections = currentInjections.filter((s) => s !== source);
       renderAttachmentRow();
@@ -4445,7 +4147,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const detail = injected
       .map((s) => `${INJECTION_SEGMENT_LABELS[s.source]} ${fmtTokens(s.tokens)}`)
       .join(' · ');
-    injectionReceipt.textContent = `本轮注入 ${fmtTokens(summary.total)}（${detail}）· 发送时刻估算，下一轮覆盖`;
+    injectionReceipt.textContent = l10n.t(
+      'Injected this turn {0} ({1}) · estimated at send time, overwritten next turn',
+      fmtTokens(summary.total),
+      detail,
+    );
     injectionReceipt.hidden = false;
   }
 
@@ -4553,7 +4259,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   // 提问卡渲染（真源 = turn_update.state 的 waiting/ask）
-  // 职责与原 need_clarify 分支等价：优先内联块（renderAskInline 挂问答交互行下），
+  // 职责与原 need_clarify 分支等价：优先内联块（askInlineView 挂问答交互行下），
   // 无锚点时降级底部 clarifyBar 异常兜底。questions 来自 turn_update.state.questions
   //（宿主 postTurnUpdate 投影派生，非独立消息载荷）。
   function renderAskPhase(questions: PendingQuestionDto[]): void {
@@ -4562,12 +4268,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 提问形态内联化：选择题 + 补充输入渲染到消息流提问块下方
     //（对齐 TraeWork/主流对话流交互），不再用底部 clarifyBar 替换输入栏。
     // 底部 clarifyBar 保留为异常兜底（无 assistant 块锚点时退化使用）
-    const askBlock = renderAskInline(questions);
+    const askBlock = askInlineView.render(questions);
     if (!askBlock) {
-      clarifyText.textContent = 'Agent 需要你确认：' + questions.map((q) => q.question).join('；');
+      clarifyText.textContent = l10n.t(
+        'Agent needs your confirmation: {0}',
+        questions.map((q) => q.question).join(l10n.t('; ')),
+      );
       clarifyInput.value = '';
       clarifyOptions.textContent = '';
-      // 强制单选（同 renderAskInline 语义）：任一提问带 options 且 allowCustom=false → 隐藏自由输入框
+      // 强制单选（同 askInlineView 语义）：任一提问带 options 且 allowCustom=false → 隐藏自由输入框
       const forceChoose = questions.some(
         (q) => q.options && q.options.length > 0 && q.allowCustom === false,
       );
@@ -4637,7 +4346,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     statusBars.dispose(); // 三挂载条 DOM 随状态条域收口（第 6 刀）
     imageCapture.dispose(); // 采集层监听器（paste / dragover / drop）必须随 view 收干净
     contextMenuController.dispose(); // 右键菜单 document 级监听随 view 收干净（COPY-2）
-    stopConfirmCountdown();
+    writeConfirmView.dispose(); // 审批卡倒计时定时器随域收口（C-3 域外置）
   }
 
   return { dispose };

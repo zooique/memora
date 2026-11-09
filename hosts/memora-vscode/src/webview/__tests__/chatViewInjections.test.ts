@@ -187,7 +187,7 @@ describe('本轮注入回执行（HOST-CTX-4 ② · 圆环 hover 卡片底部）
     expect(receipt().hidden).toBe(false);
     // 数字口径与卡片其余行统一（fmtTokens 精确式：非整千走千分位）
     expect(receipt().textContent).toBe(
-      '本轮注入 3,378（当前文件正文 3,258 · 工作区诊断 120）· 发送时刻估算，下一轮覆盖',
+      'Injected this turn 3,378 (当前文件正文 3,258 · 工作区诊断 120) · estimated at send time, overwritten next turn',
     );
   });
 
@@ -214,7 +214,7 @@ describe('本轮注入回执行（HOST-CTX-4 ② · 圆环 hover 卡片底部）
       },
     });
     expect(receipt().textContent).toBe(
-      '本轮注入 8,720（工作区诊断 120 · git 未提交改动 8,600）· 发送时刻估算，下一轮覆盖',
+      'Injected this turn 8,720 (工作区诊断 120 · git 未提交改动 8,600) · estimated at send time, overwritten next turn',
     );
   });
 
