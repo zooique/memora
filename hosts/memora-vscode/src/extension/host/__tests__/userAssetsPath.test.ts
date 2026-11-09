@@ -10,8 +10,17 @@
  * 写错任一条都能把文件写到 globalStorage 之外（且不会有任何测试之外的报警）。
  */
 // @vitest-environment node
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { resolve, sep, join } from 'node:path';
+
+// 宿主文案已本地化：`{0}` 插值照做，断言用英文源键比对（同 providerStore.test 口径）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: (string | number)[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 import {
   isPathWithin,
   USER_ASSET_NAME_RE,
@@ -97,7 +106,7 @@ describe('resolveInsideDir（最终路径逃逸断言）', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         // 断言逃逸判定不是靠「恰好等于 root」而是 startsWith(root + sep)
-        expect(result.reason).toContain('越出用户目录');
+        expect(result.reason).toContain('escapes the user directory');
       }
     },
   );

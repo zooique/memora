@@ -10,7 +10,16 @@
  * 仍被压缩包导入复用；判据跟着写盘器一起消失，等于把校验也删了。
  */
 // @vitest-environment node
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// 宿主文案已本地化：`{0}` 插值照做，断言用英文源键比对（同 providerStore.test 口径）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: (string | number)[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 import { validateSkillAsset } from '../userAssets/validateSkill.js';
 
 describe('validateSkillAsset（只校验、不落盘）', () => {
@@ -22,12 +31,12 @@ describe('validateSkillAsset（只校验、不落盘）', () => {
   it('description 含换行 ⇒ 拒绝（会提前闭合 frontmatter）', () => {
     expect(
       validateSkillAsset({ name: 'demo', description: '第一行\n第二行', content: '# Demo' }),
-    ).toContain('换行');
+    ).toContain('line breaks');
   });
 
   it('正文为空 ⇒ 拒绝（空技能对模型无用）', () => {
     const reason = validateSkillAsset({ name: 'demo', description: '说明', content: '  \n  ' });
-    expect(reason).toContain('正文不能为空');
+    expect(reason).toContain('skill body cannot be empty');
   });
 
   it('名字含路径分隔符 ⇒ 拒绝（复用名字净化单点）', () => {

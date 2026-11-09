@@ -21,6 +21,8 @@
  * （且 `pathExists` → `writeFile` 还有 TOCTOU），从落笔那一刻起必然分叉。
  */
 
+// 值导入（非 import type）：拒绝原因是用户可见文案，须经 vscode.l10n.t 出本地化版本
+import * as vscode from 'vscode';
 import { resolve, sep } from 'node:path';
 import { stat } from 'node:fs/promises';
 
@@ -44,17 +46,18 @@ export type SanitizeResult = { ok: true; name: string } | { ok: false; reason: s
 export function sanitizeAssetName(raw: string): SanitizeResult {
   const trimmed = raw.trim();
   if (trimmed === '') {
-    return { ok: false, reason: '名字不能为空' };
+    return { ok: false, reason: vscode.l10n.t('The name cannot be empty') };
   }
   // 首尾空格不再静默 trim 后放行：用户以为名字含空格，落盘却不同名，属隐式改写
   if (trimmed !== raw) {
-    return { ok: false, reason: '名字首尾不得有空格' };
+    return { ok: false, reason: vscode.l10n.t('The name must not start or end with a space') };
   }
   if (!USER_ASSET_NAME_RE.test(trimmed)) {
     return {
       ok: false,
-      reason:
-        '名字只能包含中文、字母、数字、下划线、连字符（最长 64 字符），不得含路径分隔符、.. 或首尾空格',
+      reason: vscode.l10n.t(
+        'The name may only contain letters, numbers, CJK characters, underscores and hyphens (up to 64 characters); path separators, "..", and leading or trailing spaces are not allowed',
+      ),
     };
   }
   return { ok: true, name: trimmed };
@@ -76,7 +79,10 @@ export function resolveInsideDir(
   const safeRoot = resolve(root);
   const target = resolve(safeRoot, segment);
   if (!target.startsWith(safeRoot + sep)) {
-    return { ok: false, reason: `写入路径越出用户目录：${target}` };
+    return {
+      ok: false,
+      reason: vscode.l10n.t('The write path escapes the user directory: {0}', target),
+    };
   }
   return { ok: true, path: target };
 }

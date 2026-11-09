@@ -10,6 +10,8 @@
  *   - 名字合法性复用 `./path.ts` 的 `sanitizeAssetName`（唯一判据，不另写正则）。
  */
 
+// 值导入（非 import type）：拒绝原因是用户可见文案，须经 vscode.l10n.t 出本地化版本
+import * as vscode from 'vscode';
 import { sanitizeAssetName } from './path.js';
 
 /** 技能校验入参：三项都已确定（正文由调用方提供，本模块不生成空壳模板） */
@@ -31,14 +33,18 @@ export function validateSkillAsset(input: SkillAssetInput): string | null {
   const sanitized = sanitizeAssetName(input.name);
   if (!sanitized.ok) return sanitized.reason;
   if (!input.description.trim()) {
-    return '描述（description）必填：缺失的技能不会进入模型可见清单，等于白建';
+    return vscode.l10n.t(
+      'A description is required: skills without one never enter the model-visible list',
+    );
   }
   // 换行会提前闭合 frontmatter 块，把正文误读成元数据
   if (/[\r\n]/.test(input.description)) {
-    return '描述不得包含换行（会破坏技能 frontmatter 结构）';
+    return vscode.l10n.t(
+      'The description must not contain line breaks (they would break the skill frontmatter)',
+    );
   }
   if (!input.content.trim()) {
-    return '技能正文不能为空';
+    return vscode.l10n.t('The skill body cannot be empty');
   }
   return null;
 }
