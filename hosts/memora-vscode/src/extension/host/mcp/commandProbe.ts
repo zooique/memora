@@ -30,6 +30,8 @@
  */
 import { statSync } from 'node:fs';
 import { delimiter, extname, isAbsolute, join, resolve } from 'node:path';
+// 值导入：预检原因会经连接层原样进面板（用户可见），键 = 英文源文案
+import * as vscode from 'vscode';
 
 /**
  * 不能直接作为 `command` 执行的脚本扩展名
@@ -224,7 +226,10 @@ export function probeCommand(input: CommandProbeInput): CommandProbeResult {
   // （command 带尾随空格时预检说没事、拉起却失败）。
   const rawCommand = stripWrappingQuotes(typeof input.command === 'string' ? input.command : '');
   if (rawCommand.trim().length === 0)
-    return { ok: false, problem: '缺少 command（要填可执行程序，如 node / npx / python）' };
+    return {
+      ok: false,
+      problem: vscode.l10n.t('Missing command (a program name such as node / npx / python)'),
+    };
 
   const baseDir = input.baseDir && input.baseDir.length > 0 ? input.baseDir : process.cwd();
 
@@ -233,8 +238,21 @@ export function probeCommand(input: CommandProbeInput): CommandProbeResult {
   const cwd = cwdValue.trim().length > 0 ? resolve(baseDir, cwdValue) : undefined;
   if (cwd) {
     const stat = fileStat(cwd);
-    if (!stat) return { ok: false, problem: `工作目录不存在：${cwd}（cwd 字段填错了）` };
-    if (!stat.isDirectory) return { ok: false, problem: `工作目录不是文件夹：${cwd}` };
+    if (!stat) {
+      return {
+        ok: false,
+        problem: vscode.l10n.t(
+          'Working directory does not exist: {0} (the cwd field is wrong)',
+          cwd,
+        ),
+      };
+    }
+    if (!stat.isDirectory) {
+      return {
+        ok: false,
+        problem: vscode.l10n.t('Working directory is not a folder: {0}', cwd),
+      };
+    }
   }
 
   // ② 其余相对路径的基准：子进程先 chdir 再执行 ⇒ 配了 cwd 就是它，否则退回工作区根
@@ -248,7 +266,13 @@ export function probeCommand(input: CommandProbeInput): CommandProbeResult {
     if (looksLikeFileArg(first)) {
       const abs = resolve(pathBase, first);
       if (!fileStat(abs)) {
-        return { ok: false, problem: `参数里的文件不存在：${abs}（检查 args 第一项）` };
+        return {
+          ok: false,
+          problem: vscode.l10n.t(
+            'File in args does not exist: {0} (check the first args entry)',
+            abs,
+          ),
+        };
       }
       args[0] = abs;
     }
@@ -260,13 +284,21 @@ export function probeCommand(input: CommandProbeInput): CommandProbeResult {
     const abs = resolve(pathBase, rawCommand);
     const stat = fileStat(abs);
     if (!stat) {
-      const ext = extname(abs).toLowerCase();
-      const hint = NON_EXECUTABLE_SCRIPT_EXTS.has(ext)
-        ? `；如果这是一个脚本文件，命令请填 node（或 python），把 ${abs} 放进「参数」`
-        : '';
-      return { ok: false, problem: `找不到可执行文件：${abs}${hint}` };
+      // 脚本后缀：把「该填解释器」这句指路并进同一条原因里（不单独建碎片键）
+      const problem = NON_EXECUTABLE_SCRIPT_EXTS.has(extname(abs).toLowerCase())
+        ? vscode.l10n.t(
+            'Executable not found: {0} (this looks like a script file: set command to node or python and pass the script in args)',
+            abs,
+          )
+        : vscode.l10n.t('Executable not found: {0}', abs);
+      return { ok: false, problem };
     }
-    if (!stat.isFile) return { ok: false, problem: `命令指向的是文件夹而不是文件：${abs}` };
+    if (!stat.isFile) {
+      return {
+        ok: false,
+        problem: vscode.l10n.t('Command points to a folder instead of a file: {0}', abs),
+      };
+    }
     const ext = extname(abs).toLowerCase();
     // POSIX 上「可执行位 + shebang」的脚本能被直接拉起 ⇒ 有执行位就不拦（无执行位则必然失败）
     if (
@@ -275,14 +307,20 @@ export function probeCommand(input: CommandProbeInput): CommandProbeResult {
     ) {
       return {
         ok: false,
-        problem: `「${abs}」是脚本文件，不能直接执行：命令填 node（Python 填 python），脚本路径放进「参数」`,
+        problem: vscode.l10n.t(
+          '{0} is a script file and cannot be executed directly: set command to node (or python) and pass the script path in args',
+          abs,
+        ),
       };
     }
     command = abs;
   } else if (!findOnPath(rawCommand)) {
     return {
       ok: false,
-      problem: `PATH 里找不到「${rawCommand}」：命令要么是 PATH 中的可执行程序（node / npx / python），要么写绝对路径；脚本文件请填 node 并把脚本放进「参数」`,
+      problem: vscode.l10n.t(
+        'Command not found on PATH: {0}. Use a program on PATH (node / npx / python) or an absolute path; for a script file set command to node and pass the script in args',
+        rawCommand,
+      ),
     };
   }
 

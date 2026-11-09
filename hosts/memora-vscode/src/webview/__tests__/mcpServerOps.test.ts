@@ -186,7 +186,7 @@ describe('mcp_write / upsert（增改）', () => {
     await applyMcpWrite(d, { op: 'upsert', server: { name: 'bad', command: '   ' } });
     expect((h.data['mcpServers'] as unknown[]).length).toBe(1);
     expect(d.notices[0]?.level).toBe('error');
-    expect(d.notices[0]?.message).toContain('缺少 command');
+    expect(d.notices[0]?.message).toContain('Missing command');
   });
 
   it('写失败 → notice(error)（不假装成功）', async () => {
@@ -216,8 +216,14 @@ describe('mcp_write / upsert 重名预检', () => {
     // 落盘未变：旧配置的 command/args 没有被冲掉（原缺陷 = 原地合并覆盖 + 回执「已更新」）
     expect(h.data['mcpServers']).toEqual([{ name: 'fs', command: 'node', args: ['-y', 'pkg'] }]);
     expect(d.notices[0]?.level).toBe('error');
-    expect(d.notices[0]?.message).toContain('覆盖');
-    expect(d.acks).toEqual([{ reqId: 'r1', ok: false, error: expect.stringContaining('覆盖') }]);
+    expect(d.notices[0]?.message).toContain('already exists and saving would overwrite');
+    expect(d.acks).toEqual([
+      {
+        reqId: 'r1',
+        ok: false,
+        error: expect.stringContaining('already exists and saving would overwrite'),
+      },
+    ]);
   });
 
   it('归一化撞车：新增名带首尾空格也拦得住（判据两侧同走 normalizeServerName）', async () => {
@@ -273,7 +279,7 @@ describe('mcp_write / ack（upsert 的结论随状态回推带回）', () => {
     });
     expect(d.acks).toHaveLength(1);
     expect(d.acks[0]!.ok).toBe(false);
-    expect(d.acks[0]!.error).toContain('缺少 command');
+    expect(d.acks[0]!.error).toContain('Missing command');
   });
 
   it('写失败 ⇒ ack{ok:false, error}（视图据此复开表单还输入）', async () => {
@@ -379,10 +385,10 @@ describe('mcp_write / remove 与 setEnabled', () => {
 
 describe('mcp_write / restart', () => {
   it('重启失败 → notice(error) 带上原因，且仍回推状态', async () => {
-    const d = deps(async () => ({ ok: false, error: '未找到 server' }));
+    const d = deps(async () => ({ ok: false, error: 'Server "ghost" not found' }));
     await applyMcpWrite(d, { op: 'restart', name: 'ghost' });
     expect(d.notices[0]?.level).toBe('error');
-    expect(d.notices[0]?.message).toContain('未找到 server');
+    expect(d.notices[0]?.message).toContain('not found');
     expect(d.pushes).toBeGreaterThan(0);
   });
 
@@ -404,7 +410,7 @@ describe('mcp_write / name 归一化匹配（写侧同样单点）', () => {
     const d = deps();
     await applyMcpWrite(d, { op: 'remove', name: 'fs' });
     expect(h.data['mcpServers']).toEqual([]);
-    expect(d.notices[0]?.message).toContain('已删除');
+    expect(d.notices[0]?.message).toContain('Removed "fs"');
   });
 
   it('停用：配置里是 `fs `、面板下发 `fs` ⇒ 改到那一条的 enabled 位', async () => {
@@ -412,7 +418,7 @@ describe('mcp_write / name 归一化匹配（写侧同样单点）', () => {
     const d = deps();
     await applyMcpWrite(d, { op: 'setEnabled', name: 'fs', enabled: false });
     expect(h.data['mcpServers']).toEqual([{ name: 'fs ', command: 'node', enabled: false }]);
-    expect(d.notices[0]?.message).toContain('已停用');
+    expect(d.notices[0]?.message).toContain('Disabled "fs"');
   });
 
   it('编辑：配置里是 `fs `、表单回传 `fs` ⇒ 覆盖同一条，不追加近似项', async () => {
@@ -425,7 +431,7 @@ describe('mcp_write / name 归一化匹配（写侧同样单点）', () => {
     });
     // 只有一条（`"fs "` 与 `"fs"` 两条会让运行侧按先到先得跳过后者 = 保存了却不生效）
     expect(h.data['mcpServers']).toEqual([{ name: 'fs', command: 'npx', enabled: true }]);
-    expect(d.notices[0]?.message).toContain('已更新');
+    expect(d.notices[0]?.message).toContain('Updated "fs"');
   });
 
   it('新增：表单名带首尾空格 ⇒ 落盘值归一化（面板显示什么，配置里就是什么）', async () => {
@@ -506,8 +512,8 @@ describe('mcp_write / import（粘贴 JSON 片段）', () => {
       },
       { name: 'cmd', command: 'node', enabled: true },
     ]);
-    expect(d.acks[0]?.detail).toContain('新增 3 台');
-    expect(d.acks[0]?.detail).toContain('跳过 1 台');
+    expect(d.acks[0]?.detail).toContain('Import completed: 3 added');
+    expect(d.acks[0]?.detail).toContain('1 skipped');
     // 不支持的形态必须点名（不能只说「跳过 1 台」）
     expect(d.acks[0]?.detail).toContain('sse');
     expect(d.acks[0]?.detail).toContain('SSE');
@@ -523,9 +529,9 @@ describe('mcp_write / import（粘贴 JSON 片段）', () => {
     });
     expect(h.data['mcpServers']).toEqual([{ name: 'keep', command: 'node' }]);
     expect(d.acks[0]?.ok).toBe(true);
-    expect(d.acks[0]?.detail).toContain('没有新增任何服务器');
+    expect(d.acks[0]?.detail).toContain('No servers added');
     // 仅 url 会被推成 http，因此 command 成了「跨形态字段」——报互斥而不是静默丢掉 url
-    expect(d.acks[0]?.detail).toContain('不能填写 command');
+    expect(d.acks[0]?.detail).toContain('must not set command');
   });
 
   it('重名不覆盖：已有同名 + 同批归一化重名都跳过，计数与原因进 detail', async () => {
@@ -548,10 +554,10 @@ describe('mcp_write / import（粘贴 JSON 片段）', () => {
       {
         reqId: 'r-dup',
         ok: true,
-        detail: expect.stringContaining('已存在同名服务器（不覆盖）'),
+        detail: expect.stringContaining('A server with the same name already exists'),
       },
     ]);
-    expect(d.acks[0]?.detail).toContain('与本次导入的前一条重名');
+    expect(d.acks[0]?.detail).toContain('Duplicate name with a previous entry in this import');
   });
 
   it('零新增绝不写盘：既有配置不被空结果覆盖', async () => {
@@ -562,7 +568,7 @@ describe('mcp_write / import（粘贴 JSON 片段）', () => {
     // 什么也没发生必须说出来（info 档会被当成「悄悄成功」）
     expect(d.notices[0]?.level).toBe('error');
     expect(d.acks).toEqual([
-      { reqId: 'r0', ok: true, detail: expect.stringContaining('没有新增任何服务器') },
+      { reqId: 'r0', ok: true, detail: expect.stringContaining('No servers added') },
     ]);
   });
 
@@ -578,8 +584,8 @@ describe('mcp_write / import（粘贴 JSON 片段）', () => {
       }),
     });
     expect(h.data['mcpServers']).toEqual([{ name: 'ok', command: 'node', enabled: true }]);
-    expect(d.acks[0]?.detail).toContain('缺少 command');
-    expect(d.acks[0]?.detail).toContain('args 必须是字符串数组');
+    expect(d.acks[0]?.detail).toContain('Missing command');
+    expect(d.acks[0]?.detail).toContain('args must be an array of strings');
   });
 
   it('整体失败：非法 JSON / 缺外壳 / 空表 / inputs 占位符 ⇒ 不写配置且 ack ok:false', async () => {
@@ -596,7 +602,7 @@ describe('mcp_write / import（粘贴 JSON 片段）', () => {
       expect(h.data['mcpServers']).toEqual([{ name: 'keep', command: 'node' }]);
       expect(d.notices[0]?.level).toBe('error');
       expect(d.acks[0]?.ok).toBe(false);
-      expect(d.acks[0]?.error).toContain('导入失败');
+      expect(d.acks[0]?.error).toContain('Import failed');
     }
   });
 

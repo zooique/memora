@@ -287,7 +287,7 @@ describe('往返探针 · 重名与失败回执', () => {
       reqId: write!.reqId,
     } as never);
     expect(d.acks[0]!.ok).toBe(false);
-    expect(d.acks[0]!.error).toContain('覆盖');
+    expect(d.acks[0]!.error).toContain('already exists and saving would overwrite');
 
     // 宿主把拒绝随 mcp_status 带回 ⇒ 视图认领，表单带着刚填的内容复开
     view.push({
@@ -297,7 +297,9 @@ describe('往返探针 · 重名与失败回执', () => {
       ack: d.acks[0]!,
     });
     expect(view.root.querySelector('[data-field="command"]')).not.toBeNull();
-    expect(view.root.querySelector('.mcp-form-error')!.textContent).toContain('覆盖');
+    expect(view.root.querySelector('.mcp-form-error')!.textContent).toContain(
+      'already exists and saving would overwrite',
+    );
     // 落盘未变：旧配置的 command 没有被新表单冲掉（原缺陷：回执说「已更新」，旧配置已遭殃）
     expect(savedServers()[0]!['command']).toBe('node');
   });
@@ -502,11 +504,11 @@ describe('隐藏条目可见性（配置里存在、列表画不出来的那部�
     });
 
     const count = view.root.querySelector('#mcpCount')!;
-    expect(count.textContent).toContain('2 台');
-    expect(count.textContent).toContain('1 条未显示');
+    expect(count.textContent).toContain('2 servers');
+    expect(count.textContent).toContain('1 hidden');
     const omitted = view.root.querySelector<HTMLElement>('#mcpOmitted')!;
     expect(omitted.hidden).toBe(false);
-    expect(omitted.textContent).toContain('重名的 1 条');
+    expect(omitted.textContent).toContain('1 entries duplicating the previous one');
   });
 
   it('全部被隐藏 ⇒ 不说「还没有配置」，改说「有配置但显示不出来」', () => {
@@ -515,7 +517,9 @@ describe('隐藏条目可见性（配置里存在、列表画不出来的那部�
     expect(view.root.querySelector<HTMLElement>('#mcpEmpty')!.hidden).toBe(false);
     expect(view.root.querySelector<HTMLElement>('#mcpEmptyDefault')!.hidden).toBe(true);
     expect(view.root.querySelector<HTMLElement>('#mcpEmptyHidden')!.hidden).toBe(false);
-    expect(view.root.querySelector('#mcpOmitted')!.textContent).toContain('缺名称的 2 条');
+    expect(view.root.querySelector('#mcpOmitted')!.textContent).toContain(
+      '2 entries without a name',
+    );
   });
 
   it('无隐藏 ⇒ 解释行隐藏且用默认空态文案（不制造噪音）', () => {

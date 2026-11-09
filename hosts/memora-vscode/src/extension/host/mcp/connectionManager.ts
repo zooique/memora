@@ -27,6 +27,8 @@ import {
   type Tool as McpTool,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { ILogger } from '@zooique/memora';
+// 值导入：失败原因 / 超时标签会进面板（用户可见），键 = 英文源文案
+import * as vscode from 'vscode';
 import { probeCommand } from './commandProbe.js';
 import { resolveTransportMode } from './mcpConfigGuard.js';
 // 配置形状真源在 shared（webview 要画编辑表单，不能 import 本模块——会把 MCP SDK 拖进
@@ -103,7 +105,10 @@ export interface McpToolPage {
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     // 定时器句柄：settle 后立刻清掉，避免进程被挂起的 timer 拖住
-    const timer = setTimeout(() => reject(new Error(`${label} 超时（${ms}ms）`)), ms);
+    const timer = setTimeout(
+      () => reject(new Error(vscode.l10n.t('{0} timed out ({1}ms)', label, String(ms)))),
+      ms,
+    );
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -133,7 +138,7 @@ const STDERR_TAIL_LINE_MAX = 200;
  */
 function withStderrTail(err: unknown, tail: readonly string[]): Error {
   if (tail.length === 0) return err instanceof Error ? err : new Error(String(err));
-  const suffix = `｜子进程输出：${tail.join(' │ ')}`;
+  const suffix = vscode.l10n.t(' | subprocess output: {0}', tail.join(' | '));
   if (err instanceof Error) {
     err.message = `${err.message}${suffix}`;
     return err;
@@ -277,7 +282,9 @@ export class McpConnection {
   private transportMode(): McpTransport {
     const mode = resolveTransportMode(this.config.transport);
     if (mode === null) {
-      throw new Error(`配置无法启动：未知的 transport 值（server「${this.name}」）`);
+      throw new Error(
+        vscode.l10n.t('Config cannot start: unknown transport value (server "{0}")', this.name),
+      );
     }
     return mode;
   }
@@ -315,7 +322,7 @@ export class McpConnection {
       ...(this.baseDir ? { baseDir: this.baseDir } : {}),
     });
     if (!probe.ok) {
-      throw new Error(`配置无法启动：${probe.problem}`);
+      throw new Error(vscode.l10n.t('Config cannot start: {0}', probe.problem));
     }
 
     // env 合并默认安全环境：只给用户 env 会丢掉 PATH（子进程直接 ENOENT），
@@ -382,7 +389,9 @@ export class McpConnection {
    */
   private asStdioConfig(): McpServerConfig & { command: string } {
     if (typeof this.config.command !== 'string' || this.config.command.trim().length === 0) {
-      throw new Error(`配置无法启动：缺少 command（server「${this.name}」）`);
+      throw new Error(
+        vscode.l10n.t('Config cannot start: missing command (server "{0}")', this.name),
+      );
     }
     return this.config as McpServerConfig & { command: string };
   }
@@ -390,7 +399,7 @@ export class McpConnection {
   /** `asStdioConfig` 的远程对应物（只守 url 在不在） */
   private asHttpConfig(): McpServerConfig & { url: string } {
     if (typeof this.config.url !== 'string' || this.config.url.trim().length === 0) {
-      throw new Error(`配置无法启动：缺少 url（server「${this.name}」）`);
+      throw new Error(vscode.l10n.t('Config cannot start: missing url (server "{0}")', this.name));
     }
     return this.config as McpServerConfig & { url: string };
   }
@@ -407,7 +416,9 @@ export class McpConnection {
   private connectFailure(err: unknown, mode: McpTransport): Error {
     if (mode === 'stdio') return withStderrTail(err, this.stderrTail);
     if (isUnauthorizedError(err)) {
-      return new Error('服务器要求授权（OAuth 支持在后续版本）');
+      return new Error(
+        vscode.l10n.t('The server requires authorization (OAuth support ships in a later release)'),
+      );
     }
     return err instanceof Error ? err : new Error(String(err));
   }
@@ -439,7 +450,7 @@ export class McpConnection {
       await withTimeout(
         client.connect(transport),
         CONNECT_TIMEOUT_MS,
-        `MCP server「${this.name}」握手`,
+        vscode.l10n.t('MCP server "{0}" handshake', this.name),
       );
       // P4 能力断言：本宿主只接 tools 能力（resources / prompts 未接入 = 已登记边界，
       // 见方案 §10）。没有 tools 的 server 无工具可注册，仍按失败处理（不静默注册空清单）；
@@ -451,8 +462,11 @@ export class McpConnection {
         const nonTool = declared.filter((key) => key !== 'tools');
         throw new Error(
           nonTool.length > 0
-            ? `本宿主当前只接 tools 能力；该 server 只提供 ${nonTool.join(' / ')}，暂不支持（不是 server 故障）`
-            : '该 server 未声明任何能力（本宿主当前只接 tools）',
+            ? vscode.l10n.t(
+                'This host only consumes the tools capability; this server offers only {0}, which is not supported (this is not a server failure)',
+                nonTool.join(' / '),
+              )
+            : vscode.l10n.t('This server declares no capability (this host only consumes tools)'),
         );
       }
       // 未消费能力不静默：每台 server 连上时记一次，否则用户只会看到「资源/提示没出现」。
@@ -515,7 +529,7 @@ export class McpConnection {
   async refreshTools(): Promise<McpTool[]> {
     const client = this.client;
     if (!client || this.closing) {
-      throw new Error(`MCP server「${this.name}」连接不可用`);
+      throw new Error(vscode.l10n.t('MCP server "{0}" connection is unavailable', this.name));
     }
     return this.fetchAllTools(client);
   }
@@ -533,7 +547,7 @@ export class McpConnection {
       const page = await withTimeout(
         cursor ? client.listTools({ cursor }) : client.listTools(),
         LIST_TOOLS_TIMEOUT_MS,
-        `MCP server「${this.name}」tools/list`,
+        vscode.l10n.t('MCP server "{0}" tools/list', this.name),
       );
       return { tools: page.tools, nextCursor: page.nextCursor };
     });
@@ -569,12 +583,12 @@ export class McpConnection {
   ): Promise<unknown> {
     const client = this.client;
     if (!client || this.closing) {
-      throw new Error(`MCP server「${this.name}」连接不可用`);
+      throw new Error(vscode.l10n.t('MCP server "{0}" connection is unavailable', this.name));
     }
     return withTimeout(
       client.callTool({ name: originalName, arguments: args }),
       timeoutMs,
-      `MCP server「${this.name}」调用 ${originalName}`,
+      vscode.l10n.t('MCP server "{0}" call {1}', this.name, originalName),
     );
   }
 

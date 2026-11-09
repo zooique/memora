@@ -7,7 +7,16 @@
  *
  * 纯函数，不碰内核、不拉起子进程。
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// vscode 替身：失败态兜底文案经 `vscode.l10n` 出键面（默认语言下原样返回英文源键）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 import type { ToolDefinition } from '@zooique/memora';
 import { deriveMcpServerStatus, type McpStatusContext } from '../mcp/statusView.js';
 import { allowlistKey, serverAllowlistKey } from '../mcp/policy.js';
@@ -152,6 +161,6 @@ describe('派生：远程形态下发面（transport / url 下发，headers 不�
     });
     const server = snap.servers[0]!;
     expect(server.state).toBe('invalid');
-    expect(server.problem).toContain('stdio 配置不能填写 url');
+    expect(server.problem).toContain('stdio config must not set url');
   });
 });

@@ -16,6 +16,8 @@
  */
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolHandler } from '@zooique/memora';
+// 值导入：转述进参数描述的约束文本是**模型可见**文案（不进日志白名单），键 = 英文源文案
+import * as vscode from 'vscode';
 import { isPlainObject, type JsonSchema } from './json.js';
 import { normalizeToolResult } from './resultNormalizer.js';
 import { resolveConfirmPolicy, type McpToolAllowlist } from './policy.js';
@@ -95,60 +97,71 @@ function describeConstraints(schema: JsonSchema, depth = 0): string {
 
   // 枚举：结构约束里最容易让模型踩空的一种，逐值列出
   if (Array.isArray(schema['enum'])) {
-    notes.push(`取值必须为 ${schema['enum'].map((v) => JSON.stringify(v)).join(' / ')} 之一`);
+    notes.push(
+      vscode.l10n.t('Must be one of {0}', schema['enum'].map((v) => JSON.stringify(v)).join(' / ')),
+    );
   }
   // const：单值约束等价于一个枚举
   if (schema['const'] !== undefined) {
-    notes.push(`取值固定为 ${JSON.stringify(schema['const'])}`);
+    notes.push(vscode.l10n.t('Fixed value: {0}', JSON.stringify(schema['const'])));
   }
   // 数值范围
   if (typeof schema['minimum'] === 'number' && typeof schema['maximum'] === 'number') {
-    notes.push(`取值范围 ${schema['minimum']} ~ ${schema['maximum']}`);
-  } else if (typeof schema['minimum'] === 'number') {
-    notes.push(`不得小于 ${schema['minimum']}`);
-  } else if (typeof schema['maximum'] === 'number') {
-    notes.push(`不得大于 ${schema['maximum']}`);
-  }
-  // 字符串长度
-  if (typeof schema['minLength'] === 'number' || typeof schema['maxLength'] === 'number') {
     notes.push(
-      `长度 ${typeof schema['minLength'] === 'number' ? schema['minLength'] : 0} ~ ${
-        typeof schema['maxLength'] === 'number' ? schema['maxLength'] : '不限'
-      }`,
+      vscode.l10n.t('Value range {0} ~ {1}', String(schema['minimum']), String(schema['maximum'])),
+    );
+  } else if (typeof schema['minimum'] === 'number') {
+    notes.push(vscode.l10n.t('Must not be less than {0}', String(schema['minimum'])));
+  } else if (typeof schema['maximum'] === 'number') {
+    notes.push(vscode.l10n.t('Must not be greater than {0}', String(schema['maximum'])));
+  }
+  // 字符串长度（有上限 / 只有下限分成两句，避免造一个「不限」碎片键）
+  if (typeof schema['minLength'] === 'number' || typeof schema['maxLength'] === 'number') {
+    const min = typeof schema['minLength'] === 'number' ? schema['minLength'] : 0;
+    notes.push(
+      typeof schema['maxLength'] === 'number'
+        ? vscode.l10n.t('Length {0} ~ {1}', String(min), String(schema['maxLength']))
+        : vscode.l10n.t('Length must be at least {0}', String(min)),
     );
   }
   // 正则 / 格式（原样转述：模型对常见格式词理解良好，正则留给它自己匹配）
   if (typeof schema['pattern'] === 'string') {
-    notes.push(`须匹配正则 ${schema['pattern']}`);
+    notes.push(vscode.l10n.t('Must match the regular expression {0}', schema['pattern']));
   }
   if (typeof schema['format'] === 'string') {
-    notes.push(`格式：${schema['format']}`);
+    notes.push(vscode.l10n.t('Format: {0}', schema['format']));
   }
   // 缺省值：模型据此决定省略参数是否安全
   if (schema['default'] !== undefined) {
-    notes.push(`缺省 ${inlineJson(schema['default'])}`);
+    notes.push(vscode.l10n.t('Default: {0}', inlineJson(schema['default'])));
   }
   // 混合结构（参数级 oneOf/anyOf/allOf）：内核无法表达，原文塞进描述
   for (const combinator of ['oneOf', 'anyOf', 'allOf'] as const) {
     if (Array.isArray(schema[combinator])) {
-      notes.push(`结构约束（${combinator}）：${inlineJson(schema[combinator])}`);
+      notes.push(
+        vscode.l10n.t(
+          'Structural constraint ({0}): {1}',
+          combinator,
+          inlineJson(schema[combinator]),
+        ),
+      );
     }
   }
   // 嵌套对象：展开一层子字段（必填标注），再深就交给 JSON 原文
   if (isPlainObject(schema['properties']) && depth < 1) {
-    notes.push(`子字段：${describeObjectFields(schema)}`);
+    notes.push(vscode.l10n.t('Fields: {0}', describeObjectFields(schema)));
   }
   if (schema['additionalProperties'] === false) {
-    notes.push('不接受额外字段');
+    notes.push(vscode.l10n.t('Additional fields are not accepted'));
   }
 
-  return notes.join('；');
+  return notes.join('; ');
 }
 
 /**
  * 渲染对象子字段清单（一层）
  *
- * 形态如「query (string，必填)：检索词；limit (number)：条数，取值范围 1 ~ 50」
+ * 形态如「query (string, required): 检索词; limit (number, optional): 条数, Value range 1 ~ 50」
  *
  * @param schema 含 properties 的对象 schema
  */
@@ -161,13 +174,16 @@ function describeObjectFields(schema: JsonSchema): string {
     .map(([field, raw]) => {
       const child: JsonSchema = isPlainObject(raw) ? raw : {};
       const type = typeof child['type'] === 'string' ? child['type'] : 'any';
-      const flag = required.includes(field) ? '必填' : '可选';
+      // 前半「字段 (类型, 必填性)」按必填性分两句，避免造 required / optional 碎片键
+      const head = required.includes(field)
+        ? vscode.l10n.t('{0} ({1}, required)', field, type)
+        : vscode.l10n.t('{0} ({1}, optional)', field, type);
       const desc = typeof child['description'] === 'string' ? child['description'] : '';
       const extra = describeConstraints(child, 1);
-      const detail = [desc, extra].filter((s) => s.length > 0).join('，');
-      return `${field} (${type}，${flag})${detail ? `：${detail}` : ''}`;
+      const detail = [desc, extra].filter((s) => s.length > 0).join(', ');
+      return detail.length > 0 ? vscode.l10n.t('{0}: {1}', head, detail) : head;
     })
-    .join('；');
+    .join('; ');
 }
 
 /**
@@ -188,7 +204,7 @@ function mapProperty(raw: unknown): ToolDefinition['parameters']['properties'][s
     describeConstraints(schema),
   ]
     .filter((part) => part.length > 0)
-    .join('；');
+    .join('; ');
 
   if (type === 'array') {
     const rawItems: JsonSchema = isPlainObject(schema['items']) ? schema['items'] : {};
@@ -208,7 +224,7 @@ function mapProperty(raw: unknown): ToolDefinition['parameters']['properties'][s
           describeConstraints(child, 1),
         ]
           .filter((part) => part.length > 0)
-          .join('；');
+          .join('; ');
         properties[field] = { type: childType, description: childDesc };
       }
       // required 兜底 + 过滤：不在 properties 里的必填项模型看不到，留着只会必然报「参数缺失」
@@ -259,7 +275,9 @@ export function toToolDefinition(
     return {
       skipped: {
         toolName: tool.name,
-        reason: '顶层 anyOf/oneOf 无法映射进内核参数类型（本期不支持，已跳过该工具）',
+        reason: vscode.l10n.t(
+          'Top-level anyOf/oneOf cannot be mapped to the kernel parameter type (unsupported in this release; tool skipped)',
+        ),
       },
     };
   }
@@ -267,7 +285,10 @@ export function toToolDefinition(
     return {
       skipped: {
         toolName: tool.name,
-        reason: `顶层 inputSchema.type=${String(schema['type'])}，内核只接受 object`,
+        reason: vscode.l10n.t(
+          'Top-level inputSchema.type={0}; the kernel only accepts object',
+          String(schema['type']),
+        ),
       },
     };
   }
@@ -302,7 +323,7 @@ export function toToolDefinition(
   return {
     definition: {
       name: '', // 由 deriveToolName 填充（命名需要全 server 上下文查撞名）
-      description: `[MCP 服务器 ${serverName}] ${toolDesc}`.trimEnd(),
+      description: vscode.l10n.t('[MCP server {0}] {1}', serverName, toolDesc).trimEnd(),
       parameters: { type: 'object', properties, required },
       // 审批意图显式声明（切片 2 三档）：命中 allowlist = 'audit' 免弹窗仍落审计，
       // 未命中 = 'always' 逐次确认。MCP 工具来源不可信，故无缺省路径（风险 2）。

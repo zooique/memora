@@ -19,6 +19,8 @@
  *   3. **失败必须有声音**：写失败 / 校验失败一律 `notice('error', …)` 并回推状态（让面板收敛到
  *      持久化真值）。首版的静默 unhandled rejection 是缺陷，不是风格。
  */
+// 值导入而非 `import type`：本文件要调 `vscode.l10n.t`（宿主侧本地化的唯一合法用法）
+import * as vscode from 'vscode';
 import {
   MCP_ALLOWLIST_KEY,
   MCP_SERVERS_KEY,
@@ -83,7 +85,7 @@ async function writeServers(
 ): Promise<{ ok: boolean; error?: string }> {
   const written = await writeSetting(MCP_SERVERS_KEY, next);
   if (written.ok) return { ok: true };
-  const error = writeErrorText('MCP 配置', written);
+  const error = writeErrorText(vscode.l10n.t('MCP configuration'), written);
   deps.notice('error', error);
   return { ok: false, error };
 }
@@ -105,7 +107,7 @@ function ackOf(
   if (!reqId) return undefined;
   const ack: McpWriteAckDto = ok
     ? { reqId, ok }
-    : { reqId, ok, error: error ?? '写入失败（原因未记录）' };
+    : { reqId, ok, error: error ?? vscode.l10n.t('Write failed (reason not recorded)') };
   if (detail) ack.detail = detail;
   return ack;
 }
@@ -199,9 +201,9 @@ export type McpImportParse =
  * @param value 片段里的值（任意 JSON，逐字段收窄）
  */
 function parseImportEntry(rawName: string, value: unknown): McpImportEntry {
-  const name = normalizeServerName(rawName) || '(未命名)';
+  const name = normalizeServerName(rawName) || vscode.l10n.t('(unnamed)');
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return { name, problem: '条目必须是一个对象' };
+    return { name, problem: vscode.l10n.t('The entry must be an object') };
   }
   const item = value as Record<string, unknown>;
 
@@ -214,10 +216,18 @@ function parseImportEntry(rawName: string, value: unknown): McpImportEntry {
   else if (rawType === 'sse') {
     return {
       name,
-      problem: '暂不支持 SSE 传输（已定案不做），请改用 Streamable HTTP（type: "http"）',
+      problem: vscode.l10n.t(
+        'SSE transport is not supported (decided against); use Streamable HTTP (type: "http") instead',
+      ),
     };
   } else if (rawType !== '') {
-    return { name, problem: `未知的传输类型 type="${String(item.type)}"（只支持 stdio / http）` };
+    return {
+      name,
+      problem: vscode.l10n.t(
+        'Unknown transport type type="{0}" (only stdio / http are supported)',
+        String(item.type),
+      ),
+    };
   } else {
     // 没写 type 时按 url 判断意图：只给 url 的片段（第三方工具常见形态）就是远程
     transport = rawUrl.length > 0 ? 'http' : 'stdio';
@@ -227,25 +237,26 @@ function parseImportEntry(rawName: string, value: unknown): McpImportEntry {
   let args: string[] | undefined;
   if (item.args !== undefined) {
     if (!Array.isArray(item.args) || item.args.some((arg) => typeof arg !== 'string')) {
-      return { name, problem: 'args 必须是字符串数组' };
+      return { name, problem: vscode.l10n.t('args must be an array of strings') };
     }
     if (item.args.length > 0) args = [...(item.args as string[])];
   }
   let env: Record<string, string> | undefined;
   if (item.env !== undefined) {
     if (typeof item.env !== 'object' || item.env === null || Array.isArray(item.env)) {
-      return { name, problem: 'env 必须是 KEY=VALUE 对象' };
+      return { name, problem: vscode.l10n.t('env must be a KEY=VALUE object') };
     }
     const pairs = Object.entries(item.env as Record<string, unknown>);
     const bad = pairs.find(([, v]) => typeof v !== 'string');
-    if (bad) return { name, problem: `env 的值必须是字符串（${bad[0]} 不是）` };
+    if (bad)
+      return { name, problem: vscode.l10n.t('env values must be strings ({0} is not)', bad[0]) };
     if (pairs.length > 0) env = Object.fromEntries(pairs) as Record<string, string>;
   }
   if (item.cwd !== undefined && typeof item.cwd !== 'string') {
-    return { name, problem: 'cwd 必须是字符串' };
+    return { name, problem: vscode.l10n.t('cwd must be a string') };
   }
   if (item.enabled !== undefined && typeof item.enabled !== 'boolean') {
-    return { name, problem: 'enabled 必须是 true/false' };
+    return { name, problem: vscode.l10n.t('enabled must be true/false') };
   }
   // headers 的形状（对象 / 字符串值 / 禁 CR-LF）由 configProblem **单点**裁决，
   // 这里只搬运原值——两处各校验一遍迟早给出两套结论（判据散点）。
@@ -285,7 +296,8 @@ function parseImportEntry(rawName: string, value: unknown): McpImportEntry {
  * @returns 逐条解析结果（条目级问题随条目带走，不中断整份解析）
  */
 export function parseMcpServersJson(raw: string): McpImportParse {
-  if (raw.trim().length === 0) return { ok: false, error: '粘贴内容为空' };
+  if (raw.trim().length === 0)
+    return { ok: false, error: vscode.l10n.t('The pasted content is empty') };
   let doc: unknown;
   try {
     doc = JSON.parse(raw);
@@ -293,30 +305,37 @@ export function parseMcpServersJson(raw: string): McpImportParse {
     // JSON.parse 的报错自带位置信息（如 `Unexpected token } in JSON at position 42`），原样带上
     return {
       ok: false,
-      error: `JSON 解析失败：${err instanceof Error ? err.message : String(err)}`,
+      error: vscode.l10n.t(
+        'JSON parse failed: {0}',
+        err instanceof Error ? err.message : String(err),
+      ),
     };
   }
   if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) {
-    return { ok: false, error: '顶层必须是一个 JSON 对象' };
+    return { ok: false, error: vscode.l10n.t('The top level must be a JSON object') };
   }
   const top = doc as Record<string, unknown>;
   if (Array.isArray(top.inputs) && top.inputs.length > 0) {
     return {
       ok: false,
-      error: '片段含 inputs 变量提示（${input:…}），导入时无法求值；请手动填写该服务器的参数',
+      error: vscode.l10n.t(
+        "The snippet contains inputs variable prompts (${input:…}), which cannot be evaluated during import; fill in this server's arguments manually",
+      ),
     };
   }
   const block = top.mcpServers ?? top.servers;
   if (typeof block !== 'object' || block === null || Array.isArray(block)) {
     return {
       ok: false,
-      error:
-        '顶层缺少 mcpServers（或 servers）对象；请粘贴形如 {"mcpServers": {"名称": {"command": "npx"}}} 的片段',
+      error: vscode.l10n.t(
+        'The top level is missing the mcpServers (or servers) object; paste a snippet like {"mcpServers": {"name": {"command": "npx"}}}',
+      ),
     };
   }
   const map = block as Record<string, unknown>;
   const names = Object.keys(map);
-  if (names.length === 0) return { ok: false, error: 'mcpServers 里没有任何服务器条目' };
+  if (names.length === 0)
+    return { ok: false, error: vscode.l10n.t('mcpServers contains no server entries') };
   return { ok: true, entries: names.map((name) => parseImportEntry(name, map[name])) };
 }
 
@@ -350,16 +369,22 @@ export function planMcpImport(
   const skipped: { name: string; reason: string }[] = [];
   for (const entry of entries) {
     if (!entry.config) {
-      skipped.push({ name: entry.name, reason: entry.problem ?? '无法解析' });
+      skipped.push({ name: entry.name, reason: entry.problem ?? vscode.l10n.t('Cannot parse') });
       continue;
     }
     const name = entry.config.name;
     if (existingNames.has(name)) {
-      skipped.push({ name, reason: '已存在同名服务器（不覆盖）' });
+      skipped.push({
+        name,
+        reason: vscode.l10n.t('A server with the same name already exists (not overwritten)'),
+      });
       continue;
     }
     if (batchNames.has(name)) {
-      skipped.push({ name, reason: '与本次导入的前一条重名' });
+      skipped.push({
+        name,
+        reason: vscode.l10n.t('Duplicate name with a previous entry in this import'),
+      });
       continue;
     }
     batchNames.add(name);
@@ -375,11 +400,26 @@ export function planMcpImport(
  * @param plan 导入计划
  */
 export function formatMcpImportSummary(plan: McpImportPlan): string {
-  const head =
-    plan.added.length > 0
-      ? `导入完成：新增 ${plan.added.length} 台${plan.skipped.length > 0 ? `，跳过 ${plan.skipped.length} 台` : ''}。`
-      : `没有新增任何服务器${plan.skipped.length > 0 ? `（跳过 ${plan.skipped.length} 条）` : ''}。`;
-  const lines = plan.skipped.map((item) => `跳过「${item.name}」：${item.reason}`);
+  // 两态文案必须各自成句（判据⑨：静态键采集只认字面量，拼在条件表达式里的碎片采不到）
+  let head: string;
+  if (plan.added.length > 0) {
+    head =
+      plan.skipped.length > 0
+        ? vscode.l10n.t(
+            'Import completed: {0} added, {1} skipped.',
+            plan.added.length,
+            plan.skipped.length,
+          )
+        : vscode.l10n.t('Import completed: {0} added.', plan.added.length);
+  } else {
+    head =
+      plan.skipped.length > 0
+        ? vscode.l10n.t('No servers added ({0} skipped).', plan.skipped.length)
+        : vscode.l10n.t('No servers added.');
+  }
+  const lines = plan.skipped.map((item) =>
+    vscode.l10n.t('Skipped "{0}": {1}', item.name, item.reason),
+  );
   return [head, ...lines].join('\n');
 }
 
@@ -397,7 +437,7 @@ export function formatMcpImportSummary(plan: McpImportPlan): string {
 async function importServers(deps: McpOpsDeps, raw: string, reqId?: string): Promise<void> {
   const parsed = parseMcpServersJson(raw);
   if (!parsed.ok) {
-    const message = `导入失败：${parsed.error}`;
+    const message = vscode.l10n.t('Import failed: {0}', parsed.error);
     deps.notice('error', message);
     deps.pushStatus(ackOf(reqId, false, message));
     return;
@@ -444,7 +484,14 @@ export async function applyMcpWrite(deps: McpOpsDeps, payload: McpWritePayload):
     case 'restart': {
       const result = await deps.restart(payload.name);
       if (!result.ok)
-        deps.notice('error', `重启「${payload.name}」失败：${result.error ?? '未知原因'}`);
+        deps.notice(
+          'error',
+          vscode.l10n.t(
+            'Failed to restart "{0}": {1}',
+            payload.name,
+            result.error ?? vscode.l10n.t('unknown reason'),
+          ),
+        );
       deps.pushStatus();
       return;
     }
@@ -453,7 +500,14 @@ export async function applyMcpWrite(deps: McpOpsDeps, payload: McpWritePayload):
       // 失败原因由状态面逐字显示，再弹一条 toast 就是同一件事说两遍。
       const result = await deps.connect();
       if (!result.ok)
-        deps.notice('error', `接入「${payload.name}」失败：${result.error ?? '未知原因'}`);
+        deps.notice(
+          'error',
+          vscode.l10n.t(
+            'Failed to attach "{0}": {1}',
+            payload.name,
+            result.error ?? vscode.l10n.t('unknown reason'),
+          ),
+        );
       // 装配完成 ⇒ 状态从 pending 变成 running/failed；装配失败 ⇒ 仍是 pending，
       // 两种情况都必须回推，否则面板停在用户点按钮之前的那一帧。
       deps.pushStatus();
@@ -479,7 +533,8 @@ async function setAllowlisted(deps: McpOpsDeps, key: string, allowlisted: boolea
   else next.delete(key);
   const written = await writeSetting(MCP_ALLOWLIST_KEY, [...next]);
   // 写不进去必须说：webview 已把勾选还原，沉默会让用户以为「点了没反应」
-  if (!written.ok) deps.notice('error', writeErrorText('免确认设置', written));
+  if (!written.ok)
+    deps.notice('error', writeErrorText(vscode.l10n.t('Allow-list settings'), written));
   deps.pushStatus();
 }
 
@@ -505,8 +560,8 @@ async function upsertServer(
   originalName?: string,
 ): Promise<void> {
   if (!draft || typeof draft.name !== 'string') {
-    deps.notice('error', 'MCP 服务器保存失败：缺少名称');
-    deps.pushStatus(ackOf(reqId, false, '缺少名称'));
+    deps.notice('error', vscode.l10n.t('Failed to save the MCP server: missing name'));
+    deps.pushStatus(ackOf(reqId, false, vscode.l10n.t('Missing name')));
     return;
   }
   const configs = readServers();
@@ -520,9 +575,10 @@ async function upsertServer(
   // 出路写进错误信息：先删原条目再添加，或换名。
   const selfName = normalizeServerName(originalName);
   if (index >= 0 && selfName !== patch.name) {
-    const message =
-      `MCP 服务器「${patch.name}」已存在，保存会覆盖它的配置：` +
-      '若要替换，请先删除原条目再添加；或给新条目换个名称。';
+    const message = vscode.l10n.t(
+      'The MCP server "{0}" already exists and saving would overwrite its configuration: to replace it, delete the original entry and add it again; or give the new entry a different name.',
+      patch.name,
+    );
     deps.notice('error', message);
     deps.pushStatus(ackOf(reqId, false, message));
     return;
@@ -535,7 +591,11 @@ async function upsertServer(
   // 判据与启动侧同源（mcpConfigGuard.configProblem）：面板能存进去的配置，启动侧不会因同一原因拒
   const problem = configProblem(merged);
   if (problem) {
-    const message = `MCP 服务器「${merged.name || '(未命名)'}」不可保存：${problem}`;
+    const message = vscode.l10n.t(
+      'The MCP server "{0}" cannot be saved: {1}',
+      merged.name || vscode.l10n.t('(unnamed)'),
+      problem,
+    );
     deps.notice('error', message);
     deps.pushStatus(ackOf(reqId, false, message));
     return;
@@ -546,7 +606,12 @@ async function upsertServer(
 
   const written = await writeServers(deps, configs);
   if (written.ok) {
-    deps.notice('info', index >= 0 ? `已更新「${merged.name}」` : `已添加「${merged.name}」`);
+    deps.notice(
+      'info',
+      index >= 0
+        ? vscode.l10n.t('Updated "{0}"', merged.name)
+        : vscode.l10n.t('Added "{0}"', merged.name),
+    );
   }
   // ack 无论成败都必须回：成功 ⇒ 视图丢掉暂存草稿；失败 ⇒ 视图复开表单还输入（见
   // mcpView 的 pendingSave）。漏推成功 ack 会让草稿一直挂在状态里（无害但不干净）。
@@ -570,10 +635,16 @@ async function removeServer(deps: McpOpsDeps, name: string): Promise<void> {
   const target = normalizeServerName(name);
   const next = configs.filter((item) => normalizeServerName(item.name) !== target);
   if (next.length === configs.length) {
-    deps.notice('error', `未找到 server「${name}」（配置可能已被其他窗口修改）`);
+    deps.notice(
+      'error',
+      vscode.l10n.t(
+        'Server "{0}" not found (the configuration may have been changed in another window)',
+        name,
+      ),
+    );
   } else {
     const written = await writeServers(deps, next);
-    if (written.ok) deps.notice('info', `已删除「${name}」`);
+    if (written.ok) deps.notice('info', vscode.l10n.t('Removed "{0}"', name));
   }
   deps.pushStatus();
 }
@@ -590,14 +661,23 @@ async function setServerEnabled(deps: McpOpsDeps, name: string, enabled: boolean
   const target = normalizeServerName(name);
   const index = configs.findIndex((item) => normalizeServerName(item.name) === target);
   if (index < 0) {
-    deps.notice('error', `未找到 server「${name}」（配置可能已被其他窗口修改）`);
+    deps.notice(
+      'error',
+      vscode.l10n.t(
+        'Server "{0}" not found (the configuration may have been changed in another window)',
+        name,
+      ),
+    );
     deps.pushStatus();
     return;
   }
   configs[index] = { ...configs[index], enabled };
   const written = await writeServers(deps, configs);
   if (written.ok) {
-    deps.notice('info', enabled ? `已启用「${name}」` : `已停用「${name}」`);
+    deps.notice(
+      'info',
+      enabled ? vscode.l10n.t('Enabled "{0}"', name) : vscode.l10n.t('Disabled "{0}"', name),
+    );
   }
   deps.pushStatus();
 }

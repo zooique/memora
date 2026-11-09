@@ -6,8 +6,17 @@
  * 按原名寻址不认清洗显示名 / 空集 fail-closed）。
  * 纯函数为主，不拉起子进程（真实连接见 mcpConnectionManager.test.ts）。
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
+
+// vscode 替身：mcp 宿主模块经 `vscode.l10n` 出可见文案（默认语言下原样返回英文源键，`{0}` 照常插值）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 import type { ToolDefinition, ToolHandler } from '@zooique/memora';
 import { allowlistKey } from '../mcp/policy.js';
 import {

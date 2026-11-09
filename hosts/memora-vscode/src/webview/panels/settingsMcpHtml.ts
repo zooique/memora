@@ -9,6 +9,10 @@
  * `scripts/mcpView.ts` 承担（数据经 `mcp_status` 消息下行），配置写入由
  * `panels/mcpServerOps.ts` 承担。
  *
+ * 本地化（B6）：文案不再写死中文，改为 `l10n.t(英文源键)` 在构建时求值——构建发生在
+ * settingsPanelHtml 模块加载期，此时 host 已把 l10n 配置注入（与 config/skills 两页同口径）。
+ * `l10n` 以参数注入而非模块级导入：本文件被 jsdom 用例直接引用，不能依赖 vscode 运行时。
+ *
  * **只使用全页面可用的 class**（`security-desc` / `loading-hint` / `btn` 等全局基线）：
  * `.hint` / `.empty-state` / `.footer-hint` 的选择符只挂在 roles/memory/config 三个 root 上
  * （CSS 注释明写 skills 是刻意不并入）⇒ MCP 页复用它们会渲染成裸文本。本页自有样式统一
@@ -18,30 +22,39 @@
  * 按 tab 表统一生成。
  */
 
-/** MCP 选项卡主体（服务器状态 + 增删改停启 + 免确认点选 + 原生设置出口） */
-export const MCP_BODY_HTML = `
+/**
+ * 构建 MCP 选项卡主体骨架
+ *
+ * @param l10n 本地化器（生产传 `vscode.l10n`；用例可注入英文直通实现）
+ * @returns MCP 选项卡的静态 HTML 片段（不含外层 `#mcp-root`）
+ */
+export function buildMcpBodyHtml(l10n: {
+  t(message: string, ...args: (string | number)[]): string;
+}): string {
+  return `
     <div class="header">
       <div class="header-main">
-        <h2>MCP 工具服务器</h2>
+        <h2>${l10n.t('MCP tool servers')}</h2>
         <span id="mcpCount" class="stat-bar" hidden></span>
       </div>
       <div class="header-actions">
-        <button id="mcpImportBtn" class="btn btn-secondary mcp-import-btn" type="button">从 JSON 导入</button>
-        <button id="mcpAddBtn" class="btn btn-secondary mcp-add-btn" type="button">添加服务器</button>
+        <button id="mcpImportBtn" class="btn btn-secondary mcp-import-btn" type="button">${l10n.t('Import from JSON')}</button>
+        <button id="mcpAddBtn" class="btn btn-secondary mcp-add-btn" type="button">${l10n.t('Add server')}</button>
       </div>
     </div>
-    <p class="security-desc">MCP（Model Context Protocol）服务器给对话提供外部工具，工具名形如 <code>mcp__服务器名__工具名</code>。配置写在<strong>用户级</strong>设置里（随人、不随项目）——本页直接编辑它，不另存副本。</p>
+    <p class="security-desc">${l10n.t('MCP (Model Context Protocol) servers give the conversation external tools; tool names look like <code>mcp__server__tool</code>. The configuration lives in <strong>user-level</strong> settings (it follows the person, not the project) — this page edits it in place and keeps no copy.')}</p>
     <div id="mcpList">
-      <p class="loading-hint">加载中…</p>
+      <p class="loading-hint">${l10n.t('Loading…')}</p>
     </div>
     <div id="mcpEmpty" hidden>
-      <p class="security-desc" id="mcpEmptyDefault">还没有配置任何 MCP 服务器。添加一台后，它的工具会以 <code>mcp__服务器名__工具名</code> 出现在模型工具列表里；调用前默认每次都要你确认。</p>
-      <p class="security-desc" id="mcpEmptyHidden" hidden>配置里有条目，但没有一条能显示成卡片（缺名称，或与前一条重名）。改好后会自动出现在这里；也可以直接删掉重加。具体是哪几条见下面那行提示。</p>
-      <button class="btn btn-secondary mcp-add-btn" type="button">添加第一台服务器</button>
+      <p class="security-desc" id="mcpEmptyDefault">${l10n.t("No MCP servers configured yet. Once you add one, its tools appear in the model's tool list as <code>mcp__server__tool</code>; by default you must approve every call.")}</p>
+      <p class="security-desc" id="mcpEmptyHidden" hidden>${l10n.t('The configuration has entries, but none can be shown as a card (missing name, or a duplicate of the previous one). They will appear here automatically once fixed; you can also delete and re-add them. The hint line below lists which ones.')}</p>
+      <button class="btn btn-secondary mcp-add-btn" type="button">${l10n.t('Add the first server')}</button>
     </div>
     <p id="mcpOmitted" class="mcp-omitted" hidden></p>
-    <p class="security-desc">免确认只是不弹窗，<strong>每次调用仍写审计</strong>。支持两级：单个工具勾选（只放行该工具），或整台服务器的「整台免确认」（放行这台的全部工具）。没有「一次放行所有服务器」的开关——每台都要单独授权。删除服务器不会连带清掉它的免确认记录（重新添加同名服务器时自动恢复）。</p>
+    <p class="security-desc">${l10n.t('Allow-listing only skips the confirmation prompt; <strong>every call is still audited</strong>. Two levels are supported: per-tool checkboxes (allow only that tool), or the whole server\'s "allow all" (allows every tool of that server). There is no "allow every server" switch — each server must be authorized on its own. Deleting a server does not clear its allow-list records (re-adding a server with the same name restores them).')}</p>
     <div class="mcp-footer">
-      <button class="btn btn-ghost open-setting-btn" type="button" data-setting-key="memora.mcpServers">高级：在 settings.json 中编辑</button>
+      <button class="btn btn-ghost open-setting-btn" type="button" data-setting-key="memora.mcpServers">${l10n.t('Advanced: edit in settings.json')}</button>
     </div>
 `;
+}

@@ -468,7 +468,27 @@ const WEBVIEW_PANELS = {
       'extension/commands/reloadSkills.ts',
     ],
   },
-  mcp: { state: 'pending', files: [] },
+  // MCP 页（B6）：骨架 / 运行时脚本 / 样式 / 面板执行面（`mcpServerOps`）+ 连接层全域判据全部迁完。
+  // `extension/host/mcp/*` 八件全登记：失败原因、预检原因、跳过原因、约束转述（模型可见）
+  // 都是**同一条链上的可见文案**，只登记其中一半等于让另一半静默腐烂。
+  mcp: {
+    state: 'migrated',
+    files: [
+      'shared/settingsTabs.ts',
+      'webview/panels/settingsMcpHtml.ts',
+      'webview/scripts/mcpView.ts',
+      'webview/styles/mcpStyles.ts',
+      'webview/panels/mcpServerOps.ts',
+      'extension/host/mcp/toolRegistry.ts',
+      'extension/host/mcp/connectionManager.ts',
+      'extension/host/mcp/mcpConfigGuard.ts',
+      'extension/host/mcp/runtime.ts',
+      'extension/host/mcp/commandProbe.ts',
+      'extension/host/mcp/failureLedger.ts',
+      'extension/host/mcp/statusView.ts',
+      'extension/host/mcp/resultNormalizer.ts',
+    ],
+  },
   security: { state: 'pending', files: [] },
   // 作品页是首个范式样板：文件清单与文案真源均已迁移（判据⑰ 生效）。
   works: {
@@ -537,9 +557,14 @@ function scanStringLiterals(text) {
   return out;
 }
 
-/** 日志白名单：字面量是否为 `console.*` / `logger.*` 的**直接实参**（启发式，见注册表盲区 3；只放内部事实，不放模型可见 / 双面，见盲区 4） */
+/**
+ * 日志白名单：字面量是否为 `console.*` / `logger.*` 的**直接实参**（启发式，见注册表盲区 3；只放内部事实，不放模型可见 / 双面，见盲区 4）
+ *
+ * `?.` 可选链必须同样放行：`this.logger?.warn('…')` 与原形是同一个调用面，漏认会把
+ * 纯开发者日志误判成用户可见文案（误红），逼着把日志翻译成键——那是为过闸造噪音。
+ */
 function isLogArgument(textBefore) {
-  return /(?:^|[^\w$])(?:console|logger)\s*\.\s*\w+\s*\([^()]*$/.test(textBefore);
+  return /(?:^|[^\w$])(?:console|logger)\s*(?:\?\.|\.)\s*\w+\s*\([^()]*$/.test(textBefore);
 }
 
 /**
@@ -1121,6 +1146,11 @@ function selfTest() {
     [
       '⑰ 负向：console / logger 实参不判',
       collectVisibleCjkInText(`console.log('中文日志'); logger.warn('中文日志');`).length === 0,
+    ],
+    [
+      '⑰ 负向：可选链日志实参不判（this.logger?.warn）',
+      collectVisibleCjkInText(`this.logger?.warn('中文日志'); console?.error('中文日志');`)
+        .length === 0,
     ],
     [
       '⑰ 负向：注释里的中文不判',

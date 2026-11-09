@@ -5,7 +5,16 @@
  * §10「单次结果无 per-result 预裁」行的退出条件（预裁 + 截断提示）。
  * 纯函数，不碰内核、不拉起子进程（连接面见 mcpConnectionManager.test.ts）。
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// vscode 替身：降级 / 截断标记经 `vscode.l10n` 出键面（默认语言下原样返回英文源键，`{0}` 照常插值）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 import { normalizeToolResult } from '../mcp/resultNormalizer.js';
 
 describe('normalizeToolResult（结果归一化）', () => {
@@ -27,7 +36,7 @@ describe('normalizeToolResult（结果归一化）', () => {
 
   it('isError 且无文本 → 固定说明文案（不让空错误文本流进模型）', () => {
     expect(() => normalizeToolResult({ content: [], isError: true })).toThrow(
-      'MCP 工具返回错误（无文本说明）',
+      'MCP tool returned an error (no textual explanation)',
     );
   });
 
@@ -39,17 +48,25 @@ describe('normalizeToolResult（结果归一化）', () => {
         { type: 'resource', resource: { uri: 'file:///x' } },
       ],
     });
-    expect(text).toBe('见图\n[已丢弃非文本结果：image]\n[已丢弃非文本结果：resource]');
+    expect(text).toBe(
+      '见图\n[Non-text result dropped: image]\n[Non-text result dropped: resource]',
+    );
   });
 
   it('空结果 → 明示文案（不被误读成工具无事可做）', () => {
-    expect(normalizeToolResult({ content: [] })).toBe('（MCP 工具返回空结果）');
+    expect(normalizeToolResult({ content: [] })).toBe('(MCP tool returned an empty result)');
   });
 
   it('载荷不是对象 → 明说「非标准结果」（协议违规 ≠ 真空结果：后者是工具跑完没输出，前者是 server 没按协议回）', () => {
-    expect(normalizeToolResult(undefined)).toBe('（MCP 工具返回非标准结果：载荷不是对象）');
-    expect(normalizeToolResult('不是对象')).toBe('（MCP 工具返回非标准结果：载荷不是对象）');
-    expect(normalizeToolResult(42)).toBe('（MCP 工具返回非标准结果：载荷不是对象）');
+    expect(normalizeToolResult(undefined)).toBe(
+      '(MCP tool returned a non-standard result: payload is not an object)',
+    );
+    expect(normalizeToolResult('不是对象')).toBe(
+      '(MCP tool returned a non-standard result: payload is not an object)',
+    );
+    expect(normalizeToolResult(42)).toBe(
+      '(MCP tool returned a non-standard result: payload is not an object)',
+    );
   });
 
   it('structuredContent 降级：无文本正文时转 JSON 并注明来源', () => {
@@ -57,7 +74,7 @@ describe('normalizeToolResult（结果归一化）', () => {
       content: [],
       structuredContent: { ok: true, items: [1, 2] },
     });
-    expect(text).toBe('[结构化输出已降级为文本]\n{"ok":true,"items":[1,2]}');
+    expect(text).toBe('[Structured output downgraded to text]\n{"ok":true,"items":[1,2]}');
   });
 
   it('有文本正文时 structuredContent 丢弃不注（平行冗余形态，注了反而双份）', () => {
@@ -70,7 +87,7 @@ describe('normalizeToolResult（结果归一化）', () => {
 
   it('空对象 structuredContent 不触发降级（空结构不是内容）', () => {
     expect(normalizeToolResult({ content: [], structuredContent: {} })).toBe(
-      '（MCP 工具返回空结果）',
+      '(MCP tool returned an empty result)',
     );
   });
 
@@ -78,7 +95,9 @@ describe('normalizeToolResult（结果归一化）', () => {
     const huge = 'x'.repeat(20_001);
     const text = normalizeToolResult({ content: [{ type: 'text', text: huge }] });
     expect(text.startsWith('x'.repeat(20_000))).toBe(true);
-    expect(text).toContain('[结果已截断：原长 20001 字符，仅保留前 20000 字符]');
+    expect(text).toContain(
+      '[Result truncated: original length 20001 characters, only the first 20000 kept]',
+    );
   });
 
   it('恰好等于上限不截断（边界：不误伤正常大结果）', () => {
@@ -90,6 +109,6 @@ describe('normalizeToolResult（结果归一化）', () => {
     const huge = 'e'.repeat(20_001);
     expect(() =>
       normalizeToolResult({ content: [{ type: 'text', text: huge }], isError: true }),
-    ).toThrow(/结果已截断：原长 20001 字符/);
+    ).toThrow(/Result truncated: original length 20001 characters/);
   });
 });

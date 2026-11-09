@@ -17,12 +17,12 @@ import { createSettingsView, SETTINGS_VIEW_MOUNTS } from '../scripts/settingsVie
 import type { CustomSearchEngineConfig, MemoryItemDto } from '../../shared/protocol.js';
 // MCP 子视图骨架**直接取产线同一份常量**（不再手抄一份夹具镜像）：手抄镜像会随产线演进
 // 静默失同步，而失同步的表现是「测试全绿、真机少一块」——正是这类夹具要防的东西。
-import { MCP_BODY_HTML } from '../panels/settingsMcpHtml.js';
+import { buildMcpBodyHtml } from '../panels/settingsMcpHtml.js';
 import { buildWorksBodyHtml } from '../panels/settingsWorksHtml.js';
 import { SETTINGS_TABS, settingsRootId } from '../../shared/settingsTabs.js';
 
 /** MCP 面板容器（root id 由 tab 表派生，不写死字符串） */
-const MCP_FIXTURE = `<div id="${settingsRootId('mcp')}" hidden>${MCP_BODY_HTML}</div>`;
+const MCP_FIXTURE = `<div id="${settingsRootId('mcp')}" hidden>${buildMcpBodyHtml({ t: (s) => s })}</div>`;
 /** 作品面板容器：同取产线骨架，避免加 tab 时夹具漏一块导致 switchTab 撞 null */
 const WORKS_FIXTURE = `<div id="${settingsRootId('works')}" hidden>${buildWorksBodyHtml({ t: (s) => s })}</div>`;
 
@@ -959,7 +959,7 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
     mountSettingsView();
     pushStatus([RUNNING]);
     expect((document.getElementById('mcpCount') as HTMLElement).textContent).toBe(
-      '1 台 · 1 已连接 · 2 个工具',
+      '1 servers · 1 connected · 2 tools',
     );
     expect(mcpRoot().querySelector('.mcp-dot')?.getAttribute('data-state')).toBe('running');
     expect(mcpRoot().querySelectorAll('.mcp-tool-row')).toHaveLength(2);
@@ -993,7 +993,7 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
     expect(mcpRoot().querySelector('.mcp-server-error')?.textContent).toBe(
       'spawn github-mcp ENOENT',
     );
-    expect(mcpRoot().querySelector('.mcp-server-state')?.textContent).toBe('启动失败');
+    expect(mcpRoot().querySelector('.mcp-server-state')?.textContent).toBe('Failed to start');
     // 失败态也给了恢复路径（重启），否则「配置没变就永远起不来」
     expect(mcpRoot().querySelector('[data-act="restart"]')).not.toBeNull();
   });
@@ -1020,19 +1020,19 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
         tools: [],
         serverAllowKey: 'mcp__bad__*',
         serverAllowlisted: false,
-        problem: '缺少 command',
+        problem: 'Missing command',
       },
     ]);
     const states = Array.from(mcpRoot().querySelectorAll('.mcp-server-state')).map(
       (el) => el.textContent,
     );
-    expect(states).toEqual(['已停用', '配置不完整']);
+    expect(states).toEqual(['Disabled', 'Incomplete configuration']);
     // 停用态给「启用」，非法态只给「编辑」（配置没救之前重启无意义）
     const cards = mcpRoot().querySelectorAll<HTMLElement>('.mcp-server');
-    expect(cards[0]?.querySelector('[data-act="toggle"]')?.textContent).toBe('启用');
+    expect(cards[0]?.querySelector('[data-act="toggle"]')?.textContent).toBe('Enable');
     expect(cards[0]?.querySelector('[data-act="restart"]')).toBeNull();
     expect(cards[1]?.querySelector('[data-act="toggle"]')).toBeNull();
-    expect(cards[1]?.querySelector('.mcp-server-error')?.textContent).toBe('缺少 command');
+    expect(cards[1]?.querySelector('.mcp-server-error')?.textContent).toBe('Missing command');
   });
 
   it('空数组 = 空态 + 添加入口（空态不再是一段「去别处改」的说明书）', () => {
@@ -1161,7 +1161,7 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
     const { postMessage } = mountSettingsView();
     pushStatus([RUNNING]);
     const toggle = mcpRoot().querySelector<HTMLElement>('[data-act="toggle"]');
-    expect(toggle?.textContent).toBe('停用');
+    expect(toggle?.textContent).toBe('Disable');
     toggle!.click();
     expect(postMessage).toHaveBeenCalledWith({
       type: 'mcp_write',
@@ -1214,8 +1214,8 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
     expect(edit?.disabled).toBe(true);
     // 原因必须是「远程没有表单字段」，不能复用「字符有损」那句——照后者去改永远改不好
     const title = edit?.getAttribute('title') ?? '';
-    expect(title).toContain('远程');
-    expect(title).not.toContain('含空项');
+    expect(title).toContain('Remote servers cannot be edited');
+    expect(title).not.toContain('empty items or line breaks');
     // 同台的启停仍可用（禁的只是编辑这一条死路，不是整张卡片）
     expect(mcpRoot().querySelector<HTMLButtonElement>('[data-act="toggle"]')?.disabled).toBe(false);
   });
@@ -1299,7 +1299,9 @@ describe('MCP 选项卡（五态观察面 + 增删改停启，2026-10-24 交互�
     expect(postMessage).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'mcp_write', op: 'import' }),
     );
-    expect(mcpRoot().querySelector('.mcp-import-result')?.textContent).toContain('请先粘贴');
+    expect(mcpRoot().querySelector('.mcp-import-result')?.textContent).toContain(
+      'Paste some JSON first',
+    );
   });
 
   it('「高级：在 settings.json 中编辑」→ post open_setting（页面级绑定，按钮已降级为后门）', () => {

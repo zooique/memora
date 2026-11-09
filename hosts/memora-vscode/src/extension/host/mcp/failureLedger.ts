@@ -12,6 +12,8 @@
  * 失败记录是**观察面**的真相源（面板 `state=failed` + 错误原文）：只写日志不留痕，
  * 用户在最需要排查的时候看到的是一片"没有服务器"（本页首版的缺陷）。
  */
+// 值导入：兜底原因文本会进面板（用户可见），键 = 英文源文案
+import * as vscode from 'vscode';
 
 /**
  * 一条失败记录
@@ -42,7 +44,7 @@ const failed = new Map<string, McpFailure>();
  * @param reason 原始错误（Error / 字符串 / 任何被抛出的东西）
  */
 export function noteFailure(name: string, reason: unknown): void {
-  const text = String(reason ?? '未知错误');
+  const text = String(reason ?? vscode.l10n.t('Unknown error'));
   failed.set(name, {
     error: text.length > MAX_ERROR_TEXT ? `${text.slice(0, MAX_ERROR_TEXT)}…` : text,
     at: Date.now(),

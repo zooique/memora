@@ -7,7 +7,16 @@
  * 纯逻辑用注入替身测（不拉起子进程）；通知→回调的真链路见
  * mcpConnectionManager.test.ts 的 list_changed 用例。
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+
+// vscode 替身：重启失败 / 断线原因经 `vscode.l10n` 出键面（默认语言下原样返回英文源键，`{0}` 照常插值）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import type { Agent, ILogger, ToolDefinition, ToolHandler } from '@zooique/memora';
 import type { McpConnection } from '../mcp/connectionManager.js';
@@ -394,7 +403,7 @@ describe('reconcileMcpConfig（面板「接入」）', () => {
   it('工具执行器不可用 ⇒ 返回可读失败（不能静默成功）', async () => {
     const r = await reconcileMcpConfig({} as unknown as Agent, [cfg('s1')], { allowlist: [] });
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('工具执行器不可用');
+    expect(r.error).toContain('tool executor is unavailable');
   });
 
   it('已装配 ⇒ 按当前配置追平一次（新配置进 applied，工具注册成功）', async () => {
@@ -875,7 +884,7 @@ describe('MCP 状态面（五态合并 / 失败留痕 / 恢复路径）', () => 
 
     const status = statusList(configs);
     expect(status.map((item) => item.state)).toEqual(['disabled', 'invalid']);
-    expect(status[1]?.problem).toBe('缺少 command');
+    expect(status[1]?.problem).toBe('Missing command');
     // 非法/停用都不带 error（原因不同，不能混成一句「失败」）
     expect(status[0]?.error).toBeUndefined();
     expect(status[1]?.error).toBeUndefined();
@@ -895,7 +904,7 @@ describe('MCP 状态面（五态合并 / 失败留痕 / 恢复路径）', () => 
 
     const status = statusList([serverConfig('fs')]);
     expect(status[0]?.state).toBe('failed');
-    expect(status[0]?.error).toContain('连接已断开');
+    expect(status[0]?.error).toContain('Connection closed');
   });
 
   it('成功启动会清掉失败记录（失败→重启成功不留红点）', async () => {
@@ -948,7 +957,7 @@ describe('MCP 状态面（五态合并 / 失败留痕 / 恢复路径）', () => 
 
     const result = await restartMcpServer(agent, 'nope');
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('未找到');
+    expect(result.error).toContain('not found');
   });
 
   it('运行态变化会通知监听器（断线/失败不是配置变更 ⇒ 只能靠这条回调驱动回推）', async () => {

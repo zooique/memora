@@ -25,15 +25,18 @@ import type {
   McpServerStatusDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
+// 命名空间导入而非裸 `t`：静态键采集（判据⑨）只认 `l10n.t('…')`
+import * as l10n from '@vscode/l10n';
 import { escapeHtml } from '../helpers/escapeHtml.js';
 
 /** 五态可见名（与 CSS 的 `[data-state]` 取值同源） */
+// @nls-keys
 export const STATE_LABELS: Record<McpServerState, string> = {
-  running: '已连接',
-  failed: '启动失败',
-  pending: '待接入',
-  disabled: '已停用',
-  invalid: '配置不完整',
+  running: 'Connected',
+  failed: 'Failed to start',
+  pending: 'Not connected',
+  disabled: 'Disabled',
+  invalid: 'Incomplete configuration',
 };
 
 /** 表单草稿（args/env 以**文本**保存：编辑中途不解析，保存时才落成数组/对象） */
@@ -180,7 +183,9 @@ function isRemote(server: McpServerDraftDto): boolean {
 export function summaryOf(server: McpServerDraftDto): string {
   const command = typeof server.command === 'string' ? server.command : '';
   if (command.trim().length === 0) {
-    return isRemote(server) ? `http · ${server.url ?? '(未填写 url)'}` : '（未填写 command）';
+    return isRemote(server)
+      ? `http · ${server.url ?? l10n.t('(url not set)')}`
+      : l10n.t('(command not set)');
   }
   const text = [command, ...(server.args ?? [])].join(' ').trim();
   return text.length > 120 ? `${text.slice(0, 120)}…` : text;
@@ -246,15 +251,23 @@ export function formatServerSummary(
   const countOf = (predicate: (item: McpServerStatusDto) => boolean): number =>
     servers.filter(predicate).length;
   const parts = [
-    `${omitted.configured} 台`,
-    `${countOf((item) => item.state === 'running')} 已连接`,
+    l10n.t('{0} servers', omitted.configured),
+    l10n.t(
+      '{0} connected',
+      countOf((item) => item.state === 'running'),
+    ),
   ];
   const bad = countOf((item) => item.state === 'failed' || item.state === 'invalid');
-  if (bad > 0) parts.push(`${bad} 需处理`);
+  if (bad > 0) parts.push(l10n.t('{0} need attention', bad));
   const pending = countOf((item) => item.state === 'pending');
-  if (pending > 0) parts.push(`${pending} 待接入`);
-  parts.push(`${servers.reduce((sum, item) => sum + item.toolCount, 0)} 个工具`);
-  if (hidden > 0) parts.push(`${hidden} 条未显示`);
+  if (pending > 0) parts.push(l10n.t('{0} not connected', pending));
+  parts.push(
+    l10n.t(
+      '{0} tools',
+      servers.reduce((sum, item) => sum + item.toolCount, 0),
+    ),
+  );
+  if (hidden > 0) parts.push(l10n.t('{0} hidden', hidden));
   return parts.join(' · ');
 }
 
@@ -274,9 +287,22 @@ export function formatOmittedNotice(omitted: McpOmittedDto): string {
   const hidden = omitted.missingName + omitted.duplicate;
   if (hidden === 0) return '';
   const reasons: string[] = [];
-  if (omitted.missingName > 0) reasons.push(`缺名称的 ${omitted.missingName} 条`);
-  if (omitted.duplicate > 0) reasons.push(`与前一条重名的 ${omitted.duplicate} 条（只保留第一条）`);
-  return `配置里共 ${omitted.configured} 条，其中 ${hidden} 条没有显示在上面的列表里：${reasons.join('、')}。这些条目启动时会被跳过，细节见「Memora」输出面板。`;
+  if (omitted.missingName > 0)
+    reasons.push(l10n.t('{0} entries without a name', omitted.missingName));
+  if (omitted.duplicate > 0)
+    reasons.push(
+      l10n.t(
+        '{0} entries duplicating the previous one (only the first is kept)',
+        omitted.duplicate,
+      ),
+    );
+  // 分隔符并进整句（reasons 内部逗号分隔，中文版由 zh-cn 译文给出顿号）
+  return l10n.t(
+    '{0} entries are configured and {1} of them are not shown in the list above: {2}. These entries are skipped at startup; see the "Memora" output panel for details.',
+    omitted.configured,
+    hidden,
+    reasons.join(', '),
+  );
 }
 
 /** createMcpView 依赖 */
@@ -359,11 +385,11 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
         return `<li class="mcp-tool-row">
           <div class="mcp-tool-name">
             <code>${escapeHtml(tool.derivedName)}</code>
-            ${renamed ? `<span class="mcp-tool-orig">（工具原名 ${escapeHtml(tool.originalName)}）</span>` : ''}
+            ${renamed ? `<span class="mcp-tool-orig">${l10n.t('(original tool name: {0})', escapeHtml(tool.originalName))}</span>` : ''}
           </div>
-          <label class="mcp-allow-toggle" title="${covered ? '已由「整台免确认」覆盖，取消请关掉整台开关' : '免确认：不再弹窗，但每次调用仍写审计'}">
-            <input type="checkbox" class="mcp-allow-check" data-allow-key="${escapeHtml(tool.allowKey)}" aria-label="${escapeHtml(tool.derivedName)} 免确认" ${tool.allowlisted ? 'checked' : ''}${covered ? ' disabled' : ''} />
-            <span>免确认</span>
+          <label class="mcp-allow-toggle" title="${covered ? l10n.t('Already covered by the server-wide "allow all"; turn that switch off to un-allow') : l10n.t('Allow-listed: no more prompts, but every call is still audited')}">
+            <input type="checkbox" class="mcp-allow-check" data-allow-key="${escapeHtml(tool.allowKey)}" aria-label="${l10n.t('Allow-list {0}', escapeHtml(tool.derivedName))}" ${tool.allowlisted ? 'checked' : ''}${covered ? ' disabled' : ''} />
+            <span>${l10n.t('Allow-list')}</span>
           </label>
         </li>`;
       })
@@ -378,9 +404,9 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
    */
   function serverAllowRow(server: McpServerStatusDto): string {
     if (server.tools.length === 0) return '';
-    const label = `整台免确认（${server.tools.length} 个工具）`;
+    const label = l10n.t('Allow all tools of this server ({0} tools)', server.tools.length);
     return `<div class="mcp-allow-server-row">
-      <label class="mcp-allow-toggle" title="整台免确认：此 server 的全部工具不再弹窗；每次调用仍写审计">
+      <label class="mcp-allow-toggle" title="${l10n.t('Allow all tools of this server: no prompts for any of its tools; every call is still audited')}">
         <input type="checkbox" class="mcp-allow-server-check" data-allow-key="${escapeHtml(server.serverAllowKey)}" aria-label="${escapeHtml(server.name)} ${label}" ${server.serverAllowlisted ? 'checked' : ''} />
         <span>${label}</span>
       </label>
@@ -392,32 +418,32 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     const isEdit = current.originalName !== '';
     return `<form class="mcp-form" data-form="1">
       <div class="mcp-field">
-        <label class="mcp-label" for="mcpFName">名称</label>
-        <input id="mcpFName" class="mcp-input" data-field="name" type="text" value="${escapeHtml(current.name)}" ${isEdit ? 'readonly' : ''} placeholder="例如 filesystem" />
-        ${isEdit ? '<span class="mcp-hint">名称是工具名前缀与免确认寻址键，改名请删除后重建</span>' : ''}
+        <label class="mcp-label" for="mcpFName">${l10n.t('Name')}</label>
+        <input id="mcpFName" class="mcp-input" data-field="name" type="text" value="${escapeHtml(current.name)}" ${isEdit ? 'readonly' : ''} placeholder="${l10n.t('e.g. filesystem')}" />
+        ${isEdit ? `<span class="mcp-hint">${l10n.t('The name is the tool-name prefix and the allow-list addressing key; to rename, delete and re-create')}</span>` : ''}
       </div>
       <div class="mcp-field">
-        <label class="mcp-label" for="mcpFCommand">命令</label>
-        <input id="mcpFCommand" class="mcp-input" data-field="command" type="text" value="${escapeHtml(current.command)}" placeholder="例如 npx" />
+        <label class="mcp-label" for="mcpFCommand">${l10n.t('Command')}</label>
+        <input id="mcpFCommand" class="mcp-input" data-field="command" type="text" value="${escapeHtml(current.command)}" placeholder="${l10n.t('e.g. npx')}" />
       </div>
       <div class="mcp-field">
-        <label class="mcp-label" for="mcpFArgs">参数<span class="mcp-hint">一行一个</span></label>
+        <label class="mcp-label" for="mcpFArgs">${l10n.t('Arguments')}<span class="mcp-hint">${l10n.t('one per line')}</span></label>
         <textarea id="mcpFArgs" class="mcp-input mcp-textarea" data-field="argsText" rows="3" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/path/to/dir">${escapeHtml(current.argsText)}</textarea>
       </div>
       <div class="mcp-field">
-        <label class="mcp-label" for="mcpFEnv">环境变量<span class="mcp-hint">一行一个 KEY=VALUE</span></label>
+        <label class="mcp-label" for="mcpFEnv">${l10n.t('Environment variables')}<span class="mcp-hint">${l10n.t('one KEY=VALUE per line')}</span></label>
         <textarea id="mcpFEnv" class="mcp-input mcp-textarea" data-field="envText" rows="2" placeholder="TOKEN=xxx">${escapeHtml(current.envText)}</textarea>
       </div>
       <div class="mcp-field">
-        <label class="mcp-label" for="mcpFCwd">工作目录<span class="mcp-hint">可留空</span></label>
-        <input id="mcpFCwd" class="mcp-input" data-field="cwd" type="text" value="${escapeHtml(current.cwd)}" placeholder="缺省继承扩展宿主目录" />
+        <label class="mcp-label" for="mcpFCwd">${l10n.t('Working directory')}<span class="mcp-hint">${l10n.t('optional')}</span></label>
+        <input id="mcpFCwd" class="mcp-input" data-field="cwd" type="text" value="${escapeHtml(current.cwd)}" placeholder="${l10n.t('inherits the extension host directory by default')}" />
       </div>
-      <label class="mcp-check"><input type="checkbox" data-field="enabled" ${current.enabled ? 'checked' : ''} />启用</label>
-      <p class="mcp-warn">保存后立即生效：面板会拉起这个命令并把它暴露的工具注册给模型。只填你信任的服务器。</p>
+      <label class="mcp-check"><input type="checkbox" data-field="enabled" ${current.enabled ? 'checked' : ''} />${l10n.t('Enabled')}</label>
+      <p class="mcp-warn">${l10n.t('Takes effect immediately after saving: the panel launches this command and registers the tools it exposes with the model. Only add servers you trust.')}</p>
       <p class="mcp-form-error"${formError ? '' : ' hidden'}>${escapeHtml(formError)}</p>
       <div class="mcp-form-actions">
-        <button class="btn btn-primary" type="button" data-act="save">保存</button>
-        <button class="btn btn-secondary" type="button" data-act="cancel">取消</button>
+        <button class="btn btn-primary" type="button" data-act="save">${l10n.t('Save')}</button>
+        <button class="btn btn-secondary" type="button" data-act="cancel">${l10n.t('Cancel')}</button>
       </div>
     </form>`;
   }
@@ -435,8 +461,12 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     const editable = !remote && isFormRepresentable(server);
     // 两种禁用原因分开写：同一句 title 盖两件事 ⇒ 用户照着提示改完还是失败
     const editBlockReason = remote
-      ? '远程服务器没有表单编辑：请用页脚「高级：在 settings.json 中编辑」或从 JSON 导入'
-      : '参数或环境变量含空项/换行，表单无法无损呈现；请用页脚的 settings.json 入口编辑';
+      ? l10n.t(
+          'Remote servers cannot be edited with the form: use the footer "Advanced: edit in settings.json" or import from JSON',
+        )
+      : l10n.t(
+          'Arguments or environment variables contain empty items or line breaks, which the form cannot represent losslessly; use the settings.json entry in the footer instead',
+        );
     const actions: string[] = [];
 
     // 「待接入」是唯一有**出路**的空转态：点接入即让运行态按当前配置追平一次
@@ -445,48 +475,50 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     // 而重启按钮不渲染（restart 只恢复已有运行时），用户点不出任何东西（2026-10-24 实测）。
     if (state === 'pending') {
       actions.push(
-        '<button class="btn btn-primary" type="button" data-act="connect">接入</button>',
+        `<button class="btn btn-primary" type="button" data-act="connect">${l10n.t('Connect')}</button>`,
       );
     }
     if (state === 'running' || state === 'failed') {
       actions.push(
-        '<button class="btn btn-secondary" type="button" data-act="restart">重启</button>',
+        `<button class="btn btn-secondary" type="button" data-act="restart">${l10n.t('Restart')}</button>`,
       );
     }
     // 编辑对**所有态**开放：invalid（缺 command）正需要补字段，藏了编辑等于逼用户手写 JSON
     // （远程例外：形态本身没有表单字段，见上方 `remote` 判据）
     actions.push(
-      `<button class="btn btn-secondary" type="button" data-act="edit"${editable ? '' : ` disabled title="${editBlockReason}"`}${editing ? ' hidden' : ''}>编辑</button>`,
+      `<button class="btn btn-secondary" type="button" data-act="edit"${editable ? '' : ` disabled title="${editBlockReason}"`}${editing ? ' hidden' : ''}>${l10n.t('Edit')}</button>`,
     );
     // 启停只对「配置完整」的台有意义：invalid 永远起不来，给个「启用」是假动作
     if (state !== 'invalid') {
       actions.push(
-        `<button class="btn btn-secondary" type="button" data-act="toggle">${server.enabled ? '停用' : '启用'}</button>`,
+        `<button class="btn btn-secondary" type="button" data-act="toggle">${server.enabled ? l10n.t('Disable') : l10n.t('Enable')}</button>`,
       );
     }
     if (confirmingDelete === server.name) {
       actions.push(
-        '<button class="btn btn-danger" type="button" data-act="delete-confirm">确认删除</button>',
+        `<button class="btn btn-danger" type="button" data-act="delete-confirm">${l10n.t('Confirm delete')}</button>`,
       );
       actions.push(
-        '<button class="btn btn-secondary" type="button" data-act="delete-cancel">取消</button>',
+        `<button class="btn btn-secondary" type="button" data-act="delete-cancel">${l10n.t('Cancel')}</button>`,
       );
     } else {
-      actions.push('<button class="btn btn-ghost" type="button" data-act="delete">删除</button>');
+      actions.push(
+        `<button class="btn btn-ghost" type="button" data-act="delete">${l10n.t('Delete')}</button>`,
+      );
     }
 
     return `<div class="mcp-server card" data-name="${escapeHtml(server.name)}">
       <div class="mcp-server-head">
         <span class="mcp-dot" data-state="${state}" aria-hidden="true"></span>
         <h3 class="mcp-server-name">${escapeHtml(server.name)}</h3>
-        ${isRemote(server) ? '<span class="mcp-server-tag">远程</span>' : ''}
+        ${isRemote(server) ? `<span class="mcp-server-tag">${l10n.t('Remote')}</span>` : ''}
         <code class="mcp-server-cmd" title="${escapeHtml(summaryOf(server))}">${escapeHtml(summaryOf(server))}</code>
-        <span class="mcp-server-state" data-state="${state}">${STATE_LABELS[state]}</span>
-        <span class="mcp-server-count">${server.toolCount} 个工具</span>
+        <span class="mcp-server-state" data-state="${state}">${l10n.t(STATE_LABELS[state])}</span>
+        <span class="mcp-server-count">${l10n.t('{0} tools', server.toolCount)}</span>
       </div>
       ${state === 'failed' ? `<p class="mcp-server-error">${escapeHtml(server.error ?? '')}</p>` : ''}
       ${state === 'invalid' ? `<p class="mcp-server-error">${escapeHtml(server.problem ?? '')}</p>` : ''}
-      ${state === 'pending' ? '<p class="mcp-server-note">尚未接入：点「接入」按当前配置连接一次（未装配会先完成装配；打开对话面板也会自动触发）</p>' : ''}
+      ${state === 'pending' ? `<p class="mcp-server-note">${l10n.t('Not connected yet: click "Connect" to use the current configuration once (an unassembled agent is assembled first; opening the chat panel also triggers it)')}</p>` : ''}
       ${serverAllowRow(server)}
       ${toolRows(server)}
       <div class="mcp-actions">${actions.join('')}</div>
@@ -498,14 +530,14 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
   function importCardHtml(): string {
     return `<div class="mcp-server card mcp-import-card">
       <div class="mcp-server-head">
-        <h3 class="mcp-server-name">从 JSON 导入</h3>
+        <h3 class="mcp-server-name">${l10n.t('Import from JSON')}</h3>
       </div>
-      <p class="mcp-server-note">粘贴 mcpServers 片段（Claude Desktop / Cursor / VS Code mcp.json 均可）。支持 stdio（command）与 Streamable HTTP（url / type: "http"）两种形式，SSE 已定案不支持；同名与字段不合法的条目会逐条跳过，不会覆盖已有配置。</p>
-      <textarea class="mcp-input mcp-textarea" data-import="1" rows="8" aria-label="粘贴 mcpServers JSON 片段" placeholder="{&#10;  &quot;mcpServers&quot;: {&#10;    &quot;filesystem&quot;: {&#10;      &quot;command&quot;: &quot;npx&quot;,&quot;args&quot;: [&quot;-y&quot;, &quot;@modelcontextprotocol/server-filesystem&quot;, &quot;/path&quot;]&#10;    }&#10;  }&#10;}">${escapeHtml(importText ?? '')}</textarea>
+      <p class="mcp-server-note">${l10n.t('Paste a mcpServers snippet (Claude Desktop / Cursor / VS Code mcp.json all work). Both stdio (command) and Streamable HTTP (url / type: "http") are supported; SSE is not supported by decision. Entries with a duplicate name or invalid fields are skipped one by one and never overwrite existing configuration.')}</p>
+      <textarea class="mcp-input mcp-textarea" data-import="1" rows="8" aria-label="${l10n.t('Paste a mcpServers JSON snippet')}" placeholder="{&#10;  &quot;mcpServers&quot;: {&#10;    &quot;filesystem&quot;: {&#10;      &quot;command&quot;: &quot;npx&quot;,&quot;args&quot;: [&quot;-y&quot;, &quot;@modelcontextprotocol/server-filesystem&quot;, &quot;/path&quot;]&#10;    }&#10;  }&#10;}">${escapeHtml(importText ?? '')}</textarea>
       ${importResult ? `<p class="mcp-import-result">${escapeHtml(importResult)}</p>` : ''}
       <div class="mcp-form-actions">
-        <button class="btn btn-primary" type="button" data-act="import-run">导入</button>
-        <button class="btn btn-secondary" type="button" data-act="import-cancel">取消</button>
+        <button class="btn btn-primary" type="button" data-act="import-run">${l10n.t('Import')}</button>
+        <button class="btn btn-secondary" type="button" data-act="import-cancel">${l10n.t('Cancel')}</button>
       </div>
     </div>`;
   }
@@ -561,13 +593,16 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     const name = draft.name.trim();
     const command = draft.command.trim();
     if (!name || !command) {
-      formError = '名称与命令都不能为空';
+      formError = l10n.t('The name and the command cannot be empty');
       render();
       return;
     }
     const { env, invalidLines } = parseEnv(draft.envText);
     if (invalidLines.length > 0) {
-      formError = `环境变量行缺少 KEY=：${invalidLines.join(' / ')}`;
+      formError = l10n.t(
+        'Environment variable lines are missing KEY=: {0}',
+        invalidLines.join(' / '),
+      );
       render();
       return;
     }
@@ -616,7 +651,7 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
       if (pendingImport) return; // 在途导入未回：重复点击只会让同一份片段按「已存在」全部跳过
       const text = listEl!.querySelector<HTMLTextAreaElement>('[data-import]')?.value ?? '';
       if (text.trim().length === 0) {
-        importResult = '请先粘贴 JSON 内容';
+        importResult = l10n.t('Paste some JSON first');
         render();
         return;
       }
@@ -768,14 +803,18 @@ export function createMcpView({ vscode, window, root }: McpViewDeps): void {
     if (ack && pendingSave && ack.reqId === pendingSave.reqId) {
       if (!ack.ok) {
         draft = pendingSave.draft;
-        formError = ack.error ?? '保存失败';
+        formError = ack.error ?? l10n.t('Save failed');
+      } else {
+        // 成功 ⇒ 只丢掉暂存（表单本来就关着）
       }
       pendingSave = null;
     }
     // 导入结论：保留粘贴内容（失败时用户可直接改了重试；成功时面板也留着刚导入的片段供核对），
     // 明细留在卡上而不是只弹一条会消失的 toast。
     if (ack && pendingImport && ack.reqId === pendingImport) {
-      importResult = ack.ok ? (ack.detail ?? '导入完成') : (ack.error ?? '导入失败');
+      importResult = ack.ok
+        ? (ack.detail ?? l10n.t('Import completed'))
+        : (ack.error ?? l10n.t('Import failed'));
       pendingImport = null;
     }
     // 被编辑/待删的那台如果已经不在配置里（他处改了配置），收起表单与确认态

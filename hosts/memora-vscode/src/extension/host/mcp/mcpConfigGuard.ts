@@ -12,6 +12,8 @@
  * 不能带 I/O；可执行性判据只在宿主侧跑。
  */
 import type { ILogger } from '@zooique/memora';
+// 值导入：问题文案要进面板（用户可见），一律走 l10n 键面，键 = 英文源文案
+import * as vscode from 'vscode';
 import type { McpServerConfig } from './connectionManager.js';
 // 形态取值集合的真源在 shared：类型与本函数的运行期校验都从 MCP_TRANSPORTS 取，
 // 不在这里再写一遍 'stdio' | 'http' 字面量（否则加形态时两处各改一半 = 判据散点）。
@@ -85,19 +87,21 @@ const LOOPBACK_HOST = /^(localhost|127(?:\.\d{1,3}){3}|\[?::1\]?)$/i;
  */
 function urlProblem(raw: unknown): string | null {
   if (typeof raw !== 'string' || raw.trim().length === 0) {
-    return '缺少 url（transport: "http" 必须填写服务器地址）';
+    return vscode.l10n.t('Missing url (transport "http" requires a server address)');
   }
   let parsed: URL;
   try {
     parsed = new URL(raw.trim());
   } catch {
-    return `url 不是合法地址：${raw}`;
+    return vscode.l10n.t('Invalid url: {0}', raw);
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return `url 只支持 http / https 协议（当前是 ${parsed.protocol}）`;
+    return vscode.l10n.t('url only supports http / https (current: {0})', parsed.protocol);
   }
   if (parsed.protocol === 'http:' && !LOOPBACK_HOST.test(parsed.hostname)) {
-    return '非本机地址必须使用 https（http 只允许 localhost / 127.0.0.1 / ::1）';
+    return vscode.l10n.t(
+      'Non-loopback addresses must use https (http is allowed only for localhost / 127.0.0.1 / ::1)',
+    );
   }
   return null;
 }
@@ -115,14 +119,18 @@ function urlProblem(raw: unknown): string | null {
 function headersProblem(raw: unknown): string | null {
   if (raw === undefined || raw === null) return null;
   if (typeof raw !== 'object' || Array.isArray(raw)) {
-    return 'headers 必须是 { "名称": "值" } 对象';
+    return vscode.l10n.t('headers must be an object of { "name": "value" } pairs');
   }
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (/[\r\n]/.test(key)) return `headers 的名称不能包含换行：${JSON.stringify(key)}`;
-    if (typeof value !== 'string') {
-      return `headers 的值必须是字符串（${key} 不是）`;
+    if (/[\r\n]/.test(key)) {
+      return vscode.l10n.t('headers name must not contain line breaks: {0}', JSON.stringify(key));
     }
-    if (/[\r\n]/.test(value)) return `headers 的值不能包含换行（${key}）`;
+    if (typeof value !== 'string') {
+      return vscode.l10n.t('headers value must be a string ({0} is not)', key);
+    }
+    if (/[\r\n]/.test(value)) {
+      return vscode.l10n.t('headers value must not contain line breaks ({0})', key);
+    }
   }
   return null;
 }
@@ -148,44 +156,71 @@ function headersProblem(raw: unknown): string | null {
  */
 export function configProblem(config: McpServerConfig): string | null {
   if (normalizeServerName(config.name).length === 0) {
-    return '缺少 name';
+    return vscode.l10n.t('Missing name');
   }
 
   // 手写 `type` 的指路：本仓只认 transport（别名只在导入通道映射一次）。
   // 必须读原始对象：`type` 刻意不在 DTO 上，写上来就是用户手改 settings.json 的形态。
   const rawType = (config as unknown as Record<string, unknown>).type;
   if (rawType !== undefined) {
-    return '未知字段 type：本设置只认 transport（"stdio" / "http"）；外部片段请从面板「从 JSON 导入」粘贴';
+    return vscode.l10n.t(
+      'Unknown field type: this setting only accepts transport ("stdio" / "http"); paste external fragments via "Import from JSON" in the panel',
+    );
   }
 
   const rawTransport: unknown = config.transport;
   const mode = resolveTransportMode(rawTransport);
   if (mode === null) {
     if (typeof rawTransport === 'string' && rawTransport.trim().toLowerCase() === 'sse') {
-      return '暂不支持 SSE 传输（已定案不做，见方案 §5.5-1）；远程请用 transport: "http"';
+      return vscode.l10n.t(
+        'SSE transport is not supported (decided against, see design doc §5.5-1); use transport: "http" for remote servers',
+      );
     }
-    return `未知的 transport 值 ${JSON.stringify(rawTransport)}（只支持 "stdio" / "http"）`;
+    return vscode.l10n.t(
+      'Unknown transport value {0} (only "stdio" / "http" are supported)',
+      JSON.stringify(rawTransport),
+    );
   }
 
   if (mode === 'http') {
     const problem = urlProblem(config.url);
     if (problem) return problem;
-    if (isFilled(config.command)) return 'http 配置不能填写 command（远程服务器不拉起本地进程）';
-    if (isFilled(config.args)) return 'http 配置不能填写 args（远程服务器不拉起本地进程）';
-    if (isFilled(config.cwd)) return 'http 配置不能填写 cwd（远程服务器不拉起本地进程）';
-    if (isFilled(config.env)) return 'http 配置不能填写 env（远程配置的环境变量无处生效）';
+    if (isFilled(config.command)) {
+      return vscode.l10n.t(
+        'http config must not set command (a remote server spawns no local process)',
+      );
+    }
+    if (isFilled(config.args)) {
+      return vscode.l10n.t(
+        'http config must not set args (a remote server spawns no local process)',
+      );
+    }
+    if (isFilled(config.cwd)) {
+      return vscode.l10n.t(
+        'http config must not set cwd (a remote server spawns no local process)',
+      );
+    }
+    if (isFilled(config.env)) {
+      return vscode.l10n.t(
+        'http config must not set env (environment variables take no effect for a remote server)',
+      );
+    }
     return headersProblem(config.headers);
   }
 
   // stdio（缺省形态）：原有判据一字未改，只补「远程字段不许混进来」
   if (typeof config.command !== 'string' || config.command.trim().length === 0) {
-    return '缺少 command';
+    return vscode.l10n.t('Missing command');
   }
   if (isFilled(config.url)) {
-    return 'stdio 配置不能填写 url（要连接远程服务器请写 transport: "http"）';
+    return vscode.l10n.t(
+      'stdio config must not set url (use transport: "http" to connect to a remote server)',
+    );
   }
   if (isFilled(config.headers)) {
-    return 'stdio 配置不支持 headers（请求头只对 transport: "http" 生效）';
+    return vscode.l10n.t(
+      'stdio config does not support headers (request headers only apply to transport: "http")',
+    );
   }
   return null;
 }

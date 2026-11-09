@@ -12,6 +12,8 @@ import type { McpServerConfig } from './connectionManager.js';
 import { configProblem, normalizeServerName, resolveTransportMode } from './mcpConfigGuard.js';
 import { allowlistKey, serverAllowlistKey, type McpToolAllowlist } from './policy.js';
 import type { McpToolBinding } from './toolRegistry.js';
+// 值导入：失败态兜底文案会进面板（用户可见），键 = 英文源文案
+import * as vscode from 'vscode';
 // 五态词汇与隐藏计数的 DTO 真源在 shared/protocol（面板与宿主共用，禁各写一份字面量）
 import type { McpOmittedDto, McpServerState, McpTransport } from '../../../shared/protocol.js';
 
@@ -230,7 +232,11 @@ export function deriveMcpServerStatus(
         : [],
       // 失败原因只在该状态出现；禁用/非法不冒充「失败」（三种原因要分得清）
       ...(state === 'failed'
-        ? { error: failure?.error ?? '未连接（本次装配没有这台 server 的记录）' }
+        ? {
+            error:
+              failure?.error ??
+              vscode.l10n.t('Not connected (no record of this server in the current assembly)'),
+          }
         : {}),
       ...(state === 'invalid' && problem ? { problem } : {}),
     });

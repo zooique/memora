@@ -8,10 +8,19 @@
  * 判据边界（勿扩大）：只判「静态可判」的必然失败，不判可执行位 / 依赖 / 端口。
  */
 // @vitest-environment node
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+// vscode 替身：预检原因经 `vscode.l10n` 出键面（默认语言下原样返回英文源键，`{0}` 照常插值）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 import { probeCommand, scriptNeedsInterpreter } from '../mcp/commandProbe.js';
 
 /** 临时目录（每个用例自造文件，不依赖仓库内容） */
@@ -42,14 +51,14 @@ describe('commandProbe / command 字段', () => {
   it('空命令 ⇒ 明确说缺什么', () => {
     const r = probeCommand({ command: '   ' });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.problem).toContain('缺少 command');
+    if (!r.ok) expect(r.problem).toContain('Missing command');
   });
 
   it('绝对路径不存在 ⇒ 报绝对路径（而不是 Connection closed）', () => {
     const r = probeCommand({ command: join(dir, 'ghost-binary') });
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.problem).toContain('找不到可执行文件');
+      expect(r.problem).toContain('Executable not found');
       expect(r.problem).toContain('ghost-binary');
     }
   });
@@ -58,8 +67,8 @@ describe('commandProbe / command 字段', () => {
     const r = probeCommand({ command: join(dir, 'server.mjs') });
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.problem).toContain('脚本文件');
-      expect(r.problem).toContain('命令填 node');
+      expect(r.problem).toContain('script file');
+      expect(r.problem).toContain('set command to node');
     }
   });
 
@@ -80,7 +89,7 @@ describe('commandProbe / command 字段', () => {
     const r = probeCommand({ command: 'definitely-no-such-mcp-binary' });
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.problem).toContain('PATH 里找不到');
+      expect(r.problem).toContain('Command not found on PATH');
       expect(r.problem).toContain('node');
     }
   });
@@ -96,13 +105,13 @@ describe('commandProbe / cwd 字段', () => {
   it('cwd 不存在 ⇒ 报绝对路径（不要等 spawn 出 ENOENT）', () => {
     const r = probeCommand({ command: 'node', cwd: join(dir, 'no-such-dir') });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.problem).toContain('工作目录不存在');
+    if (!r.ok) expect(r.problem).toContain('Working directory does not exist');
   });
 
   it('cwd 指向文件 ⇒ 说清「不是文件夹」', () => {
     const r = probeCommand({ command: 'node', cwd: join(dir, 'notes.txt') });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.problem).toContain('不是文件夹');
+    if (!r.ok) expect(r.problem).toContain('not a folder');
   });
 
   it('cwd 是相对路径 ⇒ 按 baseDir 解析成绝对路径', () => {
@@ -128,7 +137,7 @@ describe('commandProbe / 值不改写（判据面 = 字段面）', () => {
     // `'  ./sub'` 若被 trim ⇒ 解析成 <dir>/sub（存在、判 ok）；原值 ⇒ <dir>/'  ./sub'（不存在）
     const r = probeCommand({ command: 'node', cwd: '  ./sub', baseDir: dir });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.problem).toContain('工作目录不存在');
+    if (!r.ok) expect(r.problem).toContain('Working directory does not exist');
   });
 
   it('cwd 全空白 ⇒ 视作未配置（与面板保存「空白 = 清空」同口径）', () => {
@@ -148,7 +157,7 @@ describe('commandProbe / args 第一项', () => {
     const r = probeCommand({ command: 'node', args: [join(dir, 'ghost-server.js')] });
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.problem).toContain('参数里的文件不存在');
+      expect(r.problem).toContain('File in args does not exist');
       expect(r.problem).toContain('ghost-server.js');
     }
   });
@@ -269,6 +278,6 @@ describe('commandProbe / 平台差异与引号', () => {
   it('POSIX 无执行位的脚本当命令 ⇒ 仍拒（这才是必然失败）', () => {
     const r = probeCommand({ command: join(dir, 'plain-server.js') });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.problem).toContain('脚本文件');
+    if (!r.ok) expect(r.problem).toContain('script file');
   });
 });

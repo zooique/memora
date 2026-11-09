@@ -20,6 +20,8 @@
  * 结构化输出的完整支持 / 取消 / progress 仍归 §10 登记项（P6），本文件只做文本降级。
  */
 import { isPlainObject } from './json.js';
+// 值导入：降级 / 截断标记会随工具结果上屏（双面串，按可见文案处理），键 = 英文源文案
+import * as vscode from 'vscode';
 
 /**
  * 单条结果字符数预裁上限
@@ -50,7 +52,7 @@ export function normalizeToolResult(result: unknown): string {
     }
     // 非文本（image / audio / resource / 嵌入资源）：本期内核只收字符串，
     // 丢弃但注明类型，避免「返回了空文本」被误读成工具无事可做
-    parts.push(`[已丢弃非文本结果：${String(item['type'])}]`);
+    parts.push(vscode.l10n.t('[Non-text result dropped: {0}]', String(item['type'])));
   }
 
   let text = parts.join('\n');
@@ -59,20 +61,27 @@ export function normalizeToolResult(result: unknown): string {
   // 形态（MCP 规范建议两者并存），转出来只会让同一事实出现两遍
   const structured = payload?.['structuredContent'];
   if (text.length === 0 && isPlainObject(structured) && Object.keys(structured).length > 0) {
-    text = `[结构化输出已降级为文本]\n${stringify(structured)}`;
+    text = vscode.l10n.t('[Structured output downgraded to text]\n{0}', stringify(structured));
   }
 
   const isError = payload?.['isError'] === true;
   if (payload === null) {
     // 协议违规（载荷不是对象）与真空结果是两件事：说成「空结果」会让模型以为
     // 工具正常跑完没输出，实际是 server 没按 MCP 协议回（联调期最常见的一类故障）
-    text = '（MCP 工具返回非标准结果：载荷不是对象）';
+    text = vscode.l10n.t('(MCP tool returned a non-standard result: payload is not an object)');
   } else if (text.length === 0) {
-    text = isError ? 'MCP 工具返回错误（无文本说明）' : '（MCP 工具返回空结果）';
+    text = isError
+      ? vscode.l10n.t('MCP tool returned an error (no textual explanation)')
+      : vscode.l10n.t('(MCP tool returned an empty result)');
   }
 
   if (text.length > MAX_TOOL_RESULT_CHARS) {
-    text = `${text.slice(0, MAX_TOOL_RESULT_CHARS)}\n[结果已截断：原长 ${text.length} 字符，仅保留前 ${MAX_TOOL_RESULT_CHARS} 字符]`;
+    text = vscode.l10n.t(
+      '{0}\n[Result truncated: original length {1} characters, only the first {2} kept]',
+      text.slice(0, MAX_TOOL_RESULT_CHARS),
+      String(text.length),
+      String(MAX_TOOL_RESULT_CHARS),
+    );
   }
 
   // isError 放最后：错误文案同样受预裁约束（先截断再抛，抛出的消息有界）

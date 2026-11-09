@@ -21,7 +21,15 @@ import {
   STATE_LABELS,
   summaryOf,
 } from '../scripts/mcpView.js';
-import { MCP_BODY_HTML } from '../panels/settingsMcpHtml.js';
+import { buildMcpBodyHtml } from '../panels/settingsMcpHtml.js';
+
+/** 英文直通本地化器（骨架只做 `{n}` 插值，键即英文源文案） */
+const en = {
+  t: (message: string, ...args: (string | number)[]) =>
+    message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+};
+/** MCP 骨架直接取产线构建函数（不再手抄夹具镜像，防静默失同步） */
+const MCP_BODY_HTML = buildMcpBodyHtml(en);
 
 describe('args 文本化（一行一个，不做 shell 解析）', () => {
   it('往返无损：普通参数（含空格）原样还原', () => {
@@ -92,20 +100,22 @@ describe('统计条口径（汇总不得与卡片分家）', () => {
   it('失败与配置不完整都算「需处理」（漏掉 invalid 就会出现「0 失败」但页面有红点）', () => {
     const servers = [s('running', 2), s('failed'), s('invalid')];
     expect(formatServerSummary(servers, allVisible(servers))).toBe(
-      '3 台 · 1 已连接 · 2 需处理 · 2 个工具',
+      '3 servers · 1 connected · 2 need attention · 2 tools',
     );
   });
 
   it('待接入单独说，不并进失败（没试过 ≠ 失败）', () => {
     const servers = [s('pending'), s('running', 1)];
     expect(formatServerSummary(servers, allVisible(servers))).toBe(
-      '2 台 · 1 已连接 · 1 待接入 · 1 个工具',
+      '2 servers · 1 connected · 1 not connected · 1 tools',
     );
   });
 
   it('停用只进台数（用户主动停的，不需处理也不报待接入）', () => {
     const servers = [s('disabled')];
-    expect(formatServerSummary(servers, allVisible(servers))).toBe('1 台 · 0 已连接 · 0 个工具');
+    expect(formatServerSummary(servers, allVisible(servers))).toBe(
+      '1 servers · 0 connected · 0 tools',
+    );
   });
 
   it('空列表 = 空串（调用方据此隐藏统计条）', () => {
@@ -115,13 +125,13 @@ describe('统计条口径（汇总不得与卡片分家）', () => {
   it('有隐藏条目时台数取配置原值，并明说「N 条未显示」（否则与 settings.json 数不上账）', () => {
     const servers = [s('running', 1)];
     expect(formatServerSummary(servers, { configured: 3, missingName: 1, duplicate: 1 })).toBe(
-      '3 台 · 1 已连接 · 1 个工具 · 2 条未显示',
+      '3 servers · 1 connected · 1 tools · 2 hidden',
     );
   });
 
   it('配置全被隐藏时统计条仍在（「0 台」是谎报：配置里明明有条目）', () => {
     expect(formatServerSummary([], { configured: 2, missingName: 2, duplicate: 0 })).toBe(
-      '2 台 · 0 已连接 · 0 个工具 · 2 条未显示',
+      '2 servers · 0 connected · 0 tools · 2 hidden',
     );
   });
 });
@@ -133,17 +143,17 @@ describe('隐藏条目解释（面板看不见的东西必须有一句可见的�
 
   it('缺 name 与重名分别说清，并指向输出面板（唯一能定位到具体条目的地方）', () => {
     const text = formatOmittedNotice({ configured: 4, missingName: 1, duplicate: 2 });
-    expect(text).toContain('共 4 条');
-    expect(text).toContain('3 条没有显示');
-    expect(text).toContain('缺名称的 1 条');
-    expect(text).toContain('重名的 2 条');
+    expect(text).toContain('4 entries are configured');
+    expect(text).toContain('3 of them are not shown');
+    expect(text).toContain('1 entries without a name');
+    expect(text).toContain('2 entries duplicating the previous one');
     expect(text).toContain('Memora');
   });
 
   it('只有重名时不说「缺名称」（文案按实际原因拼，不写死两句）', () => {
     const text = formatOmittedNotice({ configured: 2, missingName: 0, duplicate: 1 });
-    expect(text).toContain('重名的 1 条');
-    expect(text).not.toContain('缺名称');
+    expect(text).toContain('1 entries duplicating the previous one');
+    expect(text).not.toContain('without a name');
   });
 });
 
@@ -155,7 +165,7 @@ describe('五态可见名（与 CSS data-state 同源）', () => {
   });
 
   it('pending 有独立可见名（不能被并进「已停用」或「启动失败」——没试过 ≠ 失败）', () => {
-    expect(STATE_LABELS.pending).toBe('待接入');
+    expect(STATE_LABELS.pending).toBe('Not connected');
     expect(STATE_LABELS.pending).not.toBe(STATE_LABELS.disabled);
     expect(STATE_LABELS.pending).not.toBe(STATE_LABELS.failed);
   });
@@ -240,11 +250,11 @@ describe('卡片副标题 summaryOf（stdio 命令行 / http 地址行）', () =
       'http · https://x/mcp',
     );
     // url 也缺 ⇒ 诚实说缺 url，而不是说「缺 command」
-    expect(summaryOf({ name: 'r', transport: 'http' })).toBe('http · (未填写 url)');
+    expect(summaryOf({ name: 'r', transport: 'http' })).toBe('http · (url not set)');
   });
 
   it('既无 command 又非 http ⇒ 「（未填写 command）」（老逻辑不变）', () => {
-    expect(summaryOf({ name: 'bad' })).toBe('（未填写 command）');
+    expect(summaryOf({ name: 'bad' })).toBe('(command not set)');
   });
 });
 

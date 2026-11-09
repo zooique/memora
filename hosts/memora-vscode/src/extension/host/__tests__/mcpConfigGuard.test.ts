@@ -8,7 +8,16 @@
  *
  * 纯函数，不碰内核、不拉起子进程、不发网络请求。
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// vscode 替身：判据文案经 `vscode.l10n` 出键面（默认语言下原样返回英文源键，`{0}` 照常插值）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 import { configProblem, resolveTransportMode } from '../mcp/mcpConfigGuard.js';
 import type { McpServerConfig } from '../mcp/connectionManager.js';
 
@@ -39,7 +48,7 @@ describe('resolveTransportMode（缺省值单点）', () => {
 
 describe('configProblem：形态无关的护栏', () => {
   it('缺 name ⇒ 「缺少 name」', () => {
-    expect(configProblem({ name: '   ', command: 'node' })).toBe('缺少 name');
+    expect(configProblem({ name: '   ', command: 'node' })).toBe('Missing name');
   });
 
   it('手写 type ⇒ 指路 transport（本仓不认别名，别名只在导入通道映射一次）', () => {
@@ -49,28 +58,28 @@ describe('configProblem：形态无关的护栏', () => {
       type: 'stdio',
     } as unknown as McpServerConfig;
     const problem = configProblem(handWritten);
-    expect(problem).toContain('未知字段 type');
+    expect(problem).toContain('Unknown field type');
     expect(problem).toContain('transport');
   });
 
   it('未知 transport 值 ⇒ 报原值，不退化成通用语法错误', () => {
     const problem = configProblem(config({ command: 'node', transport: 'websocket' as never }));
-    expect(problem).toContain('未知的 transport 值');
+    expect(problem).toContain('Unknown transport value');
     expect(problem).toContain('websocket');
   });
 
   it('transport: sse ⇒ 点名「已定案不做」并指路 http', () => {
     const problem = configProblem(config({ command: 'node', transport: 'sse' as never }));
     expect(problem).toContain('SSE');
-    expect(problem).toContain('已定案不做');
+    expect(problem).toContain('decided against');
     expect(problem).toContain('http');
   });
 });
 
 describe('configProblem：stdio 形态（缺省）', () => {
   it('缺 command ⇒ 「缺少 command」', () => {
-    expect(configProblem(config({ command: '  ' }))).toBe('缺少 command');
-    expect(configProblem(config({}))).toBe('缺少 command');
+    expect(configProblem(config({ command: '  ' }))).toBe('Missing command');
+    expect(configProblem(config({}))).toBe('Missing command');
   });
 
   it('合法 stdio 配置 ⇒ null', () => {
@@ -79,13 +88,13 @@ describe('configProblem：stdio 形态（缺省）', () => {
 
   it('反向护栏：stdio 填 url ⇒ 报互斥并指路 transport: "http"', () => {
     const problem = configProblem(config({ command: 'node', url: 'https://x/mcp' }));
-    expect(problem).toContain('stdio 配置不能填写 url');
+    expect(problem).toContain('stdio config must not set url');
     expect(problem).toContain('transport: "http"');
   });
 
   it('反向护栏：stdio 填 headers ⇒ 报「只对 http 生效」', () => {
     const problem = configProblem(config({ command: 'node', headers: { A: 'b' } }));
-    expect(problem).toContain('不支持 headers');
+    expect(problem).toContain('does not support headers');
     expect(problem).toContain('http');
   });
 });
@@ -100,21 +109,21 @@ describe('configProblem：http 形态', () => {
   });
 
   it('缺 url / url 非法 ⇒ 各自点名（不是笼统「配置不完整」）', () => {
-    expect(configProblem(config({ transport: 'http' }))).toContain('缺少 url');
+    expect(configProblem(config({ transport: 'http' }))).toContain('Missing url');
     expect(configProblem(config({ transport: 'http', url: 'not a url' }))).toContain(
-      'url 不是合法地址',
+      'Invalid url: not a url',
     );
   });
 
   it('协议只认 http/https', () => {
     const problem = configProblem(config({ transport: 'http', url: 'ftp://x/mcp' }));
-    expect(problem).toContain('只支持 http / https');
+    expect(problem).toContain('only supports http / https');
     expect(problem).toContain('ftp:');
   });
 
   it('非回环地址强制 https（明文会让工具参数与结果整段暴露）', () => {
     const problem = configProblem(config({ transport: 'http', url: 'http://example.com/mcp' }));
-    expect(problem).toContain('必须使用 https');
+    expect(problem).toContain('must use https');
   });
 
   it('回环地址允许 http（本地网关调试）', () => {
@@ -127,10 +136,10 @@ describe('configProblem：http 形态', () => {
 
   it('互斥：http 填 command / args / cwd / env ⇒ 逐项报「不能填写」（不静默忽略）', () => {
     const base = { transport: 'http' as const, url: 'https://x/mcp' };
-    expect(configProblem(config({ ...base, command: 'node' }))).toContain('不能填写 command');
-    expect(configProblem(config({ ...base, args: ['x'] }))).toContain('不能填写 args');
-    expect(configProblem(config({ ...base, cwd: '/tmp' }))).toContain('不能填写 cwd');
-    expect(configProblem(config({ ...base, env: { A: '1' } }))).toContain('不能填写 env');
+    expect(configProblem(config({ ...base, command: 'node' }))).toContain('must not set command');
+    expect(configProblem(config({ ...base, args: ['x'] }))).toContain('must not set args');
+    expect(configProblem(config({ ...base, cwd: '/tmp' }))).toContain('must not set cwd');
+    expect(configProblem(config({ ...base, env: { A: '1' } }))).toContain('must not set env');
   });
 
   it('空值不算「填了」：args: [] / env: {} / cwd: "" 不报互斥（表单产出的噪音）', () => {
@@ -146,17 +155,17 @@ describe('configProblem：headers 形态（运行期唯一校验点）', () => {
   it('非对象 / 数组 ⇒ 报形态错误', () => {
     expect(
       configProblem(config({ transport: 'http', url: 'https://x/mcp', headers: 'x' as never })),
-    ).toContain('必须是');
+    ).toContain('must be an object');
     expect(
       configProblem(config({ transport: 'http', url: 'https://x/mcp', headers: [] as never })),
-    ).toContain('必须是');
+    ).toContain('must be an object');
   });
 
   it('值不是字符串 ⇒ 点名该键（不静默 ASCII 化）', () => {
     const problem = configProblem(
       config({ transport: 'http', url: 'https://x/mcp', headers: { A: 1 as never } }),
     );
-    expect(problem).toContain('值必须是字符串');
+    expect(problem).toContain('must be a string');
     expect(problem).toContain('A');
   });
 
@@ -165,9 +174,9 @@ describe('configProblem：headers 形态（运行期唯一校验点）', () => {
       configProblem(
         config({ transport: 'http', url: 'https://x/mcp', headers: { 'A\r\nB': 'v' } }),
       ),
-    ).toContain('不能包含换行');
+    ).toContain('must not contain line breaks');
     expect(
       configProblem(config({ transport: 'http', url: 'https://x/mcp', headers: { A: 'v\nB' } })),
-    ).toContain('不能包含换行');
+    ).toContain('must not contain line breaks');
   });
 });

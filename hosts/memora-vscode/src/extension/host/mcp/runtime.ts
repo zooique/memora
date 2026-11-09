@@ -14,6 +14,8 @@
  */
 import type { Agent, ILogger } from '@zooique/memora';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
+// 值导入：断线原因 / 重启失败原因会进面板（用户可见），键 = 英文源文案
+import * as vscode from 'vscode';
 import { McpConnection, type McpServerConfig } from './connectionManager.js';
 import { clearAllFailures, clearFailure, failureOf, noteFailure } from './failureLedger.js';
 import {
@@ -333,8 +335,10 @@ async function startOneServer(config: McpServerConfig, ctx: StartOneServerContex
       noteFailure(
         config.name,
         resolveTransportMode(config.transport) === 'http'
-          ? '与远程服务器的连接已断开（不会自动重连；改配置或重载窗口后重试）'
-          : '连接已断开（子进程退出或传输层关闭）',
+          ? vscode.l10n.t(
+              'Disconnected from the remote server (no automatic reconnect; edit the config or reload the window to retry)',
+            )
+          : vscode.l10n.t('Connection closed (subprocess exited or transport closed)'),
       );
       noteToolCount(logger);
       notifyStatus();
@@ -669,17 +673,36 @@ async function restartInner(
   } = options;
   try {
     const state = running;
-    if (!state) return { ok: false, error: 'MCP 运行时未启动（Agent 尚未装配）' };
+    if (!state) {
+      return {
+        ok: false,
+        error: vscode.l10n.t('MCP runtime is not started (the agent is not assembled yet)'),
+      };
+    }
     // 按归一化名找（与运行态键、状态面同源）：配置里写 `"fs "` 时面板下发的是 `fs`，
     // 精确比较会得到「未找到 server」——一条能跑起来的配置被报成不存在
     const target = normalizeServerName(name);
     const config = appliedConfigs.find((item) => normalizeServerName(item?.name) === target);
-    if (!config) return { ok: false, error: `未找到 server「${name}」（配置可能已变更）` };
+    if (!config) {
+      return {
+        ok: false,
+        error: vscode.l10n.t('Server "{0}" not found (the config may have changed)', name),
+      };
+    }
     const problem = configProblem(config);
-    if (problem) return { ok: false, error: `配置不合法：${problem}` };
-    if (config.enabled === false) return { ok: false, error: '该 server 已停用，先启用再重启' };
+    if (problem) {
+      return { ok: false, error: vscode.l10n.t('Invalid config: {0}', problem) };
+    }
+    if (config.enabled === false) {
+      return {
+        ok: false,
+        error: vscode.l10n.t('This server is disabled; enable it before restarting'),
+      };
+    }
     const registrar = agent.tools;
-    if (!registrar) return { ok: false, error: 'Agent 工具执行器不可用' };
+    if (!registrar) {
+      return { ok: false, error: vscode.l10n.t('Agent tool executor is unavailable') };
+    }
 
     if (state.has(target)) await stopServerIn(state, target);
     clearFailure(target);
@@ -701,7 +724,10 @@ async function restartInner(
     noteToolCount(logger);
     notifyStatus();
     if (state.has(target)) return { ok: true };
-    return { ok: false, error: failureOf(target)?.error ?? '启动失败（原因未记录）' };
+    return {
+      ok: false,
+      error: failureOf(target)?.error ?? vscode.l10n.t('Startup failed (reason not recorded)'),
+    };
   } catch (err) {
     logger?.warn(`[MCP] 重启「${name}」失败：${String(err)}`);
     return { ok: false, error: String(err) };
@@ -785,7 +811,12 @@ export async function reconcileMcpConfig(
 ): Promise<{ ok: boolean; error?: string }> {
   const run = hotReloadChain.then(async () => {
     // 热更里的这条分支是静默 return；按钮语境必须把它变成可读失败，否则「点了没用」
-    if (!agent.tools) return { ok: false, error: 'Agent 工具执行器不可用，接入未生效' };
+    if (!agent.tools) {
+      return {
+        ok: false,
+        error: vscode.l10n.t('Agent tool executor is unavailable; the change did not take effect'),
+      };
+    }
     await applyConfigChangeInner(agent, configs, options);
     return { ok: true };
   });

@@ -5,7 +5,16 @@
  * §9 切片 3a（调用转发超时 / 分页收口可观测）。
  * 纯分页逻辑用注入页函数测；端到端用 fixtures/fakeMcpServer.mjs 子进程测（真握手、真调用）。
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// vscode 替身：连接层失败原因经 `vscode.l10n` 出键面（默认语言下原样返回英文源键，`{0}` 照常插值）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -148,7 +157,7 @@ describe('真实 stdio 连接（fixtures/fakeMcpServer.mjs）', () => {
       await connection.connect();
       // 第三参仅测试传小值（生产走缺省 60s，见 connectionManager.TOOL_CALL_TIMEOUT_MS）；
       // 内核 custom 分支无超时包裹，这一层是唯一兜底
-      await expect(connection.callTool('never-responds', {}, 80)).rejects.toThrow(/超时/);
+      await expect(connection.callTool('never-responds', {}, 80)).rejects.toThrow(/timed out/);
       // 超时只失败本次调用：server 卡一个请求不应顺带杀掉连接（否则一次卡死 = 整台
       // server 的工具全废）。JSON-RPC over stdio 按 id 匹配，挂起请求不阻塞后续请求。
       // 注意断言口径：callTool 回的是**原始 MCP 结果对象**（归一化是 toolRegistry
@@ -238,7 +247,7 @@ describe('真实 stdio 连接（fixtures/fakeMcpServer.mjs）', () => {
     // 主动关闭：closing 标记应过滤掉底层 onclose 回调
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(closedNotified).toBe(0);
-    await expect(connection.callTool('echo-text', {})).rejects.toThrow('连接不可用');
+    await expect(connection.callTool('echo-text', {})).rejects.toThrow('connection is unavailable');
   }, 30_000);
 });
 
@@ -256,13 +265,13 @@ describe('拉起前预检与失败原因可读', () => {
       name: 'ghost',
       command: join(tmpdir(), 'memora-no-such-binary-xyz'),
     });
-    await expect(connection.connect()).rejects.toThrow('配置无法启动');
-    await expect(connection.connect()).rejects.toThrow('找不到可执行文件');
+    await expect(connection.connect()).rejects.toThrow('Config cannot start');
+    await expect(connection.connect()).rejects.toThrow('Executable not found');
   }, 30_000);
 
   it('脚本文件被当成命令 ⇒ 提示改填 node（最高频的配错形态）', async () => {
     const connection = new McpConnection({ name: 'as-command', command: FIXTURE_SERVER });
-    await expect(connection.connect()).rejects.toThrow('脚本文件');
+    await expect(connection.connect()).rejects.toThrow('script file');
   }, 30_000);
 
   it('server 启动即崩 ⇒ 失败原因里带上它的 stderr 原文（而不是只有 Connection closed）', async () => {
@@ -354,7 +363,7 @@ describe('传输分派（假 transport 工厂）', () => {
       undefined,
       () => failingTransport(Object.assign(new Error('POSTing to endpoint failed'), { code: 401 })),
     );
-    await expect(connection.connect()).rejects.toThrow('服务器要求授权');
+    await expect(connection.connect()).rejects.toThrow('requires authorization');
     await expect(connection.connect()).rejects.toThrow('OAuth');
   });
 
@@ -371,7 +380,7 @@ describe('传输分派（假 transport 工厂）', () => {
       (err: unknown) => err as Error,
     );
     expect(error?.message).toBe('ECONNREFUSED');
-    expect(error?.message).not.toContain('子进程输出');
+    expect(error?.message).not.toContain('subprocess output');
   });
 
   it('未知 transport ⇒ 直接拒连并点名（不可达状态也要有话说）', async () => {
@@ -383,7 +392,7 @@ describe('传输分派（假 transport 工厂）', () => {
       undefined,
       modesRecorder(seen),
     );
-    await expect(connection.connect()).rejects.toThrow('未知的 transport 值');
+    await expect(connection.connect()).rejects.toThrow('unknown transport value');
     // 判据在创建传输之前，工厂不应被调用（否则会按缺省形态误连）
     expect(seen).toEqual([]);
   });
