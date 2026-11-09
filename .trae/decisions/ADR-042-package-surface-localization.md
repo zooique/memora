@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-description: package 面本地化定案——VS Code 原生 package.nls* 两文件（默认英文 + zh-cn），语言真源 = VS Code 显示语言；键命名契约与七条机检判据；本切片只做元数据面，运行时 UI 明确不在范围内（半本地化边界如实登记）
+description: package 面本地化定案——VS Code 原生 package.nls* 两文件（默认英文 + zh-cn），语言真源 = VS Code 显示语言；键命名契约与机检判据（条数以 verify-nls 自检清单为准）；运行时 UI 分切片推进（切片 1 只做元数据面，半本地化边界如实登记）
 ---
 
 # ADR-042 · package 面本地化（默认英文 + zh-cn + 机检判据）
@@ -36,9 +36,10 @@ description: package 面本地化定案——VS Code 原生 package.nls* 两文�
    - 视图名：`view.<视图 id 去掉 memora. 前缀>.name`
    - **品牌名与标识符永不进 nls**：`displayName`、视图容器标题、命令 id、配置键、`when` 子句、枚举值一律保持字面量。翻译标识符是功能伤害，不是本地化。
 
-4. **机检判据 = `scripts/verify-nls.mjs` 七条，全部对真实文件断言。**
+4. **机检判据 = `scripts/verify-nls.mjs`，全部对真实文件断言。** 判据编号与条数以脚本内 `--self-test` 清单为准（本 ADR 不抄数量快照——增删判据即过期，见「描述性计数 = 时点快照」纪律）。
    ① 引用闭合（每个 `%key%` 两侧都有定义）② 键面相等（两侧键集合完全相同）③ 无孤儿键（nls 有、manifest 未引用 = 僵尸译文）④ 默认文件不含 CJK（中文混进默认文件 = 英文用户看到中文）⑤ 本地化面无中文残留（命令/配置/视图三面出现 CJK ⇒ 忘了走 `%key%`）⑥ 无空值 ⑦ 射程下限（命令数与配置项数不得低于基线——防 `contributes` 结构漂移导致遍历静默变空集而「全绿」）。
-   判据⑦ 是必须的：①②⑤ 全都以「遍历 manifest」为前提，结构一改名，它们会一起变成空集然后报绿。
+   ⑧-⑮ 为切片 2 起的 bundle / 窗口面判据（bundle 键面相等、源码 `t()` 键全覆盖（动态键源以 `@nls-keys` 标记收录，不锚变量名）、无孤儿、译文非空、`t()` 首参须静态字面量、窗口面中文残留（QuickPick / 开框 / 输入框 / 状态栏 / CodeLens 全扫）、已迁移模块登记完整、动态键源标记不塌空）。
+   判据⑦ 是必须的：①②⑤ 全都以「遍历 manifest」为前提，结构一改名，它们会一起变成空集然后报绿。⑭⑮ 同理，是「防扫描面塌空」的同族下限判据。
 
 5. **闸门两处都挂。**
    `package.json#scripts.package`（vsce 打包前）+ `scripts/local-ci.mjs` 的 full 档步骤 `host:manifest`。只挂打包链 ⇒ 日常提交永不触发，等于「有实现 ≠ 会跑」。
@@ -95,5 +96,5 @@ description: package 面本地化定案——VS Code 原生 package.nls* 两文�
 - **三拍板项已答（2026-11-09，方案 §8 同步）**：① 做全切片 1-4（目标 = 英文用户真可用）；② 接受源码倒英文 + `l10n.t()`（原生机制前置条件）；③ 覆盖 `zh-tw`（单独 bundle，避免「简体界面 + 繁体回答」混搭）。
 - 切片 2（宿主运行时）→ 3（webview 静态模板）→ 4（webview 动态脚本）按过程稿的操作指点分片推进，各自独立提交与验收；本 ADR 不预先承诺它们的时间点。
 - 切片 2 范围内已定案的两条实现决策：**运行时提示嵌命令标题**用「占位符 + 读 `package.nls.<locale>.json` 解析」实现同源引用（VS Code 无运行时取标题 API，`packageJSON` 返回未解析原始值）；**bundle 不引入 `@vscode/l10n-dev`**（生成工具降级为手工维护 + 键面三面对账守卫：源码 `t()` 键集合 = 默认 bundle 键集合 = zh-cn bundle 键集合，漏键即红）。
-- 切片 2 宿主面代码已落地（2026-11-09）：l10n 管线骨架（manifest `"l10n"` 声明 + 双 bundle + `verify-nls.mjs` 判据 ⑧-⑬）+ `host/manifestNls.ts` 标题解析（三命令：addToChat / registerWork / toggleResidentRule）+ 宿主通知面 `l10n.t` 化 + `CHINESE_MESSAGES` 按 `vscode.env.language` 供给；遗留（`zipImport.ts` / `fileChangeView` 富文本区 / `shared/errorText.ts` 双消费者 / 间接传参盲区）登记台账 HOST-I18N-2；**切片 2 真机验收已通过（2026-11-09，en / zh-cn 两态重启冒烟，含真机反馈收口批复验）**，zipImport 批与切片 3-4 继续按台账推进。
+- 切片 2 宿主面代码已落地（2026-11-09）：l10n 管线骨架（manifest `"l10n"` 声明 + 双 bundle + `verify-nls.mjs` 判据 ⑧-⑮）+ `host/manifestNls.ts` 标题解析（三命令：addToChat / registerWork / toggleResidentRule）+ 宿主窗口面 `l10n.t` 化（含 QuickPick 标题占位 / 开框标题 / CodeLens 标题 / 状态栏文案）+ `CHINESE_MESSAGES` 按 `vscode.env.language` 供给；**前置批已修**：删除宿主 `interrupted` / `reflectionHint` / `selfReviewPrompt` 有损镜像（走内核默认）、`kernelResultNotice` 的 `reason` 改为从 `Agent.works` 方法返回类型推导（内核扩码即 tsc 红）；遗留（`zipImport.ts` / `shared/errorText.ts` 双消费者 / 间接传参盲区 / `MemoraError.format()` 中文正文）登记台账 HOST-I18N-2；**切片 2 真机验收已通过（2026-11-09，en / zh-cn 两态重启冒烟，含真机反馈收口批复验）**，zipImport 批与切片 3-4 继续按台账推进。
 - 真机反馈收口批（2026-11-09 第二批，用户截图实证英文界面弹内核中文回执）：**窗口面与 webview 面分界拍板**——内核回执到窗口通知**不透传散文**，宿主按结构化 `reason` 码本地化渲染（`workProjectionBridge.kernelResultNotice` 单点，未知码原文兜底 fail-visible）；内核散文仍是聊天/工具回执面的文案真源（零内核改动）。同批补窗口面遗漏（恢复初始状态 modal / 图片限额 / 插话上限 / 流内错误实时路）+ verify-nls 采集器补转义还原（多行键假红修复）。宿主经 post 送 webview 的通知串归切片 4（面板中文语境下混排即撒谎）。

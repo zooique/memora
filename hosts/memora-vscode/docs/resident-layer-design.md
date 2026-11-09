@@ -580,13 +580,16 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 > 跨进程换渲染模型：数据经 `work_projection` 一条同名双向消息传 DTO，动作变成消息，
 > 菜单变成行内按钮，判据真源仍是内核清单与 `Agent.residentSegmentReport`。
 
-- **边界**：清单与徽标只读展示；写入口 = 登记命令 / 行内「设为项目规则」/ 行内「移除登记」，
-  四入口共用 `runWorkProjectionAction()` 执行面。不做跨面板角标（§7-6）。
+- **边界**：清单与徽标只读展示；**动作执行面** = `runWorkProjectionAction()`（动作集
+  `load | open | toggle | unregister`），消费入口 = 文件右键 / QuickPick / 设置页行内按钮。
+  ⚠️ **登记不走该执行面**（走 `registerWorkCommand` → `agent.works.registerWork`，含开框 /
+  多选 / 批量回执）；「四入口共用 `runWorkProjectionAction()`」是把两层折叠成一个词，已订正。
+  不做跨面板角标（§7-6）。
 - **行**（2026-11-09 真机反馈后重排）：首行 = 作品名 + 右侧状态后缀（「项目规则」/
   「未设为项目规则」）两端对齐；第二行 = **一句话简介，直接显示在卡片内**（原形态只塞
   tooltip，用户反馈「鼠标放置才看得到」）；第三行 = 源路径。规则行勾选图标、其余文件图标、
   失效行告警图标。tooltip 只留源路径 + 内核失效原文案，不与卡片重复。
-  `icon` / `contextValue` 这类 TreeView 专属字段**不得进 DTO**：`shared/workProjectionDto.ts`
+  `icon` / `contextValue` 这类呈现面专属字段**不得进 DTO**：`shared/workProjectionDto.ts`
   只给 `resident` / `hasFailure` 语义二元组与 `description` 原文，渲染适配各归一侧。
 - **可见名 = 「作品和规则」**：只叫「作品」时用户不知道作品还能升级成项目规则；并列复合名
   同时收「未升级的作品」与「已升级的规则」两类条目，仍**不单叫「规则」**（该页一半条目未
