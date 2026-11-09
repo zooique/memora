@@ -18,6 +18,8 @@
  * @module skillPickerView
  */
 
+// 命名空间导入而非裸 `t`：静态键采集（判据⑨）只认 `l10n.t('…')`
+import * as l10n from '@vscode/l10n';
 import type { SkillDto } from '../../shared/protocol.js';
 import { closeOtherDropdowns, setDropdownOpen } from '../components/dropdown.js';
 import { bindSingleTrackRow, syncRowEdges } from '../helpers/chipRow.js';
@@ -94,9 +96,9 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
   const searchInput = document.createElement('input');
   searchInput.className = 'treedd__search';
   searchInput.type = 'search';
-  searchInput.placeholder = '搜索技能（名称/描述）';
-  searchInput.setAttribute('aria-label', '搜索技能');
-  searchInput.title = '按名称或描述过滤技能列表';
+  searchInput.placeholder = l10n.t('Search skills (name / description)');
+  searchInput.setAttribute('aria-label', l10n.t('Search skills'));
+  searchInput.title = l10n.t('Filter the skill list by name or description');
   searchInput.addEventListener('input', () => {
     skillSearchQuery = searchInput.value;
     renderMenu();
@@ -113,11 +115,12 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     if (trigger) {
       if (currentSkill) {
         const label = currentSkill.displayName ?? currentSkill.name; // 显示名回退（无 H1 时露出英文 id）
-        trigger.setAttribute('title', '当前 Skill：' + label);
-        trigger.setAttribute('aria-label', '当前 Skill：' + label);
+        // 技能名是插值内容（用户数据），不参与翻译
+        trigger.setAttribute('title', l10n.t('Current skill: {0}', label));
+        trigger.setAttribute('aria-label', l10n.t('Current skill: {0}', label));
       } else {
-        trigger.setAttribute('title', '选择 Skill');
-        trigger.setAttribute('aria-label', '选择 Skill');
+        trigger.setAttribute('title', l10n.t('Select skill'));
+        trigger.setAttribute('aria-label', l10n.t('Select skill'));
       }
       const active = !!currentSkill;
       // .ctl--on 归触发器（视觉），.active 归根容器（选择器级状态标记，供外部判读）
@@ -161,13 +164,18 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
       // 失效（会话元数据里锁着、当前清单里已没有）：灰显 + 明示，**不静默过滤**。
       // 与 .is-disabled 共用灰样式，但文案不同——「已失效」= 对象不存在，「已禁用」= 对象存在但被关。
       chip.classList.add('is-missing');
-      chip.setAttribute('title', '该技能已不存在（已删除或改名），发送时不会注入；可移除');
+      chip.setAttribute(
+        'title',
+        l10n.t(
+          'This skill no longer exists (deleted or renamed); it is not injected on send and can be removed',
+        ),
+      );
     } else if (skill.disabled) {
       // 选中的技能已禁用 → 标记 chip。否则用户以为「已挂载」，实际发送时不注入。
       // 术语沿用设置页同一词汇「已禁用」，不新增概念。
       // 判据始终取 DTO 当前值（`setSkills` 按 name 重解析），不是选择时刻快照。
       chip.classList.add('is-disabled');
-      chip.setAttribute('title', '该技能已禁用，发送时不会注入');
+      chip.setAttribute('title', l10n.t('This skill is disabled; it is not injected on send'));
     }
     const icon = document.createElement('span');
     icon.className = 'skill-chip__icon';
@@ -182,12 +190,12 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     if (skill.missing) {
       const note = document.createElement('span');
       note.className = 'skill-chip__note';
-      note.textContent = '已失效';
+      note.textContent = l10n.t('Unavailable');
       chip.appendChild(note);
     } else if (skill.disabled) {
       const note = document.createElement('span');
       note.className = 'skill-chip__note';
-      note.textContent = '已禁用';
+      note.textContent = l10n.t('Disabled');
       chip.appendChild(note);
     }
     // 体积提示（只对钉住生效：未钉住发完即清，每轮成本不成立）：
@@ -200,7 +208,11 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     ) {
       const sizeNote = document.createElement('span');
       sizeNote.className = 'skill-chip__note skill-chip__size';
-      sizeNote.textContent = `此文 ${(skill.contentChars / 10_000).toFixed(1)} 万字，每轮都会发送`;
+      // 数值按千字符换算（原文「N 万字」= N×10000，改为千字符以对齐英文的量级习惯）
+      sizeNote.textContent = l10n.t(
+        'This item is about {0}k characters and is sent on every round',
+        Math.round(skill.contentChars / 1_000),
+      );
       chip.appendChild(sizeNote);
       chip.classList.add('is-large');
     }
@@ -217,8 +229,16 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     // 曾写死为常量 'lock' ⇒ 两态同图标、用户无法分辨钉住与否（真机实测缺陷）。
     pin.innerHTML = getIconSvg(skill.pinned ? 'lock' : 'lock-open', 11, 11);
     pin.setAttribute('aria-pressed', String(skill.pinned));
-    pin.setAttribute('title', skill.pinned ? '取消常驻（发送后清除）' : '常驻（发送后保留）');
-    pin.setAttribute('aria-label', (skill.pinned ? '取消常驻：' : '常驻：') + label);
+    pin.setAttribute(
+      'title',
+      skill.pinned
+        ? l10n.t('Unpin (cleared after sending)')
+        : l10n.t('Pinned (kept after sending)'),
+    );
+    pin.setAttribute(
+      'aria-label',
+      skill.pinned ? l10n.t('Unpin: {0}', label) : l10n.t('Pin: {0}', label),
+    );
     pin.addEventListener('click', () => {
       currentSkill = { ...skill, pinned: !skill.pinned };
       renderChip();
@@ -230,8 +250,8 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     remove.type = 'button';
     remove.className = 'skill-chip__remove';
     remove.innerHTML = getIconSvg('close', 11, 11);
-    remove.setAttribute('title', '移除 Skill');
-    remove.setAttribute('aria-label', '移除 Skill：' + label);
+    remove.setAttribute('title', l10n.t('Remove skill'));
+    remove.setAttribute('aria-label', l10n.t('Remove skill: {0}', label));
     remove.addEventListener('click', () => {
       currentSkill = null;
       syncLabel();
@@ -277,9 +297,10 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     // 顶部项语义 = 「普通对话、不挂载技能」——用中性「未选择技能」替代原「不使用 Skill」：
     // 原文字易被误读为「禁用技能」（禁用另属设置页禁用清单），且暗示「提及技能名即自动
     // 命中」（当前机制是显式选择，见 title 提示）。
-    clearItem.textContent = '未选择技能';
-    clearItem.title =
-      '未挂载任何技能，进行普通对话（技能需从下方显式选择；提示词提及技能名不会自动加载）';
+    clearItem.textContent = l10n.t('No skill selected');
+    clearItem.title = l10n.t(
+      'No skill attached; this is a normal conversation (skills must be selected explicitly below; mentioning a skill name in the prompt does not load it automatically)',
+    );
     clearItem.dataset.treeddId = CLEAR_ID;
     list.appendChild(clearItem);
     const divider = document.createElement('div');
@@ -305,7 +326,7 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
         item.classList.add('is-disabled');
         const note = document.createElement('span');
         note.className = 'treedd__item-note';
-        note.textContent = '已禁用';
+        note.textContent = l10n.t('Disabled');
         item.appendChild(note);
       }
       list.appendChild(item);
@@ -314,7 +335,7 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     if (skillOptions.length > 0 && visible === 0) {
       const empty = document.createElement('div');
       empty.className = 'treedd__empty';
-      empty.textContent = '无匹配技能';
+      empty.textContent = l10n.t('No matching skills');
       list.appendChild(empty);
     }
     syncLabel();

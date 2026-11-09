@@ -412,7 +412,7 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     expect(document.querySelector<HTMLElement>('.skill-content')!.hidden).toBe(false);
     expect(document.querySelector<HTMLElement>('.skill-content')!.textContent).toBe('正文内容');
     expect(document.querySelector<HTMLButtonElement>('.skill-content-toggle')!.textContent).toBe(
-      '收起正文',
+      'Hide content',
     );
   });
 
@@ -438,7 +438,7 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     const off = document.querySelector('.skill-item[data-skill-name="skill-off"]');
     const on = document.querySelector('.skill-item[data-skill-name="skill-on"]');
     expect(off).not.toBeNull(); // 不隐藏：静默消失会让人误判「启停没做」
-    expect(off?.querySelector('.disabled-badge')?.textContent).toBe('已禁用');
+    expect(off?.querySelector('.disabled-badge')?.textContent).toBe('Disabled');
     expect(on?.querySelector('.disabled-badge')).toBeNull();
   });
 
@@ -462,8 +462,8 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     );
     const tip = document.querySelector('#skills-root .skill-unmatched-tip');
     expect(tip).not.toBeNull();
-    expect(tip?.textContent).toContain('未找到需要禁用的技能');
-    expect(tip?.textContent).toContain('typo-skill、ghost-skill');
+    expect(tip?.textContent).toContain('No matching skill found to disable');
+    expect(tip?.textContent).toContain('typo-skill, ghost-skill');
   });
 
   it('D 未匹配提示：空/undefined → 不渲染提示行（不打扰正常清单）', () => {
@@ -481,7 +481,7 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     // 覆盖是合法语义的可见事实：胜者卡片说明它盖掉了谁（不是健康问题，走中性样式）
     const lines = document.querySelectorAll('#skills-root .skill-override');
     expect(lines).toHaveLength(1);
-    expect(lines[0]?.textContent).toContain('已覆盖用户同名技能');
+    expect(lines[0]?.textContent).toContain('Overrides the same-named User skill');
     // 未覆盖者不得凭空多出一行（防「无条件渲染」的假绿）
     expect(document.querySelectorAll('.skill-item')).toHaveLength(2);
   });
@@ -520,7 +520,7 @@ describe('技能禁用延长线开关（S4 E，2026-09-22）', () => {
     dispatchSkills([{ name: 'rp', description: '角色包技能', layer: 'rolepack' }]);
     const rpItem = document.querySelector('.skill-item[data-skill-name="rp"]') as HTMLElement;
     expect(rpItem.querySelector('.skill-disable-check')).toBeNull();
-    expect(rpItem.querySelector('.skill-rolepack-hint')?.textContent).toContain('随角色启停');
+    expect(rpItem.querySelector('.skill-rolepack-hint')?.textContent).toContain('Follows the role');
   });
 
   it('点击开关 → 发送 toggle_skill_disabled；不做本地乐观翻转（「已禁用」徽章不上屏，等回推）', () => {

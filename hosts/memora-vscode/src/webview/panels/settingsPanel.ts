@@ -1384,7 +1384,11 @@ export class MemoraSettingsPanel {
   private async toggleSkillDisabled(name: string, disabled: boolean): Promise<void> {
     const agent = await this.ensureAgent();
     if (!agent?.skills) {
-      this.post({ type: 'notice', level: 'error', message: 'Agent 未就绪，无法切换技能禁用状态' });
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: l10n.t('Memora Agent is not ready; cannot toggle the skill disabled state'),
+      });
       return;
     }
     // 增量增/删（base 为只读快照，不改数组内容直接得出 next）
@@ -1401,14 +1405,17 @@ export class MemoraSettingsPanel {
       this.post({
         type: 'notice',
         level: 'error',
-        message: writeErrorText('技能禁用设置', written),
+        message: writeErrorText(l10n.t('Skill disabled setting'), written),
       });
       return;
     }
     this.post({
       type: 'notice',
       level: 'info',
-      message: `已${disabled ? '禁用' : '启用'}技能「${name}」`,
+      // 两态各自整句（禁把 '禁用'/'启用' 做成碎片键：静态采集只认字面量）
+      message: disabled
+        ? l10n.t('Disabled skill "{0}"', name)
+        : l10n.t('Enabled skill "{0}"', name),
     });
   }
 

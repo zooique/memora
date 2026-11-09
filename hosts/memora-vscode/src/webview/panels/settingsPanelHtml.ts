@@ -23,6 +23,7 @@ import { SECURITY_BODY_HTML } from './settingsSecurityHtml.js';
 import { buildConfigBodyHtml } from './settingsConfigHtml.js';
 import { buildMemoryBodyHtml } from './settingsMemoryHtml.js';
 import { buildRolesBodyHtml } from './settingsRolesHtml.js';
+import { buildSkillsBodyHtml } from './settingsSkillsHtml.js';
 import { buildWorksBodyHtml } from './settingsWorksHtml.js';
 import {
   DEFAULT_SETTINGS_TAB,
@@ -45,6 +46,9 @@ const ROLES_BODY_HTML = buildRolesBodyHtml(vscode.l10n);
 /** Config body built at import time with the host localizer (same reason as the works body). */
 const CONFIG_BODY_HTML = buildConfigBodyHtml(vscode.l10n);
 
+/** Skills body built at import time with the host localizer (same reason as the works body). */
+const SKILLS_BODY_HTML = buildSkillsBodyHtml(vscode.l10n);
+
 /**
  * 各选项卡主体骨架（**不含外层 root 容器**——root 与 tab 按钮均由 {@link buildHtml} 统一生成）
  *
@@ -54,27 +58,7 @@ const TAB_BODY_HTML: Record<SettingsTab, string> = {
   memory: MEMORY_BODY_HTML,
   roles: ROLES_BODY_HTML,
   config: CONFIG_BODY_HTML,
-  skills: `  <!-- 技能子视图（skills 选项卡） -->
-    <div class="header">
-      <h2>全局技能</h2>
-      <span id="skillCount" class="stat-bar" hidden></span>
-      <div class="header-actions">
-        <button id="btnImportSkillZip" class="btn btn-secondary btn-icon-solo" title="导入 .zip 技能（可导入到用户级或项目级）">
-          <span class="btn-icon" data-icon="import"></span>
-        </button>
-        <button id="btnOpenSkillsDir" class="btn btn-secondary btn-icon-solo" title="打开用户技能目录">
-          <span class="btn-icon" data-icon="folder"></span>
-        </button>
-        <button id="btnRefreshSkills" class="btn btn-secondary btn-icon-solo" title="刷新技能列表（重扫项目与用户技能目录）">
-          <span class="btn-icon" data-icon="refresh"></span>
-        </button>
-      </div>
-    </div>
-    <div class="hint">全局技能是所有角色包共享的能力。支持单文件 <code>.md</code> 和文件夹 <code>SKILL.md</code> 两种格式。</div>
-    <div id="skillsList">
-      <p class="loading-hint">加载中…</p>
-    </div>
-    <p class="footer-hint">用户技能目录：<code>VS Code 全局存储 / skills /</code></p>`,
+  skills: SKILLS_BODY_HTML,
   mcp: MCP_BODY_HTML,
   security: SECURITY_BODY_HTML,
   works: WORKS_BODY_HTML,

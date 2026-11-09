@@ -104,7 +104,7 @@ describe('skillPickerView 菜单渲染', () => {
     expect(items[0]?.textContent).toBe('摘要提炼');
     expect(items[1]?.textContent).toBe('foreshadow');
     const clear = menu.querySelector<HTMLElement>('[data-treedd-id="__clear_skill"]');
-    expect(clear?.textContent).toBe('未选择技能');
+    expect(clear?.textContent).toBe('No skill selected');
   });
 
   it('禁用技能：弱化 + 「已禁用」徽记，但条目保留不隐藏', () => {
@@ -112,7 +112,7 @@ describe('skillPickerView 菜单渲染', () => {
     view.setSkills([{ ...SKILLS[0]!, disabled: true }]);
     const item = skillItems(menu)[0]!;
     expect(item.classList.contains('is-disabled')).toBe(true);
-    expect(item.querySelector('.treedd__item-note')?.textContent).toBe('已禁用');
+    expect(item.querySelector('.treedd__item-note')?.textContent).toBe('Disabled');
   });
 });
 
@@ -150,7 +150,7 @@ describe('skillPickerView 搜索判据', () => {
     const { view, menu } = mount();
     view.setSkills(SKILLS);
     expect(search(menu, 'zzz')).toEqual([]);
-    expect(menu.querySelector('.treedd__empty')?.textContent).toBe('无匹配技能');
+    expect(menu.querySelector('.treedd__empty')?.textContent).toBe('No matching skills');
   });
 });
 
@@ -307,7 +307,7 @@ describe('skillPickerView 选中态与 pinned', () => {
     const { view, trigger, chipRow } = mount();
     view.setSkills(SKILLS);
     view.select('summarize');
-    expect(trigger.getAttribute('aria-label')).toBe('当前 Skill：摘要提炼');
+    expect(trigger.getAttribute('aria-label')).toBe('Current skill: 摘要提炼');
     expect(view.getSelected()?.name).toBe('summarize');
     expect(chipRow.querySelector('.skill-chip__name')?.textContent).toBe('摘要提炼');
     expect(chipRow.hidden).toBe(false);
@@ -361,7 +361,7 @@ describe('skillPickerView 选中态与 pinned', () => {
     view.setSkills([{ ...SKILLS[0]!, disabled: true }, SKILLS[1]!]);
     const chip = document.querySelector<HTMLElement>('.skill-chip') as HTMLElement;
     expect(chip.classList.contains('is-disabled')).toBe(true);
-    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('已禁用');
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('Disabled');
   });
 
   it('失效不静默：清单重推找不到同名 → 保留条目并灰显「已失效」', () => {
@@ -374,7 +374,7 @@ describe('skillPickerView 选中态与 pinned', () => {
     expect(sel?.missing).toBe(true);
     const chip = document.querySelector<HTMLElement>('.skill-chip') as HTMLElement;
     expect(chip.classList.contains('is-missing')).toBe(true);
-    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('已失效');
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('Unavailable');
   });
 
   it('restorePinned：无选择时按名回种并置锁；已有不同名选择不被覆盖', () => {
@@ -435,7 +435,7 @@ describe('skillPickerView 选中态与 pinned', () => {
     const chip = document.querySelector<HTMLElement>('.skill-chip') as HTMLElement;
     expect(chip.classList.contains('is-large')).toBe(true);
     expect(chip.querySelector('.skill-chip__size')?.textContent).toBe(
-      '此文 3.2 万字，每轮都会发送',
+      'This item is about 32k characters and is sent on every round',
     );
   });
 });

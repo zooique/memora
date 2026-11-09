@@ -451,7 +451,23 @@ const WEBVIEW_PANELS = {
       'extension/settingsWrite.ts',
     ],
   },
-  skills: { state: 'pending', files: [] },
+  // 技能页（B5）：骨架 / 运行时（已按 tab 外置 skillsView.ts）/ 选择器 / 技能资产校验与命名判据全部迁完。
+  // `settingsPanel.ts` **不登记**：技能域消息虽已英文化，但该文件仍混着对话与其他页签文案，
+  // 登记会连带判别的页（登记口径是文件，不是「页面」——见文件头注册制盲区）。同理 `settingsView.ts`
+  // 仍含安全页中文，待 B7 外置后另行登记。
+  skills: {
+    state: 'migrated',
+    files: [
+      'shared/settingsTabs.ts',
+      'webview/panels/settingsSkillsHtml.ts',
+      'webview/scripts/skillsView.ts',
+      'webview/scripts/skillPickerView.ts',
+      'webview/styles/skillsStyles.ts',
+      'extension/host/userAssets/path.ts',
+      'extension/host/userAssets/validateSkill.ts',
+      'extension/commands/reloadSkills.ts',
+    ],
+  },
   mcp: { state: 'pending', files: [] },
   security: { state: 'pending', files: [] },
   // 作品页是首个范式样板：文件清单与文案真源均已迁移（判据⑰ 生效）。
