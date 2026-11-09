@@ -1092,5 +1092,12 @@
   "Click + above to create a session before chatting": "请先点击上方「＋」新建会话再开始对话",
   "The answers do not match the current questions ({0} answers / {1} questions); please answer again": "答题数据与当前提问不一致（{0} 条答案 / {1} 道题），请重新作答",
   "Skill \"{0}\" is disabled and was not injected (the message was still sent). Enable it in Settings > Skills and retry.": "技能「{0}」已禁用，本次未注入（消息已照常发送）。可在设置 → 技能中启用后重试。",
-  "Failed to generate the memory summary for this turn; its content will not be persisted automatically (the conversation itself is unaffected)": "本轮记忆摘要生成失败，本轮内容不会被自动沉淀（对话本身不受影响）"
+  "Failed to generate the memory summary for this turn; its content will not be persisted automatically (the conversation itself is unaffected)": "本轮记忆摘要生成失败，本轮内容不会被自动沉淀（对话本身不受影响）",
+  " and locates line {0}": "，定位到第 {0} 行",
+  "This reference is no longer valid (the file no longer exists); it can still be removed. Original path: {0}": "该引用已失效（文件已不存在）；仍可移除。原路径：{0}",
+  "Pointer only; the model reads the content on demand (no budget cost). Click to open in the editor{0} ({1})": "仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开{0}（{1}）",
+  "Invalid (file no longer exists)": "已失效（文件已不存在）",
+  "Remove reference: {0}": "移除引用：{0}",
+  "Clear all references": "清空全部引用",
+  "Clear all references (including pinned)": "清空全部引用（含钉住的）"
 }

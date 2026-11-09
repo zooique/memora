@@ -10126,9 +10126,9 @@ describe('添加到对话：引用气泡（file/folder · 去重 · 发送清空
     dispatch({ type: 'addRef', refs: [{ path: 'src/utils', kind: 'folder' }] });
     const chip = document.querySelector('#refChips .skill-chip') as HTMLElement;
     const title = chip.querySelector('.skill-chip__name')?.getAttribute('title') ?? '';
-    expect(title).toContain('仅挂指针');
-    expect(title).toContain('按需读取');
-    expect(title).toContain('点击在编辑器中打开');
+    expect(title).toContain('Pointer only');
+    expect(title).toContain('reads the content on demand');
+    expect(title).toContain('Click to open in the editor');
   });
 
   it('同一 path 重复 addRef 只留一个气泡（去重，SSOT = currentRefs）', () => {
@@ -10561,8 +10561,10 @@ describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () =>
     });
     const chip = document.querySelector('#refChips .skill-chip') as HTMLElement;
     expect(chip.classList.contains('is-missing')).toBe(true);
-    // 该注记（引用 chip 的失效标记）仍走未迁移的宿主分支，当前用中文源文案
-    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('已失效');
+    // 该注记（引用 chip 的失效标记）走 l10n 源键，en 环境下 t() 原样返回键面
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe(
+      'Invalid (file no longer exists)',
+    );
   });
 
   it('锁即落盘：🔒 动作即时上行 kind=pin（不等发送）', () => {
@@ -11014,7 +11016,7 @@ describe('引用 chip 点击跳转（open_ref）', () => {
     // title 提示与行号对价（hover 可见的定位预告）；CTX-6① 后首句是指针语义，定位预告随后；
     // HOST-CTX-17 起末尾附完整相对路径（可见文本降噪，同名文件靠 hover 消歧）
     expect(name.title).toBe(
-      '仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开并定位到第 5-24 行（src/foo.ts）',
+      'Pointer only; the model reads the content on demand (no budget cost). Click to open in the editor and locates line 5-24 (src/foo.ts)',
     );
     (document.querySelector('#refChips .skill-chip__range') as HTMLElement).click();
     expect(postMessage).toHaveBeenCalledWith({
@@ -11023,14 +11025,14 @@ describe('引用 chip 点击跳转（open_ref）', () => {
     });
   });
 
-  it('单行区间 title 不带区间尾巴（#L7 → 「定位到第 7 行」）', () => {
+  it('单行区间 title 不带区间尾巴（#L7 → 「locates line 7」）', () => {
     mountChatView();
     dispatch({
       type: 'addRef',
       refs: [{ path: 'src/bar.ts', kind: 'file', range: { start: 7, end: 7 } }],
     });
     expect((document.querySelector('#refChips .skill-chip__name') as HTMLElement).title).toBe(
-      '仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开并定位到第 7 行（src/bar.ts）',
+      'Pointer only; the model reads the content on demand (no budget cost). Click to open in the editor and locates line 7 (src/bar.ts)',
     );
   });
 

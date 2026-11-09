@@ -524,6 +524,14 @@ const WEBVIEW_PANELS = {
   //   · 本域**不做相位裁决**（那是 `handleInput` 的活），只执行并给出点击反馈；
   //   · `postPendingDiscarded` / `syncPendingQueue` 留在面板：它们是队列投影的一对，
   //     与运行控制只共享「停止会丢弃排队插话」一个调用点，搬走反而把投影打散。
+  //
+  // B9-E-1a（引用 chip 构建域）已收口并登记：
+  //   · refChips —— 引用 chip 的可见文本 / title / aria-label 全走 l10n；
+  //     钉住二态**复用** skill chip 同一组键（`Pinned (kept after sending)` / `Unpin (cleared after
+  //     sending)`，同一「发送后是否保留」语义不另造近似措辞），失效注记用专用键
+  //     `Invalid (file no longer exists)`（不复用裸 `Invalid`，避免 zh 译文被别处借用成「无效」）；
+  //   · 行号定位提示拆成 `' and locates line {0}'` 拼接进主句的 `{0}`——两个语言各按自语句序给译文，
+  //     不在代码里拼中文/英文语序。
   chat: {
     state: 'pending',
     files: [
@@ -551,6 +559,7 @@ const WEBVIEW_PANELS = {
       'webview/panels/chatSessionNavOps.ts',
       'webview/panels/chatMemoryOps.ts',
       'webview/panels/chatRunControlOps.ts',
+      'webview/helpers/refChips.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。

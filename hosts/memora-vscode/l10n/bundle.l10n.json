@@ -1092,5 +1092,12 @@
   "Click + above to create a session before chatting": "",
   "The answers do not match the current questions ({0} answers / {1} questions); please answer again": "",
   "Skill \"{0}\" is disabled and was not injected (the message was still sent). Enable it in Settings > Skills and retry.": "",
-  "Failed to generate the memory summary for this turn; its content will not be persisted automatically (the conversation itself is unaffected)": ""
+  "Failed to generate the memory summary for this turn; its content will not be persisted automatically (the conversation itself is unaffected)": "",
+  " and locates line {0}": "",
+  "This reference is no longer valid (the file no longer exists); it can still be removed. Original path: {0}": "",
+  "Pointer only; the model reads the content on demand (no budget cost). Click to open in the editor{0} ({1})": "",
+  "Invalid (file no longer exists)": "",
+  "Remove reference: {0}": "",
+  "Clear all references": "",
+  "Clear all references (including pinned)": ""
 }

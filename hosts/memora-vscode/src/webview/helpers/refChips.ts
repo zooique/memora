@@ -14,6 +14,7 @@
  * @module refChips
  */
 
+import * as l10n from '@vscode/l10n';
 import type { ChatRef } from '../../shared/protocol.js';
 import { formatRefRange, normalizeRefRange } from '../../shared/refKey.js';
 import { getIconSvg } from '../scripts/icons.js';
@@ -97,18 +98,28 @@ export function appendRefChips(
     const name = document.createElement('span');
     name.className = 'skill-chip__name';
     name.textContent = refDisplayName(ref.path);
-    // 定位提示是**中文语句**而非协议标签，故不复用 formatRefRange（两者语言不同、不可共享）；
+    // 定位提示是**成句提示**而非协议标签，故不复用 formatRefRange（两者语言不同、不可共享）；
     // 但端点同样取归一化结果，避免出现「第 NaN 行」。
     const rangeHint = markedRange
-      ? `并定位到第 ${markedRange.start}${markedRange.start === markedRange.end ? '' : `-${markedRange.end}`} 行`
+      ? l10n.t(
+          ' and locates line {0}',
+          `${markedRange.start}${markedRange.start === markedRange.end ? '' : `-${markedRange.end}`}`,
+        )
       : '';
     // CTX-6①：指针语义提示放最前（用户 hover 的第一问是「这挂的是啥、占不占」）——引用只挂
     // 指针不注入内容，目录更是只给模型一张目录地图（内容按需 list_dir）。与信封侧
     // buildRefContextBlock 的「按需读取」标注同义：信封说给模型听，这里说给用户听。
     // HOST-CTX-17：全路径附在末尾括号——可见文本降噪后，同名文件的区分靠 hover 这一眼。
     name.title = ref.missing
-      ? `该引用已失效（文件已不存在）；仍可移除。原路径：${ref.path}`
-      : `仅挂指针，正文由模型按需读取（不占预算）；点击在编辑器中打开${rangeHint}（${ref.path}）`;
+      ? l10n.t(
+          'This reference is no longer valid (the file no longer exists); it can still be removed. Original path: {0}',
+          ref.path,
+        )
+      : l10n.t(
+          'Pointer only; the model reads the content on demand (no budget cost). Click to open in the editor{0} ({1})',
+          rangeHint,
+          ref.path,
+        );
     // 键盘可达：span 非原生按钮，补 role/tabindex/Enter-Space 与鼠标同构
     name.setAttribute('role', 'button');
     name.tabIndex = 0;
@@ -143,7 +154,7 @@ export function appendRefChips(
       chip.classList.add('is-missing');
       const missingNote = document.createElement('span');
       missingNote.className = 'skill-chip__note';
-      missingNote.textContent = '已失效';
+      missingNote.textContent = l10n.t('Invalid (file no longer exists)');
       chip.appendChild(missingNote);
     }
     // 常驻锁切换（🔒）：与 ✕ 语义二分——🔒 只切「发送后是否保留」，✕ 才是移除。
@@ -156,16 +167,23 @@ export function appendRefChips(
     }
     pin.innerHTML = getIconSvg(ref.pinned ? 'lock' : 'lock-open', 11, 11);
     pin.setAttribute('aria-pressed', String(ref.pinned));
-    pin.setAttribute('title', ref.pinned ? '取消常驻（发送后清除）' : '常驻（发送后保留）');
-    pin.setAttribute('aria-label', (ref.pinned ? '取消常驻：' : '常驻：') + label);
+    pin.setAttribute(
+      'title',
+      // 与 skill chip 复用同一组钉住键（同一「发送后是否保留」语义，不另造近似措辞）
+      ref.pinned ? l10n.t('Unpin (cleared after sending)') : l10n.t('Pinned (kept after sending)'),
+    );
+    pin.setAttribute(
+      'aria-label',
+      ref.pinned ? l10n.t('Unpin: {0}', label) : l10n.t('Pin: {0}', label),
+    );
     pin.addEventListener('click', () => handlers.onTogglePin(ref));
     chip.appendChild(pin);
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'skill-chip__remove';
     remove.innerHTML = getIconSvg('close', 11, 11);
-    remove.setAttribute('title', `移除引用：${label}`);
-    remove.setAttribute('aria-label', `移除引用：${label}`);
+    remove.setAttribute('title', l10n.t('Remove reference: {0}', label));
+    remove.setAttribute('aria-label', l10n.t('Remove reference: {0}', label));
     remove.addEventListener('click', () => handlers.onRemove(ref));
     chip.appendChild(remove);
     row.appendChild(chip);
@@ -180,8 +198,8 @@ export function appendRefChips(
     clearAll.type = 'button';
     clearAll.className = 'ref-chips__clear';
     clearAll.innerHTML = getIconSvg('close', 11, 11);
-    clearAll.setAttribute('title', '清空全部引用（含常驻）');
-    clearAll.setAttribute('aria-label', '清空全部引用');
+    clearAll.setAttribute('title', l10n.t('Clear all references (including pinned)'));
+    clearAll.setAttribute('aria-label', l10n.t('Clear all references'));
     clearAll.addEventListener('click', () => handlers.onClearAll());
     row.appendChild(clearAll);
   }
