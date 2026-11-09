@@ -62,8 +62,10 @@ export const DEFAULT_SETTINGS_TAB: SettingsTab = SETTINGS_TABS[0];
  * 同时是 tab 按钮文案与子视图 `aria-label` 的唯一来源（此前按钮写「大模型」、
  * root 的 aria-label 写「大模型配置」两份文案并列）。
  *
- * ⚠️ 键名带引号不是风格偏好：`@nls-keys` 的动态键采集只认 `'键': '值'` 成对形态，
- * 去掉引号会让这批键脱离判据⑨采集面（bundle 里变成孤儿键，实测红过）。
+ * ⚠️ 别指望「给键名加引号」来让采集器认出它们：本仓 prettier 默认 `quoteProps: as-needed`
+ * 会在提交钩子里把合法标识符键名的引号剥掉，所以 `@nls-keys` 的采集端**两种形态都认**
+ * （见 `scripts/verify-nls.mjs` 的 `collectDynamicKeySources`）。真正的约束是：值必须是
+ * 字符串字面量，不能是变量 / 模板串。
  */
 // @nls-keys
 export const SETTINGS_TAB_LABELS: Record<SettingsTab, string> = {

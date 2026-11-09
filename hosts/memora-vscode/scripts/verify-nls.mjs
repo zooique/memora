@@ -276,20 +276,27 @@ function sliceBalanced(text, openIndex, open, close) {
  * 第二张映射表就静默脱管（2026-11-09 审查实证）。标记与命名解耦，改名不影响判定。
  * 判据边界：新增第二张动态键源表若**不打标记**，仍会脱管——语法上无法推断「谁是键源」，
  * 故配 ⑮「标记数不得低于基线」防清单塌空，并在台账登记该边界。
+ *
+ * **键名带不带引号都认**（2026-11-09 订正）：本仓 prettier 没配 `quoteProps`，默认
+ * `as-needed` 会**自动剥掉**合法标识符键名的引号 ⇒ 旧实现只认 `'键': '值'` 时，提交钩子
+ * 一跑就把这批键踢出采集面（实测：settingsTabs 的 8 个页签名全成 bundle 孤儿键，而
+ * TYPE_BADGE_LABEL 的 5 个值既不进 bundle 也不报缺键 = 静默脱管）。**约定不能与格式化工具
+ * 对抗**，故采集端放行裸标识符键名（值仍必须是字符串字面量）。
  */
 function collectDynamicKeySources(text) {
   const values = [];
   let markers = 0;
+  // 键：单引号 / 双引号 / 裸标识符（三选一）；值：单引号或双引号字符串字面量
+  const ENTRY_RE =
+    /(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|([A-Za-z_$][\w$]*))\s*:\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")/g;
   for (const m of text.matchAll(/@nls-keys/g)) {
     markers++;
     const open = text.indexOf('{', m.index);
     if (open < 0) continue;
     const block = sliceBalanced(text, open, '{', '}');
-    for (const re of [
-      /'((?:[^'\\]|\\.)*)'\s*:\s*'((?:[^'\\]|\\.)*)'/g,
-      /"((?:[^"\\]|\\.)*)"\s*:\s*"((?:[^"\\]|\\.)*)"/g,
-    ]) {
-      for (const mm of block.matchAll(re)) values.push(unescapeSourceLiteral(mm[2]));
+    for (const mm of block.matchAll(ENTRY_RE)) {
+      // mm[4] / mm[5] = 值的正文（单引号 / 双引号），按开引号类型分支避免截断
+      values.push(unescapeSourceLiteral(mm[4] !== undefined ? mm[4] : mm[5]));
     }
   }
   return { values, markers };
@@ -1080,6 +1087,17 @@ function selfTest() {
     console.log(`  ${ok ? '✅' : '❌'} ${label}${ok ? '' : ' 被误报'}`);
     if (!ok) allOk = false;
   }
+
+  // 正向控制：`@nls-keys` 的键名会被 prettier 剥引号（quoteProps=as-needed），
+  // 两种形态都必须收进键面——采集端只认带引号时，这批键静默脱管（见 collectDynamicKeySources）
+  const dyn = collectDynamicKeySources(
+    `// @nls-keys\nexport const T = { memory: 'Memory', 'no-workspace': 'No workspace' };\n`,
+  );
+  const dynOk = dyn.values.includes('Memory') && dyn.values.includes('No workspace');
+  console.log(
+    `  ${dynOk ? '✅' : '❌'} ⑨ 正向：裸标识符键名也进动态键面${dynOk ? '' : ' 漏采（键面脱管）'}`,
+  );
+  if (!dynOk) allOk = false;
 
   console.log(allOk ? '\n✅ 自检通过：本地化面各判据均可捕获变异' : '\n❌ 自检失败：存在失明判据');
   return allOk ? 0 : 1;

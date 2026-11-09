@@ -28,6 +28,11 @@ vi.mock('vscode', () => ({
     }),
   },
   ConfigurationTarget: { Global: 1 },
+  // 失败文案经 settingsWrite 走 vscode.l10n（默认语言下原样返回英文源键）
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
 }));
 
 import { applyMcpWrite, type McpOpsDeps } from '../panels/mcpServerOps.js';
@@ -101,7 +106,7 @@ describe('mcp_write / allow（免确认档位）', () => {
       applyMcpWrite(d, { op: 'allow', key: 'k', allowlisted: true }),
     ).resolves.toBeUndefined();
     expect(d.notices[0]?.level).toBe('error');
-    expect(d.notices[0]?.message).toContain('免确认设置写入失败');
+    expect(d.notices[0]?.message).toContain('write failed');
   });
 });
 
@@ -277,7 +282,7 @@ describe('mcp_write / ack（upsert 的结论随状态回推带回）', () => {
     await applyMcpWrite(d, { op: 'upsert', server: { name: 'fs', command: 'npx' }, reqId: 'r3' });
     expect(d.acks).toHaveLength(1);
     expect(d.acks[0]!.ok).toBe(false);
-    expect(d.acks[0]!.error).toContain('写入失败');
+    expect(d.acks[0]!.error).toContain('write failed');
   });
 
   it('无 reqId（旧客户端）⇒ 不带 ack（无从认领就不发，行为不变）', async () => {
@@ -319,9 +324,11 @@ describe('mcp_write / 写入超时兜底（update 永不 settle）', () => {
     });
     await vi.advanceTimersByTimeAsync(5000);
 
-    expect(d.acks).toEqual([{ reqId: 'r9', ok: false, error: expect.stringContaining('超时') }]);
+    expect(d.acks).toEqual([
+      { reqId: 'r9', ok: false, error: expect.stringContaining('timed out') },
+    ]);
     expect(d.notices[0]?.level).toBe('error');
-    expect(d.notices[0]?.message).toContain('只读或被占用');
+    expect(d.notices[0]?.message).toContain('read-only or locked');
   });
 
   it('allow：同一上限（免确认勾选也是写用户设置，沉默 = 点了没反应）', async () => {
@@ -331,7 +338,7 @@ describe('mcp_write / 写入超时兜底（update 永不 settle）', () => {
     await vi.advanceTimersByTimeAsync(5000);
 
     expect(d.notices[0]?.level).toBe('error');
-    expect(d.notices[0]?.message).toContain('免确认设置写入超时');
+    expect(d.notices[0]?.message).toContain('write timed out');
   });
 
   it('成功写入后不残留计时器（finally 清掉，不拖住事件循环）', async () => {
@@ -603,7 +610,7 @@ describe('mcp_write / import（粘贴 JSON 片段）', () => {
     });
     expect(d.notices.some((item) => item.level === 'error')).toBe(true);
     expect(d.acks[0]?.ok).toBe(false);
-    expect(d.acks[0]?.error).toContain('写入失败');
+    expect(d.acks[0]?.error).toContain('write failed');
   });
 });
 

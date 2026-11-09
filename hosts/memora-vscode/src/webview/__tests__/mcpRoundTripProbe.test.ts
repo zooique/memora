@@ -47,6 +47,11 @@ vi.mock('vscode', () => ({
     }),
   },
   ConfigurationTarget: { Global: 1 },
+  // 失败文案经 settingsWrite 走 vscode.l10n（默认语言下原样返回英文源键）
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
 }));
 
 import { applyMcpWrite, type McpOpsDeps } from '../panels/mcpServerOps.js';
@@ -318,7 +323,7 @@ describe('往返探针 · 重名与失败回执', () => {
       originalName: write!.originalName,
     } as never);
     expect(d.acks).toEqual([
-      { reqId: write!.reqId, ok: false, error: expect.stringContaining('写入失败') },
+      { reqId: write!.reqId, ok: false, error: expect.stringContaining('write failed') },
     ]);
 
     // 宿主把 ack 随写后那次 mcp_status 带回 ⇒ 视图认领，表单带着刚才填的内容复开
@@ -332,7 +337,7 @@ describe('往返探针 · 重名与失败回执', () => {
     const command = view.root.querySelector<HTMLInputElement>('[data-field="command"]');
     expect(command).not.toBeNull();
     expect(command!.value).toBe('node --experimental');
-    expect(view.root.querySelector('.mcp-form-error')!.textContent).toContain('写入失败');
+    expect(view.root.querySelector('.mcp-form-error')!.textContent).toContain('write failed');
     // 落盘确实没变（失败 = 未落盘）
     expect(savedServers()[0]!['command']).toBe('node');
   });

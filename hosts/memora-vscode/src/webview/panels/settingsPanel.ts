@@ -63,6 +63,16 @@ import {
 } from '../../extension/host/mcp/runtime.js';
 // MCP 写操作实现（`mcp_write` 全部 op 的唯一落点；写配置/回执/重启/接入都在那边）
 import { applyMcpWrite, type McpOpsDeps } from './mcpServerOps.js';
+// 记忆写操作（删除/恢复/永久删除/清空/编辑/清理）：面板只留一行委派，保住 max-lines 余量
+import {
+  clearRecycleOp,
+  deleteMemoryOp,
+  editMemoryOp,
+  purgeMemoryOp,
+  restoreMemoryOp,
+  runCleanupOp,
+  type MemoryOpsContext,
+} from './settingsMemoryOps.js';
 // 配置原值 = 面板列表的「有哪些」，只经唯一读取点（禁就地 getConfiguration，判据散点）
 import { readMcpServers, readMcpToolAllowlist } from '../../extension/mcpConfig.js';
 // 配置写入唯一通道（5s 超时兜底：只读/受管设置上 update 可能永不 settle ⇒ 静默吞输入）
@@ -103,7 +113,7 @@ import {
 import { isPathWithin } from '../../extension/host/userAssets/path.js';
 // 项目级 → 用户级复制编排层（执行面 = zipImport 的事务化原语，本面板只分发）
 import { copyProjectRolePackToUser, copyProjectSkillToUser } from './assetCopyToUser.js';
-import { CONFIRM_SCRIPTS_KEY, MEMORY_RECYCLE_RETENTION_DAYS } from '../../shared/constants.js';
+import { CONFIRM_SCRIPTS_KEY } from '../../shared/constants.js';
 // 内核常量与键面/校验入口（宿主不复制字面量，SSOT 单一来源）：
 //   BUILTIN_FALLBACK_PACK — 兜底契约包名，随内核包分发，宿主 UI 禁删标记；
 //   validateManifestText  — 角色包保存前校验入口（宿主不重写判据，校验失败不写盘）。
@@ -1098,6 +1108,23 @@ export class MemoraSettingsPanel {
     return agent?.memory ?? undefined;
   }
 
+  /**
+   * 记忆写操作的宿主能力视图（实现外置到 `settingsMemoryOps.ts`）
+   *
+   * 只传「取句柄 / 回推 / 刷新」三类能力，不把整个面板交出去——写操作不需要面板状态，
+   * 反向依赖会让外置失去意义（也挡住「外置模块自己再写一套查询」的旁路）。
+   */
+  private memoryOps(): MemoryOpsContext {
+    return {
+      ensureMemory: () => this.ensureMemory(),
+      ensureAgent: () => this.ensureAgent(),
+      post: (msg) => this.post(msg),
+      loadMemory: () => this.loadMemory(),
+      loadRecycle: () => this.loadRecycle(),
+      loadGovernance: () => this.loadGovernance(),
+    };
+  }
+
   private async loadMemory(): Promise<void> {
     const memory = await this.ensureMemory();
     if (!memory) {
@@ -1148,203 +1175,38 @@ export class MemoraSettingsPanel {
   // ─── 记忆单条删除 / 恢复 / 回收站 ───
 
   /**
-   * 删除单条记忆（memory_delete）
-   *
-   * 软删除：弹确认框后调 agent.memory.writeDelete(id)（进入回收站，可恢复），
-   * 完成后推送 memory_deleted + 刷新记忆列表与治理统计。取消确认不推送。
+   * 删除单条记忆（memory_delete）—— 实现外置在 `settingsMemoryOps.ts`（面板只留委派）
    */
   private async deleteMemory(id: string): Promise<void> {
-    const memory = await this.ensureMemory();
-    if (!memory) {
-      this.post({
-        type: 'memory_deleted',
-        ok: false,
-        id,
-        message: l10n.t('The Agent is not ready; cannot delete the memory'),
-      });
-      return;
-    }
-    const confirmed = await confirmModal({
-      message: l10n.t(
-        'Delete this memory? It moves to the recycle bin and can be restored at any time.',
-      ),
-      confirmLabel: l10n.t('Delete'),
-    });
-    if (!confirmed) return;
-    try {
-      memory.writeDelete(id);
-      this.post({ type: 'memory_deleted', ok: true, id });
-      await this.loadMemory();
-      await this.loadGovernance();
-    } catch (err) {
-      this.post({
-        type: 'memory_deleted',
-        ok: false,
-        id,
-        message: toNoticeText(err),
-      });
-    }
+    await deleteMemoryOp(this.memoryOps(), id);
   }
 
   /**
-   * 恢复单条记忆（memory_restore）
-   *
-   * 调 agent.memory.writeRestore(id) 从回收站恢复，完成后推送 memory_restored + 刷新
-   * 记忆列表与治理统计；webview 收到 ok 后自行重新拉取回收站列表（若展开）。
+   * 恢复单条记忆（memory_restore）—— 实现外置在 `settingsMemoryOps.ts`
    */
   private async restoreMemory(id: string): Promise<void> {
-    const memory = await this.ensureMemory();
-    if (!memory) {
-      this.post({
-        type: 'memory_restored',
-        ok: false,
-        id,
-        message: l10n.t('The Agent is not ready; cannot restore the memory'),
-      });
-      return;
-    }
-    try {
-      memory.writeRestore(id);
-      this.post({ type: 'memory_restored', ok: true, id });
-      await this.loadMemory();
-      await this.loadGovernance();
-    } catch (err) {
-      this.post({
-        type: 'memory_restored',
-        ok: false,
-        id,
-        message: toNoticeText(err),
-      });
-    }
+    await restoreMemoryOp(this.memoryOps(), id);
   }
 
   /**
-   * 永久删除回收站单条记忆（memory_purge）
-   *
-   * 弹确认框后调 agent.memory.writePurge(id) 物理删除（不可恢复），完成后推送 memory_purged
-   * + 刷新回收站/记忆列表/治理统计。
+   * 永久删除回收站单条记忆（memory_purge）—— 实现外置在 `settingsMemoryOps.ts`
    */
   private async purgeMemory(id: string): Promise<void> {
-    const memory = await this.ensureMemory();
-    if (!memory) {
-      this.post({
-        type: 'memory_purged',
-        ok: false,
-        id,
-        message: l10n.t('The Agent is not ready; cannot permanently delete the memory'),
-      });
-      return;
-    }
-    const confirmed = await confirmModal({
-      message: l10n.t('Permanently delete this memory? This cannot be undone.'),
-      confirmLabel: l10n.t('Delete permanently'),
-    });
-    if (!confirmed) return;
-    try {
-      memory.writePurge(id);
-      this.post({ type: 'memory_purged', ok: true, id });
-      // 刷新回收站 + 列表（可能删的是活跃记忆外的回收条目，仅 count/回收站变化）
-      await this.loadRecycle();
-      await this.loadGovernance();
-    } catch (err) {
-      this.post({
-        type: 'memory_purged',
-        ok: false,
-        id,
-        message: toNoticeText(err),
-      });
-    }
+    await purgeMemoryOp(this.memoryOps(), id);
   }
 
   /**
-   * 清空回收站（memory_recycle_clear）
-   *
-   * 弹确认框后遍历 listDeleted() 逐个 writePurge 物理删除全部软删记忆（不可恢复），
-   * 完成后推送 memory_recycle_cleared + 刷新回收站/治理统计。
+   * 清空回收站（memory_recycle_clear）—— 实现外置在 `settingsMemoryOps.ts`
    */
   private async clearRecycle(): Promise<void> {
-    const memory = await this.ensureMemory();
-    if (!memory) {
-      this.post({
-        type: 'memory_recycle_cleared',
-        ok: false,
-        count: 0,
-        message: l10n.t('The Agent is not ready; cannot empty the recycle bin'),
-      });
-      return;
-    }
-    // 空回收站：无需确认，直接回报 0
-    // 取全部（不传 limit）——本函数把 deleted 同时用作「删除操作集合」与「上报条数」，
-    // 任何截断都会造成部分清理 + 谎报条数（deleted 条数即上报 count，须取全量，不能传上限）。
-    const deleted = memory.listDeleted();
-    if (deleted.length === 0) {
-      this.post({ type: 'memory_recycle_cleared', ok: true, count: 0 });
-      return;
-    }
-    const confirmed = await confirmModal({
-      message: l10n.t(
-        'Empty the recycle bin? {0} memories will be permanently deleted. This cannot be undone.',
-        deleted.length,
-      ),
-      confirmLabel: l10n.t('Empty recycle bin'),
-    });
-    if (!confirmed) return;
-    try {
-      for (const m of deleted) memory.writePurge(m.id);
-      this.post({ type: 'memory_recycle_cleared', ok: true, count: deleted.length });
-      await this.loadRecycle();
-      await this.loadGovernance();
-    } catch (err) {
-      this.post({
-        type: 'memory_recycle_cleared',
-        ok: false,
-        count: 0,
-        message: toNoticeText(err),
-      });
-    }
+    await clearRecycleOp(this.memoryOps());
   }
 
   /**
-   * 编辑单条记忆内容（memory_edit，内联编辑）
-   *
-   * read-modify-write：经 agent.memory.getById(id) 取真实 Memory，仅改 content 并标记
-   * isModified（人工修改），writeUpsert 落盘（保留 accessedAt/metadata 等字段，避免从
-   * 损失性 DTO 重建丢字段）。完成后推送 memory_edited + 刷新记忆列表与治理统计。
+   * 编辑单条记忆内容（memory_edit，内联编辑）—— 实现外置在 `settingsMemoryOps.ts`
    */
   private async editMemory(id: string, content: string): Promise<void> {
-    const memory = await this.ensureMemory();
-    if (!memory) {
-      this.post({
-        type: 'memory_edited',
-        ok: false,
-        id,
-        message: l10n.t('The Agent is not ready; cannot edit the memory'),
-      });
-      return;
-    }
-    const existing = memory.getById(id);
-    if (!existing) {
-      this.post({
-        type: 'memory_edited',
-        ok: false,
-        id,
-        message: l10n.t('The memory does not exist or has been deleted'),
-      });
-      return;
-    }
-    try {
-      memory.writeUpsert({ ...existing, content, isModified: true });
-      this.post({ type: 'memory_edited', ok: true, id });
-      await this.loadMemory();
-      await this.loadGovernance();
-    } catch (err) {
-      this.post({
-        type: 'memory_edited',
-        ok: false,
-        id,
-        message: toNoticeText(err),
-      });
-    }
+    await editMemoryOp(this.memoryOps(), id, content);
   }
 
   /**
@@ -1405,49 +1267,10 @@ export class MemoraSettingsPanel {
   }
 
   /**
-   * 清理过期软删除记忆（governance_cleanup）
-   *
-   * 破坏性操作：弹确认框后调 agent.memory.writePurgeExpired(保留期前) 永久删除，
-   * 完成后刷新治理统计与记忆列表（与 memora.cleanupMemories 命令同语义、同保留期常量）。
+   * 清理过期软删除记忆（governance_cleanup）—— 实现外置在 `settingsMemoryOps.ts`
    */
   private async runCleanup(): Promise<void> {
-    const agent = await this.ensureAgent();
-    if (!agent?.memory) {
-      this.post({
-        type: 'governance_result',
-        ok: false,
-        message: l10n.t('The Agent is not ready; cannot clean up memories'),
-        action: 'cleanup',
-      });
-      return;
-    }
-    const confirmed = await confirmModal({
-      message: l10n.t(
-        'Memories soft-deleted more than {0} days ago will be permanently deleted. This cannot be undone.',
-        MEMORY_RECYCLE_RETENTION_DAYS,
-      ),
-      confirmLabel: l10n.t('Confirm cleanup'),
-    });
-    if (!confirmed) return;
-    try {
-      const cutoff = new Date(Date.now() - MEMORY_RECYCLE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-      const purged = agent.memory.writePurgeExpired(cutoff);
-      this.post({
-        type: 'governance_result',
-        ok: true,
-        message: l10n.t('Cleaned up {0} expired memories', purged),
-        action: 'cleanup',
-      });
-      await this.loadGovernance();
-      await this.loadMemory();
-    } catch (err) {
-      this.post({
-        type: 'governance_result',
-        ok: false,
-        message: toNoticeText(err),
-        action: 'cleanup',
-      });
-    }
+    await runCleanupOp(this.memoryOps());
   }
 
   // ─── 技能子视图数据加载 ───

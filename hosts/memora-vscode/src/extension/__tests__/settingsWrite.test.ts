@@ -28,6 +28,11 @@ vi.mock('vscode', () => ({
     getConfiguration: () => ({ update: h.update }),
   },
   ConfigurationTarget: { Global: 1, Workspace: 2 },
+  // settingsWrite 的失败文案走 vscode.l10n；默认语言下 t() 原样返回英文源键并填占位符
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
 }));
 
 import { WRITE_TIMEOUT_MS, writeErrorText, writeSetting } from '../settingsWrite.js';
@@ -81,14 +86,16 @@ describe('settingsWrite.writeSetting', () => {
 
 describe('settingsWrite.writeErrorText', () => {
   it('超时 → 明说「只读或被占用」并提示可能已临时生效', () => {
-    const text = writeErrorText('MCP 配置', { timedOut: true, reason: 'x' });
-    // G9 真机验收过的原文，不得改写（用户照这句判断该去检查哪个文件）
-    expect(text).toBe('MCP 配置写入超时：文件可能只读或被占用（设置可能已临时生效，但未落盘）');
+    const text = writeErrorText('MCP configuration', { timedOut: true, reason: 'x' });
+    // 模板是用户照它判断该去检查哪个文件的原文，不得改写
+    expect(text).toBe(
+      'MCP configuration write timed out: the file may be read-only or locked (the setting may have taken effect temporarily but was not written to disk)',
+    );
   });
 
   it('真拒绝 → 带原始原因', () => {
-    expect(writeErrorText('免确认设置', { timedOut: false, reason: '配置只读' })).toBe(
-      '免确认设置写入失败：配置只读',
+    expect(writeErrorText('Confirmation settings', { timedOut: false, reason: '配置只读' })).toBe(
+      'Confirmation settings write failed: 配置只读',
     );
   });
 });
