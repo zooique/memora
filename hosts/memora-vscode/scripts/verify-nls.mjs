@@ -392,7 +392,20 @@ function collectWindowApiCjkInText(text, label) {
  */
 const WEBVIEW_PANELS = {
   chat: { state: 'pending', files: [] },
-  memory: { state: 'pending', files: [] },
+  // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。
+  // `shared/settingsTabs.ts` 一并登记：它是页签可见名的唯一真源，虽服务全部面板，但
+  // B2 起值已全部是英文源键——任何一处回退成中文都会让所有页签在英文界面下露中文，
+  // 没有理由等最后一页才守。
+  memory: {
+    state: 'migrated',
+    files: [
+      'shared/settingsTabs.ts',
+      'webview/panels/settingsMemoryHtml.ts',
+      'webview/scripts/memoryView.ts',
+      'webview/scripts/pager.ts',
+      'webview/styles/memoryStyles.ts',
+    ],
+  },
   roles: { state: 'pending', files: [] },
   config: { state: 'pending', files: [] },
   skills: { state: 'pending', files: [] },

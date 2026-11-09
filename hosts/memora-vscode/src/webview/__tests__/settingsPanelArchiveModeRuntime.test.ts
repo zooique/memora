@@ -194,11 +194,13 @@ describe('settingsPanel.setArchiveMode —— 运行时真相层（UI 谎言检�
     expect(vscodeConfigMock.cfgUpdate).toHaveBeenCalledWith('archiveMode', 'manual', 1);
     // ← 现有 6 例**从未问过这句**：偏好存了 ≠ 运行时改了
     expect(stub.runtime()).toBe('full');
-    expect(notices(posted)[0]?.message).toContain('偏好已保存');
+    expect(notices(posted)[0]?.message).toContain('Preference saved');
     // 顺延文案必须点名「对话结束后生效」——A2 落地后这是**被兑现的承诺**而非空头支票
-    expect(notices(posted)[0]?.message).toContain('对话结束后生效');
+    expect(notices(posted)[0]?.message).toContain(
+      'takes effect after the current conversation ends',
+    );
     // 忙期不得出现任何「已切换」成功话术（与 P0-2 负向断言同口径）
-    expect(notices(posted)[0]?.message).not.toContain('已切换归档模式');
+    expect(notices(posted)[0]?.message).not.toContain('Archive mode switched');
   });
 
   it('P0-1 反面对照：非繁忙时，偏好在流外一次即到运行时（基线锚点，必须绿）', async () => {
@@ -225,10 +227,10 @@ describe('settingsPanel.setArchiveMode —— 运行时真相层（UI 谎言检�
     const msgs = notices(posted);
     expect(msgs).toHaveLength(1);
     expect(msgs[0]?.level).toBe('info');
-    expect(msgs[0]?.message).toContain('偏好已保存');
-    expect(msgs[0]?.message).toContain('对话结束后生效');
+    expect(msgs[0]?.message).toContain('Preference saved');
+    expect(msgs[0]?.message).toContain('takes effect after the current conversation ends');
     // 负向断言（现有用例只有正向断言，堵不住「把顺延分支改成成功文案」这类 wrong fix）
-    expect(msgs[0]?.message).not.toContain('已切换归档模式');
+    expect(msgs[0]?.message).not.toContain('Archive mode switched');
     expect(msgs[0]?.message).not.toContain('已生效');
   });
 
@@ -260,7 +262,7 @@ describe('settingsPanel.setArchiveMode —— 运行时真相层（UI 谎言检�
 
     expect(statusMessages(posted)).toContainEqual({ type: 'archive_mode_status', mode: 'manual' });
     // 成功路径才允许出现「已切换」的成功提示（对比 P0-2 的负向断言）
-    expect(notices(posted)[0]?.message).toContain('已切换归档模式');
+    expect(notices(posted)[0]?.message).toContain('Archive mode switched');
   });
 
   // ─── P1-3：对接内核真实错误契约（MemoraError 分支） ───

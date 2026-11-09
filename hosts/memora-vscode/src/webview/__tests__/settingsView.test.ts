@@ -353,7 +353,7 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     expect(items[0]?.querySelector('.skill-name')?.textContent).toBe('skill-00');
     const bar = document.querySelector('#skills-root .pager-bar') as HTMLElement;
     expect(bar.hidden).toBe(false);
-    expect(bar.querySelector('.pager-info')?.textContent).toBe('第 1 / 2 页（共 15 条）');
+    expect(bar.querySelector('.pager-info')?.textContent).toBe('Page 1 of 2 (15 items)');
   });
 
   it('点击「下一页」→ 前端切片渲染第 2 页（5 张，纯本地无 IPC 请求）', () => {
@@ -365,7 +365,7 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     expect(items).toHaveLength(5);
     expect(items[0]?.querySelector('.skill-name')?.textContent).toBe('skill-10');
     expect(document.querySelector('#skills-root .pager-info')?.textContent).toBe(
-      '第 2 / 2 页（共 15 条）',
+      'Page 2 of 2 (15 items)',
     );
   });
 
@@ -381,7 +381,7 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     dispatchSkills(Array.from({ length: 15 }, (_, i) => makeSkill(i)));
     document.querySelectorAll<HTMLButtonElement>('#skills-root .pager-btn')[1]!.click(); // 到第 2 页
     expect(document.querySelector('#skills-root .pager-info')?.textContent).toBe(
-      '第 2 / 2 页（共 15 条）',
+      'Page 2 of 2 (15 items)',
     );
 
     dispatchSkills(Array.from({ length: 15 }, (_, i) => makeSkill(i))); // 同一份数据重推
@@ -390,7 +390,7 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     expect(items).toHaveLength(5);
     expect(items[0]?.querySelector('.skill-name')?.textContent).toBe('skill-10');
     expect(document.querySelector('#skills-root .pager-info')?.textContent).toBe(
-      '第 2 / 2 页（共 15 条）',
+      'Page 2 of 2 (15 items)',
     );
   });
 

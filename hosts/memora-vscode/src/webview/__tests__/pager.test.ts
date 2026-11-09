@@ -46,7 +46,7 @@ describe('pager 通用分页组件', () => {
     );
     const bar = document.querySelector('.pager-bar') as HTMLElement;
     expect(bar.hidden).toBe(false);
-    expect(bar.querySelector('.pager-info')?.textContent).toBe('第 1 / 3 页（共 25 条）');
+    expect(bar.querySelector('.pager-info')?.textContent).toBe('Page 1 of 3 (25 items)');
     expect((bar.querySelectorAll('.pager-btn')[0] as HTMLButtonElement).disabled).toBe(true);
     expect((bar.querySelectorAll('.pager-btn')[1] as HTMLButtonElement).disabled).toBe(false);
   });
@@ -68,7 +68,7 @@ describe('pager 通用分页组件', () => {
       25,
     );
     expect(getLast()[0]).toBe('b0');
-    expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 25 条）');
+    expect(document.querySelector('.pager-info')?.textContent).toBe('Page 2 of 3 (25 items)');
   });
 
   it('末页 next() 拒绝（越界钳制）；prev() 正常回退', () => {
@@ -138,7 +138,7 @@ describe('pager 通用分页组件', () => {
     expect(controller.getPage()).toBe(2);
     // 第 2 页 = 全量索引 10..19（切片由组件完成，调用方不再各自算）
     expect(getLast()).toEqual(all.slice(10, 20));
-    expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 25 条）');
+    expect(document.querySelector('.pager-info')?.textContent).toBe('Page 2 of 3 (25 items)');
   });
 
   it('showKeepingPage 数据变少时向前夹取到末页（不留在空页）', () => {
@@ -148,7 +148,7 @@ describe('pager 通用分页组件', () => {
     controller.showKeepingPage(fewer);
     expect(controller.getPage()).toBe(2);
     expect(getLast()).toEqual(['a10', 'a11']);
-    expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 2 页（共 12 条）');
+    expect(document.querySelector('.pager-info')?.textContent).toBe('Page 2 of 2 (12 items)');
   });
 
   it('showKeepingPage 空数据集 → 回到第 1 页且分页条隐藏（不留上一轮页码）', () => {

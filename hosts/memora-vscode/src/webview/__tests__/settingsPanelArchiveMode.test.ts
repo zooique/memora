@@ -153,7 +153,7 @@ describe('settingsPanel.setArchiveMode —— 归档模式切换', () => {
     const msgs = notices(posted);
     expect(msgs).toHaveLength(1);
     expect(msgs[0]?.level).toBe('info');
-    expect(msgs[0]?.message).toContain('仅手动归档');
+    expect(msgs[0]?.message).toContain('manual only');
   });
 
   it('合法模式 full → 同样走通（枚举全集覆盖，非仅测新值）', async () => {
@@ -165,7 +165,7 @@ describe('settingsPanel.setArchiveMode —— 归档模式切换', () => {
     expect(vscodeConfigMock.cfgUpdate).toHaveBeenCalledWith('archiveMode', 'full', 1);
     expect(setArchiveMode).toHaveBeenCalledWith('full');
     expect(posted).toContainEqual({ type: 'archive_mode_status', mode: 'full' });
-    expect(notices(posted)[0]?.message).toContain('自动归档');
+    expect(notices(posted)[0]?.message).toContain('automatic');
   });
 
   it('非法枚举 → 整体拒绝（不落盘 / 不热更新）+ 回推持久值复位下拉', async () => {
@@ -181,7 +181,7 @@ describe('settingsPanel.setArchiveMode —— 归档模式切换', () => {
     const msgs = notices(posted);
     expect(msgs).toHaveLength(1);
     expect(msgs[0]?.level).toBe('error');
-    expect(msgs[0]?.message).toContain('无效的归档模式');
+    expect(msgs[0]?.message).toContain('Invalid archive mode');
   });
 
   it('对话繁忙（内核 assertNotBusy 抛错）→ 偏好仍落盘 + status 回推 + info 顺延提示', async () => {
@@ -202,8 +202,8 @@ describe('settingsPanel.setArchiveMode —— 归档模式切换', () => {
     const msgs = notices(posted);
     expect(msgs).toHaveLength(1);
     expect(msgs[0]?.level).toBe('info');
-    expect(msgs[0]?.message).toContain('偏好已保存');
-    expect(msgs[0]?.message).toContain('对话结束后生效');
+    expect(msgs[0]?.message).toContain('Preference saved');
+    expect(msgs[0]?.message).toContain('takes effect after the current conversation ends');
   });
 
   it('Agent 未就绪 → 偏好仍落盘 + status 回推，但不得推「已切换」成功提示（假成功回归锚点）', async () => {

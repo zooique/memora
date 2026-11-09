@@ -140,9 +140,9 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
         content: '偏好简洁界面。',
       }),
     ]);
-    // 顶栏统计：总数 + source 分布
+    // 顶栏统计：总数 + source 分布（l10n 缺省语言下 t() 原样返回英文源键）
     expect(document.getElementById('statBar')?.textContent).toBe(
-      '共 3 条 · round-summary 2 · profile 1',
+      '3 memories · round-summary 2 · profile 1',
     );
     const cards = document.querySelectorAll('.mem-card');
     expect(cards).toHaveLength(2);
@@ -154,7 +154,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       '确认采用独立记忆视图承载资产全貌。',
     );
     // 卡片 tooltip：提示可点击展开/收起（可发现性，对齐角色/配置卡）
-    expect(cards[0]?.getAttribute('title')).toBe('点击展开 / 收起详情');
+    expect(cards[0]?.getAttribute('title')).toBe('Click to expand or collapse details');
   });
 
   it('点击卡片展开详情（全文 content + 创建时间），再点击收起', () => {
@@ -182,7 +182,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     // 真实流程：搜索前用户已输入 query（竞态守卫要求 query 与输入框一致）
     (document.getElementById('searchInput') as HTMLInputElement).value = '记忆视图';
     dispatchSearchResult('记忆视图', [makeMemory()]);
-    expect(document.querySelector('.search-summary')?.textContent).toBe('「记忆视图」命中 1 条');
+    expect(document.querySelector('.search-summary')?.textContent).toBe('1 matches for "记忆视图"');
     expect(document.querySelectorAll('.mem-card')).toHaveLength(1);
   });
 
@@ -205,14 +205,14 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
   it('memory_loaded 空列表 → 渲染空态引导', () => {
     mountMemoryView();
     dispatchLoaded({ total: 0, bySource: {} }, []);
-    expect(document.querySelector('.empty-title')?.textContent).toBe('暂无记忆');
+    expect(document.querySelector('.empty-title')?.textContent).toBe('No memories yet');
   });
 
   it('搜索无命中 → 渲染空态引导（带关键词）', () => {
     mountMemoryView();
     (document.getElementById('searchInput') as HTMLInputElement).value = '不存在';
     dispatchSearchResult('不存在', []);
-    expect(document.querySelector('.empty-title')?.textContent).toBe('没有匹配的记忆');
+    expect(document.querySelector('.empty-title')?.textContent).toBe('No matching memories');
     expect(document.querySelector('.empty-hint')?.textContent).toContain('不存在');
   });
 
@@ -309,7 +309,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     const card = document.querySelector('#list .mem-card') as HTMLElement;
     const delBtn = card.querySelector('.mem-del-btn') as HTMLButtonElement;
     expect(delBtn).not.toBeNull();
-    expect(delBtn.getAttribute('aria-label')).toBe('删除记忆');
+    expect(delBtn.getAttribute('aria-label')).toBe('Delete memory');
     // 点击删除：发消息 + stopPropagation（卡片不应展开）
     delBtn.click();
     expect(postMessage).toHaveBeenCalledWith({
@@ -327,7 +327,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     const card = document.querySelector('#list .mem-card') as HTMLElement;
     const editBtn = card.querySelector('.mem-edit-btn') as HTMLButtonElement;
     expect(editBtn).not.toBeNull();
-    expect(editBtn.getAttribute('aria-label')).toBe('编辑记忆');
+    expect(editBtn.getAttribute('aria-label')).toBe('Edit memory');
     // 点击编辑：进入编辑态，stopPropagation 防卡片展开
     editBtn.click();
     expect(card.classList.contains('expanded')).toBe(false);
@@ -409,7 +409,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     const cards = document.querySelectorAll('#recycleList .mem-recycle-card');
     expect(cards).toHaveLength(1);
     // 删除时间被消费（deletedAt 非死字段）
-    expect(cards[0]?.querySelector('.mem-recycle-meta')?.textContent).toContain('删除于');
+    expect(cards[0]?.querySelector('.mem-recycle-meta')?.textContent).toContain('Deleted ');
     const restoreBtn = cards[0]?.querySelector('.mem-restore-btn') as HTMLButtonElement;
     expect(restoreBtn).not.toBeNull();
     restoreBtn.click();
@@ -467,7 +467,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       }),
     );
     expect(postMessage).toHaveBeenCalledWith({ type: 'memory_recycle_load' });
-    expect(document.getElementById('memHint')?.textContent).toBe('已永久删除');
+    expect(document.getElementById('memHint')?.textContent).toBe('Permanently deleted');
   });
 
   it('memory_recycle_cleared 成功 → 重拉回收站 + 提示条数', () => {
@@ -478,7 +478,9 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       new MessageEvent('message', { data: { type: 'memory_recycle_cleared', ok: true, count: 3 } }),
     );
     expect(postMessage).toHaveBeenCalledWith({ type: 'memory_recycle_load' });
-    expect(document.getElementById('memHint')?.textContent).toContain('已清空回收站（3 条）');
+    expect(document.getElementById('memHint')?.textContent).toContain(
+      'Recycle bin emptied (3 items)',
+    );
   });
 
   it('memory_recycle_loaded 空列表 → 渲染空态引导', () => {
@@ -486,7 +488,9 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     window.dispatchEvent(
       new MessageEvent('message', { data: { type: 'memory_recycle_loaded', items: [] } }),
     );
-    expect(document.querySelector('#recycleList .empty-title')?.textContent).toBe('回收站为空');
+    expect(document.querySelector('#recycleList .empty-title')?.textContent).toBe(
+      'The recycle bin is empty',
+    );
   });
 
   it('memory_deleted 失败（ok:false）→ 显示错误提示 memHint（error 样式）', () => {
@@ -515,7 +519,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     // 清晰提示"已移入回收站可恢复"
     const hint = document.getElementById('memHint') as HTMLElement;
     expect(hint.hidden).toBe(false);
-    expect(hint.textContent).toContain('已移入回收站');
+    expect(hint.textContent).toContain('Moved to the recycle bin');
   });
 
   it('governance_loaded 回收站条数同步到标题徽标（回收站（N））', () => {
@@ -527,7 +531,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       superseded: 2,
     });
     const summary = document.querySelector('#recycle > summary') as HTMLElement;
-    expect(summary.textContent).toBe('回收站（3）');
+    expect(summary.textContent).toBe('Recycle bin (3)');
     // 清空后回退纯文案
     dispatchGovernanceLoaded({
       active: 5,
@@ -535,7 +539,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       bySource: { 'round-summary': 5 },
       superseded: 0,
     });
-    expect(summary.textContent).toBe('回收站');
+    expect(summary.textContent).toBe('Recycle bin');
   });
 
   it('memory_restored 成功且回收站已展开 → 重新拉取回收站列表', () => {
@@ -558,7 +562,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       );
       const bar = document.querySelector('.pager-bar') as HTMLElement;
       expect(bar.hidden).toBe(false);
-      expect(bar.querySelector('.pager-info')?.textContent).toBe('第 1 / 3 页（共 45 条）');
+      expect(bar.querySelector('.pager-info')?.textContent).toBe('Page 1 of 3 (45 items)');
       const prev = bar.querySelector('[data-action="prev"]') as HTMLButtonElement | null;
       // 首页：上一页禁用，下一页可用（未到末页）
       expect(bar.querySelectorAll('.pager-btn')![0]!.hasAttribute('disabled')).toBe(true);
@@ -585,7 +589,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       const cards = document.querySelectorAll('.mem-card');
       expect(cards).toHaveLength(20);
       expect(cards[0]?.querySelector('.mem-card-preview')?.textContent).toBe('页二内容0');
-      expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 45 条）');
+      expect(document.querySelector('.pager-info')?.textContent).toBe('Page 2 of 3 (45 items)');
     });
 
     it('竞态守卫：滞后页码应答（非当前页）被丢弃，不覆盖新页', () => {
@@ -611,7 +615,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       );
       const cards = document.querySelectorAll('.mem-card');
       expect(cards[0]?.querySelector('.mem-card-preview')?.textContent).toBe('正确页内容0');
-      expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 45 条）');
+      expect(document.querySelector('.pager-info')?.textContent).toBe('Page 2 of 3 (45 items)');
     });
 
     it('单页（total ≤ 20）→ 分页条自动隐藏（小数据量不暴露分页 UI）', () => {
@@ -640,7 +644,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
         2,
         Array.from({ length: 20 }, (_, i) => makeMemory({ id: `p2-${i}`, content: `页二${i}` })),
       );
-      expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 45 条）');
+      expect(document.querySelector('.pager-info')?.textContent).toBe('Page 2 of 3 (45 items)');
       postMessage.mockClear();
 
       // 重推：总数变 46，载荷仍是「第 1 页 20 条」
@@ -658,7 +662,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
         2,
         Array.from({ length: 20 }, (_, i) => makeMemory({ id: `p2-${i}`, content: `页二${i}` })),
       );
-      expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 46 条）');
+      expect(document.querySelector('.pager-info')?.textContent).toBe('Page 2 of 3 (46 items)');
     });
 
     it('被动重推 memory_loaded（搜索框有词）：按原词重放搜索，不把列表打回全量', () => {
@@ -666,7 +670,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       const input = document.getElementById('searchInput') as HTMLInputElement;
       input.value = '设计';
       dispatchSearchResult('设计', [makeMemory({ content: '搜索命中内容' })]);
-      expect(document.querySelector('.search-summary')?.textContent).toBe('「设计」命中 1 条');
+      expect(document.querySelector('.search-summary')?.textContent).toBe('1 matches for "设计"');
       postMessage.mockClear();
 
       dispatchLoaded({ total: 2, bySource: { 'round-summary': 2 } }, [
@@ -677,7 +681,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       // 重放搜索走同一检索入口（不在 webview 本地过滤数组）；输入框与列表保持同一上下文
       expect(postMessage).toHaveBeenCalledWith({ type: 'memory_search', query: '设计' });
       expect(input.value).toBe('设计');
-      expect(document.querySelector('.search-summary')?.textContent).toBe('「设计」命中 1 条');
+      expect(document.querySelector('.search-summary')?.textContent).toBe('1 matches for "设计"');
       expect(document.querySelector('.mem-card-preview')?.textContent).toBe('搜索命中内容');
     });
   });

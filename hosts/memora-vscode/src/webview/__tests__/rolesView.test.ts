@@ -507,7 +507,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       expect(cards).toHaveLength(9);
       const bar = document.querySelector('.pager-bar') as HTMLElement;
       expect(bar.hidden).toBe(false);
-      expect(bar.querySelector('.pager-info')?.textContent).toBe('第 1 / 2 页（共 11 条）');
+      expect(bar.querySelector('.pager-info')?.textContent).toBe('Page 1 of 2 (11 items)');
     });
 
     it('点击「下一页」→ 其他角色第 2 页渲染剩余 3 张；激活角色仍置顶', () => {
@@ -528,7 +528,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       // 第 2 页：激活 1 + 其他 3
       const cards = document.querySelectorAll('.card');
       expect(cards).toHaveLength(4);
-      expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 2 页（共 11 条）');
+      expect(document.querySelector('.pager-info')?.textContent).toBe('Page 2 of 2 (11 items)');
       // 激活角色卡片仍在
       expect(cards[0]?.querySelector('.card-name')?.textContent).toContain('文档打磨');
       expect(cards[0]?.classList.contains('active')).toBe(true);
@@ -704,9 +704,9 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
   }
 
   /** 分页条按钮（PagerController 自建 DOM：00=上一页 / 01=下一页） */
-  function pagerBtn(label: '‹ 上一页' | '下一页 ›'): HTMLButtonElement {
+  function pagerBtn(label: '‹ Previous' | 'Next ›'): HTMLButtonElement {
     const btn = Array.from(document.querySelectorAll<HTMLButtonElement>('.pager-btn')).find((b) =>
-      b.textContent?.includes(label === '下一页 ›' ? '下一页' : '上一页'),
+      b.textContent?.includes(label === 'Next ›' ? 'Next' : 'Previous'),
     );
     if (!btn) throw new Error(`pager 按钮不存在: ${label}`);
     return btn;
@@ -716,27 +716,27 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
     mountRolesView();
     const packs = makePacks(18); // 其他角色 17 条 / 每页 8 → 3 页
     dispatchLoaded(packs, 'p0');
-    expect(document.querySelector('.pager-info')?.textContent).toBe('第 1 / 3 页（共 17 条）');
+    expect(document.querySelector('.pager-info')?.textContent).toBe('Page 1 of 3 (17 items)');
 
-    pagerBtn('下一页 ›').click();
-    expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 17 条）');
+    pagerBtn('Next ›').click();
+    expect(document.querySelector('.pager-info')?.textContent).toBe('Page 2 of 3 (17 items)');
     expect(document.getElementById('list')?.textContent).toContain('角色9');
 
     // 模拟面板由隐藏转可见：宿主 refreshAll 重推同一份数据
     dispatchLoaded(packs, 'p0');
-    expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 17 条）');
+    expect(document.querySelector('.pager-info')?.textContent).toBe('Page 2 of 3 (17 items)');
     expect(document.getElementById('list')?.textContent).toContain('角色9');
   });
 
   it('roles_loaded 重推后页数变少 → 向前夹取到末页（不落空页）', () => {
     mountRolesView();
     dispatchLoaded(makePacks(18), 'p0');
-    pagerBtn('下一页 ›').click();
-    pagerBtn('下一页 ›').click();
-    expect(document.querySelector('.pager-info')?.textContent).toBe('第 3 / 3 页（共 17 条）');
+    pagerBtn('Next ›').click();
+    pagerBtn('Next ›').click();
+    expect(document.querySelector('.pager-info')?.textContent).toBe('Page 3 of 3 (17 items)');
 
     dispatchLoaded(makePacks(10), 'p0'); // 其他角色 9 条 → 2 页，第 3 页已不存在
-    expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 2 页（共 9 条）');
+    expect(document.querySelector('.pager-info')?.textContent).toBe('Page 2 of 2 (9 items)');
     // 末页有内容：激活角色 p0 + 末页唯一一条 p9
     expect(document.querySelectorAll('#list .card')).toHaveLength(2);
   });
@@ -744,8 +744,8 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
   it('roles_loaded 空列表 → 分页态同批收敛（不留「有 N 条却永远空」的幽灵分页条）', () => {
     mountRolesView();
     dispatchLoaded(makePacks(18), 'p0');
-    pagerBtn('下一页 ›').click();
-    expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 17 条）');
+    pagerBtn('Next ›').click();
+    expect(document.querySelector('.pager-info')?.textContent).toBe('Page 2 of 3 (17 items)');
 
     // 角色包被清空（用户删包 / 换工作区）：空态分支必须同时收掉分页条。
     // 反例形态（本用例要防的）：分页条仍显示「第 2 / 2 页（共 16 条）」且双向可点，
@@ -753,8 +753,8 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
     dispatchLoaded([], '');
     expect(document.querySelector('.empty-title')?.textContent).toBe('暂无角色包');
     expect((document.querySelector('.pager-bar') as HTMLElement).hidden).toBe(true);
-    expect(pagerBtn('‹ 上一页').disabled).toBe(true);
-    expect(pagerBtn('下一页 ›').disabled).toBe(true);
+    expect(pagerBtn('‹ Previous').disabled).toBe(true);
+    expect(pagerBtn('Next ›').disabled).toBe(true);
     expect(document.querySelectorAll('#list .card')).toHaveLength(0);
   });
 });

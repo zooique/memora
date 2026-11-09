@@ -1156,12 +1156,19 @@ export class MemoraSettingsPanel {
   private async deleteMemory(id: string): Promise<void> {
     const memory = await this.ensureMemory();
     if (!memory) {
-      this.post({ type: 'memory_deleted', ok: false, id, message: 'Agent 未就绪，无法删除记忆' });
+      this.post({
+        type: 'memory_deleted',
+        ok: false,
+        id,
+        message: l10n.t('The Agent is not ready; cannot delete the memory'),
+      });
       return;
     }
     const confirmed = await confirmModal({
-      message: '确定删除这条记忆？它将进入回收站，可随时恢复。',
-      confirmLabel: '删除',
+      message: l10n.t(
+        'Delete this memory? It moves to the recycle bin and can be restored at any time.',
+      ),
+      confirmLabel: l10n.t('Delete'),
     });
     if (!confirmed) return;
     try {
@@ -1188,7 +1195,12 @@ export class MemoraSettingsPanel {
   private async restoreMemory(id: string): Promise<void> {
     const memory = await this.ensureMemory();
     if (!memory) {
-      this.post({ type: 'memory_restored', ok: false, id, message: 'Agent 未就绪，无法恢复记忆' });
+      this.post({
+        type: 'memory_restored',
+        ok: false,
+        id,
+        message: l10n.t('The Agent is not ready; cannot restore the memory'),
+      });
       return;
     }
     try {
@@ -1219,13 +1231,13 @@ export class MemoraSettingsPanel {
         type: 'memory_purged',
         ok: false,
         id,
-        message: 'Agent 未就绪，无法永久删除记忆',
+        message: l10n.t('The Agent is not ready; cannot permanently delete the memory'),
       });
       return;
     }
     const confirmed = await confirmModal({
-      message: '永久删除这条记忆？此操作不可恢复。',
-      confirmLabel: '永久删除',
+      message: l10n.t('Permanently delete this memory? This cannot be undone.'),
+      confirmLabel: l10n.t('Delete permanently'),
     });
     if (!confirmed) return;
     try {
@@ -1257,7 +1269,7 @@ export class MemoraSettingsPanel {
         type: 'memory_recycle_cleared',
         ok: false,
         count: 0,
-        message: 'Agent 未就绪，无法清空回收站',
+        message: l10n.t('The Agent is not ready; cannot empty the recycle bin'),
       });
       return;
     }
@@ -1270,8 +1282,11 @@ export class MemoraSettingsPanel {
       return;
     }
     const confirmed = await confirmModal({
-      message: `确定清空回收站？将永久删除 ${deleted.length} 条记忆，此操作不可恢复。`,
-      confirmLabel: '清空回收站',
+      message: l10n.t(
+        'Empty the recycle bin? {0} memories will be permanently deleted. This cannot be undone.',
+        deleted.length,
+      ),
+      confirmLabel: l10n.t('Empty recycle bin'),
     });
     if (!confirmed) return;
     try {
@@ -1299,12 +1314,22 @@ export class MemoraSettingsPanel {
   private async editMemory(id: string, content: string): Promise<void> {
     const memory = await this.ensureMemory();
     if (!memory) {
-      this.post({ type: 'memory_edited', ok: false, id, message: 'Agent 未就绪，无法编辑记忆' });
+      this.post({
+        type: 'memory_edited',
+        ok: false,
+        id,
+        message: l10n.t('The Agent is not ready; cannot edit the memory'),
+      });
       return;
     }
     const existing = memory.getById(id);
     if (!existing) {
-      this.post({ type: 'memory_edited', ok: false, id, message: '记忆不存在或已被删除' });
+      this.post({
+        type: 'memory_edited',
+        ok: false,
+        id,
+        message: l10n.t('The memory does not exist or has been deleted'),
+      });
       return;
     }
     try {
@@ -1391,14 +1416,17 @@ export class MemoraSettingsPanel {
       this.post({
         type: 'governance_result',
         ok: false,
-        message: 'Agent 未就绪，无法清理记忆',
+        message: l10n.t('The Agent is not ready; cannot clean up memories'),
         action: 'cleanup',
       });
       return;
     }
     const confirmed = await confirmModal({
-      message: `将永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆，此操作不可撤销。`,
-      confirmLabel: '确认清理',
+      message: l10n.t(
+        'Memories soft-deleted more than {0} days ago will be permanently deleted. This cannot be undone.',
+        MEMORY_RECYCLE_RETENTION_DAYS,
+      ),
+      confirmLabel: l10n.t('Confirm cleanup'),
     });
     if (!confirmed) return;
     try {
@@ -1407,7 +1435,7 @@ export class MemoraSettingsPanel {
       this.post({
         type: 'governance_result',
         ok: true,
-        message: `已清理 ${purged} 条过期记忆`,
+        message: l10n.t('Cleaned up {0} expired memories', purged),
         action: 'cleanup',
       });
       await this.loadGovernance();
@@ -1714,7 +1742,11 @@ export class MemoraSettingsPanel {
    */
   private async setArchiveMode(mode: ArchiveMode): Promise<void> {
     if (mode !== 'full' && mode !== 'manual') {
-      this.post({ type: 'notice', level: 'error', message: `无效的归档模式：${String(mode)}` });
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: l10n.t('Invalid archive mode: {0}', String(mode)),
+      });
       // 拒收即复位：下拉此时已停在（被篡改的）非法值上，回推持久值让它回到偏好。
       // 口径与切换路径一致——archive_mode_status 恒推持久值，webview 据此回写 select。
       pushArchiveModePreference((m) => this.post(m));
@@ -1727,7 +1759,7 @@ export class MemoraSettingsPanel {
       this.post({
         type: 'notice',
         level: 'error',
-        message: writeErrorText('归档模式设置', written),
+        message: writeErrorText(l10n.t('Archive mode settings'), written),
       });
       pushArchiveModePreference((m) => this.post(m));
       return;
@@ -1746,14 +1778,19 @@ export class MemoraSettingsPanel {
         this.post({
           type: 'notice',
           level: 'error',
-          message: '偏好已保存：Agent 未就绪，运行时未切换——将在下次装配（或重载窗口）后生效',
+          message: l10n.t(
+            'Preference saved: the Agent is not ready, so the runtime mode was not switched. It takes effect after the next assembly (or after reloading the window).',
+          ),
         });
       }
     } catch (err) {
       this.post({
         type: 'notice',
         level: 'info',
-        message: `偏好已保存：${toNoticeText(err)}——运行时将在当前对话结束后生效`,
+        message: l10n.t(
+          'Preference saved: {0} — the runtime mode takes effect after the current conversation ends',
+          toNoticeText(err),
+        ),
       });
     }
     // 回推状态（持久值口径，与 search_engine_status 一致）：下拉反映偏好，
@@ -1763,7 +1800,10 @@ export class MemoraSettingsPanel {
       this.post({
         type: 'notice',
         level: 'info',
-        message: mode === 'full' ? '已切换归档模式：自动归档' : '已切换归档模式：仅手动归档',
+        message:
+          mode === 'full'
+            ? l10n.t('Archive mode switched: automatic')
+            : l10n.t('Archive mode switched: manual only'),
       });
     }
   }

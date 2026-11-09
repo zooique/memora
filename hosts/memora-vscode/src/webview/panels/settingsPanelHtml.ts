@@ -20,9 +20,8 @@ import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
 import { MCP_BODY_HTML } from './settingsMcpHtml.js';
 import { SECURITY_BODY_HTML } from './settingsSecurityHtml.js';
+import { buildMemoryBodyHtml } from './settingsMemoryHtml.js';
 import { buildWorksBodyHtml } from './settingsWorksHtml.js';
-// 回收站清理天数是弹窗文案与按钮 title 同一句的事实来源（宿主常量，不在这里写死数字）
-import { MEMORY_RECYCLE_RETENTION_DAYS } from '../../shared/constants.js';
 import {
   DEFAULT_SETTINGS_TAB,
   SETTINGS_TABS,
@@ -35,66 +34,16 @@ import {
 /** Works body built at import time with the host localizer (`vscode.l10n` is available here). */
 const WORKS_BODY_HTML = buildWorksBodyHtml(vscode.l10n);
 
+/** Memory body built at import time with the host localizer (same reason as the works body). */
+const MEMORY_BODY_HTML = buildMemoryBodyHtml(vscode.l10n);
+
 /**
  * 各选项卡主体骨架（**不含外层 root 容器**——root 与 tab 按钮均由 {@link buildHtml} 统一生成）
  *
  * `Record` 穷尽性 = 机器化的「不许漏」：加了 tab id 却忘了给主体 ⇒ 编译不过。
  */
 const TAB_BODY_HTML: Record<SettingsTab, string> = {
-  memory: `  <!-- 记忆子视图（memory 选项卡，默认首页） -->
-    <div class="header">
-      <h2>记忆</h2>
-      <span id="statBar" class="stat-bar" hidden></span>
-    </div>
-    <div class="search-wrap">
-      <input id="searchInput" class="search-input" type="text" placeholder="搜索记忆…" aria-label="搜索记忆" />
-    </div>
-    <div id="list">
-      <p class="loading-hint">加载中…</p>
-    </div>
-
-    <!-- 回收站：软删除记忆的可恢复暂存区 -->
-    <details id="recycle" class="recycle" role="region" aria-label="回收站">
-      <summary>回收站</summary>
-      <div id="recycleList"><p class="hint">回收站为空。</p></div>
-    </details>
-    <p id="memHint" class="mem-hint" hidden></p>
-
-    <!-- 记忆治理区：统计卡 + 加权/清理操作 -->
-    <div id="governance" class="governance" role="region" aria-label="记忆治理">
-      <div class="governance-stats">
-        <div class="governance-stat">
-          <span id="govActive" class="gov-num">0</span>
-          <span class="gov-label">活跃</span>
-        </div>
-        <div class="governance-stat">
-          <span id="govDeleted" class="gov-num">0</span>
-          <span class="gov-label">回收站</span>
-        </div>
-        <div class="governance-stat">
-          <span id="govSuperseded" class="gov-num">0</span>
-          <span class="gov-label">已被取代</span>
-        </div>
-      </div>
-      <div class="governance-actions">
-        <button id="btnCleanup" class="btn btn-danger" title="永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆（不可撤销）">清理过期</button>
-      </div>
-      <p id="govDetail" class="governance-detail" hidden></p>
-    </div>
-
-    <!-- 会话归档模式：内核 archiveMode 投影（full=自动归档 / manual=仅手动；设置即热更新，繁忙顺延） -->
-    <div id="archiveMode" class="archive-mode" role="region" aria-label="会话归档">
-      <div class="archive-mode-item">
-        <label class="security-label" for="archiveModeSelect">会话归档模式</label>
-        <select id="archiveModeSelect" class="security-select" aria-label="会话归档模式">
-          <option value="full">自动归档</option>
-          <option value="manual">仅手动归档</option>
-        </select>
-      </div>
-      <p class="security-desc">自动归档：切换 / 分叉离开会话时自动生成会话摘要与主题（历史列表的检索数据）；仅手动归档：只在手动触发时生成。<strong>轮次摘要不受影响</strong>（总是生成，对话记忆照常沉淀）。对话进行中切换时，内核拒绝热改——偏好保存后到当前对话结束生效。</p>
-    </div>
-
-    <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>`,
+  memory: MEMORY_BODY_HTML,
   roles: `  <!-- 角色子视图（roles 选项卡） -->
     <div class="header">
       <h2>角色</h2>
@@ -236,7 +185,8 @@ const TAB_BODY_HTML: Record<SettingsTab, string> = {
 function buildTabButtons(): string {
   return SETTINGS_TABS.map((tab) => {
     const active = tab === DEFAULT_SETTINGS_TAB;
-    return `    <button class="tab-btn${active ? ' active' : ''}" data-tab="${tab}" role="tab" aria-selected="${String(active)}">${SETTINGS_TAB_LABELS[tab]}</button>`;
+    // 表值只存英文源键，本地化在消费侧做（shared/ 两侧共用，不能在里面调任何一侧的 l10n API）
+    return `    <button class="tab-btn${active ? ' active' : ''}" data-tab="${tab}" role="tab" aria-selected="${String(active)}">${vscode.l10n.t(SETTINGS_TAB_LABELS[tab])}</button>`;
   }).join('\n');
 }
 
@@ -244,7 +194,7 @@ function buildTabButtons(): string {
 function buildTabPanels(): string {
   return SETTINGS_TABS.map((tab) => {
     const hidden = tab === DEFAULT_SETTINGS_TAB ? '' : ' hidden';
-    return `  <div id="${settingsRootId(tab)}" class="tab-panel" role="tabpanel" aria-label="${SETTINGS_TAB_ARIA_LABELS[tab]}"${hidden}>\n${TAB_BODY_HTML[tab]}\n  </div>`;
+    return `  <div id="${settingsRootId(tab)}" class="tab-panel" role="tabpanel" aria-label="${vscode.l10n.t(SETTINGS_TAB_ARIA_LABELS[tab])}"${hidden}>\n${TAB_BODY_HTML[tab]}\n  </div>`;
   }).join('\n\n');
 }
 

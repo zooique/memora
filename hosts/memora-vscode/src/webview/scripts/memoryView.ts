@@ -13,6 +13,7 @@
  * 由 esbuild 以 browser/iife 打包进 dist/webview/scripts/settingsView.js（经 settingsViewMain
  * 入口），在 webview HTML 中 <script src> 引用（CSP script-src cspSource）。
  */
+import * as l10n from '@vscode/l10n';
 import type {
   ExtensionToWebviewMessage,
   GovernanceStatsDto,
@@ -60,17 +61,21 @@ export const SOURCE_BADGE_CLASS: Record<string, string> = {
 };
 
 /**
- * SummaryType → 中文徽章文案（round-summary 子类型）。
+ * SummaryType → 徽章可见名（round-summary 子类型）
  *
  * 对齐约束：键集合须 ⊆ 内核 SUMMARY_TYPES（漂移哨兵见 __tests__/memoryView.test.ts），
  * 新增摘要类型需同步补文案，否则回退原值展示。
+ *
+ * 值 = 英文源键（默认语言下键即屏幕文字），本地化在渲染点调 `l10n.t` 做；本表被动态
+ * 消费（`l10n.t(TYPE_BADGE_LABEL[...])`）⇒ 必须打 `@nls-keys` 标记，否则判据⑨看不见这批键。
  */
+// @nls-keys
 export const TYPE_BADGE_LABEL: Record<string, string> = {
-  preference: '偏好',
-  fact: '事实',
-  decision: '决策',
-  intent: '意图',
-  general: '通用',
+  preference: 'Preference',
+  fact: 'Fact',
+  decision: 'Decision',
+  intent: 'Intent',
+  general: 'General',
 };
 
 /** 记忆列表每页条数（分页组件；与宿主 MEMORY_LIST_LIMIT 对齐，首屏同 20 条） */
@@ -118,8 +123,8 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       list.textContent = '';
       list.appendChild(
         createEmptyState(document, {
-          title: '暂无记忆',
-          hint: '对话沉淀的 round-summary 记忆会出现在这里',
+          title: l10n.t('No memories yet'),
+          hint: l10n.t('Round-summary memories distilled from conversations will appear here.'),
         }),
       );
       return;
@@ -134,8 +139,11 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       list.textContent = '';
       list.appendChild(
         createEmptyState(document, {
-          title: '没有匹配的记忆',
-          hint: `未找到与「${query}」相关的记忆。换个关键词，或开始一段新对话让 Agent 生成记忆`,
+          title: l10n.t('No matching memories'),
+          hint: l10n.t(
+            'No memories related to "{0}" were found. Try another keyword, or start a new conversation so the Agent can create memories.',
+            query,
+          ),
         }),
       );
       return;
@@ -144,7 +152,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     // 命中摘要（主动可见：当前检索上下文）
     const summary = document.createElement('div');
     summary.className = 'search-summary';
-    summary.textContent = `「${query}」命中 ${hits.length} 条`;
+    summary.textContent = l10n.t('{0} matches for "{1}"', hits.length, query);
     list.appendChild(summary);
     hits.forEach((m) => list.appendChild(buildCard(m)));
   }
@@ -171,7 +179,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     if (m.isModified) card.classList.add('mem-card-modified');
     card.setAttribute('role', 'button');
     card.setAttribute('aria-expanded', 'false');
-    card.title = '点击展开 / 收起详情';
+    card.title = l10n.t('Click to expand or collapse details');
 
     // 头部：source 徽章 + 类型徽章 + 操作按钮。name（「轮次摘要 {session} {roundId}」）
     // 撤出视觉层——机器标识对用户是黑话，正文预览才是卡片主位（用户心智：这条记忆
@@ -189,8 +197,8 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     if (m.summaryType) {
       const typeBadge = document.createElement('span');
       typeBadge.className = 'type-badge';
-      typeBadge.textContent = TYPE_BADGE_LABEL[m.summaryType] ?? m.summaryType;
-      typeBadge.title = `摘要类型：${m.summaryType}`;
+      typeBadge.textContent = l10n.t(TYPE_BADGE_LABEL[m.summaryType] ?? m.summaryType);
+      typeBadge.title = l10n.t('Summary type: {0}', m.summaryType);
       head.appendChild(typeBadge);
     }
 
@@ -199,8 +207,8 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     delBtn.className = 'mem-del-btn';
     // 图标语言唯一 = icons.ts 柔和线条 SVG
     delBtn.innerHTML = getIconSvg('close', 12, 12);
-    delBtn.title = '删除这条记忆（进入回收站，可恢复）';
-    delBtn.setAttribute('aria-label', '删除记忆');
+    delBtn.title = l10n.t('Delete this memory (moves it to the recycle bin; recoverable)');
+    delBtn.setAttribute('aria-label', l10n.t('Delete memory'));
     delBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       vscode.postMessage({ type: 'memory_delete', id: m.id });
@@ -210,8 +218,8 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     editBtn.className = 'mem-edit-btn';
     // 图标语言唯一 = icons.ts 柔和线条 SVG
     editBtn.innerHTML = getIconSvg('edit', 12, 12);
-    editBtn.title = '编辑这条记忆的内容';
-    editBtn.setAttribute('aria-label', '编辑记忆');
+    editBtn.title = l10n.t('Edit this memory');
+    editBtn.setAttribute('aria-label', l10n.t('Edit memory'));
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       enterEditMode();
@@ -232,14 +240,14 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       if (m.supersededBy) {
         const t = document.createElement('span');
         t.className = 'tag tag-superseded';
-        t.textContent = '已取代';
-        t.title = `已被 ${m.supersededBy} 取代`;
+        t.textContent = l10n.t('Superseded');
+        t.title = l10n.t('Replaced by {0}', m.supersededBy);
         tags.appendChild(t);
       }
       if (m.isModified) {
         const t = document.createElement('span');
         t.className = 'tag tag-modified';
-        t.textContent = '已编辑';
+        t.textContent = l10n.t('Edited');
         tags.appendChild(t);
       }
       card.appendChild(tags);
@@ -268,14 +276,14 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       actions.className = 'mem-edit-actions';
       const saveBtn = document.createElement('button');
       saveBtn.className = 'btn btn-primary';
-      saveBtn.textContent = '保存';
+      saveBtn.textContent = l10n.t('Save');
       saveBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         vscode.postMessage({ type: 'memory_edit', id: m.id, content: ta.value });
       });
       const cancelBtn = document.createElement('button');
       cancelBtn.className = 'btn btn-secondary';
-      cancelBtn.textContent = '取消';
+      cancelBtn.textContent = l10n.t('Cancel');
       cancelBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         exitEditMode();
@@ -314,8 +322,8 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
         }
         // 双溯源：会话 / 轮次（仅 round-summary 携带 sessionName/roundId）
         const traceParts: string[] = [];
-        if (m.sessionName) traceParts.push(`会话 ${m.sessionName}`);
-        if (m.roundId) traceParts.push(`轮次 ${m.roundId}`);
+        if (m.sessionName) traceParts.push(l10n.t('Session {0}', m.sessionName));
+        if (m.roundId) traceParts.push(l10n.t('Round {0}', m.roundId));
         if (traceParts.length > 0) {
           const trace = document.createElement('div');
           trace.className = 'mem-card-meta';
@@ -341,14 +349,14 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   function renderStats(stats: MemoryStatsDto): void {
     statBar.hidden = false;
     const parts = Object.entries(stats.bySource).map(([s, n]) => `${s} ${n}`);
-    statBar.textContent =
-      `共 ${stats.total} 条` + (parts.length > 0 ? ` · ${parts.join(' · ')}` : '');
+    const totalText = l10n.t('{0} memories', stats.total);
+    statBar.textContent = parts.length > 0 ? `${totalText} · ${parts.join(' · ')}` : totalText;
   }
 
   /** 回收站标题条数徽标：有回收站条目时在「回收站」后显示 (N)，提高可发现性 */
   function updateRecycleCount(n: number): void {
     if (!recycleSummary) return;
-    recycleSummary.textContent = n > 0 ? `回收站（${n}）` : '回收站';
+    recycleSummary.textContent = n > 0 ? l10n.t('Recycle bin ({0})', n) : l10n.t('Recycle bin');
   }
 
   /** 渲染治理统计（活跃 / 回收站 + 结果提示） */
@@ -369,8 +377,8 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     if (!items || items.length === 0) {
       recycleList.appendChild(
         createEmptyState(document, {
-          title: '回收站为空',
-          hint: '被删除的记忆会出现在这里，可随时恢复。',
+          title: l10n.t('The recycle bin is empty'),
+          hint: l10n.t('Deleted memories appear here and can be restored at any time.'),
         }),
       );
       return;
@@ -380,8 +388,10 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     toolRow.className = 'mem-recycle-tools';
     const clearBtn = document.createElement('button');
     clearBtn.className = 'btn btn-danger mem-recycle-clear';
-    clearBtn.textContent = '清空回收站';
-    clearBtn.title = '永久删除回收站全部记忆，不可恢复';
+    clearBtn.textContent = l10n.t('Empty recycle bin');
+    clearBtn.title = l10n.t(
+      'Permanently delete all memories in the recycle bin. This cannot be undone.',
+    );
     clearBtn.addEventListener('click', () => {
       vscode.postMessage({ type: 'memory_recycle_clear' });
     });
@@ -394,7 +404,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   function buildRecycleCard(m: MemoryItemDto): HTMLElement {
     const card = document.createElement('div');
     card.className = 'mem-card mem-recycle-card';
-    card.title = '点击卡片或「恢复」按钮还原这条记忆';
+    card.title = l10n.t('Click the card or "Restore" to bring this memory back');
 
     const textWrap = document.createElement('div');
     textWrap.className = 'mem-recycle-text';
@@ -419,7 +429,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     if (m.deletedAt) {
       const meta = document.createElement('div');
       meta.className = 'mem-recycle-meta';
-      meta.textContent = `删除于 ${formatTime(m.deletedAt)}`;
+      meta.textContent = l10n.t('Deleted {0}', formatTime(m.deletedAt));
       textWrap.appendChild(meta);
     }
     card.appendChild(textWrap);
@@ -427,8 +437,8 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     // 恢复按钮：独立走 memory_restore（卡片整体亦可点击，按钮 stopPropagation 防双触发）
     const restoreBtn = document.createElement('button');
     restoreBtn.className = 'mem-restore-btn btn btn-secondary';
-    restoreBtn.textContent = '恢复';
-    restoreBtn.title = '从回收站恢复这条记忆';
+    restoreBtn.textContent = l10n.t('Restore');
+    restoreBtn.title = l10n.t('Restore this memory from the recycle bin');
     restoreBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       vscode.postMessage({ type: 'memory_restore', id: m.id });
@@ -438,8 +448,8 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     // 永久删除按钮：独立走 memory_purge，物理删除不可恢复
     const purgeBtn = document.createElement('button');
     purgeBtn.className = 'mem-purge-btn btn btn-danger';
-    purgeBtn.textContent = '永久删除';
-    purgeBtn.title = '物理删除这条记忆，不可恢复';
+    purgeBtn.textContent = l10n.t('Delete permanently');
+    purgeBtn.title = l10n.t('Permanently delete this memory. This cannot be undone.');
     purgeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       vscode.postMessage({ type: 'memory_purge', id: m.id });
@@ -469,7 +479,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   function showGovernanceResult(msg: { ok: boolean; message?: string; action: 'cleanup' }): void {
     if (govDetail) {
       govDetail.hidden = false;
-      govDetail.textContent = msg.message ?? (msg.ok ? '操作完成' : '操作失败');
+      govDetail.textContent = msg.message ?? (msg.ok ? l10n.t('Done') : l10n.t('Operation failed'));
       govDetail.classList.toggle('gov-error', !msg.ok);
     }
     vscode.postMessage({ type: 'governance_load' });
@@ -538,7 +548,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
           recycle.open = true; // 程序性展开，不依赖手点 summary
           vscode.postMessage({ type: 'memory_recycle_load' });
         }
-        showMemHint('已移入回收站，可在下方「回收站」中恢复', false);
+        showMemHint(l10n.t('Moved to the recycle bin. You can restore it below.'), false);
       } else if (msg.message) {
         showMemHint(msg.message, true);
       }
@@ -553,7 +563,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       // 永久删除单条：成功重拉回收站 + 活跃列表；失败显示错误
       if (msg.ok) {
         if (recycle?.open) vscode.postMessage({ type: 'memory_recycle_load' });
-        showMemHint('已永久删除', false);
+        showMemHint(l10n.t('Permanently deleted'), false);
       } else if (msg.message) {
         showMemHint(msg.message, true);
       }
@@ -561,7 +571,12 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       // 清空回收站：成功重拉回收站；失败显示错误
       if (msg.ok) {
         if (recycle?.open) vscode.postMessage({ type: 'memory_recycle_load' });
-        showMemHint(msg.count > 0 ? `已清空回收站（${msg.count} 条）` : '回收站已是空的', false);
+        showMemHint(
+          msg.count > 0
+            ? l10n.t('Recycle bin emptied ({0} items)', msg.count)
+            : l10n.t('The recycle bin is already empty'),
+          false,
+        );
       } else if (msg.message) {
         showMemHint(msg.message, true);
       }

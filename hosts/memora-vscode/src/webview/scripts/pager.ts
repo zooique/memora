@@ -5,12 +5,14 @@
  *   - 统一数据通道：`fetchPage(page, pageSize)` 由调用方负责取数，数据到达后调用 `show()` 填充；
  *     - 全量前端分页（技能/角色包）：fetchPage 内本地数组 slice → 同步 show；
  *     - 增量服务端分页（记忆）：fetchPage 内 postMessage 向宿主拉页 → 回包后 show。
- *   - 自含 DOM：分页条（‹ 上一页 · 第 x/y 页 · 共 N 条 · 下一页 ›）由组件创建并 append 到
+ *   - 自含 DOM：分页条（‹ Previous · Page x of y · Next ›）由组件创建并 append 到
  *     mountRoot，调用方零骨架改动；单页 / 无数据自动隐藏（小数据量不暴露无意义分页 UI）。
  *   - 竞态防护：show(page, ...) 显式携带页码，调用方据 getPage() 校验滞后响应。
  *
  * 组件无模块级全局状态（工厂 + 显式依赖注入），适用 jsdom 单测。
  */
+import * as l10n from '@vscode/l10n';
+
 export interface PagerDeps<T> {
   /** 子视图根容器（id 空间隔离约定，不直接使用，仅语义锚点） */
   root: HTMLElement;
@@ -69,17 +71,17 @@ export function createPager<T>(deps: PagerDeps<T>): PagerController<T> {
   const bar = document.createElement('div');
   bar.className = 'pager-bar';
   bar.setAttribute('role', 'navigation');
-  bar.setAttribute('aria-label', '分页');
+  bar.setAttribute('aria-label', l10n.t('Pagination'));
   const prevBtn = document.createElement('button');
   prevBtn.className = 'pager-btn';
-  prevBtn.textContent = '‹ 上一页';
-  prevBtn.title = '上一页';
+  prevBtn.textContent = l10n.t('‹ Previous');
+  prevBtn.title = l10n.t('Previous');
   const info = document.createElement('span');
   info.className = 'pager-info';
   const nextBtn = document.createElement('button');
   nextBtn.className = 'pager-btn';
-  nextBtn.textContent = '下一页 ›';
-  nextBtn.title = '下一页';
+  nextBtn.textContent = l10n.t('Next ›');
+  nextBtn.title = l10n.t('Next');
   bar.append(prevBtn, info, nextBtn);
   // 插入位置：anchor 存在 → 插到 anchor 之前（列表正下的语义位）；否则 append 到 mountRoot 末尾
   const parent = anchor?.parentElement ?? mountRoot;
@@ -110,8 +112,8 @@ export function createPager<T>(deps: PagerDeps<T>): PagerController<T> {
     info.textContent = label
       ? label(curPage, pageCount(), total)
       : total === undefined
-        ? `第 ${curPage} 页`
-        : `第 ${curPage} / ${pageCount()} 页（共 ${total} 条）`;
+        ? l10n.t('Page {0}', curPage)
+        : l10n.t('Page {0} of {1} ({2} items)', curPage, pageCount(), total);
   }
 
   /** 切换页码并渲染：调用 fetchPage 取数（组件不自知数据源，数据到达后经 show 回填） */

@@ -108,6 +108,7 @@ describe('加一页接线守卫（静默半残 → 可红）', () => {
     'btn-icon',
   ] as const;
   const BODY_CONST_FILES: Record<string, string> = {
+    MEMORY_BODY_HTML: 'settingsMemoryHtml.ts',
     MCP_BODY_HTML: 'settingsMcpHtml.ts',
     SECURITY_BODY_HTML: 'settingsSecurityHtml.ts',
     WORKS_BODY_HTML: 'settingsWorksHtml.ts',

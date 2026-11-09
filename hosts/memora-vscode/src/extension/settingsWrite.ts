@@ -61,7 +61,7 @@ export async function writeSetting(
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
           timedOut = true;
-          reject(new Error('配置写入未在期限内完成'));
+          reject(new Error('Configuration write did not finish before the timeout'));
         }, WRITE_TIMEOUT_MS);
       }),
     ]);
@@ -84,6 +84,9 @@ export function writeErrorText(
   failure: { timedOut: boolean; reason: string },
 ): string {
   return failure.timedOut
-    ? `${label}写入超时：文件可能只读或被占用（设置可能已临时生效，但未落盘）`
-    : `${label}写入失败：${failure.reason}`;
+    ? vscode.l10n.t(
+        '{0} write timed out: the file may be read-only or locked (the setting may have taken effect temporarily but was not written to disk)',
+        label,
+      )
+    : vscode.l10n.t('{0} write failed: {1}', label, failure.reason);
 }

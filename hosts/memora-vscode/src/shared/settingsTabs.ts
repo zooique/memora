@@ -55,22 +55,30 @@ export const DEFAULT_SETTINGS_TAB: SettingsTab = SETTINGS_TABS[0];
 /**
  * 选项卡可见名（`Record` 穷尽：加 tab 忘写按钮文案 ⇒ 编译红，不会出现空白按钮）
  *
+ * **只存英文源键，不存译文**：本文件同时被宿主进程与 webview 运行时导入，任何一侧的
+ * l10n API 都不能在这里直接调用 ⇒ 本地化一律在消费侧做（宿主 = `vscode.l10n.t`）。
+ * 键 = 英文源文案本身（默认语言下 `bundle.l10n` 为 undefined，键即屏幕上看到的字）。
+ *
  * 同时是 tab 按钮文案与子视图 `aria-label` 的唯一来源（此前按钮写「大模型」、
  * root 的 aria-label 写「大模型配置」两份文案并列）。
+ *
+ * ⚠️ 键名带引号不是风格偏好：`@nls-keys` 的动态键采集只认 `'键': '值'` 成对形态，
+ * 去掉引号会让这批键脱离判据⑨采集面（bundle 里变成孤儿键，实测红过）。
  */
+// @nls-keys
 export const SETTINGS_TAB_LABELS: Record<SettingsTab, string> = {
-  memory: '记忆',
-  roles: '角色',
-  config: '大模型',
-  skills: '技能',
-  // 不写作「工具」：用户找不到 MCP 配置 UI 的第一手反馈就是「搜不到 MCP 这个词」，
+  memory: 'Memory',
+  roles: 'Roles',
+  config: 'Models',
+  skills: 'Skills',
+  // 不写作「Tools」：用户找不到 MCP 配置 UI 的第一手反馈就是「搜不到 MCP 这个词」，
   // 按钮文案必须是用户会搜的那个词（技能页讲的是插件自带技能，两者混用会再次误导）。
   mcp: 'MCP',
-  security: '安全',
+  security: 'Security',
   // 并列复合名：既收作品（含未升级的），也收升级后的项目规则。2026-11-09 真机反馈
   // 「只叫『作品』，用户不知道作品还能升级成规则」⇒ 可见名显式带出升级去向。
   // 仍不单叫「规则」：该页同时列未设为项目规则的作品，单叫会把一半条目说成不该在这儿。
-  works: '作品和规则',
+  works: 'Works and rules',
 };
 
 /**
@@ -81,14 +89,15 @@ export const SETTINGS_TAB_LABELS: Record<SettingsTab, string> = {
  * 两个问题（按钮空间受限 vs 面板语义完整），且在既有代码里已有分歧 ⇒ 收敛为两张表 +
  * 都由编译器强制补齐，而不是把 `config` 的无障碍名悄悄改成短文（那是行为变更，不是重构）。
  */
+// @nls-keys
 export const SETTINGS_TAB_ARIA_LABELS: Record<SettingsTab, string> = {
-  memory: '记忆',
-  roles: '角色',
-  config: '大模型配置',
-  skills: '技能',
-  mcp: 'MCP 工具服务器',
-  security: '安全',
-  works: '作品和规则清单与项目规则求值',
+  memory: 'Memory',
+  roles: 'Roles',
+  config: 'Model providers',
+  skills: 'Skills',
+  mcp: 'MCP tool servers',
+  security: 'Security',
+  works: 'Works and rules: list and project-rule evaluation',
 };
 
 /** 子视图根容器 id（此前 5 个 id 在 HTML / webview 脚本 / CSS 三处各自硬写） */
