@@ -371,10 +371,10 @@ describe('importAssetCommand · 同名覆盖确认', () => {
     expect(err).toContain('已取消导入');
     // 覆盖确认只有「确认项 + options」两个实参，不存在取消 item（双取消的结构性防线）
     const confirmArgs = vscodeMock.showWarningMessage.mock.calls.find((args) =>
-      String(args[0]).includes('目标已存在'),
+      String(args[0]).includes('Target already exists'),
     ) as unknown[];
     expect(confirmArgs).toHaveLength(3);
-    expect(confirmArgs[2]).toBe('覆盖');
+    expect(confirmArgs[2]).toBe('Overwrite');
   });
 
   it('用户点「覆盖」⇒ 内容替换 + 无事务残留 + resync 一次', async () => {
@@ -391,7 +391,7 @@ describe('importAssetCommand · 同名覆盖确认', () => {
 
     vscodeMock.showOpenDialog.mockResolvedValue([{ fsPath: zipPath }]);
     vscodeMock.showQuickPick.mockResolvedValue({ label: '用户级（默认）', level: 'user' });
-    vscodeMock.showWarningMessage.mockResolvedValue('覆盖');
+    vscodeMock.showWarningMessage.mockResolvedValue('Overwrite');
 
     await importAssetCommand({
       userSkillsDir,
@@ -486,7 +486,7 @@ describe('importAssetCommand · 角色包同名判定（内置 vs 用户级）',
       { detail?: string },
     ];
     const confirmText = `${confirmArgs?.[0] ?? ''}\n${confirmArgs?.[1]?.detail ?? ''}`;
-    expect(confirmText).toContain('会备份并替换原内容，失败自动回滚');
+    expect(confirmText).toContain('Overwriting backs up and replaces the existing content');
     expect(calls).toEqual([]);
     expect(vscodeMock.showErrorMessage.mock.calls[0]?.[0]).toContain('已取消导入');
   });

@@ -32,7 +32,7 @@ const DESCRIPTION_MAX_TOKENS = 4096;
  * @param context 扩展上下文（订阅随停用自动释放）
  * @param tryGetAgent 取当前工作区 Agent（与其余命令同源）
  * @param output 输出通道（LLM 原始返回与降级原因留痕）
- * @param onRegistered 登记成功后的刷新回调（树视图据此重拉；失败不调）
+ * @param onRegistered 登记成功后的刷新回调（设置页「作品和规则」据此重拉清单；失败不调）
  */
 export function registerRegisterWorkCommand(
   context: vscode.ExtensionContext,
@@ -60,7 +60,7 @@ export function registerRegisterWorkCommand(
  * @param tryGetAgent 取当前工作区 Agent（**失败返 null 不抛错**：装配失败时本命令只提示
  *   「未就绪」，与其余命令同一口径；工作区根的回退规则由该闭包统一持有，本命令不重算）
  * @param output 输出通道（LLM 原始返回与降级原因留痕，用户报障时唯一可查的面）
- * @param onRegistered 登记成功后的回调（树视图刷新用；失败不调，避免「刷新了但没有新行」的假信号）
+ * @param onRegistered 登记成功后的回调（设置页重拉清单用；失败不调，避免「刷新了但没有新行」的假信号）
  * @param registerWorkTitle 菜单标题原文（与命令面板同源，经 `resolveCommandTitle` 解析）
  */
 export async function registerWorkCommand(
@@ -172,7 +172,7 @@ export async function registerWorkCommand(
       vscode.window.showInformationMessage(
         vscode.l10n.t('Work registered: {0} | {1}', result.name, description),
       );
-      // 只有真落盘成功才刷新树（失败路径保持旧视图，不让用户以为多了一条）
+      // 只有真落盘成功才回推刷新（失败路径保持旧视图，不让用户以为多了一条）
       onRegistered?.();
     } else {
       vscode.window.showErrorMessage(

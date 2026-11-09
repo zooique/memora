@@ -5,7 +5,7 @@
  * 文案，不透传内核中文散文（真机缺陷：英文界面弹「作品投影清单中没有该文件的登记
  * 记录…」）。锁三件事：① 九个已知 reason 各有专属键且走对通道（成功=info / 其余=error）；
  * ② 同 `not-found` 码在 toggle / unregister 两流渲染不同文案；③ 未知 reason 原文兜底
- * （fail-visible——内核扩码未同步渲染表时宁可显示原文，不静默失义）。
+ * （fail-visible——**同代 dist 之外的运行时**才可能到达；编译期已由 `never` 穷尽断言拦住）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -86,7 +86,7 @@ describe('showKernelResult · reason 码本地化渲染', () => {
     showKernelResult({ reason: 'write-failed', message: '内核中文' }, SRC, 'unregister');
     expect(state.errors).toEqual([
       'Workspace is not trusted; trust the workspace first',
-      `Cannot read or validate the source file: ${SRC}`,
+      `Could not apply the change: the source file is unreadable or the works list could not be saved; nothing was written — see the log: ${SRC}`,
       `Project-rules segment limit exceeded; nothing was written — simplify or remove some rules first: ${SRC}`,
       'Works list file is malformed; nothing changed — fix it to a top-level JSON array and retry',
       'Failed to write the works list (retryable); details in the log',
@@ -94,8 +94,17 @@ describe('showKernelResult · reason 码本地化渲染', () => {
     expect(state.infos).toEqual([]);
   });
 
-  it('未知 reason → 内核原文兜底（fail-visible，不静默失义）', () => {
-    showKernelResult({ reason: 'brand-new-code', message: '内核新码中文原文' }, SRC, 'toggle');
+  it('未知 reason → 内核原文兜底（运行时 fail-visible；编译期由 never 断言拦）', () => {
+    // 类型上已不可能（`unhandledReason(reason: never)` 会让 tsc 红），此处强转只为覆盖
+    // 「宿主与内核非同一代 dist」的运行时情形——兜底必须 fail-visible，不得静默吞掉。
+    showKernelResult(
+      {
+        reason: 'brand-new-code' as never as Parameters<typeof showKernelResult>[0]['reason'],
+        message: '内核新码中文原文',
+      },
+      SRC,
+      'toggle',
+    );
     expect(state.errors).toEqual(['内核新码中文原文']);
   });
 });

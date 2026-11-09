@@ -5,7 +5,9 @@
  * 1. MemoraError 走 format() 全文（标题 + 原因 + 建议），不得退化成只有标题的 message
  *    （本函数存在的根因：`err.message` 转发会把内核诊断吞在宿主边界）；
  * 2. 普通 Error 维持 err.message 原语义（零行为变化承诺）；
- * 3. 非 Error 值 String 化兜底（与替换前的原表达式对齐）。
+ * 3. 非 Error 值 String 化兜底（与替换前的原表达式对齐）；
+ * 4. ⚠️ 已知缺口：format() 正文是内核中文 SSOT ⇒ 英文界面下仍是中文（宿主自建英文模板会变
+ *    第二套渲染真源，明确不做）。用例只钉「三层信息不丢」，不钉语言。
  */
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
@@ -13,7 +15,8 @@ import { MemoraError } from '@zooique/memora';
 import { toNoticeText } from '../noticeText.js';
 
 describe('toNoticeText —— 宿主错误通知单一出口', () => {
-  it('MemoraError → format() 全文：标题、原因、建议三层俱在', () => {
+  // 契约 = 「三层信息不被宿主边界吞掉」；**不**契约化语言（正文随内核中文 SSOT，见文件头缺口 4）
+  it('MemoraError → format() 全文：标题、原因、建议三层俱在（语言随内核，不在此契约内）', () => {
     // 构造与内核 forkSession 同形态的结构化错误（title 有、detail 有、建议有）
     const err = new MemoraError({
       title: '无法分叉会话',

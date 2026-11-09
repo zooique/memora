@@ -52,7 +52,13 @@ export type WorkspaceRelativePathResult =
  * `vscode.l10n.t(message)` 动态查 zh bundle。本表的值集合由 `verify-nls.mjs`
  * 键面守卫**专项收录**（动态 t 的键源，静态扫描拿不到）——改这里的值必须同步
  * 补 `l10n/bundle.l10n.zh-cn.json`，否则中文用户看到英文。
+ *
+ * ⚠️ 本表上方的 `nls-keys` 标记（带 @ 前缀）是**机检锚点**（`verify-nls.mjs` 判据⑮）：
+ * 标记后第一个 `{ … }` 块的字符串值全部按「动态 t 键」校验译文。改表名不会脱管
+ * （标记与命名解耦）；但**新增第二张动态键源表必须自己打标记**，否则仍会脱管
+ * （语法上无法推断谁是键源）。
  */
+// @nls-keys
 const REJECT_MESSAGES: Record<WorkspacePathRejectReason, string> = {
   'no-workspace': 'No workspace folder is open; cannot produce a project-relative path',
   'empty-target': 'The target path is empty',

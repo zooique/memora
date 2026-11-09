@@ -5,10 +5,14 @@
  *  - `memora.toggleResidentRule`：右键文件 / 编辑器标签切换该文件的常驻态；
  *  - `memora.manageResidentRules`：QuickPick 管理整份清单（切换 / 移除登记）。
  *
- * 🔴 动作执行面 SSOT（WORK-PROJECTION-MOVE-1）：本文件的两个入口、设置页「作品和规则」的
- * 行内按钮、资源管理器「登记作品投影」共四个入口，**翻转 / 移除 / 打开的执行体**
- * 全部收口在 `host/workProjectionBridge.ts` 的 `runWorkProjectionAction()`。本文件只负责
- * 「URI → 首根相对路径」与「QuickPick → 选中项 source」这两段入口差异，
+ * 🔴 动作执行面 SSOT（WORK-PROJECTION-MOVE-1）：**翻转 / 移除 / 打开**三个动作的执行体
+ * 收口在 `host/workProjectionBridge.ts` 的 `runWorkProjectionAction()`（动作集 =
+ * `load | open | toggle | unregister`）。消费该执行面的入口 = 本文件的两个命令 +
+ * 设置页「作品和规则」的行内按钮；它们的差异段只有「意图从哪来」。
+ * ⚠️ **登记不属于该执行面**：资源管理器 / 命令面板的「登记作品投影」走
+ * `registerWorkCommand` → `agent.works.registerWork`（含开框、多选、批量回执），
+ * 不进 `runWorkProjectionAction` —— 「四入口共用执行面」是把两层折叠成一个词，勿再这样写。
+ * 本文件只负责「URI → 首根相对路径」与「QuickPick → 选中项 source」这两段入口差异，
  * 禁止再写一份 `listManagedWorks + setResident` 循环（两份语义必然漂移）。
  * 侧边栏 TreeView 退役后，`toggleResidentRuleFromTree` / `unregisterWork` 两个树行命令
  * 及其 `WorkProjectionTreeItem` 载荷一并删除，不留双轨。
@@ -17,8 +21,8 @@
  *  1. **能不能设为项目规则、超没超上限、文件在不在、当前是不是项目规则** —— 全部由内核回答。
  *     本文件不得出现字符上限数值 / 文件存在性 / `resident === true` 这类判断；
  *     项目规则态一律读内核归一后的 `listManagedWorks().resident`（判据 = `isResidentEntry`）。
- *  2. 结果文案**原样展示**内核 message（失败四态 + 成功两态），宿主不改写、不归纳
- *     （展示出口在 bridge 的 `showKernelResult` 单点）。
+ *  2. 结果文案的真源仍是内核结构化 `reason` 码：展示出口在 bridge 的 `showKernelResult`
+ *     单点，按码渲染宿主本地化文案（内核 message 仅在未知码时兜底）。本文件不得自建文案。
  *  3. URI → 相对路径**必须**走 `toWorkspaceRelativePath` 单点判据（禁用 `asRelativePath`）。
  *
  * 已知平台限制（诚实登记）：VS Code 的菜单标题是 `package.json` 静态贡献，**不支持按文件状态
@@ -84,8 +88,10 @@ function showManagePick(
 ): Promise<{ item: ManageItem; action: 'toggle' | 'remove' } | null> {
   return new Promise((resolve) => {
     const pick = vscode.window.createQuickPick<ManageItem>();
-    pick.title = 'Memora: 管理项目规则';
-    pick.placeholder = '回车切换项目规则 / 点右侧按钮仅移除登记（不会删除源文件）';
+    pick.title = vscode.l10n.t('Memora: manage project rules');
+    pick.placeholder = vscode.l10n.t(
+      'Enter toggles the project rule; the button on the right removes the entry only (the source file is kept)',
+    );
     pick.items = items;
     /** 用户选择（关闭时据此回传） */
     let chosen: { item: ManageItem; action: 'toggle' | 'remove' } | null = null;
@@ -158,7 +164,9 @@ export async function manageResidentRulesCommand(
 
     const items: ManageItem[] = entries.map((e) => ({
       label: `${e.resident ? '$(check)' : '$(circle-outline)'} ${e.name}`,
-      description: `${e.source} · ${e.resident ? '已设为项目规则' : '未设为项目规则'}`,
+      description: `${e.source} · ${
+        e.resident ? vscode.l10n.t('currently a project rule') : vscode.l10n.t('not a project rule')
+      }`,
       detail: e.description,
       source: e.source,
       resident: e.resident,

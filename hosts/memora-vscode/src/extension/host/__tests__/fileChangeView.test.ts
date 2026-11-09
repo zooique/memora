@@ -614,7 +614,7 @@ describe('FileChangeView · 回退的未保存编辑守卫', () => {
     });
     // 只弹一次模态（批量不逐个追问），且明细里列出两个文件与「含未保存的编辑」计数
     expect(h.state.warningCalls.length).toBe(1);
-    expect(h.state.warningCalls[0].detail).toContain('含未保存的编辑（会一并丢弃）：2 个');
+    expect(h.state.warningCalls[0].detail).toContain('with unsaved edits (also discarded): 2');
     expect(h.state.warningCalls[0].detail).toContain(REL);
     expect(h.state.warningCalls[0].detail).toContain('b.md');
     expect(h.state.writes.map((w) => w.path)).toEqual(expect.arrayContaining([FILE, FILE_B]));
@@ -702,7 +702,7 @@ function armCompareViaReview(record: ReturnType<FileChangeTracker['get']>): void
   // 第一次 QuickPick = 选文件（条目本身由 showChangeList 生成，测试只负责「选中哪个记录」）
   h.state.quickPickAnswers.push({ label: '$(file) picked', record });
   // 第二次 QuickPick = 选动作
-  h.state.quickPickAnswers.push({ label: '$(diff) 查看对比', action: 'compare' });
+  h.state.quickPickAnswers.push({ label: '$(diff) Compare', action: 'compare' });
   h.state.commands.get(REVIEW_FILE_CHANGES_COMMAND)?.();
 }
 
@@ -751,10 +751,10 @@ describe('FileChangeView · 块级按钮粒度与落点', () => {
     view.register(makeContext());
 
     expect(renderLenses(makeDoc('a\nX\nc\nY\ne')).map((lens) => lens.command.title)).toEqual([
-      '$(check) 接受此处（1/2）',
-      '$(discard) 拒绝此处（1/2）',
-      '$(check) 接受此处（2/2）',
-      '$(discard) 拒绝此处（2/2）',
+      '$(check) Accept this change (1/2)',
+      '$(discard) Reject this change (1/2)',
+      '$(check) Accept this change (2/2)',
+      '$(discard) Reject this change (2/2)',
     ]);
   });
 
@@ -782,8 +782,8 @@ describe('FileChangeView · 块级按钮粒度与落点', () => {
     const lenses = renderLenses(doc);
     expect(lenses.map((lens) => lens.range.line)).toEqual([2, 2]); // 被 clamp，落在改动行本身
     expect(lenses.map((lens) => lens.command.title)).toEqual([
-      '$(check) 接受此处（1/1）',
-      '$(discard) 拒绝此处（1/1）',
+      '$(check) Accept this change (1/1)',
+      '$(discard) Reject this change (1/1)',
     ]);
   });
 

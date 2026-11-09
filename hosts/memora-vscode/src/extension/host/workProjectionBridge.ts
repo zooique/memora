@@ -3,8 +3,11 @@
  *
  * 三件事，都在扩展宿主进程内（webview 只收数据、只发意图）：
  *  ① `load()` 把内核清单 + 求值报告派生成 DTO 推给设置页；
- *  ② `runWorkProjectionAction()` 是**四个动作入口共用的唯一执行面**
- *     （文件右键 / QuickPick / 命令面板 / 设置页行内按钮）；
+ *  ② `runWorkProjectionAction()` 是**翻转 / 移除 / 打开**的唯一执行面
+ *     （消费入口 = 文件右键 `toggleResidentRule` / QuickPick `manageResidentRules` /
+ *     设置页行内按钮；三个入口都只把意图变成 `source`）；
+ *     ⚠️ **登记不属本执行面**——它走 `registerWorkCommand` → `agent.works.registerWork`
+ *     （含开框 / 多选 / 批量回执），写「四入口共用执行面」即把两层折叠成一个词。
  *  ③ `openWorkSource()` 处理新增的「单击打开原文件」。
  *
  * 🔴 零判据纪律：`hasAgent` / `listMalformed` / `entries` / `residentReport` 四项全部直读内核，
@@ -26,10 +29,10 @@ import type {
 import { deriveWorkProjectionView } from './workProjectionRows.js';
 import { resolveUnderPrimaryRoot } from './refPath.js';
 
-/** 内核结果面（结构对齐 setResident / unregisterWork，宿主只读这两字段） */
+/** 内核结果面的读取视图（结构对齐 setResident / unregisterWork，宿主只读这两字段） */
 interface KernelResult {
   /** 粗粒度结果码（判据真源在内核，宿主按码渲染本地化文案 + 选提示通道） */
-  reason: string;
+  reason: KernelReason;
   /**
    * 内核人读文案（中文 SSOT，供聊天/工具回执面）。
    * ⚠️ 2026-11-09 起窗口通知**不再原样透传**（真机反馈：英文界面弹中文）：
@@ -38,8 +41,31 @@ interface KernelResult {
   message: string;
 }
 
+/**
+ * 内核结果码联合 —— **类型同源，禁止抄字面量**
+ *
+ * 从公开 API `Agent.works` 的方法返回类型推导，而不是在宿主重写一份 reason 字面量联合：
+ * 抄一份就等于开了第二真相源（内核新增 reason 时 tsc 不红、无测试红，窗口通知回落到
+ * 内核中文散文 ⇒ 英文界面冒中文，2026-11-09 审查实证）。
+ */
+type WorksApi = NonNullable<Agent['works']>;
+type SetResidentReason = Awaited<ReturnType<WorksApi['setResident']>>['reason'];
+type UnregisterWorkReason = Awaited<ReturnType<WorksApi['unregisterWork']>>['reason'];
+type KernelReason = SetResidentReason | UnregisterWorkReason;
+
 /** 成功态结果码（仅决定用「信息」还是「错误」通道，不是能力判据） */
-const SUCCESS_REASONS = new Set(['enabled', 'disabled', 'removed']);
+const SUCCESS_REASONS = new Set<KernelReason>(['enabled', 'disabled', 'removed']);
+
+/**
+ * 编译期穷尽断言 + 运行时兜底（`kernelResultNotice` 的 default 分支专用）
+ *
+ * 参数类型是 `never`：内核新增结果码而本表未渲染 ⇒ **tsc 红**（编译期就报警，不等真机冒中文）。
+ * 运行时仍返回内核原文（fail-visible：宁可中文也不静默失义；同代 dist 下不应走到这里）。
+ */
+function unhandledReason(reason: never, message: string): string {
+  void reason;
+  return message;
+}
 
 /**
  * 内核结果码 → 宿主本地化文案（窗口通知面单点）
@@ -75,7 +101,12 @@ function kernelResultNotice(
     case 'untrusted':
       return vscode.l10n.t('Workspace is not trusted; trust the workspace first');
     case 'source-unreadable':
-      return vscode.l10n.t('Cannot read or validate the source file: {0}', source);
+      // 内核把两种因由折进同一个码（源文件读不到 / 清单写不进，见内核 SetResidentReason 注释）
+      // ⇒ 宿主**不许**断言方向（写「读不到源文件」在写失败时就是反向误导）。
+      return vscode.l10n.t(
+        'Could not apply the change: the source file is unreadable or the works list could not be saved; nothing was written — see the log: {0}',
+        source,
+      );
     case 'too-long':
       return vscode.l10n.t(
         'Project-rules segment limit exceeded; nothing was written — simplify or remove some rules first: {0}',
@@ -88,8 +119,7 @@ function kernelResultNotice(
     case 'write-failed':
       return vscode.l10n.t('Failed to write the works list (retryable); details in the log');
     default:
-      // 内核新增结果码：本地化表未覆盖 → 原文兜底（fail-visible，宁可中文不静默失义）
-      return result.message;
+      return unhandledReason(result.reason, result.message);
   }
 }
 
@@ -237,7 +267,8 @@ async function openWorkSource(source: string, resolveAgent: AgentResolver): Prom
 }
 
 /**
- * 动作执行面（唯一真源）：四个入口都只做「把意图变成 source」，翻转 / 移除 / 打开全在这里
+ * 动作执行面（唯一真源）：消费入口只做「把意图变成 source」，翻转 / 移除 / 打开全在这里
+ * （动作集 `load | open | toggle | unregister`，见 `WorkProjectionAction`）
  *
  * @param action 动作名
  * @param source 清单相对路径（load 不需要）

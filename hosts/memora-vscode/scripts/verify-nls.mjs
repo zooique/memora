@@ -35,9 +35,21 @@
  *   ⑪ **zh-cn 译文非空**：空串 = 界面上什么都不显示。
  *   ⑫ **t() 第一参必须是静态字面量**：模板串作第一参 ⇒ 红（键面守卫拿不到键 = 守卫失明，
  *      宁可红也不放开）；动态拼接一律改 `{0}` 占位符形态。
- *   ⑬ **窗口 API 中文残留**：`show*Message(<静态中文字面量>)` ⇒ 红（宿主运行时 UI 通知
- *      必须走 `l10n.t`）。只扫调用点直接字面量——「先存中文变量再传」的间接形态扫不到，
- *      属判据边界，靠 review 与台账登记兜。
+ *   ⑬ **窗口 API 中文残留**：静态中文字面量直接作为**窗口面可见文案**的第一参或属性值 ⇒ 红。
+ *      覆盖面（此前只扫 `show*Message` 首参，其余全在网外——2026-11-09 审查实证漏网）：
+ *      - 消息 API：`showErrorMessage|showWarningMessage|showInformationMessage|showQuickPick|<项>.label`
+ *      - 开框：`showOpenDialog|showSaveDialog` 的 `title` / `openLabel` / `saveLabel` 与 `filters` 键
+ *      - 输入：`showInputBox` 的 `title` / `prompt` / `placeHolder`
+ *      - 状态栏：`setStatusBarMessage` 首参、`StatusBarItem` 的 `.text` / `.tooltip` / `.name`
+ *      - 行内：`CodeLens` 的 `title`、`QuickPickItem` 的 `label` / `description` / `detail`
+ *      判定口径不变（只扫**直接字面量**）：先存中文变量再传的间接形态仍属判据边界，靠台账登记。
+ *
+ * ## 判据边界（如实登记，不假装覆盖）
+ *
+ * - **只认静态字面量**：`l10n.t(variable)` / 拼接 / 模板串第一参之外的动态形态扫不到（⑫ 只拦
+ *   模板串第一参这一种最易犯的写法）。
+ * - **动态键源只认「从源码里抽出的字符串值」**：`REJECT_MESSAGES` 一类映射表按「文件内抽取
+ *   全部 `'键': '文案'` 形态」聚合，**不锚定变量名**——改名或新增第二张映射表不会静默脱管。
  *
  * 插点：`package.json#scripts.package`（vsce 打包前）+ `scripts/local-ci.mjs` 的
  *   full 档步骤 `host:manifest`。「实现了」不等于「会跑」，两处都要挂。
@@ -194,77 +206,163 @@ function walkTs(dir, acc = []) {
  * `\uXXXX` / `\u{...}` / `\xXX` / `\\` `\'` `\"` 等 identity 转义。
  */
 function unescapeSourceLiteral(raw) {
-  return raw.replace(
-    /\\(u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[\s\S])/g,
-    (_, g) => {
-      if (g[0] === 'u' && g[1] === '{') return String.fromCodePoint(parseInt(g.slice(2, -1), 16));
-      if (g[0] === 'u' || g[0] === 'x') return String.fromCodePoint(parseInt(g.slice(1), 16));
-      if (g === 'n') return '\n';
-      if (g === 't') return '\t';
-      if (g === 'r') return '\r';
-      if (g === '0') return '\0';
-      if (g === '\n') return ''; // 行续接反斜杠（源码折行）
-      return g; // \\ \' \" 等 identity 转义 → 还原为字符本身
-    },
-  );
+  return raw.replace(/\\(u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[\s\S])/g, (_, g) => {
+    if (g[0] === 'u' && g[1] === '{') return String.fromCodePoint(parseInt(g.slice(2, -1), 16));
+    if (g[0] === 'u' || g[0] === 'x') return String.fromCodePoint(parseInt(g.slice(1), 16));
+    if (g === 'n') return '\n';
+    if (g === 't') return '\t';
+    if (g === 'r') return '\r';
+    if (g === '0') return '\0';
+    if (g === '\n') return ''; // 行续接反斜杠（源码折行）
+    return g; // \\ \' \" 等 identity 转义 → 还原为字符本身
+  });
 }
 
-function collectDynamicKeySources(text) {
-  const anchor = /const REJECT_MESSAGES[^=]*=\s*\{/;
-  const start = text.search(anchor);
-  if (start < 0) return [];
-  const end = text.indexOf('\n};', start);
-  if (end < 0) return [];
-  const block = text.slice(start, end);
-  // 形态 `{ 'reason': '文案' }`：抽冒号后的字符串值（键是原因码，不进键面）
-  const values = [];
-  for (const re of [/:\s*'((?:[^'\\]|\\.)*)'/g, /:\s*"((?:[^"\\]|\\.)*)"/g]) {
-    for (const m of block.matchAll(re)) values.push(unescapeSourceLiteral(m[1]));
+/** 从 `openIndex` 处的开符号取到配对闭符号（含两端）；找不到闭合即取到文末 */
+function sliceBalanced(text, openIndex, open, close) {
+  let depth = 0;
+  for (let i = openIndex; i < text.length; i++) {
+    if (text[i] === open) depth++;
+    else if (text[i] === close && --depth === 0) return text.slice(openIndex, i + 1);
   }
-  return values;
+  return text.slice(openIndex);
 }
+
+/**
+ * 动态 t() 的键源登记点采集（判据⑮ 的扫描面）
+ *
+ * 约定：在「动态 `l10n.t()` 会用到的映射表」上方写一行 `// @nls-keys`，紧随其后的
+ * 第一个 `{ … }` 块即该表，块的字符串值进入键面（键是原因码 / 枚举值，不进键面）。
+ *
+ * 为什么用**标记**而不是锚定变量名：锚定 `const REJECT_MESSAGES` 时，改个变量名或新增
+ * 第二张映射表就静默脱管（2026-11-09 审查实证）。标记与命名解耦，改名不影响判定。
+ * 判据边界：新增第二张动态键源表若**不打标记**，仍会脱管——语法上无法推断「谁是键源」，
+ * 故配 ⑮「标记数不得低于基线」防清单塌空，并在台账登记该边界。
+ */
+function collectDynamicKeySources(text) {
+  const values = [];
+  let markers = 0;
+  for (const m of text.matchAll(/@nls-keys/g)) {
+    markers++;
+    const open = text.indexOf('{', m.index);
+    if (open < 0) continue;
+    const block = sliceBalanced(text, open, '{', '}');
+    for (const re of [
+      /'((?:[^'\\]|\\.)*)'\s*:\s*'((?:[^'\\]|\\.)*)'/g,
+      /"((?:[^"\\]|\\.)*)"\s*:\s*"((?:[^"\\]|\\.)*)"/g,
+    ]) {
+      for (const mm of block.matchAll(re)) values.push(unescapeSourceLiteral(mm[2]));
+    }
+  }
+  return { values, markers };
+}
+
+/**
+ * 窗口面可见文案的**静态字面量**采集（判据⑬ 的扫描面）
+ *
+ * 每条规则 = 「锚点正则 + 捕获组序」。锚点命中即判定文案值是否含 CJK——不做 AST，
+ * 因为「窗口 API 被包一层 helper 后仍可能漏」这件事 AST 一样挡不住（helper 里同样是动态传参）；
+ * 真正决定覆盖面的是「窗口面有哪些写法」，故按 API 面穷举写法而非按语法深度。
+ *
+ * ⚠️ 新增一个窗口面 API 时**必须**回来加一条锚点：漏加的后果是「新面中文裸串静默上线」。
+ */
+const WINDOW_LITERAL_ANCHORS = [
+  // 消息类：第一参
+  /(showErrorMessage|showWarningMessage|showInformationMessage|setStatusBarMessage)\s*\(\s*'((?:[^'\\]|\\.)*)'/g,
+  /(showErrorMessage|showWarningMessage|showInformationMessage|setStatusBarMessage)\s*\(\s*"((?:[^"\\]|\\.)*)"/g,
+  /(showErrorMessage|showWarningMessage|showInformationMessage|setStatusBarMessage)\s*\(\s*`([^`]*)`/g,
+  // QuickPick / 输入框：选项对象的文案属性（label / description / detail / title / prompt / placeHolder）
+  /\b(label|description|detail|title|prompt|placeHolder)\s*:\s*'((?:[^'\\]|\\.)*)'/g,
+  /\b(label|description|detail|title|prompt|placeHolder)\s*:\s*"((?:[^"\\]|\\.)*)"/g,
+  /\b(label|description|detail|title|prompt|placeHolder)\s*:\s*`([^`]*)`/g,
+  // 开框选项：openLabel / saveLabel；filters 的键（`{ 压缩包: ['zip'] }` 形态）
+  /\b(openLabel|saveLabel)\s*:\s*'((?:[^'\\]|\\.)*)'/g,
+  /\b(filters)\s*:\s*\{[^}]*?('((?:[^'\\]|\\.)*)')\s*:/g,
+  // 状态栏 item 属性（`.text = '…'` / `.tooltip = '…'` / `.name = '…'`）
+  /\.(text|tooltip|name)\s*=\s*'((?:[^'\\]|\\.)*)'/g,
+  /\.(text|tooltip|name)\s*=\s*`([^`]*)`/g,
+];
 
 /** 源码 l10n 键采集结果 */
 function collectTKeyFacts(files) {
   const staticKeys = new Set();
   const dynamicKeys = new Set();
   const templateViolations = [];
+  let dynamicKeyMarkers = 0;
   // 按开引号类型分支（键里合法含另一种引号字符，合一字符类会提前截断——同 collectDynamicKeySources）
   const callSingles = [/\bl10n\.t\(\s*'((?:[^'\\]|\\.)*)'/g, /\bl10n\.t\(\s*"((?:[^"\\]|\\.)*)"/g];
   for (const f of files) {
     const text = readFileSync(f, 'utf8');
-    for (const m of collectDynamicKeySources(text)) dynamicKeys.add(m);
+    const dyn = collectDynamicKeySources(text);
+    dynamicKeyMarkers += dyn.markers;
+    for (const m of dyn.values) dynamicKeys.add(m);
     for (const re of callSingles) {
       for (const m of text.matchAll(re)) staticKeys.add(unescapeSourceLiteral(m[1]));
     }
     // 模板串第一参 = 违规（键面守卫拿不到键）
     if (/\bl10n\.t\(\s*`/.test(text)) templateViolations.push(f);
   }
-  return { staticKeys, dynamicKeys, templateViolations };
+  return { staticKeys, dynamicKeys, templateViolations, dynamicKeyMarkers };
 }
 
-/** 窗口 API 直接中文字面量（show*Message 第一参为静态字面量且含 CJK ⇒ 违规） */
-function collectWindowApiCjk(files) {
+/** 窗口 API 直接中文字面量（按 `WINDOW_LITERAL_ANCHORS` 穷举窗口面写法） */
+function collectWindowApiCjkInText(text, label) {
   const violations = [];
-  // 三种引号各一条分支（合一字符类会在串内的另一种引号处截断）
-  const callRes = [
-    /\b(showErrorMessage|showWarningMessage|showInformationMessage)\(\s*'((?:[^'\\]|\\.)*)'/g,
-    /\b(showErrorMessage|showWarningMessage|showInformationMessage)\(\s*"((?:[^"\\]|\\.)*)"/g,
-    /\b(showErrorMessage|showWarningMessage|showInformationMessage)\(\s*`([^`]*)`/g,
-  ];
-  for (const f of files) {
-    const text = readFileSync(f, 'utf8');
-    for (const re of callRes) {
-      for (const m of text.matchAll(re)) {
-        // 转义还原后再判 CJK（`'\u4e2d\u6587'` 形态在原文里不含 CJK 字符，不还原即漏检）
-        const value = unescapeSourceLiteral(m[2]);
-        if (CJK.test(value)) {
-          violations.push(`${f}: ${m[1]}('${value.slice(0, 30)}…')`);
-        }
+  for (const re of WINDOW_LITERAL_ANCHORS) {
+    for (const m of text.matchAll(re)) {
+      // filters 形态的捕获组序不同（第 3 组才是文案键），统一取最后一个含字面量的组
+      const raw = m[3] !== undefined ? m[3] : m[2];
+      // 转义还原后再判 CJK（`'\u4e2d\u6587'` 形态在原文里不含 CJK 字符，不还原即漏检）
+      const value = unescapeSourceLiteral(raw);
+      if (CJK.test(value)) {
+        violations.push(`${label}: ${m[1]}('${value.slice(0, 30)}…')`);
       }
     }
   }
   return violations;
+}
+
+/**
+ * 已迁移窗口面模块清单（判据⑬ 的扫描面）
+ *
+ * 为什么按文件登记，而不是扫全 `src`：未迁移的文件（webview 面板、尚未排期的命令）本来就有
+ * 中文裸串，全扫会让判据长期红——长期红等于红灯免疫，比盲区更坏。登记制的代价是
+ * 「新文件默认不在网内」，故配套两条机检：⑭ 登记项逐条必须真实存在，且条数不得低于基线
+ * （防清单被悄悄清空后「全绿」）。
+ *
+ * 登记语义 = 「本文件的窗口面可见文案已全量 l10n 化」；往登记文件里塞中文裸串即红。
+ */
+const MIGRATED_UI_MODULES = [
+  'extension/commands/importAsset.ts',
+  'extension/commands/registerWork.ts',
+  'extension/commands/residentRules.ts',
+  'extension/host/fileChangeView.ts',
+  'extension/host/workProjectionBridge.ts',
+  'extension/host/windowNotices.ts',
+];
+
+/** 判据⑭ 基线：登记项少于该数 ⇒ 红（清单被清空 = 判据静默失明） */
+const MIN_MIGRATED_UI_MODULES = 5;
+
+/** 判据⑮ 基线：动态键源标记 `@nls-keys` 少于此数 ⇒ 红（键面整段脱管） */
+const MIN_DYNAMIC_KEY_SOURCES = 1;
+
+/**
+ * 按登记清单解析绝对路径并标记缺失项（判据⑭ 的一半：清单里写错路径 = 该文件永不被扫）
+ */
+function resolveMigratedUiFiles() {
+  const missing = [];
+  const files = [];
+  for (const rel of MIGRATED_UI_MODULES) {
+    const abs = join(HOST_ROOT, 'src', rel);
+    try {
+      statSync(abs);
+      files.push(abs);
+    } catch {
+      missing.push(`判据⑭ 登记项不存在：src/${rel}（路径写错 = 该文件永不被扫）`);
+    }
+  }
+  return { files, missing };
 }
 
 /**
@@ -277,17 +375,30 @@ function collectWindowApiCjk(files) {
  * @param {Set<string>} input.dynamicKeys REJECT_MESSAGES 值集合（动态 t 键源）
  * @param {string[]} input.templateViolations 模板串第一参的文件清单
  * @param {string[]} input.windowViolations 窗口 API 中文字面量违规清单
+ * @param {string[]} input.registryIssues 判据⑭ 登记清单问题（路径不存在 / 条数低于基线）
+ * @param {number} [input.dynamicKeyMarkers] 判据⑮ 动态键源标记数（`@nls-keys`）
  */
-export function auditBundle({ bundleEn, bundleZh, staticKeys, dynamicKeys, templateViolations, windowViolations }) {
+export function auditBundle({
+  bundleEn,
+  bundleZh,
+  staticKeys,
+  dynamicKeys,
+  templateViolations,
+  windowViolations,
+  registryIssues = [],
+  dynamicKeyMarkers = MIN_DYNAMIC_KEY_SOURCES,
+}) {
   const issues = [];
   const allKeys = new Set([...staticKeys, ...dynamicKeys]);
 
   // ⑧ bundle 键面相等
   for (const key of Object.keys(bundleEn)) {
-    if (!Object.hasOwn(bundleZh, key)) issues.push(`bundle 键面不等：仅在英文 bundle「${key.slice(0, 40)}」`);
+    if (!Object.hasOwn(bundleZh, key))
+      issues.push(`bundle 键面不等：仅在英文 bundle「${key.slice(0, 40)}」`);
   }
   for (const key of Object.keys(bundleZh)) {
-    if (!Object.hasOwn(bundleEn, key)) issues.push(`bundle 键面不等：仅在中文 bundle「${key.slice(0, 40)}」`);
+    if (!Object.hasOwn(bundleEn, key))
+      issues.push(`bundle 键面不等：仅在中文 bundle「${key.slice(0, 40)}」`);
   }
 
   // ⑨ 源码键全覆盖（缺 = 中文用户静默看到英文）
@@ -314,7 +425,22 @@ export function auditBundle({ bundleEn, bundleZh, staticKeys, dynamicKeys, templ
   }
 
   // ⑬ 窗口 API 中文残留
-  for (const v of windowViolations) issues.push(`宿主窗口通知中文残留（应走 l10n.t）：${v}`);
+  for (const v of windowViolations) issues.push(`宿主窗口面中文残留（应走 l10n.t）：${v}`);
+
+  // ⑭ 登记清单完整性（清单塌空 / 路径写错都会让 ⑬ 静默失明）
+  for (const v of registryIssues) issues.push(v);
+  if (MIGRATED_UI_MODULES.length < MIN_MIGRATED_UI_MODULES) {
+    issues.push(
+      `判据⑭ 已迁移模块登记 ${MIGRATED_UI_MODULES.length} < 基线 ${MIN_MIGRATED_UI_MODULES}（判据⑬ 扫描面塌空 = 静默失明）`,
+    );
+  }
+
+  // ⑮ 动态键源登记（标记塌空 ⇒ 动态 t() 的键面整段脱管，⑨ 再也看不见那批键）
+  if (dynamicKeyMarkers < MIN_DYNAMIC_KEY_SOURCES) {
+    issues.push(
+      `判据⑮ 动态键源标记 @nls-keys 命中 ${dynamicKeyMarkers} < 基线 ${MIN_DYNAMIC_KEY_SOURCES}（动态 t() 键面脱管）`,
+    );
+  }
 
   return issues;
 }
@@ -328,6 +454,10 @@ function loadReal() {
   const bundleZh = readJson(join('l10n', 'bundle.l10n.zh-cn.json'));
   const files = walkTs(join(HOST_ROOT, 'src'));
   const tKeys = collectTKeyFacts(files);
+  const ui = resolveMigratedUiFiles();
+  const windowViolations = ui.files.flatMap((f) =>
+    collectWindowApiCjkInText(readFileSync(f, 'utf8'), f.slice(HOST_ROOT.length + 1)),
+  );
   return {
     pkg: readJson('package.json'),
     en: readJson('package.nls.json'),
@@ -338,7 +468,9 @@ function loadReal() {
       staticKeys: tKeys.staticKeys,
       dynamicKeys: tKeys.dynamicKeys,
       templateViolations: tKeys.templateViolations,
-      windowViolations: collectWindowApiCjk(files),
+      windowViolations,
+      registryIssues: ui.missing,
+      dynamicKeyMarkers: tKeys.dynamicKeyMarkers,
     },
   };
 }
@@ -457,6 +589,57 @@ function selfTest() {
       },
       expect: '中文残留',
     },
+    {
+      // 采集器级变异：证明「往已迁移文件里塞中文」不只是判据函数能红，**扫描器本身**能抓到
+      label: '⑬ 采集器：QuickPick 占位/标题中文',
+      mutate: (d) => {
+        d.bundle.windowViolations.push(
+          ...collectWindowApiCjkInText(
+            `await vscode.window.showQuickPick(items, { title: '本次文件改动', placeHolder: '选择操作' });`,
+            'mutated',
+          ),
+        );
+      },
+      expect: '中文残留',
+    },
+    {
+      label: '⑬ 采集器：开框标题 / openLabel / filters 键中文',
+      mutate: (d) => {
+        d.bundle.windowViolations.push(
+          ...collectWindowApiCjkInText(
+            `vscode.window.showOpenDialog({ filters: { 压缩包: ['zip'] }, openLabel: '导入', title: '选择压缩包' });`,
+            'mutated',
+          ),
+        );
+      },
+      expect: '中文残留',
+    },
+    {
+      label: '⑬ 采集器：CodeLens 标题 / 状态栏文案中文',
+      mutate: (d) => {
+        d.bundle.windowViolations.push(
+          ...collectWindowApiCjkInText(
+            `new vscode.CodeLens(range, { title: '接受此处' }); statusBar.text = '未确认改动';`,
+            'mutated',
+          ),
+        );
+      },
+      expect: '中文残留',
+    },
+    {
+      label: '⑮ 动态键源标记塌空',
+      mutate: (d) => {
+        d.bundle.dynamicKeyMarkers = 0;
+      },
+      expect: '动态键源标记',
+    },
+    {
+      label: '⑭ 登记清单路径写错',
+      mutate: (d) => {
+        d.bundle.registryIssues.push('判据⑭ 登记项不存在：src/extension/nope.ts');
+      },
+      expect: '登记项不存在',
+    },
   ];
   let allOk = true;
   for (const c of cases) {
@@ -464,7 +647,7 @@ function selfTest() {
     const data = structuredClone(base);
     c.mutate(data);
     // bundle 用例打 bundle 判据（auditBundle 入参与 auditNls 不同），其余打 package 判据
-    const isBundleCase = c.label.includes('bundle') || /[⑧⑨⑩⑪⑫⑬]/.test(c.label);
+    const isBundleCase = c.label.includes('bundle') || /[⑧⑨⑩⑪⑫⑬⑭⑮]/.test(c.label);
     const issues = isBundleCase ? auditBundle(data.bundle) : auditNls(data);
     const hit = issues.some((s) => s.includes(c.expect));
     console.log(

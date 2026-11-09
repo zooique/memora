@@ -53,13 +53,16 @@ import type { ProviderStore } from '../providers/providerStore.js';
  * 宿主 UI 消息中文化（P0）
  *
  * UIMessages 全键可选，未覆盖即用内核默认。本对象只覆盖**内核默认非中文、且能到用户眼前**的键；
- * 以下三类刻意不覆盖，各有理由（判据不同，不是遗漏）：
- *   - `softLimitWrapup` / `duplicateToolCallWarning`：内核默认本就是中文，复制一份到宿主即双轨镜像
- *     （内核改文案宿主不跟随），故只依赖内核默认文案；
+ * 以下两类刻意不覆盖，各有理由（判据不同，不是遗漏）：
+ *   - **内核默认本就是中文的键**：`softLimitWrapup` / `duplicateToolCallWarning` /
+ *     `interrupted` / `reflectionHint` / `selfReviewPrompt`。复制一份到宿主即**双轨镜像**——
+ *     内核改文案宿主不跟随，且复制品必然落后（实证：宿主版 `interrupted` 停在升级前的短
+ *     `[已中断]`，遮蔽了内核带「断点摘要」的新文案，导致中文用户流式中断后模型重复输出；
+ *     宿主版 `selfReviewPrompt` 丢了内核的 4 点核查清单）。故一律**不复制**，走内核默认。
  *   - `abortedByTimeout`：内核默认虽为英文，但渲染层按 `aborted.stopReason` 重贴中文
- *     （chatView 的 stopReasonLabel：timeout → 「对话处理超时」；内核恒带 stopReason），文案真源在渲染层；
- *   - 已覆盖键中的低频场景（如自审查 selfReviewPrompt）：覆盖后无害——不触发即不消费。
+ *     （chatView 的 stopReasonLabel：timeout → 「对话处理超时」；内核恒带 stopReason），文案真源在渲染层。
  * ⚠️ 覆盖边界即本清单：内核若新增英文默认的 UI 键，须回来补此处，勿假定「全键已覆盖」。
+ * ⚠️ 往本清单添键前先看内核默认值：中文默认的键**不许**再抄一遍。
  *
  * 传递时机由 {@link pickUiMessages} 决定：zh 开头 locale 才注入（英文用户走内核英文默认）。
  */
@@ -67,7 +70,6 @@ const CHINESE_MESSAGES: UIMessages = {
   // 对话取消 / 达上限 / 流式中断（三者均为「对话末尾状态标记」）
   abortedByUser: '用户取消了对话',
   maxIterationsReached: '\n\n[已达最大迭代次数]',
-  interrupted: '\n\n[已中断]',
   // 上下文窗口截断提示
   contextTruncated: (skipped: number, kept: number) =>
     `[上下文已截断：跳过 ${skipped} 条历史，保留 ${kept} 条]`,
@@ -75,14 +77,6 @@ const CHINESE_MESSAGES: UIMessages = {
   recentConversationLabel: '[最近对话]',
   userLabel: '[用户]',
   assistantLabel: '[助手]',
-  // 工具失败重试 / 自审查（低频场景，覆盖保证中文化一致）
-  reflectionHint: (remaining: number) =>
-    `\n\n[工具调用失败，剩余 ${remaining} 次反思机会，请聚焦修正而非放弃]`,
-  selfReviewPrompt: () =>
-    `\n\n[请审查你上一轮的回答质量（单次终审）]` +
-    `\n输出格式（必须遵守）：` +
-    `\n- 满意：只输出一句简短确认（如"无需修改"），严禁重复输出完整回答。` +
-    `\n- 存在必须改进的判据：才输出改进后的完整回复，不要附加说明。`,
   // 空响应兜底：LLM 200 但 0 token（瞬态抽风 / 模型拒绝）时，
   // 覆盖内核默认英文为中文提示；配合内核空响应重试，多数瞬态会在重试中救回、落不到这里。
   emptyResponseFallback: '模型未返回有效内容，请重试或换个说法。',

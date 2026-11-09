@@ -117,9 +117,9 @@ export async function importAssetCommand(deps: ImportAssetDeps): Promise<void> {
     canSelectFiles: true,
     canSelectFolders: false,
     canSelectMany: false,
-    filters: { 压缩包: ['zip'] },
-    openLabel: '导入',
-    title: '选择要导入的技能或角色包压缩包（.zip）',
+    filters: { [vscode.l10n.t('Archive')]: ['zip'] },
+    openLabel: vscode.l10n.t('Import'),
+    title: vscode.l10n.t('Select the skill or role-pack archive to import (.zip)'),
   });
   if (!picked || picked.length === 0) return;
   const zipPath = picked[0]!.fsPath;
@@ -129,17 +129,25 @@ export async function importAssetCommand(deps: ImportAssetDeps): Promise<void> {
   const projectAvailable = Boolean(projectDirs.skills && projectDirs.rolePacks);
   const levelItems: LevelQuickPickItem[] = [
     {
-      label: '用户级（默认）',
-      description: '所有项目通用',
-      detail: '写入全局用户目录；与项目级同名时，项目级仍优先',
+      label: vscode.l10n.t('User level (default)'),
+      description: vscode.l10n.t('Applies to all projects'),
+      detail: vscode.l10n.t(
+        'Writes to the global user directory; when a same-named project-level asset exists, the project level still wins',
+      ),
       level: 'user',
     },
     {
-      label: '项目级',
-      description: projectAvailable ? '仅当前工作区' : '不可选：工作区未受信任',
+      label: vscode.l10n.t('Project level'),
+      description: projectAvailable
+        ? vscode.l10n.t('This workspace only')
+        : vscode.l10n.t('Unavailable: the workspace is not trusted'),
       detail: projectAvailable
-        ? '写入当前工作区 .memora 目录（优先级高于用户级）'
-        : '需先在窗口中选择「信任工作区」后重试；未受信任时项目目录不会被加载',
+        ? vscode.l10n.t(
+            'Writes to the .memora directory of this workspace (takes priority over user level)',
+          )
+        : vscode.l10n.t(
+            'Trust the workspace in this window first and retry; project directories are not loaded while untrusted',
+          ),
       level: 'project',
     },
   ];
@@ -163,7 +171,7 @@ export async function importAssetCommand(deps: ImportAssetDeps): Promise<void> {
     if (levelPick.level === 'project') {
       const root = kind === 'skill' ? projectDirs.skills : projectDirs.rolePacks;
       // 上面已拦截未受信任的情形；此处断言仅为收窄类型（正常路径恒有值）
-      if (!root) throw new Error('项目级目录未就绪（信任门判定与选项不一致）');
+      if (!root) throw new Error(vscode.l10n.t('project-level directory is not ready'));
       return root;
     }
     return kind === 'skill' ? deps.userSkillsDir : deps.userRolePacksDir;
@@ -179,9 +187,11 @@ export async function importAssetCommand(deps: ImportAssetDeps): Promise<void> {
     // 不再自拼「取消」item（那会造成 `[覆盖] [取消] [取消]`，见台账 MODAL-DUP-CANCEL-1）
     confirmOverwrite: (prompt) =>
       confirmModal({
-        message: `目标已存在：${prompt.targetPath}`,
-        detail: '覆盖会备份并替换原内容，失败自动回滚，确定继续？',
-        confirmLabel: '覆盖',
+        message: vscode.l10n.t('Target already exists: {0}', prompt.targetPath),
+        detail: vscode.l10n.t(
+          'Overwriting backs up and replaces the existing content; it rolls back automatically on failure. Continue?',
+        ),
+        confirmLabel: vscode.l10n.t('Overwrite'),
       }),
     isNameTaken: (name) => isBuiltinRolePackName(name, deps.builtinRolePacksDir, agent),
   });
