@@ -1545,7 +1545,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // 点击即反馈：申请已发送要明确告知
     const notices = ofType(posted, 'notice');
     expect(notices).toHaveLength(1);
-    expect((notices[0] as { message?: string }).message).toContain('暂停申请已发送');
+    expect((notices[0] as { message?: string }).message).toContain('Pause requested');
   });
 
   it('handlePause：requestPause 返回 false → 明确告知申请未生效（作废路径）', () => {
@@ -1559,7 +1559,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // 反馈申请未生效（空闲守卫作废 / 幂等 / paused、error 态）——不再保持沉默
     const notices = ofType(posted, 'notice');
     expect(notices).toHaveLength(1);
-    expect((notices[0] as { message?: string }).message).toContain('未生效');
+    expect((notices[0] as { message?: string }).message).toContain('had no effect');
   });
 
   it('handlePause：空闲态也可 toggle，点击即反馈', () => {

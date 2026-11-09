@@ -517,6 +517,13 @@ const WEBVIEW_PANELS = {
   //   · 与设置页 `settingsMemoryOps.ts` **不合并**：那边是记忆管理语境（删完刷列表与治理统计），
   //     这边是对话语境（只回 `memory_deleted` 摘行），仅一行内核调用同形，抽象成本高于各写一份；
   //   · chatPanel —— 两个私有方法只留转发口；`confirmModal` 导入随域迁出（本类不再直接开框）。
+  //
+  // B9-D-6（运行控制域，`chatPanel.ts` 第六刀）已收口并登记：
+  //   · chatRunControlOps —— 停止 / 暂停 toggle / 恢复三入口整域外置：共同依赖会话级运行态
+  //     （`runtimeFor`）与提问协调器（`askFor`），且「paused 必须以中断收场」的判据只有一份；
+  //   · 本域**不做相位裁决**（那是 `handleInput` 的活），只执行并给出点击反馈；
+  //   · `postPendingDiscarded` / `syncPendingQueue` 留在面板：它们是队列投影的一对，
+  //     与运行控制只共享「停止会丢弃排队插话」一个调用点，搬走反而把投影打散。
   chat: {
     state: 'pending',
     files: [
@@ -543,6 +550,7 @@ const WEBVIEW_PANELS = {
       'webview/panels/chatTurnStructureOps.ts',
       'webview/panels/chatSessionNavOps.ts',
       'webview/panels/chatMemoryOps.ts',
+      'webview/panels/chatRunControlOps.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。

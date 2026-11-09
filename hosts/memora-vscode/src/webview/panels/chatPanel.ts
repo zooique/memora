@@ -181,6 +181,8 @@ import { createChatTurnStructureOps, truncateFailNotice } from './chatTurnStruct
 import { createChatSessionNavOps } from './chatSessionNavOps.js';
 // 记忆软删域（B9-D-5 按 op 组外置）：单条反馈删除 + 会话删除联动软删，同一套降级口径
 import { createChatMemoryOps } from './chatMemoryOps.js';
+// 运行控制域（B9-D-6 按 op 组外置）：停止 / 暂停 toggle / 恢复，共用会话级运行态与 ask 协调器
+import { createChatRunControlOps } from './chatRunControlOps.js';
 import {
   buildDocContextBlock,
   buildGitChangesContextBlock,
@@ -330,6 +332,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     post: (msg) => this.post(msg),
     getAgent: () => this._agent,
     getAgentOrWarn: () => this.getAgentOrWarn(),
+  });
+  /** 运行控制域（B9-D-6 外置）：停止 / 暂停 toggle / 恢复（不做相位裁决，裁决在 handleInput） */
+  private readonly _runOps = createChatRunControlOps({
+    post: (msg) => this.post(msg),
+    postTurnUpdate: () => this.postTurnUpdate(),
+    runtimeFor: () => this.runtimeFor(),
+    askFor: () => this.askFor(),
+    getAgent: () => this._agent,
+    runFlow: (factory) => this.runFlow(factory),
+    syncPendingQueue: (force) => this.syncPendingQueue(force),
+    postPendingDiscarded: (items) => this.postPendingDiscarded(items),
   });
   /** 当前**显示会话**的 Agent（`_sessionAgents` 的一份投影；真正的实例归属表在 extension） */
   private _agent: Agent | undefined;
@@ -2862,52 +2875,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 停止生成：用户主动中断执行（暂停/恢复能力下的硬停止对齐）
+   * 停止生成 —— 实现已按 op 组外置到 `chatRunControlOps.ts`（B9-D-6）
    *
-   * 三种运行态行为：
-   *   - thinking（runtime.streaming=true）→ abort() 当前流，内核在下一 await 点退出 yield aborted
-   *   - paused（status=paused, runtime.streaming=false）→ **以中断收场**：`abandonTurn`
-   *     （对称语义：pause=想继续；stop=彻底放弃——用户说过的话必须留下痕迹，见下）
-   * done 态无停止按钮（UI 隐藏）。
-   *
-   * ⚠️ paused 分支不能只 `discardCurrentCheckpoint`（ADR-044 决策 3）：ask 挂起轮无正文
-   * ⇒ 内核 `appendAssistant` 空正文守卫直接返回 ⇒ 该轮**没有任何收场调用点**。只弃检查点会
-   * 留下 pending 僵尸轮（真机实测：轮永久 pending），且宿主 `_pending` 未清 ⇒ 相位恒
-   * waiting/ask ⇒ 用户下一条输入被路由成「回答一个已死的提问」（内核内存消费、不落盘）。
+   * 三种运行态（thinking / paused / done）的分支与「paused 必须以中断收场」的理由都在
+   * 该模块内（ADR-044 决策 3）；本处只留转发口。
    */
   private async handleStop(): Promise<void> {
-    // 停止按钮只作用于当前可见会话：取当前会话的运行态与 ask 协调器
-    const runtime = this.runtimeFor();
-    const ask = this.askFor();
-    // thinking 态：已有路径
-    if (runtime.streaming && runtime.abortController) {
-      runtime.abortController.abort();
-      return;
-    }
-    // paused 态：收场 + 彻底放弃暂停检查点（对称 pause 语义）
-    if (this._agent?.sessionManager?.status === 'paused') {
-      // 先读后弃：abandonTurn 协同清理排队插话（内核 agent.ts 单点），
-      // 被弃条目 = 丢弃（蒸发不落盘）→ 必须发丢弃信号，否则 webview diff 误判「消费」误上屏
-      const before = this._agent.getPendingInterjections?.() ?? [];
-      const hadAsk = ask.pendingQuestions().length > 0;
-      // ask 域先清宿主镜像 + 逐条透出「未回答」行（与盘面同文案、同题身份），再走内核收场
-      const checkpointDiscarded = await ask.abandonOnStop();
-      this.post({ type: 'status', state: 'done' });
-      if (checkpointDiscarded) {
-        // 有提问时已由 ask 域给出「N 个提问未回答」，此处只补纯暂停态的旧提示
-        if (!hadAsk) {
-          this.post({ type: 'notice', level: 'info', message: '已停止，暂停检查点已清理' });
-        }
-        if (before.length > 0) {
-          this.postPendingDiscarded([...before]);
-        }
-      }
-      // 相位无条件重投影（force 绕长度守卫）：① 排在丢弃信号**之后**——FIFO 契约要求
-      // 「信号先于新快照」；② 无条件——队列本就为空或未弃检查点时长度不变，守卫会吞掉这一帧，
-      // 而 `_turnState` 是快照、不重算就停在 waiting/ask ⇒ 下一条输入被当成「回答死提问」
-      // 由内核内存消费、不落盘（用户输入凭空蒸发）。
-      this.syncPendingQueue(true);
-    }
+    await this._runOps.handleStop();
   }
 
   /**
@@ -2924,67 +2898,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 暂停按钮行为 toggle（宿主层裁决，UI 纯投影）
+   * 暂停按钮 toggle —— 实现已按 op 组外置到 `chatRunControlOps.ts`（B9-D-6）
    *
-   * UI 只负责显示 pause（‖）图标，不维护任何本地 toggle 状态——图标永远不变，
-   * hidden 由会话状态机驱动（thinking 显示，paused/done 隐藏）。
-   * 点击后的行为裁决完全在宿主层，点击即反馈：
-   *   - agent.isPausePending()=true → cancelPauseRequest()（反悔）+ 告知已取消
-   *   - 否则 requestPause()：
-   *      返回 true（运行中入队）→ 告知「暂停申请已发送，将在当前步骤完成后暂停」
-   *      返回 false（空闲守卫作废 / 幂等 / paused、error）→ 告知「任务已结束，申请未生效」
-   * 不再对 requestPause 返回值保持沉默——「有按钮就有反馈」。
+   * 「申请 / 取消 / 作废」三路的点击反馈与 turn_update 补推都在该模块内；本处只留转发口。
    */
   private handlePause(): void {
-    if (!this._agent) return;
-    if (this._agent.isPausePending()) {
-      this._agent.cancelPauseRequest();
-      // 骨架真源 = turn_update.state——申请在途变化处同步补推
-      //（deriveTurnState：pausePending=false → running），否则申请/取消无按钮反馈
-      this.postTurnUpdate();
-      // 点击即反馈：取消申请也要明确告知（「有按钮就有反馈」）
-      this.post({ type: 'notice', level: 'info', message: '已取消暂停申请（将继续运行）' });
-      return;
-    }
-    const ok = this._agent.requestPause('user-pause', 'user');
-    if (ok) {
-      // 申请在途同步补推 turn_update（deriveTurnState → waiting{pausePending}，
-      // 发送按钮随之切「停止生成」保持、暂停按钮切可反悔「继续 ▶」）
-      // 点击即反馈：申请已入队，step 边界生效（用户知情，不"点了没反应"）
-      this.postTurnUpdate();
-      this.post({
-        type: 'notice',
-        level: 'info',
-        message: '暂停申请已发送，将在当前步骤完成后暂停',
-      });
-    } else {
-      // 作废路径：空闲守卫（任务已结束）/ 幂等 / paused、error 态——统一明确告知
-      // （空闲不翻状态机，任务结束的暂停申请直接作废）
-      // 作废同样补推 turn_update（骨架保持运行中，按钮不动）
-      this.postTurnUpdate();
-      this.post({ type: 'notice', level: 'info', message: '当前任务已结束，暂停申请未生效' });
-    }
+    this._runOps.handlePause();
   }
 
   /**
-   * resume 意图：从暂停状态恢复执行
+   * 从暂停恢复 —— 实现已按 op 组外置到 `chatRunControlOps.ts`（B9-D-6）
    *
-   * 复用 runFlow + agent.resumeExecution 路径，与对主动提问的回答同构。
-   * 无暂停会话时内核会阻断，宿主捕获后提示用户。
-   * 守卫（Agent 就绪/会话存在）与错位拦截收归 handleInput 相位路由，
-   * 此处仅保证相位为 waiting/pause（handleInput 的 isPauseWaiting 已在路由层校验）。
+   * 复用 runFlow + agent.resumeExecution，与「回答主动提问」同构；相位裁决在 `handleInput`。
    */
   private async resumeInput(): Promise<void> {
-    const agent = this._agent; // handleInput 守卫保证非空
-    try {
-      await this.runFlow((signal) => agent!.resumeExecution(undefined, signal));
-    } catch (err) {
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: toNoticeText(err),
-      });
-    }
+    await this._runOps.resumeInput();
   }
 
   /** 过程事件 / 指标段级合并已外置为纯函数模块（HOST-SPLIT-1 切片）：见 helpers/processEventMerge.ts */

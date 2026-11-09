@@ -1073,5 +1073,9 @@
   "This session has no completed turn to fork from": "当前会话没有可用的问答闭环，无法分叉",
   "Enter a new session name": "输入新的会话名称",
   "Session name cannot be empty": "会话名称不能为空",
-  "Mark this memory as useless and move it to the recycle bin? You can restore it at any time in memory management.": "标记为无用并移入回收站？可随时在记忆管理中恢复。"
+  "Mark this memory as useless and move it to the recycle bin? You can restore it at any time in memory management.": "标记为无用并移入回收站？可随时在记忆管理中恢复。",
+  "Stopped; the pause checkpoint has been cleared": "已停止，暂停检查点已清理",
+  "Pause request canceled; the run continues": "已取消暂停申请（将继续运行）",
+  "Pause requested; it takes effect after the current step": "暂停申请已发送，将在当前步骤完成后暂停",
+  "The current task has ended; the pause request had no effect": "当前任务已结束，暂停申请未生效"
 }
