@@ -31,6 +31,51 @@ export function roleFallbackDiffText(name: string): { note: string; spoken: stri
     : { note: '', spoken: '' };
 }
 
+/**
+ * 角色徽章读屏标签（`aria-label` 优先于按钮内容 ⇒ 必须动态拼入角色名，写死会丢「现在是谁」）
+ *
+ * @param name   当前角色名
+ * @param spoken 回落说明（`roleFallbackDiffText().spoken`，可为空）
+ */
+export function roleBadgeAria(name: string, spoken: string): string {
+  return l10n.t('Current role: {0}{1}; click to manage role packs', name, spoken);
+}
+
+/**
+ * 角色徽章可见文案：`角色名 · 首要特征`，回落差异后缀常驻（切走切回仍可见）
+ *
+ * @param name     当前角色名
+ * @param topTrait 首要特征名（空串 = 无特征，只显示角色名）
+ * @param note     回落差异后缀（来自 `roleFallbackDiffText().note`）
+ */
+export function roleBadgeText(name: string, topTrait: string, note: string): string {
+  return topTrait ? `${name} · ${topTrait}${note}` : `${name}${note}`;
+}
+
+/** 单个特征得分串（「精准 60%」；百分数取整，避免徽章标题过长） */
+export function traitScorePair(label: string, score: number): string {
+  return l10n.t('{0} {1}%', label, String(Math.round(score * 100)));
+}
+
+/**
+ * 角色徽章悬浮说明：角色名 + 全部特征得分 + 回落说明
+ *
+ * @param pairs  已格式化的特征得分串（`traitScorePair`）
+ * @param spoken 回落说明（换行前缀由 `roleFallbackDiffText` 给）
+ */
+export function roleBadgeTitle(name: string, pairs: readonly string[], spoken: string): string {
+  return l10n.t('Role: {0}\nTraits: {1}{2}', name, pairs.join(' · '), spoken);
+}
+
+/** 小组会议图标悬浮说明（组长 / 组员 / 点击提示） */
+export function teamMeetingTitle(leader: string, members: readonly string[]): string {
+  return l10n.t(
+    'Team meeting · Leader: {0} · Members: {1} (click to start)',
+    leader,
+    members.join(' · '),
+  );
+}
+
 /** 徽章行依赖：文档对象 + 两个徽章节点引用（节点身份由 chatView 持有，此处只读用） */
 export interface RoleBadgeViewDeps {
   /** webview 文档对象（构造唯一 DOM 入口） */

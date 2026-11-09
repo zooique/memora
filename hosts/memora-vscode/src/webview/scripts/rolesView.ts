@@ -38,6 +38,8 @@ import {
 import type { StrategyKeyMetaEntry } from '../helpers/strategyKeyMeta.js';
 import { collectStrategyFromForm } from '../helpers/strategyForm.js';
 import type { StrategyFormCell } from '../helpers/strategyForm.js';
+// 性格特征名唯一定义处（与对话侧角色徽章共用，禁本文件另持副本）
+import { traitLabel } from '../helpers/traitLabels.js';
 
 /** 「其他角色」每页条数（分页组件；激活角色恒显不参与分页） */
 const ROLE_PAGE_SIZE = 8;
@@ -135,16 +137,6 @@ const TEMP_GROUP_LABELS: Record<string, string> = {
   high: 'High creativity',
   mid: 'Balanced',
   low: 'Low temperature',
-};
-
-/** 性格特征名（值 = 英文源键，渲染时过 l10n.t） */
-// @nls-keys
-const TRAIT_LABELS: Record<string, string> = {
-  precision: 'Precision',
-  creativity: 'Creativity',
-  rigor: 'Rigor',
-  empathy: 'Empathy',
-  speed: 'Speed',
 };
 
 /**
@@ -880,7 +872,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
           trait.className = 'trait';
           const label = document.createElement('span');
           label.className = 'trait-label';
-          label.textContent = l10n.t(TRAIT_LABELS[key] ?? key);
+          label.textContent = traitLabel(key);
           const bar = document.createElement('div');
           bar.className = 'trait-bar';
           const fill = document.createElement('div');

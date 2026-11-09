@@ -427,6 +427,14 @@ const WEBVIEW_PANELS = {
   //     任务项 tag / 进行中工具行 / 叙述冒号），键与标签分离：`data-section` 落机器键；
   //   · qaRowView —— 随本刀迁完（其 tag 文案与 chatView 收起态统计 `<tag>×N` 必须同源，
   //     拆分迁移会让统计与行 tag 各说各话）；仍未迁移：chatView.ts 其余域（C-2/C-3）⇒ 面板仍 pending。
+  //
+  // B9-C-2（会话 / 输入区 chrome 与状态指示域，`chatView.ts` 第二刀）已收口并登记：
+  //   · pendingWaitView —— 「回答等待中」指示器整域外置（元素 / 起算时点 / 1s 定时器），
+  //     缺省相位与「已等待」后缀是本域自有键；
+  //   · roleBadgeView —— 徽章读屏 / 可见文案 / 悬浮说明 / 组队 tooltip 提为纯函数；
+  //   · traitLabels —— 特征名表从 rolesView 提升为唯一真源（chatView 徽章与角色面板共用）；
+  //   · fmtTime —— 新增 fmtMonthDay（日期分隔线的月日短格式，中文版式只由 zh 译文给）；
+  //     仍未迁移：chatView.ts 交互确认 / 附件注入域（C-3）⇒ 面板仍 pending。
   chat: {
     state: 'pending',
     files: [
@@ -441,6 +449,10 @@ const WEBVIEW_PANELS = {
       'webview/scripts/processFlowCells.ts',
       'webview/scripts/toolRowView.ts',
       'webview/scripts/qaRowView.ts',
+      'webview/scripts/pendingWaitView.ts',
+      'webview/scripts/roleBadgeView.ts',
+      'webview/helpers/traitLabels.ts',
+      'webview/helpers/fmtTime.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。

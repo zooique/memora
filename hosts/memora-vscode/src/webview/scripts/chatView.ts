@@ -48,7 +48,7 @@ import { createQuoteDraft } from '../helpers/quoteDraft.js';
 import { createClampUserBubble } from '../helpers/userBubble.js';
 import { createImageCapture } from '../helpers/imageCapture.js';
 import { renderAttachmentStrip, type UserAttachmentView } from '../helpers/attachmentStrip.js';
-import { fmtTime } from '../helpers/fmtTime.js';
+import { fmtMonthDay, fmtTime } from '../helpers/fmtTime.js';
 import { copyText, installSelectionCopyGuard } from '../helpers/selectionClipboard.js';
 import { fmtTokens } from '../helpers/fmtTokens.js';
 import {
@@ -129,7 +129,17 @@ import { createPickerView } from './pickerView.js';
 import { createSkillPickerView } from './skillPickerView.js';
 import { createQaRowView } from './qaRowView.js';
 import { createEmptyStateView } from './emptyStateView.js';
-import { createRoleBadgeView, roleFallbackDiffText } from './roleBadgeView.js';
+import {
+  createRoleBadgeView,
+  roleBadgeAria,
+  roleBadgeText,
+  roleBadgeTitle,
+  roleFallbackDiffText,
+  teamMeetingTitle,
+  traitScorePair,
+} from './roleBadgeView.js';
+// 性格特征名唯一定义处（角色管理面板与本文件徽章共用，禁各持副本）
+import { traitLabel } from '../helpers/traitLabels.js';
 import { createToolRowView } from './toolRowView.js';
 // 历史菜单（会话记录/留存区）：渲染与分组状态收口于 historyMenuView（HOST-SPLIT-1 chatView 第 2 刀）
 import { createHistoryMenuView } from './historyMenuView.js';
@@ -140,6 +150,8 @@ import { createActivityDrawerView } from './activityDrawerView.js';
 // dock 浮层放置机制（UI-TOAST-1：活动条浮层化的搬移/类同步；判据与裁决仍在本文件）
 import { isToastHead, placeDockHead, toastLoopSkip } from '../helpers/dockToast.js';
 import { createStatusBarsView } from './statusBarsView.js';
+// 回答等待指示器（相位 + 已等待秒数）：元素/计时/缺省相位收口于 pendingWaitView（C-2 域外置）
+import { createPendingWaitView } from './pendingWaitView.js';
 
 /** chatView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ChatViewDeps {
@@ -1326,8 +1338,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     lastShownDate = key;
     const today = toDateKey(new Date());
     const yesterday = toDateKey(new Date(Date.now() - 86400000));
-    const md = `${d.getMonth() + 1}月${d.getDate()}日`;
-    const label = key === today ? `${md} · 今天` : key === yesterday ? `${md} · 昨天` : md;
+    // 月日短格式与「今天/昨天」后缀：中文版式（`{0}月{1}日`）只由 zh 译文给
+    const md = fmtMonthDay(d);
+    const label =
+      key === today
+        ? l10n.t('{0} · Today', md)
+        : key === yesterday
+          ? l10n.t('{0} · Yesterday', md)
+          : md;
     const divider = document.createElement('div');
     divider.className = 'date-divider';
     divider.setAttribute('aria-hidden', 'true');
@@ -1636,13 +1654,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     //（正在看历史时条全撤 = P10C open 轴血训的同一条纪律，折叠轴只剩这一个）。
     if (!chipVisible) _dockExpanded = false;
     dockChip.hidden = !chipVisible;
-    dockChip.textContent = rest.length > 0 ? `+${rest.length}` : '活动';
+    dockChip.textContent = rest.length > 0 ? `+${rest.length}` : l10n.t('Activity');
     // 可见文案极简（+N/活动），可读名在此补全：收纳数 + 未读后缀。未读圆点是 ::before
     // 装饰（读屏拿不到），有未读必须靠 aria-label 让读屏器报出。
-    dockChip.setAttribute(
-      'aria-label',
-      (rest.length > 0 ? `${rest.length} 个收纳状态` : '活动历史') + (hasUnread ? '，有未读' : ''),
-    );
+    let dockAria: string;
+    if (rest.length > 0) {
+      dockAria = hasUnread
+        ? l10n.t('{0} folded statuses, unread', String(rest.length))
+        : l10n.t('{0} folded statuses', String(rest.length));
+    } else {
+      dockAria = hasUnread ? l10n.t('Activity history, unread') : l10n.t('Activity history');
+    }
+    dockChip.setAttribute('aria-label', dockAria);
     dockChip.setAttribute('aria-expanded', String(_dockExpanded));
     dockChip.classList.toggle('is-unread', hasUnread);
     // 收起态形态降级（用户诉求 2026-10-07）：收起时 dockChip 收为输入框左侧小气泡，
@@ -1722,49 +1745,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 缺口：prepare 阶段（meta 到达前的召回/装配/首 token 等待）仅有 thinking 事件、
   // 无骨架（骨架由 meta 建立）承接 → UI 静默「发送后无反应」。此指示器在该窗口内提
   // 供「相位文案 + 等待秒数」可见反馈；meta 到达（骨架接管）/ 正文开启 / 收尾即移除。
-  let pendingWaitEl: HTMLElement | null = null;
-  /** 等待起算时间戳（发送后首个 thinking 事件置位，跨相位不重置） */
-  let pendingWaitStart = 0;
-  /** 等待计时器（1s 刷新秒数） */
-  let pendingWaitTimer: ReturnType<typeof setInterval> | undefined;
-  /** 当前等待相位文案（最新 thinking 阶段，缺省准备中） */
-  let pendingWaitPhase = '正在准备回答…';
-
-  /** 建立/复用回答等待指示器（挂到消息区末尾，role=status 供读屏） */
-  function ensurePendingWait(): void {
-    if (pendingWaitEl && pendingWaitEl.isConnected) {
-      updatePendingWait();
-      return;
-    }
-    if (pendingWaitStart === 0) pendingWaitStart = Date.now();
-    pendingWaitEl = document.createElement('div');
-    pendingWaitEl.className = 'pending-wait';
-    pendingWaitEl.setAttribute('role', 'status');
-    messages.appendChild(pendingWaitEl);
-    updatePendingWait();
-    if (pendingWaitTimer === undefined) {
-      pendingWaitTimer = setInterval(updatePendingWait, 1000);
-    }
-  }
-
-  /** 刷新等待指示器文案（相位 + 已等待秒数） */
-  function updatePendingWait(): void {
-    if (!pendingWaitEl || !pendingWaitEl.isConnected) return;
-    const elapsed = Math.floor((Date.now() - pendingWaitStart) / 1000);
-    pendingWaitEl.textContent = `${pendingWaitPhase} · 已等待 ${elapsed}s`;
-  }
-
-  /** 清除等待指示器（幂等；meta 建骨架 / chunk 开正文 / done·error / 切轮时调用） */
-  function clearPendingWait(): void {
-    if (pendingWaitTimer !== undefined) {
-      clearInterval(pendingWaitTimer);
-      pendingWaitTimer = undefined;
-    }
-    pendingWaitEl?.remove();
-    pendingWaitEl = null;
-    pendingWaitStart = 0;
-    pendingWaitPhase = '正在准备回答…';
-  }
+  // 元素 / 起算时点 / 定时器 / 相位文案归 pendingWaitView（C-2 域外置），本文件只接线。
+  const pendingWaitView = createPendingWaitView({ document, container: messages });
 
   // ── TS-11c：工具等待时长（瞬态展示，不落库） ─────────────────────
   // 进行中工具行的「已等待 Ns」秒数：仅 tool_start 已到、tool_result 未达期间实时刷新。
@@ -1835,8 +1817,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     roleBadge.hidden = false;
     // 回落差异常驻：记录里请求的包不可用 ⇒ 徽章后缀（切走切回仍可见，不靠反复弹窗）
     const { note, spoken } = roleFallbackDiffText(currentUnavailableRolePack);
-    // 可访问性：aria-label 优先于按钮内容 ⇒ 须动态拼入角色名（写死会丢「现在是谁」）
-    roleBadge.setAttribute('aria-label', `当前角色：${currentRoleName}${spoken}，点击管理角色包`);
+    // 可访问性：aria-label 优先于按钮内容 ⇒ 须动态拼入角色名（文案单点 = roleBadgeView）
+    roleBadge.setAttribute('aria-label', roleBadgeAria(currentRoleName, spoken));
     const traits = currentRoleTraits;
     if (traits && Object.keys(traits).length > 0) {
       // 选择得分最高的 trait 展示，避免徽章过长
@@ -1849,25 +1831,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         }
       }
       if (topKey) {
-        const traitLabelMap: Record<string, string> = {
-          precision: '精准',
-          creativity: '创意',
-          rigor: '严谨',
-          empathy: '共情',
-          speed: '迅捷',
-          stability: '沉稳',
-          assertiveness: '果断',
-          curiosity: '好奇',
-        };
-        const label = traitLabelMap[topKey] ?? topKey;
-        roleBadge.textContent = `${currentRoleName} · ${label}${note}`;
-        roleBadge.title = `角色：${currentRoleName}\n性格特征：${Object.entries(traits)
-          .map(([k, v]) => `${traitLabelMap[k] ?? k} ${Math.round(v * 100)}%`)
-          .join('、')}${spoken}`;
+        roleBadge.textContent = roleBadgeText(currentRoleName, traitLabel(topKey), note);
+        roleBadge.title = roleBadgeTitle(
+          currentRoleName,
+          Object.entries(traits).map(([k, v]) => traitScorePair(traitLabel(k), v)),
+          spoken,
+        );
         return;
       }
     }
-    roleBadge.textContent = `${currentRoleName}${note}`;
+    roleBadge.textContent = roleBadgeText(currentRoleName, '', note);
   }
 
   /**
@@ -1894,8 +1867,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (!teamMeetingIcon) {
       teamMeetingIcon = roleBadgeView.createTeamMeetingIcon();
     }
-    // 更新队员 tooltip（角色切换时队员名单可能变）
-    teamMeetingIcon.title = `小组会议 · 组长：${team.leader} · 组员：${team.members.join('、')}（点击启动）`;
+    // 更新队员 tooltip（角色切换时队员名单可能变；文案单点 = roleBadgeView）
+    teamMeetingIcon.title = teamMeetingTitle(team.leader, team.members);
     teamMeetingIcon.hidden = false;
   }
 
@@ -1906,9 +1879,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 渲染模型下拉框选项
   function renderModelPicker(): void {
     pickerView.renderPicker(modelPickerMenu, modelPickerTrigger, currentProviders, currentActive, {
-      emptyText: '未配置模型',
-      labelFallback: '选择模型',
-      ariaLabel: '选择模型',
+      emptyText: l10n.t('No model configured'),
+      labelFallback: l10n.t('Select model'),
+      ariaLabel: l10n.t('Select model'),
     });
   }
 
@@ -1970,7 +1943,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 用户消息 hover 操作区：复制图标 + 时间戳
       const actions = document.createElement('div');
       actions.className = 'msg-user-actions';
-      const copyBtn = createIcon('copy', '复制消息', 'msg-copy-icon');
+      const copyBtn = createIcon('copy', l10n.t('Copy message'), 'msg-copy-icon');
       copyBtn.addEventListener('click', () => copyText(text));
       actions.appendChild(copyBtn);
       const t = fmtTime(ts);
@@ -2935,7 +2908,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     );
     currentRoundMeta = metaEv ? { role: metaEv.payload.role, llm: metaEv.payload.llm } : undefined;
     if (events.length > 0 || r.status === 'interrupted') {
-      clearPendingWait(); // 重放为历史渲染，等待指示器不适用
+      pendingWaitView.clear(); // 重放为历史渲染，等待指示器不适用
       if (r.status === 'interrupted') {
         // 单轮自洽：重放由 renderReplayFromRounds 先 resetChatView 再逐轮重建，批内不存在
         // 「上一轮残留」——此处**不得**做跨轮清理（历史事故 INTERRUPT-MULTI-1：删上一轮
@@ -2988,7 +2961,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         flowShellEl?.remove();
         flowShellEl = null;
         if (pausedAssistantEl && !pausedAssistantEl.isConnected) pausedAssistantEl = null;
-        clearPendingWait();
+        pendingWaitView.clear();
         resumePending = true;
         appendInteractiveInput(
           item.content,
@@ -3113,7 +3086,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         //   resumePending：交互续跑 meta 兜底（无 paused 锚点）→ 建流式骨架（qa 第 2 段块
         //     既定形态；supplement 主路径不过此——interject 无新 meta，chunk 层单块续写）。
         //   真新轮：清空当前轮缓冲与 round-block 引用，随即建流式骨架（TTFT 前即时反馈）。
-        clearPendingWait(); // 骨架接管：移除等待指示器
+        pendingWaitView.clear(); // 骨架接管：移除等待指示器
         clearToolElapsed(); // 切轮清工具等待计时（瞬态，防跨轮残留）
         currentRoundMeta = { role: ev.payload.role, llm: ev.payload.llm };
         // 交互输入（qa/supp/timeout）不制造 turn 分段——
@@ -3185,8 +3158,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           // 运行时 thinking 相位已由 process-flow 内 .process-flow__phase 行承载，
           // 故仅 flow 未创建（骨架尚未挂载）时才落 pending-wait 兜底，防双显示。
           if (!roundBlockEl && !flowEl && ev.payload.phase !== 'archiving') {
-            pendingWaitPhase = phaseLabel(ev.payload.phase);
-            ensurePendingWait();
+            pendingWaitView.ensure(phaseLabel(ev.payload.phase));
           }
         } else if (ev.type === 'tool_start') {
           // TS-11c：工具开始执行 → 记起点 + 启动秒数刷新（进行中行的「已等待 Ns」）
@@ -3236,7 +3208,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 骨架清理职责单一路径归 meta（prepareFlowShell 重建时清旧）/ 重放（resetChatView），
       // user 消息处理不参与。补充行归位由 appendInteractiveInput 按 flowEl.isConnected
       // 正常路径进过程容器，无兜底散落。
-      clearPendingWait();
+      pendingWaitView.clear();
       // 在途批宿命已定（用户输入 = 插话打断/新轮起步，[TOOL_ABORTED] 同源）：
       // 未升级预告行注销（生命周期契约见 dropStalePendingToolRows）
       toolRow.dropStalePendingToolRows();
@@ -3279,7 +3251,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 此处不再弹硬编码 banner——避免双份提示 + 输入/输出语义错位。
       // 首个 chunk：若骨架已由 meta 建立（TTFT 前即时反馈）→ 复用该块开启正文流，否则新建
       if (!streamingActive) {
-        clearPendingWait(); // 正文开启：等待指示器退场（骨架已接管）
+        pendingWaitView.clear(); // 正文开启：等待指示器退场（骨架已接管）
         if (flowShellEl) {
           // 复用骨架：正文流入同一块（不新建第二条 assistant 消息）
           // 同轮归位判定（chunk 到达才有 roundId）：同轮骨架继续留在原 round-group、新轮走新容器；
@@ -3382,7 +3354,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // ④ 预算可视化：更新输入区常驻上下文占用条
       occupancyView.updateOccupancy(msg.occupancy);
     } else if (msg.type === 'error') {
-      clearPendingWait(); // 失败即收尾，等待指示器退场
+      pendingWaitView.clear(); // 失败即收尾，等待指示器退场
       // 先清运行态——终态与运行态两通道不得并存（2026-10-19 SSOT 收敛）。
       // 终态写入退役（TERMINUS-SSOT-1）：error 是流内事件非终态，终态归属收场消息（done 携
       // roundStatus 投影盘面）；原因显示面 = 平铺错误行；done 必达（收尾段 catch 无 return）。
@@ -3397,7 +3369,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       append('error', msg.message);
     } else if (msg.type === 'done') {
       // 本轮流式结束：清除归档停滞兜底定时器 + 骨架引用（已定型为正文/异常块）
-      clearPendingWait();
+      pendingWaitView.clear();
       clearArchivingFallback();
       flowShellEl = null;
       pausedAssistantEl = null; // 结束即收尾：暂停续接锚失效
@@ -3421,7 +3393,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 等待指示器同步收尾
       // ③：done/error 均清，唯独中断漏清——残留的 pending-wait 会悬挂
       // 「已等待 Ns」且 1s 定时器空转，直到下次用户输入才被清掉。
-      clearPendingWait();
+      pendingWaitView.clear();
       clearToolElapsed(); // TS-11c：中断同样清工具等待计时（防定时器残留空转）
       clearArchivingFallback();
       flowShellEl = null;
@@ -3544,7 +3516,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       sessionTitleText.textContent = msg.title;
       // 草稿页没有会话 id ⇒ 不可改名：禁用改名笔（否则点了只能得到一个无从落库的失败）
       renameSessionBtn.disabled = msg.draft === true;
-      renameSessionBtn.title = msg.draft === true ? '草稿尚未发送，暂不能命名' : '重命名会话';
+      renameSessionBtn.title =
+        msg.draft === true
+          ? l10n.t('Draft not sent yet; cannot rename')
+          : l10n.t('Rename conversation');
       // 草稿页 = 无会话：能力面 / 占用一并归零（只认 draft 标记，不新增消息类型；真实会话不触发）
       if (msg.draft === true) {
         roleBadgeView.hideCapabilityBadge();
@@ -4656,7 +4631,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     document.removeEventListener('click', onDocumentClick);
     if (streamRenderTimer) clearTimeout(streamRenderTimer);
     if (archivingFallbackTimer !== undefined) clearTimeout(archivingFallbackTimer);
-    if (pendingWaitTimer !== undefined) clearInterval(pendingWaitTimer);
+    pendingWaitView.dispose();
     if (toolElapsedTimer !== undefined) clearInterval(toolElapsedTimer);
     activityDrawerView.dispose(); // 瞬态条撤出计时器随活动抽屉域收口（第 4 刀）
     statusBars.dispose(); // 三挂载条 DOM 随状态条域收口（第 6 刀）

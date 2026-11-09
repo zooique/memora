@@ -182,7 +182,10 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(badge.textContent).toBe('文档打磨');
 
     // aria-label 动态拼当前角色名（读屏优先于按钮内容，写死文案会丢失「现在是谁」）
-    expect(badge.getAttribute('aria-label')).toBe('当前角色：文档打磨，点击管理角色包');
+    // 断言写英文源键：单测跑默认语言，l10n.t(键) 返回键本身（中文版式由 zh 译文给）
+    expect(badge.getAttribute('aria-label')).toBe(
+      'Current role: 文档打磨; click to manage role packs',
+    );
 
     // 切回空名 → 徽章重新隐藏
     dispatch({ type: 'chat_role_pack', rolePack: '' });
@@ -233,8 +236,8 @@ describe('chatView clear_ok 消息区清理', () => {
     const icon = icons()[0] as HTMLElement;
     expect(icon.parentElement?.classList.contains('composer-status')).toBe(true);
     expect(icon.hidden).toBe(false);
-    expect(icon.title).toContain('组长：共鸣小说家');
-    expect(icon.title).toContain('组员：编辑、评论家');
+    expect(icon.title).toContain('Leader: 共鸣小说家');
+    expect(icon.title).toContain('Members: 编辑 · 评论家');
 
     // 点击 → 输入框填充「小组会议：」前缀（启动小组会议的唯一交互入口）
     const input = document.getElementById('input') as HTMLTextAreaElement;
@@ -256,7 +259,7 @@ describe('chatView clear_ok 消息区清理', () => {
     });
     expect(icons()).toHaveLength(1);
     expect(icons()[0]).toBe(icon);
-    expect(icon.title).toContain('组员：校对');
+    expect(icon.title).toContain('Members: 校对');
 
     // 队伍清空（切到非组长 / 无队伍）→ 隐藏但保留单例（再次推送仍复用）
     dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家' });
@@ -1649,7 +1652,7 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     expect(metrics.hidden).toBe(false);
     // C1：首推只让入口可达 + 亮未读徽章，抽屉体仍隐藏（宪法④ 不自动弹）
     expect(chip.hidden).toBe(false);
-    expect(chip.textContent).toBe('活动');
+    expect(chip.textContent).toBe('Activity');
     expect(chip.classList.contains('is-unread')).toBe(true);
     expect(panel.hidden).toBe(true);
     // 用户主动拉开后才看到内容
@@ -1750,7 +1753,7 @@ describe('P4 状态抽屉：时间线静态固定 + 未读只亮入口徽章（C
     pushActivity('正在思考');
     // 未读 ⇒ 入口可达 + 亮徽章 + 文案「活动」（单条活跃无收纳，rest=0）；抽屉体仍隐藏
     expect(chip().hidden).toBe(false);
-    expect(chip().textContent).toBe('活动');
+    expect(chip().textContent).toBe('Activity');
     expect(chip().classList.contains('is-unread')).toBe(true);
     expect(chip().getAttribute('aria-expanded')).toBe('false');
     expect(panel().hidden).toBe(true); // 宪法④：不自动弹
@@ -1766,7 +1769,7 @@ describe('P4 状态抽屉：时间线静态固定 + 未读只亮入口徽章（C
     expect(panel().hidden).toBe(true);
     expect(chip().hidden).toBe(false);
     expect(chip().classList.contains('is-unread')).toBe(false);
-    expect(chip().textContent).toBe('活动');
+    expect(chip().textContent).toBe('Activity');
   });
 
   it('新活动重新标未读（未读不是一次性开关），但始终不自动弹', () => {
@@ -1843,7 +1846,7 @@ describe('P4 状态抽屉：时间线静态固定 + 未读只亮入口徽章（C
     expect(panel().hidden).toBe(true); // 不自动弹
     // 历史入口仍可达
     expect(chip().hidden).toBe(false);
-    expect(chip().textContent).toBe('活动');
+    expect(chip().textContent).toBe('Activity');
   });
 
   it('静态链：浮层主位定位于 toast 槽，其下恒为静态抽屉体/入口（UI-TOAST-1 · C1 链 = 非活跃条 → chip → panel → inputBar）', () => {
@@ -2108,7 +2111,7 @@ describe('P4 状态抽屉：时间线静态固定 + 未读只亮入口徽章（C
       expect(actBar().hidden).toBe(true);
       // 🔴 C1 闭合的核心缺口：条没了，入口仍可达（历史非空）、文案退为「活动」、未读仍亮
       expect(chip().hidden).toBe(false);
-      expect(chip().textContent).toBe('活动');
+      expect(chip().textContent).toBe('Activity');
       expect(chip().classList.contains('is-unread')).toBe(true);
       expect(panel().hidden).toBe(true); // 不自动弹
       // 用户拉开 ⇒ 历史内容在（条死了历史不死）
@@ -2132,7 +2135,7 @@ describe('P4 状态抽屉：时间线静态固定 + 未读只亮入口徽章（C
       expect(panel().hidden).toBe(false);
       expect(chip().getAttribute('aria-expanded')).toBe('true');
       // 入口从「+N」语义退为「活动」（rest 清空，时间段仍在）
-      expect(chip().textContent).toBe('活动');
+      expect(chip().textContent).toBe('Activity');
     });
 
     it('控件段随抽屉开合：被收纳条在 #dockControls 内显隐随抽屉，时间线同在抽屉体内', () => {
@@ -2274,7 +2277,7 @@ describe('UI-TOAST-1 瞬态提示浮层化（活动条出流 · 不挤占消息�
       expect(inputBar().previousElementSibling).toBe(panel());
       // 历史与入口不陪葬（C1 不变式）
       expect(chip().hidden).toBe(false);
-      expect(chip().textContent).toBe('活动');
+      expect(chip().textContent).toBe('Activity');
     } finally {
       vi.useRealTimers();
     }
@@ -5516,7 +5519,7 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
     dispatch({ type: 'user', text: '你好，帮我打磨文档', ts: '2026-08-14T09:00:00.000Z' });
     const copyBtn = document.querySelector('.msg-user-actions .msg-copy-icon') as HTMLButtonElement;
     expect(copyBtn).not.toBeNull();
-    expect(copyBtn.getAttribute('aria-label')).toBe('复制消息');
+    expect(copyBtn.getAttribute('aria-label')).toBe('Copy message');
   });
 
   it('AI 消息底部有复制 + 删除按钮（删除问答闭环入口）', () => {
@@ -5975,7 +5978,7 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
     let wait = messages.querySelector('.pending-wait') as HTMLElement | null;
     expect(wait).not.toBeNull();
     expect(wait!.textContent).toContain('Assembling context');
-    expect(wait!.textContent).toMatch(/已等待 \d+s/);
+    expect(wait!.textContent).toMatch(/Waited \d+s/);
 
     // 相位推进 → 文案随 thinking 更新
     dispatch({
