@@ -56,6 +56,11 @@ description: package 面本地化定案——VS Code 原生 package.nls* 两文�
 - **Marketplace README 不随语言切换**：原生无此机制，不做第三方翻译扩展。
 - **角色包、提示词、工具描述不翻译**：模型可见内容，语言影响模型行为，属功能而非外观。
 - **日志保持中文**：内部事实，不属 UI。
+- **AI 回答语言联动不是本 ADR 的 UI 本地化机制**（`HOST-I18N-LLM-1`，2026-11-09 独立落地）：
+  走 `HostEnvironmentInfo.responseLanguageDirective`（宿主按 `vscode.env.language` 产出、
+  内核零解释转发），与 `package.nls*` / `l10n bundle` 两套字典完全分离；两者只共用
+  `vscode.env.language` 这一个真源，机制互不夹带。方案 §7「AI 回答语言与 UI 语言分开」
+  在此兑现为**机制分离、真源唯一**，不是把两件事焊进一个开关。
 
 ## 后果与残余风险
 
@@ -67,6 +72,13 @@ description: package 面本地化定案——VS Code 原生 package.nls* 两文�
 3. **长配置描述的英文信息密度低于中文原文。** 如 `mcpServers` / `mcpToolAllowlist` 两条安全说明，中文用分号断句承载了多层限定，英译在同等篇幅下更松散。这类文本的英译需人工校对，不能当成机械替换的产物。
 
 4. **两条描述引用了 mcp-setup 文档**（位于 `docs/` 目录），而 `docs/**` 被 `.vscodeignore` 排除——该路径在安装包里不存在，对市场用户是可读但不可达的指引。属既有缺陷、与本切片正交，单独登记不下沉进本 ADR。
+
+5. **回答语言联动落地不改变半本地化结论**（2026-11-09）：`HOST-I18N-LLM-1` 之后，
+   英文 VS Code 用户会得到英文回答指令，但**进入面板后界面仍全中文**——切片 2-4 未动，
+   运行时 UI 文案、`CHINESE_MESSAGES`（内核 UI 消息的中文覆盖）均保持原样。
+   这不构成「英文用户可用」的证据，不得在 CHANGELOG / 市场描述里宣称已支持英文。
+   未来加日语是**两件事**：回答语言在宿主 `DIRECTIVE_BY_LOCALE` 加一条即可；
+   界面语言须按切片 2-4 补 `bundle.l10n.ja.json` / `package.nls.ja.json`，二者不得互相替代。
 
 ## 落地与销项
 
