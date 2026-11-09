@@ -58,6 +58,9 @@
  *        字符串 / 模板串逐条计红。
  *      - CSS（`styles/*.ts`）：只判 `content: '…CJK…'`，注释不判——CSS 里的中文基本都在
  *        注释中，按字面量全扫会把注释误判成文案。
+ *      - **协议标记豁免**：与内核 / 持久化 / 剥离契约对齐的信封块头等值不翻译，按
+ *        「文件 + 精确值」双键登记在 `PANEL_CJK_ALLOWLIST`（不按「含转义就放行」——
+ *        那等于给所有漏译开后门）。新增条目必须写清「谁对齐谁」。
  *   ⑱ **面板清单 = 设置页签 + chat**：`WEBVIEW_PANELS` 的 panel id 集合必须等于
  *      `shared/settingsTabs.ts` 的 `SETTINGS_TABS`（文本抽取）加 `chat`。新增页签未登记 ⇒ 红，
  *      防「新面板天然无判据」。
@@ -475,11 +478,8 @@ const WEBVIEW_PANELS = {
   //   · writeConfirmCardView —— 确认审批卡整域外置（内容填充 / 末段倒计时 / 等待态 / 裁决）；
   //   · chatView —— 剩余散落文案（状态提示 / 附件注入 chip / clarify 兜底）全走 l10n.t，
   //     ⑰ 口径 CJK 字面量 = 0（仅剩 2 条 console.* 日志，白名单）。
-  //   **面板为何仍是 pending（不翻 migrated）**：`state` 是**面板级**开关，⑰ 只守登记面。
-  //   本面板尚未迁移的文件（`chatPanel.ts` → B9-D；imageCapture / historyMenuView /
-  //   contextOccupancyView / emptyStateView / turnUiState / sessionHistoryActions 等 → B9-E；
-  //   docContext / refChips 已在 B9-E-1 迁完）一旦登记就会立刻红 ⇒ 现在翻转等于「守卫报绿、
-  //   屏幕仍中文」（守卫撒谎比没有守卫更贵）。待 B9-E 收口一次性登记齐全再翻。
+  //   **pending 说明已随 B9-E 收口作废**：本行记录当时的判断（登记未齐就翻 = 守卫报绿、
+  //   屏幕仍中文）。实际收口见下方 B9-E-5。
   //
   // B9-D-1（会话事件出口域，`chatPanel.ts` 首刀）已收口并登记：
   //   · chatNoticeOps —— 20 个会话级 / 后台事件处理器整域外置（纯「事件 → notice / 派生投影刷新」，
@@ -565,8 +565,21 @@ const WEBVIEW_PANELS = {
   //   · errorText —— 文案改**调用时**取 `l10n.t`（switch 里全静态键，不建模块级译文表：
   //     顶层求值会把默认语言写死，且守卫 ⑨⑫ 只认静态 `t('键')`）；
   //   · imageCapture —— 采集 / 拒收 / 预览 / 上传按钮的全部可见文案走 `l10n.t`。
+  //
+  // B9-E-5（收口）：
+  //   · `state` 翻 `migrated`——登记面（35 个文件，含 `chatPanel.ts`）可见 CJK = 0。
+  //     口径是「**登记面**全绿」，不是「全目录无中文」：未登记文件由 `--report` 未登记面照旧列出；
+  //   · **协议标记不译**（判据⑰ 白名单 `PANEL_CJK_ALLOWLIST`，按「文件 + 精确值」双键）：
+  //     `docContext` 的信封块头 / `【当前技能】` / `用户请求：` 分隔符（内核同源写入模型上下文，
+  //     剥离侧以闭标签为锚点，翻译即剥离失效）、`injectionSourceMeta` 的 `[工作区诊断]` /
+  //     `[git 未提交改动]`（持久化数据）、`emptyStateView` 的角色包 manifest 显示名（映射键 + 对比值）。
+  //     这类值是**跨端契约的字节**，与「漏译」本质不同；新增条目须写清「谁对齐谁」；
+  //   · `chatPanelHtml.ts` **不登记**（登记 = 假绿）：宿主侧 HTML 骨架的静态文案（placeholder /
+  //     title / 按钮字）在**模板字面量**里，而判据⑰ 采集器只扫带引号的字符串，模板串里的中文
+  //     它看不见。登记它等于宣称守护了一个看不见的面。已知债：骨架静态文案迁 l10n +
+  //     采集器支持模板串（先剥 `//` 注释）后另行登记。
   chat: {
-    state: 'pending',
+    state: 'migrated',
     files: [
       'webview/scripts/statusBarsView.ts',
       'webview/scripts/activityDrawerView.ts',
@@ -602,6 +615,7 @@ const WEBVIEW_PANELS = {
       'webview/helpers/imageCapture.ts',
       'shared/errorText.ts',
       'shared/injectionSourceMeta.ts',
+      'webview/panels/chatPanel.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。
@@ -834,9 +848,55 @@ function collectCssCjkContent(text) {
   return hits;
 }
 
+/**
+ * 判据⑰ 的**协议标记豁免**（B9-E 收口）：不翻译 ≠ 漏译
+ *
+ * 有一类中文字面量**不是 UI 文案**：它们是与内核 / 持久化数据 / 剥离契约对齐的**协议标记**
+ * （信封块头、用户请求分隔符、角色包 manifest 身份串）。翻译它们 = 破坏跨端契约；
+ * 源码里用 Unicode 转义只能消掉「肉眼可见的中文」，采集器 unescape 后仍会判红。
+ *
+ * **为什么按「文件 + 精确值」双键白名单**（而不是「含转义就放行」）：后者等于给所有中文
+ * 开一道后门——任何漏译只要写成 `\uXXXX` 就能静默过关，判据形同虚设。
+ *
+ * 新增条目前先自问：**这个值被谁按字节读取？** 答不出「谁对齐谁」的，一律是漏译，不许进表。
+ * 条目必须与真实字面量**逐字相同**（含前导换行等空白；匹配前按采集口径折叠空白 + 截断）。
+ */
+const PANEL_CJK_ALLOWLIST = {
+  // 协议标记：信封块头 / 分隔符（内核同源写入模型上下文，剥离侧以闭标签为锚点）
+  'webview/helpers/docContext.ts': [
+    '[当前打磨文档内容]',
+    '[/当前打磨文档内容]',
+    '[参考文件/目录]',
+    '[/参考文件/目录]',
+    '【当前技能】',
+    '\n\n用户请求：',
+  ],
+  // 注入源信封标记：持久化数据 + `stripInjectedContextPrefix` 以闭标签为锚点
+  'shared/injectionSourceMeta.ts': [
+    '[工作区诊断]',
+    '[/工作区诊断]',
+    '[git 未提交改动]',
+    '[/git 未提交改动]',
+  ],
+  // 角色包 manifest 显示名（`ROLE_SUGGESTION_SETS` 的映射键 + 对比值）：随 manifest 字节对齐，
+  // 翻译即失配、示例提问整组回落默认——不是 UI 文案
+  'webview/scripts/emptyStateView.ts': ['白话方案设计师'],
+};
+
+/** 采集口径的归一化（与 collectVisibleCjkInText 的展示形态一致，白名单靠它对齐） */
+function normalizeCjkHit(value) {
+  return value.replace(/\s+/g, ' ').slice(0, 40);
+}
+
 /** 按文件类型分派可见 CJK 采集（`styles/` 走 CSS 口径，其余走 TS 口径） */
 function collectPanelFileCjk(rel, text) {
-  return /(^|\/)styles\//.test(rel) ? collectCssCjkContent(text) : collectVisibleCjkInText(text);
+  const hits = /(^|\/)styles\//.test(rel)
+    ? collectCssCjkContent(text)
+    : collectVisibleCjkInText(text);
+  const allow = PANEL_CJK_ALLOWLIST[rel];
+  if (!allow) return hits;
+  const allowed = new Set(allow.map(normalizeCjkHit));
+  return hits.filter((h) => !allowed.has(h));
 }
 
 /**
@@ -1423,6 +1483,17 @@ function selfTest() {
     [
       '⑰ 负向：CSS 注释中文不判',
       collectCssCjkContent(`/* 中文注释 */ .x { color: red; }`).length === 0,
+    ],
+    [
+      // 协议标记（信封块头）不翻译 ⇒ 白名单命中不判；见 PANEL_CJK_ALLOWLIST
+      '⑰ 负向：协议标记白名单命中不判',
+      collectPanelFileCjk('shared/injectionSourceMeta.ts', `const a = '[工作区诊断]';`).length ===
+        0,
+    ],
+    [
+      // 白名单是「文件 + 精确值」双键：同一个值出现在别的文件里仍须判红（防外溢成通用后门）
+      '⑰ 负向：白名单不外溢（同值换文件仍判红）',
+      collectPanelFileCjk('webview/scripts/other.ts', `const a = '[工作区诊断]';`).length === 1,
     ],
   ];
   for (const [label, ok] of negativeCases) {
