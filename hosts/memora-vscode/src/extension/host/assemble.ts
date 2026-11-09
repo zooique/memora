@@ -122,6 +122,12 @@ export interface AssembleOptions {
   /** 工作区路径（memora projectPath） */
   projectPath: string;
   /**
+   * VS Code 显示语言（`vscode.env.language`）——回答语言指令的唯一真源。
+   * 由 `buildAssembleOptions` 单点注入；缺省按「无对应语言」处理 ⇒ 英文兜底。
+   * 不新增任何 `memora.*` 语言配置项（ADR-042 决策 1：语言真源只能有一个）。
+   */
+  envLanguage?: string;
+  /**
    * 项目搜索根（可选）
    *
    * 仅当存在真实工作区文件夹时注入（= workspaceFolders[0].fsPath）；
@@ -447,9 +453,10 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     fetchProvider: new FetchWebFetchProvider(),
     // 代码执行（local vm 沙箱，受限计算能力）——注入后内核暴露 run_code 工具给 LLM
     codeExecutionProvider: createLocalCodeExecutor(),
-    // 宿主环境提供者（命令执行能力方案 §10.4-②）：上报 OS/shell/可用运行时 → 内核注入 system prompt
-    // 「## 运行环境」段；环境事实只给模型看，内核零解释（不进判据）
-    environmentProvider: createVscodeEnvironmentProvider(),
+    // 宿主环境提供者（命令执行能力方案 §10.4-②）：上报 OS/shell/可用运行时 → 内核注入
+    // system prompt「## 运行环境」段；环境事实只给模型看，内核零解释（不进判据）。
+    // 同一快照另带回答语言指令行（HOST-I18N-LLM-1），语言真源 = options.envLanguage。
+    environmentProvider: createVscodeEnvironmentProvider(options.envLanguage),
     // 工作区信任态（现读快照）：内核常驻规则层 fail-closed 闸的唯一入参；
     // 缺省 = undefined ⇒ 内核按未信任处理（不读任何常驻正文）
     workspaceTrusted,

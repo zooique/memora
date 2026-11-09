@@ -14,6 +14,7 @@
 
 ### Added（内核）
 
+- **`HostEnvironmentInfo.responseLanguageDirective`：宿主可随环境快照自定一行 system prompt 指令**（`HOST-I18N-LLM-1`）：新增**可选**字段，取值是宿主产出的**完整一行文本**（含列表前缀），内核 `buildEnvironmentContextBlock` 原样转发、置于「## 运行环境」段末，**不解析、不判定、不追加引导语**。内核零语言耦合：locale → 措辞的映射全在宿主，新增支持语言不改内核。缺省 `undefined` ⇒ 该段与既有 system prompt 逐字不变。**对消费者**：纯新增可选字段，零签名 / 零行为变更；本字段是宿主自定指令，内核不据此进任何判据。
 - **会话级钉住的指针类型与落盘字段**（`57dada6b` · `HOST-0.10.0-DEBT-1`）：包入口新增导出 `SessionPinnedItem`（`file` / `folder` 带可选 `range`，或 `skill` 带 `name`），`SessionMeta` 新增可选 `pinnedItems?: SessionPinnedItem[]`——**只存指针、不存正文**。内核只承载字段与类型，装配 / 回种策略归宿主。**对消费者**：纯新增导出 + 可选字段，零签名变更；缺省 `undefined` 与 `[]` 同义（本会话无钉住）。
 - **项目规则求值报告只读上浮**（`985782f2` · `WORK-PROJECTION-MOVE-1` 前置）：`Agent` 新增 `residentSegmentReport` getter，返回每轮 turn 入口**全量覆盖**的只读快照（`null` = 未求值 / 未信任），供宿主回答「这条是不是项目规则、本轮有没有真的注入」。报告类型 `ResidentSegmentReport` **未**从包入口导出，外部只经 `Agent` 成员消费。**对消费者**：新增只读成员，零既有签名 / 行为变化。
 - **`RolePackManager.listSkills()` 返回项新增可选 `contentChars`**（`57dada6b`）：技能正文字符数，只服务宿主「钉住大技能」的成本提示——**不是预算判据**，不得据此裁剪或拦截技能；角色包技能列表不带正文时缺省。**对消费者**：可选字段，既有解构零变化。
@@ -101,6 +102,7 @@
 
 ### Added（宿主）
 
+- **回答语言跟随 VS Code 显示语言**（`HOST-I18N-LLM-1`）：`vscode.env.language` 为 `zh-cn` ⇒ 注入「请使用简体中文回答」；`zh-tw` ⇒ 「請使用繁體中文回答」；其余（`en` / 尚未支持的语言 / 取不到）⇒ 英文兜底。指令随既有环境快照的 `responseLanguageDirective` 上报、由内核原样转发进 system prompt。**不新增任何语言设置项、不自建字典**（ADR-042 决策 1：语言真源唯一 = VS Code 显示语言）；未来加日语只改宿主 `DIRECTIVE_BY_LOCALE` 一张表。⚠️ 只管**模型回答语言**：界面文案仍全中文（ADR-042 切片 2-4 未动，半本地化结论不变），不得据此宣称「已支持英文」。顺带订正 `<html lang>` 兜底 `zh-CN` → `en`，与 manifest 英文默认文件对齐。**对消费者**：中文用户回答语言不变；英文 / 日文等用户首次得到英文回答，但面板界面仍是中文。
 - **会话级钉住：文件 / 文件夹 / 技能可锁在本会话**（`57dada6b` · `HOST-0.10.0-DEBT-1`）：锁是**动作**，动作发生即落盘（不等发送），跨轮 / 跨重启保留；技能反过来默认「选中即用、发完即清」。切会话不跟过去——`clear_ok` 清空 composer 后按本会话元数据单向回种，修掉「A 会话挂的技能跟到 B」的泄漏；⚠️ **该配对目前只靠调用方记得配、无机器守卫**（已登记欠账，不影响既有会话的正常路径）。协议扩张：`WebviewInputKind` 新增 `'pin'`；`ChatRef` 新增可选 `pinned?` / `missing?`；`input` 载荷新增 `skillPinned?`；状态推送新增 `pinnedSkillName?`；技能 DTO 新增 `contentChars?`。**对消费者**：全是可增字段 / 新枚举成员，不传即走原路径；`missing` 只由宿主下发、UI 灰显而**不静默过滤**（静默消失会被读成「自己没锁」）。**已知边界**：草稿期（会话尚未建立）加锁无处可写，须等首条消息把草稿 flush 成会话后由宿主补落——「草稿期锁了、没发就关窗」会白锁，另见台账 ①。
 - **设置页第 7 个选项卡「作品和规则」**（`0b3b1890` · `9286f7cb` · `WORK-PROJECTION-MOVE-1`）：作品投影清单从侧边栏 TreeView 迁入设置面板，**默认首页仍是「记忆」**。逐条显示是不是项目规则、最近一次装配有没有真的注入（读取失败 / 单条超限 / 合计超限各有标）、一句话简介直接落在卡片内；**单击行打开原文件且可编辑**（host 侧先与内核清单对拍、再走既有 `resolveUnderPrimaryRoot` 解析，挡伪造路径 / 绝对路径 / `..`），行内两颗按钮不冒泡触发打开。四个入口（文件右键 / QuickPick / 资源管理器 / 设置页）共用 `runWorkProjectionAction` 单一执行面。新增**同名双向**消息 `work_projection`（W→E 四动作 `load` / `open` / `toggle` / `unregister`；E→W 视图状态），DTO `WorkProjectionAction` / `WorkProjectionViewState` / `WorkProjectionRow`（第二批新增 `description` 字段），`SettingsTab` 联合新增 `'works'`；协议计数按守卫去重口径只 +1（阈值 138→139），载荷判别一律 `kind` / `action`。**对消费者**：新增一条消息通道与一组 DTO，既有消息类型零改动。清单改动即时可见，**失效原因由内核在每轮装配时重算** ⇒ 改完文件需发起一轮完整对话才刷新（中断轮不产生摘要，靠切走再切回设置页触发 `refreshAll`，属正常形态）。
 

@@ -254,6 +254,7 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
 
   return {
     projectPath,
+    envLanguage: vscode.env.language,
     // 项目搜索根 = 真实工作区文件夹（无 folder 时 undefined → 不注入 search_project）
     projectSearchRoot: resolveProjectSearchRoot(),
     providerStore: deps.providerStore,

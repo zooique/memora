@@ -11,12 +11,16 @@
  *   - **诚实上报**：探测失败 / 退出码非 0 的运行时不上报（Windows 上 `python` 可能是
  *     Microsoft Store stub 假阳性，退出码 9009 会被滤掉）——宁缺勿假；
  *   - **零解释转发**：内核只格式化不裁决（命令执行能力方案 §10.5 刻意不做：环境事实不升级为内核判据）。
+ *   - **回答语言指令同源**：`responseLanguageDirective` 由宿主显示语言经
+ *     `buildResponseLanguageDirective` 单点产出后随快照上报；本模块**不 import vscode**，
+ *     locale 由装配层注入式传入，保持零宿主 API 依赖、可纯 node 单测。
  */
 import { spawn } from 'node:child_process';
 import * as os from 'node:os';
 import type { IEnvironmentProvider, HostEnvironmentInfo } from '@zooique/memora';
 // shell 派发映射唯一真源（内核公开导出）：本文件 shell 字段经它派生，禁自写平台三元副本
 import { resolveShellCommand } from '@zooique/memora';
+import { buildResponseLanguageDirective } from './responseLanguage.js';
 
 /** 运行时探测超时（毫秒）：--version 类调用应瞬间完成，超时视为不可用 */
 const PROBE_TIMEOUT_MS = 5_000;
@@ -70,9 +74,11 @@ function probeRuntime(command: string): Promise<string | null> {
  * 启动期异步探测一次（node / python），缓存快照供内核同步读取；
  * 探测进行中 / 全部失败时 getEnvironment() 返回已有部分或 null（不阻塞、不报错）。
  *
+ * @param envLanguage VS Code 显示语言（`vscode.env.language`）；由装配层传入，
+ *                    缺省按「无对应语言」处理 ⇒ 英文兜底
  * @returns 实现 IEnvironmentProvider 的环境提供者
  */
-export function createVscodeEnvironmentProvider(): IEnvironmentProvider {
+export function createVscodeEnvironmentProvider(envLanguage?: string): IEnvironmentProvider {
   // 快照容器：探测完成后一次性填充（OS/shell 可同步获得，运行时需异步探测）
   let snapshot: HostEnvironmentInfo | null = null;
 
@@ -88,6 +94,10 @@ export function createVscodeEnvironmentProvider(): IEnvironmentProvider {
     //   按 zsh/bash 语法写命令却在 dash 下执行（POSIX）= 每次都失败。
     //   经内核公开导出直接派生（单一真源，无镜像副本）——内核改映射本字段自动跟随。
     shell: resolveShellCommand('', process.platform).command,
+    // 回答语言指令：语言真源 = VS Code 显示语言（装配层注入，本模块零 vscode 依赖）。
+    // 启动期取一次即可——VS Code 切换显示语言需重启，与 env.language 的生效时机一致；
+    // 异步探测 runtimes 时用展开合并，本字段不丢。
+    responseLanguageDirective: buildResponseLanguageDirective(envLanguage),
   };
   snapshot = partial;
 

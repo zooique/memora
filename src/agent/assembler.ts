@@ -120,6 +120,11 @@ export function buildEnvironmentContextBlock(
   if (env.runtimes && env.runtimes.length > 0) {
     lines.push(`- 可用运行时：${env.runtimes.join('、')}`);
   }
+  // 宿主自定的回答语言指令行：**零解释转发**（措辞与语言判定全在宿主，内核不解析、
+  // 不裁决、不追加引导语）。置于段末 = 最接近用户消息，模型注意力位。
+  // 与上文「环境事实自己会说话、不写行为引导」的纪律不冲突：本行不是内核写的行为引导，
+  // 而是宿主上报的原文；上面三个字段的格式化路径一字未改。
+  if (env.responseLanguageDirective) lines.push(env.responseLanguageDirective);
   // 无任何有效字段 → 不产生空壳标题（防 prompt 出现「## 运行环境」下无内容的谎言段）
   if (lines.length === 0) return '';
   return `## 运行环境\n\n${lines.join('\n')}`;

@@ -870,7 +870,10 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   },
   CodeExecutionOptions: { kind: 'interface', members: ['cwd', 'signal', 'timeoutMs'] },
   IEnvironmentProvider: { kind: 'interface', members: ['getEnvironment'] },
-  HostEnvironmentInfo: { kind: 'interface', members: ['os', 'runtimes', 'shell'] },
+  HostEnvironmentInfo: {
+    kind: 'interface',
+    members: ['os', 'responseLanguageDirective', 'runtimes', 'shell'],
+  },
   IProjectSearchProvider: { kind: 'interface', members: ['searchFiles', 'searchText'] },
   ProjectFileMatch: { kind: 'interface', members: ['path'] },
   ProjectFileSearchOptions: {

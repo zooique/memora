@@ -18,8 +18,13 @@ export interface HtmlHeadParams {
   styles: string;
 }
 
-/** lang 回落值：env.language 不可得时（如测试环境的 vscode mock 未定义 env）沿用中文 */
-export const DEFAULT_HTML_LANG = 'zh-CN';
+/**
+ * lang 回落值：`env.language` 不可得时（如测试环境的 vscode mock 未定义 env）按
+ * ADR-042 决策 2「默认语言 = 英文」落英文兜底。
+ * ⚠️ 曾写死 `zh-CN` —— manifest 侧已定英文兜底、HTML lang 却兜底中文，同一事实两处
+ * 登记且无任何测试会红（SSOT 漂移）。此处与 `package.nls.json` 的默认语言对齐。
+ */
+export const DEFAULT_HTML_LANG = 'en';
 
 /**
  * lang 取值稳健解析：undefined 与空串一律回落，避免产出 `<html lang="undefined">`

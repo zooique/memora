@@ -223,7 +223,7 @@ new Agent({
 | `fetchProvider` | `IFetchProvider` | ❌ | 网页抓取提供者注入（提供时自动暴露 `web_fetch` 工具给 LLM，与 `webSearchProvider` 成对构成「搜索→抓取」闭环，不传则不暴露） |
 | `codeExecutionProvider` | `ICodeExecutionProvider` | ❌ | 代码执行提供者注入（提供时自动暴露 `run_code` 工具给 LLM，沙箱执行能力完全由宿主 provider 决定，内核零运行时依赖，不传则不暴露） |
 | `projectSearchProvider` | `IProjectSearchProvider` | ❌ | 项目内搜索提供者注入（提供时 LLM 获项目文件检索能力，不传则不暴露） |
-| `environmentProvider` | `IEnvironmentProvider` | ❌ | 宿主环境提供者（不配则 system prompt 不注入环境段）：宿主上报运行环境事实（OS / shell / 可用运行时），内核零解释转发 |
+| `environmentProvider` | `IEnvironmentProvider` | ❌ | 宿主环境提供者（不配则 system prompt 不注入环境段）：宿主上报运行环境事实（OS / shell / 可用运行时），内核零解释转发。快照另带**可选** `responseLanguageDirective`（宿主自定的一行指令，如回答语言）——同为原样转发，内核不解析、不判定、不追加引导语 |
 | `workspaceTrusted` | `boolean` | ❌ | 工作区是否已受信任（宿主作为**新入参**传入的内核事实快照）：内核侧无 `isTrusted` 态，装配期无法现读。**只认严格 `=== true`** 才启用项目规则层；未传 / `false` / 任何非 `true` 值一律按**未信任**处理（fail-closed：不给项目规则正文，不静默扩权）。判据唯一实现 = `src/agent/managers/residentRules.ts` 的 `isResidentLayerEnabled`，消费点禁止各自写 `if (trusted)` |
 | `scriptNodePath` | `string` | ❌ | node 可执行文件路径：宿主注入真实 node 路径给 L3 脚本执行器（`run_skill_script` / `run_project_script` 的 node 分支）；缺省走 `'node'`（PATH 查找），宿主机无独立 node 时注入可避免 ENOENT |
 | `disabledSkills` | `string[]` | ❌ | 禁用的技能名清单：命中的技能从 L1 清单消失、L2/L3 访问不可用（对 LLM 语义 = 技能不存在，宿主 UI 据同名设置标「已禁用」徽章） |

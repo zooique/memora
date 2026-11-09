@@ -1233,6 +1233,28 @@ describe('buildEnvironmentContextBlock · 运行环境注入', () => {
     }
   });
 
+  it('responseLanguageDirective 零解释转发：宿主原文逐字注入段末，缺省不注入', () => {
+    const directive = '- 回答语言：请使用简体中文回答用户的问题。';
+    const block = buildEnvironmentContextBlock(
+      { os: 'win32 10.0.22631', responseLanguageDirective: directive },
+      'linux',
+    );
+    expect(block).toContain('## 运行环境');
+    expect(block).toContain(directive);
+    // 段末 = 最接近用户消息（os 行在前）；内核不改写、不翻译、不追加引导语
+    expect(block.indexOf(directive)).toBeGreaterThan(block.indexOf('- 操作系统：'));
+    expect(block).not.toContain('应该');
+    // 缺省 = 既有形态逐字不变（向后兼容）
+    expect(buildEnvironmentContextBlock({ os: 'win32' }, 'linux')).not.toContain('回答语言');
+  });
+
+  it('仅有 responseLanguageDirective 时也产出环境段（不产生空壳标题）', () => {
+    const directive = '- 回答语言：Please respond in English.';
+    expect(buildEnvironmentContextBlock({ responseLanguageDirective: directive }, 'linux')).toBe(
+      `## 运行环境\n\n${directive}`,
+    );
+  });
+
   it('environmentContext 作为第 5 参注入 prefix：位于作品投影后、时间戳前', () => {
     const prefix = buildSystemPromptPrefix(
       'persona',

@@ -85,4 +85,28 @@ describe('environmentProvider（§10.4-② 宿主环境快照）', () => {
     expect(env.os).toContain(process.platform);
     expect(env.shell).toBeTruthy();
   });
+
+  it('回答语言指令随快照上报：zh-cn 用中文，其余 / 缺省英文兜底', () => {
+    expect(
+      createVscodeEnvironmentProvider('zh-cn').getEnvironment()!.responseLanguageDirective,
+    ).toContain('简体中文');
+    expect(
+      createVscodeEnvironmentProvider('ja').getEnvironment()!.responseLanguageDirective,
+    ).toContain('Please respond in English');
+    // 语言真源取不到 = 无对应语言，走兜底而不是抛错 / 静默空块
+    expect(createVscodeEnvironmentProvider().getEnvironment()!.responseLanguageDirective).toContain(
+      'Please respond in English',
+    );
+  });
+
+  it('异步探测合并后回答语言指令不丢（展开合并保留新字段）', async () => {
+    const provider = createVscodeEnvironmentProvider('zh-cn');
+    await vi.waitFor(
+      () => {
+        expect(provider.getEnvironment()!.runtimes).toBeDefined();
+      },
+      { timeout: PROBE_WAIT_MS },
+    );
+    expect(provider.getEnvironment()!.responseLanguageDirective).toContain('简体中文');
+  });
 });
