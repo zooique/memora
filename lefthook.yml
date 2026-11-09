@@ -26,6 +26,14 @@
 #
 # 提交规范（conventional commits）见 .trae/rules/project-rules.md §6
 
+# ⚠️ 执行顺序（2026-11-10 实验定案 · 别再靠 YAML 书写序猜）：
+#   lefthook 2.1.10 实测——**未写 priority 时按命令名字母序执行**（不是书写序）；
+#   写了 priority 的按数值升序**先跑**，未写的排在其后（仍按字母序）。
+#   由此本文件曾按 `gate-fast → lint-staged → prettier-fix` 执行：**判据跑在就地修复之前**，
+#   于是「格式化前 1000 行、格式化后 1005 行」的内容被判据放行、再由 prettier 折行后提交
+#   （实证 `09621033` 把 extension.ts 推到 1005 行仍过 pre-commit）。
+#   故三条命令**全部显式写 priority**：修复(1/2) 在判据(3) 之前，判据看到的就是将被提交的内容。
+#   新增命令必须一并写 priority——不写就会被字母序塞到判据前后任意位置，洞会静默复发。
 pre-commit:
   parallel: false
   commands:
@@ -34,18 +42,22 @@ pre-commit:
     # 为何必须在提交层：此前格式修复只靠 full 档 format:check，而 full 挂 pre-push 且
     # 推送常绕（拍板的省算力设计）⇒ 格式欠账长期潜伏、只在跑 full 时才爆（本轮实锤 9 文件）。
     prettier-fix:
+      priority: 1
       glob: "*.{ts,mjs,json}"
       run: npx prettier --write {staged_files}
       stage_fixed: true
 
     # fast 档前的「就地修复」：只扫 staged 的 .ts 并自动修格式（全仓 lint 判据已由 preset 承担）
     lint-staged:
+      priority: 2
       glob: "*.ts"
       run: npx eslint {staged_files} --max-warnings 0 --no-warn-ignored
       stage_fixed: true
 
     # 门禁 fast 档：两侧 tsc + 两侧 lint + 秒级守卫（落盘收据日志）
+    # priority 3 = 排在两处就地修复之后（顺序理由见本文件 pre-commit 上方的执行顺序说明）
     gate-fast:
+      priority: 3
       run: npm run ci:local -- --preset=fast
 
 # 提交信息规范校验（commitlint）
