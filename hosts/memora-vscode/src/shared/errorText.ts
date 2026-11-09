@@ -2,7 +2,7 @@
  * 流式错误 category → 用户可见文案（webview 重放路映射；**单一真理源**）
  *
  * 消费面（2026-11-09 起）：webview 侧 `processFlowModel`（中断轮平铺停止行，含失败原因）。
- * 宿主实时路（chatPanel 窗口提示）已改走 `host/noticeText.ts` 的 `localizedFlowError`
+ * 宿主实时路（chatPanel 窗口提示）已改走 `host/windowNotices.ts` 的 `flowError`
  * （`vscode.l10n` 本地化渲染）——webview 无法调 `vscode.l10n`，故两份映射并存是切片 4
  * 前的过渡形态（category 联合类型锁两侧不漂移，统一收口归切片 4，见台账 HOST-I18N-2）。
  *
