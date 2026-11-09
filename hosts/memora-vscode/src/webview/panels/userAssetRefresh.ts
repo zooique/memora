@@ -10,6 +10,7 @@
  */
 
 import type { Agent } from '@zooique/memora';
+import * as vscode from 'vscode';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 
 /** 面板投递通道（窄接口：只传消息，不暴露 webview 实例） */
@@ -38,12 +39,16 @@ export interface RolePackResyncDiff extends SkillResyncDiff {
  */
 export function formatResyncNotice(label: string, diff: RolePackResyncDiff): string {
   const parts: string[] = [];
-  if (diff.added > 0) parts.push(`新增 ${diff.added} 个`);
+  if (diff.added > 0) parts.push(vscode.l10n.t('{0} added', diff.added));
   if (diff.removed.length > 0)
-    parts.push(`移除 ${diff.removed.length} 个（${diff.removed.join('、')}）`);
+    parts.push(vscode.l10n.t('{0} removed ({1})', diff.removed.length, diff.removed.join(', ')));
   // 角色包独有：原激活包被删/改名后内核已回退兜底包，必须告知用户
-  if (diff.activeFallback) parts.push('原激活包已不在，已回退兜底角色包');
-  return parts.length > 0 ? `${label}已刷新：${parts.join('；')}` : `${label}已刷新：无变化`;
+  if (diff.activeFallback) {
+    parts.push(vscode.l10n.t('The previously active pack is gone; fell back to the default pack'));
+  }
+  return parts.length > 0
+    ? vscode.l10n.t('{0} refreshed: {1}', label, parts.join('; '))
+    : vscode.l10n.t('{0} refreshed: no changes', label);
 }
 
 /**
@@ -62,11 +67,19 @@ export async function refreshUserSkillsFlow(deps: {
 }): Promise<void> {
   const sm = deps.agent?.skills;
   if (!sm) {
-    deps.post({ type: 'notice', level: 'error', message: '技能系统未就绪，无法刷新' });
+    deps.post({
+      type: 'notice',
+      level: 'error',
+      message: vscode.l10n.t('The skill system is not ready; cannot refresh'),
+    });
     return;
   }
   const diff = await sm.resyncUserSkills();
-  deps.post({ type: 'notice', level: 'info', message: formatResyncNotice('技能', diff) });
+  deps.post({
+    type: 'notice',
+    level: 'info',
+    message: formatResyncNotice(vscode.l10n.t('skill'), diff),
+  });
   await deps.reloadList();
   deps.refreshChatSkills();
 }
@@ -87,10 +100,18 @@ export async function refreshUserRolePacksFlow(deps: {
 }): Promise<void> {
   const rpm = deps.agent?.rolePackManager;
   if (!rpm || !deps.userRolePacksDir) {
-    deps.post({ type: 'notice', level: 'error', message: '角色包系统未就绪，无法刷新' });
+    deps.post({
+      type: 'notice',
+      level: 'error',
+      message: vscode.l10n.t('The role-pack system is not ready; cannot refresh'),
+    });
     return;
   }
   const diff = await rpm.resyncUserPacks(deps.userRolePacksDir);
-  deps.post({ type: 'notice', level: 'info', message: formatResyncNotice('角色包', diff) });
+  deps.post({
+    type: 'notice',
+    level: 'info',
+    message: formatResyncNotice(vscode.l10n.t('role pack'), diff),
+  });
   await deps.reloadList();
 }

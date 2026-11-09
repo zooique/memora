@@ -685,6 +685,10 @@ const WEBVIEW_PANELS = {
       'extension/host/userAssets/path.ts',
       'extension/host/userAssets/validateSkill.ts',
       'extension/commands/reloadSkills.ts',
+      // B10-C：设置页「添加到用户级」与两个「刷新」按钮的执行面——**技能页与角色包页共用**
+      // （⑰ 按文件判、不按页判，故只登记在本页即可覆盖两处的 CJK 判据：notice 文案若回归中文会红）
+      'webview/panels/assetCopyToUser.ts',
+      'webview/panels/userAssetRefresh.ts',
     ],
   },
   // MCP 页（B6）：骨架 / 运行时脚本 / 样式 / 面板执行面（`mcpServerOps`）+ 连接层全域判据全部迁完。

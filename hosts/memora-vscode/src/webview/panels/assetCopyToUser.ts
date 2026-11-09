@@ -24,6 +24,7 @@
  * 「模型无法写用户目录」。
  */
 import type { Agent } from '@zooique/memora';
+import * as vscode from 'vscode';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { isPathWithin } from '../../extension/host/userAssets/path.js';
 import {
@@ -87,7 +88,13 @@ function copySuccessMessage(
   name: string,
   result: { targetPath: string; fileCount: number },
 ): string {
-  return `已复制${label}「${name}」到用户级：${result.targetPath}（${result.fileCount} 个文件）。用户级副本已装好；同一项目内项目级优先，用户级副本在其它项目才生效。这是副本，不是同步——之后项目级与用户级互不影响。`;
+  return vscode.l10n.t(
+    'Copied {0} "{1}" to the user level: {2} ({3} files). The user-level copy is ready; project-level wins inside the same project, so the user-level copy only applies in other projects. This is a copy, not a sync — the project-level and user-level copies stay independent.',
+    label,
+    name,
+    result.targetPath,
+    result.fileCount,
+  );
 }
 
 /**
@@ -98,7 +105,11 @@ function copySuccessMessage(
  * @param name 资产名
  */
 function missingPackageRootMessage(assetLabel: string, name: string): string {
-  return `内核未提供${assetLabel}「${name}」的包根（packageRoot），无法安全复制到用户级`;
+  return vscode.l10n.t(
+    'The kernel did not provide a package root (packageRoot) for {0} "{1}", so it cannot be copied to the user level safely',
+    assetLabel,
+    name,
+  );
 }
 
 /**
@@ -110,9 +121,15 @@ function missingPackageRootMessage(assetLabel: string, name: string): string {
 function confirmOverwriteCopy(assetLabel: string): (prompt: OverwritePrompt) => Promise<boolean> {
   return (prompt) =>
     confirmModal({
-      message: `用户级已存在同名${assetLabel}：${prompt.targetPath}`,
-      detail: '继续会先备份现有内容再覆盖，失败自动回滚；确定复制？',
-      confirmLabel: '覆盖',
+      message: vscode.l10n.t(
+        'A user-level {0} with the same name already exists: {1}',
+        assetLabel,
+        prompt.targetPath,
+      ),
+      detail: vscode.l10n.t(
+        'Continuing backs up the existing content before overwriting, and rolls back automatically on failure. Copy now?',
+      ),
+      confirmLabel: vscode.l10n.t('Overwrite'),
     });
 }
 
@@ -128,7 +145,12 @@ export async function copyProjectSkillToUser(
 ): Promise<void> {
   const agent = await deps.ensureAgent();
   if (!agent?.skills || !deps.configDir || !deps.userSkillsDir) {
-    postCopyError(deps, '技能系统或用户目录未就绪，无法复制到用户级');
+    postCopyError(
+      deps,
+      vscode.l10n.t(
+        'The skill system or the user directory is not ready; cannot copy to the user level',
+      ),
+    );
     return;
   }
   // 只认项目级来源：同名技能可能同时存在于用户级（项目优先），用聚合 layer 再断言一次
@@ -139,29 +161,35 @@ export async function copyProjectSkillToUser(
     projectSkillsDir: deps.projectSkillsDir,
   }).find((s) => s.name === skillName && s.layer === 'project');
   if (!skill?.filePath) {
-    postCopyError(deps, `未找到项目级技能「${skillName}」，无法复制到用户级`);
+    postCopyError(
+      deps,
+      vscode.l10n.t(
+        'Project-level skill "{0}" not found; cannot copy to the user level',
+        skillName,
+      ),
+    );
     return;
   }
 
   // 复制单元 = 内核给出的包根（单文件技能 = 文件；目录式技能 = 技能目录），宿主不拿 filePath 反推
   if (!skill.packageRoot) {
-    postCopyError(deps, missingPackageRootMessage('技能', skillName));
+    postCopyError(deps, missingPackageRootMessage(vscode.l10n.t('skill'), skillName));
     return;
   }
   const result = await copyAssetToRoot(skill.packageRoot, deps.userSkillsDir, {
     // 类型由本层显式声明，只影响校验分支与文案（不决定复制单元）
     kind: 'skill',
     // 同名覆盖确认走共用回调（只传「覆盖」；取消是 VS Code modal 自带的 Cancel ⇒ false）
-    confirmOverwrite: confirmOverwriteCopy('技能'),
+    confirmOverwrite: confirmOverwriteCopy(vscode.l10n.t('skill')),
   });
   if (!result.ok) {
-    postCopyError(deps, `复制到用户级失败：${result.reason}`);
+    postCopyError(deps, vscode.l10n.t('Failed to copy to the user level: {0}', result.reason));
     return;
   }
   deps.post({
     type: 'notice',
     level: 'info',
-    message: copySuccessMessage('技能', skillName, result),
+    message: copySuccessMessage(vscode.l10n.t('skill'), skillName, result),
   });
   await refreshUserSkillsFlow({
     agent,
@@ -181,31 +209,43 @@ export async function copyProjectRolePackToUser(deps: AssetCopyDeps, name: strin
   const agent = await deps.ensureAgent();
   const rpm = agent?.rolePackManager;
   if (!rpm || !deps.userRolePacksDir) {
-    postCopyError(deps, '角色包系统或用户目录未就绪，无法复制到用户级');
+    postCopyError(
+      deps,
+      vscode.l10n.t(
+        'The role-pack system or the user directory is not ready; cannot copy to the user level',
+      ),
+    );
     return;
   }
   // 来源归属以 filePath 为唯一判据，不猜来源；同名时内核池项目级优先，但仍逐路径核对
   const pack = rpm.get(name);
   if (!pack || !isPathWithin(deps.projectRolePacksDir, pack.filePath)) {
-    postCopyError(deps, `「${name}」不是项目级角色包，无法复制到用户级`);
+    postCopyError(
+      deps,
+      vscode.l10n.t('"{0}" is not a project-level role pack; cannot copy to the user level', name),
+    );
     return;
   }
   // 复制单元 = 包根（包目录），由内核装配时给出；缺字段即拒绝，宿主不拿 manifest 路径反推
   if (!pack.packageRoot) {
-    postCopyError(deps, missingPackageRootMessage('角色包', name));
+    postCopyError(deps, missingPackageRootMessage(vscode.l10n.t('role pack'), name));
     return;
   }
 
   const result = await copyAssetToRoot(pack.packageRoot, deps.userRolePacksDir, {
     kind: 'rolePack',
     // 同名覆盖确认走共用回调（只传「覆盖」；取消是 VS Code modal 自带的 Cancel ⇒ false）
-    confirmOverwrite: confirmOverwriteCopy('角色包'),
+    confirmOverwrite: confirmOverwriteCopy(vscode.l10n.t('role pack')),
   });
   if (!result.ok) {
-    postCopyError(deps, `复制到用户级失败：${result.reason}`);
+    postCopyError(deps, vscode.l10n.t('Failed to copy to the user level: {0}', result.reason));
     return;
   }
-  deps.post({ type: 'notice', level: 'info', message: copySuccessMessage('角色包', name, result) });
+  deps.post({
+    type: 'notice',
+    level: 'info',
+    message: copySuccessMessage(vscode.l10n.t('role pack'), name, result),
+  });
   await refreshUserRolePacksFlow({
     agent,
     userRolePacksDir: deps.userRolePacksDir,

@@ -513,7 +513,11 @@ describe('settingsPanel.refreshRolePacks —— 角色包刷新链路', () => {
 
     expect(resync).toHaveBeenCalledWith(USER_DIR);
     expect(notices(posted)).toEqual([
-      { type: 'notice', level: 'info', message: '角色包已刷新：新增 1 个；移除 1 个（旧名包）' },
+      {
+        type: 'notice',
+        level: 'info',
+        message: 'role pack refreshed: 1 added; 1 removed (旧名包)',
+      },
     ]);
     expect(posted.some((m) => m.type === 'roles_loaded')).toBe(true);
   });
@@ -529,7 +533,7 @@ describe('settingsPanel.refreshRolePacks —— 角色包刷新链路', () => {
     await refresh(provider);
 
     expect(notices(posted)).toEqual([
-      { type: 'notice', level: 'info', message: '角色包已刷新：无变化' },
+      { type: 'notice', level: 'info', message: 'role pack refreshed: no changes' },
     ]);
   });
 
@@ -544,7 +548,7 @@ describe('settingsPanel.refreshRolePacks —— 角色包刷新链路', () => {
     await refresh(provider);
 
     expect(notices(posted)).toEqual([
-      { type: 'notice', level: 'info', message: '角色包已刷新：无变化' },
+      { type: 'notice', level: 'info', message: 'role pack refreshed: no changes' },
     ]);
   });
 
@@ -560,7 +564,7 @@ describe('settingsPanel.refreshRolePacks —— 角色包刷新链路', () => {
 
     const msgs = notices(posted);
     expect(msgs).toHaveLength(1);
-    expect(msgs[0]?.message).toContain('回退兜底角色包');
+    expect(msgs[0]?.message).toContain('fell back to the default pack');
   });
 
   it('Agent 未装配（无 rolePackManager）→ 错误提示，不调 resync、不下发列表', async () => {
@@ -582,7 +586,11 @@ describe('settingsPanel.refreshRolePacks —— 角色包刷新链路', () => {
     await refresh(provider);
 
     expect(notices(posted)).toEqual([
-      { type: 'notice', level: 'error', message: '角色包系统未就绪，无法刷新' },
+      {
+        type: 'notice',
+        level: 'error',
+        message: 'The role-pack system is not ready; cannot refresh',
+      },
     ]);
     expect(posted.some((m) => m.type === 'roles_loaded')).toBe(false);
   });

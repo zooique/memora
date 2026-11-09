@@ -1265,5 +1265,21 @@
   "--- Runtime metrics ---": "--- 运行指标 ---",
   "LLM calls {0} · tokens in {1} / out {2} · tool failures {3} · truncations {4}": "LLM 调用 {0} 次 · token 入 {1} / 出 {2} · 工具失败 {3} 次 · 截断 {4} 次",
   "(Agent not assembled)": "（Agent 未装配）",
-  "--- Recent webview errors (up to {0}) ---": "--- 最近 webview 错误（最多 {0} 条） ---"
+  "--- Recent webview errors (up to {0}) ---": "--- 最近 webview 错误（最多 {0} 条） ---",
+  "Copied {0} \"{1}\" to the user level: {2} ({3} files). The user-level copy is ready; project-level wins inside the same project, so the user-level copy only applies in other projects. This is a copy, not a sync — the project-level and user-level copies stay independent.": "已复制{0}「{1}」到用户级：{2}（{3} 个文件）。用户级副本已装好；同一项目内项目级优先，用户级副本在其它项目才生效。这是副本，不是同步——之后项目级与用户级互不影响。",
+  "The kernel did not provide a package root (packageRoot) for {0} \"{1}\", so it cannot be copied to the user level safely": "内核未提供{0}「{1}」的包根（packageRoot），无法安全复制到用户级",
+  "A user-level {0} with the same name already exists: {1}": "用户级已存在同名{0}：{1}",
+  "Continuing backs up the existing content before overwriting, and rolls back automatically on failure. Copy now?": "继续会先备份现有内容再覆盖，失败自动回滚；确定复制？",
+  "The skill system or the user directory is not ready; cannot copy to the user level": "技能系统或用户目录未就绪，无法复制到用户级",
+  "Project-level skill \"{0}\" not found; cannot copy to the user level": "未找到项目级技能「{0}」，无法复制到用户级",
+  "Failed to copy to the user level: {0}": "复制到用户级失败：{0}",
+  "The role-pack system or the user directory is not ready; cannot copy to the user level": "角色包系统或用户目录未就绪，无法复制到用户级",
+  "\"{0}\" is not a project-level role pack; cannot copy to the user level": "「{0}」不是项目级角色包，无法复制到用户级",
+  "{0} added": "新增 {0} 个",
+  "{0} removed ({1})": "移除 {0} 个（{1}）",
+  "The previously active pack is gone; fell back to the default pack": "原激活包已不在，已回退兜底角色包",
+  "{0} refreshed: {1}": "{0}已刷新：{1}",
+  "{0} refreshed: no changes": "{0}已刷新：无变化",
+  "The skill system is not ready; cannot refresh": "技能系统未就绪，无法刷新",
+  "The role-pack system is not ready; cannot refresh": "角色包系统未就绪，无法刷新"
 }

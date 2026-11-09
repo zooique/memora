@@ -1265,5 +1265,21 @@
   "--- Runtime metrics ---": "",
   "LLM calls {0} · tokens in {1} / out {2} · tool failures {3} · truncations {4}": "",
   "(Agent not assembled)": "",
-  "--- Recent webview errors (up to {0}) ---": ""
+  "--- Recent webview errors (up to {0}) ---": "",
+  "Copied {0} \"{1}\" to the user level: {2} ({3} files). The user-level copy is ready; project-level wins inside the same project, so the user-level copy only applies in other projects. This is a copy, not a sync — the project-level and user-level copies stay independent.": "",
+  "The kernel did not provide a package root (packageRoot) for {0} \"{1}\", so it cannot be copied to the user level safely": "",
+  "A user-level {0} with the same name already exists: {1}": "",
+  "Continuing backs up the existing content before overwriting, and rolls back automatically on failure. Copy now?": "",
+  "The skill system or the user directory is not ready; cannot copy to the user level": "",
+  "Project-level skill \"{0}\" not found; cannot copy to the user level": "",
+  "Failed to copy to the user level: {0}": "",
+  "The role-pack system or the user directory is not ready; cannot copy to the user level": "",
+  "\"{0}\" is not a project-level role pack; cannot copy to the user level": "",
+  "{0} added": "",
+  "{0} removed ({1})": "",
+  "The previously active pack is gone; fell back to the default pack": "",
+  "{0} refreshed: {1}": "",
+  "{0} refreshed: no changes": "",
+  "The skill system is not ready; cannot refresh": "",
+  "The role-pack system is not ready; cannot refresh": ""
 }
