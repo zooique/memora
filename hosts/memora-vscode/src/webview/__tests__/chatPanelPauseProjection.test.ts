@@ -108,8 +108,11 @@ function setup() {
  * 🔴 不改成直接改不存在的字段会**静默失效**：给不存在的字段赋值不报错，运行时不抛，
  * 而「无在途提问」的默认态恰等于 clearPending 后的空态 ⇒ 无一用例因此转红。 */
 interface ProjectionCast {
-  onSessionPaused(info: { reason: string; source: string; sessionId?: string }): void;
-  onSessionResumed(info: { sessionId?: string }): void;
+  /** 会话事件出口（B9-D 起外置到 `chatNoticeOps.ts`，经面板字段 `_notice` 访问） */
+  _notice: {
+    onSessionPaused(info: { reason: string; source: string; sessionId?: string }): void;
+    onSessionResumed(info: { sessionId?: string }): void;
+  };
   runtimeFor(sessionId?: string): { streaming: boolean };
   askFor(sessionId?: string): { clearPending(): void; setPending(q: unknown[]): void };
   _agent: Agent;
@@ -126,7 +129,7 @@ describe('暂停/恢复：真源翻转事件必须刷新骨架投影', () => {
     cast.runtimeFor().streaming = true; // 续跑流已启动
     cast.askFor().clearPending();
 
-    cast.onSessionResumed({ sessionId: 's1' });
+    cast._notice.onSessionResumed({ sessionId: 's1' });
 
     const updates = turnUpdates(posted);
     expect(updates).toHaveLength(1);
@@ -140,7 +143,7 @@ describe('暂停/恢复：真源翻转事件必须刷新骨架投影', () => {
     cast.runtimeFor().streaming = true;
     cast.askFor().clearPending();
 
-    cast.onSessionPaused({ reason: 'user-pause', source: 'user' });
+    cast._notice.onSessionPaused({ reason: 'user-pause', source: 'user' });
 
     const updates = turnUpdates(posted);
     expect(updates).toHaveLength(1);
@@ -155,7 +158,7 @@ describe('暂停/恢复：真源翻转事件必须刷新骨架投影', () => {
     cast.runtimeFor().streaming = true;
     cast.askFor().clearPending();
 
-    cast.onSessionResumed({ sessionId: 's1' });
+    cast._notice.onSessionResumed({ sessionId: 's1' });
 
     const updates = turnUpdates(posted);
     expect(updates).toHaveLength(1);

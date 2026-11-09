@@ -76,9 +76,7 @@ import {
   type ImageRef,
   type ProcessEvent,
   type ProcessMetaPayload,
-  COMPRESS_TARGET_LABELS,
   estimateTokensText,
-  type CompressTarget,
   // 「这轮算不算跑成功」判据取内核单点（isRoundSuccessful）：宿主不得自写
   // `status === 'complete'`（内核 roundStore.test 的判据单源守卫会拦，见 helpers/occupancyHistory.ts 先例）
   isRoundSuccessful,
@@ -200,6 +198,8 @@ import {
 import { vscodeTracer } from '../../extension/host/tracer.js';
 // HTML 骨架已外置（纯静态模板，见 chatPanelHtml 模块头）
 import { buildHtml } from './chatPanelHtml.js';
+// 会话事件出口（B9-D 按 op 组外置；纯「事件 → notice / 投影刷新」映射，见模块头）
+import { createChatNoticeOps, type ChatNoticeOps } from './chatNoticeOps.js';
 import {
   buildDocContextBlock,
   buildGitChangesContextBlock,
@@ -414,6 +414,28 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   });
   /** 最近 webview 错误上报（复制诊断命令消费；容量/格式化归 hostDiagnostics 模块） */
   private readonly _recentHostDiags: HostDiagEntry[] = [];
+  /**
+   * 会话事件出口（B9-D 按 op 组外置，真源见 `chatNoticeOps.ts`）
+   *
+   * **注入而非继承**：处理器只经 11 个窄接口读写面板状态（`post` / 投影刷新 / 激活角色的
+   * 读写），不反向持有 provider 实例——与 `_confirm` / `_activeFile` 同范式。
+   * 引用必须**构造期一次性稳定**：装订表按引用做 `off`→`on` 幂等，每次取新对象会让解绑失效。
+   */
+  private readonly _notice: ChatNoticeOps = createChatNoticeOps({
+    post: (msg) => this.post(msg),
+    postTurnUpdate: () => this.postTurnUpdate(),
+    postActiveRolePack: (name) => this.postActiveRolePack(name),
+    postCapabilityBadge: () => this.postCapabilityBadge(),
+    pushSkillList: () => this.pushSkillList(),
+    postContextOccupancy: () => this.postContextOccupancy(),
+    pushSessionList: () => this.pushSessionList(),
+    pushArchiveModeRuntime: () => this.pushArchiveModeRuntime(),
+    getCurrentSessionId: () => this._currentSessionId,
+    getActiveRolePack: () => this._activeRolePack,
+    setActiveRolePack: (name) => {
+      this._activeRolePack = name;
+    },
+  });
   /**
    * 当前 turn 状态（单一路由判据的 SSOT）：由 `postTurnUpdate` 写回（与推给 webview 的
    * `turn_update.state` 同一对象），`handleInput` 据此路由四条内核入口。提问原文从
@@ -1431,283 +1453,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     return this._currentSessionId;
   }
 
-  // ─── 会话异常可观测出口（错误级 notice） ───
-  // 监听内核会话级事件并转发为错误提示条。错误不插入消息区，避免污染对话历史；
-  // 以下 handler 均为箭头函数属性，保证 off/on 引用一致（折叠展开防重复注册）。
-
-  /** sessionError：会话异常（LLM 超时等） */
-  private readonly onSessionError = (info: { cause: string }): void => {
-    this.post({ type: 'notice', level: 'error', message: `会话异常：${info.cause}` });
-  };
-
-  /** sessionResumeFailed：恢复操作执行失败（如存储层异常） */
-  private readonly onSessionResumeFailed = (info: { reason: string }): void => {
-    this.post({ type: 'notice', level: 'error', message: `会话恢复失败：${info.reason}` });
-  };
-
-  /** sessionResumeBlocked：恢复被阻止（暂停超时检查点已清理） */
-  private readonly onSessionResumeBlocked = (info: { reason: string }): void => {
-    this.post({ type: 'notice', level: 'error', message: `会话无法恢复：${info.reason}` });
-  };
-
-  /** sessionPauseTimedOut：暂停超时，需重新开始 */
-  private readonly onSessionPauseTimedOut = (): void => {
-    this.post({ type: 'notice', level: 'error', message: '会话暂停超时，请重新开始' });
-  };
-
-  // ─── 低扰信息出口（info 级 notice） ───
-  // 上下文截断 / 记忆冲突 / 归档失败 / 权重持久化失败 —— 均为「知晓即可」的低频信息，
-  // 统一走 notice info 级提示条（语义分级单一通道，不插入消息区，不污染对话历史）。
-  // 提示条为独立元素，不随流式 chunk 重建，天然规避「截断提示被后续 chunk 覆盖」。
-
-  /** contextTruncated：上下文窗口截断（消息超出 token 上限被裁剪） */
-  private readonly onContextTruncated = (info: {
-    skippedCount: number;
-    keptCount: number;
-  }): void => {
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `上下文已截断：跳过 ${info.skippedCount} 条，保留 ${info.keptCount} 条`,
-    });
-  };
-
-  /** contextCompressed：LLM 主动压缩上下文（第二级压缩，与内核自动截断区分） */
-  private readonly onContextCompressed = (info: {
-    target: CompressTarget;
-    replacedCount: number;
-    summaryLength: number;
-  }): void => {
-    // target→中文标签引内核 COMPRESS_TARGET_LABELS（穷尽 Record），
-    // 禁在本处写三元/else——枚举增补时三元会把新值落到旧标签上，对用户说谎
-    // （2026-10-03 CTX-WIN-2 落地时实证：earliest_steps 曾被三元显示成「最大工具结果摘要」）。
-    const targetText = COMPRESS_TARGET_LABELS[info.target];
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `上下文已压缩：${targetText}，替换 ${info.replacedCount} 条消息，摘要 ${info.summaryLength} token`,
-    });
-  };
-
-  /** archiveFailed：记忆归档失败（内核 stage 为 'session' 会话归档阶段，无 'insight' 阶段） */
-  private readonly onArchiveFailed = (info: { stage: string; message: string }): void => {
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `记忆归档失败（${info.stage}）：${info.message}`,
-    });
-  };
-
-  /**
-   * sessionArchived：会话归档写入成功（updatedFields 非空）→ 重拉会话列表。
-   * 修「最后一公里」缺口：切走时的列表快照拿不到异步完成的 summary/keyTopics，
-   * 无此重拉则历史条目悬停 tooltip 恒空（载荷暂无消费——全量重拉，不按 sessionId 寻址）。
-   */
-  private readonly onSessionArchived = (): void => {
-    this.pushSessionList();
-  };
-
-  // ─── 高价值事件 ───
-
-  /**
-   * inputTooLarge：装配前输入预算判负（剩余 token 不足以支撑至少一轮正文）
-   *
-   * 内核 ContextPreparer 在装配前检测输入是否超出预算，触发此事件时
-   * 通常意味着直接把大文件内容粘到了对话里，LLM 会因上下文不足报错。
-   * 展示 hint（如「建议用 read_file 分段读取」）给用户降级路径。
-   */
-  private readonly onInputTooLarge = (info: {
-    inputLength: number;
-    remainingTokens: number;
-    hint: string;
-  }): void => {
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `输入过大（${info.inputLength} 字符），剩余预算不足。${info.hint}`,
-    });
-  };
-
-  /**
-   * sessionForked：会话分叉成功（内核 SessionManager.forkSession 完成后触发）
-   *
-   * 补充通知路径：host 当前在 forkCurrentSession() 中直接处理分叉结果（同步切换+回放），
-   * 此事件监听作为安全网——任何未来不经过 forkCurrentSession 的分叉路径都能获得一致反馈。
-   */
-  private readonly onSessionForked = (info: {
-    from: string;
-    to: string;
-    roundCount: number;
-  }): void => {
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `已分叉新会话「${info.to}」（${info.roundCount} 个问答闭环）`,
-    });
-  };
-
-  // ─── 低价值事件（状态冗余确认） ───
-
-  /** sessionPaused：对话被暂停（状态可视化补充 + 骨架投影刷新）
-   *
-   * ⚠ 投影刷新点（SSOT）：sessionPaused 是状态机真正翻 PAUSED 的事件信号，
-   * 骨架必须在此刻重投影——否则 `_turnState` 停留在翻转前的值，暂停按钮不切「继续」。
-   * 只读真源（status / isPausePending / 运行态 streaming / ask 域在途提问）+ 幂等；
-   * chat 路径不 emit 本事件，故零影响。 */
-  private readonly onSessionPaused = (info: {
-    reason: string;
-    source: string;
-    sessionId?: string;
-  }): void => {
-    this.post({ type: 'notice', level: 'info', message: `对话已暂停（${info.reason}）` });
-    this.postTurnUpdate();
-  };
-
-  /** sessionResumed：对话恢复执行（状态反馈 + 骨架投影刷新 + 待发送区同步）
-   *
-   * ⚠ 投影刷新点（SSOT）：sessionResumed 是状态机真正翻 RUNNING 的事件信号。
-   * 必须用 postTurnUpdate 而非 syncPendingQueue——后者带长度守卫（纯续跑无 interject 时
-   * 队列长度恒 0 → 不推），会让 `_turnState` 钉死在 `waiting(pause)`，续跑全程按钮停在
-   * 「继续」（用户实测 Bug 根因）。postTurnUpdate 自带 pendingQueue 载荷（双职责一次推完），
-   * 故不再叠加 syncPendingQueue。 */
-  private readonly onSessionResumed = (_info: { sessionId?: string }): void => {
-    this.post({ type: 'notice', level: 'info', message: '对话已恢复执行' });
-    this.postTurnUpdate();
-  };
-
-  /** sessionRecovered：对话异常恢复完成（自动恢复反馈） */
-  private readonly onSessionRecovered = (_info: { sessionId?: string }): void => {
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: '对话已从异常中恢复，继续执行',
-    });
-  };
-
-  /**
-   * sessionTitleUpdated：会话标题被 LLM 自动更新（SSOT 同步）
-   *
-   * 当 SessionNamer 完成标题生成后，Agent 发射此事件。
-   * 宿主检查是否为当前会话，若是则推送 session_title 到 webview 刷新顶部标题。
-   * 这确保了"对话记录已更新，但顶部未同步"的问题得到解决。
-   */
-  private readonly onSessionTitleUpdated = (info: { sessionId: string; title: string }): void => {
-    // 仅当更新的是当前会话时才推送（其他会话的标题更新不影响当前 UI）
-    if (info.sessionId === this._currentSessionId) {
-      this.post({ type: 'session_title', title: info.title });
-    }
-  };
-
-  /**
-   * rolePackSwitched：角色包切换（内核 emit：手动切换 activate / 检查点恢复激活）
-   *
-   * 内核在手动切换或恢复激活角色包时 emit rolePackSwitched，此处转发为现有
-   * chat_role_pack 协议消息（复用，不新增类型），webview 即时刷新。
-   *
-   * 同步推送 capability_badge —— 工具权限徽章，展示当前角色的工具模式与能力列表。
-   */
-  private readonly onRolePackSwitched = (info: { from: string | null; to: string }): void => {
-    // 防双发：手动切换经「activate 回调 + rolePackSwitched 事件」两次到达；与当前值相同即已处理
-    if (info.to === this._activeRolePack) return;
-    // SSOT：同一事件维护内部激活角色（= 内核 activeName），是 replaySession 的真相源；
-    // 只 post 不更新会让视图重解析时读到陈旧值 → 徽章与设置面板分叉。
-    this._activeRolePack = info.to;
-    // 仅转发切换后的角色显示名（to），触发角色选择器 + AI 消息标签同步（视图存活时）
-    this.postActiveRolePack(info.to);
-    // 同步推送工具权限徽章（角色切换后能力面随之变化）
-    this.postCapabilityBadge();
-    // 角色切换后「启用角色包」技能源变化 → 刷新技能清单（composer 动态下拉与设置面板同步，SSOT）
-    this.pushSkillList();
-    // 角色包底盘占用随切换实时反映到输入区圆环（内核已在切换时重算 setRolePackBaseTokens，
-    // 此处直接推当前占用快照即可，不重算、不依赖跑 prepare——切角色包即刷新占用）
-    this.postContextOccupancy();
-  };
-
-  /**
-   * workProjectionGenerated：工作投影生成（内核后台投影完成时 emit）
-   *
-   * 转发为 notice info 级提示条，告知用户当前工作投影已更新。
-   * 内核事件形状：{ sourcePath: string; summary: string }
-   */
-  private readonly onWorkProjectionGenerated = (info: {
-    sourcePath: string;
-    summary: string;
-  }): void => {
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `工作投影已生成：${info.summary ?? info.sourcePath}`,
-    });
-  };
-
-  // ─── 后台事件（调试可观测性） ───
-
-  /** configReloaded：配置热重载完成 */
-  private readonly onConfigReloaded = (info: { source: string }): void => {
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `配置已重载（来源：${info.source}）`,
-    });
-  };
-
-  /**
-   * archiveModeChanged：归档模式切换（内核 setArchiveMode **成功**才发 ⇒ 即运行时真值已变）
-   *
-   * 顺带把运行时真值推给 chat webview：留存按钮文案随之切换（manual 模式按钮兼做归档触发）。
-   * 拒切（busy）不发本事件 ⇒ 偏好已存而运行时未生效的窗口内，文案保持旧值——**如实**，
-   * 与「点击时真实发生什么」一致（偏好改了但按钮还按 full 行事，就该显示 full 的文案）。
-   */
-  private readonly onArchiveModeChanged = (info: { from: string; to: string }): void => {
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `归档模式已切换：${info.from} → ${info.to}`,
-    });
-    this.pushArchiveModeRuntime();
-  };
-
-  /**
-   * rolePackSwitchLocked：角色包切换被**限流锁定**时提示用户（消除 silent failure——用户在
-   * 角色视图点「设为当前」触达限流阈值时，若无本事件则点击无任何反馈）。
-   *
-   * 触发面：内核 activate() 仅在**触发锁定**的那一次切换发射本事件（该次切换成功）；
-   * 被锁期间的后续切换直接返回 false 且不发射，其提示由 settingsPanel.activateRole 经
-   * getRolePackSwitchLockStatus() 分支补发。
-   */
-  private readonly onRolePackSwitchLocked = (info: {
-    reason: string;
-    lockedSeconds: number;
-  }): void => {
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `角色包切换被锁定：${info.reason}，${info.lockedSeconds} 秒后再试`,
-    });
-  };
-
-  /**
-   * memoryRecalled：LLM 查询记忆库命中 N 条相关记忆
-   *
-   * HOST-S3-1 / MEM-EVENT-2：由 notice 条数提示升级为**透明转发** memory_hits——命中明细
-   * （hits）由 webview 收进对应那次 search_memories 调用的工具折叠块（按 toolCallId 配对；
-   * 无 ID / 行未就绪则回退轮次级聚合行）。
-   * - 宿主零加工（不截断、不改写、不做配对决策）：载荷形态真源 = 内核
-   *   AgentEventMap['memoryRecalled']（含 toolCallId），明细上限由内核 parseLimit（50）单点钳制。
-   * - hits / toolCallId 均可选 = 跨 dist 契约：老内核不发这些字段（类型层强制 webview 容错）。
-   *   配对与否、落位退化的分支**全在 webview 渲染层**，宿主只搬字段。
-   * 唯一触发位 = search_memories 工具命中（assembler 接线），
-   * 对齐内核 builtinToolHandlers.searchMemories 命中点。
-   */
-  private readonly onMemoryRecalled = (info: AgentEventMap['memoryRecalled']): void => {
-    this.post({
-      type: 'memory_hits',
-      count: info.count,
-      query: info.query,
-      hits: info.hits,
-      toolCallId: info.toolCallId,
-    });
-  };
+  // ─── 会话事件出口（B9-D 按 op 组外置） ───
+  // 内核会话级 / 后台事件 → notice 与派生投影刷新，整域在 `chatNoticeOps.ts`
+  // （纯「事件 → 输出」映射，依赖面 = 11 个窄接口；文案与 l10n 键也归那里）。
+  // 本类只负责：拿到稳定引用、按事件名装订、解绑。
 
   /**
    * 记忆反馈删除（HOST-S3-3）：对话面板命中行 ✕ → 模态确认后软删。
@@ -1748,6 +1497,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private bindAgentNoticeEvents(): void {
     if (!this._agent) return;
     const a = this._agent;
+    // 处理器集合的稳定引用（外置域，见 `chatNoticeOps.ts`）：装订表内只读一次，不重复取
+    const notice = this._notice;
     this._noticeEventScope.bindTo(a, (agent) => {
       // 每条订阅的解绑闭包：与「事件名 + handler 引用」一一对应，作用域统一释放
       const unsubscribers: Array<() => void> = [];
@@ -1760,51 +1511,51 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         agent.on(event, handler);
         unsubscribers.push(() => agent.off(event, handler));
       };
-      on('sessionError', this.onSessionError);
-      on('sessionResumeFailed', this.onSessionResumeFailed);
-      on('sessionResumeBlocked', this.onSessionResumeBlocked);
-      on('sessionPauseTimedOut', this.onSessionPauseTimedOut);
+      on('sessionError', notice.onSessionError);
+      on('sessionResumeFailed', notice.onSessionResumeFailed);
+      on('sessionResumeBlocked', notice.onSessionResumeBlocked);
+      on('sessionPauseTimedOut', notice.onSessionPauseTimedOut);
       // 低扰信息（截断/压缩/归档失败）→ info 级提示条
-      on('contextTruncated', this.onContextTruncated);
+      on('contextTruncated', notice.onContextTruncated);
       // LLM 主动压缩事件订阅（与 contextTruncated 的内核自动截断区分）
-      on('contextCompressed', this.onContextCompressed);
-      on('archiveFailed', this.onArchiveFailed);
+      on('contextCompressed', notice.onContextCompressed);
+      on('archiveFailed', notice.onArchiveFailed);
       // 会话归档写入成功（内核异步归档完成后发）→ 重拉会话列表：历史条目摘要/keyTopics
       // 即时更新，否则条目停留在切走时的快照、悬停 tooltip 恒空
-      on('sessionArchived', this.onSessionArchived);
+      on('sessionArchived', notice.onSessionArchived);
       // 角色包切换 → UI 角色选择器实时对齐（内核粘性切换/显式激活）
-      on('rolePackSwitched', this.onRolePackSwitched);
+      on('rolePackSwitched', notice.onRolePackSwitched);
       // 后台任务自然终态 → 推 UI 快照（脱管后 turn 已结束：周期性推送点（step_boundary /
       // background_report）都已过、也没有 kill 动作，覆盖不到「任务自然跑完」⇒ 条会一直
       // 显示假活跃的「运行中」。主动 kill 不发本事件。见方案文档 §5.2.2）
       on('backgroundTaskSettled', this._snapshots.onTaskSettled);
       // 项目切换：projectSwitched 事件随内核 PR-SWITCH-1 一并删除（多项目改为宿主各建一个
       // Agent 实例，内核不再切换项目）⇒ 此处原订阅为僵尸（永不触发），已移除。
-      on('workProjectionGenerated', this.onWorkProjectionGenerated);
+      on('workProjectionGenerated', notice.onWorkProjectionGenerated);
       // 后台事件 → info 级提示条（调试可观测性）
-      on('configReloaded', this.onConfigReloaded);
-      on('archiveModeChanged', this.onArchiveModeChanged);
+      on('configReloaded', notice.onConfigReloaded);
+      on('archiveModeChanged', notice.onArchiveModeChanged);
       // 角色包切换锁定事件（补全 rolesView 点设为当前被锁时的 silent failure）
-      on('rolePackSwitchLocked', this.onRolePackSwitchLocked);
+      on('rolePackSwitchLocked', notice.onRolePackSwitchLocked);
       // memoryRecalled：LLM 回答前召回 N 条记忆 → info 级感知提示
-      on('memoryRecalled', this.onMemoryRecalled);
+      on('memoryRecalled', notice.onMemoryRecalled);
       // 高价值事件：输入过大预警
-      on('inputTooLarge', this.onInputTooLarge);
+      on('inputTooLarge', notice.onInputTooLarge);
       // 中价值事件：分叉完成 + 去重完成 + 槽位澄清
-      on('sessionForked', this.onSessionForked);
+      on('sessionForked', notice.onSessionForked);
       // 删后注记（2026-10-18 · 5.0.0）：曾订阅内核 `dedupCompleted` 弹 notice，该事件随内核
       // 治理链退役（GOVERNANCE-SRC-1）一并拆除——留着就是僵尸订阅（永不发射 ⇒ 静态检查恒过）。
       // 勿加回；内核 `AgentEventMap` 已无此键。
       // 低价值事件：会话状态冗余确认
-      on('sessionPaused', this.onSessionPaused);
-      on('sessionResumed', this.onSessionResumed);
-      on('sessionRecovered', this.onSessionRecovered);
+      on('sessionPaused', notice.onSessionPaused);
+      on('sessionResumed', notice.onSessionResumed);
+      on('sessionRecovered', notice.onSessionRecovered);
       // SSOT 会话标题同步：LLM 自动生成标题后，刷新 webview 顶部标题
-      on('sessionTitleUpdated', this.onSessionTitleUpdated);
+      on('sessionTitleUpdated', notice.onSessionTitleUpdated);
       return unsubscribers;
     });
     // 角色包**激活态**变更（含删激活包后的兜底回退）→ 复用同一条 UI 更新路径；防双发在处理器内
-    bridgeRolePackActivation(a.rolePacks, this.onRolePackSwitched);
+    bridgeRolePackActivation(a.rolePacks, this._notice.onRolePackSwitched);
   }
 
   /** 解绑本面板在所属 Agent 上的全部会话级订阅（幂等；面板销毁/换实例时调用） */

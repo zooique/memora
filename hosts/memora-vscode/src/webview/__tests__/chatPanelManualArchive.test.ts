@@ -251,12 +251,15 @@ describe('chatPanel 手动归档入口（manual 模式嫁接留存按钮 · 2026
 
     (
       provider as unknown as {
-        onArchiveModeChanged(info: { from: string; to: string }): void;
+        _notice: {
+          onArchiveModeChanged(info: { from: string; to: string }): void;
+        };
       }
-    ).onArchiveModeChanged({ from: 'full', to: 'manual' });
+    )._notice.onArchiveModeChanged({ from: 'full', to: 'manual' });
 
     const notices = ofType<{ type: string; message: string }>(posted, 'notice');
-    expect(notices.at(-1)?.message).toBe('归档模式已切换：full → manual');
+    // 宿主默认语言 = 英文（l10n 无译文时 t() 返回源键本身），故断言英文源键
+    expect(notices.at(-1)?.message).toBe('Archive mode changed: full → manual');
     expect(ofType<{ type: string; mode: string }>(posted, 'chat_archive_mode').at(-1)?.mode).toBe(
       'manual',
     );

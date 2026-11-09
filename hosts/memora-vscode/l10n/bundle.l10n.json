@@ -1044,5 +1044,21 @@
   "Remove {0} injection": "",
   "Injected this turn {0} ({1}) · estimated at send time, overwritten next turn": "",
   "Agent needs your confirmation: {0}": "",
-  "; ": ""
+  "; ": "",
+  "Session error: {0}": "",
+  "Session resume failed: {0}": "",
+  "Session cannot be resumed: {0}": "",
+  "Session pause timed out; please start again": "",
+  "Context truncated: {0} skipped, {1} kept": "",
+  "Context compressed: {0}, {1} messages replaced, summary {2} tokens": "",
+  "Memory archiving failed ({0}): {1}": "",
+  "Input too large ({0} characters); remaining budget is insufficient. {1}": "",
+  "Forked new session \"{0}\" ({1} turns)": "",
+  "Conversation paused ({0})": "",
+  "Conversation resumed": "",
+  "Conversation recovered from the error; continuing": "",
+  "Work projection generated: {0}": "",
+  "Configuration reloaded (source: {0})": "",
+  "Archive mode changed: {0} → {1}": "",
+  "Role pack switching is locked: {0}; try again in {1} seconds": ""
 }

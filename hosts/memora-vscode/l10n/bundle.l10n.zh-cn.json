@@ -1044,5 +1044,21 @@
   "Remove {0} injection": "移除{0}注入",
   "Injected this turn {0} ({1}) · estimated at send time, overwritten next turn": "本轮注入 {0}（{1}）· 发送时刻估算，下一轮覆盖",
   "Agent needs your confirmation: {0}": "Agent 需要你确认：{0}",
-  "; ": "；"
+  "; ": "；",
+  "Session error: {0}": "会话异常：{0}",
+  "Session resume failed: {0}": "会话恢复失败：{0}",
+  "Session cannot be resumed: {0}": "会话无法恢复：{0}",
+  "Session pause timed out; please start again": "会话暂停超时，请重新开始",
+  "Context truncated: {0} skipped, {1} kept": "上下文已截断：跳过 {0} 条，保留 {1} 条",
+  "Context compressed: {0}, {1} messages replaced, summary {2} tokens": "上下文已压缩：{0}，替换 {1} 条消息，摘要 {2} token",
+  "Memory archiving failed ({0}): {1}": "记忆归档失败（{0}）：{1}",
+  "Input too large ({0} characters); remaining budget is insufficient. {1}": "输入过大（{0} 字符），剩余预算不足。{1}",
+  "Forked new session \"{0}\" ({1} turns)": "已分叉新会话「{0}」（{1} 个问答闭环）",
+  "Conversation paused ({0})": "对话已暂停（{0}）",
+  "Conversation resumed": "对话已恢复执行",
+  "Conversation recovered from the error; continuing": "对话已从异常中恢复，继续执行",
+  "Work projection generated: {0}": "工作投影已生成：{0}",
+  "Configuration reloaded (source: {0})": "配置已重载（来源：{0}）",
+  "Archive mode changed: {0} → {1}": "归档模式已切换：{0} → {1}",
+  "Role pack switching is locked: {0}; try again in {1} seconds": "角色包切换被锁定：{0}，{1} 秒后再试"
 }

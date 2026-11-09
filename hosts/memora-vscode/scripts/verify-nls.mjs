@@ -449,7 +449,8 @@ const WEBVIEW_PANELS = {
   //     toolNameMap 表值改为**英文源键**，webview 与宿主两侧各过本地化器（宿主 confirmCoordinator 同步）；
   //   · statusAttrs —— data-status / data-terminus 的**键面与文案分离**（键给选择器、label 给
   //     CSS content），故属性里不再有 CJK；chatStyles 的三档终态标签随之改读 label 通道。
-  //   仍未迁移：chatView.ts（B9-C）/ chatPanel.ts（B9-D）/ imageCapture 等（B9-E）⇒ 面板仍 pending。
+  //   仍未迁移：imageCapture 等（B9-E）⇒ 面板仍 pending。
+  //   （`chatView.ts` 已于 B9-C 三刀迁完、`chatPanel.ts` 的事件出口域已于 B9-D-1 迁完，见下。）
   //
   // B9-B（过程流单元格两件套）已收口并登记：
   //   · processFlowCells —— 任务项标题 / 叙述冒号 / 工具批失败统计 / 搜索证据三件套全部走 l10n；
@@ -479,6 +480,13 @@ const WEBVIEW_PANELS = {
   //   contextOccupancyView / emptyStateView / turnUiState / sessionHistoryActions /
   //   docContext / refChips 等 → B9-E）一旦登记就会立刻红 ⇒ 现在翻转等于「守卫报绿、
   //   屏幕仍中文」（守卫撒谎比没有守卫更贵）。待 B9-E 收口一次性登记齐全再翻。
+  //
+  // B9-D-1（会话事件出口域，`chatPanel.ts` 首刀）已收口并登记：
+  //   · chatNoticeOps —— 20 个会话级 / 后台事件处理器整域外置（纯「事件 → notice / 派生投影刷新」，
+  //     依赖面 = 11 个窄接口）；可见文案全走 l10n，两处**内核中文载荷**（`inputTooLarge.hint` /
+  //     `COMPRESS_TARGET_LABELS`）属内核公开面，本批只登记为债、不改；
+  //   · chatPanel —— 只留 `_notice` 注入 + 装订表；本刀后仍有未迁移域（会话结构 / 分叉改名 /
+  //     输入守卫 / 文案常量）⇒ 面板仍 pending。
   chat: {
     state: 'pending',
     files: [
@@ -500,6 +508,7 @@ const WEBVIEW_PANELS = {
       'webview/scripts/askInlineView.ts',
       'webview/scripts/writeConfirmCardView.ts',
       'webview/scripts/chatView.ts',
+      'webview/panels/chatNoticeOps.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。

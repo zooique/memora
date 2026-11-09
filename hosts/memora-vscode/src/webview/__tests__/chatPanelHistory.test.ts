@@ -347,7 +347,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
 
     // 模拟内核异步归档完成 → 宿主 handler 被事件触发
-    (provider as unknown as { onSessionArchived(): void }).onSessionArchived();
+    (provider as unknown as { _notice: { onSessionArchived(): void } })._notice.onSessionArchived();
 
     const data = ofType<{ type: string; sessions: unknown[] }>(posted, 'session_list_data');
     expect(data).toHaveLength(1);
@@ -361,13 +361,15 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // 模拟内核 search_memories 命中（4.1.0 载荷形态：count + query + hits 明细）
     (
       provider as unknown as {
-        onMemoryRecalled(info: {
-          count: number;
-          query: string;
-          hits?: { id: string; name: string; source: string }[];
-        }): void;
+        _notice: {
+          onMemoryRecalled(info: {
+            count: number;
+            query: string;
+            hits?: { id: string; name: string; source: string }[];
+          }): void;
+        };
       }
-    ).onMemoryRecalled({
+    )._notice.onMemoryRecalled({
       count: 2,
       query: '测试',
       hits: [
