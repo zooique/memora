@@ -1060,5 +1060,8 @@
   "Work projection generated: {0}": "",
   "Configuration reloaded (source: {0})": "",
   "Archive mode changed: {0} → {1}": "",
-  "Role pack switching is locked: {0}; try again in {1} seconds": ""
+  "Role pack switching is locked: {0}; try again in {1} seconds": "",
+  "Cannot open reference: {0}": "",
+  "File count exceeds {0} and has been truncated (built-in ignored directories already excluded); type keywords to narrow down (multi-select, Esc to cancel)…": "",
+  "Select a file to attach as a reference, or pick {0} to inject context (multi-select, Esc to cancel)…": ""
 }

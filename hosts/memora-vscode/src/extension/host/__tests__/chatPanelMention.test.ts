@@ -25,7 +25,9 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as vscode from 'vscode';
-import { MemoraChatViewProvider, MENTION_FILE_LIMIT } from '../../../webview/panels/chatPanel.js';
+import { MemoraChatViewProvider } from '../../../webview/panels/chatPanel.js';
+// 上限常量随 @ 提及域外置（B9-D-2），测试断言仍读同一个数，不复制字面量
+import { MENTION_FILE_LIMIT } from '../../../webview/panels/chatRefOps.js';
 import { WorkspaceSessionStore } from '../sessionStore.js';
 import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
 
@@ -170,7 +172,7 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
     expect(qp.canSelectMany).toBe(true);
     // 反向守卫（HOST-CTX-11）：未命中上限时 placeholder 不得含截断提示（否则用户永远
     // 以为列表不全，会去徒劳地输关键词缩小范围）
-    expect(qp.placeholder).not.toContain('已截断');
+    expect(qp.placeholder).not.toContain('has been truncated');
     // 用户确认（accept 回调 → selectedItems 即上面预置的两项）
     (qp.onDidAccept.mock.calls[0][0] as () => void)();
     await p;
@@ -240,10 +242,11 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
     const qp = stubQuickPick([]);
     const p = h.cast.openMentionQuickPick();
     await vi.waitFor(() => expect(qp.onDidHide).toHaveBeenCalled());
-    expect(qp.placeholder).toContain('已截断');
+    // 宿主默认语言 = 英文（测试里 l10n.t 返回源键本身），故断言英文源键
+    expect(qp.placeholder).toContain('has been truncated');
     // HOST-CTX-14：截断须交代原因——「内置忽略目录已排除、仍超限」。只说超上限时，
     // 用户会以为额度被无关文件占着（那正是本项修掉的旧形态），徒劳换关键词。
-    expect(qp.placeholder).toContain('忽略目录已排除');
+    expect(qp.placeholder).toContain('ignored directories already excluded');
     (qp.onDidHide.mock.calls[0][0] as () => void)();
     await p;
   });

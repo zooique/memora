@@ -1060,5 +1060,8 @@
   "Work projection generated: {0}": "工作投影已生成：{0}",
   "Configuration reloaded (source: {0})": "配置已重载（来源：{0}）",
   "Archive mode changed: {0} → {1}": "归档模式已切换：{0} → {1}",
-  "Role pack switching is locked: {0}; try again in {1} seconds": "角色包切换被锁定：{0}，{1} 秒后再试"
+  "Role pack switching is locked: {0}; try again in {1} seconds": "角色包切换被锁定：{0}，{1} 秒后再试",
+  "Cannot open reference: {0}": "无法打开引用：{0}",
+  "File count exceeds {0} and has been truncated (built-in ignored directories already excluded); type keywords to narrow down (multi-select, Esc to cancel)…": "文件数超 {0} 已截断（内置忽略目录已排除、仍超上限），请输入关键词缩小范围（可多选，Esc 取消）…",
+  "Select a file to attach as a reference, or pick {0} to inject context (multi-select, Esc to cancel)…": "选择要挂为引用的文件，或选 {0} 注入上下文（可多选，Esc 取消）…"
 }

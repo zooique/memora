@@ -487,6 +487,14 @@ const WEBVIEW_PANELS = {
   //     `COMPRESS_TARGET_LABELS`）属内核公开面，本批只登记为债、不改；
   //   · chatPanel —— 只留 `_notice` 注入 + 装订表；本刀后仍有未迁移域（会话结构 / 分叉改名 /
   //     输入守卫 / 文案常量）⇒ 面板仍 pending。
+  //
+  // B9-D-2（引用入口域，`chatPanel.ts` 第二刀）已收口并登记：
+  //   · chatRefOps —— `openRefInEditor`（引用打开定位）+ `openMentionQuickPick`（@ 提及选择器）
+  //     整域外置；两者同属「引用的入口/出口」一条链、共用 `refPath` 首根判据，故同模块承载；
+  //     in-flight 标志收进闭包（面板不再持有），依赖面 = 3 个窄接口（post / pushRefs / hasView）；
+  //   · `MENTION_FILE_LIMIT` 随域迁出，测试从 `chatRefOps.ts` 读同一个数（不复制字面量）；
+  //   · chatPanel —— 两个方法与旧 `##` 说明只留转发口，`openMentionQuickPick` 保留公开签名
+  //     （webview 分发与宿主单测经它驱动）。
   chat: {
     state: 'pending',
     files: [
@@ -509,6 +517,7 @@ const WEBVIEW_PANELS = {
       'webview/scripts/writeConfirmCardView.ts',
       'webview/scripts/chatView.ts',
       'webview/panels/chatNoticeOps.ts',
+      'webview/panels/chatRefOps.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。
