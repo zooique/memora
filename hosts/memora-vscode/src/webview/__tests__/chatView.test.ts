@@ -3191,7 +3191,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const planItems = document.querySelectorAll('.round-block__plan-item');
     expect(planItems.length).toBe(2);
     expect(planItems[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain(
-      '任务项 1',
+      'Task item 1',
     );
     expect(planItems[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain(
       '分析需求',
@@ -3396,13 +3396,13 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 编号真源 = bounds 按 (ts, seq) 排出的名次：乙（ts 小）是「任务项 1」，甲（ts 大）是「任务项 2」；
     // 视觉序必须与编号序一致（若组按纯 seq 摆位 → 甲在前、编号却更大 → 红）
     expect(groups[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain(
-      '任务项 1',
+      'Task item 1',
     );
     expect(groups[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain(
       '任务乙',
     );
     expect(groups[1]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain(
-      '任务项 2',
+      'Task item 2',
     );
     expect(groups[1]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain(
       '任务甲',
@@ -7837,7 +7837,8 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     const narrateRow = rb.querySelector('.round-block__narrate') as HTMLElement;
     expect(narrateRow).not.toBeNull();
     expect(narrateRow.tagName).toBe('DIV'); // 非折叠 details
-    expect(narrateRow.textContent).toBe('我先搜索相关资料：'); // 冒号形态与运行时一致
+    // 冒号形态与运行时一致（B9-B 起走 l10n 源键 '{0}:'；测试无 zh bundle ⇒ 断言英文源键形态）
+    expect(narrateRow.textContent).toBe('我先搜索相关资料:');
   });
 
   it('策略拦截（blocked）工具行显示「已拦截」并默认展开，不冒充成功/失败（2026-09-02 第三态）', () => {
@@ -8064,7 +8065,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     row = document.querySelector('.round-block__tool') as HTMLDetailsElement;
     expect(row.classList.contains('is-tool-pending')).toBe(false);
     expect(row.classList.contains('is-tool-running')).toBe(true);
-    expect(row.textContent).toContain('进行中');
+    expect(row.textContent).toContain('Running');
     // 叙述复原（参数完整，写环工具行动叙述生成器同路）
     expect(row.textContent).toContain('Write file: b.md');
     // ③ tool_result 收敛终态（成功收起，非运行态）
@@ -11511,8 +11512,8 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     expect(block.dataset.toolBatch).toBe('2');
     expect(block.classList.contains('is-tool-batch-failed')).toBe(true);
     const warn = block.querySelector('.round-block__tool-batch-warn') as HTMLElement;
-    expect(warn.textContent).toContain('含失败 1');
-    expect(warn.textContent).toContain('含拦截 1');
+    expect(warn.textContent).toContain('1 failed');
+    expect(warn.textContent).toContain('1 blocked');
     // 失败/被拒行留段内（各自原位可见），无游离行逃出批块
     const rows = block.querySelectorAll('.round-block__tool');
     expect(rows).toHaveLength(3);
@@ -13002,8 +13003,8 @@ describe('web_search 裁决证据（evidence 随 RoundView / 收场消息透传�
     expect(row).not.toBeNull();
     const ev = row!.querySelector<HTMLElement>('.round-block__search-evidence');
     expect(ev).not.toBeNull();
-    expect(ev!.textContent).toContain('搜索来源：DuckDuckGo');
-    expect(ev!.textContent).toContain('结果条数：2');
+    expect(ev!.textContent).toContain('Search source: DuckDuckGo');
+    expect(ev!.textContent).toContain('Results: 2');
     expect(ev!.textContent).toContain('· 结果A');
     expect(ev!.textContent).toContain('· 结果B');
     // 纯文本证据面：不得产生可点链接（内核证据无 URL 可锚）
@@ -13030,9 +13031,9 @@ describe('web_search 裁决证据（evidence 随 RoundView / 收场消息透传�
     );
     const ev = document.querySelector<HTMLElement>('.round-block__search-evidence');
     expect(ev).not.toBeNull();
-    expect(ev!.textContent).toContain('结果条数：0');
+    expect(ev!.textContent).toContain('Results: 0');
     // 无 endpoint（提供方未打标）→ 不渲染来源行
-    expect(ev!.textContent).not.toContain('搜索来源：');
+    expect(ev!.textContent).not.toContain('Search source:');
   });
 
   it('无 evidence 或缺省（实时/无证据轮）不渲染证据块', () => {
@@ -13116,10 +13117,10 @@ describe('web_search 裁决证据（evidence 随 RoundView / 收场消息透传�
     const second = document
       .querySelector<HTMLElement>('.round-block__tool[data-tool-call-id="w2"]')
       ?.querySelector<HTMLElement>('.round-block__search-evidence');
-    expect(first?.textContent).toContain('搜索来源：E1');
-    expect(first?.textContent).toContain('结果条数：1');
-    expect(second?.textContent).toContain('搜索来源：E2');
-    expect(second?.textContent).toContain('结果条数：2');
+    expect(first?.textContent).toContain('Search source: E1');
+    expect(first?.textContent).toContain('Results: 1');
+    expect(second?.textContent).toContain('Search source: E2');
+    expect(second?.textContent).toContain('Results: 2');
   });
 
   it('主配（toolCallId）：同 query 下被护栏硬拦的搜索行不张冠李戴到另一次成功的证据', () => {
@@ -13156,8 +13157,8 @@ describe('web_search 裁决证据（evidence 随 RoundView / 收场消息透传�
     expect(blockedRow).toBeNull();
     // w2 的证据唯一配对回 w2
     expect(okRow).not.toBeNull();
-    expect(okRow!.textContent).toContain('搜索来源：E2');
-    expect(okRow!.textContent).toContain('结果条数：2');
+    expect(okRow!.textContent).toContain('Search source: E2');
+    expect(okRow!.textContent).toContain('Results: 2');
   });
 
   /** 运行时开新轮：meta 建 round-block → chunk 建本轮 assistant 容器（finalize 重建的宿主） */
@@ -13196,8 +13197,8 @@ describe('web_search 裁决证据（evidence 随 RoundView / 收场消息透传�
     });
     const ev = document.querySelector<HTMLElement>('.round-block__search-evidence');
     expect(ev).not.toBeNull();
-    expect(ev!.textContent).toContain('搜索来源：DuckDuckGo');
-    expect(ev!.textContent).toContain('结果条数：1');
+    expect(ev!.textContent).toContain('Search source: DuckDuckGo');
+    expect(ev!.textContent).toContain('Results: 1');
     expect(ev!.textContent).toContain('· 结果A');
   });
 
@@ -13231,8 +13232,8 @@ describe('web_search 裁决证据（evidence 随 RoundView / 收场消息透传�
     });
     const ev = document.querySelector<HTMLElement>('.round-block__search-evidence');
     expect(ev).not.toBeNull();
-    expect(ev!.textContent).toContain('搜索来源：Bing');
-    expect(ev!.textContent).toContain('结果条数：2');
+    expect(ev!.textContent).toContain('Search source: Bing');
+    expect(ev!.textContent).toContain('Results: 2');
   });
 });
 

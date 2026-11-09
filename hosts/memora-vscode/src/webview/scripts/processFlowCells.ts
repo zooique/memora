@@ -16,6 +16,7 @@
  * @module processFlowCells
  */
 import type { ProcessEvent } from '@zooique/memora';
+import * as l10n from '@vscode/l10n';
 import {
   isPlanItemBoundaryEvent,
   toolActionLabel,
@@ -329,7 +330,10 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     const title = bound.payload.title?.trim() ?? '';
     const summary = document.createElement('summary');
     summary.className = 'round-block__plan-item-summary';
-    summary.textContent = `任务项 ${order} · ${title.length > 36 ? `${title.slice(0, 36)}…` : title}`;
+    // 文案走 l10n：源键 = 英文整句（「任务项 N」是屏上文案，不是编号真源）；
+    // 标题是模型/用户产出的自由文本，只截断不翻译
+    const titlePreview = title.length > 36 ? `${title.slice(0, 36)}…` : title;
+    summary.textContent = l10n.t('Task item {0} · {1}', String(order), titlePreview);
     grp.appendChild(summary);
     // 任务项内叙述/工具父容器：按序插入 details 顶层，容器内平铺该任务项过程事件
     insertPlanItemGroupInOrder(root, grp, bound.ts, bound.seq);
@@ -385,9 +389,10 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     // 纯文本直显（对齐流式 process-flow__narrate 同构）：narrate 语义 = 一句话行动叙述，
     // 无折叠价值——旧 details 形态（summary 全文 + body 全文）对 ≤80 字叙述双份消费同一内容，
     // 且与流式纯文本形态分裂（轮结束瞬间直显突变折叠+双份，2026-10-05 真机实锤）。
-    // 叙述冒号：结尾无标点时补「：」（流式同款定案「AI 说什么：」后接工具块）——文本防注入
+    // 叙述冒号：结尾无标点时补一个（流式同款定案「AI 说什么：」后接工具块）——文本防注入；
+    // 冒号本身是标点文案，中英文形态不同（全角/半角），故走 l10n 取当前语言形态
     const text = ev.payload.content.trim();
-    row.textContent = /[:：。!！?？；;]$/.test(text) ? text : `${text}：`;
+    row.textContent = /[:：。!！?？；;]$/.test(text) ? text : l10n.t('{0}:', text);
     return row;
   }
 
@@ -402,7 +407,7 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     openByDefault = false,
     ts?: string,
     seq?: number,
-    label = '思考',
+    label: string = l10n.t('Thinking'),
   ): HTMLDetailsElement {
     // 思考事件存的是**增量 delta 片段**（如 "Now let me also read" / "the" / "gap analysis."），
     // 按序**原样连续拼接**（无分隔符、不逐条 trim，保留片段的天然间隔）→ 还原真正的连续思考流，
@@ -458,7 +463,8 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     // 参数此刻已完整，按既有多参数叙述生成器复原（renderToolRow 同路）
     if (labelEl) labelEl.textContent = toolActionLabel(start.payload.name, start.payload.args);
     const statusEl = row.querySelector<HTMLElement>('.round-block__tool-status');
-    if (statusEl) statusEl.textContent = ' (进行中)';
+    // 状态文案与 renderToolRow 同源（toolRowStatus 的 'Running' 键），不另造一条同义键
+    if (statusEl) statusEl.textContent = ` (${l10n.t('Running')})`;
     // 参数补挂（与 renderToolRow 的 args pre 同构）：展开可看本次调用入参
     if (start.payload.args && !row.querySelector(':scope > .round-block__pre')) {
       const pre = document.createElement('pre');
@@ -549,8 +555,8 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     }
     block.classList.toggle('is-tool-batch-failed', failed + blocked > 0);
     const parts: string[] = [];
-    if (failed > 0) parts.push(`含失败 ${failed}`);
-    if (blocked > 0) parts.push(`含拦截 ${blocked}`);
+    if (failed > 0) parts.push(l10n.t('{0} failed', String(failed)));
+    if (blocked > 0) parts.push(l10n.t('{0} blocked', String(blocked)));
     // 提示 span 同为稳定节点：无提示即移除（生命周期随统计结果，title 节点不受影响）
     let warn = summary.querySelector<HTMLElement>(':scope > .round-block__tool-batch-warn');
     if (parts.length === 0) {
@@ -562,7 +568,8 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
       warn.className = 'round-block__tool-batch-warn';
       summary.appendChild(warn);
     }
-    const warnText = `（${parts.join(' · ')}）`;
+    // 包裹括号同为标点文案：中英文括号形态不同，整句走 l10n（源键 = 半角括号形态）
+    const warnText = l10n.t('({0})', parts.join(' · '));
     if (warn.textContent !== warnText) warn.textContent = warnText;
   }
 
@@ -607,8 +614,8 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
       d.textContent = text;
       box.appendChild(d);
     };
-    if (ev.payload.endpoint) addLine(`搜索来源：${ev.payload.endpoint}`);
-    addLine(`结果条数：${ev.payload.count}`);
+    if (ev.payload.endpoint) addLine(l10n.t('Search source: {0}', ev.payload.endpoint));
+    addLine(l10n.t('Results: {0}', String(ev.payload.count)));
     for (const title of ev.payload.titles) addLine(`· ${title}`);
     return box;
   }

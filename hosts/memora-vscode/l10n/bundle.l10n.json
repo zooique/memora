@@ -948,5 +948,12 @@
   "Paused": "",
   "Completed": "",
   "Stopped by user": "",
-  "Interrupted by error": ""
+  "Interrupted by error": "",
+  "Task item {0} · {1}": "",
+  "{0}:": "",
+  "({0})": "",
+  "{0} failed": "",
+  "{0} blocked": "",
+  "Search source: {0}": "",
+  "Results: {0}": ""
 }

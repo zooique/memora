@@ -948,5 +948,12 @@
   "Paused": "已暂停",
   "Completed": "已完成",
   "Stopped by user": "用户中断",
-  "Interrupted by error": "异常中断"
+  "Interrupted by error": "异常中断",
+  "Task item {0} · {1}": "任务项 {0} · {1}",
+  "{0}:": "{0}：",
+  "({0})": "（{0}）",
+  "{0} failed": "含失败 {0}",
+  "{0} blocked": "含拦截 {0}",
+  "Search source: {0}": "搜索来源：{0}",
+  "Results: {0}": "结果条数：{0}"
 }

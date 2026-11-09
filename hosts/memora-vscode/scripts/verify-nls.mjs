@@ -415,7 +415,12 @@ const WEBVIEW_PANELS = {
   //     toolNameMap 表值改为**英文源键**，webview 与宿主两侧各过本地化器（宿主 confirmCoordinator 同步）；
   //   · statusAttrs —— data-status / data-terminus 的**键面与文案分离**（键给选择器、label 给
   //     CSS content），故属性里不再有 CJK；chatStyles 的三档终态标签随之改读 label 通道。
-  //   仍未迁移：chatView.ts（B9-C）/ chatPanel.ts（B9-D）/ processFlowCells 等（B9-B）⇒ 面板仍 pending。
+  //   仍未迁移：chatView.ts（B9-C）/ chatPanel.ts（B9-D）/ imageCapture 等（B9-E）⇒ 面板仍 pending。
+  //
+  // B9-B（过程流单元格两件套）已收口并登记：
+  //   · processFlowCells —— 任务项标题 / 叙述冒号 / 工具批失败统计 / 搜索证据三件套全部走 l10n；
+  //     标点类文案（冒号、包裹括号）按中英形态各一条键，不用 ASCII 凑中文版式；
+  //   · toolRowView —— 文件内本就零可见字面量（中文全在注释），登记即把「过期未迁移」变成受判据文件。
   chat: {
     state: 'pending',
     files: [
@@ -427,6 +432,8 @@ const WEBVIEW_PANELS = {
       'webview/helpers/processFlowModel.ts',
       'webview/helpers/statusAttrs.ts',
       'webview/styles/chatStyles.ts',
+      'webview/scripts/processFlowCells.ts',
+      'webview/scripts/toolRowView.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。
