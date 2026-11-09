@@ -17,7 +17,19 @@ import {
   type ResidentFailureView,
   type ResidentReportView,
   type WorkEntryView,
+  type WorkProjectionL10n,
 } from '../workProjectionRows.js';
+
+/** Default-language translator: keys are the English source text (same as an unconfigured l10n runtime). */
+const en: WorkProjectionL10n = {
+  t: (message: string, ...args: (string | number | boolean)[]) =>
+    message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+};
+
+/** Derive through the default-language translator so assertions pin the English source text. */
+function derive(input: Omit<Parameters<typeof deriveWorkProjectionView>[0], 'l10n'>) {
+  return deriveWorkProjectionView({ ...input, l10n: en });
+}
 
 /** 造一条内核清单快照（字段与 `ManagedWorkEntry` 对齐；resident 已归一为布尔） */
 function entry(source: string, resident: boolean, description = ''): WorkEntryView {
@@ -56,7 +68,7 @@ function reportView(
 
 describe('派生：非行状态（三种「拿不到行」的原因必须分开）', () => {
   it('无 Agent ⇒ no-agent（空清单也不得显示成「还没有登记作品投影」）', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: false,
       listMalformed: false,
       entries: [],
@@ -64,11 +76,11 @@ describe('派生：非行状态（三种「拿不到行」的原因必须分开�
     });
     expect(state.kind).toBe('no-agent');
     if (state.kind !== 'no-agent') throw new Error('state 收窄失败');
-    expect(state.message).toContain('尚未创建任何会话');
+    expect(state.message).toContain('No session yet');
   });
 
   it('清单格式异常 ⇒ malformed（优先级高于空清单：改 JSON 与去登记是两种自救动作）', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: true,
       entries: [entry('a.md', false)],
@@ -80,7 +92,7 @@ describe('派生：非行状态（三种「拿不到行」的原因必须分开�
   });
 
   it('清单为空 ⇒ empty（文案必须指向登记入口，否则用户不知道下一步）', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [],
@@ -88,13 +100,13 @@ describe('派生：非行状态（三种「拿不到行」的原因必须分开�
     });
     expect(state.kind).toBe('empty');
     if (state.kind !== 'empty') throw new Error('state 收窄失败');
-    expect(state.message).toContain('登记作品投影');
+    expect(state.message).toContain('Register Work Projection');
   });
 });
 
 describe('派生：行字段', () => {
   it('常驻条目的行：状态后缀 / description / resident / hasFailure / tooltip 逐字段钉死', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [entry('rules.md', true, '仓库硬约束')],
@@ -107,7 +119,7 @@ describe('派生：行字段', () => {
     const row = state.rows[0]!;
     expect(row.name).toBe('rules');
     expect(row.source).toBe('rules.md');
-    expect(row.statusText).toBe('项目规则');
+    expect(row.statusText).toBe('Project rule');
     expect(row.resident).toBe(true);
     expect(row.hasFailure).toBe(false);
     // 说明进卡片字段（不靠 hover）；tooltip 只留源路径，避免同一句话两处显示
@@ -117,7 +129,7 @@ describe('派生：行字段', () => {
   });
 
   it('非常驻条目的行：未设为项目规则 + resident=false（不得被画成规则）', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [entry('notes.md', false, '随手记')],
@@ -125,13 +137,13 @@ describe('派生：行字段', () => {
     });
     if (state.kind !== 'rows') throw new Error('state 收窄失败');
     const row = state.rows[0]!;
-    expect(row.statusText).toBe('未设为项目规则');
+    expect(row.statusText).toBe('Not a project rule');
     expect(row.resident).toBe(false);
     expect(row.hasFailure).toBe(false);
   });
 
   it('说明为空 ⇒ 原样透传空串、tooltip 只留源路径（不留空行尾巴）', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [entry('plain.md', false)],
@@ -143,7 +155,7 @@ describe('派生：行字段', () => {
   });
 
   it('行序 = 清单数组顺序（注入段「靠前者优先」同一份顺序，禁止另排序）', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [entry('b.md', true), entry('a.md', false), entry('c.md', true)],
@@ -156,7 +168,7 @@ describe('派生：行字段', () => {
 
 describe('派生：失效徽标（内核报告 → 行后缀 / hasFailure / tooltip）', () => {
   it('读盘失败家族 ⇒ 未注入（读取失败）；文案进 tooltip 而不是后缀', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [entry('rules.md', true, '仓库硬约束')],
@@ -164,7 +176,7 @@ describe('派生：失效徽标（内核报告 → 行后缀 / hasFailure / tool
     });
     if (state.kind !== 'rows') throw new Error('state 收窄失败');
     const row = state.rows[0]!;
-    expect(row.statusText).toBe('项目规则 · 未注入（读取失败）');
+    expect(row.statusText).toBe('Project rule · Not injected (read failed)');
     expect(row.hasFailure).toBe(true);
     // 后缀只说分类，内核那句带路径 / 计量的说明放 tooltip（不截断、不改写）
     expect(row.statusText).not.toContain('源文件不存在');
@@ -182,19 +194,19 @@ describe('派生：失效徽标（内核报告 → 行后缀 / hasFailure / tool
       'missing',
       'read-error',
     ] as const) {
-      const state = deriveWorkProjectionView({
+      const state = derive({
         hasAgent: true,
         listMalformed: false,
         entries: [entry('r.md', true)],
         residentReport: reportView([failure('r.md', reason)]),
       });
       if (state.kind !== 'rows') throw new Error('state 收窄失败');
-      expect(state.rows[0]!.statusText).toBe('项目规则 · 未注入（读取失败）');
+      expect(state.rows[0]!.statusText).toBe('Project rule · Not injected (read failed)');
     }
   });
 
   it('单条超限 ⇒ 未注入（单条超限）（处置是拆文件，不得说成「下轮重试」）', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [entry('big.md', true)],
@@ -202,13 +214,13 @@ describe('派生：失效徽标（内核报告 → 行后缀 / hasFailure / tool
     });
     if (state.kind !== 'rows') throw new Error('state 收窄失败');
     const row = state.rows[0]!;
-    expect(row.statusText).toBe('项目规则 · 未注入（单条超限）');
-    expect(row.statusText).not.toContain('下轮重试');
+    expect(row.statusText).toBe('Project rule · Not injected (entry too long)');
+    expect(row.statusText).not.toContain('retry');
     expect(row.tooltip).toContain('超过单条 5000 上限 320 字符');
   });
 
   it('合计超限被丢弃（dropped 通道）⇒ 未注入（合计超限）', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [entry('a.md', true), entry('b.md', true)],
@@ -219,13 +231,13 @@ describe('派生：失效徽标（内核报告 → 行后缀 / hasFailure / tool
     });
     if (state.kind !== 'rows') throw new Error('state 收窄失败');
     expect(state.rows.map((r) => r.statusText)).toEqual([
-      '项目规则',
-      '项目规则 · 未注入（合计超限）',
+      'Project rule',
+      'Project rule · Not injected (total limit exceeded)',
     ]);
   });
 
   it('非布尔 resident 误配 ⇒ 未设为项目规则 · 配置有误（该条本来就不是规则）', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [entry('bad.md', false)],
@@ -235,27 +247,27 @@ describe('派生：失效徽标（内核报告 → 行后缀 / hasFailure / tool
     });
     if (state.kind !== 'rows') throw new Error('state 收窄失败');
     const row = state.rows[0]!;
-    expect(row.statusText).toBe('未设为项目规则 · 配置有误');
+    expect(row.statusText).toBe('Not a project rule · Invalid configuration');
     expect(row.hasFailure).toBe(true);
     expect(row.tooltip).toContain('"true"');
   });
 
   it('只有失效条目变化：同清单里的正常行不得被牵连（无后缀、hasFailure 仍为 false）', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [entry('bad.md', true), entry('ok.md', false)],
       residentReport: reportView([failure('bad.md', 'missing')]),
     });
     if (state.kind !== 'rows') throw new Error('state 收窄失败');
-    expect(state.rows[1]!.statusText).toBe('未设为项目规则');
+    expect(state.rows[1]!.statusText).toBe('Not a project rule');
     expect(state.rows[1]!.hasFailure).toBe(false);
   });
 });
 
 describe('派生：报告层面的说明行（不得把「没求值 / 没读到」显示成零失效）', () => {
   it('报告为 null 且配了常驻条目 ⇒ info 说明行 + 行内无失效徽标', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [entry('rules.md', true)],
@@ -263,14 +275,14 @@ describe('派生：报告层面的说明行（不得把「没求值 / 没读到�
     });
     if (state.kind !== 'rows') throw new Error('state 收窄失败');
     expect(state.notice?.level).toBe('info');
-    expect(state.notice?.text).toContain('尚未求值');
+    expect(state.notice?.text).toContain('have not been evaluated');
     // 关键：没求值过不得被画成「已生效」或「零失效」，行保持原样
-    expect(state.rows[0]!.statusText).toBe('项目规则');
+    expect(state.rows[0]!.statusText).toBe('Project rule');
     expect(state.rows[0]!.hasFailure).toBe(false);
   });
 
   it('报告为 null 且没有任何常驻条目 ⇒ 不出说明行（没配规则时这句话是噪音）', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [entry('notes.md', false)],
@@ -281,7 +293,7 @@ describe('派生：报告层面的说明行（不得把「没求值 / 没读到�
   });
 
   it('listReadable === false ⇒ warning 说明行（本轮整段不注入，不是零失效）', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [entry('rules.md', true)],
@@ -289,13 +301,13 @@ describe('派生：报告层面的说明行（不得把「没求值 / 没读到�
     });
     if (state.kind !== 'rows') throw new Error('state 收窄失败');
     expect(state.notice?.level).toBe('warning');
-    expect(state.notice?.text).toContain('未读到清单');
+    expect(state.notice?.text).toContain('could not read the list');
     // 报告读不到清单时不得给出任何「已生效」暗示：行后缀保持中性
-    expect(state.rows[0]!.statusText).toBe('项目规则');
+    expect(state.rows[0]!.statusText).toBe('Project rule');
   });
 
   it('报告已求值且零失效 ⇒ 无说明行（此时沉默才是准确的）', () => {
-    const state = deriveWorkProjectionView({
+    const state = derive({
       hasAgent: true,
       listMalformed: false,
       entries: [entry('rules.md', true)],

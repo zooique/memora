@@ -22,6 +22,10 @@ vi.mock('vscode', async () => ({
       get bundle() {
         return h.bundle;
       },
+      // Panel templates call `vscode.l10n.t` at module scope; identity keeps this test's
+      // focus on bundle passthrough instead of translated text.
+      t: (message: string, ...args: (string | number | boolean)[]) =>
+        message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
     };
   },
 }));

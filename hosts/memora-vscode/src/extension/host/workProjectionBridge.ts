@@ -327,6 +327,7 @@ export class WorkProjectionBridge {
           listMalformed: false,
           entries: [],
           residentReport: null,
+          l10n: vscode.l10n,
         });
       } else {
         const works = agent.works;
@@ -336,11 +337,15 @@ export class WorkProjectionBridge {
           listMalformed: works.isFileMalformed,
           entries: await works.listManagedWorks(),
           residentReport: agent.residentSegmentReport,
+          l10n: vscode.l10n,
         });
       }
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      state = { kind: 'error', message: '读取作品投影失败：' + detail };
+      state = {
+        kind: 'error',
+        message: vscode.l10n.t('Failed to load the work projection list: {0}', detail),
+      };
     }
     this.deps.post({ type: 'work_projection', state });
   }

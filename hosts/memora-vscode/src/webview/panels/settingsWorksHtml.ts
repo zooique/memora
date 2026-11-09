@@ -15,21 +15,34 @@
  * `#works-root` 前缀接管，不在这里写内联样式。
  */
 
-/** 作品和规则子视图主体（works 选项卡：清单 + 项目规则装配诊断 + 单击打开原文件） */
-export const WORKS_BODY_HTML = `
+/**
+ * Build the works sub-view body with an injected localizer.
+ *
+ * Injected (not `import vscode`) because this module is also pulled in by jsdom tests that cannot
+ * resolve the `vscode` bare module. The host caller passes `vscode.l10n`.
+ *
+ * The parameter is a namespace object (not a bare `t` function) on purpose: the static key
+ * collector only recognizes `l10n.t('...')`, so a bare `t('...')` would make these keys invisible
+ * and they would show up as orphans in the bundle (same failure mode as the ⑯ bare-import rule).
+ *
+ * @param l10n Localizer: English source text -> current UI language
+ */
+export function buildWorksBodyHtml(l10n: { t(message: string): string }): string {
+  return `
   <!-- 作品和规则子视图（works 选项卡：作品投影清单与项目规则求值） -->
     <div class="header">
-      <h2>作品和规则</h2>
+      <h2>${l10n.t('Works and rules')}</h2>
       <span id="worksCount" class="stat-bar" hidden></span>
       <div class="header-actions">
-        <button id="btnRefreshWorks" class="btn btn-secondary btn-icon-solo" type="button" title="重新读取清单（徽标是最近一次装配求值的结果，改完清单需下一轮对话才重算）">
+        <button id="btnRefreshWorks" class="btn btn-secondary btn-icon-solo" type="button" title="${l10n.t('Reload the list (badges reflect the last assembly; changes are recalculated on the next turn)')}">
           <span class="btn-icon" data-icon="refresh"></span>
         </button>
       </div>
     </div>
-    <div class="hint"><code>work-projections.json</code> 里登记的都是作品；点行内<strong>「设为项目规则」</strong>即可升级为每轮自动注入的红线。<strong>单击一行打开原文件</strong>可直接修改，保存后下一轮装配重读。</div>
+    <div class="hint"><code>work-projections.json</code> ${l10n.t('lists works; click <strong>"Set as project rule"</strong> in a row to make it a rule injected automatically every turn. <strong>Click a row to open its source file</strong> and edit it; changes are read at the next assembly.')}</div>
     <div id="worksNotice" class="works-notice" hidden></div>
     <div id="worksList" class="works-list">
-      <p class="loading-hint">加载中…</p>
+      <p class="loading-hint">${l10n.t('Loading…')}</p>
     </div>
-    <p class="footer-hint">行尾标出当前是不是项目规则、上一轮装配有没有真的注入；清单改动即时可见，失效原因由内核在每轮装配时重算，改完文件后需发起一轮对话才会刷新。</p>`;
+    <p class="footer-hint">${l10n.t('The row suffix shows whether an entry is a project rule and whether it was actually injected in the last assembly; list changes are visible immediately, while invalid reasons are recalculated by the kernel at each assembly — run a chat turn after editing files.')}</p>`;
+}

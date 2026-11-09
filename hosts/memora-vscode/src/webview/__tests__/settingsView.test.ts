@@ -18,13 +18,13 @@ import type { CustomSearchEngineConfig, MemoryItemDto } from '../../shared/proto
 // MCP 子视图骨架**直接取产线同一份常量**（不再手抄一份夹具镜像）：手抄镜像会随产线演进
 // 静默失同步，而失同步的表现是「测试全绿、真机少一块」——正是这类夹具要防的东西。
 import { MCP_BODY_HTML } from '../panels/settingsMcpHtml.js';
-import { WORKS_BODY_HTML } from '../panels/settingsWorksHtml.js';
+import { buildWorksBodyHtml } from '../panels/settingsWorksHtml.js';
 import { SETTINGS_TABS, settingsRootId } from '../../shared/settingsTabs.js';
 
 /** MCP 面板容器（root id 由 tab 表派生，不写死字符串） */
 const MCP_FIXTURE = `<div id="${settingsRootId('mcp')}" hidden>${MCP_BODY_HTML}</div>`;
 /** 作品面板容器：同取产线骨架，避免加 tab 时夹具漏一块导致 switchTab 撞 null */
-const WORKS_FIXTURE = `<div id="${settingsRootId('works')}" hidden>${WORKS_BODY_HTML}</div>`;
+const WORKS_FIXTURE = `<div id="${settingsRootId('works')}" hidden>${buildWorksBodyHtml({ t: (s) => s })}</div>`;
 
 /** 覆盖 createSettingsView 全部查询引用 + 五个子视图骨架的最小 HTML（默认选项卡为「记忆」） */
 const HTML = `

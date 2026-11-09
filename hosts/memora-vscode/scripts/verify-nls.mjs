@@ -394,9 +394,9 @@ const WEBVIEW_PANELS = {
   skills: { state: 'pending', files: [] },
   mcp: { state: 'pending', files: [] },
   security: { state: 'pending', files: [] },
-  // 作品页是首个范式样板（B1b）：登记文件清单已定，迁移前 state 仍为 pending。
+  // 作品页是首个范式样板：文件清单与文案真源均已迁移（判据⑰ 生效）。
   works: {
-    state: 'pending',
+    state: 'migrated',
     files: [
       'extension/host/workProjectionRows.ts',
       'webview/panels/settingsWorksHtml.ts',

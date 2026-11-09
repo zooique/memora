@@ -63,7 +63,7 @@ describe('作品子视图：状态渲染', () => {
     expect(lines).toHaveLength(2);
     expect((lines[0] as HTMLElement).dataset.source).toBe('a.md');
     expect((lines[1] as HTMLElement).classList.contains('is-failure')).toBe(true);
-    expect(document.getElementById('worksCount')?.textContent).toBe('2 条');
+    expect(document.getElementById('worksCount')?.textContent).toBe('2 items');
   });
 
   it('清单文本来自用户可手改的 JSON ⇒ 文件名里的标签不得被解析成 DOM', () => {

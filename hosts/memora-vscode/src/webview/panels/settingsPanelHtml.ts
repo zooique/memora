@@ -20,7 +20,7 @@ import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
 import { MCP_BODY_HTML } from './settingsMcpHtml.js';
 import { SECURITY_BODY_HTML } from './settingsSecurityHtml.js';
-import { WORKS_BODY_HTML } from './settingsWorksHtml.js';
+import { buildWorksBodyHtml } from './settingsWorksHtml.js';
 // 回收站清理天数是弹窗文案与按钮 title 同一句的事实来源（宿主常量，不在这里写死数字）
 import { MEMORY_RECYCLE_RETENTION_DAYS } from '../../shared/constants.js';
 import {
@@ -31,6 +31,9 @@ import {
   settingsRootId,
   type SettingsTab,
 } from '../../shared/settingsTabs.js';
+
+/** Works body built at import time with the host localizer (`vscode.l10n` is available here). */
+const WORKS_BODY_HTML = buildWorksBodyHtml(vscode.l10n);
 
 /**
  * 各选项卡主体骨架（**不含外层 root 容器**——root 与 tab 按钮均由 {@link buildHtml} 统一生成）

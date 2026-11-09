@@ -72,20 +72,16 @@ export interface ResidentReportView {
   listReadable: boolean;
 }
 
-/** 空态 / 错误态文案（常量集中，避免散落在 provider 与测试里各写一份） */
-const MESSAGES = {
-  /** 无会话时可归属的 Agent */
-  noAgent: '尚未创建任何会话：先打开 Memora 对话面板',
-  /** 清单文件格式异常（内核 fail-safe 拒绝改写） */
-  malformed: '作品投影清单格式异常（work-projections.json 顶层必须是 JSON 数组），已跳过写入',
-  /** 清单为空 */
-  empty: '还没有登记作品投影：在资源管理器里右键文件 →「Memora: 登记作品投影」',
-  /** 规则报告尚未生成（不等于零失效，也不等于整层关闭——宿主拿不到这两种区分，只能如实说未求值） */
-  reportPending: '项目规则尚未求值：发起一轮对话后才会显示本轮注入了哪些规则',
-  /** 规则报告是「清单没读到」的产物（本轮整段为空，不能当作零失效） */
-  reportUnreadable:
-    '项目规则最近一次求值未读到清单：本轮不注入任何规则（检查 work-projections.json 后重试）',
-} as const;
+/**
+ * Localization function shape (a structural subset of `vscode.l10n.t`).
+ *
+ * Injected instead of imported so this module stays free of the `vscode` runtime and can be
+ * unit-tested directly. The caller (workProjectionBridge) passes `vscode.l10n`; the key-surface
+ * guard still collects these static keys because the call sites read `l10n.t('...')`.
+ */
+export interface WorkProjectionL10n {
+  t(message: string, ...args: (string | number | boolean)[]): string;
+}
 
 /**
  * 失效原因码 → 行内短标签（唯一映射点，UI 文案不散落在调用方）
@@ -94,22 +90,23 @@ const MESSAGES = {
  * 非布尔误配必须改清单——统一说成「下轮重试」会让用户白等。
  *
  * @param reason 内核失效原因码
+ * @param l10n 本地化函数（英文源文案作键，见 `WorkProjectionL10n`）
  * @returns 行内短标签
  */
-function failureLabel(reason: ResidentFailureReason): string {
+function failureLabel(reason: ResidentFailureReason, l10n: WorkProjectionL10n): string {
   switch (reason) {
     case 'outside-workspace':
     case 'blocked-path':
     case 'not-textual':
     case 'missing':
     case 'read-error':
-      return '未注入（读取失败）';
+      return l10n.t('Not injected (read failed)');
     case 'too-long':
-      return '未注入（单条超限）';
+      return l10n.t('Not injected (entry too long)');
     case 'total-exceeded':
-      return '未注入（合计超限）';
+      return l10n.t('Not injected (total limit exceeded)');
     case 'resident-not-boolean':
-      return '配置有误';
+      return l10n.t('Invalid configuration');
   }
 }
 
@@ -124,6 +121,7 @@ function failureLabel(reason: ResidentFailureReason): string {
  * @param input.listMalformed 内核 `isFileMalformed` 读面（格式异常时 register 会拒绝写入）
  * @param input.entries 内核 `listManagedWorks()` 快照（已归一 `resident`）
  * @param input.residentReport 内核本轮求值报告（`null` = 尚未求值，**不得**当作零失效）
+ * @param input.l10n 本地化函数（调用方传 `vscode.l10n`）
  * @returns 视图状态（行按清单顺序，不重排）
  */
 export function deriveWorkProjectionView(input: {
@@ -131,10 +129,33 @@ export function deriveWorkProjectionView(input: {
   listMalformed: boolean;
   entries: readonly WorkEntryView[];
   residentReport: ResidentReportView | null;
+  l10n: WorkProjectionL10n;
 }): WorkProjectionViewState {
-  if (!input.hasAgent) return { kind: 'no-agent', message: MESSAGES.noAgent };
-  if (input.listMalformed) return { kind: 'malformed', message: MESSAGES.malformed };
-  if (input.entries.length === 0) return { kind: 'empty', message: MESSAGES.empty };
+  const { l10n } = input;
+  // Keys are inlined at the call sites (not held in a constant) so the static key-surface
+  // guard can collect them from `l10n.t('...')`.
+  if (!input.hasAgent) {
+    return {
+      kind: 'no-agent',
+      message: l10n.t('No session yet: open the Memora chat panel first'),
+    };
+  }
+  if (input.listMalformed) {
+    return {
+      kind: 'malformed',
+      message: l10n.t(
+        'Work projection list is malformed (work-projections.json must be a top-level JSON array); nothing was written',
+      ),
+    };
+  }
+  if (input.entries.length === 0) {
+    return {
+      kind: 'empty',
+      message: l10n.t(
+        'No work projections yet: right-click a file in Explorer and choose "Memora: Register Work Projection"',
+      ),
+    };
+  }
 
   // 失效索引：完整失效集 ∪ 丢弃集。同一条不会两边都有——能进丢弃集的前提是读盘与单条上限都通过
   const failureBySource = new Map<string, ResidentFailureView>();
@@ -148,7 +169,7 @@ export function deriveWorkProjectionView(input: {
   // 行派生：顺序真源 = 清单数组顺序（与注入段的「靠前者优先」同一份顺序，不另排序）
   const rows: WorkProjectionRow[] = input.entries.map((e) => {
     // 常驻态的唯一来源是内核归一结果；这里只决定「显示成什么」
-    const base = e.resident ? '项目规则' : '未设为项目规则';
+    const base = e.resident ? l10n.t('Project rule') : l10n.t('Not a project rule');
     const failure = failureBySource.get(e.source);
     return {
       source: e.source,
@@ -156,7 +177,7 @@ export function deriveWorkProjectionView(input: {
       // 说明是内核清单原文，卡片内直接显示；tooltip 只留寻址与失效详情，避免同一句话两处出现
       description: e.description,
       // 后缀同时答两问：本意是不是规则 / 本轮有没有生效（后者缺失时保持原样，不写「正常」）
-      statusText: failure ? `${base} · ${failureLabel(failure.reason)}` : base,
+      statusText: failure ? `${base} · ${failureLabel(failure.reason, l10n)}` : base,
       // 内核文案带实际计量与写入值，放 tooltip 比塞进单行后缀更可读
       tooltip: failure ? `${e.source}\n\n${failure.message}` : e.source,
       // 语义二元组（不是图标 id）：渲染面自己决定「项目规则 / 普通 / 失效」各画什么
@@ -170,10 +191,20 @@ export function deriveWorkProjectionView(input: {
   if (!input.residentReport) {
     // 只有真配了规则才提示「尚未求值」：一条规则都没有时这句话是噪音
     if (input.entries.some((e) => e.resident)) {
-      notice = { text: MESSAGES.reportPending, level: 'info' };
+      notice = {
+        text: l10n.t(
+          'Project rules have not been evaluated yet: the rules injected this turn appear after the next chat turn',
+        ),
+        level: 'info',
+      };
     }
   } else if (!input.residentReport.listReadable) {
-    notice = { text: MESSAGES.reportUnreadable, level: 'warning' };
+    notice = {
+      text: l10n.t(
+        'The last project-rule evaluation could not read the list: no rules were injected this turn (check work-projections.json and retry)',
+      ),
+      level: 'warning',
+    };
   }
 
   return notice ? { kind: 'rows', rows, notice } : { kind: 'rows', rows };

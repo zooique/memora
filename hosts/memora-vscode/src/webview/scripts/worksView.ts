@@ -24,6 +24,7 @@ import type {
   WorkProjectionRow,
   WorkProjectionViewState,
 } from '../../shared/workProjectionDto.js';
+import * as l10n from '@vscode/l10n';
 import { getIconSvg } from './icons.js';
 
 /** 子视图依赖（结构对齐 `MountFactory`，由 settingsView 统一注入） */
@@ -48,7 +49,10 @@ function buildRow(document: Document, row: WorkProjectionRow): HTMLElement {
   el.setAttribute('role', 'button');
   el.setAttribute('tabindex', '0');
   el.setAttribute('title', row.tooltip);
-  el.setAttribute('aria-label', `${row.name}，${row.statusText}；单击打开原文件`);
+  el.setAttribute(
+    'aria-label',
+    l10n.t('{0}, {1}; click to open the source file', row.name, row.statusText),
+  );
 
   const icon = document.createElement('span');
   icon.className = 'works-row-icon';
@@ -91,14 +95,16 @@ function buildRow(document: Document, row: WorkProjectionRow): HTMLElement {
   toggle.type = 'button';
   toggle.className = 'btn btn-ghost works-row-btn';
   toggle.dataset.action = 'toggle';
-  toggle.textContent = row.resident ? '取消项目规则' : '设为项目规则';
-  toggle.title = row.resident ? '取消该文件的项目规则态' : '把该文件设为项目规则';
+  toggle.textContent = row.resident ? l10n.t('Unset project rule') : l10n.t('Set as project rule');
+  toggle.title = row.resident
+    ? l10n.t('Unset the project rule for this file')
+    : l10n.t('Make this file a project rule');
   const remove = document.createElement('button');
   remove.type = 'button';
   remove.className = 'btn btn-ghost works-row-btn';
   remove.dataset.action = 'unregister';
-  remove.textContent = '移除登记';
-  remove.title = '仅从清单移除登记，不删除源文件';
+  remove.textContent = l10n.t('Remove from list');
+  remove.title = l10n.t('Remove from the list only (the source file is kept)');
   actions.append(toggle, remove);
   el.appendChild(actions);
   return el;
@@ -145,7 +151,7 @@ export function createWorksView({ vscode, window, root }: WorksViewDeps): void {
       notice.classList.toggle('is-warning', state.notice.level === 'warning');
     }
     count.hidden = false;
-    count.textContent = `${state.rows.length} 条`;
+    count.textContent = l10n.t('{0} items', state.rows.length);
     for (const row of state.rows) list.appendChild(buildRow(document, row));
   }
 
