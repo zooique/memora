@@ -21,7 +21,17 @@ const vsMock = vi.hoisted(() => ({
 /** fs 写入桩：面板侧必须零写入 */
 const writeFileMock = vi.hoisted(() => vi.fn(async () => undefined));
 
+/** l10n.t 替身：{0}/{1} 占位符按参替换（vi.hoisted——mock 工厂先于 import 执行，import 绑定不可用） */
+const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
+  let out = msg;
+  args.forEach((arg, i) => {
+    out = out.replaceAll(`{${i}}`, String(arg));
+  });
+  return out;
+});
+
 vi.mock('vscode', () => ({
+  l10n: { t: tStub },
   Uri: { joinPath: () => ({ toString: () => 'mock://uri' }) },
   workspace: {
     workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],

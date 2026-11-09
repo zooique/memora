@@ -36,7 +36,17 @@ const vscodeConfigMock = vi.hoisted(() => ({
 }));
 
 // mock vscode：仅提供 settingsPanel 及其依赖在加载/构造期用到的最小 API
+/** l10n.t 替身：{0}/{1} 占位符按参替换（vi.hoisted——mock 工厂先于 import 执行，import 绑定不可用） */
+const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
+  let out = msg;
+  args.forEach((arg, i) => {
+    out = out.replaceAll(`{${i}}`, String(arg));
+  });
+  return out;
+});
+
 vi.mock('vscode', () => ({
+  l10n: { t: tStub },
   Uri: { joinPath: () => ({ toString: () => 'mock://uri' }) },
   workspace: {
     workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],

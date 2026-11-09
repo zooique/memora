@@ -45,7 +45,17 @@ import { MemoraChatViewProvider } from '../panels/chatPanel.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHAT_PANEL_PATH = join(HERE, '..', 'panels', 'chatPanel.ts');
 
+/** l10n.t 替身：{0}/{1} 占位符按参替换（vi.hoisted——mock 工厂先于 import 执行，import 绑定不可用） */
+const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
+  let out = msg;
+  args.forEach((arg, i) => {
+    out = out.replaceAll(`{${i}}`, String(arg));
+  });
+  return out;
+});
+
 vi.mock('vscode', async () => ({
+  l10n: { t: tStub },
   Uri: {
     joinPath: (base: unknown, ...p: string[]) => ({ base, segments: p }),
     fsPath: '/mock/path',

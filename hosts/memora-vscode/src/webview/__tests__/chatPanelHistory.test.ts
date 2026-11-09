@@ -50,6 +50,15 @@ import {
 import { MAX_THOUGHT_PAYLOAD_LENGTH, foldThoughtEvents } from '../../extension/host/thoughtFold.js';
 
 // mock vscode：仅提供 chatPanel / ProviderStore 用到的最小 API
+/** l10n.t 替身：{0}/{1} 占位符按参替换（vi.hoisted——mock 工厂先于 import 执行，import 绑定不可用） */
+const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
+  let out = msg;
+  args.forEach((arg, i) => {
+    out = out.replaceAll(`{${i}}`, String(arg));
+  });
+  return out;
+});
+
 vi.mock('vscode', async () => {
   const uri = {
     joinPath: (base: unknown, ...p: string[]) => ({ base, segments: p }),
@@ -57,6 +66,7 @@ vi.mock('vscode', async () => {
     fsPath: '/mock/path',
   };
   return {
+    l10n: { t: tStub },
     Uri: uri,
     window: {
       // 会话管理的 InputBox / 危险操作确认 modal（QuickPick 已移除）

@@ -51,6 +51,9 @@ const ALLOWED_EXACT = new Set([
   'LICENSE',
   'package.nls.json',
   'package.nls.zh-cn.json',
+  // l10n bundle（切片 2 宿主面运行时本地化，ADR-042 / 方案 §3）：缺任一 ⇒ 对应语言退化英文原文
+  'l10n/bundle.l10n.json',
+  'l10n/bundle.l10n.zh-cn.json',
 ]);
 const ALLOWED_PREFIXES = ['resources/', 'dist/'];
 
@@ -71,6 +74,9 @@ const REQUIRED_ENTRIES = [
   // 新增语言时同步本清单（与 ALLOWED_EXACT 同为契约，不是闸的误报）。
   'package.nls.json',
   'package.nls.zh-cn.json',
+  // l10n bundle（切片 2）：manifest `"l10n"` 声明指向的运行时字典，缺了 = l10n.t 静默回退英文原文
+  'l10n/bundle.l10n.json',
+  'l10n/bundle.l10n.zh-cn.json',
   'dist/extension/extension.js',
 ];
 

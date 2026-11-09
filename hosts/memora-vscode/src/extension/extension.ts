@@ -47,7 +47,7 @@ import { registerResidentRuleCommands } from './commands/residentRules.js';
 // 作品投影：侧边栏 TreeView 已退役，清单变更由 notifier 回推设置页「作品和规则」选项卡
 import { notifyWorkProjectionChanged } from './host/workProjectionBridge.js';
 import { answerLanguageAssembly } from './host/answerLanguageConfig.js';
-import { addToChatCommand } from './commands/addToChat.js';
+import { registerAddToChatCommand } from './commands/addToChat.js';
 import { createUserDataResetHandler } from './commands/userDataReset.js';
 import { importAssetCommand } from './commands/importAsset.js';
 import { readDisabledSkills, syncDisabledSkills } from './host/skillSync.js';
@@ -255,6 +255,8 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
   return {
     projectPath,
     answerLanguage: answerLanguageAssembly(),
+    // UI 消息语言真源 = VS Code 显示语言（zh 开头传中文覆盖，其余内核英文默认）
+    envLanguage: vscode.env.language,
     // 项目搜索根 = 真实工作区文件夹（无 folder 时 undefined → 不注入 search_project）
     projectSearchRoot: resolveProjectSearchRoot(),
     providerStore: deps.providerStore,
@@ -902,12 +904,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // 消费面 = 设置页「作品和规则」选项卡；清单变更统一经 notifier 回推，无树 provider 实例。
   registerRegisterWorkCommand(context, tryGetAgent, memoraOutput, notifyWorkProjectionChanged);
 
-  // 命令：添加到对话（实现见 `commands/addToChat.ts`）
-  context.subscriptions.push(
-    vscode.commands.registerCommand('memora.addToChat', (uri) =>
-      addToChatCommand(uri, chatProvider),
-    ),
-  );
+  // 命令：添加到对话（实现与标题同源解析见 `commands/addToChat.ts`，ADR-042 后果第 2 条）
+  registerAddToChatCommand(context, chatProvider);
 
   registerResidentRuleCommands(context, tryGetAgent, notifyWorkProjectionChanged);
 
@@ -923,7 +921,9 @@ export function activate(context: vscode.ExtensionContext): void {
         agentMetrics: data.agentMetrics,
       });
       await vscode.env.clipboard.writeText(snapshot);
-      void vscode.window.showInformationMessage('Memora 诊断摘要已复制到剪贴板');
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t('Memora: diagnostics summary copied to the clipboard'),
+      );
     }),
   );
   // 会话管理入口在 webview 标题条：

@@ -87,7 +87,17 @@ vi.mock('../atomicWriteSync.js', () => ({
   },
 }));
 
+/** l10n.t 替身：{0}/{1} 占位符按参替换（vi.hoisted——mock 工厂先于 import 执行，import 绑定不可用） */
+const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
+  let out = msg;
+  args.forEach((arg, i) => {
+    out = out.replaceAll(`{${i}}`, String(arg));
+  });
+  return out;
+});
+
 vi.mock('vscode', () => ({
+  l10n: { t: tStub },
   EventEmitter: h.MockEventEmitter,
   CodeLens: class {
     constructor(
@@ -537,9 +547,9 @@ describe('FileChangeView · 回退的未保存编辑守卫', () => {
     await vi.waitFor(() => {
       expect(h.state.warningCalls.length).toBe(1);
     });
-    // 模态 + 明细说清「会丢弃未保存编辑」
+    // 模态 + 明细说清「会丢弃未保存编辑」（detail 已倒英文为 l10n 键，切片 2）
     expect(h.state.warningCalls[0].modal).toBe(true);
-    expect(h.state.warningCalls[0].detail).toContain('未保存');
+    expect(h.state.warningCalls[0].detail).toContain('Reverting restores');
     // 静默覆盖的反面：盘没动、记录还在
     expect(h.state.writes.length).toBe(0);
     expect(tracker.size()).toBe(1);
@@ -550,7 +560,8 @@ describe('FileChangeView · 回退的未保存编辑守卫', () => {
     recordOneWrite(tracker, setDisk);
     view.register(makeContext());
     h.state.documents = [makeDoc('用户未保存的编辑', { isDirty: true })];
-    h.state.warningChoice = '仍然回退';
+    // confirmModal 以 `resolved === confirmLabel` 判确认 ⇒ choice 必须与新英文 label 一致
+    h.state.warningChoice = 'Revert anyway';
 
     h.state.commands.get(RESTORE_FILE_COMMAND)?.(FILE);
 
@@ -594,7 +605,7 @@ describe('FileChangeView · 回退的未保存编辑守卫', () => {
       makeDoc('未保存编辑 A', { isDirty: true }),
       makeDoc('未保存编辑 B', { fsPath: FILE_B, isDirty: true }),
     ];
-    h.state.warningChoice = '确认回退';
+    h.state.warningChoice = 'Confirm revert';
 
     h.state.commands.get(REVERT_ALL_FILE_CHANGES_COMMAND)?.();
 
@@ -893,7 +904,7 @@ describe('FileChangeView · 块级动作（命题 B）', () => {
       expect(h.state.warningCalls.length).toBe(1);
     });
     expect(h.state.warningCalls[0].modal).toBe(true);
-    expect(h.state.warningCalls[0].detail).toContain('未保存');
+    expect(h.state.warningCalls[0].detail).toContain('Rejecting this change overwrites');
     expect(h.state.writes.length).toBe(0);
     expect(tracker.size()).toBe(1);
   });
@@ -937,7 +948,7 @@ describe('FileChangeView · 对比预览的体积闸（含删除场景）', () =
     armCompareViaReview(tracker.get(FILE));
 
     await vi.waitFor(() => {
-      expect(h.state.infoCalls.some((m) => m.includes('改动过大'))).toBe(true);
+      expect(h.state.infoCalls.some((m) => m.includes('too large'))).toBe(true);
     });
     // 闸生效的直接证据：没有真的去开 diff（左栏虚拟文档也没建 ⇒ 读出来是空串）
     expect(h.state.executed).not.toContain('vscode.diff');

@@ -25,7 +25,9 @@ import { confirmModal } from '../host/ui/confirmModal.js';
 export async function memoryStatsCommand(tryGetAgent: () => Promise<Agent | null>): Promise<void> {
   const agent = await tryGetAgent();
   if (!agent) {
-    vscode.window.showWarningMessage('Memora Agent 未就绪，无法查看记忆统计');
+    vscode.window.showWarningMessage(
+      vscode.l10n.t('Memora Agent is not ready; cannot show memory stats'),
+    );
     return;
   }
   const mem = agent.memory;
@@ -40,7 +42,12 @@ export async function memoryStatsCommand(tryGetAgent: () => Promise<Agent | null
       .map(([src, cnt]) => `${src}: ${cnt}`)
       .join(', ') || '—';
   vscode.window.showInformationMessage(
-    `记忆统计：活跃 ${activeCount} 条，回收站 ${deletedCount} 条 | 来源分布：${sourceSummary}`,
+    vscode.l10n.t(
+      'Memory stats: {0} active, {1} in recycle bin | by source: {2}',
+      activeCount,
+      deletedCount,
+      sourceSummary,
+    ),
   );
 }
 
@@ -54,7 +61,9 @@ export async function cleanupMemoriesCommand(
 ): Promise<void> {
   const agent = await tryGetAgent();
   if (!agent?.memory) {
-    vscode.window.showWarningMessage('Memora Agent 未就绪，无法清理记忆');
+    vscode.window.showWarningMessage(
+      vscode.l10n.t('Memora Agent is not ready; cannot purge memory'),
+    );
     return;
   }
   // 确认对话框——防止误操作。统一走 confirmModal（唯一入口，取消交给系统 Cancel）
@@ -67,9 +76,9 @@ export async function cleanupMemoriesCommand(
     // 保留期 SSOT = shared/constants（与设置面板「清理过期」同源，改一处即两侧同步）
     const cutoff = new Date(Date.now() - MEMORY_RECYCLE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
     const purged = agent.memory.writePurgeExpired(cutoff);
-    vscode.window.showInformationMessage(`已清理 ${purged} 条过期记忆`);
+    vscode.window.showInformationMessage(vscode.l10n.t('Purged {0} expired memories', purged));
   } catch (err) {
-    vscode.window.showErrorMessage(`清理失败：${toNoticeText(err)}`);
+    vscode.window.showErrorMessage(vscode.l10n.t('Purge failed: {0}', toNoticeText(err)));
   }
 }
 
@@ -81,15 +90,22 @@ export async function cleanupMemoriesCommand(
 export async function runGcCommand(tryGetAgent: () => Promise<Agent | null>): Promise<void> {
   const agent = await tryGetAgent();
   if (!agent) {
-    vscode.window.showWarningMessage('Memora Agent 未就绪，无法执行垃圾回收');
+    vscode.window.showWarningMessage(
+      vscode.l10n.t('Memora Agent is not ready; cannot run garbage collection'),
+    );
     return;
   }
   try {
     const stats = agent.gcNow();
     vscode.window.showInformationMessage(
-      `孤儿回收完成：扫描 ${stats.scanned} 个问答闭环，清理 ${stats.deleted} 个孤立 Round + ${stats.memoryCleaned} 条摘要`,
+      vscode.l10n.t(
+        'GC completed: scanned {0} QA loops, removed {1} orphaned rounds + {2} summaries',
+        stats.scanned,
+        stats.deleted,
+        stats.memoryCleaned,
+      ),
     );
   } catch (err) {
-    vscode.window.showErrorMessage(`垃圾回收失败：${toNoticeText(err)}`);
+    vscode.window.showErrorMessage(vscode.l10n.t('GC failed: {0}', toNoticeText(err)));
   }
 }

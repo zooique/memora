@@ -18,6 +18,9 @@
  *    本文件只留接线。下一批第一个动作必须是搬迁（台账 `CHATPANEL-MARGIN-1`），不得在此继续加行。
  */
 import * as vscode from 'vscode';
+
+// 本文件通知文案全部走 l10n（切片 2 宿主面本地化，ADR-042）；短引用免 7 字符/处折行租金
+const { l10n } = vscode;
 import { basename } from 'node:path';
 import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.js';
 import type { HostSessionStore } from '../../extension/host/sessionStore.js';
@@ -1042,7 +1045,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!root) {
       // 未打开工作区：引用判据（首根相对路径）无处安放，提示而非静默失败
-      void vscode.window.showInformationMessage('未打开工作区，无法选择引用文件');
+      void vscode.window.showInformationMessage(l10n.t('No workspace open; no reference target'));
       return;
     }
     this._mentionQuickPickOpen = true;
@@ -1279,9 +1282,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 了 dist 却没重启扩展宿主——webview 脚本从磁盘读是新的，本 switch 活在宿主进程内存
       // 是旧的 ⇒ 表现为「某功能凭空消失、零反馈」）。落宿主日志供排查，**不驱动 UI、不弹
       // 提示**——也可能是无害的旧版本残留消息，用户无感知能力，不该被打断。
-      console.warn(
-        `[memora] 未知 webview 消息类型：${(msg as { type: string }).type}（最可能原因：扩展宿主未重启，webview 脚本与宿主不同版本）`,
-      );
+      console.warn('未知 webview 消息', (msg as { type: string }).type, '宿主未重启?');
     }
   }
 
@@ -1400,7 +1401,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     try {
       const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       if (!ws) {
-        void vscode.window.showWarningMessage('Memora：请先打开一个工作区');
+        void vscode.window.showWarningMessage(vscode.l10n.t('Memora: open a workspace first'));
         return;
       }
       // 会话先于实例：无会话 ⇒ 直接进草稿（不造 id、不拿锁）
@@ -1416,7 +1417,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       void this.ensureInitialSession();
     } catch (err) {
       const msg = toNoticeText(err);
-      void vscode.window.showErrorMessage(`Memora 装配失败：${msg}`);
+      void vscode.window.showErrorMessage(vscode.l10n.t('Memora assembly failed: {0}', msg));
       // HOST-BUG-1：失败必须重置 Promise 缓存——否则 _agentReady 成「已 settle 但
       // _agent 仍 null」的僵尸，后续 ensureAgent 永远 await 它、永不重试。
       // 对齐 `AgentRegistry` 的「失败不入表、下次可重试」契约（宿主侧不再持有 Promise 缓存）。
@@ -2278,7 +2279,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (this._agent) return this._agent;
     await this.ensureAgent();
     if (!this._agent) {
-      void vscode.window.showWarningMessage('Memora：Agent 尚未就绪，请稍候再试');
+      void vscode.window.showWarningMessage(l10n.t('Memora: Agent is not ready; retry shortly'));
       return undefined;
     }
     return this._agent;
@@ -2670,7 +2671,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       toWebviewUri: (f: string) => this.toWebviewUri(f),
       warmCache: (ref: ImageRef) => this.imageCache?.preload(ref, this.workspacePath),
       notifyPanelUnavailable: () =>
-        void vscode.window.showInformationMessage('请先打开 Memora 对话面板，再添加图片'),
+        void vscode.window.showInformationMessage(l10n.t('Open the Memora chat view first')),
     };
   }
 
@@ -3005,8 +3006,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       if (!(await this._draft.flush())) return;
     }
     if (!this._agent) {
-      // Agent 未装配（可能仍在懒装配中）：提示用户稍候，而非静默无反应
-      void vscode.window.showWarningMessage('Memora：Agent 尚未就绪，请稍候片刻再发送');
+      // Agent 未装配（可能仍在懒装配中）：提示用户稍候，而非静默无反应（与 ensureAgent 同键）
+      void vscode.window.showWarningMessage(l10n.t('Memora: Agent is not ready; retry shortly'));
       return;
     }
     // 会话管理纯度：无当前会话（无历史时的初始空态）→ 引导手动
@@ -3038,9 +3039,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 留痕（T2 观测）：对用户仍静默，但「答了没反应」的排障线索必须在日志可查
         if (!this.isAskWaiting()) {
           const reason = 'reason' in this._turnState ? this._turnState.reason : '—';
-          console.warn(
-            `Memora：错位回答已丢弃（当前相位=${this._turnState.phase}/${reason}，答案数=${answers.length}）`,
-          );
+          console.warn('错位回答已丢弃', this._turnState.phase, reason, answers.length);
           return;
         }
         // 边界校验（判据与真相源均在 ask 域）：题数不等 ⇒ 两侧对批次认知已分叉，
@@ -3138,7 +3137,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 静默丢整条 = 背刺）。窗口从 providerStore 真源取（不信 webview 传值）。
     if (attachments?.length) {
       if (this.runtimeFor().streaming || this.isAskWaiting() || this.isPauseWaiting()) {
-        void vscode.window.showWarningMessage('Memora：图片只能随新消息发送，请等本轮结束后再发');
+        void vscode.window.showWarningMessage(l10n.t('Memora: images go with a new message'));
         return;
       }
       const cfg = await this._providerStore.getActive();
@@ -3146,7 +3145,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         attachments,
         cfg ? resolveContextWindow(cfg.contextWindow) : undefined,
       );
-      if (reason) return void vscode.window.showWarningMessage(`Memora：${reason}`);
+      if (reason)
+        return void vscode.window.showWarningMessage(vscode.l10n.t('Memora: {0}', reason));
     }
     // 无缝插话（SSOT）：生成中 Enter 补充 → agent.interject() 排队，内核下一 step 边界并入为
     // user 消息续跑（不 abort 旧流、不新开 chat）；pausePending 窗口发补充 = interject + 取消暂停。
@@ -3180,7 +3180,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 故拒收（不改写成 answer、不发起新轮）：答题唯一入口 = 内联提问卡（逐题承载 askCallId）。
     // webview sendMessage 已同判据前置拦截，此处为宿主兜底（旧 bundle / 竞态漏网）。
     if (this.isAskWaiting()) {
-      void vscode.window.showWarningMessage('Memora：请在上方提问卡作答（不答可点停止）');
+      void vscode.window.showWarningMessage(l10n.t('Memora: answer the question card above'));
       return;
     }
     // 暂停态补充输入（waiting/pause，相位判据）→ 不发起新 chat()

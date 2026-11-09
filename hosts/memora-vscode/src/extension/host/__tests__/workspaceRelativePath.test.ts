@@ -54,7 +54,8 @@ describe('adjudicateWorkspaceRelativePath（纯判据：首根语义 + 可读拒
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.reason).toBe('no-workspace');
-      expect(r.message).toContain('未打开工作区');
+      // REJECT_MESSAGES 值已倒英文为 l10n 键（切片 2）——断言英文键片段 + reason 码双锚
+      expect(r.message).toContain('No workspace folder is open');
     }
   });
 
@@ -70,7 +71,7 @@ describe('adjudicateWorkspaceRelativePath（纯判据：首根语义 + 可读拒
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.reason).toBe('outside-primary-root');
-      expect(r.message).toContain('仅支持首根');
+      expect(r.message).toContain('outside the first workspace root');
     }
   });
 
@@ -85,7 +86,7 @@ describe('adjudicateWorkspaceRelativePath（纯判据：首根语义 + 可读拒
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.reason).toBe('non-canonical');
-      expect(r.message).toContain('规范形');
+      expect(r.message).toContain('not canonical');
     }
   });
 
@@ -107,7 +108,7 @@ describe('adjudicateWorkspaceRelativePath（纯判据：首根语义 + 可读拒
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.reason).toBe('cross-drive');
-      expect(r.message).toContain('同一盘符');
+      expect(r.message).toContain('different drive');
     }
   });
 });

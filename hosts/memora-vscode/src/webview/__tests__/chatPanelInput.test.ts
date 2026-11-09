@@ -32,7 +32,17 @@ import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js
 import { MemoraChatViewProvider } from '../panels/chatPanel.js';
 
 // mock vscode：提供 chatPanel 构造最小 API（与 chatPanelHistory.test 同款）
+/** l10n.t 替身：{0}/{1} 占位符按参替换（vi.hoisted——mock 工厂先于 import 执行，import 绑定不可用） */
+const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
+  let out = msg;
+  args.forEach((arg, i) => {
+    out = out.replaceAll(`{${i}}`, String(arg));
+  });
+  return out;
+});
+
 vi.mock('vscode', async () => ({
+  l10n: { t: tStub },
   Uri: {
     joinPath: (base: unknown, ...p: string[]) => ({ base, segments: p }),
     fsPath: '/mock/path',
@@ -223,7 +233,9 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     expect(h.posted.filter((m) => (m as { type?: string }).type === 'user')).toHaveLength(0);
     // 拒收必须可见（静默拒收 = 背刺，用户不知道该怎么办）
     const { window } = await import('vscode');
-    expect(window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('提问卡'));
+    expect(window.showWarningMessage).toHaveBeenCalledWith(
+      expect.stringContaining('answer the question card'),
+    );
   });
 
   it('waiting(ask) 态 answer → answerQuestion 回填 + resumeExecution("question-answer")', async () => {
@@ -394,11 +406,13 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
       h.posted.filter((m) => (m as { kind?: string }).kind === 'question-answer'),
     ).toHaveLength(0);
     // T2 留痕：丢弃事实必须落日志（带相位上下文），排障时可查「为什么答了没反应」
+    // （console.warn('错位回答已丢弃', phase, reason, answers.length) 首串 + 参数形态）
     const discardWarns = warnSpy.mock.calls.filter((args) =>
       String(args[0]).includes('错位回答已丢弃'),
     );
     expect(discardWarns).toHaveLength(1);
-    expect(String(discardWarns[0][0])).toContain('waiting/pause');
+    expect(discardWarns[0][1]).toBe('waiting');
+    expect(discardWarns[0][2]).toBe('pause');
     warnSpy.mockRestore();
   });
 

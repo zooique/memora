@@ -22,25 +22,56 @@ import type { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
 import { relativeUnderPrimaryRoot } from '../host/refPath.js';
 import { hasInboundImageExtension } from '../host/imageExts.js';
 import { isRefTargetImage } from '../host/refImageGuard.js';
+import { resolveCommandTitle } from '../host/manifestNls.js';
 import { selectionToRefRange } from '../host/selectionRange.js';
 
 /** 图片嗅探所需的头部字节数（最短合法格式 12 字节，此处留余量） */
 const SNIFF_HEAD_BYTES = 64;
 
 /**
+ * 注册「添加到对话」命令（extension.ts 只留一行调用）
+ *
+ * 命令标题在本层解析（ADR-042 后果第 2 条）：守卫提示嵌标题时必须与菜单标题**同源**——
+ * 都出自 `command.addToChat.title` 这一个 nls 键，改标题提示自动跟随，禁止再抄一遍原文。
+ * 标题在注册期解析一次即可：`vscode.env.language` 只随重启变化，与 nls 文件选择同构。
+ *
+ * @param context 扩展上下文（订阅随停用自动释放；extensionUri 用于定位 nls 文件）
+ * @param chatProvider 对话视图提供者（引用投递面）
+ */
+export function registerAddToChatCommand(
+  context: vscode.ExtensionContext,
+  chatProvider: MemoraChatViewProvider,
+): void {
+  const addToChatTitle = resolveCommandTitle(
+    context.extensionUri.fsPath,
+    vscode.env.language,
+    'addToChat',
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.addToChat', (uri) =>
+      addToChatCommand(uri, chatProvider, addToChatTitle),
+    ),
+  );
+}
+
+/**
  * 把文件/目录引用挂到对话输入区
  *
  * @param uri 右键菜单传入的目标（文件 / 目录 / 多选数组 / 命令面板调用时为 undefined）
  * @param chatProvider 对话视图提供者（引用投递面；未聚焦时 pushRefs 会缓冲到 ready 补发）
+ * @param addToChatTitle 菜单标题原文（与命令面板同源，经 `resolveCommandTitle` 解析）
  */
 export async function addToChatCommand(
   uri: vscode.Uri | vscode.Uri[] | undefined,
   chatProvider: MemoraChatViewProvider,
+  addToChatTitle: string,
 ): Promise<void> {
   // 仅支持从右键菜单触发（必须带 uri 参数）；Explorer 多选返回 uri 数组
   const uris = Array.isArray(uri) ? uri : uri ? [uri] : [];
   if (uris.length === 0) {
-    vscode.window.showWarningMessage('请在文件或目录上右键，选择「Memora: 添加到对话」');
+    vscode.window.showWarningMessage(
+      vscode.l10n.t('Right-click a file or folder and choose "{0}".', addToChatTitle),
+    );
     return;
   }
   // 根归属：引用路径必须以**首个工作区根**为基准（内核 read_file cwd / openRefInEditor 同源）。
@@ -91,7 +122,10 @@ export async function addToChatCommand(
   }
   if (skippedOutsideRoot.length > 0) {
     vscode.window.showWarningMessage(
-      `以下项不在主工作区根下，未挂引用：${skippedOutsideRoot.join('、')}`,
+      vscode.l10n.t(
+        'Not attached (outside the primary workspace root): {0}',
+        skippedOutsideRoot.join(', '),
+      ),
     );
   }
   if (refs.length === 0 && imagePaths.length === 0) return; // 全部被拒：不聚焦面板、不产空操作

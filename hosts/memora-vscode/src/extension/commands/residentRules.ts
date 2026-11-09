@@ -29,27 +29,34 @@ import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
 import { toWorkspaceRelativePath } from '../host/workspaceRelativePath.js';
 import { runWorkProjectionAction } from '../host/workProjectionBridge.js';
+import { resolveCommandTitle } from '../host/manifestNls.js';
 
 /**
  * 切换单个文件的常驻态（右键 / 编辑器标签入口）
  *
  * @param uri 右键传入的目标（多选时为数组；命令面板调用为 undefined）
  * @param tryGetAgent 取当前工作区 Agent（失败返 null 不抛错，与其余命令同口径）
+ * @param toggleResidentRuleTitle 菜单标题原文（与命令面板同源，经 `resolveCommandTitle` 解析）
  */
 export async function toggleResidentRuleCommand(
   uri: vscode.Uri | vscode.Uri[] | undefined,
   tryGetAgent: () => Promise<Agent | null>,
+  toggleResidentRuleTitle: string,
 ): Promise<void> {
   const uris = Array.isArray(uri) ? uri : uri ? [uri] : [];
   if (uris.length === 0) {
-    void vscode.window.showWarningMessage('请在文件上右键，选择「Memora: 切换项目规则」');
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t('Right-click a file and choose "{0}".', toggleResidentRuleTitle),
+    );
     return;
   }
 
   // 相对路径单点判据（首根语义；非首根 / 越界 / 跨盘当场拒绝，不静默截断）
   const relResult = toWorkspaceRelativePath(uris[0]!);
   if (!relResult.ok) {
-    void vscode.window.showWarningMessage('无法切换项目规则：' + relResult.message);
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t('Cannot toggle the project rule: {0}', vscode.l10n.t(relResult.message)),
+    );
     return;
   }
 
@@ -111,7 +118,9 @@ export async function manageResidentRulesCommand(
 ): Promise<void> {
   const agent = await tryGetAgent();
   if (!agent?.works) {
-    void vscode.window.showWarningMessage('Memora Agent 未就绪，无法管理项目规则');
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t('Memora Agent is not ready; cannot manage project rules'),
+    );
     return;
   }
   const works = agent.works;
@@ -119,7 +128,7 @@ export async function manageResidentRulesCommand(
   // 条目级按钮：语义在 tooltip 里写明「不删源文件」，避免与删除文件混淆
   const removeButton: vscode.QuickInputButton = {
     iconPath: new vscode.ThemeIcon('trash'),
-    tooltip: '仅从清单移除登记（不删除源文件）',
+    tooltip: vscode.l10n.t('Remove from the list only (the source file is kept)'),
   };
 
   // 动作后回到清单（循环直到用户取消）；清单态始终来自内核
@@ -129,13 +138,20 @@ export async function manageResidentRulesCommand(
       entries = await works.listManagedWorks();
     } catch (err) {
       void vscode.window.showErrorMessage(
-        '读取项目规则清单失败：' + (err instanceof Error ? err.message : String(err)),
+        vscode.l10n.t(
+          'Failed to load the project rule list: {0}',
+          err instanceof Error ? err.message : String(err),
+        ),
       );
       return;
     }
     if (entries.length === 0) {
+      // 刻意不嵌「登记作品投影」菜单标题原文（ADR-042 后果第 2 条：嵌标题必须同源引用；
+      // 此处拿不到该标题的解析链，改写避嵌比抄一遍标题原文更稳）
       void vscode.window.showInformationMessage(
-        '清单为空：先用「Memora: 登记作品投影」登记文件，再把它设为项目规则',
+        vscode.l10n.t(
+          'The list is empty. Register files via the work registration command first, then toggle them as project rules.',
+        ),
       );
       return;
     }
@@ -173,9 +189,19 @@ export function registerResidentRuleCommands(
   tryGetAgent: () => Promise<Agent | null>,
   onMutated?: () => void,
 ): void {
+  // 命令标题注册期解析一次（ADR-042 后果第 2 条：守卫提示嵌标题必须与菜单同源）
+  const toggleResidentRuleTitle = resolveCommandTitle(
+    context.extensionUri.fsPath,
+    vscode.env.language,
+    'toggleResidentRule',
+  );
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.toggleResidentRule', async (uri) => {
-      await toggleResidentRuleCommand(uri as vscode.Uri | vscode.Uri[] | undefined, tryGetAgent);
+      await toggleResidentRuleCommand(
+        uri as vscode.Uri | vscode.Uri[] | undefined,
+        tryGetAgent,
+        toggleResidentRuleTitle,
+      );
       onMutated?.();
     }),
     vscode.commands.registerCommand('memora.manageResidentRules', async () => {

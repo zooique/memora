@@ -12,6 +12,7 @@ import type { Agent } from '@zooique/memora';
 import { accumulateStream } from '@zooique/memora';
 import { toNoticeText } from '../host/noticeText.js';
 import { toWorkspaceRelativePath } from '../host/workspaceRelativePath.js';
+import { resolveCommandTitle } from '../host/manifestNls.js';
 
 /**
  * 文件内容裁切上限：超长文件只取头部
@@ -39,9 +40,15 @@ export function registerRegisterWorkCommand(
   output: vscode.OutputChannel,
   onRegistered?: () => void,
 ): void {
+  // 命令标题注册期解析一次（ADR-042 后果第 2 条：守卫提示嵌标题必须与菜单同源）
+  const registerWorkTitle = resolveCommandTitle(
+    context.extensionUri.fsPath,
+    vscode.env.language,
+    'registerWork',
+  );
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.registerWork', (uri) =>
-      registerWorkCommand(uri, tryGetAgent, output, onRegistered),
+      registerWorkCommand(uri, tryGetAgent, output, onRegistered, registerWorkTitle),
     ),
   );
 }
@@ -54,17 +61,21 @@ export function registerRegisterWorkCommand(
  *   「未就绪」，与其余命令同一口径；工作区根的回退规则由该闭包统一持有，本命令不重算）
  * @param output 输出通道（LLM 原始返回与降级原因留痕，用户报障时唯一可查的面）
  * @param onRegistered 登记成功后的回调（树视图刷新用；失败不调，避免「刷新了但没有新行」的假信号）
+ * @param registerWorkTitle 菜单标题原文（与命令面板同源，经 `resolveCommandTitle` 解析）
  */
 export async function registerWorkCommand(
   uri: vscode.Uri | vscode.Uri[] | undefined,
   tryGetAgent: () => Promise<Agent | null>,
   output: vscode.OutputChannel,
   onRegistered?: () => void,
+  registerWorkTitle?: string,
 ): Promise<void> {
   // 仅支持从右键菜单触发（必须带 uri 参数）
   const uris = Array.isArray(uri) ? uri : uri ? [uri] : [];
   if (uris.length === 0) {
-    vscode.window.showWarningMessage('请在文件上右键，选择「Memora: 登记作品投影」');
+    vscode.window.showWarningMessage(
+      vscode.l10n.t('Right-click a file and choose "{0}".', registerWorkTitle ?? ''),
+    );
     return;
   }
 
@@ -72,19 +83,24 @@ export async function registerWorkCommand(
   const targetUri = uris[0];
   const relResult = toWorkspaceRelativePath(targetUri);
   if (!relResult.ok) {
-    // 非首根 / 越界 / 跨盘 / 非规范形：当场拒绝并给出可读原因（不静默截断成能存下的路径）
-    vscode.window.showWarningMessage('无法登记：' + relResult.message);
+    // 非首根 / 越界 / 跨盘 / 非规范形：当场拒绝并给出可读原因（不静默截断成能存下的路径）。
+    // REJECT_MESSAGES 的值 = 英文原文键，此处动态 t 查 zh bundle（键面守卫专项收录该表）
+    vscode.window.showWarningMessage(
+      vscode.l10n.t('Cannot register: {0}', vscode.l10n.t(relResult.message)),
+    );
     return;
   }
   const relativePath = relResult.relPath;
 
   // 显示进度
-  vscode.window.showInformationMessage('正在登记：' + relativePath + ' ...');
+  vscode.window.showInformationMessage(vscode.l10n.t('Registering: {0} ...', relativePath));
 
   // 装配路径与其余命令同源：tryGetAgent 内部持有 workspacePath（首根 / 未开工作区的回退）
   const agent = await tryGetAgent();
   if (!agent?.works) {
-    vscode.window.showWarningMessage('Memora Agent 未就绪，无法登记作品');
+    vscode.window.showWarningMessage(
+      vscode.l10n.t('Memora Agent is not ready; cannot register the work'),
+    );
     return;
   }
 
@@ -125,7 +141,10 @@ export async function registerWorkCommand(
       const msg = llmErr instanceof Error ? llmErr.message : String(llmErr);
       output.appendLine(`[作品投影] LLM 生成描述失败：${msg}`);
       vscode.window.showWarningMessage(
-        'LLM 生成描述失败（详见 Memora 输出通道），已用文件名兜底：' + msg,
+        vscode.l10n.t(
+          'LLM failed to generate a description (see the Memora output channel); falling back to the file name: {0}',
+          msg,
+        ),
       );
     }
 
@@ -137,7 +156,12 @@ export async function registerWorkCommand(
           .pop()
           ?.replace(/\.[^.]+$/, '') ?? 'unknown';
       output.appendLine(`[作品投影] LLM 未返回描述，已用文件名兜底：${description}`);
-      vscode.window.showWarningMessage('LLM 未返回描述，已用文件名「' + description + '」兜底');
+      vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          'LLM returned no description; falling back to the file name "{0}"',
+          description,
+        ),
+      );
     } else {
       output.appendLine(`[作品投影] LLM 生成描述：${description}`);
     }
@@ -145,13 +169,21 @@ export async function registerWorkCommand(
     // 登记投影
     const result = await agent.works.registerWork(relativePath, description);
     if (result) {
-      vscode.window.showInformationMessage('作品登记成功：' + result.name + ' | ' + description);
+      vscode.window.showInformationMessage(
+        vscode.l10n.t('Work registered: {0} | {1}', result.name, description),
+      );
       // 只有真落盘成功才刷新树（失败路径保持旧视图，不让用户以为多了一条）
       onRegistered?.();
     } else {
-      vscode.window.showErrorMessage('作品登记失败，路径可能越界或发生其他错误');
+      vscode.window.showErrorMessage(
+        vscode.l10n.t(
+          'Work registration failed; the path may be outside the allowed roots or another error occurred',
+        ),
+      );
     }
   } catch (err) {
-    vscode.window.showErrorMessage('登记失败：' + toNoticeText(err));
+    // toNoticeText 产出内核 MemoraError 全文（文案 SSOT 在内核，宿主不翻——ADR-042 边界）：
+    // 英文用户会看到英文前缀 + 内核中文详情的混合，属内核文案面的已知边界
+    vscode.window.showErrorMessage(vscode.l10n.t('Registration failed: {0}', toNoticeText(err)));
   }
 }

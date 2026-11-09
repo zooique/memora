@@ -30,7 +30,17 @@ import { WorkspaceSessionStore } from '../sessionStore.js';
 import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
 
 // mock vscode：chatPanel 构造最小面（同 chatPanelInput.test）+ mention 所需的 findFiles / QuickPick
+/** l10n.t 替身：{0}/{1} 占位符按参替换（vi.hoisted——mock 工厂先于 import 执行，import 绑定不可用） */
+const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
+  let out = msg;
+  args.forEach((arg, i) => {
+    out = out.replaceAll(`{${i}}`, String(arg));
+  });
+  return out;
+});
+
 vi.mock('vscode', async () => ({
+  l10n: { t: tStub },
   Uri: {
     joinPath: (base: unknown, ...p: string[]) => ({ base, segments: p }),
     fsPath: '/mock/path',
@@ -296,8 +306,12 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
     // 直接经 onDidReceiveMessage 入口派发一个不在协议内的类型——正常不可能到达，
     // 一旦到达即 webview 脚本与扩展宿主不同版本（最常见：重编译了 dist 没重启宿主）
     h.dispatch({ type: 'not_a_real_message_type' });
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('not_a_real_message_type'));
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('扩展宿主未重启'));
+    // 形态：首串标签 + 类型值 + 过期线索（三者都不得缺——HOST-CTX-12 唯一运行时线索）
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('未知 webview 消息'),
+      'not_a_real_message_type',
+      expect.stringContaining('宿主未重启'),
+    );
     warn.mockRestore();
   });
 });

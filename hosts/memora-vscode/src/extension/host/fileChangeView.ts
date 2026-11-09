@@ -493,7 +493,10 @@ export class FileChangeView implements FileChangeSink {
     const afterText = rec.afterContent ?? '';
     if (Math.max(beforeText.length, afterText.length) > MAX_DIFF_CONTENT_LENGTH) {
       void vscode.window.showInformationMessage(
-        `Memora：${rec.relPath} 改动过大，已跳过对比预览（可「回退」）`,
+        vscode.l10n.t(
+          'Memora: {0} is too large; diff preview skipped (revert is still available)',
+          rec.relPath,
+        ),
       );
       return;
     }
@@ -562,7 +565,9 @@ export class FileChangeView implements FileChangeSink {
   private confirmAll(): void {
     const records = this.tracker.list();
     if (records.length === 0) {
-      void vscode.window.showInformationMessage('Memora：当前没有未确认的文件改动');
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t('Memora: no unconfirmed file changes'),
+      );
       return;
     }
     for (const rec of records) this.discardRecord(rec);
@@ -570,7 +575,9 @@ export class FileChangeView implements FileChangeSink {
     this.refreshStatusBar();
     this.lensProvider.refresh();
     this.notifyChanged();
-    void vscode.window.showInformationMessage(`Memora：已确认全部 ${records.length} 处改动`);
+    void vscode.window.showInformationMessage(
+      vscode.l10n.t('Memora: accepted all {0} changes', records.length),
+    );
   }
 
   /**
@@ -589,7 +596,7 @@ export class FileChangeView implements FileChangeSink {
   private async revertAll(): Promise<void> {
     const records = this.tracker.list();
     if (records.length === 0) {
-      void vscode.window.showInformationMessage('Memora：当前没有可回退的文件改动');
+      void vscode.window.showInformationMessage(vscode.l10n.t('Memora: no file changes to revert'));
       return;
     }
     const willDelete = records.filter((rec) => rec.beforeContent === null);
@@ -615,9 +622,9 @@ export class FileChangeView implements FileChangeSink {
       ...preview,
     ].join('\n');
     const confirmed = await confirmModal({
-      message: `确认回退全部 ${records.length} 个文件的改动？`,
+      message: vscode.l10n.t('Confirm revert of all {0} file changes?', records.length),
       detail,
-      confirmLabel: '确认回退',
+      confirmLabel: vscode.l10n.t('Confirm revert'),
     });
     if (!confirmed) return;
     let okCount = 0;
@@ -634,11 +641,18 @@ export class FileChangeView implements FileChangeSink {
     this.notifyChanged();
     this.lensProvider.refresh();
     if (failures.length === 0) {
-      void vscode.window.showInformationMessage(`Memora：已回退 ${okCount} 个文件的改动`);
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t('Memora: reverted {0} files', okCount),
+      );
       return;
     }
     void vscode.window.showErrorMessage(
-      `Memora：已回退 ${okCount} 个，${failures.length} 个失败 —— ${failures.join('；')}`,
+      vscode.l10n.t(
+        'Memora: reverted {0}, {1} failed — {2}',
+        okCount,
+        failures.length,
+        failures.join('; '),
+      ),
     );
   }
 
@@ -655,7 +669,7 @@ export class FileChangeView implements FileChangeSink {
     confirmLabel: string,
   ): Promise<boolean> {
     return confirmModal({
-      message: `Memora：${rec.relPath} 有未保存的编辑`,
+      message: vscode.l10n.t('Memora: {0} has unsaved edits', rec.relPath),
       detail,
       confirmLabel,
     });
@@ -672,12 +686,14 @@ export class FileChangeView implements FileChangeSink {
     if (outcome.status === 'dirty') {
       const ok = await this.confirmOverwriteDirty(
         rec,
-        '回退会把文件恢复到「你尚未接受的改动之前」的内容，未保存的编辑将一并丢弃（无 git 时无法找回）。要保留这些编辑，请先取消、保存文件后再回退。',
-        '仍然回退',
+        vscode.l10n.t(
+          'Reverting restores the content from before your unaccepted changes; unsaved edits will be discarded as well (unrecoverable without git). To keep them, cancel and save the file first.',
+        ),
+        vscode.l10n.t('Revert anyway'),
       );
       if (!ok) {
         void vscode.window.showInformationMessage(
-          `Memora：已取消 ${rec.relPath} 的回退，未保存的编辑未动`,
+          vscode.l10n.t('Memora: revert of {0} cancelled; unsaved edits untouched', rec.relPath),
         );
         return;
       }
@@ -685,13 +701,20 @@ export class FileChangeView implements FileChangeSink {
     }
     if (outcome.status !== 'ok') {
       // 类型穷尽兜底：重试恒带 overwriteDirty ⇒ 'dirty' 实际不可达，如实走通用失败文案、不虚述场景
-      const reason = outcome.status === 'failed' ? outcome.reason : '回退未能完成，请重试';
-      void vscode.window.showErrorMessage(`Memora：恢复 ${rec.relPath} 失败（${reason}）`);
+      const reason =
+        outcome.status === 'failed'
+          ? outcome.reason
+          : vscode.l10n.t('the revert could not complete; please retry');
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t('Memora: failed to restore {0} ({1})', rec.relPath, reason),
+      );
       return;
     }
     this.notifyChanged();
     this.lensProvider.refresh();
-    void vscode.window.showInformationMessage(`Memora：已回退 ${rec.relPath} 的未接受改动`);
+    void vscode.window.showInformationMessage(
+      vscode.l10n.t('Memora: reverted the unaccepted changes of {0}', rec.relPath),
+    );
   }
 
   /**
@@ -810,12 +833,14 @@ export class FileChangeView implements FileChangeSink {
     if (outcome.status === 'dirty') {
       const ok = await this.confirmOverwriteDirty(
         rec,
-        '拒绝此处改动会覆盖该文件当前内容，未保存的编辑将一并丢弃（无 git 时无法找回）。要保留这些编辑，请先取消、保存文件后再操作。',
-        '仍然拒绝',
+        vscode.l10n.t(
+          'Rejecting this change overwrites the current file content; unsaved edits will be discarded as well (unrecoverable without git). To keep them, cancel and save the file first.',
+        ),
+        vscode.l10n.t('Reject anyway'),
       );
       if (!ok) {
         void vscode.window.showInformationMessage(
-          `Memora：已取消 ${rec.relPath} 的块级拒绝，未保存的编辑未动`,
+          vscode.l10n.t('Memora: rejection of {0} cancelled; unsaved edits untouched', rec.relPath),
         );
         return;
       }
@@ -823,9 +848,12 @@ export class FileChangeView implements FileChangeSink {
     }
     if (outcome.status !== 'ok') {
       // 类型穷尽兜底：重试恒带 overwriteDirty ⇒ 'dirty' 实际不可达，如实走通用文案、不虚述场景
-      const reason = outcome.status === 'failed' ? outcome.reason : '拒绝未能完成，请重试';
+      const reason =
+        outcome.status === 'failed'
+          ? outcome.reason
+          : vscode.l10n.t('the rejection could not complete; please retry');
       void vscode.window.showErrorMessage(
-        `Memora：拒绝 ${rec.relPath} 的该处改动失败（${reason}）`,
+        vscode.l10n.t('Memora: failed to reject the change in {0} ({1})', rec.relPath, reason),
       );
       return;
     }
@@ -885,7 +913,9 @@ export class FileChangeView implements FileChangeSink {
   private async showChangeList(): Promise<void> {
     const records = this.tracker.list();
     if (records.length === 0) {
-      void vscode.window.showInformationMessage('Memora：当前没有未确认的文件改动');
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t('Memora: no unconfirmed file changes'),
+      );
       return;
     }
     const items: ChangePickItem[] = [

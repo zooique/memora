@@ -39,7 +39,17 @@ import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
 import { MemoraChatViewProvider } from '../panels/chatPanel.js';
 
+/** l10n.t 替身：{0}/{1} 占位符按参替换（vi.hoisted——mock 工厂先于 import 执行，import 绑定不可用） */
+const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
+  let out = msg;
+  args.forEach((arg, i) => {
+    out = out.replaceAll(`{${i}}`, String(arg));
+  });
+  return out;
+});
+
 vi.mock('vscode', async () => ({
+  l10n: { t: tStub },
   // 视图重开走真实 render（buildHtmlHead 读 vscode.env.language）
   env: { language: 'zh-cn' },
   Uri: {

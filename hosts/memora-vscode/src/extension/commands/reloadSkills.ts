@@ -34,7 +34,9 @@ export async function reloadSkillsCommand(
 ): Promise<void> {
   const agent = await tryGetAgent();
   if (!agent) {
-    vscode.window.showWarningMessage('Memora Agent 未就绪，无法重载技能');
+    vscode.window.showWarningMessage(
+      vscode.l10n.t('Memora Agent is not ready; cannot reload skills'),
+    );
     return;
   }
   // 禁用集 + UI 同步（启停闭环）：配置变更本身已由 onDidChangeConfiguration 监听
@@ -47,7 +49,9 @@ export async function reloadSkillsCommand(
     await Promise.allSettled([agent.reloadConfig('skill'), agent.reloadConfig('rolePack')]);
     // 措辞须对两种时序都成立：判据为真后锁可能瞬间释放（此时两次调用会真的立即生效）。
     vscode.window.showInformationMessage(
-      '技能重载请求已提交；若对话仍在进行，将在对话空闲时自动生效',
+      vscode.l10n.t(
+        'Reload request submitted; it will take effect when the conversation goes idle',
+      ),
     );
     return;
   }
@@ -63,9 +67,13 @@ export async function reloadSkillsCommand(
     // 对话区技能下拉同理：重载会改变可用技能集，必须同代刷新
     chatProvider.refreshSkillList();
     vscode.window.showInformationMessage(
-      `技能已重载：全局技能 ${result.skill} 个 / 角色包技能 ${result.rolePack} 个`,
+      vscode.l10n.t(
+        'Reloaded: {0} global skills / {1} role-pack skills',
+        result.skill,
+        result.rolePack,
+      ),
     );
   } catch (err) {
-    vscode.window.showWarningMessage(`技能重载失败：${toNoticeText(err)}`);
+    vscode.window.showWarningMessage(vscode.l10n.t('Reload failed: {0}', toNoticeText(err)));
   }
 }

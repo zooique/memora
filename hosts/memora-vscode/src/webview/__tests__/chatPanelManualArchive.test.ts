@@ -23,12 +23,22 @@ import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js
 import { MemoraChatViewProvider } from '../panels/chatPanel.js';
 
 // mock vscode：仅提供 chatPanel 构造/推送用到的最小 API（同 chatPanelHistory 基线）
+/** l10n.t 替身：{0}/{1} 占位符按参替换（vi.hoisted——mock 工厂先于 import 执行，import 绑定不可用） */
+const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
+  let out = msg;
+  args.forEach((arg, i) => {
+    out = out.replaceAll(`{${i}}`, String(arg));
+  });
+  return out;
+});
+
 vi.mock('vscode', async () => {
   const uri = {
     joinPath: (base: unknown, ...p: string[]) => ({ base, segments: p }),
     fsPath: '/mock/path',
   };
   return {
+    l10n: { t: tStub },
     Uri: uri,
     window: {
       showInputBox: vi.fn(),

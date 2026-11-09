@@ -57,7 +57,7 @@ const DEMO_PROMPT = `这是一次 Memora 内核能力演示，请按以下步骤
  */
 export async function runDemoCommand(configDir: string): Promise<void> {
   // 创建 output channel（唯一演示出口，纯文本视图，改动最小）
-  const output = vscode.window.createOutputChannel('Memora 演示');
+  const output = vscode.window.createOutputChannel(vscode.l10n.t('Memora Demo'));
   output.show(true);
 
   const header = () => {
@@ -84,6 +84,8 @@ export async function runDemoCommand(configDir: string): Promise<void> {
       projectPath: demoPath,
       // 独立装配也要带同一回答语言来源：漏传 = 演示时模型被强制英文回答
       answerLanguage: answerLanguageAssembly(),
+      // UI 消息语言同源：漏传 = 演示区 Agent 的对话流框架文字退回内核英文默认
+      envLanguage: vscode.env.language,
       // dataDir 由 assembleAgent 内部 = resolveProjectDataDir(projectPath)，落演示区内
       configDir,
     });

@@ -20,6 +20,7 @@
  *   - 各子视图 load 由本面板按 activeTab 分发；切选项卡只显隐 content 区，不销毁/重建 DOM。
  */
 import * as vscode from 'vscode';
+const { l10n } = vscode; // 通知文案 l10n（切片 2，ADR-042）：短引用省折行租金
 import type { Agent, ArchiveMode, MemoryInspector } from '@zooique/memora';
 import { hasActiveSuperseder } from '@zooique/memora';
 import type { ProviderStore } from '../../extension/providers/providerStore.js';
@@ -391,10 +392,8 @@ export class MemoraSettingsPanel {
         // 预填衔接文本：角色包自洽声明 handoffPrompt 优先（作者定制特色接手话术），
         // 缺省回退通用话术。SSOT：提示词真理源在角色包 meta（内核透传），宿主仅兜底，
         // 不引入跨包引用（角色包独立自洽，插卡解耦）。
-        const fallback = `继续以「${displayName}」的视角处理以上任务`;
-        this._chatProvider?.prefillInput(
-          meta?.handoffPrompt?.trim() ? meta.handoffPrompt : fallback,
-        );
+        const cue = `继续以「${displayName}」的视角处理以上任务`;
+        this._chatProvider?.prefillInput(meta?.handoffPrompt?.trim() ? meta.handoffPrompt : cue);
       }
       return;
     }
@@ -452,7 +451,7 @@ export class MemoraSettingsPanel {
       return;
     }
     if (msg.type === 'roles_open_dir') {
-      this.openDirInOs(this._userRolePacksDir, '用户角色包');
+      this.openDirInOs(this._userRolePacksDir, l10n.t('user role packs'));
       return;
     }
     // 重扫项目与用户角色包目录（刷新按钮）：内核对账后 notice 结果 + 刷新下发
@@ -606,7 +605,7 @@ export class MemoraSettingsPanel {
       return;
     }
     if (msg.type === 'skills_open_dir') {
-      this.openDirInOs(this._userSkillsDir, '用户技能');
+      this.openDirInOs(this._userSkillsDir, l10n.t('user skills'));
       return;
     }
     if (msg.type === 'skills_refresh') {
@@ -739,7 +738,7 @@ export class MemoraSettingsPanel {
     if (!this._getAgent) return undefined;
     const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!ws) {
-      void vscode.window.showWarningMessage('Memora：请先打开一个工作区');
+      void vscode.window.showWarningMessage(l10n.t('Memora: open a workspace first'));
       return undefined;
     }
     let agent: Agent | undefined;
@@ -747,7 +746,7 @@ export class MemoraSettingsPanel {
       agent = await this._getAgent(ws);
     } catch (err) {
       const message = toNoticeText(err);
-      void vscode.window.showErrorMessage(`Memora 装配失败：${message}`);
+      void vscode.window.showErrorMessage(l10n.t('Memora assembly failed: {0}', message));
       return undefined;
     }
     // 装配工厂可能以 undefined 收场（「Agent 未就绪」的一条出口）：此时不得去碰事件面
@@ -1124,7 +1123,7 @@ export class MemoraSettingsPanel {
       this.post({ type: 'memory_search_result', query, hits: hits.map(toSearchDto) });
     } catch (err) {
       const message = toNoticeText(err);
-      void vscode.window.showErrorMessage(`Memora 记忆搜索失败：${message}`);
+      void vscode.window.showErrorMessage(l10n.t('Memora memory search failed: {0}', message));
       this.post({ type: 'memory_search_result', query, hits: [] });
     }
   }
@@ -1547,7 +1546,7 @@ export class MemoraSettingsPanel {
   /** 在系统文件管理器中打开指定目录（revealFileInOS 失败回退 showItemInFolder；供技能/角色包目录共用，SSOT 消除重复） */
   private openDirInOs(dir: string | undefined, label: string): void {
     if (!dir) {
-      void vscode.window.showWarningMessage(`${label}目录未配置`);
+      void vscode.window.showWarningMessage(l10n.t('{0} directory is not configured', label));
       return;
     }
     const uri = vscode.Uri.file(dir);

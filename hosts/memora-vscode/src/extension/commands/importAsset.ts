@@ -52,9 +52,9 @@ export interface ImportAssetDeps {
   settingsProvider: MemoraSettingsPanel;
 }
 
-/** 资产类型的中文标签（toast / 错误文案共用） */
+/** 资产类型的标签（toast / 错误文案共用；切片 2 走 l10n——显式分支，键面守卫要求 t() 后紧跟字面量） */
 function kindLabel(kind: AssetKind): string {
-  return kind === 'skill' ? '技能' : '角色包';
+  return kind === 'skill' ? vscode.l10n.t('skill') : vscode.l10n.t('role pack');
 }
 
 /**
@@ -144,14 +144,16 @@ export async function importAssetCommand(deps: ImportAssetDeps): Promise<void> {
     },
   ];
   const levelPick = await vscode.window.showQuickPick(levelItems, {
-    placeHolder: '选择导入位置',
-    title: '导入到哪一层',
+    placeHolder: vscode.l10n.t('Choose the import target'),
+    title: vscode.l10n.t('Import to which level'),
   });
   if (!levelPick) return;
   if (levelPick.level === 'project' && !projectAvailable) {
     // 不静默降级为用户级：用户选了项目级，却写进用户目录属「落点与选择不一致」
     void vscode.window.showWarningMessage(
-      '工作区未受信任，无法导入到项目级。请先信任当前工作区，或重新选择用户级。',
+      vscode.l10n.t(
+        'The workspace is not trusted; cannot import to project level. Trust the workspace first, or choose user level instead.',
+      ),
     );
     return;
   }
@@ -186,7 +188,7 @@ export async function importAssetCommand(deps: ImportAssetDeps): Promise<void> {
 
   if (!result.ok) {
     // 失败必须给具体原因（zip-slip 条目名 / 超限 / 类型不符 / 校验失败各自可读）
-    void vscode.window.showErrorMessage(`导入失败：${result.reason}`);
+    void vscode.window.showErrorMessage(vscode.l10n.t('Import failed: {0}', result.reason));
     return;
   }
 
@@ -196,7 +198,12 @@ export async function importAssetCommand(deps: ImportAssetDeps): Promise<void> {
   // ④ 重扫与 UI 刷新（写入是磁盘事实，重扫让内核池同步；Agent 未就绪时如实告知）
   if (!agent) {
     void vscode.window.showWarningMessage(
-      `已导入${kindLabel(asset.kind)}「${asset.name}」到 ${asset.targetPath}，但 Memora Agent 未就绪，未能立即刷新；打开对话面板后会自动装载。`,
+      vscode.l10n.t(
+        'Imported {0} "{1}" to {2}, but the Memora Agent is not ready; it will load when the chat panel opens.',
+        kindLabel(asset.kind),
+        asset.name,
+        asset.targetPath,
+      ),
     );
   } else {
     try {
@@ -204,7 +211,12 @@ export async function importAssetCommand(deps: ImportAssetDeps): Promise<void> {
     } catch (err) {
       // 落盘已成功，重扫失败不谎报「导入失败」——分开告知，用户可手动点「刷新」
       void vscode.window.showWarningMessage(
-        `已导入${kindLabel(asset.kind)}「${asset.name}」，但刷新内核失败：${(err as Error).message}。请在设置页点击「刷新」。`,
+        vscode.l10n.t(
+          'Imported {0} "{1}", but resyncing the kernel failed: {2}. Click "Refresh" in the settings view.',
+          kindLabel(asset.kind),
+          asset.name,
+          (err as Error).message,
+        ),
       );
     }
     if (asset.kind === 'skill') {
@@ -217,7 +229,13 @@ export async function importAssetCommand(deps: ImportAssetDeps): Promise<void> {
 
   // ⑤ 成功 toast：类型 + 名称 + 落点 + 文件数
   void vscode.window.showInformationMessage(
-    `导入成功：${kindLabel(asset.kind)}「${asset.name}」→ ${asset.targetPath}（${asset.fileCount} 个文件）`,
+    vscode.l10n.t(
+      'Import succeeded: {0} "{1}" -> {2} ({3} file(s))',
+      kindLabel(asset.kind),
+      asset.name,
+      asset.targetPath,
+      asset.fileCount,
+    ),
   );
 }
 

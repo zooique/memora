@@ -64,7 +64,9 @@ export type AgentResolver = () => Promise<Agent | null>;
 async function toggleByRelativePath(source: string, resolveAgent: AgentResolver): Promise<void> {
   const agent = await resolveAgent();
   if (!agent?.works) {
-    void vscode.window.showWarningMessage('Memora Agent 未就绪，无法切换项目规则');
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t('Memora Agent is not ready; cannot toggle the project rule'),
+    );
     return;
   }
   try {
@@ -73,7 +75,10 @@ async function toggleByRelativePath(source: string, resolveAgent: AgentResolver)
     showKernelResult(await agent.works.setResident(source, !current?.resident));
   } catch (err) {
     void vscode.window.showErrorMessage(
-      '切换项目规则失败：' + (err instanceof Error ? err.message : String(err)),
+      vscode.l10n.t(
+        'Failed to toggle the project rule: {0}',
+        err instanceof Error ? err.message : String(err),
+      ),
     );
   }
 }
@@ -85,7 +90,9 @@ async function unregisterByRelativePath(
 ): Promise<void> {
   const agent = await resolveAgent();
   if (!agent?.works) {
-    void vscode.window.showWarningMessage('Memora Agent 未就绪，无法移除作品投影');
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t('Memora Agent is not ready; cannot remove the work projection'),
+    );
     return;
   }
   try {
@@ -93,7 +100,10 @@ async function unregisterByRelativePath(
     showKernelResult(await agent.works.unregisterWork(source));
   } catch (err) {
     void vscode.window.showErrorMessage(
-      '移除作品投影失败：' + (err instanceof Error ? err.message : String(err)),
+      vscode.l10n.t(
+        'Failed to remove the work projection: {0}',
+        err instanceof Error ? err.message : String(err),
+      ),
     );
   }
 }
@@ -107,7 +117,9 @@ async function unregisterByRelativePath(
 async function openWorkSource(source: string, resolveAgent: AgentResolver): Promise<void> {
   const agent = await resolveAgent();
   if (!agent?.works) {
-    void vscode.window.showWarningMessage('Memora Agent 未就绪，无法打开作品原文件');
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t('Memora Agent is not ready; cannot open the work source file'),
+    );
     return;
   }
 
@@ -117,24 +129,33 @@ async function openWorkSource(source: string, resolveAgent: AgentResolver): Prom
     listed = (await agent.works.listManagedWorks()).some((e) => e.source === source);
   } catch (err) {
     void vscode.window.showErrorMessage(
-      '读取作品投影清单失败：' + (err instanceof Error ? err.message : String(err)),
+      vscode.l10n.t(
+        'Failed to load the work projection list: {0}',
+        err instanceof Error ? err.message : String(err),
+      ),
     );
     return;
   }
   if (!listed) {
-    void vscode.window.showWarningMessage(`无法打开作品：清单里没有 ${source}`);
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t('Cannot open the work: {0} is not in the list', source),
+    );
     return;
   }
 
   // ② 首根解析（SSOT = refPath，与生成侧 toWorkspaceRelativePath 同一契约的两半）
   const root = vscode.workspace.workspaceFolders?.[0];
   if (!root) {
-    void vscode.window.showWarningMessage('未打开工作区，无法定位作品原文件');
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t('No workspace is open; cannot locate the work source file'),
+    );
     return;
   }
   const abs = resolveUnderPrimaryRoot(root.uri.fsPath, source);
   if (!abs) {
-    void vscode.window.showWarningMessage(`无法打开作品：路径不在首个工作区根内 ${source}`);
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t('Cannot open the work: {0} is outside the first workspace root', source),
+    );
     return;
   }
 
@@ -144,7 +165,10 @@ async function openWorkSource(source: string, resolveAgent: AgentResolver): Prom
     await vscode.window.showTextDocument(doc);
   } catch (err) {
     void vscode.window.showErrorMessage(
-      '打开作品原文件失败：' + (err instanceof Error ? err.message : String(err)),
+      vscode.l10n.t(
+        'Failed to open the work source file: {0}',
+        err instanceof Error ? err.message : String(err),
+      ),
     );
   }
 }
@@ -163,7 +187,9 @@ export async function runWorkProjectionAction(
 ): Promise<void> {
   if (action === 'load') return;
   if (!source) {
-    void vscode.window.showWarningMessage('未指定作品条目，无法执行该动作');
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t('No work entry specified; cannot perform the action'),
+    );
     return;
   }
   switch (action) {

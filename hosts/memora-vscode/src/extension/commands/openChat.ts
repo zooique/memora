@@ -28,7 +28,7 @@ export async function openChatCommand(
 ): Promise<void> {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   if (!workspaceFolder) {
-    void vscode.window.showErrorMessage('Memora：请先打开一个工作区');
+    void vscode.window.showErrorMessage(vscode.l10n.t('Memora: open a workspace first'));
     return;
   }
   try {
@@ -41,6 +41,6 @@ export async function openChatCommand(
     void vscode.commands.executeCommand(`${MemoraChatViewProvider.viewType}.focus`);
   } catch (err) {
     const msg = toNoticeText(err);
-    void vscode.window.showErrorMessage(`Memora 装配失败：${msg}`);
+    void vscode.window.showErrorMessage(vscode.l10n.t('Memora assembly failed: {0}', msg));
   }
 }

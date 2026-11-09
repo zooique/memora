@@ -52,8 +52,18 @@ const vscodeMock = vi.hoisted(() => ({
   showErrorMessage: vi.fn(),
 }));
 
-// vscode 命名空间只用到 window 交互面（命令层不碰 workspace / env）
-vi.mock('vscode', () => ({ window: vscodeMock }));
+/** l10n.t 替身：{0}/{1} 占位符按参替换（vi.hoisted——mock 工厂先于 import 执行，import 绑定不可用） */
+const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
+  let out = msg;
+  args.forEach((arg, i) => {
+    out = out.replaceAll(`{${i}}`, String(arg));
+  });
+  return out;
+});
+
+// vscode 命名空间只用到 window 交互面（命令层不碰 workspace / env）；l10n.t = 占位符替换替身
+// （切片 2：提示串经 vscode.l10n.t 产出，断言口径 = 英文原文键；中文译文归 bundle 守卫与真机）
+vi.mock('vscode', () => ({ window: vscodeMock, l10n: { t: tStub } }));
 
 /** 本文件创建的临时目录（afterEach 统一清理） */
 const tempDirs: string[] = [];
@@ -222,7 +232,9 @@ describe('importAssetCommand · 信任门与目标级', () => {
       settingsProvider: panels.settingsProvider,
     });
 
-    expect(vscodeMock.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('未受信任'));
+    expect(vscodeMock.showWarningMessage).toHaveBeenCalledWith(
+      expect.stringContaining('The workspace is not trusted'),
+    );
     expect(calls).toEqual([]);
     expect(vscodeMock.showInformationMessage).not.toHaveBeenCalled();
   });
@@ -257,10 +269,10 @@ describe('importAssetCommand · 用户级导入成功', () => {
     expect(panels.chatRefreshes).toBe(1);
     expect(panels.settingsSkillRefreshes).toBe(1);
     const toast = vscodeMock.showInformationMessage.mock.calls[0]?.[0] as string;
-    expect(toast).toContain('技能');
+    expect(toast).toContain('skill');
     expect(toast).toContain('demo-skill');
     expect(toast).toContain(target);
-    expect(toast).toContain('1 个文件');
+    expect(toast).toContain('1 file(s)');
   });
 
   it('角色包 ⇒ resyncUserPacks(user) + 角色列表刷新', async () => {
@@ -355,7 +367,7 @@ describe('importAssetCommand · 同名覆盖确认', () => {
     expect(hasLeftovers(userSkillsDir)).toBe(false);
     expect(calls).toEqual([]);
     const err = vscodeMock.showErrorMessage.mock.calls[0]?.[0] as string;
-    expect(err).toContain('导入失败');
+    expect(err).toContain('Import failed');
     expect(err).toContain('已取消导入');
     // 覆盖确认只有「确认项 + options」两个实参，不存在取消 item（双取消的结构性防线）
     const confirmArgs = vscodeMock.showWarningMessage.mock.calls.find((args) =>

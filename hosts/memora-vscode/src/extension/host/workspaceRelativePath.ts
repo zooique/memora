@@ -45,14 +45,24 @@ export type WorkspacePathRejectReason =
 export type WorkspaceRelativePathResult =
   { ok: true; relPath: string } | { ok: false; reason: WorkspacePathRejectReason; message: string };
 
-/** 原因码 → 用户可读文案（统一在这里，避免各入口各写一套说法） */
+/**
+ * 原因码 → 用户可读文案（统一在这里，避免各入口各写一套说法）
+ *
+ * 值 = **英文原文键**（切片 2 宿主面本地化，ADR-042）：消费方对 message 二次
+ * `vscode.l10n.t(message)` 动态查 zh bundle。本表的值集合由 `verify-nls.mjs`
+ * 键面守卫**专项收录**（动态 t 的键源，静态扫描拿不到）——改这里的值必须同步
+ * 补 `l10n/bundle.l10n.zh-cn.json`，否则中文用户看到英文。
+ */
 const REJECT_MESSAGES: Record<WorkspacePathRejectReason, string> = {
-  'no-workspace': '未打开工作区，无法生成项目内相对路径',
-  'empty-target': '目标路径为空',
-  'non-canonical': '路径不是规范形（不可含 . 或 .. 段），请使用规范的绝对路径',
-  'is-root-itself': '目标是工作区根自身，不是可登记的文件',
-  'cross-drive': '目标与首个工作区根不在同一盘符，无法生成相对路径',
-  'outside-primary-root': '目标不在首个工作区根下（多根工作区下仅支持首根）',
+  'no-workspace': 'No workspace folder is open; cannot produce a project-relative path',
+  'empty-target': 'The target path is empty',
+  'non-canonical':
+    'The path is not canonical (no "." or ".." segments allowed); use a canonical absolute path',
+  'is-root-itself': 'The target is the workspace root itself, not a registrable file',
+  'cross-drive':
+    'The target is on a different drive than the first workspace root; cannot produce a relative path',
+  'outside-primary-root':
+    'The target is outside the first workspace root (multi-root workspaces support the first root only)',
 };
 
 /**
