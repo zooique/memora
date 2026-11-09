@@ -53,7 +53,7 @@ description: package 面本地化定案——VS Code 原生 package.nls* 两文�
 ## 边界与不做
 
 - **不做 `memora.language`（UI 语言开关）**：UI 语言真源只有一个 = VS Code 显示语言。原生 NLS 按显示语言取文件、运行时无法被配置项改写 ⇒ 自建开关只会造出「设置了但界面不变」的静默失效。**注意区分**：`memora.answerLanguage`（`HOST-I18N-LLM-2`）**不是** UI 开关——它只决定注入给模型的回答语言指令，不改任何界面文案，见下条边界。
-- **不假设 `zh-tw` 自动回落 `zh-cn`**：VS Code 按 locale 精确取文件，要覆盖繁中需另给 `zh-tw` 并真机验证。
+- **覆盖范围：只做 `en` + `zh-cn` 两套；`zh-tw` 未覆盖，判定为本轮不做**（2026-11-09 二次拍板，**不是待办、不是待拍板**）。VS Code 按 locale 精确取文件、不回落，故 `zh-tw` 用户取到默认英文文件——这正是本轮接受的现状；不得为此新增 `zh-tw` 译文、占位键、守卫分支或 TODO。
 - **Marketplace README 不随语言切换**：原生无此机制，不做第三方翻译扩展。
 - **角色包、提示词、工具描述不翻译**：模型可见内容，语言影响模型行为，属功能而非外观。
 - **日志保持中文**：内部事实，不属 UI。
@@ -94,7 +94,7 @@ description: package 面本地化定案——VS Code 原生 package.nls* 两文�
 
 - 切片 1（package 面）已落地：两份 nls 文件 + 46 个 `%key%` + 机检判据 + 打包白名单。
 - 切片 1 真机两态验收：随 `HOST-I18N-LLM-1` 真机验证（2026-11-09）顺带确认——`en` 下扩展描述 / 命令面板 / 设置描述走英文，`zh-cn` 下走中文。
-- **三拍板项已答（2026-11-09，方案 §8 同步）**：① 做全切片 1-4（目标 = 英文用户真可用）；② 接受源码倒英文 + `l10n.t()`（原生机制前置条件）；③ 覆盖 `zh-tw`（单独 bundle，避免「简体界面 + 繁体回答」混搭）。
+- **三拍板项已答（2026-11-09，方案 §8 同步）**：① 做全切片 1-4（目标 = 英文用户真可用）；② 接受源码倒英文 + `l10n.t()`（原生机制前置条件）；③ **不覆盖 `zh-tw`**（2026-11-09 二次拍板收紧：形态**只做 `en` + `zh-cn` 两套**，见「边界与不做」覆盖范围条）。
 - 切片 2（宿主运行时）→ 3（webview 静态模板）→ 4（webview 动态脚本）按过程稿的操作指点分片推进，各自独立提交与验收；本 ADR 不预先承诺它们的时间点。
 - 切片 2 范围内已定案的两条实现决策：**运行时提示嵌命令标题**用「占位符 + 读 `package.nls.<locale>.json` 解析」实现同源引用（VS Code 无运行时取标题 API，`packageJSON` 返回未解析原始值）；**bundle 不引入 `@vscode/l10n-dev`**（生成工具降级为手工维护 + 键面三面对账守卫：源码 `t()` 键集合 = 默认 bundle 键集合 = zh-cn bundle 键集合，漏键即红）。
 - 切片 2 宿主面代码已落地（2026-11-09）：l10n 管线骨架（manifest `"l10n"` 声明 + 双 bundle + `verify-nls.mjs` 判据 ⑧-⑮）+ `host/manifestNls.ts` 标题解析（三命令：addToChat / registerWork / toggleResidentRule）+ 宿主窗口面 `l10n.t` 化（含 QuickPick 标题占位 / 开框标题 / CodeLens 标题 / 状态栏文案）+ `CHINESE_MESSAGES` 按 `vscode.env.language` 供给；**前置批已修**：删除宿主 `interrupted` / `reflectionHint` / `selfReviewPrompt` 有损镜像（走内核默认）、`kernelResultNotice` 的 `reason` 改为从 `Agent.works` 方法返回类型推导（内核扩码即 tsc 红）；遗留（`zipImport.ts` / `shared/errorText.ts` 双消费者 / 间接传参盲区 / `MemoraError.format()` 中文正文）登记台账 HOST-I18N-2；**切片 2 真机验收已通过（2026-11-09，en / zh-cn 两态重启冒烟，含真机反馈收口批复验）**，zipImport 批与切片 3-4 继续按台账推进。
