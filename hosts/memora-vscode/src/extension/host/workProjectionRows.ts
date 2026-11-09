@@ -22,7 +22,7 @@ export type { WorkProjectionRow, WorkProjectionViewState } from '../../shared/wo
 export interface WorkEntryView {
   /** 作品名 */
   name: string;
-  /** 一句话说明 */
+  /** 一句话说明（内核清单原文，卡片内直接显示） */
   description: string;
   /** 源文件路径（相对项目根） */
   source: string;
@@ -150,14 +150,15 @@ export function deriveWorkProjectionView(input: {
     // 常驻态的唯一来源是内核归一结果；这里只决定「显示成什么」
     const base = e.resident ? '项目规则' : '未设为项目规则';
     const failure = failureBySource.get(e.source);
-    const baseTooltip = e.description ? `${e.source}\n${e.description}` : e.source;
     return {
       source: e.source,
       name: e.name,
+      // 说明是内核清单原文，卡片内直接显示；tooltip 只留寻址与失效详情，避免同一句话两处出现
+      description: e.description,
       // 后缀同时答两问：本意是不是规则 / 本轮有没有生效（后者缺失时保持原样，不写「正常」）
       statusText: failure ? `${base} · ${failureLabel(failure.reason)}` : base,
       // 内核文案带实际计量与写入值，放 tooltip 比塞进单行后缀更可读
-      tooltip: failure ? `${baseTooltip}\n\n${failure.message}` : baseTooltip,
+      tooltip: failure ? `${e.source}\n\n${failure.message}` : e.source,
       // 语义二元组（不是图标 id）：渲染面自己决定「项目规则 / 普通 / 失效」各画什么
       resident: e.resident,
       hasFailure: failure !== undefined,

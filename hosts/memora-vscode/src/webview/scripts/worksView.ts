@@ -1,5 +1,5 @@
 /**
- * worksView — 设置面板「作品」子视图（作品投影清单）
+ * worksView — 设置面板「作品和规则」子视图（作品投影清单）
  *
  * 职责边界：**只渲染 host 推来的 `work_projection.state`，只上报用户意图**。
  * 「是不是项目规则」「本轮有没有失效」全部是内核已算好的字段，本文件不复算、不补算。
@@ -58,16 +58,31 @@ function buildRow(document: Document, row: WorkProjectionRow): HTMLElement {
 
   const body = document.createElement('div');
   body.className = 'works-row-body';
+
+  // 首行：作品名 + 状态后缀两端对齐（名称长了只截名称，状态始终完整可读）
+  const head = document.createElement('div');
+  head.className = 'works-row-head';
   const name = document.createElement('span');
   name.className = 'works-row-name';
   name.textContent = row.name;
-  const source = document.createElement('span');
-  source.className = 'works-row-source';
-  source.textContent = row.source;
   const status = document.createElement('span');
   status.className = 'works-row-status';
   status.textContent = row.statusText;
-  body.append(name, source, status);
+  head.append(name, status);
+  body.appendChild(head);
+
+  // 说明只在卡片内显示（不再靠 hover tooltip）；空串不占位——这是渲染决策，不是业务判据
+  if (row.description) {
+    const description = document.createElement('span');
+    description.className = 'works-row-description';
+    description.textContent = row.description;
+    body.appendChild(description);
+  }
+
+  const source = document.createElement('span');
+  source.className = 'works-row-source';
+  source.textContent = row.source;
+  body.appendChild(source);
   el.appendChild(body);
 
   const actions = document.createElement('div');
@@ -89,7 +104,7 @@ function buildRow(document: Document, row: WorkProjectionRow): HTMLElement {
   return el;
 }
 
-/** 初始化「作品」子视图 */
+/** 初始化「作品和规则」子视图 */
 export function createWorksView({ vscode, window, root }: WorksViewDeps): void {
   const document = window.document;
   const listMaybe = root.querySelector<HTMLElement>('#worksList');

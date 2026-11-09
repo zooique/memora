@@ -5,7 +5,7 @@
  *  - `memora.toggleResidentRule`：右键文件 / 编辑器标签切换该文件的常驻态；
  *  - `memora.manageResidentRules`：QuickPick 管理整份清单（切换 / 移除登记）。
  *
- * 🔴 动作执行面 SSOT（WORK-PROJECTION-MOVE-1）：本文件的两个入口、设置页「作品」的
+ * 🔴 动作执行面 SSOT（WORK-PROJECTION-MOVE-1）：本文件的两个入口、设置页「作品和规则」的
  * 行内按钮、资源管理器「登记作品投影」共四个入口，**翻转 / 移除 / 打开的执行体**
  * 全部收口在 `host/workProjectionBridge.ts` 的 `runWorkProjectionAction()`。本文件只负责
  * 「URI → 首根相对路径」与「QuickPick → 选中项 source」这两段入口差异，

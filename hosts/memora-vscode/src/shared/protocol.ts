@@ -911,7 +911,7 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'background_kill'; taskId: string; reason?: 'terminate' | 'dismiss' }
   /**
-   * 作品投影（设置页「作品」选项卡）：同一条通道按 action 判别，不为每个按钮单开通道
+   * 作品投影（设置页「作品和规则」选项卡）：同一条通道按 action 判别，不为每个按钮单开通道
    *
    * `load` = 请求当前清单；`open` = 单击行打开原文件（可编辑）；`toggle` = 切换项目规则；
    * `unregister` = 仅移除登记。四个动作共用 `runWorkProjectionAction` 执行面。

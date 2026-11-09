@@ -21,9 +21,11 @@ export interface WorkProjectionRow {
   source: string;
   /** 行标题（作品名） */
   name: string;
+  /** 一句话说明（内核清单原文；卡片内直接显示，不再只塞 tooltip） */
+  description: string;
   /** 行右侧状态后缀（项目规则 / 未设为项目规则；本轮有失效时追加分类标签） */
   statusText: string;
-  /** 行 tooltip（含源路径与说明；失效时附内核原文案） */
+  /** 行 tooltip（源路径；失效时附内核原文案。说明已在卡片内显示，不在此重复） */
   tooltip: string;
   /** 内核归一后的项目规则态（webview 只据此选图标，不二次判断） */
   resident: boolean;

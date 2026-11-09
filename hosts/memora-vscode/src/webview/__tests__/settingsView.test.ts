@@ -34,7 +34,7 @@ const HTML = `
     <button class="tab-btn" data-tab="config">大模型</button>
     <button class="tab-btn" data-tab="skills">技能</button>
     <button class="tab-btn" data-tab="security">安全</button>
-    <button class="tab-btn" data-tab="works">作品</button>
+    <button class="tab-btn" data-tab="works">作品和规则</button>
   </div>
   <div id="memory-root">
     <div class="header"><h2>记忆</h2><span id="statBar" class="stat-bar" hidden></span></div>

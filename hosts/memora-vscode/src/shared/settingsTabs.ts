@@ -67,9 +67,10 @@ export const SETTINGS_TAB_LABELS: Record<SettingsTab, string> = {
   // 按钮文案必须是用户会搜的那个词（技能页讲的是插件自带技能，两者混用会再次误导）。
   mcp: 'MCP',
   security: '安全',
-  // 作品投影（项目规则清单 + 本轮装配失效徽标）。不写作「规则」：该页同时列未设为
-  // 项目规则的作品，叫「规则」会把一半条目说成不该在这儿。
-  works: '作品',
+  // 并列复合名：既收作品（含未升级的），也收升级后的项目规则。2026-11-09 真机反馈
+  // 「只叫『作品』，用户不知道作品还能升级成规则」⇒ 可见名显式带出升级去向。
+  // 仍不单叫「规则」：该页同时列未设为项目规则的作品，单叫会把一半条目说成不该在这儿。
+  works: '作品和规则',
 };
 
 /**
@@ -87,7 +88,7 @@ export const SETTINGS_TAB_ARIA_LABELS: Record<SettingsTab, string> = {
   skills: '技能',
   mcp: 'MCP 工具服务器',
   security: '安全',
-  works: '作品投影清单与项目规则',
+  works: '作品和规则清单与项目规则求值',
 };
 
 /** 子视图根容器 id（此前 5 个 id 在 HTML / webview 脚本 / CSS 三处各自硬写） */

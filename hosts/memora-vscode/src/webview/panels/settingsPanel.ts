@@ -1,7 +1,7 @@
 /**
  * 设置面板 — editor tab Webview 面板（选项卡式七页合一，单例管理）
  *
- * 各子视图（角色 / 大模型 / 记忆 / 技能 / MCP / 安全 / 作品，清单 SSOT = `shared/settingsTabs.ts`）
+ * 各子视图（角色 / 大模型 / 记忆 / 技能 / MCP / 安全 / 作品和规则，清单 SSOT = `shared/settingsTabs.ts`）
  * 共存于单一「设置」面板，内部通过选项卡切换。
  * 子视图保留各自独立行为逻辑，通过共享同一 webview 文档 + root 容器 id 空间隔离共存。
  *
@@ -115,7 +115,7 @@ const MEMORY_LIST_LIMIT = 20;
 /** 搜索结果条数 */
 const MEMORY_SEARCH_LIMIT = 20;
 
-/** 设置面板（editor tab 单例；七页合一：角色 / 大模型 / 记忆 / 技能 / MCP / 安全 / 作品） */
+/** 设置面板（editor tab 单例；七页合一：角色 / 大模型 / 记忆 / 技能 / MCP / 安全 / 作品和规则） */
 export class MemoraSettingsPanel {
   /** 面板类型标识（createWebviewPanel 首参；沿用原侧栏 view id 作面板类型键，不另造） */
   public static readonly viewType = 'memora.settings';

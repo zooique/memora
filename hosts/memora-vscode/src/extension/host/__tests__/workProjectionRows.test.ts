@@ -5,7 +5,7 @@
  * 本文件钉的是**派生关系**（内核快照 → 行/空态/失效徽标），不碰 vscode、不碰内核、
  * 不拉起扩展宿主。
  *
- * 🔴 反假绿纪律：每条断言都钉具体字段值（statusText / resident / hasFailure / tooltip），
+ * 🔴 反假绿纪律：每条断言都钉具体字段值（description / statusText / resident / hasFailure / tooltip），
  * 禁止只断言「函数被调用」或「返回了数组」——那类断言在实现退化成空数组时依然绿。
  * 侧边栏树退役后，图标 id 与 contextValue 一并从派生形状移除（渲染面各归一侧），
  * 本套件改钉语义二元组，不再断言任何 ThemeIcon 字面量。
@@ -93,7 +93,7 @@ describe('派生：非行状态（三种「拿不到行」的原因必须分开�
 });
 
 describe('派生：行字段', () => {
-  it('常驻条目的行：状态后缀 / resident / hasFailure / tooltip 逐字段钉死', () => {
+  it('常驻条目的行：状态后缀 / description / resident / hasFailure / tooltip 逐字段钉死', () => {
     const state = deriveWorkProjectionView({
       hasAgent: true,
       listMalformed: false,
@@ -110,9 +110,10 @@ describe('派生：行字段', () => {
     expect(row.statusText).toBe('项目规则');
     expect(row.resident).toBe(true);
     expect(row.hasFailure).toBe(false);
-    // tooltip 同时带源路径与说明（不打开文件也能确认是哪一份、干什么的）
-    expect(row.tooltip).toContain('rules.md');
-    expect(row.tooltip).toContain('仓库硬约束');
+    // 说明进卡片字段（不靠 hover）；tooltip 只留源路径，避免同一句话两处显示
+    expect(row.description).toBe('仓库硬约束');
+    expect(row.tooltip).toBe('rules.md');
+    expect(row.tooltip).not.toContain('仓库硬约束');
   });
 
   it('非常驻条目的行：未设为项目规则 + resident=false（不得被画成规则）', () => {
@@ -129,7 +130,7 @@ describe('派生：行字段', () => {
     expect(row.hasFailure).toBe(false);
   });
 
-  it('说明为空 ⇒ tooltip 只留源路径（不留空行尾巴）', () => {
+  it('说明为空 ⇒ 原样透传空串、tooltip 只留源路径（不留空行尾巴）', () => {
     const state = deriveWorkProjectionView({
       hasAgent: true,
       listMalformed: false,
@@ -137,6 +138,7 @@ describe('派生：行字段', () => {
       residentReport: reportView(),
     });
     if (state.kind !== 'rows') throw new Error('state 收窄失败');
+    expect(state.rows[0]!.description).toBe('');
     expect(state.rows[0]!.tooltip).toBe('plain.md');
   });
 
@@ -167,7 +169,9 @@ describe('派生：失效徽标（内核报告 → 行后缀 / hasFailure / tool
     // 后缀只说分类，内核那句带路径 / 计量的说明放 tooltip（不截断、不改写）
     expect(row.statusText).not.toContain('源文件不存在');
     expect(row.tooltip).toContain('源文件不存在：rules.md');
-    expect(row.tooltip).toContain('仓库硬约束');
+    // 说明已搬进卡片字段；失效原文仍留 tooltip，两者不重复
+    expect(row.description).toBe('仓库硬约束');
+    expect(row.tooltip).not.toContain('仓库硬约束');
   });
 
   it('五类读盘原因码都归到「读取失败」（不逐码造词：用户动作都是去修文件）', () => {
