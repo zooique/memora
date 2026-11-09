@@ -60,19 +60,19 @@ describe('历史菜单会话活跃度标识（E4 批 4）', () => {
     view.renderMenu(SESSIONS, []);
     view.setActivity(['2026-11-06-b'], ['2026-11-06-a'], 1);
 
-    expect(stateLabel('2026-11-06-a')).toBe('待处理');
-    expect(stateLabel('2026-11-06-b')).toBe('运行中');
+    expect(stateLabel('2026-11-06-a')).toBe('Awaiting answer');
+    expect(stateLabel('2026-11-06-b')).toBe('Executing');
 
     // 同一会话既在跑又在等答 ⇒ 只留「待处理」（两标签并存会让用户以为要处理两件事）
     view.setActivity(['2026-11-06-a'], ['2026-11-06-a'], 0);
-    expect(stateLabel('2026-11-06-a')).toBe('待处理');
+    expect(stateLabel('2026-11-06-a')).toBe('Awaiting answer');
   });
 
   it('状态清空后标签与角标一起消失（不残留）', () => {
     const { view, badge } = mount();
     view.renderMenu(SESSIONS, []);
     view.setActivity(['2026-11-06-a'], ['2026-11-06-b'], 1);
-    expect(stateLabel('2026-11-06-a')).toBe('运行中');
+    expect(stateLabel('2026-11-06-a')).toBe('Executing');
     // 角标与条目标签同源：1 个待处理 ⇒ 显示「1」
     expect(badge.hidden).toBe(false);
     expect(badge.textContent).toBe('1');

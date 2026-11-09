@@ -30,6 +30,7 @@
  */
 
 import type { ArchiveMode } from '@zooique/memora';
+import * as l10n from '@vscode/l10n';
 import { getIconSvg } from './icons.js';
 
 /** 会话条目形状契约 = protocol `session_list_data.sessions`（结构化兼容，协议演进时同步本表） */
@@ -193,11 +194,13 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
       // 搜索无匹配 ≠ 分组为空：两种空态语义不同，文案必须区分（否则搜不到会被误读成「分组是空的」）
       empty.textContent = q
         ? sessionListView === 'archived'
-          ? `留存区中没有匹配「${sessionSearchQuery.trim()}」的会话`
-          : `没有匹配「${sessionSearchQuery.trim()}」的会话`
+          ? l10n.t('No sessions in retained matching "{0}"', sessionSearchQuery.trim())
+          : l10n.t('No sessions matching "{0}"', sessionSearchQuery.trim())
         : sessionListView === 'archived'
-          ? '留存区还是空的——把不想看的会话移进来，内容不会丢'
-          : '暂无历史会话，新建会话后自动归档到此';
+          ? l10n.t(
+              'The retained area is empty — move sessions you no longer need here; nothing is lost',
+            )
+          : l10n.t('No session history yet; new sessions will be archived here automatically');
       menuEl.appendChild(empty);
       return;
     }
@@ -214,7 +217,7 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
       head.className = 'session-history__date-group';
       // 会话是多个 turn 的集合，「N 条会话」的「条」易误读为消息条数（行内「· N 条」才是消息数）
       // ⇒ 2026-10-18 真机反馈订正：日期头只计数不量词
-      head.textContent = `${day} · ${items.length} 会话`;
+      head.textContent = l10n.t('{0} · {1} sessions', day, items.length);
       menuEl.appendChild(head);
       for (const s of items) {
         renderHistoryItem(s);
@@ -242,14 +245,17 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
     // 计数并槽（messageCount 缺省 = 旧会话未生成，只显示时间不显示 0）
     const timeText =
       typeof s.messageCount === 'number' && s.messageCount > 0
-        ? `${fmtRelativeTime(s.updatedAt)} · ${s.messageCount} 条`
+        ? l10n.t('{0} · {1} messages', fmtRelativeTime(s.updatedAt), s.messageCount)
         : fmtRelativeTime(s.updatedAt);
     // 角色包名并槽（缺省 = 从未选过角色，旧会话副标题一字不变）；
     // 只展示名字快照，不判断包是否仍可用——可用性判断会造第二份状态源，卸载场景由打开会话时的既有回落 notice 告知
-    timeEl.textContent = [timeText, s.activeRolePackName ? `角色：${s.activeRolePackName}` : '']
+    timeEl.textContent = [
+      timeText,
+      s.activeRolePackName ? l10n.t('Role: {0}', s.activeRolePackName) : '',
+    ]
       .filter(Boolean)
       .join(' · ');
-    if (s.activeRolePackName) timeEl.title = `角色包：${s.activeRolePackName}`;
+    if (s.activeRolePackName) timeEl.title = l10n.t('Role pack: {0}', s.activeRolePackName);
     /**
      * 活跃度标识（E4 批 4）：待处理优先于运行中——既在跑又在等你答，先说的是「等你答」；
      * 同一条目只挂一个标签（两个都挂会让用户以为要处理两件事）。
@@ -258,10 +264,10 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
     const stateEl = document.createElement('span');
     if (pendingSessionIds.has(s.sessionId)) {
       stateEl.className = 'session-history__item-state is-pending';
-      stateEl.textContent = '待处理';
+      stateEl.textContent = l10n.t('Awaiting answer');
     } else if (runningSessionIds.has(s.sessionId)) {
       stateEl.className = 'session-history__item-state is-running';
-      stateEl.textContent = '运行中';
+      stateEl.textContent = l10n.t('Executing');
     }
     // 分组动作：会话记录 → 移入留存区；留存区 → 移回会话记录。
     // 两者都**不是删除**（数据一字不动），故图标与文案都不用删除类语言。
@@ -273,10 +279,12 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
     // full 模式文案一字不动（自动归档已在离场时跑过；按钮纯留存）。
     keepBtn.title =
       sessionListView === 'archived'
-        ? '移回会话记录'
+        ? l10n.t('Move back to session records')
         : currentArchiveMode === 'manual'
-          ? '归档并留存：生成会话摘要并移入留存区（内容不丢，只是换个位置）'
-          : '移入留存区（内容不丢，只是换个位置）';
+          ? l10n.t(
+              'Archive and retain: generate a session summary and move it to retained (nothing is lost, just relocated)',
+            )
+          : l10n.t('Move to retained (nothing is lost, just relocated)');
     keepBtn.setAttribute('role', 'button');
     keepBtn.setAttribute('aria-label', keepBtn.title);
     keepBtn.innerHTML = getIconSvg(sessionListView === 'archived' ? 'restore' : 'archive', 14, 14);
@@ -290,9 +298,9 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
     // 删除用 span 而非 button：同上（button 内不可嵌套 button）
     const delBtn = document.createElement('span');
     delBtn.className = 'session-history__item-del';
-    delBtn.title = '删除会话';
+    delBtn.title = l10n.t('Delete session');
     delBtn.setAttribute('role', 'button');
-    delBtn.setAttribute('aria-label', '删除会话');
+    delBtn.setAttribute('aria-label', l10n.t('Delete session'));
     delBtn.innerHTML = getIconSvg('trash', 14, 14);
     delBtn.addEventListener('click', (e) => {
       e.stopPropagation(); // 阻断冒泡到 menu 的选择委托，仅触发删除（菜单保持展开可连续删）
@@ -310,12 +318,12 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
     const diff = Date.now() - new Date(iso).getTime();
     if (Number.isNaN(diff) || diff < 0) return '';
     const min = Math.floor(diff / 60000);
-    if (min < 1) return '刚刚';
-    if (min < 60) return `${min} 分钟前`;
+    if (min < 1) return l10n.t('Just now');
+    if (min < 60) return l10n.t('{0} min ago', min);
     const hr = Math.floor(min / 60);
-    if (hr < 24) return `${hr} 小时前`;
+    if (hr < 24) return l10n.t('{0} hr ago', hr);
     const day = Math.floor(hr / 24);
-    if (day < 30) return `${day} 天前`;
+    if (day < 30) return l10n.t('{0} days ago', day);
     return iso.slice(0, 10);
   }
 

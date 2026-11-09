@@ -6,6 +6,7 @@
  * （currentRoleName / currentRolePacks 真源仍在 chatView 的协议消息处理器）。
  * chips 点击委托仍在 chatView（读 dataset.prompt 填输入框，属输入域不属空态域）。
  */
+import * as l10n from '@vscode/l10n';
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 
 /** 空状态示例提问项（点击填入输入框） */
@@ -23,18 +24,47 @@ interface Suggestion {
  * showcase 角色（白话方案设计师）展示"种子收敛"引导——让用户一键体验 memora 最吸引人的
  * 「给模糊想法 → 引导收敛最小单元」设计魅力；其余角色保持通用打磨引导，
  * 避免为每条角色特化造成维护成本（新增 showcase 角色时在此追加映射即可）。
+ *
+ * 文案在**调用时**经 `l10n.t` 取（不用模块级常量）：模块加载早于语言包就绪，
+ * 顶层求值会把默认语言永久写死。
  */
-const DEFAULT_SUGGESTIONS: Suggestion[] = [
-  { prompt: '帮我审阅当前文档的架构合理性', label: '审阅架构' },
-  { prompt: '帮我精简文档中的冗余表达', label: '精简表达' },
-  { prompt: '检查文档与代码实现是否一致', label: '对齐实现' },
-];
+function defaultSuggestions(): Suggestion[] {
+  return [
+    {
+      prompt: l10n.t('Review the architectural soundness of the current document'),
+      label: l10n.t('Review architecture'),
+    },
+    { prompt: l10n.t('Trim redundant wording in the document'), label: l10n.t('Trim wording') },
+    {
+      prompt: l10n.t('Check whether the documentation matches the implementation'),
+      label: l10n.t('Align implementation'),
+    },
+  ];
+}
 
-const ROLE_SUGGESTION_SETS: Record<string, Suggestion[]> = {
-  白话方案设计师: [
-    { prompt: '我想做一个个人知识库，帮我设计一个方案', label: '设计知识库' },
-    { prompt: '我想做一个记忆系统，帮我找出最小单元', label: '设计记忆系统' },
-    { prompt: '我想做一个待办工具，帮我找出最小功能', label: '找最小单元' },
+/**
+ * showcase 角色显示名（角色包 manifest 的**身份串**，非 UI 文案，不得翻译）
+ *
+ * 它既是对映射表的键、也是与 `packs[].displayName` 比较的值；翻译即命中失效。
+ * Unicode 转义只消源码 CJK，运行期字符串与 manifest 完全一致。
+ */
+const SHOWCASE_ROLE_NAME = '\u767d\u8bdd\u65b9\u6848\u8bbe\u8ba1\u5e08';
+
+/** 角色特化示例提问（工厂同 defaultSuggestions：调用时取译文） */
+const ROLE_SUGGESTION_SETS: Record<string, () => Suggestion[]> = {
+  [SHOWCASE_ROLE_NAME]: () => [
+    {
+      prompt: l10n.t('I want to build a personal knowledge base; help me design a plan'),
+      label: l10n.t('Design a knowledge base'),
+    },
+    {
+      prompt: l10n.t('I want to build a memory system; help me find the minimal unit'),
+      label: l10n.t('Design a memory system'),
+    },
+    {
+      prompt: l10n.t('I want to build a to-do tool; help me find the minimal feature set'),
+      label: l10n.t('Find the minimal unit'),
+    },
   ],
 };
 
@@ -85,10 +115,12 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
    * 改为标题用角色显示名、提示用角色定位描述（manifest.description，可选），随角色生长。
    */
   function updateRole(name: string, packs: { displayName: string; description?: string }[]): void {
-    emptyTitle.textContent = '开始与 ' + (name || 'AI') + ' 对话';
+    emptyTitle.textContent = l10n.t('Chat with {0}', name || 'AI');
     // 角色定位描述优先；无描述时回退默认引导文案（textContent 赋值防注入）
     const activePack = packs.find((p) => p.displayName === name);
-    emptyHint.textContent = activePack?.description || '在下方输入你的想法，或点击示例提问快速开始';
+    emptyHint.textContent =
+      activePack?.description ||
+      l10n.t('Type your idea below, or click a sample prompt to get started');
     // 示例提问随 showcase 角色特化（白话方案设计师展示"种子收敛"引导，其余回退通用）
     renderSuggestions(name || 'AI');
   }
@@ -101,8 +133,10 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
    * 文案一律 textContent 赋值防注入；按钮事件创建处绑定（随空态 DOM 常驻，无需委托）。
    */
   function onboarding(): void {
-    emptyTitle.textContent = '还没有配置大模型';
-    emptyHint.textContent = '配置一个大模型后即可开始对话（支持 OpenAI 兼容接口）';
+    emptyTitle.textContent = l10n.t('No LLM configured yet');
+    emptyHint.textContent = l10n.t(
+      'Configure an LLM to start chatting (OpenAI-compatible APIs supported)',
+    );
     emptySuggestions.textContent = '';
     // 防重复追加（配置后回普通空态再触发时幂等）
     let btn = emptyState.querySelector<HTMLButtonElement>('.empty-onboard-btn');
@@ -110,7 +144,7 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
       btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'empty-onboard-btn';
-      btn.textContent = '去配置模型';
+      btn.textContent = l10n.t('Configure a model');
       btn.addEventListener('click', () => {
         deps.postMessage({ type: 'open_settings_tab', tab: 'config' });
       });
@@ -127,12 +161,13 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
    * 空状态示例提问 Chips：随激活角色动态渲染（SSOT，事件委托兼容动态元素）。
    *
    * 命中 ROLE_SUGGESTION_SETS 的角色展示专属示例（showcase，如白话方案设计师的"种子收敛"
-   * 引导）；未命中回退 DEFAULT_SUGGESTIONS 通用打磨引导（避免为每条角色特化造成维护成本）。
+   * 引导）；未命中回退 defaultSuggestions() 通用打磨引导（避免为每条角色特化造成维护成本）。
    * textContent 赋值防注入。
    */
   function renderSuggestions(name: string): void {
     if (!emptySuggestions) return;
-    const set = ROLE_SUGGESTION_SETS[name] ?? DEFAULT_SUGGESTIONS;
+    const factory = ROLE_SUGGESTION_SETS[name];
+    const set = factory ? factory() : defaultSuggestions();
     emptySuggestions.textContent = '';
     set.forEach((s) => {
       const chip = document.createElement('button');

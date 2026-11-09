@@ -546,6 +546,14 @@ const WEBVIEW_PANELS = {
   //   · sessionHistoryActions —— 运行在 extension host（依赖 HostSessionStore / confirmModal），
   //     用宿主侧 `vscode.l10n.t`；`SESSION_HELD_NOTICE` 常量改为 `sessionHeldNotice()` 函数
   //     （模块加载期不能定语言，且守卫 ⑨⑩ 认的是静态 `t('键')` 字面量）；两处 console.warn 顺手改英文。
+  //
+  // B9-E-3（空状态 / 历史菜单 / 上下文占用三视图）已收口并登记：
+  //   · 文案一律改为**调用时**取 `l10n.t`（`defaultSuggestions()` / `segmentLabels()` 等工厂），
+  //     不用模块级常量——模块加载早于语言包就绪，顶层求值会把默认语言写死；
+  //   · showcase 角色显示名（`SHOWCASE_ROLE_NAME`）是角色包 manifest 的**身份串**（映射键 + 比较值），
+  //     Unicode 转义只消源码 CJK，运行期字符串与 manifest 一致，不得翻译；
+  //   · 历史活跃度标签用专用键 `Awaiting answer` / `Executing`——通用 `Pending` / `Running`
+  //     已被别处占用且译文不同（待发送 / 进行中），复用即串味。
   chat: {
     state: 'pending',
     files: [
@@ -577,6 +585,9 @@ const WEBVIEW_PANELS = {
       'webview/helpers/docContext.ts',
       'webview/helpers/turnUiState.ts',
       'webview/helpers/sessionHistoryActions.ts',
+      'webview/scripts/emptyStateView.ts',
+      'webview/scripts/historyMenuView.ts',
+      'webview/scripts/contextOccupancyView.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。

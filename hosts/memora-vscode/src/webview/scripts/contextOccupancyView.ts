@@ -12,6 +12,7 @@
  * **无监听器**：纯数据驱动渲染（消息到达 → 渲染），无事件注册面；DOM 全即时查询。
  */
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
+import * as l10n from '@vscode/l10n';
 import { fmtTokens } from '../helpers/fmtTokens.js';
 
 /** context_occupancy 消息的 occupancy 载荷（协议同源取型，禁在容器内手抄字段形状） */
@@ -73,43 +74,110 @@ export function createContextOccupancyView(deps: ContextOccupancyViewDeps): Cont
     fill.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - pct / 100));
   }
 
-  /** 占用分段标签单点（HOST-S3-2）：hover 明细行与构成条段 title 共用，防两处文案漂移 */
-  const SEGMENT_LABELS = {
-    rolePack: '角色包/系统设定',
-    dynamicSystem: '动态注入',
-    dialogue: '完整对话',
-    inputAnchor: '当前输入锚点',
-    outputReserve: '输出预留',
-    free: '剩余可用',
-  } as const;
+  /**
+   * 占用分段标签单点（HOST-S3-2）：hover 明细行与构成条段 title 共用，防两处文案漂移。
+   *
+   * 做成**函数**而非模块级常量：模块加载早于语言包就绪，顶层求值会把默认语言写死。
+   */
+  function segmentLabels(): {
+    rolePack: string;
+    dynamicSystem: string;
+    dialogue: string;
+    inputAnchor: string;
+    outputReserve: string;
+    free: string;
+  } {
+    return {
+      rolePack: l10n.t('Role pack / system prompt'),
+      dynamicSystem: l10n.t('Dynamic injection'),
+      dialogue: l10n.t('Full conversation'),
+      inputAnchor: l10n.t('Current input anchor'),
+      outputReserve: l10n.t('Output reserve'),
+      free: l10n.t('Remaining capacity'),
+    };
+  }
+
+  /**
+   * 单段明细行（hover 明细与构成条 title 的单点格式，防两处漂移）
+   *
+   * 三种形态：对话段带条数 / 角色包段带「占窗口比例」/ 其余仅 token + 占比。
+   * 语序交给 `{n}` 占位符与 zh bundle，不在代码里拼中文或英文句式。
+   */
+  function segmentDetail(opts: {
+    label: string;
+    tokens: number;
+    pct: string;
+    count?: number;
+    ofWindow?: boolean;
+  }): string {
+    const tokens = fmtTokens(opts.tokens);
+    if (opts.count !== undefined) {
+      return l10n.t('{0}: {1} items · {2} ({3})', opts.label, opts.count, tokens, opts.pct);
+    }
+    if (opts.ofWindow) {
+      return l10n.t('{0}: {1} (of window {2})', opts.label, tokens, opts.pct);
+    }
+    return l10n.t('{0}: {1} ({2})', opts.label, tokens, opts.pct);
+  }
 
   /**
    * 组装占用明细弹窗文字（纯文字，多行；供 hover/聚焦浮层展示）。
    *
    * 每行「标签：数量 · token（占比）」；rolePack 额外给「占窗口比例」；
    * UI 只渲染宿主透传的数字与条数，不重算（守内核/宿主边界）。
-   * 标签取自 SEGMENT_LABELS（与构成条段 title 单点共用）。
+   * 标签取自 segmentLabels()、行格式取自 segmentDetail()（与构成条单点共用）。
    */
   function buildOccupancyTipText(occ: ContextOccupancySnapshot): string {
     const total = Math.max(1, occ.totalTokens);
     const pctOf = (val: number): string => ((val / total) * 100).toFixed(1) + '%';
-    const lines: string[] = [`上下文占用（总容量 ${fmtTokens(occ.totalTokens)}）`];
+    const labels = segmentLabels();
+    const lines: string[] = [
+      l10n.t('Context usage (total capacity {0})', fmtTokens(occ.totalTokens)),
+    ];
     lines.push(
-      `${SEGMENT_LABELS.rolePack}：${fmtTokens(occ.rolePackBaseTokens)}（占窗口 ${pctOf(occ.rolePackBaseTokens)}）`,
+      segmentDetail({
+        label: labels.rolePack,
+        tokens: occ.rolePackBaseTokens,
+        pct: pctOf(occ.rolePackBaseTokens),
+        ofWindow: true,
+      }),
     );
     lines.push(
-      `${SEGMENT_LABELS.dynamicSystem}：${fmtTokens(occ.dynamicSystemTokens)}（${pctOf(occ.dynamicSystemTokens)}）`,
+      segmentDetail({
+        label: labels.dynamicSystem,
+        tokens: occ.dynamicSystemTokens,
+        pct: pctOf(occ.dynamicSystemTokens),
+      }),
     );
     lines.push(
-      `${SEGMENT_LABELS.dialogue}：${occ.dialogueCount} 条 · ${fmtTokens(occ.dialogueTokens)}（${pctOf(occ.dialogueTokens)}）`,
+      segmentDetail({
+        label: labels.dialogue,
+        tokens: occ.dialogueTokens,
+        pct: pctOf(occ.dialogueTokens),
+        count: occ.dialogueCount,
+      }),
     );
     lines.push(
-      `${SEGMENT_LABELS.inputAnchor}：${fmtTokens(occ.inputAnchorTokens)}（${pctOf(occ.inputAnchorTokens)}）`,
+      segmentDetail({
+        label: labels.inputAnchor,
+        tokens: occ.inputAnchorTokens,
+        pct: pctOf(occ.inputAnchorTokens),
+      }),
     );
     lines.push(
-      `${SEGMENT_LABELS.outputReserve}：${fmtTokens(occ.outputReserveTokens)}（${pctOf(occ.outputReserveTokens)}）`,
+      segmentDetail({
+        label: labels.outputReserve,
+        tokens: occ.outputReserveTokens,
+        pct: pctOf(occ.outputReserveTokens),
+      }),
     );
-    lines.push(`${SEGMENT_LABELS.free}：${fmtTokens(occ.freeTokens)}（${pctOf(occ.freeTokens)}）`);
+    lines.push(
+      segmentDetail({
+        label: labels.free,
+        tokens: occ.freeTokens,
+        pct: pctOf(occ.freeTokens),
+      }),
+    );
     return lines.join('\n');
   }
 
@@ -126,37 +194,64 @@ export function createContextOccupancyView(deps: ContextOccupancyViewDeps): Cont
     if (!bar) return;
     const total = Math.max(1, occ.totalTokens);
     const pctOf = (val: number): string => ((val / total) * 100).toFixed(1) + '%';
+    const labels = segmentLabels();
     // 段序 = 台账口径五段（角色包/动态注入/对话/输入锚点/输出预留）+ 剩余；title 与 hover 明细行同格式
     const segments: { cls: string; tokens: number; title: string }[] = [
       {
         cls: 'rolepack',
         tokens: occ.rolePackBaseTokens,
-        title: `${SEGMENT_LABELS.rolePack}：${fmtTokens(occ.rolePackBaseTokens)}（占窗口 ${pctOf(occ.rolePackBaseTokens)}）`,
+        title: segmentDetail({
+          label: labels.rolePack,
+          tokens: occ.rolePackBaseTokens,
+          pct: pctOf(occ.rolePackBaseTokens),
+          ofWindow: true,
+        }),
       },
       {
         cls: 'dynamic',
         tokens: occ.dynamicSystemTokens,
-        title: `${SEGMENT_LABELS.dynamicSystem}：${fmtTokens(occ.dynamicSystemTokens)}（${pctOf(occ.dynamicSystemTokens)}）`,
+        title: segmentDetail({
+          label: labels.dynamicSystem,
+          tokens: occ.dynamicSystemTokens,
+          pct: pctOf(occ.dynamicSystemTokens),
+        }),
       },
       {
         cls: 'dialogue',
         tokens: occ.dialogueTokens,
-        title: `${SEGMENT_LABELS.dialogue}：${occ.dialogueCount} 条 · ${fmtTokens(occ.dialogueTokens)}（${pctOf(occ.dialogueTokens)}）`,
+        title: segmentDetail({
+          label: labels.dialogue,
+          tokens: occ.dialogueTokens,
+          pct: pctOf(occ.dialogueTokens),
+          count: occ.dialogueCount,
+        }),
       },
       {
         cls: 'input',
         tokens: occ.inputAnchorTokens,
-        title: `${SEGMENT_LABELS.inputAnchor}：${fmtTokens(occ.inputAnchorTokens)}（${pctOf(occ.inputAnchorTokens)}）`,
+        title: segmentDetail({
+          label: labels.inputAnchor,
+          tokens: occ.inputAnchorTokens,
+          pct: pctOf(occ.inputAnchorTokens),
+        }),
       },
       {
         cls: 'output',
         tokens: occ.outputReserveTokens,
-        title: `${SEGMENT_LABELS.outputReserve}：${fmtTokens(occ.outputReserveTokens)}（${pctOf(occ.outputReserveTokens)}）`,
+        title: segmentDetail({
+          label: labels.outputReserve,
+          tokens: occ.outputReserveTokens,
+          pct: pctOf(occ.outputReserveTokens),
+        }),
       },
       {
         cls: 'free',
         tokens: occ.freeTokens,
-        title: `${SEGMENT_LABELS.free}：${fmtTokens(occ.freeTokens)}（${pctOf(occ.freeTokens)}）`,
+        title: segmentDetail({
+          label: labels.free,
+          tokens: occ.freeTokens,
+          pct: pctOf(occ.freeTokens),
+        }),
       },
     ];
     bar.replaceChildren(

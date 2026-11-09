@@ -4232,10 +4232,14 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
       archivedIds: [],
     });
     const items = document.querySelectorAll('#historyMenu .treedd__item');
-    // 带计数：时间并槽追加「 · 12 条」
-    expect(items[0]?.querySelector('.session-history__item-time')?.textContent).toContain('12 条');
-    // 缺省（旧会话未生成）：只显示时间，不出现「0 条」
-    expect(items[1]?.querySelector('.session-history__item-time')?.textContent).not.toContain('条');
+    // 带计数：时间并槽追加「 · 12 messages」
+    expect(items[0]?.querySelector('.session-history__item-time')?.textContent).toContain(
+      '12 messages',
+    );
+    // 缺省（旧会话未生成）：只显示时间，不出现「0 messages」
+    expect(items[1]?.querySelector('.session-history__item-time')?.textContent).not.toContain(
+      'messages',
+    );
     void postMessage;
   });
 
@@ -4259,10 +4263,10 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     const withoutRole = items[1]?.querySelector(
       '.session-history__item-time',
     ) as HTMLElement | null;
-    expect(withRole?.textContent).toContain('角色：只读项目顾问');
-    expect(withRole?.title).toBe('角色包：只读项目顾问');
+    expect(withRole?.textContent).toContain('Role: 只读项目顾问');
+    expect(withRole?.title).toBe('Role pack: 只读项目顾问');
     // 未选过角色的旧会话：副标题不出现角色段（与改动前零差异）
-    expect(withoutRole?.textContent).not.toContain('角色：');
+    expect(withoutRole?.textContent).not.toContain('Role:');
     expect(withoutRole?.title).toBe('');
   });
 
@@ -4280,7 +4284,9 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     const keep = document.querySelector(
       '#historyMenu .session-history__item-keep',
     ) as HTMLElement | null;
-    expect(keep?.title).toBe('归档并留存：生成会话摘要并移入留存区（内容不丢，只是换个位置）');
+    expect(keep?.title).toBe(
+      'Archive and retain: generate a session summary and move it to retained (nothing is lost, just relocated)',
+    );
     // aria-label 与 title 同源（无障碍面不得分叉）
     expect(keep?.getAttribute('aria-label')).toBe(keep?.title);
   });
@@ -4297,7 +4303,7 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     const keep = document.querySelector(
       '#historyMenu .session-history__item-keep',
     ) as HTMLElement | null;
-    expect(keep?.title).toBe('移入留存区（内容不丢，只是换个位置）');
+    expect(keep?.title).toBe('Move to retained (nothing is lost, just relocated)');
   });
 
   it('模式后到（列表先渲染、chat_archive_mode 后收）→ 就地重渲染，按钮文案跟着变', () => {
@@ -4312,12 +4318,12 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     const before = document.querySelector(
       '#historyMenu .session-history__item-keep',
     ) as HTMLElement | null;
-    expect(before?.title).toBe('移入留存区（内容不丢，只是换个位置）');
+    expect(before?.title).toBe('Move to retained (nothing is lost, just relocated)');
     dispatch({ type: 'chat_archive_mode', mode: 'manual' });
     const after = document.querySelector(
       '#historyMenu .session-history__item-keep',
     ) as HTMLElement | null;
-    expect(after?.title).toContain('归档并留存');
+    expect(after?.title).toContain('Archive and retain');
   });
 
   it('留存区视图下按钮为「移回会话记录」，不受归档模式影响', () => {
@@ -4334,7 +4340,7 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     const keep = document.querySelector(
       '#historyMenu .session-history__item-keep',
     ) as HTMLElement | null;
-    expect(keep?.title).toBe('移回会话记录');
+    expect(keep?.title).toBe('Move back to session records');
   });
 
   it('历史条目悬停 title 载摘要：keyTopics + summary（超 100 字截断以…收尾）', () => {
@@ -4395,7 +4401,7 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     mountChatView();
     dispatch({ type: 'session_list_data', sessions: [], archivedIds: [] });
     expect(document.querySelector('.session-history__empty')?.textContent).toContain(
-      '暂无历史会话',
+      'No session history yet',
     );
     expect(document.querySelectorAll('#historyMenu .treedd__item').length).toBe(0);
   });
@@ -4416,7 +4422,10 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     const heads = [...document.querySelectorAll('#historyMenu .session-history__date-group')];
     // 两个日期 → 两个组头；组间降序（ISO 日期字符串可直接比较，与 updatedAt 降序同向）
     // 量词口径（2026-10-18 真机订正）：会话 = 多 turn 集合，日期头只计数不量词（「条」留给消息数）
-    expect(heads.map((h) => h.textContent)).toEqual(['2026-08-15 · 1 会话', '2026-08-14 · 2 会话']);
+    expect(heads.map((h) => h.textContent)).toEqual([
+      '2026-08-15 · 1 sessions',
+      '2026-08-14 · 2 sessions',
+    ]);
     // 组内保留下发顺序：新日期组的条目在前，旧日期组内两条按原序
     const items = [...document.querySelectorAll('#historyMenu .treedd__item')];
     expect(items.map((i) => (i as HTMLElement).dataset.treeddId)).toEqual([
@@ -4509,7 +4518,7 @@ describe('留存区分组标签（SESS-KEEP-1）', () => {
     });
     (document.getElementById('historyTabArchived') as HTMLElement).click();
     expect(document.querySelector('#historyMenu .session-history__empty')?.textContent).toContain(
-      '留存区',
+      'retained',
     );
   });
 
@@ -4562,7 +4571,7 @@ describe('留存区分组标签（SESS-KEEP-1）', () => {
       ),
     ).toBe(true);
     expect(document.querySelector('#historyMenu .session-history__empty')?.textContent).toContain(
-      '留存区',
+      'retained',
     );
   });
 
@@ -4666,7 +4675,7 @@ describe('会话元数据搜索（FD-3-A）', () => {
     });
     type('不存在的词');
     const empty = document.querySelector('#historyMenu .session-history__empty');
-    expect(empty?.textContent).toContain('没有匹配');
+    expect(empty?.textContent).toContain('No sessions matching');
     expect(empty?.textContent).toContain('不存在的词');
   });
 
@@ -5018,7 +5027,7 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     const title = document.getElementById('emptyTitle') as HTMLElement;
     const hint = document.getElementById('emptyHint') as HTMLElement;
     // 未加载角色包：回退「AI」+ 默认引导
-    expect(title.textContent).toBe('开始与 AI 对话');
+    expect(title.textContent).toBe('Chat with AI');
     // 角色包列表 + 激活角色 → 空状态随角色生长（标题用角色名、提示用定位描述）
     dispatch({
       type: 'chat_role_packs',
@@ -5029,11 +5038,11 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
       activeName: 'doc-review',
     });
     dispatch({ type: 'chat_role_pack', rolePack: '文档打磨' });
-    expect(title.textContent).toBe('开始与 文档打磨 对话');
+    expect(title.textContent).toBe('Chat with 文档打磨');
     expect(hint.textContent).toBe('打磨文档结构、表达与一致性');
     // 切换角色 → 文案同步更新
     dispatch({ type: 'chat_role_pack', rolePack: '翻译助手' });
-    expect(title.textContent).toBe('开始与 翻译助手 对话');
+    expect(title.textContent).toBe('Chat with 翻译助手');
     expect(hint.textContent).toBe('中英互译与润色');
   });
 
@@ -5042,13 +5051,17 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     const chipLabels = () =>
       Array.from(document.querySelectorAll('.suggestion-chip')).map((c) => c.textContent);
     // 未加载角色：回退通用打磨引导
-    expect(chipLabels()).toEqual(['审阅架构', '精简表达', '对齐实现']);
+    expect(chipLabels()).toEqual(['Review architecture', 'Trim wording', 'Align implementation']);
     // 非 showcase 角色（文档打磨）：仍回退通用引导
     dispatch({ type: 'chat_role_pack', rolePack: '文档打磨' });
-    expect(chipLabels()).toEqual(['审阅架构', '精简表达', '对齐实现']);
+    expect(chipLabels()).toEqual(['Review architecture', 'Trim wording', 'Align implementation']);
     // showcase 角色（白话方案设计师）：渲染专属"种子收敛"引导，一键体验 memora 设计魅力
     dispatch({ type: 'chat_role_pack', rolePack: '白话方案设计师' });
-    expect(chipLabels()).toEqual(['设计知识库', '设计记忆系统', '找最小单元']);
+    expect(chipLabels()).toEqual([
+      'Design a knowledge base',
+      'Design a memory system',
+      'Find the minimal unit',
+    ]);
   });
 });
 
@@ -6092,7 +6105,7 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
 
     // 展示所选模型上限（fmtTokens 缩写 128K），已用 0
     expect(bar.hidden).toBe(false);
-    expect(tipEl.textContent).toContain('总容量 128K');
+    expect(tipEl.textContent).toContain('total capacity 128K');
     expect((document.getElementById('occPercent') as HTMLElement).textContent).toBe('0%');
     // 空环：dashoffset = 周长（无可见充能弧）
     const fill = document.getElementById('occFill') as unknown as SVGCircleElement;
@@ -6134,7 +6147,7 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
       },
     });
     expect((document.getElementById('occTip') as HTMLElement).textContent).toContain(
-      '完整对话：3 条',
+      'Full conversation: 3 items',
     );
     // 同款 chat_providers 再推送（如面板刷新）→ 上限未变 → 不把已用清回 0
     dispatch({
@@ -6145,7 +6158,7 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
       activeName: 'deepseek',
     });
     expect((document.getElementById('occTip') as HTMLElement).textContent).toContain(
-      '完整对话：3 条',
+      'Full conversation: 3 items',
     );
   });
 
@@ -6159,7 +6172,9 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
       ],
       activeName: 'deepseek',
     });
-    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('总容量 128K');
+    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain(
+      'total capacity 128K',
+    );
 
     // 用户切换模型（底部模型下拉）→ host 重推 chat_providers（activeName 变化）
     dispatch({
@@ -6172,7 +6187,7 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
     });
     // 容量切换为本地模型 8K，占用清零（旧模型占用数据对新模型无意义）
     expect((document.getElementById('occTip') as HTMLElement).textContent).toContain(
-      '总容量 8,192',
+      'total capacity 8,192',
     );
     expect((document.getElementById('occPercent') as HTMLElement).textContent).toBe('0%');
   });
@@ -6186,7 +6201,9 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
       ],
       activeName: 'deepseek',
     });
-    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('总容量 64K');
+    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain(
+      'total capacity 64K',
+    );
 
     // 内核 prepare 后回推真实占用
     dispatch({
@@ -6210,9 +6227,9 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
     expect(Number(fill.style.strokeDashoffset)).toBeCloseTo(expectedOffset, 1);
     // 明细弹窗：含角色包比例 + 条数 + token（fmtTokens 整千缩写 15K/1K）
     const tip = (document.getElementById('occTip') as HTMLElement).textContent ?? '';
-    expect(tip).toContain('总容量 64K');
-    expect(tip).toContain('完整对话：2 条 · 1K');
-    expect(tip).toContain('角色包/系统设定：15K（占窗口 23.4%）');
+    expect(tip).toContain('total capacity 64K');
+    expect(tip).toContain('Full conversation: 2 items · 1K');
+    expect(tip).toContain('Role pack / system prompt: 15K (of window 23.4%)');
   });
 });
 
@@ -6269,12 +6286,12 @@ describe('chatView 占用构成条：圆环 hover 卡片内分段比例条（HOS
       '83800',
     ]);
     // 段 title 出单段明细（与 hover 明细同格式）
-    expect(segs[0]!.title).toContain('角色包/系统设定：20K');
-    expect(segs[1]!.title).toContain('动态注入：3K');
-    expect(segs[2]!.title).toContain('完整对话：3 条 · 2K');
+    expect(segs[0]!.title).toContain('Role pack / system prompt: 20K');
+    expect(segs[1]!.title).toContain('Dynamic injection: 3K');
+    expect(segs[2]!.title).toContain('Full conversation: 3 items · 2K');
   });
 
-  it('构成条段 title 与 hover 明细行逐字对拍（SEGMENT_LABELS 单点，两处零漂移）', () => {
+  it('构成条段 title 与 hover 明细行逐字对拍（segmentLabels/segmentDetail 单点，两处零漂移）', () => {
     mountChatView();
     dispatch({
       type: 'context_occupancy',
