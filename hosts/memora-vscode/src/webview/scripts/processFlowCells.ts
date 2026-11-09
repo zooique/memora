@@ -252,7 +252,7 @@ export function appendInterruptedRow(host: HTMLElement, events: ProcessEvent[]):
   const verdict = decideTerminus(events);
   // 终态走独立通道（宿主块 data-terminus）；两档恒写（TERMINUS-SSOT-1：null 案已归用户中断）
   setTerminus(host, verdict.kind);
-  if (verdict.kind === '用户中断') return; // 用户中断：停止行退役，底栏标签承载
+  if (verdict.kind === 'user-interrupted') return; // 用户中断：停止行退役，底栏标签承载
   const row = document.createElement('div');
   row.className = 'round-block__interrupted';
   row.dataset.interruptedRow = 'true';

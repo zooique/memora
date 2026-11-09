@@ -2,22 +2,39 @@
  * 正文块运行态 / 终态属性写入（CHATVIEW-SLIM-2 第 5 刀·零状态批，自 chatView.ts 外置）
  *
  * 两条通道严格分离（2026-10-19 SSOT 收敛）：运行/挂起态写 `data-status`、终态写
- * `data-terminus`。文案与样式全由 CSS 承载，
- * 本模块只负责把状态**写到载体属性**上——不持有状态、不查全局 DOM。
+ * `data-terminus`。本模块只负责把状态**写到载体属性**上——不持有状态、不查全局 DOM。
+ *
+ * **键面与文案分离（B9-A 起）**：属性值是**语言无关的机器键**（`thinking` / `completed` …），
+ * CSS 用键做选择器（`:has([data-terminus='completed'])`）；可见文案另写 `data-*-label`
+ * 属性（调用时 `l10n.t` 解析），CSS 以 `content: attr(data-*-label)` 承接。
+ * 分离动机：属性值直接进 CSS 选择器时，**翻译文案就会改选择器**——中英文切换即断样式，
+ * 且「文案 = 键」使 l10n 无法介入（旧实现把中文写死进属性）。两属性由本模块**同一处成对写入**，
+ * 不存在「有键无文案」的中间态（唯一写入方 ⇒ 成对性由结构保证，不靠纪律）。
  *
  * @module statusAttrs
  */
+import * as l10n from '@vscode/l10n';
 
 /**
  * 运行/挂起态（单一合成函数的输出域）：运行三态呼吸 / 挂起两态静态。**不含终态**——
  * 终态三档已分离到 TerminusKind（data-terminus），运行结束由调用方显式清除本通道。
  */
 export type CursorStatus =
-  | '思考中' // 运行：思考相位（process-flow 相位行非工具形态在途）
-  | '运行工具中' // 运行：工具在途（is-tool-running 存在）
-  | '正在回答中' // 运行：正文流式生成（默认态）
-  | '等待输入' // 挂起：ask 预检停顿（提问框在途）
-  | '已暂停';
+  | 'thinking' // 运行：思考相位（process-flow 相位行非工具形态在途）
+  | 'running-tool' // 运行：工具在途（is-tool-running 存在）
+  | 'answering' // 运行：正文流式生成（默认态）
+  | 'waiting-input' // 挂起：ask 预检停顿（提问框在途）
+  | 'paused';
+
+/** 运行/挂起态 → 展示文案（英文源键 = l10n 键面；模块加载早于 l10n 初始化，故值不可预解析） */
+// @nls-keys
+const CURSOR_STATUS_LABEL: Record<CursorStatus, string> = {
+  thinking: 'Thinking…',
+  'running-tool': 'Running tool…',
+  answering: 'Answering…',
+  'waiting-input': 'Waiting for input',
+  paused: 'Paused',
+};
 
 /**
  * 终态三档（data-terminus 输出域，与运行态 data-status 通道严格分离，2026-10-19）。
@@ -39,12 +56,20 @@ export type CursorStatus =
  * 的落脚点会随之消失，历史轮也无法回溯重标 ⇒ 不可作为「想显示得更准」的手段。
  */
 export type TerminusInterruptKind =
-  | '用户中断' // 终态：用户主动停止（载体 = 中断轮宿主块，底栏文字标签）
-  | '异常中断';
+  | 'user-interrupted' // 终态：用户主动停止（载体 = 中断轮宿主块，底栏文字标签）
+  | 'error-interrupted';
 
 export type TerminusKind =
-  | '已完成' // 终态：底栏 time 之后淡勾（正文尾不再显示）
+  | 'completed' // 终态：底栏 time 之后淡勾（正文尾不再显示）
   | TerminusInterruptKind;
+
+/** 终态三档 → 展示文案（英文源键 = l10n 键面；同上，调用时才解析） */
+// @nls-keys
+const TERMINUS_LABEL: Record<TerminusKind, string> = {
+  completed: 'Completed',
+  'user-interrupted': 'Stopped by user',
+  'error-interrupted': 'Interrupted by error',
+};
 
 /**
  * 对指定正文块写入运行/挂起态（唯一实现；null = 清除，幂等）
@@ -57,8 +82,14 @@ export function setCursorStatus(
   status: CursorStatus | null,
 ): void {
   if (!body || !body.isConnected) return;
-  if (status) body.dataset.status = status;
-  else delete body.dataset.status;
+  if (status) {
+    body.dataset.status = status;
+    // 成对写入可见文案：CSS content 读 label，选择器读键（见文件头「键面与文案分离」）
+    body.dataset.statusLabel = l10n.t(CURSOR_STATUS_LABEL[status]);
+  } else {
+    delete body.dataset.status;
+    delete body.dataset.statusLabel;
+  }
 }
 
 /**
@@ -78,4 +109,15 @@ export function setCursorStatus(
 export function setTerminus(el: HTMLElement | null | undefined, kind: TerminusKind): void {
   if (!el || !el.isConnected) return;
   el.dataset.terminus = kind;
+  const label = l10n.t(TERMINUS_LABEL[kind]);
+  // 成对写入可见文案（同 setCursorStatus：键给选择器，label 给 content）
+  el.dataset.terminusLabel = label;
+  // 底栏标签的文案通道：`round-group__footer::after` 与载体**不是同一元素**，CSS attr()
+  // 跨不过去；容器级自定义属性可被 footer（后代）继承，故把同一文案写进容器。
+  // 等价性：容器此刻不存在 ⇒ 载体不可能落在任何容器内 ⇒ `:has(...)` 底栏规则永不匹配，
+  // 无漏写风险（组容器在消息入树前创建，不存在「后置包一层」）。
+  el.closest<HTMLElement>('.round-group')?.style.setProperty(
+    '--terminus-label',
+    JSON.stringify(label),
+  );
 }

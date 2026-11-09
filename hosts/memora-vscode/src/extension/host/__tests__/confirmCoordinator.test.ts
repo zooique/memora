@@ -19,6 +19,16 @@
  */
 // @vitest-environment node
 import { describe, it, expect, vi, afterEach } from 'vitest';
+
+// 宿主侧 l10n 替身（B9-A 起本模块经 vscode.l10n 解析工具展示名）：
+// 语义与真实 `vscode.l10n.t` 在**无译文包**时一致——返回英文源键并按 {0} 占位替换。
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 import type { Agent, WriteConfirmationRequest } from '@zooique/memora';
 import { ConfirmCoordinator } from '../confirmCoordinator.js';
 import { createAttentionNotifier } from '../attentionNotice.js';
@@ -314,7 +324,7 @@ describe('ConfirmCoordinator · onConfirmShown 交互提醒钩子（HOST-ATTN-1�
     expect(h.shown[0].requestId).toBe(h.requests[0].requestId);
   });
 
-  it('label 是「工具：basename」简写（不承载 diff 全文）', () => {
+  it('label 是「工具: basename」简写（不承载 diff 全文）', () => {
     const h = makeWired();
     const stub = agentStub();
     h.holder.agent = stub.agent;
@@ -322,7 +332,8 @@ describe('ConfirmCoordinator · onConfirmShown 交互提醒钩子（HOST-ATTN-1�
 
     stub.trigger(confirmInfo());
 
-    expect(h.shown[0].label).toContain('：');
+    // 无译文包 ⇒ 英文源键形态「Write file: foo.md」（判据 = 工具面 + 冒号 + basename，不断言具体语言）
+    expect(h.shown[0].label).toContain(': ');
     expect(h.shown[0].label.endsWith('foo.md')).toBe(true);
     // 反向守卫：diff 全文绝不进提醒文案（通知是最可能被截图外传的面）
     expect(h.shown[0].label).not.toContain(CARGO_MARKER);

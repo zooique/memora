@@ -33,6 +33,15 @@ const TOKENS_PATH = join(WEBVIEW_DIR, 'styles', 'tokens.ts');
 /** 主题注入域：VS Code 提供，不归本仓定义（双向豁免） */
 const THEME_PREFIX = 'vscode-';
 
+/**
+ * 运行期动态属性（**非设计令牌**，不参与闭合比对的消费侧）
+ *
+ * 由生产 TS 以 `style.setProperty()` 在运行时写入，值来自 l10n 译文（语种相关），
+ * 因此**不可能**在 tokens.ts 静态定义——把它们当幽灵令牌会逼出「为过闸写死常量」的假收口。
+ * 现存一条：`--terminus-label`（statusAttrs.setTerminus 写容器，chatStyles 底栏 ::after 读）。
+ */
+const RUNTIME_CUSTOM_PROPS = new Set(['terminus-label']);
+
 /** 递归列出 src 下的生产 .ts（跳过 __tests__，测试不构成真实消费点） */
 function listProductionTs(dir: string): string[] {
   const out: string[] = [];
@@ -80,7 +89,9 @@ const consumed = new Set<string>();
 for (const file of listProductionTs(SRC_DIR)) {
   if (file === TOKENS_PATH) continue;
   for (const name of extractReferenced(readFileSync(file, 'utf8'))) {
-    if (!name.startsWith(THEME_PREFIX)) consumed.add(name);
+    if (name.startsWith(THEME_PREFIX)) continue;
+    if (RUNTIME_CUSTOM_PROPS.has(name)) continue;
+    consumed.add(name);
   }
 }
 

@@ -43,38 +43,39 @@ describe('parseToolArgs / argStr', () => {
   });
 });
 
-describe('toolActionLabel（兜底链：映射 → 中文显示名）', () => {
+describe('toolActionLabel（兜底链：映射 → 展示名）', () => {
   it('run_code 双模式：script_path 优先，code 次之，均缺走显示名', () => {
-    expect(toolActionLabel('run_code', '{"script_path":"t.mjs"}')).toBe('运行脚本：t.mjs');
-    expect(toolActionLabel('run_code', '{"code":"1+1"}')).toBe('运行代码片段');
-    expect(toolActionLabel('run_code', '{}')).toBe('运行代码');
+    // 无译文包 ⇒ l10n.t 返回英文源键（键面 = 英文源文案，见 verify-nls 判据⑨）
+    expect(toolActionLabel('run_code', '{"script_path":"t.mjs"}')).toBe('Run script: t.mjs');
+    expect(toolActionLabel('run_code', '{"code":"1+1"}')).toBe('Run code snippet');
+    expect(toolActionLabel('run_code', '{}')).toBe('Run code');
   });
-  it('run_command 后台标记：background=true/1 加「（后台）」', () => {
+  it('run_command 后台标记：background=true/1 加「(background)」', () => {
     expect(toolActionLabel('run_command', '{"command":"npm test","background":true}')).toBe(
-      '执行命令（后台）：npm test',
+      'Run command (background): npm test',
     );
     expect(toolActionLabel('run_command', '{"command":"npm test","background":1}')).toBe(
-      '执行命令（后台）：npm test',
+      'Run command (background): npm test',
     );
-    expect(toolActionLabel('run_command', '{"command":"npm test"}')).toBe('执行命令：npm test');
+    expect(toolActionLabel('run_command', '{"command":"npm test"}')).toBe('Run command: npm test');
   });
-  it('未收录工具 / 缺参 → 中文显示名，不裸露英文', () => {
-    expect(toolActionLabel('ask_user', '{}')).toBe('询问用户');
-    expect(toolActionLabel('read_file', '{}')).toBe('读取文件');
+  it('未收录工具 / 缺参 → 展示名（英文源键），不裸露工具原名', () => {
+    expect(toolActionLabel('ask_user', '{}')).toBe('Ask user');
+    expect(toolActionLabel('read_file', '{}')).toBe('Read file');
   });
 });
 
 describe('toolActionType / toolSummaryText', () => {
   it('未收录工具归 other；other 不参与成句只计入总数', () => {
     expect(toolActionType('mystery_tool')).toBe('other');
-    expect(toolSummaryText(['mystery_tool', 'mystery_tool2'])).toBe('工具×2');
+    expect(toolSummaryText(['mystery_tool', 'mystery_tool2'])).toBe('Tools ×2');
   });
   it('空数组返回空串（调用方据此省略整段）', () => {
     expect(toolSummaryText([])).toBe('');
   });
   it('已知工具按显示名聚合计次，段序 = 首次出场序', () => {
     const s = toolSummaryText(['web_search', 'read_file', 'web_search']);
-    expect(s).toBe('工具×3（网络搜索 2 · 读取文件 1）');
+    expect(s).toBe('Tools ×3 (Web search 2 · Read file 1)');
   });
 });
 

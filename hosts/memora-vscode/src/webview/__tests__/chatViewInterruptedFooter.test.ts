@@ -138,9 +138,13 @@ describe('异常终态轮容器 footer 显形（chatView · settleRoundFooter �
     dispatch({ type: 'interrupted', roundId: 'round-err' });
     const group = document.querySelector<HTMLElement>('.round-group[data-round-id="round-err"]');
     expect(group).not.toBeNull();
-    // decideTerminus error 事件 → 宿主块「异常中断」→ 底栏红字标签（:has 消费）
-    const host = group!.querySelector<HTMLElement>('.msg.assistant[data-terminus="异常中断"]');
+    // decideTerminus error 事件 → 宿主块终态键 error-interrupted → 底栏红字标签（:has 消费）
+    const host = group!.querySelector<HTMLElement>(
+      '.msg.assistant[data-terminus="error-interrupted"]',
+    );
     expect(host).not.toBeNull();
+    // 键面与文案分离：可见文案另走 data-terminus-label（CSS content 读它，见 statusAttrs）
+    expect(host!.dataset.terminusLabel).toBe('Interrupted by error');
     // 异常案停止行保留（原因句承载；与用户案退役分叉——appendInterruptedRow 判据）
     expect(group!.querySelector('[data-interrupted-row]')).not.toBeNull();
     const footer = group!.querySelector<HTMLElement>('.round-group__footer');
@@ -161,9 +165,11 @@ describe('异常终态轮容器 footer 显形（chatView · settleRoundFooter �
     dispatch({ type: 'chunk', content: '答', ts: '2026-10-05T13:00:01.000Z' });
     dispatch({ type: 'done' });
     expect(document.querySelector('.round-group')).toBeNull();
-    const carrier = document.querySelector<HTMLElement>('.msg-body[data-terminus="已完成"]');
+    const carrier = document.querySelector<HTMLElement>('.msg-body[data-terminus="completed"]');
     expect(carrier).not.toBeNull();
     expect(carrier!.closest('.round-group')).toBeNull();
+    // 容器缺席 ⇒ 无 --terminus-label 继承链；正文尾兜底改读载体自身 label 属性（不再依赖字面量）
+    expect(carrier!.dataset.terminusLabel).toBe('Completed');
   });
 
   it('回归（2026-10-19）：无 roundId 的中断轮宿主态落容器外——宿主尾兜底前提', () => {
@@ -184,9 +190,12 @@ describe('异常终态轮容器 footer 显形（chatView · settleRoundFooter �
     });
     dispatch({ type: 'interrupted' });
     expect(document.querySelector('.round-group')).toBeNull();
-    const host = document.querySelector<HTMLElement>('.msg.assistant[data-terminus="用户中断"]');
+    const host = document.querySelector<HTMLElement>(
+      '.msg.assistant[data-terminus="user-interrupted"]',
+    );
     expect(host).not.toBeNull();
     expect(host!.closest('.round-group')).toBeNull();
+    expect(host!.dataset.terminusLabel).toBe('Stopped by user');
   });
 
   it('prepare 期中断（仅 meta+thinking、无正文）→ 提前建立的骨架被 interrupted 收口，无残留空壳（LIVE-ROUND-BLOCK-LOST-1）', () => {
@@ -243,10 +252,10 @@ describe('异常终态轮容器 footer 显形（chatView · settleRoundFooter �
     expect(footer).not.toBeNull();
     expect(footer!.classList.contains('is-pending')).toBe(false);
     // ③ aborted 事件未被丢弃：收口态归「用户中断」（中断信息由底栏标签承载）
-    expect(group!.querySelector('.msg.assistant[data-terminus="用户中断"]')).not.toBeNull();
+    expect(group!.querySelector('.msg.assistant[data-terminus="user-interrupted"]')).not.toBeNull();
     // ③-b prepare 期两枚过程事件确实可见（PREPARE-EVENT-LOST-1 的修复面：归桶后不再被 meta 清空）
-    expect(group!.textContent).toContain('装配上下文中…');
-    expect(group!.textContent).toContain('处理中…');
+    expect(group!.textContent).toContain('Assembling context…');
+    expect(group!.textContent).toContain('Processing…');
     // ④ 无残留空壳：所有 assistant 块都在容器内（容器外孤块 = 本改动要防的新症状）
     const all = Array.from(document.querySelectorAll<HTMLElement>('.msg.assistant'));
     expect(all.length).toBeGreaterThan(0);

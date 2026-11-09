@@ -13,6 +13,7 @@
  * @module processFlowModel
  */
 import type { ProcessEvent } from '@zooique/memora';
+import * as l10n from '@vscode/l10n';
 import type { RoundView } from '../../shared/protocol.js';
 import { friendlyErrorMessage } from '../../shared/errorText.js';
 import { argStr, isPlanItemBoundaryEvent, parseToolArgs } from './processEventText.js';
@@ -93,7 +94,9 @@ export function planItemStatesFromEvents(events: ProcessEvent[]): Map<string, st
 
 /** 思考折叠块标题：stepIndex 已知 = 标注第几步（一个 step 一个折叠块）；无归属 = 裸「思考」 */
 export function thoughtLabel(stepIndex?: number): string {
-  return stepIndex !== undefined ? `思考 · 第 ${stepIndex} 步` : '思考';
+  return stepIndex !== undefined
+    ? l10n.t('Thinking · step {0}', String(stepIndex))
+    : l10n.t('Thinking');
 }
 
 /**
@@ -154,12 +157,16 @@ export function groupThoughtBuckets(events: ProcessEvent[]): {
  * aborted 永不带此语义，假分支删除防文案双源漂移。
  */
 export function stopReasonLabel(payload: { reason: string; stopReason?: string }): string {
+  // 值 = 英文源键（l10n 键面）：本模块在 `initWebviewL10n` 前即被 import，不可在此预解析
+  // @nls-keys
   const map: Record<string, string> = {
-    user: '用户停止了对话',
-    timeout: '对话处理超时，请稍后重试',
-    interrupted: '对话已中断',
+    user: 'User stopped the conversation',
+    timeout: 'The conversation timed out, please try again later',
+    interrupted: 'The conversation was interrupted',
   };
-  return (payload.stopReason && map[payload.stopReason]) || payload.reason;
+  // 无 stopReason → 回退 reason 原文（调试可追溯，不丢原始细节）
+  const key = payload.stopReason ? map[payload.stopReason] : undefined;
+  return key ? l10n.t(key) : payload.reason;
 }
 
 /**
@@ -194,11 +201,12 @@ export function toolRowStatus(result: Extract<ProcessEvent, { type: 'tool_result
   open: boolean;
   running: boolean;
 } {
-  if (!result) return { label: '进行中', open: true, running: true };
-  if (result.payload.blocked === true) return { label: '已拦截', open: true, running: false };
+  if (!result) return { label: l10n.t('Running'), open: true, running: true };
+  if (result.payload.blocked === true)
+    return { label: l10n.t('Blocked'), open: true, running: false };
   return result.payload.ok
-    ? { label: '成功', open: false, running: false }
-    : { label: '失败', open: true, running: false };
+    ? { label: l10n.t('Succeeded'), open: false, running: false }
+    : { label: l10n.t('Failed'), open: true, running: false };
 }
 
 /**
@@ -288,8 +296,8 @@ export function buildMemoryHitsEvidenceResolver(
  * 用户停止/锁超时），皆无则 generic 兜底（旧数据）。error 优先是保守排序——二者本应
  * 互斥（failed 路径 signal 未 abort），此序仅防异常组合。
  *
- * @returns kind='用户中断' → 用户主动停止（停止行退役，底栏标签承载）；
- *          kind='异常中断' → error/锁超时等意外（原因句留折叠块外当现场）；
+ * @returns kind='user-interrupted' → 用户主动停止（停止行退役，底栏标签承载）；
+ *          kind='error-interrupted' → error/锁超时等意外（原因句留折叠块外当现场）；
  *          kind=null      → 事件不足不猜态（诚实投影：无载体不撒状态，停止行照旧兜底）
  */
 export function decideTerminus(events: ProcessEvent[]): {
@@ -301,7 +309,7 @@ export function decideTerminus(events: ProcessEvent[]): {
   );
   if (errorEv) {
     return {
-      kind: '异常中断',
+      kind: 'error-interrupted',
       reason: friendlyErrorMessage(errorEv.payload.category, errorEv.payload.message),
     };
   }
@@ -311,17 +319,17 @@ export function decideTerminus(events: ProcessEvent[]): {
   if (aborted) {
     // 判据字段 = stopReason（reason 是自由文本描述，如 'User cancelled the conversation'）
     return aborted.payload.stopReason === 'user'
-      ? { kind: '用户中断', reason: stopReasonLabel(aborted.payload) }
-      : { kind: '异常中断', reason: stopReasonLabel(aborted.payload) };
+      ? { kind: 'user-interrupted', reason: stopReasonLabel(aborted.payload) }
+      : { kind: 'error-interrupted', reason: stopReasonLabel(aborted.payload) };
   }
   // 兜底案归「用户中断」（TERMINUS-SSOT-1，2026-10-31）：interrupted 收场的唯一运行时来源 =
   // handleStop（chatPanel 唯一 abort() 调用方；paused 案 abandonOnStop 同属用户停）+ 崩溃打捞轮
   // （messageHistory 定案「崩溃残留轮 = 等同于用户点停止的正常 turn」）——两来源数据面同构，
   // 展示面跟随同一事实；旧 null 案「不猜终态」令底栏无标签、停止行「对话已中断」孤悬上方
   // （真机主诉）。旧 null 返回域退役，签名随之收窄。语义键仍放法定口袋 stopReason
-  //（TERM-REASON-1 沿革）：查得中文「对话已中断」，reason 供停止行/复制源兜底。
+  //（TERM-REASON-1 沿革）：查得「对话已中断」译文，reason 供停止行/复制源兜底。
   return {
-    kind: '用户中断',
+    kind: 'user-interrupted',
     reason: stopReasonLabel({ stopReason: 'interrupted', reason: 'interrupted' }),
   };
 }

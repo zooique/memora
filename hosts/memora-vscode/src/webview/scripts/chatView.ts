@@ -59,6 +59,7 @@ import {
   trackScroll,
 } from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
+import * as l10n from '@vscode/l10n';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
 import {
   countReviews,
@@ -684,8 +685,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     iconSpan.innerHTML = getIconSvg('tool', 12, 12); // 静态 SVG，无外部输入
     const labelSpan = document.createElement('span');
     labelSpan.className = 'round-block__tool-label';
-    // 参数未成形，无法生成行动叙述 → 直显中文显示名（与 toolActionLabel 兜底同源：toolNameMap）
-    labelSpan.textContent = getToolDisplayName(pending.name);
+    // 参数未成形，无法生成行动叙述 → 直显工具展示名（与 toolActionLabel 兜底同源：toolNameMap 持英文源键）
+    labelSpan.textContent = l10n.t(getToolDisplayName(pending.name));
     const statusSpan = document.createElement('span');
     statusSpan.className = 'round-block__tool-status';
     statusSpan.textContent = ' (准备中)';
@@ -2300,7 +2301,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       ?.querySelector<HTMLElement>('.round-group__footer')
       ?.classList.add('is-pending');
     // 光标挂起态「等待输入」：ask 预检停顿（无正文块时 no-op——纯问答轮由 ask-inline 承担可见性）
-    setActiveSheetStatus('等待输入');
+    setActiveSheetStatus('waiting-input');
     // 幂等：重复提问（如连续多问/多次 turn_update 推送）先移除旧内联块，再挂新
     document.querySelector('.ask-inline')?.remove();
     const box = document.createElement('div');
@@ -2505,14 +2506,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (!body) return;
     const scope = body.closest('.round-group') ?? messages;
     if (scope.querySelector('.round-block__tool.is-tool-running, .process-flow__phase--tool')) {
-      setCursorStatus(body, '运行工具中');
+      setCursorStatus(body, 'running-tool');
       return;
     }
     if (scope.querySelector('.process-flow__phase')) {
-      setCursorStatus(body, '思考中');
+      setCursorStatus(body, 'thinking');
       return;
     }
-    setCursorStatus(body, '正在回答中');
+    setCursorStatus(body, 'answering');
   }
 
   /**
@@ -2536,7 +2537,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     messages.appendChild(div);
     // 流式开启即默认回答态（后续工具/思考事件经 renderProcessFlow → syncRunningCursor 修正）；
     // 须在 append 后写入（setCursorStatus 的 isConnected guard 要求载体已入树）
-    setCursorStatus(body, '正在回答中');
+    setCursorStatus(body, 'answering');
     // 容器化：运行时首块归位到所属 .round-group（chunk 携带 turn roundId）
     // 流式未定稿 → 容器 footer 初始隐藏（pending=true），done/interrupted 后 finalizeStreaming 展示
     ensureRoundGroup(roundId, div, true);
@@ -3010,7 +3011,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 变量化判据 = 渲染分流（怎么画光标，非收场判定），isRoundSettled 守卫按此片段豁免
         const settledReplay = r.status === 'complete';
         if (settledReplay) {
-          setTerminus(activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'), '已完成');
+          setTerminus(
+            activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
+            'completed',
+          );
         }
         renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, r.evidence);
         if (r.id && roundBlockEl?.isConnected) {
@@ -3281,7 +3285,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           streamingRaw = '';
           const body = flowShellEl.querySelector<HTMLElement>(':scope .msg-body');
           // 骨架转正文块：运行态推导（此时无工具/思考 → 默认回答态）
-          setCursorStatus(body, '正在回答中');
+          setCursorStatus(body, 'answering');
           // 容器化：骨架随 chunk 归位到所属容器（骨架建时无 roundId）
           // 流式未定稿 → 容器 footer 初始隐藏（pending=true），done/interrupted 后 finalizeStreaming 展示
           ensureRoundGroup(msg.roundId, flowShellEl, true);
@@ -3302,7 +3306,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           pausedAssistantEl = null;
           const body = activeAssistantEl.querySelector<HTMLElement>(':scope .msg-body');
           // 暂停锚块原位续写：运行态重新推导（续写点无工具/思考 → 默认回答态）
-          setCursorStatus(body, '正在回答中');
+          setCursorStatus(body, 'answering');
           streamingActive = true;
         } else {
           beginStreaming(msg.ts, msg.roundId);
@@ -3318,7 +3322,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         streamingRaw += msg.content;
         // 正文流式 = 最强「正在回答」信号：覆盖思考相位态（相位行随 thinking 事件常驻，
         // 不覆盖会把流式正文误标「思考中」）；工具在途不受影响（chunk 与工具执行不同时发生）
-        setCursorStatus(target, '正在回答中');
+        setCursorStatus(target, 'answering');
         // 流式增量渲染：首个 chunk 立即渲染（TTFT 即时反馈），后续 150ms 节流重渲染。
         // 用户实时看到 markdown 成形（列表/代码块不显示 **、``` 原始记号），对齐 TraeWork 对话流。
         if (!streamBodyRendered) renderStreamBody();
@@ -3358,7 +3362,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           clearTimeout(streamRenderTimer);
           streamRenderTimer = undefined;
         }
-        setActiveSheetStatus('已暂停');
+        setActiveSheetStatus('paused');
         streamingActive = false;
       }
     } else if (msg.type === 'capability_badge') {
@@ -3401,7 +3405,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 缺省（无 store/旧消息回放）按已完成兼容。通道分离纪律见 statusAttrs。
       setTerminus(
         activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body'),
-        msg.roundStatus && msg.roundStatus !== 'complete' ? '异常中断' : '已完成',
+        msg.roundStatus && msg.roundStatus !== 'complete' ? 'error-interrupted' : 'completed',
       );
       // 回填底栏时间戳 + 容器 footer 显形收口（commitTurnTs 前置契约已内嵌于
       // settleRoundWithFooter，无需调用方记顺序——时间戳补建读首段 ts）
@@ -3711,8 +3715,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     )
       return;
     // 全部字段用 textContent 填充（SSOT：不信任 host 输入，防注入——与消息区渲染同纪律）
-    // 工具名走中文显示名单一真源（与工具行 toolActionLabel 同源）
-    writeConfirmTool.textContent = getToolDisplayName(msg.tool);
+    // 工具名走展示名单一真源（与工具行 toolActionLabel 同源）；表值 = 英文源键，
+    // 须经 webview 本地化器解析——与宿主侧 confirmCoordinator（vscode.l10n）严格同源同键，
+    // 少过这一步即「弹窗英文、卡片中文」的双头语义（B9-A 实修）
+    writeConfirmTool.textContent = l10n.t(getToolDisplayName(msg.tool));
     writeConfirmPath.textContent = msg.targetPath;
     writeConfirmDesc.textContent = msg.description ?? '';
     // diff 域判据归内核单点（`WriteConfirmationInfo.hasDiff` 经协议载荷透传）：

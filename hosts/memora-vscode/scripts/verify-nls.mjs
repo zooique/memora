@@ -409,12 +409,24 @@ const WEBVIEW_PANELS = {
   // 的依赖面 = chatView（对话面板）+ 宿主 confirmCoordinator（`toolNameMap`），归 B9 一并翻；
   // `toast.ts` 虽然被 settingsView / configView 消费，但文件内**零 CJK 可见字面量**（中文只在注释里），
   // 无需登记；`dockToast.ts` 只服务 chatView 的浮层放置，归 B9。
+  //
+  // B9-A（共享渲染件三件套 + 状态属性通道）已收口并登记：
+  //   · processEventText / toolNameMap / processFlowModel —— 过程流文案与工具展示名；
+  //     toolNameMap 表值改为**英文源键**，webview 与宿主两侧各过本地化器（宿主 confirmCoordinator 同步）；
+  //   · statusAttrs —— data-status / data-terminus 的**键面与文案分离**（键给选择器、label 给
+  //     CSS content），故属性里不再有 CJK；chatStyles 的三档终态标签随之改读 label 通道。
+  //   仍未迁移：chatView.ts（B9-C）/ chatPanel.ts（B9-D）/ processFlowCells 等（B9-B）⇒ 面板仍 pending。
   chat: {
     state: 'pending',
     files: [
       'webview/scripts/statusBarsView.ts',
       'webview/scripts/activityDrawerView.ts',
       'extension/host/tracer.ts',
+      'webview/helpers/processEventText.ts',
+      'webview/helpers/toolNameMap.ts',
+      'webview/helpers/processFlowModel.ts',
+      'webview/helpers/statusAttrs.ts',
+      'webview/styles/chatStyles.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。

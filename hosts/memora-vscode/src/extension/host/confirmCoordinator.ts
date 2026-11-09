@@ -1,3 +1,4 @@
+import * as vscode from 'vscode';
 import type { Agent, WriteConfirmationRequest } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { getToolDisplayName } from '../../webview/helpers/toolNameMap.js';
@@ -194,13 +195,19 @@ export class ConfirmCoordinator {
     // 本地另建映射易产生幽灵键（edit_file / create_file / append_file 内核并不存在——
     // 唯一写入工具是 write_file），还可能同工具异名双写（「写文件」vs「写入文件」）；
     // 复用入口后内核工具更名/新增无需第二处同步。
-    const toolLabel = getToolDisplayName(info.tool);
+    // 表值是**英文源键**（B9-A 起，两侧共用同一张表）：宿主侧必须过 `vscode.l10n.t`
+    // 才是译文——webview 用 `@vscode/l10n`，两个本地化器不可互换。
+    const toolLabel = vscode.l10n.t(getToolDisplayName(info.tool));
     const entry: ConfirmEntry = {
       requestId: `wc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       info,
       resolve,
       // 决策记录工具面：basename 与安全审计同款取法，防折叠区冗长且不泄露完整目录结构
-      logLabel: `${toolLabel}：${info.targetPath.split(/[\\/]/).pop() ?? info.targetPath}`,
+      logLabel: vscode.l10n.t(
+        '{0}: {1}',
+        toolLabel,
+        info.targetPath.split(/[\\/]/).pop() ?? info.targetPath,
+      ),
       presented: false,
     };
     const state = this._stateFor(sessionId);
@@ -248,7 +255,9 @@ export class ConfirmCoordinator {
       requestId,
       targetPath: info.targetPath,
       tool: info.tool,
-      description: info.description || `${getToolDisplayName(info.tool)}：${info.targetPath}`,
+      description:
+        info.description ||
+        vscode.l10n.t('{0}: {1}', vscode.l10n.t(getToolDisplayName(info.tool)), info.targetPath),
       permission: info.permission,
       beforeContent: info.beforeContent ?? null,
       afterContent: info.afterContent,

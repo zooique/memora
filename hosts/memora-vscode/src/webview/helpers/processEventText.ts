@@ -15,6 +15,7 @@
  */
 
 import type { ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
+import * as l10n from '@vscode/l10n';
 import { getToolDisplayName } from './toolNameMap.js';
 
 /** 本地时区 YYYY-MM-DD 日期键。
@@ -32,22 +33,26 @@ export function toDateKey(d: Date): string {
   ).padStart(2, '0')}`;
 }
 
-/** thinking 阶段 → 中文标签（展示面）。相位取值来自内核 **`ProcessThinkingPhase`**
+/** thinking 阶段 → 展示标签。相位取值来自内核 **`ProcessThinkingPhase`**
  *  （memory/roundStore.ts，随 ProcessEvent 下发）；勿误引 agent 层类型 `ThinkingPhase`
  *  ——那是 agent/types.ts 的**另一个类型**（当前同值，但非同一符号、非本条数据来源）。 */
 export function phaseLabel(phase: ProcessThinkingPhase): string {
+  // 值 = 英文源键（l10n 键面）：本模块在 `initWebviewL10n` 之前即被 import，
+  // 表内**不可**预解析成译文（早于 config 的 t() 只会拿到键）——故解析放在调用时
+  // @nls-keys
   const map: Record<ProcessThinkingPhase, string> = {
-    assembling: '装配上下文中…',
-    llm_calling: '调用模型中…',
-    processing: '处理中…',
-    archiving: '归档记忆中…',
+    assembling: 'Assembling context…',
+    llm_calling: 'Calling model…',
+    processing: 'Processing…',
+    archiving: 'Archiving memory…',
   };
-  // `?? '思考中…'` 是**有意保留的兜底，不属「类型兜底残留」**——勿按本文件
+  // `?? 'Thinking…'` 是**有意保留的兜底，不属「类型兜底残留」**——勿按本文件
   // 计划栏状态标签（PLAN_ITEM_STATUS_LABEL，同包枚举）的「枚举固定、无需运行时兜底」原则删掉它：
   // 相位经 postMessage 跨进程到达且**未经运行时校验**，且 replay 会把旧持久化轮的
   // 事件原样重放——历史轮文件可能携带已下线的 `recalling`（现归并为 `assembling`）。
   // 删兜底 → 旧数据渲染出 `undefined`（用户可见的破图）。
-  return map[phase] ?? '思考中…';
+  const key = map[phase];
+  return key ? l10n.t(key) : l10n.t('Thinking…');
 }
 
 /**
@@ -66,82 +71,84 @@ type ToolActionFn = (args: Readonly<Record<string, unknown>>) => string | undefi
 const TOOL_ACTION_LABELS: Record<string, ToolActionFn> = {
   read_file: (a) => {
     const p = argStr(a, 'path');
-    return p ? `读取文件：${p}` : undefined;
+    return p ? l10n.t('Read file: {0}', p) : undefined;
   },
   write_file: (a) => {
     const p = argStr(a, 'path');
-    return p ? `写入文件：${p}` : undefined;
+    return p ? l10n.t('Write file: {0}', p) : undefined;
   },
   delete_file: (a) => {
     const p = argStr(a, 'path');
-    return p ? `删除文件：${p}` : undefined;
+    return p ? l10n.t('Delete file: {0}', p) : undefined;
   },
   list_dir: (a) => {
     const p = argStr(a, 'path');
-    return p ? `浏览目录：${p}` : '浏览项目目录';
+    return p ? l10n.t('Browse directory: {0}', p) : l10n.t('Browse project directory');
   },
   search_project: (a) => {
     const q = argStr(a, 'query');
-    return q ? `搜索项目：${q}` : '列出项目文件';
+    return q ? l10n.t('Search project: {0}', q) : l10n.t('List project files');
   },
   search_memories: (a) => {
     const q = argStr(a, 'query');
-    return q ? `检索记忆：${q}` : undefined;
+    return q ? l10n.t('Search memories: {0}', q) : undefined;
   },
   web_search: (a) => {
     const q = argStr(a, 'query');
-    return q ? `联网搜索：${q}` : undefined;
+    return q ? l10n.t('Web search: {0}', q) : undefined;
   },
   web_fetch: (a) => {
     const u = argStr(a, 'url');
-    return u ? `浏览网页：${u}` : undefined;
+    return u ? l10n.t('Browse page: {0}', u) : undefined;
   },
   // run_code 双模式：script_path（执行脚本） vs code（直接执行代码片段）
   run_code: (a) => {
     const script = argStr(a, 'script_path');
-    if (script) return `运行脚本：${script}`;
-    return argStr(a, 'code') ? '运行代码片段' : undefined;
+    if (script) return l10n.t('Run script: {0}', script);
+    return argStr(a, 'code') ? l10n.t('Run code snippet') : undefined;
   },
   run_skill_script: (a) => {
     const skill = argStr(a, 'skill_name');
     const script = argStr(a, 'script_path');
-    return script ? `执行技能脚本：${skill ? `${skill}/` : ''}${script}` : undefined;
+    return script
+      ? l10n.t('Run skill script: {0}', `${skill ? `${skill}/` : ''}${script}`)
+      : undefined;
   },
-  // run_command：命令原文是唯一可叙述面。后台模式加「（后台）」标记——
-  // 用户看到「执行命令：npm test（后台）」才知道它不会立刻出结果、稍后才有回复，
+  // run_command：命令原文是唯一可叙述面。后台模式加「后台」标记——
+  // 用户看到「Run command (background): npm test」才知道它不会立刻出结果、稍后才有回复，
   // 否则会以为界面卡住了（与本仓「静默空跑 = 比炸更坏」同源纪律：状态必须说出来）。
   run_command: (a) => {
     const cmd = argStr(a, 'command');
     if (!cmd) return undefined;
     return a['background'] === true || a['background'] === 1
-      ? `执行命令（后台）：${cmd}`
-      : `执行命令：${cmd}`;
+      ? l10n.t('Run command (background): {0}', cmd)
+      : l10n.t('Run command: {0}', cmd);
   },
   read_skill: (a) => {
     const n = argStr(a, 'name');
-    return n ? `读取技能：${n}` : undefined;
+    return n ? l10n.t('Read skill: {0}', n) : undefined;
   },
   read_resource: (a) => {
     const p = argStr(a, 'resource_path');
-    return p ? `读取资源：${p}` : undefined;
+    return p ? l10n.t('Read resource: {0}', p) : undefined;
   },
   trace_summary: (a) => {
     const s = argStr(a, 'sessionId');
-    return s ? `追溯对话记录：${s}` : undefined;
+    return s ? l10n.t('Trace conversation: {0}', s) : undefined;
   },
-  list_sessions: () => '列出历史会话',
+  list_sessions: () => l10n.t('List past sessions'),
   list_resources: (a) => {
     const n = argStr(a, 'skill_name');
-    return n ? `列出技能资源：${n}` : '列出技能资源';
+    return n ? l10n.t('List skill resources: {0}', n) : l10n.t('List skill resources');
   },
-  list_skills: () => '列出可用技能',
-  task_table_write: () => '建立任务计划',
-  task_table_update: () => '更新任务进度',
+  list_skills: () => l10n.t('List available skills'),
+  task_table_write: () => l10n.t('Create task plan'),
+  task_table_update: () => l10n.t('Update task progress'),
   register_work: (a) => {
     const p = argStr(a, 'path');
-    return p ? `登记作品：${p}` : undefined;
+    return p ? l10n.t('Register work: {0}', p) : undefined;
   },
-  compress_context: () => '整理上下文空间',
+  compress_context: () => l10n.t('Compact context'),
 };
 
 /** 安全取工具 args 的字符串参数（args 为 JSON 解析后的对象；类型不符 / 空返回 undefined） */
@@ -164,15 +171,16 @@ export function parseToolArgs(raw: string | undefined): Readonly<Record<string, 
 }
 
 /**
- * 工具行动叙述：命中映射且参数齐备 → 人话描述；否则回退中文显示名（再回退原生工具名）
+ * 工具行动叙述：命中映射且参数齐备 → 人话描述；否则回退工具显示名（再回退原生工具名）
  *
- * 兜底走 toolNameMap.getToolDisplayName（**工具中文名的唯一真源**）——两类场景在 UI 上
- * 不裸露英文工具名：①未收录工具——ask_user /
+ * 兜底走 toolNameMap.getToolDisplayName（**工具展示名的唯一真源**，值为英文源键）——
+ * 两类场景在 UI 上不裸露英文工具名：①未收录工具——ask_user /
  * remember_intel / run_project_script / run_team_meeting（均无可叙述参数，故不入
  * TOOL_ACTION_LABELS）；②已收录但本次 args 缺参（如 read_file 无 path）。
+ * 显示名本身是 l10n 键，故这里再过一次 `l10n.t`（表值不预解析，见 phaseLabel 同注）。
  */
 export function toolActionLabel(name: string, argsRaw: string | undefined): string {
-  return TOOL_ACTION_LABELS[name]?.(parseToolArgs(argsRaw)) ?? getToolDisplayName(name);
+  return TOOL_ACTION_LABELS[name]?.(parseToolArgs(argsRaw)) ?? l10n.t(getToolDisplayName(name));
 }
 
 /** 工具动作分型（收尾叙述句的分组依据，语义与 TOOL_ACTION_LABELS 对齐） */
@@ -233,7 +241,7 @@ export function toolStartNames(events: ProcessEvent[]): string[] {
 /**
  * 工具叙述句（**唯一形成点**）：「工具×N（读取文件 2 · 网络搜索 1）」
  *
- * **词表单一**：句内一律用工具显示名（`getToolDisplayName` = 中文名唯一真源），与工具行叙述
+ * **词表单一**：句内一律用工具显示名（`getToolDisplayName` = 展示名唯一真源，值为英文源键），与工具行叙述
  * （`toolActionLabel`）同词表。轮摘要若另按类别粗分（「读取 2 · 搜索 1」）会形成第二套词汇
  * ——同一次调用在屏上被叫成两种名字，且两套映射表可按不同节奏更新。
  * **不参与成句的工具**：`toolActionType === 'other'`（未知 / 自定义 / 空间整理类）只计入 N、
@@ -250,11 +258,14 @@ export function toolSummaryText(names: readonly string[]): string {
   const counts = new Map<string, number>();
   for (const name of names) {
     if (toolActionType(name) === 'other') continue;
-    const label = getToolDisplayName(name);
+    // 显示名是英文源键（toolNameMap 单一真源），此处解析为当前语言的译文
+    const label = l10n.t(getToolDisplayName(name));
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
   const parts = [...counts.entries()].map(([label, n]) => `${label} ${n}`);
-  return parts.length > 0 ? `工具×${names.length}（${parts.join(' · ')}）` : `工具×${names.length}`;
+  return parts.length > 0
+    ? l10n.t('Tools ×{0} ({1})', String(names.length), parts.join(' · '))
+    : l10n.t('Tools ×{0}', String(names.length));
 }
 
 /**

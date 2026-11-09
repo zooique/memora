@@ -2,7 +2,8 @@
  * getToolDisplayName 纯函数单测（纯逻辑抽为可测模块后的覆盖）
  *
  * 键集合对齐约束见 toolNameMap.ts 文件头：本测试顺带守卫「未知工具回退」语义，
- * 已知键逐一断言中文标签，防幽灵键死灰复燃。另含键集合与内核清单双向闭合守卫。
+ * 已知键逐一断言**英文源键**（B9-A 起表值即 l10n 键，译文由消费侧 t() 解析），
+ * 防幽灵键死灰复燃。另含键集合与内核清单双向闭合守卫。
  * 图标不在本模块职责内——emoji 断言已随 getToolIcon 剪除。
  */
 import { describe, it, expect } from 'vitest';
@@ -11,18 +12,18 @@ import { join } from 'node:path';
 import { getToolDisplayName } from '../toolNameMap.js';
 
 describe('getToolDisplayName', () => {
-  it('映射已知工具为中文标签', () => {
-    // 内置工具清单代表性抽查（read/write/记忆/追溯/会议/压缩），映射缺失会回退英文 → 此断言即漂移哨兵
-    expect(getToolDisplayName('read_file')).toBe('读取文件');
-    expect(getToolDisplayName('write_file')).toBe('写入文件');
-    expect(getToolDisplayName('web_search')).toBe('网络搜索');
-    expect(getToolDisplayName('search_memories')).toBe('搜索记忆');
-    expect(getToolDisplayName('trace_summary')).toBe('追溯摘要');
-    expect(getToolDisplayName('run_team_meeting')).toBe('团队会议');
-    expect(getToolDisplayName('compress_context')).toBe('压缩上下文');
-    expect(getToolDisplayName('ask_user')).toBe('询问用户');
-    expect(getToolDisplayName('list_sessions')).toBe('列出会话');
-    expect(getToolDisplayName('read_skill')).toBe('读取技能');
+  it('映射已知工具为英文源键（展示名唯一真源）', () => {
+    // 内置工具清单代表性抽查（read/write/记忆/追溯/会议/压缩），映射缺失会回退英文工具名 → 此断言即漂移哨兵
+    expect(getToolDisplayName('read_file')).toBe('Read file');
+    expect(getToolDisplayName('write_file')).toBe('Write file');
+    expect(getToolDisplayName('web_search')).toBe('Web search');
+    expect(getToolDisplayName('search_memories')).toBe('Search memories');
+    expect(getToolDisplayName('trace_summary')).toBe('Trace summary');
+    expect(getToolDisplayName('run_team_meeting')).toBe('Team meeting');
+    expect(getToolDisplayName('compress_context')).toBe('Compress context');
+    expect(getToolDisplayName('ask_user')).toBe('Ask user');
+    expect(getToolDisplayName('list_sessions')).toBe('List sessions');
+    expect(getToolDisplayName('read_skill')).toBe('Read skill');
   });
 
   it('未知工具回退原值', () => {

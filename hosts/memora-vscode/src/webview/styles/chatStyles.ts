@@ -843,40 +843,40 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
   }
-  .msg-body[data-status]::after { content: attr(data-status); }
-  .msg-body[data-terminus]::after { content: attr(data-terminus); }
+  .msg-body[data-status]::after { content: attr(data-status-label); }
+  .msg-body[data-terminus]::after { content: attr(data-terminus-label); }
   /* 运行三态：呼吸动画（淡色「活着」信号；复用 selfReviewPulse，与相位行/圆点同源） */
-  .msg-body[data-status='思考中']::after,
-  .msg-body[data-status='运行工具中']::after,
-  .msg-body[data-status='正在回答中']::after {
+  .msg-body[data-status='thinking']::after,
+  .msg-body[data-status='running-tool']::after,
+  .msg-body[data-status='answering']::after {
     animation: selfReviewPulse var(--dur-pulse) ease-in-out infinite;
   }
   @media (prefers-reduced-motion: reduce) {
-    .msg-body[data-status='思考中']::after,
-    .msg-body[data-status='运行工具中']::after,
-    .msg-body[data-status='正在回答中']::after {
+    .msg-body[data-status='thinking']::after,
+    .msg-body[data-status='running-tool']::after,
+    .msg-body[data-status='answering']::after {
       animation: none;
     }
   }
   /* 终态「已完成」：**容器内**由底栏承接（2026-10-13 收口底栏——淡勾迁至 round-group
    * 底栏 time 之后的 ::after，见 .round-group__footer 标签规则），正文尾压制。content:none
-   * 显式压住终态基础档的 attr(data-terminus) 文字。压制**限定在容器内**：无 roundId 的兜底轮
+   * 显式压住终态基础档的 attr(data-terminus-label) 文字。压制**限定在容器内**：无 roundId 的兜底轮
    * （早期错误/早停，ensureRoundGroup 不建容器）容器缺席，若全局压制则终态无任何展示位
    * 而静默消失（2026-10-19 修复「底栏偶尔不显示」；与「异常中断」正文尾兜底同一相位机制）；
-   * 容器外回退终态基础档 attr(data-terminus)「已完成」文字自足承接。 */
-  .round-group .msg-body[data-terminus='已完成']::after {
+   * 容器外回退终态基础档 attr(data-terminus-label)「已完成」文字自足承接。 */
+  .round-group .msg-body[data-terminus='completed']::after {
     content: none;
   }
   /* 终态「异常中断」：红字状态词。**容器内**由底栏红字标签承接（TERMINUS-SSOT-1，2026-10-31：
    * done 恒携 roundStatus 投影盘面收场并 settle footer，正文尾双显退役——旧「流错误案 footer
    * 隐藏期正文尾自足」两相位设计随 error 分支退役 setTerminus 一并废除）；detail 摘要通道
    * 零写入随之退役，异常原因显示面 = 平铺错误行/停止行 reason。压制限定容器内：无 roundId
-   * 兑底轮容器缺席，正文尾自足承接（与「已完成」档同机制）。 */
-  .msg-body[data-terminus='异常中断']::after {
-    content: '异常中断';
+   * 兑底轮容器缺席，正文尾自足承接（与「已完成」档同机制）。
+   * 文案取 label 属性（语言无关键在 data-terminus，可见文案在 data-terminus-label）。 */
+  .msg-body[data-terminus='error-interrupted']::after {
     color: var(--danger, #f14c4c);
   }
-  .round-group .msg-body[data-terminus='异常中断']::after {
+  .round-group .msg-body[data-terminus='error-interrupted']::after {
     content: none;
   }
   /* AI 正文段落间距（增加阅读舒适度）；行高由「正文排版唯一来源」组规则统一声明 */
@@ -1004,22 +1004,23 @@ export const chatStyles = `
    * ::after，正文尾回归光标纯度。载体泛匹配（契约见 chatView TerminusKind）：有正文轮
    * 挂 .msg-body、中断轮挂宿主块，round-group 内任一带终态 [data-terminus] 即点亮——
    * 运行态（思考中等）不在三档内不触发，流式期 footer.is-pending 隐藏形成第二道屏蔽。
-   * 各档文案与下方「容器外」宿主尾兜底同名（「用户中断」/「异常中断」字面量各两处，改须同步）。
+   * 各档文案统一取 --terminus-label（statusAttrs 写入容器级自定义属性）与载体
+   * data-terminus-label，本文件不再出现任何语种字面量。
    *
    * 两端分布机制（首版 ::before+margin-left:auto 的返修教训：::before 是首子伪元素，
    * 其 auto margin 吸收全部余量会把 actions/time/标签整组挤到右端、左侧全空——实测
    * 「底部单边倒」）：标签用 ::after（DOM 序在 time 之后），auto margin 挂在 .msg-time
    * 上（见 .round-group__footer .msg-time 规则）——time 与标签成组靠右，操作按钮独占
    * 左端。无标签轮 time 独占右端，与 space-between 原效果一致。 */
-  .round-group:has([data-terminus='已完成']) .round-group__footer::after,
-  .round-group:has([data-terminus='用户中断']) .round-group__footer::after,
-  .round-group:has([data-terminus='异常中断']) .round-group__footer::after {
+  .round-group:has([data-terminus='completed']) .round-group__footer::after,
+  .round-group:has([data-terminus='user-interrupted']) .round-group__footer::after,
+  .round-group:has([data-terminus='error-interrupted']) .round-group__footer::after {
     font-size: var(--font-xs, 10px);
     line-height: 1;
   }
   /* 「已完成」→ 静默 circle-check 淡勾（自正文尾 ::after 迁移；path 与 icons.ts
    * circle-check 同形——伪元素无法走 getIconSvg 注入，以 mask 复刻同款轮廓） */
-  .round-group:has([data-terminus='已完成']) .round-group__footer::after {
+  .round-group:has([data-terminus='completed']) .round-group__footer::after {
     content: '';
     width: var(--icon-2xs); height: var(--icon-2xs);
     background: var(--status-pass, #4ec9b0); opacity: var(--op-6);
@@ -1029,14 +1030,14 @@ export const chatStyles = `
       no-repeat center / contain;
   }
   /* 「用户中断」→ 中性文字标签（主动停止非错误，不抢注意力） */
-  .round-group:has([data-terminus='用户中断']) .round-group__footer::after {
-    content: '用户中断';
+  .round-group:has([data-terminus='user-interrupted']) .round-group__footer::after {
+    content: var(--terminus-label, '');
     color: var(--text-secondary, #9aa0a6);
   }
   /* 「异常中断」→ 红字标签（中断轮案：锁超时等异常轮 footer 恒显形，标签在场；
    * 流错误案 footer 隐藏期该规则不可见，正文尾红字自足承接，两相位不重复） */
-  .round-group:has([data-terminus='异常中断']) .round-group__footer::after {
-    content: '异常中断';
+  .round-group:has([data-terminus='error-interrupted']) .round-group__footer::after {
+    content: var(--terminus-label, '');
     color: var(--danger, #f14c4c);
   }
   /* 终态标签「容器外」兜底（2026-10-19 修复「底栏偶尔不显示」）：中断轮无正文块，终态写入
@@ -1045,21 +1046,21 @@ export const chatStyles = `
    * 终态既无底栏标签、正文尾又无兜底 ⇒ 静默消失。此处由宿主块尾自足承接，保证「轮已收场」
    * 这个事实恒有展示位（与「异常中断」正文尾兜底同一相位机制，统一到三档）。
    * 有容器轮由底栏承接，下方压制宿主块尾避免双显（「单一位点」纪律）。
-   * 文案与上方底栏标签同名（字面量两处，改须同步）。 */
-  .msg.assistant[data-terminus='用户中断']::after {
-    content: '用户中断';
+   * 文案取载体自身的 data-terminus-label（与底栏标签同一次 l10n 解析，见 statusAttrs）。 */
+  .msg.assistant[data-terminus='user-interrupted']::after {
+    content: attr(data-terminus-label);
     margin-left: var(--sp-2, 6px);
     font-size: var(--font-xs, 10px); line-height: 1;
     color: var(--text-secondary, #9aa0a6);
   }
-  .msg.assistant[data-terminus='异常中断']::after {
-    content: '异常中断';
+  .msg.assistant[data-terminus='error-interrupted']::after {
+    content: attr(data-terminus-label);
     margin-left: var(--sp-2, 6px);
     font-size: var(--font-xs, 10px); line-height: 1;
     color: var(--danger, #f14c4c);
   }
-  .round-group .msg.assistant[data-terminus='用户中断']::after,
-  .round-group .msg.assistant[data-terminus='异常中断']::after {
+  .round-group .msg.assistant[data-terminus='user-interrupted']::after,
+  .round-group .msg.assistant[data-terminus='error-interrupted']::after {
     content: none;
   }
   /* 底栏 time 吸收余量（两端分布的承载点）：auto margin 优先于 justify-content

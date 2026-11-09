@@ -786,7 +786,7 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(document.querySelector('.round-block')).toBeNull(); // 运行时绝无大折叠壳
     const phaseRow = rbRunning.querySelector('.process-flow__phase') as HTMLElement;
     expect(phaseRow).not.toBeNull();
-    expect(phaseRow.textContent).toContain('装配上下文中');
+    expect(phaseRow.textContent).toContain('Assembling context');
     // 收尾后：折叠区收起（open=false）、相位行移除；§ 过程轨迹保留相位时间线
     dispatch({
       type: 'process_event',
@@ -801,9 +801,9 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(rb.classList.contains('is-running')).toBe(false);
     expect(rb.open).toBe(false);
     expect(rb.querySelector('.round-block__phase')).toBeNull();
-    expect(rb.querySelector('.round-block__details')?.textContent).toContain('装配上下文中');
-    expect(rb.querySelector('.round-block__details')?.textContent).toContain('调用模型中');
-    expect(rb.querySelector('.round-block__details')?.textContent).toContain('归档记忆中');
+    expect(rb.querySelector('.round-block__details')?.textContent).toContain('Assembling context');
+    expect(rb.querySelector('.round-block__details')?.textContent).toContain('Calling model');
+    expect(rb.querySelector('.round-block__details')?.textContent).toContain('Archiving memory');
   });
 
   it('过程轨迹聚合：同一 thinking 相位 N 次压缩为「相位 ×N」一行，去视觉噪点（2026-09-09）', () => {
@@ -832,7 +832,7 @@ describe('chatView clear_ok 消息区清理', () => {
     // 聚合：同相位合并计次（×5；phaseLabel 输出含「…」省略号），单次相位直显不赘 ×1；
     // 行数 = 相位种类（2），不随事件数（6）膨胀
     expect(rows.some((r) => r.includes('×5'))).toBe(true);
-    expect(rows.some((r) => r.includes('装配上下文'))).toBe(true);
+    expect(rows.some((r) => r.includes('Assembling context'))).toBe(true);
     expect(details.querySelectorAll('.round-block__row')).toHaveLength(2);
   });
 
@@ -2371,11 +2371,11 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // summary：耗时（metrics）+ 叙述句（工具×1（读取文件 1））
     const summary = rb.querySelector('.round-block__summary') as HTMLElement;
     expect(summary.textContent).toContain('耗时 1m 2s');
-    expect(summary.textContent).toContain('工具×1（读取文件 1）');
+    expect(summary.textContent).toContain('Tools ×1 (Read file 1)');
     // 工具行移入 round-block（任务过程折叠区）工具调用小节，不重复出现在其他档案小节
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
     expect(tool).not.toBeNull();
-    expect(tool.textContent).toContain('读取文件：a.md (成功)');
+    expect(tool.textContent).toContain('Read file: a.md (Succeeded)');
     expect(tool.textContent).toContain('读取成功');
     // round-block details 各小节（档案：已沉淀/执行指标）
     const details = rb.querySelector('.round-block__details') as HTMLElement;
@@ -2599,17 +2599,17 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(tools).toHaveLength(3);
     // 成功：折叠（open=false），summary 含名称(状态)，body 含 args 与 result
     expect(tools[0].open).toBe(false);
-    expect(tools[0].querySelector('summary')?.textContent).toBe('读取文件：a.md (成功)');
+    expect(tools[0].querySelector('summary')?.textContent).toBe('Read file: a.md (Succeeded)');
     expect(tools[0].textContent).toContain('{"path":"a.md"}');
     expect(tools[0].textContent).toContain('读取成功');
     // 失败：默认展开（open=true），错误摘要可见
     expect(tools[1].open).toBe(true);
-    expect(tools[1].querySelector('summary')?.textContent).toBe('写入文件：b.md (失败)');
+    expect(tools[1].querySelector('summary')?.textContent).toBe('Write file: b.md (Failed)');
     expect(tools[1].textContent).toContain('权限不足');
     // 进行中：TS-11b 默认展开（让正在执行的工具可见）+ 进行中态 class（is-tool-running）
     expect(tools[2].open).toBe(true);
     expect(tools[2].classList.contains('is-tool-running')).toBe(true);
-    expect(tools[2].querySelector('summary')?.textContent).toBe('search (进行中)');
+    expect(tools[2].querySelector('summary')?.textContent).toBe('search (Running)');
   });
 
   it('meta 驱动本轮身份：该轮 assistant 消息挂对应角色/模型标签（与会话级 chat_role_pack 分离）', () => {
@@ -2707,13 +2707,13 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(rb).not.toBeNull();
     expect(document.querySelector('.process-flow')).toBeNull();
     // 思考/工具行保留在折叠块 details 内（已完成 step 不丢）
-    expect(rb.querySelector('.round-block__thought')?.textContent).toContain('思考');
+    expect(rb.querySelector('.round-block__thought')?.textContent).toContain('Thinking');
     const toolRow = rb.querySelector('.round-block__details .round-block__tool') as HTMLElement;
-    expect(toolRow?.textContent).toContain('读取文件');
-    expect(toolRow?.textContent).toContain('失败');
+    expect(toolRow?.textContent).toContain('Read file');
+    expect(toolRow?.textContent).toContain('Failed');
     // 用户中断：停止行退役（2026-10-13 终态标签收口底栏），宿主载体如实定格（底栏 :has 消费）
     expect(host.querySelector('.round-block__interrupted')).toBeNull();
-    expect(host.dataset.terminus).toBe('用户中断');
+    expect(host.dataset.terminus).toBe('user-interrupted');
     // 收起态摘要含耗时（指标留折叠块，不重复平铺）
     expect(rb.querySelector('.round-block__stats')?.textContent).toContain('耗时');
   });
@@ -2764,7 +2764,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 哨兵不上屏：tag「未回答」已承载语义，正文不再重复机器标记
     expect(rb.textContent).not.toContain('[ASK_ABORTED]');
     // 终态仍定格（底栏标签消费）
-    expect(host.dataset.terminus).toBe('用户中断');
+    expect(host.dataset.terminus).toBe('user-interrupted');
   });
 
   it('中断轮重放：error 事件 → §已停止行显示失败原因（LEG-1 缺口②：失败原因重放可见）', () => {
@@ -2787,8 +2787,10 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(host).not.toBeNull();
     // 停止行平铺在折叠块外（error → 友好文案，非 generic「对话已中断」）
     const row = host.querySelector('.round-block__interrupted') as HTMLElement;
+    // ⚠️ 该文案来自 shared/errorText.ts 的 friendlyErrorMessage（**尚未迁移**，B9-E 收口），
+    // 故此处仍断言中文；勿随工具/状态文案英文化一并改（改了就是给未迁移面写假断言）。
     expect(row?.textContent).toContain('对话处理超时，请稍后重试');
-    expect(row?.textContent).not.toContain('对话已中断');
+    expect(row?.textContent).not.toContain('The conversation was interrupted');
   });
 
   it('中断轮重放：error 无 category → §已停止行回退原始 message（不吞技术细节）', () => {
@@ -3082,14 +3084,14 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
     expect(rb.querySelector('.round-block__details .round-block__tool')?.textContent).toContain(
-      '读取文件',
+      'Read file',
     );
     // 半截正文被掐断：assistant 块不再有正文容器
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
     expect(assistant.querySelector('.msg-body')).toBeNull();
     // 用户中断：停止行退役（2026-10-13 底栏标签收口），宿主载体如实定格 + 身份标签保留
     expect(document.querySelector('.round-block__interrupted')).toBeNull();
-    expect(assistant.dataset.terminus).toBe('用户中断');
+    expect(assistant.dataset.terminus).toBe('user-interrupted');
     expect(assistant.querySelector('.msg-ai-label__role')?.textContent).toBe('白话方案设计师');
     // 运行时平铺容器已收走（不残留 process-flow 呼吸相位行）
     expect(document.querySelector('.process-flow')).toBeNull();
@@ -3124,7 +3126,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     });
     dispatch({ type: 'interrupted', roundId: 'r2' });
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
-    expect(assistant.dataset.terminus).toBe('用户中断');
+    expect(assistant.dataset.terminus).toBe('user-interrupted');
     // 实时与重放同形：交互行在同一详情区（不换容器），收起态由同一 rb.open 判据裁决
     const rb = assistant.querySelector('.round-block') as HTMLDetailsElement;
     expect(rb.open).toBe(false);
@@ -3200,14 +3202,14 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 任务项1内：narrate 与 tool 归入第 1 个任务项容器（边界切组、项内平铺）
     const planItem1Host = planItems[0]!.querySelector('.round-block__narrate') as HTMLElement;
     expect(planItem1Host?.textContent).toContain('正在分析需求文档');
-    expect(planItems[0]!.querySelector('.round-block__tool')?.textContent).toContain('读取文件');
+    expect(planItems[0]!.querySelector('.round-block__tool')?.textContent).toContain('Read file');
     // 任务项2内：narrate 与 tool 归入第 2 个任务项容器，不越界混入任务项1
     const planItem2Host = planItems[1]!.querySelector('.round-block__narrate') as HTMLElement;
     expect(planItem2Host?.textContent).toContain('开始编写实现代码');
-    expect(planItems[1]!.querySelector('.round-block__tool')?.textContent).toContain('写入文件');
-    // 负向断言：任务项 1 不含任务项 2 的工具——标记物须同步为中文名，否则接入后恒真（因错误的原因通过）
+    expect(planItems[1]!.querySelector('.round-block__tool')?.textContent).toContain('Write file');
+    // 负向断言：任务项 1 不含任务项 2 的工具——标记物须同步为展示名，否则接入后恒真（因错误的原因通过）
     expect(planItems[0]!.querySelector('.round-block__tool')?.textContent).not.toContain(
-      '写入文件',
+      'Write file',
     );
   });
 
@@ -3644,13 +3646,13 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     });
     let row = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(row).not.toBeNull();
-    expect(row.textContent).toContain('装配上下文中');
+    expect(row.textContent).toContain('Assembling context');
     dispatch({
       type: 'process_event',
       event: { type: 'thinking', seq: 3, ts: '', payload: { phase: 'llm_calling' } },
     });
     row = document.querySelector('.process-flow__phase') as HTMLElement;
-    expect(row.textContent).toContain('调用模型中');
+    expect(row.textContent).toContain('Calling model');
   });
 
   it('首个 chunk 复用餐架块：正文流入同一块，不新建第二条 assistant 消息', () => {
@@ -3910,7 +3912,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(rb).not.toBeNull();
     // 现象2：会话结束后光标收口 → 终态定格「已完成」（批次二：运行态消失 + 静默淡勾）
     const body = document.querySelector<HTMLElement>('.msg.assistant .msg-body');
-    expect(body?.dataset.terminus).toBe('已完成');
+    expect(body?.dataset.terminus).toBe('completed');
     // 过程平铺容器（进度条）finalize 后被移除，不在消息流底部残留
     expect(document.querySelector('.process-flow')).toBeNull();
   });
@@ -4019,7 +4021,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(document.querySelector('.plan-inline.plan-inline-done')).toBeNull();
     // 光标收口 → 终态「已完成」
     const body = document.querySelector<HTMLElement>('.msg.assistant .msg-body');
-    expect(body?.dataset.terminus).toBe('已完成');
+    expect(body?.dataset.terminus).toBe('completed');
     // 过程平铺容器已收
     expect(document.querySelector('.process-flow')).toBeNull();
   });
@@ -4127,7 +4129,7 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     expect(document.querySelector('.process-flow')).toBeNull();
     // 且 finalizeStreaming 被执行到 → 运行态清 + 终态「已完成」定格
     expect(document.querySelector('.msg-body[data-terminus]')?.getAttribute('data-terminus')).toBe(
-      '已完成',
+      'completed',
     );
     // 折叠内容完整性（兜底掩盖防线）：折叠块必须真的装进过程内容（思考折叠 + 小节）。
     // 若 renderRoundBlock 中途抛错，finally 虽收掉 flow/光标，折叠块却只剩 step 空骨架
@@ -4993,14 +4995,14 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     expect(rb).not.toBeNull();
     // 折叠块内 §已停止（详情完整，stopReasonLabel 映射友好文案）
     expect(rb.textContent).toContain('已停止');
-    expect(rb.textContent).toContain('用户停止了对话');
+    expect(rb.textContent).toContain('User stopped the conversation');
     // 收尾即停止呼吸（is-running 收敛）
     expect(rb.classList.contains('is-running')).toBe(false);
     // 用户中断：停止行退役（2026-10-13 底栏标签收口），宿主载体如实定格；
     // 折叠块内 §已停止详情仍保留完整文案（详情记录层不受收口影响，上方已断言）
     expect(document.querySelector('.round-block__interrupted')).toBeNull();
     expect(document.querySelector<HTMLElement>('.msg.assistant')?.dataset.terminus).toBe(
-      '用户中断',
+      'user-interrupted',
     );
     // 半截正文掐断（丢弃运行中 step 的内容，与重放中断轮不显示正文同构）
     expect(document.querySelector('.msg.assistant .msg-body')).toBeNull();
@@ -5059,13 +5061,13 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
     // 流式进行中：默认回答态 data-status（CSS ::after 呼吸光标）+ 首个 chunk 立即渲染 markdown
     // （对齐 TraeWork 实时格式化，不显示 ** ` 原始记号）
-    expect(body.dataset.status).toBe('正在回答中');
+    expect(body.dataset.status).toBe('answering');
     expect(body.textContent?.trim()).toBe('加粗 与 code');
     expect(body.querySelector('strong')).not.toBeNull();
 
     // done → 终态定格「已完成」，Markdown 保持渲染（加粗/行内代码成元素）
     dispatch({ type: 'done' });
-    expect(body.dataset.terminus).toBe('已完成');
+    expect(body.dataset.terminus).toBe('completed');
     expect(body.querySelector('strong')).not.toBeNull();
     expect(body.querySelector('code')).not.toBeNull();
   });
@@ -5466,7 +5468,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     mountChatView();
     dispatch({ type: 'chunk', content: '- 列表项一' });
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    expect(body.dataset.status).toBe('正在回答中');
+    expect(body.dataset.status).toBe('answering');
     // 打断 → 渲染已累积的半截内容为 Markdown（列表成 <li>），正文块移除（中断态由停止行承担）
     dispatch({ type: 'interrupted' });
     expect(body.isConnected).toBe(false);
@@ -5495,7 +5497,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
     // 历史重放非流式：直接渲染 Markdown（标题成 <h2>），complete 轮终态定格「已完成」
     expect(body.querySelector('h2')).not.toBeNull();
-    expect(body.dataset.terminus).toBe('已完成');
+    expect(body.dataset.terminus).toBe('completed');
   });
 });
 
@@ -5970,7 +5972,7 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
     });
     let wait = messages.querySelector('.pending-wait') as HTMLElement | null;
     expect(wait).not.toBeNull();
-    expect(wait!.textContent).toContain('装配上下文中');
+    expect(wait!.textContent).toContain('Assembling context');
     expect(wait!.textContent).toMatch(/已等待 \d+s/);
 
     // 相位推进 → 文案随 thinking 更新
@@ -5978,7 +5980,7 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
       type: 'process_event',
       event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'llm_calling' } },
     });
-    expect(messages.querySelector('.pending-wait')!.textContent).toContain('调用模型中');
+    expect(messages.querySelector('.pending-wait')!.textContent).toContain('Calling model');
 
     // meta 到达（建流式骨架 + 平铺容器）→ 等待条移除，过程平铺容器接管
     dispatch({
@@ -6785,7 +6787,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     });
     dispatch({ type: 'done' });
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
-    expect(tool.querySelector('summary')?.textContent).toBe('读取文件：docs/a.md (成功)');
+    expect(tool.querySelector('summary')?.textContent).toBe('Read file: docs/a.md (Succeeded)');
     // 原始 args JSON 仍在折叠 body（细节不丢）
     expect(tool.textContent).toContain('{"path":"docs/a.md"}');
   });
@@ -6805,8 +6807,8 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'done' });
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
     // 无 result → 进行中；TOOL_META 亦未收录（角色包自定义工具）→ 原生英文名
-    // （这是**唯一**落到英文名的路径——内置 24 工具均已中文）
-    expect(tool.querySelector('summary')?.textContent).toBe('my_custom_tool (进行中)');
+    // （这是**唯一**落到原生英文名的路径——内置 24 工具均已注册展示名）
+    expect(tool.querySelector('summary')?.textContent).toBe('my_custom_tool (Running)');
   });
 
   it('args 非合法 JSON 时走兜底中文显示名（解析兜底，不抛错）', () => {
@@ -6832,8 +6834,8 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     });
     dispatch({ type: 'done' });
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
-    // 解析失败 → 参数为空 → 叙述生成器返回 undefined → 兜底 toolNameMap 中文名
-    expect(tool.querySelector('summary')?.textContent).toBe('读取文件 (成功)');
+    // 解析失败 → 参数为空 → 叙述生成器返回 undefined → 兜底 toolNameMap 展示名
+    expect(tool.querySelector('summary')?.textContent).toBe('Read file (Succeeded)');
   });
 
   it('多工具 → 收尾叙述句「工具×N（读取文件 x · 项目搜索 y …）」：按工具名计数，与工具行同词表', () => {
@@ -6915,7 +6917,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'done' });
     const summary = document.querySelector('.round-block__summary') as HTMLElement;
     expect(summary.textContent).toContain(
-      '工具×4（读取文件 1 · 读取技能 1 · 项目搜索 1 · 写入文件 1）',
+      'Tools ×4 (Read file 1 · Read skill 1 · Search project 1 · Write file 1)',
     );
   });
 
@@ -6928,7 +6930,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     });
     dispatch({ type: 'chunk', content: '正在回答第一段' });
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    expect(body.dataset.status).toBe('正在回答中');
+    expect(body.dataset.status).toBe('answering');
     // 插话（supplement）到达 → 旧流被打断：新块由后续 chunk 开启，旧块必须无运行态（既非运行也非终态）
     dispatch({
       type: 'user',
@@ -7021,7 +7023,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     // finalize 完成：流式态结清（终态「已完成」）、单块形态；补充行随过程折入折叠块（G31 收敛，rb 文本断言——
     // collectAllBodyText 是正文收集器，折叠块内容不在其范围）
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    expect(body.dataset.terminus).toBe('已完成');
+    expect(body.dataset.terminus).toBe('completed');
     expect(document.querySelectorAll('.msg.assistant')).toHaveLength(1);
     const rbText = document.querySelector('details.round-block')?.textContent ?? '';
     expect(rbText).toContain('你补充');
@@ -7277,9 +7279,9 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     });
     dispatch({ type: 'chunk', content: '需要先确认哪个方案？', roundId: 'round-1' });
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    expect(body.dataset.status).toBe('正在回答中'); // 暂停前运行态亮
+    expect(body.dataset.status).toBe('answering'); // 暂停前运行态亮
     dispatch({ type: 'paused' });
-    expect(body.dataset.status).toBe('已暂停'); // 暂停即静态挂起态（半截正文保留，不撒谎运行态）
+    expect(body.dataset.status).toBe('paused'); // 暂停即静态挂起态（半截正文保留，不撒谎运行态）
   });
 
   it('运行时 resume meta：续跑保留平铺容器锚点，不复制第二个运行时容器', () => {
@@ -7785,8 +7787,8 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(narrates[1].textContent).toContain('再读取文档');
     expect(tools[0].dataset.toolCallId).toBe('t1');
     expect(tools[1].dataset.toolCallId).toBe('t2');
-    expect(tools[0].textContent).toContain('联网搜索：A (成功)');
-    expect(tools[1].textContent).toContain('读取文件：x.md (成功)');
+    expect(tools[0].textContent).toContain('Web search: A (Succeeded)');
+    expect(tools[1].textContent).toContain('Read file: x.md (Succeeded)');
   });
 
   it('运行中与收尾 narrate 同构纯文本冒号行（2026-10-05 形态统一：details+双份消费已废）', () => {
@@ -7870,7 +7872,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     const row = rb.querySelector<HTMLDetailsElement>('.round-block__tool[data-tool-call-id="t1"]');
     expect(row).not.toBeNull();
     // 状态标签为「已拦截」而非「成功/失败」；拦截即展开（拒绝文案应直接可见，与失败同纪律）
-    expect(row!.textContent).toContain('已拦截');
+    expect(row!.textContent).toContain('Blocked');
     expect(row!.open).toBe(true);
   });
 
@@ -7935,7 +7937,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     });
     let phaseRow = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(phaseRow).not.toBeNull();
-    expect(phaseRow.textContent).toBe('正在执行：写入文件：b.md');
+    expect(phaseRow.textContent).toBe('正在执行：Write file: b.md');
     expect(phaseRow.classList.contains('is-tool')).toBe(true);
     // 工具完成：相位行回落最新 thinking（调用模型中…），移除 is-tool 态
     dispatch({
@@ -7948,7 +7950,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
       },
     });
     phaseRow = document.querySelector('.process-flow__phase') as HTMLElement;
-    expect(phaseRow.textContent).toContain('调用模型中');
+    expect(phaseRow.textContent).toContain('Calling model');
     expect(phaseRow.classList.contains('is-tool')).toBe(false);
   });
 
@@ -7975,7 +7977,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     });
     // 最新未完成者（t2）为相位主体
     let phaseRow = document.querySelector('.process-flow__phase') as HTMLElement;
-    expect(phaseRow.textContent).toBe('正在执行：写入文件：b.md');
+    expect(phaseRow.textContent).toBe('正在执行：Write file: b.md');
     // t2 完成 → t1 成为剩余未完成者 → 相位切回 t1
     dispatch({
       type: 'process_event',
@@ -7987,7 +7989,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
       },
     });
     phaseRow = document.querySelector('.process-flow__phase') as HTMLElement;
-    expect(phaseRow.textContent).toBe('正在执行：读取文件：a.md');
+    expect(phaseRow.textContent).toBe('正在执行：Read file: a.md');
     // t1 完成 → 无进行中工具且无 thinking → 相位行移除（不残留过期「正在执行」）
     dispatch({
       type: 'process_event',
@@ -8029,7 +8031,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     });
     expect(row.classList.contains('is-tool-running')).toBe(false);
     expect(row.open).toBe(false);
-    expect(row.textContent).toContain('(成功)');
+    expect(row.textContent).toContain('(Succeeded)');
   });
 
   it('TS-11d 工具意图预告：tool_pending「准备中」→ tool_start 升级执行态 → tool_result 收敛（不重建）', () => {
@@ -8064,7 +8066,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     expect(row.classList.contains('is-tool-running')).toBe(true);
     expect(row.textContent).toContain('进行中');
     // 叙述复原（参数完整，写环工具行动叙述生成器同路）
-    expect(row.textContent).toContain('写入文件：b.md');
+    expect(row.textContent).toContain('Write file: b.md');
     // ③ tool_result 收敛终态（成功收起，非运行态）
     dispatch({
       type: 'process_event',
@@ -8077,7 +8079,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     });
     expect(row.classList.contains('is-tool-running')).toBe(false);
     expect(row.open).toBe(false);
-    expect(row.textContent).toContain('(成功)');
+    expect(row.textContent).toContain('(Succeeded)');
   });
 
   it('run_command 工具行叙述命令原文（2026-10-03 宿主侧自然生长）', () => {
@@ -8099,7 +8101,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
       },
     });
     const row = document.querySelector('.round-block__tool') as HTMLElement;
-    expect(row.textContent).toContain('执行命令：npm test');
+    expect(row.textContent).toContain('Run command: npm test');
   });
 
   it('run_command 后台模式在叙述里标出（否则用户以为界面卡住）', () => {
@@ -8119,7 +8121,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
       },
     });
     const row = document.querySelector('.round-block__tool') as HTMLElement;
-    expect(row.textContent).toContain('执行命令（后台）：npm run build');
+    expect(row.textContent).toContain('Run command (background): npm run build');
   });
 
   it('kill_command 叙述任务 id（否则只见「终止后台命令」，不知停的是哪个）', () => {
@@ -8139,20 +8141,20 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
       },
     });
     const row = document.querySelector('.round-block__tool') as HTMLElement;
-    expect(row.textContent).toContain('终止后台命令');
+    expect(row.textContent).toContain('Stop background command');
   });
 
-  it('工具中文名接入（2026-09-19）：无参数可叙述的未收录工具与参数缺失场景均显中文名，不裸露英文名', () => {
-    // 背景：toolActionLabel 兜底若为 `?? name`（英文原名）——两类场景在 UI 裸露英文工具名：
+  it('工具展示名接入（2026-09-19，B9-A 起为英文源键）：无参数可叙述的未收录工具与参数缺失场景均显展示名，不裸露协议名', () => {
+    // 背景：toolActionLabel 兜底若为 `?? name`（协议英文原名）——两类场景在 UI 裸露工具协议名：
     // ①未收录工具（ask_user / remember_intel / run_project_script / run_team_meeting，均无可叙述
     //   参数，故不入 TOOL_ACTION_LABELS）；②已收录但本次 args 缺参（如 read_file 无 path）。
-    // toolNameMap.getToolDisplayName 统一回退中文名，本条锁死该回退契约。
+    // toolNameMap.getToolDisplayName 统一回退展示名（英文源键，消费侧过 l10n），本条锁死该回退契约。
     mountChatView();
     beginRound();
-    // ① 准备中态（renderPendingToolRow）：直显中文名
+    // ① 准备中态（renderPendingToolRow）：直显展示名（未 config 时 l10n.t 返回英文源键）
     dispatch({ type: 'tool_pending', toolCallId: 'call_m', name: 'run_team_meeting' });
     const pendingRow = document.querySelector('.round-block__tool') as HTMLElement;
-    expect(pendingRow.textContent).toContain('团队会议');
+    expect(pendingRow.textContent).toContain('Team meeting');
     expect(pendingRow.textContent).not.toContain('run_team_meeting');
     // ② 升级为执行态（upgradePendingToolRow → toolActionLabel 兜底）：仍为中文名
     dispatch({
@@ -8164,7 +8166,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
         payload: { toolCallId: 'call_m', name: 'run_team_meeting', args: '{}' },
       },
     });
-    expect(pendingRow.textContent).toContain('团队会议');
+    expect(pendingRow.textContent).toContain('Team meeting');
     expect(pendingRow.textContent).not.toContain('run_team_meeting');
   });
 
@@ -8266,7 +8268,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     const rb = document.querySelector('.round-block') as HTMLElement;
     const detail = rb.querySelector('.round-block__details') as HTMLElement;
     expect(detail.textContent).toContain('已停止');
-    expect(detail.textContent).toContain('用户停止了对话');
+    expect(detail.textContent).toContain('User stopped the conversation');
     expect(detail.textContent).not.toContain('用户取消了对话');
   });
 
@@ -8296,7 +8298,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     });
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
-    expect(rb.textContent).toContain('对话处理超时，请稍后重试');
+    expect(rb.textContent).toContain('The conversation timed out, please try again later');
     expect(rb.textContent).not.toContain('用户停止');
   });
 
@@ -8792,7 +8794,7 @@ describe('chatView narrate_withdraw 回抽', () => {
     const flow = document.querySelector('.process-flow') as HTMLElement;
     const runningRow = flow.querySelector('.process-flow__thought') as HTMLDetailsElement;
     expect(runningRow).not.toBeNull();
-    expect(runningRow.textContent).toContain('思考');
+    expect(runningRow.textContent).toContain('Thinking');
     expect(runningRow.textContent).toContain('用户问 A/B，先查资料');
     // 思考不污染正文
     expect(assistantBody().textContent).not.toContain('用户问 A/B');
@@ -8801,7 +8803,7 @@ describe('chatView narrate_withdraw 回抽', () => {
     const rb = document.querySelector('.round-block') as HTMLElement;
     const doneRow = rb.querySelector('.round-block__thought') as HTMLDetailsElement;
     expect(doneRow).not.toBeNull();
-    expect(doneRow.textContent).toContain('思考');
+    expect(doneRow.textContent).toContain('Thinking');
     expect(doneRow.textContent).toContain('用户问 A/B，先查资料');
   });
 
@@ -8871,7 +8873,7 @@ describe('chatView narrate_withdraw 回抽', () => {
     const runningRows = flow.querySelectorAll('.process-flow__thought');
     expect(runningRows.length).toBe(1);
     // 连贯：碎片拼接无换行 → 一次性连续文本（不逐段一行）
-    expect(runningRows[0]!.textContent).toBe('思考用户想要理解项目并生成白');
+    expect(runningRows[0]!.textContent).toBe('Thinking用户想要理解项目并生成白');
     // finalize：round-block 亦为**单个**折叠块，连续拼接
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
@@ -8928,9 +8930,9 @@ describe('chatView narrate_withdraw 回抽', () => {
     const flow = document.querySelector('.process-flow') as HTMLElement;
     const runningRows = flow.querySelectorAll('.process-flow__thought');
     expect(runningRows.length).toBe(2);
-    expect(runningRows[0]!.textContent).toContain('第 1 步');
+    expect(runningRows[0]!.textContent).toContain('step 1');
     expect(runningRows[0]!.textContent).toContain('第一步');
-    expect(runningRows[1]!.textContent).toContain('第 2 步');
+    expect(runningRows[1]!.textContent).toContain('step 2');
     expect(runningRows[1]!.textContent).toContain('第二步');
     // finalize：round-block 内同样每 step 一个折叠块
     dispatch({ type: 'done' });
@@ -9084,7 +9086,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       hasDiff: true, // 写入场景：判据归内核单点，宿主按此渲染 diff 域
     });
     expect(card.hasAttribute('hidden')).toBe(false);
-    expect(document.getElementById('writeConfirmTool')!.textContent).toBe('写入文件');
+    expect(document.getElementById('writeConfirmTool')!.textContent).toBe('Write file');
     expect(document.getElementById('writeConfirmPath')!.textContent).toBe('/workspace/src/foo.ts');
     expect(document.getElementById('writeConfirmDesc')!.textContent).toBe('写文件：foo.ts');
     // diff 预览：before → after（textContent 防注入，与消息区同纪律；纯内容对比，不含描述）
@@ -9800,63 +9802,72 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(tokenSrc).toMatch(/--dim-lg:\s*160px/);
   });
 
-  it('🔴 源码级守卫：终态标签收口底栏（三档 :has 规则 + 正文尾已完成/异常中断容器内压制 + 宿主尾兜底）', () => {
-    // 形态定案（2026-10-13 终态标签收口底栏，布局返修同日）：已完成/用户中断/异常中断
-    // 三态标签挂 round-group 底栏 ::after（time 之后），正文尾回归光标纯度。
+  it('🔴 源码级守卫：终态标签收口底栏（三档 :has 规则 + 正文尾压制 + 宿主尾兜底 + 键面/文案分离）', () => {
+    // 形态定案（2026-10-13 终态标签收口底栏，布局返修同日）：completed/user-interrupted/
+    // error-interrupted 三态标签挂 round-group 底栏 ::after（time 之后），正文尾回归光标纯度。
+    // B9-A 起属性值与文案分离：选择器用语言无关键（data-terminus）、可见文案走
+    // data-terminus-label / --terminus-label（见 statusAttrs）——本守卫同时锁这两条通道。
     // jsdom 不算计算样式，读生产样式表源码断言（与活动限高守卫同范式）——删任一档规则即红。
     const styleSrc = readFileSync(
       join(__dirname, '..', 'styles', 'chatStyles.ts'),
       'utf-8',
     ) as string;
     // 三档标签位点齐全（载体泛匹配 [data-terminus]，有正文挂 body、中断轮挂宿主）
-    for (const term of ['已完成', '用户中断', '异常中断']) {
+    for (const term of ['completed', 'user-interrupted', 'error-interrupted']) {
       expect(styleSrc).toContain(`:has([data-terminus='${term}']) .round-group__footer::after`);
     }
+    // 键面禁回退：属性值里不得再出现任何 CJK（否则「翻译文案 = 改选择器」，换语言即断样式）
+    expect(styleSrc).not.toMatch(/data-terminus='[^']*[\u4e00-\u9fff][^']*'/);
     // 两端分布（实测返修 2026-10-13「底部单边倒」）：auto margin 挂 footer 内 .msg-time
     // ——time+标签成组靠右、操作按钮独占左端。首版挂在 ::before 上（首子伪元素吸收
     // 全部余量把整组挤右端）即此 bug，断言两者互斥防回退：标签规则含 auto margin 即红
     const footerTime = styleSrc.match(/\.round-group__footer \.msg-time\s*\{([^}]*)\}/);
     expect(footerTime?.[1] ?? '').toMatch(/margin-left:\s*auto/);
     const termRule = styleSrc.match(
-      /:has\(\[data-terminus='已完成'\]\) \.round-group__footer::after\s*\{([^}]*)\}/,
+      /:has\(\[data-terminus='completed'\]\) \.round-group__footer::after\s*\{([^}]*)\}/,
     );
     expect(termRule?.[1] ?? '').not.toMatch(/margin-left:\s*auto/);
     // 已完成正文尾压制必须**限定容器内**（.round-group 前缀）——容器外回退终态基础档
-    // attr(data-terminus) 文字自足承接；若全局压制，无 roundId 兜底轮（ensureRoundGroup
+    // attr(data-terminus-label) 文字自足承接；若全局压制，无 roundId 兜底轮（ensureRoundGroup
     // 不建容器）终态无任何展示位而静默消失（2026-10-19 修复「底栏偶尔不显示」的核心不变量）
     const doneBody = styleSrc.match(
-      /\.round-group\s+\.msg-body\[data-terminus='已完成'\]::after\s*\{([^}]*)\}/,
+      /\.round-group\s+\.msg-body\[data-terminus='completed'\]::after\s*\{([^}]*)\}/,
     );
     expect(doneBody?.[1] ?? '').toMatch(/content:\s*none/);
     // 反断言：不得存在**无容器前缀**的全局压制（负向锁定，防回退到「容器外也压死」= 静默消失）
     expect(styleSrc).not.toMatch(
-      /(?<!\.round-group )\.msg-body\[data-terminus='已完成'\]::after\s*\{/,
+      /(?<!\.round-group )\.msg-body\[data-terminus='completed'\]::after\s*\{/,
     );
-    // 异常态正文尾兜底：纯状态词（TERMINUS-SSOT-1 改判：detail 摘要通道随 error 分支退役
-    // setTerminus 一并退役——异常原因显示面 = 平铺错误行/停止行 reason；旧「异常中断 · 」attr
-    // 拼接零写入后留空尾巴，content 收纯状态词）
-    const errBody = styleSrc.match(/\.msg-body\[data-terminus='异常中断'\]::after\s*\{([^}]*)\}/);
-    expect(errBody?.[1] ?? '').toMatch(/content:\s*'异常中断'/);
+    // 基础档兜底改读载体自身 label 属性（容器外 = 唯一展示位；不得再写字面量文案）
+    const baseBody = styleSrc.match(
+      /\.msg-body\[data-terminus\]::after\s*\{\s*content:\s*attr\(data-terminus-label\)/,
+    );
+    expect(baseBody).not.toBeNull();
+    // 异常态正文尾兜底：红字着色（文案统一由基础档 attr(data-terminus-label) 承接，
+    // 勿在此另写一份 content —— 两份文案必漂移；detail 摘要通道随 error 分支退役）
+    expect(styleSrc).toMatch(
+      /\.msg-body\[data-terminus='error-interrupted'\]::after\s*\{[^}]*color:/,
+    );
     // 异常中断正文尾压制限定容器内（与已完成档同构）：done 恒携 roundStatus 定格终态并
     // settle footer，容器内由底栏红字标签承接（正文尾双显退役）
     const errSuppress = styleSrc.match(
-      /\.round-group \.msg-body\[data-terminus='异常中断'\]::after\s*\{([^}]*)\}/,
+      /\.round-group \.msg-body\[data-terminus='error-interrupted'\]::after\s*\{([^}]*)\}/,
     );
     expect(errSuppress?.[1] ?? '').toMatch(/content:\s*none/);
     // 中断终态「容器外」兜底（宿主块尾）：用户中断/异常中断各一条内容规则 + 容器内压制规则
     // ——无 roundId 的中断轮容器缺席，宿主体尾是唯一展示位（与上文 body 兜底同一相位机制）
-    for (const term of ['用户中断', '异常中断']) {
+    for (const term of ['user-interrupted', 'error-interrupted']) {
       const hostTail = styleSrc.match(
         new RegExp(`\\.msg\\.assistant\\[data-terminus='${term}'\\]::after\\s*\\{([^}]*)\\}`),
       );
-      expect(hostTail?.[1] ?? '').toContain(`'${term}'`);
+      expect(hostTail?.[1] ?? '').toContain('content: attr(data-terminus-label)');
     }
     // 容器内压制宿主块尾（避免与底栏标签双显；与「单一位点」纪律配套）——两条选择器同组
     const hostSuppress = styleSrc.match(
-      /\.round-group \.msg\.assistant\[data-terminus='用户中断'\]::after,[^}]*content:\s*none/,
+      /\.round-group \.msg\.assistant\[data-terminus='user-interrupted'\]::after,[^}]*content:\s*none/,
     );
     expect(hostSuppress).not.toBeNull();
-    expect(styleSrc).toMatch(/\.round-group \.msg\.assistant\[data-terminus='异常中断'\]/);
+    expect(styleSrc).toMatch(/\.round-group \.msg\.assistant\[data-terminus='error-interrupted'\]/);
   });
 
   it('审批卡终结通知：write_confirm_closed 收卡，收卡后按钮不再回传（僵尸交互不留）', () => {
@@ -11453,7 +11464,7 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     const summary = block.querySelector('.round-block__tool-batch-summary') as HTMLElement;
     // 分型计数走 toolActionType（与轮收尾摘要同源），不再按工具名另起一份计数口径
     expect(block.querySelector('.round-block__tool-batch-title')?.textContent).toBe(
-      '工具×3（读取文件 2 · 网络搜索 1）',
+      'Tools ×3 (Read file 2 · Web search 1)',
     );
     // 工具类折叠块不带序号：批号与 step 号互不对齐，属另一套编号（STEP-ID-1 防复发精神）
     expect(summary.textContent).not.toMatch(/第\s*\d+\s*[批步]/);
@@ -11477,7 +11488,7 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
       .textContent;
     const roundSummary = (document.querySelector('.round-block__stats') as HTMLElement).textContent;
     // 唯一的形成点：两份工具叙述同一口径；一旦批改用工具名计数，此断言立即红
-    expect(blockTitle).toBe('工具×4（读取文件 2 · 网络搜索 1 · 写入文件 1）');
+    expect(blockTitle).toBe('Tools ×4 (Read file 2 · Web search 1 · Write file 1)');
     expect(roundSummary).toBe(blockTitle);
   });
 
@@ -11762,10 +11773,10 @@ describe('任务项完成态（plan_snapshot 快照 → 状态图标）', () => 
 // ═══════════════════════════════════════════════════════════
 // 光标状态机（运行态 data-status / 终态 data-terminus，UI-BLOCK-ICON 批次二）
 // ═══════════════════════════════════════════════════════════
-// 运行态真源 = setCursorStatus（data-status 值即中文文案，CSS 按值分档渲染）；终态真源 = setTerminus
-//（data-terminus / data-terminus-detail，2026-10-19 双通道分离）；运行态「推导」单一入口 = syncRunningCursor
+// 运行态真源 = setCursorStatus（data-status 存语言无关键，可见文案走 data-status-label 供 CSS content）；
+// 终态真源 = setTerminus（data-terminus 键 + data-terminus-label 文案「双通道」）；运行态「推导」单一入口 = syncRunningCursor
 //（优先级 = 工具在途 > 思考相位 > 默认回答）；显式转移（默认回答/续写/清态）由 setCursorStatus 直写，不经该入口。
-// 变异锁：删 chunk 尾覆盖 / 删 done 落「已完成」/ 删 error detail 透传 → 对应用例转红。
+// 变异锁：删 chunk 尾覆盖 / 删 done 落 'completed' / 删 error detail 透传 → 对应用例转红。
 describe('光标状态机（运行态 data-status / 终态 data-terminus）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -11789,7 +11800,7 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
   it('运行三态迁移：chunk（正在回答中）→ 工具在途（运行工具中）→ 结果回收（回正在回答中）', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '开始回答' });
-    expect(bodyOf().dataset.status).toBe('正在回答中');
+    expect(bodyOf().dataset.status).toBe('answering');
     // 工具开始：相位行转 --tool 形态 → 合成点判「运行工具中」
     dispatchEv({
       type: 'tool_start',
@@ -11797,7 +11808,7 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
       ts: 'T1',
       payload: { toolCallId: 't1', name: 'read_file', args: '{"p":"a"}', stepIndex: 1 },
     });
-    expect(bodyOf().dataset.status).toBe('运行工具中');
+    expect(bodyOf().dataset.status).toBe('running-tool');
     // 工具结果：is-tool-running 摘除、相位行回落 → 回默认回答态
     dispatchEv({
       type: 'tool_result',
@@ -11805,7 +11816,7 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
       ts: 'T2',
       payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: 'done' },
     });
-    expect(bodyOf().dataset.status).toBe('正在回答中');
+    expect(bodyOf().dataset.status).toBe('answering');
   });
 
   it('思考相位：thinking 建相位行 → 「思考中」；后续 chunk 覆盖回「正在回答中」', () => {
@@ -11813,17 +11824,17 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
     dispatch({ type: 'chunk', content: '先说结论' });
     // thinking 相位行随事件常驻（events 累积，renderProcessFlow 重渲染不丢）
     dispatchEv({ type: 'thinking', seq: 2, ts: 'T1', payload: { phase: 'llm_calling' } });
-    expect(bodyOf().dataset.status).toBe('思考中');
+    expect(bodyOf().dataset.status).toBe('thinking');
     // 正文流式 = 最强「正在回答」信号：chunk 尾覆盖思考相位态（相位行不消失也不误标）
     dispatch({ type: 'chunk', content: '，展开说' });
-    expect(bodyOf().dataset.status).toBe('正在回答中');
+    expect(bodyOf().dataset.status).toBe('answering');
   });
 
   it('优先级：思考相位下工具在途 → 「运行工具中」压过「思考中」（工具在途 > 思考相位）', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '开工' });
     dispatchEv({ type: 'thinking', seq: 2, ts: 'T1', payload: { phase: 'processing' } });
-    expect(bodyOf().dataset.status).toBe('思考中');
+    expect(bodyOf().dataset.status).toBe('thinking');
     // 工具开始（无结果）：同一相位行转 --tool 形态，合成点按优先级判「运行工具中」
     dispatchEv({
       type: 'tool_start',
@@ -11831,7 +11842,7 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
       ts: 'T2',
       payload: { toolCallId: 't2', name: 'write_file', args: '{}', stepIndex: 1 },
     });
-    expect(bodyOf().dataset.status).toBe('运行工具中');
+    expect(bodyOf().dataset.status).toBe('running-tool');
     // 结果回收：相位行回落普通形态 → 仍处思考相位（下一步推理前不误标回答态）
     dispatchEv({
       type: 'tool_result',
@@ -11839,7 +11850,7 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
       ts: 'T3',
       payload: { toolCallId: 't2', name: 'write_file', ok: true, summary: 'ok' },
     });
-    expect(bodyOf().dataset.status).toBe('思考中');
+    expect(bodyOf().dataset.status).toBe('thinking');
   });
 
   it('挂起态不撒谎：ask 提问挂起 → 「等待输入」（非运行三态）', () => {
@@ -11854,7 +11865,7 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
         questions: [{ slot: 'task', question: '确认执行？', options: ['是', '否'] }],
       },
     });
-    expect(bodyOf().dataset.status).toBe('等待输入');
+    expect(bodyOf().dataset.status).toBe('waiting-input');
   });
 
   it('error 流内事件不定格终态（TERMINUS-SSOT-1：终态归属收场消息）；done 缺省按已完成', () => {
@@ -11868,7 +11879,7 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
     expect(body.dataset.status).toBeUndefined();
     // done 兜底收尾：roundStatus 缺省（无 store/旧消息）按已完成——兼容回放不破
     dispatch({ type: 'done' });
-    expect(body.dataset.terminus).toBe('已完成');
+    expect(body.dataset.terminus).toBe('completed');
   });
 
   it('done + roundStatus 投影盘面收场（TERMINUS-SSOT-1）：interrupted/pending → 异常中断；complete → 已完成', () => {
@@ -11877,17 +11888,17 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
     mountChatView();
     dispatch({ type: 'chunk', content: '半截回答', roundId: 'r-fail' });
     dispatch({ type: 'done', roundId: 'r-fail', roundStatus: 'interrupted' });
-    expect(bodyOf().dataset.terminus).toBe('异常中断');
+    expect(bodyOf().dataset.terminus).toBe('error-interrupted');
     // 未收场案（空正文守卫跳过 → 盘面 pending）：同落异常中断
     mountChatView();
     dispatch({ type: 'chunk', content: '答', roundId: 'r-pending' });
     dispatch({ type: 'done', roundId: 'r-pending', roundStatus: 'pending' });
-    expect(bodyOf().dataset.terminus).toBe('异常中断');
+    expect(bodyOf().dataset.terminus).toBe('error-interrupted');
     // 显式 complete（对照）：已完成
     mountChatView();
     dispatch({ type: 'chunk', content: '完整回答', roundId: 'r-ok' });
     dispatch({ type: 'done', roundId: 'r-ok', roundStatus: 'complete' });
-    expect(bodyOf().dataset.terminus).toBe('已完成');
+    expect(bodyOf().dataset.terminus).toBe('completed');
   });
 
   it('重放 live 轮接手运行态（无工具/相位 → 默认「正在回答中」）；重放 interrupted 轮无正文块、无状态撒谎', () => {
@@ -11903,7 +11914,7 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
       live: true,
     });
     const liveBody = document.querySelector<HTMLElement>('.msg.assistant .msg-body');
-    expect(liveBody?.dataset.status).toBe('正在回答中');
+    expect(liveBody?.dataset.status).toBe('answering');
 
     // interrupted 轮：正文块整体不派生（诚实降级）——不得伪造任何运行态 data-status
     mountChatView();
@@ -11929,7 +11940,7 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
     expect(document.querySelector('.msg-body[data-terminus]')).toBeNull();
     // 宿主载体按事件如实定格（本案 error 事件 → 异常中断；非伪造，是真实终态）
     expect(document.querySelector<HTMLElement>('.is-interrupted-host')?.dataset.terminus).toBe(
-      '异常中断',
+      'error-interrupted',
     );
   });
 
@@ -12054,7 +12065,7 @@ describe('块类型标与折叠箭头（批次三）', () => {
     expect(thought).not.toBeNull();
     expect(iconOf(thought!)).not.toBeNull();
     // 文本走独立 span：icon 存在且 summary 文本完整（拼接逻辑迁移不丢内容）
-    expect(thought!.querySelector('summary')?.textContent).toContain('思考 · 第 1 步');
+    expect(thought!.querySelector('summary')?.textContent).toContain('Thinking · step 1');
 
     // 路二：运行时增量（renderProcessFlow 懒建折叠块）
     mountChatView();
@@ -12068,7 +12079,7 @@ describe('块类型标与折叠箭头（批次三）', () => {
     const flowThought = document.querySelector('.process-flow__thought');
     expect(flowThought).not.toBeNull();
     expect(iconOf(flowThought!)).not.toBeNull();
-    expect(flowThought!.querySelector('summary')?.textContent).toContain('思考 · 第 1 步');
+    expect(flowThought!.querySelector('summary')?.textContent).toContain('Thinking · step 1');
   });
 
   it('工具行 summary 前置 tool 类型标；tool_result 状态重写后 icon 不丢', () => {
@@ -12090,7 +12101,7 @@ describe('块类型标与折叠箭头（批次三）', () => {
       payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: 'done' },
     });
     expect(row().querySelector('.round-block__type-icon svg')).not.toBeNull();
-    expect(row().querySelector('.round-block__tool-status')?.textContent).toBe(' (成功)');
+    expect(row().querySelector('.round-block__tool-status')?.textContent).toBe(' (Succeeded)');
   });
 
   it('工具批 summary 前置 tool 类型标（行批共用）；finalize 重刷后 icon 不丢', () => {

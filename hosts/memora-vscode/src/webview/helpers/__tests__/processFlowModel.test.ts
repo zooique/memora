@@ -54,14 +54,14 @@ const boundary = (
 
 describe('toolRowStatus（工具行状态四档）', () => {
   it('无结果 = 进行中（展开）', () => {
-    expect(toolRowStatus(undefined)).toEqual({ label: '进行中', open: true, running: true });
+    expect(toolRowStatus(undefined)).toEqual({ label: 'Running', open: true, running: true });
   });
 
   it('成功 = 收起；失败 = 展开', () => {
     const ok = event('tool_result', 2, { toolCallId: 'a', name: 'x', ok: true });
     const bad = event('tool_result', 3, { toolCallId: 'a', name: 'x', ok: false });
-    expect(toolRowStatus(ok)).toEqual({ label: '成功', open: false, running: false });
-    expect(toolRowStatus(bad)).toEqual({ label: '失败', open: true, running: false });
+    expect(toolRowStatus(ok)).toEqual({ label: 'Succeeded', open: false, running: false });
+    expect(toolRowStatus(bad)).toEqual({ label: 'Failed', open: true, running: false });
   });
 
   it('blocked 优先于 ok（被拦不算成功也不算失败）', () => {
@@ -71,39 +71,41 @@ describe('toolRowStatus（工具行状态四档）', () => {
       ok: false,
       blocked: true,
     });
-    expect(toolRowStatus(blocked)).toEqual({ label: '已拦截', open: true, running: false });
+    expect(toolRowStatus(blocked)).toEqual({ label: 'Blocked', open: true, running: false });
   });
 });
 
 describe('stopReasonLabel / decideTerminus', () => {
   it('stopReason 命中映射，未命中回落 reason 原文', () => {
-    expect(stopReasonLabel({ reason: 'r', stopReason: 'user' })).toBe('用户停止了对话');
+    expect(stopReasonLabel({ reason: 'r', stopReason: 'user' })).toBe(
+      'User stopped the conversation',
+    );
     expect(stopReasonLabel({ reason: 'r', stopReason: 'timeout' })).toBe(
-      '对话处理超时，请稍后重试',
+      'The conversation timed out, please try again later',
     );
     expect(stopReasonLabel({ reason: '原始原因' })).toBe('原始原因');
   });
 
   it('error 事件 = 异常中断（原因取友好文案）', () => {
     const v = decideTerminus([event('error', 1, { message: 'boom' })]);
-    expect(v.kind).toBe('异常中断');
+    expect(v.kind).toBe('error-interrupted');
     expect(v.reason.length).toBeGreaterThan(0);
   });
 
   it('aborted + stopReason=user = 用户中断；其余 stopReason = 异常中断', () => {
     expect(decideTerminus([event('aborted', 1, { reason: 'x', stopReason: 'user' })]).kind).toBe(
-      '用户中断',
+      'user-interrupted',
     );
     expect(decideTerminus([event('aborted', 2, { reason: 'x', stopReason: 'timeout' })]).kind).toBe(
-      '异常中断',
+      'error-interrupted',
     );
   });
 
   it('无 error / aborted = 用户中断（TERMINUS-SSOT-1 改判：interrupted 收场唯一来源 = handleStop 用户停 + 打捞轮「等同用户停」定案；旧 null 不猜终态令底栏无标签，已退役）', () => {
     const v = decideTerminus([toolStart(1, 'a')]);
-    expect(v.kind).toBe('用户中断');
-    // TERM-REASON-1 收口（2026-10-29）沿革保持：兜底案语义键放法定口袋 stopReason ⇒ 查得中文。
-    expect(v.reason).toBe('对话已中断');
+    expect(v.kind).toBe('user-interrupted');
+    // TERM-REASON-1 收口（2026-10-29）沿革保持：兜底案语义键放法定口袋 stopReason ⇒ 查得译文。
+    expect(v.reason).toBe('The conversation was interrupted');
   });
 });
 
@@ -129,8 +131,8 @@ describe('groupThoughtBuckets / thoughtLabel', () => {
   });
 
   it('标签仅有 / 无步号两形态', () => {
-    expect(thoughtLabel(2)).toBe('思考 · 第 2 步');
-    expect(thoughtLabel(undefined)).toBe('思考');
+    expect(thoughtLabel(2)).toBe('Thinking · step 2');
+    expect(thoughtLabel(undefined)).toBe('Thinking');
   });
 });
 
