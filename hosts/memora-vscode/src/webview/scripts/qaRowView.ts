@@ -10,6 +10,9 @@
  * @module qaRowView
  */
 
+import * as l10n from '@vscode/l10n';
+import { qaKindTag, type QaKind } from '../helpers/processEventText.js';
+
 /** 问答行构造依赖：仅文档对象 */
 export interface QaRowViewDeps {
   /** webview 文档对象（构造唯一 DOM 入口；禁在模块内读全局 document） */
@@ -19,12 +22,7 @@ export interface QaRowViewDeps {
 /** 问答行窄接口：chatView 仅经此驱动 */
 export interface QaRowView {
   /** 构造问答回顾行（tag 语义按 kind 映射，文本经 textContent 上屏） */
-  renderQaItem(
-    text: string,
-    kind: 'question-answer' | 'supplement' | 'timeout' | 'unanswered',
-    question?: string,
-    options?: string[],
-  ): HTMLElement;
+  renderQaItem(text: string, kind: QaKind, question?: string, options?: string[]): HTMLElement;
 }
 
 export function createQaRowView(deps: QaRowViewDeps): QaRowView {
@@ -32,7 +30,7 @@ export function createQaRowView(deps: QaRowViewDeps): QaRowView {
 
   function renderQaItem(
     text: string,
-    kind: 'question-answer' | 'supplement' | 'timeout' | 'unanswered',
+    kind: QaKind,
     question?: string,
     options?: string[],
   ): HTMLElement {
@@ -45,7 +43,7 @@ export function createQaRowView(deps: QaRowViewDeps): QaRowView {
       q.className = 'round-block__input-q';
       const qTag = document.createElement('span');
       qTag.className = 'round-block__input-tag';
-      qTag.textContent = '问';
+      qTag.textContent = l10n.t('Q');
       const qTxt = document.createElement('span');
       qTxt.className = 'round-block__input-text';
       qTxt.textContent = question;
@@ -53,18 +51,18 @@ export function createQaRowView(deps: QaRowViewDeps): QaRowView {
       if (options && options.length > 0) {
         const opts = document.createElement('span');
         opts.className = 'round-block__input-opts';
-        opts.textContent = `候选：${options.join(' ｜ ')}`;
+        // 选项分隔符用 ASCII「|」：全角「｜」是 CJK 标点，不该由代码持有版式
+        opts.textContent = l10n.t('Options: {0}', options.join(' | '));
         q.appendChild(opts);
       }
       row.appendChild(q);
     }
-    // 内容行：tag 语义映射（回答 →「你答」；补充 →「你补充」；超时/崩溃未答 →「未回答」）
+    // 内容行：tag 语义映射（回答 / 补充 / 超时与崩溃未答）——文案唯一形成点 qaKindTag
     const main = document.createElement('div');
     main.className = 'round-block__input-row';
     const tag = document.createElement('span');
     tag.className = 'round-block__input-tag';
-    tag.textContent =
-      kind === 'supplement' ? '你补充' : kind === 'question-answer' ? '你答' : '未回答';
+    tag.textContent = qaKindTag(kind);
     const txt = document.createElement('span');
     txt.className = 'round-block__input-text';
     // 哨兵不上屏：`[ASK_ABORTED]` 是内核 tool 结果的机器标记，语义已由 tag「未回答」承载；

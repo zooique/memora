@@ -174,7 +174,7 @@ describe('运行时 × 重放对拍（round-1789565571934 同一 fixture 两路�
   });
 
   it(
-    '§4 交互输入行 live×replay 同形对拍：supplement/question-answer 两路渲染「你补充/你答」一致',
+    '§4 交互输入行 live×replay 同形对拍：supplement/question-answer 两路渲染「补充/回答」tag 一致',
     { timeout: PARITY_TIMEOUT_MS },
     () => {
       // 守「live 交互行 == replay 交互行」同形（§2 只守轮级 4 字段，本例守交互行）。
@@ -186,8 +186,9 @@ describe('运行时 × 重放对拍（round-1789565571934 同一 fixture 两路�
       const TS_S = '2026-09-07T11:00:00.000Z';
       const TS_A = '2026-09-07T12:00:00.000Z';
       const expected = [
-        { tag: '你补充', content: SUPPLEMENT },
-        { tag: '你答', content: ANSWER },
+        // tag 文案来源 = processEventText.qaKindTag（默认语言下为英文源键）
+        { tag: 'You added', content: SUPPLEMENT },
+        { tag: 'You answered', content: ANSWER },
       ];
       const sortRows = (rows: InteractiveRow[]) =>
         [...rows].sort((a, b) => a.tag.localeCompare(b.tag) || a.content.localeCompare(b.content));

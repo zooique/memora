@@ -62,14 +62,18 @@ import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import * as l10n from '@vscode/l10n';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
 import {
+  buildMetricsLines,
+  buildRoundSummaryText,
   countReviews,
-  fmtDuration,
   isPlanItemBoundaryEvent,
+  narrateDisplayText,
   phaseLabel,
+  planTagText,
+  processSectionTitle,
+  qaKindTag,
+  runningToolText,
   toDateKey,
-  toolActionLabel,
   toolStartNames,
-  toolSummaryText,
 } from '../helpers/processEventText.js';
 // 会话大纲导航条（HOST-NAV-1）：逻辑收口于 helpers/roundNav.ts（SSOT），本文件只接线
 import { createRoundNav } from '../helpers/roundNav.js';
@@ -689,7 +693,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     labelSpan.textContent = l10n.t(getToolDisplayName(pending.name));
     const statusSpan = document.createElement('span');
     statusSpan.className = 'round-block__tool-status';
-    statusSpan.textContent = ' (准备中)';
+    statusSpan.textContent = ` (${l10n.t('Preparing')})`;
     summary.append(iconSpan, labelSpan, statusSpan);
     row.appendChild(summary);
     flow.appendChild(row);
@@ -746,19 +750,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       dot.setAttribute('aria-hidden', 'true');
       summary.appendChild(dot);
       const reviews = countReviews(events);
-      const parts: string[] = [];
-      // 工具叙述句（唯一形成点 toolSummaryText，与工具批标题同源）：按工具显示名小计，
-      // 收起态也能看懂"它做了什么"；不可辨识的工具不进句，仅计入总数
-      const toolSentence = toolSummaryText(toolStartNames(events));
-      if (toolSentence) parts.push(toolSentence);
-      if (reviews > 0) parts.push(`审查 ${reviews} 次`);
       const metrics = events.find(
         (e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics',
       );
-      if (metrics) parts.unshift(`耗时 ${fmtDuration(metrics.payload.durationMs)}`);
       const label = document.createElement('span');
       label.className = 'round-block__stats';
-      label.textContent = parts.length > 0 ? parts.join(' · ') : '任务过程';
+      // 摘要文案（工具叙述 → 审查次数 → 耗时，空则「任务过程」）唯一形成点 = processEventText
+      label.textContent = buildRoundSummaryText({
+        toolNames: toolStartNames(events),
+        reviews,
+        durationMs: metrics?.payload.durationMs,
+      });
       summary.appendChild(label);
       rb.classList.toggle('is-running', !finalize);
     }
@@ -773,7 +775,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           activePlanItem.description.length > 36
             ? `${activePlanItem.description.slice(0, 36)}…`
             : activePlanItem.description;
-        const tagText = `执行任务项 ${activePlanItem.order + 1}: ${brief}`;
+        const tagText = planTagText(activePlanItem.order + 1, brief);
         if (existingTag) {
           // 只改文本节点：图标节点保持稳定，且 brief 源自 LLM → 必须走 textContent（防注入）
           const textEl = existingTag.querySelector('.round-block__plan-tag__text');
@@ -911,7 +913,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       (e): e is Extract<ProcessEvent, { type: 'thinking' }> => e.type === 'thinking',
     );
     if (thinking.length > 0) {
-      const { listEl } = cells.sectionOf(details, '过程轨迹');
+      const { listEl } = cells.sectionOf(details, 'trace', processSectionTitle('trace'));
       const labelCount = new Map<string, number>();
       const order: string[] = [];
       for (const e of thinking) {
@@ -935,7 +937,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       (e): e is Extract<ProcessEvent, { type: 'memory_added' }> => e.type === 'memory_added',
     );
     if (added.length > 0) {
-      const { listEl } = cells.sectionOf(details, '已沉淀');
+      const { listEl } = cells.sectionOf(
+        details,
+        'memoryAdded',
+        processSectionTitle('memoryAdded'),
+      );
       added.forEach((e) => {
         const row = document.createElement('div');
         row.className = 'round-block__row';
@@ -952,7 +958,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         e.type === 'background_report',
     );
     if (bgReports.length > 0) {
-      const { listEl } = cells.sectionOf(details, '后台任务收尾');
+      const { listEl } = cells.sectionOf(details, 'background', processSectionTitle('background'));
       for (const rep of bgReports) {
         // 多行报告按 \n 拆行渲染（textContent 防注入；格式化单点在内核，宿主零猜测）
         for (const line of rep.payload.content.split('\n')) {
@@ -972,11 +978,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         e.type === 'text_self_review',
     );
     if (reviews.length > 0 || reviewTexts.length > 0) {
-      const { listEl } = cells.sectionOf(details, '自审查输出');
+      const { listEl } = cells.sectionOf(details, 'selfReview', processSectionTitle('selfReview'));
       reviews.forEach((_e) => {
         const row = document.createElement('div');
         row.className = 'round-block__row';
-        row.textContent = '自审查终审';
+        row.textContent = l10n.t('Self-review verdict');
         listEl.appendChild(row);
       });
       reviewTexts.forEach((e) => {
@@ -991,7 +997,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       (e): e is Extract<ProcessEvent, { type: 'aborted' }> => e.type === 'aborted',
     );
     if (aborted) {
-      const { listEl } = cells.sectionOf(details, '已停止');
+      const { listEl } = cells.sectionOf(details, 'stopped', processSectionTitle('stopped'));
       const row = document.createElement('div');
       row.className = 'round-block__row';
       // TS-12b：stopReason 语义映射（与 error.category→友好文案同构）——不把「如何结束」写死成
@@ -1004,7 +1010,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       (e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics',
     );
     if (metrics) {
-      const { listEl } = cells.sectionOf(details, '执行指标');
+      const { listEl } = cells.sectionOf(details, 'metrics', processSectionTitle('metrics'));
       // 未解析文本工具意图：>0 表示「想调用工具却未走原生协议」，
       // 不得显示为成功收尾——与 success 判据（流程跑完）正交，这是新增的诚实信号。
       const unparsed = metrics.payload.unparsedToolIntentCount ?? 0;
@@ -1019,21 +1025,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       );
       // undefined = 请求未传 max_tokens，回服务端默认（0-哨兵/未声明侧均落到此）
       const effectiveLimit = roundMeta?.payload.maxTokens;
-      const lines = [
-        `耗时：${fmtDuration(metrics.payload.durationMs)}`,
-        // 口径须显式：入/出均为估算值；「入」是**本轮全部 LLM 调用输入的累加**（每次调用
-        // 重发全量上下文，N 步即累加 N 次，故可远超单轮窗口——**不是**窗口占用率，
-        // 勿据其判超窗）；「出」只计正文——不含思考与工具轮叙述，推理模型下远小于真实
-        // 输出预算消耗（判压力看下行「输出上限」+ 截断重试救回）
-        `Tokens（估算）：入 ${metrics.payload.tokenIn} 累计 / 正文 ${metrics.payload.tokenOut}（不含思考）`,
-        // 生效上限直接亮给用户：配了面板却被角色包收紧时，这里与面板值不一致即可见
-        `输出上限（生效）：${effectiveLimit ?? '服务端默认'}`,
-        `工具失败：${metrics.payload.toolFailureCount} 次`,
-        ...(unparsed > 0 ? [`未解析工具意图：${unparsed} 次`] : []),
-        ...(emptyResp > 0 ? [`空响应兜底：${emptyResp} 次`] : []),
-        ...(truncRecover > 0 ? [`截断重试救回：${truncRecover} 次`] : []),
-        `完成：${finalSuccess ? '是' : '否（中断/失败）'}`,
-      ];
+      // 指标多行文案（含口径注释）唯一形成点 = processEventText.buildMetricsLines
+      const lines = buildMetricsLines({
+        durationMs: metrics.payload.durationMs,
+        tokenIn: metrics.payload.tokenIn,
+        tokenOut: metrics.payload.tokenOut,
+        effectiveLimit,
+        toolFailureCount: metrics.payload.toolFailureCount,
+        unparsedToolIntentCount: unparsed,
+        emptyResponseCount: emptyResp,
+        truncationRecoveryCount: truncRecover,
+        finalSuccess,
+      });
       lines.forEach((line) => {
         const row = document.createElement('div');
         row.className = 'round-block__row';
@@ -1047,10 +1050,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (finalize) {
       const statsSpan = rb.querySelector('.round-block__stats');
       if (statsSpan) {
-        const kindTag = (
-          kind: 'question-answer' | 'supplement' | 'timeout' | 'unanswered',
-        ): string | null =>
-          kind === 'question-answer' ? '你答' : kind === 'supplement' ? '你补充' : '未回答';
         const qaCount = new Map<string, number>();
         const countedTs = new Set<string>();
         // 快照条目：tag 取内容行（.input-row .input-tag），避免误取「问」回顾行 tag
@@ -1065,9 +1064,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           if (elTs) countedTs.add(key);
           qaCount.set(tag, (qaCount.get(tag) ?? 0) + 1);
         }
-        // 合并流条目：按 kind 映射 tag（身份键去重，与渲染循环同源）
+        // 合并流条目：按 kind 映射 tag（身份键去重，与渲染循环同源；tag 文案同源 qaKindTag）
         for (const qa of interactiveInputs ?? []) {
-          const tag = kindTag(qa.kind);
+          const tag = qaKindTag(qa.kind);
           const key = qaDedupKey(qa.id, qa.ts);
           if (!tag || !qa.ts || countedTs.has(key)) continue;
           countedTs.add(key);
@@ -1120,7 +1119,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         flow.prepend(phaseRow);
       }
       phaseRow.classList.add('is-tool');
-      phaseRow.textContent = `正在执行：${toolActionLabel(runningTool.payload.name, runningTool.payload.args)}`;
+      phaseRow.textContent = runningToolText(runningTool.payload.name, runningTool.payload.args);
     } else if (thinking && thinking.payload.phase !== 'archiving') {
       if (!phaseRow) {
         phaseRow = document.createElement('div');
@@ -1142,9 +1141,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       row.className = 'process-flow__narrate';
       row.dataset.seq = String(n.seq);
       row.dataset.ts = n.ts; // 时间键（统一排序）
-      // 叙述冒号：结尾无标点时补「：」（用户定案「AI 说什么：」后接工具块）——文本防注入
-      const text = n.payload.content.trim();
-      row.textContent = /[:：。!！?？；;]$/.test(text) ? text : `${text}：`;
+      // 叙述冒号：结尾无标点时补冒号（用户定案「AI 说什么：」后接工具块）——文本防注入；
+      // 冒号字符的中文版式由 zh 译文给（唯一形成点 = narrateDisplayText）
+      row.textContent = narrateDisplayText(n.payload.content);
       // 任务表例外：有 plan_item_boundary 归入任务项折叠块（复用 getOrCreatePlanItemGroup 容器）
       const { host } = cells.planItemContainerFor(flow, events, n.ts, n.seq);
       insertPlanItemInOrder(host, row, n.ts);
@@ -2792,7 +2791,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     // summary 文案（N = 聚合去重后条数，textContent 防注入）
     const label = el.querySelector<HTMLElement>('.memory-hits__label');
-    if (label) label.textContent = `本轮参考了 ${currentMemoryHits.size} 条记忆`;
+    if (label) {
+      label.textContent = l10n.t(
+        'Referenced {0} memories this round',
+        String(currentMemoryHits.size),
+      );
+    }
     // 列表全量重建（事件量小，简单确定性——与 sectionOf 全量重建同构）
     const list = el.querySelector<HTMLElement>('.memory-hits__list');
     if (!list) return;
@@ -3166,7 +3170,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           // 回退 name，再回退通用文案（不裸显 id）
           activityDrawerView.showActivity(
             'info',
-            `已沉淀：${firstLine(ev.payload.content, 48) || ev.payload.name || '本轮摘要'}`,
+            l10n.t(
+              'Memory added: {0}',
+              firstLine(ev.payload.content, 48) || ev.payload.name || l10n.t('This round summary'),
+            ),
           );
         } else if (ev.type === 'thinking') {
           // 归档停滞兜底：archiving 激活即调度超时收起呼吸点

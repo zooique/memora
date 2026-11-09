@@ -421,6 +421,12 @@ const WEBVIEW_PANELS = {
   //   · processFlowCells —— 任务项标题 / 叙述冒号 / 工具批失败统计 / 搜索证据三件套全部走 l10n；
   //     标点类文案（冒号、包裹括号）按中英形态各一条键，不用 ASCII 凑中文版式；
   //   · toolRowView —— 文件内本就零可见字面量（中文全在注释），登记即把「过期未迁移」变成受判据文件。
+  //
+  // B9-C-1（过程流文案域，`chatView.ts` 首刀）已收口并登记：
+  //   · processEventText —— 新增轮块文案构建器（小节标题 / 收起摘要 / 执行指标 / 交互 tag /
+  //     任务项 tag / 进行中工具行 / 叙述冒号），键与标签分离：`data-section` 落机器键；
+  //   · qaRowView —— 随本刀迁完（其 tag 文案与 chatView 收起态统计 `<tag>×N` 必须同源，
+  //     拆分迁移会让统计与行 tag 各说各话）；仍未迁移：chatView.ts 其余域（C-2/C-3）⇒ 面板仍 pending。
   chat: {
     state: 'pending',
     files: [
@@ -434,6 +440,7 @@ const WEBVIEW_PANELS = {
       'webview/styles/chatStyles.ts',
       'webview/scripts/processFlowCells.ts',
       'webview/scripts/toolRowView.ts',
+      'webview/scripts/qaRowView.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。

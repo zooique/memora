@@ -38,10 +38,12 @@ export interface ProcessFlowCellsDeps {
 
 /** 单元格工厂窄接口：chatView 仅经此驱动，域内辅助函数零暴露 */
 export interface ProcessFlowCells {
-  /** 分区（标题 + 列表）取建 */
-  getOrCreateSection(details: HTMLElement, title: string): HTMLElement;
   /** 分区全量重建（清列表 + 更新标题计数） */
-  sectionOf(details: HTMLElement, title: string): { titleEl: HTMLElement; listEl: HTMLElement };
+  sectionOf(
+    details: HTMLElement,
+    key: string,
+    label: string,
+  ): { titleEl: HTMLElement; listEl: HTMLElement };
   /** 任务项分组取建（含有序插入） */
   getOrCreatePlanItemGroup(
     root: HTMLElement,
@@ -272,16 +274,21 @@ export function appendInterruptedRow(host: HTMLElement, events: ProcessEvent[]):
 export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowCells {
   const { document, memoryHits } = deps;
 
-  /** 获取或创建小节容器（进行中增量专用：不清理已有内容，防误删已追加的工具行） */
-  function getOrCreateSection(details: HTMLElement, title: string): HTMLElement {
-    let section = details.querySelector<HTMLElement>(`[data-section="${title}"]`);
+  /**
+   * 获取或创建小节容器（进行中增量专用：不清理已有内容，防误删已追加的工具行）
+   *
+   * @param key   语言无关的机器键（`data-section`，跨语言重放对得上的唯一坐标）
+   * @param label 可见标题（已译；语言由调用方决定）
+   */
+  function getOrCreateSection(details: HTMLElement, key: string, label: string): HTMLElement {
+    let section = details.querySelector<HTMLElement>(`[data-section="${key}"]`);
     if (!section) {
       section = document.createElement('div');
       section.className = 'round-block__section';
-      section.dataset.section = title;
+      section.dataset.section = key;
       const titleEl = document.createElement('div');
       titleEl.className = 'round-block__section-title';
-      titleEl.textContent = title;
+      titleEl.textContent = label;
       section.appendChild(titleEl);
       const listEl = document.createElement('div');
       listEl.className = 'round-block__section-list';
@@ -294,17 +301,18 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
   /** 在 details 中创建/复用小节容器（标题 + 内容行容器，textContent 构建防注入） */
   function sectionOf(
     details: HTMLElement,
-    title: string,
+    key: string,
+    label: string,
   ): { titleEl: HTMLElement; listEl: HTMLElement } {
     // 全量重建：清空已有列表重排（简单确定性——事件量小），再更新标题计数
-    const section = getOrCreateSection(details, title);
+    const section = getOrCreateSection(details, key, label);
     const listEl = section.querySelector('.round-block__section-list') as HTMLElement;
     listEl
       .querySelectorAll('.round-block__row, .round-block__tool, .round-block__pre')
       .forEach((el) => el.remove());
     const titleEl = section.querySelector('.round-block__section-title') as HTMLElement;
     const count = listEl.children.length;
-    titleEl.textContent = `${title}${count > 0 ? ` (${count})` : ''}`;
+    titleEl.textContent = `${label}${count > 0 ? ` (${count})` : ''}`;
     return { titleEl, listEl };
   }
 
@@ -696,7 +704,6 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
   }
 
   return {
-    getOrCreateSection,
     sectionOf,
     getOrCreatePlanItemGroup,
     planItemContainerFor,

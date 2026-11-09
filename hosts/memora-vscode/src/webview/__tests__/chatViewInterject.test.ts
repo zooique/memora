@@ -13,10 +13,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { dispatch, mountChatView } from './helpers/chatViewTestEnv.js';
 
-/** 全部「你补充」过程条目行 */
+/** 全部「补充」过程条目行（tag 文案来源 = processEventText.qaKindTag，默认语言为英文源键） */
 function supRows(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>('.round-block__input')).filter(
-    (el) => el.querySelector('.round-block__input-tag')?.textContent === '你补充',
+    (el) => el.querySelector('.round-block__input-tag')?.textContent === 'You added',
   );
 }
 

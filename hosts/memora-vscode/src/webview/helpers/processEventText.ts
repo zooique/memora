@@ -291,3 +291,155 @@ export function isPlanItemBoundaryEvent(
 ): e is Extract<ProcessEvent, { type: 'plan_item_boundary' }> {
   return e.type === 'plan_item_boundary';
 }
+
+/* ------------------------------------------------------------------ *
+ * 轮块（round-block）文案构建器（HOST-I18N-2 C-1）
+ *
+ * 迁出动机与上批同源：chatView.ts 行数闸贴死上限 + 文案集中一处才不会出现
+ * 「同一小节名两份字面量、改一处漏一处」。全部纯函数，无 DOM 依赖。
+ * ------------------------------------------------------------------ */
+
+/** 轮块小节标识（**语言无关的机器键**：`data-section` 的取值面，不是可见文案） */
+export type ProcessSectionKind =
+  'trace' | 'memoryAdded' | 'background' | 'selfReview' | 'stopped' | 'metrics';
+
+/**
+ * 轮块小节标题（可见名）
+ *
+ * 键/值分离：`data-section` 落 `ProcessSectionKind`（机器键），屏上才吃译文。
+ * 若把译文当 DOM 键，语言一变键就变——跨语言的重放/快照将对不上同一小节
+ * （同 `data-status` 纪律：机器键与展示标签不共用一套字符串）。
+ *
+ * @param kind 小节标识
+ */
+export function processSectionTitle(kind: ProcessSectionKind): string {
+  // 值 = 英文源键；解析在调用时（本模块早于 initWebviewL10n 被 import，表内不可预解析）
+  // @nls-keys
+  const map: Record<ProcessSectionKind, string> = {
+    trace: 'Process trace',
+    memoryAdded: 'Memories added',
+    background: 'Background wrap-up',
+    selfReview: 'Self-review output',
+    stopped: 'Stopped',
+    metrics: 'Run metrics',
+  };
+  return l10n.t(map[kind]);
+}
+
+/**
+ * 轮收起态摘要（`耗时 · 工具叙述 · 审查次数`；三者皆无回退「任务过程」）
+ *
+ * @param input.toolNames  本轮工具名序列（按出场序）
+ * @param input.reviews    自审查次数（0 不显示该段）
+ * @param input.durationMs 本轮耗时（undefined 不显示该段）
+ */
+export function buildRoundSummaryText(input: {
+  toolNames: readonly string[];
+  reviews: number;
+  durationMs?: number;
+}): string {
+  const parts: string[] = [];
+  const toolSentence = toolSummaryText(input.toolNames);
+  if (toolSentence) parts.push(toolSentence);
+  if (input.reviews > 0) parts.push(l10n.t('Reviews: {0}', String(input.reviews)));
+  // 耗时置最前：阅读顺序「多久 → 做了什么 → 审查几次」
+  if (input.durationMs !== undefined) {
+    parts.unshift(l10n.t('Duration: {0}', fmtDuration(input.durationMs)));
+  }
+  return parts.length > 0 ? parts.join(' · ') : l10n.t('Task process');
+}
+
+/**
+ * § 执行指标（metrics）小节的多行文案
+ *
+ * 口径注释随迁（原 chatView 内联注释）：入/出均为**估算值**，「入」是**本轮全部 LLM
+ * 调用输入的累加**（每步重发全量上下文，故可远超单轮窗口，**不是**窗口占用率）；
+ * 「出」只计正文（不含思考与工具轮叙述）。
+ *
+ * @param input.finalSuccess              完成判据（success 且无未解析意图、无空响应兜底）
+ * @param input.effectiveLimit            本轮**生效**输出上限；undefined = 回服务端默认
+ * @param input.unparsedToolIntentCount   >0 才显示（诚实信号：想调工具却未走原生协议）
+ * @param input.emptyResponseCount        >0 才显示（末段正文是兜底文案）
+ * @param input.truncationRecoveryCount   >0 才显示（曾截断但被换策略重试救回）
+ */
+export function buildMetricsLines(input: {
+  durationMs: number;
+  tokenIn: number;
+  tokenOut: number;
+  effectiveLimit?: number;
+  toolFailureCount: number;
+  unparsedToolIntentCount: number;
+  emptyResponseCount: number;
+  truncationRecoveryCount: number;
+  finalSuccess: boolean;
+}): string[] {
+  return [
+    l10n.t('Duration: {0}', fmtDuration(input.durationMs)),
+    l10n.t(
+      'Tokens (estimated): {0} in cumulative / {1} out (excludes thinking)',
+      String(input.tokenIn),
+      String(input.tokenOut),
+    ),
+    l10n.t(
+      'Output limit (effective): {0}',
+      input.effectiveLimit === undefined ? l10n.t('Server default') : String(input.effectiveLimit),
+    ),
+    l10n.t('{0} tool failures', String(input.toolFailureCount)),
+    ...(input.unparsedToolIntentCount > 0
+      ? [l10n.t('{0} unparsed tool intents', String(input.unparsedToolIntentCount))]
+      : []),
+    ...(input.emptyResponseCount > 0
+      ? [l10n.t('Empty-response fallbacks: {0}', String(input.emptyResponseCount))]
+      : []),
+    ...(input.truncationRecoveryCount > 0
+      ? [l10n.t('Truncation retries recovered: {0}', String(input.truncationRecoveryCount))]
+      : []),
+    l10n.t(
+      'Complete: {0}',
+      input.finalSuccess ? l10n.t('Yes') : l10n.t('No (interrupted or failed)'),
+    ),
+  ];
+}
+
+/** 交互输入种类（问答回顾行的 tag 语义面；与内核 interactiveInputs[].kind 同值域） */
+export type QaKind = 'question-answer' | 'supplement' | 'timeout' | 'unanswered';
+
+/**
+ * 交互输入 tag 文案（**唯一形成点**）
+ *
+ * 消费方二：① `qaRowView` 渲染行 tag；② `chatView` 收起态统计 `<tag>×N`。
+ * 两处必须同源——曾各自写字面量，「统计」与「行 tag」靠肉眼保持一致。
+ */
+export function qaKindTag(kind: QaKind): string {
+  if (kind === 'supplement') return l10n.t('You added');
+  if (kind === 'question-answer') return l10n.t('You answered');
+  return l10n.t('Unanswered');
+}
+
+/**
+ * round-block 任务项标签（summary 上方的「执行任务项 N: 标题」）
+ *
+ * @param order 任务项序号（**已 +1 的展示序号**；0 基序号由调用方换算，避免在文案层藏算术）
+ * @param brief 任务项标题（LLM 产出 → 调用方走 textContent 防注入）
+ */
+export function planTagText(order: number, brief: string): string {
+  return l10n.t('Executing task item {0}: {1}', String(order), brief);
+}
+
+/** 进行中工具的行动叙述行（「正在执行：读取文件 xxx」） */
+export function runningToolText(name: string, argsRaw: string | undefined): string {
+  return l10n.t('Running: {0}', toolActionLabel(name, argsRaw));
+}
+
+/**
+ * 过程叙述行显示文本：结尾已有标点则原样，否则补冒号
+ *
+ * 「AI 说什么：」后接工具块是既有形态；冒号字符的中文版式（全角）由 zh 译文给，
+ * 代码只持 `{0}:` 这一条英文源键——禁止在代码里判断语言再选标点。
+ *
+ * @param raw 叙述原文（模型产出，调用方以 textContent 上屏）
+ */
+export function narrateDisplayText(raw: string): string {
+  const text = raw.trim();
+  return /[:：。!！?？；;]$/.test(text) ? text : l10n.t('{0}:', text);
+}
