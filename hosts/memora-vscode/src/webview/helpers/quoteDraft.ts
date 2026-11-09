@@ -12,6 +12,8 @@
  *
  * 生命周期：单枚（再引用 = 替换）；发送后无条件清（快照即焚，无 pin 语义）；手动 ✕ 清。
  */
+import * as l10n from '@vscode/l10n';
+
 import { getIconSvg } from '../scripts/icons.js';
 
 /** 摘要可见字符上限（超出截断加省略号；全文在 title） */
@@ -82,7 +84,7 @@ export function createQuoteDraft(deps: {
       chip.className = 'skill-chip';
       const name = document.createElement('span');
       name.className = 'skill-chip__name';
-      name.textContent = `引用：${summarize(snapshot)}`;
+      name.textContent = l10n.t('Quote: {0}', summarize(snapshot));
       // 全文放 title（摘要截断的补偿）；非文件指针，无跳转语义 ⇒ 不可点、无 role=button
       name.title = snapshot;
       chip.appendChild(name);
@@ -91,8 +93,8 @@ export function createQuoteDraft(deps: {
       remove.className = 'skill-chip__remove';
       // 图标走 icons.ts 单点（与引用 chip ✕ 同源，禁手抄 SVG = 第二真理源）
       remove.innerHTML = getIconSvg('close', 11, 11);
-      remove.setAttribute('title', '移除引用');
-      remove.setAttribute('aria-label', `移除引用：${summarize(snapshot)}`);
+      remove.setAttribute('title', l10n.t('Remove quote'));
+      remove.setAttribute('aria-label', l10n.t('Remove quote: {0}', summarize(snapshot)));
       remove.addEventListener('click', () => {
         snapshot = '';
         onRemove?.();

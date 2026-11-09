@@ -20,6 +20,8 @@
  * 3. **长会话不炸**：`loading="lazy"` + `decoding="async"`，且用 `ImageRef` 的宽高设属性
  *    预留占位（60 轮 × ≤5 张 ≈ 上限 300 张，无占位会边加载边跳）。
  */
+import * as l10n from '@vscode/l10n';
+
 import type { ImageRef } from '@zooique/memora';
 
 /**
@@ -39,7 +41,8 @@ export interface UserAttachmentView {
 
 /** 取不到图时的统一文案（与输入框悬停预览同一句，避免同一缺陷两种说法） */
 export function attachmentFailedText(sha256: string): string {
-  return `预览加载失败（${sha256.slice(0, 8)}）`;
+  // 调用时取译文（本模块在 `initWebviewL10n` 之前即被 import）；短哈希是定位线索，非文案
+  return l10n.t('Preview failed to load ({0})', sha256.slice(0, 8));
 }
 
 /**

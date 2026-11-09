@@ -61,10 +61,11 @@ describe('createQuoteDraft 快照草稿状态机', () => {
     const chip = draft.chip() as HTMLElement;
     expect(chip.className).toBe('skill-chip');
     const name = chip.querySelector('.skill-chip__name') as HTMLElement;
-    // 可见文本 = 截断摘要；title = 全文（截断补偿）
-    expect(name.textContent?.startsWith('引用：')).toBe(true);
+    // 可见文本 = 截断摘要；title = 全文（截断补偿）。断言英文源键：单测无 zh bundle，
+    // `l10n.t(键)` 原样返回键本身（中文版式由 zh 译文给）
+    expect(name.textContent?.startsWith('Quote: ')).toBe(true);
     expect(name.textContent?.endsWith('…')).toBe(true);
-    expect(name.textContent!.length).toBeLessThan(`引用：${full}`.length);
+    expect(name.textContent!.length).toBeLessThan(`Quote: ${full}`.length);
     expect(name.title).toBe(full);
   });
 

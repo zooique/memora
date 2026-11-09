@@ -21,6 +21,8 @@
  *
  * @module helpers/errorBoundary
  */
+import * as l10n from '@vscode/l10n';
+
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 
 /** 错误卡片容器 id —— 单例判据（已存在即不再插卡，只重复上报） */
@@ -80,14 +82,16 @@ export function installWebviewErrorBoundary(deps: ErrorBoundaryDeps): void {
       'font-size:13px;line-height:1.5;box-shadow:0 2px 8px rgba(0,0,0,0.35);';
     const title = deps.document.createElement('div');
     // textContent 赋值 = 纯文本，错误消息里的 HTML 不进 DOM（防注入）
-    title.textContent = 'Memora 界面出错了';
+    // 卡片文案取调用时译文：若故障恰是语言包加载失败，`l10n.t` 回落英文源键（可读即可）
+    title.textContent = l10n.t('Memora UI error');
     title.style.fontWeight = 'bold';
     const detail = deps.document.createElement('div');
     detail.textContent = err.message.slice(0, 300);
     detail.style.opacity = '0.9';
     const hint = deps.document.createElement('div');
-    hint.textContent =
-      '重新打开面板可恢复；如需反馈，请附 Output 日志（扩展宿主）中的 Memora 报错。';
+    hint.textContent = l10n.t(
+      'Reopen the panel to recover. To report this, attach the Memora error from the Output log (Extension Host).',
+    );
     hint.style.opacity = '0.85';
     card.append(title, detail, hint);
     deps.document.body.appendChild(card);

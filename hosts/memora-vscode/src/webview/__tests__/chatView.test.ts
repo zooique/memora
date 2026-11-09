@@ -5101,7 +5101,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     expect(lang.textContent).toBe('ts');
     const copyBtn = block.querySelector('.code-block__copy') as HTMLButtonElement;
     expect(copyBtn).not.toBeNull();
-    expect(copyBtn.textContent).toBe('复制');
+    expect(copyBtn.textContent).toBe('Copy');
     // 复制按钮承载的是代码文本（供点击复制）
     expect(block.querySelector('code')?.textContent).toContain('const x = 1');
   });
@@ -5246,15 +5246,15 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     expect(body.classList.contains('is-clamped')).toBe(true);
     const more = document.querySelector('.msg-user-more') as HTMLButtonElement;
     expect(more).toBeTruthy();
-    expect(more.textContent).toBe('展开全文');
+    expect(more.textContent).toBe('Show full text');
     // 点击 → 展开（撤掉截断），文案切「收起」
     more.click();
     expect(body.classList.contains('is-clamped')).toBe(false);
-    expect(more.textContent).toBe('收起');
+    expect(more.textContent).toBe('Collapse');
     // 再点 → 收回折叠态
     more.click();
     expect(body.classList.contains('is-clamped')).toBe(true);
-    expect(more.textContent).toBe('展开全文');
+    expect(more.textContent).toBe('Show full text');
   });
 
   // ─── StatusDock：底部状态条收纳器（优先级裁决 / error 豁免 / 收纳形态行为锁）───
@@ -13356,7 +13356,7 @@ describe('图片缩略图：运行时回声 × 重放两路同形', () => {
 
     expect(document.querySelector('img.msg-attachment')).toBeNull();
     expect(document.querySelector('.msg-attachment-failed')?.textContent).toBe(
-      `预览加载失败（${SHA.slice(0, 8)}）`,
+      `Preview failed to load (${SHA.slice(0, 8)})`,
     );
   });
 
@@ -13570,7 +13570,8 @@ describe('COPY-2 锚点契约与引用快照事务（复审回归）', () => {
     rightClick(document.querySelector('.msg.assistant') as HTMLElement);
     (document.querySelector('[data-ctxmenu-id="quote-reply"]') as HTMLElement).click();
     const chipRow = document.getElementById('refChips') as HTMLElement;
-    expect(chipRow.textContent).toContain('引用：原文一句');
+    // 断言英文源键（单测无 zh bundle，`l10n.t(键)` 原样返回键本身）
+    expect(chipRow.textContent).toContain('Quote: 原文一句');
 
     // 早退之一：插话满员拒发 —— 引用不得被吞（快照已清而 chip 还在 = 静默丢内容）
     dispatch({
@@ -13585,7 +13586,7 @@ describe('COPY-2 锚点契约与引用快照事务（复审回归）', () => {
     expect(postMessage).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'input', kind: 'send' }),
     );
-    expect(chipRow.textContent).toContain('引用：原文一句');
+    expect(chipRow.textContent).toContain('Quote: 原文一句');
 
     // 恢复可发送相位：引用块置顶；快照消费后 chip 清空
     dispatch({ type: 'turn_update', rounds: [], state: { phase: 'idle' } });
@@ -13593,7 +13594,7 @@ describe('COPY-2 锚点契约与引用快照事务（复审回归）', () => {
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'input', kind: 'send', text: '> 原文一句\n\n正文' }),
     );
-    expect(chipRow.textContent).not.toContain('引用：');
+    expect(chipRow.textContent).not.toContain('Quote: ');
   });
 });
 

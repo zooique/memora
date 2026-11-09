@@ -57,9 +57,9 @@ describe('installWebviewErrorBoundary', () => {
     expect(posted[0]).toMatchObject({ type: 'host_diag', source: 'error', message: '渲染崩了' });
     const card = document.getElementById('memora-error-card');
     expect(card).not.toBeNull();
-    expect(card!.textContent).toContain('Memora 界面出错了');
+    expect(card!.textContent).toContain('Memora UI error');
     expect(card!.textContent).toContain('渲染崩了');
-    expect(card!.textContent).toContain('重新打开面板可恢复');
+    expect(card!.textContent).toContain('Reopen the panel to recover');
   });
 
   it('风暴单例：第二次错误卡片不重复插，但上报仍然发生（留痕不节流）', () => {

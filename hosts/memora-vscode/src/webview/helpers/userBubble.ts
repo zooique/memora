@@ -4,6 +4,8 @@
  * 工厂形态（SLIM 同型：deps 注入 + 纯 DOM 行为）。唯一闭包依赖 = 吸底滚动
  * （展开/收起改变高度，吸底时跟随到底部）——注入而非复制逻辑。
  */
+import * as l10n from '@vscode/l10n';
+
 export function createClampUserBubble(deps: {
   document: Document;
   /** 吸底滚动（chatView 实例化时绑定消息容器：用户在翻历史时由吸底标记自动静默） */
@@ -27,11 +29,11 @@ export function createClampUserBubble(deps: {
     const more = document.createElement('button');
     more.type = 'button';
     more.className = 'msg-user-more';
-    more.textContent = '展开全文';
+    more.textContent = l10n.t('Show full text');
     more.setAttribute('aria-expanded', 'false');
     more.addEventListener('click', () => {
       const collapsed = body.classList.toggle('is-clamped');
-      more.textContent = collapsed ? '展开全文' : '收起';
+      more.textContent = collapsed ? l10n.t('Show full text') : l10n.t('Collapse');
       more.setAttribute('aria-expanded', String(!collapsed));
       // 展开/收起改变高度：吸底时跟随到底部（用户在翻历史时由吸底标记自动静默）
       scrollToBottom();

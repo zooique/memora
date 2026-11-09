@@ -45,7 +45,7 @@ describe('renderAttachmentStrip：正文缩略图', () => {
     renderAttachmentStrip(host, { attachments: [ref()], attachmentUris: {} });
     expect(host.querySelector('img')).toBeNull();
     const failed = host.querySelector<HTMLElement>('.msg-attachment-failed');
-    expect(failed?.textContent).toBe('预览加载失败（a1b2c3d4）');
+    expect(failed?.textContent).toBe('Preview failed to load (a1b2c3d4)');
     // 文件名仍在（读屏/悬停可定位是哪一张）
     expect(failed?.title).toBe('照片.png');
   });

@@ -15,11 +15,9 @@
  * 为什么外置：`chatPanel.ts` 贴 eslint `max-lines` 只降不升基线；本域是「一个布尔标记 +
  * 纯投递序列」，无业务裁决，符合 helpers 落点纪律（判据仍归面板，本模块只做投影）。
  */
+import * as vscode from 'vscode';
 import { formatDateKey } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
-
-/** 草稿页标题：草稿没有会话 id ⇒ 没有创建时间可言，恒显示「新会话」（不带时间） */
-export const DRAFT_SESSION_TITLE = '新会话';
 
 /** 草稿控制器依赖：全部由面板注入，模块自身不反向持有面板实例 */
 export interface DraftSessionDeps {
@@ -149,7 +147,9 @@ export class DraftSessionController {
     //   ① webview 禁用改名笔（草稿没有可改名的会话）；
     //   ② 会话级投影归零信号——webview 据此隐藏能力徽章、把上下文占用环复位为空态
     //     （无会话 ⇒ 不得保留上一会话的能力面与占用；不为此新增消息类型）
-    this.deps.post({ type: 'session_title', title: DRAFT_SESSION_TITLE, draft: true });
+    // 草稿页标题：草稿没有会话 id ⇒ 没有创建时间可言，恒显示「新会话」（不带时间）。
+    // 取调用时译文：模块顶层求值会把默认语言写死（与 errorText 同纪律）
+    this.deps.post({ type: 'session_title', title: vscode.l10n.t('New session'), draft: true });
     // 草稿没有 Agent ⇒ 后台任务 / 看板投影一律空（看板由 clear_ok 的 DOM 复位承担），
     // 不把上一个会话的投影留在屏上；角色徽章例外——草稿期显示「即将生效」的包（见 postRolePack）
     this.postRolePack();

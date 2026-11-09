@@ -29,6 +29,8 @@
  * 纯函数 computeActiveIndex（tops 数组入参），DOM 几何只在控制器层读取——纯函数
  * 直接单测，DOM 层测试打桩（对齐 chatView.test.ts stubScroll 既有纪律）。
  */
+import * as l10n from '@vscode/l10n';
+
 import { stripInjectedContextPrefix } from './docContext.js';
 import { trackScroll } from './scrollToBottom.js';
 
@@ -211,8 +213,10 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
   // 浮层时会掉进一条没有元素接住的缝隙，hover 撤销、浮层当场闪退（见 chatStyles 注释）。
   const list0 = nav.querySelector<HTMLElement>('.round-nav__panel > .round-nav__list');
   if (!track0 || !list0) {
+    // 开发期 fail-fast 诊断（用户不可见，故不走 l10n；英文与「非日志 CJK = 0」判据一致）
     throw new Error(
-      '[roundNav] 外壳缺 .round-nav__track 或 .round-nav__panel>.round-nav__list：生产模板或测试夹具未同步',
+      '[roundNav] shell is missing .round-nav__track or .round-nav__panel>.round-nav__list: ' +
+        'production template or test fixture is out of sync',
     );
   }
   const track: HTMLElement = track0;
@@ -249,14 +253,14 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
     track.textContent = '';
     list.textContent = '';
     previews.forEach((raw, i) => {
-      const preview = raw || '（空输入）';
+      const preview = raw || l10n.t('(empty input)');
       // 条：视觉矩形由 CSS ::before 画（默认 2px 细线），触达区高于视觉条；条高由
       // applyMetrics 按压密结果内联下发（默认 --sp-5）。aria-label 让读屏与 title 都可读
       const bar = document.createElement('button');
       bar.type = 'button';
       bar.className = 'round-nav__bar';
       bar.dataset.index = String(i);
-      bar.setAttribute('aria-label', `第 ${i + 1} 轮：${preview}`);
+      bar.setAttribute('aria-label', l10n.t('Turn {0}: {1}', i + 1, preview));
       bar.title = preview;
       track.appendChild(bar);
       // 浮层行：hover 容器显形，点击同条定位；文本节点构建防注入

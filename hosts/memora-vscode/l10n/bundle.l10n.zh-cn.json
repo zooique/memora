@@ -1332,5 +1332,16 @@
   "Background model reverted (same as live chat)": "后台模型已回退（与实时对话相同）",
   "Failed to switch the background model: {0}": "切换后台模型失败：{0}",
   "Assembly did not complete (see the window notice)": "装配未完成（原因见窗口提示）",
-  "Agent not assembled (it starts with the current config on the next assembly; no restart needed)": "Agent 未装配（下次装配会按当前配置启动，无需重启）"
+  "Agent not assembled (it starts with the current config on the next assembly; no restart needed)": "Agent 未装配（下次装配会按当前配置启动，无需重启）",
+  "Copy": "复制",
+  "New session": "新会话",
+  "Copy the whole Q&A (your prompt and all replies)": "复制整条问答（含你的提问与全部回答）",
+  "Quote: {0}": "引用：{0}",
+  "Remove quote": "移除引用",
+  "Remove quote: {0}": "移除引用：{0}",
+  "Show full text": "展开全文",
+  "(empty input)": "（空输入）",
+  "Turn {0}: {1}": "第 {0} 轮：{1}",
+  "Memora UI error": "Memora 界面出错了",
+  "Reopen the panel to recover. To report this, attach the Memora error from the Output log (Extension Host).": "重新打开面板可恢复；如需反馈，请附 Output 日志（扩展宿主）中的 Memora 报错。"
 }

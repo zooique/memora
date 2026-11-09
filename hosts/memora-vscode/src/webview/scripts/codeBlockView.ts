@@ -8,6 +8,8 @@
  * 工厂形态（SLIM-3 同型：deps 注入 + 纯 DOM 变换）：无定时器 / 无全局监听
  * （copyBtn 监听挂在被增强的 DOM 上随 DOM 生命周期走）⇒ 无 dispose。
  */
+import * as l10n from '@vscode/l10n';
+
 import type { copyText } from '../helpers/selectionClipboard.js';
 
 export function createCodeBlockEnhancer({
@@ -38,8 +40,9 @@ export function createCodeBlockEnhancer({
       const copyBtn = document.createElement('button');
       copyBtn.type = 'button';
       copyBtn.className = 'code-block__copy';
-      copyBtn.textContent = '复制';
-      copyBtn.title = '复制代码';
+      // 文案取调用时译文（本模块在 `initWebviewL10n` 之前即被 import，不可在顶层预解析）
+      copyBtn.textContent = l10n.t('Copy');
+      copyBtn.title = l10n.t('Copy code');
       copyBtn.addEventListener('click', () => copy(code?.textContent ?? ''));
       header.appendChild(langEl);
       header.appendChild(copyBtn);

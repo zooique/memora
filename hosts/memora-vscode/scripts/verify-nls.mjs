@@ -646,6 +646,16 @@ const WEBVIEW_PANELS = {
       'webview/scripts/memoryHitsBlock.ts',
       'webview/components/roundActions.ts',
       'webview/components/contextMenuItems.ts',
+      // B10-F 第一刀：展示面纯文案（零协议载荷）——代码块复制 / 附件降级语 / 草稿标题 /
+      // 底栏整链复制 / 引用胶囊 / 用户气泡折叠 / 大纲导航 / 下拉触发器可达名
+      'webview/scripts/codeBlockView.ts',
+      'webview/helpers/attachmentStrip.ts',
+      'webview/helpers/draftSession.ts',
+      'webview/scripts/roundFooterView.ts',
+      'webview/helpers/quoteDraft.ts',
+      'webview/helpers/userBubble.ts',
+      'webview/helpers/roundNav.ts',
+      'webview/components/dropdown.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。
@@ -796,6 +806,9 @@ const SHARED_CJK_FILES = [
   // （`mcpOpsDeps` 的 `connect` / `restart`）。2026-11-10（B10-E 组3）清零后登记，
   // 是该文件唯一一道「再塞中文会红」的网。
   'webview/panels/settingsPanel.ts',
+  // 两个 webview 入口（chatViewMain / settingsViewMain）各装配一次的全局错误边界：
+  // 文案（卡片标题 + 自救指引）不归任何页签域。2026-11-10（B10-F 第一刀）清零后登记。
+  'webview/helpers/errorBoundary.ts',
 ];
 
 /**

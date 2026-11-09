@@ -38,32 +38,38 @@ export interface DropdownItem {
 
 /** 生成下拉组件 HTML（默认触发器 = ellipsis 内联 SVG；onSelect 指定该项点击后调用的全局回调名）
  *  SSOT 优化：触发器文本/title/aria-label 可通过 opts 自定义，避免硬编码「更多操作」
- *  对选择器场景（Skill/Model picker）语义不当。未指定时保持向后兼容默认值。 */
+ *  对选择器场景（Skill/Model picker）语义不当。
+ *
+ *  🔴 `triggerTitle` / `triggerAriaLabel` **必传**（2026-11-10 B10-F 收紧）：本组件同时被
+ *  宿主（`chatPanelHtml` 拼模板）与 webview（`chatView` 运行期）消费，跨上下文 ⇒ 两侧
+ *  l10n 入口不同（`vscode.l10n` / `@vscode/l10n`），组件内写死任一侧都会让另一侧失效。
+ *  文案归调用方（各自按本上下文取译文），组件只负责结构与可达性 —— 原来那个中文兜底
+ *  正是「第二套语言真源」，已删除。 */
 export function buildDropdownHtml(
   items: DropdownItem[],
-  opts?: {
+  opts: {
     extraClass?: string;
     /** 触发器额外类名（如输入区 .ctl 去边框基类）；缺省只保留 .treedd__trigger */
     triggerClass?: string;
     onSelect?: string;
     triggerLabel?: string;
-    triggerTitle?: string;
-    triggerAriaLabel?: string;
+    /** 触发器 tooltip（必传：无译文兜底，见函数头） */
+    triggerTitle: string;
+    /** 触发器读屏名（必传：同 triggerTitle） */
+    triggerAriaLabel: string;
   },
 ): string {
-  const extra = opts?.extraClass ? ` ${opts.extraClass}` : '';
-  const triggerExtra = opts?.triggerClass ? ` ${opts.triggerClass}` : '';
+  const extra = opts.extraClass ? ` ${opts.extraClass}` : '';
+  const triggerExtra = opts.triggerClass ? ` ${opts.triggerClass}` : '';
   // 实例级回调：data-on-select 指向全局回调名；缺省回退 __treeddOnSelect
-  const onSelectAttr = opts?.onSelect ? ` data-on-select="${opts.onSelect}"` : '';
+  const onSelectAttr = opts.onSelect ? ` data-on-select="${opts.onSelect}"` : '';
   // 默认触发器 = ellipsis 内联 SVG（icons.ts 唯一图标语言）。
   // 取「内联」而非 data-icon 占位 span 的理由：本函数是**返回字符串的纯生成器**，调用上下文
   // （初始化模板 / 运行期拼接）由消费者决定，生成器无从约束。内联 SVG 使产物**自足**，消除
   // 「消费上下文是否覆盖 populateIcons」这一隐式契约（**契约收紧**，防调用点踩坑）；data-icon
   // 占位形态在该契约不成立时静默空白（.treedd__trigger 固定 26px、背景透明、无边框
   // → 空内容等同隐形可点区域）（坑）。
-  const triggerLabel = opts?.triggerLabel ?? getIconSvg('ellipsis', 14, 14);
-  const triggerTitle = opts?.triggerTitle ?? '更多操作';
-  const triggerAriaLabel = opts?.triggerAriaLabel ?? '更多操作';
+  const triggerLabel = opts.triggerLabel ?? getIconSvg('ellipsis', 14, 14);
   const itemHtml = items
     .map(
       (it) =>
@@ -72,7 +78,7 @@ export function buildDropdownHtml(
     .join('');
   return `
     <div class="treedd${extra}" data-treedd${onSelectAttr}>
-      <button class="treedd__trigger${triggerExtra}" title="${triggerTitle}" aria-label="${triggerAriaLabel}" aria-haspopup="menu">${triggerLabel}</button>
+      <button class="treedd__trigger${triggerExtra}" title="${opts.triggerTitle}" aria-label="${opts.triggerAriaLabel}" aria-haspopup="menu">${triggerLabel}</button>
       <div class="treedd__menu" role="menu">${itemHtml}</div>
     </div>`;
 }

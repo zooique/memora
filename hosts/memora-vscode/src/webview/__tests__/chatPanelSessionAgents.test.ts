@@ -697,8 +697,8 @@ describe('草稿态 · 「＋」不再立刻落空会话（首次发送才建会
     expect(setLastActive).not.toHaveBeenCalled();
     // ③ 零装配（② = 不占锁：拿锁只发生在 createSession，本用例从未走到那里）
     expect(factory).not.toHaveBeenCalled();
-    // 草稿标题：draft 标记是 webview 禁用改名笔的唯一判据
-    expect(lastTitle(posted)).toMatchObject({ title: '新会话', draft: true });
+    // 草稿标题：draft 标记是 webview 禁用改名笔的唯一判据（标题断言英文源键：单测无 zh bundle）
+    expect(lastTitle(posted)).toMatchObject({ title: 'New session', draft: true });
     // 后台任务条按空投影重推（不残留上一个会话的清单）
     const tasks = posted.filter((m) => m.type === 'background_tasks').at(-1) as unknown as {
       items: unknown[];

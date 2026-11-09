@@ -531,7 +531,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const types = posted.map((m) => (m as { type: string }).type);
     expect(types).toContain('clear_ok');
     const title = ofType<{ type: string; title: string; draft?: boolean }>(posted, 'session_title');
-    expect(title[0]?.title).toBe('新会话');
+    expect(title[0]?.title).toBe('New session');
     expect(title[0]?.draft).toBe(true);
   });
 

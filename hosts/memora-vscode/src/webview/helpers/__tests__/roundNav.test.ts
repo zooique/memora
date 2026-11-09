@@ -315,7 +315,7 @@ describe('createRoundNav（控制器集成）', () => {
     expect(items.length).toBe(2);
     // 预览 = 上屏文本单行化；aria-label 与 title 同源
     expect((bars[1] as HTMLElement).title).toBe('第二轮 多行输入');
-    expect(bars[1].getAttribute('aria-label')).toBe('第 2 轮：第二轮 多行输入');
+    expect(bars[1].getAttribute('aria-label')).toBe('Turn 2: 第二轮 多行输入');
     expect(items[1].textContent).toBe('第二轮 多行输入');
   });
 

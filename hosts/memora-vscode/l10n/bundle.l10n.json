@@ -1332,5 +1332,16 @@
   "Background model reverted (same as live chat)": "",
   "Failed to switch the background model: {0}": "",
   "Assembly did not complete (see the window notice)": "",
-  "Agent not assembled (it starts with the current config on the next assembly; no restart needed)": ""
+  "Agent not assembled (it starts with the current config on the next assembly; no restart needed)": "",
+  "Copy": "",
+  "New session": "",
+  "Copy the whole Q&A (your prompt and all replies)": "",
+  "Quote: {0}": "",
+  "Remove quote": "",
+  "Remove quote: {0}": "",
+  "Show full text": "",
+  "(empty input)": "",
+  "Turn {0}: {1}": "",
+  "Memora UI error": "",
+  "Reopen the panel to recover. To report this, attach the Memora error from the Output log (Extension Host).": ""
 }

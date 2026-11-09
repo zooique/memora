@@ -12,6 +12,8 @@
  * 本模块接管底栏后 chatView 净减行；同时「段级 .msg-footer」已退役（容器底栏是唯一可见
  * 操作面，旧段级 footer 恒被 CSS 隐藏），留着就是第三份动作面（不带伤原则：接管即退役）。
  */
+import * as l10n from '@vscode/l10n';
+
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 import { copyText } from '../helpers/selectionClipboard.js';
 import { fmtTime } from '../helpers/fmtTime.js';
@@ -95,7 +97,11 @@ export function buildRoundGroupFooter(opts: RoundFooterOptions): void {
   const actions = document.createElement('div');
   actions.className = 'round-group__actions';
   // 复制整链：底栏专属动作（菜单没有「复制整链」），故不入轮级真源表，避免两处定义同一动作
-  const copyBtn = createIcon('copy', '复制整条问答（含你的提问与全部回答）', 'msg-copy-icon');
+  const copyBtn = createIcon(
+    'copy',
+    l10n.t('Copy the whole Q&A (your prompt and all replies)'),
+    'msg-copy-icon',
+  );
   copyBtn.addEventListener('click', () => copyText(roundChainText(group)));
   actions.appendChild(copyBtn);
   // 轮级动作：文案 / 图标 / 判据 / 执行全部取自真源，本面只负责图标按钮形态

@@ -29,7 +29,7 @@ function mountDropdown(): Mounted {
         { id: 'b', label: '选项B' },
         { id: 'c', label: '选项C' },
       ],
-      { onSelect: '__onSelect' },
+      { onSelect: '__onSelect', triggerTitle: 'More actions', triggerAriaLabel: 'More actions' },
     )}
     <button id="outside">外部元素</button>
   `;
@@ -153,6 +153,8 @@ describe('dropdown 键盘可访问性', () => {
     document.body.innerHTML = buildDropdownHtml([{ id: 'm', label: '模型A' }], {
       onSelect: '__onSelect',
       extraClass: 'treedd--capsule',
+      triggerTitle: 'More actions',
+      triggerAriaLabel: 'More actions',
     });
     const onSelect = vi.fn();
     initDropdowns(document, { __onSelect: onSelect });
