@@ -29,6 +29,7 @@
   "config.attentionSound.description": "交互提醒提示音：对话面板不在前台时，审批卡推出 / AI 提问等待 / 一轮完成会播放系统提示音。关闭后完全静音（面板内徽章与未读仍照常工作）。修改即时生效。",
   "config.allowedPaths.description": "白名单额外允许目录（项目目录之外的可信目录，Agent 可读取/写入）。项目目录始终允许，无需添加。用户级：机器级目录信任，个人绝对路径不进项目 settings。修改即时生效，重启后仍保留。",
   "config.defaultRolePack.description": "新建会话自动使用的角色包。留空 = 使用内置兜底角色包（即当前行为）。本设置只影响此后新建的会话：修改它不会改写已有会话。用户级偏好，不随项目。注意：若默认角色包是只读策略角色，此后每个新会话都会失去写入能力。",
+  "config.answerLanguage.description": "AI 回答使用的语言。留空（或填 `auto`）= 跟随 VS Code 显示语言：中文界面用中文回答，其余一律英文。也可直接填语言名，如 `日语` / `日本語` / `English`——原文会交给模型并优先于界面语言。本项不改变界面语言，改完下一轮回答即生效。",
   "config.searchEngine.description": "内部网页搜索引擎（web_search 工具使用的后端）。可选值：auto（Bing→DuckDuckGo 默认链）、bing、duckduckgo、baidu、sogou，或自定义搜索引擎名（在设置面板「自定义搜索引擎」中定义）。用户级偏好，随用户而非随项目。修改后重载窗口生效。",
   "config.archiveMode.description": "会话归档模式。full=自动归档：切换/分叉离开会话时自动生成会话摘要与主题（历史列表检索用）；manual=仅手动归档：仅在用户手动触发时生成。轮次摘要不受本设置影响（总是生成）。用户级偏好，随用户而非随项目。设置面板切换即时生效（对话进行中内核拒切，偏好保存后顺延到对话结束）。",
   "config.customSearchEngines.description": "用户自定义网页搜索引擎（web_search 工具后端）。每项 = 名称 + URL 模板(?q={query}) + 宿主预置解析策略。仅支持结构化结果源，自定义 HTML 解析不可行（安全红线）。修改后重载窗口生效。",

@@ -46,6 +46,7 @@ import { registerRegisterWorkCommand } from './commands/registerWork.js';
 import { registerResidentRuleCommands } from './commands/residentRules.js';
 // 作品投影：侧边栏 TreeView 已退役，清单变更由 notifier 回推设置页「作品和规则」选项卡
 import { notifyWorkProjectionChanged } from './host/workProjectionBridge.js';
+import { answerLanguageAssembly } from './host/answerLanguageConfig.js';
 import { addToChatCommand } from './commands/addToChat.js';
 import { createUserDataResetHandler } from './commands/userDataReset.js';
 import { importAssetCommand } from './commands/importAsset.js';
@@ -244,8 +245,7 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
   // （L1 清单 / list_skills / read_skill / L3 全不可达）。此处只是**装配期快照**；
   // 用户改设置由 activate 内的配置监听实时重设，无需重新装配。
   const disabledSkills = readDisabledSkills();
-  // 脚本执行 node 路径（S3-接续）：用户显式配置的 node 可执行文件绝对路径；
-  // 空/未配置 = 不注入（内核走 'node' PATH 查找）。修改需重建会话（装配期一次性注入）。
+  // 脚本执行 node 路径（S3-接续）：空/未配置 = 不注入（内核走 'node' PATH 查找）；修改需重建会话。
   const scriptNodePath = vscode.workspace
     .getConfiguration('memora')
     .get<string>('scriptNodePath', '');
@@ -254,7 +254,7 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
 
   return {
     projectPath,
-    envLanguage: vscode.env.language,
+    answerLanguage: answerLanguageAssembly(),
     // 项目搜索根 = 真实工作区文件夹（无 folder 时 undefined → 不注入 search_project）
     projectSearchRoot: resolveProjectSearchRoot(),
     providerStore: deps.providerStore,

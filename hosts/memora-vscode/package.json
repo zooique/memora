@@ -163,6 +163,13 @@
           "default": "",
           "description": "%config.defaultRolePack.description%"
         },
+        "memora.answerLanguage": {
+          "type": "string",
+          "scope": "application",
+          "default": "",
+          "maxLength": 60,
+          "description": "%config.answerLanguage.description%"
+        },
         "memora.backgroundProvider": {
           "type": "string",
           "scope": "application",

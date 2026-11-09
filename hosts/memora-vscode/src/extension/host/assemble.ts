@@ -38,6 +38,7 @@ import type { OutputChannel } from 'vscode';
 import { createProvider, createBackgroundProvider } from './llmConfig.js';
 import { createLocalCodeExecutor } from './codeExecutor.js';
 import { createVscodeEnvironmentProvider } from './environmentProvider.js';
+import type { AnswerLanguageInput } from './responseLanguage.js';
 import { createVscodeProjectSearchProvider } from './projectSearchProvider.js';
 import { createHostMemoryStorage } from './memoryStorage.js';
 import { resolveProjectDataDir } from './projectDataDir.js';
@@ -122,11 +123,14 @@ export interface AssembleOptions {
   /** 工作区路径（memora projectPath） */
   projectPath: string;
   /**
-   * VS Code 显示语言（`vscode.env.language`）——回答语言指令的唯一真源。
-   * 由 `buildAssembleOptions` 单点注入；缺省按「无对应语言」处理 ⇒ 英文兜底。
-   * 不新增任何 `memora.*` 语言配置项（ADR-042 决策 1：语言真源只能有一个）。
+   * 回答语言输入：VS Code 显示语言（值）+ 用户自定义（读取器）。
+   *
+   * 由 `answerLanguageAssembly()` 单点构造；缺省 ⇒ 英文软默认。
+   * 覆盖值传**读取器**：内核每轮重建前缀时现取 ⇒ 改设置下一轮即生效。
+   * 不新增 `memora.*` **UI 语言**配置项（ADR-042 决策 1 仍成立）；
+   * `memora.answerLanguage` 只影响模型可见的回答语言，不改任何界面文案。
    */
-  envLanguage?: string;
+  answerLanguage?: AnswerLanguageInput;
   /**
    * 项目搜索根（可选）
    *
@@ -455,8 +459,10 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     codeExecutionProvider: createLocalCodeExecutor(),
     // 宿主环境提供者（命令执行能力方案 §10.4-②）：上报 OS/shell/可用运行时 → 内核注入
     // system prompt「## 运行环境」段；环境事实只给模型看，内核零解释（不进判据）。
-    // 同一快照另带回答语言指令行（HOST-I18N-LLM-1），语言真源 = options.envLanguage。
-    environmentProvider: createVscodeEnvironmentProvider(options.envLanguage),
+    // 同一快照另带回答语言指令行（HOST-I18N-LLM-1/-2），来源 = options.answerLanguage。
+    environmentProvider: createVscodeEnvironmentProvider({
+      answerLanguage: options.answerLanguage,
+    }),
     // 工作区信任态（现读快照）：内核常驻规则层 fail-closed 闸的唯一入参；
     // 缺省 = undefined ⇒ 内核按未信任处理（不读任何常驻正文）
     workspaceTrusted,

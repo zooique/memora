@@ -86,27 +86,41 @@ describe('environmentProvider（§10.4-② 宿主环境快照）', () => {
     expect(env.shell).toBeTruthy();
   });
 
-  it('回答语言指令随快照上报：zh-cn 用中文，其余 / 缺省英文兜底', () => {
+  it('回答语言指令随快照上报：zh-cn 中文锚点，其余 / 缺省英文软默认', () => {
     expect(
-      createVscodeEnvironmentProvider('zh-cn').getEnvironment()!.responseLanguageDirective,
+      createVscodeEnvironmentProvider({ answerLanguage: { display: 'zh-cn' } }).getEnvironment()!
+        .responseLanguageDirective,
     ).toContain('简体中文');
     expect(
-      createVscodeEnvironmentProvider('ja').getEnvironment()!.responseLanguageDirective,
-    ).toContain('Please respond in English');
+      createVscodeEnvironmentProvider({ answerLanguage: { display: 'ja' } }).getEnvironment()!
+        .responseLanguageDirective,
+    ).toContain('Respond in English');
     // 语言真源取不到 = 无对应语言，走兜底而不是抛错 / 静默空块
     expect(createVscodeEnvironmentProvider().getEnvironment()!.responseLanguageDirective).toContain(
-      'Please respond in English',
+      'Respond in English',
     );
   });
 
-  it('异步探测合并后回答语言指令不丢（展开合并保留新字段）', async () => {
-    const provider = createVscodeEnvironmentProvider('zh-cn');
+  it('异步探测合并后回答语言指令不丢（含 runtimes 的快照仍带指令）', async () => {
+    const provider = createVscodeEnvironmentProvider({ answerLanguage: { display: 'zh-cn' } });
     await vi.waitFor(
       () => {
         expect(provider.getEnvironment()!.runtimes).toBeDefined();
       },
       { timeout: PROBE_WAIT_MS },
     );
+    expect(provider.getEnvironment()!.responseLanguageDirective).toContain('简体中文');
+  });
+
+  it('用户改设置后下一次取快照即生效（指令现算，不缓存进快照）', () => {
+    let override = '';
+    const provider = createVscodeEnvironmentProvider({
+      answerLanguage: { display: 'zh-cn', readOverride: () => override },
+    });
+    expect(provider.getEnvironment()!.responseLanguageDirective).toContain('简体中文');
+    override = '日语';
+    expect(provider.getEnvironment()!.responseLanguageDirective).toContain('日语');
+    override = '';
     expect(provider.getEnvironment()!.responseLanguageDirective).toContain('简体中文');
   });
 });

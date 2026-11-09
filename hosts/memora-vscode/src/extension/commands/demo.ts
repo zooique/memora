@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import type { Agent, AgentChunk } from '@zooique/memora';
 import { assembleAgent } from '../host/assemble.js';
+import { answerLanguageAssembly } from '../host/answerLanguageConfig.js';
 import { toNoticeText } from '../host/noticeText.js';
 import { vscodeTracer } from '../host/tracer.js';
 
@@ -81,8 +82,8 @@ export async function runDemoCommand(configDir: string): Promise<void> {
     // 独立装配（不传 sessionStore → 内部独立会话存储，不共享主面板单例；含搜索/抓取/存储/tracer）
     agent = await assembleAgent({
       projectPath: demoPath,
-      // 独立装配也要带同一语言真源：漏传 = 中文用户演示时模型被强制英文回答
-      envLanguage: vscode.env.language,
+      // 独立装配也要带同一回答语言来源：漏传 = 演示时模型被强制英文回答
+      answerLanguage: answerLanguageAssembly(),
       // dataDir 由 assembleAgent 内部 = resolveProjectDataDir(projectPath)，落演示区内
       configDir,
     });
