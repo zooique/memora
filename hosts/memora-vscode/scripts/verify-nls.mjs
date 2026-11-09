@@ -98,6 +98,24 @@
  *      宿主原样搬运）。按「模型可见」放行 = 守卫报绿而英文用户屏幕仍是中文——**守卫撒谎
  *      比没有守卫更贵**。双面串属未收口缺口，**必须报出来**（分类口径见方案 §4 切片 0）。
  *
+ * ## 采集面已知形态清单（B11 第一步立 · 一次说清覆盖什么、不覆盖什么）
+ *
+ * > 立这条的直接原因：今晚连续两次「以为覆盖了、其实没有」——判据⑬ 不认属性赋值、
+ * > 判据⑰ 的模板串采集在嵌套模板处自我截断。**盲区写在明处才不会再付一次学费。**
+ *
+ * | 形态 | 例子 | ⑰ 采集器 | 说明 |
+ * | --- | --- | --- | --- |
+ * | 字符串字面量 | `el.title = '删除'` | ✅ 计红 | 单 / 双引号串逐条产出 |
+ * | 属性赋值 | `{ label: '删除' }` / `el.title = '删除'` | ✅ 计红 | 它就是字面量；⑨ 的映射表另按 `@nls-keys` 聚合 |
+ * | 模板字面量 | `` `<b>删除</b>` `` / `` `${head}<b>删除</b>` `` | ✅ 计红 | 按 `${…}` 切静态片段逐段判；插值**前后**都算 |
+ * | 纯插值模板 | `` `${a}${b}` `` | ✅ 不判 | 零静态片段 ⇒ 没有文案可翻（负向自检守着） |
+ * | 正则字面量含引号 | `/['"]/` | ⚠️ 可能漏 | 字面量边界会被打乱，同文件后续文案可能漏采 |
+ * | 字符串拼接 | `'前缀' + label` | ⚠️ 半采 | 每段本身会被采到，但「这是一句完整文案」判断不了 |
+ * | 动态键 | `l10n.t(variable)` | ❌ 不采 | ⑫ 只拦「模板串作第一参」这一种最易犯写法 |
+ * | CSS 中文 | `.x { color: red }` 里的中文 | ❌ 不判 | 只认 `content: '…'`；注释不判（见⑰ CSS 口径） |
+ * | 宿主产物 / 资源 | `dist` 目录、`.html` 资源、`package.json` | ❌ 不扫 | 扫描面 = `src` 下的 `.ts`（`package.json` 由 ⑧ 单独判 `%key%`） |
+ * | ⑬ 窗口 API 的**属性赋值** | `opts.title = '删除'` | ❌ 不判 | **⑬ 的形态缺口**（它只认方法实参），与 ⑰ 采集器无关，勿混为一谈 |
+ *
  * ## 判据边界（如实登记，不假装覆盖）
  *
  * - **只认静态字面量**：`l10n.t(variable)` / 拼接 / 模板串第一参之外的动态形态扫不到（⑫ 只拦
@@ -603,10 +621,11 @@ const WEBVIEW_PANELS = {
   //     剥离侧以闭标签为锚点，翻译即剥离失效）、`injectionSourceMeta` 的 `[工作区诊断]` /
   //     `[git 未提交改动]`（持久化数据）、`emptyStateView` 的角色包 manifest 显示名（映射键 + 对比值）。
   //     这类值是**跨端契约的字节**，与「漏译」本质不同；新增条目须写清「谁对齐谁」；
-  //   · `chatPanelHtml.ts` **不登记**（登记 = 假绿）：宿主侧 HTML 骨架的静态文案（placeholder /
-  //     title / 按钮字）在**模板字面量**里，而判据⑰ 采集器只扫带引号的字符串，模板串里的中文
-  //     它看不见。登记它等于宣称守护了一个看不见的面。已知债：骨架静态文案迁 l10n +
-  //     采集器支持模板串（先剥 `//` 注释）后另行登记。
+  //   · `chatPanelHtml.ts` **暂不登记**（登记 = 假绿）：采集器自 B11 第一步起已能看见模板串
+  //     静态片段（旧注释「只扫带引号字符串、看不见模板串」已随扫描器重写失效），真正的阻塞
+  //     只剩**文案本身还是中文**——登记它会让⑰ 立刻红在该文件的静态文案上
+  //     （2026-11-10 实测 7 处：选择 Skill ×2、选择模型 ×3 + 两段 HTML 静态片段）。
+  //     登记条件：骨架静态文案迁 `l10n.t` 后另行登记（迁移批次见台账 HOST-I18N-2）。
   chat: {
     state: 'migrated',
     files: [
@@ -826,107 +845,246 @@ const SHARED_CJK_FILES = [
  * （B10-F 第一刀末已实际付出过一次判断成本）。**判定结论要可执行，否则等于没判。**
  *
  * 🔴 准入判据（三条全满足才可入表；缺一条 ⇒ 该翻，只是排在后面）：
- *   ① 中文读者是**模型或诊断链**，不是「只看这个键的界面」；
- *   ② 换成 `l10n.t` 会产生**随 locale 漂移的载荷**（同一份工具结果 / 协议文本在不同
- *      用户机器上不一样），或造出**第三套语言真源**；
- *   ③ 用户可见的外壳另有承载面（渲染层），不需要动这里。
+ *   ① `kind` **只能取枚举值**（`DEFERRED_KINDS`：双面串 / 纯模型面 / 纯诊断 / 本地化注入面），
+ *      不许自由文本。理由：这个字段的唯一用途是「按读者面聚合核对」，自由文本既不能聚合、
+ *      也无法机检——写成「混合（模型指令 + 双面串）」等于把两件事塞进一个格子（措辞折叠同族）。
+ *      一个文件里两种读者都有的，取**更严的那一种**，另一条在 `reason` 里点名。
+ *   ② `reason` 必须回答「**翻了会坏在哪**」，不是「为什么不需要翻」。前者可证伪（能指着某条
+ *      链路说「这里会随 locale 漂移」），后者是偏好（「界面上看不到」这种话翻不翻都成立）。
+ *      机检形态：`reason` 须写成「翻了会…」/「翻成…会…」句式（≥20 字）；**它只能证明作者写了
+ *      后果句，证明不了后果为真**，语义仍归 code review——这条判据是「提醒写后果」的闸，
+ *      不是「后果成立」的闸。
+ *   ③ **禁止「暂时 / 待定 / 后续再看」类延后语**。延后可以，但不能挂在本表里冒充「已判定」：
+ *      一旦允许，这张表就从「结论清单」退化成「拖延清单」，下一个读者无法区分
+ *      「想清楚了不翻」与「还没想」。
  *
- * 每项必须写全 `kind`（读者面）与 `reason`（为什么不翻 + 翻了会错在哪）——这两项就是
- * 「下次别再判一遍」的全部信息，空着视同未登记（self-test 有完整性不变量）。
+ * 判据实现 = `auditDeferredEntries()`（下方纯函数），self-test 用**伪造条目**做变异
+ * ——不靠「改真实常量 → 跑 → 撤销」的一次性手法，否则下次没人复跑，判据静默失明。
  */
 const DEFERRED_CJK_FILES = [
   {
     file: 'extension/host/codeExecutor.ts',
-    kind: '双面串（模型 + 用户）',
+    kind: '双面串',
     // stderr 文本同时是 run_code 的工具结果与用户在对话里看到的失败原因
     reason:
-      '三条都是 run_code 的工具结果（不支持的语言 / 执行失败 / 进程树终止未确认），' +
-      '模型要靠它改代码、用户看到的也是同一段文字；换 l10n 会让工具结果随 locale 变，' +
-      '模型输入不再可复现。中文外壳归渲染层。',
+      '翻了会让工具结果随 locale 变（同一句失败原因在 zh 用户处中文、en 用户处英文），' +
+      '模型输入不可复现、跨会话比对失真。三条都是 run_code 的工具结果（不支持的语言 / ' +
+      '执行失败 / 进程树终止未确认）；中文外壳归渲染层。',
   },
   {
     file: 'extension/host/gitExec.ts',
-    kind: '双面串（模型 + 用户）',
+    kind: '双面串',
     reason:
-      '三条是 git 工具的回执（拒绝非只读命令 / 输出超上限 / 命令超时），与 codeExecutor 同型；' +
-      '载荷保持单一语言，否则同一协议在不同语言用户下产出不同文本。',
+      '翻了会让 git 回执随 locale 变：同一协议在不同语言用户下产出不同文本，模型侧判断与' +
+      '测试断言都要跟着漂。三条是拒绝非只读命令 / 输出超上限 / 命令超时。',
   },
   {
     file: 'extension/host/agentRegistry.ts',
-    kind: '纯诊断面（模型 / 日志）',
+    kind: '纯诊断',
     reason:
-      '三条是 AgentRegistry 停用后的拒绝原因（登记 / 装配 / 在途装配关闭），经抛错进诊断链，' +
-      '界面上不出现；它回答的是「为什么被拒」这一事实，应与工具结果同源。',
+      '翻了会让「为什么被拒」这一事实出现两种文本：拒绝原因随语言变、工具结果不变，' +
+      '诊断链里对不上。三条是登记 / 装配 / 在途装配关闭，经抛错进诊断链，界面上不出现。',
   },
   {
     file: 'extension/host/assemble.ts',
-    kind: '本地化注入面（本身即机制）',
+    kind: '本地化注入面',
     reason:
-      'CHINESE_MESSAGES 是 pickUiMessages 按 vscode.env.language 选择的中文覆盖表（zh 用户注入中文、' +
-      '其余走内核英文默认），它**就是**本地化机制；且这些文案要进模型上下文与落盘，必须与 locale ' +
-      '同源、不能在渲染前求值，改 l10n.t 会变成第三套真源。',
+      '翻了会造出第三套语言真源：`CHINESE_MESSAGES` 本就是 `pickUiMessages` 按 ' +
+      '`vscode.env.language` 选的中文覆盖表（zh 注入中文、其余走内核英文默认），且这些文案进' +
+      '模型上下文与落盘，必须与 locale 同源、不能在渲染前求值。',
   },
   {
     file: 'extension/host/askCoordinator.ts',
-    kind: '混合（模型指令 + 双面串）',
+    kind: '双面串', // 两条里一条纯模型、一条双面，取更严的双面串（见 reason）
     reason:
-      '`ASK_TIMEOUT_NOTICE` 是给模型的代选指令（纯模型面），`abandonOnStop` 的停止通知是' +
-      '模型与用户同看的回执（双面串）；两者都属载荷，理由同上。',
+      '翻了会让模型输入不可复现：`ASK_TIMEOUT_NOTICE` 是给模型的代选指令（纯模型面），' +
+      '`abandonOnStop` 的停止通知是模型与用户同看的回执（双面串）；本表 kind 取更强的双面串。',
   },
 ];
 
 /**
- * 逐字符扫描源码，产出字符串字面量（含模板串）清单
+ * 第三登记面的 `kind` 枚举（与常量上方准入判据 ① 同源，改一处必须同步另一处）
+ *
+ * 四类按**读者面**分，不按文件位置分：同一目录下两个文件可能一个双面、一个纯诊断。
+ */
+const DEFERRED_KINDS = ['双面串', '纯模型面', '纯诊断', '本地化注入面'];
+
+/** 延后语黑名单（准入判据 ③；命中即「冒充已判定」） */
+const DEFERRED_DEFERRAL_WORDS = [
+  '暂时',
+  '待定',
+  '后续再看',
+  '以后再',
+  '以后再说',
+  '待评估',
+  '待补',
+];
+
+/**
+ * 审 `DEFERRED_CJK_FILES` 的三道准入（准入判据的可执行形态）
+ *
+ * 为什么独立成纯函数：self-test 要能**注入伪造条目**证明判据会红。若判据直接写在真实常量上，
+ * 只能靠「改常量 → 跑 → 撤销」的一次性手法，下次没人复跑 ⇒ 判据随时间失明（同 §5.2 僵尸豁免）。
+ *
+ * @param {Array<{file: string, kind: string, reason: string}>} entries 待审登记项
+ * @returns {string[]} 违规说明（空数组 = 全过）
+ */
+function auditDeferredEntries(entries) {
+  const issues = [];
+  for (const d of entries) {
+    // ① kind 必须是枚举值；非枚举项不再往下判（否则一次变异报三条噪音，读不出根因）
+    if (!DEFERRED_KINDS.includes(d.kind)) {
+      issues.push(`${d.file}：kind 非枚举（${d.kind ?? '缺'}）`);
+      continue;
+    }
+    if (!d.reason || d.reason.length < 20) {
+      issues.push(`${d.file}：reason 缺失或过短（未写判据）`);
+    } else if (DEFERRED_DEFERRAL_WORDS.some((w) => d.reason.includes(w))) {
+      issues.push(`${d.file}：reason 是延后语（不算已判定）`);
+    } else if (!/翻[了成][^。；]{0,12}会/.test(d.reason)) {
+      // ② 形态判据：「翻了会…」/「翻成…会…」句式；只写「不需要翻译」不算后果句
+      issues.push(`${d.file}：reason 没写后果句（须回答「翻了会坏在哪」）`);
+    }
+  }
+  return issues;
+}
+
+/**
+ * 逐字符扫描源码，产出字符串字面量清单（单 / 双引号串 + 模板串的静态片段）
  *
  * 为什么手写扫描而非正则先剥注释：`//` 会出现在字符串里（URL / 路径），按行剥注释会误伤；
  * 逐字符走一遍能同时拿到「字面量边界」与「是否在注释里」两个事实，且不引入 AST 依赖。
  *
+ * 🔴 模板串口径（B11 第一步定 · 可检验）：一个模板串按 `${…}` 切成若干**静态片段**，逐段产出记录。
+ *   · **静态片段算文案**——插值之前之后的文字都算（`` `${head}<b>删除</b>` `` 的「删除」在插值后，照样是文案）；
+ *   · **只有插值、没有静态文字**的模板（`` `${a}${b}` ``）不产出记录 ⇒ 不误红；
+ *   · `${…}` 内部按**代码**处理：其中的注释不是文案，其中的嵌套字符串 / 模板串照常产出记录。
+ * 旧实现把嵌套模板的反引号当成外层闭合符 ⇒ 外层剩余部分被并成一段（`${}` 里的注释混入文案、
+ * 后续 HTML 的中文被 40 字符截断掩盖）。本版用「代码 / 模板片段双模式 + 花括号深度」修掉，
+ * 变异见 self-test「模板串静态片段」与负向「纯插值模板不判」。
+ *
+ * 已知未覆盖形态（不假装支持，见文件头「采集面已知形态清单」）：正则字面量里的引号会扰乱边界判断；
+ * `'a' + b` 这类拼接的跨段文案无法还原成语义单元（但每段本身仍被采集）。
+ *
  * @param {string} text 源码全文
- * @returns {{start:number, value:string, quote:string}[]} 字面量清单（value 已还原转义）
+ * @returns {{start:number, value:string, quote:string, anchor:number}[]} 字面量清单（value 已还原转义）
  */
 function scanStringLiterals(text) {
   const out = [];
-  let i = 0;
   const n = text.length;
-  while (i < n) {
-    const ch = text[i];
-    // 行注释：跳到行尾
-    if (ch === '/' && text[i + 1] === '/') {
-      const end = text.indexOf('\n', i);
-      i = end < 0 ? n : end + 1;
-      continue;
-    }
-    // 块注释：跳到闭合标记
-    if (ch === '/' && text[i + 1] === '*') {
-      const end = text.indexOf('*/', i + 2);
-      i = end < 0 ? n : end + 2;
-      continue;
-    }
-    if (ch === "'" || ch === '"' || ch === '`') {
-      const quote = ch;
-      const start = i;
-      i++;
-      let raw = '';
-      while (i < n) {
-        if (text[i] === '\\') {
-          raw += text[i] + (text[i + 1] ?? '');
-          i += 2;
-          continue;
-        }
-        if (text[i] === quote) {
-          i++;
-          break;
-        }
-        // 单/双引号串未闭合时止于行尾，防止一处笔误把整份文件吞成一个字面量
-        if (quote !== '`' && text[i] === '\n') break;
-        raw += text[i];
-        i++;
-      }
-      out.push({ start, value: unescapeSourceLiteral(raw), quote });
-      continue;
-    }
-    i++;
+
+  /**
+   * 记录一条字面量；空片段不记（纯插值模板就是零片段）。
+   *
+   * `anchor` = 该字面量所属**表达式**的起点（引号串 = 引号本身；模板片段 = 模板的起始反引号）。
+   * 为什么片段需要 anchor：日志白名单要拿「字面量之前的文本」判是不是 `logger.x(` 的实参，
+   * 而模板的第 2 个片段之前横着 `${…}` ——里面 `String(err)` 这类调用的括号会让
+   * `[^()]*$` 失配 ⇒ 纯开发者日志误红（本仓实证：`logger?.warn(\`…${String(err)}…\`)`）。
+   */
+  function push(start, raw, quote, anchor) {
+    if (raw.length === 0) return;
+    out.push({ start, value: unescapeSourceLiteral(raw), quote, anchor: anchor ?? start });
   }
+
+  /** 扫一段带引号的字符串（不含反引号）；未闭合时止于行尾，防止一处笔误吞整份文件 */
+  function scanQuoted(from, quote) {
+    let i = from + 1;
+    let raw = '';
+    while (i < n) {
+      if (text[i] === '\\') {
+        raw += text[i] + (text[i + 1] ?? '');
+        i += 2;
+        continue;
+      }
+      if (text[i] === quote) {
+        i++;
+        break;
+      }
+      if (text[i] === '\n') break;
+      raw += text[i];
+      i++;
+    }
+    push(from, raw, quote);
+    return i;
+  }
+
+  /** 扫一个模板串：静态片段逐段产出，`${…}` 交给 scanCode（按代码扫） */
+  function scanTemplate(from) {
+    let i = from + 1;
+    let fragStart = i;
+    let raw = '';
+    while (i < n) {
+      const ch = text[i];
+      if (ch === '\\') {
+        raw += ch + (text[i + 1] ?? '');
+        i += 2;
+        continue;
+      }
+      if (ch === '`') {
+        push(fragStart, raw, '`', from);
+        return i + 1;
+      }
+      if (ch === '$' && text[i + 1] === '{') {
+        // 插值前的静态前缀到此为止；插值内部是代码，不是文案
+        push(fragStart, raw, '`', from);
+        raw = '';
+        i = scanCode(i + 2, true);
+        fragStart = i;
+        continue;
+      }
+      raw += ch;
+      i++;
+    }
+    push(fragStart, raw, '`', from);
+    return i;
+  }
+
+  /**
+   * 扫一段代码；`inInterpolation` 为真时在**配平的** `}` 处收手（返回其后的位置）。
+   * 花括号深度必须记账：`${{ a: `x` }}` 这类插值里的对象字面量 / 函数体不能提前收手。
+   */
+  function scanCode(from, inInterpolation) {
+    let i = from;
+    let depth = 0;
+    while (i < n) {
+      const ch = text[i];
+      // 行注释：跳到行尾（插值内的注释也按注释处理，不计入文案）
+      if (ch === '/' && text[i + 1] === '/') {
+        const end = text.indexOf('\n', i);
+        i = end < 0 ? n : end + 1;
+        continue;
+      }
+      // 块注释：跳到闭合标记
+      if (ch === '/' && text[i + 1] === '*') {
+        const end = text.indexOf('*/', i + 2);
+        i = end < 0 ? n : end + 2;
+        continue;
+      }
+      if (ch === '{') {
+        depth++;
+        i++;
+        continue;
+      }
+      if (ch === '}') {
+        if (inInterpolation && depth === 0) return i + 1;
+        if (depth > 0) depth--;
+        i++;
+        continue;
+      }
+      if (ch === "'" || ch === '"') {
+        i = scanQuoted(i, ch);
+        continue;
+      }
+      if (ch === '`') {
+        i = scanTemplate(i);
+        continue;
+      }
+      i++;
+    }
+    return i;
+  }
+
+  scanCode(0, false);
   return out;
 }
 
@@ -954,8 +1112,10 @@ function collectVisibleCjkInText(text) {
   for (const lit of scanStringLiterals(text)) {
     const value = lit.value.replace(/<!--[\s\S]*?-->/g, '');
     if (!CJK.test(value)) continue;
-    // 只看字面量前 200 字符：足够覆盖「console.log(a, '…')」这类调用前缀
-    if (isLogArgument(text.slice(Math.max(0, lit.start - 200), lit.start))) continue;
+    // 只看字面量前 200 字符：足够覆盖「console.log(a, '…')」这类调用前缀。
+    // 取 `anchor`（模板片段取模板起点）而非 `start`——否则第 2 个片段前面横着 `${…}`，
+    // 插值里的括号会让日志白名单失配（见 scanStringLiterals 的 push 注释）。
+    if (isLogArgument(text.slice(Math.max(0, lit.anchor - 200), lit.anchor))) continue;
     hits.push(value.replace(/\s+/g, ' ').slice(0, 40));
   }
   return hits;
@@ -1566,6 +1726,31 @@ function selfTest() {
       expect: 'webview 面板中文残留',
     },
     {
+      // 模板串口径（B11 第一步）：插值**之后**的静态片段同样是文案。
+      // 旧实现在 `${…}` 里遇到嵌套模板就把那个反引号当外层闭合，后续 HTML 不再按字面量扫。
+      label: '⑰ 采集器：模板串静态片段中文（插值前后都算）',
+      mutate: (d) => {
+        d.bundle.webviewViolations.push(
+          ...collectVisibleCjkInText(
+            'el.innerHTML = `${head({ title })}\n<b title="移除登记">x</b>`;',
+          ).map((s) => `mutated：${s}`),
+        );
+      },
+      expect: 'webview 面板中文残留',
+    },
+    {
+      // 插值里的**嵌套模板**不得吞掉外层剩余部分（反引号误闭合是旧实现的核心缺陷）
+      label: '⑰ 采集器：插值内嵌套模板的中文',
+      mutate: (d) => {
+        d.bundle.webviewViolations.push(
+          ...collectVisibleCjkInText('const s = `${`${a}`}<b>移除登记</b>`;').map(
+            (s) => `mutated：${s}`,
+          ),
+        );
+      },
+      expect: 'webview 面板中文残留',
+    },
+    {
       // 采集器级变异：CSS 口径只认 content 字符串
       label: '⑰ 采集器：CSS content 中文',
       mutate: (d) => {
@@ -1695,6 +1880,61 @@ function selfTest() {
   );
   if (deferredOverlap.length > 0) allOk = false;
 
+  // 不变量：`DEFERRED_CJK_FILES` 的三道准入（2026-11-10 · B10-F 第三刀）
+  // 判据 = `auditDeferredEntries()` 纯函数；下面紧跟三组**伪造条目**变异证明它会红。
+  const deferredIssues = auditDeferredEntries(DEFERRED_CJK_FILES);
+  console.log(
+    `  ${deferredIssues.length === 0 ? '✅' : '❌'} 判定不翻准入三条（kind 枚举 / 写后果 / 无延后语）${
+      deferredIssues.length > 0 ? `（${deferredIssues.join('；')}）` : ''
+    }`,
+  );
+  if (deferredIssues.length > 0) allOk = false;
+
+  // 准入判据的变异：每条都必须被**自己那条**判据抓住（红在别处 = 判据没生效）
+  const deferredMutations = [
+    {
+      label: '判定不翻准入：kind 写成自由文本',
+      entries: [
+        {
+          file: 'mutated.ts',
+          kind: '双面串（模型 + 用户）',
+          reason: '翻了会让工具结果随 locale 漂移，模型输入不再可复现。',
+        },
+      ],
+      expect: 'kind 非枚举',
+    },
+    {
+      label: '判定不翻准入：理由写「待定」冒充已判定',
+      entries: [
+        {
+          file: 'mutated.ts',
+          kind: '双面串',
+          reason: '暂时先不翻，这个问题待定，后续再看是否需要处理。',
+        },
+      ],
+      expect: '延后语',
+    },
+    {
+      label: '判定不翻准入：只说「不需要翻」没写后果',
+      entries: [
+        {
+          file: 'mutated.ts',
+          kind: '纯诊断',
+          reason: '这些文案界面上看不到，所以不需要把它们翻译成键。',
+        },
+      ],
+      expect: '没写后果句',
+    },
+  ];
+  for (const m of deferredMutations) {
+    const issues = auditDeferredEntries(m.entries);
+    const hit = issues.some((s) => s.includes(m.expect));
+    console.log(
+      `  ${hit ? '✅' : '❌'} ${m.label}${hit ? ' 被捕获' : ` 未被捕获（实际：${issues[0] ?? '无问题'}）`}`,
+    );
+    if (!hit) allOk = false;
+  }
+
   // 负向控制：白名单口径必须**不**误报（只测「能红」会放过「把所有中文都红」的过宽判据）
   const negativeCases = [
     [
@@ -1713,6 +1953,18 @@ function selfTest() {
     [
       '⑰ 负向：字符串里的 HTML 注释不判',
       collectVisibleCjkInText('const h = `<!-- 中文标注 -->`;').length === 0,
+    ],
+    [
+      // 模板串口径：只有插值、没有静态文字 ⇒ 没有文案可翻。
+      // 误红会逼人给载荷加键（与 DEFERRED_CJK_FILES 的结论直接冲突）
+      '⑰ 负向：纯插值模板不判',
+      collectVisibleCjkInText('const s = `${a}${b}`;').length === 0,
+    ],
+    [
+      // `${…}` 内部是代码：其中注释不是界面文案（旧实现会把注释文本并进模板片段 ⇒ 误红）
+      '⑰ 负向：插值内的中文注释不判',
+      collectVisibleCjkInText('const s = `${head({\n  // 中文说明\n  title,\n})}<b>ok</b>`;')
+        .length === 0,
     ],
     [
       '⑰ 负向：CSS 注释中文不判',
