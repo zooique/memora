@@ -17,6 +17,8 @@
  *     的投影而非身份，中断轮无 assistant ts 可锚，用它反推轮次只能靠时间窗猜测
  *     （历史事故 DELETE-ANCHOR-1：相邻两中断轮点了删除却删掉后面那轮）。
  */
+import * as l10n from '@vscode/l10n';
+
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 import type { IconName } from '../scripts/icons.js';
 
@@ -37,10 +39,10 @@ export interface RoundActionDeps {
 export interface RoundAction {
   /** 动作 id（右键菜单项 id / 底栏按钮 data-round-action 的同一取值） */
   id: 'regenerate' | 'fork' | 'delete-turn';
-  /** 右键菜单文案 */
-  label: string;
-  /** 图标按钮 tooltip / aria-label */
-  title: string;
+  /** 右键菜单文案（**函数形态**：本表在 `initWebviewL10n` 前即求值，存字符串会把语言写死） */
+  label(): string;
+  /** 图标按钮 tooltip / aria-label（同 `label`，调用时才解析译文） */
+  title(): string;
   /** 图标（复用 icons.ts 既有图形，不新增 path） */
   icon: IconName;
   /** 危险操作（菜单红色高亮；底栏沿用同一按钮形态） */
@@ -61,12 +63,20 @@ export interface RoundAction {
   run(ctx: RoundActionCtx, deps: RoundActionDeps): void;
 }
 
-/** 轮级动作全集（顺序 = 底栏图标顺序；菜单也按此顺序派生，两面不会漂） */
+/**
+ * 轮级动作全集（顺序 = 底栏图标顺序；菜单也按此顺序派生，两面不会漂）
+ *
+ * 文案是**方法**而非字段：模块加载早于语言包就绪（`initWebviewL10n`），若写成字符串，
+ * 表内 `l10n.t()` 会在无译文状态下求值，中文用户永远看到英文。
+ */
 export const ROUND_ACTIONS: readonly RoundAction[] = [
   {
     id: 'regenerate',
-    label: '重新生成',
-    title: '重新生成该问答（删除本轮及之后对话，并以原文重发）',
+    label: () => l10n.t('Regenerate'),
+    title: () =>
+      l10n.t(
+        'Regenerate this turn (deletes this turn and all later turns, then resends the original text)',
+      ),
     icon: 'refresh',
     // 与删除同强度：截断会话结构，锁态下不可用
     available: (ctx, locked) => !locked && !!ctx.roundId,
@@ -74,17 +84,17 @@ export const ROUND_ACTIONS: readonly RoundAction[] = [
   },
   {
     id: 'fork',
-    label: '分叉',
-    title: '从此问答闭环分叉新会话',
+    label: () => l10n.t('Fork'),
+    title: () => l10n.t('Fork a new session from this turn'),
     icon: 'fork',
     available: (ctx, locked) => !locked && !!ctx.roundId,
     run: (ctx, deps) => deps.post({ type: 'fork_session', roundId: ctx.roundId }),
   },
   {
     id: 'delete-turn',
-    label: '删除',
+    label: () => l10n.t('Delete'),
     danger: true,
-    title: '删除该问答及之后所有对话',
+    title: () => l10n.t('Delete this turn and all later turns'),
     icon: 'delete',
     available: (ctx, locked) => !locked && !!ctx.roundId,
     run: (ctx, deps) => deps.post({ type: 'delete_turn', roundId: ctx.roundId }),

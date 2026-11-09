@@ -616,6 +616,11 @@ const WEBVIEW_PANELS = {
       'shared/errorText.ts',
       'shared/injectionSourceMeta.ts',
       'webview/panels/chatPanel.ts',
+      // B10-D：B9 漏登记的 chat 盲区（计划栏 / 记忆命中块 / 轮级动作真源 / 右键菜单表）
+      'webview/scripts/planBarView.ts',
+      'webview/scripts/memoryHitsBlock.ts',
+      'webview/components/roundActions.ts',
+      'webview/components/contextMenuItems.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。

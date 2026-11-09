@@ -1281,5 +1281,22 @@
   "{0} refreshed: {1}": "{0}已刷新：{1}",
   "{0} refreshed: no changes": "{0}已刷新：无变化",
   "The skill system is not ready; cannot refresh": "技能系统未就绪，无法刷新",
-  "The role-pack system is not ready; cannot refresh": "角色包系统未就绪，无法刷新"
+  "The role-pack system is not ready; cannot refresh": "角色包系统未就绪，无法刷新",
+  "{0}s ago": "{0}秒前",
+  "To do": "待执行",
+  "In progress": "进行中",
+  "Stuck": "阻塞",
+  "Not useful or outdated? Move to the recycle bin (recoverable)": "没用/已过时？移入回收站（可恢复）",
+  "Mark as not useful: {0}": "反馈无用：{0}",
+  "Memory hits: {0}": "本次命中 {0} 条记忆",
+  "Memory ×{0}": "记忆 {0}",
+  "Memory hits in this call: {0} (expand for details)": "本次调用命中 {0} 条记忆（展开查看明细）",
+  "Regenerate this turn (deletes this turn and all later turns, then resends the original text)": "重新生成该问答（删除本轮及之后对话，并以原文重发）",
+  "Fork": "分叉",
+  "Fork a new session from this turn": "从此问答闭环分叉新会话",
+  "Delete this turn and all later turns": "删除该问答及之后所有对话",
+  "Copy selection": "复制选中",
+  "Quote reply": "引用回复",
+  "Copy as Markdown": "复制为 Markdown",
+  "Copy code": "复制代码"
 }

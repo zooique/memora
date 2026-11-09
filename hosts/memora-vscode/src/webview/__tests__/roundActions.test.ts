@@ -88,8 +88,8 @@ describe('roundActions 轮级动作真源', () => {
     // 轮级项恒排在文本/选区类之后，顺序 = 真源顺序（底栏同序）
     const roundItems = items.slice(-ROUND_ACTIONS.length);
     expect(roundItems.map((i) => i.id)).toEqual(ROUND_ACTIONS.map((a) => a.id));
-    // 文案取自真源：改一处两面同步，不存在第二份菜单文案
-    roundItems.forEach((item, i) => expect(item.label).toBe(ROUND_ACTIONS[i]?.label));
+    // 文案取自真源：改一处两面同步，不存在第二份菜单文案（真源文案是方法，调用时取译文）
+    roundItems.forEach((item, i) => expect(item.label).toBe(ROUND_ACTIONS[i]?.label()));
   });
 
   it('重新生成维持仅 AI 段（呈现差异，锚点/锁判据仍归真源）', () => {

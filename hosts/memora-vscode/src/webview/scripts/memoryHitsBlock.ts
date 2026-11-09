@@ -9,6 +9,8 @@
  *
  * @module memoryHitsBlock
  */
+import * as l10n from '@vscode/l10n';
+
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 import { getIconSvg } from './icons.js';
 import type { MemoryHitEntry } from '../helpers/processFlowModel.js';
@@ -81,8 +83,11 @@ export function createMemoryHitsBlock(deps: MemoryHitsBlockDeps): MemoryHitsBloc
       const removeBtn = document.createElement('button');
       removeBtn.className = 'memory-hits__remove';
       removeBtn.type = 'button';
-      removeBtn.title = '没用/已过时？移入回收站（可恢复）';
-      removeBtn.setAttribute('aria-label', `反馈无用：${hit.contentPreview || hit.name || id}`);
+      removeBtn.title = l10n.t('Not useful or outdated? Move to the recycle bin (recoverable)');
+      removeBtn.setAttribute(
+        'aria-label',
+        l10n.t('Mark as not useful: {0}', hit.contentPreview || hit.name || id),
+      );
       removeBtn.innerHTML = getIconSvg('close', 10, 10); // 静态 SVG，无外部输入
       removeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -110,7 +115,7 @@ export function createMemoryHitsBlock(deps: MemoryHitsBlockDeps): MemoryHitsBloc
     box.className = 'round-block__memory-hits';
     const label = document.createElement('div');
     label.className = 'memory-hits__label';
-    label.textContent = `本次命中 ${hits.size} 条记忆`;
+    label.textContent = l10n.t('Memory hits: {0}', String(hits.size));
     box.appendChild(label);
     const list = document.createElement('div');
     list.className = 'memory-hits__list';
@@ -129,8 +134,9 @@ export function createMemoryHitsBlock(deps: MemoryHitsBlockDeps): MemoryHitsBloc
   function createMemoryBadge(hitCount: number): HTMLSpanElement {
     const badge = document.createElement('span');
     badge.className = 'round-block__memory-badge';
-    badge.textContent = `记忆 ${hitCount}`;
-    badge.title = `本次调用命中 ${hitCount} 条记忆（展开查看明细）`;
+    // 徽章极窄：用 `×N` 形态避免英文单复数（"1 memories" 是错的，"1 memory" 又要第二套键）
+    badge.textContent = l10n.t('Memory ×{0}', String(hitCount));
+    badge.title = l10n.t('Memory hits in this call: {0} (expand for details)', String(hitCount));
     return badge;
   }
 

@@ -19,30 +19,40 @@
  * @module planBarView
  */
 
+import * as l10n from '@vscode/l10n';
+
 import type { PlanItemDto } from '../../shared/protocol.js';
 import { applyIcon } from './icons.js';
 
-/** 任务项状态 → 中文标签（状态枚举固定，缺一即编译报错，无需运行时兜底） */
+/**
+ * 任务项状态 → 展示标签（值 = **英文源键** = l10n 键面）。
+ *
+ * 状态枚举固定（缺一即编译报错，无需运行时兜底），但**文案不能在此预解析**：本模块在
+ * `initWebviewL10n` 之前即被 import，表内直接 `l10n.t()` 会把默认语言写死；故值存键、
+ * 解析放在渲染时（与 `statusAttrs` 的 `CURSOR_STATUS_LABEL` 同范式）。
+ */
+// @nls-keys
 const PLAN_ITEM_STATUS_LABEL: Record<PlanItemDto['status'], string> = {
-  pending: '待执行',
-  active: '进行中',
-  done: '已完成',
-  blocked: '阻塞',
+  pending: 'To do',
+  active: 'In progress',
+  done: 'Completed',
+  // 不复用既有 `Blocked`（那是工具「已拦截」的键，译文不同）——同键不同义会串味
+  blocked: 'Stuck',
 };
 
-/** 相对时间格式化（任务项推进记录完成时间 → "3s 前 / 2m 前 / 1h 前"） */
+/** 相对时间格式化（任务项推进记录完成时间 → "3s ago / 2 min ago / 1 hr ago"） */
 function formatRelativeTime(timestamp: number, now: number = Date.now()): string {
   // 时间差（钳到非负：宿主时钟与 webview 时钟可能有微小回拨）
   const diff = Math.max(0, now - timestamp);
-  // 秒级 → 分钟级 → 小时级 → 天级，逐档降精度
+  // 秒级 → 分钟级 → 小时级 → 天级，逐档降精度（分钟以上复用既有时间键，不另造近似措辞）
   const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return `${seconds}s 前`;
+  if (seconds < 60) return l10n.t('{0}s ago', String(seconds));
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m 前`;
+  if (minutes < 60) return l10n.t('{0} min ago', String(minutes));
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h 前`;
+  if (hours < 24) return l10n.t('{0} hr ago', String(hours));
   const days = Math.floor(hours / 24);
-  return `${days}d 前`;
+  return l10n.t('{0} days ago', String(days));
 }
 
 /** 工厂依赖：只需要文档对象（DOM 引用按需惰性查询，不预先注入节点） */
@@ -159,7 +169,7 @@ export function createPlanBarView({ document }: PlanBarViewDeps): PlanBarView {
     if (fillEl) fillEl.style.width = `${percent}%`;
     if (currentEl) {
       if (doneCount === total && total > 0) {
-        currentEl.textContent = '已完成';
+        currentEl.textContent = l10n.t('Completed');
       } else if (activePlanItem) {
         // 摘要超 28 字截断，避免撑破一行
         const brief =
@@ -203,7 +213,7 @@ export function createPlanBarView({ document }: PlanBarViewDeps): PlanBarView {
       summary.appendChild(label);
       const badge = document.createElement('span');
       badge.className = 'plan-item-badge';
-      badge.textContent = PLAN_ITEM_STATUS_LABEL[planItem.status];
+      badge.textContent = l10n.t(PLAN_ITEM_STATUS_LABEL[planItem.status]);
       summary.appendChild(badge);
       item.appendChild(summary);
       const logs = planItem.planItemLog;

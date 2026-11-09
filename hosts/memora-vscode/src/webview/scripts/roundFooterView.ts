@@ -101,7 +101,8 @@ export function buildRoundGroupFooter(opts: RoundFooterOptions): void {
   // 轮级动作：文案 / 图标 / 判据 / 执行全部取自真源，本面只负责图标按钮形态
   const ctx = roundActionCtx(group);
   ROUND_ACTIONS.forEach((action) => {
-    const btn = createIcon(action.icon, action.title, BTN_CLASS[action.id]);
+    // title 是方法（真源表在语言包就绪前求值，字符串会把语言写死）
+    const btn = createIcon(action.icon, action.title(), BTN_CLASS[action.id]);
     btn.dataset.roundAction = action.id;
     btn.disabled = !action.available(ctx, locked);
     btn.addEventListener('click', () => {

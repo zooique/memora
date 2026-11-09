@@ -1281,5 +1281,22 @@
   "{0} refreshed: {1}": "",
   "{0} refreshed: no changes": "",
   "The skill system is not ready; cannot refresh": "",
-  "The role-pack system is not ready; cannot refresh": ""
+  "The role-pack system is not ready; cannot refresh": "",
+  "{0}s ago": "",
+  "To do": "",
+  "In progress": "",
+  "Stuck": "",
+  "Not useful or outdated? Move to the recycle bin (recoverable)": "",
+  "Mark as not useful: {0}": "",
+  "Memory hits: {0}": "",
+  "Memory ×{0}": "",
+  "Memory hits in this call: {0} (expand for details)": "",
+  "Regenerate this turn (deletes this turn and all later turns, then resends the original text)": "",
+  "Fork": "",
+  "Fork a new session from this turn": "",
+  "Delete this turn and all later turns": "",
+  "Copy selection": "",
+  "Quote reply": "",
+  "Copy as Markdown": "",
+  "Copy code": ""
 }

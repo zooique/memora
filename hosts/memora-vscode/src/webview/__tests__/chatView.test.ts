@@ -5788,13 +5788,13 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     expect(planItems).toHaveLength(3);
     expect(planItems[0].querySelector('.plan-item-title')?.textContent).toBe('1. 收集需求');
     expect(planItems[0].classList.contains('plan-item-done')).toBe(true);
-    expect(planItems[0].querySelector('.plan-item-badge')?.textContent).toBe('已完成');
+    expect(planItems[0].querySelector('.plan-item-badge')?.textContent).toBe('Completed');
     expect(planItems[1].querySelector('.plan-item-title')?.textContent).toBe('2. 设计方案');
     expect(planItems[1].classList.contains('plan-item-active')).toBe(true);
-    expect(planItems[1].querySelector('.plan-item-badge')?.textContent).toBe('进行中');
+    expect(planItems[1].querySelector('.plan-item-badge')?.textContent).toBe('In progress');
     expect(planItems[2].querySelector('.plan-item-title')?.textContent).toBe('3. 编写文档');
     expect(planItems[2].classList.contains('plan-item-pending')).toBe(true);
-    expect(planItems[2].querySelector('.plan-item-badge')?.textContent).toBe('待执行');
+    expect(planItems[2].querySelector('.plan-item-badge')?.textContent).toBe('To do');
   });
 
   it('任务看板浮层展开态按 Esc 收起（对齐 dropdown 族键盘契约）；收起态 Esc 无副作用', () => {
@@ -12508,8 +12508,8 @@ describe('记忆命中明细（HOST-S3-1 · MEM-EVENT-2 落位）', () => {
     // 归属：明细在工具行**内部**（随行收起，不再沉在底部遮挡运行时状态）
     expect(row!.contains(box)).toBe(true);
     // 收起态可见信号 = 摘要徽章（没有它，明细藏进折叠体 = 信息静默消失）
-    expect(row!.querySelector('.round-block__memory-badge')?.textContent).toBe('记忆 2');
-    expect(box!.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 2 条记忆');
+    expect(row!.querySelector('.round-block__memory-badge')?.textContent).toBe('Memory ×2');
+    expect(box!.querySelector('.memory-hits__label')?.textContent).toBe('Memory hits: 2');
     const items = box!.querySelectorAll('.memory-hits__item');
     expect(items).toHaveLength(2);
     // 反馈寻址键与来源徽章（S3-3 通道靠它定位）
@@ -12565,11 +12565,11 @@ describe('记忆命中明细（HOST-S3-1 · MEM-EVENT-2 落位）', () => {
     );
     dispatchHits([{ id: 'm1', name: 'A', source: 'note' }], undefined, 't2');
     const box1 = toolRow('t1')!.querySelector<HTMLElement>('.round-block__memory-hits')!;
-    expect(box1.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 2 条记忆');
+    expect(box1.querySelector('.memory-hits__label')?.textContent).toBe('Memory hits: 2');
     expect(box1.querySelectorAll('.memory-hits__item')).toHaveLength(2);
     // 跨调用不去重：同一条 m1 在两次调用里各出现一次（各自的事实，不互相吞并）
     const box2 = toolRow('t2')!.querySelector<HTMLElement>('.round-block__memory-hits')!;
-    expect(box2.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 1 条记忆');
+    expect(box2.querySelector('.memory-hits__label')?.textContent).toBe('Memory hits: 1');
     expect(box2.querySelectorAll('.memory-hits__item')).toHaveLength(1);
     // 幂等重建：反复更新不产生重复块 / 重复徽章
     expect(toolRow('t1')!.querySelectorAll('.round-block__memory-hits')).toHaveLength(1);
@@ -12662,8 +12662,8 @@ describe('记忆命中明细（HOST-S3-1 · MEM-EVENT-2 落位）', () => {
     const box = document.querySelector('.round-block__memory-hits') as HTMLElement;
     expect(box).not.toBeNull();
     expect(box.querySelectorAll('.memory-hits__item')).toHaveLength(2);
-    expect(box.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 2 条记忆');
-    expect(document.querySelector('.round-block__memory-badge')?.textContent).toBe('记忆 2');
+    expect(box.querySelector('.memory-hits__label')?.textContent).toBe('Memory hits: 2');
+    expect(document.querySelector('.round-block__memory-badge')?.textContent).toBe('Memory ×2');
   });
 
   it('新轮 meta → 模型重置：旧轮明细随旧轮 DOM 固定，新轮不继承旧计数', () => {
@@ -12675,7 +12675,7 @@ describe('记忆命中明细（HOST-S3-1 · MEM-EVENT-2 落位）', () => {
     beginMemoryCall('t2', 5);
     dispatchHits([{ id: 'm2', name: 'B', source: 'note' }], undefined, 't2');
     // 旧块：仍是 1 条（不被新轮命中污染）
-    expect(firstBox.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 1 条记忆');
+    expect(firstBox.querySelector('.memory-hits__label')?.textContent).toBe('Memory hits: 1');
     expect(firstBox.querySelectorAll('.memory-hits__item')).toHaveLength(1);
     // 新块：只含新轮命中
     const boxes = document.querySelectorAll('.round-block__memory-hits');
@@ -12708,7 +12708,8 @@ describe('记忆反馈通道（HOST-S3-3）', () => {
     });
     const btn = document.querySelector('.memory-hits__remove') as HTMLButtonElement;
     expect(btn).not.toBeNull();
-    expect(btn.title).toContain('回收站');
+    // 文案已迁 l10n：无语言包时 l10n.t 返回英文源键，断言锁「回收站可恢复」这一语义
+    expect(btn.title).toContain('recycle bin');
     btn.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'memory_delete', id: 'm1' });
   });
@@ -12788,14 +12789,14 @@ describe('记忆反馈通道（HOST-S3-3）', () => {
       ],
       toolCallId: 't1',
     });
-    expect(document.querySelector('.round-block__memory-badge')?.textContent).toBe('记忆 2');
+    expect(document.querySelector('.round-block__memory-badge')?.textContent).toBe('Memory ×2');
 
     dispatch({ type: 'memory_deleted', ok: true, id: 'm1' });
     // 模型同步 → 块与徽章按剩余条数重建（不清模型会被收场重建「复活」）
     expect(document.querySelectorAll('[data-memory-id="m1"]')).toHaveLength(0);
     expect(document.querySelectorAll('[data-memory-id="m2"]')).toHaveLength(1);
-    expect(document.querySelector('.round-block__memory-badge')?.textContent).toBe('记忆 1');
-    expect(document.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 1 条记忆');
+    expect(document.querySelector('.round-block__memory-badge')?.textContent).toBe('Memory ×1');
+    expect(document.querySelector('.memory-hits__label')?.textContent).toBe('Memory hits: 1');
 
     // 删到空 → 块与徽章一并摘除（不留空壳标题行）
     dispatch({ type: 'memory_deleted', ok: true, id: 'm2' });
@@ -12868,9 +12869,9 @@ describe('记忆命中明细重放（MEM-EVENT-3 · evidence 轨重建）', () =
     expect(row).not.toBeNull();
     const box = row!.querySelector<HTMLElement>('.round-block__memory-hits');
     expect(box).not.toBeNull();
-    expect(box!.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 2 条记忆');
+    expect(box!.querySelector('.memory-hits__label')?.textContent).toBe('Memory hits: 2');
     expect(box!.querySelectorAll('.memory-hits__item')).toHaveLength(2);
-    expect(row!.querySelector('.round-block__memory-badge')?.textContent).toBe('记忆 2');
+    expect(row!.querySelector('.round-block__memory-badge')?.textContent).toBe('Memory ×2');
     // 100 字截断副本与结构化明细同源 → 有块即不出摘要（否则用户看到半句 `(a`）
     expect(row!.querySelector('.round-block__tool-summary')).toBeNull();
     // 重放行同样可反馈（data-memory-id 是寻址键，与实时行同构）
@@ -12964,7 +12965,7 @@ describe('记忆命中明细重放（MEM-EVENT-3 · evidence 轨重建）', () =
     const box = document.querySelector<HTMLElement>('.round-block__memory-hits');
     expect(box).not.toBeNull();
     // 两批合并去重后 2 条；m1 保留首次的名字
-    expect(box!.querySelector('.memory-hits__label')?.textContent).toBe('本次命中 2 条记忆');
+    expect(box!.querySelector('.memory-hits__label')?.textContent).toBe('Memory hits: 2');
     const items = box!.querySelectorAll('.memory-hits__item');
     expect(items).toHaveLength(2);
     expect(items[0]!.textContent).toContain('首次名');

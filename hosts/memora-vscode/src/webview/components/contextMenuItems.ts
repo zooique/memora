@@ -17,6 +17,8 @@
  * 未落项：「在编辑器打开」不在此表——对话内代码块不是工作区文件指针，`open_ref` 语义
  * （ref = 指针而非内容载体）不容硬塞，且无零新 type 的挂载点（台账 COPY-2 收口时已记偏差）。
  */
+import * as l10n from '@vscode/l10n';
+
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 import type { ContextMenuCtx, ContextMenuItem } from './contextMenu.js';
 import { ROUND_ACTIONS, type RoundAction, type RoundActionCtx } from './roundActions.js';
@@ -73,10 +75,10 @@ export function createContextMenuItems(actions: ContextMenuActions): ContextMenu
    * 不在这里重判第二次（两份锁判据必然漂移）。
    */
   const bodyMenuAllowed = (c: ContextMenuCtx): boolean => c.kind === 'selection' || !isLocked();
-  // 轮级动作从真源派生：顺序与底栏一致，两面不漂
+  // 轮级动作从真源派生：顺序与底栏一致，两面不漂（文案是方法，调用时取当前语言）
   const roundItems: ContextMenuItem[] = ROUND_ACTIONS.map((action) => ({
     id: action.id,
-    label: action.label,
+    label: action.label(),
     danger: action.danger,
     when: (c) =>
       c.kind === 'message' &&
@@ -84,34 +86,36 @@ export function createContextMenuItems(actions: ContextMenuActions): ContextMenu
       action.available(toActionCtx(c), isLocked()),
     run: (c) => action.run(toActionCtx(c), { post }),
   }));
+  // 本表在 createChatView 初始化期（已 initWebviewL10n 之后）构造一次，故此处可直接取译文
   return [
     {
       id: 'copy-selection',
-      label: '复制选中',
+      label: l10n.t('Copy selection'),
       when: (c) => c.kind === 'selection',
       run: (c) => copy(c.selectionText),
     },
     {
       id: 'quote-reply',
-      label: '引用回复',
+      label: l10n.t('Quote reply'),
       when: (c) => c.kind === 'selection',
       run: (c) => quoteReply(c.selectionText),
     },
     {
       id: 'copy-message',
-      label: '复制本条',
+      // 与消息条 hover 复制按钮同一语义，复用同一键（不再造「复制本条」的近似措辞）
+      label: l10n.t('Copy message'),
       when: (c) => bodyMenuAllowed(c) && c.kind === 'message' && !!c.visibleText,
       run: (c) => copy(c.visibleText),
     },
     {
       id: 'copy-message-md',
-      label: '复制为 Markdown',
+      label: l10n.t('Copy as Markdown'),
       when: (c) => bodyMenuAllowed(c) && c.kind === 'message' && !!c.rawText,
       run: (c) => copy(c.rawText),
     },
     {
       id: 'copy-code',
-      label: '复制代码',
+      label: l10n.t('Copy code'),
       when: (c) => bodyMenuAllowed(c) && c.kind === 'code' && !!c.codeText,
       run: (c) => copy(c.codeText),
     },
