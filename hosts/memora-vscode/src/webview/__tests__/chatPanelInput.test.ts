@@ -484,9 +484,11 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     // 整条拒收：不上屏（user 气泡 = 已入队的视觉镜像，判定后置）、不续跑
     expect(h.posted.filter((m) => (m as { type?: string }).type === 'user')).toHaveLength(0);
     expect(chat).not.toHaveBeenCalled();
-    // 拒收必须提示（走既有 showWarningMessage 通道，零新增协议）
+    // 拒收必须提示（走既有 showWarningMessage 通道，零新增协议；文案 = l10n 英文键 + 数字）
     const { window } = await import('vscode');
-    expect(window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('上限'));
+    expect(window.showWarningMessage).toHaveBeenCalledWith(
+      expect.stringContaining('pending interjections hit the'),
+    );
   });
 
   it('INPUT-LIMIT-1：插话未达上限 → 正常入队、不即时上屏（吸收时上屏）', async () => {
@@ -730,7 +732,10 @@ describe('IMG-8 · 宿主兜底：三维聚合限额（与 webview 预检同判�
     });
 
     expect(chat).not.toHaveBeenCalled();
-    expect(window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('上限'));
+    // 拒收提示 = l10n 英文键（数字由共享判据字段带入，此处只钉键面语义，不钉内核常量数值）
+    expect(window.showWarningMessage).toHaveBeenCalledWith(
+      expect.stringContaining('exceed the limit of'),
+    );
     // 拒收也**不回声**：图没发出去，屏上不能出现「已发送」假象
     expect(h.posted.find((m) => (m as { type?: string }).type === 'user')).toBeUndefined();
   });

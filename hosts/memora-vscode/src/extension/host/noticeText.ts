@@ -1,5 +1,6 @@
 /**
- * 错误 → 用户可见通知文本（宿主单一出口）
+ * 错误 → 用户可见通知文本（宿主单一出口，纯 node 可测——禁 import vscode，
+ * 窗口通知文案函数在 `windowNotices.ts`）
  *
  * 内核 `MemoraError` 分三层：`message` 只含标题（`super(opts.title)`），原因（detail）
  * 与排查建议（suggestions）只在 `format()` 里。宿主各 catch 若直接 `err.message` 转发，

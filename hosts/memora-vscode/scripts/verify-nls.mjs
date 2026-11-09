@@ -185,6 +185,30 @@ function walkTs(dir, acc = []) {
  * 注意引号分支：值里合法地含双引号字符（如 `no "." or ".." segments`），字符类
  * 若同时排除 `'` 和 `"` 会在第一处双引号截断——必须按开引号类型分支匹配。
  */
+/**
+ * 把源码字符串字面量的**原始捕获文本**还原为运行时字符串值。
+ *
+ * 正则从源文件捕获的是原文：`\n` 在源文件里是「反斜杠 + n」两个字符，而 JSON bundle
+ * 解析后 `\n` 是真换行——不做还原，多行键（如 modal 文案）两侧比对必假红
+ * （2026-11-09 真机反馈批实踩）。覆盖常见转义：`\n` / `\t` / `\r` / `\0` / 行续接 /
+ * `\uXXXX` / `\u{...}` / `\xXX` / `\\` `\'` `\"` 等 identity 转义。
+ */
+function unescapeSourceLiteral(raw) {
+  return raw.replace(
+    /\\(u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[\s\S])/g,
+    (_, g) => {
+      if (g[0] === 'u' && g[1] === '{') return String.fromCodePoint(parseInt(g.slice(2, -1), 16));
+      if (g[0] === 'u' || g[0] === 'x') return String.fromCodePoint(parseInt(g.slice(1), 16));
+      if (g === 'n') return '\n';
+      if (g === 't') return '\t';
+      if (g === 'r') return '\r';
+      if (g === '0') return '\0';
+      if (g === '\n') return ''; // 行续接反斜杠（源码折行）
+      return g; // \\ \' \" 等 identity 转义 → 还原为字符本身
+    },
+  );
+}
+
 function collectDynamicKeySources(text) {
   const anchor = /const REJECT_MESSAGES[^=]*=\s*\{/;
   const start = text.search(anchor);
@@ -195,7 +219,7 @@ function collectDynamicKeySources(text) {
   // 形态 `{ 'reason': '文案' }`：抽冒号后的字符串值（键是原因码，不进键面）
   const values = [];
   for (const re of [/:\s*'((?:[^'\\]|\\.)*)'/g, /:\s*"((?:[^"\\]|\\.)*)"/g]) {
-    for (const m of block.matchAll(re)) values.push(m[1]);
+    for (const m of block.matchAll(re)) values.push(unescapeSourceLiteral(m[1]));
   }
   return values;
 }
@@ -211,7 +235,7 @@ function collectTKeyFacts(files) {
     const text = readFileSync(f, 'utf8');
     for (const m of collectDynamicKeySources(text)) dynamicKeys.add(m);
     for (const re of callSingles) {
-      for (const m of text.matchAll(re)) staticKeys.add(m[1]);
+      for (const m of text.matchAll(re)) staticKeys.add(unescapeSourceLiteral(m[1]));
     }
     // 模板串第一参 = 违规（键面守卫拿不到键）
     if (/\bl10n\.t\(\s*`/.test(text)) templateViolations.push(f);
@@ -232,8 +256,10 @@ function collectWindowApiCjk(files) {
     const text = readFileSync(f, 'utf8');
     for (const re of callRes) {
       for (const m of text.matchAll(re)) {
-        if (CJK.test(m[2])) {
-          violations.push(`${f}: ${m[1]}('${m[2].slice(0, 30)}…')`);
+        // 转义还原后再判 CJK（`'\u4e2d\u6587'` 形态在原文里不含 CJK 字符，不还原即漏检）
+        const value = unescapeSourceLiteral(m[2]);
+        if (CJK.test(value)) {
+          violations.push(`${f}: ${m[1]}('${value.slice(0, 30)}…')`);
         }
       }
     }

@@ -28,9 +28,13 @@ import { resolveUnderPrimaryRoot } from './refPath.js';
 
 /** 内核结果面（结构对齐 setResident / unregisterWork，宿主只读这两字段） */
 interface KernelResult {
-  /** 粗粒度结果码（判据真源在内核，宿主只按成功态选提示通道） */
+  /** 粗粒度结果码（判据真源在内核，宿主按码渲染本地化文案 + 选提示通道） */
   reason: string;
-  /** 人读文案（原样展示，禁止改写） */
+  /**
+   * 内核人读文案（中文 SSOT，供聊天/工具回执面）。
+   * ⚠️ 2026-11-09 起窗口通知**不再原样透传**（真机反馈：英文界面弹中文）：
+   * `kernelResultNotice` 按 `reason` 码渲染宿主本地化文案，内核文案仅未知码兜底。
+   */
   message: string;
 }
 
@@ -38,17 +42,76 @@ interface KernelResult {
 const SUCCESS_REASONS = new Set(['enabled', 'disabled', 'removed']);
 
 /**
- * 展示内核回执（动作执行面的唯一出口）
+ * 内核结果码 → 宿主本地化文案（窗口通知面单点）
  *
- * 成功走轻提示，失败走错误提示；**message 原样透传**（文案真源在内核）。
+ * 按内核结构化 `reason` 渲染，不透传内核中文散文；`source` 由调用方回传
+ * （内核 message 里嵌的路径不可重构，宿主本来就持有）。已知边界（登记台账）：
+ * - `not-found` 在 toggle 流复载两义（清单无条目 / 源文件已消失），toast 取
+ *   「未登记，请先登记」主义，文件消失竞态极罕见且路径随附自明；
+ * - `too-long` 的具体数字（字符数/被挤条目清单）在内核日志，toast 只给处置方向；
+ * - `write-failed` 的 OS 错误细节在内核日志，toast 不带。
  *
  * @param result 内核返回面
+ * @param source 动作目标（清单相对路径）
+ * @param flow 动作流（同 `not-found` 码在两流语义不同，须区分渲染）
+ * @returns 已本地化的提示文案
  */
-export function showKernelResult(result: KernelResult): void {
+function kernelResultNotice(
+  result: KernelResult,
+  source: string,
+  flow: 'toggle' | 'unregister',
+): string {
+  switch (result.reason) {
+    case 'enabled':
+      return vscode.l10n.t('Already a project rule; nothing changed: {0}', source);
+    case 'disabled':
+      return vscode.l10n.t('Already not a project rule; nothing changed: {0}', source);
+    case 'removed':
+      return vscode.l10n.t('Unregistered (source file kept): {0}', source);
+    case 'not-found':
+      return flow === 'unregister'
+        ? vscode.l10n.t('No registered entry for this file; nothing was deleted: {0}', source)
+        : vscode.l10n.t('Not registered in the works list; register it first: {0}', source);
+    case 'untrusted':
+      return vscode.l10n.t('Workspace is not trusted; trust the workspace first');
+    case 'source-unreadable':
+      return vscode.l10n.t('Cannot read or validate the source file: {0}', source);
+    case 'too-long':
+      return vscode.l10n.t(
+        'Project-rules segment limit exceeded; nothing was written — simplify or remove some rules first: {0}',
+        source,
+      );
+    case 'list-malformed':
+      return vscode.l10n.t(
+        'Works list file is malformed; nothing changed — fix it to a top-level JSON array and retry',
+      );
+    case 'write-failed':
+      return vscode.l10n.t('Failed to write the works list (retryable); details in the log');
+    default:
+      // 内核新增结果码：本地化表未覆盖 → 原文兜底（fail-visible，宁可中文不静默失义）
+      return result.message;
+  }
+}
+
+/**
+ * 展示内核回执（动作执行面的唯一出口）
+ *
+ * 成功走轻提示，失败走错误提示；文案按 `reason` 码本地化渲染（见 `kernelResultNotice`）。
+ *
+ * @param result 内核返回面
+ * @param source 动作目标（清单相对路径）
+ * @param flow 动作流（toggle / unregister）
+ */
+export function showKernelResult(
+  result: KernelResult,
+  source: string,
+  flow: 'toggle' | 'unregister',
+): void {
+  const text = kernelResultNotice(result, source, flow);
   if (SUCCESS_REASONS.has(result.reason)) {
-    void vscode.window.showInformationMessage(result.message);
+    void vscode.window.showInformationMessage(text);
   } else {
-    void vscode.window.showErrorMessage(result.message);
+    void vscode.window.showErrorMessage(text);
   }
 }
 
@@ -72,7 +135,7 @@ async function toggleByRelativePath(source: string, resolveAgent: AgentResolver)
   try {
     const entries = await agent.works.listManagedWorks();
     const current = entries.find((e) => e.source === source);
-    showKernelResult(await agent.works.setResident(source, !current?.resident));
+    showKernelResult(await agent.works.setResident(source, !current?.resident), source, 'toggle');
   } catch (err) {
     void vscode.window.showErrorMessage(
       vscode.l10n.t(
@@ -97,7 +160,7 @@ async function unregisterByRelativePath(
   }
   try {
     // 文案与「删条目 ≠ 删文件」由内核 message 保证，这里只负责展示
-    showKernelResult(await agent.works.unregisterWork(source));
+    showKernelResult(await agent.works.unregisterWork(source), source, 'unregister');
   } catch (err) {
     void vscode.window.showErrorMessage(
       vscode.l10n.t(

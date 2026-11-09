@@ -1,10 +1,10 @@
 /**
- * 流式错误 category → 用户可见文案（**单一真理源**，Node 侧与 webview 侧共用）
+ * 流式错误 category → 用户可见文案（webview 重放路映射；**单一真理源**）
  *
- * 为何必须放 `shared/`：同一份映射被两端同时需要 —— ① Node 侧 `chatPanel.consumeFlow` 的 `error`
- * 分支（实时提示条）；② webview 侧 `chatView.appendInterruptedRow`（中断轮平铺停止行，含失败原因）。
- * 各写一份即「文案双源漂移」（`chatView.stopReasonLabel` 的注释已就此告警）。
- * `shared/` 是两端唯一共同可引层（`protocol.ts` / `constants.ts` 同处）。
+ * 消费面（2026-11-09 起）：webview 侧 `processFlowModel`（中断轮平铺停止行，含失败原因）。
+ * 宿主实时路（chatPanel 窗口提示）已改走 `host/noticeText.ts` 的 `localizedFlowError`
+ * （`vscode.l10n` 本地化渲染）——webview 无法调 `vscode.l10n`，故两份映射并存是切片 4
+ * 前的过渡形态（category 联合类型锁两侧不漂移，统一收口归切片 4，见台账 HOST-I18N-2）。
  *
  * 未收录的 category（如 'unknown'）**回退原始 message** —— 与收口前 `chatPanel` 的既有行为逐字等价
  * （不改既有错误展示：保留技术细节供排查，不做二次加工）。

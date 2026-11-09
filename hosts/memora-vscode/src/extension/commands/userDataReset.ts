@@ -47,17 +47,13 @@ export function createUserDataResetHandler(
   return async (): Promise<UserDataResetResult> => {
     // 统一走 confirmModal（唯一入口）：取消交给 VS Code 系统级 Cancel，调用点不自拼取消项
     const confirmed = await confirmModal({
-      message:
-        '将清空插件的全部用户级数据：\n' +
-        '· 用户技能与用户角色包\n' +
-        '· 大模型配置与 API Key\n' +
-        '· 激活角色包、角色包组、安全开关与用户级设置\n\n' +
-        '保留：当前项目的记忆与会话记录（.memora/）、项目设置。\n' +
-        '清理完成后将自动重载窗口，进行中的对话会中断。此操作不可撤销。',
-      confirmLabel: '确认初始化并重载',
+      message: vscode.l10n.t(
+        'This will clear ALL user-level plugin data:\n· user skills and role packs\n· LLM configuration and API keys\n· active role pack, role-pack teams, security toggles and user settings\n\nKept: current project memories and sessions (.memora/), project settings.\nThe window reloads automatically after clearing; in-progress chats are interrupted. This action cannot be undone.',
+      ),
+      confirmLabel: vscode.l10n.t('Confirm reset and reload'),
     });
     if (!confirmed) {
-      return { ok: false, cancelled: true, message: '已取消' };
+      return { ok: false, cancelled: true, message: vscode.l10n.t('Cancelled') };
     }
     try {
       const report = await resetUserData(scope);
@@ -68,11 +64,11 @@ export function createUserDataResetHandler(
           `目录 ${report.dirsReset.length} 个`,
       );
       await vscode.commands.executeCommand('workbench.action.reloadWindow');
-      return { ok: true, message: '已清空用户级数据，窗口即将重载' };
+      return { ok: true, message: vscode.l10n.t('User-level data cleared; reloading the window') };
     } catch (err) {
       const message = toNoticeText(err);
       output.appendLine(`Memora 用户级数据初始化失败：${message}`);
-      return { ok: false, message: `初始化失败：${message}` };
+      return { ok: false, message: vscode.l10n.t('Reset failed: {0}', message) };
     }
   };
 }

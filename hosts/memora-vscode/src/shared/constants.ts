@@ -24,10 +24,6 @@ export const ROLE_PACK_TEAMS_KEY = 'memora.rolePackTeams';
  *  写文件一律直接落盘（前后台一致），宿主不再读/写该键；旧用户 globalState 里的残留值无消费面。 */
 export const CONFIRM_SCRIPTS_KEY = 'memora.confirmScripts';
 
-/** 插话达上限的拒收提示（INPUT-LIMIT-1）：上限裁决在内核，本串只做用户可见提示 */
-export const INTERJECT_LIMIT_NOTICE = (limit: number): string =>
-  `Memora：待并入的插话已达 ${limit} 条上限，本条未送出——可在待发送区删减后再试`;
-
 /** 插话已生效但本轮历史未写入的提示（INTERJECT-PERSIST-1）
  *  🔴 文案**不得**写成「请重发」：插话已在 loop 队列生效（step 边界必注入），
  *  重发会让同一条被注入两次（双执行）。此处只如实告知「历史里没有它」。 */

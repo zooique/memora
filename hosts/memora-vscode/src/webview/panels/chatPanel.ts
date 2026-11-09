@@ -130,11 +130,10 @@ import {
   mergeLiveRound,
   type PendingLiveRound,
 } from '../../shared/turnProjection.js';
-import { friendlyErrorMessage } from '../../shared/errorText.js';
-// 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
-import { dedupeRefs } from '../../shared/refKey.js';
+import { dedupeRefs } from '../../shared/refKey.js'; // 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
 // 插话受理三态的可见文案（INPUT-LIMIT-1 / INTERJECT-PERSIST-1）：文案单点，勿在面板内嵌字面量
-import { INTERJECT_LIMIT_NOTICE, INTERJECT_UNSAVED_NOTICE } from '../../shared/constants.js';
+import { INTERJECT_UNSAVED_NOTICE } from '../../shared/constants.js';
+
 // 会话标题读侧兜底（列表 / 面板标题条 / 占位 meta 三处同一口径）
 import { sessionDisplayTitle } from '../../extension/host/sessionTitle.js';
 // 历史会话列表投影（store → DTO 纯映射，外置于 max-lines TARGET 文件）
@@ -159,6 +158,7 @@ import { deriveCapabilityState } from '../helpers/capabilityState.js';
 // 输入区徽章的域级短标签（标签投影与三态判定分离，见 capabilityLabels 头注释）
 import { capabilityDomainLabel } from '../helpers/capabilityLabels.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
+import { limitNotice, flowError } from '../../extension/host/windowNotices.js';
 import {
   readSessionRolePackName,
   sessionRolePackFallbackNotice,
@@ -3154,7 +3154,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 三态裁决真源在内核：'rejected-limit' 零入队零落盘（须提示）；'queued-unpersisted'=已生效但历史未写（勿诱导重发，重发即双执行）
       const outcome = await agent.interject(input);
       if (outcome === 'rejected-limit')
-        return void vscode.window.showWarningMessage(INTERJECT_LIMIT_NOTICE(INTERJECT_LIMIT));
+        return void vscode.window.showWarningMessage(limitNotice(INTERJECT_LIMIT));
       if (outcome === 'queued-unpersisted')
         this.post({ type: 'error', message: INTERJECT_UNSAVED_NOTICE, category: 'unknown' });
       // 上屏时机 = 消费时刻（吸收时上屏）：排队中 ≠ 已说出，入队成功**不再**即时 post type:'user'
@@ -3927,8 +3927,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 流内错误 → 复用现有 error 协议消息（webview 已有分支）。
           // 按内核产出的 category 映射友好文案（connection/timeout/unknown），
           // 无 category（普通错误）回退原始 message——语义分类走结构化字段，不做裸前缀/字符串匹配。
-          // 映射 SSOT = shared/errorText（见该文件头）。
-          const friendly = friendlyErrorMessage(chunk.category, chunk.message);
+          // 映射 SSOT = windowNotices.flowError（窗口提示本地化）；webview 重放路仍用 shared/errorText（切片 4 统一两路）
+          const friendly = flowError(chunk.category, chunk.message);
           this.post({ type: 'error', message: friendly, category: chunk.category });
           // 后台流（用户已切到其他会话）时 post 被流归属闸整批丢弃 ⇒ 这条明确失败永远看不到；
           // 明确失败必须到达用户：后台时改走既有全局通知（零新增协议，切回前也能看到）。

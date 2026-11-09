@@ -54,11 +54,27 @@ export interface ImageTurnLimitsResult {
   ok: boolean;
   /** 面向用户的可读原因（可直接上活动条 / 通知；放行时为空串） */
   message: string;
+  /**
+   * 越界维度（放行时缺省）：宿主窗口提示按「维度 + 数字」渲染本地化文案
+   * （`imageTurnGuard`），webview 预检仍用 `message`（webview 显示语言归切片 4）。
+   * 结构化字段让宿主渲染**不透传内核/共享层中文散文**，判据公式仍单点在本文件。
+   */
+  dimension?: 'count' | 'bytes' | 'tokens';
+  /** 已用量：count=张 / bytes=字节 / tokens=token */
+  used?: number;
+  /** 上限：count=张 / bytes=字节 / tokens=token */
+  limit?: number;
+  /** 超出量（同单位；恒正） */
+  over?: number;
 }
 
-/** MiB 展示（一位小数，字节维度文案共用） */
-function mib(bytes: number): string {
+/** MiB 展示（一位小数，字节维度文案共用；宿主窗口提示同用本单点，禁第二份格式化） */
+export function formatMiB(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1);
+}
+
+function mib(bytes: number): string {
+  return formatMiB(bytes);
 }
 
 /**
@@ -75,6 +91,10 @@ export function checkImageTurnLimits(input: ImageTurnLimitsInput): ImageTurnLimi
     return {
       ok: false,
       message: `本轮图片 ${input.count} 张，超过上限 ${MAX_IMAGES_PER_TURN} 张，请先移除部分图片再发送`,
+      dimension: 'count',
+      used: input.count,
+      limit: MAX_IMAGES_PER_TURN,
+      over: input.count - MAX_IMAGES_PER_TURN,
     };
   }
   if (input.totalBytes > MAX_TURN_BYTES) {
@@ -82,6 +102,10 @@ export function checkImageTurnLimits(input: ImageTurnLimitsInput): ImageTurnLimi
     return {
       ok: false,
       message: `本轮图片合计 ${mib(input.totalBytes)} MiB，超过上限 20 MiB（超出 ${over} MiB），请减少图片或换更小的图`,
+      dimension: 'bytes',
+      used: input.totalBytes,
+      limit: MAX_TURN_BYTES,
+      over: input.totalBytes - MAX_TURN_BYTES,
     };
   }
   // 窗口缺省 / 0 ⇒ token 维不做限制（与内核 tokenBudget 口径一致）；token 合计未知 ⇒ 跳过不假算
@@ -93,6 +117,10 @@ export function checkImageTurnLimits(input: ImageTurnLimitsInput): ImageTurnLimi
       return {
         ok: false,
         message: `本轮图片约占 ${input.totalTokens} token，超过该模型上限 ${limit} token（25% 窗口，超出 ${over}），请减少图片或换更小的图`,
+        dimension: 'tokens',
+        used: input.totalTokens,
+        limit,
+        over,
       };
     }
   }
