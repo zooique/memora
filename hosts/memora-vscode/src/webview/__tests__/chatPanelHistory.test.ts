@@ -1081,7 +1081,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // 上一例只验判据本身（mustInjectDocBody）。**判据对了而调用点没接上**正是本次 P0 的
     // 原始病灶形态（定案已拍、实现没迁），单测分别守住两半却守不住接缝 ⇒ 此处驱动真实
     // sendInput，直接断言「送达模型的信封」：
-    //   干净 ⇒ 有 `当前打开文件：` 指针行、无文档块、无正文；
+    //   干净 ⇒ 有 `Current open file:` 指针行、无文档块、无正文；
     //   脏   ⇒ 有文档块与正文、无指针行（指针会让模型读到磁盘旧版）。
     const captured: string[] = [];
     const makeEditor = (isDirty: boolean) =>
@@ -1188,7 +1188,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     };
 
     const clean = await sendWithEditor(false);
-    expect(clean).toContain('- 当前打开文件：docs/方案.md');
+    expect(clean).toContain('- Current open file: docs/方案.md');
     expect(clean).not.toContain('[当前打磨文档内容]');
     expect(clean).not.toContain('文档内容A');
     expect(clean).toContain('请继续');
@@ -1199,7 +1199,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const dirty = await sendWithEditor(true);
     expect(dirty).toContain('[当前打磨文档内容]');
     expect(dirty).toContain('文档内容A');
-    expect(dirty).not.toContain('当前打开文件');
+    expect(dirty).not.toContain('Current open file');
     // 发送时刻取数（docBlock 已在手，零额外读取），本轮回推带正数 token 估算；
     // 击键后的实时投影**刻意不带**——正文惰性纪律（CTX-3 收尾）不被显示需求破坏，
     // 若为实时显示 token 恢复每击键读全文即回归（上条「汇总条数恒为 1」即此守卫）。
@@ -1210,7 +1210,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     // 关掉开关 ⇒ 既不注入正文、也不挂指针（「关了还偷偷给指针」是自相矛盾的中间态）
     const offClean = await sendWithEditor(false, false);
-    expect(offClean).not.toContain('当前打开文件');
+    expect(offClean).not.toContain('Current open file');
     expect(offClean).not.toContain('[当前打磨文档内容]');
     const offDirty = await sendWithEditor(true, false);
     expect(offDirty).not.toContain('[当前打磨文档内容]');

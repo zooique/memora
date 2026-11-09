@@ -34,7 +34,7 @@ export function normalizeRefRange(range: Range | undefined | null): Range | unde
 /**
  * 行区间标签（**显示格式唯一产地**）：单行 `#L7`，跨行 `#L5-L24`
  *
- * 键（`refKeyOf`）、chip 行号 span、信封 `参考文件：` 行一律经此拼串。
+ * 键（`refKeyOf`）、chip 行号 span、信封 `Referenced file:` 行一律经此拼串。
  * 曾四处各写一遍（键恒不折叠、信封恒不折叠、chip 折叠到单行、行号 span 再抄一遍），
  * 同一引用在 UI 显示 `#L7`、喂给模型却是 `#L7-L7` —— 改一处必漂移，故下沉单点。
  * 非法区间返回空串（**不是** `#Lundefined`）。

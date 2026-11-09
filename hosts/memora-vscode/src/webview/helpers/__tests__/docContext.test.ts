@@ -62,19 +62,21 @@ describe('stripInjectedContextPrefix', () => {
     ]);
     expect(block).toContain('[参考文件/目录]');
     expect(block).toContain('[/参考文件/目录]');
-    expect(block).toContain('- 参考文件：src/foo.ts');
-    expect(block).toContain('- 参考目录：src/utils（内容按需经 list_dir 读取）');
+    expect(block).toContain('- Referenced file: src/foo.ts');
+    expect(block).toContain(
+      '- Referenced folder: src/utils (contents read on demand via list_dir)',
+    );
   });
 
   it('带行区间的引用：输出 #L 区间 + read_file 的 offset/limit 参数（引用模式精确到行）', () => {
     const block = buildRefContextBlock([
       { path: 'src/foo.ts', kind: 'file' as const, range: { start: 5, end: 24 } },
     ]);
-    expect(block).toContain('- 参考文件：src/foo.ts#L5-L24');
+    expect(block).toContain('- Referenced file: src/foo.ts#L5-L24');
     // 参数由宿主算好，模型不必自己推 limit = end - start + 1（算错即读偏）
     expect(block).toContain('offset=5 limit=20');
     // 行号是指针不是快照：明确提示模型以实际内容为准
-    expect(block).toContain('以实际内容为准');
+    expect(block).toContain('trust the actual content if they differ');
   });
 
   it('单行区间（start === end）→ limit 为 1，不带冗余区间', () => {
@@ -94,13 +96,15 @@ describe('stripInjectedContextPrefix', () => {
     const block = buildRefContextBlock([
       { path: 'src/foo.ts', kind: 'file' as const, range: { start: 24, end: 5 } },
     ]);
-    expect(block).toContain('- 参考文件：src/foo.ts\n');
+    expect(block).toContain('- Referenced file: src/foo.ts\n');
     expect(block).not.toContain('offset=');
   });
 
   it('当前打开文件（干净态）作为指针行并入同块，已挂同 path 引用时不重复', () => {
     const withFile = buildRefContextBlock([], 'docs/方案.md');
-    expect(withFile).toContain('- 当前打开文件：docs/方案.md（内容未注入，按需经 read_file 读取）');
+    expect(withFile).toContain(
+      '- Current open file: docs/方案.md (content not injected; read on demand via read_file)',
+    );
     // 已显式挂同一文件 ⇒ 引用行已经告诉模型，不再追加
     const dup = buildRefContextBlock(
       [{ path: 'docs/方案.md', kind: 'file' as const }],
@@ -274,7 +278,9 @@ describe('引用失效标记（发送前 stat 降级）', () => {
       undefined,
       new Set(['src/gone.ts']),
     );
-    expect(block).toContain('- 参考文件：src/gone.ts（注意：添加后已不存在，请向用户确认）');
+    expect(block).toContain(
+      '- Referenced file: src/gone.ts (warning: no longer exists since it was added; confirm with the user)',
+    );
     // 死文件不得带 #L 区间与 offset/limit（与「无 range」同一条纪律）
     expect(block).not.toContain('src/gone.ts#L');
     expect(block).not.toContain('offset=5');
@@ -289,7 +295,9 @@ describe('引用失效标记（发送前 stat 降级）', () => {
       undefined,
       new Set(['src/gone.ts']),
     );
-    expect(block).toContain('- 参考文件：src/gone.ts（注意：添加后已不存在，请向用户确认）');
+    expect(block).toContain(
+      '- Referenced file: src/gone.ts (warning: no longer exists since it was added; confirm with the user)',
+    );
   });
 
   it('目录引用即使传入 missingPaths 也不标（目录不检测）', () => {
@@ -298,8 +306,10 @@ describe('引用失效标记（发送前 stat 降级）', () => {
       undefined,
       new Set(['src/utils']),
     );
-    expect(block).toContain('- 参考目录：src/utils（内容按需经 list_dir 读取）');
-    expect(block).not.toContain('已不存在');
+    expect(block).toContain(
+      '- Referenced folder: src/utils (contents read on demand via list_dir)',
+    );
+    expect(block).not.toContain('no longer exists');
   });
 
   it('未命中失效集合 → 引用行与当前文件行原样（向后兼容：第三参缺省亦同）', () => {
@@ -308,12 +318,14 @@ describe('引用失效标记（发送前 stat 降级）', () => {
       'docs/方案.md',
       new Set(['other.ts']),
     );
-    expect(block).toContain('- 参考文件：src/ok.ts');
-    expect(block).toContain('- 当前打开文件：docs/方案.md（内容未注入，按需经 read_file 读取）');
-    expect(block).not.toContain('已不存在');
+    expect(block).toContain('- Referenced file: src/ok.ts');
+    expect(block).toContain(
+      '- Current open file: docs/方案.md (content not injected; read on demand via read_file)',
+    );
+    expect(block).not.toContain('no longer exists');
     // 缺省第三参（旧调用点）行为不变
     expect(buildRefContextBlock([{ path: 'src/ok.ts', kind: 'file' as const }])).toContain(
-      '- 参考文件：src/ok.ts',
+      '- Referenced file: src/ok.ts',
     );
   });
 });

@@ -17,11 +17,17 @@ import { MOUNTABLE_INJECTION_META } from '../../shared/injectionSourceMeta.js';
  *   `{块1}\n\n{块2}\n\n用户请求：{input}`；无任何块时**不加信封**，原样为 `{input}`。
  */
 
-/** 文档上下文块开标签 */
-export const DOC_CONTEXT_OPEN = '[当前打磨文档内容]';
+/**
+ * 文档上下文块开标签
+ *
+ * 🔴 值用 Unicode 转义承载、**运行期字符串一字不改**：信封标记是**持久化数据**
+ * （已落盘的历史消息里就是这串字面）+ 剥离契约的锚点，翻译或改值即让旧消息剥离失效。
+ * 协议标记 / 内核镜像，非 UI 文案，**不得翻译**。
+ */
+export const DOC_CONTEXT_OPEN = '[\u5f53\u524d\u6253\u78e8\u6587\u6863\u5185\u5bb9]';
 
-/** 文档上下文块闭标签（剥离侧的锚点） */
-export const DOC_CONTEXT_CLOSE = '[/当前打磨文档内容]';
+/** 文档上下文块闭标签（剥离侧的锚点；同上：协议标记，非 UI 文案，不得翻译） */
+export const DOC_CONTEXT_CLOSE = '[/\u5f53\u524d\u6253\u78e8\u6587\u6863\u5185\u5bb9]';
 
 /**
  * 引用上下文块开标签（右键「添加到对话」挂的文件/目录引用，仅路径、不注入内容）
@@ -29,11 +35,14 @@ export const DOC_CONTEXT_CLOSE = '[/当前打磨文档内容]';
  * 与技能块/文档块同构进入信封：无块消息不含分隔符、回放侧以分隔符为界还原用户请求。
  * 剥离判据（stripInjectedContextPrefix）须识别本开标签，否则仅挂引用时回放会把
  * 引用块残留在用户消息里。
+ *
+ * 🔴 值用 Unicode 转义承载、运行期字符串一字不改：协议标记（持久化数据 + 剥离锚点），
+ * 非 UI 文案，不得翻译。
  */
-export const REF_CONTEXT_OPEN = '[参考文件/目录]';
+export const REF_CONTEXT_OPEN = '[\u53c2\u8003\u6587\u4ef6/\u76ee\u5f55]';
 
-/** 引用上下文块闭标签 */
-export const REF_CONTEXT_CLOSE = '[/参考文件/目录]';
+/** 引用上下文块闭标签（同上：协议标记，非 UI 文案，不得翻译） */
+export const REF_CONTEXT_CLOSE = '[/\u53c2\u8003\u6587\u4ef6/\u76ee\u5f55]';
 
 /**
  * 诊断上下文块开标签（HOST-CTX-4 · `@problems` 有界注入）
@@ -101,7 +110,9 @@ function refItemLine(ref: ChatRef, missingPaths?: ReadonlySet<string>): string {
     // 内容」），对目录给 read_file 等于给模型一条必然失败的指令。目录也不做整体注入——
     // 显式标注「按需读取」避免模型误以为全文已在上下文。
     // 目录不做失效检测（由模型经 list_dir 自行发现）。
-    return `- 参考目录：${ref.path}（内容按需经 list_dir 读取）`;
+    // 提示正文是**喂给模型看的协议正文**（不是 UI 文案、不占屏），故写英文源字面量、
+    // 不过 l10n——界面语言与模型指令语言无关。
+    return `- Referenced folder: ${ref.path} (contents read on demand via list_dir)`;
   }
   // 失效引用（添加后文件已消失）：降级为**裸指针 + 标记**——把死指针变成模型可读事实。
   // 关键纪律「绝不给 read_file 一条必然失败的指令」⇒ 连行区间标签一并去掉（死文件上的
@@ -110,15 +121,16 @@ function refItemLine(ref: ChatRef, missingPaths?: ReadonlySet<string>): string {
   // 标记用**纯文本**而非 `⚠` 符号：本块会被剥离契约从 UI 隐藏、只喂模型，且
   // `iconLanguage` 守卫把 `⚠`(U+26A0) 列为 webview 代码内禁用的字符图标（代码内出现即红）。
   if (missingPaths?.has(ref.path)) {
-    return `- 参考文件：${ref.path}（注意：添加后已不存在，请向用户确认）`;
+    return `- Referenced file: ${ref.path} (warning: no longer exists since it was added; confirm with the user)`;
   }
   const range = normalizeRefRange(ref.range);
-  if (!range) return `- 参考文件：${ref.path}`;
+  if (!range) return `- Referenced file: ${ref.path}`;
   const limit = range.end - range.start + 1;
   return (
-    `- 参考文件：${ref.path}${formatRefRange(range)}` +
-    `（read_file 时 offset=${range.start} limit=${limit}；行号是添加时记下的**指针而非内容快照**，` +
-    `若与读到的内容不符以实际内容为准）`
+    `- Referenced file: ${ref.path}${formatRefRange(range)} ` +
+    `(when calling read_file use offset=${range.start} limit=${limit}; ` +
+    `line numbers are pointers recorded at add time, not a content snapshot, ` +
+    `so trust the actual content if they differ)`
   );
 }
 
@@ -145,7 +157,9 @@ export function buildRefContextBlock(
 ): string {
   const items = refs.map((r) => refItemLine(r, missingPaths));
   if (currentFilePath && !refs.some((r) => r.path === currentFilePath)) {
-    items.push(`- 当前打开文件：${currentFilePath}（内容未注入，按需经 read_file 读取）`);
+    items.push(
+      `- Current open file: ${currentFilePath} (content not injected; read on demand via read_file)`,
+    );
   }
   if (items.length === 0) return '';
   return `${REF_CONTEXT_OPEN}\n${items.join('\n')}\n${REF_CONTEXT_CLOSE}`;
@@ -159,16 +173,21 @@ export function buildRefContextBlock(
  * `extension/host/skillAggregation.ts` `skillPromptFor`。webview 经 esbuild 打成
  * browser/iife 包、无法 import host 侧模块（后者依赖 vscode），故此处只能镜像。
  * 内核变更该前缀时须同步本常量（否则纯技能消息的剥离判据失效）。
+ *
+ * 🔴 值用 Unicode 转义承载、运行期字符串一字不改：协议标记 / 内核镜像，非 UI 文案，不得翻译。
  */
-export const SKILL_CONTEXT_OPEN = '【当前技能】';
+export const SKILL_CONTEXT_OPEN = '\u3010\u5f53\u524d\u6280\u80fd\u3011';
 
 /**
  * 上下文信封分隔符
  *
  * 仅当存在上下文块时由 buildInjectedContextEnvelope 注入，是「宿主注入前缀」与
  * 「用户原始输入」之间唯一的分界标记；无块消息不含此串。
+ *
+ * 🔴 值用 Unicode 转义承载、运行期字符串一字不改：协议标记（持久化数据 + 剥离锚点），
+ * 非 UI 文案，不得翻译。
  */
-export const USER_REQUEST_SEPARATOR = '\n\n用户请求：';
+export const USER_REQUEST_SEPARATOR = '\n\n\u7528\u6237\u8bf7\u6c42\uff1a';
 
 /** 构造文档上下文块（`[当前打磨文档内容]\n{doc}\n[/当前打磨文档内容]`） */
 export function buildDocContextBlock(doc: string): string {

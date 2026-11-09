@@ -86,7 +86,7 @@ export const NAV_HEIGHT_RATIO = 0.5;
  * 提取轮次预览文本：上屏文本 → 剥注入前缀 → 压缩空白成单行 → 截断
  *
  * 输入是上屏 .msg-body 的 textContent（渲染同源）；strip 让重放路径（带
- * 「当前打开文件：…」前缀）与运行时（无前缀）归一。空体返回空串（调用方
+ * 「Current open file: …」前缀）与运行时（无前缀）归一。空体返回空串（调用方
  * 据此给「（空输入）」占位）。
  */
 export function extractPreview(raw: string): string {

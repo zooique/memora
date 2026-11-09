@@ -477,8 +477,8 @@ const WEBVIEW_PANELS = {
   //     ⑰ 口径 CJK 字面量 = 0（仅剩 2 条 console.* 日志，白名单）。
   //   **面板为何仍是 pending（不翻 migrated）**：`state` 是**面板级**开关，⑰ 只守登记面。
   //   本面板尚未迁移的文件（`chatPanel.ts` → B9-D；imageCapture / historyMenuView /
-  //   contextOccupancyView / emptyStateView / turnUiState / sessionHistoryActions /
-  //   docContext / refChips 等 → B9-E）一旦登记就会立刻红 ⇒ 现在翻转等于「守卫报绿、
+  //   contextOccupancyView / emptyStateView / turnUiState / sessionHistoryActions 等 → B9-E；
+  //   docContext / refChips 已在 B9-E-1 迁完）一旦登记就会立刻红 ⇒ 现在翻转等于「守卫报绿、
   //   屏幕仍中文」（守卫撒谎比没有守卫更贵）。待 B9-E 收口一次性登记齐全再翻。
   //
   // B9-D-1（会话事件出口域，`chatPanel.ts` 首刀）已收口并登记：
@@ -532,6 +532,14 @@ const WEBVIEW_PANELS = {
   //     `Invalid (file no longer exists)`（不复用裸 `Invalid`，避免 zh 译文被别处借用成「无效」）；
   //   · 行号定位提示拆成 `' and locates line {0}'` 拼接进主句的 `{0}`——两个语言各按自语句序给译文，
   //     不在代码里拼中文/英文语序。
+  //
+  // B9-E-1b（上下文信封域）已收口并登记：
+  //   · docContext —— **协议标记不译**：`DOC_CONTEXT_OPEN/CLOSE`、`REF_CONTEXT_OPEN/CLOSE`、
+  //     `SKILL_CONTEXT_OPEN`（内核技能块前缀的镜像）、`USER_REQUEST_SEPARATOR` 是信封标记，
+  //     属持久化数据 + 剥离契约锚点 ⇒ 值一字不改，改用 Unicode 转义消 CJK（转义前后运行期
+  //     字符串完全相同，旧消息的剥离不受影响）；
+  //   · 引用块喂给**模型**的提示正文（指针行 + read_file 的 offset/limit 提示）改英文源字面量、
+  //     **不过 l10n**——那是模型指令正文，不是界面文案，界面语言与它无关。
   chat: {
     state: 'pending',
     files: [
@@ -560,6 +568,7 @@ const WEBVIEW_PANELS = {
       'webview/panels/chatMemoryOps.ts',
       'webview/panels/chatRunControlOps.ts',
       'webview/helpers/refChips.ts',
+      'webview/helpers/docContext.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。
