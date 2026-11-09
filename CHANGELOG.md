@@ -118,7 +118,7 @@
 
 ### Breaking（宿主）
 
-- **侧边栏「作品投影」树与三条树命令整体退役**（`0b3b1890` · `WORK-PROJECTION-MOVE-1`）：`contributes.views.memora` 只剩 `memora.chat`（容器 `memora` 保留）；删除命令 `memora.refreshWorkProjection` / `memora.toggleResidentRuleFromTree` / `memora.unregisterWork`，以及 `view/title` 刷新项、`view/item/context` 两项、`commandPalette` 两项，两套 nls 各删 4 键。**迁移**：登记 / 切换 / 移除作品统一走「设置 → 作品和规则」页、文件右键、QuickPick 或资源管理器；旧命令的键绑定与命令面板收藏需删除。**不留双轨**：TreeView provider 与 TreeItem 类型整文件删除，源码 / 声明 / 文档回扫零命中。
+- **侧边栏「作品投影」树与三条树命令整体退役**（`0b3b1890` · `WORK-PROJECTION-MOVE-1`）：`contributes.views.memora` 只剩 `memora.chat`（容器 `memora` 保留）；删除命令 `memora.refreshWorkProjection` / `memora.toggleResidentRuleFromTree` / `memora.unregisterWork`，以及 `view/title` 刷新项、`view/item/context` 两项、`commandPalette` 两项，两套 nls 各删 4 键。**迁移**：登记 / 切换 / 移除作品统一走「设置 → 作品和规则」页、文件右键、QuickPick 或资源管理器；旧命令的键绑定与命令面板收藏需删除。**不留双轨**：TreeView provider 与 TreeItem 类型整文件删除；命令 / 视图 / nls 键在源码与声明中无**现行**引用，仅余「已退役」说明性注释（不宣称零命中）。
 
 ## [0.8.0] · 2026-11-07 · 宿主
 
