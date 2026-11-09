@@ -61,6 +61,8 @@
  *      - **协议标记豁免**：与内核 / 持久化 / 剥离契约对齐的信封块头等值不翻译，按
  *        「文件 + 精确值」双键登记在 `PANEL_CJK_ALLOWLIST`（不按「含转义就放行」——
  *        那等于给所有漏译开后门）。新增条目必须写清「谁对齐谁」。
+ *      - **第二登记面 `SHARED_CJK_FILES`**（2026-11-10 立）：跨页签域的共享文件不挂任何面板
+ *        state，登记即按同一口径判（非日志 CJK = 0）。理由见该常量注释——同一事实不接受两处表达。
  *   ⑱ **面板清单 = 设置页签 + chat**：`WEBVIEW_PANELS` 的 panel id 集合必须等于
  *      `shared/settingsTabs.ts` 的 `SETTINGS_TABS`（文本抽取）加 `chat`。新增页签未登记 ⇒ 红，
  *      防「新面板天然无判据」。
@@ -774,6 +776,29 @@ const WEBVIEW_PANELS = {
 };
 
 /**
+ * 跨页签域共享文件 —— 判据⑰ 的**第二登记面**（与页签登记平级，2026-11-10 立）
+ *
+ * 为什么不放进 `WEBVIEW_PANELS` 当第八个键：
+ * - ⑱ 把 `Object.keys(WEBVIEW_PANELS)` 直接当 panel id 集合 ⇒ 多一个键即被判
+ *   「不在设置页签 + chat 集合内」，除非再为它开一个 ⑱ 例外（等于给判据开后门）；
+ * - 更要紧的是**语义**：一个文件的迁移状态是**一个事实**。挂到某个具体页签名下 = 同一事实
+ *   在两处表达——将来删掉那一页、或把那一页 state 退回 `pending`，这个文件的判据会跟着
+ *   那一页一起消失。而共享文件的干净与否**与页签存亡无关**（谁消费它都可能变）。
+ *
+ * 判据：**非日志 CJK 字面量 = 0**（`collectPanelFileCjk` 同一口径），**无 state 开关**——
+ * 登记即判，没有「先登记后收口」的中间态（共享文件登记前须先清零，见下）。
+ *
+ * 登记条件（两条都满足才放这里）：① 文件被多个页签域消费；② 清零后**无单一页签可归属**。
+ * 只服务单页的文件仍登记在 `WEBVIEW_PANELS` 的对应面板下——事实一处表达，不许两边都列。
+ */
+const SHARED_CJK_FILES = [
+  // 七页签的宿主分支集中地：大模型页回执（`setBackgroundProvider` 三条）+ MCP 页装配回执
+  // （`mcpOpsDeps` 的 `connect` / `restart`）。2026-11-10（B10-E 组3）清零后登记，
+  // 是该文件唯一一道「再塞中文会红」的网。
+  'webview/panels/settingsPanel.ts',
+];
+
+/**
  * 逐字符扫描源码，产出字符串字面量（含模板串）清单
  *
  * 为什么手写扫描而非正则先剥注释：`//` 会出现在字符串里（URL / 路径），按行剥注释会误伤；
@@ -1193,6 +1218,17 @@ function loadWebviewPanels() {
       }
     }
   }
+  // ⑰ 第二登记面：共享文件无 state 开关，登记即判（口径与 migrated 面板完全一致）
+  for (const rel of SHARED_CJK_FILES) {
+    const abs = join(HOST_ROOT, 'src', rel);
+    if (!existsSync(abs)) {
+      registryIssues.push(`判据⑰ 共享文件登记项不存在：src/${rel}（路径写错 = 永不被扫）`);
+      continue;
+    }
+    for (const hit of collectPanelFileCjk(rel, readFileSync(abs, 'utf8'))) {
+      violations.push(`共享 · src/${rel}：${hit}`);
+    }
+  }
   const tabsText = readFileSync(join(HOST_ROOT, 'src', 'shared', 'settingsTabs.ts'), 'utf8');
   return {
     panelIds,
@@ -1470,6 +1506,26 @@ function selfTest() {
       expect: '登记项不存在',
     },
     {
+      // 第二登记面的红必须带「共享」前缀，否则红里看不出该查哪一侧的登记
+      label: '⑰ 共享文件中文残留',
+      mutate: (d) => {
+        d.bundle.webviewViolations.push(
+          ...collectPanelFileCjk(
+            'webview/panels/settingsPanel.ts',
+            `panel.webview.postMessage({ message: '切换失败' });`,
+          ).map((s) => `共享 · src/webview/panels/settingsPanel.ts：${s}`),
+        );
+      },
+      expect: 'webview 面板中文残留',
+    },
+    {
+      label: '⑰ 共享文件登记项路径写错',
+      mutate: (d) => {
+        d.bundle.webviewRegistryIssues.push('判据⑰ 共享文件登记项不存在：src/nope-shared.ts');
+      },
+      expect: '共享文件登记项不存在',
+    },
+    {
       label: '⑱ 新设置页签未登记',
       mutate: (d) => {
         d.bundle.settingsTabIds.push('brand-new-tab');
@@ -1512,6 +1568,17 @@ function selfTest() {
     `  ${cleanOk ? '✅' : '❌'} 反例：真实文件${cleanOk ? '保持全绿' : `被误报：${clean.join(' / ')}`}`,
   );
   if (!cleanOk) allOk = false;
+
+  // 不变量：**同一事实只表达一处**——共享文件不得同时出现在任何面板的登记清单里
+  // （双向登记的坏处见 SHARED_CJK_FILES 注释：面板存亡会带走这个文件的判据）
+  const panelFiles = new Set(Object.values(WEBVIEW_PANELS).flatMap((p) => p.files));
+  const overlap = SHARED_CJK_FILES.filter((f) => panelFiles.has(f));
+  console.log(
+    `  ${overlap.length === 0 ? '✅' : '❌'} ⑰ 共享文件与面板登记不重叠（同一事实不两处表达）${
+      overlap.length > 0 ? `（重复：${overlap.join('、')}）` : ''
+    }`,
+  );
+  if (overlap.length > 0) allOk = false;
 
   // 负向控制：白名单口径必须**不**误报（只测「能红」会放过「把所有中文都红」的过宽判据）
   const negativeCases = [
@@ -1571,10 +1638,11 @@ function selfTest() {
 /**
  * `--report` 规模报告（判据⑲）：只量规模、出收据，**不判红**
  *
- * 输出两段：
+ * 输出三段：
  * 1. 已登记面板：逐面板的可见 CJK 计数（口径与⑰ 完全一致 ⇒ 该面板改 `migrated` 时
  *    这里的数字就是「还剩多少条要翻」）；
- * 2. 未登记文件：`WEBVIEW_PANELS` 之外的 `src` 文件按 CJK 计数降序（注册制盲区的唯一量化口径）。
+ * 2. 共享文件（`SHARED_CJK_FILES`）：无面板 state 的第二登记面，同样给计数；
+ * 3. 未登记文件：注册表（面板 + 共享）之外的 `src` 文件按 CJK 计数降序（注册制盲区的唯一量化口径）。
  * 末尾附⑬ 窗口面锚点的全 src 命中数（与⑬ 同源，只看宿主 extension 面）。
  */
 function report() {
@@ -1601,6 +1669,19 @@ function report() {
     for (const d of details) console.log(d);
   }
 
+  // 第二登记面：共享文件（无面板 state，登记即判）
+  console.log('\n共享文件（`SHARED_CJK_FILES` · 无面板 state，登记即判）：');
+  for (const rel of SHARED_CJK_FILES) {
+    const abs = join(HOST_ROOT, 'src', rel);
+    registered.add(`src/${rel}`);
+    if (!existsSync(abs)) {
+      console.log(`      src/${rel}：❌ 文件不存在`);
+      continue;
+    }
+    const hits = collectPanelFileCjk(rel, readFileSync(abs, 'utf8'));
+    console.log(`      src/${rel}：${hits.length} 处`);
+  }
+
   const all = walkTs(join(HOST_ROOT, 'src'));
   const unregistered = [];
   for (const abs of all) {
@@ -1611,7 +1692,7 @@ function report() {
   }
   unregistered.sort((a, b) => b[1] - a[1]);
   console.log(
-    `\n未登记进 WEBVIEW_PANELS 的文件（注册制盲区，判据⑰ 扫不到）：${unregistered.length} 个含 CJK 字面量`,
+    `\n未登记进注册表（WEBVIEW_PANELS + SHARED_CJK_FILES）的文件（注册制盲区，判据⑰ 扫不到）：${unregistered.length} 个含 CJK 字面量`,
   );
   for (const [rel, n] of unregistered.slice(0, 20))
     console.log(`  ${String(n).padStart(5)}  ${rel}`);
