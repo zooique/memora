@@ -179,6 +179,8 @@ import { createChatNoticeOps, type ChatNoticeOps } from './chatNoticeOps.js';
 import { createChatRefOps } from './chatRefOps.js';
 // 问答结构破坏性操作域（B9-D-3 按 op 组外置）：delete_turn / regenerate 共用的截断核
 import { createChatTurnStructureOps, truncateFailNotice } from './chatTurnStructureOps.js';
+// 会话导航域（B9-D-4 按 op 组外置）：分叉 / 改名 / 切换共用「拿锁 → 换显示源 → 回放」
+import { createChatSessionNavOps } from './chatSessionNavOps.js';
 import {
   buildDocContextBlock,
   buildGitChangesContextBlock,
@@ -287,6 +289,41 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     },
     softDeleteMemories: (ids) => this.softDeleteSessionMemories(ids),
     replaySession: () => this.replaySession(),
+  });
+  /**
+   * 会话导航域（B9-D-4 外置）：分叉 / 改名 / 切换
+   *
+   * 全部依赖都是**延迟取的闭包**：本字段的初始化早于 `_lockFinalizer` / `_sessionAgents`
+   * 等字段的初始化，构造期捕获实例会拿到 undefined（编译过、运行时崩）。
+   */
+  private readonly _navOps = createChatSessionNavOps({
+    post: (msg) => this.post(msg),
+    sessionStore: { getRoundIds: (sessionId) => this.sessionStore.getRoundIds(sessionId) },
+    getCurrentSessionId: () => this._currentSessionId,
+    setCurrentSessionId: (sessionId) => this.setCurrentSessionId(sessionId),
+    clearSessionId: () => this._sessionIdAccess.clearSessionId(),
+    currentTitle: () => this.currentSessionTitle(),
+    getAgent: () => this._agent,
+    getAgentOrWarn: () => this.getAgentOrWarn(),
+    agentForSession: (sessionId) => this.agentForSession(sessionId),
+    lock: {
+      acquire: (sessionId) => this._lockFinalizer.acquire(sessionId),
+      holds: (sessionId) => this._lockFinalizer.holds(sessionId),
+      releaseOne: (sessionId) => this._lockFinalizer.releaseOne(sessionId),
+    },
+    sessionAgents: {
+      get: (sessionId) => this._sessionAgents.get(sessionId),
+      set: (sessionId, agent) => {
+        this._sessionAgents.set(sessionId, agent);
+      },
+      delete: (sessionId) => {
+        this._sessionAgents.delete(sessionId);
+      },
+    },
+    rekeyAgent: (from, to) => this._rekeyAgent?.(from, to),
+    bindAgent: (agent) => this.bindAgent(agent),
+    replaySession: () => this.replaySession(),
+    postBackgroundTasks: () => this.postBackgroundTasks('force'),
   });
   /** 当前**显示会话**的 Agent（`_sessionAgents` 的一份投影；真正的实例归属表在 extension） */
   private _agent: Agent | undefined;
@@ -1695,126 +1732,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 分叉当前会话（AI 回复底部「分叉」按钮触发）
    *
-   * 薄壳消费内核 forkSession()：把当前对话复制为新分支并切入（工作记忆同步到新分支）。
-   * fork 不分叉记忆——记忆索引全局共享，仅对话历史分叉；空会话/对话繁忙由内核拒绝，
-   * host 兜底转错误通知。
+   * 实现已按 op 组外置到 `chatSessionNavOps.ts`（B9-D-4）；本处只留公开转发口
+   * （webview 消息分发与既有白盒测试仍按原入口驱动）。
    */
   public async forkCurrentSession(roundId?: string): Promise<void> {
-    // 流中分叉由内核 forkSession 自行拒绝（对话繁忙），宿主不再前置拦——E4 批 2 拆宿主闸
-    const agent = await this.getAgentOrWarn();
-    if (!agent) return;
-
-    try {
-      // 获取当前会话的最后一个 roundId 作为默认分叉点（SSOT：走 getRoundIds 真源，SessionMeta 无 roundIds）
-      const sessionRoundIds = this.sessionStore.getRoundIds(this._currentSessionId);
-      const forkRoundId = roundId ?? sessionRoundIds[sessionRoundIds.length - 1];
-
-      if (!forkRoundId) {
-        this.post({ type: 'notice', level: 'info', message: '当前会话无可分叉的问答闭环' });
-        return;
-      }
-
-      // round-based 分叉：从指定 Round 位置创建新会话
-      const { newSession, roundCount } = agent.forkSession(forkRoundId);
-      const forkedId = `${formatDateKey(new Date())}-${newSession}`;
-      // 内核分叉已在同步调用里写好了新会话文件（无锁创建豁免）；此处接管锁并重读，
-      // 之后对它的写入必须有归属——拿不到说明有第三方在写这个 id（极罕见），拒绝并保持原会话
-      const previous = this._currentSessionId;
-      if (!(await this._lockFinalizer.acquire(forkedId))) {
-        // 拿不到锁就回滚内核当前会话：内核 forkSession 已同步切到新会话，
-        // 不回滚会让「内核当前会话」与「宿主 _currentSessionId」分叉（后续写到无锁会话上）
-        try {
-          if (agent.sessionManager) await agent.sessionManager.switchToSession(previous);
-        } catch (rollbackErr) {
-          console.warn('Memora 分叉回滚失败（内核当前会话可能已偏离）', rollbackErr);
-        }
-        this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
-        return;
-      }
-      this.setCurrentSessionId(forkedId);
-      // 内核 forkSession 已把**同一实例**的当前会话切到 forkedId ⇒ 登记表键必须同步改键，
-      // 否则「实例 ↔ 注册键」漂移（切回旧会话会取到停在 forkedId 的实例）
-      this._rekeyAgent?.(previous, forkedId);
-      if (previous) this._sessionAgents.delete(previous);
-      this._sessionAgents.set(forkedId, agent);
-      this.bindAgent(agent);
-      this.replaySession();
-      // 会话视图入口（分叉）：同新建——后台任务条必须切到新分支自己的任务，显式 force
-      this.postBackgroundTasks('force');
-      this.post({
-        type: 'notice',
-        level: 'info',
-        message: `已从第 ${roundCount} 个问答闭环节点分叉新会话「${newSession}」`,
-      });
-    } catch (err) {
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: toNoticeText(err),
-      });
-    }
+    await this._navOps.forkCurrentSession(roundId);
   }
+
+  /** 改名当前会话（实现见 `chatSessionNavOps.ts`：只改元数据、不改会话结构） */
   public async renameCurrentSession(): Promise<void> {
-    // 重命名只改元数据、不改会话结构：流中允许（E4 批 2 拆宿主闸）
-    const title = await vscode.window.showInputBox({
-      prompt: '输入新的会话名称',
-      value: this.currentSessionTitle(),
-      validateInput: (v) => (v.trim() ? undefined : '会话名称不能为空'),
-    });
-    if (title === undefined || title === null) return; // 用户取消
-    const trimmed = title.trim();
-    if (!trimmed) return;
-    // 会话管理未就绪时静默跳过落库（UI 刷新标题不阻塞，元数据由内核侧 SessionNamer 兜底）
-    this._agent?.sessionManager?.renameSession(this._currentSessionId, trimmed);
-    this.post({ type: 'session_title', title: trimmed });
+    await this._navOps.renameCurrentSession();
   }
 
-  /**
-   * 切换到指定会话：**按会话取/建实例**并绑定为显示源 + 回放该会话历史
-   *
-   * E4 批 2：不再调内核 `switchToSession` 改单实例身份（各会话各有实例、各停在自己的会话）。
-   * 流中允许切换——后台会话的流继续跑，其 UI 投递由 `isBackgroundFlow()`
-   * （`BackgroundFlowGate`）挡在显示会话之外。
-   *
-   * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
-   */
+  /** 切换到指定会话（实现见 `chatSessionNavOps.ts`：取/建实例 → 绑定显示源 → 回放） */
   public async switchToSession(sessionId: string): Promise<void> {
-    if (sessionId === this._currentSessionId) return; // 已在目标会话
-    const wasHeld = this._lockFinalizer.holds(sessionId); // 切回旧会话 = 已是长锁（②A），失败不得误放
-    // 先拿目标会话的锁：拿不到 = 另一窗口正在用，明确拒绝（不静默覆盖对方写入）
-    if (!(await this._lockFinalizer.acquire(sessionId))) {
-      this.post({ type: 'notice', level: 'info', message: SESSION_HELD_NOTICE });
-      return;
-    }
-    const previous = this._currentSessionId;
-    try {
-      // 切宿主当前会话 → 取该会话实例（首次进入时才装配）→ 绑定显示源
-      this.setCurrentSessionId(sessionId);
-      const agent = await this.agentForSession(sessionId);
-      this.bindAgent(agent);
-      this.replaySession();
-      // 后台任务条按会话重投影（BGTASK-SWITCH-REPUSH-1）：切会话不推 ⇒ 常驻条继续显示上一个会话的任务。
-      // 必须 force（两会话任务都可能为空、签名相同）；force 是**第二道保险**——`sessionChanged`
-      // 已在起作用，保留它防未来调用顺序漂移，**不是必需成本，勿当冗余删掉**。
-      this.postBackgroundTasks('force');
-    } catch (err) {
-      // 切失败：只还**本次新拿**的锁（切回旧会话时本是长锁，误放会放掉仍在写盘的归属）
-      if (!wasHeld) this._lockFinalizer.releaseOne(sessionId);
-      this._sessionAgents.delete(sessionId);
-      if (previous) {
-        this.setCurrentSessionId(previous);
-        const previousAgent = this._sessionAgents.get(previous);
-        if (previousAgent) this.bindAgent(previousAgent);
-      } else {
-        // 无旧会话可退：经收尾器同一清空写点归零（守卫要求源码仅一处清空赋值）
-        this._sessionIdAccess.clearSessionId();
-      }
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: toNoticeText(err),
-      });
-    }
+    await this._navOps.switchToSession(sessionId);
   }
 
   /** 确保 Agent 已装配（未装配时返回 undefined 并提示） */

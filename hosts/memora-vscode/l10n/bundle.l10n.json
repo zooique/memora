@@ -1069,5 +1069,8 @@
   "Could not locate that turn (the session may have changed); refresh the session and try again": "",
   "Regenerating deletes this turn and all later turns, then resends the original text. This cannot be undone.": "",
   "Regenerate": "",
-  "Could not retrieve the original prompt text; nothing was regenerated": ""
+  "Could not retrieve the original prompt text; nothing was regenerated": "",
+  "This session has no completed turn to fork from": "",
+  "Enter a new session name": "",
+  "Session name cannot be empty": ""
 }

@@ -502,6 +502,13 @@ const WEBVIEW_PANELS = {
   //     传入（文案与破坏面一一对应，不在核里按 reason 猜）；依赖面 7 个窄接口；
   //   · `TRUNCATE_FAIL_NOTICE` 迁为 `truncateFailNotice()`（两入口共用同一句，不复制字面量）；
   //   · chatPanel —— 只经 `_turnOps` 转发；测试的白盒驱动改走 `_turnOps`（4 处）。
+  //
+  // B9-D-4（会话导航域，`chatPanel.ts` 第四刀）已收口并登记：
+  //   · chatSessionNavOps —— 分叉 / 改名 / 切换三个导航入口整域外置：三者共用
+  //     「拿锁 → 换显示源 → 取/建实例 → 回放」同一套步骤，锁归属 / 实例投影表 / 回放
+  //     三条不变量因此只有一份实现；依赖面 13 个窄接口（含 lock 与 sessionAgents 两个
+  //     子接口），全部是**延迟取**的闭包（字段初始化早于 `_lockFinalizer` / `_sessionAgents`）；
+  //   · chatPanel —— 三个公开方法只留转发口（webview 分发与既有白盒测试按原入口驱动）。
   chat: {
     state: 'pending',
     files: [
@@ -526,6 +533,7 @@ const WEBVIEW_PANELS = {
       'webview/panels/chatNoticeOps.ts',
       'webview/panels/chatRefOps.ts',
       'webview/panels/chatTurnStructureOps.ts',
+      'webview/panels/chatSessionNavOps.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。
