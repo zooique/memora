@@ -49,6 +49,31 @@
  *      （源码 t() 键 = 默认 bundle = zh-cn bundle）在 webview 侧静默失明。`import type` 无运行时
  *      调用，放行。
  *
+ * ## webview 面板判据（切片 3-4 前置 · `WEBVIEW_PANELS` 注册制）
+ *
+ *   ⑰ **已迁移面板 CJK 清零**：`WEBVIEW_PANELS` 里 `state: 'migrated'` 的面板，其登记的
+ *      全部文件**非日志 CJK 字面量必须为 0**。口径：
+ *      - TS/JS：注释整段跳过；字符串里的 HTML 注释（`<!-- … -->`）跳过；
+ *        `console.*` / `logger.*` 的**直接实参**跳过（日志不是给用户看的）；其余含 CJK 的
+ *        字符串 / 模板串逐条计红。
+ *      - CSS（`styles/*.ts`）：只判 `content: '…CJK…'`，注释不判——CSS 里的中文基本都在
+ *        注释中，按字面量全扫会把注释误判成文案。
+ *   ⑱ **面板清单 = 设置页签 + chat**：`WEBVIEW_PANELS` 的 panel id 集合必须等于
+ *      `shared/settingsTabs.ts` 的 `SETTINGS_TABS`（文本抽取）加 `chat`。新增页签未登记 ⇒ 红，
+ *      防「新面板天然无判据」。
+ *   ⑲ **`--report` 规模报告**（不判红）：对全 `src` 跑⑬ 的窗口面锚点，并按面板打印 CJK 计数。
+ *      只用于量规模与出收据，**不参与退出码**。
+ *
+ * ### 🔴 注册制盲区（如实写死，不假装覆盖）
+ *
+ *   1. **漏登记不会红**：新建 webview 面板 / 文件而不写进 `WEBVIEW_PANELS`，⑰ 永远扫不到。
+ *      补偿只有两条：⑱ 挡「新设置页签没登记」；`--report` 的未登记文件清单进批次收据。
+ *      ⑰ 本身**没有**兜底判据（不存在「全 src 无中文」这种判据，未迁移面板本来就有中文）。
+ *   2. **`state` 可被人为改回 `pending`**：等于关掉该面板的判据。首次迁移前无法设迁移数下限
+ *      （下限为 0 是死判据），故由批次收据 + 代码审查兜；后续批次逐个 `migrated` 后风险递减。
+ *   3. **日志白名单是启发式**：只放行「字面量是 `console.*` / `logger.*` 的直接实参」，
+ *      包一层 helper 的间接日志会被计为可见文案（误红不误绿）。
+ *
  * ## 判据边界（如实登记，不假装覆盖）
  *
  * - **只认静态字面量**：`l10n.t(variable)` / 拼接 / 模板串第一参之外的动态形态扫不到（⑫ 只拦
@@ -59,13 +84,15 @@
  *   全部 `'键': '文案'` 形态」聚合，**不锚定变量名**——改名或新增第二张映射表不会静默脱管。
  *
  * 插点：`package.json#scripts.package`（vsce 打包前）+ `scripts/local-ci.mjs` 的
- *   full 档步骤 `host:manifest`。「实现了」不等于「会跑」，两处都要挂。
+ *   `host:manifest` 步骤（**fast + full 两档**）。「实现了」不等于「会跑」，两处都要挂；
+ *   纯静态、秒级 ⇒ 进 fast 档，改键面时在**提交**就红，而不是推到 pre-push 才发现。
  *
  * 用法：
  *   node scripts/verify-nls.mjs             # 主跑：对真实 manifest / nls / bundle / 源码断言
  *   node scripts/verify-nls.mjs --self-test # 自检：基于真实文件注入变异，确认判据能红
+ *   node scripts/verify-nls.mjs --report    # 规模报告：全 src CJK 计数（按面板），不判红
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -344,6 +371,160 @@ function collectWindowApiCjkInText(text, label) {
   return violations;
 }
 
+/* ------------------------------------------------------------------ *
+ * webview 面板判据（⑰-⑲）
+ * ------------------------------------------------------------------ */
+
+/**
+ * webview 面板注册表 —— 判据⑰（已迁移面板 CJK 清零）与⑱（面板清单对拍）的真源
+ *
+ * 状态语义：
+ * - `migrated`：登记的全部文件里不得存在**非日志 CJK 字面量**（⑰ 判红）。
+ * - `pending`：尚未迁移。`files` 为空是**如实**表达「尚未登记文件清单」，不是「没有中文」；
+ *   该面板的规模只能看 `--report` 的「未登记文件」段。
+ *
+ * 盲区见文件头「注册制盲区」三条：漏登记不红、state 可改回 pending、日志白名单是启发式。
+ * 新增面板 = 本表加一项（⑱ 会挡漏登记）+ 迁移批次把 state 改 `migrated` 并列出文件。
+ */
+const WEBVIEW_PANELS = {
+  chat: { state: 'pending', files: [] },
+  memory: { state: 'pending', files: [] },
+  roles: { state: 'pending', files: [] },
+  config: { state: 'pending', files: [] },
+  skills: { state: 'pending', files: [] },
+  mcp: { state: 'pending', files: [] },
+  security: { state: 'pending', files: [] },
+  // 作品页是首个范式样板（B1b）：登记文件清单已定，迁移前 state 仍为 pending。
+  works: {
+    state: 'pending',
+    files: [
+      'extension/host/workProjectionRows.ts',
+      'webview/panels/settingsWorksHtml.ts',
+      'webview/scripts/worksView.ts',
+      'webview/styles/worksStyles.ts',
+    ],
+  },
+};
+
+/**
+ * 逐字符扫描源码，产出字符串字面量（含模板串）清单
+ *
+ * 为什么手写扫描而非正则先剥注释：`//` 会出现在字符串里（URL / 路径），按行剥注释会误伤；
+ * 逐字符走一遍能同时拿到「字面量边界」与「是否在注释里」两个事实，且不引入 AST 依赖。
+ *
+ * @param {string} text 源码全文
+ * @returns {{start:number, value:string, quote:string}[]} 字面量清单（value 已还原转义）
+ */
+function scanStringLiterals(text) {
+  const out = [];
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    const ch = text[i];
+    // 行注释：跳到行尾
+    if (ch === '/' && text[i + 1] === '/') {
+      const end = text.indexOf('\n', i);
+      i = end < 0 ? n : end + 1;
+      continue;
+    }
+    // 块注释：跳到闭合标记
+    if (ch === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2);
+      i = end < 0 ? n : end + 2;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') {
+      const quote = ch;
+      const start = i;
+      i++;
+      let raw = '';
+      while (i < n) {
+        if (text[i] === '\\') {
+          raw += text[i] + (text[i + 1] ?? '');
+          i += 2;
+          continue;
+        }
+        if (text[i] === quote) {
+          i++;
+          break;
+        }
+        // 单/双引号串未闭合时止于行尾，防止一处笔误把整份文件吞成一个字面量
+        if (quote !== '`' && text[i] === '\n') break;
+        raw += text[i];
+        i++;
+      }
+      out.push({ start, value: unescapeSourceLiteral(raw), quote });
+      continue;
+    }
+    i++;
+  }
+  return out;
+}
+
+/** 日志白名单：字面量是否为 `console.*` / `logger.*` 的**直接实参**（启发式，见注册表盲区 3） */
+function isLogArgument(textBefore) {
+  return /(?:^|[^\w$])(?:console|logger)\s*\.\s*\w+\s*\([^()]*$/.test(textBefore);
+}
+
+/**
+ * 采集一个 TS/JS 文件里的「可见 CJK 字面量」（判据⑰ 的判定单元）
+ *
+ * 口径：注释跳过、字符串里的 HTML 注释跳过、日志实参跳过；其余含 CJK 的字符串 / 模板串逐条计入。
+ * 这是**文案面**判据，不是「文件里没有中文」判据——注释里的中文完全合法。
+ *
+ * @param {string} text 源码全文
+ * @returns {string[]} 违规字面量（空白折叠 + 截断，仅用于报错展示）
+ */
+function collectVisibleCjkInText(text) {
+  const hits = [];
+  for (const lit of scanStringLiterals(text)) {
+    const value = lit.value.replace(/<!--[\s\S]*?-->/g, '');
+    if (!CJK.test(value)) continue;
+    // 只看字面量前 200 字符：足够覆盖「console.log(a, '…')」这类调用前缀
+    if (isLogArgument(text.slice(Math.max(0, lit.start - 200), lit.start))) continue;
+    hits.push(value.replace(/\s+/g, ' ').slice(0, 40));
+  }
+  return hits;
+}
+
+/**
+ * 采集一个样式文件里的可见 CJK（判据⑰ 的 CSS 口径）
+ *
+ * CSS 里只有 `content:` 的字符串会显示到屏幕上；样式文件中的中文基本都在注释里，
+ * 按字面量全扫会把注释误判成文案。故只认 `content: '…'` / `content: "…"`，注释不判。
+ *
+ * @param {string} text 样式源码全文（CSS 模板串）
+ * @returns {string[]} 违规值
+ */
+function collectCssCjkContent(text) {
+  const css = text.replace(/\/\*[\s\S]*?\*\//g, '');
+  const hits = [];
+  for (const re of [/content\s*:\s*'((?:[^'\\]|\\.)*)'/g, /content\s*:\s*"((?:[^"\\]|\\.)*)"/g]) {
+    for (const m of css.matchAll(re)) {
+      const value = unescapeSourceLiteral(m[1]);
+      if (CJK.test(value)) hits.push(value.slice(0, 40));
+    }
+  }
+  return hits;
+}
+
+/** 按文件类型分派可见 CJK 采集（`styles/` 走 CSS 口径，其余走 TS 口径） */
+function collectPanelFileCjk(rel, text) {
+  return /(^|\/)styles\//.test(rel) ? collectCssCjkContent(text) : collectVisibleCjkInText(text);
+}
+
+/**
+ * 从 `shared/settingsTabs.ts` 文本抽 `SETTINGS_TABS`（判据⑱ 的对拍真源）
+ *
+ * @param {string} text 文件全文
+ * @returns {string[]|null} 页签 id 列表；抽不到返回 null（判据必须红，不许静默放行）
+ */
+function collectSettingsTabIdsInText(text) {
+  const m = /export\s+const\s+SETTINGS_TABS\s*=\s*\[([\s\S]*?)\]\s*as\s+const/.exec(text);
+  if (!m) return null;
+  return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
+}
+
 /**
  * 已迁移窗口面模块清单（判据⑬ 的扫描面）
  *
@@ -425,6 +606,10 @@ export function collectL10nImportIssuesInText(text, name) {
  * @param {string[]} input.registryIssues 判据⑭ 登记清单问题（路径不存在 / 条数低于基线）
  * @param {number} [input.dynamicKeyMarkers] 判据⑮ 动态键源标记数（`@nls-keys`）
  * @param {string[]} [input.l10nImportIssues] 判据⑯ `@vscode/l10n` 非 namespace 导入清单
+ * @param {string[]} [input.webviewViolations] 判据⑰ 已迁移面板的可见 CJK 残留清单
+ * @param {string[]} [input.webviewRegistryIssues] 判据⑰ 面板登记项路径不存在清单
+ * @param {string[]|null} [input.webviewPanelIds] `WEBVIEW_PANELS` 的 panel id 集合
+ * @param {string[]|null} [input.settingsTabIds] 从 `shared/settingsTabs.ts` 抽出的页签 id（null = 抽取失败）
  */
 export function auditBundle({
   bundleEn,
@@ -436,6 +621,10 @@ export function auditBundle({
   registryIssues = [],
   dynamicKeyMarkers = MIN_DYNAMIC_KEY_SOURCES,
   l10nImportIssues = [],
+  webviewViolations = [],
+  webviewRegistryIssues = [],
+  webviewPanelIds = null,
+  settingsTabIds = null,
 }) {
   const issues = [];
   const allKeys = new Set([...staticKeys, ...dynamicKeys]);
@@ -494,11 +683,67 @@ export function auditBundle({
   // ⑯ @vscode/l10n 导入形态（裸别名 = 键面采集脱管，⑨ 在该调用点永久失明）
   for (const v of l10nImportIssues) issues.push(v);
 
+  // ⑰ 已迁移面板：可见 CJK 字面量必须为 0（采集范围 = WEBVIEW_PANELS 里 state:'migrated' 的文件）
+  for (const v of webviewViolations) issues.push(`webview 面板中文残留（应走 l10n.t）：${v}`);
+  // ⑰ 配套：登记项路径写错 = 该文件永不被扫（与⑭ 同一纪律，防止「登记了但扫不到」）
+  for (const v of webviewRegistryIssues) issues.push(v);
+
+  // ⑱ 面板清单对拍：WEBVIEW_PANELS 的 id 集合 == 设置页签集合 ∪ { chat }
+  if (settingsTabIds === null) {
+    issues.push('判据⑱ 无法从 shared/settingsTabs.ts 抽取 SETTINGS_TABS（对拍真源失效）');
+  } else if (webviewPanelIds !== null) {
+    const expected = new Set([...settingsTabIds, 'chat']);
+    for (const id of webviewPanelIds) {
+      if (!expected.has(id)) issues.push(`判据⑱ 面板「${id}」不在设置页签 + chat 集合内`);
+    }
+    for (const id of expected) {
+      if (!webviewPanelIds.includes(id)) {
+        issues.push(`判据⑱ 页签「${id}」未登记进 WEBVIEW_PANELS（该面板无 CJK 判据）`);
+      }
+    }
+  }
+
   return issues;
 }
 
 function readJson(name) {
   return JSON.parse(readFileSync(join(HOST_ROOT, name), 'utf8'));
+}
+
+/**
+ * 判据⑰⑱ 的真源装载：面板注册表 + 已迁移文件 CJK 采集 + 设置页签集合抽取
+ *
+ * 注意采集只发生在 `state: 'migrated'` 的登记文件上——pending 面板本来就有中文，
+ * 全量扫会让判据长期红（长期红 = 红灯免疫）。
+ *
+ * @returns {{panelIds:string[], violations:string[], registryIssues:string[], settingsTabIds:string[]|null}}
+ */
+function loadWebviewPanels() {
+  const panelIds = Object.keys(WEBVIEW_PANELS);
+  const registryIssues = [];
+  const violations = [];
+  for (const [id, panel] of Object.entries(WEBVIEW_PANELS)) {
+    for (const rel of panel.files) {
+      const abs = join(HOST_ROOT, 'src', rel);
+      if (!existsSync(abs)) {
+        registryIssues.push(
+          `判据⑰ webview 面板登记项不存在：src/${rel}（面板 ${id}，路径写错 = 永不被扫）`,
+        );
+        continue;
+      }
+      if (panel.state !== 'migrated') continue;
+      for (const hit of collectPanelFileCjk(rel, readFileSync(abs, 'utf8'))) {
+        violations.push(`${id} · src/${rel}：${hit}`);
+      }
+    }
+  }
+  const tabsText = readFileSync(join(HOST_ROOT, 'src', 'shared', 'settingsTabs.ts'), 'utf8');
+  return {
+    panelIds,
+    violations,
+    registryIssues,
+    settingsTabIds: collectSettingsTabIdsInText(tabsText),
+  };
 }
 
 function loadReal() {
@@ -514,6 +759,7 @@ function loadReal() {
   const windowViolations = ui.files.flatMap((f) =>
     collectWindowApiCjkInText(readFileSync(f, 'utf8'), f.slice(HOST_ROOT.length + 1)),
   );
+  const webview = loadWebviewPanels();
   return {
     pkg: readJson('package.json'),
     en: readJson('package.nls.json'),
@@ -528,6 +774,10 @@ function loadReal() {
       registryIssues: ui.missing,
       dynamicKeyMarkers: tKeys.dynamicKeyMarkers,
       l10nImportIssues,
+      webviewViolations: webview.violations,
+      webviewRegistryIssues: webview.registryIssues,
+      webviewPanelIds: webview.panelIds,
+      settingsTabIds: webview.settingsTabIds,
     },
   };
 }
@@ -710,6 +960,63 @@ function selfTest() {
       },
       expect: '非 namespace 导入',
     },
+    {
+      label: '⑰ 已迁移面板中文残留',
+      mutate: (d) => {
+        d.bundle.webviewViolations.push('works · src/webview/scripts/worksView.ts：移除登记');
+      },
+      expect: 'webview 面板中文残留',
+    },
+    {
+      // 采集器级变异：证明 TS 口径由**扫描器本身**判出（字符串 + 模板串 + 属性值）
+      label: '⑰ 采集器：TS 字面量 / 模板串中文',
+      mutate: (d) => {
+        d.bundle.webviewViolations.push(
+          ...collectVisibleCjkInText(`el.textContent = '移除登记'; el.title = \`设为\${x}\`;`).map(
+            (s) => `mutated：${s}`,
+          ),
+        );
+      },
+      expect: 'webview 面板中文残留',
+    },
+    {
+      // 采集器级变异：CSS 口径只认 content 字符串
+      label: '⑰ 采集器：CSS content 中文',
+      mutate: (d) => {
+        d.bundle.webviewViolations.push(
+          ...collectCssCjkContent(`.x::after { content: '中文提示'; }`).map((s) => `mutated：${s}`),
+        );
+      },
+      expect: 'webview 面板中文残留',
+    },
+    {
+      label: '⑰ 登记项路径写错',
+      mutate: (d) => {
+        d.bundle.webviewRegistryIssues.push('判据⑰ webview 面板登记项不存在：src/nope.ts');
+      },
+      expect: '登记项不存在',
+    },
+    {
+      label: '⑱ 新设置页签未登记',
+      mutate: (d) => {
+        d.bundle.settingsTabIds.push('brand-new-tab');
+      },
+      expect: '未登记进 WEBVIEW_PANELS',
+    },
+    {
+      label: '⑱ 注册表多出未声明面板',
+      mutate: (d) => {
+        d.bundle.webviewPanelIds.push('ghost-panel');
+      },
+      expect: '不在设置页签',
+    },
+    {
+      label: '⑱ 页签集合抽取失败',
+      mutate: (d) => {
+        d.bundle.settingsTabIds = null;
+      },
+      expect: '抽取 SETTINGS_TABS',
+    },
   ];
   let allOk = true;
   for (const c of cases) {
@@ -717,7 +1024,7 @@ function selfTest() {
     const data = structuredClone(base);
     c.mutate(data);
     // bundle 用例打 bundle 判据（auditBundle 入参与 auditNls 不同），其余打 package 判据
-    const isBundleCase = c.label.includes('bundle') || /[⑧⑨⑩⑪⑫⑬⑭⑮⑯]/.test(c.label);
+    const isBundleCase = c.label.includes('bundle') || /[⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱]/.test(c.label);
     const issues = isBundleCase ? auditBundle(data.bundle) : auditNls(data);
     const hit = issues.some((s) => s.includes(c.expect));
     console.log(
@@ -732,12 +1039,99 @@ function selfTest() {
     `  ${cleanOk ? '✅' : '❌'} 反例：真实文件${cleanOk ? '保持全绿' : `被误报：${clean.join(' / ')}`}`,
   );
   if (!cleanOk) allOk = false;
+
+  // 负向控制：白名单口径必须**不**误报（只测「能红」会放过「把所有中文都红」的过宽判据）
+  const negativeCases = [
+    [
+      '⑰ 负向：console / logger 实参不判',
+      collectVisibleCjkInText(`console.log('中文日志'); logger.warn('中文日志');`).length === 0,
+    ],
+    [
+      '⑰ 负向：注释里的中文不判',
+      collectVisibleCjkInText(`/** 中文说明 */\nconst a = 'ok';`).length === 0,
+    ],
+    [
+      '⑰ 负向：字符串里的 HTML 注释不判',
+      collectVisibleCjkInText('const h = `<!-- 中文标注 -->`;').length === 0,
+    ],
+    [
+      '⑰ 负向：CSS 注释中文不判',
+      collectCssCjkContent(`/* 中文注释 */ .x { color: red; }`).length === 0,
+    ],
+  ];
+  for (const [label, ok] of negativeCases) {
+    console.log(`  ${ok ? '✅' : '❌'} ${label}${ok ? '' : ' 被误报'}`);
+    if (!ok) allOk = false;
+  }
+
   console.log(allOk ? '\n✅ 自检通过：本地化面各判据均可捕获变异' : '\n❌ 自检失败：存在失明判据');
   return allOk ? 0 : 1;
 }
 
+/**
+ * `--report` 规模报告（判据⑲）：只量规模、出收据，**不判红**
+ *
+ * 输出两段：
+ * 1. 已登记面板：逐面板的可见 CJK 计数（口径与⑰ 完全一致 ⇒ 该面板改 `migrated` 时
+ *    这里的数字就是「还剩多少条要翻」）；
+ * 2. 未登记文件：`WEBVIEW_PANELS` 之外的 `src` 文件按 CJK 计数降序（注册制盲区的唯一量化口径）。
+ * 末尾附⑬ 窗口面锚点的全 src 命中数（与⑬ 同源，只看宿主 extension 面）。
+ */
+function report() {
+  const registered = new Set();
+  console.log('📊 [nls] webview 面板 CJK 规模报告（--report · 不判红）\n');
+  console.log('已登记面板（计数口径 = 判据⑰ 的可见 CJK 采集）：');
+  for (const [id, panel] of Object.entries(WEBVIEW_PANELS)) {
+    const details = [];
+    let count = 0;
+    for (const rel of panel.files) {
+      const abs = join(HOST_ROOT, 'src', rel);
+      registered.add(`src/${rel}`);
+      if (!existsSync(abs)) {
+        details.push(`      src/${rel}：❌ 文件不存在`);
+        continue;
+      }
+      const hits = collectPanelFileCjk(rel, readFileSync(abs, 'utf8'));
+      count += hits.length;
+      if (hits.length > 0) details.push(`      src/${rel}：${hits.length} 处`);
+    }
+    const scope =
+      panel.files.length > 0 ? `${count} 处 / ${panel.files.length} 文件` : '—（未登记文件）';
+    console.log(`  ${id.padEnd(9)} ${panel.state.padEnd(9)} ${scope}`);
+    for (const d of details) console.log(d);
+  }
+
+  const all = walkTs(join(HOST_ROOT, 'src'));
+  const unregistered = [];
+  for (const abs of all) {
+    const rel = abs.slice(HOST_ROOT.length + 1).replace(/\\/g, '/');
+    if (registered.has(rel)) continue;
+    const hits = collectPanelFileCjk(rel, readFileSync(abs, 'utf8'));
+    if (hits.length > 0) unregistered.push([rel, hits.length]);
+  }
+  unregistered.sort((a, b) => b[1] - a[1]);
+  console.log(
+    `\n未登记进 WEBVIEW_PANELS 的文件（注册制盲区，判据⑰ 扫不到）：${unregistered.length} 个含 CJK 字面量`,
+  );
+  for (const [rel, n] of unregistered.slice(0, 20))
+    console.log(`  ${String(n).padStart(5)}  ${rel}`);
+  if (unregistered.length > 20) console.log(`  … 另有 ${unregistered.length - 20} 个文件`);
+
+  const windowHits = all.flatMap((abs) =>
+    collectWindowApiCjkInText(
+      readFileSync(abs, 'utf8'),
+      abs.slice(HOST_ROOT.length + 1).replace(/\\/g, '/'),
+    ),
+  );
+  console.log(`\n判据⑬ 窗口面锚点全 src 命中：${windowHits.length} 处（不判红）`);
+}
+
 function main() {
   if (process.argv.includes('--self-test')) process.exit(selfTest());
+  if (process.argv.includes('--report')) {
+    report();
+    return 0;
+  }
   const real = loadReal();
   const issues = [...auditNls(real), ...auditBundle(real.bundle)];
   if (issues.length === 0) {

@@ -245,15 +245,17 @@ const ALL_STEPS = [
     required: true,
     presets: ['fast', 'full'],
   },
-  // package 面本地化（HOST-I18N-1 切片 1）：`%key%` 拼错 / 两侧键面不等 / 默认文件混中文，
-  // VS Code 都不报错而是把 `%key%` 原样显示给用户——纯静态判据，秒级，故挂硬闸。
+  // package / bundle / webview 面本地化（HOST-I18N-1/2/3）：`%key%` 拼错 / 两侧键面不等 /
+  // 默认文件混中文 / 源码 t() 键缺译文 / 已迁移 webview 面板残留中文——VS Code 都不报错而是
+  // 把 `%key%` 或中文原样显示给用户。纯静态、秒级 ⇒ **进 fast 档**：改键面时在提交就红，
+  // 而不是推到 pre-push 才发现（full 档仍跑同一脚本，两档不重复定义）。
   {
     id: 'host:manifest',
-    name: '宿主清单本地化（nls 键面与 %key% 闭合）',
+    name: '宿主本地化（nls / bundle / webview 三面）',
     cmd: 'node scripts/verify-nls.mjs',
     cwd: HOST,
     required: true,
-    presets: ['full'],
+    presets: ['fast', 'full'],
   },
   {
     id: 'host:test',
