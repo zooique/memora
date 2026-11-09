@@ -22,6 +22,8 @@
  *
  * @module activityDrawerView
  */
+// 命名空间导入是判据⑯ 的要求：裸别名 `t` 会脱离 `l10n.t(` 的键面采集面
+import * as l10n from '@vscode/l10n';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { fmtTime } from '../helpers/fmtTime.js';
 import { fmtCompactTokens } from '../helpers/fmtTokens.js';
@@ -265,59 +267,67 @@ export function createActivityDrawerView(deps: ActivityDrawerViewDeps): Activity
    */
   function renderMetrics(msg: MetricsMessage): void {
     const fp = msg.fingerprints;
+    // 累计指标行：固定三段 + 未解析意图仅在非零时出现（缺省不占位）。
+    // 分段各自成键而非一整句拼接：中文语序与英文不同，整句拼则 zh 只能直译英文骨架。
+    const cumulative = [
+      l10n.t('Cumulative: {0} LLM calls', msg.metrics.llmCallCount),
+      l10n.t('{0} tool failures', msg.metrics.toolFailureCount),
+      ...(msg.metrics.unparsedToolIntentCount && msg.metrics.unparsedToolIntentCount > 0
+        ? [l10n.t('{0} unparsed tool intents', msg.metrics.unparsedToolIntentCount)]
+        : []),
+      l10n.t('{0} truncations', msg.metrics.truncationCount),
+    ].join(' · ');
     const lines = [
       // 指纹行：只显示 hash，不显示内容（可追溯性边界）
-      '本轮指纹：' + (fp.systemPromptHash ? '系统提示 ' + fp.systemPromptHash : '系统提示 -'),
+      fp.systemPromptHash
+        ? l10n.t('Round fingerprint: system prompt {0}', fp.systemPromptHash)
+        : l10n.t('Round fingerprint: system prompt -'),
       // 累计指标行（未解析工具意图累计，诊断面板可见文本 tool_call 静默失败）
-      '累计：LLM ' +
-        msg.metrics.llmCallCount +
-        ' 次 · 工具失败 ' +
-        msg.metrics.toolFailureCount +
-        (msg.metrics.unparsedToolIntentCount && msg.metrics.unparsedToolIntentCount > 0
-          ? ' · 未解析工具意图 ' + msg.metrics.unparsedToolIntentCount
-          : '') +
-        ' · 截断 ' +
-        msg.metrics.truncationCount,
+      cumulative,
       // token 用量（可选字段，缺省不显示）：估算口径。「入」为**累计**（同轮详情执行指标
       // 同源，勿据其判窗口占用）；「出」只计正文、不含思考——防推理模型下把正文数
       // 误读成总输出
-      'Tokens（估算）：' +
-        (typeof msg.metrics.llmTokenIn === 'number'
-          ? '入 ' + msg.metrics.llmTokenIn + ' 累计'
-          : '入 -') +
-        ' / 正文 ' +
-        (typeof msg.metrics.llmTokenOut === 'number'
-          ? msg.metrics.llmTokenOut + '（不含思考）'
-          : '-'),
+      l10n.t(
+        'Tokens (estimated): {0} in / {1} out',
+        typeof msg.metrics.llmTokenIn === 'number'
+          ? l10n.t('{0} cumulative', msg.metrics.llmTokenIn)
+          : '-',
+        typeof msg.metrics.llmTokenOut === 'number'
+          ? l10n.t('{0} (excludes thinking)', msg.metrics.llmTokenOut)
+          : '-',
+      ),
       // ④ 预算分配构成（可选字段，缺省不显示）——窗口内空间如何被 锚点/对话层 瓜分
       ...(msg.metrics.budget
         ? [
-            '预算：可用 ' +
-              fmtCompactTokens(msg.metrics.budget.availableTokens) +
-              ' · 锚点 ' +
-              fmtCompactTokens(msg.metrics.budget.anchorTokens) +
-              ' · 对话层 ' +
-              fmtCompactTokens(msg.metrics.budget.dialogueBudgetTokens) +
-              ' · 剩余 ' +
+            l10n.t(
+              'Budget: {0} available · {1} anchors · {2} dialogue · {3} remaining',
+              fmtCompactTokens(msg.metrics.budget.availableTokens),
+              fmtCompactTokens(msg.metrics.budget.anchorTokens),
+              fmtCompactTokens(msg.metrics.budget.dialogueBudgetTokens),
               fmtCompactTokens(msg.metrics.budget.remainingTokens),
+            ),
           ]
         : []),
       // B9 可观测补齐：最近操作流（span 标签新→旧，指标区末尾渲染，缺省不显示）
       ...(msg.trace && msg.trace.length > 0
-        ? ['操作流：', ...msg.trace.map((t) => '  › ' + t.label)]
+        ? [l10n.t('Operation flow:'), ...msg.trace.map((t) => '  › ' + t.label)]
         : []),
       // 安全/装配透明：路径守卫审计概要（有审计事件才显示；basename 路径）
       ...(msg.securityAudit && msg.securityAudit.total > 0
         ? [
-            '安全审计 ' +
-              msg.securityAudit.total +
-              ' 次 · 拒绝 ' +
-              msg.securityAudit.denied +
+            l10n.t(
+              'Security audit: {0} events · {1} denied',
+              msg.securityAudit.total,
+              msg.securityAudit.denied,
+            ) +
               (msg.securityAudit.recent.length > 0
-                ? ' · 最近：' +
-                  msg.securityAudit.recent
-                    .map((r) => r.type + ' ' + r.path + (r.reason ? ' (' + r.reason + ')' : ''))
-                    .join(', ')
+                ? ' · ' +
+                  l10n.t(
+                    'recent: {0}',
+                    msg.securityAudit.recent
+                      .map((r) => r.type + ' ' + r.path + (r.reason ? ' (' + r.reason + ')' : ''))
+                      .join(', '),
+                  )
                 : ''),
           ]
         : []),

@@ -39,6 +39,11 @@ vi.mock('vscode', () => ({
     workspaceFolders: [{ uri: { fsPath: '/mock' } }],
     getConfiguration: vi.fn(() => ({ get: vi.fn(() => false) })),
   },
+  // tracer 的展现标签走 `vscode.l10n.t`：默认语言替身原样返回源键并按参填充 `{n}`
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
   EventEmitter: vi.fn(),
 }));
 
@@ -132,10 +137,10 @@ describe('宿主集成端到端测试', () => {
 
       const traces = tracer.getRecentTraces();
       expect(traces).toHaveLength(1);
-      expect(traces[0]!.label).toBe('LLM 调用');
+      expect(traces[0]!.label).toBe('LLM call');
     });
 
-    it('VscodeTracer.getRecentTraces 返回中文标签', () => {
+    it('VscodeTracer.getRecentTraces 返回展现标签', () => {
       const tracer = new VscodeTracer();
       tracer.startSpan(TRACE_SPANS.CONTEXT_SUMMARY).end();
       tracer.startSpan(TRACE_SPANS.LLM_CALL).end();
@@ -145,12 +150,12 @@ describe('宿主集成端到端测试', () => {
       const traces = tracer.getRecentTraces();
       expect(traces).toHaveLength(4);
 
-      // 验证中文标签映射
+      // 验证标签映射（默认语言 = 英文源键）
       const labels = traces.map((t) => t.label);
-      expect(labels).toContain('压缩摘要');
-      expect(labels).toContain('LLM 调用');
-      expect(labels).toContain('工具·read_file');
-      expect(labels).toContain('响应生成');
+      expect(labels).toContain('Context summary');
+      expect(labels).toContain('LLM call');
+      expect(labels).toContain('Tool · read_file');
+      expect(labels).toContain('Response generation');
     });
 
     it('自定义 Span 名称回退原始名称', () => {

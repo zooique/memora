@@ -22,6 +22,8 @@
  *
  * @module statusBarsView
  */
+// 命名空间导入是判据⑯ 的要求：裸别名 `t` 会脱离 `l10n.t(` 的键面采集面
+import * as l10n from '@vscode/l10n';
 import type { BackgroundTaskView } from '../../shared/protocol.js';
 import { getIconSvg, populateIcons } from './icons.js';
 
@@ -124,9 +126,9 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
       _pendingQueueBar.innerHTML = `
         <div class="pending-queue-bar__head">
           <span class="pending-queue-bar__badge"></span>
-          <span class="pending-queue-bar__label">待发送</span>
-          <span class="pending-queue-bar__hint">补充将紧随当前步骤后注入</span>
-          <button class="pending-queue-bar__clear" type="button" title="清空全部" aria-label="清空全部待发送"><span class="btn-icon" data-icon="close"></span></button>
+          <span class="pending-queue-bar__label">${l10n.t('Pending')}</span>
+          <span class="pending-queue-bar__hint">${l10n.t('Supplements are injected right after the current step')}</span>
+          <button class="pending-queue-bar__clear" type="button" title="${l10n.t('Clear all')}" aria-label="${l10n.t('Clear all pending items')}"><span class="btn-icon" data-icon="close"></span></button>
         </div>
         <div class="pending-queue-bar__list"></div>
       `;
@@ -162,7 +164,7 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
       const delBtn = deps.document.createElement('button');
       delBtn.className = 'pending-queue-bar__item-del';
       delBtn.type = 'button';
-      delBtn.title = '删除这条';
+      delBtn.title = l10n.t('Remove this item');
       // 图标语言唯一 = icons.ts 柔和线条 SVG（注意 × 兼作语义乘号，
       // 如「工具×3」——“乘号”与“关闭图标”须靠位置区分，不可机械替换）
       delBtn.innerHTML = getIconSvg('close', 10, 10);
@@ -195,10 +197,10 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
       _fileChangesBar.className = 'file-changes-bar';
       _fileChangesBar.innerHTML = `
         <span class="file-changes-bar__badge"></span>
-        <span class="file-changes-bar__label">个文件有未确认改动</span>
+        <span class="file-changes-bar__label">${l10n.t('file(s) with unconfirmed changes')}</span>
         <span class="file-changes-bar__spacer"></span>
-        <button class="file-changes-bar__confirm" type="button" title="确认全部改动（仅清除本提示，不改文件内容）">全部确认</button>
-        <button class="file-changes-bar__revert" type="button" title="回退全部改动到 agent 之前（不可撤销，需二次确认）">全部回退</button>
+        <button class="file-changes-bar__confirm" type="button" title="${l10n.t('Confirm all changes (clears this notice only; files are not modified)')}">${l10n.t('Confirm all')}</button>
+        <button class="file-changes-bar__revert" type="button" title="${l10n.t('Revert all changes to before the agent ran (irreversible; asks for confirmation)')}">${l10n.t('Revert all')}</button>
       `;
       deps.inputBar.parentNode?.insertBefore(_fileChangesBar, deps.inputBar);
       deps.registerDockEntry('fileChanges', _fileChangesBar);
@@ -241,7 +243,7 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
       _backgroundBar.innerHTML = `
         <div class="background-tasks-bar__head">
           <span class="background-tasks-bar__badge"></span>
-          <span class="background-tasks-bar__label">后台任务</span>
+          <span class="background-tasks-bar__label">${l10n.t('Background tasks')}</span>
         </div>
         <div class="background-tasks-bar__list"></div>
       `;
@@ -272,8 +274,8 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
         const killBtn = deps.document.createElement('button');
         killBtn.className = 'background-tasks-bar__kill';
         killBtn.type = 'button';
-        killBtn.textContent = '终止';
-        killBtn.title = '终止这条后台命令';
+        killBtn.textContent = l10n.t('Stop');
+        killBtn.title = l10n.t('Stop this background command');
         killBtn.addEventListener('click', () => {
           deps.postMessage({ type: 'background_kill', taskId: task.taskId });
         });
@@ -287,8 +289,10 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
         dismissBtn.className = 'background-tasks-bar__dismiss';
         dismissBtn.type = 'button';
         dismissBtn.textContent = '×';
-        dismissBtn.title = '从列表收起这条（不终止进程，输出仍可取回）';
-        dismissBtn.setAttribute('aria-label', '收起这条后台任务');
+        dismissBtn.title = l10n.t(
+          'Dismiss from list (process keeps running; output remains retrievable)',
+        );
+        dismissBtn.setAttribute('aria-label', l10n.t('Dismiss this background task'));
         dismissBtn.addEventListener('click', () => {
           deps.postMessage({
             type: 'background_kill',

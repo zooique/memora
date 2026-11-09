@@ -391,14 +391,32 @@ function collectWindowApiCjkInText(text, label) {
  *
  * 状态语义：
  * - `migrated`：登记的全部文件里不得存在**非日志 CJK 字面量**（⑰ 判红）。
- * - `pending`：尚未迁移。`files` 为空是**如实**表达「尚未登记文件清单」，不是「没有中文」；
- *   该面板的规模只能看 `--report` 的「未登记文件」段。
+ * - `pending`：尚未迁移，**不判红**。`files` 可以非空——那表示「这些文件已在本批翻完并登记
+ *   到位，只是所属面板还没整体收口」（B8 起：chat 面板里的状态条 / 活动抽屉两个文件已英文化，
+ *   但 chatView 本体等仍在 B9）。判据⑰ 按**文件**登记、按**面板**开关，故 pending 面板的
+ *   已翻文件此刻只能靠「批次屏上用例」兜底，面板整体 migrated 时自动进网。
  *
  * 盲区见文件头「注册制盲区」三条：漏登记不红、state 可改回 pending、日志白名单是启发式。
  * 新增面板 = 本表加一项（⑱ 会挡漏登记）+ 迁移批次把 state 改 `migrated` 并列出文件。
  */
 const WEBVIEW_PANELS = {
-  chat: { state: 'pending', files: [] },
+  // chat 面板（B8 起分批迁移）：
+  // `statusBarsView.ts` / `activityDrawerView.ts` 已于 B8 英文化（状态条 + 活动抽屉 + 指标详情），
+  // `extension/host/tracer.ts` 一并登记——它是活动抽屉「操作流」段的**数据源**，标签是用户可见面，
+  // 只翻抽屉不翻数据源 = 屏上仍是中文（半截迁移）。但 `chatView.ts` / `chatPanel.ts` 等对话主体
+  // 仍在 B9 ⇒ 面板整体保持 pending。
+  // **归属判定（用户提醒第 2 条）**：`processEventText.ts` / `toolNameMap.ts` / `processFlowCells.ts`
+  // 的依赖面 = chatView（对话面板）+ 宿主 confirmCoordinator（`toolNameMap`），归 B9 一并翻；
+  // `toast.ts` 虽然被 settingsView / configView 消费，但文件内**零 CJK 可见字面量**（中文只在注释里），
+  // 无需登记；`dockToast.ts` 只服务 chatView 的浮层放置，归 B9。
+  chat: {
+    state: 'pending',
+    files: [
+      'webview/scripts/statusBarsView.ts',
+      'webview/scripts/activityDrawerView.ts',
+      'extension/host/tracer.ts',
+    ],
+  },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。
   // `shared/settingsTabs.ts` 一并登记：它是页签可见名的唯一真源，虽服务全部面板，但
   // B2 起值已全部是英文源键——任何一处回退成中文都会让所有页签在英文界面下露中文，

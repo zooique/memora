@@ -3,16 +3,26 @@
  *
  * 覆盖：
  *   - 已结束 span 被采集，按新→旧返回，limit 截断
- *   - 已知 TRACE_SPANS 名称映射为中文展现标签
- *   - 工具 span 附带工具名（工具·<名>）
+ *   - 已知 TRACE_SPANS 名称映射为展现标签（默认语言 = 英文源键）
+ *   - 工具 span 附带工具名（Tool · <名>）
  *   - 未知名 span 回退原始名称
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// tracer 的展现标签走 `vscode.l10n.t`（用户可见面），故本文件须有 vscode 替身；
+// 默认语言下 t() 原样返回源键并按参填充 `{n}`（与 settingsWrite / providerStore 用例同法）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 import { TRACE_SPANS } from '@zooique/memora';
 import { VscodeTracer } from '../tracer.js';
 
 describe('VscodeTracer.getRecentTraces', () => {
-  it('按新→旧返回已结束 span，并映射为中文标签', () => {
+  it('按新→旧返回已结束 span，并映射为展现标签', () => {
     const tracer = new VscodeTracer();
     tracer.startSpan(TRACE_SPANS.CONTEXT_SUMMARY).end();
     tracer.startSpan(TRACE_SPANS.LLM_CALL, { inputTokens: 100 }).end();
@@ -21,17 +31,17 @@ describe('VscodeTracer.getRecentTraces', () => {
     const traces = tracer.getRecentTraces();
     // 新→旧：最先结束的 context.summary 在末尾
     expect(traces).toHaveLength(3);
-    expect(traces[0].label).toBe('响应生成');
-    expect(traces[1].label).toBe('LLM 调用');
-    expect(traces[2].label).toBe('压缩摘要');
+    expect(traces[0].label).toBe('Response generation');
+    expect(traces[1].label).toBe('LLM call');
+    expect(traces[2].label).toBe('Context summary');
   });
 
-  it('工具 span 附带工具名（工具·<名>）', () => {
+  it('工具 span 附带工具名（Tool · <名>）', () => {
     const tracer = new VscodeTracer();
     tracer.startSpan(TRACE_SPANS.TOOL_EXEC, { tool: 'read_file' }).end();
 
     const [first] = tracer.getRecentTraces();
-    expect(first?.label).toBe('工具·read_file');
+    expect(first?.label).toBe('Tool · read_file');
   });
 
   it('limit 截断最近 N 条', () => {
@@ -41,8 +51,8 @@ describe('VscodeTracer.getRecentTraces', () => {
     const traces = tracer.getRecentTraces(2);
     expect(traces).toHaveLength(2);
     // 保留最近的 2 条（新→旧）
-    expect(traces[0].label).toBe('LLM 调用');
-    expect(traces[1].label).toBe('LLM 调用');
+    expect(traces[0].label).toBe('LLM call');
+    expect(traces[1].label).toBe('LLM call');
   });
 
   it('未知名 span 回退原始名称', () => {

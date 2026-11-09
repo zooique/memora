@@ -14,6 +14,8 @@
  */
 import type { ISpan, ITracer } from '@zooique/memora';
 import { TRACE_SPANS } from '@zooique/memora';
+// 宿主侧统一入口：`vscode.l10n.t` 才是键面采集面（裸解构 t 会脱离判据⑨）
+import * as vscode from 'vscode';
 
 /** span 属性值类型（对齐内核 ITracer 的 span 属性类型） */
 type SpanAttributeValue = string | number | boolean;
@@ -89,7 +91,7 @@ export class VscodeTracer implements ITracer {
    * @returns 最近已结束 span 的展现序列（新→旧）
    */
   getRecentTraces(limit = 20): { label: string }[] {
-    // 倒序遍历取最近 limit 条，映射为中文展现标签
+    // 倒序遍历取最近 limit 条，映射为展现标签
     return this.spans
       .slice(-limit)
       .reverse()
@@ -97,9 +99,10 @@ export class VscodeTracer implements ITracer {
   }
 
   /**
-   * 将一条 span 映射为透明面板的展现标签（中文，工具 span 附带工具名）
+   * 将一条 span 映射为透明面板的展现标签（工具 span 附带工具名）
    *
-   * 命中 TRACE_SPANS 已知 span 名时给出语义化中文标签；未知名回退原始 span 名。
+   * 命中 TRACE_SPANS 已知 span 名时给出语义化标签；未知名回退原始 span 名。
+   * 文案是**用户可见面**（活动抽屉「操作流」段），故走 `vscode.l10n.t` 而非硬编码。
    *
    * @param record 已采集的 span 记录
    * @returns 展现标签
@@ -107,22 +110,22 @@ export class VscodeTracer implements ITracer {
   private static labelFor(record: SpanRecord): string {
     switch (record.name) {
       case TRACE_SPANS.LLM_CALL:
-        return 'LLM 调用';
+        return vscode.l10n.t('LLM call');
       case TRACE_SPANS.TOOL_EXEC: {
-        // 工具 span 附带具体工具名（toolRunner 埋点），展现「工具·<名>」更透明
+        // 工具 span 附带具体工具名（toolRunner 埋点），展现「Tool · <name>」更透明
         const tool = record.attributes.tool;
-        return typeof tool === 'string' ? `工具·${tool}` : '工具';
+        return typeof tool === 'string' ? vscode.l10n.t('Tool · {0}', tool) : vscode.l10n.t('Tool');
       }
       case TRACE_SPANS.RESPONSE:
-        return '响应生成';
+        return vscode.l10n.t('Response generation');
       case TRACE_SPANS.CONTEXT_SUMMARY:
-        return '压缩摘要';
+        return vscode.l10n.t('Context summary');
       case TRACE_SPANS.POST_PROCESS:
-        return '会话归档';
+        return vscode.l10n.t('Session archive');
       case TRACE_SPANS.DIFFICULTY:
-        return '难度分级';
+        return vscode.l10n.t('Difficulty rating');
       case TRACE_SPANS.REPORT:
-        return '收尾汇报';
+        return vscode.l10n.t('Final report');
       default:
         return record.name;
     }

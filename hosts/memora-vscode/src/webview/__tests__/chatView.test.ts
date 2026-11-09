@@ -851,9 +851,9 @@ describe('chatView clear_ok 消息区清理', () => {
       },
     });
     expect(metrics.hidden).toBe(false);
-    expect(metrics.textContent).toContain('入 1000');
+    expect(metrics.textContent).toContain('1000 cumulative in');
     // 口径标注：输出只计正文、不含思考（旧断言「出 500」对应未标注的误导形态）
-    expect(metrics.textContent).toContain('正文 500（不含思考）');
+    expect(metrics.textContent).toContain('500 (excludes thinking) out');
   });
 
   it('收起态 dockChip 收为左侧小气泡（is-collapsed），展开态恢复全宽 pill（用户诉求 2026-10-07）', () => {
@@ -896,10 +896,10 @@ describe('chatView clear_ok 消息区清理', () => {
     });
     expect(metrics.hidden).toBe(false);
     // 预算行展示：可用/锚点/对话层/剩余（k 缩写）
-    expect(metrics.textContent).toContain('预算：可用 97k');
-    expect(metrics.textContent).toContain('锚点 200');
-    expect(metrics.textContent).toContain('对话层 87k');
-    expect(metrics.textContent).toContain('剩余 97k');
+    expect(metrics.textContent).toContain('Budget: 97k available');
+    expect(metrics.textContent).toContain('200 anchors');
+    expect(metrics.textContent).toContain('87k dialogue');
+    expect(metrics.textContent).toContain('97k remaining');
   });
 
   it('metrics 缺省 budget 时不显示预算行（可选字段非必填）', () => {
@@ -910,7 +910,7 @@ describe('chatView clear_ok 消息区清理', () => {
       fingerprints: {},
       metrics: { llmCallCount: 0, toolFailureCount: 0, truncationCount: 0 },
     });
-    expect(metrics.textContent).not.toContain('预算：');
+    expect(metrics.textContent).not.toContain('Budget:');
   });
 
   it('metrics 渲染最近操作流（B9 透明面板 trace 展示）', () => {
@@ -924,13 +924,17 @@ describe('chatView clear_ok 消息区清理', () => {
         toolFailureCount: 1,
         truncationCount: 0,
       },
-      trace: [{ label: '响应生成' }, { label: '工具·read_file' }, { label: '压缩摘要' }],
+      trace: [
+        { label: 'Response generation' },
+        { label: 'Tool · read_file' },
+        { label: 'Context summary' },
+      ],
     });
     expect(metrics.hidden).toBe(false);
-    expect(metrics.textContent).toContain('操作流');
-    expect(metrics.textContent).toContain('› 响应生成');
-    expect(metrics.textContent).toContain('› 工具·read_file');
-    expect(metrics.textContent).toContain('› 压缩摘要');
+    expect(metrics.textContent).toContain('Operation flow:');
+    expect(metrics.textContent).toContain('› Response generation');
+    expect(metrics.textContent).toContain('› Tool · read_file');
+    expect(metrics.textContent).toContain('› Context summary');
   });
 
   it('metrics 无操作流时渲染不受影响（trace 缺省）', () => {
@@ -946,8 +950,8 @@ describe('chatView clear_ok 消息区清理', () => {
       },
     });
     expect(metrics.hidden).toBe(false);
-    // 未携带 trace / trace 为空 → 不出现「操作流」段
-    expect(metrics.textContent).not.toContain('操作流');
+    // 未携带 trace / trace 为空 → 不出现「Operation flow:」段
+    expect(metrics.textContent).not.toContain('Operation flow:');
   });
 });
 
@@ -1444,7 +1448,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(items[1]!.querySelector('.pending-queue-bar__text')!.textContent).toBe('再来一句');
     // 计数为圆形徽章（badge）
     expect(bar.querySelector('.pending-queue-bar__badge')!.textContent).toBe('2');
-    expect(bar.querySelector('.pending-queue-bar__label')!.textContent).toBe('待发送');
+    expect(bar.querySelector('.pending-queue-bar__label')!.textContent).toBe('Pending');
     // 清空 → 隐藏
     dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: [] });
     expect(bar.hidden).toBe(true);
@@ -1522,7 +1526,9 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(bar.hidden).toBe(false);
     // 计数徽章 + 固定标签（数字由宿主快照驱动，webview 不自维护副本）
     expect(bar.querySelector('.file-changes-bar__badge')!.textContent).toBe('2');
-    expect(bar.querySelector('.file-changes-bar__label')!.textContent).toBe('个文件有未确认改动');
+    expect(bar.querySelector('.file-changes-bar__label')!.textContent).toBe(
+      'file(s) with unconfirmed changes',
+    );
     // 悬停清单 = 宿主下发的相对路径（webview 只展示不解析）
     expect(bar.title).toBe('src/a.md\nsrc/b.ts');
     // count 归零 → 隐藏（宿主「全部确认」后推 0）
@@ -1649,8 +1655,8 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     // 用户主动拉开后才看到内容
     chip.click();
     expect(panel.hidden).toBe(false);
-    expect(metrics.textContent).toContain('系统提示 a1b2c3d4e5f6');
-    expect(metrics.textContent).toContain('LLM 5 次');
+    expect(metrics.textContent).toContain('Round fingerprint: system prompt a1b2c3d4e5f6');
+    expect(metrics.textContent).toContain('Cumulative: 5 LLM calls');
   });
 
   it('P0 错误显示期间 P1 低扰不打断（错误优先保护，P1 仅进详情历史）', () => {
@@ -2013,7 +2019,7 @@ describe('P4 状态抽屉：时间线静态固定 + 未读只亮入口徽章（C
       // 展开态下诊断信号变化（失败数 1→2）⇒ 当场记为已读，不亮徽章
       pushMetrics(42, { toolFailureCount: 2 });
       expect(chip().classList.contains('is-unread')).toBe(false);
-      expect(metrics().textContent).toContain('工具失败 2'); // 内容照常刷新
+      expect(metrics().textContent).toContain('2 tool failures'); // 内容照常刷新
       // 收起后不反标；同信号继续推也安静
       chip().click();
       pushMetrics(43, { toolFailureCount: 2 });
@@ -5709,7 +5715,7 @@ describe('chatView 安全审计指标（G6，2026-08-23）', () => {
       },
     });
     const metricsEl = document.getElementById('activityMetrics') as HTMLElement;
-    expect(metricsEl.textContent).toContain('安全审计 4 次 · 拒绝 1');
+    expect(metricsEl.textContent).toContain('Security audit: 4 events · 1 denied');
     expect(metricsEl.textContent).toContain('path-allow foo.ts');
     // 拒绝原因须透出（仅显示 type+path 会丢弃 reason）
     expect(metricsEl.textContent).toContain('path-deny out.js (路径越界，不在白名单内)');
@@ -5723,7 +5729,7 @@ describe('chatView 安全审计指标（G6，2026-08-23）', () => {
       metrics: { llmCallCount: 1, toolFailureCount: 0, truncationCount: 0 },
     });
     const metricsEl = document.getElementById('activityMetrics') as HTMLElement;
-    expect(metricsEl.textContent).not.toContain('安全审计');
+    expect(metricsEl.textContent).not.toContain('Security audit:');
   });
 });
 
