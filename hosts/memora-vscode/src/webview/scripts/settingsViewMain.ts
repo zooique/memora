@@ -8,6 +8,7 @@
 
 import { createSettingsView, type SettingsViewDeps } from './settingsView.js';
 import { installWebviewErrorBoundary } from '../helpers/errorBoundary.js';
+import { initWebviewL10n } from '../helpers/webviewL10n.js';
 
 // webview 宿主提供的全局函数（@types/vscode 未声明，此处显式声明）
 declare const acquireVsCodeApi: SettingsViewDeps['acquireVsCodeApi'];
@@ -16,5 +17,7 @@ declare const acquireVsCodeApi: SettingsViewDeps['acquireVsCodeApi'];
 // 边界先装配，工厂初始化期抛出的错误也能被抓到并上报留痕。
 const api = acquireVsCodeApi();
 installWebviewErrorBoundary({ post: (msg) => api.postMessage(msg), window, document });
+// 装配宿主注入的 l10n 译文（P1 基建）：须先于任何 l10n.t 调用；无注入时保持未配置
+initWebviewL10n(document);
 
 createSettingsView({ acquireVsCodeApi: () => api, window });

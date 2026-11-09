@@ -256,6 +256,9 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     lang: resolveHtmlLang(vscode.env?.language),
     cspSource,
     styles: settingsStyles,
+    // P1 基建：宿主译文随 HTML 内联（默认语言 bundle 为 undefined ⇒ 不注入）；
+    // `?.` 守测试侧 vscode mock 未提供 l10n 的场景，真实 API 恒存在
+    l10nBundle: vscode.l10n?.bundle,
   })}
 <body>
   <div class="tabs" role="tablist" aria-label="设置选项卡">

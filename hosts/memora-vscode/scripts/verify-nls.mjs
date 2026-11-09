@@ -43,11 +43,18 @@
  *      - 状态栏：`setStatusBarMessage` 首参、`StatusBarItem` 的 `.text` / `.tooltip` / `.name`
  *      - 行内：`CodeLens` 的 `title`、`QuickPickItem` 的 `label` / `description` / `detail`
  *      判定口径不变（只扫**直接字面量**）：先存中文变量再传的间接形态仍属判据边界，靠台账登记。
+ *   ⑯ **`@vscode/l10n` 必须 namespace 导入**（P1 webview 基建引入的形态闸）：
+ *      `import { t } from '@vscode/l10n'` 再裸调 `t('…')` ⇒ 红。⑨⑫ 的键面采集认的是字面
+ *      `l10n.t(`——裸别名导入后调用点仍能翻译，但**脱离采集面**：缺译文不再红，键面三面对账
+ *      （源码 t() 键 = 默认 bundle = zh-cn bundle）在 webview 侧静默失明。`import type` 无运行时
+ *      调用，放行。
  *
  * ## 判据边界（如实登记，不假装覆盖）
  *
  * - **只认静态字面量**：`l10n.t(variable)` / 拼接 / 模板串第一参之外的动态形态扫不到（⑫ 只拦
  *   模板串第一参这一种最易犯的写法）。
+ * - **注释剥离按整行**（⑨⑫⑯ 采集前先剥）：残余边界 = **行尾行内注释**里的调用样例 / import
+ *   样例仍会被当代码采集（误红不误绿）——注释里的示例写在独立整行注释内即安全。
  * - **动态键源只认「从源码里抽出的字符串值」**：`REJECT_MESSAGES` 一类映射表按「文件内抽取
  *   全部 `'键': '文案'` 形态」聚合，**不锚定变量名**——改名或新增第二张映射表不会静默脱管。
  *
@@ -283,6 +290,19 @@ const WINDOW_LITERAL_ANCHORS = [
   /\.(text|tooltip|name)\s*=\s*`([^`]*)`/g,
 ];
 
+/**
+ * 按行剥离整行注释（`//` / `/*` 块行 / `*` 续行 / `*​/`）——键面采集认**代码**。
+ *
+ * 为什么必须剥：注释里写调用样例（``l10n.t('Key')``、`` `l10n.t(` `` 裸提及）会被
+ * ⑨⑫ 当真实调用采集 ⇒ 误红（2026-11-09 P1 实测：webviewL10n 注释里的样例直接打红主跑）。
+ * 为什么按行剥而非完整词法剥离：字符串字面量里的 `//` 不会顶行首，误伤面可枚举；
+ * 残余边界 = **行尾行内注释**里的样例仍会被采集（登记在判据边界，不假装覆盖）。
+ * `*` 续行要求后随空白（`* text`），放行生成器方法行（`*gen() {}`）。
+ */
+function stripCommentLines(text) {
+  return text.replace(/^[ \t]*(?:\/\/|\/\*|\*\/|\*\s).*$/gm, '');
+}
+
 /** 源码 l10n 键采集结果 */
 function collectTKeyFacts(files) {
   const staticKeys = new Set();
@@ -293,14 +313,16 @@ function collectTKeyFacts(files) {
   const callSingles = [/\bl10n\.t\(\s*'((?:[^'\\]|\\.)*)'/g, /\bl10n\.t\(\s*"((?:[^"\\]|\\.)*)"/g];
   for (const f of files) {
     const text = readFileSync(f, 'utf8');
+    // 动态键源的标记 @nls-keys 本身写在注释里 ⇒ 动态采集用原文；静态 / 模板采集剥注释
     const dyn = collectDynamicKeySources(text);
     dynamicKeyMarkers += dyn.markers;
     for (const m of dyn.values) dynamicKeys.add(m);
+    const codeText = stripCommentLines(text);
     for (const re of callSingles) {
-      for (const m of text.matchAll(re)) staticKeys.add(unescapeSourceLiteral(m[1]));
+      for (const m of codeText.matchAll(re)) staticKeys.add(unescapeSourceLiteral(m[1]));
     }
     // 模板串第一参 = 违规（键面守卫拿不到键）
-    if (/\bl10n\.t\(\s*`/.test(text)) templateViolations.push(f);
+    if (/\bl10n\.t\(\s*`/.test(codeText)) templateViolations.push(f);
   }
   return { staticKeys, dynamicKeys, templateViolations, dynamicKeyMarkers };
 }
@@ -366,6 +388,31 @@ function resolveMigratedUiFiles() {
 }
 
 /**
+ * 判据⑯ 采集（文本级，供自检对合成源码断言）：`@vscode/l10n` 的 import 形态
+ *
+ * 键面三面对账（⑧⑨⑩）的输入 = 源码里字面 `l10n.t(` 调用。写成
+ * `import { t } from '@vscode/l10n'` 再 `t('…')` 时，翻译照常生效但调用点
+ * 脱离采集面 ⇒ 缺译文不再红。namespace 导入是唯一让调用点保持 `l10n.t(` 可见的
+ * 写法，故其余值导入形态一律判红；`import type` 无运行时调用，放行。
+ *
+ * @param {string} text 源文件全文
+ * @param {string} name 展示名（相对路径）
+ * @returns {string[]} 违规清单（空 = 绿）
+ */
+export function collectL10nImportIssuesInText(text, name) {
+  const issues = [];
+  const codeText = stripCommentLines(text); // 注释里的 import 样例不是 import（同⑨⑫口径）
+  for (const m of codeText.matchAll(/import\s+([^;]*?)\s+from\s+['"]@vscode\/l10n['"]/g)) {
+    const spec = m[1].trim();
+    if (spec === '* as l10n' || spec.startsWith('type ')) continue;
+    issues.push(
+      `判据⑯ @vscode/l10n 非 namespace 导入：${name}（import ${spec} from '@vscode/l10n'）——裸调用 t() 脱离键面采集 = 判据⑨失明`,
+    );
+  }
+  return issues;
+}
+
+/**
  * bundle 判据本体（纯函数，便于自检注入）
  *
  * @param {object} input
@@ -377,6 +424,7 @@ function resolveMigratedUiFiles() {
  * @param {string[]} input.windowViolations 窗口 API 中文字面量违规清单
  * @param {string[]} input.registryIssues 判据⑭ 登记清单问题（路径不存在 / 条数低于基线）
  * @param {number} [input.dynamicKeyMarkers] 判据⑮ 动态键源标记数（`@nls-keys`）
+ * @param {string[]} [input.l10nImportIssues] 判据⑯ `@vscode/l10n` 非 namespace 导入清单
  */
 export function auditBundle({
   bundleEn,
@@ -387,6 +435,7 @@ export function auditBundle({
   windowViolations,
   registryIssues = [],
   dynamicKeyMarkers = MIN_DYNAMIC_KEY_SOURCES,
+  l10nImportIssues = [],
 }) {
   const issues = [];
   const allKeys = new Set([...staticKeys, ...dynamicKeys]);
@@ -442,6 +491,9 @@ export function auditBundle({
     );
   }
 
+  // ⑯ @vscode/l10n 导入形态（裸别名 = 键面采集脱管，⑨ 在该调用点永久失明）
+  for (const v of l10nImportIssues) issues.push(v);
+
   return issues;
 }
 
@@ -454,6 +506,10 @@ function loadReal() {
   const bundleZh = readJson(join('l10n', 'bundle.l10n.zh-cn.json'));
   const files = walkTs(join(HOST_ROOT, 'src'));
   const tKeys = collectTKeyFacts(files);
+  // 判据⑯：全 src 的 @vscode/l10n import 形态（键面采集面完整性）
+  const l10nImportIssues = files.flatMap((f) =>
+    collectL10nImportIssuesInText(readFileSync(f, 'utf8'), f.slice(HOST_ROOT.length + 1)),
+  );
   const ui = resolveMigratedUiFiles();
   const windowViolations = ui.files.flatMap((f) =>
     collectWindowApiCjkInText(readFileSync(f, 'utf8'), f.slice(HOST_ROOT.length + 1)),
@@ -471,6 +527,7 @@ function loadReal() {
       windowViolations,
       registryIssues: ui.missing,
       dynamicKeyMarkers: tKeys.dynamicKeyMarkers,
+      l10nImportIssues,
     },
   };
 }
@@ -640,6 +697,19 @@ function selfTest() {
       },
       expect: '登记项不存在',
     },
+    {
+      // 采集器级变异：证明裸别名导入由**扫描器本身**判出，而非只测判据函数透传
+      label: '⑯ @vscode/l10n 裸导 t（键面采集脱管）',
+      mutate: (d) => {
+        d.bundle.l10nImportIssues.push(
+          ...collectL10nImportIssuesInText(
+            `import { t } from '@vscode/l10n';\nexport const s = t('Key');`,
+            'mutated',
+          ),
+        );
+      },
+      expect: '非 namespace 导入',
+    },
   ];
   let allOk = true;
   for (const c of cases) {
@@ -647,7 +717,7 @@ function selfTest() {
     const data = structuredClone(base);
     c.mutate(data);
     // bundle 用例打 bundle 判据（auditBundle 入参与 auditNls 不同），其余打 package 判据
-    const isBundleCase = c.label.includes('bundle') || /[⑧⑨⑩⑪⑫⑬⑭⑮]/.test(c.label);
+    const isBundleCase = c.label.includes('bundle') || /[⑧⑨⑩⑪⑫⑬⑭⑮⑯]/.test(c.label);
     const issues = isBundleCase ? auditBundle(data.bundle) : auditNls(data);
     const hit = issues.some((s) => s.includes(c.expect));
     console.log(

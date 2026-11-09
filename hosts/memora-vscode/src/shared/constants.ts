@@ -67,3 +67,9 @@ export const MAX_ASK_ANSWER_CHARS = 4000;
  *  extension 侧直接消费内核常量与返回值）。本常量仅供 webview 预检消费（webview 无法
  *  import 内核包），与内核真源的同值关系由 chatPanelInput 守卫测试锁定，改值须两处同步。 */
 export const MAX_PENDING_INTERJECTIONS = 5;
+
+/** webview l10n 译文注入元素 id（HOST-I18N-1 P1 基建）：宿主写端（helpers/htmlShell
+ *  内联 `<script type="application/json">` 数据块）与 webview 读端（helpers/webviewL10n
+ *  启动时 config）共用的跨侧契约键——两侧禁各写字面量：第二份即漂移，且漂移后
+ *  读端拿到 null 静默不配置，译文全线回落原文、无任何测试会红。 */
+export const L10N_BUNDLE_ELEMENT_ID = 'memora-l10n-bundle';

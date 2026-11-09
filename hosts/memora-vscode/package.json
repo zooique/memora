@@ -437,6 +437,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
+    "@vscode/l10n": "^0.0.18",
     "dompurify": "^3.4.13",
     "marked": "^18.0.9",
     "yauzl": "3.4.0"
