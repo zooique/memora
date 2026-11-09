@@ -1110,7 +1110,8 @@ export class MemoraSettingsPanel {
       this.post({
         type: 'notice',
         level: 'error',
-        message: written.message ?? '切换后台模型失败（原因未记录）',
+        message:
+          written.message ?? l10n.t('Failed to switch the background model (reason not recorded)'),
       });
       return;
     }
@@ -1125,13 +1126,15 @@ export class MemoraSettingsPanel {
       this.post({
         type: 'notice',
         level: 'info',
-        message: name ? `后台模型已切换为「${name}」` : '后台模型已回退（与实时对话相同）',
+        message: name
+          ? l10n.t('Background model switched to "{0}"', name)
+          : l10n.t('Background model reverted (same as live chat)'),
       });
     } catch (err) {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `切换后台模型失败：${toNoticeText(err)}`,
+        message: l10n.t('Failed to switch the background model: {0}', toNoticeText(err)),
       });
     }
   }
@@ -1584,7 +1587,9 @@ export class MemoraSettingsPanel {
         const agent = await this.ensureAgent();
         // ensureAgent 的失败已在窗口层提示过（无工作区 → warning / 装配异常 → error），
         // 这里只补一条指向它的回执：让用户知道「点了接入、没成功」而不是按钮失灵。
-        if (!agent) return { ok: false, error: '装配未完成（原因见窗口提示）' };
+        if (!agent) {
+          return { ok: false, error: l10n.t('Assembly did not complete (see the window notice)') };
+        }
         const result = await reconcileMcpConfig(agent, readMcpServers(), {
           allowlist: readMcpToolAllowlist(),
         });
@@ -1596,7 +1601,12 @@ export class MemoraSettingsPanel {
         // 只探视已登记实例：未装配时「按当前配置启动」是下次装配的天然行为，不为重启而装配
         const agent = this._peekAgent?.();
         if (!agent) {
-          return { ok: false, error: 'Agent 未装配（下次装配会按当前配置启动，无需重启）' };
+          return {
+            ok: false,
+            error: l10n.t(
+              'Agent not assembled (it starts with the current config on the next assembly; no restart needed)',
+            ),
+          };
         }
         // 日志/版本不在此传：runtime 沿用最近一次应用配置时的注入值（单点，不为此加面板字段）
         return restartMcpServer(agent, name);

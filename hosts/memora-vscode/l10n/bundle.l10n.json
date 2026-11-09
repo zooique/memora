@@ -1326,5 +1326,11 @@
   "Workspace is not trusted, so Memora skips project-level skills and role packs (.memora/). It takes effect once trusted.": "",
   "No sessionManager after agent assembly": "",
   "No session yet; cannot assemble agent": "",
-  "$(shield) Memora: project-level assets are off": ""
+  "$(shield) Memora: project-level assets are off": "",
+  "Failed to switch the background model (reason not recorded)": "",
+  "Background model switched to \"{0}\"": "",
+  "Background model reverted (same as live chat)": "",
+  "Failed to switch the background model: {0}": "",
+  "Assembly did not complete (see the window notice)": "",
+  "Agent not assembled (it starts with the current config on the next assembly; no restart needed)": ""
 }

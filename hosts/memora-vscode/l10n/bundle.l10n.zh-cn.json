@@ -1326,5 +1326,11 @@
   "Workspace is not trusted, so Memora skips project-level skills and role packs (.memora/). It takes effect once trusted.": "工作区未受信任，Memora 不读取项目级技能/角色包（.memora/）。信任后自动生效。",
   "No sessionManager after agent assembly": "Agent 装配完成但 sessionManager 为空",
   "No session yet; cannot assemble agent": "尚未创建任何会话，无法装配 Agent",
-  "$(shield) Memora: project-level assets are off": "$(shield) Memora：项目级资产未启用"
+  "$(shield) Memora: project-level assets are off": "$(shield) Memora：项目级资产未启用",
+  "Failed to switch the background model (reason not recorded)": "切换后台模型失败（原因未记录）",
+  "Background model switched to \"{0}\"": "后台模型已切换为「{0}」",
+  "Background model reverted (same as live chat)": "后台模型已回退（与实时对话相同）",
+  "Failed to switch the background model: {0}": "切换后台模型失败：{0}",
+  "Assembly did not complete (see the window notice)": "装配未完成（原因见窗口提示）",
+  "Agent not assembled (it starts with the current config on the next assembly; no restart needed)": "Agent 未装配（下次装配会按当前配置启动，无需重启）"
 }
