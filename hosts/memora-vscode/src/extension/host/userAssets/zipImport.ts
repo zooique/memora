@@ -16,6 +16,7 @@
  *    流式读取时再按**实际字节**二次校验（中央目录声明可被伪造）；
  * 2. 逐条目路径校验：拒绝对路径、盘符、`..`、`\`、空名；拒绝符号链接条目；
  *    最终写入路径必须落在目标目录内（`resolveInsideDir` 二次断言）；
+ *    —— ①② 的判据与解压本身在 `./zipReader.ts`（`readZipFileEntries` 直接回吐条目表）；
  * 3. 类型识别：含 `manifest.json` ⇒ 角色包；否则含带 `description` 的 `.md`（或 `SKILL.md`
  *    文件夹形态）⇒ 技能；两者都不满足 ⇒ 拒绝并说明原因；
  * 4. 格式校验：技能走 `validateSkillAsset`（`./validateSkill.ts`，只校验不落盘），
@@ -34,20 +35,14 @@
 import { randomBytes } from 'node:crypto';
 import { cp, copyFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+// 值导入（非 import type）：`reason` 是用户可见文案（命令层按 `Import failed: {0}` 直接上屏），
+// 必须经 vscode.l10n.t 出本地化版本；`logger.*` 的实参属内部事实，保持中文不译。
+import * as vscode from 'vscode';
 import { logger, parseFrontmatter, SKILL_MAIN_FILE, validateManifestText } from '@zooique/memora';
-import * as yauzl from 'yauzl';
 import { pathExists, resolveInsideDir, sanitizeAssetName } from './path.js';
 import { validateSkillAsset } from './validateSkill.js';
-
-/** 解压上限（防 zip bomb；按「解压后」口径，不是压缩包大小） */
-export const ZIP_IMPORT_LIMITS = {
-  /** 条目数上限（含目录条目） */
-  maxEntries: 500,
-  /** 单条解压后大小上限（5 MB） */
-  maxEntryBytes: 5 * 1024 * 1024,
-  /** 全部条目解压后总大小上限（20 MB） */
-  maxTotalBytes: 20 * 1024 * 1024,
-} as const;
+// 读 zip + 路径 / 体量防线（判据见 `zipReader.ts`；本模块只消费「条目表」）
+import { readZipFileEntries, type ZipFileEntry } from './zipReader.js';
 
 /** 暂存区名字前缀（只由本模块创建；清理按「前缀正则 + 过期时间」双判据，不碰其他文件） */
 export const IMPORT_TMP_PREFIX = '.import-tmp-';
@@ -167,11 +162,18 @@ async function commitStaged(
     return recoveries.length > 0
       ? {
           ok: false,
-          reason: `换名提交失败且回滚未完成，旧内容保留为恢复备份：${recoveries.join('、')}（请手工恢复）：${(err as Error).message}`,
+          reason: vscode.l10n.t(
+            'Rename commit failed and rollback did not finish; the old content is kept as a recovery backup: {0} (please restore it manually): {1}',
+            recoveries.join(', '),
+            (err as Error).message,
+          ),
         }
       : {
           ok: false,
-          reason: `换名提交失败，已回滚（目标保持导入前内容）：${(err as Error).message}`,
+          reason: vscode.l10n.t(
+            'Rename commit failed; rolled back (the target keeps its pre-import content): {0}',
+            (err as Error).message,
+          ),
         };
   }
   // 提交成功后才删备份；删失败只记日志——此时目标已是新内容，把清理失败当导入失败属误报
@@ -236,186 +238,6 @@ export interface ImportZipOptions {
   isNameTaken?: (name: string) => boolean | Promise<boolean>;
 }
 
-/** 压缩包内一个已通过路径校验的文件条目（路径统一为 `/` 分隔的相对路径） */
-interface ZipFileEntry {
-  /** 相对路径（不含前导 `./`，`/` 分隔） */
-  relPath: string;
-  /** 原始字节 */
-  data: Buffer;
-}
-
-/**
- * 校验并规范化单个条目路径（防 zip-slip 的唯一判据）
- *
- * @param raw 压缩包条目原名
- * @returns 通过时返回 `/` 分隔的相对路径；拒绝时给出具体原因
- */
-export function validateArchiveEntryPath(
-  raw: string,
-): { ok: true; relPath: string } | { ok: false; reason: string } {
-  if (!raw) return { ok: false, reason: '条目名为空' };
-  // 反斜杠在 zip 规范里不是分隔符，但 Windows 上会被当作分隔符 ⇒ 跨平台歧义，一律拒绝
-  if (raw.includes('\\')) {
-    return { ok: false, reason: `条目名含反斜杠（跨平台路径歧义）：${raw}` };
-  }
-  if (raw.startsWith('/')) return { ok: false, reason: `条目名为绝对路径：${raw}` };
-  if (/^[A-Za-z]:/.test(raw)) return { ok: false, reason: `条目名含 Windows 盘符：${raw}` };
-  if (raw.includes('\0')) return { ok: false, reason: '条目名含空字符' };
-  // 允许并剥离前导 `./`（部分打包工具会带），剥离后仍按严格规则校验
-  let normalized = raw;
-  while (normalized.startsWith('./')) normalized = normalized.slice(2);
-  if (normalized.includes('//')) return { ok: false, reason: `条目名含空路径段：${raw}` };
-  const segments = normalized.split('/');
-  if (segments.some((seg) => seg === '' || seg === '.' || seg === '..')) {
-    return { ok: false, reason: `条目名含路径穿越或空路径段：${raw}` };
-  }
-  return { ok: true, relPath: segments.join('/') };
-}
-
-/**
- * 判定条目是否为符号链接（Unix 模式下 mode 高 4 位 = 0o120000）
- *
- * 符号链接若落盘，后续读技能资源时会逃出目标目录（zip-slip 的变体），故一律拒绝。
- *
- * @param entry yauzl 条目元数据
- */
-function isSymlinkEntry(entry: yauzl.Entry): boolean {
-  // versionMadeBy 高字节 = 3 表示 Unix 创建（外部属性高 16 位才是文件模式）
-  return (
-    entry.versionMadeBy >> 8 === 3 &&
-    ((entry.externalFileAttributes >>> 16) & 0o170000) === 0o120000
-  );
-}
-
-/**
- * 读取 zip 全部文件条目（带解压上限与路径校验）
- *
- * 上限在两级校验：① 读数据前看中央目录声明；② 流式读取时按实际字节累计——
- * 只信声明会被伪造的 uncompressedSize 绕过（zip bomb 的常见变体）。
- *
- * `validateEntrySizes: false` 是刻意关掉的：yauzl 的尺寸断言会在业务层之前直接报错
- * （deflated 走 `AssertByteCountStream`、stored 在中央目录解析阶段比对 compressed/uncompressed），
- * 结果是「实际字节二次校验」成死代码。关掉后**上限判据全部归本模块**：声明照看（快速拒），
- * 实际字节照算（防伪造），两级都在这里。
- *
- * @param zipPath zip 绝对路径
- * @returns 通过校验的文件条目（目录条目已跳过）
- */
-async function readZipFileEntries(zipPath: string): Promise<ZipFileEntry[]> {
-  return new Promise((resolve, reject) => {
-    yauzl.open(
-      zipPath,
-      {
-        lazyEntries: true,
-        autoClose: true,
-        decodeStrings: true,
-        strictFileNames: false,
-        // 见上方说明：尺寸断言交给本模块的两级上限，否则「按实际字节」永远不可达
-        validateEntrySizes: false,
-      },
-      (openErr, zipFile) => {
-        if (openErr || !zipFile) {
-          reject(new Error(`不是有效的 zip 文件：${openErr?.message ?? '无法打开'}`));
-          return;
-        }
-        const files: ZipFileEntry[] = [];
-        /** 条目总数（含目录条目） */
-        let entryCount = 0;
-        /** 中央目录声明的总解压字节数 */
-        let declaredTotal = 0;
-        /** 实际读出的总字节数 */
-        let actualTotal = 0;
-        /** 是否已结束（防 close 后仍回调） */
-        let settled = false;
-        /** 统一的失败出口（幂等：先 close 再 reject） */
-        const fail = (reason: string): void => {
-          if (settled) return;
-          settled = true;
-          zipFile.close();
-          reject(new Error(reason));
-        };
-
-        zipFile.on('error', (err) => fail(`读取压缩包失败：${err.message}`));
-        zipFile.on('entry', (entry) => {
-          if (settled) return;
-          entryCount += 1;
-          if (entryCount > ZIP_IMPORT_LIMITS.maxEntries) {
-            fail(`压缩包条目数超过上限（${ZIP_IMPORT_LIMITS.maxEntries} 条）`);
-            return;
-          }
-          // 目录条目只表达结构，不读数据、不计数；但仍做路径校验（防后续条目借目录名穿越）
-          const validated = validateArchiveEntryPath(entry.fileName.replace(/\/$/, ''));
-          if (!validated.ok) {
-            fail(validated.reason);
-            return;
-          }
-          if (entry.fileName.endsWith('/')) {
-            zipFile.readEntry();
-            return;
-          }
-          if (isSymlinkEntry(entry)) {
-            fail(`压缩包包含符号链接条目（拒绝解压）：${entry.fileName}`);
-            return;
-          }
-          // macOS 打包元数据不属资产内容，跳过（否则会污染技能目录 / 干扰根目录识别）
-          if (
-            validated.relPath.startsWith('__MACOSX/') ||
-            basename(validated.relPath) === '.DS_Store'
-          ) {
-            zipFile.readEntry();
-            return;
-          }
-          if (entry.uncompressedSize > ZIP_IMPORT_LIMITS.maxEntryBytes) {
-            fail(
-              `条目解压后超过单条上限（${ZIP_IMPORT_LIMITS.maxEntryBytes} 字节）：${entry.fileName}`,
-            );
-            return;
-          }
-          declaredTotal += entry.uncompressedSize;
-          if (declaredTotal > ZIP_IMPORT_LIMITS.maxTotalBytes) {
-            fail(`压缩包解压后总大小超过上限（${ZIP_IMPORT_LIMITS.maxTotalBytes} 字节）`);
-            return;
-          }
-          zipFile.openReadStream(entry, (streamErr, stream) => {
-            if (streamErr || !stream) {
-              fail(`读取条目失败：${entry.fileName}（${streamErr?.message ?? '无数据流'}）`);
-              return;
-            }
-            const chunks: Buffer[] = [];
-            let entryBytes = 0;
-            stream.on('data', (chunk: Buffer) => {
-              if (settled) return;
-              entryBytes += chunk.length;
-              actualTotal += chunk.length;
-              if (entryBytes > ZIP_IMPORT_LIMITS.maxEntryBytes) {
-                fail(`条目实际解压大小超过单条上限：${entry.fileName}`);
-                return;
-              }
-              if (actualTotal > ZIP_IMPORT_LIMITS.maxTotalBytes) {
-                fail(`压缩包实际解压总大小超过上限（${ZIP_IMPORT_LIMITS.maxTotalBytes} 字节）`);
-                return;
-              }
-              chunks.push(chunk);
-            });
-            stream.on('error', (err) => fail(`读取条目失败：${entry.fileName}（${err.message}）`));
-            stream.on('end', () => {
-              if (settled) return;
-              files.push({ relPath: validated.relPath, data: Buffer.concat(chunks) });
-              zipFile.readEntry();
-            });
-          });
-        });
-        zipFile.on('end', () => {
-          if (settled) return;
-          settled = true;
-          resolve(files);
-        });
-        zipFile.readEntry();
-      },
-    );
-  });
-}
-
 /** 解析后的资产计划（类型识别 + 格式校验后的落盘蓝图） */
 interface AssetPlan {
   kind: AssetKind;
@@ -467,7 +289,7 @@ function planAsset(
   entries: ZipFileEntry[],
 ): { ok: true; plan: AssetPlan } | { ok: false; reason: string } {
   if (entries.length === 0) {
-    return { ok: false, reason: '压缩包为空（没有可导入的文件）' };
+    return { ok: false, reason: vscode.l10n.t('The archive is empty (no importable files)') };
   }
 
   // ── 角色包：含 manifest.json ──
@@ -498,7 +320,7 @@ function planRolePack(
   try {
     parsed = JSON.parse(manifestEntry.data.toString('utf-8')) as Record<string, unknown>;
   } catch {
-    return { ok: false, reason: '角色包 manifest.json 不是合法的 JSON' };
+    return { ok: false, reason: vscode.l10n.t('The role-pack manifest.json is not valid JSON') };
   }
   // formatVersion 缺省补 1.0.0（与角色包 schema 默认同源；写入为让文件自描述）
   if (!parsed['formatVersion']) parsed['formatVersion'] = '1.0.0';
@@ -506,12 +328,22 @@ function planRolePack(
   const validation = validateManifestText(manifestText);
   const firstError = validation.issues.find((issue) => issue.severity === 'error');
   if (firstError) {
-    return { ok: false, reason: `角色包 manifest 校验失败：${firstError.message}` };
+    // 注意：firstError.message 来自内核校验器（内核中文散文属公开面，只登记不改）
+    return {
+      ok: false,
+      reason: vscode.l10n.t('Role-pack manifest validation failed: {0}', firstError.message),
+    };
   }
   const name = typeof parsed['name'] === 'string' ? parsed['name'] : '';
   const sanitized = sanitizeAssetName(name);
   if (!sanitized.ok) {
-    return { ok: false, reason: `角色包名不可用作目录名：${sanitized.reason}` };
+    return {
+      ok: false,
+      reason: vscode.l10n.t(
+        'The role-pack name cannot be used as a directory name: {0}',
+        sanitized.reason,
+      ),
+    };
   }
   const rootDir = dirname(manifestEntry.relPath);
   // 根目录的 manifest.json 合法（rootDir 为 '.'，按空串处理）
@@ -547,7 +379,9 @@ function planFolderSkill(
   if (!name) {
     return {
       ok: false,
-      reason: '文件夹形态技能缺少 frontmatter name，且压缩包内目录名为空（无法确定技能名）',
+      reason: vscode.l10n.t(
+        'The folder-shaped skill has no frontmatter name, and the archive contains no directory name (cannot determine the skill name)',
+      ),
     };
   }
   const invalid = validateSkillAsset({
@@ -555,9 +389,17 @@ function planFolderSkill(
     description: parsed.frontmatter['description'] ?? '',
     content: parsed.body,
   });
-  if (invalid) return { ok: false, reason: `技能校验失败：${invalid}` };
+  if (invalid) return { ok: false, reason: vscode.l10n.t('Skill validation failed: {0}', invalid) };
   const sanitized = sanitizeAssetName(name);
-  if (!sanitized.ok) return { ok: false, reason: `技能名不可用作目录名：${sanitized.reason}` };
+  if (!sanitized.ok) {
+    return {
+      ok: false,
+      reason: vscode.l10n.t(
+        'The skill name cannot be used as a directory name: {0}',
+        sanitized.reason,
+      ),
+    };
+  }
   const assetEntries = entriesUnder(entries, rootDir === '.' ? '' : rootDir);
   return {
     ok: true,
@@ -587,15 +429,19 @@ function planFlatSkill(
   if (candidates.length === 0) {
     return {
       ok: false,
-      reason:
-        '压缩包不符合技能或角色包规范（未找到 manifest.json，也没有带 description 的 .md 技能文件）',
+      reason: vscode.l10n.t(
+        'The archive matches neither the skill nor the role-pack layout (no manifest.json, and no .md skill file with a description)',
+      ),
     };
   }
   const picked = pickShallowest(candidates);
   if (!picked) {
     return {
       ok: false,
-      reason: `压缩包内含多个技能文件（${candidates.map((e) => e.relPath).join('、')}），无法确定导入哪一个`,
+      reason: vscode.l10n.t(
+        'The archive contains multiple skill files ({0}); cannot determine which one to import',
+        candidates.map((e) => e.relPath).join(', '),
+      ),
     };
   }
   const parsed = parseFrontmatter(picked.data.toString('utf-8'));
@@ -605,9 +451,17 @@ function planFlatSkill(
     description: parsed.frontmatter['description'] ?? '',
     content: parsed.body,
   });
-  if (invalid) return { ok: false, reason: `技能校验失败：${invalid}` };
+  if (invalid) return { ok: false, reason: vscode.l10n.t('Skill validation failed: {0}', invalid) };
   const sanitized = sanitizeAssetName(name);
-  if (!sanitized.ok) return { ok: false, reason: `技能名不可用作目录名：${sanitized.reason}` };
+  if (!sanitized.ok) {
+    return {
+      ok: false,
+      reason: vscode.l10n.t(
+        'The skill name cannot be used as a directory name: {0}',
+        sanitized.reason,
+      ),
+    };
+  }
   return {
     ok: true,
     plan: {
@@ -668,7 +522,10 @@ export async function importAssetZip(
   if (plan.kind === 'rolePack' && options.isNameTaken && (await options.isNameTaken(plan.name))) {
     return {
       ok: false,
-      reason: `已存在同名角色包（内置）「${plan.name}」，请改名后再导入`,
+      reason: vscode.l10n.t(
+        'A built-in role pack with the same name already exists ("{0}"); rename the pack and try again',
+        plan.name,
+      ),
       asset: { kind: plan.kind, name: plan.name },
     };
   }
@@ -694,7 +551,10 @@ export async function importAssetZip(
     if (!overwrite) {
       return {
         ok: false,
-        reason: `已取消导入：目标已存在（${existing[0]}），未做任何写入`,
+        reason: vscode.l10n.t(
+          'Import cancelled: the target already exists ({0}); nothing was written',
+          existing[0],
+        ),
         asset: { kind: plan.kind, name: plan.name },
       };
     }
@@ -717,7 +577,11 @@ export async function importAssetZip(
       for (const entry of plan.entries) {
         // 逐条目二次逃逸断言（路径校验已在读包时做过，此处防「蓝图拼接」引入新逃逸）
         const destination = resolveInsideDir(stagedPath, entry.relPath);
-        if (!destination.ok) throw new Error(`条目写入路径越出目标目录：${entry.relPath}`);
+        if (!destination.ok) {
+          throw new Error(
+            vscode.l10n.t('The entry write path escapes the target directory: {0}', entry.relPath),
+          );
+        }
         await mkdir(dirname(destination.path), { recursive: true });
         await writeFile(destination.path, entry.data);
       }
@@ -729,7 +593,10 @@ export async function importAssetZip(
     });
     return {
       ok: false,
-      reason: `写入失败（目标未改动）：${(err as Error).message}`,
+      reason: vscode.l10n.t(
+        'Write failed (the target was not modified): {0}',
+        (err as Error).message,
+      ),
       asset: { kind: plan.kind, name: plan.name },
     };
   }
@@ -831,16 +698,31 @@ export async function copyAssetToRoot(
     const info = await stat(packageRoot);
     sourceIsDir = info.isDirectory();
   } catch (err) {
-    return { ok: false, reason: `源资产不存在或不可读：${(err as Error).message}` };
+    return {
+      ok: false,
+      reason: vscode.l10n.t(
+        'The source asset does not exist or is unreadable: {0}',
+        (err as Error).message,
+      ),
+    };
   }
 
   // 前置校验（按包根，先验来源再动盘）：任一条不满足即拒绝并给绝对路径，暂存 / 换名一步都不做
   if (options.kind === 'rolePack') {
     if (!sourceIsDir) {
-      return { ok: false, reason: `角色包包根必须是包目录，收到文件路径：${packageRoot}` };
+      return {
+        ok: false,
+        reason: vscode.l10n.t(
+          'The role-pack root must be a directory; received a file path: {0}',
+          packageRoot,
+        ),
+      };
     }
     if (!(await pathExists(join(packageRoot, 'manifest.json')))) {
-      return { ok: false, reason: `角色包目录缺少 manifest.json：${packageRoot}` };
+      return {
+        ok: false,
+        reason: vscode.l10n.t('The role-pack directory has no manifest.json: {0}', packageRoot),
+      };
     }
   } else {
     // 技能分支只校验「包根形态与 entry 是否自洽」，自身不推导包根：
@@ -849,7 +731,11 @@ export async function copyAssetToRoot(
         // 目录式技能：内核已判定包根是目录，则该目录必须有入口文件；缺入口 = 坏包，拒复制
         return {
           ok: false,
-          reason: `目录式技能包根缺少入口文件 ${SKILL_MAIN_FILE}：${packageRoot}`,
+          reason: vscode.l10n.t(
+            'The directory-shaped skill root has no entry file {0}: {1}',
+            SKILL_MAIN_FILE,
+            packageRoot,
+          ),
         };
       }
     } else if (basename(packageRoot).toLowerCase() === SKILL_MAIN_FILE.toLowerCase()) {
@@ -858,9 +744,11 @@ export async function copyAssetToRoot(
       return {
         ok: false,
         // 含修复指引：单文件技能若恰好叫 SKILL.md，路径上无法与目录式入口区分 ⇒ 宁可拒也不误搬
-        reason:
-          `目录式技能应传入技能目录作为包根，收到入口文件：${packageRoot}` +
-          `（若这是单文件技能本身，请改用其它文件名——${SKILL_MAIN_FILE} 是目录式入口约定）`,
+        reason: vscode.l10n.t(
+          'A directory-shaped skill needs its directory as the package root; received the entry file: {0} (if this is a single-file skill, rename it — {1} is the directory-entry convention)',
+          packageRoot,
+          SKILL_MAIN_FILE,
+        ),
       };
     }
   }
@@ -893,7 +781,13 @@ export async function copyAssetToRoot(
       targetPath: existing[0]!,
     });
     if (!overwrite) {
-      return { ok: false, reason: `已取消复制：目标已存在（${existing[0]}），未做任何写入` };
+      return {
+        ok: false,
+        reason: vscode.l10n.t(
+          'Copy cancelled: the target already exists ({0}); nothing was written',
+          existing[0],
+        ),
+      };
     }
   }
 
@@ -918,7 +812,13 @@ export async function copyAssetToRoot(
     await rm(stagedPath, { recursive: true, force: true }).catch((cleanupErr: unknown) => {
       logger.warn({ cleanupErr, stagedPath }, '复制到用户级写入失败后清理暂存失败');
     });
-    return { ok: false, reason: `复制失败（目标未改动）：${(err as Error).message}` };
+    return {
+      ok: false,
+      reason: vscode.l10n.t(
+        'Copy failed (the target was not modified): {0}',
+        (err as Error).message,
+      ),
+    };
   }
 
   // ── 换名提交：与压缩包导入完全同一原语（备份 → rename → 删备份；失败回滚） ──

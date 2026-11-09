@@ -368,7 +368,7 @@ describe('importAssetCommand · 同名覆盖确认', () => {
     expect(calls).toEqual([]);
     const err = vscodeMock.showErrorMessage.mock.calls[0]?.[0] as string;
     expect(err).toContain('Import failed');
-    expect(err).toContain('已取消导入');
+    expect(err).toContain('Import cancelled');
     // 覆盖确认只有「确认项 + options」两个实参，不存在取消 item（双取消的结构性防线）
     const confirmArgs = vscodeMock.showWarningMessage.mock.calls.find((args) =>
       String(args[0]).includes('Target already exists'),
@@ -442,7 +442,7 @@ describe('importAssetCommand · 角色包同名判定（内置 vs 用户级）',
     });
 
     const err = vscodeMock.showErrorMessage.mock.calls[0]?.[0] as string;
-    expect(err).toContain('已存在同名角色包（内置）');
+    expect(err).toContain('built-in role pack with the same name');
     // 零写入：连用户角色包根目录都没被创建（判定在 mkdir 之前）
     expect(existsSync(userRolePacksDir)).toBe(false);
     expect(vscodeMock.showWarningMessage).not.toHaveBeenCalled();
@@ -488,6 +488,6 @@ describe('importAssetCommand · 角色包同名判定（内置 vs 用户级）',
     const confirmText = `${confirmArgs?.[0] ?? ''}\n${confirmArgs?.[1]?.detail ?? ''}`;
     expect(confirmText).toContain('Overwriting backs up and replaces the existing content');
     expect(calls).toEqual([]);
-    expect(vscodeMock.showErrorMessage.mock.calls[0]?.[0]).toContain('已取消导入');
+    expect(vscodeMock.showErrorMessage.mock.calls[0]?.[0]).toContain('Import cancelled');
   });
 });

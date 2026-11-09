@@ -29,11 +29,9 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ZipFile } from 'yazl';
-import {
-  importAssetZip,
-  validateArchiveEntryPath,
-  ZIP_IMPORT_LIMITS,
-} from '../userAssets/zipImport.js';
+import { importAssetZip } from '../userAssets/zipImport.js';
+// 路径 / 体量防线与解压上限的真理源已外置到 zipReader（B10-A 按职责切分）
+import { validateArchiveEntryPath, ZIP_IMPORT_LIMITS } from '../userAssets/zipReader.js';
 
 // vscode 替身：拒绝原因经 `vscode.l10n` 出键面（默认语言下原样返回英文源键，`{0}` 照常插值）
 vi.mock('vscode', () => ({
@@ -151,25 +149,25 @@ describe('validateArchiveEntryPath · zip-slip 判据（单一真理源）', () 
   }
 
   it('拒绝 `..` 上跳', () => {
-    expectRejected('../../x.md', '路径穿越');
-    expectRejected('a/../b.md', '路径穿越');
+    expectRejected('../../x.md', 'path traversal');
+    expectRejected('a/../b.md', 'path traversal');
   });
 
   it('拒绝绝对路径与 Windows 盘符', () => {
-    expectRejected('/absolute/x.md', '绝对路径');
-    expectRejected('C:/evil.md', '盘符');
+    expectRejected('/absolute/x.md', 'absolute path');
+    expectRejected('C:/evil.md', 'drive letter');
   });
 
   it('拒绝反斜杠（跨平台路径歧义）', () => {
-    expectRejected('dir\\evil.md', '反斜杠');
+    expectRejected('dir\\evil.md', 'backslash');
     // 盘符 + 反斜杠同时出现时，先命中的判据是反斜杠（语义上两者都属拒绝理由）
-    expectRejected('c:\\evil.md', '反斜杠');
+    expectRejected('c:\\evil.md', 'backslash');
   });
 
   it('拒绝空名 / 空路径段 / 单点段', () => {
-    expectRejected('', '为空');
-    expectRejected('a//b.md', '空路径段');
-    expectRejected('a/./b.md', '空路径段');
+    expectRejected('', 'is empty');
+    expectRejected('a//b.md', 'empty path segment');
+    expectRejected('a/./b.md', 'empty path segment');
   });
 
   it('允许并剥离前导 `./`（部分打包工具会带）', () => {
@@ -188,7 +186,7 @@ describe('importAssetZip · 包级拒绝（非 zip / 空包 / zip bomb / 符号�
       confirmOverwrite: neverOverwrite,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toMatch(/不是有效的 zip 文件/);
+    if (!result.ok) expect(result.reason).toMatch(/Not a valid zip file/);
   });
 
   it('空 zip ⇒ 明确说明压缩包为空', async () => {
@@ -200,7 +198,7 @@ describe('importAssetZip · 包级拒绝（非 zip / 空包 / zip bomb / 符号�
       confirmOverwrite: neverOverwrite,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('压缩包为空');
+    if (!result.ok) expect(result.reason).toContain('archive is empty');
   });
 
   it('总解压量超过上限 ⇒ 拒绝（zip bomb）', async () => {
@@ -220,7 +218,7 @@ describe('importAssetZip · 包级拒绝（非 zip / 空包 / zip bomb / 符号�
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toMatch(
-        new RegExp(`总大小超过上限（${ZIP_IMPORT_LIMITS.maxTotalBytes}`),
+        new RegExp(`total size limit after extraction \\(${ZIP_IMPORT_LIMITS.maxTotalBytes}`),
       );
     }
   });
@@ -234,7 +232,7 @@ describe('importAssetZip · 包级拒绝（非 zip / 空包 / zip bomb / 符号�
       confirmOverwrite: neverOverwrite,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('符号链接');
+    if (!result.ok) expect(result.reason).toContain('symbolic-link');
   });
 
   it('zip-slip（`../`）⇒ 拒绝且不落盘', async () => {
@@ -248,7 +246,7 @@ describe('importAssetZip · 包级拒绝（非 zip / 空包 / zip bomb / 符号�
       confirmOverwrite: neverOverwrite,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toMatch(/relative path|路径穿越|读取压缩包失败/);
+    if (!result.ok) expect(result.reason).toMatch(/path traversal|Failed to read the archive/);
     // 逃逸目标不应出现（写入从未开始）：目标根未被创建
     expect(existsSync(root)).toBe(false);
   });
@@ -263,7 +261,7 @@ describe('importAssetZip · 包级拒绝（非 zip / 空包 / zip bomb / 符号�
       confirmOverwrite: neverOverwrite,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toMatch(/absolute path|绝对路径|读取压缩包失败/);
+    if (!result.ok) expect(result.reason).toMatch(/absolute path|Failed to read the archive/);
   });
 
   it('zip-slip（Windows 盘符）⇒ 拒绝', async () => {
@@ -276,7 +274,7 @@ describe('importAssetZip · 包级拒绝（非 zip / 空包 / zip bomb / 符号�
       confirmOverwrite: neverOverwrite,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toMatch(/absolute path|盘符|读取压缩包失败/);
+    if (!result.ok) expect(result.reason).toMatch(/drive letter|Failed to read the archive/);
   });
 });
 
@@ -363,7 +361,8 @@ describe('importAssetZip · 类型识别与格式校验', () => {
       confirmOverwrite: neverOverwrite,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('不符合技能或角色包规范');
+    if (!result.ok)
+      expect(result.reason).toContain('matches neither the skill nor the role-pack layout');
   });
 });
 
@@ -391,7 +390,7 @@ describe('importAssetZip · 同名处置（不许静默覆盖）', () => {
       confirmOverwrite,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('已取消导入');
+    if (!result.ok) expect(result.reason).toContain('Import cancelled');
     expect(confirmOverwrite).toHaveBeenCalledTimes(1);
     expect(readFileSync(existingPath, 'utf-8')).toBe(before);
   });
@@ -428,7 +427,7 @@ describe('importAssetZip · 内置角色包同名（isNameTaken 命中即零写�
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('同名角色包（内置）');
+    if (!result.ok) expect(result.reason).toContain('built-in role pack with the same name');
     // 零写入：判定发生在 mkdir / 暂存之前
     expect(existsSync(root)).toBe(false);
     expect(confirmOverwrite).not.toHaveBeenCalled();
@@ -453,7 +452,7 @@ describe('importAssetZip · 内置角色包同名（isNameTaken 命中即零写�
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('已取消导入');
+    if (!result.ok) expect(result.reason).toContain('Import cancelled');
     expect(confirmOverwrite).toHaveBeenCalledTimes(1);
     expect(readFileSync(join(targetDir, 'manifest.json'), 'utf-8')).toContain('user-role');
   });
@@ -478,7 +477,7 @@ describe('importAssetZip · 防线用例（既有实现，零覆盖补测）', (
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('条目数超过上限');
+    if (!result.ok) expect(result.reason).toContain('more entries than the limit');
   });
 
   it('单条解压后超过上限（5 MB + 1 字节）⇒ 拒绝', async () => {
@@ -494,7 +493,7 @@ describe('importAssetZip · 防线用例（既有实现，零覆盖补测）', (
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('单条上限');
+    if (!result.ok) expect(result.reason).toContain('per-entry limit after extraction');
   });
 
   it('伪造中央目录声明（声明 1 字节、实际 5 MB+）⇒ 被「实际字节」二次校验拦下', async () => {
@@ -516,7 +515,7 @@ describe('importAssetZip · 防线用例（既有实现，零覆盖补测）', (
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('实际解压大小超过单条上限');
+    if (!result.ok) expect(result.reason).toContain('per-entry limit in actual extracted size');
   });
 
   it('同深度多份候选技能 ⇒ 明确拒绝（不任选一个）', async () => {
@@ -533,7 +532,7 @@ describe('importAssetZip · 防线用例（既有实现，零覆盖补测）', (
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('多个技能文件');
+    if (!result.ok) expect(result.reason).toContain('multiple skill files');
   });
 
   it('跳过 `__MACOSX/` 与 `.DS_Store` ⇒ 只导入真实技能文件', async () => {

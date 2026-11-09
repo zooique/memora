@@ -184,7 +184,7 @@ describe('importAssetZip · 暂存换名（失败中断不得损坏旧目标）'
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('写入失败');
+    if (!result.ok) expect(result.reason).toContain('Write failed');
     // 旧内容逐字节一致（不是「看起来还在」，而是字节相等）
     expect(readFileSync(join(targetDir, 'manifest.json'), 'utf-8')).toBe(OLD_MANIFEST);
     expect(readFileSync(join(targetDir, 'old.md'), 'utf-8')).toBe(OLD_EXTRA);
@@ -208,7 +208,7 @@ describe('importAssetZip · 暂存换名（失败中断不得损坏旧目标）'
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('已回滚');
+    if (!result.ok) expect(result.reason).toContain('rolled back');
     // 回滚后目标仍是旧版（逐字节一致），且没有新版文件混入
     expect(readFileSync(join(targetDir, 'manifest.json'), 'utf-8')).toBe(OLD_MANIFEST);
     expect(readFileSync(join(targetDir, 'old.md'), 'utf-8')).toBe(OLD_EXTRA);
@@ -232,7 +232,7 @@ describe('importAssetZip · 暂存换名（失败中断不得损坏旧目标）'
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain('回滚未完成');
+    if (!result.ok) expect(result.reason).toContain('rollback did not finish');
     // 目标位置已无旧内容（旧内容的唯一副本迁到了恢复备份）
     expect(existsSync(targetDir)).toBe(false);
     // 恢复备份存在且旧内容逐字节完好
@@ -403,7 +403,7 @@ describe('copyAssetToRoot · 项目级 → 用户级（拷贝非同步，复用�
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.reason).toContain('已取消复制');
+    expect(result.reason).toContain('Copy cancelled');
     expect(readFileSync(target, 'utf-8')).toBe('旧版内容');
     expect(hasLeftovers(user)).toBe(false);
   });
@@ -437,7 +437,7 @@ describe('copyAssetToRoot · 项目级 → 用户级（拷贝非同步，复用�
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.reason).toContain('源资产不存在');
+    expect(result.reason).toContain('does not exist or is unreadable');
     expect(readdirSync(user)).toEqual([]);
   });
 
@@ -458,7 +458,7 @@ describe('copyAssetToRoot · 项目级 → 用户级（拷贝非同步，复用�
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.reason).toContain('必须是包目录');
+    expect(result.reason).toContain('must be a directory');
     expect(result.reason).toContain(manifestPath);
     expect(readdirSync(user)).toEqual([]);
     expect(hasLeftovers(user)).toBe(false);
@@ -570,7 +570,7 @@ describe('copyAssetToRoot · 项目级 → 用户级（拷贝非同步，复用�
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.reason).toContain('技能目录作为包根');
+    expect(result.reason).toContain('needs its directory as the package root');
     expect(result.reason).toContain(entry);
     // 零写入：用户根既无平铺 SKILL.md，也无任何残留
     expect(readdirSync(user)).toEqual([]);
