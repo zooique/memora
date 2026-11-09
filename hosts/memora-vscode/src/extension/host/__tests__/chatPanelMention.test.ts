@@ -157,13 +157,15 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
     // （与 Roo Code / Cursor 同款）；顺序 = MOUNTABLE_INJECTION_META 登记序
     expect(qp.items).toEqual([
       {
-        label: '诊断（问题面板）',
-        description: '注入当前工作区的错误 / 警告（发送时取最新，占预算）',
+        label: 'Diagnostics (Problems panel)',
+        description:
+          'Inject errors / warnings from the current workspace (latest at send time, uses budget)',
         injection: 'problems',
       },
       {
-        label: 'git 未提交改动',
-        description: '注入 git 未提交改动（只读 status/diff，发送时取最新，占预算）',
+        label: 'Uncommitted git changes',
+        description:
+          'Inject uncommitted git changes (read-only status/diff, latest at send time, uses budget)',
         injection: 'git-changes',
       },
       { label: 'b.md', description: 'docs/b.md', rel: 'docs/b.md' },
@@ -193,8 +195,8 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
     const h = setup();
     (vscode.workspace.findFiles as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     const qp = stubQuickPick([
-      { label: '诊断（问题面板）', injection: 'problems' } as never,
-      { label: 'git 未提交改动', injection: 'git-changes' } as never,
+      { label: 'Diagnostics (Problems panel)', injection: 'problems' } as never,
+      { label: 'Uncommitted git changes', injection: 'git-changes' } as never,
     ]);
     const p = h.cast.openMentionQuickPick();
     await vi.waitFor(() => expect(qp.onDidAccept).toHaveBeenCalled());

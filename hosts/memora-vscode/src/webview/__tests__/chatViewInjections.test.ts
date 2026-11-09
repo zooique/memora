@@ -41,11 +41,12 @@ describe('注入型上下文 chip（HOST-CTX-4 · @problems 第一笔）', () =>
     const chip = injectionChips()[0];
     expect(chip.dataset.injection).toBe('problems');
     // 与引用 chip 的「仅挂指针」语义相反，必须在可见面说清
-    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('内容已注入');
+    // （断言写英文源键：单测跑默认语言，l10n.t(键) 返回键本身）
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('Content injected');
     // chip 可见名 = injectionSourceMeta 的 segmentLabel 单点（2026-10-21 SSOT 化回填时补：
     // 此前只断言 note/title，变异 segmentLabel 仅回执一例红——chip 可见名面零覆盖）
-    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('工作区诊断');
-    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('已注入');
+    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('Workspace diagnostics');
+    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('injected');
     expect(document.getElementById('refChips')?.hasAttribute('hidden')).toBe(false);
   });
 
@@ -57,9 +58,9 @@ describe('注入型上下文 chip（HOST-CTX-4 · @problems 第一笔）', () =>
     expect(chip.dataset.injection).toBe('git-changes');
     // 三面都从 MOUNTABLE_INJECTION_META / INJECTION_SEGMENT_LABELS 派生——本用例守的是
     // 「Record 穷尽性让新源渲染自动」不是空话：任一值漂移这三条断言即红
-    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('git 未提交改动');
-    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('内容已注入');
-    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('已注入');
+    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('Uncommitted git changes');
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('Content injected');
+    expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain('injected');
   });
 
   it('幂等：同一 source 重复挂载恒一枚（身份判据 = 来源枚举，非内容哈希）', () => {
@@ -187,7 +188,7 @@ describe('本轮注入回执行（HOST-CTX-4 ② · 圆环 hover 卡片底部）
     expect(receipt().hidden).toBe(false);
     // 数字口径与卡片其余行统一（fmtTokens 精确式：非整千走千分位）
     expect(receipt().textContent).toBe(
-      'Injected this turn 3,378 (当前文件正文 3,258 · 工作区诊断 120) · estimated at send time, overwritten next turn',
+      'Injected this turn 3,378 (Current file content 3,258 · Workspace diagnostics 120) · estimated at send time, overwritten next turn',
     );
   });
 
@@ -214,7 +215,7 @@ describe('本轮注入回执行（HOST-CTX-4 ② · 圆环 hover 卡片底部）
       },
     });
     expect(receipt().textContent).toBe(
-      'Injected this turn 8,720 (工作区诊断 120 · git 未提交改动 8,600) · estimated at send time, overwritten next turn',
+      'Injected this turn 8,720 (Workspace diagnostics 120 · Uncommitted git changes 8,600) · estimated at send time, overwritten next turn',
     );
   });
 

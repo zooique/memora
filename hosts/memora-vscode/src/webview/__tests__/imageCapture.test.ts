@@ -177,7 +177,7 @@ describe('createImageCapture — 粘贴', () => {
     // 回执未到的此刻必须是「正在保存」，不能说成「将随消息发送」——否则就是另一种假话。
     expect(chips()[0]!.classList.contains('image-chip--probe')).toBe(false);
     expect(chips()[0]!.querySelector('.skill-chip__name')?.getAttribute('title')).toContain(
-      '正在保存到本地',
+      'Still saving locally',
     );
     expect(handle.accepted.length).toBe(1);
     // 提案摘要与尺寸必须落进候选（发送时刻要用它们，且不是渲染期再算）
@@ -298,7 +298,7 @@ describe('createImageCapture — 粘贴', () => {
     dom.input.dispatchEvent(eventWithData('paste', 'clipboardData', clipboard));
 
     expect(handle.rejected.length).toBe(1);
-    expect(handle.rejected[0]!.reason).toContain('不解析');
+    expect(handle.rejected[0]!.reason).toContain('not parsed');
   });
 
   it('合法图片 => paste 必须 preventDefault（否则图片名会同时落进 textarea）', async () => {
@@ -390,7 +390,7 @@ describe('createImageCapture — 拖入', () => {
 
     expect(e.defaultPrevented).toBe(true);
     expect(posted).toEqual([]);
-    expect(notices).toEqual(['仅支持拖入本地图片文件']);
+    expect(notices).toEqual(['Only local image files can be dropped here']);
   });
 
   it('拖入带 `Files` 的真实文件 => 保留真名（与粘贴路径的派生名分流，别一起改）', async () => {
@@ -555,7 +555,7 @@ describe('createImageCapture — 上行与落盘回执（IMG-2）', () => {
     expect(chips()[0]!.querySelector('.skill-chip__name')?.textContent).toBe('真名.png');
     // 落盘终态要能在 title 里看到（否则用户分不清「已保存」与「只在内存里」）
     expect(chips()[0]!.querySelector('.skill-chip__name')?.getAttribute('title')).toContain(
-      '已保存',
+      'Saved locally',
     );
   });
 
@@ -599,7 +599,7 @@ describe('createImageCapture — 上行与落盘回执（IMG-2）', () => {
 
     expect(handle!.accepted.length).toBe(1);
     expect(chips().length).toBe(1);
-    expect(notices).toContain('该图片已添加');
+    expect(notices).toContain('This image is already added');
     // 去重走的是「已上行过一次」的候选，不再发第二条上行（省一次字节传输）
     expect(sent.length).toBe(1);
   });
@@ -610,7 +610,7 @@ describe('createImageCapture — 上行与落盘回执（IMG-2）', () => {
 
     // 回执未到（写盘在途）=> 不许发，且原因必须点明在等什么（空手发一条「图没跟上」的消息最坏）
     const waiting = handle!.resolveSendable(false);
-    expect('blocked' in waiting && waiting.blocked).toContain('仍在保存');
+    expect('blocked' in waiting && waiting.blocked).toContain('still being saved locally');
 
     const ref = {
       sha256: SHA,
@@ -637,7 +637,9 @@ describe('createImageCapture — 上行与落盘回执（IMG-2）', () => {
     });
 
     const blocked = handle!.resolveSendable(true);
-    expect('blocked' in blocked && blocked.blocked).toContain('生成中');
+    expect('blocked' in blocked && blocked.blocked).toContain(
+      'Cannot send images while generating',
+    );
   });
 
   it('发送取图：零候选 => 空 refs（纯文字消息照常发，插话路由也不受图影响）', () => {
@@ -663,7 +665,7 @@ describe('createImageCapture — 上行与落盘回执（IMG-2）', () => {
     for (let i = 0; i < 5; i++) await Promise.resolve();
 
     const blocked = handle!.resolveSendable(false);
-    expect('blocked' in blocked && blocked.blocked).toContain('保存');
+    expect('blocked' in blocked && blocked.blocked).toContain('saved locally');
   });
 });
 
@@ -754,9 +756,9 @@ describe('悬停预览（#imgPreviewTip · 磁盘预览）', () => {
     tip.querySelector('img')!.dispatchEvent(new Event('error'));
 
     expect(tip.hidden).toBe(false);
-    expect(tip.textContent).toContain(`预览加载失败（${SHA.slice(0, 8)}）`);
+    expect(tip.textContent).toContain(`Preview failed to load (${SHA.slice(0, 8)})`);
     // 反向断言：不得回到「存在性断言」的措辞（改文案很容易顺手写回去）
-    expect(tip.textContent).not.toContain('不可用');
+    expect(tip.textContent).not.toContain('unavailable');
     expect(chips().length).toBe(1);
   });
 
@@ -779,7 +781,7 @@ describe('悬停预览（#imgPreviewTip · 磁盘预览）', () => {
 
     chips()[0]!.dispatchEvent(new MouseEvent('mouseenter'));
     const tip = tipEl()!;
-    expect(tip.textContent).toContain('正在保存到本地，暂无预览');
+    expect(tip.textContent).toContain('Still saving locally; no preview yet');
     expect(tip.querySelector('img')).toBeNull();
   });
 
@@ -787,7 +789,7 @@ describe('悬停预览（#imgPreviewTip · 磁盘预览）', () => {
     await mountIngested(undefined);
     chips()[0]!.dispatchEvent(new MouseEvent('mouseenter'));
     const tip = tipEl()!;
-    expect(tip.textContent).toContain('暂无预览');
+    expect(tip.textContent).toContain('No preview');
     expect(tip.querySelector('img')).toBeNull();
   });
 
@@ -931,7 +933,7 @@ describe('createImageCapture — 文件选择框回执（Q3 applyPicked）', () 
     const chip = chips()[0]!;
     expect(chip.dataset.imageSource).toBe('pick');
     expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain(
-      '已保存到本地',
+      'Saved locally',
     );
   });
 
@@ -942,7 +944,7 @@ describe('createImageCapture — 文件选择框回执（Q3 applyPicked）', () 
 
     expect(handle.accepted.length).toBe(1);
     expect(chips().length).toBe(1);
-    expect(notices).toEqual(['该图片已添加']);
+    expect(notices).toEqual(['This image is already added']);
   });
 
   it('rejected/failed → 转**可见**拒收 chip（本路径无既有 chip 可转态，绝不静默丢）', () => {
@@ -960,7 +962,7 @@ describe('createImageCapture — 文件选择框回执（Q3 applyPicked）', () 
     expect(handle.rejected.length).toBe(1);
     const chip = chips()[0]!;
     expect(chip.classList.contains('image-chip--rejected')).toBe(true);
-    expect(chip.querySelector('.skill-chip__name')?.textContent).toContain('（未采用）');
+    expect(chip.querySelector('.skill-chip__name')?.textContent).toContain('(not adopted)');
     expect(chip.querySelector('.skill-chip__name')?.getAttribute('title')).toContain(
       '不支持的图片格式',
     );
@@ -972,7 +974,7 @@ describe('createImageCapture — 文件选择框回执（Q3 applyPicked）', () 
 
     expect(handle.accepted.length).toBe(0);
     expect(handle.rejected.length).toBe(1);
-    expect(handle.rejected[0]!.reason).toContain('回执缺少图片引用');
+    expect(handle.rejected[0]!.reason).toContain('The receipt is missing the image reference');
   });
 });
 
@@ -1009,7 +1011,7 @@ describe('createImageCapture — 上传按钮（常驻，D27）', () => {
 
     expect(btn.getAttribute('aria-disabled')).toBe('true');
     expect(btn.classList.contains('is-vision-off')).toBe(true);
-    expect(btn.title).toContain('未开启图片输入');
+    expect(btn.title).toContain('Image input is not enabled');
   });
 
   it('置灰态点击 → 跳设置（open_settings_tab config），不发拾取请求（D27：置灰但可点）', () => {
@@ -1084,8 +1086,8 @@ describe('explainEmptySend（IMG-10：纯图不激活发送，但必须说明原
     h.explainEmptySend();
 
     expect(notices).toHaveLength(1);
-    expect(notices[0]).toContain('纯图片消息暂不支持发送');
-    expect(notices[0]).toContain('已保留');
+    expect(notices[0]).toContain('Image-only messages are not supported yet');
+    expect(notices[0]).toContain('are kept');
   });
 });
 

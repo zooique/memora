@@ -188,10 +188,18 @@ export function createChatRefOps(deps: ChatRefOpsDeps): ChatRefOps {
         }
         fileItems.sort((a, b) => (a.description ?? '').localeCompare(b.description ?? ''));
         // 关键字项由 MOUNTABLE_INJECTION_META **派生**（加源零改本处——第 1 笔 Record
-        // 穷尽性兜底：新源漏配 meta 即 tsc 红）。label / description 值真源 = 该单点。
+        // 穷尽性兜底：新源漏配 meta 即 tsc 红）。label / description 值真源 = 该单点，
+        // 但表里存的是**英文源键**（webview 侧也消费同一张表）⇒ 宿主侧在此过 vscode.l10n.t。
         const mountableItems: MentionItem[] = (
           Object.keys(MOUNTABLE_INJECTION_META) as Exclude<InjectionSource, 'active-file'>[]
-        ).map((source) => ({ ...MOUNTABLE_INJECTION_META[source].quickPick, injection: source }));
+        ).map((source) => {
+          const { label, description } = MOUNTABLE_INJECTION_META[source].quickPick;
+          return {
+            label: vscode.l10n.t(label),
+            description: vscode.l10n.t(description),
+            injection: source,
+          };
+        });
         const items: MentionItem[] = [...mountableItems, ...fileItems];
         // 截断告知（HOST-CTX-11）：>= 上限即视为可能截断（恰好等于上限不截断的极小概率
         // 也在提示范围内——多一句提示远好过用户找不到文件）。走 placeholder 而非塞一条

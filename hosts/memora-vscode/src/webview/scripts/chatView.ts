@@ -4093,7 +4093,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   function buildInjectionChip(source: MountableInjectionSource): HTMLElement {
     const meta = MOUNTABLE_INJECTION_META[source];
-    const sourceName = INJECTION_SEGMENT_LABELS[source];
+    const sourceName = l10n.t(INJECTION_SEGMENT_LABELS[source]);
     const chip = document.createElement('span');
     // .skill-chip 基类 + .injection-chip 差异化（形状 / 颜色）；data-injection 是测试锚点
     chip.className = 'skill-chip injection-chip';
@@ -4106,10 +4106,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     name.className = 'skill-chip__name';
     name.textContent = sourceName;
     // 可见文本只有四个字，全部说明进 title（hover 第一问就是「这挂的是啥、占不占」）
-    name.title = meta.chip.title;
+    name.title = l10n.t(meta.chip.title);
     const note = document.createElement('span');
     note.className = 'skill-chip__note';
-    note.textContent = meta.chip.note;
+    note.textContent = l10n.t(meta.chip.note);
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'skill-chip__remove';
@@ -4145,7 +4145,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       return;
     }
     const detail = injected
-      .map((s) => `${INJECTION_SEGMENT_LABELS[s.source]} ${fmtTokens(s.tokens)}`)
+      .map((s) => `${l10n.t(INJECTION_SEGMENT_LABELS[s.source])} ${fmtTokens(s.tokens)}`)
       .join(' · ');
     injectionReceipt.textContent = l10n.t(
       'Injected this turn {0} ({1}) · estimated at send time, overwritten next turn',

@@ -12,15 +12,16 @@ import { describe, it, expect } from 'vitest';
 import { friendlyErrorMessage } from '../errorText.js';
 
 describe('friendlyErrorMessage · category → 用户可见文案', () => {
+  // 断言写英文源键：单测跑默认语言，l10n.t(键) 返回键本身（中文译文由 zh bundle 给）
   it('connection → 连接中断文案（保留部分回答提示）', () => {
     expect(friendlyErrorMessage('connection', 'fetch failed')).toBe(
-      '对话连接中断，已保留部分回答，请检查网络后重试',
+      'The conversation connection was interrupted and part of the answer was kept; check your network and try again',
     );
   });
 
   it('timeout → 超时文案', () => {
     expect(friendlyErrorMessage('timeout', 'LLM request timed out (no response)')).toBe(
-      '对话处理超时，请稍后重试',
+      'The conversation timed out; please try again later',
     );
   });
 
@@ -36,6 +37,8 @@ describe('friendlyErrorMessage · category → 用户可见文案', () => {
 
   it('空串 message 不被吞成 falsy 误判（回退路径原样返回）', () => {
     expect(friendlyErrorMessage(undefined, '')).toBe('');
-    expect(friendlyErrorMessage('timeout', '')).toBe('对话处理超时，请稍后重试');
+    expect(friendlyErrorMessage('timeout', '')).toBe(
+      'The conversation timed out; please try again later',
+    );
   });
 });

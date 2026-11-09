@@ -25,6 +25,14 @@
  * 守卫面（本模块自 2026-10-21 回填起，新旧值逐字相同、零行为变更）：
  * chatPanelMention 断言下拉 label / description、chatViewInjections 断言 chip note 与
  * 回执短名、docContext 测试断言信封块头 ⇒ 改本模块任一值，预期这些测试红。
+ *
+ * **本地化口径（B9-E-4 起）**：本模块仍是**零依赖**——UI 字段（段名 / 下拉项 / chip 说明）
+ * 的值 = **英文源键**，由**消费侧**过各自本地化器（宿主 `vscode.l10n.t`、webview `l10n.t`）；
+ * 在表内写死任一侧的本地化调用都会让另一侧失效（两侧共用本模块，同 `helpers/toolNameMap` 范式）。
+ * 键源登记用 `// @nls-keys` 让 verify-nls 判据⑮ 把动态 `t(值)` 的键收进 bundle 键面。
+ *
+ * `envelope` 是**例外中的红线**：它是持久化数据 + 剥离契约锚点（`stripInjectedContextPrefix`
+ * 以闭标签为锚），值一字不改、**不翻译**——Unicode 转义只消源码 CJK，运行期字符串不变。
  */
 import type { InjectionSource } from './protocol.js';
 
@@ -36,10 +44,11 @@ export type MountableInjectionSource = Exclude<InjectionSource, 'active-file'>;
  *
  * 各写一套必然出现「chip 叫 A、回执里叫 B」的漂移（2026-10-21 审查合并过一次）。
  */
+// @nls-keys
 export const INJECTION_SEGMENT_LABELS: Record<InjectionSource, string> = {
-  'active-file': '当前文件正文',
-  problems: '工作区诊断',
-  'git-changes': 'git 未提交改动',
+  'active-file': 'Current file content',
+  problems: 'Workspace diagnostics',
+  'git-changes': 'Uncommitted git changes',
 };
 
 /**
@@ -61,26 +70,41 @@ export const MOUNTABLE_INJECTION_META: Record<
   }
 > = {
   problems: {
+    // @nls-keys
     quickPick: {
-      label: '诊断（问题面板）',
-      description: '注入当前工作区的错误 / 警告（发送时取最新，占预算）',
+      label: 'Diagnostics (Problems panel)',
+      description:
+        'Inject errors / warnings from the current workspace (latest at send time, uses budget)',
     },
+    // @nls-keys
     chip: {
-      note: '内容已注入',
-      title: '内容已注入本轮正文（不是指针），发送时取最新的错误 / 警告，占预算；发送后自动清除',
+      note: 'Content injected',
+      title:
+        'Content injected into this turn (not a pointer); latest errors / warnings are taken at send time, uses budget; cleared automatically after sending',
     },
-    envelope: { open: '[工作区诊断]', close: '[/工作区诊断]' },
+    // 协议信封标记：持久化 + 剥离锚点，值不得翻译（转义只消源码 CJK）
+    envelope: {
+      open: '[\u5de5\u4f5c\u533a\u8bca\u65ad]',
+      close: '[/\u5de5\u4f5c\u533a\u8bca\u65ad]',
+    },
   },
   'git-changes': {
+    // @nls-keys
     quickPick: {
-      label: 'git 未提交改动',
-      description: '注入 git 未提交改动（只读 status/diff，发送时取最新，占预算）',
+      label: 'Uncommitted git changes',
+      description:
+        'Inject uncommitted git changes (read-only status/diff, latest at send time, uses budget)',
     },
+    // @nls-keys
     chip: {
-      note: '内容已注入',
+      note: 'Content injected',
       title:
-        '内容已注入本轮正文（不是指针），发送时取最新的未提交改动（只读 status/diff），占预算；发送后自动清除',
+        'Content injected into this turn (not a pointer); latest uncommitted changes (read-only status/diff) are taken at send time, uses budget; cleared automatically after sending',
     },
-    envelope: { open: '[git 未提交改动]', close: '[/git 未提交改动]' },
+    // 协议信封标记：同上，值不得翻译
+    envelope: {
+      open: '[git \u672a\u63d0\u4ea4\u6539\u52a8]',
+      close: '[/git \u672a\u63d0\u4ea4\u6539\u52a8]',
+    },
   },
 };

@@ -2792,9 +2792,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(host).not.toBeNull();
     // 停止行平铺在折叠块外（error → 友好文案，非 generic「对话已中断」）
     const row = host.querySelector('.round-block__interrupted') as HTMLElement;
-    // ⚠️ 该文案来自 shared/errorText.ts 的 friendlyErrorMessage（**尚未迁移**，B9-E 收口），
-    // 故此处仍断言中文；勿随工具/状态文案英文化一并改（改了就是给未迁移面写假断言）。
-    expect(row?.textContent).toContain('对话处理超时，请稍后重试');
+    // 该文案来自 shared/errorText.ts 的 friendlyErrorMessage（B9-E-4 已迁 l10n）：
+    // 单测跑默认语言 ⇒ 断言英文源键本身，中文由 zh bundle 给。
+    expect(row?.textContent).toContain('The conversation timed out; please try again later');
     expect(row?.textContent).not.toContain('The conversation was interrupted');
   });
 
@@ -2831,7 +2831,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
     const host = document.querySelector('.msg.is-interrupted-host') as HTMLElement;
     expect(host.querySelector('.round-block__interrupted')?.textContent).toContain(
-      '对话连接中断，已保留部分回答，请检查网络后重试',
+      'The conversation connection was interrupted and part of the answer was kept; check your network and try again',
     );
   });
 
@@ -13397,7 +13397,7 @@ describe('IMG-10 · 纯图片消息的发送拦截与解释（2026-10-29 拍板�
     pickImage();
     const input = pressEnter();
     expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'input' }));
-    expect(activityText()).toContain('纯图片消息暂不支持发送');
+    expect(activityText()).toContain('Image-only messages are not supported yet');
     // 输入行不清空：拦下不等于丢弃
     expect(input.value).toBe('');
   });
@@ -13406,7 +13406,7 @@ describe('IMG-10 · 纯图片消息的发送拦截与解释（2026-10-29 拍板�
     const { postMessage } = mountChatView();
     pressEnter();
     expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'input' }));
-    expect(activityText()).not.toContain('纯图片消息暂不支持发送');
+    expect(activityText()).not.toContain('Image-only messages are not supported yet');
   });
 
   it('有图 + 有文字 ⇒ 正常发送（拦截只针对纯图，不许误伤）', () => {

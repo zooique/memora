@@ -554,6 +554,17 @@ const WEBVIEW_PANELS = {
   //     Unicode 转义只消源码 CJK，运行期字符串与 manifest 一致，不得翻译；
   //   · 历史活跃度标签用专用键 `Awaiting answer` / `Executing`——通用 `Pending` / `Running`
   //     已被别处占用且译文不同（待发送 / 进行中），复用即串味。
+  //
+  // B9-E-4（图片采集 / 错误文案 / 注入源登记三件套）已收口并登记：
+  //   · injectionSourceMeta —— UI 字段（段名 / @ 下拉项 / chip 说明）改为**英文源键**，由
+  //     消费侧各过本地化器（宿主 chatRefOps 用 `vscode.l10n.t`、webview chatView 用 `l10n.t`）；
+  //     本模块保持**零依赖**（两侧共用，写死任一侧的 t() 都会让另一侧失效），键源用
+  //     `// @nls-keys` 登记进 bundle 键面；
+  //   · 信封标记（`[工作区诊断]` / `[git 未提交改动]`）是持久化数据 + 剥离契约锚点，
+  //     **值不翻译**——Unicode 转义只消源码 CJK，运行期字符串不变；
+  //   · errorText —— 文案改**调用时**取 `l10n.t`（switch 里全静态键，不建模块级译文表：
+  //     顶层求值会把默认语言写死，且守卫 ⑨⑫ 只认静态 `t('键')`）；
+  //   · imageCapture —— 采集 / 拒收 / 预览 / 上传按钮的全部可见文案走 `l10n.t`。
   chat: {
     state: 'pending',
     files: [
@@ -588,6 +599,9 @@ const WEBVIEW_PANELS = {
       'webview/scripts/emptyStateView.ts',
       'webview/scripts/historyMenuView.ts',
       'webview/scripts/contextOccupancyView.ts',
+      'webview/helpers/imageCapture.ts',
+      'shared/errorText.ts',
+      'shared/injectionSourceMeta.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。

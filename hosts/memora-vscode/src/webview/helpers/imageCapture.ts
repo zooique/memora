@@ -36,6 +36,7 @@
  */
 
 import type { ImageRef } from '@zooique/memora';
+import * as l10n from '@vscode/l10n';
 import { type ImageCheckResult, validateImageCandidate } from '../../shared/imageValidation.js';
 import { checkImageTurnLimits } from '../../shared/imageTurnLimits.js';
 import type {
@@ -242,7 +243,7 @@ async function defaultReadBytes(file: File): Promise<Uint8Array> {
   return new Promise<Uint8Array>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
-    reader.onerror = () => reject(new Error('读取图片内容失败'));
+    reader.onerror = () => reject(new Error(l10n.t('Failed to read the image content')));
     reader.readAsArrayBuffer(file);
   });
 }
@@ -357,7 +358,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
 
     const name = doc.createElement('span');
     name.className = 'skill-chip__name';
-    name.textContent = `${item.name}（未采用）`;
+    name.textContent = l10n.t('{0} (not adopted)', item.name);
     name.title = item.reason;
     chip.appendChild(name);
 
@@ -369,8 +370,8 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     const btn = doc.createElement('button');
     btn.type = 'button';
     btn.className = 'skill-chip__remove';
-    btn.title = '移除';
-    btn.setAttribute('aria-label', '移除这张图片');
+    btn.title = l10n.t('Remove');
+    btn.setAttribute('aria-label', l10n.t('Remove this image'));
     btn.innerHTML = getIconSvg('close', 11, 11);
     btn.addEventListener('click', onClick);
     return btn;
@@ -400,8 +401,8 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
      *   - 有 `ref`：已落盘且会随下条消息发出（`本地已存`）；
      *   - 无 `ref`：落盘回执未到，发送会被拦下等它。
      */
-    if (item.ref) parts.push('已保存到本地，将随消息发送');
-    else parts.push('正在保存到本地，完成后可发送');
+    if (item.ref) parts.push(l10n.t('Saved locally; will be sent with the message'));
+    else parts.push(l10n.t('Still saving locally; can send once it finishes'));
     return parts.join(' · ') || item.name;
   }
 
@@ -487,7 +488,12 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     const tip = ensureTip();
     resetTip(tip);
     if (!item.previewUri) {
-      fillTipText(tip, item.ref ? '暂无预览（宿主未提供图片地址）' : '正在保存到本地，暂无预览');
+      fillTipText(
+        tip,
+        item.ref
+          ? l10n.t('No preview (the host did not provide an image URL)')
+          : l10n.t('Still saving locally; no preview yet'),
+      );
       tip.hidden = false;
       placeTip(tip, chip);
       return;
@@ -500,7 +506,10 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       // 加载失败：切文本态如实报（方案 §5.10 缺陷态），chip 本身不受影响。
       // 文案只陈述「这次加载失败」，不推断文件是否存在——理由见本函数 JSDoc。
       resetTip(tip);
-      fillTipText(tip, `预览加载失败（${(item.ref?.sha256 ?? item.sha256 ?? '').slice(0, 8)}）`);
+      fillTipText(
+        tip,
+        l10n.t('Preview failed to load ({0})', (item.ref?.sha256 ?? item.sha256 ?? '').slice(0, 8)),
+      );
       tip.hidden = false;
       placeTip(tip, chip);
     });
@@ -539,7 +548,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
         // 同轮同 sha256 只留一条 chip（方案 G4）：sha256 只管物理文件去重，数组去重
         // 必须显式做——同一张图发两遍 = 双倍 token + 无意义视觉重复。
         if (accepted.some((it) => it.sha256 === digest)) {
-          notice('该图片已添加');
+          notice(l10n.t('This image is already added'));
           render();
           return;
         }
@@ -567,17 +576,17 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       } else {
         rejected.push({
           source,
-          name: declaredName || '图片',
+          name: declaredName || l10n.t('Image'),
           // 文案刻意**不带环号**：屏上 loop 已占用「第 N 步」措辞（术语锚点 §4.2 禁同词同屏），
           // 且用户只关心「为什么被拒」、不关心是第几环——环号保留在结构化字段供测试/日志定位
-          reason: `图片校验未通过：${result.message}`,
+          reason: l10n.t('Image validation failed: {0}', result.message),
         });
       }
     } catch (err) {
       rejected.push({
         source,
-        name: declaredName || '图片',
-        reason: `读取失败：${err instanceof Error ? err.message : String(err)}`,
+        name: declaredName || l10n.t('Image'),
+        reason: l10n.t('Read failed: {0}', err instanceof Error ? err.message : String(err)),
       });
     }
     render();
@@ -617,7 +626,11 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       source: target.source,
       name: target.name,
       // 文案原样上屏（宿主产出、面向用户）；缺省只可能是契约破损，给中性兜底不许留空
-      reason: msg.reason ?? (msg.status === 'ok' ? '回执缺少图片引用' : '图片未被采用'),
+      reason:
+        msg.reason ??
+        (msg.status === 'ok'
+          ? l10n.t('The receipt is missing the image reference')
+          : l10n.t('The image was not adopted')),
     });
     render();
   }
@@ -636,7 +649,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       const ref = msg.ref;
       // G4 去重：与粘贴路径同一判据（物理 sha256），键此刻已是宿主复算的真值
       if (accepted.some((it) => it.sha256 === ref.sha256)) {
-        notice('该图片已添加');
+        notice(l10n.t('This image is already added'));
         return;
       }
       accepted.push({
@@ -658,7 +671,11 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       source: 'pick',
       name: msg.name,
       // 文案原样上屏（宿主产出）；缺省只可能是契约破损，给中性兜底不许留空
-      reason: msg.reason ?? (msg.status === 'ok' ? '回执缺少图片引用' : '图片未被采用'),
+      reason:
+        msg.reason ??
+        (msg.status === 'ok'
+          ? l10n.t('The receipt is missing the image reference')
+          : l10n.t('The image was not adopted')),
     });
     render();
   }
@@ -674,11 +691,20 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
   function resolveSendable(interjectRoute: boolean): SendableImages {
     if (accepted.length === 0) return { refs: [] };
     if (interjectRoute) {
-      return { blocked: '生成中不支持发送图片，请等本轮结束后再发' };
+      return {
+        blocked: l10n.t(
+          'Cannot send images while generating; wait until this turn ends and try again',
+        ),
+      };
     }
     const pending = accepted.filter((it) => !it.ref);
     if (pending.length > 0) {
-      return { blocked: `有 ${pending.length} 张图片仍在保存到本地，请稍候再发送` };
+      return {
+        blocked: l10n.t(
+          '{0} image(s) are still being saved locally; please wait before sending',
+          pending.length,
+        ),
+      };
     }
     return { refs: accepted.map((it) => it.ref!) };
   }
@@ -716,7 +742,11 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
   /** 见 handle 上的同名声明：无候选图时保持静默，有候选才解释「为什么这条发不出去」 */
   function explainEmptySend(): void {
     if (accepted.length === 0) return;
-    notice('纯图片消息暂不支持发送，请在输入框补一句说明（图片已保留）');
+    notice(
+      l10n.t(
+        'Image-only messages are not supported yet; add a note in the input box (the images are kept)',
+      ),
+    );
   }
 
   function onPaste(e: ClipboardEvent): void {
@@ -732,8 +762,10 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       if (html.includes('<img')) {
         rejected.push({
           source: 'paste',
-          name: '网页图片',
-          reason: '富文本里的图片不解析：请先把图片存成文件，再粘贴或拖入',
+          name: l10n.t('Web image'),
+          reason: l10n.t(
+            'Images inside rich text are not parsed: save the image as a file first, then paste or drop it',
+          ),
         });
         render();
       }
@@ -775,7 +807,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     e.preventDefault();
     const fileUris = uris.filter((u) => u.startsWith('file:'));
     if (fileUris.length === 0) {
-      notice('仅支持拖入本地图片文件');
+      notice(l10n.t('Only local image files can be dropped here'));
       return;
     }
     post({ type: 'image_pick_request', paths: fileUris });
@@ -803,8 +835,10 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     attachBtn.classList.toggle('is-vision-off', !vision);
     attachBtn.setAttribute('aria-disabled', String(!vision));
     attachBtn.title = vision
-      ? '添加图片（也可直接粘贴或按住 Shift 拖入文件）'
-      : '当前模型未开启图片输入——点击前往设置开启';
+      ? l10n.t('Add image (you can also paste or Shift-drag files)')
+      : l10n.t(
+          'Image input is not enabled for the current model — click to open settings and enable it',
+        );
   }
   attachBtn?.addEventListener('click', onAttachClick);
   // 挂载即落初始态：不依赖骨架预置 class（chat_providers 未到前按未声明处理）

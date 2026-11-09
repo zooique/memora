@@ -8,14 +8,13 @@
  *
  * 未收录的 category（如 'unknown'）**回退原始 message** —— 与收口前 `chatPanel` 的既有行为逐字等价
  * （不改既有错误展示：保留技术细节供排查，不做二次加工）。
+ *
+ * **本地化形态（B9-E-4 起）**：本文件只被 webview 消费 ⇒ 用 `@vscode/l10n` 的 `l10n.t`。
+ * 文案**必须在调用时取**，不能建模块级「category → 译文」常量表：模块加载早于语言包就绪，
+ * 顶层求值会把默认语言写死；且键面守卫 ⑨⑫ 认的是静态 `t('键')` 字面量。
  */
+import * as l10n from '@vscode/l10n';
 import type { LlmErrorCategory } from '@zooique/memora';
-
-/** category → 友好文案（未收录 = 不映射，走回退原文） */
-const FRIENDLY_ERROR_TEXT: Partial<Record<LlmErrorCategory, string>> = {
-  connection: '对话连接中断，已保留部分回答，请检查网络后重试',
-  timeout: '对话处理超时，请稍后重试',
-};
 
 /**
  * 取错误展示文案。
@@ -28,5 +27,14 @@ export function friendlyErrorMessage(
   category: LlmErrorCategory | undefined,
   rawMessage: string,
 ): string {
-  return (category !== undefined && FRIENDLY_ERROR_TEXT[category]) || rawMessage;
+  switch (category) {
+    case 'connection':
+      return l10n.t(
+        'The conversation connection was interrupted and part of the answer was kept; check your network and try again',
+      );
+    case 'timeout':
+      return l10n.t('The conversation timed out; please try again later');
+    default:
+      return rawMessage;
+  }
 }
