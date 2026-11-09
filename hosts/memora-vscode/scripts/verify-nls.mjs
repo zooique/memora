@@ -1694,9 +1694,9 @@ function report() {
   console.log(
     `\n未登记进注册表（WEBVIEW_PANELS + SHARED_CJK_FILES）的文件（注册制盲区，判据⑰ 扫不到）：${unregistered.length} 个含 CJK 字面量`,
   );
-  for (const [rel, n] of unregistered.slice(0, 20))
-    console.log(`  ${String(n).padStart(5)}  ${rel}`);
-  if (unregistered.length > 20) console.log(`  … 另有 ${unregistered.length - 20} 个文件`);
+  // 全量列出（2026-11-10 去截断）：本段是「下一批选哪些文件」的唯一清单，
+  // 只列前 20 + 「另有 N 个」会让剩下的文件**连坐标都没有**——盲区里的盲区。
+  for (const [rel, n] of unregistered) console.log(`  ${String(n).padStart(5)}  ${rel}`);
 
   const windowHits = all.flatMap((abs) =>
     collectWindowApiCjkInText(
