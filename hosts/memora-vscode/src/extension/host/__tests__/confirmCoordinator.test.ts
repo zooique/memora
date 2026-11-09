@@ -141,7 +141,7 @@ describe('ConfirmCoordinator（宿主确认队列域 · HOST-SPLIT-1 第 2 刀�
 
     const decisions = h.decisions();
     expect(decisions).toHaveLength(1);
-    expect(decisions[0].message).toContain('已批准');
+    expect(decisions[0].message).toContain('Approved');
     expect(decisions[0].message).toContain('foo.md');
   });
 
@@ -225,7 +225,7 @@ describe('ConfirmCoordinator（宿主确认队列域 · HOST-SPLIT-1 第 2 刀�
     const decisions = h.decisions();
     expect(decisions).toHaveLength(1);
     expect(decisions[0].level).toBe('error');
-    expect(decisions[0].message).toContain('已自动拒绝');
+    expect(decisions[0].message).toContain('declined automatically');
     expect(decisions[0].message).toContain('foo.md');
   });
 

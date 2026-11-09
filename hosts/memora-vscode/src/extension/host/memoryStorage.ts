@@ -30,6 +30,9 @@
  *
  * ## 路径语义（内核边界）
  * `.memora/` 目录名与库文件名**只在宿主侧**（内核工厂收全长 `dbPath`，不拼目录、不定义文件名）。
+ *
+ * @nls-injected 错误文案经**注入翻译器** `t()` 出（本模块零 vscode 依赖，宿主入口注入
+ * `vscode.l10n.t`），由 NLS 守卫按此标记采集键面。
  */
 import { existsSync, mkdirSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
@@ -41,6 +44,8 @@ import {
   type IMemoryStorage,
 } from '@zooique/memora';
 import { resolveProjectDataDir } from './projectDataDir.js';
+// 翻译器契约（本模块零 vscode 依赖，宿主入口注入实现；缺省 = 英文源键 + 实参插值）
+import { identityTranslate, type Translate } from '../../shared/l10nTranslate.js';
 import { WorkspaceStorage } from './workspaceStorage.js';
 
 /** SQLite 库文件名（宿主侧定义；内核不感知，见文件头「路径语义」） */
@@ -83,12 +88,15 @@ export interface MemoryStorageDeps {
  * @param projectPath 工作区根（`.memora/` 由此推导）
  * @param logger 可选：宿主日志（迁移摘要经此上报；缺省静默）
  * @param deps 可选：sqlite 探针注入（仅测试用）
+ * @param t 可选：文案翻译器（本模块零 vscode 依赖 ⇒ 不能直接用 `vscode.l10n.t`，
+ *   由宿主入口注入；缺省恒等 = 错误文案是英文源键，单测断言不依赖语言包）
  * @returns 记忆存储实例（SQLite 或降级 JSON）
  */
 export function createHostMemoryStorage(
   projectPath: string,
   logger?: ILogger,
   deps: MemoryStorageDeps = { openSqlite: createNodeSqliteStorage },
+  t: Translate = identityTranslate,
 ): IMemoryStorage {
   const dbPath = resolveHostMemoryDbPath(projectPath);
 
@@ -101,7 +109,7 @@ export function createHostMemoryStorage(
     // 非「环境不支持」（真故障）：原样抛出——不伪装成降级（防「因错误的原因通过」）
     if (!isSqliteUnavailable(err)) throw err;
     // 已迁移但环境不支持：响亮失败（禁数据分叉 + 不静默丢记忆）
-    if (existsSync(dbPath)) throw memoryDbUnavailableError(dbPath);
+    if (existsSync(dbPath)) throw memoryDbUnavailableError(dbPath, t);
     // 未迁移：JSON 读写不变（现状）——老环境扩展不挂、JSON 照常
     const legacy = new WorkspaceStorage(projectPath);
     legacy.load();
@@ -113,8 +121,8 @@ export function createHostMemoryStorage(
   const result = migrateLegacyJsonToSqlite(projectPath, sqlite);
   if (result.migrated) {
     logger?.info(
-      `Memora 记忆库已迁移到 SQLite：${result.count} 条 → ${MEMORY_DB_FILENAME}` +
-        `（旧档保留于 ${result.legacySnapshotPath}）`,
+      `Memora memory store migrated to SQLite: ${result.count} rows → ${MEMORY_DB_FILENAME}` +
+        ` (legacy snapshot kept at ${result.legacySnapshotPath})`,
     );
   }
   return sqlite;
@@ -154,15 +162,20 @@ function isSqliteUnavailable(err: unknown): boolean {
 }
 
 /** 已迁移但环境不支持时的专属错误（响亮失败；指引用户升级环境，并警示勿造数据分叉） */
-function memoryDbUnavailableError(dbPath: string): MemoraError {
+function memoryDbUnavailableError(dbPath: string, t: Translate): MemoraError {
   return new MemoraError({
-    title: '记忆库已升级为 SQLite，但当前环境不支持',
-    detail:
-      `记忆真源 ${dbPath} 需要 Node ≥22.13（VS Code ≥1.101 内置 Node 满足）。` +
-      '当前 VS Code 内置 Node 过旧：既读不了该库，也不能回退写 JSON（那会造成两份真源分叉）。',
+    title: t(
+      'The memory database was upgraded to SQLite, but this environment does not support it',
+    ),
+    detail: t(
+      'The memory source {0} requires Node ≥22.13 (bundled with VS Code ≥1.101). The current bundled Node is too old: it can neither read this database nor fall back to writing JSON (that would fork the source of truth).',
+      dbPath,
+    ),
     suggestions: [
-      '升级 VS Code 至 ≥1.101 后重开本工作区',
-      '切勿手动在该工作区新建 memories.json——数据分叉会覆盖真实记忆',
+      t('Upgrade VS Code to ≥1.101 and reopen this workspace'),
+      t(
+        'Do not create memories.json in this workspace by hand — forking the data would overwrite real memories',
+      ),
     ],
     category: 'config',
     errorCode: ToolErrorCode.NOT_AVAILABLE,

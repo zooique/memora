@@ -543,6 +543,8 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
         digest,
         file.type,
         declaredName,
+        // 兜底名会落进 `ImageRef` 被持久化 ⇒ 必须按当前语言生成，不能留英文默认
+        l10n.t('Pasted image'),
       );
       if (result.ok) {
         // 同轮同 sha256 只留一条 chip（方案 G4）：sha256 只管物理文件去重，数组去重
@@ -579,7 +581,11 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
           name: declaredName || l10n.t('Image'),
           // 文案刻意**不带环号**：屏上 loop 已占用「第 N 步」措辞（术语锚点 §4.2 禁同词同屏），
           // 且用户只关心「为什么被拒」、不关心是第几环——环号保留在结构化字段供测试/日志定位
-          reason: l10n.t('Image validation failed: {0}', result.message),
+          // 校验链只回「英文源键 + 插值实参」（`shared/` 零依赖不产句子），此处按当前语言解析
+          reason: l10n.t(
+            'Image validation failed: {0}',
+            l10n.t(result.messageKey, ...result.messageArgs),
+          ),
         });
       }
     } catch (err) {

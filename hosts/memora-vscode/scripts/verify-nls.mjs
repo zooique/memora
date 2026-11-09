@@ -319,21 +319,24 @@ function sliceBalanced(text, openIndex, open, close) {
  * 一跑就把这批键踢出采集面（实测：settingsTabs 的 8 个页签名全成 bundle 孤儿键，而
  * TYPE_BADGE_LABEL 的 5 个值既不进 bundle 也不报缺键 = 静默脱管）。**约定不能与格式化工具
  * 对抗**，故采集端放行裸标识符键名（值仍必须是字符串字面量）。
+ *
+ * **数字键也认**（2026-11-10，B10-E 实锤）：`Record<1|2|3, string>` 这类按阶段码索引的表
+ * 是合法键源（`imageValidation.REJECT_KEY`），旧实现只认三种键形 ⇒ 六条拒绝文案全成孤儿键。
  */
 function collectDynamicKeySources(text) {
   const values = [];
   let markers = 0;
-  // 键：单引号 / 双引号 / 裸标识符（三选一）；值：单引号或双引号字符串字面量
+  // 键：单引号 / 双引号 / 裸标识符 / 数字（枚举值表，如 `Record<1|2|3, string>`）；值：单引号或双引号字符串字面量
   const ENTRY_RE =
-    /(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|([A-Za-z_$][\w$]*))\s*:\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")/g;
+    /(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|([A-Za-z_$][\w$]*)|(\d+))\s*:\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")/g;
   for (const m of text.matchAll(/@nls-keys/g)) {
     markers++;
     const open = text.indexOf('{', m.index);
     if (open < 0) continue;
     const block = sliceBalanced(text, open, '{', '}');
     for (const mm of block.matchAll(ENTRY_RE)) {
-      // mm[4] / mm[5] = 值的正文（单引号 / 双引号），按开引号类型分支避免截断
-      values.push(unescapeSourceLiteral(mm[4] !== undefined ? mm[4] : mm[5]));
+      // mm[5] / mm[6] = 值的正文（单引号 / 双引号），按开引号类型分支避免截断
+      values.push(unescapeSourceLiteral(mm[5] !== undefined ? mm[5] : mm[6]));
     }
   }
   return { values, markers };
@@ -378,6 +381,18 @@ function stripCommentLines(text) {
   return text.replace(/^[ \t]*(?:\/\/|\/\*|\*\/|\*\s).*$/gm, '');
 }
 
+/**
+ * 注入式翻译器模块的标记：文件头注释写 `@nls-injected`
+ *
+ * **为什么需要第二个标记**：零 vscode 依赖模块（`imageIngest` / `imagePick` / `memoryStorage`
+ * ——「能拿真临时目录机测」的前提）拿不到 `vscode.l10n.t`，只能由宿主注入翻译器（形参名 `t`），
+ * 于是调用点是 `t('Key')` 而非 `l10n.t('Key')`，**静态采集面认不出** ⇒ 键全成 bundle 孤儿键。
+ *
+ * 为什么用**文件内标记**而非集中的模块清单：文件改名 / 移动时标记跟着文件走，
+ * 集中清单会静默脱管（同 `@nls-keys` 的选型理由）。
+ */
+const INJECTED_TRANSLATOR_MARKER = '@nls-injected';
+
 /** 源码 l10n 键采集结果 */
 function collectTKeyFacts(files) {
   const staticKeys = new Set();
@@ -386,6 +401,8 @@ function collectTKeyFacts(files) {
   let dynamicKeyMarkers = 0;
   // 按开引号类型分支（键里合法含另一种引号字符，合一字符类会提前截断——同 collectDynamicKeySources）
   const callSingles = [/\bl10n\.t\(\s*'((?:[^'\\]|\\.)*)'/g, /\bl10n\.t\(\s*"((?:[^"\\]|\\.)*)"/g];
+  // 注入式翻译器模块：调用点是 `t('Key')`（拿不到 vscode，翻译器由宿主注入）⇒ 需专用采集
+  const injectedSingles = [/\bt\(\s*'((?:[^'\\]|\\.)*)'/g, /\bt\(\s*"((?:[^"\\]|\\.)*)"/g];
   for (const f of files) {
     const text = readFileSync(f, 'utf8');
     // 动态键源的标记 @nls-keys 本身写在注释里 ⇒ 动态采集用原文；静态 / 模板采集剥注释
@@ -395,6 +412,12 @@ function collectTKeyFacts(files) {
     const codeText = stripCommentLines(text);
     for (const re of callSingles) {
       for (const m of codeText.matchAll(re)) staticKeys.add(unescapeSourceLiteral(m[1]));
+    }
+    // `@nls-injected` 标记（写文件头注释）⇒ 本文件的 `t('Key')` 也进静态键面
+    if (text.includes(INJECTED_TRANSLATOR_MARKER)) {
+      for (const re of injectedSingles) {
+        for (const m of codeText.matchAll(re)) staticKeys.add(unescapeSourceLiteral(m[1]));
+      }
     }
     // 模板串第一参 = 违规（键面守卫拿不到键）
     if (/\bl10n\.t\(\s*`/.test(codeText)) templateViolations.push(f);
@@ -942,6 +965,14 @@ const MIGRATED_UI_MODULES = [
   'extension/host/userAssets/zipImport.ts',
   'extension/host/userAssets/zipReader.ts',
   'webview/panels/hostDiagnostics.ts',
+  // B10-E（2026-11-10）：宿主「文件改动悬停 / 记忆库错误 / 确认决策回执」三条文案面
+  // ——分别经 `vscode.l10n.t` 与注入翻译器出键，登记后由判据⑬ 守回归。
+  // `extension/host/imageIngest.ts` / `shared/imageValidation.ts` **刻意不登记**：
+  // 二者是零 vscode 依赖模块，只产出「英文源键 + 实参」（不直接调窗口 API），
+  // 键面由 `@nls-keys`（判据⑮）覆盖——登记进本清单不增加任何判据覆盖。
+  'extension/host/fileChangeRenderer.ts',
+  'extension/host/memoryStorage.ts',
+  'extension/host/confirmCoordinator.ts',
 ];
 
 /** 判据⑭ 基线：登记项少于该数 ⇒ 红（清单被清空 = 判据静默失明） */

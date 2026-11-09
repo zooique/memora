@@ -185,7 +185,7 @@ describe('C2 决策记录宿主出口（chatPanel · 方案 §6.6-C2）', () => 
     await expect(settled).resolves.toBe(true);
 
     const d = takeDecision(h.posted);
-    expect(d.message).toContain('已批准');
+    expect(d.message).toContain('Approved');
     expect(d.message).toContain('foo.md');
     // 反向守卫：description（diff 全文）进 message 即变异——必须红
     expect(d.message).not.toContain(CARGO_MARKER);
@@ -206,7 +206,7 @@ describe('C2 决策记录宿主出口（chatPanel · 方案 §6.6-C2）', () => 
     await expect(settled).resolves.toBe(false);
 
     const d = takeDecision(h.posted);
-    expect(d.message).toContain('已拒绝');
+    expect(d.message).toContain('Declined');
     expect(d.message).toContain('foo.md');
     expect(d.message).not.toContain(CARGO_MARKER);
   });
@@ -226,7 +226,7 @@ describe('C2 决策记录宿主出口（chatPanel · 方案 §6.6-C2）', () => 
 
     const d = takeDecision(h.posted);
     expect(d.level).toBe('error');
-    expect(d.message).toContain('已自动拒绝');
+    expect(d.message).toContain('declined automatically');
     expect(d.message).toContain('foo.md');
     expect(d.message).not.toContain(CARGO_MARKER);
   });

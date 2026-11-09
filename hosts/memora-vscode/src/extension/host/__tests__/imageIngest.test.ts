@@ -115,7 +115,7 @@ describe('ingestImage — 成功路径', () => {
 
     await ingestImage(dir, msg, (r) => results.push(r));
 
-    expect(results[0]!.ref?.name).toBe(`粘贴图片-${msg.sha256.slice(0, 6)}`);
+    expect(results[0]!.ref?.name).toBe(`Pasted image-${msg.sha256.slice(0, 6)}`);
   });
 
   it('注入 URL 转换器 => 回执 ok 带上 webview 可加载地址（悬停预览的唯一来源）', async () => {
@@ -199,7 +199,7 @@ describe('ingestImage — 拒收（坏字节不写盘）', () => {
     );
 
     expect(results[0]!.status).toBe('rejected');
-    expect(results[0]!.reason).toContain('不支持的图片格式');
+    expect(results[0]!.reason).toContain('Unsupported image format');
     expect(() => readdirSync(resolveAttachmentsDir(dir))).toThrow();
   });
 
@@ -212,7 +212,7 @@ describe('ingestImage — 拒收（坏字节不写盘）', () => {
     await ingestImage(dir, ingestMsg(bytes, { mime: 'image/jpeg' }), (r) => results.push(r));
 
     expect(results[0]!.status).toBe('rejected');
-    expect(results[0]!.reason).toContain('不符');
+    expect(results[0]!.reason).toContain('does not match its declared type');
   });
 });
 
@@ -227,7 +227,7 @@ describe('ingestImage — IO 故障', () => {
     await ingestImage(blocker, ingestMsg(pngBytes(8, 8)), (r) => results.push(r));
 
     expect(results[0]!.status).toBe('failed');
-    expect(results[0]!.reason).toContain('保存失败');
+    expect(results[0]!.reason).toContain('Failed to save image');
   });
 });
 
@@ -289,7 +289,7 @@ describe('ingestDiskFile — 文件选择框拾取（Q3）', () => {
 
     expect(results[0]!.status).toBe('rejected');
     expect(results[0]!.name).toBe('fake.png');
-    expect(results[0]!.reason).toContain('不支持的图片格式');
+    expect(results[0]!.reason).toContain('Unsupported image format');
     expect(() => readdirSync(resolveAttachmentsDir(root))).toThrow();
   });
 
@@ -301,7 +301,7 @@ describe('ingestDiskFile — 文件选择框拾取（Q3）', () => {
 
     expect(results[0]!.status).toBe('failed');
     expect(results[0]!.name).toBe('gone.png');
-    expect(results[0]!.reason).toContain('读取失败');
+    expect(results[0]!.reason).toContain('Failed to read image');
   });
 
   it('超大文件（>5 MiB）→ 读前 stat 预筛直接 rejected（可见拒收，不读字节、不写盘）', async () => {
@@ -316,8 +316,8 @@ describe('ingestDiskFile — 文件选择框拾取（Q3）', () => {
     expect(results.length).toBe(1);
     expect(results[0]!.status).toBe('rejected');
     expect(results[0]!.name).toBe('huge.bin');
-    // 理由带「跳过读取」= 证明确实走了 stat 预筛（而非 validateImageCandidate 第 2 步兜底）
-    expect(results[0]!.reason).toContain('跳过读取');
+    // 理由带「skipped reading」= 证明确实走了 stat 预筛（而非 validateImageCandidate 第 2 步兜底）
+    expect(results[0]!.reason).toContain('skipped reading');
     expect(results[0]!.reason).toContain('MiB');
     // 坏字节不写盘（目录不该被创建出附件文件）
     expect(() => readdirSync(resolveAttachmentsDir(root))).toThrow();

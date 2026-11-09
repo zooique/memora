@@ -1213,7 +1213,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } else if (msg.type === 'image_ingest') {
       // 采集即写盘（IMG-2 Q1）+ 落盘即入字节缓存（断点A）：落盘点在 host/imageIngest，失败三态一律回执
       const img = this.imagePanelDeps();
-      void ingestImage(this.workspacePath, msg, img.post, img.toWebviewUri, img.warmCache);
+      void ingestImage(this.workspacePath, msg, img.post, img.toWebviewUri, img.warmCache, img.t);
     } else if (msg.type === 'image_pick_request') {
       // 图片拾取（Q3）：无 paths = 开框拾取（按钮 / 命令面板）；有 paths = 拖入 URI 报送（IMG-13）
       // 或右键真图（IMG-12）直入同一摄取面。URI→fsPath 换算收在宿主（webview 零 vscode API）
@@ -2163,6 +2163,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       warmCache: (ref: ImageRef) => this.imageCache?.preload(ref, this.workspacePath),
       notifyPanelUnavailable: () =>
         void vscode.window.showInformationMessage(l10n.t('Open the Memora chat view first')),
+      // 文案翻译器：宿主唯一本地化器；imageIngest / imagePick 为零 vscode 依赖模块，
+      // 只能由本处注入（缺省恒等 = 单测拿英文源键）
+      t: (key: string, ...args: string[]) => l10n.t(key, ...args),
     };
   }
 

@@ -22,8 +22,13 @@ const CONFIRM_TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
  * confirm 超时交互记录正文（镜像语义：与 timeout 分支的 resolve(false) 同因，供用户可知）
+ *
+ * **函数而非常量**：`l10n.t` 必须在调用时刻取——模块顶层求值会绕过语言包就绪窗口，
+ * 把语言焊死在加载期（同 chatPanel 的 `snapshotOversizeNotice` 先例）。
  */
-const CONFIRM_TIMEOUT_NOTICE = '用户未在时限内确认，已自动拒绝';
+function confirmTimeoutNotice(): string {
+  return vscode.l10n.t('User did not confirm in time; declined automatically');
+}
 
 /** 协调器全部反向依赖（均由 chatPanel 构造时注入） */
 export interface ConfirmDeps {
@@ -298,15 +303,19 @@ export class ConfirmCoordinator {
   private _logDecision(entry: ConfirmEntry, verdict: 'approved' | 'declined' | 'timeout'): void {
     const word =
       verdict === 'approved'
-        ? '已批准'
+        ? vscode.l10n.t('Approved')
         : verdict === 'declined'
-          ? '已拒绝'
-          : CONFIRM_TIMEOUT_NOTICE;
+          ? vscode.l10n.t('Declined')
+          : confirmTimeoutNotice();
     this._deps.post({
       type: 'notice',
       level: verdict === 'timeout' ? 'error' : 'info',
-      // 动作词中性化：同一张卡也承载命令/代码/脚本执行确认，写「写入」即失实
-      message: verdict === 'timeout' ? `${word}（${entry.logLabel}）` : `${word} ${entry.logLabel}`,
+      // 动作词中性化：同一张卡也承载命令/代码/脚本执行确认，写「写入」即失实。
+      // 超时行用 `({0})` 键（中英括号形态不同，不能拼字面量括号）；批准/拒绝行词与面之间留空格。
+      message:
+        verdict === 'timeout'
+          ? `${word} ${vscode.l10n.t('({0})', entry.logLabel)}`
+          : `${word} ${entry.logLabel}`,
       kind: 'decision',
     });
   }

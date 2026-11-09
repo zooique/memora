@@ -188,7 +188,7 @@ export class FileChangeRenderer {
     } catch (err) {
       // 不再静默：打开/装饰失败必须留痕（「打开了但无高亮」会因此无诊断线索）
       this.log(
-        `[fileChange] 打开/渲染失败 ${rec.relPath}：${err instanceof Error ? err.message : String(err)}`,
+        `[fileChange] open/render failed ${rec.relPath}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -217,7 +217,9 @@ export class FileChangeRenderer {
       // 走到这里仍不一致 = 用户正在编辑（dirty，`revealChange` 刻意不重载它）或重载失败 ⇒
       // 坐标系与所见文本必然错位，必须留痕，否则下次仍是无诊断线索的「显示不正确」。
       if (rec.afterContent !== null && doc.getText() !== rec.afterContent) {
-        this.log(`[fileChange] 文档已被改动或重载失败（高亮范围可能错位）${rec.relPath}`);
+        this.log(
+          `[fileChange] document changed or reload failed (highlight range may be off) ${rec.relPath}`,
+        );
       }
       const hunks = this.snapshotFor(rec).hunks;
       if (hunks.length === 0) return;
@@ -247,7 +249,7 @@ export class FileChangeRenderer {
       target.revealRange(anchor, vscode.TextEditorRevealType.InCenter);
     } catch (err) {
       this.log(
-        `[fileChange] 装饰应用失败 ${rec.relPath}：${err instanceof Error ? err.message : String(err)}`,
+        `[fileChange] decoration apply failed ${rec.relPath}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -324,14 +326,19 @@ export class FileChangeRenderer {
   private oldContentHover(hunk: DiffHunk): vscode.MarkdownString {
     const md = new vscode.MarkdownString();
     if (hunk.removed.length === 0) {
-      md.appendMarkdown('**本次新增**（此处原本没有内容）');
+      md.appendMarkdown(vscode.l10n.t('**New content** (nothing was here before)'));
       return md;
     }
-    md.appendMarkdown('**改动前的原内容**（已不在文件中，仅用于对照）\n\n');
+    md.appendMarkdown(
+      vscode.l10n.t('**Previous content** (no longer in the file; shown for comparison)\n\n'),
+    );
     const shown = hunk.removed.slice(0, HOVER_MAX_LINES);
     md.appendCodeblock(shown.join('\n'), 'text');
     if (hunk.removed.length > HOVER_MAX_LINES) {
-      md.appendMarkdown(`\n…另有 ${hunk.removed.length - HOVER_MAX_LINES} 行已省略`);
+      // 换行是排版、不属于文案 ⇒ 拼在键外，译文只承载句子本身
+      md.appendMarkdown(
+        `\n${vscode.l10n.t('…{0} more lines omitted', String(hunk.removed.length - HOVER_MAX_LINES))}`,
+      );
     }
     return md;
   }
@@ -343,7 +350,9 @@ export class FileChangeRenderer {
     if (cached && cached.afterText === afterText) return cached;
     const diff = computeFileDiff(rec.beforeContent ?? '', afterText);
     if (diff.degraded) {
-      this.log(`[fileChange] ${rec.relPath} 改动过大，已降级为整体高亮（逐行对照跳过）`);
+      this.log(
+        `[fileChange] ${rec.relPath} change too large; degraded to whole-block highlight (line-by-line skipped)`,
+      );
     }
     const snapshot: HunkSnapshot = { hunks: diff.hunks, afterText };
     this.hunkCache.set(rec.path, snapshot);

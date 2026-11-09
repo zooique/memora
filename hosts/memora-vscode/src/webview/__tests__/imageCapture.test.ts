@@ -170,7 +170,7 @@ describe('createImageCapture — 粘贴', () => {
     expect(chips().length).toBe(1);
     // 粘贴路径不吃 `file.name`：平台占位名两张截图完全一样，sha 前 6 才可辨（IMG-4）
     expect(chips()[0]!.querySelector('.skill-chip__name')?.textContent).toBe(
-      `粘贴图片-${SHA.slice(0, 6)}`,
+      `Pasted image-${SHA.slice(0, 6)}`,
     );
     expect(dom.row.hidden).toBe(false);
     // 探针期标记已随发送链路接线删除（文案改为如实描述「未落盘 / 待发送」三态）：
@@ -210,7 +210,7 @@ describe('createImageCapture — 粘贴', () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(handle.accepted[0]!.name).toBe(`粘贴图片-${SHA.slice(0, 6)}`);
+      expect(handle.accepted[0]!.name).toBe(`Pasted image-${SHA.slice(0, 6)}`);
     }
   });
 
@@ -519,7 +519,7 @@ describe('createImageCapture — 上行与落盘回执（IMG-2）', () => {
     expect(msg.height).toBe(8);
     // 上行名与 chip 名同源（都是 `resolveImageName` 的产物）：宿主 `ref.name` 与本侧
     // 提案名一致，回执换真时不会出现「上行一个名、回执另一个名」的抖动
-    expect(msg.name).toBe(`粘贴图片-${SHA.slice(0, 6)}`);
+    expect(msg.name).toBe(`Pasted image-${SHA.slice(0, 6)}`);
     // base64 必须能原样解回字节（通道上唯一的字节形态，编解码任一错都会在图变半张时暴露）
     expect(Buffer.from(msg.base64, 'base64').equals(Buffer.from(bytes))).toBe(true);
   });

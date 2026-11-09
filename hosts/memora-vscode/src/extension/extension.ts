@@ -493,10 +493,15 @@ export function activate(context: vscode.ExtensionContext): void {
    * 记忆存储单例（懒建，所有权归宿主）
    *
    * 首次装配才打开 DB：打开失败的时机与现状一致（落在装配错误路径），
-   * 不会把 activate 拖死；此后所有会话 Agent 共用这一对象（共存储共记忆）。
+   * 不会把 activate 拖死；此后所有会话 Agent 共用这一对象（共存储共记忆）。第 4 参 = 翻译器：memoryStorage 零 vscode 依赖，错误文案只能由本入口注入本地化器。
    */
   const getMemoryStorage = (): IMemoryStorage => {
-    hostMemoryStorage ??= createHostMemoryStorage(workspacePath, createVscodeLogger(memoraOutput));
+    hostMemoryStorage ??= createHostMemoryStorage(
+      workspacePath,
+      createVscodeLogger(memoraOutput),
+      undefined,
+      (k, ...a) => vscode.l10n.t(k, ...a),
+    );
     return hostMemoryStorage;
   };
 

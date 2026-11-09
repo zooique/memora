@@ -263,7 +263,7 @@ describe('六步链主入口 · 逐步失败针对下一步', () => {
     });
   });
 
-  it('失败原因均带可读 message（**不静默丢弃**的前提：每条拒绝都要能直接进 UI）', () => {
+  it('失败原因均带可读键 + 实参（**不静默丢弃**的前提：每条拒绝都要能直接进 UI）', () => {
     const cases: Array<[Uint8Array, string | undefined]> = [
       [new Uint8Array(0), undefined],
       [new Uint8Array(MAX_IMAGE_BYTES + 1), undefined],
@@ -274,7 +274,8 @@ describe('六步链主入口 · 逐步失败针对下一步', () => {
     for (const [bytes, declared] of cases) {
       const r = validateImageCandidate(bytes, sha, declared);
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.message.length).toBeGreaterThan(0);
+      // 本模块零依赖：产物是英文源键 + 插值实参，解析归消费侧（见 ImageReject 注释）
+      if (!r.ok) expect(r.messageKey.length).toBeGreaterThan(0);
     }
   });
 });
@@ -285,9 +286,11 @@ describe('D29 · ImageRef.name 唯一生产点', () => {
   });
 
   it('无名 / 空 / 纯空白 ⇒ 按 sha256 前 6 位兜底（缺失 name 会在 UI 与缺陷文案里落成 undefined）', () => {
-    expect(resolveImageName(undefined, 'abcdef1234567890')).toBe('粘贴图片-abcdef');
-    expect(resolveImageName('', 'abcdef1234567890')).toBe('粘贴图片-abcdef');
-    expect(resolveImageName('   ', 'abcdef1234567890')).toBe('粘贴图片-abcdef');
+    // 兜底词缺省是英文源键（本模块零依赖）；消费侧传当前语言的词（见 resolveImageName 第 3 参）
+    expect(resolveImageName(undefined, 'abcdef1234567890')).toBe('Pasted image-abcdef');
+    expect(resolveImageName('', 'abcdef1234567890')).toBe('Pasted image-abcdef');
+    expect(resolveImageName('   ', 'abcdef1234567890')).toBe('Pasted image-abcdef');
+    expect(resolveImageName(undefined, 'abcdef1234567890', '粘贴图片')).toBe('粘贴图片-abcdef');
   });
 
   it('真实平台值 `image.png` 不做特判 ⇒ 原样返回（虚拟名剔除是**入口**职责）', () => {

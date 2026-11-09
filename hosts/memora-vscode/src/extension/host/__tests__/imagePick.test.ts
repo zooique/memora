@@ -49,7 +49,7 @@ describe('pickAndIngestImages — 入口闸门', () => {
 });
 
 describe('pickAndIngestImages — 选项与取消语义', () => {
-  it('开框选项单点下发：多选 + 中文图片过滤器 + 所有文件兜底（扩展名不可信的立身前提）', async () => {
+  it('开框选项单点下发：多选 + 图片过滤器 + 所有文件兜底（扩展名不可信的立身前提）', async () => {
     const { deps, picker } = makeDeps();
 
     await pickAndIngestImages(deps);
@@ -57,12 +57,21 @@ describe('pickAndIngestImages — 选项与取消语义', () => {
     expect(picker).toHaveBeenCalledTimes(1);
     const opts = picker.mock.calls[0]![0];
     expect(opts.canSelectMany).toBe(true);
-    expect(opts.title).toContain('图片');
-    expect(opts.filters['图片']).toContain('png');
+    // 文案走注入的翻译器；测试不注入 = 恒等 ⇒ 断言英文源键
+    expect(opts.title).toContain('images');
+    expect(opts.filters['Images']).toContain('png');
     // 扩展名清单单点（IMG-9）：过滤器必须逐项等于入站集合，写死第二份即红
-    expect(opts.filters['图片']).toEqual([...INBOUND_IMAGE_EXTS]);
+    expect(opts.filters['Images']).toEqual([...INBOUND_IMAGE_EXTS]);
     // 兜底必须存在：锁死扩展名 = 自打「扩展名不可信」的嘴
-    expect(opts.filters['所有文件']).toEqual(['*']);
+    expect(opts.filters['All files']).toEqual(['*']);
+  });
+
+  it('注入翻译器 ⇒ 对话框标题与过滤器键按译文下发（界面文案不焊死语言）', async () => {
+    const { deps, picker } = makeDeps({ t: (key) => (key === 'All files' ? '所有文件' : key) });
+
+    await pickAndIngestImages(deps);
+
+    expect(picker.mock.calls[0]![0].filters['所有文件']).toEqual(['*']);
   });
 
   it('取消（undefined）→ 不回执、不落盘（「没有发生任何事」不产生事件）', async () => {

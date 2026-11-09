@@ -52,8 +52,15 @@ export interface ImageReject {
   ok: false;
   /** 失败发生在第几环（调试/测试用；**不进 UI 文案**——用户不关心第几步，只关心为什么） */
   stage: ImageRejectStage;
-  /** 面向用户的可读原因（必须能直接进 UI，不含绝对路径） */
-  message: string;
+  /**
+   * 拒收原因的**英文源键**（= l10n 键面）。
+   *
+   * 本模块零依赖（宿主与 webview 共用），**不产面向用户的句子**：两端的本地化器不同
+   * （宿主 `vscode.l10n` / webview `@vscode/l10n`），故只回键 + 插值实参，由消费侧解析。
+   */
+  messageKey: string;
+  /** `messageKey` 的 `{n}` 插值实参（顺序即占位序号） */
+  messageArgs: string[];
 }
 
 export interface ImageAccept {
@@ -249,13 +256,29 @@ export function verifyBase64RoundTrip(originalByteLength: number, base64: string
  * 为什么无名时必须生成而不是留空：`name` 在 `ImageRef` 里是**必填**，而 UI 与缺陷态文案
  * 都要用；留空会在两处落成 undefined。取 sha256 前 6 位保证可定位到文件。
  */
-export function resolveImageName(declaredName: string | undefined, sha256: string): string {
+export function resolveImageName(
+  declaredName: string | undefined,
+  sha256: string,
+  /** 无名时的兜底词（**由消费侧传入当前语言**：`name` 会落进 `ImageRef` 被持久化，不能留中文） */
+  fallbackPrefix = 'Pasted image',
+): string {
   const trimmed = declaredName?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : `粘贴图片-${sha256.slice(0, 6)}`;
+  return trimmed && trimmed.length > 0 ? trimmed : `${fallbackPrefix}-${sha256.slice(0, 6)}`;
 }
 
-function reject(stage: ImageRejectStage, message: string): ImageReject {
-  return { ok: false, stage, message };
+/** 六环拒收文案的英文源键（`// @nls-keys` 供守卫登记键面；解析归消费侧） */
+// @nls-keys
+const REJECT_KEY: Record<ImageRejectStage, string> = {
+  1: 'Image content is empty',
+  2: 'Image exceeds {0} MiB',
+  3: 'Unsupported image format (PNG / JPEG / WebP / GIF only)',
+  4: 'File format does not match its declared type ({0} declared, {1} actual)',
+  5: 'Image data is incomplete (base64 check failed)',
+  6: 'Cannot parse image size; the file may be corrupted',
+};
+
+function reject(stage: ImageRejectStage, messageArgs: string[] = []): ImageReject {
+  return { ok: false, stage, messageKey: REJECT_KEY[stage], messageArgs };
 }
 
 /**
@@ -271,33 +294,35 @@ export function validateImageCandidate(
   sha256: string,
   declaredMime?: string,
   declaredName?: string,
+  /** 无名兜底词（见 `resolveImageName`，由消费侧按当前语言传入） */
+  fallbackPrefix?: string,
 ): ImageCheckResult {
   // 第 1 步：字节非空
-  if (bytes.length === 0) return reject(1, '图片内容为空');
+  if (bytes.length === 0) return reject(1);
 
   // 第 2 步：单图字节上限
   if (bytes.length > MAX_IMAGE_BYTES) {
-    return reject(2, `单张图片不能超过 ${Math.floor(MAX_IMAGE_BYTES / 1024 / 1024)} MiB`);
+    return reject(2, [String(Math.floor(MAX_IMAGE_BYTES / 1024 / 1024))]);
   }
 
   // 第 3 步：嗅探真实格式
   const mime = sniffImageMime(bytes);
-  if (!mime) return reject(3, '不支持的图片格式（仅支持 PNG / JPEG / WebP / GIF）');
+  if (!mime) return reject(3);
 
   // 第 4 步：与声明一致（声明缺失时不判——`File.type` 为空是常见且合法的）
   if (declaredMime && declaredMime !== mime) {
-    return reject(4, `文件格式与声明不符（声明 ${declaredMime}，实际 ${mime}）`);
+    return reject(4, [declaredMime, mime]);
   }
 
   // 第 6 步：像素尺寸（第 5 步由调用方在拿到 base64 后补）
   const size = parseImageSize(bytes, mime);
-  if (!size) return reject(6, '无法解析图片尺寸，文件可能已损坏');
+  if (!size) return reject(6);
 
   return {
     ok: true,
     mime,
     width: size.width,
     height: size.height,
-    name: resolveImageName(declaredName, sha256),
+    name: resolveImageName(declaredName, sha256, fallbackPrefix),
   };
 }

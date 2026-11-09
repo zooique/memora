@@ -28,12 +28,17 @@
  * - `ok`：已写盘，`ref` = 本模块复算的**真值** `ImageRef`（webview 据此建/换 chip）；
  * - `rejected`：字节层不可用（base64 非法 / 嗅不出图片 magic），**坏字节不写盘**；
  * - `failed`：IO 故障（读盘失败 / 磁盘满 / 权限），可重试。
+ *
+ * @nls-injected 本模块文案键经**注入翻译器** `t()` 出（零 vscode 依赖的前提），
+ * 由 NLS 守卫按此标记采集键面——删掉标记 = 键全成 bundle 孤儿键。
  */
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 // 值导入内核（node 侧合法；webview 打包不经过本模块）：token 公式单点，回执 tokens 字段（IMG-8）
 import { imageTokens, type ImageRef } from '@zooique/memora';
+// 翻译器契约（键 + 实参 → 文案）：本模块零 vscode 依赖，只能由宿主注入实现
+import { identityTranslate, type Translate } from '../../shared/l10nTranslate.js';
 import {
   MAX_IMAGE_BYTES,
   type ImageAccept,
@@ -132,6 +137,7 @@ async function writeOnce(dir: string, file: string, bytes: Uint8Array): Promise<
  *   回执之前调用：回执到达 webview 后用户随时可能发送，此时同步 `ImageResolver` 查表——
  *   若只靠「会话加载期预读」（`preloadSession`），新会话首发时图刚落盘、预读发生在它之前，
  *   查表必 miss ⇒ 内核 D7 推 `[图片不可用]` 占位（真机实锤）。落盘与入缓存之间不许有缝。
+ * @param t 文案翻译器（见 {@link Translate}）；缺省恒等 = 回执里是英文源键
  */
 export async function ingestImage(
   projectPath: string,
@@ -139,6 +145,7 @@ export async function ingestImage(
   post: (msg: ImageIngestResult) => void,
   toWebviewUri?: (file: string) => string | undefined,
   warmCache?: (ref: ImageRef) => void,
+  t: Translate = identityTranslate,
 ): Promise<void> {
   // 关联键 = 采集侧提案 sha256。三态回执都必须原样带回，否则 webview 无从知道
   // 这条回执属于哪一张 chip（多图并发时按文件名猜 = 张冠李戴）。
@@ -153,7 +160,7 @@ export async function ingestImage(
       type: 'image_ingest_result',
       status: 'rejected',
       sha256: key,
-      reason: '图片数据读取失败',
+      reason: t('Failed to read image data'),
     });
     return;
   }
@@ -165,7 +172,8 @@ export async function ingestImage(
       type: 'image_ingest_result',
       status: 'rejected',
       sha256: key,
-      reason: '图片数据传输不完整（base64 校验失败）',
+      // 与采集侧第 5 环同一句（同因同文案：键复用，不另造近义句）
+      reason: t('Image data is incomplete (base64 check failed)'),
     });
     return;
   }
@@ -176,9 +184,15 @@ export async function ingestImage(
 
   // 剩余校验环（非空 / 上限 / magic 嗅探 / 声明一致 / 尺寸）复用同一函数：
   // 对同一份字节是确定性结果，故「提案 mime 与嗅探结果不一致」只可能是传输损坏
-  const checked = validateImageCandidate(bytes, sha256, msg.mime, msg.name);
+  // （第 5 参 = 无名兜底词按当前语言生成：它会落进 ImageRef.name 被持久化）
+  const checked = validateImageCandidate(bytes, sha256, msg.mime, msg.name, t('Pasted image'));
   if (!checked.ok) {
-    post({ type: 'image_ingest_result', status: 'rejected', sha256: key, reason: checked.message });
+    post({
+      type: 'image_ingest_result',
+      status: 'rejected',
+      sha256: key,
+      reason: t(checked.messageKey, ...checked.messageArgs),
+    });
     return;
   }
 
@@ -195,7 +209,7 @@ export async function ingestImage(
       type: 'image_ingest_result',
       status: 'failed',
       sha256: key,
-      reason: `图片保存失败：${err instanceof Error ? err.message : String(err)}`,
+      reason: t('Failed to save image: {0}', err instanceof Error ? err.message : String(err)),
     });
     return;
   }
@@ -238,6 +252,7 @@ export async function ingestImage(
  * @param post 回执通道（注入以便单测直接断言，不触 vscode）
  * @param toWebviewUri 落盘文件 → webview 可加载 URL（语义同 `ingestImage` 第 4 参）
  * @param warmCache 写盘成功后的字节缓存预热钩子（语义同 `ingestImage` 第 5 参，两入口同一判据）
+ * @param t 文案翻译器（见 {@link Translate}；缺省恒等 = 回执里是英文源键）
  */
 export async function ingestDiskFile(
   projectPath: string,
@@ -245,6 +260,7 @@ export async function ingestDiskFile(
   post: (msg: ImagePickedResult) => void,
   toWebviewUri?: (file: string) => string | undefined,
   warmCache?: (ref: ImageRef) => void,
+  t: Translate = identityTranslate,
 ): Promise<void> {
   const name = basename(filePath);
 
@@ -262,7 +278,10 @@ export async function ingestDiskFile(
       type: 'image_picked',
       status: 'rejected',
       name,
-      reason: `单张图片不能超过 ${MAX_IMAGE_BYTES / 1024 / 1024} MiB（文件过大，已跳过读取）`,
+      reason: t(
+        'Image exceeds {0} MiB (file too large; skipped reading)',
+        String(Math.floor(MAX_IMAGE_BYTES / 1024 / 1024)),
+      ),
     });
     return;
   }
@@ -276,7 +295,7 @@ export async function ingestDiskFile(
       type: 'image_picked',
       status: 'failed',
       name,
-      reason: `图片读取失败：${err instanceof Error ? err.message : String(err)}`,
+      reason: t('Failed to read image: {0}', err instanceof Error ? err.message : String(err)),
     });
     return;
   }
@@ -290,7 +309,7 @@ export async function ingestDiskFile(
       type: 'image_picked',
       status: 'rejected',
       name,
-      reason: `图片校验未通过：${checked.message}`,
+      reason: t('Image validation failed: {0}', t(checked.messageKey, ...checked.messageArgs)),
     });
     return;
   }
@@ -305,7 +324,7 @@ export async function ingestDiskFile(
       type: 'image_picked',
       status: 'failed',
       name,
-      reason: `图片保存失败：${err instanceof Error ? err.message : String(err)}`,
+      reason: t('Failed to save image: {0}', err instanceof Error ? err.message : String(err)),
     });
     return;
   }

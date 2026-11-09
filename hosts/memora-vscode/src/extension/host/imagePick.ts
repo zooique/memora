@@ -21,11 +21,16 @@
  * （`ingestDiskFile` 不传声明 mime）。故必须留「所有文件」兜底——扩展名不可信正是
  * 本路径的立身前提，把用户锁死在扩展名里等于自打嘴巴；选错内容会被 rejected
  * **可见**拒收，不静默。
+ *
+ * @nls-injected 对话框文案 / 回执理由经**注入翻译器** `t()` 出（零 vscode 依赖的前提），
+ * 由 NLS 守卫按此标记采集键面。
  */
 import type { ImageRef } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { INBOUND_IMAGE_EXTS } from './imageExts.js';
 import { ingestDiskFile } from './imageIngest.js';
+// 翻译器契约（零依赖模块由宿主注入）：与 imageIngest 共用同一份缺省实现
+import { identityTranslate, type Translate } from '../../shared/l10nTranslate.js';
 
 /** 拾取回执类型（从协议联合取型，禁手写第二份字段表） */
 type ImagePickedResult = Extract<ExtensionToWebviewMessage, { type: 'image_picked' }>;
@@ -45,20 +50,26 @@ export interface ImagePickDialogOptions {
 export type ImageFilePicker = (options: ImagePickDialogOptions) => Promise<string[] | undefined>;
 
 /**
- * 对话框文案与过滤器（单点）。
+ * 对话框文案与过滤器（单点，**函数而非常量**）。
  *
- * filters 键用中文「图片」：键名直接显示在原生对话框的下拉里，与面板全中文 UI 同语。
+ * 标题与过滤器键名直接显示在原生对话框里 ⇒ 必须按**当前语言**生成：写成模块顶层常量
+ * 会在语言包就绪前求值、把语言焊死（同 `l10n.t` 模块级陷阱）。
  * 扩展名列表**不在此写死**：唯一真源 = `imageExts.INBOUND_IMAGE_EXTS`（IMG-9），
  * 与右键「添加到对话」的预筛共用；此处写第二份就是选择框能选、右键却不拦。
+ *
+ * @param t 文案翻译器（宿主注入 `vscode.l10n.t`）
  */
-const DIALOG_OPTIONS: ImagePickDialogOptions = {
-  title: '选择要添加到对话的图片',
-  canSelectMany: true,
-  filters: {
-    图片: [...INBOUND_IMAGE_EXTS],
-    所有文件: ['*'],
-  },
-};
+function dialogOptions(t: Translate): ImagePickDialogOptions {
+  return {
+    title: t('Select images to add to the conversation'),
+    canSelectMany: true,
+    filters: {
+      // 过滤器键名是 UI 文案（下拉里直接可见）；中英各按当前语言呈现
+      [t('Images')]: [...INBOUND_IMAGE_EXTS],
+      [t('All files')]: ['*'],
+    },
+  };
+}
 
 export interface ImagePickDeps {
   /**
@@ -81,6 +92,11 @@ export interface ImagePickDeps {
   warmCache?: (ref: ImageRef) => void;
   /** 面板不可用时的用户提示（注入保持零 vscode；文案面归调用方） */
   notifyPanelUnavailable: () => void;
+  /**
+   * 文案翻译器（注入保持零 vscode；缺省恒等 = 对话框文案与回执理由是英文源键）。
+   * 生产侧由 chatPanel 注 `vscode.l10n.t`，与 `imageIngest` 两入口同一口径。
+   */
+  t?: Translate;
 }
 
 /**
@@ -97,7 +113,7 @@ export async function pickAndIngestImages(deps: ImagePickDeps): Promise<void> {
     deps.notifyPanelUnavailable();
     return;
   }
-  const picked = await deps.picker(DIALOG_OPTIONS);
+  const picked = await deps.picker(dialogOptions(deps.t ?? identityTranslate));
   if (!picked || picked.length === 0) return;
   await ingestImageFiles(deps, picked);
 }
@@ -122,7 +138,7 @@ export async function ingestImageFiles(
   }
   await Promise.all(
     paths.map((file) =>
-      ingestDiskFile(deps.projectPath, file, deps.post, deps.toWebviewUri, deps.warmCache),
+      ingestDiskFile(deps.projectPath, file, deps.post, deps.toWebviewUri, deps.warmCache, deps.t),
     ),
   );
 }
