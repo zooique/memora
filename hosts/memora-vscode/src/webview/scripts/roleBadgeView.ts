@@ -11,6 +11,7 @@
  * @module roleBadgeView
  */
 
+import * as l10n from '@vscode/l10n';
 import { createIcon } from './icons.js';
 import { CAPABILITY_STATE_TEXT } from '../helpers/capabilityLabels.js';
 import type { CapabilityStateDto, RoleStrategyIndicatorDto } from '../../shared/protocol.js';
@@ -23,7 +24,10 @@ import type { CapabilityStateDto, RoleStrategyIndicatorDto } from '../../shared/
  */
 export function roleFallbackDiffText(name: string): { note: string; spoken: string } {
   return name
-    ? { note: `（原「${name}」不可用）`, spoken: `\n原角色包「${name}」已不可用，当前使用默认角色` }
+    ? {
+        note: l10n.t('(the former "{0}" is unavailable)', name),
+        spoken: '\n' + l10n.t('Role pack "{0}" is unavailable; the default role is in use', name),
+      }
     : { note: '', spoken: '' };
 }
 
@@ -71,7 +75,7 @@ export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
    */
   function createTeamMeetingIcon(): HTMLElement {
     // 用 createIcon 创建按钮（Trae 统一图标管理，team 图标双人轮廓）
-    const btn = createIcon('team', '小组会议（点击启动）', 'team-meeting-icon');
+    const btn = createIcon('team', l10n.t('Team meeting (click to start)'), 'team-meeting-icon');
     // 插入 roleBadge 同行容器（roleBadge.parentNode 是底部徽章行）
     const container = roleBadge!.parentNode as HTMLElement;
     if (container) {
@@ -84,7 +88,7 @@ export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
     btn.addEventListener('click', () => {
       const input = document.getElementById('input') as HTMLTextAreaElement | null;
       if (!input) return;
-      const PREFIX = '小组会议：';
+      const PREFIX = l10n.t('Team meeting: ');
       input.value = PREFIX + input.value;
       input.focus();
       input.setSelectionRange(PREFIX.length, PREFIX.length);
@@ -119,30 +123,31 @@ export function createRoleBadgeView(deps: RoleBadgeViewDeps): RoleBadgeView {
     if (!capabilityBadge) return;
     if (toolMode === 'block') {
       capabilityBadge.hidden = false;
-      capabilityBadge.textContent = '纯 LLM';
-      capabilityBadge.title = '纯 LLM 模式（无工具暴露）';
+      capabilityBadge.textContent = l10n.t('Pure LLM');
+      capabilityBadge.title = l10n.t('Pure LLM mode (no tools are exposed)');
       return;
     }
     /** 只读提示文案：照内核事实陈述（`toolReadonly='readonly'` 时写类工具会被拒绝），不写承诺 */
-    const READONLY_LABEL = '只读模式（写类工具会被拒绝）';
+    const READONLY_LABEL = l10n.t('Read-only mode (write tools are rejected)');
     /** 三态先定文案（本段不读 strategyHint，保证三态语义不被只读项干扰） */
     let label: string;
     let title: string;
     if (capabilityState.kind === 'all') {
-      label = CAPABILITY_STATE_TEXT.all.label;
-      title = CAPABILITY_STATE_TEXT.all.title;
+      label = l10n.t(CAPABILITY_STATE_TEXT.all.label);
+      title = l10n.t(CAPABILITY_STATE_TEXT.all.title);
     } else if (capabilityState.kind === 'residentOnly') {
-      label = CAPABILITY_STATE_TEXT.residentOnly.label;
-      title = CAPABILITY_STATE_TEXT.residentOnly.title;
+      label = l10n.t(CAPABILITY_STATE_TEXT.residentOnly.label);
+      title = l10n.t(CAPABILITY_STATE_TEXT.residentOnly.title);
     } else {
-      const labels = [...new Set(capabilityState.capabilities.map((c) => c.label))];
+      // 能力名标签由 host 以英文源键下发，渲染侧统一过 l10n（host 与 webview 各用各的本地化器）
+      const labels = [...new Set(capabilityState.capabilities.map((c) => l10n.t(c.label)))];
       label = labels.join(' · ');
-      title = `允许：${labels.join('、')}`;
+      title = l10n.t('Allowed: {0}', labels.join(' · '));
     }
     // 只读是附加投影：三态文案与悬浮说明各追加一句，不替换、不重判
     if (strategyHint?.toolReadonly === 'readonly') {
       label = `${label} · ${READONLY_LABEL}`;
-      title = `${title}；${READONLY_LABEL}`;
+      title = l10n.t('{0} · {1}', title, READONLY_LABEL);
     }
     capabilityBadge.hidden = false;
     capabilityBadge.textContent = label;

@@ -21,6 +21,7 @@ import { settingsStyles } from '../styles/settingsStyles.js';
 import { MCP_BODY_HTML } from './settingsMcpHtml.js';
 import { SECURITY_BODY_HTML } from './settingsSecurityHtml.js';
 import { buildMemoryBodyHtml } from './settingsMemoryHtml.js';
+import { buildRolesBodyHtml } from './settingsRolesHtml.js';
 import { buildWorksBodyHtml } from './settingsWorksHtml.js';
 import {
   DEFAULT_SETTINGS_TAB,
@@ -37,6 +38,9 @@ const WORKS_BODY_HTML = buildWorksBodyHtml(vscode.l10n);
 /** Memory body built at import time with the host localizer (same reason as the works body). */
 const MEMORY_BODY_HTML = buildMemoryBodyHtml(vscode.l10n);
 
+/** Roles body built at import time with the host localizer (same reason as the works body). */
+const ROLES_BODY_HTML = buildRolesBodyHtml(vscode.l10n);
+
 /**
  * 各选项卡主体骨架（**不含外层 root 容器**——root 与 tab 按钮均由 {@link buildHtml} 统一生成）
  *
@@ -44,26 +48,7 @@ const MEMORY_BODY_HTML = buildMemoryBodyHtml(vscode.l10n);
  */
 const TAB_BODY_HTML: Record<SettingsTab, string> = {
   memory: MEMORY_BODY_HTML,
-  roles: `  <!-- 角色子视图（roles 选项卡） -->
-    <div class="header">
-      <h2>角色</h2>
-      <span id="statBar" class="stat-bar" hidden></span>
-      <div class="header-actions">
-        <button id="btnImportRolePackZip" class="btn btn-secondary btn-icon-solo" title="导入 .zip 角色包（可导入到用户级或项目级）">
-          <span class="btn-icon" data-icon="import"></span>
-        </button>
-        <button id="btnOpenRolePacksDir" class="btn btn-secondary btn-icon-solo" title="打开用户角色包目录">
-          <span class="btn-icon" data-icon="folder"></span>
-        </button>
-        <button id="btnRefreshRolePacks" class="btn btn-secondary btn-icon-solo" title="刷新角色包列表（重扫项目与用户角色包目录）">
-          <span class="btn-icon" data-icon="refresh"></span>
-        </button>
-      </div>
-    </div>
-    <div id="list">
-      <p class="loading-hint">加载中…</p>
-    </div>
-    <p class="footer-hint">「当前」= 本会话正在使用的角色（「设为当前」只切本会话）；「默认」= 此后新建会话自动使用的角色（「设为默认」只影响未来，不改已有会话）；「带入对话」还会跳到对话并预填一句过渡语（不自动发送，可编辑后再发）。默认角色若是只读策略，此后每个新会话都会失去写入能力。</p>`,
+  roles: ROLES_BODY_HTML,
   config: `  <!-- 大模型配置子视图（config 选项卡） -->
     <div class="header">
       <h2>大模型配置</h2>

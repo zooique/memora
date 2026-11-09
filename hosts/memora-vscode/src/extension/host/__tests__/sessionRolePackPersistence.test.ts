@@ -10,7 +10,16 @@
  *   ③ 另一会话不受影响（各自读回各自的包）；
  *   ④ 包名解析不到 → 装配不崩、回落兜底包，且产出的 UI 消息**指名**原包与新角色（不许静默）。
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// 回落提示文案走 vscode.l10n（宿主侧本地化器）：默认语言下 t() 原样返回英文源键并填占位符
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
@@ -279,7 +288,7 @@ describe('会话级角色包：落盘 → 重启读回 → 只读闸仍生效', 
     expect(notice).toEqual({
       type: 'notice',
       level: 'error',
-      message: `原角色包「已删除的角色包」已不可用，当前使用默认角色「${FALLBACK_PACK}」。`,
+      message: `The former role pack "已删除的角色包" is unavailable; using the default role "${FALLBACK_PACK}" instead.`,
     });
     close();
   }, 60_000);

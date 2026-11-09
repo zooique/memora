@@ -17,6 +17,15 @@
  */
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
+
+// 失败原因 / 完成态措辞走 vscode.l10n（宿主侧本地化器）：默认语言下 t() 原样返回英文源键并填占位符
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 import type { RolePackManager } from '@zooique/memora';
 import type { Memento } from 'vscode';
 import { inspectTeamsHealth, inspectRolePackTeams } from '../rolePackTeams.js';

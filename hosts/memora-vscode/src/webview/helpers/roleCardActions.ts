@@ -9,6 +9,7 @@
  *   - 「默认」= 用户级配置 `memora.defaultRolePack`（`roles_set_active` + `scope:'default'`，
  *     只影响此后新建会话；同一通道两种作用域，不另开 op）。
  */
+import * as l10n from '@vscode/l10n';
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 import { appendPromoteToUserButton } from './assetPromoteButton.js';
 
@@ -46,15 +47,17 @@ export function appendRoleStateBadges(
   if (pack.name === deps.activeName) {
     const badge = document.createElement('span');
     badge.className = 'badge';
-    badge.textContent = '当前';
+    badge.textContent = l10n.t('Current');
     header.appendChild(badge);
   }
   // 「默认」徽章：新建会话将自动使用该角色（与「当前」是两个层面，可同时成立）
   if (pack.name === deps.defaultName) {
     const badge = document.createElement('span');
     badge.className = 'badge';
-    badge.textContent = '默认';
-    badge.title = '新建会话将自动使用该角色；不影响已有会话';
+    badge.textContent = l10n.t('Default');
+    badge.title = l10n.t(
+      'New sessions use this role automatically; existing sessions are unaffected',
+    );
     header.appendChild(badge);
   }
 }
@@ -75,8 +78,10 @@ export function appendRoleCardActions(
   // 「带入对话」：切换角色并跳到对话视图（预填过渡语，不自动发送）
   const handoffBtn = document.createElement('button');
   handoffBtn.className = 'btn btn-primary';
-  handoffBtn.textContent = '带入对话';
-  handoffBtn.title = '切换角色并跳到对话视图：已在输入框预填一句过渡语（不自动发送，可编辑后再发）';
+  handoffBtn.textContent = l10n.t('Take into chat');
+  handoffBtn.title = l10n.t(
+    'Switch role and jump to the chat view: a transition line is pre-filled in the input box (not sent automatically; edit it before sending)',
+  );
   handoffBtn.addEventListener('click', () => post({ type: 'roles_handoff', name: pack.name }));
   actions.appendChild(handoffBtn);
   // 项目级专属：拷贝到用户级（非同步；同名先备份再覆盖）
@@ -86,8 +91,10 @@ export function appendRoleCardActions(
   if (pack.name !== deps.activeName) {
     const actBtn = document.createElement('button');
     actBtn.className = 'btn btn-secondary';
-    actBtn.textContent = '设为当前';
-    actBtn.title = '切换当前会话的角色，停留在设置页（不跳转到对话）';
+    actBtn.textContent = l10n.t('Set as current');
+    actBtn.title = l10n.t(
+      'Switch the role of the current session and stay on the settings tab (no jump to chat)',
+    );
     actBtn.addEventListener('click', () => post({ type: 'roles_set_active', name: pack.name }));
     actions.appendChild(actBtn);
   }
@@ -95,8 +102,10 @@ export function appendRoleCardActions(
   if (pack.name === deps.defaultName) {
     const clearBtn = document.createElement('button');
     clearBtn.className = 'btn btn-secondary';
-    clearBtn.textContent = '取消默认';
-    clearBtn.title = '取消后新建会话使用系统兜底角色；不影响当前与已有会话';
+    clearBtn.textContent = l10n.t('Clear default');
+    clearBtn.title = l10n.t(
+      'After clearing, new sessions use the system fallback role; current and existing sessions are unaffected',
+    );
     clearBtn.addEventListener('click', () =>
       post({ type: 'roles_set_active', name: '', scope: 'default' }),
     );
@@ -104,8 +113,10 @@ export function appendRoleCardActions(
   } else {
     const defBtn = document.createElement('button');
     defBtn.className = 'btn btn-secondary';
-    defBtn.textContent = '设为默认';
-    defBtn.title = '此后新建会话自动使用该角色；不改变当前会话与已有会话';
+    defBtn.textContent = l10n.t('Set as default');
+    defBtn.title = l10n.t(
+      'New sessions created afterwards use this role automatically; the current and existing sessions do not change',
+    );
     defBtn.addEventListener('click', () =>
       post({ type: 'roles_set_active', name: pack.name, scope: 'default' }),
     );

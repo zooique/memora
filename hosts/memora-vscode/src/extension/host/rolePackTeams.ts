@@ -25,6 +25,8 @@
 import type { Agent, RolePackManager } from '@zooique/memora';
 // 组员上限（保存校验用；内核常量单点，宿主不复制 5 字面量）
 import { MAX_TEAM_MEMBERS } from '@zooique/memora';
+// 值导入：本模块的失败原因 / 完成态措辞全部经 vscode.l10n 本地化（宿主侧本地化器）
+import * as vscode from 'vscode';
 import type { Memento } from 'vscode';
 import { ROLE_PACK_TEAMS_KEY } from '../../shared/constants.js';
 
@@ -84,7 +86,10 @@ export function broadcastRolePackTeams(
       const rpm = agent.rolePackManager;
       // 内核未就绪不算「已生效」：记失败，避免汇总数虚高
       if (!rpm) {
-        failed.push({ sessionId, reason: '内核未就绪（无 rolePackManager）' });
+        failed.push({
+          sessionId,
+          reason: vscode.l10n.t('Kernel not ready (no rolePackManager)'),
+        });
         continue;
       }
       rpm.setRolePackTeams(teams);
@@ -131,22 +136,38 @@ export async function saveRolePackTeam(
   members: string[],
 ): Promise<{ ok: true; broadcast?: TeamBroadcastResult } | { ok: false; reason: string }> {
   const rpm = deps.rpm;
-  if (!rpm || !leader) return { ok: false, reason: '小组保存失败：内核未就绪' };
+  if (!rpm || !leader)
+    return { ok: false, reason: vscode.l10n.t('Team save failed: kernel not ready') };
   const validPacks = new Set(rpm.listMeta().map((m) => m.name));
   const deduped = [...new Set(members)];
   if (!validPacks.has(leader))
-    return { ok: false, reason: `小组保存失败：组长「${leader}」不存在` };
-  if (deduped.length === 0) return { ok: false, reason: '小组保存失败：至少选择 1 名组员' };
+    return {
+      ok: false,
+      reason: vscode.l10n.t('Team save failed: leader "{0}" does not exist', leader),
+    };
+  if (deduped.length === 0)
+    return { ok: false, reason: vscode.l10n.t('Team save failed: choose at least 1 member') };
   if (deduped.some((m) => !validPacks.has(m))) {
-    return { ok: false, reason: '小组保存失败：存在不存在的组员角色包' };
+    return {
+      ok: false,
+      reason: vscode.l10n.t('Team save failed: one of the member role packs does not exist'),
+    };
   }
   if (deduped.includes(leader))
-    return { ok: false, reason: '小组保存失败：组长不能同时是自己的组员' };
+    return {
+      ok: false,
+      reason: vscode.l10n.t('Team save failed: the leader cannot be a member of its own team'),
+    };
   // 5 人组上限（队长 1 + 组员 ≤ MAX_TEAM_MEMBERS，组队功能用户约定）：超限拒绝保存
   if (deduped.length > MAX_TEAM_MEMBERS) {
     return {
       ok: false,
-      reason: `小组保存失败：组员最多 ${MAX_TEAM_MEMBERS} 名（队长 1 + 组员 ≤ ${MAX_TEAM_MEMBERS} = ${MAX_TEAM_MEMBERS + 1} 人组上限）`,
+      reason: vscode.l10n.t(
+        'Team save failed: at most {0} members (1 leader + up to {1} members, {2}-member limit)',
+        MAX_TEAM_MEMBERS,
+        MAX_TEAM_MEMBERS,
+        MAX_TEAM_MEMBERS + 1,
+      ),
     };
   }
   // 组长身份唯一：同一组长不允许两处建组
@@ -167,21 +188,37 @@ export async function deleteRolePackTeam(
   return applyTeams(next, deps);
 }
 
-/** 组队热更结果的用户可见措辞（保存/删除共用，禁两套口径） */
+/**
+ * 组队热更结果的用户可见措辞（保存/删除共用，禁两套口径）
+ *
+ * `action` 取语义枚举而非已翻译文案：把「已保存 / 已删除」拼进整句，翻译时语序无法保真
+ * （旧签名接 `'保存'` 这类中文片段，等于把语法焊死在中文上）。
+ */
 export function describeTeamBroadcast(
-  actionLabel: string,
+  action: 'save' | 'delete',
   result: TeamBroadcastResult | undefined,
 ): string {
-  if (!result) return `小组已${actionLabel}`;
+  /** 完成态主句（保存/删除各一条键，不做片段拼接） */
+  const done = action === 'save' ? vscode.l10n.t('Team saved') : vscode.l10n.t('Team deleted');
+  if (!result) return done;
   if (result.failed.length > 0) {
-    const detail = result.failed.map((f) => `${f.sessionId}：${f.reason}`).join('；');
-    return `小组已${actionLabel}；热更成功 ${result.updated.length} 个会话，失败 ${result.failed.length} 个（${detail}）——失败会话需重开面板或重启后生效`;
+    const detail = result.failed.map((f) => `${f.sessionId}: ${f.reason}`).join('; ');
+    return vscode.l10n.t(
+      '{0}; hot update succeeded for {1} sessions and failed for {2} ({3}) — failed sessions need the panel reopened or a restart to take effect',
+      done,
+      result.updated.length,
+      result.failed.length,
+      detail,
+    );
   }
   // 零已装配会话不是失败：下次装配本就按新名单注入，说清楚免得用户以为没生效
   if (result.updated.length === 0) {
-    return `小组已${actionLabel}（当前无已装配会话，下次打开即按新名单生效）`;
+    return vscode.l10n.t(
+      '{0} (no session is assembled yet; the new roster applies the next time one opens)',
+      done,
+    );
   }
-  return `小组已${actionLabel}`;
+  return done;
 }
 
 /**

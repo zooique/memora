@@ -413,7 +413,29 @@ const WEBVIEW_PANELS = {
       'webview/styles/memoryStyles.ts',
     ],
   },
-  roles: { state: 'pending', files: [] },
+  // 角色页（B3）：骨架 / 运行时脚本 / 卡片动作 / 能力标签 / 策略键面 / 组队文案全部迁完。
+  // `roleBadgeView.ts` 与 `sessionRolePack.ts` 虽服务于对话侧徽章，但文案归属角色域
+  // （角色名回落 / 能力三态），一并登记——否则它们只有 chat 面板迁移时才第一次进守卫。
+  roles: {
+    state: 'migrated',
+    files: [
+      'shared/settingsTabs.ts',
+      'webview/panels/settingsRolesHtml.ts',
+      'webview/scripts/rolesView.ts',
+      'webview/scripts/rolesTeamModal.ts',
+      'webview/scripts/roleBadgeView.ts',
+      'webview/helpers/rolePackListView.ts',
+      'webview/helpers/roleCardActions.ts',
+      'webview/helpers/rolePackSelectionActions.ts',
+      'webview/helpers/assetPromoteButton.ts',
+      'webview/helpers/strategyKeyMeta.ts',
+      'webview/helpers/capabilityLabels.ts',
+      'webview/helpers/capabilityChips.ts',
+      'webview/styles/rolesStyles.ts',
+      'extension/host/rolePackTeams.ts',
+      'extension/host/sessionRolePack.ts',
+    ],
+  },
   config: { state: 'pending', files: [] },
   skills: { state: 'pending', files: [] },
   mcp: { state: 'pending', files: [] },

@@ -1,4 +1,4 @@
-// @vitest-environment node
+﻿// @vitest-environment node
 /**
  * roleBadgeView 能力徽章「只读投影」测试
  *
@@ -35,8 +35,8 @@ const RESIDENT_ONLY: CapabilityStateDto = { kind: 'residentOnly' };
 const LIST: CapabilityStateDto = {
   kind: 'list',
   capabilities: [
-    { capability: 'file:read', label: '文件' },
-    { capability: 'memory:recall', label: '记忆' },
+    { capability: 'file:read', label: 'File' },
+    { capability: 'memory:recall', label: 'Memory' },
   ],
 };
 
@@ -46,9 +46,9 @@ describe('updateCapabilityBadge：只读投影', () => {
     view.updateCapabilityBadge('allow', ALL, { toolReadonly: 'readonly' });
     expect(badge.hidden).toBe(false);
     expect(badge.textContent).toBe(
-      `${CAPABILITY_STATE_TEXT.all.label} · 只读模式（写类工具会被拒绝）`,
+      `${CAPABILITY_STATE_TEXT.all.label} · Read-only mode (write tools are rejected)`,
     );
-    expect(badge.title).toContain('只读模式（写类工具会被拒绝）');
+    expect(badge.title).toContain('Read-only mode (write tools are rejected)');
   });
 
   it('非只读（full / 未给 hint）不显示只读文案', () => {
@@ -63,10 +63,10 @@ describe('updateCapabilityBadge：只读投影', () => {
     const { view, badge } = makeView();
     view.updateCapabilityBadge('allow', RESIDENT_ONLY, { toolReadonly: 'readonly' });
     expect(badge.textContent).toBe(
-      `${CAPABILITY_STATE_TEXT.residentOnly.label} · 只读模式（写类工具会被拒绝）`,
+      `${CAPABILITY_STATE_TEXT.residentOnly.label} · Read-only mode (write tools are rejected)`,
     );
     view.updateCapabilityBadge('allow', LIST, { toolReadonly: 'readonly' });
-    expect(badge.textContent).toBe('文件 · 记忆 · 只读模式（写类工具会被拒绝）');
+    expect(badge.textContent).toBe('File · Memory · Read-only mode (write tools are rejected)');
   });
 
   it('三态不被只读项干扰：无 hint 时与 SSOT 文案逐字一致', () => {
@@ -75,13 +75,13 @@ describe('updateCapabilityBadge：只读投影', () => {
     expect(badge.textContent).toBe(CAPABILITY_STATE_TEXT.residentOnly.label);
     expect(badge.title).toBe(CAPABILITY_STATE_TEXT.residentOnly.title);
     view.updateCapabilityBadge('allow', LIST);
-    expect(badge.textContent).toBe('文件 · 记忆');
-    expect(badge.title).toBe('允许：文件、记忆');
+    expect(badge.textContent).toBe('File · Memory');
+    expect(badge.title).toBe('Allowed: File · Memory');
   });
 
   it('block（纯 LLM）不混入只读文案', () => {
     const { view, badge } = makeView();
     view.updateCapabilityBadge('block', ALL, { toolReadonly: 'readonly' });
-    expect(badge.textContent).toBe('纯 LLM');
+    expect(badge.textContent).toBe('Pure LLM');
   });
 });

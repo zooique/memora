@@ -12,6 +12,7 @@
  * 由 esbuild 以 browser/iife 打包进 dist/webview/scripts/settingsView.js（经 settingsViewMain
  * 入口），在 webview HTML 中 <script src> 引用（CSP script-src cspSource）。
  */
+import * as l10n from '@vscode/l10n';
 import type {
   CapabilityStateDto,
   ExtensionToWebviewMessage,
@@ -26,8 +27,14 @@ import {
   type RoleCardControlDeps,
 } from '../helpers/roleCardActions.js';
 import { createPager, PagerController } from './pager.js';
+// 组队弹窗外置（本文件贴 max-lines 基线；弹窗自足、零共享状态）
+import { launchTeamModal as launchTeamModalImpl } from './rolesTeamModal.js';
 import { getIconSvg } from './icons.js';
-import { STRATEGY_KEY_META, formatDetailValue } from '../helpers/strategyKeyMeta.js';
+import {
+  STRATEGY_KEY_META,
+  SWITCH_CONTROL_KEYS,
+  formatDetailValue,
+} from '../helpers/strategyKeyMeta.js';
 import type { StrategyKeyMetaEntry } from '../helpers/strategyKeyMeta.js';
 import { collectStrategyFromForm } from '../helpers/strategyForm.js';
 import type { StrategyFormCell } from '../helpers/strategyForm.js';
@@ -113,12 +120,31 @@ interface KeyFaceItem {
   range?: { min: number; max: number };
 }
 
-/** 策略阶段中文标题（键面分组的组头；顺序 = 键面出现序） */
+/** 策略阶段标题（键面分组的组头；顺序 = 键面出现序）。值是英文源键，渲染时过 l10n.t */
+// @nls-keys
 const STAGE_LABELS: Record<string, string> = {
-  prepare: '回答前（Prepare）',
-  act: '回答中（Act）',
-  reflect: '回答后（Reflect）',
-  global: '全局',
+  prepare: 'Before answering (Prepare)',
+  act: 'While answering (Act)',
+  reflect: 'After answering (Reflect)',
+  global: 'Global',
+};
+
+/** 温度分组 chip 文案（值 = 英文源键，渲染时过 l10n.t） */
+// @nls-keys
+const TEMP_GROUP_LABELS: Record<string, string> = {
+  high: 'High creativity',
+  mid: 'Balanced',
+  low: 'Low temperature',
+};
+
+/** 性格特征名（值 = 英文源键，渲染时过 l10n.t） */
+// @nls-keys
+const TRAIT_LABELS: Record<string, string> = {
+  precision: 'Precision',
+  creativity: 'Creativity',
+  rigor: 'Rigor',
+  empathy: 'Empathy',
+  speed: 'Speed',
 };
 
 /**
@@ -185,7 +211,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   function renderOthersPage(items: readonly RolePackItem[]): void {
     othersHost.textContent = '';
     if (!items || items.length === 0) return;
-    othersHost.appendChild(createGroupTitle(document, '其他角色'));
+    othersHost.appendChild(createGroupTitle(document, l10n.t('Other roles')));
     items.forEach((p) => othersHost.appendChild(buildCard(p, lastData!)));
   }
 
@@ -207,7 +233,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   /** 渲染角色包列表：激活角色置顶常显，其余角色分页展示（对齐 config 面板分组） */
   function render(data: RolesPayload): void {
     statBar.hidden = false;
-    statBar.textContent = `已加载 ${data.packs?.length ?? 0} 个角色`;
+    statBar.textContent = l10n.t('{0} roles loaded', data.packs?.length ?? 0);
     list.textContent = '';
     lastData = data;
     // 默认角色名先落（空态也要与载荷同步：清空列表不能留着上一轮的「默认」判据）
@@ -218,8 +244,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       // 空态引导：无角色包时提示（SSOT：createEmptyState 纯函数，对齐 configView 列表级同构）
       list.appendChild(
         createEmptyState(document, {
-          title: '暂无角色包',
-          hint: '请先打开一个工作区，或安装角色包后重新加载',
+          title: l10n.t('No role packs'),
+          hint: l10n.t('Open a workspace, or install a role pack and reload'),
         }),
       );
       // 空态必须同批收敛分页态：早退不清 pager ⇒ 分页条留着上一轮页码与条数，表现为
@@ -241,7 +267,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     // 激活角色置顶（主动可见：用户一眼看到当前定位）——恒显不参与分页
     const active = data.packs.filter((p) => p.name === activeName);
     if (active.length > 0) {
-      list.appendChild(createGroupTitle(document, '当前角色'));
+      list.appendChild(createGroupTitle(document, l10n.t('Current role')));
       active.forEach((p) => list.appendChild(buildCard(p, data)));
     }
     // 「其他角色」归口整页容器（renderOthersPage 重建，翻页不叠加）
@@ -266,10 +292,10 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     block.className = 'legacy-teams';
     const title = document.createElement('div');
     title.className = 'legacy-teams-title';
-    title.textContent = `遗留队伍（${legacyTeams.length}）`;
-    title.title =
-      '这些队伍的组长角色包已不存在（如内置包收紧、用户包被删除）。' +
-      '队伍数据已保留，确认不需要后可清理。';
+    title.textContent = l10n.t('Orphan teams ({0})', legacyTeams.length);
+    title.title = l10n.t(
+      'The leader role pack of these teams no longer exists (for example, a built-in pack was tightened or a user pack was deleted). Team data is kept; clean it up once you are sure it is not needed.',
+    );
     block.appendChild(title);
     for (const t of legacyTeams) {
       const row = document.createElement('div');
@@ -279,16 +305,20 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       const memberNames = t.members
         .map((m) => {
           const label = data.packs.find((x) => x.name === m)?.displayName ?? m;
-          return missing.has(m) ? `${label}（已卸载）` : label;
+          return missing.has(m) ? l10n.t('{0} (uninstalled)', label) : label;
         })
         .join(' / ');
       const label = document.createElement('span');
       label.className = 'legacy-teams-label';
-      label.textContent = `组长「${t.leader}」已卸载 · 组员：${memberNames || '（无）'}`;
+      label.textContent = l10n.t(
+        'Leader "{0}" is uninstalled · members: {1}',
+        t.leader,
+        memberNames || l10n.t('(none)'),
+      );
       const clean = document.createElement('button');
       clean.className = 'btn btn-danger legacy-teams-btn';
-      clean.textContent = '清理';
-      clean.title = '删除该遗留队伍（移除会议名单记录）';
+      clean.textContent = l10n.t('Clean up');
+      clean.title = l10n.t('Delete this orphan team (removes the meeting roster record)');
       clean.addEventListener('click', () => {
         vscode.postMessage({ type: 'roles_team_delete', leader: t.leader });
       });
@@ -316,28 +346,41 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       const names = leadTeam.members
         .map((m) => {
           const label = data.packs.find((x) => x.name === m)?.displayName ?? m;
-          return missing.has(m) ? `${label}（已卸载）` : label;
+          return missing.has(m) ? l10n.t('{0} (uninstalled)', label) : label;
         })
         .join(' / ');
-      label.textContent = `队伍：${names}`;
+      label.textContent = l10n.t('Team: {0}', names);
       // 超限/缺员组（存量/外部数据）：内核会议消费端先截断后过滤缺员（不回补），
       // 参会计数须与该口径一致，不虚报（名单原样展示，用户可自行删减/修复）。
       const truncated = leadTeam.members.slice(0, data.maxTeamMembers);
       const active = truncated.filter((m) => !missing.has(m)).length;
       label.title =
         leadTeam.members.length > data.maxTeamMembers
-          ? `${active} 名组员参与小组会议（名单共 ${leadTeam.members.length} 名，超出上限的 ${leadTeam.members.length - data.maxTeamMembers} 名不参与）`
-          : `${active} 名组员参与小组会议（表层装配发言）`;
+          ? l10n.t(
+              '{0} members join the team meeting (roster has {1}; {2} above the limit do not participate)',
+              active,
+              leadTeam.members.length,
+              leadTeam.members.length - data.maxTeamMembers,
+            )
+          : l10n.t('{0} members join the team meeting (surface-level speaking)', active);
     } else {
-      label.textContent = '暂无队伍';
+      label.textContent = l10n.t('No team yet');
     }
     const action = document.createElement('button');
     action.className = 'btn btn-secondary team-ribbon-btn';
-    action.textContent = leadTeam ? '编辑队伍' : '创建队伍';
+    action.textContent = leadTeam ? l10n.t('Edit team') : l10n.t('Create team');
     // 上限值统一取宿主下发的内核常量（两处文案口径对齐：队长 1 + 组员 ≤ maxTeamMembers）
     action.title = leadTeam
-      ? `修改队伍组员（${data.maxTeamMembers + 1} 人组上限：队长 1 + 组员 ≤ ${data.maxTeamMembers}）`
-      : `以当前角色为队长创建队伍（${data.maxTeamMembers + 1} 人组上限：队长 1 + 组员 ≤ ${data.maxTeamMembers}）`;
+      ? l10n.t(
+          'Edit team members ({0}-member limit: 1 leader + up to {1} members)',
+          data.maxTeamMembers + 1,
+          data.maxTeamMembers,
+        )
+      : l10n.t(
+          'Create a team led by this role ({0}-member limit: 1 leader + up to {1} members)',
+          data.maxTeamMembers + 1,
+          data.maxTeamMembers,
+        );
     action.addEventListener('click', () => launchTeamModal(p, data));
     ribbon.appendChild(label);
     ribbon.appendChild(action);
@@ -349,114 +392,12 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
    * （最多 maxTeamMembers 名组员，上限值由宿主下发，本地不写死）。
    * 编辑既有队伍时回显已选组员；复用 roles_team_save 保存契约。
    * 默认保留「当前角色已是别队成员」的共享说明（内核当前无互斥限制，组员可复用）。
+   *
+   * 实现外置于 `rolesTeamModal.ts`：弹窗是自足的 DOM 构造块（输入角色包 + 名单 + 上限，
+   * 输出一条消息），与视图其余部分零共享状态；本文件已贴 max-lines 基线，故抽出。
    */
   function launchTeamModal(p: RolesPayload['packs'][number], data: RolesPayload): void {
-    const overlay = document.createElement('div');
-    overlay.className = 'team-modal-overlay';
-    const modal = document.createElement('div');
-    modal.className = 'team-modal';
-    modal.setAttribute('role', 'dialog');
-    modal.setAttribute('aria-modal', 'true');
-    modal.setAttribute('aria-label', `为「${p.displayName}」创建队伍`);
-
-    const head = document.createElement('div');
-    head.className = 'team-modal-head';
-    const title = document.createElement('span');
-    title.className = 'team-modal-title';
-    title.textContent = `创建队伍 · 队长 ${p.displayName}`;
-    const close = document.createElement('button');
-    close.className = 'btn team-modal-close';
-    close.innerHTML = getIconSvg('close', 12, 12);
-    close.title = '关闭';
-    close.addEventListener('click', () => overlay.remove());
-    head.appendChild(title);
-    head.appendChild(close);
-    modal.appendChild(head);
-
-    const current = data.teams?.find((t) => t.leader === p.name);
-    const selected = new Set(current?.members ?? []);
-    // 组员上限：内核常量 MAX_TEAM_MEMBERS 经宿主从 roles_loaded 下发（SSOT 单一来源，禁止本地字面量）
-    const LIMIT = data.maxTeamMembers;
-
-    const list = document.createElement('div');
-    list.className = 'team-modal-list';
-    const picks = data.packs.filter((x) => x.name !== p.name);
-    for (const x of picks) {
-      const item = document.createElement('label');
-      item.className = 'team-modal-item' + (selected.has(x.name) ? ' checked' : '');
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = x.name;
-      cb.checked = selected.has(x.name);
-      const txt = document.createElement('span');
-      txt.textContent = x.displayName + (x.isFallback ? '（兜底）' : '');
-      item.appendChild(cb);
-      item.appendChild(txt);
-      // 已达 5 人上限（4 名组员）时禁止继续勾选；取消勾选始终允许
-      cb.addEventListener('change', () => {
-        if (cb.checked && list.querySelectorAll('input:checked').length > LIMIT) {
-          cb.checked = false;
-          return;
-        }
-        item.classList.toggle('checked', cb.checked);
-      });
-      // 整行点击切换（行为对齐 checkbox 语义，可访问性由原 checkbox 承担）
-      item.addEventListener('click', (ev) => {
-        if ((ev.target as HTMLElement).tagName !== 'INPUT') cb.click();
-      });
-      list.appendChild(item);
-    }
-    modal.appendChild(list);
-
-    // 反馈区：5 人上限提示（默认）+ 当前角色已是别队成员时的共享说明
-    const hint = document.createElement('div');
-    hint.className = 'team-modal-hint';
-    const sharedLeader = data.teams?.find((t) => t.leader !== p.name && t.members.includes(p.name));
-    hint.textContent = !sharedLeader
-      ? `${LIMIT + 1} 人组上限：队长 1 + 组员 ≤ ${LIMIT}（勾选超过 ${LIMIT} 名自动拒绝）`
-      : `当前角色已作为「${sharedLeader.leader}」的队伍成员参与会议；创建自己队伍后仍保留原参与。`;
-    modal.appendChild(hint);
-
-    const actions = document.createElement('div');
-    actions.className = 'team-modal-actions';
-    const cancel = document.createElement('button');
-    cancel.className = 'btn btn-secondary';
-    cancel.textContent = '取消';
-    cancel.addEventListener('click', () => overlay.remove());
-    const save = document.createElement('button');
-    save.className = 'btn btn-primary';
-    save.textContent = current ? '保存队伍' : '创建队伍';
-    save.addEventListener('click', () => {
-      const members = Array.from(list.querySelectorAll('input:checked')).map(
-        (el) => (el as HTMLInputElement).value,
-      );
-      vscode.postMessage({ type: 'roles_team_save', leader: p.name, members });
-      overlay.remove();
-    });
-    actions.appendChild(cancel);
-    actions.appendChild(save);
-    // ② 编辑态删除队伍：仅当已有队伍时提供（解散队伍 = 移除会议名单，不影响角色日常）
-    if (current) {
-      const del = document.createElement('button');
-      del.className = 'btn btn-danger team-modal-del';
-      del.textContent = '删除队伍';
-      del.title = '解散该队伍（移除会议名单，不影响任何角色日常使用）';
-      del.addEventListener('click', () => {
-        vscode.postMessage({ type: 'roles_team_delete', leader: p.name });
-        overlay.remove();
-      });
-      actions.appendChild(del);
-    }
-    modal.appendChild(actions);
-
-    // 点击遮罩空白处关闭
-    overlay.addEventListener('click', (ev) => {
-      if (ev.target === overlay) overlay.remove();
-    });
-    overlay.appendChild(modal);
-    // 挂载到注入 root（id 空间隔离约定：不用 document.getElementById 全局查找，
-    // 与 createRolesView 收受依赖的 root 一致——测试/多实例下 root 可能非 #roles-root）
-    root.appendChild(overlay);
+    launchTeamModalImpl({ document, root, vscode, pack: p, data });
   }
 
   // ════════════════ 角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）════════════════
@@ -481,11 +422,11 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     const pack = lastData?.packs.find((p) => p.name === detail!.name);
     const title = document.createElement('span');
     title.className = 'team-modal-title';
-    title.textContent = `角色配置 · ${pack?.displayName ?? detail.name}`;
+    title.textContent = l10n.t('Role configuration · {0}', pack?.displayName ?? detail.name);
     const close = document.createElement('button');
     close.className = 'btn team-modal-close';
     close.innerHTML = getIconSvg('close', 12, 12);
-    close.title = '关闭';
+    close.title = l10n.t('Close');
     close.addEventListener('click', () => {
       detailOverlay = null;
       overlay.remove();
@@ -524,23 +465,25 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     if (stageNames.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'team-modal-hint';
-      empty.textContent = '该角色未自定义任何策略键，全部走默认行为。';
+      empty.textContent = l10n.t(
+        'This role customizes no strategy keys; everything uses the defaults.',
+      );
       body.appendChild(empty);
     }
     for (const stage of stageNames) {
       const stageHead = document.createElement('div');
       stageHead.className = 'role-detail-stage';
-      stageHead.textContent = STAGE_LABELS[stage] ?? stage;
+      stageHead.textContent = l10n.t(STAGE_LABELS[stage] ?? stage);
       body.appendChild(stageHead);
       for (const [key, value] of Object.entries(declared[stage] ?? {})) {
         const meta = STRATEGY_KEY_META[key];
         const row = document.createElement('div');
         row.className = 'role-detail-row';
         // 悬停含义：meta.tip 优先；未知键兜底显示键名原文（降级安全，方案 §2）
-        row.title = meta?.tip ?? `未识别的策略键：${key}`;
+        row.title = meta ? l10n.t(meta.tip) : l10n.t('Unrecognized strategy key: {0}', key);
         const label = document.createElement('span');
         label.className = 'role-detail-label';
-        label.textContent = meta?.label ?? key;
+        label.textContent = meta ? l10n.t(meta.label) : key;
         const val = document.createElement('span');
         val.className = 'role-detail-value';
         val.textContent = formatDetailValue(meta, value);
@@ -554,15 +497,19 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     if (detail.source !== 'builtin') {
       const edit = document.createElement('button');
       edit.className = 'btn btn-primary';
-      edit.textContent = '编辑配置';
-      edit.title = '打开全键表单（留空 = 走默认值；悬停键名查看含义）';
+      edit.textContent = l10n.t('Edit configuration');
+      edit.title = l10n.t(
+        'Open the full key form (blank = use the default; hover a key name for its meaning)',
+      );
       edit.addEventListener('click', () => openDetailEditor());
       actions.push(edit);
     } else {
       // 内置包：只读呈现 + 指路（真拒绝在宿主 extension 侧，直接发 roles_save 也被拒）
       const hint = document.createElement('span');
       hint.className = 'team-modal-hint role-detail-readonly-hint';
-      hint.textContent = '内置角色包为只读展示；复制到用户角色包目录后可编辑';
+      hint.textContent = l10n.t(
+        'Built-in role packs are read-only here; copy it into the user role pack directory to edit',
+      );
       actions.push(hint);
     }
     mountDetailModal(body, actions);
@@ -580,26 +527,29 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   ): HTMLElement {
     const row = document.createElement('div');
     row.className = 'role-detail-form-row';
-    const kind = meta?.control === 'switch' ? 'switch' : face.kind;
+    const kind = SWITCH_CONTROL_KEYS.has(face.key) ? 'switch' : face.kind;
     const label = document.createElement('label');
     label.className = 'role-detail-label';
-    label.textContent = meta?.label ?? face.key;
-    // 悬停含义：中文 tip；数值键追加合法范围（来自键面 range，与内核同源）
+    label.textContent = meta ? l10n.t(meta.label) : face.key;
+    // 悬停含义：meta.tip 优先；数值键追加合法范围（来自键面 range，与内核同源）
     const rangeSuffix =
-      face.range && kind === 'number' ? `（合法范围 ${face.range.min}–${face.range.max}）` : '';
-    label.title = (meta?.tip ?? `未识别的策略键：${face.key}`) + rangeSuffix;
+      face.range && kind === 'number'
+        ? ' ' + l10n.t('(valid range {0}–{1})', face.range.min, face.range.max)
+        : '';
+    label.title =
+      (meta ? l10n.t(meta.tip) : l10n.t('Unrecognized strategy key: {0}', face.key)) + rangeSuffix;
     row.appendChild(label);
 
     if (kind === 'enum') {
       const sel = document.createElement('select');
       const emptyOpt = document.createElement('option');
       emptyOpt.value = '';
-      emptyOpt.textContent = '留空（用默认）';
+      emptyOpt.textContent = l10n.t('Blank (use the default)');
       sel.appendChild(emptyOpt);
       for (const v of face.values ?? []) {
         const opt = document.createElement('option');
         opt.value = v;
-        opt.textContent = meta?.valueLabels?.[v] ?? v;
+        opt.textContent = meta?.valueLabels?.[v] ? l10n.t(meta.valueLabels[v]) : v;
         sel.appendChild(opt);
       }
       sel.value = initial === undefined || initial === null ? '' : String(initial);
@@ -607,7 +557,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       if (sel.value === '' && initial !== undefined && initial !== null) {
         const rawOpt = document.createElement('option');
         rawOpt.value = String(initial);
-        rawOpt.textContent = `${String(initial)}（原文值）`;
+        rawOpt.textContent = l10n.t('{0} (raw value)', String(initial));
         sel.appendChild(rawOpt);
         sel.value = String(initial);
       }
@@ -627,8 +577,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
         input.max = String(face.range.max);
         input.step = face.key === 'temperature' ? '0.1' : '1';
       }
-      input.placeholder = '留空 = 用默认值';
-      input.title = (meta?.tip ?? '') + rangeSuffix;
+      input.placeholder = l10n.t('Blank = use default');
+      input.title = (meta ? l10n.t(meta.tip) : '') + rangeSuffix;
       if (typeof initial === 'number') input.value = String(initial);
       refs.push({
         cell: { stage: face.stage, key: face.key, kind: 'number', raw: '' },
@@ -656,7 +606,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
         cb.value = opt;
         cb.checked = selected.has(opt);
         const txt = document.createElement('span');
-        txt.textContent = meta?.optionLabels?.[opt] ?? opt;
+        txt.textContent = meta?.optionLabels?.[opt] ? l10n.t(meta.optionLabels[opt]) : opt;
         item.appendChild(cb);
         item.appendChild(txt);
         wrap.appendChild(item);
@@ -679,7 +629,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     cb.type = 'checkbox';
     cb.checked = typeof initial === 'number' && initial > 0;
     const txt = document.createElement('span');
-    txt.textContent = '开启';
+    txt.textContent = l10n.t('On');
     toggle.appendChild(cb);
     toggle.appendChild(txt);
     refs.push({
@@ -712,7 +662,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     for (const stage of stages) {
       const stageHead = document.createElement('div');
       stageHead.className = 'role-detail-stage';
-      stageHead.textContent = STAGE_LABELS[stage] ?? stage;
+      stageHead.textContent = l10n.t(STAGE_LABELS[stage] ?? stage);
       body.appendChild(stageHead);
       for (const face of keyface.filter((f) => f.stage === stage)) {
         const initial = detail.strategy?.[stage]?.[face.key];
@@ -721,12 +671,16 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     }
     const hint = document.createElement('div');
     hint.className = 'team-modal-hint';
-    hint.textContent = '留空的键不写入（= 走默认值）；悬停键名查看含义。';
+    hint.textContent = l10n.t(
+      'Keys left blank are not written (= use the default); hover a key name for its meaning.',
+    );
     body.appendChild(hint);
     const save = document.createElement('button');
     save.className = 'btn btn-primary';
-    save.textContent = '保存';
-    save.title = '校验通过后写回 manifest 原文（仅替换 strategy 段，其余字段原样保留）';
+    save.textContent = l10n.t('Save');
+    save.title = l10n.t(
+      'After validation, write back to the manifest source (only the strategy section is replaced; other fields are preserved)',
+    );
     save.addEventListener('click', () => {
       // 收集：DOM 读取薄封装 → 纯函数收集（空格子不写入）；弹窗保持打开——
       // 成功 → 宿主回发 roles_detail_data 切回查看态；失败 → notice 留在编辑态
@@ -736,8 +690,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     });
     const cancel = document.createElement('button');
     cancel.className = 'btn btn-secondary';
-    cancel.textContent = '取消';
-    cancel.title = '放弃修改，回到查看模式（不写盘）';
+    cancel.textContent = l10n.t('Cancel');
+    cancel.title = l10n.t('Discard changes and return to view mode (nothing is written)');
     cancel.addEventListener('click', () => renderDetailView());
     mountDetailModal(body, [save, cancel]);
   }
@@ -777,10 +731,12 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       const isProject = p.source === 'project';
       const srcBadge = document.createElement('span');
       srcBadge.className = `badge ${isProject ? 'badge-source-project' : 'badge-source-user'}`;
-      srcBadge.textContent = isProject ? '项目' : '用户';
+      srcBadge.textContent = isProject ? l10n.t('Project') : l10n.t('User');
       srcBadge.title = isProject
-        ? '项目级角色包：位于 <工作区>/.memora/role-packs，随仓库分发，可编辑'
-        : '用户自建角色包：位于用户角色包目录，可编辑';
+        ? l10n.t(
+            'Project-level role pack: lives in <workspace>/.memora/role-packs, ships with the repository, editable',
+          )
+        : l10n.t('User role pack: lives in the user role pack directory, editable');
       header.appendChild(srcBadge);
     }
 
@@ -824,32 +780,35 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
         const chip = document.createElement('span');
         chip.className =
           'strategy-chip ' + (hint.toolReadonly === 'readonly' ? 'readonly' : 'full');
-        chip.textContent = hint.toolReadonly === 'readonly' ? '只读模式' : '完整工具';
+        chip.textContent =
+          hint.toolReadonly === 'readonly' ? l10n.t('Read-only mode') : l10n.t('All tools');
         strategy.appendChild(chip);
       }
       if (hint?.tempGroup) {
         const chip = document.createElement('span');
         chip.className = 'strategy-chip temp-' + hint.tempGroup;
-        const tempLabel = { high: '高创意', mid: '平衡', low: '低温度' };
-        chip.textContent = tempLabel[hint.tempGroup] ?? hint.tempGroup;
+        chip.textContent = l10n.t(TEMP_GROUP_LABELS[hint.tempGroup] ?? hint.tempGroup);
         strategy.appendChild(chip);
       }
       if (hint?.reasoningMode) {
         const chip = document.createElement('span');
         chip.className = 'strategy-chip reasoning-' + hint.reasoningMode;
-        chip.textContent = hint.reasoningMode === 'auto' ? '自动推理' : '手动推理';
+        chip.textContent =
+          hint.reasoningMode === 'auto'
+            ? l10n.t('Automatic reasoning')
+            : l10n.t('Manual reasoning');
         strategy.appendChild(chip);
       }
       if (hint?.summaryFocus) {
         const chip = document.createElement('span');
         chip.className = 'strategy-chip';
-        chip.textContent = `聚焦: ${hint.summaryFocus}`;
+        chip.textContent = l10n.t('Focus: {0}', hint.summaryFocus);
         strategy.appendChild(chip);
       }
       if (hint?.outputLimit && hint.outputLimit > 0) {
         const chip = document.createElement('span');
         chip.className = 'strategy-chip output-limit';
-        chip.textContent = `输出上限: ${hint.outputLimit}k`;
+        chip.textContent = l10n.t('Output limit: {0}k', hint.outputLimit);
         strategy.appendChild(chip);
       }
       // 兜底契约包定位（能力标签区）：以 chip 呈现系统兜底，
@@ -857,9 +816,10 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       if (p.isFallback) {
         const chip = document.createElement('span');
         chip.className = 'strategy-chip fallback';
-        chip.textContent = '系统兜底';
-        chip.title =
-          '内核兜底契约包（BUILTIN_FALLBACK_PACK）：领域无关通用助手，名字锁定、系统内置不可删除、构建期校验';
+        chip.textContent = l10n.t('System fallback');
+        chip.title = l10n.t(
+          'Kernel fallback contract pack (BUILTIN_FALLBACK_PACK): a domain-neutral general assistant; the name is locked, it is built in and cannot be deleted, and it is validated at build time',
+        );
         strategy.appendChild(chip);
       }
 
@@ -882,7 +842,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       health.className = 'role-health';
       const badge = document.createElement('span');
       badge.className = `role-health-badge ${hasError ? 'health-error' : hasWarn ? 'health-warn' : ''}`;
-      badge.textContent = hasError ? '配置异常' : '可优化';
+      badge.textContent = hasError ? l10n.t('Invalid configuration') : l10n.t('Can be improved');
       health.appendChild(badge);
       const list = document.createElement('ul');
       list.className = 'role-problems';
@@ -905,7 +865,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       details.className = 'card-details';
 
       const summary = document.createElement('summary');
-      summary.textContent = '详情';
+      summary.textContent = l10n.t('Details');
       details.appendChild(summary);
 
       const content = document.createElement('div');
@@ -915,19 +875,12 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       if (hasTraits) {
         const traits = document.createElement('div');
         traits.className = 'role-traits';
-        const labelMap: Record<string, string> = {
-          precision: '精准',
-          creativity: '创意',
-          rigor: '严谨',
-          empathy: '共情',
-          speed: '速度',
-        };
         Object.entries(p.traits!).forEach(([key, value]) => {
           const trait = document.createElement('div');
           trait.className = 'trait';
           const label = document.createElement('span');
           label.className = 'trait-label';
-          label.textContent = labelMap[key] ?? key;
+          label.textContent = l10n.t(TRAIT_LABELS[key] ?? key);
           const bar = document.createElement('div');
           bar.className = 'trait-bar';
           const fill = document.createElement('div');

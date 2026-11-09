@@ -1,4 +1,4 @@
-/**
+﻿/**
  * rolesView 测试 — 角色管理面板渲染分支（独立视图）
  *
  * 覆盖新增的角色管理视图渲染路径：
@@ -12,18 +12,18 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createRolesView } from '../scripts/rolesView.js';
+import { buildRolesBodyHtml } from '../panels/settingsRolesHtml.js';
 
-/** 覆盖 createRolesView 全部查询引用的最小 HTML 骨架（子视图挂载在 #roles-root 根容器内，
- *  与设置面板选项卡合并后的 id 空间隔离约定一致） */
+/** 默认语言翻译替身：原样返回英文源键并填 `{n}`（与宿主默认语言行为一致） */
+const en = {
+  t: (message: string, ...args: (string | number | boolean)[]) =>
+    message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+};
+
+/** 骨架直接取生产构造函数（禁测试内自抄一份：自抄的骨架会与真实 DOM 契约静默漂移） */
 const HTML = `
   <div id="roles-root">
-    <div class="header">
-      <h2>角色</h2>
-      <span id="statBar" class="stat-bar" hidden></span>
-      <div class="header-actions"><button id="btnOpenRolePacksDir" class="btn btn-secondary btn-icon-solo" title="打开用户角色包目录"><span class="btn-icon" data-icon="folder"></span></button><button id="btnRefreshRolePacks" class="btn btn-secondary btn-icon-solo" title="刷新角色包列表（重扫用户角色包目录）"><span class="btn-icon" data-icon="refresh"></span></button></div>
-    </div>
-    <div id="list"><p class="hint">加载中…</p></div>
-    <p class="footer-hint">「当前」= 本会话正在使用的角色（「设为当前」只切本会话）；「默认」= 此后新建会话自动使用的角色（「设为默认」只影响未来，不改已有会话）；「带入对话」还会跳到对话并预填一句过渡语（不自动发送，可编辑后再发）。默认角色若是只读策略，此后每个新会话都会失去写入能力。</p>
+${buildRolesBodyHtml(en)}
   </div>
 `;
 
@@ -92,17 +92,17 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     );
     const list = document.getElementById('list') as HTMLElement;
     // 顶栏统计
-    expect(document.getElementById('statBar')?.textContent).toBe('已加载 2 个角色');
+    expect(document.getElementById('statBar')?.textContent).toBe('2 roles loaded');
     // 分组：当前角色（doc-review 带徽章）→ 其他角色
     const groups = list.querySelectorAll('.group-title');
-    expect(groups[0]?.textContent).toBe('当前角色');
-    expect(groups[1]?.textContent).toBe('其他角色');
+    expect(groups[0]?.textContent).toBe('Current role');
+    expect(groups[1]?.textContent).toBe('Other roles');
     const cards = list.querySelectorAll('.card');
     expect(cards).toHaveLength(2);
     expect(cards[0]?.classList.contains('active')).toBe(true);
     // badge 内嵌于 .card-name（文本节点 + 徽章 span），名称部分包含「文档打磨」
     expect(cards[0]?.querySelector('.card-name')?.textContent).toContain('文档打磨');
-    expect(cards[0]?.querySelector('.badge')?.textContent).toBe('当前');
+    expect(cards[0]?.querySelector('.badge')?.textContent).toBe('Current');
     // 激活角色无「设为当前」（仅「带入对话」+ 卡片级组队入口），其他角色两者都有
     expect(
       Array.from(cards[0]!.querySelectorAll('.btn-secondary')).some(
@@ -110,14 +110,16 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       ),
     ).toBe(false);
     expect(cards[1]?.querySelector('.card-name')?.textContent).toBe('翻译助手');
-    expect(cards[1]?.querySelector('.btn-secondary')?.textContent).toBe('设为当前');
+    expect(cards[1]?.querySelector('.btn-secondary')?.textContent).toBe('Set as current');
     // 每张卡片都有「带入对话」按钮
-    expect(cards[0]?.querySelector('.btn-primary')?.textContent).toBe('带入对话');
-    expect(cards[1]?.querySelector('.btn-primary')?.textContent).toBe('带入对话');
+    expect(cards[0]?.querySelector('.btn-primary')?.textContent).toBe('Take into chat');
+    expect(cards[1]?.querySelector('.btn-primary')?.textContent).toBe('Take into chat');
     // 按钮 title 提示：解释各自行为（对齐 chip.title 可发现性范式）
-    expect(cards[0]?.querySelector('.btn-primary')?.getAttribute('title')).toContain('跳到对话');
+    expect(cards[0]?.querySelector('.btn-primary')?.getAttribute('title')).toContain(
+      'jump to the chat',
+    );
     expect(cards[1]?.querySelector('.btn-secondary')?.getAttribute('title')).toContain(
-      '切换当前会话',
+      'Switch the role of the current session',
     );
   });
 
@@ -139,19 +141,19 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     /** 卡片上的状态徽章文本（顺序 = 渲染顺序：当前 → 默认） */
     const badgesOf = (card: Element) =>
       Array.from(card.querySelectorAll('.badge')).map((b) => b.textContent);
-    expect(badgesOf(cards[0]!)).toEqual(['当前']);
-    expect(badgesOf(cards[1]!)).toEqual(['默认']);
+    expect(badgesOf(cards[0]!)).toEqual(['Current']);
+    expect(badgesOf(cards[1]!)).toEqual(['Default']);
     expect(cards[1]!.querySelector('.badge')?.getAttribute('title')).toContain(
-      '新建会话将自动使用该角色',
+      'New sessions use this role automatically',
     );
     /** 卡片上的次要按钮文本集合（设为当前 / 设为默认 / 取消默认） */
     const secondaryTexts = (card: Element) =>
       Array.from(card.querySelectorAll('.btn-secondary')).map((b) => b.textContent);
-    expect(secondaryTexts(cards[0]!)).toContain('设为默认');
-    expect(secondaryTexts(cards[1]!)).toContain('取消默认');
+    expect(secondaryTexts(cards[0]!)).toContain('Set as default');
+    expect(secondaryTexts(cards[1]!)).toContain('Clear default');
     // 「设为默认」→ 用户级默认（scope=default），不是会话级 roles_set_active 默认语义
     const defBtn = Array.from(cards[0]!.querySelectorAll('.btn-secondary')).find(
-      (b) => b.textContent === '设为默认',
+      (b) => b.textContent === 'Set as default',
     ) as HTMLElement;
     defBtn.click();
     expect(postMessage).toHaveBeenCalledWith({
@@ -161,7 +163,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     });
     // 「取消默认」→ 空串 + scope=default（恢复内核兜底包）
     const clearBtn = Array.from(cards[1]!.querySelectorAll('.btn-secondary')).find(
-      (b) => b.textContent === '取消默认',
+      (b) => b.textContent === 'Clear default',
     ) as HTMLElement;
     clearBtn.click();
     expect(postMessage).toHaveBeenCalledWith({
@@ -182,10 +184,10 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       'doc-review',
     );
     const badges = Array.from(document.querySelectorAll('.card .badge')).map((b) => b.textContent);
-    expect(badges).toEqual(['当前', '默认']);
+    expect(badges).toEqual(['Current', 'Default']);
   });
 
-  it('能力标签 chips：展示 host 翻译的中文 label，title 承载原始能力名', () => {
+  it('能力标签 chips：展示 host 下发的英文源键（渲染侧过 l10n），title 承载原始能力名', () => {
     mountRolesView();
     dispatchLoaded(
       [
@@ -195,8 +197,8 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
           capabilityState: {
             kind: 'list',
             capabilities: [
-              { capability: 'file:read', label: '读取文件' },
-              { capability: 'llm:summarize', label: '摘要生成' },
+              { capability: 'file:read', label: 'Read files' },
+              { capability: 'llm:summarize', label: 'Generate summaries' },
             ],
           },
         },
@@ -205,9 +207,9 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     );
     const chips = document.querySelectorAll('.cap-chip');
     expect(chips).toHaveLength(2);
-    expect(chips[0]?.textContent).toBe('读取文件');
+    expect(chips[0]?.textContent).toBe('Read files');
     expect(chips[0]?.getAttribute('title')).toBe('file:read');
-    expect(chips[1]?.textContent).toBe('摘要生成');
+    expect(chips[1]?.textContent).toBe('Generate summaries');
   });
 
   it('三态可分辨：residentOnly 与 all 在角色卡上渲染出不同的状态标记', () => {
@@ -223,8 +225,8 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     const allMarker = cards[0]?.querySelector('.cap-chip--state');
     const residentMarker = cards[1]?.querySelector('.cap-chip--state');
     // 两态各自有标记（此前两者都留空 ⇒ 用户读成同一件事）
-    expect(allMarker?.textContent).toBe('全部工具');
-    expect(residentMarker?.textContent).toBe('仅基础工具');
+    expect(allMarker?.textContent).toBe('All tools');
+    expect(residentMarker?.textContent).toBe('Basic tools only');
     // 核心可红断言：拿掉 residentOnly 分支（两态共用同一文案）时，本行必红
     expect(allMarker?.textContent).not.toBe(residentMarker?.textContent);
     // `list` 支不受影响：能力名 chip 不带状态修饰类
@@ -252,7 +254,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     // 有问题卡片：显示健康区 + 徽章（含 error → 配置异常）+ 两条问题（分色）
     const health = cards[0]?.querySelector('.role-health');
     expect(health).not.toBeNull();
-    expect(health?.querySelector('.role-health-badge')?.textContent).toBe('配置异常');
+    expect(health?.querySelector('.role-health-badge')?.textContent).toBe('Invalid configuration');
     const problems = health?.querySelectorAll('.role-problems li');
     expect(problems).toHaveLength(2);
     expect(problems?.[0]?.textContent).toContain('缺 name 字段');
@@ -277,7 +279,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     );
     const badge = document.querySelector('.role-health-badge');
     expect(badge).not.toBeNull();
-    expect(badge?.textContent).toBe('可优化');
+    expect(badge?.textContent).toBe('Can be improved');
     expect(badge?.classList.contains('health-warn')).toBe(true);
   });
 
@@ -319,8 +321,8 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
   it('roles_loaded 空列表 → 渲染空态引导', () => {
     mountRolesView();
     dispatchLoaded([], '');
-    expect(document.querySelector('.empty-title')?.textContent).toBe('暂无角色包');
-    expect(document.querySelector('.empty-hint')?.textContent).toContain('打开一个工作区');
+    expect(document.querySelector('.empty-title')?.textContent).toBe('No role packs');
+    expect(document.querySelector('.empty-hint')?.textContent).toContain('Open a workspace');
   });
 
   it('② 卡片级组队：无队伍 → ribbon「暂无队伍」+ 创建按钮 → 弹窗排除自身、勾选保存', () => {
@@ -342,7 +344,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     const card = Array.from(document.querySelectorAll('.card')).find(
       (c) => c.querySelector('.card-name')?.textContent === '共鸣小说家',
     );
-    expect(card?.querySelector('.team-ribbon-label')?.textContent).toBe('暂无队伍');
+    expect(card?.querySelector('.team-ribbon-label')?.textContent).toBe('No team yet');
     (card?.querySelector('.team-ribbon-btn') as HTMLButtonElement).click();
 
     // 兜底契约包定位 chip（能力标签区）：顶部无 badge，仅保留策略区 chip
@@ -350,7 +352,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       (c) => c.querySelector('.card-name')?.textContent === 'memora 助手',
     );
     expect(fallbackCard?.querySelector('.strategy-chip.fallback')?.textContent).toContain(
-      '系统兜底',
+      'System fallback',
     );
 
     // 弹窗：显示队长（当前卡片角色）+ 排除自身后的其余角色
@@ -390,9 +392,9 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       (c) => c.querySelector('.card-name')?.textContent === '共鸣小说家',
     );
     // ribbon 显示阵容（成员 displayName 拼接）
-    expect(card?.querySelector('.team-ribbon-label')?.textContent).toBe('队伍：编辑 / 评论家');
+    expect(card?.querySelector('.team-ribbon-label')?.textContent).toBe('Team: 编辑 / 评论家');
     const btn = card?.querySelector('.team-ribbon-btn') as HTMLButtonElement;
-    expect(btn.textContent).toBe('编辑队伍');
+    expect(btn.textContent).toBe('Edit team');
     btn.click();
 
     // 编辑态回显：已有组员勾选
@@ -434,7 +436,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     }
     expect(checked).toBe(4);
     expect(modal?.querySelectorAll('.team-modal-item input:checked')).toHaveLength(4);
-    expect(modal?.querySelector('.team-modal-hint')?.textContent).toContain('5 人组上限');
+    expect(modal?.querySelector('.team-modal-hint')?.textContent).toContain('Team limit 5');
   });
 
   it('② 存量超限队伍：卡片标注实际参会人数，不虚报（名单原样展示）', () => {
@@ -456,11 +458,11 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     );
     const label = card?.querySelector('.team-ribbon-label') as HTMLElement;
     // 名单原样展示（用户可自行删减）
-    expect(label.textContent).toBe('队伍：编辑 / 评论家 / 校对 / 排版 / 发行');
+    expect(label.textContent).toBe('Team: 编辑 / 评论家 / 校对 / 排版 / 发行');
     // 实际只有 4 名参会，且明确告知超出 1 名不参与
-    expect(label.title).toContain('4 名组员参与小组会议');
-    expect(label.title).toContain('名单共 5 名');
-    expect(label.title).toContain('超出上限的 1 名不参与');
+    expect(label.title).toContain('4 members join the team meeting');
+    expect(label.title).toContain('roster has 5');
+    expect(label.title).toContain('1 above the limit do not participate');
   });
 
   it('② 组队弹窗挂载到注入 root（不依赖全局 #roles-root——多 Webview/测试环境 id 可不同）', () => {
@@ -562,9 +564,9 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       ]);
       const block = document.querySelector('.legacy-teams') as HTMLElement;
       expect(block).not.toBeNull();
-      expect(block.querySelector('.legacy-teams-title')?.textContent).toBe('遗留队伍（1）');
+      expect(block.querySelector('.legacy-teams-title')?.textContent).toBe('Orphan teams (1)');
       expect(block.querySelector('.legacy-teams-label')?.textContent).toContain(
-        '组长「方案设计师」已卸载',
+        'Leader "方案设计师" is uninstalled',
       );
       // 清理按钮：用户主动触发，复用已有删除消息契约
       const clean = block.querySelector<HTMLButtonElement>('.legacy-teams-btn');
@@ -589,9 +591,9 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       expect(document.querySelector('.legacy-teams')).toBeNull();
       // 队伍条缺员标注
       const ribbonLabel = document.querySelector('.team-ribbon-label') as HTMLElement;
-      expect(ribbonLabel.textContent).toContain('memora助手 / 幽灵包（已卸载）');
+      expect(ribbonLabel.textContent).toContain('memora助手 / 幽灵包 (uninstalled)');
       // 参会计数与内核口径一致（先截断后过滤）：1 名健康组员参会
-      expect(ribbonLabel.title).toContain('1 名组员参与小组会议');
+      expect(ribbonLabel.title).toContain('1 members join the team meeting');
     });
 
     it('无受损队伍 → 不渲染遗留区块（健康组不带标记字段）', () => {
@@ -639,10 +641,12 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
     expect(modal).not.toBeNull();
     expect(modal?.querySelector('.team-modal-title')?.textContent).toContain('内置甲');
     // 查看态：声明键中文渲染（有啥渲染啥：manifest 声明了才出现）
-    expect(modal?.querySelector('.role-detail-label')?.textContent).toBe('步数预算');
+    expect(modal?.querySelector('.role-detail-label')?.textContent).toBe('Step budget');
     expect(modal?.querySelector('.role-detail-value')?.textContent).toBe('100');
     // 内置包：只读提示在、编辑按钮不在（真拒绝在宿主 extension 侧，这里只是呈现）
-    expect(modal?.querySelector('.role-detail-readonly-hint')?.textContent).toContain('只读展示');
+    expect(modal?.querySelector('.role-detail-readonly-hint')?.textContent).toContain(
+      'Built-in role packs are read-only here',
+    );
     const primaries = Array.from(modal?.querySelectorAll('.btn-primary') ?? []).map(
       (b) => b.textContent,
     );
@@ -661,7 +665,7 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
     dispatchDetail('user-a', 'user', {});
     const viewModal = document.querySelector('.team-modal.role-detail');
     const edit = Array.from(viewModal?.querySelectorAll('.btn-primary') ?? []).find(
-      (b) => b.textContent === '编辑配置',
+      (b) => b.textContent === 'Edit configuration',
     ) as HTMLButtonElement;
     expect(edit).toBeTruthy();
     edit.click();
@@ -751,7 +755,7 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
     // 反例形态（本用例要防的）：分页条仍显示「第 2 / 2 页（共 16 条）」且双向可点，
     // 而 list 里只有空态引导——用户看到的是一个永远翻不出内容的条。
     dispatchLoaded([], '');
-    expect(document.querySelector('.empty-title')?.textContent).toBe('暂无角色包');
+    expect(document.querySelector('.empty-title')?.textContent).toBe('No role packs');
     expect((document.querySelector('.pager-bar') as HTMLElement).hidden).toBe(true);
     expect(pagerBtn('‹ Previous').disabled).toBe(true);
     expect(pagerBtn('Next ›').disabled).toBe(true);

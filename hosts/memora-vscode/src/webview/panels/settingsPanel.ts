@@ -316,7 +316,7 @@ export class MemoraSettingsPanel {
     }
     const panel = vscode.window.createWebviewPanel(
       MemoraSettingsPanel.viewType,
-      '设置',
+      l10n.t('Settings'),
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
@@ -402,7 +402,10 @@ export class MemoraSettingsPanel {
         // 预填衔接文本：角色包自洽声明 handoffPrompt 优先（作者定制特色接手话术），
         // 缺省回退通用话术。SSOT：提示词真理源在角色包 meta（内核透传），宿主仅兜底，
         // 不引入跨包引用（角色包独立自洽，插卡解耦）。
-        const cue = `继续以「${displayName}」的视角处理以上任务`;
+        const cue = l10n.t(
+          'Continue handling the above task from the perspective of "{0}"',
+          displayName,
+        );
         this._chatProvider?.prefillInput(meta?.handoffPrompt?.trim() ? meta.handoffPrompt : cue);
       }
       return;
@@ -429,7 +432,7 @@ export class MemoraSettingsPanel {
       this.post({
         type: 'notice',
         level: hasFailure ? 'error' : 'info',
-        message: describeTeamBroadcast('保存', result.broadcast),
+        message: describeTeamBroadcast('save', result.broadcast),
       });
       await this.loadRoles();
       // 热更新通知：chatPanel 重推 chat_role_pack 让 chatView 刷新 team 图标（组长队伍变更后图标显隐）
@@ -452,7 +455,7 @@ export class MemoraSettingsPanel {
         this.post({
           type: 'notice',
           level: 'error',
-          message: describeTeamBroadcast('删除', result),
+          message: describeTeamBroadcast('delete', result),
         });
       }
       await this.loadRoles();
@@ -800,7 +803,11 @@ export class MemoraSettingsPanel {
     this.post({
       type: 'notice',
       level: 'info',
-      message: `角色包切换被锁定：${info.reason}，${info.lockedSeconds} 秒后再试`,
+      message: l10n.t(
+        'Role pack switching is locked: {0}. Try again in {1} seconds.',
+        info.reason,
+        info.lockedSeconds,
+      ),
     });
   };
 
@@ -883,11 +890,15 @@ export class MemoraSettingsPanel {
           level: 'info',
           message:
             remain === null
-              ? '角色包切换已被限流锁定，请稍后再试'
-              : `角色包切换已被限流锁定，${remain} 秒后再试`,
+              ? l10n.t('Role pack switching is rate-limited. Please try again later.')
+              : l10n.t('Role pack switching is rate-limited. Try again in {0} seconds.', remain),
         });
       } else {
-        this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
+        this.post({
+          type: 'notice',
+          level: 'error',
+          message: l10n.t('Role pack not found: {0}', name),
+        });
       }
     }
     return ok;
@@ -909,12 +920,20 @@ export class MemoraSettingsPanel {
     const agent = await this.ensureAgent();
     const rpm = agent?.rolePackManager;
     if (!rpm) {
-      this.post({ type: 'notice', level: 'error', message: 'Agent 未就绪，无法读取角色配置' });
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: l10n.t('Agent is not ready; cannot read the role configuration'),
+      });
       return;
     }
     const pack = rpm.get(name);
     if (!pack?.filePath) {
-      this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: l10n.t('Role pack not found: {0}', name),
+      });
       return;
     }
     const source = this.rolePackSource(pack.filePath);
@@ -927,7 +946,7 @@ export class MemoraSettingsPanel {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `读取角色包配置失败：${toNoticeText(err)}`,
+        message: l10n.t('Failed to read the role pack configuration: {0}', toNoticeText(err)),
       });
     }
   }
@@ -950,12 +969,20 @@ export class MemoraSettingsPanel {
     const agent = await this.ensureAgent();
     const rpm = agent?.rolePackManager;
     if (!rpm) {
-      this.post({ type: 'notice', level: 'error', message: 'Agent 未就绪，无法保存角色配置' });
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: l10n.t('Agent is not ready; cannot save the role configuration'),
+      });
       return;
     }
     const pack = rpm.get(name);
     if (!pack?.filePath) {
-      this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: l10n.t('Role pack not found: {0}', name),
+      });
       return;
     }
     const source = this.rolePackSource(pack.filePath);
@@ -965,7 +992,10 @@ export class MemoraSettingsPanel {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `「${name}」是内置角色包，不可编辑；可将其复制到用户角色包目录后修改`,
+        message: l10n.t(
+          '"{0}" is a built-in role pack and cannot be edited; copy it to the user role pack directory and edit that copy instead',
+          name,
+        ),
       });
       return;
     }
@@ -989,7 +1019,7 @@ export class MemoraSettingsPanel {
         this.post({
           type: 'notice',
           level: 'error',
-          message: `保存失败：${firstError.message}`,
+          message: l10n.t('Save failed: {0}', firstError.message),
         });
         return;
       }
@@ -1003,12 +1033,16 @@ export class MemoraSettingsPanel {
         strategy: manifest.strategy as Record<string, Record<string, unknown>> | undefined,
       });
       await this.loadRoles();
-      this.post({ type: 'notice', level: 'info', message: `「${name}」的策略配置已保存` });
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: l10n.t('The strategy configuration for "{0}" has been saved', name),
+      });
     } catch (err) {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `保存失败：${toNoticeText(err)}`,
+        message: l10n.t('Save failed: {0}', toNoticeText(err)),
       });
     }
   }

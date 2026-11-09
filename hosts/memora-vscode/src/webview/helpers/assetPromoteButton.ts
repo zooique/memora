@@ -9,6 +9,7 @@
  * 是否成功、是否覆盖由宿主执行面裁决，成功后以列表重推为准。
  */
 
+import * as l10n from '@vscode/l10n';
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 
 /** 可升级到用户级的资产类型（与 `asset_copy_to_user` 的 assetKind 同源） */
@@ -31,8 +32,10 @@ export function appendPromoteToUserButton(
   const button = document.createElement('button');
   // 样式复用设置页既有次按钮基类，不新造视觉
   button.className = 'btn btn-secondary';
-  button.textContent = '添加到用户级';
-  button.title = '复制到用户级（拷贝，不是同步；同名先备份再覆盖，失败可回滚）';
+  button.textContent = l10n.t('Add to user level');
+  button.title = l10n.t(
+    'Copy into the user-level directory (a copy, not a sync; an existing item is backed up before being overwritten, and failure rolls back)',
+  );
   button.addEventListener('click', () => post({ type: 'asset_copy_to_user', assetKind, name }));
   container.appendChild(button);
 }

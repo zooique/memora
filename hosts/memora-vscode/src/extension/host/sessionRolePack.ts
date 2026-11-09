@@ -13,6 +13,7 @@
  *   - 解析是**装配期一次性**的：同名包重装后，已装配的 Agent 不会自动热切回；
  *     需重新装配（重开面板 / 重启宿主）或手动切回——这一条同时写进台账与 CHANGELOG。
  */
+import * as vscode from 'vscode';
 import type { SessionMeta } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 
@@ -55,8 +56,15 @@ export function rolePackFallbackNotice(
   // 按名解析成功 ⇒ 正常路径，零提示
   if (requested === activeName) return null;
   const message = activeName
-    ? `原角色包「${requested}」已不可用，当前使用默认角色「${activeName}」。`
-    : `原角色包「${requested}」已不可用，且兜底角色包缺失，当前无可用角色。`;
+    ? vscode.l10n.t(
+        'The former role pack "{0}" is unavailable; using the default role "{1}" instead.',
+        requested,
+        activeName,
+      )
+    : vscode.l10n.t(
+        'The former role pack "{0}" is unavailable and the fallback role pack is also missing; no role is available right now.',
+        requested,
+      );
   return { type: 'notice', level: 'error', message };
 }
 
@@ -76,8 +84,15 @@ export function defaultRolePackFallbackNotice(
 ): ExtensionToWebviewMessage | null {
   if (!requested || requested === activeName) return null;
   const message = activeName
-    ? `默认角色包「${requested}」不可用，当前使用兜底角色「${activeName}」。`
-    : `默认角色包「${requested}」不可用，且兜底角色包缺失，当前无可用角色。`;
+    ? vscode.l10n.t(
+        'Default role pack "{0}" is unavailable; using the fallback role "{1}" instead.',
+        requested,
+        activeName,
+      )
+    : vscode.l10n.t(
+        'Default role pack "{0}" is unavailable and the fallback role pack is also missing; no role is available right now.',
+        requested,
+      );
   return { type: 'notice', level: 'error', message };
 }
 
@@ -89,7 +104,7 @@ export function defaultRolePackFallbackNotice(
  * 损坏。**说错原因比不说原因更糟**——用户会照着错误归因去修一个不存在的目录问题。
  * 精确归因需区分内核内部错误类型（内核面改动），故本期只保留中性表述。
  */
-export const UNVERIFIED_ROLE_PACK_TEXT = '无法校验角色包列表';
+export const UNVERIFIED_ROLE_PACK_TEXT = vscode.l10n.t('Unable to verify the role pack list');
 
 /**
  * 构造「默认角色包无法校验」的可见提示（纯函数；仅在编目读不到时使用）
@@ -109,8 +124,17 @@ export function defaultRolePackUnverifiedNotice(
 ): ExtensionToWebviewMessage | null {
   if (!requested) return null;
   const message = activeName
-    ? `默认角色包「${requested}」${UNVERIFIED_ROLE_PACK_TEXT}，已使用兜底角色「${activeName}」。`
-    : `默认角色包「${requested}」${UNVERIFIED_ROLE_PACK_TEXT}，且兜底角色包缺失，当前无可用角色。`;
+    ? vscode.l10n.t(
+        'Default role pack "{0}": {1}. Using the fallback role "{2}" instead.',
+        requested,
+        UNVERIFIED_ROLE_PACK_TEXT,
+        activeName,
+      )
+    : vscode.l10n.t(
+        'Default role pack "{0}": {1}. The fallback role pack is also missing, so no role is available.',
+        requested,
+        UNVERIFIED_ROLE_PACK_TEXT,
+      );
   return { type: 'notice', level: 'error', message };
 }
 

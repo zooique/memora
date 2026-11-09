@@ -1,127 +1,146 @@
 /**
- * strategyKeyMeta — 策略键中文元数据（SSOT）+ 详情值本地化（纯数据 / 纯函数）
+ * strategyKeyMeta — 策略键展示元数据（SSOT）+ 详情值本地化（纯数据 / 纯函数）
  *
  * 从 `scripts/rolesView.ts` 抽出（2026-10-26）。抽出理由有二：
  *   ① rolesView 顶到 1149 行闸门，而这三块零闭包依赖、纯数据纯函数；
  *   ② 与 `capabilityLabels.ts` 同类（「领域无关的展示映射表」），落点有一致先例。
  * 渲染 chip / 详情行的逻辑仍在 rolesView（依赖 document），本文件只提供数据与格式化。
  *
- * 为什么在 webview 而非内核：内核领域无关，不背中文文案（四层分工，方案 §2）。
+ * 为什么在 webview 而非内核：内核领域无关，不背任何自然语言文案（四层分工，方案 §2）。
+ * **值全为英文源键**（B3 起）：渲染/格式化时统一过 `@vscode/l10n` 的 `t()`；默认语言下
+ * 原样返回英文即用户看到的文案，zh-cn 由 `l10n/bundle.l10n.zh-cn.json` 提供译文。
  * 降级保护：内核新键宿主未配标签 → 格子照常出现（数据来自键面），标签/提示兜底显示键名原文。
  * 守卫：`__tests__/rolesKeyface.test.ts` 双向锁定本映射键集 ↔ 内核 describeStrategyKeys() 键集，
  * 内核加键漏翻译 / 本表拼错键名都会红（防「键名拼错静默失败」，内核对未知键只 warning）。
  */
+import * as l10n from '@vscode/l10n';
 
-/** 单键中文元数据（STRATEGY_KEY_META 值类型）：标签 + 悬停含义 + 可选值中文映射 */
+/** 单键元数据（STRATEGY_KEY_META 值类型）：标签 + 悬停含义 + 可选值映射 */
 export interface StrategyKeyMetaEntry {
-  /** 中文名（格子标签） */
+  /** 名称（格子标签；英文源键） */
   label: string;
-  /** 悬停含义（一句话：这个键管什么 + 留空行为） */
+  /** 悬停含义（一句话：这个键管什么 + 留空行为；英文源键） */
   tip: string;
-  /** 枚举值中文映射（enum 键用；缺省显示原文） */
+  /** 枚举值映射（enum 键用；缺省显示原文） */
   valueLabels?: Record<string, string>;
-  /** 多选选项中文映射（multi 键用；缺省显示原文） */
+  /** 多选选项映射（multi 键用；缺省显示原文） */
   optionLabels?: Record<string, string>;
-  /** 控件形态覆盖（缺省按键面 kind 渲染）：selfReview 是布尔数字语义（0=关/正整数归一 1），用开关而非数字框呈现 */
-  control?: 'switch';
 }
 
 /**
- * 策略键中文标签映射（键名 → 中文标签 + 悬停含义）。
+ * 策略键展示元数据（键名 → 标签 + 悬停含义）。
  *
  * 键集必须与内核 `describeStrategyKeys()` 的键集双向相等（守卫见文件头）。
  * 加键顺序 = 键面出现序，供阅读参考，不作判据。
+ * `@nls-keys` 标记让 `scripts/verify-nls.mjs` 判据⑨ 把本表所有字符串值纳入键面。
  */
+// @nls-keys
 export const STRATEGY_KEY_META: Record<string, StrategyKeyMetaEntry> = {
   summaryFocus: {
-    label: '提炼视角',
-    tip: '告诉记忆摘要往哪个方向提炼（如 code、creative），最长 500 字符；留空用通用摘要',
+    label: 'Summary focus',
+    tip: 'Tells the memory summary which direction to distill (e.g. code, creative); up to 500 characters. Leave blank for a general summary.',
   },
   toolMode: {
-    label: '工具模式',
-    tip: 'allow = 允许使用工具；block = 纯对话不执行任何工具',
-    valueLabels: { allow: '允许工具', block: '禁止工具' },
+    label: 'Tool mode',
+    tip: 'allow = tools may be used; block = pure conversation with no tool execution',
+    valueLabels: { allow: 'Allow tools', block: 'Block tools' },
   },
   temperature: {
-    label: '生成温度',
-    tip: '越高越有创意、越低越稳定（0.0~2.0）；留空用默认 0.7',
+    label: 'Temperature',
+    tip: 'Higher is more creative, lower is more stable (0.0–2.0). Leave blank for the default 0.7.',
   },
   outputLimit: {
-    label: '输出上限',
-    tip: '单轮回答的最大 token 数；0 或留空 = 不干预（交给模型/服务商默认）',
+    label: 'Output limit',
+    tip: 'Maximum tokens for a single-turn answer; 0 or blank = no intervention (use the model or provider default)',
   },
   toolStepLimit: {
-    label: '工具步数上限',
-    tip: '单轮最多执行多少步工具（0 = 不限制）；留空用默认',
+    label: 'Tool step limit',
+    tip: 'Maximum tool steps per turn (0 = unlimited). Leave blank for the default.',
   },
   providerRouting: {
-    label: '模型路由',
-    tip: 'auto = 按任务自动选模型；fixed = 固定当前模型',
-    valueLabels: { auto: '自动路由', fixed: '固定模型' },
+    label: 'Model routing',
+    tip: 'auto = choose a model by task; fixed = pin the current model',
+    valueLabels: { auto: 'Automatic routing', fixed: 'Fixed model' },
   },
   multiStepReasoning: {
-    label: '多步推理',
-    tip: 'auto = 复杂任务自动深入思考；manual = 快速直接回答',
-    valueLabels: { auto: '自动推理', manual: '手动推理' },
+    label: 'Multi-step reasoning',
+    tip: 'auto = think deeper on complex tasks; manual = answer quickly and directly',
+    valueLabels: { auto: 'Automatic reasoning', manual: 'Manual reasoning' },
   },
   toolReadonly: {
-    label: '工具权限',
-    tip: 'full = 完整读写；readonly = 仅只读操作（更安全）',
-    valueLabels: { full: '完整权限', readonly: '只读模式' },
+    label: 'Tool permissions',
+    tip: 'full = full read and write; readonly = read-only operations only (safer)',
+    valueLabels: { full: 'Full permissions', readonly: 'Read-only mode' },
   },
   summary: {
-    label: '记忆摘要',
-    tip: 'on = 每轮对话后生成记忆摘要；off = 不生成',
-    valueLabels: { on: '开启', off: '关闭' },
+    label: 'Memory summary',
+    tip: 'on = generate a memory summary after each turn; off = do not generate',
+    valueLabels: { on: 'On', off: 'Off' },
   },
   selfReview: {
-    label: '完成自审',
-    tip: '开启后回答完成前先自查一次再交付；关闭 = 不自查',
-    control: 'switch',
+    label: 'Self-review',
+    tip: 'When on, review the answer once before delivering it; off = no self-review',
   },
   userFollowup: {
-    label: '追问策略',
-    tip: 'ask = 任务说不清时主动反问；silent = 只等用户输入',
-    valueLabels: { ask: '主动追问', silent: '静默等待' },
+    label: 'Follow-up strategy',
+    tip: 'ask = ask back proactively when the task is unclear; silent = only wait for user input',
+    valueLabels: { ask: 'Ask proactively', silent: 'Wait silently' },
   },
   askOn: {
-    label: '主动提问时机',
-    tip: '允许角色向你提问的情形，可多选组合；全部不勾 = 不主动提问',
+    label: 'When to ask',
+    tip: 'Situations where the role may ask you questions; multiple choices allowed. None checked = never ask proactively.',
     optionLabels: {
-      ambiguity: '任务有歧义时',
-      decision: '要做决定时',
-      missing_info: '信息不足时',
-      confirm: '执行前确认',
+      ambiguity: 'When the task is ambiguous',
+      decision: 'When a decision is needed',
+      missing_info: 'When information is missing',
+      confirm: 'Confirm before executing',
     },
   },
   askLimit: {
-    label: '提问次数上限',
-    tip: '单轮回答最多主动提问几次（1~10）',
+    label: 'Question limit',
+    tip: 'How many proactive questions per turn (1–10)',
   },
   webSearchLimit: {
-    label: '联网搜索上限',
-    tip: '单轮回答最多联网搜索几次（1~20，超限自动停止搜索）；留空用默认 6',
+    label: 'Web search limit',
+    tip: 'How many web searches per turn (1–20; searching stops when exceeded). Leave blank for the default 6.',
   },
   errorHandling: {
-    label: '出错处理',
-    tip: '工具/模型出错时怎么办：retry=重试，degrade=降级继续，stop=终止本轮',
-    valueLabels: { retry: '重试', degrade: '降级继续', stop: '终止' },
+    label: 'Error handling',
+    tip: 'What to do when a tool or model fails: retry = try again, degrade = continue degraded, stop = end this turn',
+    valueLabels: { retry: 'Retry', degrade: 'Continue degraded', stop: 'Stop' },
   },
   contextLimit: {
-    label: '上下文上限',
-    tip: '角色自设的上下文规模（token），与模型窗口取小值；0 或留空 = 跟随模型窗口',
+    label: 'Context limit',
+    tip: 'Context size in tokens set by the role; the smaller of this and the model window is used. 0 or blank = follow the model window.',
   },
   stepBudget: {
-    label: '步数预算',
-    tip: '这轮对话最多跑多少次「思考+用工具」（10~500）；0 或留空 = 用默认 50',
+    label: 'Step budget',
+    tip: 'Maximum "think + use tools" iterations in this turn (10–500); 0 or blank = the default 50',
   },
 };
 
-/** 详情值渲染：数组（askOn 多选）走选项中文映射，枚举走值中文映射，其余原样字符串化（对象 JSON 兜底） */
+/**
+ * 用开关（而非数字框）呈现的策略键
+ *
+ * 为什么不放进 {@link STRATEGY_KEY_META}：`@nls-keys` 标记声明「本块内所有字符串值都是文案键」，
+ * 守卫会把块内任意 `x: '字符串'` 都当键采集。把非文案的控件形态塞进同一张表，会让 `'switch'`
+ * 变成 bundle 里的假键（孤儿键判据反过来又会报它）。故单列于此。
+ *
+ * 语义：selfReview 是布尔数字语义（0 = 关 / 正整数归一为 1），用开关比数字框更贴切。
+ */
+export const SWITCH_CONTROL_KEYS: ReadonlySet<string> = new Set(['selfReview']);
+
+/** 详情值渲染：数组（askOn 多选）走选项映射，枚举走值映射，其余原样字符串化（对象 JSON 兜底）；每一项都过 l10n */
 export function formatDetailValue(meta: StrategyKeyMetaEntry | undefined, value: unknown): string {
   if (Array.isArray(value)) {
-    return value.map((v) => meta?.optionLabels?.[String(v)] ?? String(v)).join(' / ');
+    return value
+      .map((v) => {
+        const label = meta?.optionLabels?.[String(v)];
+        return label ? l10n.t(label) : String(v);
+      })
+      .join(' / ');
   }
   const s = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
-  return meta?.valueLabels?.[s] ?? s;
+  const label = meta?.valueLabels?.[s];
+  return label ? l10n.t(label) : s;
 }

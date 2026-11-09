@@ -11,6 +11,7 @@
  *   - {@link setDefaultRolePack}：只写用户级配置 `memora.defaultRolePack`，**不碰任何会话 meta**，
  *     只影响此后新建会话（默认值在建会话时快照进 meta，改它不追溯已有会话）。
  */
+import * as vscode from 'vscode';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { writeErrorText, writeSetting } from '../../extension/settingsWrite.js';
 import type { RolePackCatalogReader } from '../../extension/host/newSessionRolePack.js';
@@ -76,7 +77,9 @@ export async function selectDraftRolePack(
     deps.post({
       type: 'notice',
       level: 'error',
-      message: '草稿期角色切换通道未就绪，无法记录选择，请稍后重试',
+      message: vscode.l10n.t(
+        'The draft role switching channel is not ready, so the selection cannot be recorded. Please try again later.',
+      ),
     });
     return false;
   }
@@ -85,12 +88,18 @@ export async function selectDraftRolePack(
     deps.post({
       type: 'notice',
       level: 'error',
-      message: '草稿期暂无可校验的角色目录（尚未装配任何会话），请先发送一条内容后再选择',
+      message: vscode.l10n.t(
+        'No role pack directory is available to verify in the draft (no session is assembled yet). Send a message first, then choose.',
+      ),
     });
     return false;
   }
   if (!rpm.get?.(name)) {
-    deps.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
+    deps.post({
+      type: 'notice',
+      level: 'error',
+      message: vscode.l10n.t('Role pack not found: {0}', name),
+    });
     return false;
   }
   deps.setDraftRolePackName(name);
@@ -127,12 +136,20 @@ export async function setDefaultRolePack(
       deps.post({
         type: 'notice',
         level: 'error',
-        message: `${UNVERIFIED_ROLE_PACK_TEXT}，未写入默认角色「${name}」`,
+        message: vscode.l10n.t(
+          '{0}; the default role "{1}" was not written',
+          UNVERIFIED_ROLE_PACK_TEXT,
+          name,
+        ),
       });
       return false;
     }
     if (!catalog.has(name)) {
-      deps.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
+      deps.post({
+        type: 'notice',
+        level: 'error',
+        message: vscode.l10n.t('Role pack not found: {0}', name),
+      });
       return false;
     }
   }
@@ -141,7 +158,7 @@ export async function setDefaultRolePack(
     deps.post({
       type: 'notice',
       level: 'error',
-      message: writeErrorText('默认角色包设置', written),
+      message: writeErrorText(vscode.l10n.t('Default role pack setting'), written),
     });
     return false;
   }
@@ -149,8 +166,11 @@ export async function setDefaultRolePack(
     type: 'notice',
     level: 'info',
     message: name
-      ? `已将「${name}」设为新建会话的默认角色（不影响已有会话）`
-      : '已取消默认角色：新建会话将使用系统兜底角色',
+      ? vscode.l10n.t(
+          '"{0}" is now the default role for new sessions (existing sessions are unaffected)',
+          name,
+        )
+      : vscode.l10n.t('Default role cleared: new sessions will use the system fallback role'),
   });
   await deps.reloadRoles();
   return true;

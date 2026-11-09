@@ -9,6 +9,7 @@
  * `capabilityState.ts` 的 `deriveCapabilityState`；文案唯一真源仍是 `capabilityLabels.ts`
  * 的 `CAPABILITY_STATE_TEXT`（与输入区能力徽章共用一份，禁止在此另写文案）。
  */
+import * as l10n from '@vscode/l10n';
 import type { CapabilityStateDto } from '../../shared/protocol.js';
 import { CAPABILITY_STATE_TEXT } from './capabilityLabels.js';
 
@@ -38,14 +39,14 @@ export function appendCapabilityChips(
   parent: HTMLElement,
   state: CapabilityStateDto,
 ): void {
-  /** 待渲染的 chip 规格：`list` 展开为多条，其余两态各一条 */
+  /** 待渲染的 chip 规格：`list` 展开为多条（label 由 host 已本地化），其余两态各一条（本表值是源键，此处过 l10n） */
   const specs: ChipSpec[] =
     state.kind === 'list'
       ? state.capabilities.map((c) => ({ text: c.label, title: c.capability, stateChip: false }))
       : [
           {
-            text: CAPABILITY_STATE_TEXT[state.kind].label,
-            title: CAPABILITY_STATE_TEXT[state.kind].title,
+            text: l10n.t(CAPABILITY_STATE_TEXT[state.kind].label),
+            title: l10n.t(CAPABILITY_STATE_TEXT[state.kind].title),
             stateChip: true,
           },
         ];

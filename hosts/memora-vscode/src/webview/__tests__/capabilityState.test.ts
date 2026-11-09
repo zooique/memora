@@ -21,7 +21,7 @@ describe('deriveCapabilityState（三态判定唯一出口）', () => {
   it('非空白名单 → list，label 走缺省映射（capabilityLabel）', () => {
     expect(deriveCapabilityState([{ capability: 'file:read' }])).toEqual({
       kind: 'list',
-      capabilities: [{ capability: 'file:read', label: '读取文件' }],
+      capabilities: [{ capability: 'file:read', label: 'Read files' }],
     });
   });
 
