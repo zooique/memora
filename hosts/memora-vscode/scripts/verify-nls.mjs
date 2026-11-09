@@ -928,6 +928,11 @@ const MIGRATED_UI_MODULES = [
   'extension/host/fileChangeView.ts',
   'extension/host/workProjectionBridge.ts',
   'extension/host/windowNotices.ts',
+  // B10（2026-11-10）：资产导入链路 + 诊断摘要——`reason` / 摘要标签全部改 `l10n.t`
+  // （前者经 `Import failed: {0}` 上屏，后者进剪贴板摘要），登记后由判据⑬ 守回归
+  'extension/host/userAssets/zipImport.ts',
+  'extension/host/userAssets/zipReader.ts',
+  'webview/panels/hostDiagnostics.ts',
 ];
 
 /** 判据⑭ 基线：登记项少于该数 ⇒ 红（清单被清空 = 判据静默失明） */

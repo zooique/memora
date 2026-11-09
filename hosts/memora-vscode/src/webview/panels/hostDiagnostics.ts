@@ -72,40 +72,59 @@ export function formatDiagnosticsSnapshot(input: DiagnosticsSnapshotInput): stri
   const metrics = input.agentMetrics;
   const providerLines = providers.length
     ? providers.map((p, i) => {
-        return `  - ${p.name || `#${i + 1}`}：model=${p.model || '(未填)'} baseUrl=${p.baseUrl || '(未填)'}`;
+        // 标签一律走 l10n（摘要会被用户贴进公开渠道，英文用户也要能读懂字段名）
+        return vscode.l10n.t(
+          '  - {0}: model={1} baseUrl={2}',
+          p.name || `#${i + 1}`,
+          p.model || vscode.l10n.t('(not filled)'),
+          p.baseUrl || vscode.l10n.t('(not filled)'),
+        );
       })
-    : ['  (未配置)'];
+    : [`  ${vscode.l10n.t('(not configured)')}`];
   const diagLines = input.recentHostDiags.length
     ? input.recentHostDiags.flatMap((d) => [
-        `[${d.at}] ${d.source}：${d.message}`,
+        vscode.l10n.t('[{0}] {1}: {2}', d.at, d.source, d.message),
         // 栈只留前 5 行：完整栈对定位「哪个消息处理点炸了」足够，再长反而淹没摘要
         ...(d.stack ? [`  ${d.stack.split('\n').slice(0, 5).join('\n  ')}`] : []),
       ])
-    : ['(无)'];
+    : [vscode.l10n.t('(none)')];
   return [
-    '=== Memora 诊断摘要 ===',
-    `时间：${new Date().toISOString()}`,
-    `扩展版本：${input.extensionVersion}`,
-    `VS Code：${vscode.version}（${process.platform}-${process.arch}）`,
-    `宿主 Node：${process.version}`,
+    vscode.l10n.t('=== Memora diagnostics ==='),
+    vscode.l10n.t('Time: {0}', new Date().toISOString()),
+    vscode.l10n.t('Extension version: {0}', input.extensionVersion),
+    vscode.l10n.t('VS Code: {0} ({1}-{2})', vscode.version, process.platform, process.arch),
+    vscode.l10n.t('Host Node: {0}', process.version),
     '',
-    '--- 配置（apiKey 存于 SecretStorage，不纳入诊断） ---',
-    `activeProvider：${activeProvider || '(未设置)'}`,
-    `providers（${providers.length}）：`,
+    vscode.l10n.t('--- Configuration (apiKey lives in SecretStorage and is excluded) ---'),
+    vscode.l10n.t('activeProvider: {0}', activeProvider || vscode.l10n.t('(not set)')),
+    vscode.l10n.t('providers ({0}):', providers.length),
     ...providerLines,
-    `allowedPaths：${cfg.get<string[]>('allowedPaths', []).length} 条`,
-    `disabledSkills：${cfg.get<string[]>('disabledSkills', []).join(', ') || '(无)'}`,
-    `archiveMode：${cfg.get<string>('archiveMode', 'full')}`,
-    `scriptNodePath：${cfg.get<string>('scriptNodePath', '') || '(留空 → 系统 PATH)'}`,
-    `showMetrics：${cfg.get<boolean>('showMetrics', false)}`,
-    `attentionSound：${cfg.get<boolean>('attentionSound', true)}`,
+    vscode.l10n.t('allowedPaths: {0} entries', cfg.get<string[]>('allowedPaths', []).length),
+    vscode.l10n.t(
+      'disabledSkills: {0}',
+      cfg.get<string[]>('disabledSkills', []).join(', ') || vscode.l10n.t('(none)'),
+    ),
+    vscode.l10n.t('archiveMode: {0}', cfg.get<string>('archiveMode', 'full')),
+    vscode.l10n.t(
+      'scriptNodePath: {0}',
+      cfg.get<string>('scriptNodePath', '') || vscode.l10n.t('(empty → system PATH)'),
+    ),
+    vscode.l10n.t('showMetrics: {0}', cfg.get<boolean>('showMetrics', false)),
+    vscode.l10n.t('attentionSound: {0}', cfg.get<boolean>('attentionSound', true)),
     '',
-    '--- 运行指标 ---',
+    vscode.l10n.t('--- Runtime metrics ---'),
     metrics
-      ? `LLM 调用 ${metrics.llm.callCount} 次 · token 入 ${metrics.llm.totalInputTokens} / 出 ${metrics.llm.totalOutputTokens} · 工具失败 ${metrics.tools.failureCount} 次 · 截断 ${metrics.context.truncationCount} 次`
-      : '(Agent 未装配)',
+      ? vscode.l10n.t(
+          'LLM calls {0} · tokens in {1} / out {2} · tool failures {3} · truncations {4}',
+          metrics.llm.callCount,
+          metrics.llm.totalInputTokens,
+          metrics.llm.totalOutputTokens,
+          metrics.tools.failureCount,
+          metrics.context.truncationCount,
+        )
+      : vscode.l10n.t('(Agent not assembled)'),
     '',
-    `--- 最近 webview 错误（最多 ${MAX_RECENT_HOST_DIAGS} 条） ---`,
+    vscode.l10n.t('--- Recent webview errors (up to {0}) ---', MAX_RECENT_HOST_DIAGS),
     ...diagLines,
   ].join('\n');
 }
