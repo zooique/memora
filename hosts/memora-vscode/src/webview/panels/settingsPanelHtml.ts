@@ -18,7 +18,7 @@
 import * as vscode from 'vscode';
 import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
-import { SECURITY_BODY_HTML } from './settingsSecurityHtml.js';
+import { buildSecurityBodyHtml } from './settingsSecurityHtml.js';
 import { buildConfigBodyHtml } from './settingsConfigHtml.js';
 import { buildMemoryBodyHtml } from './settingsMemoryHtml.js';
 import { buildRolesBodyHtml } from './settingsRolesHtml.js';
@@ -51,6 +51,9 @@ const SKILLS_BODY_HTML = buildSkillsBodyHtml(vscode.l10n);
 
 /** MCP body built at import time with the host localizer (same reason as the works body). */
 const MCP_BODY_HTML = buildMcpBodyHtml(vscode.l10n);
+
+/** Security body built at import time with the host localizer (same reason as the works body). */
+const SECURITY_BODY_HTML = buildSecurityBodyHtml(vscode.l10n);
 
 /**
  * 各选项卡主体骨架（**不含外层 root 容器**——root 与 tab 按钮均由 {@link buildHtml} 统一生成）

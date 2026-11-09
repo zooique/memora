@@ -59,15 +59,15 @@ export function createUserDataResetHandler(
       const report = await resetUserData(scope);
       // 明细落输出通道（可追溯），提示语只给概要（不刷屏）
       output.appendLine(
-        `Memora 用户级数据初始化完成：globalState ${report.globalStateCleared.length} 键 / ` +
-          `SecretStorage ${report.secretsCleared.length} 条 / settings ${report.settingsCleared.length} 键 / ` +
-          `目录 ${report.dirsReset.length} 个`,
+        `Memora user-level data reset complete: globalState ${report.globalStateCleared.length} keys / ` +
+          `SecretStorage ${report.secretsCleared.length} entries / settings ${report.settingsCleared.length} keys / ` +
+          `${report.dirsReset.length} directories`,
       );
       await vscode.commands.executeCommand('workbench.action.reloadWindow');
       return { ok: true, message: vscode.l10n.t('User-level data cleared; reloading the window') };
     } catch (err) {
       const message = toNoticeText(err);
-      output.appendLine(`Memora 用户级数据初始化失败：${message}`);
+      output.appendLine(`Memora user-level data reset failed: ${message}`);
       return { ok: false, message: vscode.l10n.t('Reset failed: {0}', message) };
     }
   };

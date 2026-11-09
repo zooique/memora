@@ -1,87 +1,98 @@
 /**
- * 设置面板「安全」选项卡 HTML 主体片段
+ * 设置面板「安全」选项卡 HTML 主体片段（B7 本地化）
  *
  * 为什么独立成文件（自 settingsPanel.ts 拆出）：settingsPanel 是贴 eslint max-lines
  * 上限的 TARGET 文件（只降不升），而安全页每加一个配置项入口就多一段静态 HTML，
  * 是典型的线性增长域，留在大文件必爆线（同 hostDiagnostics.ts / injectionBodies.ts 先例）。
  *
  * 职责边界：本模块只提供静态 DOM 骨架，零逻辑。交互（开关读写、路径增删、引擎测试、
- * open_setting 导航）全部由 settingsPanel.ts 的 handleMessage 与 webview 侧子视图承担。
- * 片段内不得出现插值变量——一旦需要动态数据，说明它该留在 settingsPanel 或走消息通道。
+ * open_setting 导航）全部由 securityServerOps.ts（宿主）与 webview 侧 `scripts/securityView.ts`
+ * 承担。片段内不得出现插值变量——一旦需要动态数据，说明它该留在宿主或走消息通道。
  *
- * **root 容器的归属变更（2026-10-24 tab 表收口）**：`<div id="security-root" role="tabpanel">`
- * 不再由本片段自带，改由 `settingsPanelHtml.ts` 的 {@link buildHtml} 与其余选项卡统一生成
- * （id 由 `settingsRootId('security')` 派生、`hidden` 由是否默认首页决定）。此前每个选项卡
- * 各自手写 root 容器 ⇒ tab 的 id / role / aria 是判据散点。
+ * **本地化形态（B7）**：键 = 英文源文案本身，插值一律 `{0}`；本地化器由宿主注入
+ * （`vscode.l10n`）。参数是**命名空间对象**而非裸 `t` 函数——静态键采集只认
+ * `l10n.t('…')`，裸 `t('…')` 会让这些键脱离判据⑨的采集面。
+ *
+ * **root 容器的归属（2026-10-24 tab 表收口）**：`<div id="security-root" role="tabpanel">`
+ * 不由本片段自带，由 `settingsPanelHtml.ts` 的 {@link buildHtml} 与其余选项卡统一生成
+ * （id 由 `settingsRootId('security')` 派生、`hidden` 由是否默认首页决定）。
  */
 
-/** 安全子视图主体（security 选项卡：执行审批 / 路径白名单 / 搜索引擎 / 调试与提示入口） */
-export const SECURITY_BODY_HTML = `
+/**
+ * 构建安全子视图主体（本地化器由宿主注入）
+ *
+ * @param l10n 本地化器（英文源键 → 当前 UI 语言）
+ */
+export function buildSecurityBodyHtml(l10n: {
+  t(message: string, ...args: (string | number)[]): string;
+}): string {
+  return `
   <!-- 安全子视图（security 选项卡：执行审批 / 路径白名单） -->
     <div class="header">
-      <h2>安全</h2>
+      <h2>${l10n.t('Security')}</h2>
     </div>
     <div class="security-section">
       <div class="security-item">
         <div class="security-item-header">
-          <label for="confirmScriptsToggle" class="security-label">执行二次确认</label>
+          <label for="confirmScriptsToggle" class="security-label">${l10n.t('Confirm before running')}</label>
           <label class="toggle-switch">
-            <input id="confirmScriptsToggle" type="checkbox" role="switch" aria-label="脚本与命令执行二次确认开关" />
+            <input id="confirmScriptsToggle" type="checkbox" role="switch" aria-label="${l10n.t('Secondary confirmation for script and command execution')}" />
             <span class="toggle-slider"></span>
           </label>
         </div>
-        <p class="security-desc">开启后，AI 运行脚本/代码（run_project_script / run_code）或执行普通 shell 命令（run_command）前会弹出审批卡，需确认放行。默认关闭（自动放行）。仅控制「是否询问」，不影响能力本身（这些能力始终开放）。<strong>注意：git 写操作（commit / push / reset / rebase / merge）与 npm publish 不受本开关影响，每次都会询问、且无法豁免</strong>——它们属于不可逆操作。</p>
+        <p class="security-desc">${l10n.t('When enabled, the AI asks for approval before running scripts/code (run_project_script / run_code) or executing ordinary shell commands (run_command). Off by default (auto-approve). This only controls whether to ask; it does not affect the capabilities themselves (always available). <strong>Note: git write operations (commit / push / reset / rebase / merge) and npm publish are not affected by this switch — they always ask and cannot be exempted</strong> — they are irreversible.')}</p>
       </div>
       <div id="securityStatus" class="security-status" hidden></div>
       <div class="security-item">
         <div class="security-item-header">
-          <label class="security-label">允许路径白名单</label>
+          <label class="security-label">${l10n.t('Allowed path allow-list')}</label>
         </div>
-        <p class="security-desc">项目目录始终允许访问。可添加项目之外的可信目录（如个人笔记、文档），Agent 即可读写；增删即时生效，重启后仍保留。敏感文件（.env/.ssh 等）黑名单仍强制拦截。</p>
+        <p class="security-desc">${l10n.t('The project directory is always accessible. You can add trusted directories outside the project (for example, personal notes or documents) and the Agent can read and write them; additions and deletions take effect immediately and persist after a restart. The blacklist for sensitive files (.env/.ssh etc.) still blocks access.')}</p>
         <ul id="allowedPathsList" class="allowed-paths-list"></ul>
         <div class="allowed-paths-add">
-          <input id="allowedPathsInput" type="text" class="allowed-paths-input" placeholder="输入目录绝对路径，如 D:/我的笔记" aria-label="新增允许路径" />
-          <button id="allowedPathsAdd" class="btn btn-secondary" type="button">添加</button>
+          <input id="allowedPathsInput" type="text" class="allowed-paths-input" placeholder="${l10n.t('Enter an absolute directory path, e.g. D:/my-notes')}" aria-label="${l10n.t('Add an allowed path')}" />
+          <button id="allowedPathsAdd" class="btn btn-secondary" type="button">${l10n.t('Add')}</button>
         </div>
       </div>
       <div class="security-item">
         <div class="security-item-header">
-          <label class="security-label" for="searchEngineSelect">网页搜索引擎</label>
+          <label class="security-label" for="searchEngineSelect">${l10n.t('Web search engine')}</label>
         </div>
-        <p class="security-desc">「联网搜索」工具使用的内部搜索后端。自动 = Bing 优先降级 DuckDuckGo；中文场景推荐切「百度/搜狗」提升命中质量。也可选用下方自定义引擎。修改后需重载窗口生效。</p>
-        <select id="searchEngineSelect" class="security-select" aria-label="网页搜索引擎"></select>
-        <p class="security-desc">自定义引擎需返回结构化结果：OpenSearch RSS / Atom，或 JSON（<code>{results:[{title,url,…}]}</code>）。普通网页（一堆 HTML）与需登录的平台不支持。点「编辑」填写后先「测试」再「保存」。</p>
+        <p class="security-desc">${l10n.t('The internal search backend used by the web search tool. Auto = Bing first, falling back to DuckDuckGo; for Chinese content, switching to Baidu or Sogou improves hit quality. You can also use a custom engine below. Reload the window after changing this.')}</p>
+        <select id="searchEngineSelect" class="security-select" aria-label="${l10n.t('Web search engine')}"></select>
+        <p class="security-desc">${l10n.t('Custom engines must return structured results: OpenSearch RSS / Atom, or JSON (<code>{results:[{title,url,…}]}</code>). Ordinary web pages (a pile of HTML) and platforms that require sign-in are not supported. Click Edit, fill in the form, then Test before Save.')}</p>
         <div id="customSearchEngines" class="custom-search-engines"></div>
-        <button id="addCustomEngineBtn" class="btn btn-secondary ce-add-btn" type="button">+ 添加自定义搜索引擎</button>
+        <button id="addCustomEngineBtn" class="btn btn-secondary ce-add-btn" type="button">${l10n.t('+ Add a custom search engine')}</button>
       </div>
       <div class="security-item">
         <div class="security-item-header">
-          <label class="security-label">脚本解释器（node 路径）</label>
-          <button class="btn btn-secondary open-setting-btn" type="button" data-setting-key="memora.scriptNodePath">在设置中调整</button>
+          <label class="security-label">${l10n.t('Script interpreter (node path)')}</label>
+          <button class="btn btn-secondary open-setting-btn" type="button" data-setting-key="memora.scriptNodePath">${l10n.t('Adjust in Settings')}</button>
         </div>
-        <p class="security-desc">技能脚本与项目脚本使用的 node 解释器。留空时走系统 PATH；若脚本报「spawn node ENOENT」（找不到 node），在此填写 node 可执行文件的绝对路径。修改后需重载窗口生效。</p>
+        <p class="security-desc">${l10n.t('The node interpreter used by skill scripts and project scripts. Leave empty to use the system PATH; if a script reports "spawn node ENOENT" (node not found), enter the absolute path to the node executable here. Reload the window after changing this.')}</p>
       </div>
       <div class="security-item">
         <div class="security-item-header">
-          <label class="security-label">活动指标（调试）</label>
-          <button class="btn btn-secondary open-setting-btn" type="button" data-setting-key="memora.showMetrics">在设置中调整</button>
+          <label class="security-label">${l10n.t('Activity metrics (debug)')}</label>
+          <button class="btn btn-secondary open-setting-btn" type="button" data-setting-key="memora.showMetrics">${l10n.t('Adjust in Settings')}</button>
         </div>
-        <p class="security-desc">活动抽屉里的 LLM 调用次数 / token / 安全审计 / 指纹等调试信息。默认隐藏；开启后从下一轮对话起在抽屉展示。</p>
+        <p class="security-desc">${l10n.t('Debug information such as LLM call counts / tokens / security audit / fingerprints in the activity drawer. Hidden by default; once enabled, it appears in the drawer starting from the next conversation.')}</p>
       </div>
       <div class="security-item">
         <div class="security-item-header">
-          <label class="security-label">提醒提示音</label>
-          <button class="btn btn-secondary open-setting-btn" type="button" data-setting-key="memora.attentionSound">在设置中调整</button>
+          <label class="security-label">${l10n.t('Notification sound')}</label>
+          <button class="btn btn-secondary open-setting-btn" type="button" data-setting-key="memora.attentionSound">${l10n.t('Adjust in Settings')}</button>
         </div>
-        <p class="security-desc">对话面板不在前台时，审批卡推出 / AI 提问等待 / 一轮完成会播放系统提示音。默认开启；关闭后完全静音，面板内徽章与未读不受影响。</p>
+        <p class="security-desc">${l10n.t('When the chat panel is not in the foreground, a system sound plays when an approval card appears / the AI waits for an answer / a round completes. On by default; turning it off mutes it completely, while in-panel badges and unread counts are unaffected.')}</p>
       </div>
       <div class="security-item">
         <div class="security-item-header">
-          <label class="security-label">恢复初始状态</label>
+          <label class="security-label">${l10n.t('Restore initial state')}</label>
         </div>
-        <p class="security-desc">一键清空插件的<strong>全部用户级数据</strong>：用户技能、用户角色包、大模型配置（含 API Key）、激活角色包、角色包组、安全开关与用户级设置，恢复到第一次使用插件的状态。<strong>项目数据完整保留</strong>：当前项目的记忆、会话记录（.memora/）与项目设置不动——它们已经是项目的一部分。清理完成后将自动重载窗口，进行中的对话会中断。</p>
-        <button id="resetUserDataBtn" class="btn btn-danger security-reset-btn" type="button">清空用户级数据…</button>
+        <p class="security-desc">${l10n.t('Clear <strong>all user-level data</strong> of the plugin in one click: user skills, user role packs, LLM configuration (including API keys), the active role pack, role pack teams, security toggles and user-level settings, restoring the state of the first launch. <strong>Project data is fully preserved</strong>: memories and session records (.memora/) of the current project, plus project settings, are untouched — they are already part of the project. The window reloads automatically after clearing; in-progress conversations are interrupted.')}</p>
+        <button id="resetUserDataBtn" class="btn btn-danger security-reset-btn" type="button">${l10n.t('Clear user-level data…')}</button>
         <span id="resetUserDataHint" class="security-status security-reset-hint" hidden></span>
       </div>
     </div>
 `;
+}

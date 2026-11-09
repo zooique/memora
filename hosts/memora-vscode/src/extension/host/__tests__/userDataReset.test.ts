@@ -228,7 +228,7 @@ describe('userDataReset.resetUserData', () => {
 
     await expect(
       resetUserData(makeScope({ secrets: failingSecrets as unknown as vscode.SecretStorage })),
-    ).rejects.toThrow('API Key「p1」清理 failed: Credential Manager 不可用');
+    ).rejects.toThrow('Cleaning up API key "p1" failed: Credential Manager 不可用');
 
     // K1 顺序不变：密钥删除失败即中止，settings 一个键都没清（不清 name 先丢的残留之外，
     // 也保证「半完成初始化」不会越过密钥通道继续往下走）

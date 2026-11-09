@@ -43,14 +43,11 @@ import { toNoticeText } from '../../extension/host/noticeText.js';
 // 模态确认框唯一入口（禁自开 showWarningMessage + modal: true，见 scripts/verify-modal-cancel.mjs 严闸）
 import { confirmModal } from '../../extension/host/ui/confirmModal.js';
 import type {
-  CustomSearchEngineConfig,
   ExtensionToWebviewMessage,
   GovernanceStatsDto,
   McpWriteAckDto,
   MemoryItemDto,
   MemoryStatsDto,
-  SearchEngineSetting,
-  SearchEngineTestResult,
   SkillDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
@@ -80,11 +77,17 @@ import { writeErrorText, writeSetting } from '../../extension/settingsWrite.js';
 // tab 标识 / 顺序 / 可见名唯一真源：本文件此前手写的两处联合都漏了 'security'
 // （⇒ 安全页无法从任何命令跳转过去），不再手写，统一取这一份
 import type { SettingsTab } from '../../shared/settingsTabs.js';
-import { PRESET_SEARCH_ENGINES } from '../../shared/protocol.js';
-// 判据单点复用：validateCustomEngines 定义在搜索引擎域（extension/host/searchEngines.ts），
-// 本面板的「测试 / 保存」两条路径与装配侧 resolveSearchEndpoints 共用同一函数；
-// probeSearchEngine 同域导入，禁在本文件另写校验规则。
-import { probeSearchEngine, validateCustomEngines } from '../../extension/host/searchEngines.js';
+// 安全页执行面（五个 op 的唯一实现，见模块头）：本文件只留一行委派，保住 max-lines 余量
+import {
+  loadAllowedPathsStatusOp,
+  resetUserDataOp,
+  setAllowedPathsOp,
+  setCustomSearchEnginesOp,
+  setSearchEngineOp,
+  testCustomSearchEngineOp,
+  toggleConfirmScriptsOp,
+  type SecurityOpsDeps,
+} from './securityServerOps.js';
 // 角色列表投影外置（纯投影不占本文件行数；判据全部来自既有点）
 import { postRolePackList } from '../helpers/rolePackListView.js';
 // 三条零面板状态依赖的「读配置 → 推消息」动作外置（先腾行后接入作品页）
@@ -93,7 +96,6 @@ import {
   pushCustomSearchEnginesStatus,
   pushSearchEngineStatus,
   pushSecurityStatus,
-  readCustomSearchEngines,
 } from '../helpers/settingsStatusPush.js';
 // 作品投影桥接（数据推送 / 动作执行面 / 打开原文件；侧边栏 TreeView 退役后的唯一消费面）
 import {
@@ -113,7 +115,6 @@ import {
 import { isPathWithin } from '../../extension/host/userAssets/path.js';
 // 项目级 → 用户级复制编排层（执行面 = zipImport 的事务化原语，本面板只分发）
 import { copyProjectRolePackToUser, copyProjectSkillToUser } from './assetCopyToUser.js';
-import { CONFIRM_SCRIPTS_KEY } from '../../shared/constants.js';
 // 内核常量与键面/校验入口（宿主不复制字面量，SSOT 单一来源）：
 //   BUILTIN_FALLBACK_PACK — 兜底契约包名，随内核包分发，宿主 UI 禁删标记；
 //   validateManifestText  — 角色包保存前校验入口（宿主不重写判据，校验失败不写盘）。
@@ -660,19 +661,20 @@ export class MemoraSettingsPanel {
       return;
     }
 
-    // ─── 安全子视图消息（执行确认 + 路径白名单） ───
-    // 写入确认开关已退役（E4 批 4：写文件一律直接落盘），本通道只剩执行确认语义
+    // ─── 安全子视图消息（执行确认 + 路径白名单 + 搜索引擎 + 恢复初始状态） ───
+    // 写入确认开关已退役（E4 批 4：写文件一律直接落盘），本通道只剩执行确认语义。
+    // 五个 op 的唯一实现在 securityServerOps（本文件只留委派，见模块头）。
     if (msg.type === 'security_toggle') {
-      await this.toggleConfirmScripts(msg.enabled);
+      await toggleConfirmScriptsOp(this.securityOpsDeps(), msg.enabled);
       return;
     }
     if (msg.type === 'allowed_paths_set') {
-      await this.setAllowedPaths(msg.paths);
+      await setAllowedPathsOp(this.securityOpsDeps(), msg.paths);
       return;
     }
     // 网页搜索引擎：持久化设置 + 回显选中下拉
     if (msg.type === 'search_engine_set') {
-      await this.setSearchEngine(msg.engine);
+      await setSearchEngineOp(this.securityOpsDeps(), msg.engine);
       return;
     }
     // 会话归档模式：持久化用户级设置 + 热更新 agent.setArchiveMode（繁忙顺延）
@@ -688,17 +690,12 @@ export class MemoraSettingsPanel {
     }
     // 自定义搜索引擎清单：持久化 + 回显编辑器
     if (msg.type === 'custom_search_engines_set') {
-      await this.setCustomSearchEngines(msg.engines);
+      await setCustomSearchEnginesOp(this.securityOpsDeps(), msg.engines);
       return;
     }
     // 自定义搜索引擎连通性验证（保存前先验证的预览探针）
     if (msg.type === 'custom_search_engine_test') {
-      // 静态校验先用同一判据过一遍（非法配置不必发网络请求），合法才实测抓取+解析
-      const problem = validateCustomEngines([msg.engine]);
-      const result: SearchEngineTestResult = problem
-        ? { engineName: msg.engine?.name || '(空)', ok: false, count: 0, error: problem }
-        : await probeSearchEngine(msg.engine);
-      this.post({ type: 'custom_search_engine_test_result', result });
+      await testCustomSearchEngineOp(this.securityOpsDeps(), msg.engine);
       return;
     }
     // 「在设置中调整」：设置页只做导航，配置读写真源仍是 VS Code 原生设置
@@ -709,35 +706,38 @@ export class MemoraSettingsPanel {
       return;
     }
     // 「恢复初始状态」：按钮 → 注入的处理器（extension 侧 modal + 清理 + reload），
-    // 结果回推 webview 恢复按钮态。面板不自行实现清理逻辑（单一路径，与命令面板共用）。
+    // 结果由执行面回推 webview 恢复按钮态。面板不自行实现清理逻辑（单一路径，与命令面板共用）。
     if (msg.type === 'reset_user_data') {
-      const result = await this.runReset();
-      this._panel?.webview.postMessage({
-        type: 'reset_user_data_result',
-        ok: result.ok,
-        cancelled: result.cancelled,
-        message: result.message,
-      });
+      await resetUserDataOp(this.securityOpsDeps());
       return;
     }
   }
 
   /**
-   * 执行「恢复初始状态」（委托 extension 注入的处理器）
+   * 组装安全页执行面依赖（每次调用现取，避免把易变的注入面缓存成第二份状态）
    *
-   * 处理器未注入（理论不可达——activate 恒注入）时返回失败回执，
+   * `runReset` 未注入（理论不可达——activate 恒注入）时返回失败回执，
    * 不静默吞掉（否则按钮点了没反应，用户无从判断是没点到还是坏了）。
    */
-  private async runReset(): Promise<{ ok: boolean; cancelled?: boolean; message?: string }> {
-    if (!this._resetHandler) {
-      return { ok: false, message: '初始化功能未就绪，请重载窗口后重试' };
-    }
-    try {
-      return await this._resetHandler();
-    } catch (err) {
-      const message = toNoticeText(err);
-      return { ok: false, message };
-    }
+  private securityOpsDeps(): SecurityOpsDeps {
+    return {
+      post: (msg) => this.post(msg),
+      ensureAgent: () => this.ensureAgent(),
+      globalState: this._globalState,
+      runReset: async () => {
+        if (!this._resetHandler) {
+          return {
+            ok: false,
+            message: l10n.t('The reset feature is not ready; reload the window and try again'),
+          };
+        }
+        try {
+          return await this._resetHandler();
+        } catch (err) {
+          return { ok: false, message: toNoticeText(err) };
+        }
+      },
+    };
   }
 
   // ─── 角色子视图数据加载 ───
@@ -1452,141 +1452,6 @@ export class MemoraSettingsPanel {
     );
   }
 
-  // ─── 安全子视图方法（执行确认） ───
-
-  /**
-   * 切换脚本/代码/命令执行确认开关（security_toggle 消息处理）
-   *
-   * 持久化到 globalState + 热更新 agent.security.setConfirmScripts()。
-   * 无需重启 Agent——SecurityGuard 支持运行时切换。语义：开 = run_code / run_project_script /
-   * run_command（普通命令）执行前询问。⚠️ git 写操作与 npm publish 属 ALWAYS_ASK 档，
-   * **不受本开关影响**（恒询问且不可豁免，见内核 `pathGuard.classifyCommand`）——
-   * 故下方关闭态文案必须带上这句，否则用户会误以为关掉开关就能跳过 git 提交审批。
-   */
-  private async toggleConfirmScripts(enabled: boolean): Promise<void> {
-    try {
-      // 1. 持久化到 globalState（用户级偏好）
-      this._globalState?.update(CONFIRM_SCRIPTS_KEY, enabled);
-      // 2. 热更新已装配的 Agent（SecurityGuard 运行时切换）
-      const agent = await this.ensureAgent();
-      if (agent?.security) {
-        agent.security.setConfirmScripts(enabled);
-      }
-      // 3. 推送最新状态给 webview（写入确认已退役，只剩执行确认这一项）
-      this.post({ type: 'security_status', confirmScripts: enabled });
-      this.post({
-        type: 'notice',
-        level: 'info',
-        message: enabled
-          ? '已开启执行二次确认（运行脚本/代码或执行普通命令前将弹出审批卡）'
-          : '已关闭执行二次确认（脚本与普通命令自动放行；git 写操作与发布仍每次询问）',
-      });
-    } catch (err) {
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: `切换脚本执行确认开关失败：${toNoticeText(err)}`,
-      });
-    }
-  }
-
-  // 零面板状态依赖的「读配置 → 推消息」动作统一外置到 helpers/settingsStatusPush.ts
-
-  /**
-   * 设置白名单额外允许路径（allowed_paths_set 消息处理）
-   *
-   * 归类：目录白名单 = 这台机器信任的数据目录（机器级信任，
-   * 跨项目通用），归 ConfigurationTarget.Global——个人绝对路径不进项目
-   * .vscode/settings.json（避免随项目入库泄漏本机目录结构 + 跨项目重复配置）。
-   * 热更新 agent.security.setAllowedPaths()。无需重启 Agent——SecurityGuard 支持运行时热更新。
-   * paths = 完整用户额外数组（不含 projectPath 基准根）。
-   */
-  private async setAllowedPaths(paths: string[]): Promise<void> {
-    // 1. 持久化到用户级设置（机器级信任；projectPath 基准根恒在，不在此数组内）。
-    //    经统一写入通道（带 5s 上限）：写不进去就回执并中止，不热更一份没落盘的偏好。
-    const written = await writeSetting('allowedPaths', paths);
-    if (!written.ok) {
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: writeErrorText('允许路径设置', written),
-      });
-      return;
-    }
-    try {
-      // 2. 热更新已装配的 Agent（SecurityGuard 运行时切换）
-      const agent = await this.ensureAgent();
-      if (agent?.security) {
-        agent.security.setAllowedPaths(paths);
-      }
-      // 3. 推送最新状态给 webview（含只读基准根 projectPath）
-      const projectPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-      this.post({ type: 'allowed_paths_status', projectPath, paths });
-      this.post({
-        type: 'notice',
-        level: 'info',
-        message:
-          paths.length > 0
-            ? `已更新允许路径白名单（${paths.length} 项）`
-            : '已清空额外允许路径（仅保留项目目录）',
-      });
-    } catch (err) {
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: `设置允许路径失败：${toNoticeText(err)}`,
-      });
-    }
-  }
-
-  /**
-   * 加载并推送白名单额外路径状态（settings 视图 ready 时调用）
-   *
-   * 从 workspace 设置读取持久化的额外路径数组，推送给 webview 渲染初始列表。
-   */
-  private loadAllowedPathsStatus(): void {
-    const paths = vscode.workspace.getConfiguration('memora').get<string[]>('allowedPaths', []);
-    const projectPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-    this.post({ type: 'allowed_paths_status', projectPath, paths });
-  }
-
-  /**
-   * 设置内部网页搜索引擎（search_engine_set 消息处理）
-   *
-   * 归类：搜索引擎是**用户级偏好**（跨项目一致，与模型/provider 同属用户设置），
-   * 写入 ConfigurationTarget.Global——不进项目 .vscode/settings.json，避免个人偏好
-   * 入库/跨仓漂移（与 providerStore 的 providers 同 scope）。
-   * 装配期一次性注入，修改后需重载窗口（或重建会话）生效——此处仅持久化 + 回显，不做热装配。
-   */
-  private async setSearchEngine(engine: SearchEngineSetting): Promise<void> {
-    const customs = readCustomSearchEngines();
-    const valid =
-      (PRESET_SEARCH_ENGINES as readonly string[]).includes(engine) ||
-      customs.some((e) => e.name === engine);
-    if (!valid) {
-      this.post({ type: 'notice', level: 'error', message: `无效的搜索引擎：${engine}` });
-      return;
-    }
-    // 经统一写入通道（带 5s 上限）：失败（含不 settle 超时）即回执，不回显未落盘的选择
-    const written = await writeSetting('searchEngine', engine);
-    if (!written.ok) {
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: writeErrorText('搜索引擎设置', written),
-      });
-      return;
-    }
-    this.post({ type: 'search_engine_status', engine });
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `已切换网页搜索引擎：${engine}（重载窗口后生效）`,
-    });
-  }
-
-  // ─── 会话归档模式（archive_mode_set 消息处理） ───
-
   /**
    * 设置会话归档模式（archive_mode_set 消息处理）
    *
@@ -1674,60 +1539,6 @@ export class MemoraSettingsPanel {
   }
 
   // 归档模式偏好推送见 helpers/settingsStatusPush.ts（持久值，不是内核运行时真相）
-
-  /**
-   * 持久化用户自定义搜索引擎清单（custom_search_engines_set 消息处理）
-   *
-   * 校验：每项需名称非空、URL 模板含 {query}、解析策略合法；任一不合规整体拒绝并提示，
-   * 不写入（避免半合法状态）。合法则写入用户级设置 + 回推状态 + 提示。
-   */
-  /**
-   * 拒绝一次保存：报出原因，并**回推当前已持久化状态**令 webview 收敛。
-   * 校验失败与探针未通过两条路径都走这里 ⇒ 回滚行为单点，不留第二份逻辑。
-   */
-  private rejectCustomEngines(reason: string): void {
-    this.post({ type: 'notice', level: 'error', message: reason });
-    this.post({ type: 'custom_search_engines_status', engines: readCustomSearchEngines() });
-  }
-
-  private async setCustomSearchEngines(engines: CustomSearchEngineConfig[]): Promise<void> {
-    const problem = validateCustomEngines(engines);
-    if (problem) {
-      this.rejectCustomEngines(`自定义搜索引擎${problem}，未保存`);
-      return;
-    }
-    // 保存前实测验证（host 权威门禁）：仅对相对已持久化清单发生变化的引擎探针（未变引擎跳过，避免重复网络探测）；
-    // 任一变化引擎验证未通过（网络失败 / 接口无结构化结果）→ 整体拒绝保存，webview 即便跳过「测试」也无法绕过。
-    const persisted = readCustomSearchEngines();
-    for (const e of engines) {
-      const unchanged = persisted.some(
-        (p) =>
-          p.name === e.name &&
-          p.urlTemplate === e.urlTemplate &&
-          p.parseStrategy === e.parseStrategy,
-      );
-      if (unchanged) continue;
-      const r = await probeSearchEngine(e);
-      if (!r.ok) {
-        this.rejectCustomEngines(
-          `搜索引擎「${e.name || '(空)'}」验证未通过，未保存：${r.error ?? `接口未返回可解析结果（${r.count} 条）`}`,
-        );
-        return;
-      }
-    }
-    // 经统一写入通道（带 5s 上限）：写不进去即回执 + 回推已持久化清单（复选回滚单点 = rejectCustomEngines）
-    const written = await writeSetting('customSearchEngines', engines);
-    if (!written.ok) {
-      this.rejectCustomEngines(writeErrorText('自定义搜索引擎设置', written));
-      return;
-    }
-    this.post({ type: 'custom_search_engines_status', engines });
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `已保存 ${engines.length} 个自定义搜索引擎（重载窗口后生效）`,
-    });
-  }
 
   // 自定义搜索引擎清单的「读配置 → 推送」已外置到 helpers/settingsStatusPush.ts（ready / 拒收复位共用）
 
@@ -1825,7 +1636,7 @@ export class MemoraSettingsPanel {
     void this.loadSkills();
     // 安全子视图：写入二次确认开关状态 + 白名单额外路径 + 网页搜索引擎
     pushSecurityStatus((m) => this.post(m), this._globalState);
-    this.loadAllowedPathsStatus();
+    loadAllowedPathsStatusOp(this.securityOpsDeps());
     pushCustomSearchEnginesStatus((m) => this.post(m));
     pushSearchEngineStatus((m) => this.post(m));
     // 记忆子视图：会话归档模式当前值（归档模式下拉的回显真源）

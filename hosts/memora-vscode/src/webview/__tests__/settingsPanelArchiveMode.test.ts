@@ -119,7 +119,7 @@ function pushPreference(provider: MemoraSettingsPanel): void {
       'loadConfig',
       'loadMemory',
       'loadSkills',
-      'loadAllowedPathsStatus',
+      // 2026-11-09（B7）：白名单状态推送已外置到 securityServerOps，不再是类私有方法 ⇒ 移出 stub 清单
       'pushMcpStatus',
     ] as const
   ).forEach((m) => {

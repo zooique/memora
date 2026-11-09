@@ -159,7 +159,8 @@ export async function resetUserData(scope: UserDataResetScope): Promise<ResetRep
     const deleted = await deleteSecret(scope.secrets, providerSecretKey(name));
     // 失败即抛出的契约不变（调用方 catch + 失败不 reload + 各步骤幂等可重试），
     // 但消息带语义标签（哪个 Provider 的 key、失败原因），与 settings 通道同构
-    if (!deleted.ok) throw new Error(secretErrorText(`API Key「${name}」清理`, deleted));
+    if (!deleted.ok)
+      throw new Error(secretErrorText(vscode.l10n.t('Cleaning up API key "{0}"', name), deleted));
     report.secretsCleared.push(name);
   }
 
@@ -169,7 +170,8 @@ export async function resetUserData(scope: UserDataResetScope): Promise<ResetRep
   //    否则初始化流程会永久卡住、用户看不到任何回执。失败按本函数契约抛出。
   for (const fullKey of listUserSettingKeys(scope.packageJson)) {
     const written = await writeSetting(toRelativeSettingKey(fullKey), undefined);
-    if (!written.ok) throw new Error(writeErrorText(`用户级设置「${fullKey}」`, written));
+    if (!written.ok)
+      throw new Error(writeErrorText(vscode.l10n.t('User setting "{0}"', fullKey), written));
     report.settingsCleared.push(fullKey);
   }
 

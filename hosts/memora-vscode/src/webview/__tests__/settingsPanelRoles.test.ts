@@ -948,9 +948,9 @@ describe('settingsPanel.switchTab —— 导航落点兜底（不可投递时只
     provider = new MemoraSettingsPanel({} as never, {} as never);
     provider.setAgentFactory(async () => ({ on: vi.fn(), off: vi.fn() }) as unknown as Agent);
     provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
-    (
-      ['loadRoles', 'loadConfig', 'loadMemory', 'loadSkills', 'loadAllowedPathsStatus'] as const
-    ).forEach((m) => {
+    // 2026-11-09（B7）：白名单状态推送已外置到 securityServerOps（`loadAllowedPathsStatusOp`），
+    // 不再是类私有方法 ⇒ 从 stub 清单移除；它同样是「读配置 → post」的纯动作。
+    (['loadRoles', 'loadConfig', 'loadMemory', 'loadSkills'] as const).forEach((m) => {
       vi.spyOn(provider as unknown as Record<string, () => Promise<void>>, m).mockResolvedValue(
         undefined,
       );

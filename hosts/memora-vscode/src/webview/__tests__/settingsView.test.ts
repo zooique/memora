@@ -288,8 +288,9 @@ describe('脚本执行二次确认开关（2026-10-24 协议治理合并；2026-
     );
     const statusEl = document.getElementById('securityStatus') as HTMLElement;
     // 2026-10-03：开关语义已含 run_command（普通命令），文案随之改判——
-    // 原「脚本执行前审批」漏了命令执行这一档，对用户是安全承诺失实
-    expect(statusEl.textContent).toContain('脚本/命令执行前审批');
+    // 原「脚本执行前审批」漏了命令执行这一档，对用户是安全承诺失实。
+    // 2026-11-09（B7）：文案英文化后键面即断言值（默认语言下 l10n.t 原样返回源键）。
+    expect(statusEl.textContent).toContain('Enabled: approval before scripts/commands run');
   });
 
   it('切换执行确认开关 → 发送 security_toggle（无 target 字段）+ 更新状态文案', () => {
@@ -302,7 +303,7 @@ describe('脚本执行二次确认开关（2026-10-24 协议治理合并；2026-
       enabled: true,
     });
     expect((document.getElementById('securityStatus') as HTMLElement).textContent).toContain(
-      '脚本/命令执行前审批',
+      'Enabled: approval before scripts/commands run',
     );
   });
 
@@ -835,7 +836,7 @@ describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-1
       }),
     );
     const status = document.querySelector<HTMLElement>('.custom-engine.expanded .ce-test-status');
-    expect(status?.textContent).toContain('验证通过');
+    expect(status?.textContent).toContain('Verified: 3 results returned');
     expect(status?.className).toContain('ok');
     expect(document.querySelector('.custom-engine.expanded .ce-dot')?.className).toContain('ok');
   });

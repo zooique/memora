@@ -453,8 +453,8 @@ const WEBVIEW_PANELS = {
   },
   // 技能页（B5）：骨架 / 运行时（已按 tab 外置 skillsView.ts）/ 选择器 / 技能资产校验与命名判据全部迁完。
   // `settingsPanel.ts` **不登记**：技能域消息虽已英文化，但该文件仍混着对话与其他页签文案，
-  // 登记会连带判别的页（登记口径是文件，不是「页面」——见文件头注册制盲区）。同理 `settingsView.ts`
-  // 仍含安全页中文，待 B7 外置后另行登记。
+  // 登记会连带判别的页（登记口径是文件，不是「页面」——见文件头注册制盲区）。
+  // `settingsView.ts`（容器）已于 B7 随安全页外置后登记在 security 名下。
   skills: {
     state: 'migrated',
     files: [
@@ -489,7 +489,27 @@ const WEBVIEW_PANELS = {
       'extension/host/mcp/resultNormalizer.ts',
     ],
   },
-  security: { state: 'pending', files: [] },
+  // 安全页（B7）：骨架 / 运行时（已按 tab 外置 securityView.ts）/ 面板执行面（securityServerOps）
+  // + 「恢复初始状态」链路（宿主清理与命令层）全部迁完。
+  // `settingsView.ts` 于本批登记：容器此前残留安全页中文（L456 注释承诺「待 B7 外置后另行登记」），
+  // 外置后它只剩挂载表 / 切换 / ready 握手，零可见文案——登记它等于让容器保持干净。
+  // `settingsStyles.ts` 是共享壳样式（含安全页 CSS），当前零 CJK `content` 串；登记在此是为了
+  // 让安全页的可见文案成网（后续任何页往壳里加中文文案都会在此处红，红里能看出真因是「壳」）。
+  // `settingsPanel.ts` 仍不登记（同一文件混着对话与其他页签文案，登记会连带误判别的页）。
+  security: {
+    state: 'migrated',
+    files: [
+      'shared/settingsTabs.ts',
+      'webview/panels/settingsSecurityHtml.ts',
+      'webview/scripts/settingsView.ts',
+      'webview/scripts/securityView.ts',
+      'webview/styles/settingsStyles.ts',
+      'webview/panels/securityServerOps.ts',
+      'webview/helpers/settingsStatusPush.ts',
+      'extension/host/userDataReset.ts',
+      'extension/commands/userDataReset.ts',
+    ],
+  },
   // 作品页是首个范式样板：文件清单与文案真源均已迁移（判据⑰ 生效）。
   works: {
     state: 'migrated',
