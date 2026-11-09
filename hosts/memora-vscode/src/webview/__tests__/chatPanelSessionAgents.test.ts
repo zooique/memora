@@ -1205,14 +1205,14 @@ describe('新建会话默认角色包 · 用户级默认 → 会话快照', () =
     const assembled = ctx.cast._sessionAgents.get(newId) as Agent;
     expect(assembled.rolePackManager?.activeName).toBe(BUILTIN_FALLBACK_PACK);
     const defaultNotice = ctx.posted
-      .filter((m) => m.type === 'notice' && String(m.message ?? '').includes('默认角色包'))
+      .filter((m) => m.type === 'notice' && String(m.message ?? '').includes('Default role pack'))
       .at(-1) as unknown as { level?: string; message?: string } | undefined;
     expect(defaultNotice?.level).toBe('error');
     expect(defaultNotice?.message).toBe(
-      `默认角色包「幽灵角色」不可用，当前使用兜底角色「${BUILTIN_FALLBACK_PACK}」。`,
+      `Default role pack "幽灵角色" is unavailable; using the fallback role "${BUILTIN_FALLBACK_PACK}" instead.`,
     );
     // 与既有「原角色包不可用」区分：默认包不是用户在该会话里选过的角色
-    expect(defaultNotice?.message).not.toContain('原角色包');
+    expect(defaultNotice?.message).not.toContain('The former role pack');
   });
 
   it('草稿徽章投影全局默认；草稿期间不装配（默认只在建会话时快照）', async () => {
@@ -1272,12 +1272,12 @@ describe('新建会话默认角色包 · 用户级默认 → 会话快照', () =
     expect(assembled.rolePackManager?.activeName).toBe(BUILTIN_FALLBACK_PACK);
     // ② 文案判据：走「默认角色包不可用」这条，不是给老会话用的「原角色包不可用」
     const notice = ctx.posted
-      .filter((m) => m.type === 'notice' && String(m.message ?? '').includes('角色包'))
+      .filter((m) => m.type === 'notice' && String(m.message ?? '').includes('role pack'))
       .at(-1) as unknown as { level?: string; message?: string } | undefined;
     expect(notice?.message).toBe(
-      `默认角色包「幽灵角色」不可用，当前使用兜底角色「${BUILTIN_FALLBACK_PACK}」。`,
+      `Default role pack "幽灵角色" is unavailable; using the fallback role "${BUILTIN_FALLBACK_PACK}" instead.`,
     );
-    expect(notice?.message).not.toContain('原角色包');
+    expect(notice?.message).not.toContain('The former role pack');
   });
 
   it('角色包目录读不到 ⇒ 不写 meta，弹「无法校验」（与「包不存在」区分）', async () => {
@@ -1290,14 +1290,14 @@ describe('新建会话默认角色包 · 用户级默认 → 会话快照', () =
     const assembled = ctx.cast._sessionAgents.get(newId) as Agent;
     expect(assembled.rolePackManager?.activeName).toBe(BUILTIN_FALLBACK_PACK);
     const notice = ctx.posted
-      .filter((m) => m.type === 'notice' && String(m.message ?? '').includes('无法校验'))
+      .filter((m) => m.type === 'notice' && String(m.message ?? '').includes('Unable to verify'))
       .at(-1) as unknown as { level?: string; message?: string } | undefined;
     expect(notice?.level).toBe('error');
     expect(notice?.message).toBe(
-      `默认角色包「代码助手」无法校验角色包列表，已使用兜底角色「${BUILTIN_FALLBACK_PACK}」。`,
+      `Default role pack "代码助手": Unable to verify the role pack list. Using the fallback role "${BUILTIN_FALLBACK_PACK}" instead.`,
     );
     // 第三出口不得折叠成「包不存在」：否则用户会去改包名，永远修不好目录问题
-    expect(notice?.message).not.toContain('不可用，当前使用兜底角色');
+    expect(notice?.message).not.toContain('is unavailable; using the fallback role');
   });
 });
 

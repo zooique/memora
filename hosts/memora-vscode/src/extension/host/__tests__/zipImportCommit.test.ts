@@ -33,6 +33,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { ZipFile } from 'yazl';
 
+// vscode 替身：拒绝原因经 `vscode.l10n` 出键面（默认语言下原样返回英文源键，`{0}` 照常插值）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 /** 写盘 / 换名的失败注入控制（序号 = 0 基调用计数；空数组表示不注入） */
 const fsControl = vi.hoisted(() => ({
   /** 需抛错的 writeFile 调用序号（可多点注入，如「提交失败 + 回滚失败」） */

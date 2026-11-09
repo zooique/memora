@@ -35,6 +35,14 @@ import {
   ZIP_IMPORT_LIMITS,
 } from '../userAssets/zipImport.js';
 
+// vscode 替身：拒绝原因经 `vscode.l10n` 出键面（默认语言下原样返回英文源键，`{0}` 照常插值）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
+
 /** 本文件创建的临时目录（afterEach 统一清理） */
 const tempDirs: string[] = [];
 

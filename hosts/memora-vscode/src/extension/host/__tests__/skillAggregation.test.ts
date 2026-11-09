@@ -8,7 +8,7 @@
  * 以及 `resolveSkill`（正文解析唯一收口：角色包 → 全局，与内核 read_skill 同序）与
  * `skillPromptFor`（composer 注入，格式沿用内核 buildSystemPrompt）。
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { Agent } from '@zooique/memora';
 import type { SkillDto } from '../../../shared/protocol.js';
 import { join } from 'node:path';
@@ -19,6 +19,14 @@ import {
   resolveSkill,
   skillPromptFor,
 } from '../skillAggregation.js';
+
+// vscode 替身：被依赖模块的拒绝原因经 `vscode.l10n` 出键面（默认语言下原样返回英文源键，`{0}` 照常插值）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
+}));
 
 const configDir = 'C:/app/dist/extension';
 const userSkillsDir = 'C:/Users/t/.vscode/globalStorage/skills';

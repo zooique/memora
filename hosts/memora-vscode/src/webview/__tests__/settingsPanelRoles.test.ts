@@ -149,7 +149,7 @@ describe('settingsPanel.activateRole —— 切换失败两成因判定', () => 
     // 未锁 → 必须查询锁定判据后才能断定"不存在"
     expect(getRolePackSwitchLockStatus).toHaveBeenCalled();
     expect(notices(posted)).toEqual([
-      { type: 'notice', level: 'error', message: '角色包不存在：ghost' },
+      { type: 'notice', level: 'error', message: 'Role pack not found: ghost' },
     ]);
   });
 
@@ -171,9 +171,9 @@ describe('settingsPanel.activateRole —— 切换失败两成因判定', () => 
     expect(msgs).toHaveLength(1);
     // 不得出现假错误「角色包不存在」
     expect(msgs[0]?.level).toBe('info');
-    expect(msgs[0]?.message).not.toContain('不存在');
-    expect(msgs[0]?.message).toContain('锁定');
-    expect(msgs[0]?.message).toContain('秒后再试');
+    expect(msgs[0]?.message).not.toContain('not found');
+    expect(msgs[0]?.message).toContain('rate-limited');
+    expect(msgs[0]?.message).toContain('Try again in 90 seconds');
   });
 
   it('切换被锁定但 unlockAt 缺失 → 退化为不含秒数的锁定提示（不误报不存在）', async () => {
@@ -189,7 +189,7 @@ describe('settingsPanel.activateRole —— 切换失败两成因判定', () => 
     const msgs = notices(posted);
     expect(msgs).toHaveLength(1);
     expect(msgs[0]?.level).toBe('info');
-    expect(msgs[0]?.message).toBe('角色包切换已被限流锁定，请稍后再试');
+    expect(msgs[0]?.message).toBe('Role pack switching is rate-limited. Please try again later.');
   });
 
   it('切换成功 → 只作用于当前会话 agent（不写 globalState）+ 不弹任何 notice', async () => {
@@ -313,7 +313,8 @@ describe('settingsPanel.setDefaultRole —— 新建会话默认角色包（用�
     expect(notices(posted).at(-1)).toEqual({
       type: 'notice',
       level: 'info',
-      message: '已将「代码助手」设为新建会话的默认角色（不影响已有会话）',
+      message:
+        '"代码助手" is now the default role for new sessions (existing sessions are unaffected)',
     });
   });
 
@@ -325,7 +326,7 @@ describe('settingsPanel.setDefaultRole —— 新建会话默认角色包（用�
     expect(ok).toBe(false);
     expect(vscodeConfigMock.cfgUpdate).not.toHaveBeenCalled();
     const message = notices(posted)[0]?.message ?? '';
-    expect(message).toBe('角色包不存在：ghost');
+    expect(message).toBe('Role pack not found: ghost');
     // 旧拒绝路径（与建会话口径不一致的「先打开会话」）必须彻底消失
     expect(message).not.toContain('请先在对话中打开');
     expect(message).not.toContain('没有可校验的角色目录');
@@ -340,7 +341,9 @@ describe('settingsPanel.setDefaultRole —— 新建会话默认角色包（用�
     expect(vscodeConfigMock.cfgUpdate).not.toHaveBeenCalled();
     const message = notices(posted)[0]?.message ?? '';
     // 中性措辞：不承诺失败原因是目录 IO 还是包损坏（说明错原因比不说更糟）
-    expect(message).toBe('无法校验角色包列表，未写入默认角色「代码助手」');
+    expect(message).toBe(
+      'Unable to verify the role pack list; the default role "代码助手" was not written',
+    );
     expect(message).not.toContain('角色包不存在');
   });
 
@@ -351,7 +354,7 @@ describe('settingsPanel.setDefaultRole —— 新建会话默认角色包（用�
 
     expect(ok).toBe(false);
     expect(vscodeConfigMock.cfgUpdate).not.toHaveBeenCalled();
-    expect(notices(posted)[0]?.message).toContain('无法校验角色包列表');
+    expect(notices(posted)[0]?.message).toContain('Unable to verify the role pack list');
   });
 
   it('空串 → 取消默认（无需校验：目录读不到也应允许取消）', async () => {
@@ -361,7 +364,9 @@ describe('settingsPanel.setDefaultRole —— 新建会话默认角色包（用�
 
     expect(ok).toBe(true);
     expect(vscodeConfigMock.cfgUpdate).toHaveBeenCalledWith('defaultRolePack', '', 1);
-    expect(notices(posted).at(-1)?.message).toBe('已取消默认角色：新建会话将使用系统兜底角色');
+    expect(notices(posted).at(-1)?.message).toBe(
+      'Default role cleared: new sessions will use the system fallback role',
+    );
   });
 });
 
@@ -398,7 +403,7 @@ describe('settingsPanel.toggleSkillDisabled —— 技能启停开关', () => {
       vscode.ConfigurationTarget.Global,
     );
     expect(notices(posted)).toEqual([
-      { type: 'notice', level: 'info', message: '已禁用技能「b」' },
+      { type: 'notice', level: 'info', message: 'Disabled skill "b"' },
     ]);
   });
 
@@ -418,7 +423,7 @@ describe('settingsPanel.toggleSkillDisabled —— 技能启停开关', () => {
       vscode.ConfigurationTarget.Global,
     );
     expect(notices(posted)).toEqual([
-      { type: 'notice', level: 'info', message: '已启用技能「b」' },
+      { type: 'notice', level: 'info', message: 'Enabled skill "b"' },
     ]);
   });
 
@@ -430,7 +435,11 @@ describe('settingsPanel.toggleSkillDisabled —— 技能启停开关', () => {
 
     expect(vscodeConfigMock.cfgUpdate).not.toHaveBeenCalled();
     expect(notices(posted)).toEqual([
-      { type: 'notice', level: 'error', message: 'Agent 未就绪，无法切换技能禁用状态' },
+      {
+        type: 'notice',
+        level: 'error',
+        message: 'Memora Agent is not ready; cannot toggle the skill disabled state',
+      },
     ]);
   });
 });
@@ -680,7 +689,7 @@ describe('settingsPanel.roles_save / roles_detail —— 角色策略保存链�
     const msgs = saveNotices(posted);
     expect(msgs).toHaveLength(1);
     expect(msgs[0]?.level).toBe('error');
-    expect(msgs[0]?.message).toContain('不可编辑');
+    expect(msgs[0]?.message).toContain('cannot be edited');
   });
 
   it('用户包保存 → 全量保真：只换 strategy 段，其余字段保留 + 2 空格尾换行 + reload（变异 M2/M4 锁）', async () => {
@@ -712,7 +721,11 @@ describe('settingsPanel.roles_save / roles_detail —— 角色策略保存链�
     });
     expect(posted.some((m) => m.type === 'roles_loaded')).toBe(true);
     expect(saveNotices(posted)).toEqual([
-      { type: 'notice', level: 'info', message: '「writer」的策略配置已保存' },
+      {
+        type: 'notice',
+        level: 'info',
+        message: 'The strategy configuration for "writer" has been saved',
+      },
     ]);
   });
 
@@ -727,7 +740,7 @@ describe('settingsPanel.roles_save / roles_detail —— 角色策略保存链�
     const msgs = saveNotices(posted);
     expect(msgs).toHaveLength(1);
     expect(msgs[0]?.level).toBe('error');
-    expect(msgs[0]?.message).toContain('保存失败');
+    expect(msgs[0]?.message).toContain('Save failed');
   });
 
   it('空 strategy 保存 → 删除 strategy 键（保持「未声明」语义，不固化空对象），其余字段保留', async () => {
@@ -1172,7 +1185,7 @@ describe('settingsPanel.activateRole —— 草稿期角色切换', () => {
     expect(setName).not.toHaveBeenCalled();
     expect(getAgent).not.toHaveBeenCalled();
     expect(notices(posted)).toEqual([
-      { type: 'notice', level: 'error', message: '角色包不存在：ghost' },
+      { type: 'notice', level: 'error', message: 'Role pack not found: ghost' },
     ]);
   });
 
@@ -1188,7 +1201,8 @@ describe('settingsPanel.activateRole —— 草稿期角色切换', () => {
       {
         type: 'notice',
         level: 'error',
-        message: '草稿期暂无可校验的角色目录（尚未装配任何会话），请先发送一条内容后再选择',
+        message:
+          'No role pack directory is available to verify in the draft (no session is assembled yet). Send a message first, then choose.',
       },
     ]);
   });
@@ -1208,7 +1222,8 @@ describe('settingsPanel.activateRole —— 草稿期角色切换', () => {
       {
         type: 'notice',
         level: 'error',
-        message: '草稿期角色切换通道未就绪，无法记录选择，请稍后重试',
+        message:
+          'The draft role switching channel is not ready, so the selection cannot be recorded. Please try again later.',
       },
     ]);
   });

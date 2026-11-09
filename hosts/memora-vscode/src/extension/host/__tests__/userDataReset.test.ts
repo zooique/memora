@@ -67,6 +67,11 @@ const globalState = {
 vi.mock('vscode', () => ({
   ConfigurationTarget: { Global: 1, Workspace: 2 },
   workspace: { getConfiguration: () => h.config },
+  // 清理失败原因经 `vscode.l10n` 出键面（默认语言下原样返回英文源键，`{0}` 照常插值）
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
 }));
 
 import * as vscode from 'vscode';
@@ -223,7 +228,7 @@ describe('userDataReset.resetUserData', () => {
 
     await expect(
       resetUserData(makeScope({ secrets: failingSecrets as unknown as vscode.SecretStorage })),
-    ).rejects.toThrow('API Key「p1」清理 失败：Credential Manager 不可用');
+    ).rejects.toThrow('API Key「p1」清理 failed: Credential Manager 不可用');
 
     // K1 顺序不变：密钥删除失败即中止，settings 一个键都没清（不清 name 先丢的残留之外，
     // 也保证「半完成初始化」不会越过密钥通道继续往下走）
@@ -242,7 +247,7 @@ describe('userDataReset.resetUserData', () => {
       const pending = resetUserData(
         makeScope({ secrets: hangingSecrets as unknown as vscode.SecretStorage }),
       );
-      const assertion = expect(pending).rejects.toThrow('超时');
+      const assertion = expect(pending).rejects.toThrow('timed out');
       await vi.advanceTimersByTimeAsync(5000);
       await assertion;
     } finally {

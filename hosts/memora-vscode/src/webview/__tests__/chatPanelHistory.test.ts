@@ -3277,7 +3277,7 @@ describe('会话级角色包：解析失败不许静默（2026-11-07）', () => 
     expect(notices).toHaveLength(1);
     expect(notices[0]!.level).toBe('error');
     expect(notices[0]!.message).toBe(
-      '原角色包「已删除的角色包」已不可用，当前使用默认角色「memora助手」。',
+      'The former role pack "已删除的角色包" is unavailable; using the default role "memora助手" instead.',
     );
   });
 

@@ -202,13 +202,13 @@ describe('chatView clear_ok 消息区清理', () => {
       unavailableName: '已删除的角色包',
     });
     expect(badge.hidden).toBe(false);
-    expect(badge.textContent).toBe('memora助手（原「已删除的角色包」不可用）');
-    expect(badge.getAttribute('aria-label')).toContain('原角色包「已删除的角色包」已不可用');
+    expect(badge.textContent).toBe('memora助手(the former "已删除的角色包" is unavailable)');
+    expect(badge.getAttribute('aria-label')).toContain('Role pack "已删除的角色包" is unavailable');
 
     // 差异消失（正常推送）⇒ 后缀撤下，不残留上一次会话的标记
     dispatch({ type: 'chat_role_packs', packs: [], activeName: 'memora助手' });
     expect(badge.textContent).toBe('memora助手');
-    expect(badge.getAttribute('aria-label')).not.toContain('已不可用');
+    expect(badge.getAttribute('aria-label')).not.toContain('is unavailable');
   });
 
   it('角色徽章点击 → post open_settings_tab(roles)（导航到设置面板角色选项卡，切换逻辑不走本路径）', () => {
@@ -240,7 +240,7 @@ describe('chatView clear_ok 消息区清理', () => {
     const input = document.getElementById('input') as HTMLTextAreaElement;
     input.value = '讨论选题';
     (icon as HTMLButtonElement).click();
-    expect(input.value).toBe('小组会议：讨论选题');
+    expect(input.value).toBe('Team meeting: 讨论选题');
 
     // 回归（启动时 replaySession + 装配后补推各推一次）→ 复用同一元素，不得出现第 2 个图标
     dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家', team });
@@ -10016,7 +10016,7 @@ describe('技能启停：对话区（用户通道）显式标注（SKILL-S2）',
     const on = menu.querySelector('[data-treedd-id="正常技能"]') as HTMLElement;
     // 标记在：弱化 + 后缀（复用设置页同一词汇，不新增术语）
     expect(off.classList.contains('is-disabled')).toBe(true);
-    expect(off.querySelector('.treedd__item-note')?.textContent).toBe('已禁用');
+    expect(off.querySelector('.treedd__item-note')?.textContent).toBe('Disabled');
     // 标记不在：启用中的技能不得被误标（反向守卫，防「一刀切标禁用」）
     expect(on.classList.contains('is-disabled')).toBe(false);
     expect(on.querySelector('.treedd__item-note')).toBeNull();
@@ -10031,7 +10031,7 @@ describe('技能启停：对话区（用户通道）显式标注（SKILL-S2）',
     const chip = document.querySelector('#skillChips .skill-chip') as HTMLElement;
     expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('已禁用技能');
     expect(chip.classList.contains('is-disabled')).toBe(true);
-    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('已禁用');
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('Disabled');
     // 「不拦截」的判据 = chip 仍被创建（技能仍挂在 composer 上，发送时才由 host 判定）。
     // 若改成「禁止选择」（currentSkill 置 null），chip 直接不存在 → 上一行断言即红。
   });
@@ -10518,7 +10518,7 @@ describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () =>
     });
     const chip = document.querySelector('#skillChips .skill-chip') as HTMLElement;
     expect(chip.classList.contains('is-missing')).toBe(true);
-    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('已失效');
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('Unavailable');
   });
 
   it('失效灰显：回种的引用路径被宿主判失效（missing）→ 灰「已失效」，不静默丢', () => {
@@ -10530,6 +10530,7 @@ describe('常驻锁 pinned：🔒 切换 · 发送保留 · 钉住上浮', () =>
     });
     const chip = document.querySelector('#refChips .skill-chip') as HTMLElement;
     expect(chip.classList.contains('is-missing')).toBe(true);
+    // 该注记（引用 chip 的失效标记）仍走未迁移的宿主分支，当前用中文源文案
     expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('已失效');
   });
 
@@ -11074,7 +11075,7 @@ describe('技能菜单搜索（名称/描述过滤 · 重建保词）', () => {
     // 清除项始终可达：过滤再狠也不能把「取消挂载」藏掉
     const clear = document.querySelector('.skill-picker [data-treedd-id="__clear_skill"]');
     expect(clear).not.toBeNull();
-    expect(clear?.textContent).toBe('未选择技能');
+    expect(clear?.textContent).toBe('No skill selected');
   });
 
   it('按描述匹配：名称不中但描述命中 → 仍显示（双匹配域判据）', () => {
@@ -11099,14 +11100,16 @@ describe('技能菜单搜索（名称/描述过滤 · 重建保词）', () => {
     search('禁用');
     const item = document.querySelector('.skill-picker [data-treedd-id="禁用技能"]') as HTMLElement;
     expect(item.classList.contains('is-disabled')).toBe(true);
-    expect(item.querySelector('.treedd__item-note')?.textContent).toBe('已禁用');
+    expect(item.querySelector('.treedd__item-note')?.textContent).toBe('Disabled');
   });
 
   it('空态：有技能但零命中 → 「无匹配技能」；无技能时不显示（区分两类空）', () => {
     mountChatView();
     dispatchSearchableSkills();
     search('绝无此词');
-    expect(document.querySelector('.skill-picker .treedd__empty')?.textContent).toBe('无匹配技能');
+    expect(document.querySelector('.skill-picker .treedd__empty')?.textContent).toBe(
+      'No matching skills',
+    );
     // 反向守卫：技能清单为空时是「尚未下发」而非「无匹配」，不误报空态
     mountChatView();
     expect(document.querySelector('.skill-picker .treedd__empty')).toBeNull();
@@ -12251,8 +12254,8 @@ describe('工具权限徽章四分支（block / 未声明 / 显式空 / 白名�
     dispatch({ type: 'capability_badge', toolMode: 'block', capabilityState: { kind: 'all' } });
     const badge = document.getElementById('currentCapabilityBadge') as HTMLElement;
     expect(badge.hidden).toBe(false);
-    expect(badge.textContent).toBe('纯 LLM');
-    expect(badge.title).toBe('纯 LLM 模式（无工具暴露）');
+    expect(badge.textContent).toBe('Pure LLM');
+    expect(badge.title).toBe('Pure LLM mode (no tools are exposed)');
   });
 
   it('allow + 未声明（kind=all）→ 「全部工具」+ 悬停解释，徽章点亮', () => {
@@ -12260,8 +12263,10 @@ describe('工具权限徽章四分支（block / 未声明 / 显式空 / 白名�
     dispatch({ type: 'capability_badge', toolMode: 'allow', capabilityState: { kind: 'all' } });
     const badge = document.getElementById('currentCapabilityBadge') as HTMLElement;
     expect(badge.hidden).toBe(false);
-    expect(badge.textContent).toBe('全部工具');
-    expect(badge.title).toBe('允许所有工具（角色包未声明能力白名单）');
+    expect(badge.textContent).toBe('All tools');
+    expect(badge.title).toBe(
+      'All tools are allowed (the role pack declares no capability allowlist)',
+    );
   });
 
   it('allow + 显式空（kind=residentOnly）→ 「仅基础工具」，不得冒充「全部工具」', () => {
@@ -12274,9 +12279,9 @@ describe('工具权限徽章四分支（block / 未声明 / 显式空 / 白名�
     const badge = document.getElementById('currentCapabilityBadge') as HTMLElement;
     expect(badge.hidden).toBe(false);
     // CAP-TRISTATE-1 的原始缺陷：显式空 `[]` 被显示层折叠成「全部工具」——此处钉住反向断言
-    expect(badge.textContent).toBe('仅基础工具');
-    expect(badge.textContent).not.toBe('全部工具');
-    expect(badge.title).toContain('联网、代码执行');
+    expect(badge.textContent).toBe('Basic tools only');
+    expect(badge.textContent).not.toBe('All tools');
+    expect(badge.title).toContain('web search and code execution');
   });
 
   it('allow + 白名单（kind=list）→ label 去重后「 · 」连接 + 「允许：」悬停解释', () => {
@@ -12296,7 +12301,7 @@ describe('工具权限徽章四分支（block / 未声明 / 显式空 / 白名�
     const badge = document.getElementById('currentCapabilityBadge') as HTMLElement;
     expect(badge.hidden).toBe(false);
     expect(badge.textContent).toBe('文件 · 联网');
-    expect(badge.title).toBe('允许：文件、联网');
+    expect(badge.title).toBe('Allowed: 文件 · 联网');
   });
 });
 
@@ -13657,7 +13662,7 @@ describe('草稿页 = 角色显示内核兜底包，其余四项会话级投影�
     expect(el.roleBadge.hidden).toBe(false);
     expect(el.roleBadge.textContent).toContain('代码助手');
     expect(el.capabilityBadge.hidden).toBe(false);
-    expect(el.capabilityBadge.textContent).toBe('全部工具');
+    expect(el.capabilityBadge.textContent).toBe('All tools');
     expect(el.percent.textContent).toBe('25%');
     expect(el.backgroundBar?.hidden).toBe(false);
     expect(el.planBar.hidden).toBe(false);

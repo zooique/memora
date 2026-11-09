@@ -169,7 +169,7 @@ describe('settingsPanel.roles_team_save —— 组队热更广播到所有已装
       { leader: '设计师', members: ['数据分析师'] },
     ]);
     expect(posted.filter((m) => m.type === 'notice')).toEqual([
-      { type: 'notice', level: 'info', message: '小组已保存' },
+      { type: 'notice', level: 'info', message: 'Team saved' },
     ]);
   });
 
@@ -217,7 +217,7 @@ describe('settingsPanel.roles_team_save —— 组队热更广播到所有已装
     }[];
     expect(notices).toHaveLength(1);
     expect(notices[0]?.level).toBe('error');
-    expect(notices[0]?.message).toContain('热更成功 1 个会话，失败 1 个');
-    expect(notices[0]?.message).toContain('B：实例已释放');
+    expect(notices[0]?.message).toContain('hot update succeeded for 1 sessions and failed for 1');
+    expect(notices[0]?.message).toContain('B: 实例已释放');
   });
 });
