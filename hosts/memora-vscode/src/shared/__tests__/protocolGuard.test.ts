@@ -44,9 +44,14 @@ import { join } from 'node:path';
  * （2026-10-28 实测 131 ⇒ 132，Q3 后 133 ⇒ 134；2026-11-02 增三条后 136 ⇒ 137，
  *  同日剪枝后实测 134 ⇒ 135；同日压缩包导入合并为单条后实测 135 ⇒ 136；
  *  2026-11-03 复制通道合并为单条后实测 136 ⇒ 137；
- *  2026-11-06 增会话活跃度快照 `session_activity` 后实测 137 ⇒ 138）。
+ *  2026-11-06 增会话活跃度快照 `session_activity` 后实测 137 ⇒ 138；
+ *  2026-11-09 作品投影迁入设置页 +1（WORK-PROJECTION-MOVE-1）：新增**同名双向**
+ *  `work_projection`（W→E 四个动作 / E→W 视图状态）。按既有「同名消息类型共用一条通道」
+ *  去重口径只占 1 条，未给每个按钮 / 每个触发面单开通道 ⇒ 实测 137 ⇒ 138，
+ *  阈值按「当前计数 + 1 余量」重算 139。载荷判别字段一律叫 `kind` / `action`，
+ *  禁叫 `type`——本守卫按 `type: '...'` 字面量计数，DTO 里多一个同名字段即被误计。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 138;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 139;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

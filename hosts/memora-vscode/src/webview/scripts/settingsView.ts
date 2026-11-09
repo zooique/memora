@@ -11,7 +11,7 @@
  *     （#list/#statBar 等在各自根内不冲突，故它们是「根内唯一」而非全局唯一）；
  *   - 监听 host 的 settings_switch_tab 指令（configureModel 命令 → 大模型选项卡）。
  *
- * 挂载顺序（重要约定）：config → memory → roles → skills → mcp → security。**ready 握手由
+ * 挂载顺序（重要约定）：config → memory → roles → skills → mcp → security → works。**ready 握手由
  * 容器在本函数末尾统一发出**（不是某个子视图发的）：等全部子视图挂载完、消息监听器都注册
  * 之后才请 host 推送，host 侧待切选项卡的补发才安全 —— 对齐 chatPanel replaySession 的
  * ready 时序修复范式。
@@ -32,6 +32,7 @@ import { createMemoryView } from './memoryView.js';
 import { createRolesView } from './rolesView.js';
 // MCP 子视图（观察面 + 增删改停启）已按域拆出：本文件是选项卡容器，不该长成第二个大文件
 import { createMcpView } from './mcpView.js';
+import { createWorksView } from './worksView.js';
 import { populateIcons } from './icons.js';
 import { createPager, PagerController } from './pager.js';
 // escapeHtml：HTML 转义纯函数单一真理源（SSOT 收敛，见 helpers/escapeHtml.ts）
@@ -85,6 +86,7 @@ export const SETTINGS_VIEW_MOUNTS: ReadonlyArray<{ name: SettingsTab; make: Moun
   { name: 'skills', make: createSkillsView },
   { name: 'mcp', make: createMcpView },
   { name: 'security', make: createSecurityView },
+  { name: 'works', make: createWorksView },
 ];
 
 /**

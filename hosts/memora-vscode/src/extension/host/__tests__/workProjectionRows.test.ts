@@ -1,17 +1,18 @@
 /**
- * 作品投影行派生测试 — 树视图的「显示形状」唯一判据面
+ * 作品投影行派生测试 — 设置页「显示形状」唯一判据面
  *
  * 判据来源：`host/workProjectionRows.ts` 的 `deriveWorkProjectionView`（纯函数）。
  * 本文件钉的是**派生关系**（内核快照 → 行/空态/失效徽标），不碰 vscode、不碰内核、
  * 不拉起扩展宿主。
  *
- * 🔴 反假绿纪律：每条断言都钉具体字段值（label / description / icon / contextValue / tooltip），
+ * 🔴 反假绿纪律：每条断言都钉具体字段值（statusText / resident / hasFailure / tooltip），
  * 禁止只断言「函数被调用」或「返回了数组」——那类断言在实现退化成空数组时依然绿。
+ * 侧边栏树退役后，图标 id 与 contextValue 一并从派生形状移除（渲染面各归一侧），
+ * 本套件改钉语义二元组，不再断言任何 ThemeIcon 字面量。
  */
 import { describe, it, expect } from 'vitest';
 import {
   deriveWorkProjectionView,
-  WORK_PROJECTION_ITEM_CONTEXT,
   type ResidentFailureReason,
   type ResidentFailureView,
   type ResidentReportView,
@@ -92,7 +93,7 @@ describe('派生：非行状态（三种「拿不到行」的原因必须分开�
 });
 
 describe('派生：行字段', () => {
-  it('常驻条目的行：状态后缀 / 图标 / contextValue / tooltip 逐字段钉死', () => {
+  it('常驻条目的行：状态后缀 / resident / hasFailure / tooltip 逐字段钉死', () => {
     const state = deriveWorkProjectionView({
       hasAgent: true,
       listMalformed: false,
@@ -107,14 +108,14 @@ describe('派生：行字段', () => {
     expect(row.name).toBe('rules');
     expect(row.source).toBe('rules.md');
     expect(row.statusText).toBe('项目规则');
-    expect(row.icon).toBe('shield');
-    expect(row.contextValue).toBe(WORK_PROJECTION_ITEM_CONTEXT);
+    expect(row.resident).toBe(true);
+    expect(row.hasFailure).toBe(false);
     // tooltip 同时带源路径与说明（不打开文件也能确认是哪一份、干什么的）
     expect(row.tooltip).toContain('rules.md');
     expect(row.tooltip).toContain('仓库硬约束');
   });
 
-  it('非常驻条目的行：未设为项目规则 + file 图标（不得出现 shield）', () => {
+  it('非常驻条目的行：未设为项目规则 + resident=false（不得被画成规则）', () => {
     const state = deriveWorkProjectionView({
       hasAgent: true,
       listMalformed: false,
@@ -124,8 +125,8 @@ describe('派生：行字段', () => {
     if (state.kind !== 'rows') throw new Error('state 收窄失败');
     const row = state.rows[0]!;
     expect(row.statusText).toBe('未设为项目规则');
-    expect(row.icon).toBe('file');
-    expect(row.icon).not.toBe('shield');
+    expect(row.resident).toBe(false);
+    expect(row.hasFailure).toBe(false);
   });
 
   it('说明为空 ⇒ tooltip 只留源路径（不留空行尾巴）', () => {
@@ -151,7 +152,7 @@ describe('派生：行字段', () => {
   });
 });
 
-describe('派生：失效徽标（内核报告 → 行后缀 / 告警图标 / tooltip）', () => {
+describe('派生：失效徽标（内核报告 → 行后缀 / hasFailure / tooltip）', () => {
   it('读盘失败家族 ⇒ 未注入（读取失败）；文案进 tooltip 而不是后缀', () => {
     const state = deriveWorkProjectionView({
       hasAgent: true,
@@ -162,7 +163,7 @@ describe('派生：失效徽标（内核报告 → 行后缀 / 告警图标 / to
     if (state.kind !== 'rows') throw new Error('state 收窄失败');
     const row = state.rows[0]!;
     expect(row.statusText).toBe('项目规则 · 未注入（读取失败）');
-    expect(row.icon).toBe('warning');
+    expect(row.hasFailure).toBe(true);
     // 后缀只说分类，内核那句带路径 / 计量的说明放 tooltip（不截断、不改写）
     expect(row.statusText).not.toContain('源文件不存在');
     expect(row.tooltip).toContain('源文件不存在：rules.md');
@@ -231,11 +232,11 @@ describe('派生：失效徽标（内核报告 → 行后缀 / 告警图标 / to
     if (state.kind !== 'rows') throw new Error('state 收窄失败');
     const row = state.rows[0]!;
     expect(row.statusText).toBe('未设为项目规则 · 配置有误');
-    expect(row.icon).toBe('warning');
+    expect(row.hasFailure).toBe(true);
     expect(row.tooltip).toContain('"true"');
   });
 
-  it('只有失效条目变化：同清单里的正常行不得被牵连（无后缀、图标仍表「是不是规则」）', () => {
+  it('只有失效条目变化：同清单里的正常行不得被牵连（无后缀、hasFailure 仍为 false）', () => {
     const state = deriveWorkProjectionView({
       hasAgent: true,
       listMalformed: false,
@@ -244,7 +245,7 @@ describe('派生：失效徽标（内核报告 → 行后缀 / 告警图标 / to
     });
     if (state.kind !== 'rows') throw new Error('state 收窄失败');
     expect(state.rows[1]!.statusText).toBe('未设为项目规则');
-    expect(state.rows[1]!.icon).toBe('file');
+    expect(state.rows[1]!.hasFailure).toBe(false);
   });
 });
 
@@ -261,7 +262,7 @@ describe('派生：报告层面的说明行（不得把「没求值 / 没读到�
     expect(state.notice?.text).toContain('尚未求值');
     // 关键：没求值过不得被画成「已生效」或「零失效」，行保持原样
     expect(state.rows[0]!.statusText).toBe('项目规则');
-    expect(state.rows[0]!.icon).toBe('shield');
+    expect(state.rows[0]!.hasFailure).toBe(false);
   });
 
   it('报告为 null 且没有任何常驻条目 ⇒ 不出说明行（没配规则时这句话是噪音）', () => {

@@ -1,14 +1,14 @@
 /**
- * 设置面板 — editor tab Webview 面板（选项卡式六页合一，单例管理）
+ * 设置面板 — editor tab Webview 面板（选项卡式七页合一，单例管理）
  *
- * 各子视图（角色 / 大模型 / 记忆 / 技能 / MCP / 安全，清单 SSOT = `shared/settingsTabs.ts`）
+ * 各子视图（角色 / 大模型 / 记忆 / 技能 / MCP / 安全 / 作品，清单 SSOT = `shared/settingsTabs.ts`）
  * 共存于单一「设置」面板，内部通过选项卡切换。
  * 子视图保留各自独立行为逻辑，通过共享同一 webview 文档 + root 容器 id 空间隔离共存。
  *
  * L3 分家（2026-10-26）：设置六页整体从侧栏 view 迁入 editor tab（六页合一迁入，非回退到分页前
  * 形态）；对话仍留侧栏。关 tab 即 dispose，重开走 ready 握手重建 + _pendingTab 补发。
  *
- * 上下文保留：panel **设** `retainContextWhenHidden: true`（editor tab 失焦是常态，不设即丢六页
+ * 上下文保留：panel **设** `retainContextWhenHidden: true`（editor tab 失焦是常态，不设即丢各页
  * 表单草稿）。⚠️ 别按「panel 无该选项」的旧结论决策——`WebviewPanelOptions & WebviewOptions`
  * 明载该字段。隐藏期投递语义官方注释自相矛盾 ⇒ 按不可靠设计：凡「投出就清状态」必经
  * `isDeliverable()`（panel 在 ∧ 已 ready ∧ 可见），隐藏期只记 `_pendingTab`、转可见
@@ -76,6 +76,19 @@ import { PRESET_SEARCH_ENGINES } from '../../shared/protocol.js';
 import { probeSearchEngine, validateCustomEngines } from '../../extension/host/searchEngines.js';
 // 角色列表投影外置（纯投影不占本文件行数；判据全部来自既有点）
 import { postRolePackList } from '../helpers/rolePackListView.js';
+// 三条零面板状态依赖的「读配置 → 推消息」动作外置（先腾行后接入作品页）
+import {
+  pushArchiveModePreference,
+  pushCustomSearchEnginesStatus,
+  pushSearchEngineStatus,
+  pushSecurityStatus,
+  readCustomSearchEngines,
+} from '../helpers/settingsStatusPush.js';
+// 作品投影桥接（数据推送 / 动作执行面 / 打开原文件；侧边栏 TreeView 退役后的唯一消费面）
+import {
+  WorkProjectionBridge,
+  setWorkProjectionListener,
+} from '../../extension/host/workProjectionBridge.js';
 // 角色选择动作外置（草稿选择 / 设为默认；校验链与文案单点，见模块头）
 import { selectDraftRolePack, setDefaultRolePack } from '../helpers/rolePackSelectionActions.js';
 // 角色包目录编目读面（与建会话同一份；类型来自决策模块，实现在 extension/host/rolePackCatalog.ts）
@@ -102,7 +115,7 @@ const MEMORY_LIST_LIMIT = 20;
 /** 搜索结果条数 */
 const MEMORY_SEARCH_LIMIT = 20;
 
-/** 设置面板（editor tab 单例；六页合一：角色 / 大模型 / 记忆 / 技能 / MCP / 安全） */
+/** 设置面板（editor tab 单例；七页合一：角色 / 大模型 / 记忆 / 技能 / MCP / 安全 / 作品） */
 export class MemoraSettingsPanel {
   /** 面板类型标识（createWebviewPanel 首参；沿用原侧栏 view id 作面板类型键，不另造） */
   public static readonly viewType = 'memora.settings';
@@ -153,6 +166,11 @@ export class MemoraSettingsPanel {
   private _webviewReady = false;
   /** 对话面板提供者（角色 handoff 预填需跨 webview 投递，由 extension 注入） */
   private _chatProvider: MemoraChatViewProvider | undefined;
+  /** 作品投影桥（数据 / 动作 / 打开原文件的唯一入口；只读探视 Agent，不触发懒装配） */
+  private readonly works = new WorkProjectionBridge({
+    post: (msg) => this.post(msg),
+    peekAgent: () => this._peekAgent?.(this._resolveSessionId?.()),
+  });
   /** 用户技能目录路径（由 extension 注入，用于打开目录功能） */
   private _userSkillsDir: string | undefined;
   /** 系统内置配置目录（configDir/skills/ 所在父目录，extension 注入，用于技能来源判定） */
@@ -180,6 +198,8 @@ export class MemoraSettingsPanel {
     // 触发 ⇒ 由运行时回调驱动回推，否则面板停在旧值（台账缺口②）。注册在这里而不是
     // extension.ts：那边是贴 max-lines 上限的文件，且「谁要这份状态」本就是视图自己的事。
     setMcpStatusListener(() => this.pushMcpStatus());
+    // 清单被本进程改动（登记 / 切换 / 移除）后回推作品页；报告刷新另走内核事件订阅
+    setWorkProjectionListener(() => void this.works.load());
   }
 
   /** 注入 Agent 取用面（真源 = extension 的 `AgentRegistry`；本面板**不缓存实例**）
@@ -289,7 +309,7 @@ export class MemoraSettingsPanel {
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
-        // 上下文保留：editor tab 失焦是常态，默认「不可见即销毁」会丢六页表单草稿（webview 无 setState 兜底）
+        // 上下文保留：editor tab 失焦是常态，默认「不可见即销毁」会丢各页表单草稿（webview 无 setState 兜底）
         // 代价（隐藏期收不到 postMessage）由 onDidChangeViewState 补刷，见文件头说明。
         retainContextWhenHidden: true,
         // roots 刻意不放行 attachments/（零图片消费面，D6 无消费不放宽；与 chatPanel 分岔是刻意的，勿顺手对齐）
@@ -341,6 +361,11 @@ export class MemoraSettingsPanel {
       // 保证命令落点与用户意图一致（对齐 chatPanel replaySession 的 ready 时序修复）
       this.flushPendingTab();
       this.refreshAll();
+      return;
+    }
+    // 作品页：一条通道四个动作，执行面与文件右键 / QuickPick / 命令面板共用
+    if (msg.type === 'work_projection') {
+      await this.works.handle(msg.action, msg.source);
       return;
     }
     // .zip 导入：三入口共用同一命令处理器（面板只做路由）
@@ -733,14 +758,23 @@ export class MemoraSettingsPanel {
       const previous = this._peekAgent?.(this._boundSessionId);
       previous?.off('rolePackSwitched', this.onRolePackSwitched);
       previous?.off('rolePackSwitchLocked', this.onRolePackSwitchLocked);
+      previous?.off('roundSummaryGenerated', this.onRoundSettledForWorks);
     }
     this._boundSessionId = sessionId;
     agent.off('rolePackSwitched', this.onRolePackSwitched);
     agent.on('rolePackSwitched', this.onRolePackSwitched);
     agent.off('rolePackSwitchLocked', this.onRolePackSwitchLocked);
     agent.on('rolePackSwitchLocked', this.onRolePackSwitchLocked);
+    // 一轮对话结束 ⇒ 报告已变，回推作品页徽标；中断轮靠 refreshAll 收敛网兜底（见文件头）。
+    agent.off('roundSummaryGenerated', this.onRoundSettledForWorks);
+    agent.on('roundSummaryGenerated', this.onRoundSettledForWorks);
     return agent;
   }
+
+  /** 轮结算回推（报告刷新在内核 turn 入口；这里只负责把最新态送到 webview） */
+  private readonly onRoundSettledForWorks = (): void => {
+    void this.works.load();
+  };
 
   private readonly onRolePackSwitched = (): void => {
     void this.loadRoles();
@@ -1564,15 +1598,7 @@ export class MemoraSettingsPanel {
     }
   }
 
-  /**
-   * 加载并推送安全设置状态（settings 视图 ready 时调用）
-   *
-   * 从 globalState 读取持久化开关值，推送给 webview 渲染初始状态。
-   */
-  private loadSecurityStatus(): void {
-    const scripts = this._globalState?.get<boolean>(CONFIRM_SCRIPTS_KEY) ?? false;
-    this.post({ type: 'security_status', confirmScripts: scripts });
-  }
+  // 零面板状态依赖的「读配置 → 推消息」动作统一外置到 helpers/settingsStatusPush.ts
 
   /**
    * 设置白名单额外允许路径（allowed_paths_set 消息处理）
@@ -1641,7 +1667,7 @@ export class MemoraSettingsPanel {
    * 装配期一次性注入，修改后需重载窗口（或重建会话）生效——此处仅持久化 + 回显，不做热装配。
    */
   private async setSearchEngine(engine: SearchEngineSetting): Promise<void> {
-    const customs = this.readCustomSearchEngines();
+    const customs = readCustomSearchEngines();
     const valid =
       (PRESET_SEARCH_ENGINES as readonly string[]).includes(engine) ||
       customs.some((e) => e.name === engine);
@@ -1665,14 +1691,6 @@ export class MemoraSettingsPanel {
       level: 'info',
       message: `已切换网页搜索引擎：${engine}（重载窗口后生效）`,
     });
-  }
-
-  /** 加载并推送当前搜索引擎选择（settings 视图 ready 时调用） */
-  private loadSearchEngineStatus(): void {
-    const engine = vscode.workspace
-      .getConfiguration('memora')
-      .get<SearchEngineSetting>('searchEngine', 'auto');
-    this.post({ type: 'search_engine_status', engine });
   }
 
   // ─── 会话归档模式（archive_mode_set 消息处理） ───
@@ -1700,7 +1718,7 @@ export class MemoraSettingsPanel {
       this.post({ type: 'notice', level: 'error', message: `无效的归档模式：${String(mode)}` });
       // 拒收即复位：下拉此时已停在（被篡改的）非法值上，回推持久值让它回到偏好。
       // 口径与切换路径一致——archive_mode_status 恒推持久值，webview 据此回写 select。
-      this.loadArchiveModePreference();
+      pushArchiveModePreference((m) => this.post(m));
       return;
     }
     // 先落盘再热更新：用户偏好是持久真相，运行时切换是 hot-path 优化。
@@ -1712,7 +1730,7 @@ export class MemoraSettingsPanel {
         level: 'error',
         message: writeErrorText('归档模式设置', written),
       });
-      this.loadArchiveModePreference();
+      pushArchiveModePreference((m) => this.post(m));
       return;
     }
     // ⚠ 初值必须 false：「已应用」只由「内核真的切了」这一个事实决定。旧实现初值 true
@@ -1751,28 +1769,7 @@ export class MemoraSettingsPanel {
     }
   }
 
-  /**
-   * 加载并回推归档模式**偏好**（settings 视图 ready 握手 + 切换/拒收后回推）
-   *
-   * 命名刻意说「偏好」不说「状态」：读的是用户级设置 `memora.archiveMode` 的**持久值**
-   * （真源 = 用户偏好），**不是运行时真相**（运行时真相的官方读口 = 内核 `getArchiveMode()`，
-   * 仅供内核侧往返测试消费，不进 UI——UI 层不开第二条真值运输通道）。旧名
-   * `loadArchiveModeStatus` 把「偏好」说成「状态」，正是批次四「下拉显示新值 / 运行时仍旧值」
-   * 这条缺口的认知来源之一。
-   */
-  private loadArchiveModePreference(): void {
-    const mode = vscode.workspace
-      .getConfiguration('memora')
-      .get<ArchiveMode>('archiveMode', 'full');
-    this.post({ type: 'archive_mode_status', mode });
-  }
-
-  /** 读取用户自定义搜索引擎清单 */
-  private readCustomSearchEngines(): CustomSearchEngineConfig[] {
-    return vscode.workspace
-      .getConfiguration('memora')
-      .get<CustomSearchEngineConfig[]>('customSearchEngines', []);
-  }
+  // 归档模式偏好推送见 helpers/settingsStatusPush.ts（持久值，不是内核运行时真相）
 
   /**
    * 持久化用户自定义搜索引擎清单（custom_search_engines_set 消息处理）
@@ -1786,7 +1783,7 @@ export class MemoraSettingsPanel {
    */
   private rejectCustomEngines(reason: string): void {
     this.post({ type: 'notice', level: 'error', message: reason });
-    this.post({ type: 'custom_search_engines_status', engines: this.readCustomSearchEngines() });
+    this.post({ type: 'custom_search_engines_status', engines: readCustomSearchEngines() });
   }
 
   private async setCustomSearchEngines(engines: CustomSearchEngineConfig[]): Promise<void> {
@@ -1797,7 +1794,7 @@ export class MemoraSettingsPanel {
     }
     // 保存前实测验证（host 权威门禁）：仅对相对已持久化清单发生变化的引擎探针（未变引擎跳过，避免重复网络探测）；
     // 任一变化引擎验证未通过（网络失败 / 接口无结构化结果）→ 整体拒绝保存，webview 即便跳过「测试」也无法绕过。
-    const persisted = this.readCustomSearchEngines();
+    const persisted = readCustomSearchEngines();
     for (const e of engines) {
       const unchanged = persisted.some(
         (p) =>
@@ -1828,10 +1825,7 @@ export class MemoraSettingsPanel {
     });
   }
 
-  /** 加载并推送自定义搜索引擎清单（settings 视图 ready 时先于 search_engine_status 调用） */
-  private loadCustomSearchEnginesStatus(): void {
-    this.post({ type: 'custom_search_engines_status', engines: this.readCustomSearchEngines() });
-  }
+  // 自定义搜索引擎清单的「读配置 → 推送」已外置到 helpers/settingsStatusPush.ts（ready / 拒收复位共用）
 
   /**
    * 推送 MCP 服务器状态（MCP 选项卡的观察面）
@@ -1926,15 +1920,16 @@ export class MemoraSettingsPanel {
     void this.loadMemory();
     void this.loadSkills();
     // 安全子视图：写入二次确认开关状态 + 白名单额外路径 + 网页搜索引擎
-    this.loadSecurityStatus();
+    pushSecurityStatus((m) => this.post(m), this._globalState);
     this.loadAllowedPathsStatus();
-    this.loadCustomSearchEnginesStatus();
-    this.loadSearchEngineStatus();
+    pushCustomSearchEnginesStatus((m) => this.post(m));
+    pushSearchEngineStatus((m) => this.post(m));
     // 记忆子视图：会话归档模式当前值（归档模式下拉的回显真源）
-    this.loadArchiveModePreference();
+    pushArchiveModePreference((m) => this.post(m));
     // MCP 子视图：服务器/工具运行态（无独立拉取消息，统一由本函数推送——
     // 未装配时是合法空态，装配完成后由 extension 的热更回推覆盖）
     this.pushMcpStatus();
+    void this.works.load();
   }
 
   /**

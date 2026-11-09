@@ -11,6 +11,8 @@ import type {
 } from '@zooique/memora';
 // 设置面板选项卡标识（type-only：运行时常量不进协议，与 injectionSourceMeta.ts 同取向）
 import type { SettingsTab } from './settingsTabs.js';
+// 作品投影 DTO 与动作名（type-only；形状定义在 shared/workProjectionDto.ts，不进通道计数）
+import type { WorkProjectionAction, WorkProjectionViewState } from './workProjectionDto.js';
 
 /**
  * 消息协议 — extension host ↔ Webview 通信契约
@@ -907,7 +909,16 @@ export type WebviewToExtensionMessage =
    * ⚠️ running 行**只有 `terminate`**：进程在跑必须可见（不变量），
    * 绝不能让它能被藏起来——那正是本缺口最初的样子（「派了人出去办事却不知道他还在不在」）。
    */
-  | { type: 'background_kill'; taskId: string; reason?: 'terminate' | 'dismiss' };
+  | { type: 'background_kill'; taskId: string; reason?: 'terminate' | 'dismiss' }
+  /**
+   * 作品投影（设置页「作品」选项卡）：同一条通道按 action 判别，不为每个按钮单开通道
+   *
+   * `load` = 请求当前清单；`open` = 单击行打开原文件（可编辑）；`toggle` = 切换项目规则；
+   * `unregister` = 仅移除登记。四个动作共用 `runWorkProjectionAction` 执行面。
+   * ⚠️ `source` 由 webview 回传 = 一条「打开任意文件」的上行通道，host 侧**必须**先与内核
+   * 清单对拍、再走 `refPath.resolveUnderPrimaryRoot`；详见 `workProjectionBridge.ts` 头注释。
+   */
+  | { type: 'work_projection'; action: WorkProjectionAction; source?: string };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -1890,7 +1901,9 @@ export type ExtensionToWebviewMessage =
    * **时序契约**：宿主必须先 post 本事件、后 post 携带新队列快照的 turn_update（同一 handler
    * 内顺序调用，postMessage FIFO 保证到达序）——webview 的丢弃缓冲按帧消耗，乱序 = 误上屏。
    */
-  | { type: 'pending_discarded'; items: string[] };
+  | { type: 'pending_discarded'; items: string[] }
+  /** 作品投影视图状态（对 work_projection(load) 的应答，也是四个重推面的统一推送格式） */
+  | { type: 'work_projection'; state: WorkProjectionViewState };
 
 /**
  * 后台任务 UI 投影（**Pick 约束**——改内核字段名即编译报错，禁另立第二套字段）

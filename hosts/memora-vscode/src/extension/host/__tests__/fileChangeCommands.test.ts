@@ -218,9 +218,10 @@ const REGISTER_SOURCES = [
   // 注册点四：commands/registerWork.ts（2026-11-08 作品投影 UI 落地：`memora.registerWork`
   // 的注册随命令整体外置（extension.ts 行数闸），字面量直写；命令本身仍只有一处注册）
   resolve(PKG_ROOT, 'src/extension/commands/registerWork.ts'),
-  // 注册点五：host/workProjectionTree.ts（2026-11-08 作品投影树：`memora.refreshWorkProjection`
-  // 与树 provider 同处注册，字面量直写）
-  resolve(PKG_ROOT, 'src/extension/host/workProjectionTree.ts'),
+  // 注册点五（2026-11-09 退役）：host/workProjectionTree.ts 曾注册
+  // `memora.refreshWorkProjection`。侧边栏树迁入设置页后该文件与三条树命令一并删除，
+  // 动作改由 webview 的 `work_projection` 消息进 `runWorkProjectionAction`，无新注册点。
+  // ⚠️ 旧登记若留在表里 = readFileSync 抛错（僵尸豁免），删文件必须同步删登记。
 ];
 
 /** 注册豁免：两个块级 hunk 命令刻意不贡献（CodeLens 带参调用，暴露即静默失败） */

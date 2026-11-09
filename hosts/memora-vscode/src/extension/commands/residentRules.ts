@@ -5,11 +5,20 @@
  *  - `memora.toggleResidentRule`：右键文件 / 编辑器标签切换该文件的常驻态；
  *  - `memora.manageResidentRules`：QuickPick 管理整份清单（切换 / 移除登记）。
  *
+ * 🔴 动作执行面 SSOT（WORK-PROJECTION-MOVE-1）：本文件的两个入口、设置页「作品」的
+ * 行内按钮、资源管理器「登记作品投影」共四个入口，**翻转 / 移除 / 打开的执行体**
+ * 全部收口在 `host/workProjectionBridge.ts` 的 `runWorkProjectionAction()`。本文件只负责
+ * 「URI → 首根相对路径」与「QuickPick → 选中项 source」这两段入口差异，
+ * 禁止再写一份 `listManagedWorks + setResident` 循环（两份语义必然漂移）。
+ * 侧边栏 TreeView 退役后，`toggleResidentRuleFromTree` / `unregisterWork` 两个树行命令
+ * 及其 `WorkProjectionTreeItem` 载荷一并删除，不留双轨。
+ *
  * 🔴 纪律（宿主零判据）：
  *  1. **能不能设为项目规则、超没超上限、文件在不在、当前是不是项目规则** —— 全部由内核回答。
  *     本文件不得出现字符上限数值 / 文件存在性 / `resident === true` 这类判断；
  *     项目规则态一律读内核归一后的 `listManagedWorks().resident`（判据 = `isResidentEntry`）。
- *  2. 结果文案**原样展示**内核 message（失败四态 + 成功两态），宿主不改写、不归纳。
+ *  2. 结果文案**原样展示**内核 message（失败四态 + 成功两态），宿主不改写、不归纳
+ *     （展示出口在 bridge 的 `showKernelResult` 单点）。
  *  3. URI → 相对路径**必须**走 `toWorkspaceRelativePath` 单点判据（禁用 `asRelativePath`）。
  *
  * 已知平台限制（诚实登记）：VS Code 的菜单标题是 `package.json` 静态贡献，**不支持按文件状态
@@ -19,66 +28,7 @@
 import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
 import { toWorkspaceRelativePath } from '../host/workspaceRelativePath.js';
-import type { WorkProjectionTreeItem } from '../host/workProjectionTree.js';
-
-/** 内核结果面（结构对齐 setResident / unregisterWork，宿主只读这两字段） */
-interface KernelResult {
-  /** 粗粒度结果码（判据真源在内核，宿主只按成功态选提示通道） */
-  reason: string;
-  /** 人读文案（原样展示，禁止改写） */
-  message: string;
-}
-
-/** 成功态结果码（仅决定用「信息」还是「错误」通道，不是能力判据） */
-const SUCCESS_REASONS = new Set(['enabled', 'disabled', 'removed']);
-
-/**
- * 展示内核回执
- *
- * 成功走轻提示，失败走错误提示；**message 原样透传**（文案真源在内核）。
- *
- * @param result 内核返回面
- */
-function showKernelResult(result: KernelResult): void {
-  if (SUCCESS_REASONS.has(result.reason)) {
-    void vscode.window.showInformationMessage(result.message);
-  } else {
-    void vscode.window.showErrorMessage(result.message);
-  }
-}
-
-/**
- * 切换常驻态的核心执行面（**真理源**：按清单相对路径翻转，与入口形态无关）
- *
- * 两个入口（右键文件 URI / 树行）都只做「拿到相对路径」这一段差异，翻转与回执全在这里，
- * 禁止为树入口再写一份 `listManagedWorks + setResident` 循环（两份语义必然漂移）。
- *
- * @param relativePath 清单相对路径（首根语义，调用方负责转换并校验）
- * @param tryGetAgent 取当前工作区 Agent（失败返 null 不抛错）
- */
-async function toggleByRelativePath(
-  relativePath: string,
-  tryGetAgent: () => Promise<Agent | null>,
-): Promise<void> {
-  const agent = await tryGetAgent();
-  if (!agent?.works) {
-    void vscode.window.showWarningMessage('Memora Agent 未就绪，无法切换项目规则');
-    return;
-  }
-
-  try {
-    // 当前态读内核归一结果（未登记 ⇒ 尝试置 true，由内核回 not-found + 指路文案）
-    const entries = await agent.works.listManagedWorks();
-    const current = entries.find((e) => e.source === relativePath);
-    const nextResident = !current?.resident;
-    showKernelResult(await agent.works.setResident(relativePath, nextResident));
-  } catch (err) {
-    // 只有「取清单 / 反序列化」这类意外会到这儿；setResident 自身的失败已由内核结果面承载
-    void vscode.window.showErrorMessage(
-      '切换项目规则失败：' + (err instanceof Error ? err.message : String(err)),
-    );
-  }
-}
+import { runWorkProjectionAction } from '../host/workProjectionBridge.js';
 
 /**
  * 切换单个文件的常驻态（右键 / 编辑器标签入口）
@@ -103,58 +53,7 @@ export async function toggleResidentRuleCommand(
     return;
   }
 
-  await toggleByRelativePath(relResult.relPath, tryGetAgent);
-}
-
-/**
- * 切换常驻态（树行入口）
- *
- * 相对路径已在清单里（内核登记时就是它），**不再经 URI 往返**——那会引入一次
- * 「相对路径 → 绝对 → 相对」的多余转换，且树行不属于任何编辑器选中态。
- *
- * @param item 被右键的树行（payload 见 `WorkProjectionTreeItem`）
- * @param tryGetAgent 取当前工作区 Agent
- */
-export async function toggleResidentRuleFromTreeCommand(
-  item: WorkProjectionTreeItem | undefined,
-  tryGetAgent: () => Promise<Agent | null>,
-): Promise<void> {
-  const row = item?.row;
-  if (!row) {
-    void vscode.window.showWarningMessage('请在作品投影列表的条目上右键');
-    return;
-  }
-  await toggleByRelativePath(row.source, tryGetAgent);
-}
-
-/**
- * 仅移除登记（树行入口；**不删源文件**）
- *
- * @param item 被右键的树行
- * @param tryGetAgent 取当前工作区 Agent
- */
-export async function unregisterWorkCommand(
-  item: WorkProjectionTreeItem | undefined,
-  tryGetAgent: () => Promise<Agent | null>,
-): Promise<void> {
-  const row = item?.row;
-  if (!row) {
-    void vscode.window.showWarningMessage('请在作品投影列表的条目上右键');
-    return;
-  }
-  const agent = await tryGetAgent();
-  if (!agent?.works) {
-    void vscode.window.showWarningMessage('Memora Agent 未就绪，无法移除作品投影');
-    return;
-  }
-  try {
-    // 文案与「删条目 ≠ 删文件」由内核 message 保证，这里只负责展示
-    showKernelResult(await agent.works.unregisterWork(row.source));
-  } catch (err) {
-    void vscode.window.showErrorMessage(
-      '移除作品投影失败：' + (err instanceof Error ? err.message : String(err)),
-    );
-  }
+  await runWorkProjectionAction('toggle', relResult.relPath, tryGetAgent);
 }
 
 /** 管理清单条目（QuickPick 行；`source` / `resident` 直接来自内核快照） */
@@ -253,11 +152,12 @@ export async function manageResidentRulesCommand(
     const picked = await showManagePick(items);
     if (!picked) return;
 
-    if (picked.action === 'remove') {
-      showKernelResult(await works.unregisterWork(picked.item.source));
-    } else {
-      showKernelResult(await works.setResident(picked.item.source, !picked.item.resident));
-    }
+    // 与设置页行内按钮共用同一执行面；不在此处再调 works.setResident / unregisterWork
+    await runWorkProjectionAction(
+      picked.action === 'remove' ? 'unregister' : 'toggle',
+      picked.item.source,
+      tryGetAgent,
+    );
   }
 }
 
@@ -266,7 +166,7 @@ export async function manageResidentRulesCommand(
  *
  * @param context 扩展上下文（订阅随停用自动释放）
  * @param tryGetAgent 取当前工作区 Agent 的闭包（与其余命令同源）
- * @param onMutated 清单发生变更后的刷新回调（树视图据此重拉；不传 = 无树视图消费方）
+ * @param onMutated 清单发生变更后的刷新回调（经 `notifyWorkProjectionChanged` 回推设置页）
  */
 export function registerResidentRuleCommands(
   context: vscode.ExtensionContext,
@@ -280,19 +180,6 @@ export function registerResidentRuleCommands(
     }),
     vscode.commands.registerCommand('memora.manageResidentRules', async () => {
       await manageResidentRulesCommand(tryGetAgent);
-      onMutated?.();
-    }),
-    // 树行入口（右键菜单）：与文件入口共用 toggleByRelativePath，不另写一份翻转逻辑
-    vscode.commands.registerCommand('memora.toggleResidentRuleFromTree', async (item) => {
-      await toggleResidentRuleFromTreeCommand(
-        item as WorkProjectionTreeItem | undefined,
-        tryGetAgent,
-      );
-      onMutated?.();
-    }),
-    // 树行入口：仅移除登记（不删源文件）
-    vscode.commands.registerCommand('memora.unregisterWork', async (item) => {
-      await unregisterWorkCommand(item as WorkProjectionTreeItem | undefined, tryGetAgent);
       onMutated?.();
     }),
   );

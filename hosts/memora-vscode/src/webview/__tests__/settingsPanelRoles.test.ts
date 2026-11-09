@@ -919,20 +919,14 @@ describe('settingsPanel.switchTab —— 导航落点兜底（不可投递时只
     posted = [];
     // open 单例路径：每次创建返回新 mock panel（dispose 后再 open 视为重建）
     vscodeConfigMock.createWebviewPanel.mockImplementation(() => makePanel());
-    // ready 分支的数据推送（loadRoles/loadConfig/…）与导航兜底无关，置空隔离
+    // ready 分支的数据推送（loadRoles/loadConfig/…）与导航兜底无关，置空隔离。
+    // 安全状态 / 搜索引擎 / 归档偏好三条已外置到 helpers/settingsStatusPush.ts（不再有类私有方法）：
+    // 它们是「读 mock 配置 → post 一条」的纯动作，无需 stub；导航断言只按 settings_switch_tab 过滤。
     provider = new MemoraSettingsPanel({} as never, {} as never);
     provider.setAgentFactory(async () => ({ on: vi.fn(), off: vi.fn() }) as unknown as Agent);
     provider.setGlobalState({ get: () => undefined, update: vi.fn() } as never);
     (
-      [
-        'loadRoles',
-        'loadConfig',
-        'loadMemory',
-        'loadSkills',
-        'loadSecurityStatus',
-        'loadAllowedPathsStatus',
-        'loadSearchEngineStatus',
-      ] as const
+      ['loadRoles', 'loadConfig', 'loadMemory', 'loadSkills', 'loadAllowedPathsStatus'] as const
     ).forEach((m) => {
       vi.spyOn(provider as unknown as Record<string, () => Promise<void>>, m).mockResolvedValue(
         undefined,

@@ -597,7 +597,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // （2026-10-30，与 .treedd__item 同语义同令牌）
     // 53：技能同名覆盖说明行 #skills-root .skill-override line-height: var(--lh-tight)
     // （skillsStyles）+1（2026-11-07，SKILL-OVERRIDE-1；实数经 scripts/count-token-refs.mjs 实锤）
-    'lh-': 53, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
+    // 55：作品页（worksStyles）提示行与空态各引 var(--lh-relaxed) +2（2026-11-09，
+    // WORK-PROJECTION-MOVE-1；实数经 scripts/count-token-refs.mjs 实锤同步）。
+    'lh-': 55, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
     //             MCP 页级说明段落改 var(--lh-relaxed) +1（2026-10-24）
     //             MCP 隐藏条目解释行 var(--lh-relaxed) +1（2026-10-24）
     // 18：回到原值。中途曾 +2（🔒 未钉态 / ✕ 弱化态各用 opacity: var(--op-6)），后经真机
@@ -609,7 +611,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //            .image-attach-btn.is-vision-off 自写 opacity 退役 -1 ⇒ 净不变（19，机械实测同步）。
     'icon-': 17,
     'dot-': 22,
-    'line-': 80, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
+    // 82：作品页（worksStyles）提示行与清单行各引 var(--line-solid) +2（2026-11-09，
+    // WORK-PROJECTION-MOVE-1；实数经 scripts/count-token-refs.mjs 实锤同步）。
+    'line-': 82, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
     //             var(--line-solid) +1 ⇒ 79→80（UI-STATUS-DIVIDE-1，与
     //             `.context-ring__injection` 同一既有令牌，未新造颜色）；
     //             实数经 scripts/count-token-refs.mjs 实锤同步。
@@ -623,7 +627,8 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             MCP-S1：远程标记 .mcp-server-tag 描边 +1（2026-10-25）；
     //             IMG-2：悬停预览浮层 .image-chip-tip 描边（var(--line-input)）+1（2026-10-28）；
     //             IMG-2 Q3：上传按钮 .image-attach-btn 描边 + hover 描边（var(--line-solid)）+2
-    //             （2026-10-28，已于 2026-11-02 随「输入区控件去边框」按 -2 退役）
+    //             （2026-10-28，已于 2026-11-02 随「输入区控件去边框」按 -2 退役）；
+    //             作品页提示行 + 清单行（worksStyles）各引 var(--line-solid) +2（2026-11-09）
     'sq-': 51, // 输入区控件去边框（2026-11-02）：.ctl 基类的 min-width/min-height 各引
     //           var(--sq-xl)/var(--sq-lg) +2 ⇒ 49→51（机械实测同步）。
     //           IMG-2 Q3：上传按钮 .image-attach-btn 尺寸 var(--sq-xl)/var(--sq-lg) +2

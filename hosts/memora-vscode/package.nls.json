@@ -15,9 +15,6 @@
   "command.registerWork.title": "Memora: Register Work Projection",
   "command.toggleResidentRule.title": "Memora: Toggle Project Rule",
   "command.manageResidentRules.title": "Memora: Manage Project Rules",
-  "command.refreshWorkProjection.title": "Memora: Refresh Work Projections (list only; badges recompute next turn)",
-  "command.toggleResidentRuleFromTree.title": "Memora: Toggle Project Rule (List)",
-  "command.unregisterWork.title": "Memora: Remove Work Projection Registration",
   "command.addToChat.title": "Memora: Add to Chat",
   "command.reviewFileChanges.title": "Memora: Review File Changes",
   "command.confirmAllFileChanges.title": "Memora: Confirm All File Changes",
@@ -51,6 +48,5 @@
   "config.mcpServers.cwd.description": "Working directory for the subprocess (optional; defaults to the extension host's)",
   "config.mcpServers.enabled.description": "Whether the server is enabled (defaults to enabled). Off = not launched and its tools do not exist for the model",
   "config.mcpToolAllowlist.description": "MCP tool confirmation allowlist (no prompt ≠ no audit: matches are still written to the audit log). Two key levels: per-tool mcp__<server>__<tool> (exempts that one tool) and per-server mcp__<server>__* (exempts every tool of that server). Note that the per-server level is a server-level authorization, not a snapshot of tool names: tools added to that server later fall inside the exemption automatically (a server upgrade that adds tools, or a different server reusing the same name), without asking you again. Tool names cannot be known in advance, so if you want new tools to still require confirmation you must exempt them one by one with per-tool keys. Both key levels address the server and the tool by their original names — if an original name contains `-`, `.` and the like, the sanitized display name (the one in the model's tool list) differs from the key, and writing the display name silently fails and falls back to confirming every call. There is no \"exempt all servers at once\" form: the server segment supports no wildcard, so exempting N servers takes N explicit keys. Match = that tool is called without a prompt but still audited; no match = every call asks. Takes effect immediately (tiers are recomputed; servers are not reconnected); see https://gitee.com/zooique/memora/blob/main/hosts/memora-vscode/docs/mcp-setup.md. Scope machine (not synced by VS Code Settings Sync; configure once per machine).",
-  "view.chat.name": "Chat",
-  "view.workProjection.name": "Work Projections"
+  "view.chat.name": "Chat"
 }

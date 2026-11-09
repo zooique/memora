@@ -16,25 +16,35 @@
  * 漂移的实际后果：`switchTab('security')` 编译不过 ⇒ 安全页无法从任何命令 / 提示跳过去，
  * 也就是说「加 tab」这件事的成本在此之前是「找齐 6 个地方手抄」。
  *
- * ⚠️ **加一页的真实改动面（2026-10-26 L3 审查订正，勿按旧注释估算成本）**：
+ * ⚠️ **加一页的真实改动面（2026-11-09 订正；旧版「六处」清单已过时，勿再照抄）**：
  * 本文件收口的只是「标识 / 顺序 / 可见名」这一层，漏补两张 `Record` 确实 tsc 红，但
- * **「加一页 = 只改这里」是错的**（旧注释如此声称，实际差 5 处）。完整清单：
+ * **「加一页 = 只改这里」是错的**。完整清单：
  *   ① 本文件：`SETTINGS_TABS` 一行 + `SETTINGS_TAB_LABELS` / `SETTINGS_TAB_ARIA_LABELS`；
- *   ② `webview/panels/settingsPanelHtml.ts` 的 body 骨架表（缺该页 root ⇒ 整页空白）；
+ *   ② `webview/panels/settingsPanelHtml.ts` 的 `TAB_BODY_HTML` 一行 —— **root 容器与 tab
+ *      按钮已由 `SETTINGS_TABS` 派生**，不再手写 root；`Record` 穷尽 ⇒ 忘写 tsc 红。
+ *      旧注释的「缺该页 root ⇒ 整页空白」是迁移前的历史形态，现已不成立；
  *   ③ `webview/scripts/<新页>View.ts`：新视图文件（`createXxxView`，签名须匹配 `MountFactory`）；
  *   ④ `webview/scripts/settingsView.ts` 的 `SETTINGS_VIEW_MOUNTS` 表一行（顺序 = 初始化时序）；
  *   ⑤ `webview/styles/` 该页样式（按 root 前缀分文件，共享类只许复用不许追加）；
- *   ⑥ `webview/panels/settingsPanel.ts`：`loadXxx` + `handleMessage` 分支 + `refreshAll` 补一行。
- * ①-③ 缺即红（类型 / 运行时异常）；④ 缺亦红（`SETTINGS_VIEW_MOUNTS` 与 `SETTINGS_TABS` 集合
- * 相等由 `settingsView.test.ts` 断言，2026-10-26 由「静默半残」转为可红）；⑤-⑥ 缺则
- * **静默半残**（有按钮无内容），只有真机能发现。
+ *   ⑥ `webview/panels/settingsPanel.ts`：`handleMessage` 分支 + `refreshAll` 的 loader 表。
+ * ①-④ 缺即红（tsc 穷尽 / 集合断言）。⑤⑥ 曾长期是「缺了不红、只有真机发现」的
+ * **静默半残**；2026-11-09 起由 `settingsTabWiring.test.ts` 对拍 + `SETTINGS_TAB_LOADERS`
+ * 的 `Record` 穷尽收口 ⇒ **不许再把「静默半残」当既定事实写进方案**，缺守卫本身就是一条伤。
  * 导航侧已无成本：`memora.openSettings(tab)` 收任意 `SettingsTab`，webview 发
  * `open_settings_tab` 即可直达，不必新增命令或映射表（2026-10-26 收口）。
  *
  * **顺序 = UI 顺序**：数组下标决定按钮排列顺序，**下标 0 即默认首页**（右下不应另有一处
  * 写死是谁是首页）。
  */
-export const SETTINGS_TABS = ['memory', 'roles', 'config', 'skills', 'mcp', 'security'] as const;
+export const SETTINGS_TABS = [
+  'memory',
+  'roles',
+  'config',
+  'skills',
+  'mcp',
+  'security',
+  'works',
+] as const;
 
 /** 单个选项卡标识（其余各处一律 `import type`，不得再手写联合） */
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
@@ -57,6 +67,9 @@ export const SETTINGS_TAB_LABELS: Record<SettingsTab, string> = {
   // 按钮文案必须是用户会搜的那个词（技能页讲的是插件自带技能，两者混用会再次误导）。
   mcp: 'MCP',
   security: '安全',
+  // 作品投影（项目规则清单 + 本轮装配失效徽标）。不写作「规则」：该页同时列未设为
+  // 项目规则的作品，叫「规则」会把一半条目说成不该在这儿。
+  works: '作品',
 };
 
 /**
@@ -74,6 +87,7 @@ export const SETTINGS_TAB_ARIA_LABELS: Record<SettingsTab, string> = {
   skills: '技能',
   mcp: 'MCP 工具服务器',
   security: '安全',
+  works: '作品投影清单与项目规则',
 };
 
 /** 子视图根容器 id（此前 5 个 id 在 HTML / webview 脚本 / CSS 三处各自硬写） */

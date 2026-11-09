@@ -4,8 +4,8 @@
  * 设计（对齐 ITCSS + tokens.ts 单一真理源）：
  *   - 设计令牌由 tokens.ts 单一真理源提供，本文件内嵌一次，五个子视图样式不再各自内嵌；
  *   - 共享的 body 基础规则在本文件定义（五个子视图共用，勿在各子视图重复定义）；
- *   - 子视图样式（rolesStyles / configStyles / memoryStyles / skillsStyles / mcpStyles）各自以
- *     #roles-root / #config-root / #memory-root / #skills-root / #mcp-root 前缀限定，与选项卡栏
+ *   - 子视图样式（rolesStyles / configStyles / memoryStyles / skillsStyles / mcpStyles / worksStyles）各自以
+ *     #roles-root / #config-root / #memory-root / #skills-root / #mcp-root / #works-root 前缀限定，与选项卡栏
  *     共享类名（.header 等）靠根容器前缀隔离，避免串扰；安全页样式无独立文件、直接内嵌于本文件
  *     （历史形态，.security-* 为全局选择符，新增子视图勿再效仿之——按 root 分文件才是架构）；
  *   - 选项卡栏：等宽按钮 + 激活态 accent 高亮，低扰不抢内容层级。
@@ -16,6 +16,7 @@ import { configStyles } from './configStyles.js';
 import { memoryStyles } from './memoryStyles.js';
 import { skillsStyles } from './skillsStyles.js';
 import { mcpStyles } from './mcpStyles.js';
+import { worksStyles } from './worksStyles.js';
 
 export const settingsStyles = `
   ${tokens}
@@ -237,6 +238,7 @@ export const settingsStyles = `
   ${memoryStyles}
   ${skillsStyles}
   ${mcpStyles}
+  ${worksStyles}
 
   /* ============ Security：安全子视图（写入审批） ============ */
   #security-root { padding: var(--sp-3, 8px); }

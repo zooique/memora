@@ -140,10 +140,11 @@ describe('settingsPanel 会话归属（SETTINGS-AGENT-STALE-1 方案 B）', () =
     expect(b.switchRolePack).toHaveBeenCalledWith('r2');
     // A 零新增业务调用：实例方法只被 A 显示时那一次触碰，切走后再取用也不碰它
     expect(a.switchRolePack).toHaveBeenCalledTimes(1);
-    expect(a.on).toHaveBeenCalledTimes(2);
-    // A 的监听被按 sessionId 解绑（每次解绑 2 个 off：两事件）
-    expect(a.off).toHaveBeenCalledTimes(4);
-    expect(b.on).toHaveBeenCalledTimes(2);
+    // ensureAgent 每次幂等重绑 3 个事件（含作品页的 roundSummaryGenerated 轮结算回推）
+    expect(a.on).toHaveBeenCalledTimes(3);
+    // A 的监听被按 sessionId 解绑：首轮重绑 3 个 off + 切走时按 id 解绑 3 个 off
+    expect(a.off).toHaveBeenCalledTimes(6);
+    expect(b.on).toHaveBeenCalledTimes(3);
   });
 
   it('切走再切回：旧实例监听按 sessionId 解绑，监听数不累积、面板不持有 Agent 引用', async () => {
@@ -154,17 +155,21 @@ describe('settingsPanel 会话归属（SETTINGS-AGENT-STALE-1 方案 B）', () =
 
     switchTo('b');
     await send({ type: 'roles_set_active', name: 'r2' });
-    // 切走：A 上监听归零；B 各事件恰好 1 份
+    // 切走：A 上监听归零（含轮结算回推，漏解绑就会在旧会话留下幽灵监听）；B 各事件恰好 1 份
     expect(a.listeners('rolePackSwitched')).toBe(0);
     expect(a.listeners('rolePackSwitchLocked')).toBe(0);
+    expect(a.listeners('roundSummaryGenerated')).toBe(0);
     expect(b.listeners('rolePackSwitched')).toBe(1);
+    expect(b.listeners('roundSummaryGenerated')).toBe(1);
 
     switchTo('a');
     await send({ type: 'roles_set_active', name: 'r3' });
     // 切回：B 监听归零，A 重新绑定且**不累积**（仍是 1，不是 2）
     expect(b.listeners('rolePackSwitched')).toBe(0);
+    expect(b.listeners('roundSummaryGenerated')).toBe(0);
     expect(a.listeners('rolePackSwitched')).toBe(1);
     expect(a.listeners('rolePackSwitchLocked')).toBe(1);
+    expect(a.listeners('roundSummaryGenerated')).toBe(1);
 
     // 全程不持有旧 agent 引用：面板自有字段里没有任何 Agent 实例
     const fields = Object.values(provider as unknown as Record<string, unknown>);

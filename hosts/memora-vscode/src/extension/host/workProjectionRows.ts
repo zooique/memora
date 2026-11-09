@@ -1,14 +1,22 @@
 /**
- * 作品投影树 — 纯派生层（无 `vscode` 依赖，便于单测直喂）
+ * 作品投影 — 纯派生层（无 `vscode` 依赖，便于单测直喂）
  *
- * 定位：把「内核清单快照」派生为「树上要显示的行 / 空态文案」。**只做形状翻译**，
+ * 定位：把「内核清单快照」派生为「设置页要显示的行 / 空态文案」。**只做形状翻译**，
  * 判据一律来自内核（`listManagedWorks()` 已把 `resident` 归一为布尔），本文件不得写
  * `resident === true` / 文件存在性 / 字符上限这类判断（宿主零判据纪律）。
  * 失效徽标同理：只读内核 `Agent.residentSegmentReport` 的报告，不在宿主复算「哪条生效」。
  *
+ * 输出形状在 `shared/workProjectionDto.ts`（extension host 与 webview 共用、零依赖）。
+ * 🔴 本层**不含任何渲染面字段**：ThemeIcon id、菜单 contextValue 都是 TreeView 专属，
+ * 侧边栏树退役后若留在这里，会在 webview 侧变成没人消费的僵尸载荷（判据散点）。
+ * 图标由 webview 依 `resident` / `hasFailure` 自行选择，派生层只给语义。
+ *
  * 与 QuickPick 的关系：两者是同一份清单的两个视图，**不是两份数据**——都读
- * `listManagedWorks()`，本文件只负责树行的 label/description/icon/contextValue 形态。
+ * `listManagedWorks()`，本文件只负责行的文案 / 状态形状。
  */
+import type { WorkProjectionRow, WorkProjectionViewState } from '../../shared/workProjectionDto.js';
+
+export type { WorkProjectionRow, WorkProjectionViewState } from '../../shared/workProjectionDto.js';
 
 /** 清单条目最小形状（结构对齐内核 `ManagedWorkEntry`，宿主只读这些字段） */
 export interface WorkEntryView {
@@ -63,42 +71,6 @@ export interface ResidentReportView {
   /** 本轮清单是否读到（false ⇒ 整段为空，报告不能当作「零失效」用） */
   listReadable: boolean;
 }
-
-/** 树上的一行（纯数据；provider 负责转成 `vscode.TreeItem`） */
-export interface WorkProjectionRow {
-  /** 清单源路径（右键动作原样回传内核） */
-  source: string;
-  /** 行标题（作品名） */
-  name: string;
-  /** 行右侧状态后缀（项目规则 / 未设为项目规则；本轮有失效时追加 ` · <失效标签>`） */
-  statusText: string;
-  /** 行 tooltip（含源路径与说明，便于不打开文件也能确认是哪一份） */
-  tooltip: string;
-  /** 行图标 id（VS Code ThemeIcon 名） */
-  icon: string;
-  /** 树项 contextValue（右键菜单 `when` 判据） */
-  contextValue: string;
-}
-
-/** 视图整体状态（行 / 空态 / 错误态；空态文案也由本层给出，provider 不另写一套） */
-export type WorkProjectionViewState =
-  | { kind: 'no-agent'; message: string }
-  | { kind: 'malformed'; message: string }
-  | { kind: 'empty'; message: string }
-  | {
-      kind: 'rows';
-      rows: WorkProjectionRow[];
-      /**
-       * 行上方的说明行（规则求值报告的两种「不可当作零失效」态）
-       *
-       * 报告 `null`（尚未求值）/ `listReadable === false`（清单没读到）都**不是**「零失效」，
-       * 必须各给一句话；报告正常且无失效时缺省（此时沉默才是准确的）。
-       */
-      notice?: { text: string; level: 'info' | 'warning' };
-    };
-
-/** 行 contextValue（右键菜单 `viewItem` 判据；与 `contributes.menus` 的 when 同源） */
-export const WORK_PROJECTION_ITEM_CONTEXT = 'memoraWorkProjectionEntry';
 
 /** 空态 / 错误态文案（常量集中，避免散落在 provider 与测试里各写一份） */
 const MESSAGES = {
@@ -186,9 +158,9 @@ export function deriveWorkProjectionView(input: {
       statusText: failure ? `${base} · ${failureLabel(failure.reason)}` : base,
       // 内核文案带实际计量与写入值，放 tooltip 比塞进单行后缀更可读
       tooltip: failure ? `${baseTooltip}\n\n${failure.message}` : baseTooltip,
-      // 图标只在「本轮没生效」时让位给告警；其余仍表达「是不是项目规则」
-      icon: failure ? 'warning' : e.resident ? 'shield' : 'file',
-      contextValue: WORK_PROJECTION_ITEM_CONTEXT,
+      // 语义二元组（不是图标 id）：渲染面自己决定「项目规则 / 普通 / 失效」各画什么
+      resident: e.resident,
+      hasFailure: failure !== undefined,
     };
   });
 

@@ -77,8 +77,11 @@ export default [
     rules: { 'max-lines': ['error', { max: 4242 }] },
   },
   {
-    files: ['src/webview/panels/settingsPanel.ts'], // TARGET（六页合一；安全页静态骨架已外置）
-    rules: { 'max-lines': ['error', { max: 2037 }] },
+    // WORK-PROJECTION-MOVE-1（2026-11-09）：接入第 7 页前先外置三条「读配置 → 推消息」与
+    // 自定义引擎清单读写到 helpers/settingsStatusPush.ts（先腾行、后加功能，未抬阈值）；
+    // 落完新页接线后闸门自报 2032 ⇒ 基线同步下调，不留虚空余量（只降不升）。
+    files: ['src/webview/panels/settingsPanel.ts'], // TARGET（七页合一；安全页骨架 / 状态推送已外置）
+    rules: { 'max-lines': ['error', { max: 2032 }] },
   },
   // fileChangeView 的专属 override 已于 2026-11-01 退役：实测 948 行 ≤ 1000 ⇒ 已达「瘦身达标」
   // 退出条件（见本块头部规则 TARGET 条：达标后删该条、回到下方通用 1000 闸）。

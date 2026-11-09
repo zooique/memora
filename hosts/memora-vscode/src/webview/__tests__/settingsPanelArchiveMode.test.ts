@@ -8,13 +8,15 @@
  *      直接发消息的越界值照拒，与服务端校验同一条纪律）；
  *   ③ 对话繁忙（内核 A2：判 busy 后暂存+抛错）→ **偏好仍落盘**（装配期读取）+ 回推 status
  *      + info 级顺延提示——不得谎报「已生效」，也不得把「用户偏好已保存」显示成红色错误；
- *   ④ loadArchiveModePreference：ready 握手回推**偏好持久值**（下拉真源 = 用户级设置，缺省 full）。
+ *   ④ refreshAll() 经 helpers/settingsStatusPush.ts 的 pushArchiveModePreference 回推**偏好持久值**
+ *      （下拉真源 = 用户级设置，缺省 full；外置后类体不再有 loadArchiveModePreference 私有方法）。
  *
  * ⚠ 变异验证靶标：撤掉 setArchiveMode 里的 config.update → 「持久化」断言转红；
  * 撤掉 agent.setArchiveMode 调用 → 「热更新」断言转红；把繁忙 catch 改成回滚偏好
  * → 「偏好仍落盘」断言转红（那会让保存过的偏好下次装配又变回去）；把 `applied` 初值
  * 改回 true（或删掉 agent 未就绪的降级提示）→「Agent 未就绪」用例转红（假成功回归锚点）；
- * 撤掉拒收分支的 loadArchiveModePreference() → 「复位下拉」断言转红。
+ * 撤掉拒收分支的 pushArchiveModePreference() → 「复位下拉」断言转红；
+ * 从 refreshAll() 删掉该调用 → 下面两条「偏好回推」用例转红（守的是接线，不只是 helper 自身）。
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -93,6 +95,28 @@ function sendArchiveModeSet(provider: MemoraSettingsPanel, mode: string): Promis
 /** 取 notice 消息 */
 function notices(posted: { type: string; level?: string; message?: string }[]) {
   return posted.filter((m) => m.type === 'notice');
+}
+
+/**
+ * 经 refreshAll() 单点触发偏好回推（不是直呼 helper：要守住「全量推送清单里有这一条」）。
+ * 其余 loader 与本用例无关，置空隔离——harness 的 store 是空对象，loadConfig 不 stub 会抛。
+ */
+function pushPreference(provider: MemoraSettingsPanel): void {
+  const stub = provider as unknown as Record<string, () => Promise<void>>;
+  (
+    [
+      'loadRoles',
+      'loadConfig',
+      'loadMemory',
+      'loadSkills',
+      'loadAllowedPathsStatus',
+      'pushMcpStatus',
+    ] as const
+  ).forEach((m) => {
+    vi.spyOn(stub, m).mockResolvedValue(undefined);
+  });
+  // works.load() 不 stub：它只读 peekAgent（本 harness 未注入）并 post 一条空态，无副作用可干扰断言
+  stub.refreshAll?.();
 }
 
 describe('settingsPanel.setArchiveMode —— 归档模式切换', () => {
@@ -189,22 +213,22 @@ describe('settingsPanel.setArchiveMode —— 归档模式切换', () => {
     expect(msgs.some((m) => m.message?.includes('已切换归档模式'))).toBe(false);
   });
 
-  it('loadArchiveModePreference：回推的是偏好持久值（下拉真源 = 用户级设置，非运行时真相）', async () => {
+  it('pushArchiveModePreference（经 refreshAll）：回推的是偏好持久值（下拉真源 = 用户级设置，非运行时真相）', () => {
     vscodeConfigMock.cfgGet.mockImplementation((key: string) =>
       key === 'archiveMode' ? 'manual' : undefined,
     );
     const { provider, posted } = setup(agentStub().agent);
 
-    (provider as unknown as { loadArchiveModePreference(): void }).loadArchiveModePreference();
+    pushPreference(provider);
 
     expect(posted).toContainEqual({ type: 'archive_mode_status', mode: 'manual' });
   });
 
-  it('loadArchiveModePreference 缺省 → full（配置未写时回落，与 package.json default 同口径）', async () => {
+  it('pushArchiveModePreference 缺省 → full（配置未写时回落，与 package.json default 同口径）', () => {
     // 基座 mock 忠实 VS Code API：get('archiveMode', 'full') 未配置 → 回落 'full'
     const { provider, posted } = setup(agentStub().agent);
 
-    (provider as unknown as { loadArchiveModePreference(): void }).loadArchiveModePreference();
+    pushPreference(provider);
 
     expect(vscodeConfigMock.cfgGet).toHaveBeenCalledWith('archiveMode', 'full');
     expect(posted).toContainEqual({ type: 'archive_mode_status', mode: 'full' });

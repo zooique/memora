@@ -64,7 +64,7 @@ description: 领域术语唯一定义处（turn / loop / step / planItem / round
 | **角色包（Role Pack）** | 角色为单位的固定范式：L1 内容 + L2 行为策略（+远期 L3），可插拔整体 |
 | **角色池（Role Pool）** | 角色包集合：可下载、可共享，手动装载 |
 | **插卡式** | 内核提供固定卡槽，角色包自含内容，换卡即变 |
-| **作品投影（workProjection）** | 项目级作品索引的一行（`.memora/work-projections.json`）：源文件相对路径 + 一句话描述 + 可选 `resident`。只读展示面 = 宿主侧边栏「作品投影」树；写入口只有登记 / 切换 / 移除三条命令 |
+| **作品投影（workProjection）** | 项目级作品索引的一行（`.memora/work-projections.json`）：源文件相对路径 + 一句话描述 + 可选 `resident`。只读展示面 = 宿主设置面板「作品」选项卡（2026-11-09 由侧边栏树迁入），单击行可打开原文件；写入口 = 登记 / 切换 / 移除三个动作，四入口共用 `runWorkProjectionAction()` 执行面 |
 | **项目规则（resident）** | 作品投影里 `resident === true` 的条目，正文每轮注入 system prompt。**严格布尔**：`"true"` / `1` 等一律视为未开启（fail-closed；误配进完整失效集但不进模型段首） |
 | **行为策略** | L2 策略层枚举项：角色的行为开关（理解确认 / 工具权限 / 记忆模式） |
 | **预检停顿** | 回答前确认点：总结输入 → 提问确认 → 确认后进入回答中 |

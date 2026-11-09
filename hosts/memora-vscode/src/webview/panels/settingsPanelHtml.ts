@@ -20,6 +20,7 @@ import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
 import { MCP_BODY_HTML } from './settingsMcpHtml.js';
 import { SECURITY_BODY_HTML } from './settingsSecurityHtml.js';
+import { WORKS_BODY_HTML } from './settingsWorksHtml.js';
 // 回收站清理天数是弹窗文案与按钮 title 同一句的事实来源（宿主常量，不在这里写死数字）
 import { MEMORY_RECYCLE_RETENTION_DAYS } from '../../shared/constants.js';
 import {
@@ -225,6 +226,7 @@ const TAB_BODY_HTML: Record<SettingsTab, string> = {
     <p class="footer-hint">用户技能目录：<code>VS Code 全局存储 / skills /</code></p>`,
   mcp: MCP_BODY_HTML,
   security: SECURITY_BODY_HTML,
+  works: WORKS_BODY_HTML,
 };
 
 /** 选项卡按钮栏（顺序、默认高亮、`aria-selected` 全部由 tab 表派生） */
