@@ -75,15 +75,29 @@ const INTERJECT_LIMIT = LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS;
 /**
  * 快照超阈值（文件过多 / 总量过大）时的降级提示
  *
- * 写前快照与写后扫描两条路径都会降级到同一句提示——并列字面量必漂移，故抽为单点常量。
+ * 写前快照与写后扫描两条路径都会降级到同一句提示——并列字面量必漂移，故抽为单点函数
+ * （函数而非常量：`l10n.t` 必须在**调用时刻**取，模块加载期取值会绕过 VS Code 的
+ * locale 初始化窗口，且无法被 bundle 覆盖率判据匹配）。
  */
-const SNAPSHOT_OVERSIZE_NOTICE = '工作区文本文件过多，脚本改动未自动追踪——请用 git 核对改动';
+function snapshotOversizeNotice(): string {
+  return l10n.t(
+    'Too many text files in the workspace; script changes are not tracked automatically. Use git to review the changes.',
+  );
+}
 
 /** 启动时首选会话被另一窗口占用、已自动让位到最近可用会话的提示（解释「为什么不是上次那个会话」） */
-const SESSION_DISPLACED_NOTICE = '上次停留的会话正在另一个窗口中使用，已为你打开另一个会话。';
+function sessionDisplacedNotice(): string {
+  return l10n.t(
+    'The session you were on is in use by another window; opened another session instead.',
+  );
+}
 
 /** 启动时首选会话被占且工作区无其他可用会话、已新建空会话的提示（如实说「新建」而非「另一个」） */
-const SESSION_DISPLACED_NEW_NOTICE = '上次停留的会话正在另一个窗口中使用，已为你新建一个空会话。';
+function sessionDisplacedNewNotice(): string {
+  return l10n.t(
+    'The session you were on is in use by another window; created a new empty session.',
+  );
+}
 import type {
   ChatRef,
   InjectionSegment,
@@ -853,7 +867,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'error',
-        message: `启动会话对齐失败：${toNoticeText(err)}`,
+        message: l10n.t('Failed to align the startup session: {0}', toNoticeText(err)),
       });
     }
   }
@@ -1149,7 +1163,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const before = this._agent?.getPendingInterjections?.() ?? [];
       const cleared = this._agent?.clearPendingInterjections() ?? 0;
       if (cleared > 0) {
-        this.post({ type: 'notice', level: 'info', message: `已清空 ${cleared} 条待发送内容` });
+        this.post({
+          type: 'notice',
+          level: 'info',
+          message: l10n.t('Cleared {0} pending message(s)', cleared),
+        });
         this.postPendingDiscarded(before);
       }
       this.syncPendingQueue();
@@ -1206,7 +1224,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 了 dist 却没重启扩展宿主——webview 脚本从磁盘读是新的，本 switch 活在宿主进程内存
       // 是旧的 ⇒ 表现为「某功能凭空消失、零反馈」）。落宿主日志供排查，**不驱动 UI、不弹
       // 提示**——也可能是无害的旧版本残留消息，用户无感知能力，不该被打断。
-      console.warn('未知 webview 消息', (msg as { type: string }).type, '宿主未重启?');
+      console.warn(
+        'Unknown webview message',
+        (msg as { type: string }).type,
+        'host not restarted?',
+      );
     }
   }
 
@@ -1529,7 +1551,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // Agent 未装配 ⇒ 抛错由 triggerManualArchive 兜成可见 notice（与改前同文案）
       requestArchive: async (date, session) => {
         const agent = this._agent;
-        if (!agent) throw new Error('Agent 未就绪');
+        if (!agent) throw new Error(l10n.t('Memora: Agent is not ready; retry shortly'));
         await agent.archiveSession(date, session, { skipIfUnchanged: true });
       },
     };
@@ -1702,7 +1724,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @param sessionId 目标会话标识
    */
   private async agentForSession(sessionId: string): Promise<Agent> {
-    if (!this._getAgent) throw new Error('Agent 装配工厂未注入');
+    if (!this._getAgent) throw new Error(l10n.t('Memora: Agent factory is not injected'));
     const cached = this._sessionAgents.get(sessionId);
     if (cached) return cached;
     const agent = await this._getAgent(this.workspacePath, sessionId);
@@ -1827,12 +1849,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         }
       }
     } catch (err) {
-      console.warn('Memora 加载会话历史失败', err);
+      console.warn('Memora failed to load session history', err);
       // 历史加载失败给用户可见提示，避免「历史空白」静默（SSOT 不藏错）
       this.post({
         type: 'notice',
         level: 'error',
-        message: '加载会话历史失败，可尝试切换会话重试',
+        message: l10n.t('Failed to load session history; try switching sessions and retry'),
       });
     }
   }
@@ -1959,12 +1981,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       );
       // 新建失败：createSession 已推送错误通知，此处不再补一句「已新建」的假话
       if (created) {
-        this.post({ type: 'notice', level: 'info', message: SESSION_DISPLACED_NEW_NOTICE });
+        this.post({ type: 'notice', level: 'info', message: sessionDisplacedNewNotice() });
       }
       return;
     }
     // 成功让位到既有会话
-    this.post({ type: 'notice', level: 'info', message: SESSION_DISPLACED_NOTICE });
+    this.post({ type: 'notice', level: 'info', message: sessionDisplacedNotice() });
   }
 
   /**
@@ -2032,7 +2054,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 无当前会话（初始空态）→ 推送引导文案而非「新会话 HH:MM」占位，避免误认存在会话
     this.post({
       type: 'session_title',
-      title: this._currentSessionId ? this.currentSessionTitle() : '暂无会话（点击上方「＋」新建）',
+      title: this._currentSessionId
+        ? this.currentSessionTitle()
+        : l10n.t('No session yet (click + above to create one)'),
     });
     // 推送当前激活角色包 → 输入区角色选择器 + AI 消息标签（主动可见）。
     // 即使没有激活的角色包也推送，让 webview 正确处理状态
@@ -2088,12 +2112,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private async handlePolishInput(text: string): Promise<void> {
     const agent = await this.getAgentOrWarn();
     if (!agent) {
-      this.post({ type: 'polish_input_result', ok: false, message: 'Agent 未就绪' });
+      this.post({
+        type: 'polish_input_result',
+        ok: false,
+        message: l10n.t('Memora: Agent is not ready; retry shortly'),
+      });
       return;
     }
     const polisher = agent.polish;
     if (!polisher) {
-      this.post({ type: 'polish_input_result', ok: false, message: '润色服务不可用' });
+      this.post({
+        type: 'polish_input_result',
+        ok: false,
+        message: l10n.t('Polish service unavailable'),
+      });
       return;
     }
     try {
@@ -2267,7 +2299,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       level: 'error',
       message: rollback.ok
         ? toNoticeText(outcome.error)
-        : `${toNoticeText(outcome.error)}（激活态回滚也失败：${rollback.message ?? '原因未记录'}）`,
+        : l10n.t(
+            '{0} (also failed to roll back the active provider: {1})',
+            toNoticeText(outcome.error),
+            rollback.message ?? l10n.t('reason not recorded'),
+          ),
     });
   }
 
@@ -2472,7 +2508,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 会话管理纯度：无当前会话（无历史时的初始空态）→ 引导手动
     // 新建，绝不隐式创建会话。新建会话唯一入口 = 标题条「＋」（回归主流，手动唯一）。
     if (!this._currentSessionId) {
-      this.post({ type: 'notice', level: 'info', message: '请先点击上方「＋」新建会话再开始对话' });
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: l10n.t('Click + above to create a session before chatting'),
+      });
       return;
     }
     switch (msg.kind) {
@@ -2505,11 +2545,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 继续按位回填必错位；拒收留痕，不写坏盘面。
         const count = this.askFor().checkAnswerCount(answers);
         if (!count.ok) {
-          console.warn(`Memora：答案数与提问数不匹配（${count.got} ≠ ${count.expected}），已拒收`);
+          console.warn(
+            `Memora: answer count does not match question count (${count.got} != ${count.expected}); rejected`,
+          );
           this.post({
             type: 'notice',
             level: 'error',
-            message: `答题数据与当前提问不一致（${count.got} 条答案 / ${count.expected} 道题），请重新作答`,
+            message: l10n.t(
+              'The answers do not match the current questions ({0} answers / {1} questions); please answer again',
+              count.got,
+              count.expected,
+            ),
           });
           return;
         }
@@ -2698,7 +2744,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         this.post({
           type: 'notice',
           level: 'error',
-          message: `技能「${skillName}」已禁用，本次未注入（消息已照常发送）。可在设置 → 技能中启用后重试。`,
+          message: l10n.t(
+            'Skill "{0}" is disabled and was not injected (the message was still sent). Enable it in Settings > Skills and retry.',
+            skillName,
+          ),
         });
       }
     }
@@ -3201,13 +3250,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
               const after = scanWorkspaceTextFiles();
               if (after === null) {
                 // 写后扫描超阈值：与写前降级同一条提示，不做内容 diff
-                this.post({ type: 'notice', level: 'info', message: SNAPSHOT_OVERSIZE_NOTICE });
+                this.post({ type: 'notice', level: 'info', message: snapshotOversizeNotice() });
               } else {
                 this._fileChangeSink?.noteExternalMutations(diffWorkspaceSnapshots(before, after));
               }
             } else if (chunk.ok && !chunk.blocked) {
               // 写前快照为 null（已超阈值降级）：写后不再扫描，直接提示用户用 git 核对
-              this.post({ type: 'notice', level: 'info', message: SNAPSHOT_OVERSIZE_NOTICE });
+              this.post({ type: 'notice', level: 'info', message: snapshotOversizeNotice() });
             }
           }
           // N/M 闪骨架：tool_start 时读到的 plan 是工具执行前的旧状态
@@ -3494,10 +3543,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             this.post({
               type: 'notice',
               level: 'error',
-              message: '本轮记忆摘要生成失败，本轮内容不会被自动沉淀（对话本身不受影响）',
+              message: l10n.t(
+                'Failed to generate the memory summary for this turn; its content will not be persisted automatically (the conversation itself is unaffected)',
+              ),
             });
           } else {
-            console.warn('Memora 后台会话记忆摘要生成失败', sessionId);
+            console.warn('Memora background session memory summary failed', sessionId);
           }
         }
         unlockDone();

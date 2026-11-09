@@ -311,9 +311,9 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
     h.dispatch({ type: 'not_a_real_message_type' });
     // 形态：首串标签 + 类型值 + 过期线索（三者都不得缺——HOST-CTX-12 唯一运行时线索）
     expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('未知 webview 消息'),
+      expect.stringContaining('Unknown webview message'),
       'not_a_real_message_type',
-      expect.stringContaining('宿主未重启'),
+      expect.stringContaining('host not restarted'),
     );
     warn.mockRestore();
   });

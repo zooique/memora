@@ -1077,5 +1077,20 @@
   "Stopped; the pause checkpoint has been cleared": "已停止，暂停检查点已清理",
   "Pause request canceled; the run continues": "已取消暂停申请（将继续运行）",
   "Pause requested; it takes effect after the current step": "暂停申请已发送，将在当前步骤完成后暂停",
-  "The current task has ended; the pause request had no effect": "当前任务已结束，暂停申请未生效"
+  "The current task has ended; the pause request had no effect": "当前任务已结束，暂停申请未生效",
+  "Too many text files in the workspace; script changes are not tracked automatically. Use git to review the changes.": "工作区文本文件过多，脚本改动未自动追踪——请用 git 核对改动",
+  "The session you were on is in use by another window; opened another session instead.": "上次停留的会话正在另一个窗口中使用，已为你打开另一个会话。",
+  "The session you were on is in use by another window; created a new empty session.": "上次停留的会话正在另一个窗口中使用，已为你新建一个空会话。",
+  "Failed to align the startup session: {0}": "启动会话对齐失败：{0}",
+  "Cleared {0} pending message(s)": "已清空 {0} 条待发送内容",
+  "Memora: Agent factory is not injected": "Memora：Agent 装配工厂未注入",
+  "Failed to load session history; try switching sessions and retry": "加载会话历史失败，可尝试切换会话重试",
+  "No session yet (click + above to create one)": "暂无会话（点击上方「＋」新建）",
+  "Polish service unavailable": "润色服务不可用",
+  "{0} (also failed to roll back the active provider: {1})": "{0}（激活态回滚也失败：{1}）",
+  "reason not recorded": "原因未记录",
+  "Click + above to create a session before chatting": "请先点击上方「＋」新建会话再开始对话",
+  "The answers do not match the current questions ({0} answers / {1} questions); please answer again": "答题数据与当前提问不一致（{0} 条答案 / {1} 道题），请重新作答",
+  "Skill \"{0}\" is disabled and was not injected (the message was still sent). Enable it in Settings > Skills and retry.": "技能「{0}」已禁用，本次未注入（消息已照常发送）。可在设置 → 技能中启用后重试。",
+  "Failed to generate the memory summary for this turn; its content will not be persisted automatically (the conversation itself is unaffected)": "本轮记忆摘要生成失败，本轮内容不会被自动沉淀（对话本身不受影响）"
 }

@@ -188,7 +188,7 @@ describe('MEM-1 · 轮次摘要失败可观测出口（onSummary 消费 success�
 
     const notices = errorNotices(posted);
     expect(notices).toHaveLength(1);
-    expect(notices[0]?.message).toContain('摘要');
+    expect(notices[0]?.message).toContain('memory summary');
   });
 
   it('摘要成功（success:true）→ 不产生错误 notice（不误报）', async () => {

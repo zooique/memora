@@ -2316,7 +2316,7 @@ describe('技能启停：按名指定已禁用技能 → 响亮失败（SKILL-S2
     expect(notices).toHaveLength(1);
     expect(notices[0]!.level).toBe('error');
     expect(notices[0]!.message).toContain('禁用技能');
-    expect(notices[0]!.message).toContain('未注入');
+    expect(notices[0]!.message).toContain('is disabled and was not injected');
     // 不拒绝（变异锁）：修「静默」不得改成「禁止发送」——用户消息仍上屏
     expect(posted.some((m) => (m as { type: string }).type === 'user')).toBe(true);
   });
@@ -2991,7 +2991,9 @@ describe('启动会话对齐（启动即分叉根因修复）', () => {
     provider.setAgent(agent);
     await flushAlign();
     const notices = ofType<{ type: string; level: string; message: string }>(posted, 'notice');
-    const alignNotice = notices.find((n) => n.message.includes('启动会话对齐失败'));
+    const alignNotice = notices.find((n) =>
+      n.message.includes('Failed to align the startup session'),
+    );
     expect(alignNotice, '对齐失败必须发 error notice（静默则退回启动即错位原症状）').toBeDefined();
     expect(alignNotice!.level).toBe('error');
     // format() 全文三件套：标题 / 原因 / 建议都在

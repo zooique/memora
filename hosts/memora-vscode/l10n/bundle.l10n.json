@@ -1077,5 +1077,20 @@
   "Stopped; the pause checkpoint has been cleared": "",
   "Pause request canceled; the run continues": "",
   "Pause requested; it takes effect after the current step": "",
-  "The current task has ended; the pause request had no effect": ""
+  "The current task has ended; the pause request had no effect": "",
+  "Too many text files in the workspace; script changes are not tracked automatically. Use git to review the changes.": "",
+  "The session you were on is in use by another window; opened another session instead.": "",
+  "The session you were on is in use by another window; created a new empty session.": "",
+  "Failed to align the startup session: {0}": "",
+  "Cleared {0} pending message(s)": "",
+  "Memora: Agent factory is not injected": "",
+  "Failed to load session history; try switching sessions and retry": "",
+  "No session yet (click + above to create one)": "",
+  "Polish service unavailable": "",
+  "{0} (also failed to roll back the active provider: {1})": "",
+  "reason not recorded": "",
+  "Click + above to create a session before chatting": "",
+  "The answers do not match the current questions ({0} answers / {1} questions); please answer again": "",
+  "Skill \"{0}\" is disabled and was not injected (the message was still sent). Enable it in Settings > Skills and retry.": "",
+  "Failed to generate the memory summary for this turn; its content will not be persisted automatically (the conversation itself is unaffected)": ""
 }
