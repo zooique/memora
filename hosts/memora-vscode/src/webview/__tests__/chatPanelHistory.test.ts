@@ -3031,11 +3031,14 @@ describe('truncateTurnCore 返回值契约（COPY-2-OK-CONTRACT-1）', () => {
     _currentSessionId: string;
     /** E4 批 1：原 _streaming 单份字段已按会话命名空间化 */
     runtimeFor(): { streaming: boolean };
-    truncateTurnCore(
-      roundId: string,
-      confirmMessage: string,
-      confirmButton: string,
-    ): Promise<{ ok: boolean; reason?: string; userText?: string }>;
+    /** 截断核已随域外置（B9-D-3），经面板字段 `_turnOps` 驱动 */
+    _turnOps: {
+      truncateTurnCore(
+        roundId: string,
+        confirmMessage: string,
+        confirmButton: string,
+      ): Promise<{ ok: boolean; reason?: string; userText?: string }>;
+    };
   }
 
   it('锚未命中 → ok=false / reason=miss（不得伪装成功）', async () => {
@@ -3043,8 +3046,9 @@ describe('truncateTurnCore 返回值契约（COPY-2-OK-CONTRACT-1）', () => {
     const cast = provider as unknown as TruncateCast;
     // 锚形态 = roundId（轮身份），不是 ts；空会话内无该 session 的 roundIds ⇒ truncateFrom 返回 ok=false
     cast._currentSessionId = '2026-08-16-empty';
+    // 本用例直驱截断核、确认按钮词由入参给定（非生产文案），故回包与入参同词
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
-    const outcome = await cast.truncateTurnCore('round-missing', '确认？', '删除');
+    const outcome = await cast._turnOps.truncateTurnCore('round-missing', '确认？', '删除');
     expect(outcome).toEqual({ ok: false, reason: 'miss' });
   });
 
@@ -3053,7 +3057,7 @@ describe('truncateTurnCore 返回值契约（COPY-2-OK-CONTRACT-1）', () => {
     const cast = provider as unknown as TruncateCast;
     cast._currentSessionId = '2026-08-16-empty';
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never);
-    const outcome = await cast.truncateTurnCore('round-missing', '确认？', '删除');
+    const outcome = await cast._turnOps.truncateTurnCore('round-missing', '确认？', '删除');
     expect(outcome).toEqual({ ok: false, reason: 'cancel' });
   });
 
@@ -3063,7 +3067,7 @@ describe('truncateTurnCore 返回值契约（COPY-2-OK-CONTRACT-1）', () => {
     cast._currentSessionId = '2026-08-16-empty';
     cast.runtimeFor().streaming = true;
     vi.mocked(vscode.window.showWarningMessage).mockClear();
-    const outcome = await cast.truncateTurnCore('round-missing', '确认？', '删除');
+    const outcome = await cast._turnOps.truncateTurnCore('round-missing', '确认？', '删除');
     expect(outcome).toEqual({ ok: false, reason: 'busy' });
     expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
   });

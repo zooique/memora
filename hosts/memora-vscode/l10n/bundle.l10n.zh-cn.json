@@ -1063,5 +1063,11 @@
   "Role pack switching is locked: {0}; try again in {1} seconds": "角色包切换被锁定：{0}，{1} 秒后再试",
   "Cannot open reference: {0}": "无法打开引用：{0}",
   "File count exceeds {0} and has been truncated (built-in ignored directories already excluded); type keywords to narrow down (multi-select, Esc to cancel)…": "文件数超 {0} 已截断（内置忽略目录已排除、仍超上限），请输入关键词缩小范围（可多选，Esc 取消）…",
-  "Select a file to attach as a reference, or pick {0} to inject context (multi-select, Esc to cancel)…": "选择要挂为引用的文件，或选 {0} 注入上下文（可多选，Esc 取消）…"
+  "Select a file to attach as a reference, or pick {0} to inject context (multi-select, Esc to cancel)…": "选择要挂为引用的文件，或选 {0} 注入上下文（可多选，Esc 取消）…",
+  "A response is being generated; wait before changing the conversation": "生成中，请稍候再操作会话结构",
+  "Delete this turn and all later turns? This cannot be undone.": "确定删除该问答及之后的所有对话？此操作不可恢复。",
+  "Could not locate that turn (the session may have changed); refresh the session and try again": "未能定位该问答（会话可能已变更），请刷新会话后重试",
+  "Regenerating deletes this turn and all later turns, then resends the original text. This cannot be undone.": "重新生成将删除该问答及之后的所有对话，并以原文重新发送。此操作不可恢复。",
+  "Regenerate": "重新生成",
+  "Could not retrieve the original prompt text; nothing was regenerated": "未能取得原提问文本，未重新生成"
 }

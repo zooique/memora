@@ -495,6 +495,13 @@ const WEBVIEW_PANELS = {
   //   · `MENTION_FILE_LIMIT` 随域迁出，测试从 `chatRefOps.ts` 读同一个数（不复制字面量）；
   //   · chatPanel —— 两个方法与旧 `##` 说明只留转发口，`openMentionQuickPick` 保留公开签名
   //     （webview 分发与宿主单测经它驱动）。
+  //
+  // B9-D-3（问答结构破坏性操作域，`chatPanel.ts` 第三刀）已收口并登记：
+  //   · chatTurnStructureOps —— `delete_turn` 与 `regenerate` 共用的截断核（运行时守卫 →
+  //     确认 → store 截断 → 现场作废 → 联动软删 → 重放）整域外置；确认文案由调用方本地化后
+  //     传入（文案与破坏面一一对应，不在核里按 reason 猜）；依赖面 7 个窄接口；
+  //   · `TRUNCATE_FAIL_NOTICE` 迁为 `truncateFailNotice()`（两入口共用同一句，不复制字面量）；
+  //   · chatPanel —— 只经 `_turnOps` 转发；测试的白盒驱动改走 `_turnOps`（4 处）。
   chat: {
     state: 'pending',
     files: [
@@ -518,6 +525,7 @@ const WEBVIEW_PANELS = {
       'webview/scripts/chatView.ts',
       'webview/panels/chatNoticeOps.ts',
       'webview/panels/chatRefOps.ts',
+      'webview/panels/chatTurnStructureOps.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。

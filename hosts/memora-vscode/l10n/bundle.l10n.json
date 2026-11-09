@@ -1063,5 +1063,11 @@
   "Role pack switching is locked: {0}; try again in {1} seconds": "",
   "Cannot open reference: {0}": "",
   "File count exceeds {0} and has been truncated (built-in ignored directories already excluded); type keywords to narrow down (multi-select, Esc to cancel)…": "",
-  "Select a file to attach as a reference, or pick {0} to inject context (multi-select, Esc to cancel)…": ""
+  "Select a file to attach as a reference, or pick {0} to inject context (multi-select, Esc to cancel)…": "",
+  "A response is being generated; wait before changing the conversation": "",
+  "Delete this turn and all later turns? This cannot be undone.": "",
+  "Could not locate that turn (the session may have changed); refresh the session and try again": "",
+  "Regenerating deletes this turn and all later turns, then resends the original text. This cannot be undone.": "",
+  "Regenerate": "",
+  "Could not retrieve the original prompt text; nothing was regenerated": ""
 }

@@ -49,7 +49,6 @@ import {
   resolveContextWindow,
   estimateOccupancy,
   estimateTokensMessages,
-  splitSessionId,
   LOOP_CONSTANTS,
   type Agent,
   type AgentChunk,
@@ -81,12 +80,6 @@ const INTERJECT_LIMIT = LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS;
  * 写前快照与写后扫描两条路径都会降级到同一句提示——并列字面量必漂移，故抽为单点常量。
  */
 const SNAPSHOT_OVERSIZE_NOTICE = '工作区文本文件过多，脚本改动未自动追踪——请用 git 核对改动';
-
-/**
- * 截断锚未命中 / 截断异常的统一用户提示（删除与重新生成共用；两个入口同核，文案各写一份
- * 必漂移，且「点了没反应」是最难排障的形态——失败必须可见）
- */
-const TRUNCATE_FAIL_NOTICE = '未能定位该问答（会话可能已变更），请刷新会话后重试';
 
 /** 启动时首选会话被另一窗口占用、已自动让位到最近可用会话的提示（解释「为什么不是上次那个会话」） */
 const SESSION_DISPLACED_NOTICE = '上次停留的会话正在另一个窗口中使用，已为你打开另一个会话。';
@@ -184,6 +177,8 @@ import { buildHtml } from './chatPanelHtml.js';
 import { createChatNoticeOps, type ChatNoticeOps } from './chatNoticeOps.js';
 // 引用入口域（B9-D-2 按 op 组外置）：引用打开定位 + @ 提及选择器，见模块头
 import { createChatRefOps } from './chatRefOps.js';
+// 问答结构破坏性操作域（B9-D-3 按 op 组外置）：delete_turn / regenerate 共用的截断核
+import { createChatTurnStructureOps, truncateFailNotice } from './chatTurnStructureOps.js';
 import {
   buildDocContextBlock,
   buildGitChangesContextBlock,
@@ -272,6 +267,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     post: (msg) => this.post(msg),
     pushRefs: (refs) => this.pushRefs(refs),
     hasView: () => Boolean(this._view),
+  });
+  /**
+   * 问答结构破坏性操作域（B9-D-3 外置）：截断核 + 删除问答
+   *
+   * `sessionStore.truncateFrom` 用闭包**延迟取**（不在字段初始化时捕获实例）——
+   * 字段初始化早于构造参数属性的可读保证，直接传 `this.sessionStore` 有拿到 undefined 的窗口。
+   */
+  private readonly _turnOps = createChatTurnStructureOps({
+    post: (msg) => this.post(msg),
+    isStreaming: () => this.runtimeFor().streaming,
+    getCurrentSessionId: () => this._currentSessionId,
+    sessionStore: {
+      truncateFrom: (date, session, roundId) =>
+        this.sessionStore.truncateFrom(date, session, roundId),
+    },
+    discardLiveBuffer: () => {
+      this.runtimeFor().liveBuffer = undefined;
+    },
+    softDeleteMemories: (ids) => this.softDeleteSessionMemories(ids),
+    replaySession: () => this.replaySession(),
   });
   /** 当前**显示会话**的 Agent（`_sessionAgents` 的一份投影；真正的实例归属表在 extension） */
   private _agent: Agent | undefined;
@@ -1061,7 +1076,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       void this.renameCurrentSession();
     } else if (msg.type === 'delete_turn') {
       // 删除单个问答闭环（轮容器底栏 / 右键菜单触发）：确认不可恢复后截断该轮及之后所有
-      void this.deleteTurnFrom(msg.roundId);
+      void this._turnOps.deleteTurnFrom(msg.roundId);
     } else if (msg.type === 'chat_set_provider') {
       void this.handleSetProvider(msg.name);
     } else if (msg.type === 'stop') {
@@ -1442,64 +1457,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._confirm.bindWriteConfirmation();
   }
 
-  /**
-   * 截断核：从锚点轮截断该问答及之后所有（对齐主流 truncate-from-turn——删该问答及其后
-   * 全部轮，保证剩余上下文自洽）。锚 = 目标轮 `Round.id`，调宿主 `sessionStore.truncateFrom`
-   * （宿主 ISessionStore 扩展，内核接口保持最小化），成功后重放当前会话刷新 UI。
-   * `delete_turn` 与 `input.kind=regenerate` 共用——同锚同截断面，唯一差异 = 确认文案与
-   * 按钮词（调用方传入，防两处确认漂移成第二真理源）。锚 = roundId 而非 ts（DELETE-ANCHOR-1）。
-   *
-   * @returns ok = 是否**实际完成截断**（取消 / 守卫 / 锚未命中 / 异常一律 false——此前恒 true，
-   *          与契约相反，调用方会把「没删」当「删了」续做）；reason = 失败归类（busy 已自带
-   *          提示 / cancel 应静默 / miss·error 必须由调用方给可见反馈，否则就是神秘失灵）；
-   *          userText = 截断起点 Round 的 user 原文（regenerate 重发真源）
-   */
-  private async truncateTurnCore(
-    roundId: string,
-    confirmMessage: string,
-    confirmButton: string,
-  ): Promise<
-    { ok: true; userText?: string } | { ok: false; reason: 'busy' | 'cancel' | 'miss' | 'error' }
-  > {
-    // 运行时守卫：**只拦截断类**（删除 / 重新生成会重写会话文件，与在途落盘冲突）；导航不设此闸
-    if (this.runtimeFor().streaming) {
-      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再操作会话结构' });
-      return { ok: false, reason: 'busy' };
-    }
-    // 破坏性操作：确认不可恢复（与「清空对话」同强度确认）
-    const confirmed = await confirmModal({ message: confirmMessage, confirmLabel: confirmButton });
-    if (!confirmed) return { ok: false, reason: 'cancel' };
-    try {
-      // sessionId 格式契约 SSOT：内核 splitSessionId 拆解（session 名可含连字符）
-      const { date, session } = splitSessionId(this._currentSessionId);
-      const result = this.sessionStore.truncateFrom(date, session, roundId);
-      // 锚未命中（会话已改动 / 旧 DOM 残留锚）= 什么都没删：既不伪装成功也不重放（存储未变）
-      if (!result.ok) return { ok: false, reason: 'miss' };
-      // 盘面已删 ⇒ 现场必须立刻作废（先于任何后续步骤，异常路径也不得复活已删内容）：
-      // 被删轮可能还在软暂停刻意保留的 live 现场（pausedOnPurpose）里，重放会并回其 seedUserMessage
-      this.runtimeFor().liveBuffer = undefined;
-      // 联动软删回收站（轮次摘要；会话级不联动——会话仍在）
-      this.softDeleteSessionMemories(result.removedIds);
-      // 截断后重放当前会话（消息已减少），保证 UI 与存储一致
-      this.replaySession();
-      return { ok: true, userText: result.removedUserText };
-    } catch (err) {
-      // 截断失败不阻塞展示（仅清理 UI），但需记录（SSOT 不藏错）
-      console.warn('Memora 截断问答闭环失败', err);
-      return { ok: false, reason: 'error' };
-    }
-  }
-
-  private async deleteTurnFrom(roundId: string): Promise<void> {
-    const outcome = await this.truncateTurnCore(
-      roundId,
-      '确定删除该问答及之后的所有对话？此操作不可恢复。',
-      '删除',
-    );
-    if (!outcome.ok && (outcome.reason === 'miss' || outcome.reason === 'error')) {
-      this.post({ type: 'notice', level: 'info', message: TRUNCATE_FAIL_NOTICE });
-    }
-  }
+  // ─── 问答结构破坏性操作（B9-D-3 按 op 组外置） ───
+  // 截断核（delete_turn / regenerate 共用：运行时守卫 → 确认 → store 截断 → 现场作废 →
+  // 联动软删 → 重放）整段在 `chatTurnStructureOps.ts`；两处入口只经 `_turnOps` 调用，
+  // **不得**在此复写第二份截断逻辑。
 
   /**
    * 推送历史会话列表（对 session_list 的应答）
@@ -2658,22 +2619,28 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 附件不重发：图片随轮落盘、截断即随轮回收（语义如实：重新生成 = 文本重开）。
         const anchor = msg.roundId?.trim() ?? '';
         if (!anchor) return;
-        const outcome = await this.truncateTurnCore(
+        const outcome = await this._turnOps.truncateTurnCore(
           anchor,
-          '重新生成将删除该问答及之后的所有对话，并以原文重新发送。此操作不可恢复。',
-          '重新生成',
+          l10n.t(
+            'Regenerating deletes this turn and all later turns, then resends the original text. This cannot be undone.',
+          ),
+          l10n.t('Regenerate'),
         );
         if (!outcome.ok) {
           // busy 已在核内提示、cancel 是用户主动 → 均静默；miss / error 必须可见否则等于失灵
           if (outcome.reason === 'miss' || outcome.reason === 'error') {
-            this.post({ type: 'notice', level: 'info', message: TRUNCATE_FAIL_NOTICE });
+            this.post({ type: 'notice', level: 'info', message: truncateFailNotice() });
           }
           return;
         }
         const text = outcome.userText?.trim() ?? '';
         if (!text) {
           // 锚点轮无 user 原文（异常态）→ 如实提示，不静默吞
-          this.post({ type: 'notice', level: 'info', message: '未能取得原提问文本，未重新生成' });
+          this.post({
+            type: 'notice',
+            level: 'info',
+            message: l10n.t('Could not retrieve the original prompt text; nothing was regenerated'),
+          });
           return;
         }
         await this.sendInput(text, undefined, undefined, undefined, undefined);

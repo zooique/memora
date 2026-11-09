@@ -780,7 +780,8 @@ describe('会话结构操作 · 删除问答后 live 现场必须作废（防已
       runtimeFor(sessionId?: string): { streaming: boolean; liveBuffer?: unknown };
       sessionStore: unknown;
       _viewLoader: unknown;
-      deleteTurnFrom(roundId: string): Promise<void>;
+      /** 删除问答已随域外置（B9-D-3），经面板字段 `_turnOps` 驱动 */
+      _turnOps: { deleteTurnFrom(roundId: string): Promise<void> };
     };
     c.runtimeFor().streaming = false;
     c._viewLoader = () => [];
@@ -798,9 +799,9 @@ describe('会话结构操作 · 删除问答后 live 现场必须作废（防已
       seedUserMessage: { content: '已删轮的用户提问' },
     };
     const { window } = await import('vscode');
-    vi.mocked(window.showWarningMessage).mockResolvedValue('删除' as never);
+    vi.mocked(window.showWarningMessage).mockResolvedValue('Delete' as never);
 
-    await c.deleteTurnFrom('round-a');
+    await c._turnOps.deleteTurnFrom('round-a');
 
     // 变异锚：删掉 `runtimeFor().liveBuffer = undefined` ⇒ 本例红在 toBeUndefined
     //（真机实证：删除中断轮后残留提问气泡，重启才消失；重启即现场为空）
@@ -813,7 +814,8 @@ describe('会话结构操作 · 删除问答后 live 现场必须作废（防已
     const c = h.cast as unknown as {
       runtimeFor(sessionId?: string): { streaming: boolean; liveBuffer?: unknown };
       sessionStore: unknown;
-      deleteTurnFrom(roundId: string): Promise<void>;
+      /** 删除问答已随域外置（B9-D-3），经面板字段 `_turnOps` 驱动 */
+      _turnOps: { deleteTurnFrom(roundId: string): Promise<void> };
     };
     c.runtimeFor().streaming = false;
     c.sessionStore = { truncateFrom: () => ({ ok: false, removedIds: [] }) };
@@ -824,9 +826,9 @@ describe('会话结构操作 · 删除问答后 live 现场必须作废（防已
     };
     c.runtimeFor().liveBuffer = buffer;
     const { window } = await import('vscode');
-    vi.mocked(window.showWarningMessage).mockResolvedValue('删除' as never);
+    vi.mocked(window.showWarningMessage).mockResolvedValue('Delete' as never);
 
-    await c.deleteTurnFrom('round-miss');
+    await c._turnOps.deleteTurnFrom('round-miss');
 
     // 什么都没删 ⇒ 不得清现场（否则暂停中的半截正文丢失，见 consumeFlow finally 注释）
     expect(c.runtimeFor().liveBuffer).toBe(buffer);
