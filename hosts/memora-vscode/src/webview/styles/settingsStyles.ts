@@ -242,6 +242,16 @@ export const settingsStyles = `
 
   /* ============ Security：安全子视图（写入审批） ============ */
   #security-root { padding: var(--sp-3, 8px); }
+  /* 页头：历史形态用全局 .security-* 选择符，.header 一直没被 root 接管 ⇒ 裸 h2
+     按浏览器默认字号 / 外边距渲染。只补对齐与字号，不加分隔线——本页视觉语言与其余页
+     的 border-bottom 页头不同，勿顺手对齐成同一形态。 */
+  #security-root .header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 6px);
+    margin-bottom: var(--sp-3, 8px);
+  }
+  #security-root .header h2 { margin: 0; font-size: var(--font-lg, 14px); }
   .security-section { margin-top: var(--sp-3, 8px); }
   .security-item {
     /* 卡片外壳语言对齐记忆/技能/角色卡（单一真理源）：surface-sidebar + border .4 + margin-bottom 间距；

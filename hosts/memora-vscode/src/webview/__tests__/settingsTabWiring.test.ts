@@ -8,7 +8,7 @@
  *   - 每个 tab 在 `refreshAll()` 里都有 loader 调用（漏一个即红）；
  *   - 每个 tab 的 root id 都在样式表里出现（漏一个即红）；
  *   - 每个 tab 用到的共享类都被该 root 前缀样式接管（2026-11-09 真机截图补，
- *     存量缺口按冻结表登记不修，新增即红）；
+ *     第二批把 3 处存量缺口补齐、2 条僵尸豁免清除 ⇒ **零豁免**，任何缺口即红）；
  *   - `handleMessage` 有新页的消息分支、`TAB_BODY_HTML` 的键集与 tab 表相等。
  *
  * 判据取源码文本（与 `protocolGuard` / `fileChangeCommands` 同型），不复制一份
@@ -90,8 +90,13 @@ describe('加一页接线守卫（静默半残 → 可红）', () => {
    * 按钮竖向堆叠、说明贴边；DOM 测试不查计算样式，全绿也只有真机截图看得出
    * （与 mcpStyles 头注释记录的 2026-10-24 MCP 首版「样式整层缺失」同类伤）。
    *
-   * 存量缺口按下表冻结（按真机验收 §六 登记不修，不宣称全库已收口）；
-   * **任何新增缺口立即红**，包括未来加第 8 个 tab 忘补共享类样式。
+   * **零豁免（2026-11-09 第二批）**：首版冻结表的 5 条按「一次性排查脚本」抄来，
+   * 该脚本用 `class="[^"]*\bhint\b` 宽松正则 ⇒ `loading-hint` / `security-reset-hint`
+   * 被误判含 `hint`；本守卫的 `usesClass` 是 class 属性**精确分词**，两套判据不同源。
+   * 按本守卫口径复算：`mcp:hint` / `security:hint` 永不命中（僵尸豁免），
+   * 真缺口只有 `skills:stat-bar` / `skills:footer-hint` / `security:header` 三处，
+   * 均已在各自样式文件补齐。故冻结表整体删除 —— 留着空 Set 或永不命中的键都是僵尸容器。
+   * **判据唯一真源 = 本文件的 `usesClass`**，复算缺口不得另写宽松正则。
    */
   const SHARED_CLASSES = [
     'header',
@@ -102,13 +107,6 @@ describe('加一页接线守卫（静默半残 → 可红）', () => {
     'btn-icon-solo',
     'btn-icon',
   ] as const;
-  const KNOWN_SHARED_CLASS_GAPS = new Set([
-    'skills:stat-bar',
-    'skills:footer-hint',
-    'mcp:hint',
-    'security:header',
-    'security:hint',
-  ]);
   const BODY_CONST_FILES: Record<string, string> = {
     MCP_BODY_HTML: 'settingsMcpHtml.ts',
     SECURITY_BODY_HTML: 'settingsSecurityHtml.ts',
@@ -145,7 +143,19 @@ describe('加一页接线守卫（静默半残 → 可红）', () => {
     );
   }
 
-  it('每个 tab 用到的共享类都有该 root 前缀样式（新增缺口即红）', () => {
+  /**
+   * 样式侧同样按选择器词边界匹配，**与 usesClass 对称**。
+   * 原写法 `stylesText.includes('#<root> .<cls>')` 是前缀子串：把规则改名成
+   * `.stat-bar-MUTATION` 后仍判绿（2026-11-09 变异实证，守卫当场没红）⇒
+   * DOM 侧精确、样式侧宽松，两套口径不同源，等于给未来留一条假绿通道。
+   * 边界取 `(?![\w-])`：后接 `{` / 空格 / 逗号 / 冒号 / 后代选择器都算命中，
+   * 后接 `-` 或字母（`.stat-bar-extra`）不算。
+   */
+  function stylesClass(root: string, cls: string): boolean {
+    return new RegExp(`#${root} \\.${cls}(?![\\w-])`, 'm').test(stylesText);
+  }
+
+  it('每个 tab 用到的共享类都有该 root 前缀样式（零豁免，任何缺口即红）', () => {
     const gaps: string[] = [];
     let scanned = 0;
     for (const tab of SETTINGS_TABS) {
@@ -155,10 +165,8 @@ describe('加一页接线守卫（静默半残 → 可红）', () => {
       for (const cls of SHARED_CLASSES) {
         if (!usesClass(body, cls)) continue;
         scanned++;
-        const key = `${tab}:${cls}`;
-        if (stylesText.includes(`#${settingsRootId(tab)} .${cls}`)) continue;
-        if (KNOWN_SHARED_CLASS_GAPS.has(key)) continue;
-        gaps.push(key);
+        if (stylesClass(settingsRootId(tab), cls)) continue;
+        gaps.push(`${tab}:${cls}`);
       }
     }
     expect(scanned, '未扫到任何共享类引用（解析口径失效）').toBeGreaterThan(10);

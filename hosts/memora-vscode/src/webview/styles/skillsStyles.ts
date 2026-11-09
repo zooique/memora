@@ -27,6 +27,14 @@ export const skillsStyles = `
     font-size: var(--font-lg, 14px);
   }
 
+  /* 页头计数徽标：兄弟页各有 root 前缀规则，本页此前漏接管 ⇒ 裸 span 按正文字号 / 主色显示。
+     与 #works-root .stat-bar 同款（次级色 + 小字 + 推到行尾），不新造令牌。 */
+  #skills-root .stat-bar {
+    margin-left: auto;
+    font-size: var(--font-sm, 11px);
+    color: var(--text-secondary, #9aa0a6);
+  }
+
   #skills-root .header-actions {
     display: flex;
     gap: var(--sp-2, 6px);
@@ -65,6 +73,16 @@ export const skillsStyles = `
     padding: var(--sp-hair, 1px) var(--sp-1, 4px);
     border-radius: var(--radius-sm, 2px);
     font-size: var(--font-sm, 11px);
+  }
+
+  /* 页尾脚注：#roles-root / #memory-root 的共用规则不含本页，此前是裸文本。
+     与既有页尾同款（上分隔线 + 次级色小字），左右不另加 padding（#skills-root 已有）。 */
+  #skills-root .footer-hint {
+    margin: var(--sp-3, 8px) 0 0;
+    padding: var(--sp-3, 8px) 0 0;
+    border-top: var(--line-solid);
+    color: var(--text-secondary, #9aa0a6);
+    font-size: var(--font-xs, 10px);
   }
 
   #skills-root .skill-item {

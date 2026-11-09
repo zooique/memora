@@ -617,7 +617,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // WORK-PROJECTION-MOVE-1；实数经 scripts/count-token-refs.mjs 实锤同步）。
     // 84：同日第二批 UI 反馈订正，worksStyles 补页头 border-bottom / 页尾 border-top
     // 两处 var(--line-solid) +2（82→84；实数经 scripts/count-token-refs.mjs 实锤同步）。
-    'line-': 84, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
+    // 85：同日第三批收口存量共享类缺口，skillsStyles 页尾脚注 border-top
+    // var(--line-solid) +1（84→85；实数经 scripts/count-token-refs.mjs 实锤同步）。
+    'line-': 85, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
     //             var(--line-solid) +1 ⇒ 79→80（UI-STATUS-DIVIDE-1，与
     //             `.context-ring__injection` 同一既有令牌，未新造颜色）；
     //             实数经 scripts/count-token-refs.mjs 实锤同步。
@@ -633,7 +635,8 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             IMG-2 Q3：上传按钮 .image-attach-btn 描边 + hover 描边（var(--line-solid)）+2
     //             （2026-10-28，已于 2026-11-02 随「输入区控件去边框」按 -2 退役）；
     //             作品页提示行 + 清单行（worksStyles）各引 var(--line-solid) +2（2026-11-09）；
-    //             同日 UI 反馈订正再补页头 / 页尾两处 +2 ⇒ 84
+    //             同日 UI 反馈订正再补页头 / 页尾两处 +2 ⇒ 84；
+    //             同日第三批存量收口补 skillsStyles 页尾脚注一处 +1 ⇒ 85
     'sq-': 51, // 输入区控件去边框（2026-11-02）：.ctl 基类的 min-width/min-height 各引
     //           var(--sq-xl)/var(--sq-lg) +2 ⇒ 49→51（机械实测同步）。
     //           IMG-2 Q3：上传按钮 .image-attach-btn 尺寸 var(--sq-xl)/var(--sq-lg) +2
