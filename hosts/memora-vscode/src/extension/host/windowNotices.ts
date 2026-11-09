@@ -1,5 +1,5 @@
 /**
- * 窗口通知文案的本地化渲染单点（show*Message / modal 面向的文案在此出）
+ * 窗口通知文案的本地化渲染单点（show*Message / modal / 状态栏项面向的文案在此出）
  *
  * 与 `noticeText.ts`（错误 → 通知文本，纯 node 可测）分文件：本文件 import vscode，
  * 会连累纯 node 测试环境——凡**宿主窗口面**的 l10n 文案函数落这里，凡 catch 错误转
@@ -9,6 +9,7 @@
  */
 import * as vscode from 'vscode';
 import type { LlmErrorCategory } from '@zooique/memora';
+import { readWorkspaceTrusted } from './userAssets/projectScope.js';
 
 /**
  * 插话达上限的拒收提示（INPUT-LIMIT-1）：上限裁决在内核
@@ -46,4 +47,35 @@ export function flowError(category: LlmErrorCategory | undefined, rawMessage: st
     default:
       return rawMessage;
   }
+}
+
+/**
+ * 未信任工作区的状态栏提示（只提示、不阻断对话）
+ *
+ * 从 `extension.ts` 外置而成：状态栏项的生命周期（挂 `context.subscriptions`）与它的
+ * 本地化文案必须同处一处，否则两头的键与显隐判据各写一份（同 `.text` 裸串复发面）。
+ * 真源 = `vscode.workspace.isTrusted`（经 `readWorkspaceTrusted` 单点读，不自存状态副本）。
+ *
+ * @param context 扩展上下文（状态栏项随插件停用自动释放）
+ * @returns 按当前信任状态刷新显隐的函数（信任变更监听器里要再调一次）
+ */
+export function createTrustNotice(context: vscode.ExtensionContext): () => void {
+  // 状态栏项：右侧、优先级 100（排在常规状态信息之上，不抢最右）
+  const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  // 键 = 英文原文（ADR-042）；`$(shield)` 是 VS Code 图标语法，翻译时须原样保留
+  item.text = vscode.l10n.t('$(shield) Memora: project-level assets are off');
+  item.tooltip = vscode.l10n.t(
+    'Workspace is not trusted, so Memora skips project-level skills and role packs (.memora/). It takes effect once trusted.',
+  );
+  // 点击直达 VS Code 的「管理工作区信任」（不自己造信任入口）
+  item.command = 'workbench.action.manageTrust';
+  context.subscriptions.push(item);
+  /** 刷新显隐：仅「打开了工作区且未受信任」时显示（无工作区时没有项目级资产可谈） */
+  const sync = (): void => {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (folder && !readWorkspaceTrusted()) item.show();
+    else item.hide();
+  };
+  sync();
+  return sync;
 }

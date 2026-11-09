@@ -1322,5 +1322,9 @@
   "Do not create memories.json in this workspace by hand — forking the data would overwrite real memories": "切勿手动在该工作区新建 memories.json——数据分叉会覆盖真实记忆",
   "Approved": "已批准",
   "Declined": "已拒绝",
-  "User did not confirm in time; declined automatically": "用户未在时限内确认，已自动拒绝"
+  "User did not confirm in time; declined automatically": "用户未在时限内确认，已自动拒绝",
+  "Workspace is not trusted, so Memora skips project-level skills and role packs (.memora/). It takes effect once trusted.": "工作区未受信任，Memora 不读取项目级技能/角色包（.memora/）。信任后自动生效。",
+  "No sessionManager after agent assembly": "Agent 装配完成但 sessionManager 为空",
+  "No session yet; cannot assemble agent": "尚未创建任何会话，无法装配 Agent",
+  "$(shield) Memora: project-level assets are off": "$(shield) Memora：项目级资产未启用"
 }

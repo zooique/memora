@@ -973,6 +973,13 @@ const MIGRATED_UI_MODULES = [
   'extension/host/fileChangeRenderer.ts',
   'extension/host/memoryStorage.ts',
   'extension/host/confirmCoordinator.ts',
+  // B10-E 组2（2026-11-10）：`extension.ts` 的状态栏未信任提示外置为
+  // `host/windowNotices.createTrustNotice`（文案与显隐同处，避开 max-lines 顶格），
+  // 两处 `throw / Promise.reject` 文案改键，4 个热更失败标签随日志模板改英文。
+  // ⚠️ 覆盖边界：判据⑬ 只认 `WINDOW_LITERAL_ANCHORS` 列出的写法（`.text/.tooltip=`、
+  // `show*Message`、QuickPick 属性等）；`throw new Error('…')` **不在锚点表内**——
+  // 本文件那两处是本次人工清的，不靠判据守（见文件头「采集面已知形态」）。
+  'extension/extension.ts',
 ];
 
 /** 判据⑭ 基线：登记项少于该数 ⇒ 红（清单被清空 = 判据静默失明） */

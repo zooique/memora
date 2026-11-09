@@ -1322,5 +1322,9 @@
   "Do not create memories.json in this workspace by hand — forking the data would overwrite real memories": "",
   "Approved": "",
   "Declined": "",
-  "User did not confirm in time; declined automatically": ""
+  "User did not confirm in time; declined automatically": "",
+  "Workspace is not trusted, so Memora skips project-level skills and role packs (.memora/). It takes effect once trusted.": "",
+  "No sessionManager after agent assembly": "",
+  "No session yet; cannot assemble agent": "",
+  "$(shield) Memora: project-level assets are off": ""
 }

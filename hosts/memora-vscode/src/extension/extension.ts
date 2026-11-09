@@ -47,6 +47,7 @@ import { registerResidentRuleCommands } from './commands/residentRules.js';
 // 作品投影：侧边栏 TreeView 已退役，清单变更由 notifier 回推设置页「作品和规则」选项卡
 import { notifyWorkProjectionChanged } from './host/workProjectionBridge.js';
 import { answerLanguageAssembly } from './host/answerLanguageConfig.js';
+import { createTrustNotice } from './host/windowNotices.js';
 import { registerAddToChatCommand } from './commands/addToChat.js';
 import { createUserDataResetHandler } from './commands/userDataReset.js';
 import { importAssetCommand } from './commands/importAsset.js';
@@ -173,7 +174,7 @@ function runOnAssembledAgent(
       await action(agent);
     }
   })().catch((err) => {
-    console.warn(`Memora ${failLabel}失败`, err);
+    console.warn(`Memora ${failLabel} failed`, err);
   });
 }
 
@@ -335,7 +336,7 @@ async function assembleAgentForSession(
   try {
     // getter 类型为可空（未初始化时 null）；此处刚装配完成，为空即内部状态异常
     const sessionManager = agent.sessionManager;
-    if (!sessionManager) throw new Error('Agent 装配完成但 sessionManager 为空，无法绑定会话');
+    if (!sessionManager) throw new Error(vscode.l10n.t('No sessionManager after agent assembly'));
     // 生产会话切换走 switchToSession：同时载入该会话消息并重建工作记忆
     await sessionManager.switchToSession(sessionId);
   } catch (err) {
@@ -414,24 +415,9 @@ export function activate(context: vscode.ExtensionContext): void {
     });
   // 激活期的目录快照（供面板展示用；运行期补注入时再读一次并回推面板—见信任监听器）
   const projectDirsAtActivation = readProjectAssetDirs();
-  const firstWorkspaceFolder = vscode.workspace.workspaceFolders?.[0];
 
-  // 未信任可见提示（状态栏）：只提示、不阻断对话——用户可随时「信任工作区」后即时生效
-  const trustNotice = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  trustNotice.text = '$(shield) Memora：项目级资产未启用';
-  trustNotice.tooltip =
-    '工作区未受信任，Memora 不读取项目级技能/角色包（.memora/）。信任后自动生效。';
-  trustNotice.command = 'workbench.action.manageTrust';
-  context.subscriptions.push(trustNotice);
-  /** 刷新信任提示显隐（真源 = vscode.workspace.isTrusted，不自存状态副本） */
-  const syncTrustNotice = (): void => {
-    if (firstWorkspaceFolder && !readWorkspaceTrusted()) {
-      trustNotice.show();
-    } else {
-      trustNotice.hide();
-    }
-  };
-  syncTrustNotice();
+  // 未信任可见提示（状态栏）：文案与显隐判据外置到 host/windowNotices.ts（窗口面 l10n 单点）
+  const syncTrustNotice = createTrustNotice(context);
 
   // 侧边栏视图：对话面板（sessionStore 与 assemble 同路径 .memora/sessions/）
   const workspacePath = resolveWorkspacePath();
@@ -449,7 +435,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const sessionId = resolveCommandSessionId(chatProvider, sessionStore);
     if (!sessionId) {
       // 无任何会话 ⇒ 没有可归属的 Agent；显式拒绝，避免「装出来挂在空会话上」
-      return Promise.reject(new Error('尚未创建任何会话，无法装配 Agent'));
+      return Promise.reject(new Error(vscode.l10n.t('No session yet; cannot assemble agent')));
     }
     return agentRegistry.createAgentForSession(sessionId);
   };
@@ -818,7 +804,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (e.affectsConfiguration('memora.disabledSkills')) {
         runOnAssembledAgent(
           (agent) => syncDisabledSkills(agent, chatProvider, settingsProvider),
-          '技能启停配置同步',
+          'skill toggle sync',
         );
       }
       // 白名单：设置面板写入之外，用户手改 settings.json / Settings Sync 落地也必须收敛，
@@ -829,7 +815,7 @@ export function activate(context: vscode.ExtensionContext): void {
           // LLM 对用户级的写权限，装配期与热更新两处必须口径一致，否则改一次设置就对
           // 用户目录重新放行——装配期收回、热更新放行的双头语义）。
           (agent) => agent.security?.setAllowedPaths(readAllowedPaths()),
-          '允许路径配置同步',
+          'allowed paths sync',
         );
       }
       // 归档模式：同上。setArchiveMode 在对话进行中会「暂存 + 抛错」（内核 A2 契约），
@@ -842,7 +828,7 @@ export function activate(context: vscode.ExtensionContext): void {
             // 预期路径（busy 暂存）：保留日志便于诊断「为什么还没切」
             console.info('Memora 归档模式变更已暂存，将在当前对话结束后生效', err);
           }
-        }, '归档模式配置同步');
+        }, 'archive mode sync');
       }
       // MCP 配置（切片 4 起即时生效）：按 name 差分增量启停 + allowlist 只重算档位，
       // 无需重载窗口；差分细节见 host/mcp/runtime.ts，读取与装配期同源（mcpConfig.ts）。
@@ -859,7 +845,7 @@ export function activate(context: vscode.ExtensionContext): void {
             clientVersion: extensionVersion,
           });
           settingsProvider.pushMcpStatus();
-        }, 'MCP 配置热更');
+        }, 'MCP config hot update');
       }
     }),
   );
