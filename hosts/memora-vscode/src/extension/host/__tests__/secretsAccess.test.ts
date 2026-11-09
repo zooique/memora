@@ -35,6 +35,11 @@ const calls = vi.hoisted(() => ({ get: 0, store: 0, delete: 0 }));
 vi.mock('vscode', () => ({
   workspace: { getConfiguration: () => ({ update: () => Promise.resolve() }) },
   ConfigurationTarget: { Global: 1, Workspace: 2 },
+  // 宿主文案已本地化：`{0}` 插值照做，断言用英文源键比对
+  l10n: {
+    t: (message: string, ...args: (string | number)[]) =>
+      message.replace(/\{(\d+)\}/g, (m, i) => String(args[Number(i)] ?? m)),
+  },
 }));
 
 import {
@@ -171,13 +176,13 @@ describe('secretsAccess.writeSecret / deleteSecret', () => {
 describe('secretsAccess.secretErrorText', () => {
   it('超时 → 明说「钥匙串无响应」并提示密钥可能未保存', () => {
     expect(secretErrorText('API Key', { timedOut: true, reason: 'x' })).toBe(
-      'API Key 超时：系统钥匙串未在期限内响应，密钥可能未保存',
+      'API Key timed out: the system keychain did not respond in time; the secret may not have been saved',
     );
   });
 
   it('真拒绝 → 带原始原因', () => {
     expect(secretErrorText('API Key', { timedOut: false, reason: '钥匙串已锁定' })).toBe(
-      'API Key 失败：钥匙串已锁定',
+      'API Key failed: 钥匙串已锁定',
     );
   });
 });

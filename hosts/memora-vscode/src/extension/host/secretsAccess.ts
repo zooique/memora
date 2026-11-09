@@ -45,7 +45,8 @@
  *   未设（或空串）= 正常透传，单测钉死默认态。注入的 reason 自带变量名，
  *   真机回执上可区分「注入」与「真实故障」，不会把验点环境误判成产品缺陷。
  */
-import type * as vscode from 'vscode';
+// 值导入（非 `import type`）：失败文案要用 `vscode.l10n.t`，纯类型导入在运行时没有该成员
+import * as vscode from 'vscode';
 import { WRITE_TIMEOUT_MS, type WriteResult } from '../settingsWrite.js';
 import { toNoticeText } from './noticeText.js';
 
@@ -73,8 +74,16 @@ export type ReadResult =
 function faultReason(op: 'read' | 'write'): string | undefined {
   const mode = (process.env.MEMORA_FAULT_SECRETS ?? '').trim().toLowerCase();
   if (mode !== 'all' && mode !== op) return undefined;
-  const what = op === 'read' ? '读取' : '写入';
-  return `故障注入：密钥${what}被强制失败（MEMORA_FAULT_SECRETS=${mode}）`;
+  // 两条整句键各自独立调用（不把「read/write」当碎片键，也不把变量传进 t —— 那会让键脱离静态采集）
+  return op === 'read'
+    ? vscode.l10n.t(
+        'Fault injection: the secret read was forced to fail (MEMORA_FAULT_SECRETS={0})',
+        mode,
+      )
+    : vscode.l10n.t(
+        'Fault injection: the secret write was forced to fail (MEMORA_FAULT_SECRETS={0})',
+        mode,
+      );
 }
 
 /**
@@ -95,7 +104,7 @@ export async function readSecret(secrets: vscode.SecretStorage, key: string): Pr
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
           timedOut = true;
-          reject(new Error('密钥读取未在期限内完成'));
+          reject(new Error(vscode.l10n.t('Secret read did not finish within the time limit')));
         }, WRITE_TIMEOUT_MS);
       }),
     ]);
@@ -130,7 +139,7 @@ export async function writeSecret(
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
           timedOut = true;
-          reject(new Error('密钥写入未在期限内完成'));
+          reject(new Error(vscode.l10n.t('Secret write did not finish within the time limit')));
         }, WRITE_TIMEOUT_MS);
       }),
     ]);
@@ -166,7 +175,7 @@ export async function deleteSecret(
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
           timedOut = true;
-          reject(new Error('密钥删除未在期限内完成'));
+          reject(new Error(vscode.l10n.t('Secret delete did not finish within the time limit')));
         }, WRITE_TIMEOUT_MS);
       }),
     ]);
@@ -185,11 +194,11 @@ export async function deleteSecret(
  * 超时要指向「文件只读/被占用」（G9 真机验收原句，有测试逐字钉死），密钥超时
  * 的合理排查方向是「系统钥匙串无响应」。两面各自域内单点，不互相串用。
  *
- * 模板里 label 后留一个半角空格：本面的 label 常以英文词结尾（`API Key`），
- * 无空格会得到「API Key失败」这种中英粘连形态；settings 面 label 全中文，
- * 其模板保持无空格（原句有测试钉死，不因本面改动而漂移）。
+ * 模板内 label 与后续文案之间用 `{0}` 占位承接：label 是插值内容（用户数据/域内标签），
+ * 参与翻译的只有整句键——「label 后要不要空格 / 用中文引号还是英文引号」由各语言的译文决定，
+ * 不再在代码里按语种硬拼。
  *
- * @param label 操作对象名（如 `API Key` / `API Key「deepseek」清理` / `API Key「deepseek」读取`）
+ * @param label 操作对象名（如 `API Key` / `API Key cleanup` / `API Key "deepseek" read`）
  * @param failure 访问结果里的失败分支
  */
 export function secretErrorText(
@@ -197,8 +206,11 @@ export function secretErrorText(
   failure: { timedOut: boolean; reason: string },
 ): string {
   return failure.timedOut
-    ? `${label} 超时：系统钥匙串未在期限内响应，密钥可能未保存`
-    : `${label} 失败：${failure.reason}`;
+    ? vscode.l10n.t(
+        '{0} timed out: the system keychain did not respond in time; the secret may not have been saved',
+        label,
+      )
+    : vscode.l10n.t('{0} failed: {1}', label, failure.reason);
 }
 
 /**
@@ -211,11 +223,11 @@ export function secretErrorText(
  * userDataReset 中间态 / 设置同步不含密钥 / 凭证被清理），必须可读地拒绝——
  * 空 key 打到服务端是一个与真实原因无关的 401。
  *
- * @param label 操作对象名（如 `API Key「deepseek」`，中文引号结尾故模板不加空格）
+ * @param label 操作对象名（如 `API Key "deepseek"`）
  */
 export function secretMissingText(label: string): string {
-  return (
-    `${label}未存储：可能保存未成功、系统凭证被清理，或设置同步未包含密钥；` +
-    `请在配置面板编辑该服务商补填 API Key`
+  return vscode.l10n.t(
+    '{0} is not stored: the save may not have succeeded, the system credential may have been cleared, or settings sync may not include secrets; edit this provider in the configuration panel to fill in the API Key',
+    label,
   );
 }

@@ -436,7 +436,21 @@ const WEBVIEW_PANELS = {
       'extension/host/sessionRolePack.ts',
     ],
   },
-  config: { state: 'pending', files: [] },
+  // 配置页（B4）：骨架 / 运行时脚本 / 样式 + 配置域宿主执行面（Provider 存储 + 密钥通道）全部迁完。
+  // `secretsAccess.ts` 与 `settingsWrite.ts` 是写入通道的失败文案单点（`{0}` 占位已全部英文化），
+  // 登记在此是因为本批次已把它们的模板与配置域 label 一起改齐——其余域的 label 随各自批次走。
+  config: {
+    state: 'migrated',
+    files: [
+      'shared/settingsTabs.ts',
+      'webview/panels/settingsConfigHtml.ts',
+      'webview/scripts/configView.ts',
+      'webview/styles/configStyles.ts',
+      'extension/providers/providerStore.ts',
+      'extension/host/secretsAccess.ts',
+      'extension/settingsWrite.ts',
+    ],
+  },
   skills: { state: 'pending', files: [] },
   mcp: { state: 'pending', files: [] },
   security: { state: 'pending', files: [] },
