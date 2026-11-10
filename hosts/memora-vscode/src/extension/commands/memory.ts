@@ -62,21 +62,26 @@ export async function cleanupMemoriesCommand(
   const agent = await tryGetAgent();
   if (!agent?.memory) {
     vscode.window.showWarningMessage(
-      vscode.l10n.t('Memora Agent is not ready; cannot purge memory'),
+      // 复用设置面板「清理过期」的同义句：同一动作不在两处各写一份（原 purge 系键已删）
+      vscode.l10n.t('The Agent is not ready; cannot clean up memories'),
     );
     return;
   }
   // 确认对话框——防止误操作。统一走 confirmModal（唯一入口，取消交给系统 Cancel）
   const confirmed = await confirmModal({
-    message: `将永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆，此操作不可撤销。`,
-    confirmLabel: '确认清理',
+    // 与设置面板「清理过期」是同一动作：复用同一句确认文案与按钮名（单一真源，勿各自写一份）
+    message: vscode.l10n.t(
+      'Memories soft-deleted more than {0} days ago will be permanently deleted. This cannot be undone.',
+      MEMORY_RECYCLE_RETENTION_DAYS,
+    ),
+    confirmLabel: vscode.l10n.t('Confirm cleanup'),
   });
   if (!confirmed) return;
   try {
     // 保留期 SSOT = shared/constants（与设置面板「清理过期」同源，改一处即两侧同步）
     const cutoff = new Date(Date.now() - MEMORY_RECYCLE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
     const purged = agent.memory.writePurgeExpired(cutoff);
-    vscode.window.showInformationMessage(vscode.l10n.t('Purged {0} expired memories', purged));
+    vscode.window.showInformationMessage(vscode.l10n.t('Cleaned up {0} expired memories', purged));
   } catch (err) {
     vscode.window.showErrorMessage(vscode.l10n.t('Purge failed: {0}', toNoticeText(err)));
   }

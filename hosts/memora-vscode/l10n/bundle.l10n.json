@@ -19,8 +19,6 @@
   "The target is outside the first workspace root (multi-root workspaces support the first root only)": "",
   "Memora Agent is not ready; cannot show memory stats": "",
   "Memory stats: {0} active, {1} in recycle bin | by source: {2}": "",
-  "Memora Agent is not ready; cannot purge memory": "",
-  "Purged {0} expired memories": "",
   "Purge failed: {0}": "",
   "Memora Agent is not ready; cannot run garbage collection": "",
   "GC completed: scanned {0} QA loops, removed {1} orphaned rounds + {2} summaries": "",

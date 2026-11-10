@@ -18,8 +18,6 @@
   "The target is outside the first workspace root (multi-root workspaces support the first root only)": "目标不在首个工作区根下（多根工作区下仅支持首根）",
   "Memora Agent is not ready; cannot show memory stats": "Memora Agent 未就绪，无法查看记忆统计",
   "Memory stats: {0} active, {1} in recycle bin | by source: {2}": "记忆统计：活跃 {0} 条，回收站 {1} 条 | 来源分布：{2}",
-  "Memora Agent is not ready; cannot purge memory": "Memora Agent 未就绪，无法清理记忆",
-  "Purged {0} expired memories": "已清理 {0} 条过期记忆",
   "Purge failed: {0}": "清理失败：{0}",
   "Memora Agent is not ready; cannot run garbage collection": "Memora Agent 未就绪，无法执行垃圾回收",
   "GC completed: scanned {0} QA loops, removed {1} orphaned rounds + {2} summaries": "孤儿回收完成：扫描 {0} 个问答闭环，清理 {1} 个孤立 Round + {2} 条摘要",
