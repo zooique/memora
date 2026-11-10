@@ -29,6 +29,7 @@
 
 - **轮身份在 prepare 入口即刻出生，不再由「首个携带该 id 的数据块」反向派生**（`6539957e`）：`roundId` 的分配从「装配完成之后」提前到「prepare 入口」，因此从「用户发送」到「首个数据块到达」之间，这一轮在内存快照 / 会话视图里**已经存在**（正文尚空），不再表现为「它不存在」。同批收口一个静默写错轮：prepare 窗口内的 `interject()` 原先会把内容写进**上一轮**的历史，现按 `round-missing` fail-closed，返回 6.0.0 已有的 `'queued-unpersisted'`（**该返回值不是本版新增枚举**）。**对消费者**：`thinking` chunk 新增可选 `roundId`（`RoundTagged`，纯新增字段，既有解构零变化），宿主据此在生成期把一轮归到正确轮号；prepare 窗口的插话落盘结果从「写错轮」变为「明确未落盘」。
 - **作品投影写入改为保留未知字段的 upsert，并按文件串行**（`eb70cb3e`）：`registerWork()` 命中同 `source` 时原先整条替换为只带三字段的新对象，自己写入的额外字段被静默丢弃且无测试会红；现改为读-合并-写，并在进程内按绝对路径排队串行（跨进程仍按「最后落盘者胜」）。**对消费者**：`agent.works.registerWork()` 不再抹掉自己写入的额外字段；同进程内多会话并发登记不再互相覆盖。
+- **项目规则「绝对路径」判定改为跨平台双形态，同一输入不再两平台两个 reason**（首次 `v7.0.0` 流水线 red 暴露）：原先只依赖 `path.isAbsolute`，而该函数平台相关——POSIX 上 `C:/Windows/win.ini` 被判为相对路径，绕过「绝对路径」分支后被当成工作区内文件名，最终 reason 从 `outside-workspace` 退化成 `blocked-path`；Windows 上同一输入给出 `outside-workspace`。现显式补齐 Windows 盘符形态（`^[A-Za-z]:[\\/]`，POSIX 的 `/` 开头仍由 `isAbsolute` 覆盖），两平台判定一致。**对消费者**：项目规则读取失败的 reason 不再随宿主平台漂移；仍是 fail-closed（两种形态都不读正文）。
 
 ### Breaking（内核）
 
