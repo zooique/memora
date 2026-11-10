@@ -315,6 +315,81 @@ describe('验收：轮次文件不含引用状态 / 引用真源 = 会话 roundI
     }
   });
 
+  it('旧档回写实测：getByIdFresh 读到带 refCount 的旧轮 → save 后盘上无该键', () => {
+    // 与上一条的区别：上条 save 的是 makeRound() 新造的干净对象，**没覆盖「读旧档再写回」**。
+    // 生产路径 roundEventCheckpoint 对已收场旧轮正是 fresh 读 → 改 → save，
+    // 若写侧不剥未知键，旧档里的 refCount 会被原样带回盘上（文件头「不回写」承诺落空）。
+    const ws3 = mkdtempSync(join(tmpdir(), 'memora-legacy-rewrite-'));
+    try {
+      const roundsDir = join(ws3, '.memora', 'rounds');
+      mkdirSync(roundsDir, { recursive: true });
+      const ts = '2026-11-01T00:00:00.000Z';
+      writeFileSync(
+        join(roundsDir, 'round-legacy-2.json'),
+        JSON.stringify(
+          {
+            id: 'round-legacy-2',
+            userMessage: {
+              id: 'round-legacy-2-u',
+              role: 'user',
+              content: '旧档问题',
+              timestamp: ts,
+            },
+            assistantMessage: {
+              id: 'round-legacy-2-a',
+              role: 'assistant',
+              content: '旧档回答',
+              timestamp: ts,
+            },
+            status: 'complete',
+            createdAt: ts,
+            completedAt: ts,
+            refCount: 1,
+          },
+          null,
+          2,
+        ),
+      );
+      writeFileSync(
+        join(roundsDir, 'index.json'),
+        JSON.stringify(
+          [
+            {
+              id: 'round-legacy-2',
+              status: 'complete',
+              createdAt: ts,
+              file: 'round-legacy-2.json',
+            },
+          ],
+          null,
+          2,
+        ),
+      );
+
+      const legacyStore = new WorkspaceRoundStore(ws3);
+      legacyStore.load();
+
+      // ① 读侧确实是「原样透传」：旧键此刻还在内存对象上（本用例要防的就是这一段被写回去）
+      const fresh = legacyStore.getByIdFresh('round-legacy-2');
+      expect(fresh).not.toBeNull();
+      expect('refCount' in (fresh as object)).toBe(true);
+
+      // ② 改一个字段后整对象回写（生产 checkpoint 的真实形态）
+      fresh!.completedAt = '2026-11-02T00:00:00.000Z';
+      legacyStore.save(fresh!);
+
+      // ③ 写侧白名单生效：盘上既保留改动，又不含旧键
+      const raw = JSON.parse(
+        readFileSync(join(roundsDir, 'round-legacy-2.json'), 'utf8'),
+      ) as Record<string, unknown>;
+      expect('refCount' in raw).toBe(false);
+      expect(raw.completedAt).toBe('2026-11-02T00:00:00.000Z');
+      expect((raw.assistantMessage as { content: string }).content).toBe('旧档回答');
+    } finally {
+      rmSync(ws3, { recursive: true, force: true });
+    }
+  });
+
   /** 构造最小完整 Round（仅 GC 判据需要的字段） */
   function makeRound(id: string, content: string): Round {
     const ts = new Date().toISOString();

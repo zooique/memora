@@ -78,6 +78,45 @@ export const ROUND_TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export const DEFAULT_SWEEP_MIN_AGE_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * Round 落盘字段白名单（穷尽 `keyof Round`，内核加字段即编译红）
+ *
+ * 为什么落盘要显式挑字段：`loadRoundFromFile` 是 `JSON.parse(raw) as Round`（不剥未知键），
+ * `getByIdFresh` 又把对象浅拷贝原样交出 ⇒ 旧档里的历史键会顺着「读 → 改 → 写」被回写，
+ * 文件头承诺的「旧档历史引用字段不回写」就落空（实证路径：`roundEventCheckpoint` 对已收场
+ * 旧轮就是 fresh 读 → 改 → save）。本表让轮文件写侧与索引侧（只写 4 个派生字段）口径一致。
+ *
+ * 🔴 穷尽约束 = 消费者侧的漂移警报：内核给 `Round` 增删字段时这里必然编译红，
+ * 补/删一行即可；**不要**改成 `Object.keys` 动态推断（那会把新字段静默漏写）。
+ */
+const ROUND_PERSISTED_KEYS: Record<keyof Round, true> = {
+  id: true,
+  userMessage: true,
+  assistantMessage: true,
+  interactiveInputs: true,
+  pendingAsk: true,
+  evidence: true,
+  assistantLog: true,
+  status: true,
+  createdAt: true,
+  completedAt: true,
+  processEvents: true,
+};
+
+/**
+ * 只挑已知字段（丢弃旧档残留键与任何非 Round 键）
+ *
+ * 值为 `undefined` 的键不落盘（与内核「可选字段缺省即不写」的零冗余口径一致）。
+ */
+function pickRoundFields(round: Round): Round {
+  /** 待落盘对象（键集合 = ROUND_PERSISTED_KEYS） */
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(ROUND_PERSISTED_KEYS) as (keyof Round)[]) {
+    if (round[key] !== undefined) out[key] = round[key];
+  }
+  return out as unknown as Round;
+}
+
+/**
  * 工作区问答闭环存储
  */
 export class WorkspaceRoundStore implements IRoundStore {
@@ -347,9 +386,9 @@ export class WorkspaceRoundStore implements IRoundStore {
     };
     this.index.set(round.id, entry);
 
-    // 写入 Round 文件
+    // 写入 Round 文件（只挑已知字段：旧档残留下来的历史键不会顺着「读 → 改 → 写」回写）
     const filePath = this.getRoundFilePath(round.id);
-    atomicWriteFileSync(filePath, JSON.stringify(round, null, 2));
+    atomicWriteFileSync(filePath, JSON.stringify(pickRoundFields(round), null, 2));
 
     // 保存索引
     this.saveIndex();

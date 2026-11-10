@@ -200,8 +200,8 @@ export interface Round {
   /** 完成时间 */
   completedAt?: string;
   
-  /** 引用计数（被多少个会话引用） */
-  refCount: number;
+  // 🔴 7.0.0 已删除 `refCount`（引用真源 = 会话 `roundIds`）。本文件是设计期推演稿，
+  //    下文凡出现 refCount / incrementRef / 「refCount 保证不删除」的段落一律按该口径读。
 }
 
 export interface RoundMessage {
@@ -653,10 +653,13 @@ const roundSummaryLoader = (): string => {
 
 ## 五、引用计数与垃圾回收
 
-### 5.1 引用计数机制
+### 5.1 引用计数机制（🔴 7.0.0 已退役）
+
+> 本节的 `refCount` / `incrementRef` / `decrementRef` **已全部删除**：引用关系只存在于会话 `roundIds`，
+> 轮对象不再持引用状态。以下代码块保留为设计期推演，**不得当现行实现读**。
 
 ```typescript
-// src/memory/roundStore.ts
+// src/memory/roundStore.ts（历史设计稿，7.0.0 已退役）
 
 class RoundStore {
   /** 增加引用（分叉时调用） */

@@ -163,8 +163,8 @@ ProcessEvent = {
 
 * **生命周期天然原子**（合案核心收益，撤销 v1.3 双路径 GC 联动的复杂度）：
 
-  * **删 round 即删事件**：GC 孤儿回收（refCount=0 + 超龄）与宿主主动删除都走 `roundStore.delete()`，事件随文件一并消失，无需任何额外清理
-  * **分叉即共享**：分叉会话引用同一 roundId → 读到同一 `processEvents`（指针复制，零拷贝一致），refCount 保证任一会话仍引用时不删除
+  * **删 round 即删事件**：GC 孤儿回收（判据 = **不在任何会话 `roundIds` 中** + 超龄；`refCount` 已于 7.0.0 退役）与宿主主动删除都走 `roundStore.delete()`，事件随文件一并消失，无需任何额外清理
+  * **分叉即共享**：分叉会话引用同一 roundId → 读到同一 `processEvents`（指针复制，零拷贝一致），「仍存在于某个会话的 `roundIds`」保证任一会话仍引用时不删除（判据 = 会话引用集合，**不是轮对象字段**）
   * **截断即覆盖**：`truncateFrom`（删除问答闭环）与 `deleteSession` 移除 round 引用后，事件随 round 自然离开禁用范围（不在 roundIds 即不重放），GC 超龄后物理回收
 
 * **Write-once 语义**：`processEvents` 与 `assistantMessage` 同在闭环完成时刻定型（详见 §3.5），写入后不再修改——与 Round「完成后不可修改」的既有约束对齐

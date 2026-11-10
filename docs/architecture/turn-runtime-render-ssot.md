@@ -38,7 +38,8 @@
 ### 排雷后最大的好消息
 
 **`RoundView` 不用新造 —— `Round` 本身就是它。** `roundStore.ts:291` 的 `Round` 已含
-`id / userMessage / assistantMessage / interactiveInputs / assistantLog / status / processEvents / createdAt / completedAt / refCount`。
+`id / userMessage / assistantMessage / interactiveInputs / assistantLog / status / processEvents / createdAt / completedAt`
+（7.0.0 起不再含 `refCount`：引用关系只存在于会话 `roundIds`，轮对象不持引用状态）。
 内核已经把"一轮的全部真相"定形成一个对象了。所以收口不是新建数据结构，而是**让运行时也按 `Round` 的形状生长**（嫁接，非并列）。
 
 ---

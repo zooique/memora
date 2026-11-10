@@ -215,7 +215,7 @@ new Agent({
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `roundStore` | `IRoundStore` | ❌ | 问答闭环独立存储注入（round-based 落盘真源；未注入则消息仅内存保存，与 `sessionStore` 配套） |
 | `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
-| `messages` | `UIMessages` | ❌ | 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） |
+| `messages` | `UIMessages` | ❌ | 宿主可覆盖的 UI 消息文本（**默认混合**：其余键英文；`interrupted` / `softLimitWrapup` / `reflectionHint` / `selfReviewPrompt` / `duplicateToolCallWarning` 5 条默认中文） |
 | `enableContextSummary` | `boolean` | ❌ | 上下文超限时是否自动生成摘要（默认 true，开启后首次截断时增加 ~1-2s 延迟） |
 | `archiveMode` | `ArchiveMode` | ❌ | 归档模式（ADR-015，默认 `'full'`）。`'full'`：会话内容在会话切换前自动归档；`'manual'`：全部需手动触发（2026-08-14 洞察层移除后三态收敛为二态，原 `'insights-only'` 已移除） |
 | `autoStartGc` | `boolean` | ❌ | 是否自动启动周期 GC（默认 true）。false = 只登记不启动：GCService 仍创建（`gcNow()` 可手动调用），但不挂本实例的周期定时器——供宿主在多实例共享同一份存储时把 GC 收口到一个共享调度点 |

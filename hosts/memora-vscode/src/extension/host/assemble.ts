@@ -64,7 +64,9 @@ import type { ProviderStore } from '../providers/providerStore.js';
  * ⚠️ 覆盖边界即本清单：内核若新增英文默认的 UI 键，须回来补此处，勿假定「全键已覆盖」。
  * ⚠️ 往本清单添键前先看内核默认值：中文默认的键**不许**再抄一遍。
  *
- * 传递时机由 {@link pickUiMessages} 决定：zh 开头 locale 才注入（英文用户走内核英文默认）。
+ * 传递时机由 {@link pickUiMessages} 决定：zh 开头 locale 才注入；其余 locale **不注入** ⇒ 走内核默认
+ * （`UIMessages` 现为**混合默认**：其余键英文，上面点名不复制的那 5 条中文——即这 5 条对非 zh 用户
+ * 仍是中文，与本仓英文标签 + 中文正文的错误通知同族的已知缺口）。
  */
 const CHINESE_MESSAGES: UIMessages = {
   // 对话取消 / 达上限 / 流式中断（三者均为「对话末尾状态标记」）

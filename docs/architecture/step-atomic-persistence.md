@@ -113,7 +113,7 @@ listInterruptedRecent(date: string, limit?: number): Round[];
 ### T1 · 中断轮 → 升级为正常 stop turn 入会话（核心）✅ 已实现，端到端验收待办
 - **收场路径定案：新增 `MessageHistory.appendInterrupted(roundId, opts?)`，不重用 appendAssistant**。理由（SSOT / 最小单元）：
   - `appendAssistant` 顶层跳过空内容（`if (!content.trim()) return`）→ 无文本中断轮无法收场，违 §一·五「即使无 assistantMessage 总结也按 stop 语义收场」验收口径；
-  - `appendInterrupted` 与 `appendAssistant` 意图不同（崩溃恢复收场 vs 追加助手消息），独立命名自文档化；**收场约定复用** appendAssistant 同一真理源（refCount 0→1 + appendRoundId + status complete + completedAt + isReappend 防重），Round schema / 存储格式不变。
+  - `appendInterrupted` 与 `appendAssistant` 意图不同（崩溃恢复收场 vs 追加助手消息），独立命名自文档化；**收场约定复用** appendAssistant 同一真理源（appendRoundId + status complete + completedAt + isReappend 防重；其中「refCount 0→1」一项已于 7.0.0 随字段退役删除），Round schema / 存储格式不变。
 - **宿主收场链路**：`ready` 处理器改为 `await ensureAgent()`（ensureAgent 可等待化）→ `await upgradeInterruptedRounds()`（once-guard）→ `replaySession()`。升级轮随首次回放一次性投递，**不再有第二条回放通道** → 与 `_viewEpoch` 折叠重建互斥（T3）。
 - **文本派生**：narrate 事件按 seq 拼接作恢复的助手文本；无叙述（工具阶段崩溃）传空串，由内核按 stop 语义收场（不写 assistantMessage）。
   * **A1 回抽后（2026-09-12）**：narrate 的 `content` 已含**首轮被回抽的叙述段**（该段先前被逐字流式进正文、不在 narrate 里，见 [process-event-log-replay-design.md](./process-event-log-replay-design.md) 事件表注记）→ 工具轮首个叙述步崩溃时派生文本**不再为空**，恢复出的助手文本更完整。注意 `narrate.withdrawn` 是运行时专有字段、**不落盘**，故本处派生只看 `content`。
