@@ -156,6 +156,7 @@
   "· with unsaved edits (also discarded): {0}": "· 含未保存的编辑（会一并丢弃）：{0} 个",
   "⚠️ This cannot be undone (unrecoverable without git), and it overwrites any manual edits you made after the agent changed these files (including unsaved ones).": "⚠️ 此操作不可撤销（无 git 时无法找回），且会覆盖你在 agent 改动之后对这些文件的手动编辑（含未保存的编辑）。",
   "has unsaved edits; not confirmed": "有未保存的编辑，未确认",
+  "{0} ({1})": "{0}（{1}）",
   "No session yet: open the Memora chat panel first": "尚未创建任何会话：先打开 Memora 对话面板",
   "Work projection list is malformed (work-projections.json must be a top-level JSON array); nothing was written": "作品投影清单格式异常（work-projections.json 顶层必须是 JSON 数组），已跳过写入",
   "No work projections yet: right-click a file in Explorer and choose \"Memora: Register Work Projection\"": "还没有登记作品投影：在资源管理器里右键文件，选择「Memora: 登记作品投影」",

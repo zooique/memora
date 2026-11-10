@@ -958,6 +958,14 @@ const DEFERRED_CJK_FILES = [
       '语言指令（zh 用中文、其余走英文），再套 l10n 会让指令语言受界面 bundle 二次裁决，回答语言反而失真。',
   },
   {
+    file: 'extension/host/fileChangeView.ts',
+    kind: '纯诊断',
+    reason:
+      '翻了会让 `[fileChange] … 已忽略` 这类排障日志随界面语言变：本文件用户可见文案（含失败清单的' +
+      '`{0}（{1}）` 括号形态）已全量走 `vscode.l10n.t`，剩下的中文只在 `deps.log` 诊断行里' +
+      '（采集器按间接日志口径计入），翻它会让排障 grep 在两种语言下对不上。',
+  },
+  {
     file: 'extension/host/sessionStore.ts',
     kind: '纯诊断',
     reason:

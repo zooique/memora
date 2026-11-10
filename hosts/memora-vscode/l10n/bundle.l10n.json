@@ -156,6 +156,7 @@
   "· with unsaved edits (also discarded): {0}": "",
   "⚠️ This cannot be undone (unrecoverable without git), and it overwrites any manual edits you made after the agent changed these files (including unsaved ones).": "",
   "has unsaved edits; not confirmed": "",
+  "{0} ({1})": "",
   "No session yet: open the Memora chat panel first": "",
   "Work projection list is malformed (work-projections.json must be a top-level JSON array); nothing was written": "",
   "No work projections yet: right-click a file in Explorer and choose \"Memora: Register Work Projection\"": "",

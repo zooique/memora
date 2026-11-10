@@ -645,14 +645,14 @@ export class FileChangeView implements FileChangeSink {
       // 只对模态里列出的 dirty 文件放行覆盖，其余走 fail-closed 闸（防确认后新产生的编辑被吞）
       const outcome = await this.applyRestore(rec, { overwriteDirty: dirtyPaths.has(rec.path) });
       if (outcome.status === 'ok') okCount += 1;
-      else
-        failures.push(
-          `${rec.relPath}（${
-            outcome.status === 'failed'
-              ? outcome.reason
-              : vscode.l10n.t('has unsaved edits; not confirmed')
-          }）`,
-        );
+      else {
+        // 失败原因既可能是写盘错误原文，也可能是「未确认覆盖」，两者都要随界面语言本地化
+        const why =
+          outcome.status === 'failed'
+            ? outcome.reason
+            : vscode.l10n.t('has unsaved edits; not confirmed');
+        failures.push(vscode.l10n.t('{0} ({1})', rec.relPath, why));
+      }
     }
     this.notifyChanged();
     this.lensProvider.refresh();
