@@ -1,226 +1,230 @@
 # Memora
 
-用 AI 打磨设计、沉淀记忆、生成骨架——在 IDE 侧边栏里做，消灭"反复拉扯代码导致一团乱"。
+Polish your design with AI, accumulate memory, generate skeletons — inside your IDE sidebar, so you stop churning through scattered code edits until everything is a mess.
 
-Memora 是内核驱动的 **VS Code AI 助手**：薄壳装配、复用内核全部能力，功能定位由**内置角色包**承载（出厂自带「memora 助手」「共鸣小说家」「白话方案设计师」角色），插件本身不硬编码任何定位。
+**English** | [中文](./README.zh-cn.md)
 
-**开源仓库**：[github.com/zooique/memora](https://github.com/zooique/memora)
+Memora is a kernel-driven **VS Code AI assistant**: a thin shell that assembles the kernel and reuses all of its capabilities. What the assistant *is* comes from **built-in role packs** (it ships with `memora助手` — the fallback contract pack, `白话方案设计师` — a plain-language solution designer, and `共鸣小说家` — a resonant novelist). The extension itself hard-codes no positioning.
 
-**内核**：基于 npm 包 [@zooique/memora](https://www.npmjs.com/package/@zooique/memora) `6.0.0` 开发（本版本内联的内核代次，随宿主版本发布核对）
+**Open source**: [github.com/zooique/memora](https://github.com/zooique/memora)
+
+**Kernel**: built on the npm package [@zooique/memora](https://www.npmjs.com/package/@zooique/memora) `7.0.0` (the kernel generation bundled into this version, reconciled with every host release)
 
 ---
 
-## 功能
+## Features
 
-- **通用对话**：打开侧边栏与 AI 对话，定位由角色包决定
-- **跨会话记忆**：记得你之前定过的决策，新会话中 LLM 可自行调用 `search_memories` 取回
-- **主动提问**：关键节点 AI 会停下来问你，不闷头写偏
-- **角色包定位（出厂自带 doc-review）**：
-  - **文档自洽检查**：在对话中让 AI 审阅文档的矛盾 / 缺口 / 悬空引用
-  - **代码骨架生成**：自洽通过后，根据设计文档让 AI 生成代码骨架
-- **文件改动确认**：AI 改文件先进暂存，编辑器顶部一键确认 / 回退，不静默落盘
-- **网络搜索**：Agent 可联网查资料——auto（默认链 Bing→DuckDuckGo）/ Bing / DuckDuckGo / 百度 / 搜狗 五档预设可选，另可自定义搜索引擎（OpenSearch RSS / JSON API，保存前实测验证连通）
-- **MCP 工具接入**：可接入外部 MCP 工具服务器（用户级配置，只拉起你信任的本地子进程），其工具以 `mcp__<服务器名>__<工具名>` 出现在模型工具列表；默认每次调用都需确认，可逐条加白名单免确认（仍写审计），改配置即时生效——详见 [MCP 工具接入](https://gitee.com/zooique/memora/blob/main/hosts/memora-vscode/docs/mcp-setup.md)
-- **多模型配置**：可添加多个大模型 API，随时切换，支持连接测试
-- **上下文引用**：输入框 `@` 选文件、右键挂引用（选区带行号），引用只给指针不占预算；当前文件、工作区诊断、git 未提交改动可一键注入——详见[给 AI 添上下文](#给-ai-添上下文引用与注入)
-- **图片输入（多模态）**：对话里直接发图片——粘贴到输入框、点输入框的「上传图片」按钮、资源管理器 / 编辑器右键「Memora: 添加到对话」命中真图、或从文件系统拖入（外部文件须按住 `Shift`）。四种入口汇流到同一摄取管线；模型未声明支持视觉时入口会提示先开启，发图后一级门禁明确拒绝并给理由，不会静默丢掉你的图；历史图片随对话轮次恢复
-- **一键初始化**：设置 › 安全里一键清空用户级数据（大模型配置与 API Key、用户技能与角色包、安全开关等），恢复首次使用状态；当前项目的记忆与会话不受影响
+- **General chat**: open the sidebar and talk — positioning is decided by the active role pack
+- **Cross-session memory**: remembers the decisions you settled earlier; in a new session the model can call `search_memories` itself to bring them back
+- **Proactive questions**: at key moments the AI stops and asks you, instead of quietly building on a wrong assumption
+- **Role-pack grounding (three built-in packs)**:
+  - `memora助手` — domain-agnostic fallback contract pack; the default role for new sessions
+  - `白话方案设计师` — converges a vague idea into a plain-language design doc, then into a developer-ready spec (includes a single-source-of-truth consistency review)
+  - `共鸣小说家` — three-layer fiction workflow (need → core → form)
+  - Switch packs, or set the default for new sessions, in **Settings › Roles** (or via `memora.defaultRolePack`)
+- **File-change confirmation**: AI edits land in a staging area first; confirm or revert with one click at the top of the editor — nothing is written to disk silently
+- **Web search**: the agent can look things up online — auto (default Bing→DuckDuckGo chain) / Bing / DuckDuckGo / Baidu / Sogou presets, plus custom engines (OpenSearch RSS / JSON API, connectivity is tested before saving)
+- **MCP tools**: connect external MCP tool servers (user-level config; it only launches local subprocesses you trust). Their tools appear in the model's tool list as `mcp__<server>__<tool>`; every call asks for confirmation by default, and you can whitelist individual tools (an audit record is still written). Config changes take effect immediately — see [MCP tools setup](docs/mcp-setup.md)
+- **Multiple models**: add several model APIs, switch anytime, with connection tests
+- **Context references**: type `@` in the input box to pick files, or right-click to attach a reference (selections carry line numbers). References are pointers only and cost no budget; the current file, workspace diagnostics and uncommitted git changes can be injected in one click — see [Giving the AI context](#giving-the-ai-context-references-and-injection)
+- **Image input (multimodal)**: send images right inside the conversation — paste into the input box, click the "upload image" button there, right-click a real image in the explorer / editor → "Memora: Add to Chat", or drag one in from the file system (external files need `Shift` held). All four entry points converge on the same ingestion pipeline; when the model does not declare vision support, the entry point tells you up front and the first gate rejects with an explicit reason — your image is never dropped silently. Past images are restored with the turn
+- **One-click reset**: Settings › Security can clear all user-level data (model config and API keys, user skills and role packs, security switches, …) and restore the first-run state; the current project's memory and sessions are untouched
 
-## 界面预览
+## Screenshots
 
-**对话面板**（标题栏齿轮直达设置、角色徽章、模型切换、快捷动作一屏可达）：
+**Chat panel** (gear in the title bar goes straight to settings, role badge, model switcher, quick actions all on one screen):
 
-![Memora 对话主界面](resources/UI-images/memora-chat-main.png)
+![Memora chat panel](resources/UI-images/memora-chat-main.png)
 
-**设置 · 记忆**（记忆检索、角色 / 大模型 / 技能 / 安全分页，回收站与过期清理）：
+**Settings › Memory** (memory retrieval, plus Roles / Models / Skills / Security tabs, trash and expiry cleanup):
 
-![Memora 设置与记忆](resources/UI-images/memora-settings-memory.png)
+![Memora settings and memory](resources/UI-images/memora-settings-memory.png)
 
-**设置 · 角色**（角色包管理：多角色切换与设为当前、完整工具 / 温度徽章、团队编排）：
+**Settings › Roles** (role-pack management: switch and set current, full tool / temperature badges, team orchestration):
 
-![Memora 设置角色包](resources/UI-images/memora-settings-rolepacks.jpg)
+![Memora role packs](resources/UI-images/memora-settings-rolepacks.jpg)
 
-**设置 · 技能**（全局技能与角色包技能同屏：内置标记、启停开关、查看正文）：
+**Settings › Skills** (global skills and role-pack skills side by side: built-in marker, enable/disable toggle, view content):
 
-![Memora 设置技能](resources/UI-images/memora-settings-skills.jpg)
+![Memora skills](resources/UI-images/memora-settings-skills.jpg)
 
-## 安装
+## Installation
 
-### 方式一：从市场安装
+### Option 1: from the Marketplace
 
-打开扩展面板（`Ctrl+Shift+X`），搜索 **Memora**，点击安装。
+Open the Extensions view (`Ctrl+Shift+X`), search for **Memora**, click Install.
 
-### 方式二：从 VSIX 安装（离线包）
+### Option 2: from a VSIX (offline package)
 
-1. 拿到 `memora-vscode.vsix` 文件
-2. 打开扩展面板（`Ctrl+Shift+X`）
-3. 点右上角 `...` → **从 VSIX 安装...**（Install from VSIX...）
-4. 选择 `memora-vscode.vsix`，等待安装完成
-5. 重载窗口（`Ctrl+Shift+P` → `Reload Window`）
+1. Get the `memora-vscode.vsix` file
+2. Open the Extensions view (`Ctrl+Shift+X`)
+3. Click `...` in the top right → **Install from VSIX...**
+4. Pick `memora-vscode.vsix` and wait for it to finish
+5. Reload the window (`Ctrl+Shift+P` → `Reload Window`)
 
-## 快速上手
+## Quick start
 
-1. 点击左侧活动栏的 **Memora** 图标
-2. 首次使用，先打开「设置」面板配置大模型（点侧栏「对话」视图标题栏的齿轮 ⚙，或 `Ctrl+Shift+P` → `Memora: 打开设置面板`，或对话空态点「去配置模型」）：
-   - 点「添加 API」→ 填别名 / 模型 / Base URL / API Key
-   - 点「测试连接」验证 → 保存 → 「设为当前」
-   - 支持添加多个，随时切换
-3. 打开「对话」面板，开始对话（标题旁徽章显示当前角色 `doc-review`）
-   - 说"请对当前文档做自洽性审阅" → 触发自洽检查
-   - 说"请基于设计文档生成代码骨架" → 触发骨架生成
+1. Click the **Memora** icon in the activity bar on the left
+2. On first use, open the Settings panel to configure a model (click the gear ⚙ in the Chat view title bar, or `Ctrl+Shift+P` → `Memora: Open Settings Panel`, or click "Configure model" in the empty chat state):
+   - Click "Add API" → fill in alias / model / base URL / API key
+   - Click "Test connection" to verify → Save → "Set as current"
+   - Add several and switch between them at any time
+3. Open the **Chat** panel and start talking (the badge next to the title shows the active role pack — `memora助手` by default; switch packs in **Settings › Roles**)
+   - With `白话方案设计师` active: "please review this document for self-consistency" or "please draft the technical spec from this design doc"
+   - With `共鸣小说家` active: "help me turn this premise into a story"
 
-### 本地模型（Ollama / LM Studio）
+### Local models (Ollama / LM Studio)
 
-Memora 兼容任何 OpenAI 协议的本地运行时（Ollama、LM Studio 等），把请求发到本地地址即可，无需联网：
+Memora works with any local runtime that speaks the OpenAI protocol (Ollama, LM Studio, …) — point the base URL at your local address and no internet connection is needed:
 
-1. 本地启动服务（选择其一）：
-   - **Ollama**：`ollama serve` → Base URL 填 `http://localhost:11434/v1`，模型填已拉取的模型名（如 `qwen3`），API Key 可留任意占位（本地一般不做鉴权）
-   - **LM Studio**：开发者面板启用 OpenAI 兼容服务器，Base URL 填 `http://localhost:1234/v1`
-2. 在「大模型配置」添加时，把「来源类型」选为 **本地运行时**：
-   - **支持原生工具调用（OpenAI Function Calling）**：默认勾选。勾选表示本地模型能调用工具（联网搜索 / 文件读写 / 记忆检索等）；取消勾选则仅纯文本对话，工具通道自动收起并告知模型不可用
-   - 云端模型（默认）无需操心此项——云端服务商默认启用原生工具调用，行为与历史版本完全一致
+1. Start the local service (pick one):
+   - **Ollama**: run `ollama serve` → set the base URL to `http://localhost:11434/v1` and the model to a name you have pulled (e.g. `qwen3`); the API key can be any placeholder (local runtimes usually do not authenticate)
+   - **LM Studio**: enable the OpenAI-compatible server in the developer panel → set the base URL to `http://localhost:1234/v1`
+2. When adding the model under "Model configuration", set "Source type" to **local runtime**:
+   - **Supports native tool calling (OpenAI function calling)**: checked by default. Checked means the local model can call tools (web search / file read-write / memory retrieval, …); unchecked means plain-text chat only — the tool channel is collapsed and the model is told tools are unavailable
+   - Cloud models (the default) need no attention here: cloud providers enable native tool calling by default, exactly as in previous versions
 
-> 提示：本地模型是否支持原生工具调用无法从地址自动推断，需要你按模型实际能力显式勾选。多数近期模型（如 qwen2.5 / qwen3 / llama3.x 系列）都支持。
+> Tip: whether a local model supports native tool calling cannot be inferred from its address — you have to check it according to what the model actually does. Most recent models (e.g. the qwen2.5 / qwen3 / llama3.x families) do support it.
 
-### 不用配置面板（环境变量方式）
+### Skip the settings panel (environment variables)
 
-插件回退读取环境变量，设好后**重启 VS Code** 生效：
+The extension falls back to environment variables; **restart VS Code** after setting them:
 
 ```bash
 set MEMORA_BASE_URL=https://api.xiaomimimo.com/v1
 set MEMORA_MODEL=deepseek-chat
-set MEMORA_API_KEY=你的key
+set MEMORA_API_KEY=your-key
 ```
 
-已有环境变量配置的，无需走配置面板，优先级：**配置面板激活 Provider > 环境变量**。
+If you already have environment variables configured, you can skip the settings panel entirely. Priority: **activated provider in the settings panel > environment variables**.
 
-## 给 AI 添上下文（引用与注入）
+## Giving the AI context (references and injection)
 
-输入盒文字上方有两行小气泡（chip）：上面一行是技能，下面一行是**上下文**——当前文件、`@` 注入、你挂的引用都住在这里。上下文分两类：**引用**（只给指针，不占预算）和**注入**（给正文，占预算）。
+Above the text in the input box sit two rows of small chips: the top row is skills, the bottom row is **context** — the current file, `@` injections and the references you attached all live there. Context comes in two kinds: **references** (pointer only, no budget) and **injection** (full text, consumes budget).
 
-### 挂引用的三种方式
+### Three ways to attach a reference
 
-| 方式 | 操作 | 结果 |
-|------|------|------|
-| 输入框键入 `@` | 弹出工作区文件选择器（模糊检索、可多选） | 选中即挂引用 chip，`@` 字符自动撤掉，焦点回到输入框 |
-| 编辑器右键 → **Memora: 添加到对话** | 对当前打开的文件 | 挂文件引用；**有选区时带行号**（如 `#L5-L24`），AI 只读你选的部分 |
-| 资源管理器右键 → **Memora: 添加到对话** | 对文件 / 目录 | 挂文件或目录引用（目录只给一张地图，内容 AI 按需读） |
+| Way | Action | Result |
+|------|--------|--------|
+| Type `@` in the input box | A workspace file picker pops up (fuzzy search, multi-select) | Selecting a file attaches a reference chip, the `@` character is removed, focus returns to the input box |
+| Editor right-click → **Memora: Add to Chat** | For the currently open file | Attaches a file reference; **with a selection it carries line numbers** (e.g. `#L5-L24`), so the AI reads only the part you selected |
+| Explorer right-click → **Memora: Add to Chat** | For a file / folder | Attaches a file or folder reference (a folder gives only a map; the AI reads contents on demand) |
 
-### 引用 = 指针，不是内容
+### A reference is a pointer, not content
 
-引用只告诉 AI「去看这个文件」，**不把正文塞进对话**——悬停 chip 可见「仅挂指针，正文由模型按需读取（不占预算）」。真正占预算的是下面的「注入」。
+A reference only tells the AI "go look at this file" — it does **not** stuff the body into the conversation. Hovering a chip shows "pointer only, the body is read on demand (no budget)". What actually consumes budget is **injection**, below.
 
-### chip 行操作
+### Chip row operations
 
-- **点击 chip**（路径或行号）：在编辑器中打开并定位；有行号时选中高亮——核对「我到底引了哪几行」不用自己数
-- **🔒 常驻**：发送后保留（不锁则发送即清）
-- **✕**：移除单条
-- **清空全部引用**：chip 行末尾按钮，一次清空所有引用（含常驻）
-- chip 行**不换行**：挂多了横向排列，滚轮切换查看，两侧渐隐提示「还有」
+- **Click a chip** (path or line numbers): open and locate it in the editor; with line numbers the range is highlighted — no need to count lines yourself to check "which lines did I actually reference"
+- **🔒 Pinned**: kept after sending (unpinned chips are cleared on send)
+- **✕**: remove a single chip
+- **Clear all references**: the button at the end of the chip row clears every reference at once (pinned ones included)
+- The chip row **never wraps**: many chips scroll horizontally, with fading hints on both sides showing there is more
 
-### 引用失效会说清楚
+### Broken references are called out
 
-挂上后文件被删 / 改名？发送时这条引用自动降级为裸指针并标记「添加后已不存在」——AI 会先跟你确认，而不是拿着死路径去撞一次错误。
+If an attached file is deleted or renamed, that reference is degraded to a bare pointer and marked "no longer exists after attaching" when you send — the AI asks you first instead of hitting an error with a dead path.
 
-### 当前文件 chip：自动附加，本会话可关
+### The current-file chip: attached automatically, can be turned off for this session
 
-上下文行第一枚 chip 显示当前打开的文件：
+The first chip on the context row shows the file currently open:
 
-- **干净文件**：只给指针（`📄 白话设计文档.md`），不占预算
-- **未保存 / 未命名 / 工作区外**：显示「全文已附」——磁盘不是真相，注入的是编辑器里的正文
-- **✕**：本会话不再附加（变成虚线胶囊「当前文件未附加 · 点击启用」，点一下回开，不留死角）
+- **Clean file**: pointer only (`📄 plain-language-design.md`), no budget
+- **Unsaved / untitled / outside the workspace**: shows "full text attached" — the disk is not the truth, so the editor buffer is what gets injected
+- **✕**: stop attaching it for this session (it becomes a dashed capsule "current file not attached · click to enable"; one click brings it back, no dead ends)
 
-### @ 注入类上下文：诊断与 git 未提交改动
+### `@` injection contexts: diagnostics and uncommitted git changes
 
-`@` 列表顶部有两个关键字项：
+The top of the `@` list has two keyword entries:
 
-- **诊断（问题面板）**：注入工作区的错误 / 警告
-- **git 未提交改动**：注入 `git status` + `git diff`（只读采集，有界：最多 20 文件 / 单文件 200 行 / 合计 12K 字符，超出明示截断）
+- **Diagnostics (Problems panel)**: injects the workspace's errors / warnings
+- **Uncommitted git changes**: injects `git status` + `git diff` (read-only collection, bounded: at most 20 files / 200 lines per file / 12K characters total, with explicit truncation notices)
 
-与引用有三点区别：**发送时刻才取最新内容**（挂载只是标记通道）；**占预算**；chip 没有 🔒、**发送后自动清除**（快照钉住 = 下一轮喂过期数据）。
+Three differences from references: contents are **fetched at send time** (attaching only marks the channel); they **consume budget**; and their chips have no 🔒 and are **cleared automatically after sending** (pinning a snapshot = feeding stale data next turn).
 
-### 这轮贵在哪：注入量归因
+### Where this turn spent its budget: injection attribution
 
-发送一条消息后，悬停上下文占用圆环，卡片底部显示「本轮注入 N（分项…）」——按源分项告诉你预算花在哪（如「当前文件正文 3,258 · 工作区诊断 120」）。干净文件永远看不到数字（按设计不注入）；要验证注入量，改而不存 + 发一条消息即可。
+After sending a message, hover the context-usage ring — the card footer shows "injected N this turn (breakdown …)", telling you per source where the budget went (e.g. "current file body 3,258 · workspace diagnostics 120"). A clean file never shows a number (by design it is not injected); to verify injection volume, edit without saving and send a message.
 
-> 注入只在**发送时刻**发生，实时投影不带数字——打字过程中预览不到预估值是故意的，下一击击键就会抹掉它。
+> Injection happens **only at send time**, and the live projection carries no numbers — not previewing an estimate while you type is intentional; the next keystroke would invalidate it anyway.
 
-## 命令
+## Commands
 
-| 命令 | 说明 |
-|------|------|
-| `Memora: 打开对话面板` | 打开侧边栏对话面板（角色包承载定位），快捷键 `Ctrl+Alt+M` |
-| `Memora: 配置大模型` | 打开大模型配置面板 |
-| `Memora: 管理角色包` | 打开角色管理选项卡（对话区「当前角色」徽章点击同此落点） |
-| `Memora: 查看记忆统计` | 查看当前项目的记忆条数与存储概况 |
-| `Memora: 清理过期记忆` | 清理超过保留期的记忆 |
-| `Memora: 立即执行孤儿回收` | GC：回收不再被会话引用的孤立记忆 |
-| `Memora: 恢复初始状态（清空用户级数据）` | 一键清空用户级数据（大模型配置与 API Key、用户技能与角色包、安全开关等），恢复首装态；项目记忆与会话保留，完成后自动重载窗口 |
-| `Memora: 运行能力演示（隔离演示区）` | 在隔离演示区跑一遍能力演示，不动真实数据 |
-| `Memora: 重载技能与角色包` | 重新扫描内置与用户技能、角色包 |
-| `Memora: 导入技能或角色包（.zip）` | 从 zip 包导入技能或角色包（导入后按需重载） |
-| `Memora: 打开设置面板` | 打开设置面板（模型 / 搜索 / 归档 / MCP / 安全 / 作品和规则等偏好与清单集中处） |
-| `Memora: 登记作品投影` | 把当前文件登记为可沉淀的作品投影（资源管理器与编辑器右键菜单），登记后出现在「设置 → 作品和规则」页 |
-| `Memora: 切换项目规则` | 对右键的文件切换「项目规则」常驻态（正文每轮注入）。未登记 ⇒ 只提示先登记，**绝不新建**；当前态由回执播报 |
-| `Memora: 管理项目规则` | 弹出临时 QuickPick 清单，逐条切换 / 移除登记（清单管理面） |
-| **设置 →「作品和规则」页** | 作品投影清单的常看面：卡片内直接显示作品名、一句话简介、源路径与是不是项目规则；点行内**「设为项目规则」**即可把作品升级为每轮自动注入的红线。最近一次装配有没有真的注入也有标（读取失败 / 单条超限 / 合计超限各有标）。**单击一行打开原文件**，可直接修改，保存后下一轮装配重读；行内两颗按钮切换规则 / 仅移除登记（不删源文件）。页内刷新按钮重读清单；**徽标 = 最近一次装配求值的结果**：改完清单即时可见，失效原因要等下一轮对话才重算 |
-| `Memora: 添加到对话` | 把资源管理器里的文件 / 目录、或编辑器选区作为引用加入对话输入框（只挂引用，不注入内容） |
-| `Memora: 添加图片到对话` | 打开文件选择器把本地图片加入对话输入框（与粘贴 / 右键 / 拖入汇流到同一摄取管线） |
-| `Memora: 查看文件改动` | 查看 AI 本轮产生的文件改动清单 |
-| `Memora: 全部确认文件改动` | 一次性确认本轮全部改动 |
-| `Memora: 全部回退文件改动` | 一次性回退本轮全部改动 |
-| `Memora: 确认本文件改动` | 编辑器顶部按钮，确认当前文件的暂存改动 |
-| `Memora: 回退本文件改动` | 编辑器顶部按钮，回退当前文件的暂存改动 |
-| `Memora: 复制诊断摘要` | 一键复制版本 / 环境 / 配置 / 最近 webview 错误 / 运行指标——报障时贴给维护者 |
+| Command | Description |
+|---------|-------------|
+| `Memora: Open Chat Panel` | Open the sidebar chat panel (positioning comes from the role pack), shortcut `Ctrl+Alt+M` |
+| `Memora: Configure Model` | Open the model configuration panel |
+| `Memora: Manage Role Packs` | Open the Roles tab of settings (the "current role" badge in the chat area lands here too) |
+| `Memora: View Memory Statistics` | Show the current project's memory count and storage overview |
+| `Memora: Clean Up Expired Memories` | Clean up memories past their retention period |
+| `Memora: Run Orphan Garbage Collection Now` | GC: reclaim orphaned memories no session references anymore |
+| `Memora: Reset to Initial State (Clear User-Level Data)` | Clear all user-level data in one click (model config and API keys, user skills and role packs, security switches, …) and restore the first-run state; project memory and sessions are kept; the window reloads automatically when done |
+| `Memora: Run Capability Demo (Isolated Demo Area)` | Run the capability demo in an isolated demo area without touching real data |
+| `Memora: Reload Skills and Role Packs` | Rescan built-in and user skills and role packs |
+| `Memora: Import Skill or Role Pack (.zip)` | Import a skill or role pack from a zip (reload afterwards if needed) |
+| `Memora: Open Settings Panel` | Open the settings panel (models / search / archiving / MCP / security / works and rules — all preferences and lists in one place) |
+| `Memora: Register Work Projection` | Register the current file as a work projection that can accumulate (explorer and editor context menus); once registered it shows up under **Settings → "Works and rules"** |
+| `Memora: Toggle Project Rule` | Toggle the "project rule" resident state of a right-clicked file (its body is injected every turn). If the file is not registered it only tells you to register first — it **never creates** a registration; the current state is reported in the receipt |
+| `Memora: Manage Project Rules` | Open a temporary QuickPick list to toggle / unregister entries one by one (the list-management surface) |
+| **Settings → "Works and rules" page** | The browsing surface for work projections: each card shows the work name, one-line summary, source path and whether it is a project rule; click **"Set as project rule"** in the row to promote the work into a red line injected automatically every turn. There is also a badge for whether the most recent assembly actually injected it (read failure / single item over limit / total over limit each have their own mark). **Clicking a row opens the source file**, so you can edit it directly and the next assembly re-reads it after saving; two in-row buttons toggle the rule / unregister only (the source file is never deleted). The refresh button re-reads the list; **the badge reflects the most recent assembly**: list edits show up immediately, while failure reasons are recomputed on the next conversation turn |
+| `Memora: Add to Chat` | Add a file / folder from the explorer, or an editor selection, to the chat input as a reference (pointer only, no content injected) |
+| `Memora: Add Image to Chat` | Open a file picker to add a local image to the chat input (converges with paste / right-click / drag onto the same ingestion pipeline) |
+| `Memora: Review File Changes` | Review the file changes the AI produced this turn |
+| `Memora: Confirm All File Changes` | Confirm every change of this turn in one click |
+| `Memora: Revert All File Changes` | Revert every change of this turn in one click |
+| `Memora: Confirm Changes in This File` | Editor title-bar button: confirm the staged changes of the current file |
+| `Memora: Revert Changes in This File` | Editor title-bar button: revert the staged changes of the current file |
+| `Memora: Copy Diagnostic Summary` | Copy version / environment / config / recent webview errors / runtime metrics in one click — paste it to the maintainer when reporting a problem |
 
-## 数据存储
+## Data storage
 
-插件数据分**项目级 / 用户级**两级存储（插件定义行为，全部走 VS Code 原生机制，不额外创建用户目录文件夹）：
+Extension data comes in two levels — **project level and user level**. The extension defines the behaviour, everything uses VS Code's native mechanisms, and no extra user folder is created:
 
-| 层级 | 位置 | 内容 |
-|------|------|------|
-| 项目级 | 工作区 `.memora/` 目录 | 会话记录 `sessions.json` / 记忆 `memories.json` |
-| 用户级 | VS Code 用户设置 `settings.json` | 大模型 Provider 配置（别名 / 模型 / Base URL，**不含 API Key**） |
-| 用户级 | VS Code 用户设置 `settings.json` | 搜索引擎偏好：`memora.searchEngine`（预设或自定义引擎名）与 `memora.customSearchEngines`（自定义清单，`application` 作用域 = 跨项目共享） |
-| 用户级 | VS Code 用户设置 `settings.json` | AI 回答语言：`memora.answerLanguage`（留空或 `auto` = 跟随 VS Code 显示语言；也可直接填语言名，如 `日语`。**只影响回答语言，不改界面文案**，改完下一轮生效） |
-| 用户级 | VS Code 用户设置 `settings.json` | MCP 配置：`memora.mcpServers`（外部工具服务器清单）与 `memora.mcpToolAllowlist`（免确认白名单；用户级 = 跨项目共享，**不接受工作区级**——见 [mcp-setup.md](https://gitee.com/zooique/memora/blob/main/hosts/memora-vscode/docs/mcp-setup.md)） |
-| 用户级 | VS Code 全局存储 `globalStorage` | 激活角色包（跨项目共享） |
-| 用户级 | VS Code 安全存储 `SecretStorage` | API Key（加密存储） |
+| Level | Location | Content |
+|-------|----------|---------|
+| Project | workspace `.memora/` directory | session records `sessions.json` / memories `memories.json` |
+| User | VS Code user settings `settings.json` | model provider config (alias / model / base URL, **no API keys**) |
+| User | VS Code user settings `settings.json` | search preferences: `memora.searchEngine` (a preset or a custom engine name) and `memora.customSearchEngines` (custom list, `application` scope = shared across projects) |
+| User | VS Code user settings `settings.json` | AI answer language: `memora.answerLanguage` (empty or `auto` = follow VS Code's display language; you can also type a language name such as `Japanese`. **Only affects the answer language, never the UI text**; takes effect from the next reply) |
+| User | VS Code user settings `settings.json` | MCP config: `memora.mcpServers` (external tool servers) and `memora.mcpToolAllowlist` (confirmation-free whitelist; user-level = shared across projects, **workspace level is not accepted** — see [mcp-setup.md](docs/mcp-setup.md)) |
+| User | VS Code global storage `globalStorage` | active role pack (shared across projects) |
+| User | VS Code SecretStorage | API keys (encrypted at rest) |
 
-补充说明：
+Notes:
 
-- **项目级 `.memora/`**：一个项目一份记忆，随项目工作区走（可提交或忽略由你决定）。
-- **用户级配置**在 VS Code 用户数据目录（Windows：`AppData/Roaming/Code/User/`）。Provider 配置存用户级而非项目级——跨项目共享，切换项目无需重配，且不污染项目 `.vscode/settings.json`。
-- **API Key 存 SecretStorage（VS Code 加密存储）**：不会写入 settings.json 或进 git。**找不到明文文件是正常的安全设计**，密钥本就不该以明文落盘。
-- **恢复初始状态**：设置面板「安全」页或命令面板 `Memora: 恢复初始状态` 可一键清空上表全部用户级存储；项目级 `.memora/` 与项目设置不受影响。
-- 若此前旧版本把 Provider 配置写进了项目 `.vscode/settings.json`，插件启动时会自动迁移到用户级并清理残留。
+- **Project-level `.memora/`**: one memory set per project, travelling with the workspace (commit it or ignore it, your call).
+- **User-level config** lives in the VS Code user data directory (Windows: `AppData/Roaming/Code/User/`). Provider config is user-level rather than project-level so it is shared across projects — no reconfiguration when you switch projects, and no pollution of the project's `.vscode/settings.json`.
+- **API keys go to SecretStorage** (VS Code's encrypted storage): they are never written to settings.json and never enter git. **Not finding a plaintext file is the intended security design** — keys should not be on disk in plaintext in the first place.
+- **Reset to initial state**: the Security tab of the settings panel, or `Memora: Reset to Initial State` in the command palette, clears every user-level store in the table above in one click; project-level `.memora/` and project settings are unaffected.
+- If an older version wrote provider config into the project's `.vscode/settings.json`, the extension migrates it to user level and cleans up the leftovers on startup.
 
-## 常见问题（排障）
+## Troubleshooting
 
-### 对话报 401 / 鉴权失败？
+### Chat reports 401 / authentication failure?
 
-先看错误消息的措辞——三种形态，修法不同：
+Read the wording of the error first — three shapes, three fixes:
 
-| 消息形态 | 含义 | 怎么办 |
-|------|------|------|
-| `API Key「xxx」未存储：…` | 服务商在配置里、系统钥匙串里**没有**它的 key | 到「设置 › 大模型」编辑该服务商，补填 API Key |
-| `API Key「xxx」读取 失败：…` | 钥匙串本身读不了（状态未知，不一定是没 key） | 按消息里的原因处理，再重启 VS Code 重试 |
-| `API Key「xxx」读取 超时：…` | 钥匙串 5 秒没响应 | 重启 VS Code；反复出现就查系统凭证服务（Windows 凭据管理器）是否正常 |
+| Message shape | Meaning | What to do |
+|---------------|---------|------------|
+| `API Key "xxx" is not stored: …` | The provider is configured, but the system keychain has **no** key for it | Edit that provider under **Settings › Models** and fill in the API Key |
+| `API Key for "xxx" read failed: …` | The keychain itself cannot be read (state unknown — not necessarily a missing key) | Follow the reason in the message, then restart VS Code and retry |
+| `API Key for "xxx" read timed out: …` | The keychain did not respond in time | Restart VS Code; if it keeps happening, check the system credential service (Windows Credential Manager) |
 
-「未存储」的四种来路（按常见度排）：
+Where a missing key usually comes from (most common first):
 
-1. **设置同步**（最常见）：VS Code 的 Settings Sync 同步 settings.json，但**不同步系统钥匙串**——换新机器后服务商名单整整齐齐、key 全不在。补填一次即好。
-2. **保存时密钥没写进去**：保存回执提示过「服务商配置已保存，但 API Key 失败」——配置进了名单、密钥没进钥匙串。编辑该服务商补填即可，不用整个重填。
-3. **恢复初始状态中途失败**：清空用户数据分两步（先删 key、后清配置），中间失败会留下「配置在册、key 已删」的中间态。补填该服务商即好。
-4. **系统凭证被清理**：安全软件或清理工具动了系统凭证存储。补填后观察是否复发。
+1. **Settings Sync** (the most common): VS Code's Settings Sync syncs settings.json but **not** the system keychain — on a new machine the provider list is complete while all keys are gone. Filling them in once fixes it.
+2. **The key was not written when saving**: the save receipt already warned "provider config saved, but the API key failed" — the provider is in the list, the key never reached the keychain. Edit that provider and fill in the key; no need to re-enter everything.
+3. **Reset to initial state failed midway**: clearing user data has two steps (delete keys first, then clear config); a failure in between leaves the intermediate state "provider registered, key deleted". Filling in that provider fixes it.
+4. **System credentials were cleaned up**: security software or a cleanup tool touched the system credential store. Fill the key in again and watch whether it recurs.
 
-### 提示「该服务商暂时无法使用」？
+### It says "this provider is temporarily unavailable"?
 
-半完成态：配置已存、密钥没存，**表单内容还在**——关闭表单，在服务商列表中编辑该服务商补填 API Key，不用从头重填。
+That is a half-finished state: config saved, key not saved, **and the form contents are still there** — close the form, edit the provider in the provider list and fill in the API key; no need to start over.
 
-### 还是要报障
+### Still need to report a problem
 
-命令面板执行 `Memora: 复制诊断摘要`，一键复制版本 / 环境 / 配置 / 最近 webview 错误 / 运行指标，贴给维护者。
+Run `Memora: Copy Diagnostic Summary` from the command palette to copy version / environment / config / recent webview errors / runtime metrics in one click, then paste it to the maintainer.
 
 ---
 
