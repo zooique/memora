@@ -239,7 +239,7 @@
 
 * 中立规范（跨实现契约）：[role-pack-spec.md](./role-pack-spec.md)
 
-* 示例角色包（结构参考，不参与分发）：[role-packs/](../../role-packs/README.md)
+* 角色包内容源（示例包 + 兜底契约包，随运行时分发、随 npm 包发布）：[role-packs/](../../role-packs/README.md)
 
 * 区间常量 SSOT：`src/role-pack/strategyKeys.ts`
 

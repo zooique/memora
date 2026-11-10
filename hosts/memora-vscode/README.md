@@ -17,7 +17,7 @@ Memora is a kernel-driven **VS Code AI assistant**: a thin shell that assembles 
 - **General chat**: open the sidebar and talk — positioning is decided by the active role pack
 - **Cross-session memory**: remembers the decisions you settled earlier; in a new session the model can call `search_memories` itself to bring them back
 - **Proactive questions**: at key moments the AI stops and asks you, instead of quietly building on a wrong assumption
-- **Role-pack grounding (four built-in packs)**:
+- **Role-pack grounding (built-in packs)**:
   - `memora助手` — domain-agnostic fallback contract pack; the default role for new sessions
   - `只读项目顾问` — reads, searches and analyses your project, then tells you what to improve and why. Its tool set is **read-only**: it never edits your project files (asking questions and pausing are session state, not project files, so they are not restricted)
   - `白话方案设计师` — converges a vague idea into a plain-language design doc, then into a developer-ready spec (includes a single-source-of-truth consistency review)

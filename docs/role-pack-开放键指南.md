@@ -5,7 +5,7 @@
 > **相关文档**：
 > - 中立规范（跨所有 Agent 实现的契约，随包发布）：[role-pack-spec.md](./architecture/role-pack-spec.md)
 > - 详细填写手册（含全部区间 / 错误修正 / 键的落实状态，随包发布）：[role-pack-authoring-guide.md](./architecture/role-pack-authoring-guide.md)
-> - 示例角色包（结构参考，随包发布、不参与宿主运行时装载）：[role-packs/](../role-packs/README.md)
+> - 示例角色包（结构参考，随包发布、宿主构建期同步后由 `RolePackManager` 运行时装载）：[role-packs/](../role-packs/README.md)
 
 ---
 
