@@ -4,7 +4,7 @@ Polish your design with AI, accumulate memory, generate skeletons — inside you
 
 **English** | [中文](./README.zh-cn.md)
 
-Memora is a kernel-driven **VS Code AI assistant**: a thin shell that assembles the kernel and reuses all of its capabilities. What the assistant *is* comes from **built-in role packs** (it ships with `memora助手` — the fallback contract pack, `白话方案设计师` — a plain-language solution designer, and `共鸣小说家` — a resonant novelist). The extension itself hard-codes no positioning.
+Memora is a kernel-driven **VS Code AI assistant**: a thin shell that assembles the kernel and reuses all of its capabilities. What the assistant *is* comes from **built-in role packs** (it ships with `memora助手` — the fallback contract pack, `只读项目顾问` — a read-only advisor that never modifies your project files, `白话方案设计师` — a plain-language solution designer, and `共鸣小说家` — a resonant novelist). The extension itself hard-codes no positioning.
 
 **Open source**: [github.com/zooique/memora](https://github.com/zooique/memora)
 
@@ -17,8 +17,9 @@ Memora is a kernel-driven **VS Code AI assistant**: a thin shell that assembles 
 - **General chat**: open the sidebar and talk — positioning is decided by the active role pack
 - **Cross-session memory**: remembers the decisions you settled earlier; in a new session the model can call `search_memories` itself to bring them back
 - **Proactive questions**: at key moments the AI stops and asks you, instead of quietly building on a wrong assumption
-- **Role-pack grounding (three built-in packs)**:
+- **Role-pack grounding (four built-in packs)**:
   - `memora助手` — domain-agnostic fallback contract pack; the default role for new sessions
+  - `只读项目顾问` — reads, searches and analyses your project, then tells you what to improve and why. Its tool set is **read-only**: it never edits your project files (asking questions and pausing are session state, not project files, so they are not restricted)
   - `白话方案设计师` — converges a vague idea into a plain-language design doc, then into a developer-ready spec (includes a single-source-of-truth consistency review)
   - `共鸣小说家` — three-layer fiction workflow (need → core → form)
   - Switch packs, or set the default for new sessions, in **Settings › Roles** (or via `memora.defaultRolePack`)
