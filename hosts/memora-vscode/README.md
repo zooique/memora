@@ -210,7 +210,7 @@ Read the wording of the error first — three shapes, three fixes:
 |---------------|---------|------------|
 | `API Key "xxx" is not stored: …` | The provider is configured, but the system keychain has **no** key for it | Edit that provider under **Settings › Models** and fill in the API Key |
 | `API Key for "xxx" read failed: …` | The keychain itself cannot be read (state unknown — not necessarily a missing key) | Follow the reason in the message, then restart VS Code and retry |
-| `API Key for "xxx" read timed out: …` | The keychain did not respond in time | Restart VS Code; if it keeps happening, check the system credential service (Windows Credential Manager) |
+| `API Key for "xxx" read timed out: …` | The keychain did not respond within 5 seconds | Restart VS Code; if it keeps happening, check the system credential service (Windows Credential Manager) |
 
 Where a missing key usually comes from (most common first):
 
