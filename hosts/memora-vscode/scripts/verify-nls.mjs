@@ -679,6 +679,10 @@ const WEBVIEW_PANELS = {
       'webview/helpers/userBubble.ts',
       'webview/helpers/roundNav.ts',
       'webview/components/dropdown.ts',
+      // chat 面板 HTML 骨架（B11 第一步收口）：可见文案（title / aria-label / placeholder /
+      // 按钮文本 / 下拉触发器名）全部改走 `vscode.l10n.t`；空状态「标题 + 提示」两处**删默认值**
+      // 而非翻译——运行期由 emptyStateView.updateRole 同步填充，留默认值等于第二套语言真源。
+      'webview/panels/chatPanelHtml.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。
@@ -832,6 +836,10 @@ const SHARED_CJK_FILES = [
   // 两个 webview 入口（chatViewMain / settingsViewMain）各装配一次的全局错误边界：
   // 文案（卡片标题 + 自救指引）不归任何页签域。2026-11-10（B10-F 第一刀）清零后登记。
   'webview/helpers/errorBoundary.ts',
+  // 设置面板 HTML 骨架（七页签共用的外壳）：body 由各页签的 `buildXxxBodyHtml(vscode.l10n)`
+  // 填充，骨架自身只剩 title / 容器，无单一页签归属。2026-11-10（B11 第一步）核实零可见 CJK
+  // 后登记——它此前一直不在任何登记面内，属「骨架天然无判据」的盲区。
+  'webview/panels/settingsPanelHtml.ts',
 ];
 
 /**
