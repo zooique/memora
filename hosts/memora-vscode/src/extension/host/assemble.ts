@@ -61,7 +61,7 @@ import type { ProviderStore } from '../providers/providerStore.js';
  *     宿主版 `selfReviewPrompt` 丢了内核的 4 点核查清单）。故一律**不复制**，走内核默认。
  *   - `abortedByTimeout`：内核默认虽为英文，但渲染层按 `aborted.stopReason` 重贴中文
  *     （chatView 的 stopReasonLabel：timeout → 「对话处理超时」；内核恒带 stopReason），文案真源在渲染层。
- * ⚠️ 覆盖边界即本清单：内核若新增英文默认的 UI 键，须回来补此处，勿假定「全键已覆盖」。
+ * ⚠️ 覆盖边界即本清单：内核若新增**默认值为英文**的 UI 键，须回来补此处，勿假定「全键已覆盖」。
  * ⚠️ 往本清单添键前先看内核默认值：中文默认的键**不许**再抄一遍。
  *
  * 传递时机由 {@link pickUiMessages} 决定：zh 开头 locale 才注入；其余 locale **不注入** ⇒ 走内核默认
@@ -92,13 +92,13 @@ const CHINESE_MESSAGES: UIMessages = {
 /**
  * 按 VS Code 显示语言选择 UI 消息覆盖（单一选择点）
  *
- * `zh` 开头（zh-cn / zh-tw）→ 中文覆盖；其余 / 缺省 → `undefined` = 内核英文默认。
+ * `zh` 开头（zh-cn / zh-tw）→ 中文覆盖；其余 / 缺省 → `undefined` = 内核默认（混合默认，见文件头）。
  * 繁中用户得简体框架文字是**内容供给的显式决策**（UI 消息仅此一套中文文案），
  * 不是「zh-tw 回落 zh-cn」的文件查找假设，ADR-042 边界不受影响。
  * 判定唯一在此处——回答语言的判定在 `buildResponseLanguageDirective`，两者机制分离。
  *
  * @param envLanguage VS Code 显示语言（`vscode.env.language`，装配调用方注入）
- * @returns 中文覆盖或 undefined（内核英文默认）
+ * @returns 中文覆盖或 undefined（走内核默认，混合默认见文件头）
  */
 function pickUiMessages(envLanguage: string | undefined): UIMessages | undefined {
   return envLanguage && /^zh/i.test(envLanguage) ? CHINESE_MESSAGES : undefined;
@@ -149,7 +149,7 @@ export interface AssembleOptions {
    *
    * `zh` 开头（zh-cn / zh-tw）⇒ 传 `CHINESE_MESSAGES`（UI 消息仅此一套简体中文文案，
    * 给繁中用户提供简体框架文字是**内容供给的显式决策**，非文件查找回落，ADR-042 边界不受影响）；
-   * 其余 / 缺省 ⇒ 不传 = 内核英文默认。由装配调用方注入；与回答语言机制无关
+   * 其余 / 缺省 ⇒ 不传 = 内核默认（混合：多数键英文 + 上面点名的 5 条中文）。由装配调用方注入；与回答语言机制无关
    * （回答语言判定唯一在 `buildResponseLanguageDirective`，勿在此耦合）。
    */
   envLanguage?: string;
@@ -498,7 +498,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
       ? createVscodeProjectSearchProvider(projectSearchRoot)
       : undefined,
     // UI 消息语言：zh 开头传中文覆盖（繁中用户亦得简体框架文字——显式内容供给决策），
-    // 其余走内核英文默认。选择依据唯一 = options.envLanguage（见 AssembleOptions JSDoc）
+    // 其余走内核默认（混合：多数键英文 + 文件头点名的 5 条中文）。选择依据唯一 = options.envLanguage
     messages: pickUiMessages(options.envLanguage),
     // 角色包**只用手动切换**（v0.13：内核已移除自动匹配全链）；切换入口唯一走角色管理视图的
     // agent.switchRolePack，`activeRolePack` 键保留并扩展为 §4.1 解析链第一层。

@@ -2,12 +2,14 @@
 
 > **状态**：🔍 探索中 → **档2 + T1 恢复接入 + 档3（迭代边界落盘）均已落地**（档2/T1：2026-09-09；档3：2026-09-23）。**可逆探索决策，不预写 ADR、不占编号、不改决策 README 索引。** 验证被真实崩溃场景消费、确认稳定后再固化为 ADR。
 >
+> **🔴 7.0.0 后读本文须知**：`Round.refCount` 已随 7.0.0 退役（引用真源 = 会话 `roundIds`，字段与 `IRoundStore.incrementRef/decrementRef` 一并删除）。下文保留的是设计期推演的历史描述，凡出现 `refCount` 的句子不得再当现行判据读；「孤儿」一律按「**不在任何会话 `roundIds` 中 + 超龄**」判（`gcService` 现行口径）。
+>
 > **⚠ 术语警告（2026-09-23，§九）**：本项目有两个「step」——① **loop 迭代 step** = 一次 LLM 交互 + 其工具执行（`stepBudget` / `runIterationLoop` / `handleIteration` 属此阵营，是本文「一次 step 一次落盘」的真 step）；② **任务表 plan step**（一行任务，用户已裁定更名为 **planItem**）。`plan_item_boundary` 这个名字被阵营 ②占用 → 阵营 ①的边界信号缺失，正是 §九 档3 要补的缺口。
 >
 > **落地进度**：
 > - ✅ **写侧**（step 原子落盘）：已实现并验证——宿主 `checkpointRound` 增量落盘 pending Round，流尾复用同一合并函数（SSOT 单一合并语义）；内核 / 宿主测试全绿、tsc/lint 通过。**⚠ 档2 原覆盖范围有缺口：仅覆盖「有任务表且任务项推进」的 turn，无任务表长工具循环零增量落盘 → 已由 §九 档3 修复（落盘时机迁至 `step_boundary`）。**
 > - ✅ **读侧接口**（内核最小支持）：`IRoundStore.listInterruptedRecent(date, limit?)` 已在 `InMemoryRoundStore` + 宿主 `WorkspaceRoundStore` 落地，含单测。
-> - ✅ **恢复接入（T1 已实现，端到端验收待办）**：内核新增收场方法 `MessageHistory.appendInterrupted`（中断轮 → 正常 stop turn：complete + refCount 0→1 + appendRoundId，无文本也按 stop 语义收场）+ 宿主 `chatPanel.upgradeInterruptedRounds`（`ready` 流程打捞 → 升级 → 随首次回放投递），双端单测覆盖（内核 4 例 / 宿主 5 例）。**杀进程→重启端到端验收待真实插件环境**（见 §八 T1 验收）。
+> - ✅ **恢复接入（T1 已实现，端到端验收待办）**：内核新增收场方法 `MessageHistory.appendInterrupted`（中断轮 → 正常 stop turn：complete + appendRoundId，无文本也按 stop 语义收场；7.0.0 前的 `refCount 0→1` 已随字段退役）+ 宿主 `chatPanel.upgradeInterruptedRounds`（`ready` 流程打捞 → 升级 → 随首次回放投递），双端单测覆盖（内核 4 例 / 宿主 5 例）。**杀进程→重启端到端验收待真实插件环境**（见 §八 T1 验收）。
 >
 > **一句话**：把过程事件（processEvents）的落盘从「流尾一次性」改为「每个 step 完成一次次性增量」，让进程崩溃只丢当前 step，之前已完成 step 的过程可从库恢复；重启后中断轮**升级为正常 stop turn 入会话**（可删、可作后续上下文），而非半成品孤儿。落盘动作归宿主（数据所在地），内核只补「列出中断轮」只读接口 + 「中断轮收场」写方法——即用户确认的最小支持形态（档2 + T1）。
 >
@@ -19,7 +21,7 @@
 
 当前 turn 落盘时序：
 
-1. `appendUser` → 创建 pending Round（userMessage 落盘，refCount=0）
+1. `appendUser` → 创建 pending Round（userMessage 落盘；此时**尚未登记进会话 `roundIds`**）
 2. 流运行期间：内核产 chunk → **宿主**派生 ProcessEvent → 暂存内存 `eventsByRound`（[chatPanel.ts#L2309-2335](../../hosts/memora-vscode/src/webview/panels/chatPanel.ts)）
 3. 流结束：内核 `appendAssistant` 完成 Round（写 assistantMessage）+ 宿主流尾把 `eventsByRound` 附各 Round.processEvents 落盘（[chatPanel.ts#L2498-2517](../../hosts/memora-vscode/src/webview/panels/chatPanel.ts)）
 
@@ -50,8 +52,8 @@
 - **任务项边界信号内核已具备**：`plan_item_boundary` chunk（[loop.ts](../../src/agent/loop.ts)）+ `chunk.roundId` 轮归属。
   > **⚠ 订正（2026-09-23，§九 档3）**：此处的「step 边界」实为**任务项边界**——`plan_item_boundary` 由 active 任务项推进驱动，**无任务表不产**。档2 借它当落盘时机，正是 §九 查出的覆盖缺口根因。**迭代边界**信号由档3 新增的 `step_boundary` chunk 承担（`iteration_boundary` 归位更名）。
 - **pending Round 可覆盖写**：roundStore.save 覆盖 pending（[roundStore.test.ts 增量覆盖用例](../../src/memory/roundStore.ts) 已验证）。
-- **崩溃轮是孤儿**：`refCount=0`、`status=pending`、`appendRoundId` 只在 complete 时登记 → **不在正式会话 roundIds 里**，会话重放遍历不到。**修订（§一·五）**：这不是目标态——中断轮应**升级为正常 stop turn 并登记进 roundIds**，「孤儿」只是升级前的中间态。
-- **GC 回收崩溃残留轮**（[gcService.ts#L6](../../src/memory/gcService.ts)：refCount=0 且超龄，pending/error 不分状态）。**修订（§一·五）**：中断轮升级为正常 turn 后不再是无引用孤儿，GC 按普通 turn 生命周期处理（随会话删除）；`listInterruptedRecent` 打捞口只服务「崩溃后尚未升级」的短暂窗口。
+- **崩溃轮是孤儿**：**不在任何会话 `roundIds` 中**、`status=pending`、`appendRoundId` 只在 complete 时登记 → 会话重放遍历不到。**修订（§一·五）**：这不是目标态——中断轮应**升级为正常 stop turn 并登记进 roundIds**，「孤儿」只是升级前的中间态。
+- **GC 回收崩溃残留轮**（[gcService.ts](../../src/memory/gcService.ts)：**不在任何会话 `roundIds` 中**且超龄，pending/error 不分状态）。**修订（§一·五）**：中断轮升级为正常 turn 后不再是无引用孤儿，GC 按普通 turn 生命周期处理（随会话删除）；`listInterruptedRecent` 打捞口只服务「崩溃后尚未升级」的短暂窗口。
 
 ## 三、分两侧判断「要不要改内核」
 
@@ -121,12 +123,12 @@ listInterruptedRecent(date: string, limit?: number): Round[];
 
 ### T2 · 打捞口定位调整 ✅ 已随 T1 落地
 - `listInterruptedRecent` 定位已从「孤儿草稿打捞」改为「**崩溃残留轮升级前的中转**」（接口/两实现注释同步更新）。
-- **GC 不误回收确认**：升级动作在启动后的 `ready → 打捞` 内完成，远早于 sweepOrphans 默认 24h 存活保护；升级后轮 complete + refCount>0，不再是无引用孤儿，GC 按普通 turn 生命周期处理（随会话删除）。
+- **GC 不误回收确认**：升级动作在启动后的 `ready → 打捞` 内完成，远早于 sweepOrphans 默认 24h 存活保护；升级后轮 complete **且已登记进会话 `roundIds`**，不再是无引用孤儿，GC 按普通 turn 生命周期处理（随会话删除）。（判据口径见文首 7.0.0 须知：孤儿 = 不在任何会话 `roundIds` 中 + 超龄。）
 - **`date` 过滤定案：保留**（宿主只持当前会话日期，理由见 §六）。
 
 ### T3 · 与 `_viewEpoch` 重建回放互斥 ✅ 已设计互斥 + 断言测试
 - 升级轮只经「roundIds 回放」一条通道投递（升级完成于首次回放之前），折叠重建的回放与崩溃恢复回放**不双发**。
-- 断言：宿主 once-guard（重复调用不再升级）+ 内核幂等（重复 `appendInterrupted` 不二次登记 roundIds / refCount 不虚增）。
+- 断言：宿主 once-guard（重复调用不再升级）+ 内核幂等（重复 `appendInterrupted` 不二次登记会话 `roundIds`；`refCount` 已随 7.0.0 退役，原「refCount 不虚增」断言随之删除）。
 
 ### T4 · 写性能采样 ⏳ 待真实长任务环境
 - `checkpointRound` step 高频增量写 vs 流尾全量写，真实长任务采样（本专项环境无真实 LLM 长任务，未执行）。
