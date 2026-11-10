@@ -911,6 +911,88 @@ const DEFERRED_CJK_FILES = [
       '翻了会让模型输入不可复现：`ASK_TIMEOUT_NOTICE` 是给模型的代选指令（纯模型面），' +
       '`abandonOnStop` 的停止通知是模型与用户同看的回执（双面串）；本表 kind 取更强的双面串。',
   },
+  // ---- B11 第四刀（2026-11-10）：宿主采集器 / 命令面的模型载荷与诊断口 ----
+  {
+    file: 'extension/host/gitCollector.ts',
+    kind: '纯模型面',
+    reason:
+      '翻了会让注入给模型的 git 改动正文随界面语言变：同一份改动在不同语言用户下产出不同事实行、' +
+      '截断注记与清单措辞，模型输入不可复现；且这些正文是给模型的读文件指令（路径可直接用于 ' +
+      'read_file），不是上屏文案。',
+  },
+  {
+    file: 'extension/host/problemsCollector.ts',
+    kind: '纯模型面',
+    reason:
+      '翻了会让 @problems 注入正文随界面语言变：严重度标签、条数与截断注记都进模型上下文，' +
+      '同一诊断集在两种语言下产出不同文本；正文里的「源码行」提示语是模型操作指令，' +
+      '翻它会让指令与事实混排。',
+  },
+  {
+    file: 'extension/host/injectionBodies.ts',
+    kind: '纯模型面',
+    reason:
+      '翻了会让两条采集失败事实行随界面语言变：它们是发送时刻补进模型上下文的兜底正文' +
+      '（诊断采集失败 / git 采集失败），翻成界面语言会让模型收到的失败原因在两种语言下不可比对，' +
+      '而上屏只剩 chip 标签。',
+  },
+  {
+    file: 'extension/host/activeFileTracker.ts',
+    kind: '纯模型面',
+    reason:
+      '翻了会让活动文件信封头与截断标记随界面语言变：`文件名：{name}` 是注入信封的格式契约' +
+      '（文件内注释明写勿改格式），翻它等于改模型侧解析约定，同一文件在两种语言用户下注入形态不一致。',
+  },
+  {
+    file: 'extension/host/skillAggregation.ts',
+    kind: '纯模型面',
+    reason:
+      '翻了会让 `【当前技能】` 技能块头随界面语言变：该块由 composer 选中技能后直接拼进模型上下文，' +
+      '翻它会让技能注入的格式标记随语言漂移，模型侧对同一技能块的识别不稳定。',
+  },
+  {
+    file: 'extension/host/responseLanguage.ts',
+    kind: '本地化注入面',
+    reason:
+      '翻了会造出第三套语言真源：`DIRECTIVE_BY_LOCALE` 本就是按 `vscode.env.language` 选出的回答' +
+      '语言指令（zh 用中文、其余走英文），再套 l10n 会让指令语言受界面 bundle 二次裁决，回答语言反而失真。',
+  },
+  {
+    file: 'extension/host/sessionStore.ts',
+    kind: '纯诊断',
+    reason:
+      '翻了会让跨进程写锁断言的抛错文案随界面语言变：这条 Error 只进诊断链与日志' +
+      '（「会话文件写入缺少跨进程锁」），界面不呈现，翻它会让排障时同一句断言在两种语言下无法按串检索。',
+  },
+  {
+    file: 'extension/host/workspaceStorage.ts',
+    kind: '纯诊断',
+    reason:
+      '翻了会让人工 source 校验的抛错随界面语言变：这条 Error 只进诊断链与日志（带内核 warning），' +
+      '不直接上屏，翻它会让排障串检索在英文界面下失效，而上屏回执由调用方另行本地化。',
+  },
+  {
+    file: 'shared/imageTokenBudget.ts',
+    kind: '纯诊断',
+    reason:
+      '翻了会让这条与内核 `checkImageTokenBudget` 同式的镜像判据文案分叉：本函数当前零生产消费者' +
+      '（只有测试驱动），message 从不上屏，翻它只增键面噪音而没有用户收益。',
+  },
+  {
+    file: 'extension/commands/registerWork.ts',
+    kind: '本地化注入面',
+    reason:
+      '翻了会让作品描述的语言随界面语言漂移：读文件后的「仅前 N 字符」注记、描述生成提示词与' +
+      '「只输出一句中文描述」的系统提示共同决定落库描述文本，描述是项目数据，应随内容语言而非界面语言。',
+  },
+  {
+    file: 'extension/commands/demo.ts',
+    kind: '纯诊断',
+    reason:
+      '翻了会让演示提示词与 Output Channel 输出随界面语言变：演示要展示的是同一套固定中文范式' +
+      '（写入演示区的摘要与总结语言都是中文），翻它会让演示产出随语言漂移、结果不再可比；' +
+      '该面按方案 §11.3 判为非 UI 面。',
+  },
 ];
 
 /**
