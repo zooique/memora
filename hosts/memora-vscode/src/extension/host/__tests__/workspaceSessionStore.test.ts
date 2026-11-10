@@ -1,4 +1,4 @@
-/**
+﻿/**
  * WorkspaceSessionStore 单元测试（ISessionStore 契约 + truncateFrom）
  *
  * 覆盖两类：
@@ -57,7 +57,6 @@ function seedRound(
     status: status ?? (assistant ? 'complete' : 'pending'),
     createdAt: user.ts,
     ...(assistant ? { completedAt: assistant.ts } : {}),
-    refCount: 1,
   };
   roundStore.save(round);
   const sessionId = `${date}-${session}`;
@@ -388,7 +387,6 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
         status: 'complete',
         createdAt: `2026-08-17T00:0${i}:00.000Z`,
         completedAt: `2026-08-17T00:0${i}:30.000Z`,
-        refCount: 1,
       });
     }
     store.setRoundIds('2026-08-17-main', ids);
@@ -460,7 +458,7 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     const removedIds = store.deleteSession('2026-08-17-main');
     expect(store.getSessionMeta('2026-08-17-main')).toBeUndefined();
     expect(store.listSessions()).not.toContain('2026-08-17-main');
-    // 先注销会话 roundIds → 现场派生引用集合判 0 ⇒ 移入回收站（不再读 refCount）
+    // 先注销会话 roundIds → 现场派生引用集合判 0 ⇒ 移入回收站（不读轮上的引用状态）
     expect(roundStore.getById(roundId)).toBeNull();
     // 返回值 = 被回收的 Round 列表（供调用方联动软删记忆摘要）
     expect(removedIds).toEqual([roundId]);
@@ -468,10 +466,10 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
 
   it('deleteSession：分叉共享轮安全保留（仍被其他会话 roundIds 引用）', () => {
     const roundId = seedRound(store, roundStore, '2026-08-17', 'main', { content: 'x', ts: 't1' });
-    // 分叉引用 = 另一会话 roundIds 共享同一 Round（指针复制，refCount 不变）
+    // 分叉引用 = 另一会话 roundIds 共享同一 Round（指针复制，轮文件不改写）
     store.setRoundIds('2026-08-17-fork', [roundId]);
     const removedIds = store.deleteSession('2026-08-17-main');
-    // Round 仍被分叉会话引用 → 保留（delete 不再有 refCount 护栏，保护来自引用集合派生）
+    // Round 仍被分叉会话引用 → 保留（delete 无引用计数护栏，保护来自引用集合派生）
     expect(roundStore.getById(roundId)).not.toBeNull();
     // 返回值不含共享轮（未回收 → 不联动记忆，共享会话摘要保留）
     expect(removedIds).toEqual([]);
@@ -669,7 +667,6 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
       status: 'complete',
       createdAt: 't1',
       completedAt: 't2',
-      refCount: 1,
       processEvents: [
         { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
         {
@@ -706,7 +703,6 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
       userMessage: { id: 'u1', role: 'user', content: '问题', timestamp: 't1' },
       status: 'pending',
       createdAt: 't1',
-      refCount: 0,
       processEvents: [{ type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } }],
     };
     roundStore.save(round);
@@ -724,7 +720,6 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
       status: 'complete',
       createdAt: 't1',
       completedAt: 't2',
-      refCount: 1, // 冻结为存在性标记；共享保护由会话引用集合承担
       processEvents: [{ type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } }],
     };
     roundStore.save(round);
@@ -743,7 +738,7 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
   let dir: string;
   /** 问答闭环物理存储 */
   let roundStore: WorkspaceRoundStore;
-  /** 引用真源（模拟会话 roundIds）：孤儿判定现场派生，不读 refCount */
+  /** 引用真源（模拟会话 roundIds）：孤儿判定现场派生，不看轮上的任何计数 */
   let referencedIds: Set<string>;
 
   beforeEach(() => {
@@ -757,7 +752,7 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
   /**
    * 直接落一个 Round（绕过 SessionStore 登记，模拟无会话引用残留孤儿）。
    * status 可指定为 'pending' 以复现「CRASH 残留」形态。
-   * `refCount` 固定为 1（存在性标记），不参与任何孤儿判据。
+   * 轮对象上不写任何引用状态（引用真源 = 会话 roundIds）。
    */
   function seedRawRound(
     roundId: string,
@@ -769,7 +764,6 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
       userMessage: { id: `${roundId}-u`, role: 'user', content: 'x', timestamp: createdAt },
       status,
       createdAt,
-      refCount: 1,
     };
     roundStore.save(round);
   }
@@ -823,7 +817,6 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
       userMessage: { id: 'u', role: 'user', content: 'x', timestamp: '2026-08-20T00:00:00.000Z' },
       status: 'complete',
       createdAt: '2026-08-20T00:00:00.000Z',
-      refCount: 1,
     });
     expect(bare.sweepOrphans(0)).toEqual([]);
     expect(bare.getById('round-no-provider')).not.toBeNull();
@@ -1165,7 +1158,6 @@ describe('WorkspaceRoundStore.load 索引校正（轮文件在、索引缺）', 
       status: 'complete',
       createdAt: '2026-11-06T00:00:00.000Z',
       completedAt: '2026-11-06T00:00:01.000Z',
-      refCount: 1,
     };
   }
 
@@ -1376,7 +1368,6 @@ describe('历史只读闸（save 唯一写通道 / delete 引用即禁删）', (
       },
       status: 'pending',
       createdAt: '2026-11-04T00:00:00.000Z',
-      refCount: 1,
     });
     expect(store.referencedIds()).not.toContain(orphanId);
 

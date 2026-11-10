@@ -212,7 +212,7 @@ describe('mergeLiveRound', () => {
     content: '第二个问题',
     timestamp: '2026-09-23T01:00:00.000Z',
   };
-  /** RoundView 必填四件套：id / userMessage / status / createdAt（refCount 未被 Pick） */
+  /** RoundView 必填四件套：id / userMessage / status / createdAt */
   const historyRound = (id: string, over: Partial<RoundView> = {}): RoundView => ({
     id,
     userMessage: userMsg,

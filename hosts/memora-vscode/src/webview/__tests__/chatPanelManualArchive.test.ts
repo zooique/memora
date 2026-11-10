@@ -1,4 +1,4 @@
-/**
+﻿/**
  * chatPanel 手动归档入口（manual 模式嫁接「移入留存区」· 2026-10-19）
  *
  * 背景：`memora.archiveMode = manual` 承诺「仅手动触发时生成会话摘要」，但宿主原本
@@ -138,7 +138,6 @@ function seedSession(
     status: 'complete',
     createdAt: 't1',
     completedAt: 't2',
-    refCount: 1,
   };
   roundStore.save(round);
   store.appendRoundId(`${date}-${session}`, roundId);

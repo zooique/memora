@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 引用集合「现场派生」测试（审查 B2）
  *
  * 立此用例的伤：`referencedIds()` 曾遍历进程内的 `roundIdsStore`（仅 `load()` /
@@ -29,7 +29,6 @@ function makeRound(id: string, at: string): Round {
     status: 'complete',
     createdAt: at,
     completedAt: at,
-    refCount: 1,
   };
 }
 

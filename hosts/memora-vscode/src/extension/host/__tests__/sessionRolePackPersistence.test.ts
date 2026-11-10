@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 会话级角色包：落盘 → 重启读回 → 实际写工具仍被拒（方案 A 回归）
  *
  * 背景（为什么必须实测）：方案 A 把角色选择从「用户级全局激活态」改为「随会话文件落盘」。
@@ -349,7 +349,6 @@ describe('会话级角色包：落盘 → 重启读回 → 只读闸仍生效', 
       status: 'complete',
       createdAt: '2026-11-07T10:00:00.000Z',
       completedAt: '2026-11-07T10:00:30.000Z',
-      refCount: 1,
     };
     roundStore1.save(round);
     store1.setRoundIds(parentId, [roundId]);

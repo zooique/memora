@@ -27,7 +27,7 @@
 .memora/
   sessions.json            # WorkspaceSessionStore：sessionId → SessionMeta + roundIds
   rounds/
-    index.json             # WorkspaceRoundStore：roundId → status + refCount + file
+    index.json             # WorkspaceRoundStore：roundId → status + file（派生缓存，不含引用信息）
     {roundId}.json         # 单个 Round 完整数据
 ```
 
@@ -60,7 +60,7 @@
 - `resolveSessionLocation(sessionId)` → `active | archived`：先查活动 `sessions.json`，查不到再查 `archived/sessions.json`。
 - `archiveSession(sessionId)`：
   1. 从活动 `sessions.json` 读出该条 meta + roundId 列表；
-  2. 把该会话引用的每个 `rounds/{roundId}.json` `move` 到 `archived/rounds/` 并更新两区 `index.json` 的 refCount（**先入后删，成对完整搬**）；
+  2. 把该会话引用的每个 `rounds/{roundId}.json` `move` 到 `archived/rounds/`（**先入后删，成对完整搬**）；两区 `index.json` 只重建派生条目——**引用状态不写盘**（真源 = 会话 `roundIds`，7.0.0 起轮对象无引用字段）；
   3. 把 meta + roundIds 写入 `archived/sessions.json`，再从活动 `sessions.json` 移除；
   4. 全流程原子（失败可回滚：已搬的 round 移回）。
 - `unarchiveSession(sessionId)`：反向执行（archived → active），同样成对搬。
@@ -91,7 +91,7 @@
 
 - **成对搬**：meta 与 rounds 必须同为一步搬完；漏搬 → 归档后无内容或 `traceSummary` 回溯断供。
 - **同名撞库**：活动区与归档区不许同名会话；move 前校验 `sessionId` 已存在则拒绝 / 加后缀。
-- **孤儿清扫联掉**：`WorkspaceRoundStore` 现有孤儿清扫按 refCount 走；跨区 move 时两区 `index.json` 的 refCount 需同步维护，避免误清。
+- **孤儿清扫联掉**：`WorkspaceRoundStore` 的孤儿清扫按**会话引用集合现场派生**（不看轮上的计数）；跨区 move 时两区会话文件即引用真源，搬完两边都可见，不存在靠计数同步才不误清的约束。
 - **崩溃一致性**：move 非单文件原子；采用「先写目标、校验成功后删源」防半搬状态。
 - 探索期内不写 ADR；验证稳定、被真实场景复现消费后再固化为定案（含引用方盘点）。
 

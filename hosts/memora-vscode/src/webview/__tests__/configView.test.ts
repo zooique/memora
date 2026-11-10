@@ -61,7 +61,7 @@ function dispatchLoaded(providers: unknown[], activeName?: string, backgroundNam
  *
  * ⚠️ **不要把这个 helper 写成字段白名单**。它原先逐字列举每个字段，于是每次给
  * `LlmProviderConfig` 加新字段（本次是 supportsVision），这里都会静默吞掉、
- * 导致「新字段永远测不到」——宿主一轮踩的是 `makeRound` 缺 refCount 的同类坑。
+ * 导致「新字段永远测不到」——宿主一轮踩的是 `makeRound` 缺必填字段的同类坑。
  * 改成「默认值对象 + 展开 opts」：以后加字段**只改 implements 的那一处**，
  * 这里无需同步，测试替身不再成为第二份字段清单。
  */

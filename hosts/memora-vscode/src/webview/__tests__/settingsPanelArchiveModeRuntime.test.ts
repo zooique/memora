@@ -77,7 +77,7 @@ vi.mock('vscode', () => ({
  * isRetryableErrorCode），故在宿主侧按同一形状用 MemoraError 构造。
  *
  * 为什么不能像旧测试那样手写 `new Error('对话繁忙：…')`：
- *   宿主 `toNoticeText`（extension/host/noticeText）对 MemoraError 走 `err.format()`，
+ *   宿主 `toNoticeText`（extension/host/noticeText）对 MemoraError 走**结构化字段自渲染**，
  *   对普通 Error 才走 `err.message` —— 手写普通 Error 意味着**永远只测了第二个分支**，
  *   真实内核抛出的 MemoraError 形态（含 ❌ / 原因 / 建议 多行结构）从未进入过这条链路。
  */
@@ -267,9 +267,9 @@ describe('settingsPanel.setArchiveMode —— 运行时真相层（UI 谎言检�
 
   // ─── P1-3：对接内核真实错误契约（MemoraError 分支） ───
 
-  it('P1-3 繁忙错误走内核 MemoraError 形态 → notice 用 err.format() 渲染（非 err.message）', async () => {
-    // toNoticeText 对 MemoraError 走 `err.format()`，
-    // 输出 `❌ 标题 / 原因： / 建议：` 多行结构；普通 Error 才走 err.message。
+  it('P1-3 繁忙错误走内核 MemoraError 形态 → notice 由宿主自渲染（非 err.message）', async () => {
+    // 7.0.0 起内核不再提供 format()：toNoticeText 用结构化字段自渲染，
+    // 默认语言下输出 `❌ Error: / Reason: / Suggestions:` 多行结构；普通 Error 才走 err.message。
     // 旧用例手抄普通 Error ⇒ **MemoraError 分支从未被覆盖**。
     const stub = truthfulAgentStub('full');
     const { provider, posted } = setup(stub.agent);
@@ -278,10 +278,10 @@ describe('settingsPanel.setArchiveMode —— 运行时真相层（UI 谎言检�
     await sendArchiveModeSet(provider, 'manual');
 
     const msg = notices(posted)[0]?.message ?? '';
-    // 「❌ 对话繁忙」+「原因：」是 format() 独有的结构标记 ⇒ 证明走的是 MemoraError 分支
-    expect(msg).toContain('❌ 对话繁忙');
-    expect(msg).toContain('原因：上一轮对话尚未完成，请等待其结束后再切换归档模式');
-    expect(msg).toContain('建议：');
+    // 「❌ Error: 对话繁忙」+「Reason:」是自渲染独有的结构标记 ⇒ 证明走的是 MemoraError 分支
+    expect(msg).toContain('❌ Error: 对话繁忙');
+    expect(msg).toContain('Reason: 上一轮对话尚未完成，请等待其结束后再切换归档模式');
+    expect(msg).toContain('Suggestions:');
     expect(msg).toContain('等待当前对话完成后重试');
   });
 

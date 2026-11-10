@@ -414,7 +414,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private _agentReady: Promise<void> | null = null;
   /** 崩溃残留轮升级为 stop turn 是否已执行：每面板实例一次；
-   *  升级后轮已 complete + refCount>0，listInterruptedRecent 不再命中，重复执行无意义 */
+   *  升级后轮已 complete，listInterruptedRecent 不再命中，重复执行无意义 */
   private _salvageUpgraded = false;
   /** 当前激活角色包（**会话 Agent 真实值的投影**：bindAgent 强制重读，不再由外部写入） */
   private _activeRolePack: string | undefined;
@@ -2004,7 +2004,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 本方法只管视图生命周期（once-guard / 会话日期取值 / 失败降级）——不在视图层重述业务口径。
    * 幂等/时序：
    *   once-guard（_salvageUpgraded）+ 内核 appendInterrupted 防重 → 升级轮不二次登记、不被
-   *   _viewEpoch 折叠重建回放与崩溃恢复重复投递；升级后轮 complete + refCount>0，
+   *   _viewEpoch 折叠重建回放与崩溃恢复重复投递；升级后轮 complete，
    *   GC 按普通 turn 生命周期处理（随会话删除）。
    * 失败降级：打捞/升级失败仅记日志，不阻断历史回放；未升级轮保持 pending，由 GC 兜底回收。
    */

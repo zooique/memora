@@ -1,4 +1,4 @@
-/**
+﻿/**
  * chatPanel 会话管理集成测试（会话标题层）
  *
  * 用真实 WorkspaceSessionStore（临时目录落盘）+ mock vscode 驱动
@@ -220,7 +220,6 @@ function seedSession(
       status: a ? 'complete' : 'pending',
       createdAt: u.ts,
       ...(a ? { completedAt: a.ts } : {}),
-      refCount: 1,
     };
     roundStore.save(round);
     store.appendRoundId(`${date}-${session}`, roundId);
@@ -855,7 +854,6 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
         },
         status: 'complete',
         createdAt: `t${i}`,
-        refCount: 1,
       });
       store.appendRoundId('2026-10-28-s1', roundId);
     }
@@ -2082,7 +2080,7 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
 });
 
 describe('chatPanel · 崩溃残留轮打捞升级为正常 stop turn（T1，2026-09-09）', () => {
-  /** 种子「崩溃残局」轮：pending + refCount=0 + 宿主已落盘的 processEvents */
+  /** 种子「崩溃残局」轮：pending + 宿主已落盘的 processEvents */
   function seedInterruptedRound(
     roundStore: WorkspaceRoundStore,
     id: string,
@@ -2099,7 +2097,6 @@ describe('chatPanel · 崩溃残留轮打捞升级为正常 stop turn（T1，202
       },
       status: 'pending',
       createdAt,
-      refCount: 0,
       processEvents,
     } as Round);
   }
@@ -2862,7 +2859,6 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
       userMessage: { id: 'round-9-user', role: 'user', content: '新问题', timestamp: 't2' },
       status: 'pending',
       createdAt: 't2',
-      refCount: 0,
       processEvents: [ev(1, 'meta'), ev(2, 'tool_start')],
     } as never);
     // 模拟 resume 续跑缓冲：只有续跑段事件（seq 更大），无暂停前事件
@@ -2996,7 +2992,7 @@ describe('启动会话对齐（启动即分叉根因修复）', () => {
     );
     expect(alignNotice, '对齐失败必须发 error notice（静默则退回启动即错位原症状）').toBeDefined();
     expect(alignNotice!.level).toBe('error');
-    // format() 全文三件套：标题 / 原因 / 建议都在
+    // toNoticeText 全文三件套：标题 / 原因 / 建议都在
     expect(alignNotice!.message).toContain('打开会话');
     expect(alignNotice!.message).toContain('会话处于 running 态之外');
     expect(alignNotice!.message).toContain('等待当前对话完成后重试');

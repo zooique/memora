@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 会话锁生命周期测试（审查 B1 + E4 批 3：按会话长持有 / 三类关闭场景）
  *
  * 立此用例的伤：`onDidDispose` 原本只解事件订阅、不放锁，`releaseAllSessionLocks` 生产零调用
@@ -196,7 +196,6 @@ describe('会话锁生命周期（按会话长持有 + 三类关闭场景）', (
       status: 'complete',
       createdAt: '2026-11-06T01:00:00.000Z',
       completedAt: '2026-11-06T01:00:01.000Z',
-      refCount: 1,
     };
     roundStore.save(round);
     storeA.createSession({

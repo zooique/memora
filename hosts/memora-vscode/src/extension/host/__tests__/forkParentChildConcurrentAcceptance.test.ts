@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 6.0.0 批 1 验收 ④：fork 后父子会话**同时各跑一轮**（20 次零差异）
  *
  * 背景（口径真源 = `tasks/6.0.0-落地排产表-临时.md` §2 批 1）：
@@ -347,7 +347,6 @@ describe('6.0.0 批 1 验收 ④：fork 父子会话同时各跑一轮', () => {
       status: 'complete',
       createdAt: ts,
       completedAt: ts,
-      refCount: 1,
     };
   }
 });

@@ -76,8 +76,15 @@ async function main(): Promise<void> {
     probe = store.probe();
   } catch (err) {
     // 可操作错误（库不存在 / 环境不支持）：打印成因与建议，不打堆栈——这是用户要读的，不是开发者要看的
+    // 7.0.0 起内核不再提供 format()：CLI 侧自渲染三层（标题 / 原因 / 建议），中文与周边日志一致
     if (err instanceof MemoraError) {
-      console.error(`[memora-mcp] 启动失败：\n${err.format()}`);
+      const lines: string[] = [`[memora-mcp] 启动失败：`, `❌ ${err.title}`];
+      if (err.detail) lines.push(`   原因：${err.detail}`);
+      if (err.suggestions.length > 0) {
+        lines.push('   建议：');
+        for (const suggestion of err.suggestions) lines.push(`     - ${suggestion}`);
+      }
+      console.error(lines.join('\n'));
       process.exit(1);
     }
     throw err;

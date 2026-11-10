@@ -1,5 +1,5 @@
-/**
- * 6.0.0 批 1 验收：引用真相移出轮次文件（宿主真实文件系统）
+﻿/**
+ * 验收：引用真相在会话 roundIds（轮次文件零引用状态；7.0.0 起 `Round.refCount` 已移除）
  *
  * 严格对应派发单的三条验收（不扩范围）：
  *   1. 分叉前后 `rounds/*.json` 全量 sha256 逐一比对：**字节与文件集合均不变**
@@ -14,10 +14,24 @@
 // @vitest-environment node
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Agent, type LlmChunk, type LlmProvider, type Round } from '@zooique/memora';
+import {
+  Agent,
+  isRoundSettled,
+  type LlmChunk,
+  type LlmProvider,
+  type Round,
+} from '@zooique/memora';
 import { WorkspaceSessionStore } from '../sessionStore.js';
 import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
 
@@ -51,7 +65,7 @@ class StubProvider {
   async *chat(): AsyncIterable<LlmChunk> {}
 }
 
-describe('6.0.0 批 1 验收：refCount 冻结 / 引用真源 = 会话 roundIds', () => {
+describe('验收：轮次文件不含引用状态 / 引用真源 = 会话 roundIds', () => {
   /** 临时工作区 */
   let ws: string;
   /** 数据目录（Agent dataDir） */
@@ -222,6 +236,85 @@ describe('6.0.0 批 1 验收：refCount 冻结 / 引用真源 = 会话 roundIds'
     expect(sessionStore.getRoundIds(forkSessionId)).toEqual(shared);
   }, 120_000);
 
+  it('旧档相容实测：带 refCount 的旧 rounds/*.json 可正常反序列化，新写入不含该字段', () => {
+    // 真实旧档形态 = 6.x 落盘的 round 文件 + index.json 条目，两者都带 refCount。
+    // 本用例是「删字段不会读挂」的**实测证据**（不是对注释的转述）。
+    const legacyWs = mkdtempSync(join(tmpdir(), 'memora-legacy-refcount-'));
+    try {
+      const roundsDir = join(legacyWs, '.memora', 'rounds');
+      mkdirSync(roundsDir, { recursive: true });
+      const ts = '2026-11-01T00:00:00.000Z';
+      // 旧档轮文件：refCount 是被删字段，旧数据里真实存在
+      writeFileSync(
+        join(roundsDir, 'round-legacy-1.json'),
+        JSON.stringify(
+          {
+            id: 'round-legacy-1',
+            userMessage: {
+              id: 'round-legacy-1-u',
+              role: 'user',
+              content: '旧档问题',
+              timestamp: ts,
+            },
+            assistantMessage: {
+              id: 'round-legacy-1-a',
+              role: 'assistant',
+              content: '旧档回答',
+              timestamp: ts,
+            },
+            status: 'complete',
+            createdAt: ts,
+            completedAt: ts,
+            refCount: 1,
+          },
+          null,
+          2,
+        ),
+      );
+      // 旧档索引：同样带 refCount（派生缓存旧格式）
+      writeFileSync(
+        join(roundsDir, 'index.json'),
+        JSON.stringify(
+          [
+            {
+              id: 'round-legacy-1',
+              status: 'complete',
+              createdAt: ts,
+              file: 'round-legacy-1.json',
+              refCount: 1,
+            },
+          ],
+          null,
+          2,
+        ),
+      );
+
+      const legacyStore = new WorkspaceRoundStore(legacyWs);
+      // ① 读入不炸：未知键被忽略，正文 / 状态 / 列表全部照常可用
+      expect(() => legacyStore.load()).not.toThrow();
+      const loaded = legacyStore.getById('round-legacy-1');
+      expect(loaded?.assistantMessage?.content).toBe('旧档回答');
+      expect(loaded?.status).toBe('complete');
+      expect(legacyStore.listAll().map((r) => r.id)).toContain('round-legacy-1');
+      // 读侧不判：孤儿 / 打捞判据都不看该字段（旧值原样躺在 JSON 里也不影响任何判定）
+      expect(isRoundSettled(loaded!.status)).toBe(true);
+
+      // ② 新写入不带字段：走真实 save() 写一个新轮，落盘 JSON 里不应出现 refCount
+      legacyStore.save(makeRound('round-new-1', '新档问题'));
+      const newRaw = JSON.parse(
+        readFileSync(join(roundsDir, 'round-new-1.json'), 'utf8'),
+      ) as Record<string, unknown>;
+      expect('refCount' in newRaw).toBe(false);
+      // 索引同样只写派生字段
+      const idxRaw = JSON.parse(readFileSync(join(roundsDir, 'index.json'), 'utf8')) as Array<
+        Record<string, unknown>
+      >;
+      expect(idxRaw.every((e) => !('refCount' in e))).toBe(true);
+    } finally {
+      rmSync(legacyWs, { recursive: true, force: true });
+    }
+  });
+
   /** 构造最小完整 Round（仅 GC 判据需要的字段） */
   function makeRound(id: string, content: string): Round {
     const ts = new Date().toISOString();
@@ -237,7 +330,6 @@ describe('6.0.0 批 1 验收：refCount 冻结 / 引用真源 = 会话 roundIds'
       status: 'complete',
       createdAt: ts,
       completedAt: ts,
-      refCount: 1,
     };
   }
 });

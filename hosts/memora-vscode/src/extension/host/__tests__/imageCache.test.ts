@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 图片字节缓存（`ImageCache`）单元测试
  *
  * 范式同 `imageIngest.test.ts`：**真临时目录**验证「预读 → resolver 同步命中」闭环，
@@ -72,7 +72,6 @@ function roundWith(id: string, attachments: ImageRef[]): Round {
     userMessage: { id: `${id}-user`, role: 'user', content: '[图片]', timestamp: 't', attachments },
     status: 'complete',
     createdAt: 't',
-    refCount: 1,
   };
 }
 

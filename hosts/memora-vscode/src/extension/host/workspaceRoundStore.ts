@@ -3,7 +3,7 @@
  *
  * 设计理念：
  * - 每个 Round 存为独立文件（rounds/{roundId}.json）
- * - 索引文件是**派生缓存**（Round ID → 状态），不含 refCount 等引用信息
+ * - 索引文件是**派生缓存**（Round ID → 状态），不含引用信息
  * - 支持批量读取，避免 N+1 查询
  * - 原子写入保证数据安全
  *
@@ -18,7 +18,7 @@
  * ```
  *
  * 🔴 引用真源 = `WorkspaceSessionStore` 的会话 roundIds（见 `setReferencedIdsProvider`）；
- * `Round.refCount` 仅为旧档 schema 的存在性标记，任何判据与索引副本都不使用它。
+ * 轮对象上不持有任何引用状态，旧档 JSON 里的历史引用字段读入即忽略（不判、不改、不回写）。
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
@@ -68,7 +68,7 @@ export const ROUND_TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 /**
  * 孤儿清扫的默认存活保护（24h）。
  *
- * 判据 = 「不在任何会话 roundIds 中」（由 sessionStore 现场派生，不读 refCount）。
+ * 判据 = 「不在任何会话 roundIds 中」（由 sessionStore 现场派生）。
  * 存活保护给「刚失去引用」的轮留后悔窗口：**刚删会话的轮 24h 内不动物理文件**
  * （`deleteSession` 复用本判据；截断 `truncateFrom` 是用户显式操作、调用方持有会话锁，
  * 不经本保护、即时回收）。
@@ -95,7 +95,7 @@ export class WorkspaceRoundStore implements IRoundStore {
    * 引用真源提供者（由 `WorkspaceSessionStore` 注入）
    *
    * 本存储不持有会话，无法自行判定「是否仍被引用」；未注入时 `listOrphaned` 返回空
-   * （宁可不回收，也不读过期 `refCount` 误删用户数据）。
+   * （宁可不回收，也不按过期引用信息误删用户数据）。
    */
   private referencedIdsProvider: (() => ReadonlySet<string>) | null = null;
   /**
@@ -148,7 +148,7 @@ export class WorkspaceRoundStore implements IRoundStore {
    */
   load(): void {
     this.cleanupTrash();
-    // 加载索引（旧档条目可能带 refCount：只取派生字段，副本作废）
+    // 加载索引（旧档条目可能带历史引用字段：只取派生字段，副本作废）
     if (existsSync(this.indexPath)) {
       try {
         const raw = readFileSync(this.indexPath, 'utf8');
@@ -272,7 +272,7 @@ export class WorkspaceRoundStore implements IRoundStore {
   }
 
   /**
-   * 保存索引到文件（**副本作废**：只写派生字段，不写 refCount）
+   * 保存索引到文件（**副本作废**：只写派生字段，不写引用信息）
    */
   private saveIndex(): void {
     const entries: RoundIndexEntry[] = Array.from(this.index.values()).map((e) => ({
@@ -338,7 +338,7 @@ export class WorkspaceRoundStore implements IRoundStore {
     // 更新缓存
     this.cache.set(round.id, round);
 
-    // 更新索引（派生副本：不写 refCount）
+    // 更新索引（派生副本：不写引用信息）
     const entry: RoundIndexEntry = {
       id: round.id,
       status: round.status,
@@ -449,26 +449,6 @@ export class WorkspaceRoundStore implements IRoundStore {
   }
 
   /**
-   * 增加引用计数（**no-op**：引用真源 = 会话 roundIds）
-   *
-   * 保留 API 仅供公开面兼容（7.0.0 移除）。**不得**产生任何持久化写入——
-   * 分叉若在此改写轮次文件 / index.json，会破坏「分叉前后 rounds/*.json 字节不变」。
-   */
-  incrementRef(_roundId: string): void {
-    // 有意为空：分叉只复制会话 roundIds 指针
-  }
-
-  /**
-   * 减少引用计数（**no-op**：引用真源 = 会话 roundIds）
-   *
-   * 保留 API 仅供公开面兼容（7.0.0 移除）。删除会话 / 截断时先收缩会话 roundIds，
-   * 再由 sessionStore 现场派生引用集合判 0。
-   */
-  decrementRef(_roundId: string): void {
-    // 有意为空：引用变化只发生在会话 roundIds（落盘 = sessions/<sessionId>.json）
-  }
-
-  /**
    * 删除问答闭环（物理层：移入 `.trash`，保留 7 天）
    *
    * 🔴 **引用即禁删**（机器判据，不靠调用方声明 origin）：仍被任意会话 `roundIds` 引用时
@@ -485,7 +465,7 @@ export class WorkspaceRoundStore implements IRoundStore {
     const entry = this.index.get(roundId);
     if (!entry) return false;
 
-    // 引用真源现场派生（与 listOrphaned 同一 provider，不另读 refCount）
+    // 引用真源现场派生（与 listOrphaned 同一 provider）
     const referenced = this.referencedIdsProvider?.();
     if (referenced?.has(roundId)) {
       logger.warn({ roundId }, '拒绝删除：该轮仍被会话引用（后台动作不得删历史）');
@@ -534,7 +514,7 @@ export class WorkspaceRoundStore implements IRoundStore {
   /**
    * 获取孤立的问答闭环（**不在任何会话 roundIds 中** 且超龄）
    *
-   * 引用真源由 `sessionStore.referencedIds()` 现场注入；本存储不读 `Round.refCount`。
+   * 引用真源由 `sessionStore.referencedIds()` 现场注入；轮对象上不持引用状态。
    * 未注入真源时返回空数组——宁可不回收，也不按过期计数误删。
    *
    * 索引是派生缓存：只枚举索引条目（`.trash/` 不在索引中，天然排除）。
@@ -592,7 +572,7 @@ export class WorkspaceRoundStore implements IRoundStore {
     // 共用本打捞条件。⚠️ `interrupted` **不入本打捞口**：它已是「已收场的停 turn」。
     // **勿因 grep 到零写点而删**（它是打捞条件的组成部分，非死代码）。
     //
-    // 🔴 ADR-044：判据**不含 `refCount`**。打捞筛的是「收场与否」，与「有无会话引用」正交。
+    // 🔴 ADR-044：判据只看状态。打捞筛的是「收场与否」，与「有无会话引用」正交。
     const candidates = Array.from(this.index.values())
       .filter((e) => e.status === 'pending' || e.status === 'error')
       .filter((e) => isWithinLocalDay(e.createdAt, date))

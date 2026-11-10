@@ -116,8 +116,8 @@ export class WorkspaceSessionStore implements ISessionStore {
    * 「留存区」会话标记（**视图层分组标签，不是数据状态**）
    *
    * 语义边界（易与第一直觉相反，务必先读）：
-   *   - 打标的会话**什么都没变**：Round 文件原地不动、**引用计数不减**（保持 refCount > 0，
-   *     `WorkspaceRoundStore.sweepOrphans` 天然不碰 ⇒ 24h 保洁不会吃掉留存数据），
+   *   - 打标的会话**什么都没变**：Round 文件原地不动、**会话 roundIds 不减**
+   *     （`WorkspaceRoundStore.sweepOrphans` 天然不碰 ⇒ 24h 保洁不会吃掉留存数据），
    *     会话仍出现在 `listSessions()` 结果里；变的只有「显示在哪个分组」。
    *   - 因此本集合**只能供给 UI 分屏显示**，**不得**被任何数据层判据消费
    *     （不得作为「能否删除 / 能否写入 / 是否参与 GC」的条件）。若将来有人想拿它做判据，
@@ -166,7 +166,7 @@ export class WorkspaceSessionStore implements ISessionStore {
       this.roundStore = rs;
     }
     // 引用真源单点注入：RoundStore 不持有会话，孤儿判定必须回读本存储的 roundIds。
-    // 由此内核定时 GC 与宿主启动清扫都读同一套引用集合（不再读 Round.refCount）。
+    // 由此内核定时 GC 与宿主启动清扫都读同一套引用集合（轮对象上不持引用状态）。
     if (this.roundStore instanceof WorkspaceRoundStore) {
       this.roundStore.setReferencedIdsProvider(() => new Set(this.referencedIds()));
       // 历史只读写入闸的「可续跑轮」真源：同一批扫盘结果，不引入第二份「当前轮」字段

@@ -531,7 +531,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 孤儿清扫（无会话引用 Round 统一回收）：删除会话/截断后遗留的无引用轮
   // 在启动时清理，防磁盘膨胀与「无引用卡片滞留」（引用归 SessionStore、物理归 RoundStore）。
   // 🔴 必须在 sessionStore.load() **之后**执行：判据 = 「不在任何会话 roundIds 中」，
-  // 由 sessionStore.referencedIds() 现场派生（构造时已注入 provider），不读 Round.refCount。
+  // 由 sessionStore.referencedIds() 现场派生（构造时已注入 provider），轮对象上不持引用状态。
   // 存活保护必须显式带上：刚失去引用的轮给 24h 后悔窗口，无保护会立即移入回收站。
   const sweptIds = roundStore.sweepOrphans(DEFAULT_SWEEP_MIN_AGE_MS);
   if (sweptIds.length > 0) {
